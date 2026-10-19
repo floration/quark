@@ -348,13 +348,19 @@ int main(int argc, char** argv) {
     if (argc > 2 && std::string(argv[1]) == "--cleanup") cleanup = std::thread(install::cleanupDownloaded, fs::u8path(argv[2]));
     // Started from Downloads (or anywhere else): install into the program folder, then hand over
     // to that copy, which deletes the downloaded file.
-    if (install::runningFromOutside(argv[0])) {
-        fs::path installed = install::installSelf(argv[0]);
-        if (install::runningFromOutside(argv[0]) && fs::exists(installed) &&
-            install::relaunchInstalled(installed, install::selfPath(argv[0])))
-            return 0;
-    }
+    // One launcher at a time: a second start (double click, or an older build relaunching itself)
+    // just brings the running one to the front.
+    bool handedOver = argc > 2 && std::string(argv[1]) == "--cleanup";
+    if (!install::acquireSingleInstance(handedOver)) return 0;
+    // Started from Downloads (or anywhere else): install into the program folder, then hand over
+    // to that copy, which deletes the downloaded file. Never hands over to itself, and a process
+    // that was itself started by a hand-over never hands over again (no relaunch loops).
+    fs::path self = install::selfPath(argv[0]);
     fs::path launcherPath = install::installSelf(argv[0]);
+    std::error_code eqEc;
+    if (!handedOver && install::runningFromOutside(argv[0]) && fs::exists(launcherPath) && !fs::equivalent(launcherPath, self, eqEc)) {
+        if (install::relaunchInstalled(launcherPath, self)) return 0; // it waits for us to exit, then takes the lock
+    }
     { // always listed in "installed programs" (Windows Apps & features); no option needed
         std::string ver = readFile(dir / "version.txt");
         while (!ver.empty() && (ver.back() == '\n' || ver.back() == '\r')) ver.pop_back();

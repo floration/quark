@@ -19,6 +19,11 @@ bool relaunchInstalled(const std::filesystem::path& installed, const std::filesy
 // Called by the installed launcher: deletes the downloaded copy once that process has exited.
 void cleanupDownloaded(const std::filesystem::path& original);
 std::filesystem::path selfPath(const char* argv0);
+// The installed launcher always has this fixed name, whatever the download was called
+// ("quark_launcher (1).exe" etc.), so re-downloads replace it instead of piling up copies.
+std::filesystem::path installedLauncher();
+// Only one launcher at a time (a second start just exits). Returns false if another is running.
+bool acquireSingleInstance(bool waitForPrevious); // wait: a hand-over waits up to 5 s for its parent to exit
 
 // What the platform calls each integration (empty = not offered on this platform).
 const char* desktopLabel();   // "DESKTOP ICON"

@@ -13,6 +13,7 @@
 #else
 #include <sys/stat.h>
 #include <unistd.h>
+#include <fcntl.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -126,9 +127,42 @@ fs::path selfPath(const char* argv0) {
     return self;
 }
 
+fs::path installedLauncher() {
+#ifdef _WIN32
+    return appDir() / "quark_launcher.exe";
+#else
+    return appDir() / "quark_launcher";
+#endif
+}
+
+bool acquireSingleInstance(bool waitForPrevious) {
+    for (int attempt = 0; attempt < (waitForPrevious ? 50 : 1); attempt++) {
+        if (attempt) {
+#ifdef _WIN32
+            Sleep(100);
+#else
+            usleep(100000);
+#endif
+        }
+#ifdef _WIN32
+        HANDLE m = CreateMutexW(nullptr, TRUE, L"Local\\quark_launcher_single_instance");
+        if (m && GetLastError() == ERROR_ALREADY_EXISTS) { CloseHandle(m); continue; }
+        return true; // handle stays open for the life of the process
+#else
+        static int fd = -1;
+        fs::create_directories(appDir(), ec);
+        if (fd < 0) fd = open((appDir() / ".launcher.lock").string().c_str(), O_CREAT | O_RDWR, 0644);
+        if (fd < 0 || lockf(fd, F_TLOCK, 0) == 0) return true;
+#endif
+    }
+#ifdef _WIN32
+    if (HWND w = FindWindowW(nullptr, L"quark launcher")) { ShowWindow(w, SW_RESTORE); SetForegroundWindow(w); }
+#endif
+    return false;
+}
+
 bool runningFromOutside(const char* argv0) {
-    fs::path self = selfPath(argv0);
-    return !fs::equivalent(self, appDir() / self.filename(), ec);
+    return !fs::equivalent(selfPath(argv0), installedLauncher(), ec);
 }
 
 bool relaunchInstalled(const fs::path& installed, const fs::path& original) {
@@ -165,10 +199,19 @@ fs::path installSelf(const char* argv0) {
     fs::path self = selfPath(argv0);
     fs::create_directories(appDir(), ec);
     std::ofstream(appDir() / "quark.png", std::ios::binary).write((const char*)kIconPng, sizeof kIconPng);
-    fs::path dst = appDir() / self.filename();
+    fs::path dst = installedLauncher();
     if (fs::equivalent(self, dst, ec)) return dst;
-    fs::copy_file(self, dst, fs::copy_options::overwrite_existing, ec);
-    return ec ? self : dst;
+    // leftovers from older versions that installed under the download's name ("quark_launcher (1).exe")
+    for (auto& e : fs::directory_iterator(appDir(), ec)) {
+        std::string n = e.path().filename().string();
+        if (n.rfind("quark_launcher", 0) == 0 && e.path() != dst && !fs::equivalent(e.path(), self, ec)) fs::remove(e.path(), ec);
+    }
+    std::error_code cec;
+    fs::copy_file(self, dst, fs::copy_options::overwrite_existing, cec);
+#ifndef _WIN32
+    if (!cec) fs::permissions(dst, fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec, fs::perm_options::add, ec);
+#endif
+    return dst; // may be the previous copy if this one couldn't be written (in use)
 }
 
 #ifdef _WIN32
