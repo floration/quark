@@ -4,73 +4,209 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>quark</title>
-<meta name="description" content="quark - a fast, free arena shooter.">
+<meta name="description" content="quark - a fast, free arena shooter. 1000 Hz servers, grapples, rockets, ranked 1v1.">
 <link rel="icon" type="image/png" href="icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Stencil+Display:wght@700;900&family=Barlow+Condensed:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <style>
-  :root { --bg: #111317; --fg: #e6e8eb; --dim: #8b9099; --accent: #3d7bff; --line: #23262c; }
+  :root {
+    --steel: #1a1c1f; --steel2: #23262a; --plate: #2b2f34; --edge: #3a3f46; --rust: #8a4a2a;
+    --fg: #d9dcdf; --dim: #8a9097; --hazard: #f2b705; --hazard-dk: #c79400; --black: #0d0e10;
+    --mono: "Share Tech Mono", ui-monospace, monospace; --head: "Big Shoulders Stencil Display", Impact, sans-serif;
+    --body: "Barlow Condensed", "Arial Narrow", sans-serif;
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width: 640px; margin: 0 auto; padding: 56px 20px 40px; }
-  a { color: var(--accent); text-decoration: none; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; color: var(--fg); font: 500 19px/1.5 var(--body); letter-spacing: .2px;
+    background:
+      radial-gradient(ellipse at 50% -10%, #2a2e33 0%, transparent 60%),
+      repeating-linear-gradient(0deg, transparent 0 39px, rgba(255,255,255,.025) 39px 40px),
+      repeating-linear-gradient(90deg, transparent 0 39px, rgba(255,255,255,.025) 39px 40px),
+      var(--steel);
+  }
+  a { color: var(--hazard); text-decoration: none; }
   a:hover { text-decoration: underline; }
-  h1 { font-size: 44px; letter-spacing: 2px; margin: 0; }
-  .tag { color: var(--dim); margin: 4px 0 32px; }
-  .btn { display: inline-block; background: var(--accent); color: #fff; padding: 12px 22px; border-radius: 6px; font-weight: 600; }
-  .btn:hover { text-decoration: none; filter: brightness(1.1); }
-  .btn.alt { background: #5865f2; margin-left: 8px; }
-  .small { color: var(--dim); font-size: 14px; }
-  h2 { font-size: 18px; margin: 40px 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
-  ul { padding-left: 20px; }
-  details { border-bottom: 1px solid var(--line); padding: 8px 0; }
-  summary { cursor: pointer; }
-  .body { color: #c9ccd1; font-size: 15px; }
-  .body h4 { margin: 12px 0 4px; font-size: 15px; }
-  code { background: var(--line); padding: 1px 5px; border-radius: 3px; font-size: 14px; }
-  table { border-collapse: collapse; font-size: 14px; } td, th { border: 1px solid var(--line); padding: 3px 8px; }
-  footer { color: var(--dim); font-size: 14px; margin-top: 48px; }
+  .hazard { height: 14px; background: repeating-linear-gradient(-45deg, var(--hazard) 0 18px, var(--black) 18px 36px); }
+  .hazard.thin { height: 6px; }
+
+  /* top bar */
+  header { position: sticky; top: 0; z-index: 5; background: rgba(13,14,16,.94); backdrop-filter: blur(4px); border-bottom: 1px solid var(--edge); }
+  .bar { max-width: 1080px; margin: 0 auto; padding: 10px 20px; display: flex; align-items: center; gap: 22px; }
+  .logo { font: 900 30px var(--head); letter-spacing: 3px; color: var(--fg); }
+  .logo span { color: var(--hazard); }
+  nav { margin-left: auto; display: flex; gap: 18px; font: 600 15px var(--body); text-transform: uppercase; letter-spacing: 2px; }
+  nav a { color: var(--dim); } nav a:hover { color: var(--hazard); text-decoration: none; }
+
+  main { max-width: 1080px; margin: 0 auto; padding: 0 20px 40px; }
+
+  /* hero */
+  .hero { position: relative; margin: 36px 0 28px; padding: 46px 40px 40px; background: linear-gradient(180deg, var(--plate), var(--steel2)); border: 1px solid var(--edge); box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 18px 40px rgba(0,0,0,.45); }
+  .hero::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 10px; background: repeating-linear-gradient(-45deg, var(--hazard) 0 14px, var(--black) 14px 28px); }
+  .stamp { display: inline-block; font: 15px var(--mono); color: var(--black); background: var(--hazard); padding: 2px 10px; letter-spacing: 2px; margin-bottom: 14px; }
+  h1 { font: 900 clamp(72px, 13vw, 150px)/0.85 var(--head); letter-spacing: 6px; margin: 0; color: #e8eaec; text-shadow: 0 3px 0 #000, 0 0 30px rgba(242,183,5,.12); }
+  .sub { font: 600 clamp(20px, 3vw, 28px) var(--body); text-transform: uppercase; letter-spacing: 3px; color: var(--dim); margin: 14px 0 28px; }
+  .sub b { color: var(--fg); }
+  .btns { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .btn { display: inline-flex; align-items: center; gap: 10px; font: 700 21px var(--body); text-transform: uppercase; letter-spacing: 2px; padding: 14px 26px; border: 2px solid var(--black); color: var(--black); background: var(--hazard); box-shadow: 4px 4px 0 var(--black); }
+  .btn:hover { text-decoration: none; background: #ffc81a; transform: translate(-1px,-1px); box-shadow: 5px 5px 0 var(--black); }
+  .btn.steel { background: var(--edge); color: var(--fg); border-color: #000; }
+  .btn.steel:hover { background: #4a5059; }
+  .plat { font: 15px var(--mono); color: var(--dim); margin-top: 14px; }
+  .bolt { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #8d939b, #3c4148 60%, #1c1f22); box-shadow: 0 1px 1px #000; }
+  .bolt.tl { top: 20px; left: 14px; } .bolt.tr { top: 20px; right: 14px; } .bolt.bl { bottom: 14px; left: 14px; } .bolt.br { bottom: 14px; right: 14px; }
+
+  /* readouts */
+  .gauges { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 28px; }
+  .gauge { background: var(--black); border: 1px solid var(--edge); padding: 14px 16px; position: relative; }
+  .gauge::after { content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: var(--w, 60%); background: var(--hazard); }
+  .gauge .n { font: 900 40px/1 var(--head); color: var(--hazard); letter-spacing: 1px; }
+  .gauge .l { font: 14px var(--mono); color: var(--dim); text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+
+  /* panels */
+  section { position: relative; margin: 0 0 24px; background: linear-gradient(180deg, var(--steel2), #1d2023); border: 1px solid var(--edge); padding: 26px 28px 24px; }
+  .label { position: absolute; top: -13px; left: 20px; font: 700 15px var(--mono); letter-spacing: 2px; background: var(--hazard); color: var(--black); padding: 2px 10px; }
+  h2 { font: 900 38px var(--head); letter-spacing: 3px; margin: 6px 0 14px; text-transform: uppercase; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 28px; }
+  .item { border-left: 3px solid var(--hazard); padding: 2px 0 2px 14px; }
+  .item b { display: block; font: 700 21px var(--body); text-transform: uppercase; letter-spacing: 1.5px; color: #fff; }
+  .item span { color: var(--dim); }
+  .modes { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { font: 600 16px var(--body); text-transform: uppercase; letter-spacing: 1.5px; border: 1px solid var(--edge); background: var(--black); padding: 6px 12px; }
+  .chip.hot { border-color: var(--hazard); color: var(--hazard); }
+
+  /* weapon spec sheet */
+  .sheet { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font: 16px var(--mono); }
+  th { text-align: left; color: var(--black); background: var(--hazard); padding: 6px 10px; font-weight: 400; letter-spacing: 1px; }
+  td { padding: 7px 10px; border-bottom: 1px dashed var(--edge); white-space: nowrap; }
+  tr:hover td { background: rgba(242,183,5,.05); }
+  .meter { display: inline-block; height: 9px; background: repeating-linear-gradient(90deg, var(--hazard) 0 6px, transparent 6px 8px); vertical-align: middle; }
+  .tagw { color: var(--rust); filter: brightness(1.6); }
+
+  /* host / shipping log */
+  pre { background: var(--black); border: 1px solid var(--edge); border-left: 4px solid var(--hazard); padding: 14px 16px; font: 15px/1.5 var(--mono); color: #c7cbd0; overflow-x: auto; margin: 10px 0; }
+  details { border-bottom: 1px dashed var(--edge); }
+  summary { cursor: pointer; list-style: none; padding: 10px 0; display: flex; gap: 14px; align-items: baseline; }
+  summary::-webkit-details-marker { display: none; }
+  summary .v { font: 700 16px var(--mono); color: var(--black); background: var(--hazard); padding: 1px 8px; }
+  summary .t { color: var(--dim); text-transform: uppercase; letter-spacing: 1px; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  details[open] summary .t { color: var(--fg); }
+  .body { padding: 0 0 14px 4px; font-size: 18px; color: #c9cdd2; }
+  .body h4 { font: 700 18px var(--body); text-transform: uppercase; letter-spacing: 1.5px; color: var(--hazard); margin: 12px 0 2px; }
+  .body ul { margin: 6px 0; padding-left: 20px; } .body li::marker { color: var(--hazard); }
+  .body code { font: 15px var(--mono); background: var(--black); padding: 1px 6px; border: 1px solid var(--edge); }
+  .body table { font-size: 14px; margin: 8px 0; } .body th { padding: 3px 8px; } .body td { padding: 3px 8px; }
+  .more { margin-top: 14px; font: 700 16px var(--body); text-transform: uppercase; letter-spacing: 2px; background: none; border: 1px solid var(--edge); color: var(--fg); padding: 8px 16px; cursor: pointer; }
+  .more:hover { border-color: var(--hazard); color: var(--hazard); }
+
+  footer { max-width: 1080px; margin: 0 auto; padding: 22px 20px 40px; display: flex; flex-wrap: wrap; gap: 10px 24px; font: 15px var(--mono); color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+  footer .sp { margin-left: auto; }
+
+  @media (max-width: 760px) {
+    nav { display: none; } .hero { padding: 40px 22px 30px; } .gauges { grid-template-columns: 1fr 1fr; } .cols { grid-template-columns: 1fr; }
+    section { padding: 24px 18px 20px; }
+  }
 </style>
 </head>
 <body>
+<header>
+  <div class="bar">
+    <a class="logo" href="#">Q<span>U</span>ARK</a>
+    <nav><a href="#about">The game</a><a href="#arsenal">Arsenal</a><a href="#host">Host</a><a href="#log">Shipping log</a><a href="https://discord.gg/RERYWNWSXg">Discord</a></nav>
+  </div>
+  <div class="hazard thin"></div>
+</header>
+
 <main>
-  <h1>QUARK</h1>
-  <p class="tag">A fast, free arena shooter. <span id="ver"></span></p>
+  <div class="hero">
+    <i class="bolt tl"></i><i class="bolt tr"></i><i class="bolt bl"></i><i class="bolt br"></i>
+    <div class="stamp" id="ver">BUILD ----</div>
+    <h1>QUARK</h1>
+    <p class="sub"><b>Arena shooter.</b> Built from scratch. Free. Fast as a press brake.</p>
+    <div class="btns">
+      <a class="btn" id="dl" href="https://github.com/floration/quark/releases/latest">&#x2193; Download</a>
+      <a class="btn steel" href="https://discord.gg/RERYWNWSXg">Join the Discord</a>
+    </div>
+    <div class="plat" id="platforms"></div>
+  </div>
 
-  <a class="btn" id="dl" href="https://github.com/floration/quark/releases/latest">Download</a>
-  <a class="btn alt" href="https://discord.gg/RERYWNWSXg">Discord</a>
-  <p class="small" id="platforms"></p>
+  <div class="gauges">
+    <div class="gauge" style="--w:100%"><div class="n">1000 HZ</div><div class="l">Server tick rate</div></div>
+    <div class="gauge" style="--w:80%"><div class="n" id="wcount">8</div><div class="l">Weapons</div></div>
+    <div class="gauge" style="--w:90%"><div class="n">10</div><div class="l">Game modes</div></div>
+    <div class="gauge" style="--w:35%"><div class="n">32</div><div class="l">Players per server</div></div>
+  </div>
 
-  <h2>What it is</h2>
-  <ul>
-    <li>1000 Hz servers, movement that plays the same at any frame rate.</li>
-    <li>Dash, grapple, rocket jumps. Rifle, rockets, knife, sniper, laser, shotgun, stickies, crossbow.</li>
-    <li>Free for all, team modes, bomb, payload, king of the hill, race, 1v1 and tourneys.</li>
-    <li>Ranked 1v1 ladders, a map editor you can use together, and anyone can host.</li>
-  </ul>
-  <p class="small">The launcher installs the game and keeps it up to date.</p>
+  <section id="about">
+    <div class="label">SECTION 01 // THE GAME</div>
+    <h2>What comes off the line</h2>
+    <div class="cols">
+      <div class="item"><b>Movement first</b><span>Dash, grapple, rocket jumps and bunny hops. It runs in 1 ms steps, so it plays the same at any frame rate.</span></div>
+      <div class="item"><b>Netcode tuned to the bolt</b><span>1000 Hz servers, delta snapshots, adaptive interpolation and lag compensation.</span></div>
+      <div class="item"><b>Ranked 1v1</b><span>Three ladders: Vanilla, Laser Vampire, Instagib. Both players' games confirm every result.</span></div>
+      <div class="item"><b>Build your own floor</b><span>The map editor runs inside the game. Edit with friends live, then play it straight away.</span></div>
+      <div class="item"><b>Anyone can host</b><span>Host from the menu, or run the dedicated server on any Linux box. Servers update themselves.</span></div>
+      <div class="item"><b>No engine, no bloat</b><span>Custom C++ and OpenGL. Every frame is judged by its 1% lows, not its average.</span></div>
+    </div>
+    <h2 style="margin-top:26px">Modes</h2>
+    <div class="modes">
+      <span class="chip hot">Ranked 1v1</span><span class="chip">Free for all</span><span class="chip">VS</span><span class="chip">Bomb</span>
+      <span class="chip">Payload</span><span class="chip">Neutral payload</span><span class="chip">King of the hill</span><span class="chip">Race</span>
+      <span class="chip">Duel 1v1 / 2v2</span><span class="chip">1v1 rulesets</span><span class="chip">Tourney</span>
+    </div>
+  </section>
 
-  <h2>Changelog</h2>
-  <div id="log">Loading...</div>
+  <section id="arsenal">
+    <div class="label">SECTION 02 // ARSENAL</div>
+    <h2>Spec sheet</h2>
+    <div class="sheet"><table id="wtable"><tr><td>Loading...</td></tr></table></div>
+  </section>
 
-  <footer>
-    <a href="https://github.com/floration/quark">Source</a> ·
-    <a href="https://github.com/floration/quark/releases">All releases</a> ·
-    <a href="https://discord.gg/RERYWNWSXg">Discord</a>
-  </footer>
+  <section id="host">
+    <div class="label">SECTION 03 // HOST</div>
+    <h2>Run a server</h2>
+    <p>In the game: <b>Host game</b>, pick a mode and a map, start. For a 24/7 server on a Linux machine (a free cloud VM works), clone the repo, then:</p>
+    <pre>sh tools/server/install.sh --public --name "my server"
+# ranked:  --ranked --variant vanilla --map temple</pre>
+    <p>It starts on boot, restarts if it crashes, and installs new versions by itself once nobody is mid-match.</p>
+  </section>
+
+  <section id="log">
+    <div class="label">SECTION 04 // SHIPPING LOG</div>
+    <h2>What changed</h2>
+    <div id="logbox">Loading...</div>
+    <button class="more" id="morebtn" style="display:none">Older shipments</button>
+  </section>
 </main>
+
+<div class="hazard"></div>
+<footer>
+  <span>Quark // free</span>
+  <a href="https://github.com/floration/quark">Source</a>
+  <a href="https://github.com/floration/quark/releases">All releases</a>
+  <a href="https://discord.gg/RERYWNWSXg">Discord</a>
+  <span class="sp">Hard hat area</span>
+</footer>
+
 <script>
-const DL = n => `https://github.com/floration/quark/releases/latest/download/${n}`;
+const REPO = "floration/quark";
+const DL = n => `https://github.com/${REPO}/releases/latest/download/${n}`;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 const ua = navigator.userAgent;
 const os = /Win/.test(ua) ? "windows" : /Mac/.test(ua) ? "macos" : "linux";
 const L = {
-  windows: { file: "quark-launcher-windows.exe", name: "Windows" },
-  macos:   { file: "quark-launcher-macos.zip",  name: "Mac" },
-  linux:   { file: "quark-launcher-linux",      name: "Linux" },
+  windows: { file: "quark-launcher-windows.exe", name: "Windows", game: "quark-windows.zip" },
+  macos:   { file: "quark-launcher-macos.zip",  name: "Mac",     game: "quark-macos.zip" },
+  linux:   { file: "quark-launcher-linux",      name: "Linux",   game: "quark-linux.tar.gz" },
 };
-document.getElementById("dl").href = DL(L[os].file);
-document.getElementById("dl").textContent = "Download for " + L[os].name;
-document.getElementById("platforms").innerHTML = "Other: " +
-  Object.keys(L).filter(k => k !== os).map(k => `<a href="${DL(L[k].file)}">${L[k].name}</a>`).join(" · ");
+const dl = document.getElementById("dl");
+dl.href = DL(L[os].file);
+dl.innerHTML = "&#x2193; Download for " + L[os].name;
+document.getElementById("platforms").innerHTML =
+  "Other: " + Object.keys(L).filter(k => k !== os).map(k => `<a href="${DL(L[k].file)}">${L[k].name}</a>`).join(" / ") +
+  " &nbsp;//&nbsp; Game only, no launcher: " + Object.keys(L).map(k => `<a href="${DL(L[k].game)}">${L[k].name}</a>`).join(" / ");
 
 // changelogs are short markdown: headings, lists, tables, **bold**, `code`
 const inline = s => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
@@ -98,12 +234,40 @@ function md(text) {
   }
   return html + (list ? "</ul>" : "");
 }
+const teaser = notes => {
+  for (const l of (notes || "").split(/\r?\n/)) {
+    const t = l.trim();
+    if (t && !t.startsWith("# ") && !t.startsWith("|")) return t.replace(/^#+ |^[-*] /g, "").replace(/\*\*|`/g, "");
+  }
+  return "";
+};
 fetch("changelog.json").then(r => r.json()).then(log => {
-  if (log.length) document.getElementById("ver").textContent = "Latest: v" + log[0].version;
-  document.getElementById("log").innerHTML = log.slice(0, 15).map((e, i) =>
-    `<details${i === 0 ? " open" : ""}><summary><b>v${esc(e.version)}</b></summary><div class="body">${md(e.notes)}</div></details>`).join("") +
-    `<p class="small"><a href="https://github.com/floration/quark/releases">Older versions</a></p>`;
-}).catch(() => { document.getElementById("log").textContent = "Couldn't load the changelog."; });
+  if (log.length) document.getElementById("ver").textContent = "BUILD v" + log[0].version;
+  const box = document.getElementById("logbox"), more = document.getElementById("morebtn");
+  const render = n => {
+    box.innerHTML = log.slice(0, n).map((e, i) =>
+      `<details${i === 0 ? " open" : ""}><summary><span class="v">v${esc(e.version)}</span><span class="t">${esc(teaser(e.notes))}</span></summary><div class="body">${md(e.notes)}</div></details>`).join("");
+    more.style.display = n < log.length ? "" : "none";
+  };
+  render(8);
+  more.onclick = () => render(log.length);
+}).catch(() => { document.getElementById("logbox").textContent = "Couldn't load the shipping log."; });
+
+// weapon spec sheet from the game's own numbers (site/weapons.json is generated from gamedefs.h)
+fetch("weapons.json").then(r => r.json()).then(ws => {
+  ws = ws.slice().sort((a, b) => a.ttk - b.ttk);
+  document.getElementById("wcount").textContent = ws.length;
+  const rate = w => w.refire < 0.01 ? `${Math.round(1 / w.refire)}/s` : `${+w.refire.toFixed(3)} s`;
+  const dmg = w => w.pellets > 1 ? `${w.damage} x ${w.pellets}` : w.beam ? `${w.damage}/ms` : `${w.damage}`;
+  const maxT = Math.max(...ws.map(w => w.ttk));
+  let html = "<tr><th>UNIT</th><th>DAMAGE</th><th>FIRE RATE</th><th>HITS TO KILL</th><th>TIME TO KILL</th><th></th><th>NOTES</th></tr>";
+  for (const w of ws) {
+    const notes = [w.splash && "splash", w.beam && "beam", w.scope && "scope"].filter(Boolean).join(" / ");
+    html += `<tr><td><b>${esc(w.name)}</b></td><td>${dmg(w)}</td><td>${rate(w)}</td><td>${w.shots}</td><td>${w.ttk.toFixed(2)} s</td>` +
+            `<td><span class="meter" style="width:${Math.max(8, Math.round(w.ttk / maxT * 120))}px"></span></td><td class="tagw">${notes}</td></tr>`;
+  }
+  document.getElementById("wtable").innerHTML = html;
+}).catch(() => { document.getElementById("wtable").innerHTML = "<tr><td>Couldn't load the spec sheet.</td></tr>"; });
 </script>
 </body>
 </html>
