@@ -178,6 +178,7 @@ void Game::onKey(int key, int action, int mods) {
     if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) uiIn_.enter = true;
     if (key == GLFW_KEY_TAB) uiIn_.tab = true;
     if (action != GLFW_PRESS) return;
+    if (key == GLFW_KEY_F3) { showPerf_ = !showPerf_; return; }
     if (key == GLFW_KEY_F12) {
         static int n = 0;
         r_.screenshot("screenshot_" + std::to_string(n++) + ".png");
@@ -338,6 +339,9 @@ void Game::handleEvents() {
 
 void Game::frame(double dt) {
     time_ += dt;
+    frameTimes_[frameIdx_] = (float)dt;
+    frameIdx_ = (frameIdx_ + 1) % frameTimes_.size();
+    frameCount_ = std::min(frameCount_ + 1, frameTimes_.size());
     net_.poll();
     if (screen_ == Screen::InGame && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
 
@@ -411,6 +415,7 @@ void Game::frame(double dt) {
         }
     }
     drawMenu();
+    if (showPerf_) drawPerf();
     r_.flush2D();
 
     if (shotAt_ > 0 && time_ >= shotAt_ && screen_ == Screen::InGame) {
@@ -979,4 +984,23 @@ void Game::drawMenu() {
         }
         default: break;
     }
+}
+
+void Game::drawPerf() {
+    if (time_ >= perfNextUpdate_ && frameCount_ > 10) {
+        perfNextUpdate_ = time_ + 0.5;
+        std::vector<float> t(frameTimes_.begin(), frameTimes_.begin() + frameCount_);
+        std::sort(t.begin(), t.end());
+        double sum = 0;
+        for (float f : t) sum += f;
+        auto pct = [&](double p) { return t[std::min(t.size() - 1, (size_t)(t.size() * p))]; };
+        char b[200];
+        snprintf(b, sizeof b, "AVG %.0f  1%% LOW %.0f  0.1%% LOW %.0f  WORST %.1fMS  PING %d",
+                 t.size() / sum, 1.0 / pct(0.99), 1.0 / pct(0.999), t.back() * 1000.0,
+                 net_.findPlayer(net_.clientId()) ? net_.findPlayer(net_.clientId())->ping : 0);
+        perfText_ = b;
+    }
+    float ts = std::max(1.0f, std::round(r_.height() / 720.0f * 2.0f));
+    r_.rect(4, 4, r_.textWidth(perfText_, ts) + 8, r_.textHeight(ts) + 8, {0, 0, 0, 0.6f});
+    r_.text(8, 8, ts, perfText_, {1, 1, 0.4f, 1});
 }

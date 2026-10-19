@@ -1,0 +1,69 @@
+name: build-and-release
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y mingw-w64
+      - name: cross-compile (MinGW, static, Windows 7+)
+        run: |
+          cat > mingw.cmake <<'T'
+          set(CMAKE_SYSTEM_NAME Windows)
+          set(CMAKE_C_COMPILER x86_64-w64-mingw32-gcc-posix)
+          set(CMAKE_CXX_COMPILER x86_64-w64-mingw32-g++-posix)
+          set(CMAKE_RC_COMPILER x86_64-w64-mingw32-windres)
+          T
+          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=mingw.cmake -DCMAKE_BUILD_TYPE=Release -DQUARK_BUILD_TESTS=OFF
+          cmake --build build -j
+          mkdir -p quark-windows && cp build/quark.exe build/quark_server.exe README.md quark-windows/ && cp -r maps quark-windows/
+          zip -r quark-windows.zip quark-windows
+      - uses: actions/upload-artifact@v4
+        with: { name: windows, path: quark-windows.zip }
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev
+      - run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j
+          ./build/quark_tests
+          mkdir -p quark-linux && cp build/quark build/quark_server README.md quark-linux/ && cp -r maps quark-linux/
+          tar czf quark-linux.tar.gz quark-linux
+      - uses: actions/upload-artifact@v4
+        with: { name: linux, path: quark-linux.tar.gz }
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
+          cmake --build build -j
+          mkdir -p quark-macos && cp -r build/quark.app build/quark_server README.md quark-macos/ && cp -r maps quark-macos/ && mkdir -p quark-macos/quark.app/Contents/Resources && cp -r maps quark-macos/quark.app/Contents/Resources/
+          zip -r quark-macos.zip quark-macos
+      - uses: actions/upload-artifact@v4
+        with: { name: macos, path: quark-macos.zip }
+  release:
+    needs: [windows, linux, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: quark build ${{ github.run_number }} (${{ github.ref_name }})
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          body: |
+            Automatic build of ${{ github.sha }}.
+            Windows: unzip quark-windows.zip and run quark.exe (or quark_server.exe for a dedicated server).
+          files: |
+            windows/quark-windows.zip
+            linux/quark-linux.tar.gz
+            macos/quark-macos.zip

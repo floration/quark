@@ -103,4 +103,12 @@ private:
     std::vector<Explosion> explosions_;
     std::vector<ProjectileSnap> lastProjectiles_;
     double shotAt_ = -1;
+
+    // F3 performance overlay: frame-time percentiles (lows matter, averages hide stutter)
+    bool showPerf_ = false;
+    std::vector<float> frameTimes_ = std::vector<float>(2048, 0.0f);
+    size_t frameIdx_ = 0, frameCount_ = 0;
+    double perfNextUpdate_ = 0;
+    std::string perfText_;
+    void drawPerf();
 };
