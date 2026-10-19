@@ -114,7 +114,7 @@
 <header>
   <div class="bar">
     <a class="logo" href="#">Q<span>U</span>ARK</a>
-    <nav><a href="#about">The game</a><a href="#arsenal">Arsenal</a><a href="#host">Host</a><a href="#log">Shipping log</a><a href="https://discord.gg/RERYWNWSXg">Discord</a></nav>
+    <nav><a href="#about">The game</a><a href="#arsenal">Arsenal</a><a href="#ranks">Leaderboard</a><a href="#host">Host</a><a href="#log">Shipping log</a><a href="https://discord.gg/RERYWNWSXg">Discord</a></nav>
   </div>
   <div class="hazard thin"></div>
 </header>
@@ -164,8 +164,15 @@
     <div class="sheet"><table id="wtable"><tr><td>Loading...</td></tr></table></div>
   </section>
 
+  <section id="ranks">
+    <div class="label">SECTION 03 // LEADERBOARD</div>
+    <h2>Top of the ladders</h2>
+    <div class="cols" id="boards" style="grid-template-columns:1fr 1fr 1fr">Loading...</div>
+    <p class="small" style="color:var(--dim)">Ranked 1v1 ratings. Players show up after 3 rated games.</p>
+  </section>
+
   <section id="host">
-    <div class="label">SECTION 03 // HOST</div>
+    <div class="label">SECTION 04 // HOST</div>
     <h2>Run a server</h2>
     <p>In the game: <b>Host game</b>, pick a mode and a map, start. For a 24/7 server on a Linux machine (a free cloud VM works), clone the repo, then:</p>
     <pre>sh tools/server/install.sh --public --name "my server"
@@ -174,7 +181,7 @@
   </section>
 
   <section id="log">
-    <div class="label">SECTION 04 // SHIPPING LOG</div>
+    <div class="label">SECTION 05 // SHIPPING LOG</div>
     <h2>What changed</h2>
     <div id="logbox">Loading...</div>
     <button class="more" id="morebtn" style="display:none">Older shipments</button>
@@ -252,6 +259,20 @@ fetch("changelog.json").then(r => r.json()).then(log => {
   render(8);
   more.onclick = () => render(log.length);
 }).catch(() => { document.getElementById("logbox").textContent = "Couldn't load the shipping log."; });
+
+// leaderboard: the ranking server's address is published next to this page (master.txt)
+fetch("master.txt").then(r => r.text()).then(t => {
+  const base = t.trim().replace(/\/+$/, "");
+  const ladders = [["vanilla", "Vanilla"], ["vampire", "Laser Vampire"], ["instagib", "Instagib"]];
+  return Promise.all(ladders.map(([k]) => fetch(`${base}/leaderboard?ladder=${k}&n=10`).then(r => r.ok ? r.text() : "").catch(() => ""))).then(res => {
+    document.getElementById("boards").innerHTML = ladders.map(([k, title], i) => {
+      const rows = res[i].split("\n").map(l => l.match(/^(\d+) (\d+) (.+)$/)).filter(Boolean);
+      const body = rows.length ? rows.map((m, n) => `<tr><td>${n + 1}</td><td>${esc(m[3])}</td><td style="text-align:right">${m[1]}</td></tr>`).join("")
+                               : `<tr><td colspan="3" style="color:var(--dim)">Nobody ranked yet</td></tr>`;
+      return `<div><table><tr><th colspan="3">${title.toUpperCase()}</th></tr>${body}</table></div>`;
+    }).join("");
+  });
+}).catch(() => { document.getElementById("boards").textContent = "Couldn't reach the ranking server."; });
 
 // weapon spec sheet from the game's own numbers (site/weapons.json is generated from gamedefs.h)
 fetch("weapons.json").then(r => r.json()).then(ws => {
