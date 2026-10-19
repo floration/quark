@@ -29,9 +29,10 @@ class M:
         s.lines.append(f"wallbang {x0:g} {y0:g} {z0:g} {x1:g} {y1:g} {z1:g}")
         if mirror: s.lines.append(f"wallbang {-x1:g} {y0:g} {-z1:g} {-x0:g} {y1:g} {-z0:g}")
     def trim(s, hx, hz, y=0, h=0.25, d=0.12):
-        """thin accent strip along the inside of the outer walls (decoration)"""
-        s.box(-hx, y, -hz, hx, y + h, -hz + d, accent=True); s.box(-hx, y, hz - d, hx, y + h, hz, accent=True)
-        s.box(-hx, y, -hz, -hx + d, y + h, hz, accent=True); s.box(hx - d, y, -hz, hx, y + h, hz, accent=True)
+        """accent strip along the outer walls, sunk into the wall so its face is flush (purely visual:
+        nothing to snag on while sliding along a wall)"""
+        s.box(-hx, y, -hz - d, hx, y + h, -hz, accent=True); s.box(-hx, y, hz, hx, y + h, hz + d, accent=True)
+        s.box(-hx - d, y, -hz, -hx, y + h, hz, accent=True); s.box(hx, y, -hz, hx + d, y + h, hz, accent=True)
     def pillar(s, x, z, h, r=0.8, mirror=False):
         """column with an accent base and capital"""
         s.box(x - r - 0.2, 0, z - r - 0.2, x + r + 0.2, 0.35, z + r + 0.2, accent=True, mirror=mirror)
@@ -134,7 +135,7 @@ class M:
         for (mid, span, side, along, wall) in bays:
             a0, a1, y0, y1 = mid - span / 2 + 1.0, mid + span / 2 - 1.0, 1.6, min(h - 1.8, 5.0)
             if a1 - a0 < 1.5 or y1 - y0 < 1.0: continue
-            w0, w1 = (side * wall - 0.06, side * wall) if side > 0 else (side * wall, side * wall + 0.06)
+            w0, w1 = (side * wall, side * wall + 0.06) if side > 0 else (side * wall - 0.06, side * wall)  # inside the wall: flush
             if along: s.box(a0, y0, w0, a1, y1, w1, accent=True)
             else: s.box(w0, y0, a0, w1, y1, a1, accent=True)
         # pipes along the two long walls
@@ -151,9 +152,9 @@ class M:
                 c = -(hx if not long_x else hz) + i * 2 * (hx if not long_x else hz) / (n + 1)
                 if long_x: s.box(-hx, h - 1.6, c - 0.35, hx, h - 1.0, c + 0.35, accent=True)
                 else: s.box(c - 0.35, h - 1.6, -hz, c + 0.35, h - 1.0, hz, accent=True)
-        # floor seams in both directions (a tiled look)
-        for x in range(-int(hx) + 8, int(hx) - 4, 8): s.box(x - 0.06, 0, -hz, x + 0.06, 0.02, hz, accent=True)
-        for z in range(-int(hz) + 8, int(hz) - 4, 8): s.box(-hx, 0, z - 0.06, hx, 0.02, z + 0.06, accent=True)
+        # floor seams in both directions (a tiled look), sunk into the floor: flush, nothing to trip on
+        for x in range(-int(hx) + 8, int(hx) - 4, 8): s.box(x - 0.06, -0.05, -hz, x + 0.06, 0, hz, accent=True)
+        for z in range(-int(hz) + 8, int(hz) - 4, 8): s.box(-hx, -0.05, z - 0.06, hx, 0, z + 0.06, accent=True)
         # wall lamps in evenly spread bays (baked lights: soft pools of light along the walls)
         order = sorted(range(len(bays)), key=lambda k: rnd.random())
         for k in sorted(order[:lamps]):
@@ -221,8 +222,8 @@ m.room(26, 34, 9)
 m.box(-10, 0, -20, -8, 5, -2); m.box(-10, 0, 2, -8, 5, 20)
 m.box(8, 0, -20, 10, 5, -2); m.box(8, 0, 2, 10, 5, 20)
 # site A (west) and site B (east), each with crates
-m.box(-22, 0, -30, -14, 0.1, -22, accent=True); m.raw("site -22 0 -30 -14 3 -22")
-m.box(14, 0, -30, 22, 0.1, -22, accent=True); m.raw("site 14 0 -30 22 3 -22")
+m.box(-22, -0.05, -30, -14, 0, -22, accent=True); m.raw("site -22 0 -30 -14 3 -22")
+m.box(14, -0.05, -30, 22, 0, -22, accent=True); m.raw("site 14 0 -30 22 3 -22")
 for (x, z) in ((-20, -24), (-16, -28), (16, -24), (20, -28)): m.box(x - 1, 0, z - 1, x + 1, 1.4, z + 1)
 m.box(-24, 0, -20, -18, 2, -18); m.box(18, 0, -20, 24, 2, -18)          # site walls
 m.box(-3, 0, -6, 3, 1.4, -4); m.box(-3, 0, 4, 3, 1.4, 6)                # mid cover
@@ -334,7 +335,7 @@ for t in range(3):                                                      # tiered
     m.box(-o1, 0, -o0, -o0, h, o0, accent=(t == 1)); m.box(o0, 0, -o0, o1, h, o0, accent=(t == 1))
 m.stairs(-2, 21.2, 2, 23.6, 2.7, "z", 1, mirror=True)                   # stairs up the stands
 m.box(-22, 0, -22, -18, 3.6, -18, accent=True, mirror=True); m.box(18, 0, -22, 22, 3.6, -18, accent=True, mirror=True)  # corner towers
-m.box(-6, -0.01, -6, 6, 0.02, 6, accent=True)                           # arena floor ring marking
+m.box(-6, -0.05, -6, 6, 0, 6, accent=True)                             # arena floor ring marking
 m.pillar(0, 0, 6.0, r=1.0)                                              # central obelisk (grapple anchor)
 m.wallbang(-9, 0, -1, -8, 2.6, 1, mirror=True); m.wallbang(-1, 0, 8, 1, 2.6, 9, mirror=True)  # wallbang pavises
 m.box(-13, 0, 6, -10, 1.3, 9, mirror=True); m.box(10, 0, 6, 13, 1.3, 9, mirror=True)

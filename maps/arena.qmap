@@ -48,8 +48,8 @@ box -27 0 -24 -26 1.25 -14
 box 26 0 14 27 1.25 24
 
 # bomb site markers (low accent pads)
-accent -24 0 -28 -16 0.1 -20
-accent 16 0 -28 24 0.1 -20
+accent -24 -0.05 -28 -16 0 -20
+accent 16 -0.05 -28 24 0 -20
 
 # spawns: team A south (+z), team B north (-z)
 spawn a -6 0 28 0
