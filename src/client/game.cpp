@@ -1,3 +1,4 @@
+#include <sstream>
 #include <array>
 #include "game.h"
 #define GLFW_INCLUDE_NONE
@@ -83,7 +84,8 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
         startHost();
     } else if (opts_.debugPicker) {
         setScreen(Screen::Host);
-        picker_ = PICK_HOST_MAP;
+        variantCtx_ = 0;
+        picker_ = opts_.debugPicker;
     } else if (!opts_.connect.empty()) {
         connectTo(opts_.connect);
     }
@@ -113,6 +115,7 @@ void Game::startHost(bool vsBots) {
     sc.balanceBots = cfg_.hostBalanceBots;
     sc.logLevel = cfg_.hostLog;
     sc.duelTeamSize = cfg_.hostDuelSize;
+    sc.arenaVariant = cfg_.hostArenaVariant;
     sc.publicList = cfg_.hostPublic;
     if (vsBots) { // private local game: any free port, no port forwarding, fixed bots
         sc.name = "vs bots";
@@ -127,6 +130,7 @@ void Game::startHost(bool vsBots) {
         sc.botsEnemy = cfg_.botEnemies;
         sc.botsAlly = modeIsTeamBased(sc.mode) ? cfg_.botAllies : 0;
         sc.botsEnemy = std::min(sc.botsEnemy, kMaxPlayers - 1 - sc.botsAlly);
+        sc.arenaVariant = cfg_.botArenaVariant;
     }
     host_ = std::make_unique<Server>();
     host_->setLog([](const std::string& s) { printf("[host] %s\n", s.c_str()); });
@@ -213,7 +217,7 @@ void Game::loadMapIfNeeded() {
         drawBakeProgress(net_.map().name, p);
     });
     bgCenter_ = net_.map().bounds.center();
-    bgRadius_ = length(net_.map().bounds.mx - net_.map().bounds.mn) * 0.35f;
+    bgRadius_ = length(net_.map().bounds.mx - net_.map().bounds.mn) * 0.26f;
 }
 
 void Game::drawBakeProgress(const std::string& name, float p) {
@@ -234,7 +238,7 @@ void Game::loadMenuBackdrop() {
     if (!menuMap_.load(name) && (maps_.empty() || !menuMap_.load(maps_[0]))) return;
     r_.loadWorld(menuMap_, [&](float p) { drawBakeProgress(menuMap_.name, p); });
     bgCenter_ = menuMap_.bounds.center();
-    bgRadius_ = length(menuMap_.bounds.mx - menuMap_.bounds.mn) * 0.35f;
+    bgRadius_ = length(menuMap_.bounds.mx - menuMap_.bounds.mn) * 0.26f;
 }
 
 // ---------------------------------------------------------------------------
@@ -302,10 +306,19 @@ bool Game::pressInput(int code) {
         captureMouse(false);
         return true;
     }
-    for (int w = 0; w < WPN_COUNT; w++) if (b.has(A_WEAPON1 + w, code)) { desiredWeapon_ = w; return true; }
+    // weapons outside this mode's pool (1v1 rulesets, duel modifiers) are skipped
+    uint16_t pool = net_.mode().weaponMask;
+    auto allowed = [&](int w) { return !pool || (pool >> w & 1); };
+    for (int w = 0; w < WPN_COUNT; w++) if (b.has(A_WEAPON1 + w, code)) { if (allowed(w)) desiredWeapon_ = w; return true; }
     int cur = desiredWeapon_ >= 0 ? desiredWeapon_ : net_.selfWeapon();
-    if (b.has(A_NEXTWEAPON, code)) { desiredWeapon_ = (cur + 1) % WPN_COUNT; return true; }
-    if (b.has(A_PREVWEAPON, code)) { desiredWeapon_ = (cur + WPN_COUNT - 1) % WPN_COUNT; return true; }
+    for (int dir : {1, -1}) {
+        if (!b.has(dir > 0 ? A_NEXTWEAPON : A_PREVWEAPON, code)) continue;
+        for (int k = 1; k <= WPN_COUNT; k++) {
+            int w = (cur + dir * k + WPN_COUNT * 2) % WPN_COUNT;
+            if (allowed(w)) { desiredWeapon_ = w; break; }
+        }
+        return true;
+    }
     if (b.has(A_FIRE, code)) fireLatched_ = true; // a click shorter than a tick still fires
     return false;
 }
@@ -493,6 +506,21 @@ void Game::handleEvents() {
                 centerText_ = e.text;
                 centerUntil_ = time_ + (e.b ? 8.0 : 3.5);
                 break;
+            case EV_BRACKET: {
+                bracket_.clear();
+                std::istringstream ls(e.text);
+                std::string line;
+                while (std::getline(ls, line)) {
+                    if (!line.empty() && line[0] == '@') { sscanf(line.c_str() + 1, "%d,%d", &bracketRound_, &bracketMatch_); continue; }
+                    std::vector<int> r;
+                    std::istringstream es(line);
+                    std::string v;
+                    while (std::getline(es, v, '|')) r.push_back(atoi(v.c_str()));
+                    bracket_.push_back(r);
+                }
+                for (int i = 0; i < kMaxPlayers; i++) { std::string n = net_.playerName(i); if (!n.empty()) bracketNames_[i] = n; }
+                break;
+            }
             case EV_VOTE:
                 voteText_ = e.text;
                 break;
@@ -588,7 +616,7 @@ void Game::frame(double dt) {
                             spreadOffset(net_.nextSeq(), k, spread, a, r);
                             d = normalize(aim + right * (std::cos(a) * r) + up * (std::sin(a) * r));
                         }
-                        float t = net_.map().raycast(eye, d, wd.range);
+                        float bangT, t = net_.map().raycastBullet(eye, d, wd.range, &bangT);
                         if (t < 0) t = wd.range;
                         tracers_.push_back({eye + aim * 0.5f + right * 0.15f - Vec3(0, 0.12f, 0), eye + d * t, time_ + (w == WPN_SNIPER ? 0.3 : 0.06)});
                     }
@@ -633,7 +661,7 @@ void Game::frame(double dt) {
     } else {
         // slow orbit around the backdrop map, looking slightly down at its center
         float ang = opts_.backdropAngle >= 0 ? deg2rad(opts_.backdropAngle) : (float)time_ * 0.04f;
-        Vec3 camPos = bgCenter_ + Vec3(std::sin(ang) * bgRadius_, bgRadius_ * 0.45f, std::cos(ang) * bgRadius_);
+        Vec3 camPos = bgCenter_ + Vec3(std::sin(ang) * bgRadius_, bgRadius_ * 0.6f, std::cos(ang) * bgRadius_);
         Vec3 to = bgCenter_ - camPos;
         r_.setCamera(camPos, std::atan2(-to.x, -to.z), std::atan2(to.y, std::sqrt(to.x * to.x + to.z * to.z)), 75);
         if (r_.worldLoaded()) r_.drawScene(false);
@@ -760,7 +788,7 @@ void Game::drawWorld(float alpha) {
                 Vec3 eyeP = p.pos + Vec3(0, (p.flags & PS_CROUCHED) ? kCrouchEyeHeight : kEyeHeight, 0);
                 Vec3 d = angleForward(p.yaw, p.pitch);
                 float range = weaponDef(w).range;
-                float t = map.raycast(eyeP, d, range);
+                float bangT, t = map.raycastBullet(eyeP, d, range, &bangT);
                 Vec3 end = eyeP + d * (t < 0 ? range : t);
                 Vec3 start = eyeP + d * 0.6f;
                 if (w == WPN_LASER) r_.line(start, end, 0.06f, rgba(teamColor(i), 0.85f));
@@ -773,7 +801,7 @@ void Game::drawWorld(float alpha) {
     if (alive && time_ < laserUntil_ && net_.selfWeapon() == WPN_LASER) {
         Vec3 d = angleForward(yaw_, pitch_);
         float range = weaponDef(WPN_LASER).range;
-        float t = map.raycast(eye, d, range);
+        float bangT, t = map.raycastBullet(eye, d, range, &bangT);
         Vec3 right = normalize(cross(d, {0, 1, 0}));
         Vec3 a = eye + d * 0.5f + right * 0.15f - Vec3(0, 0.12f, 0), b = eye + d * (t < 0 ? range : t);
         r_.line(a, b, 0.05f, rgba(cfg_.colorFriendly, 0.9f));
@@ -966,6 +994,8 @@ void Game::drawHud() {
 
     // top: mode, timer, scores
     std::string title = modeTitle(ms.mode);
+    if (ms.mode == MODE_ARENA || (ms.mode == MODE_TOURNEY && ms.phase != PHASE_WARMUP))
+        title += std::string(" - ") + arenaVariant(ms.arenaVariant).title;
     std::string phase;
     switch (ms.phase) {
         case PHASE_WARMUP:
@@ -974,7 +1004,7 @@ void Game::drawHud() {
             break;
         case PHASE_FREEZE: phase = "ROUND " + std::to_string(ms.round) + " - " + std::to_string((int)std::ceil(ms.timeLeft)); break;
         case PHASE_LIVE:
-            if (ms.mode == MODE_VS || ms.mode == MODE_DUEL) phase = (ms.flags & MS_DRAIN) ? "STALEMATE - HEALTH DRAINING" : "DRAIN IN " + fmtTime(ms.timeLeft);
+            if (ms.mode == MODE_VS || ms.mode == MODE_DUEL || ms.mode == MODE_ARENA || ms.mode == MODE_TOURNEY) phase = (ms.flags & MS_DRAIN) ? "STALEMATE - HEALTH DRAINING" : "DRAIN IN " + fmtTime(ms.timeLeft);
             else if (ms.mode == MODE_KOTH) phase = "FIRST TO " + std::to_string(ms.target);
             else phase = fmtTime(ms.timeLeft) + ((ms.flags & MS_OVERTIME) ? " OVERTIME" : "");
             break;
@@ -1021,6 +1051,14 @@ void Game::drawHud() {
         obj = (mep->flags & PS_FINISHED) ? "FINISHED" : "CHECKPOINT " + std::to_string(mep->checkpoint) + " / " + std::to_string(net_.map().checkpoints.size());
     } else if (ms.mode == MODE_VS && ms.phase == PHASE_LIVE) {
         obj = "LAST TEAM STANDING WINS";
+    } else if (ms.mode == MODE_ARENA) {
+        obj = arenaVariant(ms.arenaVariant).desc;
+    } else if (ms.mode == MODE_TOURNEY && ms.phase != PHASE_WARMUP && !bracket_.empty() && bracketRound_ < (int)bracket_.size()) {
+        const auto& r = bracket_[bracketRound_];
+        int a = 2 * bracketMatch_ < (int)r.size() ? r[2 * bracketMatch_] : -1, b = 2 * bracketMatch_ + 1 < (int)r.size() ? r[2 * bracketMatch_ + 1] : -1;
+        obj = (a >= 0 ? bracketNames_[a] : "?") + " VS " + (b >= 0 ? bracketNames_[b] : "?") + " - FIRST TO " + std::to_string(ms.roundsToWin);
+    } else if (ms.mode == MODE_TOURNEY && ms.phase == PHASE_WARMUP) {
+        obj = "TOURNEY - VOTE START (" + inputName(cfg_.binds.code[A_VOTESTART][0]) + "), PICK MAPS AND RULESETS IN THE VOTE MENU";
     } else if (ms.mode == MODE_DUEL && ms.phase != PHASE_WARMUP && ms.duelMod < DUEL_MOD_COUNT) {
         obj = std::string("THIS LIFE: ") + duelModTitle(ms.duelMod);
     }
@@ -1071,7 +1109,8 @@ void Game::drawHud() {
             float sts = std::max(1.0f, std::round(ts * 0.75f));
             float tw = r_.textWidth(t, sts);
             bx -= tw + 14 * s;
-            r_.text(bx, H - 74 * s, sts, t, wi == net_.selfWeapon() ? fc : Color{0.85f, 0.87f, 0.9f, 0.9f});
+            bool inPool = !ms.weaponMask || (ms.weaponMask >> wi & 1);
+            r_.text(bx, H - 74 * s, sts, t, wi == net_.selfWeapon() ? fc : inPool ? Color{0.85f, 0.87f, 0.9f, 0.9f} : Color{0.5f, 0.52f, 0.55f, 0.35f});
         }
     } else if (ms.phase != PHASE_ROUND_END && ms.phase != PHASE_MATCH_END) {
         std::string t = mep && (mep->flags & PS_SPECTATOR) ? "SPECTATING" : "DEAD";
@@ -1122,7 +1161,11 @@ void Game::drawHud() {
     }
 
     showScores_ = isDown(A_SCORES) || ms.phase == PHASE_MATCH_END;
-    if (showScores_ && !paused_) drawScoreboard();
+    // tourney: the bracket between matches / rounds and on TAB, so everyone sees who's still in
+    bool showBracket = ms.mode == MODE_TOURNEY && !bracket_.empty() &&
+                       (showScores_ || ms.phase == PHASE_ROUND_END || (ms.phase == PHASE_FREEZE && ms.round <= 1));
+    if (showBracket && !paused_) drawBracket();
+    else if (showScores_ && !paused_) drawScoreboard();
     if (paused_) drawPauseMenu(cx, H * 0.25f);
 }
 
@@ -1136,7 +1179,11 @@ void Game::drawScoreboard() {
         if (a.team() != b.team()) return a.team() < b.team();
         return a.score > b.score;
     });
-    float rowH = r_.textHeight(ts) + 10 * s;
+    if (ps.size() > 12) { // big servers (up to 32): smaller rows so everyone fits
+        ts = std::max(1.0f, std::round(ts * 0.75f));
+        y = 90 * s;
+    }
+    float rowH = std::min(r_.textHeight(ts) + 10 * s, (H - y - 40 * s) / (ps.size() + 2));
     ui_.panel(x, y, w, (ps.size() + 2) * rowH + 10 * s, 0.8f);
     float cy = y + 10 * s;
     r_.text(x + 12 * s, cy, ts, "PLAYER", kGrey);
@@ -1181,6 +1228,12 @@ void Game::drawVoteMenu(float cx, float y) {
         y += h + gap;
     };
     if (warmup) vote("START THE MATCH", "start");
+    if (warmup && net_.mode().mode == MODE_TOURNEY) {
+        float hw = (w - gap) * 0.5f;
+        if (ui_.button(x, y, hw, h, "TOURNEY MAPS...")) { multiSel_.clear(); picker_ = PICK_TMAPS; }
+        if (ui_.button(x + hw + gap, y, hw, h, "TOURNEY RULES...")) { multiSel_.clear(); picker_ = PICK_TMODES; }
+        y += h + gap;
+    }
     {
         float hw = (w - gap) * 0.5f;
         if (ui_.button(x, y, hw, h, "MODE...")) openLivePicker(PICK_LIVE_MODE, true);
@@ -1203,7 +1256,7 @@ void Game::drawPauseMenu(float cx, float y) {
         drawSettings(x - 60 * s, y, w + 120 * s);
         return;
     }
-    if (picker_ == PICK_LIVE_MAP || picker_ == PICK_LIVE_MODE) { drawPicker(cx, y); return; }
+    if (picker_ != PICK_NONE) { drawPicker(cx, y); return; }
     if (voteMenu_) { drawVoteMenu(cx, y); return; }
     bool teamMode = modeIsTeamBased(net_.mode().mode);
     int rows = 7 + (host_ ? 2 : 0);
@@ -1424,7 +1477,7 @@ void Game::drawMenu() {
                 y += bh + gap;
                 Map m;
                 m.load(maps_[hostMapIdx_]);
-                if (ui_.button(lx, y, lw, bh, std::string("MODE: ") + modeTitle(hostModeIdx_) + "  >")) picker_ = PICK_HOST_MODE;
+                if (ui_.button(lx, y, lw, bh, std::string("MODE: ") + modeTitle(hostModeIdx_) + (hostModeIdx_ == MODE_ARENA || hostModeIdx_ == MODE_TOURNEY ? std::string(" - ") + arenaVariant(cfg_.hostArenaVariant).title : "") + "  >")) picker_ = PICK_HOST_MODE;
                 y += bh + gap;
                 if (!m.supportsMode(hostModeIdx_)) ui_.label(lx, y, "THIS MAP DOES NOT SUPPORT THAT MODE", kRed);
                 else if (hostModeIdx_ == MODE_DUEL && ui_.button(lx, y - 2 * s, lw, 24 * s, cfg_.hostDuelSize == 2 ? "TEAMS: 2V2 (CLICK FOR 1V1)" : "TEAMS: 1V1 (CLICK FOR 2V2)"))
@@ -1461,7 +1514,7 @@ void Game::drawMenu() {
         case Screen::VsBots: {
             float lw = 460 * s, lx = cx - lw * 0.5f;
             ui_.panel(lx - 16 * s, y - 16 * s, lw + 32 * s, 360 * s);
-            if (ui_.button(lx, y, lw, bh, std::string("MODE: ") + modeTitle(cfg_.botMode) + "  >")) picker_ = PICK_BOT_MODE;
+            if (ui_.button(lx, y, lw, bh, std::string("MODE: ") + modeTitle(cfg_.botMode) + (cfg_.botMode == MODE_ARENA ? std::string(" - ") + arenaVariant(cfg_.botArenaVariant).title : "") + "  >")) picker_ = PICK_BOT_MODE;
             y += bh + gap;
             if (!maps_.empty()) {
                 // only offer maps that support the chosen mode
@@ -1689,53 +1742,96 @@ void Game::drawControls(float x0, float y0, float wTotal) {
 // each map says which mode it was built for.
 void Game::drawPicker(float cx, float y) {
     float s = ui_.s(), bh = 40 * s, gap = 8 * s;
+    bool variants = picker_ == PICK_VARIANT || picker_ == PICK_TMODES;
+    bool multi = picker_ == PICK_TMAPS || picker_ == PICK_TMODES; // tourney rotation lists: pick several, then vote
     bool modes = picker_ == PICK_HOST_MODE || picker_ == PICK_BOT_MODE || picker_ == PICK_LIVE_MODE;
-    bool host = picker_ == PICK_HOST_MAP || picker_ == PICK_HOST_MODE;
-    bool live = picker_ == PICK_LIVE_MAP || picker_ == PICK_LIVE_MODE; // in game: changes the running server
+    bool host = picker_ == PICK_HOST_MAP || picker_ == PICK_HOST_MODE || (picker_ == PICK_VARIANT && variantCtx_ == 0);
+    bool live = picker_ == PICK_LIVE_MAP || picker_ == PICK_LIVE_MODE || (picker_ == PICK_VARIANT && variantCtx_ == 2);
     int& mode = live ? liveMode_ : host ? hostModeIdx_ : cfg_.botMode;
     int& mapIdx = live ? liveMap_ : host ? hostMapIdx_ : botMapIdx_;
-    int n = modes ? MODE_COUNT : (int)maps_.size();
+    int& variant = live ? liveVariant_ : host ? cfg_.hostArenaVariant : cfg_.botArenaVariant;
+    int n = variants ? kArenaVariants : modes ? MODE_COUNT : (int)maps_.size();
+    if ((int)multiSel_.size() != n) multiSel_.assign(n, false);
     int cols = 3;
     float bw = 250 * s, w = cols * bw + (cols - 1) * gap;
     float x = cx - w * 0.5f;
     int rows = (n + cols - 1) / cols;
-    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 40 * s + rows * (bh + 18 * s + gap) + bh + 30 * s);
-    std::string title = modes ? "CHOOSE A MODE" : std::string("CHOOSE A MAP FOR ") + modeTitle(mode);
-    if (live && livePickVote_) title = "VOTE: " + title;
+    float rowH = bh + (variants ? 30 : 18) * s + gap;
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 40 * s + rows * rowH + bh + 30 * s);
+    std::string title = picker_ == PICK_TMAPS ? "TOURNEY MAPS (PICK ANY, THEY ROTATE)" : picker_ == PICK_TMODES ? "TOURNEY RULESETS (PICK ANY, THEY ROTATE)"
+                      : variants ? std::string(modeTitle(mode)) + " - CHOOSE A RULESET" : modes ? "CHOOSE A MODE" : std::string("CHOOSE A MAP FOR ") + modeTitle(mode);
+    if ((live && livePickVote_) || multi) title = "VOTE: " + title;
     ui_.labelCentered(cx, y, title);
     y += 34 * s;
+    // finishing a choice: host/bots remember it; in game it's a map command or a vote
+    auto finish = [&]() {
+        picker_ = PICK_NONE;
+        if (live) {
+            std::string cmd = (livePickVote_ ? "callvote map " : "map ") + maps_[mapIdx] + " " + modeName(mode);
+            if (mode == MODE_ARENA || mode == MODE_TOURNEY) cmd += std::string(" ") + arenaVariant(variant).name;
+            net_.sendCommand(cmd);
+            voteMenu_ = false;
+            paused_ = false;
+        } else cfg_.save();
+    };
     for (int i = 0; i < n; i++) {
-        float bx = x + (i % cols) * (bw + gap), by = y + (i / cols) * (bh + 18 * s + gap);
+        float bx = x + (i % cols) * (bw + gap), by = y + (i / cols) * rowH;
         std::string label, sub;
         bool ok = true, cur;
-        if (modes) {
+        if (variants) {
+            label = arenaVariant(i).title;
+            sub = arenaVariant(i).desc;
+            cur = multi ? multiSel_[i] : i == variant;
+        } else if (modes) {
             label = modeTitle(i);
             cur = i == mode;
             for (auto& mi : mapInfo_) if (mi.preferredMode == i) sub = "MAP: " + upper(mi.title);
+            if (i == MODE_ARENA) sub = "8 RULESETS >";
+            if (i == MODE_TOURNEY) sub = "BRACKET OF 1V1S - RULESETS >";
         } else {
             const MapInfo& mi = mapInfo_[i];
             label = upper(maps_[i]);
-            cur = i == mapIdx;
-            ok = (mi.modes >> mode) & 1;
+            cur = multi ? multiSel_[i] : i == mapIdx;
+            ok = (mi.modes >> (multi ? MODE_TOURNEY : mode)) & 1;
             sub = !ok ? "DOESN'T SUPPORT THIS MODE" : mi.preferredMode >= 0 ? std::string("BUILT FOR ") + modeTitle(mi.preferredMode) : "ALL MODES";
         }
         if (cur) r_.rect(bx - 2 * s, by - 2 * s, bw + 4 * s, bh + 4 * s, ui_.accent);
         if (ui_.button(bx, by, bw, bh, label, ok)) {
-            if (modes) {
+            if (multi) multiSel_[i] = !multiSel_[i];
+            else if (variants) { variant = i; finish(); }
+            else if (modes) {
                 mode = i;
                 if (!live || !((mapInfo_[mapIdx].modes >> i) & 1)) mapIdx = bestMapFor(i); // live: keep the map if it can
-            } else mapIdx = i;
-            picker_ = PICK_NONE;
-            if (live) {
-                net_.sendCommand((livePickVote_ ? "callvote map " : "map ") + maps_[mapIdx] + " " + modeName(mode));
-                voteMenu_ = false;
-                paused_ = false;
-            } else cfg_.save();
+                if (i == MODE_ARENA || i == MODE_TOURNEY) { // second step: which 1v1 ruleset
+                    variantCtx_ = live ? 2 : host ? 0 : 1;
+                    picker_ = PICK_VARIANT;
+                } else finish();
+            } else { mapIdx = i; finish(); }
         }
-        ui_.label(bx + 2 * s, by + bh + 3 * s, sub, ok ? Color{0.7f, 0.72f, 0.75f, 1} : Color{0.5f, 0.3f, 0.3f, 1}, 0.5f);
+        // wrap long descriptions onto two small lines
+        float sts = std::max(1.0f, std::round(ui_.textScale() * 0.5f));
+        std::string line1 = sub, line2;
+        while (r_.textWidth(line1, sts) > bw && line1.find(' ') != std::string::npos) {
+            size_t sp = line1.rfind(' ');
+            line2 = line1.substr(sp + 1) + (line2.empty() ? "" : " " + line2);
+            line1 = line1.substr(0, sp);
+        }
+        Color sc = ok ? Color{0.7f, 0.72f, 0.75f, 1} : Color{0.5f, 0.3f, 0.3f, 1};
+        r_.text(bx + 2 * s, by + bh + 3 * s, sts, line1, sc);
+        if (!line2.empty()) r_.text(bx + 2 * s, by + bh + 3 * s + r_.textHeight(sts) + 2 * s, sts, line2, sc);
     }
-    y += rows * (bh + 18 * s + gap) + 10 * s;
-    if (ui_.button(cx - 100 * s, y, 200 * s, bh, "BACK")) picker_ = PICK_NONE;
+    y += rows * rowH + 10 * s;
+    if (multi) {
+        int count = 0;
+        std::string list;
+        for (int i = 0; i < n; i++)
+            if (multiSel_[i]) { list += (count++ ? "," : "") + std::string(variants ? arenaVariant(i).name : maps_[i]); }
+        if (ui_.button(cx - 210 * s, y, 200 * s, bh, "CALL VOTE", count > 0)) {
+            net_.sendCommand(std::string("callvote ") + (picker_ == PICK_TMAPS ? "tmaps " : "tmodes ") + list);
+            picker_ = PICK_NONE; voteMenu_ = false; paused_ = false;
+        }
+        if (ui_.button(cx + 10 * s, y, 200 * s, bh, "BACK")) picker_ = PICK_NONE;
+    } else if (ui_.button(cx - 100 * s, y, 200 * s, bh, "BACK")) picker_ = PICK_NONE;
 }
 
 void Game::drawKnifeSlash(const Vec3& eye, float yaw, float pitch, float t, const Vec3& color) {
@@ -1759,6 +1855,44 @@ void Game::drawKnifeSlash(const Vec3& eye, float yaw, float pitch, float t, cons
     // the actual hit check: a ray to `reach`, with a marker at the tip
     r_.line(eye + fwd * 0.4f - up * 0.05f, eye + fwd * reach, 0.012f, rgba({1, 1, 1}, 0.5f * fade));
     r_.box(eye + fwd * reach, {0.05f, 0.05f, 0.05f}, yaw, color * 1.5f, 1.0f, false);
+}
+
+void Game::drawBracket() {
+    float s = ui_.s(), W = (float)r_.width(), H = (float)r_.height();
+    int nr = (int)bracket_.size();
+    float colW = std::min(220 * s, (W - 80 * s) / nr), boxH = 26 * s, gap = 14 * s;
+    float totalW = nr * colW + (nr - 1) * gap;
+    float x0 = (W - totalW) * 0.5f;
+    int first = (int)bracket_[0].size();
+    float areaH = std::min(H * 0.62f, first * (boxH + 8 * s));
+    float y0 = H * 0.5f - areaH * 0.5f;
+    ui_.panel(x0 - 24 * s, y0 - 56 * s, totalW + 48 * s, areaH + 80 * s, 0.85f);
+    ui_.labelCentered(W * 0.5f, y0 - 44 * s, "TOURNEY BRACKET");
+    float ts = std::max(1.0f, std::round(ui_.textScale() * 0.75f));
+    const Color fc = rgba(cfg_.colorFriendly);
+    for (int r = 0; r < nr; r++) {
+        const auto& col = bracket_[r];
+        int n = (int)col.size();
+        float x = x0 + r * (colW + gap);
+        static const char* names[] = {"FINAL", "SEMIFINALS", "QUARTERFINALS", "ROUND OF 16", "ROUND OF 32"};
+        int fromEnd = nr - 2 - r;
+        std::string head = r == nr - 1 ? "CHAMPION" : fromEnd >= 0 && fromEnd < 5 ? names[fromEnd] : "ROUND " + std::to_string(r + 1);
+        r_.text(x, y0 - 22 * s, std::max(1.0f, ts * 0.75f), head, {0.6f, 0.62f, 0.66f, 1});
+        for (int i = 0; i < n; i++) {
+            float slot = areaH / n;
+            float y = y0 + slot * i + (slot - boxH) * 0.5f;
+            int id = col[i];
+            bool won = r + 1 < nr && id >= 0 && bracket_[r + 1][i / 2] == id;
+            bool lost = r + 1 < nr && id >= 0 && bracket_[r + 1][i / 2] >= 0 && bracket_[r + 1][i / 2] != id;
+            bool current = r == bracketRound_ && i / 2 == bracketMatch_ && net_.mode().phase != PHASE_MATCH_END;
+            if (current) r_.rect(x - 2 * s, y - 2 * s, colW + 4 * s, boxH + 4 * s, fc);
+            r_.rect(x, y, colW, boxH, won || (r == nr - 1 && id >= 0) ? Color{fc.r * 0.35f, fc.g * 0.35f, fc.b * 0.35f, 1} : Color{0.1f, 0.11f, 0.14f, 1});
+            std::string t = id >= 0 ? bracketNames_[id] : id == -1 ? "BYE" : "";
+            Color tc = lost ? Color{0.45f, 0.45f, 0.5f, 1} : id == -1 ? Color{0.4f, 0.4f, 0.45f, 1} : Color{1, 1, 1, 1};
+            r_.text(x + 8 * s, y + (boxH - r_.textHeight(ts)) * 0.5f, ts, t, tc);
+            if (lost) r_.rect(x + 6 * s, y + boxH * 0.5f, std::min(colW - 12 * s, r_.textWidth(t, ts) + 4 * s), 1.5f * s, {0.6f, 0.3f, 0.3f, 1});
+        }
+    }
 }
 
 // Crosshair from the settings: style, size, thickness, gap, color, outline. A hit flashes it white.

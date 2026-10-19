@@ -29,7 +29,7 @@ struct LaunchOptions {
     bool debugScope = false, debugFire = false; // --scope, --fire
     bool debugPerf = false;     // --perf: F3 overlay on, with a synthetic input event every frame
     bool debugCrosshair = false;
-    bool debugPicker = false;
+    int debugPicker = 0;        // --picker N: open that host-menu list (1 maps, 2 modes, 7 rulesets)
     bool debugPause = false, debugVote = false; // --pause / --votemenu
     std::string backdrop;       // --backdrop MAP: menu backdrop of that map, no menu drawn (site screenshots)
     float backdropAngle = -1;   // --orbit DEG: fixed orbit position for --backdrop   // --picker: open the host menu's map list
@@ -103,7 +103,9 @@ private:
     std::vector<std::string> maps_;
     struct MapInfo { std::string title; int preferredMode = -1; uint32_t modes = 0; }; // modes: bit per supported mode
     std::vector<MapInfo> mapInfo_;
-    enum { PICK_NONE = 0, PICK_HOST_MAP, PICK_HOST_MODE, PICK_BOT_MAP, PICK_BOT_MODE, PICK_LIVE_MAP, PICK_LIVE_MODE };
+    enum { PICK_NONE = 0, PICK_HOST_MAP, PICK_HOST_MODE, PICK_BOT_MAP, PICK_BOT_MODE, PICK_LIVE_MAP, PICK_LIVE_MODE, PICK_VARIANT, PICK_TMAPS, PICK_TMODES };
+    int variantCtx_ = 0, liveVariant_ = 0; // ruleset step: 0 host, 1 vs bots, 2 in game
+    std::vector<bool> multiSel_;
     int liveMode_ = 0, liveMap_ = 0;  // in-game map/mode change (host) or vote (anyone)
     bool livePickVote_ = false;
     void openLivePicker(int kind, bool vote);
@@ -191,6 +193,11 @@ private:
     bool crosshairOpen_ = false;
     int captureAction_ = -1, captureSlot_ = 0;
     std::string voteText_;
+    // tourney bracket (EV_BRACKET): rounds of player ids (-1 bye, -2 undecided), current match
+    std::vector<std::vector<int>> bracket_;
+    std::string bracketNames_[kMaxPlayers];
+    int bracketRound_ = 0, bracketMatch_ = 0;
+    void drawBracket();
     struct DmgNum { int victim; float amount; double start; Vec3 pos; };
     std::vector<DmgNum> dmgNums_;
     int botMapIdx_ = 0;

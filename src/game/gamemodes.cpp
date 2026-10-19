@@ -28,6 +28,8 @@ int roundsToWin(const Server& s) {
     switch (s.ms_.mode) {
         case MODE_VS: return 5;
         case MODE_DUEL: return 5;
+        case MODE_ARENA: return 5;
+        case MODE_TOURNEY: return 2; // best of 3 per match
         case MODE_BOMB: return 7;
         case MODE_RACE: return 3;
         case MODE_PAYLOAD: return 1; // each team attacks once
@@ -125,6 +127,72 @@ void startRound(Server& s) {
     setPhase(s, PHASE_FREEZE, kFreezeTime);
 }
 
+// ---- tourney: single elimination, one 1v1 at a time, everyone else spectates ----
+std::string tourneyName(const Server& s, int id) { return id >= 0 && s.players_[id].connected ? s.players_[id].name : "?"; }
+
+// Fills in byes / players who left, then sets up the next playable match. Returns the champion's id
+// when the bracket is finished (else -1).
+int tourneyAdvance(Server& s) {
+    auto& t = s.tourney_;
+    for (;;) {
+        auto& cur = t.rounds[t.round];
+        if (cur.size() == 1) return cur[0] >= 0 ? cur[0] : -2; // champion (or nobody)
+        auto& next = t.rounds[t.round + 1];
+        bool played = false;
+        for (int m = 0; m < (int)cur.size() / 2; m++) {
+            if (next[m] != -2) continue; // decided
+            int a = cur[2 * m], b = cur[2 * m + 1];
+            bool aIn = a >= 0 && s.players_[a].connected, bIn = b >= 0 && s.players_[b].connected;
+            if (aIn && bIn) { t.match = m; played = true; break; }
+            next[m] = aIn ? a : bIn ? b : -1; // walkover (bye or left)
+        }
+        if (played) return -1;
+        t.round++;
+        t.match = 0;
+    }
+}
+
+void tourneySetupMatch(Server& s) {
+    auto& t = s.tourney_;
+    ModeState& m = s.ms_;
+    int a = t.rounds[t.round][2 * t.match], b = t.rounds[t.round][2 * t.match + 1];
+    if (!s.cfg_.tourneyMaps.empty()) s.switchMapKeepRules(s.cfg_.tourneyMaps[t.played % s.cfg_.tourneyMaps.size()]);
+    int v = s.cfg_.tourneyVariants.empty() ? s.cfg_.arenaVariant : s.cfg_.tourneyVariants[t.played % s.cfg_.tourneyVariants.size()];
+    m.arenaVariant = (uint8_t)std::max(0, v);
+    for (int i = 0; i < kMaxPlayers; i++) {
+        auto& p = s.players_[i];
+        if (!p.connected) continue;
+        p.team = i == a ? TEAM_A : i == b ? TEAM_B : TEAM_SPECTATOR;
+        p.alive = false;
+    }
+    m.scoreA = m.scoreB = 0;
+    m.round = 0;
+    s.broadcastBracket();
+    std::string what = tourneyName(s, a) + " vs " + tourneyName(s, b) + " - " + arenaVariant(m.arenaVariant).title + " on " + s.cfg_.map;
+    s.message(what);
+    s.glog(LOG_SIMPLE, "tourney match: %s", what.c_str());
+}
+
+void tourneyBegin(Server& s) {
+    auto& t = s.tourney_;
+    t = Server::Tourney();
+    std::vector<int> entrants;
+    for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].team != TEAM_SPECTATOR) entrants.push_back(i);
+    for (size_t i = entrants.size(); i > 1; i--) std::swap(entrants[i - 1], entrants[rand() % i]); // random seeding
+    size_t size = 2;
+    while (size < entrants.size()) size *= 2;
+    // byes go against different players: fill pairs' second slots last
+    std::vector<int> first(size, -1);
+    for (size_t i = 0, k = 0; i < entrants.size(); i++) {
+        size_t slot = i < size / 2 ? 2 * i : 2 * (i - size / 2) + 1;
+        first[slot] = entrants[i];
+        (void)k;
+    }
+    t.rounds.push_back(first);
+    for (size_t n = size / 2; n >= 1; n /= 2) t.rounds.push_back(std::vector<int>(n, -2));
+    t.running = true;
+}
+
 void startMatch(Server& s) {
     ModeState& m = s.ms_;
     m.round = 0;
@@ -135,6 +203,14 @@ void startMatch(Server& s) {
     s.bestProgress_[0] = s.bestProgress_[1] = 0;
     s.completeTime_[0] = s.completeTime_[1] = 0;
     for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; }
+    if (m.mode == MODE_TOURNEY) {
+        tourneyBegin(s);
+        s.message("tourney started - " + std::to_string(s.tourney_.rounds[0].size()) + " slot bracket");
+        if (tourneyAdvance(s) != -1) { enterMatchEnd(s, "not enough players for a tourney", -1); return; }
+        tourneySetupMatch(s);
+        startRound(s);
+        return;
+    }
     s.message(std::string(modeTitle(m.mode)) + " - match started");
     startRound(s);
 }
@@ -162,7 +238,10 @@ void endRound(Server& s, int winner, const std::string& why, bool award = true) 
         else text = "nobody finished";
     } else if (winner >= 0) {
         if (award) (winner == TEAM_A ? m.scoreA : m.scoreB)++;
-        text = std::string(teamName(winner)) + " wins the round";
+        std::string who = teamName(winner);
+        if (m.mode == MODE_ARENA || m.mode == MODE_TOURNEY) // 1v1: name the player
+            for (auto& p : s.players_) if (p.connected && p.team == winner) { who = p.name; break; }
+        text = who + " wins the round";
     } else {
         text = "round draw";
     }
@@ -184,8 +263,27 @@ bool checkMatchOver(Server& s) {
     ModeState& m = s.ms_;
     int rtw = roundsToWin(s);
     switch (m.mode) {
+        case MODE_TOURNEY:
+            if (m.scoreA >= rtw || m.scoreB >= rtw) { // match decided: winner advances
+                auto& t = s.tourney_;
+                int a = t.rounds[t.round][2 * t.match], b = t.rounds[t.round][2 * t.match + 1];
+                int w = m.scoreA >= rtw ? a : b;
+                t.rounds[t.round + 1][t.match] = w;
+                t.played++;
+                s.message(tourneyName(s, w) + " advances");
+                int champ = tourneyAdvance(s);
+                s.broadcastBracket();
+                if (champ != -1) {
+                    t.running = false;
+                    enterMatchEnd(s, champ >= 0 ? tourneyName(s, champ) + " wins the tourney!" : "tourney over", champ);
+                    return true;
+                }
+                tourneySetupMatch(s);
+            }
+            return false;
         case MODE_VS:
         case MODE_DUEL:
+        case MODE_ARENA:
         case MODE_BOMB:
             if (m.scoreA >= rtw || m.scoreB >= rtw) {
                 int w = m.scoreA >= rtw ? TEAM_A : TEAM_B;
@@ -214,7 +312,8 @@ bool checkMatchOver(Server& s) {
 bool enoughPlayers(const Server& s) {
     switch (s.ms_.mode) {
         case MODE_RACE: return s.teamCount(TEAM_A) >= 1;
-        case MODE_FFA: return s.teamCount(TEAM_A) >= 2;
+        case MODE_FFA:
+        case MODE_TOURNEY: return s.teamCount(TEAM_A) >= 2;
         default: return s.teamCount(TEAM_A) >= 1 && s.teamCount(TEAM_B) >= 1;
     }
 }
@@ -488,7 +587,8 @@ void tickFFA(Server& s) {
 }
 } // namespace
 
-bool modeIsTeamBased(int mode) { return mode != MODE_FFA && mode != MODE_RACE; }
+// Tourney warmup is a free for all; during matches the two players are on teams A and B.
+bool modeIsTeamBased(int mode) { return mode != MODE_FFA && mode != MODE_RACE && mode != MODE_TOURNEY; }
 
 void rulesReset(Server& s) {
     ModeState& m = s.ms_;
@@ -498,6 +598,11 @@ void rulesReset(Server& s) {
     m.payloadLen = s.map_.payloadLength();
     m.attackers = TEAM_A;
     m.duelMod = 255;
+    m.arenaVariant = (uint8_t)s.cfg_.arenaVariant;
+    if (s.tourney_.running || m.mode == MODE_TOURNEY) { // back to free play: everyone in again
+        s.tourney_.running = false;
+        for (auto& p : s.players_) if (p.connected && m.mode == MODE_TOURNEY) p.team = TEAM_A;
+    }
     setPhase(s, PHASE_WARMUP, 0);
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = s.players_[i];
@@ -512,6 +617,7 @@ void rulesForceStart(Server& s) {
 
 void rulesTick(Server& s) {
     ModeState& m = s.ms_;
+    m.weaponMask = s.weaponMask();
     updateCartSolid(s);
     switch (m.phase) {
         case PHASE_WARMUP:
@@ -536,7 +642,9 @@ void rulesTick(Server& s) {
         case PHASE_LIVE:
             switch (m.mode) {
                 case MODE_VS:
-                case MODE_DUEL: tickVS(s); break;
+                case MODE_DUEL:
+                case MODE_ARENA:
+                case MODE_TOURNEY: tickVS(s); break;
                 case MODE_BOMB: tickBomb(s); break;
                 case MODE_RACE: tickRace(s); break;
                 case MODE_KOTH: tickKoth(s); break;
@@ -603,6 +711,8 @@ bool rulesFrozen(const Server& s, int id) {
 int rulesSpawnType(const Server& s, int id) {
     const int mode = s.ms_.mode;
     if (mode == MODE_RACE && s.map_.supportsMode(MODE_RACE)) return SPAWN_RACE;
+    if (mode == MODE_TOURNEY && s.tourney_.running && s.map_.supportsMode(MODE_VS))
+        return s.players_[id].team == TEAM_B ? SPAWN_B : SPAWN_A; // a match: opposite ends
     if (!modeIsTeamBased(mode)) return SPAWN_ANY;
     return s.players_[id].team == TEAM_B ? SPAWN_B : SPAWN_A;
 }

@@ -93,7 +93,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         s.dashExitSpeed = std::max(kDashExitMin, std::min(h, kDashSpeed));
         s.dashUp = std::sin(cmd.pitch) * kDashVertical;
         s.dashTimer = kDashTime;
-        s.dashCooldown = kDashCooldown;
+        s.dashCooldown = (s.mods & MOVE_QUICK_DASH) ? kDashCooldown / 3 : kDashCooldown;
     }
     bool dashing = s.dashTimer > 0;
     if (dashing) {
@@ -159,7 +159,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
                 float nl = std::sqrt(nx * nx + nz * nz);
                 if (nl > 1e-4f) { s.vel.x = nx / nl * h; s.vel.z = nz / nl * h; }
             }
-            s.vel.y -= kGravity * dt * (hooked ? kHookGravityScale : 1.0f);
+            s.vel.y -= kGravity * dt * (hooked ? kHookGravityScale : 1.0f) * ((s.mods & MOVE_LOW_GRAVITY) ? 0.4f : 1.0f);
         }
     }
 

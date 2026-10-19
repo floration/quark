@@ -8,7 +8,7 @@ enum SpawnTeam { SPAWN_A = 0, SPAWN_B = 1, SPAWN_ANY = 2, SPAWN_RACE = 3 };
 
 struct Brush {
     AABB box;
-    int material = 0; // 0 = base, 1 = accent
+    int material = 0; // 0 = base, 1 = accent, 2 = wallbang (dark grey: solid, but hitscan goes through it)
 };
 
 struct SpawnPoint {
@@ -41,6 +41,10 @@ struct Map {
     // Returns hit distance or -1. normal receives the face normal on hit.
     float raycast(const Vec3& origin, const Vec3& dir, float maxDist, Vec3* normal = nullptr) const;
     bool raycastAny(const Vec3& origin, const Vec3& dir, float maxDist) const; // shadow-ray style early out
+    // Hitscan bullets: like raycast, but passes through wallbang brushes; *through is set if it went
+    // through at least one before the returned hit (or maxDist); *bangDist = distance to the first one.
+    float raycastBullet(const Vec3& origin, const Vec3& dir, float maxDist, float* bangDist) const;
+    bool hasWallbang = false;
 
     bool supportsMode(int mode) const;
 

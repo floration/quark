@@ -83,7 +83,7 @@ uniform float uFogDensity;
 out vec4 fragColor;
 void main() {
     vec2 lm = texture(uLightmap, vUV).rg;
-    vec3 albedo = mix(uBase, uAccent, vMat);
+    vec3 albedo = vMat > 1.5 ? uBase * 0.42 : mix(uBase, uAccent, vMat); // 2 = wallbang: dark grey
     vec3 light = uSkyColor * lm.g + uSunColor * lm.r * shadowAt(vShadow);
     vec3 c = albedo * light * outline(vEdge);
     float d = length(vPos - uCamPos);

@@ -48,7 +48,11 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     tick_ = 0;
     timeMs_ = 0;
     rateLevel_ = 0;
-    while (rateLevel_ < kTickRateLevels - 1 && cfg_.maxTickRate > 0 && kTickRates[rateLevel_] > cfg_.maxTickRate) rateLevel_++;
+    // Bandwidth grows with players x tick rate: big servers start lower (warmup can still step down more).
+    int cap = cfg_.maxTickRate > 0 ? cfg_.maxTickRate : 1000;
+    if (cfg_.maxPlayers > 24) cap = std::min(cap, 250);
+    else if (cfg_.maxPlayers > 16) cap = std::min(cap, 500);
+    while (rateLevel_ < kTickRateLevels - 1 && kTickRates[rateLevel_] > cap) rateLevel_++;
     nextTick_ = timeNow();
     resetRateWindow();
     rulesReset(*this);
@@ -273,8 +277,9 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
 
 void Server::autoTeam(int id) {
     ServerPlayer& p = players_[id];
+    if (cfg_.mode == MODE_TOURNEY) { p.team = tourney_.running ? TEAM_SPECTATOR : TEAM_A; return; } // joins the next tourney
     if (!modeIsTeamBased(cfg_.mode) || (cfg_.vsBots && !p.isBot)) { p.team = TEAM_A; return; }
-    if (cfg_.mode == MODE_DUEL) { // duelTeamSize humans per side; balance bots make way, anyone else spectates
+    if (cfg_.mode == MODE_DUEL || cfg_.mode == MODE_ARENA) { // duelTeamSize (1v1: 1) humans per side; balance bots make way, anyone else spectates
         int takenA = 0, takenB = 0;
         for (int i = 0; i < kMaxPlayers; i++) {
             const auto& o = players_[i];
@@ -282,7 +287,7 @@ void Server::autoTeam(int id) {
             if (o.team == TEAM_A) takenA++;
             else if (o.team == TEAM_B) takenB++;
         }
-        int size = std::min(std::max(cfg_.duelTeamSize, 1), 2);
+        int size = cfg_.mode == MODE_ARENA ? 1 : std::min(std::max(cfg_.duelTeamSize, 1), 2);
         p.team = takenA < size && takenA <= takenB ? TEAM_A : takenB < size ? TEAM_B : takenA < size ? TEAM_A : TEAM_SPECTATOR;
         return;
     }
@@ -369,11 +374,11 @@ void Server::handleStringCmd(int id, const std::string& s) {
         int t = rest == "a" ? TEAM_A : rest == "b" ? TEAM_B : rest == "spec" ? TEAM_SPECTATOR : -1;
         if (t < 0 || t == p.team) return;
         if (!modeIsTeamBased(cfg_.mode) && t == TEAM_B) t = TEAM_A;
-        if (cfg_.mode == MODE_DUEL && t != TEAM_SPECTATOR) {
+        if ((cfg_.mode == MODE_DUEL || cfg_.mode == MODE_ARENA) && t != TEAM_SPECTATOR) {
             int n = 0;
             for (int i = 0; i < kMaxPlayers; i++)
                 n += i != id && players_[i].connected && !players_[i].balanceBot && players_[i].team == t;
-            if (n >= std::min(std::max(cfg_.duelTeamSize, 1), 2)) {
+            if (n >= (cfg_.mode == MODE_ARENA ? 1 : std::min(std::max(cfg_.duelTeamSize, 1), 2))) {
                 GameEvent e; e.type = EV_MESSAGE; e.text = "that side is full"; sendEvent(id, e);
                 return;
             }
@@ -399,16 +404,31 @@ void Server::handleStringCmd(int id, const std::string& s) {
             if (ms_.phase != PHASE_WARMUP) { GameEvent e; e.type = EV_MESSAGE; e.text = "the match has already started"; sendEvent(id, e); }
             else callVote(id, VOTE_START, 0);
         }
-        else if (what == "map" || what == "mode") { // callvote map <name> [mode] / callvote mode <mode>
-            std::string m2;
-            vs >> m2;
+        else if (what == "tmaps" || what == "tmodes") { // tourney rotation: callvote tmaps a,b,c / tmodes classic,hitscan
+            bool ok = !arg.empty();
+            std::istringstream ls(arg);
+            std::string it;
+            while (std::getline(ls, it, ',')) {
+                Map m;
+                if (what == "tmaps" ? (it.find_first_of("/\\.") != std::string::npos || !m.load(it) || !m.supportsMode(MODE_TOURNEY))
+                                    : arenaVariantFromName(it.c_str()) < 0) ok = false;
+            }
+            if (!ok) { GameEvent e; e.type = EV_MESSAGE; e.text = "can't vote for that list"; sendEvent(id, e); }
+            else callVote(id, what == "tmaps" ? VOTE_TMAPS : VOTE_TMODES, 0, arg);
+        }
+        else if (what == "map" || what == "mode") { // callvote map <name> [mode] [ruleset] / callvote mode <mode> [ruleset]
+            std::string m2, v2;
+            vs >> m2 >> v2;
+            if (what == "mode") v2 = m2;
+            int variant = v2.empty() ? cfg_.arenaVariant : arenaVariantFromName(v2.c_str());
+            if (variant < 0) variant = cfg_.arenaVariant;
             std::string mapName = what == "map" ? arg : cfg_.map;
             int mode = what == "mode" ? modeFromName(arg.c_str()) : m2.empty() ? cfg_.mode : modeFromName(m2.c_str());
             Map m;
             bool ok = mode >= 0 && mapName.find_first_of("/\\.") == std::string::npos && m.load(mapName);
             if (ok && !m.supportsMode(mode)) ok = false;
             if (!ok) { GameEvent e; e.type = EV_MESSAGE; e.text = "can't vote for that map/mode"; sendEvent(id, e); }
-            else callVote(id, VOTE_MAP, mode, mapName);
+            else callVote(id, VOTE_MAP, mode, mapName, variant);
         }
         else if (what == "botskill") {
             int k = -1;
@@ -440,6 +460,12 @@ void Server::command(const std::string& line, int fromPlayer) {
         if (cmd == "mode") newMode = modeFromName(arg.c_str());
         else { std::string m2; if (ss >> m2) newMode = modeFromName(m2.c_str()); }
         if (newMode < 0) { reply("unknown mode"); return; }
+        std::string v2; // optional 1v1 ruleset: map <name> 1v1 classic
+        if (ss >> v2) {
+            int v = arenaVariantFromName(v2.c_str());
+            if (v < 0) { reply("unknown 1v1 ruleset"); return; }
+            cfg_.arenaVariant = v;
+        }
         Map m;
         std::string err;
         if (!m.load(newMap, &err)) { reply(err); return; }
@@ -557,10 +583,13 @@ void Server::spawnPlayer(int id) {
     p.alive = true;
     p.health = kMaxHealth;
     p.weapon = p.selectedWeapon;
+    if (!weaponAllowed(p.weapon)) // restricted pool: first allowed weapon
+        for (int w = 0; w < WPN_COUNT; w++) if (weaponAllowed(w)) { p.weapon = w; break; }
     int mod = duelMod();
-    if (duelModWeapon(mod) >= 0) p.weapon = duelModWeapon(mod);
     if (mod == DUEL_ONE_HP) p.health = 1;
     if (mod == DUEL_GRAPPLE) p.move.mods |= MOVE_GRAPPLE_ONLY;
+    if (arenaRules() & AR_QUICK_DASH) p.move.mods |= MOVE_QUICK_DASH;
+    if (arenaRules() & AR_LOW_GRAVITY) p.move.mods |= MOVE_LOW_GRAVITY;
     p.nextFire = time() + 0.25f;
     p.respawnAt = -1;
     GameEvent e;
@@ -602,11 +631,16 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
     if (!v.alive) return;
     bool canHurt = rulesCanDamage(*this, attacker, victim);
     bool friendly = attacker >= 0 && attacker != victim && modeIsTeamBased(cfg_.mode) && players_[attacker].team == v.team;
+    // Race: you can only affect yourself (rocket jumps etc.), never other racers.
+    if (ms_.mode == MODE_RACE && ms_.phase != PHASE_WARMUP && attacker >= 0 && attacker != victim) return;
     if (!friendly) {
         v.move.vel += knock;
         if (knock.y > 0.5f) v.move.flags &= ~MF_ONGROUND;
     }
     if (!canHurt || dmg <= 0) return;
+    uint8_t rules = arenaRules();
+    if (attacker == victim && (rules & AR_NO_SELF_DAMAGE)) return;
+    if (attacker >= 0 && attacker != victim && (rules & AR_INSTAGIB)) dmg = std::max(dmg, v.health + 1);
     v.health -= dmg;
     v.lastDamagedTick = tick_;
     if (attacker >= 0 && attacker != victim) {
@@ -617,7 +651,7 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
         if (time() >= hitFlushAt_[attacker][victim]) flushHit(attacker, victim);
         // Vampire laser: damage dealt heals the attacker (up to full health).
         ServerPlayer& a = players_[attacker];
-        if (duelMod() == DUEL_VAMPIRE_LASER && a.alive) a.health = std::min((float)kMaxHealth, a.health + dmg);
+        if ((duelMod() == DUEL_VAMPIRE_LASER || (rules & AR_VAMPIRE)) && a.alive) a.health = std::min((float)kMaxHealth, a.health + dmg);
     }
     glog(LOG_VERBOSE, "hit attacker=%d victim=%d dmg=%.2f weapon=%d health=%.2f", attacker, victim, dmg, weapon, v.health);
     if (v.health <= 0) killPlayer(victim, attacker, weapon);
@@ -701,7 +735,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     else p.move.flags &= ~MF_FROZEN;
     pmove(p.move, cmd, map_);
 
-    if (cmd.weapon < WPN_COUNT && duelModWeapon(duelMod()) < 0) p.weapon = cmd.weapon;
+    if (cmd.weapon < WPN_COUNT && weaponAllowed(cmd.weapon)) p.weapon = cmd.weapon;
     // Sticky launcher: alt-fire detonates your armed stickies.
     if (p.weapon == WPN_STICKY && (cmd.buttons & BTN_ALTFIRE))
         for (auto& pr : projectiles_)
@@ -739,7 +773,8 @@ Vec3 Server::spreadDir(const Vec3& dir, float spread, uint32_t seq, int pellet) 
 // One lag-compensated ray: adds dmg to the first player it hits (tested against where players
 // were at the shooter's view time).
 void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t vt, float* dmgPer, float dmg) {
-    float wall = map_.raycast(eye, dir, range);
+    float bang;
+    float wall = map_.raycastBullet(eye, dir, range, &bang); // goes through wallbang brushes
     float best = wall >= 0 ? wall : range;
     int hit = -1;
     Vec3 inv = safeInv(dir);
@@ -756,7 +791,7 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
         float t = rayAABB(eye, inv, hitBox(pos, crouched), best);
         if (t >= 0 && t < best) { best = t; hit = i; }
     }
-    if (hit >= 0) dmgPer[hit] += dmg;
+    if (hit >= 0) dmgPer[hit] += (bang >= 0 && best > bang) ? dmg * kWallbangDamage : dmg;
 }
 
 void Server::fireWeapon(int id, const UserCmd& cmd) {
@@ -927,7 +962,8 @@ void Server::sendSnapshots() {
     }
     for (auto& pr : projectiles_) {
         if (!pr.active) continue;
-        if (s.projectiles.size() >= 48) break;
+        // fit the packet: 32 players leave less room for projectiles
+        if (s.projectiles.size() >= std::min<size_t>(48, (kMaxPacket - 200 - s.players.size() * 32) / 16)) break;
         s.projectiles.push_back({pr.id, (uint8_t)pr.type, (uint8_t)pr.owner, pr.pos, pr.vel});
     }
     // Shared part (mode, players, projectiles) is identical for everyone: encode it once.
@@ -991,7 +1027,7 @@ int Server::addBot(int team, int skill, bool balance) {
     p.balanceBot = balance;
     p.team = team;
     p.lastRecv = timeNow();
-    p.name = std::string("BOT ") + names[(id * 7 + tick_) % 16];
+    p.name = uniqueName(std::string("BOT ") + names[(id * 7 + tick_) % 16], id);
     bots_[id] = BotBrain();
     bots_[id].skill = skill;
     bots_[id].rng = 0x9E3779B9u ^ (uint32_t)(id * 2654435761u) ^ tick_;
@@ -1027,7 +1063,7 @@ void Server::updateBalanceBots(bool matchStarting) {
     while (haveB < needB && addBot(TEAM_B, cfg_.balanceBotSkill, true) >= 0) haveB++;
 }
 
-void Server::callVote(int caller, int kind, int arg, const std::string& map) {
+void Server::callVote(int caller, int kind, int arg, const std::string& map, int arg2) {
     if (vote_.kind != VOTE_NONE) {
         GameEvent e; e.type = EV_MESSAGE; e.text = "a vote is already in progress";
         sendEvent(caller, e);
@@ -1037,11 +1073,14 @@ void Server::callVote(int caller, int kind, int arg, const std::string& map) {
     vote_.kind = kind;
     vote_.arg = arg;
     vote_.map = map;
+    vote_.arg2 = arg2;
     vote_.endsAt = time() + 30.0f;
     vote_.text = kind == VOTE_BOTS        ? std::string("BALANCE BOTS ") + (arg ? "ON" : "OFF")
                : kind == VOTE_BOTSKILL    ? std::string("BOT DIFFICULTY: ") + botSkillName(arg)
                : kind == VOTE_START       ? std::string("START THE MATCH")
-               : kind == VOTE_MAP         ? "PLAY " + map + " - " + modeTitle(arg)
+               : kind == VOTE_MAP         ? "PLAY " + map + " - " + modeTitle(arg) + (arg == MODE_ARENA || arg == MODE_TOURNEY ? std::string(" (") + arenaVariant(vote_.arg2).title + ")" : "")
+               : kind == VOTE_TMAPS       ? "TOURNEY MAPS: " + map
+               : kind == VOTE_TMODES      ? "TOURNEY RULESETS: " + map
                                           : std::string("FILL THE UNEVEN TEAMS WITH BOTS?");
     GameEvent e; e.type = EV_VOTE; e.a = (uint8_t)(caller < 0 ? 255 : caller); e.text = vote_.text;
     broadcastEvent(e);
@@ -1088,8 +1127,19 @@ void Server::tickVote() {
         return;
     }
     if (pass) {
+        if (vote_.kind == VOTE_TMAPS || vote_.kind == VOTE_TMODES) {
+            std::vector<std::string> items;
+            std::istringstream ls(vote_.map);
+            std::string it;
+            while (std::getline(ls, it, ',')) if (!it.empty()) items.push_back(it);
+            if (vote_.kind == VOTE_TMAPS) cfg_.tourneyMaps = items;
+            else { cfg_.tourneyVariants.clear(); for (auto& v : items) cfg_.tourneyVariants.push_back(arenaVariantFromName(v.c_str())); }
+            message("vote passed: " + vote_.text);
+            vote_ = Vote();
+            return;
+        }
         if (vote_.kind == VOTE_MAP) {
-            std::string cmd = "map " + vote_.map + " " + modeName(vote_.arg);
+            std::string cmd = "map " + vote_.map + " " + modeName(vote_.arg) + " " + arenaVariant(vote_.arg2).name;
             message("vote passed: " + vote_.text);
             vote_ = Vote();
             command(cmd);
@@ -1130,6 +1180,41 @@ std::string Server::uniqueName(std::string name, int self) const {
 
 // ---------------------------------------------------------------------------
 // game log (off / simple / verbose / extreme)
+
+void Server::broadcastBracket() {
+    std::string t;
+    for (auto& r : tourney_.rounds) {
+        for (size_t i = 0; i < r.size(); i++) t += (i ? "|" : "") + std::to_string(r[i]);
+        t += "\n";
+    }
+    t += "@" + std::to_string(tourney_.round) + "," + std::to_string(tourney_.match);
+    GameEvent e; e.type = EV_BRACKET; e.text = t;
+    broadcastEvent(e);
+}
+
+bool Server::switchMapKeepRules(const std::string& name) {
+    if (name == cfg_.map) return true;
+    Map m;
+    if (!m.load(name) || !m.supportsMode(cfg_.mode)) return false;
+    map_ = m;
+    cfg_.map = name;
+    for (auto& pr : projectiles_) pr.active = false;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        auto& p = players_[i];
+        if (!p.connected) continue;
+        p.alive = false;
+        p.cmdQueue.clear();
+        if (!p.isBot) sendAccept(sock_, p.addr, p.nonce, i, map_, cfg_.mode);
+    }
+    glog(LOG_SIMPLE, "map %s mode %s", name.c_str(), modeName(cfg_.mode));
+    return true;
+}
+
+uint16_t Server::weaponMask() const {
+    if (ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY) return arenaVariant(ms_.arenaVariant).weapons;
+    int forced = duelModWeapon(duelMod());
+    return forced >= 0 ? (uint16_t)(1u << forced) : 0;
+}
 
 AABB Server::hitBox(const Vec3& feet, bool crouched) const {
     AABB b = playerBox(feet, crouched);

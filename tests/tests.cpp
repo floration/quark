@@ -575,6 +575,18 @@ static void testRocketSelfDamage(uint16_t port) {
     s.stop();
 }
 
+static void testWallbang() {
+    printf("wallbang: bullets pass through, movement and normal rays don't\n");
+    Map m;
+    CHECK(m.parse("box -10 -1 -10 10 0 10\nwallbang -1 0 -5 1 3 5\nbox 4 0 -5 5 3 5\nspawn any -5 0 0\n"));
+    float bang = -2;
+    float t = m.raycastBullet({-5, 1.5f, 0}, {1, 0, 0}, 50, &bang);
+    CHECK(std::fabs(bang - 4) < 0.01f);   // went through the wallbang at x=-1
+    CHECK(std::fabs(t - 9) < 0.01f);      // stopped by the solid box at x=4
+    CHECK(std::fabs(m.raycast({-5, 1.5f, 0}, {1, 0, 0}, 50) - 4) < 0.01f); // normal rays (sight, splash) stop
+    CHECK(m.boxSolid(playerBox({0, 0, 0}, false)));                        // and you can't walk through it
+}
+
 static void testTimeToKill() {
     printf("time to kill with perfect aim (1-4.5 s), no shot over 50\n");
     for (int w = 0; w < WPN_COUNT; w++) {
@@ -796,6 +808,75 @@ static void testMapVote(uint16_t port) {
     s.stop();
 }
 
+// 1v1 rulesets: weapon pools, instagib, no self damage, vampire. Tourney: 5 players (byes), the bracket
+// runs to a champion with map and ruleset rotation, non-players spectate.
+static void testArenaAndTourney(uint16_t& port) {
+    printf("1v1 rulesets + tourney bracket\n");
+    {
+        Server s;
+        ServerConfig cfg;
+        cfg.autoStart = true;
+        cfg.map = "crucible"; cfg.mode = MODE_ARENA; cfg.port = port++; cfg.arenaVariant = arenaVariantFromName("classic");
+        s.setLog([](const std::string&) {});
+        if (!s.start(cfg)) { g_fail++; return; }
+        NetClient a, b;
+        a.connect("127.0.0.1:" + std::to_string(cfg.port), "a");
+        b.connect("127.0.0.1:" + std::to_string(cfg.port), "b");
+        std::vector<NetClient*> cls = {&a, &b};
+        pump(s, cls, 1.0, idle);
+        pump(s, cls, 6.0, idle);
+        auto& pa = s.players_[a.clientId()];
+        CHECK(s.ms_.weaponMask == ((1 << WPN_ROCKET) | (1 << WPN_LASER) | (1 << WPN_KNIFE)));
+        CHECK(pa.weapon == WPN_ROCKET || pa.weapon == WPN_LASER || pa.weapon == WPN_KNIFE);
+        pump(s, cls, 0.2, [](int) { UserCmd c; c.weapon = WPN_SNIPER; return c; });
+        CHECK(pa.weapon != WPN_SNIPER); // not in the pool
+        pump(s, cls, 0.2, [](int) { UserCmd c; c.weapon = WPN_KNIFE; return c; });
+        CHECK(pa.weapon == WPN_KNIFE);
+        s.cfg_.arenaVariant = s.ms_.arenaVariant = (uint8_t)arenaVariantFromName("instagib");
+        while (s.ms_.phase != PHASE_LIVE) pump(s, cls, 0.1, idle);
+        auto& pb = s.players_[b.clientId()];
+        s.damagePlayer(b.clientId(), a.clientId(), 1, WPN_SNIPER, {});
+        CHECK(!pb.alive); // instagib
+        s.stop();
+    }
+    {
+        Server s;
+        ServerConfig cfg;
+        cfg.autoStart = true;
+        cfg.map = "crucible"; cfg.mode = MODE_TOURNEY; cfg.port = port++;
+        cfg.tourneyMaps = {"crucible", "duel"};
+        cfg.tourneyVariants = {arenaVariantFromName("classic"), arenaVariantFromName("hitscan")};
+        s.setLog([](const std::string&) {});
+        if (!s.start(cfg)) { g_fail++; return; }
+        NetClient h;
+        h.connect("127.0.0.1:" + std::to_string(cfg.port), "human");
+        std::vector<NetClient*> cls = {&h};
+        pump(s, cls, 1.0, idle);
+        for (int i = 0; i < 4; i++) s.addBot(TEAM_A, BOT_BEGINNER);
+        int brackets = 0, matches = 0, maxPlaying = 0;
+        std::string lastMatch;
+        double end = timeNow() + 300;
+        while (timeNow() < end && s.ms_.phase != PHASE_MATCH_END) {
+            pump(s, cls, 0.1, idle);
+            for (auto& e : h.takeEvents()) brackets += e.type == EV_BRACKET;
+            int playing = 0;
+            for (auto& p : s.players_) playing += p.connected && p.team != TEAM_SPECTATOR;
+            if (s.tourney_.running) maxPlaying = std::max(maxPlaying, playing);
+            if (s.ms_.phase == PHASE_LIVE) { // decide rounds fast: team B's player dies
+                std::string mt = s.cfg_.map + std::to_string(s.tourney_.round) + "," + std::to_string(s.tourney_.match);
+                if (mt != lastMatch) { lastMatch = mt; matches++; }
+                for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].alive && s.players_[i].team == TEAM_B) s.killPlayer(i, -1, 255);
+            }
+        }
+        printf("  tourney: %d matches, %d bracket updates, phase %d\n", matches, brackets, s.ms_.phase);
+        CHECK(s.ms_.phase == PHASE_MATCH_END);
+        CHECK(matches == 4);            // 5 entrants in an 8 slot bracket: 4 played matches (3 byes)
+        CHECK(brackets >= 4);
+        CHECK(maxPlaying == 2);         // everyone else spectates
+        s.stop();
+    }
+}
+
 static void testBots(uint16_t& port) {
     printf("bots: vs-bots fights, balance bots, votes, every mode\n");
     { // FFA vs 3 expert bots: they should find and kill each other / us
@@ -897,7 +978,8 @@ static void testBots(uint16_t& port) {
         s.stop();
     }
     // every mode with bots on both sides: no crashes, things happen
-    const char* maps[MODE_COUNT] = {"arena", "arena", "sprint", "arena", "arena", "arena", "arena", "crucible"};
+    const char* maps[MODE_COUNT] = {"arena", "arena", "sprint", "arena", "arena", "arena", "arena", "crucible", "crucible", "crucible"};
+    static_assert(MODE_COUNT == 10, "add the new mode's map here");
     for (int mode = 0; mode < MODE_COUNT; mode++) {
         Server s;
         ServerConfig cfg;
@@ -932,6 +1014,8 @@ int main(int argc, char** argv) {
     testAllMaps();
     testGridQueries();
     uint16_t port = 28500;
+    if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = 29800; testArenaAndTourney(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = 29700; testWeapons(p); testRocketSelfDamage(p + 20); return g_fail ? 1 : 0; }
     testSession(MODE_VS, "arena", port++);
     testSession(MODE_BOMB, "arena", port++);
@@ -945,9 +1029,11 @@ int main(int argc, char** argv) {
     testCartDash(port++);
     testSemiAuto(port++);
     testMapVote(port++);
+    testArenaAndTourney(port);
     testTickRateFallback(port++);
     testRocketSelfDamage(port++);
     testTimeToKill();
+    testWallbang();
     testDuel(port++);
     testDuel2v2(port++);
     testInternetList(port++);

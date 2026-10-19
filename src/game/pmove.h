@@ -28,7 +28,11 @@ struct MoveState {
     Vec3 hookPoint;    // grapple anchor while MF_HOOKED
     uint8_t mods = 0;  // MOVE_* rule modifiers (duel)
 };
-enum : uint8_t { MOVE_GRAPPLE_ONLY = 1 }; // no walking, jumping or dashing: the grapple is the only way to move
+enum : uint8_t {
+    MOVE_GRAPPLE_ONLY = 1, // no walking, jumping or dashing: the grapple is the only way to move
+    MOVE_QUICK_DASH = 2,   // dash recharges 3x faster
+    MOVE_LOW_GRAVITY = 4,  // 40% gravity
+};
 enum : uint8_t {
     MF_ONGROUND = 1, MF_CROUCHED = 2, MF_JUMPHELD = 4, MF_FROZEN = 8,
     MF_HOOKHELD = 16, MF_HOOKED = 32, MF_DASHHELD = 64,

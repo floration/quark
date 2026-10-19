@@ -78,6 +78,7 @@ static bool readBox(std::istringstream& ls, AABB& b) {
 bool Map::parse(const std::string& text, std::string* err) {
     brushes.clear(); spawns.clear(); bombSites.clear(); checkpoints.clear(); payloadPath.clear();
     hasHill = false;
+    hasWallbang = false;
     preferredMode = -1;
     crc = crc32(text.data(), text.size());
     std::istringstream in(text);
@@ -95,10 +96,11 @@ bool Map::parse(const std::string& text, std::string* err) {
         if (kw == "title") {
             std::getline(ls, title);
             while (!title.empty() && title[0] == ' ') title.erase(0, 1);
-        } else if (kw == "box" || kw == "accent") {
+        } else if (kw == "box" || kw == "accent" || kw == "wallbang") {
             Brush b;
             ok = readBox(ls, b.box);
-            b.material = kw == "accent" ? 1 : 0;
+            b.material = kw == "accent" ? 1 : kw == "wallbang" ? 2 : 0;
+            hasWallbang |= b.material == 2;
             if (ok) {
                 brushes.push_back(b);
                 bounds.mn = vmin(bounds.mn, b.box.mn);
@@ -263,6 +265,29 @@ float Map::raycast(const Vec3& o, const Vec3& dir, float maxDist, Vec3* normal) 
     return best;
 }
 
+float Map::raycastBullet(const Vec3& o, const Vec3& dir, float maxDist, float* bangDist) const {
+    *bangDist = -1;
+    if (!hasWallbang) return raycast(o, dir, maxDist);
+    Vec3 inv = safeInv(dir);
+    float best = -1.0f, bang = -1.0f; // nearest solid / nearest wallbang
+    walkCells(*this, o, dir, maxDist, [&](size_t c, float tExit) {
+        for (uint32_t k = cellStart[c]; k < cellStart[c + 1]; k++) {
+            const Brush& br = brushes[cellBrushes[k]];
+            float t = rayAABB(o, inv, br.box, best < 0 ? maxDist : best);
+            if (t < 0) continue;
+            if (br.material == 2) { if (bang < 0 || t < bang) bang = t; }
+            else if (best < 0 || t < best) best = t;
+        }
+        return !(best >= 0 && best <= tExit);
+    });
+    for (const AABB& b : dynSolids) {
+        float t = rayAABB(o, inv, b, best < 0 ? maxDist : best);
+        if (t >= 0 && (best < 0 || t < best)) best = t;
+    }
+    if (bang >= 0 && (best < 0 || bang < best)) *bangDist = bang;
+    return best;
+}
+
 bool Map::raycastAny(const Vec3& o, const Vec3& dir, float maxDist) const {
     Vec3 inv = safeInv(dir);
     bool hit = false;
@@ -280,7 +305,9 @@ bool Map::supportsMode(int mode) const {
     bool teams = has(SPAWN_A) && has(SPAWN_B);
     switch (mode) {
         case MODE_VS:
-        case MODE_DUEL: return teams;
+        case MODE_DUEL:
+        case MODE_ARENA: return teams;
+        case MODE_TOURNEY: return !spawns.empty();
         case MODE_BOMB: return teams && !bombSites.empty();
         case MODE_RACE: return has(SPAWN_RACE) && !checkpoints.empty();
         case MODE_KOTH: return teams && hasHill;

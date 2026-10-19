@@ -171,7 +171,7 @@
       <div class="stat"><b>1000 Hz</b><span>server tick rate, with automatic fallback down to 125 Hz</span></div>
       <div class="stat"><b>1 ms</b><span>movement steps: identical at any tick rate or frame rate</span></div>
       <div class="stat"><b>&lt;0.5 ms</b><span>input to frame with low-latency mode on</span></div>
-      <div class="stat"><b>8</b><span>players per server, hosted in game or dedicated</span></div>
+      <div class="stat"><b>32</b><span>players per server (8 by default), hosted in game or dedicated</span></div>
     </div>
     <div class="grid" style="margin-top:22px">
       <div class="card"><span class="k">NETCODE</span><h3>Predicted, lag-compensated</h3><p>Client prediction with replay, 3-snapshot interpolation and server-side rewind for every hitscan shot. Shot spread is seeded, so your tracer shows exactly what the server hit.</p></div>
@@ -185,7 +185,7 @@
 
   <section id="modes">
     <h2>Game modes</h2>
-    <p class="h">Eight modes, each with a map built for it.</p>
+    <p class="h">Ten modes, each with a map built for it.</p>
     <p class="intro">Every mode also runs on Arena, and players can vote to change the map or mode mid-session.</p>
     <div class="modes">
       <div class="mode"><img src="img/foundry.jpg" alt="Foundry" loading="lazy"><div><h3>Free for all</h3><span class="map">FOUNDRY</span><p>Everyone for themselves. A tie at the time limit goes to sudden death.</p></div></div>
@@ -195,7 +195,10 @@
       <div class="mode"><img src="img/summit.jpg" alt="Summit" loading="lazy"><div><h3>King of the hill</h3><span class="map">SUMMIT</span><p>Hold the plateau to score. First team to the target wins.</p></div></div>
       <div class="mode"><img src="img/railyard.jpg" alt="Railyard" loading="lazy"><div><h3>Payload</h3><span class="map">RAILYARD</span><p>Push the solid cart down the track. Each team attacks once, and the faster push wins.</p></div></div>
       <div class="mode"><img src="img/tug.jpg" alt="Tug" loading="lazy"><div><h3>Neutral payload</h3><span class="map">TUG</span><p>One cart in the middle. Push it into the enemy's end.</p></div></div>
-      <div class="mode"><img src="img/sprint.jpg" alt="Sprint" loading="lazy"><div><h3>Race</h3><span class="map">SPRINT</span><p>Checkpoints in order. Weapons only knock players back.</p></div></div>
+      <div class="mode"><img src="img/sprint.jpg" alt="Sprint" loading="lazy"><div><h3>Race</h3><span class="map">SPRINT</span><p>Checkpoints in order. Your weapons only affect you, so rocket-jump your way through.</p></div></div>
+      <div class="mode"><img src="img/temple.jpg" alt="Temple" loading="lazy"><div><h3>1v1</h3><span class="map">TEMPLE</span><p>Eight rulesets: laser vampire, classic, quirky, hitscan, instagib, boomers, blades and moon shotgun.</p></div></div>
+      <div class="mode"><img src="img/colosseum.jpg" alt="Colosseum" loading="lazy"><div><h3>Tourney</h3><span class="map">COLOSSEUM</span><p>A single-elimination bracket of everyone in the server. One 1v1 at a time, with everyone else watching.</p></div></div>
+      <div class="mode"><img src="img/harbor.jpg" alt="Harbor" loading="lazy"><div><h3>Free for all, bigger</h3><span class="map">HARBOR</span><p>Containers, crates, a crane to grapple from, and thin walls you can shoot through.</p></div></div>
     </div>
   </section>
 
@@ -209,7 +212,7 @@
         <tbody id="wtable"><tr><td colspan="6" style="color:var(--dim)">loading…</td></tr></tbody>
       </table>
     </div>
-    <p class="note">Splash damage falls off from the center. Your own rocket does 10% damage to you when the blast is below you. Laser alt-fire pulls the target in for 75% damage. Sniper and crossbow zoom on alt-fire.</p>
+    <p class="note">Splash damage falls off from the center. Your own rocket does 10% damage to you when the blast is below you. Laser alt-fire pulls the target in for 75% damage. Sniper and crossbow zoom on alt-fire. Hitscan weapons go through dark grey wallbang walls for half damage.</p>
   </section>
 
   <section id="host">

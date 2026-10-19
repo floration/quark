@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
         else if (a == "--orbit") opts.backdropAngle = (float)atof(next().c_str());
         else if (a == "--pause") opts.debugPause = true;
         else if (a == "--votemenu") { opts.debugPause = true; opts.debugVote = true; }
-        else if (a == "--picker") opts.debugPicker = true;
+        else if (a == "--picker") opts.debugPicker = atoi(next().c_str());
         else if (a == "--crosshair") { opts.debugSettings = true; opts.debugCrosshair = true; }
         else if (a == "--controls") { opts.debugSettings = true; opts.debugControls = true; }
         else if (a == "--pitch") opts.spawnPitch = (float)atof(next().c_str());

@@ -18,6 +18,23 @@ class M:
         s.lines.append(f"spawn {team} {x:g} {y:g} {z:g} {yaw:g}")
         if mirror_team: s.lines.append(f"spawn {mirror_team} {-x:g} {y:g} {-z:g} {yaw + 180:g}")
     def raw(s, line): s.lines.append(line)
+    def wallbang(s, x0, y0, z0, x1, y1, z1, mirror=False):
+        """dark grey wall that hitscan weapons shoot through (half damage); solid for movement"""
+        s.lines.append(f"wallbang {x0:g} {y0:g} {z0:g} {x1:g} {y1:g} {z1:g}")
+        if mirror: s.lines.append(f"wallbang {-x1:g} {y0:g} {-z1:g} {-x0:g} {y1:g} {-z0:g}")
+    def trim(s, hx, hz, y=0, h=0.25, d=0.12):
+        """thin accent strip along the inside of the outer walls (decoration)"""
+        s.box(-hx, y, -hz, hx, y + h, -hz + d, accent=True); s.box(-hx, y, hz - d, hx, y + h, hz, accent=True)
+        s.box(-hx, y, -hz, -hx + d, y + h, hz, accent=True); s.box(hx - d, y, -hz, hx, y + h, hz, accent=True)
+    def pillar(s, x, z, h, r=0.8, mirror=False):
+        """column with an accent base and capital"""
+        s.box(x - r - 0.2, 0, z - r - 0.2, x + r + 0.2, 0.35, z + r + 0.2, accent=True, mirror=mirror)
+        s.box(x - r, 0.35, z - r, x + r, h - 0.35, z + r, mirror=mirror)
+        s.box(x - r - 0.2, h - 0.35, z - r - 0.2, x + r + 0.2, h, z + r + 0.2, accent=True, mirror=mirror)
+    def crates(s, x, z, n=2, size=1.2, mirror=False):
+        """a little stack of crates (n on the floor, one on top)"""
+        for i in range(n): s.box(x + i * size, 0, z, x + (i + 1) * size - 0.05, size, z + size, mirror=mirror)
+        s.box(x + size * 0.4, size, z + 0.1, x + size * 1.35, size * 1.8, z + size - 0.1, accent=True, mirror=mirror)
     def stairs(s, x0, z0, x1, z1, top, axis, rising, mirror=False):
         """steps of 0.5 m up to `top` along axis ('x' or 'z'), rising toward +/-"""
         n = int(round(top / 0.5)); length = (x1 - x0) if axis == "x" else (z1 - z0)
@@ -144,4 +161,64 @@ for (x, z) in ((-18, -18), (18, -18), (-18, 18), (18, 18), (0, -20), (0, 20), (-
     m.spawn("any", x, y, z, round(yaw))
 m.spawn("a", 0, 0, 16, 0, "b")
 m.save("foundry")
+
+# --- temple: 1v1, symmetric halls of columns, wallbang screens in the middle ---------------------
+m = M("Temple", "1v1", sun=(0.35, 1.0, 0.55))
+m.room(22, 30, 12)
+m.trim(22, 30); m.trim(22, 30, y=11.4, h=0.6)
+m.box(-8, 0, -6, 8, 0.6, 6, accent=True)                                # sanctum floor
+m.stairs(-4, 6, 4, 8, 0.6, "z", -1); m.stairs(-4, -8, 4, -6, 0.6, "z", 1)
+m.box(-2, 0.6, -2, 2, 1.6, 2)                                           # altar
+m.box(-1.2, 1.6, -1.2, 1.2, 1.9, 1.2, accent=True)
+for (x, z) in ((-12, -18), (-12, -8), (-12, 8), (-12, 18)): m.pillar(x, z, 11.0, mirror=True)
+m.wallbang(-7, 0.6, -0.3, -3, 3.2, 0.3, mirror=True)                     # wallbang screens across the sanctum
+m.box(-22, 0, -4, -17, 3.5, 4); m.stairs(-17, -4, -14, 4, 3.5, "x", -1)  # side galleries
+m.box(17, 0, -4, 22, 3.5, 4); m.stairs(14, -4, 17, 4, 3.5, "x", 1)
+m.box(-22, 3.5, -4.2, -17, 4.4, -4, accent=True); m.box(17, 3.5, 4, 22, 4.4, 4.2, accent=True)   # gallery railings
+m.box(-6, 0, 18, -3, 2.4, 19, mirror=True); m.box(3, 0, 18, 6, 2.4, 19, mirror=True)           # spawn screens
+m.crates(-19, 22, mirror=True); m.crates(15, 13, 1, mirror=True)
+for x in (-3, 3): m.spawn("a", x, 0, 26, 0, "b")
+m.spawn("any", -19, 3.5, 0, 90, "any")
+m.save("temple")
+
+# --- colosseum: tourney, an octagonal-ish ring with tiered stands and a central pit -----------------
+m = M("Colosseum", "tourney", sun=(0.5, 1.0, 0.2))
+m.room(26, 26, 14)
+for t in range(3):                                                      # tiered stands (decoration + high ground)
+    o0, o1, h = 26 - (t + 1) * 1.6, 26 - t * 1.6, 0.9 * (3 - t)
+    m.box(-26, 0, -o1, 26, h, -o0, accent=(t == 1)); m.box(-26, 0, o0, 26, h, o1, accent=(t == 1))
+    m.box(-o1, 0, -o0, -o0, h, o0, accent=(t == 1)); m.box(o0, 0, -o0, o1, h, o0, accent=(t == 1))
+m.stairs(-2, 21.2, 2, 23.6, 2.7, "z", 1, mirror=True)                   # stairs up the stands
+m.box(-22, 0, -22, -18, 3.6, -18, accent=True, mirror=True); m.box(18, 0, -22, 22, 3.6, -18, accent=True, mirror=True)  # corner towers
+m.box(-6, -0.01, -6, 6, 0.02, 6, accent=True)                           # arena floor ring marking
+m.pillar(0, 0, 6.0, r=1.0)                                              # central obelisk (grapple anchor)
+m.wallbang(-9, 0, -1, -8, 2.6, 1, mirror=True); m.wallbang(-1, 0, 8, 1, 2.6, 9, mirror=True)  # wallbang pavises
+m.box(-13, 0, 6, -10, 1.3, 9, mirror=True); m.box(10, 0, 6, 13, 1.3, 9, mirror=True)
+m.crates(-15, -3, 1, mirror=True)
+for x in (-4, 4): m.spawn("a", x, 0, 17, 0, "b")
+for (x, z) in ((-16, 0), (16, 0), (0, -14), (0, 14), (-12, -12), (12, 12)): m.spawn("any", x, 0, z, 0)
+m.save("colosseum")
+
+# --- harbor: free for all, crates, containers, a pier and a crane ----------------------------------
+m = M("Harbor", "ffa", sun=(0.6, 1.0, 0.15))
+m.room(30, 30, 12)
+m.trim(30, 30)
+m.box(-30, 0, 14, 30, 1.2, 30)                                          # raised quay along the north
+m.stairs(-4, 11, 4, 14, 1.2, "z", -1, mirror=False)
+m.stairs(-20, 11, -14, 14, 1.2, "z", -1); m.stairs(14, 11, 20, 14, 1.2, "z", -1)
+for x in (-24, -12, 0, 12, 24): m.box(x - 0.3, 1.2, 29, x + 0.3, 2.4, 29.6, accent=True)   # bollards
+for (x0, z0, x1, z1) in ((-26, -10, -20, -4), (8, -24, 14, -18), (-6, -20, 0, -14)):        # shipping containers
+    m.box(x0, 0, z0, x1, 2.6, z1); m.box(x0, 2.6, z0 + 0.2, x1, 2.8, z1 - 0.2, accent=True)
+m.wallbang(18, 0, -8, 24, 2.6, -2)                                      # a thin-walled container (wallbang)
+m.wallbang(-8, 0, 2, -2, 2.4, 2.4)                                      # fence panels
+m.wallbang(4, 0, 4, 10, 2.4, 4.4)
+m.crates(-16, -24, 3); m.crates(20, 6, 2); m.crates(-2, 6, 2); m.crates(-24, 4, 1)
+m.box(-1, 0, -6, 1, 9, -4, accent=True)                                 # crane mast
+m.box(-1, 9, -6, 14, 9.8, -4, accent=True)                              # crane jib (grapple anchor)
+m.box(13, 6.5, -5.5, 14, 9, -4.5)                                       # hook
+for (x, z) in ((-22, 22), (22, 22), (0, 24), (-26, -26), (26, -26), (0, -26), (-12, -2), (10, 9), (-18, 8), (24, -14)):
+    yaw = math.degrees(math.atan2(x, z))
+    m.spawn("any", x, 1.2 if z > 14 else 0, z, round(yaw))
+m.spawn("a", -10, 0, -10, 0, "b")
+m.save("harbor")
 print("maps written")

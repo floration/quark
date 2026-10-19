@@ -24,7 +24,7 @@ struct ServerConfig {
     std::string map = "arena";
     int mode = MODE_FFA;
     uint16_t port = kDefaultPort;
-    int maxPlayers = 8;
+    int maxPlayers = 8;         // up to kMaxPlayers (32); big servers start at a lower tick rate
     bool upnp = false;          // try to open the port on the router automatically
     int maxTickRate = 1000;     // starting (highest) tick rate; lowered automatically if the host can't keep up
     // Bots
@@ -41,9 +41,13 @@ struct ServerConfig {
     // Game log: 0 off, 1 simple (deaths, map changes, chat, wins), 2 verbose (+ 125 Hz gameplay),
     // 3 extreme (every tick: inputs, movement, projectiles). File defaults to logs/quark-<time>.log.
     int logLevel = 0;
-    int duelTeamSize = 1;
-    bool publicList = false;    // announce on the internet server list (Join screen)       // duel: players per side, 1 (1v1) or 2 (2v2)
     std::string logFile;
+    int duelTeamSize = 1;       // duel: players per side, 1 (1v1) or 2 (2v2)
+    int arenaVariant = 0;       // 1v1 mode: ArenaVariant index
+    bool publicList = false;    // announce on the internet server list (Join screen)
+    // tourney: maps and 1v1 rulesets the matches rotate through (empty = current map / arenaVariant)
+    std::vector<std::string> tourneyMaps;
+    std::vector<int> tourneyVariants;
 };
 enum LogLevel { LOG_OFF = 0, LOG_SIMPLE, LOG_VERBOSE, LOG_EXTREME };
 inline int logLevelFromName(const std::string& s) {
@@ -155,9 +159,18 @@ public:
     int humanCount(int team = -1) const;
     void updateBalanceBots(bool matchStarting = false);
     // Votes (bots on/off, bot difficulty): majority of human players decides.
-    enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL, VOTE_START, VOTE_STARTBOTS, VOTE_MAP };
-    struct Vote { int kind = VOTE_NONE; int arg = 0; std::string map; uint32_t yes = 0, no = 0; float endsAt = 0; std::string text; } vote_;
-    void callVote(int caller, int kind, int arg, const std::string& map = "");
+    enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL, VOTE_START, VOTE_STARTBOTS, VOTE_MAP, VOTE_TMAPS, VOTE_TMODES };
+    struct Vote { int kind = VOTE_NONE; int arg = 0, arg2 = 0; std::string map; uint32_t yes = 0, no = 0; float endsAt = 0; std::string text; } vote_;
+    void callVote(int caller, int kind, int arg, const std::string& map = "", int arg2 = 0);
+    // Tourney: single elimination bracket of everyone in the server, one 1v1 at a time.
+    struct Tourney {
+        bool running = false;
+        std::vector<std::vector<int>> rounds; // rounds[r]: entrants (player id, -1 bye, -2 not decided yet)
+        int round = 0, match = 0;             // current match: rounds[round][2*match] vs [2*match+1]
+        int played = 0;                       // matches played (map / ruleset rotation)
+    } tourney_;
+    void broadcastBracket();
+    bool switchMapKeepRules(const std::string& name); // change map for the next tourney match
     void castVote(int id, bool yes);
     void tickVote();
     float nextBalanceCheck_ = 0;
@@ -176,6 +189,10 @@ public:
     void handleStringCmdForTest(int id, const std::string& s) { handleStringCmd(id, s); }
     void glog(int level, const char* fmt, ...);   // game log file (no-op below cfg_.logLevel)
     int duelMod() const { return ms_.mode == MODE_DUEL ? ms_.duelMod : 255; } // 255 in warmup (rulesReset clears it)
+    // Weapons allowed right now (bit per weapon, 0 = all) and the 1v1 ruleset's AR_* rules.
+    uint16_t weaponMask() const;
+    uint8_t arenaRules() const { return ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY ? arenaVariant(ms_.arenaVariant).rules : 0; }
+    bool weaponAllowed(int w) const { uint16_t m = weaponMask(); return !m || (m >> w & 1); }
     AABB hitBox(const Vec3& feet, bool crouched) const; // damage hull (doubled under DUEL_BIG)
 
 private:

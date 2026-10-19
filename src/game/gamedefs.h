@@ -8,11 +8,11 @@
 constexpr int kTickRates[] = {1000, 500, 250, 125};
 constexpr int kTickRateLevels = 4;
 constexpr float kMoveStep = 0.001f;        // movement substep (s)
-constexpr int kMaxPlayers = 8;
+constexpr int kMaxPlayers = 32;        // engine limit; servers default to 8 (ServerConfig::maxPlayers)
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 10;
+constexpr uint16_t kProtocolVersion = 11;
 
 // Player hull
 constexpr float kPlayerHalfWidth = 0.4f;
@@ -22,18 +22,17 @@ constexpr float kEyeHeight = 1.6f;
 constexpr float kCrouchEyeHeight = 1.05f;
 constexpr int kMaxHealth = 100;
 
-enum GameModeId : uint8_t { MODE_VS = 0, MODE_BOMB, MODE_RACE, MODE_KOTH, MODE_PAYLOAD, MODE_FFA, MODE_NPAYLOAD, MODE_DUEL, MODE_COUNT };
+enum GameModeId : uint8_t { MODE_VS = 0, MODE_BOMB, MODE_RACE, MODE_KOTH, MODE_PAYLOAD, MODE_FFA, MODE_NPAYLOAD, MODE_DUEL, MODE_ARENA, MODE_TOURNEY, MODE_COUNT };
 inline bool isPayloadMode(int m) { return m == MODE_PAYLOAD || m == MODE_NPAYLOAD; }
 inline const char* modeName(int m) {
-    static const char* n[] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel"};
+    static const char* n[] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "1v1", "tourney"};
     return (m >= 0 && m < MODE_COUNT) ? n[m] : "?";
 }
 inline const char* modeTitle(int m) {
-    static const char* n[] = {"VS", "BOMB", "RACE", "KING OF THE HILL", "PAYLOAD", "FREE FOR ALL", "NEUTRAL PAYLOAD", "DUEL"};
+    static const char* n[] = {"VS", "BOMB", "RACE", "KING OF THE HILL", "PAYLOAD", "FREE FOR ALL", "NEUTRAL PAYLOAD", "DUEL", "1V1", "TOURNEY"};
     return (m >= 0 && m < MODE_COUNT) ? n[m] : "?";
 }
 inline int modeFromName(const char* s) {
-    if (s[0] == '1' && s[1] == 'v' && s[2] == '1' && !s[3]) return MODE_DUEL; // old name
     for (int i = 0; i < MODE_COUNT; i++) {
         const char* a = modeName(i); const char* b = s;
         while (*a && *b && (*a == (*b | 32))) { a++; b++; }
@@ -51,6 +50,41 @@ inline const char* duelModTitle(int m) {
 // Weapon a modifier forces, or -1 for free choice.
 inline int duelModWeapon(int m) { return m == DUEL_VAMPIRE_LASER ? 4 : m == DUEL_ROCKET ? 1 : m == DUEL_KNIFE ? 2 : -1; }
 constexpr float kBigScale = 2.0f; // DUEL_BIG hitbox / model scale
+
+// 1V1 mode: one of these rulesets (chosen by the host or a vote). Rounds, one life each, first to 5.
+enum ArenaRule : uint8_t {
+    AR_VAMPIRE = 1,        // damage you deal heals you
+    AR_INSTAGIB = 2,       // any hit kills
+    AR_NO_SELF_DAMAGE = 4, // your own splash only pushes you
+    AR_QUICK_DASH = 8,     // dash recharges 3x faster
+    AR_LOW_GRAVITY = 16,   // 40% gravity
+};
+#define WB(w) (1u << (w))
+struct ArenaVariant { const char* name; const char* title; const char* desc; uint16_t weapons; uint8_t rules; };
+constexpr int kArenaVariants = 8;
+inline const ArenaVariant& arenaVariant(int v) {
+    // weapon ids: 0 rifle 1 rocket 2 knife 3 sniper 4 laser 5 shotgun 6 sticky 7 crossbow
+    static const ArenaVariant vs[kArenaVariants] = {
+        {"vampire", "LASER VAMPIRE", "LASERS ONLY - DAMAGE YOU DEAL HEALS YOU", WB(4), AR_VAMPIRE},
+        {"classic", "CLASSIC", "ROCKET, LASER AND KNIFE", WB(1) | WB(4) | WB(2), 0},
+        {"quirky", "QUIRKY", "CROSSBOW, STICKY AND RIFLE", WB(7) | WB(6) | WB(0), 0},
+        {"hitscan", "HITSCAN", "RIFLE, SNIPER, LASER, SHOTGUN AND KNIFE", WB(0) | WB(3) | WB(4) | WB(5) | WB(2), 0},
+        {"instagib", "INSTAGIB", "SNIPERS - ANY HIT KILLS", WB(3), AR_INSTAGIB},
+        {"boomers", "BOOMERS", "ROCKETS AND STICKIES - NO SELF DAMAGE", WB(1) | WB(6), AR_NO_SELF_DAMAGE},
+        {"blades", "BLADES", "KNIVES ONLY - DASH RECHARGES 3X FASTER", WB(2), AR_QUICK_DASH},
+        {"moon", "MOON SHOTGUN", "SHOTGUNS IN LOW GRAVITY", WB(5), AR_LOW_GRAVITY},
+    };
+    return vs[v < 0 || v >= kArenaVariants ? 0 : v];
+}
+#undef WB
+inline int arenaVariantFromName(const char* s) {
+    for (int i = 0; i < kArenaVariants; i++) {
+        const char* a = arenaVariant(i).name; const char* b = s;
+        while (*a && *b && (*a == (*b | 32))) { a++; b++; }
+        if (!*a && !*b) return i;
+    }
+    return -1;
+}
 
 enum Team : uint8_t { TEAM_A = 0, TEAM_B = 1, TEAM_SPECTATOR = 2 };
 
@@ -98,6 +132,7 @@ struct WeaponDef {
     bool semiAuto = false; // one shot per click (a click up to 0.15 s early is kept until it can fire)
 };
 constexpr float kFireBuffer = 0.15f;
+constexpr float kWallbangDamage = 0.5f; // hitscan through a wallbang wall
 constexpr float kLaserPush = 20.0f;        // laser knockback (m/s per second of beam on target)
 constexpr float kLaserPullScale = 1.3f;    // alt-fire pulls this much harder than the normal beam pushes
 constexpr float kLaserPullDamage = 0.75f;  // ...for 75% damage
@@ -116,7 +151,7 @@ inline const WeaponDef& weaponDef(int w) {
         {"RIFLE",       2.0f/9,  7,     300.0f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 15 shots, 3.1 s
         {"ROCKET",      2.0f,    40,      0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  12.0f, false, 5}, // 3, 4.0 s
         {"KNIFE",       0.7f,    40,      2.2f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 3, 1.4 s
-        {"SNIPER",      2.0f,    40,    500.0f, false,  0,    0,     0.09f, 0.0f, 24.0f,  false, 1,  0,    false, 0},  // 3, 4.0 s
+        {"SNIPER",      2.0f,    40,    500.0f, false,  0,    0,     0.09f, 0.0f, 45.0f,  false, 1,  0,    false, 0},  // 3, 4.0 s
         {"LASER",       0.001f,  0.03f,  32.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},  // every 1 ms, 3334 hits, 3.3 s
         {"SHOTGUN",     1.0f,    2,      60.0f, false,  0,    0,     0.085f,-1,     0,    false, 20, 0,    false, 0},  // 20 x 2 = 40 per blast, 3, 2.0 s
         {"STICKY",      1.0f,    35,      0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30}, // 3, 2.0 s
@@ -138,4 +173,5 @@ enum EventType : uint8_t {
     EV_SPAWN,        // a = player id, c = yaw in milliradians (sent to the spawned player)
     EV_VOTE,         // text = what's being voted on (vote started)
     EV_SOUND,        // reserved
+    EV_BRACKET,      // tourney bracket: text = rounds ("\n"), entries ("|"): player id, -1 bye, -2 not decided; last line "@round,match"
 };
