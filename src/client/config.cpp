@@ -40,6 +40,8 @@ void Settings::load() {
         else if (k == "width") width = iv;
         else if (k == "height") height = iv;
         else if (k == "shadows") shadows = iv != 0;
+        else if (k == "volume") volume = clampf(fv, 0, 1);
+        else if (k == "hitsounds") hitsounds = iv != 0;
         else if (k == "shadowres") shadowRes = iv;
         else if (k == "color_friendly") colorFriendly = parseColor(v, colorFriendly);
         else if (k == "color_enemy") colorEnemy = parseColor(v, colorEnemy);
@@ -69,7 +71,7 @@ void Settings::save() const {
     f << "name=" << name << "\nsensitivity=" << sensitivity << "\nfov=" << fov << "\ndisplay_mode=" << displayMode
       << "\npresent_mode=" << presentMode << "\nlow_latency=" << lowLatency
       << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height
-      << "\nshadows=" << shadows << "\nshadowres=" << shadowRes
+      << "\nshadows=" << shadows << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nhitsounds=" << hitsounds
       << "\ncolor_friendly=" << colorHex(colorFriendly) << "\ncolor_enemy=" << colorHex(colorEnemy)
       << "\nlast_address=" << lastAddress << "\nhost_name=" << hostName << "\nhost_map=" << hostMap
       << "\nhost_mode=" << hostMode << "\nhost_port=" << hostPort << "\nhost_max=" << hostMaxPlayers

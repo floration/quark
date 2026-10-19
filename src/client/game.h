@@ -8,6 +8,7 @@
 #include <vector>
 #include "../game/netclient.h"
 #include "../game/server.h"
+#include "audio.h"
 #include "binds.h"
 #include "config.h"
 #include "renderer.h"
@@ -143,6 +144,14 @@ private:
     std::string latText_;
     double latNextUpdate_ = 0;
     int desiredWeapon_ = -1;
+    // sound
+    Audio audio_;
+    void updateSounds(const NetClient::PlayerArray& players);
+    MoveState prevMove_;
+    bool prevAlive_ = false;
+    float stepDist_ = 0;
+    struct RemoteAudio { Vec3 pos; bool valid = false; float stepDist = 0; bool hooked = false; double nextLaser = 0; };
+    RemoteAudio remoteAudio_[kMaxPlayers];
     // rebinding
     bool isDown(int action) const;
     bool pressInput(int code);

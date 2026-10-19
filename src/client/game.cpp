@@ -52,6 +52,8 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     applyDisplayMode();
     applyPresentMode();
     for (auto& q : latQ_) glGenQueries(1, &q.q);
+    if (!audio_.start()) printf("audio: no output device - running without sound\n");
+    audio_.setMasterVolume(cfg_.volume);
 
     if (opts_.vsBotsMode >= 0) {
         cfg_.botMode = opts_.vsBotsMode;
@@ -73,6 +75,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
 }
 
 void Game::shutdown() {
+    audio_.stop();
     leaveGame();
     cfg_.save();
 }
@@ -391,6 +394,7 @@ void Game::handleEvents() {
                 killFeed_.push_back({t, c, time_ + 6});
                 while (killFeed_.size() > 6) killFeed_.pop_front();
                 if (e.b == net_.clientId() && e.a != 255 && e.a != e.b) specTarget_ = e.a;
+                if (e.a == net_.clientId() && e.b != e.a && cfg_.hitsounds) audio_.play(SND_KILL, 0.9f);
                 break;
             }
             case EV_CHAT:
@@ -411,6 +415,7 @@ void Game::handleEvents() {
             case EV_HIT:
                 if (e.a == net_.clientId()) {
                     hitUntil_ = time_ + 0.15;
+                    if (cfg_.hitsounds) audio_.play(SND_HIT, 0.9f, 1.25f - std::min((int)e.c, 50) / 100.0f); // bigger hits sound deeper
                     // hits on the same target in quick succession add up into one number
                     bool merged = false;
                     for (auto& d : dmgNums_)
@@ -469,6 +474,7 @@ void Game::frame(double dt) {
             if ((c.buttons & BTN_FIRE) && net_.selfAlive() && time_ >= localNextFire_ && net_.mode().phase != PHASE_FREEZE) {
                 int w = net_.selfWeapon();
                 localNextFire_ = time_ + weaponDef(w).refire;
+                audio_.play(SND_RIFLE + w, w == WPN_LASER ? 0.6f : 0.8f, 0.97f + (rand() % 7) * 0.01f);
                 recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
                 if (w == WPN_LASER) laserUntil_ = time_ + 0.07;
                 else if (!weaponDef(w).projectile && w != WPN_KNIFE) {
@@ -499,12 +505,15 @@ void Game::frame(double dt) {
         for (auto& old : lastProjectiles_) {
             bool still = false;
             for (auto& p : projs) still |= p.id == old.id;
-            if (!still && weaponDef(old.type).splashRadius > 0) explosions_.push_back({old.pos, time_});
+            if (!still && weaponDef(old.type).splashRadius > 0) { explosions_.push_back({old.pos, time_}); audio_.play3D(SND_EXPLOSION, old.pos, 1.0f); }
+            else if (!still && old.type == WPN_CROSSBOW) audio_.play3D(SND_BOLT_HIT, old.pos, 0.8f);
+            if (still && old.type == WPN_STICKY && length(old.vel) > 0.01f)
+                for (auto& p : projs) if (p.id == old.id && length(p.vel) < 0.01f) audio_.play3D(SND_STICKY_ATTACH, p.pos, 0.8f);
         }
         lastProjectiles_ = projs;
 
         int hp = net_.selfHealth();
-        if (hp < lastHealth_ && net_.selfAlive()) damageUntil_ = time_ + 0.25;
+        if (hp < lastHealth_ && net_.selfAlive()) { damageUntil_ = time_ + 0.25; audio_.play(SND_HURT, 0.7f); }
         lastHealth_ = hp;
         if (!net_.selfAlive() && uiIn_.pressed && !paused_) {
             // cycle spectate target
@@ -579,6 +588,8 @@ void Game::drawWorld(float alpha) {
         }
     }
     r_.setCamera(eye, camYaw, camPitch, alive ? viewFov() : cfg_.fov);
+    audio_.setListener(eye, camYaw);
+    updateSounds(players);
 
     // players
     for (int i = 0; i < kMaxPlayers; i++) {
@@ -928,8 +939,10 @@ void Game::drawHud() {
             float lts = std::max(1.0f, std::round(ts * 0.5f));
             r_.text(bx - r_.textWidth(label, lts) - 6 * s, y - 2 * s, lts, label, f >= 1 ? kWhite : kGrey);
         };
-        bar(cy + 40 * s, "DASH", mv.dashCooldown, kDashCooldown);
-        bar(cy + 52 * s, "HOOK", mv.hookCooldown, kHookCooldown);
+        int cw = net_.selfWeapon();
+        bar(cy + 40 * s, "WEAPON", (float)std::max(0.0, localNextFire_ - time_), weaponDef(cw).refire);
+        bar(cy + 52 * s, "DASH", mv.dashCooldown, kDashCooldown);
+        bar(cy + 64 * s, "HOOK", mv.hookCooldown, kHookCooldown);
         // weapon slots: 1 rifle, 2 rocket, 3 knife, 4 sniper, 5 laser
         float bx = W - 24 * s;
         for (int wi = WPN_COUNT - 1; wi >= 0; wi--) {
@@ -1141,6 +1154,9 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
         cfg_.colorEnemy = kPalettes[pi].enemy;
     }
     ui_.accent = rgba(cfg_.colorFriendly);
+    y += h + gap;
+    if (ui_.slider(x, y, w * 0.6f, h, "VOLUME", cfg_.volume, 0, 1, "%.2f")) audio_.setMasterVolume(cfg_.volume);
+    ui_.toggle(x + w * 0.6f + gap, y, w * 0.4f - gap, h, "HITSOUND", cfg_.hitsounds);
 
     // --- right column: display + latency
     y = y0;
@@ -1485,9 +1501,14 @@ void Game::drawControls(float x0, float y0, float wTotal) {
     for (int a = 0; a < A_COUNT; a++) {
         float cx = x + (a / perCol) * (colW + colGap), cy = y + (a % perCol) * (rowH + gap);
         r_.text(cx, cy + 5 * s, lts, actionName(a), {0.85f, 0.87f, 0.9f, 1});
-        float bw = colW * 0.27f;
+        float bw = colW * 0.24f, xw = rowH;
+        if (ui_.button(cx + colW - xw, cy, xw, rowH, "X")) { // unbind both slots
+            cfg_.binds.code[a][0] = cfg_.binds.code[a][1] = 0;
+            if (captureAction_ == a) captureAction_ = -1;
+            cfg_.save();
+        }
         for (int k = 0; k < 2; k++) {
-            float bx = cx + colW - (2 - k) * (bw + 4 * s);
+            float bx = cx + colW - xw - 4 * s - (2 - k) * (bw + 4 * s);
             bool cap = captureAction_ == a && captureSlot_ == k;
             std::string label = cap ? "PRESS..." : inputName(cfg_.binds.code[a][k]);
             if (ui_.button(bx, cy, bw, rowH, label)) { captureAction_ = a; captureSlot_ = k; }
@@ -1495,9 +1516,60 @@ void Game::drawControls(float x0, float y0, float wTotal) {
     }
     y += perCol * (rowH + gap) + 10 * s;
     ui_.label(x, y, captureAction_ >= 0 ? "PRESS A KEY, MOUSE BUTTON OR SCROLL - ESC CANCELS, BACKSPACE CLEARS"
-                                        : "CLICK A SLOT TO REBIND IT", {0.7f, 0.72f, 0.75f, 1}, 0.5f);
+                                        : "CLICK A SLOT TO REBIND IT - X UNBINDS THE ACTION", {0.7f, 0.72f, 0.75f, 1}, 0.5f);
     y += 20 * s;
     float bw = colW * 0.6f;
     if (ui_.button(x, y, bw, 32 * s, "RESET TO DEFAULTS")) { cfg_.binds.setDefaults(); cfg_.save(); }
     if (ui_.button(x + colW * 2 + colGap - bw, y, bw, 32 * s, "BACK")) { controlsOpen_ = false; captureAction_ = -1; cfg_.save(); }
+}
+
+// Footsteps, jumps, landings, dash and grapple for you; footsteps, gunfire and grapples for
+// everyone else (positioned in 3D).
+void Game::updateSounds(const NetClient::PlayerArray& players) {
+    const int me = net_.clientId();
+    bool alive = net_.selfAlive();
+    const MoveState& m = net_.predicted();
+    if (alive && prevAlive_) {
+        bool was = prevMove_.flags & MF_ONGROUND, now = m.flags & MF_ONGROUND;
+        Vec3 d = m.pos - prevMove_.pos;
+        float h = std::sqrt(d.x * d.x + d.z * d.z);
+        if (now && h < 2.0f) {
+            stepDist_ += h;
+            if (stepDist_ > 2.4f) { stepDist_ = 0; audio_.play(SND_STEP, 0.55f, 0.9f + (rand() % 20) * 0.01f); }
+        }
+        if (was && !now && m.vel.y > 3) audio_.play(SND_JUMP, 0.5f);
+        if (!was && now && prevMove_.vel.y < -6) audio_.play(SND_LAND, clampf(-prevMove_.vel.y / 20.0f, 0.3f, 1.0f));
+        if (m.dashTimer > 0 && prevMove_.dashTimer <= 0) audio_.play(SND_DASH, 0.8f);
+        if ((m.flags & MF_HOOKED) && !(prevMove_.flags & MF_HOOKED)) {
+            audio_.play(SND_GRAPPLE_FIRE, 0.7f);
+            audio_.play3D(SND_GRAPPLE_HIT, m.hookPoint, 0.9f);
+        }
+    }
+    prevMove_ = m;
+    prevAlive_ = alive;
+
+    for (int i = 0; i < kMaxPlayers; i++) {
+        RemoteAudio& ra = remoteAudio_[i];
+        if (i == me || !players[i].valid || !(players[i].snap.flags & PS_ALIVE)) { ra.valid = false; continue; }
+        const PlayerSnap& p = players[i].snap;
+        if (ra.valid) {
+            Vec3 d = p.pos - ra.pos;
+            float h = std::sqrt(d.x * d.x + d.z * d.z);
+            if (h < 2.0f && std::fabs(d.y) < 0.05f) { // walking on the ground
+                ra.stepDist += h;
+                if (ra.stepDist > 2.4f) { ra.stepDist = 0; audio_.play3D(SND_STEP, p.pos, 0.8f, 0.9f + (rand() % 20) * 0.01f); }
+            }
+            if (p.hooked && !ra.hooked) audio_.play3D(SND_GRAPPLE_HIT, p.hookPoint, 0.9f);
+            bool firing = (p.flags & PS_FIRING) != 0;
+            if (firing && p.weapon == WPN_LASER && time_ >= ra.nextLaser) {
+                audio_.play3D(SND_LASER, p.pos + Vec3(0, 1.5f, 0), 0.7f);
+                ra.nextLaser = time_ + 0.05;
+            } else if (firing && !remoteFiring_[i] && p.weapon != WPN_LASER) {
+                audio_.play3D(SND_RIFLE + p.weapon, p.pos + Vec3(0, 1.5f, 0), 1.0f, 0.97f + (rand() % 7) * 0.01f);
+            }
+        }
+        ra.pos = p.pos;
+        ra.hooked = p.hooked;
+        ra.valid = true;
+    }
 }

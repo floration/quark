@@ -74,9 +74,10 @@ if(QUARK_BUILD_CLIENT)
     src/client/ui.cpp
     src/client/config.cpp
     src/client/binds.cpp
+    src/client/audio.cpp
     ${QUARK_ICON_RC}
   )
-  target_link_libraries(quark quark_core glfw)
+  target_link_libraries(quark quark_core glfw ${CMAKE_DL_LIBS})
   add_executable(quark_launcher WIN32
     src/launcher/main.cpp
     src/launcher/install.cpp
@@ -89,7 +90,7 @@ if(QUARK_BUILD_CLIENT)
   target_link_libraries(quark_launcher quark_core glfw)
   foreach(t quark quark_launcher)
     if(APPLE)
-      target_link_libraries(${t} "-framework OpenGL")
+      target_link_libraries(${t} "-framework OpenGL" "-framework AudioToolbox" "-framework CoreFoundation")
     elseif(WIN32)
       target_link_libraries(${t} opengl32)
     endif()
