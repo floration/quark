@@ -891,6 +891,7 @@ void Game::drawMenu() {
     float x = cx - bw * 0.5f;
     float y = H * 0.12f;
     ui_.labelCentered(cx, y, "QUARK", rgba(cfg_.colorFriendly), 4.0f);
+    r_.text(8 * s, H - 20 * s, std::max(1.0f, std::round(s)), "V" QUARK_VERSION, kGrey);
     y += 80 * s;
 
     switch (screen_) {

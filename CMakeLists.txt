@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 project(quark CXX C)
 
+file(STRINGS ${CMAKE_SOURCE_DIR}/VERSION QUARK_VERSION LIMIT_COUNT 1)
+add_compile_definitions(QUARK_VERSION="${QUARK_VERSION}")
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -66,10 +69,23 @@ if(QUARK_BUILD_CLIENT)
     src/client/config.cpp
   )
   target_link_libraries(quark quark_core glfw)
-  if(APPLE)
-    target_link_libraries(quark "-framework OpenGL")
-  elseif(WIN32)
-    target_link_libraries(quark opengl32)
+  add_executable(quark_launcher WIN32
+    src/launcher/main.cpp
+    src/client/gl.cpp
+    src/client/renderer.cpp
+    src/client/lightmap.cpp
+    src/client/ui.cpp
+  )
+  target_link_libraries(quark_launcher quark_core glfw)
+  foreach(t quark quark_launcher)
+    if(APPLE)
+      target_link_libraries(${t} "-framework OpenGL")
+    elseif(WIN32)
+      target_link_libraries(${t} opengl32)
+    endif()
+  endforeach()
+  if(WIN32)
+    target_link_libraries(quark_launcher winhttp)
   endif()
 endif()
 

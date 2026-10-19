@@ -10,5 +10,7 @@
 - Whenever a feature, the render pipeline, netcode or anything else can be made faster or lower-latency, do it.
 - In-game F3 overlay shows avg / 1% low / 0.1% low FPS; use it (and `--screenshot` runs) to check changes.
 
-## Releases
-- Every push builds Windows (.exe), Linux and macOS packages via `.github/workflows/release.yml` and publishes them as a GitHub release. Keep that workflow passing.
+## Releases, versions, changelogs
+- Every push builds Windows (.exe), Linux and macOS packages + launchers via `.github/workflows/release.yml`, publishes GitHub release `v<VERSION>`, and deploys `site/` to https://floration.github.io/quark. Keep that workflow passing.
+- Every update: bump `VERSION` (semver; started at 0.1.0) and add `changelogs/<VERSION>.md` describing what changed. The release notes, the website and the launcher all show that file.
+- The launcher (`src/launcher/`) installs/updates from the release's `quark-<platform>.qpak` (made by `tools/pack.py`); keep those asset names stable.
