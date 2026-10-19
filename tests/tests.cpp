@@ -879,6 +879,28 @@ static void testRanked(uint16_t port) {
     RankKey k1 = loadOrCreateRankKey(keyPath), again = loadOrCreateRankKey(keyPath);
     std::remove(keyPath.c_str());
     CHECK(k1.secret.size() == 64 && k1.id == again.id && k1.id == sha256Hex(k1.secret).substr(0, 32));
+    // official maps: every shipped map hashes the same as at build time; an edited copy doesn't count
+    for (auto& name : listMaps()) {
+        if (name.rfind("zz_", 0) == 0) continue;
+        Map m;
+        CHECK(m.load(name) && isOfficialMap(m));
+    }
+    {
+        Map m;
+        CHECK(m.load("temple"));
+        Map edited = m;
+        edited.source += "box 0 50 0 1 51 1\n";
+        CHECK(!isOfficialMap(edited));
+        std::string path = findDataPath("maps") + "/zz_rk" + tag + ".qmap";
+        CHECK(saveMapFile(path, edited.source));
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "zz_rk" + std::string(tag); cfg.ranked = true; cfg.port = port;
+        s.setLog([](const std::string&) {});
+        std::string err;
+        CHECK(!s.start(cfg, &err) && err.find("official") != std::string::npos);
+        std::remove(path.c_str());
+    }
     for (int variant : {1, 3}) { // laser vampire (a ladder), quirky (not one)
         const int teamSize = 1;
         Server s;

@@ -9,11 +9,27 @@
 #include "../common/net.h"
 #include "../common/sha256.h"
 #include "master.h"
+#include "map.h"
+#include "official_maps.h"
 
 static bool isHex(const std::string& s, size_t n) {
     if (s.size() != n) return false;
     for (char c : s) if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
     return true;
+}
+
+bool isOfficialMapName(const std::string& name) {
+    for (const OfficialMap* o = kOfficialMaps; o->name; o++) if (name == o->name) return true;
+    return false;
+}
+
+bool isOfficialMap(const Map& m) {
+    std::string text;
+    text.reserve(m.source.size());
+    for (char c : m.source) if (c != '\r') text += c;
+    std::string h = sha256Hex(text);
+    for (const OfficialMap* o = kOfficialMaps; o->name; o++) if (m.name == o->name && h == o->sha256) return true;
+    return false;
 }
 
 std::string rankIdFromSecret(const std::string& secret) { return sha256Hex(secret).substr(0, 32); }

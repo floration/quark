@@ -404,6 +404,7 @@ void Game::onKey(int key, int action, int mods) {
         return;
     }
     if (action != GLFW_PRESS) return;
+    if (key == GLFW_KEY_ESCAPE && ui_.typing() && !chatting_) { uiIn_.escape = true; return; } // just stop typing, stay on the screen
     bool typing = chatting_ || ui_.typing();
     if (captureAction_ >= 0 || !typing) {
         if (pressInput(key)) return;
@@ -575,6 +576,7 @@ void Game::handleEvents() {
                 for (int i = 0; i < kMaxPlayers; i++) ids.push_back(net_.rankId(i));
                 std::string body = buildRankReport(e.text, ids, rankKey_, &players, &ladder);
                 if (body.empty()) break;
+                if (!isOfficialMap(net_.map())) { notify("NOT REPORTED - RANKED NEEDS AN OFFICIAL MAP", 6); break; } // a host with a custom map gets no result
                 Rating r;
                 if (rank_.rating(ladder, rankKey_.id, r)) { rankBefore_ = r.display(); rankGamesBefore_ = r.games; }
                 rank_.submit(body, ladder, players);
@@ -1104,7 +1106,16 @@ void Game::drawHud() {
         case PHASE_ROUND_END: phase = "ROUND OVER"; break;
         case PHASE_MATCH_END: phase = "MATCH OVER"; break;
     }
+    bool rankedGame = ms.flags & MS_RANKED;
+    if (rankedGame) title = std::string("RANKED 1V1 - ") + arenaVariant(ms.arenaVariant).title;
     ui_.panel(cx - 220 * s, 8 * s, 440 * s, 64 * s, 0.55f);
+    if (rankedGame) { // always visible on a ranked server
+        const Color gold = {1.0f, 0.78f, 0.25f, 1};
+        r_.rect(cx - 220 * s, 8 * s, 440 * s, 3 * s, gold);
+        float tts = std::max(1.0f, std::round(ts * 0.5f));
+        r_.rect(cx - 220 * s, 72 * s, r_.textWidth("RANKED", tts) + 12 * s, r_.textHeight(tts) + 8 * s, gold);
+        r_.text(cx - 214 * s, 76 * s, tts, "RANKED", {0.1f, 0.08f, 0.02f, 1});
+    }
     ui_.labelCentered(cx, 16 * s, title, kWhite);
     ui_.labelCentered(cx, 16 * s + 22 * s, phase, kGrey);
     if (teamMode) {
@@ -1647,17 +1658,18 @@ void Game::drawMenu() {
                 if (cfg_.hostRanked) { // ranked is always 1v1 on a ladder: the mode button picks the ladder instead
                     hostModeIdx_ = MODE_ARENA;
                     if (!arenaVariantRanked(cfg_.hostArenaVariant)) cfg_.hostArenaVariant = 0;
-                    if (hostMapIdx_ >= (int)mapInfo_.size() || !(mapInfo_[hostMapIdx_].modes >> MODE_ARENA & 1)) hostMapIdx_ = bestMapFor(MODE_ARENA);
+                    if (hostMapIdx_ >= (int)mapInfo_.size() || !(mapInfo_[hostMapIdx_].modes >> MODE_ARENA & 1) || !isOfficialMapName(maps_[hostMapIdx_]))
+                        hostMapIdx_ = bestMapFor(MODE_ARENA);
                 }
                 Map m;
                 m.load(maps_[hostMapIdx_]);
                 if (cfg_.hostRanked) {
                     static const int ladders[3] = {0, 1, 5};
                     int k = cfg_.hostArenaVariant == 1 ? 1 : cfg_.hostArenaVariant == 5 ? 2 : 0;
-                    if (ui_.button(lx, y, lw, bh, std::string("RANKED 1V1: ") + arenaVariant(ladders[k]).title + "  >")) cfg_.hostArenaVariant = ladders[(k + 1) % 3];
+                    if (ui_.button(lx, y, lw, bh, std::string("MODE: RANKED 1V1 - ") + arenaVariant(ladders[k]).title + "  >")) picker_ = PICK_HOST_MODE;
                 } else if (ui_.button(lx, y, lw, bh, std::string("MODE: ") + modeTitle(hostModeIdx_) + (hostModeIdx_ == MODE_ARENA || hostModeIdx_ == MODE_TOURNEY ? std::string(" - ") + arenaVariant(cfg_.hostArenaVariant).title : "") + "  >")) picker_ = PICK_HOST_MODE;
                 y += bh + gap;
-                if (cfg_.hostRanked) ui_.label(lx, y, "CLICK TO SWITCH LADDER - EACH HAS ITS OWN RATING - NO BOTS", kGrey, 0.5f);
+                if (cfg_.hostRanked) ui_.label(lx, y, "RANKED - OFFICIAL MAPS ONLY - EACH LADDER HAS ITS OWN RATING", kGrey, 0.5f);
                 else if (!m.supportsMode(hostModeIdx_)) ui_.label(lx, y, "THIS MAP DOES NOT SUPPORT THAT MODE", kRed);
                 else if (hostModeIdx_ == MODE_DUEL && ui_.button(lx, y - 2 * s, lw, 24 * s, cfg_.hostDuelSize == 2 ? "TEAMS: 2V2 (CLICK FOR 1V1)" : "TEAMS: 1V1 (CLICK FOR 2V2)"))
                     cfg_.hostDuelSize = cfg_.hostDuelSize == 2 ? 1 : 2;
@@ -1676,8 +1688,7 @@ void Game::drawMenu() {
             else ui_.toggle(lx, y, lw * 0.5f - 4 * s, bh, "BALANCE BOTS", cfg_.hostBalanceBots);
             ui_.toggle(lx + lw * 0.5f + 4 * s, y, lw * 0.5f - 4 * s, bh, "PUBLIC", cfg_.hostPublic);
             y += bh + gap;
-            ui_.cycle(lx, y, lw * 0.6f - 4 * s, bh, "SERVER LOG", cfg_.hostLog, 4, {"LOG OFF", "SIMPLE LOG", "VERBOSE LOG", "EXTREME LOG"});
-            ui_.toggle(lx + lw * 0.6f + 4 * s, y, lw * 0.4f - 4 * s, bh, "RANKED", cfg_.hostRanked);
+            ui_.cycle(lx, y, lw, bh, "SERVER LOG", cfg_.hostLog, 4, {"SERVER LOG OFF", "SIMPLE LOG", "VERBOSE LOG (125 HZ)", "EXTREME LOG (EVERY TICK)"});
             y += bh + gap;
             ui_.label(lx, y, "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, 0.5f);
             y += 14 * s;
@@ -1926,15 +1937,18 @@ void Game::drawControls(float x0, float y0, float wTotal) {
 // each map says which mode it was built for.
 void Game::drawPicker(float cx, float y) {
     float s = ui_.s(), bh = 40 * s, gap = 8 * s;
-    bool variants = picker_ == PICK_VARIANT || picker_ == PICK_TMODES;
+    bool ladders = picker_ == PICK_RANKED; // host: the three ranked ladders
+    bool variants = picker_ == PICK_VARIANT || picker_ == PICK_TMODES || ladders;
     bool multi = picker_ == PICK_TMAPS || picker_ == PICK_TMODES; // tourney rotation lists: pick several, then vote
     bool modes = picker_ == PICK_HOST_MODE || picker_ == PICK_BOT_MODE || picker_ == PICK_LIVE_MODE;
-    bool host = picker_ == PICK_HOST_MAP || picker_ == PICK_HOST_MODE || (picker_ == PICK_VARIANT && variantCtx_ == 0);
+    bool host = picker_ == PICK_HOST_MAP || picker_ == PICK_HOST_MODE || (picker_ == PICK_VARIANT && variantCtx_ == 0) || ladders;
     bool live = picker_ == PICK_LIVE_MAP || picker_ == PICK_LIVE_MODE || (picker_ == PICK_VARIANT && variantCtx_ == 2);
     int& mode = live ? liveMode_ : host ? hostModeIdx_ : cfg_.botMode;
     int& mapIdx = live ? liveMap_ : host ? hostMapIdx_ : botMapIdx_;
     int& variant = live ? liveVariant_ : host ? cfg_.hostArenaVariant : cfg_.botArenaVariant;
-    int n = variants ? kArenaVariants : modes ? MODE_COUNT : (int)maps_.size();
+    static const int kLadders[3] = {0, 1, 5};
+    bool rankedTile = picker_ == PICK_HOST_MODE; // hosting: RANKED is one more choice, holding the ladders
+    int n = ladders ? 3 : variants ? kArenaVariants : modes ? MODE_COUNT + (rankedTile ? 1 : 0) : (int)maps_.size();
     if ((int)multiSel_.size() != n) multiSel_.assign(n, false);
     int cols = 3;
     float bw = 250 * s, w = cols * bw + (cols - 1) * gap;
@@ -1943,7 +1957,9 @@ void Game::drawPicker(float cx, float y) {
     float rowH = bh + (variants ? 30 : 18) * s + gap;
     ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 40 * s + rows * rowH + bh + 30 * s);
     std::string title = picker_ == PICK_TMAPS ? "TOURNEY MAPS (PICK ANY, THEY ROTATE)" : picker_ == PICK_TMODES ? "TOURNEY RULESETS (PICK ANY, THEY ROTATE)"
-                      : variants ? std::string(modeTitle(mode)) + " - CHOOSE A RULESET" : modes ? "CHOOSE A MODE" : std::string("CHOOSE A MAP FOR ") + modeTitle(mode);
+                      : ladders ? "RANKED 1V1 - CHOOSE A LADDER"
+                      : variants ? std::string(modeTitle(mode)) + " - CHOOSE A RULESET" : modes ? "CHOOSE A MODE"
+                      : std::string("CHOOSE A MAP FOR ") + (host && cfg_.hostRanked ? "RANKED" : modeTitle(mode));
     if ((live && livePickVote_) || multi) title = "VOTE: " + title;
     ui_.labelCentered(cx, y, title);
     y += 34 * s;
@@ -1962,13 +1978,21 @@ void Game::drawPicker(float cx, float y) {
         float bx = x + (i % cols) * (bw + gap), by = y + (i / cols) * rowH;
         std::string label, sub;
         bool ok = true, cur;
-        if (variants) {
+        if (ladders) {
+            label = arenaVariant(kLadders[i]).title;
+            sub = std::string(arenaVariant(kLadders[i]).desc) + " - OWN RATING";
+            cur = cfg_.hostRanked && kLadders[i] == variant;
+        } else if (variants) {
             label = arenaVariant(i).title;
             sub = arenaVariant(i).desc;
             cur = multi ? multiSel_[i] : i == variant;
+        } else if (modes && i == MODE_COUNT) {
+            label = "RANKED";
+            sub = "1V1 LADDERS ON OFFICIAL MAPS >";
+            cur = cfg_.hostRanked;
         } else if (modes) {
             label = modeTitle(i);
-            cur = i == mode;
+            cur = i == mode && !(host && cfg_.hostRanked);
             for (auto& mi : mapInfo_) if (mi.preferredMode == i) sub = "MAP: " + upper(mi.title);
             if (i == MODE_ARENA) sub = "9 RULESETS >";
             if (i == MODE_TOURNEY) sub = "BRACKET OF 1V1S - RULESETS >";
@@ -1977,13 +2001,24 @@ void Game::drawPicker(float cx, float y) {
             label = upper(maps_[i]);
             cur = multi ? multiSel_[i] : i == mapIdx;
             ok = (mi.modes >> (multi ? MODE_TOURNEY : mode)) & 1;
-            sub = !ok ? "DOESN'T SUPPORT THIS MODE" : mi.preferredMode >= 0 ? std::string("BUILT FOR ") + modeTitle(mi.preferredMode) : "ALL MODES";
+            bool rankedOnly = host && cfg_.hostRanked && !isOfficialMapName(maps_[i]);
+            sub = rankedOnly ? "NOT AN OFFICIAL MAP" : !ok ? "DOESN'T SUPPORT THIS MODE" : mi.preferredMode >= 0 ? std::string("BUILT FOR ") + modeTitle(mi.preferredMode) : "ALL MODES";
+            ok = ok && !rankedOnly;
         }
         if (cur) r_.rect(bx - 2 * s, by - 2 * s, bw + 4 * s, bh + 4 * s, ui_.accent);
         if (ui_.button(bx, by, bw, bh, label, ok)) {
             if (multi) multiSel_[i] = !multiSel_[i];
+            else if (ladders) {
+                cfg_.hostRanked = true;
+                variant = kLadders[i];
+                mode = MODE_ARENA;
+                if (!isOfficialMapName(maps_[mapIdx]) || !((mapInfo_[mapIdx].modes >> MODE_ARENA) & 1)) mapIdx = bestMapFor(MODE_ARENA);
+                finish();
+            }
             else if (variants) { variant = i; finish(); }
+            else if (modes && i == MODE_COUNT) picker_ = PICK_RANKED;
             else if (modes) {
+                if (host) cfg_.hostRanked = false; // any other mode: unranked
                 mode = i;
                 if (!live || !((mapInfo_[mapIdx].modes >> i) & 1)) mapIdx = bestMapFor(i); // live: keep the map if it can
                 if (i == MODE_ARENA || i == MODE_TOURNEY) { // second step: which 1v1 ruleset
@@ -2023,19 +2058,6 @@ void Game::drawKnifeSlash(const Vec3& eye, float yaw, float pitch, float t, cons
     Vec3 fwd = angleForward(yaw, pitch);
     Vec3 right = normalize(cross(fwd, {0, 1, 0})), up = cross(right, fwd);
     float fade = 1.0f - t;
-    // arc from right-up to left-down, drawn up to the current sweep position
-    const int seg = 10;
-    float sweep = std::min(1.0f, t * 2.5f);
-    Vec3 prev;
-    for (int k = 0; k <= seg; k++) {
-        float u = (float)k / seg;
-        if (u > sweep) break;
-        float ang = (u - 0.5f) * 0.8f; // +-23 degrees
-        Vec3 dir = normalize(fwd * std::cos(ang) - right * std::sin(ang) + up * (0.15f * (0.5f - u)));
-        Vec3 pnt = eye + dir * reach;
-        if (k > 0) r_.line(prev, pnt, 0.01f + 0.015f * u, rgba(color * 1.3f, 0.7f * fade));
-        prev = pnt;
-    }
     // the hit check (a ray to `reach`), drawn as a blade-width beam from the arm out to the tip
     Vec3 arm = eye + right * 0.22f - up * 0.25f + fwd * 0.15f, tip = eye + fwd * reach;
     r_.line(arm, tip, 0.05f, rgba(color * 1.3f, 0.25f * fade));

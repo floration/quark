@@ -107,7 +107,7 @@ private:
     std::vector<std::string> maps_;
     struct MapInfo { std::string title; int preferredMode = -1; uint32_t modes = 0; }; // modes: bit per supported mode
     std::vector<MapInfo> mapInfo_;
-    enum { PICK_NONE = 0, PICK_HOST_MAP, PICK_HOST_MODE, PICK_BOT_MAP, PICK_BOT_MODE, PICK_LIVE_MAP, PICK_LIVE_MODE, PICK_VARIANT, PICK_TMAPS, PICK_TMODES };
+    enum { PICK_NONE = 0, PICK_HOST_MAP, PICK_HOST_MODE, PICK_BOT_MAP, PICK_BOT_MODE, PICK_LIVE_MAP, PICK_LIVE_MODE, PICK_VARIANT, PICK_TMAPS, PICK_TMODES, PICK_RANKED };
     int variantCtx_ = 0, liveVariant_ = 0; // ruleset step: 0 host, 1 vs bots, 2 in game
     std::vector<bool> multiSel_;
     int liveMode_ = 0, liveMap_ = 0;  // in-game map/mode change (host) or vote (anyone)

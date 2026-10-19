@@ -10,6 +10,11 @@
 #include <thread>
 #include <vector>
 
+struct Map;
+// Ranked only runs on the maps shipped with the game: same name and the same contents as the official file.
+bool isOfficialMap(const Map& m);
+bool isOfficialMapName(const std::string& name);
+
 struct RankKey {
     std::string secret; // 64 hex chars
     std::string id;     // 32 hex chars

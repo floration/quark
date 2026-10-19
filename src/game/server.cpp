@@ -1,4 +1,5 @@
 #include "server.h"
+#include "ranked.h"
 #include <random>
 #include "../common/profile.h"
 #include "gamemodes.h"
@@ -43,6 +44,8 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     if (!map_.load(cfg_.map, &e)) { if (err) *err = e; return false; }
     if (cfg_.editMode && !map_.supportsMode(cfg_.mode)) // an edit session runs whatever the map can't play yet
         cfg_.mode = map_.supportsMode(MODE_FFA) ? MODE_FFA : cfg_.mode;
+    if (cfg_.ranked && !isOfficialMap(map_)) { if (err) *err = "ranked only runs on the official maps"; return false; }
+    if (cfg_.ranked) cfg_.editMode = false;
     if (!cfg_.editMode && !map_.supportsMode(cfg_.mode)) {
         if (err) *err = "map '" + cfg_.map + "' does not support mode " + modeName(cfg_.mode);
         return false;
@@ -499,6 +502,7 @@ void Server::command(const std::string& line, int fromPlayer) {
         if (fromPlayer >= 0) { GameEvent e; e.type = EV_MESSAGE; e.text = t; sendEvent(fromPlayer, e); }
         else log(t);
     };
+    if (cmd == "editmode" && cfg_.ranked) { reply("no map editing on a ranked server"); return; }
     if (cmd == "editmode") { // editmode on|off: switch between editing the map together and playing it
         if (arg == "on") { if (!editing_) setEditing(true); return; }
         if (!editing_) return;
@@ -523,12 +527,17 @@ void Server::command(const std::string& line, int fromPlayer) {
         if (ss >> v2) {
             int v = arenaVariantFromName(v2.c_str());
             if (v < 0) { reply("unknown 1v1 ruleset"); return; }
+            if (cfg_.ranked && !arenaVariantRanked(v)) { reply("ranked: only vanilla, laser vampire or instagib"); return; }
             cfg_.arenaVariant = v;
         }
         Map m;
         std::string err;
         if (!m.load(newMap, &err)) { reply(err); return; }
         if (!m.supportsMode(newMode)) { reply("map does not support that mode"); return; }
+        if (cfg_.ranked && (newMode != MODE_ARENA || !isOfficialMap(m) || !arenaVariantRanked(cfg_.arenaVariant))) {
+            reply("ranked: only 1v1 on vanilla, laser vampire or instagib, on official maps");
+            return;
+        }
         map_ = m;
         cfg_.map = newMap;
         cfg_.mode = newMode;

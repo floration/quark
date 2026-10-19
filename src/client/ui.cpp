@@ -1,3 +1,5 @@
+#include <cmath>
+#include <cstdlib>
 #include "ui.h"
 #include <cstdio>
 #include "../common/net.h"
@@ -84,9 +86,38 @@ bool Ui::toggle(float x, float y, float w, float h, const std::string& label, bo
 
 bool Ui::slider(float x, float y, float w, float h, const std::string& label, float& v, float lo, float hi, const char* fmt) {
     int id = sliderCounter_++;
-    if (in_.pressed && hover(x, y, w, h)) activeSlider_ = id;
+    char buf[64];
+    snprintf(buf, sizeof buf, fmt, v);
+    // where the number sits in "LABEL: number": click it to type a value (any value, not just the slider's range)
+    std::string prefix = label + ": ";
+    float tw = r_->textWidth(prefix + buf, textScale_), tx = x + (w - tw) * 0.5f, ty = y + (h - r_->textHeight(textScale_)) * 0.5f;
+    float nx = tx + r_->textWidth(prefix, textScale_), nw = std::max(r_->textWidth(buf, textScale_), 24 * scale_);
+    bool overNumber = hover(nx - 6 * scale_, y, nw + 12 * scale_, h);
     bool changed = false;
-    if (activeSlider_ == id && in_.down) {
+    bool editing = editSlider_ == id && focus_ == kSliderFocus + id;
+    auto commit = [&] {
+        char* end = nullptr;
+        float nv = strtof(editText_.c_str(), &end);
+        if (end != editText_.c_str() && std::isfinite(nv)) {
+            if (lo >= 0) nv = std::max(nv, 0.0f);
+            if (nv != v) { v = nv; changed = true; }
+        }
+        editSlider_ = -1;
+        if (focus_ == kSliderFocus + id) focus_ = -1;
+    };
+    if (editing) {
+        for (char c : in_.chars) if (((c >= '0' && c <= '9') || c == '.' || c == '-') && editText_.size() < 12) editText_ += c;
+        if (in_.backspace && !editText_.empty()) editText_.pop_back();
+        if (in_.escape) { editSlider_ = -1; focus_ = -1; editing = false; }
+        else if (in_.enter || in_.tab || (in_.pressed && !hover(x, y, w, h))) { commit(); editing = false; }
+    } else if (in_.pressed && overNumber) {
+        editSlider_ = id;
+        editText_ = buf;
+        while (!editText_.empty() && editText_[0] == ' ') editText_.erase(0, 1);
+        focus_ = kSliderFocus + id;
+        editing = true;
+    } else if (in_.pressed && hover(x, y, w, h)) activeSlider_ = id;
+    if (!editing && activeSlider_ == id && in_.down) {
         float t = clampf((in_.mx - x) / w, 0, 1);
         float nv = lo + (hi - lo) * t;
         if (nv != v) { v = nv; changed = true; }
@@ -94,9 +125,17 @@ bool Ui::slider(float x, float y, float w, float h, const std::string& label, fl
     float t = clampf((v - lo) / (hi - lo), 0, 1);
     r_->rect(x, y, w, h, {0.08f, 0.09f, 0.11f, 0.95f});
     r_->rect(x, y, w * t, h, {accent.r * 0.45f, accent.g * 0.45f, accent.b * 0.45f, 0.95f});
-    char buf[64];
-    snprintf(buf, sizeof buf, fmt, v);
-    std::string s = label + ": " + buf;
-    r_->text(x + (w - r_->textWidth(s, textScale_)) * 0.5f, y + (h - r_->textHeight(textScale_)) * 0.5f, textScale_, s, {1, 1, 1, 1});
+    if (editing) {
+        std::string s = prefix + editText_ + (std::fmod(timeNow(), 1.0) < 0.5 ? "_" : " ");
+        float ex = x + (w - r_->textWidth(s, textScale_)) * 0.5f;
+        r_->rect(ex + r_->textWidth(prefix, textScale_) - 3 * scale_, y + 3 * scale_, r_->textWidth(editText_ + "_", textScale_) + 6 * scale_, h - 6 * scale_, {0, 0, 0, 0.6f});
+        r_->text(ex, ty, textScale_, s, {1, 1, 1, 1});
+        r_->rect(x, y + h - 2 * scale_, w, 2 * scale_, accent);
+    } else {
+        snprintf(buf, sizeof buf, fmt, v);
+        std::string s = prefix + buf;
+        r_->text(x + (w - r_->textWidth(s, textScale_)) * 0.5f, ty, textScale_, s, {1, 1, 1, 1});
+        if (overNumber) r_->rect(nx, ty + r_->textHeight(textScale_) + 1 * scale_, r_->textWidth(buf, textScale_), 1 * scale_, {1, 1, 1, 0.7f}); // clickable
+    }
     return changed;
 }

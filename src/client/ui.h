@@ -41,6 +41,9 @@ private:
     float scale_ = 1, textScale_ = 2;
     int focus_ = -1;
     int activeSlider_ = -1, sliderCounter_ = 0;
+    int editSlider_ = -1;       // slider whose number is being typed in (focus_ = kSliderFocus + id)
+    std::string editText_;
+    static constexpr int kSliderFocus = 100000;
     double blink_ = 0;
     std::string copied_;
 };
