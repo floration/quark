@@ -569,23 +569,32 @@ void Renderer::rect(float x, float y, float w, float h, const Color& c) {
 }
 
 void Renderer::text(float x, float y, float s, const std::string& str, const Color& c) {
-    float cx = std::round(x), cy = std::round(y);
-    for (char ch : str) {
-        unsigned char uc = (unsigned char)ch;
-        if (uc >= 'a' && uc <= 'z') uc -= 32;
-        if (uc < 32 || uc > 126) uc = '?';
-        int g = uc - 32;
-        if (g != 0) {
-            float u0 = (g % 16) * 6.0f / kFontTexW, v0 = (g / 16) * 8.0f / kFontTexH;
-            float u1 = u0 + 6.0f / kFontTexW, v1 = v0 + 8.0f / kFontTexH;
-            float w = 6 * s, h = 8 * s;
-            Vertex2D q[4] = {{{cx, cy}, {u0, v0}, {c.r, c.g, c.b, c.a}}, {{cx + w, cy}, {u1, v0}, {c.r, c.g, c.b, c.a}},
-                             {{cx + w, cy + h}, {u1, v1}, {c.r, c.g, c.b, c.a}}, {{cx, cy + h}, {u0, v1}, {c.r, c.g, c.b, c.a}}};
-            const int idx[6] = {0, 1, 2, 0, 2, 3};
-            for (int i : idx) ui_.push_back(q[i]);
+    float x0 = std::round(x), y0 = std::round(y);
+    auto glyphs = [&](float ox, float oy, const Color& col) {
+        float cx = x0 + ox, cy = y0 + oy;
+        for (char ch : str) {
+            unsigned char uc = (unsigned char)ch;
+            if (uc >= 'a' && uc <= 'z') uc -= 32;
+            if (uc < 32 || uc > 126) uc = '?';
+            int g = uc - 32;
+            if (g != 0) {
+                float u0 = (g % 16) * 6.0f / kFontTexW, v0 = (g / 16) * 8.0f / kFontTexH;
+                float u1 = u0 + 6.0f / kFontTexW, v1 = v0 + 8.0f / kFontTexH;
+                float w = 6 * s, h = 8 * s;
+                Vertex2D q[4] = {{{cx, cy}, {u0, v0}, {col.r, col.g, col.b, col.a}}, {{cx + w, cy}, {u1, v0}, {col.r, col.g, col.b, col.a}},
+                                 {{cx + w, cy + h}, {u1, v1}, {col.r, col.g, col.b, col.a}}, {{cx, cy + h}, {u0, v1}, {col.r, col.g, col.b, col.a}}};
+                const int idx[6] = {0, 1, 2, 0, 2, 3};
+                for (int i : idx) ui_.push_back(q[i]);
+            }
+            cx += 6 * s;
         }
-        cx += 6 * s;
-    }
+    };
+    // 1 px black outline: the glyphs offset in 8 directions underneath, then the text itself.
+    const Color k = {0, 0, 0, c.a};
+    for (int dy = -1; dy <= 1; dy++)
+        for (int dx = -1; dx <= 1; dx++)
+            if (dx || dy) glyphs((float)dx, (float)dy, k);
+    glyphs(0, 0, c);
 }
 
 void Renderer::flush2D() {

@@ -7,9 +7,10 @@ struct Settings {
     std::string name = "player";
     float sensitivity = 2.0f;   // degrees per 100 mouse counts
     float fov = 100.0f;         // horizontal degrees
-    bool vsync = false;
+    int displayMode = 0;        // 0 windowed, 1 borderless fullscreen, 2 exclusive fullscreen (legacy)
+    int presentMode = 0;        // 0 immediate (vsync off, tearing), 1 vsync, 2 adaptive vsync (tears only when late)
+    int lowLatency = 1;         // 0 off, 1 on (max 1 frame queued), 2 ultra (0 queued, just-in-time input)
     int maxFps = 0;             // 0 = unlimited
-    bool fullscreen = false;
     int width = 1280, height = 720;
     bool shadows = true;
     int shadowRes = 2048;

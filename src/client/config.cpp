@@ -31,9 +31,12 @@ void Settings::load() {
         if (k == "name") name = v;
         else if (k == "sensitivity") sensitivity = fv;
         else if (k == "fov") fov = clampf(fv, 60, 140);
-        else if (k == "vsync") vsync = iv != 0;
+        else if (k == "vsync") presentMode = iv != 0 ? 1 : 0; // old setting
+        else if (k == "display_mode") displayMode = std::min(std::max(iv, 0), 2);
+        else if (k == "present_mode") presentMode = std::min(std::max(iv, 0), 2);
+        else if (k == "low_latency") lowLatency = std::min(std::max(iv, 0), 2);
         else if (k == "maxfps") maxFps = iv;
-        else if (k == "fullscreen") fullscreen = iv != 0;
+        else if (k == "fullscreen") { if (iv) displayMode = 1; }
         else if (k == "width") width = iv;
         else if (k == "height") height = iv;
         else if (k == "shadows") shadows = iv != 0;
@@ -54,8 +57,9 @@ void Settings::load() {
 
 void Settings::save() const {
     std::ofstream f(cfgPath());
-    f << "name=" << name << "\nsensitivity=" << sensitivity << "\nfov=" << fov << "\nvsync=" << vsync
-      << "\nmaxfps=" << maxFps << "\nfullscreen=" << fullscreen << "\nwidth=" << width << "\nheight=" << height
+    f << "name=" << name << "\nsensitivity=" << sensitivity << "\nfov=" << fov << "\ndisplay_mode=" << displayMode
+      << "\npresent_mode=" << presentMode << "\nlow_latency=" << lowLatency
+      << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height
       << "\nshadows=" << shadows << "\nshadowres=" << shadowRes
       << "\ncolor_friendly=" << colorHex(colorFriendly) << "\ncolor_enemy=" << colorHex(colorEnemy)
       << "\nlast_address=" << lastAddress << "\nhost_name=" << hostName << "\nhost_map=" << hostMap

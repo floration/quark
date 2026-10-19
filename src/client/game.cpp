@@ -49,7 +49,9 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     hostPortStr_ = std::to_string(cfg_.hostPort);
     joinAddr_ = cfg_.lastAddress;
     ui_.accent = rgba(cfg_.colorFriendly);
-    glfwSwapInterval(cfg_.vsync ? 1 : 0);
+    applyDisplayMode();
+    applyPresentMode();
+    for (auto& q : latQ_) glGenQueries(1, &q.q);
 
     if (opts_.hostMode >= 0) {
         hostModeIdx_ = opts_.hostMode;
@@ -174,6 +176,7 @@ void Game::onChar(unsigned cp) {
 }
 
 void Game::onKey(int key, int action, int mods) {
+    markInput();
     if (action == GLFW_RELEASE) return;
     if (key == GLFW_KEY_BACKSPACE) uiIn_.backspace = true;
     if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) uiIn_.enter = true;
@@ -225,6 +228,7 @@ void Game::onKey(int key, int action, int mods) {
 }
 
 void Game::onMouseButton(int button, int action) {
+    markInput();
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
         if (action == GLFW_PRESS) { uiIn_.pressed = true; uiIn_.down = true; fireLatched_ = true; }
         else if (action == GLFW_RELEASE) uiIn_.down = false;
@@ -232,6 +236,7 @@ void Game::onMouseButton(int button, int action) {
 }
 
 void Game::onCursor(double x, double y) {
+    markInput();
     if (mouseCaptured_) {
         if (firstMouse_) { lastMx_ = x; lastMy_ = y; firstMouse_ = false; return; }
         double dx = x - lastMx_, dy = y - lastMy_;
@@ -253,6 +258,13 @@ void Game::onCursor(double x, double y) {
 
 void Game::onResize(int w, int h) { r_.resize(w, h); }
 
+void Game::onScroll(double dy) {
+    markInput();
+    if (screen_ != Screen::InGame || paused_ || dy == 0) return;
+    int cur = desiredWeapon_ >= 0 ? desiredWeapon_ : net_.selfWeapon();
+    desiredWeapon_ = (cur + (dy < 0 ? 1 : -1) + WPN_COUNT) % WPN_COUNT;
+}
+
 UserCmd Game::buildCmd() {
     UserCmd c;
     c.yaw = yaw_;
@@ -273,11 +285,12 @@ UserCmd Game::buildCmd() {
     if (key(GLFW_KEY_LEFT_SHIFT)) c.buttons |= BTN_DASH;
     if (key(GLFW_KEY_Q)) c.buttons |= BTN_GRAPPLE;
     if (key(GLFW_KEY_R)) c.buttons |= BTN_RELOAD;
-    if (key(GLFW_KEY_1)) c.buttons |= BTN_WEAPON1;
-    if (key(GLFW_KEY_2)) c.buttons |= BTN_WEAPON2;
-    if (key(GLFW_KEY_3)) c.buttons |= BTN_WEAPON3;
-    if (key(GLFW_KEY_4)) c.buttons |= BTN_WEAPON4;
-    if (key(GLFW_KEY_5)) c.buttons |= BTN_WEAPON5;
+    const int numKeys[WPN_COUNT] = {GLFW_KEY_1, GLFW_KEY_2, GLFW_KEY_3, GLFW_KEY_4, GLFW_KEY_5};
+    for (int w = 0; w < WPN_COUNT; w++) if (key(numKeys[w])) desiredWeapon_ = w;
+    if (desiredWeapon_ >= 0) {
+        if (desiredWeapon_ == net_.selfWeapon()) desiredWeapon_ = -1;
+        else c.buttons |= (uint16_t)(BTN_WEAPON1 << desiredWeapon_);
+    }
     if (glfwGetMouseButton(win_, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS || fireLatched_) c.buttons |= BTN_FIRE;
     if (glfwGetMouseButton(win_, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) c.buttons |= BTN_ALTFIRE;
     fireLatched_ = false;
@@ -348,6 +361,10 @@ void Game::handleEvents() {
 
 void Game::frame(double dt) {
     time_ += dt;
+    if (opts_.debugPerf) { showPerf_ = true; if (pendingInput_ < 0) pendingInput_ = timeNow(); }
+    if (opts_.debugSettings && screen_ == Screen::InGame && !settingsInGame_) { paused_ = true; settingsInGame_ = true; opts_.debugSettings = false; }
+    frameInput_ = pendingInput_; // the oldest input this frame will show
+    pendingInput_ = -1;
     frameTimes_[frameIdx_] = (float)dt;
     frameIdx_ = (frameIdx_ + 1) % frameTimes_.size();
     frameCount_ = std::min(frameCount_ + 1, frameTimes_.size());
@@ -910,51 +927,81 @@ void Game::drawPauseMenu(float cx, float y) {
 // ---------------------------------------------------------------------------
 // menus
 
-void Game::drawSettings(float x, float y, float w) {
+void Game::drawSettings(float x0, float y0, float wTotal) {
     float s = ui_.s();
-    float h = 34 * s, gap = 8 * s;
-    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 12 * (h + gap) + 24 * s);
+    float h = 32 * s, gap = 7 * s, colGap = 24 * s;
+    float w = std::max(320 * s, wTotal * 0.5f);
+    float x = x0 + wTotal * 0.5f - w - colGap * 0.5f; // two columns centred on the old area
+    float xr = x + w + colGap;
+    ui_.panel(x - 16 * s, y0 - 16 * s, w * 2 + colGap + 32 * s, 8 * (h + gap) + 150 * s);
+
+    // --- left column: player, mouse, colors
+    float y = y0;
     ui_.label(x, y, "NAME");
     y += 22 * s;
-    if (ui_.textField(1, x, y, w, h, cfg_.name, 20) && net_.state() == ConnState::Connected) {}
+    ui_.textField(1, x, y, w, h, cfg_.name, 20);
     y += h + gap;
     ui_.slider(x, y, w, h, "SENSITIVITY", cfg_.sensitivity, 0.1f, 10.0f, "%.2f");
     y += h + gap;
     ui_.slider(x, y, w, h, "FOV", cfg_.fov, 70, 130, "%.0f");
     y += h + gap;
-    if (ui_.toggle(x, y, w, h, "VSYNC", cfg_.vsync)) glfwSwapInterval(cfg_.vsync ? 1 : 0);
-    y += h + gap;
-    static const int caps[] = {0, 60, 120, 144, 165, 240, 360};
-    static const std::vector<std::string> capNames = {"UNLIMITED", "60", "120", "144", "165", "240", "360"};
-    int ci = 0;
-    for (int i = 0; i < 7; i++) if (caps[i] == cfg_.maxFps) ci = i;
-    if (ui_.cycle(x, y, w, h, "MAX FPS", ci, 7, capNames)) cfg_.maxFps = caps[ci];
-    y += h + gap;
-    ui_.toggle(x, y, w, h, "PLAYER SHADOWS", cfg_.shadows);
-    y += h + gap;
-    if (ui_.toggle(x, y, w, h, "FULLSCREEN", cfg_.fullscreen)) {
-        GLFWmonitor* mon = glfwGetPrimaryMonitor();
-        const GLFWvidmode* vm = glfwGetVideoMode(mon);
-        if (cfg_.fullscreen) glfwSetWindowMonitor(win_, mon, 0, 0, vm->width, vm->height, vm->refreshRate);
-        else glfwSetWindowMonitor(win_, nullptr, 100, 100, cfg_.width, cfg_.height, 0);
-    }
-    y += h + gap;
+    auto colorRow = [&](const char* label, Vec3& c) {
+        ui_.label(x, y + 4 * s, label);
+        r_.rect(x + w - 60 * s, y, 60 * s, 22 * s, rgba(c));
+        y += 26 * s;
+        float sw = (w - 2 * gap) / 3;
+        const char* ch[3] = {"R", "G", "B"};
+        for (int i = 0; i < 3; i++) {
+            float v = c[i] * 255.0f;
+            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f")) c[i] = std::round(v) / 255.0f;
+        }
+        y += h + gap;
+    };
+    colorRow("TEAM COLOR", cfg_.colorFriendly);
+    colorRow("ENEMY COLOR", cfg_.colorEnemy);
     std::vector<std::string> pn;
-    int pi = 0;
+    int pi = -1;
     for (int i = 0; i < kPaletteCount; i++) {
         pn.push_back(kPalettes[i].name);
         if (length(kPalettes[i].friendly - cfg_.colorFriendly) < 0.01f && length(kPalettes[i].enemy - cfg_.colorEnemy) < 0.01f) pi = i;
     }
-    if (ui_.cycle(x, y, w, h, "COLORS", pi, kPaletteCount, pn)) {
+    if (pi < 0) { pn.push_back("CUSTOM"); pi = kPaletteCount; }
+    if (ui_.cycle(x, y, w, h, "PRESET", pi, kPaletteCount, pn)) {
         cfg_.colorFriendly = kPalettes[pi].friendly;
         cfg_.colorEnemy = kPalettes[pi].enemy;
-        ui_.accent = rgba(cfg_.colorFriendly);
     }
+    ui_.accent = rgba(cfg_.colorFriendly);
+
+    // --- right column: display + latency
+    y = y0;
+    static const std::vector<std::string> dispNames = {"WINDOWED", "BORDERLESS FULLSCREEN", "EXCLUSIVE FULLSCREEN"};
+    if (ui_.cycle(xr, y, w, h, "DISPLAY", cfg_.displayMode, 3, dispNames)) applyDisplayMode();
     y += h + gap;
-    r_.rect(x, y, w * 0.5f - 4 * s, 10 * s, rgba(cfg_.colorFriendly));
-    r_.rect(x + w * 0.5f + 4 * s, y, w * 0.5f - 4 * s, 10 * s, rgba(cfg_.colorEnemy));
-    y += 10 * s + gap;
-    if (ui_.button(x, y, w, h, "BACK")) {
+    static const std::vector<std::string> presNames = {"NO VSYNC", "VSYNC", "ADAPTIVE"};
+    if (ui_.cycle(xr, y, w, h, "PRESENT", cfg_.presentMode, 3, presNames)) applyPresentMode();
+    y += h + gap;
+    static const std::vector<std::string> llNames = {"OFF", "ON", "ULTRA"};
+    ui_.cycle(xr, y, w, h, "LOW LATENCY", cfg_.lowLatency, 3, llNames);
+    y += h + gap;
+    static const int caps[] = {0, 60, 120, 144, 165, 240, 360, 500, 1000};
+    static const std::vector<std::string> capNames = {"UNLIMITED", "60", "120", "144", "165", "240", "360", "500", "1000"};
+    int ci = 0;
+    for (int i = 0; i < 9; i++) if (caps[i] == cfg_.maxFps) ci = i;
+    if (ui_.cycle(xr, y, w, h, "MAX FPS", ci, 9, capNames)) cfg_.maxFps = caps[ci];
+    y += h + gap;
+    ui_.toggle(xr, y, w, h, "PLAYER SHADOWS", cfg_.shadows);
+    y += h + gap;
+    const char* help[] = {
+        "NO VSYNC = LOWEST LATENCY, MAY TEAR",
+        "EXCLUSIVE / BORDERLESS SKIP THE DESKTOP",
+        "COMPOSITOR ON MOST DRIVERS",
+        "LOW LATENCY ON: <= 1 FRAME QUEUED",
+        "ULTRA: 0 QUEUED + LATE INPUT SAMPLING",
+        "F3 SHOWS INPUT->FRAME LATENCY",
+    };
+    for (const char* t : help) { ui_.label(xr, y, t, {0.7f, 0.72f, 0.75f, 1}, 0.5f); y += 14 * s; }
+    y += gap;
+    if (ui_.button(xr, y, w, h, "BACK")) {
         cfg_.save();
         if (net_.state() == ConnState::Connected) net_.sendCommand("name " + cfg_.name);
         if (settingsInGame_) settingsInGame_ = false;
@@ -1070,6 +1117,21 @@ void Game::drawMenu() {
 }
 
 void Game::drawPerf() {
+    if (time_ >= latNextUpdate_) {
+        latNextUpdate_ = time_ + 1.0;
+        if (latSamples_.empty()) latText_ = "INPUT->FRAME: MOVE THE MOUSE";
+        else {
+            std::sort(latSamples_.begin(), latSamples_.end());
+            double sum = 0;
+            for (float v : latSamples_) sum += v;
+            auto r = [](double ms) { return std::round(ms * 10.0) / 10.0; }; // 100 us steps
+            char b[160];
+            snprintf(b, sizeof b, "INPUT->FRAME AVG %.1fMS  MIN %.1fMS  99%% %.1fMS", r(sum / latSamples_.size()), r(latSamples_.front()),
+                     r(latSamples_[std::min(latSamples_.size() - 1, (size_t)(latSamples_.size() * 0.99))]));
+            latText_ = b;
+        }
+        latSamples_.clear();
+    }
     if (time_ >= perfNextUpdate_ && frameCount_ > 10) {
         perfNextUpdate_ = time_ + 0.5;
         std::vector<float> t(frameTimes_.begin(), frameTimes_.begin() + frameCount_);
@@ -1084,10 +1146,115 @@ void Game::drawPerf() {
         perfText_ = b;
     }
     float ts = std::max(1.0f, std::round(r_.height() / 720.0f * 2.0f));
-    r_.rect(4, 4, r_.textWidth(perfText_, ts) + 8, r_.textHeight(ts) + 8, {0, 0, 0, 0.6f});
+    std::string tick = net_.hasSnapshot() ? "SERVER " + std::to_string(net_.tickRate()) + " HZ  LOSS " + std::to_string(net_.snapshotLoss()) + "%" : "";
+    float lh = r_.textHeight(ts) + 6;
+    float w = std::max(std::max(r_.textWidth(perfText_, ts), r_.textWidth(latText_, ts)), r_.textWidth(tick, ts));
+    r_.rect(4, 4, w + 8, lh * 3 + 4, {0, 0, 0, 0.6f});
     r_.text(8, 8, ts, perfText_, {1, 1, 0.4f, 1});
+    r_.text(8, 8 + lh, ts, latText_, {1, 1, 0.4f, 1});
+    r_.text(8, 8 + lh * 2, ts, tick, {1, 1, 0.4f, 1});
 }
 
 float Game::viewFov() const {
     return scoped_ ? weaponDef(net_.selfWeapon()).zoomFov : cfg_.fov;
+}
+
+// ---------------------------------------------------------------------------
+// display modes, present modes, low latency, latency measurement
+
+void Game::applyDisplayMode() {
+    GLFWmonitor* mon = glfwGetPrimaryMonitor();
+    const GLFWvidmode* vm = glfwGetVideoMode(mon);
+    switch (cfg_.displayMode) {
+        case 2: // exclusive fullscreen: owns the display, bypasses the desktop compositor
+            glfwSetWindowAttrib(win_, GLFW_DECORATED, GLFW_TRUE);
+            glfwSetWindowMonitor(win_, mon, 0, 0, vm->width, vm->height, vm->refreshRate);
+            break;
+        case 1: { // borderless fullscreen window covering the monitor
+            int mx = 0, my = 0;
+            glfwGetMonitorPos(mon, &mx, &my);
+            glfwSetWindowMonitor(win_, nullptr, mx, my, vm->width, vm->height, 0);
+            glfwSetWindowAttrib(win_, GLFW_DECORATED, GLFW_FALSE);
+            glfwSetWindowPos(win_, mx, my);
+            glfwSetWindowSize(win_, vm->width, vm->height);
+            break;
+        }
+        default:
+            glfwSetWindowMonitor(win_, nullptr, 100, 100, cfg_.width, cfg_.height, 0);
+            glfwSetWindowAttrib(win_, GLFW_DECORATED, GLFW_TRUE);
+            break;
+    }
+    applyPresentMode(); // some drivers reset the swap interval on mode changes
+}
+
+void Game::applyPresentMode() {
+    int interval = 0;
+    if (cfg_.presentMode == 1) interval = 1;
+    if (cfg_.presentMode == 2) {
+        bool tear = glfwExtensionSupported("WGL_EXT_swap_control_tear") || glfwExtensionSupported("GLX_EXT_swap_control_tear");
+        interval = tear ? -1 : 1; // adaptive: vsync, but tear instead of waiting when a frame is late
+    }
+    glfwSwapInterval(interval);
+}
+
+void Game::beforeInput() {
+    // Low latency "on": allow at most one frame queued on the GPU. We wait for the previous
+    // frame to finish before sampling input, so input is never stuck behind a deep queue.
+    if (cfg_.lowLatency == 1) {
+        int prev = fenceIdx_ ^ 1;
+        if (fence_[prev]) {
+            glClientWaitSync((GLsync)fence_[prev], GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
+            glDeleteSync((GLsync)fence_[prev]);
+            fence_[prev] = nullptr;
+        }
+    }
+}
+
+void Game::afterSwap() {
+    // Low latency "ultra": wait until this frame is fully rendered before starting the next
+    // one (nothing queued), then the next frame samples input at the last possible moment.
+    if (cfg_.lowLatency >= 1) {
+        GLsync f = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        if (cfg_.lowLatency == 2) {
+            glClientWaitSync(f, GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
+            glDeleteSync(f);
+        } else {
+            glFlush();
+            if (fence_[fenceIdx_]) glDeleteSync((GLsync)fence_[fenceIdx_]);
+            fence_[fenceIdx_] = f;
+            fenceIdx_ ^= 1;
+        }
+    }
+    if (!showPerf_) return;
+    // Input-to-frame latency: GPU timestamp written after this frame's commands, converted to
+    // the CPU clock, minus when the game received the input event from the OS. Read back a few
+    // frames later without stalling.
+    double now = timeNow();
+    if (now - gpuCalibAt_ > 1.0) {
+        GLint64 g = 0;
+        glGetInteger64v(GL_TIMESTAMP, &g);
+        gpuClockOffset_ = timeNow() - g * 1e-9;
+        gpuCalibAt_ = now;
+    }
+    if (frameInput_ >= 0) {
+        LatQuery& q = latQ_[latNext_];
+        if (!q.used) {
+            glQueryCounter(q.q, GL_TIMESTAMP);
+            q.input = frameInput_;
+            q.used = true;
+            latNext_ = (latNext_ + 1) % 16;
+        }
+    }
+    for (auto& q : latQ_) {
+        if (!q.used) continue;
+        GLint avail = 0;
+        glGetQueryObjectiv(q.q, GL_QUERY_RESULT_AVAILABLE, &avail);
+        if (!avail) continue;
+        GLuint64 t = 0;
+        glGetQueryObjectui64v(q.q, GL_QUERY_RESULT, &t);
+        double done = t * 1e-9 + gpuClockOffset_;
+        double ms = (done - q.input) * 1000.0;
+        if (ms >= 0 && ms < 1000) latSamples_.push_back((float)ms);
+        q.used = false;
+    }
 }

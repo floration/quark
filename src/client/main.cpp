@@ -24,6 +24,8 @@ int main(int argc, char** argv) {
         else if (a == "--weapon") opts.debugWeapon = atoi(next().c_str());
         else if (a == "--scope") opts.debugScope = true;
         else if (a == "--fire") opts.debugFire = true;
+        else if (a == "--perf") opts.debugPerf = true;
+        else if (a == "--settings") opts.debugSettings = true;
         else if (a == "--pitch") opts.spawnPitch = (float)atof(next().c_str());
         else if (a == "-h" || a == "--help") {
             printf("quark [--connect ip:port] [--host mode --map name]\n");
@@ -41,10 +43,8 @@ int main(int argc, char** argv) {
 
     Settings pre;
     pre.load();
-    GLFWmonitor* mon = pre.fullscreen ? glfwGetPrimaryMonitor() : nullptr;
-    int w = pre.width, h = pre.height;
-    if (mon) { const GLFWvidmode* vm = glfwGetVideoMode(mon); w = vm->width; h = vm->height; }
-    GLFWwindow* win = glfwCreateWindow(w, h, "quark", mon, nullptr);
+    // Created windowed; Game::init switches to the configured display mode.
+    GLFWwindow* win = glfwCreateWindow(pre.width, pre.height, "quark", nullptr, nullptr);
     if (!win) {
         fprintf(stderr, "could not create an OpenGL 3.3 window - update your graphics driver\n");
         glfwTerminate();
@@ -69,21 +69,26 @@ int main(int argc, char** argv) {
     glfwSetMouseButtonCallback(win, [](GLFWwindow*, int b, int a, int) { g_game->onMouseButton(b, a); });
     glfwSetCursorPosCallback(win, [](GLFWwindow*, double x, double y) { g_game->onCursor(x, y); });
     glfwSetFramebufferSizeCallback(win, [](GLFWwindow*, int fw, int fh) { g_game->onResize(fw, fh); });
+    glfwSetScrollCallback(win, [](GLFWwindow*, double, double dy) { g_game->onScroll(dy); });
 
     double last = timeNow();
+    double frameStart = timeNow();
     while (!glfwWindowShouldClose(win) && !game.quitRequested()) {
+        // Frame cap: wait *before* reading input, so the frame shows the freshest input possible.
+        if (game.maxFps() > 0) {
+            double target = frameStart + 1.0 / game.maxFps();
+            while (timeNow() < target - 0.0015) sleepMs(1);
+            while (timeNow() < target) {}
+        }
+        frameStart = timeNow();
+        game.beforeInput();
         glfwPollEvents();
         double now = timeNow();
         double dt = now - last;
         last = now;
         game.frame(dt);
         glfwSwapBuffers(win);
-        // optional frame cap (sleep most of the remainder, spin the rest for accuracy)
-        if (game.maxFps() > 0) {
-            double target = last + 1.0 / game.maxFps();
-            while (timeNow() < target - 0.002) sleepMs(1);
-            while (timeNow() < target) {}
-        }
+        game.afterSwap();
     }
     game.shutdown();
     glfwDestroyWindow(win);

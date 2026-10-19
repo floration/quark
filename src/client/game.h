@@ -24,6 +24,8 @@ struct LaunchOptions {
     float spawnPitch = 0;       // --pitch deg
     int debugWeapon = -1;       // --weapon N (1-5), for screenshots
     bool debugScope = false, debugFire = false; // --scope, --fire
+    bool debugPerf = false;     // --perf: F3 overlay on, with a synthetic input event every frame
+    bool debugSettings = false; // --settings: open the settings screen in game
 };
 
 class Game {
@@ -40,6 +42,11 @@ public:
     void onMouseButton(int button, int action);
     void onCursor(double x, double y);
     void onResize(int w, int h);
+    void onScroll(double dy);
+
+    // Frame pacing hooks called by the main loop around the buffer swap.
+    void beforeInput();   // frame limiter sleep happens before this, so input is sampled as late as possible
+    void afterSwap();     // low-latency fence waits + F3 input-latency measurement
 
 private:
     enum class Screen { Main, Join, Host, Settings, Connecting, InGame };
@@ -117,4 +124,20 @@ private:
     double perfNextUpdate_ = 0;
     std::string perfText_;
     void drawPerf();
+
+    // display / latency
+    void applyDisplayMode();
+    void applyPresentMode();
+    void markInput() { if (pendingInput_ < 0) pendingInput_ = timeNow(); }
+    double pendingInput_ = -1, frameInput_ = -1;
+    void* fence_[2] = {nullptr, nullptr};
+    int fenceIdx_ = 0;
+    struct LatQuery { unsigned q; double input; bool used; };
+    LatQuery latQ_[16] = {};
+    int latNext_ = 0;
+    double gpuClockOffset_ = 0, gpuCalibAt_ = -10;
+    std::vector<float> latSamples_;      // ms, last second
+    std::string latText_;
+    double latNextUpdate_ = 0;
+    int desiredWeapon_ = -1;
 };

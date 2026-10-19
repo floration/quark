@@ -20,6 +20,9 @@ typedef char GLchar;
 typedef unsigned char GLubyte;
 typedef ptrdiff_t GLsizeiptr;
 typedef ptrdiff_t GLintptr;
+typedef uint64_t GLuint64;
+typedef int64_t GLint64;
+typedef struct __GLsync* GLsync;
 
 #define GL_FALSE 0
 #define GL_TRUE 1
@@ -81,6 +84,15 @@ typedef ptrdiff_t GLintptr;
 #define GL_PACK_ALIGNMENT 0x0D05
 #define GL_VERSION 0x1F02
 #define GL_RENDERER 0x1F01
+#define GL_SYNC_GPU_COMMANDS_COMPLETE 0x9117
+#define GL_SYNC_FLUSH_COMMANDS_BIT 0x00000001
+#define GL_ALREADY_SIGNALED 0x911A
+#define GL_TIMEOUT_EXPIRED 0x911B
+#define GL_CONDITION_SATISFIED 0x911C
+#define GL_WAIT_FAILED 0x911D
+#define GL_TIMESTAMP 0x8E28
+#define GL_QUERY_RESULT 0x8866
+#define GL_QUERY_RESULT_AVAILABLE 0x8867
 
 #define QGL_FUNCS(X) \
     X(void, glClear, (GLbitfield)) \
@@ -140,7 +152,17 @@ typedef ptrdiff_t GLintptr;
     X(void, glFramebufferTexture2D, (GLenum, GLenum, GLenum, GLuint, GLint)) \
     X(GLenum, glCheckFramebufferStatus, (GLenum)) \
     X(void, glDrawBuffer, (GLenum)) \
-    X(void, glReadBuffer, (GLenum))
+    X(void, glReadBuffer, (GLenum)) \
+    X(void, glFlush, ()) \
+    X(void, glFinish, ()) \
+    X(GLsync, glFenceSync, (GLenum, GLbitfield)) \
+    X(GLenum, glClientWaitSync, (GLsync, GLbitfield, GLuint64)) \
+    X(void, glDeleteSync, (GLsync)) \
+    X(void, glGenQueries, (GLsizei, GLuint*)) \
+    X(void, glQueryCounter, (GLuint, GLenum)) \
+    X(void, glGetQueryObjectiv, (GLuint, GLenum, GLint*)) \
+    X(void, glGetQueryObjectui64v, (GLuint, GLenum, GLuint64*)) \
+    X(void, glGetInteger64v, (GLenum, GLint64*))
 
 #define QGL_DECLARE(ret, name, args) typedef ret(QGLAPI* PFN_##name) args; extern PFN_##name name;
 QGL_FUNCS(QGL_DECLARE)
