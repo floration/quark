@@ -4,213 +4,79 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>quark</title>
+<meta name="description" content="quark - a fast, free arena shooter.">
 <link rel="icon" type="image/png" href="icon.png">
-<meta name="description" content="quark: a tiny, stupidly fast multiplayer fps on a homemade engine. free.">
-<meta property="og:title" content="quark">
-<meta property="og:description" content="a tiny, stupidly fast multiplayer fps on a homemade engine. free.">
-<meta property="og:image" content="img/hero.jpg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Mono:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg: #0b0b0d; --ink: #d8dccf; --dim: #7d8378; --cyan: #40d9ff; --red: #ff4d40; --yel: #ffd84a;
-    --pix: "VT323", ui-monospace, monospace; --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
-  }
+  :root { --bg: #111317; --fg: #e6e8eb; --dim: #8b9099; --accent: #3d7bff; --line: #23262c; }
   * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.65 var(--mono);
-    /* faint scanlines, like it's on a crt in someone's basement */
-    background-image: repeating-linear-gradient(0deg, rgba(255,255,255,.018) 0 1px, transparent 1px 3px);
-  }
-  a { color: var(--cyan); text-decoration-thickness: 1px; text-underline-offset: 3px; }
-  a:hover { background: var(--cyan); color: #000; text-decoration: none; }
-  img { max-width: 100%; display: block; }
-  main { max-width: 860px; margin: 0 auto; padding: 28px 16px 60px; }
-  ::selection { background: var(--red); color: #000; }
-
-  .topline { font-family: var(--pix); font-size: 20px; color: var(--dim); display: flex; flex-wrap: wrap; gap: 4px 18px; }
-  .topline a { color: var(--dim); }
-  .topline a:hover { color: #000; }
-
-  pre.logo { font: 600 clamp(7px, 1.55vw, 13px)/1.05 var(--mono); color: var(--cyan); margin: 34px 0 6px; overflow: hidden; white-space: pre; }
-  .tagline { font-family: var(--pix); font-size: 30px; line-height: 1.15; margin: 12px 0 0; }
-  .tagline .strike { color: var(--dim); text-decoration: line-through; }
-  .cursor { display: inline-block; width: .55em; height: .9em; background: var(--cyan); vertical-align: -.08em; animation: blink 1s steps(1) infinite; }
-  @keyframes blink { 50% { opacity: 0; } }
-
-  .dlbox { margin: 28px 0 10px; border: 2px dashed var(--cyan); padding: 18px 18px 14px; position: relative; }
-  .dlbox .label { position: absolute; top: -13px; left: 12px; background: var(--bg); padding: 0 8px; font-family: var(--pix); font-size: 20px; color: var(--cyan); }
-  .bigdl { display: inline-block; font-family: var(--pix); font-size: 34px; line-height: 1; padding: 10px 18px 12px; background: var(--cyan); color: #000; text-decoration: none; border: 0; transform: rotate(-1deg); box-shadow: 5px 5px 0 var(--red); }
-  .bigdl:hover { background: var(--yel); transform: rotate(1deg); box-shadow: 5px 5px 0 var(--cyan); }
-  .small { font-size: 13px; color: var(--dim); }
-  .small a { color: var(--dim); }
-
-  h2 { font-family: var(--pix); font-weight: 400; font-size: 34px; color: var(--yel); margin: 64px 0 10px; letter-spacing: .02em; }
-  h2::before { content: "## "; color: var(--dim); }
-  p { margin: 10px 0; }
-  ul.dash { list-style: none; padding: 0; margin: 10px 0; }
-  ul.dash li { padding-left: 1.6em; text-indent: -1.6em; margin: 6px 0; }
-  ul.dash li::before { content: "-> "; color: var(--red); }
-  b, strong { color: #fff; font-weight: 600; }
-  code, kbd { font-family: var(--mono); background: #1a1b1f; padding: 1px 5px; color: var(--yel); font-size: .93em; }
-
-  /* polaroid-ish screenshots, stuck on slightly crooked */
-  .pins { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 26px 22px; margin: 22px 0 8px; }
-  .pin { background: #ece9df; padding: 8px 8px 6px; color: #222; transform: rotate(var(--r, -1.5deg)); box-shadow: 0 6px 18px rgba(0,0,0,.6); transition: transform .15s; }
-  .pin:hover { transform: rotate(0deg) scale(1.03); z-index: 2; }
-  .pin img { aspect-ratio: 16/10; object-fit: cover; }
-  .pin .cap { font-family: var(--pix); font-size: 21px; line-height: 1.1; margin-top: 6px; }
-  .pin .cap span { color: #666; font-size: 17px; display: block; }
-  .pin:nth-child(3n+2) { --r: 1.2deg; } .pin:nth-child(3n) { --r: -0.6deg; } .pin:nth-child(4n) { --r: 2deg; }
-
-  .sticky { display: inline-block; background: var(--yel); color: #111; font-family: var(--pix); font-size: 21px; line-height: 1.15; padding: 8px 12px 10px; transform: rotate(2deg); box-shadow: 3px 4px 0 rgba(0,0,0,.5); max-width: 330px; margin: 14px 0 4px; }
-
-  /* the weapon table is literally a terminal printout */
-  .term { background: #050605; border: 1px solid #262a24; padding: 14px 16px; overflow-x: auto; margin: 16px 0 6px; }
-  .term .prompt { color: var(--dim); white-space: nowrap; }
-  .term .prompt b { color: var(--cyan); }
-  .term pre { margin: 6px 0 0; font: 14px/1.5 var(--mono); color: #b8f3a0; white-space: pre; }
-
-  .shell { background: #050605; border-left: 3px solid var(--red); padding: 10px 14px; overflow-x: auto; white-space: pre; font: 13px/1.6 var(--mono); color: #b8f3a0; margin: 10px 0; }
-
-  /* changelog */
-  .entry { border-top: 1px dashed #33372f; padding: 4px 0; }
-  .entry > summary { cursor: pointer; list-style: none; display: flex; gap: 14px; align-items: baseline; padding: 6px 0; min-width: 0; }
-  .entry > summary::-webkit-details-marker { display: none; }
-  .entry > summary::before { content: "[+]"; color: var(--dim); font-family: var(--mono); }
-  .entry[open] > summary::before { content: "[-]"; color: var(--red); }
-  .entry .v { font-family: var(--pix); font-size: 26px; color: var(--cyan); line-height: 1; }
-  .entry .t { color: var(--dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-  .entry .body { padding: 0 0 12px 2.6em; }
-  .entry h4 { font-family: var(--pix); font-weight: 400; font-size: 22px; color: var(--yel); margin: 14px 0 2px; }
-  .entry ul { margin: 4px 0; padding-left: 1.2em; }
-  .entry li { margin: 2px 0; }
-  .entry .tw { overflow-x: auto; margin: 8px 0; }
-  .entry table { border-collapse: collapse; font-size: 13px; }
-  .entry th, .entry td { border: 1px solid #33372f; padding: 4px 10px; text-align: left; white-space: nowrap; }
-  .entry th { color: var(--yel); font-weight: 400; }
-  @media (max-width: 560px) { .entry .body { padding-left: 0; } }
-  .more { font-family: var(--pix); font-size: 22px; background: none; border: 1px dashed var(--dim); color: var(--ink); padding: 4px 14px; cursor: pointer; margin-top: 12px; }
-  .more:hover { border-color: var(--cyan); color: var(--cyan); }
-
-  footer { max-width: 860px; margin: 40px auto 0; padding: 18px 16px 50px; color: var(--dim); font-size: 13px; border-top: 1px dashed #33372f; }
-  .counter { font-family: var(--pix); font-size: 20px; background: #000; color: var(--red); padding: 0 6px; border: 1px solid #333; letter-spacing: 2px; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 56px 20px 40px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  h1 { font-size: 44px; letter-spacing: 2px; margin: 0; }
+  .tag { color: var(--dim); margin: 4px 0 32px; }
+  .btn { display: inline-block; background: var(--accent); color: #fff; padding: 12px 22px; border-radius: 6px; font-weight: 600; }
+  .btn:hover { text-decoration: none; filter: brightness(1.1); }
+  .btn.alt { background: #5865f2; margin-left: 8px; }
+  .small { color: var(--dim); font-size: 14px; }
+  h2 { font-size: 18px; margin: 40px 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  ul { padding-left: 20px; }
+  details { border-bottom: 1px solid var(--line); padding: 8px 0; }
+  summary { cursor: pointer; }
+  .body { color: #c9ccd1; font-size: 15px; }
+  .body h4 { margin: 12px 0 4px; font-size: 15px; }
+  code { background: var(--line); padding: 1px 5px; border-radius: 3px; font-size: 14px; }
+  table { border-collapse: collapse; font-size: 14px; } td, th { border: 1px solid var(--line); padding: 3px 8px; }
+  footer { color: var(--dim); font-size: 14px; margin-top: 48px; }
 </style>
 </head>
 <body>
 <main>
-  <div class="topline">
-    <span id="ver">v?.?.?</span>
-    <a href="#get">get it</a><a href="#modes">modes</a><a href="#guns">guns</a><a href="#host">host</a><a href="#log">changelog</a>
-    <a href="https://github.com/floration/quark">source</a><a href="https://discord.gg/RERYWNWSXg">discord</a>
-  </div>
+  <h1>QUARK</h1>
+  <p class="tag">A fast, free arena shooter. <span id="ver"></span></p>
 
-<pre class="logo" aria-label="QUARK">
-  ██████   ██    ██   █████   ██████   ██   ██
- ██    ██  ██    ██  ██   ██  ██   ██  ██  ██
- ██    ██  ██    ██  ███████  ██████   █████
- ██ ▄▄ ██  ██    ██  ██   ██  ██   ██  ██  ██
-  ██████    ██████   ██   ██  ██   ██  ██   ██
-     ▀▀
-</pre>
-  <p class="tagline">a tiny multiplayer shooter on a homemade engine.<br>
-    <span class="strike">no textures.</span> two colors. black lines on everything. fast as hell.<span class="cursor"></span></p>
+  <a class="btn" id="dl" href="https://github.com/floration/quark/releases/latest">Download</a>
+  <a class="btn alt" href="https://discord.gg/RERYWNWSXg">Discord</a>
+  <p class="small" id="platforms"></p>
 
-  <div class="dlbox" id="get">
-    <span class="label">./get_quark</span>
-    <a class="bigdl" id="dl" href="#">download</a>
-    <p class="small" id="platforms" style="margin-top:16px"></p>
-    <p class="small">come hang out / find a match / yell at me about bugs: <a href="https://discord.gg/RERYWNWSXg">join the discord</a></p>
-    <p class="small">The launcher installs the game, keeps it updated, and lets you roll back to any old version if I break something. (I will break something.)</p>
-  </div>
-
-  <h2>what is this</h2>
-  <p>quark is an arena FPS written from scratch in C++. No Unity, no Unreal, no engine. Just a pile of code that draws grey boxes really, really quickly.</p>
-  <ul class="dash">
-    <li>the server ticks at <b>1000 Hz</b>. movement runs in 1 ms steps, so it plays the same at any frame rate or tick rate.</li>
-    <li>input-to-frame latency is under half a millisecond with low-latency mode on. hit F3 in game and it'll show you.</li>
-    <li>bunny hop by holding space, dash on shift (aim up to hop it), and a grappling hook on Q that keeps your momentum.</li>
-    <li>lighting is baked (sun, sky, one bounce). players and rockets get real shadows.</li>
-    <li>bots in 4 flavours of bad, from "can't hit a barn" to "honestly kind of rude".</li>
-    <li>runs on Windows 7 through 11, macOS and Linux. probably runs on your toaster too.</li>
+  <h2>What it is</h2>
+  <ul>
+    <li>1000 Hz servers, movement that plays the same at any frame rate.</li>
+    <li>Dash, grapple, rocket jumps. Rifle, rockets, knife, sniper, laser, shotgun, stickies, crossbow.</li>
+    <li>Free for all, team modes, bomb, payload, king of the hill, race, 1v1 and tourneys.</li>
+    <li>Ranked 1v1 ladders, a map editor you can use together, and anyone can host.</li>
   </ul>
-  <div class="sticky">pro tip: the 0.1% low fps is the number that matters. the average is a liar.</div>
+  <p class="small">The launcher installs the game and keeps it up to date.</p>
 
-  <h2 id="modes">modes</h2>
-  <p>Every mode has a map built for it. You can also vote to change the map or mode mid-game, democracy style.</p>
-  <div class="pins">
-    <div class="pin"><img src="img/foundry.jpg" alt="" loading="lazy"><div class="cap">free for all<span>foundry, harbor</span></div></div>
-    <div class="pin"><img src="img/temple.jpg" alt="" loading="lazy"><div class="cap">1v1 (8 rulesets)<span>temple: vampire, instagib, moon shotgun...</span></div></div>
-    <div class="pin"><img src="img/colosseum.jpg" alt="" loading="lazy"><div class="cap">tourney<span>colosseum: a bracket of everyone, winner stays</span></div></div>
-    <div class="pin"><img src="img/crucible.jpg" alt="" loading="lazy"><div class="cap">duel<span>crucible: 1v1 or 2v2, cursed modifier every life</span></div></div>
-    <div class="pin"><img src="img/duel.jpg" alt="" loading="lazy"><div class="cap">vs<span>duel: one life each, stalemates drain hp</span></div></div>
-    <div class="pin"><img src="img/depot.jpg" alt="" loading="lazy"><div class="cap">bomb<span>depot: plant it or defuse it</span></div></div>
-    <div class="pin"><img src="img/summit.jpg" alt="" loading="lazy"><div class="cap">king of the hill<span>summit: stand on the thing</span></div></div>
-    <div class="pin"><img src="img/railyard.jpg" alt="" loading="lazy"><div class="cap">payload<span>railyard: push the cart</span></div></div>
-    <div class="pin"><img src="img/tug.jpg" alt="" loading="lazy"><div class="cap">neutral payload<span>tug: push the cart the other way</span></div></div>
-    <div class="pin"><img src="img/sprint.jpg" alt="" loading="lazy"><div class="cap">race<span>sprint: rocket jump to the finish</span></div></div>
-  </div>
+  <h2>Changelog</h2>
+  <div id="log">Loading...</div>
 
-  <h2 id="guns">guns</h2>
-  <p>Eight of them. This table gets pulled straight out of the source code every release, so if I nerf something you'll see it here first.</p>
-  <div class="term">
-    <div class="prompt"><b>you@quark</b>:~$ cat src/game/gamedefs.h | ./ttk --sort</div>
-    <pre id="wtable">loading...</pre>
-  </div>
-  <p class="small">ttk = time to kill a full-health player if you never miss. Splash falls off with distance. Your own rocket only does 10% to you when the blast is under your feet (rocket jump away). Laser alt-fire is a tractor beam. The dark grey walls are wallbangable: hitscan goes through them for half damage.</p>
-
-  <h2 id="host">hosting</h2>
-  <p>Hit <b>HOST GAME</b> in the menu. UPnP tries to open your router port by itself, and if <b>PUBLIC</b> is on, your game shows up in everyone's server list. Up to 32 players (8 by default, because 32 at 1000 Hz is a lot of packets).</p>
-  <p>Or run the dedicated server that comes in every download:</p>
-  <div class="shell">$ quark_server --mode tourney --map colosseum --public --upnp
-$ quark_server --mode 1v1 --variant instagib --max 2
-$ quark_server --mode ffa --map harbor --max 16 --log simple</div>
-  <p class="small">If UPnP fails, forward UDP 27500 on your router. If that fails too, your ISP probably has you behind CGNAT. Sorry.</p>
-
-  <h2>screenshots</h2>
-  <div class="pins" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr))">
-    <div class="pin" style="--r:-1deg"><img src="img/play-duel.jpg" alt="" loading="lazy"><div class="cap">a normal tuesday in crucible</div></div>
-    <div class="pin" style="--r:1.5deg"><img src="img/play-bomb.jpg" alt="" loading="lazy"><div class="cap">site A, as seen by a nervous attacker</div></div>
-  </div>
-
-  <h2 id="log">changelog</h2>
-  <p>Everything that changed, newest first. It's long because I push a lot.</p>
-  <div id="logbox">loading...</div>
-  <button class="more" id="morebtn" style="display:none">show older junk</button>
+  <footer>
+    <a href="https://github.com/floration/quark">Source</a> ·
+    <a href="https://github.com/floration/quark/releases">All releases</a> ·
+    <a href="https://discord.gg/RERYWNWSXg">Discord</a>
+  </footer>
 </main>
-
-<footer>
-  quark is free and the <a href="https://github.com/floration/quark">source is on github</a>.
-  all releases <a href="https://github.com/floration/quark/releases">live here</a>.
-  the <a href="https://discord.gg/RERYWNWSXg">discord</a> is where matches get organized.
-  best viewed at 1000 Hz. you are visitor <span class="counter">000001</span> (probably).
-</footer>
-
 <script>
-const REPO = "floration/quark";
-const DL = n => `https://github.com/${REPO}/releases/latest/download/${n}`;
-const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-
+const DL = n => `https://github.com/floration/quark/releases/latest/download/${n}`;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 const ua = navigator.userAgent;
 const os = /Win/.test(ua) ? "windows" : /Mac/.test(ua) ? "macos" : "linux";
 const L = {
-  windows: { file: "quark-launcher-windows.exe", name: "windows", game: "quark-windows.zip" },
-  macos:   { file: "quark-launcher-macos.zip",  name: "mac",     game: "quark-macos.zip" },
-  linux:   { file: "quark-launcher-linux",      name: "linux",   game: "quark-linux.tar.gz" },
+  windows: { file: "quark-launcher-windows.exe", name: "Windows" },
+  macos:   { file: "quark-launcher-macos.zip",  name: "Mac" },
+  linux:   { file: "quark-launcher-linux",      name: "Linux" },
 };
-const dl = document.getElementById("dl");
-dl.href = DL(L[os].file);
-dl.textContent = `download for ${L[os].name} ↓`;
-document.getElementById("platforms").innerHTML =
-  "not on " + L[os].name + "? " + Object.keys(L).filter(k => k !== os).map(k => `<a href="${DL(L[k].file)}">${L[k].name}</a>`).join(" / ") +
-  " &nbsp;·&nbsp; no launcher, just the game: " + Object.keys(L).map(k => `<a href="${DL(L[k].game)}">${L[k].name}</a>`).join(" / ");
+document.getElementById("dl").href = DL(L[os].file);
+document.getElementById("dl").textContent = "Download for " + L[os].name;
+document.getElementById("platforms").innerHTML = "Other: " +
+  Object.keys(L).filter(k => k !== os).map(k => `<a href="${DL(L[k].file)}">${L[k].name}</a>`).join(" · ");
 
-// minimal markdown for the changelogs: headings, lists, tables, **bold**, `code`
+// changelogs are short markdown: headings, lists, tables, **bold**, `code`
 const inline = s => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
 function md(text) {
-  const lines = (text || "").split(/\r?\n/);
   let html = "", list = false;
+  const lines = (text || "").split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     if (/^\|.*\|$/.test(line)) {
@@ -219,9 +85,9 @@ function md(text) {
       while (i < lines.length && /^\|.*\|$/.test(lines[i].trim())) rows.push(lines[i++].trim());
       i--;
       const cells = r => r.slice(1, -1).split("|").map(c => c.trim());
-      html += '<div class="tw"><table><tr>' + cells(rows[0]).map(c => `<th>${inline(c)}</th>`).join("") + "</tr>";
+      html += "<table><tr>" + cells(rows[0]).map(c => `<th>${inline(c)}</th>`).join("") + "</tr>";
       for (const r of rows.slice(1)) if (!/^\|[\s:|-]+\|$/.test(r)) html += "<tr>" + cells(r).map(c => `<td>${inline(c)}</td>`).join("") + "</tr>";
-      html += "</table></div>";
+      html += "</table>";
       continue;
     }
     if (/^[-*] /.test(line)) { if (!list) { html += "<ul>"; list = true; } html += "<li>" + inline(line.slice(2)) + "</li>"; continue; }
@@ -232,42 +98,12 @@ function md(text) {
   }
   return html + (list ? "</ul>" : "");
 }
-const teaser = notes => {
-  for (const l of (notes || "").split(/\r?\n/)) {
-    const t = l.trim();
-    if (t && !t.startsWith("# ") && !t.startsWith("|")) return t.replace(/^#+ |^[-*] /g, "").replace(/\*\*|`/g, "").toLowerCase();
-  }
-  return "";
-};
-
 fetch("changelog.json").then(r => r.json()).then(log => {
-  if (log.length) document.getElementById("ver").textContent = "v" + log[0].version + " (latest)";
-  const box = document.getElementById("logbox"), more = document.getElementById("morebtn");
-  const render = n => {
-    box.innerHTML = log.slice(0, n).map((e, i) =>
-      `<details class="entry"${i === 0 ? " open" : ""}><summary><span class="v">v${esc(e.version)}</span><span class="t">${esc(teaser(e.notes))}</span></summary><div class="body">${md(e.notes)}</div></details>`).join("");
-    more.style.display = n < log.length ? "" : "none";
-  };
-  render(10);
-  more.onclick = () => render(log.length);
-}).catch(e => { document.getElementById("logbox").textContent = "couldn't load the changelog (" + e + "). the internet is a series of tubes and one of them is clogged."; });
-
-// the gun table, printed like a terminal
-fetch("weapons.json").then(r => r.json()).then(ws => {
-  ws = ws.slice().sort((a, b) => a.ttk - b.ttk);
-  const pad = (s, n) => String(s).padEnd(n);
-  const rate = w => w.refire < 0.01 ? `${Math.round(1 / w.refire)}/s` : `${+w.refire.toFixed(3)}s`;
-  const dmg = w => w.pellets > 1 ? `${w.damage}x${w.pellets}` : w.beam ? `${w.damage}/ms` : `${w.damage}`;
-  const maxT = Math.max(...ws.map(w => w.ttk));
-  let out = pad("GUN", 10) + pad("DMG", 9) + pad("RATE", 9) + pad("HITS", 6) + pad("TTK", 8) + "\n";
-  out += "-".repeat(54) + "\n";
-  for (const w of ws) {
-    const bar = "#".repeat(Math.max(1, Math.round(w.ttk / maxT * 12)));
-    const tags = [w.splash && "boom", w.beam && "beam", w.scope && "zoom"].filter(Boolean).join(",");
-    out += pad(w.name.toLowerCase(), 10) + pad(dmg(w), 9) + pad(rate(w), 9) + pad(w.shots, 6) + pad(w.ttk.toFixed(2) + "s", 8) + pad(bar, 13) + (tags ? " " + tags : "") + "\n";
-  }
-  document.getElementById("wtable").textContent = out;
-}).catch(() => { document.getElementById("wtable").textContent = "segfault (jk, couldn't load weapons.json)"; });
+  if (log.length) document.getElementById("ver").textContent = "Latest: v" + log[0].version;
+  document.getElementById("log").innerHTML = log.slice(0, 15).map((e, i) =>
+    `<details${i === 0 ? " open" : ""}><summary><b>v${esc(e.version)}</b></summary><div class="body">${md(e.notes)}</div></details>`).join("") +
+    `<p class="small"><a href="https://github.com/floration/quark/releases">Older versions</a></p>`;
+}).catch(() => { document.getElementById("log").textContent = "Couldn't load the changelog."; });
 </script>
 </body>
 </html>
