@@ -45,6 +45,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     maps_ = listMaps();
     for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == cfg_.hostMap) hostMapIdx_ = (int)i;
     hostModeIdx_ = clampf((float)cfg_.hostMode, 0, MODE_COUNT - 1);
+    cfg_.hostMaxPlayers = std::min(std::max(cfg_.hostMaxPlayers, 2), kMaxPlayers);
     hostPortStr_ = std::to_string(cfg_.hostPort);
     joinAddr_ = cfg_.lastAddress;
     ui_.accent = rgba(cfg_.colorFriendly);
@@ -96,7 +97,7 @@ void Game::startHost() {
     cfg_.save();
     hostQuit_ = false;
     Server* srv = host_.get();
-    hostThread_ = std::thread([this, srv] { srv->run(hostQuit_); });
+    hostThread_ = std::thread([this, srv] { raiseThreadPriority(); srv->run(hostQuit_); });
     connectTo("127.0.0.1:" + std::to_string(sc.port));
 }
 
@@ -269,6 +270,8 @@ UserCmd Game::buildCmd() {
     if (key(GLFW_KEY_SPACE)) c.buttons |= BTN_JUMP;
     if (key(GLFW_KEY_LEFT_CONTROL) || key(GLFW_KEY_C)) c.buttons |= BTN_CROUCH;
     if (key(GLFW_KEY_E)) c.buttons |= BTN_USE;
+    if (key(GLFW_KEY_LEFT_SHIFT)) c.buttons |= BTN_DASH;
+    if (key(GLFW_KEY_Q)) c.buttons |= BTN_GRAPPLE;
     if (key(GLFW_KEY_R)) c.buttons |= BTN_RELOAD;
     if (key(GLFW_KEY_1)) c.buttons |= BTN_WEAPON1;
     if (key(GLFW_KEY_2)) c.buttons |= BTN_WEAPON2;
@@ -366,7 +369,8 @@ void Game::frame(double dt) {
         // fixed-rate input + prediction
         tickAcc_ += dt;
         if (tickAcc_ > 0.25) tickAcc_ = 0.25;
-        while (tickAcc_ >= kTickDt) {
+        const double period = net_.tickPeriod();
+        while (tickAcc_ >= period) {
             UserCmd c = buildCmd();
             // local fire feedback (server is authoritative for damage)
             if ((c.buttons & BTN_FIRE) && net_.selfAlive() && time_ >= localNextFire_ && net_.mode().phase != PHASE_FREEZE) {
@@ -385,7 +389,7 @@ void Game::frame(double dt) {
                 }
             }
             net_.tick(c);
-            tickAcc_ -= kTickDt;
+            tickAcc_ -= period;
         }
         scoped_ = net_.selfAlive() && !paused_ && !chatting_ && weaponDef(net_.selfWeapon()).scopedSpread >= 0 &&
                   (glfwGetMouseButton(win_, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS || opts_.debugScope);
@@ -414,7 +418,7 @@ void Game::frame(double dt) {
 
     // ---- render ----
     if (screen_ == Screen::InGame && net_.hasSnapshot() && r_.worldLoaded()) {
-        drawWorld((float)(tickAcc_ / kTickDt));
+        drawWorld((float)clampf((float)(tickAcc_ / net_.tickPeriod()), 0, 1));
         drawHud();
     } else {
         r_.setCamera({0, 20, 30}, (float)time_ * 0.05f, -0.4f, 100);
@@ -511,6 +515,17 @@ void Game::drawWorld(float alpha) {
                 r_.text(sx - r_.textWidth(n, ts) * 0.5f, sy, ts, n, rgba(col));
             }
         }
+    }
+
+    // grapple ropes
+    if (alive && (net_.predicted().flags & MF_HOOKED)) {
+        Vec3 d = angleForward(yaw_, pitch_);
+        Vec3 right = normalize(cross(d, {0, 1, 0}));
+        r_.line(eye - Vec3(0, 0.25f, 0) - right * 0.15f, net_.predicted().hookPoint, 0.03f, {0.1f, 0.1f, 0.1f, 1});
+    }
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (i == me || !players[i].valid || !players[i].snap.hooked) continue;
+        r_.line(players[i].snap.pos + Vec3(0, 1.2f, 0), players[i].snap.hookPoint, 0.04f, {0.1f, 0.1f, 0.1f, 1});
     }
 
     // other players' shots: laser beams while firing, a tracer when a sniper fires

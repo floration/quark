@@ -219,7 +219,7 @@ void tickVS(Server& s) {
     if (idle < kStalemateTime) { m.flags &= ~MS_DRAIN; return; }
     if (!(m.flags & MS_DRAIN)) s.message("stalemate - health draining");
     m.flags |= MS_DRAIN;
-    s.drainAccum_ += kDrainPerSecond * kTickDt;
+    s.drainAccum_ += kDrainPerSecond * s.dt();
     while (s.drainAccum_ >= 1.0f) {
         s.drainAccum_ -= 1.0f;
         for (int i = 0; i < kMaxPlayers; i++) {
@@ -234,7 +234,7 @@ void tickVS(Server& s) {
 void tickBomb(Server& s) {
     ModeState& m = s.ms_;
     const int att = m.attackers, def = defenders(s);
-    const float dt = kTickDt;
+    const float dt = s.dt();
     m.timeLeft = m.bombState == BOMB_PLANTED ? m.bombTimer : std::max(0.0f, s.phaseEnd_ - s.time());
 
     if (m.bombState == BOMB_DROPPED) {
@@ -344,7 +344,7 @@ void tickKoth(Server& s) {
     else if (in[0] > 0 || in[1] > 0) {
         int t = in[0] > 0 ? 0 : 1;
         m.hillOwner = (uint8_t)t;
-        s.kothPoints_[t] += kTickDt;
+        s.kothPoints_[t] += s.dt();
     } else m.hillOwner = 255;
     m.scoreA = (int16_t)s.kothPoints_[0];
     m.scoreB = (int16_t)s.kothPoints_[1];
@@ -371,13 +371,13 @@ void tickPayload(Server& s) {
     m.flags &= ~MS_CONTESTED;
     if (na > 0 && nd == 0) {
         float speed = std::min(kCartSpeed * (1.0f + 0.25f * (na - 1)), kCartSpeed * 2.0f);
-        m.payloadDist = std::min(m.payloadDist + speed * kTickDt, m.payloadLen);
+        m.payloadDist = std::min(m.payloadDist + speed * s.dt(), m.payloadLen);
         s.payloadIdleSince_ = s.time();
     } else if (na > 0 && nd > 0) {
         m.flags |= MS_CONTESTED;
         s.payloadIdleSince_ = s.time();
     } else if (na == 0 && s.time() - s.payloadIdleSince_ > kCartIdleBeforeRollback) {
-        m.payloadDist = std::max(0.0f, m.payloadDist - kCartRollback * kTickDt);
+        m.payloadDist = std::max(0.0f, m.payloadDist - kCartRollback * s.dt());
     }
     float& best = s.bestProgress_[att];
     best = std::max(best, m.payloadDist);

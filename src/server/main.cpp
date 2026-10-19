@@ -17,11 +17,13 @@ static void usage() {
         "  --map NAME       map from maps/ (default arena)\n"
         "  --mode MODE      vs | bomb | race | koth | payload | ffa\n"
         "  --name TEXT      server name shown in the browser\n"
-        "  --max N          max players (default 12)\n"
+        "  --max N          max players (default 8, the maximum)\n"
         "  --rounds N       rounds to win (vs/bomb/race)\n"
         "  --timelimit S    ffa time limit in seconds\n"
         "  --scorelimit N   koth points / ffa kills to win\n"
         "  --upnp           ask the router to forward the port automatically\n"
+        "  --tickrate N     highest tick rate to try: 1000 (default), 500, 250 or 125.\n"
+        "                   During warmup it steps down automatically if the host can't keep up.\n"
         "console commands: map <name> [mode], mode <name>, forcestart, restart, kick <id>, say <text>, status, quit\n",
         kDefaultPort);
 }
@@ -45,6 +47,7 @@ int main(int argc, char** argv) {
         else if (a == "--timelimit") cfg.timeLimit = atoi(next().c_str());
         else if (a == "--scorelimit") cfg.scoreLimit = atoi(next().c_str());
         else if (a == "--upnp") cfg.upnp = true;
+        else if (a == "--tickrate") cfg.maxTickRate = atoi(next().c_str());
         else if (a == "-h" || a == "--help") { usage(); return 0; }
         else { printf("unknown option %s\n", a.c_str()); usage(); return 1; }
     }
@@ -82,8 +85,7 @@ int main(int argc, char** argv) {
                 else if (!line.empty()) server.command(line);
             }
         }
-        int ms = (int)(wait * 1000.0);
-        if (ms > 0) sleepMs(std::min(ms, 4));
+        server.idle(wait);
     }
     server.stop();
     netShutdown();

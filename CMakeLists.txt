@@ -42,7 +42,7 @@ add_library(quark_core STATIC
 target_include_directories(quark_core PUBLIC src)
 target_link_libraries(quark_core PUBLIC Threads::Threads)
 if(WIN32)
-  target_link_libraries(quark_core PUBLIC ws2_32)
+  target_link_libraries(quark_core PUBLIC ws2_32 winmm)
 endif()
 if(MINGW)
   # Self-contained exes: no libstdc++/libgcc/winpthread DLLs to ship.

@@ -11,10 +11,12 @@ void writeSnapshot(Writer& w, const Snapshot& s) {
 
 void writeSnapshotClient(Writer& w, const Snapshot& s) {
     w.u32(s.tick);
+    w.u32(s.timeMs);
+    w.u16(s.tickRate);
     w.u32(s.ackCmdSeq);
     w.u16(s.ackStringCmd);
     w.u8(s.clientId);
-    w.vec(s.self.pos); w.vec(s.self.vel); w.u8(s.self.flags); w.f32(s.self.jumpTimer);
+    w.vec(s.self.pos); w.vec(s.self.vel); w.u8(s.self.flags); w.f32(s.self.dashCooldown); w.vec(s.self.hookPoint);
     w.u8(s.selfHealth); w.u8(s.selfWeapon);
 }
 
@@ -32,6 +34,7 @@ void writeSnapshotShared(Writer& w, const Snapshot& s) {
         w.u8(p.id); w.u8(p.flags); w.vecq(p.pos); w.i16(angQ(p.yaw)); w.i16(angQ(p.pitch));
         w.u8(p.health); w.u8(p.weapon); w.i16(p.kills); w.i16(p.deaths); w.i16(p.score);
         w.u16(p.ping); w.u8(p.checkpoint);
+        w.u8(p.hooked); if (p.hooked) w.vecq(p.hookPoint);
     }
     w.u8((uint8_t)s.projectiles.size());
     for (auto& p : s.projectiles) {
@@ -48,10 +51,12 @@ void writeSnapshotEvents(Writer& w, const std::vector<GameEvent>& events) {
 
 bool readSnapshot(Reader& r, Snapshot& s) {
     s.tick = r.u32();
+    s.timeMs = r.u32();
+    s.tickRate = r.u16();
     s.ackCmdSeq = r.u32();
     s.ackStringCmd = r.u16();
     s.clientId = r.u8();
-    s.self.pos = r.vec(); s.self.vel = r.vec(); s.self.flags = r.u8(); s.self.jumpTimer = r.f32();
+    s.self.pos = r.vec(); s.self.vel = r.vec(); s.self.flags = r.u8(); s.self.dashCooldown = r.f32(); s.self.hookPoint = r.vec();
     s.selfHealth = r.u8(); s.selfWeapon = r.u8();
 
     ModeState& m = s.ms;
@@ -67,6 +72,7 @@ bool readSnapshot(Reader& r, Snapshot& s) {
         p.id = r.u8(); p.flags = r.u8(); p.pos = r.vecq(); p.yaw = angD(r.i16()); p.pitch = angD(r.i16());
         p.health = r.u8(); p.weapon = r.u8(); p.kills = r.i16(); p.deaths = r.i16(); p.score = r.i16();
         p.ping = r.u16(); p.checkpoint = r.u8();
+        p.hooked = r.u8(); if (p.hooked) p.hookPoint = r.vecq();
     }
     s.projectiles.resize(r.u8());
     for (auto& p : s.projectiles) {

@@ -18,8 +18,9 @@ struct ServerConfig {
     std::string map = "arena";
     int mode = MODE_FFA;
     uint16_t port = kDefaultPort;
-    int maxPlayers = 12;
+    int maxPlayers = 8;
     bool upnp = false;          // try to open the port on the router automatically
+    int maxTickRate = 1000;     // starting (highest) tick rate; lowered automatically if the host can't keep up
     bool lanOnly = false;
     // Mode tuning (0 = mode default)
     int roundsToWin = 0;
@@ -48,7 +49,8 @@ struct ServerPlayer {
     int checkpoint = 0;         // race: next checkpoint index
     uint32_t lastCmdSeq = 0;
     std::deque<UserCmd> cmdQueue;
-    float cmdTokens = 2.0f;
+    float cmdTokensMs = 16.0f;
+    uint8_t reportedLoss = 0;   // % of snapshots the client says it missed
     uint32_t lastViewTick = 0;
     double lastRecv = 0;
     float ping = 0;
@@ -59,7 +61,8 @@ struct ServerPlayer {
     uint32_t lastDamagedTick = 0;
     // lag compensation history
     struct Hist { uint32_t tick; Vec3 pos; bool crouched; bool alive; };
-    Hist history[128];
+    static constexpr int kHistory = 1024; // >= 1 s at any tick rate
+    Hist history[kHistory];
 };
 
 struct Projectile {
@@ -81,6 +84,7 @@ public:
     void run(std::atomic<bool>& quit);
     // Process network + advance as many ticks as are due. Returns seconds until next tick.
     double frame();
+    void idle(double secondsUntilNextTick);
     void command(const std::string& line, int fromPlayer = -1); // console / admin commands
 
     void setLog(LogFn fn) { log_ = std::move(fn); }
@@ -94,7 +98,11 @@ public:
     ServerConfig cfg_;
     Map map_;
     uint32_t tick_ = 0;
-    float time() const { return tick_ * kTickDt; }
+    uint32_t timeMs_ = 0;       // server clock (advances 1000/rate ms per tick)
+    int rateLevel_ = 0;         // index into kTickRates
+    int tickRate() const { return kTickRates[rateLevel_]; }
+    float dt() const { return 1.0f / tickRate(); }
+    float time() const { return timeMs_ * 0.001f; }
     ServerPlayer players_[kMaxPlayers];
     Projectile projectiles_[kMaxProjectiles];
     uint16_t nextProjId_ = 1;
@@ -127,6 +135,8 @@ private:
     void dropPlayer(int id, const std::string& reason, bool notify);
     void simulate();
     void drainCmds(int id);
+    void checkTickRate();
+    void resetRateWindow();
     void runPlayerCmd(int id, const UserCmd& cmd);
     void fireWeapon(int id, const UserCmd& cmd);
     void tickProjectiles();
@@ -140,7 +150,9 @@ private:
     float randf() { rng_ = rng_ * 1664525u + 1013904223u; return (rng_ >> 8) / 16777216.0f; } // [0,1)
     std::vector<GameEvent> events_; // scratch for snapshot building
     bool running_ = false;
-    double startTime_ = 0;
+    double nextTick_ = 0;
+    double rateWindowStart_ = 0;
+    int windowTicks_ = 0, windowLate_ = 0, windowSendFail_ = 0, windowWorstLoss_ = 0;
     LogFn log_;
     std::unique_ptr<PortMapper> upnp_;
 };

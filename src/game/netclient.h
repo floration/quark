@@ -22,7 +22,7 @@ public:
     void disconnect();
     // Receive packets, handle timeouts/retries. Call every frame.
     void poll();
-    // Run one fixed simulation tick with this input (call at kTickRate).
+    // Run one simulation tick with this input (call at tickRate() Hz).
     void tick(UserCmd cmd);
     void sendCommand(const std::string& s); // reliable string command ("say hi", "team b", ...)
 
@@ -54,6 +54,12 @@ public:
     std::vector<GameEvent> takeEvents() { std::vector<GameEvent> e; e.swap(events_); return e; }
     float renderTime() const { return renderTime_; }
     uint32_t serverTick() const { return hasSnapshot() ? latest().tick : 0; }
+    int tickRate() const { return hasSnapshot() ? latest().tickRate : 1000; }
+    double tickPeriod() const { return 1.0 / tickRate(); }
+    // Render other players this far behind the newest snapshot: 3 snapshots + 10 ms jitter margin.
+    float interpDelay() const { return 3.0f / tickRate() + 0.010f; }
+    int snapshotLoss() const { return lossPct_; }
+    void overrideReportedLoss(int pct) { lossOverride_ = pct; } // tests: pretend to lose snapshots
 
 private:
     void handlePacket(const uint8_t* data, int len);
@@ -77,9 +83,14 @@ private:
     bool clockInit_ = false;
     float renderTime_ = 0;        // server time (s) used for interpolating others
 
-    UserCmd cmds_[128];
+    UserCmd cmds_[256];
     uint32_t nextSeq_ = 1;
     MoveState pred_, predPrev_;
+    MoveState predicted_[256];        // our predicted state after each command
+    uint32_t predictedSeq_[256] = {};
+    uint32_t lossExpected_ = 0, lossReceived_ = 0;
+    uint8_t lossPct_ = 0;
+    int lossOverride_ = -1;
     Vec3 errorOffset_;
     uint32_t lastEventId_ = 0;
     std::vector<GameEvent> events_;

@@ -21,7 +21,7 @@ static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F inpu
         for (auto* c : cls) c->poll();
         if (timeNow() >= nextTick) {
             for (size_t i = 0; i < cls.size(); i++) cls[i]->tick(input((int)i));
-            nextTick += kTickDt;
+            nextTick += cls.empty() ? 0.001 : cls[0]->tickPeriod();
         }
         sleepMs(1);
     }
@@ -35,24 +35,57 @@ static void testMovement() {
     MoveState s;
     s.pos = {0, 2, 0};
     UserCmd c;
-    for (int i = 0; i < 120; i++) pmove(s, c, m, kTickDt);
+    c.msec = 8;
+    for (int i = 0; i < 250; i++) pmove(s, c, m);
     CHECK(std::fabs(s.pos.y) < 0.01f);
     CHECK(s.flags & MF_ONGROUND);
     // walk +x into the wall
     c.yaw = -PI / 2; // facing +x
     c.forward = 127;
-    for (int i = 0; i < 240; i++) pmove(s, c, m, kTickDt);
+    for (int i = 0; i < 500; i++) pmove(s, c, m);
     CHECK(s.pos.x < 5.0f - kPlayerHalfWidth + 0.01f && s.pos.x > 4.0f);
     // walk -x over the small step
     c.yaw = PI / 2;
-    for (int i = 0; i < 180; i++) pmove(s, c, m, kTickDt);
+    for (int i = 0; i < 375; i++) pmove(s, c, m);
     CHECK(s.pos.x < -3.5f);
     // jump
     c.forward = 0;
     c.buttons = BTN_JUMP;
     float maxY = 0;
-    for (int i = 0; i < 60; i++) { pmove(s, c, m, kTickDt); maxY = std::max(maxY, s.pos.y); }
+    for (int i = 0; i < 125; i++) { pmove(s, c, m); maxY = std::max(maxY, s.pos.y); }
     CHECK(maxY > 1.0f);
+}
+
+// The same inputs must give bit-identical movement at 1000, 500, 250 and 125 Hz.
+static void testTickRateIndependence() {
+    printf("movement identical at every tick rate (incl. dash, bhop, grapple)\n");
+    Map m;
+    CHECK(m.load("arena"));
+    MoveState results[4];
+    for (int level = 0; level < kTickRateLevels; level++) {
+        int msec = 1000 / kTickRates[level];
+        MoveState s;
+        s.pos = {-20, 0, 20};
+        for (int t = 0; t < 3000; t += msec) {   // 3 s, input changes every 8 ms
+            int win = t / 8;
+            UserCmd c;
+            c.msec = (uint8_t)msec;
+            c.yaw = 0.3f + win * 0.004f;
+            c.pitch = 0.15f;
+            c.forward = 127;
+            c.side = (int8_t)((win / 40) % 2 ? 90 : -90);
+            if (win > 20) c.buttons |= BTN_JUMP;                    // hold space: auto bhop
+            if (win % 150 == 30) c.buttons |= BTN_DASH;            // periodic dash
+            if (win >= 200 && win < 260) c.buttons |= BTN_GRAPPLE; // grapple for ~0.5 s
+            pmove(s, c, m);
+        }
+        results[level] = s;
+    }
+    for (int level = 1; level < kTickRateLevels; level++) {
+        CHECK(results[level].pos.x == results[0].pos.x && results[level].pos.y == results[0].pos.y && results[level].pos.z == results[0].pos.z);
+        CHECK(results[level].vel.x == results[0].vel.x && results[level].flags == results[0].flags);
+    }
+    printf("  end position (%.3f, %.3f, %.3f)\n", results[0].pos.x, results[0].pos.y, results[0].pos.z);
 }
 
 static void testMaps() {
@@ -299,7 +332,7 @@ static int runBot(const std::string& addr, double seconds, const std::string& na
             u.side = (int8_t)(std::sin(timeNow()) * 100);
             if (((int)timeNow()) % 3 == 0) u.buttons |= BTN_JUMP;
             c.tick(u);
-            next += kTickDt;
+            next += c.tickPeriod();
         }
         sleepMs(1);
     }
@@ -357,6 +390,27 @@ static void testWeapons(uint16_t port) {
     }
 }
 
+static void testTickRateFallback(uint16_t port) {
+    printf("tick rate starts at 1000 Hz and steps down when the host can't keep up\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    CHECK(s.tickRate() == 1000);
+    NetClient a;
+    a.connect("127.0.0.1:" + std::to_string(port), "solo");
+    std::vector<NetClient*> cls = {&a};
+    pump(s, cls, 1.0, idle);
+    CHECK(a.tickRate() == s.tickRate());
+    // Simulate a client reporting heavy snapshot loss during warmup.
+    a.overrideReportedLoss(50);
+    pump(s, cls, 3.2 * 4, idle);
+    CHECK(s.tickRate() == 125); // floor: never below 125 Hz
+    CHECK(a.tickRate() == 125);
+    s.stop();
+}
+
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
     netInit();
@@ -364,6 +418,7 @@ int main(int argc, char** argv) {
     srand(1234);
     testMovement();
     testMaps();
+    testTickRateIndependence();
     testGridQueries();
     uint16_t port = 28500;
     testSession(MODE_VS, "arena", port++);
@@ -375,6 +430,7 @@ int main(int argc, char** argv) {
     testPayloadPush(port++);
     testPacketLoss(port++);
     testWeapons(port); port += 3;
+    testTickRateFallback(port++);
     netShutdown();
     printf(g_fail ? "%d FAILURE(S)\n" : "all tests passed\n", g_fail);
     return g_fail ? 1 : 0;

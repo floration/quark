@@ -34,6 +34,7 @@ public:
     int recv(NetAddr& from, void* buf, size_t cap);
     // Block up to timeoutMs waiting for data (used by the dedicated server to sleep).
     bool wait(int timeoutMs);
+    bool waitUs(int timeoutUs);
     uint16_t localPort() const;
 
 private:
@@ -50,3 +51,5 @@ private:
 // Monotonic time in seconds since first call.
 double timeNow();
 void sleepMs(int ms);
+// Gives the calling thread above-normal scheduling priority (server thread inside the client).
+void raiseThreadPriority();

@@ -7,8 +7,12 @@
 namespace {
 constexpr double kTimeout = 10.0;
 constexpr int kMaxQueuedCmds = 12;
-constexpr float kMaxCmdTokens = 4.0f;
-constexpr int kMaxRewindTicks = 30; // 500 ms of lag compensation
+constexpr uint32_t kMaxRewindMs = 500; // lag compensation window
+constexpr float kMaxCmdTokensMs = 40.0f; // burst allowance after network jitter
+// Tick-rate test during warmup: each window must stay clean or the rate steps down.
+constexpr double kRateWindow = 3.0;
+constexpr double kMaxLateFraction = 0.01;  // ticks that ran more than 2 periods late
+constexpr int kMaxClientLossPct = 2;       // snapshot loss any client may report
 constexpr float kKnifeRange = 2.2f;
 constexpr float kRocketLife = 5.0f;
 
@@ -37,7 +41,11 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     for (auto& p : players_) p = ServerPlayer();
     for (auto& p : projectiles_) p = Projectile();
     tick_ = 0;
-    startTime_ = timeNow();
+    timeMs_ = 0;
+    rateLevel_ = 0;
+    while (rateLevel_ < kTickRateLevels - 1 && cfg_.maxTickRate > 0 && kTickRates[rateLevel_] > cfg_.maxTickRate) rateLevel_++;
+    nextTick_ = timeNow();
+    resetRateWindow();
     rulesReset(*this);
     running_ = true;
     log("listening on UDP " + std::to_string(port()) + " - map " + cfg_.map + ", mode " + modeName(cfg_.mode));
@@ -66,9 +74,37 @@ void Server::run(std::atomic<bool>& quit) {
             std::string st = upnp_->status();
             if (st != lastUpnp) { log(st); lastUpnp = st; }
         }
-        int ms = (int)(wait * 1000.0);
-        if (ms > 0) sock_.wait(std::min(ms, 5));
+        idle(wait);
     }
+}
+
+void Server::idle(double wait) {
+    // Sleep in the socket until the next tick (wakes early for packets); the last ~0.3 ms is spun
+    // by the caller's loop so 1 ms ticks stay on time.
+    if (wait > 0.0003) sock_.waitUs((int)std::min((wait - 0.0003) * 1e6, 5000.0));
+}
+
+void Server::resetRateWindow() {
+    rateWindowStart_ = timeNow();
+    windowTicks_ = windowLate_ = windowSendFail_ = windowWorstLoss_ = 0;
+}
+
+// Warmup only: if the host can't sustain the current rate cleanly, step down a level.
+void Server::checkTickRate() {
+    double now = timeNow();
+    if (now - rateWindowStart_ < kRateWindow) return;
+    if (ms_.phase != PHASE_WARMUP || playerCount() == 0 || rateLevel_ >= kTickRateLevels - 1) { resetRateWindow(); return; }
+    int worstLoss = windowWorstLoss_;
+    double lateFrac = windowTicks_ ? windowLate_ / (double)windowTicks_ : 0;
+    bool bad = lateFrac > kMaxLateFraction || windowSendFail_ > 0 || worstLoss > kMaxClientLossPct;
+    if (bad) {
+        char why[160];
+        snprintf(why, sizeof why, "late %.1f%%, send failures %d, worst client loss %d%%", lateFrac * 100, windowSendFail_, worstLoss);
+        rateLevel_++;
+        message("server tick rate lowered to " + std::to_string(tickRate()) + " Hz");
+        log("tick rate -> " + std::to_string(tickRate()) + " Hz (" + why + ")");
+    }
+    resetRateWindow();
 }
 
 double Server::frame() {
@@ -78,19 +114,25 @@ double Server::frame() {
     while ((n = sock_.recv(from, buf, sizeof buf)) > 0) handlePacket(from, buf, n);
 
     double now = timeNow();
-    uint32_t target = (uint32_t)((now - startTime_) * kTickRate);
-    if (target > tick_ + 10) { // fell far behind (debugger, hitch): skip ahead instead of spiralling
-        startTime_ = now - (tick_ + 1) * (double)kTickDt;
-        target = tick_ + 1;
+    double period = 1.0 / tickRate();
+    if (now - nextTick_ > period * 20) { // fell far behind (debugger, hitch): skip ahead instead of spiralling
+        windowLate_ += 20;
+        nextTick_ = now;
     }
-    while (tick_ < target) {
+    while (now >= nextTick_) {
+        if (now - nextTick_ > period * 2) windowLate_++;
+        windowTicks_++;
         simulate();
         tick_++;
-        if (tick_ % kSnapshotDivider == 0) sendSnapshots();
+        timeMs_ += 1000 / tickRate();
+        sendSnapshots();
+        nextTick_ += 1.0 / tickRate();
+        now = timeNow();
     }
     for (int i = 0; i < kMaxPlayers; i++)
         if (players_[i].connected && now - players_[i].lastRecv > kTimeout) dropPlayer(i, "timed out", false);
-    return startTime_ + (tick_ + 1) * (double)kTickDt - timeNow();
+    checkTickRate();
+    return nextTick_ - timeNow();
 }
 
 int Server::findPlayer(const NetAddr& a) const {
@@ -234,8 +276,9 @@ void Server::dropPlayer(int id, const std::string& reason, bool notify) {
 
 void Server::handleInput(int id, Reader& r) {
     ServerPlayer& p = players_[id];
-    uint32_t ackTick = r.u32();
+    uint32_t ackMs = r.u32();
     uint32_t ackEvent = r.u32();
+    uint8_t loss = r.u8();
     int n = r.u8();
     if (n > 16) return;
     UserCmd cmds[16];
@@ -246,9 +289,11 @@ void Server::handleInput(int id, Reader& r) {
     if (hasStr) { strSeq = r.u16(); str = r.str(); }
     if (r.bad()) return;
 
-    if (ackTick <= tick_ && ackTick + 600 > tick_) {
-        float sample = (tick_ - ackTick) * kTickDt * 1000.0f;
-        p.ping = p.ping == 0 ? sample : p.ping * 0.9f + sample * 0.1f;
+    p.reportedLoss = loss;
+    windowWorstLoss_ = std::max(windowWorstLoss_, (int)loss);
+    if (ackMs <= timeMs_ && ackMs + 10000 > timeMs_) {
+        float sample = (float)(timeMs_ - ackMs);
+        p.ping = p.ping == 0 ? sample : p.ping * 0.98f + sample * 0.02f;
     }
     if (ackEvent > p.ackedEvent) p.ackedEvent = ackEvent;
     while (!p.events.empty() && p.events.front().id <= p.ackedEvent) p.events.pop_front();
@@ -480,14 +525,14 @@ void Server::simulate() {
     for (int i = 0; i < kMaxPlayers; i++) {
         ServerPlayer& p = players_[i];
         if (!p.connected) continue;
-        p.cmdTokens = std::min(p.cmdTokens + 1.0f, kMaxCmdTokens);
+        p.cmdTokensMs = std::min(p.cmdTokensMs + 1000.0f / tickRate(), kMaxCmdTokensMs);
         drainCmds(i);
     }
     // Record positions for lag compensation.
     for (auto& p : players_) {
         if (!p.connected) continue;
-        auto& h = p.history[tick_ % 128];
-        h.tick = tick_;
+        auto& h = p.history[tick_ % ServerPlayer::kHistory];
+        h.tick = timeMs_;
         h.pos = p.move.pos;
         h.crouched = p.move.flags & MF_CROUCHED;
         h.alive = p.alive;
@@ -506,11 +551,14 @@ void Server::simulate() {
 // move faster than real time, but bursts after network jitter are absorbed immediately.
 void Server::drainCmds(int id) {
     ServerPlayer& p = players_[id];
-    while (p.cmdTokens >= 1.0f && !p.cmdQueue.empty()) {
-        UserCmd c = p.cmdQueue.front();
+    while (!p.cmdQueue.empty()) {
+        UserCmd& c = p.cmdQueue.front();
+        if (c.msec != 1 && c.msec != 2 && c.msec != 4 && c.msec != 8) c.msec = 1;
+        if (p.cmdTokensMs < c.msec) break;
+        p.cmdTokensMs -= c.msec;
+        UserCmd run = c;
         p.cmdQueue.pop_front();
-        p.cmdTokens -= 1.0f;
-        runPlayerCmd(id, c);
+        runPlayerCmd(id, run);
     }
 }
 
@@ -525,7 +573,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     if (!p.alive) return;
     if (rulesFrozen(*this, id)) p.move.flags |= MF_FROZEN;
     else p.move.flags &= ~MF_FROZEN;
-    pmove(p.move, cmd, map_, kTickDt);
+    pmove(p.move, cmd, map_);
 
     if (cmd.buttons & BTN_WEAPON1) p.weapon = WPN_RIFLE;
     if (cmd.buttons & BTN_WEAPON2) p.weapon = WPN_ROCKET;
@@ -535,7 +583,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     if ((cmd.buttons & BTN_FIRE) && time() >= p.nextFire && !(p.move.flags & MF_FROZEN)) {
         // Holding fire keeps an exact cadence; after a pause the timer restarts from now.
         float refire = weaponDef(p.weapon).refire;
-        p.nextFire = (time() - p.nextFire < kTickDt) ? p.nextFire + refire : time() + refire;
+        p.nextFire = (time() - p.nextFire < dt() + 0.0005f) ? p.nextFire + refire : time() + refire;
         p.lastFire = time();
         fireWeapon(id, cmd);
     }
@@ -570,9 +618,9 @@ void Server::fireWeapon(int id, const UserCmd& cmd) {
         return;
     }
     // Hitscan with lag compensation: test against where targets were on the shooter's screen.
-    uint32_t vt = cmd.viewTick;
-    if (vt > tick_) vt = tick_;
-    if (tick_ - vt > (uint32_t)kMaxRewindTicks) vt = tick_ - kMaxRewindTicks;
+    uint32_t vt = cmd.viewTick; // ms on the server clock
+    if (vt > timeMs_) vt = timeMs_;
+    if (timeMs_ - vt > kMaxRewindMs) vt = timeMs_ - kMaxRewindMs;
     float range = p.weapon == WPN_KNIFE ? kKnifeRange : wd.range;
     float wall = map_.raycast(eye, dir, range);
     float best = wall >= 0 ? wall : range;
@@ -580,10 +628,14 @@ void Server::fireWeapon(int id, const UserCmd& cmd) {
     Vec3 inv = safeInv(dir);
     for (int i = 0; i < kMaxPlayers; i++) {
         if (i == id || !players_[i].connected || !players_[i].alive) continue;
-        const auto& h = players_[i].history[vt % 128];
         Vec3 pos = players_[i].move.pos;
         bool crouched = players_[i].move.flags & MF_CROUCHED;
-        if (h.tick == vt && h.alive) { pos = h.pos; crouched = h.crouched; }
+        // newest recorded state at or before the shooter's view time
+        for (uint32_t k = 1; k <= (uint32_t)ServerPlayer::kHistory && k <= tick_; k++) {
+            const auto& h = players_[i].history[(tick_ - k) % ServerPlayer::kHistory];
+            if (h.tick == 0xFFFFFFFFu || h.tick > timeMs_) break;
+            if (h.tick <= vt) { if (h.alive) { pos = h.pos; crouched = h.crouched; } break; }
+        }
         float t = rayAABB(eye, inv, playerBox(pos, crouched), best);
         if (t >= 0 && t < best) { best = t; hit = i; }
     }
@@ -594,7 +646,7 @@ void Server::tickProjectiles() {
     for (auto& pr : projectiles_) {
         if (!pr.active) continue;
         if (time() >= pr.dieAt) { pr.active = false; continue; }
-        Vec3 step = pr.vel * kTickDt;
+        Vec3 step = pr.vel * dt();
         float len = length(step);
         Vec3 dir = step / len;
         float wall = map_.raycast(pr.pos, dir, len);
@@ -647,6 +699,8 @@ void Server::explode(const Vec3& at, int owner, int weapon) {
 void Server::sendSnapshots() {
     Snapshot s;
     s.tick = tick_;
+    s.timeMs = timeMs_;
+    s.tickRate = (uint16_t)tickRate();
     s.ms = ms_;
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
@@ -671,6 +725,8 @@ void Server::sendSnapshots() {
         ps.score = (int16_t)p.score;
         ps.ping = (uint16_t)p.ping;
         ps.checkpoint = (uint8_t)p.checkpoint;
+        ps.hooked = p.alive && (p.move.flags & MF_HOOKED);
+        ps.hookPoint = p.move.hookPoint;
         s.players.push_back(ps);
     }
     for (auto& pr : projectiles_) {
@@ -712,6 +768,6 @@ void Server::sendSnapshots() {
             events_.push_back(e);
         }
         writeSnapshotEvents(w, events_);
-        sock_.send(p.addr, buf, w.size());
+        if (!sock_.send(p.addr, buf, w.size())) windowSendFail_++;
     }
 }

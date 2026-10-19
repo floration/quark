@@ -9,6 +9,7 @@ struct UserCmd {
     int8_t forward = 0;     // -127..127
     int8_t side = 0;
     uint16_t buttons = 0;
+    uint8_t msec = 1;       // duration this command covers (1, 2, 4 or 8 ms = one server tick)
     float yaw = 0, pitch = 0;
 };
 
@@ -17,10 +18,16 @@ struct MoveState {
     Vec3 pos;      // feet position (bottom center of hull)
     Vec3 vel;
     uint8_t flags = 0; // MF_*
-    float jumpTimer = 0;
+    float dashCooldown = 0;
+    Vec3 hookPoint;    // grapple anchor while MF_HOOKED
 };
-enum : uint8_t { MF_ONGROUND = 1, MF_CROUCHED = 2, MF_JUMPHELD = 4, MF_FROZEN = 8 };
+enum : uint8_t {
+    MF_ONGROUND = 1, MF_CROUCHED = 2, MF_JUMPHELD = 4, MF_FROZEN = 8,
+    MF_HOOKHELD = 16, MF_HOOKED = 32, MF_DASHHELD = 64,
+};
+constexpr float kGrappleRange = 45.0f;
+constexpr float kDashCooldown = 1.2f;
 
 AABB playerBox(const Vec3& feet, bool crouched);
-// Advances movement by one tick.
-void pmove(MoveState& s, const UserCmd& cmd, const Map& map, float dt);
+// Advances movement by cmd.msec milliseconds, in fixed 1 ms steps (tick-rate independent).
+void pmove(MoveState& s, const UserCmd& cmd, const Map& map);

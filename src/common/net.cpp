@@ -10,6 +10,7 @@
   #endif
   #include <winsock2.h>
   #include <ws2tcpip.h>
+  #include <mmsystem.h>
   typedef int socklen_t;
 #else
   #include <sys/socket.h>
@@ -52,6 +53,7 @@ bool NetAddr::parse(const std::string& s, uint16_t defaultPort, NetAddr& out) {
 bool netInit() {
 #ifdef _WIN32
     WSADATA d;
+    timeBeginPeriod(1); // 1 ms sleep/timer precision (default is 15.6 ms)
     return WSAStartup(MAKEWORD(2, 2), &d) == 0;
 #else
     return true;
@@ -59,6 +61,7 @@ bool netInit() {
 }
 void netShutdown() {
 #ifdef _WIN32
+    timeEndPeriod(1);
     WSACleanup();
 #endif
 }
@@ -140,6 +143,15 @@ int UdpSocket::recv(NetAddr& from, void* buf, size_t cap) {
     }
 }
 
+bool UdpSocket::waitUs(int us) {
+    if (fd_ == kInvalid) return false;
+    fd_set set;
+    FD_ZERO(&set);
+    FD_SET(fd_, &set);
+    timeval tv{us / 1000000, us % 1000000};
+    return select((int)fd_ + 1, &set, nullptr, nullptr, &tv) > 0;
+}
+
 bool UdpSocket::wait(int timeoutMs) {
     if (fd_ == kInvalid) return false;
     fd_set set;
@@ -163,3 +175,9 @@ double timeNow() {
 }
 
 void sleepMs(int ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); }
+
+void raiseThreadPriority() {
+#ifdef _WIN32
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+#endif
+}

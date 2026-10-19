@@ -2,14 +2,17 @@
 #pragma once
 #include <cstdint>
 
-constexpr int kTickRate = 60;              // simulation + input rate (Hz)
-constexpr float kTickDt = 1.0f / kTickRate;
-constexpr int kSnapshotDivider = 1;        // snapshots every tick (60 Hz): lower latency
-constexpr int kMaxPlayers = 32;
+// Server tick rate is chosen at runtime: it starts at 1000 Hz and steps down
+// (500, 250, 125) during warmup if the host can't keep up. A snapshot is sent every tick.
+// Movement always simulates in fixed 1 ms steps, so it is identical at every rate.
+constexpr int kTickRates[] = {1000, 500, 250, 125};
+constexpr int kTickRateLevels = 4;
+constexpr float kMoveStep = 0.001f;        // movement substep (s)
+constexpr int kMaxPlayers = 8;
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 1;
+constexpr uint16_t kProtocolVersion = 3;
 
 // Player hull
 constexpr float kPlayerHalfWidth = 0.4f;
@@ -60,6 +63,8 @@ enum : uint16_t {
     BTN_WEAPON3 = 1 << 8,
     BTN_WEAPON4 = 1 << 9,
     BTN_WEAPON5 = 1 << 10,
+    BTN_DASH = 1 << 11,    // left shift
+    BTN_GRAPPLE = 1 << 12, // q
 };
 
 // Weapon set. Rifle and knife are placeholders; sniper, laser and rocket are the real designs.

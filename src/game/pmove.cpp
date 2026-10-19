@@ -13,6 +13,12 @@ constexpr float kAirSpeedCap = 1.0f; // quake-style air strafe cap
 constexpr float kFriction = 7.0f;
 constexpr float kStopSpeed = 2.0f;
 constexpr float kStepHeight = 0.55f;
+constexpr float kDashSpeed = 15.0f;     // horizontal speed right after a dash
+constexpr float kDashHop = 2.0f;
+constexpr float kHookAccel = 38.0f;     // pull acceleration toward the anchor (adds to momentum)
+constexpr float kHookMaxSpeed = 24.0f;
+constexpr float kHookGravityScale = 0.5f;
+constexpr float kHookRelease = 1.2f;    // auto-release this close to the anchor
 }
 
 AABB playerBox(const Vec3& f, bool crouched) {
@@ -41,7 +47,7 @@ static int slideMove(MoveState& s, const Map& map, const Vec3& delta, bool crouc
     return blocked;
 }
 
-void pmove(MoveState& s, const UserCmd& cmd, const Map& map, float dt) {
+static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt) {
     if (s.flags & MF_FROZEN) {
         s.vel = {0, std::min(s.vel.y, 0.0f), 0};
     }
@@ -64,9 +70,52 @@ void pmove(MoveState& s, const UserCmd& cmd, const Map& map, float dt) {
 
     bool onGround = (s.flags & MF_ONGROUND) != 0;
     bool jumpHeld = (cmd.buttons & BTN_JUMP) != 0;
-    if (onGround && jumpHeld && !(s.flags & MF_JUMPHELD) && !(s.flags & MF_FROZEN)) {
+    bool frozen = (s.flags & MF_FROZEN) != 0;
+    // Holding jump bunny-hops: jump on the first grounded tick, before friction applies.
+    if (onGround && jumpHeld && !frozen) {
         s.vel.y = kJumpSpeed;
         onGround = false;
+    }
+
+    // Dash: one burst in the movement direction (or forward), on a cooldown.
+    s.dashCooldown = std::max(0.0f, s.dashCooldown - dt);
+    bool dashHeld = (cmd.buttons & BTN_DASH) != 0;
+    if (dashHeld && !(s.flags & MF_DASHHELD) && s.dashCooldown <= 0 && !frozen) {
+        Vec3 d = wishLen > 0 ? wishDir : fwd;
+        float h = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
+        float sp = std::max(kDashSpeed, h);
+        s.vel.x = d.x * sp;
+        s.vel.z = d.z * sp;
+        s.vel.y = std::max(s.vel.y, kDashHop);
+        onGround = false;
+        s.dashCooldown = kDashCooldown;
+    }
+
+    // Grapple: press to fire at what you're aiming at, hold to be pulled; momentum is kept.
+    bool hookHeld = (cmd.buttons & BTN_GRAPPLE) != 0;
+    if (hookHeld && !(s.flags & MF_HOOKHELD) && !frozen) {
+        float eyeH = crouched ? kCrouchEyeHeight : kEyeHeight;
+        Vec3 eye = s.pos + Vec3(0, eyeH, 0);
+        float t = map.raycast(eye, angleForward(cmd.yaw, cmd.pitch), kGrappleRange);
+        if (t >= 0) {
+            s.hookPoint = eye + angleForward(cmd.yaw, cmd.pitch) * t;
+            s.flags |= MF_HOOKED;
+        }
+    }
+    if (!hookHeld || frozen) s.flags &= ~MF_HOOKED;
+    bool hooked = (s.flags & MF_HOOKED) != 0;
+    if (hooked) {
+        Vec3 to = s.hookPoint - (s.pos + Vec3(0, 1.0f, 0));
+        float dist = length(to);
+        if (dist < kHookRelease) {
+            s.flags &= ~MF_HOOKED;
+            hooked = false;
+        } else {
+            s.vel += to / dist * (kHookAccel * dt);
+            float sp = length(s.vel);
+            if (sp > kHookMaxSpeed) s.vel *= kHookMaxSpeed / sp;
+            onGround = false;
+        }
     }
 
     if (onGround) {
@@ -81,7 +130,7 @@ void pmove(MoveState& s, const UserCmd& cmd, const Map& map, float dt) {
         s.vel.y = 0;
     } else {
         accelerate(s.vel, wishDir, std::min(wishSpeed, kAirSpeedCap), kAirAccel * 10.0f, dt);
-        s.vel.y -= kGravity * dt;
+        s.vel.y -= kGravity * dt * (hooked ? kHookGravityScale : 1.0f);
     }
 
     Vec3 delta = s.vel * dt;
@@ -119,10 +168,17 @@ void pmove(MoveState& s, const UserCmd& cmd, const Map& map, float dt) {
         if (down > -kStepHeight + 0.001f) { s.pos.y += down; nowGround = true; s.vel.y = 0; }
     }
 
-    s.flags &= MF_FROZEN;
-    if (nowGround) s.flags |= MF_ONGROUND;
+    s.flags &= (MF_FROZEN | MF_HOOKED);
+    if (nowGround && !(s.flags & MF_HOOKED)) s.flags |= MF_ONGROUND;
     if (crouched) s.flags |= MF_CROUCHED;
     if (jumpHeld) s.flags |= MF_JUMPHELD;
+    if (hookHeld) s.flags |= MF_HOOKHELD;
+    if (dashHeld) s.flags |= MF_DASHHELD;
 
     if (s.pos.y < -100.0f) s.pos.y = -100.0f; // kill plane handled by game logic
+}
+
+void pmove(MoveState& s, const UserCmd& cmd, const Map& map) {
+    int n = cmd.msec < 1 ? 1 : (cmd.msec > 8 ? 8 : cmd.msec);
+    for (int i = 0; i < n; i++) pmoveStep(s, cmd, map, kMoveStep);
 }

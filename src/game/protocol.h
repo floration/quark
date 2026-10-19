@@ -12,7 +12,7 @@
 enum PacketType : uint8_t {
     // client -> server
     PKT_CONNECT = 1,     // u16 version, u32 nonce, str name
-    PKT_INPUT,           // u32 nonce, u32 ackTick, u32 ackEvent, u8 ncmds, cmds..., u8 hasCmd [u16 seq, str]
+    PKT_INPUT,           // u32 nonce, u32 ackTimeMs, u32 ackEvent, u8 lossPct, u8 ncmds, cmds..., u8 hasCmd [u16 seq, str]
     PKT_DISCONNECT,      // u32 nonce
     PKT_INFO_REQUEST,    // (none)
     // server -> client
@@ -26,12 +26,12 @@ enum PacketType : uint8_t {
 inline void writeHeader(Writer& w, PacketType t) { w.u32(kProtocolMagic); w.u8(t); }
 
 inline void writeCmd(Writer& w, const UserCmd& c) {
-    w.u32(c.seq); w.u32(c.viewTick); w.i8(c.forward); w.i8(c.side); w.u16(c.buttons);
+    w.u32(c.seq); w.u32(c.viewTick); w.i8(c.forward); w.i8(c.side); w.u16(c.buttons); w.u8(c.msec);
     w.f32(c.yaw); w.f32(c.pitch);
 }
 inline UserCmd readCmd(Reader& r) {
     UserCmd c;
-    c.seq = r.u32(); c.viewTick = r.u32(); c.forward = r.i8(); c.side = r.i8(); c.buttons = r.u16();
+    c.seq = r.u32(); c.viewTick = r.u32(); c.forward = r.i8(); c.side = r.i8(); c.buttons = r.u16(); c.msec = r.u8();
     c.yaw = r.f32(); c.pitch = clampf(r.f32(), -1.55f, 1.55f);
     return c;
 }
@@ -50,6 +50,8 @@ struct PlayerSnap {
     int16_t kills = 0, deaths = 0, score = 0;
     uint16_t ping = 0;
     uint8_t checkpoint = 0;
+    uint8_t hooked = 0;
+    Vec3 hookPoint;
     int team() const { return (flags & PS_SPECTATOR) ? TEAM_SPECTATOR : (flags & PS_TEAM_B) ? TEAM_B : TEAM_A; }
 };
 
@@ -96,7 +98,9 @@ struct ModeState {
 enum : uint8_t { MS_DRAIN = 1, MS_OVERTIME = 2, MS_CONTESTED = 4 };
 
 struct Snapshot {
-    uint32_t tick = 0;
+    uint32_t tick = 0;        // server tick counter (one snapshot per tick; gaps = loss)
+    uint32_t timeMs = 0;      // server clock in ms
+    uint16_t tickRate = 1000; // current server tick rate (Hz)
     uint32_t ackCmdSeq = 0;
     uint16_t ackStringCmd = 0;
     uint8_t clientId = 0;

@@ -5,7 +5,6 @@ namespace {
 constexpr double kConnectRetry = 0.5;
 constexpr double kConnectTimeout = 10.0;
 constexpr double kServerTimeout = 10.0;
-constexpr float kInterpDelay = 0.05f;  // seconds behind the newest snapshot (3 snapshots at 60 Hz)
 constexpr int kCmdsPerPacket = 4;      // redundancy against packet loss
 
 uint32_t randomNonce() {
@@ -30,6 +29,9 @@ bool NetClient::connect(const std::string& address, const std::string& name) {
     snaps_.clear();
     clockInit_ = false;
     nextSeq_ = 1;
+    lossExpected_ = lossReceived_ = 0;
+    lossPct_ = 0;
+    for (auto& q : predictedSeq_) q = 0;
     lastEventId_ = 0;
     events_.clear();
     stringCmds_.clear();
@@ -87,7 +89,7 @@ void NetClient::poll() {
         return;
     }
     if (state_ == ConnState::Connected && clockInit_) {
-        float target = (float)(now + clockOffset_) - kInterpDelay;
+        float target = (float)(now + clockOffset_) - interpDelay();
         renderTime_ = target;
     }
 }
@@ -144,7 +146,16 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
 void NetClient::onSnapshot(Snapshot& s) {
     if (!snaps_.empty() && s.tick <= snaps_.back().tick) return; // out of order / duplicate
     double now = timeNow();
-    double serverTime = s.tick * (double)kTickDt;
+    // Snapshot loss for the server's tick-rate test (every tick sends one snapshot).
+    if (!snaps_.empty()) {
+        lossExpected_ += s.tick - snaps_.back().tick;
+        lossReceived_++;
+        if (lossExpected_ >= 500) {
+            lossPct_ = (uint8_t)std::min(100u, (lossExpected_ - lossReceived_) * 100 / lossExpected_);
+            lossExpected_ = lossReceived_ = 0;
+        }
+    }
+    double serverTime = s.timeMs * 0.001;
     double offset = serverTime - now;
     if (!clockInit_ || std::fabs(offset - clockOffset_) > 0.5) { clockOffset_ = offset; clockInit_ = true; }
     // Track the most recent arrival tightly but let jitter average out.
@@ -164,37 +175,46 @@ void NetClient::onSnapshot(Snapshot& s) {
         stringAcked_++;
     }
 
-    // Prediction reconcile: start from authoritative state, replay unacknowledged commands.
-    Vec3 oldVisual = pred_.pos + errorOffset_;
-    pred_ = s.self;
+    // Prediction reconcile. If the server's state for the acknowledged command matches what we
+    // predicted for it, our prediction is already right: skip the replay (the common case).
     bool alive = false;
     for (auto& p : s.players) if (p.id == s.clientId) alive = p.flags & PS_ALIVE;
-    if (alive && mapReady_) {
+    const MoveState& mine = predicted_[s.ackCmdSeq % 256];
+    bool match = predictedSeq_[s.ackCmdSeq % 256] == s.ackCmdSeq && length(mine.pos - s.self.pos) < 1e-4f &&
+                 length(mine.vel - s.self.vel) < 1e-3f && mine.flags == s.self.flags;
+    if (!alive || !mapReady_) {
+        pred_ = predPrev_ = s.self;
+        errorOffset_ = {};
+    } else if (!match) {
+        Vec3 oldVisual = pred_.pos + errorOffset_;
+        pred_ = s.self;
         for (uint32_t seq = s.ackCmdSeq + 1; seq < nextSeq_; seq++) {
-            const UserCmd& c = cmds_[seq % 128];
+            const UserCmd& c = cmds_[seq % 256];
             if (c.seq != seq) continue;
             predPrev_ = pred_;
-            pmove(pred_, c, map_, kTickDt);
+            pmove(pred_, c, map_);
+            predicted_[seq % 256] = pred_;
+            predictedSeq_[seq % 256] = seq;
         }
         Vec3 err = oldVisual - pred_.pos;
         errorOffset_ = length(err) < 2.0f ? err : Vec3();
-    } else {
-        predPrev_ = pred_;
-        errorOffset_ = {};
     }
 
     snaps_.push_back(std::move(s));
-    while (snaps_.size() > 32) snaps_.pop_front();
+    while (snaps_.size() > 64) snaps_.pop_front();
 }
 
 void NetClient::tick(UserCmd cmd) {
     if (state_ != ConnState::Connected || !mapReady_) return;
     cmd.seq = nextSeq_++;
-    cmd.viewTick = (uint32_t)std::max(0.0f, renderTime_ * kTickRate);
-    cmds_[cmd.seq % 128] = cmd;
+    cmd.msec = (uint8_t)(1000 / tickRate());
+    cmd.viewTick = (uint32_t)std::max(0.0, renderTime_ * 1000.0); // server ms we're looking at
+    cmds_[cmd.seq % 256] = cmd;
     predPrev_ = pred_;
-    if (selfAlive()) pmove(pred_, cmd, map_, kTickDt);
-    errorOffset_ *= 0.85f; // decay correction smoothing over ~100 ms
+    if (selfAlive()) pmove(pred_, cmd, map_);
+    predicted_[cmd.seq % 256] = pred_;
+    predictedSeq_[cmd.seq % 256] = cmd.seq;
+    errorOffset_ *= std::exp(-cmd.msec / 60.0f); // fade corrections out over ~60 ms, at any tick rate
     sendInput();
 }
 
@@ -203,11 +223,12 @@ void NetClient::sendInput() {
     Writer w(buf, sizeof buf);
     writeHeader(w, PKT_INPUT);
     w.u32(nonce_);
-    w.u32(serverTick());
+    w.u32(hasSnapshot() ? latest().timeMs : 0);
     w.u32(lastEventId_);
+    w.u8(lossOverride_ >= 0 ? (uint8_t)lossOverride_ : lossPct_);
     uint32_t first = nextSeq_ > (uint32_t)kCmdsPerPacket ? nextSeq_ - kCmdsPerPacket : 1;
     w.u8((uint8_t)(nextSeq_ - first));
-    for (uint32_t s = first; s < nextSeq_; s++) writeCmd(w, cmds_[s % 128]);
+    for (uint32_t s = first; s < nextSeq_; s++) writeCmd(w, cmds_[s % 256]);
     if (!stringCmds_.empty()) {
         w.u8(1);
         w.u16((uint16_t)(stringAcked_ + 1));
@@ -257,14 +278,14 @@ NetClient::PlayerArray NetClient::interpolatedPlayers() const {
     const Snapshot* a = &snaps_.front();
     const Snapshot* b = &snaps_.back();
     for (size_t i = 0; i + 1 < snaps_.size(); i++) {
-        if (snaps_[i].tick * kTickDt <= renderTime_ && snaps_[i + 1].tick * kTickDt >= renderTime_) {
+        if (snaps_[i].timeMs * 0.001f <= renderTime_ && snaps_[i + 1].timeMs * 0.001f >= renderTime_) {
             a = &snaps_[i];
             b = &snaps_[i + 1];
             break;
         }
     }
-    if (renderTime_ >= snaps_.back().tick * kTickDt) a = b = &snaps_.back();
-    float ta = a->tick * kTickDt, tb = b->tick * kTickDt;
+    if (renderTime_ >= snaps_.back().timeMs * 0.001f) a = b = &snaps_.back();
+    float ta = a->timeMs * 0.001f, tb = b->timeMs * 0.001f;
     float t = tb > ta ? clampf((renderTime_ - ta) / (tb - ta), 0, 1) : 1.0f;
     for (auto& pb : b->players) {
         InterpPlayer& ip = out[pb.id];
@@ -289,7 +310,7 @@ std::vector<ProjectileSnap> NetClient::interpolatedProjectiles() const {
     if (snaps_.empty()) return out;
     // Projectiles fly straight: extrapolate the newest snapshot to "now" (they're visual only).
     const Snapshot& s = snaps_.back();
-    float dt = clampf(renderTime_ + kInterpDelay - s.tick * kTickDt, 0, 0.2f);
+    float dt = clampf(renderTime_ + interpDelay() - s.timeMs * 0.001f, 0, 0.2f);
     for (auto p : s.projectiles) {
         p.pos += p.vel * dt;
         out.push_back(p);

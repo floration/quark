@@ -22,7 +22,7 @@ struct Settings {
     std::string hostMap = "arena";
     int hostMode = 5;
     int hostPort = 27500;
-    int hostMaxPlayers = 12;
+    int hostMaxPlayers = 8;
     bool hostUpnp = true;
 
     void load();
