@@ -14,3 +14,7 @@
 - Every push builds Windows (.exe), Linux and macOS packages + launchers via `.github/workflows/release.yml`, publishes GitHub release `v<VERSION>`, and deploys `site/` to https://floration.github.io/quark. Keep that workflow passing.
 - Every update: bump `VERSION` (semver; started at 0.1.0) and add `changelogs/<VERSION>.md` describing what changed. The release notes, the website and the launcher all show that file.
 - The launcher (`src/launcher/`) installs/updates from the release's `quark-<platform>.qpak` (made by `tools/pack.py`); keep those asset names stable.
+
+## Maps
+- One map per mode (duel=vs, depot=bomb, sprint=race, summit=koth, railyard=payload, tug=npayload, foundry=ffa) plus arena for everything. The generated ones come from `tools/make_maps.py` (edit it and re-run, don't hand-edit those .qmap files). `for <mode>` in a map marks the mode it's built for; menus pick that map by default.
+- `quark_tests` checks every map: spawns not in walls, preferred mode supported, bots can navigate from every spawn to every objective.

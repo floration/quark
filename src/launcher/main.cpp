@@ -2,6 +2,7 @@
 // shows the changelog, and starts the game.
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <cstring>
@@ -30,7 +31,7 @@
 namespace fs = std::filesystem;
 
 namespace {
-const char* kApi = "https://api.github.com/repos/floration/quark/releases/latest";
+const char* kApi = "https://api.github.com/repos/floration/quark/releases?per_page=50";
 #if defined(_WIN32)
 const char* kPlatform = "windows";
 const char* kGameExe = "quark.exe";
@@ -211,82 +212,125 @@ bool launchGame(const fs::path& dir) {
 #endif
 }
 
+struct Release { std::string version, body, url; };
+
 struct State {
     std::mutex mu;
     std::string status = "checking for updates...";
-    std::string latest, changelog, error;
+    std::vector<Release> releases;     // newest first (only ones with a build for this platform)
+    std::string installed;
+    int selected = 0;                  // index into releases; 0 = newest
+    bool pinLatest = true;             // follow the newest version automatically
     std::atomic<float> progress{-1};
     std::atomic<bool> busy{true}, ready{false};
 };
 
-void updater(State* st, fs::path dir) {
-    auto setStatus = [&](const std::string& s) { std::lock_guard<std::mutex> l(st->mu); st->status = s; };
-    std::string installed = readFile(dir / "version.txt");
+fs::path launcherCfg() { return install::appDir() / "launcher.cfg"; }
+
+// Every release (tag, notes, our platform's .qpak) from the GitHub releases list.
+bool fetchReleases(State* st, std::string* err) {
     std::ostringstream json;
-    std::string err;
     const char* api = getenv("QUARK_UPDATE_API"); // override for testing
-    if (!httpGet(api ? api : kApi, json, nullptr, &err)) {
-        std::lock_guard<std::mutex> l(st->mu);
-        st->status = installed.empty() ? "offline - could not reach github (" + err + ")" : "offline - playing installed version " + installed;
-        st->ready = !installed.empty();
-        st->busy = false;
-        return;
-    }
+    if (!httpGet(api ? api : kApi, json, nullptr, err)) return false;
     std::string j = json.str();
-    std::string tag = jsonField(j, "tag_name");
-    std::string latest = tag.size() && (tag[0] == 'v' || tag[0] == 'V') ? tag.substr(1) : tag;
-    {
-        std::lock_guard<std::mutex> l(st->mu);
-        st->latest = latest;
-        st->changelog = jsonField(j, "body");
-    }
-    std::string want = std::string("quark-") + kPlatform + ".qpak", url;
+    std::string want = std::string("quark-") + kPlatform + ".qpak";
+    std::vector<Release> list;
     size_t pos = 0, at;
     for (;;) {
-        std::string u = jsonField(j, "browser_download_url", pos, &at);
-        if (u.empty()) break;
+        std::string tag = jsonField(j, "tag_name", pos, &at);
+        if (tag.empty()) break;
+        size_t next = j.find("\"tag_name\"", at + 1); // this release's fields end where the next one's tag starts
+        std::string seg = j.substr(at, next == std::string::npos ? std::string::npos : next - at);
         pos = at + 1;
-        if (u.size() >= want.size() && u.compare(u.size() - want.size(), want.size(), want) == 0) { url = u; break; }
+        Release r;
+        r.version = tag.size() && (tag[0] == 'v' || tag[0] == 'V') ? tag.substr(1) : tag;
+        r.body = jsonField(seg, "body");
+        size_t p2 = 0, a2;
+        for (;;) {
+            std::string u = jsonField(seg, "browser_download_url", p2, &a2);
+            if (u.empty()) break;
+            p2 = a2 + 1;
+            if (u.size() >= want.size() && u.compare(u.size() - want.size(), want.size(), want) == 0) { r.url = u; break; }
+        }
+        if (!r.url.empty() && isdigit((unsigned char)r.version[0])) list.push_back(r);
     }
-    bool needs = installed.empty() || versionCmp(installed, latest) < 0;
-    if (!needs || url.empty()) {
-        setStatus(url.empty() && needs ? "no " + std::string(kPlatform) + " build in the latest release" : "up to date - version " + installed);
-        st->ready = !installed.empty();
-        st->busy = false;
-        return;
-    }
-    setStatus("downloading version " + latest + "...");
+    std::sort(list.begin(), list.end(), [](const Release& x, const Release& y) { return versionCmp(x.version, y.version) > 0; });
+    std::lock_guard<std::mutex> l(st->mu);
+    st->releases = list;
+    if (list.empty()) { *err = "no " + std::string(kPlatform) + " builds published yet"; return false; }
+    return true;
+}
+
+void installRelease(State* st, fs::path dir, Release r) {
+    auto setStatus = [&](const std::string& s) { std::lock_guard<std::mutex> l(st->mu); st->status = s; };
+    std::string err;
+    setStatus("downloading version " + r.version + "...");
     std::error_code ec;
     fs::create_directories(dir, ec);
     fs::path tmp = dir.parent_path() / "update.qpak";
     {
         std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        bool ok = httpGet(url, out, [&](uint64_t d, uint64_t t) { st->progress = t ? (float)d / t : -1.0f; }, &err);
+        bool ok = httpGet(r.url, out, [&](uint64_t d, uint64_t t) { st->progress = t ? (float)d / t : -1.0f; }, &err);
         if (!ok) {
             setStatus("download failed: " + err);
-            st->ready = !installed.empty();
             st->busy = false;
             return;
         }
     }
-    setStatus("installing version " + latest + "...");
+    setStatus("installing version " + r.version + "...");
     st->progress = -1;
     if (!extractPak(tmp.string(), dir, &err)) {
         setStatus("install failed: " + err);
     } else {
-        std::ofstream(dir / "version.txt") << latest << "\n";
+        std::ofstream(dir / "version.txt") << r.version << "\n";
         if (install::hasPrograms()) install::setPrograms(true, install::appDir() / fs::path(
 #ifdef _WIN32
             "quark_launcher.exe"
 #else
             "quark_launcher"
 #endif
-            ), latest); // keep the version shown in "installed programs" current
-        setStatus("updated to version " + latest);
+            ), r.version); // keep the version shown in "installed programs" current
+        std::lock_guard<std::mutex> l(st->mu);
+        st->installed = r.version;
+        st->status = "installed version " + r.version;
         st->ready = true;
     }
     fs::remove(tmp, ec);
     st->busy = false;
+}
+
+// Startup: get the list, then install the pinned version (or the newest if following latest).
+void updater(State* st, fs::path dir) {
+    std::string installed = readFile(dir / "version.txt");
+    std::string pin = readFile(launcherCfg());
+    if (pin.rfind("pin=", 0) == 0) pin = pin.substr(4);
+    {
+        std::lock_guard<std::mutex> l(st->mu);
+        st->installed = installed;
+        st->ready = !installed.empty();
+    }
+    std::string err;
+    if (!fetchReleases(st, &err)) {
+        std::lock_guard<std::mutex> l(st->mu);
+        st->status = installed.empty() ? "offline - " + err : "offline - playing installed version " + installed;
+        st->busy = false;
+        return;
+    }
+    Release target;
+    {
+        std::lock_guard<std::mutex> l(st->mu);
+        st->pinLatest = pin.empty() || pin == "latest";
+        st->selected = 0;
+        if (!st->pinLatest)
+            for (size_t i = 0; i < st->releases.size(); i++) if (st->releases[i].version == pin) st->selected = (int)i;
+        target = st->releases[st->selected];
+        if (installed == target.version) {
+            st->status = st->pinLatest ? "up to date - version " + installed : "version " + installed + " (pinned)";
+            st->busy = false;
+            return;
+        }
+    }
+    installRelease(st, dir, target);
 }
 } // namespace
 
@@ -300,6 +344,16 @@ int main(int argc, char** argv) {
         return 0;
     }
     fs::path dir = install::gameDir();
+    std::thread cleanup;
+    if (argc > 2 && std::string(argv[1]) == "--cleanup") cleanup = std::thread(install::cleanupDownloaded, fs::u8path(argv[2]));
+    // Started from Downloads (or anywhere else): install into the program folder, then hand over
+    // to that copy, which deletes the downloaded file.
+    if (install::runningFromOutside(argv[0])) {
+        fs::path installed = install::installSelf(argv[0]);
+        if (install::runningFromOutside(argv[0]) && fs::exists(installed) &&
+            install::relaunchInstalled(installed, install::selfPath(argv[0])))
+            return 0;
+    }
     fs::path launcherPath = install::installSelf(argv[0]);
     if (!glfwInit()) return 1;
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -341,10 +395,20 @@ int main(int argc, char** argv) {
         ui.begin(&r, in, s * 0.7f);
         r.rect(0, 0, (float)fw, (float)fh, {0.04f, 0.045f, 0.06f, 1});
         ui.label(24 * s, 20 * s, "QUARK", ui.accent, 2.5f);
-        std::string status, latest, log;
+        std::string status, latest, log, installed;
+        std::vector<std::string> versionNames;
+        Release sel;
         {
             std::lock_guard<std::mutex> l(st.mu);
-            status = st.status; latest = st.latest; log = st.changelog;
+            status = st.status;
+            installed = st.installed;
+            for (size_t i = 0; i < st.releases.size(); i++)
+                versionNames.push_back(i == 0 ? "LATEST (" + st.releases[0].version + ")" : st.releases[i].version);
+            if (!st.releases.empty()) {
+                sel = st.releases[std::min<size_t>(st.selected, st.releases.size() - 1)];
+                latest = sel.version;
+                log = sel.body;
+            }
         }
         ui.label(24 * s, 70 * s, status, {0.8f, 0.82f, 0.85f, 1});
         float p = st.progress;
@@ -355,7 +419,7 @@ int main(int argc, char** argv) {
         // changelog
         ui.panel(24 * s, 110 * s, fw - 48 * s, 222 * s, 0.6f);
         float y = 120 * s;
-        ui.label(36 * s, y, latest.empty() ? "CHANGELOG" : "WHAT'S NEW IN " + latest, ui.accent);
+        ui.label(36 * s, y, latest.empty() ? "CHANGELOG" : "VERSION " + latest + (latest == installed ? " (INSTALLED)" : ""), ui.accent);
         y += 22 * s;
         std::istringstream ls(log);
         std::string line;
@@ -399,12 +463,30 @@ int main(int argc, char** argv) {
                 } else uninstallArmed = timeNow() + 3.0;
             }
         }
+        // version picker: newest ("latest", follows updates) or any older release
+        if (!versionNames.empty()) {
+            int pick = st.selected;
+            if (ui.cycle(180 * s, 414 * s, fw - 180 * s - 236 * s, 48 * s, "VERSION", pick, (int)versionNames.size(), versionNames)) {
+                std::lock_guard<std::mutex> l(st.mu);
+                st.selected = pick;
+                st.pinLatest = pick == 0;
+                std::ofstream(launcherCfg()) << "pin=" << (pick == 0 ? std::string("latest") : st.releases[pick].version) << "\n";
+            }
+        }
+        bool needInstall = !sel.version.empty() && sel.version != installed;
         bool canPlay = st.ready && !st.busy;
-        if (ui.button(fw - 224 * s, 414 * s, 200 * s, 48 * s, st.busy ? "UPDATING..." : "PLAY", canPlay) || (autoPlay && canPlay)) {
+        if (needInstall && !st.busy) {
+            if (ui.button(fw - 224 * s, 414 * s, 200 * s, 48 * s, "INSTALL " + sel.version)) {
+                st.busy = true;
+                if (worker.joinable()) worker.join();
+                worker = std::thread(installRelease, &st, dir, sel);
+            }
+        } else if (ui.button(fw - 224 * s, 414 * s, 200 * s, 48 * s, st.busy ? "WORKING..." : "PLAY", canPlay) || (autoPlay && canPlay)) {
             if (launchGame(dir)) quit = true;
             else { std::lock_guard<std::mutex> l(st.mu); st.status = "could not start the game in " + dir.string(); autoPlay = false; }
         }
         if (ui.button(24 * s, 414 * s, 140 * s, 48 * s, "QUIT")) quit = true;
+        (void)installed;
         glClearColor(0, 0, 0, 1);
         glClear(GL_COLOR_BUFFER_BIT);
         r.flush2D();
@@ -412,7 +494,8 @@ int main(int argc, char** argv) {
         in.pressed = false;
     }
     if (st.busy) worker.detach(); // don't hang the window on a slow download
-    else worker.join();
+    else if (worker.joinable()) worker.join();
+    if (cleanup.joinable()) cleanup.join();
     glfwTerminate();
     return 0;
 }

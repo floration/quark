@@ -66,7 +66,6 @@ spawn any -28 0 28 45
 spawn any 28 0 28 -45
 spawn any -28 0 -28 135
 spawn any 28 0 -28 -135
-spawn any 0 1 0 0
 spawn any -20 0 8 90
 spawn any 20 0 -8 -90
 

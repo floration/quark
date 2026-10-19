@@ -1,5 +1,6 @@
 # Race map: run, jump, and rocket-jump along the course.
 title Sprint
+for race
 sun -0.3 1.0 0.5
 
 # start platform

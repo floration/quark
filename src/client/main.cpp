@@ -60,12 +60,7 @@ int main(int argc, char** argv) {
     printf("GL %s / %s\n", (const char*)glGetString(GL_VERSION), (const char*)glGetString(GL_RENDERER));
 
     Game game;
-    std::string err;
-    if (!game.init(win, opts, &err)) {
-        fprintf(stderr, "init failed: %s\n", err.c_str());
-        return 1;
-    }
-    g_game = &game;
+    g_game = &game; // callbacks are live before init, so the initial fullscreen resize isn't missed
     glfwSetCharCallback(win, [](GLFWwindow*, unsigned cp) { g_game->onChar(cp); });
     glfwSetKeyCallback(win, [](GLFWwindow*, int k, int, int a, int m) { g_game->onKey(k, a, m); });
     glfwSetMouseButtonCallback(win, [](GLFWwindow*, int b, int a, int) { g_game->onMouseButton(b, a); });
@@ -73,6 +68,11 @@ int main(int argc, char** argv) {
     glfwSetFramebufferSizeCallback(win, [](GLFWwindow*, int fw, int fh) { g_game->onResize(fw, fh); });
     glfwSetScrollCallback(win, [](GLFWwindow*, double, double dy) { g_game->onScroll(dy); });
 
+    std::string err;
+    if (!game.init(win, opts, &err)) {
+        fprintf(stderr, "init failed: %s\n", err.c_str());
+        return 1;
+    }
     double last = timeNow();
     double frameStart = timeNow();
     while (!glfwWindowShouldClose(win) && !game.quitRequested()) {

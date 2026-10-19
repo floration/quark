@@ -95,7 +95,8 @@ fs::path desktopAlias() { return home() / "Desktop/Quark.app"; }
 
 fs::path appDir() {
 #ifdef _WIN32
-    return knownFolder(CSIDL_LOCAL_APPDATA) / L"quark";
+    // Per-user Programs folder (like VS Code / Discord): no admin rights needed, so updates stay silent.
+    return knownFolder(CSIDL_LOCAL_APPDATA) / L"Programs" / L"quark";
 #elif defined(__APPLE__)
     return home() / "Library/Application Support/quark";
 #else
@@ -103,7 +104,18 @@ fs::path appDir() {
 #endif
 }
 
-fs::path installSelf(const char* argv0) {
+// Moves an install from the old location (%LOCALAPPDATA%\quark, before 0.12) to the new one.
+void migrateOldInstall() {
+#ifdef _WIN32
+    fs::path old = knownFolder(CSIDL_LOCAL_APPDATA) / L"quark";
+    if (!fs::exists(old / L"game", ec) || fs::exists(appDir() / L"game", ec)) return;
+    fs::create_directories(appDir(), ec);
+    fs::rename(old / L"game", appDir() / L"game", ec);
+    for (const char* f : {"launcher.cfg", "quark.png"}) fs::rename(old / f, appDir() / f, ec);
+#endif
+}
+
+fs::path selfPath(const char* argv0) {
     fs::path self = fs::absolute(fs::path(argv0), ec);
 #ifdef _WIN32
     wchar_t buf[MAX_PATH];
@@ -111,6 +123,46 @@ fs::path installSelf(const char* argv0) {
 #else
     if (fs::exists("/proc/self/exe", ec)) self = fs::read_symlink("/proc/self/exe", ec);
 #endif
+    return self;
+}
+
+bool runningFromOutside(const char* argv0) {
+    fs::path self = selfPath(argv0);
+    return !fs::equivalent(self, appDir() / self.filename(), ec);
+}
+
+bool relaunchInstalled(const fs::path& installed, const fs::path& original) {
+#ifdef _WIN32
+    std::wstring cmd = L"\"" + installed.wstring() + L"\" --cleanup \"" + original.wstring() + L"\"";
+    STARTUPINFOW si{};
+    si.cb = sizeof si;
+    PROCESS_INFORMATION pi{};
+    if (!CreateProcessW(installed.wstring().c_str(), &cmd[0], nullptr, nullptr, FALSE, 0, nullptr,
+                        installed.parent_path().wstring().c_str(), &si, &pi)) return false;
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return true;
+#else
+    std::string cmd = "'" + installed.string() + "' --cleanup '" + original.string() + "' >/dev/null 2>&1 &";
+    return system(cmd.c_str()) == 0;
+#endif
+}
+
+void cleanupDownloaded(const fs::path& original) {
+    // the original process exits right after starting us: retry for a few seconds
+    for (int i = 0; i < 50; i++) {
+        if (!fs::exists(original, ec) || fs::remove(original, ec)) return;
+#ifdef _WIN32
+        Sleep(100);
+#else
+        usleep(100000);
+#endif
+    }
+}
+
+fs::path installSelf(const char* argv0) {
+    migrateOldInstall();
+    fs::path self = selfPath(argv0);
     fs::create_directories(appDir(), ec);
     std::ofstream(appDir() / "quark.png", std::ios::binary).write((const char*)kIconPng, sizeof kIconPng);
     fs::path dst = appDir() / self.filename();

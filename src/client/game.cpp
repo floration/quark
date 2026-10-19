@@ -55,12 +55,12 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     if (!audio_.start()) printf("audio: no output device - running without sound\n");
     audio_.setMasterVolume(cfg_.volume);
 
+    botMapIdx_ = bestMapFor(cfg_.botMode);
     if (opts_.vsBotsMode >= 0) {
         cfg_.botMode = opts_.vsBotsMode;
-        for (size_t i = 0; i < maps_.size(); i++) {
-            Map m;
-            if (m.load(maps_[i]) && m.supportsMode(cfg_.botMode)) { botMapIdx_ = (int)i; break; }
-        }
+        botMapIdx_ = bestMapFor(cfg_.botMode);
+        if (!opts_.hostMap.empty())
+            for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == opts_.hostMap) botMapIdx_ = (int)i;
         startHost(true);
     } else if (opts_.hostMode >= 0) {
         hostModeIdx_ = opts_.hostMode;
@@ -200,6 +200,18 @@ void Game::loadMapIfNeeded() {
 
 void Game::onChar(unsigned cp) {
     if (cp < 128) uiIn_.chars += (char)cp;
+}
+
+// The map built for this mode if there is one, else the first map that supports it.
+int Game::bestMapFor(int mode) const {
+    int fallback = -1;
+    for (size_t i = 0; i < maps_.size(); i++) {
+        Map m;
+        if (!m.load(maps_[i]) || !m.supportsMode(mode)) continue;
+        if (m.preferredMode == mode) return (int)i;
+        if (fallback < 0) fallback = (int)i;
+    }
+    return fallback < 0 ? 0 : fallback;
 }
 
 bool Game::isDown(int action) const {
@@ -1273,7 +1285,7 @@ void Game::drawMenu() {
                 m.load(maps_[hostMapIdx_]);
                 std::vector<std::string> modes;
                 for (int i = 0; i < MODE_COUNT; i++) modes.push_back(modeTitle(i));
-                ui_.cycle(lx, y, lw, bh, "MODE", hostModeIdx_, MODE_COUNT, modes);
+                if (ui_.cycle(lx, y, lw, bh, "MODE", hostModeIdx_, MODE_COUNT, modes)) hostMapIdx_ = bestMapFor(hostModeIdx_);
                 y += bh + gap;
                 if (!m.supportsMode(hostModeIdx_)) ui_.label(lx, y, "THIS MAP DOES NOT SUPPORT THAT MODE", kRed);
                 y += 24 * s;
@@ -1307,7 +1319,7 @@ void Game::drawMenu() {
             ui_.panel(lx - 16 * s, y - 16 * s, lw + 32 * s, 360 * s);
             std::vector<std::string> modes;
             for (int i = 0; i < MODE_COUNT; i++) modes.push_back(modeTitle(i));
-            ui_.cycle(lx, y, lw, bh, "MODE", cfg_.botMode, MODE_COUNT, modes);
+            if (ui_.cycle(lx, y, lw, bh, "MODE", cfg_.botMode, MODE_COUNT, modes)) botMapIdx_ = bestMapFor(cfg_.botMode);
             y += bh + gap;
             if (!maps_.empty()) {
                 // only offer maps that support the chosen mode
@@ -1412,6 +1424,11 @@ void Game::applyDisplayMode() {
             break;
     }
     applyPresentMode(); // some drivers reset the swap interval on mode changes
+    // Render at the new size right away (don't wait for a resize event that may arrive late).
+    int fw = 0, fh = 0;
+    glfwGetFramebufferSize(win_, &fw, &fh);
+    if (cfg_.displayMode != 0) { fw = std::max(fw, vm->width); fh = std::max(fh, vm->height); }
+    if (fw > 0 && fh > 0) r_.resize(fw, fh);
 }
 
 void Game::applyPresentMode() {

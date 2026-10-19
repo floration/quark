@@ -58,7 +58,7 @@ Vec3 objective(Server& s, int id, BotBrain& b) {
             if (me.checkpoint < (int)map.checkpoints.size()) return map.checkpoints[me.checkpoint].center();
             break;
         case MODE_KOTH:
-            if (map.hasHill) return map.hill.center();
+            if (map.hasHill) return {map.hill.center().x, map.hill.mn.y, map.hill.center().z}; // the hill's floor
             break;
         case MODE_PAYLOAD:
         case MODE_NPAYLOAD:
@@ -107,11 +107,10 @@ void NavGraph::build(const Map& m) {
     for (const Brush& b : m.brushes) {
         const AABB& a = b.box;
         if (a.mx.x - a.mn.x < 0.6f || a.mx.z - a.mn.z < 0.6f) continue;
-        // standable if a player fits on top somewhere (center or any quarter: walls may cross the middle)
+        // standable if a player fits on top somewhere (5x5 samples: other blocks may cover parts of it)
         bool free = false;
-        const float fx[5] = {0.5f, 0.25f, 0.75f, 0.25f, 0.75f}, fz[5] = {0.5f, 0.25f, 0.25f, 0.75f, 0.75f};
-        for (int k = 0; k < 5 && !free; k++) {
-            Vec3 top = {lerpf(a.mn.x, a.mx.x, fx[k]), a.mx.y + 0.02f, lerpf(a.mn.z, a.mx.z, fz[k])};
+        for (int k = 0; k < 25 && !free; k++) {
+            Vec3 top = {lerpf(a.mn.x, a.mx.x, 0.1f + 0.2f * (k % 5)), a.mx.y + 0.02f, lerpf(a.mn.z, a.mx.z, 0.1f + 0.2f * (k / 5))};
             AABB probe = {{top.x - 0.05f, top.y, top.z - 0.05f}, {top.x + 0.05f, top.y + kPlayerCrouchHeight, top.z + 0.05f}};
             free = !m.boxSolid(probe);
         }

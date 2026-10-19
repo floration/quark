@@ -7,6 +7,7 @@
 #include "game/server.h"
 #include "game/netclient.h"
 #include "game/gamemodes.h"
+#include "game/bots.h"
 
 static int g_fail = 0;
 #define CHECK(c) do { if (!(c)) { printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); g_fail++; } } while (0)
@@ -98,6 +99,40 @@ static void testMaps() {
     for (int m : {MODE_VS, MODE_BOMB, MODE_KOTH, MODE_PAYLOAD, MODE_FFA}) CHECK(arena.supportsMode(m));
     CHECK(sprint.supportsMode(MODE_RACE));
     CHECK(arena.payloadLength() > 20);
+}
+
+// Every map: loads, supports the mode it was built for, no spawn inside a wall, and bots can
+// navigate from every spawn to every objective.
+static void testAllMaps() {
+    printf("all maps: modes, spawns, bot navigation\n");
+    for (auto& name : listMaps()) {
+        Map m;
+        std::string err;
+        if (!m.load(name, &err)) { printf("  %s: %s\n", name.c_str(), err.c_str()); g_fail++; continue; }
+        if (m.preferredMode >= 0) CHECK(m.supportsMode(m.preferredMode));
+        for (auto& sp : m.spawns) CHECK(!m.boxSolid(playerBox(sp.pos + Vec3(0, 0.02f, 0), false)));
+        NavGraph g;
+        g.build(m);
+        std::vector<Vec3> goals;
+        if (m.hasHill) goals.push_back({m.hill.center().x, m.hill.mn.y, m.hill.center().z});
+        for (auto& s : m.bombSites) goals.push_back(s.center());
+        if (m.payloadPath.size() >= 2) { goals.push_back(m.payloadPath.front()); goals.push_back(m.payloadPath.back()); }
+        for (auto& c : m.checkpoints) goals.push_back(c.center());
+        int unreachable = 0;
+        for (auto& sp : m.spawns)
+            for (auto& gl : goals) {
+                int a = g.nodeAt(sp.pos + Vec3(0, 0.1f, 0)), b = g.nodeAt(gl + Vec3(0, 0.5f, 0));
+                if (a < 0 || b < 0) { unreachable++; continue; }
+                std::vector<char> seen(g.nodes.size(), 0);
+                std::vector<int> q = {a};
+                seen[a] = 1;
+                for (size_t i = 0; i < q.size(); i++)
+                    for (auto& l : g.links[q[i]]) if (!seen[l.first]) { seen[l.first] = 1; q.push_back(l.first); }
+                unreachable += !seen[b];
+            }
+        if (unreachable) printf("  %s: %d spawn->objective routes missing\n", name.c_str(), unreachable);
+        CHECK(unreachable == 0);
+    }
 }
 
 static void testGridQueries() {
@@ -585,6 +620,7 @@ int main(int argc, char** argv) {
     testMovement();
     testMaps();
     testTickRateIndependence();
+    testAllMaps();
     testGridQueries();
     uint16_t port = 28500;
     testSession(MODE_VS, "arena", port++);

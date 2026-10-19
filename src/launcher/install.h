@@ -12,6 +12,13 @@ inline std::filesystem::path gameDir() { return appDir() / "game"; }
 // Copies the running launcher into appDir() (once), so shortcuts don't depend on the download location.
 // Returns the installed launcher path.
 std::filesystem::path installSelf(const char* argv0);
+// True if `self` is not the installed copy (e.g. run from Downloads).
+bool runningFromOutside(const char* argv0);
+// Starts the installed launcher, asking it to delete the copy we were started from.
+bool relaunchInstalled(const std::filesystem::path& installed, const std::filesystem::path& original);
+// Called by the installed launcher: deletes the downloaded copy once that process has exited.
+void cleanupDownloaded(const std::filesystem::path& original);
+std::filesystem::path selfPath(const char* argv0);
 
 // What the platform calls each integration (empty = not offered on this platform).
 const char* desktopLabel();   // "DESKTOP ICON"

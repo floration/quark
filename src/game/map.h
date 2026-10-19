@@ -20,6 +20,7 @@ struct SpawnPoint {
 struct Map {
     std::string name;
     std::string title;
+    int preferredMode = -1;    // "for <mode>": the mode this map was designed for
     std::vector<Brush> brushes;
     std::vector<SpawnPoint> spawns;
     std::vector<AABB> bombSites;

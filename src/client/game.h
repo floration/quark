@@ -154,6 +154,7 @@ private:
     RemoteAudio remoteAudio_[kMaxPlayers];
     // rebinding
     bool isDown(int action) const;
+    int bestMapFor(int mode) const;
     bool pressInput(int code);
     void drawControls(float x, float y, float w);
     bool controlsOpen_ = false;
