@@ -30,6 +30,7 @@ void Settings::load() {
         int iv = atoi(v.c_str());
         if (k == "name") name = v;
         else if (k == "sensitivity") sensitivity = fv;
+        else if (k == "dpi") dpi = std::min(std::max(iv, 100), 32000);
         else if (k == "fov") fov = clampf(fv, 60, 140);
         else if (k == "vsync") presentMode = iv != 0 ? 1 : 0; // old setting
         else if (k == "display_mode") displayMode = std::min(std::max(iv, 0), 2);
@@ -78,7 +79,7 @@ void Settings::load() {
 
 void Settings::save() const {
     std::ofstream f(cfgPath());
-    f << "name=" << name << "\nsensitivity=" << sensitivity << "\nfov=" << fov << "\ndisplay_mode=" << displayMode
+    f << "name=" << name << "\nsensitivity=" << sensitivity << "\ndpi=" << dpi << "\nfov=" << fov << "\ndisplay_mode=" << displayMode
       << "\npresent_mode=" << presentMode << "\nlow_latency=" << lowLatency
       << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height
       << "\nshadows=" << shadows << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nhitsounds=" << hitsounds

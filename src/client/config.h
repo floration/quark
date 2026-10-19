@@ -6,7 +6,8 @@
 
 struct Settings {
     std::string name = "player";
-    float sensitivity = 2.0f;   // degrees per 100 mouse counts
+    float sensitivity = 2.0f;   // degrees per 100 mouse counts (x 0.022 deg per count: same scale as CS / Quake)
+    int dpi = 800;              // mouse DPI, only used to show / set cm per 360
     float fov = 100.0f;         // horizontal degrees
     int displayMode = 0;        // 0 windowed, 1 borderless fullscreen, 2 exclusive fullscreen (legacy)
     int presentMode = 0;        // 0 immediate (vsync off, tearing), 1 vsync, 2 adaptive vsync (tears only when late)

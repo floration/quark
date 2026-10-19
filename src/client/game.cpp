@@ -1203,7 +1203,7 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     float w = std::max(320 * s, wTotal * 0.5f);
     float x = x0 + wTotal * 0.5f - w - colGap * 0.5f; // two columns centred on the old area
     float xr = x + w + colGap;
-    ui_.panel(x - 16 * s, y0 - 16 * s, w * 2 + colGap + 32 * s, 9 * (h + gap) + 150 * s);
+    ui_.panel(x - 16 * s, y0 - 16 * s, w * 2 + colGap + 32 * s, 10 * (h + gap) + 150 * s);
 
     // --- left column: player, mouse, colors
     float y = y0;
@@ -1211,7 +1211,20 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     y += 22 * s;
     ui_.textField(1, x, y, w, h, cfg_.name, 20);
     y += h + gap;
-    ui_.slider(x, y, w, h, "SENSITIVITY", cfg_.sensitivity, 0.1f, 10.0f, "%.2f");
+    {   // sensitivity, or the same thing as cm per 360 at your mouse DPI (drag either)
+        ui_.slider(x, y, w, h, "SENSITIVITY", cfg_.sensitivity, 0.1f, 10.0f, "%.2f");
+        y += h + gap;
+        float cw = w * 0.6f, dw = w - cw - gap;
+        // counts per 360 = 360 / (sens * 0.022); cm = counts / dpi * 2.54
+        float cm = 360.0f / (cfg_.sensitivity * 0.022f) / cfg_.dpi * 2.54f;
+        if (ui_.slider(x, y, cw, h, "CM/360", cm, 5, 120, "%.1f"))
+            cfg_.sensitivity = clampf(360.0f / (cm / 2.54f * cfg_.dpi) / 0.022f, 0.01f, 50.0f);
+        static const int dpis[] = {400, 800, 1000, 1200, 1600, 2400, 3200, 6400};
+        static const std::vector<std::string> dpiNames = {"400 DPI", "800 DPI", "1000 DPI", "1200 DPI", "1600 DPI", "2400 DPI", "3200 DPI", "6400 DPI"};
+        int di = 1;
+        for (int i = 0; i < 8; i++) if (dpis[i] == cfg_.dpi) di = i;
+        if (ui_.button(x + cw + gap, y, dw, h, dpiNames[di])) cfg_.dpi = dpis[(di + 1) % 8]; // click: next DPI
+    }
     y += h + gap;
     ui_.slider(x, y, w, h, "FOV", cfg_.fov, 70, 130, "%.0f");
     y += h + gap;
