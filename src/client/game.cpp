@@ -1792,7 +1792,7 @@ void Game::drawPicker(float cx, float y) {
             label = modeTitle(i);
             cur = i == mode;
             for (auto& mi : mapInfo_) if (mi.preferredMode == i) sub = "MAP: " + upper(mi.title);
-            if (i == MODE_ARENA) sub = "8 RULESETS >";
+            if (i == MODE_ARENA) sub = "9 RULESETS >";
             if (i == MODE_TOURNEY) sub = "BRACKET OF 1V1S - RULESETS >";
         } else {
             const MapInfo& mi = mapInfo_[i];

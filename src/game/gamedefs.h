@@ -61,10 +61,11 @@ enum ArenaRule : uint8_t {
 };
 #define WB(w) (1u << (w))
 struct ArenaVariant { const char* name; const char* title; const char* desc; uint16_t weapons; uint8_t rules; };
-constexpr int kArenaVariants = 8;
+constexpr int kArenaVariants = 9;
 inline const ArenaVariant& arenaVariant(int v) {
     // weapon ids: 0 rifle 1 rocket 2 knife 3 sniper 4 laser 5 shotgun 6 sticky 7 crossbow
     static const ArenaVariant vs[kArenaVariants] = {
+        {"vanilla", "VANILLA", "EVERY WEAPON, ALL MOVEMENT - NO GIMMICKS", 0xFF, 0},
         {"vampire", "LASER VAMPIRE", "LASERS ONLY - DAMAGE YOU DEAL HEALS YOU", WB(4), AR_VAMPIRE},
         {"classic", "CLASSIC", "ROCKET, LASER AND KNIFE", WB(1) | WB(4) | WB(2), 0},
         {"quirky", "QUIRKY", "CROSSBOW, STICKY AND RIFLE", WB(7) | WB(6) | WB(0), 0},

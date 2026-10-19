@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generates the per-mode maps in maps/ (symmetric layouts are mirrored so both teams get the same map).
 Edit and re-run: python3 tools/make_maps.py"""
-import os
+import os, random, math
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "maps")
 
 class M:
@@ -11,6 +11,7 @@ class M:
         s.lines.append(f"{'accent' if accent else 'box'} {x0:g} {y0:g} {z0:g} {x1:g} {y1:g} {z1:g}")
         if mirror: s.lines.append(f"{'accent' if accent else 'box'} {-x1:g} {y0:g} {-z1:g} {-x0:g} {y1:g} {-z0:g}")
     def room(s, hx, hz, h=8):
+        s.hx, s.hz, s.h = hx, hz, h
         s.box(-hx - 2, -1, -hz - 2, hx + 2, 0, hz + 2)                  # floor
         s.box(-hx - 2, 0, -hz - 2, -hx, h, hz + 2); s.box(hx, 0, -hz - 2, hx + 2, h, hz + 2)
         s.box(-hx, 0, -hz - 2, hx, h, -hz); s.box(-hx, 0, hz, hx, h, hz + 2)
@@ -43,7 +44,100 @@ class M:
             h = 0.5 * (i + 1) if rising > 0 else 0.5 * (n - i)
             if axis == "x": s.box(x0 + a, 0, z0, x0 + b, h, z1, mirror=mirror)
             else: s.box(x0, 0, z0 + a, x1, h, z0 + b, mirror=mirror)
-    def save(s, name):
+    # ---- structure kit ----
+    def catwalk(s, x0, z0, x1, z1, y, rails="z", mirror=False):
+        """elevated walkway (0.3 thick) on accent supports, with railings along its long sides"""
+        s.box(x0, y - 0.3, z0, x1, y, z1, mirror=mirror)
+        for (px, pz) in ((x0, z0), (x1 - 0.4, z0), (x0, z1 - 0.4), (x1 - 0.4, z1 - 0.4)):
+            s.box(px, 0, pz, px + 0.4, y - 0.3, pz + 0.4, accent=True, mirror=mirror)
+        if rails == "z":   # rails on the z = z0 / z1 edges
+            s.box(x0, y, z0, x1, y + 0.9, z0 + 0.1, accent=True, mirror=mirror); s.box(x0, y, z1 - 0.1, x1, y + 0.9, z1, accent=True, mirror=mirror)
+        elif rails == "x":
+            s.box(x0, y, z0, x0 + 0.1, y + 0.9, z1, accent=True, mirror=mirror); s.box(x1 - 0.1, y, z0, x1, y + 0.9, z1, accent=True, mirror=mirror)
+    def doorwall(s, x0, z0, x1, z1, h, doors, axis="x", mirror=False):
+        """a wall along `axis` with doorways: doors = [(center, width, height)], lintel above each"""
+        a0, a1 = (x0, x1) if axis == "x" else (z0, z1)
+        cuts = sorted((c - w / 2, c + w / 2, dh) for c, w, dh in doors)
+        pos = a0
+        for (c0, c1, dh) in cuts:
+            if c0 > pos:
+                s.box(pos, 0, z0, c0, h, z1, mirror=mirror) if axis == "x" else s.box(x0, 0, pos, x1, h, c0, mirror=mirror)
+            s.box(c0, dh, z0, c1, h, z1, mirror=mirror) if axis == "x" else s.box(x0, dh, c0, x1, h, c1, mirror=mirror)  # lintel
+            pos = c1
+        if pos < a1: s.box(pos, 0, z0, a1, h, z1, mirror=mirror) if axis == "x" else s.box(x0, 0, pos, x1, h, a1, mirror=mirror)
+    def windowwall(s, x0, z0, x1, z1, h, sill, top, every=3.0, width=1.6, wallbang=False, mirror=False):
+        """wall along x with a row of windows between sill and top (wallbang = shoot-through panels)"""
+        add = s.wallbang if wallbang else (lambda *a, **k: s.box(*a, **k))
+        add(x0, 0, z0, x1, sill, z1, mirror=mirror); add(x0, top, z0, x1, h, z1, mirror=mirror)
+        x = x0
+        while x < x1:
+            seg = min(x1, x + every - width)
+            add(x, sill, z0, seg, top, z1, mirror=mirror)
+            x += every
+    # ---- automatic detail pass (runs in save) ----
+    def keepouts(s):
+        pts = []
+        for l in s.lines:
+            t = l.split()
+            if not t: continue
+            if t[0] == "spawn": pts.append((float(t[2]), float(t[4]), 2.2))
+            elif t[0] == "path": pts.append((float(t[1]), float(t[3]), 3.0))
+            elif t[0] in ("site", "hill", "checkpoint"):
+                x0, z0, x1, z1 = float(t[1]), float(t[3]), float(t[4]), float(t[6])
+                pts.append(((x0 + x1) / 2, (z0 + z1) / 2, max(abs(x1 - x0), abs(z1 - z0)) / 2 + 1.5))
+        # densify payload paths so debris never lands on the track
+        path = [(float(l.split()[1]), float(l.split()[3])) for l in s.lines if l.startswith("path ")]
+        for (ax, az), (bx, bz) in zip(path, path[1:]):
+            n = int(math.hypot(bx - ax, bz - az) / 2) + 1
+            for i in range(n + 1): pts.append((ax + (bx - ax) * i / n, az + (bz - az) * i / n, 3.0))
+        return pts
+    def clear(s, x, z, r, pts):
+        return all(math.hypot(x - px, z - pz) > r + pr for (px, pz, pr) in pts)
+    def dress(s, name, debris=14):
+        if not hasattr(s, "hx"): return
+        hx, hz, h = s.hx, s.hz, s.h
+        rnd = random.Random(name)
+        pts = s.keepouts()
+        s.trim(hx, hz)                                            # base trim
+        s.trim(hx, hz, y=h - 0.5, h=0.5, d=0.25)                  # cornice
+        # buttresses along the walls (rhythm + something to peek / grapple)
+        for along, half, wall in ((True, hx, hz), (False, hz, hx)):
+            n = int(2 * half / 7)
+            for i in range(1, n):
+                c = -half + i * 2 * half / n
+                for side in (-1, 1):
+                    x, z = (c, side * (wall - 0.3)) if along else (side * (wall - 0.3), c)
+                    if not s.clear(x, z, 1.0, pts): continue
+                    bx0, bz0, bx1, bz1 = (c - 0.5, side * wall - (0.6 if side > 0 else -0.6), c + 0.5, side * wall) if along else \
+                                         (side * wall - (0.6 if side > 0 else -0.6), c - 0.5, side * wall, c + 0.5)
+                    s.box(min(bx0, bx1), 0, min(bz0, bz1), max(bx0, bx1), h - 0.5, max(bz0, bz1))
+                    s.box(min(bx0, bx1) - 0.1, h - 1.4, min(bz0, bz1) - 0.1, max(bx0, bx1) + 0.1, h - 1.1, max(bz0, bz1) + 0.1, accent=True)
+        # pipes along the two long walls
+        long_x = hx >= hz
+        for side in (-1, 1):
+            for y in (h * 0.45, h * 0.45 + 0.45):
+                if long_x: s.box(-hx, y, side * hz - (0.35 if side > 0 else -0.35) - 0.0, hx, y + 0.25, side * hz - (0.05 if side > 0 else -0.05), accent=(y > h * 0.45))
+                else: s.box(side * hx - (0.35 if side > 0 else -0.35), y, -hz, side * hx - (0.05 if side > 0 else -0.05), y + 0.25, hz, accent=(y > h * 0.45))
+        # beams across tall rooms: visual rhythm and grapple anchors
+        if h >= 9:
+            n = int(2 * (hx if not long_x else hz) / 9)
+            for i in range(1, n + 1):
+                c = -(hx if not long_x else hz) + i * 2 * (hx if not long_x else hz) / (n + 1)
+                if long_x: s.box(-hx, h - 1.6, c - 0.35, hx, h - 1.0, c + 0.35, accent=True)
+                else: s.box(c - 0.35, h - 1.6, -hz, c + 0.35, h - 1.0, hz, accent=True)
+        # floor strips
+        for x in range(-int(hx) + 8, int(hx) - 4, 8): s.box(x - 0.08, 0, -hz, x + 0.08, 0.02, hz, accent=True)
+        # debris and small clutter near the walls
+        for _ in range(debris * 4):
+            if debris <= 0: break
+            w, d, ht = rnd.uniform(0.4, 1.1), rnd.uniform(0.4, 1.1), rnd.uniform(0.3, 1.0)
+            if rnd.random() < 0.5: x, z = rnd.uniform(-hx + 1.2, hx - 1.2), rnd.choice((-1, 1)) * (hz - rnd.uniform(1.0, 2.2))
+            else: x, z = rnd.choice((-1, 1)) * (hx - rnd.uniform(1.0, 2.2)), rnd.uniform(-hz + 1.2, hz - 1.2)
+            if not s.clear(x, z, 1.2, pts): continue
+            s.box(x - w / 2, 0, z - d / 2, x + w / 2, ht, z + d / 2, accent=rnd.random() < 0.3)
+            pts.append((x, z, 0.8)); debris -= 1
+    def save(s, name, dress=True):
+        if dress: s.dress(name)
         open(os.path.join(OUT, name + ".qmap"), "w").write("\n".join(s.lines) + "\n")
 
 # --- duel: small symmetric VS arena, lots of cover, two raised flanks ---------------------------
@@ -154,6 +248,10 @@ m.stairs(9, -24, 12, -18, 2.5, "x", 1, mirror=True)
 m.box(-4, 0, -4, 4, 1, 4, accent=True); m.box(-1, 1, -1, 1, 5, 1)      # center dais + pillar
 m.box(-12, 0, -2, -8, 1.6, 2, mirror=True); m.box(-2, 0, 8, 2, 1.6, 12, mirror=True)
 m.box(-18, 0, 3, -15, 3.5, 6, accent=True, mirror=True)                 # grapple pillars
+m.catwalk(-9, -23.8, 9, -21.6, 2.5, rails="z", mirror=True)             # upper ring: corner to corner, both ends
+m.windowwall(-7, -9.2, 7, -8.8, 3.2, 1.0, 2.2, every=3.5, width=2.0, wallbang=True, mirror=True)  # shoot-through screens
+m.doorwall(-24, 7.8, -19, 8.2, 4.0, [(-21.5, 2.2, 2.6)], axis="x", mirror=True)                     # gatehouses on the flanks
+m.box(-19, 0, 7.8, -18.6, 4.0, 12, mirror=True); m.box(-24, 3.6, 8.2, -18.6, 4.0, 12, accent=True, mirror=True)
 import math
 for (x, z) in ((-18, -18), (18, -18), (-18, 18), (18, 18), (0, -20), (0, 20), (-20, 0), (20, 0), (-6, 6), (6, -6)):
     y = 2.5 if abs(x) >= 17 and abs(z) >= 17 else 0
@@ -177,6 +275,9 @@ m.box(17, 0, -4, 22, 3.5, 4); m.stairs(14, -4, 17, 4, 3.5, "x", 1)
 m.box(-22, 3.5, -4.2, -17, 4.4, -4, accent=True); m.box(17, 3.5, 4, 22, 4.4, 4.2, accent=True)   # gallery railings
 m.box(-6, 0, 18, -3, 2.4, 19, mirror=True); m.box(3, 0, 18, 6, 2.4, 19, mirror=True)           # spawn screens
 m.crates(-19, 22, mirror=True); m.crates(15, 13, 1, mirror=True)
+m.catwalk(-17, -1, 17, 1, 3.5, rails="z")                               # bridge between the galleries, over the altar
+m.box(-1, 3.5, -1, 1, 6.5, 1, accent=True)                              # bridge shrine (a little cover up top)
+m.doorwall(-22, 13.8, 22, 14.2, 5.0, [(-10, 3.0, 3.2), (0, 4.0, 3.6), (10, 3.0, 3.2)], axis="x", mirror=True)  # arcades
 for x in (-3, 3): m.spawn("a", x, 0, 26, 0, "b")
 m.spawn("any", -19, 3.5, 0, 90, "any")
 m.save("temple")
@@ -195,6 +296,11 @@ m.pillar(0, 0, 6.0, r=1.0)                                              # centra
 m.wallbang(-9, 0, -1, -8, 2.6, 1, mirror=True); m.wallbang(-1, 0, 8, 1, 2.6, 9, mirror=True)  # wallbang pavises
 m.box(-13, 0, 6, -10, 1.3, 9, mirror=True); m.box(10, 0, 6, 13, 1.3, 9, mirror=True)
 m.crates(-15, -3, 1, mirror=True)
+# inner ring wall with arches all around: breaks the bowl into lanes and gives peeks
+for side in (-1, 1):
+    m.doorwall(-15, side * 15 - 0.25, 15, side * 15 + 0.25, 4.0, [(-9, 2.6, 3.0), (0, 3.4, 3.2), (9, 2.6, 3.0)], axis="x")
+    m.doorwall(side * 15 - 0.25, -15, side * 15 + 0.25, 15, 4.0, [(-9, 2.6, 3.0), (0, 3.4, 3.2), (9, 2.6, 3.0)], axis="z")
+for (x, z) in ((-15, -15), (15, -15), (-15, 15), (15, 15)): m.pillar(x, z, 5.0, r=0.7)
 for x in (-4, 4): m.spawn("a", x, 0, 17, 0, "b")
 for (x, z) in ((-16, 0), (16, 0), (0, -14), (0, 14), (-12, -12), (12, 12)): m.spawn("any", x, 0, z, 0)
 m.save("colosseum")
@@ -216,6 +322,13 @@ m.crates(-16, -24, 3); m.crates(20, 6, 2); m.crates(-2, 6, 2); m.crates(-24, 4, 
 m.box(-1, 0, -6, 1, 9, -4, accent=True)                                 # crane mast
 m.box(-1, 9, -6, 14, 9.8, -4, accent=True)                              # crane jib (grapple anchor)
 m.box(13, 6.5, -5.5, 14, 9, -4.5)                                       # hook
+# warehouse in the south-west corner: walls with doors, a window row and a roof deck you can reach by stairs
+m.doorwall(-30, -16.2, -16, -15.8, 4.5, [(-27, 2.4, 2.8), (-22.5, 2.4, 2.8)], axis="x")
+m.doorwall(-16.2, -30, -15.8, -16.2, 4.5, [(-23, 2.6, 2.8)], axis="z")
+m.box(-30, 4.5, -30, -15.8, 4.8, -15.8, accent=True)                    # roof deck
+m.stairs(-20, -15.8, -17.6, -11.3, 4.5, "z", -1)                        # stairs up to the roof edge, from the yard
+m.catwalk(-20, -8, 8, -6.6, 2.8, rails="z")                             # walkway from the first container toward the crane
+
 for (x, z) in ((-22, 22), (22, 22), (0, 24), (-26, -26), (26, -26), (0, -26), (-12, -2), (10, 9), (-18, 8), (24, -14)):
     yaw = math.degrees(math.atan2(x, z))
     m.spawn("any", x, 1.2 if z > 14 else 0, z, round(yaw))
