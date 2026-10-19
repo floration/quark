@@ -18,39 +18,64 @@ constexpr int kPeriod = 240;        // frames per buffer: 5 ms at 48 kHz
 constexpr int kMaxVoices = 64;
 
 // --- synthesis helpers -------------------------------------------------------
+// Sounds are built in layers: a pitch-dropping "body" (weight), band-limited noise (texture),
+// soft attacks/fades (no clicks), then a short room reverb so nothing sounds dry or synthetic.
 struct Noise { uint32_t s = 0x12345678; float operator()() { s = s * 1664525u + 1013904223u; return ((s >> 9) & 0xFFFF) / 32768.0f - 1.0f; } };
 
 std::vector<float> make(float seconds) { return std::vector<float>((size_t)(seconds * R), 0.0f); }
-float env(float t, float attack, float decay) { return (t < attack ? t / attack : 1.0f) * std::exp(-t / decay); }
+float env(float t, float attack, float decay) { return (t < attack ? std::sin(0.5f * PI * t / attack) : 1.0f) * std::exp(-t / decay); }
+float onePole(float cutoffHz) { return 1.0f - std::exp(-2.0f * PI * cutoffHz / R); }
 
-void addSine(std::vector<float>& b, float f0, float f1, float amp, float attack, float decay) {
+// sine whose pitch falls exponentially from f0 to f1 (kicks, thumps, booms)
+void addThump(std::vector<float>& b, float f0, float f1, float pitchTime, float amp, float attack, float decay, float start = 0) {
     float ph = 0;
-    for (size_t i = 0; i < b.size(); i++) {
-        float t = i / (float)R, f = f0 + (f1 - f0) * (t / (b.size() / (float)R));
+    for (size_t i = (size_t)(start * R); i < b.size(); i++) {
+        float t = i / (float)R - start;
+        float f = f1 + (f0 - f1) * std::exp(-t / pitchTime);
         ph += 2 * PI * f / R;
         b[i] += std::sin(ph) * amp * env(t, attack, decay);
     }
 }
-// noise through a one-pole low-pass (cut 0..1, smaller = darker)
-void addNoise(std::vector<float>& b, float amp, float attack, float decay, float cut, uint32_t seed = 1) {
+// noise band-limited between lo..hi Hz (difference of two low-passes), with a cutoff sweep
+void addBand(std::vector<float>& b, float lo, float hi, float amp, float attack, float decay, uint32_t seed, float hiEnd = -1, float start = 0) {
     Noise n; n.s ^= seed * 2654435761u;
-    float lp = 0;
-    for (size_t i = 0; i < b.size(); i++) {
-        float t = i / (float)R;
-        lp += (n() - lp) * cut;
-        b[i] += lp * amp * env(t, attack, decay);
+    float a = 0, c = 0;
+    for (size_t i = (size_t)(start * R); i < b.size(); i++) {
+        float t = i / (float)R - start;
+        float h = hiEnd > 0 ? hi + (hiEnd - hi) * std::min(1.0f, t / (b.size() / (float)R)) : hi;
+        float x = n();
+        a += (x - a) * onePole(h);
+        c += (x - c) * onePole(lo);
+        b[i] += (a - c) * amp * env(t, attack, decay);
     }
 }
-void addSaw(std::vector<float>& b, float f, float amp, float attack, float decay) {
-    float ph = 0;
-    for (size_t i = 0; i < b.size(); i++) {
-        float t = i / (float)R;
-        ph += f / R;
-        ph -= std::floor(ph);
-        b[i] += (ph * 2 - 1) * amp * env(t, attack, decay);
+void addTone(std::vector<float>& b, float f, float amp, float attack, float decay, float start = 0) {
+    for (size_t i = (size_t)(start * R); i < b.size(); i++) {
+        float t = i / (float)R - start;
+        b[i] += std::sin(2 * PI * f * t) * amp * env(t, attack, decay);
     }
 }
-void normalizeTo(std::vector<float>& b, float peak) {
+// small room: a few feedback combs + a low-pass, mixed in quietly
+void addRoom(std::vector<float>& b, float mix, float size = 1.0f) {
+    const int delays[4] = {1116, 1188, 1277, 1356};
+    std::vector<float> wet(b.size(), 0.0f);
+    for (int d : delays) {
+        int D = (int)(d * size);
+        std::vector<float> line(D, 0.0f);
+        float lp = 0;
+        for (size_t i = 0; i < b.size(); i++) {
+            float y = line[i % D];
+            lp += (y - lp) * 0.35f;
+            line[i % D] = b[i] + lp * 0.72f;
+            wet[i] += y * 0.25f;
+        }
+    }
+    for (size_t i = 0; i < b.size(); i++) b[i] += wet[i] * mix;
+}
+void finish(std::vector<float>& b, float peak) {
+    // fade the last 15 ms so tails never click, then set the level
+    size_t f = std::min(b.size(), (size_t)(0.015f * R));
+    for (size_t i = 0; i < f; i++) b[b.size() - 1 - i] *= i / (float)f;
     float m = 1e-6f;
     for (float v : b) m = std::max(m, std::fabs(v));
     for (float& v : b) v *= peak / m;
@@ -59,31 +84,38 @@ void normalizeTo(std::vector<float>& b, float peak) {
 
 void Audio::synthesize() {
     auto& s = sounds_;
-    s[SND_HIT] = make(0.07f);      addSine(s[SND_HIT], 1900, 1700, 0.8f, 0.001f, 0.02f);  normalizeTo(s[SND_HIT], 0.5f);
-    s[SND_KILL] = make(0.18f);     addSine(s[SND_KILL], 1500, 1500, 0.6f, 0.001f, 0.03f);
-    { auto t = make(0.18f); addSine(t, 2300, 2300, 0.6f, 0.001f, 0.04f);                    // second, higher blip
-      for (size_t i = 0; i + R / 14 < s[SND_KILL].size(); i++) s[SND_KILL][i + R / 14] += t[i]; }
-    normalizeTo(s[SND_KILL], 0.6f);
-    s[SND_HURT] = make(0.15f);     addSine(s[SND_HURT], 160, 70, 0.8f, 0.002f, 0.05f); addNoise(s[SND_HURT], 0.4f, 0.001f, 0.03f, 0.2f); normalizeTo(s[SND_HURT], 0.6f);
-    s[SND_STEP] = make(0.06f);     addNoise(s[SND_STEP], 1, 0.002f, 0.012f, 0.12f, 3); addSine(s[SND_STEP], 110, 80, 0.4f, 0.001f, 0.015f); normalizeTo(s[SND_STEP], 0.3f);
-    s[SND_JUMP] = make(0.08f);     addNoise(s[SND_JUMP], 1, 0.004f, 0.02f, 0.3f, 4); normalizeTo(s[SND_JUMP], 0.2f);
-    s[SND_LAND] = make(0.1f);      addSine(s[SND_LAND], 120, 60, 1, 0.001f, 0.03f); addNoise(s[SND_LAND], 0.6f, 0.001f, 0.02f, 0.1f, 5); normalizeTo(s[SND_LAND], 0.4f);
-    s[SND_RIFLE] = make(0.12f);    addNoise(s[SND_RIFLE], 1, 0.0005f, 0.025f, 0.6f, 6); addSine(s[SND_RIFLE], 900, 300, 0.5f, 0.0005f, 0.02f); normalizeTo(s[SND_RIFLE], 0.55f);
-    s[SND_ROCKET] = make(0.5f);    addNoise(s[SND_ROCKET], 1, 0.02f, 0.15f, 0.08f, 7); addSine(s[SND_ROCKET], 90, 60, 0.6f, 0.005f, 0.12f); normalizeTo(s[SND_ROCKET], 0.6f);
-    s[SND_KNIFE] = make(0.14f);    addNoise(s[SND_KNIFE], 1, 0.03f, 0.03f, 0.9f, 8); normalizeTo(s[SND_KNIFE], 0.35f);
-    s[SND_SNIPER] = make(0.7f);    addNoise(s[SND_SNIPER], 1, 0.0003f, 0.02f, 0.8f, 9); addSine(s[SND_SNIPER], 70, 40, 0.8f, 0.001f, 0.18f); addNoise(s[SND_SNIPER], 0.4f, 0.001f, 0.25f, 0.03f, 10); normalizeTo(s[SND_SNIPER], 0.8f);
-    s[SND_LASER] = make(0.06f);    addSaw(s[SND_LASER], 220, 0.5f, 0.003f, 0.05f); addSaw(s[SND_LASER], 331, 0.3f, 0.003f, 0.05f); normalizeTo(s[SND_LASER], 0.25f);
-    s[SND_SHOTGUN] = make(0.35f);  addNoise(s[SND_SHOTGUN], 1, 0.0005f, 0.07f, 0.25f, 11); addSine(s[SND_SHOTGUN], 85, 50, 0.9f, 0.001f, 0.08f); normalizeTo(s[SND_SHOTGUN], 0.75f);
-    s[SND_STICKY] = make(0.16f);   addSine(s[SND_STICKY], 220, 120, 1, 0.001f, 0.04f); addNoise(s[SND_STICKY], 0.4f, 0.001f, 0.02f, 0.3f, 12); normalizeTo(s[SND_STICKY], 0.45f);
-    s[SND_CROSSBOW] = make(0.25f); addSine(s[SND_CROSSBOW], 340, 300, 1, 0.001f, 0.06f); addNoise(s[SND_CROSSBOW], 0.5f, 0.0005f, 0.01f, 0.7f, 13); normalizeTo(s[SND_CROSSBOW], 0.45f);
-    s[SND_EXPLOSION] = make(0.9f); addNoise(s[SND_EXPLOSION], 1, 0.002f, 0.25f, 0.06f, 14); addSine(s[SND_EXPLOSION], 60, 30, 0.9f, 0.002f, 0.3f); normalizeTo(s[SND_EXPLOSION], 0.85f);
-    s[SND_STICKY_ATTACH] = make(0.04f); addNoise(s[SND_STICKY_ATTACH], 1, 0.0005f, 0.006f, 0.5f, 15); normalizeTo(s[SND_STICKY_ATTACH], 0.3f);
-    s[SND_BOLT_HIT] = make(0.08f); addSine(s[SND_BOLT_HIT], 260, 140, 1, 0.001f, 0.02f); addNoise(s[SND_BOLT_HIT], 0.5f, 0.001f, 0.01f, 0.4f, 16); normalizeTo(s[SND_BOLT_HIT], 0.4f);
-    s[SND_DASH] = make(0.28f);     addNoise(s[SND_DASH], 1, 0.03f, 0.07f, 0.35f, 17); addSine(s[SND_DASH], 300, 900, 0.25f, 0.02f, 0.08f); normalizeTo(s[SND_DASH], 0.45f);
-    s[SND_GRAPPLE_FIRE] = make(0.16f); addSine(s[SND_GRAPPLE_FIRE], 1400, 300, 0.7f, 0.001f, 0.06f); addNoise(s[SND_GRAPPLE_FIRE], 0.3f, 0.001f, 0.05f, 0.7f, 18); normalizeTo(s[SND_GRAPPLE_FIRE], 0.4f);
-    s[SND_GRAPPLE_HIT] = make(0.25f);
-    for (float f : {1230.0f, 1710.0f, 2490.0f}) addSine(s[SND_GRAPPLE_HIT], f, f, 0.4f, 0.0005f, 0.06f);
-    normalizeTo(s[SND_GRAPPLE_HIT], 0.4f);
+    // feedback: soft rounded ticks
+    s[SND_HIT] = make(0.09f);  addThump(s[SND_HIT], 1500, 1100, 0.01f, 1, 0.0015f, 0.022f); addTone(s[SND_HIT], 2600, 0.15f, 0.001f, 0.01f); finish(s[SND_HIT], 0.32f);
+    s[SND_KILL] = make(0.3f);  addThump(s[SND_KILL], 1300, 1000, 0.01f, 1, 0.0015f, 0.03f); addThump(s[SND_KILL], 1900, 1500, 0.01f, 0.9f, 0.0015f, 0.05f, 0.075f);
+    addRoom(s[SND_KILL], 0.25f, 0.6f); finish(s[SND_KILL], 0.36f);
+    s[SND_HURT] = make(0.22f); addThump(s[SND_HURT], 140, 60, 0.04f, 1, 0.003f, 0.06f); addBand(s[SND_HURT], 80, 900, 0.5f, 0.002f, 0.04f, 1); finish(s[SND_HURT], 0.35f);
+    // movement: muffled, quiet
+    s[SND_STEP] = make(0.09f); addBand(s[SND_STEP], 60, 700, 1, 0.003f, 0.018f, 3); addThump(s[SND_STEP], 120, 70, 0.02f, 0.5f, 0.002f, 0.02f); finish(s[SND_STEP], 0.16f);
+    s[SND_JUMP] = make(0.12f); addBand(s[SND_JUMP], 200, 1500, 1, 0.01f, 0.03f, 4); finish(s[SND_JUMP], 0.1f);
+    s[SND_LAND] = make(0.16f); addThump(s[SND_LAND], 110, 50, 0.03f, 1, 0.002f, 0.05f); addBand(s[SND_LAND], 60, 600, 0.6f, 0.002f, 0.03f, 5); finish(s[SND_LAND], 0.25f);
+    // weapons: body + crack + room
+    s[SND_RIFLE] = make(0.3f); addThump(s[SND_RIFLE], 220, 80, 0.015f, 1, 0.001f, 0.035f); addBand(s[SND_RIFLE], 400, 4500, 0.9f, 0.001f, 0.025f, 6, 1200);
+    addRoom(s[SND_RIFLE], 0.35f, 0.8f); finish(s[SND_RIFLE], 0.28f);
+    s[SND_ROCKET] = make(0.7f); addThump(s[SND_ROCKET], 160, 45, 0.05f, 1, 0.004f, 0.12f); addBand(s[SND_ROCKET], 80, 1800, 0.9f, 0.03f, 0.22f, 7, 500);
+    addRoom(s[SND_ROCKET], 0.3f); finish(s[SND_ROCKET], 0.32f);
+    s[SND_KNIFE] = make(0.18f); addBand(s[SND_KNIFE], 1500, 6000, 1, 0.04f, 0.035f, 8, 2500); finish(s[SND_KNIFE], 0.16f);
+    s[SND_SNIPER] = make(1.0f); addThump(s[SND_SNIPER], 260, 45, 0.03f, 1, 0.001f, 0.12f); addBand(s[SND_SNIPER], 500, 6000, 0.8f, 0.0008f, 0.03f, 9, 1500);
+    addBand(s[SND_SNIPER], 60, 500, 0.5f, 0.01f, 0.3f, 10); addRoom(s[SND_SNIPER], 0.45f, 1.3f); finish(s[SND_SNIPER], 0.4f);
+    s[SND_LASER] = make(0.07f); addTone(s[SND_LASER], 330, 0.6f, 0.006f, 0.05f); addTone(s[SND_LASER], 495, 0.3f, 0.006f, 0.04f); addBand(s[SND_LASER], 1000, 3000, 0.15f, 0.005f, 0.04f, 19); finish(s[SND_LASER], 0.1f);
+    s[SND_SHOTGUN] = make(0.55f); addThump(s[SND_SHOTGUN], 180, 50, 0.025f, 1, 0.001f, 0.08f); addBand(s[SND_SHOTGUN], 150, 3500, 1, 0.001f, 0.06f, 11, 700);
+    addRoom(s[SND_SHOTGUN], 0.4f, 1.1f); finish(s[SND_SHOTGUN], 0.38f);
+    s[SND_STICKY] = make(0.25f); addThump(s[SND_STICKY], 300, 110, 0.03f, 1, 0.002f, 0.05f); addBand(s[SND_STICKY], 200, 1500, 0.3f, 0.002f, 0.03f, 12); addRoom(s[SND_STICKY], 0.2f, 0.7f); finish(s[SND_STICKY], 0.26f);
+    s[SND_CROSSBOW] = make(0.35f); addThump(s[SND_CROSSBOW], 420, 300, 0.05f, 1, 0.001f, 0.09f); addBand(s[SND_CROSSBOW], 1500, 5000, 0.4f, 0.001f, 0.012f, 13); addRoom(s[SND_CROSSBOW], 0.2f, 0.7f); finish(s[SND_CROSSBOW], 0.24f);
+    s[SND_EXPLOSION] = make(1.2f); addThump(s[SND_EXPLOSION], 120, 32, 0.08f, 1, 0.002f, 0.3f); addBand(s[SND_EXPLOSION], 40, 2500, 1, 0.003f, 0.25f, 14, 300);
+    addRoom(s[SND_EXPLOSION], 0.4f, 1.4f); finish(s[SND_EXPLOSION], 0.42f);
+    s[SND_STICKY_ATTACH] = make(0.06f); addThump(s[SND_STICKY_ATTACH], 900, 500, 0.008f, 1, 0.001f, 0.01f); finish(s[SND_STICKY_ATTACH], 0.14f);
+    s[SND_BOLT_HIT] = make(0.12f); addThump(s[SND_BOLT_HIT], 320, 140, 0.015f, 1, 0.001f, 0.03f); addBand(s[SND_BOLT_HIT], 300, 2500, 0.4f, 0.001f, 0.015f, 16); finish(s[SND_BOLT_HIT], 0.2f);
+    // abilities
+    s[SND_DASH] = make(0.35f); addBand(s[SND_DASH], 300, 900, 1, 0.05f, 0.09f, 17, 4000); finish(s[SND_DASH], 0.22f);
+    s[SND_GRAPPLE_FIRE] = make(0.2f); addBand(s[SND_GRAPPLE_FIRE], 800, 5000, 1, 0.005f, 0.06f, 18, 1500); addThump(s[SND_GRAPPLE_FIRE], 700, 300, 0.04f, 0.4f, 0.002f, 0.05f); finish(s[SND_GRAPPLE_FIRE], 0.18f);
+    s[SND_GRAPPLE_HIT] = make(0.35f);
+    for (float f : {1180.0f, 1630.0f, 2360.0f}) addTone(s[SND_GRAPPLE_HIT], f, 0.35f, 0.001f, 0.07f);
+    addThump(s[SND_GRAPPLE_HIT], 400, 200, 0.01f, 0.5f, 0.001f, 0.02f); addRoom(s[SND_GRAPPLE_HIT], 0.25f, 0.6f); finish(s[SND_GRAPPLE_HIT], 0.2f);
 }
 
 void Audio::voiceGains(Voice& v) {

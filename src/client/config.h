@@ -14,7 +14,7 @@ struct Settings {
     int maxFps = 0;             // 0 = unlimited
     int width = 1280, height = 720;
     bool shadows = true;
-    float volume = 0.8f;
+    float volume = 0.6f;
     bool hitsounds = true;
     int shadowRes = 2048;
     // The two-color palette: your team, and the enemy (everyone else in FFA/race).

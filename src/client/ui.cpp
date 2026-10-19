@@ -50,6 +50,7 @@ bool Ui::textField(int id, float x, float y, float w, float h, std::string& valu
         for (char c : in_.chars)
             if (c >= 32 && c < 127 && value.size() < maxLen) { value += c; changed = true; }
         if (in_.backspace && !value.empty()) { value.pop_back(); changed = true; }
+        if (in_.copy) copied_ = value;
         if (in_.enter || in_.tab || in_.escape) focus_ = -1;
     }
     r_->rect(x, y, w, h, focused ? Color{0.1f, 0.12f, 0.16f, 1} : Color{0.08f, 0.09f, 0.11f, 0.95f});

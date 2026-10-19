@@ -9,6 +9,7 @@ struct UiInput {
     bool down = false, pressed = false;
     std::string chars;
     bool backspace = false, enter = false, tab = false, escape = false;
+    bool copy = false;          // Ctrl/Cmd+C this frame
 };
 
 class Ui {
@@ -28,6 +29,8 @@ public:
     bool slider(float x, float y, float w, float h, const std::string& label, float& v, float lo, float hi, const char* fmt = "%.1f");
     void clearFocus() { focus_ = -1; }
     bool typing() const { return focus_ >= 0; }
+    // Text the focused field wants on the clipboard (Ctrl+C); empty if none.
+    std::string takeCopy() { std::string c; c.swap(copied_); return c; }
 
     Color accent = {0.25f, 0.85f, 1.0f, 1.0f};
 
@@ -39,4 +42,5 @@ private:
     int focus_ = -1;
     int activeSlider_ = -1, sliderCounter_ = 0;
     double blink_ = 0;
+    std::string copied_;
 };

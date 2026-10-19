@@ -138,8 +138,11 @@ void Game::stopHost() {
     host_.reset();
 }
 
-void Game::connectTo(const std::string& addr) {
+void Game::connectTo(const std::string& rawAddr) {
     error_.clear();
+    std::string addr = rawAddr; // pasted addresses often carry spaces / newlines
+    while (!addr.empty() && (unsigned char)addr.back() <= ' ') addr.pop_back();
+    while (!addr.empty() && (unsigned char)addr[0] <= ' ') addr.erase(0, 1);
     if (!net_.connect(addr, cfg_.name)) { error_ = net_.error(); return; }
     if (!host_) { cfg_.lastAddress = addr; cfg_.save(); }
     setScreen(Screen::Connecting);
@@ -267,6 +270,18 @@ void Game::onKey(int key, int action, int mods) {
     if (key == GLFW_KEY_BACKSPACE) uiIn_.backspace = true;
     if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) uiIn_.enter = true;
     if (key == GLFW_KEY_TAB) uiIn_.tab = true;
+    // clipboard: Ctrl+V / Cmd+V pastes into the focused text field or chat, Ctrl+C copies the field
+    bool cmd = (mods & GLFW_MOD_CONTROL) || (mods & GLFW_MOD_SUPER);
+    if (cmd && key == GLFW_KEY_V && (ui_.typing() || chatting_)) {
+        if (const char* clip = glfwGetClipboardString(win_))
+            for (const char* c = clip; *c; c++) if (*c >= 32 && *c < 127) uiIn_.chars += *c;
+        return;
+    }
+    if (cmd && key == GLFW_KEY_C && (ui_.typing() || chatting_)) {
+        if (chatting_) glfwSetClipboardString(win_, chatText_.c_str());
+        else uiIn_.copy = true;
+        return;
+    }
     if (action != GLFW_PRESS) return;
     bool typing = chatting_ || ui_.typing();
     if (captureAction_ >= 0 || !typing) {
@@ -550,6 +565,8 @@ void Game::frame(double dt) {
         }
     }
     drawMenu();
+    std::string copied = ui_.takeCopy();
+    if (!copied.empty()) glfwSetClipboardString(win_, copied.c_str());
     if (showPerf_) drawPerf();
     r_.flush2D();
 
@@ -560,7 +577,7 @@ void Game::frame(double dt) {
     }
     uiIn_.pressed = false;
     uiIn_.chars.clear();
-    uiIn_.backspace = uiIn_.enter = uiIn_.tab = uiIn_.escape = false;
+    uiIn_.backspace = uiIn_.enter = uiIn_.tab = uiIn_.escape = uiIn_.copy = false;
 }
 
 // ---------------------------------------------------------------------------
