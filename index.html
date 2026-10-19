@@ -5,78 +5,331 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>quark</title>
 <link rel="icon" type="image/png" href="icon.png">
-<meta name="description" content="quark - a fast, minimal multiplayer FPS on a custom engine.">
+<meta name="description" content="quark: a fast, minimal multiplayer FPS on a fully custom engine. 1000 Hz servers, sub-millisecond input latency, free on Windows, macOS and Linux.">
+<meta property="og:title" content="quark">
+<meta property="og:description" content="A fast, minimal multiplayer FPS on a fully custom engine.">
+<meta property="og:image" content="img/hero.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>
-  :root { --bg:#0b0d12; --panel:#141820; --line:#000; --text:#e8eaee; --dim:#9aa1ad; --accent:#40d9ff; --enemy:#ff4d40; }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.55 ui-monospace, "Cascadia Mono", Consolas, monospace; }
-  main { max-width:920px; margin:0 auto; padding:40px 16px 80px; }
-  h1 { font-size:64px; letter-spacing:6px; margin:0; color:var(--accent); }
-  h2 { font-size:20px; letter-spacing:2px; margin:48px 0 12px; text-transform:uppercase; }
-  .tag { color:var(--dim); margin:4px 0 24px; }
-  img.shot { width:100%; border:3px solid var(--line); outline:1px solid #2a303c; display:block; }
-  .card { background:var(--panel); border:3px solid var(--line); outline:1px solid #2a303c; padding:20px; margin-top:16px; }
-  .btns { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
-  a.btn { display:inline-block; padding:10px 16px; border:3px solid var(--line); background:#1d2330; color:var(--text); text-decoration:none; }
-  a.btn.primary { background:var(--accent); color:#001018; font-weight:bold; }
-  a.btn:hover { outline:2px solid var(--accent); }
-  .ver { color:var(--accent); }
-  .date { color:var(--dim); font-size:14px; }
-  .log h3 { margin:10px 0 4px; font-size:16px; } .log ul { margin:4px 0; padding-left:20px; }
-  .muted { color:var(--dim); font-size:14px; }
-  details { margin-top:10px; } summary { cursor:pointer; }
+  :root {
+    --bg: #0a0c10; --bg2: #10141b; --panel: #151a23; --edge: #000; --hair: #262d3a;
+    --text: #e9ecf1; --dim: #98a1b0; --faint: #5f6878;
+    --accent: #40d9ff; --accent-ink: #00141c; --enemy: #ff4d40;
+    --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 Rubik, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: var(--accent); }
+  img { max-width: 100%; display: block; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+
+  /* nav */
+  nav { position: sticky; top: 0; z-index: 10; background: rgba(10,12,16,.85); backdrop-filter: blur(8px); border-bottom: 1px solid var(--hair); }
+  nav .wrap { display: flex; align-items: center; gap: 22px; height: 56px; }
+  nav .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: 3px; color: var(--text); text-decoration: none; }
+  nav .brand img { width: 26px; height: 26px; }
+  nav .links { display: flex; gap: 18px; margin-left: auto; font-size: 14px; }
+  nav .links a { color: var(--dim); text-decoration: none; }
+  nav .links a:hover { color: var(--text); }
+  @media (max-width: 640px) { nav .links a:not(.keep) { display: none; } }
+
+  /* hero */
+  .hero { position: relative; overflow: hidden; border-bottom: 3px solid var(--edge); }
+  .hero .bg { position: absolute; inset: 0; background: url(img/hero.jpg) center/cover; filter: saturate(.6) brightness(.55); transform: scale(1.04); }
+  .hero .bg::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(10,12,16,.96) 0%, rgba(10,12,16,.75) 45%, rgba(10,12,16,.2) 100%), linear-gradient(0deg, var(--bg) 0%, transparent 35%); }
+  .hero .wrap { position: relative; padding-top: 88px; padding-bottom: 96px; }
+  .logo { display: flex; align-items: center; gap: 18px; margin: 0; font-size: clamp(56px, 11vw, 112px); font-weight: 800; letter-spacing: .08em; line-height: 1; color: var(--accent); }
+  .logo img { width: .82em; height: .82em; }
+  .lede { font-size: clamp(18px, 2.4vw, 23px); color: var(--text); max-width: 560px; margin: 22px 0 8px; }
+  .sub { color: var(--dim); max-width: 560px; margin: 0 0 30px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .btn { display: inline-flex; align-items: center; gap: 10px; padding: 13px 22px; border: 3px solid var(--edge); background: #1c2230; color: var(--text); text-decoration: none; font-weight: 600; box-shadow: 4px 4px 0 var(--edge); transition: transform .08s, box-shadow .08s; }
+  .btn:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--edge); }
+  .btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--edge); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); font-size: 18px; padding: 15px 26px; }
+  .btn small { font-weight: 400; opacity: .75; }
+  .platforms { margin-top: 16px; font-size: 14px; color: var(--dim); }
+  .platforms a { margin-right: 14px; }
+  .badge { display: inline-block; font: 600 13px var(--mono); color: var(--accent); border: 1px solid rgba(64,217,255,.35); background: rgba(64,217,255,.08); padding: 3px 9px; margin-bottom: 22px; }
+
+  /* sections */
+  section { padding: 76px 0 8px; }
+  h2 { font-size: 13px; letter-spacing: .22em; text-transform: uppercase; color: var(--accent); margin: 0 0 10px; font-weight: 600; }
+  .h { font-size: clamp(26px, 3.6vw, 36px); font-weight: 800; margin: 0 0 14px; line-height: 1.15; }
+  .intro { color: var(--dim); max-width: 680px; margin: 0 0 32px; }
+
+  /* stats */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); border: 3px solid var(--edge); background: var(--panel); box-shadow: 6px 6px 0 var(--edge); }
+  .stat { padding: 22px 20px; border-right: 1px solid var(--hair); }
+  .stat:last-child { border-right: 0; }
+  .stat b { display: block; font: 600 clamp(26px, 3.4vw, 34px)/1.1 var(--mono); color: var(--accent); }
+  .stat span { color: var(--dim); font-size: 14px; }
+  @media (max-width: 760px) { .stats { grid-template-columns: 1fr 1fr; } .stat:nth-child(2) { border-right: 0; } .stat:nth-child(-n+2) { border-bottom: 1px solid var(--hair); } }
+
+  /* feature grid */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 3px solid var(--edge); box-shadow: 5px 5px 0 var(--edge); padding: 22px; }
+  .card h3 { margin: 0 0 8px; font-size: 18px; }
+  .card p { margin: 0; color: var(--dim); font-size: 15px; }
+  .card .k { font: 600 12px var(--mono); color: var(--accent); letter-spacing: .1em; display: block; margin-bottom: 10px; }
+
+  /* modes */
+  .modes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+  @media (max-width: 960px) { .modes { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 520px) { .modes { grid-template-columns: 1fr; } }
+  .mode { background: var(--panel); border: 3px solid var(--edge); box-shadow: 5px 5px 0 var(--edge); display: flex; flex-direction: column; }
+  .mode img { aspect-ratio: 16/9; object-fit: cover; border-bottom: 3px solid var(--edge); filter: saturate(.8); }
+  .mode div { padding: 14px 16px 16px; }
+  .mode h3 { margin: 0; font-size: 17px; letter-spacing: .04em; }
+  .mode .map { font: 12px var(--mono); color: var(--accent); }
+  .mode p { margin: 6px 0 0; color: var(--dim); font-size: 14px; }
+
+  /* weapons */
+  .table { border: 3px solid var(--edge); box-shadow: 6px 6px 0 var(--edge); background: var(--panel); overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { padding: 11px 16px; text-align: left; border-bottom: 1px solid var(--hair); white-space: nowrap; }
+  th { font: 600 12px var(--mono); letter-spacing: .08em; color: var(--dim); text-transform: uppercase; background: var(--bg2); }
+  tr:last-child td { border-bottom: 0; }
+  td.num { font-family: var(--mono); }
+  td.name { font-weight: 600; letter-spacing: .04em; }
+  .bar { height: 6px; background: var(--hair); min-width: 90px; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
+  .tag { font: 11px var(--mono); color: var(--dim); border: 1px solid var(--hair); padding: 1px 6px; margin-left: 6px; }
+  .note { color: var(--faint); font-size: 13px; margin-top: 12px; }
+
+  /* host */
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 760px) { .split { grid-template-columns: 1fr; } }
+  pre { margin: 12px 0 0; background: var(--bg); border: 1px solid var(--hair); padding: 12px 14px; font: 13px/1.6 var(--mono); color: var(--text); overflow-x: auto; }
+  code { font-family: var(--mono); font-size: .92em; }
+
+  /* gallery */
+  .gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 700px) { .gallery { grid-template-columns: 1fr; } }
+  .gallery img { border: 3px solid var(--edge); box-shadow: 5px 5px 0 var(--edge); }
+
+  /* changelog */
+  .log { display: grid; gap: 16px; }
+  .entry { background: var(--panel); border: 3px solid var(--edge); box-shadow: 5px 5px 0 var(--edge); }
+  .entry > summary { list-style: none; cursor: pointer; padding: 16px 20px; display: flex; align-items: baseline; gap: 14px; }
+  .entry > summary::-webkit-details-marker { display: none; }
+  .entry > summary .v { font: 600 18px var(--mono); color: var(--accent); }
+  .entry > summary .t { color: var(--dim); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .entry > summary::after { content: "+"; margin-left: auto; font: 600 18px var(--mono); color: var(--faint); }
+  .entry[open] > summary::after { content: "-"; }
+  .entry .body { padding: 0 20px 18px; border-top: 1px solid var(--hair); }
+  .entry h4 { margin: 18px 0 6px; font-size: 15px; letter-spacing: .03em; }
+  .entry ul { margin: 6px 0; padding-left: 20px; color: #cfd5de; }
+  .entry li { margin: 3px 0; }
+  .entry p { color: #cfd5de; margin: 8px 0; }
+  .entry .tw { overflow-x: auto; margin: 10px 0; }
+  .entry table { font-size: 14px; border: 1px solid var(--hair); }
+  .log > *, .grid > *, .modes > *, .split > * { min-width: 0; }
+  .entry th, .entry td { padding: 7px 12px; }
+  .more { margin-top: 16px; }
+
+  footer { margin-top: 90px; border-top: 1px solid var(--hair); padding: 28px 0 40px; color: var(--faint); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 18px; justify-content: space-between; }
 </style>
 </head>
 <body>
-<main>
-  <h1><img src="icon.png" alt="" width="64" height="64" style="vertical-align:-6px;margin-right:14px">QUARK</h1>
-  <p class="tag">A fast, minimal multiplayer FPS on a fully custom engine. Built for frame rate and latency first.</p>
-  <img class="shot" src="screenshot.png" alt="quark gameplay">
-
-  <h2>Download</h2>
-  <div class="card" id="latest"><span class="muted">loading latest release...</span></div>
-
-  <h2>Changelog</h2>
-  <div id="history"><span class="muted">loading...</span></div>
-
-  <h2>Hosting</h2>
-  <div class="card">
-    Host from the game (Host Game), or run <code>quark_server --mode ffa --map arena --upnp</code>.
-    Friends join with your public IP and port (default UDP 27500). If automatic port forwarding (UPnP) fails, forward that UDP port on your router.
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#"><img src="icon.png" alt="">QUARK</a>
+    <div class="links">
+      <a href="#features">Engine</a><a href="#modes">Modes</a><a href="#weapons">Weapons</a><a href="#host">Host</a><a class="keep" href="#changelog">Changelog</a><a class="keep" href="#download">Download</a>
+    </div>
   </div>
+</nav>
+
+<header class="hero" id="download">
+  <div class="bg"></div>
+  <div class="wrap">
+    <span class="badge" id="ver">latest release</span>
+    <h1 class="logo"><img src="icon.png" alt="">QUARK</h1>
+    <p class="lede">A fast, minimal multiplayer shooter on a fully custom engine.</p>
+    <p class="sub">Two colors, baked light, black outlines on every edge, and an engine and netcode where latency comes first. Free on Windows 7–11, macOS and Linux.</p>
+    <div class="cta" id="cta">
+      <a class="btn primary" id="dl" href="#">Download launcher</a>
+      <a class="btn" href="#changelog">What's new</a>
+    </div>
+    <div class="platforms" id="platforms"></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section id="features">
+    <h2>The engine</h2>
+    <p class="h">Built for frame times, not frame rates.</p>
+    <p class="intro">quark is C++ from the ground up with no third-party engine. Every system is judged by its worst frames (1% and 0.1% lows), not its average.</p>
+    <div class="stats">
+      <div class="stat"><b>1000 Hz</b><span>server tick rate, with automatic fallback down to 125 Hz</span></div>
+      <div class="stat"><b>1 ms</b><span>movement steps: identical at any tick rate or frame rate</span></div>
+      <div class="stat"><b>&lt;0.5 ms</b><span>input to frame with low-latency mode on</span></div>
+      <div class="stat"><b>8</b><span>players per server, hosted in game or dedicated</span></div>
+    </div>
+    <div class="grid" style="margin-top:22px">
+      <div class="card"><span class="k">NETCODE</span><h3>Predicted, lag-compensated</h3><p>Client prediction with replay, 3-snapshot interpolation and server-side rewind for every hitscan shot. Shot spread is seeded, so your tracer shows exactly what the server hit.</p></div>
+      <div class="card"><span class="k">RENDERER</span><h3>Baked light, live shadows</h3><p>Pre-baked sun, sky and bounce lighting, real-time shadows on players and projectiles, and outlines computed in shaders. No textures, just shades of grey.</p></div>
+      <div class="card"><span class="k">LATENCY</span><h3>Low-latency mode on any GPU</h3><p>Exclusive or borderless fullscreen, every present mode, and a Reflex-style mode that works on any GPU. The F3 overlay shows input-to-frame latency.</p></div>
+      <div class="card"><span class="k">MOVEMENT</span><h3>Bhop, dash, grapple</h3><p>Hold jump to bunny-hop, dash on Shift (it tilts with your aim), and a momentum grapple on Q. Strong air control throughout.</p></div>
+      <div class="card"><span class="k">PLAY</span><h3>Bots, votes, server list</h3><p>Four bot levels that aim like people, balance bots for uneven teams, votes for start, map, mode and bots, and an internet server list.</p></div>
+      <div class="card"><span class="k">LAUNCHER</span><h3>Always up to date</h3><p>The launcher installs quark, keeps it updated, and lets you pin any older version. It also adds desktop and Start Menu shortcuts and an entry in installed programs.</p></div>
+    </div>
+  </section>
+
+  <section id="modes">
+    <h2>Game modes</h2>
+    <p class="h">Eight modes, each with a map built for it.</p>
+    <p class="intro">Every mode also runs on Arena, and players can vote to change the map or mode mid-session.</p>
+    <div class="modes">
+      <div class="mode"><img src="img/foundry.jpg" alt="Foundry" loading="lazy"><div><h3>Free for all</h3><span class="map">FOUNDRY</span><p>Everyone for themselves. A tie at the time limit goes to sudden death.</p></div></div>
+      <div class="mode"><img src="img/crucible.jpg" alt="Crucible" loading="lazy"><div><h3>Duel</h3><span class="map">CRUCIBLE</span><p>1v1 or 2v2. Every life gets a random modifier: vampire laser, rockets only, knives only, 1 HP, double size, or grapple-only movement.</p></div></div>
+      <div class="mode"><img src="img/duel.jpg" alt="Duel" loading="lazy"><div><h3>VS</h3><span class="map">DUEL</span><p>Team rounds with one life each. Stalemates drain health.</p></div></div>
+      <div class="mode"><img src="img/depot.jpg" alt="Depot" loading="lazy"><div><h3>Bomb</h3><span class="map">DEPOT</span><p>Attackers plant at one of two sites; defenders defuse.</p></div></div>
+      <div class="mode"><img src="img/summit.jpg" alt="Summit" loading="lazy"><div><h3>King of the hill</h3><span class="map">SUMMIT</span><p>Hold the plateau to score. First team to the target wins.</p></div></div>
+      <div class="mode"><img src="img/railyard.jpg" alt="Railyard" loading="lazy"><div><h3>Payload</h3><span class="map">RAILYARD</span><p>Push the solid cart down the track. Each team attacks once, and the faster push wins.</p></div></div>
+      <div class="mode"><img src="img/tug.jpg" alt="Tug" loading="lazy"><div><h3>Neutral payload</h3><span class="map">TUG</span><p>One cart in the middle. Push it into the enemy's end.</p></div></div>
+      <div class="mode"><img src="img/sprint.jpg" alt="Sprint" loading="lazy"><div><h3>Race</h3><span class="map">SPRINT</span><p>Checkpoints in order. Weapons only knock players back.</p></div></div>
+    </div>
+  </section>
+
+  <section id="weapons">
+    <h2>Arsenal</h2>
+    <p class="h">Eight weapons.</p>
+    <p class="intro">Numbers come straight from the game's source on every release. Time to kill assumes a full-health target and perfect aim.</p>
+    <div class="table">
+      <table>
+        <thead><tr><th>Weapon</th><th>Damage</th><th>Fire rate</th><th>Shots to kill</th><th>Time to kill</th><th></th></tr></thead>
+        <tbody id="wtable"><tr><td colspan="6" style="color:var(--dim)">loading…</td></tr></tbody>
+      </table>
+    </div>
+    <p class="note">Splash damage falls off from the center. Your own rocket does 10% damage to you when the blast is below you. Laser alt-fire pulls the target in for 75% damage. Sniper and crossbow zoom on alt-fire.</p>
+  </section>
+
+  <section id="host">
+    <h2>Hosting</h2>
+    <p class="h">Host from the game or run a dedicated server.</p>
+    <div class="split">
+      <div class="card">
+        <span class="k">IN GAME</span><h3>Host game</h3>
+        <p>Pick a map and mode and press Start. UPnP opens the port on your router automatically. Leave <b>PUBLIC</b> on to show the game on everyone's server list. Friends can also join with your public IP and port (UDP 27500).</p>
+      </div>
+      <div class="card">
+        <span class="k">DEDICATED</span><h3>quark_server</h3>
+        <p>Ships with every download.</p>
+        <pre>quark_server --mode duel --map crucible --public --upnp
+quark_server --mode koth --log simple --bots 3 --botskill 2</pre>
+      </div>
+    </div>
+  </section>
+
+  <section id="gallery">
+    <h2>In game</h2>
+    <div class="gallery">
+      <img src="img/play-duel.jpg" alt="Duel on Crucible" loading="lazy">
+      <img src="img/play-bomb.jpg" alt="Bomb on Depot" loading="lazy">
+    </div>
+  </section>
+
+  <section id="changelog">
+    <h2>Changelog</h2>
+    <p class="h">Every update.</p>
+    <div class="log" id="log"><div class="card" style="color:var(--dim)">loading…</div></div>
+    <div class="more"><a class="btn" id="morebtn" href="#" style="display:none">Show older versions</a></div>
+  </section>
 </main>
+
+<footer>
+  <div class="wrap">
+    <span>quark · free · <a href="https://github.com/floration/quark">source on GitHub</a></span>
+    <span><a href="https://github.com/floration/quark/releases">all releases</a></span>
+  </div>
+</footer>
+
 <script>
 const REPO = "floration/quark";
-const esc = s => s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-function md(text) {
-  let html = "", inList = false;
-  for (const raw of (text || "").split(/\r?\n/)) {
-    const line = raw.trim();
-    if (/^[-*] /.test(line)) { if (!inList) { html += "<ul>"; inList = true; } html += "<li>" + esc(line.slice(2)) + "</li>"; continue; }
-    if (inList) { html += "</ul>"; inList = false; }
-    if (/^#+ /.test(line)) html += "<h3>" + esc(line.replace(/^#+ /, "")) + "</h3>";
-    else if (line) html += "<p>" + esc(line) + "</p>";
-  }
-  return html + (inList ? "</ul>" : "");
-}
 const DL = n => `https://github.com/${REPO}/releases/latest/download/${n}`;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+// download buttons for the visitor's platform
 const ua = navigator.userAgent;
 const os = /Win/.test(ua) ? "windows" : /Mac/.test(ua) ? "macos" : "linux";
-const launcher = { windows: ["quark-launcher-windows.exe", "Windows"], macos: ["quark-launcher-macos.zip", "macOS"], linux: ["quark-launcher-linux", "Linux"] };
-const others = Object.keys(launcher).filter(k => k !== os)
-  .map(k => `<a class="btn" href="${DL(launcher[k][0])}">${launcher[k][1]} launcher</a>`).join("");
+const L = {
+  windows: { file: "quark-launcher-windows.exe", name: "Windows", game: "quark-windows.zip" },
+  macos:   { file: "quark-launcher-macos.zip",  name: "macOS",   game: "quark-macos.zip" },
+  linux:   { file: "quark-launcher-linux",      name: "Linux",   game: "quark-linux.tar.gz" },
+};
+const dl = document.getElementById("dl");
+dl.href = DL(L[os].file);
+dl.innerHTML = `Download for ${L[os].name} <small>launcher</small>`;
+document.getElementById("platforms").innerHTML =
+  "Other platforms: " + Object.keys(L).filter(k => k !== os).map(k => `<a href="${DL(L[k].file)}">${L[k].name}</a>`).join("") +
+  ` · Full game without the launcher: ` + Object.keys(L).map(k => `<a href="${DL(L[k].game)}">${L[k].name.toLowerCase()}</a>`).join("");
+
+// minimal markdown: headings, lists, tables, **bold**, `code`
+function inline(s) {
+  return esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+function md(text) {
+  const lines = (text || "").split(/\r?\n/);
+  let html = "", list = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (/^\|.*\|$/.test(line)) { // table: header, separator, rows
+      if (list) { html += "</ul>"; list = false; }
+      const rows = [];
+      while (i < lines.length && /^\|.*\|$/.test(lines[i].trim())) rows.push(lines[i++].trim());
+      i--;
+      const cells = r => r.slice(1, -1).split("|").map(c => c.trim());
+      html += "<div class=\"tw\"><table><thead><tr>" + cells(rows[0]).map(c => `<th>${inline(c)}</th>`).join("") + "</tr></thead><tbody>";
+      for (const r of rows.slice(1)) if (!/^\|[\s:|-]+\|$/.test(r)) html += "<tr>" + cells(r).map(c => `<td>${inline(c)}</td>`).join("") + "</tr>";
+      html += "</tbody></table></div>";
+      continue;
+    }
+    if (/^[-*] /.test(line)) { if (!list) { html += "<ul>"; list = true; } html += "<li>" + inline(line.slice(2)) + "</li>"; continue; }
+    if (list) { html += "</ul>"; list = false; }
+    if (/^# /.test(line)) continue; // the version title is shown in the summary
+    if (/^#+ /.test(line)) html += "<h4>" + inline(line.replace(/^#+ /, "")) + "</h4>";
+    else if (line) html += "<p>" + inline(line) + "</p>";
+  }
+  return html + (list ? "</ul>" : "");
+}
+function firstLine(notes) { // short teaser for the collapsed summary
+  for (const l of (notes || "").split(/\r?\n/)) {
+    const t = l.trim();
+    if (t && !t.startsWith("# ") && !t.startsWith("|")) return t.replace(/^#+ |^[-*] /g, "").replace(/\*\*|`/g, "");
+  }
+  return "";
+}
+
 fetch("changelog.json").then(r => r.json()).then(log => {
-  const v = log.length ? log[0].version : "";
-  document.getElementById("latest").innerHTML =
-    `<div>latest: <span class="ver">v${esc(v)}</span></div>
-     <div class="btns"><a class="btn primary" href="${DL(launcher[os][0])}">Download launcher for ${launcher[os][1]}</a>${others}</div>
-     <p class="muted">The launcher installs quark and keeps it updated automatically. Windows 7 / 10 / 11, macOS, Linux.
-     Full game zips: <a class="ver" href="${DL("quark-windows.zip")}">windows</a> /
-     <a class="ver" href="${DL("quark-linux.tar.gz")}">linux</a> / <a class="ver" href="${DL("quark-macos.zip")}">macos</a></p>`;
-  document.getElementById("history").innerHTML = log.map((e, i) =>
-    `<div class="card log"><div><span class="ver">v${esc(e.version)}</span></div>
-     ${i < 3 ? md(e.notes) : `<details><summary>show</summary>${md(e.notes)}</details>`}</div>`).join("");
-}).catch(e => { document.getElementById("latest").textContent = "could not load changelog: " + e; });
+  if (log.length) document.getElementById("ver").textContent = "v" + log[0].version + " · latest release";
+  const box = document.getElementById("log"), more = document.getElementById("morebtn");
+  const render = n => {
+    box.innerHTML = log.slice(0, n).map((e, i) =>
+      `<details class="entry"${i === 0 ? " open" : ""}><summary><span class="v">v${esc(e.version)}</span><span class="t">${esc(firstLine(e.notes))}</span></summary><div class="body">${md(e.notes)}</div></details>`).join("");
+    more.style.display = n < log.length ? "" : "none";
+  };
+  let shown = 8;
+  render(shown);
+  more.onclick = ev => { ev.preventDefault(); shown = log.length; render(shown); };
+}).catch(e => { document.getElementById("log").innerHTML = `<div class="card">could not load the changelog (${esc(e)})</div>`; });
+
+fetch("weapons.json").then(r => r.json()).then(ws => {
+  const maxTtk = Math.max(...ws.map(w => w.ttk));
+  const rate = w => w.refire < 0.01 ? `${Math.round(1 / w.refire)} / s` : `${+w.refire.toFixed(3)} s`;
+  const dmg = w => w.pellets > 1 ? `${w.damage} × ${w.pellets}` : (w.beam ? `${w.damage} per ms` : `${w.damage}`);
+  document.getElementById("wtable").innerHTML = ws.slice().sort((a, b) => a.ttk - b.ttk).map(w =>
+    `<tr><td class="name">${esc(w.name)}${w.splash ? '<span class="tag">splash</span>' : ""}${w.beam ? '<span class="tag">beam</span>' : ""}${w.projectile ? '<span class="tag">projectile</span>' : ""}${w.scope ? '<span class="tag">zoom</span>' : ""}</td>
+     <td class="num">${dmg(w)}</td><td class="num">${rate(w)}</td><td class="num">${w.shots}</td>
+     <td class="num">${w.ttk.toFixed(2)} s</td><td><div class="bar"><i style="width:${(w.ttk / maxTtk * 100).toFixed(0)}%"></i></div></td></tr>`).join("");
+}).catch(() => { document.getElementById("wtable").innerHTML = '<tr><td colspan="6">could not load weapon stats</td></tr>'; });
 </script>
 </body>
 </html>
