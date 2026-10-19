@@ -58,34 +58,24 @@ function md(text) {
   }
   return html + (inList ? "</ul>" : "");
 }
-const asset = (r, name) => (r.assets || []).find(a => a.name === name);
-fetch(`https://api.github.com/repos/${REPO}/releases?per_page=30`)
-  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-  .then(rels => {
-    rels = rels.filter(r => /^v\d/.test(r.tag_name) && !r.draft);
-    if (!rels.length) throw new Error("no releases yet");
-    const L = rels[0];
-    const links = [
-      ["quark-launcher-windows.exe", "Windows launcher", true],
-      ["quark-windows.zip", "Windows (zip)"],
-      ["quark-launcher-linux", "Linux launcher"],
-      ["quark-linux.tar.gz", "Linux (tar.gz)"],
-      ["quark-launcher-macos.zip", "macOS launcher"],
-      ["quark-macos.zip", "macOS (zip)"],
-    ].map(([n, label, primary]) => { const a = asset(L, n); return a ? `<a class="btn${primary ? " primary" : ""}" href="${a.browser_download_url}">${label}</a>` : ""; }).join("");
-    document.getElementById("latest").innerHTML =
-      `<div><span class="ver">${esc(L.tag_name)}</span> <span class="date">${new Date(L.published_at).toLocaleDateString()}</span></div>
-       <div class="btns">${links}</div>
-       <p class="muted">The launcher installs the game and keeps it updated automatically. Windows 7 / 10 / 11, macOS, Linux.</p>`;
-    document.getElementById("history").innerHTML = rels.map((r, i) =>
-      `<div class="card log"><div><span class="ver">${esc(r.tag_name)}</span> <span class="date">${new Date(r.published_at).toLocaleDateString()}</span></div>
-       ${i < 3 ? md(r.body) : `<details><summary>show</summary>${md(r.body)}</details>`}</div>`).join("");
-  })
-  .catch(e => {
-    const msg = `<span class="muted">Could not load releases (${esc(String(e.message || e))}). See <a class="ver" href="https://github.com/${REPO}/releases">github.com/${REPO}/releases</a>.</span>`;
-    document.getElementById("latest").innerHTML = msg;
-    document.getElementById("history").innerHTML = "";
-  });
+const DL = n => `https://github.com/${REPO}/releases/latest/download/${n}`;
+const ua = navigator.userAgent;
+const os = /Win/.test(ua) ? "windows" : /Mac/.test(ua) ? "macos" : "linux";
+const launcher = { windows: ["quark-launcher-windows.exe", "Windows"], macos: ["quark-launcher-macos.zip", "macOS"], linux: ["quark-launcher-linux", "Linux"] };
+const others = Object.keys(launcher).filter(k => k !== os)
+  .map(k => `<a class="btn" href="${DL(launcher[k][0])}">${launcher[k][1]} launcher</a>`).join("");
+fetch("changelog.json").then(r => r.json()).then(log => {
+  const v = log.length ? log[0].version : "";
+  document.getElementById("latest").innerHTML =
+    `<div>latest: <span class="ver">v${esc(v)}</span></div>
+     <div class="btns"><a class="btn primary" href="${DL(launcher[os][0])}">Download launcher for ${launcher[os][1]}</a>${others}</div>
+     <p class="muted">The launcher installs quark and keeps it updated automatically. Windows 7 / 10 / 11, macOS, Linux.
+     Full game zips: <a class="ver" href="${DL("quark-windows.zip")}">windows</a> /
+     <a class="ver" href="${DL("quark-linux.tar.gz")}">linux</a> / <a class="ver" href="${DL("quark-macos.zip")}">macos</a></p>`;
+  document.getElementById("history").innerHTML = log.map((e, i) =>
+    `<div class="card log"><div><span class="ver">v${esc(e.version)}</span></div>
+     ${i < 3 ? md(e.notes) : `<details><summary>show</summary>${md(e.notes)}</details>`}</div>`).join("");
+}).catch(e => { document.getElementById("latest").textContent = "could not load changelog: " + e; });
 </script>
 </body>
 </html>

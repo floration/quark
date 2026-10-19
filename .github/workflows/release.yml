@@ -88,6 +88,8 @@ jobs:
     environment: { name: github-pages }
     steps:
       - uses: actions/checkout@v4
+      - run: python3 tools/site_changelog.py .
+      - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with: { path: site }
       - uses: actions/deploy-pages@v4
