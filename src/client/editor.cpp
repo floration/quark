@@ -344,7 +344,7 @@ void Game::editorKey(int key, int mods) {
     if (ctrl && key == GLFW_KEY_Z) { edUndoLast(); return; }
     if (ctrl && key == GLFW_KEY_S) {
         if (!edOnline_) edSave();
-        else if (host_) edNotify("your map is autosaved");
+        else if (host_ && !(net_.hasSnapshot() && (net_.mode().flags & MS_TEMP_EDIT))) edNotify("your map is autosaved");
         else edSaveCopy(ed_, edName_);
         return;
     }
@@ -601,7 +601,8 @@ void Game::editorFrame(double dt) {
         for (auto& p : ps) n += p.valid;
         ui_.label(x, y, "EDITING TOGETHER (" + std::to_string(n) + ")", ui_.accent);
         y += 22 * s;
-        ui_.label(x, y, "MAP " + edName_ + (host_ ? " - AUTOSAVED" : " - THE HOST SAVES IT"), kGrey, 0.5f);
+        bool temp = net_.hasSnapshot() && (net_.mode().flags & MS_TEMP_EDIT);
+        ui_.label(x, y, "MAP " + edName_ + (temp ? " - REVERTS WHEN THE MAP CHANGES" : host_ ? " - AUTOSAVED" : " - THE HOST SAVES IT"), kGrey, 0.5f);
         y += 12 * s;
     } else {
         ui_.label(x, y, std::string("MAP EDITOR") + (edDirty_ ? " *" : ""), ui_.accent);
@@ -626,10 +627,15 @@ void Game::editorFrame(double dt) {
         row();
     }
     if (edOnline_) {
+        bool temp = net_.hasSnapshot() && (net_.mode().flags & MS_TEMP_EDIT);
         if (host_) {
             if (ui_.button(x, y, w2, h, "PLAY MODE")) net_.sendCommand("editmode off"); // everyone plays it; ESC menu has EDIT MODE
-        } else if (ui_.button(x, y, w2, h, "SAVE A COPY")) edSaveCopy(ed_, edName_);
-        if (ui_.button(x + w2 + gap, y, w2, h, host_ ? "END SESSION" : "LEAVE")) { closeEditor(); return; }
+        } else if (ui_.button(x, y, w2, h, "VOTE: PLAY IT")) net_.sendCommand("callvote edit off");
+        if (ui_.button(x + w2 + gap, y, w2, h, host_ && !temp ? "END SESSION" : "LEAVE")) { closeEditor(); return; }
+        if (temp || !host_) {
+            row();
+            if (ui_.button(x, y, w, h, "SAVE A COPY")) edSaveCopy(ed_, edName_);
+        }
         row();
     } else {
         if (ui_.button(x, y, w3, h, "NEW")) { openEditor(""); return; }

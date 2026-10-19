@@ -955,6 +955,78 @@ static void testRanked(uint16_t port) {
     }
 }
 
+// Voting ranked on / off, what ranked forbids, and the update restart flag (waits for the match to end).
+static void testRankedVoteAndRestart(uint16_t port) {
+    printf("ranked vote, restart for updates\n");
+    char tag[16];
+    snprintf(tag, sizeof tag, "%u", (unsigned)rand());
+    std::string flag = findDataPath("maps") + "/../zz_update" + tag + ".pending";
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "foundry"; cfg.mode = MODE_FFA; cfg.port = port; cfg.restartFlag = flag;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    NetClient a, b;
+    a.connect("127.0.0.1:" + std::to_string(port), "a");
+    b.connect("127.0.0.1:" + std::to_string(port), "b");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 0.5, idle);
+    s.addBot(TEAM_A, 1);
+    a.sendCommand("callvote ranked on instagib");
+    pump(s, cls, 0.2, idle);
+    b.sendCommand("vote yes");
+    pump(s, cls, 0.5, idle);
+    CHECK(s.config().ranked && s.config().mode == MODE_ARENA && s.ms_.arenaVariant == 5 && isOfficialMap(s.map_));
+    CHECK(a.hasSnapshot() && (a.mode().flags & MS_RANKED));
+    bool bots = false;
+    for (auto& p : s.players_) bots |= p.connected && p.isBot;
+    CHECK(!bots);
+    a.sendCommand("callvote bots on");          // refused while ranked
+    a.sendCommand("callvote map harbor ffa");   // refused: not 1v1
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE);
+    a.sendCommand("callvote ranked off");
+    pump(s, cls, 0.2, idle);
+    b.sendCommand("vote yes");
+    pump(s, cls, 0.3, idle);
+    CHECK(!s.config().ranked && !(a.mode().flags & MS_RANKED));
+    // voted editing on a normal server: edits are played, never saved, and gone at the next map change
+    Map disk;
+    CHECK(disk.load(s.config().map));
+    a.sendCommand("callvote edit on");
+    pump(s, cls, 0.2, idle);
+    b.sendCommand("vote yes");
+    pump(s, cls, 0.5, idle);
+    CHECK(s.editing_ && s.tempEdit_ && (a.mode().flags & MS_TEMP_EDIT));
+    a.sendCommand("ed b ins 0 1 0 20 0 1 21 1");
+    pump(s, cls, 0.5, idle);
+    CHECK(a.map().crc == s.map_.crc && s.map_.brushes.size() == disk.brushes.size() + 1);
+    b.sendCommand("callvote edit off");
+    pump(s, cls, 0.2, idle);
+    a.sendCommand("vote yes");
+    pump(s, cls, 0.5, idle);
+    CHECK(!s.editing_ && s.mapEdited_ && s.map_.brushes.size() == disk.brushes.size() + 1 && !(a.mode().flags & MS_EDITING));
+    Map after;
+    CHECK(after.load(s.config().map) && after.crc == disk.crc);   // the file was never touched
+    s.command("map " + s.config().map);
+    pump(s, cls, 0.5, idle);
+    CHECK(s.map_.crc == disk.crc && a.map().crc == disk.crc && !s.mapEdited_); // back to the original
+    // update installed mid-match: announced, but no restart until the match is over
+    s.ms_.phase = PHASE_LIVE;
+    FILE* f = fopen(flag.c_str(), "w");
+    if (f) fclose(f);
+    pump(s, cls, 3.0, idle);
+    CHECK(!s.restartRequested() && s.restartAnnounced_);
+    s.ms_.phase = PHASE_MATCH_END;
+    pump(s, cls, 4.0, idle);
+    CHECK(s.restartRequested());
+    f = fopen(flag.c_str(), "r");
+    CHECK(f == nullptr); // consumed
+    if (f) fclose(f);
+    std::remove(flag.c_str());
+    s.stop();
+}
+
 // Map edit session: edits from any client reach everyone (and late joiners), the host's file is autosaved,
 // and the session switches to playing the map and back.
 static void testEditSession(uint16_t port) {
@@ -1288,7 +1360,7 @@ int main(int argc, char** argv) {
     testAllMaps();
     testGridQueries();
     uint16_t port = 28500;
-    if (argc >= 2 && std::string(argv[1]) == "ranked") { testRanked(29610); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "ranked") { testRanked(29610); testRankedVoteAndRestart(29620); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(29600); testEditSession(29601); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(29900); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
@@ -1309,6 +1381,7 @@ int main(int argc, char** argv) {
     testMapDownload(port++);
     testEditSession(port++);
     testRanked(port); port += 3;
+    testRankedVoteAndRestart(port++);
     testArenaAndTourney(port);
     testNetcode(port); port += 2;
     testTickRateFallback(port++);

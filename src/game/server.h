@@ -49,6 +49,7 @@ struct ServerConfig {
     std::vector<std::string> tourneyMaps;
     std::vector<int> tourneyVariants;
     bool editMode = false;      // start as a map edit session (anyone connected can edit; the host autosaves)
+    std::string restartFlag;    // if this file appears (an update was installed), restart once no match is being played
     bool ranked = false;        // matches are rated (OpenSkill) once every player reports the same result; no bots
 };
 enum LogLevel { LOG_OFF = 0, LOG_SIMPLE, LOG_VERBOSE, LOG_EXTREME };
@@ -168,7 +169,7 @@ public:
     int humanCount(int team = -1) const;
     void updateBalanceBots(bool matchStarting = false);
     // Votes (bots on/off, bot difficulty): majority of human players decides.
-    enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL, VOTE_START, VOTE_STARTBOTS, VOTE_MAP, VOTE_TMAPS, VOTE_TMODES };
+    enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL, VOTE_START, VOTE_STARTBOTS, VOTE_MAP, VOTE_TMAPS, VOTE_TMODES, VOTE_RANKED, VOTE_EDIT };
     struct Vote { int kind = VOTE_NONE; int arg = 0, arg2 = 0; std::string map; uint32_t yes = 0, no = 0; float endsAt = 0; std::string text; } vote_;
     void callVote(int caller, int kind, int arg, const std::string& map = "", int arg2 = 0);
     // Tourney: single elimination bracket of everyone in the server, one 1v1 at a time.
@@ -199,8 +200,21 @@ public:
     // Map edit sessions: everyone flies around and edits the map together; edits go through here so all
     // copies stay identical. The map file is autosaved (it's the host's copy) while dirty.
     bool editing_ = false, editDirty_ = false;
+    bool tempEdit_ = false;     // editing was voted on a normal server: never saved, reverts at the next map change
+    bool mapEdited_ = false;    // map_ differs from its file (temporary edits being played)
+    void playMap(int mode);
     float nextAutosave_ = 0;
     void setEditing(bool on);
+    void setRanked(bool on, int ladder);            // ranked on (1v1 on that ladder, official map) / off
+    bool rankedBlocks(int id, const std::string& what); // tells the player and returns true if ranked forbids it
+    bool balanceBotsUnranked_ = true;                // balance bots setting to go back to when ranked is voted off
+    std::string listName() const;                    // server name for the browser ("[RANKED ...]" prefixed)
+    // Updates: restartFlag appeared -> restart (exit) as soon as no match is in progress, telling players first
+    bool restartRequested() const { return restartNow_; }
+    bool matchInProgress() const;
+    bool restartNow_ = false, restartAnnounced_ = false;
+    double nextFlagCheck_ = 0, restartAt_ = 0;
+    void checkRestartFlag();
     std::string rankedResult(int winner, std::string* whyNot); // EV_RANKED text for the match that just ended
     bool applyEdit(int from, const std::string& op);
     bool autosave();

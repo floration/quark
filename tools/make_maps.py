@@ -98,18 +98,27 @@ class M:
         return pts
     def clear(s, x, z, r, pts):
         return all(math.hypot(x - px, z - pz) > r + pr for (px, pz, pr) in pts)
-    def dress(s, name, debris=14):
+    def dress(s, name, stacks=6, lamps=8):
+        """architectural detail along the outer walls: trims, corner columns, buttresses with inset panels
+        between them, pipes, roof beams, floor seams, wall lamps and a few tidy crate stacks in the bays.
+        Everything hugs the walls (keepouts protect spawns, objectives and the payload track)."""
         if not hasattr(s, "hx"): return
         hx, hz, h = s.hx, s.hz, s.h
         rnd = random.Random(name)
         pts = s.keepouts()
         s.trim(hx, hz)                                            # base trim
         s.trim(hx, hz, y=h - 0.5, h=0.5, d=0.25)                  # cornice
-        # buttresses along the walls (rhythm + something to peek / grapple)
+        s.trim(hx, hz, y=1.1, h=0.12, d=0.08)                     # chair rail
+        for (cx, cz) in ((-hx, -hz), (hx, -hz), (-hx, hz), (hx, hz)):   # corner columns
+            x0, x1 = (cx, cx + 1.2) if cx < 0 else (cx - 1.2, cx)
+            z0, z1 = (cz, cz + 1.2) if cz < 0 else (cz - 1.2, cz)
+            s.box(x0, 0, z0, x1, h, z1, accent=True)
+        bays = []   # (x, z, inward normal x, z, along axis) midpoints between buttresses, for panels / lamps / crates
         for along, half, wall in ((True, hx, hz), (False, hz, hx)):
-            n = int(2 * half / 7)
+            n = max(2, int(2 * half / 7))
+            cs = [-half + i * 2 * half / n for i in range(n + 1)]
             for i in range(1, n):
-                c = -half + i * 2 * half / n
+                c = cs[i]
                 for side in (-1, 1):
                     x, z = (c, side * (wall - 0.3)) if along else (side * (wall - 0.3), c)
                     if not s.clear(x, z, 1.0, pts): continue
@@ -117,12 +126,24 @@ class M:
                                          (side * wall - (0.6 if side > 0 else -0.6), c - 0.5, side * wall, c + 0.5)
                     s.box(min(bx0, bx1), 0, min(bz0, bz1), max(bx0, bx1), h - 0.5, max(bz0, bz1))
                     s.box(min(bx0, bx1) - 0.1, h - 1.4, min(bz0, bz1) - 0.1, max(bx0, bx1) + 0.1, h - 1.1, max(bz0, bz1) + 0.1, accent=True)
+            for i in range(n):
+                mid, span = (cs[i] + cs[i + 1]) / 2, (cs[i + 1] - cs[i])
+                for side in (-1, 1):
+                    bays.append((mid, span, side, along, wall))
+        # inset panels in every bay (flush, just above the chair rail)
+        for (mid, span, side, along, wall) in bays:
+            a0, a1, y0, y1 = mid - span / 2 + 1.0, mid + span / 2 - 1.0, 1.6, min(h - 1.8, 5.0)
+            if a1 - a0 < 1.5 or y1 - y0 < 1.0: continue
+            w0, w1 = (side * wall - 0.06, side * wall) if side > 0 else (side * wall, side * wall + 0.06)
+            if along: s.box(a0, y0, w0, a1, y1, w1, accent=True)
+            else: s.box(w0, y0, a0, w1, y1, a1, accent=True)
         # pipes along the two long walls
         long_x = hx >= hz
         for side in (-1, 1):
-            for y in (h * 0.45, h * 0.45 + 0.45):
-                if long_x: s.box(-hx, y, side * hz - (0.35 if side > 0 else -0.35) - 0.0, hx, y + 0.25, side * hz - (0.05 if side > 0 else -0.05), accent=(y > h * 0.45))
-                else: s.box(side * hx - (0.35 if side > 0 else -0.35), y, -hz, side * hx - (0.05 if side > 0 else -0.05), y + 0.25, hz, accent=(y > h * 0.45))
+            for y in (h * 0.6, h * 0.6 + 0.45):
+                if y + 0.25 > h - 1.5: continue
+                if long_x: s.box(-hx, y, side * hz - (0.35 if side > 0 else -0.35), hx, y + 0.25, side * hz - (0.05 if side > 0 else -0.05), accent=(y > h * 0.6))
+                else: s.box(side * hx - (0.35 if side > 0 else -0.35), y, -hz, side * hx - (0.05 if side > 0 else -0.05), y + 0.25, hz, accent=(y > h * 0.6))
         # beams across tall rooms: visual rhythm and grapple anchors
         if h >= 9:
             n = int(2 * (hx if not long_x else hz) / 9)
@@ -130,17 +151,33 @@ class M:
                 c = -(hx if not long_x else hz) + i * 2 * (hx if not long_x else hz) / (n + 1)
                 if long_x: s.box(-hx, h - 1.6, c - 0.35, hx, h - 1.0, c + 0.35, accent=True)
                 else: s.box(c - 0.35, h - 1.6, -hz, c + 0.35, h - 1.0, hz, accent=True)
-        # floor strips
-        for x in range(-int(hx) + 8, int(hx) - 4, 8): s.box(x - 0.08, 0, -hz, x + 0.08, 0.02, hz, accent=True)
-        # debris and small clutter near the walls
-        for _ in range(debris * 4):
-            if debris <= 0: break
-            w, d, ht = rnd.uniform(0.4, 1.1), rnd.uniform(0.4, 1.1), rnd.uniform(0.3, 1.0)
-            if rnd.random() < 0.5: x, z = rnd.uniform(-hx + 1.2, hx - 1.2), rnd.choice((-1, 1)) * (hz - rnd.uniform(1.0, 2.2))
-            else: x, z = rnd.choice((-1, 1)) * (hx - rnd.uniform(1.0, 2.2)), rnd.uniform(-hz + 1.2, hz - 1.2)
-            if not s.clear(x, z, 1.2, pts): continue
-            s.box(x - w / 2, 0, z - d / 2, x + w / 2, ht, z + d / 2, accent=rnd.random() < 0.3)
-            pts.append((x, z, 0.8)); debris -= 1
+        # floor seams in both directions (a tiled look)
+        for x in range(-int(hx) + 8, int(hx) - 4, 8): s.box(x - 0.06, 0, -hz, x + 0.06, 0.02, hz, accent=True)
+        for z in range(-int(hz) + 8, int(hz) - 4, 8): s.box(-hx, 0, z - 0.06, hx, 0.02, z + 0.06, accent=True)
+        # wall lamps in evenly spread bays (baked lights: soft pools of light along the walls)
+        order = sorted(range(len(bays)), key=lambda k: rnd.random())
+        for k in sorted(order[:lamps]):
+            mid, span, side, along, wall = bays[k]
+            y = min(h - 2.0, 4.2)
+            inset = side * (wall - 0.45)
+            x, z = (mid, inset) if along else (inset, mid)
+            s.lines.append(f"light {x:g} {y:g} {z:g} 8 0.45")
+            if along: s.box(mid - 0.3, y + 0.1, min(inset, side * wall), mid + 0.3, y + 0.35, max(inset, side * wall), accent=True)
+            else: s.box(min(inset, side * wall), y + 0.1, mid - 0.3, max(inset, side * wall), y + 0.35, mid + 0.3, accent=True)
+        # a few tidy crate stacks tucked into bays (never near spawns / objectives)
+        for k in order[lamps:]:
+            if stacks <= 0: break
+            mid, span, side, along, wall = bays[k]
+            if span < 5: continue
+            inset = side * (wall - 1.3)
+            x, z = (mid, inset) if along else (inset, mid)
+            if not s.clear(x, z, 2.0, pts): continue
+            size = 1.1
+            cx0, cz0 = x - size, z - size / 2
+            s.box(cx0, 0, cz0, cx0 + size - 0.04, size, cz0 + size)
+            s.box(cx0 + size, 0, cz0, cx0 + 2 * size - 0.04, size, cz0 + size, accent=True)
+            s.box(cx0 + size * 0.5, size, cz0 + 0.08, cx0 + size * 1.45, size * 1.8, cz0 + size - 0.08)
+            pts.append((x, z, 1.8)); stacks -= 1
     def save(s, name, dress=True):
         if dress: s.dress(name)
         open(os.path.join(OUT, name + ".qmap"), "w").write("\n".join(s.lines) + "\n")

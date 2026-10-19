@@ -5,3 +5,7 @@ site/weapons.json
 build-tracy/
 maps/downloads/
 *.key
+build-update/
+bin/
+.built-commit
+update.pending

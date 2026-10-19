@@ -12,7 +12,7 @@ constexpr int kMaxPlayers = 32;        // engine limit; servers default to 8 (Se
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 15;
+constexpr uint16_t kProtocolVersion = 16;
 
 // Player hull
 constexpr float kPlayerHalfWidth = 0.4f;

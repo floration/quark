@@ -23,6 +23,7 @@ static void usage() {
         "  --timelimit S    ffa time limit in seconds\n"
         "  --scorelimit N   koth points / ffa kills to win\n"
         "  --upnp           ask the router to forward the port automatically\n"
+        "  --restart-flag F when file F appears (an update was installed), restart once no match is being played\n"
         "  --ranked         rated matches (OpenSkill): every player's game reports the result; no bots\n"
         "  --tickrate N     highest tick rate to try: 1000 (default), 500, 250 or 125.\n"
         "                   During warmup it steps down automatically if the host can't keep up.\n"
@@ -88,6 +89,7 @@ int main(int argc, char** argv) {
         }
         else if (a == "--nobalance") cfg.balanceBots = false;
         else if (a == "--ranked") cfg.ranked = true;
+        else if (a == "--restart-flag") cfg.restartFlag = next();
         else if (a == "-h" || a == "--help") { usage(); return 0; }
         else { printf("unknown option %s\n", a.c_str()); usage(); return 1; }
     }
@@ -114,7 +116,7 @@ int main(int argc, char** argv) {
     });
     input.detach();
 
-    while (!quit) {
+    while (!quit && !server.restartRequested()) {
         double wait = server.frame();
         {
             std::lock_guard<std::mutex> l(mu);
@@ -127,7 +129,9 @@ int main(int argc, char** argv) {
         }
         server.idle(wait);
     }
+    bool restart = server.restartRequested();
     server.stop();
     netShutdown();
+    if (restart) printf("exiting to restart into the updated version\n");
     return 0;
 }

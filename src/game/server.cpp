@@ -69,6 +69,8 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     rulesReset(*this);
     running_ = true;
     editing_ = editDirty_ = false;
+    balanceBotsUnranked_ = cfg_.balanceBots;
+    restartNow_ = restartAnnounced_ = false;
     if (cfg_.ranked) { cfg_.balanceBots = false; cfg_.vsBots = false; cfg_.botsEnemy = cfg_.botsAlly = 0; }
     if (cfg_.editMode) setEditing(true);
     if (cfg_.vsBots) {
@@ -93,7 +95,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
 
 void Server::stop() {
     if (!running_) return;
-    if (editDirty_) autosave();
+    if (editDirty_ && !tempEdit_) autosave();
     for (int i = 0; i < kMaxPlayers; i++)
         if (players_[i].connected) dropPlayer(i, "server shutting down", true);
     sock_.close();
@@ -176,6 +178,7 @@ double Server::frame() {
     for (int i = 0; i < kMaxPlayers; i++)
         if (players_[i].connected && !players_[i].isBot && now - players_[i].lastRecv > kTimeout) dropPlayer(i, "timed out", false);
     checkTickRate();
+    checkRestartFlag();
     return nextTick_ - timeNow();
 }
 
@@ -211,7 +214,7 @@ void Server::handlePacket(const NetAddr& from, const uint8_t* data, int len) {
         uint8_t out[512];
         Writer w(out, sizeof out);
         writeHeader(w, PKT_INFO_REPLY);
-        w.str(cfg_.name); w.str(cfg_.map); w.u8((uint8_t)cfg_.mode);
+        w.str(listName()); w.str(cfg_.map); w.u8((uint8_t)cfg_.mode);
         w.u8((uint8_t)playerCount()); w.u8((uint8_t)cfg_.maxPlayers); w.u16(port());
         sock_.send(from, out, w.size());
         return;
@@ -447,11 +450,35 @@ void Server::handleStringCmd(int id, const std::string& s) {
         std::istringstream vs(rest);
         std::string what, arg;
         vs >> what >> arg;
-        if (what == "bots") callVote(id, VOTE_BOTS, arg == "off" ? 0 : 1);
+        if (what == "edit") { // callvote edit on / off
+            if (arg != "on" && arg != "off") return;
+            if ((arg == "on") == editing_ || rankedBlocks(id, "map editing")) return;
+            callVote(id, VOTE_EDIT, arg == "on" ? 1 : 0);
+        }
+        else if (what == "ranked") { // callvote ranked on <vanilla|vampire|instagib> / callvote ranked off
+            if (editing_) { GameEvent e; e.type = EV_MESSAGE; e.text = "not while editing the map"; sendEvent(id, e); return; }
+            if (arg == "off") { if (cfg_.ranked) callVote(id, VOTE_RANKED, -1); return; }
+            std::string lname;
+            vs >> lname;
+            int v = lname.empty() ? (arenaVariantRanked(cfg_.arenaVariant) ? cfg_.arenaVariant : 0) : arenaVariantFromName(lname.c_str());
+            if (v < 0 || !arenaVariantRanked(v)) { GameEvent e; e.type = EV_MESSAGE; e.text = "ranked ladders: vanilla, vampire, instagib"; sendEvent(id, e); return; }
+            if (cfg_.ranked && ms_.arenaVariant == v) return;
+            callVote(id, VOTE_RANKED, v);
+        }
+        else if (what == "bots" || what == "botskill") { if (!rankedBlocks(id, "bots")) {
+            if (what == "bots") callVote(id, VOTE_BOTS, arg == "off" ? 0 : 1);
+            else {
+                int k = -1;
+                for (auto& c : arg) c = (char)toupper((unsigned char)c);
+                for (int i = 0; i < BOT_SKILLS; i++) if (arg == botSkillName(i) || arg == std::to_string(i)) k = i;
+                if (k >= 0) callVote(id, VOTE_BOTSKILL, k);
+            }
+        } }
         else if (what == "start") {
             if (ms_.phase != PHASE_WARMUP) { GameEvent e; e.type = EV_MESSAGE; e.text = "the match has already started"; sendEvent(id, e); }
             else callVote(id, VOTE_START, 0);
         }
+        else if ((what == "tmaps" || what == "tmodes") && rankedBlocks(id, "tourney")) {}
         else if (what == "tmaps" || what == "tmodes") { // tourney rotation: callvote tmaps a,b,c / tmodes classic,hitscan
             bool ok = !arg.empty();
             std::istringstream ls(arg);
@@ -475,15 +502,12 @@ void Server::handleStringCmd(int id, const std::string& s) {
             Map m;
             bool ok = mode >= 0 && mapName.find_first_of("/\\.") == std::string::npos && m.load(mapName);
             if (ok && !m.supportsMode(mode)) ok = false;
+            if (ok && cfg_.ranked && (mode != MODE_ARENA || !arenaVariantRanked(variant) || !isOfficialMap(m))) {
+                GameEvent e; e.type = EV_MESSAGE; e.text = "ranked server: 1v1 on an official map, ladders vanilla / vampire / instagib (or vote ranked off)"; sendEvent(id, e);
+                return;
+            }
             if (!ok) { GameEvent e; e.type = EV_MESSAGE; e.text = "can't vote for that map/mode"; sendEvent(id, e); }
             else callVote(id, VOTE_MAP, mode, mapName, variant);
-        }
-        else if (what == "botskill") {
-            int k = -1;
-            for (int i = 0; i < BOT_SKILLS; i++) if (arg == botSkillName(i) || arg == std::to_string(i)) k = i;
-            for (auto& c : arg) c = (char)toupper((unsigned char)c);
-            for (int i = 0; i < BOT_SKILLS; i++) if (arg == botSkillName(i)) k = i;
-            if (k >= 0) callVote(id, VOTE_BOTSKILL, k);
         }
     } else if (cmd == "vote") {
         castVote(id, rest == "yes" || rest == "y" || rest == "1");
@@ -502,7 +526,7 @@ void Server::command(const std::string& line, int fromPlayer) {
         if (fromPlayer >= 0) { GameEvent e; e.type = EV_MESSAGE; e.text = t; sendEvent(fromPlayer, e); }
         else log(t);
     };
-    if (cmd == "editmode" && cfg_.ranked) { reply("no map editing on a ranked server"); return; }
+    if (cmd == "editmode" && cfg_.ranked) { reply("no map editing on a ranked server (vote ranked off first)"); return; }
     if (cmd == "editmode") { // editmode on|off: switch between editing the map together and playing it
         if (arg == "on") { if (!editing_) setEditing(true); return; }
         if (!editing_) return;
@@ -511,6 +535,7 @@ void Server::command(const std::string& line, int fromPlayer) {
         if (mode < 0 && map_.supportsMode(MODE_FFA)) mode = MODE_FFA;
         for (int m = 0; m < MODE_COUNT && mode < 0; m++) if (map_.supportsMode(m)) mode = m;
         if (mode < 0) { reply("this map can't be played in any mode yet (add spawns)"); return; }
+        if (tempEdit_) { setEditing(false); playMap(mode); return; } // play the edited copy; it's gone at the next map change
         if (!autosave()) { reply("could not save the map"); return; }
         setEditing(false);
         command("map " + cfg_.map + " " + modeName(mode), fromPlayer);
@@ -538,21 +563,20 @@ void Server::command(const std::string& line, int fromPlayer) {
             reply("ranked: only 1v1 on vanilla, laser vampire or instagib, on official maps");
             return;
         }
+        if (editing_ && tempEdit_) setEditing(false); // a voted edit was temporary: the new map loads as it is on disk
         map_ = m;
         cfg_.map = newMap;
-        cfg_.mode = newMode;
-        for (auto& pr : projectiles_) pr.active = false;
-        for (int i = 0; i < kMaxPlayers; i++) {
-            auto& p = players_[i];
-            if (!p.connected) continue;
-            p.alive = false;
-            p.cmdQueue.clear();
-            if (p.team != TEAM_SPECTATOR) autoTeam(i);
-            sendAccept(sock_, p.addr, p.nonce, i, map_, cfg_.mode);
-        }
-        rulesReset(*this);
-        message("now playing " + newMap + " - " + modeTitle(newMode));
-        glog(LOG_SIMPLE, "map %s mode %s", newMap.c_str(), modeName(newMode));
+        mapEdited_ = false;
+        playMap(newMode);
+    } else if (cmd == "addbot" && cfg_.ranked) {
+        reply("no bots on a ranked server");
+    } else if (cmd == "ranked") { // ranked on [ladder] / ranked off
+        std::string lname;
+        ss >> lname;
+        int v = lname.empty() ? 0 : arenaVariantFromName(lname.c_str());
+        if (arg == "off") setRanked(false, 0);
+        else if (arg == "on" && v >= 0 && arenaVariantRanked(v)) setRanked(true, v);
+        else reply("ranked on [vanilla|vampire|instagib] / ranked off");
     } else if (cmd == "addbot") {
         std::string sk;
         ss >> sk;
@@ -577,7 +601,7 @@ void Server::command(const std::string& line, int fromPlayer) {
     } else if (cmd == "status") {
         reply(statusText());
     } else {
-        reply("commands: map <name> [mode], mode <name>, reload, editmode on|off, forcestart, restart, kick <id>, say <text>, status, addbot [a|b] [0-3], kickbots");
+        reply("commands: map <name> [mode], mode <name>, reload, editmode on|off, ranked on [ladder]|off, forcestart, restart, kick <id>, say <text>, status, addbot [a|b] [0-3], kickbots");
     }
 }
 
@@ -742,7 +766,7 @@ void Server::simulate() {
             if (!p.cmdQueue.empty()) { p.lastCmdSeq = p.cmdQueue.back().seq; p.yaw = p.cmdQueue.back().yaw; p.pitch = p.cmdQueue.back().pitch; }
             p.cmdQueue.clear();
         }
-        if (editDirty_ && time() >= nextAutosave_) autosave();
+        if (editDirty_ && !tempEdit_ && time() >= nextAutosave_) autosave();
         return;
     }
     for (int a = 0; a < kMaxPlayers; a++)
@@ -1038,7 +1062,7 @@ void Server::sendSnapshots() {
     s.timeMs = timeMs_;
     s.tickRate = (uint16_t)tickRate();
     s.ms = ms_;
-    if (editing_) s.ms.flags |= MS_EDITING;
+    if (editing_) s.ms.flags |= MS_EDITING | (tempEdit_ ? MS_TEMP_EDIT : 0);
     if (cfg_.ranked) s.ms.flags |= MS_RANKED;
     std::vector<PlayerSnap> all;
     for (int i = 0; i < kMaxPlayers; i++) {
@@ -1205,6 +1229,8 @@ void Server::callVote(int caller, int kind, int arg, const std::string& map, int
                : kind == VOTE_MAP         ? "PLAY " + map + " - " + modeTitle(arg) + (arg == MODE_ARENA || arg == MODE_TOURNEY ? std::string(" (") + arenaVariant(vote_.arg2).title + ")" : "")
                : kind == VOTE_TMAPS       ? "TOURNEY MAPS: " + map
                : kind == VOTE_TMODES      ? "TOURNEY RULESETS: " + map
+               : kind == VOTE_EDIT        ? std::string(arg ? "EDIT THE MAP TOGETHER (CHANGES LAST UNTIL THE MAP CHANGES)" : "STOP EDITING AND PLAY THE MAP")
+               : kind == VOTE_RANKED      ? (arg < 0 ? std::string("RANKED OFF") : std::string("RANKED ON - ") + arenaVariant(arg).title + " 1V1")
                                           : std::string("FILL THE UNEVEN TEAMS WITH BOTS?");
     GameEvent e; e.type = EV_VOTE; e.a = (uint8_t)(caller < 0 ? 255 : caller); e.text = vote_.text;
     broadcastEvent(e);
@@ -1245,7 +1271,7 @@ void Server::tickVote() {
     if (pass && vote_.kind == VOTE_START) {
         message("vote passed: starting the match");
         vote_ = Vote();
-        bool uneven = modeIsTeamBased(cfg_.mode) && !cfg_.vsBots && humanCount(TEAM_A) != humanCount(TEAM_B);
+        bool uneven = modeIsTeamBased(cfg_.mode) && !cfg_.vsBots && !cfg_.ranked && humanCount(TEAM_A) != humanCount(TEAM_B);
         if (uneven) callVote(-1, VOTE_STARTBOTS, 1);
         else { updateBalanceBots(true); rulesForceStart(*this); }
         return;
@@ -1260,6 +1286,20 @@ void Server::tickVote() {
             else { cfg_.tourneyVariants.clear(); for (auto& v : items) cfg_.tourneyVariants.push_back(arenaVariantFromName(v.c_str())); }
             message("vote passed: " + vote_.text);
             vote_ = Vote();
+            return;
+        }
+        if (vote_.kind == VOTE_EDIT) {
+            int on = vote_.arg;
+            message("vote passed: " + vote_.text);
+            vote_ = Vote();
+            command(on ? "editmode on" : "editmode off");
+            return;
+        }
+        if (vote_.kind == VOTE_RANKED) {
+            int v = vote_.arg;
+            message("vote passed: " + vote_.text);
+            vote_ = Vote();
+            setRanked(v >= 0, v);
             return;
         }
         if (vote_.kind == VOTE_MAP) {
@@ -1320,8 +1360,10 @@ bool Server::switchMapKeepRules(const std::string& name) {
     if (name == cfg_.map) return true;
     Map m;
     if (!m.load(name) || !m.supportsMode(cfg_.mode)) return false;
+    if (editing_ && tempEdit_) setEditing(false);
     map_ = m;
     cfg_.map = name;
+    mapEdited_ = false;
     for (auto& pr : projectiles_) pr.active = false;
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
@@ -1405,16 +1447,34 @@ void Server::logTick() {
                     pr.pos.x, pr.pos.y, pr.pos.z, pr.vel.x, pr.vel.y, pr.vel.z, pr.stuck ? " stuck" : "");
 }
 
+// Start playing map_ (already loaded or edited) in `mode`: everyone respawns, clients get the map again.
+void Server::playMap(int mode) {
+    cfg_.mode = mode;
+    for (auto& pr : projectiles_) pr.active = false;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        auto& p = players_[i];
+        if (!p.connected) continue;
+        p.alive = false;
+        p.cmdQueue.clear();
+        if (p.team != TEAM_SPECTATOR) autoTeam(i);
+        sendAccept(sock_, p.addr, p.nonce, i, map_, cfg_.mode);
+    }
+    rulesReset(*this);
+    message("now playing " + cfg_.map + (mapEdited_ ? " (edited)" : "") + " - " + modeTitle(mode));
+    glog(LOG_SIMPLE, "map %s mode %s", cfg_.map.c_str(), modeName(mode));
+}
+
 void Server::setEditing(bool on) {
     editing_ = on;
-    if (!on) return;
+    if (!on) { if (tempEdit_) editDirty_ = false; return; }
+    tempEdit_ = !cfg_.editMode; // voted on a normal server: edits live until the map changes, never saved
     for (int i = kMaxPlayers - 1; i >= 0; i--) if (players_[i].connected && players_[i].isBot) removeBot(i);
     for (auto& pr : projectiles_) pr.active = false;
     for (auto& p : players_) { p.alive = false; p.respawnAt = -1; p.cmdQueue.clear(); }
     vote_ = Vote();
     tourney_ = Tourney();
     nextAutosave_ = time() + 5;
-    message("map editing - everyone can build; the host saves");
+    message(tempEdit_ ? "map editing - everyone can build; changes last until the map changes" : "map editing - everyone can build; the host saves");
     glog(LOG_SIMPLE, "edit mode on %s", cfg_.map.c_str());
 }
 
@@ -1424,6 +1484,7 @@ bool Server::applyEdit(int from, const std::string& op) {
     if (!applyMapEdit(map_, op)) return false;
     map_.source = map_.serialize();
     map_.crc = crc32(map_.source.data(), map_.source.size());
+    mapEdited_ = true;
     if (!editDirty_) nextAutosave_ = time() + 5;
     editDirty_ = true;
     char head[24];
@@ -1475,4 +1536,73 @@ std::string Server::rankedResult(int winner, std::string* whyNot) {
         out += (k ? "," : "") + std::to_string(es[k].slot) + ":" + std::to_string(es[k].team) + ":" + std::to_string(place);
     }
     return out;
+}
+
+std::string Server::listName() const {
+    return cfg_.ranked ? std::string("[RANKED ") + arenaVariant(ms_.arenaVariant).title + "] " + cfg_.name : cfg_.name;
+}
+
+bool Server::rankedBlocks(int id, const std::string& what) {
+    if (!cfg_.ranked) return false;
+    GameEvent e; e.type = EV_MESSAGE; e.text = "ranked server: no " + what + " (vote ranked off first)";
+    sendEvent(id, e);
+    return true;
+}
+
+// Ranked on: no bots, 1v1 on the ladder's ruleset, on this map if it's an official 1v1 map, else the
+// official map built for 1v1. Off: back to the bot setting from before.
+void Server::setRanked(bool on, int ladder) {
+    if (!on) {
+        if (!cfg_.ranked) return;
+        cfg_.ranked = false;
+        cfg_.balanceBots = balanceBotsUnranked_;
+        message("ranked off - matches aren't rated");
+        updateBalanceBots();
+        return;
+    }
+    if (editing_) setEditing(false);
+    std::string mapName = cfg_.map;
+    Map m;
+    if (!(m.load(mapName) && isOfficialMap(m) && m.supportsMode(MODE_ARENA))) {
+        mapName.clear();
+        for (auto& n : listMaps()) {
+            Map c;
+            if (!c.load(n) || !isOfficialMap(c) || !c.supportsMode(MODE_ARENA)) continue;
+            if (mapName.empty() || c.preferredMode == MODE_ARENA) mapName = n;
+            if (c.preferredMode == MODE_ARENA) break;
+        }
+        if (mapName.empty()) { message("can't go ranked: no official 1v1 map installed"); return; }
+    }
+    if (!cfg_.ranked) balanceBotsUnranked_ = cfg_.balanceBots;
+    cfg_.ranked = true;
+    cfg_.balanceBots = false;
+    for (int i = kMaxPlayers - 1; i >= 0; i--) if (players_[i].connected && players_[i].isBot) removeBot(i);
+    cfg_.arenaVariant = ladder;
+    command("map " + mapName + " 1v1 " + arenaVariant(ladder).name);
+    message(std::string("ranked on - ") + arenaVariant(ladder).title + " ladder");
+}
+
+bool Server::matchInProgress() const {
+    if (editing_ || humanCount() == 0) return false;
+    return ms_.phase == PHASE_FREEZE || ms_.phase == PHASE_LIVE || ms_.phase == PHASE_ROUND_END;
+}
+
+// An installed update leaves restartFlag behind: say so, wait for the match in progress to end, then
+// ask the process to exit (the service manager starts the new version).
+void Server::checkRestartFlag() {
+    double now = timeNow();
+    if (restartAt_ > 0) { if (now >= restartAt_) restartNow_ = true; return; }
+    if (cfg_.restartFlag.empty() || now < nextFlagCheck_) return;
+    nextFlagCheck_ = now + 2;
+    FILE* f = fopen(cfg_.restartFlag.c_str(), "r");
+    if (!f) return;
+    fclose(f);
+    if (matchInProgress()) {
+        if (!restartAnnounced_) { message("an update is ready - the server restarts after this match"); restartAnnounced_ = true; log("update ready: waiting for the match to end"); }
+        return;
+    }
+    std::remove(cfg_.restartFlag.c_str());
+    message("restarting for an update - rejoin in a few seconds");
+    log("restarting for an update");
+    restartAt_ = now + 2; // let the message reach everyone
 }
