@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 project(quark CXX C)
+if(WIN32)
+  enable_language(RC)
+  file(WRITE ${CMAKE_BINARY_DIR}/quark_icon.rc "IDI_ICON1 ICON \"${CMAKE_SOURCE_DIR}/assets/quark.ico\"\n")
+  set(QUARK_ICON_RC ${CMAKE_BINARY_DIR}/quark_icon.rc)
+endif()
 
 file(STRINGS ${CMAKE_SOURCE_DIR}/VERSION QUARK_VERSION LIMIT_COUNT 1)
 add_compile_definitions(QUARK_VERSION="${QUARK_VERSION}")
@@ -67,10 +72,13 @@ if(QUARK_BUILD_CLIENT)
     src/client/lightmap.cpp
     src/client/ui.cpp
     src/client/config.cpp
+    ${QUARK_ICON_RC}
   )
   target_link_libraries(quark quark_core glfw)
   add_executable(quark_launcher WIN32
     src/launcher/main.cpp
+    src/launcher/install.cpp
+    ${QUARK_ICON_RC}
     src/client/gl.cpp
     src/client/renderer.cpp
     src/client/lightmap.cpp
@@ -85,7 +93,7 @@ if(QUARK_BUILD_CLIENT)
     endif()
   endforeach()
   if(WIN32)
-    target_link_libraries(quark_launcher winhttp)
+    target_link_libraries(quark_launcher winhttp ole32 uuid shell32 advapi32)
   endif()
 endif()
 

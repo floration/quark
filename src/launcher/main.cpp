@@ -16,6 +16,7 @@
 #include "../client/renderer.h"
 #include "../client/ui.h"
 #include "../common/net.h"
+#include "install.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -181,16 +182,6 @@ bool extractPak(const std::string& pak, const fs::path& dest, std::string* err) 
     return true;
 }
 
-fs::path installDir(const char* argv0) {
-#ifdef __APPLE__
-    const char* home = getenv("HOME");
-    return fs::path(home ? home : ".") / "Library/Application Support/quark/game";
-#else
-    std::error_code ec;
-    return fs::absolute(fs::path(argv0), ec).parent_path() / "game";
-#endif
-}
-
 std::string readFile(const fs::path& p) {
     std::ifstream f(p, std::ios::binary);
     std::stringstream ss;
@@ -284,6 +275,13 @@ void updater(State* st, fs::path dir) {
         setStatus("install failed: " + err);
     } else {
         std::ofstream(dir / "version.txt") << latest << "\n";
+        if (install::hasPrograms()) install::setPrograms(true, install::appDir() / fs::path(
+#ifdef _WIN32
+            "quark_launcher.exe"
+#else
+            "quark_launcher"
+#endif
+            ), latest); // keep the version shown in "installed programs" current
         setStatus("updated to version " + latest);
         st->ready = true;
     }
@@ -293,7 +291,16 @@ void updater(State* st, fs::path dir) {
 } // namespace
 
 int main(int argc, char** argv) {
-    fs::path dir = installDir(argv[0]);
+    if (argc > 1 && std::string(argv[1]) == "--uninstall") {
+#ifdef _WIN32
+        if (MessageBoxW(nullptr, L"Remove quark, its shortcuts and downloaded game files?", L"Uninstall quark",
+                        MB_YESNO | MB_ICONQUESTION) != IDYES) return 0;
+#endif
+        install::uninstallAll();
+        return 0;
+    }
+    fs::path dir = install::gameDir();
+    fs::path launcherPath = install::installSelf(argv[0]);
     if (!glfwInit()) return 1;
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
@@ -318,6 +325,7 @@ int main(int argc, char** argv) {
         if (b == GLFW_MOUSE_BUTTON_LEFT) { g_in->down = a == GLFW_PRESS; if (a == GLFW_PRESS) g_in->pressed = true; }
     });
     bool quit = false;
+    double uninstallArmed = 0;
     bool autoPlay = argc > 1 && std::string(argv[1]) == "--play";
     while (!glfwWindowShouldClose(win) && !quit) {
         glfwPollEvents();
@@ -345,7 +353,7 @@ int main(int argc, char** argv) {
             r.rect(24 * s, 92 * s, (fw - 48 * s) * p, 6 * s, ui.accent);
         }
         // changelog
-        ui.panel(24 * s, 110 * s, fw - 48 * s, 290 * s, 0.6f);
+        ui.panel(24 * s, 110 * s, fw - 48 * s, 222 * s, 0.6f);
         float y = 120 * s;
         ui.label(36 * s, y, latest.empty() ? "CHANGELOG" : "WHAT'S NEW IN " + latest, ui.accent);
         y += 22 * s;
@@ -353,15 +361,43 @@ int main(int argc, char** argv) {
         std::string line;
         float ts = std::max(1.0f, std::round(ui.textScale() * 0.75f));
         size_t maxChars = (size_t)((fw - 80 * s) / (6 * ts));
-        while (std::getline(ls, line) && y < 390 * s) {
+        while (std::getline(ls, line) && y < 322 * s) {
             while (!line.empty() && (line[0] == '#' || line[0] == ' ')) line.erase(0, 1);
-            while (line.size() > maxChars && y < 390 * s) {
+            while (line.size() > maxChars && y < 322 * s) {
                 r.text(36 * s, y, ts, line.substr(0, maxChars), {0.85f, 0.85f, 0.88f, 1});
                 line = line.substr(maxChars);
                 y += 10 * ts;
             }
             r.text(36 * s, y, ts, line, {0.85f, 0.85f, 0.88f, 1});
             y += 10 * ts;
+        }
+        // desktop integration
+        {
+            std::vector<int> opts = {0, 1};
+            if (*install::programsLabel()) opts.push_back(2);
+            int n = (int)opts.size() + 1;
+            float bw = (fw - 48 * s - (n - 1) * 8 * s) / n, bx = 24 * s, by = 344 * s, bh = 40 * s;
+            for (int o : opts) {
+                bool on = o == 0 ? install::hasDesktop() : o == 1 ? install::hasMenu() : install::hasPrograms();
+                std::string label = std::string(o == 0 ? install::desktopLabel() : o == 1 ? install::menuLabel() : install::programsLabel()) +
+                                    (on ? ": ON" : ": OFF");
+                if (ui.button(bx, by, bw, bh, label)) {
+                    std::string ver = readFile(dir / "version.txt");
+                    bool ok = o == 0 ? install::setDesktop(!on, launcherPath)
+                            : o == 1 ? install::setMenu(!on, launcherPath)
+                                     : install::setPrograms(!on, launcherPath, ver.empty() ? latest : ver);
+                    std::lock_guard<std::mutex> l(st.mu);
+                    if (!ok) st.status = "could not change that (permissions?)";
+                }
+                bx += bw + 8 * s;
+            }
+            bool armed = timeNow() < uninstallArmed;
+            if (ui.button(bx, by, bw, bh, armed ? "CLICK TO CONFIRM" : "UNINSTALL", !st.busy)) {
+                if (armed) {
+                    install::uninstallAll();
+                    quit = true;
+                } else uninstallArmed = timeNow() + 3.0;
+            }
         }
         bool canPlay = st.ready && !st.busy;
         if (ui.button(fw - 224 * s, 414 * s, 200 * s, 48 * s, st.busy ? "UPDATING..." : "PLAY", canPlay) || (autoPlay && canPlay)) {
