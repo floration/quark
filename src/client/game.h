@@ -102,7 +102,9 @@ private:
     struct MapInfo { std::string title; int preferredMode = -1; uint32_t modes = 0; }; // modes: bit per supported mode
     std::vector<MapInfo> mapInfo_;
     enum { PICK_NONE = 0, PICK_HOST_MAP, PICK_HOST_MODE, PICK_BOT_MAP, PICK_BOT_MODE, PICK_LIVE_MAP, PICK_LIVE_MODE };
-    int liveMode_ = 0, liveMap_ = 0;  // host's in-game map/mode change
+    int liveMode_ = 0, liveMap_ = 0;  // in-game map/mode change (host) or vote (anyone)
+    bool livePickVote_ = false;
+    void openLivePicker(int kind, bool vote);
     bool voteMenu_ = false;
     void drawVoteMenu(float cx, float y);
     int picker_ = PICK_NONE;    // full list of maps / modes open over the host or vs-bots menu

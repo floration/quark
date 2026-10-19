@@ -155,9 +155,9 @@ public:
     int humanCount(int team = -1) const;
     void updateBalanceBots(bool matchStarting = false);
     // Votes (bots on/off, bot difficulty): majority of human players decides.
-    enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL, VOTE_START, VOTE_STARTBOTS };
-    struct Vote { int kind = VOTE_NONE; int arg = 0; uint32_t yes = 0, no = 0; float endsAt = 0; std::string text; } vote_;
-    void callVote(int caller, int kind, int arg);
+    enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL, VOTE_START, VOTE_STARTBOTS, VOTE_MAP };
+    struct Vote { int kind = VOTE_NONE; int arg = 0; std::string map; uint32_t yes = 0, no = 0; float endsAt = 0; std::string text; } vote_;
+    void callVote(int caller, int kind, int arg, const std::string& map = "");
     void castVote(int id, bool yes);
     void tickVote();
     float nextBalanceCheck_ = 0;

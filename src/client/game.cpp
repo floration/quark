@@ -1119,12 +1119,21 @@ void Game::drawScoreboard() {
     }
 }
 
+// Full map / mode list in game: the host switches right away, anyone else calls a vote for it.
+void Game::openLivePicker(int kind, bool vote) {
+    liveMode_ = net_.mode().mode;
+    liveMap_ = 0;
+    for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == net_.map().name) liveMap_ = (int)i;
+    livePickVote_ = vote;
+    picker_ = kind;
+}
+
 // Everything players can call a vote on (majority of human players decides).
 void Game::drawVoteMenu(float cx, float y) {
     float s = ui_.s();
     float w = 300 * s, h = 36 * s, gap = 8 * s, x = cx - w * 0.5f;
     bool warmup = net_.mode().phase == PHASE_WARMUP;
-    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, (warmup ? 9 : 8) * (h + gap) + 40 * s);
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, (warmup ? 10 : 9) * (h + gap) + 40 * s);
     ui_.labelCentered(cx, y, "CALL A VOTE");
     y += 30 * s;
     auto vote = [&](const std::string& label, const std::string& cmd) {
@@ -1132,6 +1141,12 @@ void Game::drawVoteMenu(float cx, float y) {
         y += h + gap;
     };
     if (warmup) vote("START THE MATCH", "start");
+    {
+        float hw = (w - gap) * 0.5f;
+        if (ui_.button(x, y, hw, h, "MODE...")) openLivePicker(PICK_LIVE_MODE, true);
+        if (ui_.button(x + hw + gap, y, hw, h, "MAP...") && !maps_.empty()) openLivePicker(PICK_LIVE_MAP, true);
+        y += h + gap;
+    }
     vote("BALANCE BOTS ON", "bots on");
     vote("BALANCE BOTS OFF", "bots off");
     vote("BOTS: BEGINNER", "botskill BEGINNER");
@@ -1170,17 +1185,9 @@ void Game::drawPauseMenu(float cx, float y) {
     y += h + gap;
     if (host_) {
         // Host controls: change mode/map live.
-        const Map& map = net_.map();
-        int cur = net_.mode().mode;
         float hw = (w - gap) * 0.5f;
-        auto openLive = [&](int kind) {
-            liveMode_ = cur;
-            liveMap_ = 0;
-            for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == map.name) liveMap_ = (int)i;
-            picker_ = kind;
-        };
-        if (ui_.button(x, y, hw, h, "CHANGE MODE")) openLive(PICK_LIVE_MODE);
-        if (ui_.button(x + hw + gap, y, hw, h, "CHANGE MAP") && !maps_.empty()) openLive(PICK_LIVE_MAP);
+        if (ui_.button(x, y, hw, h, "CHANGE MODE")) openLivePicker(PICK_LIVE_MODE, false);
+        if (ui_.button(x + hw + gap, y, hw, h, "CHANGE MAP") && !maps_.empty()) openLivePicker(PICK_LIVE_MAP, false);
         y += h + gap;
         if (ui_.button(x, y, w, h, "FORCE START")) { net_.sendCommand("forcestart"); paused_ = false; }
         y += h + gap;
@@ -1653,7 +1660,9 @@ void Game::drawPicker(float cx, float y) {
     float x = cx - w * 0.5f;
     int rows = (n + cols - 1) / cols;
     ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 40 * s + rows * (bh + 18 * s + gap) + bh + 30 * s);
-    ui_.labelCentered(cx, y, modes ? "CHOOSE A MODE" : std::string("CHOOSE A MAP FOR ") + modeTitle(mode));
+    std::string title = modes ? "CHOOSE A MODE" : std::string("CHOOSE A MAP FOR ") + modeTitle(mode);
+    if (live && livePickVote_) title = "VOTE: " + title;
+    ui_.labelCentered(cx, y, title);
     y += 34 * s;
     for (int i = 0; i < n; i++) {
         float bx = x + (i % cols) * (bw + gap), by = y + (i / cols) * (bh + 18 * s + gap);
@@ -1678,7 +1687,8 @@ void Game::drawPicker(float cx, float y) {
             } else mapIdx = i;
             picker_ = PICK_NONE;
             if (live) {
-                net_.sendCommand("map " + maps_[mapIdx] + " " + modeName(mode));
+                net_.sendCommand((livePickVote_ ? "callvote map " : "map ") + maps_[mapIdx] + " " + modeName(mode));
+                voteMenu_ = false;
                 paused_ = false;
             } else cfg_.save();
         }

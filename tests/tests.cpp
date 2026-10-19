@@ -771,6 +771,30 @@ static void testBotAim(uint16_t& port) {
     CHECK(dps[0] > 2); // beginners still land some hits
 }
 
+static void testMapVote(uint16_t port) {
+    printf("vote to change map / mode\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    NetClient a, b;
+    a.connect("127.0.0.1:" + std::to_string(port), "a");
+    b.connect("127.0.0.1:" + std::to_string(port), "b");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 1.0, idle);
+    b.sendCommand("callvote map nosuchmap ffa");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE);
+    b.sendCommand("callvote map summit koth");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_MAP);
+    a.sendCommand("vote yes");
+    pump(s, cls, 1.0, idle);
+    CHECK(s.config().map == "summit" && s.config().mode == MODE_KOTH);
+    s.stop();
+}
+
 static void testBots(uint16_t& port) {
     printf("bots: vs-bots fights, balance bots, votes, every mode\n");
     { // FFA vs 3 expert bots: they should find and kill each other / us
@@ -918,6 +942,7 @@ int main(int argc, char** argv) {
     testWeapons(port); port += 8;
     testCartDash(port++);
     testSemiAuto(port++);
+    testMapVote(port++);
     testTickRateFallback(port++);
     testRocketSelfDamage(port++);
     testTimeToKill();

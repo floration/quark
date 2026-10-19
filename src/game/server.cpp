@@ -399,6 +399,17 @@ void Server::handleStringCmd(int id, const std::string& s) {
             if (ms_.phase != PHASE_WARMUP) { GameEvent e; e.type = EV_MESSAGE; e.text = "the match has already started"; sendEvent(id, e); }
             else callVote(id, VOTE_START, 0);
         }
+        else if (what == "map" || what == "mode") { // callvote map <name> [mode] / callvote mode <mode>
+            std::string m2;
+            vs >> m2;
+            std::string mapName = what == "map" ? arg : cfg_.map;
+            int mode = what == "mode" ? modeFromName(arg.c_str()) : m2.empty() ? cfg_.mode : modeFromName(m2.c_str());
+            Map m;
+            bool ok = mode >= 0 && mapName.find_first_of("/\\.") == std::string::npos && m.load(mapName);
+            if (ok && !m.supportsMode(mode)) ok = false;
+            if (!ok) { GameEvent e; e.type = EV_MESSAGE; e.text = "can't vote for that map/mode"; sendEvent(id, e); }
+            else callVote(id, VOTE_MAP, mode, mapName);
+        }
         else if (what == "botskill") {
             int k = -1;
             for (int i = 0; i < BOT_SKILLS; i++) if (arg == botSkillName(i) || arg == std::to_string(i)) k = i;
@@ -989,7 +1000,7 @@ void Server::updateBalanceBots(bool matchStarting) {
     while (haveB < needB && addBot(TEAM_B, cfg_.balanceBotSkill, true) >= 0) haveB++;
 }
 
-void Server::callVote(int caller, int kind, int arg) {
+void Server::callVote(int caller, int kind, int arg, const std::string& map) {
     if (vote_.kind != VOTE_NONE) {
         GameEvent e; e.type = EV_MESSAGE; e.text = "a vote is already in progress";
         sendEvent(caller, e);
@@ -998,10 +1009,12 @@ void Server::callVote(int caller, int kind, int arg) {
     vote_ = Vote();
     vote_.kind = kind;
     vote_.arg = arg;
+    vote_.map = map;
     vote_.endsAt = time() + 30.0f;
     vote_.text = kind == VOTE_BOTS        ? std::string("BALANCE BOTS ") + (arg ? "ON" : "OFF")
                : kind == VOTE_BOTSKILL    ? std::string("BOT DIFFICULTY: ") + botSkillName(arg)
                : kind == VOTE_START       ? std::string("START THE MATCH")
+               : kind == VOTE_MAP         ? "PLAY " + map + " - " + modeTitle(arg)
                                           : std::string("FILL THE UNEVEN TEAMS WITH BOTS?");
     GameEvent e; e.type = EV_VOTE; e.a = (uint8_t)(caller < 0 ? 255 : caller); e.text = vote_.text;
     broadcastEvent(e);
@@ -1048,6 +1061,13 @@ void Server::tickVote() {
         return;
     }
     if (pass) {
+        if (vote_.kind == VOTE_MAP) {
+            std::string cmd = "map " + vote_.map + " " + modeName(vote_.arg);
+            message("vote passed: " + vote_.text);
+            vote_ = Vote();
+            command(cmd);
+            return;
+        }
         if (vote_.kind == VOTE_BOTS) cfg_.balanceBots = vote_.arg != 0;
         else {
             cfg_.balanceBotSkill = cfg_.botSkill = vote_.arg;
