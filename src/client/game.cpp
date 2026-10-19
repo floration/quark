@@ -1695,22 +1695,27 @@ void Game::drawMenu() {
             ui_.panel(lx, y, lw, 220 * s, 0.6f);
             float ry = y + 8 * s;
             for (auto& sv : browser_.servers()) {
-                char row[160];
-                if (sv.noReply) snprintf(row, sizeof row, "%s  - NO RESPONSE (PORT NOT OPEN?) - CLICK TO TRY", sv.name.c_str());
-                else {
-                    // shorten the name until the row fits its button (long names used to spill past the list)
-                    std::string nm = sv.name;
-                    for (;;) {
-                        snprintf(row, sizeof row, "%s  %s/%s  %d/%d  %dms", nm.c_str(), sv.map.c_str(), modeName(sv.mode), sv.players,
-                                 sv.maxPlayers, (int)sv.ping);
-                        if (r_.textWidth(row, ui_.textScale()) <= lw - 24 * s || nm.size() <= 4) break;
-                        nm = nm.substr(0, nm.size() - (nm.size() > 3 && nm.compare(nm.size() - 3, 3, "...") == 0 ? 4 : 1)) + "...";
-                    }
-                }
-                if (ui_.button(lx + 6 * s, ry, lw - 12 * s, 30 * s, row)) {
+                // name on the left (a long one scrolls back and forth so all of it can be read), details on the right
+                char info[96];
+                if (sv.noReply) snprintf(info, sizeof info, "NO RESPONSE - CLICK TO TRY");
+                else snprintf(info, sizeof info, "%s/%s  %d/%d  %dms", sv.map.c_str(), modeName(sv.mode), sv.players, sv.maxPlayers, (int)sv.ping);
+                std::string infoU = upper(info);
+                float bx = lx + 6 * s, bwRow = lw - 12 * s, bhRow = 30 * s, ts = ui_.textScale();
+                if (ui_.button(bx, ry, bwRow, bhRow, "")) {
                     joinAddr_ = sv.addr.toString();
                     connectTo(joinAddr_);
                 }
+                float ty = ry + (bhRow - r_.textHeight(ts)) * 0.5f, iw = r_.textWidth(infoU, ts);
+                r_.text(bx + bwRow - iw - 8 * s, ty, ts, infoU, kWhite);
+                std::string name = upper(sv.name);
+                float cw = r_.textWidth("M", ts);
+                int fit = std::max(1, (int)((bwRow - iw - 28 * s) / cw)), extra = (int)name.size() - fit;
+                if (extra > 0) { // ping-pong: pause 1.5 s at each end, scroll 6 characters a second
+                    double cycle = 2 * (extra / 6.0 + 1.5), t = std::fmod(time_, cycle);
+                    double pos = t < 1.5 ? 0 : t < 1.5 + extra / 6.0 ? (t - 1.5) * 6 : t < 3 + extra / 6.0 ? extra : extra - (t - 3 - extra / 6.0) * 6;
+                    name = name.substr((size_t)std::clamp((int)pos, 0, extra), (size_t)fit);
+                }
+                r_.text(bx + 8 * s, ty, ts, name, kWhite);
                 ry += 34 * s;
                 if (ry > y + 200 * s) break;
             }
