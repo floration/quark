@@ -69,6 +69,7 @@ struct ServerPlayer {
     int selectedWeapon = WPN_RIFLE; // last weapon the player picked; kept across respawns
     float nextFire = 0;
     float lastFire = -10;
+    float fireQueuedUntil = -1; // semi-auto: a click waiting for the weapon to be ready
     int kills = 0, deaths = 0, score = 0;
     float respawnAt = -1;
     int checkpoint = 0;         // race: next checkpoint index
@@ -122,6 +123,7 @@ public:
     std::string statusText();
     const ServerConfig& config() const { return cfg_; }
     std::string upnpStatus() { return upnp_ ? upnp_->status() : std::string(); }
+    std::string listStatus() { return master_ ? master_->status() : std::string(); }
 
     // ---- state used by the game mode rules (gamemodes.cpp) ----
     ServerConfig cfg_;
@@ -189,7 +191,7 @@ private:
     void tickProjectiles();
     void explode(const Vec3& at, int owner, int weapon);
     void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t viewMs, float* dmgPerPlayer, float dmg);
-    Vec3 spreadDir(const Vec3& dir, float spread);
+    Vec3 spreadDir(const Vec3& dir, float spread, uint32_t seq, int pellet);
     void sendSnapshots();
     void openGameLog();
     void logTick();

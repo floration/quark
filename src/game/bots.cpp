@@ -288,6 +288,8 @@ UserCmd botThink(Server& s, int id) {
         float err = std::fabs(angleDiff(b.aimYaw, wantYaw)) + std::fabs(b.aimPitch - wantPitch);
         if (now - b.seenAt >= sp.reaction && err < sp.fireCone + 0.3f / std::max(dist, 1.0f)) cmd.buttons |= BTN_FIRE;
         if (w == WPN_SNIPER) cmd.buttons |= BTN_ALTFIRE;
+        // semi-auto: let go between shots (a click is buffered until the weapon is ready)
+        if (weaponDef(me.weapon).semiAuto && (me.buttons & BTN_FIRE)) cmd.buttons &= ~BTN_FIRE;
         // fight movement: keep a good range for the weapon, strafe to dodge
         Vec3 to = t.move.pos - me.move.pos;
         to.y = 0;

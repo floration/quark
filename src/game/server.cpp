@@ -616,6 +616,7 @@ void Server::simulate() {
         if (!p.connected) continue;
         if (p.isBot) {
             UserCmd c = botThink(*this, i);
+            c.seq = tick_; // distinct shot spread per shot
             c.msec = (uint8_t)(1000 / tickRate());
             c.viewTick = timeMs_;
             runPlayerCmd(i, c);
@@ -682,7 +683,13 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
                 pr.active = false;
                 explode(pr.pos, id, WPN_STICKY);
             }
-    if ((cmd.buttons & BTN_FIRE) && time() >= p.nextFire && !(p.move.flags & MF_FROZEN)) {
+    bool wantFire = (cmd.buttons & BTN_FIRE) != 0;
+    if (weaponDef(p.weapon).semiAuto) { // one shot per click
+        if (wantFire && !(p.prevButtons & BTN_FIRE)) p.fireQueuedUntil = time() + kFireBuffer;
+        wantFire = time() <= p.fireQueuedUntil;
+    }
+    if (wantFire && time() >= p.nextFire && !(p.move.flags & MF_FROZEN)) {
+        p.fireQueuedUntil = -1;
         // Holding fire keeps an exact cadence; after a pause the timer restarts from now.
         float refire = weaponDef(p.weapon).refire;
         p.nextFire = (time() - p.nextFire < dt() + 0.0005f) ? p.nextFire + refire : time() + refire;
@@ -691,10 +698,11 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     }
 }
 
-Vec3 Server::spreadDir(const Vec3& dir, float spread) {
+Vec3 Server::spreadDir(const Vec3& dir, float spread, uint32_t seq, int pellet) {
     if (spread <= 0) return dir;
     Vec3 right = normalize(cross(dir, {0, 1, 0})), up = cross(right, dir);
-    float a = randf() * 2 * PI, r = std::sqrt(randf()) * spread;
+    float a, r;
+    spreadOffset(seq, pellet, spread, a, r);
     return normalize(dir + right * (std::cos(a) * r) + up * (std::sin(a) * r));
 }
 
@@ -749,7 +757,7 @@ void Server::fireWeapon(int id, const UserCmd& cmd) {
             pr.type = p.weapon;
             pr.owner = id;
             pr.pos = eye + aim * 0.3f;
-            pr.vel = spreadDir(aim, spread) * wd.projSpeed;
+            pr.vel = spreadDir(aim, spread, cmd.seq, 0) * wd.projSpeed;
             pr.dieAt = time() + wd.life;
             pr.armAt = time() + kStickyArmTime;
             return;
@@ -762,7 +770,7 @@ void Server::fireWeapon(int id, const UserCmd& cmd) {
     float range = p.weapon == WPN_KNIFE ? kKnifeRange : wd.range;
     // Pellets add up per target so one shotgun blast is one hit (one damage event) per player.
     float dmgPer[kMaxPlayers] = {};
-    for (int k = 0; k < wd.pellets; k++) hitscan(id, eye, spreadDir(aim, spread), range, vt, dmgPer, (float)wd.damage);
+    for (int k = 0; k < wd.pellets; k++) hitscan(id, eye, spreadDir(aim, spread, cmd.seq, k), range, vt, dmgPer, (float)wd.damage);
     for (int i = 0; i < kMaxPlayers; i++)
         if (dmgPer[i] > 0) damagePlayer(i, id, dmgPer[i], p.weapon, aim * (wd.pellets > 1 ? 0.15f * dmgPer[i] / wd.damage : 1.0f));
 }
@@ -770,11 +778,7 @@ void Server::fireWeapon(int id, const UserCmd& cmd) {
 void Server::tickProjectiles() {
     for (auto& pr : projectiles_) {
         if (!pr.active) continue;
-        if (time() >= pr.dieAt) {
-            pr.active = false;
-            if (weaponDef(pr.type).bounce) explode(pr.pos, pr.owner, pr.type); // grenade fuse
-            continue;
-        }
+        if (time() >= pr.dieAt) { pr.active = false; continue; }
         if (pr.stuck && pr.onCart) {
             if (map_.dynSolids.empty()) pr.active = false; // cart gone (round over)
             else pr.pos = map_.payloadPoint(ms_.payloadDist) + pr.cartOffset;
@@ -800,11 +804,6 @@ void Server::tickProjectiles() {
         }
         if (wall < 0 && hitPlayer < 0) { pr.pos += step; continue; }
         Vec3 at = pr.pos + dir * std::max(0.0f, best - 0.05f);
-        if (wd.bounce && hitPlayer < 0) { // grenade: bounce off the wall, losing energy
-            pr.pos = at + n * 0.02f;
-            pr.vel = (pr.vel - n * (2.0f * dot(pr.vel, n))) * 0.55f;
-            continue;
-        }
         if (wd.sticky) {               // stick where it landed (on a player: it drops there)
             pr.pos = hitPlayer < 0 ? at + n * 0.08f : at;
             pr.vel = {};

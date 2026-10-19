@@ -286,7 +286,7 @@ bool Game::pressInput(int code) {
         captureMouse(false);
         return true;
     }
-    for (int w = 0; w < WPN_COUNT; w++) if (b.has(w < 8 ? A_WEAPON1 + w : A_WEAPON9 + (w - 8), code)) { desiredWeapon_ = w; return true; }
+    for (int w = 0; w < WPN_COUNT; w++) if (b.has(A_WEAPON1 + w, code)) { desiredWeapon_ = w; return true; }
     int cur = desiredWeapon_ >= 0 ? desiredWeapon_ : net_.selfWeapon();
     if (b.has(A_NEXTWEAPON, code)) { desiredWeapon_ = (cur + 1) % WPN_COUNT; return true; }
     if (b.has(A_PREVWEAPON, code)) { desiredWeapon_ = (cur + WPN_COUNT - 1) % WPN_COUNT; return true; }
@@ -540,7 +540,14 @@ void Game::frame(double dt) {
         while (tickAcc_ >= period) {
             UserCmd c = buildCmd();
             // local fire feedback (server is authoritative for damage)
-            if ((c.buttons & BTN_FIRE) && net_.selfAlive() && time_ >= localNextFire_ && net_.mode().phase != PHASE_FREEZE) {
+            bool wantFire = (c.buttons & BTN_FIRE) != 0;
+            if (weaponDef(net_.selfWeapon()).semiAuto) { // mirror the server: one shot per click, short buffer
+                if (wantFire && !localFireHeld_) localFireQueued_ = time_ + kFireBuffer;
+                localFireHeld_ = wantFire;
+                wantFire = time_ <= localFireQueued_;
+            } else localFireHeld_ = wantFire;
+            if (wantFire && net_.selfAlive() && time_ >= localNextFire_ && net_.mode().phase != PHASE_FREEZE) {
+                localFireQueued_ = -1;
                 int w = net_.selfWeapon();
                 localNextFire_ = time_ + weaponDef(w).refire;
                 audio_.play(SND_RIFLE + w, w == WPN_LASER ? 0.6f : 0.8f, 0.97f + (rand() % 7) * 0.01f);
@@ -552,10 +559,12 @@ void Game::frame(double dt) {
                     Vec3 aim = angleForward(yaw_, pitch_);
                     Vec3 right = normalize(cross(aim, {0, 1, 0})), up = cross(right, aim);
                     const WeaponDef& wd = weaponDef(w);
-                    for (int k = 0; k < wd.pellets; k++) { // visual only; the server rolls the real spread
+                    float spread = (wd.scopedSpread >= 0 && (c.buttons & BTN_ALTFIRE)) ? wd.scopedSpread : wd.spread;
+                    for (int k = 0; k < wd.pellets; k++) { // same seeded spread as the server, so tracers show the real shot
                         Vec3 d = aim;
-                        if (wd.pellets > 1) {
-                            float a = (rand() % 1000) * 0.00628f, r = std::sqrt((rand() % 1000) * 0.001f) * wd.spread;
+                        if (spread > 0) {
+                            float a, r;
+                            spreadOffset(net_.nextSeq(), k, spread, a, r);
                             d = normalize(aim + right * (std::cos(a) * r) + up * (std::sin(a) * r));
                         }
                         float t = net_.map().raycast(eye, d, wd.range);
@@ -567,6 +576,7 @@ void Game::frame(double dt) {
             net_.tick(c);
             tickAcc_ -= period;
         }
+        scopeOverlay_ = net_.selfWeapon() == WPN_SNIPER; // crossbow: just a light zoom, normal crosshair
         scoped_ = net_.selfAlive() && !paused_ && !chatting_ && weaponDef(net_.selfWeapon()).scopedSpread >= 0 &&
                   (isDown(A_ALTFIRE) || opts_.debugScope);
         // explosions: projectiles that vanished
@@ -752,8 +762,6 @@ void Game::drawWorld(float alpha) {
             bool resting = sp < 0.01f; // stuck: pulse so they're easy to spot
             float k = resting ? 0.75f + 0.25f * std::sin((float)time_ * 10) : 1.0f;
             r_.box(pr.pos, {0.14f, 0.14f, 0.14f}, (float)time_ * (resting ? 0 : 6), col * k, 1.0f);
-        } else if (pr.type == WPN_GRENADE) { // tumbling, blinking faster as the fuse runs out
-            r_.box(pr.pos, {0.13f, 0.13f, 0.13f}, (float)time_ * 9, col * (0.8f + 0.2f * std::sin((float)time_ * 25)), 1.0f);
         } else if (pr.type == WPN_CROSSBOW) {
             r_.boxPitched(pr.pos, {0, 0, 0}, {0.03f, 0.03f, 0.35f}, yaw, std::asin(clampf(dir.y, -1, 1)), {0.1f, 0.1f, 0.12f}, 1.0f);
             r_.line(pr.pos, pr.pos - dir * 1.5f, 0.04f, rgba(col, 0.5f));
@@ -835,7 +843,7 @@ void Game::drawWorld(float alpha) {
     }
 
     // viewmodel
-    if (alive && !scoped_) {
+    if (alive && !(scoped_ && scopeOverlay_)) {
         int w = net_.selfWeapon();
         recoil_ = std::max(0.0, recoil_ - 0.016 * 8);
         float kick = (float)recoil_ * 0.06f;
@@ -847,7 +855,6 @@ void Game::drawWorld(float alpha) {
         if (w == WPN_SHOTGUN) gun = {0.04f, 0.035f, 0.22f};
         if (w == WPN_STICKY) gun = {0.05f, 0.05f, 0.18f};
         if (w == WPN_CROSSBOW) gun = {0.02f, 0.025f, 0.22f};
-        if (w == WPN_GRENADE) gun = {0.055f, 0.045f, 0.16f};
         Vec3 at = {0.2f, -0.17f, -0.55f + kick};
         r_.viewBox(at, gun, {0.14f, 0.14f, 0.16f});
         r_.viewBox(at + Vec3(0, gun.y + 0.006f, 0.05f), {0.01f, 0.006f, 0.05f}, cfg_.colorFriendly);
@@ -874,7 +881,7 @@ void Game::drawHud() {
     bool teamMode = modeIsTeamBased(ms.mode);
 
     float cx = W * 0.5f, cy = H * 0.5f;
-    if (scoped_) {
+    if (scoped_ && scopeOverlay_) {
         // circular scope mask built from horizontal strips (one batch, no texture)
         float R = H * 0.46f;
         const Color k = {0, 0, 0, 1};
@@ -892,7 +899,7 @@ void Game::drawHud() {
         r_.rect(cx - 0.5f, cy - R, 1, 2 * R, {0, 0, 0, 0.9f});
     }
     // crosshair (scoped: the scope's reticle replaces it)
-    if (!scoped_) drawCrosshair(cx, cy, s, time_ < hitUntil_);
+    if (!(scoped_ && scopeOverlay_)) drawCrosshair(cx, cy, s, time_ < hitUntil_);
     {   // floating damage numbers above whoever you hit
         auto ip = net_.interpolatedPlayers();
         for (size_t i = 0; i < dmgNums_.size();) {
@@ -1069,6 +1076,9 @@ void Game::drawHud() {
         std::string st = "HOSTING ON UDP PORT " + std::to_string(host_->port());
         ui_.labelCentered(cx, H - 120 * s, st, kGrey);
         if (host_->config().upnp && host_->upnpStatus().size()) ui_.labelCentered(cx, H - 100 * s, host_->upnpStatus(), kGrey);
+        std::string ls = host_->listStatus();
+        for (auto& ch : ls) ch = (char)toupper((unsigned char)ch);
+        if (!ls.empty()) ui_.labelCentered(cx, H - 80 * s, ls, kGrey);
     }
 
     showScores_ = isDown(A_SCORES) || ms.phase == PHASE_MATCH_END;
@@ -1318,7 +1328,8 @@ void Game::drawMenu() {
             if (ui_.button(lx + lw - 130 * s, y, 130 * s, bh, "CONNECT") || (uiIn_.enter && !joinAddr_.empty())) connectTo(joinAddr_);
             y += bh + gap * 2;
             ui_.label(lx, y, "SERVERS (LAN + INTERNET)");
-            ui_.label(lx + lw * 0.42f, y + 6 * s, browser_.internetStatus(), kGrey, 0.5f);
+            ui_.label(lx, y + 22 * s, browser_.internetStatus(), kGrey, 0.5f);
+            y += 12 * s;
             if (ui_.button(lx + lw - 130 * s, y - 6 * s, 130 * s, 30 * s, "REFRESH")) browser_.refresh();
             y += 30 * s;
             ui_.panel(lx, y, lw, 220 * s, 0.6f);
@@ -1348,11 +1359,11 @@ void Game::drawMenu() {
             ui_.textField(3, lx, y, lw, bh, cfg_.hostName, 32);
             y += bh + gap;
             if (!maps_.empty()) {
-                if (ui_.button(lx, y, lw, bh, "MAP: " + upper(maps_[hostMapIdx_ % maps_.size()]) + "  (CLICK TO CHOOSE)")) picker_ = PICK_HOST_MAP;
+                if (ui_.button(lx, y, lw, bh, "MAP: " + upper(maps_[hostMapIdx_ % maps_.size()]) + "  >")) picker_ = PICK_HOST_MAP;
                 y += bh + gap;
                 Map m;
                 m.load(maps_[hostMapIdx_]);
-                if (ui_.button(lx, y, lw, bh, std::string("MODE: ") + modeTitle(hostModeIdx_) + "  (CLICK TO CHOOSE)")) picker_ = PICK_HOST_MODE;
+                if (ui_.button(lx, y, lw, bh, std::string("MODE: ") + modeTitle(hostModeIdx_) + "  >")) picker_ = PICK_HOST_MODE;
                 y += bh + gap;
                 if (!m.supportsMode(hostModeIdx_)) ui_.label(lx, y, "THIS MAP DOES NOT SUPPORT THAT MODE", kRed);
                 else if (hostModeIdx_ == MODE_DUEL && ui_.button(lx, y - 2 * s, lw, 24 * s, cfg_.hostDuelSize == 2 ? "TEAMS: 2V2 (CLICK FOR 1V1)" : "TEAMS: 1V1 (CLICK FOR 2V2)"))
@@ -1368,8 +1379,8 @@ void Game::drawMenu() {
             y += bh + gap;
             ui_.toggle(lx, y, lw, bh, "AUTO PORT FORWARD (UPNP)", cfg_.hostUpnp);
             y += bh + gap;
-            ui_.toggle(lx, y, lw * 0.5f - 4 * s, bh, "BOT BALANCE", cfg_.hostBalanceBots);
-            ui_.toggle(lx + lw * 0.5f + 4 * s, y, lw * 0.5f - 4 * s, bh, "LIST ON INTERNET", cfg_.hostPublic);
+            ui_.toggle(lx, y, lw * 0.5f - 4 * s, bh, "BALANCE BOTS", cfg_.hostBalanceBots);
+            ui_.toggle(lx + lw * 0.5f + 4 * s, y, lw * 0.5f - 4 * s, bh, "PUBLIC", cfg_.hostPublic);
             y += bh + gap;
             ui_.cycle(lx, y, lw, bh, "SERVER LOG", cfg_.hostLog, 4, {"SERVER LOG OFF", "SIMPLE LOG", "VERBOSE LOG (125 HZ)", "EXTREME LOG (EVERY TICK)"});
             y += bh + gap;
@@ -1389,7 +1400,7 @@ void Game::drawMenu() {
         case Screen::VsBots: {
             float lw = 460 * s, lx = cx - lw * 0.5f;
             ui_.panel(lx - 16 * s, y - 16 * s, lw + 32 * s, 360 * s);
-            if (ui_.button(lx, y, lw, bh, std::string("MODE: ") + modeTitle(cfg_.botMode) + "  (CLICK TO CHOOSE)")) picker_ = PICK_BOT_MODE;
+            if (ui_.button(lx, y, lw, bh, std::string("MODE: ") + modeTitle(cfg_.botMode) + "  >")) picker_ = PICK_BOT_MODE;
             y += bh + gap;
             if (!maps_.empty()) {
                 // only offer maps that support the chosen mode
@@ -1398,7 +1409,7 @@ void Game::drawMenu() {
                     if (m.load(maps_[botMapIdx_ % maps_.size()]) && m.supportsMode(cfg_.botMode)) break;
                     botMapIdx_ = (botMapIdx_ + 1) % (int)maps_.size();
                 }
-                if (ui_.button(lx, y, lw, bh, "MAP: " + upper(maps_[botMapIdx_ % maps_.size()]) + "  (CLICK TO CHOOSE)")) picker_ = PICK_BOT_MAP;
+                if (ui_.button(lx, y, lw, bh, "MAP: " + upper(maps_[botMapIdx_ % maps_.size()]) + "  >")) picker_ = PICK_BOT_MAP;
                 y += bh + gap;
             }
             static const std::vector<std::string> skills = {"BEGINNER BOTS", "INTERMEDIATE BOTS", "ADVANCED BOTS", "EXPERT BOTS"};
@@ -1581,7 +1592,7 @@ void Game::drawControls(float x0, float y0, float wTotal) {
     float colW = std::max(330 * s, wTotal * 0.5f);
     float x = x0 + wTotal * 0.5f - colW - colGap * 0.5f;
     std::vector<int> actions; // every rebindable action (crouch was removed from the game)
-    for (int a = 0; a < A_COUNT; a++) if (a != A_CROUCH) actions.push_back(a);
+    for (int a = 0; a < A_COUNT; a++) if (a != A_CROUCH && a != A_WEAPON9) actions.push_back(a);
     int perCol = ((int)actions.size() + 1) / 2;
     float h = perCol * (rowH + gap) + 90 * s;
     float y = std::max(8 * s, y0 - 40 * s);

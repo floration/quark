@@ -385,7 +385,7 @@ static int runBot(const std::string& addr, double seconds, const std::string& na
 
 static void testWeapons(uint16_t port) {
     printf("weapons: sniper (scoped/unscoped), laser, rocket\n");
-    for (int w : {WPN_SNIPER, WPN_LASER, WPN_ROCKET, WPN_SHOTGUN, WPN_CROSSBOW, WPN_STICKY, WPN_GRENADE}) {
+    for (int w : {WPN_SNIPER, WPN_LASER, WPN_ROCKET, WPN_SHOTGUN, WPN_CROSSBOW, WPN_STICKY}) {
         Server s;
         ServerConfig cfg;
         cfg.autoStart = true;
@@ -399,7 +399,7 @@ static void testWeapons(uint16_t port) {
         pump(s, cls, 2.5, idle);
         auto& sa = s.players_[a.clientId()];
         auto& sb = s.players_[b.clientId()];
-        float dist = (w == WPN_LASER || w == WPN_SHOTGUN || w == WPN_GRENADE) ? 8.0f : 20.0f;
+        float dist = (w == WPN_LASER || w == WPN_SHOTGUN) ? 8.0f : 20.0f;
         sa.move.pos = {9, 0, 6}; sb.move.pos = {9, 0, 6 - dist};
         sa.move.vel = sb.move.vel = {};
         pump(s, cls, 0.3, idle);
@@ -425,16 +425,16 @@ static void testWeapons(uint16_t port) {
         int deaths0 = sb.deaths;
         float hp0 = sb.health;
         double t0 = timeNow();
-        pump(s, cls, w == WPN_LASER ? 0.5 : (w == WPN_ROCKET || w == WPN_CROSSBOW || w == WPN_STICKY || w == WPN_SHOTGUN || w == WPN_GRENADE) ? 0.2 : 0.3, [&](int i) { return aim(i, BTN_FIRE | (w == WPN_SNIPER ? BTN_ALTFIRE : 0)); });
+        pump(s, cls, w == WPN_LASER ? 0.5 : (w == WPN_ROCKET || w == WPN_CROSSBOW || w == WPN_STICKY || w == WPN_SHOTGUN) ? 0.2 : 0.3, [&](int i) { return aim(i, BTN_FIRE | (w == WPN_SNIPER ? BTN_ALTFIRE : 0)); });
         double elapsed = timeNow() - t0;
-        if (w == WPN_ROCKET || w == WPN_CROSSBOW || w == WPN_STICKY || w == WPN_GRENADE) pump(s, cls, 1.0, idle); // let it fly
+        if (w == WPN_ROCKET || w == WPN_CROSSBOW || w == WPN_STICKY) pump(s, cls, 1.0, idle); // let it fly
         float dealt = (sb.deaths > deaths0) ? 100.0f : hp0 - sb.health;
         if (w == WPN_SNIPER) CHECK(dealt >= 50);                 // one scoped shot
         if (w == WPN_LASER) {                                     // ~5 dmg every 0.05 s
             float expect = (float)(elapsed / weaponDef(WPN_LASER).refire) * weaponDef(WPN_LASER).damage;
             CHECK(dealt > expect * 0.6f && dealt < expect * 1.4f + 5);
         }
-        if (w == WPN_ROCKET || w == WPN_GRENADE) CHECK(dealt > 15);
+        if (w == WPN_ROCKET) CHECK(dealt > 15);
         if (w == WPN_SHOTGUN) CHECK(dealt >= 25);      // most of 10 x 5 pellets at 8 m
         if (w == WPN_CROSSBOW) CHECK(dealt >= 50);
         if (w == WPN_STICKY) {                          // lobbed: lands near the target, then detonate
@@ -450,10 +450,10 @@ static void testWeapons(uint16_t port) {
     }
 }
 
-// Grenades bounce off walls and go off when the fuse runs out; stickies stuck to the payload cart ride
+// Stickies stuck to the payload cart ride
 // along with it; dashing while looking up rises a little.
-static void testGrenadeCartDash(uint16_t port) {
-    printf("grenade bounce + fuse, stickies ride the cart, dash tilts with pitch\n");
+static void testCartDash(uint16_t port) {
+    printf("stickies ride the cart, dash tilts with pitch\n");
     {
         MoveState m; Map map; map.load("arena");
         m.pos = {9, 0, 6}; m.flags = MF_ONGROUND;
@@ -472,16 +472,6 @@ static void testGrenadeCartDash(uint16_t port) {
     if (!s.start(cfg)) { g_fail++; return; }
     std::vector<NetClient*> none;
     pump(s, none, 0.2, idle);
-    // grenade thrown straight at the floor: bounces up, then explodes on its fuse
-    Projectile& g = s.projectiles_[0];
-    g = Projectile();
-    g.active = true; g.type = WPN_GRENADE; g.owner = 0; g.id = 999;
-    Vec3 cart = s.map_.payloadPoint(s.ms_.payloadDist);
-    g.pos = cart + Vec3(8, 1.0f, 0); g.vel = {0, -15, 0}; g.dieAt = s.time() + 1.0f;
-    pump(s, none, 0.15, idle);
-    CHECK(g.active && g.vel.y > 0); // bounced
-    pump(s, none, 1.2, idle);
-    CHECK(!g.active);               // fuse
     // sticky on the cart moves with it
     s.ms_.payloadDist = 5;
     pump(s, none, 0.05, idle);
@@ -497,6 +487,42 @@ static void testGrenadeCartDash(uint16_t port) {
     pump(s, none, 0.05, idle);
     Vec3 moved = st.pos - before, cartMoved = s.map_.payloadPoint(9) - s.map_.payloadPoint(5);
     CHECK(length(moved - cartMoved) < 0.05f && length(cartMoved) > 1);
+    s.stop();
+}
+
+// Rifle is semi-auto: holding fire shoots once, clicking shoots each click; spread is seeded per command.
+static void testSemiAuto(uint16_t port) {
+    printf("rifle semi-auto, seeded spread\n");
+    float a1, r1, a2, r2;
+    spreadOffset(42, 0, 0.1f, a1, r1); spreadOffset(42, 0, 0.1f, a2, r2);
+    CHECK(a1 == a2 && r1 == r2 && r1 <= 0.1f);
+    spreadOffset(43, 0, 0.1f, a2, r2);
+    CHECK(a1 != a2);
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    NetClient a;
+    a.connect("127.0.0.1:" + std::to_string(port), "clicker");
+    std::vector<NetClient*> cls = {&a};
+    pump(s, cls, 2.0, idle);
+    auto& p = s.players_[a.clientId()];
+    pump(s, cls, 0.3, [](int) { UserCmd c; c.weapon = WPN_RIFLE; return c; });
+    float last = p.lastFire;
+    int shots = 0;
+    pump(s, cls, 1.5, [&](int) { UserCmd c; c.weapon = WPN_RIFLE; c.buttons = BTN_FIRE; if (p.lastFire != last) { shots++; last = p.lastFire; } return c; });
+    CHECK(shots <= 1); // held: one shot
+    shots = 0;
+    int n = 0;
+    pump(s, cls, 1.5, [&](int) {
+        UserCmd c; c.weapon = WPN_RIFLE;
+        if ((n++ / 40) % 2 == 0) c.buttons = BTN_FIRE; // click every 80 ms
+        if (p.lastFire != last) { shots++; last = p.lastFire; }
+        return c;
+    });
+    printf("  held: 1 shot, clicking: %d shots in 1.5 s\n", shots);
+    CHECK(shots >= 5);
     s.stop();
 }
 
@@ -772,7 +798,7 @@ static void testBots(uint16_t& port) {
         int kills = 0;
         for (auto& p : s.players_) if (p.connected) kills += p.kills;
         printf("  ffa vs 3 expert bots: %d kills in 40 s (phase %d)\n", kills, s.ms_.phase);
-        CHECK(kills >= 3);
+        CHECK(kills >= 2);
         s.stop();
     }
     { // pregame (no bots) -> vote start -> vote balance bots -> bots join; then votes
@@ -899,7 +925,8 @@ int main(int argc, char** argv) {
     testPayloadPush(port++);
     testPacketLoss(port++);
     testWeapons(port); port += 8;
-    testGrenadeCartDash(port++);
+    testCartDash(port++);
+    testSemiAuto(port++);
     testTickRateFallback(port++);
     testRocketSelfDamage(port++);
     testTimeToKill();

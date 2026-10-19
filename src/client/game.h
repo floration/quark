@@ -113,6 +113,8 @@ private:
     double lastMx_ = 0, lastMy_ = 0;
     bool mouseCaptured_ = false, firstMouse_ = true;
     bool fireLatched_ = false;
+    bool localFireHeld_ = false, scopeOverlay_ = false;
+    double localFireQueued_ = -1;
     double wheelAccum_ = 0;         // fractional scroll (trackpads, high-res wheels) until a full notch
     double wheelHeldUntil_[2] = {}; // a scroll step counts as "held" briefly, so hold actions (jump, fire...) work on the wheel
     int specTarget_ = -1;

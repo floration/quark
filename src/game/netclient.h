@@ -41,6 +41,7 @@ public:
 
     // Prediction
     const MoveState& predicted() const { return pred_; }
+    uint32_t nextSeq() const { return nextSeq_; } // seq the next tick()'s command will get
     Vec3 smoothedPos(float alpha) const; // predicted position interpolated between ticks + error smoothing
     bool selfAlive() const;
     int selfHealth() const { return hasSnapshot() ? latest().selfHealth : 0; }
