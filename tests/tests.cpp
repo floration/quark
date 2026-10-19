@@ -821,6 +821,14 @@ static void testMapDownload(uint16_t port) {
         for (int k = 0; k < MODE_COUNT; k++) CHECK(r.supportsMode(k) == m.supportsMode(k));
         CHECK(r.serialize() == m.serialize());
     }
+    { // allowed modes: kept through save/load, and they limit supportsMode
+        Map m;
+        CHECK(m.load("arena"));
+        CHECK(applyMapEdit(m, "m " + std::to_string((1u << MODE_FFA) | (1u << MODE_DUEL))));
+        Map r;
+        CHECK(r.parse(m.serialize()) && r.allowedModes == m.allowedModes);
+        CHECK(r.supportsMode(MODE_FFA) && r.supportsMode(MODE_DUEL) && !r.supportsMode(MODE_KOTH) && r.canSupportMode(MODE_KOTH));
+    }
     Map base;
     CHECK(base.load("arena"));
     std::string text = base.serialize() + "accent 0 8 0 1 9 1\n";

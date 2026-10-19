@@ -257,12 +257,30 @@ Game::EdSel Game::edPick(const Vec3& o, const Vec3& dir) const {
     return best;
 }
 
+// Grab points on the selection: one per face of a box (drag = resize that side, Shift+drag = move), or
+// arrows out of a point object along each axis (drag = move).
+std::vector<Game::EdHandle> Game::edHandles() const {
+    std::vector<EdHandle> hs;
+    if (!edSelValid()) return hs;
+    AABB b = edBounds(ed_, edSel_);
+    Vec3 c = b.center();
+    bool point = edSel_.kind == ED_SPAWN || edSel_.kind == ED_LIGHT || edSel_.kind == ED_PATH;
+    for (int a = 0; a < 3; a++)
+        for (int sg = -1; sg <= 1; sg += 2) {
+            Vec3 p = c;
+            if (point) p[a] += sg * ((b.mx[a] - b.mn[a]) * 0.5f + 0.6f);
+            else p[a] = sg > 0 ? b.mx[a] : b.mn[a];
+            hs.push_back({p, a, sg, point});
+        }
+    return hs;
+}
+
 // World-space direction under the mouse (the screen center while mouse-looking).
 Vec3 Game::edMouseRay() const {
     Vec3 f = angleForward(yaw_, pitch_);
     if (edLook_) return f;
     Vec3 right = normalize(cross(f, {0, 1, 0})), up = cross(right, f);
-    float W = (float)r_.width(), H = (float)r_.height();
+    float H = (float)r_.height(), W = (float)r_.width() - 320 * (H / 720.0f); // the 3D view stops at the panel
     float tx = std::tan(deg2rad(cfg_.fov) * 0.5f), ty = tx * H / W;
     float nx = uiIn_.mx / W * 2 - 1, ny = 1 - uiIn_.my / H * 2;
     return normalize(f + right * (nx * tx) + up * (ny * ty));
@@ -441,15 +459,68 @@ void Game::editorFrame(double dt) {
         float sp = edSpeed_ * (glfwGetKey(win_, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? 3.0f : 1.0f);
         if (length(mv) > 0) edCam_ += normalize(mv) * sp * (float)dt;
     }
-    // ---- click to select (outside the panel)
+    // ---- the 3D view covers the screen left of the panel (so its center, where things get added, is
+    // the middle of what you see)
+    const int fullW = r_.width();
+    r_.resize((int)panelX, (int)H);
+    r_.setCamera(edCam_, yaw_, pitch_, cfg_.fov);
+    auto closestOnAxis = [&](const Vec3& p0, int axis, const Vec3& d) { // param along the axis nearest the mouse ray
+        Vec3 a;
+        a[axis] = 1;
+        Vec3 w = p0 - edCam_;
+        float bb = dot(a, d), den = 1 - bb * bb;
+        return den < 1e-4f ? 0.0f : (bb * dot(d, w) - dot(a, w)) / den;
+    };
+    // ---- click: grab a handle of the selection, else select what's under the mouse
     if (uiIn_.pressed && uiIn_.mx < panelX) {
-        edSel_ = edPick(edCam_, edMouseRay());
         ui_.clearFocus();
+        int best = -1;
+        float bestD = 14 * s;
+        auto hs = edHandles();
+        for (size_t k = 0; k < hs.size(); k++) {
+            float sx, sy;
+            if (!r_.project(hs[k].pos, sx, sy)) continue;
+            float dd = std::hypot(sx - uiIn_.mx, sy - uiIn_.my);
+            if (dd < bestD) { bestD = dd; best = (int)k; }
+        }
+        if (best >= 0 && !edLook_) {
+            edDragAxis_ = hs[best].axis;
+            edDragSign_ = hs[best].sign;
+            edDragMove_ = hs[best].move || glfwGetKey(win_, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
+            edDragP0_ = hs[best].pos;
+            edDragT0_ = closestOnAxis(edDragP0_, edDragAxis_, edMouseRay());
+            edDragBase_ = ed_;
+            edDragLast_.clear();
+            edDragPushed_ = false;
+        } else {
+            edSel_ = edPick(edCam_, edMouseRay());
+        }
+    }
+    if (edDragAxis_ >= 0 && (!uiIn_.down || !edSelValid())) edDragAxis_ = -1;
+    if (edDragAxis_ >= 0 && (size_t)edSel_.idx < kindCount(edDragBase_, edSel_.kind)) {
+        float delta = snapTo(closestOnAxis(edDragP0_, edDragAxis_, edMouseRay()) - edDragT0_, g);
+        delta = clampf(delta, -500, 500);
+        Map tmp = edDragBase_;
+        int kind = edSel_.kind, i = edSel_.idx, a = edDragAxis_;
+        if (edDragMove_) {
+            Vec3 d;
+            d[a] = delta;
+            moveObject(tmp, kind, i, d);
+        } else if (AABB* b = kindBox(tmp, kind, i)) {
+            if (edDragSign_ > 0) b->mx[a] = std::max(b->mn[a] + g, b->mx[a] + delta);
+            else b->mn[a] = std::min(b->mx[a] - g, b->mn[a] + delta);
+        }
+        char k = kKindChar[kind];
+        std::string op = describeMapObject(tmp, k, "set", i);
+        if (op != edDragLast_ && !(edDragLast_.empty() && op == describeMapObject(edDragBase_, k, "set", i))) {
+            if (!edDragPushed_) { edUndo_.push_back(describeMapObject(edDragBase_, k, "set", i)); edDragPushed_ = true; }
+            edDo(op, "", false, false);
+            edDragLast_ = op;
+        }
     }
     if (edSel_.valid() && !edSelValid() && !edOnline_) edSel_ = EdSel(); // (online: a new object may not have arrived yet)
 
     // ---- 3D view
-    r_.setCamera(edCam_, yaw_, pitch_, cfg_.fov);
     const Vec3 matColor[3] = {r_.baseColor, r_.accentColor, {0.22f, 0.22f, 0.24f}};
     if (!edBaked_)
         for (auto& b : ed_.brushes) r_.box(b.box.center(), (b.box.mx - b.box.mn) * 0.5f, 0, matColor[b.material], 1.0f, false);
@@ -477,9 +548,17 @@ void Game::editorFrame(double dt) {
             if (e & 1) p[a1] = b.mx[a1];
             if (e & 2) p[a2] = b.mx[a2];
             q = p; q[ax] = b.mx[ax];
-            r_.line(p, q, 0.04f, c);
+            r_.line(p, q, std::max(0.04f, length((p + q) * 0.5f - edCam_) * 0.004f), c);
         }
         if (edSel_.kind == ED_LIGHT) { auto& l = ed_.lights[edSel_.idx]; r_.translucentBox(around(l.pos, {l.radius, l.radius, l.radius}), {1, 0.9f, 0.4f, 0.06f}); }
+        const Vec3 axisCol[3] = {{1.0f, 0.3f, 0.25f}, {0.35f, 1.0f, 0.35f}, {0.3f, 0.55f, 1.0f}};
+        Vec3 bc = b.center();
+        for (auto& hd : edHandles()) { // sized to stay grabbable at any distance
+            float sz = clampf(length(hd.pos - edCam_) * 0.018f, 0.05f, 1.2f);
+            Vec3 col = axisCol[hd.axis] * (edDragAxis_ == hd.axis && edDragSign_ == hd.sign ? 1.3f : 1.0f);
+            if (hd.move) r_.line(bc, hd.pos, sz * 0.3f, rgba(col));
+            r_.box(hd.pos, {sz, sz, sz}, 0, col, 1.0f, false);
+        }
     }
     // the other editors: a camera box each, labeled after the scene is drawn
     std::vector<std::pair<Vec3, std::string>> others;
@@ -501,11 +580,14 @@ void Game::editorFrame(double dt) {
         if (t >= 0) r_.box(snapTo(edCam_ + dir * t + n * 0.001f, g), {0.06f, 0.06f, 0.06f}, 0, {1, 0.85f, 0.1f}, 1.0f, false);
     }
     r_.drawScene(false);
-    if (edLook_) r_.rect(W * 0.5f - 1, H * 0.5f - 1, 2, 2, kWhite);
     for (auto& o : others) {
         float sx, sy, ts = std::max(1.0f, std::round(s));
         if (r_.project(o.first, sx, sy) && sx < panelX) r_.text(sx - r_.textWidth(o.second, ts) * 0.5f, sy, ts, o.second, kWhite);
     }
+    // crosshair: where things get added, the middle of the view
+    r_.rect(panelX * 0.5f - 6 * s, H * 0.5f - 1, 12 * s, 2, {1, 1, 1, 0.8f});
+    r_.rect(panelX * 0.5f - 1, H * 0.5f - 6 * s, 2, 12 * s, {1, 1, 1, 0.8f});
+    r_.resize(fullW, (int)H);
 
     // ---- panel
     ui_.begin(&r_, uiIn_, s);
@@ -590,6 +672,30 @@ void Game::editorFrame(double dt) {
         static const std::vector<std::string> grids = {"GRID 0.25 M", "GRID 0.5 M", "GRID 1 M", "GRID 2 M", "GRID 4 M"};
         ui_.cycle(x, y, w, h, "GRID ([ ])", edGridIdx_, 5, grids);
         row();
+    }
+    {   // which modes this map is offered for: click to allow / disallow (dim = missing pieces, e.g. team spawns)
+        ui_.label(x, y, "MODES (CLICK TO ALLOW / BLOCK)", kGrey, 0.5f);
+        y += 12 * s;
+        const uint32_t all = (1u << MODE_COUNT) - 1;
+        uint32_t mask = ed_.allowedModes ? ed_.allowedModes : all;
+        float cw = (w - 3 * gap) / 4, ch = 18 * s, cts = std::max(1.0f, std::round(ui_.textScale() * 0.5f));
+        for (int m = 0; m < MODE_COUNT; m++) {
+            float cx = x + (m % 4) * (cw + gap), cy = y + (m / 4) * (ch + 3 * s);
+            bool on = mask >> m & 1, can = ed_.canSupportMode(m);
+            bool hv = uiIn_.mx >= cx && uiIn_.mx < cx + cw && uiIn_.my >= cy && uiIn_.my < cy + ch;
+            Color bg = on ? Color{ui_.accent.r * 0.55f, ui_.accent.g * 0.55f, ui_.accent.b * 0.55f, can ? 0.95f : 0.45f} : Color{0.12f, 0.13f, 0.16f, 0.9f};
+            r_.rect(cx, cy, cw, ch, bg);
+            if (hv) r_.rect(cx, cy + ch - 2 * s, cw, 2 * s, ui_.accent);
+            std::string t = modeName(m);
+            for (auto& c : t) c = (char)toupper((unsigned char)c);
+            r_.text(cx + (cw - r_.textWidth(t, cts)) * 0.5f, cy + (ch - r_.textHeight(cts)) * 0.5f, cts, t, on && can ? kWhite : kGrey);
+            if (hv && uiIn_.pressed) {
+                uint32_t nm = mask ^ (1u << m);
+                if (nm == 0) edNotify("a map needs at least one mode");
+                else edDo("m " + std::to_string(nm == all ? 0 : nm), "m " + std::to_string(ed_.allowedModes));
+            }
+        }
+        y += ((MODE_COUNT + 3) / 4) * (ch + 3 * s) + gap;
     }
     y += 6 * s;
     if (edSelValid()) {

@@ -102,6 +102,7 @@ bool Map::parse(const std::string& text, std::string* err) {
     hasHill = false;
     hasWallbang = false;
     preferredMode = -1;
+    allowedModes = 0;
     crc = crc32(text.data(), text.size());
     source = text;
     std::istringstream in(text);
@@ -150,6 +151,9 @@ bool Map::parse(const std::string& text, std::string* err) {
             std::string mode;
             ok = (bool)(ls >> mode);
             if (ok) preferredMode = modeFromName(mode.c_str());
+        } else if (kw == "modes") {
+            std::string mn;
+            while (ls >> mn) { int m = modeFromName(mn.c_str()); if (m >= 0) allowedModes |= 1u << m; else ok = false; }
         } else if (kw == "light") {
             Light l;
             ok = (bool)(ls >> l.pos.x >> l.pos.y >> l.pos.z >> l.radius);
@@ -182,6 +186,11 @@ std::string Map::serialize() const {
     };
     if (!title.empty()) o += "title " + title + "\n";
     if (preferredMode >= 0) o += std::string("for ") + modeName(preferredMode) + "\n";
+    if (allowedModes) {
+        o += "modes";
+        for (int m = 0; m < MODE_COUNT; m++) if (allowedModes >> m & 1) o += std::string(" ") + modeName(m);
+        o += "\n";
+    }
     snprintf(b, sizeof b, "sun %g %g %g\n\n", sunDir.x, sunDir.y, sunDir.z);
     o += b;
     for (auto& br : brushes) box(br.material == 1 ? "accent" : br.material == 2 ? "wallbang" : "box", br.box);
@@ -231,6 +240,12 @@ bool applyMapEdit(Map& m, const std::string& op) {
         if (title.size() > 40) return false;
         for (char c : title) if ((unsigned char)c < 32 || (unsigned char)c > 126 || c == '#') return false;
         m.title = title;
+        return true;
+    }
+    if (kind == "m") {
+        uint32_t mask;
+        if (!(in >> mask) || mask >= (1u << MODE_COUNT)) return false;
+        m.allowedModes = mask;
         return true;
     }
     if (kind == "f") {
@@ -461,6 +476,11 @@ bool Map::raycastAny(const Vec3& o, const Vec3& dir, float maxDist) const {
 }
 
 bool Map::supportsMode(int mode) const {
+    if (allowedModes && (mode < 0 || mode >= 32 || !(allowedModes >> mode & 1))) return false;
+    return canSupportMode(mode);
+}
+
+bool Map::canSupportMode(int mode) const {
     auto has = [&](int t) { for (auto& s : spawns) if (s.team == t) return true; return false; };
     bool teams = has(SPAWN_A) && has(SPAWN_B);
     switch (mode) {

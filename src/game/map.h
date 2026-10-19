@@ -21,6 +21,7 @@ struct Map {
     std::string name;
     std::string title;
     int preferredMode = -1;    // "for <mode>": the mode this map was designed for
+    uint32_t allowedModes = 0; // "modes ffa duel ...": only these (bit per mode); 0 = every mode the map has the pieces for
     std::vector<Brush> brushes;
     std::vector<SpawnPoint> spawns;
     std::vector<AABB> bombSites;
@@ -51,7 +52,8 @@ struct Map {
     float raycastBullet(const Vec3& origin, const Vec3& dir, float maxDist, float* bangDist) const;
     bool hasWallbang = false;
 
-    bool supportsMode(int mode) const;
+    bool supportsMode(int mode) const;  // allowed and has what the mode needs
+    bool canSupportMode(int mode) const; // has what the mode needs (ignores allowedModes)
 
     // Uniform XZ grid over brushes: queries only touch cells they pass through.
     static constexpr float kCell = 4.0f;
@@ -73,7 +75,7 @@ struct Map {
 // Map edit ops (the editor's undo steps and what multiplayer editing sends through the server), one line each:
 //   <kind> ins|set|del <index> [fields]   kind: b brush (material + box), s spawn (team x y z yawDeg), l light (x y z radius
 //                                         intensity), z bomb site (box), c checkpoint (box), p path point (x y z), h hill (has + box)
-//   t <title>    f <preferred mode, -1 any>
+//   t <title>    f <preferred mode, -1 any>    m <allowed modes bitmask, 0 = all>
 // applyMapEdit validates (indices, sizes, finite numbers, at least one box and spawn) and rebuilds the grid.
 bool applyMapEdit(Map& m, const std::string& op);
 // The op that sets (or inserts) object `idx` of `kind` to its current state in m: used to build edits and their undo.

@@ -37,6 +37,7 @@ struct LaunchOptions {
     bool debugControls = false; // --controls
     std::string editMap;        // --editor MAP: open the map editor on that map
     bool editSession = false;   // --editsession MAP: and host it as an edit session
+    int editSel = -1;           // --edsel N: select box N (screenshots)
 };
 
 class Game {
@@ -141,6 +142,15 @@ private:
     bool testEdit_ = false;     // hosting an edit session started from the editor
     uint32_t edRev_ = 0;        // net_.mapRevision() that ed_ was copied from
     std::vector<std::string> edUndo_; // inverse ops, newest last
+    // dragging a handle of the selection: a face (resize) or, with Shift / on points, the whole thing (move)
+    struct EdHandle { Vec3 pos; int axis, sign; bool move; };
+    std::vector<EdHandle> edHandles() const;
+    int edDragAxis_ = -1, edDragSign_ = 0;
+    bool edDragMove_ = false, edDragPushed_ = false;
+    Vec3 edDragP0_;
+    float edDragT0_ = 0;
+    Map edDragBase_;
+    std::string edDragLast_;
     bool edPrompt_ = false;     // "save your copy?" after leaving someone else's edit session
     Map edPromptMap_;
     std::string edPromptName_;

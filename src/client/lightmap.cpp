@@ -9,7 +9,7 @@
 
 namespace {
 constexpr uint32_t kCacheMagic = 0x314D4C51; // "QLM1"
-constexpr uint32_t kBakeVersion = 6; // 6: point lights
+constexpr uint32_t kBakeVersion = 7; // 6: point lights
 constexpr int kSkySamples = 48;
 constexpr int kSunSamples = 6;
 constexpr float kAlbedo = 0.65f;
@@ -137,6 +137,19 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
             if (all) edgeOff[i] |= 1 << edge;
         }
     }
+    // 1c. Coplanar faces of different materials overlapping would z-fight: the higher material (wallbang >
+    // accent > base) gets lifted a hair off its plane, so decorations can sit flush on gameplay geometry.
+    // Only those faces: lifting every accent/wallbang face opened gaps along all their edges.
+    std::vector<uint8_t> needLift(faces.size(), 0);
+    for (size_t i = 0; i < faces.size(); i++) {
+        const Face& f = faces[i];
+        if (f.material == 0) continue;
+        for (size_t k = 0; k < faces.size() && !needLift[i]; k++) {
+            const Face& o = faces[k];
+            if (o.material >= f.material || o.axis != f.axis || o.sign != f.sign || std::fabs(o.plane - f.plane) > 1e-4f) continue;
+            needLift[i] = f.u0 < o.u1 && o.u0 < f.u1 && f.v0 < o.v1 && o.v0 < f.v1;
+        }
+    }
     // 2. Choose texel density so the atlas fits in 2048x2048.
     float area = 0;
     for (auto& f : faces) area += (f.u1 - f.u0) * (f.v1 - f.v0);
@@ -172,9 +185,7 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
     for (size_t fi = 0; fi < faces.size(); fi++) {
         const Face& f = faces[fi];
         Vec3 n = faceNormal(f);
-        // Coplanar faces of different materials would z-fight: wallbang always wins, then accent, then
-        // base, by lifting the face a hair off its plane. Decorations can sit flush on gameplay geometry.
-        Vec3 lift = n * (f.material == 2 ? 0.004f : f.material == 1 ? 0.002f : 0.0f);
+        Vec3 lift = needLift[fi] ? n * (f.material == 2 ? 0.004f : 0.002f) : Vec3();
         const float B = 1000.0f; // a turned-off edge is "infinitely far": no outline
         uint8_t off = edgeOff[fi];
         auto vert = [&](float u, float v) {
