@@ -22,7 +22,7 @@ const call = async (path, form) => {
   const init = form ? { method: "POST", body: new URLSearchParams(form) } : {};
   return (await worker.fetch(new Request("https://x" + path, init), env)).text();
 };
-const ratings = async (ns) => Object.fromEntries((await call("/ratings?ids=" + ns.map(id).join(","))).split("\n")
+const ratings = async (ns, ladder = "vanilla") => Object.fromEntries((await call("/ratings?ladder=" + ladder + "&ids=" + ns.map(id).join(","))).split("\n")
   .map((l) => l.split(" ")).map(([i, mu, s, g]) => [i, { mu: +mu, sigma: +s, games: +g }]));
 
 // math: winners gain, losers lose, equal and opposite in a fair 1v1; uncertainty shrinks
@@ -52,30 +52,39 @@ const ratings = async (ns) => Object.fromEntries((await call("/ratings?ids=" + n
 // reporting: 2v2, everyone must agree
 {
   const p = `${id(1)}:0:0,${id(2)}:0:0,${id(3)}:1:1,${id(4)}:1:1`;
-  check((await call("/report", { secret: secret(1), match: "aaaaaaaaaaaaaaaa", mode: "duel", p })) === "pending 1/4", "first report pending");
-  check((await call("/report", { secret: secret(1), match: "aaaaaaaaaaaaaaaa", mode: "duel", p })) === "pending 1/4", "duplicate report ignored");
-  check((await call("/report", { secret: secret(9), match: "aaaaaaaaaaaaaaaa", mode: "duel", p })) === "not in this match", "outsider refused");
-  await call("/report", { secret: secret(2), match: "aaaaaaaaaaaaaaaa", mode: "duel", p });
-  await call("/report", { secret: secret(3), match: "aaaaaaaaaaaaaaaa", mode: "duel", p });
+  check((await call("/report", { secret: secret(1), match: "aaaaaaaaaaaaaaaa", ladder: "vanilla", p })) === "pending 1/4", "first report pending");
+  check((await call("/report", { secret: secret(1), match: "aaaaaaaaaaaaaaaa", ladder: "vanilla", p })) === "pending 1/4", "duplicate report ignored");
+  check((await call("/report", { secret: secret(9), match: "aaaaaaaaaaaaaaaa", ladder: "vanilla", p })) === "not in this match", "outsider refused");
+  await call("/report", { secret: secret(2), match: "aaaaaaaaaaaaaaaa", ladder: "vanilla", p });
+  await call("/report", { secret: secret(3), match: "aaaaaaaaaaaaaaaa", ladder: "vanilla", p });
   let r = await ratings([1, 3]);
   check(r[id(1)].games === 0, "not rated before everyone reported");
-  check((await call("/report", { secret: secret(4), match: "aaaaaaaaaaaaaaaa", mode: "duel", p })) === "done", "last report rates");
+  check((await call("/report", { secret: secret(4), match: "aaaaaaaaaaaaaaaa", ladder: "vanilla", p })) === "done", "last report rates");
   r = await ratings([1, 2, 3, 4]);
   check(r[id(1)].mu > 25 && r[id(2)].mu > 25 && r[id(3)].mu < 25 && r[id(1)].games === 1, "2v2 rated");
-  check((await call("/report", { secret: secret(4), match: "aaaaaaaaaaaaaaaa", mode: "duel", p })) === "done", "rated only once");
+  check((await call("/report", { secret: secret(4), match: "aaaaaaaaaaaaaaaa", ladder: "vanilla", p })) === "done", "rated only once");
   r = await ratings([1]);
   check(r[id(1)].games === 1, "still one game");
 }
 // a disagreeing report voids the match
 {
   const won = `${id(5)}:0:0,${id(6)}:1:1`, lost = `${id(5)}:0:1,${id(6)}:1:0`;
-  await call("/report", { secret: secret(5), match: "bbbbbbbbbbbbbbbb", mode: "duel", p: won });
-  check((await call("/report", { secret: secret(6), match: "bbbbbbbbbbbbbbbb", mode: "duel", p: lost })).startsWith("void"), "disagreement voids");
-  check((await call("/report", { secret: secret(6), match: "bbbbbbbbbbbbbbbb", mode: "duel", p: won })) === "void", "stays void");
+  await call("/report", { secret: secret(5), match: "bbbbbbbbbbbbbbbb", ladder: "vanilla", p: won });
+  check((await call("/report", { secret: secret(6), match: "bbbbbbbbbbbbbbbb", ladder: "vanilla", p: lost })).startsWith("void"), "disagreement voids");
+  check((await call("/report", { secret: secret(6), match: "bbbbbbbbbbbbbbbb", ladder: "vanilla", p: won })) === "void", "stays void");
   const r = await ratings([5, 6]);
   check(r[id(5)].games === 0 && r[id(6)].games === 0, "void match not rated");
 }
-check((await call("/report", { secret: secret(1), match: "cccccccccccccccc", mode: "duel", p: `${id(1)}:0:0` })) === "bad result", "one player refused");
-check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", mode: "duel", p: `${id(1)}:0:0,${id(2)}:0:1` })) === "bad result", "one side refused");
+// ladders are separate: an instagib win doesn't touch vanilla
+{
+  const p = `${id(7)}:0:0,${id(8)}:1:1`;
+  await call("/report", { secret: secret(7), match: "eeeeeeeeeeeeeeee", ladder: "instagib", p });
+  await call("/report", { secret: secret(8), match: "eeeeeeeeeeeeeeee", ladder: "instagib", p });
+  const ig = await ratings([7, 8], "instagib"), va = await ratings([7, 8], "vanilla"), vp = await ratings([7], "vampire");
+  check(ig[id(7)].games === 1 && ig[id(7)].mu > 25 && va[id(7)].games === 0 && va[id(7)].mu === 25 && vp[id(7)].games === 0, "ladders separate");
+  check((await call("/report", { secret: secret(7), match: "ffffffffffffffff", ladder: "boomers", p })) === "not a ranked ladder", "unranked ruleset refused");
+}
+check((await call("/report", { secret: secret(1), match: "cccccccccccccccc", ladder: "vanilla", p: `${id(1)}:0:0` })) === "bad result", "one player refused");
+check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", ladder: "vanilla", p: `${id(1)}:0:0,${id(2)}:0:1` })) === "bad result", "one side refused");
 console.log(fails ? fails + " FAILURE(S)" : "worker tests passed");
 process.exit(fails ? 1 : 0);

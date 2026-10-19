@@ -6,8 +6,9 @@
 // The game checks every listed server over UDP itself, so a bogus entry just never shows up.
 //
 // Ranked (OpenSkill / Weng-Lin Plackett-Luce ratings):
-//   POST /report  form: secret, match, mode, p=id:team:place,...   one player's account of a finished match
-//   GET  /ratings?ids=a,b,c                                        "id mu sigma games" per line (unknown ids: defaults)
+//   POST /report  form: secret, match, ladder, p=id:team:place,...   one player's account of a finished match
+//   GET  /ratings?ladder=L&ids=a,b,c                                 "id mu sigma games" per line (unknown ids: defaults)
+// Ladders (each its own ratings): vanilla (all weapons), vampire (laser vampire), instagib. Rows are keyed "ladder:id".
 // A player's id is the first 32 hex chars of sha256(secret); the secret never leaves their game except to
 // here. A match counts only when every player in it has reported the exact same result; any disagreement
 // voids it, and matches not fully reported within an hour are dropped. Hosts never see secrets, so a
@@ -15,6 +16,7 @@
 const FRESH_MS = 150000;
 const MU = 25, SIGMA = 25 / 3, BETA = SIGMA / 2, TAU = MU / 300, EPS = 1e-4;
 const PENDING_MS = 3600000;
+const LADDERS = new Set(["vanilla", "vampire", "instagib"]);
 
 async function sha256hex(s) {
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
@@ -65,24 +67,28 @@ function parseResult(p) {
   return { entries: out, text: out.map((e) => `${e.id}:${e.team}:${e.place}`).join(",") };
 }
 
-async function loadRatings(env, ids) {
+async function loadRatings(env, ladder, ids) {
   const map = new Map(ids.map((id) => [id, { id, mu: MU, sigma: SIGMA, games: 0 }]));
   if (!ids.length) return map;
   const { results } = await env.DB.prepare(
     `SELECT id, mu, sigma, games FROM players WHERE id IN (${ids.map(() => "?").join(",")})`
-  ).bind(...ids).all();
-  for (const r of results) map.set(r.id, { id: r.id, mu: r.mu, sigma: r.sigma, games: r.games });
+  ).bind(...ids.map((id) => ladder + ":" + id)).all();
+  for (const r of results) {
+    const id = r.id.slice(ladder.length + 1);
+    map.set(id, { id, mu: r.mu, sigma: r.sigma, games: r.games });
+  }
   return map;
 }
 
 async function report(env, form, now) {
-  const secret = String(form.get("secret") || ""), match = String(form.get("match") || ""), mode = String(form.get("mode") || "");
-  if (!/^[0-9a-f]{64}$/.test(secret) || !/^[0-9a-f]{16,32}$/.test(match) || !/^[a-z0-9]{1,16}$/.test(mode)) return "bad request";
+  const secret = String(form.get("secret") || ""), match = String(form.get("match") || ""), ladder = String(form.get("ladder") || "");
+  if (!/^[0-9a-f]{64}$/.test(secret) || !/^[0-9a-f]{16,32}$/.test(match)) return "bad request";
+  if (!LADDERS.has(ladder)) return "not a ranked ladder";
   const res = parseResult(form.get("p"));
   if (!res) return "bad result";
   const me = (await sha256hex(secret)).slice(0, 32);
   if (!res.entries.some((e) => e.id === me)) return "not in this match";
-  const result = mode + "|" + res.text;
+  const result = ladder + "|" + res.text;
   if (Math.random() < 0.02) await env.DB.prepare("UPDATE matches SET status = 'expired' WHERE status = 'pending' AND created < ?").bind(now - PENDING_MS).run();
   let m = await env.DB.prepare("SELECT result, players, status, created FROM matches WHERE id = ?").bind(match).first();
   if (!m) {
@@ -102,7 +108,7 @@ async function report(env, form, now) {
   // last report in: rate it (only once, even if two reports race here)
   const claim = await env.DB.prepare("UPDATE matches SET status = 'done' WHERE id = ? AND status = 'pending'").bind(match).run();
   if (!claim.meta || claim.meta.changes !== 1) return "done";
-  const ratings = await loadRatings(env, res.entries.map((e) => e.id));
+  const ratings = await loadRatings(env, ladder, res.entries.map((e) => e.id));
   const byTeam = new Map();
   for (const e of res.entries) {
     if (!byTeam.has(e.team)) byTeam.set(e.team, { players: [], rank: e.place });
@@ -113,7 +119,7 @@ async function report(env, form, now) {
     env.DB.prepare(
       "INSERT INTO players (id, mu, sigma, games, updated) VALUES (?, ?, ?, ?, ?) " +
       "ON CONFLICT(id) DO UPDATE SET mu = excluded.mu, sigma = excluded.sigma, games = excluded.games, updated = excluded.updated"
-    ).bind(r.id, r.mu, r.sigma, r.games + 1, now)
+    ).bind(ladder + ":" + r.id, r.mu, r.sigma, r.games + 1, now)
   ));
   return "done";
 }
@@ -159,7 +165,8 @@ export default {
     }
     if (u.pathname === "/ratings") {
       const ids = q("ids").split(",").filter((id) => /^[0-9a-f]{32}$/.test(id)).slice(0, 64);
-      const r = await loadRatings(env, [...new Set(ids)]);
+      if (!LADDERS.has(q("ladder"))) return text("not a ranked ladder", 400);
+      const r = await loadRatings(env, q("ladder"), [...new Set(ids)]);
       return text([...r.values()].map((p) => `${p.id} ${p.mu.toFixed(4)} ${p.sigma.toFixed(4)} ${p.games}`).join("\n"));
     }
     return text("quark server list");

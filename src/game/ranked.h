@@ -21,7 +21,7 @@ std::string rankIdFromSecret(const std::string& secret);
 // From an EV_RANKED event text and the slot -> ranked id table: the form body this player posts to /report
 // (empty if the text is malformed, an id is missing, or we didn't play in it). ids: kMaxPlayers entries.
 std::string buildRankReport(const std::string& eventText, const std::vector<std::string>& ids, const RankKey& me,
-                            std::vector<std::string>* playersOut = nullptr);
+                            std::vector<std::string>* playersOut = nullptr, std::string* ladderOut = nullptr);
 
 struct Rating {
     double mu = 25, sigma = 25.0 / 3;
@@ -33,12 +33,13 @@ struct Rating {
 class RankService {
 public:
     ~RankService();
-    void submit(const std::string& body, const std::vector<std::string>& players); // then re-fetches their ratings a few times
-    void fetch(const std::vector<std::string>& ids);
-    bool rating(const std::string& id, Rating& out);
+    // ladder: the ranked ruleset ("vanilla", "vampire", "instagib"); each has its own ratings
+    void submit(const std::string& body, const std::string& ladder, const std::vector<std::string>& players); // then re-fetches their ratings
+    void fetch(const std::string& ladder, const std::vector<std::string>& ids);
+    bool rating(const std::string& ladder, const std::string& id, Rating& out);
     std::vector<std::string> takeMessages();
 private:
-    struct Job { double due; bool report; std::string body; std::vector<std::string> ids; };
+    struct Job { double due; bool report; std::string body, ladder; std::vector<std::string> ids; };
     void run();
     void push(Job j);
     std::thread thread_;
@@ -46,6 +47,6 @@ private:
     std::condition_variable cv_;
     bool quit_ = false;
     std::deque<Job> jobs_;
-    std::map<std::string, Rating> ratings_;
+    std::map<std::string, Rating> ratings_; // "ladder:id"
     std::vector<std::string> messages_;
 };

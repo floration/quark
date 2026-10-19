@@ -38,7 +38,7 @@ RankKey loadOrCreateRankKey(const std::string& path) {
 }
 
 std::string buildRankReport(const std::string& text, const std::vector<std::string>& ids, const RankKey& me,
-                            std::vector<std::string>* playersOut) {
+                            std::vector<std::string>* playersOut, std::string* ladderOut) {
     if (me.secret.empty()) return "";
     std::istringstream in(text);
     std::string match, mode, list;
@@ -58,7 +58,8 @@ std::string buildRankReport(const std::string& text, const std::vector<std::stri
     }
     if (!mine) return "";
     if (playersOut) *playersOut = players;
-    return "secret=" + me.secret + "&match=" + match + "&mode=" + mode + "&p=" + p;
+    if (ladderOut) *ladderOut = mode;
+    return "secret=" + me.secret + "&match=" + match + "&ladder=" + mode + "&p=" + p;
 }
 
 int Rating::display() const { return (int)std::lround(std::max(0.0, mu - 3 * sigma) * 40); }
@@ -78,17 +79,17 @@ void RankService::push(Job j) {
     cv_.notify_all();
 }
 
-void RankService::submit(const std::string& body, const std::vector<std::string>& players) {
+void RankService::submit(const std::string& body, const std::string& ladder, const std::vector<std::string>& players) {
     double now = timeNow();
-    push({now, true, body, players});
-    for (double d : {4.0, 15.0, 45.0}) push({now + d, false, "", players}); // others' reports may finish it later
+    push({now, true, body, ladder, players});
+    for (double d : {4.0, 15.0, 45.0}) push({now + d, false, "", ladder, players}); // others' reports may finish it later
 }
 
-void RankService::fetch(const std::vector<std::string>& ids) { if (!ids.empty()) push({timeNow(), false, "", ids}); }
+void RankService::fetch(const std::string& ladder, const std::vector<std::string>& ids) { if (!ids.empty()) push({timeNow(), false, "", ladder, ids}); }
 
-bool RankService::rating(const std::string& id, Rating& out) {
+bool RankService::rating(const std::string& ladder, const std::string& id, Rating& out) {
     std::lock_guard<std::mutex> l(mu_);
-    auto it = ratings_.find(id);
+    auto it = ratings_.find(ladder + ":" + id);
     if (it == ratings_.end()) return false;
     out = it->second;
     return true;
@@ -119,11 +120,13 @@ void RankService::run() {
         } else {
             std::string ids;
             for (auto& id : j.ids) if (isHex(id, 32)) ids += (ids.empty() ? "" : ",") + id;
-            if (!ids.empty() && httpGetText(base + "/ratings?ids=" + ids, out, 5000, &err)) {
+            bool okLadder = !j.ladder.empty();
+            for (char c : j.ladder) okLadder &= (bool)isalnum((unsigned char)c);
+            if (okLadder && !ids.empty() && httpGetText(base + "/ratings?ladder=" + j.ladder + "&ids=" + ids, out, 5000, &err)) {
                 std::istringstream in(out);
                 std::string id;
                 Rating r;
-                while (in >> id >> r.mu >> r.sigma >> r.games) if (isHex(id, 32)) got[id] = r;
+                while (in >> id >> r.mu >> r.sigma >> r.games) if (isHex(id, 32)) got[j.ladder + ":" + id] = r;
             }
         }
         l.lock();

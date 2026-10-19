@@ -879,10 +879,11 @@ static void testRanked(uint16_t port) {
     RankKey k1 = loadOrCreateRankKey(keyPath), again = loadOrCreateRankKey(keyPath);
     std::remove(keyPath.c_str());
     CHECK(k1.secret.size() == 64 && k1.id == again.id && k1.id == sha256Hex(k1.secret).substr(0, 32));
-    for (int teamSize : {1, 2}) {
+    for (int variant : {1, 3}) { // laser vampire (a ladder), quirky (not one)
+        const int teamSize = 1;
         Server s;
         ServerConfig cfg;
-        cfg.map = "crucible"; cfg.mode = MODE_DUEL; cfg.port = (uint16_t)(port + teamSize); cfg.ranked = true; cfg.duelTeamSize = teamSize;
+        cfg.map = "temple"; cfg.mode = MODE_FFA; cfg.port = (uint16_t)(port + variant); cfg.ranked = true; cfg.arenaVariant = variant;
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; continue; }
         std::vector<std::unique_ptr<NetClient>> owned;
@@ -899,20 +900,21 @@ static void testRanked(uint16_t port) {
             cls[i]->sendCommand("rankid " + k.id);
         }
         pump(s, cls, 1.0, idle);
-        CHECK(cls[0]->hasSnapshot() && (cls[0]->mode().flags & MS_RANKED));
+        CHECK(cls[0]->hasSnapshot() && (cls[0]->mode().flags & MS_RANKED) && s.config().mode == MODE_ARENA); // ranked is always 1v1
+        CHECK(cls[0]->mode().arenaVariant == (variant == 1 ? 1 : 0)); // a ruleset that isn't a ladder falls back to vanilla
         for (int i = 0; i < 2 * teamSize; i++) CHECK(cls[0]->rankId(cls[i]->clientId()) == keys[i].id);
         int teamA = 0;
         for (auto& p : s.players_) teamA += p.connected && p.team == TEAM_A;
         CHECK(teamA == teamSize);
         std::string why, res = s.rankedResult(TEAM_A, &why);
-        CHECK(!res.empty());
+        CHECK(!res.empty() && res.find(variant == 1 ? " vampire " : " vanilla ") == 16);
         // every player builds the same list of results (only the secret differs)
         std::string expectP;
         for (int i = 0; i < 2 * teamSize; i++) {
             std::vector<std::string> ids, players;
             for (int k = 0; k < kMaxPlayers; k++) ids.push_back(cls[i]->rankId(k));
-            std::string body = buildRankReport(res, ids, keys[i], &players);
-            CHECK(body.find("secret=" + keys[i].secret + "&") == 0 && (int)players.size() == 2 * teamSize);
+            std::string ladder, body = buildRankReport(res, ids, keys[i], &players, &ladder);
+            CHECK(body.find("secret=" + keys[i].secret + "&") == 0 && (int)players.size() == 2 * teamSize && ladder == (variant == 1 ? "vampire" : "vanilla"));
             std::string p = body.substr(body.find("&p=") + 3);
             if (i == 0) expectP = p;
             CHECK(p == expectP);

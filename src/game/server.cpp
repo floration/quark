@@ -35,6 +35,10 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     cfg_ = cfg;
     if (cfg_.maxPlayers < 1) cfg_.maxPlayers = 1;
     if (cfg_.maxPlayers > kMaxPlayers) cfg_.maxPlayers = kMaxPlayers;
+    if (cfg_.ranked) { // ranked = 1v1 on one of the ladder rulesets
+        cfg_.mode = MODE_ARENA;
+        if (!arenaVariantRanked(cfg_.arenaVariant)) cfg_.arenaVariant = 0;
+    }
     std::string e;
     if (!map_.load(cfg_.map, &e)) { if (err) *err = e; return false; }
     if (cfg_.editMode && !map_.supportsMode(cfg_.mode)) // an edit session runs whatever the map can't play yet
@@ -1434,7 +1438,8 @@ bool Server::autosave() {
 // loser 1, both 0 on a draw); free-for-all modes rank players by score (ties share a place). Every
 // player in it must have a ranked id and be human, else the match isn't rated.
 std::string Server::rankedResult(int winner, std::string* whyNot) {
-    if (cfg_.mode == MODE_TOURNEY) { *whyNot = "tourney matches aren't ranked"; return ""; }
+    if (cfg_.mode != MODE_ARENA) { *whyNot = "only 1v1 is ranked"; return ""; }
+    if (!arenaVariantRanked(ms_.arenaVariant)) { *whyNot = std::string(arenaVariant(ms_.arenaVariant).title) + " isn't a ranked ruleset"; return ""; }
     bool teams = modeIsTeamBased(cfg_.mode);
     struct Entry { int slot, team, score; };
     std::vector<Entry> es;
@@ -1453,7 +1458,7 @@ std::string Server::rankedResult(int winner, std::string* whyNot) {
     std::random_device rd;
     char id[24];
     snprintf(id, sizeof id, "%08x%08x", (unsigned)rd(), (unsigned)rd());
-    std::string out = std::string(id) + " " + modeName(cfg_.mode) + " ";
+    std::string out = std::string(id) + " " + arenaVariant(ms_.arenaVariant).name + " "; // the ladder
     for (size_t k = 0; k < es.size(); k++) {
         int place = 0;
         if (teams) place = winner < 0 ? 0 : es[k].team == winner ? 0 : 1;

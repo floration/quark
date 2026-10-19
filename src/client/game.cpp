@@ -111,7 +111,11 @@ void Game::startHost(bool vsBots) {
     sc.arenaVariant = cfg_.hostArenaVariant;
     sc.publicList = cfg_.hostPublic;
     sc.ranked = cfg_.hostRanked;
-    if (sc.ranked) sc.name = "[RANKED] " + sc.name;
+    if (sc.ranked) { // 1v1 on a ladder ruleset (the 1v1 ruleset picked, if it's one of them)
+        sc.mode = MODE_ARENA;
+        if (!arenaVariantRanked(sc.arenaVariant)) sc.arenaVariant = 0;
+        sc.name = std::string("[RANKED ") + arenaVariant(sc.arenaVariant).title + "] " + sc.name;
+    }
     if (vsBots) { // private local game: any free port, no port forwarding, fixed bots
         sc.name = "vs bots";
         sc.map = maps_[botMapIdx_ % maps_.size()];
@@ -567,12 +571,13 @@ void Game::handleEvents() {
                 break;
             case EV_RANKED: {
                 std::vector<std::string> ids, players;
+                std::string ladder;
                 for (int i = 0; i < kMaxPlayers; i++) ids.push_back(net_.rankId(i));
-                std::string body = buildRankReport(e.text, ids, rankKey_, &players);
+                std::string body = buildRankReport(e.text, ids, rankKey_, &players, &ladder);
                 if (body.empty()) break;
                 Rating r;
-                if (rank_.rating(rankKey_.id, r)) { rankBefore_ = r.display(); rankGamesBefore_ = r.games; }
-                rank_.submit(body, players);
+                if (rank_.rating(ladder, rankKey_.id, r)) { rankBefore_ = r.display(); rankGamesBefore_ = r.games; }
+                rank_.submit(body, ladder, players);
                 notify("RANKED MATCH OVER - REPORTING THE RESULT", 4);
                 break;
             }
@@ -1307,9 +1312,10 @@ void Game::updateRanked() {
         while (chatFeed_.size() > 8) chatFeed_.pop_front();
     }
     if (!net_.hasSnapshot() || !(net_.mode().flags & MS_RANKED)) return;
-    if (time_ >= nextRankFetch_) { rank_.fetch(rankIdsInGame()); nextRankFetch_ = time_ + 20; }
+    std::string ladder = arenaVariant(net_.mode().arenaVariant).name;
+    if (time_ >= nextRankFetch_) { rank_.fetch(ladder, rankIdsInGame()); nextRankFetch_ = time_ + 20; }
     Rating r;
-    if (rankGamesBefore_ >= 0 && rank_.rating(rankKey_.id, r) && r.games > rankGamesBefore_) {
+    if (rankGamesBefore_ >= 0 && rank_.rating(ladder, rankKey_.id, r) && r.games > rankGamesBefore_) {
         int d = r.display() - rankBefore_;
         notify("RATING " + std::to_string(rankBefore_) + " -> " + std::to_string(r.display()) + " (" + (d >= 0 ? "+" : "") + std::to_string(d) + ")", 8);
         rankGamesBefore_ = -1;
@@ -1335,6 +1341,7 @@ void Game::drawScoreboard() {
     float cy = y + 10 * s;
     r_.text(x + 12 * s, cy, ts, "PLAYER", kGrey);
     bool ranked = ms.flags & MS_RANKED;
+    std::string ladder = arenaVariant(ms.arenaVariant).name;
     if (ranked) r_.text(x + w * 0.36f, cy, ts, "RATING", kGrey);
     r_.text(x + w * 0.5f, cy, ts, ms.mode == MODE_RACE ? "WINS" : "SCORE", kGrey);
     r_.text(x + w * 0.64f, cy, ts, "K", kGrey);
@@ -1347,7 +1354,7 @@ void Game::drawScoreboard() {
         if (p.id == net_.clientId()) r_.rect(x + 4 * s, cy - 4 * s, w - 8 * s, rowH - 2 * s, {1, 1, 1, 0.06f});
         r_.text(x + 12 * s, cy, ts, n, c);
         Rating rt;
-        if (ranked && rank_.rating(net_.rankId(p.id), rt))
+        if (ranked && rank_.rating(ladder, net_.rankId(p.id), rt))
             r_.text(x + w * 0.36f, cy, ts, rt.games < 5 ? std::to_string(rt.display()) + "?" : std::to_string(rt.display()), kWhite); // ? = still placing
         r_.text(x + w * 0.5f, cy, ts, std::to_string(p.score), kWhite);
         r_.text(x + w * 0.64f, cy, ts, std::to_string(p.kills), kWhite);
@@ -1661,6 +1668,11 @@ void Game::drawMenu() {
             ui_.cycle(lx, y, lw * 0.6f - 4 * s, bh, "SERVER LOG", cfg_.hostLog, 4, {"LOG OFF", "SIMPLE LOG", "VERBOSE LOG", "EXTREME LOG"});
             ui_.toggle(lx + lw * 0.6f + 4 * s, y, lw * 0.4f - 4 * s, bh, "RANKED", cfg_.hostRanked);
             y += bh + gap;
+            if (cfg_.hostRanked) { // ranked always runs 1v1 on a ladder ruleset
+                int v = arenaVariantRanked(cfg_.hostArenaVariant) ? cfg_.hostArenaVariant : 0;
+                ui_.label(lx, y, std::string("RANKED 1V1 - ") + arenaVariant(v).title + " LADDER (RANKED RULESETS: VANILLA, LASER VAMPIRE, INSTAGIB)", kGrey, 0.5f);
+                y += 14 * s;
+            }
             ui_.label(lx, y, "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, 0.5f);
             y += 14 * s;
             ui_.label(lx, y, "IF UPNP FAILS, FORWARD THAT UDP PORT ON YOUR ROUTER", kGrey, 0.5f);
