@@ -9,7 +9,7 @@
 
 namespace {
 constexpr uint32_t kCacheMagic = 0x314D4C51; // "QLM1"
-constexpr uint32_t kBakeVersion = 7; // 6: point lights
+constexpr uint32_t kBakeVersion = 8; // 6: point lights
 constexpr int kSkySamples = 48;
 constexpr int kSunSamples = 6;
 constexpr float kAlbedo = 0.65f;
@@ -101,10 +101,12 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
                 if (f.u1 - f.u0 < 1e-4f || f.v1 - f.v0 < 1e-4f) continue;
                 // Cull faces completely buried in other solids.
                 Vec3 n = faceNormal(f);
+                // Buried only if a 9x9 grid over the face is all inside solids (5 samples used to be fooled:
+                // corner columns + something in the middle hid entire floors).
                 bool hidden = true;
-                const float fu[5] = {0.5f, 0.05f, 0.95f, 0.05f, 0.95f}, fv[5] = {0.5f, 0.05f, 0.05f, 0.95f, 0.95f};
-                for (int k = 0; k < 5 && hidden; k++) {
-                    Vec3 p = facePoint(f, lerpf(f.u0, f.u1, fu[k]), lerpf(f.v0, f.v1, fv[k])) + n * 0.01f;
+                for (int k = 0; k < 81 && hidden; k++) {
+                    float fu = (k % 9 + 0.5f) / 9.0f, fv = (k / 9 + 0.5f) / 9.0f;
+                    Vec3 p = facePoint(f, lerpf(f.u0, f.u1, fu), lerpf(f.v0, f.v1, fv)) + n * 0.01f;
                     hidden = pointSolid(map, p);
                 }
                 if (!hidden) faces.push_back(f);
