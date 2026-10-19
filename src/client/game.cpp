@@ -1167,8 +1167,9 @@ void Game::drawHud() {
         const Color gold = {1.0f, 0.78f, 0.25f, 1};
         r_.rect(cx - 220 * s, 8 * s, 440 * s, 3 * s, gold);
         float tts = std::max(1.0f, std::round(ts * 0.5f));
-        r_.rect(cx - 220 * s, 72 * s, r_.textWidth("RANKED", tts) + 12 * s, r_.textHeight(tts) + 8 * s, gold);
-        r_.text(cx - 214 * s, 76 * s, tts, "RANKED", {0.1f, 0.08f, 0.02f, 1});
+        float tw = r_.textWidth("RANKED", tts) + 12 * s; // tag on the panel's right edge, clear of the objective line
+        r_.rect(cx + 224 * s, 8 * s, tw, r_.textHeight(tts) + 8 * s, gold);
+        r_.text(cx + 230 * s, 12 * s, tts, "RANKED", {0.1f, 0.08f, 0.02f, 1});
     }
     ui_.labelCentered(cx, 16 * s, title, kWhite);
     ui_.labelCentered(cx, 16 * s + 22 * s, phase, kGrey);
@@ -1446,7 +1447,7 @@ void Game::drawVoteMenu(float cx, float y) {
     float w = 300 * s, h = 36 * s, gap = 8 * s, x = cx - w * 0.5f, hw = (w - gap) * 0.5f;
     const ModeState& ms = net_.mode();
     bool warmup = ms.phase == PHASE_WARMUP, ranked = ms.flags & MS_RANKED, tourney = ms.mode == MODE_TOURNEY && !ranked;
-    int rows = 4 + (warmup ? 1 : 0) + (warmup && tourney ? 1 : 0) + (ranked ? 0 : 4);
+    int rows = 3 + (warmup ? 1 : 0) + (warmup && tourney ? 1 : 0) + (ranked ? 0 : 4);
     ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, rows * (h + gap) + 40 * s);
     ui_.labelCentered(cx, y, "CALL A VOTE");
     y += 30 * s;
@@ -1463,7 +1464,7 @@ void Game::drawVoteMenu(float cx, float y) {
     if (ui_.button(x + hw + gap, y, hw, h, "MAP...") && !maps_.empty()) openLivePicker(PICK_LIVE_MAP, true);
     y += h + gap;
     // ranked: on with a ladder / switch ladder / off (no bots while it's on)
-    if (ui_.button(x, y, ranked ? hw : w, h, ranked ? "SWITCH LADDER..." : "RANKED ON...")) { variantCtx_ = 2; livePickVote_ = true; picker_ = PICK_RANKED; }
+    if (ui_.button(x, y, ranked ? hw : w, h, ranked ? "LADDER..." : "RANKED ON...")) { variantCtx_ = 2; livePickVote_ = true; picker_ = PICK_RANKED; }
     if (ranked) voteBtn(x + hw + gap, hw, "RANKED OFF", "ranked off");
     y += h + gap;
     if (!ranked) { // edit the map together; on a normal server the changes last until the map changes
@@ -1696,8 +1697,16 @@ void Game::drawMenu() {
             for (auto& sv : browser_.servers()) {
                 char row[160];
                 if (sv.noReply) snprintf(row, sizeof row, "%s  - NO RESPONSE (PORT NOT OPEN?) - CLICK TO TRY", sv.name.c_str());
-                else snprintf(row, sizeof row, "%s  %s/%s  %d/%d  %dms", sv.name.c_str(), sv.map.c_str(), modeName(sv.mode), sv.players,
-                              sv.maxPlayers, (int)sv.ping);
+                else {
+                    // shorten the name until the row fits its button (long names used to spill past the list)
+                    std::string nm = sv.name;
+                    for (;;) {
+                        snprintf(row, sizeof row, "%s  %s/%s  %d/%d  %dms", nm.c_str(), sv.map.c_str(), modeName(sv.mode), sv.players,
+                                 sv.maxPlayers, (int)sv.ping);
+                        if (r_.textWidth(row, ui_.textScale()) <= lw - 24 * s || nm.size() <= 4) break;
+                        nm = nm.substr(0, nm.size() - (nm.size() > 3 && nm.compare(nm.size() - 3, 3, "...") == 0 ? 4 : 1)) + "...";
+                    }
+                }
                 if (ui_.button(lx + 6 * s, ry, lw - 12 * s, 30 * s, row)) {
                     joinAddr_ = sv.addr.toString();
                     connectTo(joinAddr_);

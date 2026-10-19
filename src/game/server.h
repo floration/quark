@@ -260,6 +260,7 @@ private:
     double nextTick_ = 0;
     double rateWindowStart_ = 0;
     int windowTicks_ = 0, windowLate_ = 0, windowSendFail_ = 0, windowWorstLoss_ = 0;
+    double windowBusy_ = 0;   // seconds spent in simulate + snapshots this window
     LogFn log_;
     std::unique_ptr<PortMapper> upnp_;
     std::unique_ptr<MasterAnnouncer> master_;

@@ -131,6 +131,7 @@ void Server::idle(double wait) {
 void Server::resetRateWindow() {
     rateWindowStart_ = timeNow();
     windowTicks_ = windowLate_ = windowSendFail_ = windowWorstLoss_ = 0;
+    windowBusy_ = 0;
 }
 
 // Warmup only: if the host can't sustain the current rate cleanly, step down a level.
@@ -141,10 +142,14 @@ void Server::checkTickRate() {
     if (editing_ || ms_.phase != PHASE_WARMUP || playerCount() == 0 || rateLevel_ >= kTickRateLevels - 1) { resetRateWindow(); return; }
     int worstLoss = windowWorstLoss_;
     double lateFrac = windowTicks_ ? windowLate_ / (double)windowTicks_ : 0;
-    bool bad = lateFrac > kMaxLateFraction || windowSendFail_ > 0 || worstLoss > kMaxClientLossPct;
+    double busy = windowBusy_ / std::max(1e-6, now - rateWindowStart_); // share of the time spent simulating + sending
+    // Late ticks alone don't mean the server can't keep up: on shared / burstable VMs the OS wakes us late
+    // while the CPU is nearly idle, and the catch-up loop still runs every tick. Step down only when the
+    // work itself is heavy (or late ticks come with real load), or packets / clients are being lost.
+    bool bad = busy > 0.5 || (lateFrac > kMaxLateFraction && busy > 0.2) || windowSendFail_ > 0 || worstLoss > kMaxClientLossPct;
     if (bad) {
-        char why[160];
-        snprintf(why, sizeof why, "late %.1f%%, send failures %d, worst client loss %d%%", lateFrac * 100, windowSendFail_, worstLoss);
+        char why[200];
+        snprintf(why, sizeof why, "busy %.0f%%, late %.1f%%, send failures %d, worst client loss %d%%", busy * 100, lateFrac * 100, windowSendFail_, worstLoss);
         rateLevel_++;
         message("server tick rate lowered to " + std::to_string(tickRate()) + " Hz");
         log("tick rate -> " + std::to_string(tickRate()) + " Hz (" + why + ")");
@@ -167,11 +172,13 @@ double Server::frame() {
     while (now >= nextTick_) {
         if (now - nextTick_ > period * 2) windowLate_++;
         windowTicks_++;
+        double t0 = timeNow();
         { QZONE("server simulate"); simulate(); }
         logTick();
         tick_++;
         timeMs_ += 1000 / tickRate();
         { QZONE("server snapshots"); sendSnapshots(); }
+        windowBusy_ += timeNow() - t0;
         nextTick_ += 1.0 / tickRate();
         now = timeNow();
     }

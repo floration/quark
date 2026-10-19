@@ -109,16 +109,19 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         }
     }
 
-    // Grapple: press to fire at what you're aiming at, hold to be pulled; momentum is kept.
+    // Grapple: hold to fire, hold to be pulled; momentum is kept. While held it keeps trying every tick
+    // until it catches something (sweep your aim across a thin bar and it grabs it), also waiting out the
+    // cooldown; one grab per press (MF_HOOKHELD: this press already grabbed), release to fire again.
     bool hookHeld = (cmd.buttons & BTN_GRAPPLE) != 0;
     bool wasHooked = (s.flags & MF_HOOKED) != 0;
-    if (hookHeld && !(s.flags & MF_HOOKHELD) && !frozen && s.hookCooldown <= 0) {
+    if (!hookHeld) s.flags &= ~MF_HOOKHELD;
+    if (hookHeld && !(s.flags & MF_HOOKHELD) && !(s.flags & MF_HOOKED) && !frozen && s.hookCooldown <= 0) {
         float eyeH = crouched ? kCrouchEyeHeight : kEyeHeight;
         Vec3 eye = s.pos + Vec3(0, eyeH, 0);
         float t = map.raycast(eye, angleForward(cmd.yaw, cmd.pitch), kGrappleRange);
         if (t >= 0) {
             s.hookPoint = eye + angleForward(cmd.yaw, cmd.pitch) * t;
-            s.flags |= MF_HOOKED;
+            s.flags |= MF_HOOKED | MF_HOOKHELD;
         }
     }
     if (!hookHeld || frozen) s.flags &= ~MF_HOOKED;
@@ -209,7 +212,6 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     if (nowGround && !(s.flags & MF_HOOKED)) s.flags |= MF_ONGROUND;
     if (crouched) s.flags |= MF_CROUCHED;
     if (jumpHeld) s.flags |= MF_JUMPHELD;
-    if (hookHeld) s.flags |= MF_HOOKHELD;
     if (dashHeld) s.flags |= MF_DASHHELD;
 
     if (s.pos.y < -100.0f) s.pos.y = -100.0f; // kill plane handled by game logic
