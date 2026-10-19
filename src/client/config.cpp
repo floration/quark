@@ -55,6 +55,10 @@ void Settings::load() {
         else if (k == "bot_enemies") botEnemies = std::min(std::max(iv, 1), 7);
         else if (k == "bot_allies") botAllies = std::min(std::max(iv, 0), 3);
         else if (k == "bot_mode") botMode = std::min(std::max(iv, 0), 5);
+        else if (k.rfind("bind_", 0) == 0) {
+            int a = atoi(k.c_str() + 5), c0 = 0, c1 = 0;
+            if (a >= 0 && a < A_COUNT && sscanf(v.c_str(), "%d,%d", &c0, &c1) >= 1) { binds.code[a][0] = c0; binds.code[a][1] = c1; }
+        }
     }
     if (width < 320) width = 1280;
     if (height < 240) height = 720;
@@ -71,4 +75,5 @@ void Settings::save() const {
       << "\nhost_mode=" << hostMode << "\nhost_port=" << hostPort << "\nhost_max=" << hostMaxPlayers
       << "\nhost_upnp=" << hostUpnp << "\nhost_balance_bots=" << hostBalanceBots << "\nbot_skill=" << botSkill
       << "\nbot_enemies=" << botEnemies << "\nbot_allies=" << botAllies << "\nbot_mode=" << botMode << "\n";
+    for (int a = 0; a < A_COUNT; a++) f << "bind_" << a << "=" << binds.code[a][0] << "," << binds.code[a][1] << "\n";
 }

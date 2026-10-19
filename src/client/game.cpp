@@ -199,6 +199,52 @@ void Game::onChar(unsigned cp) {
     if (cp < 128) uiIn_.chars += (char)cp;
 }
 
+bool Game::isDown(int action) const {
+    for (int k = 0; k < 2; k++) {
+        int c = cfg_.binds.code[action][k];
+        if (c >= kMouseCode && c < kMouseCode + 16) { if (glfwGetMouseButton(win_, c - kMouseCode) == GLFW_PRESS) return true; }
+        else if (c > 0 && c < kMouseCode && glfwGetKey(win_, c) == GLFW_PRESS) return true;
+    }
+    return false;
+}
+
+// A key, mouse button or scroll step was pressed: rebinding capture, or the bound one-shot actions.
+bool Game::pressInput(int code) {
+    if (captureAction_ >= 0) {
+        if (code == GLFW_KEY_ESCAPE) { captureAction_ = -1; return true; }
+        int& slot = cfg_.binds.code[captureAction_][captureSlot_];
+        slot = (code == GLFW_KEY_BACKSPACE || code == GLFW_KEY_DELETE) ? 0 : code;
+        captureAction_ = -1;
+        cfg_.save();
+        return true;
+    }
+    const Binds& b = cfg_.binds;
+    if (b.has(A_PERF, code)) { showPerf_ = !showPerf_; return true; }
+    if (b.has(A_SCREENSHOT, code)) {
+        static int n = 0;
+        r_.screenshot("screenshot_" + std::to_string(n++) + ".png");
+        notify("screenshot saved");
+        return true;
+    }
+    if (screen_ != Screen::InGame || chatting_) return false;
+    if (b.has(A_VOTEYES, code)) { net_.sendCommand("vote yes"); return true; }
+    if (b.has(A_VOTENO, code)) { net_.sendCommand("vote no"); return true; }
+    if (paused_) return false;
+    if (b.has(A_CHAT, code)) {
+        chatting_ = true;
+        chatText_.clear();
+        uiIn_.chars.clear();
+        captureMouse(false);
+        return true;
+    }
+    for (int w = 0; w < WPN_COUNT; w++) if (b.has(A_WEAPON1 + w, code)) { desiredWeapon_ = w; return true; }
+    int cur = desiredWeapon_ >= 0 ? desiredWeapon_ : net_.selfWeapon();
+    if (b.has(A_NEXTWEAPON, code)) { desiredWeapon_ = (cur + 1) % WPN_COUNT; return true; }
+    if (b.has(A_PREVWEAPON, code)) { desiredWeapon_ = (cur + WPN_COUNT - 1) % WPN_COUNT; return true; }
+    if (b.has(A_FIRE, code)) fireLatched_ = true; // a click shorter than a tick still fires
+    return false;
+}
+
 void Game::onKey(int key, int action, int mods) {
     markInput();
     if (action == GLFW_RELEASE) return;
@@ -206,16 +252,9 @@ void Game::onKey(int key, int action, int mods) {
     if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) uiIn_.enter = true;
     if (key == GLFW_KEY_TAB) uiIn_.tab = true;
     if (action != GLFW_PRESS) return;
-    if (key == GLFW_KEY_F3) { showPerf_ = !showPerf_; return; }
-    if (screen_ == Screen::InGame && !chatting_ && (key == GLFW_KEY_F1 || key == GLFW_KEY_F2)) {
-        net_.sendCommand(key == GLFW_KEY_F1 ? "vote yes" : "vote no");
-        return;
-    }
-    if (key == GLFW_KEY_F12) {
-        static int n = 0;
-        r_.screenshot("screenshot_" + std::to_string(n++) + ".png");
-        notify("screenshot saved");
-        return;
+    bool typing = chatting_ || ui_.typing();
+    if (captureAction_ >= 0 || !typing) {
+        if (pressInput(key)) return;
     }
     if (screen_ == Screen::InGame) {
         if (chatting_) {
@@ -232,20 +271,15 @@ void Game::onKey(int key, int action, int mods) {
             return;
         }
         if (key == GLFW_KEY_ESCAPE) {
+            if (controlsOpen_) { controlsOpen_ = false; cfg_.save(); return; }
             if (settingsInGame_) { settingsInGame_ = false; cfg_.save(); return; }
             paused_ = !paused_;
             captureMouse(!paused_);
             return;
         }
-        if (!paused_ && (key == GLFW_KEY_T || key == GLFW_KEY_Y)) {
-            chatting_ = true;
-            chatText_.clear();
-            uiIn_.chars.clear();
-            captureMouse(false);
-            return;
-        }
     } else if (key == GLFW_KEY_ESCAPE) {
         uiIn_.escape = true;
+        if (controlsOpen_) { controlsOpen_ = false; cfg_.save(); return; }
         if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::Settings || screen_ == Screen::VsBots) {
             cfg_.save();
             setScreen(Screen::Main);
@@ -258,8 +292,13 @@ void Game::onKey(int key, int action, int mods) {
 void Game::onMouseButton(int button, int action) {
     markInput();
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
-        if (action == GLFW_PRESS) { uiIn_.pressed = true; uiIn_.down = true; fireLatched_ = true; }
+        if (action == GLFW_PRESS) { uiIn_.pressed = captureAction_ < 0; uiIn_.down = true; }
         else if (action == GLFW_RELEASE) uiIn_.down = false;
+    }
+    if (action == GLFW_PRESS) {
+        // in menus the left button belongs to the UI (except when rebinding)
+        bool uiClick = button == GLFW_MOUSE_BUTTON_LEFT && (screen_ != Screen::InGame || paused_) && captureAction_ < 0;
+        if (!uiClick) pressInput(kMouseCode + button);
     }
 }
 
@@ -288,9 +327,8 @@ void Game::onResize(int w, int h) { r_.resize(w, h); }
 
 void Game::onScroll(double dy) {
     markInput();
-    if (screen_ != Screen::InGame || paused_ || dy == 0) return;
-    int cur = desiredWeapon_ >= 0 ? desiredWeapon_ : net_.selfWeapon();
-    desiredWeapon_ = (cur + (dy < 0 ? 1 : -1) + WPN_COUNT) % WPN_COUNT;
+    if (dy == 0) return;
+    pressInput(dy > 0 ? kWheelUp : kWheelDown);
 }
 
 UserCmd Game::buildCmd() {
@@ -299,27 +337,24 @@ UserCmd Game::buildCmd() {
     c.pitch = pitch_;
     bool block = paused_ || chatting_ || screen_ != Screen::InGame;
     if (block) return c;
-    auto key = [&](int k) { return glfwGetKey(win_, k) == GLFW_PRESS; };
     int f = 0, s = 0;
-    if (key(GLFW_KEY_W)) f += 127;
-    if (key(GLFW_KEY_S)) f -= 127;
-    if (key(GLFW_KEY_D)) s += 127;
-    if (key(GLFW_KEY_A)) s -= 127;
+    if (isDown(A_FORWARD)) f += 127;
+    if (isDown(A_BACK)) f -= 127;
+    if (isDown(A_RIGHT)) s += 127;
+    if (isDown(A_LEFT)) s -= 127;
     c.forward = (int8_t)clampf((float)f, -127, 127);
     c.side = (int8_t)clampf((float)s, -127, 127);
-    if (key(GLFW_KEY_SPACE)) c.buttons |= BTN_JUMP;
-    if (key(GLFW_KEY_LEFT_CONTROL) || key(GLFW_KEY_C)) c.buttons |= BTN_CROUCH;
-    if (key(GLFW_KEY_E)) c.buttons |= BTN_USE;
-    if (key(GLFW_KEY_LEFT_SHIFT)) c.buttons |= BTN_DASH;
-    if (key(GLFW_KEY_Q)) c.buttons |= BTN_GRAPPLE;
-    if (key(GLFW_KEY_R)) c.buttons |= BTN_RELOAD;
-    for (int w = 0; w < WPN_COUNT; w++) if (key(GLFW_KEY_1 + w)) desiredWeapon_ = w;
+    if (isDown(A_JUMP)) c.buttons |= BTN_JUMP;
+    if (isDown(A_CROUCH)) c.buttons |= BTN_CROUCH;
+    if (isDown(A_USE)) c.buttons |= BTN_USE;
+    if (isDown(A_DASH)) c.buttons |= BTN_DASH;
+    if (isDown(A_GRAPPLE)) c.buttons |= BTN_GRAPPLE;
     if (desiredWeapon_ >= 0) {
         if (desiredWeapon_ == net_.selfWeapon()) desiredWeapon_ = -1;
         else c.weapon = (uint8_t)desiredWeapon_;
     }
-    if (glfwGetMouseButton(win_, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS || fireLatched_) c.buttons |= BTN_FIRE;
-    if (glfwGetMouseButton(win_, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) c.buttons |= BTN_ALTFIRE;
+    if (isDown(A_FIRE) || fireLatched_) c.buttons |= BTN_FIRE;
+    if (isDown(A_ALTFIRE)) c.buttons |= BTN_ALTFIRE;
     fireLatched_ = false;
     if (opts_.debugWeapon >= 1 && opts_.debugWeapon <= WPN_COUNT) c.weapon = (uint8_t)(opts_.debugWeapon - 1);
     if (opts_.debugScope) c.buttons |= BTN_ALTFIRE;
@@ -373,7 +408,17 @@ void Game::handleEvents() {
                 voteText_ = e.text;
                 break;
             case EV_HIT:
-                if (e.a == net_.clientId()) hitUntil_ = time_ + 0.15;
+                if (e.a == net_.clientId()) {
+                    hitUntil_ = time_ + 0.15;
+                    // hits on the same target in quick succession add up into one number
+                    bool merged = false;
+                    for (auto& d : dmgNums_)
+                        if (d.victim == e.b && time_ - d.start < 0.35) { d.amount += e.c; d.start = time_; merged = true; }
+                    if (!merged) {
+                        const PlayerSnap* v = net_.findPlayer(e.b);
+                        dmgNums_.push_back({e.b, (float)e.c, time_, v ? v->pos : Vec3()});
+                    }
+                }
                 break;
             case EV_SPAWN:
                 if (e.a == net_.clientId()) {
@@ -392,7 +437,7 @@ void Game::handleEvents() {
 void Game::frame(double dt) {
     time_ += dt;
     if (opts_.debugPerf) { showPerf_ = true; if (pendingInput_ < 0) pendingInput_ = timeNow(); }
-    if (opts_.debugSettings && screen_ == Screen::InGame && !settingsInGame_) { paused_ = true; settingsInGame_ = true; opts_.debugSettings = false; }
+    if (opts_.debugSettings && screen_ == Screen::InGame && !settingsInGame_) { paused_ = true; settingsInGame_ = true; controlsOpen_ = opts_.debugControls; opts_.debugSettings = false; }
     frameInput_ = pendingInput_; // the oldest input this frame will show
     pendingInput_ = -1;
     frameTimes_[frameIdx_] = (float)dt;
@@ -447,7 +492,7 @@ void Game::frame(double dt) {
             tickAcc_ -= period;
         }
         scoped_ = net_.selfAlive() && !paused_ && !chatting_ && weaponDef(net_.selfWeapon()).scopedSpread >= 0 &&
-                  (glfwGetMouseButton(win_, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS || opts_.debugScope);
+                  (isDown(A_ALTFIRE) || opts_.debugScope);
         // explosions: projectiles that vanished
         auto projs = net_.interpolatedProjectiles();
         for (auto& old : lastProjectiles_) {
@@ -761,6 +806,23 @@ void Game::drawHud() {
     r_.rect(cx - 6 * cs, cy - cs * 0.5f, 4 * cs, cs, chc);
     r_.rect(cx + 2 * cs, cy - cs * 0.5f, 4 * cs, cs, chc);
     if (time_ < hitUntil_) r_.rect(cx - cs, cy - cs, 2 * cs, 2 * cs, {1, 1, 1, 1});
+    {   // floating damage numbers above whoever you hit
+        auto ip = net_.interpolatedPlayers();
+        for (size_t i = 0; i < dmgNums_.size();) {
+            DmgNum& d = dmgNums_[i];
+            float t = (float)(time_ - d.start);
+            if (t > 0.9f) { dmgNums_.erase(dmgNums_.begin() + i); continue; }
+            if (d.victim >= 0 && d.victim < kMaxPlayers && ip[d.victim].valid) d.pos = ip[d.victim].snap.pos;
+            float sx, sy;
+            if (r_.project(d.pos + Vec3(0, 2.0f + t * 0.8f, 0), sx, sy)) {
+                std::string n = std::to_string((int)std::lround(d.amount));
+                float k = std::max(1.0f, std::round(ts * (d.amount >= 40 ? 1.5f : 1.0f)));
+                Color c = d.amount >= 40 ? Color{1, 0.85f, 0.2f, 1 - t / 0.9f} : Color{1, 1, 1, 1 - t / 0.9f};
+                r_.text(sx - r_.textWidth(n, k) * 0.5f, sy, k, n, c);
+            }
+            i++;
+        }
+    }
     if (time_ < damageUntil_) {
         float a = (float)(damageUntil_ - time_) / 0.25f * 0.35f;
         float b = 30 * s;
@@ -900,11 +962,11 @@ void Game::drawHud() {
     // host info
     if (host_ && paused_) {
         std::string st = "HOSTING ON UDP PORT " + std::to_string(host_->port());
-        ui_.labelCentered(cx, H - 70 * s, st, kGrey);
-        if (host_->config().upnp && host_->upnpStatus().size()) ui_.labelCentered(cx, H - 48 * s, host_->upnpStatus(), kGrey);
+        ui_.labelCentered(cx, H - 120 * s, st, kGrey);
+        if (host_->config().upnp && host_->upnpStatus().size()) ui_.labelCentered(cx, H - 100 * s, host_->upnpStatus(), kGrey);
     }
 
-    showScores_ = glfwGetKey(win_, GLFW_KEY_TAB) == GLFW_PRESS || ms.phase == PHASE_MATCH_END;
+    showScores_ = isDown(A_SCORES) || ms.phase == PHASE_MATCH_END;
     if (showScores_ && !paused_) drawScoreboard();
     if (paused_) drawPauseMenu(cx, H * 0.25f);
 }
@@ -1013,12 +1075,13 @@ void Game::drawPauseMenu(float cx, float y) {
 // menus
 
 void Game::drawSettings(float x0, float y0, float wTotal) {
+    if (controlsOpen_) { drawControls(x0, y0, wTotal); return; }
     float s = ui_.s();
     float h = 32 * s, gap = 7 * s, colGap = 24 * s;
     float w = std::max(320 * s, wTotal * 0.5f);
     float x = x0 + wTotal * 0.5f - w - colGap * 0.5f; // two columns centred on the old area
     float xr = x + w + colGap;
-    ui_.panel(x - 16 * s, y0 - 16 * s, w * 2 + colGap + 32 * s, 8 * (h + gap) + 150 * s);
+    ui_.panel(x - 16 * s, y0 - 16 * s, w * 2 + colGap + 32 * s, 9 * (h + gap) + 150 * s);
 
     // --- left column: player, mouse, colors
     float y = y0;
@@ -1086,6 +1149,8 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     };
     for (const char* t : help) { ui_.label(xr, y, t, {0.7f, 0.72f, 0.75f, 1}, 0.5f); y += 14 * s; }
     y += gap;
+    if (ui_.button(xr, y, w, h, "CONTROLS")) controlsOpen_ = true;
+    y += h + gap;
     if (ui_.button(xr, y, w, h, "BACK")) {
         cfg_.save();
         if (net_.state() == ConnState::Connected) net_.sendCommand("name " + cfg_.name);
@@ -1110,6 +1175,10 @@ void Game::drawMenu() {
 
     switch (screen_) {
         case Screen::Main: {
+            ui_.label(x, y, "YOUR NAME (SHOWN IN CHAT AND SCOREBOARD)", kGrey, 0.5f);
+            y += 16 * s;
+            if (ui_.textField(9, x, y, bw, bh, cfg_.name, 20)) cfg_.save();
+            y += bh + gap * 2;
             if (ui_.button(x, y, bw, bh, "PLAY VS BOTS")) setScreen(Screen::VsBots);
             y += bh + gap;
             if (ui_.button(x, y, bw, bh, "JOIN GAME")) setScreen(Screen::Join);
@@ -1377,4 +1446,36 @@ void Game::afterSwap() {
         if (ms >= 0 && ms < 1000) latSamples_.push_back((float)ms);
         q.used = false;
     }
+}
+
+// Every action, two bind slots each. Click a slot, then press a key / mouse button / scroll.
+// Esc cancels, Backspace or Delete clears the slot.
+void Game::drawControls(float x0, float y0, float wTotal) {
+    float s = ui_.s();
+    float rowH = 22 * s, gap = 3 * s, colGap = 24 * s;
+    float colW = std::max(330 * s, wTotal * 0.5f);
+    float x = x0 + wTotal * 0.5f - colW - colGap * 0.5f;
+    int perCol = (A_COUNT + 1) / 2;
+    float h = perCol * (rowH + gap) + 90 * s;
+    float y = std::max(8 * s, y0 - 40 * s);
+    ui_.panel(x - 16 * s, y - 16 * s, colW * 2 + colGap + 32 * s, h);
+    float lts = std::max(1.0f, std::round(ui_.textScale() * 0.75f));
+    for (int a = 0; a < A_COUNT; a++) {
+        float cx = x + (a / perCol) * (colW + colGap), cy = y + (a % perCol) * (rowH + gap);
+        r_.text(cx, cy + 5 * s, lts, actionName(a), {0.85f, 0.87f, 0.9f, 1});
+        float bw = colW * 0.27f;
+        for (int k = 0; k < 2; k++) {
+            float bx = cx + colW - (2 - k) * (bw + 4 * s);
+            bool cap = captureAction_ == a && captureSlot_ == k;
+            std::string label = cap ? "PRESS..." : inputName(cfg_.binds.code[a][k]);
+            if (ui_.button(bx, cy, bw, rowH, label)) { captureAction_ = a; captureSlot_ = k; }
+        }
+    }
+    y += perCol * (rowH + gap) + 10 * s;
+    ui_.label(x, y, captureAction_ >= 0 ? "PRESS A KEY, MOUSE BUTTON OR SCROLL - ESC CANCELS, BACKSPACE CLEARS"
+                                        : "CLICK A SLOT TO REBIND IT", {0.7f, 0.72f, 0.75f, 1}, 0.5f);
+    y += 20 * s;
+    float bw = colW * 0.6f;
+    if (ui_.button(x, y, bw, 32 * s, "RESET TO DEFAULTS")) { cfg_.binds.setDefaults(); cfg_.save(); }
+    if (ui_.button(x + colW * 2 + colGap - bw, y, bw, 32 * s, "BACK")) { controlsOpen_ = false; captureAction_ = -1; cfg_.save(); }
 }

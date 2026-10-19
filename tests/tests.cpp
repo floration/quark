@@ -380,14 +380,14 @@ static void testWeapons(uint16_t port) {
         double elapsed = timeNow() - t0;
         if (w == WPN_ROCKET || w == WPN_CROSSBOW || w == WPN_STICKY) pump(s, cls, 1.0, idle); // let it fly
         float dealt = (sb.deaths > deaths0) ? 100.0f : hp0 - sb.health;
-        if (w == WPN_SNIPER) CHECK(dealt >= 90);                 // one scoped shot
+        if (w == WPN_SNIPER) CHECK(dealt >= 50);                 // one scoped shot
         if (w == WPN_LASER) {                                     // ~5 dmg every 0.05 s
-            float expect = (float)(elapsed / weaponDef(WPN_LASER).refire) * 5;
+            float expect = (float)(elapsed / weaponDef(WPN_LASER).refire) * weaponDef(WPN_LASER).damage;
             CHECK(dealt > expect * 0.6f && dealt < expect * 1.4f + 5);
         }
-        if (w == WPN_ROCKET) CHECK(dealt > 40);
-        if (w == WPN_SHOTGUN) CHECK(dealt >= 45);      // most of 10 x 9 pellets at 8 m
-        if (w == WPN_CROSSBOW) CHECK(dealt >= 85);
+        if (w == WPN_ROCKET) CHECK(dealt > 15);
+        if (w == WPN_SHOTGUN) CHECK(dealt >= 25);      // most of 10 x 5 pellets at 8 m
+        if (w == WPN_CROSSBOW) CHECK(dealt >= 50);
         if (w == WPN_STICKY) {                          // lobbed: lands near the target, then detonate
             int stuck = 0;
             for (auto& pr : s.projectiles_) stuck += pr.active && pr.type == WPN_STICKY;
@@ -395,7 +395,7 @@ static void testWeapons(uint16_t port) {
             float before = sb.health; int d0 = sb.deaths;
             for (auto& pr : s.projectiles_) if (pr.active && pr.type == WPN_STICKY) pr.pos = sb.move.pos + Vec3(0, 0.1f, 0.5f);
             pump(s, cls, 0.2, [&](int i) { UserCmd c; c.weapon = WPN_STICKY; if (i == 0) c.buttons = BTN_ALTFIRE; return c; });
-            CHECK(sb.deaths > d0 || sb.health < before - 40);
+            CHECK(sb.deaths > d0 || sb.health < before - 15);
         }
         s.stop();
     }
@@ -445,8 +445,8 @@ static void testRocketSelfDamage(uint16_t port) {
     float down = shoot(-1.5f, {9, 0, 0});              // straight at the floor
     float level = shoot(0.0f, {0, 0, 30.5f}, PI);      // into the wall in front (+z), at eye height
     printf("  floor blast %.1f damage, eye-level blast %.1f damage\n", down, level);
-    CHECK(down > 0 && down <= 10);
-    CHECK(level > 20);
+    CHECK(down > 0 && down <= 4);
+    CHECK(level > 15);
     s.stop();
 }
 

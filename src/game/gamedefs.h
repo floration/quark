@@ -62,7 +62,7 @@ enum : uint16_t {
     BTN_GRAPPLE = 1 << 12, // q
 };
 
-// Weapon set. Rifle and knife are placeholders.
+// Weapon set. Rifle and knife are placeholders. No single shot does more than 50 (of 100 health).
 enum WeaponId : uint8_t {
     WPN_RIFLE = 0, WPN_ROCKET, WPN_KNIFE, WPN_SNIPER, WPN_LASER, WPN_SHOTGUN, WPN_STICKY, WPN_CROSSBOW, WPN_COUNT
 };
@@ -87,14 +87,14 @@ struct WeaponDef {
 inline const WeaponDef& weaponDef(int w) {
     static const WeaponDef defs[WPN_COUNT] = {
         //  name        refire dmg  range   proj  speed  splash spread scoped zoom   beam  pel grav  sticky life
-        {"RIFLE",       0.12f, 18, 300.0f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},
-        {"ROCKET",      0.85f, 95,   0,    true,  32.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  0,    false, 5},
-        {"KNIFE",       0.45f, 55,   2.2f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},
-        {"SNIPER",      1.25f, 95, 500.0f, false,  0,    0,     0.06f, 0.0f, 24.0f,  false, 1,  0,    false, 0},
-        {"LASER",       0.05f,  5,  32.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},
-        {"SHOTGUN",     0.85f,  9,  60.0f, false,  0,    0,     0.085f,-1,     0,    false, 10, 0,    false, 0},
-        {"STICKY",      0.6f,  85,   0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30},
-        {"CROSSBOW",    1.1f,  85,   0,    true,  90.0f, 0,     0.0f,  -1,     0,    false, 1,  6.0f, false, 3},
+        {"RIFLE",       0.12f, 10, 300.0f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},
+        {"ROCKET",      0.85f, 35,   0,    true,  32.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  0,    false, 5},
+        {"KNIFE",       0.45f, 40,   2.2f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},
+        {"SNIPER",      1.25f, 50, 500.0f, false,  0,    0,     0.06f, 0.0f, 24.0f,  false, 1,  0,    false, 0},
+        {"LASER",       0.05f,  3,  32.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},
+        {"SHOTGUN",     0.85f,  5,  60.0f, false,  0,    0,     0.085f,-1,     0,    false, 10, 0,    false, 0},
+        {"STICKY",      0.6f,  35,   0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30},
+        {"CROSSBOW",    1.1f,  50,   0,    true,  90.0f, 0,     0.0f,  -1,     0,    false, 1,  6.0f, false, 3},
     };
     return defs[w < 0 || w >= WPN_COUNT ? 0 : w];
 }

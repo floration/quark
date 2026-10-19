@@ -73,6 +73,7 @@ if(QUARK_BUILD_CLIENT)
     src/client/lightmap.cpp
     src/client/ui.cpp
     src/client/config.cpp
+    src/client/binds.cpp
     ${QUARK_ICON_RC}
   )
   target_link_libraries(quark quark_core glfw)

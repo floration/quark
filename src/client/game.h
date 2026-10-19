@@ -8,6 +8,7 @@
 #include <vector>
 #include "../game/netclient.h"
 #include "../game/server.h"
+#include "binds.h"
 #include "config.h"
 #include "renderer.h"
 #include "ui.h"
@@ -27,6 +28,7 @@ struct LaunchOptions {
     bool debugScope = false, debugFire = false; // --scope, --fire
     bool debugPerf = false;     // --perf: F3 overlay on, with a synthetic input event every frame
     bool debugSettings = false; // --settings: open the settings screen in game
+    bool debugControls = false; // --controls
 };
 
 class Game {
@@ -141,7 +143,15 @@ private:
     std::string latText_;
     double latNextUpdate_ = 0;
     int desiredWeapon_ = -1;
+    // rebinding
+    bool isDown(int action) const;
+    bool pressInput(int code);
+    void drawControls(float x, float y, float w);
+    bool controlsOpen_ = false;
+    int captureAction_ = -1, captureSlot_ = 0;
     std::string voteText_;
+    struct DmgNum { int victim; float amount; double start; Vec3 pos; };
+    std::vector<DmgNum> dmgNums_;
     int voteSkillPick_ = 1;
     int botMapIdx_ = 0;
 };

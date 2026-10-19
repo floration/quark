@@ -170,6 +170,7 @@ private:
     void sendSnapshots();
     int findPlayer(const NetAddr& a) const;
     void autoTeam(int id);
+    std::string uniqueName(std::string name, int self) const;
 
     UdpSocket sock_;
     uint32_t rng_ = 0x9E3779B9u;

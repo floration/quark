@@ -2,6 +2,7 @@
 #pragma once
 #include <string>
 #include "../common/qmath.h"
+#include "binds.h"
 
 struct Settings {
     std::string name = "player";
@@ -31,6 +32,8 @@ struct Settings {
     int botEnemies = 3, botAllies = 1;
     int botMode = 5;            // ffa
 
+    Binds binds;
+    Settings() { binds.setDefaults(); }
     void load();
     void save() const;
 };

@@ -27,6 +27,7 @@ int main(int argc, char** argv) {
         else if (a == "--fire") opts.debugFire = true;
         else if (a == "--perf") opts.debugPerf = true;
         else if (a == "--settings") opts.debugSettings = true;
+        else if (a == "--controls") { opts.debugSettings = true; opts.debugControls = true; }
         else if (a == "--pitch") opts.spawnPitch = (float)atof(next().c_str());
         else if (a == "-h" || a == "--help") {
             printf("quark [--connect ip:port] [--host mode --map name]\n");

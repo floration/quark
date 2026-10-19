@@ -222,8 +222,7 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
     if (id < 0) { reject("server is full"); return; }
 
     for (auto& c : name) if ((unsigned char)c < 32 || (unsigned char)c > 126) c = '?';
-    if (name.empty()) name = "player";
-    if (name.size() > 20) name.resize(20);
+    name = uniqueName(name, -1);
 
     ServerPlayer& p = players_[id];
     p = ServerPlayer();
@@ -343,7 +342,8 @@ void Server::handleStringCmd(int id, const std::string& s) {
         if (t != TEAM_SPECTATOR && rulesRespawnDelay(*this) >= 0) p.respawnAt = time() + 1.0f;
     } else if (cmd == "name") {
         if (rest.empty()) return;
-        if (rest.size() > 20) rest.resize(20);
+        rest = uniqueName(rest, id);
+        if (rest == p.name) return;
         message(p.name + " is now " + rest);
         p.name = rest;
         GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.text = rest;
@@ -965,4 +965,19 @@ void Server::tickVote() {
     ms_.voteNo = (uint8_t)n;
     ms_.voteVoters = (uint8_t)humans;
     ms_.voteTimeLeft = vote_.endsAt - time();
+}
+
+// Printable, max 20 chars, and not already taken by someone else (then "name (2)", ...).
+std::string Server::uniqueName(std::string name, int self) const {
+    for (auto& c : name) if ((unsigned char)c < 32 || (unsigned char)c > 126) c = '?';
+    while (!name.empty() && name.back() == ' ') name.pop_back();
+    if (name.empty()) name = "player";
+    if (name.size() > 20) name.resize(20);
+    auto taken = [&](const std::string& n) {
+        for (int i = 0; i < kMaxPlayers; i++) if (i != self && players_[i].connected && players_[i].name == n) return true;
+        return false;
+    };
+    std::string out = name;
+    for (int k = 2; taken(out); k++) out = name.substr(0, 16) + " (" + std::to_string(k) + ")";
+    return out;
 }
