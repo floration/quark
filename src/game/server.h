@@ -21,7 +21,7 @@ extern bool g_serverRateCheck;
 
 struct ServerConfig {
     std::string name = "quark server";
-    std::string map = "arena";
+    std::string map = "bastion";
     int mode = MODE_FFA;
     uint16_t port = kDefaultPort;
     int maxPlayers = 8;         // up to kMaxPlayers (32); big servers start at a lower tick rate

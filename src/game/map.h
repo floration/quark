@@ -8,7 +8,7 @@ enum SpawnTeam { SPAWN_A = 0, SPAWN_B = 1, SPAWN_ANY = 2, SPAWN_RACE = 3 };
 
 struct Brush {
     AABB box;
-    int material = 0; // 0 = base, 1 = accent, 2 = wallbang (dark grey: solid, but hitscan goes through it)
+    int material = 0; // 0 = base, 1 = accent, 2 = wallbang (dark grey: solid, but hitscan goes through it), 3 = metal, 4 = glow (emissive trim)
 };
 
 struct SpawnPoint {
@@ -31,6 +31,9 @@ struct Map {
     std::vector<AABB> checkpoints;    // race; the last one is the finish line
     std::vector<Vec3> payloadPath;    // ordered waypoints
     Vec3 sunDir = normalize(Vec3(0.4f, 1.0f, 0.25f)); // points toward the sun
+    // "palette base r g b accent r g b metal r g b glow r g b sky r g b" (linear 0..1): per-map colours
+    bool hasPalette = false;
+    Vec3 palBase, palAccent, palMetal, palGlow, palSky;
     struct Light { Vec3 pos; float radius = 10, intensity = 1; };
     std::vector<Light> lights;        // baked point lights ("light x y z radius [intensity]"): lit rooms under roofs
     AABB bounds;

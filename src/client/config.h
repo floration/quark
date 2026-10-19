@@ -24,7 +24,7 @@ struct Settings {
     std::string lastAddress = "127.0.0.1";
     // hosting
     std::string hostName = "quark server";
-    std::string hostMap = "arena";
+    std::string hostMap = "bastion";
     int hostMode = 5;
     int hostPort = 27500;
     int hostMaxPlayers = 8;

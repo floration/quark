@@ -81,16 +81,54 @@ float shadowAt(vec4 sc) {
 const char* kWorldFS = R"(
 in vec3 vPos; in vec3 vN; in vec2 vUV; in float vMat; in vec4 vShadow; in vec4 vEdge;
 uniform sampler2D uLightmap;
-uniform vec3 uSunColor, uSkyColor, uBase, uAccent, uFogColor, uCamPos;
+uniform vec3 uSunColor, uSkyColor, uBase, uAccent, uMetal, uGlow, uFogColor, uCamPos;
 uniform float uFogDensity;
 out vec4 fragColor;
+float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 void main() {
     vec2 lm = texture(uLightmap, vUV).rg;
-    vec3 albedo = vMat > 1.5 ? uBase * 0.42 : mix(uBase, uAccent, vMat); // 2 = wallbang: dark grey
+    int mat = int(vMat + 0.5);
+    vec3 albedo = mat == 0 ? uBase : mat == 1 ? uAccent : mat == 2 ? uBase * 0.42 : uMetal; // 2 = wallbang: dark grey
+    albedo = pow(albedo, vec3(2.2)) * 1.5; // palette is authored in display space: deepen it so colours read under bright sun
+    // surface detail: 2 m panels (4 m on floors) with a faint per-panel tint and thin seams, world-space so it
+    // tiles across brushes; floor contact darkening on walls
+    vec3 an = abs(vN);
+    vec2 pp = an.y > 0.5 ? vPos.xz * 0.25 : an.x > 0.5 ? vPos.zy * 0.5 : vPos.xy * 0.5;
+    if (mat == 3) pp = pp * vec2(2.0, 0.5);
+    vec2 cell = floor(pp), f = fract(pp), w = fwidth(pp) * 1.5;
+    float seam = min(smoothstep(0.0, w.x + 0.012, min(f.x, 1.0 - f.x)), smoothstep(0.0, w.y + 0.012, min(f.y, 1.0 - f.y)));
+    albedo *= (0.93 + 0.1 * hash2(cell + floor(vPos.y * 0.01))) * mix(0.82, 1.0, seam);
+    if (mat == 0 && vN.y > 0.5) albedo = mix(albedo, pow(uMetal, vec3(2.2)) * 2.0, 0.55); // floors / tops: darker, cooler than walls
+    if (an.y < 0.5) albedo *= mix(0.72, 1.0, smoothstep(0.0, 0.6, fract(vPos.y + 1000.0) + step(1.0, vPos.y)));
     vec3 light = uSkyColor * lm.g + uSunColor * lm.r * shadowAt(vShadow);
-    vec3 c = albedo * light * outline(vEdge);
+    vec3 c = albedo * light * 0.62 * outline(vEdge);
+    if (mat == 4) c = uGlow * 0.9;
     float d = length(vPos - uCamPos);
     c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity));
+    c = clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0) * 1.08; // ACES-style filmic curve
+    fragColor = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
+})";
+
+// sky: one full-screen triangle at the far plane, drawn after the world so only uncovered pixels shade
+const char* kSkyVS = R"(#version 330 core
+out vec2 vNdc;
+void main() {
+    vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2) * 2.0 - 1.0;
+    vNdc = p; gl_Position = vec4(p, 1.0, 1.0);
+})";
+const char* kSkyFS = R"(#version 330 core
+in vec2 vNdc;
+uniform vec3 uFwd, uRight, uUp, uSky, uSunDir;
+uniform vec2 uTan;
+out vec4 fragColor;
+void main() {
+    vec3 d = normalize(uFwd + vNdc.x * uTan.x * uRight + vNdc.y * uTan.y * uUp);
+    float up = clamp(d.y, 0.0, 1.0);
+    vec3 zenith = uSky * vec3(0.55, 0.62, 0.8);
+    vec3 c = mix(uSky, zenith, pow(up, 0.6));
+    float s = max(dot(d, uSunDir), 0.0);
+    c += vec3(1.0, 0.9, 0.7) * (pow(s, 600.0) * 4.0 + pow(s, 12.0) * 0.25);
+    c = clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0) * 1.08;
     fragColor = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
 })";
 
@@ -270,7 +308,8 @@ bool Renderer::init(int shadowRes, std::string* err) {
     flatProg_ = compile(kFlatVS, kFlatFS, err);
     shadowProg_ = compile(kShadowVS, kShadowFS, err);
     uiProg_ = compile(kUiVS, kUiFS, err);
-    if (!worldProg_ || !dynProg_ || !flatProg_ || !shadowProg_ || !uiProg_) return false;
+    skyProg_ = compile(kSkyVS, kSkyFS, err);
+    if (!skyProg_ || !worldProg_ || !dynProg_ || !flatProg_ || !shadowProg_ || !uiProg_) return false;
 
     // VAOs
     glGenVertexArrays(1, &dynVao_);
@@ -342,6 +381,13 @@ void Renderer::loadWorld(const Map& map, const std::function<void(float)>& progr
     BakedWorld bw;
     buildWorld(map, bw, progress);
     sunDir_ = map.sunDir;
+    {   // per-map palette (falls back to the stock greys)
+        skyColor = map.hasPalette ? map.palSky : Vec3{0.62f, 0.66f, 0.72f};
+        baseColor = map.hasPalette ? map.palBase : Vec3{0.62f, 0.62f, 0.64f};
+        accentColor = map.hasPalette ? map.palAccent : Vec3{0.40f, 0.40f, 0.43f};
+        metalColor = map.hasPalette ? map.palMetal : Vec3{0.30f, 0.33f, 0.37f};
+        glowColor = map.hasPalette ? map.palGlow : Vec3{1.00f, 0.55f, 0.15f};
+    }
     if (!worldVao_) { glGenVertexArrays(1, &worldVao_); glGenBuffers(1, &worldVbo_); glGenTextures(1, &lightmapTex_); }
     glBindVertexArray(worldVao_);
     glBindBuffer(GL_ARRAY_BUFFER, worldVbo_);
@@ -391,6 +437,10 @@ void Renderer::setCamera(const Vec3& eye, float yaw, float pitch, float hfovDeg)
     float vfov = 2.0f * std::atan(std::tan(deg2rad(hfovDeg) * 0.5f) / aspect);
     proj_ = Mat4::perspective(vfov, aspect, 0.05f, 400.0f);
     view_m_ = Mat4::lookAt(eye, eye + angleForward(yaw, pitch), {0, 1, 0});
+    camFwd_ = angleForward(yaw, pitch);
+    camRight_ = normalize(cross(camFwd_, Vec3(0, 1, 0)));
+    camUp_ = cross(camRight_, camFwd_);
+    tanY_ = std::tan(vfov * 0.5f); tanX_ = tanY_ * aspect;
     viewProj_ = proj_ * view_m_;
 }
 
@@ -559,7 +609,7 @@ void Renderer::drawScene(bool shadows) {
 
     const Vec3 sunColor = {0.78f, 0.75f, 0.70f};
     const Vec3 skyLight = {0.42f, 0.45f, 0.52f};
-    const float fog = 0.006f;
+    const float fog = 0.0035f;
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, shadowTex_);
     glActiveTexture(GL_TEXTURE0);
@@ -578,12 +628,22 @@ void Renderer::drawScene(bool shadows) {
         setVec3(worldProg_, "uSkyColor", skyLight);
         setVec3(worldProg_, "uBase", baseColor);
         setVec3(worldProg_, "uAccent", accentColor);
+        setVec3(worldProg_, "uMetal", metalColor);
+        setVec3(worldProg_, "uGlow", glowColor);
         setVec3(worldProg_, "uFogColor", skyColor);
         setVec3(worldProg_, "uCamPos", camPos_);
         glUniform1f(U(worldProg_, "uFogDensity"), fog);
         glBindTexture(GL_TEXTURE_2D, lightmapTex_);
         glBindVertexArray(worldVao_);
         glDrawArrays(GL_TRIANGLES, 0, worldVerts_);
+        // sky after the world: depth LEQUAL at z = 1 only passes where nothing was drawn
+        glUseProgram(skyProg_);
+        setVec3(skyProg_, "uFwd", camFwd_); setVec3(skyProg_, "uRight", camRight_); setVec3(skyProg_, "uUp", camUp_);
+        setVec3(skyProg_, "uSky", skyColor); setVec3(skyProg_, "uSunDir", sunDir_);
+        glUniform2f(U(skyProg_, "uTan"), tanX_, tanY_);
+        glDepthMask(GL_FALSE);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glDepthMask(GL_TRUE);
     }
 
     auto drawDyn = [&](const std::vector<DynVertex>& v, bool receive) {

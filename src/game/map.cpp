@@ -79,7 +79,9 @@ uint32_t crc32(const void* data, size_t len) {
     return c ^ 0xFFFFFFFFu;
 }
 
-bool Map::load(const std::string& mapName, std::string* err) {
+bool Map::load(const std::string& requested, std::string* err) {
+    // renamed maps: old configs / votes for these still work
+    std::string mapName = requested == "arena" ? "bastion" : requested == "tug" ? "canal" : requested;
     std::string path = findDataPath("maps/" + mapName + ".qmap");
     std::ifstream f(path, std::ios::binary);
     if (!f) { if (err) *err = "map not found: " + path; return false; }
@@ -101,6 +103,7 @@ bool Map::parse(const std::string& text, std::string* err) {
     brushes.clear(); spawns.clear(); bombSites.clear(); checkpoints.clear(); payloadPath.clear(); lights.clear();
     hasHill = false;
     hasWallbang = false;
+    hasPalette = false;
     preferredMode = -1;
     allowedModes = 0;
     rankedLadders = 0;
@@ -121,10 +124,10 @@ bool Map::parse(const std::string& text, std::string* err) {
         if (kw == "title") {
             std::getline(ls, title);
             while (!title.empty() && title[0] == ' ') title.erase(0, 1);
-        } else if (kw == "box" || kw == "accent" || kw == "wallbang") {
+        } else if (kw == "box" || kw == "accent" || kw == "wallbang" || kw == "metal" || kw == "glow") {
             Brush b;
             ok = readBox(ls, b.box);
-            b.material = kw == "accent" ? 1 : kw == "wallbang" ? 2 : 0;
+            b.material = kw == "accent" ? 1 : kw == "wallbang" ? 2 : kw == "metal" ? 3 : kw == "glow" ? 4 : 0;
             hasWallbang |= b.material == 2;
             if (ok) {
                 brushes.push_back(b);
@@ -163,6 +166,14 @@ bool Map::parse(const std::string& text, std::string* err) {
             ok = (bool)(ls >> l.pos.x >> l.pos.y >> l.pos.z >> l.radius);
             ls >> l.intensity;
             if (ok) lights.push_back(l);
+        } else if (kw == "palette") {
+            std::string k; Vec3 c;
+            while (ok && ls >> k) {
+                ok = (bool)(ls >> c.x >> c.y >> c.z);
+                if (k == "base") palBase = c; else if (k == "accent") palAccent = c; else if (k == "metal") palMetal = c;
+                else if (k == "glow") palGlow = c; else if (k == "sky") palSky = c; else ok = false;
+            }
+            hasPalette = ok;
         } else if (kw == "sun") {
             Vec3 d; ok = (bool)(ls >> d.x >> d.y >> d.z); if (ok) sunDir = normalize(d);
         } else {
@@ -202,7 +213,12 @@ std::string Map::serialize() const {
     }
     snprintf(b, sizeof b, "sun %g %g %g\n\n", sunDir.x, sunDir.y, sunDir.z);
     o += b;
-    for (auto& br : brushes) box(br.material == 1 ? "accent" : br.material == 2 ? "wallbang" : "box", br.box);
+    if (hasPalette) {
+        auto c = [&](const char* k, Vec3 v) { snprintf(b, sizeof b, " %s %g %g %g", k, v.x, v.y, v.z); o += b; };
+        o += "palette"; c("base", palBase); c("accent", palAccent); c("metal", palMetal); c("glow", palGlow); c("sky", palSky); o += "\n\n";
+    }
+    static const char* matNames[] = {"box", "accent", "wallbang", "metal", "glow"};
+    for (auto& br : brushes) box(matNames[br.material], br.box);
     o += "\n";
     static const char* teams[] = {"a", "b", "any", "race"};
     for (auto& sp : spawns) {
@@ -294,7 +310,7 @@ bool applyMapEdit(Map& m, const std::string& op) {
         return true;
     };
     bool ok = false;
-    if (kind == "b") ok = edit(m.brushes, [&](Brush& b) { return (bool)(in >> b.material) && b.material >= 0 && b.material <= 2 && readBox(b.box); }, 1, 60000);
+    if (kind == "b") ok = edit(m.brushes, [&](Brush& b) { return (bool)(in >> b.material) && b.material >= 0 && b.material <= 4 && readBox(b.box); }, 1, 60000);
     else if (kind == "s") ok = edit(m.spawns, [&](SpawnPoint& sp) {
         float yaw;
         if (!(in >> sp.team) || sp.team < 0 || sp.team > 3 || !readVec(sp.pos) || !(in >> yaw) || !okNum(yaw)) return false;

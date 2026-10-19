@@ -187,7 +187,7 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
     for (size_t fi = 0; fi < faces.size(); fi++) {
         const Face& f = faces[fi];
         Vec3 n = faceNormal(f);
-        Vec3 lift = needLift[fi] ? n * (f.material == 2 ? 0.004f : 0.002f) : Vec3();
+        Vec3 lift = needLift[fi] ? n * (0.002f * f.material) : Vec3();
         const float B = 1000.0f; // a turned-off edge is "infinitely far": no outline
         uint8_t off = edgeOff[fi];
         auto vert = [&](float u, float v) {

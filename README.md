@@ -26,4 +26,4 @@ Keep the `maps/` folder next to the executables.
 WASD move · Space jump · Ctrl/C crouch · Mouse1 fire · 1/2/3 weapons · E plant/defuse · Tab scores · T chat · Esc menu · F12 screenshot
 
 ## Maps
-Plain text files in `maps/` (see the header of `maps/arena.qmap`). Lighting is baked on first load and cached as `.qlm`.
+Plain text files in `maps/` (see the header of `maps/bastion.qmap`). Lighting is baked on first load and cached as `.qlm`.

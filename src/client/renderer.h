@@ -58,6 +58,8 @@ public:
     Vec3 skyColor = {0.62f, 0.66f, 0.72f};
     Vec3 baseColor = {0.62f, 0.62f, 0.64f};
     Vec3 accentColor = {0.40f, 0.40f, 0.43f};
+    Vec3 metalColor = {0.30f, 0.33f, 0.37f};
+    Vec3 glowColor = {1.00f, 0.55f, 0.15f};
 
 private:
     unsigned compile(const char* vs, const char* fs, std::string* err);
@@ -65,7 +67,9 @@ private:
     void emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& half, const Vec3& color, float sunVis);
 
     int width_ = 1280, height_ = 720;
-    unsigned worldProg_ = 0, dynProg_ = 0, flatProg_ = 0, shadowProg_ = 0, uiProg_ = 0;
+    unsigned worldProg_ = 0, dynProg_ = 0, flatProg_ = 0, shadowProg_ = 0, uiProg_ = 0, skyProg_ = 0;
+    Vec3 camFwd_, camRight_, camUp_;
+    float tanX_ = 1, tanY_ = 1;
     unsigned worldVao_ = 0, worldVbo_ = 0, lightmapTex_ = 0;
     int worldVerts_ = 0;
     unsigned dynVao_ = 0, dynVbo_ = 0, flatVao_ = 0, flatVbo_ = 0, uiVao_ = 0, uiVbo_ = 0, shadowVao_ = 0;

@@ -507,13 +507,16 @@ void Server::handleStringCmd(int id, const std::string& s) {
             std::string mapName = what == "map" ? arg : cfg_.map;
             int mode = what == "mode" ? modeFromName(arg.c_str()) : m2.empty() ? cfg_.mode : modeFromName(m2.c_str());
             Map m;
-            bool ok = mode >= 0 && mapName.find_first_of("/\\.") == std::string::npos && m.load(mapName);
-            if (ok && !m.supportsMode(mode)) ok = false;
+            std::string why;   // say exactly what's wrong instead of a generic refusal
+            if (mode < 0) why = "unknown mode '" + (what == "mode" ? arg : m2) + "'";
+            else if (mapName.find_first_of("/\\.") != std::string::npos || !m.load(mapName)) why = "this server doesn't have the map '" + mapName + "' (it may be on an older version)";
+            else if (!m.supportsMode(mode)) why = mapName + " can't run " + modeTitle(mode);
+            bool ok = why.empty();
             if (ok && cfg_.ranked && (mode != MODE_ARENA || !arenaVariantRanked(variant) || !isRankedMap(m, variant))) {
                 GameEvent e; e.type = EV_MESSAGE; e.text = "ranked server: 1v1 on a ranked map for the ladder (vanilla / vampire / instagib), or vote ranked off"; sendEvent(id, e);
                 return;
             }
-            if (!ok) { GameEvent e; e.type = EV_MESSAGE; e.text = "can't vote for that map/mode"; sendEvent(id, e); }
+            if (!ok) { GameEvent e; e.type = EV_MESSAGE; e.text = "can't vote: " + why; sendEvent(id, e); }
             else callVote(id, VOTE_MAP, mode, mapName, variant);
         }
     } else if (cmd == "vote") {

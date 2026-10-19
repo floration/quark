@@ -2,7 +2,7 @@
 
 - Commit and push every change to the working branch automatically when it's done and tested; don't ask first.
 - Before pushing: build (`cmake --build build -j`) and run `build/quark_tests` (headless multiplayer tests must pass).
-- Client changes can be checked headless: `Xvfb :99 &` then `DISPLAY=:99 build/quark --host ffa --map arena --screenshot out.png`.
+- Client changes can be checked headless: `Xvfb :99 &` then `DISPLAY=:99 build/quark --host ffa --map bastion --screenshot out.png`.
 - Weapons and movement in `src/game/gamedefs.h` / `src/game/pmove.cpp` are placeholders until the owner specifies them.
 
 ## Priorities
@@ -16,5 +16,5 @@
 - The launcher (`src/launcher/`) installs/updates from the release's `quark-<platform>.qpak` (made by `tools/pack.py`); keep those asset names stable.
 
 ## Maps
-- One map per mode (duel=vs, crucible=duel (1v1/2v2), temple=1v1, colosseum=tourney, harbor=ffa (big), depot=bomb, sprint=race, summit=koth, railyard=payload, tug=npayload, foundry=ffa) plus arena for everything. `wallbang` brushes are dark grey and let hitscan through for half damage. The generated ones come from `tools/make_maps.py` (edit it and re-run, don't hand-edit those .qmap files). `for <mode>` in a map marks the mode it's built for; menus pick that map by default.
+- Map pool: ranked 1v1 maps temple (vanilla), furnace (vampire), gantry (instagib), anvil (all three); mode maps crucible=duel, depot=bomb, summit=koth, railyard=payload, canal=npayload, harbor=ffa; all-mode maps bastion, foundry, colosseum. No map is named after a game mode. `wallbang` brushes are dark grey and let hitscan through for half damage. The generated ones come from `tools/make_maps.py` (edit it and re-run, don't hand-edit those .qmap files). `for <mode>` in a map marks the mode it's built for; menus pick that map by default.
 - `quark_tests` checks every map: spawns not in walls, preferred mode supported, bots can navigate from every spawn to every objective.

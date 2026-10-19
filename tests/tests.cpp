@@ -68,7 +68,7 @@ static void testMovement() {
 static void testTickRateIndependence() {
     printf("movement identical at every tick rate (incl. dash, bhop, grapple)\n");
     Map m;
-    CHECK(m.load("arena"));
+    CHECK(m.load("bastion"));
     MoveState results[4];
     for (int level = 0; level < kTickRateLevels; level++) {
         int msec = 1000 / kTickRates[level];
@@ -100,7 +100,7 @@ static void testMaps() {
     printf("maps\n");
     std::string err;
     // the three all-mode maps support every mode
-    for (const char* name : {"arena", "foundry", "colosseum"}) {
+    for (const char* name : {"bastion", "foundry", "colosseum"}) {
         Map m;
         CHECK(m.load(name, &err));
         if (!err.empty()) printf("  %s\n", err.c_str());
@@ -173,7 +173,7 @@ static void testAllMaps() {
 static void testGridQueries() {
     printf("grid raycast / collision vs brute force\n");
     Map m;
-    CHECK(m.load("arena"));
+    CHECK(m.load("bastion"));
     auto brute = [&](const Vec3& o, const Vec3& d, float maxT) {
         Vec3 inv = safeInv(d);
         float best = -1;
@@ -322,7 +322,7 @@ static void testPayloadPush(uint16_t port) {
     Server s;
     ServerConfig cfg;
     cfg.autoStart = true;
-    cfg.map = "arena"; cfg.mode = MODE_PAYLOAD; cfg.port = port;
+    cfg.map = "bastion"; cfg.mode = MODE_PAYLOAD; cfg.port = port;
     s.setLog([](const std::string&) {});
     if (!s.start(cfg)) { g_fail++; return; }
     NetClient a, b;
@@ -351,7 +351,7 @@ static void testPacketLoss(uint16_t port) {
     Server s;
     ServerConfig cfg;
     cfg.autoStart = true;
-    cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
     s.setLog([](const std::string&) {});
     if (!s.start(cfg)) { g_fail++; return; }
     NetClient a, b;
@@ -419,7 +419,7 @@ static void testWeapons(uint16_t port) {
         Server s;
         ServerConfig cfg;
         cfg.autoStart = true;
-        cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port++;
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port++;
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; continue; }
         NetClient a, b;
@@ -486,7 +486,7 @@ static void testWeapons(uint16_t port) {
 static void testCartDash(uint16_t port) {
     printf("stickies ride the cart, dash tilts with pitch\n");
     {
-        MoveState m; Map map; map.load("arena");
+        MoveState m; Map map; map.load("bastion");
         m.pos = {9, 0, 6}; m.flags = MF_ONGROUND;
         UserCmd c; c.msec = 1; c.pitch = 1.0f; c.buttons = BTN_DASH;
         for (int i = 0; i < 150; i++) pmove(m, c, map);
@@ -531,7 +531,7 @@ static void testSemiAuto(uint16_t port) {
     CHECK(a1 != a2);
     Server s;
     ServerConfig cfg;
-    cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
     s.setLog([](const std::string&) {});
     if (!s.start(cfg)) { g_fail++; return; }
     NetClient a;
@@ -556,7 +556,7 @@ static void testTickRateFallback(uint16_t port) {
     Server s;
     ServerConfig cfg;
     cfg.autoStart = true;
-    cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
     s.setLog([](const std::string&) {});
     if (!s.start(cfg)) { g_fail++; return; }
     CHECK(s.tickRate() == 1000);
@@ -578,7 +578,7 @@ static void testRocketSelfDamage(uint16_t port) {
     Server s;
     ServerConfig cfg;
     cfg.autoStart = true;
-    cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
     s.setLog([](const std::string&) {});
     if (!s.start(cfg)) { g_fail++; return; }
     NetClient a;
@@ -761,7 +761,7 @@ static void testInternetList(uint16_t port) {
     printf("internet server list via %s\n", getenv("QUARK_MASTER"));
     Server s;
     ServerConfig cfg;
-    cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port; cfg.publicList = true; cfg.name = "listed";
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.publicList = true; cfg.name = "listed";
     s.setLog([](const std::string&) {});
     if (!s.start(cfg)) { g_fail++; return; }
     std::vector<NetClient*> none;
@@ -784,7 +784,7 @@ static void testBotAim(uint16_t& port) {
     for (int k = 0; k < BOT_SKILLS; k++) {
         Server s;
         ServerConfig cfg;
-        cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port++;
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port++;
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; return; }
         NetClient a;
@@ -829,7 +829,7 @@ static void testAltFires(uint16_t port) {
         Server s;
         ServerConfig cfg;
         cfg.autoStart = false; // stay in warmup: a match start would move everyone back to spawns
-        cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = (uint16_t)(port + kase);
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = (uint16_t)(port + kase);
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; continue; }
         NetClient a, b;
@@ -901,7 +901,7 @@ static void testMapVote(uint16_t port) {
     printf("vote to change map / mode\n");
     Server s;
     ServerConfig cfg;
-    cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
     s.setLog([](const std::string&) {});
     if (!s.start(cfg)) { g_fail++; return; }
     NetClient a, b;
@@ -918,6 +918,20 @@ static void testMapVote(uint16_t port) {
     a.sendCommand("vote yes");
     pump(s, cls, 1.0, idle);
     CHECK(s.config().map == "summit" && s.config().mode == MODE_KOTH);
+    // every map / mode pair the vote menu offers must be accepted
+    for (auto& name : listMaps()) {
+        Map m;
+        if (!m.load(name)) continue;
+        for (int k = 0; k < MODE_COUNT; k++) {
+            if (!m.supportsMode(k)) continue;
+            b.sendCommand(std::string("callvote map ") + name + " " + modeName(k) + (k == MODE_ARENA || k == MODE_TOURNEY ? " classic" : ""));
+            pump(s, cls, 0.2, idle);
+            if (s.vote_.kind != Server::VOTE_MAP) { printf("  FAIL vote refused: %s %s\n", name.c_str(), modeName(k)); g_fail++; }
+            a.sendCommand("vote no"); b.sendCommand("vote no");
+            pump(s, cls, 0.2, idle);
+            s.vote_.kind = Server::VOTE_NONE;
+        }
+    }
     s.stop();
 }
 
@@ -936,14 +950,14 @@ static void testMapDownload(uint16_t port) {
     }
     { // allowed modes: kept through save/load, and they limit supportsMode
         Map m;
-        CHECK(m.load("arena"));
+        CHECK(m.load("bastion"));
         CHECK(applyMapEdit(m, "m " + std::to_string((1u << MODE_FFA) | (1u << MODE_DUEL))));
         Map r;
         CHECK(r.parse(m.serialize()) && r.allowedModes == m.allowedModes);
         CHECK(r.supportsMode(MODE_FFA) && r.supportsMode(MODE_DUEL) && !r.supportsMode(MODE_KOTH) && r.canSupportMode(MODE_KOTH));
     }
     Map base;
-    CHECK(base.load("arena"));
+    CHECK(base.load("bastion"));
     std::string text = base.serialize() + "accent 0 8 0 1 9 1\n";
     char tag[16];
     snprintf(tag, sizeof tag, "%u", (unsigned)rand());
@@ -1143,7 +1157,7 @@ static void testRankedVoteAndRestart(uint16_t port) {
 static void testEditSession(uint16_t port) {
     printf("multiplayer map editing\n");
     Map base;
-    CHECK(base.load("arena"));
+    CHECK(base.load("bastion"));
     char tag[16];
     snprintf(tag, sizeof tag, "%u", (unsigned)rand());
     std::string name = std::string("zz_edtest") + tag, path = findDataPath("maps") + "/" + name + ".qmap";
@@ -1277,7 +1291,7 @@ static void testNetcode(uint16_t port) {
     printf("netcode: delta snapshots, visibility\n");
     Server s;
     ServerConfig cfg;
-    cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
     s.setLog([](const std::string&) {});
     if (!s.start(cfg)) { g_fail++; return; }
     std::vector<std::unique_ptr<NetClient>> owned;
@@ -1340,7 +1354,7 @@ static void testBots(uint16_t& port) {
         Server s;
         ServerConfig cfg;
         cfg.autoStart = true;
-        cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port++;
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port++;
         cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botSkill = BOT_EXPERT; cfg.timeLimit = 60;
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; return; }
@@ -1358,7 +1372,7 @@ static void testBots(uint16_t& port) {
     { // pregame (no bots) -> vote start -> vote balance bots -> bots join; then votes
         Server s;
         ServerConfig cfg;
-        cfg.map = "arena"; cfg.mode = MODE_VS; cfg.port = port++;
+        cfg.map = "bastion"; cfg.mode = MODE_VS; cfg.port = port++;
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; return; }
         NetClient a, b;
@@ -1402,7 +1416,7 @@ static void testBots(uint16_t& port) {
         Server s;
         ServerConfig cfg;
         cfg.autoStart = true;
-        cfg.map = "arena"; cfg.mode = MODE_NPAYLOAD; cfg.port = port++;
+        cfg.map = "bastion"; cfg.mode = MODE_NPAYLOAD; cfg.port = port++;
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; return; }
         NetClient a, b;
@@ -1435,7 +1449,7 @@ static void testBots(uint16_t& port) {
         s.stop();
     }
     // every mode with bots on both sides: no crashes, things happen
-    const char* maps[MODE_COUNT] = {"arena", "arena", "foundry", "arena", "arena", "arena", "arena", "crucible", "crucible", "crucible"};
+    const char* maps[MODE_COUNT] = {"bastion", "bastion", "foundry", "bastion", "bastion", "bastion", "bastion", "crucible", "crucible", "crucible"};
     static_assert(MODE_COUNT == 10, "add the new mode's map here");
     for (int mode = 0; mode < MODE_COUNT; mode++) {
         Server s;
@@ -1477,11 +1491,11 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = 29800; testArenaAndTourney(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = 29700; testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); return g_fail ? 1 : 0; }
-    testSession(MODE_VS, "arena", port++);
-    testSession(MODE_BOMB, "arena", port++);
-    testSession(MODE_KOTH, "arena", port++);
-    testSession(MODE_PAYLOAD, "arena", port++);
-    testSession(MODE_FFA, "arena", port++);
+    testSession(MODE_VS, "bastion", port++);
+    testSession(MODE_BOMB, "bastion", port++);
+    testSession(MODE_KOTH, "bastion", port++);
+    testSession(MODE_PAYLOAD, "bastion", port++);
+    testSession(MODE_FFA, "bastion", port++);
     testSession(MODE_RACE, "foundry", port++);
     testPayloadPush(port++);
     testPacketLoss(port++);
