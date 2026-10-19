@@ -2,6 +2,7 @@
 #include "../common/profile.h"
 #include <array>
 #include "game.h"
+#include "openurl.h"
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <cstdio>
@@ -231,6 +232,8 @@ void Game::captureMouse(bool on) {
     if (glfwRawMouseMotionSupported()) glfwSetInputMode(win_, GLFW_RAW_MOUSE_MOTION, on ? GLFW_TRUE : GLFW_FALSE);
     firstMouse_ = true;
 }
+
+static const char* kDiscordUrl = "https://discord.gg/RERYWNWSXg";
 
 static std::string upper(std::string t) {
     for (auto& c : t) c = (char)toupper((unsigned char)c);
@@ -1675,7 +1678,8 @@ void Game::drawMenu() {
             y += bh + gap;
             if (ui_.button(x, y, bw, bh, "SETTINGS")) setScreen(Screen::Settings);
             y += bh + gap;
-            if (ui_.button(x, y, bw, bh, "QUIT")) quit_ = true;
+            if (ui_.button(x, y, bw * 0.5f - gap * 0.5f, bh, "DISCORD")) openUrl(kDiscordUrl);
+            if (ui_.button(x + bw * 0.5f + gap * 0.5f, y, bw * 0.5f - gap * 0.5f, bh, "QUIT")) quit_ = true;
             y += bh + gap * 2;
             if (!error_.empty()) ui_.labelCentered(cx, y, error_, kRed);
             break;

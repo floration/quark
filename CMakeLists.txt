@@ -106,6 +106,7 @@ if(QUARK_BUILD_CLIENT)
     src/client/main.cpp
     src/client/game.cpp
     src/client/editor.cpp
+    src/client/openurl.cpp
     src/client/gl.cpp
     src/client/renderer.cpp
     src/client/lightmap.cpp
@@ -116,6 +117,9 @@ if(QUARK_BUILD_CLIENT)
     ${QUARK_ICON_RC}
   )
   target_link_libraries(quark quark_core glfw ${CMAKE_DL_LIBS})
+  if(WIN32)
+    target_link_libraries(quark shell32)
+  endif()
   add_executable(quark_launcher WIN32
     src/launcher/main.cpp
     src/launcher/install.cpp
