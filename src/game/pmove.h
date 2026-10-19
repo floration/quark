@@ -19,6 +19,10 @@ struct MoveState {
     Vec3 vel;
     uint8_t flags = 0; // MF_*
     float dashCooldown = 0;
+    float dashTimer = 0;     // > 0 while the dash burst is active
+    float dashDirX = 0, dashDirZ = 0;
+    float dashExitSpeed = 0; // horizontal speed to settle to when the burst ends
+    float hookCooldown = 0;
     Vec3 hookPoint;    // grapple anchor while MF_HOOKED
 };
 enum : uint8_t {
@@ -27,6 +31,7 @@ enum : uint8_t {
 };
 constexpr float kGrappleRange = 45.0f;
 constexpr float kDashCooldown = 1.2f;
+constexpr float kHookCooldown = 1.0f;   // after the hook is released
 
 AABB playerBox(const Vec3& feet, bool crouched);
 // Advances movement by cmd.msec milliseconds, in fixed 1 ms steps (tick-rate independent).

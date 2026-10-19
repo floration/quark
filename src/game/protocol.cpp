@@ -17,6 +17,7 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
     w.u16(s.ackStringCmd);
     w.u8(s.clientId);
     w.vec(s.self.pos); w.vec(s.self.vel); w.u8(s.self.flags); w.f32(s.self.dashCooldown); w.vec(s.self.hookPoint);
+    w.f32(s.self.dashTimer); w.f32(s.self.dashDirX); w.f32(s.self.dashDirZ); w.f32(s.self.dashExitSpeed); w.f32(s.self.hookCooldown);
     w.u8(s.selfHealth); w.u8(s.selfWeapon);
 }
 
@@ -57,6 +58,7 @@ bool readSnapshot(Reader& r, Snapshot& s) {
     s.ackStringCmd = r.u16();
     s.clientId = r.u8();
     s.self.pos = r.vec(); s.self.vel = r.vec(); s.self.flags = r.u8(); s.self.dashCooldown = r.f32(); s.self.hookPoint = r.vec();
+    s.self.dashTimer = r.f32(); s.self.dashDirX = r.f32(); s.self.dashDirZ = r.f32(); s.self.dashExitSpeed = r.f32(); s.self.hookCooldown = r.f32();
     s.selfHealth = r.u8(); s.selfWeapon = r.u8();
 
     ModeState& m = s.ms;

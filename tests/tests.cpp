@@ -411,6 +411,34 @@ static void testTickRateFallback(uint16_t port) {
     s.stop();
 }
 
+static void testRocketSelfDamage(uint16_t port) {
+    printf("rocket self damage: 10%% below you, full when level or above\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    NetClient a;
+    a.connect("127.0.0.1:" + std::to_string(port), "jumper");
+    std::vector<NetClient*> cls = {&a};
+    pump(s, cls, 2.5, idle);
+    auto& p = s.players_[a.clientId()];
+    auto shoot = [&](float pitch, Vec3 at, float yaw = 0) {
+        p.health = 100; p.move.pos = at; p.move.vel = {};
+        pump(s, cls, 1.0, [&](int) { UserCmd c; c.yaw = yaw; c.pitch = pitch; c.buttons = BTN_WEAPON2; return c; });
+        p.health = 100; p.move.pos = at; p.move.vel = {};
+        pump(s, cls, 0.12, [&](int) { UserCmd c; c.yaw = yaw; c.pitch = pitch; c.buttons = BTN_WEAPON2 | BTN_FIRE; return c; });
+        pump(s, cls, 0.5, [&](int) { UserCmd c; c.yaw = yaw; c.pitch = pitch; return c; });
+        return 100 - p.health;
+    };
+    float down = shoot(-1.5f, {9, 0, 0});              // straight at the floor
+    float level = shoot(0.0f, {0, 0, 30.5f}, PI);      // into the wall in front (+z), at eye height
+    printf("  floor blast %.1f damage, eye-level blast %.1f damage\n", down, level);
+    CHECK(down > 0 && down <= 10);
+    CHECK(level > 20);
+    s.stop();
+}
+
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
     netInit();
@@ -431,6 +459,7 @@ int main(int argc, char** argv) {
     testPacketLoss(port++);
     testWeapons(port); port += 3;
     testTickRateFallback(port++);
+    testRocketSelfDamage(port++);
     netShutdown();
     printf(g_fail ? "%d FAILURE(S)\n" : "all tests passed\n", g_fail);
     return g_fail ? 1 : 0;

@@ -690,7 +690,9 @@ void Server::explode(const Vec3& at, int owner, int weapon) {
         float frac = 1.0f - d / wd.splashRadius;
         Vec3 push = dist > 0.01f ? to / dist : Vec3(0, 1, 0);
         bool self = i == owner;
-        float dmg = wd.damage * frac * (self ? 0.5f : 1.0f);
+        // Self damage: 10% when the blast is at or below your feet (rocket jumps), full otherwise.
+        float selfScale = at.y <= p.move.pos.y + 0.3f ? 0.1f : 1.0f;
+        float dmg = wd.damage * frac * (self ? selfScale : 1.0f);
         Vec3 knock = push * (11.0f * frac * (self ? 1.3f : 1.0f));
         damagePlayer(i, owner, dmg, weapon, knock);
     }

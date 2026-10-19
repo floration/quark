@@ -784,6 +784,18 @@ void Game::drawHud() {
         r_.rect(24 * s, H - 28 * s, 200 * s * clampf(hp / 100.0f, 0, 1), 8 * s, hp > 30 ? fc : kRed);
         std::string wn = weaponDef(net_.selfWeapon()).name;
         r_.text(W - 24 * s - r_.textWidth(wn, ts * 1.5f), H - 50 * s, ts * 1.5f, wn, kWhite);
+        // dash + grapple cooldown bars under the crosshair (full = ready)
+        const MoveState& mv = net_.predicted();
+        auto bar = [&](float y, const char* label, float remaining, float total) {
+            float bw = 90 * s, bh = 5 * s, bx = cx - bw * 0.5f;
+            float f = clampf(1.0f - remaining / total, 0, 1);
+            r_.rect(bx - 1, y - 1, bw + 2, bh + 2, {0, 0, 0, 0.8f});
+            r_.rect(bx, y, bw * f, bh, f >= 1 ? fc : Color{0.6f, 0.62f, 0.66f, 0.9f});
+            float lts = std::max(1.0f, std::round(ts * 0.5f));
+            r_.text(bx - r_.textWidth(label, lts) - 6 * s, y - 2 * s, lts, label, f >= 1 ? kWhite : kGrey);
+        };
+        bar(cy + 40 * s, "DASH", mv.dashCooldown, kDashCooldown);
+        bar(cy + 52 * s, "HOOK", mv.hookCooldown, kHookCooldown);
         // weapon slots: 1 rifle, 2 rocket, 3 knife, 4 sniper, 5 laser
         float bx = W - 24 * s;
         for (int wi = WPN_COUNT - 1; wi >= 0; wi--) {

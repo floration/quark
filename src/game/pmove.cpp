@@ -8,13 +8,15 @@ constexpr float kJumpSpeed = 7.0f;
 constexpr float kGroundSpeed = 8.0f;
 constexpr float kCrouchSpeed = 4.0f;
 constexpr float kGroundAccel = 12.0f;
-constexpr float kAirAccel = 1.2f;
-constexpr float kAirSpeedCap = 1.0f; // quake-style air strafe cap
+constexpr float kAirAccel = 2.2f;
+constexpr float kAirSpeedCap = 2.0f; // quake-style air strafe cap (higher = more air control)
+constexpr float kAirControl = 4.0f;  // how fast held direction bends momentum in the air (rad/s-ish), speed kept
 constexpr float kFriction = 7.0f;
 constexpr float kStopSpeed = 2.0f;
 constexpr float kStepHeight = 0.55f;
-constexpr float kDashSpeed = 15.0f;     // horizontal speed right after a dash
-constexpr float kDashHop = 2.0f;
+constexpr float kDashSpeed = 24.0f;     // burst speed
+constexpr float kDashTime = 0.12f;      // burst length; then speed settles back
+constexpr float kDashExitMin = 11.0f;   // speed you keep after the burst (or your old speed if faster)
 constexpr float kHookAccel = 38.0f;     // pull acceleration toward the anchor (adds to momentum)
 constexpr float kHookMaxSpeed = 24.0f;
 constexpr float kHookGravityScale = 0.5f;
@@ -79,21 +81,34 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
 
     // Dash: one burst in the movement direction (or forward), on a cooldown.
     s.dashCooldown = std::max(0.0f, s.dashCooldown - dt);
+    s.hookCooldown = std::max(0.0f, s.hookCooldown - dt);
     bool dashHeld = (cmd.buttons & BTN_DASH) != 0;
     if (dashHeld && !(s.flags & MF_DASHHELD) && s.dashCooldown <= 0 && !frozen) {
         Vec3 d = wishLen > 0 ? wishDir : fwd;
         float h = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
-        float sp = std::max(kDashSpeed, h);
-        s.vel.x = d.x * sp;
-        s.vel.z = d.z * sp;
-        s.vel.y = std::max(s.vel.y, kDashHop);
-        onGround = false;
+        s.dashDirX = d.x;
+        s.dashDirZ = d.z;
+        s.dashExitSpeed = std::max(kDashExitMin, std::min(h, kDashSpeed));
+        s.dashTimer = kDashTime;
         s.dashCooldown = kDashCooldown;
+    }
+    bool dashing = s.dashTimer > 0;
+    if (dashing) {
+        // Short, strong, flat burst: no gravity, no steering.
+        s.vel = {s.dashDirX * kDashSpeed, 0, s.dashDirZ * kDashSpeed};
+        onGround = false;
+        s.dashTimer -= dt;
+        if (s.dashTimer <= 0) {
+            s.dashTimer = 0;
+            s.vel.x = s.dashDirX * s.dashExitSpeed;
+            s.vel.z = s.dashDirZ * s.dashExitSpeed;
+        }
     }
 
     // Grapple: press to fire at what you're aiming at, hold to be pulled; momentum is kept.
     bool hookHeld = (cmd.buttons & BTN_GRAPPLE) != 0;
-    if (hookHeld && !(s.flags & MF_HOOKHELD) && !frozen) {
+    bool wasHooked = (s.flags & MF_HOOKED) != 0;
+    if (hookHeld && !(s.flags & MF_HOOKHELD) && !frozen && s.hookCooldown <= 0) {
         float eyeH = crouched ? kCrouchEyeHeight : kEyeHeight;
         Vec3 eye = s.pos + Vec3(0, eyeH, 0);
         float t = map.raycast(eye, angleForward(cmd.yaw, cmd.pitch), kGrappleRange);
@@ -110,13 +125,14 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         if (dist < kHookRelease) {
             s.flags &= ~MF_HOOKED;
             hooked = false;
-        } else {
+        } else if (!dashing) {
             s.vel += to / dist * (kHookAccel * dt);
             float sp = length(s.vel);
             if (sp > kHookMaxSpeed) s.vel *= kHookMaxSpeed / sp;
             onGround = false;
         }
     }
+    if (wasHooked && !(s.flags & MF_HOOKED)) s.hookCooldown = kHookCooldown;
 
     if (onGround) {
         float sp = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
@@ -129,8 +145,18 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         accelerate(s.vel, wishDir, wishSpeed, kGroundAccel, dt);
         s.vel.y = 0;
     } else {
-        accelerate(s.vel, wishDir, std::min(wishSpeed, kAirSpeedCap), kAirAccel * 10.0f, dt);
-        s.vel.y -= kGravity * dt * (hooked ? kHookGravityScale : 1.0f);
+        if (!dashing) {
+            accelerate(s.vel, wishDir, std::min(wishSpeed, kAirSpeedCap), kAirAccel * 10.0f, dt);
+            // Air control: bend horizontal momentum toward the held direction without changing speed.
+            float h = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
+            if (wishLen > 0 && h > 0.5f) {
+                float k = std::min(1.0f, kAirControl * dt);
+                float nx = s.vel.x / h + (wishDir.x - s.vel.x / h) * k, nz = s.vel.z / h + (wishDir.z - s.vel.z / h) * k;
+                float nl = std::sqrt(nx * nx + nz * nz);
+                if (nl > 1e-4f) { s.vel.x = nx / nl * h; s.vel.z = nz / nl * h; }
+            }
+            s.vel.y -= kGravity * dt * (hooked ? kHookGravityScale : 1.0f);
+        }
     }
 
     Vec3 delta = s.vel * dt;

@@ -12,7 +12,7 @@ constexpr int kMaxPlayers = 8;
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 3;
+constexpr uint16_t kProtocolVersion = 4;
 
 // Player hull
 constexpr float kPlayerHalfWidth = 0.4f;
