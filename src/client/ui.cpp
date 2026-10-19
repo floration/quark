@@ -71,7 +71,8 @@ bool Ui::cycle(float x, float y, float w, float h, const std::string& label, int
     if (button(x, y, bw, h, "<")) { index = (index + count - 1) % count; changed = true; }
     if (button(x + w - bw, y, bw, h, ">")) { index = (index + 1) % count; changed = true; }
     r_->rect(x + bw, y, w - 2 * bw, h, {0.08f, 0.09f, 0.11f, 0.95f});
-    std::string t = label + ": " + (index >= 0 && index < (int)names.size() ? names[index] : "?");
+    (void)label; // the value names say what they are (no "LABEL: " prefix, it overflowed)
+    std::string t = index >= 0 && index < (int)names.size() ? names[index] : "?";
     r_->text(x + (w - r_->textWidth(t, textScale_)) * 0.5f, y + (h - r_->textHeight(textScale_)) * 0.5f, textScale_, t, {1, 1, 1, 1});
     return changed;
 }

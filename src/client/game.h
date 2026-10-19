@@ -29,7 +29,8 @@ struct LaunchOptions {
     bool debugScope = false, debugFire = false; // --scope, --fire
     bool debugPerf = false;     // --perf: F3 overlay on, with a synthetic input event every frame
     bool debugCrosshair = false;
-    bool debugPicker = false;   // --picker: open the host menu's map list
+    bool debugPicker = false;
+    bool debugPause = false, debugVote = false; // --pause / --votemenu   // --picker: open the host menu's map list
     bool debugSettings = false; // --settings: open the settings screen in game
     bool debugControls = false; // --controls
 };
@@ -100,7 +101,10 @@ private:
     std::vector<std::string> maps_;
     struct MapInfo { std::string title; int preferredMode = -1; uint32_t modes = 0; }; // modes: bit per supported mode
     std::vector<MapInfo> mapInfo_;
-    enum { PICK_NONE = 0, PICK_HOST_MAP, PICK_HOST_MODE, PICK_BOT_MAP, PICK_BOT_MODE };
+    enum { PICK_NONE = 0, PICK_HOST_MAP, PICK_HOST_MODE, PICK_BOT_MAP, PICK_BOT_MODE, PICK_LIVE_MAP, PICK_LIVE_MODE };
+    int liveMode_ = 0, liveMap_ = 0;  // host's in-game map/mode change
+    bool voteMenu_ = false;
+    void drawVoteMenu(float cx, float y);
     int picker_ = PICK_NONE;    // full list of maps / modes open over the host or vs-bots menu
     void drawPicker(float cx, float y);
 
@@ -174,6 +178,5 @@ private:
     std::string voteText_;
     struct DmgNum { int victim; float amount; double start; Vec3 pos; };
     std::vector<DmgNum> dmgNums_;
-    int voteSkillPick_ = 1;
     int botMapIdx_ = 0;
 };

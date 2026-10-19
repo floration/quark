@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 project(quark CXX C)
 if(WIN32)
   enable_language(RC)
-  file(WRITE ${CMAKE_BINARY_DIR}/quark_icon.rc "IDI_ICON1 ICON \"${CMAKE_SOURCE_DIR}/assets/quark.ico\"\n")
+  file(WRITE ${CMAKE_BINARY_DIR}/quark_icon.rc "GLFW_ICON ICON \"${CMAKE_SOURCE_DIR}/assets/quark.ico\"\n")
   set(QUARK_ICON_RC ${CMAKE_BINARY_DIR}/quark_icon.rc)
 endif()
 

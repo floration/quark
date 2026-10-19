@@ -334,6 +334,7 @@ void Game::onKey(int key, int action, int mods) {
         if (key == GLFW_KEY_ESCAPE) {
             if (controlsOpen_ || crosshairOpen_) { controlsOpen_ = crosshairOpen_ = false; cfg_.save(); return; }
             if (settingsInGame_) { settingsInGame_ = false; cfg_.save(); return; }
+            if (voteMenu_ || picker_ != PICK_NONE) { voteMenu_ = false; picker_ = PICK_NONE; return; }
             paused_ = !paused_;
             captureMouse(!paused_);
             return;
@@ -341,6 +342,7 @@ void Game::onKey(int key, int action, int mods) {
     } else if (key == GLFW_KEY_ESCAPE) {
         uiIn_.escape = true;
         if (controlsOpen_ || crosshairOpen_) { controlsOpen_ = crosshairOpen_ = false; cfg_.save(); return; }
+        if (picker_ != PICK_NONE) { picker_ = PICK_NONE; return; }
         if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::Settings || screen_ == Screen::VsBots) {
             cfg_.save();
             setScreen(Screen::Main);
@@ -509,6 +511,7 @@ void Game::handleEvents() {
 void Game::frame(double dt) {
     time_ += dt;
     if (opts_.debugPerf) { showPerf_ = true; if (pendingInput_ < 0) pendingInput_ = timeNow(); }
+    if (opts_.debugPause && screen_ == Screen::InGame && !paused_) { paused_ = true; voteMenu_ = opts_.debugVote; opts_.debugPause = false; }
     if (opts_.debugSettings && screen_ == Screen::InGame && !settingsInGame_) { paused_ = true; settingsInGame_ = true; controlsOpen_ = opts_.debugControls; crosshairOpen_ = opts_.debugCrosshair; opts_.debugSettings = false; }
     frameInput_ = pendingInput_; // the oldest input this frame will show
     pendingInput_ = -1;
@@ -1106,6 +1109,28 @@ void Game::drawScoreboard() {
     }
 }
 
+// Everything players can call a vote on (majority of human players decides).
+void Game::drawVoteMenu(float cx, float y) {
+    float s = ui_.s();
+    float w = 300 * s, h = 36 * s, gap = 8 * s, x = cx - w * 0.5f;
+    bool warmup = net_.mode().phase == PHASE_WARMUP;
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, (warmup ? 9 : 8) * (h + gap) + 40 * s);
+    ui_.labelCentered(cx, y, "CALL A VOTE");
+    y += 30 * s;
+    auto vote = [&](const std::string& label, const std::string& cmd) {
+        if (ui_.button(x, y, w, h, label)) { net_.sendCommand("callvote " + cmd); voteMenu_ = false; paused_ = false; }
+        y += h + gap;
+    };
+    if (warmup) vote("START THE MATCH", "start");
+    vote("BALANCE BOTS ON", "bots on");
+    vote("BALANCE BOTS OFF", "bots off");
+    vote("BOTS: BEGINNER", "botskill BEGINNER");
+    vote("BOTS: INTERMEDIATE", "botskill INTERMEDIATE");
+    vote("BOTS: ADVANCED", "botskill ADVANCED");
+    vote("BOTS: EXPERT", "botskill EXPERT");
+    if (ui_.button(x, y, w, h, "BACK")) voteMenu_ = false;
+}
+
 void Game::drawPauseMenu(float cx, float y) {
     float s = ui_.s();
     float w = 300 * s, h = 36 * s, gap = 8 * s, x = cx - w * 0.5f;
@@ -1113,8 +1138,10 @@ void Game::drawPauseMenu(float cx, float y) {
         drawSettings(x - 60 * s, y, w + 120 * s);
         return;
     }
+    if (picker_ == PICK_LIVE_MAP || picker_ == PICK_LIVE_MODE) { drawPicker(cx, y); return; }
+    if (voteMenu_) { drawVoteMenu(cx, y); return; }
     bool teamMode = modeIsTeamBased(net_.mode().mode);
-    int rows = 8 + (teamMode ? 1 : 0) + (host_ ? 2 : 0) + (net_.mode().phase == PHASE_WARMUP ? 1 : 0);
+    int rows = 7 + (host_ ? 2 : 0);
     ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, rows * (h + gap) + 24 * s);
     if (ui_.button(x, y, w, h, "RESUME")) { paused_ = false; }
     y += h + gap;
@@ -1129,45 +1156,23 @@ void Game::drawPauseMenu(float cx, float y) {
     }
     if (ui_.button(x, y, w, h, "SPECTATE")) { net_.sendCommand("team spec"); paused_ = false; }
     y += h + gap;
-    if (net_.mode().phase == PHASE_WARMUP) {
-        if (ui_.button(x, y, w, h, "VOTE START MATCH")) { net_.sendCommand("callvote start"); paused_ = false; }
-        y += h + gap;
-    }
+    if (ui_.button(x, y, w, h, "VOTE...")) voteMenu_ = true;
+    y += h + gap;
     if (host_) {
         // Host controls: change mode/map live.
         const Map& map = net_.map();
         int cur = net_.mode().mode;
-        if (ui_.button(x, y, w, h, "NEXT MODE")) {
-            for (int k = 1; k <= MODE_COUNT; k++) {
-                int m = (cur + k) % MODE_COUNT;
-                if (map.supportsMode(m)) { net_.sendCommand(std::string("mode ") + modeName(m)); break; }
-            }
-        }
-        y += h + gap;
-        if (ui_.button(x, y, w, h, "NEXT MAP") && !maps_.empty()) {
-            int idx = 0;
-            for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == map.name) idx = (int)i;
-            for (size_t k = 1; k <= maps_.size(); k++) {
-                Map m;
-                const std::string& name = maps_[(idx + k) % maps_.size()];
-                if (!m.load(name)) continue;
-                int mode = m.supportsMode(cur) ? cur : -1;
-                for (int mm = 0; mm < MODE_COUNT && mode < 0; mm++) if (m.supportsMode(mm)) mode = mm;
-                if (mode >= 0) { net_.sendCommand("map " + name + " " + modeName(mode)); break; }
-            }
-        }
+        float hw = (w - gap) * 0.5f;
+        auto openLive = [&](int kind) {
+            liveMode_ = cur;
+            liveMap_ = 0;
+            for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == map.name) liveMap_ = (int)i;
+            picker_ = kind;
+        };
+        if (ui_.button(x, y, hw, h, "CHANGE MODE")) openLive(PICK_LIVE_MODE);
+        if (ui_.button(x + hw + gap, y, hw, h, "CHANGE MAP") && !maps_.empty()) openLive(PICK_LIVE_MAP);
         y += h + gap;
         if (ui_.button(x, y, w, h, "FORCE START")) { net_.sendCommand("forcestart"); paused_ = false; }
-        y += h + gap;
-    }
-    {   // votes: bots on/off, bot difficulty (majority of human players decides)
-        float hw = (w - gap) * 0.5f;
-        if (ui_.button(x, y, hw, h, "VOTE BOTS ON")) { net_.sendCommand("callvote bots on"); paused_ = false; }
-        if (ui_.button(x + hw + gap, y, hw, h, "VOTE BOTS OFF")) { net_.sendCommand("callvote bots off"); paused_ = false; }
-        y += h + gap;
-        static const std::vector<std::string> skills = {"BEGINNER", "INTERMEDIATE", "ADVANCED", "EXPERT"};
-        ui_.cycle(x, y, w - 90 * s, h, "BOTS", voteSkillPick_, 4, skills);
-        if (ui_.button(x + w - 84 * s, y, 84 * s, h, "VOTE")) { net_.sendCommand("callvote botskill " + skills[voteSkillPick_]); paused_ = false; }
         y += h + gap;
     }
     if (ui_.button(x, y, w, h, "SETTINGS")) settingsInGame_ = true;
@@ -1235,14 +1240,15 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     static const std::vector<std::string> dispNames = {"WINDOWED", "BORDERLESS FULLSCREEN", "EXCLUSIVE FULLSCREEN"};
     if (ui_.cycle(xr, y, w, h, "DISPLAY", cfg_.displayMode, 3, dispNames)) applyDisplayMode();
     y += h + gap;
-    static const std::vector<std::string> presNames = {"NO VSYNC", "VSYNC", "ADAPTIVE"};
+    static const std::vector<std::string> presNames = {"NO VSYNC", "VSYNC", "ADAPTIVE VSYNC"};
     if (ui_.cycle(xr, y, w, h, "PRESENT", cfg_.presentMode, 3, presNames)) applyPresentMode();
     y += h + gap;
-    static const std::vector<std::string> llNames = {"OFF", "ON", "ULTRA"};
+    static const std::vector<std::string> llNames = {"LOW LATENCY OFF", "LOW LATENCY ON", "LOW LATENCY ULTRA"};
     ui_.cycle(xr, y, w, h, "LOW LATENCY", cfg_.lowLatency, 3, llNames);
     y += h + gap;
     static const int caps[] = {0, 60, 120, 144, 165, 240, 360, 500, 1000};
-    static const std::vector<std::string> capNames = {"UNLIMITED", "60", "120", "144", "165", "240", "360", "500", "1000"};
+    static const std::vector<std::string> capNames = {"UNLIMITED FPS", "60 FPS MAX", "120 FPS MAX", "144 FPS MAX", "165 FPS MAX",
+                                                      "240 FPS MAX", "360 FPS MAX", "500 FPS MAX", "1000 FPS MAX"};
     int ci = 0;
     for (int i = 0; i < 9; i++) if (caps[i] == cfg_.maxFps) ci = i;
     if (ui_.cycle(xr, y, w, h, "MAX FPS", ci, 9, capNames)) cfg_.maxFps = caps[ci];
@@ -1365,7 +1371,7 @@ void Game::drawMenu() {
             ui_.toggle(lx, y, lw * 0.5f - 4 * s, bh, "BOT BALANCE", cfg_.hostBalanceBots);
             ui_.toggle(lx + lw * 0.5f + 4 * s, y, lw * 0.5f - 4 * s, bh, "LIST ON INTERNET", cfg_.hostPublic);
             y += bh + gap;
-            ui_.cycle(lx, y, lw, bh, "SERVER LOG", cfg_.hostLog, 4, {"OFF", "SIMPLE", "VERBOSE (125 HZ)", "EXTREME (EVERY TICK)"});
+            ui_.cycle(lx, y, lw, bh, "SERVER LOG", cfg_.hostLog, 4, {"SERVER LOG OFF", "SIMPLE LOG", "VERBOSE LOG (125 HZ)", "EXTREME LOG (EVERY TICK)"});
             y += bh + gap;
             ui_.label(lx, y, "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, 0.5f);
             y += 14 * s;
@@ -1395,7 +1401,7 @@ void Game::drawMenu() {
                 if (ui_.button(lx, y, lw, bh, "MAP: " + upper(maps_[botMapIdx_ % maps_.size()]) + "  (CLICK TO CHOOSE)")) picker_ = PICK_BOT_MAP;
                 y += bh + gap;
             }
-            static const std::vector<std::string> skills = {"BEGINNER", "INTERMEDIATE", "ADVANCED", "EXPERT"};
+            static const std::vector<std::string> skills = {"BEGINNER BOTS", "INTERMEDIATE BOTS", "ADVANCED BOTS", "EXPERT BOTS"};
             ui_.cycle(lx, y, lw, bh, "DIFFICULTY", cfg_.botSkill, 4, skills);
             y += bh + gap;
             bool teams = modeIsTeamBased(cfg_.botMode);
@@ -1611,10 +1617,11 @@ void Game::drawControls(float x0, float y0, float wTotal) {
 // each map says which mode it was built for.
 void Game::drawPicker(float cx, float y) {
     float s = ui_.s(), bh = 40 * s, gap = 8 * s;
-    bool modes = picker_ == PICK_HOST_MODE || picker_ == PICK_BOT_MODE;
+    bool modes = picker_ == PICK_HOST_MODE || picker_ == PICK_BOT_MODE || picker_ == PICK_LIVE_MODE;
     bool host = picker_ == PICK_HOST_MAP || picker_ == PICK_HOST_MODE;
-    int& mode = host ? hostModeIdx_ : cfg_.botMode;
-    int& mapIdx = host ? hostMapIdx_ : botMapIdx_;
+    bool live = picker_ == PICK_LIVE_MAP || picker_ == PICK_LIVE_MODE; // in game: changes the running server
+    int& mode = live ? liveMode_ : host ? hostModeIdx_ : cfg_.botMode;
+    int& mapIdx = live ? liveMap_ : host ? hostMapIdx_ : botMapIdx_;
     int n = modes ? MODE_COUNT : (int)maps_.size();
     int cols = 3;
     float bw = 250 * s, w = cols * bw + (cols - 1) * gap;
@@ -1640,10 +1647,15 @@ void Game::drawPicker(float cx, float y) {
         }
         if (cur) r_.rect(bx - 2 * s, by - 2 * s, bw + 4 * s, bh + 4 * s, ui_.accent);
         if (ui_.button(bx, by, bw, bh, label, ok)) {
-            if (modes) { mode = i; mapIdx = bestMapFor(i); }
-            else mapIdx = i;
+            if (modes) {
+                mode = i;
+                if (!live || !((mapInfo_[mapIdx].modes >> i) & 1)) mapIdx = bestMapFor(i); // live: keep the map if it can
+            } else mapIdx = i;
             picker_ = PICK_NONE;
-            cfg_.save();
+            if (live) {
+                net_.sendCommand("map " + maps_[mapIdx] + " " + modeName(mode));
+                paused_ = false;
+            } else cfg_.save();
         }
         ui_.label(bx + 2 * s, by + bh + 3 * s, sub, ok ? Color{0.7f, 0.72f, 0.75f, 1} : Color{0.5f, 0.3f, 0.3f, 1}, 0.5f);
     }

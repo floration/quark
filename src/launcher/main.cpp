@@ -375,6 +375,9 @@ int main(int argc, char** argv) {
     Ui ui;
     UiInput in;
     static UiInput* g_in = &in;
+    static double g_scroll = 0; // wheel steps since the last frame (version list)
+    glfwSetScrollCallback(win, [](GLFWwindow*, double, double dy) { g_scroll += dy; });
+    float listScroll = 0;       // version list offset in rows
     glfwSetMouseButtonCallback(win, [](GLFWwindow*, int b, int a, int) {
         if (b == GLFW_MOUSE_BUTTON_LEFT) { g_in->down = a == GLFW_PRESS; if (a == GLFW_PRESS) g_in->pressed = true; }
     });
@@ -396,12 +399,13 @@ int main(int argc, char** argv) {
         r.rect(0, 0, (float)fw, (float)fh, {0.04f, 0.045f, 0.06f, 1});
         ui.label(24 * s, 20 * s, "QUARK", ui.accent, 2.5f);
         std::string status, latest, log, installed;
-        std::vector<std::string> versionNames;
+        std::vector<std::string> versionNames, versions;
         Release sel;
         {
             std::lock_guard<std::mutex> l(st.mu);
             status = st.status;
             installed = st.installed;
+            for (size_t i = 0; i < st.releases.size(); i++) versions.push_back(st.releases[i].version);
             for (size_t i = 0; i < st.releases.size(); i++)
                 versionNames.push_back(i == 0 ? "LATEST (" + st.releases[0].version + ")" : st.releases[i].version);
             if (!st.releases.empty()) {
@@ -416,15 +420,54 @@ int main(int argc, char** argv) {
             r.rect(24 * s, 92 * s, (fw - 48 * s), 6 * s, {0.15f, 0.15f, 0.2f, 1});
             r.rect(24 * s, 92 * s, (fw - 48 * s) * p, 6 * s, ui.accent);
         }
+        // version list (right): scroll with the wheel; LATEST follows updates, older ones stay pinned
+        float listW = 190 * s, listX = fw - 24 * s - listW, listY = 110 * s, listH = 222 * s, rowH = 24 * s;
+        ui.panel(listX, listY, listW, listH, 0.6f);
+        ui.label(listX + 10 * s, listY + 8 * s, "VERSIONS", ui.accent);
+        {
+            float top = listY + 30 * s, viewH = listH - 36 * s;
+            int n = (int)versionNames.size();
+            float maxScroll = std::max(0.0f, n - viewH / rowH);
+            bool over = in.mx >= listX && in.mx < listX + listW && in.my >= listY && in.my < listY + listH;
+            if (over) listScroll -= (float)g_scroll * 2;
+            listScroll = clampf(listScroll, 0, maxScroll);
+            int first = (int)listScroll;
+            for (int i = first; i < n; i++) {
+                float ry = top + (i - listScroll) * rowH;
+                if (ry + rowH > top + viewH + 0.5f) break;
+                if (ry < top - 0.5f) continue;
+                bool cur = i == st.selected;
+                if (cur) r.rect(listX + 4 * s, ry, listW - 16 * s, rowH - 2 * s, {ui.accent.r * 0.35f, ui.accent.g * 0.35f, ui.accent.b * 0.35f, 1});
+                bool hov = in.mx >= listX + 4 * s && in.mx < listX + listW - 12 * s && in.my >= ry && in.my < ry + rowH - 2 * s;
+                if (hov && !cur) r.rect(listX + 4 * s, ry, listW - 16 * s, rowH - 2 * s, {0.16f, 0.18f, 0.22f, 1});
+                std::string label = versionNames[i];
+                const std::string& ver = versions[i];
+                if (!installed.empty() && ver == installed) label += "  *";
+                ui.label(listX + 10 * s, ry + 4 * s, label, cur ? Color{1, 1, 1, 1} : Color{0.8f, 0.82f, 0.85f, 1}, 0.85f);
+                if (hov && in.pressed) {
+                    std::lock_guard<std::mutex> l(st.mu);
+                    st.selected = i;
+                    st.pinLatest = i == 0;
+                    std::ofstream(launcherCfg()) << "pin=" << (i == 0 ? std::string("latest") : versions[i]) << "\n";
+                }
+            }
+            if (maxScroll > 0) { // scrollbar
+                float barH = viewH * (viewH / rowH) / n;
+                float barY = top + (viewH - barH) * (listScroll / maxScroll);
+                r.rect(listX + listW - 8 * s, top, 4 * s, viewH, {0.15f, 0.16f, 0.2f, 1});
+                r.rect(listX + listW - 8 * s, barY, 4 * s, barH, ui.accent);
+            }
+            g_scroll = 0;
+        }
         // changelog
-        ui.panel(24 * s, 110 * s, fw - 48 * s, 222 * s, 0.6f);
+        ui.panel(24 * s, 110 * s, fw - 48 * s - listW - 8 * s, 222 * s, 0.6f);
         float y = 120 * s;
         ui.label(36 * s, y, latest.empty() ? "CHANGELOG" : "VERSION " + latest + (latest == installed ? " (INSTALLED)" : ""), ui.accent);
         y += 22 * s;
         std::istringstream ls(log);
         std::string line;
         float ts = std::max(1.0f, std::round(ui.textScale() * 0.75f));
-        size_t maxChars = (size_t)((fw - 80 * s) / (6 * ts));
+        size_t maxChars = (size_t)((fw - 80 * s - listW - 8 * s) / (6 * ts));
         while (std::getline(ls, line) && y < 322 * s) {
             while (!line.empty() && (line[0] == '#' || line[0] == ' ')) line.erase(0, 1);
             while (line.size() > maxChars && y < 322 * s) {
@@ -461,16 +504,6 @@ int main(int argc, char** argv) {
                     install::uninstallAll();
                     quit = true;
                 } else uninstallArmed = timeNow() + 3.0;
-            }
-        }
-        // version picker: newest ("latest", follows updates) or any older release
-        if (!versionNames.empty()) {
-            int pick = st.selected;
-            if (ui.cycle(180 * s, 414 * s, fw - 180 * s - 236 * s, 48 * s, "VERSION", pick, (int)versionNames.size(), versionNames)) {
-                std::lock_guard<std::mutex> l(st.mu);
-                st.selected = pick;
-                st.pinLatest = pick == 0;
-                std::ofstream(launcherCfg()) << "pin=" << (pick == 0 ? std::string("latest") : st.releases[pick].version) << "\n";
             }
         }
         bool needInstall = !sel.version.empty() && sel.version != installed;
