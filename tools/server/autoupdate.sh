@@ -8,6 +8,11 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD)
 git fetch -q origin "$BRANCH"
 TARGET=$(git rev-parse "origin/$BRANCH")
 [ "$TARGET" = "$(cat .built-commit 2>/dev/null)" ] && exit 0
+# Wait until that version's release is published (players' launchers install from it), so the server
+# never runs a version nobody can download yet.
+NEWVER=$(git show "origin/$BRANCH:VERSION" | tr -d '[:space:]')
+REPO=$(git remote get-url origin | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##')
+curl -sfL -o /dev/null "https://github.com/$REPO/releases/tag/v$NEWVER" || exit 0
 git checkout -q -- maps 2>/dev/null || true   # a server runs the shipped maps: drop stray local changes so the update applies
 git merge -q --ff-only "origin/$BRANCH"
 cmake -S . -B build-update -DQUARK_BUILD_CLIENT=OFF -DQUARK_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release >/dev/null
