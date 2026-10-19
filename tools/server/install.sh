@@ -6,7 +6,8 @@
 set -e
 cd "$(dirname "$0")/../.."
 DIR=$(pwd)
-ARGS="$*"
+ARGS=""
+for a in "$@"; do ARGS="$ARGS \"$(printf '%s' "$a" | sed 's/["\\]/\\&/g')\""; done   # quoted for systemd (names with spaces)
 [ -z "$ARGS" ] && ARGS="--public"
 rm -f .built-commit
 sh tools/server/autoupdate.sh || { echo "build failed"; exit 1; }
