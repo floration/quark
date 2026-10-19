@@ -5,91 +5,19 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
-  pages: write
-  id-token: write
-jobs:
-  windows:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y mingw-w64
-      - name: cross-compile (MinGW, static, Windows 7+)
-        run: |
-          cat > mingw.cmake <<'T'
-          set(CMAKE_SYSTEM_NAME Windows)
-          set(CMAKE_C_COMPILER x86_64-w64-mingw32-gcc-posix)
-          set(CMAKE_CXX_COMPILER x86_64-w64-mingw32-g++-posix)
-          set(CMAKE_RC_COMPILER x86_64-w64-mingw32-windres)
-          T
-          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=mingw.cmake -DCMAKE_BUILD_TYPE=Release -DQUARK_BUILD_TESTS=OFF
-          cmake --build build -j
-          mkdir -p pkg && cp build/quark.exe build/quark_server.exe pkg/ && cp -r maps pkg/
-          python3 tools/pack.py pkg quark-windows.qpak
-          mkdir -p quark-windows && cp -r pkg/* build/quark_launcher.exe README.md quark-windows/
-          zip -r quark-windows.zip quark-windows
-          cp build/quark_launcher.exe quark-launcher-windows.exe
-      - uses: actions/upload-artifact@v4
-        with: { name: windows, path: "quark-windows.zip\nquark-windows.qpak\nquark-launcher-windows.exe" }
-  linux:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev
-      - run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build -j
-          ./build/quark_tests
-          mkdir -p pkg && cp build/quark build/quark_server pkg/ && cp -r maps pkg/
-          python3 tools/pack.py pkg quark-linux.qpak
-          mkdir -p quark-linux && cp -r pkg/* build/quark_launcher README.md quark-linux/
-          tar czf quark-linux.tar.gz quark-linux
-          cp build/quark_launcher quark-launcher-linux
-      - uses: actions/upload-artifact@v4
-        with: { name: linux, path: "quark-linux.tar.gz\nquark-linux.qpak\nquark-launcher-linux" }
-  macos:
-    runs-on: macos-14
-    steps:
-      - uses: actions/checkout@v4
-      - run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
-          cmake --build build -j
-          mkdir -p pkg && cp -r build/quark.app build/quark_server pkg/ && cp -r maps pkg/
-          mkdir -p pkg/quark.app/Contents/Resources && cp -r maps pkg/quark.app/Contents/Resources/
-          python3 tools/pack.py pkg quark-macos.qpak
-          mkdir -p quark-macos && cp -r pkg/* build/quark_launcher README.md quark-macos/
-          zip -ry quark-macos.zip quark-macos
-          zip -j quark-launcher-macos.zip build/quark_launcher
-      - uses: actions/upload-artifact@v4
-        with: { name: macos, path: "quark-macos.zip\nquark-macos.qpak\nquark-launcher-macos.zip" }
-  release:
-    needs: [windows, linux, macos]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - id: v
-        run: |
-          echo "version=$(head -n1 VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
-      - uses: actions/download-artifact@v4
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.v.outputs.version }}
-          name: quark ${{ steps.v.outputs.version }}
-          target_commitish: ${{ github.sha }}
-          body_path: changelogs/${{ steps.v.outputs.version }}.md
-          make_latest: true
-          files: |
-            windows/*
-            linux/*
-            macos/*
   pages:
     needs: release
     runs-on: ubuntu-latest
-    continue-on-error: true   # until GitHub Pages is enabled (Settings > Pages > Source: GitHub Actions)
-    environment: { name: github-pages }
     steps:
       - uses: actions/checkout@v4
-      - run: python3 tools/site_changelog.py .
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with: { path: site }
-      - uses: actions/deploy-pages@v4
+      - name: publish site/ to the gh-pages branch (served at floration.github.io/quark)
+        run: |
+          python3 tools/site_changelog.py .
+          cd site
+          touch .nojekyll
+          git init -q -b gh-pages
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -qm "site for ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
