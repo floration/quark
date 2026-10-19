@@ -175,6 +175,10 @@ void NetClient::onSnapshot(Snapshot& s) {
         stringAcked_++;
     }
 
+    // The payload cart is solid: mirror the server's collision box so prediction agrees.
+    map_.dynSolids.clear();
+    if (mapReady_ && isPayloadMode(s.ms.mode) && map_.payloadPath.size() >= 2) map_.dynSolids.push_back(map_.payloadCartBox(s.ms.payloadDist));
+
     // Prediction reconcile. If the server's state for the acknowledged command matches what we
     // predicted for it, our prediction is already right: skip the replay (the common case).
     bool alive = false;

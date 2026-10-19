@@ -26,6 +26,7 @@ struct ServerConfig {
     bool balanceBots = true;    // team modes: an extra bot joins the side with fewer humans (vote can turn off)
     int balanceBotSkill = BOT_INTERMEDIATE;
     bool vsBots = false;        // "play vs bots": fixed bots, humans always on team A
+    bool autoStart = false;     // start the match automatically once both sides have players (else: vote)
     int botsEnemy = 0, botsAlly = 0, botSkill = BOT_INTERMEDIATE;
     bool lanOnly = false;
     // Mode tuning (0 = mode default)
@@ -132,9 +133,9 @@ public:
     int addBot(int team, int skill, bool balance = false);
     void removeBot(int id);
     int humanCount(int team = -1) const;
-    void updateBalanceBots();
+    void updateBalanceBots(bool matchStarting = false);
     // Votes (bots on/off, bot difficulty): majority of human players decides.
-    enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL };
+    enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL, VOTE_START, VOTE_STARTBOTS };
     struct Vote { int kind = VOTE_NONE; int arg = 0; uint32_t yes = 0, no = 0; float endsAt = 0; std::string text; } vote_;
     void callVote(int caller, int kind, int arg);
     void castVote(int id, bool yes);

@@ -26,13 +26,14 @@ void Binds::setDefaults() {
     set(A_VOTENO, GLFW_KEY_F2);
     set(A_PERF, GLFW_KEY_F3);
     set(A_SCREENSHOT, GLFW_KEY_F12);
+    set(A_VOTESTART, GLFW_KEY_F4);
 }
 
 const char* actionName(int a) {
     static const char* n[A_COUNT] = {
         "FORWARD", "BACK", "LEFT", "RIGHT", "JUMP", "CROUCH", "FIRE", "ALT FIRE", "USE", "DASH", "GRAPPLE",
         "RIFLE", "ROCKET", "KNIFE", "SNIPER", "LASER", "SHOTGUN", "STICKY", "CROSSBOW",
-        "NEXT WEAP", "PREV WEAP", "SCOREBOARD", "CHAT", "VOTE YES", "VOTE NO", "PERF STATS", "SCREENSHOT",
+        "NEXT WEAP", "PREV WEAP", "SCOREBOARD", "CHAT", "VOTE YES", "VOTE NO", "PERF STATS", "SCREENSHOT", "VOTE START",
     };
     return a >= 0 && a < A_COUNT ? n[a] : "?";
 }

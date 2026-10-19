@@ -49,6 +49,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     rulesReset(*this);
     running_ = true;
     if (cfg_.vsBots) {
+        cfg_.autoStart = true;
         bool teams = modeIsTeamBased(cfg_.mode);
         for (int k = 0; k < cfg_.botsEnemy; k++) addBot(teams ? TEAM_B : TEAM_A, cfg_.botSkill);
         for (int k = 0; k < cfg_.botsAlly && teams; k++) addBot(TEAM_A, cfg_.botSkill);
@@ -353,6 +354,10 @@ void Server::handleStringCmd(int id, const std::string& s) {
         std::string what, arg;
         vs >> what >> arg;
         if (what == "bots") callVote(id, VOTE_BOTS, arg == "off" ? 0 : 1);
+        else if (what == "start") {
+            if (ms_.phase != PHASE_WARMUP) { GameEvent e; e.type = EV_MESSAGE; e.text = "the match has already started"; sendEvent(id, e); }
+            else callVote(id, VOTE_START, 0);
+        }
         else if (what == "botskill") {
             int k = -1;
             for (int i = 0; i < BOT_SKILLS; i++) if (arg == botSkillName(i) || arg == std::to_string(i)) k = i;
@@ -892,8 +897,10 @@ void Server::removeBot(int id) {
 }
 
 // Team modes: keep teams even by adding intermediate bots to the side with fewer humans.
-void Server::updateBalanceBots() {
-    bool wanted = cfg_.balanceBots && !cfg_.vsBots && modeIsTeamBased(cfg_.mode) && humanCount() > 0;
+void Server::updateBalanceBots(bool matchStarting) {
+    // No balance bots during warmup: they're added when a match starts (if voted / enabled).
+    bool inMatch = ms_.phase != PHASE_WARMUP || matchStarting;
+    bool wanted = inMatch && cfg_.balanceBots && !cfg_.vsBots && modeIsTeamBased(cfg_.mode) && humanCount() > 0;
     int hA = humanCount(TEAM_A), hB = humanCount(TEAM_B);
     int needA = wanted ? std::max(0, hB - hA) : 0, needB = wanted ? std::max(0, hA - hB) : 0;
     int haveA = 0, haveB = 0;
@@ -919,12 +926,14 @@ void Server::callVote(int caller, int kind, int arg) {
     vote_.kind = kind;
     vote_.arg = arg;
     vote_.endsAt = time() + 30.0f;
-    vote_.text = kind == VOTE_BOTS ? std::string("BALANCE BOTS ") + (arg ? "ON" : "OFF")
-                                   : std::string("BOT DIFFICULTY: ") + botSkillName(arg);
-    GameEvent e; e.type = EV_VOTE; e.a = (uint8_t)caller; e.text = vote_.text;
+    vote_.text = kind == VOTE_BOTS        ? std::string("BALANCE BOTS ") + (arg ? "ON" : "OFF")
+               : kind == VOTE_BOTSKILL    ? std::string("BOT DIFFICULTY: ") + botSkillName(arg)
+               : kind == VOTE_START       ? std::string("START THE MATCH")
+                                          : std::string("FILL THE UNEVEN TEAMS WITH BOTS?");
+    GameEvent e; e.type = EV_VOTE; e.a = (uint8_t)(caller < 0 ? 255 : caller); e.text = vote_.text;
     broadcastEvent(e);
-    message(players_[caller].name + " called a vote: " + vote_.text + " (F1 yes / F2 no)");
-    castVote(caller, true);
+    message((caller < 0 ? std::string("vote") : players_[caller].name + " called a vote") + ": " + vote_.text + " (F1 yes / F2 no)");
+    if (caller >= 0) castVote(caller, true);
 }
 
 void Server::castVote(int id, bool yes) {
@@ -948,6 +957,23 @@ void Server::tickVote() {
     }
     bool pass = y * 2 > humans, fail = n * 2 >= humans || humans == 0;
     if (time() >= vote_.endsAt) { pass = y > n; fail = !pass; }
+    if (vote_.kind == VOTE_STARTBOTS && (pass || fail)) {
+        // follow-up to a passed start vote: decides balance bots, then the match starts either way
+        cfg_.balanceBots = pass;
+        message(std::string("bots ") + (pass ? "will fill the uneven teams" : "off for this match"));
+        vote_ = Vote();
+        updateBalanceBots(true);
+        rulesForceStart(*this);
+        return;
+    }
+    if (pass && vote_.kind == VOTE_START) {
+        message("vote passed: starting the match");
+        vote_ = Vote();
+        bool uneven = modeIsTeamBased(cfg_.mode) && !cfg_.vsBots && humanCount(TEAM_A) != humanCount(TEAM_B);
+        if (uneven) callVote(-1, VOTE_STARTBOTS, 1);
+        else { updateBalanceBots(true); rulesForceStart(*this); }
+        return;
+    }
     if (pass) {
         if (vote_.kind == VOTE_BOTS) cfg_.balanceBots = vote_.arg != 0;
         else {

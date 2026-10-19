@@ -141,6 +141,7 @@ static void testSession(int mode, const char* mapName, uint16_t port) {
     printf("session: %s on %s\n", modeName(mode), mapName);
     Server s;
     ServerConfig cfg;
+    cfg.autoStart = true;
     cfg.map = mapName;
     cfg.mode = mode;
     cfg.port = port;
@@ -250,6 +251,7 @@ static void testPayloadPush(uint16_t port) {
     printf("payload push\n");
     Server s;
     ServerConfig cfg;
+    cfg.autoStart = true;
     cfg.map = "arena"; cfg.mode = MODE_PAYLOAD; cfg.port = port;
     s.setLog([](const std::string&) {});
     if (!s.start(cfg)) { g_fail++; return; }
@@ -278,6 +280,7 @@ static void testPacketLoss(uint16_t port) {
     printf("lag compensation hitscan\n");
     Server s;
     ServerConfig cfg;
+    cfg.autoStart = true;
     cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port;
     s.setLog([](const std::string&) {});
     if (!s.start(cfg)) { g_fail++; return; }
@@ -345,6 +348,7 @@ static void testWeapons(uint16_t port) {
     for (int w : {WPN_SNIPER, WPN_LASER, WPN_ROCKET, WPN_SHOTGUN, WPN_CROSSBOW, WPN_STICKY}) {
         Server s;
         ServerConfig cfg;
+        cfg.autoStart = true;
         cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port++;
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; continue; }
@@ -405,6 +409,7 @@ static void testTickRateFallback(uint16_t port) {
     printf("tick rate starts at 1000 Hz and steps down when the host can't keep up\n");
     Server s;
     ServerConfig cfg;
+    cfg.autoStart = true;
     cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port;
     s.setLog([](const std::string&) {});
     if (!s.start(cfg)) { g_fail++; return; }
@@ -426,6 +431,7 @@ static void testRocketSelfDamage(uint16_t port) {
     printf("rocket self damage: 10%% below you, full when level or above\n");
     Server s;
     ServerConfig cfg;
+    cfg.autoStart = true;
     cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port;
     s.setLog([](const std::string&) {});
     if (!s.start(cfg)) { g_fail++; return; }
@@ -455,6 +461,7 @@ static void testBots(uint16_t& port) {
     { // FFA vs 3 expert bots: they should find and kill each other / us
         Server s;
         ServerConfig cfg;
+        cfg.autoStart = true;
         cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port++;
         cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botSkill = BOT_EXPERT; cfg.timeLimit = 60;
         s.setLog([](const std::string&) {});
@@ -470,7 +477,7 @@ static void testBots(uint16_t& port) {
         CHECK(kills >= 3);
         s.stop();
     }
-    { // balance bots + vote
+    { // pregame (no bots) -> vote start -> vote balance bots -> bots join; then votes
         Server s;
         ServerConfig cfg;
         cfg.map = "arena"; cfg.mode = MODE_VS; cfg.port = port++;
@@ -479,10 +486,18 @@ static void testBots(uint16_t& port) {
         NetClient a, b;
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "one");
         std::vector<NetClient*> cls = {&a};
-        pump(s, cls, 1.5, idle);
+        pump(s, cls, 6.5, idle);
         int bots = 0;
         for (auto& p : s.players_) bots += p.connected && p.isBot;
-        CHECK(bots == 1);                                  // 1 human vs 0 -> one bot on the other team
+        CHECK(bots == 0 && s.ms_.phase == PHASE_WARMUP);  // warmup: no bots, no automatic start
+        a.sendCommand("callvote start");                  // passes (only voter) -> asks about bots
+        pump(s, cls, 0.4, idle);
+        CHECK(s.vote_.kind == Server::VOTE_STARTBOTS);
+        a.sendCommand("vote yes");
+        pump(s, cls, 0.6, idle);
+        bots = 0;
+        for (auto& p : s.players_) bots += p.connected && p.isBot && p.alive;
+        CHECK(bots == 1 && s.ms_.phase == PHASE_FREEZE);   // match started with one bot on team B
         b.connect("127.0.0.1:" + std::to_string(cfg.port), "two");
         cls.push_back(&b);
         pump(s, cls, 1.5, idle);
@@ -505,11 +520,48 @@ static void testBots(uint16_t& port) {
         CHECK(bots == 0 && !s.config().balanceBots);
         s.stop();
     }
+    { // neutral payload: starts in the middle, either team pushes it; the cart is solid
+        Server s;
+        ServerConfig cfg;
+        cfg.autoStart = true;
+        cfg.map = "arena"; cfg.mode = MODE_NPAYLOAD; cfg.port = port++;
+        s.setLog([](const std::string&) {});
+        if (!s.start(cfg)) { g_fail++; return; }
+        NetClient a, b;
+        a.connect("127.0.0.1:" + std::to_string(cfg.port), "a");
+        b.connect("127.0.0.1:" + std::to_string(cfg.port), "b");
+        std::vector<NetClient*> cls = {&a, &b};
+        pump(s, cls, 0.5, idle);
+        s.command("forcestart");
+        pump(s, cls, 3.3, idle);
+        CHECK(s.ms_.phase == PHASE_LIVE);
+        float mid = s.ms_.payloadLen * 0.5f;
+        CHECK(std::fabs(s.ms_.payloadDist - mid) < 0.5f);
+        int ia = s.players_[a.clientId()].team == TEAM_A ? a.clientId() : b.clientId();
+        int ib = ia == a.clientId() ? b.clientId() : a.clientId();
+        auto standAt = [&](int id, float off) {
+            Vec3 c = s.map_.payloadPoint(s.ms_.payloadDist);
+            s.players_[id].move.pos = c + Vec3(off, 0, 0);
+            s.players_[id].move.vel = {};
+        };
+        for (int k = 0; k < 15; k++) { standAt(ia, 2.0f); s.players_[ib].move.pos = {-25, 0, 25}; pump(s, cls, 0.1, idle); }
+        float afterA = s.ms_.payloadDist;
+        CHECK(afterA > mid + 1.0f);                      // team A pushes toward the end
+        for (int k = 0; k < 30; k++) { standAt(ib, 2.0f); s.players_[ia].move.pos = {-25, 0, 25}; pump(s, cls, 0.1, idle); }
+        CHECK(s.ms_.payloadDist < afterA - 2.0f);        // team B pushes it back
+        AABB cart = s.map_.payloadCartBox(s.ms_.payloadDist);
+        Vec3 c = cart.center();
+        float t = s.map_.raycast(c + Vec3(0, 0, 6), {0, 0, -1}, 12);
+        CHECK(t > 0 && t < 6);                           // the cart blocks shots
+        CHECK(a.map().dynSolids.size() == 1);            // and the client predicts it as solid
+        s.stop();
+    }
     // every mode with bots on both sides: no crashes, things happen
-    const char* maps[MODE_COUNT] = {"arena", "arena", "sprint", "arena", "arena", "arena"};
+    const char* maps[MODE_COUNT] = {"arena", "arena", "sprint", "arena", "arena", "arena", "arena"};
     for (int mode = 0; mode < MODE_COUNT; mode++) {
         Server s;
         ServerConfig cfg;
+        cfg.autoStart = true;
         cfg.map = maps[mode]; cfg.mode = mode; cfg.port = port++;
         cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botsAlly = 2; cfg.botSkill = BOT_ADVANCED;
         s.setLog([](const std::string&) {});

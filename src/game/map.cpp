@@ -174,8 +174,7 @@ float Map::sweepAxis(const AABB& box, int axis, float delta) const {
     constexpr float eps = 0.001f;
     AABB q = box;
     if (delta > 0) q.mx[axis] += delta; else q.mn[axis] += delta;
-    forBox(q, [&](const Brush& br) {
-        const AABB& b = br.box;
+    auto clip = [&](const AABB& b) {
         if (box.mx[a1] <= b.mn[a1] || box.mn[a1] >= b.mx[a1]) return;
         if (box.mx[a2] <= b.mn[a2] || box.mn[a2] >= b.mx[a2]) return;
         if (delta > 0) {
@@ -189,13 +188,16 @@ float Map::sweepAxis(const AABB& box, int axis, float delta) const {
                 if (allowed > delta) delta = std::min(allowed, 0.0f);
             }
         }
-    });
+    };
+    forBox(q, [&](const Brush& br) { clip(br.box); });
+    for (const AABB& b : dynSolids) clip(b);
     return delta;
 }
 
 bool Map::boxSolid(const AABB& box) const {
     bool hit = false;
     forBox(box, [&](const Brush& b) { hit = hit || box.overlaps(b.box); });
+    for (const AABB& b : dynSolids) hit = hit || box.overlaps(b);
     return hit;
 }
 
@@ -242,6 +244,11 @@ float Map::raycast(const Vec3& o, const Vec3& dir, float maxDist, Vec3* normal) 
         }
         return !(best >= 0 && best <= tExit); // nearest hit is inside this cell: done
     });
+    for (const AABB& b : dynSolids) {
+        int axis;
+        float t = rayAABB(o, inv, b, best < 0 ? maxDist : best, &axis);
+        if (t >= 0 && (best < 0 || t < best)) { best = t; bestAxis = axis; }
+    }
     if (best >= 0 && normal) {
         *normal = Vec3(0, 0, 0);
         if (bestAxis >= 0) (*normal)[bestAxis] = dir[bestAxis] > 0 ? -1.0f : 1.0f;
@@ -257,6 +264,7 @@ bool Map::raycastAny(const Vec3& o, const Vec3& dir, float maxDist) const {
             hit = rayAABB(o, inv, brushes[cellBrushes[k]].box, maxDist) >= 0;
         return !hit;
     });
+    for (const AABB& b : dynSolids) hit = hit || rayAABB(o, inv, b, maxDist) >= 0;
     return hit;
 }
 
@@ -268,10 +276,19 @@ bool Map::supportsMode(int mode) const {
         case MODE_BOMB: return teams && !bombSites.empty();
         case MODE_RACE: return has(SPAWN_RACE) && !checkpoints.empty();
         case MODE_KOTH: return teams && hasHill;
-        case MODE_PAYLOAD: return teams && payloadPath.size() >= 2;
+        case MODE_PAYLOAD:
+        case MODE_NPAYLOAD: return teams && payloadPath.size() >= 2;
         case MODE_FFA: return !spawns.empty();
     }
     return false;
+}
+
+AABB Map::payloadCartBox(float d) const {
+    Vec3 c = payloadPoint(d), ahead = payloadPoint(d + 0.5f), behind = payloadPoint(d - 0.5f);
+    Vec3 dir = ahead - behind;
+    bool alongX = std::fabs(dir.x) > std::fabs(dir.z);
+    Vec3 half = alongX ? Vec3(1.2f, 0.75f, 0.9f) : Vec3(0.9f, 0.75f, 1.2f);
+    return {{c.x - half.x, c.y, c.z - half.z}, {c.x + half.x, c.y + 1.5f, c.z + half.z}};
 }
 
 float Map::payloadLength() const {

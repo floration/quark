@@ -61,6 +61,7 @@ Vec3 objective(Server& s, int id, BotBrain& b) {
             if (map.hasHill) return map.hill.center();
             break;
         case MODE_PAYLOAD:
+        case MODE_NPAYLOAD:
             if (map.payloadPath.size() >= 2) return map.payloadPoint(m.payloadDist);
             break;
         case MODE_BOMB: {

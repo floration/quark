@@ -52,6 +52,10 @@ struct Map {
     void buildGrid();
     template <class F> void forBox(const AABB& b, F f) const; // calls f(brush) for brushes in overlapped cells (may repeat)
 
+    // Moving solids that aren't part of the static geometry (the payload cart). Collision and
+    // raycasts include them; kept tiny so checking them all is free.
+    std::vector<AABB> dynSolids;
+    AABB payloadCartBox(float dist) const;
     float payloadLength() const;
     Vec3 payloadPoint(float dist) const;
 };

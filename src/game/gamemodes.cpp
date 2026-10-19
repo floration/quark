@@ -39,6 +39,7 @@ float roundTime(const Server& s) {
         case MODE_BOMB: return 105.0f;
         case MODE_RACE: return 180.0f;
         case MODE_PAYLOAD: return 240.0f;
+        case MODE_NPAYLOAD: return 300.0f;
         case MODE_FFA: return s.cfg_.timeLimit > 0 ? (float)s.cfg_.timeLimit : 600.0f;
         default: return 0.0f; // no limit
     }
@@ -81,6 +82,9 @@ void startRound(Server& s) {
         m.attackers = (m.round % 2 == 1) ? TEAM_A : TEAM_B;
         m.payloadDist = 0;
         m.payloadLen = s.map_.payloadLength();
+    } else if (m.mode == MODE_NPAYLOAD) {
+        m.payloadLen = s.map_.payloadLength();
+        m.payloadDist = m.payloadLen * 0.5f; // starts in the middle; team A pushes to the end, B to the start
     }
     for (auto& p : s.players_) {
         p.finished = false;
@@ -389,6 +393,63 @@ void tickPayload(Server& s) {
     if (s.time() >= s.phaseEnd_) endRound(s, def, "time", false);
 }
 
+// Neutral payload: whichever team is alone at the cart pushes it toward the far end of the track
+// (team A toward the end, team B toward the start). Reaching an end wins; at time-out the side of
+// the track the cart is on wins.
+void tickNeutralPayload(Server& s) {
+    ModeState& m = s.ms_;
+    m.timeLeft = std::max(0.0f, s.phaseEnd_ - s.time());
+    Vec3 cart = s.map_.payloadPoint(m.payloadDist);
+    int na = 0, nb = 0;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        auto& p = s.players_[i];
+        if (!p.connected || !p.alive || length(p.move.pos - cart) >= kCartRange) continue;
+        if (p.team == TEAM_A) na++;
+        else if (p.team == TEAM_B) nb++;
+    }
+    m.flags &= ~MS_CONTESTED;
+    m.hillOwner = 255; // reused: which team is moving the cart
+    if (na > 0 && nb > 0) m.flags |= MS_CONTESTED;
+    else if (na > 0 || nb > 0) {
+        int n = na > 0 ? na : nb;
+        float speed = std::min(kCartSpeed * (1.0f + 0.25f * (n - 1)), kCartSpeed * 2.0f);
+        m.payloadDist = clampf(m.payloadDist + (na > 0 ? speed : -speed) * s.dt(), 0, m.payloadLen);
+        m.hillOwner = (uint8_t)(na > 0 ? TEAM_A : TEAM_B);
+    }
+    if (m.payloadDist >= m.payloadLen - 1e-3f) { enterMatchEnd(s, "TEAM A delivered the payload", TEAM_A); return; }
+    if (m.payloadDist <= 1e-3f) { enterMatchEnd(s, "TEAM B delivered the payload", TEAM_B); return; }
+    if (s.time() >= s.phaseEnd_) {
+        float mid = m.payloadLen * 0.5f;
+        if (std::fabs(m.payloadDist - mid) < 0.05f) enterMatchEnd(s, "draw - the payload is in the middle", -1);
+        else {
+            int w = m.payloadDist > mid ? TEAM_A : TEAM_B;
+            enterMatchEnd(s, std::string(teamName(w)) + " wins - payload on their side", w);
+        }
+    }
+}
+
+// The cart is solid (cover, blocks movement). Keep the collision box where the cart is and push
+// anyone it moved into out of the way.
+void updateCartSolid(Server& s) {
+    s.map_.dynSolids.clear();
+    if (!isPayloadMode(s.ms_.mode) || s.map_.payloadPath.size() < 2) return;
+    AABB cart = s.map_.payloadCartBox(s.ms_.payloadDist);
+    s.map_.dynSolids.push_back(cart);
+    for (auto& p : s.players_) {
+        if (!p.connected || !p.alive) continue;
+        AABB b = playerBox(p.move.pos, p.move.flags & MF_CROUCHED);
+        if (!b.overlaps(cart)) continue;
+        // smallest push out: sideways either way, or up onto the cart
+        float pushes[5] = {cart.mx.x - b.mn.x, b.mx.x - cart.mn.x, cart.mx.z - b.mn.z, b.mx.z - cart.mn.z, cart.mx.y - b.mn.y};
+        int k = 0;
+        for (int i = 1; i < 5; i++) if (pushes[i] < pushes[k]) k = i;
+        float d = pushes[k] + 0.01f;
+        if (k == 0) p.move.pos.x += d; else if (k == 1) p.move.pos.x -= d;
+        else if (k == 2) p.move.pos.z += d; else if (k == 3) p.move.pos.z -= d;
+        else p.move.pos.y += d;
+    }
+}
+
 void finishFFA(Server& s) {
     int best = -1, bestScore = -100000, ties = 0;
     for (int i = 0; i < kMaxPlayers; i++) {
@@ -438,9 +499,12 @@ void rulesForceStart(Server& s) {
 
 void rulesTick(Server& s) {
     ModeState& m = s.ms_;
+    updateCartSolid(s);
     switch (m.phase) {
         case PHASE_WARMUP:
-            if (!enoughPlayers(s)) { s.phaseEnd_ = 0; m.timeLeft = 0; break; }
+            // Warmup lasts until players vote to start (F4). Play-vs-bots / autostart servers
+            // start by themselves once both sides have someone.
+            if (!s.cfg_.autoStart || !enoughPlayers(s)) { s.phaseEnd_ = 0; m.timeLeft = 0; break; }
             if (s.phaseEnd_ == 0) {
                 s.phaseEnd_ = s.time() + kWarmupCountdown;
                 s.message("match starting");
@@ -463,6 +527,7 @@ void rulesTick(Server& s) {
                 case MODE_RACE: tickRace(s); break;
                 case MODE_KOTH: tickKoth(s); break;
                 case MODE_PAYLOAD: tickPayload(s); break;
+                case MODE_NPAYLOAD: tickNeutralPayload(s); break;
                 case MODE_FFA: tickFFA(s); break;
             }
             break;
@@ -500,7 +565,8 @@ float rulesRespawnDelay(const Server& s) {
     switch (s.ms_.mode) {
         case MODE_RACE: return 1.0f;
         case MODE_KOTH: return 4.0f;
-        case MODE_PAYLOAD: return 5.0f;
+        case MODE_PAYLOAD:
+        case MODE_NPAYLOAD: return 5.0f;
         case MODE_FFA: return 2.0f;
         default: return -1.0f; // VS, BOMB: no respawn
     }

@@ -229,6 +229,7 @@ bool Game::pressInput(int code) {
     if (screen_ != Screen::InGame || chatting_) return false;
     if (b.has(A_VOTEYES, code)) { net_.sendCommand("vote yes"); return true; }
     if (b.has(A_VOTENO, code)) { net_.sendCommand("vote no"); return true; }
+    if (b.has(A_VOTESTART, code)) { net_.sendCommand("callvote start"); return true; }
     if (paused_) return false;
     if (b.has(A_CHAT, code)) {
         chatting_ = true;
@@ -718,17 +719,20 @@ void Game::drawWorld(float alpha) {
         Vec3 c = ms.hillOwner == 255 ? Vec3(1, 1, 1) : teamCol(ms.hillOwner);
         r_.translucentBox(map.hill, rgba(c, 0.12f + 0.05f * std::sin((float)time_ * 4)));
         labelAt({map.hill.center().x, map.hill.mx.y + 0.5f, map.hill.center().z}, (ms.flags & MS_CONTESTED) ? "CONTESTED" : "HILL", rgba(c));
-    } else if (ms.mode == MODE_PAYLOAD && map.payloadPath.size() >= 2) {
+    } else if (isPayloadMode(ms.mode) && map.payloadPath.size() >= 2) {
+        bool neutral = ms.mode == MODE_NPAYLOAD;
+        int cartTeam = neutral ? (ms.hillOwner == 255 ? -1 : ms.hillOwner) : ms.attackers;
+        Vec3 cartCol = cartTeam < 0 ? Vec3(0.75f, 0.75f, 0.78f) : teamCol(cartTeam);
         for (size_t i = 1; i < map.payloadPath.size(); i++)
-            r_.line(map.payloadPath[i - 1] + Vec3(0, 0.05f, 0), map.payloadPath[i] + Vec3(0, 0.05f, 0), 0.25f, rgba(teamCol(ms.attackers), 0.35f));
+            r_.line(map.payloadPath[i - 1] + Vec3(0, 0.05f, 0), map.payloadPath[i] + Vec3(0, 0.05f, 0), 0.25f, rgba(neutral ? Vec3(1, 1, 1) : teamCol(ms.attackers), 0.35f));
         Vec3 cart = map.payloadPoint(ms.payloadDist);
         Vec3 ahead = map.payloadPoint(ms.payloadDist + 0.5f);
         Vec3 d = ahead - cart;
         float yaw = (length(d) > 1e-3f) ? std::atan2(-d.x, -d.z) : 0;
         float sv = sunVisibility(map, cart + Vec3(0, 1, 0));
-        r_.box(cart + Vec3(0, 0.6f, 0), {0.9f, 0.6f, 1.2f}, yaw, teamCol(ms.attackers) * 0.8f, sv);
+        r_.box(cart + Vec3(0, 0.6f, 0), {0.9f, 0.6f, 1.2f}, yaw, cartCol * 0.8f, sv);
         r_.box(cart + Vec3(0, 1.35f, 0), {0.5f, 0.15f, 0.7f}, yaw, {0.2f, 0.2f, 0.22f}, sv);
-        labelAt(cart + Vec3(0, 2.2f, 0), (ms.flags & MS_CONTESTED) ? "PAYLOAD - CONTESTED" : "PAYLOAD", rgba(teamCol(ms.attackers)));
+        labelAt(cart + Vec3(0, 2.2f, 0), (ms.flags & MS_CONTESTED) ? "PAYLOAD - CONTESTED" : "PAYLOAD", rgba(cartCol));
     } else if (ms.mode == MODE_RACE) {
         int next = mep ? mep->checkpoint : 0;
         for (size_t i = 0; i < map.checkpoints.size(); i++) {
@@ -834,7 +838,10 @@ void Game::drawHud() {
     std::string title = modeTitle(ms.mode);
     std::string phase;
     switch (ms.phase) {
-        case PHASE_WARMUP: phase = ms.timeLeft > 0 ? "MATCH STARTS IN " + std::to_string((int)std::ceil(ms.timeLeft)) : "WARMUP - WAITING FOR PLAYERS"; break;
+        case PHASE_WARMUP:
+            phase = ms.timeLeft > 0 ? "MATCH STARTS IN " + std::to_string((int)std::ceil(ms.timeLeft))
+                                    : "WARMUP - " + inputName(cfg_.binds.code[A_VOTESTART][0]) + " TO VOTE START";
+            break;
         case PHASE_FREEZE: phase = "ROUND " + std::to_string(ms.round) + " - " + std::to_string((int)std::ceil(ms.timeLeft)); break;
         case PHASE_LIVE:
             if (ms.mode == MODE_VS) phase = (ms.flags & MS_DRAIN) ? "STALEMATE - HEALTH DRAINING" : "DRAIN IN " + fmtTime(ms.timeLeft);
@@ -877,6 +884,9 @@ void Game::drawHud() {
     } else if (ms.mode == MODE_PAYLOAD) {
         obj = myTeam == ms.attackers ? "PUSH THE PAYLOAD" : "STOP THE PAYLOAD";
         if (ms.payloadLen > 0) progress = ms.payloadDist / ms.payloadLen;
+    } else if (ms.mode == MODE_NPAYLOAD) {
+        obj = (ms.flags & MS_CONTESTED) ? "PAYLOAD CONTESTED" : ms.hillOwner == 255 ? "PUSH THE PAYLOAD TO THE ENEMY END"
+              : ms.hillOwner == myTeam ? "YOUR TEAM IS PUSHING" : "ENEMY IS PUSHING";
     } else if (ms.mode == MODE_RACE && mep) {
         obj = (mep->flags & PS_FINISHED) ? "FINISHED" : "CHECKPOINT " + std::to_string(mep->checkpoint) + " / " + std::to_string(net_.map().checkpoints.size());
     } else if (ms.mode == MODE_VS && ms.phase == PHASE_LIVE) {
@@ -887,6 +897,14 @@ void Game::drawHud() {
         float bw = 300 * s;
         r_.rect(cx - bw * 0.5f, 104 * s, bw, 8 * s, {0, 0, 0, 0.5f});
         r_.rect(cx - bw * 0.5f, 104 * s, bw * clampf(progress, 0, 1), 8 * s, ms.mode == MODE_PAYLOAD ? rgba(myTeam == ms.attackers ? cfg_.colorFriendly : cfg_.colorEnemy) : kWhite);
+    }
+    if (ms.mode == MODE_NPAYLOAD && ms.payloadLen > 0) {
+        // tug-of-war bar: your side's end on the left
+        float bw = 300 * s, f = ms.payloadDist / ms.payloadLen;
+        if (myTeam == TEAM_A) f = 1 - f; // team A pushes toward the end of the track
+        r_.rect(cx - bw * 0.5f, 104 * s, bw, 8 * s, rgba(cfg_.colorEnemy, 0.8f));
+        r_.rect(cx - bw * 0.5f, 104 * s, bw * clampf(1 - f, 0, 1), 8 * s, rgba(cfg_.colorFriendly, 0.9f));
+        r_.rect(cx - 1, 100 * s, 2, 16 * s, kWhite);
     }
     if (ms.mode == MODE_BOMB && ms.bombState == BOMB_PLANTED && ms.phase == PHASE_LIVE)
         ui_.labelCentered(cx, 118 * s, fmtTime(ms.bombTimer), kRed, 1.5f);
@@ -1012,7 +1030,7 @@ void Game::drawPauseMenu(float cx, float y) {
         return;
     }
     bool teamMode = modeIsTeamBased(net_.mode().mode);
-    int rows = 8 + (teamMode ? 1 : 0) + (host_ ? 2 : 0);
+    int rows = 8 + (teamMode ? 1 : 0) + (host_ ? 2 : 0) + (net_.mode().phase == PHASE_WARMUP ? 1 : 0);
     ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, rows * (h + gap) + 24 * s);
     if (ui_.button(x, y, w, h, "RESUME")) { paused_ = false; }
     y += h + gap;
@@ -1027,6 +1045,10 @@ void Game::drawPauseMenu(float cx, float y) {
     }
     if (ui_.button(x, y, w, h, "SPECTATE")) { net_.sendCommand("team spec"); paused_ = false; }
     y += h + gap;
+    if (net_.mode().phase == PHASE_WARMUP) {
+        if (ui_.button(x, y, w, h, "VOTE START MATCH")) { net_.sendCommand("callvote start"); paused_ = false; }
+        y += h + gap;
+    }
     if (host_) {
         // Host controls: change mode/map live.
         const Map& map = net_.map();

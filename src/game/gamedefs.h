@@ -12,7 +12,7 @@ constexpr int kMaxPlayers = 8;
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 6;
+constexpr uint16_t kProtocolVersion = 7;
 
 // Player hull
 constexpr float kPlayerHalfWidth = 0.4f;
@@ -22,13 +22,14 @@ constexpr float kEyeHeight = 1.6f;
 constexpr float kCrouchEyeHeight = 1.05f;
 constexpr int kMaxHealth = 100;
 
-enum GameModeId : uint8_t { MODE_VS = 0, MODE_BOMB, MODE_RACE, MODE_KOTH, MODE_PAYLOAD, MODE_FFA, MODE_COUNT };
+enum GameModeId : uint8_t { MODE_VS = 0, MODE_BOMB, MODE_RACE, MODE_KOTH, MODE_PAYLOAD, MODE_FFA, MODE_NPAYLOAD, MODE_COUNT };
+inline bool isPayloadMode(int m) { return m == MODE_PAYLOAD || m == MODE_NPAYLOAD; }
 inline const char* modeName(int m) {
-    static const char* n[] = {"vs", "bomb", "race", "koth", "payload", "ffa"};
+    static const char* n[] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload"};
     return (m >= 0 && m < MODE_COUNT) ? n[m] : "?";
 }
 inline const char* modeTitle(int m) {
-    static const char* n[] = {"VS", "BOMB", "RACE", "KING OF THE HILL", "PAYLOAD", "FREE FOR ALL"};
+    static const char* n[] = {"VS", "BOMB", "RACE", "KING OF THE HILL", "PAYLOAD", "FREE FOR ALL", "NEUTRAL PAYLOAD"};
     return (m >= 0 && m < MODE_COUNT) ? n[m] : "?";
 }
 inline int modeFromName(const char* s) {
