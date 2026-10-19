@@ -17,6 +17,7 @@ src = open(os.path.join(root, "src", "game", "gamedefs.h"), encoding="utf-8").re
 weapons = []
 for m in re.finditer(r'^\s*\{"([A-Z]+)",([^}]*)\}', src, re.M):
     f = [re.sub(r"(?<=[0-9.])f$", "", x.strip()).replace("f/", "/") for x in m.group(2).split(",")]
+    if len(f) < 11 or not re.match(r"^-?[0-9.]", f[0]): continue   # other {"NAME", ...} tables (duel rulesets)
     num = lambda x: float(eval(x)) if x not in ("true", "false") else x == "true"
     refire, dmg, splash, beam, pellets = num(f[0]), num(f[1]), num(f[5]), num(f[9]), int(num(f[10]))
     per = dmg * pellets
