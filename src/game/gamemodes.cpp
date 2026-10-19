@@ -29,7 +29,7 @@ int roundsToWin(const Server& s) {
         case MODE_VS: return 5;
         case MODE_DUEL: return 5;
         case MODE_ARENA: return 5;
-        case MODE_TOURNEY: return 2; // best of 3 per match
+        case MODE_TOURNEY: return 3; // best of 5 per match
         case MODE_BOMB: return 7;
         case MODE_RACE: return 3;
         case MODE_PAYLOAD: return 1; // each team attacks once

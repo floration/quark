@@ -64,10 +64,11 @@ float outline(vec4 e) {
 uniform sampler2DShadow uShadow;
 uniform int uShadowOn;
 uniform float uShadowTexel;
+uniform vec4 uCasterRect; // shadow-map area the dynamic casters cover: outside it nothing can be shadowed
 float shadowAt(vec4 sc) {
     if (uShadowOn == 0) return 1.0;
     vec3 p = sc.xyz / sc.w * 0.5 + 0.5;
-    if (p.x <= 0.0 || p.x >= 1.0 || p.y <= 0.0 || p.y >= 1.0 || p.z >= 1.0) return 1.0;
+    if (p.x < uCasterRect.x || p.y < uCasterRect.y || p.x > uCasterRect.z || p.y > uCasterRect.w || p.z >= 1.0) return 1.0;
     float s = 0.0;
     s += texture(uShadow, vec3(p.xy + vec2(-0.5, -0.5) * uShadowTexel, p.z - 0.0015));
     s += texture(uShadow, vec3(p.xy + vec2( 0.5, -0.5) * uShadowTexel, p.z - 0.0015));
@@ -146,17 +147,36 @@ const char* kUiVS = R"(#version 330 core
 layout(location=0) in vec2 aPos;
 layout(location=1) in vec2 aUV;
 layout(location=2) in vec4 aColor;
+layout(location=3) in vec2 aText; // x: text scale (0 = plain rect), y: glyph cell index
 uniform vec2 uScreen;
-out vec2 vUV; out vec4 vColor;
+out vec2 vUV; out vec4 vColor; flat out vec2 vText;
 void main() {
-    vUV = aUV; vColor = aColor;
+    vUV = aUV / 64.0 - 1.0; vColor = aColor; vText = aText; // font texels
     gl_Position = vec4(aPos.x / uScreen.x * 2.0 - 1.0, 1.0 - aPos.y / uScreen.y * 2.0, 0.0, 1.0);
 })";
+// Text: the glyph quad is 1 px bigger on each side; a pixel that isn't part of the glyph but has a glyph
+// texel within 1 screen pixel becomes the black outline (samples clamped to the glyph's own atlas cell).
 const char* kUiFS = R"(#version 330 core
-in vec2 vUV; in vec4 vColor;
+in vec2 vUV; in vec4 vColor; flat in vec2 vText;
 uniform sampler2D uFont;
+uniform vec2 uFontSize;
 out vec4 fragColor;
-void main() { fragColor = vec4(vColor.rgb, vColor.a * texture(uFont, vUV).r); })";
+float glyphAt(vec2 texel, vec2 cell0) {
+    if (any(lessThan(texel, cell0)) || any(greaterThanEqual(texel, cell0 + vec2(6.0, 8.0)))) return 0.0;
+    return texture(uFont, texel / uFontSize).r;
+}
+void main() {
+    if (vText.x <= 0.0) { fragColor = vec4(vColor.rgb, vColor.a * texture(uFont, vUV / uFontSize).r); return; }
+    vec2 t = vUV;
+    float g = vText.y;
+    vec2 cell0 = vec2(mod(g, 16.0) * 6.0, floor(g / 16.0) * 8.0);
+    if (glyphAt(t, cell0) > 0.5) { fragColor = vColor; return; }
+    float d = 1.0 / vText.x, o = 0.0;
+    for (int y = -1; y <= 1; y++)
+        for (int x = -1; x <= 1; x++) o = max(o, glyphAt(t + vec2(x, y) * d, cell0));
+    if (o < 0.5) discard;
+    fragColor = vec4(0.0, 0.0, 0.0, vColor.a);
+})";
 
 // Uniform locations cached by (program, literal pointer): no string lookups in the frame loop.
 GLint U(unsigned prog, const char* name) {
@@ -273,9 +293,10 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glGenBuffers(1, &uiVbo_);
     glBindVertexArray(uiVao_);
     glBindBuffer(GL_ARRAY_BUFFER, uiVbo_);
-    glEnableVertexAttribArray(0); glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex2D), (void*)0);
-    glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex2D), (void*)8);
-    glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex2D), (void*)16);
+    glEnableVertexAttribArray(0); glVertexAttribPointer(0, 2, GL_SHORT, GL_FALSE, sizeof(Vertex2D), (void*)0);
+    glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_UNSIGNED_SHORT, GL_FALSE, sizeof(Vertex2D), (void*)4);
+    glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex2D), (void*)8);
+    glEnableVertexAttribArray(3); glVertexAttribPointer(3, 2, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(Vertex2D), (void*)12);
     glBindVertexArray(0);
 
     // Font texture
@@ -339,6 +360,27 @@ void Renderer::loadWorld(const Map& map, const std::function<void(float)>& progr
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    warmup(map);
+}
+
+// Drivers compile shader variants and pipeline states lazily, on the first draw that uses them, which
+// is a 30-60 ms hitch on the first frame of a match (and on the first explosion, beam, ...). Draw one
+// throwaway frame that touches every program and state while the loading screen is up, and wait for it.
+void Renderer::warmup(const Map& map) {
+    QZONE("renderer warmup");
+    Vec3 c = map.bounds.center();
+    setCamera(c + Vec3(0, 2, 0), 0, 0, 90);
+    box(c, {0.3f, 0.3f, 0.3f}, 0, {0.5f, 0.5f, 0.5f}, 1.0f, true, true);   // dynamic + shadow caster
+    box(c, {0.3f, 0.3f, 0.3f}, 0, {0.5f, 0.5f, 0.5f}, 1.0f, true, false);  // shadow-only caster
+    translucentBox({c, c + Vec3(0.5f, 0.5f, 0.5f)}, {1, 1, 1, 0.3f});       // blended pass
+    line(c, c + Vec3(0, 1, 0), 0.05f, {1, 1, 1, 0.5f});
+    viewBox({0.2f, -0.2f, -0.5f}, {0.02f, 0.02f, 0.1f}, {0.5f, 0.5f, 0.5f}); // first-person pass
+    drawScene(true);
+    rect(0, 0, 4, 4, {1, 1, 1, 0.5f});
+    text(0, 0, 2, "A", {1, 1, 1, 1});
+    flush2D();
+    glFinish();
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
 void Renderer::setCamera(const Vec3& eye, float yaw, float pitch, float hfovDeg) {
@@ -480,6 +522,18 @@ void Renderer::drawScene(bool shadows) {
         QZONE("shadow pass");
         std::vector<DynVertex>& casters = dynShadowOnly_;
         casters.insert(casters.end(), dyn_.begin(), dyn_.end());
+        // Where in the shadow map the casters land (plus a 2 texel margin for the filter): every other
+        // pixel of the world and of players skips the 4 shadow taps.
+        float x0 = 1, y0 = 1, x1 = 0, y1 = 0;
+        const float* sm = shadowMat.m;
+        for (const DynVertex& v : casters) {
+            float sx = sm[0] * v.pos[0] + sm[4] * v.pos[1] + sm[8] * v.pos[2] + sm[12];
+            float sy = sm[1] * v.pos[0] + sm[5] * v.pos[1] + sm[9] * v.pos[2] + sm[13];
+            sx = sx * 0.5f + 0.5f; sy = sy * 0.5f + 0.5f;
+            x0 = std::min(x0, sx); y0 = std::min(y0, sy); x1 = std::max(x1, sx); y1 = std::max(y1, sy);
+        }
+        float margin = 2.0f / shadowRes_;
+        casterRect_[0] = x0 - margin; casterRect_[1] = y0 - margin; casterRect_[2] = x1 + margin; casterRect_[3] = y1 + margin;
         upload(dynVbo_, dynCap_, casters);
         glBindFramebuffer(GL_FRAMEBUFFER, shadowFbo_);
         glViewport(0, 0, shadowRes_, shadowRes_);
@@ -518,6 +572,7 @@ void Renderer::drawScene(bool shadows) {
         glUniform1i(U(worldProg_, "uLightmap"), 0);
         glUniform1i(U(worldProg_, "uShadow"), 1);
         glUniform1i(U(worldProg_, "uShadowOn"), useShadows ? 1 : 0);
+        glUniform4fv(U(worldProg_, "uCasterRect"), 1, casterRect_);
         glUniform1f(U(worldProg_, "uShadowTexel"), 1.0f / shadowRes_);
         setVec3(worldProg_, "uSunColor", sunColor);
         setVec3(worldProg_, "uSkyColor", skyLight);
@@ -539,6 +594,7 @@ void Renderer::drawScene(bool shadows) {
         setMat(dynProg_, "uShadowMat", shadowMat);
         glUniform1i(U(dynProg_, "uShadow"), 1);
         glUniform1i(U(dynProg_, "uShadowOn"), useShadows ? 1 : 0);
+        glUniform4fv(U(dynProg_, "uCasterRect"), 1, casterRect_);
         glUniform1i(U(dynProg_, "uReceiveShadow"), receive ? 1 : 0);
         glUniform1f(U(dynProg_, "uShadowTexel"), 1.0f / shadowRes_);
         setVec3(dynProg_, "uSunColor", sunColor);
@@ -577,41 +633,48 @@ void Renderer::drawScene(bool shadows) {
     flat_.clear();
 }
 
-void Renderer::rect(float x, float y, float w, float h, const Color& c) {
-    const float u = 2.0f / kFontTexW, v = 52.0f / kFontTexH; // inside the solid block
-    Vertex2D q[4] = {{{x, y}, {u, v}, {c.r, c.g, c.b, c.a}}, {{x + w, y}, {u, v}, {c.r, c.g, c.b, c.a}},
-                     {{x + w, y + h}, {u, v}, {c.r, c.g, c.b, c.a}}, {{x, y + h}, {u, v}, {c.r, c.g, c.b, c.a}}};
+static inline uint8_t u8c(float v) { return (uint8_t)std::lround(clampf(v, 0, 1) * 255.0f); }
+static inline uint16_t u16uv(float texel) { return (uint16_t)std::lround(clampf((texel + 1) * 64.0f, 0, 65535)); }
+static inline int16_t px(float v) { return (int16_t)clampf(std::round(v), -32768, 32767); }
+
+// one quad (2 triangles) into the UI batch
+static void uiQuad(std::vector<Vertex2D>& out, float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1,
+                   const Color& c, uint8_t outline, uint8_t glyph) {
+    Vertex2D q[4];
+    const float xs[4] = {x0, x1, x1, x0}, ys[4] = {y0, y0, y1, y1}, us[4] = {u0, u1, u1, u0}, vs[4] = {v0, v0, v1, v1};
+    for (int k = 0; k < 4; k++) {
+        q[k].pos[0] = px(xs[k]); q[k].pos[1] = px(ys[k]);
+        q[k].uv[0] = u16uv(us[k]); q[k].uv[1] = u16uv(vs[k]);
+        q[k].color[0] = u8c(c.r); q[k].color[1] = u8c(c.g); q[k].color[2] = u8c(c.b); q[k].color[3] = u8c(c.a);
+        q[k].outline = outline; q[k].glyph = glyph; q[k].pad[0] = q[k].pad[1] = 0;
+    }
     const int idx[6] = {0, 1, 2, 0, 2, 3};
-    for (int i : idx) ui_.push_back(q[i]);
+    for (int i : idx) out.push_back(q[i]);
+}
+
+void Renderer::rect(float x, float y, float w, float h, const Color& c) {
+    const float u = 2.0f, v = 52.0f; // texels inside the solid block
+    uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, c, 0, 0);
 }
 
 void Renderer::text(float x, float y, float s, const std::string& str, const Color& c) {
-    float x0 = std::round(x), y0 = std::round(y);
-    auto glyphs = [&](float ox, float oy, const Color& col) {
-        float cx = x0 + ox, cy = y0 + oy;
-        for (char ch : str) {
-            unsigned char uc = (unsigned char)ch;
-            if (uc >= 'a' && uc <= 'z') uc -= 32;
-            if (uc < 32 || uc > 126) uc = '?';
-            int g = uc - 32;
-            if (g != 0) {
-                float u0 = (g % 16) * 6.0f / kFontTexW, v0 = (g / 16) * 8.0f / kFontTexH;
-                float u1 = u0 + 6.0f / kFontTexW, v1 = v0 + 8.0f / kFontTexH;
-                float w = 6 * s, h = 8 * s;
-                Vertex2D q[4] = {{{cx, cy}, {u0, v0}, {col.r, col.g, col.b, col.a}}, {{cx + w, cy}, {u1, v0}, {col.r, col.g, col.b, col.a}},
-                                 {{cx + w, cy + h}, {u1, v1}, {col.r, col.g, col.b, col.a}}, {{cx, cy + h}, {u0, v1}, {col.r, col.g, col.b, col.a}}};
-                const int idx[6] = {0, 1, 2, 0, 2, 3};
-                for (int i : idx) ui_.push_back(q[i]);
-            }
-            cx += 6 * s;
+    float cx = std::round(x), cy = std::round(y);
+    uint8_t scale = (uint8_t)clampf(std::round(s), 1, 255);
+    for (char ch : str) {
+        unsigned char uc = (unsigned char)ch;
+        if (uc >= 'a' && uc <= 'z') uc -= 32;
+        if (uc < 32 || uc > 126) uc = '?';
+        int g = uc - 32;
+        if (g != 0) {
+            // glyph cell plus 1 screen pixel of padding on every side for the outline
+            float pad = 1.0f / s; // in font texels
+            float tx0 = (g % 16) * 6.0f - pad, ty0 = (g / 16) * 8.0f - pad;
+            float tx1 = (g % 16) * 6.0f + 6 + pad, ty1 = (g / 16) * 8.0f + 8 + pad;
+            uiQuad(ui_, cx - 1, cy - 1, cx + 6 * s + 1, cy + 8 * s + 1, tx0, ty0, tx1, ty1,
+                   c, scale, (uint8_t)g);
         }
-    };
-    // 1 px black outline: the glyphs offset in 8 directions underneath, then the text itself.
-    const Color k = {0, 0, 0, c.a};
-    for (int dy = -1; dy <= 1; dy++)
-        for (int dx = -1; dx <= 1; dx++)
-            if (dx || dy) glyphs((float)dx, (float)dy, k);
-    glyphs(0, 0, c);
+        cx += 6 * s;
+    }
 }
 
 void Renderer::flush2D() {
@@ -629,6 +692,7 @@ void Renderer::flush2D() {
     glUseProgram(uiProg_);
     glUniform2f(U(uiProg_, "uScreen"), (float)width_, (float)height_);
     glUniform1i(U(uiProg_, "uFont"), 0);
+    glUniform2f(U(uiProg_, "uFontSize"), (float)kFontTexW, (float)kFontTexH);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, fontTex_);
     glBindVertexArray(uiVao_);

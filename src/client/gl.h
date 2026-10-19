@@ -44,6 +44,8 @@ typedef struct __GLsync* GLsync;
 #define GL_ONE 1
 #define GL_FLOAT 0x1406
 #define GL_UNSIGNED_BYTE 0x1401
+#define GL_SHORT 0x1402
+#define GL_UNSIGNED_SHORT 0x1403
 #define GL_ARRAY_BUFFER 0x8892
 #define GL_STATIC_DRAW 0x88E4
 #define GL_DYNAMIC_DRAW 0x88E8
@@ -145,6 +147,7 @@ typedef struct __GLsync* GLsync;
     X(void, glUniform1f, (GLint, GLfloat)) \
     X(void, glUniform2f, (GLint, GLfloat, GLfloat)) \
     X(void, glUniform3f, (GLint, GLfloat, GLfloat, GLfloat)) \
+    X(void, glUniform4fv, (GLint, GLsizei, const GLfloat*)) \
     X(void, glUniform4f, (GLint, GLfloat, GLfloat, GLfloat, GLfloat)) \
     X(void, glUniformMatrix4fv, (GLint, GLsizei, GLboolean, const GLfloat*)) \
     X(void, glGenFramebuffers, (GLsizei, GLuint*)) \

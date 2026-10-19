@@ -11,7 +11,10 @@
 
 struct DynVertex { float pos[3]; float normal[3]; float color[4]; float edge[4]; }; // color.a = sun visibility
 struct FlatVertex { float pos[3]; float color[4]; };
-struct Vertex2D { float pos[2]; float uv[2]; float color[4]; };
+// 16 bytes: screen pixels, font texel coords (u16 fixed point: (texel + 1) * 64), color (RGBA8), and for text the outline width in
+// font texels (scale; 0 = no outline) plus the glyph's atlas cell, so the outline is done in the shader
+// with one quad per character.
+struct Vertex2D { int16_t pos[2]; uint16_t uv[2]; uint8_t color[4]; uint8_t outline, glyph, pad[2]; };
 
 struct Color { float r, g, b, a; };
 inline Color rgba(const Vec3& c, float a = 1) { return {c.x, c.y, c.z, a}; }
@@ -23,6 +26,7 @@ public:
     int width() const { return width_; }
     int height() const { return height_; }
     void loadWorld(const Map& map, const std::function<void(float)>& progress);
+    void warmup(const Map& map); // compile every shader / state now, not on the first match frame
     bool worldLoaded() const { return worldVerts_ > 0; }
 
     void setCamera(const Vec3& eye, float yaw, float pitch, float hfovDeg);
@@ -73,6 +77,7 @@ private:
     std::vector<DynVertex> dyn_, dynShadowOnly_, view_;
     std::vector<FlatVertex> flat_;
     std::vector<Vertex2D> ui_;
+    float casterRect_[4] = {0, 0, 1, 1}; // shadow-map rect covered by dynamic casters (this frame)
 
     Vec3 camPos_, sunDir_ = {0, 1, 0};
     float camYaw_ = 0, camPitch_ = 0;
