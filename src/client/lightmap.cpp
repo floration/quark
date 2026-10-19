@@ -9,7 +9,7 @@
 
 namespace {
 constexpr uint32_t kCacheMagic = 0x314D4C51; // "QLM1"
-constexpr uint32_t kBakeVersion = 4;
+constexpr uint32_t kBakeVersion = 5;
 constexpr int kSkySamples = 48;
 constexpr int kSunSamples = 6;
 constexpr float kAlbedo = 0.65f;
@@ -23,12 +23,7 @@ struct Face {
     int material;
 };
 
-bool anyHit(const Map& m, const Vec3& o, const Vec3& d, float maxT) {
-    Vec3 inv = safeInv(d);
-    for (const Brush& b : m.brushes)
-        if (rayAABB(o, inv, b.box, maxT) >= 0) return true;
-    return false;
-}
+bool anyHit(const Map& m, const Vec3& o, const Vec3& d, float maxT) { return m.raycastAny(o, d, maxT); }
 
 bool pointSolid(const Map& m, const Vec3& p) {
     for (const Brush& b : m.brushes)

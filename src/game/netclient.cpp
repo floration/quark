@@ -5,7 +5,7 @@ namespace {
 constexpr double kConnectRetry = 0.5;
 constexpr double kConnectTimeout = 10.0;
 constexpr double kServerTimeout = 10.0;
-constexpr float kInterpDelay = 0.1f;   // seconds behind the newest snapshot
+constexpr float kInterpDelay = 0.05f;  // seconds behind the newest snapshot (3 snapshots at 60 Hz)
 constexpr int kCmdsPerPacket = 4;      // redundancy against packet loss
 
 uint32_t randomNonce() {
@@ -250,8 +250,8 @@ static float lerpAngle(float a, float b, float t) {
     return a + d * t;
 }
 
-std::vector<InterpPlayer> NetClient::interpolatedPlayers() const {
-    std::vector<InterpPlayer> out(kMaxPlayers);
+NetClient::PlayerArray NetClient::interpolatedPlayers() const {
+    PlayerArray out{};
     if (snaps_.empty()) return out;
     // Find snapshots bracketing renderTime.
     const Snapshot* a = &snaps_.front();

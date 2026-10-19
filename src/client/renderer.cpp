@@ -156,8 +156,17 @@ uniform sampler2D uFont;
 out vec4 fragColor;
 void main() { fragColor = vec4(vColor.rgb, vColor.a * texture(uFont, vUV).r); })";
 
-void setVec3(unsigned prog, const char* name, const Vec3& v) { glUniform3f(glGetUniformLocation(prog, name), v.x, v.y, v.z); }
-void setMat(unsigned prog, const char* name, const Mat4& m) { glUniformMatrix4fv(glGetUniformLocation(prog, name), 1, GL_FALSE, m.m); }
+// Uniform locations cached by (program, literal pointer): no string lookups in the frame loop.
+GLint U(unsigned prog, const char* name) {
+    struct E { unsigned prog; const char* name; GLint loc; };
+    static std::vector<E> cache;
+    for (auto& e : cache) if (e.prog == prog && e.name == name) return e.loc;
+    GLint l = glGetUniformLocation(prog, name);
+    cache.push_back({prog, name, l});
+    return l;
+}
+void setVec3(unsigned prog, const char* name, const Vec3& v) { glUniform3f(U(prog, name), v.x, v.y, v.z); }
+void setMat(unsigned prog, const char* name, const Mat4& m) { glUniformMatrix4fv(U(prog, name), 1, GL_FALSE, m.m); }
 
 // Upload a vector into a growable stream buffer.
 template <class T>
@@ -489,17 +498,17 @@ void Renderer::drawScene(bool shadows) {
         glUseProgram(worldProg_);
         setMat(worldProg_, "uViewProj", viewProj_);
         setMat(worldProg_, "uShadowMat", shadowMat);
-        glUniform1i(glGetUniformLocation(worldProg_, "uLightmap"), 0);
-        glUniform1i(glGetUniformLocation(worldProg_, "uShadow"), 1);
-        glUniform1i(glGetUniformLocation(worldProg_, "uShadowOn"), useShadows ? 1 : 0);
-        glUniform1f(glGetUniformLocation(worldProg_, "uShadowTexel"), 1.0f / shadowRes_);
+        glUniform1i(U(worldProg_, "uLightmap"), 0);
+        glUniform1i(U(worldProg_, "uShadow"), 1);
+        glUniform1i(U(worldProg_, "uShadowOn"), useShadows ? 1 : 0);
+        glUniform1f(U(worldProg_, "uShadowTexel"), 1.0f / shadowRes_);
         setVec3(worldProg_, "uSunColor", sunColor);
         setVec3(worldProg_, "uSkyColor", skyLight);
         setVec3(worldProg_, "uBase", baseColor);
         setVec3(worldProg_, "uAccent", accentColor);
         setVec3(worldProg_, "uFogColor", skyColor);
         setVec3(worldProg_, "uCamPos", camPos_);
-        glUniform1f(glGetUniformLocation(worldProg_, "uFogDensity"), fog);
+        glUniform1f(U(worldProg_, "uFogDensity"), fog);
         glBindTexture(GL_TEXTURE_2D, lightmapTex_);
         glBindVertexArray(worldVao_);
         glDrawArrays(GL_TRIANGLES, 0, worldVerts_);
@@ -511,16 +520,16 @@ void Renderer::drawScene(bool shadows) {
         glUseProgram(dynProg_);
         setMat(dynProg_, "uViewProj", viewProj_);
         setMat(dynProg_, "uShadowMat", shadowMat);
-        glUniform1i(glGetUniformLocation(dynProg_, "uShadow"), 1);
-        glUniform1i(glGetUniformLocation(dynProg_, "uShadowOn"), useShadows ? 1 : 0);
-        glUniform1i(glGetUniformLocation(dynProg_, "uReceiveShadow"), receive ? 1 : 0);
-        glUniform1f(glGetUniformLocation(dynProg_, "uShadowTexel"), 1.0f / shadowRes_);
+        glUniform1i(U(dynProg_, "uShadow"), 1);
+        glUniform1i(U(dynProg_, "uShadowOn"), useShadows ? 1 : 0);
+        glUniform1i(U(dynProg_, "uReceiveShadow"), receive ? 1 : 0);
+        glUniform1f(U(dynProg_, "uShadowTexel"), 1.0f / shadowRes_);
         setVec3(dynProg_, "uSunColor", sunColor);
         setVec3(dynProg_, "uSkyColor", skyLight);
         setVec3(dynProg_, "uSunDir", sunDir_);
         setVec3(dynProg_, "uFogColor", skyColor);
         setVec3(dynProg_, "uCamPos", camPos_);
-        glUniform1f(glGetUniformLocation(dynProg_, "uFogDensity"), fog);
+        glUniform1f(U(dynProg_, "uFogDensity"), fog);
         glBindVertexArray(dynVao_);
         glDrawArrays(GL_TRIANGLES, 0, (GLsizei)v.size());
     };
@@ -588,8 +597,8 @@ void Renderer::flush2D() {
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     upload(uiVbo_, uiCap_, ui_);
     glUseProgram(uiProg_);
-    glUniform2f(glGetUniformLocation(uiProg_, "uScreen"), (float)width_, (float)height_);
-    glUniform1i(glGetUniformLocation(uiProg_, "uFont"), 0);
+    glUniform2f(U(uiProg_, "uScreen"), (float)width_, (float)height_);
+    glUniform1i(U(uiProg_, "uFont"), 0);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, fontTex_);
     glBindVertexArray(uiVao_);

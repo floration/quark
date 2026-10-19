@@ -4,13 +4,21 @@ static int16_t angQ(float a) { return (int16_t)std::lround(std::remainder(a, 2 *
 static float angD(int16_t q) { return q * (PI / 32767.0f); }
 
 void writeSnapshot(Writer& w, const Snapshot& s) {
+    writeSnapshotClient(w, s);
+    writeSnapshotShared(w, s);
+    writeSnapshotEvents(w, s.events);
+}
+
+void writeSnapshotClient(Writer& w, const Snapshot& s) {
     w.u32(s.tick);
     w.u32(s.ackCmdSeq);
     w.u16(s.ackStringCmd);
     w.u8(s.clientId);
     w.vec(s.self.pos); w.vec(s.self.vel); w.u8(s.self.flags); w.f32(s.self.jumpTimer);
     w.u8(s.selfHealth); w.u8(s.selfWeapon);
+}
 
+void writeSnapshotShared(Writer& w, const Snapshot& s) {
     const ModeState& m = s.ms;
     w.u8(m.mode); w.u8(m.phase); w.f32(m.timeLeft); w.u8(m.round); w.u8(m.roundsToWin);
     w.i16(m.scoreA); w.i16(m.scoreB); w.u8(m.attackers); w.u8(m.flags);
@@ -29,8 +37,11 @@ void writeSnapshot(Writer& w, const Snapshot& s) {
     for (auto& p : s.projectiles) {
         w.u16(p.id); w.u8(p.type); w.u8(p.owner); w.vecq(p.pos); w.vecq(p.vel);
     }
-    w.u8((uint8_t)s.events.size());
-    for (auto& e : s.events) {
+}
+
+void writeSnapshotEvents(Writer& w, const std::vector<GameEvent>& events) {
+    w.u8((uint8_t)events.size());
+    for (auto& e : events) {
         w.u32(e.id); w.u8(e.type); w.u8(e.a); w.u8(e.b); w.i16(e.c); w.str(e.text);
     }
 }

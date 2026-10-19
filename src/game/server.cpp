@@ -7,6 +7,7 @@
 namespace {
 constexpr double kTimeout = 10.0;
 constexpr int kMaxQueuedCmds = 12;
+constexpr float kMaxCmdTokens = 4.0f;
 constexpr int kMaxRewindTicks = 30; // 500 ms of lag compensation
 constexpr float kKnifeRange = 2.2f;
 constexpr float kRocketLife = 5.0f;
@@ -256,6 +257,7 @@ void Server::handleInput(int id, Reader& r) {
     for (int i = 0; i < n; i++) // cmds are sent oldest first
         if (cmds[i].seq > newest) { p.cmdQueue.push_back(cmds[i]); newest = cmds[i].seq; }
     while ((int)p.cmdQueue.size() > kMaxQueuedCmds) { p.lastCmdSeq = p.cmdQueue.front().seq; p.cmdQueue.pop_front(); }
+    drainCmds(id); // run input the moment it arrives instead of waiting for the next tick
 
     if (hasStr && strSeq == (uint16_t)(p.lastStringCmd + 1)) {
         p.lastStringCmd = strSeq;
@@ -478,13 +480,8 @@ void Server::simulate() {
     for (int i = 0; i < kMaxPlayers; i++) {
         ServerPlayer& p = players_[i];
         if (!p.connected) continue;
-        // Normally one command per tick; drain faster if the client's queue has grown (jitter catch-up).
-        int budget = p.cmdQueue.size() > 4 ? 3 : 1;
-        while (budget-- > 0 && !p.cmdQueue.empty()) {
-            UserCmd c = p.cmdQueue.front();
-            p.cmdQueue.pop_front();
-            runPlayerCmd(i, c);
-        }
+        p.cmdTokens = std::min(p.cmdTokens + 1.0f, kMaxCmdTokens);
+        drainCmds(i);
     }
     // Record positions for lag compensation.
     for (auto& p : players_) {
@@ -505,6 +502,18 @@ void Server::simulate() {
     rulesTick(*this);
 }
 
+// Commands cost one token each and tokens refill at the tick rate, so a client can't
+// move faster than real time, but bursts after network jitter are absorbed immediately.
+void Server::drainCmds(int id) {
+    ServerPlayer& p = players_[id];
+    while (p.cmdTokens >= 1.0f && !p.cmdQueue.empty()) {
+        UserCmd c = p.cmdQueue.front();
+        p.cmdQueue.pop_front();
+        p.cmdTokens -= 1.0f;
+        runPlayerCmd(id, c);
+    }
+}
+
 void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     ServerPlayer& p = players_[id];
     p.lastCmdSeq = cmd.seq;
@@ -521,8 +530,13 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     if (cmd.buttons & BTN_WEAPON1) p.weapon = WPN_RIFLE;
     if (cmd.buttons & BTN_WEAPON2) p.weapon = WPN_ROCKET;
     if (cmd.buttons & BTN_WEAPON3) p.weapon = WPN_KNIFE;
+    if (cmd.buttons & BTN_WEAPON4) p.weapon = WPN_SNIPER;
+    if (cmd.buttons & BTN_WEAPON5) p.weapon = WPN_LASER;
     if ((cmd.buttons & BTN_FIRE) && time() >= p.nextFire && !(p.move.flags & MF_FROZEN)) {
-        p.nextFire = time() + weaponDef(p.weapon).refire;
+        // Holding fire keeps an exact cadence; after a pause the timer restarts from now.
+        float refire = weaponDef(p.weapon).refire;
+        p.nextFire = (time() - p.nextFire < kTickDt) ? p.nextFire + refire : time() + refire;
+        p.lastFire = time();
         fireWeapon(id, cmd);
     }
 }
@@ -533,6 +547,13 @@ void Server::fireWeapon(int id, const UserCmd& cmd) {
     float eyeH = (p.move.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight;
     Vec3 eye = p.move.pos + Vec3(0, eyeH, 0);
     Vec3 dir = angleForward(cmd.yaw, cmd.pitch);
+    bool scoped = wd.scopedSpread >= 0 && (cmd.buttons & BTN_ALTFIRE);
+    float spread = scoped ? wd.scopedSpread : wd.spread;
+    if (spread > 0) {
+        Vec3 right = normalize(cross(dir, {0, 1, 0})), up = cross(right, dir);
+        float a = randf() * 2 * PI, r = std::sqrt(randf()) * spread;
+        dir = normalize(dir + right * (std::cos(a) * r) + up * (std::sin(a) * r));
+    }
 
     if (wd.projectile) {
         for (auto& pr : projectiles_) {
@@ -639,6 +660,7 @@ void Server::sendSnapshots() {
         if (p.team == TEAM_SPECTATOR) ps.flags |= PS_SPECTATOR;
         if (p.team == TEAM_B) ps.flags |= PS_TEAM_B;
         if (p.finished) ps.flags |= PS_FINISHED;
+        if (p.alive && time() - p.lastFire < 0.1f) ps.flags |= PS_FIRING;
         ps.pos = p.move.pos;
         ps.yaw = p.yaw;
         ps.pitch = p.pitch;
@@ -656,7 +678,16 @@ void Server::sendSnapshots() {
         if (s.projectiles.size() >= 40) break;
         s.projectiles.push_back({pr.id, (uint8_t)pr.type, (uint8_t)pr.owner, pr.pos, pr.vel});
     }
-    uint8_t buf[kMaxPacket + 64];
+    // Shared part (mode, players, projectiles) is identical for everyone: encode it once.
+    uint8_t shared[kMaxPacket];
+    Writer ws(shared, sizeof shared);
+    writeSnapshotShared(ws, s);
+    if (ws.overflowed()) { // too many projectiles: drop them rather than the snapshot
+        s.projectiles.clear();
+        ws = Writer(shared, sizeof shared);
+        writeSnapshotShared(ws, s);
+    }
+    uint8_t buf[kMaxPacket];
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
         if (!p.connected) continue;
@@ -666,29 +697,21 @@ void Server::sendSnapshots() {
         s.self = p.move;
         s.selfHealth = (uint8_t)clampf(std::ceil(p.health), 0, 255);
         s.selfWeapon = (uint8_t)p.weapon;
-        s.events.clear();
-        int budget = 400;
-        for (auto& e : p.events) {
-            int sz = 10 + (int)e.text.size();
-            if (sz > budget || s.events.size() >= 16) break;
-            budget -= sz;
-            s.events.push_back(e);
-        }
         Writer w(buf, kMaxPacket);
         writeHeader(w, PKT_SNAPSHOT);
         w.u32(p.nonce);
-        writeSnapshot(w, s);
-        if (w.overflowed()) {
-            // Drop projectiles from this packet rather than send nothing.
-            Snapshot trimmed = s;
-            trimmed.projectiles.clear();
-            Writer w2(buf, kMaxPacket);
-            writeHeader(w2, PKT_SNAPSHOT);
-            w2.u32(p.nonce);
-            writeSnapshot(w2, trimmed);
-            sock_.send(p.addr, buf, w2.size());
-        } else {
-            sock_.send(p.addr, buf, w.size());
+        writeSnapshotClient(w, s);
+        w.bytes(shared, ws.size());
+        // Reliable events fill whatever room is left.
+        int room = kMaxPacket - w.size() - 1;
+        events_.clear();
+        for (auto& e : p.events) {
+            int sz = 10 + (int)e.text.size();
+            if (sz > room || events_.size() >= 16) break;
+            room -= sz;
+            events_.push_back(e);
         }
+        writeSnapshotEvents(w, events_);
+        sock_.send(p.addr, buf, w.size());
     }
 }

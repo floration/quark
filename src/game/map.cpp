@@ -132,17 +132,52 @@ bool Map::parse(const std::string& text, std::string* err) {
         if (err) *err = "map needs at least one box and one spawn";
         return false;
     }
+    buildGrid();
     return true;
+}
+
+void Map::buildGrid() {
+    gridX0 = std::floor(bounds.mn.x / kCell) * kCell;
+    gridZ0 = std::floor(bounds.mn.z / kCell) * kCell;
+    gridW = std::max(1, (int)std::ceil((bounds.mx.x - gridX0) / kCell));
+    gridH = std::max(1, (int)std::ceil((bounds.mx.z - gridZ0) / kCell));
+    std::vector<std::vector<uint16_t>> cells((size_t)gridW * gridH);
+    for (size_t i = 0; i < brushes.size(); i++) {
+        const AABB& b = brushes[i].box;
+        int x0 = std::max(0, (int)((b.mn.x - gridX0) / kCell)), x1 = std::min(gridW - 1, (int)((b.mx.x - gridX0) / kCell));
+        int z0 = std::max(0, (int)((b.mn.z - gridZ0) / kCell)), z1 = std::min(gridH - 1, (int)((b.mx.z - gridZ0) / kCell));
+        for (int z = z0; z <= z1; z++)
+            for (int x = x0; x <= x1; x++) cells[(size_t)z * gridW + x].push_back((uint16_t)i);
+    }
+    cellStart.assign(cells.size() + 1, 0);
+    cellBrushes.clear();
+    for (size_t c = 0; c < cells.size(); c++) {
+        cellStart[c] = (uint32_t)cellBrushes.size();
+        cellBrushes.insert(cellBrushes.end(), cells[c].begin(), cells[c].end());
+    }
+    cellStart[cells.size()] = (uint32_t)cellBrushes.size();
+}
+
+template <class F> void Map::forBox(const AABB& b, F f) const {
+    int x0 = std::max(0, (int)std::floor((b.mn.x - gridX0) / kCell)), x1 = std::min(gridW - 1, (int)std::floor((b.mx.x - gridX0) / kCell));
+    int z0 = std::max(0, (int)std::floor((b.mn.z - gridZ0) / kCell)), z1 = std::min(gridH - 1, (int)std::floor((b.mx.z - gridZ0) / kCell));
+    for (int z = z0; z <= z1; z++)
+        for (int x = x0; x <= x1; x++) {
+            size_t c = (size_t)z * gridW + x;
+            for (uint32_t k = cellStart[c]; k < cellStart[c + 1]; k++) f(brushes[cellBrushes[k]]);
+        }
 }
 
 float Map::sweepAxis(const AABB& box, int axis, float delta) const {
     if (delta == 0.0f) return 0.0f;
     const int a1 = (axis + 1) % 3, a2 = (axis + 2) % 3;
     constexpr float eps = 0.001f;
-    for (const Brush& br : brushes) {
+    AABB q = box;
+    if (delta > 0) q.mx[axis] += delta; else q.mn[axis] += delta;
+    forBox(q, [&](const Brush& br) {
         const AABB& b = br.box;
-        if (box.mx[a1] <= b.mn[a1] || box.mn[a1] >= b.mx[a1]) continue;
-        if (box.mx[a2] <= b.mn[a2] || box.mn[a2] >= b.mx[a2]) continue;
+        if (box.mx[a1] <= b.mn[a1] || box.mn[a1] >= b.mx[a1]) return;
+        if (box.mx[a2] <= b.mn[a2] || box.mn[a2] >= b.mx[a2]) return;
         if (delta > 0) {
             if (box.mx[axis] <= b.mn[axis] + eps) {
                 float allowed = b.mn[axis] - box.mx[axis] - eps;
@@ -154,30 +189,75 @@ float Map::sweepAxis(const AABB& box, int axis, float delta) const {
                 if (allowed > delta) delta = std::min(allowed, 0.0f);
             }
         }
-    }
+    });
     return delta;
 }
 
 bool Map::boxSolid(const AABB& box) const {
-    for (const Brush& b : brushes)
-        if (box.overlaps(b.box)) return true;
-    return false;
+    bool hit = false;
+    forBox(box, [&](const Brush& b) { hit = hit || box.overlaps(b.box); });
+    return hit;
+}
+
+// Walks the XZ grid cells along the ray (2D DDA). visit(cellIndex, tExit) returns false to stop.
+template <class V> static void walkCells(const Map& m, const Vec3& o, const Vec3& d, float maxT, V visit) {
+    // Clip the ray to the grid's XZ extent first.
+    float t0 = 0, t1 = maxT;
+    const float gx1 = m.gridX0 + m.gridW * Map::kCell, gz1 = m.gridZ0 + m.gridH * Map::kCell;
+    const float lo[2] = {m.gridX0, m.gridZ0}, hi[2] = {gx1, gz1}, oo[2] = {o.x, o.z}, dd[2] = {d.x, d.z};
+    for (int i = 0; i < 2; i++) {
+        if (std::fabs(dd[i]) < 1e-9f) { if (oo[i] < lo[i] || oo[i] > hi[i]) return; continue; }
+        float a = (lo[i] - oo[i]) / dd[i], b = (hi[i] - oo[i]) / dd[i];
+        if (a > b) std::swap(a, b);
+        t0 = std::max(t0, a); t1 = std::min(t1, b);
+        if (t0 > t1) return;
+    }
+    float px = o.x + d.x * t0, pz = o.z + d.z * t0;
+    int cx = std::min(m.gridW - 1, std::max(0, (int)((px - m.gridX0) / Map::kCell)));
+    int cz = std::min(m.gridH - 1, std::max(0, (int)((pz - m.gridZ0) / Map::kCell)));
+    int sx = d.x > 0 ? 1 : -1, sz = d.z > 0 ? 1 : -1;
+    float tdx = std::fabs(d.x) > 1e-9f ? Map::kCell / std::fabs(d.x) : 1e30f;
+    float tdz = std::fabs(d.z) > 1e-9f ? Map::kCell / std::fabs(d.z) : 1e30f;
+    float nx = m.gridX0 + (cx + (sx > 0 ? 1 : 0)) * Map::kCell, nz = m.gridZ0 + (cz + (sz > 0 ? 1 : 0)) * Map::kCell;
+    float tmx = std::fabs(d.x) > 1e-9f ? (nx - o.x) / d.x : 1e30f;
+    float tmz = std::fabs(d.z) > 1e-9f ? (nz - o.z) / d.z : 1e30f;
+    for (;;) {
+        float tExit = std::min(std::min(tmx, tmz), t1);
+        if (!visit((size_t)cz * m.gridW + cx, tExit)) return;
+        if (tExit >= t1) return;
+        if (tmx < tmz) { cx += sx; tmx += tdx; if (cx < 0 || cx >= m.gridW) return; }
+        else { cz += sz; tmz += tdz; if (cz < 0 || cz >= m.gridH) return; }
+    }
 }
 
 float Map::raycast(const Vec3& o, const Vec3& dir, float maxDist, Vec3* normal) const {
     Vec3 inv = safeInv(dir);
     float best = -1.0f;
     int bestAxis = -1;
-    for (const Brush& b : brushes) {
-        int axis;
-        float t = rayAABB(o, inv, b.box, best < 0 ? maxDist : best, &axis);
-        if (t >= 0 && (best < 0 || t < best)) { best = t; bestAxis = axis; }
-    }
+    walkCells(*this, o, dir, maxDist, [&](size_t c, float tExit) {
+        for (uint32_t k = cellStart[c]; k < cellStart[c + 1]; k++) {
+            int axis;
+            float t = rayAABB(o, inv, brushes[cellBrushes[k]].box, best < 0 ? maxDist : best, &axis);
+            if (t >= 0 && (best < 0 || t < best)) { best = t; bestAxis = axis; }
+        }
+        return !(best >= 0 && best <= tExit); // nearest hit is inside this cell: done
+    });
     if (best >= 0 && normal) {
         *normal = Vec3(0, 0, 0);
         if (bestAxis >= 0) (*normal)[bestAxis] = dir[bestAxis] > 0 ? -1.0f : 1.0f;
     }
     return best;
+}
+
+bool Map::raycastAny(const Vec3& o, const Vec3& dir, float maxDist) const {
+    Vec3 inv = safeInv(dir);
+    bool hit = false;
+    walkCells(*this, o, dir, maxDist, [&](size_t c, float) {
+        for (uint32_t k = cellStart[c]; k < cellStart[c + 1] && !hit; k++)
+            hit = rayAABB(o, inv, brushes[cellBrushes[k]].box, maxDist) >= 0;
+        return !hit;
+    });
+    return hit;
 }
 
 bool Map::supportsMode(int mode) const {

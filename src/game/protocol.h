@@ -37,7 +37,7 @@ inline UserCmd readCmd(Reader& r) {
 }
 
 enum PlayerSnapFlags : uint8_t {
-    PS_ALIVE = 1, PS_CROUCHED = 2, PS_HASBOMB = 4, PS_SPECTATOR = 8, PS_TEAM_B = 16, PS_CONNECTED = 32, PS_FINISHED = 64,
+    PS_ALIVE = 1, PS_CROUCHED = 2, PS_HASBOMB = 4, PS_SPECTATOR = 8, PS_TEAM_B = 16, PS_CONNECTED = 32, PS_FINISHED = 64, PS_FIRING = 128,
 };
 
 struct PlayerSnap {
@@ -110,4 +110,8 @@ struct Snapshot {
 };
 
 void writeSnapshot(Writer& w, const Snapshot& s);
+// The pieces of writeSnapshot, in wire order: the server encodes the shared part once per tick.
+void writeSnapshotClient(Writer& w, const Snapshot& s);   // per-client header + own movement state
+void writeSnapshotShared(Writer& w, const Snapshot& s);   // mode state, players, projectiles
+void writeSnapshotEvents(Writer& w, const std::vector<GameEvent>& events);
 bool readSnapshot(Reader& r, Snapshot& s);

@@ -39,8 +39,19 @@ struct Map {
     bool boxSolid(const AABB& box) const;
     // Returns hit distance or -1. normal receives the face normal on hit.
     float raycast(const Vec3& origin, const Vec3& dir, float maxDist, Vec3* normal = nullptr) const;
+    bool raycastAny(const Vec3& origin, const Vec3& dir, float maxDist) const; // shadow-ray style early out
 
     bool supportsMode(int mode) const;
+
+    // Uniform XZ grid over brushes: queries only touch cells they pass through.
+    static constexpr float kCell = 4.0f;
+    int gridW = 0, gridH = 0;
+    float gridX0 = 0, gridZ0 = 0;
+    std::vector<uint32_t> cellStart;   // gridW*gridH+1 offsets into cellBrushes
+    std::vector<uint16_t> cellBrushes;
+    void buildGrid();
+    template <class F> void forBox(const AABB& b, F f) const; // calls f(brush) for brushes in overlapped cells (may repeat)
+
     float payloadLength() const;
     Vec3 payloadPoint(float dist) const;
 };

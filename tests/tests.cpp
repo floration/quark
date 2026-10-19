@@ -67,6 +67,41 @@ static void testMaps() {
     CHECK(arena.payloadLength() > 20);
 }
 
+static void testGridQueries() {
+    printf("grid raycast / collision vs brute force\n");
+    Map m;
+    CHECK(m.load("arena"));
+    auto brute = [&](const Vec3& o, const Vec3& d, float maxT) {
+        Vec3 inv = safeInv(d);
+        float best = -1;
+        for (auto& b : m.brushes) { float t = rayAABB(o, inv, b.box, best < 0 ? maxT : best); if (t >= 0 && (best < 0 || t < best)) best = t; }
+        return best;
+    };
+    srand(7);
+    auto rnd = [](float a, float b) { return a + (b - a) * (rand() / (float)RAND_MAX); };
+    int mism = 0;
+    double tGrid = 0, tBrute = 0;
+    for (int i = 0; i < 20000; i++) {
+        Vec3 o = {rnd(-40, 40), rnd(-2, 10), rnd(-40, 40)};
+        Vec3 d = normalize(Vec3(rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)));
+        if (i % 10 == 0) d = {0, -1, 0};
+        double t0 = timeNow();
+        float a = m.raycast(o, d, 120);
+        double t1 = timeNow();
+        float b = brute(o, d, 120);
+        double t2 = timeNow();
+        tGrid += t1 - t0; tBrute += t2 - t1;
+        if ((a < 0) != (b < 0) || (a >= 0 && std::fabs(a - b) > 1e-3f)) mism++;
+        if (m.raycastAny(o, d, 120) != (b >= 0)) mism++;
+        AABB box = playerBox(o, false);
+        bool solidBrute = false;
+        for (auto& br : m.brushes) solidBrute |= box.overlaps(br.box);
+        if (m.boxSolid(box) != solidBrute) mism++;
+    }
+    CHECK(mism == 0);
+    printf("  raycast: grid %.2fus, brute %.2fus per ray\n", tGrid / 20000 * 1e6, tBrute / 20000 * 1e6);
+}
+
 static UserCmd idle(int) { return UserCmd(); }
 
 static void testSession(int mode, const char* mapName, uint16_t port) {
@@ -272,6 +307,56 @@ static int runBot(const std::string& addr, double seconds, const std::string& na
     return 0;
 }
 
+static void testWeapons(uint16_t port) {
+    printf("weapons: sniper (scoped/unscoped), laser, rocket\n");
+    for (int w : {WPN_SNIPER, WPN_LASER, WPN_ROCKET}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port++;
+        s.setLog([](const std::string&) {});
+        if (!s.start(cfg)) { g_fail++; continue; }
+        NetClient a, b;
+        a.connect("127.0.0.1:" + std::to_string(cfg.port), "shooter");
+        b.connect("127.0.0.1:" + std::to_string(cfg.port), "target");
+        std::vector<NetClient*> cls = {&a, &b};
+        pump(s, cls, 2.5, idle);
+        auto& sa = s.players_[a.clientId()];
+        auto& sb = s.players_[b.clientId()];
+        float dist = w == WPN_LASER ? 10.0f : 20.0f;
+        sa.move.pos = {9, 0, 6}; sb.move.pos = {9, 0, 6 - dist};
+        sa.move.vel = sb.move.vel = {};
+        pump(s, cls, 0.3, idle);
+        uint16_t sel = w == WPN_SNIPER ? BTN_WEAPON4 : w == WPN_LASER ? BTN_WEAPON5 : BTN_WEAPON2;
+        auto aim = [&](int i, uint16_t extra) {
+            UserCmd c;
+            if (i != 0) return c;
+            Vec3 eye = a.predicted().pos + Vec3(0, kEyeHeight, 0);
+            Vec3 tgt = sb.move.pos + Vec3(0, w == WPN_ROCKET ? 0.2f : 1.0f, 0);
+            Vec3 d = normalize(tgt - eye);
+            c.pitch = std::asin(d.y);
+            c.yaw = std::atan2(-d.x, -d.z);
+            c.buttons = sel | extra;
+            return c;
+        };
+        pump(s, cls, 0.3, [&](int i) { return aim(i, 0); }); // switch weapon
+        CHECK(sa.weapon == w);
+        int deaths0 = sb.deaths;
+        float hp0 = sb.health;
+        double t0 = timeNow();
+        pump(s, cls, w == WPN_LASER ? 0.5 : w == WPN_ROCKET ? 0.2 : 0.3, [&](int i) { return aim(i, BTN_FIRE | (w == WPN_SNIPER ? BTN_ALTFIRE : 0)); });
+        double elapsed = timeNow() - t0;
+        if (w == WPN_ROCKET) pump(s, cls, 1.0, idle); // let it fly
+        float dealt = (sb.deaths > deaths0) ? 100.0f : hp0 - sb.health;
+        if (w == WPN_SNIPER) CHECK(dealt >= 90);                 // one scoped shot
+        if (w == WPN_LASER) {                                     // ~5 dmg every 0.05 s
+            float expect = (float)(elapsed / weaponDef(WPN_LASER).refire) * 5;
+            CHECK(dealt > expect * 0.6f && dealt < expect * 1.4f + 5);
+        }
+        if (w == WPN_ROCKET) CHECK(dealt > 40);
+        s.stop();
+    }
+}
+
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
     netInit();
@@ -279,6 +364,7 @@ int main(int argc, char** argv) {
     srand(1234);
     testMovement();
     testMaps();
+    testGridQueries();
     uint16_t port = 28500;
     testSession(MODE_VS, "arena", port++);
     testSession(MODE_BOMB, "arena", port++);
@@ -288,6 +374,7 @@ int main(int argc, char** argv) {
     testSession(MODE_RACE, "sprint", port++);
     testPayloadPush(port++);
     testPacketLoss(port++);
+    testWeapons(port); port += 3;
     netShutdown();
     printf(g_fail ? "%d FAILURE(S)\n" : "all tests passed\n", g_fail);
     return g_fail ? 1 : 0;

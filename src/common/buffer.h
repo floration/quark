@@ -24,6 +24,11 @@ public:
         u8((uint8_t)n);
         for (size_t i = 0; i < n; i++) u8((uint8_t)s[i]);
     }
+    void bytes(const uint8_t* p, int n) {
+        if (pos_ + n > cap_) { overflow_ = true; return; }
+        memcpy(buf_ + pos_, p, n);
+        pos_ += n;
+    }
     int size() const { return pos_; }
     bool overflowed() const { return overflow_; }
     uint8_t* data() { return buf_; }

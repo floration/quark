@@ -22,6 +22,8 @@ struct LaunchOptions {
     float shotDelay = 3.0f;
     float spawnYaw = -1000;     // --yaw deg (debug camera direction for screenshots)
     float spawnPitch = 0;       // --pitch deg
+    int debugWeapon = -1;       // --weapon N (1-5), for screenshots
+    bool debugScope = false, debugFire = false; // --scope, --fire
 };
 
 class Game {
@@ -103,6 +105,10 @@ private:
     std::vector<Explosion> explosions_;
     std::vector<ProjectileSnap> lastProjectiles_;
     double shotAt_ = -1;
+    bool scoped_ = false;
+    double laserUntil_ = 0;            // local laser beam visible until
+    bool remoteFiring_[kMaxPlayers] = {};
+    float viewFov() const;
 
     // F3 performance overlay: frame-time percentiles (lows matter, averages hide stutter)
     bool showPerf_ = false;

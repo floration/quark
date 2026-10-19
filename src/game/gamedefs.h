@@ -4,7 +4,7 @@
 
 constexpr int kTickRate = 60;              // simulation + input rate (Hz)
 constexpr float kTickDt = 1.0f / kTickRate;
-constexpr int kSnapshotDivider = 2;        // snapshots at 30 Hz
+constexpr int kSnapshotDivider = 1;        // snapshots every tick (60 Hz): lower latency
 constexpr int kMaxPlayers = 32;
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
@@ -58,24 +58,33 @@ enum : uint16_t {
     BTN_WEAPON1 = 1 << 6,
     BTN_WEAPON2 = 1 << 7,
     BTN_WEAPON3 = 1 << 8,
+    BTN_WEAPON4 = 1 << 9,
+    BTN_WEAPON5 = 1 << 10,
 };
 
-// Placeholder weapon set; real weapons will be defined later.
-enum WeaponId : uint8_t { WPN_RIFLE = 0, WPN_ROCKET, WPN_KNIFE, WPN_COUNT };
+// Weapon set. Rifle and knife are placeholders; sniper, laser and rocket are the real designs.
+enum WeaponId : uint8_t { WPN_RIFLE = 0, WPN_ROCKET, WPN_KNIFE, WPN_SNIPER, WPN_LASER, WPN_COUNT };
 struct WeaponDef {
     const char* name;
-    float refire;     // seconds between shots
+    float refire;       // seconds between shots
     int damage;
     float range;
     bool projectile;
     float projSpeed;
     float splashRadius;
+    float spread;       // radians of random spread (hip fire)
+    float scopedSpread; // radians when scoped (alt-fire held); < 0 = can't scope
+    float zoomFov;      // horizontal fov while scoped
+    bool beam;          // continuous beam (laser)
 };
 inline const WeaponDef& weaponDef(int w) {
     static const WeaponDef defs[WPN_COUNT] = {
-        {"RIFLE", 0.12f, 18, 300.0f, false, 0, 0},
-        {"ROCKET", 0.9f, 90, 0, true, 30.0f, 3.5f},
-        {"KNIFE", 0.45f, 55, 2.2f, false, 0, 0},
+        //  name      refire  dmg  range   proj  speed  splash spread  scoped  zoom  beam
+        {"RIFLE",     0.12f,  18, 300.0f, false,  0,    0,     0.0f,   -1,     0,    false},
+        {"ROCKET",    0.85f,  95,   0,    true,  32.0f, 3.6f,  0.0f,   -1,     0,    false},
+        {"KNIFE",     0.45f,  55,   2.2f, false,  0,    0,     0.0f,   -1,     0,    false},
+        {"SNIPER",    1.25f,  95, 500.0f, false,  0,    0,     0.06f,  0.0f,  24.0f, false},
+        {"LASER",     0.05f,   5,  32.0f, false,  0,    0,     0.0f,   -1,     0,    true},
     };
     return defs[w < 0 || w >= WPN_COUNT ? 0 : w];
 }

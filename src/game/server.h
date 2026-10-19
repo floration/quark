@@ -42,11 +42,13 @@ struct ServerPlayer {
     float health = 0;
     int weapon = WPN_RIFLE;
     float nextFire = 0;
+    float lastFire = -10;
     int kills = 0, deaths = 0, score = 0;
     float respawnAt = -1;
     int checkpoint = 0;         // race: next checkpoint index
     uint32_t lastCmdSeq = 0;
     std::deque<UserCmd> cmdQueue;
+    float cmdTokens = 2.0f;
     uint32_t lastViewTick = 0;
     double lastRecv = 0;
     float ping = 0;
@@ -124,6 +126,7 @@ private:
     void handleStringCmd(int id, const std::string& s);
     void dropPlayer(int id, const std::string& reason, bool notify);
     void simulate();
+    void drainCmds(int id);
     void runPlayerCmd(int id, const UserCmd& cmd);
     void fireWeapon(int id, const UserCmd& cmd);
     void tickProjectiles();
@@ -133,6 +136,9 @@ private:
     void autoTeam(int id);
 
     UdpSocket sock_;
+    uint32_t rng_ = 0x9E3779B9u;
+    float randf() { rng_ = rng_ * 1664525u + 1013904223u; return (rng_ >> 8) / 16777216.0f; } // [0,1)
+    std::vector<GameEvent> events_; // scratch for snapshot building
     bool running_ = false;
     double startTime_ = 0;
     LogFn log_;

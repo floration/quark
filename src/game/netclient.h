@@ -1,6 +1,7 @@
 // Client side of the protocol: connection, input sending, prediction, interpolation.
 // Has no rendering dependencies so tests and bots can use it headless.
 #pragma once
+#include <array>
 #include <deque>
 #include <string>
 #include <vector>
@@ -43,7 +44,8 @@ public:
     int selfHealth() const { return hasSnapshot() ? latest().selfHealth : 0; }
     int selfWeapon() const;
     // Interpolated view of every player at render time.
-    std::vector<InterpPlayer> interpolatedPlayers() const;
+    using PlayerArray = std::array<InterpPlayer, kMaxPlayers>;
+    PlayerArray interpolatedPlayers() const;
     std::vector<ProjectileSnap> interpolatedProjectiles() const;
     const PlayerSnap* findPlayer(int id) const;
     std::string playerName(int id) const;
