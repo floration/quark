@@ -117,6 +117,9 @@ private:
     bool fireLatched_ = false;
     bool localFireHeld_ = false, scopeOverlay_ = false;
     double localFireQueued_ = -1;
+    double nextLaserSound_ = 0;
+    double knifeSlash_[kMaxPlayers] = {}; // when each player last swung the knife (slash trail)
+    void drawKnifeSlash(const Vec3& eye, float yaw, float pitch, float t, const Vec3& color);
     double wheelAccum_ = 0;         // fractional scroll (trackpads, high-res wheels) until a full notch
     double wheelHeldUntil_[2] = {}; // a scroll step counts as "held" briefly, so hold actions (jump, fire...) work on the wheel
     int specTarget_ = -1;

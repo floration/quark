@@ -82,7 +82,7 @@ constexpr uint8_t kNoWeaponChange = 255;
 struct WeaponDef {
     const char* name;
     float refire;       // seconds between shots
-    int damage;         // per pellet / per hit / at the center of a blast
+    float damage;       // per pellet / per hit / at the center of a blast
     float range;        // hitscan range (m)
     bool projectile;
     float projSpeed;
@@ -98,6 +98,9 @@ struct WeaponDef {
     bool semiAuto = false; // one shot per click (a click up to 0.15 s early is kept until it can fire)
 };
 constexpr float kFireBuffer = 0.15f;
+constexpr float kLaserPush = 20.0f;        // laser knockback (m/s per second of beam on target)
+constexpr float kLaserPullScale = 1.3f;    // alt-fire pulls this much harder than the normal beam pushes
+constexpr float kLaserPullDamage = 0.75f;  // ...for 75% damage
 
 // Shot spread from the command's sequence number, so the client draws exactly the shot the server fired.
 inline uint32_t spreadHash(uint32_t x) { x ^= x >> 16; x *= 0x7feb352dU; x ^= x >> 15; x *= 0x846ca68bU; x ^= x >> 16; return x; }
@@ -108,16 +111,16 @@ inline void spreadOffset(uint32_t seq, int pellet, float spread, float& a, float
 }
 inline const WeaponDef& weaponDef(int w) {
     static const WeaponDef defs[WPN_COUNT] = {
-        // Tuned by the owner (0.14.0). Perfect-aim time to kill from 100 hp in the trailing comment.
-        //  name        refire   dmg  range   proj  speed  splash spread scoped zoom   beam  pel grav  sticky life
-        {"RIFLE",       2.0f/9,   7, 300.0f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // full auto, 15 shots, 3.1 s
-        {"ROCKET",      1.0f,    45,   0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  12.0f, false, 5}, // 3, 2.0 s
-        {"KNIFE",       1.0f,    40,   2.2f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 3, 2.0 s
-        {"SNIPER",      4.0f,    50, 500.0f, false,  0,    0,     0.09f, 0.0f, 24.0f,  false, 1,  0,    false, 0},  // 2, 4.0 s
-        {"LASER",       0.02f,    1,  32.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},  // 100 ticks, 2.0 s
-        {"SHOTGUN",     2.0f,     5,  60.0f, false,  0,    0,     0.085f,-1,     0,    false, 10, 0,    false, 0},  // 2 full blasts, 2.0 s
-        {"STICKY",      1.0f,    35,   0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30}, // 3, 2.0 s
-        {"CROSSBOW",    1.5f,    50,   0,    true,  90.0f, 0,     0.0f,  0.0f, 70.0f,    false, 1,  6.0f, false, 3},  // 2, 1.5 s
+        // Tuned by the owner (0.15.1). Perfect-aim time to kill from 100 hp in the trailing comment.
+        //  name        refire   dmg    range   proj  speed  splash spread scoped zoom   beam  pel grav  sticky life
+        {"RIFLE",       2.0f/9,  7,     300.0f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 15 shots, 3.1 s
+        {"ROCKET",      2.0f,    40,      0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  12.0f, false, 5}, // 3, 4.0 s
+        {"KNIFE",       0.7f,    40,      2.2f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 3, 1.4 s
+        {"SNIPER",      2.0f,    40,    500.0f, false,  0,    0,     0.09f, 0.0f, 24.0f,  false, 1,  0,    false, 0},  // 3, 4.0 s
+        {"LASER",       0.001f,  0.03f,  32.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},  // every 1 ms, 3334 hits, 3.3 s
+        {"SHOTGUN",     1.0f,    2,      60.0f, false,  0,    0,     0.085f,-1,     0,    false, 20, 0,    false, 0},  // 20 x 2 = 40 per blast, 3, 2.0 s
+        {"STICKY",      1.0f,    35,      0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30}, // 3, 2.0 s
+        {"CROSSBOW",    1.5f,    50,      0,    true,  90.0f, 0,     0.0f,  0.0f, 70.0f,  false, 1,  6.0f, false, 3},  // 2, 1.5 s
     };
     return defs[w < 0 || w >= WPN_COUNT ? 0 : w];
 }

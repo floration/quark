@@ -482,15 +482,16 @@ void Game::handleEvents() {
                 break;
             case EV_HIT:
                 if (e.a == net_.clientId()) {
+                    float dmg = e.c / 100.0f; // hundredths of a point
                     hitUntil_ = time_ + 0.15;
-                    if (cfg_.hitsounds) audio_.play(SND_HIT, 0.9f, 1.25f - std::min((int)e.c, 50) / 100.0f); // bigger hits sound deeper
+                    if (cfg_.hitsounds) audio_.play(SND_HIT, 0.9f, 1.25f - std::min(dmg, 50.0f) / 100.0f); // bigger hits sound deeper
                     // hits on the same target in quick succession add up into one number
                     bool merged = false;
                     for (auto& d : dmgNums_)
-                        if (d.victim == e.b && time_ - d.start < 0.35) { d.amount += e.c; d.start = time_; merged = true; }
+                        if (d.victim == e.b && time_ - d.start < 0.35) { d.amount += dmg; d.start = time_; merged = true; }
                     if (!merged) {
                         const PlayerSnap* v = net_.findPlayer(e.b);
-                        dmgNums_.push_back({e.b, (float)e.c, time_, v ? v->pos : Vec3()});
+                        dmgNums_.push_back({e.b, dmg, time_, v ? v->pos : Vec3()});
                     }
                 }
                 break;
@@ -550,7 +551,11 @@ void Game::frame(double dt) {
                 localFireQueued_ = -1;
                 int w = net_.selfWeapon();
                 localNextFire_ = time_ + weaponDef(w).refire;
-                audio_.play(SND_RIFLE + w, w == WPN_LASER ? 0.6f : 0.8f, 0.97f + (rand() % 7) * 0.01f);
+                if (w != WPN_LASER || time_ >= nextLaserSound_) { // laser fires every 10 ms: sound at 20 Hz
+                    audio_.play(SND_RIFLE + w, w == WPN_LASER ? 0.6f : 0.8f, 0.97f + (rand() % 7) * 0.01f);
+                    nextLaserSound_ = time_ + 0.05;
+                }
+                if (w == WPN_KNIFE) knifeSlash_[net_.clientId() % kMaxPlayers] = time_;
                 recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
                 if (w == WPN_LASER) laserUntil_ = time_ + 0.07;
                 else if (!weaponDef(w).projectile && w != WPN_KNIFE) {
@@ -730,6 +735,7 @@ void Game::drawWorld(float alpha) {
         if (firing) {
             const PlayerSnap& p = players[i].snap;
             int w = p.weapon;
+            if (w == WPN_KNIFE && !remoteFiring_[i]) knifeSlash_[i] = time_;
             if (w == WPN_LASER || (w == WPN_SNIPER && !remoteFiring_[i])) {
                 Vec3 eyeP = p.pos + Vec3(0, (p.flags & PS_CROUCHED) ? kCrouchEyeHeight : kEyeHeight, 0);
                 Vec3 d = angleForward(p.yaw, p.pitch);
@@ -743,13 +749,28 @@ void Game::drawWorld(float alpha) {
         }
         remoteFiring_[i] = firing;
     }
-    // own laser beam follows the crosshair while held
+    // own laser beam follows the crosshair while held; alt-fire (pull) adds pulses running back toward you
     if (alive && time_ < laserUntil_ && net_.selfWeapon() == WPN_LASER) {
         Vec3 d = angleForward(yaw_, pitch_);
         float range = weaponDef(WPN_LASER).range;
         float t = map.raycast(eye, d, range);
         Vec3 right = normalize(cross(d, {0, 1, 0}));
-        r_.line(eye + d * 0.5f + right * 0.15f - Vec3(0, 0.12f, 0), eye + d * (t < 0 ? range : t), 0.05f, rgba(cfg_.colorFriendly, 0.9f));
+        Vec3 a = eye + d * 0.5f + right * 0.15f - Vec3(0, 0.12f, 0), b = eye + d * (t < 0 ? range : t);
+        r_.line(a, b, 0.05f, rgba(cfg_.colorFriendly, 0.9f));
+        if (isDown(A_ALTFIRE))
+            for (int k = 0; k < 6; k++) {
+                float f = 1.0f - std::fmod((float)time_ * 2.5f + k / 6.0f, 1.0f); // moving from target to you
+                r_.box(a + (b - a) * f, {0.06f, 0.06f, 0.06f}, (float)time_ * 8, cfg_.colorFriendly * 1.4f, 1.0f, false);
+            }
+    }
+    // knife: a short slash trail sweeping across the knife's reach (its hit ray ends at the tip)
+    for (int i = 0; i < kMaxPlayers; i++) {
+        float t = (float)(time_ - knifeSlash_[i]) / 0.18f;
+        if (knifeSlash_[i] <= 0 || t >= 1 || !players[i].valid) continue;
+        bool selfView = i == me && alive;
+        const PlayerSnap& p = players[i].snap;
+        Vec3 e = selfView ? eye : p.pos + Vec3(0, kEyeHeight, 0);
+        drawKnifeSlash(e, selfView ? yaw_ : p.yaw, selfView ? pitch_ : p.pitch, t, teamColor(i));
     }
 
     // projectiles
@@ -827,7 +848,6 @@ void Game::drawWorld(float alpha) {
         float sv = sunVisibility(map, cart + Vec3(0, 1, 0));
         r_.box(cart + Vec3(0, 0.6f, 0), {0.9f, 0.6f, 1.2f}, yaw, cartCol * 0.8f, sv);
         r_.box(cart + Vec3(0, 1.35f, 0), {0.5f, 0.15f, 0.7f}, yaw, {0.2f, 0.2f, 0.22f}, sv);
-        labelAt(cart + Vec3(0, 2.2f, 0), (ms.flags & MS_CONTESTED) ? "PAYLOAD - CONTESTED" : "PAYLOAD", rgba(cartCol));
     } else if (ms.mode == MODE_RACE) {
         int next = mep ? mep->checkpoint : 0;
         for (size_t i = 0; i < map.checkpoints.size(); i++) {
@@ -1696,6 +1716,29 @@ void Game::drawPicker(float cx, float y) {
     }
     y += rows * (bh + 18 * s + gap) + 10 * s;
     if (ui_.button(cx - 100 * s, y, 200 * s, bh, "BACK")) picker_ = PICK_NONE;
+}
+
+void Game::drawKnifeSlash(const Vec3& eye, float yaw, float pitch, float t, const Vec3& color) {
+    const float reach = weaponDef(WPN_KNIFE).range;
+    Vec3 fwd = angleForward(yaw, pitch);
+    Vec3 right = normalize(cross(fwd, {0, 1, 0})), up = cross(right, fwd);
+    float fade = 1.0f - t;
+    // arc from right-up to left-down, drawn up to the current sweep position
+    const int seg = 10;
+    float sweep = std::min(1.0f, t * 2.5f);
+    Vec3 prev;
+    for (int k = 0; k <= seg; k++) {
+        float u = (float)k / seg;
+        if (u > sweep) break;
+        float ang = (u - 0.5f) * 0.8f; // +-23 degrees
+        Vec3 dir = normalize(fwd * std::cos(ang) - right * std::sin(ang) + up * (0.15f * (0.5f - u)));
+        Vec3 pnt = eye + dir * reach;
+        if (k > 0) r_.line(prev, pnt, 0.01f + 0.015f * u, rgba(color * 1.3f, 0.7f * fade));
+        prev = pnt;
+    }
+    // the actual hit check: a ray to `reach`, with a marker at the tip
+    r_.line(eye + fwd * 0.4f - up * 0.05f, eye + fwd * reach, 0.012f, rgba({1, 1, 1}, 0.5f * fade));
+    r_.box(eye + fwd * reach, {0.05f, 0.05f, 0.05f}, yaw, color * 1.5f, 1.0f, false);
 }
 
 // Crosshair from the settings: style, size, thickness, gap, color, outline. A hit flashes it white.

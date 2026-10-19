@@ -611,8 +611,10 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
     v.lastDamagedTick = tick_;
     if (attacker >= 0 && attacker != victim) {
         lastProgress_ = time();
-        GameEvent e; e.type = EV_HIT; e.a = (uint8_t)attacker; e.b = (uint8_t)victim; e.c = (int16_t)dmg;
-        sendEvent(attacker, e);
+        // Hit feedback (hitsound, damage number): rapid small hits (laser) are batched every 50 ms
+        // instead of sending a reliable event per tick. c = damage in hundredths.
+        hitAccum_[attacker][victim] += dmg;
+        if (time() >= hitFlushAt_[attacker][victim]) flushHit(attacker, victim);
         // Vampire laser: damage dealt heals the attacker (up to full health).
         ServerPlayer& a = players_[attacker];
         if (duelMod() == DUEL_VAMPIRE_LASER && a.alive) a.health = std::min((float)kMaxHealth, a.health + dmg);
@@ -621,7 +623,20 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
     if (v.health <= 0) killPlayer(victim, attacker, weapon);
 }
 
+void Server::flushHit(int attacker, int victim) {
+    float& acc = hitAccum_[attacker][victim];
+    if (acc <= 0) return;
+    GameEvent e; e.type = EV_HIT; e.a = (uint8_t)attacker; e.b = (uint8_t)victim;
+    e.c = (int16_t)std::lround(std::min(acc, 300.0f) * 100.0f);
+    sendEvent(attacker, e);
+    acc = 0;
+    hitFlushAt_[attacker][victim] = time() + 0.05f;
+}
+
 void Server::simulate() {
+    for (int a = 0; a < kMaxPlayers; a++)
+        for (int v = 0; v < kMaxPlayers; v++)
+            if (hitAccum_[a][v] > 0 && time() >= hitFlushAt_[a][v]) flushHit(a, v);
     for (int i = 0; i < kMaxPlayers; i++) {
         ServerPlayer& p = players_[i];
         if (!p.connected) continue;
@@ -699,11 +714,15 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
         if (wantFire && !(p.prevButtons & BTN_FIRE)) p.fireQueuedUntil = time() + kFireBuffer;
         wantFire = time() <= p.fireQueuedUntil;
     }
-    if (wantFire && time() >= p.nextFire && !(p.move.flags & MF_FROZEN)) {
+    // Fast weapons (laser: every 10 ms) can fire more than once in a command at low tick rates.
+    for (int shot = 0; shot < 16 && wantFire && time() >= p.nextFire && !(p.move.flags & MF_FROZEN); shot++) {
         p.fireQueuedUntil = -1;
-        // Holding fire keeps an exact cadence; after a pause the timer restarts from now.
+        // Holding fire keeps an exact cadence, catching up shots that fell between commands (the laser
+        // fires every 1 ms, so late or batched commands must not drop shots). After a pause, or more
+        // than 100 ms behind, the timer restarts from now.
         float refire = weaponDef(p.weapon).refire;
-        p.nextFire = (time() - p.nextFire < dt() + 0.0005f) ? p.nextFire + refire : time() + refire;
+        bool held = (p.prevButtons & BTN_FIRE) != 0;
+        p.nextFire = (held && time() - p.nextFire < 0.1f) ? p.nextFire + refire : time() + refire;
         p.lastFire = time();
         fireWeapon(id, cmd);
     }
@@ -781,9 +800,16 @@ void Server::fireWeapon(int id, const UserCmd& cmd) {
     float range = p.weapon == WPN_KNIFE ? kKnifeRange : wd.range;
     // Pellets add up per target so one shotgun blast is one hit (one damage event) per player.
     float dmgPer[kMaxPlayers] = {};
-    for (int k = 0; k < wd.pellets; k++) hitscan(id, eye, spreadDir(aim, spread, cmd.seq, k), range, vt, dmgPer, (float)wd.damage);
-    for (int i = 0; i < kMaxPlayers; i++)
-        if (dmgPer[i] > 0) damagePlayer(i, id, dmgPer[i], p.weapon, aim * (wd.pellets > 1 ? 0.15f * dmgPer[i] / wd.damage : 1.0f));
+    // Laser alt-fire is a tractor beam: pulls the target toward you for a little less damage.
+    bool pull = wd.beam && (cmd.buttons & BTN_ALTFIRE);
+    float dmg = wd.damage * (pull ? kLaserPullDamage : 1.0f);
+    for (int k = 0; k < wd.pellets; k++) hitscan(id, eye, spreadDir(aim, spread, cmd.seq, k), range, vt, dmgPer, dmg);
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (dmgPer[i] <= 0) continue;
+        Vec3 knock = aim * (wd.pellets > 1 ? 0.15f * dmgPer[i] / wd.damage : 1.0f);
+        if (wd.beam) knock = aim * (kLaserPush * wd.refire * (pull ? -kLaserPullScale : 1.0f)); // same push per second at any fire rate
+        damagePlayer(i, id, dmgPer[i], p.weapon, knock);
+    }
 }
 
 void Server::tickProjectiles() {
@@ -861,6 +887,7 @@ void Server::explode(const Vec3& at, int owner, int weapon) {
         float selfScale = at.y <= p.move.pos.y + 0.3f ? 0.1f : 1.0f;
         float dmg = wd.damage * frac * (self ? selfScale : 1.0f);
         Vec3 knock = push * (11.0f * frac * (self ? 1.3f : 1.0f));
+        if (!self) knock.y *= 2.0f; // enemies get launched: twice the vertical knockback
         damagePlayer(i, owner, dmg, weapon, knock);
     }
 }

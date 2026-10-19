@@ -171,6 +171,8 @@ public:
     int aliveCount(int team) const;
     int teamCount(int team) const;
     void log(const std::string& s);
+    float hitAccum_[kMaxPlayers][kMaxPlayers] = {}, hitFlushAt_[kMaxPlayers][kMaxPlayers] = {};
+    void flushHit(int attacker, int victim);
     void handleStringCmdForTest(int id, const std::string& s) { handleStringCmd(id, s); }
     void glog(int level, const char* fmt, ...);   // game log file (no-op below cfg_.logLevel)
     int duelMod() const { return ms_.mode == MODE_DUEL ? ms_.duelMod : 255; } // 255 in warmup (rulesReset clears it)

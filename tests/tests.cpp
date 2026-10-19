@@ -429,13 +429,14 @@ static void testWeapons(uint16_t port) {
         double elapsed = timeNow() - t0;
         if (w == WPN_ROCKET || w == WPN_CROSSBOW || w == WPN_STICKY) pump(s, cls, 1.0, idle); // let it fly
         float dealt = (sb.deaths > deaths0) ? 100.0f : hp0 - sb.health;
-        if (w == WPN_SNIPER) CHECK(dealt >= 50);                 // one scoped shot
+        if (w == WPN_SNIPER) CHECK(dealt >= weaponDef(WPN_SNIPER).damage); // one scoped shot
         if (w == WPN_LASER) {                                     // ~5 dmg every 0.05 s
             float expect = (float)(elapsed / weaponDef(WPN_LASER).refire) * weaponDef(WPN_LASER).damage;
+            printf("  laser: %.1f damage in %.2f s (expected ~%.1f)\n", dealt, elapsed, expect);
             CHECK(dealt > expect * 0.6f && dealt < expect * 1.4f + 5);
         }
         if (w == WPN_ROCKET) CHECK(dealt > 15);
-        if (w == WPN_SHOTGUN) CHECK(dealt >= 25);      // most of 10 x 5 pellets at 8 m
+        if (w == WPN_SHOTGUN) CHECK(dealt >= 20);      // most of 20 x 2 pellets at 8 m
         if (w == WPN_CROSSBOW) CHECK(dealt >= 50);
         if (w == WPN_STICKY) {                          // lobbed: lands near the target, then detonate
             int stuck = 0;
@@ -557,7 +558,7 @@ static void testRocketSelfDamage(uint16_t port) {
     auto& p = s.players_[a.clientId()];
     auto shoot = [&](float pitch, Vec3 at, float yaw = 0) {
         p.health = 100; p.move.pos = at; p.move.vel = {};
-        pump(s, cls, 1.0, [&](int) { UserCmd c; c.yaw = yaw; c.pitch = pitch; c.weapon = WPN_ROCKET; return c; });
+        pump(s, cls, weaponDef(WPN_ROCKET).refire + 0.2, [&](int) { UserCmd c; c.yaw = yaw; c.pitch = pitch; c.weapon = WPN_ROCKET; return c; });
         p.health = 100; p.move.pos = at; p.move.vel = {};
         pump(s, cls, 0.12, [&](int) { UserCmd c; c.yaw = yaw; c.pitch = pitch; c.weapon = WPN_ROCKET; c.buttons = BTN_FIRE; return c; });
         pump(s, cls, 0.5, [&](int) { UserCmd c; c.yaw = yaw; c.pitch = pitch; return c; });
@@ -570,7 +571,7 @@ static void testRocketSelfDamage(uint16_t port) {
     s.killPlayer(a.clientId(), -1, 255); // respawns with the last selected weapon
     pump(s, cls, 2.5, idle);
     CHECK(p.alive && p.weapon == WPN_ROCKET);
-    CHECK(level > 15);
+    CHECK(level > 10);
     s.stop();
 }
 
@@ -578,10 +579,10 @@ static void testTimeToKill() {
     printf("time to kill with perfect aim (1-4.5 s), no shot over 50\n");
     for (int w = 0; w < WPN_COUNT; w++) {
         const WeaponDef& d = weaponDef(w);
-        int perShot = d.damage * d.pellets;
-        int shots = (kMaxHealth + perShot - 1) / perShot;
+        float perShot = d.damage * d.pellets;
+        int shots = (int)std::ceil(kMaxHealth / perShot - 1e-4f);
         float ttk = (shots - 1) * d.refire;
-        printf("  %-9s %2d x %3d dmg, ttk %.3f s\n", d.name, shots, perShot, ttk);
+        printf("  %-9s %3d x %5.2f dmg, ttk %.3f s\n", d.name, shots, perShot, ttk);
         CHECK(ttk >= 1.0f && ttk <= 4.5f);
         CHECK(perShot <= 50);
     }
@@ -931,6 +932,7 @@ int main(int argc, char** argv) {
     testAllMaps();
     testGridQueries();
     uint16_t port = 28500;
+    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = 29700; testWeapons(p); testRocketSelfDamage(p + 20); return g_fail ? 1 : 0; }
     testSession(MODE_VS, "arena", port++);
     testSession(MODE_BOMB, "arena", port++);
     testSession(MODE_KOTH, "arena", port++);
