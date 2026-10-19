@@ -1,0 +1,982 @@
+#include "game.h"
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+#include <cstdio>
+#include "../game/gamemodes.h"
+
+namespace {
+const Color kWhite = {1, 1, 1, 1};
+const Color kGrey = {0.7f, 0.72f, 0.75f, 1};
+const Color kRed = {1, 0.35f, 0.3f, 1};
+
+struct Palette { const char* name; Vec3 friendly, enemy; };
+const Palette kPalettes[] = {
+    {"CYAN / RED", {0.25f, 0.85f, 1.0f}, {1.0f, 0.3f, 0.25f}},
+    {"BLUE / ORANGE", {0.3f, 0.55f, 1.0f}, {1.0f, 0.6f, 0.15f}},
+    {"GREEN / MAGENTA", {0.35f, 1.0f, 0.45f}, {1.0f, 0.3f, 0.85f}},
+    {"WHITE / YELLOW", {0.95f, 0.95f, 0.95f}, {1.0f, 0.85f, 0.1f}},
+};
+constexpr int kPaletteCount = sizeof(kPalettes) / sizeof(kPalettes[0]);
+
+std::string fmtTime(float s) {
+    int t = (int)std::ceil(std::max(0.0f, s));
+    char b[16];
+    snprintf(b, sizeof b, "%d:%02d", t / 60, t % 60);
+    return b;
+}
+
+const char* weaponName(int w) {
+    if (w == 252) return "fell";
+    if (w == 253) return "bomb";
+    if (w == 254) return "drained";
+    if (w == 255) return "suicide";
+    return weaponDef(w).name;
+}
+}
+
+bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
+    win_ = win;
+    opts_ = opts;
+    cfg_.load();
+    int w, h;
+    glfwGetFramebufferSize(win, &w, &h);
+    r_.resize(w, h);
+    if (!r_.init(cfg_.shadowRes, err)) return false;
+    maps_ = listMaps();
+    for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == cfg_.hostMap) hostMapIdx_ = (int)i;
+    hostModeIdx_ = clampf((float)cfg_.hostMode, 0, MODE_COUNT - 1);
+    hostPortStr_ = std::to_string(cfg_.hostPort);
+    joinAddr_ = cfg_.lastAddress;
+    ui_.accent = rgba(cfg_.colorFriendly);
+    glfwSwapInterval(cfg_.vsync ? 1 : 0);
+
+    if (opts_.hostMode >= 0) {
+        hostModeIdx_ = opts_.hostMode;
+        if (!opts_.hostMap.empty())
+            for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == opts_.hostMap) hostMapIdx_ = (int)i;
+        cfg_.hostUpnp = false;
+        startHost();
+    } else if (!opts_.connect.empty()) {
+        connectTo(opts_.connect);
+    }
+    return true;
+}
+
+void Game::shutdown() {
+    leaveGame();
+    cfg_.save();
+}
+
+// ---------------------------------------------------------------------------
+// hosting / connection
+
+void Game::startHost() {
+    stopHost();
+    if (maps_.empty()) { error_ = "no maps found in maps/"; return; }
+    ServerConfig sc;
+    sc.name = cfg_.hostName;
+    sc.map = maps_[hostMapIdx_ % maps_.size()];
+    sc.mode = hostModeIdx_;
+    sc.port = (uint16_t)atoi(hostPortStr_.c_str());
+    if (sc.port == 0) sc.port = kDefaultPort;
+    sc.maxPlayers = cfg_.hostMaxPlayers;
+    sc.upnp = cfg_.hostUpnp;
+    host_ = std::make_unique<Server>();
+    host_->setLog([](const std::string& s) { printf("[host] %s\n", s.c_str()); });
+    std::string e;
+    if (!host_->start(sc, &e)) {
+        error_ = "could not host: " + e;
+        host_.reset();
+        setScreen(Screen::Host);
+        return;
+    }
+    cfg_.hostMap = sc.map;
+    cfg_.hostMode = sc.mode;
+    cfg_.hostPort = sc.port;
+    cfg_.save();
+    hostQuit_ = false;
+    Server* srv = host_.get();
+    hostThread_ = std::thread([this, srv] { srv->run(hostQuit_); });
+    connectTo("127.0.0.1:" + std::to_string(sc.port));
+}
+
+void Game::stopHost() {
+    if (!host_) return;
+    hostQuit_ = true;
+    if (hostThread_.joinable()) hostThread_.join();
+    host_->stop();
+    host_.reset();
+}
+
+void Game::connectTo(const std::string& addr) {
+    error_.clear();
+    if (!net_.connect(addr, cfg_.name)) { error_ = net_.error(); return; }
+    if (!host_) { cfg_.lastAddress = addr; cfg_.save(); }
+    setScreen(Screen::Connecting);
+}
+
+void Game::leaveGame(const std::string& error) {
+    net_.disconnect();
+    stopHost();
+    error_ = error;
+    paused_ = chatting_ = false;
+    killFeed_.clear(); chatFeed_.clear(); notices_.clear();
+    tracers_.clear(); explosions_.clear(); lastProjectiles_.clear();
+    loadedMapGen_ = 0;
+    setScreen(Screen::Main);
+}
+
+void Game::setScreen(Screen s) {
+    screen_ = s;
+    ui_.clearFocus();
+    captureMouse(s == Screen::InGame && !paused_ && !chatting_);
+    if (s == Screen::Join) browser_.refresh();
+}
+
+void Game::captureMouse(bool on) {
+    if (on == mouseCaptured_) return;
+    mouseCaptured_ = on;
+    glfwSetInputMode(win_, GLFW_CURSOR, on ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+    if (glfwRawMouseMotionSupported()) glfwSetInputMode(win_, GLFW_RAW_MOUSE_MOTION, on ? GLFW_TRUE : GLFW_FALSE);
+    firstMouse_ = true;
+}
+
+void Game::loadMapIfNeeded() {
+    if (!net_.mapReady() || net_.mapGeneration() == loadedMapGen_) return;
+    loadedMapGen_ = net_.mapGeneration();
+    double lastKeepAlive = 0;
+    r_.loadWorld(net_.map(), [&](float p) {
+        // Keep the connection alive and show progress while lighting bakes.
+        net_.poll();
+        if (timeNow() - lastKeepAlive > 0.05) {
+            UserCmd c; c.yaw = yaw_; c.pitch = pitch_;
+            net_.tick(c);
+            lastKeepAlive = timeNow();
+        }
+        r_.rect(0, 0, (float)r_.width(), (float)r_.height(), {0.05f, 0.06f, 0.08f, 1});
+        float bw = r_.width() * 0.4f, bx = (r_.width() - bw) * 0.5f, by = r_.height() * 0.55f;
+        r_.rect(bx, by, bw, 8, {0.2f, 0.2f, 0.25f, 1});
+        r_.rect(bx, by, bw * p, 8, rgba(cfg_.colorFriendly));
+        float ts = std::max(2.0f, std::round(r_.height() / 360.0f));
+        std::string t = "BAKING LIGHT - " + net_.map().name;
+        r_.text((r_.width() - r_.textWidth(t, ts)) * 0.5f, by - 30 * ts / 2, ts, t, kWhite);
+        r_.flush2D();
+        glfwSwapBuffers(win_);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// input
+
+void Game::onChar(unsigned cp) {
+    if (cp < 128) uiIn_.chars += (char)cp;
+}
+
+void Game::onKey(int key, int action, int mods) {
+    if (action == GLFW_RELEASE) return;
+    if (key == GLFW_KEY_BACKSPACE) uiIn_.backspace = true;
+    if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) uiIn_.enter = true;
+    if (key == GLFW_KEY_TAB) uiIn_.tab = true;
+    if (action != GLFW_PRESS) return;
+    if (key == GLFW_KEY_F12) {
+        static int n = 0;
+        r_.screenshot("screenshot_" + std::to_string(n++) + ".png");
+        notify("screenshot saved");
+        return;
+    }
+    if (screen_ == Screen::InGame) {
+        if (chatting_) {
+            if (key == GLFW_KEY_ESCAPE) { chatting_ = false; chatText_.clear(); captureMouse(!paused_); }
+            else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
+                if (!chatText_.empty()) {
+                    if (chatText_[0] == '/') net_.sendCommand(chatText_.substr(1));
+                    else net_.sendCommand("say " + chatText_);
+                }
+                chatText_.clear();
+                chatting_ = false;
+                captureMouse(!paused_);
+            }
+            return;
+        }
+        if (key == GLFW_KEY_ESCAPE) {
+            if (settingsInGame_) { settingsInGame_ = false; cfg_.save(); return; }
+            paused_ = !paused_;
+            captureMouse(!paused_);
+            return;
+        }
+        if (!paused_ && (key == GLFW_KEY_T || key == GLFW_KEY_Y)) {
+            chatting_ = true;
+            chatText_.clear();
+            uiIn_.chars.clear();
+            captureMouse(false);
+            return;
+        }
+    } else if (key == GLFW_KEY_ESCAPE) {
+        uiIn_.escape = true;
+        if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::Settings) {
+            cfg_.save();
+            setScreen(Screen::Main);
+        } else if (screen_ == Screen::Connecting) {
+            leaveGame();
+        }
+    }
+}
+
+void Game::onMouseButton(int button, int action) {
+    if (button == GLFW_MOUSE_BUTTON_LEFT) {
+        if (action == GLFW_PRESS) { uiIn_.pressed = true; uiIn_.down = true; fireLatched_ = true; }
+        else if (action == GLFW_RELEASE) uiIn_.down = false;
+    }
+}
+
+void Game::onCursor(double x, double y) {
+    if (mouseCaptured_) {
+        if (firstMouse_) { lastMx_ = x; lastMy_ = y; firstMouse_ = false; return; }
+        double dx = x - lastMx_, dy = y - lastMy_;
+        lastMx_ = x; lastMy_ = y;
+        float k = deg2rad(cfg_.sensitivity) * 0.01f * 2.2f;
+        yaw_ -= (float)dx * k;
+        pitch_ = clampf(pitch_ - (float)dy * k, -1.55f, 1.55f);
+        yaw_ = std::remainder(yaw_, 2 * PI);
+    } else {
+        // UI coordinates are framebuffer pixels (handles HiDPI).
+        int ww, wh, fw, fh;
+        glfwGetWindowSize(win_, &ww, &wh);
+        glfwGetFramebufferSize(win_, &fw, &fh);
+        uiIn_.mx = (float)(x * fw / std::max(1, ww));
+        uiIn_.my = (float)(y * fh / std::max(1, wh));
+    }
+}
+
+void Game::onResize(int w, int h) { r_.resize(w, h); }
+
+UserCmd Game::buildCmd() {
+    UserCmd c;
+    c.yaw = yaw_;
+    c.pitch = pitch_;
+    bool block = paused_ || chatting_ || screen_ != Screen::InGame;
+    if (block) return c;
+    auto key = [&](int k) { return glfwGetKey(win_, k) == GLFW_PRESS; };
+    int f = 0, s = 0;
+    if (key(GLFW_KEY_W)) f += 127;
+    if (key(GLFW_KEY_S)) f -= 127;
+    if (key(GLFW_KEY_D)) s += 127;
+    if (key(GLFW_KEY_A)) s -= 127;
+    c.forward = (int8_t)clampf((float)f, -127, 127);
+    c.side = (int8_t)clampf((float)s, -127, 127);
+    if (key(GLFW_KEY_SPACE)) c.buttons |= BTN_JUMP;
+    if (key(GLFW_KEY_LEFT_CONTROL) || key(GLFW_KEY_C)) c.buttons |= BTN_CROUCH;
+    if (key(GLFW_KEY_E)) c.buttons |= BTN_USE;
+    if (key(GLFW_KEY_R)) c.buttons |= BTN_RELOAD;
+    if (key(GLFW_KEY_1)) c.buttons |= BTN_WEAPON1;
+    if (key(GLFW_KEY_2)) c.buttons |= BTN_WEAPON2;
+    if (key(GLFW_KEY_3)) c.buttons |= BTN_WEAPON3;
+    if (glfwGetMouseButton(win_, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS || fireLatched_) c.buttons |= BTN_FIRE;
+    if (glfwGetMouseButton(win_, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) c.buttons |= BTN_ALTFIRE;
+    fireLatched_ = false;
+    return c;
+}
+
+void Game::notify(const std::string& s, float seconds) {
+    notices_.push_back({s, kWhite, time_ + seconds});
+    while (notices_.size() > 4) notices_.pop_front();
+}
+
+bool Game::isFriendly(int id) const {
+    if (id == net_.clientId()) return true;
+    const PlayerSnap* me = net_.findPlayer(net_.clientId());
+    const PlayerSnap* p = net_.findPlayer(id);
+    if (!me || !p || !net_.hasSnapshot()) return false;
+    if (!modeIsTeamBased(net_.mode().mode)) return false;
+    int myTeam = me->team() == TEAM_SPECTATOR ? TEAM_A : me->team();
+    return p->team() == myTeam;
+}
+
+Vec3 Game::teamColor(int id) const { return isFriendly(id) ? cfg_.colorFriendly : cfg_.colorEnemy; }
+
+void Game::handleEvents() {
+    for (auto& e : net_.takeEvents()) {
+        switch (e.type) {
+            case EV_KILL: {
+                std::string killer = e.a == 255 ? "" : net_.playerName(e.a);
+                std::string t = killer.empty() || e.a == e.b ? net_.playerName(e.b) + " [" + weaponName(e.c) + "]"
+                                                             : killer + " [" + weaponName(e.c) + "] " + net_.playerName(e.b);
+                Color c = e.a == net_.clientId() ? rgba(cfg_.colorFriendly) : e.b == net_.clientId() ? rgba(cfg_.colorEnemy) : kWhite;
+                killFeed_.push_back({t, c, time_ + 6});
+                while (killFeed_.size() > 6) killFeed_.pop_front();
+                if (e.b == net_.clientId() && e.a != 255 && e.a != e.b) specTarget_ = e.a;
+                break;
+            }
+            case EV_CHAT:
+                chatFeed_.push_back({net_.playerName(e.a) + ": " + e.text, isFriendly(e.a) ? rgba(cfg_.colorFriendly) : rgba(cfg_.colorEnemy), time_ + 10});
+                while (chatFeed_.size() > 8) chatFeed_.pop_front();
+                break;
+            case EV_MESSAGE:
+                chatFeed_.push_back({e.text, kGrey, time_ + 8});
+                while (chatFeed_.size() > 8) chatFeed_.pop_front();
+                break;
+            case EV_ROUND_WIN:
+                centerText_ = e.text;
+                centerUntil_ = time_ + (e.b ? 8.0 : 3.5);
+                break;
+            case EV_HIT:
+                if (e.a == net_.clientId()) hitUntil_ = time_ + 0.15;
+                break;
+            case EV_SPAWN:
+                if (e.a == net_.clientId()) {
+                    yaw_ = e.c / 1000.0f;
+                    pitch_ = 0;
+                    if (opts_.spawnYaw > -999) { yaw_ = deg2rad(opts_.spawnYaw); pitch_ = deg2rad(opts_.spawnPitch); }
+                }
+                break;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// main loop
+
+void Game::frame(double dt) {
+    time_ += dt;
+    net_.poll();
+    if (screen_ == Screen::InGame && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
+
+    if (screen_ == Screen::Join) browser_.poll();
+    if (screen_ == Screen::Connecting || screen_ == Screen::InGame) {
+        if (net_.state() == ConnState::Disconnected) {
+            leaveGame(net_.error().empty() ? "disconnected" : net_.error());
+        } else if (net_.state() == ConnState::Connected && net_.mapReady()) {
+            loadMapIfNeeded();
+            if (screen_ == Screen::Connecting) { setScreen(Screen::InGame); }
+        }
+    }
+
+    if (screen_ == Screen::InGame) {
+        handleEvents();
+        // fixed-rate input + prediction
+        tickAcc_ += dt;
+        if (tickAcc_ > 0.25) tickAcc_ = 0.25;
+        while (tickAcc_ >= kTickDt) {
+            UserCmd c = buildCmd();
+            // local fire feedback (server is authoritative for damage)
+            if ((c.buttons & BTN_FIRE) && net_.selfAlive() && time_ >= localNextFire_ && net_.mode().phase != PHASE_FREEZE) {
+                int w = net_.selfWeapon();
+                localNextFire_ = time_ + weaponDef(w).refire;
+                recoil_ = 1.0;
+                if (!weaponDef(w).projectile && w != WPN_KNIFE) {
+                    const MoveState& m = net_.predicted();
+                    Vec3 eye = m.pos + Vec3(0, (m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight, 0);
+                    Vec3 d = angleForward(yaw_, pitch_);
+                    float t = net_.map().raycast(eye, d, weaponDef(w).range);
+                    if (t < 0) t = weaponDef(w).range;
+                    Vec3 right = normalize(cross(d, {0, 1, 0}));
+                    tracers_.push_back({eye + d * 0.5f + right * 0.15f - Vec3(0, 0.12f, 0), eye + d * t, time_ + 0.06});
+                }
+            }
+            net_.tick(c);
+            tickAcc_ -= kTickDt;
+        }
+        // explosions: projectiles that vanished
+        auto projs = net_.interpolatedProjectiles();
+        for (auto& old : lastProjectiles_) {
+            bool still = false;
+            for (auto& p : projs) still |= p.id == old.id;
+            if (!still) explosions_.push_back({old.pos, time_});
+        }
+        lastProjectiles_ = projs;
+
+        int hp = net_.selfHealth();
+        if (hp < lastHealth_ && net_.selfAlive()) damageUntil_ = time_ + 0.25;
+        lastHealth_ = hp;
+        if (!net_.selfAlive() && uiIn_.pressed && !paused_) {
+            // cycle spectate target
+            auto ps = net_.interpolatedPlayers();
+            for (int k = 1; k <= kMaxPlayers; k++) {
+                int id = (specTarget_ + k + kMaxPlayers) % kMaxPlayers;
+                if (ps[id].valid && (ps[id].snap.flags & PS_ALIVE) && id != net_.clientId()) { specTarget_ = id; break; }
+            }
+        }
+        captureMouse(!paused_ && !chatting_);
+    }
+
+    // ---- render ----
+    if (screen_ == Screen::InGame && net_.hasSnapshot() && r_.worldLoaded()) {
+        drawWorld((float)(tickAcc_ / kTickDt));
+        drawHud();
+    } else {
+        r_.setCamera({0, 20, 30}, (float)time_ * 0.05f, -0.4f, 100);
+        if (r_.worldLoaded()) r_.drawScene(false);
+        else {
+            r_.rect(0, 0, (float)r_.width(), (float)r_.height(), {0.05f, 0.06f, 0.08f, 1});
+        }
+    }
+    drawMenu();
+    r_.flush2D();
+
+    if (shotAt_ > 0 && time_ >= shotAt_ && screen_ == Screen::InGame) {
+        r_.screenshot(opts_.screenshot);
+        printf("screenshot written to %s\n", opts_.screenshot.c_str());
+        quit_ = true;
+    }
+    uiIn_.pressed = false;
+    uiIn_.chars.clear();
+    uiIn_.backspace = uiIn_.enter = uiIn_.tab = uiIn_.escape = false;
+}
+
+// ---------------------------------------------------------------------------
+// world rendering
+
+void Game::drawWorld(float alpha) {
+    const Map& map = net_.map();
+    const ModeState& ms = net_.mode();
+    auto players = net_.interpolatedPlayers();
+    int me = net_.clientId();
+    bool alive = net_.selfAlive();
+
+    // camera: own prediction when alive, else spectate someone
+    Vec3 eye;
+    float camYaw = yaw_, camPitch = pitch_;
+    int viewing = me;
+    if (alive) {
+        Vec3 p = net_.smoothedPos(alpha);
+        bool crouch = net_.predicted().flags & MF_CROUCHED;
+        eye = p + Vec3(0, crouch ? kCrouchEyeHeight : kEyeHeight, 0);
+    } else {
+        if (specTarget_ < 0 || !players[specTarget_].valid || !(players[specTarget_].snap.flags & PS_ALIVE)) {
+            specTarget_ = -1;
+            for (int i = 0; i < kMaxPlayers; i++)
+                if (i != me && players[i].valid && (players[i].snap.flags & PS_ALIVE) && (isFriendly(i) || !modeIsTeamBased(ms.mode))) { specTarget_ = i; break; }
+        }
+        if (specTarget_ >= 0) {
+            const PlayerSnap& t = players[specTarget_].snap;
+            viewing = specTarget_;
+            camYaw = t.yaw;
+            camPitch = t.pitch;
+            eye = t.pos + Vec3(0, (t.flags & PS_CROUCHED) ? kCrouchEyeHeight : kEyeHeight, 0);
+        } else {
+            const PlayerSnap* mp = net_.findPlayer(me);
+            Vec3 base = mp ? mp->pos : Vec3(0, 0, 0);
+            eye = base + Vec3(0, 3.0f, 0);
+        }
+    }
+    r_.setCamera(eye, camYaw, camPitch, cfg_.fov);
+
+    // players
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (!players[i].valid) continue;
+        const PlayerSnap& p = players[i].snap;
+        if (!(p.flags & PS_ALIVE)) continue;
+        bool self = i == me;
+        bool firstPerson = (self && alive) || i == viewing;
+        Vec3 pos = self && alive ? net_.smoothedPos(alpha) : p.pos;
+        float yaw = self && alive ? yaw_ : p.yaw;
+        float pitch = self && alive ? pitch_ : p.pitch;
+        bool crouch = self && alive ? (net_.predicted().flags & MF_CROUCHED) : (p.flags & PS_CROUCHED);
+        float hs = crouch ? kPlayerCrouchHeight / kPlayerHeight : 1.0f;
+        Vec3 col = teamColor(i);
+        float sv = sunVisibility(map, pos + Vec3(0, 1.0f * hs, 0));
+        bool vis = !firstPerson;
+        r_.box(pos + Vec3(0, 0.45f * hs, 0), {0.28f, 0.45f * hs, 0.2f}, yaw, col * 0.55f, sv, true, vis);
+        r_.box(pos + Vec3(0, 1.15f * hs, 0), {0.38f, 0.28f * hs, 0.24f}, yaw, col, sv, true, vis);
+        r_.box(pos + Vec3(0, 1.6f * hs, 0), {0.2f, 0.18f, 0.2f}, yaw, col * 1.15f, sv, true, vis);
+        if (vis) {
+            Vec3 fwd = {-std::sin(yaw), 0, -std::cos(yaw)};
+            r_.box(pos + Vec3(0, 1.62f * hs, 0) + fwd * 0.2f, {0.16f, 0.05f, 0.02f}, yaw, {0.05f, 0.05f, 0.06f}, sv, false);
+            Vec3 shoulder = pos + Vec3(0, 1.3f * hs, 0) + Vec3(std::cos(yaw), 0, -std::sin(yaw)) * 0.3f;
+            r_.boxPitched(shoulder, {0, 0, -0.35f}, {0.06f, 0.07f, 0.35f}, yaw, pitch, {0.12f, 0.12f, 0.14f}, sv);
+            if (p.flags & PS_HASBOMB)
+                r_.box(pos + Vec3(0, 1.15f * hs, 0) + fwd * -0.32f, {0.2f, 0.22f, 0.1f}, yaw, {0.1f, 0.1f, 0.1f}, sv);
+        }
+        // name tags for teammates
+        if (!self && isFriendly(i) && i != viewing) {
+            float sx, sy;
+            if (r_.project(pos + Vec3(0, 2.1f, 0), sx, sy)) {
+                std::string n = net_.playerName(i);
+                float ts = ui_.textScale() * 0.5f;
+                ts = std::max(1.0f, std::round(ts));
+                r_.text(sx - r_.textWidth(n, ts) * 0.5f, sy, ts, n, rgba(col));
+            }
+        }
+    }
+
+    // projectiles
+    for (auto& pr : lastProjectiles_) {
+        Vec3 col = teamColor(pr.owner);
+        r_.box(pr.pos, {0.12f, 0.12f, 0.12f}, 0, col * 1.3f, 1.0f);
+        r_.line(pr.pos, pr.pos - normalize(pr.vel) * 1.2f, 0.12f, rgba(col, 0.5f));
+    }
+    // explosions
+    for (size_t i = 0; i < explosions_.size();) {
+        float t = (float)(time_ - explosions_[i].start) / 0.35f;
+        if (t >= 1) { explosions_.erase(explosions_.begin() + i); continue; }
+        float r = 0.5f + t * 3.0f;
+        Vec3 c = explosions_[i].at;
+        r_.translucentBox({c - Vec3(r, r, r), c + Vec3(r, r, r)}, {1.0f, 0.85f, 0.5f, 0.55f * (1 - t)});
+        i++;
+    }
+    for (size_t i = 0; i < tracers_.size();) {
+        if (time_ > tracers_[i].until) { tracers_.erase(tracers_.begin() + i); continue; }
+        r_.line(tracers_[i].a, tracers_[i].b, 0.03f, {1.0f, 0.95f, 0.7f, 0.8f});
+        i++;
+    }
+
+    // objectives
+    Vec3 friendly = cfg_.colorFriendly, enemy = cfg_.colorEnemy;
+    const PlayerSnap* mep = net_.findPlayer(me);
+    int myTeam = mep ? (mep->team() == TEAM_SPECTATOR ? TEAM_A : mep->team()) : TEAM_A;
+    auto teamCol = [&](int t) { return t == myTeam ? friendly : enemy; };
+    auto labelAt = [&](const Vec3& p, const std::string& s, const Color& c) {
+        float sx, sy;
+        if (r_.project(p, sx, sy)) {
+            float ts = ui_.textScale();
+            r_.text(sx - r_.textWidth(s, ts) * 0.5f, sy, ts, s, c);
+        }
+    };
+    if (ms.mode == MODE_BOMB) {
+        const char* names[] = {"A", "B", "C", "D"};
+        for (size_t i = 0; i < map.bombSites.size(); i++) {
+            r_.translucentBox(map.bombSites[i], rgba(teamCol(ms.attackers), 0.07f));
+            Vec3 c = map.bombSites[i].center();
+            labelAt({c.x, map.bombSites[i].mx.y + 0.5f, c.z}, std::string("SITE ") + names[i % 4], kWhite);
+        }
+        if (ms.bombState == BOMB_DROPPED || ms.bombState == BOMB_PLANTED) {
+            bool blink = ms.bombState == BOMB_PLANTED && std::fmod(time_, std::max(0.15, ms.bombTimer / 20.0)) < 0.08;
+            Vec3 c = blink ? Vec3(1, 0.2f, 0.2f) : Vec3(0.15f, 0.15f, 0.15f);
+            r_.box(ms.bombPos + Vec3(0, 0.15f, 0), {0.25f, 0.15f, 0.18f}, 0, c, 1.0f);
+            labelAt(ms.bombPos + Vec3(0, 0.8f, 0), ms.bombState == BOMB_PLANTED ? "BOMB" : "BOMB (DROPPED)", rgba(teamCol(ms.attackers)));
+        }
+    } else if (ms.mode == MODE_KOTH && map.hasHill) {
+        Vec3 c = ms.hillOwner == 255 ? Vec3(1, 1, 1) : teamCol(ms.hillOwner);
+        r_.translucentBox(map.hill, rgba(c, 0.12f + 0.05f * std::sin((float)time_ * 4)));
+        labelAt({map.hill.center().x, map.hill.mx.y + 0.5f, map.hill.center().z}, (ms.flags & MS_CONTESTED) ? "CONTESTED" : "HILL", rgba(c));
+    } else if (ms.mode == MODE_PAYLOAD && map.payloadPath.size() >= 2) {
+        for (size_t i = 1; i < map.payloadPath.size(); i++)
+            r_.line(map.payloadPath[i - 1] + Vec3(0, 0.05f, 0), map.payloadPath[i] + Vec3(0, 0.05f, 0), 0.25f, rgba(teamCol(ms.attackers), 0.35f));
+        Vec3 cart = map.payloadPoint(ms.payloadDist);
+        Vec3 ahead = map.payloadPoint(ms.payloadDist + 0.5f);
+        Vec3 d = ahead - cart;
+        float yaw = (length(d) > 1e-3f) ? std::atan2(-d.x, -d.z) : 0;
+        float sv = sunVisibility(map, cart + Vec3(0, 1, 0));
+        r_.box(cart + Vec3(0, 0.6f, 0), {0.9f, 0.6f, 1.2f}, yaw, teamCol(ms.attackers) * 0.8f, sv);
+        r_.box(cart + Vec3(0, 1.35f, 0), {0.5f, 0.15f, 0.7f}, yaw, {0.2f, 0.2f, 0.22f}, sv);
+        labelAt(cart + Vec3(0, 2.2f, 0), (ms.flags & MS_CONTESTED) ? "PAYLOAD - CONTESTED" : "PAYLOAD", rgba(teamCol(ms.attackers)));
+    } else if (ms.mode == MODE_RACE) {
+        int next = mep ? mep->checkpoint : 0;
+        for (size_t i = 0; i < map.checkpoints.size(); i++) {
+            bool isNext = (int)i == next;
+            bool finish = i + 1 == map.checkpoints.size();
+            Color c = isNext ? rgba(friendly, 0.2f) : rgba({1, 1, 1}, (int)i < next ? 0.03f : 0.07f);
+            r_.translucentBox(map.checkpoints[i], c);
+            if (isNext) {
+                Vec3 cc = map.checkpoints[i].center();
+                labelAt({cc.x, map.checkpoints[i].mx.y + 0.3f, cc.z}, finish ? "FINISH" : "CHECKPOINT " + std::to_string(i + 1), rgba(friendly));
+            }
+        }
+    }
+
+    // viewmodel
+    if (alive) {
+        int w = net_.selfWeapon();
+        recoil_ = std::max(0.0, recoil_ - 0.016 * 8);
+        float kick = (float)recoil_ * 0.06f;
+        Vec3 gun = {0.025f, 0.03f, 0.16f};
+        if (w == WPN_ROCKET) gun = {0.045f, 0.045f, 0.2f};
+        if (w == WPN_KNIFE) gun = {0.01f, 0.02f, 0.09f};
+        Vec3 at = {0.2f, -0.17f, -0.55f + kick};
+        r_.viewBox(at, gun, {0.14f, 0.14f, 0.16f});
+        r_.viewBox(at + Vec3(0, gun.y + 0.006f, 0.05f), {0.01f, 0.006f, 0.05f}, cfg_.colorFriendly);
+    }
+    r_.drawScene(cfg_.shadows);
+}
+
+// ---------------------------------------------------------------------------
+// HUD
+
+void Game::drawHud() {
+    const float W = (float)r_.width(), H = (float)r_.height();
+    float s = H / 720.0f;
+    ui_.begin(&r_, uiIn_, s);
+    float ts = ui_.textScale();
+    const ModeState& ms = net_.mode();
+    int me = net_.clientId();
+    const PlayerSnap* mep = net_.findPlayer(me);
+    int myTeam = mep ? (mep->team() == TEAM_SPECTATOR ? TEAM_A : mep->team()) : TEAM_A;
+    Color fc = rgba(cfg_.colorFriendly), ec = rgba(cfg_.colorEnemy);
+    bool teamMode = modeIsTeamBased(ms.mode);
+
+    // crosshair
+    float cx = W * 0.5f, cy = H * 0.5f, cs = std::max(1.0f, std::round(2 * s));
+    Color chc = time_ < hitUntil_ ? Color{1, 1, 1, 1} : fc;
+    r_.rect(cx - cs * 0.5f, cy - 6 * cs, cs, 4 * cs, chc);
+    r_.rect(cx - cs * 0.5f, cy + 2 * cs, cs, 4 * cs, chc);
+    r_.rect(cx - 6 * cs, cy - cs * 0.5f, 4 * cs, cs, chc);
+    r_.rect(cx + 2 * cs, cy - cs * 0.5f, 4 * cs, cs, chc);
+    if (time_ < hitUntil_) r_.rect(cx - cs, cy - cs, 2 * cs, 2 * cs, {1, 1, 1, 1});
+    if (time_ < damageUntil_) {
+        float a = (float)(damageUntil_ - time_) / 0.25f * 0.35f;
+        float b = 30 * s;
+        r_.rect(0, 0, W, b, {ec.r, ec.g, ec.b, a}); r_.rect(0, H - b, W, b, {ec.r, ec.g, ec.b, a});
+        r_.rect(0, 0, b, H, {ec.r, ec.g, ec.b, a}); r_.rect(W - b, 0, b, H, {ec.r, ec.g, ec.b, a});
+    }
+
+    // top: mode, timer, scores
+    std::string title = modeTitle(ms.mode);
+    std::string phase;
+    switch (ms.phase) {
+        case PHASE_WARMUP: phase = ms.timeLeft > 0 ? "MATCH STARTS IN " + std::to_string((int)std::ceil(ms.timeLeft)) : "WARMUP - WAITING FOR PLAYERS"; break;
+        case PHASE_FREEZE: phase = "ROUND " + std::to_string(ms.round) + " - " + std::to_string((int)std::ceil(ms.timeLeft)); break;
+        case PHASE_LIVE:
+            if (ms.mode == MODE_VS) phase = (ms.flags & MS_DRAIN) ? "STALEMATE - HEALTH DRAINING" : "DRAIN IN " + fmtTime(ms.timeLeft);
+            else if (ms.mode == MODE_KOTH) phase = "FIRST TO " + std::to_string(ms.target);
+            else phase = fmtTime(ms.timeLeft) + ((ms.flags & MS_OVERTIME) ? " OVERTIME" : "");
+            break;
+        case PHASE_ROUND_END: phase = "ROUND OVER"; break;
+        case PHASE_MATCH_END: phase = "MATCH OVER"; break;
+    }
+    ui_.panel(cx - 220 * s, 8 * s, 440 * s, 64 * s, 0.55f);
+    ui_.labelCentered(cx, 16 * s, title, kWhite);
+    ui_.labelCentered(cx, 16 * s + 22 * s, phase, kGrey);
+    if (teamMode) {
+        int mine = myTeam == TEAM_A ? ms.scoreA : ms.scoreB;
+        int theirs = myTeam == TEAM_A ? ms.scoreB : ms.scoreA;
+        std::string a = std::to_string(mine), b = std::to_string(theirs);
+        r_.text(cx - 200 * s, 22 * s, ts * 1.5f, a, fc);
+        r_.text(cx + 200 * s - r_.textWidth(b, ts * 1.5f), 22 * s, ts * 1.5f, b, ec);
+    } else if (mep) {
+        std::string a = std::to_string(mep->score);
+        int best = -9999;
+        for (auto& p : net_.latest().players) if (p.id != me && !(p.flags & PS_SPECTATOR)) best = std::max<int>(best, p.score);
+        std::string b = best == -9999 ? "-" : std::to_string(best);
+        r_.text(cx - 200 * s, 22 * s, ts * 1.5f, a, fc);
+        r_.text(cx + 200 * s - r_.textWidth(b, ts * 1.5f), 22 * s, ts * 1.5f, b, ec);
+    }
+
+    // objective line
+    std::string obj;
+    float progress = -1;
+    if (ms.mode == MODE_BOMB && ms.phase == PHASE_LIVE) {
+        bool att = myTeam == ms.attackers;
+        if (ms.bombState == BOMB_PLANTED) obj = att ? "BOMB PLANTED - DEFEND IT" : "BOMB PLANTED - DEFUSE IT (HOLD E)";
+        else if (ms.bombCarrier == me) obj = "YOU HAVE THE BOMB - PLANT AT A SITE (HOLD E)";
+        else if (ms.bombState == BOMB_DROPPED) obj = att ? "BOMB DROPPED - PICK IT UP" : "BOMB DROPPED";
+        else obj = att ? "ATTACK - PLANT THE BOMB" : "DEFEND THE SITES";
+        if (ms.actionPlayer != 255) progress = ms.actionProgress;
+    } else if (ms.mode == MODE_KOTH) {
+        obj = ms.flags & MS_CONTESTED ? "HILL CONTESTED" : ms.hillOwner == 255 ? "CAPTURE THE HILL" : ms.hillOwner == myTeam ? "HOLDING THE HILL" : "ENEMY HOLDS THE HILL";
+    } else if (ms.mode == MODE_PAYLOAD) {
+        obj = myTeam == ms.attackers ? "PUSH THE PAYLOAD" : "STOP THE PAYLOAD";
+        if (ms.payloadLen > 0) progress = ms.payloadDist / ms.payloadLen;
+    } else if (ms.mode == MODE_RACE && mep) {
+        obj = (mep->flags & PS_FINISHED) ? "FINISHED" : "CHECKPOINT " + std::to_string(mep->checkpoint) + " / " + std::to_string(net_.map().checkpoints.size());
+    } else if (ms.mode == MODE_VS && ms.phase == PHASE_LIVE) {
+        obj = "LAST TEAM STANDING WINS";
+    }
+    if (!obj.empty()) ui_.labelCentered(cx, 80 * s, obj, kWhite);
+    if (progress >= 0) {
+        float bw = 300 * s;
+        r_.rect(cx - bw * 0.5f, 104 * s, bw, 8 * s, {0, 0, 0, 0.5f});
+        r_.rect(cx - bw * 0.5f, 104 * s, bw * clampf(progress, 0, 1), 8 * s, ms.mode == MODE_PAYLOAD ? rgba(myTeam == ms.attackers ? cfg_.colorFriendly : cfg_.colorEnemy) : kWhite);
+    }
+    if (ms.mode == MODE_BOMB && ms.bombState == BOMB_PLANTED && ms.phase == PHASE_LIVE)
+        ui_.labelCentered(cx, 118 * s, fmtTime(ms.bombTimer), kRed, 1.5f);
+
+    // health / weapon
+    if (net_.selfAlive()) {
+        int hp = net_.selfHealth();
+        std::string h = std::to_string(hp);
+        r_.text(24 * s, H - 70 * s, ts * 2, h, hp > 30 ? kWhite : kRed);
+        r_.rect(24 * s, H - 28 * s, 200 * s, 8 * s, {0, 0, 0, 0.5f});
+        r_.rect(24 * s, H - 28 * s, 200 * s * clampf(hp / 100.0f, 0, 1), 8 * s, hp > 30 ? fc : kRed);
+        std::string wn = weaponDef(net_.selfWeapon()).name;
+        r_.text(W - 24 * s - r_.textWidth(wn, ts * 1.5f), H - 50 * s, ts * 1.5f, wn, kWhite);
+    } else if (ms.phase != PHASE_ROUND_END && ms.phase != PHASE_MATCH_END) {
+        std::string t = mep && (mep->flags & PS_SPECTATOR) ? "SPECTATING" : "DEAD";
+        if (specTarget_ >= 0) t += " - WATCHING " + net_.playerName(specTarget_) + " (CLICK TO CYCLE)";
+        ui_.labelCentered(cx, H - 60 * s, t, kGrey);
+    }
+
+    // kill feed (top right)
+    float y = 12 * s;
+    while (!killFeed_.empty() && killFeed_.front().until < time_) killFeed_.pop_front();
+    for (auto& k : killFeed_) {
+        float tw = r_.textWidth(k.text, ts);
+        r_.rect(W - tw - 20 * s, y - 3 * s, tw + 12 * s, r_.textHeight(ts) + 6 * s, {0, 0, 0, 0.4f});
+        r_.text(W - tw - 14 * s, y, ts, k.text, k.color);
+        y += r_.textHeight(ts) + 8 * s;
+    }
+    // chat (bottom left)
+    while (!chatFeed_.empty() && chatFeed_.front().until < time_ && !chatting_) chatFeed_.pop_front();
+    y = H - 110 * s - chatFeed_.size() * (r_.textHeight(ts) + 4 * s);
+    for (auto& c : chatFeed_) { r_.text(24 * s, y, ts, c.text, c.color); y += r_.textHeight(ts) + 4 * s; }
+    if (chatting_) {
+        ui_.label(24 * s, H - 100 * s, "SAY: " + chatText_ + (std::fmod(time_, 1.0) < 0.5 ? "_" : ""), kWhite);
+        for (char c : uiIn_.chars) if (c >= 32 && c < 127 && chatText_.size() < 120) chatText_ += c;
+        if (uiIn_.backspace && !chatText_.empty()) chatText_.pop_back();
+    }
+    // notices
+    while (!notices_.empty() && notices_.front().until < time_) notices_.pop_front();
+    y = H * 0.3f;
+    for (auto& n : notices_) { ui_.labelCentered(cx, y, n.text, n.color); y += r_.textHeight(ts) + 6 * s; }
+    if (time_ < centerUntil_) ui_.labelCentered(cx, H * 0.36f, centerText_, kWhite, 1.5f);
+
+    // host info
+    if (host_ && paused_) {
+        std::string st = "HOSTING ON UDP PORT " + std::to_string(host_->port());
+        ui_.labelCentered(cx, H - 70 * s, st, kGrey);
+        if (host_->config().upnp && host_->upnpStatus().size()) ui_.labelCentered(cx, H - 48 * s, host_->upnpStatus(), kGrey);
+    }
+
+    showScores_ = glfwGetKey(win_, GLFW_KEY_TAB) == GLFW_PRESS || ms.phase == PHASE_MATCH_END;
+    if (showScores_ && !paused_) drawScoreboard();
+    if (paused_) drawPauseMenu(cx, H * 0.25f);
+}
+
+void Game::drawScoreboard() {
+    const float W = (float)r_.width(), H = (float)r_.height(), s = H / 720.0f;
+    float ts = ui_.textScale();
+    float w = 640 * s, x = (W - w) * 0.5f, y = 140 * s;
+    const ModeState& ms = net_.mode();
+    std::vector<PlayerSnap> ps = net_.latest().players;
+    std::sort(ps.begin(), ps.end(), [](const PlayerSnap& a, const PlayerSnap& b) {
+        if (a.team() != b.team()) return a.team() < b.team();
+        return a.score > b.score;
+    });
+    float rowH = r_.textHeight(ts) + 10 * s;
+    ui_.panel(x, y, w, (ps.size() + 2) * rowH + 10 * s, 0.8f);
+    float cy = y + 10 * s;
+    r_.text(x + 12 * s, cy, ts, "PLAYER", kGrey);
+    r_.text(x + w * 0.5f, cy, ts, ms.mode == MODE_RACE ? "WINS" : "SCORE", kGrey);
+    r_.text(x + w * 0.64f, cy, ts, "K", kGrey);
+    r_.text(x + w * 0.74f, cy, ts, "D", kGrey);
+    r_.text(x + w * 0.84f, cy, ts, "PING", kGrey);
+    cy += rowH;
+    for (auto& p : ps) {
+        Color c = (p.flags & PS_SPECTATOR) ? kGrey : rgba(teamColor(p.id));
+        std::string n = net_.playerName(p.id) + ((p.flags & PS_ALIVE) ? "" : " (dead)");
+        if (p.id == net_.clientId()) r_.rect(x + 4 * s, cy - 4 * s, w - 8 * s, rowH - 2 * s, {1, 1, 1, 0.06f});
+        r_.text(x + 12 * s, cy, ts, n, c);
+        r_.text(x + w * 0.5f, cy, ts, std::to_string(p.score), kWhite);
+        r_.text(x + w * 0.64f, cy, ts, std::to_string(p.kills), kWhite);
+        r_.text(x + w * 0.74f, cy, ts, std::to_string(p.deaths), kWhite);
+        r_.text(x + w * 0.84f, cy, ts, std::to_string(p.ping), kWhite);
+        cy += rowH;
+    }
+}
+
+void Game::drawPauseMenu(float cx, float y) {
+    float s = ui_.s();
+    float w = 300 * s, h = 36 * s, gap = 8 * s, x = cx - w * 0.5f;
+    if (settingsInGame_) {
+        drawSettings(x - 60 * s, y, w + 120 * s);
+        return;
+    }
+    bool teamMode = modeIsTeamBased(net_.mode().mode);
+    int rows = 6 + (teamMode ? 1 : 0) + (host_ ? 2 : 0);
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, rows * (h + gap) + 24 * s);
+    if (ui_.button(x, y, w, h, "RESUME")) { paused_ = false; }
+    y += h + gap;
+    if (teamMode) {
+        float hw = (w - gap) * 0.5f;
+        if (ui_.button(x, y, hw, h, "JOIN TEAM A")) { net_.sendCommand("team a"); paused_ = false; }
+        if (ui_.button(x + hw + gap, y, hw, h, "JOIN TEAM B")) { net_.sendCommand("team b"); paused_ = false; }
+        y += h + gap;
+    } else {
+        if (ui_.button(x, y, w, h, "PLAY")) { net_.sendCommand("team a"); paused_ = false; }
+        y += h + gap;
+    }
+    if (ui_.button(x, y, w, h, "SPECTATE")) { net_.sendCommand("team spec"); paused_ = false; }
+    y += h + gap;
+    if (host_) {
+        // Host controls: change mode/map live.
+        const Map& map = net_.map();
+        int cur = net_.mode().mode;
+        if (ui_.button(x, y, w, h, "NEXT MODE")) {
+            for (int k = 1; k <= MODE_COUNT; k++) {
+                int m = (cur + k) % MODE_COUNT;
+                if (map.supportsMode(m)) { net_.sendCommand(std::string("mode ") + modeName(m)); break; }
+            }
+        }
+        y += h + gap;
+        if (ui_.button(x, y, w, h, "NEXT MAP") && !maps_.empty()) {
+            int idx = 0;
+            for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == map.name) idx = (int)i;
+            for (size_t k = 1; k <= maps_.size(); k++) {
+                Map m;
+                const std::string& name = maps_[(idx + k) % maps_.size()];
+                if (!m.load(name)) continue;
+                int mode = m.supportsMode(cur) ? cur : -1;
+                for (int mm = 0; mm < MODE_COUNT && mode < 0; mm++) if (m.supportsMode(mm)) mode = mm;
+                if (mode >= 0) { net_.sendCommand("map " + name + " " + modeName(mode)); break; }
+            }
+        }
+        y += h + gap;
+        if (ui_.button(x, y, w, h, "FORCE START")) { net_.sendCommand("forcestart"); paused_ = false; }
+        y += h + gap;
+    }
+    if (ui_.button(x, y, w, h, "SETTINGS")) settingsInGame_ = true;
+    y += h + gap;
+    if (ui_.button(x, y, w, h, host_ ? "STOP HOSTING" : "DISCONNECT")) { leaveGame(); return; }
+    y += h + gap;
+    if (ui_.button(x, y, w, h, "QUIT")) quit_ = true;
+}
+
+// ---------------------------------------------------------------------------
+// menus
+
+void Game::drawSettings(float x, float y, float w) {
+    float s = ui_.s();
+    float h = 34 * s, gap = 8 * s;
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 12 * (h + gap) + 24 * s);
+    ui_.label(x, y, "NAME");
+    y += 22 * s;
+    if (ui_.textField(1, x, y, w, h, cfg_.name, 20) && net_.state() == ConnState::Connected) {}
+    y += h + gap;
+    ui_.slider(x, y, w, h, "SENSITIVITY", cfg_.sensitivity, 0.1f, 10.0f, "%.2f");
+    y += h + gap;
+    ui_.slider(x, y, w, h, "FOV", cfg_.fov, 70, 130, "%.0f");
+    y += h + gap;
+    if (ui_.toggle(x, y, w, h, "VSYNC", cfg_.vsync)) glfwSwapInterval(cfg_.vsync ? 1 : 0);
+    y += h + gap;
+    static const int caps[] = {0, 60, 120, 144, 165, 240, 360};
+    static const std::vector<std::string> capNames = {"UNLIMITED", "60", "120", "144", "165", "240", "360"};
+    int ci = 0;
+    for (int i = 0; i < 7; i++) if (caps[i] == cfg_.maxFps) ci = i;
+    if (ui_.cycle(x, y, w, h, "MAX FPS", ci, 7, capNames)) cfg_.maxFps = caps[ci];
+    y += h + gap;
+    ui_.toggle(x, y, w, h, "PLAYER SHADOWS", cfg_.shadows);
+    y += h + gap;
+    if (ui_.toggle(x, y, w, h, "FULLSCREEN", cfg_.fullscreen)) {
+        GLFWmonitor* mon = glfwGetPrimaryMonitor();
+        const GLFWvidmode* vm = glfwGetVideoMode(mon);
+        if (cfg_.fullscreen) glfwSetWindowMonitor(win_, mon, 0, 0, vm->width, vm->height, vm->refreshRate);
+        else glfwSetWindowMonitor(win_, nullptr, 100, 100, cfg_.width, cfg_.height, 0);
+    }
+    y += h + gap;
+    std::vector<std::string> pn;
+    int pi = 0;
+    for (int i = 0; i < kPaletteCount; i++) {
+        pn.push_back(kPalettes[i].name);
+        if (length(kPalettes[i].friendly - cfg_.colorFriendly) < 0.01f && length(kPalettes[i].enemy - cfg_.colorEnemy) < 0.01f) pi = i;
+    }
+    if (ui_.cycle(x, y, w, h, "COLORS", pi, kPaletteCount, pn)) {
+        cfg_.colorFriendly = kPalettes[pi].friendly;
+        cfg_.colorEnemy = kPalettes[pi].enemy;
+        ui_.accent = rgba(cfg_.colorFriendly);
+    }
+    y += h + gap;
+    r_.rect(x, y, w * 0.5f - 4 * s, 10 * s, rgba(cfg_.colorFriendly));
+    r_.rect(x + w * 0.5f + 4 * s, y, w * 0.5f - 4 * s, 10 * s, rgba(cfg_.colorEnemy));
+    y += 10 * s + gap;
+    if (ui_.button(x, y, w, h, "BACK")) {
+        cfg_.save();
+        if (net_.state() == ConnState::Connected) net_.sendCommand("name " + cfg_.name);
+        if (settingsInGame_) settingsInGame_ = false;
+        else setScreen(Screen::Main);
+    }
+}
+
+void Game::drawMenu() {
+    if (screen_ == Screen::InGame) return;
+    const float W = (float)r_.width(), H = (float)r_.height();
+    float s = H / 720.0f;
+    ui_.begin(&r_, uiIn_, s);
+    r_.rect(0, 0, W, H, {0.03f, 0.035f, 0.05f, r_.worldLoaded() ? 0.6f : 1.0f});
+    float cx = W * 0.5f;
+    float bw = 340 * s, bh = 40 * s, gap = 10 * s;
+    float x = cx - bw * 0.5f;
+    float y = H * 0.12f;
+    ui_.labelCentered(cx, y, "QUARK", rgba(cfg_.colorFriendly), 4.0f);
+    y += 80 * s;
+
+    switch (screen_) {
+        case Screen::Main: {
+            if (ui_.button(x, y, bw, bh, "JOIN GAME")) setScreen(Screen::Join);
+            y += bh + gap;
+            if (ui_.button(x, y, bw, bh, "HOST GAME")) setScreen(Screen::Host);
+            y += bh + gap;
+            if (ui_.button(x, y, bw, bh, "SETTINGS")) setScreen(Screen::Settings);
+            y += bh + gap;
+            if (ui_.button(x, y, bw, bh, "QUIT")) quit_ = true;
+            y += bh + gap * 2;
+            if (!error_.empty()) ui_.labelCentered(cx, y, error_, kRed);
+            break;
+        }
+        case Screen::Join: {
+            float lw = 560 * s, lx = cx - lw * 0.5f;
+            ui_.label(lx, y, "ADDRESS (IP:PORT)");
+            y += 22 * s;
+            ui_.textField(2, lx, y, lw - 140 * s, bh, joinAddr_, 64);
+            if (ui_.button(lx + lw - 130 * s, y, 130 * s, bh, "CONNECT") || (uiIn_.enter && !joinAddr_.empty())) connectTo(joinAddr_);
+            y += bh + gap * 2;
+            ui_.label(lx, y, "LAN GAMES");
+            if (ui_.button(lx + lw - 130 * s, y - 6 * s, 130 * s, 30 * s, "REFRESH")) browser_.refresh();
+            y += 30 * s;
+            ui_.panel(lx, y, lw, 220 * s, 0.6f);
+            float ry = y + 8 * s;
+            for (auto& sv : browser_.servers()) {
+                char row[160];
+                snprintf(row, sizeof row, "%s  %s/%s  %d/%d  %dms", sv.name.c_str(), sv.map.c_str(), modeName(sv.mode), sv.players,
+                         sv.maxPlayers, (int)sv.ping);
+                if (ui_.button(lx + 6 * s, ry, lw - 12 * s, 30 * s, row)) {
+                    joinAddr_ = sv.addr.toString();
+                    connectTo(joinAddr_);
+                }
+                ry += 34 * s;
+                if (ry > y + 200 * s) break;
+            }
+            if (browser_.servers().empty()) ui_.label(lx + 10 * s, ry, "NO LAN GAMES FOUND", kGrey);
+            y += 230 * s;
+            if (ui_.button(x, y, bw, bh, "BACK")) setScreen(Screen::Main);
+            if (!error_.empty()) ui_.labelCentered(cx, y + bh + gap, error_, kRed);
+            break;
+        }
+        case Screen::Host: {
+            float lw = 460 * s, lx = cx - lw * 0.5f;
+            ui_.panel(lx - 16 * s, y - 16 * s, lw + 32 * s, 430 * s);
+            ui_.label(lx, y, "SERVER NAME");
+            y += 22 * s;
+            ui_.textField(3, lx, y, lw, bh, cfg_.hostName, 32);
+            y += bh + gap;
+            if (!maps_.empty()) {
+                if (ui_.cycle(lx, y, lw, bh, "MAP", hostMapIdx_, (int)maps_.size(), maps_)) {}
+                y += bh + gap;
+                Map m;
+                m.load(maps_[hostMapIdx_]);
+                std::vector<std::string> modes;
+                for (int i = 0; i < MODE_COUNT; i++) modes.push_back(modeTitle(i));
+                ui_.cycle(lx, y, lw, bh, "MODE", hostModeIdx_, MODE_COUNT, modes);
+                y += bh + gap;
+                if (!m.supportsMode(hostModeIdx_)) ui_.label(lx, y, "THIS MAP DOES NOT SUPPORT THAT MODE", kRed);
+                y += 24 * s;
+            }
+            ui_.label(lx, y, "UDP PORT");
+            y += 22 * s;
+            ui_.textField(4, lx, y, lw * 0.4f, bh, hostPortStr_, 5);
+            float mp = (float)cfg_.hostMaxPlayers;
+            if (ui_.slider(lx + lw * 0.45f, y, lw * 0.55f, bh, "MAX PLAYERS", mp, 2, (float)kMaxPlayers, "%.0f"))
+                cfg_.hostMaxPlayers = (int)std::round(mp);
+            y += bh + gap;
+            ui_.toggle(lx, y, lw, bh, "AUTO PORT FORWARD (UPNP)", cfg_.hostUpnp);
+            y += bh + gap;
+            ui_.label(lx, y, "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, 0.5f);
+            y += 14 * s;
+            ui_.label(lx, y, "IF UPNP FAILS, FORWARD THAT UDP PORT ON YOUR ROUTER", kGrey, 0.5f);
+            y += 26 * s;
+            if (ui_.button(lx, y, lw * 0.5f - 5 * s, bh, "START")) startHost();
+            if (ui_.button(lx + lw * 0.5f + 5 * s, y, lw * 0.5f - 5 * s, bh, "BACK")) { cfg_.save(); setScreen(Screen::Main); }
+            y += bh + gap;
+            if (!error_.empty()) ui_.labelCentered(cx, y + 20 * s, error_, kRed);
+            break;
+        }
+        case Screen::Settings:
+            drawSettings(cx - 230 * s, y, 460 * s);
+            break;
+        case Screen::Connecting: {
+            ui_.labelCentered(cx, y, "CONNECTING TO " + net_.address() + "...", kWhite);
+            y += 60 * s;
+            if (ui_.button(x, y, bw, bh, "CANCEL")) leaveGame();
+            break;
+        }
+        default: break;
+    }
+}

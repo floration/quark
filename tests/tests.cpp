@@ -247,9 +247,35 @@ static void testPacketLoss(uint16_t port) {
     s.stop();
 }
 
+// `quark_tests bot <addr> <seconds> [name]`: a headless player that wanders and shoots (for manual/visual testing).
+static int runBot(const std::string& addr, double seconds, const std::string& name) {
+    NetClient c;
+    c.connect(addr, name);
+    double end = timeNow() + seconds, next = timeNow();
+    float yaw = 0;
+    while (timeNow() < end) {
+        c.poll();
+        if (c.state() == ConnState::Disconnected) { printf("bot: %s\n", c.error().c_str()); return 1; }
+        if (timeNow() >= next) {
+            UserCmd u;
+            yaw += 0.01f;
+            u.yaw = yaw;
+            u.forward = 100;
+            u.side = (int8_t)(std::sin(timeNow()) * 100);
+            if (((int)timeNow()) % 3 == 0) u.buttons |= BTN_JUMP;
+            c.tick(u);
+            next += kTickDt;
+        }
+        sleepMs(1);
+    }
+    c.disconnect();
+    return 0;
+}
+
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
     netInit();
+    if (argc >= 4 && std::string(argv[1]) == "bot") return runBot(argv[2], atof(argv[3]), argc > 4 ? argv[4] : "bot");
     srand(1234);
     testMovement();
     testMaps();

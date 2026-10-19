@@ -86,6 +86,7 @@ public:
     int playerCount() const;
     std::string statusText();
     const ServerConfig& config() const { return cfg_; }
+    std::string upnpStatus() { return upnp_ ? upnp_->status() : std::string(); }
 
     // ---- state used by the game mode rules (gamemodes.cpp) ----
     ServerConfig cfg_;
