@@ -1009,20 +1009,74 @@ void Game::drawWorld(float alpha) {
         int w = net_.selfWeapon();
         recoil_ = std::max(0.0, recoil_ - 0.016 * 8);
         float kick = (float)recoil_ * 0.06f;
-        Vec3 gun = {0.025f, 0.03f, 0.16f};
-        if (w == WPN_ROCKET) gun = {0.045f, 0.045f, 0.2f};
-        if (w == WPN_KNIFE) gun = {0.01f, 0.02f, 0.09f};
-        if (w == WPN_SNIPER) gun = {0.02f, 0.026f, 0.3f};
-        if (w == WPN_LASER) gun = {0.035f, 0.04f, 0.17f};
-        if (w == WPN_SHOTGUN) gun = {0.04f, 0.035f, 0.22f};
-        if (w == WPN_STICKY) gun = {0.05f, 0.05f, 0.18f};
-        if (w == WPN_CROSSBOW) gun = {0.02f, 0.025f, 0.22f};
+        // Each weapon is a handful of boxes around `at` (camera space: +x right, +y up, -z forward).
+        const Vec3 dark = {0.13f, 0.13f, 0.15f}, mid = {0.22f, 0.22f, 0.25f}, light = {0.42f, 0.43f, 0.46f}, acc = cfg_.colorFriendly;
         Vec3 at = {0.2f, -0.17f, -0.55f + kick};
-        r_.viewBox(at, gun, {0.14f, 0.14f, 0.16f});
-        r_.viewBox(at + Vec3(0, gun.y + 0.006f, 0.05f), {0.01f, 0.006f, 0.05f}, cfg_.colorFriendly);
-        if (w == WPN_SNIPER) r_.viewBox(at + Vec3(0, gun.y + 0.03f, 0.02f), {0.018f, 0.018f, 0.09f}, {0.1f, 0.1f, 0.12f}); // scope
-        if (w == WPN_LASER) r_.viewBox(at + Vec3(0, 0, -gun.z - 0.01f), {0.02f, 0.02f, 0.012f}, cfg_.colorFriendly * 1.4f);
-        if (w == WPN_CROSSBOW) r_.viewBox(at + Vec3(0, 0.01f, -gun.z + 0.03f), {0.13f, 0.008f, 0.012f}, {0.12f, 0.12f, 0.14f}); // limbs
+        auto part = [&](float x, float y, float z, float hx, float hy, float hz, const Vec3& c) { r_.viewBox(at + Vec3(x, y, z), {hx, hy, hz}, c); };
+        switch (w) {
+            case WPN_RIFLE:      // receiver, long barrel with a front sight, magazine, stock, accent rail
+                part(0, 0, 0, 0.026f, 0.032f, 0.12f, dark);
+                part(0, 0.008f, -0.2f, 0.009f, 0.009f, 0.09f, mid);
+                part(0, 0.022f, -0.27f, 0.004f, 0.012f, 0.006f, mid);
+                part(0, -0.06f, -0.03f, 0.016f, 0.035f, 0.022f, mid);
+                part(0, -0.012f, 0.15f, 0.02f, 0.03f, 0.05f, dark);
+                part(0, 0.038f, -0.01f, 0.01f, 0.005f, 0.09f, acc);
+                break;
+            case WPN_ROCKET:     // fat tube with flared muzzle and exhaust rings, side sight, grip
+                part(0, 0, -0.02f, 0.045f, 0.045f, 0.2f, mid);
+                part(0, 0, -0.23f, 0.055f, 0.055f, 0.02f, dark);
+                part(0, 0, 0.19f, 0.052f, 0.052f, 0.015f, dark);
+                part(0, 0, 0.05f, 0.047f, 0.047f, 0.006f, acc);
+                part(-0.058f, 0.025f, -0.06f, 0.012f, 0.02f, 0.03f, dark);
+                part(0, -0.07f, 0.04f, 0.014f, 0.03f, 0.02f, dark);
+                break;
+            case WPN_KNIFE:      // grip, cross guard, long bright blade, accent pommel
+                part(0, -0.01f, 0.04f, 0.012f, 0.016f, 0.05f, dark);
+                part(0, -0.01f, -0.015f, 0.035f, 0.008f, 0.008f, mid);
+                part(0, -0.006f, -0.11f, 0.004f, 0.018f, 0.09f, light);
+                part(0, 0.006f, -0.2f, 0.003f, 0.008f, 0.012f, light);
+                part(0, -0.01f, 0.095f, 0.014f, 0.014f, 0.008f, acc);
+                break;
+            case WPN_SNIPER:     // long thin barrel with muzzle brake, receiver, scope on rings, bolt, stock
+                part(0, 0, 0, 0.022f, 0.028f, 0.13f, dark);
+                part(0, 0.006f, -0.27f, 0.007f, 0.007f, 0.15f, mid);
+                part(0, 0.006f, -0.43f, 0.012f, 0.01f, 0.018f, dark);
+                part(0, 0.058f, -0.02f, 0.017f, 0.017f, 0.09f, dark);
+                part(0, 0.058f, -0.115f, 0.02f, 0.02f, 0.008f, acc);
+                part(0, 0.036f, -0.06f, 0.006f, 0.01f, 0.006f, mid); part(0, 0.036f, 0.03f, 0.006f, 0.01f, 0.006f, mid);
+                part(0.03f, 0.01f, 0.05f, 0.012f, 0.006f, 0.006f, light);
+                part(0, -0.015f, 0.17f, 0.018f, 0.035f, 0.06f, dark);
+                break;
+            case WPN_LASER:      // chunky body, coil segments on top, glowing emitter rings at the front
+                part(0, 0, 0, 0.036f, 0.04f, 0.15f, mid);
+                for (int k = 0; k < 4; k++) part(0, 0.046f, -0.09f + k * 0.05f, 0.022f, 0.008f, 0.012f, k % 2 ? dark : acc * 0.8f);
+                part(0, 0, -0.165f, 0.03f, 0.03f, 0.012f, dark);
+                part(0, 0, -0.185f, 0.022f, 0.022f, 0.008f, acc * 1.4f);
+                part(0, -0.07f, 0.03f, 0.014f, 0.03f, 0.02f, dark);
+                break;
+            case WPN_SHOTGUN:    // twin barrels, pump under them, heavy receiver and stock
+                part(-0.012f, 0.012f, -0.17f, 0.011f, 0.011f, 0.13f, mid);
+                part(0.012f, 0.012f, -0.17f, 0.011f, 0.011f, 0.13f, mid);
+                part(0, -0.018f, -0.15f, 0.022f, 0.016f, 0.06f, dark);
+                part(0, 0, 0.02f, 0.03f, 0.035f, 0.08f, dark);
+                part(0, -0.015f, 0.16f, 0.024f, 0.035f, 0.06f, mid);
+                part(0, 0.038f, 0.0f, 0.008f, 0.004f, 0.06f, acc);
+                break;
+            case WPN_STICKY:     // drum magazine, stubby wide barrel, canister on top
+                part(0, 0, -0.06f, 0.03f, 0.03f, 0.13f, mid);
+                part(0, -0.02f, 0.04f, 0.055f, 0.055f, 0.04f, dark);
+                part(0, -0.02f, 0.04f, 0.057f, 0.012f, 0.03f, acc);
+                part(0, 0.045f, -0.02f, 0.014f, 0.014f, 0.05f, dark);
+                part(0, 0, -0.2f, 0.036f, 0.036f, 0.012f, dark);
+                break;
+            case WPN_CROSSBOW:   // stock, bow limbs with a string, a bolt on top
+                part(0, 0, 0.02f, 0.02f, 0.025f, 0.2f, dark);
+                part(0, 0.012f, -0.17f, 0.13f, 0.008f, 0.012f, mid);
+                part(-0.115f, 0.012f, -0.15f, 0.012f, 0.01f, 0.03f, mid); part(0.115f, 0.012f, -0.15f, 0.012f, 0.01f, 0.03f, mid);
+                part(0, 0.014f, -0.08f, 0.12f, 0.002f, 0.002f, light);
+                part(0, 0.032f, -0.12f, 0.004f, 0.004f, 0.11f, acc);
+                break;
+        }
     }
     r_.drawScene(cfg_.shadows);
 }
@@ -2078,7 +2132,7 @@ void Game::drawKnifeSlash(const Vec3& eye, float yaw, float pitch, float t, cons
     Vec3 right = normalize(cross(fwd, {0, 1, 0})), up = cross(right, fwd);
     float fade = 1.0f - t;
     // the hit check (a ray to `reach`), drawn as a blade-width beam from the arm out to the tip
-    Vec3 arm = eye + right * 0.22f - up * 0.25f + fwd * 0.15f, tip = eye + fwd * reach;
+    Vec3 arm = eye + right * 0.06f - up * 0.1f + fwd * 0.05f, tip = eye + fwd * reach; // from you all the way out
     r_.line(arm, tip, 0.05f, rgba(color * 1.3f, 0.25f * fade));
     r_.line(arm, tip, 0.015f, rgba({1, 1, 1}, 0.7f * fade));
     r_.box(tip, {0.05f, 0.05f, 0.05f}, yaw, color * 1.5f, 1.0f, false);

@@ -153,7 +153,7 @@ inline const WeaponDef& weaponDef(int w) {
         //  name        refire   dmg    range   proj  speed  splash spread scoped zoom   beam  pel grav  sticky life
         {"RIFLE",       2.0f/9,  7,     300.0f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 15 shots, 3.1 s
         {"ROCKET",      2.0f,    40,      0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  12.0f, false, 5}, // 3, 4.0 s
-        {"KNIFE",       0.7f,    40,      2.2f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 3, 1.4 s
+        {"KNIFE",       0.7f,    40,      2.8f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 3, 1.4 s
         {"SNIPER",      2.0f,    40,    500.0f, false,  0,    0,     0.09f, 0.0f, 45.0f,  false, 1,  0,    false, 0},  // 3, 4.0 s
         {"LASER",       0.001f,  0.03f,  32.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},  // every 1 ms, 3334 hits, 3.3 s
         {"SHOTGUN",     1.0f,    2,      60.0f, false,  0,    0,     0.085f,-1,     0,    false, 20, 0,    false, 0},  // 20 x 2 = 40 per blast, 3, 2.0 s

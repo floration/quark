@@ -19,7 +19,7 @@ constexpr float kMaxCmdTokensMs = 40.0f; // burst allowance after network jitter
 constexpr double kRateWindow = 3.0;
 constexpr double kMaxLateFraction = 0.01;  // ticks that ran more than 2 periods late
 constexpr int kMaxClientLossPct = 2;       // snapshot loss any client may report
-constexpr float kKnifeRange = 2.2f;
+const float kKnifeRange = weaponDef(WPN_KNIFE).range; // the knife's reach (also what clients draw)
 constexpr float kRocketLife = 5.0f;
 
 bool isLoopback(const NetAddr& a) { return (a.ip >> 24) == 127; }
@@ -1025,6 +1025,13 @@ void Server::explode(const Vec3& at, int owner, int weapon) {
         Vec3 knock = push * (11.0f * frac * (self ? 1.3f : 1.0f));
         if (!self) knock.y *= 2.0f; // enemies get launched: twice the vertical knockback
         damagePlayer(i, owner, dmg, weapon, knock);
+    }
+    // Blasts set off any sticky in range, anyone's (yours and the enemy's): chain reactions. Each one is
+    // switched off before it goes, so a chain always ends.
+    for (auto& pr : projectiles_) {
+        if (!pr.active || pr.type != WPN_STICKY || length(pr.pos - at) > wd.splashRadius) continue;
+        pr.active = false;
+        explode(pr.pos, pr.owner, WPN_STICKY);
     }
 }
 

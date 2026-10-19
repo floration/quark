@@ -8,6 +8,7 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD)
 git fetch -q origin "$BRANCH"
 TARGET=$(git rev-parse "origin/$BRANCH")
 [ "$TARGET" = "$(cat .built-commit 2>/dev/null)" ] && exit 0
+git checkout -q -- maps 2>/dev/null || true   # a server runs the shipped maps: drop stray local changes so the update applies
 git merge -q --ff-only "origin/$BRANCH"
 cmake -S . -B build-update -DQUARK_BUILD_CLIENT=OFF -DQUARK_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release >/dev/null
 nice cmake --build build-update -j1 >/dev/null
