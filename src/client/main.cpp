@@ -1,6 +1,7 @@
 // quark game client entry point.
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#include "../common/profile.h"
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -90,13 +91,14 @@ int main(int argc, char** argv) {
         }
         frameStart = timeNow();
         game.beforeInput();
-        glfwPollEvents();
+        { QZONE("poll events"); glfwPollEvents(); }
         double now = timeNow();
         double dt = now - last;
         last = now;
         game.frame(dt);
-        glfwSwapBuffers(win);
-        game.afterSwap();
+        { QZONE("swap"); glfwSwapBuffers(win); }
+        { QZONE("after swap (low latency wait)"); game.afterSwap(); }
+        QFRAME();
     }
     game.shutdown();
     glfwDestroyWindow(win);

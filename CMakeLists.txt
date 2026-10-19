@@ -48,6 +48,22 @@ add_library(quark_core STATIC
   src/game/master.cpp
 )
 target_include_directories(quark_core PUBLIC src)
+# Profiling: -DQUARK_TRACY=ON adds Tracy zones (src/common/profile.h). QUARK_TRACY_DIR can point at a
+# local Tracy checkout; otherwise v0.11.1 is fetched. Off by default (release builds never include it).
+option(QUARK_TRACY "Build with the Tracy profiler client" OFF)
+if(QUARK_TRACY)
+  if(QUARK_TRACY_DIR)
+    set(tracy_SOURCE_DIR ${QUARK_TRACY_DIR})
+  else()
+    include(FetchContent)
+    FetchContent_Declare(tracy GIT_REPOSITORY https://github.com/wolfpld/tracy.git GIT_TAG v0.11.1 GIT_SHALLOW TRUE)
+    FetchContent_Populate(tracy)
+  endif()
+  target_sources(quark_core PRIVATE ${tracy_SOURCE_DIR}/public/TracyClient.cpp)
+  target_include_directories(quark_core PUBLIC ${tracy_SOURCE_DIR}/public)
+  target_compile_definitions(quark_core PUBLIC QUARK_TRACY TRACY_ENABLE)
+  target_link_libraries(quark_core PUBLIC ${CMAKE_DL_LIBS})
+endif()
 target_link_libraries(quark_core PUBLIC Threads::Threads)
 if(WIN32)
   target_link_libraries(quark_core PUBLIC ws2_32 winmm winhttp)

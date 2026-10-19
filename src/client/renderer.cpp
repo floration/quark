@@ -1,4 +1,6 @@
 #include "renderer.h"
+#include "../common/profile.h"
+#include "../common/net.h"
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -169,10 +171,16 @@ void setVec3(unsigned prog, const char* name, const Vec3& v) { glUniform3f(U(pro
 void setMat(unsigned prog, const char* name, const Mat4& m) { glUniformMatrix4fv(U(prog, name), 1, GL_FALSE, m.m); }
 
 // Upload a vector into a growable stream buffer.
+#ifdef QUARK_TRACY
+static size_t g_uploadBytes = 0, g_uploads = 0, g_dynVerts = 0, g_shadowVerts = 0; // per-frame counters (profiling builds)
+#endif
 template <class T>
 void upload(unsigned vbo, size_t& cap, const std::vector<T>& v) {
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     size_t bytes = v.size() * sizeof(T);
+#ifdef QUARK_TRACY
+    g_uploadBytes += bytes; g_uploads++;
+#endif
     if (bytes > cap) {
         cap = bytes * 2;
         glBufferData(GL_ARRAY_BUFFER, cap, nullptr, GL_STREAM_DRAW);
@@ -445,6 +453,13 @@ void Renderer::line(const Vec3& a, const Vec3& b, float width, const Color& c) {
 }
 
 void Renderer::drawScene(bool shadows) {
+    QZONE("drawScene");
+    QPLOT("dyn verts", dyn_.size());
+#ifdef QUARK_TRACY
+    g_dynVerts += dyn_.size() + view_.size() + flat_.size();
+    g_shadowVerts += dyn_.size() + dynShadowOnly_.size();
+#endif
+    QPLOT("ui verts", ui_.size());
     bool useShadows = shadows && shadowsOn_;
     // Shadow pass: only dynamic objects (static shadows are baked).
     Mat4 shadowMat;
@@ -462,6 +477,7 @@ void Renderer::drawScene(bool shadows) {
         cy = std::floor(cy / texel) * texel;
         shadowMat = Mat4::ortho(cx - R, cx + R, cy - R, cy + R, -cz - 120.0f, -cz + 120.0f) * lv;
 
+        QZONE("shadow pass");
         std::vector<DynVertex>& casters = dynShadowOnly_;
         casters.insert(casters.end(), dyn_.begin(), dyn_.end());
         upload(dynVbo_, dynCap_, casters);
@@ -495,6 +511,7 @@ void Renderer::drawScene(bool shadows) {
     glActiveTexture(GL_TEXTURE0);
 
     if (worldVerts_) {
+        QZONE("world pass");
         glUseProgram(worldProg_);
         setMat(worldProg_, "uViewProj", viewProj_);
         setMat(worldProg_, "uShadowMat", shadowMat);
@@ -533,7 +550,7 @@ void Renderer::drawScene(bool shadows) {
         glBindVertexArray(dynVao_);
         glDrawArrays(GL_TRIANGLES, 0, (GLsizei)v.size());
     };
-    drawDyn(dyn_, true);
+    { QZONE("dynamic pass"); drawDyn(dyn_, true); }
 
     if (!flat_.empty()) {
         upload(flatVbo_, flatCap_, flat_);
@@ -599,6 +616,10 @@ void Renderer::text(float x, float y, float s, const std::string& str, const Col
 
 void Renderer::flush2D() {
     if (ui_.empty()) return;
+    QPLOT("ui verts", ui_.size());
+#ifdef QUARK_TRACY
+    static size_t uiTotal = 0; uiTotal += ui_.size();
+#endif
     glViewport(0, 0, width_, height_);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
@@ -614,6 +635,18 @@ void Renderer::flush2D() {
     glDrawArrays(GL_TRIANGLES, 0, (GLsizei)ui_.size());
     glDisable(GL_BLEND);
     ui_.clear();
+#ifdef QUARK_TRACY
+    // profiling builds: per-frame averages to stderr every 5 s (and to Tracy plots)
+    static double t0 = timeNow(); static int frames = 0; static size_t bytes = 0, ups = 0, dyn = 0, shadow = 0;
+    QPLOT("upload bytes", g_uploadBytes);
+    frames++; bytes += g_uploadBytes; ups += g_uploads; dyn += g_dynVerts; shadow += g_shadowVerts;
+    g_uploadBytes = g_uploads = g_dynVerts = g_shadowVerts = 0;
+    if (timeNow() - t0 > 5) {
+        fprintf(stderr, "[stats] %d frames, per frame: %.1f KB uploaded in %.1f uploads, %zu ui verts, %zu dynamic verts, %zu shadow verts\n",
+                frames, bytes / 1024.0 / frames, (double)ups / frames, uiTotal / frames, dyn / frames, shadow / frames);
+        t0 = timeNow(); frames = 0; bytes = ups = dyn = shadow = uiTotal = 0;
+    }
+#endif
 }
 
 bool Renderer::screenshot(const std::string& path) {

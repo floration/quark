@@ -1,4 +1,5 @@
 #include "audio.h"
+#include "../common/profile.h"
 #include <cmath>
 #include <cstring>
 
@@ -151,6 +152,7 @@ void Audio::play3D(int id, const Vec3& pos, float volume, float pitch) {
 }
 
 void Audio::mix(int16_t* out, int frames) {
+    QZONE("audio mix");
     float buf[kPeriod * 2 * 4];
     int n = std::min(frames, (int)(sizeof buf / sizeof buf[0] / 2));
     std::memset(buf, 0, sizeof(float) * n * 2);

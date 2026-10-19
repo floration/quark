@@ -1,4 +1,5 @@
 #include "server.h"
+#include "../common/profile.h"
 #include "gamemodes.h"
 #include <cstdio>
 #include <cstdlib>
@@ -150,11 +151,11 @@ double Server::frame() {
     while (now >= nextTick_) {
         if (now - nextTick_ > period * 2) windowLate_++;
         windowTicks_++;
-        simulate();
+        { QZONE("server simulate"); simulate(); }
         logTick();
         tick_++;
         timeMs_ += 1000 / tickRate();
-        sendSnapshots();
+        { QZONE("server snapshots"); sendSnapshots(); }
         nextTick_ += 1.0 / tickRate();
         now = timeNow();
     }

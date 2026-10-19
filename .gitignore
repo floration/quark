@@ -2,3 +2,4 @@ build*/
 *.qlm
 site/changelog.json
 site/weapons.json
+build-tracy/

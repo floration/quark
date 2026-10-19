@@ -1,4 +1,5 @@
 #include <sstream>
+#include "../common/profile.h"
 #include <array>
 #include "game.h"
 #define GLFW_INCLUDE_NONE
@@ -554,6 +555,7 @@ void Game::handleEvents() {
 // main loop
 
 void Game::frame(double dt) {
+    QZONE("Game::frame");
     time_ += dt;
     if (opts_.debugPerf) { showPerf_ = true; if (pendingInput_ < 0) pendingInput_ = timeNow(); }
     if (opts_.debugPause && screen_ == Screen::InGame && !paused_) { paused_ = true; voteMenu_ = opts_.debugVote; opts_.debugPause = false; }
@@ -563,7 +565,7 @@ void Game::frame(double dt) {
     frameTimes_[frameIdx_] = (float)dt;
     frameIdx_ = (frameIdx_ + 1) % frameTimes_.size();
     frameCount_ = std::min(frameCount_ + 1, frameTimes_.size());
-    net_.poll();
+    { QZONE("net poll"); net_.poll(); }
     if ((screen_ == Screen::InGame || opts_.debugPicker || !opts_.backdrop.empty()) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
 
     if (screen_ == Screen::Join) browser_.poll();
@@ -582,6 +584,7 @@ void Game::frame(double dt) {
         tickAcc_ += dt;
         if (tickAcc_ > 0.25) tickAcc_ = 0.25;
         const double period = net_.tickPeriod();
+        QZONE("input + prediction ticks");
         while (tickAcc_ >= period) {
             UserCmd c = buildCmd();
             // local fire feedback (server is authoritative for damage)
@@ -673,7 +676,7 @@ void Game::frame(double dt) {
     std::string copied = ui_.takeCopy();
     if (!copied.empty()) glfwSetClipboardString(win_, copied.c_str());
     if (showPerf_) drawPerf();
-    r_.flush2D();
+    { QZONE("flush2D"); r_.flush2D(); }
 
     if (shotAt_ > 0 && time_ >= shotAt_ && (screen_ == Screen::InGame || opts_.debugPicker || !opts_.backdrop.empty())) {
         r_.screenshot(opts_.screenshot);
@@ -689,6 +692,7 @@ void Game::frame(double dt) {
 // world rendering
 
 void Game::drawWorld(float alpha) {
+    QZONE("drawWorld");
     const Map& map = net_.map();
     const ModeState& ms = net_.mode();
     auto players = net_.interpolatedPlayers();
@@ -937,6 +941,7 @@ void Game::drawWorld(float alpha) {
 // HUD
 
 void Game::drawHud() {
+    QZONE("drawHud");
     const float W = (float)r_.width(), H = (float)r_.height();
     float s = H / 720.0f;
     ui_.begin(&r_, uiIn_, s);
@@ -1400,6 +1405,7 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
 }
 
 void Game::drawMenu() {
+    QZONE("drawMenu");
     if (screen_ == Screen::InGame) return;
     const float W = (float)r_.width(), H = (float)r_.height();
     float s = H / 720.0f;
@@ -1973,6 +1979,7 @@ void Game::drawCrosshairSettings(float x0, float y0, float wTotal) {
 // Footsteps, jumps, landings, dash and grapple for you; footsteps, gunfire and grapples for
 // everyone else (positioned in 3D).
 void Game::updateSounds(const NetClient::PlayerArray& players) {
+    QZONE("updateSounds");
     const int me = net_.clientId();
     bool alive = net_.selfAlive();
     const MoveState& m = net_.predicted();
