@@ -109,6 +109,7 @@ struct ServerInfo {
     std::string name, map;
     int mode = 0, players = 0, maxPlayers = 0;
     float ping = 0;
+    bool noReply = false; // on the internet list but didn't answer (port not open?); still clickable
 };
 
 // LAN discovery and direct server queries.
@@ -125,7 +126,9 @@ private:
     std::thread fetch_;
     std::mutex mu_;
     std::vector<std::string> fetched_; // addresses from the internet list, waiting to be queried
-    std::string netStatus_;
+    std::string netStatus_, myIp_;
+    struct Listed { NetAddr addr; double since; int tries; bool mine; };
+    std::vector<Listed> listed_;       // internet entries not heard from yet
     std::vector<ServerInfo> servers_;
     double sentAt_ = 0;
 };

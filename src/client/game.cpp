@@ -1349,8 +1349,9 @@ void Game::drawMenu() {
             float ry = y + 8 * s;
             for (auto& sv : browser_.servers()) {
                 char row[160];
-                snprintf(row, sizeof row, "%s  %s/%s  %d/%d  %dms", sv.name.c_str(), sv.map.c_str(), modeName(sv.mode), sv.players,
-                         sv.maxPlayers, (int)sv.ping);
+                if (sv.noReply) snprintf(row, sizeof row, "%s  - NO RESPONSE (PORT NOT OPEN?) - CLICK TO TRY", sv.name.c_str());
+                else snprintf(row, sizeof row, "%s  %s/%s  %d/%d  %dms", sv.name.c_str(), sv.map.c_str(), modeName(sv.mode), sv.players,
+                              sv.maxPlayers, (int)sv.ping);
                 if (ui_.button(lx + 6 * s, ry, lw - 12 * s, 30 * s, row)) {
                     joinAddr_ = sv.addr.toString();
                     connectTo(joinAddr_);

@@ -15,6 +15,8 @@
 std::string masterUrl();
 // ip:port of every public server running this version.
 bool fetchServerList(std::vector<std::string>& out, std::string* err = nullptr);
+// This machine's public IPv4 (empty if unknown).
+std::string publicIpv4();
 
 class MasterAnnouncer {
 public:

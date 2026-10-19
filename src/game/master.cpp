@@ -58,6 +58,12 @@ bool fetchServerList(std::vector<std::string>& out, std::string* err) {
     return true;
 }
 
+std::string publicIpv4() {
+    std::string b;
+    if (httpGetText(kIpv4Echo, b, 4000) && isIpv4(trim(b))) return trim(b);
+    return "";
+}
+
 void MasterAnnouncer::start(uint16_t port) {
     stop();
     port_ = port;
@@ -78,7 +84,7 @@ void MasterAnnouncer::run() {
     std::string ip, base;
     for (;;) {
         if (base.empty()) base = masterUrl();
-        if (ip.empty()) { std::string b; if (httpGetText(kIpv4Echo, b) && isIpv4(trim(b))) ip = trim(b); }
+        if (ip.empty()) ip = publicIpv4();
         std::string st;
         if (base.empty()) st = "internet list: not configured";
         else {

@@ -333,14 +333,17 @@ std::string ServerBrowser::internetStatus() { std::lock_guard<std::mutex> l(mu_)
 void ServerBrowser::refresh() {
     if (!sock_.isOpen()) sock_.open(0, true);
     servers_.clear();
+    listed_.clear();
     if (fetch_.joinable()) fetch_.join();
     { std::lock_guard<std::mutex> l(mu_); netStatus_ = "SEARCHING THE INTERNET..."; fetched_.clear(); }
     fetch_ = std::thread([this] {
         std::vector<std::string> list;
         std::string err;
         bool ok = fetchServerList(list, &err);
+        std::string me = ok && !list.empty() ? publicIpv4() : "";
         std::lock_guard<std::mutex> l(mu_);
         fetched_ = list;
+        myIp_ = me;
         netStatus_ = ok ? std::to_string(list.size()) + " INTERNET SERVER(S) LISTED" : "INTERNET LIST: " + err;
         for (auto& c : netStatus_) c = (char)toupper((unsigned char)c);
     });
@@ -368,8 +371,33 @@ void ServerBrowser::query(const std::string& address) {
 void ServerBrowser::poll() {
     if (!sock_.isOpen()) return;
     std::vector<std::string> addrs;
-    { std::lock_guard<std::mutex> l(mu_); addrs.swap(fetched_); }
-    for (auto& a : addrs) query(a);
+    std::string me;
+    { std::lock_guard<std::mutex> l(mu_); addrs.swap(fetched_); me = myIp_; }
+    for (auto& a : addrs) {
+        NetAddr na;
+        if (!NetAddr::parse(a, kDefaultPort, na)) continue;
+        bool mine = !me.empty() && a.rfind(me + ":", 0) == 0;
+        listed_.push_back({na, timeNow(), 1, mine});
+        query(a);
+        // Your own server: routers usually can't loop back to their own public IP, so ask locally too.
+        if (mine) query("127.0.0.1:" + std::to_string(na.port));
+    }
+    // Re-ask (UDP can drop), and after 2.5 s show silent entries anyway so they can still be tried.
+    double now = timeNow();
+    for (size_t i = 0; i < listed_.size();) {
+        Listed& l = listed_[i];
+        bool answered = false;
+        for (auto& sv : servers_)
+            answered |= !sv.noReply && (sv.addr == l.addr || (l.mine && sv.addr.port == l.addr.port && (sv.addr.ip >> 24) == 127));
+        if (answered) { listed_.erase(listed_.begin() + i); continue; }
+        if (l.tries < 3 && now - l.since > 0.7 * l.tries) { l.tries++; query(l.addr.toString()); }
+        if (now - l.since > 2.5) {
+            bool shown = false;
+            for (auto& sv : servers_) shown |= sv.addr == l.addr;
+            if (!shown) { ServerInfo si; si.addr = l.addr; si.name = l.addr.toString(); si.noReply = true; servers_.push_back(si); }
+        }
+        i++;
+    }
     uint8_t buf[1024];
     NetAddr from;
     int n;
@@ -382,6 +410,8 @@ void ServerBrowser::poll() {
         r.u16();
         if (r.bad()) continue;
         si.ping = (float)((timeNow() - sentAt_) * 1000.0);
+        for (size_t k = 0; k < servers_.size(); k++) // a late answer replaces its "no response" placeholder
+            if (servers_[k].noReply && servers_[k].addr == from) { servers_.erase(servers_.begin() + k); break; }
         bool dup = false;
         for (auto& s : servers_) {
             // Same server seen via loopback and LAN address: keep one.
