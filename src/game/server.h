@@ -72,6 +72,8 @@ struct Projectile {
     int owner = 0;
     Vec3 pos, vel;
     float dieAt = 0;
+    float armAt = 0;    // stickies can't be detonated before this
+    bool stuck = false; // stickies: attached to a surface
 };
 
 class Server {
@@ -141,6 +143,8 @@ private:
     void fireWeapon(int id, const UserCmd& cmd);
     void tickProjectiles();
     void explode(const Vec3& at, int owner, int weapon);
+    void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t viewMs, float* dmgPerPlayer, float dmg);
+    Vec3 spreadDir(const Vec3& dir, float spread);
     void sendSnapshots();
     int findPlayer(const NetAddr& a) const;
     void autoTeam(int id);

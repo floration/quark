@@ -342,7 +342,7 @@ static int runBot(const std::string& addr, double seconds, const std::string& na
 
 static void testWeapons(uint16_t port) {
     printf("weapons: sniper (scoped/unscoped), laser, rocket\n");
-    for (int w : {WPN_SNIPER, WPN_LASER, WPN_ROCKET}) {
+    for (int w : {WPN_SNIPER, WPN_LASER, WPN_ROCKET, WPN_SHOTGUN, WPN_CROSSBOW, WPN_STICKY}) {
         Server s;
         ServerConfig cfg;
         cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port++;
@@ -355,11 +355,10 @@ static void testWeapons(uint16_t port) {
         pump(s, cls, 2.5, idle);
         auto& sa = s.players_[a.clientId()];
         auto& sb = s.players_[b.clientId()];
-        float dist = w == WPN_LASER ? 10.0f : 20.0f;
+        float dist = (w == WPN_LASER || w == WPN_SHOTGUN) ? 8.0f : 20.0f;
         sa.move.pos = {9, 0, 6}; sb.move.pos = {9, 0, 6 - dist};
         sa.move.vel = sb.move.vel = {};
         pump(s, cls, 0.3, idle);
-        uint16_t sel = w == WPN_SNIPER ? BTN_WEAPON4 : w == WPN_LASER ? BTN_WEAPON5 : BTN_WEAPON2;
         auto aim = [&](int i, uint16_t extra) {
             UserCmd c;
             if (i != 0) return c;
@@ -368,7 +367,8 @@ static void testWeapons(uint16_t port) {
             Vec3 d = normalize(tgt - eye);
             c.pitch = std::asin(d.y);
             c.yaw = std::atan2(-d.x, -d.z);
-            c.buttons = sel | extra;
+            c.weapon = (uint8_t)w;
+            c.buttons = extra;
             return c;
         };
         pump(s, cls, 0.3, [&](int i) { return aim(i, 0); }); // switch weapon
@@ -376,9 +376,9 @@ static void testWeapons(uint16_t port) {
         int deaths0 = sb.deaths;
         float hp0 = sb.health;
         double t0 = timeNow();
-        pump(s, cls, w == WPN_LASER ? 0.5 : w == WPN_ROCKET ? 0.2 : 0.3, [&](int i) { return aim(i, BTN_FIRE | (w == WPN_SNIPER ? BTN_ALTFIRE : 0)); });
+        pump(s, cls, w == WPN_LASER ? 0.5 : (w == WPN_ROCKET || w == WPN_CROSSBOW || w == WPN_STICKY || w == WPN_SHOTGUN) ? 0.2 : 0.3, [&](int i) { return aim(i, BTN_FIRE | (w == WPN_SNIPER ? BTN_ALTFIRE : 0)); });
         double elapsed = timeNow() - t0;
-        if (w == WPN_ROCKET) pump(s, cls, 1.0, idle); // let it fly
+        if (w == WPN_ROCKET || w == WPN_CROSSBOW || w == WPN_STICKY) pump(s, cls, 1.0, idle); // let it fly
         float dealt = (sb.deaths > deaths0) ? 100.0f : hp0 - sb.health;
         if (w == WPN_SNIPER) CHECK(dealt >= 90);                 // one scoped shot
         if (w == WPN_LASER) {                                     // ~5 dmg every 0.05 s
@@ -386,6 +386,17 @@ static void testWeapons(uint16_t port) {
             CHECK(dealt > expect * 0.6f && dealt < expect * 1.4f + 5);
         }
         if (w == WPN_ROCKET) CHECK(dealt > 40);
+        if (w == WPN_SHOTGUN) CHECK(dealt >= 45);      // most of 10 x 9 pellets at 8 m
+        if (w == WPN_CROSSBOW) CHECK(dealt >= 85);
+        if (w == WPN_STICKY) {                          // lobbed: lands near the target, then detonate
+            int stuck = 0;
+            for (auto& pr : s.projectiles_) stuck += pr.active && pr.type == WPN_STICKY;
+            CHECK(stuck >= 1);
+            float before = sb.health; int d0 = sb.deaths;
+            for (auto& pr : s.projectiles_) if (pr.active && pr.type == WPN_STICKY) pr.pos = sb.move.pos + Vec3(0, 0.1f, 0.5f);
+            pump(s, cls, 0.2, [&](int i) { UserCmd c; c.weapon = WPN_STICKY; if (i == 0) c.buttons = BTN_ALTFIRE; return c; });
+            CHECK(sb.deaths > d0 || sb.health < before - 40);
+        }
         s.stop();
     }
 }
@@ -425,9 +436,9 @@ static void testRocketSelfDamage(uint16_t port) {
     auto& p = s.players_[a.clientId()];
     auto shoot = [&](float pitch, Vec3 at, float yaw = 0) {
         p.health = 100; p.move.pos = at; p.move.vel = {};
-        pump(s, cls, 1.0, [&](int) { UserCmd c; c.yaw = yaw; c.pitch = pitch; c.buttons = BTN_WEAPON2; return c; });
+        pump(s, cls, 1.0, [&](int) { UserCmd c; c.yaw = yaw; c.pitch = pitch; c.weapon = WPN_ROCKET; return c; });
         p.health = 100; p.move.pos = at; p.move.vel = {};
-        pump(s, cls, 0.12, [&](int) { UserCmd c; c.yaw = yaw; c.pitch = pitch; c.buttons = BTN_WEAPON2 | BTN_FIRE; return c; });
+        pump(s, cls, 0.12, [&](int) { UserCmd c; c.yaw = yaw; c.pitch = pitch; c.weapon = WPN_ROCKET; c.buttons = BTN_FIRE; return c; });
         pump(s, cls, 0.5, [&](int) { UserCmd c; c.yaw = yaw; c.pitch = pitch; return c; });
         return 100 - p.health;
     };
@@ -457,7 +468,7 @@ int main(int argc, char** argv) {
     testSession(MODE_RACE, "sprint", port++);
     testPayloadPush(port++);
     testPacketLoss(port++);
-    testWeapons(port); port += 3;
+    testWeapons(port); port += 6;
     testTickRateFallback(port++);
     testRocketSelfDamage(port++);
     netShutdown();

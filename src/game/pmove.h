@@ -10,6 +10,7 @@ struct UserCmd {
     int8_t side = 0;
     uint16_t buttons = 0;
     uint8_t msec = 1;       // duration this command covers (1, 2, 4 or 8 ms = one server tick)
+    uint8_t weapon = 255;   // weapon to switch to (kNoWeaponChange = keep)
     float yaw = 0, pitch = 0;
 };
 

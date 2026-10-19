@@ -575,11 +575,14 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     else p.move.flags &= ~MF_FROZEN;
     pmove(p.move, cmd, map_);
 
-    if (cmd.buttons & BTN_WEAPON1) p.weapon = WPN_RIFLE;
-    if (cmd.buttons & BTN_WEAPON2) p.weapon = WPN_ROCKET;
-    if (cmd.buttons & BTN_WEAPON3) p.weapon = WPN_KNIFE;
-    if (cmd.buttons & BTN_WEAPON4) p.weapon = WPN_SNIPER;
-    if (cmd.buttons & BTN_WEAPON5) p.weapon = WPN_LASER;
+    if (cmd.weapon < WPN_COUNT) p.weapon = cmd.weapon;
+    // Sticky launcher: alt-fire detonates your armed stickies.
+    if (p.weapon == WPN_STICKY && (cmd.buttons & BTN_ALTFIRE))
+        for (auto& pr : projectiles_)
+            if (pr.active && pr.owner == id && pr.type == WPN_STICKY && time() >= pr.armAt) {
+                pr.active = false;
+                explode(pr.pos, id, WPN_STICKY);
+            }
     if ((cmd.buttons & BTN_FIRE) && time() >= p.nextFire && !(p.move.flags & MF_FROZEN)) {
         // Holding fire keeps an exact cadence; after a pause the timer restarts from now.
         float refire = weaponDef(p.weapon).refire;
@@ -589,39 +592,16 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     }
 }
 
-void Server::fireWeapon(int id, const UserCmd& cmd) {
-    ServerPlayer& p = players_[id];
-    const WeaponDef& wd = weaponDef(p.weapon);
-    float eyeH = (p.move.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight;
-    Vec3 eye = p.move.pos + Vec3(0, eyeH, 0);
-    Vec3 dir = angleForward(cmd.yaw, cmd.pitch);
-    bool scoped = wd.scopedSpread >= 0 && (cmd.buttons & BTN_ALTFIRE);
-    float spread = scoped ? wd.scopedSpread : wd.spread;
-    if (spread > 0) {
-        Vec3 right = normalize(cross(dir, {0, 1, 0})), up = cross(right, dir);
-        float a = randf() * 2 * PI, r = std::sqrt(randf()) * spread;
-        dir = normalize(dir + right * (std::cos(a) * r) + up * (std::sin(a) * r));
-    }
+Vec3 Server::spreadDir(const Vec3& dir, float spread) {
+    if (spread <= 0) return dir;
+    Vec3 right = normalize(cross(dir, {0, 1, 0})), up = cross(right, dir);
+    float a = randf() * 2 * PI, r = std::sqrt(randf()) * spread;
+    return normalize(dir + right * (std::cos(a) * r) + up * (std::sin(a) * r));
+}
 
-    if (wd.projectile) {
-        for (auto& pr : projectiles_) {
-            if (pr.active) continue;
-            pr.active = true;
-            pr.id = nextProjId_++;
-            pr.type = p.weapon;
-            pr.owner = id;
-            pr.pos = eye + dir * 0.3f;
-            pr.vel = dir * wd.projSpeed;
-            pr.dieAt = time() + kRocketLife;
-            return;
-        }
-        return;
-    }
-    // Hitscan with lag compensation: test against where targets were on the shooter's screen.
-    uint32_t vt = cmd.viewTick; // ms on the server clock
-    if (vt > timeMs_) vt = timeMs_;
-    if (timeMs_ - vt > kMaxRewindMs) vt = timeMs_ - kMaxRewindMs;
-    float range = p.weapon == WPN_KNIFE ? kKnifeRange : wd.range;
+// One lag-compensated ray: adds dmg to the first player it hits (tested against where players
+// were at the shooter's view time).
+void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t vt, float* dmgPer, float dmg) {
     float wall = map_.raycast(eye, dir, range);
     float best = wall >= 0 ? wall : range;
     int hit = -1;
@@ -639,33 +619,90 @@ void Server::fireWeapon(int id, const UserCmd& cmd) {
         float t = rayAABB(eye, inv, playerBox(pos, crouched), best);
         if (t >= 0 && t < best) { best = t; hit = i; }
     }
-    if (hit >= 0) damagePlayer(hit, id, (float)wd.damage, p.weapon, dir * 1.0f);
+    if (hit >= 0) dmgPer[hit] += dmg;
+}
+
+void Server::fireWeapon(int id, const UserCmd& cmd) {
+    ServerPlayer& p = players_[id];
+    const WeaponDef& wd = weaponDef(p.weapon);
+    float eyeH = (p.move.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight;
+    Vec3 eye = p.move.pos + Vec3(0, eyeH, 0);
+    Vec3 aim = angleForward(cmd.yaw, cmd.pitch);
+    bool scoped = wd.scopedSpread >= 0 && (cmd.buttons & BTN_ALTFIRE);
+    float spread = scoped ? wd.scopedSpread : wd.spread;
+
+    if (wd.projectile) {
+        if (wd.sticky) { // too many out: the oldest one fizzles
+            int count = 0, oldest = -1;
+            for (int k = 0; k < kMaxProjectiles; k++) {
+                auto& pr = projectiles_[k];
+                if (!pr.active || pr.owner != id || pr.type != WPN_STICKY) continue;
+                count++;
+                if (oldest < 0 || (uint16_t)(pr.id - projectiles_[oldest].id) > 0x8000) oldest = k;
+            }
+            if (count >= kMaxStickies && oldest >= 0) projectiles_[oldest].active = false;
+        }
+        for (auto& pr : projectiles_) {
+            if (pr.active) continue;
+            pr = Projectile();
+            pr.active = true;
+            pr.id = nextProjId_++;
+            pr.type = p.weapon;
+            pr.owner = id;
+            pr.pos = eye + aim * 0.3f;
+            pr.vel = spreadDir(aim, spread) * wd.projSpeed;
+            pr.dieAt = time() + wd.life;
+            pr.armAt = time() + kStickyArmTime;
+            return;
+        }
+        return;
+    }
+    uint32_t vt = cmd.viewTick; // ms on the server clock
+    if (vt > timeMs_) vt = timeMs_;
+    if (timeMs_ - vt > kMaxRewindMs) vt = timeMs_ - kMaxRewindMs;
+    float range = p.weapon == WPN_KNIFE ? kKnifeRange : wd.range;
+    // Pellets add up per target so one shotgun blast is one hit (one damage event) per player.
+    float dmgPer[kMaxPlayers] = {};
+    for (int k = 0; k < wd.pellets; k++) hitscan(id, eye, spreadDir(aim, spread), range, vt, dmgPer, (float)wd.damage);
+    for (int i = 0; i < kMaxPlayers; i++)
+        if (dmgPer[i] > 0) damagePlayer(i, id, dmgPer[i], p.weapon, aim * (wd.pellets > 1 ? 0.15f * dmgPer[i] / wd.damage : 1.0f));
 }
 
 void Server::tickProjectiles() {
     for (auto& pr : projectiles_) {
         if (!pr.active) continue;
         if (time() >= pr.dieAt) { pr.active = false; continue; }
+        if (pr.stuck) continue;
+        const WeaponDef& wd = weaponDef(pr.type);
+        pr.vel.y -= wd.gravity * dt();
         Vec3 step = pr.vel * dt();
         float len = length(step);
+        if (len < 1e-6f) continue;
         Vec3 dir = step / len;
-        float wall = map_.raycast(pr.pos, dir, len);
+        Vec3 n;
+        float wall = map_.raycast(pr.pos, dir, len, &n);
         float best = wall >= 0 ? wall : len;
-        bool hitSomething = wall >= 0;
+        int hitPlayer = -1;
         Vec3 inv = safeInv(dir);
         for (int i = 0; i < kMaxPlayers; i++) {
             auto& p = players_[i];
             if (!p.connected || !p.alive || i == pr.owner) continue;
             AABB b = playerBox(p.move.pos, p.move.flags & MF_CROUCHED);
             float t = rayAABB(pr.pos, inv, b, best);
-            if (t >= 0 && t <= best) { best = t; hitSomething = true; }
+            if (t >= 0 && t <= best) { best = t; hitPlayer = i; }
         }
-        if (hitSomething) {
-            Vec3 at = pr.pos + dir * std::max(0.0f, best - 0.05f);
+        if (wall < 0 && hitPlayer < 0) { pr.pos += step; continue; }
+        Vec3 at = pr.pos + dir * std::max(0.0f, best - 0.05f);
+        if (wd.sticky) {               // stick where it landed (on a player: it drops there)
+            pr.pos = hitPlayer < 0 ? at + n * 0.08f : at;
+            pr.vel = {};
+            pr.stuck = hitPlayer < 0;
+        } else if (wd.splashRadius <= 0) { // crossbow bolt: direct hit only
+            if (hitPlayer >= 0) damagePlayer(hitPlayer, pr.owner, (float)wd.damage, pr.type, dir * 3.0f);
+            pr.active = false;
+        } else {
             pr.active = false;
             explode(at, pr.owner, pr.type);
-        } else {
-            pr.pos += step;
         }
     }
 }
@@ -733,7 +770,7 @@ void Server::sendSnapshots() {
     }
     for (auto& pr : projectiles_) {
         if (!pr.active) continue;
-        if (s.projectiles.size() >= 40) break;
+        if (s.projectiles.size() >= 48) break;
         s.projectiles.push_back({pr.id, (uint8_t)pr.type, (uint8_t)pr.owner, pr.pos, pr.vel});
     }
     // Shared part (mode, players, projectiles) is identical for everyone: encode it once.

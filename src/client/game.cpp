@@ -285,16 +285,15 @@ UserCmd Game::buildCmd() {
     if (key(GLFW_KEY_LEFT_SHIFT)) c.buttons |= BTN_DASH;
     if (key(GLFW_KEY_Q)) c.buttons |= BTN_GRAPPLE;
     if (key(GLFW_KEY_R)) c.buttons |= BTN_RELOAD;
-    const int numKeys[WPN_COUNT] = {GLFW_KEY_1, GLFW_KEY_2, GLFW_KEY_3, GLFW_KEY_4, GLFW_KEY_5};
-    for (int w = 0; w < WPN_COUNT; w++) if (key(numKeys[w])) desiredWeapon_ = w;
+    for (int w = 0; w < WPN_COUNT; w++) if (key(GLFW_KEY_1 + w)) desiredWeapon_ = w;
     if (desiredWeapon_ >= 0) {
         if (desiredWeapon_ == net_.selfWeapon()) desiredWeapon_ = -1;
-        else c.buttons |= (uint16_t)(BTN_WEAPON1 << desiredWeapon_);
+        else c.weapon = (uint8_t)desiredWeapon_;
     }
     if (glfwGetMouseButton(win_, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS || fireLatched_) c.buttons |= BTN_FIRE;
     if (glfwGetMouseButton(win_, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) c.buttons |= BTN_ALTFIRE;
     fireLatched_ = false;
-    if (opts_.debugWeapon >= 1 && opts_.debugWeapon <= 5) c.buttons |= (uint16_t)(BTN_WEAPON1 << (opts_.debugWeapon - 1));
+    if (opts_.debugWeapon >= 1 && opts_.debugWeapon <= WPN_COUNT) c.weapon = (uint8_t)(opts_.debugWeapon - 1);
     if (opts_.debugScope) c.buttons |= BTN_ALTFIRE;
     if (opts_.debugFire) c.buttons |= BTN_FIRE;
     return c;
@@ -398,11 +397,19 @@ void Game::frame(double dt) {
                 else if (!weaponDef(w).projectile && w != WPN_KNIFE) {
                     const MoveState& m = net_.predicted();
                     Vec3 eye = m.pos + Vec3(0, (m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight, 0);
-                    Vec3 d = angleForward(yaw_, pitch_);
-                    float t = net_.map().raycast(eye, d, weaponDef(w).range);
-                    if (t < 0) t = weaponDef(w).range;
-                    Vec3 right = normalize(cross(d, {0, 1, 0}));
-                    tracers_.push_back({eye + d * 0.5f + right * 0.15f - Vec3(0, 0.12f, 0), eye + d * t, time_ + (w == WPN_SNIPER ? 0.3 : 0.06)});
+                    Vec3 aim = angleForward(yaw_, pitch_);
+                    Vec3 right = normalize(cross(aim, {0, 1, 0})), up = cross(right, aim);
+                    const WeaponDef& wd = weaponDef(w);
+                    for (int k = 0; k < wd.pellets; k++) { // visual only; the server rolls the real spread
+                        Vec3 d = aim;
+                        if (wd.pellets > 1) {
+                            float a = (rand() % 1000) * 0.00628f, r = std::sqrt((rand() % 1000) * 0.001f) * wd.spread;
+                            d = normalize(aim + right * (std::cos(a) * r) + up * (std::sin(a) * r));
+                        }
+                        float t = net_.map().raycast(eye, d, wd.range);
+                        if (t < 0) t = wd.range;
+                        tracers_.push_back({eye + aim * 0.5f + right * 0.15f - Vec3(0, 0.12f, 0), eye + d * t, time_ + (w == WPN_SNIPER ? 0.3 : 0.06)});
+                    }
                 }
             }
             net_.tick(c);
@@ -415,7 +422,7 @@ void Game::frame(double dt) {
         for (auto& old : lastProjectiles_) {
             bool still = false;
             for (auto& p : projs) still |= p.id == old.id;
-            if (!still) explosions_.push_back({old.pos, time_});
+            if (!still && weaponDef(old.type).splashRadius > 0) explosions_.push_back({old.pos, time_});
         }
         lastProjectiles_ = projs;
 
@@ -576,8 +583,20 @@ void Game::drawWorld(float alpha) {
     // projectiles
     for (auto& pr : lastProjectiles_) {
         Vec3 col = teamColor(pr.owner);
-        r_.box(pr.pos, {0.12f, 0.12f, 0.12f}, 0, col * 1.3f, 1.0f);
-        r_.line(pr.pos, pr.pos - normalize(pr.vel) * 1.2f, 0.12f, rgba(col, 0.5f));
+        float sp = length(pr.vel);
+        Vec3 dir = sp > 0.01f ? pr.vel / sp : Vec3(0, 0, -1);
+        float yaw = std::atan2(-dir.x, -dir.z);
+        if (pr.type == WPN_STICKY) {
+            bool resting = sp < 0.01f; // stuck: pulse so they're easy to spot
+            float k = resting ? 0.75f + 0.25f * std::sin((float)time_ * 10) : 1.0f;
+            r_.box(pr.pos, {0.14f, 0.14f, 0.14f}, (float)time_ * (resting ? 0 : 6), col * k, 1.0f);
+        } else if (pr.type == WPN_CROSSBOW) {
+            r_.boxPitched(pr.pos, {0, 0, 0}, {0.03f, 0.03f, 0.35f}, yaw, std::asin(clampf(dir.y, -1, 1)), {0.1f, 0.1f, 0.12f}, 1.0f);
+            r_.line(pr.pos, pr.pos - dir * 1.5f, 0.04f, rgba(col, 0.5f));
+        } else {
+            r_.box(pr.pos, {0.12f, 0.12f, 0.12f}, 0, col * 1.3f, 1.0f);
+            r_.line(pr.pos, pr.pos - dir * 1.2f, 0.12f, rgba(col, 0.5f));
+        }
     }
     // explosions
     for (size_t i = 0; i < explosions_.size();) {
@@ -658,11 +677,15 @@ void Game::drawWorld(float alpha) {
         if (w == WPN_KNIFE) gun = {0.01f, 0.02f, 0.09f};
         if (w == WPN_SNIPER) gun = {0.02f, 0.026f, 0.3f};
         if (w == WPN_LASER) gun = {0.035f, 0.04f, 0.17f};
+        if (w == WPN_SHOTGUN) gun = {0.04f, 0.035f, 0.22f};
+        if (w == WPN_STICKY) gun = {0.05f, 0.05f, 0.18f};
+        if (w == WPN_CROSSBOW) gun = {0.02f, 0.025f, 0.22f};
         Vec3 at = {0.2f, -0.17f, -0.55f + kick};
         r_.viewBox(at, gun, {0.14f, 0.14f, 0.16f});
         r_.viewBox(at + Vec3(0, gun.y + 0.006f, 0.05f), {0.01f, 0.006f, 0.05f}, cfg_.colorFriendly);
         if (w == WPN_SNIPER) r_.viewBox(at + Vec3(0, gun.y + 0.03f, 0.02f), {0.018f, 0.018f, 0.09f}, {0.1f, 0.1f, 0.12f}); // scope
         if (w == WPN_LASER) r_.viewBox(at + Vec3(0, 0, -gun.z - 0.01f), {0.02f, 0.02f, 0.012f}, cfg_.colorFriendly * 1.4f);
+        if (w == WPN_CROSSBOW) r_.viewBox(at + Vec3(0, 0.01f, -gun.z + 0.03f), {0.13f, 0.008f, 0.012f}, {0.12f, 0.12f, 0.14f}); // limbs
     }
     r_.drawScene(cfg_.shadows);
 }

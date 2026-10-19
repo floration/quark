@@ -26,12 +26,12 @@ enum PacketType : uint8_t {
 inline void writeHeader(Writer& w, PacketType t) { w.u32(kProtocolMagic); w.u8(t); }
 
 inline void writeCmd(Writer& w, const UserCmd& c) {
-    w.u32(c.seq); w.u32(c.viewTick); w.i8(c.forward); w.i8(c.side); w.u16(c.buttons); w.u8(c.msec);
+    w.u32(c.seq); w.u32(c.viewTick); w.i8(c.forward); w.i8(c.side); w.u16(c.buttons); w.u8(c.msec); w.u8(c.weapon);
     w.f32(c.yaw); w.f32(c.pitch);
 }
 inline UserCmd readCmd(Reader& r) {
     UserCmd c;
-    c.seq = r.u32(); c.viewTick = r.u32(); c.forward = r.i8(); c.side = r.i8(); c.buttons = r.u16(); c.msec = r.u8();
+    c.seq = r.u32(); c.viewTick = r.u32(); c.forward = r.i8(); c.side = r.i8(); c.buttons = r.u16(); c.msec = r.u8(); c.weapon = r.u8();
     c.yaw = r.f32(); c.pitch = clampf(r.f32(), -1.55f, 1.55f);
     return c;
 }
