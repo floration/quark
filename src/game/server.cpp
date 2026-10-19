@@ -682,8 +682,9 @@ void Server::spawnPlayer(int id) {
     p.alive = true;
     p.health = kMaxHealth;
     p.weapon = p.selectedWeapon;
-    if (!weaponAllowed(p.weapon)) // restricted pool: first allowed weapon
-        for (int w = 0; w < WPN_COUNT; w++) if (weaponAllowed(w)) { p.weapon = w; break; }
+    p.knifeBackAt = 0;
+    if (!weaponAllowed(p.weapon)) // restricted pool: first allowed weapon, in slot order
+        for (int k = 0; k < WPN_COUNT; k++) if (weaponAllowed(kWeaponSlots[k])) { p.weapon = kWeaponSlots[k]; break; }
     int mod = duelMod();
     if (mod == DUEL_ONE_HP) p.health = 1;
     if (mod == DUEL_GRAPPLE) p.move.mods |= MOVE_GRAPPLE_ONLY;
@@ -750,7 +751,10 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
         if (time() >= hitFlushAt_[attacker][victim]) flushHit(attacker, victim);
         // Vampire laser: damage dealt heals the attacker (up to full health).
         ServerPlayer& a = players_[attacker];
-        if ((duelMod() == DUEL_VAMPIRE_LASER || (rules & AR_VAMPIRE)) && a.alive) a.health = std::min((float)kMaxHealth, a.health + dmg);
+        if ((duelMod() == DUEL_VAMPIRE_LASER || (rules & AR_VAMPIRE)) && a.alive) { // healing fades as the round goes on
+            float f = clampf((time() - roundStart_) / kVampireFadeTime, 0, 1);
+            a.health = std::min((float)kMaxHealth, a.health + dmg * (1.0f - (1.0f - kVampireMinHeal) * f));
+        }
     }
     glog(LOG_VERBOSE, "hit attacker=%d victim=%d dmg=%.2f weapon=%d health=%.2f", attacker, victim, dmg, weapon, v.health);
     if (v.health <= 0) killPlayer(victim, attacker, weapon);
@@ -843,7 +847,11 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     else p.move.flags &= ~MF_FROZEN;
     pmove(p.move, cmd, map_);
 
-    if (cmd.weapon < WPN_COUNT && weaponAllowed(cmd.weapon)) p.weapon = cmd.weapon;
+    // the knife can't be drawn while it's away after a throw (unless it's the only weapon this mode allows)
+    auto otherWeapon = [&]() { for (int k = 0; k < WPN_COUNT; k++) { int w = kWeaponSlots[k]; if (w != WPN_KNIFE && weaponAllowed(w)) return w; } return -1; };
+    bool knifeAway = time() < p.knifeBackAt;
+    if (cmd.weapon < WPN_COUNT && weaponAllowed(cmd.weapon) && !(knifeAway && cmd.weapon == WPN_KNIFE && otherWeapon() >= 0)) p.weapon = cmd.weapon;
+    if (knifeAway && p.weapon == WPN_KNIFE && otherWeapon() >= 0) p.weapon = otherWeapon();
     // Sticky launcher: alt-fire detonates your armed stickies.
     if (p.weapon == WPN_STICKY && (cmd.buttons & BTN_ALTFIRE))
         for (auto& pr : projectiles_)
@@ -852,7 +860,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
                 explode(pr.pos, id, WPN_STICKY);
             }
     // Knife and shotgun: alt-fire is its own shot (throw / bouncing pellets); it takes priority over fire.
-    bool altShot = altFires(p.weapon) && (cmd.buttons & BTN_ALTFIRE);
+    bool altShot = altFires(p.weapon) && (cmd.buttons & BTN_ALTFIRE) && !(p.weapon == WPN_KNIFE && knifeAway);
     bool wantFire = (cmd.buttons & BTN_FIRE) != 0 || altShot;
     if (weaponDef(p.weapon).semiAuto) { // one shot per click
         if (wantFire && !(p.prevButtons & BTN_FIRE)) p.fireQueuedUntil = time() + kFireBuffer;
@@ -868,7 +876,15 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
         bool held = (p.prevButtons & (altShot ? BTN_ALTFIRE : BTN_FIRE)) != 0;
         p.nextFire = (held && time() - p.nextFire < 0.1f) ? p.nextFire + refire : time() + refire;
         p.lastFire = time();
+        bool threw = p.weapon == WPN_KNIFE && altShot;
         fireWeapon(id, cmd);
+        if (threw) { // the knife is away: switch to the next weapon, ready to fire right away
+            p.knifeBackAt = time() + kKnifeAway;
+            if (otherWeapon() >= 0) p.weapon = otherWeapon();
+            p.nextFire = time();
+            p.fireQueuedUntil = -1;
+            break;
+        }
     }
 }
 
@@ -1175,6 +1191,7 @@ void Server::sendSnapshots() {
         s.self = p.move;
         s.selfHealth = (uint8_t)clampf(std::ceil(p.health), 0, 255);
         s.selfWeapon = (uint8_t)p.weapon;
+        s.knifeAway = (uint8_t)clampf(std::ceil((p.knifeBackAt - time()) * 10), 0, 255);
         // this client's view of the players: enemies out of sight are hidden
         bool seesAll = !p.alive || p.team == TEAM_SPECTATOR;
         s.players = all;

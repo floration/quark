@@ -265,6 +265,7 @@ UserCmd botThink(Server& s, int id) {
         Vec3 aimAt = t.move.pos + Vec3(0, 1.1f, 0);
         dist = length(aimAt - eye);
         int w = b.forceWeapon >= 0 ? b.forceWeapon : pickWeapon(s, sp, dist);
+        if (w == WPN_KNIFE && now < me.knifeBackAt && me.weapon != WPN_KNIFE) w = me.weapon; // thrown it: use what we switched to
         const WeaponDef& wd = weaponDef(w);
         bool throwKnife = w == WPN_KNIFE && dist > wd.range + 0.5f && dist < 18.0f && sp.lead; // out of reach: throw it
         aimAt -= t.move.vel * sp.trackLag; // reacts to movement late: trails strafing targets

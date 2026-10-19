@@ -12,7 +12,7 @@ constexpr int kMaxPlayers = 32;        // engine limit; servers default to 8 (Se
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 16;
+constexpr uint16_t kProtocolVersion = 17;
 
 // Player hull
 constexpr float kPlayerHalfWidth = 0.4f;
@@ -164,14 +164,16 @@ inline const WeaponDef& weaponDef(int w) {
 }
 // Alt-fires: knife throw (a projectile that hits for knife damage), shotgun bouncing pellets (ricochet off
 // walls, half damage), rifle scope (zooms like the sniper, half the fire rate).
-constexpr float kKnifeThrowSpeed = 38.0f, kKnifeThrowGravity = 14.0f, kKnifeThrowLife = 2.0f, kKnifeThrowRefire = 1.0f;
+constexpr float kKnifeThrowSpeed = 38.0f, kKnifeThrowGravity = 14.0f, kKnifeThrowLife = 2.0f;
+constexpr float kKnifeAway = 5.0f; // after a throw the knife is gone this long: you switch to another weapon (no delay on it)
 constexpr int kShotgunBounces = 2;
 constexpr float kShotgunBounceDamage = 0.5f;
 constexpr float kRifleScopedRefire = 2.0f; // refire multiplier while scoped
+constexpr float kVampireFadeTime = 60.0f, kVampireMinHeal = 0.5f; // laser vampire: healing fades 100% -> 50% over the first minute of a round
 // The refire for this shot: alt-fire modes change it.
 inline float shotRefire(int w, bool alt) {
     float r = weaponDef(w).refire;
-    if (alt && w == WPN_KNIFE) return kKnifeThrowRefire;            // knife throw
+    if (alt && w == WPN_KNIFE) return 0;                    // knife throw: no delay (you switch weapons)
     if (alt && w == WPN_RIFLE) return r * kRifleScopedRefire;       // scoped rifle
     return r;
 }

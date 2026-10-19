@@ -659,7 +659,13 @@ static void testDuel(uint16_t port) {
         if (mod == DUEL_VAMPIRE_LASER) {
             pa.health = 50;
             s.damagePlayer(ib, ia, 20, WPN_LASER, {});
-            CHECK(pa.health == 70 && pb.health == 80);
+            CHECK(pa.health > 69.0f && pa.health <= 70.0f && pb.health == 80); // early in the round: (nearly) full healing
+            float rs = s.roundStart_;
+            s.roundStart_ = s.time() - kVampireFadeTime;                     // a minute in: healing down to half
+            pa.health = 50; pb.health = 80;
+            s.damagePlayer(ib, ia, 20, WPN_LASER, {});
+            CHECK(std::fabs(pa.health - 60.0f) < 0.01f);
+            s.roundStart_ = rs;
         }
         s.killPlayer(round % 2 ? ia : ib, round % 2 ? ib : ia, 0);
         pump(s, cls, 0.3, idle);
@@ -826,8 +832,15 @@ static void testAltFires(uint16_t port) {
         float hp0 = sb.health;
         if (kase == 0) {
             pump(s, cls, 0.05, [&](int i) { return aim(i, BTN_ALTFIRE); });
+            CHECK(sa.weapon != WPN_KNIFE && sa.knifeBackAt > s.time());          // knife away: switched weapon
+            CHECK(a.hasSnapshot());
             pump(s, cls, 1.0, idle);
             CHECK(hp0 - sb.health >= weaponDef(WPN_KNIFE).damage - 0.01f);
+            pump(s, cls, 0.2, [&](int i) { return aim(i, 0); });              // asking for the knife back too soon
+            CHECK(sa.weapon != WPN_KNIFE && a.latest().knifeAway > 0);
+            pump(s, cls, kKnifeAway, idle);
+            pump(s, cls, 0.2, [&](int i) { return aim(i, 0); });
+            CHECK(sa.weapon == WPN_KNIFE);
         } else if (kase == 1) {
             pump(s, cls, 0.05, [&](int i) { return aim(i, BTN_FIRE); });          // normal blast: hits the wall only
             pump(s, cls, 0.3, idle);

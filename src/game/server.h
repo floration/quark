@@ -73,8 +73,9 @@ struct ServerPlayer {
     float yaw = 0, pitch = 0;
     uint16_t buttons = 0, prevButtons = 0;
     float health = 0;
-    int weapon = WPN_RIFLE;
-    int selectedWeapon = WPN_RIFLE; // last weapon the player picked; kept across respawns
+    int weapon = WPN_ROCKET;
+    int selectedWeapon = WPN_ROCKET; // last weapon the player picked (slot 1 to start); kept across respawns
+    float knifeBackAt = 0;      // a thrown knife is away until then: no knife (and no throws) before it
     float nextFire = 0;
     float lastFire = -10;
     float fireQueuedUntil = -1; // semi-auto: a click waiting for the weapon to be ready

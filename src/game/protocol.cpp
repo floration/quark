@@ -13,7 +13,7 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
     w.u8(s.clientId);
     w.vec(s.self.pos); w.vec(s.self.vel); w.u8(s.self.flags); w.f32(s.self.dashCooldown); w.vec(s.self.hookPoint);
     w.f32(s.self.dashTimer); w.f32(s.self.dashDirX); w.f32(s.self.dashDirZ); w.f32(s.self.dashExitSpeed); w.f32(s.self.dashUp); w.f32(s.self.hookCooldown); w.u8(s.self.mods);
-    w.u8(s.selfHealth); w.u8(s.selfWeapon);
+    w.u8(s.selfHealth); w.u8(s.selfWeapon); w.u8(s.knifeAway);
     w.u32(s.baseTick);
 }
 
@@ -26,7 +26,7 @@ bool readSnapshotClient(Reader& r, Snapshot& s) {
     s.clientId = r.u8();
     s.self.pos = r.vec(); s.self.vel = r.vec(); s.self.flags = r.u8(); s.self.dashCooldown = r.f32(); s.self.hookPoint = r.vec();
     s.self.dashTimer = r.f32(); s.self.dashDirX = r.f32(); s.self.dashDirZ = r.f32(); s.self.dashExitSpeed = r.f32(); s.self.dashUp = r.f32(); s.self.hookCooldown = r.f32(); s.self.mods = r.u8();
-    s.selfHealth = r.u8(); s.selfWeapon = r.u8();
+    s.selfHealth = r.u8(); s.selfWeapon = r.u8(); s.knifeAway = r.u8();
     s.baseTick = r.u32();
     return !r.bad();
 }

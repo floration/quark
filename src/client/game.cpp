@@ -367,7 +367,8 @@ bool Game::pressInput(int code) {
     }
     // weapons outside this mode's pool (1v1 rulesets, duel modifiers) are skipped
     uint16_t pool = net_.mode().weaponMask;
-    auto allowed = [&](int w) { return !pool || (pool >> w & 1); };
+    bool knifeAway = net_.hasSnapshot() && net_.latest().knifeAway > 0;
+    auto allowed = [&](int w) { return (!pool || (pool >> w & 1)) && !(w == WPN_KNIFE && knifeAway); }; // a thrown knife is away for a bit
     for (int k = 0; k < WPN_COUNT; k++) // slot keys 1-8, in kWeaponSlots order
         if (b.has(A_WEAPON1 + k, code)) { int w = kWeaponSlots[k]; if (allowed(w)) desiredWeapon_ = w; return true; }
     int cur = weaponSlot(desiredWeapon_ >= 0 ? desiredWeapon_ : net_.selfWeapon());
@@ -1324,9 +1325,11 @@ void Game::drawHud() {
             for (int k = WPN_COUNT - 1; k >= 0; k--) {
                 int wi = kWeaponSlots[k];
                 std::string t = std::to_string(k + 1) + " " + weaponDef(wi).name;
+                int away = wi == WPN_KNIFE && net_.hasSnapshot() ? net_.latest().knifeAway : 0;
+                if (away > 0) t += " " + std::to_string((away + 9) / 10); // thrown: seconds until it's back
                 float tw = r_.textWidth(t, sts);
                 bx -= tw + 14 * s * e.scale;
-                bool inPool = !ms.weaponMask || (ms.weaponMask >> wi & 1);
+                bool inPool = (!ms.weaponMask || (ms.weaponMask >> wi & 1)) && away == 0;
                 r_.text(bx, H - 74 * s * e.scale + e.y * s, sts, t, wi == net_.selfWeapon() ? tint(Settings::HUD_SLOTS, fc) : inPool ? Color{0.85f, 0.87f, 0.9f, 0.9f} : Color{0.5f, 0.52f, 0.55f, 0.35f});
             }
         }
