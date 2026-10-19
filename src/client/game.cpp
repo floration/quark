@@ -362,7 +362,7 @@ void Game::onKey(int key, int action, int mods) {
             return;
         }
         if (key == GLFW_KEY_ESCAPE) {
-            if (controlsOpen_ || crosshairOpen_) { controlsOpen_ = crosshairOpen_ = false; cfg_.save(); return; }
+            if (controlsOpen_ || crosshairOpen_ || hudOpen_) { controlsOpen_ = crosshairOpen_ = hudOpen_ = false; cfg_.save(); return; }
             if (settingsInGame_) { settingsInGame_ = false; cfg_.save(); return; }
             if (voteMenu_ || picker_ != PICK_NONE) { voteMenu_ = false; picker_ = PICK_NONE; return; }
             paused_ = !paused_;
@@ -371,7 +371,7 @@ void Game::onKey(int key, int action, int mods) {
         }
     } else if (key == GLFW_KEY_ESCAPE) {
         uiIn_.escape = true;
-        if (controlsOpen_ || crosshairOpen_) { controlsOpen_ = crosshairOpen_ = false; cfg_.save(); return; }
+        if (controlsOpen_ || crosshairOpen_ || hudOpen_) { controlsOpen_ = crosshairOpen_ = hudOpen_ = false; cfg_.save(); return; }
         if (picker_ != PICK_NONE) { picker_ = PICK_NONE; return; }
         if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::Settings || screen_ == Screen::VsBots) {
             cfg_.save();
@@ -621,7 +621,7 @@ void Game::frame(double dt) {
                         }
                         float bangT, t = net_.map().raycastBullet(eye, d, wd.range, &bangT);
                         if (t < 0) t = wd.range;
-                        tracers_.push_back({eye + aim * 0.5f + right * 0.15f - Vec3(0, 0.12f, 0), eye + d * t, time_ + (w == WPN_SNIPER ? 0.3 : 0.06)});
+                        tracers_.push_back({eye + aim * 0.5f + right * 0.15f - Vec3(0, 0.12f, 0), eye + d * t, time_ + (w == WPN_SNIPER ? 0.9 : 0.25)});
                     }
                 }
             }
@@ -796,7 +796,7 @@ void Game::drawWorld(float alpha) {
                 Vec3 end = eyeP + d * (t < 0 ? range : t);
                 Vec3 start = eyeP + d * 0.6f;
                 if (w == WPN_LASER) r_.line(start, end, 0.06f, rgba(teamColor(i), 0.85f));
-                else tracers_.push_back({start, end, time_ + 0.3});
+                else tracers_.push_back({start, end, time_ + 0.9});
             }
         }
         remoteFiring_[i] = firing;
@@ -837,10 +837,10 @@ void Game::drawWorld(float alpha) {
             r_.box(pr.pos, {0.14f, 0.14f, 0.14f}, (float)time_ * (resting ? 0 : 6), col * k, 1.0f);
         } else if (pr.type == WPN_CROSSBOW) {
             r_.boxPitched(pr.pos, {0, 0, 0}, {0.03f, 0.03f, 0.35f}, yaw, std::asin(clampf(dir.y, -1, 1)), {0.1f, 0.1f, 0.12f}, 1.0f);
-            r_.line(pr.pos, pr.pos - dir * 1.5f, 0.04f, rgba(col, 0.5f));
+            r_.line(pr.pos, pr.pos - dir * 4.0f, 0.04f, rgba(col, 0.5f));
         } else {
             r_.box(pr.pos, {0.12f, 0.12f, 0.12f}, 0, col * 1.3f, 1.0f);
-            r_.line(pr.pos, pr.pos - dir * 1.2f, 0.12f, rgba(col, 0.5f));
+            r_.line(pr.pos, pr.pos - dir * 3.5f, 0.12f, rgba(col, 0.5f));
         }
     }
     // explosions
@@ -854,7 +854,8 @@ void Game::drawWorld(float alpha) {
     }
     for (size_t i = 0; i < tracers_.size();) {
         if (time_ > tracers_[i].until) { tracers_.erase(tracers_.begin() + i); continue; }
-        r_.line(tracers_[i].a, tracers_[i].b, 0.03f, {1.0f, 0.95f, 0.7f, 0.8f});
+        float life = (float)std::min(1.0, (tracers_[i].until - time_) / 0.25); // fade out over the last quarter second
+        r_.line(tracers_[i].a, tracers_[i].b, 0.03f, {1.0f, 0.95f, 0.7f, 0.8f * life});
         i++;
     }
 
@@ -1084,38 +1085,71 @@ void Game::drawHud() {
     if (ms.mode == MODE_BOMB && ms.bombState == BOMB_PLANTED && ms.phase == PHASE_LIVE)
         ui_.labelCentered(cx, 118 * s, fmtTime(ms.bombTimer), kRed, 1.5f);
 
-    // health / weapon
+    // health / weapon (each element moved / sized / recolored by the HUD settings)
     if (net_.selfAlive()) {
-        int hp = net_.selfHealth();
-        std::string h = std::to_string(hp);
-        r_.text(24 * s, H - 70 * s, ts * 2, h, hp > 30 ? kWhite : kRed);
-        r_.rect(24 * s, H - 28 * s, 200 * s, 8 * s, {0, 0, 0, 0.5f});
-        r_.rect(24 * s, H - 28 * s, 200 * s * clampf(hp / 100.0f, 0, 1), 8 * s, hp > 30 ? fc : kRed);
-        std::string wn = weaponDef(net_.selfWeapon()).name;
-        r_.text(W - 24 * s - r_.textWidth(wn, ts * 1.5f), H - 50 * s, ts * 1.5f, wn, kWhite);
-        // dash + grapple cooldown bars under the crosshair (full = ready)
+        auto he = [&](int i) { return cfg_.hud[i]; };
+        auto tint = [&](int i, Color c) { const auto& e = cfg_.hud[i]; return e.custom ? Color{e.color.x, e.color.y, e.color.z, c.a} : c; };
+        {   // health: number + bar, bottom left
+            auto e = he(Settings::HUD_HEALTH);
+            float k = s * e.scale, ox = 24 * s + e.x * s, oy = H + e.y * s;
+            int hp = net_.selfHealth();
+            float hts = std::max(1.0f, std::round(ts * 2 * e.scale));
+            r_.text(ox, oy - 70 * k, hts, std::to_string(hp), hp > 30 ? tint(Settings::HUD_HEALTH, kWhite) : kRed);
+            r_.rect(ox, oy - 28 * k, 200 * k, 8 * k, {0, 0, 0, 0.5f});
+            r_.rect(ox, oy - 28 * k, 200 * k * clampf(hp / 100.0f, 0, 1), 8 * k, hp > 30 ? tint(Settings::HUD_HEALTH, fc) : kRed);
+        }
+        {   // current weapon name, bottom right
+            auto e = he(Settings::HUD_WEAPON);
+            float wts = std::max(1.0f, std::round(ts * 1.5f * e.scale));
+            std::string wn = weaponDef(net_.selfWeapon()).name;
+            r_.text(W - 24 * s + e.x * s - r_.textWidth(wn, wts), H - 50 * s * e.scale + e.y * s, wts, wn, tint(Settings::HUD_WEAPON, kWhite));
+        }
         const MoveState& mv = net_.predicted();
-        auto bar = [&](float y, const char* label, float remaining, float total) {
-            float bw = 90 * s, bh = 5 * s, bx = cx - bw * 0.5f;
-            float f = clampf(1.0f - remaining / total, 0, 1);
+        {   // dash + grapple cooldown bars under the crosshair (full = ready)
+            auto e = he(Settings::HUD_BARS);
+            float k = s * e.scale, bcx = cx + e.x * s, bcy = cy + e.y * s;
+            Color full = tint(Settings::HUD_BARS, fc);
+            auto bar = [&](float y, const char* label, float remaining, float total) {
+                float bw = 90 * k, bh = 5 * k, bx = bcx - bw * 0.5f;
+                float f = clampf(1.0f - remaining / total, 0, 1);
+                r_.rect(bx - 1, y - 1, bw + 2, bh + 2, {0, 0, 0, 0.8f});
+                r_.rect(bx, y, bw * f, bh, f >= 1 ? full : Color{0.6f, 0.62f, 0.66f, 0.9f});
+                float lts = std::max(1.0f, std::round(ts * 0.5f * e.scale));
+                r_.text(bx - r_.textWidth(label, lts) - 6 * k, y - 2 * k, lts, label, f >= 1 ? kWhite : kGrey);
+            };
+            int cw = net_.selfWeapon();
+            bar(bcy + 40 * k, "WEAPON", (float)std::max(0.0, localNextFire_ - time_), weaponDef(cw).refire);
+            bar(bcy + 52 * k, "DASH", mv.dashCooldown, kDashCooldown);
+            bar(bcy + 64 * k, "HOOK", mv.hookCooldown, kHookCooldown);
+        }
+        {   // speed meter: speed is unbounded, so the bar fills on a saturating exponential curve
+            // (1 - e^(-v/20)): half full at ~14 m/s, 90% at ~46 m/s, always room to grow. Number shows the real value.
+            auto e = he(Settings::HUD_SPEED);
+            float k = s * e.scale, bcx = cx + e.x * s, y = cy + 80 * k + e.y * s;
+            float v = std::sqrt(mv.vel.x * mv.vel.x + mv.vel.z * mv.vel.z);
+            float f = 1.0f - std::exp(-v / 20.0f);
+            float bw = 90 * k, bh = 5 * k, bx = bcx - bw * 0.5f;
+            Color c = tint(Settings::HUD_SPEED, Color{1.0f, 0.85f - 0.6f * f, 0.3f - 0.2f * f, 0.95f});
             r_.rect(bx - 1, y - 1, bw + 2, bh + 2, {0, 0, 0, 0.8f});
-            r_.rect(bx, y, bw * f, bh, f >= 1 ? fc : Color{0.6f, 0.62f, 0.66f, 0.9f});
-            float lts = std::max(1.0f, std::round(ts * 0.5f));
-            r_.text(bx - r_.textWidth(label, lts) - 6 * s, y - 2 * s, lts, label, f >= 1 ? kWhite : kGrey);
-        };
-        int cw = net_.selfWeapon();
-        bar(cy + 40 * s, "WEAPON", (float)std::max(0.0, localNextFire_ - time_), weaponDef(cw).refire);
-        bar(cy + 52 * s, "DASH", mv.dashCooldown, kDashCooldown);
-        bar(cy + 64 * s, "HOOK", mv.hookCooldown, kHookCooldown);
-        // weapon slots: 1 rifle, 2 rocket, 3 knife, 4 sniper, 5 laser
-        float bx = W - 24 * s;
-        for (int wi = WPN_COUNT - 1; wi >= 0; wi--) {
-            std::string t = std::to_string(wi + 1) + " " + weaponDef(wi).name;
-            float sts = std::max(1.0f, std::round(ts * 0.75f));
-            float tw = r_.textWidth(t, sts);
-            bx -= tw + 14 * s;
-            bool inPool = !ms.weaponMask || (ms.weaponMask >> wi & 1);
-            r_.text(bx, H - 74 * s, sts, t, wi == net_.selfWeapon() ? fc : inPool ? Color{0.85f, 0.87f, 0.9f, 0.9f} : Color{0.5f, 0.52f, 0.55f, 0.35f});
+            r_.rect(bx, y, bw * f, bh, c);
+            for (float m : {5.0f, 10.0f, 20.0f, 40.0f, 80.0f}) // tick marks at doubling speeds
+                r_.rect(bx + bw * (1.0f - std::exp(-m / 20.0f)), y, 1, bh, {0, 0, 0, 0.6f});
+            float lts = std::max(1.0f, std::round(ts * 0.5f * e.scale));
+            char buf[16]; snprintf(buf, sizeof buf, "%.1f", v);
+            r_.text(bx - r_.textWidth("SPEED", lts) - 6 * k, y - 2 * k, lts, "SPEED", kWhite);
+            r_.text(bx + bw + 6 * k, y - 2 * k, lts, buf, kWhite);
+        }
+        {   // weapon slots: 1 rifle, 2 rocket, 3 knife, 4 sniper, 5 laser
+            auto e = he(Settings::HUD_SLOTS);
+            float bx = W - 24 * s + e.x * s;
+            float sts = std::max(1.0f, std::round(ts * 0.75f * e.scale));
+            for (int wi = WPN_COUNT - 1; wi >= 0; wi--) {
+                std::string t = std::to_string(wi + 1) + " " + weaponDef(wi).name;
+                float tw = r_.textWidth(t, sts);
+                bx -= tw + 14 * s * e.scale;
+                bool inPool = !ms.weaponMask || (ms.weaponMask >> wi & 1);
+                r_.text(bx, H - 74 * s * e.scale + e.y * s, sts, t, wi == net_.selfWeapon() ? tint(Settings::HUD_SLOTS, fc) : inPool ? Color{0.85f, 0.87f, 0.9f, 0.9f} : Color{0.5f, 0.52f, 0.55f, 0.35f});
+            }
         }
     } else if (ms.phase != PHASE_ROUND_END && ms.phase != PHASE_MATCH_END) {
         std::string t = mep && (mep->flags & PS_SPECTATOR) ? "SPECTATING" : "DEAD";
@@ -1303,6 +1337,7 @@ void Game::drawPauseMenu(float cx, float y) {
 void Game::drawSettings(float x0, float y0, float wTotal) {
     if (controlsOpen_) { drawControls(x0, y0, wTotal); return; }
     if (crosshairOpen_) { drawCrosshairSettings(x0, y0, wTotal); return; }
+    if (hudOpen_) { drawHudSettings(x0, y0, wTotal); return; }
     float s = ui_.s();
     float h = 32 * s, gap = 7 * s, colGap = 24 * s;
     float w = std::max(320 * s, wTotal * 0.5f);
@@ -1396,7 +1431,8 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     if (ui_.button(xr, y, w * 0.5f - gap * 0.5f, h, "CONTROLS")) controlsOpen_ = true;
     if (ui_.button(xr + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "CROSSHAIR")) crosshairOpen_ = true;
     y += h + gap;
-    if (ui_.button(xr, y, w, h, "BACK")) {
+    if (ui_.button(xr, y, w * 0.5f - gap * 0.5f, h, "HUD LAYOUT")) hudOpen_ = true;
+    if (ui_.button(xr + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "BACK")) {
         cfg_.save();
         if (net_.state() == ConnState::Connected) net_.sendCommand("name " + cfg_.name);
         if (settingsInGame_) settingsInGame_ = false;
@@ -1859,9 +1895,11 @@ void Game::drawKnifeSlash(const Vec3& eye, float yaw, float pitch, float t, cons
         if (k > 0) r_.line(prev, pnt, 0.01f + 0.015f * u, rgba(color * 1.3f, 0.7f * fade));
         prev = pnt;
     }
-    // the actual hit check: a ray to `reach`, with a marker at the tip
-    r_.line(eye + fwd * 0.4f - up * 0.05f, eye + fwd * reach, 0.012f, rgba({1, 1, 1}, 0.5f * fade));
-    r_.box(eye + fwd * reach, {0.05f, 0.05f, 0.05f}, yaw, color * 1.5f, 1.0f, false);
+    // the hit check (a ray to `reach`), drawn as a blade-width beam from the arm out to the tip
+    Vec3 arm = eye + right * 0.22f - up * 0.25f + fwd * 0.15f, tip = eye + fwd * reach;
+    r_.line(arm, tip, 0.05f, rgba(color * 1.3f, 0.25f * fade));
+    r_.line(arm, tip, 0.015f, rgba({1, 1, 1}, 0.7f * fade));
+    r_.box(tip, {0.05f, 0.05f, 0.05f}, yaw, color * 1.5f, 1.0f, false);
 }
 
 void Game::drawBracket() {
@@ -1931,6 +1969,39 @@ void Game::drawCrosshair(float cx, float cy, float scale, bool hit) {
         for (auto& r : rs) r_.rect(r[0] - 1, r[1] - 1, r[2] + 2, r[3] + 2, {0, 0, 0, c.a * 0.9f});
     for (auto& r : rs) r_.rect(r[0], r[1], r[2], r[3], c);
     if (hit && st != 1 && st != 2) r_.rect(cx - t, cy - t, 2 * t, 2 * t, {1, 1, 1, 1});
+}
+
+void Game::drawHudSettings(float x0, float y0, float wTotal) {
+    float s = ui_.s();
+    float h = 32 * s, gap = 7 * s;
+    float w = std::max(360 * s, wTotal * 0.5f);
+    float x = x0 + wTotal * 0.5f - w * 0.5f, y = y0;
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 8 * (h + gap) + 3 * gap + 32 * s);
+    static const std::vector<std::string> names = {"HEALTH", "WEAPON NAME", "COOLDOWN BARS", "SPEED METER", "WEAPON LIST"};
+    ui_.cycle(x, y, w, h, "ELEMENT", hudSel_, Settings::HUD_COUNT, names);
+    auto& e = cfg_.hud[hudSel_];
+    y += h + gap;
+    ui_.slider(x, y, w, h, "X OFFSET", e.x, -640, 640, "%.0f"); e.x = std::round(e.x);
+    y += h + gap;
+    ui_.slider(x, y, w, h, "Y OFFSET", e.y, -360, 360, "%.0f"); e.y = std::round(e.y);
+    y += h + gap;
+    ui_.slider(x, y, w, h, "SIZE", e.scale, 0.5f, 3, "%.2f");
+    y += h + gap;
+    ui_.toggle(x, y, w, h, "CUSTOM COLOR", e.custom);
+    y += h + gap;
+    if (e.custom) {
+        float sw = (w - 2 * gap) / 3;
+        const char* ch[3] = {"R", "G", "B"};
+        for (int i = 0; i < 3; i++) {
+            float v = e.color[i] * 255.0f;
+            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f")) e.color[i] = std::round(v) / 255.0f;
+        }
+    }
+    y += h + gap * 3;
+    if (ui_.button(x, y, w * 0.5f - gap * 0.5f, h, "RESET")) e = Settings::HudElem{};
+    if (ui_.button(x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "BACK")) { hudOpen_ = false; cfg_.save(); }
+    y += h + gap;
+    if (ui_.button(x, y, w, h, "RESET ALL")) for (auto& he : cfg_.hud) he = Settings::HudElem{};
 }
 
 void Game::drawCrosshairSettings(float x0, float y0, float wTotal) {

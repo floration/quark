@@ -19,6 +19,11 @@ class M:
         s.lines.append(f"spawn {team} {x:g} {y:g} {z:g} {yaw:g}")
         if mirror_team: s.lines.append(f"spawn {mirror_team} {-x:g} {y:g} {-z:g} {yaw + 180:g}")
     def raw(s, line): s.lines.append(line)
+    def light(s, x, y, z, radius=9.0, intensity=0.8, fixture=True, mirror=False):
+        """baked point light (lights rooms under roofs / overhangs) with a small lamp fixture above it"""
+        for (lx, lz) in ((x, z), (-x, -z)) if mirror else ((x, z),):
+            s.lines.append(f"light {lx:g} {y:g} {lz:g} {radius:g} {intensity:g}")
+            if fixture: s.box(lx - 0.25, y + 0.15, lz - 0.25, lx + 0.25, y + 0.35, lz + 0.25, accent=True)
     def wallbang(s, x0, y0, z0, x1, y1, z1, mirror=False):
         """dark grey wall that hitscan weapons shoot through (half damage); solid for movement"""
         s.lines.append(f"wallbang {x0:g} {y0:g} {z0:g} {x1:g} {y1:g} {z1:g}")
@@ -277,6 +282,7 @@ m.box(-6, 0, 18, -3, 2.4, 19, mirror=True); m.box(3, 0, 18, 6, 2.4, 19, mirror=T
 m.crates(-19, 22, mirror=True); m.crates(15, 13, 1, mirror=True)
 m.catwalk(-17, -1, 17, 1, 3.5, rails="z")                               # bridge between the galleries, over the altar
 m.box(-1, 3.5, -1, 1, 6.5, 1, accent=True)                              # bridge shrine (a little cover up top)
+m.light(-10, 2.6, 0, 7, 0.6, mirror=True)                               # lamps under the bridge
 m.doorwall(-22, 13.8, 22, 14.2, 5.0, [(-10, 3.0, 3.2), (0, 4.0, 3.6), (10, 3.0, 3.2)], axis="x", mirror=True)  # arcades
 for x in (-3, 3): m.spawn("a", x, 0, 26, 0, "b")
 m.spawn("any", -19, 3.5, 0, 90, "any")
@@ -301,6 +307,7 @@ for side in (-1, 1):
     m.doorwall(-15, side * 15 - 0.25, 15, side * 15 + 0.25, 4.0, [(-9, 2.6, 3.0), (0, 3.4, 3.2), (9, 2.6, 3.0)], axis="x")
     m.doorwall(side * 15 - 0.25, -15, side * 15 + 0.25, 15, 4.0, [(-9, 2.6, 3.0), (0, 3.4, 3.2), (9, 2.6, 3.0)], axis="z")
 for (x, z) in ((-15, -15), (15, -15), (-15, 15), (15, 15)): m.pillar(x, z, 5.0, r=0.7)
+for (x, z) in ((0, -15), (-15, 0)): m.light(x, 2.6, z, 6, 0.5, mirror=True)  # lamps in the big arches
 for x in (-4, 4): m.spawn("a", x, 0, 17, 0, "b")
 for (x, z) in ((-16, 0), (16, 0), (0, -14), (0, 14), (-12, -12), (12, 12)): m.spawn("any", x, 0, z, 0)
 m.save("colosseum")
@@ -327,6 +334,7 @@ m.doorwall(-30, -16.2, -16, -15.8, 4.5, [(-27, 2.4, 2.8), (-22.5, 2.4, 2.8)], ax
 m.doorwall(-16.2, -30, -15.8, -16.2, 4.5, [(-23, 2.6, 2.8)], axis="z")
 m.box(-30, 4.5, -30, -15.8, 4.8, -15.8, accent=True)                    # roof deck
 m.stairs(-20, -15.8, -17.6, -11.3, 4.5, "z", -1)                        # stairs up to the roof edge, from the yard
+m.light(-26, 3.9, -26, 9, 0.9); m.light(-20, 3.9, -21, 9, 0.9)          # warehouse lamps (it has a roof)
 m.catwalk(-20, -8, 8, -6.6, 2.8, rails="z")                             # walkway from the first container toward the crane
 
 for (x, z) in ((-22, 22), (22, 22), (0, 24), (-26, -26), (26, -26), (0, -26), (-12, -2), (10, 9), (-18, 8), (24, -14)):

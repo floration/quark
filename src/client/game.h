@@ -187,10 +187,13 @@ private:
     int bestMapFor(int mode) const;
     bool pressInput(int code);
     void drawControls(float x, float y, float w);
+    void drawHudSettings(float x0, float y0, float wTotal);
     void drawCrosshairSettings(float x, float y, float w);
     void drawCrosshair(float cx, float cy, float scale, bool hit);
     bool controlsOpen_ = false;
     bool crosshairOpen_ = false;
+    bool hudOpen_ = false;
+    int hudSel_ = 0;
     int captureAction_ = -1, captureSlot_ = 0;
     std::string voteText_;
     // tourney bracket (EV_BRACKET): rounds of player ids (-1 bye, -2 undecided), current match

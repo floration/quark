@@ -40,6 +40,10 @@ struct Settings {
     bool chOutline = true;      // 1 px black outline
     bool chTeamColor = true;    // use your team color, else chColor
     Vec3 chColor = {1, 1, 1};
+    // HUD layout: offset (pixels at 720p) from the default spot, size, and an optional color override
+    enum { HUD_HEALTH, HUD_WEAPON, HUD_BARS, HUD_SPEED, HUD_SLOTS, HUD_COUNT };
+    struct HudElem { float x = 0, y = 0, scale = 1; bool custom = false; Vec3 color = {1, 1, 1}; };
+    HudElem hud[HUD_COUNT];
     // play vs bots
     int botSkill = 1;           // 0 beginner .. 3 expert
     int botEnemies = 3, botAllies = 1;

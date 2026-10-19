@@ -167,8 +167,10 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     MoveState before = s;
     int blocked = slideMove(s, map, delta, crouched);
 
-    // Step up small ledges when walking into them.
-    if (onGround && (blocked & 0b101)) {
+    // Step up small ledges when walking into them; also in the air (after a jump, hook or blast) as long
+    // as you aren't still rising fast, so touching the lip of a step lands you on it instead of sticking.
+    bool airStep = !onGround && !dashing && !hooked && s.vel.y <= 1.0f;
+    if ((onGround || airStep) && (blocked & 0b101)) {
         MoveState step = before;
         AABB b = playerBox(step.pos, crouched);
         float up = map.sweepAxis(b, 1, kStepHeight);
@@ -178,7 +180,12 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         step.pos.y += map.sweepAxis(b2, 1, -up);
         float d0 = (s.pos.x - before.pos.x) * (s.pos.x - before.pos.x) + (s.pos.z - before.pos.z) * (s.pos.z - before.pos.z);
         float d1 = (step.pos.x - before.pos.x) * (step.pos.x - before.pos.x) + (step.pos.z - before.pos.z) * (step.pos.z - before.pos.z);
-        if (d1 > d0 + 1e-6f) { s.pos = step.pos; blocked &= ~0b101; }
+        bool landed = true;
+        if (airStep) { // only take an air step if it puts you on the ledge (something right below)
+            AABB b3 = playerBox(step.pos, crouched);
+            landed = map.sweepAxis(b3, 1, -0.06f) > -0.05f;
+        }
+        if (d1 > d0 + 1e-6f && landed) { s.pos = step.pos; blocked &= ~0b101; }
     }
     if (blocked & 1) s.vel.x = 0;
     if (blocked & 4) s.vel.z = 0;

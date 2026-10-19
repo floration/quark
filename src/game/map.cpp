@@ -76,7 +76,7 @@ static bool readBox(std::istringstream& ls, AABB& b) {
 }
 
 bool Map::parse(const std::string& text, std::string* err) {
-    brushes.clear(); spawns.clear(); bombSites.clear(); checkpoints.clear(); payloadPath.clear();
+    brushes.clear(); spawns.clear(); bombSites.clear(); checkpoints.clear(); payloadPath.clear(); lights.clear();
     hasHill = false;
     hasWallbang = false;
     preferredMode = -1;
@@ -127,6 +127,11 @@ bool Map::parse(const std::string& text, std::string* err) {
             std::string mode;
             ok = (bool)(ls >> mode);
             if (ok) preferredMode = modeFromName(mode.c_str());
+        } else if (kw == "light") {
+            Light l;
+            ok = (bool)(ls >> l.pos.x >> l.pos.y >> l.pos.z >> l.radius);
+            ls >> l.intensity;
+            if (ok) lights.push_back(l);
         } else if (kw == "sun") {
             Vec3 d; ok = (bool)(ls >> d.x >> d.y >> d.z); if (ok) sunDir = normalize(d);
         } else {

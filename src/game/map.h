@@ -29,6 +29,8 @@ struct Map {
     std::vector<AABB> checkpoints;    // race; the last one is the finish line
     std::vector<Vec3> payloadPath;    // ordered waypoints
     Vec3 sunDir = normalize(Vec3(0.4f, 1.0f, 0.25f)); // points toward the sun
+    struct Light { Vec3 pos; float radius = 10, intensity = 1; };
+    std::vector<Light> lights;        // baked point lights ("light x y z radius [intensity]"): lit rooms under roofs
     AABB bounds;
     uint32_t crc = 0;
 

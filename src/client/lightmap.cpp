@@ -9,7 +9,7 @@
 
 namespace {
 constexpr uint32_t kCacheMagic = 0x314D4C51; // "QLM1"
-constexpr uint32_t kBakeVersion = 5;
+constexpr uint32_t kBakeVersion = 6; // 6: point lights
 constexpr int kSkySamples = 48;
 constexpr int kSunSamples = 6;
 constexpr float kAlbedo = 0.65f;
@@ -110,6 +110,33 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
                 if (!hidden) faces.push_back(f);
             }
     }
+    // 1b. Outline edges: an edge shared flush with another face of the same material in the same plane is
+    // not a real edge (a wall built from several boxes reads as one wall), so its outline is turned off.
+    // edgeOff[f] bit 0: u0 edge, 1: u1, 2: v0, 3: v1.
+    std::vector<uint8_t> edgeOff(faces.size(), 0);
+    auto covered = [&](size_t self, float u, float v) {
+        const Face& f = faces[self];
+        for (size_t k = 0; k < faces.size(); k++) {
+            const Face& o = faces[k];
+            if (k == self || o.axis != f.axis || o.sign != f.sign || o.material != f.material || std::fabs(o.plane - f.plane) > 1e-4f) continue;
+            if (u > o.u0 && u < o.u1 && v > o.v0 && v < o.v1) return true;
+        }
+        return false;
+    };
+    for (size_t i = 0; i < faces.size(); i++) {
+        const Face& f = faces[i];
+        const float e = 0.02f;
+        for (int edge = 0; edge < 4; edge++) {
+            bool all = true;
+            for (int k = 0; k < 7 && all; k++) {
+                float t = (k + 0.5f) / 7.0f;
+                float u = edge == 0 ? f.u0 - e : edge == 1 ? f.u1 + e : lerpf(f.u0, f.u1, t);
+                float v = edge == 2 ? f.v0 - e : edge == 3 ? f.v1 + e : lerpf(f.v0, f.v1, t);
+                all = covered(i, u, v);
+            }
+            if (all) edgeOff[i] |= 1 << edge;
+        }
+    }
     // 2. Choose texel density so the atlas fits in 2048x2048.
     float area = 0;
     for (auto& f : faces) area += (f.u1 - f.u0) * (f.v1 - f.v0);
@@ -142,17 +169,28 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
 
     // 4. Geometry.
     out.verts.reserve(faces.size() * 6);
-    for (auto& f : faces) {
+    for (size_t fi = 0; fi < faces.size(); fi++) {
+        const Face& f = faces[fi];
         Vec3 n = faceNormal(f);
+        // Coplanar faces of different materials would z-fight: wallbang always wins, then accent, then
+        // base, by lifting the face a hair off its plane. Decorations can sit flush on gameplay geometry.
+        Vec3 lift = n * (f.material == 2 ? 0.004f : f.material == 1 ? 0.002f : 0.0f);
+        const float B = 1000.0f; // a turned-off edge is "infinitely far": no outline
+        uint8_t off = edgeOff[fi];
         auto vert = [&](float u, float v) {
             WorldVertex wv;
-            Vec3 p = facePoint(f, u, v);
+            Vec3 p = facePoint(f, u, v) + lift;
             memcpy(wv.pos, &p.x, 12);
             memcpy(wv.normal, &n.x, 12);
             wv.uv[0] = (f.rx + 1 + (u - f.u0) / (f.u1 - f.u0) * f.wu) / (float)W;
             wv.uv[1] = (f.ry + 1 + (v - f.v0) / (f.v1 - f.v0) * f.wv) / (float)H;
             wv.material = (float)f.material;
             wv.edge[0] = u - f.u0; wv.edge[1] = v - f.v0; wv.edge[2] = f.u1 - f.u0; wv.edge[3] = f.v1 - f.v0;
+            // outline distance = min(edge.xy, edge.zw - edge.xy): push an edge away to hide its outline
+            if (off & 1) { wv.edge[0] += B; wv.edge[2] += B; }
+            if (off & 2) wv.edge[2] += B;
+            if (off & 4) { wv.edge[1] += B; wv.edge[3] += B; }
+            if (off & 8) wv.edge[3] += B;
             return wv;
         };
         WorldVertex a = vert(f.u0, f.v0), b = vert(f.u1, f.v0), c = vert(f.u1, f.v1), d = vert(f.u0, f.v1);
@@ -212,6 +250,17 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
                         else bounce += kAlbedo * 0.15f; // weak sky light on the bounced surface
                     }
                     float g = (sky + bounce * 0.9f) / kSkySamples;
+                    // baked point lights (map "light" entries): soft falloff, shadowed by the world
+                    for (const Map::Light& L : map.lights) {
+                        Vec3 to = L.pos - p;
+                        float dist = length(to);
+                        if (dist >= L.radius || dist < 1e-3f) continue;
+                        Vec3 dir = to / dist;
+                        float ndl = dot(n, dir);
+                        if (ndl <= 0 || anyHit(map, p, dir, dist - 0.05f)) continue;
+                        float fall = 1.0f - dist / L.radius;
+                        g += L.intensity * ndl * fall * fall;
+                    }
                     size_t idx = ((size_t)(f.ry + 1 + j) * W + (f.rx + 1 + i)) * 2;
                     out.texels[idx] = (uint8_t)(clampf(direct, 0, 1) * 255.0f + 0.5f);
                     out.texels[idx + 1] = (uint8_t)(clampf(g, 0, 1) * 255.0f + 0.5f);

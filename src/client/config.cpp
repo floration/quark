@@ -71,6 +71,13 @@ void Settings::load() {
         else if (k == "bot_enemies") botEnemies = std::min(std::max(iv, 1), 7);
         else if (k == "bot_allies") botAllies = std::min(std::max(iv, 0), 3);
         else if (k == "bot_mode") botMode = std::min(std::max(iv, 0), 5);
+        else if (k.rfind("hud_", 0) == 0) {
+            int i = atoi(k.c_str() + 4), c = 0; HudElem e;
+            if (i >= 0 && i < HUD_COUNT && sscanf(v.c_str(), "%f,%f,%f,%d,%f,%f,%f", &e.x, &e.y, &e.scale, &c, &e.color.x, &e.color.y, &e.color.z) == 7) {
+                e.x = clampf(e.x, -1280, 1280); e.y = clampf(e.y, -720, 720); e.scale = clampf(e.scale, 0.5f, 3); e.custom = c != 0;
+                hud[i] = e;
+            }
+        }
         else if (k.rfind("bind_", 0) == 0) {
             int a = atoi(k.c_str() + 5), c0 = 0, c1 = 0;
             if (a >= 0 && a < A_COUNT && sscanf(v.c_str(), "%d,%d", &c0, &c1) >= 1) { binds.code[a][0] = c0; binds.code[a][1] = c1; }
@@ -93,5 +100,8 @@ void Settings::save() const {
       << "\nhost_mode=" << hostMode << "\nhost_port=" << hostPort << "\nhost_max=" << hostMaxPlayers
       << "\nhost_upnp=" << hostUpnp << "\nhost_balance_bots=" << hostBalanceBots << "\nhost_log=" << hostLog << "\nhost_duel_size=" << hostDuelSize << "\nhost_public=" << hostPublic << "\nhost_variant=" << hostArenaVariant << "\nbot_variant=" << botArenaVariant << "\nbot_skill=" << botSkill
       << "\nbot_enemies=" << botEnemies << "\nbot_allies=" << botAllies << "\nbot_mode=" << botMode << "\n";
+    for (int i = 0; i < HUD_COUNT; i++)
+        f << "hud_" << i << "=" << hud[i].x << "," << hud[i].y << "," << hud[i].scale << "," << hud[i].custom << ","
+          << hud[i].color.x << "," << hud[i].color.y << "," << hud[i].color.z << "\n";
     for (int a = 0; a < A_COUNT; a++) f << "bind_" << a << "=" << binds.code[a][0] << "," << binds.code[a][1] << "\n";
 }
