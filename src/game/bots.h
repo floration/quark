@@ -17,8 +17,12 @@ struct BotBrain {
     int target = -1;           // player id being fought
     float seenAt = -1;         // when the current target was first seen (reaction time)
     float aimYaw = 0, aimPitch = 0;
-    Vec3 aimError;             // slowly drifting aim offset (m at the target)
+    float yawVel = 0, pitchVel = 0;      // current turn speed (rad/s): limited speed and acceleration
+    float errYaw = 0, errPitch = 0;      // aim error (rad), drifting toward errTo*
+    float errToYaw = 0, errToPitch = 0;
     float errorRetargetAt = 0;
+    float lapseUntil = 0;                // a moment of bad aim (lost track, panic)
+    float nextLapseRoll = 0;
     Vec3 goal;
     float goalUntil = 0;
     Vec3 lastPos;
@@ -29,6 +33,7 @@ struct BotBrain {
     Vec3 pathGoal;
     float repathAt = 0;
     uint32_t rng = 1;
+    int forceWeapon = -1;      // tests: always use this weapon
 };
 
 // Walkable surfaces (tops of blocks) and which ones a player can jump between.

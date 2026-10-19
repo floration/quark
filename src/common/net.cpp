@@ -168,10 +168,24 @@ uint16_t UdpSocket::localPort() const {
     return ntohs(a.sin_port);
 }
 
-double timeNow() {
+static double g_timeScale = 1.0, g_scaleBaseReal = 0.0, g_scaleBaseGame = 0.0;
+
+static double realTime() {
     using clk = std::chrono::steady_clock;
     static const clk::time_point start = clk::now();
     return std::chrono::duration<double>(clk::now() - start).count();
+}
+
+double timeNow() {
+    if (g_timeScale == 1.0) return realTime() - g_scaleBaseReal + g_scaleBaseGame;
+    return g_scaleBaseGame + (realTime() - g_scaleBaseReal) * g_timeScale;
+}
+
+void setTimeScale(double scale) {
+    double now = timeNow();
+    g_scaleBaseReal = realTime();
+    g_scaleBaseGame = now;
+    g_timeScale = scale;
 }
 
 void sleepMs(int ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); }

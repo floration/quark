@@ -50,6 +50,8 @@ private:
 
 // Monotonic time in seconds since first call.
 double timeNow();
+// Tests only: run the clock faster than real time (simulation is unchanged, just compressed).
+void setTimeScale(double scale);
 void sleepMs(int ms);
 // Gives the calling thread above-normal scheduling priority (server thread inside the client).
 void raiseThreadPriority();

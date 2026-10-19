@@ -27,6 +27,8 @@ int main(int argc, char** argv) {
         else if (a == "--fire") opts.debugFire = true;
         else if (a == "--perf") opts.debugPerf = true;
         else if (a == "--settings") opts.debugSettings = true;
+        else if (a == "--picker") opts.debugPicker = true;
+        else if (a == "--crosshair") { opts.debugSettings = true; opts.debugCrosshair = true; }
         else if (a == "--controls") { opts.debugSettings = true; opts.debugControls = true; }
         else if (a == "--pitch") opts.spawnPitch = (float)atof(next().c_str());
         else if (a == "-h" || a == "--help") {

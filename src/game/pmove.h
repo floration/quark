@@ -22,6 +22,7 @@ struct MoveState {
     float dashCooldown = 0;
     float dashTimer = 0;     // > 0 while the dash burst is active
     float dashDirX = 0, dashDirZ = 0;
+    float dashUp = 0;        // vertical part of the dash (from look pitch, small)
     float dashExitSpeed = 0; // horizontal speed to settle to when the burst ends
     float hookCooldown = 0;
     Vec3 hookPoint;    // grapple anchor while MF_HOOKED

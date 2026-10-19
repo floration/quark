@@ -16,6 +16,9 @@
 #include "bots.h"
 #include "master.h"
 
+// Tests running on a sped-up clock turn off the warmup tick-rate check (it would see "late" ticks).
+extern bool g_serverRateCheck;
+
 struct ServerConfig {
     std::string name = "quark server";
     std::string map = "arena";
@@ -96,6 +99,8 @@ struct Projectile {
     float dieAt = 0;
     float armAt = 0;    // stickies can't be detonated before this
     bool stuck = false; // stickies: attached to a surface
+    bool onCart = false; // stuck to the payload cart: rides along at cartOffset from its center
+    Vec3 cartOffset;
 };
 
 class Server {

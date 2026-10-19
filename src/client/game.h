@@ -28,6 +28,8 @@ struct LaunchOptions {
     int debugWeapon = -1;       // --weapon N (1-5), for screenshots
     bool debugScope = false, debugFire = false; // --scope, --fire
     bool debugPerf = false;     // --perf: F3 overlay on, with a synthetic input event every frame
+    bool debugCrosshair = false;
+    bool debugPicker = false;   // --picker: open the host menu's map list
     bool debugSettings = false; // --settings: open the settings screen in game
     bool debugControls = false; // --controls
 };
@@ -96,6 +98,11 @@ private:
     std::string hostPortStr_;
     int hostMapIdx_ = 0, hostModeIdx_ = 0;
     std::vector<std::string> maps_;
+    struct MapInfo { std::string title; int preferredMode = -1; uint32_t modes = 0; }; // modes: bit per supported mode
+    std::vector<MapInfo> mapInfo_;
+    enum { PICK_NONE = 0, PICK_HOST_MAP, PICK_HOST_MODE, PICK_BOT_MAP, PICK_BOT_MODE };
+    int picker_ = PICK_NONE;    // full list of maps / modes open over the host or vs-bots menu
+    void drawPicker(float cx, float y);
 
     // view / input
     float yaw_ = 0, pitch_ = 0;
@@ -159,7 +166,10 @@ private:
     int bestMapFor(int mode) const;
     bool pressInput(int code);
     void drawControls(float x, float y, float w);
+    void drawCrosshairSettings(float x, float y, float w);
+    void drawCrosshair(float cx, float cy, float scale, bool hit);
     bool controlsOpen_ = false;
+    bool crosshairOpen_ = false;
     int captureAction_ = -1, captureSlot_ = 0;
     std::string voteText_;
     struct DmgNum { int victim; float amount; double start; Vec3 pos; };

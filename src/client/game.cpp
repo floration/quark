@@ -1,3 +1,4 @@
+#include <array>
 #include "game.h"
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -43,6 +44,16 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     r_.resize(w, h);
     if (!r_.init(cfg_.shadowRes, err)) return false;
     maps_ = listMaps();
+    for (auto& name : maps_) {
+        Map m;
+        MapInfo mi;
+        if (m.load(name)) {
+            mi.title = m.title.empty() ? name : m.title;
+            mi.preferredMode = m.preferredMode;
+            for (int k = 0; k < MODE_COUNT; k++) if (m.supportsMode(k)) mi.modes |= 1u << k;
+        }
+        mapInfo_.push_back(mi);
+    }
     for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == cfg_.hostMap) hostMapIdx_ = (int)i;
     hostModeIdx_ = clampf((float)cfg_.hostMode, 0, MODE_COUNT - 1);
     cfg_.hostMaxPlayers = std::min(std::max(cfg_.hostMaxPlayers, 2), kMaxPlayers);
@@ -69,6 +80,9 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
         cfg_.hostUpnp = false;
         cfg_.hostPublic = false; // command-line test hosts stay off the internet list
         startHost();
+    } else if (opts_.debugPicker) {
+        setScreen(Screen::Host);
+        picker_ = PICK_HOST_MAP;
     } else if (!opts_.connect.empty()) {
         connectTo(opts_.connect);
     }
@@ -221,6 +235,11 @@ int Game::bestMapFor(int mode) const {
     return fallback < 0 ? 0 : fallback;
 }
 
+static std::string upper(std::string t) {
+    for (auto& c : t) c = (char)toupper((unsigned char)c);
+    return t;
+}
+
 bool Game::isDown(int action) const {
     for (int k = 0; k < 2; k++) {
         int c = cfg_.binds.code[action][k];
@@ -267,7 +286,7 @@ bool Game::pressInput(int code) {
         captureMouse(false);
         return true;
     }
-    for (int w = 0; w < WPN_COUNT; w++) if (b.has(A_WEAPON1 + w, code)) { desiredWeapon_ = w; return true; }
+    for (int w = 0; w < WPN_COUNT; w++) if (b.has(w < 8 ? A_WEAPON1 + w : A_WEAPON9 + (w - 8), code)) { desiredWeapon_ = w; return true; }
     int cur = desiredWeapon_ >= 0 ? desiredWeapon_ : net_.selfWeapon();
     if (b.has(A_NEXTWEAPON, code)) { desiredWeapon_ = (cur + 1) % WPN_COUNT; return true; }
     if (b.has(A_PREVWEAPON, code)) { desiredWeapon_ = (cur + WPN_COUNT - 1) % WPN_COUNT; return true; }
@@ -313,7 +332,7 @@ void Game::onKey(int key, int action, int mods) {
             return;
         }
         if (key == GLFW_KEY_ESCAPE) {
-            if (controlsOpen_) { controlsOpen_ = false; cfg_.save(); return; }
+            if (controlsOpen_ || crosshairOpen_) { controlsOpen_ = crosshairOpen_ = false; cfg_.save(); return; }
             if (settingsInGame_) { settingsInGame_ = false; cfg_.save(); return; }
             paused_ = !paused_;
             captureMouse(!paused_);
@@ -321,7 +340,7 @@ void Game::onKey(int key, int action, int mods) {
         }
     } else if (key == GLFW_KEY_ESCAPE) {
         uiIn_.escape = true;
-        if (controlsOpen_) { controlsOpen_ = false; cfg_.save(); return; }
+        if (controlsOpen_ || crosshairOpen_) { controlsOpen_ = crosshairOpen_ = false; cfg_.save(); return; }
         if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::Settings || screen_ == Screen::VsBots) {
             cfg_.save();
             setScreen(Screen::Main);
@@ -397,7 +416,6 @@ UserCmd Game::buildCmd() {
     c.forward = (int8_t)clampf((float)f, -127, 127);
     c.side = (int8_t)clampf((float)s, -127, 127);
     if (isDown(A_JUMP)) c.buttons |= BTN_JUMP;
-    if (isDown(A_CROUCH)) c.buttons |= BTN_CROUCH;
     if (isDown(A_USE)) c.buttons |= BTN_USE;
     if (isDown(A_DASH)) c.buttons |= BTN_DASH;
     if (isDown(A_GRAPPLE)) c.buttons |= BTN_GRAPPLE;
@@ -491,14 +509,14 @@ void Game::handleEvents() {
 void Game::frame(double dt) {
     time_ += dt;
     if (opts_.debugPerf) { showPerf_ = true; if (pendingInput_ < 0) pendingInput_ = timeNow(); }
-    if (opts_.debugSettings && screen_ == Screen::InGame && !settingsInGame_) { paused_ = true; settingsInGame_ = true; controlsOpen_ = opts_.debugControls; opts_.debugSettings = false; }
+    if (opts_.debugSettings && screen_ == Screen::InGame && !settingsInGame_) { paused_ = true; settingsInGame_ = true; controlsOpen_ = opts_.debugControls; crosshairOpen_ = opts_.debugCrosshair; opts_.debugSettings = false; }
     frameInput_ = pendingInput_; // the oldest input this frame will show
     pendingInput_ = -1;
     frameTimes_[frameIdx_] = (float)dt;
     frameIdx_ = (frameIdx_ + 1) % frameTimes_.size();
     frameCount_ = std::min(frameCount_ + 1, frameTimes_.size());
     net_.poll();
-    if (screen_ == Screen::InGame && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
+    if ((screen_ == Screen::InGame || opts_.debugPicker) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
 
     if (screen_ == Screen::Join) browser_.poll();
     if (screen_ == Screen::Connecting || screen_ == Screen::InGame) {
@@ -591,7 +609,7 @@ void Game::frame(double dt) {
     if (showPerf_) drawPerf();
     r_.flush2D();
 
-    if (shotAt_ > 0 && time_ >= shotAt_ && screen_ == Screen::InGame) {
+    if (shotAt_ > 0 && time_ >= shotAt_ && (screen_ == Screen::InGame || opts_.debugPicker)) {
         r_.screenshot(opts_.screenshot);
         printf("screenshot written to %s\n", opts_.screenshot.c_str());
         quit_ = true;
@@ -731,6 +749,8 @@ void Game::drawWorld(float alpha) {
             bool resting = sp < 0.01f; // stuck: pulse so they're easy to spot
             float k = resting ? 0.75f + 0.25f * std::sin((float)time_ * 10) : 1.0f;
             r_.box(pr.pos, {0.14f, 0.14f, 0.14f}, (float)time_ * (resting ? 0 : 6), col * k, 1.0f);
+        } else if (pr.type == WPN_GRENADE) { // tumbling, blinking faster as the fuse runs out
+            r_.box(pr.pos, {0.13f, 0.13f, 0.13f}, (float)time_ * 9, col * (0.8f + 0.2f * std::sin((float)time_ * 25)), 1.0f);
         } else if (pr.type == WPN_CROSSBOW) {
             r_.boxPitched(pr.pos, {0, 0, 0}, {0.03f, 0.03f, 0.35f}, yaw, std::asin(clampf(dir.y, -1, 1)), {0.1f, 0.1f, 0.12f}, 1.0f);
             r_.line(pr.pos, pr.pos - dir * 1.5f, 0.04f, rgba(col, 0.5f));
@@ -824,6 +844,7 @@ void Game::drawWorld(float alpha) {
         if (w == WPN_SHOTGUN) gun = {0.04f, 0.035f, 0.22f};
         if (w == WPN_STICKY) gun = {0.05f, 0.05f, 0.18f};
         if (w == WPN_CROSSBOW) gun = {0.02f, 0.025f, 0.22f};
+        if (w == WPN_GRENADE) gun = {0.055f, 0.045f, 0.16f};
         Vec3 at = {0.2f, -0.17f, -0.55f + kick};
         r_.viewBox(at, gun, {0.14f, 0.14f, 0.16f});
         r_.viewBox(at + Vec3(0, gun.y + 0.006f, 0.05f), {0.01f, 0.006f, 0.05f}, cfg_.colorFriendly);
@@ -849,7 +870,7 @@ void Game::drawHud() {
     Color fc = rgba(cfg_.colorFriendly), ec = rgba(cfg_.colorEnemy);
     bool teamMode = modeIsTeamBased(ms.mode);
 
-    float cx = W * 0.5f, cy = H * 0.5f, cs = std::max(1.0f, std::round(2 * s));
+    float cx = W * 0.5f, cy = H * 0.5f;
     if (scoped_) {
         // circular scope mask built from horizontal strips (one batch, no texture)
         float R = H * 0.46f;
@@ -867,13 +888,8 @@ void Game::drawHud() {
         r_.rect(cx - R, cy - 0.5f, 2 * R, 1, {0, 0, 0, 0.9f});
         r_.rect(cx - 0.5f, cy - R, 1, 2 * R, {0, 0, 0, 0.9f});
     }
-    // crosshair
-    Color chc = time_ < hitUntil_ ? Color{1, 1, 1, 1} : fc;
-    r_.rect(cx - cs * 0.5f, cy - 6 * cs, cs, 4 * cs, chc);
-    r_.rect(cx - cs * 0.5f, cy + 2 * cs, cs, 4 * cs, chc);
-    r_.rect(cx - 6 * cs, cy - cs * 0.5f, 4 * cs, cs, chc);
-    r_.rect(cx + 2 * cs, cy - cs * 0.5f, 4 * cs, cs, chc);
-    if (time_ < hitUntil_) r_.rect(cx - cs, cy - cs, 2 * cs, 2 * cs, {1, 1, 1, 1});
+    // crosshair (scoped: the scope's reticle replaces it)
+    if (!scoped_) drawCrosshair(cx, cy, s, time_ < hitUntil_);
     {   // floating damage numbers above whoever you hit
         auto ip = net_.interpolatedPlayers();
         for (size_t i = 0; i < dmgNums_.size();) {
@@ -1166,6 +1182,7 @@ void Game::drawPauseMenu(float cx, float y) {
 
 void Game::drawSettings(float x0, float y0, float wTotal) {
     if (controlsOpen_) { drawControls(x0, y0, wTotal); return; }
+    if (crosshairOpen_) { drawCrosshairSettings(x0, y0, wTotal); return; }
     float s = ui_.s();
     float h = 32 * s, gap = 7 * s, colGap = 24 * s;
     float w = std::max(320 * s, wTotal * 0.5f);
@@ -1242,7 +1259,8 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     };
     for (const char* t : help) { ui_.label(xr, y, t, {0.7f, 0.72f, 0.75f, 1}, 0.5f); y += 14 * s; }
     y += gap;
-    if (ui_.button(xr, y, w, h, "CONTROLS")) controlsOpen_ = true;
+    if (ui_.button(xr, y, w * 0.5f - gap * 0.5f, h, "CONTROLS")) controlsOpen_ = true;
+    if (ui_.button(xr + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "CROSSHAIR")) crosshairOpen_ = true;
     y += h + gap;
     if (ui_.button(xr, y, w, h, "BACK")) {
         cfg_.save();
@@ -1266,6 +1284,7 @@ void Game::drawMenu() {
     r_.text(8 * s, H - 20 * s, std::max(1.0f, std::round(s)), "V" QUARK_VERSION, kGrey);
     y += 80 * s;
 
+    if (picker_ != PICK_NONE && (screen_ == Screen::Host || screen_ == Screen::VsBots)) { drawPicker(cx, y); return; }
     switch (screen_) {
         case Screen::Main: {
             ui_.label(x, y, "YOUR NAME (SHOWN IN CHAT AND SCOREBOARD)", kGrey, 0.5f);
@@ -1323,13 +1342,11 @@ void Game::drawMenu() {
             ui_.textField(3, lx, y, lw, bh, cfg_.hostName, 32);
             y += bh + gap;
             if (!maps_.empty()) {
-                if (ui_.cycle(lx, y, lw, bh, "MAP", hostMapIdx_, (int)maps_.size(), maps_)) {}
+                if (ui_.button(lx, y, lw, bh, "MAP: " + upper(maps_[hostMapIdx_ % maps_.size()]) + "  (CLICK TO CHOOSE)")) picker_ = PICK_HOST_MAP;
                 y += bh + gap;
                 Map m;
                 m.load(maps_[hostMapIdx_]);
-                std::vector<std::string> modes;
-                for (int i = 0; i < MODE_COUNT; i++) modes.push_back(modeTitle(i));
-                if (ui_.cycle(lx, y, lw, bh, "MODE", hostModeIdx_, MODE_COUNT, modes)) hostMapIdx_ = bestMapFor(hostModeIdx_);
+                if (ui_.button(lx, y, lw, bh, std::string("MODE: ") + modeTitle(hostModeIdx_) + "  (CLICK TO CHOOSE)")) picker_ = PICK_HOST_MODE;
                 y += bh + gap;
                 if (!m.supportsMode(hostModeIdx_)) ui_.label(lx, y, "THIS MAP DOES NOT SUPPORT THAT MODE", kRed);
                 else if (hostModeIdx_ == MODE_DUEL && ui_.button(lx, y - 2 * s, lw, 24 * s, cfg_.hostDuelSize == 2 ? "TEAMS: 2V2 (CLICK FOR 1V1)" : "TEAMS: 1V1 (CLICK FOR 2V2)"))
@@ -1366,9 +1383,7 @@ void Game::drawMenu() {
         case Screen::VsBots: {
             float lw = 460 * s, lx = cx - lw * 0.5f;
             ui_.panel(lx - 16 * s, y - 16 * s, lw + 32 * s, 360 * s);
-            std::vector<std::string> modes;
-            for (int i = 0; i < MODE_COUNT; i++) modes.push_back(modeTitle(i));
-            if (ui_.cycle(lx, y, lw, bh, "MODE", cfg_.botMode, MODE_COUNT, modes)) botMapIdx_ = bestMapFor(cfg_.botMode);
+            if (ui_.button(lx, y, lw, bh, std::string("MODE: ") + modeTitle(cfg_.botMode) + "  (CLICK TO CHOOSE)")) picker_ = PICK_BOT_MODE;
             y += bh + gap;
             if (!maps_.empty()) {
                 // only offer maps that support the chosen mode
@@ -1377,7 +1392,7 @@ void Game::drawMenu() {
                     if (m.load(maps_[botMapIdx_ % maps_.size()]) && m.supportsMode(cfg_.botMode)) break;
                     botMapIdx_ = (botMapIdx_ + 1) % (int)maps_.size();
                 }
-                ui_.cycle(lx, y, lw, bh, "MAP", botMapIdx_, (int)maps_.size(), maps_);
+                if (ui_.button(lx, y, lw, bh, "MAP: " + upper(maps_[botMapIdx_ % maps_.size()]) + "  (CLICK TO CHOOSE)")) picker_ = PICK_BOT_MAP;
                 y += bh + gap;
             }
             static const std::vector<std::string> skills = {"BEGINNER", "INTERMEDIATE", "ADVANCED", "EXPERT"};
@@ -1559,13 +1574,16 @@ void Game::drawControls(float x0, float y0, float wTotal) {
     float rowH = 22 * s, gap = 3 * s, colGap = 24 * s;
     float colW = std::max(330 * s, wTotal * 0.5f);
     float x = x0 + wTotal * 0.5f - colW - colGap * 0.5f;
-    int perCol = (A_COUNT + 1) / 2;
+    std::vector<int> actions; // every rebindable action (crouch was removed from the game)
+    for (int a = 0; a < A_COUNT; a++) if (a != A_CROUCH) actions.push_back(a);
+    int perCol = ((int)actions.size() + 1) / 2;
     float h = perCol * (rowH + gap) + 90 * s;
     float y = std::max(8 * s, y0 - 40 * s);
     ui_.panel(x - 16 * s, y - 16 * s, colW * 2 + colGap + 32 * s, h);
     float lts = std::max(1.0f, std::round(ui_.textScale() * 0.75f));
-    for (int a = 0; a < A_COUNT; a++) {
-        float cx = x + (a / perCol) * (colW + colGap), cy = y + (a % perCol) * (rowH + gap);
+    for (int ai = 0; ai < (int)actions.size(); ai++) {
+        int a = actions[ai];
+        float cx = x + (ai / perCol) * (colW + colGap), cy = y + (ai % perCol) * (rowH + gap);
         r_.text(cx, cy + 5 * s, lts, actionName(a), {0.85f, 0.87f, 0.9f, 1});
         float bw = colW * 0.24f, xw = rowH;
         if (ui_.button(cx + colW - xw, cy, xw, rowH, "X")) { // unbind both slots
@@ -1587,6 +1605,125 @@ void Game::drawControls(float x0, float y0, float wTotal) {
     float bw = colW * 0.6f;
     if (ui_.button(x, y, bw, 32 * s, "RESET TO DEFAULTS")) { cfg_.binds.setDefaults(); cfg_.save(); }
     if (ui_.button(x + colW * 2 + colGap - bw, y, bw, 32 * s, "BACK")) { controlsOpen_ = false; captureAction_ = -1; cfg_.save(); }
+}
+
+// Every map or mode as a grid of buttons. Maps that can't run the chosen mode are greyed out, and
+// each map says which mode it was built for.
+void Game::drawPicker(float cx, float y) {
+    float s = ui_.s(), bh = 40 * s, gap = 8 * s;
+    bool modes = picker_ == PICK_HOST_MODE || picker_ == PICK_BOT_MODE;
+    bool host = picker_ == PICK_HOST_MAP || picker_ == PICK_HOST_MODE;
+    int& mode = host ? hostModeIdx_ : cfg_.botMode;
+    int& mapIdx = host ? hostMapIdx_ : botMapIdx_;
+    int n = modes ? MODE_COUNT : (int)maps_.size();
+    int cols = 3;
+    float bw = 250 * s, w = cols * bw + (cols - 1) * gap;
+    float x = cx - w * 0.5f;
+    int rows = (n + cols - 1) / cols;
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 40 * s + rows * (bh + 18 * s + gap) + bh + 30 * s);
+    ui_.labelCentered(cx, y, modes ? "CHOOSE A MODE" : std::string("CHOOSE A MAP FOR ") + modeTitle(mode));
+    y += 34 * s;
+    for (int i = 0; i < n; i++) {
+        float bx = x + (i % cols) * (bw + gap), by = y + (i / cols) * (bh + 18 * s + gap);
+        std::string label, sub;
+        bool ok = true, cur;
+        if (modes) {
+            label = modeTitle(i);
+            cur = i == mode;
+            for (auto& mi : mapInfo_) if (mi.preferredMode == i) sub = "MAP: " + upper(mi.title);
+        } else {
+            const MapInfo& mi = mapInfo_[i];
+            label = upper(maps_[i]);
+            cur = i == mapIdx;
+            ok = (mi.modes >> mode) & 1;
+            sub = !ok ? "DOESN'T SUPPORT THIS MODE" : mi.preferredMode >= 0 ? std::string("BUILT FOR ") + modeTitle(mi.preferredMode) : "ALL MODES";
+        }
+        if (cur) r_.rect(bx - 2 * s, by - 2 * s, bw + 4 * s, bh + 4 * s, ui_.accent);
+        if (ui_.button(bx, by, bw, bh, label, ok)) {
+            if (modes) { mode = i; mapIdx = bestMapFor(i); }
+            else mapIdx = i;
+            picker_ = PICK_NONE;
+            cfg_.save();
+        }
+        ui_.label(bx + 2 * s, by + bh + 3 * s, sub, ok ? Color{0.7f, 0.72f, 0.75f, 1} : Color{0.5f, 0.3f, 0.3f, 1}, 0.5f);
+    }
+    y += rows * (bh + 18 * s + gap) + 10 * s;
+    if (ui_.button(cx - 100 * s, y, 200 * s, bh, "BACK")) picker_ = PICK_NONE;
+}
+
+// Crosshair from the settings: style, size, thickness, gap, color, outline. A hit flashes it white.
+void Game::drawCrosshair(float cx, float cy, float scale, bool hit) {
+    float u = std::max(1.0f, std::round(scale));
+    float t = std::max(1.0f, std::round(cfg_.chThickness * u)), len = std::round(cfg_.chLength * u), g = std::round(cfg_.chGap * u);
+    Color c = hit ? Color{1, 1, 1, 1} : rgba(cfg_.chTeamColor ? cfg_.colorFriendly : cfg_.chColor);
+    cx = std::round(cx); cy = std::round(cy);
+    std::vector<std::array<float, 4>> rs; // x, y, w, h
+    int st = cfg_.chStyle;
+    if (st == 0 || st == 1 || st == 4) {
+        if (len > 0) {
+            if (st != 4) rs.push_back({cx - t * 0.5f, cy - g - len, t, len});        // up (not on T)
+            rs.push_back({cx - t * 0.5f, cy + g, t, len});                           // down
+            rs.push_back({cx - g - len, cy - t * 0.5f, len, t});                     // left
+            rs.push_back({cx + g, cy - t * 0.5f, len, t});                           // right
+        }
+    }
+    if (st == 1 || st == 2) rs.push_back({cx - t * 0.5f, cy - t * 0.5f, t, t});
+    if (st == 3) { // ring of small blocks
+        float R = g + len * 0.5f + t;
+        for (int i = 0; i < 24; i++) {
+            float a = i * 2 * PI / 24;
+            rs.push_back({cx + std::cos(a) * R - t * 0.5f, cy + std::sin(a) * R - t * 0.5f, t, t});
+        }
+        rs.push_back({cx - t * 0.5f, cy - t * 0.5f, t, t});
+    }
+    if (cfg_.chOutline)
+        for (auto& r : rs) r_.rect(r[0] - 1, r[1] - 1, r[2] + 2, r[3] + 2, {0, 0, 0, c.a * 0.9f});
+    for (auto& r : rs) r_.rect(r[0], r[1], r[2], r[3], c);
+    if (hit && st != 1 && st != 2) r_.rect(cx - t, cy - t, 2 * t, 2 * t, {1, 1, 1, 1});
+}
+
+void Game::drawCrosshairSettings(float x0, float y0, float wTotal) {
+    float s = ui_.s();
+    float h = 32 * s, gap = 7 * s;
+    float w = std::max(360 * s, wTotal * 0.5f);
+    float x = x0 + wTotal * 0.5f - w * 0.5f;
+    float y = y0;
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 110 * s + 7 * (h + gap) + 6 * gap + 32 * s);
+    // preview on a mid-grey square, like the world behind it
+    float ph = 110 * s;
+    r_.rect(x, y, w, ph, {0.42f, 0.43f, 0.45f, 1});
+    drawCrosshair(x + w * 0.5f, y + ph * 0.5f, s, false);
+    y += ph + gap;
+    static const std::vector<std::string> styles = {"CROSS", "CROSS + DOT", "DOT", "CIRCLE", "T"};
+    ui_.cycle(x, y, w, h, "STYLE", cfg_.chStyle, 5, styles);
+    y += h + gap;
+    ui_.slider(x, y, w, h, "LENGTH", cfg_.chLength, 0, 30, "%.0f");
+    cfg_.chLength = std::round(cfg_.chLength);
+    y += h + gap;
+    ui_.slider(x, y, w, h, "THICKNESS", cfg_.chThickness, 1, 8, "%.0f");
+    cfg_.chThickness = std::round(cfg_.chThickness);
+    y += h + gap;
+    ui_.slider(x, y, w, h, "GAP", cfg_.chGap, 0, 20, "%.0f");
+    cfg_.chGap = std::round(cfg_.chGap);
+    y += h + gap;
+    ui_.toggle(x, y, w * 0.5f - gap * 0.5f, h, "OUTLINE", cfg_.chOutline);
+    ui_.toggle(x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "TEAM COLOR", cfg_.chTeamColor);
+    y += h + gap;
+    if (!cfg_.chTeamColor) {
+        float sw = (w - 2 * gap) / 3;
+        const char* ch[3] = {"R", "G", "B"};
+        for (int i = 0; i < 3; i++) {
+            float v = cfg_.chColor[i] * 255.0f;
+            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f")) cfg_.chColor[i] = std::round(v) / 255.0f;
+        }
+    }
+    y += h + gap * 3;
+    if (ui_.button(x, y, w * 0.5f - gap * 0.5f, h, "RESET")) {
+        Settings d;
+        cfg_.chStyle = d.chStyle; cfg_.chLength = d.chLength; cfg_.chThickness = d.chThickness; cfg_.chGap = d.chGap;
+        cfg_.chOutline = d.chOutline; cfg_.chTeamColor = d.chTeamColor; cfg_.chColor = d.chColor;
+    }
+    if (ui_.button(x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "BACK")) { crosshairOpen_ = false; cfg_.save(); }
 }
 
 // Footsteps, jumps, landings, dash and grapple for you; footsteps, gunfire and grapples for

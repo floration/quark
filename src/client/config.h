@@ -29,9 +29,15 @@ struct Settings {
     int hostMaxPlayers = 8;
     bool hostUpnp = true;
     bool hostBalanceBots = true;
-    int hostLog = 0;
-    int hostDuelSize = 1;
-    bool hostPublic = true;     // show hosted games on the internet server list       // duel: 1 = 1v1, 2 = 2v2            // server game log: 0 off, 1 simple, 2 verbose, 3 extreme
+    int hostLog = 0;            // server game log: 0 off, 1 simple, 2 verbose, 3 extreme
+    int hostDuelSize = 1;       // duel: 1 = 1v1, 2 = 2v2
+    bool hostPublic = true;     // show hosted games on the internet server list
+    // crosshair
+    int chStyle = 0;            // 0 cross, 1 cross + dot, 2 dot, 3 circle, 4 T
+    float chLength = 8, chThickness = 2, chGap = 4; // in pixels at 720p
+    bool chOutline = true;      // 1 px black outline
+    bool chTeamColor = true;    // use your team color, else chColor
+    Vec3 chColor = {1, 1, 1};
     // play vs bots
     int botSkill = 1;           // 0 beginner .. 3 expert
     int botEnemies = 3, botAllies = 1;

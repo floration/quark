@@ -45,6 +45,13 @@ void Settings::load() {
         else if (k == "shadowres") shadowRes = iv;
         else if (k == "color_friendly") colorFriendly = parseColor(v, colorFriendly);
         else if (k == "color_enemy") colorEnemy = parseColor(v, colorEnemy);
+        else if (k == "ch_style") chStyle = std::min(std::max(iv, 0), 4);
+        else if (k == "ch_length") chLength = clampf(fv, 0, 30);
+        else if (k == "ch_thickness") chThickness = clampf(fv, 1, 8);
+        else if (k == "ch_gap") chGap = clampf(fv, 0, 20);
+        else if (k == "ch_outline") chOutline = iv != 0;
+        else if (k == "ch_team_color") chTeamColor = iv != 0;
+        else if (k == "ch_color") chColor = parseColor(v, chColor);
         else if (k == "last_address") lastAddress = v;
         else if (k == "host_name") hostName = v;
         else if (k == "host_map") hostMap = v;
@@ -76,6 +83,8 @@ void Settings::save() const {
       << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height
       << "\nshadows=" << shadows << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nhitsounds=" << hitsounds
       << "\ncolor_friendly=" << colorHex(colorFriendly) << "\ncolor_enemy=" << colorHex(colorEnemy)
+      << "\nch_style=" << chStyle << "\nch_length=" << chLength << "\nch_thickness=" << chThickness << "\nch_gap=" << chGap
+      << "\nch_outline=" << chOutline << "\nch_team_color=" << chTeamColor << "\nch_color=" << colorHex(chColor)
       << "\nlast_address=" << lastAddress << "\nhost_name=" << hostName << "\nhost_map=" << hostMap
       << "\nhost_mode=" << hostMode << "\nhost_port=" << hostPort << "\nhost_max=" << hostMaxPlayers
       << "\nhost_upnp=" << hostUpnp << "\nhost_balance_bots=" << hostBalanceBots << "\nhost_log=" << hostLog << "\nhost_duel_size=" << hostDuelSize << "\nhost_public=" << hostPublic << "\nbot_skill=" << botSkill

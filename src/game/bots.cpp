@@ -6,8 +6,12 @@ namespace {
 
 struct SkillParams {
     float reaction;   // s before firing at a newly seen target
-    float aimError;   // m of aim wobble at the target
-    float turnRate;   // rad/s
+    float aimError;   // rad: typical drifting aim error
+    float jitter;     // rad: per-tick hand shake
+    float trackLag;   // s: aims where a moving target was this long ago (hitscan) / under-leads (projectiles)
+    float lapseRate;  // chance per second of an aim lapse (0.4-0.9 s of 3x error)
+    float turnRate;   // rad/s: max turn speed
+    float turnAccel;  // rad/s^2: how fast turning speeds up / slows down (limits flicks, causes overshoot)
     float fireCone;   // rad: fire when aim is this close to the aim point
     bool strafe;      // dodge sideways while fighting
     bool bhop;        // hold jump while running
@@ -16,10 +20,11 @@ struct SkillParams {
     bool weapons;     // pick weapons by range (else rifle only)
 };
 const SkillParams kSkills[BOT_SKILLS] = {
-    {0.70f, 1.10f, 3.0f, 0.12f, false, false, false, false, false},  // beginner
-    {0.40f, 0.55f, 6.0f, 0.07f, true, false, false, false, true},    // intermediate
-    {0.25f, 0.28f, 11.0f, 0.045f, true, true, true, true, true},     // advanced
-    {0.15f, 0.12f, 20.0f, 0.03f, true, true, true, true, true},      // expert
+    // react  error  jitter trkLag lapse  turn   accel  cone    strafe bhop   dash   lead   weapons
+    {0.45f, 0.050f, 0.010f, 0.12f, 0.30f, 4.5f,  25.0f, 0.09f,  true,  false, false, false, false}, // beginner
+    {0.36f, 0.044f, 0.008f, 0.10f, 0.22f, 6.0f,  40.0f, 0.07f,  true,  false, false, true,  true},  // intermediate
+    {0.26f, 0.020f, 0.004f, 0.04f, 0.14f, 9.0f,  75.0f, 0.05f,  true,  true,  true,  true,  true},  // advanced
+    {0.17f, 0.010f, 0.002f, 0.015f, 0.07f, 15.0f, 150.0f, 0.035f, true, true,  true,  true,  true},  // expert
 };
 
 float rnd(BotBrain& b) { // xorshift, 0..1
@@ -252,21 +257,32 @@ UserCmd botThink(Server& s, int id) {
         const ServerPlayer& t = s.players_[b.target];
         Vec3 aimAt = t.move.pos + Vec3(0, 1.1f, 0);
         dist = length(aimAt - eye);
-        int w = pickWeapon(sp, dist);
+        int w = b.forceWeapon >= 0 ? b.forceWeapon : pickWeapon(sp, dist);
         const WeaponDef& wd = weaponDef(w);
+        aimAt -= t.move.vel * sp.trackLag; // reacts to movement late: trails strafing targets
         if (wd.projectile) {
             if (sp.lead) aimAt += t.move.vel * (dist / wd.projSpeed);
             if (w == WPN_ROCKET) aimAt.y = t.move.pos.y + 0.1f; // splash at the feet
             if (wd.gravity > 0) aimAt.y += 0.5f * wd.gravity * (dist / wd.projSpeed) * (dist / wd.projSpeed);
         }
-        if (now >= b.errorRetargetAt) { // human-like aim: an offset that drifts and shrinks with skill
-            b.aimError = Vec3(rnd(b) - 0.5f, rnd(b) - 0.5f, rnd(b) - 0.5f) * (2.0f * sp.aimError);
-            b.errorRetargetAt = now + 0.35f + rnd(b) * 0.4f;
+        // Human-like aim problems: an angular error that drifts to a new random offset every
+        // 0.3-0.7 s, occasional lapses with much worse aim, and per-tick shake.
+        if (now >= b.nextLapseRoll) {
+            b.nextLapseRoll = now + 0.25f;
+            if (rnd(b) < sp.lapseRate * 0.25f) b.lapseUntil = now + 0.4f + rnd(b) * 0.5f;
         }
-        aimAt += b.aimError;
+        float errMag = sp.aimError * (now < b.lapseUntil ? 3.0f : 1.0f);
+        if (now >= b.errorRetargetAt) {
+            b.errToYaw = (rnd(b) * 2 - 1) * errMag;
+            b.errToPitch = (rnd(b) * 2 - 1) * errMag * 0.6f;
+            b.errorRetargetAt = now + 0.3f + rnd(b) * 0.4f;
+        }
+        float drift = std::min(1.0f, dt * 4.0f);
+        b.errYaw += (b.errToYaw - b.errYaw) * drift;
+        b.errPitch += (b.errToPitch - b.errPitch) * drift;
         Vec3 d = normalize(aimAt - eye);
-        wantYaw = std::atan2(-d.x, -d.z);
-        wantPitch = std::asin(clampf(d.y, -1, 1));
+        wantYaw = std::atan2(-d.x, -d.z) + b.errYaw + (rnd(b) * 2 - 1) * sp.jitter;
+        wantPitch = std::asin(clampf(d.y, -1, 1)) + b.errPitch + (rnd(b) * 2 - 1) * sp.jitter;
         if (me.weapon != w) cmd.weapon = (uint8_t)w;
         // fire once the reaction time has passed and the aim is close enough
         float err = std::fabs(angleDiff(b.aimYaw, wantYaw)) + std::fabs(b.aimPitch - wantPitch);
@@ -299,10 +315,18 @@ UserCmd botThink(Server& s, int id) {
         wantPitch = 0;
     }
 
-    // turn toward the wanted angles at a limited rate
-    float maxTurn = sp.turnRate * dt;
-    b.aimYaw += clampf(angleDiff(wantYaw, b.aimYaw), -maxTurn, maxTurn);
-    b.aimPitch += clampf(wantPitch - b.aimPitch, -maxTurn, maxTurn);
+    // Turn like a hand on a mouse: turn speed is capped and can only change at a limited rate,
+    // so long flicks take time and overshoot a little before settling.
+    auto turn = [&](float diff, float& vel) {
+        // fastest speed that can still brake in time (turnAccel), capped by turnRate; gentle near the target
+        float mag = std::min({sp.turnRate, std::sqrt(2.0f * sp.turnAccel * std::fabs(diff)) * 0.85f, std::fabs(diff) * 20.0f});
+        float want = diff < 0 ? -mag : mag;
+        float dv = sp.turnAccel * dt;
+        vel += clampf(want - vel, -dv, dv);
+        return vel * dt;
+    };
+    b.aimYaw += turn(angleDiff(wantYaw, b.aimYaw), b.yawVel);
+    b.aimPitch += turn(wantPitch - b.aimPitch, b.pitchVel);
     b.aimYaw = std::remainder(b.aimYaw, 2 * PI);
     cmd.yaw = b.aimYaw;
     cmd.pitch = clampf(b.aimPitch, -1.5f, 1.5f);

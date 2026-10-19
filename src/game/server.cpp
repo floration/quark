@@ -22,6 +22,8 @@ constexpr float kRocketLife = 5.0f;
 bool isLoopback(const NetAddr& a) { return (a.ip >> 24) == 127; }
 }
 
+bool g_serverRateCheck = true;
+
 void Server::log(const std::string& s) {
     if (log_) log_(s);
     else printf("[server] %s\n", s.c_str());
@@ -114,6 +116,7 @@ void Server::resetRateWindow() {
 void Server::checkTickRate() {
     double now = timeNow();
     if (now - rateWindowStart_ < kRateWindow) return;
+    if (!g_serverRateCheck) { resetRateWindow(); return; }
     if (ms_.phase != PHASE_WARMUP || playerCount() == 0 || rateLevel_ >= kTickRateLevels - 1) { resetRateWindow(); return; }
     int worstLoss = windowWorstLoss_;
     double lateFrac = windowTicks_ ? windowLate_ / (double)windowTicks_ : 0;
@@ -767,7 +770,15 @@ void Server::fireWeapon(int id, const UserCmd& cmd) {
 void Server::tickProjectiles() {
     for (auto& pr : projectiles_) {
         if (!pr.active) continue;
-        if (time() >= pr.dieAt) { pr.active = false; continue; }
+        if (time() >= pr.dieAt) {
+            pr.active = false;
+            if (weaponDef(pr.type).bounce) explode(pr.pos, pr.owner, pr.type); // grenade fuse
+            continue;
+        }
+        if (pr.stuck && pr.onCart) {
+            if (map_.dynSolids.empty()) pr.active = false; // cart gone (round over)
+            else pr.pos = map_.payloadPoint(ms_.payloadDist) + pr.cartOffset;
+        }
         if (pr.stuck) continue;
         const WeaponDef& wd = weaponDef(pr.type);
         pr.vel.y -= wd.gravity * dt();
@@ -789,10 +800,23 @@ void Server::tickProjectiles() {
         }
         if (wall < 0 && hitPlayer < 0) { pr.pos += step; continue; }
         Vec3 at = pr.pos + dir * std::max(0.0f, best - 0.05f);
+        if (wd.bounce && hitPlayer < 0) { // grenade: bounce off the wall, losing energy
+            pr.pos = at + n * 0.02f;
+            pr.vel = (pr.vel - n * (2.0f * dot(pr.vel, n))) * 0.55f;
+            continue;
+        }
         if (wd.sticky) {               // stick where it landed (on a player: it drops there)
             pr.pos = hitPlayer < 0 ? at + n * 0.08f : at;
             pr.vel = {};
             pr.stuck = hitPlayer < 0;
+            if (pr.stuck && !map_.dynSolids.empty()) {
+                AABB cart = map_.dynSolids[0];
+                cart.mn -= Vec3(0.2f, 0.2f, 0.2f); cart.mx += Vec3(0.2f, 0.2f, 0.2f);
+                if (cart.contains(pr.pos)) {
+                    pr.onCart = true;
+                    pr.cartOffset = pr.pos - map_.payloadPoint(ms_.payloadDist);
+                }
+            }
         } else if (wd.splashRadius <= 0) { // crossbow bolt: direct hit only
             if (hitPlayer >= 0) damagePlayer(hitPlayer, pr.owner, (float)wd.damage, pr.type, dir * 3.0f);
             pr.active = false;

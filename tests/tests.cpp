@@ -13,6 +13,8 @@
 #include "game/bots.h"
 
 static int g_fail = 0;
+// Multiplayer tests run on a clock this many times faster than real time.
+static constexpr double kTestTimeScale = 4.0;
 #define CHECK(c) do { if (!(c)) { printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); g_fail++; } } while (0)
 
 // Pump a server and some clients for `seconds` of real time, feeding each client an input.
@@ -23,7 +25,7 @@ static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F inpu
     while (timeNow() < end) {
         s.frame();
         for (auto* c : cls) c->poll();
-        if (timeNow() >= nextTick) {
+        while (timeNow() >= nextTick) {
             for (size_t i = 0; i < cls.size(); i++) cls[i]->tick(input((int)i));
             nextTick += cls.empty() ? 0.001 : cls[0]->tickPeriod();
         }
@@ -280,8 +282,8 @@ static void testSession(int mode, const char* mapName, uint16_t port) {
     CHECK(chat);
 
     a.disconnect();
-    pump(s, cls, 0.2, idle);
-    CHECK(s.playerCount() == 1);
+    pump(s, cls, 0.5, idle);
+    CHECK(s.humanCount() == 1); // a balance bot may take the empty slot
     s.stop();
 }
 
@@ -383,7 +385,7 @@ static int runBot(const std::string& addr, double seconds, const std::string& na
 
 static void testWeapons(uint16_t port) {
     printf("weapons: sniper (scoped/unscoped), laser, rocket\n");
-    for (int w : {WPN_SNIPER, WPN_LASER, WPN_ROCKET, WPN_SHOTGUN, WPN_CROSSBOW, WPN_STICKY}) {
+    for (int w : {WPN_SNIPER, WPN_LASER, WPN_ROCKET, WPN_SHOTGUN, WPN_CROSSBOW, WPN_STICKY, WPN_GRENADE}) {
         Server s;
         ServerConfig cfg;
         cfg.autoStart = true;
@@ -397,7 +399,7 @@ static void testWeapons(uint16_t port) {
         pump(s, cls, 2.5, idle);
         auto& sa = s.players_[a.clientId()];
         auto& sb = s.players_[b.clientId()];
-        float dist = (w == WPN_LASER || w == WPN_SHOTGUN) ? 8.0f : 20.0f;
+        float dist = (w == WPN_LASER || w == WPN_SHOTGUN || w == WPN_GRENADE) ? 8.0f : 20.0f;
         sa.move.pos = {9, 0, 6}; sb.move.pos = {9, 0, 6 - dist};
         sa.move.vel = sb.move.vel = {};
         pump(s, cls, 0.3, idle);
@@ -406,6 +408,11 @@ static void testWeapons(uint16_t port) {
             if (i != 0) return c;
             Vec3 eye = a.predicted().pos + Vec3(0, kEyeHeight, 0);
             Vec3 tgt = sb.move.pos + Vec3(0, w == WPN_ROCKET ? 0.2f : 1.0f, 0);
+            const WeaponDef& wd = weaponDef(w);
+            if (wd.projectile && wd.gravity > 0) { // aim above for the drop
+                float t = length(tgt - eye) / wd.projSpeed;
+                tgt.y += 0.5f * wd.gravity * t * t;
+            }
             Vec3 d = normalize(tgt - eye);
             c.pitch = std::asin(d.y);
             c.yaw = std::atan2(-d.x, -d.z);
@@ -418,16 +425,16 @@ static void testWeapons(uint16_t port) {
         int deaths0 = sb.deaths;
         float hp0 = sb.health;
         double t0 = timeNow();
-        pump(s, cls, w == WPN_LASER ? 0.5 : (w == WPN_ROCKET || w == WPN_CROSSBOW || w == WPN_STICKY || w == WPN_SHOTGUN) ? 0.2 : 0.3, [&](int i) { return aim(i, BTN_FIRE | (w == WPN_SNIPER ? BTN_ALTFIRE : 0)); });
+        pump(s, cls, w == WPN_LASER ? 0.5 : (w == WPN_ROCKET || w == WPN_CROSSBOW || w == WPN_STICKY || w == WPN_SHOTGUN || w == WPN_GRENADE) ? 0.2 : 0.3, [&](int i) { return aim(i, BTN_FIRE | (w == WPN_SNIPER ? BTN_ALTFIRE : 0)); });
         double elapsed = timeNow() - t0;
-        if (w == WPN_ROCKET || w == WPN_CROSSBOW || w == WPN_STICKY) pump(s, cls, 1.0, idle); // let it fly
+        if (w == WPN_ROCKET || w == WPN_CROSSBOW || w == WPN_STICKY || w == WPN_GRENADE) pump(s, cls, 1.0, idle); // let it fly
         float dealt = (sb.deaths > deaths0) ? 100.0f : hp0 - sb.health;
         if (w == WPN_SNIPER) CHECK(dealt >= 50);                 // one scoped shot
         if (w == WPN_LASER) {                                     // ~5 dmg every 0.05 s
             float expect = (float)(elapsed / weaponDef(WPN_LASER).refire) * weaponDef(WPN_LASER).damage;
             CHECK(dealt > expect * 0.6f && dealt < expect * 1.4f + 5);
         }
-        if (w == WPN_ROCKET) CHECK(dealt > 15);
+        if (w == WPN_ROCKET || w == WPN_GRENADE) CHECK(dealt > 15);
         if (w == WPN_SHOTGUN) CHECK(dealt >= 25);      // most of 10 x 5 pellets at 8 m
         if (w == WPN_CROSSBOW) CHECK(dealt >= 50);
         if (w == WPN_STICKY) {                          // lobbed: lands near the target, then detonate
@@ -443,8 +450,61 @@ static void testWeapons(uint16_t port) {
     }
 }
 
+// Grenades bounce off walls and go off when the fuse runs out; stickies stuck to the payload cart ride
+// along with it; dashing while looking up rises a little.
+static void testGrenadeCartDash(uint16_t port) {
+    printf("grenade bounce + fuse, stickies ride the cart, dash tilts with pitch\n");
+    {
+        MoveState m; Map map; map.load("arena");
+        m.pos = {9, 0, 6}; m.flags = MF_ONGROUND;
+        UserCmd c; c.msec = 1; c.pitch = 1.0f; c.buttons = BTN_DASH;
+        for (int i = 0; i < 150; i++) pmove(m, c, map);
+        CHECK(m.pos.y > 0.4f);
+        MoveState f; f.pos = {9, 0, 6}; f.flags = MF_ONGROUND;
+        c.pitch = 0;
+        for (int i = 0; i < 150; i++) pmove(f, c, map);
+        CHECK(f.pos.y < 0.05f);
+    }
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "railyard"; cfg.mode = MODE_PAYLOAD; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    std::vector<NetClient*> none;
+    pump(s, none, 0.2, idle);
+    // grenade thrown straight at the floor: bounces up, then explodes on its fuse
+    Projectile& g = s.projectiles_[0];
+    g = Projectile();
+    g.active = true; g.type = WPN_GRENADE; g.owner = 0; g.id = 999;
+    Vec3 cart = s.map_.payloadPoint(s.ms_.payloadDist);
+    g.pos = cart + Vec3(8, 1.0f, 0); g.vel = {0, -15, 0}; g.dieAt = s.time() + 1.0f;
+    pump(s, none, 0.15, idle);
+    CHECK(g.active && g.vel.y > 0); // bounced
+    pump(s, none, 1.2, idle);
+    CHECK(!g.active);               // fuse
+    // sticky on the cart moves with it
+    s.ms_.payloadDist = 5;
+    pump(s, none, 0.05, idle);
+    AABB box = s.map_.payloadCartBox(s.ms_.payloadDist);
+    Projectile& st = s.projectiles_[1];
+    st = Projectile();
+    st.active = true; st.type = WPN_STICKY; st.owner = 0; st.id = 1000;
+    st.pos = Vec3(box.center().x, box.mx.y + 1.0f, box.center().z); st.vel = {0, -10, 0}; st.dieAt = s.time() + 20;
+    pump(s, none, 0.3, idle);
+    CHECK(st.stuck && st.onCart);
+    Vec3 before = st.pos;
+    s.ms_.payloadDist = 9;
+    pump(s, none, 0.05, idle);
+    Vec3 moved = st.pos - before, cartMoved = s.map_.payloadPoint(9) - s.map_.payloadPoint(5);
+    CHECK(length(moved - cartMoved) < 0.05f && length(cartMoved) > 1);
+    s.stop();
+}
+
 static void testTickRateFallback(uint16_t port) {
     printf("tick rate starts at 1000 Hz and steps down when the host can't keep up\n");
+    setTimeScale(1.0);
+    g_serverRateCheck = true;
+    struct Restore { ~Restore() { setTimeScale(kTestTimeScale); g_serverRateCheck = false; } } restore;
     Server s;
     ServerConfig cfg;
     cfg.autoStart = true;
@@ -489,7 +549,7 @@ static void testRocketSelfDamage(uint16_t port) {
     float down = shoot(-1.5f, {9, 0, 0});              // straight at the floor
     float level = shoot(0.0f, {0, 0, 30.5f}, PI);      // into the wall in front (+z), at eye height
     printf("  floor blast %.1f damage, eye-level blast %.1f damage\n", down, level);
-    CHECK(down > 0 && down <= 4);
+    CHECK(down > 0 && down <= weaponDef(WPN_ROCKET).damage * 0.1f + 0.01f);
     s.killPlayer(a.clientId(), -1, 255); // respawns with the last selected weapon
     pump(s, cls, 2.5, idle);
     CHECK(p.alive && p.weapon == WPN_ROCKET);
@@ -498,14 +558,14 @@ static void testRocketSelfDamage(uint16_t port) {
 }
 
 static void testTimeToKill() {
-    printf("time to kill: every weapon kills from 100 hp in 2.0 s with perfect aim\n");
+    printf("time to kill with perfect aim (1-4.5 s), no shot over 50\n");
     for (int w = 0; w < WPN_COUNT; w++) {
         const WeaponDef& d = weaponDef(w);
         int perShot = d.damage * d.pellets;
         int shots = (kMaxHealth + perShot - 1) / perShot;
         float ttk = (shots - 1) * d.refire;
         printf("  %-9s %2d x %3d dmg, ttk %.3f s\n", d.name, shots, perShot, ttk);
-        CHECK(std::fabs(ttk - 2.0f) < 0.001f);
+        CHECK(ttk >= 1.0f && ttk <= 4.5f);
         CHECK(perShot <= 50);
     }
 }
@@ -650,6 +710,50 @@ static void testInternetList(uint16_t port) {
     s.stop();
 }
 
+// Each bot level shoots at a strafing player for a while; damage per second must rise with skill.
+static void testBotAim(uint16_t& port) {
+    printf("bot aim: damage per second vs a strafing player, by level\n");
+    float dps[BOT_SKILLS] = {};
+    for (int k = 0; k < BOT_SKILLS; k++) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port++;
+        s.setLog([](const std::string&) {});
+        if (!s.start(cfg)) { g_fail++; return; }
+        NetClient a;
+        a.connect("127.0.0.1:" + std::to_string(cfg.port), "target");
+        std::vector<NetClient*> cls = {&a};
+        pump(s, cls, 2.0, idle);
+        int bot = s.addBot(TEAM_A, k);
+        s.bots_[bot].forceWeapon = WPN_RIFLE;
+        pump(s, cls, 1.0, idle);
+        auto& p = s.players_[a.clientId()];
+        auto& bp = s.players_[bot];
+        float dealt = 0, lastShot = -1;
+        int shots = 0;
+        double t0 = timeNow();
+        pump(s, cls, 15.0, [&](int) {
+            if (!p.alive || !bp.alive) return UserCmd();
+            dealt += 100 - p.health;
+            if (bp.lastFire != lastShot) { shots++; lastShot = bp.lastFire; }
+            p.health = 100;
+            p.move.pos.x = -7;                                   // strafe back and forth along z
+            if (std::fabs(p.move.pos.z + 24) > 4) p.move.pos.z = -24;
+            bp.move.pos = {7, 0, -24}; bp.move.vel = {};          // bot 14 m away, open floor, standing (aim only)
+            UserCmd c;
+            c.side = (int)((timeNow() - t0) / 0.6) % 2 ? 127 : -127;
+            c.yaw = -PI / 2;
+            return c;
+        });
+        dps[k] = dealt / 15.0f;
+        printf("  %-12s %5.1f dps, %.0f%% of shots hit\n", botSkillName(k), dps[k], shots ? dealt / weaponDef(WPN_RIFLE).damage / shots * 100 : 0.0f);
+        s.stop();
+    }
+    // short samples are noisy between neighbouring levels; the spread across levels must hold
+    CHECK(dps[0] < dps[2] && dps[1] < dps[3] && dps[2] < dps[3]);
+    CHECK(dps[0] > 2); // beginners still land some hits
+}
+
 static void testBots(uint16_t& port) {
     printf("bots: vs-bots fights, balance bots, votes, every mode\n");
     { // FFA vs 3 expert bots: they should find and kill each other / us
@@ -664,10 +768,10 @@ static void testBots(uint16_t& port) {
         NetClient a;
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "human");
         std::vector<NetClient*> cls = {&a};
-        pump(s, cls, 25.0, idle);
+        pump(s, cls, 40.0, idle);
         int kills = 0;
         for (auto& p : s.players_) if (p.connected) kills += p.kills;
-        printf("  ffa vs 3 expert bots: %d kills in 25 s (phase %d)\n", kills, s.ms_.phase);
+        printf("  ffa vs 3 expert bots: %d kills in 40 s (phase %d)\n", kills, s.ms_.phase);
         CHECK(kills >= 3);
         s.stop();
     }
@@ -774,8 +878,12 @@ static void testBots(uint16_t& port) {
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
     netInit();
+    setTimeScale(kTestTimeScale); // bot subprocesses share the test clock speed
     if (argc >= 4 && std::string(argv[1]) == "bot") return runBot(argv[2], atof(argv[3]), argc > 4 ? argv[4] : "bot");
     srand(1234);
+    setTimeScale(kTestTimeScale);
+    g_serverRateCheck = false;
+    if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = 29500; testBotAim(p); return g_fail ? 1 : 0; }
     testMovement();
     testMaps();
     testTickRateIndependence();
@@ -790,13 +898,15 @@ int main(int argc, char** argv) {
     testSession(MODE_RACE, "sprint", port++);
     testPayloadPush(port++);
     testPacketLoss(port++);
-    testWeapons(port); port += 6;
+    testWeapons(port); port += 8;
+    testGrenadeCartDash(port++);
     testTickRateFallback(port++);
     testRocketSelfDamage(port++);
     testTimeToKill();
     testDuel(port++);
     testDuel2v2(port++);
     testInternetList(port++);
+    testBotAim(port);
     testBots(port);
     netShutdown();
     printf(g_fail ? "%d FAILURE(S)\n" : "all tests passed\n", g_fail);

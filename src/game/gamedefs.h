@@ -12,7 +12,7 @@ constexpr int kMaxPlayers = 8;
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 8;
+constexpr uint16_t kProtocolVersion = 9;
 
 // Player hull
 constexpr float kPlayerHalfWidth = 0.4f;
@@ -76,7 +76,7 @@ enum : uint16_t {
 
 // Weapon set. Rifle and knife are placeholders. No single shot does more than 50 (of 100 health).
 enum WeaponId : uint8_t {
-    WPN_RIFLE = 0, WPN_ROCKET, WPN_KNIFE, WPN_SNIPER, WPN_LASER, WPN_SHOTGUN, WPN_STICKY, WPN_CROSSBOW, WPN_COUNT
+    WPN_RIFLE = 0, WPN_ROCKET, WPN_KNIFE, WPN_SNIPER, WPN_LASER, WPN_SHOTGUN, WPN_STICKY, WPN_CROSSBOW, WPN_GRENADE, WPN_COUNT
 };
 constexpr uint8_t kNoWeaponChange = 255;
 struct WeaponDef {
@@ -95,19 +95,21 @@ struct WeaponDef {
     float gravity;      // projectile drop (m/s^2)
     bool sticky;        // projectile sticks to surfaces and is detonated with alt-fire
     float life;         // projectile lifetime (s)
+    bool bounce = false;// projectile bounces off walls and explodes when its life runs out (or on a player)
 };
 inline const WeaponDef& weaponDef(int w) {
     static const WeaponDef defs[WPN_COUNT] = {
-        // Every weapon kills from 100 health in exactly 2.0 s with perfect aim: (shots - 1) * refire = 2.
+        // Tuned by the owner (0.14.0). Perfect-aim time to kill from 100 hp in the trailing comment.
         //  name        refire   dmg  range   proj  speed  splash spread scoped zoom   beam  pel grav  sticky life
-        {"RIFLE",       2.0f/9,  10, 300.0f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 10 shots
-        {"ROCKET",      1.0f,    35,   0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  5.0f, false, 5},  // 3
-        {"KNIFE",       1.0f,    40,   2.2f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 3
-        {"SNIPER",      2.0f,    50, 500.0f, false,  0,    0,     0.06f, 0.0f, 24.0f,  false, 1,  0,    false, 0},  // 2
-        {"LASER",       2.0f/24,  4,  32.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},  // 25 ticks
-        {"SHOTGUN",     2.0f,     5,  60.0f, false,  0,    0,     0.085f,-1,     0,    false, 10, 0,    false, 0},  // 2 full blasts
-        {"STICKY",      1.0f,    35,   0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30}, // 3
-        {"CROSSBOW",    2.0f,    50,   0,    true,  90.0f, 0,     0.0f,  -1,     0,    false, 1,  6.0f, false, 3},  // 2
+        {"RIFLE",       2.0f/9,   7, 300.0f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 15 shots, 3.1 s
+        {"ROCKET",      1.0f,    45,   0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  12.0f, false, 5}, // 3, 2.0 s
+        {"KNIFE",       1.0f,    40,   2.2f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 3, 2.0 s
+        {"SNIPER",      4.0f,    50, 500.0f, false,  0,    0,     0.06f, 0.0f, 24.0f,  false, 1,  0,    false, 0},  // 2, 4.0 s
+        {"LASER",       0.02f,    1,  32.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},  // 100 ticks, 2.0 s
+        {"SHOTGUN",     2.0f,     5,  60.0f, false,  0,    0,     0.085f,-1,     0,    false, 10, 0,    false, 0},  // 2 full blasts, 2.0 s
+        {"STICKY",      1.0f,    35,   0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30}, // 3, 2.0 s
+        {"CROSSBOW",    1.5f,    50,   0,    true,  90.0f, 0,     0.0f,  -1,     0,    false, 1,  6.0f, false, 3},  // 2, 1.5 s
+        {"GRENADE",     1.0f,    35,   0,    true,  26.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  18.0f, false, 1.6f, true}, // 3, 2.0 s
     };
     return defs[w < 0 || w >= WPN_COUNT ? 0 : w];
 }

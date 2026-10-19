@@ -17,6 +17,7 @@ constexpr float kStepHeight = 0.55f;
 constexpr float kDashSpeed = 24.0f;     // burst speed
 constexpr float kDashTime = 0.12f;      // burst length; then speed settles back
 constexpr float kDashExitMin = 11.0f;   // speed you keep after the burst (or your old speed if faster)
+constexpr float kDashVertical = 0.3f;   // looking up/down tilts the dash this much (fraction of dash speed)
 constexpr float kHookAccel = 38.0f;     // pull acceleration toward the anchor (adds to momentum)
 constexpr float kHookMaxSpeed = 24.0f;
 constexpr float kHookGravityScale = 0.5f;
@@ -53,7 +54,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     if (s.flags & MF_FROZEN) {
         s.vel = {0, std::min(s.vel.y, 0.0f), 0};
     }
-    bool wantCrouch = (cmd.buttons & BTN_CROUCH) != 0;
+    bool wantCrouch = false; // crouching was removed from the game (BTN_CROUCH is ignored)
     bool crouched = (s.flags & MF_CROUCHED) != 0;
     if (wantCrouch && !crouched) {
         crouched = true;
@@ -90,19 +91,21 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         s.dashDirX = d.x;
         s.dashDirZ = d.z;
         s.dashExitSpeed = std::max(kDashExitMin, std::min(h, kDashSpeed));
+        s.dashUp = std::sin(cmd.pitch) * kDashVertical;
         s.dashTimer = kDashTime;
         s.dashCooldown = kDashCooldown;
     }
     bool dashing = s.dashTimer > 0;
     if (dashing) {
-        // Short, strong, flat burst: no gravity, no steering.
-        s.vel = {s.dashDirX * kDashSpeed, 0, s.dashDirZ * kDashSpeed};
+        // Short, strong burst, tilted a little by where you look: no gravity, no steering.
+        s.vel = {s.dashDirX * kDashSpeed, s.dashUp * kDashSpeed, s.dashDirZ * kDashSpeed};
         onGround = false;
         s.dashTimer -= dt;
         if (s.dashTimer <= 0) {
             s.dashTimer = 0;
             s.vel.x = s.dashDirX * s.dashExitSpeed;
             s.vel.z = s.dashDirZ * s.dashExitSpeed;
+            s.vel.y = s.dashUp * s.dashExitSpeed;
         }
     }
 

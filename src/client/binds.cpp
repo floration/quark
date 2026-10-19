@@ -11,7 +11,6 @@ void Binds::setDefaults() {
     set(A_LEFT, GLFW_KEY_A);
     set(A_RIGHT, GLFW_KEY_D);
     set(A_JUMP, GLFW_KEY_SPACE);
-    set(A_CROUCH, GLFW_KEY_LEFT_CONTROL, GLFW_KEY_C);
     set(A_FIRE, kMouseCode + GLFW_MOUSE_BUTTON_LEFT);
     set(A_ALTFIRE, kMouseCode + GLFW_MOUSE_BUTTON_RIGHT);
     set(A_USE, GLFW_KEY_E);
@@ -27,13 +26,14 @@ void Binds::setDefaults() {
     set(A_PERF, GLFW_KEY_F3);
     set(A_SCREENSHOT, GLFW_KEY_F12);
     set(A_VOTESTART, GLFW_KEY_F4);
+    set(A_WEAPON9, GLFW_KEY_9);
 }
 
 const char* actionName(int a) {
     static const char* n[A_COUNT] = {
         "FORWARD", "BACK", "LEFT", "RIGHT", "JUMP", "CROUCH", "FIRE", "ALT FIRE", "USE", "DASH", "GRAPPLE",
         "RIFLE", "ROCKET", "KNIFE", "SNIPER", "LASER", "SHOTGUN", "STICKY", "CROSSBOW",
-        "NEXT WEAP", "PREV WEAP", "SCOREBOARD", "CHAT", "VOTE YES", "VOTE NO", "PERF STATS", "SCREENSHOT", "VOTE START",
+        "NEXT WEAP", "PREV WEAP", "SCOREBOARD", "CHAT", "VOTE YES", "VOTE NO", "PERF STATS", "SCREENSHOT", "VOTE START", "GRENADE",
     };
     return a >= 0 && a < A_COUNT ? n[a] : "?";
 }
