@@ -877,6 +877,69 @@ static void testArenaAndTourney(uint16_t& port) {
     }
 }
 
+// Delta snapshots decode (no misses) and match the server; snapshots shrink; enemies out of sight are
+// sent hidden, in sight they're sent.
+static void testNetcode(uint16_t port) {
+    printf("netcode: delta snapshots, visibility\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    std::vector<std::unique_ptr<NetClient>> owned;
+    std::vector<NetClient*> cls;
+    for (int i = 0; i < 4; i++) {
+        owned.push_back(std::make_unique<NetClient>());
+        owned.back()->connect("127.0.0.1:" + std::to_string(port), "c" + std::to_string(i));
+        cls.push_back(owned.back().get());
+    }
+    for (int i = 0; i < 4; i++) s.addBot(TEAM_A, BOT_ADVANCED);
+    pump(s, cls, 2.0, idle);
+    s.snapBytes_ = s.snapCount_ = 0;
+    pump(s, cls, 4.0, [](int i) { UserCmd c; c.forward = 127; c.yaw = i * 1.5f + (float)timeNow(); c.buttons = BTN_JUMP; return c; });
+    double avg = s.snapCount_ ? (double)s.snapBytes_ / s.snapCount_ : 0;
+    uint32_t misses = 0;
+    for (auto* c : cls) misses += c->baseMisses();
+    printf("  8 players moving: %.0f bytes per snapshot, %u undecodable deltas, interpolation delay %.1f ms (was %.1f)\n", avg, misses,
+           cls[0]->interpDelay() * 1000, (3.0f / cls[0]->tickRate() + 0.010f) * 1000);
+    CHECK(cls[0]->interpDelay() < 3.0f / cls[0]->tickRate() + 0.010f);
+    CHECK(avg > 0 && avg < 400);   // full snapshots were ~420 bytes for 8 players
+    CHECK(misses < 5);
+    // decoded state matches the server (within position quantization)
+    for (auto& p : cls[0]->latest().players) {
+        if (p.hidden || !(p.flags & PS_ALIVE)) continue;
+        Vec3 sp = s.players_[p.id].move.pos;
+        CHECK(length(p.pos - sp) < 2.0f); // a snapshot or two behind the server at most
+    }
+    s.stop();
+
+    // visibility: the center walls block the line from one end of arena to the other
+    Server v;
+    cfg.port = port + 1;
+    v.setLog([](const std::string&) {});
+    if (!v.start(cfg)) { g_fail++; return; }
+    NetClient a, b;
+    a.connect("127.0.0.1:" + std::to_string(cfg.port), "a");
+    b.connect("127.0.0.1:" + std::to_string(cfg.port), "b");
+    std::vector<NetClient*> two = {&a, &b};
+    pump(v, two, 2.0, idle);
+    auto place = [&](Vec3 pa, Vec3 pb) {
+        for (int k = 0; k < 6; k++) {
+            v.players_[a.clientId()].move.pos = pa; v.players_[a.clientId()].move.vel = {};
+            v.players_[b.clientId()].move.pos = pb; v.players_[b.clientId()].move.vel = {};
+            pump(v, two, 0.1, idle);
+        }
+    };
+    auto hiddenToA = [&]() { for (auto& p : a.latest().players) if (p.id == b.clientId()) return p.hidden; return false; };
+    place({0, 0, -28}, {0, 0, 28});
+    bool hid = hiddenToA();
+    place({-22, 0, -28}, {-22, 0, 28});
+    bool open = !hiddenToA();
+    printf("  behind walls: %s, in the open: %s\n", hid ? "hidden" : "SENT", open ? "sent" : "HIDDEN");
+    CHECK(hid && open);
+    v.stop();
+}
+
 static void testBots(uint16_t& port) {
     printf("bots: vs-bots fights, balance bots, votes, every mode\n");
     { // FFA vs 3 expert bots: they should find and kill each other / us
@@ -1014,6 +1077,7 @@ int main(int argc, char** argv) {
     testAllMaps();
     testGridQueries();
     uint16_t port = 28500;
+    if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(29900); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = 29800; testArenaAndTourney(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = 29700; testWeapons(p); testRocketSelfDamage(p + 20); return g_fail ? 1 : 0; }
@@ -1030,6 +1094,7 @@ int main(int argc, char** argv) {
     testSemiAuto(port++);
     testMapVote(port++);
     testArenaAndTourney(port);
+    testNetcode(port); port += 2;
     testTickRateFallback(port++);
     testRocketSelfDamage(port++);
     testTimeToKill();

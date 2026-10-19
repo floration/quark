@@ -60,7 +60,10 @@ public:
     int tickRate() const { return hasSnapshot() ? latest().tickRate : 1000; }
     double tickPeriod() const { return 1.0 / tickRate(); }
     // Render other players this far behind the newest snapshot: 3 snapshots + 10 ms jitter margin.
-    float interpDelay() const { return 3.0f / tickRate() + 0.010f; }
+    // Render other players this far behind the newest snapshot: 2 snapshots plus the measured arrival
+    // jitter (99th percentile), between 1 and 50 ms. On a clean connection that's a few ms instead of 13.
+    float interpDelay() const { return 2.0f / tickRate() + std::min(0.05f, std::max(0.001f, jitter_ + 0.001f)); }
+    uint32_t baseMisses() const { return baseMisses_; } // delta snapshots we couldn't decode (should stay ~0)
     int snapshotLoss() const { return lossPct_; }
     void overrideReportedLoss(int pct) { lossOverride_ = pct; } // tests: pretend to lose snapshots
 
@@ -81,6 +84,12 @@ private:
     uint32_t mapGen_ = 0;
 
     std::deque<Snapshot> snaps_;
+    static constexpr int kLateSamples = 512;
+    float lateness_[kLateSamples] = {};
+    uint32_t latenessN_ = 0;
+    float jitterTarget_ = 0.009f, jitter_ = 0.009f; // start like the old fixed margin until measured
+    double lastJitterUpdate_ = 0;
+    uint32_t baseMisses_ = 0;
     double snapRecvTime_ = 0;
     double clockOffset_ = 0;      // estimated serverTime - localTime
     bool clockInit_ = false;

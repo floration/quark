@@ -89,6 +89,12 @@ struct ServerPlayer {
     uint32_t ackedEvent = 0;
     std::deque<GameEvent> events; // unacknowledged reliable events
     uint32_t lastDamagedTick = 0;
+    // Delta snapshots: what we sent this client recently (ring by tick) and the newest one it confirmed.
+    static constexpr int kSentRing = 256;
+    std::vector<Snapshot> sent;
+    uint32_t ackSnapMs = 0;
+    // Visibility (anti-wallhack + bandwidth): when this client last had a line of sight to each player.
+    float lastSeen[kMaxPlayers] = {};
     // lag compensation history
     struct Hist { uint32_t tick; Vec3 pos; bool crouched; bool alive; };
     static constexpr int kHistory = 1024; // >= 1 s at any tick rate
@@ -184,6 +190,7 @@ public:
     int aliveCount(int team) const;
     int teamCount(int team) const;
     void log(const std::string& s);
+    size_t snapBytes_ = 0, snapCount_ = 0; // snapshot bytes sent (stats for tests / logs)
     float hitAccum_[kMaxPlayers][kMaxPlayers] = {}, hitFlushAt_[kMaxPlayers][kMaxPlayers] = {};
     void flushHit(int attacker, int victim);
     void handleStringCmdForTest(int id, const std::string& s) { handleStringCmd(id, s); }
@@ -212,6 +219,8 @@ private:
     void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t viewMs, float* dmgPerPlayer, float dmg);
     Vec3 spreadDir(const Vec3& dir, float spread, uint32_t seq, int pellet);
     void sendSnapshots();
+    void updateVisibility();
+    float nextVisCheck_ = 0;
     void openGameLog();
     void logTick();
     int findPlayer(const NetAddr& a) const;

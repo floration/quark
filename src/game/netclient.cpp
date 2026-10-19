@@ -1,4 +1,5 @@
 #include "netclient.h"
+#include <algorithm>
 #include <cctype>
 #include "master.h"
 #include <random>
@@ -91,6 +92,9 @@ void NetClient::poll() {
         return;
     }
     if (state_ == ConnState::Connected && clockInit_) {
+        // ease toward the measured jitter so the render time never jumps
+        jitter_ += (jitterTarget_ - jitter_) * (float)std::min(1.0, (now - lastJitterUpdate_) * 2.0);
+        lastJitterUpdate_ = now;
         float target = (float)(now + clockOffset_) - interpDelay();
         renderTime_ = target;
     }
@@ -138,7 +142,14 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
             if (state_ != ConnState::Connected) return;
             if (r.u32() != nonce_) return;
             Snapshot s;
-            if (!readSnapshot(r, s)) return;
+            if (!readSnapshotClient(r, s)) return;
+            const Snapshot* base = nullptr;
+            if (s.baseTick) { // delta: needs the snapshot the server based it on (we acked it, so we have it)
+                for (auto it = snaps_.rbegin(); it != snaps_.rend(); ++it)
+                    if (it->tick == s.baseTick) { base = &*it; break; }
+                if (!base) { baseMisses_++; return; } // can't decode; our next ack makes the server send against a newer base
+            }
+            if (!readSnapshotWorld(r, s, base) || !readSnapshotEvents(r, s)) return;
             onSnapshot(s);
             break;
         }
@@ -159,6 +170,17 @@ void NetClient::onSnapshot(Snapshot& s) {
     }
     double serverTime = s.timeMs * 0.001;
     double offset = serverTime - now;
+    // Arrival jitter: how much later than the best-case arrival this snapshot came. The interpolation
+    // delay is sized from the 99th percentile of that instead of a fixed worst-case margin.
+    if (clockInit_) {
+        lateness_[latenessN_++ % kLateSamples] = (float)std::max(0.0, clockOffset_ - offset);
+        if (latenessN_ % 64 == 0) {
+            int n = (int)std::min<uint32_t>(latenessN_, kLateSamples);
+            std::vector<float> v(lateness_, lateness_ + n);
+            std::nth_element(v.begin(), v.begin() + n * 99 / 100, v.end());
+            jitterTarget_ = v[n * 99 / 100];
+        }
+    }
     if (!clockInit_ || std::fabs(offset - clockOffset_) > 0.5) { clockOffset_ = offset; clockInit_ = true; }
     // Track the most recent arrival tightly but let jitter average out.
     else clockOffset_ = offset > clockOffset_ ? clockOffset_ * 0.9 + offset * 0.1 : clockOffset_ * 0.99 + offset * 0.01;
@@ -207,7 +229,8 @@ void NetClient::onSnapshot(Snapshot& s) {
     }
 
     snaps_.push_back(std::move(s));
-    while (snaps_.size() > 64) snaps_.pop_front();
+    // keep enough history to decode deltas based on any snapshot we acked within the last round trip
+    while (snaps_.size() > 512) snaps_.pop_front();
 }
 
 void NetClient::tick(UserCmd cmd) {
@@ -280,13 +303,13 @@ static float lerpAngle(float a, float b, float t) {
 NetClient::PlayerArray NetClient::interpolatedPlayers() const {
     PlayerArray out{};
     if (snaps_.empty()) return out;
-    // Find snapshots bracketing renderTime.
+    // Find snapshots bracketing renderTime (searching from the newest: it's a few snapshots back).
     const Snapshot* a = &snaps_.front();
     const Snapshot* b = &snaps_.back();
-    for (size_t i = 0; i + 1 < snaps_.size(); i++) {
-        if (snaps_[i].timeMs * 0.001f <= renderTime_ && snaps_[i + 1].timeMs * 0.001f >= renderTime_) {
-            a = &snaps_[i];
-            b = &snaps_[i + 1];
+    for (size_t i = snaps_.size() - 1; i > 0; i--) {
+        if (snaps_[i - 1].timeMs * 0.001f <= renderTime_ && snaps_[i].timeMs * 0.001f >= renderTime_) {
+            a = &snaps_[i - 1];
+            b = &snaps_[i];
             break;
         }
     }
@@ -294,11 +317,12 @@ NetClient::PlayerArray NetClient::interpolatedPlayers() const {
     float ta = a->timeMs * 0.001f, tb = b->timeMs * 0.001f;
     float t = tb > ta ? clampf((renderTime_ - ta) / (tb - ta), 0, 1) : 1.0f;
     for (auto& pb : b->players) {
+        if (pb.hidden) continue; // out of sight: the server didn't send where they are
         InterpPlayer& ip = out[pb.id];
         ip.valid = true;
         ip.snap = pb;
         for (auto& pa : a->players) {
-            if (pa.id != pb.id) continue;
+            if (pa.id != pb.id || pa.hidden) continue;
             // Don't interpolate across respawns/teleports.
             if ((pa.flags & PS_ALIVE) && (pb.flags & PS_ALIVE) && length(pa.pos - pb.pos) < 5.0f) {
                 ip.snap.pos = vlerp(pa.pos, pb.pos, t);

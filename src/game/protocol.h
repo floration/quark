@@ -52,6 +52,7 @@ struct PlayerSnap {
     uint8_t checkpoint = 0;
     uint8_t hooked = 0;
     Vec3 hookPoint;
+    bool hidden = false;    // not visible to this client: only scoreboard fields are valid (no position)
     int team() const { return (flags & PS_SPECTATOR) ? TEAM_SPECTATOR : (flags & PS_TEAM_B) ? TEAM_B : TEAM_A; }
 };
 
@@ -108,6 +109,7 @@ struct Snapshot {
     uint32_t timeMs = 0;      // server clock in ms
     uint16_t tickRate = 1000; // current server tick rate (Hz)
     uint32_t ackCmdSeq = 0;
+    uint32_t baseTick = 0;    // the players / projectiles / mode part is a delta against this tick (0 = full)
     uint16_t ackStringCmd = 0;
     uint8_t clientId = 0;
     MoveState self;
@@ -119,9 +121,12 @@ struct Snapshot {
     std::vector<GameEvent> events;
 };
 
-void writeSnapshot(Writer& w, const Snapshot& s);
-// The pieces of writeSnapshot, in wire order: the server encodes the shared part once per tick.
-void writeSnapshotClient(Writer& w, const Snapshot& s);   // per-client header + own movement state
-void writeSnapshotShared(Writer& w, const Snapshot& s);   // mode state, players, projectiles
+// Wire order: client header (own movement state, baseTick), then the world part (mode state, players,
+// projectiles) delta-encoded against `base` (the client's last acknowledged snapshot; nullptr = full),
+// then reliable events. Unchanged players cost 3 bytes, unchanged mode state 1 byte.
+void writeSnapshotClient(Writer& w, const Snapshot& s);
+void writeSnapshotWorld(Writer& w, const Snapshot& s, const Snapshot* base);
 void writeSnapshotEvents(Writer& w, const std::vector<GameEvent>& events);
-bool readSnapshot(Reader& r, Snapshot& s);
+bool readSnapshotClient(Reader& r, Snapshot& s);              // header: tells which base the world part needs
+bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base);
+bool readSnapshotEvents(Reader& r, Snapshot& s);

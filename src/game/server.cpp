@@ -337,6 +337,7 @@ void Server::handleInput(int id, Reader& r) {
 
     p.reportedLoss = loss;
     windowWorstLoss_ = std::max(windowWorstLoss_, (int)loss);
+    if (ackMs <= timeMs_ && ackMs > p.ackSnapMs) p.ackSnapMs = ackMs; // newest snapshot it has: delta base
     if (ackMs <= timeMs_ && ackMs + 10000 > timeMs_) {
         float sample = (float)(timeMs_ - ackMs);
         p.ping = p.ping == 0 ? sample : p.ping * 0.98f + sample * 0.02f;
@@ -928,12 +929,41 @@ void Server::explode(const Vec3& at, int owner, int weapon) {
     }
 }
 
+// Line of sight from each human to each enemy, 20 times a second. Players you can't see are sent
+// without a position (wallhacks get nothing); anyone within earshot, teammates, and everyone while you
+// are dead or spectating are always sent. A player stays visible for 0.3 s after line of sight breaks,
+// so peeking around a corner never pops in late.
+void Server::updateVisibility() {
+    if (time() < nextVisCheck_) return;
+    nextVisCheck_ = time() + 0.05f;
+    for (int v = 0; v < kMaxPlayers; v++) {
+        auto& pv = players_[v];
+        if (!pv.connected || pv.isBot || !pv.alive) continue;
+        Vec3 eye = pv.move.pos + Vec3(0, kEyeHeight, 0);
+        for (int t = 0; t < kMaxPlayers; t++) {
+            auto& pt = players_[t];
+            if (t == v || !pt.connected || !pt.alive) continue;
+            bool mate = modeIsTeamBased(ms_.mode) && pt.team == pv.team;
+            Vec3 d = pt.move.pos - pv.move.pos;
+            if (mate || length(d) < 20.0f) { pv.lastSeen[t] = time(); continue; }
+            Vec3 lead = pt.move.vel * 0.1f; // where they'll be shortly: peeks show up early, not late
+            for (const Vec3& off : {Vec3(0, 1.7f, 0), Vec3(0, 1.0f, 0), Vec3(0, 0.2f, 0), lead + Vec3(0, 1.0f, 0)}) {
+                Vec3 to = pt.move.pos + off - eye;
+                float len = length(to);
+                if (len < 0.01f || !map_.raycastAny(eye, to / len, len)) { pv.lastSeen[t] = time(); break; }
+            }
+        }
+    }
+}
+
 void Server::sendSnapshots() {
+    updateVisibility();
     Snapshot s;
     s.tick = tick_;
     s.timeMs = timeMs_;
     s.tickRate = (uint16_t)tickRate();
     s.ms = ms_;
+    std::vector<PlayerSnap> all;
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
         if (!p.connected) continue;
@@ -959,38 +989,48 @@ void Server::sendSnapshots() {
         ps.checkpoint = (uint8_t)p.checkpoint;
         ps.hooked = p.alive && (p.move.flags & MF_HOOKED);
         ps.hookPoint = p.move.hookPoint;
-        s.players.push_back(ps);
+        all.push_back(ps);
     }
     for (auto& pr : projectiles_) {
         if (!pr.active) continue;
-        // fit the packet: 32 players leave less room for projectiles
-        if (s.projectiles.size() >= std::min<size_t>(48, (kMaxPacket - 200 - s.players.size() * 32) / 16)) break;
+        if (s.projectiles.size() >= 48) break;
         s.projectiles.push_back({pr.id, (uint8_t)pr.type, (uint8_t)pr.owner, pr.pos, pr.vel});
     }
-    // Shared part (mode, players, projectiles) is identical for everyone: encode it once.
-    uint8_t shared[kMaxPacket];
-    Writer ws(shared, sizeof shared);
-    writeSnapshotShared(ws, s);
-    if (ws.overflowed()) { // too many projectiles: drop them rather than the snapshot
-        s.projectiles.clear();
-        ws = Writer(shared, sizeof shared);
-        writeSnapshotShared(ws, s);
-    }
-    uint8_t buf[kMaxPacket];
+    const std::vector<ProjectileSnap> allProj = s.projectiles;
+    uint8_t buf[kMaxPacket], world[kMaxPacket];
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
         if (!p.connected || p.isBot) continue;
+        if ((int)p.sent.size() != ServerPlayer::kSentRing) p.sent.assign(ServerPlayer::kSentRing, Snapshot());
         s.clientId = (uint8_t)i;
         s.ackCmdSeq = p.lastCmdSeq;
         s.ackStringCmd = p.lastStringCmd;
         s.self = p.move;
         s.selfHealth = (uint8_t)clampf(std::ceil(p.health), 0, 255);
         s.selfWeapon = (uint8_t)p.weapon;
+        // this client's view of the players: enemies out of sight are hidden
+        bool seesAll = !p.alive || p.team == TEAM_SPECTATOR;
+        s.players = all;
+        s.projectiles = allProj;
+        for (auto& ps : s.players)
+            ps.hidden = !seesAll && ps.id != i && (ps.flags & PS_ALIVE) && time() - p.lastSeen[ps.id] > 0.3f;
+        // delta base: the newest snapshot the client confirmed, if we still remember it
+        const Snapshot* base = nullptr;
+        for (auto& o : p.sent)
+            if (o.tick && o.timeMs == p.ackSnapMs && tick_ - o.tick < (uint32_t)ServerPlayer::kSentRing) { base = &o; break; }
+        s.baseTick = base ? base->tick : 0;
+        Writer ww(world, sizeof world);
+        writeSnapshotWorld(ww, s, base);
+        while (ww.overflowed() && !s.projectiles.empty()) { // too much: drop projectiles rather than the snapshot
+            s.projectiles.resize(s.projectiles.size() / 2);
+            ww = Writer(world, sizeof world);
+            writeSnapshotWorld(ww, s, base);
+        }
         Writer w(buf, kMaxPacket);
         writeHeader(w, PKT_SNAPSHOT);
         w.u32(p.nonce);
         writeSnapshotClient(w, s);
-        w.bytes(shared, ws.size());
+        w.bytes(world, ww.size());
         // Reliable events fill whatever room is left.
         int room = kMaxPacket - w.size() - 1;
         events_.clear();
@@ -1001,7 +1041,12 @@ void Server::sendSnapshots() {
             events_.push_back(e);
         }
         writeSnapshotEvents(w, events_);
+        snapBytes_ += w.size(); snapCount_++;
         if (!sock_.send(p.addr, buf, w.size())) windowSendFail_++;
+        // remember exactly what we sent (world part) as a future delta base
+        Snapshot& keep = p.sent[tick_ % ServerPlayer::kSentRing];
+        keep.tick = tick_; keep.timeMs = timeMs_; keep.ms = s.ms;
+        keep.players = s.players; keep.projectiles = s.projectiles;
     }
 }
 
