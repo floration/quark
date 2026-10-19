@@ -786,6 +786,75 @@ static void testBotAim(uint16_t& port) {
     CHECK(dps[0] > 2); // beginners still land some hits
 }
 
+// Alt-fires: thrown knife hits at range, shotgun ricochets hit someone behind you (off the wall in front),
+// scoped rifle fires at half rate.
+static void testAltFires(uint16_t port) {
+    printf("alt-fires: knife throw, shotgun ricochet, scoped rifle\n");
+    for (int kase = 0; kase < 3; kase++) {
+        Server s;
+        ServerConfig cfg;
+        cfg.autoStart = false; // stay in warmup: a match start would move everyone back to spawns
+        cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = (uint16_t)(port + kase);
+        s.setLog([](const std::string&) {});
+        if (!s.start(cfg)) { g_fail++; continue; }
+        NetClient a, b;
+        a.connect("127.0.0.1:" + std::to_string(cfg.port), "shooter");
+        b.connect("127.0.0.1:" + std::to_string(cfg.port), "target");
+        std::vector<NetClient*> cls = {&a, &b};
+        pump(s, cls, 2.5, idle);
+        auto& sa = s.players_[a.clientId()];
+        auto& sb = s.players_[b.clientId()];
+        int w = kase == 0 ? WPN_KNIFE : kase == 1 ? WPN_SHOTGUN : WPN_RIFLE;
+        // knife: target 12 m ahead. shotgun: facing the +x wall (x = 32) from 3 m, target 5 m behind.
+        if (kase == 1) { sa.move.pos = {28.5f, 0, 26}; sb.move.pos = {24, 0, 26}; }
+        else { sa.move.pos = {9, 0, 6}; sb.move.pos = {9, 0, -6}; }
+        sa.move.vel = sb.move.vel = {};
+        pump(s, cls, 0.3, idle);
+        auto aim = [&](int i, uint16_t buttons) {
+            UserCmd c;
+            if (i != 0) return c;
+            c.weapon = (uint8_t)w;
+            c.buttons = buttons;
+            if (kase == 1) { c.yaw = -PI / 2; c.pitch = 0; return c; } // facing +x
+            Vec3 eye = a.predicted().pos + Vec3(0, kEyeHeight, 0), tgt = sb.move.pos + Vec3(0, 1.0f, 0);
+            if (kase == 0) { float t = length(tgt - eye) / kKnifeThrowSpeed; tgt.y += 0.5f * kKnifeThrowGravity * t * t; }
+            Vec3 d = normalize(tgt - eye);
+            c.pitch = std::asin(d.y); c.yaw = std::atan2(-d.x, -d.z);
+            return c;
+        };
+        pump(s, cls, 0.3, [&](int i) { return aim(i, 0); });
+        float hp0 = sb.health;
+        if (kase == 0) {
+            pump(s, cls, 0.05, [&](int i) { return aim(i, BTN_ALTFIRE); });
+            pump(s, cls, 1.0, idle);
+            CHECK(hp0 - sb.health >= weaponDef(WPN_KNIFE).damage - 0.01f);
+        } else if (kase == 1) {
+            pump(s, cls, 0.05, [&](int i) { return aim(i, BTN_FIRE); });          // normal blast: hits the wall only
+            pump(s, cls, 0.3, idle);
+            CHECK(sb.health == hp0);
+            pump(s, cls, 1.2, idle);
+            sa.move.pos = {28.5f, 0, 26}; sb.move.pos = {24, 0, 26}; sa.move.vel = sb.move.vel = {}; // the match may have started: put them back
+            hp0 = sb.health;
+            float lf = sa.lastFire;
+            pump(s, cls, 0.05, [&](int i) { return aim(i, BTN_ALTFIRE); });       // ricochet comes back at the target
+            pump(s, cls, 0.3, idle);
+            CHECK(sa.lastFire != lf);
+            CHECK(sb.health < hp0 && hp0 - sb.health <= 20 * weaponDef(WPN_SHOTGUN).damage * kShotgunBounceDamage + 0.01f);
+            CHECK(sa.health == 100); // never your own ricochet
+        } else {
+            int shots = 0;
+            float last = sa.lastFire;
+            pump(s, cls, 2.0, [&](int i) {
+                if (sa.lastFire != last) { shots++; last = sa.lastFire; }
+                return aim(i, BTN_FIRE | BTN_ALTFIRE);
+            });
+            float expect = 2.0f / (weaponDef(WPN_RIFLE).refire * kRifleScopedRefire);
+            CHECK(shots >= expect - 2 && shots <= expect + 1);
+        }
+        s.stop();
+    }
+}
+
 static void testMapVote(uint16_t port) {
     printf("vote to change map / mode\n");
     Server s;
@@ -1365,7 +1434,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(29900); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = 29800; testArenaAndTourney(p); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = 29700; testWeapons(p); testRocketSelfDamage(p + 20); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = 29700; testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); return g_fail ? 1 : 0; }
     testSession(MODE_VS, "arena", port++);
     testSession(MODE_BOMB, "arena", port++);
     testSession(MODE_KOTH, "arena", port++);
@@ -1378,6 +1447,7 @@ int main(int argc, char** argv) {
     testCartDash(port++);
     testSemiAuto(port++);
     testMapVote(port++);
+    testAltFires(port); port += 3;
     testMapDownload(port++);
     testEditSession(port++);
     testRanked(port); port += 3;

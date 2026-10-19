@@ -151,7 +151,7 @@ inline const WeaponDef& weaponDef(int w) {
     static const WeaponDef defs[WPN_COUNT] = {
         // Tuned by the owner (0.15.1). Perfect-aim time to kill from 100 hp in the trailing comment.
         //  name        refire   dmg    range   proj  speed  splash spread scoped zoom   beam  pel grav  sticky life
-        {"RIFLE",       2.0f/9,  7,     300.0f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 15 shots, 3.1 s
+        {"RIFLE",       2.0f/9,  7,     300.0f, false,  0,    0,     0.0f,  0.0f, 60.0f,  false, 1,  0,    false, 0},  // 15 shots, 3.1 s (scoped: half fire rate)
         {"ROCKET",      2.0f,    40,      0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  12.0f, false, 5}, // 3, 4.0 s
         {"KNIFE",       0.7f,    40,      2.8f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 3, 1.4 s
         {"SNIPER",      2.0f,    40,    500.0f, false,  0,    0,     0.09f, 0.0f, 45.0f,  false, 1,  0,    false, 0},  // 3, 4.0 s
@@ -162,6 +162,23 @@ inline const WeaponDef& weaponDef(int w) {
     };
     return defs[w < 0 || w >= WPN_COUNT ? 0 : w];
 }
+// Alt-fires: knife throw (a projectile that hits for knife damage), shotgun bouncing pellets (ricochet off
+// walls, half damage), rifle scope (zooms like the sniper, half the fire rate).
+constexpr float kKnifeThrowSpeed = 38.0f, kKnifeThrowGravity = 14.0f, kKnifeThrowLife = 2.0f, kKnifeThrowRefire = 1.0f;
+constexpr int kShotgunBounces = 2;
+constexpr float kShotgunBounceDamage = 0.5f;
+constexpr float kRifleScopedRefire = 2.0f; // refire multiplier while scoped
+// The refire for this shot: alt-fire modes change it.
+inline float shotRefire(int w, bool alt) {
+    float r = weaponDef(w).refire;
+    if (alt && w == WPN_KNIFE) return kKnifeThrowRefire;            // knife throw
+    if (alt && w == WPN_RIFLE) return r * kRifleScopedRefire;       // scoped rifle
+    return r;
+}
+// Slot order (number keys, scroll wheel, HUD list): the weapon ids themselves stay as they are.
+constexpr int kWeaponSlots[WPN_COUNT] = {WPN_ROCKET, WPN_RIFLE, WPN_LASER, WPN_SHOTGUN, WPN_SNIPER, WPN_STICKY, WPN_CROSSBOW, WPN_KNIFE};
+inline int weaponSlot(int w) { for (int i = 0; i < WPN_COUNT; i++) if (kWeaponSlots[i] == w) return i; return 0; }
+inline bool altFires(int w) { return w == WPN_KNIFE || w == WPN_SHOTGUN; } // knife (throw) and shotgun (bounce): alt-fire is a shot of its own
 constexpr int kMaxStickies = 6;       // per player; firing a 7th removes the oldest
 constexpr float kStickyArmTime = 0.35f;
 

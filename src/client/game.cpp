@@ -368,12 +368,13 @@ bool Game::pressInput(int code) {
     // weapons outside this mode's pool (1v1 rulesets, duel modifiers) are skipped
     uint16_t pool = net_.mode().weaponMask;
     auto allowed = [&](int w) { return !pool || (pool >> w & 1); };
-    for (int w = 0; w < WPN_COUNT; w++) if (b.has(A_WEAPON1 + w, code)) { if (allowed(w)) desiredWeapon_ = w; return true; }
-    int cur = desiredWeapon_ >= 0 ? desiredWeapon_ : net_.selfWeapon();
+    for (int k = 0; k < WPN_COUNT; k++) // slot keys 1-8, in kWeaponSlots order
+        if (b.has(A_WEAPON1 + k, code)) { int w = kWeaponSlots[k]; if (allowed(w)) desiredWeapon_ = w; return true; }
+    int cur = weaponSlot(desiredWeapon_ >= 0 ? desiredWeapon_ : net_.selfWeapon());
     for (int dir : {1, -1}) {
         if (!b.has(dir > 0 ? A_NEXTWEAPON : A_PREVWEAPON, code)) continue;
         for (int k = 1; k <= WPN_COUNT; k++) {
-            int w = (cur + dir * k + WPN_COUNT * 2) % WPN_COUNT;
+            int w = kWeaponSlots[(cur + dir * k + WPN_COUNT * 2) % WPN_COUNT];
             if (allowed(w)) { desiredWeapon_ = w; break; }
         }
         return true;
@@ -678,7 +679,8 @@ void Game::frame(double dt) {
         while (tickAcc_ >= period) {
             UserCmd c = buildCmd();
             // local fire feedback (server is authoritative for damage)
-            bool wantFire = (c.buttons & BTN_FIRE) != 0;
+            bool altShot = altFires(net_.selfWeapon()) && (c.buttons & BTN_ALTFIRE); // knife throw / shotgun bounce
+            bool wantFire = (c.buttons & BTN_FIRE) != 0 || altShot;
             if (weaponDef(net_.selfWeapon()).semiAuto) { // mirror the server: one shot per click, short buffer
                 if (wantFire && !localFireHeld_) localFireQueued_ = time_ + kFireBuffer;
                 localFireHeld_ = wantFire;
@@ -687,15 +689,16 @@ void Game::frame(double dt) {
             if (wantFire && net_.selfAlive() && time_ >= localNextFire_ && net_.mode().phase != PHASE_FREEZE) {
                 localFireQueued_ = -1;
                 int w = net_.selfWeapon();
-                localNextFire_ = time_ + weaponDef(w).refire;
+                bool alt = (c.buttons & BTN_ALTFIRE) != 0;
+                localNextFire_ = time_ + shotRefire(w, alt);
                 if (w != WPN_LASER || time_ >= nextLaserSound_) { // laser fires every 10 ms: sound at 20 Hz
                     audio_.play(SND_RIFLE + w, w == WPN_LASER ? 0.6f : 0.8f, 0.97f + (rand() % 7) * 0.01f);
                     nextLaserSound_ = time_ + 0.05;
                 }
-                if (w == WPN_KNIFE) knifeSlash_[net_.clientId() % kMaxPlayers] = time_;
+                if (w == WPN_KNIFE && !alt) knifeSlash_[net_.clientId() % kMaxPlayers] = time_;
                 recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
                 if (w == WPN_LASER) laserUntil_ = time_ + 0.07;
-                else if (!weaponDef(w).projectile && w != WPN_KNIFE) {
+                else if (!weaponDef(w).projectile && w != WPN_KNIFE) { // (knife throw: the projectile shows it)
                     const MoveState& m = net_.predicted();
                     Vec3 eye = m.pos + Vec3(0, (m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight, 0);
                     Vec3 aim = angleForward(yaw_, pitch_);
@@ -709,9 +712,23 @@ void Game::frame(double dt) {
                             spreadOffset(net_.nextSeq(), k, spread, a, r);
                             d = normalize(aim + right * (std::cos(a) * r) + up * (std::sin(a) * r));
                         }
+                        Vec3 from = eye + aim * 0.5f + right * 0.15f - Vec3(0, 0.12f, 0);
+                        if (w == WPN_SHOTGUN && alt) { // ricochet: draw each leg (players ignored, like the server's walls)
+                            Vec3 o = eye;
+                            float range = wd.range;
+                            for (int b = 0; b <= kShotgunBounces && range > 0.01f; b++) {
+                                Vec3 n;
+                                float t = net_.map().raycast(o, d, range, &n);
+                                Vec3 to = o + d * (t < 0 ? range : t);
+                                tracers_.push_back({b ? o : from, to, time_ + 0.3});
+                                if (t < 0) break;
+                                o = to + n * 0.01f; d = d - n * (2.0f * dot(d, n)); range -= t;
+                            }
+                            continue;
+                        }
                         float bangT, t = net_.map().raycastBullet(eye, d, wd.range, &bangT);
                         if (t < 0) t = wd.range;
-                        tracers_.push_back({eye + aim * 0.5f + right * 0.15f - Vec3(0, 0.12f, 0), eye + d * t, time_ + (w == WPN_SNIPER ? 0.9 : 0.25)});
+                        tracers_.push_back({from, eye + d * t, time_ + (w == WPN_SNIPER ? 0.9 : 0.25)});
                     }
                 }
             }
@@ -927,6 +944,9 @@ void Game::drawWorld(float alpha) {
             bool resting = sp < 0.01f; // stuck: pulse so they're easy to spot
             float k = resting ? 0.75f + 0.25f * std::sin((float)time_ * 10) : 1.0f;
             r_.box(pr.pos, {0.14f, 0.14f, 0.14f}, (float)time_ * (resting ? 0 : 6), col * k, 1.0f);
+        } else if (pr.type == WPN_KNIFE) { // thrown knife: spins end over end
+            r_.boxPitched(pr.pos, {0, 0, 0}, {0.012f, 0.03f, 0.18f}, yaw, (float)time_ * 25.0f, {0.75f, 0.77f, 0.8f}, 1.0f);
+            r_.line(pr.pos, pr.pos - dir * 2.0f, 0.03f, rgba(col, 0.4f));
         } else if (pr.type == WPN_CROSSBOW) {
             r_.boxPitched(pr.pos, {0, 0, 0}, {0.03f, 0.03f, 0.35f}, yaw, std::asin(clampf(dir.y, -1, 1)), {0.1f, 0.1f, 0.12f}, 1.0f);
             r_.line(pr.pos, pr.pos - dir * 4.0f, 0.04f, rgba(col, 0.5f));
@@ -1119,7 +1139,7 @@ void Game::drawHud() {
         r_.rect(cx - 0.5f, cy - R, 1, 2 * R, {0, 0, 0, 0.9f});
     }
     // crosshair (scoped: the scope's reticle replaces it)
-    if (!(scoped_ && scopeOverlay_)) drawCrosshair(cx, cy, s, time_ < hitUntil_);
+    if (!(scoped_ && scopeOverlay_) && !paused_) drawCrosshair(cx, cy, s, time_ < hitUntil_); // menus open: no crosshair through them
     {   // floating damage numbers above whoever you hit
         auto ip = net_.interpolatedPlayers();
         for (size_t i = 0; i < dmgNums_.size();) {
@@ -1154,7 +1174,9 @@ void Game::drawHud() {
             phase = ms.timeLeft > 0 ? "MATCH STARTS IN " + std::to_string((int)std::ceil(ms.timeLeft))
                                     : "WARMUP - " + inputName(cfg_.binds.code[A_VOTESTART][0]) + " TO VOTE START";
             break;
-        case PHASE_FREEZE: phase = "ROUND " + std::to_string(ms.round) + " - " + std::to_string((int)std::ceil(ms.timeLeft)); break;
+        case PHASE_FREEZE: // free for all is one long round: just the countdown
+            phase = (ms.mode == MODE_FFA ? std::string("STARTING IN ") : "ROUND " + std::to_string(ms.round) + " - STARTS IN ") + std::to_string((int)std::ceil(ms.timeLeft));
+            break;
         case PHASE_LIVE:
             if (ms.mode == MODE_VS || ms.mode == MODE_DUEL || ms.mode == MODE_ARENA || ms.mode == MODE_TOURNEY) phase = (ms.flags & MS_DRAIN) ? "STALEMATE - HEALTH DRAINING" : "DRAIN IN " + fmtTime(ms.timeLeft);
             else if (ms.mode == MODE_KOTH) phase = "FIRST TO " + std::to_string(ms.target);
@@ -1261,7 +1283,7 @@ void Game::drawHud() {
             r_.text(W - 24 * s + e.x * s - r_.textWidth(wn, wts), H - 50 * s * e.scale + e.y * s, wts, wn, tint(Settings::HUD_WEAPON, kWhite));
         }
         const MoveState& mv = net_.predicted();
-        {   // dash + grapple cooldown bars under the crosshair (full = ready)
+        if (!paused_) {   // dash + grapple cooldown bars under the crosshair (full = ready); hidden behind menus
             auto e = he(Settings::HUD_BARS);
             float k = s * e.scale, bcx = cx + e.x * s, bcy = cy + e.y * s;
             Color full = tint(Settings::HUD_BARS, fc);
@@ -1278,7 +1300,7 @@ void Game::drawHud() {
             bar(bcy + 52 * k, "DASH", mv.dashCooldown, kDashCooldown);
             bar(bcy + 64 * k, "HOOK", mv.hookCooldown, kHookCooldown);
         }
-        {   // speed meter: speed is unbounded, so the bar fills on a saturating exponential curve
+        if (!paused_) {   // speed meter: speed is unbounded, so the bar fills on a saturating exponential curve
             // (1 - e^(-v/20)): half full at ~14 m/s, 90% at ~46 m/s, always room to grow. Number shows the real value.
             auto e = he(Settings::HUD_SPEED);
             float k = s * e.scale, bcx = cx + e.x * s, y = cy + 80 * k + e.y * s;
@@ -1295,12 +1317,13 @@ void Game::drawHud() {
             r_.text(bx - r_.textWidth("SPEED", lts) - 6 * k, y - 2 * k, lts, "SPEED", kWhite);
             r_.text(bx + bw + 6 * k, y - 2 * k, lts, buf, kWhite);
         }
-        {   // weapon slots: 1 rifle, 2 rocket, 3 knife, 4 sniper, 5 laser
+        {   // weapon slots in kWeaponSlots order: 1 rocket, 2 rifle, 3 laser, ...
             auto e = he(Settings::HUD_SLOTS);
             float bx = W - 24 * s + e.x * s;
             float sts = std::max(1.0f, std::round(ts * 0.75f * e.scale));
-            for (int wi = WPN_COUNT - 1; wi >= 0; wi--) {
-                std::string t = std::to_string(wi + 1) + " " + weaponDef(wi).name;
+            for (int k = WPN_COUNT - 1; k >= 0; k--) {
+                int wi = kWeaponSlots[k];
+                std::string t = std::to_string(k + 1) + " " + weaponDef(wi).name;
                 float tw = r_.textWidth(t, sts);
                 bx -= tw + 14 * s * e.scale;
                 bool inPool = !ms.weaponMask || (ms.weaponMask >> wi & 1);
@@ -1347,12 +1370,12 @@ void Game::drawHud() {
 
     // host info
     if (host_ && paused_) {
+        // under the top panel, clear of the pause menu
         std::string st = "HOSTING ON UDP PORT " + std::to_string(host_->port());
-        ui_.labelCentered(cx, H - 120 * s, st, kGrey);
-        if (host_->config().upnp && host_->upnpStatus().size()) ui_.labelCentered(cx, H - 100 * s, host_->upnpStatus(), kGrey);
-        std::string ls = host_->listStatus();
-        for (auto& ch : ls) ch = (char)toupper((unsigned char)ch);
-        if (!ls.empty()) ui_.labelCentered(cx, H - 80 * s, ls, kGrey);
+        ui_.labelCentered(cx, 100 * s, st, kGrey, 0.6f);
+        if (host_->config().upnp && host_->upnpStatus().size()) ui_.labelCentered(cx, 114 * s, upper(host_->upnpStatus()), kGrey, 0.6f);
+        std::string ls = upper(host_->listStatus());
+        if (!ls.empty()) ui_.labelCentered(cx, 128 * s, ls, kGrey, 0.6f);
     }
 
     showScores_ = isDown(A_SCORES) || ms.phase == PHASE_MATCH_END;
@@ -1459,15 +1482,15 @@ void Game::drawVoteMenu(float cx, float y) {
     };
     if (warmup) { voteBtn(x, w, "START THE MATCH", "start"); y += h + gap; }
     if (warmup && tourney) {
-        if (ui_.button(x, y, hw, h, "TOURNEY MAPS...")) { multiSel_.clear(); picker_ = PICK_TMAPS; }
-        if (ui_.button(x + hw + gap, y, hw, h, "TOURNEY RULES...")) { multiSel_.clear(); picker_ = PICK_TMODES; }
+        if (ui_.button(x, y, hw, h, "TOURNEY MAPS")) { multiSel_.clear(); picker_ = PICK_TMAPS; }
+        if (ui_.button(x + hw + gap, y, hw, h, "TOURNEY RULES")) { multiSel_.clear(); picker_ = PICK_TMODES; }
         y += h + gap;
     }
-    if (ui_.button(x, y, hw, h, "MODE...")) openLivePicker(PICK_LIVE_MODE, true);
-    if (ui_.button(x + hw + gap, y, hw, h, "MAP...") && !maps_.empty()) openLivePicker(PICK_LIVE_MAP, true);
+    if (ui_.button(x, y, hw, h, "MODE")) openLivePicker(PICK_LIVE_MODE, true);
+    if (ui_.button(x + hw + gap, y, hw, h, "MAP") && !maps_.empty()) openLivePicker(PICK_LIVE_MAP, true);
     y += h + gap;
     // ranked: on with a ladder / switch ladder / off (no bots while it's on)
-    if (ui_.button(x, y, ranked ? hw : w, h, ranked ? "LADDER..." : "RANKED ON...")) { variantCtx_ = 2; livePickVote_ = true; picker_ = PICK_RANKED; }
+    if (ui_.button(x, y, ranked ? hw : w, h, ranked ? "LADDER" : "RANKED")) { variantCtx_ = 2; livePickVote_ = true; picker_ = PICK_RANKED; }
     if (ranked) voteBtn(x + hw + gap, hw, "RANKED OFF", "ranked off");
     y += h + gap;
     if (!ranked) { // edit the map together; on a normal server the changes last until the map changes
@@ -1481,7 +1504,8 @@ void Game::drawVoteMenu(float cx, float y) {
         for (int k = 0; k < 4; k++) {
             if (k == 2) y += h + gap;
             float bx = x + (k % 2) * (qw + gap);
-            if (ui_.button(bx, y, qw, h, std::string(k == 1 ? "MEDIUM" : skills[k]) + " BOTS")) {
+            static const char* shortName[4] = {"EASY", "MEDIUM", "HARD", "EXPERT"};
+            if (ui_.button(bx, y, qw, h, std::string(shortName[k]) + " BOTS")) {
                 net_.sendCommand(std::string("callvote botskill ") + skills[k]); voteMenu_ = false; paused_ = false;
             }
         }
@@ -1515,7 +1539,7 @@ void Game::drawPauseMenu(float cx, float y) {
     }
     if (ui_.button(x, y, w, h, "SPECTATE")) { net_.sendCommand("team spec"); paused_ = false; }
     y += h + gap;
-    if (ui_.button(x, y, w, h, "VOTE...")) voteMenu_ = true;
+    if (ui_.button(x, y, w, h, "VOTE")) voteMenu_ = true;
     y += h + gap;
     if (host_) {
         // Host controls: change mode/map live.

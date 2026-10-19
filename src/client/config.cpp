@@ -84,6 +84,8 @@ void Settings::load() {
             if (a >= 0 && a < A_COUNT && sscanf(v.c_str(), "%d,%d", &c0, &c1) >= 1) { binds.code[a][0] = c0; binds.code[a][1] = c1; }
         }
     }
+    // old default chat keys (T / Y) move to the new default, Enter; a key someone picked themselves stays
+    if (binds.code[A_CHAT][0] == 84 && binds.code[A_CHAT][1] == 89) { binds.code[A_CHAT][0] = 257; binds.code[A_CHAT][1] = 335; } // GLFW T, Y -> ENTER, KP_ENTER
     if (width < 320) width = 1280;
     if (height < 240) height = 720;
 }

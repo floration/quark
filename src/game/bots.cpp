@@ -95,12 +95,19 @@ Vec3 objective(Server& s, int id, BotBrain& b) {
     return b.goal;
 }
 
-int pickWeapon(const SkillParams& sp, float dist) {
-    if (!sp.weapons) return WPN_RIFLE;
-    if (dist < 7.0f) return WPN_SHOTGUN;
-    if (dist < 18.0f) return sp.lead ? WPN_ROCKET : WPN_RIFLE;
-    if (dist > 35.0f && sp.lead) return WPN_SNIPER;
-    return sp.lead ? WPN_CROSSBOW : WPN_RIFLE;
+// Best weapon for the range that this mode allows (1v1 rulesets / duel lives restrict the pool).
+// Beginners stick to the rifle when they can.
+int pickWeapon(const Server& s, const SkillParams& sp, float dist) {
+    static const int close[] = {WPN_SHOTGUN, WPN_KNIFE, WPN_LASER, WPN_ROCKET, WPN_RIFLE, WPN_STICKY, WPN_CROSSBOW, WPN_SNIPER};
+    static const int mid[]   = {WPN_ROCKET, WPN_LASER, WPN_RIFLE, WPN_STICKY, WPN_CROSSBOW, WPN_SHOTGUN, WPN_SNIPER, WPN_KNIFE};
+    static const int midNoLead[] = {WPN_RIFLE, WPN_LASER, WPN_SHOTGUN, WPN_ROCKET, WPN_STICKY, WPN_CROSSBOW, WPN_SNIPER, WPN_KNIFE};
+    static const int far[]   = {WPN_CROSSBOW, WPN_RIFLE, WPN_SNIPER, WPN_LASER, WPN_ROCKET, WPN_STICKY, WPN_SHOTGUN, WPN_KNIFE};
+    static const int farNoLead[] = {WPN_RIFLE, WPN_SNIPER, WPN_LASER, WPN_CROSSBOW, WPN_ROCKET, WPN_STICKY, WPN_SHOTGUN, WPN_KNIFE};
+    static const int vfar[]  = {WPN_SNIPER, WPN_CROSSBOW, WPN_RIFLE, WPN_ROCKET, WPN_STICKY, WPN_LASER, WPN_SHOTGUN, WPN_KNIFE};
+    if (!sp.weapons && s.weaponAllowed(WPN_RIFLE)) return WPN_RIFLE;
+    const int* order = dist < 7 ? close : dist < 18 ? (sp.lead ? mid : midNoLead) : dist < 35 ? (sp.lead ? far : farNoLead) : (sp.lead ? vfar : farNoLead);
+    for (int k = 0; k < WPN_COUNT; k++) if (s.weaponAllowed(order[k])) return order[k];
+    return WPN_RIFLE;
 }
 
 } // namespace
@@ -257,9 +264,15 @@ UserCmd botThink(Server& s, int id) {
         const ServerPlayer& t = s.players_[b.target];
         Vec3 aimAt = t.move.pos + Vec3(0, 1.1f, 0);
         dist = length(aimAt - eye);
-        int w = b.forceWeapon >= 0 ? b.forceWeapon : pickWeapon(sp, dist);
+        int w = b.forceWeapon >= 0 ? b.forceWeapon : pickWeapon(s, sp, dist);
         const WeaponDef& wd = weaponDef(w);
+        bool throwKnife = w == WPN_KNIFE && dist > wd.range + 0.5f && dist < 18.0f && sp.lead; // out of reach: throw it
         aimAt -= t.move.vel * sp.trackLag; // reacts to movement late: trails strafing targets
+        if (throwKnife) {
+            float tf = dist / kKnifeThrowSpeed;
+            aimAt += t.move.vel * tf;
+            aimAt.y += 0.5f * kKnifeThrowGravity * tf * tf;
+        }
         if (wd.projectile) {
             if (sp.lead) aimAt += t.move.vel * (dist / wd.projSpeed);
             if (w == WPN_ROCKET) aimAt.y = t.move.pos.y + 0.1f; // splash at the feet
@@ -286,15 +299,26 @@ UserCmd botThink(Server& s, int id) {
         if (me.weapon != w) cmd.weapon = (uint8_t)w;
         // fire once the reaction time has passed and the aim is close enough
         float err = std::fabs(angleDiff(b.aimYaw, wantYaw)) + std::fabs(b.aimPitch - wantPitch);
-        if (now - b.seenAt >= sp.reaction && err < sp.fireCone + 0.3f / std::max(dist, 1.0f)) cmd.buttons |= BTN_FIRE;
+        bool ready = now - b.seenAt >= sp.reaction && err < sp.fireCone + 0.3f / std::max(dist, 1.0f);
+        bool knifeOut = w == WPN_KNIFE && !throwKnife && dist > wd.range + 0.3f; // closing in to stab: don't swing at air
+        if (ready && !knifeOut) cmd.buttons |= throwKnife ? BTN_ALTFIRE : BTN_FIRE;
         if (w == WPN_SNIPER) cmd.buttons |= BTN_ALTFIRE;
+        if (w == WPN_RIFLE && dist > 30.0f && sp.lead) cmd.buttons |= BTN_ALTFIRE; // scope in for long shots
+        if (me.weapon == WPN_STICKY) { // set off our stickies when the target is in the blast
+            for (const auto& pr : s.projectiles_)
+                if (pr.active && pr.owner == id && pr.type == WPN_STICKY && length(pr.pos - (t.move.pos + Vec3(0, 0.9f, 0))) < weaponDef(WPN_STICKY).splashRadius * 0.7f) {
+                    cmd.buttons |= BTN_ALTFIRE;
+                    break;
+                }
+        }
         // semi-auto: let go between shots (a click is buffered until the weapon is ready)
         if (weaponDef(me.weapon).semiAuto && (me.buttons & BTN_FIRE)) cmd.buttons &= ~BTN_FIRE;
         // fight movement: keep a good range for the weapon, strafe to dodge
         Vec3 to = t.move.pos - me.move.pos;
         to.y = 0;
         Vec3 toN = normalize(to);
-        float ideal = w == WPN_SHOTGUN ? 4.0f : w == WPN_SNIPER ? 40.0f : 14.0f;
+        float ideal = w == WPN_SHOTGUN ? 4.0f : w == WPN_SNIPER ? 40.0f : w == WPN_KNIFE ? 1.5f : w == WPN_LASER ? 12.0f
+                    : w == WPN_STICKY ? 10.0f : w == WPN_CROSSBOW ? 22.0f : w == WPN_RIFLE ? 18.0f : 14.0f;
         moveDir = toN * (dist > ideal + 3 ? 1.0f : dist < ideal - 3 ? -1.0f : 0.0f);
         if (sp.strafe) {
             if (now >= b.strafeSwitchAt) { b.strafeDir = rnd(b) < 0.5f ? -1.0f : 1.0f; b.strafeSwitchAt = now + 0.25f + rnd(b) * 0.6f; }

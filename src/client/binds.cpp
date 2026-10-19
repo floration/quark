@@ -20,7 +20,7 @@ void Binds::setDefaults() {
     set(A_NEXTWEAPON, kWheelDown);
     set(A_PREVWEAPON, kWheelUp);
     set(A_SCORES, GLFW_KEY_TAB);
-    set(A_CHAT, GLFW_KEY_T, GLFW_KEY_Y);
+    set(A_CHAT, GLFW_KEY_ENTER, GLFW_KEY_KP_ENTER);
     set(A_VOTEYES, GLFW_KEY_F1);
     set(A_VOTENO, GLFW_KEY_F2);
     set(A_PERF, GLFW_KEY_F3);
@@ -31,7 +31,7 @@ void Binds::setDefaults() {
 const char* actionName(int a) {
     static const char* n[A_COUNT] = {
         "FORWARD", "BACK", "LEFT", "RIGHT", "JUMP", "CROUCH", "FIRE", "ALT FIRE", "USE", "DASH", "GRAPPLE",
-        "RIFLE", "ROCKET", "KNIFE", "SNIPER", "LASER", "SHOTGUN", "STICKY", "CROSSBOW",
+        "ROCKET", "RIFLE", "LASER", "SHOTGUN", "SNIPER", "STICKY", "CROSSBOW", "KNIFE", // weapon slots 1-8
         "NEXT WEAP", "PREV WEAP", "SCOREBOARD", "CHAT", "VOTE YES", "VOTE NO", "PERF STATS", "SCREENSHOT", "VOTE START", "(UNUSED)",
     };
     return a >= 0 && a < A_COUNT ? n[a] : "?";
@@ -58,6 +58,7 @@ std::string inputName(int c) {
         case GLFW_KEY_RIGHT_ALT: return "R ALT";
         case GLFW_KEY_TAB: return "TAB";
         case GLFW_KEY_ENTER: return "ENTER";
+        case GLFW_KEY_KP_ENTER: return "KP ENTER";
         case GLFW_KEY_BACKSPACE: return "BACKSPACE";
         case GLFW_KEY_CAPS_LOCK: return "CAPS LOCK";
         case GLFW_KEY_UP: return "UP";

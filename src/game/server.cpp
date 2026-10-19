@@ -851,7 +851,9 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
                 pr.active = false;
                 explode(pr.pos, id, WPN_STICKY);
             }
-    bool wantFire = (cmd.buttons & BTN_FIRE) != 0;
+    // Knife and shotgun: alt-fire is its own shot (throw / bouncing pellets); it takes priority over fire.
+    bool altShot = altFires(p.weapon) && (cmd.buttons & BTN_ALTFIRE);
+    bool wantFire = (cmd.buttons & BTN_FIRE) != 0 || altShot;
     if (weaponDef(p.weapon).semiAuto) { // one shot per click
         if (wantFire && !(p.prevButtons & BTN_FIRE)) p.fireQueuedUntil = time() + kFireBuffer;
         wantFire = time() <= p.fireQueuedUntil;
@@ -862,8 +864,8 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
         // Holding fire keeps an exact cadence, catching up shots that fell between commands (the laser
         // fires every 1 ms, so late or batched commands must not drop shots). After a pause, or more
         // than 100 ms behind, the timer restarts from now.
-        float refire = weaponDef(p.weapon).refire;
-        bool held = (p.prevButtons & BTN_FIRE) != 0;
+        float refire = shotRefire(p.weapon, (cmd.buttons & BTN_ALTFIRE) != 0);
+        bool held = (p.prevButtons & (altShot ? BTN_ALTFIRE : BTN_FIRE)) != 0;
         p.nextFire = (held && time() - p.nextFire < 0.1f) ? p.nextFire + refire : time() + refire;
         p.lastFire = time();
         fireWeapon(id, cmd);
@@ -902,6 +904,35 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
     if (hit >= 0) dmgPer[hit] += (bang >= 0 && best > bang) ? dmg * kWallbangDamage : dmg;
 }
 
+// A pellet that ricochets: straight until it hits a player (done) or a wall, then reflects off it, up to
+// kShotgunBounces times, with whatever range is left. Players are tested where the shooter saw them.
+void Server::bounceShot(int id, Vec3 o, Vec3 dir, float range, uint32_t vt, float* dmgPer, float dmg) {
+    for (int b = 0; b <= kShotgunBounces && range > 0.01f; b++) {
+        Vec3 n;
+        float wall = map_.raycast(o, dir, range, &n);
+        float best = wall >= 0 ? wall : range;
+        int hit = -1;
+        Vec3 inv = safeInv(dir);
+        for (int i = 0; i < kMaxPlayers; i++) {
+            if (i == id || !players_[i].connected || !players_[i].alive) continue; // your own ricochets never hit you
+            Vec3 pos = players_[i].move.pos;
+            bool crouched = players_[i].move.flags & MF_CROUCHED;
+            for (uint32_t k = 1; k <= (uint32_t)ServerPlayer::kHistory && k <= tick_; k++) {
+                const auto& h = players_[i].history[(tick_ - k) % ServerPlayer::kHistory];
+                if (h.tick == 0xFFFFFFFFu || h.tick > timeMs_) break;
+                if (h.tick <= vt) { if (h.alive) { pos = h.pos; crouched = h.crouched; } break; }
+            }
+            float t = rayAABB(o, inv, hitBox(pos, crouched), best);
+            if (t >= 0 && t < best) { best = t; hit = i; }
+        }
+        if (hit >= 0) { dmgPer[hit] += dmg; return; }
+        if (wall < 0) return;
+        o = o + dir * wall + n * 0.01f;
+        dir = dir - n * (2.0f * dot(dir, n));
+        range -= wall;
+    }
+}
+
 void Server::fireWeapon(int id, const UserCmd& cmd) {
     ServerPlayer& p = players_[id];
     const WeaponDef& wd = weaponDef(p.weapon);
@@ -911,6 +942,22 @@ void Server::fireWeapon(int id, const UserCmd& cmd) {
     bool scoped = wd.scopedSpread >= 0 && (cmd.buttons & BTN_ALTFIRE);
     float spread = scoped ? wd.scopedSpread : wd.spread;
 
+    bool alt = (cmd.buttons & BTN_ALTFIRE) != 0;
+    if (p.weapon == WPN_KNIFE && alt) { // thrown knife: a fast arcing projectile, hits for knife damage
+        for (auto& pr : projectiles_) {
+            if (pr.active) continue;
+            pr = Projectile();
+            pr.active = true;
+            pr.id = nextProjId_++;
+            pr.type = WPN_KNIFE;
+            pr.owner = id;
+            pr.pos = eye + aim * 0.3f;
+            pr.vel = aim * kKnifeThrowSpeed;
+            pr.dieAt = time() + kKnifeThrowLife;
+            return;
+        }
+        return;
+    }
     if (wd.projectile) {
         if (wd.sticky) { // too many out: the oldest one fizzles
             int count = 0, oldest = -1;
@@ -946,7 +993,12 @@ void Server::fireWeapon(int id, const UserCmd& cmd) {
     // Laser alt-fire is a tractor beam: pulls the target toward you for a little less damage.
     bool pull = wd.beam && (cmd.buttons & BTN_ALTFIRE);
     float dmg = wd.damage * (pull ? kLaserPullDamage : 1.0f);
-    for (int k = 0; k < wd.pellets; k++) hitscan(id, eye, spreadDir(aim, spread, cmd.seq, k), range, vt, dmgPer, dmg);
+    bool bounce = p.weapon == WPN_SHOTGUN && alt; // ricochet pellets: half damage, off up to 2 walls
+    for (int k = 0; k < wd.pellets; k++) {
+        Vec3 d = spreadDir(aim, spread, cmd.seq, k);
+        if (bounce) bounceShot(id, eye, d, range, vt, dmgPer, dmg * kShotgunBounceDamage);
+        else hitscan(id, eye, d, range, vt, dmgPer, dmg);
+    }
     for (int i = 0; i < kMaxPlayers; i++) {
         if (dmgPer[i] <= 0) continue;
         Vec3 knock = aim * (wd.pellets > 1 ? 0.15f * dmgPer[i] / wd.damage : 1.0f);
@@ -965,7 +1017,7 @@ void Server::tickProjectiles() {
         }
         if (pr.stuck) continue;
         const WeaponDef& wd = weaponDef(pr.type);
-        pr.vel.y -= wd.gravity * dt();
+        pr.vel.y -= (pr.type == WPN_KNIFE ? kKnifeThrowGravity : wd.gravity) * dt();
         Vec3 step = pr.vel * dt();
         float len = length(step);
         if (len < 1e-6f) continue;
@@ -996,7 +1048,7 @@ void Server::tickProjectiles() {
                     pr.cartOffset = pr.pos - map_.payloadPoint(ms_.payloadDist);
                 }
             }
-        } else if (wd.splashRadius <= 0) { // crossbow bolt: direct hit only
+        } else if (wd.splashRadius <= 0) { // crossbow bolt / thrown knife: direct hit only
             if (hitPlayer >= 0) damagePlayer(hitPlayer, pr.owner, (float)wd.damage, pr.type, dir * 3.0f);
             pr.active = false;
         } else {
