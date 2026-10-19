@@ -856,6 +856,70 @@ static void testMapDownload(uint16_t port) {
     s.stop();
 }
 
+// Map edit session: edits from any client reach everyone (and late joiners), the host's file is autosaved,
+// and the session switches to playing the map and back.
+static void testEditSession(uint16_t port) {
+    printf("multiplayer map editing\n");
+    Map base;
+    CHECK(base.load("arena"));
+    char tag[16];
+    snprintf(tag, sizeof tag, "%u", (unsigned)rand());
+    std::string name = std::string("zz_edtest") + tag, path = findDataPath("maps") + "/" + name + ".qmap";
+    CHECK(saveMapFile(path, base.serialize()));
+    Server s;
+    ServerConfig cfg;
+    cfg.map = name; cfg.mode = MODE_FFA; cfg.port = port; cfg.editMode = true;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; std::remove(path.c_str()); return; }
+    NetClient a, b;
+    a.connect("127.0.0.1:" + std::to_string(port), "a");
+    b.connect("127.0.0.1:" + std::to_string(port), "b");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 1.0, idle);
+    CHECK(a.mapReady() && b.mapReady() && a.hasSnapshot() && (a.mode().flags & MS_EDITING));
+    size_t nb = base.brushes.size();
+    a.sendCommand("ed b ins " + std::to_string(nb) + " 1 0 10 0 2 11 2");
+    b.sendCommand("ed l ins 0 0 5 0 12 1.5");
+    b.sendCommand("ed b set 0 2 -34 -1 -34 34 0 34");
+    a.sendCommand("ed s del 999"); // refused
+    pump(s, cls, 0.5, idle);
+    CHECK(s.map_.brushes.size() == nb + 1 && s.map_.lights.size() == base.lights.size() + 1 && s.map_.brushes[0].material == 2);
+    CHECK(a.map().crc == s.map_.crc && b.map().crc == s.map_.crc);
+    CHECK(a.map().brushes.size() == nb + 1 && b.map().lights.size() == s.map_.lights.size());
+    // a late joiner (its disk copy is the old file) gets the edited map
+    NetClient c;
+    c.connect("127.0.0.1:" + std::to_string(port), "c");
+    cls.push_back(&c);
+    a.sendCommand("ed t Edited Arena");
+    pump(s, cls, 1.5, idle);
+    CHECK(c.mapReady() && c.map().crc == s.map_.crc && c.map().title == "Edited Arena" && a.map().title == "Edited Arena");
+    // a burst of edits while c is connected
+    for (int k = 0; k < 20; k++) b.sendCommand("ed p ins " + std::to_string(k) + " " + std::to_string(k) + " 0 0");
+    pump(s, cls, 1.0, idle);
+    CHECK(a.map().crc == s.map_.crc && b.map().crc == s.map_.crc && c.map().crc == s.map_.crc);
+    // switch to playing it: autosaved first, everyone spawns, then back to editing
+    s.command("editmode off");
+    pump(s, cls, 7.0, idle);
+    CHECK(!(a.mode().flags & MS_EDITING) && !s.editing_);
+    Map saved;
+    CHECK(saved.load(name) && saved.crc == s.map_.crc && saved.title == "Edited Arena" && saved.brushes.size() == nb + 1);
+    CHECK(a.map().crc == s.map_.crc);
+    bool anyAlive = false;
+    for (auto& p : s.players_) anyAlive |= p.connected && p.alive;
+    CHECK(anyAlive);
+    s.command("editmode on");
+    pump(s, cls, 0.5, idle);
+    CHECK((a.mode().flags & MS_EDITING) && s.editing_);
+    for (auto& p : s.players_) CHECK(!p.alive);
+    a.sendCommand("ed b del 0");
+    pump(s, cls, 0.5, idle);
+    CHECK(c.map().crc == s.map_.crc && c.map().brushes.size() == nb);
+    s.stop(); // autosaves
+    CHECK(saved.load(name) && saved.brushes.size() == nb);
+    std::remove(path.c_str());
+    for (uint32_t crc : {a.map().crc, c.map().crc}) std::remove(downloadedMapPath(name, crc).c_str());
+}
+
 // 1v1 rulesets: weapon pools, instagib, no self damage, vampire. Tourney: 5 players (byes), the bracket
 // runs to a champion with map and ruleset rotation, non-players spectate.
 static void testArenaAndTourney(uint16_t& port) {
@@ -1125,6 +1189,7 @@ int main(int argc, char** argv) {
     testAllMaps();
     testGridQueries();
     uint16_t port = 28500;
+    if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(29600); testEditSession(29601); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(29900); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = 29800; testArenaAndTourney(p); return g_fail ? 1 : 0; }
@@ -1142,6 +1207,7 @@ int main(int argc, char** argv) {
     testSemiAuto(port++);
     testMapVote(port++);
     testMapDownload(port++);
+    testEditSession(port++);
     testArenaAndTourney(port);
     testNetcode(port); port += 2;
     testTickRateFallback(port++);

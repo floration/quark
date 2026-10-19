@@ -48,6 +48,7 @@ struct ServerConfig {
     // tourney: maps and 1v1 rulesets the matches rotate through (empty = current map / arenaVariant)
     std::vector<std::string> tourneyMaps;
     std::vector<int> tourneyVariants;
+    bool editMode = false;      // start as a map edit session (anyone connected can edit; the host autosaves)
 };
 enum LogLevel { LOG_OFF = 0, LOG_SIMPLE, LOG_VERBOSE, LOG_EXTREME };
 inline int logLevelFromName(const std::string& s) {
@@ -193,6 +194,13 @@ public:
     size_t snapBytes_ = 0, snapCount_ = 0; // snapshot bytes sent (stats for tests / logs)
     float hitAccum_[kMaxPlayers][kMaxPlayers] = {}, hitFlushAt_[kMaxPlayers][kMaxPlayers] = {};
     void flushHit(int attacker, int victim);
+    // Map edit sessions: everyone flies around and edits the map together; edits go through here so all
+    // copies stay identical. The map file is autosaved (it's the host's copy) while dirty.
+    bool editing_ = false, editDirty_ = false;
+    float nextAutosave_ = 0;
+    void setEditing(bool on);
+    bool applyEdit(int from, const std::string& op);
+    bool autosave();
     void handleStringCmdForTest(int id, const std::string& s) { handleStringCmd(id, s); }
     void glog(int level, const char* fmt, ...);   // game log file (no-op below cfg_.logLevel)
     int duelMod() const { return ms_.mode == MODE_DUEL ? ms_.duelMod : 255; } // 255 in warmup (rulesReset clears it)

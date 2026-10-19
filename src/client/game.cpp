@@ -47,7 +47,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     if (!r_.init(cfg_.shadowRes, err)) return false;
     rescanMaps();
     if (opts_.hostMode < 0 && opts_.vsBotsMode < 0 && opts_.connect.empty() && opts_.editMap.empty()) loadMenuBackdrop();
-    if (!opts_.editMap.empty()) openEditor(opts_.editMap);
+    if (!opts_.editMap.empty()) { openEditor(opts_.editMap); if (opts_.editSession) edHostSession(); }
     for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == cfg_.hostMap) hostMapIdx_ = (int)i;
     hostModeIdx_ = clampf((float)cfg_.hostMode, 0, MODE_COUNT - 1);
     cfg_.hostMaxPlayers = std::min(std::max(cfg_.hostMaxPlayers, 2), kMaxPlayers);
@@ -124,16 +124,26 @@ void Game::startHost(bool vsBots) {
         sc.botsEnemy = std::min(sc.botsEnemy, kMaxPlayers - 1 - sc.botsAlly);
         sc.arenaVariant = cfg_.botArenaVariant;
     }
-    if (!testMap_.empty()) { // play-testing from the editor: private, local only
+    if (!testMap_.empty()) { // from the editor: a private play-test, or an edit session others can join
         sc = ServerConfig();
-        sc.name = "map test";
         sc.map = testMap_;
         sc.mode = testMode_;
-        sc.port = 0;
-        sc.upnp = false;
-        sc.lanOnly = true;
-        sc.publicList = false;
         sc.maxPlayers = kMaxPlayers;
+        if (testEdit_) {
+            sc.name = cfg_.hostName + " (editing " + testMap_ + ")";
+            sc.editMode = true;
+            sc.port = (uint16_t)atoi(hostPortStr_.c_str());
+            if (sc.port == 0) sc.port = kDefaultPort;
+            sc.upnp = cfg_.hostUpnp;
+            sc.publicList = cfg_.hostPublic;
+            sc.maxPlayers = cfg_.hostMaxPlayers;
+        } else {
+            sc.name = "map test";
+            sc.port = 0;
+            sc.upnp = false;
+            sc.lanOnly = true;
+            sc.publicList = false;
+        }
         vsBots = true; // don't remember it as the host settings
     }
     host_ = std::make_unique<Server>();
@@ -142,6 +152,7 @@ void Game::startHost(bool vsBots) {
     if (!host_->start(sc, &e)) {
         error_ = "could not host: " + e;
         host_.reset();
+        if (!testMap_.empty()) { std::string m = testMap_; testMap_.clear(); testEdit_ = false; openEditor(m); edNotify(error_); return; }
         setScreen(vsBots ? Screen::VsBots : Screen::Host);
         return;
     }
@@ -171,11 +182,19 @@ void Game::connectTo(const std::string& rawAddr) {
     while (!addr.empty() && (unsigned char)addr.back() <= ' ') addr.pop_back();
     while (!addr.empty() && (unsigned char)addr[0] <= ' ') addr.erase(0, 1);
     if (!net_.connect(addr, cfg_.name)) { error_ = net_.error(); return; }
+    edSession_ = edOnline_ = false;
     if (!host_) { cfg_.lastAddress = addr; cfg_.save(); }
     setScreen(Screen::Connecting);
 }
 
 void Game::leaveGame(const std::string& error) {
+    if (edSession_ && !host_ && net_.mapReady()) { // someone else's edit session: offer to keep a copy
+        edPrompt_ = true;
+        edPromptMap_ = net_.map();
+        edPromptName_ = edPromptMap_.name;
+    }
+    bool wasEditing = edOnline_;
+    edSession_ = edOnline_ = false;
     net_.disconnect();
     stopHost();
     error_ = error;
@@ -183,8 +202,9 @@ void Game::leaveGame(const std::string& error) {
     killFeed_.clear(); chatFeed_.clear(); notices_.clear();
     tracers_.clear(); explosions_.clear(); lastProjectiles_.clear();
     loadedMapGen_ = 0;
-    if (!testMap_.empty()) { std::string m = testMap_; testMap_.clear(); openEditor(m); return; } // back to the editor
+    if (!testMap_.empty()) { std::string m = testMap_; testMap_.clear(); testEdit_ = false; openEditor(m); return; } // back to the editor (autosaved)
     setScreen(Screen::Main);
+    if (wasEditing) loadMenuBackdrop(); // the editor dropped the baked world
 }
 
 void Game::setScreen(Screen s) {
@@ -606,12 +626,18 @@ void Game::frame(double dt) {
     if ((screen_ == Screen::InGame || screen_ == Screen::Editor || opts_.debugPicker || !opts_.backdrop.empty()) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
 
     if (screen_ == Screen::Join) browser_.poll();
-    if (screen_ == Screen::Connecting || screen_ == Screen::InGame) {
+    if (screen_ == Screen::Connecting || screen_ == Screen::InGame || (screen_ == Screen::Editor && edOnline_)) {
         if (net_.state() == ConnState::Disconnected) {
             leaveGame(net_.error().empty() ? "disconnected" : net_.error());
-        } else if (net_.state() == ConnState::Connected && net_.mapReady()) {
-            loadMapIfNeeded();
-            if (screen_ == Screen::Connecting) { setScreen(Screen::InGame); }
+        } else if (net_.state() == ConnState::Connected && net_.mapReady() && (screen_ != Screen::Connecting || net_.hasSnapshot())) {
+            bool editing = net_.hasSnapshot() && (net_.mode().flags & MS_EDITING);
+            if (editing) { // an edit session (or the host switched back to editing)
+                if (screen_ != Screen::Editor) enterOnlineEditor();
+            } else {
+                if (screen_ == Screen::Editor) { edOnline_ = false; loadedMapGen_ = 0; } // the host switched to playing it: bake it
+                loadMapIfNeeded();
+                if (screen_ != Screen::InGame) setScreen(Screen::InGame);
+            }
         }
     }
 
@@ -1364,6 +1390,8 @@ void Game::drawPauseMenu(float cx, float y) {
         if (ui_.button(x, y, hw, h, "FORCE START")) { net_.sendCommand("forcestart"); paused_ = false; }
         if (ui_.button(x + hw + gap, y, hw, h, "RELOAD MAP")) { net_.sendCommand("reload"); paused_ = false; } // picks up edits to the map file
         y += h + gap;
+        if (edSession_ && ui_.button(x, y, w, h, "EDIT MODE")) { net_.sendCommand("editmode on"); paused_ = false; } // back to editing together
+        if (edSession_) y += h + gap;
     }
     if (ui_.button(x, y, w, h, "SETTINGS")) settingsInGame_ = true;
     y += h + gap;
@@ -1497,6 +1525,7 @@ void Game::drawMenu() {
     y += 80 * s;
 
     if (picker_ != PICK_NONE && (screen_ == Screen::Host || screen_ == Screen::VsBots)) { drawPicker(cx, y); return; }
+    if (edPrompt_ && screen_ == Screen::Main) { drawEditorSavePrompt(); return; }
     switch (screen_) {
         case Screen::Main: {
             ui_.label(x, y, "YOUR NAME (SHOWN IN CHAT AND SCOREBOARD)", kGrey, 0.5f);

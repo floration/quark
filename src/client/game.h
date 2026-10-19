@@ -36,6 +36,7 @@ struct LaunchOptions {
     bool debugSettings = false; // --settings: open the settings screen in game
     bool debugControls = false; // --controls
     std::string editMap;        // --editor MAP: open the map editor on that map
+    bool editSession = false;   // --editsession MAP: and host it as an edit session
 };
 
 class Game {
@@ -123,35 +124,48 @@ private:
     std::string testMap_;       // set while play-testing a map from the editor
     int testMode_ = 0;
 
-    // map editor (editor.cpp)
+    // map editor (editor.cpp). Every change is an edit op (applyMapEdit): applied locally when editing
+    // alone, sent through the server in an edit session so everyone's copy stays the same.
     enum { ED_BRUSH, ED_SPAWN, ED_LIGHT, ED_SITE, ED_HILL, ED_CHECK, ED_PATH };
     struct EdSel { int kind = -1, idx = -1; bool valid() const { return kind >= 0; } };
     Map ed_;
-    std::string edName_ = "mymap", edMsg_;
-    double edMsgUntil_ = 0, edLastPush_ = 0, edLeaveArmed_ = 0;
+    std::string edName_ = "mymap", edMsg_, edTitle_;
+    double edMsgUntil_ = 0, edLastPush_ = 0, edLeaveArmed_ = 0, edNextCam_ = 0, edTickAcc_ = 0;
     EdSel edSel_;
     int edGridIdx_ = 1, edLoadIdx_ = 0;
     float edSpeed_ = 12;
     Vec3 edCam_;
     bool edLook_ = false, edDirty_ = false, edBaked_ = false;
-    std::vector<Map> edUndo_;
+    bool edOnline_ = false;     // in an edit session (connected to a server in edit mode)
+    bool edSession_ = false;    // this connection has been an edit session (leaving offers to save a copy)
+    bool testEdit_ = false;     // hosting an edit session started from the editor
+    uint32_t edRev_ = 0;        // net_.mapRevision() that ed_ was copied from
+    std::vector<std::string> edUndo_; // inverse ops, newest last
+    bool edPrompt_ = false;     // "save your copy?" after leaving someone else's edit session
+    Map edPromptMap_;
+    std::string edPromptName_;
     void openEditor(const std::string& map);
+    void enterOnlineEditor();
     void closeEditor();
     void editorFrame(double dt);
     void editorKey(int key, int mods);
-    void edPush(bool coalesce = false);
+    void edDo(const std::string& op, const std::string& inverse, bool coalesce = false, bool undoable = true);
+    void edUndoLast();
     void edChanged();
     void edNotify(const std::string& s);
-    AABB edBounds(EdSel sel) const;
-    void edMove(EdSel sel, const Vec3& d);
-    void edResize(EdSel sel, int axis, int sign, float amount);
+    bool edSelValid() const;
+    AABB edBounds(const Map& m, EdSel sel) const;
+    void edModify(const std::function<void(Map&)>& f, bool coalesce);
     void edDelete();
     void edDuplicate();
     void edAdd(int kind, int variant);
     EdSel edPick(const Vec3& o, const Vec3& dir) const;
     Vec3 edMouseRay() const;
     bool edSave();
+    bool edSaveCopy(const Map& m, const std::string& name);
     void edTest();
+    void edHostSession();
+    void drawEditorSavePrompt();
     void drawBakeProgress(const std::string& name, float p);
 
     // view / input

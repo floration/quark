@@ -123,10 +123,7 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
             clientId_ = id;
             if (!mapReady_ || map_.name != mapName || map_.crc != crc) {
                 if (useMap(mapName, crc)) dl_ = Download();
-                else if (!dl_.active || dl_.crc != crc) { // not on disk (or ours differs): fetch the server's copy
-                    dl_ = Download();
-                    dl_.active = true; dl_.name = mapName; dl_.crc = crc;
-                }
+                else if (!dl_.active || dl_.crc != crc) startDownload(mapName, crc); // not on disk (or ours differs): fetch the server's
             }
             state_ = ConnState::Connected;
             break;
@@ -135,6 +132,7 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
             if (r.u32() != nonce_ || !dl_.active) return;
             uint32_t crc = r.u32(), total = r.u32(), off = r.u32();
             int n = r.u16();
+            if (!r.bad() && crc != dl_.crc) startDownload(dl_.name, crc); // the map changed meanwhile (edit session): restart on the new one
             if (r.bad() || crc != dl_.crc || total == 0 || total > kMaxMapBytes || n <= 0 || n > r.remaining()) return;
             if (!dl_.total) {
                 dl_.total = total;
@@ -160,7 +158,23 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
                 map_ = std::move(m);
                 mapReady_ = true;
                 mapGen_++;
+                std::vector<std::string> later;
+                later.swap(dl_.edits);
                 dl_ = Download();
+                // edits made while downloading: older ones are already in the file; apply the ones that build on it
+                unsigned last = map_.crc;
+                for (auto& t : later) {
+                    unsigned b = 0, a = 0;
+                    int n = 0;
+                    if (sscanf(t.c_str(), "%x %x %n", &b, &a, &n) < 2 || n <= 0) continue;
+                    last = a;
+                    if (b == map_.crc && applyMapEdit(map_, t.substr(n))) {
+                        map_.source = map_.serialize();
+                        map_.crc = crc32(map_.source.data(), map_.source.size());
+                        editRev_++;
+                    }
+                }
+                if (last != map_.crc) startDownload(map_.name, last);
             }
             break;
         }
@@ -193,6 +207,29 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
             break;
         }
     }
+}
+
+void NetClient::startDownload(const std::string& name, uint32_t crc) {
+    dl_ = Download();
+    dl_.active = true; dl_.name = name; dl_.crc = crc;
+}
+
+// Edit session: apply the server's edit if we hold the map it was made on; if we already have the result
+// (it came with a download) skip it; anything else means we drifted, so fetch the server's current map.
+void NetClient::applyEditEvent(const std::string& text) {
+    unsigned before = 0, after = 0;
+    int n = 0;
+    if (sscanf(text.c_str(), "%x %x %n", &before, &after, &n) < 2 || n <= 0) return;
+    if (dl_.active) { if (dl_.edits.size() < 4096) dl_.edits.push_back(text); return; } // replayed when the download is done
+    if (!mapReady_) return;
+    if (map_.crc == after) return;
+    if (map_.crc == before && applyMapEdit(map_, text.substr(n))) {
+        map_.source = map_.serialize();
+        map_.crc = crc32(map_.source.data(), map_.source.size());
+        editRev_++;
+        if (map_.crc == after) return;
+    }
+    startDownload(map_.name, after);
 }
 
 bool NetClient::useMap(const std::string& name, uint32_t crc) {
@@ -270,6 +307,7 @@ void NetClient::onSnapshot(Snapshot& s) {
         if (e.id <= lastEventId_) continue;
         lastEventId_ = e.id;
         if (e.type == EV_PLAYERINFO && e.a < kMaxPlayers) names_[e.a] = e.text;
+        if (e.type == EV_EDIT) { applyEditEvent(e.text); continue; }
         events_.push_back(e);
     }
     s.events.clear();
@@ -328,7 +366,7 @@ void NetClient::tick(UserCmd cmd) {
 }
 
 void NetClient::sendInput() {
-    uint8_t buf[512];
+    uint8_t buf[kMaxPacket];
     Writer w(buf, sizeof buf);
     writeHeader(w, PKT_INPUT);
     w.u32(nonce_);
@@ -338,19 +376,22 @@ void NetClient::sendInput() {
     uint32_t first = nextSeq_ > (uint32_t)kCmdsPerPacket ? nextSeq_ - kCmdsPerPacket : 1;
     w.u8((uint8_t)(nextSeq_ - first));
     for (uint32_t s = first; s < nextSeq_; s++) writeCmd(w, cmds_[s % 256]);
-    if (!stringCmds_.empty()) {
-        w.u8(1);
+    // every unacknowledged string command that fits (resent until the server acks it), so a burst of
+    // editor ops or chat doesn't trickle out one per round trip
+    int nStr = 0, room = (int)sizeof buf - w.size() - 3;
+    while (nStr < (int)stringCmds_.size() && nStr < 16 && room >= (int)std::min<size_t>(stringCmds_[nStr].size(), 255) + 1)
+        room -= (int)std::min<size_t>(stringCmds_[nStr++].size(), 255) + 1;
+    w.u8((uint8_t)nStr);
+    if (nStr) {
         w.u16((uint16_t)(stringAcked_ + 1));
-        w.str(stringCmds_.front());
-    } else {
-        w.u8(0);
+        for (int k = 0; k < nStr; k++) w.str(stringCmds_[k]);
     }
     sock_.send(server_, buf, w.size());
     lastSend_ = timeNow();
 }
 
 void NetClient::sendCommand(const std::string& s) {
-    if (stringCmds_.size() < 64) stringCmds_.push_back(s);
+    if (stringCmds_.size() < 256) stringCmds_.push_back(s);
 }
 
 Vec3 NetClient::smoothedPos(float alpha) const {

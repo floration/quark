@@ -12,7 +12,7 @@ constexpr int kMaxPlayers = 32;        // engine limit; servers default to 8 (Se
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 13;
+constexpr uint16_t kProtocolVersion = 14;
 
 // Player hull
 constexpr float kPlayerHalfWidth = 0.4f;
@@ -175,4 +175,5 @@ enum EventType : uint8_t {
     EV_VOTE,         // text = what's being voted on (vote started)
     EV_SOUND,        // reserved
     EV_BRACKET,      // tourney bracket: text = rounds ("\n"), entries ("|"): player id, -1 bye, -2 not decided; last line "@round,match"
+    EV_EDIT,         // map edit session: text = "<crcBefore hex> <crcAfter hex> <op>" (see applyMapEdit)
 };

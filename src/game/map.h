@@ -70,6 +70,15 @@ struct Map {
     Vec3 payloadPoint(float dist) const;
 };
 
+// Map edit ops (the editor's undo steps and what multiplayer editing sends through the server), one line each:
+//   <kind> ins|set|del <index> [fields]   kind: b brush (material + box), s spawn (team x y z yawDeg), l light (x y z radius
+//                                         intensity), z bomb site (box), c checkpoint (box), p path point (x y z), h hill (has + box)
+//   t <title>    f <preferred mode, -1 any>
+// applyMapEdit validates (indices, sizes, finite numbers, at least one box and spawn) and rebuilds the grid.
+bool applyMapEdit(Map& m, const std::string& op);
+// The op that sets (or inserts) object `idx` of `kind` to its current state in m: used to build edits and their undo.
+std::string describeMapObject(const Map& m, char kind, const char* verb, int idx);
+
 std::string findDataPath(const std::string& rel); // resolves maps/... next to the executable or cwd
 void setExecutableDir(const char* argv0);
 const std::string& executableDir();       // empty if unknown

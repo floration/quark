@@ -12,7 +12,7 @@
 enum PacketType : uint8_t {
     // client -> server
     PKT_CONNECT = 1,     // u16 version, u32 nonce, str name
-    PKT_INPUT,           // u32 nonce, u32 ackTimeMs, u32 ackEvent, u8 lossPct, u8 ncmds, cmds..., u8 hasCmd [u16 seq, str]
+    PKT_INPUT,           // u32 nonce, u32 ackTimeMs, u32 ackEvent, u8 lossPct, u8 ncmds, cmds..., u8 nStr [u16 firstSeq, nStr x str]
     PKT_DISCONNECT,      // u32 nonce
     PKT_INFO_REQUEST,    // (none)
     PKT_MAP_REQUEST,     // u32 nonce, u32 mapCrc, u32 offset: ask for a piece of the server's map file
@@ -107,7 +107,7 @@ struct ModeState {
     uint8_t arenaVariant = 0; // 1v1: ArenaVariant index
     uint16_t weaponMask = 0;  // weapons allowed right now (bit per weapon); 0 = all
 };
-enum : uint8_t { MS_DRAIN = 1, MS_OVERTIME = 2, MS_CONTESTED = 4 };
+enum : uint8_t { MS_DRAIN = 1, MS_OVERTIME = 2, MS_CONTESTED = 4, MS_EDITING = 8 }; // MS_EDITING: map edit session, nobody plays
 
 struct Snapshot {
     uint32_t tick = 0;        // server tick counter (one snapshot per tick; gaps = loss)

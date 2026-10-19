@@ -27,6 +27,7 @@ public:
     // Run one simulation tick with this input (call at tickRate() Hz).
     void tick(UserCmd cmd);
     void sendCommand(const std::string& s); // reliable string command ("say hi", "team b", ...)
+    size_t pendingCommands() const { return stringCmds_.size(); }
 
     ConnState state() const { return state_; }
     const std::string& error() const { return error_; }
@@ -37,6 +38,7 @@ public:
     const std::string& downloadName() const { return dl_.name; }
     uint32_t mapGeneration() const { return mapGen_; }
     const Map& map() const { return map_; }
+    uint32_t mapRevision() const { return mapGen_ + editRev_; } // changes on every map load and every applied edit
     int clientId() const { return clientId_; }
     bool hasSnapshot() const { return !snaps_.empty(); }
     const Snapshot& latest() const { return snaps_.back(); }
@@ -86,13 +88,16 @@ private:
     double lastSend_ = 0, lastRecv_ = 0, connectStart_ = 0;
     Map map_;
     bool mapReady_ = false;
-    uint32_t mapGen_ = 0;
+    uint32_t mapGen_ = 0, editRev_ = 0;
+    void applyEditEvent(const std::string& text);
+    void startDownload(const std::string& name, uint32_t crc);
     struct Download {
         bool active = false;
         std::string name, data;
         uint32_t crc = 0, total = 0, got = 0;
         std::vector<double> asked;   // per chunk: when last requested (0 = never)
         std::vector<bool> have;
+        std::vector<std::string> edits; // edit events that arrived meanwhile: replayed on top if they're newer
     } dl_;
 
     std::deque<Snapshot> snaps_;

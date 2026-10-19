@@ -36,6 +36,7 @@ int main(int argc, char** argv) {
         else if (a == "--crosshair") { opts.debugSettings = true; opts.debugCrosshair = true; }
         else if (a == "--controls") { opts.debugSettings = true; opts.debugControls = true; }
         else if (a == "--editor") opts.editMap = next();
+        else if (a == "--editsession") { opts.editMap = next(); opts.editSession = true; }
         else if (a == "--pitch") opts.spawnPitch = (float)atof(next().c_str());
         else if (a == "-h" || a == "--help") {
             printf("quark [--connect ip:port] [--host mode --map name]\n");

@@ -36,7 +36,9 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     if (cfg_.maxPlayers > kMaxPlayers) cfg_.maxPlayers = kMaxPlayers;
     std::string e;
     if (!map_.load(cfg_.map, &e)) { if (err) *err = e; return false; }
-    if (!map_.supportsMode(cfg_.mode)) {
+    if (cfg_.editMode && !map_.supportsMode(cfg_.mode)) // an edit session runs whatever the map can't play yet
+        cfg_.mode = map_.supportsMode(MODE_FFA) ? MODE_FFA : cfg_.mode;
+    if (!cfg_.editMode && !map_.supportsMode(cfg_.mode)) {
         if (err) *err = "map '" + cfg_.map + "' does not support mode " + modeName(cfg_.mode);
         return false;
     }
@@ -58,6 +60,8 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     resetRateWindow();
     rulesReset(*this);
     running_ = true;
+    editing_ = editDirty_ = false;
+    if (cfg_.editMode) setEditing(true);
     if (cfg_.vsBots) {
         cfg_.autoStart = true;
         bool teams = modeIsTeamBased(cfg_.mode);
@@ -80,6 +84,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
 
 void Server::stop() {
     if (!running_) return;
+    if (editDirty_) autosave();
     for (int i = 0; i < kMaxPlayers; i++)
         if (players_[i].connected) dropPlayer(i, "server shutting down", true);
     sock_.close();
@@ -122,7 +127,7 @@ void Server::checkTickRate() {
     double now = timeNow();
     if (now - rateWindowStart_ < kRateWindow) return;
     if (!g_serverRateCheck) { resetRateWindow(); return; }
-    if (ms_.phase != PHASE_WARMUP || playerCount() == 0 || rateLevel_ >= kTickRateLevels - 1) { resetRateWindow(); return; }
+    if (editing_ || ms_.phase != PHASE_WARMUP || playerCount() == 0 || rateLevel_ >= kTickRateLevels - 1) { resetRateWindow(); return; }
     int worstLoss = windowWorstLoss_;
     double lateFrac = windowTicks_ ? windowLate_ / (double)windowTicks_ : 0;
     bool bad = lateFrac > kMaxLateFraction || windowSendFail_ > 0 || worstLoss > kMaxClientLossPct;
@@ -211,7 +216,8 @@ void Server::handlePacket(const NetAddr& from, const uint8_t* data, int len) {
     else if (type == PKT_DISCONNECT) dropPlayer(id, "disconnected", false);
     else if (type == PKT_MAP_REQUEST) { // client lacks this map (or has a different copy): send it a piece
         uint32_t crc = r.u32(), off = r.u32();
-        if (r.bad() || crc != map_.crc || off >= map_.source.size()) return;
+        (void)crc; // always serve the current map: in an edit session it may have changed since the client asked
+        if (r.bad() || off >= map_.source.size()) return;
         uint8_t out[kMaxPacket];
         Writer w(out, sizeof out);
         writeHeader(w, PKT_MAP_DATA);
@@ -340,10 +346,11 @@ void Server::handleInput(int id, Reader& r) {
     if (n > 16) return;
     UserCmd cmds[16];
     for (int i = 0; i < n; i++) cmds[i] = readCmd(r);
-    bool hasStr = r.u8() != 0;
+    int nStr = r.u8(); // reliable string commands: the unacknowledged ones, oldest first
+    if (nStr > 16) return;
     uint16_t strSeq = 0;
-    std::string str;
-    if (hasStr) { strSeq = r.u16(); str = r.str(); }
+    std::string strs[16];
+    if (nStr) { strSeq = r.u16(); for (int k = 0; k < nStr; k++) strs[k] = r.str(); }
     if (r.bad()) return;
 
     p.reportedLoss = loss;
@@ -362,9 +369,11 @@ void Server::handleInput(int id, Reader& r) {
     while ((int)p.cmdQueue.size() > kMaxQueuedCmds) { p.lastCmdSeq = p.cmdQueue.front().seq; p.cmdQueue.pop_front(); }
     drainCmds(id); // run input the moment it arrives instead of waiting for the next tick
 
-    if (hasStr && strSeq == (uint16_t)(p.lastStringCmd + 1)) {
-        p.lastStringCmd = strSeq;
-        handleStringCmd(id, str);
+    for (int k = 0; k < nStr && players_[id].connected; k++) {
+        uint16_t seq = (uint16_t)(strSeq + k);
+        if (seq != (uint16_t)(p.lastStringCmd + 1)) continue; // already handled (resent until acked)
+        p.lastStringCmd = seq;
+        handleStringCmd(id, strs[k]);
     }
 }
 
@@ -383,6 +392,12 @@ void Server::handleStringCmd(int id, const std::string& s) {
         broadcastEvent(e);
         log(p.name + ": " + rest);
         glog(LOG_SIMPLE, "chat %d \"%s\": %s", id, p.name.c_str(), rest.c_str());
+    } else if (cmd == "ed" && editing_) {
+        if (!applyEdit(id, rest)) { GameEvent e; e.type = EV_MESSAGE; e.text = "edit refused"; sendEvent(id, e); }
+    } else if (cmd == "edcam" && editing_) { // where this editor's camera is, so others see it
+        Vec3 c;
+        std::istringstream cs(rest);
+        if (cs >> c.x >> c.y >> c.z && std::isfinite(c.x + c.y + c.z)) p.move.pos = vmax(vmin(c, Vec3(4096, 4096, 4096)), Vec3(-4096, -4096, -4096));
     } else if (cmd == "team") {
         int t = rest == "a" ? TEAM_A : rest == "b" ? TEAM_B : rest == "spec" ? TEAM_SPECTATOR : -1;
         if (t < 0 || t == p.team) return;
@@ -467,6 +482,19 @@ void Server::command(const std::string& line, int fromPlayer) {
         if (fromPlayer >= 0) { GameEvent e; e.type = EV_MESSAGE; e.text = t; sendEvent(fromPlayer, e); }
         else log(t);
     };
+    if (cmd == "editmode") { // editmode on|off: switch between editing the map together and playing it
+        if (arg == "on") { if (!editing_) setEditing(true); return; }
+        if (!editing_) return;
+        int mode = map_.supportsMode(cfg_.mode) ? cfg_.mode : -1;
+        if (mode < 0 && map_.preferredMode >= 0 && map_.supportsMode(map_.preferredMode)) mode = map_.preferredMode;
+        if (mode < 0 && map_.supportsMode(MODE_FFA)) mode = MODE_FFA;
+        for (int m = 0; m < MODE_COUNT && mode < 0; m++) if (map_.supportsMode(m)) mode = m;
+        if (mode < 0) { reply("this map can't be played in any mode yet (add spawns)"); return; }
+        if (!autosave()) { reply("could not save the map"); return; }
+        setEditing(false);
+        command("map " + cfg_.map + " " + modeName(mode), fromPlayer);
+        return;
+    }
     if (cmd == "reload") { cmd = "map"; arg = cfg_.map; } // re-read the current map file (edited while running)
     if (cmd == "map" || cmd == "mode") {
         std::string newMap = cmd == "map" ? arg : cfg_.map;
@@ -523,7 +551,7 @@ void Server::command(const std::string& line, int fromPlayer) {
     } else if (cmd == "status") {
         reply(statusText());
     } else {
-        reply("commands: map <name> [mode], mode <name>, reload, forcestart, restart, kick <id>, say <text>, status, addbot [a|b] [0-3], kickbots");
+        reply("commands: map <name> [mode], mode <name>, reload, editmode on|off, forcestart, restart, kick <id>, say <text>, status, addbot [a|b] [0-3], kickbots");
     }
 }
 
@@ -682,6 +710,15 @@ void Server::flushHit(int attacker, int victim) {
 }
 
 void Server::simulate() {
+    if (editing_) { // nobody plays: just keep acknowledging input (cameras) and autosave now and then
+        for (auto& p : players_) {
+            if (!p.connected) continue;
+            if (!p.cmdQueue.empty()) { p.lastCmdSeq = p.cmdQueue.back().seq; p.yaw = p.cmdQueue.back().yaw; p.pitch = p.cmdQueue.back().pitch; }
+            p.cmdQueue.clear();
+        }
+        if (editDirty_ && time() >= nextAutosave_) autosave();
+        return;
+    }
     for (int a = 0; a < kMaxPlayers; a++)
         for (int v = 0; v < kMaxPlayers; v++)
             if (hitAccum_[a][v] > 0 && time() >= hitFlushAt_[a][v]) flushHit(a, v);
@@ -975,6 +1012,7 @@ void Server::sendSnapshots() {
     s.timeMs = timeMs_;
     s.tickRate = (uint16_t)tickRate();
     s.ms = ms_;
+    if (editing_) s.ms.flags |= MS_EDITING;
     std::vector<PlayerSnap> all;
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
@@ -1337,4 +1375,42 @@ void Server::logTick() {
         if (pr.active)
             fprintf(glog_, "  proj %u type %d owner %d pos %.3f %.3f %.3f vel %.3f %.3f %.3f%s\n", pr.id, pr.type, pr.owner,
                     pr.pos.x, pr.pos.y, pr.pos.z, pr.vel.x, pr.vel.y, pr.vel.z, pr.stuck ? " stuck" : "");
+}
+
+void Server::setEditing(bool on) {
+    editing_ = on;
+    if (!on) return;
+    for (int i = kMaxPlayers - 1; i >= 0; i--) if (players_[i].connected && players_[i].isBot) removeBot(i);
+    for (auto& pr : projectiles_) pr.active = false;
+    for (auto& p : players_) { p.alive = false; p.respawnAt = -1; p.cmdQueue.clear(); }
+    vote_ = Vote();
+    tourney_ = Tourney();
+    nextAutosave_ = time() + 5;
+    message("map editing - everyone can build; the host saves");
+    glog(LOG_SIMPLE, "edit mode on %s", cfg_.map.c_str());
+}
+
+bool Server::applyEdit(int from, const std::string& op) {
+    if (op.size() > 220) return false;
+    uint32_t before = map_.crc;
+    if (!applyMapEdit(map_, op)) return false;
+    map_.source = map_.serialize();
+    map_.crc = crc32(map_.source.data(), map_.source.size());
+    if (!editDirty_) nextAutosave_ = time() + 5;
+    editDirty_ = true;
+    char head[24];
+    snprintf(head, sizeof head, "%08x %08x ", before, map_.crc);
+    GameEvent e; e.type = EV_EDIT; e.text = head + op;
+    broadcastEvent(e);
+    glog(LOG_VERBOSE, "edit %d %s", from, op.c_str());
+    return true;
+}
+
+bool Server::autosave() {
+    if (cfg_.map.find_first_of("/\\.") != std::string::npos) return false;
+    std::string text = map_.serialize();
+    if (!saveMapFile(findDataPath("maps") + "/" + cfg_.map + ".qmap", text)) { log("autosave failed: maps/" + cfg_.map + ".qmap"); return false; }
+    editDirty_ = false;
+    nextAutosave_ = time() + 5;
+    return true;
 }

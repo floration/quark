@@ -5,6 +5,8 @@
 #include <sstream>
 #include <fstream>
 #include <filesystem>
+#include <cmath>
+#include <type_traits>
 
 namespace fs = std::filesystem;
 static std::string g_exeDir;
@@ -195,6 +197,100 @@ std::string Map::serialize() const {
     for (auto& p : payloadPath) { snprintf(b, sizeof b, "path %g %g %g\n", p.x, p.y, p.z); o += b; }
     for (auto& l : lights) { snprintf(b, sizeof b, "light %g %g %g %g %g\n", l.pos.x, l.pos.y, l.pos.z, l.radius, l.intensity); o += b; }
     return o;
+}
+
+static std::string fmtBox(const AABB& b) {
+    char t[160];
+    snprintf(t, sizeof t, "%.9g %.9g %.9g %.9g %.9g %.9g", b.mn.x, b.mn.y, b.mn.z, b.mx.x, b.mx.y, b.mx.z);
+    return t;
+}
+
+std::string describeMapObject(const Map& m, char kind, const char* verb, int i) {
+    char t[220];
+    switch (kind) {
+        case 'b': snprintf(t, sizeof t, "b %s %d %d %s", verb, i, m.brushes[i].material, fmtBox(m.brushes[i].box).c_str()); break;
+        case 's': { auto& sp = m.spawns[i]; snprintf(t, sizeof t, "s %s %d %d %.9g %.9g %.9g %.9g", verb, i, sp.team, sp.pos.x, sp.pos.y, sp.pos.z, sp.yaw * 180.0f / PI); break; }
+        case 'l': { auto& l = m.lights[i]; snprintf(t, sizeof t, "l %s %d %.9g %.9g %.9g %.9g %.9g", verb, i, l.pos.x, l.pos.y, l.pos.z, l.radius, l.intensity); break; }
+        case 'z': snprintf(t, sizeof t, "z %s %d %s", verb, i, fmtBox(m.bombSites[i]).c_str()); break;
+        case 'c': snprintf(t, sizeof t, "c %s %d %s", verb, i, fmtBox(m.checkpoints[i]).c_str()); break;
+        case 'p': { auto& p = m.payloadPath[i]; snprintf(t, sizeof t, "p %s %d %.9g %.9g %.9g", verb, i, p.x, p.y, p.z); break; }
+        case 'h': snprintf(t, sizeof t, "h set 0 %d %s", m.hasHill ? 1 : 0, fmtBox(m.hill).c_str()); break;
+        default: t[0] = 0;
+    }
+    return t;
+}
+
+bool applyMapEdit(Map& m, const std::string& op) {
+    std::istringstream in(op);
+    std::string kind, verb;
+    if (!(in >> kind)) return false;
+    if (kind == "t") {
+        std::string title;
+        std::getline(in, title);
+        while (!title.empty() && title[0] == ' ') title.erase(0, 1);
+        if (title.size() > 40) return false;
+        for (char c : title) if ((unsigned char)c < 32 || (unsigned char)c > 126 || c == '#') return false;
+        m.title = title;
+        return true;
+    }
+    if (kind == "f") {
+        int f;
+        if (!(in >> f) || f < -1 || f >= MODE_COUNT) return false;
+        m.preferredMode = f;
+        return true;
+    }
+    int i;
+    if (!(in >> verb >> i) || (verb != "ins" && verb != "set" && verb != "del")) return false;
+    auto okNum = [](float v) { return std::isfinite(v) && std::fabs(v) <= 4096.0f; };
+    auto readVec = [&](Vec3& v) { return (bool)(in >> v.x >> v.y >> v.z) && okNum(v.x) && okNum(v.y) && okNum(v.z); };
+    auto readBox = [&](AABB& b) {
+        Vec3 a, c;
+        if (!readVec(a) || !readVec(c)) return false;
+        b.mn = vmin(a, c); b.mx = vmax(a, c);
+        return true;
+    };
+    // generic ins / set / del on one of the lists
+    auto edit = [&](auto& vec, auto read, size_t minSize, size_t maxSize) {
+        using T = typename std::decay_t<decltype(vec)>::value_type;
+        size_t n = vec.size();
+        if (verb == "del") {
+            if (i < 0 || (size_t)i >= n || n <= minSize) return false;
+            vec.erase(vec.begin() + i);
+            return true;
+        }
+        T v{};
+        if (!read(v)) return false;
+        if (verb == "ins") {
+            if (i < 0 || (size_t)i > n || n >= maxSize) return false;
+            vec.insert(vec.begin() + i, v);
+        } else {
+            if (i < 0 || (size_t)i >= n) return false;
+            vec[i] = v;
+        }
+        return true;
+    };
+    bool ok = false;
+    if (kind == "b") ok = edit(m.brushes, [&](Brush& b) { return (bool)(in >> b.material) && b.material >= 0 && b.material <= 2 && readBox(b.box); }, 1, 60000);
+    else if (kind == "s") ok = edit(m.spawns, [&](SpawnPoint& sp) {
+        float yaw;
+        if (!(in >> sp.team) || sp.team < 0 || sp.team > 3 || !readVec(sp.pos) || !(in >> yaw) || !okNum(yaw)) return false;
+        sp.yaw = deg2rad(yaw);
+        return true;
+    }, 1, 256);
+    else if (kind == "l") ok = edit(m.lights, [&](Map::Light& l) {
+        return readVec(l.pos) && (bool)(in >> l.radius >> l.intensity) && l.radius >= 0.5f && l.radius <= 100 && l.intensity > 0 && l.intensity <= 10;
+    }, 0, 512);
+    else if (kind == "z") ok = edit(m.bombSites, readBox, 0, 16);
+    else if (kind == "c") ok = edit(m.checkpoints, readBox, 0, 128);
+    else if (kind == "p") ok = edit(m.payloadPath, readVec, 0, 512);
+    else if (kind == "h") {
+        int has;
+        AABB b;
+        ok = verb == "set" && (bool)(in >> has) && readBox(b);
+        if (ok) { m.hasHill = has != 0; m.hill = b; }
+    }
+    if (ok && kind == "b") m.rebuild();
+    return ok;
 }
 
 void Map::rebuild() {
