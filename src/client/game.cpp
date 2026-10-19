@@ -54,6 +54,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
         }
         mapInfo_.push_back(mi);
     }
+    if (opts_.hostMode < 0 && opts_.vsBotsMode < 0 && opts_.connect.empty()) loadMenuBackdrop();
     for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == cfg_.hostMap) hostMapIdx_ = (int)i;
     hostModeIdx_ = clampf((float)cfg_.hostMode, 0, MODE_COUNT - 1);
     cfg_.hostMaxPlayers = std::min(std::max(cfg_.hostMaxPlayers, 2), kMaxPlayers);
@@ -192,6 +193,11 @@ void Game::captureMouse(bool on) {
     firstMouse_ = true;
 }
 
+static std::string upper(std::string t) {
+    for (auto& c : t) c = (char)toupper((unsigned char)c);
+    return t;
+}
+
 void Game::loadMapIfNeeded() {
     if (!net_.mapReady() || net_.mapGeneration() == loadedMapGen_) return;
     loadedMapGen_ = net_.mapGeneration();
@@ -204,16 +210,31 @@ void Game::loadMapIfNeeded() {
             net_.tick(c);
             lastKeepAlive = timeNow();
         }
-        r_.rect(0, 0, (float)r_.width(), (float)r_.height(), {0.05f, 0.06f, 0.08f, 1});
-        float bw = r_.width() * 0.4f, bx = (r_.width() - bw) * 0.5f, by = r_.height() * 0.55f;
-        r_.rect(bx, by, bw, 8, {0.2f, 0.2f, 0.25f, 1});
-        r_.rect(bx, by, bw * p, 8, rgba(cfg_.colorFriendly));
-        float ts = std::max(2.0f, std::round(r_.height() / 360.0f));
-        std::string t = "BAKING LIGHT - " + net_.map().name;
-        r_.text((r_.width() - r_.textWidth(t, ts)) * 0.5f, by - 30 * ts / 2, ts, t, kWhite);
-        r_.flush2D();
-        glfwSwapBuffers(win_);
+        drawBakeProgress(net_.map().name, p);
     });
+    bgCenter_ = net_.map().bounds.center();
+    bgRadius_ = length(net_.map().bounds.mx - net_.map().bounds.mn) * 0.35f;
+}
+
+void Game::drawBakeProgress(const std::string& name, float p) {
+    r_.rect(0, 0, (float)r_.width(), (float)r_.height(), {0.05f, 0.06f, 0.08f, 1});
+    float bw = r_.width() * 0.4f, bx = (r_.width() - bw) * 0.5f, by = r_.height() * 0.55f;
+    r_.rect(bx, by, bw, 8, {0.2f, 0.2f, 0.25f, 1});
+    r_.rect(bx, by, bw * p, 8, rgba(cfg_.colorFriendly));
+    float ts = std::max(2.0f, std::round(r_.height() / 360.0f));
+    std::string t = "BAKING LIGHT - " + upper(name);
+    r_.text((r_.width() - r_.textWidth(t, ts)) * 0.5f, by - 30 * ts / 2, ts, t, kWhite);
+    r_.flush2D();
+    glfwSwapBuffers(win_);
+}
+
+// The map behind the main menu (lighting is baked once, then cached like any map).
+void Game::loadMenuBackdrop() {
+    std::string name = !opts_.backdrop.empty() ? opts_.backdrop : "crucible";
+    if (!menuMap_.load(name) && (maps_.empty() || !menuMap_.load(maps_[0]))) return;
+    r_.loadWorld(menuMap_, [&](float p) { drawBakeProgress(menuMap_.name, p); });
+    bgCenter_ = menuMap_.bounds.center();
+    bgRadius_ = length(menuMap_.bounds.mx - menuMap_.bounds.mn) * 0.35f;
 }
 
 // ---------------------------------------------------------------------------
@@ -233,11 +254,6 @@ int Game::bestMapFor(int mode) const {
         if (fallback < 0) fallback = (int)i;
     }
     return fallback < 0 ? 0 : fallback;
-}
-
-static std::string upper(std::string t) {
-    for (auto& c : t) c = (char)toupper((unsigned char)c);
-    return t;
 }
 
 bool Game::isDown(int action) const {
@@ -520,7 +536,7 @@ void Game::frame(double dt) {
     frameIdx_ = (frameIdx_ + 1) % frameTimes_.size();
     frameCount_ = std::min(frameCount_ + 1, frameTimes_.size());
     net_.poll();
-    if ((screen_ == Screen::InGame || opts_.debugPicker) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
+    if ((screen_ == Screen::InGame || opts_.debugPicker || !opts_.backdrop.empty()) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
 
     if (screen_ == Screen::Join) browser_.poll();
     if (screen_ == Screen::Connecting || screen_ == Screen::InGame) {
@@ -615,19 +631,23 @@ void Game::frame(double dt) {
         drawWorld((float)clampf((float)(tickAcc_ / net_.tickPeriod()), 0, 1));
         drawHud();
     } else {
-        r_.setCamera({0, 20, 30}, (float)time_ * 0.05f, -0.4f, 100);
+        // slow orbit around the backdrop map, looking slightly down at its center
+        float ang = opts_.backdropAngle >= 0 ? deg2rad(opts_.backdropAngle) : (float)time_ * 0.04f;
+        Vec3 camPos = bgCenter_ + Vec3(std::sin(ang) * bgRadius_, bgRadius_ * 0.45f, std::cos(ang) * bgRadius_);
+        Vec3 to = bgCenter_ - camPos;
+        r_.setCamera(camPos, std::atan2(-to.x, -to.z), std::atan2(to.y, std::sqrt(to.x * to.x + to.z * to.z)), 75);
         if (r_.worldLoaded()) r_.drawScene(false);
         else {
             r_.rect(0, 0, (float)r_.width(), (float)r_.height(), {0.05f, 0.06f, 0.08f, 1});
         }
     }
-    drawMenu();
+    if (opts_.backdrop.empty() || screen_ == Screen::InGame) drawMenu();
     std::string copied = ui_.takeCopy();
     if (!copied.empty()) glfwSetClipboardString(win_, copied.c_str());
     if (showPerf_) drawPerf();
     r_.flush2D();
 
-    if (shotAt_ > 0 && time_ >= shotAt_ && (screen_ == Screen::InGame || opts_.debugPicker)) {
+    if (shotAt_ > 0 && time_ >= shotAt_ && (screen_ == Screen::InGame || opts_.debugPicker || !opts_.backdrop.empty())) {
         r_.screenshot(opts_.screenshot);
         printf("screenshot written to %s\n", opts_.screenshot.c_str());
         quit_ = true;

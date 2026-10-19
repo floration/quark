@@ -27,6 +27,8 @@ int main(int argc, char** argv) {
         else if (a == "--fire") opts.debugFire = true;
         else if (a == "--perf") opts.debugPerf = true;
         else if (a == "--settings") opts.debugSettings = true;
+        else if (a == "--backdrop") opts.backdrop = next();
+        else if (a == "--orbit") opts.backdropAngle = (float)atof(next().c_str());
         else if (a == "--pause") opts.debugPause = true;
         else if (a == "--votemenu") { opts.debugPause = true; opts.debugVote = true; }
         else if (a == "--picker") opts.debugPicker = true;

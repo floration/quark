@@ -30,7 +30,9 @@ struct LaunchOptions {
     bool debugPerf = false;     // --perf: F3 overlay on, with a synthetic input event every frame
     bool debugCrosshair = false;
     bool debugPicker = false;
-    bool debugPause = false, debugVote = false; // --pause / --votemenu   // --picker: open the host menu's map list
+    bool debugPause = false, debugVote = false; // --pause / --votemenu
+    std::string backdrop;       // --backdrop MAP: menu backdrop of that map, no menu drawn (site screenshots)
+    float backdropAngle = -1;   // --orbit DEG: fixed orbit position for --backdrop   // --picker: open the host menu's map list
     bool debugSettings = false; // --settings: open the settings screen in game
     bool debugControls = false; // --controls
 };
@@ -109,6 +111,12 @@ private:
     void drawVoteMenu(float cx, float y);
     int picker_ = PICK_NONE;    // full list of maps / modes open over the host or vs-bots menu
     void drawPicker(float cx, float y);
+    // Menu backdrop: a map loaded at startup, orbited slowly behind the menus.
+    Map menuMap_;
+    Vec3 bgCenter_;
+    float bgRadius_ = 30;
+    void loadMenuBackdrop();
+    void drawBakeProgress(const std::string& name, float p);
 
     // view / input
     float yaw_ = 0, pitch_ = 0;
