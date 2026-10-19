@@ -1586,7 +1586,8 @@ void Game::drawPerf() {
         perfText_ = b;
     }
     float ts = std::max(1.0f, std::round(r_.height() / 720.0f * 2.0f));
-    std::string tick = net_.hasSnapshot() ? "SERVER " + std::to_string(net_.tickRate()) + " HZ  LOSS " + std::to_string(net_.snapshotLoss()) + "%" : "";
+    std::string tick = "QUARK V" QUARK_VERSION;
+    if (net_.hasSnapshot()) tick += "  SERVER " + std::to_string(net_.tickRate()) + " HZ  LOSS " + std::to_string(net_.snapshotLoss()) + "%";
     float lh = r_.textHeight(ts) + 6;
     float w = std::max(std::max(r_.textWidth(perfText_, ts), r_.textWidth(latText_, ts)), r_.textWidth(tick, ts));
     r_.rect(4, 4, w + 8, lh * 3 + 4, {0, 0, 0, 0.6f});
