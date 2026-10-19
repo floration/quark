@@ -12,6 +12,7 @@
 #include "../common/upnp.h"
 #include "map.h"
 #include "protocol.h"
+#include "bots.h"
 
 struct ServerConfig {
     std::string name = "quark server";
@@ -21,6 +22,11 @@ struct ServerConfig {
     int maxPlayers = 8;
     bool upnp = false;          // try to open the port on the router automatically
     int maxTickRate = 1000;     // starting (highest) tick rate; lowered automatically if the host can't keep up
+    // Bots
+    bool balanceBots = true;    // team modes: an extra bot joins the side with fewer humans (vote can turn off)
+    int balanceBotSkill = BOT_INTERMEDIATE;
+    bool vsBots = false;        // "play vs bots": fixed bots, humans always on team A
+    int botsEnemy = 0, botsAlly = 0, botSkill = BOT_INTERMEDIATE;
     bool lanOnly = false;
     // Mode tuning (0 = mode default)
     int roundsToWin = 0;
@@ -30,6 +36,8 @@ struct ServerConfig {
 
 struct ServerPlayer {
     bool connected = false;
+    bool isBot = false;
+    bool balanceBot = false;    // added automatically to even out teams
     NetAddr addr;
     uint32_t nonce = 0;
     std::string name;
@@ -118,6 +126,20 @@ public:
     float bestProgress_[2] = {0, 0};
     float completeTime_[2] = {0, 0};
     float kothPoints_[2] = {0, 0};
+
+    BotBrain bots_[kMaxPlayers];
+    NavGraph nav_;
+    int addBot(int team, int skill, bool balance = false);
+    void removeBot(int id);
+    int humanCount(int team = -1) const;
+    void updateBalanceBots();
+    // Votes (bots on/off, bot difficulty): majority of human players decides.
+    enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL };
+    struct Vote { int kind = VOTE_NONE; int arg = 0; uint32_t yes = 0, no = 0; float endsAt = 0; std::string text; } vote_;
+    void callVote(int caller, int kind, int arg);
+    void castVote(int id, bool yes);
+    void tickVote();
+    float nextBalanceCheck_ = 0;
 
     void broadcastEvent(const GameEvent& e);
     void sendEvent(int player, const GameEvent& e);

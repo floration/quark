@@ -94,6 +94,9 @@ struct ModeState {
     // payload
     float payloadDist = 0;
     float payloadLen = 0;
+    // vote in progress (text arrives as an EV_VOTE event)
+    uint8_t voteActive = 0, voteYes = 0, voteNo = 0, voteVoters = 0;
+    float voteTimeLeft = 0;
 };
 enum : uint8_t { MS_DRAIN = 1, MS_OVERTIME = 2, MS_CONTESTED = 4 };
 

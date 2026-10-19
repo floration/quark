@@ -1,0 +1,48 @@
+// Server-side AI players. A bot produces one UserCmd per server tick, which then goes through
+// exactly the same movement and weapon code as a human's input.
+#pragma once
+#include <cstdint>
+#include <vector>
+#include "map.h"
+#include "../common/qmath.h"
+#include "pmove.h"
+
+class Server;
+
+enum BotSkill { BOT_BEGINNER = 0, BOT_INTERMEDIATE, BOT_ADVANCED, BOT_EXPERT, BOT_SKILLS };
+const char* botSkillName(int skill);
+
+struct BotBrain {
+    int skill = BOT_INTERMEDIATE;
+    int target = -1;           // player id being fought
+    float seenAt = -1;         // when the current target was first seen (reaction time)
+    float aimYaw = 0, aimPitch = 0;
+    Vec3 aimError;             // slowly drifting aim offset (m at the target)
+    float errorRetargetAt = 0;
+    Vec3 goal;
+    float goalUntil = 0;
+    Vec3 lastPos;
+    float stuckCheckAt = 0;
+    float strafeDir = 1, strafeSwitchAt = 0;
+    float nextTargetScan = 0;
+    Vec3 waypoint;             // next point on the nav path
+    Vec3 pathGoal;
+    float repathAt = 0;
+    uint32_t rng = 1;
+};
+
+// Walkable surfaces (tops of blocks) and which ones a player can jump between.
+// Built from the map geometry, so every map gets bot navigation for free.
+struct NavGraph {
+    struct Node { float x0, z0, x1, z1, y; };
+    std::vector<Node> nodes;
+    std::vector<std::vector<std::pair<int, float>>> links; // (node, cost)
+    uint32_t mapCrc = 0;
+    void build(const Map& m);
+    int nodeAt(const Vec3& p) const;                       // surface the point stands on (or -1)
+    // Next point to walk toward on the way from `from` to `to`.
+    Vec3 nextWaypoint(const Vec3& from, const Vec3& to) const;
+};
+
+// Produces this tick's input for bot `id`.
+UserCmd botThink(Server& s, int id);

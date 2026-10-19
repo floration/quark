@@ -17,6 +17,7 @@ int main(int argc, char** argv) {
         auto next = [&]() -> std::string { return i + 1 < argc ? argv[++i] : ""; };
         if (a == "--connect") opts.connect = next();
         else if (a == "--host") opts.hostMode = modeFromName(next().c_str());
+        else if (a == "--vsbots") opts.vsBotsMode = modeFromName(next().c_str());
         else if (a == "--map") opts.hostMap = next();
         else if (a == "--screenshot") opts.screenshot = next();
         else if (a == "--shot-delay") opts.shotDelay = (float)atof(next().c_str());

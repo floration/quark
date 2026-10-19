@@ -43,6 +43,7 @@ add_library(quark_core STATIC
   src/game/server.cpp
   src/game/gamemodes.cpp
   src/game/netclient.cpp
+  src/game/bots.cpp
 )
 target_include_directories(quark_core PUBLIC src)
 target_link_libraries(quark_core PUBLIC Threads::Threads)

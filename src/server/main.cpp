@@ -24,7 +24,12 @@ static void usage() {
         "  --upnp           ask the router to forward the port automatically\n"
         "  --tickrate N     highest tick rate to try: 1000 (default), 500, 250 or 125.\n"
         "                   During warmup it steps down automatically if the host can't keep up.\n"
-        "console commands: map <name> [mode], mode <name>, forcestart, restart, kick <id>, say <text>, status, quit\n",
+        "  --bots N         play-vs-bots server: N bots (team modes: on team B; humans join team A)\n"
+        "  --allies N       team modes with --bots: N bots on the humans' team\n"
+        "  --botskill N     0 beginner, 1 intermediate (default), 2 advanced, 3 expert\n"
+        "  --nobalance      don't add bots to even out uneven teams (players can also vote it off)\n"
+        "console commands: map <name> [mode], mode <name>, forcestart, restart, kick <id>, say <text>, status,\n"
+        "                  addbot [a|b] [0-3], kickbots, quit\n",
         kDefaultPort);
 }
 
@@ -48,6 +53,10 @@ int main(int argc, char** argv) {
         else if (a == "--scorelimit") cfg.scoreLimit = atoi(next().c_str());
         else if (a == "--upnp") cfg.upnp = true;
         else if (a == "--tickrate") cfg.maxTickRate = atoi(next().c_str());
+        else if (a == "--bots") { cfg.vsBots = true; cfg.botsEnemy = atoi(next().c_str()); }
+        else if (a == "--allies") cfg.botsAlly = atoi(next().c_str());
+        else if (a == "--botskill") cfg.botSkill = cfg.balanceBotSkill = atoi(next().c_str());
+        else if (a == "--nobalance") cfg.balanceBots = false;
         else if (a == "-h" || a == "--help") { usage(); return 0; }
         else { printf("unknown option %s\n", a.c_str()); usage(); return 1; }
     }

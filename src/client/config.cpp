@@ -50,6 +50,11 @@ void Settings::load() {
         else if (k == "host_port") hostPort = iv;
         else if (k == "host_max") hostMaxPlayers = iv;
         else if (k == "host_upnp") hostUpnp = iv != 0;
+        else if (k == "host_balance_bots") hostBalanceBots = iv != 0;
+        else if (k == "bot_skill") botSkill = std::min(std::max(iv, 0), 3);
+        else if (k == "bot_enemies") botEnemies = std::min(std::max(iv, 1), 7);
+        else if (k == "bot_allies") botAllies = std::min(std::max(iv, 0), 3);
+        else if (k == "bot_mode") botMode = std::min(std::max(iv, 0), 5);
     }
     if (width < 320) width = 1280;
     if (height < 240) height = 720;
@@ -64,5 +69,6 @@ void Settings::save() const {
       << "\ncolor_friendly=" << colorHex(colorFriendly) << "\ncolor_enemy=" << colorHex(colorEnemy)
       << "\nlast_address=" << lastAddress << "\nhost_name=" << hostName << "\nhost_map=" << hostMap
       << "\nhost_mode=" << hostMode << "\nhost_port=" << hostPort << "\nhost_max=" << hostMaxPlayers
-      << "\nhost_upnp=" << hostUpnp << "\n";
+      << "\nhost_upnp=" << hostUpnp << "\nhost_balance_bots=" << hostBalanceBots << "\nbot_skill=" << botSkill
+      << "\nbot_enemies=" << botEnemies << "\nbot_allies=" << botAllies << "\nbot_mode=" << botMode << "\n";
 }

@@ -25,6 +25,11 @@ struct Settings {
     int hostPort = 27500;
     int hostMaxPlayers = 8;
     bool hostUpnp = true;
+    bool hostBalanceBots = true;
+    // play vs bots
+    int botSkill = 1;           // 0 beginner .. 3 expert
+    int botEnemies = 3, botAllies = 1;
+    int botMode = 5;            // ffa
 
     void load();
     void save() const;

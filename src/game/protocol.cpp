@@ -29,6 +29,7 @@ void writeSnapshotShared(Writer& w, const Snapshot& s) {
     w.f32(m.actionProgress); w.u8(m.actionPlayer);
     w.u8(m.hillOwner); w.i16(m.target);
     w.f32(m.payloadDist); w.f32(m.payloadLen);
+    w.u8(m.voteActive); w.u8(m.voteYes); w.u8(m.voteNo); w.u8(m.voteVoters); w.f32(m.voteTimeLeft);
 
     w.u8((uint8_t)s.players.size());
     for (auto& p : s.players) {
@@ -68,6 +69,7 @@ bool readSnapshot(Reader& r, Snapshot& s) {
     m.actionProgress = r.f32(); m.actionPlayer = r.u8();
     m.hillOwner = r.u8(); m.target = r.i16();
     m.payloadDist = r.f32(); m.payloadLen = r.f32();
+    m.voteActive = r.u8(); m.voteYes = r.u8(); m.voteNo = r.u8(); m.voteVoters = r.u8(); m.voteTimeLeft = r.f32();
 
     s.players.resize(r.u8());
     for (auto& p : s.players) {

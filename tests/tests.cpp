@@ -450,6 +450,81 @@ static void testRocketSelfDamage(uint16_t port) {
     s.stop();
 }
 
+static void testBots(uint16_t& port) {
+    printf("bots: vs-bots fights, balance bots, votes, every mode\n");
+    { // FFA vs 3 expert bots: they should find and kill each other / us
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port++;
+        cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botSkill = BOT_EXPERT; cfg.timeLimit = 60;
+        s.setLog([](const std::string&) {});
+        if (!s.start(cfg)) { g_fail++; return; }
+        CHECK(s.playerCount() == 3);
+        NetClient a;
+        a.connect("127.0.0.1:" + std::to_string(cfg.port), "human");
+        std::vector<NetClient*> cls = {&a};
+        pump(s, cls, 25.0, idle);
+        int kills = 0;
+        for (auto& p : s.players_) if (p.connected) kills += p.kills;
+        printf("  ffa vs 3 expert bots: %d kills in 25 s (phase %d)\n", kills, s.ms_.phase);
+        CHECK(kills >= 3);
+        s.stop();
+    }
+    { // balance bots + vote
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "arena"; cfg.mode = MODE_VS; cfg.port = port++;
+        s.setLog([](const std::string&) {});
+        if (!s.start(cfg)) { g_fail++; return; }
+        NetClient a, b;
+        a.connect("127.0.0.1:" + std::to_string(cfg.port), "one");
+        std::vector<NetClient*> cls = {&a};
+        pump(s, cls, 1.5, idle);
+        int bots = 0;
+        for (auto& p : s.players_) bots += p.connected && p.isBot;
+        CHECK(bots == 1);                                  // 1 human vs 0 -> one bot on the other team
+        b.connect("127.0.0.1:" + std::to_string(cfg.port), "two");
+        cls.push_back(&b);
+        pump(s, cls, 1.5, idle);
+        bots = 0;
+        for (auto& p : s.players_) bots += p.connected && p.isBot;
+        CHECK(bots == 0);                                  // second human evens the teams
+        b.disconnect();
+        cls.pop_back();
+        pump(s, cls, 1.5, idle);
+        bots = 0;
+        for (auto& p : s.players_) bots += p.connected && p.isBot;
+        CHECK(bots == 1);
+        a.sendCommand("callvote botskill expert");
+        pump(s, cls, 0.5, idle);
+        for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].isBot) CHECK(s.bots_[i].skill == BOT_EXPERT);
+        a.sendCommand("callvote bots off");
+        pump(s, cls, 1.5, idle);
+        bots = 0;
+        for (auto& p : s.players_) bots += p.connected && p.isBot;
+        CHECK(bots == 0 && !s.config().balanceBots);
+        s.stop();
+    }
+    // every mode with bots on both sides: no crashes, things happen
+    const char* maps[MODE_COUNT] = {"arena", "arena", "sprint", "arena", "arena", "arena"};
+    for (int mode = 0; mode < MODE_COUNT; mode++) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = maps[mode]; cfg.mode = mode; cfg.port = port++;
+        cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botsAlly = 2; cfg.botSkill = BOT_ADVANCED;
+        s.setLog([](const std::string&) {});
+        if (!s.start(cfg)) { g_fail++; continue; }
+        std::vector<NetClient*> cls;
+        pump(s, cls, 14.0, idle);
+        int kills = 0, cps = 0;
+        for (auto& p : s.players_) { kills += p.kills; cps += p.checkpoint; }
+        printf("  %-8s with 5 bots: phase %d, round %d, kills %d, score %d-%d, cart %.1f, bomb %d, race checkpoints %d\n",
+               modeName(mode), s.ms_.phase, s.ms_.round, kills, s.ms_.scoreA, s.ms_.scoreB, s.ms_.payloadDist, s.ms_.bombState, cps);
+        CHECK(s.ms_.phase != PHASE_WARMUP); // bots alone start a match
+        s.stop();
+    }
+}
+
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
     netInit();
@@ -471,6 +546,7 @@ int main(int argc, char** argv) {
     testWeapons(port); port += 6;
     testTickRateFallback(port++);
     testRocketSelfDamage(port++);
+    testBots(port);
     netShutdown();
     printf(g_fail ? "%d FAILURE(S)\n" : "all tests passed\n", g_fail);
     return g_fail ? 1 : 0;

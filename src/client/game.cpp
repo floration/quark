@@ -53,7 +53,14 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     applyPresentMode();
     for (auto& q : latQ_) glGenQueries(1, &q.q);
 
-    if (opts_.hostMode >= 0) {
+    if (opts_.vsBotsMode >= 0) {
+        cfg_.botMode = opts_.vsBotsMode;
+        for (size_t i = 0; i < maps_.size(); i++) {
+            Map m;
+            if (m.load(maps_[i]) && m.supportsMode(cfg_.botMode)) { botMapIdx_ = (int)i; break; }
+        }
+        startHost(true);
+    } else if (opts_.hostMode >= 0) {
         hostModeIdx_ = opts_.hostMode;
         if (!opts_.hostMap.empty())
             for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == opts_.hostMap) hostMapIdx_ = (int)i;
@@ -73,7 +80,7 @@ void Game::shutdown() {
 // ---------------------------------------------------------------------------
 // hosting / connection
 
-void Game::startHost() {
+void Game::startHost(bool vsBots) {
     stopHost();
     if (maps_.empty()) { error_ = "no maps found in maps/"; return; }
     ServerConfig sc;
@@ -84,23 +91,40 @@ void Game::startHost() {
     if (sc.port == 0) sc.port = kDefaultPort;
     sc.maxPlayers = cfg_.hostMaxPlayers;
     sc.upnp = cfg_.hostUpnp;
+    sc.balanceBots = cfg_.hostBalanceBots;
+    if (vsBots) { // private local game: any free port, no port forwarding, fixed bots
+        sc.name = "vs bots";
+        sc.map = maps_[botMapIdx_ % maps_.size()];
+        sc.mode = cfg_.botMode;
+        sc.port = 0;
+        sc.upnp = false;
+        sc.lanOnly = true;
+        sc.maxPlayers = kMaxPlayers;
+        sc.vsBots = true;
+        sc.botSkill = cfg_.botSkill;
+        sc.botsEnemy = cfg_.botEnemies;
+        sc.botsAlly = modeIsTeamBased(sc.mode) ? cfg_.botAllies : 0;
+        sc.botsEnemy = std::min(sc.botsEnemy, kMaxPlayers - 1 - sc.botsAlly);
+    }
     host_ = std::make_unique<Server>();
     host_->setLog([](const std::string& s) { printf("[host] %s\n", s.c_str()); });
     std::string e;
     if (!host_->start(sc, &e)) {
         error_ = "could not host: " + e;
         host_.reset();
-        setScreen(Screen::Host);
+        setScreen(vsBots ? Screen::VsBots : Screen::Host);
         return;
     }
-    cfg_.hostMap = sc.map;
-    cfg_.hostMode = sc.mode;
-    cfg_.hostPort = sc.port;
+    if (!vsBots) {
+        cfg_.hostMap = sc.map;
+        cfg_.hostMode = sc.mode;
+        cfg_.hostPort = sc.port;
+    }
     cfg_.save();
     hostQuit_ = false;
     Server* srv = host_.get();
     hostThread_ = std::thread([this, srv] { raiseThreadPriority(); srv->run(hostQuit_); });
-    connectTo("127.0.0.1:" + std::to_string(sc.port));
+    connectTo("127.0.0.1:" + std::to_string(host_->port()));
 }
 
 void Game::stopHost() {
@@ -183,6 +207,10 @@ void Game::onKey(int key, int action, int mods) {
     if (key == GLFW_KEY_TAB) uiIn_.tab = true;
     if (action != GLFW_PRESS) return;
     if (key == GLFW_KEY_F3) { showPerf_ = !showPerf_; return; }
+    if (screen_ == Screen::InGame && !chatting_ && (key == GLFW_KEY_F1 || key == GLFW_KEY_F2)) {
+        net_.sendCommand(key == GLFW_KEY_F1 ? "vote yes" : "vote no");
+        return;
+    }
     if (key == GLFW_KEY_F12) {
         static int n = 0;
         r_.screenshot("screenshot_" + std::to_string(n++) + ".png");
@@ -218,7 +246,7 @@ void Game::onKey(int key, int action, int mods) {
         }
     } else if (key == GLFW_KEY_ESCAPE) {
         uiIn_.escape = true;
-        if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::Settings) {
+        if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::Settings || screen_ == Screen::VsBots) {
             cfg_.save();
             setScreen(Screen::Main);
         } else if (screen_ == Screen::Connecting) {
@@ -340,6 +368,9 @@ void Game::handleEvents() {
             case EV_ROUND_WIN:
                 centerText_ = e.text;
                 centerUntil_ = time_ + (e.b ? 8.0 : 3.5);
+                break;
+            case EV_VOTE:
+                voteText_ = e.text;
                 break;
             case EV_HIT:
                 if (e.a == net_.clientId()) hitUntil_ = time_ + 0.15;
@@ -857,6 +888,14 @@ void Game::drawHud() {
     y = H * 0.3f;
     for (auto& n : notices_) { ui_.labelCentered(cx, y, n.text, n.color); y += r_.textHeight(ts) + 6 * s; }
     if (time_ < centerUntil_) ui_.labelCentered(cx, H * 0.36f, centerText_, kWhite, 1.5f);
+    if (ms.voteActive) {
+        char vb[200];
+        snprintf(vb, sizeof vb, "VOTE: %s   YES %d  NO %d  OF %d   F1 YES / F2 NO   %ds", voteText_.c_str(), ms.voteYes, ms.voteNo,
+                 ms.voteVoters, (int)std::ceil(ms.voteTimeLeft));
+        float vw = r_.textWidth(vb, ts) + 24 * s;
+        r_.rect(cx - vw * 0.5f, 122 * s, vw, r_.textHeight(ts) + 12 * s, {0, 0, 0, 0.6f});
+        ui_.labelCentered(cx, 128 * s, vb, kWhite);
+    }
 
     // host info
     if (host_ && paused_) {
@@ -897,7 +936,8 @@ void Game::drawScoreboard() {
         r_.text(x + w * 0.5f, cy, ts, std::to_string(p.score), kWhite);
         r_.text(x + w * 0.64f, cy, ts, std::to_string(p.kills), kWhite);
         r_.text(x + w * 0.74f, cy, ts, std::to_string(p.deaths), kWhite);
-        r_.text(x + w * 0.84f, cy, ts, std::to_string(p.ping), kWhite);
+        bool bot = net_.playerName(p.id).rfind("BOT ", 0) == 0;
+        r_.text(x + w * 0.84f, cy, ts, bot ? "BOT" : std::to_string(p.ping), kWhite);
         cy += rowH;
     }
 }
@@ -910,7 +950,7 @@ void Game::drawPauseMenu(float cx, float y) {
         return;
     }
     bool teamMode = modeIsTeamBased(net_.mode().mode);
-    int rows = 6 + (teamMode ? 1 : 0) + (host_ ? 2 : 0);
+    int rows = 8 + (teamMode ? 1 : 0) + (host_ ? 2 : 0);
     ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, rows * (h + gap) + 24 * s);
     if (ui_.button(x, y, w, h, "RESUME")) { paused_ = false; }
     y += h + gap;
@@ -950,6 +990,16 @@ void Game::drawPauseMenu(float cx, float y) {
         }
         y += h + gap;
         if (ui_.button(x, y, w, h, "FORCE START")) { net_.sendCommand("forcestart"); paused_ = false; }
+        y += h + gap;
+    }
+    {   // votes: bots on/off, bot difficulty (majority of human players decides)
+        float hw = (w - gap) * 0.5f;
+        if (ui_.button(x, y, hw, h, "VOTE BOTS ON")) { net_.sendCommand("callvote bots on"); paused_ = false; }
+        if (ui_.button(x + hw + gap, y, hw, h, "VOTE BOTS OFF")) { net_.sendCommand("callvote bots off"); paused_ = false; }
+        y += h + gap;
+        static const std::vector<std::string> skills = {"BEGINNER", "INTERMEDIATE", "ADVANCED", "EXPERT"};
+        ui_.cycle(x, y, w - 90 * s, h, "BOTS", voteSkillPick_, 4, skills);
+        if (ui_.button(x + w - 84 * s, y, 84 * s, h, "VOTE")) { net_.sendCommand("callvote botskill " + skills[voteSkillPick_]); paused_ = false; }
         y += h + gap;
     }
     if (ui_.button(x, y, w, h, "SETTINGS")) settingsInGame_ = true;
@@ -1060,6 +1110,8 @@ void Game::drawMenu() {
 
     switch (screen_) {
         case Screen::Main: {
+            if (ui_.button(x, y, bw, bh, "PLAY VS BOTS")) setScreen(Screen::VsBots);
+            y += bh + gap;
             if (ui_.button(x, y, bw, bh, "JOIN GAME")) setScreen(Screen::Join);
             y += bh + gap;
             if (ui_.button(x, y, bw, bh, "HOST GAME")) setScreen(Screen::Host);
@@ -1102,7 +1154,7 @@ void Game::drawMenu() {
         }
         case Screen::Host: {
             float lw = 460 * s, lx = cx - lw * 0.5f;
-            ui_.panel(lx - 16 * s, y - 16 * s, lw + 32 * s, 430 * s);
+            ui_.panel(lx - 16 * s, y - 16 * s, lw + 32 * s, 478 * s);
             ui_.label(lx, y, "SERVER NAME");
             y += 22 * s;
             ui_.textField(3, lx, y, lw, bh, cfg_.hostName, 32);
@@ -1128,6 +1180,8 @@ void Game::drawMenu() {
             y += bh + gap;
             ui_.toggle(lx, y, lw, bh, "AUTO PORT FORWARD (UPNP)", cfg_.hostUpnp);
             y += bh + gap;
+            ui_.toggle(lx, y, lw, bh, "BALANCE UNEVEN TEAMS WITH BOTS", cfg_.hostBalanceBots);
+            y += bh + gap;
             ui_.label(lx, y, "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, 0.5f);
             y += 14 * s;
             ui_.label(lx, y, "IF UPNP FAILS, FORWARD THAT UDP PORT ON YOUR ROUTER", kGrey, 0.5f);
@@ -1141,6 +1195,37 @@ void Game::drawMenu() {
         case Screen::Settings:
             drawSettings(cx - 230 * s, y, 460 * s);
             break;
+        case Screen::VsBots: {
+            float lw = 460 * s, lx = cx - lw * 0.5f;
+            ui_.panel(lx - 16 * s, y - 16 * s, lw + 32 * s, 360 * s);
+            std::vector<std::string> modes;
+            for (int i = 0; i < MODE_COUNT; i++) modes.push_back(modeTitle(i));
+            ui_.cycle(lx, y, lw, bh, "MODE", cfg_.botMode, MODE_COUNT, modes);
+            y += bh + gap;
+            if (!maps_.empty()) {
+                // only offer maps that support the chosen mode
+                Map m;
+                for (size_t k = 0; k < maps_.size(); k++) {
+                    if (m.load(maps_[botMapIdx_ % maps_.size()]) && m.supportsMode(cfg_.botMode)) break;
+                    botMapIdx_ = (botMapIdx_ + 1) % (int)maps_.size();
+                }
+                ui_.cycle(lx, y, lw, bh, "MAP", botMapIdx_, (int)maps_.size(), maps_);
+                y += bh + gap;
+            }
+            static const std::vector<std::string> skills = {"BEGINNER", "INTERMEDIATE", "ADVANCED", "EXPERT"};
+            ui_.cycle(lx, y, lw, bh, "DIFFICULTY", cfg_.botSkill, 4, skills);
+            y += bh + gap;
+            bool teams = modeIsTeamBased(cfg_.botMode);
+            float ne = (float)cfg_.botEnemies, na = (float)cfg_.botAllies;
+            if (ui_.slider(lx, y, lw, bh, teams ? "ENEMY BOTS" : "BOTS", ne, 1, 7, "%.0f")) cfg_.botEnemies = (int)std::round(ne);
+            y += bh + gap;
+            if (teams && ui_.slider(lx, y, lw, bh, "TEAMMATE BOTS", na, 0, 3, "%.0f")) cfg_.botAllies = (int)std::round(na);
+            y += bh + gap * 2;
+            if (ui_.button(lx, y, lw * 0.5f - 5 * s, bh, "START")) startHost(true);
+            if (ui_.button(lx + lw * 0.5f + 5 * s, y, lw * 0.5f - 5 * s, bh, "BACK")) { cfg_.save(); setScreen(Screen::Main); }
+            if (!error_.empty()) ui_.labelCentered(cx, y + bh + gap + 10 * s, error_, kRed);
+            break;
+        }
         case Screen::Connecting: {
             ui_.labelCentered(cx, y, "CONNECTING TO " + net_.address() + "...", kWhite);
             y += 60 * s;

@@ -48,6 +48,11 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     resetRateWindow();
     rulesReset(*this);
     running_ = true;
+    if (cfg_.vsBots) {
+        bool teams = modeIsTeamBased(cfg_.mode);
+        for (int k = 0; k < cfg_.botsEnemy; k++) addBot(teams ? TEAM_B : TEAM_A, cfg_.botSkill);
+        for (int k = 0; k < cfg_.botsAlly && teams; k++) addBot(TEAM_A, cfg_.botSkill);
+    }
     log("listening on UDP " + std::to_string(port()) + " - map " + cfg_.map + ", mode " + modeName(cfg_.mode));
     if (cfg_.upnp && !cfg_.lanOnly) {
         upnp_ = std::make_unique<PortMapper>();
@@ -130,7 +135,7 @@ double Server::frame() {
         now = timeNow();
     }
     for (int i = 0; i < kMaxPlayers; i++)
-        if (players_[i].connected && now - players_[i].lastRecv > kTimeout) dropPlayer(i, "timed out", false);
+        if (players_[i].connected && !players_[i].isBot && now - players_[i].lastRecv > kTimeout) dropPlayer(i, "timed out", false);
     checkTickRate();
     return nextTick_ - timeNow();
 }
@@ -207,6 +212,10 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
         if (players_[existing].nonce == nonce) { sendAccept(sock_, from, nonce, existing, map_, cfg_.mode); return; }
         dropPlayer(existing, "reconnecting", false);
     }
+    if (playerCount() >= cfg_.maxPlayers) {
+        for (int i = kMaxPlayers - 1; i >= 0; i--)
+            if (players_[i].connected && players_[i].isBot) { removeBot(i); break; }
+    }
     if (playerCount() >= cfg_.maxPlayers) { reject("server is full"); return; }
     int id = -1;
     for (int i = 0; i < kMaxPlayers; i++) if (!players_[i].connected) { id = i; break; }
@@ -245,10 +254,10 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
 
 void Server::autoTeam(int id) {
     ServerPlayer& p = players_[id];
-    if (!modeIsTeamBased(cfg_.mode)) { p.team = TEAM_A; return; }
+    if (!modeIsTeamBased(cfg_.mode) || (cfg_.vsBots && !p.isBot)) { p.team = TEAM_A; return; }
     int a = 0, b = 0;
     for (int i = 0; i < kMaxPlayers; i++) {
-        if (i == id || !players_[i].connected) continue;
+        if (i == id || !players_[i].connected || players_[i].isBot != p.isBot) continue;
         if (players_[i].team == TEAM_A) a++;
         else if (players_[i].team == TEAM_B) b++;
     }
@@ -339,6 +348,20 @@ void Server::handleStringCmd(int id, const std::string& s) {
         p.name = rest;
         GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.text = rest;
         broadcastEvent(e);
+    } else if (cmd == "callvote") {
+        std::istringstream vs(rest);
+        std::string what, arg;
+        vs >> what >> arg;
+        if (what == "bots") callVote(id, VOTE_BOTS, arg == "off" ? 0 : 1);
+        else if (what == "botskill") {
+            int k = -1;
+            for (int i = 0; i < BOT_SKILLS; i++) if (arg == botSkillName(i) || arg == std::to_string(i)) k = i;
+            for (auto& c : arg) c = (char)toupper((unsigned char)c);
+            for (int i = 0; i < BOT_SKILLS; i++) if (arg == botSkillName(i)) k = i;
+            if (k >= 0) callVote(id, VOTE_BOTSKILL, k);
+        }
+    } else if (cmd == "vote") {
+        castVote(id, rest == "yes" || rest == "y" || rest == "1");
     } else if (cmd == "kill") {
         if (p.alive) killPlayer(id, -1, 255);
     } else if (p.admin) {
@@ -378,6 +401,14 @@ void Server::command(const std::string& line, int fromPlayer) {
         }
         rulesReset(*this);
         message("now playing " + newMap + " - " + modeTitle(newMode));
+    } else if (cmd == "addbot") {
+        std::string sk;
+        ss >> sk;
+        int team = arg == "b" ? TEAM_B : TEAM_A;
+        int skill = sk.empty() ? cfg_.botSkill : atoi(sk.c_str());
+        if (addBot(team, std::min(std::max(skill, 0), BOT_SKILLS - 1)) < 0) reply("server is full");
+    } else if (cmd == "kickbots") {
+        for (int i = 0; i < kMaxPlayers; i++) if (players_[i].connected && players_[i].isBot) removeBot(i);
     } else if (cmd == "forcestart") {
         rulesForceStart(*this);
     } else if (cmd == "restart") {
@@ -394,7 +425,7 @@ void Server::command(const std::string& line, int fromPlayer) {
     } else if (cmd == "status") {
         reply(statusText());
     } else {
-        reply("commands: map <name> [mode], mode <name>, forcestart, restart, kick <id>, say <text>, status");
+        reply("commands: map <name> [mode], mode <name>, forcestart, restart, kick <id>, say <text>, status, addbot [a|b] [0-3], kickbots");
     }
 }
 
@@ -417,6 +448,7 @@ void Server::broadcastEvent(const GameEvent& e) {
 
 void Server::sendEvent(int id, const GameEvent& e) {
     ServerPlayer& p = players_[id];
+    if (p.isBot) return;
     if (p.events.size() > 256) p.events.pop_front(); // client is hopelessly behind
     GameEvent c = e;
     c.id = p.nextEventId++;
@@ -525,6 +557,13 @@ void Server::simulate() {
     for (int i = 0; i < kMaxPlayers; i++) {
         ServerPlayer& p = players_[i];
         if (!p.connected) continue;
+        if (p.isBot) {
+            UserCmd c = botThink(*this, i);
+            c.msec = (uint8_t)(1000 / tickRate());
+            c.viewTick = timeMs_;
+            runPlayerCmd(i, c);
+            continue;
+        }
         p.cmdTokensMs = std::min(p.cmdTokensMs + 1000.0f / tickRate(), kMaxCmdTokensMs);
         drainCmds(i);
     }
@@ -538,6 +577,8 @@ void Server::simulate() {
         h.alive = p.alive;
     }
     tickProjectiles();
+    tickVote();
+    if (time() >= nextBalanceCheck_) { nextBalanceCheck_ = time() + 1.0f; updateBalanceBots(); }
     for (int i = 0; i < kMaxPlayers; i++) {
         ServerPlayer& p = players_[i];
         if (!p.connected) continue;
@@ -785,7 +826,7 @@ void Server::sendSnapshots() {
     uint8_t buf[kMaxPacket];
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
-        if (!p.connected) continue;
+        if (!p.connected || p.isBot) continue;
         s.clientId = (uint8_t)i;
         s.ackCmdSeq = p.lastCmdSeq;
         s.ackStringCmd = p.lastStringCmd;
@@ -809,4 +850,119 @@ void Server::sendSnapshots() {
         writeSnapshotEvents(w, events_);
         if (!sock_.send(p.addr, buf, w.size())) windowSendFail_++;
     }
+}
+
+// ---------------------------------------------------------------------------
+// bots
+
+int Server::humanCount(int team) const {
+    int c = 0;
+    for (auto& p : players_) c += p.connected && !p.isBot && (team < 0 || p.team == team);
+    return c;
+}
+
+int Server::addBot(int team, int skill, bool balance) {
+    if (playerCount() >= cfg_.maxPlayers) return -1;
+    int id = -1;
+    for (int i = 0; i < kMaxPlayers; i++) if (!players_[i].connected) { id = i; break; }
+    if (id < 0) return -1;
+    static const char* names[] = {"ANNA", "BRUNO", "CLEO", "DMITRI", "EZRA", "FAYE", "GUS", "HANA", "IVO", "JUNE", "KAI", "LENA", "MILO", "NOOR", "OTTO", "PIA"};
+    ServerPlayer& p = players_[id];
+    p = ServerPlayer();
+    for (auto& h : p.history) h.tick = 0xFFFFFFFFu;
+    p.connected = true;
+    p.isBot = true;
+    p.balanceBot = balance;
+    p.team = team;
+    p.lastRecv = timeNow();
+    p.name = std::string("BOT ") + names[(id * 7 + tick_) % 16];
+    bots_[id] = BotBrain();
+    bots_[id].skill = skill;
+    bots_[id].rng = 0x9E3779B9u ^ (uint32_t)(id * 2654435761u) ^ tick_;
+    GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.text = p.name;
+    broadcastEvent(e);
+    message(p.name + " (" + botSkillName(skill) + ") joined " + (team == TEAM_B ? "team B" : modeIsTeamBased(cfg_.mode) ? "team A" : "the game"));
+    if (rulesRespawnDelay(*this) >= 0) p.respawnAt = time() + 0.5f;
+    return id;
+}
+
+void Server::removeBot(int id) {
+    if (!players_[id].connected || !players_[id].isBot) return;
+    dropPlayer(id, "bot removed", false);
+}
+
+// Team modes: keep teams even by adding intermediate bots to the side with fewer humans.
+void Server::updateBalanceBots() {
+    bool wanted = cfg_.balanceBots && !cfg_.vsBots && modeIsTeamBased(cfg_.mode) && humanCount() > 0;
+    int hA = humanCount(TEAM_A), hB = humanCount(TEAM_B);
+    int needA = wanted ? std::max(0, hB - hA) : 0, needB = wanted ? std::max(0, hA - hB) : 0;
+    int haveA = 0, haveB = 0;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        auto& p = players_[i];
+        if (!p.connected || !p.balanceBot) continue;
+        int& have = p.team == TEAM_A ? haveA : haveB;
+        int need = p.team == TEAM_A ? needA : needB;
+        if (have >= need) removeBot(i);
+        else have++;
+    }
+    while (haveA < needA && addBot(TEAM_A, cfg_.balanceBotSkill, true) >= 0) haveA++;
+    while (haveB < needB && addBot(TEAM_B, cfg_.balanceBotSkill, true) >= 0) haveB++;
+}
+
+void Server::callVote(int caller, int kind, int arg) {
+    if (vote_.kind != VOTE_NONE) {
+        GameEvent e; e.type = EV_MESSAGE; e.text = "a vote is already in progress";
+        sendEvent(caller, e);
+        return;
+    }
+    vote_ = Vote();
+    vote_.kind = kind;
+    vote_.arg = arg;
+    vote_.endsAt = time() + 30.0f;
+    vote_.text = kind == VOTE_BOTS ? std::string("BALANCE BOTS ") + (arg ? "ON" : "OFF")
+                                   : std::string("BOT DIFFICULTY: ") + botSkillName(arg);
+    GameEvent e; e.type = EV_VOTE; e.a = (uint8_t)caller; e.text = vote_.text;
+    broadcastEvent(e);
+    message(players_[caller].name + " called a vote: " + vote_.text + " (F1 yes / F2 no)");
+    castVote(caller, true);
+}
+
+void Server::castVote(int id, bool yes) {
+    if (vote_.kind == VOTE_NONE || players_[id].isBot) return;
+    uint32_t bit = 1u << id;
+    vote_.yes &= ~bit;
+    vote_.no &= ~bit;
+    (yes ? vote_.yes : vote_.no) |= bit;
+    tickVote();
+}
+
+void Server::tickVote() {
+    ms_.voteActive = 0;
+    if (vote_.kind == VOTE_NONE) return;
+    int humans = humanCount();
+    int y = 0, n = 0;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (!players_[i].connected || players_[i].isBot) continue;
+        y += (vote_.yes >> i) & 1;
+        n += (vote_.no >> i) & 1;
+    }
+    bool pass = y * 2 > humans, fail = n * 2 >= humans || humans == 0;
+    if (time() >= vote_.endsAt) { pass = y > n; fail = !pass; }
+    if (pass) {
+        if (vote_.kind == VOTE_BOTS) cfg_.balanceBots = vote_.arg != 0;
+        else {
+            cfg_.balanceBotSkill = cfg_.botSkill = vote_.arg;
+            for (int i = 0; i < kMaxPlayers; i++) if (players_[i].isBot) bots_[i].skill = vote_.arg;
+        }
+        message("vote passed: " + vote_.text);
+        vote_ = Vote();
+        updateBalanceBots();
+        return;
+    }
+    if (fail) { message("vote failed: " + vote_.text); vote_ = Vote(); return; }
+    ms_.voteActive = 1;
+    ms_.voteYes = (uint8_t)y;
+    ms_.voteNo = (uint8_t)n;
+    ms_.voteVoters = (uint8_t)humans;
+    ms_.voteTimeLeft = vote_.endsAt - time();
 }

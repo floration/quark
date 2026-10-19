@@ -17,6 +17,7 @@ struct GLFWwindow;
 struct LaunchOptions {
     std::string connect;        // --connect addr
     int hostMode = -1;          // --host mode
+    int vsBotsMode = -1;        // --vsbots mode (uses the saved bot settings)
     std::string hostMap;        // --map name
     std::string screenshot;     // --screenshot path (taken after --shot-delay seconds, then quit)
     float shotDelay = 3.0f;
@@ -49,9 +50,9 @@ public:
     void afterSwap();     // low-latency fence waits + F3 input-latency measurement
 
 private:
-    enum class Screen { Main, Join, Host, Settings, Connecting, InGame };
+    enum class Screen { Main, Join, Host, Settings, Connecting, InGame, VsBots };
     void setScreen(Screen s);
-    void startHost();
+    void startHost(bool vsBots = false);
     void stopHost();
     void connectTo(const std::string& addr);
     void leaveGame(const std::string& error = "");
@@ -140,4 +141,7 @@ private:
     std::string latText_;
     double latNextUpdate_ = 0;
     int desiredWeapon_ = -1;
+    std::string voteText_;
+    int voteSkillPick_ = 1;
+    int botMapIdx_ = 0;
 };
