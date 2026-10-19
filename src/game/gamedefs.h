@@ -110,7 +110,7 @@ inline const WeaponDef& weaponDef(int w) {
     static const WeaponDef defs[WPN_COUNT] = {
         // Tuned by the owner (0.14.0). Perfect-aim time to kill from 100 hp in the trailing comment.
         //  name        refire   dmg  range   proj  speed  splash spread scoped zoom   beam  pel grav  sticky life
-        {"RIFLE",       2.0f/9,   7, 300.0f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0, true}, // semi-auto, 15 shots, 3.1 s
+        {"RIFLE",       2.0f/9,   7, 300.0f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // full auto, 15 shots, 3.1 s
         {"ROCKET",      1.0f,    45,   0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  12.0f, false, 5}, // 3, 2.0 s
         {"KNIFE",       1.0f,    40,   2.2f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 3, 2.0 s
         {"SNIPER",      4.0f,    50, 500.0f, false,  0,    0,     0.09f, 0.0f, 24.0f,  false, 1,  0,    false, 0},  // 2, 4.0 s

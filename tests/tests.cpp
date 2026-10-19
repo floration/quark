@@ -490,9 +490,9 @@ static void testCartDash(uint16_t port) {
     s.stop();
 }
 
-// Rifle is semi-auto: holding fire shoots once, clicking shoots each click; spread is seeded per command.
+// Shot spread is seeded per command, so client tracers match the server. The rifle fires while held.
 static void testSemiAuto(uint16_t port) {
-    printf("rifle semi-auto, seeded spread\n");
+    printf("seeded spread, rifle auto fire\n");
     float a1, r1, a2, r2;
     spreadOffset(42, 0, 0.1f, a1, r1); spreadOffset(42, 0, 0.1f, a2, r2);
     CHECK(a1 == a2 && r1 == r2 && r1 <= 0.1f);
@@ -504,7 +504,7 @@ static void testSemiAuto(uint16_t port) {
     s.setLog([](const std::string&) {});
     if (!s.start(cfg)) { g_fail++; return; }
     NetClient a;
-    a.connect("127.0.0.1:" + std::to_string(port), "clicker");
+    a.connect("127.0.0.1:" + std::to_string(port), "holder");
     std::vector<NetClient*> cls = {&a};
     pump(s, cls, 2.0, idle);
     auto& p = s.players_[a.clientId()];
@@ -512,16 +512,7 @@ static void testSemiAuto(uint16_t port) {
     float last = p.lastFire;
     int shots = 0;
     pump(s, cls, 1.5, [&](int) { UserCmd c; c.weapon = WPN_RIFLE; c.buttons = BTN_FIRE; if (p.lastFire != last) { shots++; last = p.lastFire; } return c; });
-    CHECK(shots <= 1); // held: one shot
-    shots = 0;
-    int n = 0;
-    pump(s, cls, 1.5, [&](int) {
-        UserCmd c; c.weapon = WPN_RIFLE;
-        if ((n++ / 40) % 2 == 0) c.buttons = BTN_FIRE; // click every 80 ms
-        if (p.lastFire != last) { shots++; last = p.lastFire; }
-        return c;
-    });
-    printf("  held: 1 shot, clicking: %d shots in 1.5 s\n", shots);
+    printf("  held 1.5 s: %d shots\n", shots);
     CHECK(shots >= 5);
     s.stop();
 }

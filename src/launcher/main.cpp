@@ -283,13 +283,13 @@ void installRelease(State* st, fs::path dir, Release r) {
         setStatus("install failed: " + err);
     } else {
         std::ofstream(dir / "version.txt") << r.version << "\n";
-        if (install::hasPrograms()) install::setPrograms(true, install::appDir() / fs::path(
+        install::setPrograms(true, install::appDir() / fs::path(
 #ifdef _WIN32
             "quark_launcher.exe"
 #else
             "quark_launcher"
 #endif
-            ), r.version); // keep the version shown in "installed programs" current
+            ), r.version); // always listed in "installed programs" (uninstall from there), version kept current
         std::lock_guard<std::mutex> l(st->mu);
         st->installed = r.version;
         st->status = "installed version " + r.version;
@@ -355,6 +355,11 @@ int main(int argc, char** argv) {
             return 0;
     }
     fs::path launcherPath = install::installSelf(argv[0]);
+    { // always listed in "installed programs" (Windows Apps & features); no option needed
+        std::string ver = readFile(dir / "version.txt");
+        while (!ver.empty() && (ver.back() == '\n' || ver.back() == '\r')) ver.pop_back();
+        install::setPrograms(true, launcherPath, ver.empty() ? std::string(QUARK_VERSION) : ver);
+    }
     if (!glfwInit()) return 1;
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
@@ -480,8 +485,7 @@ int main(int argc, char** argv) {
         }
         // desktop integration
         {
-            std::vector<int> opts = {0, 1};
-            if (*install::programsLabel()) opts.push_back(2);
+            std::vector<int> opts = {0, 1}; // "installed programs" entry is automatic (on every install)
             int n = (int)opts.size() + 1;
             float bw = (fw - 48 * s - (n - 1) * 8 * s) / n, bx = 24 * s, by = 344 * s, bh = 40 * s;
             for (int o : opts) {
