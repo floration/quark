@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark</title>
+<meta name="description" content="quark - a fast, minimal multiplayer FPS on a custom engine.">
+<style>
+  :root { --bg:#0b0d12; --panel:#141820; --line:#000; --text:#e8eaee; --dim:#9aa1ad; --accent:#40d9ff; --enemy:#ff4d40; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.55 ui-monospace, "Cascadia Mono", Consolas, monospace; }
+  main { max-width:920px; margin:0 auto; padding:40px 16px 80px; }
+  h1 { font-size:64px; letter-spacing:6px; margin:0; color:var(--accent); }
+  h2 { font-size:20px; letter-spacing:2px; margin:48px 0 12px; text-transform:uppercase; }
+  .tag { color:var(--dim); margin:4px 0 24px; }
+  img.shot { width:100%; border:3px solid var(--line); outline:1px solid #2a303c; display:block; }
+  .card { background:var(--panel); border:3px solid var(--line); outline:1px solid #2a303c; padding:20px; margin-top:16px; }
+  .btns { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
+  a.btn { display:inline-block; padding:10px 16px; border:3px solid var(--line); background:#1d2330; color:var(--text); text-decoration:none; }
+  a.btn.primary { background:var(--accent); color:#001018; font-weight:bold; }
+  a.btn:hover { outline:2px solid var(--accent); }
+  .ver { color:var(--accent); }
+  .date { color:var(--dim); font-size:14px; }
+  .log h3 { margin:10px 0 4px; font-size:16px; } .log ul { margin:4px 0; padding-left:20px; }
+  .muted { color:var(--dim); font-size:14px; }
+  details { margin-top:10px; } summary { cursor:pointer; }
+</style>
+</head>
+<body>
+<main>
+  <h1>QUARK</h1>
+  <p class="tag">A fast, minimal multiplayer FPS on a fully custom engine. Built for frame rate and latency first.</p>
+  <img class="shot" src="screenshot.png" alt="quark gameplay">
+
+  <h2>Download</h2>
+  <div class="card" id="latest"><span class="muted">loading latest release...</span></div>
+
+  <h2>Changelog</h2>
+  <div id="history"><span class="muted">loading...</span></div>
+
+  <h2>Hosting</h2>
+  <div class="card">
+    Host from the game (Host Game), or run <code>quark_server --mode ffa --map arena --upnp</code>.
+    Friends join with your public IP and port (default UDP 27500). If automatic port forwarding (UPnP) fails, forward that UDP port on your router.
+  </div>
+</main>
+<script>
+const REPO = "floration/quark";
+const esc = s => s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function md(text) {
+  let html = "", inList = false;
+  for (const raw of (text || "").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (/^[-*] /.test(line)) { if (!inList) { html += "<ul>"; inList = true; } html += "<li>" + esc(line.slice(2)) + "</li>"; continue; }
+    if (inList) { html += "</ul>"; inList = false; }
+    if (/^#+ /.test(line)) html += "<h3>" + esc(line.replace(/^#+ /, "")) + "</h3>";
+    else if (line) html += "<p>" + esc(line) + "</p>";
+  }
+  return html + (inList ? "</ul>" : "");
+}
+const asset = (r, name) => (r.assets || []).find(a => a.name === name);
+fetch(`https://api.github.com/repos/${REPO}/releases?per_page=30`)
+  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+  .then(rels => {
+    rels = rels.filter(r => /^v\d/.test(r.tag_name) && !r.draft);
+    if (!rels.length) throw new Error("no releases yet");
+    const L = rels[0];
+    const links = [
+      ["quark-launcher-windows.exe", "Windows launcher", true],
+      ["quark-windows.zip", "Windows (zip)"],
+      ["quark-launcher-linux", "Linux launcher"],
+      ["quark-linux.tar.gz", "Linux (tar.gz)"],
+      ["quark-launcher-macos.zip", "macOS launcher"],
+      ["quark-macos.zip", "macOS (zip)"],
+    ].map(([n, label, primary]) => { const a = asset(L, n); return a ? `<a class="btn${primary ? " primary" : ""}" href="${a.browser_download_url}">${label}</a>` : ""; }).join("");
+    document.getElementById("latest").innerHTML =
+      `<div><span class="ver">${esc(L.tag_name)}</span> <span class="date">${new Date(L.published_at).toLocaleDateString()}</span></div>
+       <div class="btns">${links}</div>
+       <p class="muted">The launcher installs the game and keeps it updated automatically. Windows 7 / 10 / 11, macOS, Linux.</p>`;
+    document.getElementById("history").innerHTML = rels.map((r, i) =>
+      `<div class="card log"><div><span class="ver">${esc(r.tag_name)}</span> <span class="date">${new Date(r.published_at).toLocaleDateString()}</span></div>
+       ${i < 3 ? md(r.body) : `<details><summary>show</summary>${md(r.body)}</details>`}</div>`).join("");
+  })
+  .catch(e => {
+    const msg = `<span class="muted">Could not load releases (${esc(String(e.message || e))}). See <a class="ver" href="https://github.com/${REPO}/releases">github.com/${REPO}/releases</a>.</span>`;
+    document.getElementById("latest").innerHTML = msg;
+    document.getElementById("history").innerHTML = "";
+  });
+</script>
+</body>
+</html>
