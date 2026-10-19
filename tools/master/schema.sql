@@ -5,3 +5,5 @@ CREATE TABLE IF NOT EXISTS players (id TEXT PRIMARY KEY, mu REAL NOT NULL, sigma
 CREATE TABLE IF NOT EXISTS matches (id TEXT PRIMARY KEY, result TEXT NOT NULL, players INTEGER NOT NULL, status TEXT NOT NULL, created INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS reports (match TEXT NOT NULL, reporter TEXT NOT NULL, PRIMARY KEY (match, reporter));
 CREATE INDEX IF NOT EXISTS matches_created ON matches (created);
+-- leaderboard names (0.28.0+): the latest name each player reported with
+CREATE TABLE IF NOT EXISTS names (id TEXT PRIMARY KEY, name TEXT NOT NULL, updated INTEGER NOT NULL);

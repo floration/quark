@@ -8,6 +8,7 @@
 // Ranked (OpenSkill / Weng-Lin Plackett-Luce ratings):
 //   POST /report  form: secret, match, ladder, p=id:team:place,...   one player's account of a finished match
 //   GET  /ratings?ladder=L&ids=a,b,c                                 "id mu sigma games" per line (unknown ids: defaults)
+//   GET  /leaderboard?ladder=L[&n=25]                                "rating games name" per line, best first (3+ games)
 // Ladders (each its own ratings): vanilla (all weapons), vampire (laser vampire), instagib. Rows are keyed "ladder:id".
 // A player's id is the first 32 hex chars of sha256(secret); the secret never leaves their game except to
 // here. A match counts only when every player in it has reported the exact same result; any disagreement
@@ -88,6 +89,14 @@ async function report(env, form, now) {
   if (!res) return "bad result";
   const me = (await sha256hex(secret)).slice(0, 32);
   if (!res.entries.some((e) => e.id === me)) return "not in this match";
+  // the reporter's display name for the leaderboard (hex-encoded printable ASCII, up to 20 chars)
+  const nameHex = String(form.get("name") || "");
+  if (/^([0-9a-f]{2}){1,20}$/.test(nameHex)) {
+    const name = nameHex.match(/../g).map((h) => String.fromCharCode(parseInt(h, 16))).join("");
+    if (/^[\x20-\x7e]+$/.test(name))
+      await env.DB.prepare("INSERT INTO names (id, name, updated) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, updated = excluded.updated")
+        .bind(me, name.trim().slice(0, 20) || "player", now).run();
+  }
   const result = ladder + "|" + res.text;
   if (Math.random() < 0.02) await env.DB.prepare("UPDATE matches SET status = 'expired' WHERE status = 'pending' AND created < ?").bind(now - PENDING_MS).run();
   let m = await env.DB.prepare("SELECT result, players, status, created FROM matches WHERE id = ?").bind(match).first();
@@ -137,7 +146,7 @@ export default {
     // The caller's own address; IPv6 hosts pass their IPv4 (the game is IPv4) and only then is ?ip= used.
     const conn = req.headers.get("CF-Connecting-IP") || "";
     const ip = ipv4(conn) || ipv4(q("ip"));
-    const text = (body, status = 200) => new Response(body, { status, headers: { "content-type": "text/plain" } });
+    const text = (body, status = 200) => new Response(body, { status, headers: { "content-type": "text/plain", "access-control-allow-origin": "*" } });
 
     if (u.pathname === "/announce" || u.pathname === "/remove") {
       const port = parseInt(q("port"), 10);
@@ -162,6 +171,17 @@ export default {
     }
     if (u.pathname === "/report" && req.method === "POST") {
       return text(await report(env, await req.formData(), now));
+    }
+    if (u.pathname === "/leaderboard") {
+      const ladder = q("ladder");
+      if (!LADDERS.has(ladder)) return text("not a ranked ladder", 400);
+      const n = Math.min(100, Math.max(1, parseInt(q("n"), 10) || 25));
+      const { results } = await env.DB.prepare(
+        "SELECT p.mu, p.sigma, p.games, COALESCE(n.name, 'player') AS name FROM players p " +
+        "LEFT JOIN names n ON n.id = substr(p.id, ?) WHERE p.id LIKE ? AND p.games >= 3 " +
+        "ORDER BY (p.mu - 3 * p.sigma) DESC LIMIT ?"
+      ).bind(ladder.length + 2, ladder + ":%", n).all();
+      return text(results.map((r) => `${Math.round(Math.max(0, r.mu - 3 * r.sigma) * 40)} ${r.games} ${r.name}`).join("\n"));
     }
     if (u.pathname === "/ratings") {
       const ids = q("ids").split(",").filter((id) => /^[0-9a-f]{32}$/.test(id)).slice(0, 64);

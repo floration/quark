@@ -84,6 +84,18 @@ const ratings = async (ns, ladder = "vanilla") => Object.fromEntries((await call
   check(ig[id(7)].games === 1 && ig[id(7)].mu > 25 && va[id(7)].games === 0 && va[id(7)].mu === 25 && vp[id(7)].games === 0, "ladders separate");
   check((await call("/report", { secret: secret(7), match: "ffffffffffffffff", ladder: "boomers", p })) === "not a ranked ladder", "unranked ruleset refused");
 }
+// leaderboard: names from the reports, 3+ games, best first
+{
+  const hex = (t) => [...t].map((c) => c.charCodeAt(0).toString(16).padStart(2, "0")).join("");
+  for (let g = 0; g < 3; g++) {
+    const p = `${id(11)}:0:0,${id(12)}:1:1`, match = "abcd" + String(g).padStart(12, "0");
+    await call("/report", { secret: secret(11), match, ladder: "vampire", p, name: hex("Top Dog") });
+    await call("/report", { secret: secret(12), match, ladder: "vampire", p, name: hex("under dog") });
+  }
+  const rows = (await call("/leaderboard?ladder=vampire")).split("\n").map((l) => l.split(" "));
+  check(rows.length === 2 && rows[0].slice(2).join(" ") === "Top Dog" && +rows[0][0] > +rows[1][0] && rows[0][1] === "3", "leaderboard " + JSON.stringify(rows));
+  check((await call("/leaderboard?ladder=boomers")) === "not a ranked ladder", "leaderboard ladder check");
+}
 check((await call("/report", { secret: secret(1), match: "cccccccccccccccc", ladder: "vanilla", p: `${id(1)}:0:0` })) === "bad result", "one player refused");
 check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", ladder: "vanilla", p: `${id(1)}:0:0,${id(2)}:0:1` })) === "bad result", "one side refused");
 console.log(fails ? fails + " FAILURE(S)" : "worker tests passed");

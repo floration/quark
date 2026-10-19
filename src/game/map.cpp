@@ -103,6 +103,7 @@ bool Map::parse(const std::string& text, std::string* err) {
     hasWallbang = false;
     preferredMode = -1;
     allowedModes = 0;
+    rankedLadders = 0;
     crc = crc32(text.data(), text.size());
     source = text;
     std::istringstream in(text);
@@ -151,6 +152,9 @@ bool Map::parse(const std::string& text, std::string* err) {
             std::string mode;
             ok = (bool)(ls >> mode);
             if (ok) preferredMode = modeFromName(mode.c_str());
+        } else if (kw == "ranked") {
+            std::string ln;
+            while (ls >> ln) { int v = arenaVariantFromName(ln.c_str()); if (v >= 0) rankedLadders |= (uint16_t)(1u << v); else ok = false; }
         } else if (kw == "modes") {
             std::string mn;
             while (ls >> mn) { int m = modeFromName(mn.c_str()); if (m >= 0) allowedModes |= 1u << m; else ok = false; }
@@ -186,6 +190,11 @@ std::string Map::serialize() const {
     };
     if (!title.empty()) o += "title " + title + "\n";
     if (preferredMode >= 0) o += std::string("for ") + modeName(preferredMode) + "\n";
+    if (rankedLadders) {
+        o += "ranked";
+        for (int v = 0; v < 16; v++) if (rankedLadders >> v & 1) o += std::string(" ") + arenaVariant(v).name;
+        o += "\n";
+    }
     if (allowedModes) {
         o += "modes";
         for (int m = 0; m < MODE_COUNT; m++) if (allowedModes >> m & 1) o += std::string(" ") + modeName(m);

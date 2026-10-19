@@ -32,6 +32,8 @@ bool isOfficialMap(const Map& m) {
     return false;
 }
 
+bool isRankedMap(const Map& m, int ladder) { return ladder >= 0 && ladder < 16 && (m.rankedLadders >> ladder & 1) && isOfficialMap(m); }
+
 std::string rankIdFromSecret(const std::string& secret) { return sha256Hex(secret).substr(0, 32); }
 
 RankKey loadOrCreateRankKey(const std::string& path) {
@@ -54,7 +56,7 @@ RankKey loadOrCreateRankKey(const std::string& path) {
 }
 
 std::string buildRankReport(const std::string& text, const std::vector<std::string>& ids, const RankKey& me,
-                            std::vector<std::string>* playersOut, std::string* ladderOut) {
+                            std::vector<std::string>* playersOut, std::string* ladderOut, const std::string& name) {
     if (me.secret.empty()) return "";
     std::istringstream in(text);
     std::string match, mode, list;
@@ -75,7 +77,9 @@ std::string buildRankReport(const std::string& text, const std::vector<std::stri
     if (!mine) return "";
     if (playersOut) *playersOut = players;
     if (ladderOut) *ladderOut = mode;
-    return "secret=" + me.secret + "&match=" + match + "&ladder=" + mode + "&p=" + p;
+    std::string nameHex; // shown on the leaderboard; hex keeps the form body plain
+    for (char c : name.substr(0, 20)) if (c >= 32 && c < 127) { char b[3]; snprintf(b, sizeof b, "%02x", (unsigned char)c); nameHex += b; }
+    return "secret=" + me.secret + "&match=" + match + "&ladder=" + mode + "&p=" + p + (nameHex.empty() ? "" : "&name=" + nameHex);
 }
 
 int Rating::display() const { return (int)std::lround(std::max(0.0, mu - 3 * sigma) * 40); }
@@ -102,6 +106,16 @@ void RankService::submit(const std::string& body, const std::string& ladder, con
 }
 
 void RankService::fetch(const std::string& ladder, const std::vector<std::string>& ids) { if (!ids.empty()) push({timeNow(), false, "", ladder, ids}); }
+
+void RankService::fetchLeaderboard(const std::string& ladder) { Job j{timeNow(), false, "", ladder, {}}; j.board = true; push(j); }
+
+bool RankService::leaderboard(const std::string& ladder, std::vector<LeaderRow>& out) {
+    std::lock_guard<std::mutex> l(mu_);
+    auto it = boards_.find(ladder);
+    if (it == boards_.end()) return false;
+    out = it->second;
+    return true;
+}
 
 bool RankService::rating(const std::string& ladder, const std::string& id, Rating& out) {
     std::lock_guard<std::mutex> l(mu_);
@@ -130,7 +144,29 @@ void RankService::run() {
         l.unlock();
         std::string base = masterUrl(), out, err, msg;
         std::map<std::string, Rating> got;
-        if (base.empty()) msg = "ranked: no server configured";
+        std::vector<LeaderRow> board;
+        bool gotBoard = false;
+        bool okLadderName = !j.ladder.empty();
+        for (char c : j.ladder) okLadderName &= (bool)isalnum((unsigned char)c);
+        if (j.board) {
+            if (!base.empty() && okLadderName && httpGetText(base + "/leaderboard?ladder=" + j.ladder + "&n=25", out, 6000, &err)) {
+                std::istringstream in(out);
+                std::string line;
+                while (std::getline(in, line)) {
+                    LeaderRow r;
+                    std::istringstream ls(line);
+                    if (!(ls >> r.rating >> r.games)) continue;
+                    std::getline(ls, r.name);
+                    while (!r.name.empty() && r.name[0] == ' ') r.name.erase(0, 1);
+                    board.push_back(r);
+                }
+                gotBoard = true;
+            } else { // couldn't reach it: one row with rating -1 carries the message
+                LeaderRow r; r.rating = -1; r.name = "couldn't reach the ranking server";
+                board.push_back(r);
+                gotBoard = true;
+            }
+        } else if (base.empty()) msg = "ranked: no server configured";
         else if (j.report) {
             msg = httpPostForm(base + "/report", j.body, out, 8000, &err) ? "ranked result: " + out : "ranked report failed: " + err;
         } else {
@@ -146,6 +182,7 @@ void RankService::run() {
             }
         }
         l.lock();
+        if (gotBoard) boards_[j.ladder] = board;
         for (auto& g : got) ratings_[g.first] = g.second;
         if (!msg.empty()) messages_.push_back(msg);
     }

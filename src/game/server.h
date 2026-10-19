@@ -225,9 +225,9 @@ public:
     int duelMod() const { return ms_.mode == MODE_DUEL ? ms_.duelMod : 255; } // 255 in warmup (rulesReset clears it)
     // Weapons allowed right now (bit per weapon, 0 = all) and the 1v1 ruleset's AR_* rules.
     uint16_t weaponMask() const;
-    uint8_t arenaRules() const { return ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY ? arenaVariant(ms_.arenaVariant).rules : 0; }
+    uint8_t arenaRules() const { return ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY ? arenaVariant(ms_.arenaVariant).rules : duelModDef(duelMod()).rules; }
     bool weaponAllowed(int w) const { uint16_t m = weaponMask(); return !m || (m >> w & 1); }
-    AABB hitBox(const Vec3& feet, bool crouched) const; // damage hull (doubled under DUEL_BIG)
+    AABB hitBox(const Vec3& feet, bool crouched) const; // damage hull (scaled by the duel modifier's size)
 
 private:
     void handlePacket(const NetAddr& from, const uint8_t* data, int len);

@@ -14,6 +14,8 @@ struct Map;
 // Ranked only runs on the maps shipped with the game: same name and the same contents as the official file.
 bool isOfficialMap(const Map& m);
 bool isOfficialMapName(const std::string& name);
+// Ranked runs only on official maps marked for that ladder ("ranked ..." line).
+bool isRankedMap(const Map& m, int ladder);
 
 struct RankKey {
     std::string secret; // 64 hex chars
@@ -26,7 +28,7 @@ std::string rankIdFromSecret(const std::string& secret);
 // From an EV_RANKED event text and the slot -> ranked id table: the form body this player posts to /report
 // (empty if the text is malformed, an id is missing, or we didn't play in it). ids: kMaxPlayers entries.
 std::string buildRankReport(const std::string& eventText, const std::vector<std::string>& ids, const RankKey& me,
-                            std::vector<std::string>* playersOut = nullptr, std::string* ladderOut = nullptr);
+                            std::vector<std::string>* playersOut = nullptr, std::string* ladderOut = nullptr, const std::string& name = "");
 
 struct Rating {
     double mu = 25, sigma = 25.0 / 3;
@@ -43,8 +45,12 @@ public:
     void fetch(const std::string& ladder, const std::vector<std::string>& ids);
     bool rating(const std::string& ladder, const std::string& id, Rating& out);
     std::vector<std::string> takeMessages();
+    // Top players of a ladder ("rating games name" rows); fetched in the background, empty until it arrives.
+    struct LeaderRow { int rating = 0, games = 0; std::string name; };
+    void fetchLeaderboard(const std::string& ladder);
+    bool leaderboard(const std::string& ladder, std::vector<LeaderRow>& out);
 private:
-    struct Job { double due; bool report; std::string body, ladder; std::vector<std::string> ids; };
+    struct Job { double due; bool report; std::string body, ladder; std::vector<std::string> ids; bool board = false; };
     void run();
     void push(Job j);
     std::thread thread_;
@@ -54,4 +60,5 @@ private:
     std::deque<Job> jobs_;
     std::map<std::string, Rating> ratings_; // "ladder:id"
     std::vector<std::string> messages_;
+    std::map<std::string, std::vector<LeaderRow>> boards_;
 };

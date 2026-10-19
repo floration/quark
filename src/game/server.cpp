@@ -44,7 +44,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     if (!map_.load(cfg_.map, &e)) { if (err) *err = e; return false; }
     if (cfg_.editMode && !map_.supportsMode(cfg_.mode)) // an edit session runs whatever the map can't play yet
         cfg_.mode = map_.supportsMode(MODE_FFA) ? MODE_FFA : cfg_.mode;
-    if (cfg_.ranked && !isOfficialMap(map_)) { if (err) *err = "ranked only runs on the official maps"; return false; }
+    if (cfg_.ranked && !isRankedMap(map_, cfg_.arenaVariant)) { if (err) *err = "ranked only runs on the ranked maps for its ladder"; return false; }
     if (cfg_.ranked) cfg_.editMode = false;
     if (!cfg_.editMode && !map_.supportsMode(cfg_.mode)) {
         if (err) *err = "map '" + cfg_.map + "' does not support mode " + modeName(cfg_.mode);
@@ -509,8 +509,8 @@ void Server::handleStringCmd(int id, const std::string& s) {
             Map m;
             bool ok = mode >= 0 && mapName.find_first_of("/\\.") == std::string::npos && m.load(mapName);
             if (ok && !m.supportsMode(mode)) ok = false;
-            if (ok && cfg_.ranked && (mode != MODE_ARENA || !arenaVariantRanked(variant) || !isOfficialMap(m))) {
-                GameEvent e; e.type = EV_MESSAGE; e.text = "ranked server: 1v1 on an official map, ladders vanilla / vampire / instagib (or vote ranked off)"; sendEvent(id, e);
+            if (ok && cfg_.ranked && (mode != MODE_ARENA || !arenaVariantRanked(variant) || !isRankedMap(m, variant))) {
+                GameEvent e; e.type = EV_MESSAGE; e.text = "ranked server: 1v1 on a ranked map for the ladder (vanilla / vampire / instagib), or vote ranked off"; sendEvent(id, e);
                 return;
             }
             if (!ok) { GameEvent e; e.type = EV_MESSAGE; e.text = "can't vote for that map/mode"; sendEvent(id, e); }
@@ -566,8 +566,8 @@ void Server::command(const std::string& line, int fromPlayer) {
         std::string err;
         if (!m.load(newMap, &err)) { reply(err); return; }
         if (!m.supportsMode(newMode)) { reply("map does not support that mode"); return; }
-        if (cfg_.ranked && (newMode != MODE_ARENA || !isOfficialMap(m) || !arenaVariantRanked(cfg_.arenaVariant))) {
-            reply("ranked: only 1v1 on vanilla, laser vampire or instagib, on official maps");
+        if (cfg_.ranked && (newMode != MODE_ARENA || !arenaVariantRanked(cfg_.arenaVariant) || !isRankedMap(m, cfg_.arenaVariant))) {
+            reply("ranked: only 1v1 on vanilla, laser vampire or instagib, on that ladder's ranked maps");
             return;
         }
         if (editing_ && tempEdit_) setEditing(false); // a voted edit was temporary: the new map loads as it is on disk
@@ -685,9 +685,9 @@ void Server::spawnPlayer(int id) {
     p.knifeBackAt = 0;
     if (!weaponAllowed(p.weapon)) // restricted pool: first allowed weapon, in slot order
         for (int k = 0; k < WPN_COUNT; k++) if (weaponAllowed(kWeaponSlots[k])) { p.weapon = kWeaponSlots[k]; break; }
-    int mod = duelMod();
-    if (mod == DUEL_ONE_HP) p.health = 1;
-    if (mod == DUEL_GRAPPLE) p.move.mods |= MOVE_GRAPPLE_ONLY;
+    const DuelModDef& dm = duelModDef(duelMod()); // duel: this life's modifier (none outside duel)
+    p.health = dm.health;
+    p.move.mods |= dm.moveMods;
     if (arenaRules() & AR_QUICK_DASH) p.move.mods |= MOVE_QUICK_DASH;
     if (arenaRules() & AR_LOW_GRAVITY) p.move.mods |= MOVE_LOW_GRAVITY;
     p.nextFire = time() + 0.25f;
@@ -740,6 +740,7 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
     if (!canHurt || dmg <= 0) return;
     uint8_t rules = arenaRules();
     if (attacker == victim && (rules & AR_NO_SELF_DAMAGE)) return;
+    if (attacker >= 0 && attacker != victim) dmg *= duelModDef(duelMod()).damageMul; // glass cannons / double damage
     if (attacker >= 0 && attacker != victim && (rules & AR_INSTAGIB)) dmg = std::max(dmg, v.health + 1);
     v.health -= dmg;
     v.lastDamagedTick = tick_;
@@ -751,7 +752,7 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
         if (time() >= hitFlushAt_[attacker][victim]) flushHit(attacker, victim);
         // Vampire laser: damage dealt heals the attacker (up to full health).
         ServerPlayer& a = players_[attacker];
-        if ((duelMod() == DUEL_VAMPIRE_LASER || (rules & AR_VAMPIRE)) && a.alive) { // healing fades as the round goes on
+        if ((rules & AR_VAMPIRE) && a.alive) { // healing fades as the round goes on
             float f = clampf((time() - roundStart_) / kVampireFadeTime, 0, 1);
             a.health = std::min((float)kMaxHealth, a.health + dmg * (1.0f - (1.0f - kVampireMinHeal) * f));
         }
@@ -814,6 +815,8 @@ void Server::simulate() {
         if (!p.connected) continue;
         if (p.alive && p.move.pos.y < map_.bounds.mn.y - 20.0f) killPlayer(i, -1, 252);
         if (!p.alive && p.respawnAt >= 0 && time() >= p.respawnAt && p.team != TEAM_SPECTATOR) spawnPlayer(i);
+        if (p.alive && (arenaRules() & AR_REGEN) && tick_ - p.lastDamagedTick > (uint32_t)(3 * tickRate()) && p.health < kMaxHealth)
+            p.health = std::min((float)kMaxHealth, p.health + 10.0f * dt()); // regeneration: 10 hp/s after 3 s untouched
     }
     rulesTick(*this);
 }
@@ -1461,15 +1464,15 @@ bool Server::switchMapKeepRules(const std::string& name) {
 
 uint16_t Server::weaponMask() const {
     if (ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY) return arenaVariant(ms_.arenaVariant).weapons;
-    int forced = duelModWeapon(duelMod());
-    return forced >= 0 ? (uint16_t)(1u << forced) : 0;
+    return duelModDef(duelMod()).weapons;
 }
 
 AABB Server::hitBox(const Vec3& feet, bool crouched) const {
     AABB b = playerBox(feet, crouched);
-    if (duelMod() != DUEL_BIG) return b;
+    float k = duelModDef(duelMod()).size;
+    if (k == 1.0f) return b;
     Vec3 c = {feet.x, feet.y, feet.z};
-    return {c + (b.mn - c) * kBigScale, c + (b.mx - c) * kBigScale};
+    return {c + (b.mn - c) * k, c + (b.mx - c) * k};
 }
 
 void Server::openGameLog() {
@@ -1646,15 +1649,17 @@ void Server::setRanked(bool on, int ladder) {
     if (editing_) setEditing(false);
     std::string mapName = cfg_.map;
     Map m;
-    if (!(m.load(mapName) && isOfficialMap(m) && m.supportsMode(MODE_ARENA))) {
+    if (!(m.load(mapName) && isRankedMap(m, ladder) && m.supportsMode(MODE_ARENA))) {
+        // the ladder's own map first (built for just that ruleset), else any ranked map that takes it
         mapName.clear();
         for (auto& n : listMaps()) {
             Map c;
-            if (!c.load(n) || !isOfficialMap(c) || !c.supportsMode(MODE_ARENA)) continue;
-            if (mapName.empty() || c.preferredMode == MODE_ARENA) mapName = n;
-            if (c.preferredMode == MODE_ARENA) break;
+            if (!c.load(n) || !isRankedMap(c, ladder) || !c.supportsMode(MODE_ARENA)) continue;
+            bool own = c.rankedLadders == (1u << ladder);
+            if (mapName.empty() || own) mapName = n;
+            if (own) break;
         }
-        if (mapName.empty()) { message("can't go ranked: no official 1v1 map installed"); return; }
+        if (mapName.empty()) { message("can't go ranked: no ranked map for that ladder installed"); return; }
     }
     if (!cfg_.ranked) balanceBotsUnranked_ = cfg_.balanceBots;
     cfg_.ranked = true;

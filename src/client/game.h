@@ -39,6 +39,7 @@ struct LaunchOptions {
     std::string editMap;        // --editor MAP: open the map editor on that map
     bool editSession = false;   // --editsession MAP: and host it as an edit session
     int editSel = -1;           // --edsel N: select box N (screenshots)
+    bool debugLeaderboard = false; // --leaderboard: open the leaderboard screen
 };
 
 class Game {
@@ -62,7 +63,7 @@ public:
     void afterSwap();     // low-latency fence waits + F3 input-latency measurement
 
 private:
-    enum class Screen { Main, Join, Host, Settings, Connecting, InGame, VsBots, Editor };
+    enum class Screen { Main, Join, Host, Settings, Connecting, InGame, VsBots, Editor, Leaderboard };
     void setScreen(Screen s);
     void startHost(bool vsBots = false);
     void stopHost();
@@ -105,7 +106,7 @@ private:
     std::string hostPortStr_;
     int hostMapIdx_ = 0, hostModeIdx_ = 0;
     std::vector<std::string> maps_;
-    struct MapInfo { std::string title; int preferredMode = -1; uint32_t modes = 0; }; // modes: bit per supported mode
+    struct MapInfo { std::string title; int preferredMode = -1; uint32_t modes = 0; uint16_t ranked = 0; }; // ranked: ladders it's a ranked map for // modes: bit per supported mode
     std::vector<MapInfo> mapInfo_;
     enum { PICK_NONE = 0, PICK_HOST_MAP, PICK_HOST_MODE, PICK_BOT_MAP, PICK_BOT_MODE, PICK_LIVE_MAP, PICK_LIVE_MODE, PICK_VARIANT, PICK_TMAPS, PICK_TMODES, PICK_RANKED };
     int variantCtx_ = 0, liveVariant_ = 0; // ruleset step: 0 host, 1 vs bots, 2 in game
@@ -132,6 +133,8 @@ private:
     double nextRankFetch_ = 0;
     int rankBefore_ = -1, rankGamesBefore_ = -1;
     void updateRanked();
+    double nextBoardFetch_ = 0;
+    void drawLeaderboard(float cx, float y);
     std::vector<std::string> rankIdsInGame() const;
     // map editor (editor.cpp). Every change is an edit op (applyMapEdit): applied locally when editing
     // alone, sent through the server in an edit session so everyone's copy stays the same.
@@ -251,6 +254,7 @@ private:
     // rebinding
     bool isDown(int action) const;
     int bestMapFor(int mode) const;
+    int bestRankedMap(int ladder) const; // the ladder's own ranked map, else any ranked map for it
     bool pressInput(int code);
     void drawControls(float x, float y, float w);
     void drawHudSettings(float x0, float y0, float wTotal);

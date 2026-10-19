@@ -21,6 +21,7 @@ struct Map {
     std::string name;
     std::string title;
     int preferredMode = -1;    // "for <mode>": the mode this map was designed for
+    uint16_t rankedLadders = 0; // "ranked vanilla vampire instagib": the ranked ladders (1v1 rulesets) this map is built for
     uint32_t allowedModes = 0; // "modes ffa duel ...": only these (bit per mode); 0 = every mode the map has the pieces for
     std::vector<Brush> brushes;
     std::vector<SpawnPoint> spawns;

@@ -41,15 +41,6 @@ inline int modeFromName(const char* s) {
     return -1;
 }
 
-// DUEL (1v1 or 2v2): every life (round) is played under one modifier, picked at random each round.
-enum DuelMod : uint8_t { DUEL_VAMPIRE_LASER = 0, DUEL_ROCKET, DUEL_KNIFE, DUEL_ONE_HP, DUEL_BIG, DUEL_GRAPPLE, DUEL_MOD_COUNT };
-inline const char* duelModTitle(int m) {
-    static const char* n[] = {"VAMPIRE LASER", "ROCKETS ONLY", "KNIVES ONLY", "1 HP", "DOUBLE SIZE", "GRAPPLE MOVEMENT ONLY"};
-    return (m >= 0 && m < DUEL_MOD_COUNT) ? n[m] : "";
-}
-// Weapon a modifier forces, or -1 for free choice.
-inline int duelModWeapon(int m) { return m == DUEL_VAMPIRE_LASER ? 4 : m == DUEL_ROCKET ? 1 : m == DUEL_KNIFE ? 2 : -1; }
-constexpr float kBigScale = 2.0f; // DUEL_BIG hitbox / model scale
 
 // 1V1 mode: one of these rulesets (chosen by the host or a vote). Rounds, one life each, first to 5.
 enum ArenaRule : uint8_t {
@@ -60,6 +51,12 @@ enum ArenaRule : uint8_t {
     AR_LOW_GRAVITY = 16,   // 40% gravity
 };
 #define WB(w) (1u << (w))
+
+// DUEL (1v1 or 2v2): every life (round) is played under one of these, picked at random (never the same twice
+// in a row). First to 11. weapons: allowed pool (0 = all); rules: AR_*; size scales the hitbox and model.
+struct DuelModDef { const char* title; uint16_t weapons; uint8_t rules; float health; float size; uint8_t moveMods; float damageMul; };
+constexpr uint8_t AR_REGEN = 32;   // (duel) 10 hp/s back after 3 s without taking damage
+inline const DuelModDef& duelModDef(int m);
 struct ArenaVariant { const char* name; const char* title; const char* desc; uint16_t weapons; uint8_t rules; };
 constexpr int kArenaVariants = 9;
 inline const ArenaVariant& arenaVariant(int v) {
@@ -200,3 +197,46 @@ enum EventType : uint8_t {
     EV_RANKED,       // ranked match over: text = "<matchId> <mode> slot:team:place,..." (each player reports it)
     EV_EDIT,         // map edit session: text = "<crcBefore hex> <crcAfter hex> <op>" (see applyMapEdit)
 };
+
+#define WB(w) (1u << (w))
+inline const DuelModDef& duelModDef(int m) {
+    constexpr uint8_t G = 1, Q = 2, L = 4; // MOVE_GRAPPLE_ONLY, MOVE_QUICK_DASH, MOVE_LOW_GRAVITY (pmove.h)
+    static const DuelModDef defs[] = {
+        // title                   weapons                                   rules                      hp    size  move dmg
+        {"VAMPIRE LASER",          WB(WPN_LASER),                            AR_VAMPIRE,                100, 1.0f, 0, 1.0f},
+        {"ROCKETS ONLY",           WB(WPN_ROCKET),                           0,                         100, 1.0f, 0, 1.0f},
+        {"KNIVES ONLY",            WB(WPN_KNIFE),                            0,                         100, 1.0f, 0, 1.0f},
+        {"1 HP",                   0,                                        0,                           1, 1.0f, 0, 1.0f},
+        {"DOUBLE SIZE",            0,                                        0,                         100, 2.0f, 0, 1.0f},
+        {"GRAPPLE MOVEMENT ONLY",  0,                                        0,                         100, 1.0f, G, 1.0f},
+        {"SNIPERS ONLY",           WB(WPN_SNIPER),                           0,                         100, 1.0f, 0, 1.0f},
+        {"SHOTGUNS ONLY",          WB(WPN_SHOTGUN),                          0,                         100, 1.0f, 0, 1.0f},
+        {"STICKIES ONLY",          WB(WPN_STICKY),                           0,                         100, 1.0f, 0, 1.0f},
+        {"CROSSBOWS ONLY",         WB(WPN_CROSSBOW),                         0,                         100, 1.0f, 0, 1.0f},
+        {"RIFLES ONLY",            WB(WPN_RIFLE),                            0,                         100, 1.0f, 0, 1.0f},
+        {"LASERS ONLY",            WB(WPN_LASER),                            0,                         100, 1.0f, 0, 1.0f},
+        {"INSTAGIB SNIPERS",       WB(WPN_SNIPER),                           AR_INSTAGIB,               100, 1.0f, 0, 1.0f},
+        {"INSTAGIB CROSSBOWS",     WB(WPN_CROSSBOW),                         AR_INSTAGIB,               100, 1.0f, 0, 1.0f},
+        {"MOON GRAVITY",           0,                                        AR_LOW_GRAVITY,            100, 1.0f, L, 1.0f},
+        {"MOON ROCKETS",           WB(WPN_ROCKET),                           AR_LOW_GRAVITY,            100, 1.0f, L, 1.0f},
+        {"ROCKET JUMPERS",         WB(WPN_ROCKET),                           AR_NO_SELF_DAMAGE,         100, 1.0f, 0, 1.0f},
+        {"QUICK DASH",             0,                                        AR_QUICK_DASH,             100, 1.0f, Q, 1.0f},
+        {"DASHING BLADES",         WB(WPN_KNIFE),                            AR_QUICK_DASH,             100, 1.0f, Q, 1.0f},
+        {"TINY PLAYERS",           0,                                        0,                         100, 0.6f, 0, 1.0f},
+        {"GIANT SNIPERS",          WB(WPN_SNIPER),                           0,                         100, 2.0f, 0, 1.0f},
+        {"GLASS CANNONS",          0,                                        0,                          50, 1.0f, 0, 2.0f},
+        {"TANKS",                  0,                                        0,                         250, 1.0f, 0, 1.0f},
+        {"DOUBLE DAMAGE",          0,                                        0,                         100, 1.0f, 0, 2.0f},
+        {"CLOSE QUARTERS",         WB(WPN_SHOTGUN) | WB(WPN_KNIFE),          0,                         100, 1.0f, 0, 1.0f},
+        {"HITSCAN ONLY",           WB(WPN_RIFLE) | WB(WPN_SNIPER) | WB(WPN_LASER) | WB(WPN_SHOTGUN), 0, 100, 1.0f, 0, 1.0f},
+        {"EXPLOSIVES",             WB(WPN_ROCKET) | WB(WPN_STICKY),          AR_NO_SELF_DAMAGE,         100, 1.0f, 0, 1.0f},
+        {"REGENERATION",           0,                                        AR_REGEN,                  100, 1.0f, 0, 1.0f},
+        {"1 HP KNIVES",            WB(WPN_KNIFE),                            0,                           1, 1.0f, 0, 1.0f},
+        {"MOON SHOTGUNS",          WB(WPN_SHOTGUN),                          AR_LOW_GRAVITY,            100, 1.0f, L, 1.0f},
+    };
+    static const DuelModDef none = {"", 0, 0, 100, 1.0f, 0, 1.0f};
+    return m >= 0 && m < (int)(sizeof defs / sizeof defs[0]) ? defs[m] : none;
+}
+#undef WB
+constexpr int DUEL_MOD_COUNT = 30;
+inline const char* duelModTitle(int m) { return duelModDef(m).title; }

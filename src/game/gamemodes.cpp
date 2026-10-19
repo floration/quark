@@ -27,7 +27,7 @@ int roundsToWin(const Server& s) {
     if (s.cfg_.roundsToWin > 0) return s.cfg_.roundsToWin;
     switch (s.ms_.mode) {
         case MODE_VS: return 5;
-        case MODE_DUEL: return 5;
+        case MODE_DUEL: return 11; // first to 11 lives
         case MODE_ARENA: return 5;
         case MODE_TOURNEY: return 3; // best of 5 per match
         case MODE_BOMB: return 7;

@@ -98,14 +98,42 @@ static void testTickRateIndependence() {
 
 static void testMaps() {
     printf("maps\n");
-    Map arena, sprint;
     std::string err;
-    CHECK(arena.load("arena", &err));
-    if (!err.empty()) printf("  %s\n", err.c_str());
-    CHECK(sprint.load("sprint", &err));
-    for (int m : {MODE_VS, MODE_BOMB, MODE_KOTH, MODE_PAYLOAD, MODE_FFA}) CHECK(arena.supportsMode(m));
-    CHECK(sprint.supportsMode(MODE_RACE));
-    CHECK(arena.payloadLength() > 20);
+    // the three all-mode maps support every mode
+    for (const char* name : {"arena", "foundry", "colosseum"}) {
+        Map m;
+        CHECK(m.load(name, &err));
+        if (!err.empty()) printf("  %s\n", err.c_str());
+        for (int k = 0; k < MODE_COUNT; k++) if (!m.supportsMode(k)) { printf("  %s: no %s\n", name, modeName(k)); g_fail++; }
+        CHECK(m.payloadLength() > 20);
+    }
+    // ranked: a map of its own for each ladder plus one for all three; every ranked map is point-symmetric
+    // (each solid has a mirrored twin through the center, and each team A spawn a team B one)
+    int perLadder[3] = {0, 0, 0}, ownMaps = 0;
+    for (auto& name : listMaps()) {
+        Map m;
+        if (!m.load(name) || !m.rankedLadders) continue;
+        CHECK(isRankedMap(m, 0) || isRankedMap(m, 1) || isRankedMap(m, 5));
+        CHECK(m.supportsMode(MODE_ARENA));
+        int k = 0;
+        for (int v : {0, 1, 5}) if (m.rankedLadders >> v & 1) perLadder[k++ < 3 ? (v == 0 ? 0 : v == 1 ? 1 : 2) : 0]++;
+        if (__builtin_popcount(m.rankedLadders) == 1) ownMaps++;
+        auto mirrored = [](const AABB& b) { return AABB{{-b.mx.x, b.mn.y, -b.mx.z}, {-b.mn.x, b.mx.y, -b.mn.z}}; };
+        int lonely = 0;
+        for (auto& br : m.brushes) {
+            AABB mb = mirrored(br.box);
+            bool found = false;
+            for (auto& o : m.brushes)
+                if (o.material == br.material && length(o.box.mn - mb.mn) < 0.01f && length(o.box.mx - mb.mx) < 0.01f) { found = true; break; }
+            lonely += !found;
+        }
+        if (lonely) printf("  %s: %d solids without a mirrored twin\n", name.c_str(), lonely);
+        CHECK(lonely == 0);
+        int a = 0, b = 0;
+        for (auto& sp : m.spawns) { a += sp.team == SPAWN_A; b += sp.team == SPAWN_B; }
+        CHECK(a == b && a >= 1);
+    }
+    CHECK(perLadder[0] >= 2 && perLadder[1] >= 2 && perLadder[2] >= 2 && ownMaps == 3);
 }
 
 // Every map: loads, supports the mode it was built for, no spawn inside a wall, and bots can
@@ -639,11 +667,12 @@ static void testDuel(uint16_t port) {
         auto& pb = s.players_[ib];
         // the modifier is applied to both players, and the forced weapon can't be switched away
         pump(s, cls, 0.1, [&](int) { UserCmd u; u.weapon = WPN_SNIPER; return u; });
-        if (duelModWeapon(mod) >= 0) CHECK(pa.weapon == duelModWeapon(mod) && pb.weapon == duelModWeapon(mod));
+        const DuelModDef& dm = duelModDef(mod);
+        if (dm.weapons) CHECK((dm.weapons >> pa.weapon & 1) && (dm.weapons >> pb.weapon & 1));
         else CHECK(pa.weapon == WPN_SNIPER);
         CHECK(pa.selectedWeapon == WPN_SNIPER);
-        if (mod == DUEL_ONE_HP) CHECK(pa.health == 1 && pb.health == 1);
-        if (mod == DUEL_GRAPPLE) {
+        CHECK(pa.health == dm.health && pb.health == dm.health);
+        if (dm.moveMods & MOVE_GRAPPLE_ONLY) {
             CHECK(pa.move.mods & MOVE_GRAPPLE_ONLY);
             CHECK(a.predicted().mods & MOVE_GRAPPLE_ONLY);
             Vec3 start = pa.move.pos;
@@ -652,11 +681,11 @@ static void testDuel(uint16_t port) {
         } else {
             CHECK(!(pa.move.mods & MOVE_GRAPPLE_ONLY));
         }
-        if (mod == DUEL_BIG) {
+        {
             AABB h = s.hitBox(pa.move.pos, false);
-            CHECK(std::fabs((h.mx.y - h.mn.y) - kPlayerHeight * 2) < 0.01f);
+            CHECK(std::fabs((h.mx.y - h.mn.y) - kPlayerHeight * dm.size) < 0.01f);
         }
-        if (mod == DUEL_VAMPIRE_LASER) {
+        if ((dm.rules & AR_VAMPIRE) && dm.damageMul == 1.0f) {
             pa.health = 50;
             s.damagePlayer(ib, ia, 20, WPN_LASER, {});
             CHECK(pa.health > 69.0f && pa.health <= 70.0f && pb.health == 80); // early in the round: (nearly) full healing
@@ -980,14 +1009,14 @@ static void testRanked(uint16_t port) {
         cfg.map = "zz_rk" + std::string(tag); cfg.ranked = true; cfg.port = port;
         s.setLog([](const std::string&) {});
         std::string err;
-        CHECK(!s.start(cfg, &err) && err.find("official") != std::string::npos);
+        CHECK(!s.start(cfg, &err) && err.find("ranked maps") != std::string::npos);
         std::remove(path.c_str());
     }
     for (int variant : {1, 3}) { // laser vampire (a ladder), quirky (not one)
         const int teamSize = 1;
         Server s;
         ServerConfig cfg;
-        cfg.map = "temple"; cfg.mode = MODE_FFA; cfg.port = (uint16_t)(port + variant); cfg.ranked = true; cfg.arenaVariant = variant;
+        cfg.map = "anvil"; cfg.mode = MODE_FFA; cfg.port = (uint16_t)(port + variant); cfg.ranked = true; cfg.arenaVariant = variant;
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; continue; }
         std::vector<std::unique_ptr<NetClient>> owned;
@@ -1209,7 +1238,7 @@ static void testArenaAndTourney(uint16_t& port) {
         ServerConfig cfg;
         cfg.autoStart = true;
         cfg.map = "crucible"; cfg.mode = MODE_TOURNEY; cfg.port = port++;
-        cfg.tourneyMaps = {"crucible", "duel"};
+        cfg.tourneyMaps = {"crucible", "temple"};
         cfg.tourneyVariants = {arenaVariantFromName("classic"), arenaVariantFromName("hitscan")};
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; return; }
@@ -1406,7 +1435,7 @@ static void testBots(uint16_t& port) {
         s.stop();
     }
     // every mode with bots on both sides: no crashes, things happen
-    const char* maps[MODE_COUNT] = {"arena", "arena", "sprint", "arena", "arena", "arena", "arena", "crucible", "crucible", "crucible"};
+    const char* maps[MODE_COUNT] = {"arena", "arena", "foundry", "arena", "arena", "arena", "arena", "crucible", "crucible", "crucible"};
     static_assert(MODE_COUNT == 10, "add the new mode's map here");
     for (int mode = 0; mode < MODE_COUNT; mode++) {
         Server s;
@@ -1453,7 +1482,7 @@ int main(int argc, char** argv) {
     testSession(MODE_KOTH, "arena", port++);
     testSession(MODE_PAYLOAD, "arena", port++);
     testSession(MODE_FFA, "arena", port++);
-    testSession(MODE_RACE, "sprint", port++);
+    testSession(MODE_RACE, "foundry", port++);
     testPayloadPush(port++);
     testPacketLoss(port++);
     testWeapons(port); port += 8;

@@ -49,6 +49,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     rescanMaps();
     rankKey_ = loadOrCreateRankKey(findDataPath("maps") + "/../quark.key"); // ranked identity: stays on this computer
     if (opts_.hostMode < 0 && opts_.vsBotsMode < 0 && opts_.connect.empty() && opts_.editMap.empty()) loadMenuBackdrop();
+    if (opts_.debugLeaderboard) setScreen(Screen::Leaderboard);
     if (!opts_.editMap.empty()) { openEditor(opts_.editMap); if (opts_.editSession) edHostSession(); if (opts_.editSel >= 0) edSel_ = {ED_BRUSH, opts_.editSel}; }
     for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == cfg_.hostMap) hostMapIdx_ = (int)i;
     hostModeIdx_ = clampf((float)cfg_.hostMode, 0, MODE_COUNT - 1);
@@ -283,6 +284,7 @@ void Game::rescanMaps() {
             mi.title = m.title.empty() ? name : m.title;
             mi.preferredMode = m.preferredMode;
             for (int k = 0; k < MODE_COUNT; k++) if (m.supportsMode(k)) mi.modes |= 1u << k;
+            for (int v = 0; v < 16; v++) if (isRankedMap(m, v)) mi.ranked |= (uint16_t)(1u << v);
         }
         mapInfo_.push_back(mi);
     }
@@ -305,6 +307,16 @@ void Game::loadMenuBackdrop() {
 
 void Game::onChar(unsigned cp) {
     if (cp < 128) uiIn_.chars += (char)cp;
+}
+
+int Game::bestRankedMap(int ladder) const {
+    int any = -1;
+    for (size_t i = 0; i < mapInfo_.size(); i++) {
+        if (!(mapInfo_[i].ranked >> ladder & 1)) continue;
+        if (mapInfo_[i].ranked == (1u << ladder)) return (int)i;
+        if (any < 0) any = (int)i;
+    }
+    return any < 0 ? 0 : any;
 }
 
 // The map built for this mode if there is one, else the first map that supports it.
@@ -440,7 +452,7 @@ void Game::onKey(int key, int action, int mods) {
         uiIn_.escape = true;
         if (controlsOpen_ || crosshairOpen_ || hudOpen_) { controlsOpen_ = crosshairOpen_ = hudOpen_ = false; cfg_.save(); return; }
         if (picker_ != PICK_NONE) { picker_ = PICK_NONE; return; }
-        if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::Settings || screen_ == Screen::VsBots) {
+        if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::Settings || screen_ == Screen::VsBots || screen_ == Screen::Leaderboard) {
             cfg_.save();
             setScreen(Screen::Main);
         } else if (screen_ == Screen::Connecting) {
@@ -579,9 +591,9 @@ void Game::handleEvents() {
                 std::vector<std::string> ids, players;
                 std::string ladder;
                 for (int i = 0; i < kMaxPlayers; i++) ids.push_back(net_.rankId(i));
-                std::string body = buildRankReport(e.text, ids, rankKey_, &players, &ladder);
+                std::string body = buildRankReport(e.text, ids, rankKey_, &players, &ladder, cfg_.name);
                 if (body.empty()) break;
-                if (!isOfficialMap(net_.map())) { notify("NOT REPORTED - RANKED NEEDS AN OFFICIAL MAP", 6); break; } // a host with a custom map gets no result
+                if (!isRankedMap(net_.map(), arenaVariantFromName(ladder.c_str()))) { notify("NOT REPORTED - NOT A RANKED MAP FOR THIS LADDER", 6); break; } // a host on another map gets no result
                 Rating r;
                 if (rank_.rating(ladder, rankKey_.id, r)) { rankBefore_ = r.display(); rankGamesBefore_ = r.games; }
                 rank_.submit(body, ladder, players);
@@ -651,7 +663,7 @@ void Game::frame(double dt) {
     frameIdx_ = (frameIdx_ + 1) % frameTimes_.size();
     frameCount_ = std::min(frameCount_ + 1, frameTimes_.size());
     { QZONE("net poll"); net_.poll(); }
-    if ((screen_ == Screen::InGame || screen_ == Screen::Editor || opts_.debugPicker || !opts_.backdrop.empty()) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
+    if ((screen_ == Screen::InGame || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty()) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
 
     if (screen_ == Screen::Join) browser_.poll();
     if (screen_ == Screen::Connecting || screen_ == Screen::InGame || (screen_ == Screen::Editor && edOnline_)) {
@@ -788,7 +800,7 @@ void Game::frame(double dt) {
     if (showPerf_) drawPerf();
     { QZONE("flush2D"); r_.flush2D(); }
 
-    if (shotAt_ > 0 && time_ >= shotAt_ && (screen_ == Screen::InGame || screen_ == Screen::Editor || opts_.debugPicker || !opts_.backdrop.empty())) {
+    if (shotAt_ > 0 && time_ >= shotAt_ && (screen_ == Screen::InGame || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty())) {
         r_.screenshot(opts_.screenshot);
         printf("screenshot written to %s\n", opts_.screenshot.c_str());
         quit_ = true;
@@ -841,7 +853,7 @@ void Game::drawWorld(float alpha) {
 
     // players (duel "double size" rounds draw everyone at twice the size, matching the server hitboxes)
     const ModeState& dms = net_.latest().ms;
-    const float bs = dms.mode == MODE_DUEL && dms.phase != PHASE_WARMUP && dms.duelMod == DUEL_BIG ? kBigScale : 1.0f;
+    const float bs = dms.mode == MODE_DUEL && dms.phase != PHASE_WARMUP ? duelModDef(dms.duelMod).size : 1.0f;
     for (int i = 0; i < kMaxPlayers; i++) {
         if (!players[i].valid) continue;
         const PlayerSnap& p = players[i].snap;
@@ -1417,6 +1429,46 @@ void Game::updateRanked() {
     }
 }
 
+// Top players of each ranked ladder (from the ranking server), refreshed every 30 s while open.
+void Game::drawLeaderboard(float cx, float y) {
+    static const int ladders[3] = {0, 1, 5};
+    float s = ui_.s(), colW = 300 * s, gap = 16 * s, w = 3 * colW + 2 * gap, x0 = cx - w * 0.5f;
+    if (time_ >= nextBoardFetch_) {
+        for (int v : ladders) rank_.fetchLeaderboard(arenaVariant(v).name);
+        if (!rankKey_.id.empty()) for (int v : ladders) rank_.fetch(arenaVariant(v).name, {rankKey_.id});
+        nextBoardFetch_ = time_ + 30;
+    }
+    float rowH = 17 * s, ts = std::max(1.0f, std::round(ui_.textScale() * 0.6f));
+    ui_.panel(x0 - 16 * s, y - 16 * s, w + 32 * s, 20 * rowH + 130 * s, 0.85f);
+    ui_.labelCentered(cx, y, "RANKED LEADERBOARD");
+    y += 34 * s;
+    for (int c = 0; c < 3; c++) {
+        float x = x0 + c * (colW + gap), yy = y;
+        std::string ladder = arenaVariant(ladders[c]).name;
+        r_.rect(x, yy, colW, 26 * s, {ui_.accent.r * 0.45f, ui_.accent.g * 0.45f, ui_.accent.b * 0.45f, 0.95f});
+        ui_.labelCentered(x + colW * 0.5f, yy + 4 * s, arenaVariant(ladders[c]).title, kWhite, 0.8f);
+        yy += 32 * s;
+        std::vector<RankService::LeaderRow> rows;
+        if (!rank_.leaderboard(ladder, rows)) { r_.text(x + 6 * s, yy, ts, "LOADING...", kGrey); continue; }
+        if (rows.empty()) r_.text(x + 6 * s, yy, ts, "NOBODY RANKED YET (3 GAMES)", kGrey);
+        if (!rows.empty() && rows[0].rating < 0) { r_.text(x + 6 * s, yy, ts, upper(rows[0].name), kGrey); continue; }
+        for (size_t i = 0; i < rows.size() && i < 20; i++) {
+            std::string n = std::to_string(i + 1) + ". " + upper(rows[i].name);
+            if (n.size() > 22) n.resize(22);
+            Color c2 = i == 0 ? Color{1.0f, 0.8f, 0.3f, 1} : i < 3 ? kWhite : Color{0.8f, 0.82f, 0.85f, 1};
+            r_.text(x + 6 * s, yy, ts, n, c2);
+            std::string rt = std::to_string(rows[i].rating);
+            r_.text(x + colW - 6 * s - r_.textWidth(rt, ts), yy, ts, rt, c2);
+            yy += rowH;
+        }
+        Rating mine;
+        if (rank_.rating(ladder, rankKey_.id, mine))
+            r_.text(x + 6 * s, y + 32 * s + 20 * rowH + 6 * s, ts, "YOU: " + std::to_string(mine.display()) + (mine.games < 5 ? "? " : " ") + "(" + std::to_string(mine.games) + " GAMES)", ui_.accent);
+    }
+    float by = y + 32 * s + 20 * rowH + 30 * s;
+    if (ui_.button(cx - 100 * s, by, 200 * s, 36 * s, "BACK")) setScreen(Screen::Main);
+}
+
 void Game::drawScoreboard() {
     const float W = (float)r_.width(), H = (float)r_.height(), s = H / 720.0f;
     float ts = ui_.textScale();
@@ -1701,7 +1753,8 @@ void Game::drawMenu() {
             y += bh + gap;
             if (ui_.button(x, y, bw, bh, "HOST GAME")) setScreen(Screen::Host);
             y += bh + gap;
-            if (ui_.button(x, y, bw, bh, "MAP EDITOR")) openEditor("");
+            if (ui_.button(x, y, bw * 0.5f - gap * 0.5f, bh, "MAP EDITOR")) openEditor("");
+            if (ui_.button(x + bw * 0.5f + gap * 0.5f, y, bw * 0.5f - gap * 0.5f, bh, "LEADERBOARD")) { nextBoardFetch_ = 0; setScreen(Screen::Leaderboard); }
             y += bh + gap;
             if (ui_.button(x, y, bw, bh, "SETTINGS")) setScreen(Screen::Settings);
             y += bh + gap;
@@ -1769,8 +1822,8 @@ void Game::drawMenu() {
                 if (cfg_.hostRanked) { // ranked is always 1v1 on a ladder: the mode button picks the ladder instead
                     hostModeIdx_ = MODE_ARENA;
                     if (!arenaVariantRanked(cfg_.hostArenaVariant)) cfg_.hostArenaVariant = 0;
-                    if (hostMapIdx_ >= (int)mapInfo_.size() || !(mapInfo_[hostMapIdx_].modes >> MODE_ARENA & 1) || !isOfficialMapName(maps_[hostMapIdx_]))
-                        hostMapIdx_ = bestMapFor(MODE_ARENA);
+                    if (hostMapIdx_ >= (int)mapInfo_.size() || !(mapInfo_[hostMapIdx_].ranked >> cfg_.hostArenaVariant & 1))
+                        hostMapIdx_ = bestRankedMap(cfg_.hostArenaVariant);
                 }
                 Map m;
                 m.load(maps_[hostMapIdx_]);
@@ -1780,7 +1833,7 @@ void Game::drawMenu() {
                     if (ui_.button(lx, y, lw, bh, std::string("MODE: RANKED 1V1 - ") + arenaVariant(ladders[k]).title + "  >")) picker_ = PICK_HOST_MODE;
                 } else if (ui_.button(lx, y, lw, bh, std::string("MODE: ") + modeTitle(hostModeIdx_) + (hostModeIdx_ == MODE_ARENA || hostModeIdx_ == MODE_TOURNEY ? std::string(" - ") + arenaVariant(cfg_.hostArenaVariant).title : "") + "  >")) picker_ = PICK_HOST_MODE;
                 y += bh + gap;
-                if (cfg_.hostRanked) ui_.label(lx, y, "RANKED - OFFICIAL MAPS ONLY - EACH LADDER HAS ITS OWN RATING", kGrey, 0.5f);
+                if (cfg_.hostRanked) ui_.label(lx, y, "RANKED MAPS ONLY - EACH LADDER HAS ITS OWN RATING", kGrey, 0.5f);
                 else if (!m.supportsMode(hostModeIdx_)) ui_.label(lx, y, "THIS MAP DOES NOT SUPPORT THAT MODE", kRed);
                 else if (hostModeIdx_ == MODE_DUEL && ui_.button(lx, y - 2 * s, lw, 24 * s, cfg_.hostDuelSize == 2 ? "TEAMS: 2V2 (CLICK FOR 1V1)" : "TEAMS: 1V1 (CLICK FOR 2V2)"))
                     cfg_.hostDuelSize = cfg_.hostDuelSize == 2 ? 1 : 2;
@@ -1843,6 +1896,7 @@ void Game::drawMenu() {
             if (!error_.empty()) ui_.labelCentered(cx, y + bh + gap + 10 * s, error_, kRed);
             break;
         }
+        case Screen::Leaderboard: drawLeaderboard(cx, y); break;
         case Screen::Connecting: {
             float dlp = net_.downloadProgress();
             if (dlp >= 0) ui_.labelCentered(cx, y, "DOWNLOADING MAP " + upper(net_.downloadName()) + " - " + std::to_string((int)(dlp * 100)) + "%", kWhite);
@@ -2101,7 +2155,7 @@ void Game::drawPicker(float cx, float y) {
             cur = multi ? multiSel_[i] : i == variant;
         } else if (modes && i == MODE_COUNT) {
             label = "RANKED";
-            sub = "1V1 LADDERS ON OFFICIAL MAPS >";
+            sub = "1V1 LADDERS ON RANKED MAPS >";
             cur = rankedNow;
         } else if (modes) {
             label = modeTitle(i);
@@ -2114,8 +2168,9 @@ void Game::drawPicker(float cx, float y) {
             label = upper(maps_[i]);
             cur = multi ? multiSel_[i] : i == mapIdx;
             ok = (mi.modes >> (multi ? MODE_TOURNEY : mode)) & 1;
-            bool rankedOnly = rankedNow && !isOfficialMapName(maps_[i]);
-            sub = rankedOnly ? "NOT AN OFFICIAL MAP" : !ok ? "DOESN'T SUPPORT THIS MODE" : mi.preferredMode >= 0 ? std::string("BUILT FOR ") + modeTitle(mi.preferredMode) : "ALL MODES";
+            int ladderNow = live ? net_.mode().arenaVariant : cfg_.hostArenaVariant;
+            bool rankedOnly = rankedNow && !(mi.ranked >> ladderNow & 1);
+            sub = rankedOnly ? "NOT A RANKED MAP FOR THIS LADDER" : !ok ? "DOESN'T SUPPORT THIS MODE" : mi.preferredMode >= 0 ? std::string("BUILT FOR ") + modeTitle(mi.preferredMode) : "ALL MODES";
             ok = ok && !rankedOnly;
         }
         if (cur) r_.rect(bx - 2 * s, by - 2 * s, bw + 4 * s, bh + 4 * s, ui_.accent);
@@ -2129,7 +2184,7 @@ void Game::drawPicker(float cx, float y) {
                 cfg_.hostRanked = true;
                 variant = kLadders[i];
                 mode = MODE_ARENA;
-                if (!isOfficialMapName(maps_[mapIdx]) || !((mapInfo_[mapIdx].modes >> MODE_ARENA) & 1)) mapIdx = bestMapFor(MODE_ARENA);
+                if (!(mapInfo_[mapIdx].ranked >> variant & 1)) mapIdx = bestRankedMap(variant);
                 finish();
             }
             else if (variants) { variant = i; finish(); }
