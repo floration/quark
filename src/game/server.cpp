@@ -209,6 +209,17 @@ void Server::handlePacket(const NetAddr& from, const uint8_t* data, int len) {
     players_[id].lastRecv = timeNow();
     if (type == PKT_INPUT) handleInput(id, r);
     else if (type == PKT_DISCONNECT) dropPlayer(id, "disconnected", false);
+    else if (type == PKT_MAP_REQUEST) { // client lacks this map (or has a different copy): send it a piece
+        uint32_t crc = r.u32(), off = r.u32();
+        if (r.bad() || crc != map_.crc || off >= map_.source.size()) return;
+        uint8_t out[kMaxPacket];
+        Writer w(out, sizeof out);
+        writeHeader(w, PKT_MAP_DATA);
+        uint16_t n = (uint16_t)std::min<size_t>(kMapChunk, map_.source.size() - off);
+        w.u32(players_[id].nonce); w.u32(map_.crc); w.u32((uint32_t)map_.source.size()); w.u32(off); w.u16(n);
+        w.bytes((const uint8_t*)map_.source.data() + off, n);
+        sock_.send(from, out, w.size());
+    }
 }
 
 static void sendAccept(UdpSocket& sock, const NetAddr& to, uint32_t nonce, int id, const Map& map, int mode) {
@@ -456,6 +467,7 @@ void Server::command(const std::string& line, int fromPlayer) {
         if (fromPlayer >= 0) { GameEvent e; e.type = EV_MESSAGE; e.text = t; sendEvent(fromPlayer, e); }
         else log(t);
     };
+    if (cmd == "reload") { cmd = "map"; arg = cfg_.map; } // re-read the current map file (edited while running)
     if (cmd == "map" || cmd == "mode") {
         std::string newMap = cmd == "map" ? arg : cfg_.map;
         int newMode = cfg_.mode;
@@ -511,7 +523,7 @@ void Server::command(const std::string& line, int fromPlayer) {
     } else if (cmd == "status") {
         reply(statusText());
     } else {
-        reply("commands: map <name> [mode], mode <name>, forcestart, restart, kick <id>, say <text>, status, addbot [a|b] [0-3], kickbots");
+        reply("commands: map <name> [mode], mode <name>, reload, forcestart, restart, kick <id>, say <text>, status, addbot [a|b] [0-3], kickbots");
     }
 }
 

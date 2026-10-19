@@ -3,6 +3,8 @@
 #include <cctype>
 #include "master.h"
 #include <random>
+#include <fstream>
+#include <sstream>
 
 namespace {
 constexpr double kConnectRetry = 0.5;
@@ -40,6 +42,7 @@ bool NetClient::connect(const std::string& address, const std::string& name) {
     stringCmds_.clear();
     stringSeq_ = stringAcked_ = 0;
     mapReady_ = false;
+    dl_ = Download();
     pred_ = predPrev_ = MoveState();
     for (auto& n : names_) n.clear();
     poll();
@@ -86,7 +89,10 @@ void NetClient::poll() {
             sock_.send(server_, out, w.size());
             lastSend_ = now;
         }
-    } else if (now - lastRecv_ > kServerTimeout) {
+    } else if (dl_.active) {
+        pumpDownload(now);
+    }
+    if (state_ == ConnState::Connected && now - lastRecv_ > kServerTimeout) {
         error_ = "connection to server lost";
         disconnect();
         return;
@@ -116,13 +122,46 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
             if (r.bad()) return;
             clientId_ = id;
             if (!mapReady_ || map_.name != mapName || map_.crc != crc) {
-                std::string err;
-                if (!map_.load(mapName, &err)) { error_ = "missing map '" + mapName + "': " + err; disconnect(); return; }
-                if (map_.crc != crc) { error_ = "your copy of map '" + mapName + "' differs from the server's"; disconnect(); return; }
-                mapReady_ = true;
-                mapGen_++;
+                if (useMap(mapName, crc)) dl_ = Download();
+                else if (!dl_.active || dl_.crc != crc) { // not on disk (or ours differs): fetch the server's copy
+                    dl_ = Download();
+                    dl_.active = true; dl_.name = mapName; dl_.crc = crc;
+                }
             }
             state_ = ConnState::Connected;
+            break;
+        }
+        case PKT_MAP_DATA: {
+            if (r.u32() != nonce_ || !dl_.active) return;
+            uint32_t crc = r.u32(), total = r.u32(), off = r.u32();
+            int n = r.u16();
+            if (r.bad() || crc != dl_.crc || total == 0 || total > kMaxMapBytes || n <= 0 || n > r.remaining()) return;
+            if (!dl_.total) {
+                dl_.total = total;
+                dl_.data.assign(total, '\0');
+                size_t chunks = (total + kMapChunk - 1) / kMapChunk;
+                dl_.asked.assign(chunks, 0.0); dl_.have.assign(chunks, false);
+            }
+            size_t k = off / kMapChunk;
+            if (total != dl_.total || off % kMapChunk || k >= dl_.have.size() || off + n > total || dl_.have[k]) return;
+            for (int i = 0; i < n; i++) dl_.data[off + i] = (char)r.u8();
+            dl_.have[k] = true;
+            dl_.got += n;
+            if (dl_.got >= dl_.total) {
+                Map m;
+                std::string err;
+                if (crc32(dl_.data.data(), dl_.data.size()) != dl_.crc || !m.parse(dl_.data, &err)) {
+                    error_ = "downloaded map '" + dl_.name + "' is broken" + (err.empty() ? "" : ": " + err);
+                    disconnect();
+                    return;
+                }
+                m.name = dl_.name;
+                saveMapFile(downloadedMapPath(dl_.name, dl_.crc), dl_.data); // reused next time; failing just means re-downloading
+                map_ = std::move(m);
+                mapReady_ = true;
+                mapGen_++;
+                dl_ = Download();
+            }
             break;
         }
         case PKT_REJECT:
@@ -153,6 +192,47 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
             onSnapshot(s);
             break;
         }
+    }
+}
+
+bool NetClient::useMap(const std::string& name, uint32_t crc) {
+    if (name.find_first_of("/\\.") != std::string::npos) return false; // just a name, never a path
+    Map m;
+    if (!(m.load(name) && m.crc == crc)) {
+        std::ifstream f(downloadedMapPath(name, crc), std::ios::binary);
+        std::stringstream ss;
+        ss << f.rdbuf();
+        if (!f || !m.parse(ss.str()) || m.crc != crc) return false;
+        m.name = name;
+    }
+    map_ = std::move(m);
+    mapReady_ = true;
+    mapGen_++;
+    return true;
+}
+
+// Map download: keep up to 32 chunk requests in flight, re-asking any that went unanswered for 250 ms.
+// Before the first reply we don't know the size, so just ask for the start.
+void NetClient::pumpDownload(double now) {
+    auto ask = [&](uint32_t off) {
+        uint8_t out[32];
+        Writer w(out, sizeof out);
+        writeHeader(w, PKT_MAP_REQUEST);
+        w.u32(nonce_); w.u32(dl_.crc); w.u32(off);
+        sock_.send(server_, out, w.size());
+    };
+    if (!dl_.total) {
+        if (now - lastSend_ > 0.25) { ask(0); lastSend_ = now; }
+        return;
+    }
+    int inFlight = 0;
+    for (size_t k = 0; k < dl_.have.size(); k++)
+        if (!dl_.have[k] && dl_.asked[k] > 0 && now - dl_.asked[k] < 0.25) inFlight++;
+    for (size_t k = 0; k < dl_.have.size() && inFlight < 32; k++) {
+        if (dl_.have[k] || (dl_.asked[k] > 0 && now - dl_.asked[k] < 0.25)) continue;
+        ask((uint32_t)(k * kMapChunk));
+        dl_.asked[k] = now;
+        inFlight++;
     }
 }
 

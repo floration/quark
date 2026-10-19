@@ -33,9 +33,12 @@ struct Map {
     std::vector<Light> lights;        // baked point lights ("light x y z radius [intensity]"): lit rooms under roofs
     AABB bounds;
     uint32_t crc = 0;
+    std::string source;               // the .qmap text this was parsed from (sent to clients that lack it)
 
     bool load(const std::string& name, std::string* err = nullptr);
     bool parse(const std::string& text, std::string* err = nullptr);
+    std::string serialize() const;    // back to .qmap text (what the editor saves)
+    void rebuild();                   // after editing brushes in place: bounds, wallbang flag, grid
 
     // Movement collision: returns how far along `axis` the box may move (clamped delta).
     float sweepAxis(const AABB& box, int axis, float delta) const;
@@ -71,4 +74,7 @@ std::string findDataPath(const std::string& rel); // resolves maps/... next to t
 void setExecutableDir(const char* argv0);
 const std::string& executableDir();       // empty if unknown
 std::vector<std::string> listMaps();
+// Maps fetched from servers live apart from your own, keyed by content: maps/downloads/<name>-<crc>.qmap
+std::string downloadedMapPath(const std::string& name, uint32_t crc);
+bool saveMapFile(const std::string& path, const std::string& text);
 uint32_t crc32(const void* data, size_t len);

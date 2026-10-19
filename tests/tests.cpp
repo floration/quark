@@ -808,6 +808,54 @@ static void testMapVote(uint16_t port) {
     s.stop();
 }
 
+// A server running a map the client doesn't have (or has a different copy of): the client downloads it,
+// keeps it under maps/downloads, and the editor's save format round-trips every map.
+static void testMapDownload(uint16_t port) {
+    printf("map download + editor save format\n");
+    for (auto& name : listMaps()) {
+        Map m, r;
+        CHECK(m.load(name));
+        CHECK(r.parse(m.serialize()));
+        CHECK(r.brushes.size() == m.brushes.size() && r.spawns.size() == m.spawns.size() && r.lights.size() == m.lights.size());
+        CHECK(r.checkpoints.size() == m.checkpoints.size() && r.payloadPath.size() == m.payloadPath.size() && r.hasHill == m.hasHill);
+        for (int k = 0; k < MODE_COUNT; k++) CHECK(r.supportsMode(k) == m.supportsMode(k));
+        CHECK(r.serialize() == m.serialize());
+    }
+    Map base;
+    CHECK(base.load("arena"));
+    std::string text = base.serialize() + "accent 0 8 0 1 9 1\n";
+    char tag[16];
+    snprintf(tag, sizeof tag, "%u", (unsigned)rand());
+    std::string name = std::string("zz_dltest") + tag, path = findDataPath("maps") + "/" + name + ".qmap";
+    CHECK(saveMapFile(path, text));
+    Server s;
+    ServerConfig cfg;
+    cfg.map = name; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    bool started = s.start(cfg);
+    std::remove(path.c_str()); // the client must not find it on disk
+    CHECK(started);
+    if (!started) return;
+    NetClient a;
+    a.connect("127.0.0.1:" + std::to_string(port), "a");
+    std::vector<NetClient*> cls = {&a};
+    pump(s, cls, 1.5, idle);
+    CHECK(a.state() == ConnState::Connected && a.mapReady());
+    CHECK(a.map().crc == s.map_.crc && a.map().brushes.size() == base.brushes.size() + 1);
+    std::string dl = downloadedMapPath(name, s.map_.crc);
+    FILE* f = fopen(dl.c_str(), "rb");
+    CHECK(f != nullptr);
+    if (f) fclose(f);
+    // a second connection uses the saved download instead of fetching again
+    NetClient b;
+    b.connect("127.0.0.1:" + std::to_string(port), "b");
+    cls.push_back(&b);
+    pump(s, cls, 0.2, idle);
+    CHECK(b.mapReady() && b.downloadProgress() < 0 && b.map().crc == s.map_.crc);
+    std::remove(dl.c_str());
+    s.stop();
+}
+
 // 1v1 rulesets: weapon pools, instagib, no self damage, vampire. Tourney: 5 players (byes), the bracket
 // runs to a champion with map and ruleset rotation, non-players spectate.
 static void testArenaAndTourney(uint16_t& port) {
@@ -1093,6 +1141,7 @@ int main(int argc, char** argv) {
     testCartDash(port++);
     testSemiAuto(port++);
     testMapVote(port++);
+    testMapDownload(port++);
     testArenaAndTourney(port);
     testNetcode(port); port += 2;
     testTickRateFallback(port++);

@@ -32,6 +32,9 @@ public:
     const std::string& error() const { return error_; }
     const std::string& address() const { return addrStr_; }
     bool mapReady() const { return mapReady_; }
+    // 0..1 while fetching the server's map file, -1 when not downloading
+    float downloadProgress() const { return dl_.active ? (dl_.total ? (float)dl_.got / dl_.total : 0.0f) : -1.0f; }
+    const std::string& downloadName() const { return dl_.name; }
     uint32_t mapGeneration() const { return mapGen_; }
     const Map& map() const { return map_; }
     int clientId() const { return clientId_; }
@@ -71,6 +74,8 @@ private:
     void handlePacket(const uint8_t* data, int len);
     void onSnapshot(Snapshot& s);
     void sendInput();
+    bool useMap(const std::string& name, uint32_t crc); // load name (own copy, else a downloaded one) if its CRC matches
+    void pumpDownload(double now);
 
     UdpSocket sock_;
     NetAddr server_;
@@ -82,6 +87,13 @@ private:
     Map map_;
     bool mapReady_ = false;
     uint32_t mapGen_ = 0;
+    struct Download {
+        bool active = false;
+        std::string name, data;
+        uint32_t crc = 0, total = 0, got = 0;
+        std::vector<double> asked;   // per chunk: when last requested (0 = never)
+        std::vector<bool> have;
+    } dl_;
 
     std::deque<Snapshot> snaps_;
     static constexpr int kLateSamples = 512;

@@ -40,6 +40,26 @@ std::vector<std::string> listMaps() {
     return out;
 }
 
+std::string downloadedMapPath(const std::string& name, uint32_t crc) {
+    char hex[16];
+    snprintf(hex, sizeof hex, "%08x", crc);
+    return findDataPath("maps") + "/downloads/" + name + "-" + hex + ".qmap";
+}
+
+bool saveMapFile(const std::string& path, const std::string& text) {
+    std::error_code ec;
+    fs::create_directories(fs::path(path).parent_path(), ec);
+    std::string tmp = path + ".tmp";
+    {
+        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+        if (!f) return false;
+        f.write(text.data(), (std::streamsize)text.size());
+        if (!f) return false;
+    }
+    fs::rename(tmp, path, ec);
+    return !ec;
+}
+
 uint32_t crc32(const void* data, size_t len) {
     static uint32_t table[256];
     static bool init = false;
@@ -81,6 +101,7 @@ bool Map::parse(const std::string& text, std::string* err) {
     hasWallbang = false;
     preferredMode = -1;
     crc = crc32(text.data(), text.size());
+    source = text;
     std::istringstream in(text);
     std::string line;
     int lineNo = 0;
@@ -148,6 +169,44 @@ bool Map::parse(const std::string& text, std::string* err) {
     }
     buildGrid();
     return true;
+}
+
+std::string Map::serialize() const {
+    std::string o = "# made with the quark map editor\n";
+    char b[256];
+    auto box = [&](const char* kw, const AABB& a) {
+        snprintf(b, sizeof b, "%s %g %g %g %g %g %g\n", kw, a.mn.x, a.mn.y, a.mn.z, a.mx.x, a.mx.y, a.mx.z);
+        o += b;
+    };
+    if (!title.empty()) o += "title " + title + "\n";
+    if (preferredMode >= 0) o += std::string("for ") + modeName(preferredMode) + "\n";
+    snprintf(b, sizeof b, "sun %g %g %g\n\n", sunDir.x, sunDir.y, sunDir.z);
+    o += b;
+    for (auto& br : brushes) box(br.material == 1 ? "accent" : br.material == 2 ? "wallbang" : "box", br.box);
+    o += "\n";
+    static const char* teams[] = {"a", "b", "any", "race"};
+    for (auto& sp : spawns) {
+        snprintf(b, sizeof b, "spawn %s %g %g %g %g\n", teams[sp.team & 3], sp.pos.x, sp.pos.y, sp.pos.z, std::round(sp.yaw * 180.0f / PI));
+        o += b;
+    }
+    for (auto& a : bombSites) box("site", a);
+    if (hasHill) box("hill", hill);
+    for (auto& a : checkpoints) box("checkpoint", a);
+    for (auto& p : payloadPath) { snprintf(b, sizeof b, "path %g %g %g\n", p.x, p.y, p.z); o += b; }
+    for (auto& l : lights) { snprintf(b, sizeof b, "light %g %g %g %g %g\n", l.pos.x, l.pos.y, l.pos.z, l.radius, l.intensity); o += b; }
+    return o;
+}
+
+void Map::rebuild() {
+    bounds = {{1e9f, 1e9f, 1e9f}, {-1e9f, -1e9f, -1e9f}};
+    hasWallbang = false;
+    for (auto& b : brushes) {
+        bounds.mn = vmin(bounds.mn, b.box.mn);
+        bounds.mx = vmax(bounds.mx, b.box.mx);
+        hasWallbang |= b.material == 2;
+    }
+    if (brushes.empty()) bounds = {{-1, -1, -1}, {1, 1, 1}};
+    buildGrid();
 }
 
 void Map::buildGrid() {

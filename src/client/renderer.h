@@ -28,6 +28,7 @@ public:
     void loadWorld(const Map& map, const std::function<void(float)>& progress);
     void warmup(const Map& map); // compile every shader / state now, not on the first match frame
     bool worldLoaded() const { return worldVerts_ > 0; }
+    void unloadWorld(const Vec3& sunDir) { worldVerts_ = 0; sunDir_ = sunDir; } // editor: draw only dynamic boxes
 
     void setCamera(const Vec3& eye, float yaw, float pitch, float hfovDeg);
     const Vec3& cameraPos() const { return camPos_; }

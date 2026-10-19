@@ -45,18 +45,9 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     glfwGetFramebufferSize(win, &w, &h);
     r_.resize(w, h);
     if (!r_.init(cfg_.shadowRes, err)) return false;
-    maps_ = listMaps();
-    for (auto& name : maps_) {
-        Map m;
-        MapInfo mi;
-        if (m.load(name)) {
-            mi.title = m.title.empty() ? name : m.title;
-            mi.preferredMode = m.preferredMode;
-            for (int k = 0; k < MODE_COUNT; k++) if (m.supportsMode(k)) mi.modes |= 1u << k;
-        }
-        mapInfo_.push_back(mi);
-    }
-    if (opts_.hostMode < 0 && opts_.vsBotsMode < 0 && opts_.connect.empty()) loadMenuBackdrop();
+    rescanMaps();
+    if (opts_.hostMode < 0 && opts_.vsBotsMode < 0 && opts_.connect.empty() && opts_.editMap.empty()) loadMenuBackdrop();
+    if (!opts_.editMap.empty()) openEditor(opts_.editMap);
     for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == cfg_.hostMap) hostMapIdx_ = (int)i;
     hostModeIdx_ = clampf((float)cfg_.hostMode, 0, MODE_COUNT - 1);
     cfg_.hostMaxPlayers = std::min(std::max(cfg_.hostMaxPlayers, 2), kMaxPlayers);
@@ -133,6 +124,18 @@ void Game::startHost(bool vsBots) {
         sc.botsEnemy = std::min(sc.botsEnemy, kMaxPlayers - 1 - sc.botsAlly);
         sc.arenaVariant = cfg_.botArenaVariant;
     }
+    if (!testMap_.empty()) { // play-testing from the editor: private, local only
+        sc = ServerConfig();
+        sc.name = "map test";
+        sc.map = testMap_;
+        sc.mode = testMode_;
+        sc.port = 0;
+        sc.upnp = false;
+        sc.lanOnly = true;
+        sc.publicList = false;
+        sc.maxPlayers = kMaxPlayers;
+        vsBots = true; // don't remember it as the host settings
+    }
     host_ = std::make_unique<Server>();
     host_->setLog([](const std::string& s) { printf("[host] %s\n", s.c_str()); });
     std::string e;
@@ -180,6 +183,7 @@ void Game::leaveGame(const std::string& error) {
     killFeed_.clear(); chatFeed_.clear(); notices_.clear();
     tracers_.clear(); explosions_.clear(); lastProjectiles_.clear();
     loadedMapGen_ = 0;
+    if (!testMap_.empty()) { std::string m = testMap_; testMap_.clear(); openEditor(m); return; } // back to the editor
     setScreen(Screen::Main);
 }
 
@@ -188,6 +192,7 @@ void Game::setScreen(Screen s) {
     ui_.clearFocus();
     captureMouse(s == Screen::InGame && !paused_ && !chatting_);
     if (s == Screen::Join) browser_.refresh();
+    if (s == Screen::Host || s == Screen::VsBots) rescanMaps();
 }
 
 void Game::captureMouse(bool on) {
@@ -234,6 +239,27 @@ void Game::drawBakeProgress(const std::string& name, float p) {
 }
 
 // The map behind the main menu (lighting is baked once, then cached like any map).
+void Game::rescanMaps() {
+    std::string hostName = maps_.empty() ? cfg_.hostMap : maps_[hostMapIdx_ % maps_.size()];
+    std::string botName = maps_.empty() ? "" : maps_[botMapIdx_ % maps_.size()];
+    maps_ = listMaps();
+    mapInfo_.clear();
+    for (auto& name : maps_) {
+        Map m;
+        MapInfo mi;
+        if (m.load(name)) {
+            mi.title = m.title.empty() ? name : m.title;
+            mi.preferredMode = m.preferredMode;
+            for (int k = 0; k < MODE_COUNT; k++) if (m.supportsMode(k)) mi.modes |= 1u << k;
+        }
+        mapInfo_.push_back(mi);
+    }
+    for (size_t i = 0; i < maps_.size(); i++) {
+        if (maps_[i] == hostName) hostMapIdx_ = (int)i;
+        if (maps_[i] == botName) botMapIdx_ = (int)i;
+    }
+}
+
 void Game::loadMenuBackdrop() {
     std::string name = !opts_.backdrop.empty() ? opts_.backdrop : "crucible";
     if (!menuMap_.load(name) && (maps_.empty() || !menuMap_.load(maps_[0]))) return;
@@ -342,6 +368,12 @@ void Game::onKey(int key, int action, int mods) {
         else uiIn_.copy = true;
         return;
     }
+    if (screen_ == Screen::Editor) {
+        if (key == GLFW_KEY_ESCAPE) uiIn_.escape = true;
+        if (ui_.typing()) { if (key == GLFW_KEY_ESCAPE) ui_.clearFocus(); return; }
+        editorKey(key, mods); // presses and key repeat (hold an arrow to keep nudging)
+        return;
+    }
     if (action != GLFW_PRESS) return;
     bool typing = chatting_ || ui_.typing();
     if (captureAction_ >= 0 || !typing) {
@@ -388,6 +420,10 @@ void Game::onMouseButton(int button, int action) {
         if (action == GLFW_PRESS) { uiIn_.pressed = captureAction_ < 0; uiIn_.down = true; }
         else if (action == GLFW_RELEASE) uiIn_.down = false;
     }
+    if (screen_ == Screen::Editor) { // right button held: mouse look + fly
+        if (button == GLFW_MOUSE_BUTTON_RIGHT) { edLook_ = action == GLFW_PRESS; captureMouse(edLook_); }
+        return;
+    }
     if (action == GLFW_PRESS) {
         // in menus the left button belongs to the UI (except when rebinding)
         bool uiClick = button == GLFW_MOUSE_BUTTON_LEFT && (screen_ != Screen::InGame || paused_) && captureAction_ < 0;
@@ -421,6 +457,7 @@ void Game::onResize(int w, int h) { r_.resize(w, h); }
 void Game::onScroll(double dy) {
     markInput();
     if (dy == 0) return;
+    if (screen_ == Screen::Editor) { edSpeed_ = clampf(edSpeed_ * (float)std::pow(1.25, dy), 2, 80); return; }
     // One action per whole notch: smooth-scrolling trackpads and high-res wheels send many small
     // steps, which used to skip through several weapons at once. Reversing direction starts over.
     if ((dy > 0) != (wheelAccum_ > 0)) wheelAccum_ = 0;
@@ -566,7 +603,7 @@ void Game::frame(double dt) {
     frameIdx_ = (frameIdx_ + 1) % frameTimes_.size();
     frameCount_ = std::min(frameCount_ + 1, frameTimes_.size());
     { QZONE("net poll"); net_.poll(); }
-    if ((screen_ == Screen::InGame || opts_.debugPicker || !opts_.backdrop.empty()) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
+    if ((screen_ == Screen::InGame || screen_ == Screen::Editor || opts_.debugPicker || !opts_.backdrop.empty()) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
 
     if (screen_ == Screen::Join) browser_.poll();
     if (screen_ == Screen::Connecting || screen_ == Screen::InGame) {
@@ -658,7 +695,9 @@ void Game::frame(double dt) {
     }
 
     // ---- render ----
-    if (screen_ == Screen::InGame && net_.hasSnapshot() && r_.worldLoaded()) {
+    if (screen_ == Screen::Editor) {
+        editorFrame(dt);
+    } else if (screen_ == Screen::InGame && net_.hasSnapshot() && r_.worldLoaded()) {
         drawWorld((float)clampf((float)(tickAcc_ / net_.tickPeriod()), 0, 1));
         drawHud();
     } else {
@@ -678,7 +717,7 @@ void Game::frame(double dt) {
     if (showPerf_) drawPerf();
     { QZONE("flush2D"); r_.flush2D(); }
 
-    if (shotAt_ > 0 && time_ >= shotAt_ && (screen_ == Screen::InGame || opts_.debugPicker || !opts_.backdrop.empty())) {
+    if (shotAt_ > 0 && time_ >= shotAt_ && (screen_ == Screen::InGame || screen_ == Screen::Editor || opts_.debugPicker || !opts_.backdrop.empty())) {
         r_.screenshot(opts_.screenshot);
         printf("screenshot written to %s\n", opts_.screenshot.c_str());
         quit_ = true;
@@ -1247,6 +1286,7 @@ void Game::drawScoreboard() {
 
 // Full map / mode list in game: the host switches right away, anyone else calls a vote for it.
 void Game::openLivePicker(int kind, bool vote) {
+    rescanMaps();
     liveMode_ = net_.mode().mode;
     liveMap_ = 0;
     for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == net_.map().name) liveMap_ = (int)i;
@@ -1321,12 +1361,13 @@ void Game::drawPauseMenu(float cx, float y) {
         if (ui_.button(x, y, hw, h, "CHANGE MODE")) openLivePicker(PICK_LIVE_MODE, false);
         if (ui_.button(x + hw + gap, y, hw, h, "CHANGE MAP") && !maps_.empty()) openLivePicker(PICK_LIVE_MAP, false);
         y += h + gap;
-        if (ui_.button(x, y, w, h, "FORCE START")) { net_.sendCommand("forcestart"); paused_ = false; }
+        if (ui_.button(x, y, hw, h, "FORCE START")) { net_.sendCommand("forcestart"); paused_ = false; }
+        if (ui_.button(x + hw + gap, y, hw, h, "RELOAD MAP")) { net_.sendCommand("reload"); paused_ = false; } // picks up edits to the map file
         y += h + gap;
     }
     if (ui_.button(x, y, w, h, "SETTINGS")) settingsInGame_ = true;
     y += h + gap;
-    if (ui_.button(x, y, w, h, host_ ? "STOP HOSTING" : "DISCONNECT")) { leaveGame(); return; }
+    if (ui_.button(x, y, w, h, !testMap_.empty() ? "BACK TO EDITOR" : host_ ? "STOP HOSTING" : "DISCONNECT")) { leaveGame(); return; }
     y += h + gap;
     if (ui_.button(x, y, w, h, "QUIT")) quit_ = true;
 }
@@ -1442,7 +1483,7 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
 
 void Game::drawMenu() {
     QZONE("drawMenu");
-    if (screen_ == Screen::InGame) return;
+    if (screen_ == Screen::InGame || screen_ == Screen::Editor) return;
     const float W = (float)r_.width(), H = (float)r_.height();
     float s = H / 720.0f;
     ui_.begin(&r_, uiIn_, s);
@@ -1467,6 +1508,8 @@ void Game::drawMenu() {
             if (ui_.button(x, y, bw, bh, "JOIN GAME")) setScreen(Screen::Join);
             y += bh + gap;
             if (ui_.button(x, y, bw, bh, "HOST GAME")) setScreen(Screen::Host);
+            y += bh + gap;
+            if (ui_.button(x, y, bw, bh, "MAP EDITOR")) openEditor("");
             y += bh + gap;
             if (ui_.button(x, y, bw, bh, "SETTINGS")) setScreen(Screen::Settings);
             y += bh + gap;
@@ -1583,7 +1626,9 @@ void Game::drawMenu() {
             break;
         }
         case Screen::Connecting: {
-            ui_.labelCentered(cx, y, "CONNECTING TO " + net_.address() + "...", kWhite);
+            float dlp = net_.downloadProgress();
+            if (dlp >= 0) ui_.labelCentered(cx, y, "DOWNLOADING MAP " + upper(net_.downloadName()) + " - " + std::to_string((int)(dlp * 100)) + "%", kWhite);
+            else ui_.labelCentered(cx, y, "CONNECTING TO " + net_.address() + "...", kWhite);
             y += 60 * s;
             if (ui_.button(x, y, bw, bh, "CANCEL")) leaveGame();
             break;

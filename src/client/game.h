@@ -35,6 +35,7 @@ struct LaunchOptions {
     float backdropAngle = -1;   // --orbit DEG: fixed orbit position for --backdrop   // --picker: open the host menu's map list
     bool debugSettings = false; // --settings: open the settings screen in game
     bool debugControls = false; // --controls
+    std::string editMap;        // --editor MAP: open the map editor on that map
 };
 
 class Game {
@@ -58,7 +59,7 @@ public:
     void afterSwap();     // low-latency fence waits + F3 input-latency measurement
 
 private:
-    enum class Screen { Main, Join, Host, Settings, Connecting, InGame, VsBots };
+    enum class Screen { Main, Join, Host, Settings, Connecting, InGame, VsBots, Editor };
     void setScreen(Screen s);
     void startHost(bool vsBots = false);
     void stopHost();
@@ -118,6 +119,39 @@ private:
     Vec3 bgCenter_;
     float bgRadius_ = 30;
     void loadMenuBackdrop();
+    void rescanMaps();          // re-list maps/ so new or edited files show up without restarting
+    std::string testMap_;       // set while play-testing a map from the editor
+    int testMode_ = 0;
+
+    // map editor (editor.cpp)
+    enum { ED_BRUSH, ED_SPAWN, ED_LIGHT, ED_SITE, ED_HILL, ED_CHECK, ED_PATH };
+    struct EdSel { int kind = -1, idx = -1; bool valid() const { return kind >= 0; } };
+    Map ed_;
+    std::string edName_ = "mymap", edMsg_;
+    double edMsgUntil_ = 0, edLastPush_ = 0, edLeaveArmed_ = 0;
+    EdSel edSel_;
+    int edGridIdx_ = 1, edLoadIdx_ = 0;
+    float edSpeed_ = 12;
+    Vec3 edCam_;
+    bool edLook_ = false, edDirty_ = false, edBaked_ = false;
+    std::vector<Map> edUndo_;
+    void openEditor(const std::string& map);
+    void closeEditor();
+    void editorFrame(double dt);
+    void editorKey(int key, int mods);
+    void edPush(bool coalesce = false);
+    void edChanged();
+    void edNotify(const std::string& s);
+    AABB edBounds(EdSel sel) const;
+    void edMove(EdSel sel, const Vec3& d);
+    void edResize(EdSel sel, int axis, int sign, float amount);
+    void edDelete();
+    void edDuplicate();
+    void edAdd(int kind, int variant);
+    EdSel edPick(const Vec3& o, const Vec3& dir) const;
+    Vec3 edMouseRay() const;
+    bool edSave();
+    void edTest();
     void drawBakeProgress(const std::string& name, float p);
 
     // view / input
