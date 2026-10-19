@@ -65,6 +65,11 @@ void enterMatchEnd(Server& s, const std::string& text, int winner) {
     s.broadcastEvent(e);
     s.log(text);
     s.glog(LOG_SIMPLE, "match end: %s", text.c_str());
+    if (s.cfg_.ranked) {
+        std::string why, res = s.rankedResult(winner, &why);
+        if (res.empty()) s.message("not rated: " + why);
+        else { GameEvent r; r.type = EV_RANKED; r.text = res; s.broadcastEvent(r); s.glog(LOG_SIMPLE, "ranked %s", res.c_str()); }
+    }
     setPhase(s, PHASE_MATCH_END, kMatchEndTime);
 }
 

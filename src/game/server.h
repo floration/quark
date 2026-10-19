@@ -49,6 +49,7 @@ struct ServerConfig {
     std::vector<std::string> tourneyMaps;
     std::vector<int> tourneyVariants;
     bool editMode = false;      // start as a map edit session (anyone connected can edit; the host autosaves)
+    bool ranked = false;        // matches are rated (OpenSkill) once every player reports the same result; no bots
 };
 enum LogLevel { LOG_OFF = 0, LOG_SIMPLE, LOG_VERBOSE, LOG_EXTREME };
 inline int logLevelFromName(const std::string& s) {
@@ -62,6 +63,7 @@ struct ServerPlayer {
     NetAddr addr;
     uint32_t nonce = 0;
     std::string name;
+    std::string rankId;         // 32 hex chars from the player's key (ranked), empty if unknown
     bool admin = false;
     int team = TEAM_A;
     bool alive = false;
@@ -199,6 +201,7 @@ public:
     bool editing_ = false, editDirty_ = false;
     float nextAutosave_ = 0;
     void setEditing(bool on);
+    std::string rankedResult(int winner, std::string* whyNot); // EV_RANKED text for the match that just ended
     bool applyEdit(int from, const std::string& op);
     bool autosave();
     void handleStringCmdForTest(int id, const std::string& s) { handleStringCmd(id, s); }

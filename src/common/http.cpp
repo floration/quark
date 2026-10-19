@@ -1,12 +1,13 @@
 #include "http.h"
 #include <cstdio>
+#include <cctype>
 #include <vector>
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <winhttp.h>
 
-bool httpGetText(const std::string& url, std::string& out, int timeoutMs, std::string* err) {
+static bool request(const wchar_t* method, const std::string& url, const std::string* body, std::string& out, int timeoutMs, std::string* err) {
     out.clear();
     std::wstring wurl(url.begin(), url.end()); // URLs here are ASCII
     URL_COMPONENTS uc{};
@@ -21,9 +22,11 @@ bool httpGetText(const std::string& url, std::string& out, int timeoutMs, std::s
     WinHttpSetOption(s, WINHTTP_OPTION_SECURE_PROTOCOLS, &protos, sizeof protos);
     WinHttpSetTimeouts(s, timeoutMs, timeoutMs, timeoutMs, timeoutMs);
     HINTERNET c = WinHttpConnect(s, host, uc.nPort, 0);
-    HINTERNET r = c ? WinHttpOpenRequest(c, L"GET", path, nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+    HINTERNET r = c ? WinHttpOpenRequest(c, method, path, nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
                                          uc.nScheme == INTERNET_SCHEME_HTTPS ? WINHTTP_FLAG_SECURE : 0) : nullptr;
-    bool ok = r && WinHttpSendRequest(r, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
+    const wchar_t* hdr = L"Content-Type: application/x-www-form-urlencoded\r\n";
+    bool ok = r && (body ? WinHttpSendRequest(r, hdr, (DWORD)-1L, (LPVOID)body->data(), (DWORD)body->size(), (DWORD)body->size(), 0)
+                         : WinHttpSendRequest(r, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0)) &&
               WinHttpReceiveResponse(r, nullptr);
     DWORD status = 0, sz = sizeof status;
     if (ok) WinHttpQueryHeaders(r, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, nullptr, &status, &sz, nullptr);
@@ -41,6 +44,13 @@ bool httpGetText(const std::string& url, std::string& out, int timeoutMs, std::s
     WinHttpCloseHandle(s);
     return ok;
 }
+
+bool httpGetText(const std::string& url, std::string& out, int timeoutMs, std::string* err) {
+    return request(L"GET", url, nullptr, out, timeoutMs, err);
+}
+bool httpPostForm(const std::string& url, const std::string& body, std::string& out, int timeoutMs, std::string* err) {
+    return request(L"POST", url, &body, out, timeoutMs, err);
+}
 #else
 bool httpGetText(const std::string& url, std::string& out, int timeoutMs, std::string* err) {
     out.clear();
@@ -54,6 +64,22 @@ bool httpGetText(const std::string& url, std::string& out, int timeoutMs, std::s
     while ((n = fread(buf, 1, sizeof buf, p)) > 0 && out.size() < (1 << 20)) out.append(buf, n);
     int rc = pclose(p);
     if (rc != 0) { if (err) *err = "request failed"; return false; }
+    return true;
+}
+
+bool httpPostForm(const std::string& url, const std::string& body, std::string& out, int timeoutMs, std::string* err) {
+    for (char ch : body)
+        if (!(isalnum((unsigned char)ch) || std::string("=&:,._-").find(ch) != std::string::npos)) { if (err) *err = "bad body"; return false; }
+    for (char ch : url)
+        if (ch == '\'' || ch == '\\' || (unsigned char)ch < 32) { if (err) *err = "bad url"; return false; }
+    out.clear();
+    std::string cmd = "curl -fsS -A quark --max-time " + std::to_string(timeoutMs / 1000 + 1) + " --data '" + body + "' '" + url + "' 2>/dev/null";
+    FILE* p = popen(cmd.c_str(), "r");
+    if (!p) { if (err) *err = "could not run curl"; return false; }
+    char buf[4096];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof buf, p)) > 0 && out.size() < (1 << 20)) out.append(buf, n);
+    if (pclose(p) != 0) { if (err) *err = "request failed"; return false; }
     return true;
 }
 #endif

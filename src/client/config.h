@@ -33,6 +33,7 @@ struct Settings {
     int hostLog = 0;            // server game log: 0 off, 1 simple, 2 verbose, 3 extreme
     int hostDuelSize = 1;       // duel: 1 = 1v1, 2 = 2v2
     bool hostPublic = true;
+    bool hostRanked = false;    // rated matches (no bots)
     int hostArenaVariant = 0, botArenaVariant = 0; // 1v1 ruleset     // show hosted games on the internet server list
     // crosshair
     int chStyle = 0;            // 0 cross, 1 cross + dot, 2 dot, 3 circle, 4 T

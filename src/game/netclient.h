@@ -57,6 +57,7 @@ public:
     std::vector<ProjectileSnap> interpolatedProjectiles() const;
     const PlayerSnap* findPlayer(int id) const;
     std::string playerName(int id) const;
+    const std::string& rankId(int id) const { static const std::string none; return id >= 0 && id < kMaxPlayers ? rankIds_[id] : none; }
 
     // Reliable events received since last call.
     std::vector<GameEvent> takeEvents() { std::vector<GameEvent> e; e.swap(events_); return e; }
@@ -124,6 +125,7 @@ private:
     uint32_t lastEventId_ = 0;
     std::vector<GameEvent> events_;
     std::vector<std::string> names_ = std::vector<std::string>(kMaxPlayers);
+    std::vector<std::string> rankIds_ = std::vector<std::string>(kMaxPlayers);
 
     std::deque<std::string> stringCmds_;
     uint16_t stringSeq_ = 0;      // seq of front of queue = stringAcked_+1

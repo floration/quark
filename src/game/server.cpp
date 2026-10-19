@@ -1,4 +1,5 @@
 #include "server.h"
+#include <random>
 #include "../common/profile.h"
 #include "gamemodes.h"
 #include <cstdio>
@@ -61,6 +62,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     rulesReset(*this);
     running_ = true;
     editing_ = editDirty_ = false;
+    if (cfg_.ranked) { cfg_.balanceBots = false; cfg_.vsBots = false; cfg_.botsEnemy = cfg_.botsAlly = 0; }
     if (cfg_.editMode) setEditing(true);
     if (cfg_.vsBots) {
         cfg_.autoStart = true;
@@ -283,9 +285,12 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
         if (!players_[i].connected || i == id) continue;
         GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)i; e.text = players_[i].name;
         sendEvent(id, e);
+        if (!players_[i].rankId.empty()) { GameEvent r; r.type = EV_RANKINFO; r.a = (uint8_t)i; r.text = players_[i].rankId; sendEvent(id, r); }
     }
     GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.text = name;
     broadcastEvent(e);
+    GameEvent noRank; noRank.type = EV_RANKINFO; noRank.a = (uint8_t)id; // the slot's previous owner's id is gone
+    broadcastEvent(noRank);
     message(name + " joined");
     log(name + " connected from " + from.toString() + " as #" + std::to_string(id));
 
@@ -392,6 +397,14 @@ void Server::handleStringCmd(int id, const std::string& s) {
         broadcastEvent(e);
         log(p.name + ": " + rest);
         glog(LOG_SIMPLE, "chat %d \"%s\": %s", id, p.name.c_str(), rest.c_str());
+    } else if (cmd == "rankid") { // the player's ranked id (hash of their key); shown to everyone for the reports
+        bool ok = rest.size() == 32;
+        for (char c : rest) ok &= (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+        if (!ok || rest == p.rankId) return;
+        for (int k = 0; k < kMaxPlayers; k++) if (k != id && players_[k].connected && players_[k].rankId == rest) return; // one key, one slot
+        p.rankId = rest;
+        GameEvent e; e.type = EV_RANKINFO; e.a = (uint8_t)id; e.text = rest;
+        broadcastEvent(e);
     } else if (cmd == "ed" && editing_) {
         if (!applyEdit(id, rest)) { GameEvent e; e.type = EV_MESSAGE; e.text = "edit refused"; sendEvent(id, e); }
     } else if (cmd == "edcam" && editing_) { // where this editor's camera is, so others see it
@@ -1013,6 +1026,7 @@ void Server::sendSnapshots() {
     s.tickRate = (uint16_t)tickRate();
     s.ms = ms_;
     if (editing_) s.ms.flags |= MS_EDITING;
+    if (cfg_.ranked) s.ms.flags |= MS_RANKED;
     std::vector<PlayerSnap> all;
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
@@ -1127,6 +1141,7 @@ int Server::addBot(int team, int skill, bool balance) {
     bots_[id] = BotBrain();
     bots_[id].skill = skill;
     bots_[id].rng = 0x9E3779B9u ^ (uint32_t)(id * 2654435761u) ^ tick_;
+    { GameEvent r; r.type = EV_RANKINFO; r.a = (uint8_t)id; broadcastEvent(r); }
     GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.text = p.name;
     broadcastEvent(e);
     message(p.name + " (" + botSkillName(skill) + ") joined " + (team == TEAM_B ? "team B" : modeIsTeamBased(cfg_.mode) ? "team A" : "the game"));
@@ -1413,4 +1428,37 @@ bool Server::autosave() {
     editDirty_ = false;
     nextAutosave_ = time() + 5;
     return true;
+}
+
+// Who placed where in the match that just ended, for ranked: team modes rank the two sides (winner 0,
+// loser 1, both 0 on a draw); free-for-all modes rank players by score (ties share a place). Every
+// player in it must have a ranked id and be human, else the match isn't rated.
+std::string Server::rankedResult(int winner, std::string* whyNot) {
+    if (cfg_.mode == MODE_TOURNEY) { *whyNot = "tourney matches aren't ranked"; return ""; }
+    bool teams = modeIsTeamBased(cfg_.mode);
+    struct Entry { int slot, team, score; };
+    std::vector<Entry> es;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const auto& p = players_[i];
+        if (!p.connected || p.team == TEAM_SPECTATOR) continue;
+        if (p.isBot) { *whyNot = "bots played"; return ""; }
+        if (p.rankId.empty()) { *whyNot = p.name + " has no ranked id"; return ""; }
+        es.push_back({i, teams ? p.team : i, p.score * 1000 + p.kills});
+    }
+    if (es.size() > 16) { *whyNot = "ranked counts 16 players at most"; return ""; }
+    std::vector<bool> sides(kMaxPlayers, false);
+    int nSides = 0;
+    for (auto& e : es) if (!sides[e.team]) { sides[e.team] = true; nSides++; }
+    if (es.size() < 2 || nSides < 2) { *whyNot = "not enough players"; return ""; }
+    std::random_device rd;
+    char id[24];
+    snprintf(id, sizeof id, "%08x%08x", (unsigned)rd(), (unsigned)rd());
+    std::string out = std::string(id) + " " + modeName(cfg_.mode) + " ";
+    for (size_t k = 0; k < es.size(); k++) {
+        int place = 0;
+        if (teams) place = winner < 0 ? 0 : es[k].team == winner ? 0 : 1;
+        else for (auto& o : es) place += o.score > es[k].score;
+        out += (k ? "," : "") + std::to_string(es[k].slot) + ":" + std::to_string(es[k].team) + ":" + std::to_string(place);
+    }
+    return out;
 }

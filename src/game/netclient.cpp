@@ -45,6 +45,7 @@ bool NetClient::connect(const std::string& address, const std::string& name) {
     dl_ = Download();
     pred_ = predPrev_ = MoveState();
     for (auto& n : names_) n.clear();
+    for (auto& n : rankIds_) n.clear();
     poll();
     return true;
 }
@@ -307,6 +308,7 @@ void NetClient::onSnapshot(Snapshot& s) {
         if (e.id <= lastEventId_) continue;
         lastEventId_ = e.id;
         if (e.type == EV_PLAYERINFO && e.a < kMaxPlayers) names_[e.a] = e.text;
+        if (e.type == EV_RANKINFO && e.a < kMaxPlayers) rankIds_[e.a] = e.text;
         if (e.type == EV_EDIT) { applyEditEvent(e.text); continue; }
         events_.push_back(e);
     }

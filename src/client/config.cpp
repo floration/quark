@@ -63,6 +63,7 @@ void Settings::load() {
         else if (k == "host_upnp") hostUpnp = iv != 0;
         else if (k == "host_balance_bots") hostBalanceBots = iv != 0;
         else if (k == "host_public") hostPublic = iv != 0;
+        else if (k == "host_ranked") hostRanked = iv != 0;
         else if (k == "host_variant") hostArenaVariant = std::min(std::max(iv, 0), kArenaVariants - 1);
         else if (k == "bot_variant") botArenaVariant = std::min(std::max(iv, 0), kArenaVariants - 1);
         else if (k == "host_duel_size") hostDuelSize = iv == 2 ? 2 : 1;
@@ -98,7 +99,7 @@ void Settings::save() const {
       << "\nch_outline=" << chOutline << "\nch_team_color=" << chTeamColor << "\nch_color=" << colorHex(chColor)
       << "\nlast_address=" << lastAddress << "\nhost_name=" << hostName << "\nhost_map=" << hostMap
       << "\nhost_mode=" << hostMode << "\nhost_port=" << hostPort << "\nhost_max=" << hostMaxPlayers
-      << "\nhost_upnp=" << hostUpnp << "\nhost_balance_bots=" << hostBalanceBots << "\nhost_log=" << hostLog << "\nhost_duel_size=" << hostDuelSize << "\nhost_public=" << hostPublic << "\nhost_variant=" << hostArenaVariant << "\nbot_variant=" << botArenaVariant << "\nbot_skill=" << botSkill
+      << "\nhost_upnp=" << hostUpnp << "\nhost_balance_bots=" << hostBalanceBots << "\nhost_log=" << hostLog << "\nhost_duel_size=" << hostDuelSize << "\nhost_public=" << hostPublic << "\nhost_ranked=" << hostRanked << "\nhost_variant=" << hostArenaVariant << "\nbot_variant=" << botArenaVariant << "\nbot_skill=" << botSkill
       << "\nbot_enemies=" << botEnemies << "\nbot_allies=" << botAllies << "\nbot_mode=" << botMode << "\n";
     for (int i = 0; i < HUD_COUNT; i++)
         f << "hud_" << i << "=" << hud[i].x << "," << hud[i].y << "," << hud[i].scale << "," << hud[i].custom << ","

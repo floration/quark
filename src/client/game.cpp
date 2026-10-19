@@ -46,6 +46,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     r_.resize(w, h);
     if (!r_.init(cfg_.shadowRes, err)) return false;
     rescanMaps();
+    rankKey_ = loadOrCreateRankKey(findDataPath("maps") + "/../quark.key"); // ranked identity: stays on this computer
     if (opts_.hostMode < 0 && opts_.vsBotsMode < 0 && opts_.connect.empty() && opts_.editMap.empty()) loadMenuBackdrop();
     if (!opts_.editMap.empty()) { openEditor(opts_.editMap); if (opts_.editSession) edHostSession(); if (opts_.editSel >= 0) edSel_ = {ED_BRUSH, opts_.editSel}; }
     for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == cfg_.hostMap) hostMapIdx_ = (int)i;
@@ -109,6 +110,8 @@ void Game::startHost(bool vsBots) {
     sc.duelTeamSize = cfg_.hostDuelSize;
     sc.arenaVariant = cfg_.hostArenaVariant;
     sc.publicList = cfg_.hostPublic;
+    sc.ranked = cfg_.hostRanked;
+    if (sc.ranked) sc.name = "[RANKED] " + sc.name;
     if (vsBots) { // private local game: any free port, no port forwarding, fixed bots
         sc.name = "vs bots";
         sc.map = maps_[botMapIdx_ % maps_.size()];
@@ -183,6 +186,8 @@ void Game::connectTo(const std::string& rawAddr) {
     while (!addr.empty() && (unsigned char)addr[0] <= ' ') addr.erase(0, 1);
     if (!net_.connect(addr, cfg_.name)) { error_ = net_.error(); return; }
     edSession_ = edOnline_ = false;
+    rankBefore_ = rankGamesBefore_ = -1;
+    if (!rankKey_.id.empty()) net_.sendCommand("rankid " + rankKey_.id);
     if (!host_) { cfg_.lastAddress = addr; cfg_.save(); }
     setScreen(Screen::Connecting);
 }
@@ -560,6 +565,17 @@ void Game::handleEvents() {
                 chatFeed_.push_back({e.text, kGrey, time_ + 8});
                 while (chatFeed_.size() > 8) chatFeed_.pop_front();
                 break;
+            case EV_RANKED: {
+                std::vector<std::string> ids, players;
+                for (int i = 0; i < kMaxPlayers; i++) ids.push_back(net_.rankId(i));
+                std::string body = buildRankReport(e.text, ids, rankKey_, &players);
+                if (body.empty()) break;
+                Rating r;
+                if (rank_.rating(rankKey_.id, r)) { rankBefore_ = r.display(); rankGamesBefore_ = r.games; }
+                rank_.submit(body, players);
+                notify("RANKED MATCH OVER - REPORTING THE RESULT", 4);
+                break;
+            }
             case EV_ROUND_WIN:
                 centerText_ = e.text;
                 centerUntil_ = time_ + (e.b ? 8.0 : 3.5);
@@ -643,6 +659,7 @@ void Game::frame(double dt) {
 
     if (screen_ == Screen::InGame) {
         handleEvents();
+        updateRanked();
         // fixed-rate input + prediction
         tickAcc_ += dt;
         if (tickAcc_ > 0.25) tickAcc_ = 0.25;
@@ -1273,6 +1290,32 @@ void Game::drawHud() {
     if (paused_) drawPauseMenu(cx, H * 0.25f);
 }
 
+std::vector<std::string> Game::rankIdsInGame() const {
+    std::vector<std::string> ids;
+    if (!net_.hasSnapshot()) return ids;
+    for (auto& p : net_.latest().players) if (!net_.rankId(p.id).empty()) ids.push_back(net_.rankId(p.id));
+    return ids;
+}
+
+// Ranked servers: keep everyone's ratings fresh for the scoreboard, pass on report results, and say how
+// much your rating moved once the match is rated.
+void Game::updateRanked() {
+    for (auto& m : rank_.takeMessages()) {
+        std::string t = m;
+        for (auto& c : t) c = (char)toupper((unsigned char)c);
+        chatFeed_.push_back({t, kGrey, time_ + 8});
+        while (chatFeed_.size() > 8) chatFeed_.pop_front();
+    }
+    if (!net_.hasSnapshot() || !(net_.mode().flags & MS_RANKED)) return;
+    if (time_ >= nextRankFetch_) { rank_.fetch(rankIdsInGame()); nextRankFetch_ = time_ + 20; }
+    Rating r;
+    if (rankGamesBefore_ >= 0 && rank_.rating(rankKey_.id, r) && r.games > rankGamesBefore_) {
+        int d = r.display() - rankBefore_;
+        notify("RATING " + std::to_string(rankBefore_) + " -> " + std::to_string(r.display()) + " (" + (d >= 0 ? "+" : "") + std::to_string(d) + ")", 8);
+        rankGamesBefore_ = -1;
+    }
+}
+
 void Game::drawScoreboard() {
     const float W = (float)r_.width(), H = (float)r_.height(), s = H / 720.0f;
     float ts = ui_.textScale();
@@ -1291,6 +1334,8 @@ void Game::drawScoreboard() {
     ui_.panel(x, y, w, (ps.size() + 2) * rowH + 10 * s, 0.8f);
     float cy = y + 10 * s;
     r_.text(x + 12 * s, cy, ts, "PLAYER", kGrey);
+    bool ranked = ms.flags & MS_RANKED;
+    if (ranked) r_.text(x + w * 0.36f, cy, ts, "RATING", kGrey);
     r_.text(x + w * 0.5f, cy, ts, ms.mode == MODE_RACE ? "WINS" : "SCORE", kGrey);
     r_.text(x + w * 0.64f, cy, ts, "K", kGrey);
     r_.text(x + w * 0.74f, cy, ts, "D", kGrey);
@@ -1301,6 +1346,9 @@ void Game::drawScoreboard() {
         std::string n = net_.playerName(p.id) + ((p.flags & PS_ALIVE) ? "" : " (dead)");
         if (p.id == net_.clientId()) r_.rect(x + 4 * s, cy - 4 * s, w - 8 * s, rowH - 2 * s, {1, 1, 1, 0.06f});
         r_.text(x + 12 * s, cy, ts, n, c);
+        Rating rt;
+        if (ranked && rank_.rating(net_.rankId(p.id), rt))
+            r_.text(x + w * 0.36f, cy, ts, rt.games < 5 ? std::to_string(rt.display()) + "?" : std::to_string(rt.display()), kWhite); // ? = still placing
         r_.text(x + w * 0.5f, cy, ts, std::to_string(p.score), kWhite);
         r_.text(x + w * 0.64f, cy, ts, std::to_string(p.kills), kWhite);
         r_.text(x + w * 0.74f, cy, ts, std::to_string(p.deaths), kWhite);
@@ -1610,7 +1658,8 @@ void Game::drawMenu() {
             ui_.toggle(lx, y, lw * 0.5f - 4 * s, bh, "BALANCE BOTS", cfg_.hostBalanceBots);
             ui_.toggle(lx + lw * 0.5f + 4 * s, y, lw * 0.5f - 4 * s, bh, "PUBLIC", cfg_.hostPublic);
             y += bh + gap;
-            ui_.cycle(lx, y, lw, bh, "SERVER LOG", cfg_.hostLog, 4, {"SERVER LOG OFF", "SIMPLE LOG", "VERBOSE LOG (125 HZ)", "EXTREME LOG (EVERY TICK)"});
+            ui_.cycle(lx, y, lw * 0.6f - 4 * s, bh, "SERVER LOG", cfg_.hostLog, 4, {"LOG OFF", "SIMPLE LOG", "VERBOSE LOG", "EXTREME LOG"});
+            ui_.toggle(lx + lw * 0.6f + 4 * s, y, lw * 0.4f - 4 * s, bh, "RANKED", cfg_.hostRanked);
             y += bh + gap;
             ui_.label(lx, y, "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, 0.5f);
             y += 14 * s;

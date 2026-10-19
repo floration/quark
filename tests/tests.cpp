@@ -10,6 +10,8 @@
 #include "game/server.h"
 #include "game/netclient.h"
 #include "game/gamemodes.h"
+#include "game/ranked.h"
+#include "common/sha256.h"
 #include "game/bots.h"
 
 static int g_fail = 0;
@@ -864,6 +866,71 @@ static void testMapDownload(uint16_t port) {
     s.stop();
 }
 
+// Ranked: ids from keys, the server's result event, and the report each player's game builds from it
+// (the Worker side is tested by tools/master/test.mjs).
+static void testRanked(uint16_t port) {
+    printf("ranked: keys, results, reports\n");
+    CHECK(sha256Hex("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    CHECK(sha256Hex("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    CHECK(sha256Hex(std::string(1000, 'a')).substr(0, 16) == "41edece42d63e8d9");
+    char tag[16];
+    snprintf(tag, sizeof tag, "%u", (unsigned)rand());
+    std::string keyPath = findDataPath("maps") + "/../zz_test" + tag + ".key";
+    RankKey k1 = loadOrCreateRankKey(keyPath), again = loadOrCreateRankKey(keyPath);
+    std::remove(keyPath.c_str());
+    CHECK(k1.secret.size() == 64 && k1.id == again.id && k1.id == sha256Hex(k1.secret).substr(0, 32));
+    for (int teamSize : {1, 2}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "crucible"; cfg.mode = MODE_DUEL; cfg.port = (uint16_t)(port + teamSize); cfg.ranked = true; cfg.duelTeamSize = teamSize;
+        s.setLog([](const std::string&) {});
+        if (!s.start(cfg)) { g_fail++; continue; }
+        std::vector<std::unique_ptr<NetClient>> owned;
+        std::vector<NetClient*> cls;
+        std::vector<RankKey> keys;
+        for (int i = 0; i < 2 * teamSize; i++) {
+            owned.push_back(std::make_unique<NetClient>());
+            cls.push_back(owned.back().get());
+            RankKey k;
+            k.secret = sha256Hex("player" + std::to_string(i) + tag);
+            k.id = rankIdFromSecret(k.secret);
+            keys.push_back(k);
+            cls[i]->connect("127.0.0.1:" + std::to_string(cfg.port), "p" + std::to_string(i));
+            cls[i]->sendCommand("rankid " + k.id);
+        }
+        pump(s, cls, 1.0, idle);
+        CHECK(cls[0]->hasSnapshot() && (cls[0]->mode().flags & MS_RANKED));
+        for (int i = 0; i < 2 * teamSize; i++) CHECK(cls[0]->rankId(cls[i]->clientId()) == keys[i].id);
+        int teamA = 0;
+        for (auto& p : s.players_) teamA += p.connected && p.team == TEAM_A;
+        CHECK(teamA == teamSize);
+        std::string why, res = s.rankedResult(TEAM_A, &why);
+        CHECK(!res.empty());
+        // every player builds the same list of results (only the secret differs)
+        std::string expectP;
+        for (int i = 0; i < 2 * teamSize; i++) {
+            std::vector<std::string> ids, players;
+            for (int k = 0; k < kMaxPlayers; k++) ids.push_back(cls[i]->rankId(k));
+            std::string body = buildRankReport(res, ids, keys[i], &players);
+            CHECK(body.find("secret=" + keys[i].secret + "&") == 0 && (int)players.size() == 2 * teamSize);
+            std::string p = body.substr(body.find("&p=") + 3);
+            if (i == 0) expectP = p;
+            CHECK(p == expectP);
+            int me = cls[i]->clientId(), team = s.players_[me].team;
+            CHECK(p.find(keys[i].id + ":" + std::to_string(team) + ":" + (team == TEAM_A ? "0" : "1")) != std::string::npos);
+        }
+        RankKey outsider;
+        outsider.secret = sha256Hex("nobody");
+        outsider.id = rankIdFromSecret(outsider.secret);
+        std::vector<std::string> ids;
+        for (int k = 0; k < kMaxPlayers; k++) ids.push_back(cls[0]->rankId(k));
+        CHECK(buildRankReport(res, ids, outsider).empty());
+        s.addBot(TEAM_B, 1); // a bot in the match: not rated
+        CHECK(s.rankedResult(TEAM_A, &why).empty());
+        s.stop();
+    }
+}
+
 // Map edit session: edits from any client reach everyone (and late joiners), the host's file is autosaved,
 // and the session switches to playing the map and back.
 static void testEditSession(uint16_t port) {
@@ -1197,6 +1264,7 @@ int main(int argc, char** argv) {
     testAllMaps();
     testGridQueries();
     uint16_t port = 28500;
+    if (argc >= 2 && std::string(argv[1]) == "ranked") { testRanked(29610); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(29600); testEditSession(29601); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(29900); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
@@ -1216,6 +1284,7 @@ int main(int argc, char** argv) {
     testMapVote(port++);
     testMapDownload(port++);
     testEditSession(port++);
+    testRanked(port); port += 3;
     testArenaAndTourney(port);
     testNetcode(port); port += 2;
     testTickRateFallback(port++);

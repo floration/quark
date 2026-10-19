@@ -46,6 +46,7 @@ add_library(quark_core STATIC
   src/game/netclient.cpp
   src/game/bots.cpp
   src/game/master.cpp
+  src/game/ranked.cpp
 )
 target_include_directories(quark_core PUBLIC src)
 # Profiling: -DQUARK_TRACY=ON adds Tracy zones (src/common/profile.h). QUARK_TRACY_DIR can point at a

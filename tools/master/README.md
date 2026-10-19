@@ -18,3 +18,13 @@ directly over UDP, so it shows only servers it can reach, with their real ping. 
 
 The free tier allows 100k requests a day and 100k D1 writes a day. That is about 70 servers announcing around the clock.
 For testing, the `QUARK_MASTER` environment variable overrides the URL.
+
+## Ranked (0.24.0+)
+The same Worker stores ranked ratings. To turn it on for an existing setup:
+1. D1 → `quark` → **Console**: paste the `-- ranked` part of `schema.sql` (the three `CREATE TABLE` lines and the index) and run it.
+2. Worker → **Edit code**: replace everything with the new `worker.js` → **Deploy**.
+`https://quark-master.<you>.workers.dev/ratings?ids=` should answer with an empty page.
+
+Each player's game makes a random key once (`quark.key` next to `quark.cfg`); their id is a hash of it, and the
+key itself only goes to this Worker. After a ranked match every player's game posts its own report, and the
+match is rated (OpenSkill, Plackett-Luce) only when all of them agree. Test locally: `node tools/master/test.mjs`.

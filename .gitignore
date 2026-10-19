@@ -4,3 +4,4 @@ site/changelog.json
 site/weapons.json
 build-tracy/
 maps/downloads/
+*.key

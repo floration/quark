@@ -8,6 +8,7 @@
 #include <vector>
 #include "../game/netclient.h"
 #include "../game/server.h"
+#include "../game/ranked.h"
 #include "audio.h"
 #include "binds.h"
 #include "config.h"
@@ -125,6 +126,13 @@ private:
     std::string testMap_;       // set while play-testing a map from the editor
     int testMode_ = 0;
 
+    // ranked: this computer's key, reports + rating lookups (background), the rating before the last report
+    RankKey rankKey_;
+    RankService rank_;
+    double nextRankFetch_ = 0;
+    int rankBefore_ = -1, rankGamesBefore_ = -1;
+    void updateRanked();
+    std::vector<std::string> rankIdsInGame() const;
     // map editor (editor.cpp). Every change is an edit op (applyMapEdit): applied locally when editing
     // alone, sent through the server in an edit session so everyone's copy stays the same.
     enum { ED_BRUSH, ED_SPAWN, ED_LIGHT, ED_SITE, ED_HILL, ED_CHECK, ED_PATH };
