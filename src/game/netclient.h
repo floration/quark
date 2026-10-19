@@ -1,6 +1,8 @@
 // Client side of the protocol: connection, input sending, prediction, interpolation.
 // Has no rendering dependencies so tests and bots can use it headless.
 #pragma once
+#include <mutex>
+#include <thread>
 #include <array>
 #include <deque>
 #include <string>
@@ -111,12 +113,18 @@ struct ServerInfo {
 // LAN discovery and direct server queries.
 class ServerBrowser {
 public:
-    void refresh();                         // broadcast on the LAN
+    ~ServerBrowser();
+    void refresh();                         // broadcast on the LAN + fetch the internet list
     void query(const std::string& address); // ask a specific server
     void poll();
     const std::vector<ServerInfo>& servers() const { return servers_; }
+    std::string internetStatus();
 private:
     UdpSocket sock_;
+    std::thread fetch_;
+    std::mutex mu_;
+    std::vector<std::string> fetched_; // addresses from the internet list, waiting to be queried
+    std::string netStatus_;
     std::vector<ServerInfo> servers_;
     double sentAt_ = 0;
 };

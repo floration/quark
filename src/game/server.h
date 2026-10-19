@@ -2,6 +2,7 @@
 // the client when hosting a game (runs on its own thread, client connects via loopback).
 #pragma once
 #include <atomic>
+#include <cstdio>
 #include <memory>
 #include <deque>
 #include <functional>
@@ -13,6 +14,7 @@
 #include "map.h"
 #include "protocol.h"
 #include "bots.h"
+#include "master.h"
 
 struct ServerConfig {
     std::string name = "quark server";
@@ -33,7 +35,17 @@ struct ServerConfig {
     int roundsToWin = 0;
     int timeLimit = 0;          // seconds (ffa)
     int scoreLimit = 0;         // koth points
+    // Game log: 0 off, 1 simple (deaths, map changes, chat, wins), 2 verbose (+ 125 Hz gameplay),
+    // 3 extreme (every tick: inputs, movement, projectiles). File defaults to logs/quark-<time>.log.
+    int logLevel = 0;
+    int duelTeamSize = 1;
+    bool publicList = false;    // announce on the internet server list (Join screen)       // duel: players per side, 1 (1v1) or 2 (2v2)
+    std::string logFile;
 };
+enum LogLevel { LOG_OFF = 0, LOG_SIMPLE, LOG_VERBOSE, LOG_EXTREME };
+inline int logLevelFromName(const std::string& s) {
+    return s == "simple" ? LOG_SIMPLE : s == "verbose" ? LOG_VERBOSE : s == "extreme" ? LOG_EXTREME : s == "off" ? LOG_OFF : -1;
+}
 
 struct ServerPlayer {
     bool connected = false;
@@ -51,6 +63,7 @@ struct ServerPlayer {
     uint16_t buttons = 0, prevButtons = 0;
     float health = 0;
     int weapon = WPN_RIFLE;
+    int selectedWeapon = WPN_RIFLE; // last weapon the player picked; kept across respawns
     float nextFire = 0;
     float lastFire = -10;
     int kills = 0, deaths = 0, score = 0;
@@ -151,6 +164,10 @@ public:
     int aliveCount(int team) const;
     int teamCount(int team) const;
     void log(const std::string& s);
+    void handleStringCmdForTest(int id, const std::string& s) { handleStringCmd(id, s); }
+    void glog(int level, const char* fmt, ...);   // game log file (no-op below cfg_.logLevel)
+    int duelMod() const { return ms_.mode == MODE_DUEL ? ms_.duelMod : 255; } // 255 in warmup (rulesReset clears it)
+    AABB hitBox(const Vec3& feet, bool crouched) const; // damage hull (doubled under DUEL_BIG)
 
 private:
     void handlePacket(const NetAddr& from, const uint8_t* data, int len);
@@ -169,6 +186,8 @@ private:
     void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t viewMs, float* dmgPerPlayer, float dmg);
     Vec3 spreadDir(const Vec3& dir, float spread);
     void sendSnapshots();
+    void openGameLog();
+    void logTick();
     int findPlayer(const NetAddr& a) const;
     void autoTeam(int id);
     std::string uniqueName(std::string name, int self) const;
@@ -183,4 +202,6 @@ private:
     int windowTicks_ = 0, windowLate_ = 0, windowSendFail_ = 0, windowWorstLoss_ = 0;
     LogFn log_;
     std::unique_ptr<PortMapper> upnp_;
+    std::unique_ptr<MasterAnnouncer> master_;
+    FILE* glog_ = nullptr;
 };

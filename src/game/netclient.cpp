@@ -1,4 +1,6 @@
 #include "netclient.h"
+#include <cctype>
+#include "master.h"
 #include <random>
 
 namespace {
@@ -324,9 +326,24 @@ std::vector<ProjectileSnap> NetClient::interpolatedProjectiles() const {
 
 // ---------------------------------------------------------------------------
 
+ServerBrowser::~ServerBrowser() { if (fetch_.joinable()) fetch_.join(); }
+
+std::string ServerBrowser::internetStatus() { std::lock_guard<std::mutex> l(mu_); return netStatus_; }
+
 void ServerBrowser::refresh() {
     if (!sock_.isOpen()) sock_.open(0, true);
     servers_.clear();
+    if (fetch_.joinable()) fetch_.join();
+    { std::lock_guard<std::mutex> l(mu_); netStatus_ = "SEARCHING THE INTERNET..."; fetched_.clear(); }
+    fetch_ = std::thread([this] {
+        std::vector<std::string> list;
+        std::string err;
+        bool ok = fetchServerList(list, &err);
+        std::lock_guard<std::mutex> l(mu_);
+        fetched_ = list;
+        netStatus_ = ok ? std::to_string(list.size()) + " INTERNET SERVER(S) LISTED" : "INTERNET LIST: " + err;
+        for (auto& c : netStatus_) c = (char)toupper((unsigned char)c);
+    });
     uint8_t buf[16];
     Writer w(buf, sizeof buf);
     writeHeader(w, PKT_INFO_REQUEST);
@@ -350,6 +367,9 @@ void ServerBrowser::query(const std::string& address) {
 
 void ServerBrowser::poll() {
     if (!sock_.isOpen()) return;
+    std::vector<std::string> addrs;
+    { std::lock_guard<std::mutex> l(mu_); addrs.swap(fetched_); }
+    for (auto& a : addrs) query(a);
     uint8_t buf[1024];
     NetAddr from;
     int n;

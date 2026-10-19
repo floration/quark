@@ -1,0 +1,2 @@
+CREATE TABLE IF NOT EXISTS servers (addr TEXT PRIMARY KEY, version TEXT NOT NULL, seen INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS servers_seen ON servers (seen);

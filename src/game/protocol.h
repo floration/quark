@@ -97,6 +97,7 @@ struct ModeState {
     // vote in progress (text arrives as an EV_VOTE event)
     uint8_t voteActive = 0, voteYes = 0, voteNo = 0, voteVoters = 0;
     float voteTimeLeft = 0;
+    uint8_t duelMod = 255;    // duel: this round's DUEL_* modifier (255 = none)
 };
 enum : uint8_t { MS_DRAIN = 1, MS_OVERTIME = 2, MS_CONTESTED = 4 };
 

@@ -64,14 +64,15 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     Vec3 fwd = {-std::sin(cmd.yaw), 0, -std::cos(cmd.yaw)};
     Vec3 right = {std::cos(cmd.yaw), 0, -std::sin(cmd.yaw)};
     Vec3 wish = fwd * (cmd.forward / 127.0f) + right * (cmd.side / 127.0f);
-    if (s.flags & MF_FROZEN) wish = {};
+    if ((s.flags & MF_FROZEN) || (s.mods & MOVE_GRAPPLE_ONLY)) wish = {};
     float wishLen = length(wish);
     Vec3 wishDir = wishLen > 0 ? wish / wishLen : Vec3();
     float maxSpeed = crouched ? kCrouchSpeed : kGroundSpeed;
     float wishSpeed = std::min(wishLen, 1.0f) * maxSpeed;
 
     bool onGround = (s.flags & MF_ONGROUND) != 0;
-    bool jumpHeld = (cmd.buttons & BTN_JUMP) != 0;
+    const bool grappleOnly = (s.mods & MOVE_GRAPPLE_ONLY) != 0;
+    bool jumpHeld = (cmd.buttons & BTN_JUMP) != 0 && !grappleOnly;
     bool frozen = (s.flags & MF_FROZEN) != 0;
     // Holding jump bunny-hops: jump on the first grounded tick, before friction applies.
     if (onGround && jumpHeld && !frozen) {
@@ -82,7 +83,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     // Dash: one burst in the movement direction (or forward), on a cooldown.
     s.dashCooldown = std::max(0.0f, s.dashCooldown - dt);
     s.hookCooldown = std::max(0.0f, s.hookCooldown - dt);
-    bool dashHeld = (cmd.buttons & BTN_DASH) != 0;
+    bool dashHeld = (cmd.buttons & BTN_DASH) != 0 && !grappleOnly;
     if (dashHeld && !(s.flags & MF_DASHHELD) && s.dashCooldown <= 0 && !frozen) {
         Vec3 d = wishLen > 0 ? wishDir : fwd;
         float h = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);

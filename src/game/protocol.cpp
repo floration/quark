@@ -17,7 +17,7 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
     w.u16(s.ackStringCmd);
     w.u8(s.clientId);
     w.vec(s.self.pos); w.vec(s.self.vel); w.u8(s.self.flags); w.f32(s.self.dashCooldown); w.vec(s.self.hookPoint);
-    w.f32(s.self.dashTimer); w.f32(s.self.dashDirX); w.f32(s.self.dashDirZ); w.f32(s.self.dashExitSpeed); w.f32(s.self.hookCooldown);
+    w.f32(s.self.dashTimer); w.f32(s.self.dashDirX); w.f32(s.self.dashDirZ); w.f32(s.self.dashExitSpeed); w.f32(s.self.hookCooldown); w.u8(s.self.mods);
     w.u8(s.selfHealth); w.u8(s.selfWeapon);
 }
 
@@ -29,7 +29,7 @@ void writeSnapshotShared(Writer& w, const Snapshot& s) {
     w.f32(m.actionProgress); w.u8(m.actionPlayer);
     w.u8(m.hillOwner); w.i16(m.target);
     w.f32(m.payloadDist); w.f32(m.payloadLen);
-    w.u8(m.voteActive); w.u8(m.voteYes); w.u8(m.voteNo); w.u8(m.voteVoters); w.f32(m.voteTimeLeft);
+    w.u8(m.voteActive); w.u8(m.voteYes); w.u8(m.voteNo); w.u8(m.voteVoters); w.f32(m.voteTimeLeft); w.u8(m.duelMod);
 
     w.u8((uint8_t)s.players.size());
     for (auto& p : s.players) {
@@ -59,7 +59,7 @@ bool readSnapshot(Reader& r, Snapshot& s) {
     s.ackStringCmd = r.u16();
     s.clientId = r.u8();
     s.self.pos = r.vec(); s.self.vel = r.vec(); s.self.flags = r.u8(); s.self.dashCooldown = r.f32(); s.self.hookPoint = r.vec();
-    s.self.dashTimer = r.f32(); s.self.dashDirX = r.f32(); s.self.dashDirZ = r.f32(); s.self.dashExitSpeed = r.f32(); s.self.hookCooldown = r.f32();
+    s.self.dashTimer = r.f32(); s.self.dashDirX = r.f32(); s.self.dashDirZ = r.f32(); s.self.dashExitSpeed = r.f32(); s.self.hookCooldown = r.f32(); s.self.mods = r.u8();
     s.selfHealth = r.u8(); s.selfWeapon = r.u8();
 
     ModeState& m = s.ms;
@@ -69,7 +69,7 @@ bool readSnapshot(Reader& r, Snapshot& s) {
     m.actionProgress = r.f32(); m.actionPlayer = r.u8();
     m.hillOwner = r.u8(); m.target = r.i16();
     m.payloadDist = r.f32(); m.payloadLen = r.f32();
-    m.voteActive = r.u8(); m.voteYes = r.u8(); m.voteNo = r.u8(); m.voteVoters = r.u8(); m.voteTimeLeft = r.f32();
+    m.voteActive = r.u8(); m.voteYes = r.u8(); m.voteNo = r.u8(); m.voteVoters = r.u8(); m.voteTimeLeft = r.f32(); m.duelMod = r.u8();
 
     s.players.resize(r.u8());
     for (auto& p : s.players) {

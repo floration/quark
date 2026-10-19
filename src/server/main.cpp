@@ -15,7 +15,7 @@ static void usage() {
         "quark_server [options]\n"
         "  --port N         UDP port (default %d)\n"
         "  --map NAME       map from maps/ (default arena)\n"
-        "  --mode MODE      vs | bomb | race | koth | payload | ffa\n"
+        "  --mode MODE      vs | bomb | race | koth | payload | npayload | ffa | duel\n"
         "  --name TEXT      server name shown in the browser\n"
         "  --max N          max players (default 8, the maximum)\n"
         "  --rounds N       rounds to win (vs/bomb/race)\n"
@@ -27,6 +27,11 @@ static void usage() {
         "  --bots N         play-vs-bots server: N bots (team modes: on team B; humans join team A)\n"
         "  --allies N       team modes with --bots: N bots on the humans' team\n"
         "  --botskill N     0 beginner, 1 intermediate (default), 2 advanced, 3 expert\n"
+        "  --log LEVEL      game log to logs/: simple (deaths, map changes, chat, wins),\n"
+        "                   verbose (+ 125 Hz gameplay), extreme (every tick, everything)\n"
+        "  --logfile PATH   write the game log here instead\n"
+        "  --teamsize N     duel: 1 (1v1, default) or 2 (2v2)\n"
+        "  --public         list this server on the internet server list (players see it under Join)\n"
         "  --nobalance      don't add bots to even out uneven teams (players can also vote it off)\n"
         "console commands: map <name> [mode], mode <name>, forcestart, restart, kick <id>, say <text>, status,\n"
         "                  addbot [a|b] [0-3], kickbots, quit\n",
@@ -56,6 +61,14 @@ int main(int argc, char** argv) {
         else if (a == "--bots") { cfg.vsBots = true; cfg.botsEnemy = atoi(next().c_str()); }
         else if (a == "--allies") cfg.botsAlly = atoi(next().c_str());
         else if (a == "--botskill") cfg.botSkill = cfg.balanceBotSkill = atoi(next().c_str());
+        else if (a == "--log") {
+            std::string l = next();
+            cfg.logLevel = logLevelFromName(l);
+            if (cfg.logLevel < 0) { printf("unknown log level %s (simple | verbose | extreme)\n", l.c_str()); return 1; }
+        }
+        else if (a == "--logfile") { cfg.logFile = next(); if (!cfg.logLevel) cfg.logLevel = LOG_SIMPLE; }
+        else if (a == "--teamsize") cfg.duelTeamSize = atoi(next().c_str());
+        else if (a == "--public") cfg.publicList = true;
         else if (a == "--nobalance") cfg.balanceBots = false;
         else if (a == "-h" || a == "--help") { usage(); return 0; }
         else { printf("unknown option %s\n", a.c_str()); usage(); return 1; }

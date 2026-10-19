@@ -27,6 +27,7 @@ int roundsToWin(const Server& s) {
     if (s.cfg_.roundsToWin > 0) return s.cfg_.roundsToWin;
     switch (s.ms_.mode) {
         case MODE_VS: return 5;
+        case MODE_DUEL: return 5;
         case MODE_BOMB: return 7;
         case MODE_RACE: return 3;
         case MODE_PAYLOAD: return 1; // each team attacks once
@@ -61,6 +62,7 @@ void enterMatchEnd(Server& s, const std::string& text, int winner) {
     e.text = text;
     s.broadcastEvent(e);
     s.log(text);
+    s.glog(LOG_SIMPLE, "match end: %s", text.c_str());
     setPhase(s, PHASE_MATCH_END, kMatchEndTime);
 }
 
@@ -75,6 +77,14 @@ void startRound(Server& s) {
     m.actionPlayer = 255;
     m.hillOwner = 255;
     s.drainAccum_ = 0;
+    if (m.mode == MODE_DUEL) { // a new modifier every life, never the same twice in a row
+        int prev = m.duelMod;
+        int pick = rand() % DUEL_MOD_COUNT;
+        if (pick == prev) pick = (pick + 1 + rand() % (DUEL_MOD_COUNT - 1)) % DUEL_MOD_COUNT;
+        m.duelMod = (uint8_t)pick;
+        s.message("round " + std::to_string(m.round) + ": " + duelModTitle(pick));
+        s.glog(LOG_SIMPLE, "round %d modifier %s", m.round, duelModTitle(pick));
+    }
     if (m.mode == MODE_BOMB) {
         int half = roundsToWin(s) - 1;
         m.attackers = (half > 0 && m.round > half) ? TEAM_B : TEAM_A;
@@ -163,6 +173,7 @@ void endRound(Server& s, int winner, const std::string& why, bool award = true) 
     e.text = text;
     s.broadcastEvent(e);
     s.log(text);
+    s.glog(LOG_SIMPLE, "round %d end: %s (score %d-%d)", m.round, text.c_str(), m.scoreA, m.scoreB);
     m.actionPlayer = 255;
     m.actionProgress = 0;
     setPhase(s, PHASE_ROUND_END, kRoundEndTime);
@@ -174,6 +185,7 @@ bool checkMatchOver(Server& s) {
     int rtw = roundsToWin(s);
     switch (m.mode) {
         case MODE_VS:
+        case MODE_DUEL:
         case MODE_BOMB:
             if (m.scoreA >= rtw || m.scoreB >= rtw) {
                 int w = m.scoreA >= rtw ? TEAM_A : TEAM_B;
@@ -485,6 +497,7 @@ void rulesReset(Server& s) {
     m.roundsToWin = (uint8_t)roundsToWin(s);
     m.payloadLen = s.map_.payloadLength();
     m.attackers = TEAM_A;
+    m.duelMod = 255;
     setPhase(s, PHASE_WARMUP, 0);
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = s.players_[i];
@@ -522,7 +535,8 @@ void rulesTick(Server& s) {
             break;
         case PHASE_LIVE:
             switch (m.mode) {
-                case MODE_VS: tickVS(s); break;
+                case MODE_VS:
+                case MODE_DUEL: tickVS(s); break;
                 case MODE_BOMB: tickBomb(s); break;
                 case MODE_RACE: tickRace(s); break;
                 case MODE_KOTH: tickKoth(s); break;

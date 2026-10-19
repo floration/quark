@@ -37,6 +37,7 @@ find_package(Threads REQUIRED)
 add_library(quark_core STATIC
   src/common/net.cpp
   src/common/upnp.cpp
+  src/common/http.cpp
   src/game/map.cpp
   src/game/pmove.cpp
   src/game/protocol.cpp
@@ -44,11 +45,12 @@ add_library(quark_core STATIC
   src/game/gamemodes.cpp
   src/game/netclient.cpp
   src/game/bots.cpp
+  src/game/master.cpp
 )
 target_include_directories(quark_core PUBLIC src)
 target_link_libraries(quark_core PUBLIC Threads::Threads)
 if(WIN32)
-  target_link_libraries(quark_core PUBLIC ws2_32 winmm)
+  target_link_libraries(quark_core PUBLIC ws2_32 winmm winhttp)
 endif()
 if(MINGW)
   # Self-contained exes: no libstdc++/libgcc/winpthread DLLs to ship.

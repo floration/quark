@@ -63,5 +63,6 @@ struct Map {
 
 std::string findDataPath(const std::string& rel); // resolves maps/... next to the executable or cwd
 void setExecutableDir(const char* argv0);
+const std::string& executableDir();       // empty if unknown
 std::vector<std::string> listMaps();
 uint32_t crc32(const void* data, size_t len);

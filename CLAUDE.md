@@ -16,5 +16,5 @@
 - The launcher (`src/launcher/`) installs/updates from the release's `quark-<platform>.qpak` (made by `tools/pack.py`); keep those asset names stable.
 
 ## Maps
-- One map per mode (duel=vs, depot=bomb, sprint=race, summit=koth, railyard=payload, tug=npayload, foundry=ffa) plus arena for everything. The generated ones come from `tools/make_maps.py` (edit it and re-run, don't hand-edit those .qmap files). `for <mode>` in a map marks the mode it's built for; menus pick that map by default.
+- One map per mode (duel=vs, crucible=duel (1v1/2v2), depot=bomb, sprint=race, summit=koth, railyard=payload, tug=npayload, foundry=ffa) plus arena for everything. The generated ones come from `tools/make_maps.py` (edit it and re-run, don't hand-edit those .qmap files). `for <mode>` in a map marks the mode it's built for; menus pick that map by default.
 - `quark_tests` checks every map: spawns not in walls, preferred mode supported, bots can navigate from every spawn to every objective.

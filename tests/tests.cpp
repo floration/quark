@@ -2,6 +2,9 @@
 // on localhost, including every game mode.
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <cmath>
+#include <memory>
 #include <string>
 #include <vector>
 #include "game/server.h"
@@ -487,7 +490,163 @@ static void testRocketSelfDamage(uint16_t port) {
     float level = shoot(0.0f, {0, 0, 30.5f}, PI);      // into the wall in front (+z), at eye height
     printf("  floor blast %.1f damage, eye-level blast %.1f damage\n", down, level);
     CHECK(down > 0 && down <= 4);
+    s.killPlayer(a.clientId(), -1, 255); // respawns with the last selected weapon
+    pump(s, cls, 2.5, idle);
+    CHECK(p.alive && p.weapon == WPN_ROCKET);
     CHECK(level > 15);
+    s.stop();
+}
+
+static void testTimeToKill() {
+    printf("time to kill: every weapon kills from 100 hp in 2.0 s with perfect aim\n");
+    for (int w = 0; w < WPN_COUNT; w++) {
+        const WeaponDef& d = weaponDef(w);
+        int perShot = d.damage * d.pellets;
+        int shots = (kMaxHealth + perShot - 1) / perShot;
+        float ttk = (shots - 1) * d.refire;
+        printf("  %-9s %2d x %3d dmg, ttk %.3f s\n", d.name, shots, perShot, ttk);
+        CHECK(std::fabs(ttk - 2.0f) < 0.001f);
+        CHECK(perShot <= 50);
+    }
+}
+
+// 1v1: per-round modifiers, forced weapons, vampire healing, 1 hp, double-size hitboxes, grapple-only
+// movement, a third player spectates. Also checks the extreme game log.
+static void testDuel(uint16_t port) {
+    printf("duel 1v1: a modifier per life, spectators, game log\n");
+    std::string logPath = "quark_test_duel.log";
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = true;
+    cfg.map = "crucible"; cfg.mode = MODE_DUEL; cfg.port = port;
+    cfg.logLevel = LOG_EXTREME; cfg.logFile = logPath;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    NetClient a, b, c;
+    a.connect("127.0.0.1:" + std::to_string(port), "ann");
+    b.connect("127.0.0.1:" + std::to_string(port), "bob");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 1.0, idle);
+    c.connect("127.0.0.1:" + std::to_string(port), "cat");
+    cls.push_back(&c);
+    pump(s, cls, 0.5, idle);
+    CHECK(s.players_[a.clientId()].team != s.players_[b.clientId()].team);
+    CHECK(s.players_[c.clientId()].team == TEAM_SPECTATOR);
+    pump(s, cls, 6.0, idle); // warmup countdown -> round 1
+    CHECK(s.ms_.phase == PHASE_FREEZE || s.ms_.phase == PHASE_LIVE);
+    int seen = 0, prev = -1;
+    for (int round = 0; round < 12 && s.ms_.phase != PHASE_MATCH_END; round++) {
+        while (s.ms_.phase != PHASE_LIVE && s.ms_.phase != PHASE_MATCH_END) pump(s, cls, 0.2, idle);
+        if (s.ms_.phase == PHASE_MATCH_END) break;
+        int mod = s.ms_.duelMod;
+        CHECK(mod < DUEL_MOD_COUNT && mod != prev);
+        prev = mod;
+        seen |= 1 << mod;
+        int ia = a.clientId(), ib = b.clientId();
+        auto& pa = s.players_[ia];
+        auto& pb = s.players_[ib];
+        // the modifier is applied to both players, and the forced weapon can't be switched away
+        pump(s, cls, 0.1, [&](int) { UserCmd u; u.weapon = WPN_SNIPER; return u; });
+        if (duelModWeapon(mod) >= 0) CHECK(pa.weapon == duelModWeapon(mod) && pb.weapon == duelModWeapon(mod));
+        else CHECK(pa.weapon == WPN_SNIPER);
+        CHECK(pa.selectedWeapon == WPN_SNIPER);
+        if (mod == DUEL_ONE_HP) CHECK(pa.health == 1 && pb.health == 1);
+        if (mod == DUEL_GRAPPLE) {
+            CHECK(pa.move.mods & MOVE_GRAPPLE_ONLY);
+            CHECK(a.predicted().mods & MOVE_GRAPPLE_ONLY);
+            Vec3 start = pa.move.pos;
+            pump(s, cls, 0.5, [&](int) { UserCmd u; u.forward = 127; u.buttons = BTN_JUMP | BTN_DASH; return u; });
+            CHECK(std::fabs(pa.move.pos.x - start.x) + std::fabs(pa.move.pos.z - start.z) < 0.05f);
+        } else {
+            CHECK(!(pa.move.mods & MOVE_GRAPPLE_ONLY));
+        }
+        if (mod == DUEL_BIG) {
+            AABB h = s.hitBox(pa.move.pos, false);
+            CHECK(std::fabs((h.mx.y - h.mn.y) - kPlayerHeight * 2) < 0.01f);
+        }
+        if (mod == DUEL_VAMPIRE_LASER) {
+            pa.health = 50;
+            s.damagePlayer(ib, ia, 20, WPN_LASER, {});
+            CHECK(pa.health == 70 && pb.health == 80);
+        }
+        s.killPlayer(round % 2 ? ia : ib, round % 2 ? ib : ia, 0);
+        pump(s, cls, 0.3, idle);
+        CHECK(s.ms_.phase == PHASE_ROUND_END || s.ms_.phase == PHASE_MATCH_END);
+    }
+    printf("  modifiers seen: %02x, score %d-%d\n", seen, s.ms_.scoreA, s.ms_.scoreB);
+    CHECK(s.ms_.phase == PHASE_MATCH_END || s.ms_.phase == PHASE_ROUND_END);
+    CHECK(__builtin_popcount(seen) >= 4);
+    s.handleStringCmdForTest(a.clientId(), "say gg");
+    s.stop();
+    FILE* f = fopen(logPath.c_str(), "r");
+    CHECK(f);
+    if (f) {
+        std::string all;
+        char line[512];
+        int ticks = 0;
+        while (fgets(line, sizeof line, f)) { all += line; if (strstr(line, " tick ")) ticks++; }
+        fclose(f);
+        CHECK(all.find("map crucible mode duel") != std::string::npos);
+        CHECK(all.find("kill killer=") != std::string::npos);
+        CHECK(all.find("round 1 modifier") != std::string::npos);
+        CHECK(all.find("chat ") != std::string::npos);
+        CHECK(all.find("  p") != std::string::npos);
+        CHECK(ticks > 1000); // extreme: every tick
+        printf("  log: %zu bytes, %d tick records\n", all.size(), ticks);
+    }
+    remove(logPath.c_str());
+}
+
+static void testDuel2v2(uint16_t port) {
+    printf("duel 2v2: two per side, the fifth spectates, modifier applies to all\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = true;
+    cfg.map = "crucible"; cfg.mode = MODE_DUEL; cfg.port = port; cfg.duelTeamSize = 2;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    std::vector<std::unique_ptr<NetClient>> c;
+    std::vector<NetClient*> cls;
+    for (int i = 0; i < 5; i++) {
+        c.push_back(std::make_unique<NetClient>());
+        c[i]->connect("127.0.0.1:" + std::to_string(port), "p" + std::to_string(i));
+        cls.push_back(c[i].get());
+        pump(s, cls, 0.3, idle);
+    }
+    int a = 0, b = 0, spec = 0;
+    for (auto* cl : cls) {
+        int t = s.players_[cl->clientId()].team;
+        a += t == TEAM_A; b += t == TEAM_B; spec += t == TEAM_SPECTATOR;
+    }
+    CHECK(a == 2 && b == 2 && spec == 1);
+    pump(s, cls, 6.0, idle);
+    while (s.ms_.phase == PHASE_FREEZE) pump(s, cls, 0.2, idle);
+    CHECK(s.ms_.phase == PHASE_LIVE && s.ms_.duelMod < DUEL_MOD_COUNT);
+    int alive = 0;
+    for (auto& p : s.players_) alive += p.connected && p.alive;
+    CHECK(alive == 4);
+    s.stop();
+}
+
+// Internet list end to end; only runs with QUARK_MASTER pointing at a test copy of tools/master/worker.js.
+static void testInternetList(uint16_t port) {
+    if (!getenv("QUARK_MASTER")) return;
+    printf("internet server list via %s\n", getenv("QUARK_MASTER"));
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "arena"; cfg.mode = MODE_FFA; cfg.port = port; cfg.publicList = true; cfg.name = "listed";
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    std::vector<NetClient*> none;
+    pump(s, none, 3.0, idle); // announce
+    ServerBrowser b;
+    b.refresh();
+    bool found = false;
+    for (int i = 0; i < 400 && !found; i++) {
+        s.frame(); b.poll(); sleepMs(10);
+        for (auto& sv : b.servers()) found = found || (sv.name == "listed" && sv.addr.port == port);
+    }
+    CHECK(found);
     s.stop();
 }
 
@@ -592,7 +751,7 @@ static void testBots(uint16_t& port) {
         s.stop();
     }
     // every mode with bots on both sides: no crashes, things happen
-    const char* maps[MODE_COUNT] = {"arena", "arena", "sprint", "arena", "arena", "arena", "arena"};
+    const char* maps[MODE_COUNT] = {"arena", "arena", "sprint", "arena", "arena", "arena", "arena", "crucible"};
     for (int mode = 0; mode < MODE_COUNT; mode++) {
         Server s;
         ServerConfig cfg;
@@ -634,6 +793,10 @@ int main(int argc, char** argv) {
     testWeapons(port); port += 6;
     testTickRateFallback(port++);
     testRocketSelfDamage(port++);
+    testTimeToKill();
+    testDuel(port++);
+    testDuel2v2(port++);
+    testInternetList(port++);
     testBots(port);
     netShutdown();
     printf(g_fail ? "%d FAILURE(S)\n" : "all tests passed\n", g_fail);

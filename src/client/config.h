@@ -29,6 +29,9 @@ struct Settings {
     int hostMaxPlayers = 8;
     bool hostUpnp = true;
     bool hostBalanceBots = true;
+    int hostLog = 0;
+    int hostDuelSize = 1;
+    bool hostPublic = true;     // show hosted games on the internet server list       // duel: 1 = 1v1, 2 = 2v2            // server game log: 0 off, 1 simple, 2 verbose, 3 extreme
     // play vs bots
     int botSkill = 1;           // 0 beginner .. 3 expert
     int botEnemies = 3, botAllies = 1;

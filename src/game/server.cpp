@@ -3,6 +3,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <sstream>
+#include <cstdarg>
+#include <ctime>
+#include <filesystem>
 
 namespace {
 constexpr double kTimeout = 10.0;
@@ -55,6 +58,12 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
         for (int k = 0; k < cfg_.botsAlly && teams; k++) addBot(TEAM_A, cfg_.botSkill);
     }
     log("listening on UDP " + std::to_string(port()) + " - map " + cfg_.map + ", mode " + modeName(cfg_.mode));
+    openGameLog();
+    if (cfg_.publicList && !cfg_.lanOnly) {
+        master_ = std::make_unique<MasterAnnouncer>();
+        master_->start(port());
+    }
+    glog(LOG_SIMPLE, "map %s mode %s", cfg_.map.c_str(), modeName(cfg_.mode));
     if (cfg_.upnp && !cfg_.lanOnly) {
         upnp_ = std::make_unique<PortMapper>();
         upnp_->start(port());
@@ -68,17 +77,23 @@ void Server::stop() {
         if (players_[i].connected) dropPlayer(i, "server shutting down", true);
     sock_.close();
     if (upnp_) { upnp_->stop(); upnp_.reset(); }
+    if (master_) { master_->stop(); master_.reset(); }
     running_ = false;
     log("stopped");
+    if (glog_) { glog(LOG_SIMPLE, "server stopped"); fclose(glog_); glog_ = nullptr; }
 }
 
 void Server::run(std::atomic<bool>& quit) {
-    std::string lastUpnp;
+    std::string lastUpnp, lastMaster;
     while (!quit && running_) {
         double wait = frame();
         if (upnp_ && upnp_->done()) {
             std::string st = upnp_->status();
             if (st != lastUpnp) { log(st); lastUpnp = st; }
+        }
+        if (master_) {
+            std::string st = master_->status();
+            if (!st.empty() && st != lastMaster) { log(st); lastMaster = st; }
         }
         idle(wait);
     }
@@ -129,6 +144,7 @@ double Server::frame() {
         if (now - nextTick_ > period * 2) windowLate_++;
         windowTicks_++;
         simulate();
+        logTick();
         tick_++;
         timeMs_ += 1000 / tickRate();
         sendSnapshots();
@@ -255,6 +271,18 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
 void Server::autoTeam(int id) {
     ServerPlayer& p = players_[id];
     if (!modeIsTeamBased(cfg_.mode) || (cfg_.vsBots && !p.isBot)) { p.team = TEAM_A; return; }
+    if (cfg_.mode == MODE_DUEL) { // duelTeamSize humans per side; balance bots make way, anyone else spectates
+        int takenA = 0, takenB = 0;
+        for (int i = 0; i < kMaxPlayers; i++) {
+            const auto& o = players_[i];
+            if (i == id || !o.connected || (o.balanceBot && !p.isBot)) continue;
+            if (o.team == TEAM_A) takenA++;
+            else if (o.team == TEAM_B) takenB++;
+        }
+        int size = std::min(std::max(cfg_.duelTeamSize, 1), 2);
+        p.team = takenA < size && takenA <= takenB ? TEAM_A : takenB < size ? TEAM_B : takenA < size ? TEAM_A : TEAM_SPECTATOR;
+        return;
+    }
     int a = 0, b = 0;
     for (int i = 0; i < kMaxPlayers; i++) {
         if (i == id || !players_[i].connected || players_[i].isBot != p.isBot) continue;
@@ -333,10 +361,20 @@ void Server::handleStringCmd(int id, const std::string& s) {
         GameEvent e; e.type = EV_CHAT; e.a = (uint8_t)id; e.text = rest;
         broadcastEvent(e);
         log(p.name + ": " + rest);
+        glog(LOG_SIMPLE, "chat %d \"%s\": %s", id, p.name.c_str(), rest.c_str());
     } else if (cmd == "team") {
         int t = rest == "a" ? TEAM_A : rest == "b" ? TEAM_B : rest == "spec" ? TEAM_SPECTATOR : -1;
         if (t < 0 || t == p.team) return;
         if (!modeIsTeamBased(cfg_.mode) && t == TEAM_B) t = TEAM_A;
+        if (cfg_.mode == MODE_DUEL && t != TEAM_SPECTATOR) {
+            int n = 0;
+            for (int i = 0; i < kMaxPlayers; i++)
+                n += i != id && players_[i].connected && !players_[i].balanceBot && players_[i].team == t;
+            if (n >= std::min(std::max(cfg_.duelTeamSize, 1), 2)) {
+                GameEvent e; e.type = EV_MESSAGE; e.text = "that side is full"; sendEvent(id, e);
+                return;
+            }
+        }
         if (p.alive) killPlayer(id, -1, 255);
         p.team = t;
         message(p.name + (t == TEAM_SPECTATOR ? " is spectating" : t == TEAM_A ? " joined team A" : " joined team B"));
@@ -406,6 +444,7 @@ void Server::command(const std::string& line, int fromPlayer) {
         }
         rulesReset(*this);
         message("now playing " + newMap + " - " + modeTitle(newMode));
+        glog(LOG_SIMPLE, "map %s mode %s", newMap.c_str(), modeName(newMode));
     } else if (cmd == "addbot") {
         std::string sk;
         ss >> sk;
@@ -503,7 +542,11 @@ void Server::spawnPlayer(int id) {
     p.pitch = 0;
     p.alive = true;
     p.health = kMaxHealth;
-    p.weapon = WPN_RIFLE;
+    p.weapon = p.selectedWeapon;
+    int mod = duelMod();
+    if (duelModWeapon(mod) >= 0) p.weapon = duelModWeapon(mod);
+    if (mod == DUEL_ONE_HP) p.health = 1;
+    if (mod == DUEL_GRAPPLE) p.move.mods |= MOVE_GRAPPLE_ONLY;
     p.nextFire = time() + 0.25f;
     p.respawnAt = -1;
     GameEvent e;
@@ -533,6 +576,8 @@ void Server::killPlayer(int victim, int killer, int weapon) {
     e.b = (uint8_t)victim;
     e.c = (int16_t)weapon;
     broadcastEvent(e);
+    glog(LOG_SIMPLE, "kill killer=%d \"%s\" victim=%d \"%s\" weapon=%d", killer, killer >= 0 ? players_[killer].name.c_str() : "", victim,
+         v.name.c_str(), weapon);
     rulesOnDeath(*this, victim, killer);
     float d = rulesRespawnDelay(*this);
     v.respawnAt = d >= 0 ? time() + d : -1;
@@ -554,7 +599,11 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
         lastProgress_ = time();
         GameEvent e; e.type = EV_HIT; e.a = (uint8_t)attacker; e.b = (uint8_t)victim; e.c = (int16_t)dmg;
         sendEvent(attacker, e);
+        // Vampire laser: damage dealt heals the attacker (up to full health).
+        ServerPlayer& a = players_[attacker];
+        if (duelMod() == DUEL_VAMPIRE_LASER && a.alive) a.health = std::min((float)kMaxHealth, a.health + dmg);
     }
+    glog(LOG_VERBOSE, "hit attacker=%d victim=%d dmg=%.2f weapon=%d health=%.2f", attacker, victim, dmg, weapon, v.health);
     if (v.health <= 0) killPlayer(victim, attacker, weapon);
 }
 
@@ -616,12 +665,13 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     p.prevButtons = p.buttons;
     p.buttons = cmd.buttons;
     p.lastViewTick = cmd.viewTick;
+    if (cmd.weapon < WPN_COUNT) p.selectedWeapon = cmd.weapon; // also while dead: you respawn with it
     if (!p.alive) return;
     if (rulesFrozen(*this, id)) p.move.flags |= MF_FROZEN;
     else p.move.flags &= ~MF_FROZEN;
     pmove(p.move, cmd, map_);
 
-    if (cmd.weapon < WPN_COUNT) p.weapon = cmd.weapon;
+    if (cmd.weapon < WPN_COUNT && duelModWeapon(duelMod()) < 0) p.weapon = cmd.weapon;
     // Sticky launcher: alt-fire detonates your armed stickies.
     if (p.weapon == WPN_STICKY && (cmd.buttons & BTN_ALTFIRE))
         for (auto& pr : projectiles_)
@@ -662,7 +712,7 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
             if (h.tick == 0xFFFFFFFFu || h.tick > timeMs_) break;
             if (h.tick <= vt) { if (h.alive) { pos = h.pos; crouched = h.crouched; } break; }
         }
-        float t = rayAABB(eye, inv, playerBox(pos, crouched), best);
+        float t = rayAABB(eye, inv, hitBox(pos, crouched), best);
         if (t >= 0 && t < best) { best = t; hit = i; }
     }
     if (hit >= 0) dmgPer[hit] += dmg;
@@ -733,7 +783,7 @@ void Server::tickProjectiles() {
         for (int i = 0; i < kMaxPlayers; i++) {
             auto& p = players_[i];
             if (!p.connected || !p.alive || i == pr.owner) continue;
-            AABB b = playerBox(p.move.pos, p.move.flags & MF_CROUCHED);
+            AABB b = hitBox(p.move.pos, p.move.flags & MF_CROUCHED);
             float t = rayAABB(pr.pos, inv, b, best);
             if (t >= 0 && t <= best) { best = t; hitPlayer = i; }
         }
@@ -758,7 +808,7 @@ void Server::explode(const Vec3& at, int owner, int weapon) {
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
         if (!p.connected || !p.alive) continue;
-        AABB b = playerBox(p.move.pos, p.move.flags & MF_CROUCHED);
+        AABB b = hitBox(p.move.pos, p.move.flags & MF_CROUCHED);
         Vec3 closest = vmax(b.mn, vmin(at, b.mx));
         float d = length(closest - at);
         if (d > wd.splashRadius) continue;
@@ -1006,4 +1056,72 @@ std::string Server::uniqueName(std::string name, int self) const {
     std::string out = name;
     for (int k = 2; taken(out); k++) out = name.substr(0, 16) + " (" + std::to_string(k) + ")";
     return out;
+}
+
+// ---------------------------------------------------------------------------
+// game log (off / simple / verbose / extreme)
+
+AABB Server::hitBox(const Vec3& feet, bool crouched) const {
+    AABB b = playerBox(feet, crouched);
+    if (duelMod() != DUEL_BIG) return b;
+    Vec3 c = {feet.x, feet.y, feet.z};
+    return {c + (b.mn - c) * kBigScale, c + (b.mx - c) * kBigScale};
+}
+
+void Server::openGameLog() {
+    if (cfg_.logLevel <= LOG_OFF || glog_) return;
+    std::string path = cfg_.logFile;
+    if (path.empty()) {
+        std::string dir = (executableDir().empty() ? std::string(".") : executableDir()) + "/logs";
+        std::error_code ec;
+        std::filesystem::create_directories(dir, ec);
+        time_t t = ::time(nullptr);
+        char buf[64];
+        strftime(buf, sizeof buf, "/quark-%Y%m%d-%H%M%S.log", localtime(&t));
+        path = dir + buf;
+    }
+    glog_ = fopen(path.c_str(), "w");
+    if (!glog_) { log("could not open log file " + path); return; }
+    // A big buffer keeps 1000 Hz logging to a handful of writes per second, off the tick's critical path.
+    setvbuf(glog_, nullptr, _IOFBF, 1 << 20);
+    static const char* names[] = {"off", "simple", "verbose", "extreme"};
+    log(std::string("logging (") + names[cfg_.logLevel] + ") to " + path);
+    glog(LOG_SIMPLE, "quark server log, level %s, version %s", names[cfg_.logLevel], QUARK_VERSION);
+}
+
+void Server::glog(int level, const char* fmt, ...) {
+    if (!glog_ || cfg_.logLevel < level) return;
+    fprintf(glog_, "%u.%03u ", timeMs_ / 1000, timeMs_ % 1000);
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(glog_, fmt, ap);
+    va_end(ap);
+    fputc('\n', glog_);
+}
+
+// verbose: a gameplay sample at 125 Hz; extreme: every tick, with inputs and projectiles.
+void Server::logTick() {
+    if (!glog_ || cfg_.logLevel < LOG_VERBOSE) return;
+    bool extreme = cfg_.logLevel >= LOG_EXTREME;
+    uint32_t next = timeMs_ + 1000 / tickRate();
+    if (!extreme && next / 8 == timeMs_ / 8) return; // only when this tick crosses an 8 ms boundary
+    glog(LOG_VERBOSE, "tick %u phase %d round %d score %d-%d", tick_, ms_.phase, ms_.round, ms_.scoreA, ms_.scoreB);
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const auto& p = players_[i];
+        if (!p.connected || !p.alive) continue;
+        const Vec3& o = p.move.pos;
+        const Vec3& v = p.move.vel;
+        if (extreme)
+            fprintf(glog_, "  p%d pos %.3f %.3f %.3f vel %.3f %.3f %.3f yaw %.4f pitch %.4f hp %.1f wpn %d btn %04x flags %02x dash %.3f hook %.3f\n",
+                    i, o.x, o.y, o.z, v.x, v.y, v.z, p.yaw, p.pitch, p.health, p.weapon, p.buttons, p.move.flags,
+                    p.move.dashCooldown, p.move.hookCooldown);
+        else
+            fprintf(glog_, "  p%d pos %.2f %.2f %.2f vel %.2f %.2f %.2f yaw %.3f pitch %.3f hp %.0f wpn %d\n",
+                    i, o.x, o.y, o.z, v.x, v.y, v.z, p.yaw, p.pitch, p.health, p.weapon);
+    }
+    if (!extreme) return;
+    for (const auto& pr : projectiles_)
+        if (pr.active)
+            fprintf(glog_, "  proj %u type %d owner %d pos %.3f %.3f %.3f vel %.3f %.3f %.3f%s\n", pr.id, pr.type, pr.owner,
+                    pr.pos.x, pr.pos.y, pr.pos.z, pr.vel.x, pr.vel.y, pr.vel.z, pr.stuck ? " stuck" : "");
 }

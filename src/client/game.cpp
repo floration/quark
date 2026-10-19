@@ -67,6 +67,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
         if (!opts_.hostMap.empty())
             for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == opts_.hostMap) hostMapIdx_ = (int)i;
         cfg_.hostUpnp = false;
+        cfg_.hostPublic = false; // command-line test hosts stay off the internet list
         startHost();
     } else if (!opts_.connect.empty()) {
         connectTo(opts_.connect);
@@ -95,6 +96,9 @@ void Game::startHost(bool vsBots) {
     sc.maxPlayers = cfg_.hostMaxPlayers;
     sc.upnp = cfg_.hostUpnp;
     sc.balanceBots = cfg_.hostBalanceBots;
+    sc.logLevel = cfg_.hostLog;
+    sc.duelTeamSize = cfg_.hostDuelSize;
+    sc.publicList = cfg_.hostPublic;
     if (vsBots) { // private local game: any free port, no port forwarding, fixed bots
         sc.name = "vs bots";
         sc.map = maps_[botMapIdx_ % maps_.size()];
@@ -222,6 +226,7 @@ bool Game::isDown(int action) const {
         int c = cfg_.binds.code[action][k];
         if (c >= kMouseCode && c < kMouseCode + 16) { if (glfwGetMouseButton(win_, c - kMouseCode) == GLFW_PRESS) return true; }
         else if (c > 0 && c < kMouseCode && glfwGetKey(win_, c) == GLFW_PRESS) return true;
+        else if ((c == kWheelUp || c == kWheelDown) && timeNow() < wheelHeldUntil_[c - kWheelUp]) return true;
     }
     return false;
 }
@@ -232,6 +237,12 @@ bool Game::pressInput(int code) {
         if (code == GLFW_KEY_ESCAPE) { captureAction_ = -1; return true; }
         int& slot = cfg_.binds.code[captureAction_][captureSlot_];
         slot = (code == GLFW_KEY_BACKSPACE || code == GLFW_KEY_DELETE) ? 0 : code;
+        // An input does one thing: binding it here removes it from every other action (otherwise the
+        // default wheel = next/prev weapon kept firing alongside e.g. wheel = jump).
+        if (slot)
+            for (int a = 0; a < A_COUNT; a++)
+                for (int k = 0; k < 2; k++)
+                    if ((a != captureAction_ || k != captureSlot_) && cfg_.binds.code[a][k] == slot) cfg_.binds.code[a][k] = 0;
         captureAction_ = -1;
         cfg_.save();
         return true;
@@ -359,7 +370,17 @@ void Game::onResize(int w, int h) { r_.resize(w, h); }
 void Game::onScroll(double dy) {
     markInput();
     if (dy == 0) return;
-    pressInput(dy > 0 ? kWheelUp : kWheelDown);
+    // One action per whole notch: smooth-scrolling trackpads and high-res wheels send many small
+    // steps, which used to skip through several weapons at once. Reversing direction starts over.
+    if ((dy > 0) != (wheelAccum_ > 0)) wheelAccum_ = 0;
+    wheelAccum_ += dy;
+    while (std::fabs(wheelAccum_) >= 0.999) {
+        int code = wheelAccum_ > 0 ? kWheelUp : kWheelDown;
+        wheelAccum_ -= wheelAccum_ > 0 ? 1.0 : -1.0;
+        wheelHeldUntil_[code - kWheelUp] = timeNow() + 0.03;
+        pressInput(code);
+        if (captureAction_ < 0 && screen_ != Screen::InGame) break;
+    }
 }
 
 UserCmd Game::buildCmd() {
@@ -620,7 +641,9 @@ void Game::drawWorld(float alpha) {
     audio_.setListener(eye, camYaw);
     updateSounds(players);
 
-    // players
+    // players (duel "double size" rounds draw everyone at twice the size, matching the server hitboxes)
+    const ModeState& dms = net_.latest().ms;
+    const float bs = dms.mode == MODE_DUEL && dms.phase != PHASE_WARMUP && dms.duelMod == DUEL_BIG ? kBigScale : 1.0f;
     for (int i = 0; i < kMaxPlayers; i++) {
         if (!players[i].valid) continue;
         const PlayerSnap& p = players[i].snap;
@@ -633,18 +656,19 @@ void Game::drawWorld(float alpha) {
         bool crouch = self && alive ? (net_.predicted().flags & MF_CROUCHED) : (p.flags & PS_CROUCHED);
         float hs = crouch ? kPlayerCrouchHeight / kPlayerHeight : 1.0f;
         Vec3 col = teamColor(i);
-        float sv = sunVisibility(map, pos + Vec3(0, 1.0f * hs, 0));
+        float sv = sunVisibility(map, pos + Vec3(0, 1.0f * hs * bs, 0));
         bool vis = !firstPerson;
-        r_.box(pos + Vec3(0, 0.45f * hs, 0), {0.28f, 0.45f * hs, 0.2f}, yaw, col * 0.55f, sv, true, vis);
-        r_.box(pos + Vec3(0, 1.15f * hs, 0), {0.38f, 0.28f * hs, 0.24f}, yaw, col, sv, true, vis);
-        r_.box(pos + Vec3(0, 1.6f * hs, 0), {0.2f, 0.18f, 0.2f}, yaw, col * 1.15f, sv, true, vis);
+        auto at = [&](float h) { return pos + Vec3(0, h * hs * bs, 0); };
+        r_.box(at(0.45f), Vec3(0.28f, 0.45f * hs, 0.2f) * bs, yaw, col * 0.55f, sv, true, vis);
+        r_.box(at(1.15f), Vec3(0.38f, 0.28f * hs, 0.24f) * bs, yaw, col, sv, true, vis);
+        r_.box(pos + Vec3(0, 1.6f * hs * bs, 0), Vec3(0.2f, 0.18f, 0.2f) * bs, yaw, col * 1.15f, sv, true, vis);
         if (vis) {
             Vec3 fwd = {-std::sin(yaw), 0, -std::cos(yaw)};
-            r_.box(pos + Vec3(0, 1.62f * hs, 0) + fwd * 0.2f, {0.16f, 0.05f, 0.02f}, yaw, {0.05f, 0.05f, 0.06f}, sv, false);
-            Vec3 shoulder = pos + Vec3(0, 1.3f * hs, 0) + Vec3(std::cos(yaw), 0, -std::sin(yaw)) * 0.3f;
-            r_.boxPitched(shoulder, {0, 0, -0.35f}, {0.06f, 0.07f, 0.35f}, yaw, pitch, {0.12f, 0.12f, 0.14f}, sv);
+            r_.box(at(1.62f) + fwd * (0.2f * bs), Vec3(0.16f, 0.05f, 0.02f) * bs, yaw, {0.05f, 0.05f, 0.06f}, sv, false);
+            Vec3 shoulder = at(1.3f) + Vec3(std::cos(yaw), 0, -std::sin(yaw)) * (0.3f * bs);
+            r_.boxPitched(shoulder, Vec3(0, 0, -0.35f) * bs, Vec3(0.06f, 0.07f, 0.35f) * bs, yaw, pitch, {0.12f, 0.12f, 0.14f}, sv);
             if (p.flags & PS_HASBOMB)
-                r_.box(pos + Vec3(0, 1.15f * hs, 0) + fwd * -0.32f, {0.2f, 0.22f, 0.1f}, yaw, {0.1f, 0.1f, 0.1f}, sv);
+                r_.box(at(1.15f) + fwd * -0.32f, {0.2f, 0.22f, 0.1f}, yaw, {0.1f, 0.1f, 0.1f}, sv);
         }
         // name tags for teammates
         if (!self && isFriendly(i) && i != viewing) {
@@ -884,7 +908,7 @@ void Game::drawHud() {
             break;
         case PHASE_FREEZE: phase = "ROUND " + std::to_string(ms.round) + " - " + std::to_string((int)std::ceil(ms.timeLeft)); break;
         case PHASE_LIVE:
-            if (ms.mode == MODE_VS) phase = (ms.flags & MS_DRAIN) ? "STALEMATE - HEALTH DRAINING" : "DRAIN IN " + fmtTime(ms.timeLeft);
+            if (ms.mode == MODE_VS || ms.mode == MODE_DUEL) phase = (ms.flags & MS_DRAIN) ? "STALEMATE - HEALTH DRAINING" : "DRAIN IN " + fmtTime(ms.timeLeft);
             else if (ms.mode == MODE_KOTH) phase = "FIRST TO " + std::to_string(ms.target);
             else phase = fmtTime(ms.timeLeft) + ((ms.flags & MS_OVERTIME) ? " OVERTIME" : "");
             break;
@@ -931,6 +955,8 @@ void Game::drawHud() {
         obj = (mep->flags & PS_FINISHED) ? "FINISHED" : "CHECKPOINT " + std::to_string(mep->checkpoint) + " / " + std::to_string(net_.map().checkpoints.size());
     } else if (ms.mode == MODE_VS && ms.phase == PHASE_LIVE) {
         obj = "LAST TEAM STANDING WINS";
+    } else if (ms.mode == MODE_DUEL && ms.phase != PHASE_WARMUP && ms.duelMod < DUEL_MOD_COUNT) {
+        obj = std::string("THIS LIFE: ") + duelModTitle(ms.duelMod);
     }
     if (!obj.empty()) ui_.labelCentered(cx, 80 * s, obj, kWhite);
     if (progress >= 0) {
@@ -1266,7 +1292,8 @@ void Game::drawMenu() {
             ui_.textField(2, lx, y, lw - 140 * s, bh, joinAddr_, 64);
             if (ui_.button(lx + lw - 130 * s, y, 130 * s, bh, "CONNECT") || (uiIn_.enter && !joinAddr_.empty())) connectTo(joinAddr_);
             y += bh + gap * 2;
-            ui_.label(lx, y, "LAN GAMES");
+            ui_.label(lx, y, "SERVERS (LAN + INTERNET)");
+            ui_.label(lx + lw * 0.42f, y + 6 * s, browser_.internetStatus(), kGrey, 0.5f);
             if (ui_.button(lx + lw - 130 * s, y - 6 * s, 130 * s, 30 * s, "REFRESH")) browser_.refresh();
             y += 30 * s;
             ui_.panel(lx, y, lw, 220 * s, 0.6f);
@@ -1282,7 +1309,7 @@ void Game::drawMenu() {
                 ry += 34 * s;
                 if (ry > y + 200 * s) break;
             }
-            if (browser_.servers().empty()) ui_.label(lx + 10 * s, ry, "NO LAN GAMES FOUND", kGrey);
+            if (browser_.servers().empty()) ui_.label(lx + 10 * s, ry, "NO GAMES FOUND", kGrey);
             y += 230 * s;
             if (ui_.button(x, y, bw, bh, "BACK")) setScreen(Screen::Main);
             if (!error_.empty()) ui_.labelCentered(cx, y + bh + gap, error_, kRed);
@@ -1290,7 +1317,7 @@ void Game::drawMenu() {
         }
         case Screen::Host: {
             float lw = 460 * s, lx = cx - lw * 0.5f;
-            ui_.panel(lx - 16 * s, y - 16 * s, lw + 32 * s, 478 * s);
+            ui_.panel(lx - 16 * s, y - 16 * s, lw + 32 * s, 528 * s);
             ui_.label(lx, y, "SERVER NAME");
             y += 22 * s;
             ui_.textField(3, lx, y, lw, bh, cfg_.hostName, 32);
@@ -1305,6 +1332,8 @@ void Game::drawMenu() {
                 if (ui_.cycle(lx, y, lw, bh, "MODE", hostModeIdx_, MODE_COUNT, modes)) hostMapIdx_ = bestMapFor(hostModeIdx_);
                 y += bh + gap;
                 if (!m.supportsMode(hostModeIdx_)) ui_.label(lx, y, "THIS MAP DOES NOT SUPPORT THAT MODE", kRed);
+                else if (hostModeIdx_ == MODE_DUEL && ui_.button(lx, y - 2 * s, lw, 24 * s, cfg_.hostDuelSize == 2 ? "TEAMS: 2V2 (CLICK FOR 1V1)" : "TEAMS: 1V1 (CLICK FOR 2V2)"))
+                    cfg_.hostDuelSize = cfg_.hostDuelSize == 2 ? 1 : 2;
                 y += 24 * s;
             }
             ui_.label(lx, y, "UDP PORT");
@@ -1316,7 +1345,10 @@ void Game::drawMenu() {
             y += bh + gap;
             ui_.toggle(lx, y, lw, bh, "AUTO PORT FORWARD (UPNP)", cfg_.hostUpnp);
             y += bh + gap;
-            ui_.toggle(lx, y, lw, bh, "BALANCE UNEVEN TEAMS WITH BOTS", cfg_.hostBalanceBots);
+            ui_.toggle(lx, y, lw * 0.5f - 4 * s, bh, "BOT BALANCE", cfg_.hostBalanceBots);
+            ui_.toggle(lx + lw * 0.5f + 4 * s, y, lw * 0.5f - 4 * s, bh, "LIST ON INTERNET", cfg_.hostPublic);
+            y += bh + gap;
+            ui_.cycle(lx, y, lw, bh, "SERVER LOG", cfg_.hostLog, 4, {"OFF", "SIMPLE", "VERBOSE (125 HZ)", "EXTREME (EVERY TICK)"});
             y += bh + gap;
             ui_.label(lx, y, "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, 0.5f);
             y += 14 * s;

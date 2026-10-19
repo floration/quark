@@ -12,7 +12,7 @@ constexpr int kMaxPlayers = 8;
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 7;
+constexpr uint16_t kProtocolVersion = 8;
 
 // Player hull
 constexpr float kPlayerHalfWidth = 0.4f;
@@ -22,17 +22,18 @@ constexpr float kEyeHeight = 1.6f;
 constexpr float kCrouchEyeHeight = 1.05f;
 constexpr int kMaxHealth = 100;
 
-enum GameModeId : uint8_t { MODE_VS = 0, MODE_BOMB, MODE_RACE, MODE_KOTH, MODE_PAYLOAD, MODE_FFA, MODE_NPAYLOAD, MODE_COUNT };
+enum GameModeId : uint8_t { MODE_VS = 0, MODE_BOMB, MODE_RACE, MODE_KOTH, MODE_PAYLOAD, MODE_FFA, MODE_NPAYLOAD, MODE_DUEL, MODE_COUNT };
 inline bool isPayloadMode(int m) { return m == MODE_PAYLOAD || m == MODE_NPAYLOAD; }
 inline const char* modeName(int m) {
-    static const char* n[] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload"};
+    static const char* n[] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel"};
     return (m >= 0 && m < MODE_COUNT) ? n[m] : "?";
 }
 inline const char* modeTitle(int m) {
-    static const char* n[] = {"VS", "BOMB", "RACE", "KING OF THE HILL", "PAYLOAD", "FREE FOR ALL", "NEUTRAL PAYLOAD"};
+    static const char* n[] = {"VS", "BOMB", "RACE", "KING OF THE HILL", "PAYLOAD", "FREE FOR ALL", "NEUTRAL PAYLOAD", "DUEL"};
     return (m >= 0 && m < MODE_COUNT) ? n[m] : "?";
 }
 inline int modeFromName(const char* s) {
+    if (s[0] == '1' && s[1] == 'v' && s[2] == '1' && !s[3]) return MODE_DUEL; // old name
     for (int i = 0; i < MODE_COUNT; i++) {
         const char* a = modeName(i); const char* b = s;
         while (*a && *b && (*a == (*b | 32))) { a++; b++; }
@@ -40,6 +41,16 @@ inline int modeFromName(const char* s) {
     }
     return -1;
 }
+
+// DUEL (1v1 or 2v2): every life (round) is played under one modifier, picked at random each round.
+enum DuelMod : uint8_t { DUEL_VAMPIRE_LASER = 0, DUEL_ROCKET, DUEL_KNIFE, DUEL_ONE_HP, DUEL_BIG, DUEL_GRAPPLE, DUEL_MOD_COUNT };
+inline const char* duelModTitle(int m) {
+    static const char* n[] = {"VAMPIRE LASER", "ROCKETS ONLY", "KNIVES ONLY", "1 HP", "DOUBLE SIZE", "GRAPPLE MOVEMENT ONLY"};
+    return (m >= 0 && m < DUEL_MOD_COUNT) ? n[m] : "";
+}
+// Weapon a modifier forces, or -1 for free choice.
+inline int duelModWeapon(int m) { return m == DUEL_VAMPIRE_LASER ? 4 : m == DUEL_ROCKET ? 1 : m == DUEL_KNIFE ? 2 : -1; }
+constexpr float kBigScale = 2.0f; // DUEL_BIG hitbox / model scale
 
 enum Team : uint8_t { TEAM_A = 0, TEAM_B = 1, TEAM_SPECTATOR = 2 };
 
@@ -87,15 +98,16 @@ struct WeaponDef {
 };
 inline const WeaponDef& weaponDef(int w) {
     static const WeaponDef defs[WPN_COUNT] = {
-        //  name        refire dmg  range   proj  speed  splash spread scoped zoom   beam  pel grav  sticky life
-        {"RIFLE",       0.12f, 10, 300.0f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},
-        {"ROCKET",      0.85f, 35,   0,    true,  32.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  0,    false, 5},
-        {"KNIFE",       0.45f, 40,   2.2f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},
-        {"SNIPER",      1.25f, 50, 500.0f, false,  0,    0,     0.06f, 0.0f, 24.0f,  false, 1,  0,    false, 0},
-        {"LASER",       0.05f,  3,  32.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},
-        {"SHOTGUN",     0.85f,  5,  60.0f, false,  0,    0,     0.085f,-1,     0,    false, 10, 0,    false, 0},
-        {"STICKY",      0.6f,  35,   0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30},
-        {"CROSSBOW",    1.1f,  50,   0,    true,  90.0f, 0,     0.0f,  -1,     0,    false, 1,  6.0f, false, 3},
+        // Every weapon kills from 100 health in exactly 2.0 s with perfect aim: (shots - 1) * refire = 2.
+        //  name        refire   dmg  range   proj  speed  splash spread scoped zoom   beam  pel grav  sticky life
+        {"RIFLE",       2.0f/9,  10, 300.0f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 10 shots
+        {"ROCKET",      1.0f,    35,   0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  5.0f, false, 5},  // 3
+        {"KNIFE",       1.0f,    40,   2.2f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 3
+        {"SNIPER",      2.0f,    50, 500.0f, false,  0,    0,     0.06f, 0.0f, 24.0f,  false, 1,  0,    false, 0},  // 2
+        {"LASER",       2.0f/24,  4,  32.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},  // 25 ticks
+        {"SHOTGUN",     2.0f,     5,  60.0f, false,  0,    0,     0.085f,-1,     0,    false, 10, 0,    false, 0},  // 2 full blasts
+        {"STICKY",      1.0f,    35,   0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30}, // 3
+        {"CROSSBOW",    2.0f,    50,   0,    true,  90.0f, 0,     0.0f,  -1,     0,    false, 1,  6.0f, false, 3},  // 2
     };
     return defs[w < 0 || w >= WPN_COUNT ? 0 : w];
 }

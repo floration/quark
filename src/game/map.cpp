@@ -15,6 +15,8 @@ void setExecutableDir(const char* argv0) {
     g_exeDir = p.parent_path().string();
 }
 
+const std::string& executableDir() { return g_exeDir; }
+
 std::string findDataPath(const std::string& rel) {
     std::error_code ec;
     const std::string candidates[] = {
@@ -277,7 +279,8 @@ bool Map::supportsMode(int mode) const {
     auto has = [&](int t) { for (auto& s : spawns) if (s.team == t) return true; return false; };
     bool teams = has(SPAWN_A) && has(SPAWN_B);
     switch (mode) {
-        case MODE_VS: return teams;
+        case MODE_VS:
+        case MODE_DUEL: return teams;
         case MODE_BOMB: return teams && !bombSites.empty();
         case MODE_RACE: return has(SPAWN_RACE) && !checkpoints.empty();
         case MODE_KOTH: return teams && hasHill;

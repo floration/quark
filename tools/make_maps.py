@@ -42,6 +42,25 @@ for x in (-6, 0, 6): m.spawn("a", x, 0, 11.5, 0, "b")
 m.spawn("any", -16, 0, 0, 90, "any")
 m.save("duel")
 
+# --- crucible: duel (1v1 / 2v2). High open ceiling and no overhangs so double-size players fit
+# everywhere; tall pillars and walls to grapple from for grapple-only rounds; short sightlines for knives.
+m = M("Crucible", "duel")
+m.room(18, 18, 14)
+m.box(-2, 0, -2, 2, 9, 2, accent=True)                                  # center tower (grapple anchor)
+m.box(-9, 0, -9, -7, 7, -7, accent=True, mirror=True)                   # corner pillars
+m.box(7, 0, -9, 9, 7, -7, accent=True, mirror=True)
+m.box(-6, 0, 4, -2, 2.2, 5, mirror=True)                                # chest-high cover around mid
+m.box(2, 0, 4, 6, 2.2, 5, mirror=True)
+m.box(-13, 0, -3, -11, 3.5, 3, mirror=True)                             # flank walls
+m.box(-16, 0, -16, -12, 2, -12, mirror=True)                            # corner ledges + steps
+m.stairs(-12, -16, -10, -12, 2, "x", -1, mirror=True)
+m.box(12, 0, -16, 16, 2, -12, mirror=True)
+m.stairs(10, -16, 12, -12, 2, "x", 1, mirror=True)
+m.box(-3, 0, 12, 3, 1.2, 13, mirror=True)                               # spawn cover
+for x in (-4, 4): m.spawn("a", x, 0, 15, 0, "b")
+m.spawn("any", -15, 0, 6, 90, "any")
+m.save("crucible")
+
 # --- depot: bomb map, attackers (A) south, defenders (B) north with sites A (west) and B (east) ---
 m = M("Depot", "bomb")
 m.room(26, 34, 9)

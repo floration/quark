@@ -53,6 +53,9 @@ void Settings::load() {
         else if (k == "host_max") hostMaxPlayers = iv;
         else if (k == "host_upnp") hostUpnp = iv != 0;
         else if (k == "host_balance_bots") hostBalanceBots = iv != 0;
+        else if (k == "host_public") hostPublic = iv != 0;
+        else if (k == "host_duel_size") hostDuelSize = iv == 2 ? 2 : 1;
+        else if (k == "host_log") hostLog = std::min(std::max(iv, 0), 3);
         else if (k == "bot_skill") botSkill = std::min(std::max(iv, 0), 3);
         else if (k == "bot_enemies") botEnemies = std::min(std::max(iv, 1), 7);
         else if (k == "bot_allies") botAllies = std::min(std::max(iv, 0), 3);
@@ -75,7 +78,7 @@ void Settings::save() const {
       << "\ncolor_friendly=" << colorHex(colorFriendly) << "\ncolor_enemy=" << colorHex(colorEnemy)
       << "\nlast_address=" << lastAddress << "\nhost_name=" << hostName << "\nhost_map=" << hostMap
       << "\nhost_mode=" << hostMode << "\nhost_port=" << hostPort << "\nhost_max=" << hostMaxPlayers
-      << "\nhost_upnp=" << hostUpnp << "\nhost_balance_bots=" << hostBalanceBots << "\nbot_skill=" << botSkill
+      << "\nhost_upnp=" << hostUpnp << "\nhost_balance_bots=" << hostBalanceBots << "\nhost_log=" << hostLog << "\nhost_duel_size=" << hostDuelSize << "\nhost_public=" << hostPublic << "\nbot_skill=" << botSkill
       << "\nbot_enemies=" << botEnemies << "\nbot_allies=" << botAllies << "\nbot_mode=" << botMode << "\n";
     for (int a = 0; a < A_COUNT; a++) f << "bind_" << a << "=" << binds.code[a][0] << "," << binds.code[a][1] << "\n";
 }
