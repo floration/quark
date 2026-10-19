@@ -78,7 +78,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     } else if (opts_.debugPicker) {
         setScreen(Screen::Host);
         variantCtx_ = 0;
-        picker_ = opts_.debugPicker;
+        picker_ = opts_.debugPicker < 50 ? opts_.debugPicker : PICK_NONE; // 50+: just the host menu
     } else if (!opts_.connect.empty()) {
         connectTo(opts_.connect);
     }
@@ -1644,11 +1644,21 @@ void Game::drawMenu() {
             if (!maps_.empty()) {
                 if (ui_.button(lx, y, lw, bh, "MAP: " + upper(maps_[hostMapIdx_ % maps_.size()]) + "  >")) picker_ = PICK_HOST_MAP;
                 y += bh + gap;
+                if (cfg_.hostRanked) { // ranked is always 1v1 on a ladder: the mode button picks the ladder instead
+                    hostModeIdx_ = MODE_ARENA;
+                    if (!arenaVariantRanked(cfg_.hostArenaVariant)) cfg_.hostArenaVariant = 0;
+                    if (hostMapIdx_ >= (int)mapInfo_.size() || !(mapInfo_[hostMapIdx_].modes >> MODE_ARENA & 1)) hostMapIdx_ = bestMapFor(MODE_ARENA);
+                }
                 Map m;
                 m.load(maps_[hostMapIdx_]);
-                if (ui_.button(lx, y, lw, bh, std::string("MODE: ") + modeTitle(hostModeIdx_) + (hostModeIdx_ == MODE_ARENA || hostModeIdx_ == MODE_TOURNEY ? std::string(" - ") + arenaVariant(cfg_.hostArenaVariant).title : "") + "  >")) picker_ = PICK_HOST_MODE;
+                if (cfg_.hostRanked) {
+                    static const int ladders[3] = {0, 1, 5};
+                    int k = cfg_.hostArenaVariant == 1 ? 1 : cfg_.hostArenaVariant == 5 ? 2 : 0;
+                    if (ui_.button(lx, y, lw, bh, std::string("RANKED 1V1: ") + arenaVariant(ladders[k]).title + "  >")) cfg_.hostArenaVariant = ladders[(k + 1) % 3];
+                } else if (ui_.button(lx, y, lw, bh, std::string("MODE: ") + modeTitle(hostModeIdx_) + (hostModeIdx_ == MODE_ARENA || hostModeIdx_ == MODE_TOURNEY ? std::string(" - ") + arenaVariant(cfg_.hostArenaVariant).title : "") + "  >")) picker_ = PICK_HOST_MODE;
                 y += bh + gap;
-                if (!m.supportsMode(hostModeIdx_)) ui_.label(lx, y, "THIS MAP DOES NOT SUPPORT THAT MODE", kRed);
+                if (cfg_.hostRanked) ui_.label(lx, y, "CLICK TO SWITCH LADDER - EACH HAS ITS OWN RATING - NO BOTS", kGrey, 0.5f);
+                else if (!m.supportsMode(hostModeIdx_)) ui_.label(lx, y, "THIS MAP DOES NOT SUPPORT THAT MODE", kRed);
                 else if (hostModeIdx_ == MODE_DUEL && ui_.button(lx, y - 2 * s, lw, 24 * s, cfg_.hostDuelSize == 2 ? "TEAMS: 2V2 (CLICK FOR 1V1)" : "TEAMS: 1V1 (CLICK FOR 2V2)"))
                     cfg_.hostDuelSize = cfg_.hostDuelSize == 2 ? 1 : 2;
                 y += 24 * s;
@@ -1662,17 +1672,13 @@ void Game::drawMenu() {
             y += bh + gap;
             ui_.toggle(lx, y, lw, bh, "AUTO PORT FORWARD (UPNP)", cfg_.hostUpnp);
             y += bh + gap;
-            ui_.toggle(lx, y, lw * 0.5f - 4 * s, bh, "BALANCE BOTS", cfg_.hostBalanceBots);
+            if (cfg_.hostRanked) ui_.button(lx, y, lw * 0.5f - 4 * s, bh, "BOTS: OFF (RANKED)", false);
+            else ui_.toggle(lx, y, lw * 0.5f - 4 * s, bh, "BALANCE BOTS", cfg_.hostBalanceBots);
             ui_.toggle(lx + lw * 0.5f + 4 * s, y, lw * 0.5f - 4 * s, bh, "PUBLIC", cfg_.hostPublic);
             y += bh + gap;
             ui_.cycle(lx, y, lw * 0.6f - 4 * s, bh, "SERVER LOG", cfg_.hostLog, 4, {"LOG OFF", "SIMPLE LOG", "VERBOSE LOG", "EXTREME LOG"});
             ui_.toggle(lx + lw * 0.6f + 4 * s, y, lw * 0.4f - 4 * s, bh, "RANKED", cfg_.hostRanked);
             y += bh + gap;
-            if (cfg_.hostRanked) { // ranked always runs 1v1 on a ladder ruleset
-                int v = arenaVariantRanked(cfg_.hostArenaVariant) ? cfg_.hostArenaVariant : 0;
-                ui_.label(lx, y, std::string("RANKED 1V1 - ") + arenaVariant(v).title + " LADDER (RANKED RULESETS: VANILLA, LASER VAMPIRE, INSTAGIB)", kGrey, 0.5f);
-                y += 14 * s;
-            }
             ui_.label(lx, y, "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, 0.5f);
             y += 14 * s;
             ui_.label(lx, y, "IF UPNP FAILS, FORWARD THAT UDP PORT ON YOUR ROUTER", kGrey, 0.5f);
