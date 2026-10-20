@@ -1,6 +1,7 @@
 // Authoritative game server. Used by the standalone quark_server executable and by
 // the client when hosting a game (runs on its own thread, client connects via loopback).
 #pragma once
+#include <cmath>
 #include <atomic>
 #include <cstdio>
 #include <memory>
@@ -59,6 +60,7 @@ inline int logLevelFromName(const std::string& s) {
 }
 
 struct ServerPlayer {
+    uint32_t sentSeq = 0;     // snapshots sent (indexes the delta-base ring)
     bool connected = false;
     bool isBot = false;
     bool balanceBot = false;    // added automatically to even out teams
@@ -86,6 +88,7 @@ struct ServerPlayer {
     int checkpoint = 0;         // race: next checkpoint index
     uint32_t joinId = 0;
     int model = 0;              // player model (cosmetic, kPlayerModels looks, same hitbox)        // unique per connection (a new player in a reused slot gets a new one)
+    int soundPack = 0;      // cosmetic: the sound pack others hear this player with
     bool it = false;            // hide and seek / tag: the seeker / tagger (has the knife)
     bool found = false;         // hide and seek: found by the seeker this round (falling off doesn't count)
     Vec3 lastGround;            // where the player last stood (a dropped bomb goes here, not into a pit)
@@ -175,7 +178,8 @@ public:
         int rate = std::min(cfg_.snapRate, tickRate());
         if (cfg_.maxPlayers > 24) rate = std::min(rate, 250);       // big servers: upload bandwidth grows with players x rate
         else if (cfg_.maxPlayers > 16) rate = std::min(rate, 333);
-        return std::max(1, tickRate() / std::max(1, rate));
+        // round up (500 Hz at a 333 cap -> every 2nd tick, not every tick), but 1000 / 333 = 3.003 stays 3
+        return std::max(1, (int)std::ceil((float)tickRate() / std::max(1, rate) - 0.02f));
     } // benchmarks: every tick's simulate + send time goes here
     int hideRounds_ = 0;        // hide and seek: rounds this match (fixed at the start: everyone seeks once)
     uint32_t nextJoinId_ = 1;           // hide and seek: the last seeker (everyone takes a turn)

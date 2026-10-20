@@ -1,5 +1,7 @@
 #include "hudwidgets.h"
 #include <sys/stat.h>
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -9,7 +11,7 @@
 #include <sstream>
 
 static const char* kValueNames[HV_COUNT] = {"health", "speed", "dash", "hook", "fps", "fpsmin", "ping", "loss", "time",
-                                            "roundtime", "enemies", "teammates", "kills", "deaths", "score", "tickrate"};
+                                            "enemies", "teammates", "kills", "deaths", "score", "tickrate"};
 const char* hudValueName(int v) { return v >= 0 && v < HV_COUNT ? kValueNames[v] : "?"; }
 
 // 7x7 icons, one row per string ('#' = filled)
@@ -48,7 +50,7 @@ void HudWidgets::poll(const std::string& path) {
     if (now - lastPoll_ < 1.0) return;
     lastPoll_ = now;
     struct stat st;
-    long long mt = stat(path.c_str(), &st) == 0 ? (long long)st.st_mtime : -2;
+    long long mt = stat(path.c_str(), &st) == 0 ? (long long)st.st_mtime * 1000003LL + (long long)st.st_size : -2; // time + size: edits within a second still count
     if (mt == mtime_) return;
     mtime_ = mt;
     std::ifstream f(path);
@@ -133,7 +135,7 @@ bool HudWidgets::save(const std::string& path) {
     f << toText();
     f.close();
     struct stat st;
-    if (stat(path.c_str(), &st) == 0) mtime_ = (long long)st.st_mtime; // don't reload our own write
+    if (stat(path.c_str(), &st) == 0) mtime_ = (long long)st.st_mtime * 1000003LL + (long long)st.st_size; // don't reload our own write
     return true;
 }
 

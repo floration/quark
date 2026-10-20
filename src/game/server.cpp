@@ -1,4 +1,7 @@
 #include "server.h"
+
+// EV_PLAYERINFO's b byte: model in the low 4 bits, sound pack in the high 4
+static uint8_t looksByte(const ServerPlayer& p) { return (uint8_t)((p.model & 15) | ((p.soundPack & 15) << 4)); }
 #include "ranked.h"
 #include <random>
 #include "../common/profile.h"
@@ -307,11 +310,11 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
     // Tell the newcomer about everyone, and everyone about the newcomer.
     for (int i = 0; i < kMaxPlayers; i++) {
         if (!players_[i].connected || i == id) continue;
-        GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)i; e.b = (uint8_t)players_[i].model; e.text = players_[i].name;
+        GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)i; e.b = looksByte(players_[i]); e.text = players_[i].name;
         sendEvent(id, e);
         if (!players_[i].rankId.empty()) { GameEvent r; r.type = EV_RANKINFO; r.a = (uint8_t)i; r.text = players_[i].rankId; sendEvent(id, r); }
     }
-    GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = (uint8_t)p.model; e.text = name;
+    GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.text = name;
     broadcastEvent(e);
     GameEvent noRank; noRank.type = EV_RANKINFO; noRank.a = (uint8_t)id; // the slot's previous owner's id is gone
     broadcastEvent(noRank);
@@ -463,13 +466,18 @@ void Server::handleStringCmd(int id, const std::string& s) {
         if (rest == p.name) return;
         message(p.name + " is now " + rest);
         p.name = rest;
-        GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = (uint8_t)p.model; e.text = rest;
+        GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.text = rest;
         broadcastEvent(e);
     } else if (cmd == "model") { // cosmetic only: same hitbox for every model
-        int mdl = std::atoi(rest.c_str());
-        if (mdl < 0 || mdl >= kPlayerModels || mdl == p.model) return;
+        int mdl = 0, pack = 0;              // "model <model> <sound pack>": both cosmetic, both heard / seen by everyone
+        sscanf(rest.c_str(), "%d %d", &mdl, &pack);
+        if (cfg_.ranked) mdl = 0; // ranked: everyone is the default model (sound packs are allowed)
+        if (mdl < 0 || mdl >= kPlayerModels) mdl = 0;
+        if (pack < 0 || pack >= kSoundPacks) pack = 0;
+        if (mdl == p.model && pack == p.soundPack) return;
         p.model = mdl;
-        GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = (uint8_t)p.model; e.text = p.name;
+        p.soundPack = pack;
+        GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.text = p.name;
         broadcastEvent(e);
     } else if (cmd == "callvote") {
         std::istringstream vs(rest);
@@ -1265,7 +1273,7 @@ void Server::sendSnapshots() {
         // delta base: the newest snapshot the client confirmed, if we still remember it
         const Snapshot* base = nullptr;
         for (auto& o : p.sent)
-            if (o.tick && o.timeMs == p.ackSnapMs && tick_ - o.tick < (uint32_t)(ServerPlayer::kSentRing * snapEvery())) { base = &o; break; }
+            if (o.tick && o.timeMs == p.ackSnapMs && tick_ - o.tick < (uint32_t)(ServerPlayer::kSentRing * 8)) { base = &o; break; }
         s.baseTick = base ? base->tick : 0;
         Writer ww(world, sizeof world);
         writeSnapshotWorld(ww, s, base);
@@ -1287,7 +1295,8 @@ void Server::sendSnapshots() {
         for (auto& e : p.events) {
             if (e.sentAt >= 0 && time() - e.sentAt < resend) continue;
             int sz = 10 + (int)e.text.size();
-            if (sz > room || events_.size() >= 16) break;
+            if (events_.size() >= 16) break;
+            if (sz > room) continue; // a big one waits for a roomier snapshot; smaller ones behind it still go
             room -= sz;
             e.sentAt = time();
             events_.push_back(e);
@@ -1296,7 +1305,7 @@ void Server::sendSnapshots() {
         snapBytes_ += w.size(); snapCount_++;
         if (!sock_.send(p.addr, buf, w.size())) windowSendFail_++;
         // remember exactly what we sent (world part) as a future delta base
-        Snapshot& keep = p.sent[(tick_ / snapEvery()) % ServerPlayer::kSentRing];
+        Snapshot& keep = p.sent[p.sentSeq++ % ServerPlayer::kSentRing]; // by send count: stays a ring when the snapshot interval changes
         keep.tick = tick_; keep.timeMs = timeMs_; keep.ms = s.ms;
         keep.players = s.players; keep.projectiles = s.projectiles;
     }
@@ -1331,8 +1340,9 @@ int Server::addBot(int team, int skill, bool balance) {
     bots_[id].skill = skill;
     bots_[id].rng = 0x9E3779B9u ^ (uint32_t)(id * 2654435761u) ^ tick_;
     { GameEvent r; r.type = EV_RANKINFO; r.a = (uint8_t)id; broadcastEvent(r); }
-    p.model = (int)(bots_[id].rng % kPlayerModels); // bots: a mix of looks
-    GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = (uint8_t)p.model; e.text = p.name;
+    p.model = cfg_.ranked ? 0 : (int)(bots_[id].rng % kPlayerModels); // bots: a mix of looks (ranked: default)
+    p.soundPack = (int)((bots_[id].rng >> 8) % kSoundPacks);
+    GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.text = p.name;
     broadcastEvent(e);
     message(p.name + " (" + botSkillName(skill) + ") joined " + (team == TEAM_B ? "team B" : modeIsTeamBased(cfg_.mode) ? "team A" : "the game"));
     if (rulesRespawnDelay(*this) >= 0) p.respawnAt = time() + 0.5f;

@@ -36,6 +36,7 @@ public:
 
 private:
     bool hover(float x, float y, float w, float h) const;
+    float fit(const std::string& t, float maxW) const;
     Renderer* r_ = nullptr;
     UiInput in_;
     float scale_ = 1, textScale_ = 2;

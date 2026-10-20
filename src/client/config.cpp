@@ -35,6 +35,7 @@ void Settings::load() {
         else if (k == "fov") fov = clampf(fv, 60, 140);
         else if (k == "vsync") presentMode = iv != 0 ? 1 : 0; // old setting
         else if (k == "display_mode") displayMode = std::min(std::max(iv, 0), 2);
+        else if (k == "interp_ms") interpMs = std::min(std::max(iv, 0), 200);
         else if (k == "present_mode") presentMode = std::min(std::max(iv, 0), 2);
         else if (k == "low_latency") lowLatency = std::min(std::max(iv, 0), 2);
         else if (k == "maxfps") maxFps = iv;
@@ -102,7 +103,7 @@ void Settings::load() {
 void Settings::save() const {
     std::ofstream f(cfgPath());
     f << "name=" << name << "\nsensitivity=" << sensitivity << "\ndpi=" << dpi << "\nfov=" << fov << "\ndisplay_mode=" << displayMode
-      << "\npresent_mode=" << presentMode << "\nlow_latency=" << lowLatency
+      << "\npresent_mode=" << presentMode << "\nlow_latency=" << lowLatency << "\ninterp_ms=" << interpMs
       << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height
       << "\nshadows=" << shadows << "\nmsaa=" << msaa << "\nmodel=" << model << "\nsoundpack=" << soundPack << "\nsocd=" << socd << "\nalt_toggle=" << altToggle
       << "\nhud_verbose=" << hudVerbose << "\nhud_widgets=" << hudWidgets << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nhitsounds=" << hitsounds

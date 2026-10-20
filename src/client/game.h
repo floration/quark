@@ -35,7 +35,9 @@ struct LaunchOptions {
     bool debugPause = false, debugVote = false; // --pause / --votemenu
     std::string backdrop;       // --backdrop MAP: menu backdrop of that map, no menu drawn (site screenshots)
     float backdropAngle = -1;   // --orbit DEG: fixed orbit position for --backdrop   // --picker: open the host menu's map list
-    bool debugWidgets = false;  // --widgets: open the HUD widget editor in game
+    bool debugWidgets = false;
+    bool debugHudLayout = false; // --hudlayout: open HUD layout settings in game
+    bool debugModels = false;    // --models: every player model lined up in front of you  // --widgets: open the HUD widget editor in game
     bool debugSettings = false; // --settings: open the settings screen in game
     bool debugControls = false; // --controls
     std::string editMap;        // --editor MAP: open the map editor on that map
@@ -263,7 +265,7 @@ private:
     MoveState prevMove_;
     bool prevAlive_ = false;
     float stepDist_ = 0;
-    struct RemoteAudio { Vec3 pos; bool valid = false; float stepDist = 0; bool hooked = false; double nextLaser = 0; };
+    struct RemoteAudio { Vec3 pos; bool valid = false; float stepDist = 0; bool hooked = false; double nextLaser = 0, nextHurt = 0; int health = 0; };
     RemoteAudio remoteAudio_[kMaxPlayers];
     // rebinding
     bool isDown(int action) const;

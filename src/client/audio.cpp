@@ -1,5 +1,6 @@
 #include "audio.h"
 #include "../common/profile.h"
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -86,7 +87,7 @@ void finish(std::vector<float>& b, float peak) {
 static void voice(std::vector<float>& b, int pack);
 
 void Audio::synthesize() {
-    auto& s = sounds_;
+    auto& s = sounds_[0];
     // feedback: soft rounded ticks
     s[SND_HIT] = make(0.09f);  addThump(s[SND_HIT], 1500, 1100, 0.01f, 1, 0.0015f, 0.022f); addTone(s[SND_HIT], 2600, 0.15f, 0.001f, 0.01f); finish(s[SND_HIT], 0.32f);
     s[SND_KILL] = make(0.3f);  addThump(s[SND_KILL], 1300, 1000, 0.01f, 1, 0.0015f, 0.03f); addThump(s[SND_KILL], 1900, 1500, 0.01f, 0.9f, 0.0015f, 0.05f, 0.075f);
@@ -119,13 +120,16 @@ void Audio::synthesize() {
     s[SND_GRAPPLE_HIT] = make(0.35f);
     for (float f : {1180.0f, 1630.0f, 2360.0f}) addTone(s[SND_GRAPPLE_HIT], f, 0.35f, 0.001f, 0.07f);
     addThump(s[SND_GRAPPLE_HIT], 400, 200, 0.01f, 0.5f, 0.001f, 0.02f); addRoom(s[SND_GRAPPLE_HIT], 0.25f, 0.6f); finish(s[SND_GRAPPLE_HIT], 0.2f);
-    for (auto& snd : s) voice(snd, pack_);
+    for (int p = 1; p < kPacks; p++)
+        for (int i = 0; i < SND_COUNT; i++) { sounds_[p][i] = s[i]; voice(sounds_[p][i], p); }
 }
 
 // Sound packs re-voice every synthesized sound: pitch (by resampling), extra room, a low-pass, and for RETRO
 // a bit-crush with a sample-and-hold down to ~11 kHz. STANDARD leaves them as synthesized.
 static void voice(std::vector<float>& b, int pack) {
     if (pack == 0 || b.empty()) return;
+    auto rms = [](const std::vector<float>& v) { double e = 0; for (float x : v) e += (double)x * x; return std::sqrt(e / std::max<size_t>(1, v.size())); };
+    double before = rms(b);
     float pitch = pack == 1 ? 1.35f : pack == 2 ? 0.72f : pack == 3 ? 1.1f : 0.9f;
     std::vector<float> o((size_t)(b.size() / pitch) + 1);
     for (size_t i = 0; i < o.size(); i++) {
@@ -144,16 +148,12 @@ static void voice(std::vector<float>& b, int pack) {
         for (auto& v : o) { y += (v - y) * 0.18f; v = y * 0.85f; }
     }
     if (pack == 1) for (auto& v : o) v = std::tanh(v * 1.6f) * 0.75f; // ARCADE: brighter, saturated
+    // fairness: every pack is as loud as STANDARD (same RMS energy), so no pack hears or hides footsteps better
+    double after = rms(o);
+    if (after > 1e-6) { float g = (float)(before / after); for (auto& v : o) v = std::clamp(v * g, -1.0f, 1.0f); }
     b.swap(o);
 }
 
-void Audio::setPack(int pack) {
-    pack = (pack < 0 || pack > 4) ? 0 : pack;
-    std::lock_guard<std::mutex> l(mu_);
-    voices_.clear(); // sounds are replaced under the mixer: nothing may be playing a buffer that changes size
-    pack_ = pack;
-    synthesize();
-}
 
 void Audio::voiceGains(Voice& v) {
     if (!v.spatial) { v.gainL = v.gainR = v.volume; return; }
@@ -168,20 +168,20 @@ void Audio::voiceGains(Voice& v) {
     v.gainR = g * std::sqrt(0.5f * (1 + pan * 0.8f));
 }
 
-void Audio::play(int id, float volume, float pitch) {
+void Audio::play(int id, float volume, float pitch, int pack) {
     if (!running_ || id < 0 || id >= SND_COUNT) return;
     std::lock_guard<std::mutex> l(mu_);
     if ((int)voices_.size() >= kMaxVoices) voices_.erase(voices_.begin());
-    Voice v{id, 0, pitch, 0, 0, false, {}, volume};
+    Voice v{id, (pack < 0 || pack >= kPacks) ? pack_.load() : pack, 0, pitch, 0, 0, false, {}, volume};
     voiceGains(v);
     voices_.push_back(v);
 }
 
-void Audio::play3D(int id, const Vec3& pos, float volume, float pitch) {
+void Audio::play3D(int id, const Vec3& pos, float volume, float pitch, int pack) {
     if (!running_ || id < 0 || id >= SND_COUNT) return;
     std::lock_guard<std::mutex> l(mu_);
     if ((int)voices_.size() >= kMaxVoices) voices_.erase(voices_.begin());
-    Voice v{id, 0, pitch, 0, 0, true, pos, volume};
+    Voice v{id, (pack < 0 || pack >= kPacks) ? pack_.load() : pack, 0, pitch, 0, 0, true, pos, volume};
     voiceGains(v);
     if (v.gainL + v.gainR < 0.002f) return; // inaudible
     voices_.push_back(v);
@@ -196,7 +196,7 @@ void Audio::mix(int16_t* out, int frames) {
         std::lock_guard<std::mutex> l(mu_);
         for (size_t k = 0; k < voices_.size();) {
             Voice& v = voices_[k];
-            const std::vector<float>& s = sounds_[v.id];
+            const std::vector<float>& s = sounds_[v.pack][v.id];
             for (int i = 0; i < n; i++) {
                 size_t idx = (size_t)v.pos;
                 if (idx + 1 >= s.size()) { v.pos = (float)s.size(); break; }

@@ -1,5 +1,6 @@
 #include "profiles.h"
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -47,10 +48,17 @@ std::string stampedName(const char* prefix) {
     return prefix + std::string(b);
 }
 
+// binds are keyed by action name (e.g. bind_alt_fire), so profiles survive new or reordered actions
+static std::string actionKey(int a) {
+    std::string k = actionName(a);
+    for (char& c : k) c = c == ' ' ? '_' : (char)tolower((unsigned char)c);
+    return k;
+}
+
 std::string controlsToText(const Binds& b, int socd, bool altToggle) {
     std::string out = "# quark controls profile\n";
     out += "socd=" + std::to_string(socd) + "\nalt_toggle=" + std::to_string(altToggle ? 1 : 0) + "\n";
-    for (int a = 0; a < A_COUNT; a++) out += "bind_" + std::to_string(a) + "=" + std::to_string(b.code[a][0]) + "," + std::to_string(b.code[a][1]) + "\n";
+    for (int a = 0; a < A_COUNT; a++) out += "bind_" + actionKey(a) + "=" + std::to_string(b.code[a][0]) + "," + std::to_string(b.code[a][1]) + "\n";
     return out;
 }
 
@@ -67,7 +75,10 @@ bool controlsFromText(const std::string& text, Binds& b, int& socd, bool& altTog
         if (k == "socd") ns = std::clamp(atoi(v.c_str()), 0, 2);
         else if (k == "alt_toggle") na = atoi(v.c_str()) != 0;
         else if (k.rfind("bind_", 0) == 0) {
-            int a = atoi(k.c_str() + 5), c0 = 0, c1 = 0;
+            std::string name = k.substr(5);
+            int a = -1, c0 = 0, c1 = 0;
+            for (int i = 0; i < A_COUNT; i++) if (actionKey(i) == name) a = i;
+            if (a < 0 && !name.empty() && isdigit((unsigned char)name[0])) a = atoi(name.c_str()); // old numeric form
             if (a >= 0 && a < A_COUNT && sscanf(v.c_str(), "%d,%d", &c0, &c1) >= 1) { nb.code[a][0] = c0; nb.code[a][1] = c1; binds++; }
         }
     }

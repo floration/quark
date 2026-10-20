@@ -947,12 +947,13 @@ m.spawn("any", -17.5, 3.5, -17.5, 135, "any")
 m.save("anvil")
 
 # ======================================================================================================
-# VIADUCT: race. A long course over a chasm, start in the south, finish in the north: a bridge on stone
-# arches, stepping stones up, a covered tunnel, a climb, a narrow beam (or a grapple swing) across the big
-# gap, a slalom, more stones down and the run home. Fall off and you start again from your checkpoint.
+# VIADUCT: race, two full loops over a chasm, each leg higher than the last. Leg 1 (north): a bridge on
+# stone arches, stepping stones, a covered tunnel, a climb, a beam (or a grapple swing) across the big gap, a
+# slalom, stones down. Leg 2 (south) climbs the east edge, leg 3 (north) runs the west edge higher still, and
+# leg 4 (south) is a skyway down the middle to the finish above the start. Falls send you to your checkpoint.
 m = M("Viaduct", "race", sun=(0.5, 1.0, 0.35))
 m.raw("modes race")
-m.room(16, 82, 16, pits=[(-16, -82, 16, 82, "chasm")], style="yard", skyline="mountains")
+m.room(16, 82, 40, pits=[(-16, -82, 16, 82, "chasm")], style="yard", skyline="mountains")
 def deck(x0, z0, x1, z1, top, mat=None, piers=True):
     m.box(x0, top - 1, z0, x1, top, z1, mat=mat)
     m.glow(x0 - 0.04, top - 0.25, z0, x0, top - 0.1, z1); m.glow(x1, top - 0.25, z0, x1 + 0.04, top - 0.1, z1)
@@ -986,7 +987,46 @@ deck(2, -70, 6, -60, 1.0)                                                  # the
 deck(-8, -79, 8, -70, 1.0)
 m.box(-8, 1, -79.6, 8, 7, -79, accent=True); m.glow(-6, 5, -79.05, 6, 6, -78.95)   # finish arch
 m.metal(-8, 1, -79, -7.4, 7, -78.4); m.metal(7.4, 1, -79, 8, 7, -78.4)
-m.raw("checkpoint -6 1 -79 6 5 -72")
+m.raw("checkpoint -6 1 -79 6 5 -72")                                      # lap gate (leg 1 done)
+# leg 2, south along the east edge
+deck(8, -79, 15.5, -73, 1.0)
+m.stairs(12.5, -73, 15.5, -57, 8, "z", 1, base=1.0)
+deck(12.5, -57, 15.5, -20, 8)
+for (z, x0, x1) in ((-50, 12.5, 14.3), (-44, 13.7, 15.5), (-38, 12.5, 14.3), (-32, 13.7, 15.5)): m.box(x0, 8, z, x1, 9.6, z + 0.6, accent=True)
+m.stairs(12.5, -20, 15.5, -12, 10, "z", 1, base=8)
+deck(12.5, -12, 15.5, 30, 10)
+deck(13.3, 30, 14.7, 44, 10, mat="metal", piers=False)                    # east beam
+deck(12.5, 44, 15.5, 62, 10)
+m.raw("checkpoint 12.5 10 44 15.5 13 62")
+m.stairs(12.5, 62, 15.5, 70, 12, "z", 1, base=10)
+deck(12.5, 70, 15.5, 81, 12)
+deck(-15.5, 77, 12.5, 81, 12)                                             # south turn, high over the start
+m.raw("checkpoint -6 12 77 6 15 81")
+# leg 3, north along the west edge
+m.stairs(-15.5, 65, -12.5, 77, 18, "z", -1, base=12)
+deck(-15.5, 30, -12.5, 65, 18)
+for z in (56, 46, 36): m.box(-15.5, 18, z, -12.5, 18.7, z + 0.5, accent=True)   # hurdles: jump them
+m.stairs(-15.5, 22, -12.5, 30, 20, "z", -1, base=18)
+deck(-15.5, -30, -12.5, 22, 20)
+m.raw("checkpoint -15.5 20 -30 -12.5 23 -10")
+deck(-14.7, -44, -13.3, -30, 20, mat="metal", piers=False)                # west beam
+deck(-15.5, -60, -12.5, -44, 20)
+m.stairs(-15.5, -70, -12.5, -60, 22, "z", -1, base=20)
+deck(-15.5, -81, -12.5, -70, 22)
+deck(-12.5, -81, 1.5, -77, 22)                                            # north turn
+m.raw("checkpoint -12.5 22 -81 1.5 25 -77")
+# leg 4, the skyway south down the middle to the finish
+m.stairs(-1.5, -77, 1.5, -65, 28, "z", 1, base=22)
+deck(-1.5, -65, 1.5, -20, 28, piers=False)
+for (z, x0, x1) in ((-55, -1.5, 0.2), (-47, -0.2, 1.5), (-39, -1.5, 0.2), (-31, -0.2, 1.5)): m.box(x0, 28, z, x1, 29.6, z + 0.6, accent=True)
+m.stairs(-1.5, -20, 1.5, -12, 30, "z", 1, base=28)
+deck(-1.5, -12, 1.5, 40, 30, piers=False)
+deck(-0.6, 40, 0.6, 52, 30, mat="metal", piers=False)                     # last beam
+deck(-4, 52, 4, 64, 30, piers=False)
+m.box(-4, 30, 63.4, 4, 36, 64, accent=True); m.glow(-3, 34, 63.35, 3, 35, 63.45)   # finish arch
+m.metal(-4, 30, 62.8, -3.4, 36, 63.4); m.metal(3.4, 30, 62.8, 4, 36, 63.4)
+m.light(0, 33, 58, 9, 0.8)
+m.raw("checkpoint -3 30 56 3 34 63")
 for x in (-3, 0, 3): m.spawn("race", x, 0, 74, 0)
 m.save("viaduct")
 

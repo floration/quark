@@ -277,9 +277,12 @@ void NetClient::pumpDownload(double now) {
 void NetClient::onSnapshot(Snapshot& s) {
     if (!snaps_.empty() && s.tick <= snaps_.back().tick) return; // out of order / duplicate
     double now = timeNow();
-    // Snapshot loss for the server's tick-rate test (every tick sends one snapshot).
+    // Snapshot loss for the server's tick-rate test. Snapshots go out every `every` ticks (snapshot rate is
+    // separate from the tick rate), so count the gap in snapshots, not ticks: counting ticks read as exactly
+    // 50% loss at 1000 Hz / 500 snapshots and made the server lower its tick rate.
     if (!snaps_.empty()) {
-        lossExpected_ += s.tick - snaps_.back().tick;
+        uint32_t every = s.snapRate > 0 && s.tickRate > s.snapRate ? (uint32_t)((s.tickRate + s.snapRate / 2) / s.snapRate) : 1;
+        lossExpected_ += std::max<uint32_t>(1, (s.tick - snaps_.back().tick + every / 2) / every);
         lossReceived_++;
         if (lossExpected_ >= 500) {
             lossPct_ = (uint8_t)std::min(100u, (lossExpected_ - lossReceived_) * 100 / lossExpected_);
@@ -307,7 +310,8 @@ void NetClient::onSnapshot(Snapshot& s) {
     for (auto& e : s.events) {
         if (e.id <= lastEventId_) continue;
         lastEventId_ = e.id;
-        if (e.type == EV_PLAYERINFO && e.a < kMaxPlayers) { names_[e.a] = e.text; models_[e.a] = e.b < kPlayerModels ? e.b : 0; }
+        if (e.type == EV_PLAYERINFO && e.a < kMaxPlayers) { names_[e.a] = e.text; int m = e.b & 15, sp = e.b >> 4;
+            models_[e.a] = m < kPlayerModels ? m : 0; packs_[e.a] = sp < kSoundPacks ? sp : 0; }
         if (e.type == EV_RANKINFO && e.a < kMaxPlayers) rankIds_[e.a] = e.text;
         if (e.type == EV_EDIT) { applyEditEvent(e.text); continue; }
         events_.push_back(e);

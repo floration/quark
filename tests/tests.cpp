@@ -569,6 +569,12 @@ static void testTickRateFallback(uint16_t port) {
     std::vector<NetClient*> cls = {&a};
     pump(s, cls, 1.0, idle);
     CHECK(a.tickRate() == s.tickRate());
+    // A healthy loopback client reports no loss and the server stays at 1000 Hz (snapshots go out every
+    // other tick: counting ticks instead of snapshots once read as exactly 50% loss and dropped the rate).
+    pump(s, cls, 3.2 * 1.5, idle);
+    printf("  loopback: reported loss %d%%, tick rate %d, snapshot rate %d\n", a.snapshotLoss(), s.tickRate(), a.snapRate());
+    CHECK(a.snapshotLoss() <= 2);
+    CHECK(s.tickRate() == 1000);
     // Simulate a client reporting heavy snapshot loss during warmup.
     a.overrideReportedLoss(50);
     pump(s, cls, 3.2 * 4, idle);
@@ -1714,6 +1720,7 @@ int main(int argc, char** argv) {
     uint16_t port = 28500;
     if (argc >= 2 && std::string(argv[1]) == "ranked") { testRanked(29610); testRankedVoteAndRestart(29620); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(29600); testEditSession(29601); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(29950); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(29900); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = 29800; testArenaAndTourney(p); return g_fail ? 1 : 0; }

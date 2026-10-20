@@ -12,7 +12,7 @@ constexpr int kMaxPlayers = 32;        // engine limit; servers default to 8 (Se
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 19;
+constexpr uint16_t kProtocolVersion = 20;
 
 // Player hull
 constexpr float kPlayerHalfWidth = 0.4f;
@@ -24,7 +24,8 @@ constexpr int kMaxHealth = 100;
 
 enum GameModeId : uint8_t { MODE_VS = 0, MODE_BOMB, MODE_RACE, MODE_KOTH, MODE_PAYLOAD, MODE_FFA, MODE_NPAYLOAD, MODE_DUEL, MODE_ARENA, MODE_TOURNEY, MODE_HIDE, MODE_TAG, MODE_COUNT };
 inline bool isPayloadMode(int m) { return m == MODE_PAYLOAD || m == MODE_NPAYLOAD; }
-constexpr int kPlayerModels = 5; // STANDARD, HEAVY, SCOUT, ROBOT, KNIGHT: cosmetic, every one has the same hitbox
+constexpr int kPlayerModels = 5;          // STANDARD, HEAVY, SCOUT, ROBOT, KNIGHT: cosmetic, every one has the same hitbox
+constexpr int kSoundPacks = 5;            // STANDARD, ARCADE, HEAVY, RETRO, SOFT
 inline const char* playerModelName(int m) { static const char* n[] = {"STANDARD", "HEAVY", "SCOUT", "ROBOT", "KNIGHT"}; return n[(m < 0 || m >= kPlayerModels) ? 0 : m]; }
 inline bool isItMode(int m) { return m == MODE_HIDE || m == MODE_TAG; } // one player is "it" (seeker / tagger) with the knife
 constexpr float kHideTime = 30.0f;       // hide and seek: hiders' head start while the seeker faces the wall

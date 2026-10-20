@@ -33,6 +33,12 @@ void Ui::labelCentered(float cx, float y, const std::string& t, const Color& c, 
     r_->text(cx - r_->textWidth(t, ts) * 0.5f, y, ts, t, c);
 }
 
+// Text scale that fits maxW: the normal size, or shrunk only as much as needed.
+float Ui::fit(const std::string& t, float maxW) const {
+    if (t.empty() || r_->textWidth(t, textScale_) <= maxW) return textScale_;
+    return std::max(0.5f, maxW / r_->textWidth(t, 1.0f));
+}
+
 bool Ui::button(float x, float y, float w, float h, const std::string& label, bool enabled) {
     bool hv = enabled && hover(x, y, w, h);
     Color bg = !enabled ? Color{0.12f, 0.12f, 0.14f, 0.8f} : hv ? Color{accent.r * 0.5f, accent.g * 0.5f, accent.b * 0.5f, 0.95f}
@@ -40,7 +46,8 @@ bool Ui::button(float x, float y, float w, float h, const std::string& label, bo
     r_->rect(x, y, w, h, bg);
     if (hv) r_->rect(x, y + h - 2 * scale_, w, 2 * scale_, accent);
     Color tc = enabled ? Color{1, 1, 1, 1} : Color{0.5f, 0.5f, 0.5f, 1};
-    r_->text(x + (w - r_->textWidth(label, textScale_)) * 0.5f, y + (h - r_->textHeight(textScale_)) * 0.5f, textScale_, label, tc);
+    float ts = fit(label, w - 8 * scale_);
+    r_->text(x + (w - r_->textWidth(label, ts)) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, label, tc);
     return hv && in_.pressed;
 }
 
@@ -75,7 +82,8 @@ bool Ui::cycle(float x, float y, float w, float h, const std::string& label, int
     r_->rect(x + bw, y, w - 2 * bw, h, {0.08f, 0.09f, 0.11f, 0.95f});
     (void)label; // the value names say what they are (no "LABEL: " prefix, it overflowed)
     std::string t = index >= 0 && index < (int)names.size() ? names[index] : "?";
-    r_->text(x + (w - r_->textWidth(t, textScale_)) * 0.5f, y + (h - r_->textHeight(textScale_)) * 0.5f, textScale_, t, {1, 1, 1, 1});
+    float ts = fit(t, w - 2 * bw - 8 * scale_);
+    r_->text(x + (w - r_->textWidth(t, ts)) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, t, {1, 1, 1, 1});
     return changed;
 }
 
@@ -134,8 +142,9 @@ bool Ui::slider(float x, float y, float w, float h, const std::string& label, fl
     } else {
         snprintf(buf, sizeof buf, fmt, v);
         std::string s = prefix + buf;
-        r_->text(x + (w - r_->textWidth(s, textScale_)) * 0.5f, ty, textScale_, s, {1, 1, 1, 1});
-        if (overNumber) r_->rect(nx, ty + r_->textHeight(textScale_) + 1 * scale_, r_->textWidth(buf, textScale_), 1 * scale_, {1, 1, 1, 0.7f}); // clickable
+        float fs = fit(s, w - 8 * scale_);
+        r_->text(x + (w - r_->textWidth(s, fs)) * 0.5f, y + (h - r_->textHeight(fs)) * 0.5f, fs, s, {1, 1, 1, 1});
+        if (overNumber && fs == textScale_) r_->rect(nx, ty + r_->textHeight(textScale_) + 1 * scale_, r_->textWidth(buf, textScale_), 1 * scale_, {1, 1, 1, 0.7f}); // clickable
     }
     return changed;
 }

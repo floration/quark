@@ -26,26 +26,30 @@ public:
     ~Audio() { stop(); }
 
     // 2D (UI / your own sounds) and 3D (positioned, panned and attenuated from the listener).
-    void play(int id, float volume = 1.0f, float pitch = 1.0f);
-    void play3D(int id, const Vec3& pos, float volume = 1.0f, float pitch = 1.0f);
+    // pack: which sound pack to voice it with (-1 = yours; other players' sounds use the pack they picked)
+    void play(int id, float volume = 1.0f, float pitch = 1.0f, int pack = -1);
+    void play3D(int id, const Vec3& pos, float volume = 1.0f, float pitch = 1.0f, int pack = -1);
     void setListener(const Vec3& pos, float yaw) { std::lock_guard<std::mutex> l(mu_); listener_ = pos; listenerYaw_ = yaw; }
     void setMasterVolume(float v) { master_ = v; }
     // Sound packs: the same synthesized sounds, voiced differently (STANDARD, ARCADE, HEAVY, RETRO, SOFT).
-    void setPack(int pack);
+    // All packs are built at startup, so switching is free and every player can sound different.
+    static constexpr int kPacks = 5;
+    void setPack(int pack) { pack_ = (pack < 0 || pack >= kPacks) ? 0 : pack; }
     int pack() const { return pack_; }
     bool ok() const { return running_; }
+    const std::vector<float>& samples(int pack, int id) const { return sounds_[pack][id]; } // tests / tools
 
     // Mixes `frames` stereo frames into out (interleaved int16). Used by the backends and tests.
     void mix(int16_t* out, int frames);
 
 private:
-    struct Voice { int id; float pos; float step; float gainL, gainR; bool spatial; Vec3 at; float volume; };
+    struct Voice { int id, pack; float pos; float step; float gainL, gainR; bool spatial; Vec3 at; float volume; };
     void synthesize();
-    int pack_ = 0;
+    std::atomic<int> pack_{0};
     void voiceGains(Voice& v);
     void backendThread();
 
-    std::vector<float> sounds_[SND_COUNT];
+    std::vector<float> sounds_[kPacks][SND_COUNT];
     std::vector<Voice> voices_;
     std::mutex mu_;
     Vec3 listener_;

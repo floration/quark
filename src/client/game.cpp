@@ -530,7 +530,11 @@ UserCmd Game::buildCmd() {
     c.yaw = yaw_;
     c.pitch = pitch_;
     bool block = paused_ || chatting_ || screen_ != Screen::InGame;
-    if (block) return c;
+    if (block) { // keep key edge tracking current, so keys held through a menu aren't fresh presses after it
+        socdPrev_[0] = isDown(A_FORWARD); socdPrev_[1] = isDown(A_BACK); socdPrev_[2] = isDown(A_RIGHT); socdPrev_[3] = isDown(A_LEFT);
+        altPrev_ = isDown(A_ALTFIRE);
+        return c;
+    }
     // Opposite movement keys held together (SOCD): cancel out (default), or the last / first pressed wins.
     // Ranked always uses the default.
     bool ranked = net_.hasSnapshot() && (net_.mode().flags & MS_RANKED);
@@ -556,10 +560,11 @@ UserCmd Game::buildCmd() {
         else c.weapon = (uint8_t)desiredWeapon_;
     }
     if (isDown(A_FIRE) || fireLatched_) c.buttons |= BTN_FIRE;
-    bool alt = isDown(A_ALTFIRE);
-    if ((modeCtlActive_ ? modeAlt_ : cfg_.altToggle) && !ranked) { // tap to toggle alt-fire (scope) instead of holding it
-        if (alt && !altPrev_) altToggled_ = !altToggled_;
-        altPrev_ = alt;
+    bool alt = isDown(A_ALTFIRE), altEdge = alt && !altPrev_;
+    altPrev_ = alt;
+    if (!(modeCtlActive_ ? modeAlt_ : cfg_.altToggle) || ranked) altToggled_ = false;
+    else { // tap to toggle alt-fire (scope) instead of holding it
+        if (altEdge) altToggled_ = !altToggled_;
         if (desiredWeapon_ >= 0 || !net_.selfAlive()) altToggled_ = false; // switching weapons / dying drops the scope
         alt = altToggled_;
     }
@@ -680,18 +685,20 @@ void Game::frame(double dt) {
     time_ += dt;
     if (opts_.debugPerf) { showPerf_ = true; if (pendingInput_ < 0) pendingInput_ = timeNow(); }
     if (opts_.debugPause && screen_ == Screen::InGame && !paused_) { paused_ = true; voteMenu_ = opts_.debugVote; opts_.debugPause = false; }
-    if (opts_.debugSettings && screen_ == Screen::InGame && !settingsInGame_) { paused_ = true; settingsInGame_ = true; controlsOpen_ = opts_.debugControls; crosshairOpen_ = opts_.debugCrosshair; widgetEdit_ = opts_.debugWidgets; widgetSel_ = opts_.debugWidgets ? 0 : -1; opts_.debugSettings = false; }
+    if (opts_.debugSettings && screen_ == Screen::InGame && !settingsInGame_) { paused_ = true; settingsInGame_ = true; controlsOpen_ = opts_.debugControls; crosshairOpen_ = opts_.debugCrosshair; widgetEdit_ = opts_.debugWidgets; hudOpen_ = opts_.debugHudLayout; widgetSel_ = opts_.debugWidgets ? 0 : -1; opts_.debugSettings = false; }
     r_.setMsaa(cfg_.msaa);
     {   // per-mode HUD / controls rules follow the running mode (back to your defaults outside a game)
         // ranked never takes a rule: the default HUD and your own binds, no control scripts
         int m = net_.state() == ConnState::Connected && net_.hasSnapshot() && !(net_.mode().flags & MS_RANKED) ? (int)net_.mode().mode : -1;
         if (m != appliedMode_) applyModeRules(m);
     }
-    if (net_.state() == ConnState::Connected && net_.hasSnapshot() && net_.playerModel(net_.clientId()) != cfg_.model && time_ >= modelSentAt_ + 1.0) {
-        net_.sendCommand("model " + std::to_string(cfg_.model)); // everyone sees your pick (cosmetic only)
+    if (net_.state() == ConnState::Connected && net_.hasSnapshot() && time_ >= modelSentAt_ + 1.0 &&
+        ((!(net_.mode().flags & MS_RANKED) && net_.playerModel(net_.clientId()) != cfg_.model) || net_.playerSoundPack(net_.clientId()) != cfg_.soundPack)) {
+        net_.sendCommand("model " + std::to_string(cfg_.model) + " " + std::to_string(cfg_.soundPack)); // everyone sees / hears your picks (cosmetic only)
         modelSentAt_ = time_;
     }
     if (audio_.pack() != cfg_.soundPack) audio_.setPack(cfg_.soundPack);
+    net_.setInterpFixed(net_.hasSnapshot() && (net_.mode().flags & MS_RANKED) ? 0.010f : cfg_.interpMs > 0 ? cfg_.interpMs * 0.001f : -1.0f);
     frameInput_ = pendingInput_; // the oldest input this frame will show
     pendingInput_ = -1;
     if (opts_.bench > 0 && screen_ == Screen::InGame) benchFrame(dt);
@@ -797,10 +804,10 @@ void Game::frame(double dt) {
         for (auto& old : lastProjectiles_) {
             bool still = false;
             for (auto& p : projs) still |= p.id == old.id;
-            if (!still && weaponDef(old.type).splashRadius > 0) { explosions_.push_back({old.pos, time_}); audio_.play3D(SND_EXPLOSION, old.pos, 1.0f); }
-            else if (!still && old.type == WPN_CROSSBOW) audio_.play3D(SND_BOLT_HIT, old.pos, 0.8f);
+            if (!still && weaponDef(old.type).splashRadius > 0) { explosions_.push_back({old.pos, time_}); audio_.play3D(SND_EXPLOSION, old.pos, 1.0f, 1.0f, net_.playerSoundPack(old.owner)); }
+            else if (!still && old.type == WPN_CROSSBOW) audio_.play3D(SND_BOLT_HIT, old.pos, 0.8f, 1.0f, net_.playerSoundPack(old.owner));
             if (still && old.type == WPN_STICKY && length(old.vel) > 0.01f)
-                for (auto& p : projs) if (p.id == old.id && length(p.vel) < 0.01f) audio_.play3D(SND_STICKY_ATTACH, p.pos, 0.8f);
+                for (auto& p : projs) if (p.id == old.id && length(p.vel) < 0.01f) audio_.play3D(SND_STICKY_ATTACH, p.pos, 0.8f, 1.0f, net_.playerSoundPack(old.owner));
         }
         lastProjectiles_ = projs;
 
@@ -893,6 +900,18 @@ void Game::drawWorld(float alpha) {
     audio_.setListener(eye, camYaw);
     updateSounds(players);
 
+    if (opts_.debugModels && alive) { // model lineup for screenshots: the last slots, 5 m ahead, facing you
+        Vec3 f = {-std::sin(yaw_), 0, -std::cos(yaw_)}, rt = {std::cos(yaw_), 0, -std::sin(yaw_)};
+        for (int k = 0; k < kPlayerModels; k++) {
+            auto& ip = players[kMaxPlayers - kPlayerModels + k];
+            ip.valid = true;
+            ip.snap = PlayerSnap{};
+            ip.snap.id = (uint8_t)(kMaxPlayers - kPlayerModels + k);
+            ip.snap.flags = PS_ALIVE | (k % 2 ? PS_TEAM_B : 0);
+            ip.snap.pos = net_.smoothedPos(alpha) + f * 5.0f + rt * ((k - 2) * 1.5f);
+            ip.snap.yaw = yaw_ + 3.14159265f;
+        }
+    }
     // players (duel "double size" rounds draw everyone at twice the size, matching the server hitboxes)
     const ModeState& dms = net_.latest().ms;
     const float bs = dms.mode == MODE_DUEL && dms.phase != PHASE_WARMUP ? duelModDef(dms.duelMod).size : 1.0f;
@@ -915,7 +934,8 @@ void Game::drawWorld(float alpha) {
         // the player model (cosmetic: every model fits the same hitbox)
         auto part = [&](const Vec3& c, const Vec3& half, const Vec3& colr, bool shadow = true) { r_.box(c, half * bs, yaw, colr, sv, shadow, vis); };
         const Vec3 grey = {0.32f, 0.33f, 0.36f}, dark = {0.05f, 0.05f, 0.06f};
-        switch (net_.playerModel(i)) {
+        int model = opts_.debugModels && i >= kMaxPlayers - kPlayerModels ? i - (kMaxPlayers - kPlayerModels) : net_.playerModel(i);
+        switch ((net_.mode().flags & MS_RANKED) ? 0 : model) { // ranked: default model for everyone
             case 1: // HEAVY: wide armoured body, shoulder pads, small helmet
                 part(at(0.45f), Vec3(0.32f, 0.45f * hs, 0.24f), col * 0.45f);
                 part(at(1.15f), Vec3(0.44f, 0.3f * hs, 0.28f), col);
@@ -1334,7 +1354,7 @@ void Game::drawHud() {
         r_.rect(cx + 224 * s, 8 * s, tw, r_.textHeight(tts) + 8 * s, gold);
         r_.text(cx + 230 * s, 12 * s, tts, "RANKED", {0.1f, 0.08f, 0.02f, 1});
         if (ms.phase == PHASE_WARMUP || ms.phase == PHASE_FREEZE)
-            ui_.labelCentered(cx, 76 * s, "RANKED USES THE DEFAULT HUD AND CONTROLS FOR FAIRNESS", gold, 0.5f);
+            ui_.labelCentered(cx, 104 * s, "RANKED: DEFAULT MODEL, HUD, CONTROLS AND 10 MS INTERP FOR FAIRNESS", gold, 0.5f); // under the ruleset line
     }
     ui_.labelCentered(cx, 16 * s, title, kWhite);
     ui_.labelCentered(cx, 16 * s + 22 * s, phase, kGrey);
@@ -1638,7 +1658,6 @@ void Game::computeHudVals() {
     set(HV_PING, mep ? (float)mep->ping : 0, 200);
     set(HV_LOSS, (float)net_.snapshotLoss(), 100);
     set(HV_TIME, std::max(0.0f, ms.timeLeft), 600);
-    set(HV_ROUNDTIME, std::max(0.0f, ms.timeLeft), 600);
     int myTeam = mep ? mep->team() : TEAM_A, enemies = 0, mates = 0;
     bool team = modeIsTeamBased(ms.mode);
     for (auto& p : net_.latest().players) {
@@ -1673,7 +1692,7 @@ void Game::drawVerboseHud(float W, float s, float& y) {
     char b[14][40];
     int n = 0;
     const char* lab[14];
-    auto line = [&](const char* l, const char* fmt, auto... a) { lab[n] = l; snprintf(b[n], sizeof b[n], fmt, a...); n++; };
+    auto line = [&](const char* l, const char* fmt, auto... a) { if (n >= 14) return; lab[n] = l; snprintf(b[n], sizeof b[n], fmt, a...); n++; };
     line("TIME", "%s", clock);
     line("VERSION", "%s", QUARK_VERSION);
     line("FPS", "%.0f", h.v[HV_FPS]);
@@ -1684,7 +1703,7 @@ void Game::drawVerboseHud(float W, float s, float& y) {
     line("TICK / SNAP", "%d / %d", net_.tickRate(), net_.snapRate());
     line("ENEMIES ALIVE", "%.0f", h.v[HV_ENEMIES]);
     if (modeIsTeamBased(ms.mode)) line("TEAMMATES ALIVE", "%.0f", h.v[HV_TEAMMATES]);
-    line("ROUND TIME", "%d:%02d", (int)h.v[HV_TIME] / 60, (int)h.v[HV_TIME] % 60);
+    line("TIME LEFT", "%d:%02d", (int)h.v[HV_TIME] / 60, (int)h.v[HV_TIME] % 60);
     line("MAP", "%s", net_.map().name.c_str());
     line("MODE", "%s", modeTitle(ms.mode));
     line("K / D", "%.0f / %.0f", h.v[HV_KILLS], h.v[HV_DEATHS]);
@@ -1843,7 +1862,9 @@ void Game::drawWidgetEditor() {
     if (w.grade || w.style == HudWidget::GRADBAR) rgba4("LOW COLOUR (EMPTY)", w.low);
     ui_.label(px, y + 4 * s, "LABEL", kWhite, 0.5f);
     ui_.textField(40, px + 60 * s, y, pw - 60 * s, h, w.label, 24);
-    for (char& c : w.label) c = (char)toupper((unsigned char)c);
+    std::string lab; // no '#' (comment) or '_' (saved spaces) in labels
+    for (char c : w.label) if (c != '#' && c != '_') lab += (char)toupper((unsigned char)c);
+    w.label = lab;
     y += h + gap;
     if (ui_.button(px, y, pw, h, "DELETE WIDGET")) { L.erase(L.begin() + widgetSel_); widgetSel_ = -1; }
 }
@@ -2135,6 +2156,15 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     for (int i = 0; i < 4; i++) if (aaModes[i] == cfg_.msaa) ai = i;
     if (ui_.cycle(xr, y, w, h, "ANTI-ALIASING", ai, 4, aaNames)) cfg_.msaa = aaModes[ai];
     y += h + gap;
+    {   // other players' interpolation delay (ranked: always 10 ms)
+        static const int ims[] = {0, 5, 8, 10, 15, 20, 30, 50, 100};
+        static const std::vector<std::string> imn = {"INTERP: AUTO (ADAPTIVE)", "INTERP: 5 MS", "INTERP: 8 MS", "INTERP: 10 MS", "INTERP: 15 MS",
+                                                     "INTERP: 20 MS", "INTERP: 30 MS", "INTERP: 50 MS", "INTERP: 100 MS"};
+        int ii = 0;
+        for (int i = 0; i < 9; i++) if (ims[i] == cfg_.interpMs) ii = i;
+        if (ui_.cycle(xr, y, w, h, "INTERP", ii, 9, imn)) cfg_.interpMs = ims[ii];
+        y += h + gap;
+    }
     const char* help[] = {
         "NO VSYNC = LOWEST LATENCY, MAY TEAR",
         "EXCLUSIVE / BORDERLESS SKIP THE DESKTOP",
@@ -2268,7 +2298,7 @@ void Game::drawMenu() {
                 y += bh + gap;
                 if (cfg_.hostRanked) {
                     ui_.label(lx, y, "RANKED MAPS ONLY - EACH LADDER HAS ITS OWN RATING", kGrey, 0.5f);
-                    ui_.label(lx, y + 12 * s, "FAIRNESS: DEFAULT HUD, NO CONTROL SCRIPTS OR MODE RULES", kGrey, 0.5f);
+                    ui_.label(lx, y + 12 * s, "FAIRNESS: DEFAULT MODEL, HUD, CONTROLS, 10 MS INTERP", kGrey, 0.5f);
                 }
                 else if (!m.supportsMode(hostModeIdx_)) ui_.label(lx, y, "THIS MAP DOES NOT SUPPORT THAT MODE", kRed);
                 else if (hostModeIdx_ == MODE_DUEL && ui_.button(lx, y - 2 * s, lw, 24 * s, cfg_.hostDuelSize == 2 ? "TEAMS: 2V2 (CLICK FOR 1V1)" : "TEAMS: 1V1 (CLICK FOR 2V2)"))
@@ -2517,7 +2547,7 @@ void Game::drawControls(float x0, float y0, float wTotal) {
     std::vector<int> actions; // every rebindable action (crouch was removed from the game)
     for (int a = 0; a < A_COUNT; a++) if (a != A_CROUCH && a != A_WEAPON9) actions.push_back(a);
     int perCol = ((int)actions.size() + 1) / 2;
-    float h = perCol * (rowH + gap) + 250 * s;
+    float h = perCol * (rowH + gap) + 266 * s;
     float y = std::max(8 * s, y0 - 40 * s);
     ui_.panel(x - 16 * s, y - 16 * s, colW * 2 + colGap + 32 * s, h);
     float lts = std::max(1.0f, std::round(ui_.textScale() * 0.75f));
@@ -2567,7 +2597,7 @@ void Game::drawControls(float x0, float y0, float wTotal) {
         if (ui_.button(x + 2 * (tw + 6 * s), y, tw, 32 * s, "FOLDER")) openUrl(profileDir("controls"));
         y += 32 * s + 6 * s;
         ruleRow(x, y, colW * 2 + colGap, 32 * s, false);
-        y += 32 * s + 6 * s;
+        y += 32 * s + 22 * s; // room for the rule row's note
         if (time_ < widgetMsgUntil_) ui_.label(x, y, widgetMsg_, ui_.accent, 0.5f);
         y += 16 * s;
     }
@@ -2634,7 +2664,7 @@ void Game::drawPicker(float cx, float y) {
             cur = multi ? multiSel_[i] : i == variant;
         } else if (modes && i == MODE_COUNT) {
             label = "RANKED";
-            sub = "1V1 LADDERS - DEFAULT HUD + CONTROLS >";
+            sub = "1V1 LADDERS - DEFAULT MODEL, HUD, CONTROLS >";
             cur = rankedNow;
         } else if (modes) {
             label = modeTitle(i);
@@ -2791,7 +2821,7 @@ void Game::drawHudSettings(float x0, float y0, float wTotal) {
     float h = 32 * s, gap = 7 * s;
     float w = std::max(360 * s, wTotal * 0.5f);
     float x = x0 + wTotal * 0.5f - w * 0.5f, y = y0;
-    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 12 * (h + gap) + 3 * gap + 32 * s);
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 12 * (h + gap) + 3 * gap + 48 * s);
     static const std::vector<std::string> names = {"HEALTH", "WEAPON NAME", "COOLDOWN BARS", "SPEED METER", "WEAPON LIST"};
     ui_.cycle(x, y, w, h, "ELEMENT", hudSel_, Settings::HUD_COUNT, names);
     auto& e = cfg_.hud[hudSel_];
@@ -2900,24 +2930,30 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
         RemoteAudio& ra = remoteAudio_[i];
         if (i == me || !players[i].valid || !(players[i].snap.flags & PS_ALIVE)) { ra.valid = false; continue; }
         const PlayerSnap& p = players[i].snap;
+        int sp = net_.playerSoundPack(i); // their sounds in the pack they picked
         if (ra.valid) {
             Vec3 d = p.pos - ra.pos;
             float h = std::sqrt(d.x * d.x + d.z * d.z);
             if (h < 2.0f && std::fabs(d.y) < 0.05f) { // walking on the ground
                 ra.stepDist += h;
-                if (ra.stepDist > 2.4f) { ra.stepDist = 0; audio_.play3D(SND_STEP, p.pos, 0.8f, 0.9f + (rand() % 20) * 0.01f); }
+                if (ra.stepDist > 2.4f) { ra.stepDist = 0; audio_.play3D(SND_STEP, p.pos, 0.8f, 0.9f + (rand() % 20) * 0.01f, sp); }
             }
-            if (p.hooked && !ra.hooked) audio_.play3D(SND_GRAPPLE_HIT, p.hookPoint, 0.9f);
+            if (p.health < ra.health && time_ >= ra.nextHurt) { // their hurt sound, at most 5 a second (beams, drain)
+                ra.nextHurt = time_ + 0.2;
+                audio_.play3D(SND_HURT, p.pos + Vec3(0, 1.2f, 0), 0.8f, 1.0f, sp);
+            }
+            if (p.hooked && !ra.hooked) audio_.play3D(SND_GRAPPLE_HIT, p.hookPoint, 0.9f, 1.0f, sp);
             bool firing = (p.flags & PS_FIRING) != 0;
             if (firing && p.weapon == WPN_LASER && time_ >= ra.nextLaser) {
-                audio_.play3D(SND_LASER, p.pos + Vec3(0, 1.5f, 0), 0.7f);
+                audio_.play3D(SND_LASER, p.pos + Vec3(0, 1.5f, 0), 0.7f, 1.0f, sp);
                 ra.nextLaser = time_ + 0.05;
             } else if (firing && !remoteFiring_[i] && p.weapon != WPN_LASER) {
-                audio_.play3D(SND_RIFLE + p.weapon, p.pos + Vec3(0, 1.5f, 0), 1.0f, 0.97f + (rand() % 7) * 0.01f);
+                audio_.play3D(SND_RIFLE + p.weapon, p.pos + Vec3(0, 1.5f, 0), 1.0f, 0.97f + (rand() % 7) * 0.01f, sp);
             }
         }
         ra.pos = p.pos;
         ra.hooked = p.hooked;
+        ra.health = p.health;
         ra.valid = true;
     }
 }

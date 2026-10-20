@@ -58,6 +58,7 @@ public:
     const PlayerSnap* findPlayer(int id) const;
     std::string playerName(int id) const;
     int playerModel(int id) const { return id >= 0 && id < kMaxPlayers ? models_[id] : 0; }
+    int playerSoundPack(int id) const { return id >= 0 && id < kMaxPlayers ? packs_[id] : 0; }
     const std::string& rankId(int id) const { static const std::string none; return id >= 0 && id < kMaxPlayers ? rankIds_[id] : none; }
 
     // Reliable events received since last call.
@@ -69,7 +70,10 @@ public:
     // Render other players this far behind the newest snapshot: 3 snapshots + 10 ms jitter margin.
     // Render other players this far behind the newest snapshot: 2 snapshots plus the measured arrival
     // jitter (99th percentile), between 1 and 50 ms. On a clean connection that's a few ms instead of 13.
-    float interpDelay() const { return 2.0f / snapRate() + std::min(0.05f, std::max(0.001f, jitter_ + 0.001f)); }
+    // How far behind the newest snapshot other players are drawn: adaptive (two snapshot intervals + measured
+    // jitter) unless a fixed delay is set (seconds, < 0 = adaptive). Ranked forces a fixed 10 ms.
+    float interpDelay() const { return interpFixed_ >= 0 ? interpFixed_ : 2.0f / snapRate() + std::min(0.05f, std::max(0.001f, jitter_ + 0.001f)); }
+    void setInterpFixed(float seconds) { interpFixed_ = seconds; }
     int snapRate() const { return hasSnapshot() && latest().snapRate ? latest().snapRate : 1000; }
     uint32_t baseMisses() const { return baseMisses_; } // delta snapshots we couldn't decode (should stay ~0)
     int snapshotLoss() const { return lossPct_; }
@@ -127,7 +131,8 @@ private:
     uint32_t lastEventId_ = 0;
     std::vector<GameEvent> events_;
     std::vector<std::string> names_ = std::vector<std::string>(kMaxPlayers);
-    uint8_t models_[kMaxPlayers] = {};
+    uint8_t models_[kMaxPlayers] = {}, packs_[kMaxPlayers] = {};
+    float interpFixed_ = -1;
     std::vector<std::string> rankIds_ = std::vector<std::string>(kMaxPlayers);
 
     std::deque<std::string> stringCmds_;
