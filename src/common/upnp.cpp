@@ -1,5 +1,6 @@
 #include "upnp.h"
 #include "net.h"
+#include <chrono>
 #include <cstring>
 #include <cstdio>
 #include <vector>
@@ -134,11 +135,13 @@ void PortMapper::start(uint16_t port) {
     port_ = port;
     done_ = false;
     ok_ = false;
+    quit_ = false;
     setStatus("searching for router (UPnP)...");
     thread_ = std::thread([this] { worker(); });
 }
 
 void PortMapper::stop() {
+    quit_ = true;
     if (thread_.joinable()) thread_.join();
     if (mapped_) {
         std::string args = "<NewRemoteHost></NewRemoteHost><NewExternalPort>" + std::to_string(port_) +
@@ -222,12 +225,8 @@ void PortMapper::worker() {
     // 3. Add the mapping (some routers reject infinite leases, so retry with one).
     bool added = false;
     for (int lease : {0, 7200}) {
-        std::string args = "<NewRemoteHost></NewRemoteHost><NewExternalPort>" + std::to_string(port_) +
-                           "</NewExternalPort><NewProtocol>UDP</NewProtocol><NewInternalPort>" + std::to_string(port_) +
-                           "</NewInternalPort><NewInternalClient>" + localIp_ +
-                           "</NewInternalClient><NewEnabled>1</NewEnabled><NewPortMappingDescription>quark</NewPortMappingDescription>"
-                           "<NewLeaseDuration>" + std::to_string(lease) + "</NewLeaseDuration>";
-        if (httpOk(soap(controlUrl_, serviceType_, "AddPortMapping", args))) { added = true; break; }
+        lease_ = lease;
+        if (addMapping()) { added = true; break; }
     }
     std::string ip = xmlTag(soap(controlUrl_, serviceType_, "GetExternalIPAddress", ""), "NewExternalIPAddress");
     {
@@ -242,4 +241,25 @@ void PortMapper::worker() {
         setStatus("UPnP: router refused mapping - forward UDP port " + std::to_string(port_) + " to " + localIp_ + " manually");
     }
     done_ = true;
+    // 4. Keep it open for as long as the server runs. A mapping that expires (a 2 h lease) or that the router
+    // forgets (reboot, DHCP renew, some routers just drop idle ones) leaves everyone already playing connected
+    // - the router still tracks their flows - while anyone new, or anyone rejoining, gets no response.
+    // So re-add it every 15 minutes (re-adding an existing mapping is harmless).
+    if (!added) return;
+    double next = timeNow() + 15 * 60;
+    while (!quit_) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        if (timeNow() < next) continue;
+        next = timeNow() + 15 * 60;
+        if (!addMapping()) setStatus("UPnP: router dropped the mapping for UDP port " + std::to_string(port_) + " - forward it manually");
+    }
+}
+
+bool PortMapper::addMapping() {
+    std::string args = "<NewRemoteHost></NewRemoteHost><NewExternalPort>" + std::to_string(port_) +
+                       "</NewExternalPort><NewProtocol>UDP</NewProtocol><NewInternalPort>" + std::to_string(port_) +
+                       "</NewInternalPort><NewInternalClient>" + localIp_ +
+                       "</NewInternalClient><NewEnabled>1</NewEnabled><NewPortMappingDescription>quark</NewPortMappingDescription>"
+                       "<NewLeaseDuration>" + std::to_string(lease_) + "</NewLeaseDuration>";
+    return httpOk(soap(controlUrl_, serviceType_, "AddPortMapping", args));
 }

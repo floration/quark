@@ -25,5 +25,7 @@ private:
     std::string extIp_;
     std::string controlUrl_, serviceType_, localIp_;
     uint16_t port_ = 0;
-    std::atomic<bool> done_{false}, ok_{false}, mapped_{false};
+    std::atomic<bool> done_{false}, ok_{false}, mapped_{false}, quit_{false};
+    int lease_ = 0;             // the lease the router accepted (0 = permanent)
+    bool addMapping();          // (re)adds the forward; true if the router accepted it
 };

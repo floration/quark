@@ -975,6 +975,38 @@ static void testLadders() {
     }
 }
 
+// Leaving and rejoining a server that others are still playing on: the same client object reconnects
+// (as the game does), in warmup and mid-match, in a few modes.
+static void testRejoin(uint16_t port) {
+    printf("rejoin after disconnecting\n");
+    for (int mode : {MODE_FFA, MODE_VS, MODE_DUEL}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.autoStart = true; cfg.map = mode == MODE_DUEL ? "clockwork" : "bastion"; cfg.mode = mode; cfg.port = port++;
+        s.setLog([](const std::string&) {});
+        if (!s.start(cfg)) { g_fail++; continue; }
+        NetClient a, b, c;
+        a.connect("127.0.0.1:" + std::to_string(cfg.port), "ann");
+        b.connect("127.0.0.1:" + std::to_string(cfg.port), "bob");
+        c.connect("127.0.0.1:" + std::to_string(cfg.port), "cat");
+        std::vector<NetClient*> cls = {&a, &b, &c};
+        pump(s, cls, 1.0, idle);
+        s.command("forcestart");
+        pump(s, cls, 2.0, idle);
+        for (int round = 0; round < 2; round++) {
+            b.disconnect();
+            pump(s, cls, 0.5, idle);
+            CHECK(s.humanCount() == 2);
+            b.connect("127.0.0.1:" + std::to_string(cfg.port), "bob");
+            pump(s, cls, 1.5, idle);
+            bool ok = b.state() == ConnState::Connected && s.humanCount() == 3;
+            if (!ok) printf("  %s: rejoin %d failed: state %d, players %d, error '%s'\n", modeName(mode), round + 1, (int)b.state(), s.humanCount(), b.error().c_str());
+            CHECK(ok);
+        }
+        s.stop();
+    }
+}
+
 // Every staircase (recorded by tools/make_maps.py as "# stairs x0 z0 x1 z1 base top axis rising solid"):
 // walked from the bottom to the top by the real movement code, and checked against the paths around it:
 // no walkable surface may pass through a solid flight, or run underneath an open one with less than a
@@ -1926,6 +1958,7 @@ int main(int argc, char** argv) {
     }
     if (argc >= 2 && std::string(argv[1]) == "ladders") { testLadders(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "stairs") { testStairs(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(29980); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(29450); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = 29500; testBotAim(p); return g_fail ? 1 : 0; }
     testMovement();
@@ -1933,6 +1966,7 @@ int main(int argc, char** argv) {
     testTickRateIndependence();
     testAllMaps();
     testStairs();
+    testRejoin(29980);
     {   // the map bar: every map scores at least 7 in every category but originality (docs/MAP_METRICS.md)
         printf("map scores\n");
         std::string p = (std::filesystem::temp_directory_path() / "quark_map_report.md").string();
