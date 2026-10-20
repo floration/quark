@@ -185,6 +185,7 @@ public:
     int hideRounds_ = 0;        // hide and seek: rounds this match (fixed at the start: everyone seeks once)
     uint32_t nextJoinId_ = 1;           // hide and seek: the last seeker (everyone takes a turn)
     float drainAccum_ = 0;
+    uint32_t duelUsed_ = 0;      // duel: modifiers already played this match (bit per modifier), never repeated
     // payload/race per-round bookkeeping
     float payloadIdleSince_ = 0;
     float bestProgress_[2] = {0, 0};
@@ -252,6 +253,7 @@ public:
     bool autosave();
     void handleStringCmdForTest(int id, const std::string& s) { handleStringCmd(id, s); }
     void glog(int level, const char* fmt, ...);   // game log file (no-op below cfg_.logLevel)
+    float bodyScale() const { return duelModDef(duelMod()).size; } // duel "double size": hitbox and eye height
     int duelMod() const { return ms_.mode == MODE_DUEL ? ms_.duelMod : 255; } // 255 in warmup (rulesReset clears it)
     // Weapons allowed right now (bit per weapon, 0 = all) and the 1v1 ruleset's AR_* rules.
     uint16_t weaponMask() const;

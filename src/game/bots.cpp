@@ -35,8 +35,8 @@ float rnd(BotBrain& b) { // xorshift, 0..1
 
 float angleDiff(float a, float b) { return std::remainder(a - b, 2 * PI); }
 
-Vec3 eyeOf(const ServerPlayer& p) {
-    return p.move.pos + Vec3(0, (p.move.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight, 0);
+Vec3 eyeOf(const ServerPlayer& p, float scale = 1.0f) {
+    return p.move.pos + Vec3(0, ((p.move.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * scale, 0);
 }
 
 bool isEnemy(const Server& s, int a, int b) {
@@ -278,7 +278,7 @@ UserCmd botThink(Server& s, int id) {
         cmd.yaw = b.aimYaw;
         return cmd;
     }
-    Vec3 eye = eyeOf(me);
+    Vec3 eye = eyeOf(me, s.bodyScale());
 
     // --- target selection (10 Hz): nearest visible enemy
     bool damageOn = (s.ms_.phase == PHASE_LIVE || s.ms_.phase == PHASE_WARMUP) && !(s.ms_.mode == MODE_RACE && s.ms_.phase != PHASE_WARMUP);

@@ -784,7 +784,7 @@ void Game::frame(double dt) {
                 if (w == WPN_LASER) laserUntil_ = time_ + 0.07;
                 else if (!weaponDef(w).projectile && w != WPN_KNIFE) { // (knife throw: the projectile shows it)
                     const MoveState& m = net_.predicted();
-                    Vec3 eye = m.pos + Vec3(0, (m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight, 0);
+                    Vec3 eye = m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
                     Vec3 aim = angleForward(yaw_, pitch_);
                     Vec3 right = normalize(cross(aim, {0, 1, 0})), up = cross(right, aim);
                     const WeaponDef& wd = weaponDef(w);
@@ -900,7 +900,7 @@ void Game::drawWorld(float alpha) {
     if (alive) {
         Vec3 p = net_.smoothedPos(alpha);
         bool crouch = net_.predicted().flags & MF_CROUCHED;
-        eye = p + Vec3(0, crouch ? kCrouchEyeHeight : kEyeHeight, 0);
+        eye = p + Vec3(0, (crouch ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
     } else {
         if (specTarget_ < 0 || !players[specTarget_].valid || !(players[specTarget_].snap.flags & PS_ALIVE)) {
             specTarget_ = -1;
@@ -912,7 +912,7 @@ void Game::drawWorld(float alpha) {
             viewing = specTarget_;
             camYaw = t.yaw;
             camPitch = t.pitch;
-            eye = t.pos + Vec3(0, (t.flags & PS_CROUCHED) ? kCrouchEyeHeight : kEyeHeight, 0);
+            eye = t.pos + Vec3(0, ((t.flags & PS_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
         } else {
             const PlayerSnap* mp = net_.findPlayer(me);
             Vec3 base = mp ? mp->pos : Vec3(0, 0, 0);
@@ -937,7 +937,7 @@ void Game::drawWorld(float alpha) {
     }
     // players (duel "double size" rounds draw everyone at twice the size, matching the server hitboxes)
     const ModeState& dms = net_.latest().ms;
-    const float bs = dms.mode == MODE_DUEL && dms.phase != PHASE_WARMUP ? duelModDef(dms.duelMod).size : 1.0f;
+    const float bs = bodyScale();
     for (int i = 0; i < kMaxPlayers; i++) {
         if (!players[i].valid) continue;
         const PlayerSnap& p = players[i].snap;

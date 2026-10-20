@@ -311,6 +311,12 @@ private:
     int ruleMode_ = MODE_FFA;               // mode shown in the rule rows
     int filePick_ = 0;                      // import file list open: 1 huds, 2 controls
     // ranked and time trials: default model, HUD, controls and 10 ms interp for everyone
+    // duel "double size" lives: models, hitboxes and eye heights scale together (matches Server::bodyScale)
+    float bodyScale() const {
+        if (!net_.hasSnapshot()) return 1.0f;
+        const ModeState& m = net_.latest().ms;
+        return m.mode == MODE_DUEL && m.phase != PHASE_WARMUP ? duelModDef(m.duelMod).size : 1.0f;
+    }
     bool fairRules() const { return net_.hasSnapshot() && (net_.mode().flags & (MS_RANKED | MS_TIMETRIAL)); }
     const Binds& binds() const { return modeCtlActive_ ? modeBinds_ : cfg_.binds; }
     std::string activeHudPath() const;

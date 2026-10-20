@@ -186,10 +186,16 @@ void startRound(Server& s) {
     m.actionPlayer = 255;
     m.hillOwner = 255;
     s.drainAccum_ = 0;
-    if (m.mode == MODE_DUEL) { // a new modifier every life, never the same twice in a row
-        int prev = m.duelMod;
-        int pick = rand() % DUEL_MOD_COUNT;
-        if (pick == prev) pick = (pick + 1 + rand() % (DUEL_MOD_COUNT - 1)) % DUEL_MOD_COUNT;
+    if (m.mode == MODE_DUEL) { // a new modifier every life, never one already played this match
+        static_assert(DUEL_MOD_COUNT <= 32, "duelUsed_ is a 32-bit mask");
+        const uint32_t all = DUEL_MOD_COUNT == 32 ? 0xFFFFFFFFu : (1u << DUEL_MOD_COUNT) - 1;
+        if ((s.duelUsed_ & all) == all) s.duelUsed_ = 0; // only if a match ever outlasts the list
+        int left = 0, pick = 0;
+        for (int i = 0; i < DUEL_MOD_COUNT; i++) left += !(s.duelUsed_ >> i & 1);
+        int n = rand() % left;
+        for (int i = 0; i < DUEL_MOD_COUNT; i++)
+            if (!(s.duelUsed_ >> i & 1) && n-- == 0) { pick = i; break; }
+        s.duelUsed_ |= 1u << pick;
         m.duelMod = (uint8_t)pick;
         s.message("round " + std::to_string(m.round) + ": " + duelModTitle(pick));
         s.glog(LOG_SIMPLE, "round %d modifier %s", m.round, duelModTitle(pick));
@@ -759,6 +765,7 @@ void rulesReset(Server& s) {
     m.payloadLen = s.map_.payloadLength();
     m.attackers = TEAM_A;
     m.duelMod = 255;
+    s.duelUsed_ = 0; // a new match: every modifier is available again
     m.arenaVariant = (uint8_t)s.cfg_.arenaVariant;
     if (s.tourney_.running || m.mode == MODE_TOURNEY) { // back to free play: everyone in again
         s.tourney_.running = false;

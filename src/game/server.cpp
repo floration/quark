@@ -1022,7 +1022,7 @@ void Server::bounceShot(int id, Vec3 o, Vec3 dir, float range, uint32_t vt, floa
 void Server::fireWeapon(int id, const UserCmd& cmd) {
     ServerPlayer& p = players_[id];
     const WeaponDef& wd = weaponDef(p.weapon);
-    float eyeH = (p.move.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight;
+    float eyeH = ((p.move.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(); // giants shoot from their own eyes
     Vec3 eye = p.move.pos + Vec3(0, eyeH, 0);
     Vec3 aim = angleForward(cmd.yaw, cmd.pitch);
     bool scoped = wd.scopedSpread >= 0 && (cmd.buttons & BTN_ALTFIRE);
@@ -1194,7 +1194,7 @@ void Server::updateVisibility() {
     for (int v = 0; v < kMaxPlayers; v++) {
         auto& pv = players_[v];
         if (!pv.connected || pv.isBot || !pv.alive) continue;
-        Vec3 eye = pv.move.pos + Vec3(0, kEyeHeight, 0);
+        Vec3 eye = pv.move.pos + Vec3(0, kEyeHeight * bodyScale(), 0);
         for (int t = 0; t < kMaxPlayers; t++) {
             auto& pt = players_[t];
             if (t == v || !pt.connected || !pt.alive) continue;

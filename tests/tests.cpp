@@ -700,14 +700,14 @@ static void testDuel(uint16_t port) {
     CHECK(s.players_[c.clientId()].team == TEAM_SPECTATOR);
     pump(s, cls, 6.0, idle); // warmup countdown -> round 1
     CHECK(s.ms_.phase == PHASE_FREEZE || s.ms_.phase == PHASE_LIVE);
-    int seen = 0, prev = -1;
+    unsigned seen = 0; int prev = -1;
     for (int round = 0; round < 12 && s.ms_.phase != PHASE_MATCH_END; round++) {
         while (s.ms_.phase != PHASE_LIVE && s.ms_.phase != PHASE_MATCH_END) pump(s, cls, 0.2, idle);
         if (s.ms_.phase == PHASE_MATCH_END) break;
         int mod = s.ms_.duelMod;
-        CHECK(mod < DUEL_MOD_COUNT && mod != prev);
+        CHECK(mod < DUEL_MOD_COUNT && mod != prev && !(seen >> mod & 1)); // never a repeat within the match
         prev = mod;
-        seen |= 1 << mod;
+        seen |= 1u << mod;
         int ia = a.clientId(), ib = b.clientId();
         auto& pa = s.players_[ia];
         auto& pb = s.players_[ib];
