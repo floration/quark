@@ -81,6 +81,10 @@ configure_file(${CMAKE_BINARY_DIR}/generated/official_map_data.h.tmp ${CMAKE_BIN
 # Profiling: -DQUARK_TRACY=ON adds Tracy zones (src/common/profile.h). QUARK_TRACY_DIR can point at a
 # local Tracy checkout; otherwise v0.11.1 is fetched. Off by default (release builds never include it).
 option(QUARK_TRACY "Build with the Tracy profiler client" OFF)
+option(QUARK_ZONESTATS "Per-zone CPU totals printed by quark --bench (profiling builds only)" OFF)
+if(QUARK_ZONESTATS)
+  add_compile_definitions(QUARK_ZONESTATS)
+endif()
 if(QUARK_TRACY)
   if(QUARK_TRACY_DIR)
     set(tracy_SOURCE_DIR ${QUARK_TRACY_DIR})

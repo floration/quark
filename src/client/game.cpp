@@ -519,6 +519,7 @@ void Game::onScroll(double dy) {
 
 UserCmd Game::buildCmd() {
     UserCmd c;
+    if (opts_.bench > 0) { yaw_ = (float)std::fmod(time_ * 0.6, 2 * PI); pitch_ = -0.15f; } // benchmark: a slow look around
     c.yaw = yaw_;
     c.pitch = pitch_;
     bool block = paused_ || chatting_ || screen_ != Screen::InGame;
@@ -652,12 +653,15 @@ void Game::handleEvents() {
 
 void Game::frame(double dt) {
     QZONE("Game::frame");
+    struct CpuTime { double t0 = timeNow(); double* out; ~CpuTime() { *out = timeNow() - t0; } } cpuTime{timeNow(), &lastCpu_}; // --bench: CPU part of the frame
     time_ += dt;
     if (opts_.debugPerf) { showPerf_ = true; if (pendingInput_ < 0) pendingInput_ = timeNow(); }
     if (opts_.debugPause && screen_ == Screen::InGame && !paused_) { paused_ = true; voteMenu_ = opts_.debugVote; opts_.debugPause = false; }
     if (opts_.debugSettings && screen_ == Screen::InGame && !settingsInGame_) { paused_ = true; settingsInGame_ = true; controlsOpen_ = opts_.debugControls; crosshairOpen_ = opts_.debugCrosshair; opts_.debugSettings = false; }
+    r_.setMsaa(cfg_.msaa);
     frameInput_ = pendingInput_; // the oldest input this frame will show
     pendingInput_ = -1;
+    if (opts_.bench > 0 && screen_ == Screen::InGame) benchFrame(dt);
     frameTimes_[frameIdx_] = (float)dt;
     frameIdx_ = (frameIdx_ + 1) % frameTimes_.size();
     frameCount_ = std::min(frameCount_ + 1, frameTimes_.size());
@@ -1749,6 +1753,12 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     y += h + gap;
     ui_.toggle(xr, y, w, h, "PLAYER SHADOWS", cfg_.shadows);
     y += h + gap;
+    static const int aaModes[] = {0, 1, 2, 4};
+    static const std::vector<std::string> aaNames = {"ANTI-ALIASING OFF", "SMOOTH EDGES (CHEAP)", "MSAA 2X", "MSAA 4X"};
+    int ai = 0;
+    for (int i = 0; i < 4; i++) if (aaModes[i] == cfg_.msaa) ai = i;
+    if (ui_.cycle(xr, y, w, h, "ANTI-ALIASING", ai, 4, aaNames)) cfg_.msaa = aaModes[ai];
+    y += h + gap;
     const char* help[] = {
         "NO VSYNC = LOWEST LATENCY, MAY TEAR",
         "EXCLUSIVE / BORDERLESS SKIP THE DESKTOP",
@@ -1974,14 +1984,16 @@ void Game::drawPerf() {
     }
     if (time_ >= perfNextUpdate_ && frameCount_ > 10) {
         perfNextUpdate_ = time_ + 0.5;
-        std::vector<float> t(frameTimes_.begin(), frameTimes_.begin() + frameCount_);
-        std::sort(t.begin(), t.end());
+        // percentiles with nth_element on a reused buffer: no allocation, no full sort (this runs while
+        // measuring frame spikes, so it mustn't cause one)
+        std::vector<float>& t = perfScratch_;
+        t.assign(frameTimes_.begin(), frameTimes_.begin() + frameCount_);
         double sum = 0;
         for (float f : t) sum += f;
-        auto pct = [&](double p) { return t[std::min(t.size() - 1, (size_t)(t.size() * p))]; };
+        auto pct = [&](double p) { size_t k = std::min(t.size() - 1, (size_t)(t.size() * p)); std::nth_element(t.begin(), t.begin() + k, t.end()); return t[k]; };
         char b[200];
         snprintf(b, sizeof b, "AVG %.0f  1%% LOW %.0f  0.1%% LOW %.0f  WORST %.1fMS  PING %d",
-                 t.size() / sum, 1.0 / pct(0.99), 1.0 / pct(0.999), t.back() * 1000.0,
+                 t.size() / sum, 1.0 / pct(0.99), 1.0 / pct(0.999), *std::max_element(t.begin(), t.end()) * 1000.0,
                  net_.findPlayer(net_.clientId()) ? net_.findPlayer(net_.clientId())->ping : 0);
         perfText_ = b;
     }
@@ -2490,4 +2502,29 @@ void Game::setBackdropFrame(const AABB& b) {
     bgCenter_ = {(b.mn.x + b.mx.x) * 0.5f, (floorY + b.mx.y) * 0.5f, (b.mn.z + b.mx.z) * 0.5f};
     bgRadius_ = length(Vec3(b.mx.x - b.mn.x, b.mx.y - floorY, b.mx.z - b.mn.z)) * 0.26f;
     bgTop_ = b.mx.y;
+}
+
+// --bench SECONDS: frame times while playing (after 3 s to settle), then print avg / 1% low / 0.1% low
+// FPS and the worst frame, and quit. The same scene every run, so changes can be compared.
+void Game::benchFrame(double dt) {
+    if (benchStart_ < 0) { benchStart_ = time_; benchTimes_.reserve(100000); return; }
+    if (time_ - benchStart_ < 3.0) return;
+    benchTimes_.push_back((float)dt);
+    benchCpu_.push_back((float)lastCpu_);
+    if (time_ - benchStart_ < 3.0 + opts_.bench) return;
+    std::vector<float> t = benchTimes_;
+    std::sort(t.begin(), t.end());
+    double sum = 0;
+    for (float f : t) sum += f;
+    auto pct = [&](double p) { return t[std::min(t.size() - 1, (size_t)(t.size() * p))]; };
+    std::vector<float> c = benchCpu_;
+    std::sort(c.begin(), c.end());
+    double csum = 0;
+    for (float f : c) csum += f;
+    printf("BENCH %s: %zu frames  avg %.1f fps  1%% low %.1f  0.1%% low %.1f  worst %.2f ms  |  cpu avg %.3f ms  99%% %.3f ms  99.9%% %.3f ms\n",
+           net_.map().name.c_str(), t.size(), t.size() / sum, 1.0 / pct(0.99), 1.0 / pct(0.999), t.back() * 1000.0,
+           csum / c.size() * 1000.0, c[std::min(c.size() - 1, (size_t)(c.size() * 0.99))] * 1000.0, c[std::min(c.size() - 1, (size_t)(c.size() * 0.999))] * 1000.0);
+    qzoneDump();
+    fflush(stdout);
+    quit_ = true;
 }

@@ -81,6 +81,15 @@ typedef struct __GLsync* GLsync;
 #define GL_FRAMEBUFFER 0x8D40
 #define GL_DEPTH_ATTACHMENT 0x8D00
 #define GL_FRAMEBUFFER_COMPLETE 0x8CD5
+#define GL_RENDERBUFFER 0x8D41
+#define GL_READ_FRAMEBUFFER 0x8CA8
+#define GL_DRAW_FRAMEBUFFER 0x8CA9
+#define GL_COLOR_ATTACHMENT0 0x8CE0
+#define GL_DEPTH_STENCIL_ATTACHMENT 0x821A
+#define GL_RGBA8 0x8058
+#define GL_DEPTH24_STENCIL8 0x88F0
+#define GL_MAX_SAMPLES 0x8D57
+#define GL_MULTISAMPLE 0x809D
 #define GL_NONE 0
 #define GL_UNPACK_ALIGNMENT 0x0CF5
 #define GL_PACK_ALIGNMENT 0x0D05
@@ -151,6 +160,14 @@ typedef struct __GLsync* GLsync;
     X(void, glUniform4f, (GLint, GLfloat, GLfloat, GLfloat, GLfloat)) \
     X(void, glUniformMatrix4fv, (GLint, GLsizei, GLboolean, const GLfloat*)) \
     X(void, glGenFramebuffers, (GLsizei, GLuint*)) \
+    X(void, glDeleteFramebuffers, (GLsizei, const GLuint*)) \
+    X(void, glGenRenderbuffers, (GLsizei, GLuint*)) \
+    X(void, glDeleteRenderbuffers, (GLsizei, const GLuint*)) \
+    X(void, glBindRenderbuffer, (GLenum, GLuint)) \
+    X(void, glRenderbufferStorageMultisample, (GLenum, GLsizei, GLenum, GLsizei, GLsizei)) \
+    X(void, glFramebufferRenderbuffer, (GLenum, GLenum, GLenum, GLuint)) \
+    X(void, glBlitFramebuffer, (GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum)) \
+    X(void, glMultiDrawArrays, (GLenum, const GLint*, const GLsizei*, GLsizei)) \
     X(void, glBindFramebuffer, (GLenum, GLuint)) \
     X(void, glFramebufferTexture2D, (GLenum, GLenum, GLenum, GLuint, GLint)) \
     X(GLenum, glCheckFramebufferStatus, (GLenum)) \

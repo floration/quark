@@ -9,3 +9,4 @@ build-update/
 bin/
 .built-commit
 update.pending
+quark.cfg

@@ -169,7 +169,7 @@ void Audio::mix(int16_t* out, int frames) {
                 buf[i * 2 + 1] += x * v.gainR;
                 v.pos += v.step;
             }
-            if ((size_t)v.pos + 1 >= s.size()) voices_.erase(voices_.begin() + k);
+            if ((size_t)v.pos + 1 >= s.size()) { voices_[k] = voices_.back(); voices_.pop_back(); } // finished: swap-and-pop (order doesn't matter)
             else k++;
         }
     }

@@ -41,6 +41,7 @@ struct LaunchOptions {
     int editSel = -1;           // --edsel N: select box N (screenshots)
     bool debugLeaderboard = false; // --leaderboard: open the leaderboard screen
     bool menuShot = false;      // --menushot: screenshot whatever menu is up (main / settings / controls)
+    double bench = 0;           // --bench SECONDS: measure frame times in a vs-bots game, print, quit
 };
 
 class Game {
@@ -95,6 +96,11 @@ private:
     ServerBrowser browser_;
     Screen screen_ = Screen::Main;
     bool quit_ = false;
+    double benchStart_ = -1;
+    std::vector<float> benchTimes_, benchCpu_;
+    std::vector<float> perfScratch_ = std::vector<float>(2048); // F3 percentile workspace
+    double lastCpu_ = 0;
+    void benchFrame(double dt);
     bool paused_ = false, chatting_ = false, showScores_ = false, settingsInGame_ = false;
     std::string chatText_, joinAddr_, error_;
     double time_ = 0, tickAcc_ = 0;

@@ -42,6 +42,7 @@ void Settings::load() {
         else if (k == "width") width = iv;
         else if (k == "height") height = iv;
         else if (k == "shadows") shadows = iv != 0;
+        else if (k == "msaa") msaa = (iv == 1 || iv == 2 || iv == 4) ? iv : 0;
         else if (k == "volume") volume = clampf(fv, 0, 1);
         else if (k == "hitsounds") hitsounds = iv != 0;
         else if (k == "shadowres") shadowRes = iv;
@@ -95,7 +96,7 @@ void Settings::save() const {
     f << "name=" << name << "\nsensitivity=" << sensitivity << "\ndpi=" << dpi << "\nfov=" << fov << "\ndisplay_mode=" << displayMode
       << "\npresent_mode=" << presentMode << "\nlow_latency=" << lowLatency
       << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height
-      << "\nshadows=" << shadows << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nhitsounds=" << hitsounds
+      << "\nshadows=" << shadows << "\nmsaa=" << msaa << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nhitsounds=" << hitsounds
       << "\ncolor_friendly=" << colorHex(colorFriendly) << "\ncolor_enemy=" << colorHex(colorEnemy)
       << "\nch_style=" << chStyle << "\nch_length=" << chLength << "\nch_thickness=" << chThickness << "\nch_gap=" << chGap
       << "\nch_outline=" << chOutline << "\nch_team_color=" << chTeamColor << "\nch_color=" << colorHex(chColor)

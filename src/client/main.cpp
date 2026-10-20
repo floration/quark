@@ -38,6 +38,7 @@ int main(int argc, char** argv) {
         else if (a == "--editor") opts.editMap = next();
         else if (a == "--leaderboard") opts.debugLeaderboard = true;
         else if (a == "--menushot") opts.menuShot = true;
+        else if (a == "--bench") opts.bench = atof(next().c_str());
         else if (a == "--edsel") opts.editSel = atoi(next().c_str());
         else if (a == "--editsession") { opts.editMap = next(); opts.editSession = true; }
         else if (a == "--pitch") opts.spawnPitch = (float)atof(next().c_str());
@@ -90,11 +91,14 @@ int main(int argc, char** argv) {
     while (!glfwWindowShouldClose(win) && !game.quitRequested()) {
         // Frame cap: wait *before* reading input, so the frame shows the freshest input possible.
         if (game.maxFps() > 0) {
-            double target = frameStart + 1.0 / game.maxFps();
+            double period = 1.0 / game.maxFps();
+            double target = frameStart + period;
             while (timeNow() < target - 0.0015) sleepMs(1);
             while (timeNow() < target) {}
+            frameStart = std::max(target, timeNow() - period); // keep the cadence (no slow drift below the cap), but don't try to catch up after a hitch
+        } else {
+            frameStart = timeNow();
         }
-        frameStart = timeNow();
         game.beforeInput();
         { QZONE("poll events"); glfwPollEvents(); }
         double now = timeNow();

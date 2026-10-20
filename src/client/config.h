@@ -15,6 +15,7 @@ struct Settings {
     int maxFps = 0;             // 0 = unlimited
     int width = 1280, height = 720;
     bool shadows = true;
+    int msaa = 0;               // anti-aliasing: 0 off, 1 smooth edges (FXAA-style pass), 2 / 4 MSAA
     float volume = 0.6f;
     bool hitsounds = true;
     int shadowRes = 2048;

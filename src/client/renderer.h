@@ -52,6 +52,7 @@ public:
     void flush2D();
 
     void setShadowsAvailable(bool b) { shadowsOn_ = b; }
+    void setMsaa(int samples) { msaa_ = samples; }     // 0 = off, 1 = edges (FXAA-style), 2 / 4 / 8 MSAA (clamped to what the driver supports)
     bool screenshot(const std::string& path);
 
     // palette
@@ -72,6 +73,23 @@ private:
     float tanX_ = 1, tanY_ = 1;
     unsigned worldVao_ = 0, worldVbo_ = 0, lightmapTex_ = 0;
     int worldVerts_ = 0;
+    // World geometry grouped into spatial chunks (12 m columns) so the world pass only draws what's in
+    // the view frustum: one glMultiDrawArrays over the visible ranges.
+    struct WorldChunk { Vec3 mn, mx; int first, count; };
+    std::vector<WorldChunk> chunks_;
+    std::vector<int> drawFirst_, drawCount_;
+    void drawWorldChunks();
+    float frustum_[6][5] = {};
+    // anti-aliasing: the 3D scene renders into a multisampled framebuffer that is resolved into the window
+    // before the UI is drawn (so the HUD and menus don't pay for it). 0 / 1 = off.
+    // aa: 0 off, 1 edges (the scene goes to a texture, then one cheap FXAA-style pass smooths the high-contrast
+    // edges, i.e. the outlines), 2 / 4 / 8 MSAA
+    int msaa_ = 0, msaaW_ = 0, msaaH_ = 0, msaaActive_ = 0;
+    unsigned msaaFbo_ = 0, msaaColor_ = 0, msaaDepth_ = 0, edgeTex_ = 0, edgeProg_ = 0;
+    void ensureMsaaTarget();
+public:
+    bool inView(const Vec3& center, float radius) const; // sphere vs the current view frustum
+private:
     unsigned dynVao_ = 0, dynVbo_ = 0, flatVao_ = 0, flatVbo_ = 0, uiVao_ = 0, uiVbo_ = 0, shadowVao_ = 0;
     unsigned shadowFbo_ = 0, shadowTex_ = 0;
     int shadowRes_ = 2048;

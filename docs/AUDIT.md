@@ -84,14 +84,21 @@ Checked at 390 px and 1280 px: layout, links, live leaderboard / changelog / wea
 (0.33). Fine. Refresh screenshots once more before 1.0.
 
 ## 6. Code: client frame time
-- [ ] **perf (high)** — `U()` uniform lookup is a linear scan, ~40 calls per frame; dyn uniforms uploaded
+Benchmark: `quark --vsbots ffa --map M --bench 15` (software GL in CI, so relative numbers only).
+| map | before avg / 1% low | after avg / 1% low |
+|---|---|---|
+| foundry | 35.6 / 21.0 | 48.2 / 29.3 |
+| harbor | 44.8 / 31.5 | 54.0 / 42.5 |
+| hamlet | 44.8 / 31.4 | 53.2 / 37.0 |
+Biggest win: world geometry in 12 m chunks, frustum-culled, one `glMultiDrawArrays`.
+- [x] **perf (high)** — `U()` uniform lookup is a linear scan, ~40 calls per frame; dyn uniforms uploaded *(0.35.0)*
       twice. Resolve locations once per program; upload constants (palette, sun, fog, samplers) only on
       change.
-- [ ] **perf (high)** — world fragment shader: `pow(…, 2.2)` on uniforms per pixel; glow / far materials run
+- [x] **perf (high)** — world fragment shader: `pow(…, 2.2)` on uniforms per pixel; glow / far materials run *(0.35.0)*
       the full lighting path then discard it. Linearise palette on the CPU; branch early for mat ≥ 4.
-- [ ] **perf (high)** — dynamic geometry has no CPU frustum culling (players, projectiles, lines, labels).
+- [x] **perf (high)** — dynamic geometry has no CPU frustum culling (players, projectiles, lines, labels). *(0.35.0)*
       Cull non-caster boxes outside the view frustum.
-- [ ] **perf (high)** — F3 stats: allocate + full sort of frame times every 0.5 s (a spike in the very
+- [x] **perf (high)** — F3 stats: allocate + full sort of frame times every 0.5 s (a spike in the very *(0.35.0)*
       thing it measures). Persistent buffer + `nth_element`.
 - [ ] **perf (med)** — dyn VBO uploaded up to 3× per frame, shadow-only copy duplicates dyn vertices.
       One upload, sub-range draws.
@@ -101,9 +108,9 @@ Checked at 390 px and 1280 px: layout, links, live leaderboard / changelog / wea
       sorts every frame while open; `playerName()` returns by value.
 - [ ] **perf (med)** — audio mixer holds its mutex while mixing (a `play()` from the game thread can wait a
       whole mix period); `erase` from the middle of the voice list. Swap a pending list; swap-and-pop.
-- [ ] **perf (low)** — frame cap drifts below target (`frameStart = now`); `glClearColor(pow…)` per frame;
+- [x] **perf (low)** — frame cap drifts below target (`frameStart = now`); `glClearColor(pow…)` per frame; *(0.35.0)*
       duplicate `lin` lambdas in drawWorld.
-- [ ] **feature** — anti-aliasing: settings option (off / 2x / 4x / 8x MSAA), multisampled scene FBO
+- [x] **feature** — anti-aliasing: settings option (off / 2x / 4x / 8x MSAA), multisampled scene FBO *(0.35.0)*
       resolved before the UI so the HUD doesn't pay for it; off by default.
 - [ ] **polish** — misplaced comment in `config.h`; duplicated "return to editor" logic.
 

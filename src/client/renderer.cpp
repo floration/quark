@@ -1,4 +1,5 @@
 #include "renderer.h"
+#include <unordered_map>
 #include "../common/profile.h"
 #include "../common/net.h"
 #include <cstdio>
@@ -81,15 +82,28 @@ float shadowAt(vec4 sc) {
 const char* kWorldFS = R"(
 in vec3 vPos; in vec3 vN; in vec2 vUV; in float vMat; in vec4 vShadow; in vec4 vEdge;
 uniform sampler2D uLightmap;
-uniform vec3 uSunColor, uSkyColor, uBase, uAccent, uMetal, uGlow, uFogColor, uCamPos;
+uniform vec3 uSunColor, uSkyColor, uMetal, uGlow, uFogColor, uCamPos;
+// palette in display space, linearised and deepened on the CPU (pow(c, 2.2) * 1.5) so colours read under
+// bright sun: base, accent, wallbang (dark grey: base * 0.42), metal, and the floor tint (pow(metal, 2.2) * 2)
+uniform vec3 uBaseL, uAccentL, uWallbangL, uMetalL, uFloorL;
 uniform float uFogDensity;
 out vec4 fragColor;
 float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+vec3 finish(vec3 c) {
+    float d = length(vPos - uCamPos);
+    c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity));
+    c = clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0) * 1.08; // ACES-style filmic curve
+    return pow(c, vec3(1.0 / 2.2));
+}
 void main() {
-    vec2 lm = texture(uLightmap, vUV).rg;
     int mat = int(vMat + 0.5);
-    vec3 albedo = mat == 0 ? uBase : mat == 1 ? uAccent : mat == 2 ? uBase * 0.42 : uMetal; // 2 = wallbang: dark grey
-    albedo = pow(albedo, vec3(2.2)) * 1.5; // palette is authored in display space: deepen it so colours read under bright sun
+    if (mat >= 4) { // glow trim / far scenery: unlit, skip everything below
+        vec3 c = mat == 4 ? uGlow * 0.9 : mix(uMetal * (0.55 + 0.25 * vN.y + 0.15 * abs(vN.x)), uFogColor, 0.45); // far: hazy silhouette
+        fragColor = vec4(finish(c), 1.0);
+        return;
+    }
+    vec2 lm = texture(uLightmap, vUV).rg;
+    vec3 albedo = mat == 0 ? uBaseL : mat == 1 ? uAccentL : mat == 2 ? uWallbangL : uMetalL;
     // surface detail: 2 m panels (4 m on floors) with a faint per-panel tint and thin seams, world-space so it
     // tiles across brushes; floor contact darkening on walls
     vec3 an = abs(vN);
@@ -98,16 +112,41 @@ void main() {
     vec2 cell = floor(pp), f = fract(pp), w = fwidth(pp) * 1.5;
     float seam = min(smoothstep(0.0, w.x + 0.012, min(f.x, 1.0 - f.x)), smoothstep(0.0, w.y + 0.012, min(f.y, 1.0 - f.y)));
     albedo *= (0.93 + 0.1 * hash2(cell + floor(vPos.y * 0.01))) * mix(0.82, 1.0, seam);
-    if (mat == 0 && vN.y > 0.5) albedo = mix(albedo, pow(uMetal, vec3(2.2)) * 2.0, 0.55); // floors / tops: darker, cooler than walls
+    if (mat == 0 && vN.y > 0.5) albedo = mix(albedo, uFloorL, 0.55); // floors / tops: darker, cooler than walls
     if (an.y < 0.5) albedo *= mix(0.72, 1.0, smoothstep(0.0, 0.6, fract(vPos.y + 1000.0) + step(1.0, vPos.y)));
     vec3 light = uSkyColor * lm.g + uSunColor * lm.r * shadowAt(vShadow);
     vec3 c = albedo * light * 0.62 * outline(vEdge);
-    if (mat == 4) c = uGlow * 0.9;
-    if (mat == 5) c = mix(uMetal * (0.55 + 0.25 * vN.y + 0.15 * abs(vN.x)), uFogColor, 0.45); // far scenery: hazy silhouette
-    float d = length(vPos - uCamPos);
-    c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity));
-    c = clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0) * 1.08; // ACES-style filmic curve
-    fragColor = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
+    fragColor = vec4(finish(c), 1.0);
+})";
+
+// Edge smoothing ("EDGES" anti-aliasing): FXAA-style. Low-contrast pixels (almost everything) pass straight
+// through after 5 taps; on high-contrast edges (the outlines) it blends along the edge direction.
+const char* kEdgeVS = R"(#version 330 core
+out vec2 vUV;
+void main() {
+    vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+    vUV = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+})";
+const char* kEdgeFS = R"(#version 330 core
+in vec2 vUV;
+uniform sampler2D uScene;
+uniform vec2 uRcp;
+out vec4 fragColor;
+float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+void main() {
+    vec3 m = texture(uScene, vUV).rgb;
+    float lNW = luma(texture(uScene, vUV + vec2(-1.0, -1.0) * uRcp).rgb), lNE = luma(texture(uScene, vUV + vec2(1.0, -1.0) * uRcp).rgb);
+    float lSW = luma(texture(uScene, vUV + vec2(-1.0, 1.0) * uRcp).rgb), lSE = luma(texture(uScene, vUV + vec2(1.0, 1.0) * uRcp).rgb);
+    float lM = luma(m);
+    float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE))), lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
+    if (lMax - lMin < max(0.05, lMax * 0.125)) { fragColor = vec4(m, 1.0); return; }
+    vec2 dir = vec2(-((lNW + lNE) - (lSW + lSE)), (lNW + lSW) - (lNE + lSE));
+    float reduce = max((lNW + lNE + lSW + lSE) * 0.03125, 1.0 / 128.0);
+    dir = clamp(dir / (min(abs(dir.x), abs(dir.y)) + reduce), -8.0, 8.0) * uRcp;
+    vec3 a = 0.5 * (texture(uScene, vUV + dir * (1.0 / 3.0 - 0.5)).rgb + texture(uScene, vUV + dir * (2.0 / 3.0 - 0.5)).rgb);
+    vec3 b = a * 0.5 + 0.25 * (texture(uScene, vUV - dir * 0.5).rgb + texture(uScene, vUV + dir * 0.5).rgb);
+    float lB = luma(b);
+    fragColor = vec4((lB < lMin || lB > lMax) ? a : b, 1.0);
 })";
 
 // sky: one full-screen triangle at the far plane, drawn after the world so only uncovered pixels shade
@@ -219,11 +258,12 @@ void main() {
 
 // Uniform locations cached by (program, literal pointer): no string lookups in the frame loop.
 GLint U(unsigned prog, const char* name) {
-    struct E { unsigned prog; const char* name; GLint loc; };
-    static std::vector<E> cache;
-    for (auto& e : cache) if (e.prog == prog && e.name == name) return e.loc;
+    static std::unordered_map<uint64_t, GLint> cache(256);
+    uint64_t key = ((uint64_t)prog << 48) ^ (uint64_t)(uintptr_t)name;
+    auto it = cache.find(key);
+    if (it != cache.end()) return it->second;
     GLint l = glGetUniformLocation(prog, name);
-    cache.push_back({prog, name, l});
+    cache.emplace(key, l);
     return l;
 }
 void setVec3(unsigned prog, const char* name, const Vec3& v) { glUniform3f(U(prog, name), v.x, v.y, v.z); }
@@ -310,6 +350,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     shadowProg_ = compile(kShadowVS, kShadowFS, err);
     uiProg_ = compile(kUiVS, kUiFS, err);
     skyProg_ = compile(kSkyVS, kSkyFS, err);
+    edgeProg_ = compile(kEdgeVS, kEdgeFS, err);
     if (!skyProg_ || !worldProg_ || !dynProg_ || !flatProg_ || !shadowProg_ || !uiProg_) return false;
 
     // VAOs
@@ -381,6 +422,39 @@ bool Renderer::init(int shadowRes, std::string* err) {
 void Renderer::loadWorld(const Map& map, const std::function<void(float)>& progress) {
     BakedWorld bw;
     buildWorld(map, bw, progress);
+    {   // sort the faces (6 vertices each) into 12 m columns and remember each column's bounds
+        QZONE("world chunks");
+        const float kChunk = 12.0f;
+        size_t nf = bw.verts.size() / 6;
+        std::vector<std::pair<uint64_t, uint32_t>> key(nf);
+        for (size_t f = 0; f < nf; f++) {
+            const WorldVertex* v = &bw.verts[f * 6];
+            float cx = 0, cz = 0;
+            for (int k = 0; k < 6; k++) { cx += v[k].pos[0]; cz += v[k].pos[2]; }
+            int64_t gx = (int64_t)std::floor(cx / 6 / kChunk) + 100000, gz = (int64_t)std::floor(cz / 6 / kChunk) + 100000;
+            bool far = v[0].material > 4.5f; // distant scenery: its own chunks (huge, rarely all in view)
+            key[f] = {((uint64_t)far << 40) | ((uint64_t)gx << 20) | (uint64_t)gz, (uint32_t)f};
+        }
+        std::sort(key.begin(), key.end());
+        std::vector<WorldVertex> sorted;
+        sorted.reserve(bw.verts.size());
+        chunks_.clear();
+        for (size_t i = 0; i < nf; i++) {
+            if (i == 0 || key[i].first != key[i - 1].first)
+                chunks_.push_back({{1e9f, 1e9f, 1e9f}, {-1e9f, -1e9f, -1e9f}, (int)sorted.size(), 0});
+            WorldChunk& c = chunks_.back();
+            for (int k = 0; k < 6; k++) {
+                const WorldVertex& v = bw.verts[key[i].second * 6 + k];
+                sorted.push_back(v);
+                c.mn = vmin(c.mn, Vec3(v.pos[0], v.pos[1], v.pos[2]));
+                c.mx = vmax(c.mx, Vec3(v.pos[0], v.pos[1], v.pos[2]));
+            }
+            c.count += 6;
+        }
+        bw.verts.swap(sorted);
+        drawFirst_.reserve(chunks_.size());
+        drawCount_.reserve(chunks_.size());
+    }
     sunDir_ = map.sunDir;
     {   // per-map palette (falls back to the stock greys)
         skyColor = map.hasPalette ? map.palSky : Vec3{0.62f, 0.66f, 0.72f};
@@ -442,6 +516,16 @@ void Renderer::setCamera(const Vec3& eye, float yaw, float pitch, float hfovDeg)
     camRight_ = normalize(cross(camFwd_, Vec3(0, 1, 0)));
     camUp_ = cross(camRight_, camFwd_);
     tanY_ = std::tan(vfov * 0.5f); tanX_ = tanY_ * aspect;
+    {   // frustum planes (a, b, c, d, |normal|) for culling dynamic objects
+        const float* m = viewProj_.m;
+        for (int i = 0; i < 3; i++)
+            for (int sgn = 0; sgn < 2; sgn++) {
+                float* p = frustum_[i * 2 + sgn];
+                float k = sgn ? -1.0f : 1.0f;
+                p[0] = m[3] + k * m[i]; p[1] = m[7] + k * m[4 + i]; p[2] = m[11] + k * m[8 + i]; p[3] = m[15] + k * m[12 + i];
+                p[4] = std::sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
+            }
+    }
     viewProj_ = proj_ * view_m_;
 }
 
@@ -500,7 +584,14 @@ void Renderer::emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& 
     addQuad(out, c, tn(0, 0, -1), color * 0.96f, sunVis);
 }
 
+// Is a sphere (center, radius) at least partly inside the view frustum?
+bool Renderer::inView(const Vec3& c, float r) const {
+    for (int i = 0; i < 6; i++) if (frustum_[i][0] * c.x + frustum_[i][1] * c.y + frustum_[i][2] * c.z + frustum_[i][3] < -r * frustum_[i][4]) return false;
+    return true;
+}
+
 void Renderer::box(const Vec3& center, const Vec3& half, float yaw, const Vec3& color, float sunVis, bool castShadow, bool visible) {
+    if (visible && !inView(center, length(half))) { visible = false; if (!castShadow) return; } // off screen: only its shadow can show
     Mat4 xf = Mat4::translate(center) * Mat4::rotY(yaw);
     if (visible) emitBox(dyn_, xf, half, color, sunVis);
     else if (castShadow) emitBox(dynShadowOnly_, xf, half, color, sunVis);
@@ -599,6 +690,8 @@ void Renderer::drawScene(bool shadows) {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
+    ensureMsaaTarget();
+    if (msaaActive_) glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
     glViewport(0, 0, width_, height_);
     glClearColor(std::pow(skyColor.x, 1 / 2.2f), std::pow(skyColor.y, 1 / 2.2f), std::pow(skyColor.z, 1 / 2.2f), 1);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -627,8 +720,12 @@ void Renderer::drawScene(bool shadows) {
         glUniform1f(U(worldProg_, "uShadowTexel"), 1.0f / shadowRes_);
         setVec3(worldProg_, "uSunColor", sunColor);
         setVec3(worldProg_, "uSkyColor", skyLight);
-        setVec3(worldProg_, "uBase", baseColor);
-        setVec3(worldProg_, "uAccent", accentColor);
+        auto lin = [](const Vec3& c, float k) { return Vec3(std::pow(c.x, 2.2f), std::pow(c.y, 2.2f), std::pow(c.z, 2.2f)) * k; };
+        setVec3(worldProg_, "uBaseL", lin(baseColor, 1.5f));
+        setVec3(worldProg_, "uAccentL", lin(accentColor, 1.5f));
+        setVec3(worldProg_, "uWallbangL", lin(baseColor * 0.42f, 1.5f));
+        setVec3(worldProg_, "uMetalL", lin(metalColor, 1.5f));
+        setVec3(worldProg_, "uFloorL", lin(metalColor, 2.0f));
         setVec3(worldProg_, "uMetal", metalColor);
         setVec3(worldProg_, "uGlow", glowColor);
         setVec3(worldProg_, "uFogColor", skyColor);
@@ -636,7 +733,7 @@ void Renderer::drawScene(bool shadows) {
         glUniform1f(U(worldProg_, "uFogDensity"), fog);
         glBindTexture(GL_TEXTURE_2D, lightmapTex_);
         glBindVertexArray(worldVao_);
-        glDrawArrays(GL_TRIANGLES, 0, worldVerts_);
+        drawWorldChunks();
         // sky after the world: depth LEQUAL at z = 1 only passes where nothing was drawn
         glUseProgram(skyProg_);
         setVec3(skyProg_, "uFwd", camFwd_); setVec3(skyProg_, "uRight", camRight_); setVec3(skyProg_, "uUp", camUp_);
@@ -687,6 +784,23 @@ void Renderer::drawScene(bool shadows) {
     if (!view_.empty()) {
         glClear(GL_DEPTH_BUFFER_BIT);
         drawDyn(view_, false);
+    }
+    if (msaaActive_ >= 2) { // resolve the multisampled scene into the window; the UI draws on top un-multisampled
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, msaaFbo_);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glBlitFramebuffer(0, 0, width_, height_, 0, 0, width_, height_, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    } else if (msaaActive_ == 1) { // edges: one fullscreen pass from the scene texture into the window
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDisable(GL_DEPTH_TEST);
+        glUseProgram(edgeProg_);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, edgeTex_);
+        glUniform1i(U(edgeProg_, "uScene"), 0);
+        glUniform2f(U(edgeProg_, "uRcp"), 1.0f / width_, 1.0f / height_);
+        glBindVertexArray(worldVao_);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glEnable(GL_DEPTH_TEST);
     }
     dyn_.clear();
     dynShadowOnly_.clear();
@@ -807,4 +921,81 @@ bool Renderer::screenshot(const std::string& path) {
     std::ofstream f(path, std::ios::binary);
     f.write((const char*)out.data(), out.size());
     return (bool)f;
+}
+
+// World pass: chunks outside the view frustum are skipped; consecutive visible chunks merge into one range.
+void Renderer::drawWorldChunks() {
+    const float* m = viewProj_.m;
+    float pl[6][4];
+    for (int i = 0; i < 3; i++)
+        for (int sgn = 0; sgn < 2; sgn++) {
+            float* p = pl[i * 2 + sgn];
+            float k = sgn ? -1.0f : 1.0f;
+            p[0] = m[3] + k * m[i]; p[1] = m[7] + k * m[4 + i]; p[2] = m[11] + k * m[8 + i]; p[3] = m[15] + k * m[12 + i];
+        }
+    drawFirst_.clear();
+    drawCount_.clear();
+    for (const WorldChunk& c : chunks_) {
+        bool in = true;
+        for (int i = 0; i < 6 && in; i++) { // the box corner farthest along the plane normal must be inside
+            const float* p = pl[i];
+            float x = p[0] >= 0 ? c.mx.x : c.mn.x, y = p[1] >= 0 ? c.mx.y : c.mn.y, z = p[2] >= 0 ? c.mx.z : c.mn.z;
+            in = p[0] * x + p[1] * y + p[2] * z + p[3] >= 0;
+        }
+        if (!in) continue;
+        if (!drawFirst_.empty() && drawFirst_.back() + drawCount_.back() == c.first) drawCount_.back() += c.count;
+        else { drawFirst_.push_back(c.first); drawCount_.push_back(c.count); }
+    }
+    if (!drawFirst_.empty()) glMultiDrawArrays(GL_TRIANGLES, drawFirst_.data(), drawCount_.data(), (GLsizei)drawFirst_.size());
+}
+
+// (Re)create the multisampled scene target when the setting or the window size changes.
+void Renderer::ensureMsaaTarget() {
+    int want = msaa_ > 1 ? msaa_ : 0;
+    if (msaa_ == 1 && !worldVao_) return; // edges need a VAO to draw the fullscreen pass (any will do)
+    static GLint64 maxS = -1;
+    if (want && maxS < 0) { glGetInteger64v(GL_MAX_SAMPLES, &maxS); if (getenv("QUARK_AA_DEBUG")) printf("max samples %lld (want %d)\n", (long long)maxS, want); } // once
+    if (want) { want = std::min(want, (int)std::max<GLint64>(0, maxS)); if (want < 2) want = 0; }
+    if (msaa_ == 1) want = 1; // edges
+    if (want == msaaActive_ && (!want || (msaaW_ == width_ && msaaH_ == height_))) return;
+    if (msaaFbo_) { glDeleteFramebuffers(1, &msaaFbo_); glDeleteRenderbuffers(1, &msaaColor_); glDeleteRenderbuffers(1, &msaaDepth_); msaaFbo_ = msaaColor_ = msaaDepth_ = 0; }
+    if (edgeTex_) { glDeleteTextures(1, &edgeTex_); edgeTex_ = 0; }
+    msaaActive_ = 0;
+    if (!want || width_ <= 0 || height_ <= 0) return;
+    if (want == 1) { // edges: a plain colour texture + depth
+        glGenFramebuffers(1, &msaaFbo_);
+        glGenTextures(1, &edgeTex_);
+        glGenRenderbuffers(1, &msaaDepth_);
+        glBindTexture(GL_TEXTURE_2D, edgeTex_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width_, height_, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindRenderbuffer(GL_RENDERBUFFER, msaaDepth_);
+        glRenderbufferStorageMultisample(GL_RENDERBUFFER, 0, GL_DEPTH24_STENCIL8, width_, height_);
+        glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, edgeTex_, 0);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, msaaDepth_);
+        bool ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        if (!ok) { glDeleteFramebuffers(1, &msaaFbo_); glDeleteTextures(1, &edgeTex_); glDeleteRenderbuffers(1, &msaaDepth_); msaaFbo_ = edgeTex_ = msaaDepth_ = 0; return; }
+        msaaActive_ = 1; msaaW_ = width_; msaaH_ = height_;
+        return;
+    }
+    glGenFramebuffers(1, &msaaFbo_);
+    glGenRenderbuffers(1, &msaaColor_);
+    glGenRenderbuffers(1, &msaaDepth_);
+    glBindRenderbuffer(GL_RENDERBUFFER, msaaColor_);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, want, GL_RGBA8, width_, height_);
+    glBindRenderbuffer(GL_RENDERBUFFER, msaaDepth_);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, want, GL_DEPTH24_STENCIL8, width_, height_);
+    glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, msaaColor_);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, msaaDepth_);
+    bool ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    if (!ok) { glDeleteFramebuffers(1, &msaaFbo_); glDeleteRenderbuffers(1, &msaaColor_); glDeleteRenderbuffers(1, &msaaDepth_); msaaFbo_ = msaaColor_ = msaaDepth_ = 0; return; }
+    msaaActive_ = want; msaaW_ = width_; msaaH_ = height_;
+    if (getenv("QUARK_AA_DEBUG")) printf("msaa target %dx%d x%d\n", width_, height_, want);
 }
