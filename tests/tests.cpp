@@ -1499,9 +1499,12 @@ static void testNetcode(uint16_t port) {
     double avg = s.snapCount_ ? (double)s.snapBytes_ / s.snapCount_ : 0;
     uint32_t misses = 0;
     for (auto* c : cls) misses += c->baseMisses();
-    printf("  8 players moving: %.0f bytes per snapshot, %u undecodable deltas, interpolation delay %.1f ms (was %.1f)\n", avg, misses,
-           cls[0]->interpDelay() * 1000, (3.0f / cls[0]->tickRate() + 0.010f) * 1000);
-    CHECK(cls[0]->interpDelay() < 3.0f / cls[0]->tickRate() + 0.010f);
+    // limit: two snapshot intervals plus up to 15 ms of measured timing jitter (machine dependent: shared CI
+    // runners and cloud VMs measure 4-10 ms on their own; snapshots at 125/s would already be 17+ ms)
+    float limit = 2.0f / cls[0]->snapRate() + 0.015f;
+    printf("  8 players moving: %.0f bytes per snapshot, %u undecodable deltas, interpolation delay %.1f ms (limit %.1f)\n", avg, misses,
+           cls[0]->interpDelay() * 1000, limit * 1000);
+    CHECK(cls[0]->interpDelay() < limit);
     CHECK(avg > 0 && avg < 400);   // full snapshots were ~420 bytes for 8 players
     CHECK(misses < 5);
     // decoded state matches the server (within position quantization)

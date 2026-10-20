@@ -156,11 +156,11 @@ inline const WeaponDef& weaponDef(int w) {
     static const WeaponDef defs[WPN_COUNT] = {
         // Tuned by the owner (0.15.1). Perfect-aim time to kill from 100 hp in the trailing comment.
         //  name        refire   dmg    range   proj  speed  splash spread scoped zoom   beam  pel grav  sticky life
-        {"RIFLE",       2.0f/9,  7,     300.0f, false,  0,    0,     0.0f,  0.0f, 60.0f,  false, 1,  0,    false, 0},  // 15 shots, 3.1 s (scoped: half fire rate)
+        {"RIFLE",       2.0f/9.9f, 7,     300.0f, false,  0,    0,     0.0f,  0.0f, 60.0f,  false, 1,  0,    false, 0},  // 15 shots, 2.8 s (scoped: 3/4 fire rate)
         {"ROCKET",      1.6f,    40,      0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  12.0f, false, 5}, // 3, 3.2 s
         {"KNIFE",       0.7f,    40,      2.8f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 3, 1.4 s
         {"SNIPER",      2.0f,    40,    500.0f, false,  0,    0,     0.09f, 0.0f, 45.0f,  false, 1,  0,    false, 0},  // 3, 4.0 s (headshots 50: 2, 2.0 s)
-        {"LASER",       0.001f,  0.03f,  32.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},  // every 1 ms, 3334 hits, 3.3 s
+        {"LASER",       0.001f,  0.04f,  32.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},  // every 1 ms, 2500 hits, 2.5 s
         {"SHOTGUN",     1.0f,    2,      60.0f, false,  0,    0,     0.085f,-1,     0,    false, 20, 0,    false, 0},  // 20 x 2 = 40 per blast, 3, 2.0 s
         {"STICKY",      1.0f,    35,      0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30}, // 3, 2.0 s
         {"CROSSBOW",    2.0f,    50,      0,    true,  76.5f, 0,     0.0f,  0.0f, 70.0f,  false, 1,  6.0f, false, 3},  // 2, 2.0 s
@@ -168,7 +168,7 @@ inline const WeaponDef& weaponDef(int w) {
     return defs[w < 0 || w >= WPN_COUNT ? 0 : w];
 }
 // Alt-fires: knife throw (a projectile that hits for knife damage), shotgun bouncing pellets (ricochet off
-// walls, half damage), rifle scope (zooms like the sniper, half the fire rate).
+// walls, half damage), rifle scope (zooms like the sniper, 25% slower fire rate).
 constexpr float kSniperHeadDamage = 50.0f; // sniper hits on the head (top 20% of the hitbox)
 constexpr float kHeadFraction = 0.2f;
 constexpr float kRocketLobSpeed = 0.7f, kRocketLobGravity = 3.0f; // rocket alt-fire: a lob at 70% speed with 3x gravity
@@ -176,7 +176,7 @@ constexpr float kKnifeThrowSpeed = 38.0f, kKnifeThrowGravity = 14.0f, kKnifeThro
 constexpr float kKnifeAway = 5.0f; // after a throw the knife is gone this long: you switch to another weapon (no delay on it)
 constexpr int kShotgunBounces = 2;
 constexpr float kShotgunBounceDamage = 0.5f;
-constexpr float kRifleScopedRefire = 2.0f; // refire multiplier while scoped
+constexpr float kRifleScopedRefire = 4.0f / 3.0f; // refire multiplier while scoped (25% slower fire rate)
 constexpr float kVampireFadeTime = 60.0f, kVampireMinHeal = 0.5f; // laser vampire: healing fades 100% -> 50% over the first minute of a round
 // The refire for this shot: alt-fire modes change it.
 inline float shotRefire(int w, bool alt) {
