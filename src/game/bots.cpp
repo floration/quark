@@ -22,8 +22,8 @@ struct SkillParams {
 };
 const SkillParams kSkills[BOT_SKILLS] = {
     // react  error  jitter trkLag lapse  turn   accel  cone    strafe bhop   dash   lead   weapons
-    {0.45f, 0.050f, 0.010f, 0.12f, 0.30f, 4.5f,  25.0f, 0.09f,  true,  false, false, false, false}, // beginner
-    {0.36f, 0.044f, 0.008f, 0.10f, 0.22f, 6.0f,  40.0f, 0.07f,  true,  false, false, true,  true},  // intermediate
+    {0.48f, 0.064f, 0.012f, 0.14f, 0.32f, 4.2f,  24.0f, 0.10f,  true,  false, false, false, false}, // beginner
+    {0.34f, 0.032f, 0.007f, 0.08f, 0.22f, 6.0f,  40.0f, 0.07f,  true,  false, false, true,  true},  // intermediate
     {0.26f, 0.020f, 0.004f, 0.04f, 0.14f, 9.0f,  75.0f, 0.05f,  true,  true,  true,  true,  true},  // advanced
     {0.17f, 0.010f, 0.002f, 0.015f, 0.07f, 15.0f, 150.0f, 0.035f, true, true,  true,  true,  true},  // expert
 };
