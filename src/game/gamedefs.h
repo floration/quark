@@ -163,13 +163,20 @@ inline const WeaponDef& weaponDef(int w) {
         {"LASER",       0.001f,  0.04f,  32.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},  // every 1 ms, 2500 hits, 2.5 s
         {"SHOTGUN",     1.0f,    2,      60.0f, false,  0,    0,     0.085f,-1,     0,    false, 20, 0,    false, 0},  // 20 x 2 = 40 per blast, 3, 2.0 s
         {"STICKY",      1.0f,    35,      0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30}, // 3, 2.0 s
-        {"CROSSBOW",    2.0f,    50,      0,    true,  76.5f, 0,     0.0f,  0.0f, 70.0f,  false, 1,  6.0f, false, 3},  // 2, 2.0 s
+        {"CROSSBOW",    2.0f,    40,      0,    true,  76.5f, 0,     0.0f,  0.0f, 70.0f,  false, 1,  6.0f, false, 3},  // 3, 4.0 s (headshots 50: 2, 2.0 s)
     };
     return defs[w < 0 || w >= WPN_COUNT ? 0 : w];
 }
 // Alt-fires: knife throw (a projectile that hits for knife damage), shotgun bouncing pellets (ricochet off
 // walls, half damage), rifle scope (zooms like the sniper, 25% slower fire rate).
-constexpr float kSniperHeadDamage = 50.0f; // sniper hits on the head (top 20% of the hitbox)
+constexpr float kSniperHeadDamage = 50.0f; // hits on the head (top 20% of the hitbox): sniper, crossbow bolt,
+constexpr float kCrossbowHeadDamage = 50.0f; // rifle bullet and each shotgun pellet
+constexpr float kRifleHeadDamage = 10.0f;
+constexpr float kPelletHeadDamage = 3.0f;
+inline float headDamage(int w) {
+    return w == WPN_SNIPER ? kSniperHeadDamage : w == WPN_CROSSBOW ? kCrossbowHeadDamage : w == WPN_RIFLE ? kRifleHeadDamage
+         : w == WPN_SHOTGUN ? kPelletHeadDamage : 0.0f;
+}
 constexpr float kHeadFraction = 0.2f;
 constexpr float kRocketLobSpeed = 0.7f, kRocketLobGravity = 3.0f; // rocket alt-fire: a lob at 70% speed with 3x gravity
 constexpr float kKnifeThrowSpeed = 38.0f, kKnifeThrowGravity = 14.0f, kKnifeThrowLife = 2.0f;

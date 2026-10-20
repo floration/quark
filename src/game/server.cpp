@@ -1087,7 +1087,7 @@ void Server::fireWeapon(int id, const UserCmd& cmd) {
     for (int k = 0; k < wd.pellets; k++) {
         Vec3 d = spreadDir(aim, spread, cmd.seq, k);
         if (bounce) bounceShot(id, eye, d, range, vt, dmgPer, dmg * kShotgunBounceDamage);
-        else hitscan(id, eye, d, range, vt, dmgPer, dmg, p.weapon == WPN_SNIPER ? kSniperHeadDamage : 0);
+        else hitscan(id, eye, d, range, vt, dmgPer, dmg, pull ? 0.0f : headDamage(p.weapon));
     }
     for (int i = 0; i < kMaxPlayers; i++) {
         if (dmgPer[i] <= 0) continue;
@@ -1116,13 +1116,14 @@ void Server::tickProjectiles() {
         float wall = map_.raycast(pr.pos, dir, len, &n);
         float best = wall >= 0 ? wall : len;
         int hitPlayer = -1;
+        AABB hitBb;
         Vec3 inv = safeInv(dir);
         for (int i = 0; i < kMaxPlayers; i++) {
             auto& p = players_[i];
             if (!p.connected || !p.alive || i == pr.owner) continue;
             AABB b = hitBox(p.move.pos, p.move.flags & MF_CROUCHED);
             float t = rayAABB(pr.pos, inv, b, best);
-            if (t >= 0 && t <= best) { best = t; hitPlayer = i; }
+            if (t >= 0 && t <= best) { best = t; hitPlayer = i; hitBb = b; }
         }
         if (wall < 0 && hitPlayer < 0) { pr.pos += step; continue; }
         Vec3 at = pr.pos + dir * std::max(0.0f, best - 0.05f);
@@ -1139,7 +1140,12 @@ void Server::tickProjectiles() {
                 }
             }
         } else if (wd.splashRadius <= 0) { // crossbow bolt / thrown knife: direct hit only
-            if (hitPlayer >= 0) damagePlayer(hitPlayer, pr.owner, (float)wd.damage, pr.type, dir * 3.0f);
+            if (hitPlayer >= 0) {
+                float dmg = (float)wd.damage, head = headDamage(pr.type); // bolts: headshots (the knife has none)
+                float y = pr.pos.y + dir.y * best;
+                if (head > 0 && y >= hitBb.mx.y - (hitBb.mx.y - hitBb.mn.y) * kHeadFraction) dmg = std::max(dmg, head);
+                damagePlayer(hitPlayer, pr.owner, dmg, pr.type, dir * 3.0f);
+            }
             pr.active = false;
         } else {
             pr.active = false;

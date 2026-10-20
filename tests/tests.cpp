@@ -64,6 +64,46 @@ static void testMovement() {
     float maxY = 0;
     for (int i = 0; i < 125; i++) { pmove(s, c, m); maxY = std::max(maxY, s.pos.y); }
     CHECK(maxY > 1.0f);
+
+    // momentum: strafe-jumping (strafe key + turning) builds speed past ground speed without the grapple
+    Map open;
+    CHECK(open.parse("box -500 -1 -500 500 0 500\nspawn any 0 0 0\n", &err));
+    auto hspeed = [](const MoveState& q) { return std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z); };
+    MoveState b; b.pos = {0, 0, 0}; b.flags = MF_ONGROUND;
+    UserCmd k; k.msec = 1; k.forward = 127;
+    for (int i = 0; i < 1000; i++) pmove(b, k, open);        // run up to ground speed
+    float run = hspeed(b);
+    k.forward = 0; k.side = 127; k.buttons = BTN_JUMP;
+    for (int i = 0; i < 4000; i++) {                           // hold jump + strafe right, turning right 90 deg/s
+        k.yaw -= 1.5708f * 0.001f;
+        pmove(b, k, open);
+    }
+    printf("  strafe-jumping: %.1f -> %.1f m/s in 4 s\n", run, hspeed(b));
+    CHECK(hspeed(b) > run * 1.3f);
+    // a dash leaves you faster than you started (it used to settle back down)
+    MoveState d = b; d.dashCooldown = 0; d.flags &= ~MF_DASHHELD;
+    float before = hspeed(d);
+    UserCmd dc; dc.msec = 1; dc.yaw = k.yaw; dc.forward = 127; dc.buttons = BTN_DASH;
+    for (int i = 0; i < 200; i++) pmove(d, dc, open);
+    printf("  dash: %.1f -> %.1f m/s after the burst\n", before, hspeed(d));
+    CHECK(hspeed(d) > before + 3.0f);
+    // landing hard while holding jump bounces higher than a normal jump
+    auto peak = [&](float dropFrom) {
+        MoveState q; q.pos = {0, dropFrom, 0};
+        UserCmd j; j.msec = 1; j.buttons = BTN_JUMP;
+        bool landed = false; float top = 0;
+        for (int i = 0; i < 6000; i++) {
+            float vy = q.vel.y;
+            pmove(q, j, open);
+            if (!landed && vy <= 0 && q.vel.y > 0 && i > 0) landed = true;  // the (bounce) jump
+            if (landed) top = std::max(top, q.pos.y);
+            if (landed && q.vel.y < 0) break;
+        }
+        return top;
+    };
+    float low = peak(0.5f), high = peak(20.0f);
+    printf("  bhop bounce: %.2f m after a short drop, %.2f m after a 20 m fall\n", low, high);
+    CHECK(high > low * 1.5f);
 }
 
 // The same inputs must give bit-identical movement at 1000, 500, 250 and 125 Hz.
@@ -450,8 +490,8 @@ static int runBot(const std::string& addr, double seconds, const std::string& na
 
 static void testWeapons(uint16_t port) {
     printf("weapons: sniper (scoped/unscoped), laser, rocket\n");
-    for (int wi : std::initializer_list<int>{WPN_SNIPER, -WPN_SNIPER - 1, WPN_LASER, WPN_ROCKET, WPN_SHOTGUN, WPN_CROSSBOW, WPN_STICKY}) {
-        bool head = wi < 0; // the second sniper pass aims at the head
+    for (int wi : std::initializer_list<int>{WPN_SNIPER, -WPN_SNIPER - 1, -WPN_CROSSBOW - 1, -WPN_RIFLE - 1, WPN_LASER, WPN_ROCKET, WPN_SHOTGUN, WPN_CROSSBOW, WPN_STICKY}) {
+        bool head = wi < 0; // negative entries: the same weapon aimed at the head
         int w = head ? -wi - 1 : wi;
         Server s;
         ServerConfig cfg;
@@ -474,7 +514,7 @@ static void testWeapons(uint16_t port) {
             UserCmd c;
             if (i != 0) return c;
             Vec3 eye = a.predicted().pos + Vec3(0, kEyeHeight, 0);
-            Vec3 tgt = sb.move.pos + Vec3(0, w == WPN_ROCKET ? 0.2f : head ? 1.72f : 1.0f, 0);
+            Vec3 tgt = sb.move.pos + Vec3(0, w == WPN_ROCKET ? 0.2f : head ? 1.62f : 1.0f, 0);
             const WeaponDef& wd = weaponDef(w);
             if (wd.projectile && wd.gravity > 0) { // aim above for the drop
                 float t = length(tgt - eye) / wd.projSpeed;
@@ -507,7 +547,14 @@ static void testWeapons(uint16_t port) {
         }
         if (w == WPN_ROCKET) CHECK(dealt > 15);
         if (w == WPN_SHOTGUN) CHECK(dealt >= 20);      // most of 20 x 2 pellets at 8 m
-        if (w == WPN_CROSSBOW) CHECK(dealt >= 50);
+        if (w == WPN_CROSSBOW) { // one bolt: 40 body, 50 head
+            printf("  crossbow %s: %.0f damage\n", head ? "head" : "body", dealt);
+            CHECK(std::fabs(dealt - (head ? kCrossbowHeadDamage : weaponDef(WPN_CROSSBOW).damage)) < 0.5f);
+        }
+        if (w == WPN_RIFLE && head) { // every bullet that lands is a 10 on the head
+            printf("  rifle head: %.0f damage\n", dealt);
+            CHECK(dealt > 0 && std::fmod(dealt, kRifleHeadDamage) < 0.5f);
+        }
         if (w == WPN_STICKY) {                          // lobbed: lands near the target, then detonate
             int stuck = 0;
             for (auto& pr : s.projectiles_) stuck += pr.active && pr.type == WPN_STICKY;

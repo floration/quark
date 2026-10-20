@@ -16,8 +16,12 @@ constexpr float kStopSpeed = 2.0f;
 constexpr float kStepHeight = 0.55f;
 constexpr float kDashSpeed = 24.0f;     // burst speed
 constexpr float kDashTime = 0.12f;      // burst length; then speed settles back
-constexpr float kDashExitMin = 11.0f;   // speed you keep after the burst (or your old speed if faster)
-constexpr float kDashVertical = 0.3f;   // looking up/down tilts the dash this much (fraction of dash speed)
+constexpr float kDashExitMin = 11.0f;   // speed you leave a dash with at least
+constexpr float kDashKeep = 5.0f;       // ...and your old speed plus this, so dashes build momentum
+constexpr float kDashExitMax = 36.0f;
+constexpr float kDashVertical = 0.85f;  // looking straight up / down makes the dash this vertical (sine)
+constexpr float kBounceGain = 0.5f;     // bhop: landing faster than a jump adds this share of the extra to the jump
+constexpr float kBounceMax = 8.0f;
 constexpr float kHookAccel = 38.0f;     // pull acceleration toward the anchor (adds to momentum)
 constexpr float kHookMaxSpeed = 24.0f;
 constexpr float kHookGravityScale = 0.5f;
@@ -92,7 +96,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         float h = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
         s.dashDirX = d.x;
         s.dashDirZ = d.z;
-        s.dashExitSpeed = std::max(kDashExitMin, std::min(h, kDashSpeed));
+        s.dashExitSpeed = std::min(kDashExitMax, std::max(kDashExitMin, h + kDashKeep));
         s.dashUp = std::sin(cmd.pitch) * kDashVertical;
         s.dashTimer = kDashTime;
         s.dashCooldown = (s.mods & MOVE_QUICK_DASH) ? kDashCooldown / 3 : kDashCooldown;
@@ -100,13 +104,14 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     bool dashing = s.dashTimer > 0;
     if (dashing) {
         // Short, strong burst, tilted a little by where you look: no gravity, no steering.
-        s.vel = {s.dashDirX * kDashSpeed, s.dashUp * kDashSpeed, s.dashDirZ * kDashSpeed};
+        float hs = std::sqrt(std::max(0.0f, 1.0f - s.dashUp * s.dashUp)); // aiming up / down trades horizontal for vertical
+        s.vel = {s.dashDirX * kDashSpeed * hs, s.dashUp * kDashSpeed, s.dashDirZ * kDashSpeed * hs};
         onGround = false;
         s.dashTimer -= dt;
         if (s.dashTimer <= 0) {
             s.dashTimer = 0;
-            s.vel.x = s.dashDirX * s.dashExitSpeed;
-            s.vel.z = s.dashDirZ * s.dashExitSpeed;
+            s.vel.x = s.dashDirX * s.dashExitSpeed * hs;
+            s.vel.z = s.dashDirZ * s.dashExitSpeed * hs;
             s.vel.y = s.dashUp * s.dashExitSpeed;
         }
     }
@@ -168,9 +173,10 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     } else {
         if (!dashing && !onLadder) {
             accelerate(s.vel, wishDir, std::min(wishSpeed, kAirSpeedCap), kAirAccel * 10.0f, dt);
-            // Air control: bend horizontal momentum toward the held direction without changing speed.
+            // Air control (CPM style), forward / back only: bend momentum toward where you look without changing
+            // speed. Holding a strafe key turns it off, so strafe-and-turn gains speed like in Quake.
             float h = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
-            if (wishLen > 0 && h > 0.5f) {
+            if (wishLen > 0 && cmd.side == 0 && h > 0.5f) {
                 float k = std::min(1.0f, kAirControl * dt);
                 float nx = s.vel.x / h + (wishDir.x - s.vel.x / h) * k, nz = s.vel.z / h + (wishDir.z - s.vel.z / h) * k;
                 float nl = std::sqrt(nx * nx + nz * nz);
@@ -216,7 +222,13 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     bool nowGround = probe > -0.049f && s.vel.y <= 0.01f;
     if (nowGround) {
         s.pos.y += probe; // settle onto the floor
-        if (s.vel.y < 0) s.vel.y = 0;
+        float impact = -before.vel.y;
+        if (jumpHeld && !frozen && !grappleOnly && impact > kJumpSpeed && !onLadder) {
+            // bhop off a hard landing: bounce higher than a normal jump (the landing speed is the only input,
+            // so prediction replays it exactly)
+            s.vel.y = kJumpSpeed + std::min((impact - kJumpSpeed) * kBounceGain, kBounceMax);
+            nowGround = false;
+        } else if (s.vel.y < 0) s.vel.y = 0;
     } else if (onGround && s.vel.y <= 0) {
         float down = map.sweepAxis(feet, 1, -kStepHeight);
         if (down > -kStepHeight + 0.001f) { s.pos.y += down; nowGround = true; s.vel.y = 0; }
