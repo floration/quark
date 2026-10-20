@@ -827,7 +827,8 @@ void Game::frame(double dt) {
         for (auto& old : lastProjectiles_) {
             bool still = false;
             for (auto& p : projs) still |= p.id == old.id;
-            if (!still && weaponDef(old.type).splashRadius > 0) { explosions_.push_back({old.pos, time_}); audio_.play3D(SND_EXPLOSION, old.pos, 1.0f, 1.0f, net_.playerSoundPack(old.owner)); }
+            if (!still && old.type == WPN_BUBBLE) { explosions_.push_back({old.pos, time_, 0.45f, true}); audio_.play3D(SND_BUBBLE, old.pos, 0.7f, 1.7f, net_.playerSoundPack(old.owner)); } // pop
+            else if (!still && weaponDef(old.type).splashRadius > 0) { explosions_.push_back({old.pos, time_}); audio_.play3D(SND_EXPLOSION, old.pos, 1.0f, 1.0f, net_.playerSoundPack(old.owner)); }
             else if (!still && old.type == WPN_CROSSBOW) audio_.play3D(SND_BOLT_HIT, old.pos, 0.8f, 1.0f, net_.playerSoundPack(old.owner));
             if (still && old.type == WPN_STICKY && length(old.vel) > 0.01f)
                 for (auto& p : projs) if (p.id == old.id && length(p.vel) < 0.01f) audio_.play3D(SND_STICKY_ATTACH, p.pos, 0.8f, 1.0f, net_.playerSoundPack(old.owner));
@@ -867,7 +868,7 @@ void Game::frame(double dt) {
         Vec3 to = look - camPos;
         if (opts_.camSet) r_.setCamera(opts_.camPos, deg2rad(opts_.camYaw), deg2rad(opts_.camPitch), 90);
         else r_.setCamera(camPos, std::atan2(-to.x, -to.z), std::atan2(to.y, std::sqrt(to.x * to.x + to.z * to.z)), 75);
-        if (r_.worldLoaded()) r_.drawScene(false);
+        if (r_.worldLoaded()) { r_.brightness = cfg_.brightness; r_.drawScene(false); }
         else {
             r_.rect(0, 0, (float)r_.width(), (float)r_.height(), {0.05f, 0.06f, 0.08f, 1});
         }
@@ -1096,6 +1097,11 @@ void Game::drawWorld(float alpha) {
         } else if (pr.type == WPN_KNIFE) { // thrown knife: spins end over end
             r_.boxPitched(pr.pos, {0, 0, 0}, {0.012f, 0.03f, 0.18f}, yaw, (float)time_ * 25.0f, {0.75f, 0.77f, 0.8f}, 1.0f);
             r_.line(pr.pos, pr.pos - dir * 2.0f, 0.03f, rgba(col, 0.4f));
+        } else if (pr.type == WPN_BUBBLE) { // a wobbling bubble: a bright core in a see-through shell
+            float wob = 0.03f * std::sin((float)time_ * 14 + pr.id);
+            float r = 0.17f + wob;
+            r_.translucentBox({pr.pos - Vec3(r, r - wob, r), pr.pos + Vec3(r, r - wob, r)}, rgba(col, 0.35f));
+            r_.box(pr.pos + Vec3(0.05f, 0.06f, 0), {0.035f, 0.035f, 0.035f}, 0, Vec3(1, 1, 1) * 1.5f, 1.0f);
         } else if (pr.type == WPN_CROSSBOW) {
             r_.boxPitched(pr.pos, {0, 0, 0}, {0.03f, 0.03f, 0.35f}, yaw, std::asin(clampf(dir.y, -1, 1)), {0.1f, 0.1f, 0.12f}, 1.0f);
             r_.line(pr.pos, pr.pos - dir * 4.0f, 0.04f, rgba(col, 0.5f));
@@ -1108,9 +1114,10 @@ void Game::drawWorld(float alpha) {
     for (size_t i = 0; i < explosions_.size();) {
         float t = (float)(time_ - explosions_[i].start) / 0.35f;
         if (t >= 1) { explosions_.erase(explosions_.begin() + i); continue; }
-        float r = 0.5f + t * 3.0f;
+        float r = (0.5f + t * 3.0f) * explosions_[i].size;
         Vec3 c = explosions_[i].at;
-        r_.translucentBox({c - Vec3(r, r, r), c + Vec3(r, r, r)}, {1.0f, 0.85f, 0.5f, 0.55f * (1 - t)});
+        Color ec = explosions_[i].bubble ? rgba(r_.glowColor, 0.5f * (1 - t)) : Color{1.0f, 0.85f, 0.5f, 0.55f * (1 - t)};
+        r_.translucentBox({c - Vec3(r, r, r), c + Vec3(r, r, r)}, ec);
         i++;
     }
     for (size_t i = 0; i < tracers_.size();) {
@@ -1263,6 +1270,15 @@ void Game::drawWorld(float alpha) {
                 part(0, 0.06f, -0.02f, 0.008f, 0.003f, 0.04f, glow);
                 part(0, 0, -0.2f, 0.036f, 0.036f, 0.012f, dark);
                 break;
+            case WPN_BUBBLE:     // a round soap tank on top, a fat body, a flared wand nozzle with a bubble on it
+                part(0, 0, 0, 0.03f, 0.035f, 0.11f, mid);
+                part(0, 0.065f, 0.02f, 0.04f, 0.035f, 0.045f, light);
+                part(0, 0.065f, 0.02f, 0.03f, 0.04f, 0.035f, glow);
+                part(0, 0.004f, -0.15f, 0.014f, 0.014f, 0.05f, dark);
+                part(0, 0.004f, -0.205f, 0.03f, 0.03f, 0.006f, acc);
+                part(0, 0.004f, -0.235f, 0.022f, 0.022f, 0.022f, glow);
+                part(0, -0.06f, 0.03f, 0.014f, 0.035f, 0.02f, dark);
+                break;
             case WPN_CROSSBOW:   // stock, bow limbs with a string, a bolt on top
                 part(0, 0, 0.02f, 0.02f, 0.025f, 0.2f, dark);
                 part(0, 0.012f, -0.17f, 0.13f, 0.008f, 0.012f, mid);
@@ -1272,6 +1288,7 @@ void Game::drawWorld(float alpha) {
                 break;
         }
     }
+    r_.brightness = cfg_.brightness;
     r_.drawScene(cfg_.shadows);
 }
 
@@ -2370,7 +2387,8 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     for (int i = 0; i < 9; i++) if (caps[i] == cfg_.maxFps) ci = i;
     if (ui_.cycle(xr, y, w, h, "MAX FPS", ci, 9, capNames)) cfg_.maxFps = caps[ci];
     y += h + gap;
-    ui_.toggle(xr, y, w, h, "PLAYER SHADOWS", cfg_.shadows);
+    ui_.toggle(xr, y, w * 0.45f - gap * 0.5f, h, "PLAYER SHADOWS", cfg_.shadows);
+    ui_.slider(xr + w * 0.45f + gap * 0.5f, y, w * 0.55f - gap * 0.5f, h, "BRIGHTNESS", cfg_.brightness, 0.6f, 1.8f, "%.2f");
     y += h + gap;
     static const int aaModes[] = {0, 1, 2, 4};
     static const std::vector<std::string> aaNames = {"ANTI-ALIASING OFF", "SMOOTH EDGES (CHEAP)", "MSAA 2X", "MSAA 4X"};

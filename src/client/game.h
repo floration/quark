@@ -234,7 +234,7 @@ private:
     int lastHealth_ = 0;
     struct Tracer { Vec3 a, b; double until; };
     std::vector<Tracer> tracers_;
-    struct Explosion { Vec3 at; double start; };
+    struct Explosion { Vec3 at; double start; float size = 1; bool bubble = false; };
     std::vector<Explosion> explosions_;
     std::vector<ProjectileSnap> lastProjectiles_;
     double shotAt_ = -1;

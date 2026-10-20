@@ -940,6 +940,12 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
         if (wantFire && !(p.prevButtons & BTN_FIRE)) p.fireQueuedUntil = time() + kFireBuffer;
         wantFire = time() <= p.fireQueuedUntil;
     }
+    // A knife swing that missed keeps cutting along your current aim for a moment (one hit at most).
+    if (p.knifeSwingUntil > 0 && (p.weapon != WPN_KNIFE || time() > p.knifeSwingUntil)) p.knifeSwingUntil = -1;
+    if (p.knifeSwingUntil > 0 && !(p.move.flags & MF_FROZEN)) {
+        UserCmd sw = cmd; sw.buttons &= ~BTN_ALTFIRE;
+        if (fireWeapon(id, sw)) p.knifeSwingUntil = -1;
+    }
     // Fast weapons (laser: every 10 ms) can fire more than once in a command at low tick rates.
     for (int shot = 0; shot < 16 && wantFire && time() >= p.nextFire && !(p.move.flags & MF_FROZEN); shot++) {
         p.fireQueuedUntil = -1;
@@ -951,7 +957,8 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
         p.nextFire = (held && time() - p.nextFire < 0.1f) ? p.nextFire + refire : time() + refire;
         p.lastFire = time();
         bool threw = p.weapon == WPN_KNIFE && (cmd.buttons & BTN_ALTFIRE) && !itMode && !knifeAway; // same test as fireWeapon
-        fireWeapon(id, cmd);
+        bool hit = fireWeapon(id, cmd);
+        p.knifeSwingUntil = (p.weapon == WPN_KNIFE && !threw && !hit) ? time() + kKnifeSwingTime : -1;
         if (threw) { // the knife is away: switch to the next weapon, ready to fire right away
             p.knifeBackAt = time() + kKnifeAway;
             p.fireLocked = true;
@@ -973,7 +980,7 @@ Vec3 Server::spreadDir(const Vec3& dir, float spread, uint32_t seq, int pellet) 
 
 // One lag-compensated ray: adds dmg to the first player it hits (tested against where players
 // were at the shooter's view time).
-void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t vt, float* dmgPer, float dmg, float headDmg) {
+void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t vt, float* dmgPer, float dmg, float headDmg, float grow) {
     float bang;
     float wall = map_.raycastBullet(eye, dir, range, &bang); // goes through wallbang brushes
     float best = wall >= 0 ? wall : range;
@@ -991,6 +998,7 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
             if (h.tick <= vt) { if (h.alive) { pos = h.pos; crouched = h.crouched; } break; }
         }
         AABB bb = hitBox(pos, crouched);
+        bb.mn.x -= grow; bb.mn.z -= grow; bb.mx.x += grow; bb.mx.z += grow;
         float t = rayAABB(eye, inv, bb, best);
         if (t >= 0 && t < best) { best = t; hit = i; hitBb = bb; }
     }
@@ -1029,7 +1037,7 @@ void Server::bounceShot(int id, Vec3 o, Vec3 dir, float range, uint32_t vt, floa
     }
 }
 
-void Server::fireWeapon(int id, const UserCmd& cmd) {
+bool Server::fireWeapon(int id, const UserCmd& cmd) {
     ServerPlayer& p = players_[id];
     const WeaponDef& wd = weaponDef(p.weapon);
     float eyeH = ((p.move.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(); // giants shoot from their own eyes
@@ -1053,9 +1061,9 @@ void Server::fireWeapon(int id, const UserCmd& cmd) {
             pr.pos = eye + aim * 0.3f;
             pr.vel = aim * kKnifeThrowSpeed;
             pr.dieAt = time() + kKnifeThrowLife;
-            return;
+            return false;
         }
-        return;
+        return false;
     }
     if (wd.projectile) {
         if (wd.sticky) { // too many out: the oldest one fizzles
@@ -1067,6 +1075,22 @@ void Server::fireWeapon(int id, const UserCmd& cmd) {
                 if (oldest < 0 || (uint16_t)(pr.id - projectiles_[oldest].id) > 0x8000) oldest = k;
             }
             if (count >= kMaxStickies && oldest >= 0) projectiles_[oldest].active = false;
+        }
+        if (p.weapon == WPN_BUBBLE && alt) { // the stream: every bubble at once, each at its own speed
+            int n = 0;
+            for (auto& pr : projectiles_) {
+                if (pr.active) continue;
+                pr = Projectile();
+                pr.active = true;
+                pr.id = nextProjId_++;
+                pr.type = WPN_BUBBLE;
+                pr.owner = id;
+                pr.pos = eye + aim * 0.3f;
+                pr.vel = spreadDir(aim, 0.09f, cmd.seq, n) * kBubbleStreamSpeeds[n];
+                pr.dieAt = time() + wd.life;
+                if (++n == kBubbleStream) break;
+            }
+            return false;
         }
         for (auto& pr : projectiles_) {
             if (pr.active) continue;
@@ -1080,9 +1104,9 @@ void Server::fireWeapon(int id, const UserCmd& cmd) {
             if (p.weapon == WPN_ROCKET && alt) { pr.vel = pr.vel * kRocketLobSpeed; pr.gravMul = kRocketLobGravity; }
             pr.dieAt = time() + wd.life;
             pr.armAt = time() + kStickyArmTime;
-            return;
+            return false;
         }
-        return;
+        return false;
     }
     uint32_t vt = cmd.viewTick; // ms on the server clock
     if (vt > timeMs_) vt = timeMs_;
@@ -1097,14 +1121,17 @@ void Server::fireWeapon(int id, const UserCmd& cmd) {
     for (int k = 0; k < wd.pellets; k++) {
         Vec3 d = spreadDir(aim, spread, cmd.seq, k);
         if (bounce) bounceShot(id, eye, d, range, vt, dmgPer, dmg * kShotgunBounceDamage);
-        else hitscan(id, eye, d, range, vt, dmgPer, dmg, pull ? 0.0f : headDamage(p.weapon));
+        else hitscan(id, eye, d, range, vt, dmgPer, dmg, pull ? 0.0f : headDamage(p.weapon), p.weapon == WPN_KNIFE ? kKnifeGrow : 0.0f);
     }
+    bool any = false;
     for (int i = 0; i < kMaxPlayers; i++) {
         if (dmgPer[i] <= 0) continue;
         Vec3 knock = aim * (wd.pellets > 1 ? 0.15f * dmgPer[i] / wd.damage : 1.0f);
         if (wd.beam) knock = aim * (kLaserPush * wd.refire * (pull ? -kLaserPullScale : 1.0f)); // same push per second at any fire rate
         damagePlayer(i, id, dmgPer[i], p.weapon, knock);
+        any = true;
     }
+    return any;
 }
 
 void Server::tickProjectiles() {
@@ -1187,7 +1214,7 @@ void Server::explode(const Vec3& at, int owner, int weapon) {
         // Self damage: 10% when the blast is at or below your feet (rocket jumps), full otherwise.
         float selfScale = at.y <= p.move.pos.y + 0.3f ? 0.1f : 1.0f;
         float dmg = wd.damage * frac * (self ? selfScale : 1.0f);
-        Vec3 knock = push * (11.0f * frac * (self ? 1.3f : 1.0f));
+        Vec3 knock = push * (11.0f * frac * (self ? 1.3f : 1.0f) * (weapon == WPN_BUBBLE ? kBubbleKnock : 1.0f));
         if (!self) knock.y *= 2.0f; // enemies get launched: twice the vertical knockback
         damagePlayer(i, owner, dmg, weapon, knock);
     }
@@ -1202,7 +1229,7 @@ void Server::explode(const Vec3& at, int owner, int weapon) {
 
 // Line of sight from each human to each enemy, 20 times a second. Players you can't see are sent
 // without a position (wallhacks get nothing); anyone within earshot, teammates, and everyone while you
-// are dead or spectating are always sent. A player stays visible for 0.3 s after line of sight breaks,
+// are dead or spectating are always sent. A player stays visible for 0.6 s after line of sight breaks,
 // so peeking around a corner never pops in late.
 void Server::updateVisibility() {
     if (time() < nextVisCheck_) return;
@@ -1217,12 +1244,20 @@ void Server::updateVisibility() {
             bool mate = modeIsTeamBased(ms_.mode) && pt.team == pv.team;
             Vec3 d = pt.move.pos - pv.move.pos;
             if (mate || length(d) < 20.0f) { pv.lastSeen[t] = time(); continue; }
-            Vec3 lead = pt.move.vel * 0.1f; // where they'll be shortly: peeks show up early, not late
-            for (const Vec3& off : {Vec3(0, 1.7f, 0), Vec3(0, 1.0f, 0), Vec3(0, 0.2f, 0), lead + Vec3(0, 1.0f, 0)}) {
-                Vec3 to = pt.move.pos + off - eye;
-                float len = length(to);
-                if (len < 0.01f || !map_.raycastAny(eye, to / len, len)) { pv.lastSeen[t] = time(); break; }
-            }
+            // Generous on purpose (a player popping out of view while their shoulder shows is worse than a
+            // wallhack seeing a little): rays from both sides of your head to the target's head, chest, knees
+            // and both shoulders, where they are and where they'll be in 0.25 s (and where you'll be).
+            Vec3 lead = pt.move.vel * 0.25f, mine = pv.move.vel * 0.15f;
+            Vec3 side = normalize(Vec3(-d.z, 0, d.x)) * 0.45f;
+            bool seen = false;
+            for (const Vec3& from : {eye, eye + side * 0.7f, eye - side * 0.7f, eye + mine})
+                if (!seen) for (const Vec3& off : {Vec3(0, 1.75f, 0), Vec3(0, 1.0f, 0), Vec3(0, 0.25f, 0), side + Vec3(0, 1.3f, 0), Vec3() - side + Vec3(0, 1.3f, 0),
+                                        lead + Vec3(0, 1.0f, 0), lead + side + Vec3(0, 1.3f, 0), lead - side + Vec3(0, 1.3f, 0)}) {
+                    Vec3 to = pt.move.pos + off - from;
+                    float len = length(to);
+                    if (len < 0.01f || !map_.raycastAny(from, to / len, len)) { seen = true; break; }
+                }
+            if (seen) pv.lastSeen[t] = time();
         }
     }
 }
@@ -1293,7 +1328,7 @@ void Server::sendSnapshots() {
         s.players = all;
         s.projectiles = allProj;
         for (auto& ps : s.players)
-            ps.hidden = !seesAll && ps.id != i && (ps.flags & PS_ALIVE) && time() - p.lastSeen[ps.id] > 0.3f;
+            ps.hidden = !seesAll && ps.id != i && (ps.flags & PS_ALIVE) && time() - p.lastSeen[ps.id] > 0.6f;
         // delta base: the newest snapshot the client confirmed, if we still remember it
         const Snapshot* base = nullptr;
         for (auto& o : p.sent)

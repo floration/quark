@@ -9,7 +9,7 @@
 
 namespace {
 constexpr uint32_t kCacheMagic = 0x314D4C51; // "QLM1"
-constexpr uint32_t kBakeVersion = 9; // 6: point lights
+constexpr uint32_t kBakeVersion = 10;   // 10: point lights 10% brighter // 6: point lights
 constexpr int kSkySamples = 48;
 constexpr int kSunSamples = 6;
 constexpr float kAlbedo = 0.65f;
@@ -273,7 +273,7 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
                         float ndl = dot(n, dir);
                         if (ndl <= 0 || anyHit(map, p, dir, dist - 0.05f)) continue;
                         float fall = 1.0f - dist / L.radius;
-                        g += L.intensity * ndl * fall * fall;
+                        g += L.intensity * 1.1f * ndl * fall * fall;   // (10% up: indoor rooms read a little dark)
                     }
                     size_t idx = ((size_t)(f.ry + 1 + j) * W + (f.rx + 1 + i)) * 2;
                     out.texels[idx] = (uint8_t)(clampf(direct, 0, 1) * 255.0f + 0.5f);

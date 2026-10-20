@@ -70,7 +70,7 @@ constexpr int kArenaVariants = 9;
 inline const ArenaVariant& arenaVariant(int v) {
     // weapon ids: 0 rifle 1 rocket 2 knife 3 sniper 4 laser 5 shotgun 6 sticky 7 crossbow
     static const ArenaVariant vs[kArenaVariants] = {
-        {"vanilla", "VANILLA", "EVERY WEAPON, ALL MOVEMENT - NO GIMMICKS", 0xFF, 0},
+        {"vanilla", "VANILLA", "EVERY WEAPON, ALL MOVEMENT - NO GIMMICKS", 0x1FF, 0},
         {"vampire", "LASER VAMPIRE", "LASERS ONLY - DAMAGE YOU DEAL HEALS YOU", WB(4), AR_VAMPIRE},
         {"classic", "CLASSIC", "ROCKET, LASER AND KNIFE", WB(1) | WB(4) | WB(2), 0},
         {"quirky", "QUIRKY", "CROSSBOW, STICKY AND RIFLE", WB(7) | WB(6) | WB(0), 0},
@@ -118,7 +118,7 @@ enum : uint16_t {
 
 // Weapon set. Rifle and knife are placeholders. No single shot does more than 50 (of 100 health).
 enum WeaponId : uint8_t {
-    WPN_RIFLE = 0, WPN_ROCKET, WPN_KNIFE, WPN_SNIPER, WPN_LASER, WPN_SHOTGUN, WPN_STICKY, WPN_CROSSBOW, WPN_COUNT
+    WPN_RIFLE = 0, WPN_ROCKET, WPN_KNIFE, WPN_SNIPER, WPN_LASER, WPN_SHOTGUN, WPN_STICKY, WPN_CROSSBOW, WPN_BUBBLE, WPN_COUNT
 };
 constexpr uint8_t kNoWeaponChange = 255;
 struct WeaponDef {
@@ -154,25 +154,28 @@ inline void spreadOffset(uint32_t seq, int pellet, float spread, float& a, float
 }
 inline const WeaponDef& weaponDef(int w) {
     static const WeaponDef defs[WPN_COUNT] = {
-        // Tuned by the owner (0.15.1). Perfect-aim time to kill from 100 hp in the trailing comment.
+        // Tuned by the owner (1.6.0: every cooldown 25% shorter except the laser's damage tick; every damage 15% lower
+        // except laser and knife; crossbow 50 / 60 head on a 2 s cooldown; the bubble gun added).
+        // Perfect-aim time to kill from 100 hp in the trailing comment.
         //  name        refire   dmg    range   proj  speed  splash spread scoped zoom   beam  pel grav  sticky life
-        {"RIFLE",       2.0f/9.9f, 7,     300.0f, false,  0,    0,     0.0f,  0.0f, 60.0f,  false, 1,  0,    false, 0},  // 15 shots, 2.8 s (scoped: 3/4 fire rate)
-        {"ROCKET",      1.6f,    40,      0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  12.0f, false, 5}, // 3, 3.2 s
-        {"KNIFE",       0.7f,    40,      2.8f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 3, 1.4 s
-        {"SNIPER",      2.0f,    40,    500.0f, false,  0,    0,     0.09f, 0.0f, 45.0f,  false, 1,  0,    false, 0},  // 3, 4.0 s (headshots 50: 2, 2.0 s)
+        {"RIFLE",       0.75f*2.0f/9.9f, 5.95f, 300.0f, false, 0, 0, 0.0f, 0.0f, 60.0f, false, 1, 0, false, 0},  // 17 shots, 2.4 s (scoped: 3/4 fire rate)
+        {"ROCKET",      1.2f,    34,      0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  12.0f, false, 5}, // 3, 2.4 s
+        {"KNIFE",       0.525f,  40,      3.5f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 3, 1.05 s
+        {"SNIPER",      1.5f,    34,    500.0f, false,  0,    0,     0.09f, 0.0f, 45.0f,  false, 1,  0,    false, 0},  // 3, 3.0 s (headshots 42.5: 3)
         {"LASER",       0.001f,  0.04f,  32.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},  // every 1 ms, 2500 hits, 2.5 s
-        {"SHOTGUN",     1.0f,    2,      60.0f, false,  0,    0,     0.085f,-1,     0,    false, 20, 0,    false, 0},  // 20 x 2 = 40 per blast, 3, 2.0 s
-        {"STICKY",      1.0f,    35,      0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30}, // 3, 2.0 s
-        {"CROSSBOW",    2.0f,    40,      0,    true,  76.5f, 0,     0.0f,  0.0f, 70.0f,  false, 1,  6.0f, false, 3},  // 3, 4.0 s (headshots 50: 2, 2.0 s)
+        {"SHOTGUN",     0.75f,   1.7f,   60.0f, false,  0,    0,     0.085f,-1,     0,    false, 20, 0,    false, 0},  // 20 x 1.7 = 34 per blast, 3, 1.5 s
+        {"STICKY",      0.75f,   29.75f,  0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30}, // 4, 2.25 s
+        {"CROSSBOW",    2.0f,    50,      0,    true,  76.5f, 0,     0.0f,  0.0f, 70.0f,  false, 1,  6.0f, false, 3},  // 2, 2.0 s (headshots 60)
+        {"BUBBLE",      1.0f/3,  10,      0,    true,  13.0f, 1.8f,  0.04f, -1,     0,    false, 1, -1.5f, false, 4}, // 10 pops, 3.0 s (floats up a little)
     };
     return defs[w < 0 || w >= WPN_COUNT ? 0 : w];
 }
 // Alt-fires: knife throw (a projectile that hits for knife damage), shotgun bouncing pellets (ricochet off
 // walls, half damage), rifle scope (zooms like the sniper, 25% slower fire rate).
-constexpr float kSniperHeadDamage = 50.0f; // hits on the head (top 20% of the hitbox): sniper, crossbow bolt,
-constexpr float kCrossbowHeadDamage = 50.0f; // rifle bullet and each shotgun pellet
-constexpr float kRifleHeadDamage = 10.0f;
-constexpr float kPelletHeadDamage = 3.0f;
+constexpr float kSniperHeadDamage = 42.5f; // hits on the head (top 20% of the hitbox): sniper, crossbow bolt,
+constexpr float kCrossbowHeadDamage = 60.0f; // rifle bullet and each shotgun pellet
+constexpr float kRifleHeadDamage = 8.5f;
+constexpr float kPelletHeadDamage = 2.55f;
 inline float headDamage(int w) {
     return w == WPN_SNIPER ? kSniperHeadDamage : w == WPN_CROSSBOW ? kCrossbowHeadDamage : w == WPN_RIFLE ? kRifleHeadDamage
          : w == WPN_SHOTGUN ? kPelletHeadDamage : 0.0f;
@@ -180,22 +183,30 @@ inline float headDamage(int w) {
 constexpr float kHeadFraction = 0.2f;
 constexpr float kRocketLobSpeed = 0.7f, kRocketLobGravity = 3.0f; // rocket alt-fire: a lob at 70% speed with 3x gravity
 constexpr float kKnifeThrowSpeed = 38.0f, kKnifeThrowGravity = 14.0f, kKnifeThrowLife = 2.0f;
+constexpr float kKnifeGrow = 0.04f;    // a swing hits boxes 10% wider (0.04 m each side of 0.8)
+constexpr float kKnifeSwingTime = 0.12f; // ...and keeps cutting this long after the click if it hasn't hit yet
 constexpr float kKnifeAway = 5.0f; // after a throw the knife is gone this long: you switch to another weapon (no delay on it)
 constexpr int kShotgunBounces = 2;
 constexpr float kShotgunBounceDamage = 0.5f;
 constexpr float kRifleScopedRefire = 4.0f / 3.0f; // refire multiplier while scoped (25% slower fire rate)
+// Bubble gun alt-fire: a stream of bubbles all at once, each at its own speed, then a long reload.
+constexpr int kBubbleStream = 5;
+constexpr float kBubbleStreamRefire = 1.8f;
+constexpr float kBubbleStreamSpeeds[kBubbleStream] = {7.0f, 10.0f, 13.0f, 16.5f, 20.0f};
+constexpr float kBubbleKnock = 0.35f; // a pop shoves you a third as hard as a rocket blast of the same strength
 constexpr float kVampireFadeTime = 60.0f, kVampireMinHeal = 0.5f; // laser vampire: healing fades 100% -> 50% over the first minute of a round
 // The refire for this shot: alt-fire modes change it.
 inline float shotRefire(int w, bool alt) {
     float r = weaponDef(w).refire;
     if (alt && w == WPN_KNIFE) return 0;                    // knife throw: no delay (you switch weapons)
     if (alt && w == WPN_RIFLE) return r * kRifleScopedRefire;       // scoped rifle
+    if (alt && w == WPN_BUBBLE) return kBubbleStreamRefire;         // the bubble stream
     return r;
 }
 // Slot order (number keys, scroll wheel, HUD list): the weapon ids themselves stay as they are.
-constexpr int kWeaponSlots[WPN_COUNT] = {WPN_ROCKET, WPN_RIFLE, WPN_LASER, WPN_SHOTGUN, WPN_SNIPER, WPN_STICKY, WPN_CROSSBOW, WPN_KNIFE};
+constexpr int kWeaponSlots[WPN_COUNT] = {WPN_ROCKET, WPN_RIFLE, WPN_LASER, WPN_SHOTGUN, WPN_SNIPER, WPN_STICKY, WPN_CROSSBOW, WPN_BUBBLE, WPN_KNIFE};
 inline int weaponSlot(int w) { for (int i = 0; i < WPN_COUNT; i++) if (kWeaponSlots[i] == w) return i; return 0; }
-inline bool altFires(int w) { return w == WPN_KNIFE || w == WPN_SHOTGUN || w == WPN_ROCKET; } // knife (throw), shotgun (bounce), rocket (lob): alt-fire is a shot of its own
+inline bool altFires(int w) { return w == WPN_KNIFE || w == WPN_SHOTGUN || w == WPN_ROCKET || w == WPN_BUBBLE; } // knife (throw), shotgun (bounce), rocket (lob): alt-fire is a shot of its own
 constexpr int kMaxStickies = 6;       // per player; firing a 7th removes the oldest
 constexpr float kStickyArmTime = 0.35f;
 

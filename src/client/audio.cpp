@@ -109,6 +109,7 @@ void Audio::synthesize() {
     s[SND_SHOTGUN] = make(0.55f); addThump(s[SND_SHOTGUN], 180, 50, 0.025f, 1, 0.001f, 0.08f); addBand(s[SND_SHOTGUN], 150, 3500, 1, 0.001f, 0.06f, 11, 700);
     addRoom(s[SND_SHOTGUN], 0.4f, 1.1f); finish(s[SND_SHOTGUN], 0.38f);
     s[SND_STICKY] = make(0.25f); addThump(s[SND_STICKY], 300, 110, 0.03f, 1, 0.002f, 0.05f); addBand(s[SND_STICKY], 200, 1500, 0.3f, 0.002f, 0.03f, 12); addRoom(s[SND_STICKY], 0.2f, 0.7f); finish(s[SND_STICKY], 0.26f);
+    s[SND_BUBBLE] = make(0.22f); addThump(s[SND_BUBBLE], 700, 260, 0.06f, 1, 0.002f, 0.07f); addThump(s[SND_BUBBLE], 1100, 500, 0.04f, 0.5f, 0.01f, 0.05f); addRoom(s[SND_BUBBLE], 0.15f, 0.6f); finish(s[SND_BUBBLE], 0.22f);   // a wet bloop
     s[SND_CROSSBOW] = make(0.35f); addThump(s[SND_CROSSBOW], 420, 300, 0.05f, 1, 0.001f, 0.09f); addBand(s[SND_CROSSBOW], 1500, 5000, 0.4f, 0.001f, 0.012f, 13); addRoom(s[SND_CROSSBOW], 0.2f, 0.7f); finish(s[SND_CROSSBOW], 0.24f);
     s[SND_EXPLOSION] = make(1.2f); addThump(s[SND_EXPLOSION], 120, 32, 0.08f, 1, 0.002f, 0.3f); addBand(s[SND_EXPLOSION], 40, 2500, 1, 0.003f, 0.25f, 14, 300);
     addRoom(s[SND_EXPLOSION], 0.4f, 1.4f); finish(s[SND_EXPLOSION], 0.42f);

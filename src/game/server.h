@@ -81,6 +81,7 @@ struct ServerPlayer {
     int weapon = WPN_ROCKET;
     int selectedWeapon = WPN_ROCKET; // last weapon the player picked (slot 1 to start); kept across respawns
     float knifeBackAt = 0;
+    float knifeSwingUntil = -1; // a swing that missed keeps cutting along your aim until then
     bool fireLocked = false;    // after a knife throw: nothing fires until both buttons are let go      // a thrown knife is away until then: no knife (and no throws) before it
     float nextFire = 0;
     float lastFire = -10;
@@ -273,10 +274,10 @@ private:
     void checkTickRate();
     void resetRateWindow();
     void runPlayerCmd(int id, const UserCmd& cmd);
-    void fireWeapon(int id, const UserCmd& cmd);
+    bool fireWeapon(int id, const UserCmd& cmd);   // true if it hit a player (hitscan weapons)
     void tickProjectiles();
     void explode(const Vec3& at, int owner, int weapon);
-    void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t viewMs, float* dmgPerPlayer, float dmg, float headDmg = 0);
+    void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t viewMs, float* dmgPerPlayer, float dmg, float headDmg = 0, float grow = 0);
     Vec3 spreadDir(const Vec3& dir, float spread, uint32_t seq, int pellet);
     void sendSnapshots();
     void updateVisibility();

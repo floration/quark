@@ -133,12 +133,12 @@ Vec3 objective(Server& s, int id, BotBrain& b) {
 // Best weapon for the range that this mode allows (1v1 rulesets / duel lives restrict the pool).
 // Beginners stick to the rifle when they can.
 int pickWeapon(const Server& s, const SkillParams& sp, float dist) {
-    static const int close[] = {WPN_SHOTGUN, WPN_KNIFE, WPN_LASER, WPN_ROCKET, WPN_RIFLE, WPN_STICKY, WPN_CROSSBOW, WPN_SNIPER};
-    static const int mid[]   = {WPN_ROCKET, WPN_LASER, WPN_RIFLE, WPN_STICKY, WPN_CROSSBOW, WPN_SHOTGUN, WPN_SNIPER, WPN_KNIFE};
-    static const int midNoLead[] = {WPN_RIFLE, WPN_LASER, WPN_SHOTGUN, WPN_ROCKET, WPN_STICKY, WPN_CROSSBOW, WPN_SNIPER, WPN_KNIFE};
-    static const int far[]   = {WPN_CROSSBOW, WPN_RIFLE, WPN_SNIPER, WPN_LASER, WPN_ROCKET, WPN_STICKY, WPN_SHOTGUN, WPN_KNIFE};
-    static const int farNoLead[] = {WPN_RIFLE, WPN_SNIPER, WPN_LASER, WPN_CROSSBOW, WPN_ROCKET, WPN_STICKY, WPN_SHOTGUN, WPN_KNIFE};
-    static const int vfar[]  = {WPN_SNIPER, WPN_CROSSBOW, WPN_RIFLE, WPN_ROCKET, WPN_STICKY, WPN_LASER, WPN_SHOTGUN, WPN_KNIFE};
+    static const int close[] = {WPN_SHOTGUN, WPN_KNIFE, WPN_LASER, WPN_BUBBLE, WPN_ROCKET, WPN_RIFLE, WPN_STICKY, WPN_CROSSBOW, WPN_SNIPER};
+    static const int mid[]   = {WPN_ROCKET, WPN_LASER, WPN_RIFLE, WPN_STICKY, WPN_BUBBLE, WPN_CROSSBOW, WPN_SHOTGUN, WPN_SNIPER, WPN_KNIFE};
+    static const int midNoLead[] = {WPN_RIFLE, WPN_LASER, WPN_SHOTGUN, WPN_ROCKET, WPN_STICKY, WPN_CROSSBOW, WPN_BUBBLE, WPN_SNIPER, WPN_KNIFE};
+    static const int far[]   = {WPN_CROSSBOW, WPN_RIFLE, WPN_SNIPER, WPN_LASER, WPN_ROCKET, WPN_STICKY, WPN_SHOTGUN, WPN_BUBBLE, WPN_KNIFE};
+    static const int farNoLead[] = {WPN_RIFLE, WPN_SNIPER, WPN_LASER, WPN_CROSSBOW, WPN_ROCKET, WPN_STICKY, WPN_SHOTGUN, WPN_BUBBLE, WPN_KNIFE};
+    static const int vfar[]  = {WPN_SNIPER, WPN_CROSSBOW, WPN_RIFLE, WPN_ROCKET, WPN_STICKY, WPN_LASER, WPN_SHOTGUN, WPN_BUBBLE, WPN_KNIFE};
     if (!sp.weapons && s.weaponAllowed(WPN_RIFLE)) return WPN_RIFLE;
     const int* order = dist < 7 ? close : dist < 18 ? (sp.lead ? mid : midNoLead) : dist < 35 ? (sp.lead ? far : farNoLead) : (sp.lead ? vfar : farNoLead);
     for (int k = 0; k < WPN_COUNT; k++) if (s.weaponAllowed(order[k])) return order[k];
@@ -392,7 +392,7 @@ UserCmd botThink(Server& s, int id) {
         to.y = 0;
         Vec3 toN = normalize(to);
         float ideal = w == WPN_SHOTGUN ? 4.0f : w == WPN_SNIPER ? 40.0f : w == WPN_KNIFE ? 1.5f : w == WPN_LASER ? 12.0f
-                    : w == WPN_STICKY ? 10.0f : w == WPN_CROSSBOW ? 22.0f : w == WPN_RIFLE ? 18.0f : 14.0f;
+                    : w == WPN_STICKY ? 10.0f : w == WPN_BUBBLE ? 7.0f : w == WPN_CROSSBOW ? 22.0f : w == WPN_RIFLE ? 18.0f : 14.0f;
         moveDir = toN * (dist > ideal + 3 ? 1.0f : dist < ideal - 3 ? -1.0f : 0.0f);
         if (sp.strafe) {
             if (now >= b.strafeSwitchAt) { b.strafeDir = rnd(b) < 0.5f ? -1.0f : 1.0f; b.strafeSwitchAt = now + 0.25f + rnd(b) * 0.6f; }

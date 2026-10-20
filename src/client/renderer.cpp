@@ -87,11 +87,12 @@ uniform vec3 uSunColor, uSkyColor, uMetal, uGlow, uFogColor, uCamPos;
 // bright sun: base, accent, wallbang (dark grey: base * 0.42), metal, and the floor tint (pow(metal, 2.2) * 2)
 uniform vec3 uBaseL, uAccentL, uWallbangL, uMetalL, uFloorL;
 uniform float uFogDensity;
+uniform float uBright;   // the brightness setting (exposure, before the filmic curve)
 out vec4 fragColor;
 float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 vec3 finish(vec3 c) {
     float d = length(vPos - uCamPos);
-    c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity));
+    c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity)) * uBright;
     c = clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0) * 1.08; // ACES-style filmic curve
     return pow(c, vec3(1.0 / 2.2));
 }
@@ -163,6 +164,7 @@ const char* kSkyFS = R"(#version 330 core
 in vec2 vNdc;
 uniform vec3 uFwd, uRight, uUp, uSky, uSunDir;
 uniform vec2 uTan;
+uniform float uBright;
 out vec4 fragColor;
 void main() {
     vec3 d = normalize(uFwd + vNdc.x * uTan.x * uRight + vNdc.y * uTan.y * uUp);
@@ -171,6 +173,7 @@ void main() {
     vec3 c = mix(uSky, zenith, pow(up, 0.6));
     float s = max(dot(d, uSunDir), 0.0);
     c += vec3(1.0, 0.9, 0.7) * (pow(s, 600.0) * 4.0 + pow(s, 12.0) * 0.25);
+    c *= uBright;
     c = clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0) * 1.08;
     fragColor = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
 })";
@@ -194,6 +197,7 @@ in vec3 vPos; in vec3 vN; in vec4 vColor; in vec4 vShadow; in vec4 vEdge;
 uniform vec3 uSunColor, uSkyColor, uSunDir, uFogColor, uCamPos;
 uniform float uFogDensity;
 uniform int uReceiveShadow;
+uniform float uBright;
 out vec4 fragColor;
 void main() {
     float sh = uReceiveShadow != 0 ? shadowAt(vShadow) : 1.0;
@@ -201,7 +205,7 @@ void main() {
     vec3 light = uSkyColor * (0.6 + 0.25 * vN.y) + uSunColor * ndl * vColor.a * sh;
     vec3 c = vColor.rgb * (light * 0.7 + 0.3) * outline(vEdge); // partly emissive so team colors stay readable
     float d = length(vPos - uCamPos);
-    c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity));
+    c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity)) * uBright;
     fragColor = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
 })";
 
@@ -734,6 +738,7 @@ void Renderer::drawScene(bool shadows) {
         setVec3(worldProg_, "uFogColor", skyColor);
         setVec3(worldProg_, "uCamPos", camPos_);
         glUniform1f(U(worldProg_, "uFogDensity"), fog);
+        glUniform1f(U(worldProg_, "uBright"), brightness);
         glBindTexture(GL_TEXTURE_2D, lightmapTex_);
         glBindVertexArray(worldVao_);
         drawWorldChunks();
@@ -742,6 +747,7 @@ void Renderer::drawScene(bool shadows) {
         setVec3(skyProg_, "uFwd", camFwd_); setVec3(skyProg_, "uRight", camRight_); setVec3(skyProg_, "uUp", camUp_);
         setVec3(skyProg_, "uSky", skyColor); setVec3(skyProg_, "uSunDir", sunDir_);
         glUniform2f(U(skyProg_, "uTan"), tanX_, tanY_);
+        glUniform1f(U(skyProg_, "uBright"), brightness);
         glDepthMask(GL_FALSE);
         glDrawArrays(GL_TRIANGLES, 0, 3);
         glDepthMask(GL_TRUE);
@@ -764,6 +770,7 @@ void Renderer::drawScene(bool shadows) {
         setVec3(dynProg_, "uFogColor", skyColor);
         setVec3(dynProg_, "uCamPos", camPos_);
         glUniform1f(U(dynProg_, "uFogDensity"), fog);
+        glUniform1f(U(dynProg_, "uBright"), brightness);
         glBindVertexArray(dynVao_);
         glDrawArrays(GL_TRIANGLES, 0, (GLsizei)v.size());
     };
