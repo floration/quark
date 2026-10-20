@@ -1,3 +1,4 @@
+#include "official_map_data.h"
 #include "map.h"
 #include "gamedefs.h"
 #include <cstdio>
@@ -31,6 +32,26 @@ std::string findDataPath(const std::string& rel) {
     for (auto& c : candidates)
         if (!c.empty() && fs::exists(c, ec)) return c;
     return rel;
+}
+
+int resetOfficialMaps() {
+    std::error_code ec;
+    std::string dir = findDataPath("maps");
+    fs::create_directories(dir, ec);
+    int n = 0;
+    for (const OfficialMapData* m = kOfficialMapData; m->name; m++) {
+        std::ofstream f(dir + "/" + m->name + ".qmap", std::ios::binary | std::ios::trunc);
+        if (!f.write((const char*)m->data, (std::streamsize)m->size)) continue;
+        fs::remove(dir + "/" + m->name + ".qlm", ec);
+        n++;
+    }
+    return n;
+}
+
+std::string mapsFolder() {
+    std::error_code ec;
+    auto p = fs::absolute(findDataPath("maps"), ec);
+    return ec ? findDataPath("maps") : p.string();
 }
 
 std::vector<std::string> listMaps() {

@@ -6,6 +6,7 @@
 // to ed_ directly; in an edit session they go through the server, which applies them in one order and
 // sends them to everyone, and ed_ follows the client's copy of the map.
 #include "game.h"
+#include "openurl.h"
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <algorithm>
@@ -648,6 +649,17 @@ void Game::editorFrame(double dt) {
             row();
         }
         if (ui_.button(x, y, w, h, "HOST EDIT SESSION")) { edHostSession(); if (screen_ != Screen::Editor) return; }
+        row();
+        if (ui_.button(x, y, w2, h, "MAPS FOLDER")) openUrl(mapsFolder());
+        if (ui_.button(x + w2 + gap, y, w2, h, time_ < edResetArmed_ ? "CLICK TO CONFIRM" : "RESET MAPS")) {
+            if (time_ >= edResetArmed_) { edResetArmed_ = time_ + 3; edNotify("puts every built-in map back to its original version (your own maps are kept) - click again"); }
+            else {
+                edResetArmed_ = 0;
+                int n = resetOfficialMaps();
+                rescanMaps();
+                edNotify(std::to_string(n) + " built-in maps reset to the original version");
+            }
+        }
         row();
     }
     if (ui_.button(x, y, edOnline_ ? w : w2, h, edBaked_ ? "UNBAKE" : "BAKE LIGHT")) {

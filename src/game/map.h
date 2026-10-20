@@ -89,6 +89,9 @@ std::string findDataPath(const std::string& rel); // resolves maps/... next to t
 void setExecutableDir(const char* argv0);
 const std::string& executableDir();       // empty if unknown
 std::vector<std::string> listMaps();
+// Writes every shipped map back to its original text (and drops their light caches); returns how many.
+int resetOfficialMaps();
+std::string mapsFolder(); // absolute path of the maps folder
 // Maps fetched from servers live apart from your own, keyed by content: maps/downloads/<name>-<crc>.qmap
 std::string downloadedMapPath(const std::string& name, uint32_t crc);
 bool saveMapFile(const std::string& path, const std::string& text);

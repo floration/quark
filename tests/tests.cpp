@@ -1,3 +1,4 @@
+#include <fstream>
 // Headless tests: movement, map parsing, and real client/server sessions over UDP
 // on localhost, including every game mode.
 #include <cstdio>
@@ -824,6 +825,19 @@ static void testBotAim(uint16_t& port) {
 // Alt-fires: thrown knife hits at range, shotgun ricochets hit someone behind you (off the wall in front),
 // scoped rifle fires at half rate.
 // Rocket alt-fire: a lob at half speed that falls 3x faster.
+// "Reset maps": every shipped map is written back from the copy built into the game.
+static void testResetMaps() {
+    printf("reset built-in maps\n");
+    std::string path = findDataPath("maps") + "/temple.qmap";
+    { std::ofstream f(path, std::ios::app); f << "box 0 0 0 1 1 1\n"; }
+    Map m;
+    CHECK(m.load("temple") && !isOfficialMap(m));
+    CHECK(resetOfficialMaps() >= 13);
+    Map r;
+    CHECK(r.load("temple") && isOfficialMap(r));
+    for (auto& n : listMaps()) { Map k; CHECK(k.load(n) && isOfficialMap(k)); }
+}
+
 static void testRocketLob(uint16_t port) {
     printf("rocket lob (alt-fire)\n");
     Server s;
@@ -1528,6 +1542,7 @@ int main(int argc, char** argv) {
     testCartDash(port++);
     testSemiAuto(port++);
     testMapVote(port++);
+    testResetMaps();
     testRocketLob(port++);
     testAltFires(port); port += 3;
     testMapDownload(port++);

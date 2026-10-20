@@ -142,7 +142,7 @@ private:
     struct EdSel { int kind = -1, idx = -1; bool valid() const { return kind >= 0; } };
     Map ed_;
     std::string edName_ = "mymap", edMsg_, edTitle_;
-    double edMsgUntil_ = 0, edLastPush_ = 0, edLeaveArmed_ = 0, edNextCam_ = 0, edTickAcc_ = 0;
+    double edResetArmed_ = 0, edMsgUntil_ = 0, edLastPush_ = 0, edLeaveArmed_ = 0, edNextCam_ = 0, edTickAcc_ = 0;
     EdSel edSel_;
     int edGridIdx_ = 1, edLoadIdx_ = 0;
     float edSpeed_ = 12;
