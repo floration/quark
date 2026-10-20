@@ -83,6 +83,8 @@ void finish(std::vector<float>& b, float peak) {
 }
 } // namespace
 
+static void voice(std::vector<float>& b, int pack);
+
 void Audio::synthesize() {
     auto& s = sounds_;
     // feedback: soft rounded ticks
@@ -117,6 +119,40 @@ void Audio::synthesize() {
     s[SND_GRAPPLE_HIT] = make(0.35f);
     for (float f : {1180.0f, 1630.0f, 2360.0f}) addTone(s[SND_GRAPPLE_HIT], f, 0.35f, 0.001f, 0.07f);
     addThump(s[SND_GRAPPLE_HIT], 400, 200, 0.01f, 0.5f, 0.001f, 0.02f); addRoom(s[SND_GRAPPLE_HIT], 0.25f, 0.6f); finish(s[SND_GRAPPLE_HIT], 0.2f);
+    for (auto& snd : s) voice(snd, pack_);
+}
+
+// Sound packs re-voice every synthesized sound: pitch (by resampling), extra room, a low-pass, and for RETRO
+// a bit-crush with a sample-and-hold down to ~11 kHz. STANDARD leaves them as synthesized.
+static void voice(std::vector<float>& b, int pack) {
+    if (pack == 0 || b.empty()) return;
+    float pitch = pack == 1 ? 1.35f : pack == 2 ? 0.72f : pack == 3 ? 1.1f : 0.9f;
+    std::vector<float> o((size_t)(b.size() / pitch) + 1);
+    for (size_t i = 0; i < o.size(); i++) {
+        float x = i * pitch;
+        size_t k = (size_t)x;
+        float f = x - k;
+        o[i] = k + 1 < b.size() ? b[k] + (b[k + 1] - b[k]) * f : (k < b.size() ? b[k] : 0.0f);
+    }
+    if (pack == 2) addRoom(o, 0.35f, 1.4f);                       // HEAVY: lower, bigger room
+    if (pack == 3) {                                              // RETRO: 4-bit levels, held for 4 samples
+        float held = 0;
+        for (size_t i = 0; i < o.size(); i++) { if (i % 4 == 0) held = std::round(o[i] * 8.0f) / 8.0f; o[i] = held; }
+    }
+    if (pack == 4) {                                              // SOFT: one-pole low-pass, rounder and quieter
+        float y = 0;
+        for (auto& v : o) { y += (v - y) * 0.18f; v = y * 0.85f; }
+    }
+    if (pack == 1) for (auto& v : o) v = std::tanh(v * 1.6f) * 0.75f; // ARCADE: brighter, saturated
+    b.swap(o);
+}
+
+void Audio::setPack(int pack) {
+    pack = (pack < 0 || pack > 4) ? 0 : pack;
+    std::lock_guard<std::mutex> l(mu_);
+    voices_.clear(); // sounds are replaced under the mixer: nothing may be playing a buffer that changes size
+    pack_ = pack;
+    synthesize();
 }
 
 void Audio::voiceGains(Voice& v) {

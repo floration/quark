@@ -307,7 +307,7 @@ void NetClient::onSnapshot(Snapshot& s) {
     for (auto& e : s.events) {
         if (e.id <= lastEventId_) continue;
         lastEventId_ = e.id;
-        if (e.type == EV_PLAYERINFO && e.a < kMaxPlayers) names_[e.a] = e.text;
+        if (e.type == EV_PLAYERINFO && e.a < kMaxPlayers) { names_[e.a] = e.text; models_[e.a] = e.b < kPlayerModels ? e.b : 0; }
         if (e.type == EV_RANKINFO && e.a < kMaxPlayers) rankIds_[e.a] = e.text;
         if (e.type == EV_EDIT) { applyEditEvent(e.text); continue; }
         events_.push_back(e);

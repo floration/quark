@@ -6,6 +6,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "hudwidgets.h"
 #include "../game/netclient.h"
 #include "../game/server.h"
 #include "../game/ranked.h"
@@ -34,6 +35,7 @@ struct LaunchOptions {
     bool debugPause = false, debugVote = false; // --pause / --votemenu
     std::string backdrop;       // --backdrop MAP: menu backdrop of that map, no menu drawn (site screenshots)
     float backdropAngle = -1;   // --orbit DEG: fixed orbit position for --backdrop   // --picker: open the host menu's map list
+    bool debugWidgets = false;  // --widgets: open the HUD widget editor in game
     bool debugSettings = false; // --settings: open the settings screen in game
     bool debugControls = false; // --controls
     std::string editMap;        // --editor MAP: open the map editor on that map
@@ -100,6 +102,9 @@ private:
     std::vector<float> benchTimes_, benchCpu_;
     std::vector<float> perfScratch_ = std::vector<float>(2048); // F3 percentile workspace
     double lastCpu_ = 0;
+    double modelSentAt_ = -10;
+    int socdLastF_ = 0, socdLastS_ = 0;     // control scripts: SOCD press order, alt-fire toggle state
+    bool socdPrev_[4] = {}, altPrev_ = false, altToggled_ = false;
     void benchFrame(double dt);
     bool paused_ = false, chatting_ = false, showScores_ = false, settingsInGame_ = false;
     std::string chatText_, joinAddr_, error_;
@@ -272,6 +277,29 @@ private:
     bool controlsOpen_ = false;
     bool crosshairOpen_ = false;
     bool hudOpen_ = false;
+    // scriptable HUD: hud.cfg widgets, the verbose info block, and the in-game widget editor
+    HudWidgets widgets_;
+    HudVals hudVals_;
+    bool widgetEdit_ = false, widgetDrag_ = false, valueDrop_ = false;
+    int widgetSel_ = -1;
+    float dragDX_ = 0, dragDY_ = 0;
+    std::string widgetMsg_;
+    double widgetMsgUntil_ = 0;
+    void computeHudVals();
+    // profiles: per-mode rules swap the HUD layout / controls while that mode is running
+    Binds modeBinds_;
+    bool modeCtlActive_ = false, modeAlt_ = false;
+    int modeSocd_ = 0, appliedMode_ = -2;
+    std::string modeHudPath_;               // "" = hud.cfg
+    int ruleMode_ = MODE_FFA;               // mode shown in the rule rows
+    int filePick_ = 0;                      // import file list open: 1 huds, 2 controls
+    const Binds& binds() const { return modeCtlActive_ ? modeBinds_ : cfg_.binds; }
+    std::string activeHudPath() const;
+    void applyModeRules(int mode);
+    bool drawFileList(const char* sub, float x, float y, float w, std::string& picked);
+    void ruleRow(float x, float y, float w, float h, bool hud);
+    void drawVerboseHud(float W, float s, float& y);
+    void drawWidgetEditor();
     int hudSel_ = 0;
     int captureAction_ = -1, captureSlot_ = 0;
     std::string voteText_;

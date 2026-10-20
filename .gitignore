@@ -10,3 +10,6 @@ bin/
 .built-commit
 update.pending
 quark.cfg
+hud.cfg
+huds/
+controls/

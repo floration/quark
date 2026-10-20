@@ -307,11 +307,11 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
     // Tell the newcomer about everyone, and everyone about the newcomer.
     for (int i = 0; i < kMaxPlayers; i++) {
         if (!players_[i].connected || i == id) continue;
-        GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)i; e.text = players_[i].name;
+        GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)i; e.b = (uint8_t)players_[i].model; e.text = players_[i].name;
         sendEvent(id, e);
         if (!players_[i].rankId.empty()) { GameEvent r; r.type = EV_RANKINFO; r.a = (uint8_t)i; r.text = players_[i].rankId; sendEvent(id, r); }
     }
-    GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.text = name;
+    GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = (uint8_t)p.model; e.text = name;
     broadcastEvent(e);
     GameEvent noRank; noRank.type = EV_RANKINFO; noRank.a = (uint8_t)id; // the slot's previous owner's id is gone
     broadcastEvent(noRank);
@@ -463,7 +463,13 @@ void Server::handleStringCmd(int id, const std::string& s) {
         if (rest == p.name) return;
         message(p.name + " is now " + rest);
         p.name = rest;
-        GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.text = rest;
+        GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = (uint8_t)p.model; e.text = rest;
+        broadcastEvent(e);
+    } else if (cmd == "model") { // cosmetic only: same hitbox for every model
+        int mdl = std::atoi(rest.c_str());
+        if (mdl < 0 || mdl >= kPlayerModels || mdl == p.model) return;
+        p.model = mdl;
+        GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = (uint8_t)p.model; e.text = p.name;
         broadcastEvent(e);
     } else if (cmd == "callvote") {
         std::istringstream vs(rest);
@@ -1325,7 +1331,8 @@ int Server::addBot(int team, int skill, bool balance) {
     bots_[id].skill = skill;
     bots_[id].rng = 0x9E3779B9u ^ (uint32_t)(id * 2654435761u) ^ tick_;
     { GameEvent r; r.type = EV_RANKINFO; r.a = (uint8_t)id; broadcastEvent(r); }
-    GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.text = p.name;
+    p.model = (int)(bots_[id].rng % kPlayerModels); // bots: a mix of looks
+    GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = (uint8_t)p.model; e.text = p.name;
     broadcastEvent(e);
     message(p.name + " (" + botSkillName(skill) + ") joined " + (team == TEAM_B ? "team B" : modeIsTeamBased(cfg_.mode) ? "team A" : "the game"));
     if (rulesRespawnDelay(*this) >= 0) p.respawnAt = time() + 0.5f;

@@ -3,6 +3,7 @@
 #include <string>
 #include "../common/qmath.h"
 #include "binds.h"
+#include "../game/gamedefs.h"
 
 struct Settings {
     std::string name = "player";
@@ -15,6 +16,14 @@ struct Settings {
     int maxFps = 0;             // 0 = unlimited
     int width = 1280, height = 720;
     bool shadows = true;
+    int model = 0;              // player model (cosmetic): STANDARD, HEAVY, SCOUT, ROBOT, KNIGHT
+    int soundPack = 0;          // STANDARD, ARCADE, HEAVY, RETRO, SOFT
+    int socd = 0;               // opposite movement keys held together: 0 cancel out, 1 last pressed wins, 2 first pressed wins
+    bool altToggle = false;     // alt-fire (scope) toggles on a tap instead of hold
+    bool hudVerbose = false;    // the info block top right (clock, version, fps min, speed, players alive, ...)
+    bool hudWidgets = true;
+    // per-mode rules: a huds/ or controls/ profile file used automatically in that mode ("" = your default)
+    std::string modeHud[MODE_COUNT], modeCtl[MODE_COUNT];     // draw the widgets from hud.cfg
     int msaa = 0;               // anti-aliasing: 0 off, 1 smooth edges (FXAA-style pass), 2 / 4 MSAA
     float volume = 0.6f;
     bool hitsounds = true;

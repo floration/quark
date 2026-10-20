@@ -3,10 +3,13 @@
 #include <array>
 #include "game.h"
 #include "openurl.h"
+#include "profiles.h"
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <cstdio>
 #include "../game/gamemodes.h"
+
+static std::string hudCfgPath() { return findDataPath("maps") + "/../hud.cfg"; } // scriptable widgets, next to quark.cfg
 
 namespace {
 const Color kWhite = {1, 1, 1, 1};
@@ -332,7 +335,7 @@ int Game::bestMapFor(int mode) const {
 
 bool Game::isDown(int action) const {
     for (int k = 0; k < 2; k++) {
-        int c = cfg_.binds.code[action][k];
+        int c = binds().code[action][k];
         if (c >= kMouseCode && c < kMouseCode + 16) { if (glfwGetMouseButton(win_, c - kMouseCode) == GLFW_PRESS) return true; }
         else if (c > 0 && c < kMouseCode && glfwGetKey(win_, c) == GLFW_PRESS) return true;
         else if ((c == kWheelUp || c == kWheelDown) && timeNow() < wheelHeldUntil_[c - kWheelUp]) return true;
@@ -356,7 +359,7 @@ bool Game::pressInput(int code) {
         cfg_.save();
         return true;
     }
-    const Binds& b = cfg_.binds;
+    const Binds& b = binds();
     if (b.has(A_PERF, code)) { showPerf_ = !showPerf_; return true; }
     if (b.has(A_SCREENSHOT, code)) {
         static int n = 0;
@@ -440,6 +443,8 @@ void Game::onKey(int key, int action, int mods) {
             return;
         }
         if (key == GLFW_KEY_ESCAPE) {
+            if (filePick_) { filePick_ = 0; return; }
+            if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
             if (controlsOpen_ || crosshairOpen_ || hudOpen_) { controlsOpen_ = crosshairOpen_ = hudOpen_ = false; cfg_.save(); return; }
             if (settingsInGame_) { settingsInGame_ = false; cfg_.save(); return; }
             if (voteMenu_ || picker_ != PICK_NONE) { voteMenu_ = false; picker_ = PICK_NONE; return; }
@@ -449,6 +454,8 @@ void Game::onKey(int key, int action, int mods) {
         }
     } else if (key == GLFW_KEY_ESCAPE) {
         uiIn_.escape = true;
+        if (filePick_) { filePick_ = 0; return; }
+        if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
         if (controlsOpen_ || crosshairOpen_ || hudOpen_) { controlsOpen_ = crosshairOpen_ = hudOpen_ = false; cfg_.save(); return; }
         if (picker_ != PICK_NONE) { picker_ = PICK_NONE; return; }
         if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::Settings || screen_ == Screen::VsBots || screen_ == Screen::Leaderboard) {
@@ -524,11 +531,20 @@ UserCmd Game::buildCmd() {
     c.pitch = pitch_;
     bool block = paused_ || chatting_ || screen_ != Screen::InGame;
     if (block) return c;
-    int f = 0, s = 0;
-    if (isDown(A_FORWARD)) f += 127;
-    if (isDown(A_BACK)) f -= 127;
-    if (isDown(A_RIGHT)) s += 127;
-    if (isDown(A_LEFT)) s -= 127;
+    // Opposite movement keys held together (SOCD): cancel out (default), or the last / first pressed wins.
+    // Ranked always uses the default.
+    bool ranked = net_.hasSnapshot() && (net_.mode().flags & MS_RANKED);
+    int socd = ranked ? 0 : modeCtlActive_ ? modeSocd_ : cfg_.socd;
+    auto axis = [&](int pos, int neg, int& lastDir, bool& pPrev, bool& nPrev) {
+        bool p = isDown(pos), n = isDown(neg);
+        if (p && !pPrev) lastDir = 1;   // which key went down most recently
+        if (n && !nPrev) lastDir = -1;
+        pPrev = p; nPrev = n;
+        if (p && n) return socd == 1 ? lastDir * 127 : socd == 2 ? -lastDir * 127 : 0;
+        return p ? 127 : n ? -127 : 0;
+    };
+    int f = axis(A_FORWARD, A_BACK, socdLastF_, socdPrev_[0], socdPrev_[1]);
+    int s = axis(A_RIGHT, A_LEFT, socdLastS_, socdPrev_[2], socdPrev_[3]);
     c.forward = (int8_t)clampf((float)f, -127, 127);
     c.side = (int8_t)clampf((float)s, -127, 127);
     if (isDown(A_JUMP)) c.buttons |= BTN_JUMP;
@@ -540,7 +556,14 @@ UserCmd Game::buildCmd() {
         else c.weapon = (uint8_t)desiredWeapon_;
     }
     if (isDown(A_FIRE) || fireLatched_) c.buttons |= BTN_FIRE;
-    if (isDown(A_ALTFIRE)) c.buttons |= BTN_ALTFIRE;
+    bool alt = isDown(A_ALTFIRE);
+    if ((modeCtlActive_ ? modeAlt_ : cfg_.altToggle) && !ranked) { // tap to toggle alt-fire (scope) instead of holding it
+        if (alt && !altPrev_) altToggled_ = !altToggled_;
+        altPrev_ = alt;
+        if (desiredWeapon_ >= 0 || !net_.selfAlive()) altToggled_ = false; // switching weapons / dying drops the scope
+        alt = altToggled_;
+    }
+    if (alt) c.buttons |= BTN_ALTFIRE;
     fireLatched_ = false;
     if (opts_.debugWeapon >= 1 && opts_.debugWeapon <= WPN_COUNT) c.weapon = (uint8_t)(opts_.debugWeapon - 1);
     if (opts_.debugScope) c.buttons |= BTN_ALTFIRE;
@@ -657,8 +680,18 @@ void Game::frame(double dt) {
     time_ += dt;
     if (opts_.debugPerf) { showPerf_ = true; if (pendingInput_ < 0) pendingInput_ = timeNow(); }
     if (opts_.debugPause && screen_ == Screen::InGame && !paused_) { paused_ = true; voteMenu_ = opts_.debugVote; opts_.debugPause = false; }
-    if (opts_.debugSettings && screen_ == Screen::InGame && !settingsInGame_) { paused_ = true; settingsInGame_ = true; controlsOpen_ = opts_.debugControls; crosshairOpen_ = opts_.debugCrosshair; opts_.debugSettings = false; }
+    if (opts_.debugSettings && screen_ == Screen::InGame && !settingsInGame_) { paused_ = true; settingsInGame_ = true; controlsOpen_ = opts_.debugControls; crosshairOpen_ = opts_.debugCrosshair; widgetEdit_ = opts_.debugWidgets; widgetSel_ = opts_.debugWidgets ? 0 : -1; opts_.debugSettings = false; }
     r_.setMsaa(cfg_.msaa);
+    {   // per-mode HUD / controls rules follow the running mode (back to your defaults outside a game)
+        // ranked never takes a rule: the default HUD and your own binds, no control scripts
+        int m = net_.state() == ConnState::Connected && net_.hasSnapshot() && !(net_.mode().flags & MS_RANKED) ? (int)net_.mode().mode : -1;
+        if (m != appliedMode_) applyModeRules(m);
+    }
+    if (net_.state() == ConnState::Connected && net_.hasSnapshot() && net_.playerModel(net_.clientId()) != cfg_.model && time_ >= modelSentAt_ + 1.0) {
+        net_.sendCommand("model " + std::to_string(cfg_.model)); // everyone sees your pick (cosmetic only)
+        modelSentAt_ = time_;
+    }
+    if (audio_.pack() != cfg_.soundPack) audio_.setPack(cfg_.soundPack);
     frameInput_ = pendingInput_; // the oldest input this frame will show
     pendingInput_ = -1;
     if (opts_.bench > 0 && screen_ == Screen::InGame) benchFrame(dt);
@@ -878,12 +911,49 @@ void Game::drawWorld(float alpha) {
         float sv = sunVisibility(map, pos + Vec3(0, 1.0f * hs * bs, 0));
         bool vis = !firstPerson;
         auto at = [&](float h) { return pos + Vec3(0, h * hs * bs, 0); };
-        r_.box(at(0.45f), Vec3(0.28f, 0.45f * hs, 0.2f) * bs, yaw, col * 0.55f, sv, true, vis);
-        r_.box(at(1.15f), Vec3(0.38f, 0.28f * hs, 0.24f) * bs, yaw, col, sv, true, vis);
-        r_.box(pos + Vec3(0, 1.6f * hs * bs, 0), Vec3(0.2f, 0.18f, 0.2f) * bs, yaw, col * 1.15f, sv, true, vis);
+        Vec3 fwd = {-std::sin(yaw), 0, -std::cos(yaw)}, rgt = {std::cos(yaw), 0, -std::sin(yaw)};
+        // the player model (cosmetic: every model fits the same hitbox)
+        auto part = [&](const Vec3& c, const Vec3& half, const Vec3& colr, bool shadow = true) { r_.box(c, half * bs, yaw, colr, sv, shadow, vis); };
+        const Vec3 grey = {0.32f, 0.33f, 0.36f}, dark = {0.05f, 0.05f, 0.06f};
+        switch (net_.playerModel(i)) {
+            case 1: // HEAVY: wide armoured body, shoulder pads, small helmet
+                part(at(0.45f), Vec3(0.32f, 0.45f * hs, 0.24f), col * 0.45f);
+                part(at(1.15f), Vec3(0.44f, 0.3f * hs, 0.28f), col);
+                for (float sd : {-1.0f, 1.0f}) part(at(1.38f) + rgt * (sd * 0.42f * bs), Vec3(0.14f, 0.1f, 0.22f), grey);
+                part(at(1.6f), Vec3(0.18f, 0.16f, 0.18f), col * 1.1f);
+                if (vis) part(at(1.6f) + fwd * (0.18f * bs), Vec3(0.15f, 0.04f, 0.02f), dark, false);
+                break;
+            case 2: // SCOUT: slim, tall head with a long glowing visor
+                part(at(0.47f), Vec3(0.22f, 0.47f * hs, 0.16f), col * 0.6f);
+                part(at(1.17f), Vec3(0.3f, 0.26f * hs, 0.18f), col);
+                part(at(1.63f), Vec3(0.17f, 0.2f, 0.17f), col * 1.2f);
+                if (vis) part(at(1.66f) + fwd * (0.17f * bs), Vec3(0.17f, 0.035f, 0.02f), col * 1.8f + Vec3(0.3f, 0.3f, 0.3f), false);
+                break;
+            case 3: // ROBOT: grey frame, team-coloured chest, cube head, glowing eye, antenna
+                part(at(0.45f), Vec3(0.26f, 0.45f * hs, 0.2f), grey * 0.8f);
+                part(at(1.15f), Vec3(0.38f, 0.3f * hs, 0.26f), grey);
+                if (vis) part(at(1.18f) + fwd * (0.26f * bs), Vec3(0.26f, 0.18f, 0.02f), col, false);
+                part(at(1.62f), Vec3(0.23f, 0.19f, 0.23f), grey * 1.15f);
+                if (vis) part(at(1.64f) + fwd * (0.23f * bs), Vec3(0.12f, 0.035f, 0.02f), col * 2.0f + Vec3(0.4f, 0.4f, 0.4f), false);
+                part(at(1.9f), Vec3(0.02f, 0.1f, 0.02f), grey, false);
+                part(at(2.0f), Vec3(0.045f, 0.045f, 0.045f), col * 1.8f, false);
+                break;
+            case 4: // KNIGHT: plate armour, team tabard, crested helmet with a visor slit
+                part(at(0.45f), Vec3(0.27f, 0.45f * hs, 0.2f), grey * 0.85f);
+                part(at(1.15f), Vec3(0.4f, 0.3f * hs, 0.25f), grey);
+                if (vis) part(at(1.05f) + fwd * (0.25f * bs), Vec3(0.2f, 0.36f, 0.02f), col, false);
+                part(at(1.6f), Vec3(0.21f, 0.2f, 0.21f), grey * 1.1f);
+                part(at(1.86f), Vec3(0.03f, 0.08f, 0.19f), col * 1.1f, false);
+                if (vis) part(at(1.62f) + fwd * (0.21f * bs), Vec3(0.15f, 0.025f, 0.02f), dark, false);
+                break;
+            default: // STANDARD
+                part(at(0.45f), Vec3(0.28f, 0.45f * hs, 0.2f), col * 0.55f);
+                part(at(1.15f), Vec3(0.38f, 0.28f * hs, 0.24f), col);
+                part(pos + Vec3(0, 1.6f * hs * bs, 0), Vec3(0.2f, 0.18f, 0.2f), col * 1.15f);
+                if (vis) part(at(1.62f) + fwd * (0.2f * bs), Vec3(0.16f, 0.05f, 0.02f), dark, false);
+                break;
+        }
         if (vis) {
-            Vec3 fwd = {-std::sin(yaw), 0, -std::cos(yaw)};
-            r_.box(at(1.62f) + fwd * (0.2f * bs), Vec3(0.16f, 0.05f, 0.02f) * bs, yaw, {0.05f, 0.05f, 0.06f}, sv, false);
             Vec3 shoulder = at(1.3f) + Vec3(std::cos(yaw), 0, -std::sin(yaw)) * (0.3f * bs);
             r_.boxPitched(shoulder, Vec3(0, 0, -0.35f) * bs, Vec3(0.06f, 0.07f, 0.35f) * bs, yaw, pitch, {0.12f, 0.12f, 0.14f}, sv);
             if ((p.flags & PS_HASBOMB) && !isItMode(net_.mode().mode))
@@ -1240,7 +1310,7 @@ void Game::drawHud() {
     switch (ms.phase) {
         case PHASE_WARMUP:
             phase = ms.timeLeft > 0 ? "MATCH STARTS IN " + std::to_string((int)std::ceil(ms.timeLeft))
-                                    : "WARMUP - " + inputName(cfg_.binds.code[A_VOTESTART][0]) + " TO VOTE START";
+                                    : "WARMUP - " + inputName(binds().code[A_VOTESTART][0]) + " TO VOTE START";
             break;
         case PHASE_FREEZE: // free for all is one long round: just the countdown
             phase = (ms.mode == MODE_FFA ? std::string("STARTING IN ") : "ROUND " + std::to_string(ms.round) + " - STARTS IN ") + std::to_string((int)std::ceil(ms.timeLeft));
@@ -1263,6 +1333,8 @@ void Game::drawHud() {
         float tw = r_.textWidth("RANKED", tts) + 12 * s; // tag on the panel's right edge, clear of the objective line
         r_.rect(cx + 224 * s, 8 * s, tw, r_.textHeight(tts) + 8 * s, gold);
         r_.text(cx + 230 * s, 12 * s, tts, "RANKED", {0.1f, 0.08f, 0.02f, 1});
+        if (ms.phase == PHASE_WARMUP || ms.phase == PHASE_FREEZE)
+            ui_.labelCentered(cx, 76 * s, "RANKED USES THE DEFAULT HUD AND CONTROLS FOR FAIRNESS", gold, 0.5f);
     }
     ui_.labelCentered(cx, 16 * s, title, kWhite);
     ui_.labelCentered(cx, 16 * s + 22 * s, phase, kGrey);
@@ -1310,7 +1382,7 @@ void Game::drawHud() {
         int a = 2 * bracketMatch_ < (int)r.size() ? r[2 * bracketMatch_] : -1, b = 2 * bracketMatch_ + 1 < (int)r.size() ? r[2 * bracketMatch_ + 1] : -1;
         obj = (a >= 0 ? bracketNames_[a] : "?") + " VS " + (b >= 0 ? bracketNames_[b] : "?") + " - FIRST TO " + std::to_string(ms.roundsToWin);
     } else if (ms.mode == MODE_TOURNEY && ms.phase == PHASE_WARMUP) {
-        obj = "TOURNEY - VOTE START (" + inputName(cfg_.binds.code[A_VOTESTART][0]) + "), PICK MAPS AND RULESETS IN THE VOTE MENU";
+        obj = "TOURNEY - VOTE START (" + inputName(binds().code[A_VOTESTART][0]) + "), PICK MAPS AND RULESETS IN THE VOTE MENU";
     } else if (ms.mode == MODE_DUEL && ms.phase != PHASE_WARMUP && ms.duelMod < DUEL_MOD_COUNT) {
         obj = std::string("THIS LIFE: ") + duelModTitle(ms.duelMod);
     }
@@ -1407,8 +1479,16 @@ void Game::drawHud() {
         ui_.labelCentered(cx, H - 60 * s, t, kGrey);
     }
 
-    // kill feed (top right)
+    // kill feed (top right), under the verbose info block; hud.cfg widgets. Ranked: the default HUD only.
     float y = 12 * s;
+    if (!rankedGame) {
+        if (cfg_.hudVerbose || cfg_.hudWidgets) computeHudVals();
+        if (cfg_.hudVerbose) drawVerboseHud(W, s, y);
+        if (cfg_.hudWidgets && !widgetEdit_) {
+            widgets_.poll(activeHudPath());
+            if (!widgets_.empty()) widgets_.draw(r_, hudVals_, W, H, s);
+        }
+    }
     while (!killFeed_.empty() && killFeed_.front().until < time_) killFeed_.pop_front();
     for (auto& k : killFeed_) {
         float tw = r_.textWidth(k.text, ts);
@@ -1486,6 +1566,288 @@ void Game::updateRanked() {
 }
 
 // Top players of each ranked ladder (from the ranking server), refreshed every 30 s while open.
+
+std::string Game::activeHudPath() const { return modeHudPath_.empty() ? hudCfgPath() : modeHudPath_; }
+
+void Game::applyModeRules(int mode) {
+    appliedMode_ = mode;
+    std::string hud = mode >= 0 ? cfg_.modeHud[mode] : "", ctl = mode >= 0 ? cfg_.modeCtl[mode] : "";
+    modeHudPath_ = hud.empty() ? "" : profileDir("huds") + "/" + hud;
+    widgets_ = HudWidgets{}; // forces a reload from the new path
+    modeCtlActive_ = false;
+    if (!ctl.empty()) {
+        modeBinds_ = cfg_.binds; modeSocd_ = cfg_.socd; modeAlt_ = cfg_.altToggle;
+        modeCtlActive_ = controlsFromText(readTextFile(profileDir("controls") + "/" + ctl), modeBinds_, modeSocd_, modeAlt_);
+    }
+}
+
+// The .cfg files in huds/ or controls/ as buttons; returns true with the clicked name.
+bool Game::drawFileList(const char* sub, float x, float y, float w, std::string& picked) {
+    float s = ui_.s(), h = 22 * s, gap = 3 * s;
+    auto files = listProfiles(sub);
+    ui_.panel(x - 8 * s, y - 8 * s, w + 16 * s, (std::min<int>((int)files.size(), 14) + 2) * (h + gap) + 24 * s, 0.95f);
+    ui_.label(x, y, files.empty() ? std::string("NO FILES IN ") + upper(sub) + "/ - USE OPEN FOLDER" : "PICK A FILE TO IMPORT", kWhite, 0.5f);
+    y += 16 * s;
+    for (int i = 0; i < (int)files.size() && i < 14; i++, y += h + gap)
+        if (ui_.button(x, y, w, h, upper(files[i]))) { picked = files[i]; filePick_ = 0; return true; }
+    if (ui_.button(x, y, w, h, "CANCEL")) filePick_ = 0;
+    return false;
+}
+
+// "In <mode> use <profile>" for HUD layouts (hud) or control profiles.
+void Game::ruleRow(float x, float y, float w, float h, bool hud) {
+    float gap = 5 * ui_.s(), mw = w * 0.35f;
+    std::vector<std::string> mn;
+    for (int m = 0; m < MODE_COUNT; m++) mn.push_back(std::string("IN ") + upper(modeName(m)));
+    ui_.cycle(x, y, mw, h, "MODE", ruleMode_, MODE_COUNT, mn);
+    auto files = listProfiles(hud ? "huds" : "controls");
+    std::string& rule = hud ? cfg_.modeHud[ruleMode_] : cfg_.modeCtl[ruleMode_];
+    std::vector<std::string> fn = {hud ? "MY HUD" : "MY CONTROLS"};
+    int cur = 0;
+    for (auto& f : files) { fn.push_back(upper(f)); if (f == rule) cur = (int)fn.size() - 1; }
+    if (!rule.empty() && cur == 0) { fn.push_back(upper(rule) + " (MISSING)"); cur = (int)fn.size() - 1; }
+    if (ui_.cycle(x + mw + gap, y, w - mw - gap, h, "PROFILE", cur, (int)fn.size(), fn)) {
+        rule = cur == 0 || cur > (int)files.size() ? "" : files[cur - 1];
+        cfg_.save();
+        appliedMode_ = -2; // re-apply now
+    }
+    ui_.label(x, y + h + 3 * ui_.s(), "MODE RULES NEVER APPLY IN RANKED (DEFAULT HUD + CONTROLS)", {0.7f, 0.72f, 0.75f, 1}, 0.5f);
+}
+
+void Game::computeHudVals() {
+    HudVals& h = hudVals_;
+    const ModeState& ms = net_.mode();
+    const PlayerSnap* mep = net_.findPlayer(net_.clientId());
+    const MoveState& mv = net_.predicted();
+    auto set = [&](int i, float v, float mx) { h.v[i] = v; h.max[i] = mx; };
+    set(HV_HEALTH, (float)net_.selfHealth(), 100);
+    set(HV_SPEED, std::sqrt(mv.vel.x * mv.vel.x + mv.vel.z * mv.vel.z), 40);
+    set(HV_DASH, 100.0f * (1.0f - clampf(mv.dashCooldown / kDashCooldown, 0, 1)), 100);   // % ready
+    set(HV_HOOK, 100.0f * (1.0f - clampf(mv.hookCooldown / kHookCooldown, 0, 1)), 100);
+    {   // fps over the last second: average and the worst frame
+        double sum = 0, worst = 0;
+        int n = 0;
+        size_t N = frameTimes_.size();
+        for (size_t k = 1; k <= frameCount_ && sum < 1.0; k++) {
+            float dt = frameTimes_[(frameIdx_ + N - k) % N];
+            sum += dt; worst = std::max<double>(worst, dt); n++;
+        }
+        set(HV_FPS, sum > 0 ? (float)std::lround(n / sum) : 0, 500);
+        set(HV_FPSMIN, worst > 0 ? (float)std::lround(1.0 / worst) : 0, 500);
+    }
+    set(HV_PING, mep ? (float)mep->ping : 0, 200);
+    set(HV_LOSS, (float)net_.snapshotLoss(), 100);
+    set(HV_TIME, std::max(0.0f, ms.timeLeft), 600);
+    set(HV_ROUNDTIME, std::max(0.0f, ms.timeLeft), 600);
+    int myTeam = mep ? mep->team() : TEAM_A, enemies = 0, mates = 0;
+    bool team = modeIsTeamBased(ms.mode);
+    for (auto& p : net_.latest().players) {
+        if (p.team() == TEAM_SPECTATOR || !(p.flags & PS_ALIVE) || (mep && p.id == mep->id)) continue;
+        if (team && p.team() == myTeam) mates++; else enemies++;
+    }
+    set(HV_ENEMIES, (float)enemies, std::max(1, enemies));
+    set(HV_TEAMMATES, (float)mates, std::max(1, mates));
+    set(HV_KILLS, mep ? mep->kills : 0, 25);
+    set(HV_DEATHS, mep ? mep->deaths : 0, 25);
+    set(HV_SCORE, mep ? mep->score : 0, std::max(1, (int)ms.target));
+    set(HV_TICKRATE, (float)net_.tickRate(), 1000);
+}
+
+// Dense info block, top right: one line per value, label left / value right, all snprintf into one buffer.
+void Game::drawVerboseHud(float W, float s, float& y) {
+    const HudVals& h = hudVals_;
+    const ModeState& ms = net_.mode();
+    float ts = std::max(1.0f, std::round(ui_.textScale() * 0.5f));
+    float lh = r_.textHeight(ts) + 3 * s, colW = 190 * s, x = W - colW - 12 * s;
+    char clock[16];
+    {
+        time_t t = ::time(nullptr);
+        struct tm lt;
+#ifdef _WIN32
+        localtime_s(&lt, &t);
+#else
+        localtime_r(&t, &lt);
+#endif
+        strftime(clock, sizeof clock, "%H:%M:%S", &lt);
+    }
+    char b[14][40];
+    int n = 0;
+    const char* lab[14];
+    auto line = [&](const char* l, const char* fmt, auto... a) { lab[n] = l; snprintf(b[n], sizeof b[n], fmt, a...); n++; };
+    line("TIME", "%s", clock);
+    line("VERSION", "%s", QUARK_VERSION);
+    line("FPS", "%.0f", h.v[HV_FPS]);
+    line("FPS MIN (1S)", "%.0f", h.v[HV_FPSMIN]);
+    line("SPEED", "%.1f", h.v[HV_SPEED]);
+    line("PING", "%.0f MS", h.v[HV_PING]);
+    line("LOSS", "%.0f%%", h.v[HV_LOSS]);
+    line("TICK / SNAP", "%d / %d", net_.tickRate(), net_.snapRate());
+    line("ENEMIES ALIVE", "%.0f", h.v[HV_ENEMIES]);
+    if (modeIsTeamBased(ms.mode)) line("TEAMMATES ALIVE", "%.0f", h.v[HV_TEAMMATES]);
+    line("ROUND TIME", "%d:%02d", (int)h.v[HV_TIME] / 60, (int)h.v[HV_TIME] % 60);
+    line("MAP", "%s", net_.map().name.c_str());
+    line("MODE", "%s", modeTitle(ms.mode));
+    line("K / D", "%.0f / %.0f", h.v[HV_KILLS], h.v[HV_DEATHS]);
+    r_.rect(x - 8 * s, y - 4 * s, colW + 8 * s, n * lh + 6 * s, {0, 0, 0, 0.45f});
+    for (int i = 0; i < n; i++) {
+        r_.text(x, y, ts, lab[i], {0.7f, 0.72f, 0.75f, 1});
+        r_.text(x + colW - 8 * s - r_.textWidth(b[i], ts), y, ts, b[i], kWhite);
+        y += lh;
+    }
+    y += 8 * s;
+}
+
+// Widget editor: the widgets drawn live on screen, click to select, drag to move (re-anchors to the nearest
+// corner so layouts survive resolution changes), and a panel to pick value / style / colours.
+void Game::drawWidgetEditor() {
+    const float W = (float)r_.width(), H = (float)r_.height(), s = ui_.s();
+    widgets_.poll(activeHudPath());
+    computeHudVals();
+    HudVals preview = hudVals_;
+    for (int i = 0; i < HV_COUNT; i++) if (preview.v[i] == 0) preview.v[i] = std::round(preview.max[i] * 0.65f); // something to look at in menus
+    auto& L = widgets_.list();
+    if (widgetSel_ >= (int)L.size()) widgetSel_ = -1;
+    float pw = 380 * s, px = W - pw - 16 * s, py = 16 * s, h = 24 * s, gap = 5 * s;
+    bool overPanel = uiIn_.mx > px - 12 * s;
+    // select / drag
+    if (uiIn_.pressed && !overPanel) {
+        widgetSel_ = -1;
+        for (int i = (int)L.size() - 1; i >= 0; i--) {
+            float x, y, fw, fh;
+            widgets_.bounds(L[i], preview, r_, W, H, s, x, y, fw, fh);
+            if (uiIn_.mx >= x - 4 && uiIn_.mx <= x + fw + 4 && uiIn_.my >= y - 4 && uiIn_.my <= y + fh + 4) {
+                widgetSel_ = i; widgetDrag_ = true; dragDX_ = uiIn_.mx - x; dragDY_ = uiIn_.my - y;
+                break;
+            }
+        }
+    }
+    if (!uiIn_.down) widgetDrag_ = false;
+    if (widgetDrag_ && widgetSel_ >= 0) {
+        float x, y, fw, fh;
+        widgets_.bounds(L[widgetSel_], preview, r_, W, H, s, x, y, fw, fh);
+        HudWidgets::setFromScreen(L[widgetSel_], uiIn_.mx - dragDX_, uiIn_.my - dragDY_, fw, fh, W, H, s);
+    }
+    r_.rect(W * 0.5f - 0.5f, 0, 1, H, {1, 1, 1, 0.08f}); // centre guides
+    r_.rect(0, H * 0.5f - 0.5f, W, 1, {1, 1, 1, 0.08f});
+    widgets_.draw(r_, preview, W, H, s);
+    for (int i = 0; i < (int)L.size(); i++) { // outline every widget, the selected one in the accent colour
+        float x, y, fw, fh;
+        widgets_.bounds(L[i], preview, r_, W, H, s, x, y, fw, fh);
+        Color c = i == widgetSel_ ? ui_.accent : Color{1, 1, 1, 0.25f};
+        r_.rect(x - 3, y - 3, fw + 6, 1, c); r_.rect(x - 3, y + fh + 2, fw + 6, 1, c);
+        r_.rect(x - 3, y - 3, 1, fh + 6, c); r_.rect(x + fw + 2, y - 3, 1, fh + 6, c);
+    }
+
+    // panel
+    int rows = widgetSel_ >= 0 ? 17 : 5;
+    ui_.panel(px - 12 * s, py - 12 * s, pw + 24 * s, rows * (h + gap) + 40 * s);
+    ui_.label(px, py, "CLICK A WIDGET TO EDIT, DRAG TO MOVE. IMPORT/EXPORT = CLIPBOARD", kWhite, 0.5f);
+    float y = py + 18 * s, hw = pw * 0.5f - gap * 0.5f;
+    if (ui_.button(px, y, hw, h, "ADD WIDGET")) {
+        HudWidget w;
+        w.anchor = 4; w.y = 120;
+        L.push_back(w);
+        widgetSel_ = (int)L.size() - 1;
+    }
+    if (ui_.button(px + hw + gap, y, hw, h, "DUPLICATE", widgetSel_ >= 0)) {
+        HudWidget w = L[widgetSel_];
+        w.y += w.anchor >= 2 && w.anchor <= 3 ? -24 : 24;
+        L.push_back(w);
+        widgetSel_ = (int)L.size() - 1;
+    }
+    y += h + gap;
+    float tw = (pw - 2 * gap) / 3;
+    if (ui_.button(px, y, tw, h, "IMPORT")) { // a layout on the clipboard wins, else pick a file from huds/
+        const char* clip = glfwGetClipboardString(win_);
+        HudWidgets t;
+        int n = clip ? t.fromText(clip) : 0;
+        if (n > 0) { L = t.list(); widgetSel_ = -1; widgetMsg_ = "IMPORTED " + std::to_string(n) + " WIDGETS FROM CLIPBOARD"; widgetMsgUntil_ = time_ + 3; }
+        else filePick_ = 1;
+    }
+    if (ui_.button(px + tw + gap, y, tw, h, "EXPORT")) { // clipboard + a file in huds/
+        std::string text = widgets_.toText(), name = stampedName("hud");
+        glfwSetClipboardString(win_, text.c_str());
+        bool ok = writeTextFile(profileDir("huds") + "/" + name, text);
+        widgetMsg_ = ok ? "COPIED + SAVED HUDS/" + upper(name) : "COPIED (COULDN'T WRITE FILE)";
+        widgetMsgUntil_ = time_ + 4;
+    }
+    if (ui_.button(px + 2 * (tw + gap), y, tw, h, "FOLDER")) openUrl(profileDir("huds"));
+    y += h + gap;
+    if (ui_.button(px, y, hw, h, "CLEAR ALL")) { L.clear(); widgetSel_ = -1; }
+    if (ui_.button(px + hw + gap, y, hw, h, "SAVE + DONE")) {
+        widgets_.save(activeHudPath());
+        cfg_.hudWidgets = true;
+        widgetEdit_ = false; widgetSel_ = -1;
+        cfg_.save();
+        return;
+    }
+    y += h + gap;
+    if (filePick_ == 1) {
+        std::string f;
+        if (drawFileList("huds", px, y + 4 * s, pw, f)) {
+            HudWidgets t;
+            int n = t.fromText(readTextFile(profileDir("huds") + "/" + f));
+            if (n > 0) L = t.list();
+            widgetSel_ = -1;
+            widgetMsg_ = n > 0 ? "IMPORTED " + upper(f) : upper(f) + " HAS NO WIDGETS";
+            widgetMsgUntil_ = time_ + 3;
+        }
+        return;
+    }
+    if (time_ < widgetMsgUntil_) ui_.label(px, y, widgetMsg_, ui_.accent, 0.5f);
+    else if (!widgets_.error().empty()) ui_.label(px, y, widgets_.error(), kRed, 0.5f);
+    y += 16 * s;
+    if (widgetSel_ < 0) return;
+    HudWidget& w = L[widgetSel_];
+    if (ui_.button(px, y, pw, h, std::string("VALUE: ") + upper(hudValueName(w.value)) + (valueDrop_ ? "  ^" : "  V"))) valueDrop_ = !valueDrop_;
+    y += h + gap;
+    if (valueDrop_) { // dropdown: every value in a 2-column grid; modal until one is picked
+        float cw = pw * 0.5f - gap * 0.5f, rh = 22 * s;
+        int rowsN = (HV_COUNT + 1) / 2;
+        ui_.panel(px - 4 * s, y - 4 * s, pw + 8 * s, rowsN * (rh + 3 * s) + 8 * s, 0.97f);
+        for (int i = 0; i < HV_COUNT; i++) {
+            float bx = px + (i % 2) * (cw + gap), by = y + (i / 2) * (rh + 3 * s);
+            if (ui_.button(bx, by, cw, rh, (i == w.value ? "> " : "") + upper(hudValueName(i)))) { w.value = i; valueDrop_ = false; }
+        }
+        return;
+    }
+    static const std::vector<std::string> stn = {"STYLE: NUMBER", "STYLE: BAR", "STYLE: COLOUR-GRADED BAR", "STYLE: ICON (OPACITY)", "STYLE: ICON + BAR"};
+    int st = w.style;
+    if (ui_.cycle(px, y, pw, h, "STYLE", st, 5, stn)) w.style = (HudWidget::Style)st;
+    y += h + gap;
+    static const std::vector<std::string> icn = {"ICON: HEART", "ICON: BOLT", "ICON: HOOK", "ICON: SKULL", "ICON: STAR", "ICON: SHIELD", "ICON: CLOCK", "ICON: EYE"};
+    ui_.cycle(px, y, pw, h, "ICON", w.icon, 8, icn);
+    y += h + gap;
+    ui_.slider(px, y, hw, h, "SIZE", w.size, 0.25f, 4, "%.2f");
+    ui_.slider(px + hw + gap, y, hw, h, "MAX (0=AUTO)", w.max, 0, 1000, "%.0f"); w.max = std::round(w.max);
+    y += h + gap;
+    ui_.slider(px, y, hw, h, "BAR W", w.w, 10, 600, "%.0f"); w.w = std::round(w.w);
+    ui_.slider(px + hw + gap, y, hw, h, "BAR H", w.h, 2, 60, "%.0f"); w.h = std::round(w.h);
+    y += h + gap;
+    auto rgba4 = [&](const char* name, Color& c) {
+        ui_.label(px, y + 4 * s, name, kWhite, 0.5f);
+        r_.rect(px + pw - 40 * s, y, 40 * s, h, c);
+        y += h + gap;
+        float sw = (pw - 3 * gap) / 4;
+        float* ch[4] = {&c.r, &c.g, &c.b, &c.a};
+        const char* nm[4] = {"R", "G", "B", "A"};
+        for (int i = 0; i < 4; i++) {
+            float v = *ch[i] * 255;
+            if (ui_.slider(px + i * (sw + gap), y, sw, h, nm[i], v, 0, 255, "%.0f")) *ch[i] = std::round(v) / 255;
+        }
+        y += h + gap;
+    };
+    rgba4("COLOUR (FULL)", w.color);
+    ui_.toggle(px, y, pw, h, "GRADE FROM LOW COLOUR", w.grade);
+    y += h + gap;
+    if (w.grade || w.style == HudWidget::GRADBAR) rgba4("LOW COLOUR (EMPTY)", w.low);
+    ui_.label(px, y + 4 * s, "LABEL", kWhite, 0.5f);
+    ui_.textField(40, px + 60 * s, y, pw - 60 * s, h, w.label, 24);
+    for (char& c : w.label) c = (char)toupper((unsigned char)c);
+    y += h + gap;
+    if (ui_.button(px, y, pw, h, "DELETE WIDGET")) { L.erase(L.begin() + widgetSel_); widgetSel_ = -1; }
+}
+
 void Game::drawLeaderboard(float cx, float y) {
     static const int ladders[3] = {0, 1, 5};
     float s = ui_.s(), colW = 300 * s, gap = 16 * s, w = 3 * colW + 2 * gap, x0 = cx - w * 0.5f;
@@ -1677,13 +2039,14 @@ void Game::drawPauseMenu(float cx, float y) {
 void Game::drawSettings(float x0, float y0, float wTotal) {
     if (controlsOpen_) { drawControls(x0, y0, wTotal); return; }
     if (crosshairOpen_) { drawCrosshairSettings(x0, y0, wTotal); return; }
+    if (widgetEdit_) { drawWidgetEditor(); return; }
     if (hudOpen_) { drawHudSettings(x0, y0, wTotal); return; }
     float s = ui_.s();
     float h = 32 * s, gap = 7 * s, colGap = 24 * s;
     float w = std::max(320 * s, wTotal * 0.5f);
     float x = x0 + wTotal * 0.5f - w - colGap * 0.5f; // two columns centred on the old area
     float xr = x + w + colGap;
-    ui_.panel(x - 16 * s, y0 - 16 * s, w * 2 + colGap + 32 * s, 10 * (h + gap) + 150 * s);
+    ui_.panel(x - 16 * s, y0 - 16 * s, w * 2 + colGap + 32 * s, 11 * (h + gap) + 150 * s);
 
     // --- left column: player, mouse, colors
     float y = y0;
@@ -1737,6 +2100,14 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     y += h + gap;
     if (ui_.slider(x, y, w * 0.6f, h, "VOLUME", cfg_.volume, 0, 1, "%.2f")) audio_.setMasterVolume(cfg_.volume);
     ui_.toggle(x + w * 0.6f + gap, y, w * 0.4f - gap, h, "HITSOUND", cfg_.hitsounds);
+    y += h + gap;
+    {   // cosmetics: player model (everyone sees it) and sound pack
+        std::vector<std::string> mn;
+        for (int i = 0; i < kPlayerModels; i++) mn.push_back(playerModelName(i));
+        static const std::vector<std::string> sn = {"STANDARD SFX", "ARCADE SFX", "HEAVY SFX", "RETRO SFX", "SOFT SFX"};
+        ui_.cycle(x, y, w * 0.5f - gap * 0.5f, h, "MODEL", cfg_.model, kPlayerModels, mn);
+        ui_.cycle(x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "SOUNDS", cfg_.soundPack, 5, sn);
+    }
 
     // --- right column: display + latency
     y = y0;
@@ -1895,7 +2266,10 @@ void Game::drawMenu() {
                     if (ui_.button(lx, y, lw, bh, std::string("MODE: RANKED 1V1 - ") + arenaVariant(ladders[k]).title + "  >")) picker_ = PICK_HOST_MODE;
                 } else if (ui_.button(lx, y, lw, bh, std::string("MODE: ") + modeTitle(hostModeIdx_) + (hostModeIdx_ == MODE_ARENA || hostModeIdx_ == MODE_TOURNEY ? std::string(" - ") + arenaVariant(cfg_.hostArenaVariant).title : "") + "  >")) picker_ = PICK_HOST_MODE;
                 y += bh + gap;
-                if (cfg_.hostRanked) ui_.label(lx, y, "RANKED MAPS ONLY - EACH LADDER HAS ITS OWN RATING", kGrey, 0.5f);
+                if (cfg_.hostRanked) {
+                    ui_.label(lx, y, "RANKED MAPS ONLY - EACH LADDER HAS ITS OWN RATING", kGrey, 0.5f);
+                    ui_.label(lx, y + 12 * s, "FAIRNESS: DEFAULT HUD, NO CONTROL SCRIPTS OR MODE RULES", kGrey, 0.5f);
+                }
                 else if (!m.supportsMode(hostModeIdx_)) ui_.label(lx, y, "THIS MAP DOES NOT SUPPORT THAT MODE", kRed);
                 else if (hostModeIdx_ == MODE_DUEL && ui_.button(lx, y - 2 * s, lw, 24 * s, cfg_.hostDuelSize == 2 ? "TEAMS: 2V2 (CLICK FOR 1V1)" : "TEAMS: 1V1 (CLICK FOR 2V2)"))
                     cfg_.hostDuelSize = cfg_.hostDuelSize == 2 ? 1 : 2;
@@ -2126,13 +2500,24 @@ void Game::afterSwap() {
 // Esc cancels, Backspace or Delete clears the slot.
 void Game::drawControls(float x0, float y0, float wTotal) {
     float s = ui_.s();
+    if (filePick_ == 2) {
+        std::string f;
+        float fw = std::max(330 * s, wTotal * 0.5f);
+        if (drawFileList("controls", x0 + wTotal * 0.5f - fw * 0.5f, y0, fw, f)) {
+            bool ok = controlsFromText(readTextFile(profileDir("controls") + "/" + f), cfg_.binds, cfg_.socd, cfg_.altToggle);
+            if (ok) cfg_.save();
+            widgetMsg_ = ok ? "IMPORTED " + upper(f) : upper(f) + " HAS NO BINDS";
+            widgetMsgUntil_ = time_ + 3;
+        }
+        return; // the list is modal: nothing underneath takes clicks
+    }
     float rowH = 22 * s, gap = 3 * s, colGap = 24 * s;
     float colW = std::max(330 * s, wTotal * 0.5f);
     float x = x0 + wTotal * 0.5f - colW - colGap * 0.5f;
     std::vector<int> actions; // every rebindable action (crouch was removed from the game)
     for (int a = 0; a < A_COUNT; a++) if (a != A_CROUCH && a != A_WEAPON9) actions.push_back(a);
     int perCol = ((int)actions.size() + 1) / 2;
-    float h = perCol * (rowH + gap) + 90 * s;
+    float h = perCol * (rowH + gap) + 250 * s;
     float y = std::max(8 * s, y0 - 40 * s);
     ui_.panel(x - 16 * s, y - 16 * s, colW * 2 + colGap + 32 * s, h);
     float lts = std::max(1.0f, std::round(ui_.textScale() * 0.75f));
@@ -2157,9 +2542,38 @@ void Game::drawControls(float x0, float y0, float wTotal) {
     ui_.label(x, y, captureAction_ >= 0 ? "PRESS A KEY, MOUSE BUTTON OR SCROLL - ESC CANCELS, BACKSPACE CLEARS"
                                         : "CLICK A SLOT TO REBIND IT - X UNBINDS THE ACTION", {0.7f, 0.72f, 0.75f, 1}, 0.5f);
     y += 20 * s;
+    {   // control scripts (ignored in ranked)
+        static const std::vector<std::string> sn = {"OPPOSITE KEYS: CANCEL", "OPPOSITE KEYS: LAST WINS (SNAP TAP)", "OPPOSITE KEYS: FIRST WINS"};
+        static const std::vector<std::string> an = {"ALT-FIRE: HOLD", "ALT-FIRE: TOGGLE"};
+        if (ui_.cycle(x, y, colW, 32 * s, "SOCD", cfg_.socd, 3, sn)) cfg_.save();
+        int at = cfg_.altToggle;
+        if (ui_.cycle(x + colW + colGap, y, colW, 32 * s, "ALT", at, 2, an)) { cfg_.altToggle = at; cfg_.save(); }
+        y += 32 * s + 6 * s;
+        ui_.label(x, y, "CONTROL SCRIPTS ARE OFF IN RANKED", {0.7f, 0.72f, 0.75f, 1}, 0.5f);
+        y += 20 * s;
+        float tw = (colW - 2 * 6 * s) / 3;
+        if (ui_.button(x, y, tw, 32 * s, "IMPORT")) { // controls on the clipboard win, else pick a file from controls/
+            const char* clip = glfwGetClipboardString(win_);
+            if (clip && controlsFromText(clip, cfg_.binds, cfg_.socd, cfg_.altToggle)) { cfg_.save(); widgetMsg_ = "IMPORTED CONTROLS FROM CLIPBOARD"; widgetMsgUntil_ = time_ + 3; }
+            else filePick_ = 2;
+        }
+        if (ui_.button(x + tw + 6 * s, y, tw, 32 * s, "EXPORT")) {
+            std::string text = controlsToText(cfg_.binds, cfg_.socd, cfg_.altToggle), name = stampedName("controls");
+            glfwSetClipboardString(win_, text.c_str());
+            bool ok = writeTextFile(profileDir("controls") + "/" + name, text);
+            widgetMsg_ = ok ? "COPIED + SAVED CONTROLS/" + upper(name) : "COPIED (COULDN'T WRITE FILE)";
+            widgetMsgUntil_ = time_ + 4;
+        }
+        if (ui_.button(x + 2 * (tw + 6 * s), y, tw, 32 * s, "FOLDER")) openUrl(profileDir("controls"));
+        y += 32 * s + 6 * s;
+        ruleRow(x, y, colW * 2 + colGap, 32 * s, false);
+        y += 32 * s + 6 * s;
+        if (time_ < widgetMsgUntil_) ui_.label(x, y, widgetMsg_, ui_.accent, 0.5f);
+        y += 16 * s;
+    }
     float bw = colW * 0.6f;
     if (ui_.button(x, y, bw, 32 * s, "RESET TO DEFAULTS")) { cfg_.binds.setDefaults(); cfg_.save(); }
-    if (ui_.button(x + colW * 2 + colGap - bw, y, bw, 32 * s, "BACK")) { controlsOpen_ = false; captureAction_ = -1; cfg_.save(); }
+    if (ui_.button(x + colW * 2 + colGap - bw, y, bw, 32 * s, "BACK")) { controlsOpen_ = false; captureAction_ = -1; filePick_ = 0; cfg_.save(); }
 }
 
 // Every map or mode as a grid of buttons. Maps that can't run the chosen mode are greyed out, and
@@ -2220,7 +2634,7 @@ void Game::drawPicker(float cx, float y) {
             cur = multi ? multiSel_[i] : i == variant;
         } else if (modes && i == MODE_COUNT) {
             label = "RANKED";
-            sub = "1V1 LADDERS ON RANKED MAPS >";
+            sub = "1V1 LADDERS - DEFAULT HUD + CONTROLS >";
             cur = rankedNow;
         } else if (modes) {
             label = modeTitle(i);
@@ -2377,7 +2791,7 @@ void Game::drawHudSettings(float x0, float y0, float wTotal) {
     float h = 32 * s, gap = 7 * s;
     float w = std::max(360 * s, wTotal * 0.5f);
     float x = x0 + wTotal * 0.5f - w * 0.5f, y = y0;
-    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 8 * (h + gap) + 3 * gap + 32 * s);
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 12 * (h + gap) + 3 * gap + 32 * s);
     static const std::vector<std::string> names = {"HEALTH", "WEAPON NAME", "COOLDOWN BARS", "SPEED METER", "WEAPON LIST"};
     ui_.cycle(x, y, w, h, "ELEMENT", hudSel_, Settings::HUD_COUNT, names);
     auto& e = cfg_.hud[hudSel_];
@@ -2403,6 +2817,13 @@ void Game::drawHudSettings(float x0, float y0, float wTotal) {
     if (ui_.button(x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "BACK")) { hudOpen_ = false; cfg_.save(); }
     y += h + gap;
     if (ui_.button(x, y, w, h, "RESET ALL")) for (auto& he : cfg_.hud) he = Settings::HudElem{};
+    y += h + gap;
+    ui_.toggle(x, y, w * 0.5f - gap * 0.5f, h, "VERBOSE INFO", cfg_.hudVerbose);
+    ui_.toggle(x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "CUSTOM WIDGETS", cfg_.hudWidgets);
+    y += h + gap;
+    if (ui_.button(x, y, w, h, "WIDGET EDITOR (DRAG, ADD, IMPORT / EXPORT)")) { widgetEdit_ = true; widgetSel_ = -1; }
+    y += h + gap;
+    ruleRow(x, y, w, h, true);
 }
 
 void Game::drawCrosshairSettings(float x0, float y0, float wTotal) {

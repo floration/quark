@@ -30,6 +30,9 @@ public:
     void play3D(int id, const Vec3& pos, float volume = 1.0f, float pitch = 1.0f);
     void setListener(const Vec3& pos, float yaw) { std::lock_guard<std::mutex> l(mu_); listener_ = pos; listenerYaw_ = yaw; }
     void setMasterVolume(float v) { master_ = v; }
+    // Sound packs: the same synthesized sounds, voiced differently (STANDARD, ARCADE, HEAVY, RETRO, SOFT).
+    void setPack(int pack);
+    int pack() const { return pack_; }
     bool ok() const { return running_; }
 
     // Mixes `frames` stereo frames into out (interleaved int16). Used by the backends and tests.
@@ -38,6 +41,7 @@ public:
 private:
     struct Voice { int id; float pos; float step; float gainL, gainR; bool spatial; Vec3 at; float volume; };
     void synthesize();
+    int pack_ = 0;
     void voiceGains(Voice& v);
     void backendThread();
 

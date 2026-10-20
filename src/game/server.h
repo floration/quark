@@ -84,7 +84,8 @@ struct ServerPlayer {
     int kills = 0, deaths = 0, score = 0;
     float respawnAt = -1;
     int checkpoint = 0;         // race: next checkpoint index
-    uint32_t joinId = 0;        // unique per connection (a new player in a reused slot gets a new one)
+    uint32_t joinId = 0;
+    int model = 0;              // player model (cosmetic, kPlayerModels looks, same hitbox)        // unique per connection (a new player in a reused slot gets a new one)
     bool it = false;            // hide and seek / tag: the seeker / tagger (has the knife)
     bool found = false;         // hide and seek: found by the seeker this round (falling off doesn't count)
     Vec3 lastGround;            // where the player last stood (a dropped bomb goes here, not into a pit)

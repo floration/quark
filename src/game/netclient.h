@@ -57,6 +57,7 @@ public:
     std::vector<ProjectileSnap> interpolatedProjectiles() const;
     const PlayerSnap* findPlayer(int id) const;
     std::string playerName(int id) const;
+    int playerModel(int id) const { return id >= 0 && id < kMaxPlayers ? models_[id] : 0; }
     const std::string& rankId(int id) const { static const std::string none; return id >= 0 && id < kMaxPlayers ? rankIds_[id] : none; }
 
     // Reliable events received since last call.
@@ -126,6 +127,7 @@ private:
     uint32_t lastEventId_ = 0;
     std::vector<GameEvent> events_;
     std::vector<std::string> names_ = std::vector<std::string>(kMaxPlayers);
+    uint8_t models_[kMaxPlayers] = {};
     std::vector<std::string> rankIds_ = std::vector<std::string>(kMaxPlayers);
 
     std::deque<std::string> stringCmds_;

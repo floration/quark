@@ -127,6 +127,8 @@ if(QUARK_BUILD_CLIENT)
     src/client/lightmap.cpp
     src/client/ui.cpp
     src/client/config.cpp
+    src/client/hudwidgets.cpp
+    src/client/profiles.cpp
     src/client/binds.cpp
     src/client/audio.cpp
     ${QUARK_ICON_RC}

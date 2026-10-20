@@ -42,6 +42,14 @@ void Settings::load() {
         else if (k == "width") width = iv;
         else if (k == "height") height = iv;
         else if (k == "shadows") shadows = iv != 0;
+        else if (k == "model") model = (iv >= 0 && iv < kPlayerModels) ? iv : 0;
+        else if (k == "soundpack") soundPack = (iv >= 0 && iv < 5) ? iv : 0;
+        else if (k == "socd") socd = (iv >= 0 && iv <= 2) ? iv : 0;
+        else if (k == "alt_toggle") altToggle = iv != 0;
+        else if (k == "hud_verbose") hudVerbose = iv != 0;
+        else if (k == "hud_widgets") hudWidgets = iv != 0;
+        else if (k.rfind("mode_hud_", 0) == 0) { int m = modeFromName(k.c_str() + 9); if (m >= 0) modeHud[m] = v; }
+        else if (k.rfind("mode_controls_", 0) == 0) { int m = modeFromName(k.c_str() + 14); if (m >= 0) modeCtl[m] = v; }
         else if (k == "msaa") msaa = (iv == 1 || iv == 2 || iv == 4) ? iv : 0;
         else if (k == "volume") volume = clampf(fv, 0, 1);
         else if (k == "hitsounds") hitsounds = iv != 0;
@@ -96,7 +104,8 @@ void Settings::save() const {
     f << "name=" << name << "\nsensitivity=" << sensitivity << "\ndpi=" << dpi << "\nfov=" << fov << "\ndisplay_mode=" << displayMode
       << "\npresent_mode=" << presentMode << "\nlow_latency=" << lowLatency
       << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height
-      << "\nshadows=" << shadows << "\nmsaa=" << msaa << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nhitsounds=" << hitsounds
+      << "\nshadows=" << shadows << "\nmsaa=" << msaa << "\nmodel=" << model << "\nsoundpack=" << soundPack << "\nsocd=" << socd << "\nalt_toggle=" << altToggle
+      << "\nhud_verbose=" << hudVerbose << "\nhud_widgets=" << hudWidgets << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nhitsounds=" << hitsounds
       << "\ncolor_friendly=" << colorHex(colorFriendly) << "\ncolor_enemy=" << colorHex(colorEnemy)
       << "\nch_style=" << chStyle << "\nch_length=" << chLength << "\nch_thickness=" << chThickness << "\nch_gap=" << chGap
       << "\nch_outline=" << chOutline << "\nch_team_color=" << chTeamColor << "\nch_color=" << colorHex(chColor)
@@ -107,5 +116,9 @@ void Settings::save() const {
     for (int i = 0; i < HUD_COUNT; i++)
         f << "hud_" << i << "=" << hud[i].x << "," << hud[i].y << "," << hud[i].scale << "," << hud[i].custom << ","
           << hud[i].color.x << "," << hud[i].color.y << "," << hud[i].color.z << "\n";
+    for (int m = 0; m < MODE_COUNT; m++) {
+        if (!modeHud[m].empty()) f << "mode_hud_" << modeName(m) << "=" << modeHud[m] << "\n";
+        if (!modeCtl[m].empty()) f << "mode_controls_" << modeName(m) << "=" << modeCtl[m] << "\n";
+    }
     for (int a = 0; a < A_COUNT; a++) f << "bind_" << a << "=" << binds.code[a][0] << "," << binds.code[a][1] << "\n";
 }
