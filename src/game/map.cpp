@@ -45,6 +45,10 @@ int resetOfficialMaps() {
         fs::remove(dir + "/" + m->name + ".qlm", ec);
         n++;
     }
+    for (const char* old : {"arena", "tug", "duel", "sprint"}) { // retired built-in maps left by older versions
+        fs::remove(dir + "/" + old + ".qmap", ec);
+        fs::remove(dir + "/" + old + ".qlm", ec);
+    }
     return n;
 }
 

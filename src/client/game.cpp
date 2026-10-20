@@ -2114,7 +2114,7 @@ void Game::drawPicker(float cx, float y) {
     int& variant = live ? liveVariant_ : host ? cfg_.hostArenaVariant : cfg_.botArenaVariant;
     static const int kLadders[3] = {0, 1, 5};
     bool rankedTile = picker_ == PICK_HOST_MODE || picker_ == PICK_LIVE_MODE; // RANKED is one more choice, holding the ladders
-    bool rankedNow = live ? serverRanked : cfg_.hostRanked;
+    bool rankedNow = live ? serverRanked : host && cfg_.hostRanked; // vs bots is never ranked
     int n = ladders ? 3 : variants ? kArenaVariants : modes ? MODE_COUNT + (rankedTile ? 1 : 0) : (int)maps_.size();
     if ((int)multiSel_.size() != n) multiSel_.assign(n, false);
     int cols = 3;

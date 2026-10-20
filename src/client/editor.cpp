@@ -652,7 +652,7 @@ void Game::editorFrame(double dt) {
         row();
         if (ui_.button(x, y, w2, h, "MAPS FOLDER")) openUrl(mapsFolder());
         if (ui_.button(x + w2 + gap, y, w2, h, time_ < edResetArmed_ ? "CLICK TO CONFIRM" : "RESET MAPS")) {
-            if (time_ >= edResetArmed_) { edResetArmed_ = time_ + 3; edNotify("puts every built-in map back to its original version (your own maps are kept) - click again"); }
+            if (time_ >= edResetArmed_) { edResetArmed_ = time_ + 3; edNotify("puts every built-in map back to its original version and removes retired ones (your own maps are kept) - click again"); }
             else {
                 edResetArmed_ = 0;
                 int n = resetOfficialMaps();
