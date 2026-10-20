@@ -757,7 +757,8 @@ void Game::frame(double dt) {
         while (tickAcc_ >= period) {
             UserCmd c = buildCmd();
             // local fire feedback (server is authoritative for damage)
-            bool altShot = altFires(net_.selfWeapon()) && (c.buttons & BTN_ALTFIRE); // knife throw / shotgun bounce
+            bool altShot = altFires(net_.selfWeapon()) && (c.buttons & BTN_ALTFIRE) && // knife throw / shotgun bounce (no throws in hide and seek / tag)
+                           !(net_.selfWeapon() == WPN_KNIFE && net_.hasSnapshot() && isItMode(net_.mode().mode));
             bool wantFire = (c.buttons & BTN_FIRE) != 0 || altShot;
             if (localFireLocked_) { // mirror the server: after a knife throw, let go before the next weapon fires
                 if (!(c.buttons & (BTN_FIRE | BTN_ALTFIRE))) localFireLocked_ = false;
@@ -771,7 +772,7 @@ void Game::frame(double dt) {
             if (wantFire && net_.selfAlive() && time_ >= localNextFire_ && net_.mode().phase != PHASE_FREEZE) {
                 localFireQueued_ = -1;
                 int w = net_.selfWeapon();
-                bool alt = (c.buttons & BTN_ALTFIRE) != 0;
+                bool alt = (c.buttons & BTN_ALTFIRE) != 0 && (w != WPN_KNIFE || altShot); // same throw rule as above
                 localNextFire_ = time_ + shotRefire(w, alt);
                 if (w != WPN_LASER || time_ >= nextLaserSound_) { // laser fires every 10 ms: sound at 20 Hz
                     audio_.play(SND_RIFLE + w, w == WPN_LASER ? 0.6f : 0.8f, 0.97f + (rand() % 7) * 0.01f);

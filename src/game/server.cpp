@@ -719,7 +719,6 @@ void Server::spawnPlayer(int id) {
     p.move.mods |= dm.moveMods;
     if (arenaRules() & AR_QUICK_DASH) p.move.mods |= MOVE_QUICK_DASH;
     if (arenaRules() & AR_LOW_GRAVITY) p.move.mods |= MOVE_LOW_GRAVITY;
-    if (isItMode(ms_.mode)) p.move.mods |= MOVE_RUN_ONLY;
     p.nextFire = time() + 0.25f;
     p.respawnAt = -1;
     GameEvent e;
@@ -941,7 +940,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
         bool held = (p.prevButtons & (altShot ? BTN_ALTFIRE : BTN_FIRE)) != 0;
         p.nextFire = (held && time() - p.nextFire < 0.1f) ? p.nextFire + refire : time() + refire;
         p.lastFire = time();
-        bool threw = p.weapon == WPN_KNIFE && altShot;
+        bool threw = p.weapon == WPN_KNIFE && (cmd.buttons & BTN_ALTFIRE) && !itMode && !knifeAway; // same test as fireWeapon
         fireWeapon(id, cmd);
         if (threw) { // the knife is away: switch to the next weapon, ready to fire right away
             p.knifeBackAt = time() + kKnifeAway;
@@ -1030,6 +1029,9 @@ void Server::fireWeapon(int id, const UserCmd& cmd) {
     float spread = scoped ? wd.scopedSpread : wd.spread;
 
     bool alt = (cmd.buttons & BTN_ALTFIRE) != 0;
+    // a throw needs the knife in hand and a mode that allows it (holding alt while clicking fire used to throw
+    // past both checks: endless knives in hide and seek / tag)
+    if (p.weapon == WPN_KNIFE) alt = alt && time() >= p.knifeBackAt && !isItMode(ms_.mode);
     if (p.weapon == WPN_KNIFE && alt) { // thrown knife: a fast arcing projectile, hits for knife damage
         for (auto& pr : projectiles_) {
             if (pr.active) continue;

@@ -920,7 +920,7 @@ static void testItModes(uint16_t port) {
         CHECK(n == 1);
         if (it < 0) { s.stop(); continue; }
         auto& seeker = s.players_[it];
-        CHECK(seeker.weapon == WPN_KNIFE && (seeker.move.mods & MOVE_RUN_ONLY));
+        CHECK(seeker.weapon == WPN_KNIFE && !(seeker.move.mods & MOVE_RUN_ONLY));
         int h1 = c[0].clientId() == it ? c[1].clientId() : c[0].clientId();
         int h2 = 0; for (int i = 0; i < 3; i++) if (c[i].clientId() != it && c[i].clientId() != h1) h2 = c[i].clientId();
         if (mode == MODE_HIDE) {                       // head start: the seeker can't move, hiders can
@@ -939,6 +939,12 @@ static void testItModes(uint16_t port) {
                 pump(s, cls, 0.05, [&](int i) { UserCmd u; u.yaw = 0; u.pitch = -0.3f; if (cls[i]->clientId() == from) u.buttons = BTN_FIRE; return u; });
             }
         };
+        {   // no knife throws, not even holding alt-fire while clicking fire (that once threw endlessly)
+            pump(s, cls, 0.5, [&](int i) { UserCmd u; if (cls[i]->clientId() == it) u.buttons = BTN_FIRE | BTN_ALTFIRE; return u; });
+            int thrown = 0;
+            for (auto& pr : s.projectiles_) thrown += pr.active && pr.type == WPN_KNIFE;
+            CHECK(thrown == 0 && s.players_[it].weapon == WPN_KNIFE);
+        }
         stab(h1, it);                                  // hiders have nothing to hit with
         CHECK(s.players_[it].alive && s.players_[it].it);
         stab(it, h1);
