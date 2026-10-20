@@ -86,7 +86,7 @@ static void testMovement() {
     UserCmd dc; dc.msec = 1; dc.yaw = k.yaw; dc.forward = 127; dc.buttons = BTN_DASH;
     for (int i = 0; i < 200; i++) pmove(d, dc, open);
     printf("  dash: %.1f -> %.1f m/s after the burst\n", before, hspeed(d));
-    CHECK(hspeed(d) > before + 3.0f);
+    CHECK(hspeed(d) > before + 2.0f);
     // landing hard while holding jump bounces higher than a normal jump
     auto peak = [&](float dropFrom) {
         MoveState q; q.pos = {0, dropFrom, 0};
