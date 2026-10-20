@@ -290,7 +290,7 @@ UserCmd botThink(Server& s, int id) {
             if (!isEnemy(s, id, i)) continue;
             Vec3 chest = s.players_[i].move.pos + Vec3(0, 1.1f, 0);
             float d = length(chest - eye);
-            if (d < bestD && canSee(s, eye, chest)) { bestD = d; best = i; }
+            if (d < bestD && canSee(s, eye, chest)) { bestD = d; best = i; } // (distance first: no raycast for farther ones)
         }
         if (best != b.target) {
             b.target = best;

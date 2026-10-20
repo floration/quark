@@ -220,6 +220,7 @@ public:
     void log(const std::string& s);
     size_t snapBytes_ = 0, snapCount_ = 0; // snapshot bytes sent (stats for tests / logs)
     float hitAccum_[kMaxPlayers][kMaxPlayers] = {}, hitFlushAt_[kMaxPlayers][kMaxPlayers] = {};
+    bool hitPending_ = false;
     void flushHit(int attacker, int victim);
     void bounceShot(int id, Vec3 o, Vec3 dir, float range, uint32_t vt, float* dmgPer, float dmg);
     // Map edit sessions: everyone flies around and edits the map together; edits go through here so all

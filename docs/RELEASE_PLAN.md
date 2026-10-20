@@ -79,6 +79,17 @@ Measure: bytes per snapshot and kbit/s per client at 8 / 16 players (existing ne
 - [ ] Reliable event batching; packet header size.
 - [ ] Verify no regression in prediction error / interpolation delay (net test thresholds).
 
+## Phase 4b — owner requests before 1.0.0
+- [ ] Verbose HUD option: dense info block top-right (clock, version, fps avg / min last second, speed, ping,
+      loss, tick / snapshot rate, enemies / teammates alive, round time, map, mode, K/D)
+- [ ] Scriptable HUD widgets (`hud.cfg`): any game value as number / bar / colour-graded bar / icon with
+      opacity / icon + bar, placed anywhere
+- [ ] Scripted controls: SOCD / null movement (last key wins, or neutral), and other control options
+- [ ] Ranked: default HUD only, no control scripts (enforced client side; server rejects clients that
+      report scripts on)
+- [ ] Player models: several cosmetic variants (same hitbox), picked in settings, seen by everyone
+- [ ] Sound packs: several, picked in settings
+
 ## Phase 5 — final scan & 1.0.0
 - [ ] Re-run every test, playtest, benchmark; compare with phase 2–4 baselines.
 - [ ] Re-screenshot all maps + menus; refresh site images.

@@ -783,6 +783,7 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
         // Hit feedback (hitsound, damage number): rapid small hits (laser) are batched every 50 ms
         // instead of sending a reliable event per tick. c = damage in hundredths.
         hitAccum_[attacker][victim] += dmg;
+        hitPending_ = true;
         if (time() >= hitFlushAt_[attacker][victim]) flushHit(attacker, victim);
         // Vampire laser: damage dealt heals the attacker (up to full health).
         ServerPlayer& a = players_[attacker];
@@ -815,9 +816,15 @@ void Server::simulate() {
         if (editDirty_ && !tempEdit_ && time() >= nextAutosave_) autosave();
         return;
     }
-    for (int a = 0; a < kMaxPlayers; a++)
-        for (int v = 0; v < kMaxPlayers; v++)
-            if (hitAccum_[a][v] > 0 && time() >= hitFlushAt_[a][v]) flushHit(a, v);
+    if (hitPending_) { // batched hit feedback waiting to go out (skip the 32x32 scan when there's none)
+        hitPending_ = false;
+        for (int a = 0; a < kMaxPlayers; a++)
+            for (int v = 0; v < kMaxPlayers; v++) {
+                if (hitAccum_[a][v] <= 0) continue;
+                if (time() >= hitFlushAt_[a][v]) flushHit(a, v);
+                if (hitAccum_[a][v] > 0) hitPending_ = true;
+            }
+    }
     for (int i = 0; i < kMaxPlayers; i++) {
         ServerPlayer& p = players_[i];
         if (!p.connected) continue;

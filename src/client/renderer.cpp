@@ -954,7 +954,7 @@ void Renderer::ensureMsaaTarget() {
     int want = msaa_ > 1 ? msaa_ : 0;
     if (msaa_ == 1 && !worldVao_) return; // edges need a VAO to draw the fullscreen pass (any will do)
     static GLint64 maxS = -1;
-    if (want && maxS < 0) { glGetInteger64v(GL_MAX_SAMPLES, &maxS); if (getenv("QUARK_AA_DEBUG")) printf("max samples %lld (want %d)\n", (long long)maxS, want); } // once
+    if (want && maxS < 0) glGetInteger64v(GL_MAX_SAMPLES, &maxS); // once
     if (want) { want = std::min(want, (int)std::max<GLint64>(0, maxS)); if (want < 2) want = 0; }
     if (msaa_ == 1) want = 1; // edges
     if (want == msaaActive_ && (!want || (msaaW_ == width_ && msaaH_ == height_))) return;
@@ -997,5 +997,4 @@ void Renderer::ensureMsaaTarget() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     if (!ok) { glDeleteFramebuffers(1, &msaaFbo_); glDeleteRenderbuffers(1, &msaaColor_); glDeleteRenderbuffers(1, &msaaDepth_); msaaFbo_ = msaaColor_ = msaaDepth_ = 0; return; }
     msaaActive_ = want; msaaW_ = width_; msaaH_ = height_;
-    if (getenv("QUARK_AA_DEBUG")) printf("msaa target %dx%d x%d\n", width_, height_, want);
 }
