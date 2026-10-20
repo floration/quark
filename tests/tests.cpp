@@ -101,6 +101,7 @@ static void testMaps() {
     printf("maps\n");
     std::string err;
     // the three all-mode maps support every mode
+    { Map v; CHECK(v.load("viaduct") && v.supportsMode(MODE_RACE) && v.preferredMode == MODE_RACE && v.hasVoid && v.checkpoints.size() >= 5); }
     for (const char* name : {"bastion", "foundry", "colosseum"}) {
         Map m;
         CHECK(m.load(name, &err));
@@ -178,7 +179,7 @@ static void testGridQueries() {
     auto brute = [&](const Vec3& o, const Vec3& d, float maxT) {
         Vec3 inv = safeInv(d);
         float best = -1;
-        for (auto& b : m.brushes) { float t = rayAABB(o, inv, b.box, best < 0 ? maxT : best); if (t >= 0 && (best < 0 || t < best)) best = t; }
+        for (auto& b : m.brushes) { if (b.material == 5) continue; float t = rayAABB(o, inv, b.box, best < 0 ? maxT : best); if (t >= 0 && (best < 0 || t < best)) best = t; }
         return best;
     };
     srand(7);
@@ -199,7 +200,7 @@ static void testGridQueries() {
         if (m.raycastAny(o, d, 120) != (b >= 0)) mism++;
         AABB box = playerBox(o, false);
         bool solidBrute = false;
-        for (auto& br : m.brushes) solidBrute |= box.overlaps(br.box);
+        for (auto& br : m.brushes) solidBrute |= br.material != 5 && box.overlaps(br.box);
         if (m.boxSolid(box) != solidBrute) mism++;
     }
     CHECK(mism == 0);
@@ -1509,6 +1510,46 @@ static void testBots(uint16_t& port) {
     }
 }
 
+// Bots play every map in the mode it's built for; prints kills / deaths (deaths beyond kills = falls and
+// self-kills) and the objective state, to spot layouts where nothing happens or bots keep falling.
+static void playtestMaps(uint16_t port, double seconds) {
+    for (auto& name : listMaps()) {
+        if (getenv("PT_MAP") && name != getenv("PT_MAP")) continue;
+        Map m;
+        if (!m.load(name)) continue;
+        int mode = m.preferredMode >= 0 ? m.preferredMode : MODE_FFA;
+        Server s;
+        ServerConfig cfg;
+        cfg.map = name; cfg.mode = mode; cfg.port = port++; cfg.autoStart = true;
+        s.setLog([](const std::string&) {});
+        if (!s.start(cfg)) { printf("  %s: start failed\n", name.c_str()); continue; }
+        bool duo = mode == MODE_ARENA || mode == MODE_DUEL || mode == MODE_TOURNEY;
+        int n = duo ? 1 : mode == MODE_RACE ? 3 : 4;
+        for (int i = 0; i < n; i++) { s.addBot(TEAM_A, BOT_ADVANCED); if (mode != MODE_RACE) s.addBot(TEAM_B, BOT_ADVANCED); }
+        std::vector<NetClient*> none;
+        pump(s, none, 1.0, idle);
+        s.command("forcestart");
+        if (getenv("PT_TRACE")) {   // where do bots die?
+            Vec3 last[kMaxPlayers]; bool was[kMaxPlayers] = {};
+            double end = timeNow() + seconds;
+            while (timeNow() < end) {
+                pump(s, none, 0.05, idle);
+                for (int i = 0; i < kMaxPlayers; i++) {
+                    auto& p = s.players_[i];
+                    if (!p.connected) continue;
+                    if (was[i] && !p.alive) printf("    died at %.1f %.1f %.1f\n", last[i].x, last[i].y, last[i].z);
+                    was[i] = p.alive; if (p.alive) last[i] = p.move.pos;
+                }
+            }
+        } else pump(s, none, seconds, idle);
+        int kills = 0, deaths = 0;
+        for (auto& p : s.players_) if (p.connected) { kills += p.kills; deaths += p.deaths; }
+        printf("  %-10s %-8s kills %3d  deaths %3d  (falls/self %d)  score %d-%d  payload %.0f/%.0f  cp %d\n", name.c_str(), modeName(mode), kills, deaths,
+               deaths - kills, s.ms_.scoreA, s.ms_.scoreB, s.ms_.payloadDist, s.ms_.payloadLen, [&] { int b = 0; for (auto& p : s.players_) if (p.connected) b = std::max(b, (int)p.checkpoint); return b; }());
+        s.stop();
+    }
+}
+
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
     netInit();
@@ -1517,6 +1558,7 @@ int main(int argc, char** argv) {
     srand(1234);
     setTimeScale(kTestTimeScale);
     g_serverRateCheck = false;
+    if (argc >= 2 && std::string(argv[1]) == "playtest") { playtestMaps(29400, argc > 2 ? atof(argv[2]) : 40); return 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = 29500; testBotAim(p); return g_fail ? 1 : 0; }
     testMovement();
     testMaps();

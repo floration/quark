@@ -103,6 +103,7 @@ void main() {
     vec3 light = uSkyColor * lm.g + uSunColor * lm.r * shadowAt(vShadow);
     vec3 c = albedo * light * 0.62 * outline(vEdge);
     if (mat == 4) c = uGlow * 0.9;
+    if (mat == 5) c = mix(uMetal * (0.55 + 0.25 * vN.y + 0.15 * abs(vN.x)), uFogColor, 0.45); // far scenery: hazy silhouette
     float d = length(vPos - uCamPos);
     c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity));
     c = clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0) * 1.08; // ACES-style filmic curve

@@ -118,6 +118,7 @@ void NavGraph::build(const Map& m) {
     mapCrc = m.crc;
     for (const Brush& b : m.brushes) {
         const AABB& a = b.box;
+        if (b.material == 5) continue; // far scenery
         if (a.mx.x - a.mn.x < 0.6f || a.mx.z - a.mn.z < 0.6f) continue;
         // standable if a player fits on top somewhere (5x5 samples: other blocks may cover parts of it)
         bool free = false;
@@ -174,14 +175,24 @@ Vec3 NavGraph::nextWaypoint(const Vec3& from, const Vec3& to) const {
     if (prev[b] < 0) return to;
     std::vector<int> path; // a (exclusive) .. b
     for (int v = b; v != a; v = prev[v]) path.push_back(v);
-    // Walk to the closest point of the next surface (a little inside its edge). If that point is
-    // right where we stand (overlapping surfaces, e.g. stepping off a wall onto the floor below),
-    // look further along the path.
+    // Walk through the "portal" between consecutive surfaces: the stretch of their shared edge (or the
+    // next surface itself when they overlap, e.g. stepping down off a block). Clamping to the shared edge
+    // keeps bots from cutting corners across a hole between two surfaces. If that point is right where we
+    // stand, look further along the path.
+    int prevNode = a;
     for (auto it = path.rbegin(); it != path.rend(); ++it) {
         const Node& n = nodes[*it];
-        float inset = 0.5f;
-        float x0 = std::min(n.x0 + inset, (n.x0 + n.x1) * 0.5f), x1 = std::max(n.x1 - inset, (n.x0 + n.x1) * 0.5f);
-        float z0 = std::min(n.z0 + inset, (n.z0 + n.z1) * 0.5f), z1 = std::max(n.z1 - inset, (n.z0 + n.z1) * 0.5f);
+        const Node& pn = nodes[prevNode];
+        prevNode = *it;
+        auto span = [](float a0, float a1, float b0, float b1, float& lo, float& hi) {
+            lo = std::max(a0, b0); hi = std::min(a1, b1);
+            if (lo > hi) { lo = hi = (a1 < b0 ? b0 : b1); return; }        // no overlap: the near edge of the next surface
+            float inset = std::min(0.5f, (hi - lo) * 0.5f);                  // keep away from the ends of the shared edge
+            lo += inset; hi -= inset;
+        };
+        float x0, x1, z0, z1;
+        span(pn.x0, pn.x1, n.x0, n.x1, x0, x1);
+        span(pn.z0, pn.z1, n.z0, n.z1, z0, z1);
         Vec3 p = {clampf(from.x, x0, x1), n.y, clampf(from.z, z0, z1)};
         float dx = p.x - from.x, dz = p.z - from.z;
         if (dx * dx + dz * dz > 1.0f) return p;
@@ -369,8 +380,33 @@ UserCmd botThink(Server& s, int id) {
         Vec3 knee = me.move.pos + Vec3(0, 0.6f, 0);
         if (s.map_.raycastAny(knee, moveDir, 1.2f)) cmd.buttons |= BTN_JUMP;
         Vec3 ahead = me.move.pos + moveDir * 0.7f + Vec3(0, 0.2f, 0);
-        if ((me.move.flags & MF_ONGROUND) && !s.map_.raycastAny(ahead, {0, -1, 0}, 1.5f)) cmd.buttons |= BTN_JUMP;
+        if ((me.move.flags & MF_ONGROUND) && !s.map_.raycastAny(ahead, {0, -1, 0}, 1.5f)) {
+            // a drop ahead: on maps with pits, only go if there's ground below before the void, or a
+            // landing within jumping distance; otherwise stop at the edge (the stuck check re-plans)
+            float depth = ahead.y - s.map_.killY();
+            bool safe = !s.map_.hasVoid || s.map_.raycastAny(ahead, {0, -1, 0}, std::max(depth, 0.1f));
+            bool landing = s.map_.raycastAny(me.move.pos + moveDir * 2.6f + Vec3(0, 0.6f, 0), {0, -1, 0}, 2.0f);
+            if (safe || landing) cmd.buttons |= BTN_JUMP;
+            else { cmd.forward = 0; cmd.side = 0; }
+        }
         if (sp.bhop && s.ms_.mode != MODE_RACE) cmd.buttons |= BTN_JUMP;
+        // maps with pits: look ahead along where we're actually going (momentum included, on the ground or
+        // mid-hop); if there's no ground before the void there and nothing to land on, brake hard
+        if (s.map_.hasVoid) {
+            Vec3 hv = {me.move.vel.x, 0, me.move.vel.z};
+            Vec3 probe = me.move.pos + hv * 0.35f + moveDir * 0.6f + Vec3(0, 0.3f, 0);
+            float depth = std::max(probe.y - s.map_.killY(), 0.1f);
+            bool ground = s.map_.raycastAny(probe, {0, -1, 0}, depth);
+            Vec3 far = me.move.pos + hv * 0.35f + moveDir * 2.6f + Vec3(0, 0.6f, 0);
+            bool landing = (me.move.flags & MF_ONGROUND) && s.map_.raycastAny(far, {0, -1, 0}, 2.0f);
+            if (!ground && !landing) {
+                Vec3 back = length(hv) > 0.5f ? normalize(hv) * -1.0f : moveDir * -1.0f;
+                cmd.forward = (int8_t)clampf(dot(back, fwd) * 127, -127, 127);
+                cmd.side = (int8_t)clampf(dot(back, right) * 127, -127, 127);
+                cmd.buttons &= ~BTN_JUMP;
+                b.goalUntil = 0; // re-plan
+            }
+        }
     }
 
     // unstick: if we've barely moved for a while, pick a random place to go

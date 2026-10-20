@@ -13,11 +13,64 @@ class M:
         if mirror: s.lines.append(f"{kw} {-x1:g} {y0:g} {-z1:g} {-x0:g} {y1:g} {-z0:g}")
     def metal(s, *a, **k): s.box(*a, mat="metal", **k)
     def glow(s, *a, **k): s.box(*a, mat="glow", **k)
-    def room(s, hx, hz, h=8):
-        s.hx, s.hz, s.h = hx, hz, h
-        s.box(-hx - 2, -1, -hz - 2, hx + 2, 0, hz + 2)                  # floor
-        s.box(-hx - 2, 0, -hz - 2, -hx, h, hz + 2); s.box(hx, 0, -hz - 2, hx + 2, h, hz + 2)
-        s.box(-hx, 0, -hz - 2, hx, h, -hz); s.box(-hx, 0, hz, hx, h, hz + 2)
+    # ---- rooms: floors with holes (pits / water / molten channels) and sunken areas ----
+    def room(s, hx, hz, h=8, pits=(), sunken=(), style="hall", skyline=None, wall_base=None):
+        """the arena: floor, four walls. pits = [(x0, z0, x1, z1, kind)] are holes you fall through and die
+        (kind: molten / water / abyss / chasm); sunken = [(x0, z0, x1, z1, depth, mat)] are lower floors.
+        style picks the wall dress (hall / temple / yard / fort), skyline the distant scenery."""
+        s.hx, s.hz, s.h, s.style, s.skyline = hx, hz, h, style, skyline
+        s.pits = [tuple(p) for p in pits]
+        s.sunken = [tuple(p) for p in sunken]
+        s.holes = [p[:4] for p in s.pits] + [p[:4] for p in s.sunken]
+        deep = any(p[4] == "chasm" for p in s.pits)
+        s.wall_base = wall_base if wall_base is not None else (-12 if deep else -4 if s.pits else 0)
+        if s.pits: s.raw("void -2.5")
+        for (x0, z0, x1, z1) in minus((-hx - 2, -hz - 2, hx + 2, hz + 2), s.holes):
+            s.box(x0, -1, z0, x1, 0, z1)                                         # floor around the holes
+        wb = s.wall_base
+        s.box(-hx - 2, wb, -hz - 2, -hx, h, hz + 2); s.box(hx, wb, -hz - 2, hx + 2, h, hz + 2)
+        s.box(-hx, wb, -hz - 2, hx, h, -hz); s.box(-hx, wb, hz, hx, h, hz + 2)
+        if deep:   # the chasm keeps going: unlit rock far below
+            s.box(-hx - 2, -60, -hz - 2, -hx, wb, hz + 2, mat="far"); s.box(hx, -60, -hz - 2, hx + 2, wb, hz + 2, mat="far")
+            s.box(-hx, -60, -hz - 2, hx, wb, -hz, mat="far"); s.box(-hx, -60, hz, hx, wb, hz + 2, mat="far")
+            s.box(-hx, -61, -hz, hx, -60, hz, mat="far")
+        for (x0, z0, x1, z1, kind) in s.pits:
+            if kind == "chasm": continue
+            bot = -3.6 if kind in ("molten", "water") else -14
+            for (a, b, c, d) in ((x0 - 0.5, z0 - 0.5, x1 + 0.5, z0), (x0 - 0.5, z1, x1 + 0.5, z1 + 0.5), (x0 - 0.5, z0, x0, z1), (x1, z0, x1 + 0.5, z1)):
+                s.box(a, bot, b, c, -1, d, accent=True)                          # shaft lining under the floor edge
+            s.box(x0, bot - 0.5, z0, x1, bot + 0.6, z1, mat="glow" if kind == "molten" else "accent" if kind == "water" else "metal")
+            if kind == "molten": s.light((x0 + x1) / 2, -1.0, (z0 + z1) / 2, max(x1 - x0, z1 - z0) * 0.7 + 3, 0.9, fixture=False)
+        for (x0, z0, x1, z1, depth, mat) in s.sunken:
+            s.box(x0, -depth - 1, z0, x1, -depth, z1, mat=mat)
+            for (a, b, c, d) in ((x0 - 0.5, z0 - 0.5, x1 + 0.5, z0), (x0 - 0.5, z1, x1 + 0.5, z1 + 0.5), (x0 - 0.5, z0, x0, z1), (x1, z0, x1 + 0.5, z1)):
+                s.box(a, -depth - 1, b, c, -1, d, accent=True)
+    def over_hole(s, x, z, r=0.0):
+        return any(x0 - r < x < x1 + r and z0 - r < z < z1 + r for (x0, z0, x1, z1) in getattr(s, "holes", []))
+    def stairs(s, x0, z0, x1, z1, top, axis, rising, mirror=False, base=0.0):
+        """steps of 0.5 m from `base` up to `top` along axis ('x' or 'z'), rising toward +/-"""
+        n = max(1, int(round((top - base) / 0.5))); length = (x1 - x0) if axis == "x" else (z1 - z0)
+        for i in range(n):
+            a = length * i / n; b = length * (i + 1) / n
+            h = base + (top - base) * ((i + 1) if rising > 0 else (n - i)) / n
+            y0 = min(base, 0) - (1 if base < 0 else 0)
+            if axis == "x": s.box(x0 + a, y0, z0, x0 + b, h, z1, mirror=mirror)
+            else: s.box(x0, y0, z0 + a, x1, h, z0 + b, mirror=mirror)
+    def building(s, x0, z0, x1, z1, h, doors, roof=True, windows=False, lights=True, mirror=False, base=0.0):
+        """a walled building with doorways and a roof: doors = [(side, center, width)], side in n/s/w/e"""
+        t = 0.4
+        sides = {"n": (x0, z0, x1, z0 + t, "x"), "s": (x0, z1 - t, x1, z1, "x"), "w": (x0, z0, x0 + t, z1, "z"), "e": (x1 - t, z0, x1, z1, "z")}
+        for k, (a, b, c, d, ax) in sides.items():
+            ds = [(cc, w, min(2.6, h - 0.4)) for (sd, cc, w) in doors if sd == k]
+            if windows and k in ("n", "s"):
+                s.windowwall(a, b, c, d, h, 1.1, min(2.3, h - 0.6), every=3.0, width=1.4, mirror=mirror, base=base) if not ds else s.doorwall(a, b, c, d, h, ds, axis=ax, mirror=mirror, base=base)
+            else:
+                s.doorwall(a, b, c, d, h, ds, axis=ax, mirror=mirror, base=base)
+        if roof:
+            y = base + h
+            s.box(x0 - 0.3, y, z0 - 0.3, x1 + 0.3, y + 0.35, z1 + 0.3, accent=True, mirror=mirror)
+            s.glow(x0 - 0.32, y - 0.1, z0 - 0.32, x1 + 0.32, y, z0 - 0.3, mirror=mirror); s.glow(x0 - 0.32, y - 0.1, z1 + 0.3, x1 + 0.32, y, z1 + 0.32, mirror=mirror)
+            if lights: s.light((x0 + x1) / 2, y - 0.6, (z0 + z1) / 2, max(x1 - x0, z1 - z0) * 0.8 + 2, 0.8, mirror=mirror)
     def spawn(s, team, x, y, z, yaw, mirror_team=None):
         s.lines.append(f"spawn {team} {x:g} {y:g} {z:g} {yaw:g}")
         if mirror_team: s.lines.append(f"spawn {mirror_team} {-x:g} {y:g} {-z:g} {yaw + 180:g}")
@@ -46,14 +99,6 @@ class M:
         """a little stack of crates (n on the floor, one on top)"""
         for i in range(n): s.box(x + i * size, 0, z, x + (i + 1) * size - 0.05, size, z + size, mirror=mirror)
         s.box(x + size * 0.4, size, z + 0.1, x + size * 1.35, size * 1.8, z + size - 0.1, accent=True, mirror=mirror)
-    def stairs(s, x0, z0, x1, z1, top, axis, rising, mirror=False):
-        """steps of 0.5 m up to `top` along axis ('x' or 'z'), rising toward +/-"""
-        n = int(round(top / 0.5)); length = (x1 - x0) if axis == "x" else (z1 - z0)
-        for i in range(n):
-            a = length * i / n; b = length * (i + 1) / n
-            h = 0.5 * (i + 1) if rising > 0 else 0.5 * (n - i)
-            if axis == "x": s.box(x0 + a, 0, z0, x0 + b, h, z1, mirror=mirror)
-            else: s.box(x0, 0, z0 + a, x1, h, z0 + b, mirror=mirror)
     # ---- structure kit ----
     def catwalk(s, x0, z0, x1, z1, y, rails="z", mirror=False):
         """elevated walkway (0.3 thick) on accent supports, with railings along its long sides"""
@@ -66,25 +111,25 @@ class M:
             s.box(x0, y, z0, x1, y + 0.9, z0 + 0.1, accent=True, mirror=mirror); s.box(x0, y, z1 - 0.1, x1, y + 0.9, z1, accent=True, mirror=mirror)
         elif rails == "x":
             s.box(x0, y, z0, x0 + 0.1, y + 0.9, z1, accent=True, mirror=mirror); s.box(x1 - 0.1, y, z0, x1, y + 0.9, z1, accent=True, mirror=mirror)
-    def doorwall(s, x0, z0, x1, z1, h, doors, axis="x", mirror=False):
+    def doorwall(s, x0, z0, x1, z1, h, doors, axis="x", mirror=False, base=0.0):
         """a wall along `axis` with doorways: doors = [(center, width, height)], lintel above each"""
         a0, a1 = (x0, x1) if axis == "x" else (z0, z1)
         cuts = sorted((c - w / 2, c + w / 2, dh) for c, w, dh in doors)
-        pos = a0
+        pos, y0, y1 = a0, base, base + h
         for (c0, c1, dh) in cuts:
             if c0 > pos:
-                s.box(pos, 0, z0, c0, h, z1, mirror=mirror) if axis == "x" else s.box(x0, 0, pos, x1, h, c0, mirror=mirror)
-            s.box(c0, dh, z0, c1, h, z1, mirror=mirror) if axis == "x" else s.box(x0, dh, c0, x1, h, c1, mirror=mirror)  # lintel
+                s.box(pos, y0, z0, c0, y1, z1, mirror=mirror) if axis == "x" else s.box(x0, y0, pos, x1, y1, c0, mirror=mirror)
+            s.box(c0, base + dh, z0, c1, y1, z1, mirror=mirror) if axis == "x" else s.box(x0, base + dh, c0, x1, y1, c1, mirror=mirror)  # lintel
             pos = c1
-        if pos < a1: s.box(pos, 0, z0, a1, h, z1, mirror=mirror) if axis == "x" else s.box(x0, 0, pos, x1, h, a1, mirror=mirror)
-    def windowwall(s, x0, z0, x1, z1, h, sill, top, every=3.0, width=1.6, wallbang=False, mirror=False):
+        if pos < a1: s.box(pos, y0, z0, a1, y1, z1, mirror=mirror) if axis == "x" else s.box(x0, y0, pos, x1, y1, a1, mirror=mirror)
+    def windowwall(s, x0, z0, x1, z1, h, sill, top, every=3.0, width=1.6, wallbang=False, mirror=False, base=0.0):
         """wall along x with a row of windows between sill and top (wallbang = shoot-through panels)"""
         add = s.wallbang if wallbang else (lambda *a, **k: s.box(*a, **k))
-        add(x0, 0, z0, x1, sill, z1, mirror=mirror); add(x0, top, z0, x1, h, z1, mirror=mirror)
+        add(x0, base, z0, x1, base + sill, z1, mirror=mirror); add(x0, base + top, z0, x1, base + h, z1, mirror=mirror)
         x = x0
         while x < x1:
             seg = min(x1, x + every - width)
-            add(x, sill, z0, seg, top, z1, mirror=mirror)
+            add(x, base + sill, z0, seg, base + top, z1, mirror=mirror)
             x += every
     def track(s, pts):
         """railway along a payload path: two rails and sleepers, all sunk flush into the floor"""
@@ -132,14 +177,15 @@ class M:
     def dress(s, name, stacks=6, lamps=8):
         """architectural detail along the outer walls: trims, corner columns, buttresses with inset panels
         between them, pipes, roof beams, floor seams, wall lamps and a few tidy crate stacks in the bays.
-        Everything hugs the walls (keepouts protect spawns, objectives and the payload track)."""
+        Everything hugs the walls (keepouts protect spawns, objectives and the payload track). The room's
+        style decides which pieces it gets: hall (industrial), temple, yard (outdoors), fort."""
         if not hasattr(s, "hx"): return
-        hx, hz, h = s.hx, s.hz, s.h
+        hx, hz, h, style, wb = s.hx, s.hz, s.h, s.style, s.wall_base
         rnd = random.Random(name)
         pts = s.keepouts()
         s.trim(hx, hz)                                            # base trim
         s.trim(hx, hz, y=h - 0.5, h=0.5, d=0.25)                  # cornice
-        s.trim(hx, hz, y=1.1, h=0.12, d=0.08)                     # chair rail
+        if style != "yard": s.trim(hx, hz, y=1.1, h=0.12, d=0.08) # chair rail
         for (y, hh) in ((0.25, 0.1), (h - 0.6, 0.1)):            # glow lines over the base trim and under the cornice
             d = 0.05
             s.glow(-hx, y, -hz - d, hx, y + hh, -hz); s.glow(-hx, y, hz, hx, y + hh, hz + d)
@@ -147,7 +193,15 @@ class M:
         for (cx, cz) in ((-hx, -hz), (hx, -hz), (-hx, hz), (hx, hz)):   # corner columns
             x0, x1 = (cx, cx + 1.2) if cx < 0 else (cx - 1.2, cx)
             z0, z1 = (cz, cz + 1.2) if cz < 0 else (cz - 1.2, cz)
-            s.box(x0, 0, z0, x1, h, z1, accent=True)
+            s.box(x0, wb, z0, x1, h + (1.2 if style == "fort" else 0), z1, accent=True)
+        if style == "fort":   # battlements along the top of the outer walls
+            for along, half, wall in ((True, hx, hz), (False, hz, hx)):
+                k = int(half)
+                for i in range(-k + 1, k, 2):
+                    for side in (-1, 1):
+                        w0, w1 = (wall, wall + 2) if side > 0 else (-wall - 2, -wall)
+                        if along: s.box(i - 0.5, h, w0, i + 0.5, h + 0.9, w1, accent=True)
+                        else: s.box(w0, h, i - 0.5, w1, h + 0.9, i + 0.5, accent=True)
         bays = []   # (x, z, inward normal x, z, along axis) midpoints between buttresses, for panels / lamps / crates
         for along, half, wall in ((True, hx, hz), (False, hz, hx)):
             n = max(2, int(2 * half / 7))
@@ -159,35 +213,46 @@ class M:
                     if not s.clear(x, z, 1.0, pts): continue
                     bx0, bz0, bx1, bz1 = (c - 0.5, side * wall - (0.6 if side > 0 else -0.6), c + 0.5, side * wall) if along else \
                                          (side * wall - (0.6 if side > 0 else -0.6), c - 0.5, side * wall, c + 0.5)
-                    s.box(min(bx0, bx1), 0, min(bz0, bz1), max(bx0, bx1), h - 0.5, max(bz0, bz1))
+                    if style == "yard":   # outdoors: plain posts with a lamp on top instead of buttresses
+                        s.box(min(bx0, bx1), wb, min(bz0, bz1), max(bx0, bx1), h + 0.4, max(bz0, bz1), mat="metal")
+                        s.glow(min(bx0, bx1) - 0.05, h + 0.4, min(bz0, bz1) - 0.05, max(bx0, bx1) + 0.05, h + 0.6, max(bz0, bz1) + 0.05)
+                        continue
+                    s.box(min(bx0, bx1), wb, min(bz0, bz1), max(bx0, bx1), h - 0.5, max(bz0, bz1))
                     s.box(min(bx0, bx1) - 0.1, h - 1.4, min(bz0, bz1) - 0.1, max(bx0, bx1) + 0.1, h - 1.1, max(bz0, bz1) + 0.1, accent=True)
             for i in range(n):
                 mid, span = (cs[i] + cs[i + 1]) / 2, (cs[i + 1] - cs[i])
                 for side in (-1, 1):
                     bays.append((mid, span, side, along, wall))
         # inset panels in every bay (flush, just above the chair rail)
-        for (mid, span, side, along, wall) in bays:
-            a0, a1, y0, y1 = mid - span / 2 + 1.0, mid + span / 2 - 1.0, 1.6, min(h - 1.8, 5.0)
-            if a1 - a0 < 1.5 or y1 - y0 < 1.0: continue
-            w0, w1 = (side * wall, side * wall + 0.06) if side > 0 else (side * wall - 0.06, side * wall)  # inside the wall: flush
-            if along: s.box(a0, y0, w0, a1, y1, w1, accent=True)
-            else: s.box(w0, y0, a0, w1, y1, a1, accent=True)
-        # pipes along the two long walls
+        if style != "yard":
+            for (mid, span, side, along, wall) in bays:
+                a0, a1, y0, y1 = mid - span / 2 + 1.0, mid + span / 2 - 1.0, 1.6, min(h - 1.8, 5.0)
+                if a1 - a0 < 1.5 or y1 - y0 < 1.0: continue
+                w0, w1 = (side * wall, side * wall + 0.06) if side > 0 else (side * wall - 0.06, side * wall)  # inside the wall: flush
+                if along: s.box(a0, y0, w0, a1, y1, w1, accent=True)
+                else: s.box(w0, y0, a0, w1, y1, a1, accent=True)
         long_x = hx >= hz
-        for side in (-1, 1):
-            for y in (h * 0.6, h * 0.6 + 0.45):
-                if y + 0.25 > h - 1.5: continue
-                if long_x: s.box(-hx, y, side * hz - (0.35 if side > 0 else -0.35), hx, y + 0.25, side * hz - (0.05 if side > 0 else -0.05), mat="metal")
-                else: s.box(side * hx - (0.35 if side > 0 else -0.35), y, -hz, side * hx - (0.05 if side > 0 else -0.05), y + 0.25, hz, mat="metal")
-        # beams across tall rooms: visual rhythm and grapple anchors
-        if h >= 8:
+        if style == "hall":   # pipes along the two long walls
+            for side in (-1, 1):
+                for y in (h * 0.6, h * 0.6 + 0.45):
+                    if y + 0.25 > h - 1.5: continue
+                    if long_x: s.box(-hx, y, side * hz - (0.35 if side > 0 else -0.35), hx, y + 0.25, side * hz - (0.05 if side > 0 else -0.05), mat="metal")
+                    else: s.box(side * hx - (0.35 if side > 0 else -0.35), y, -hz, side * hx - (0.05 if side > 0 else -0.05), y + 0.25, hz, mat="metal")
+        roofed = style in ("hall", "temple") and h >= 8
+        if roofed:   # beams across tall rooms: visual rhythm and grapple anchors, with lamps hanging under them
             n = int(2 * (hx if not long_x else hz) / 9)
+            span = hx if long_x else hz
             for i in range(1, n + 1):
                 c = -(hx if not long_x else hz) + i * 2 * (hx if not long_x else hz) / (n + 1)
                 if long_x: s.box(-hx, h - 1.6, c - 0.35, hx, h - 1.0, c + 0.35, accent=True)
                 else: s.box(c - 0.35, h - 1.6, -hz, c + 0.35, h - 1.0, hz, accent=True)
+                for a in (-span * 0.5, 0, span * 0.5):
+                    x, z = (a, c) if long_x else (c, a)
+                    s.metal(x - 0.05, h - 2.6, z - 0.05, x + 0.05, h - 1.6, z + 0.05)
+                    s.glow(x - 0.45, h - 2.75, z - 0.2, x + 0.45, h - 2.6, z + 0.2)
+                    s.light(x, h - 3.0, z, 8, 0.3, fixture=False)
         # emblems on the two end walls: accent backing plate with a glow diamond and bars, high above play
-        ew = hx if long_x else hz                  # end walls are the short ones
+        ew = hx if long_x else hz
         ey0, ey1 = h * 0.5, h * 0.88
         if ey1 - ey0 > 2.5:
             cy, r = (ey0 + ey1) / 2, (ey1 - ey0) / 2
@@ -204,25 +269,11 @@ class M:
                     ebox(-a - 0.25, y - 0.12, -a + 0.05, y + 0.12, 0.08, 0.16, "glow"); ebox(a - 0.05, y - 0.12, a + 0.25, y + 0.12, 0.08, 0.16, "glow")
                 ebox(-r * 1.5, cy - 0.08, -r * 0.35, cy + 0.08, 0.08, 0.14, "glow"); ebox(r * 0.35, cy - 0.08, r * 1.5, cy + 0.08, 0.08, 0.14, "glow")
                 s.light(side * (ew - 1.5) if long_x else 0, cy, 0 if long_x else side * (ew - 1.5), 7, 0.35, fixture=False)
-        # hanging lamps under the roof beams
-        if h >= 8:
-            n = int(2 * (hx if not long_x else hz) / 9)
-            span = hx if long_x else hz
-            for i in range(1, n + 1):
-                c = -(hx if not long_x else hz) + i * 2 * (hx if not long_x else hz) / (n + 1)
-                for a in (-span * 0.5, 0, span * 0.5):
-                    x, z = (a, c) if long_x else (c, a)
-                    s.metal(x - 0.05, h - 2.6, z - 0.05, x + 0.05, h - 1.6, z + 0.05)
-                    s.glow(x - 0.45, h - 2.75, z - 0.2, x + 0.45, h - 2.6, z + 0.2)
-                    s.light(x, h - 3.0, z, 8, 0.3, fixture=False)
-        # floor inlay: two concentric accent frames around the centre, sunk flush
-        for rr in (3.0, 4.2):
-            if rr + 1 > min(hx, hz): continue
-            for (x0, z0, x1, z1) in ((-rr, -rr, rr, -rr + 0.25), (-rr, rr - 0.25, rr, rr), (-rr, -rr, -rr + 0.25, rr), (rr - 0.25, -rr, rr, rr)):
-                s.box(x0, -0.05, z0, x1, 0, z1, accent=True)
-        # floor seams in both directions (a tiled look), sunk into the floor: flush, nothing to trip on
-        for x in range(-int((hx - 4) // 8) * 8, int(hx - 4) + 1, 8): s.box(x - 0.06, -0.05, -hz, x + 0.06, 0, hz, accent=True)  # centered: symmetric
-        for z in range(-int((hz - 4) // 8) * 8, int(hz - 4) + 1, 8): s.box(-hx, -0.05, z - 0.06, hx, 0, z + 0.06, accent=True)
+        # floor seams in both directions (a tiled look), sunk flush, cut around the holes
+        for x in range(-int((hx - 4) // 8) * 8, int(hx - 4) + 1, 8):
+            for r in minus((x - 0.06, -hz, x + 0.06, hz), s.holes): s.box(r[0], -0.05, r[1], r[2], 0, r[3], accent=True)
+        for z in range(-int((hz - 4) // 8) * 8, int(hz - 4) + 1, 8):
+            for r in minus((-hx, z - 0.06, hx, z + 0.06), s.holes): s.box(r[0], -0.05, r[1], r[2], 0, r[3], accent=True)
         # wall lamps and tidy crate stacks, placed in mirrored pairs (point symmetry: both sides get the same cover)
         half = [k for k, b in enumerate(bays) if b[2] > 0]
         order = sorted(half, key=lambda k: rnd.random())
@@ -241,6 +292,7 @@ class M:
             inset = side * (wall - 1.3)
             x, z = (mid, inset) if along else (inset, mid)
             if not s.clear(x, z, 2.0, pts) or not s.clear(-x, -z, 2.0, pts): continue
+            if s.over_hole(x, z, 2.0) or s.over_hole(-x, -z, 2.0): continue
             size = 1.1
             cx0, cz0 = x - size, z - size / 2
             s.box(cx0, 0, cz0, cx0 + size - 0.04, size, cz0 + size, mirror=True)
@@ -264,13 +316,120 @@ class M:
             out.append(f"accent {x0 - 0.06:g} {y1:g} {z0 - 0.06:g} {x1 + 0.06:g} {y1 + 0.1:g} {z1 + 0.06:g}")
             out.append(f"glow {x0 - 0.02:g} 0.3 {z0 - 0.02:g} {x1 + 0.02:g} 0.38 {z1 + 0.02:g}")
         s.lines += out
+    def skyline_pass(s, name):
+        """distant scenery beyond the walls (unlit 'far' boxes, no collision with play, no lightmap cost),
+        generated for one half and mirrored through the centre so symmetric maps stay symmetric"""
+        kind = getattr(s, "skyline", None)
+        if not kind: return
+        R = random.Random(name + "/sky")
+        hx, hz, h = s.hx, s.hz, s.h
+        def far(x0, y0, z0, x1, y1, z1, mat="far"):   # (always far: lit trims would count as playable space)
+            s.box(x0, y0, z0, x1, y1, z1, mat="far", mirror=True)
+        def element(cx, cz, out):   # out: unit vector pointing away from the map
+            if kind == "city":
+                w, d, H = R.uniform(6, 13), R.uniform(6, 12), h + R.uniform(3, 24)
+                far(cx - w / 2, -2, cz - d / 2, cx + w / 2, H, cz + d / 2)
+                if R.random() < 0.5: far(cx - w / 4, H, cz - d / 4, cx + w / 4, H + R.uniform(3, 8), cz + d / 4)
+                if R.random() < 0.35: far(cx - 0.15, H, cz - 0.15, cx + 0.15, H + 6, cz + 0.15, "metal")
+                return w
+            if kind == "mountains":
+                w, H = R.uniform(26, 50), h + R.uniform(8, 30)
+                for k in range(4):
+                    f = 1 - k * 0.24
+                    far(cx - w * f / 2, -2, cz - w * f / 2, cx + w * f / 2, -2 + (H + 2) * (k + 1) / 4, cz + w * f / 2)
+                return w * 0.7
+            if kind == "stacks":
+                if R.random() < 0.45:
+                    r, H = R.uniform(1.2, 2.2), h + R.uniform(14, 30)
+                    far(cx - r, -2, cz - r, cx + r, H, cz + r)
+                    far(cx - r - 0.1, H - 3, cz - r - 0.1, cx + r + 0.1, H - 2.6, cz + r + 0.1, "glow")
+                    return 2 * r + 4
+                w, d, H = R.uniform(10, 22), R.uniform(8, 14), h + R.uniform(1, 9)
+                far(cx - w / 2, -2, cz - d / 2, cx + w / 2, H, cz + d / 2)
+                return w
+            if kind == "cranes":
+                if R.random() < 0.5:
+                    H = h + R.uniform(14, 24)
+                    far(cx - 1, -2, cz - 1, cx + 1, H, cz + 1)
+                    jx, jz = (-out[1], out[0])
+                    L = R.uniform(14, 22)
+                    far(min(cx, cx + jx * L) - 0.7, H, min(cz, cz + jz * L) - 0.7, max(cx, cx + jx * L) + 0.7, H + 1.4, max(cz, cz + jz * L) + 0.7)
+                    far(cx - 0.3, H - 6, cz - 0.3, cx + 0.3, H, cz + 0.3, "glow")
+                    return 6
+                w, d, H = R.uniform(8, 16), R.uniform(6, 10), h + R.uniform(-2, 6)
+                far(cx - w / 2, -2, cz - d / 2, cx + w / 2, H, cz + d / 2)
+                return w
+            if kind == "pagodas":
+                if R.random() < 0.4:
+                    r, H = R.uniform(2.5, 4), h + R.uniform(6, 18)
+                    tiers = 4
+                    for k in range(tiers):
+                        y0 = -2 + (H + 2) * k / tiers; y1 = -2 + (H + 2) * (k + 1) / tiers
+                        far(cx - r, y0, cz - r, cx + r, y1, cz + r)
+                        far(cx - r - 1.6, y1 - 0.4, cz - r - 1.6, cx + r + 1.6, y1, cz + r + 1.6, "accent")
+                        r *= 0.8
+                    return 12
+                w, H = R.uniform(24, 40), h + R.uniform(2, 12)
+                for k in range(3):
+                    f = 1 - k * 0.3
+                    far(cx - w * f / 2, -2, cz - w * f / 2, cx + w * f / 2, -2 + (H + 2) * (k + 1) / 3, cz + w * f / 2)
+                return w * 0.7
+            if kind == "ruins":
+                H = h + R.uniform(-2, 10)
+                far(cx - 1.2, -2, cz - 1.2, cx + 1.2, H, cz + 1.2)
+                if R.random() < 0.5:
+                    jx, jz = (-out[1], out[0])
+                    far(min(cx, cx + jx * 7) - 1.2, -2, min(cz, cz + jz * 7) - 1.2, max(cx, cx + jx * 7) + 1.2, H - 2, max(cz, cz + jz * 7) + 1.2)
+                    far(min(cx, cx + jx * 7) - 1.4, H - 2, min(cz, cz + jz * 7) - 1.4, max(cx, cx + jx * 7) + 1.4, H - 0.5, max(cz, cz + jz * 7) + 1.4, "accent")
+                    return 12
+                return 5
+            return 10
+        dist = {"mountains": (28, 70), "pagodas": (14, 40)}.get(kind, (10, 32))
+        for (out, along, half, wall) in (((0, -1), True, hx, hz), ((1, 0), False, hz, hx)):   # north and east; mirrored to south and west
+            t = -half - 30
+            while t < half + 30:
+                d = wall + 2 + R.uniform(*dist)
+                cx, cz = (t, -d) if along else (d, t)
+                t += element(cx, cz, out) + R.uniform(3, 12)
     def save(s, name, dress=True):
-        if dress: s.props(); s.dress(name)
+        if dress: s.props(); s.dress(name); s.skyline_pass(name)
         p = PALETTES.get(name)
         if p:
             p = [tuple(round(v * 0.85, 3) for v in p[0])] + list(p[1:])
             s.lines.insert(4, "palette " + " ".join(f"{k} {c[0]:g} {c[1]:g} {c[2]:g}" for k, c in zip(("base", "accent", "metal", "glow", "sky"), p)))
         open(os.path.join(OUT, name + ".qmap"), "w").write("\n".join(s.lines) + "\n")
+
+
+def minus(rect, holes):
+    """rect minus the holes, as a list of rects (grid split, merged along x then across identical rows:
+    point-symmetric holes give a point-symmetric result)"""
+    x0, z0, x1, z1 = rect
+    hs = [(max(a, x0), max(b, z0), min(c, x1), min(d, z1)) for (a, b, c, d) in holes]
+    hs = [hh for hh in hs if hh[2] > hh[0] and hh[3] > hh[1]]
+    if not hs: return [rect]
+    xs = sorted({x0, x1} | {v for hh in hs for v in (hh[0], hh[2])})
+    zs = sorted({z0, z1} | {v for hh in hs for v in (hh[1], hh[3])})
+    rows = []
+    for j in range(len(zs) - 1):
+        za, zb = zs[j], zs[j + 1]
+        runs, cur = [], None
+        for i in range(len(xs) - 1):
+            xa, xb = xs[i], xs[i + 1]
+            cx, cz = (xa + xb) / 2, (za + zb) / 2
+            solid = not any(hh[0] < cx < hh[2] and hh[1] < cz < hh[3] for hh in hs)
+            if solid:
+                cur = (cur[0], xb) if cur else (xa, xb)
+            elif cur:
+                runs.append(cur); cur = None
+        if cur: runs.append(cur)
+        rows.append((za, zb, tuple(runs)))
+    out, j = [], 0
+    while j < len(rows):
+        k = j
+        while k + 1 < len(rows) and rows[k + 1][2] == rows[j][2]: k += 1
+        for (a, b) in rows[j][2]: out.append((a, rows[j][0], b, rows[k][1]))
+        j = k + 1
+    return out
 
 # per-map colour themes: base, accent, metal, glow, sky (linear rgb)
 PALETTES = {
@@ -287,313 +446,499 @@ PALETTES = {
     "furnace":   ((0.46, 0.40, 0.38), (0.36, 0.14, 0.10), (0.20, 0.19, 0.20), (1.00, 0.28, 0.08), (0.50, 0.38, 0.34)),  # blood red heat
     "gantry":    ((0.56, 0.58, 0.62), (0.40, 0.34, 0.12), (0.24, 0.26, 0.30), (0.95, 0.90, 0.30), (0.58, 0.64, 0.72)),  # steel + yellow
     "anvil":     ((0.62, 0.62, 0.66), (0.30, 0.22, 0.40), (0.26, 0.26, 0.30), (0.75, 0.40, 1.00), (0.64, 0.64, 0.74)),  # neutral, violet
+    "viaduct":   ((0.62, 0.58, 0.52), (0.30, 0.34, 0.40), (0.26, 0.27, 0.30), (1.00, 0.75, 0.30), (0.72, 0.76, 0.84)),  # stone viaduct, amber markers
 }
 
-# --- crucible: duel (1v1 / 2v2). High open ceiling and no overhangs so double-size players fit
-# everywhere; tall pillars and walls to grapple from for grapple-only rounds; short sightlines for knives.
+
+# ======================================================================================================
+# CRUCIBLE: duel (1v1 / 2v2). A molten moat rings an island in the middle; four narrow bridges lead to the
+# crucible itself, a giant pot of molten metal hung from the roof. Knock people into the moat. High open
+# ceiling (double-size players fit everywhere), tall pillars for grapple-only rounds.
 m = M("Crucible", "duel")
-m.room(18, 18, 14)
-m.box(-2, 0, -2, 2, 9, 2, accent=True)                                  # center tower (grapple anchor)
-m.box(-9, 0, -9, -7, 7, -7, accent=True, mirror=True)                   # corner pillars
-m.box(7, 0, -9, 9, 7, -7, accent=True, mirror=True)
-m.box(-6, 0, 4, -2, 2.2, 5, mirror=True)                                # chest-high cover around mid
-m.box(2, 0, 4, 6, 2.2, 5, mirror=True)
-m.box(-13, 0, -3, -11, 3.5, 3, mirror=True)                             # flank walls
-m.box(-16, 0, -16, -12, 2, -12, mirror=True)                            # corner ledges + steps
-m.stairs(-12, -16, -10, -12, 2, "x", -1, mirror=True)
-m.box(12, 0, -16, 16, 2, -12, mirror=True)
-m.stairs(10, -16, 12, -12, 2, "x", 1, mirror=True)
-m.box(-3, 0, 12, 3, 1.2, 13, mirror=True)                               # spawn cover
-for x in (-4, 4): m.spawn("a", x, 0, 15, 0, "b")
-m.spawn("any", -15, 0, 6, 90, "any")
+moat = [(-8, -8, -1.2, -3.5, "molten"), (1.2, -8, 8, -3.5, "molten"), (-8, 3.5, -1.2, 8, "molten"), (1.2, 3.5, 8, 8, "molten"),
+        (-8, -3.5, -3.5, -1.2, "molten"), (-8, 1.2, -3.5, 3.5, "molten"), (3.5, -3.5, 8, -1.2, "molten"), (3.5, 1.2, 8, 3.5, "molten")]
+m.room(18, 18, 14, pits=moat, style="hall", skyline="stacks")
+# the crucible: pedestal, a stepped pot with a glowing molten top, rim, chains up to a roof beam
+m.box(-2.6, 0, -2.6, 2.6, 0.6, 2.6, accent=True)
+m.metal(-2, 0.6, -2, 2, 1.6, 2)
+for (a, b, c, d) in ((-2.6, -2.6, 2.6, -1.9), (-2.6, 1.9, 2.6, 2.6), (-2.6, -1.9, -1.9, 1.9), (1.9, -1.9, 2.6, 1.9)):
+    m.metal(a, 1.6, b, c, 2.9, d)
+m.glow(-1.9, 2.3, -1.9, 1.9, 2.5, 1.9)
+m.box(-2.8, 2.9, -2.8, 2.8, 3.1, -2.4, accent=True); m.box(-2.8, 2.9, 2.4, 2.8, 3.1, 2.8, accent=True)
+m.box(-2.8, 2.9, -2.4, -2.4, 3.1, 2.4, accent=True); m.box(2.4, 2.9, -2.4, 2.8, 3.1, 2.4, accent=True)
+for (x, z) in ((-2.5, -2.5), (2.5, -2.5), (-2.5, 2.5), (2.5, 2.5)): m.metal(x - 0.08, 3.1, z - 0.08, x + 0.08, 12, z + 0.08)
+m.metal(-18, 12, -0.5, 18, 12.8, 0.5); m.metal(-0.5, 12, -18, 0.5, 12.8, 18)        # roof cross-beams (grapple)
+m.light(0, 3.8, 0, 8, 0.9, fixture=False)
+# around the moat: corner pillars, flank walls, raised corner ledges, spawn cover
+m.box(-12, 0, -12, -10, 9, -10, accent=True, mirror=True); m.box(10, 0, -12, 12, 9, -10, accent=True, mirror=True)
+m.box(-6, 0, 10, -2, 2.2, 11, mirror=True); m.box(2, 0, 10, 6, 2.2, 11, mirror=True)
+m.box(-14, 0, -3, -12, 3.5, 3, mirror=True)
+m.box(-18, 0, -18, -14, 2, -14, mirror=True); m.stairs(-14, -18, -12, -14, 2, "x", -1, mirror=True)
+m.box(14, 0, -18, 18, 2, -14, mirror=True); m.stairs(12, -18, 14, -14, 2, "x", 1, mirror=True)
+m.box(-3, 0, 13, 3, 1.2, 14, mirror=True)
+for x in (-4, 4): m.spawn("a", x, 0, 16, 0, "b")
+m.spawn("any", -15, 0, 7, 90, "any")
 m.save("crucible")
 
-# --- depot: bomb map, attackers (A) south, defenders (B) north with sites A (west) and B (east) ---
+# ======================================================================================================
+# DEPOT: bomb. Attackers (A) come from the south, defenders hold the two sites in the north. Three very
+# different lanes: the west runs through a roofed warehouse full of racks, the middle crosses an open yard
+# around the freight truck (climb the crates onto its roof), the east drops into a sunken loading trench
+# under a raised dock.
 m = M("Depot", "bomb")
-m.room(26, 34, 9)
-# three lanes split by long walls with doorways
-m.box(-10, 0, -20, -8, 5, -2); m.box(-10, 0, 2, -8, 5, 20)
-m.box(8, 0, -20, 10, 5, -2); m.box(8, 0, 2, 10, 5, 20)
-# site A (west) and site B (east), each with crates
+m.room(26, 34, 9, sunken=[(12, -21, 18, 21, 2.5, "metal")], style="yard", skyline="city")
 m.box(-22, -0.05, -30, -14, 0, -22, accent=True); m.raw("site -22 0 -30 -14 3 -22")
 m.box(14, -0.05, -30, 22, 0, -22, accent=True); m.raw("site 14 0 -30 22 3 -22")
 for (x, z) in ((-20, -24), (-16, -28), (16, -24), (20, -28)): m.box(x - 1, 0, z - 1, x + 1, 1.4, z + 1)
-m.box(-24, 0, -20, -18, 2, -18); m.box(18, 0, -20, 24, 2, -18)          # site walls
-m.box(-3, 0, -6, 3, 1.4, -4); m.box(-3, 0, 4, 3, 1.4, 6)                # mid cover
-m.box(-1, 0, -26, 1, 4, -18, accent=True)                               # mid wall splitting the sites
-# defender perch with steps
-m.box(-4, 0, -33, 4, 2, -29); m.stairs(-4, -29, 4, -26, 2, "z", -1)
+m.box(-24, 0, -20, -18, 2, -19)
+m.box(-1, 0, -26, 1, 4, -18, accent=True)                               # wall splitting the sites
+m.box(-4, 0, -33, 4, 2, -29); m.stairs(-4, -29, 4, -26, 2, "z", -1)       # defender perch
+# west: the warehouse (doors north and south, a side door to the yard, racks inside)
+m.building(-24, -8, -9, 10, 5.0, [("n", -16.5, 3.2), ("s", -16.5, 3.2), ("e", 1, 2.6), ("w", -3, 2.6)], windows=True)
+for z in (-3.5, 4):
+    m.metal(-22, 0, z - 0.5, -18, 2.6, z + 0.5); m.metal(-15, 0, z - 0.5, -11, 2.6, z + 0.5)
+    for zz in (z - 0.55, z + 0.45): m.box(-22, 1.3, zz, -18, 1.4, zz + 0.1, accent=True); m.box(-15, 1.3, zz, -11, 1.4, zz + 0.1, accent=True)
+m.crates(-21, -6.5, 2); m.crates(-12.5, 7.5, 1)
+# middle: the freight truck (trailer + cab, wheels, headlights) with a crate stair onto its roof
+m.metal(-1.6, 0.6, -7, 1.6, 3.4, 3)                                       # trailer
+m.box(-1.7, 3.4, -7.1, 1.7, 3.55, 3.1, accent=True)
+for z in (-6, -4.6, 1.6): m.box(-1.75, 0, z - 0.5, -1.45, 1.0, z + 0.5, accent=True); m.box(1.45, 0, z - 0.5, 1.75, 1.0, z + 0.5, accent=True)
+m.box(-1.5, 0.6, 3.3, 1.5, 2.9, 6.2); m.box(-1.5, 2.9, 3.3, 1.5, 3.1, 5.4, accent=True)   # cab
+m.wallbang(-1.3, 1.8, 6.2, 1.3, 2.7, 6.3)                                  # windscreen
+m.glow(-1.3, 1.0, 6.2, -0.7, 1.4, 6.3); m.glow(0.7, 1.0, 6.2, 1.3, 1.4, 6.3)
+m.box(-1.75, 0, 4.3, -1.45, 1.0, 5.3, accent=True); m.box(1.45, 0, 4.3, 1.75, 1.0, 5.3, accent=True)
+m.box(2.2, 0, -8, 3.4, 1.1, -6.8); m.box(2.2, 0, -6.8, 3.4, 2.4, -5.6)    # crates up onto the trailer
+m.box(-5, 0, 10, -2, 1.4, 12); m.box(3, 0, 12, 6, 1.4, 14)                 # yard cover
+# east: raised dock beside the sunken trench, steps down into it at both ends
+m.box(18, 0, -16, 26, 1.2, 16, accent=True)
+m.stairs(18, 16, 21, 19, 1.2, "z", -1)
+m.container(20, -12, 25, -6); m.container(20, 4, 25, 10); m.container(20, 4, 25, 10, h=5.2)
+m.stairs(12, 18, 18, 21, 0, "z", 1, base=-2.5); m.stairs(12, -21, 18, -18, 0, "z", 1, base=-2.5)
+m.box(14, -2.5, -4, 16, -1.1, 0)                                           # cover down in the trench
+m.metal(11.6, 0, -14, 12, 1.0, 14); m.metal(18, 1.2, -14, 18.4, 2.2, 14)   # trench railings
 for x in (-6, -2, 2, 6): m.spawn("a", x, 0, 31, 0); m.spawn("b", x, 0, -24, 180)
 m.spawn("a", 0, 0, 28, 0); m.spawn("b", 0, 2, -31, 180)
-m.spawn("any", -20, 0, 10, 90); m.spawn("any", 20, 0, 10, -90)
+m.spawn("any", -20, 0, 16, 90); m.spawn("any", 8, 0, 16, -90)
 m.save("depot")
 
-# --- summit: king of the hill on a stepped central plateau ---------------------------------------
+# ======================================================================================================
+# SUMMIT: king of the hill. Outdoors on a mountain top: the hill is the peak, three terraces up with the
+# stairs turning a corner each tier, a beacon mast on top. Crevasses in the corners, two mountain huts.
 m = M("Summit", "koth")
-m.room(26, 26, 9)
-m.box(-6, 0, -6, 6, 2, 6, accent=True)                                  # the plateau (hill)
-m.raw("hill -6 2 -6 6 5 6")
-for (a, b) in ((-6, -9), (6, 9)):                                        # stairs on all four sides
-    pass
-m.stairs(-3, 6, 3, 9, 2, "z", -1); m.stairs(-3, -9, 3, -6, 2, "z", 1)
-m.stairs(6, -3, 9, 3, 2, "x", -1); m.stairs(-9, -3, -6, 3, 2, "x", 1)
-m.box(-1, 2, -1, 1, 4, 1)                                               # cover on top
-m.box(-16, 0, -2, -12, 2.5, 2, mirror=True)                             # flank towers
-m.box(-2, 0, 12, 2, 2.5, 16, mirror=True)
-m.box(-18, 0, 12, -12, 1.2, 14, mirror=True); m.box(12, 0, 12, 18, 1.2, 14, mirror=True)
-m.box(-20, 0, -20, -16, 3.5, -16, accent=True, mirror=True)            # grapple pillars in corners
-for x in (-8, -4, 0, 4, 8): m.spawn("a", x, 0, 22, 0, "b")
-m.spawn("any", -22, 0, 0, 90, "any")
+cre = [(13, 13, 19, 19, "water"), (-19, -19, -13, -13, "water"), (13, -19, 19, -13, "water"), (-19, 13, -13, 19, "water")]
+m.room(26, 26, 10, pits=cre, style="yard", skyline="mountains")
+m.box(-11, 0, -11, 11, 1.5, 11)                                            # terraces
+m.box(-8, 1.5, -8, 8, 3.0, 8, accent=True)
+m.box(-5, 3.0, -5, 5, 4.5, 5)
+m.raw("hill -5 4.5 -5 5 7.5 5")
+m.stairs(-2, 11, 2, 14, 1.5, "z", -1); m.stairs(-2, -14, 2, -11, 1.5, "z", 1)
+m.stairs(8, -2, 11, 2, 3.0, "x", -1, base=1.5); m.stairs(-11, -2, -8, 2, 3.0, "x", 1, base=1.5)
+m.stairs(-2, 5, 2, 8, 4.5, "z", -1, base=3.0); m.stairs(-2, -8, 2, -5, 4.5, "z", 1, base=3.0)
+m.metal(-0.35, 4.5, -0.35, 0.35, 11, 0.35)                                 # the beacon
+for (dx, dz) in ((-1, 0), (1, 0), (0, -1), (0, 1)): m.metal(dx * 1.4 - 0.08, 4.5, dz * 1.4 - 0.08, dx * 1.4 + 0.08, 7, dz * 1.4 + 0.08)
+m.box(-0.9, 11, -0.9, 0.9, 11.3, 0.9, accent=True); m.glow(-0.6, 11.3, -0.6, 0.6, 12.3, 0.6)
+m.light(0, 10.5, 0, 10, 0.6, fixture=False)
+m.box(-4, 4.5, -1, -2.6, 5.5, 1, mirror=True)                              # rocks on the peak
+m.box(-10.5, 1.5, 5, -9, 2.6, 7.5, mirror=True); m.box(6, 3.0, -7.5, 7.5, 3.9, -6, mirror=True)
+m.building(15, -5, 23, 5, 3.6, [("w", 0, 2.4), ("n", 19, 2.2), ("s", 19, 2.2)], mirror=True)   # mountain huts
+m.box(14.4, 3.95, -5.6, 23.6, 4.3, 5.6, mirror=True)                       # snowy second roof tier
+for (x, z, w, hh) in ((-22, -9, 2.4, 1.6), (-17, 8, 3, 2.2), (-6, 18, 2.6, 1.4), (6, 21, 2, 1.2), (-23, 21, 2.4, 2.6)):
+    m.box(x - w / 2, 0, z - w / 2, x + w / 2, hh, z + w / 2, mirror=True)   # boulders
+for x in (-8, -4, 0, 4, 8): m.spawn("a", x, 0, 23, 0, "b")
+m.spawn("any", -12.5, 0, 0, 90, "any")
 m.save("summit")
 
-# --- railyard: one-way payload, A pushes from the south base to the north base --------------------
+# ======================================================================================================
+# RAILYARD: payload. A pushes from the south to the north along a winding track: through a roofed tunnel,
+# past the station platform, under a footbridge. A steam locomotive waits on the siding.
 m = M("Railyard", "payload")
-m.room(24, 46, 10)
+m.room(24, 46, 10, style="yard", skyline="city")
 path = [(0, 40), (0, 26), (-14, 26), (-14, 6), (0, 6), (0, -10), (14, -10), (14, -28), (0, -28), (0, -40)]
 for p in path: m.raw(f"path {p[0]:g} 0 {p[1]:g}")
 m.track(path)
-m.signal_gantry(36, 24); m.signal_gantry(-36, 24); m.signal_gantry(0, 24)  # signal gantries over the yard
-m.container(-23, 32, -19, 38); m.container(19, -38, 23, -32)                # containers in the corners
+m.signal_gantry(36, 24); m.signal_gantry(-36, 24)
+m.container(-23, 32, -19, 38); m.container(19, -38, 23, -32)
 m.container(-23, -40, -17, -37); m.container(17, 37, 23, 40)
-m.container(-23, -40, -17, -37, h=5.2); m.container(17, 37, 23, 40, h=5.2)  # stacked two high
-m.wallbang(20, 0, 26, 23, 2.4, 26.3); m.wallbang(-23, 0, -26.3, -20, 2.4, -26)  # fences
-# cover beside (never on) the track
-for (x0, z0, x1, z1, h) in [(4, 30, 8, 34, 1.6), (-8, 30, -4, 34, 1.6), (-20, 14, -17, 20, 2), (-10, 12, -7, 18, 1.4),
-                           (4, -2, 7, 2, 1.4), (-6, -4, -3, 0, 2.2), (18, -20, 21, -14, 1.6), (8, -22, 11, -16, 1.4),
-                           (-8, -34, -4, -30, 1.6), (4, -34, 8, -30, 1.6)]:
+m.container(-23, -40, -17, -37, h=5.2); m.container(17, 37, 23, 40, h=5.2)
+m.wallbang(21.5, 0, 33, 24, 2.4, 33.3); m.wallbang(-23, 0, -33.3, -20, 2.4, -33)
+for (x0, z0, x1, z1, h) in [(4, 30, 8, 34, 1.6), (-8, 30, -4, 34, 1.6), (4, -2, 7, 2, 1.4), (-6, -4, -3, 0, 2.2),
+                           (18, -20, 21, -14, 1.6), (8, -22, 11, -16, 1.4), (-8, -34, -4, -30, 1.6), (4, -34, 8, -30, 1.6)]:
     m.box(x0, 0, z0, x1, h, z1)
-m.box(-24, 0, -6, -18, 2.5, 2, accent=True); m.stairs(-18, -6, -15, 2, 2.5, "x", -1)   # west overlook
-m.box(18, 0, 6, 24, 2.5, 14, accent=True); m.stairs(15, 6, 18, 14, 2.5, "x", 1)        # east overlook
+# the tunnel over the west leg of the track (doors in both walls half-way)
+m.doorwall(-18.4, 9, -18, 23, 4.6, [(16, 2.4, 2.6)], axis="z"); m.doorwall(-10, 9, -9.6, 23, 4.6, [(16, 2.4, 2.6)], axis="z")
+m.box(-18.6, 4.6, 8.6, -9.4, 5.1, 23.4, accent=True)
+m.glow(-18.0, 4.3, 8.6, -17.9, 4.45, 23.4); m.glow(-10.1, 4.3, 8.6, -10.0, 4.45, 23.4)
+m.light(-14, 3.8, 12, 7, 0.8); m.light(-14, 3.8, 20, 7, 0.8)
+# the station: a raised platform with a canopy on posts and a little ticket office
+m.box(-24, 0, -26, -17, 0.9, -10, accent=True); m.stairs(-17, -20, -15, -16, 0.9, "x", -1)
+for z in (-25, -18, -11): m.metal(-17.6, 0.9, z - 0.2, -17.2, 4.4, z + 0.2)
+m.box(-24, 4.4, -26.5, -16.5, 4.7, -9.5, accent=True); m.glow(-16.6, 4.2, -26.5, -16.5, 4.4, -9.5)
+m.building(-24, -24, -20, -19, 2.8, [("e", -21.5, 1.8)], base=0.9)
+m.light(-20, 3.8, -18, 8, 0.8)
+# footbridge over the yard
+m.catwalk(-9, -19, 9, -17, 4.5, rails="z")
+m.stairs(-12, -19, -9, -17, 4.5, "x", 1); m.stairs(9, -19, 12, -17, 4.5, "x", -1)
+# the locomotive on its siding (east), facing north
+for o in (-0.7, 0.7): m.metal(19 + o - 0.08, -0.05, 12, 19 + o + 0.08, 0, 32)
+m.metal(17.4, 0.4, 15, 20.6, 1.2, 29.5)                                    # frame
+m.box(17.7, 1.2, 19, 20.3, 3.4, 29, accent=True)                           # boiler
+for z in (21, 24, 27): m.metal(17.6, 1.2, z - 0.2, 20.4, 3.5, z + 0.2)     # boiler bands
+m.metal(18.5, 3.4, 26.8, 19.5, 5.4, 27.8); m.glow(18.4, 5.2, 26.7, 19.6, 5.4, 27.9)  # chimney
+m.box(17.4, 1.2, 15, 20.6, 4.4, 19, accent=True); m.metal(17.2, 4.4, 14.8, 20.8, 4.7, 19.2)   # cab
+m.wallbang(17.6, 2.6, 18.9, 20.4, 3.6, 19.05)
+for z in (16.5, 19.5, 22.5, 25.5, 28.5): m.metal(17.2, 0, z - 0.7, 17.5, 1.4, z + 0.7); m.metal(20.5, 0, z - 0.7, 20.8, 1.4, z + 0.7)
+m.glow(18.6, 2.2, 29, 19.4, 2.8, 29.2)                                     # headlamp
+m.box(17.4, 0, 29.5, 20.6, 0.9, 30.3, accent=True)                         # cow-catcher
+m.box(-24, 0, -6, -18, 2.5, 2, accent=True); m.stairs(-18, -6, -15, 2, 2.5, "x", -1)
+m.box(18, 0, 4, 24, 2.5, 10, accent=True); m.stairs(15, 4, 18, 10, 2.5, "x", 1)
 for x in (-6, -2, 2, 6): m.spawn("a", x, 0, 43, 0); m.spawn("b", x, 0, -44, 180)
 m.spawn("any", -20, 0, 30, 90); m.spawn("any", 20, 0, -30, -90)
 m.save("railyard")
 
-# --- canal: neutral payload, straight symmetric track, cart starts in the middle --------------------
+# ======================================================================================================
+# CANAL: neutral payload down the middle causeway; canals full of water either side (fall in and you're
+# out), crossed by three bridges each, with the lock gates as the centrepiece at both ends and canal-side
+# houses on the banks.
 m = M("Canal", "npayload")
-m.room(22, 42, 10)
-for z in (36, 24, 12, 0, -12, -24, -36): m.raw(f"path 0 0 {z:g}")    # A spawns behind z=+36 and pushes toward z=-36
+water = []
+for sx in (-1, 1):
+    a, b = (9, 14) if sx > 0 else (-14, -9)
+    for (z0, z1) in ((-44, -21.5), (-18.5, -1.5), (1.5, 18.5), (21.5, 44)): water.append((a, z0, b, z1, "water"))
+m.room(22, 42, 10, pits=water, style="yard", skyline="city")
+for z in (36, 24, 12, 0, -12, -24, -36): m.raw(f"path 0 0 {z:g}")
 m.track([(0, 36), (0, -36)])
-m.signal_gantry(18, 22, mirror=True); m.signal_gantry(0, 22)
-m.container(-18, 34, -13, 37, mirror=True); m.container(-21, 10, -18, 16, mirror=True)
-m.container(-21, 10, -18, 16, h=5.2, mirror=True)
-m.wallbang(10, 0, 26, 13, 2.4, 26.3, mirror=True)
-m.box(-6, 0, 16, -3, 1.6, 20, mirror=True); m.box(3, 0, 16, 6, 1.6, 20, mirror=True)
-m.box(-14, 0, 4, -10, 2.2, 8, mirror=True); m.box(10, 0, -2, 14, 1.4, 2, mirror=True)
-m.box(-22, 0, 26, -16, 2.5, 32, accent=True, mirror=True); m.stairs(-16, 26, -13, 32, 2.5, "x", -1, mirror=True)
-m.box(-8, 0, -2, -5, 3, 2, accent=True, mirror=True)
+m.signal_gantry(0, 22)
+for (z0, z1) in ((-21.5, -18.5), (-1.5, 1.5), (18.5, 21.5)):              # bridge railings
+    for (a, b) in ((9, 14), (-14, -9)):
+        m.box(a, 0, z0 - 0.1, b, 1.0, z0, accent=True); m.box(a, 0, z1, b, 1.0, z1 + 0.1, accent=True)
+for side in (-1, 1):                                                       # lock gates: posts, a glowing beam, gate leaves
+    z = side * 31
+    for (a, b) in ((8.5, 9), (14, 14.5), (-9, -8.5), (-14.5, -14)):
+        m.metal(a, -3.6, z - 0.6, b, 6.5, z + 0.6)
+    m.box(-14.5, 6.5, z - 0.7, -8.5, 7.2, z + 0.7, accent=True); m.box(8.5, 6.5, z - 0.7, 14.5, 7.2, z + 0.7, accent=True)
+    m.glow(-14.5, 6.3, z - 0.75, -8.5, 6.5, z + 0.75); m.glow(8.5, 6.3, z - 0.75, 14.5, 6.5, z + 0.75)
+    m.metal(-14, -3.6, z - 0.4, -9, 0.2, z + 0.4); m.metal(9, -3.6, z - 0.4, 14, 0.2, z + 0.4)   # gates: a narrow walkway
+    m.light(-11.5, 5.5, z, 7, 0.5, fixture=False); m.light(11.5, 5.5, z, 7, 0.5, fixture=False)
+m.building(15, 24, 22, 34, 4.2, [("w", 29, 2.4), ("s", 18.5, 2.2)], windows=True, mirror=True)    # canal houses
+m.building(15, -14, 22, -4, 3.6, [("w", -9, 2.4), ("n", 18.5, 2.2)], mirror=True)
+m.box(-6, 0, 16, -3, 1.6, 20, mirror=True); m.box(3, 0, 16, 6, 1.6, 20, mirror=True)               # causeway cover
+m.box(-7, 0, 4, -4, 2.2, 7, mirror=True); m.box(4.5, 0, -1, 7, 1.4, 1, mirror=True)
+m.box(-22, 0, -22, -16, 2.5, -16, accent=True, mirror=True); m.stairs(-16, -22, -14.5, -16, 2.5, "x", -1, mirror=True)
 for x in (-6, -2, 2, 6): m.spawn("a", x, 0, 39, 0, "b")
 m.spawn("any", -18, 0, 0, 90, "any")
 m.save("canal")
 
-# --- foundry: every mode (built for race): two levels, raised corners, a dais in the middle ----------
-m = M("Foundry", "race")
-m.room(24, 24, 10)
-m.box(-24, 0, -24, -12, 2.5, -12, mirror=True)                          # raised corners
-m.stairs(-12, -24, -9, -18, 2.5, "x", -1, mirror=True)
-m.box(12, 0, -24, 24, 2.5, -12, mirror=True)
-m.stairs(9, -24, 12, -18, 2.5, "x", 1, mirror=True)
-m.box(-4, 0, -4, 4, 1, 4, accent=True); m.box(-1, 1, -1, 1, 5, 1)      # center dais + pillar
-m.box(-12, 0, -2, -8, 1.6, 2, mirror=True); m.box(-2, 0, 8, 2, 1.6, 12, mirror=True)
-m.box(-18, 0, 3, -15, 3.5, 6, accent=True, mirror=True)                 # grapple pillars
-m.catwalk(-9, -23.8, 9, -21.6, 2.5, rails="z", mirror=True)             # upper ring: corner to corner, both ends
-m.windowwall(-7, -9.2, 7, -8.8, 3.2, 1.0, 2.2, every=3.5, width=2.0, wallbang=True, mirror=True)  # shoot-through screens
-m.doorwall(-24, 7.8, -19, 8.2, 4.0, [(-21.5, 2.2, 2.6)], axis="x", mirror=True)                     # gatehouses on the flanks
-m.box(-19, 0, 7.8, -18.6, 4.0, 12, mirror=True); m.box(-24, 3.6, 8.2, -18.6, 4.0, 12, accent=True, mirror=True)
-import math
-for (x, z) in ((-18, -18), (18, -18), (-18, 18), (18, 18), (0, -20), (0, 20), (-20, 0), (20, 0), (-6, 6), (6, -6)):
-    y = 2.5 if abs(x) >= 17 and abs(z) >= 17 else 0
-    yaw = math.degrees(math.atan2(x, z))  # face the middle of the map
-    m.spawn("any", x, y, z, round(yaw))
-for x in (-6, 0, 6): m.spawn("a", x, 0, 20, 0, "b")                 # team bases north / south
-m.raw("site -20 0 -10 -14 3 -4"); m.raw("site 14 0 -10 20 3 -4")     # bomb sites on the B side
-m.raw("hill -4 1 -4 4 4 4")                                             # the dais
-for p in ((0, 21), (13.5, 11), (13.5, -11), (0, -21)): m.raw(f"path {p[0]:g} 0 {p[1]:g}")
-m.raw("checkpoint 16 2.5 -22 22 6 -16")                                 # race: up both raised corners, over the dais, home
-m.raw("checkpoint -22 2.5 16 -16 6 22")
-m.raw("checkpoint -3 1 -3 3 5 3")
-m.raw("checkpoint -3 0 18 3 4 22")
-for x in (-4, 0, 4): m.spawn("race", x, 0, -17, 180 - 135)
-m.save("foundry")
-
-# --- temple: ranked VANILLA 1v1, symmetric halls of columns, wallbang screens in the middle -----------
-m = M("Temple", "1v1", sun=(0.35, 1.0, 0.55))
-m.raw("ranked vanilla")                                                 # ranked: the vanilla ladder's map
-m.room(22, 30, 12)
-m.trim(22, 30); m.trim(22, 30, y=11.4, h=0.6)
-m.box(-8, 0, -6, 8, 0.6, 6, accent=True)                                # sanctum floor
-m.stairs(-4, 6, 4, 8, 0.6, "z", -1); m.stairs(-4, -8, 4, -6, 0.6, "z", 1)
-m.box(-2, 0.6, -2, 2, 1.6, 2)                                           # altar
-m.box(-1.2, 1.6, -1.2, 1.2, 1.9, 1.2, accent=True)
-for (x, z) in ((-12, -18), (-12, -8), (-12, 8), (-12, 18)): m.pillar(x, z, 11.0, mirror=True)
-m.wallbang(-7, 0.6, -0.3, -3, 3.2, 0.3, mirror=True)                     # wallbang screens across the sanctum
-m.box(-22, 0, -4, -17, 3.5, 4); m.stairs(-17, -4, -14, 4, 3.5, "x", -1)  # side galleries
-m.box(17, 0, -4, 22, 3.5, 4); m.stairs(14, -4, 17, 4, 3.5, "x", 1)
-m.box(-22, 3.5, -4.2, -17, 4.4, -4, accent=True); m.box(17, 3.5, 4, 22, 4.4, 4.2, accent=True)   # gallery railings
-m.box(-6, 0, 18, -3, 2.4, 19, mirror=True); m.box(3, 0, 18, 6, 2.4, 19, mirror=True)           # spawn screens
-m.crates(-19, 22, mirror=True); m.crates(15, 13, 1, mirror=True)
-m.catwalk(-17, -1, 17, 1, 3.5, rails="z")                               # bridge between the galleries, over the altar
-m.box(-1, 3.5, -1, 1, 6.5, 1, accent=True)                              # bridge shrine (a little cover up top)
-m.light(-10, 2.6, 0, 7, 0.6, mirror=True)                               # lamps under the bridge
-m.doorwall(-22, 13.8, 22, 14.2, 5.0, [(-10, 3.0, 3.2), (0, 4.0, 3.6), (10, 3.0, 3.2)], axis="x", mirror=True)  # arcades
-for x in (-3, 3): m.spawn("a", x, 0, 26, 0, "b")
-m.spawn("any", -19, 3.5, 0, 90, "any")
-m.save("temple")
-
-# --- colosseum: every mode (built for tourney): a ring with tiered stands, arches and a central obelisk ---
-m = M("Colosseum", "tourney", sun=(0.5, 1.0, 0.2))
-m.room(26, 26, 14)
-for t in range(3):                                                      # tiered stands (decoration + high ground)
-    o0, o1, h = 26 - (t + 1) * 1.6, 26 - t * 1.6, 0.9 * (3 - t)
-    m.box(-26, 0, -o1, 26, h, -o0, accent=(t == 1)); m.box(-26, 0, o0, 26, h, o1, accent=(t == 1))
-    m.box(-o1, 0, -o0, -o0, h, o0, accent=(t == 1)); m.box(o0, 0, -o0, o1, h, o0, accent=(t == 1))
-m.stairs(-2, 21.2, 2, 23.6, 2.7, "z", 1, mirror=True)                   # stairs up the stands
-m.box(-22, 0, -22, -18, 3.6, -18, accent=True, mirror=True); m.box(18, 0, -22, 22, 3.6, -18, accent=True, mirror=True)  # corner towers
-m.box(-6, -0.05, -6, 6, 0, 6, accent=True)                             # arena floor ring marking
-m.pillar(0, 0, 6.0, r=1.0)                                              # central obelisk (grapple anchor)
-m.wallbang(-9, 0, -1, -8, 2.6, 1, mirror=True); m.wallbang(-1, 0, 8, 1, 2.6, 9, mirror=True)  # wallbang pavises
-m.box(-13, 0, 6, -10, 1.3, 9, mirror=True); m.box(10, 0, 6, 13, 1.3, 9, mirror=True)
-m.crates(-15, -3, 1, mirror=True)
-# inner ring wall with arches all around: breaks the bowl into lanes and gives peeks
-for side in (-1, 1):
-    m.doorwall(-15, side * 15 - 0.25, 15, side * 15 + 0.25, 4.0, [(-9, 2.6, 3.0), (0, 3.4, 3.2), (9, 2.6, 3.0)], axis="x")
-    m.doorwall(side * 15 - 0.25, -15, side * 15 + 0.25, 15, 4.0, [(-9, 2.6, 3.0), (0, 3.4, 3.2), (9, 2.6, 3.0)], axis="z")
-for (x, z) in ((-15, -15), (15, -15), (-15, 15), (15, 15)): m.pillar(x, z, 5.0, r=0.7)
-for (x, z) in ((0, -15), (-15, 0)): m.light(x, 2.6, z, 6, 0.5, mirror=True)  # lamps in the big arches
-for x in (-4, 4): m.spawn("a", x, 0, 17, 0, "b")
-for (x, z) in ((-16, 0), (16, 0), (0, -14), (0, 14), (-12, -12), (12, 12)): m.spawn("any", x, 0, z, 0)
-for x in (-8, 8): m.spawn("a", x, 0, 18, 0, "b")
-m.raw("site -12 0 -13 -6 3 -7"); m.raw("site 6 0 -13 12 3 -7")
-m.raw("hill -4 0 -4 4 3 4")
-for p in ((0, 19), (0, 8), (-6, 4), (-6, -4), (0, -8), (0, -19)): m.raw(f"path {p[0]:g} 0 {p[1]:g}")
-m.raw("checkpoint 14 0 -1.5 16 4 1.5")                                  # race: through the arches, around the ring
-m.raw("checkpoint -1.5 0 -16 1.5 4 -14")
-m.raw("checkpoint -16 0 -1.5 -14 4 1.5")
-m.raw("checkpoint -1.5 0 14 1.5 4 16")
-for x in (4, 7): m.spawn("race", x, 0, 18, -90)
-m.save("colosseum")
-
-# --- harbor: free for all, crates, containers, a pier and a crane ----------------------------------
+# ======================================================================================================
+# HARBOR: free for all, the big one. A quay along the north with the sea beyond it (fall in and you're out),
+# a moored freighter you can board, three piers and a lighthouse; the yard with containers, a warehouse
+# and the dock crane in the south.
 m = M("Harbor", "ffa", sun=(0.6, 1.0, 0.15))
-m.room(30, 30, 12)
-m.trim(30, 30)
-m.box(-30, 0, 14, 30, 1.2, 30)                                          # raised quay along the north
-m.stairs(-4, 11, 4, 14, 1.2, "z", -1, mirror=False)
-m.stairs(-20, 11, -14, 14, 1.2, "z", -1); m.stairs(14, 11, 20, 14, 1.2, "z", -1)
-for x in (-24, -12, 0, 12, 24): m.box(x - 0.3, 1.2, 29, x + 0.3, 2.4, 29.6, accent=True)   # bollards
-for (x0, z0, x1, z1) in ((-26, -10, -20, -4), (8, -24, 14, -18), (-6, -20, 0, -14)):        # shipping containers
-    m.box(x0, 0, z0, x1, 2.6, z1); m.box(x0, 2.6, z0 + 0.2, x1, 2.8, z1 - 0.2, accent=True)
-m.wallbang(18, 0, -8, 24, 2.6, -2)                                      # a thin-walled container (wallbang)
-m.wallbang(-8, 0, 2, -2, 2.4, 2.4)                                      # fence panels
-m.wallbang(4, 0, 4, 10, 2.4, 4.4)
+m.room(30, 30, 12, pits=[(-30, 22, 30, 30, "water")], style="yard", skyline="cranes")
+m.box(-30, 0, 14, 30, 1.2, 22)                                             # quay
+m.stairs(-4, 11, 4, 14, 1.2, "z", -1); m.stairs(-24, 11, -18, 14, 1.2, "z", -1); m.stairs(18, 11, 24, 14, 1.2, "z", -1)
+for x in (-27, -3, 13, 21): m.box(x - 0.3, 1.2, 21.3, x + 0.3, 2.0, 21.9, accent=True)   # bollards
+for (x0, x1) in ((-30, -26.5), (-2, 2), (23, 30)): m.box(x0, -3.6, 22, x1, 1.2, 30)      # piers
+# the freighter: hull level with the quay, a bridge cabin you can walk through, mast and funnel
+m.metal(-24.5, -3.6, 22.4, -4.5, 1.2, 29.2)
+m.metal(-4.5, -3.6, 23.2, -3, 1.2, 28.4); m.metal(-3, -3.6, 24.2, -2.2, 1.2, 27.4)        # bow
+m.box(-24.8, 1.2, 22.2, -2.4, 1.6, 22.4, accent=True); m.box(-24.8, 1.2, 29.2, -4.5, 1.6, 29.4, accent=True)  # gunwales
+m.building(-22, 23.4, -15.5, 28.4, 2.9, [("s", -18.75, 2.4), ("n", -18.75, 2.0)], windows=True, base=1.2)
+m.box(-21, 4.1, 24.4, -16.5, 5.6, 27.4); m.glow(-20.9, 4.9, 24.3, -16.6, 5.2, 27.5)      # wheelhouse
+m.box(-13.5, 1.2, 24.7, -11.5, 6.5, 26.9, accent=True); m.glow(-13.6, 5.6, 24.6, -11.4, 5.9, 27.0)  # funnel
+m.metal(-8.2, 1.2, 25.6, -7.8, 10, 26); m.metal(-11, 8, 25.7, -5, 8.3, 25.9); m.glow(-8.3, 10, 25.5, -7.7, 10.4, 26.1)
+m.container(-11, 23.4, -9, 28.4, h=2.4)
+# the lighthouse on the east pier
+m.box(24.5, 1.2, 24.5, 28.5, 8, 28.5); m.box(24, 8, 24, 29, 8.4, 29, accent=True)
+m.glow(25, 8.4, 25, 28, 10, 28); m.box(24.8, 10, 24.8, 28.2, 10.6, 28.2, accent=True)
+m.light(26.5, 9.2, 23.2, 10, 0.7, fixture=False)
+# the yard
+for (x0, z0, x1, z1) in ((-26, -10, -20, -4), (8, -24, 14, -18), (-6, -20, 0, -14)): m.container(x0, z0, x1, z1)
+m.wallbang(18, 0, -8, 24, 2.6, -2)
+m.wallbang(-8, 0, 2, -2, 2.4, 2.4); m.wallbang(4, 0, 4, 10, 2.4, 4.4)
 m.crates(-16, -24, 3); m.crates(20, 6, 2); m.crates(-2, 6, 2); m.crates(-24, 4, 1)
-m.box(-1, 0, -6, 1, 9, -4, accent=True)                                 # crane mast
-m.box(-1, 9, -6, 14, 9.8, -4, accent=True)                              # crane jib (grapple anchor)
-m.box(13, 6.5, -5.5, 14, 9, -4.5)                                       # hook
-# warehouse in the south-west corner: walls with doors, a window row and a roof deck you can reach by stairs
+m.box(-1, 0, -6, 1, 9, -4, accent=True); m.box(-1, 9, -6, 14, 9.8, -4, accent=True); m.box(13, 6.5, -5.5, 14, 9, -4.5)
 m.doorwall(-30, -16.2, -16, -15.8, 4.5, [(-27, 2.4, 2.8), (-22.5, 2.4, 2.8)], axis="x")
 m.doorwall(-16.2, -30, -15.8, -16.2, 4.5, [(-23, 2.6, 2.8)], axis="z")
-m.box(-30, 4.5, -30, -15.8, 4.8, -15.8, accent=True)                    # roof deck
-m.stairs(-20, -15.8, -17.6, -11.3, 4.5, "z", -1)                        # stairs up to the roof edge, from the yard
-m.light(-26, 3.9, -26, 9, 0.9); m.light(-20, 3.9, -21, 9, 0.9)          # warehouse lamps (it has a roof)
-m.catwalk(-20, -8, 8, -6.6, 2.8, rails="z")                             # walkway from the first container toward the crane
-
-for (x, z) in ((-22, 22), (22, 22), (0, 24), (-26, -26), (26, -26), (0, -26), (-12, -2), (10, 9), (-18, 8), (24, -14)):
+m.box(-30, 4.5, -30, -15.8, 4.8, -15.8, accent=True)
+m.stairs(-20, -15.8, -17.6, -11.3, 4.5, "z", -1)
+m.light(-26, 3.9, -26, 9, 0.9); m.light(-20, 3.9, -21, 9, 0.9)
+m.catwalk(-20, -8, 8, -6.6, 2.8, rails="z")
+for (x, z) in ((-22, 18), (22, 18), (6, 18), (-26, -26), (26, -26), (0, -26), (-12, -2), (10, 9), (-18, 8), (24, -14)):
     yaw = math.degrees(math.atan2(x, z))
     m.spawn("any", x, 1.2 if z > 14 else 0, z, round(yaw))
 m.spawn("a", -10, 0, -10, 0, "b")
 m.save("harbor")
 
-# --- bastion: every mode (built for vs): the original all-rounder, now with a race route -------------
+# ======================================================================================================
+# BASTION: every mode (built for vs). A fortress: the keep in the middle stands on an island in a moat with
+# four drawbridges, two raised bastions on the flanks, curtain walls with gates, battlements on top.
 m = M("Bastion", "vs")
-m.room(32, 32, 8)
-m.box(-5, 0, -5, 5, 1, 5, accent=True)                                  # center hill platform + ramps
-m.box(-5, 0, 5, 5, 0.5, 7); m.box(-5, 0, -7, 5, 0.5, -5); m.box(-7, 0, -5, -5, 0.5, 5); m.box(5, 0, -5, 7, 0.5, 5)
-m.box(-1, 1, -1, 1, 3.5, 1)
-m.box(-20, 0, -2, -12, 3, 2, mirror=True); m.box(-2, 0, 12, 2, 3, 20, mirror=True)    # mid lane walls
-m.box(-14, 0, 10, -11, 1.5, 13, mirror=True); m.box(11, 0, 10, 14, 1.5, 13, mirror=True)  # cover crates
-m.box(-26, 0, -4, -23, 2, 4, mirror=True)
+moat = [(-7.5, -7.5, -1.5, -5, "abyss"), (1.5, -7.5, 7.5, -5, "abyss"), (-7.5, 5, -1.5, 7.5, "abyss"), (1.5, 5, 7.5, 7.5, "abyss"),
+        (-7.5, -5, -5, -1.5, "abyss"), (-7.5, 1.5, -5, 5, "abyss"), (5, -5, 7.5, -1.5, "abyss"), (5, 1.5, 7.5, 5, "abyss")]
+m.room(32, 32, 8, pits=moat, style="fort", skyline="mountains")
+m.box(-2.4, 0, -2.4, 2.4, 6.5, 2.4, accent=True)                           # the keep
+for (dx, dz) in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
+    x0, x1 = (-2.4, -1.4) if dx < 0 else (1.4, 2.4); z0, z1 = (-2.4, -1.4) if dz < 0 else (1.4, 2.4)
+    m.box(x0, 6.5, z0, x1, 7.4, z1)
+m.box(-2.6, 6.3, -2.6, 2.6, 6.5, 2.6); m.metal(-0.1, 6.5, -0.1, 0.1, 11, 0.1)
+m.glow(0.1, 9.4, -0.05, 2.0, 10.8, 0.05)                                   # banner
+m.box(-2.5, 1.5, -2.5, 2.5, 1.7, 2.5); m.glow(-2.45, 2.0, -2.45, 2.45, 2.1, 2.45)
+m.raw("hill -5 0 -5 5 3 5")
+for (x0, z0, x1, z1, ns) in ((-1.5, -7.5, 1.5, -5, True), (-1.5, 5, 1.5, 7.5, True), (-7.5, -1.5, -5, 1.5, False), (5, -1.5, 7.5, 1.5, False)):   # drawbridges
+    m.metal(x0, -0.1, z0, x1, 0, z1)
+    if ns: m.box(x0 - 0.15, 0, z0, x0, 0.9, z1, accent=True); m.box(x1, 0, z0, x1 + 0.15, 0.9, z1, accent=True)
+    else: m.box(x0, 0, z0 - 0.15, x1, 0.9, z0, accent=True); m.box(x0, 0, z1, x1, 0.9, z1 + 0.15, accent=True)
+# bastions on the flanks (west one south of centre, east one north: point symmetric)
+m.box(-32, 0, -14, -24, 3, -4, mirror=True); m.stairs(-31, -4, -26, -1, 3, "z", -1, mirror=True)
+for i in range(5): m.box(-24 - 0.4, 3, -14 + i * 2.2, -24, 3.9, -14 + i * 2.2 + 1.0, accent=True, mirror=True)
+m.metal(-28.1, 3, -9.1, -27.9, 9, -8.9, mirror=True); m.glow(-27.9, 7.6, -9.05, -26, 8.8, -8.95, mirror=True)
+# curtain walls with gates (north and south), walk the top via the stairs
+m.doorwall(-14, 15.75, 14, 16.25, 3.2, [(-9, 2.6, 2.8), (9, 2.6, 2.8)], axis="x", mirror=True)
+for i in range(-13, 14, 2): m.box(i - 0.4, 3.2, 15.75, i + 0.4, 3.9, 16.25, accent=True, mirror=True)
+m.box(-20, 0, -2, -12, 3, 2, mirror=True)                                  # mid lane walls
+m.box(-14, 0, 10, -11, 1.5, 13, mirror=True); m.box(11, 0, 10, 14, 1.5, 13, mirror=True)
 m.box(-8, 0, 22, -5, 1.2, 25, mirror=True)
-m.box(-32, 0, -24, -27, 2.5, -14, mirror=True); m.box(-27, 0, -24, -26, 1.25, -14, mirror=True)  # ledges + step
-m.box(-24, -0.05, -28, -16, 0, -20, accent=True); m.box(16, -0.05, -28, 24, 0, -20, accent=True)  # site pads
+m.box(-24, -0.05, -28, -16, 0, -20, accent=True); m.box(16, -0.05, -28, 24, 0, -20, accent=True)
 m.raw("site -24 0 -28 -16 3 -20"); m.raw("site 16 0 -28 24 3 -20")
-m.raw("hill -5 1 -5 5 4 5")
 for p in ((9, 26), (9, 8), (9, -8), (9, -18), (0, -27)): m.raw(f"path {p[0]:g} 0 {p[1]:g}")
 for x in (-12, -6, 0, 6, 12): m.spawn("a", x, 0, 28 if x % 12 else 27, 0, "b")
 for (x, z, yaw) in ((-28, 28, 45), (28, 28, -45), (-20, 8, 90)): m.spawn("any", x, 0, z, yaw, "any")
-m.raw("checkpoint 27 0 -8 31 4 -4")                                     # race: east, south, west, finish north
-m.raw("checkpoint -4 0 -31 4 4 -27")
-m.raw("checkpoint -31 0 4 -27 4 8")
-m.raw("checkpoint -4 0 27 4 4 31")
+m.raw("checkpoint 27 0 -8 31 4 -4"); m.raw("checkpoint -4 0 -31 4 4 -27"); m.raw("checkpoint -31 0 4 -27 4 8"); m.raw("checkpoint -4 0 27 4 4 31")
 for x in (16, 20, 24): m.spawn("race", x, 0, 28, -90)
 m.light(-20, 2.2, 0, 6, 0.4, mirror=True)
 m.save("bastion")
 
-# --- furnace: ranked LASER VAMPIRE. Compact (laser range is 32 m), corners everywhere, a furnace in the
-# middle and two raised side decks: fights stay close and keep moving. Point-symmetric.
+# ======================================================================================================
+# FOUNDRY: every mode. A giant ladle hangs over the casting pit in the middle and pours a stream of metal
+# into it; molten runners lead off east and west. Raised corners, a catwalk ring, furnaces in the walls.
+m = M("Foundry", "vs")
+m.room(24, 24, 10, pits=[(-3, -3, 3, 3, "molten"), (-11, -0.8, -3, 0.8, "molten"), (3, -0.8, 11, 0.8, "molten")], style="hall", skyline="stacks")
+m.box(-24, 0, -24, -12, 2.5, -12, mirror=True); m.stairs(-12, -24, -9, -18, 2.5, "x", -1, mirror=True)
+m.box(12, 0, -24, 24, 2.5, -12, mirror=True); m.stairs(9, -24, 12, -18, 2.5, "x", 1, mirror=True)
+# the ladle: a crane beam across the hall, the ladle bowl on hangers, the pour
+m.metal(-24, 8.6, -0.6, 24, 9.4, 0.6)
+m.metal(-2.2, 5.4, -2.2, 2.2, 5.8, 2.2)
+for (a, b, c, d) in ((-2.2, -2.2, 2.2, -1.8), (-2.2, 1.8, 2.2, 2.2), (-2.2, -1.8, -1.8, 1.8), (1.8, -1.8, 2.2, 1.8)): m.metal(a, 5.8, b, c, 7.4, d)
+m.glow(-1.8, 7.0, -1.8, 1.8, 7.2, 1.8); m.box(2.2, 6.8, -0.5, 3.0, 7.2, 0.5, accent=True)   # spout
+for x in (-2.0, 2.0): m.metal(x - 0.08, 7.4, -0.08, x + 0.08, 8.6, 0.08)
+m.glow(2.55, -3.6, -0.15, 2.85, 6.8, 0.15)                                 # the pour, into the pit
+m.light(0, 4.5, 0, 9, 0.7, fixture=False)
+for (x, z) in ((0, -5.5), (0, 5.5)): m.metal(x - 0.7, 0, z - 0.7, x + 0.7, 1.2, z + 0.7); m.glow(x - 0.5, 1.2, z - 0.5, x + 0.5, 1.25, z + 0.5)
+m.box(-18, 0, 3, -15, 3.5, 6, accent=True, mirror=True)
+m.catwalk(-9, -23.8, 9, -21.6, 2.5, rails="z", mirror=True)
+m.windowwall(-7, -9.2, 7, -8.8, 3.2, 1.0, 2.2, every=3.5, width=2.0, wallbang=True, mirror=True)
+m.doorwall(-24, 7.8, -19, 8.2, 4.0, [(-21.5, 2.2, 2.6)], axis="x", mirror=True)
+m.box(-19, 0, 7.8, -18.6, 4.0, 12, mirror=True); m.box(-24, 3.6, 8.2, -18.6, 4.0, 12, accent=True, mirror=True)
+for side in (-1, 1):                                                       # furnaces in the east / west walls
+    x0, x1 = (21.5, 24) if side > 0 else (-24, -21.5)
+    m.box(x0, 0, -6, x1, 5.5, 6, accent=True)
+    mx = x0 if side > 0 else x1
+    m.glow(mx - 0.05, 0.6, -2, mx + 0.05, 2.4, 2); m.light(mx - side * 1.2, 1.5, 0, 6, 0.8, fixture=False)
+    m.metal(x0 + 0.5, 5.5, -1, x1 - 0.5, 10, 1)
+for (x, z) in ((-18, -18), (18, -18), (-18, 18), (18, 18), (0, -20), (0, 20), (-17, 0), (17, 0), (-6, 6), (6, -6)):
+    y = 2.5 if abs(x) >= 17 and abs(z) >= 17 else 0
+    m.spawn("any", x, y, z, round(math.degrees(math.atan2(x, z))))
+for x in (-6, 0, 6): m.spawn("a", x, 0, 20, 0, "b")
+m.raw("site -20 0 -10 -14 3 -4"); m.raw("site 14 0 -10 20 3 -4")
+m.raw("hill -7 0 -7 7 3 7")
+for p in ((0, 21), (13.5, 11), (13.5, -11), (0, -21)): m.raw(f"path {p[0]:g} 0 {p[1]:g}")
+m.raw("checkpoint 16 2.5 -22 22 6 -16"); m.raw("checkpoint -22 2.5 16 -16 6 22")
+m.raw("checkpoint -1.5 0 7 1.5 4 10"); m.raw("checkpoint -3 0 18 3 4 22")
+for x in (-4, 0, 4): m.spawn("race", x, 0, -17, 45)
+m.save("foundry")
+
+# ======================================================================================================
+# TEMPLE: ranked VANILLA 1v1. Halls of columns around a sanctum; reflecting pools either side, a bridge with
+# a pagoda shrine over the altar, a golden idol under it. Point symmetric.
+m = M("Temple", "1v1", sun=(0.35, 1.0, 0.55))
+m.raw("ranked vanilla")
+m.room(22, 30, 12, sunken=[(-7, 9, 7, 12.5, 0.8, "accent"), (-7, -12.5, 7, -9, 0.8, "accent")], style="temple", skyline="pagodas")
+m.trim(22, 30); m.trim(22, 30, y=11.4, h=0.6)
+m.box(-8, 0, -6, 8, 0.6, 6, accent=True)
+m.stairs(-4, 6, 4, 8, 0.6, "z", -1); m.stairs(-4, -8, 4, -6, 0.6, "z", 1)
+m.box(-2, 0.6, -2, 2, 1.6, 2); m.box(-1.2, 1.6, -1.2, 1.2, 1.9, 1.2, accent=True)   # altar and the idol on it
+m.box(-0.45, 1.9, -0.45, 0.45, 2.6, 0.45); m.glow(-0.3, 2.6, -0.3, 0.3, 2.95, 0.3)
+for (x, z) in ((-12, -18), (-12, -8), (-12, 8), (-12, 18)): m.pillar(x, z, 11.0, mirror=True)
+m.wallbang(-7, 0.6, -0.3, -3, 3.2, 0.3, mirror=True)
+m.box(-22, 0, -4, -17, 3.5, 4); m.stairs(-17, -4, -14, 4, 3.5, "x", -1)
+m.box(17, 0, -4, 22, 3.5, 4); m.stairs(14, -4, 17, 4, 3.5, "x", 1)
+m.box(-22, 3.5, -4.2, -17, 4.4, -4, accent=True); m.box(17, 3.5, 4, 22, 4.4, 4.2, accent=True)
+m.box(-6, 0, 18, -3, 2.4, 19, mirror=True); m.box(3, 0, 18, 6, 2.4, 19, mirror=True)
+m.crates(-19, 22, mirror=True); m.crates(15, 13, 1, mirror=True)
+m.catwalk(-17, -1, 17, 1, 3.5, rails="z")
+m.box(-1, 3.5, -1, 1, 6.5, 1, accent=True)                                  # the pagoda shrine on the bridge
+m.box(-1.8, 5.0, -1.8, 1.8, 5.3, 1.8); m.box(-1.4, 6.2, -1.4, 1.4, 6.5, 1.4)
+m.box(-0.9, 6.5, -0.9, 0.9, 7.3, 0.9, accent=True); m.box(-1.1, 7.3, -1.1, 1.1, 7.55, 1.1)
+m.glow(-0.25, 7.55, -0.25, 0.25, 8.3, 0.25)
+m.light(-10, 2.6, 0, 7, 0.6, mirror=True)
+for x in (-6, -2, 2, 6): m.glow(x - 0.2, -0.8, 10.6, x + 0.2, -0.75, 10.9, mirror=True)   # lanterns in the pools
+m.doorwall(-22, 13.8, 22, 14.2, 5.0, [(-10, 3.0, 3.2), (0, 4.0, 3.6), (10, 3.0, 3.2)], axis="x", mirror=True)
+for x in (-3, 3): m.spawn("a", x, 0, 26, 0, "b")
+m.spawn("any", -19, 3.5, 0, 90, "any")
+m.save("temple")
+
+# ======================================================================================================
+# COLOSSEUM: every mode (built for tourney). The arena ring with tiered stands and arched inner walls; a
+# giant gladiator statue in the middle and two open beast pits in the sand.
+m = M("Colosseum", "tourney", sun=(0.5, 1.0, 0.2))
+m.room(26, 26, 14, pits=[(-11, 5, -7.5, 8.5, "abyss"), (7.5, 5, 11, 8.5, "abyss")], style="temple", skyline="ruins")
+for t in range(3):
+    o0, o1, h = 26 - (t + 1) * 1.6, 26 - t * 1.6, 0.9 * (3 - t)
+    m.box(-26, 0, -o1, 26, h, -o0, accent=(t == 1)); m.box(-26, 0, o0, 26, h, o1, accent=(t == 1))
+    m.box(-o1, 0, -o0, -o0, h, o0, accent=(t == 1)); m.box(o0, 0, -o0, o1, h, o0, accent=(t == 1))
+m.stairs(-2, 21.2, 2, 23.6, 2.7, "z", 1, mirror=True)
+m.box(-22, 0, -22, -18, 3.6, -18, accent=True, mirror=True); m.box(18, 0, -22, 22, 3.6, -18, accent=True, mirror=True)
+m.box(-6, -0.05, -6, 6, 0, 6, accent=True)
+# the gladiator: pedestal, legs, kilt, torso, arms, helmet with a crest, shield and spear
+m.box(-1.6, 0, -1.6, 1.6, 1.2, 1.6, accent=True)
+m.box(-0.9, 1.2, -0.4, -0.25, 3.4, 0.4); m.box(0.25, 1.2, -0.4, 0.9, 3.4, 0.4)
+m.box(-1.0, 3.4, -0.55, 1.0, 4.2, 0.55, accent=True); m.box(-1.0, 4.2, -0.5, 1.0, 6.0, 0.5)
+m.box(-1.6, 4.4, -0.3, -1.0, 5.9, 0.3); m.box(1.0, 4.4, -0.3, 1.6, 5.9, 0.3)
+m.box(-0.45, 6.0, -0.45, 0.45, 6.9, 0.45, accent=True); m.glow(-0.08, 6.9, -0.5, 0.08, 7.4, 0.5)
+m.metal(-2.3, 3.6, -1.0, -1.7, 6.0, 1.0)                                    # shield
+m.metal(1.7, 1.2, -0.08, 1.85, 9.5, 0.08); m.glow(1.65, 9.5, -0.12, 1.9, 10.2, 0.12)  # spear (grapple anchor)
+m.wallbang(-9, 0, -1, -8, 2.6, 1, mirror=True); m.wallbang(-1, 0, 8, 1, 2.6, 9, mirror=True)
+m.crates(-15, -3, 1, mirror=True)
+for (x0, x1) in ((-11, -7.5), (7.5, 11)):                                   # grates around the pits
+    m.metal(x0, 0, 4.7, x1, 0.5, 5); m.metal(x0, 0, 8.5, x1, 0.5, 8.8)
+for side in (-1, 1):
+    m.doorwall(-15, side * 15 - 0.25, 15, side * 15 + 0.25, 4.0, [(-9, 2.6, 3.0), (0, 3.4, 3.2), (9, 2.6, 3.0)], axis="x")
+    m.doorwall(side * 15 - 0.25, -15, side * 15 + 0.25, 15, 4.0, [(-9, 2.6, 3.0), (0, 3.4, 3.2), (9, 2.6, 3.0)], axis="z")
+for (x, z) in ((-15, -15), (15, -15), (-15, 15), (15, 15)): m.pillar(x, z, 5.0, r=0.7)
+for (x, z) in ((0, -15), (-15, 0)): m.light(x, 2.6, z, 6, 0.5, mirror=True)
+for x in (-4, 4): m.spawn("a", x, 0, 17, 0, "b")
+for (x, z) in ((-16, 0), (16, 0), (0, -14), (0, 14), (-12, -12), (12, 12)): m.spawn("any", x, 0, z, 0)
+for x in (-8, 8): m.spawn("a", x, 0, 18, 0, "b")
+m.raw("site -12 0 -13 -6 3 -7"); m.raw("site 6 0 -13 12 3 -7")
+m.raw("hill -4 0 -4 4 3 4")
+for p in ((0, 19), (0, 8), (-5, 4), (-5, -4), (0, -8), (0, -19)): m.raw(f"path {p[0]:g} 0 {p[1]:g}")
+m.raw("checkpoint 14 0 -1.5 16 4 1.5"); m.raw("checkpoint -1.5 0 -16 1.5 4 -14"); m.raw("checkpoint -16 0 -1.5 -14 4 1.5"); m.raw("checkpoint -1.5 0 14 1.5 4 16")
+for x in (4, 7): m.spawn("race", x, 0, 18, -90)
+m.save("colosseum")
+
+# ======================================================================================================
+# FURNACE: ranked LASER VAMPIRE. Compact (laser range is 32 m), close corners; the furnace in the middle
+# glows through its grates, molten trenches behind the inner walls (bridged in the middle) punish a careless
+# pull from the tractor beam. Point symmetric.
 m = M("Furnace", "1v1", sun=(0.3, 1.0, 0.4))
 m.raw("ranked vampire")
-m.room(18, 18, 10)
-m.box(-3, 0, -3, 3, 4.5, 3, accent=True)                                # the furnace
-m.box(-3.4, 4.5, -3.4, 3.4, 5.0, 3.4)                                   # its lip
-m.box(-1.2, 5.0, -1.2, 1.2, 10, 1.2)                                    # chimney to the roof (grapple anchor)
-m.light(0, 1.2, -3.6, 6, 0.9, fixture=False, mirror=True)               # glow from the furnace mouths
-m.box(-1.0, 0.4, 2.9, 1.0, 1.6, 3.1)                                    # furnace doors
-m.box(-1.0, 0.4, -3.1, 1.0, 1.6, -2.9)
-m.doorwall(-12, 6.8, 12, 7.2, 4.0, [(-7, 2.4, 2.8), (5, 2.4, 2.8)], axis="x", mirror=True)   # inner walls with doorways
-m.box(-12, 4.0, 6.6, 12, 4.3, 7.4, accent=True, mirror=True)            # wall caps
-m.box(-18, 0, -4, -14, 2.5, 4, mirror=True)                             # side decks + stairs
-m.stairs(-14, -4, -11, 4, 2.5, "x", -1, mirror=True)
-m.box(-18, 2.5, -4.2, -14, 3.4, -4, accent=True, mirror=True)           # deck rails
-m.box(-18, 2.5, 4, -14, 3.4, 4.2, accent=True, mirror=True)
-for (x, z) in ((-10, 12), (10, 12)): m.pillar(x, z, 10.0, r=0.6, mirror=True)
-m.box(-6, 0, 11, -3, 1.3, 12, mirror=True); m.box(3, 0, 13, 5, 1.6, 15, mirror=True)  # low cover
-m.wallbang(-1.5, 0, 9.2, 1.5, 2.4, 9.5, mirror=True)                    # grates (hitscan passes)
+m.room(18, 18, 10, pits=[(-9, 9.5, -2, 11, "molten"), (2, 9.5, 9, 11, "molten"), (-9, -11, -2, -9.5, "molten"), (2, -11, 9, -9.5, "molten")], style="hall", skyline="stacks")
+m.box(-3, 0, -3, 3, 4.5, 3, accent=True); m.box(-3.4, 4.5, -3.4, 3.4, 5.0, 3.4)
+m.box(-1.2, 5.0, -1.2, 1.2, 10, 1.2)
+for y in (7.0, 8.8): m.glow(-1.25, y, -1.25, 1.25, y + 0.15, 1.25)
+for (a, b) in ((-3.04, -3.0), (3.0, 3.04)):                                 # grates glowing on all four faces
+    for c in (-1.5, -0.5, 0.5, 1.5):
+        m.glow(a, 2.2, c - 0.15, b, 3.6, c + 0.15); m.glow(c - 0.15, 2.2, a, c + 0.15, 3.6, b)
+m.light(0, 1.2, -3.6, 6, 0.9, fixture=False, mirror=True)
+m.box(-1.0, 0.4, 2.9, 1.0, 1.6, 3.1); m.box(-1.0, 0.4, -3.1, 1.0, 1.6, -2.9)
+m.box(-5.2, 0, 3.5, -3.8, 0.7, 5.5, mirror=True); m.box(-5.6, 0, -1, -4.2, 0.5, 1, mirror=True)   # coal heaps
+m.doorwall(-12, 6.8, 12, 7.2, 4.0, [(-7, 2.4, 2.8), (5, 2.4, 2.8)], axis="x", mirror=True)
+m.box(-12, 4.0, 6.6, 12, 4.3, 7.4, accent=True, mirror=True)
+m.box(-18, 0, -4, -14, 2.5, 4, mirror=True); m.stairs(-14, -4, -11, 4, 2.5, "x", -1, mirror=True)
+m.box(-18, 2.5, -4.2, -14, 3.4, -4, accent=True, mirror=True); m.box(-18, 2.5, 4, -14, 3.4, 4.2, accent=True, mirror=True)
+for (x, z) in ((-10, 13), (10, 13)): m.pillar(x, z, 10.0, r=0.6, mirror=True)
+m.box(-6, 0, 12, -3, 1.3, 13, mirror=True); m.box(3, 0, 13.5, 5, 1.6, 15.5, mirror=True)
+m.wallbang(-1.5, 0, 12.5, 1.5, 2.4, 12.8, mirror=True)
 m.crates(-16, -14, 1, mirror=True)
 for x in (-4, 4): m.spawn("a", x, 0, 16, 0, "b")
 m.spawn("any", -16, 2.5, 0, 90, "any")
 m.save("furnace")
 
-# --- gantry: ranked INSTAGIB. A long crane hall: catwalks along both walls and a bridge across the
-# middle, low cover on the floor. Long sightlines on every level, but you can always break line of sight.
+# ======================================================================================================
+# GANTRY: ranked INSTAGIB. The crane hall: catwalks along both walls, a bridge across the middle over the
+# open loading bay (no floor: fall and you're out), two overhead cranes with their cabs and a hanging
+# container each. Long sightlines on every level, always a way to break line of sight. Point symmetric.
 m = M("Gantry", "1v1", sun=(0.55, 1.0, 0.25))
 m.raw("ranked instagib")
-m.room(32, 12, 14)
-m.catwalk(-26, -11.8, 26, -9.6, 4.0, rails="z", mirror=True)            # side catwalks
-m.stairs(26, -11.8, 30, -9.6, 4.0, "x", -1, mirror=True)                # stairs up at the ends
-m.stairs(-30, -11.8, -26, -9.6, 4.0, "x", 1, mirror=True)  # (and the other ends)
-m.catwalk(-1.2, -9.6, 1.2, 9.6, 4.0, rails="x")                         # bridge across the middle
-for (x0, z0, x1, z1, h) in ((-20, -3, -18, 3, 1.4), (-12, 4, -9, 6, 2.2), (-6, -6, -4, -2, 1.4), (-24, -7, -22, -5, 2.6)):
-    m.box(x0, 0, z0, x1, h, z1, mirror=True)                            # floor cover
+m.room(32, 12, 14, pits=[(-3.5, -7.5, 3.5, 7.5, "abyss")], style="hall", skyline="cranes")
+m.catwalk(-26, -11.8, 26, -9.6, 4.0, rails="z", mirror=True)
+m.stairs(26, -11.8, 30, -9.6, 4.0, "x", -1, mirror=True); m.stairs(-30, -11.8, -26, -9.6, 4.0, "x", 1, mirror=True)
+m.catwalk(-1.2, -9.6, 1.2, 9.6, 4.0, rails="x")
+m.metal(-3.5, -0.3, -7.6, 3.5, 0, -7.5); m.metal(-3.5, -0.3, 7.5, 3.5, 0, 7.6)
+m.box(-3.6, 0, -7.6, -3.5, 0.9, 7.6, accent=True, mirror=True)              # bay railings
+for (x0, z0, x1, z1, h) in ((-20, -3, -18, 3, 1.4), (-12, 4, -9, 6, 2.2), (-7, -6, -5, -2, 1.4), (-24, -7, -22, -5, 2.6)):
+    m.box(x0, 0, z0, x1, h, z1, mirror=True)
 m.pillar(-14, -4, 14.0, r=0.5, mirror=True)
-m.wallbang(-8, 0, -0.2, -6, 2.6, 0.2, mirror=True)                      # thin screens: shoot through for the kill
-m.box(-32, 9, -12, 32, 9.6, -11, accent=True, mirror=True)              # crane rails high on the walls
-m.box(-10, 8.4, -11, -8, 9.0, 11, accent=True); m.box(8, 8.4, -11, 10, 9.0, 11, accent=True)  # crane beams (grapple)
-m.box(-9.4, 6.5, -0.4, -8.6, 8.4, 0.4); m.box(8.6, 6.5, -0.4, 9.4, 8.4, 0.4)                    # hooks
-for x in (-16, 16): m.light(x, 3.4, -10.7, 7, 0.5, fixture=False, mirror=True)  # under the catwalks
+m.wallbang(-9, 0, -0.2, -7, 2.6, 0.2, mirror=True)
+m.box(-32, 9, -12, 32, 9.6, -11, accent=True, mirror=True)
+m.box(-10, 8.4, -11, -8, 9.0, 11, accent=True); m.box(8, 8.4, -11, 10, 9.0, 11, accent=True)
+m.box(-10.6, 6.9, 2, -8.6, 8.4, 4.2, mirror=True); m.wallbang(-10.65, 7.4, 2.3, -10.6, 8.1, 3.9, mirror=True)   # crane cabs
+m.glow(-10.7, 6.9, 2, -8.5, 7.0, 4.2, mirror=True)
+m.metal(-9.1, 6.5, -0.1, -8.9, 8.4, 0.1, mirror=True)
+m.metal(-10.4, 4.8, -1.2, -7.6, 6.5, 1.2, mirror=True); m.box(-10.45, 5.5, -1.25, -7.55, 5.7, 1.25, accent=True, mirror=True)  # hanging containers
+for x in (-16, 16): m.light(x, 3.4, -10.7, 7, 0.5, fixture=False, mirror=True)
+m.light(0, -1.5, 0, 9, 0.5, fixture=False)
 for z in (-3, 3): m.spawn("a", -29, 0, z, -90, "b")
 m.spawn("any", -24, 4, -10.7, -90, "any")
 m.save("gantry")
 
-# --- anvil: ranked map for ALL THREE ladders. Mid-sized and balanced between ranges: an anvil-shaped
-# centerpiece you can stand on, four corner towers, window walls and wallbang screens.
+# ======================================================================================================
+# ANVIL: ranked map for ALL THREE ladders. The anvil itself in the middle (horn at both ends, you stand on
+# it), two giant hammers standing on their heads, four corner towers, window walls and wallbang screens.
 m = M("Anvil", "1v1", sun=(0.4, 1.0, 0.45))
 m.raw("ranked vanilla vampire instagib")
-m.room(22, 22, 12)
-m.box(-3, 0, -2, 3, 1.5, 2); m.box(-2, 1.5, -1.5, 2, 3, 1.5)            # the anvil: base, waist,
-m.box(-5, 3, -2.5, 5, 4, 2.5, accent=True)                              # and a wide top to stand on
-m.stairs(5, -1, 8, 1, 4, "x", -1, mirror=True)                          # steps up both ends
-m.light(0, 2.4, -2.2, 6, 0.6, fixture=False, mirror=True)               # under the overhang
-m.box(-20, 0, -20, -15, 3.5, -15, accent=True, mirror=True)             # corner towers + stairs
-m.box(15, 0, -20, 20, 3.5, -15, accent=True, mirror=True)
-m.stairs(-15, -20, -12, -17, 3.5, "x", -1, mirror=True)
-m.stairs(12, -20, 15, -17, 3.5, "x", 1, mirror=True)
-m.windowwall(-12, -9.2, -4, -8.8, 3.0, 1.0, 2.2, every=2.7, width=1.4, mirror=True)  # window walls
+m.room(22, 22, 12, style="hall", skyline="stacks")
+m.box(-3, 0, -2, 3, 1.5, 2); m.box(-2, 1.5, -1.5, 2, 3, 1.5)
+m.box(-5, 3, -2.5, 5, 4, 2.5, accent=True)
+m.stairs(5, -1, 8, 1, 4, "x", -1, mirror=True)
+m.box(5, 3, -1.25, 7, 4, 1.25, mirror=True); m.box(7, 3.4, -0.6, 8.5, 4, 0.6, mirror=True)   # horns
+for (x, z) in ((-2, -2.6), (2, 2.6), (3.5, -2.6), (-3.5, 2.6)): m.glow(x - 0.1, 4.0, z - 0.1, x + 0.1, 4.2, z + 0.1)   # sparks
+m.light(0, 2.4, -2.2, 6, 0.6, fixture=False, mirror=True)
+m.metal(-1.5, 0, 5, 1.5, 1.6, 7, mirror=True); m.box(-1.55, 0.6, 4.95, 1.55, 0.9, 7.05, accent=True, mirror=True)  # hammers
+m.box(-0.25, 1.6, 5.75, 0.25, 6.5, 6.25, mirror=True); m.glow(-0.3, 6.5, 5.7, 0.3, 6.7, 6.3, mirror=True)
+m.box(-20, 0, -20, -15, 3.5, -15, accent=True, mirror=True); m.box(15, 0, -20, 20, 3.5, -15, accent=True, mirror=True)
+m.stairs(-15, -20, -12, -17, 3.5, "x", -1, mirror=True); m.stairs(12, -20, 15, -17, 3.5, "x", 1, mirror=True)
+m.windowwall(-12, -9.2, -4, -8.8, 3.0, 1.0, 2.2, every=2.7, width=1.4, mirror=True)
 m.windowwall(4, -9.2, 12, -8.8, 3.0, 1.0, 2.2, every=2.7, width=1.4, mirror=True)
-m.box(-14, 0, -2, -11, 1.4, 2, mirror=True)                             # cover
+m.box(-14, 0, -2, -11, 1.4, 2, mirror=True)
 m.box(-8, 0, 12, -5, 2.2, 14, mirror=True); m.box(5, 0, 12, 8, 1.2, 14, mirror=True)
-m.wallbang(-1.5, 0, 9, 1.5, 2.6, 9.4, mirror=True)
+m.wallbang(-1.5, 0, 9.5, 1.5, 2.6, 9.9, mirror=True)
 m.pillar(-9, 4, 12.0, r=0.5, mirror=True); m.pillar(9, 4, 12.0, r=0.5, mirror=True)
 for x in (-4, 4): m.spawn("a", x, 0, 19, 0, "b")
 m.spawn("any", -17.5, 3.5, -17.5, 135, "any")
 m.save("anvil")
+
+# ======================================================================================================
+# VIADUCT: race. A long course over a chasm, start in the south, finish in the north: a bridge on stone
+# arches, stepping stones up, a covered tunnel, a climb, a narrow beam (or a grapple swing) across the big
+# gap, a slalom, more stones down and the run home. Fall off and you start again from your checkpoint.
+m = M("Viaduct", "race", sun=(0.5, 1.0, 0.35))
+m.raw("modes race")
+m.room(16, 82, 16, pits=[(-16, -82, 16, 82, "chasm")], style="yard", skyline="mountains")
+def deck(x0, z0, x1, z1, top, mat=None, piers=True):
+    m.box(x0, top - 1, z0, x1, top, z1, mat=mat)
+    m.glow(x0 - 0.04, top - 0.25, z0, x0, top - 0.1, z1); m.glow(x1, top - 0.25, z0, x1 + 0.04, top - 0.1, z1)
+    if piers and (z1 - z0) > 6:
+        for z in (z0 + 1, z1 - 2):
+            m.box(x0 + 0.4, -30, z, x1 - 0.4, top - 1, z + 1, accent=True)
+deck(-6, 66, 6, 78, 0)                                                     # start
+deck(-2, 50, 2, 66, 0)                                                     # bridge on arches
+for z in (54, 60): m.box(-2.2, -6, z, 2.2, -1, z + 2, accent=True); m.box(-2.2, -30, z + 0.4, 2.2, -6, z + 1.6)
+for i, (z0, top) in enumerate(((46, 0.5), (41, 1.0), (36, 1.5))):          # stepping stones up
+    deck(-1.5, z0, 1.5, z0 + 3, top)
+m.raw("checkpoint -1.5 1.5 36 1.5 4.5 39")
+deck(-12, 28, 2, 34, 1.5)                                                  # turn west
+deck(-12, 4, -8, 28, 1.5)                                                  # the covered lane
+for x in (-12, -8.4): m.box(x, 1.5, 8, x + 0.4, 5.5, 22)
+m.box(-12.6, 5.5, 7.6, -7.4, 5.9, 22.4, accent=True); m.glow(-12.6, 5.3, 7.6, -7.4, 5.5, 7.8); m.glow(-12.6, 5.3, 22.2, -7.4, 5.5, 22.4)
+m.light(-10, 4.6, 11, 7, 0.8); m.light(-10, 4.6, 19, 7, 0.8)
+m.raw("checkpoint -12 1.5 4 -8 5 8")
+m.stairs(-12, -4, -8, 4, 4.5, "z", -1, base=1.5)                           # the climb
+deck(-12, -10, 4, -4, 4.5)
+deck(0, -16, 1.4, -10, 4.5, mat="metal", piers=False)                      # the beam across the gap
+m.metal(-4.2, 4.5, -13.2, -3.8, 12, -12.8); m.box(-5, 12, -14, 5, 12.5, -12, accent=True)   # grapple gantry over the gap
+deck(-2, -22, 12, -16, 4.5)
+m.raw("checkpoint 4 4.5 -22 10 7.5 -16")
+deck(8, -40, 12, -22, 3.0)                                                 # slalom lane (drop down onto it)
+for (z, x0, x1) in ((-26, 8, 10.2), (-30, 9.8, 12), (-34, 8, 10.2)): m.box(x0, 3.0, z, x1, 4.6, z + 0.6, accent=True)
+deck(8, -45, 12, -42, 2.5); deck(8, -50, 12, -47, 2.0)                     # stones down
+deck(2, -60, 12, -52, 1.0)
+m.raw("checkpoint 2 1 -60 12 4 -52")
+deck(2, -70, 6, -60, 1.0)                                                  # the run home
+deck(-8, -79, 8, -70, 1.0)
+m.box(-8, 1, -79.6, 8, 7, -79, accent=True); m.glow(-6, 5, -79.05, 6, 6, -78.95)   # finish arch
+m.metal(-8, 1, -79, -7.4, 7, -78.4); m.metal(7.4, 1, -79, 8, 7, -78.4)
+m.raw("checkpoint -6 1 -79 6 5 -72")
+for x in (-3, 0, 3): m.spawn("race", x, 0, 74, 0)
+m.save("viaduct")
 print("maps written")

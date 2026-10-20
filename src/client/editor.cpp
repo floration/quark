@@ -357,7 +357,7 @@ void Game::editorKey(int key, int mods) {
     int kind = edSel_.kind, i = edSel_.idx;
     if (key == GLFW_KEY_M) { // material / team
         edModify([&](Map& m) {
-            if (kind == ED_BRUSH) m.brushes[i].material = (m.brushes[i].material + 1) % 5;
+            if (kind == ED_BRUSH) m.brushes[i].material = (m.brushes[i].material + 1) % 6;
             else if (kind == ED_SPAWN) m.spawns[i].team = (m.spawns[i].team + 1) % 4;
         }, false);
         return;
@@ -522,7 +522,7 @@ void Game::editorFrame(double dt) {
     if (edSel_.valid() && !edSelValid() && !edOnline_) edSel_ = EdSel(); // (online: a new object may not have arrived yet)
 
     // ---- 3D view
-    const Vec3 matColor[5] = {r_.baseColor, r_.accentColor, {0.22f, 0.22f, 0.24f}, r_.metalColor, r_.glowColor};
+    const Vec3 matColor[6] = {r_.baseColor, r_.accentColor, {0.22f, 0.22f, 0.24f}, r_.metalColor, r_.glowColor, r_.metalColor * 0.7f};
     if (!edBaked_)
         for (auto& b : ed_.brushes) r_.box(b.box.center(), (b.box.mx - b.box.mn) * 0.5f, 0, matColor[b.material], 1.0f, false);
     for (auto& sp : ed_.spawns) {
@@ -733,8 +733,8 @@ void Game::editorFrame(double dt) {
         y += 14 * s;
         if (kind == ED_BRUSH) {
             int m = ed_.brushes[i].material;
-            static const std::vector<std::string> mats = {"BASE", "ACCENT", "WALLBANG", "METAL", "GLOW"};
-            if (ui_.cycle(x, y, w, h, "MATERIAL (M)", m, 5, mats)) edModify([&](Map& mm) { mm.brushes[i].material = m; }, false);
+            static const std::vector<std::string> mats = {"BASE", "ACCENT", "WALLBANG", "METAL", "GLOW", "FAR"};
+            if (ui_.cycle(x, y, w, h, "MATERIAL (M)", m, 6, mats)) edModify([&](Map& mm) { mm.brushes[i].material = m; }, false);
             row();
         } else if (kind == ED_SPAWN) {
             static const std::vector<std::string> teams = {"TEAM A", "TEAM B", "ANY TEAM", "RACE"};

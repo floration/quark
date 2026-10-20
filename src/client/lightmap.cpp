@@ -9,7 +9,7 @@
 
 namespace {
 constexpr uint32_t kCacheMagic = 0x314D4C51; // "QLM1"
-constexpr uint32_t kBakeVersion = 8; // 6: point lights
+constexpr uint32_t kBakeVersion = 9; // 6: point lights
 constexpr int kSkySamples = 48;
 constexpr int kSunSamples = 6;
 constexpr float kAlbedo = 0.65f;
@@ -154,7 +154,7 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
     }
     // 2. Choose texel density so the atlas fits in 2048x2048.
     float area = 0;
-    for (auto& f : faces) area += (f.u1 - f.u0) * (f.v1 - f.v0);
+    for (auto& f : faces) if (f.material < 4) area += (f.u1 - f.u0) * (f.v1 - f.v0); // glow / far faces ignore lighting
     float density = 4.0f;
     while (area * density * density > 2048.0f * 2048.0f * 0.55f && density > 0.25f) density *= 0.8f;
     for (auto& f : faces) {
@@ -162,6 +162,7 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
         f.wv = std::max(2, (int)std::ceil((f.v1 - f.v0) * density));
         f.wu = std::min(f.wu, 1000);
         f.wv = std::min(f.wv, 1000);
+        if (f.material >= 4) f.wu = f.wv = 2;
     }
     // 3. Shelf-pack.
     std::vector<int> order(faces.size());

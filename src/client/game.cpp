@@ -256,8 +256,7 @@ void Game::loadMapIfNeeded() {
         }
         drawBakeProgress(net_.map().name, p);
     });
-    bgCenter_ = net_.map().bounds.center();
-    bgRadius_ = length(net_.map().bounds.mx - net_.map().bounds.mn) * 0.26f;
+    setBackdropFrame(net_.map().bounds);
 }
 
 void Game::drawBakeProgress(const std::string& name, float p) {
@@ -299,8 +298,7 @@ void Game::loadMenuBackdrop() {
     std::string name = !opts_.backdrop.empty() ? opts_.backdrop : "crucible";
     if (!menuMap_.load(name) && (maps_.empty() || !menuMap_.load(maps_[0]))) return;
     r_.loadWorld(menuMap_, [&](float p) { drawBakeProgress(menuMap_.name, p); });
-    bgCenter_ = menuMap_.bounds.center();
-    bgRadius_ = length(menuMap_.bounds.mx - menuMap_.bounds.mn) * 0.26f;
+    setBackdropFrame(menuMap_.bounds);
 }
 
 // ---------------------------------------------------------------------------
@@ -788,6 +786,7 @@ void Game::frame(double dt) {
         // slow orbit around the backdrop map, looking slightly down at its center
         float ang = opts_.backdropAngle >= 0 ? deg2rad(opts_.backdropAngle) : (float)time_ * 0.04f;
         Vec3 camPos = bgCenter_ + Vec3(std::sin(ang) * bgRadius_, bgRadius_ * 0.6f, std::cos(ang) * bgRadius_);
+        camPos.y = std::max(camPos.y, bgTop_ + 3.0f); // above the walls (pits make the bounds deep)
         Vec3 to = bgCenter_ - camPos;
         r_.setCamera(camPos, std::atan2(-to.x, -to.z), std::atan2(to.y, std::sqrt(to.x * to.x + to.z * to.z)), 75);
         if (r_.worldLoaded()) r_.drawScene(false);
@@ -1025,8 +1024,20 @@ void Game::drawWorld(float alpha) {
         Vec3 d = ahead - cart;
         float yaw = (length(d) > 1e-3f) ? std::atan2(-d.x, -d.z) : 0;
         float sv = sunVisibility(map, cart + Vec3(0, 1, 0));
-        r_.box(cart + Vec3(0, 0.6f, 0), {0.9f, 0.6f, 1.2f}, yaw, cartCol * 0.8f, sv);
-        r_.box(cart + Vec3(0, 1.35f, 0), {0.5f, 0.15f, 0.7f}, yaw, {0.2f, 0.2f, 0.22f}, sv);
+        // an armoured ore cart in the map's palette: metal chassis on four wheels, team-coloured band, a
+        // glowing core in a cradle on top
+        auto lin = [](const Vec3& c) { return Vec3(std::pow(c.x, 2.2f), std::pow(c.y, 2.2f), std::pow(c.z, 2.2f)); };
+        Vec3 metal = lin(r_.metalColor) * 1.6f + Vec3(0.04f, 0.04f, 0.04f), accent = lin(r_.accentColor) * 1.4f;
+        float cy = std::cos(yaw), syw = std::sin(yaw);
+        auto at = [&](float x, float y, float z) { return cart + Vec3(x * cy + z * syw, y, -x * syw + z * cy); };
+        for (int k = 0; k < 4; k++) r_.box(at(k & 1 ? 0.85f : -0.85f, 0.32f, k & 2 ? 0.75f : -0.75f), {0.12f, 0.3f, 0.3f}, yaw, metal * 0.45f, sv);
+        r_.box(at(0, 0.75f, 0), {0.8f, 0.4f, 1.25f}, yaw, metal, sv);                       // chassis
+        r_.box(at(0, 0.8f, 0), {0.83f, 0.12f, 1.28f}, yaw, cartCol * 0.9f, sv);            // team band
+        r_.box(at(0, 1.2f, 0), {0.85f, 0.06f, 1.3f}, yaw, accent, sv);                     // rim
+        r_.box(at(0, 1.45f, 0), {0.45f, 0.2f, 0.6f}, yaw, metal * 0.7f, sv);                // cradle
+        r_.box(at(0, 1.75f, 0), {0.3f, 0.22f, 0.3f}, yaw, r_.glowColor * 1.3f + cartCol * 0.3f, sv);  // core
+        r_.box(at(0, 0.75f, 1.3f), {0.5f, 0.15f, 0.06f}, yaw, r_.glowColor, sv);            // lamps front
+        r_.box(at(0, 0.75f, -1.3f), {0.5f, 0.15f, 0.06f}, yaw, r_.glowColor, sv);           // and back
     } else if (ms.mode == MODE_RACE) {
         int next = mep ? mep->checkpoint : 0;
         for (size_t i = 0; i < map.checkpoints.size(); i++) {
@@ -1047,7 +1058,10 @@ void Game::drawWorld(float alpha) {
         recoil_ = std::max(0.0, recoil_ - 0.016 * 8);
         float kick = (float)recoil_ * 0.06f;
         // Each weapon is a handful of boxes around `at` (camera space: +x right, +y up, -z forward).
-        const Vec3 dark = {0.13f, 0.13f, 0.15f}, mid = {0.22f, 0.22f, 0.25f}, light = {0.42f, 0.43f, 0.46f}, acc = cfg_.colorFriendly;
+        // the map's own palette: metal body, base-coloured highlights, its glow colour on emitters / sights
+        auto lin = [](const Vec3& c) { return Vec3(std::pow(c.x, 2.2f), std::pow(c.y, 2.2f), std::pow(c.z, 2.2f)); };
+        const Vec3 mid = lin(r_.metalColor) * 1.6f + Vec3(0.05f, 0.05f, 0.05f), dark = mid * 0.55f, light = lin(r_.baseColor) * 1.1f;
+        const Vec3 acc = cfg_.colorFriendly, glow = r_.glowColor;
         Vec3 at = {0.2f, -0.17f, -0.55f + kick};
         auto part = [&](float x, float y, float z, float hx, float hy, float hz, const Vec3& c) { r_.viewBox(at + Vec3(x, y, z), {hx, hy, hz}, c); };
         switch (w) {
@@ -1063,6 +1077,7 @@ void Game::drawWorld(float alpha) {
                 part(0, 0, -0.02f, 0.045f, 0.045f, 0.2f, mid);
                 part(0, 0, -0.23f, 0.055f, 0.055f, 0.02f, dark);
                 part(0, 0, 0.19f, 0.052f, 0.052f, 0.015f, dark);
+                part(0, 0, -0.14f, 0.0475f, 0.0475f, 0.005f, glow);
                 part(0, 0, 0.05f, 0.047f, 0.047f, 0.006f, acc);
                 part(-0.058f, 0.025f, -0.06f, 0.012f, 0.02f, 0.03f, dark);
                 part(0, -0.07f, 0.04f, 0.014f, 0.03f, 0.02f, dark);
@@ -1080,15 +1095,16 @@ void Game::drawWorld(float alpha) {
                 part(0, 0.006f, -0.43f, 0.012f, 0.01f, 0.018f, dark);
                 part(0, 0.058f, -0.02f, 0.017f, 0.017f, 0.09f, dark);
                 part(0, 0.058f, -0.115f, 0.02f, 0.02f, 0.008f, acc);
+                part(0, 0.058f, -0.124f, 0.012f, 0.012f, 0.002f, glow);
                 part(0, 0.036f, -0.06f, 0.006f, 0.01f, 0.006f, mid); part(0, 0.036f, 0.03f, 0.006f, 0.01f, 0.006f, mid);
                 part(0.03f, 0.01f, 0.05f, 0.012f, 0.006f, 0.006f, light);
                 part(0, -0.015f, 0.17f, 0.018f, 0.035f, 0.06f, dark);
                 break;
             case WPN_LASER:      // chunky body, coil segments on top, glowing emitter rings at the front
                 part(0, 0, 0, 0.036f, 0.04f, 0.15f, mid);
-                for (int k = 0; k < 4; k++) part(0, 0.046f, -0.09f + k * 0.05f, 0.022f, 0.008f, 0.012f, k % 2 ? dark : acc * 0.8f);
+                for (int k = 0; k < 4; k++) part(0, 0.046f, -0.09f + k * 0.05f, 0.022f, 0.008f, 0.012f, k % 2 ? dark : glow);
                 part(0, 0, -0.165f, 0.03f, 0.03f, 0.012f, dark);
-                part(0, 0, -0.185f, 0.022f, 0.022f, 0.008f, acc * 1.4f);
+                part(0, 0, -0.185f, 0.022f, 0.022f, 0.008f, glow * 1.4f);
                 part(0, -0.07f, 0.03f, 0.014f, 0.03f, 0.02f, dark);
                 break;
             case WPN_SHOTGUN:    // twin barrels, pump under them, heavy receiver and stock
@@ -1104,6 +1120,7 @@ void Game::drawWorld(float alpha) {
                 part(0, -0.02f, 0.04f, 0.055f, 0.055f, 0.04f, dark);
                 part(0, -0.02f, 0.04f, 0.057f, 0.012f, 0.03f, acc);
                 part(0, 0.045f, -0.02f, 0.014f, 0.014f, 0.05f, dark);
+                part(0, 0.06f, -0.02f, 0.008f, 0.003f, 0.04f, glow);
                 part(0, 0, -0.2f, 0.036f, 0.036f, 0.012f, dark);
                 break;
             case WPN_CROSSBOW:   // stock, bow limbs with a string, a bolt on top
@@ -2435,4 +2452,12 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
         ra.hooked = p.hooked;
         ra.valid = true;
     }
+}
+
+// Orbit frame for a backdrop map: centred on the playable floor (pits and shafts reach far below it).
+void Game::setBackdropFrame(const AABB& b) {
+    float floorY = std::max(b.mn.y, -1.0f);
+    bgCenter_ = {(b.mn.x + b.mx.x) * 0.5f, (floorY + b.mx.y) * 0.5f, (b.mn.z + b.mx.z) * 0.5f};
+    bgRadius_ = length(Vec3(b.mx.x - b.mn.x, b.mx.y - floorY, b.mx.z - b.mn.z)) * 0.26f;
+    bgTop_ = b.mx.y;
 }

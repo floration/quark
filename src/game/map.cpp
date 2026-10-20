@@ -129,6 +129,7 @@ bool Map::parse(const std::string& text, std::string* err) {
     hasHill = false;
     hasWallbang = false;
     hasPalette = false;
+    hasVoid = false;
     preferredMode = -1;
     allowedModes = 0;
     rankedLadders = 0;
@@ -149,13 +150,14 @@ bool Map::parse(const std::string& text, std::string* err) {
         if (kw == "title") {
             std::getline(ls, title);
             while (!title.empty() && title[0] == ' ') title.erase(0, 1);
-        } else if (kw == "box" || kw == "accent" || kw == "wallbang" || kw == "metal" || kw == "glow") {
+        } else if (kw == "box" || kw == "accent" || kw == "wallbang" || kw == "metal" || kw == "glow" || kw == "far") {
             Brush b;
             ok = readBox(ls, b.box);
-            b.material = kw == "accent" ? 1 : kw == "wallbang" ? 2 : kw == "metal" ? 3 : kw == "glow" ? 4 : 0;
+            b.material = kw == "accent" ? 1 : kw == "wallbang" ? 2 : kw == "metal" ? 3 : kw == "glow" ? 4 : kw == "far" ? 5 : 0;
             hasWallbang |= b.material == 2;
             if (ok) {
                 brushes.push_back(b);
+                if (b.material == 5) continue; // far scenery: not part of the playable bounds
                 bounds.mn = vmin(bounds.mn, b.box.mn);
                 bounds.mx = vmax(bounds.mx, b.box.mx);
             }
@@ -191,6 +193,8 @@ bool Map::parse(const std::string& text, std::string* err) {
             ok = (bool)(ls >> l.pos.x >> l.pos.y >> l.pos.z >> l.radius);
             ls >> l.intensity;
             if (ok) lights.push_back(l);
+        } else if (kw == "void") {
+            ok = (bool)(ls >> voidY); hasVoid = ok;
         } else if (kw == "palette") {
             std::string k; Vec3 c;
             while (ok && ls >> k) {
@@ -238,11 +242,12 @@ std::string Map::serialize() const {
     }
     snprintf(b, sizeof b, "sun %g %g %g\n\n", sunDir.x, sunDir.y, sunDir.z);
     o += b;
+    if (hasVoid) { snprintf(b, sizeof b, "void %g\n", voidY); o += b; }
     if (hasPalette) {
         auto c = [&](const char* k, Vec3 v) { snprintf(b, sizeof b, " %s %g %g %g", k, v.x, v.y, v.z); o += b; };
         o += "palette"; c("base", palBase); c("accent", palAccent); c("metal", palMetal); c("glow", palGlow); c("sky", palSky); o += "\n\n";
     }
-    static const char* matNames[] = {"box", "accent", "wallbang", "metal", "glow"};
+    static const char* matNames[] = {"box", "accent", "wallbang", "metal", "glow", "far"};
     for (auto& br : brushes) box(matNames[br.material], br.box);
     o += "\n";
     static const char* teams[] = {"a", "b", "any", "race"};
@@ -335,7 +340,7 @@ bool applyMapEdit(Map& m, const std::string& op) {
         return true;
     };
     bool ok = false;
-    if (kind == "b") ok = edit(m.brushes, [&](Brush& b) { return (bool)(in >> b.material) && b.material >= 0 && b.material <= 4 && readBox(b.box); }, 1, 60000);
+    if (kind == "b") ok = edit(m.brushes, [&](Brush& b) { return (bool)(in >> b.material) && b.material >= 0 && b.material <= 5 && readBox(b.box); }, 1, 60000);
     else if (kind == "s") ok = edit(m.spawns, [&](SpawnPoint& sp) {
         float yaw;
         if (!(in >> sp.team) || sp.team < 0 || sp.team > 3 || !readVec(sp.pos) || !(in >> yaw) || !okNum(yaw)) return false;
@@ -362,6 +367,7 @@ void Map::rebuild() {
     bounds = {{1e9f, 1e9f, 1e9f}, {-1e9f, -1e9f, -1e9f}};
     hasWallbang = false;
     for (auto& b : brushes) {
+        if (b.material == 5) continue; // far scenery: outside play, never collides
         bounds.mn = vmin(bounds.mn, b.box.mn);
         bounds.mx = vmax(bounds.mx, b.box.mx);
         hasWallbang |= b.material == 2;
@@ -377,6 +383,7 @@ void Map::buildGrid() {
     gridH = std::max(1, (int)std::ceil((bounds.mx.z - gridZ0) / kCell));
     std::vector<std::vector<uint16_t>> cells((size_t)gridW * gridH);
     for (size_t i = 0; i < brushes.size(); i++) {
+        if (brushes[i].material == 5) continue; // far scenery: not solid, not hit by shots
         const AABB& b = brushes[i].box;
         int x0 = std::max(0, (int)((b.mn.x - gridX0) / kCell)), x1 = std::min(gridW - 1, (int)((b.mx.x - gridX0) / kCell));
         int z0 = std::max(0, (int)((b.mn.z - gridZ0) / kCell)), z1 = std::min(gridH - 1, (int)((b.mx.z - gridZ0) / kCell));

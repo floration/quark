@@ -8,7 +8,7 @@ enum SpawnTeam { SPAWN_A = 0, SPAWN_B = 1, SPAWN_ANY = 2, SPAWN_RACE = 3 };
 
 struct Brush {
     AABB box;
-    int material = 0; // 0 = base, 1 = accent, 2 = wallbang (dark grey: solid, but hitscan goes through it), 3 = metal, 4 = glow (emissive trim)
+    int material = 0; // 0 = base, 1 = accent, 2 = wallbang (dark grey: solid, but hitscan goes through it), 3 = metal, 4 = glow (emissive trim), 5 = far (distant scenery outside the walls: flat-shaded, no lightmap)
 };
 
 struct SpawnPoint {
@@ -32,6 +32,10 @@ struct Map {
     std::vector<Vec3> payloadPath;    // ordered waypoints
     Vec3 sunDir = normalize(Vec3(0.4f, 1.0f, 0.25f)); // points toward the sun
     // "palette base r g b accent r g b metal r g b glow r g b sky r g b" (linear 0..1): per-map colours
+    // "void <y>": falling below this height kills (pits, water, the drop off a bridge); default 20 m below the map
+    bool hasVoid = false;
+    float voidY = 0;
+    float killY() const { return hasVoid ? voidY : bounds.mn.y - 20.0f; }
     bool hasPalette = false;
     Vec3 palBase, palAccent, palMetal, palGlow, palSky;
     struct Light { Vec3 pos; float radius = 10, intensity = 1; };
