@@ -153,7 +153,7 @@ footer { margin: 64px 0 0; padding: 24px 0 40px; border-top: 1px solid var(--lin
     <p><b>Payload</b> Push the cart or stop it, then swap sides.</p>
     <p><b>Neutral payload</b> One cart, two goals.</p>
     <p><b>King of the hill</b> Hold the point.</p>
-    <p><b>Race</b> Run every checkpoint first.</p>
+    <p><b>Race</b> Run every checkpoint first, or race the clock in a solo Viaduct time trial for the leaderboard.</p>
     <p><b>Hide and seek</b> One seeker with a knife.</p>
     <p><b>Tag</b> Don't be "it" when the timer runs out.</p>
   </div>
@@ -189,7 +189,7 @@ footer { margin: 64px 0 0; padding: 24px 0 40px; border-top: 1px solid var(--lin
 
 <section id="ranks">
   <h2>Leaderboard</h2>
-  <p class="intro">Ranked 1v1 ratings. Players appear after 3 rated games.</p>
+  <p class="intro">Ranked 1v1 ratings (players appear after 3 rated games) and the fastest Viaduct time trials.</p>
   <div id="boards">Loading…</div>
 </section>
 
@@ -283,12 +283,21 @@ fetch("master.txt").then(r => r.text()).then(t => {
   const base = t.trim().replace(/\/+$/, "");
   const ladders = [["vanilla", "Vanilla"], ["vampire", "Laser Vampire"], ["instagib", "Instagib"]];
   return Promise.all(ladders.map(([k]) => fetch(`${base}/leaderboard?ladder=${k}&n=10`).then(r => r.ok ? r.text() : "").catch(() => ""))).then(res => {
-    document.getElementById("boards").innerHTML = ladders.map(([k, title], i) => {
+    const boards = ladders.map(([k, title], i) => {
       const rows = res[i].split("\n").map(l => l.match(/^(\d+) (\d+) (.+)$/)).filter(Boolean);
       const body = rows.length ? rows.map((m, n) => `<tr><td>${n + 1}</td><td>${esc(m[3])}</td><td style="text-align:right">${m[1]}</td></tr>`).join("")
                                : `<tr><td colspan="3" style="color:var(--dim)">Nobody ranked yet</td></tr>`;
       return `<div><table><caption>${title}</caption>${body}</table></div>`;
-    }).join("");
+    });
+    document.getElementById("boards").innerHTML = boards.join("");
+    // time trials: "ms name" per line, fastest first
+    const fmt = ms => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}.${String(ms % 1000).padStart(3, "0")}`;
+    fetch(`${base}/raceboard?map=viaduct&n=10`).then(r => r.ok ? r.text() : "").catch(() => "").then(t => {
+      const rows = t.split("\n").map(l => l.match(/^(\d+) (.+)$/)).filter(Boolean);
+      const body = rows.length ? rows.map((m, n) => `<tr><td>${n + 1}</td><td>${esc(m[2])}</td><td style="text-align:right">${fmt(+m[1])}</td></tr>`).join("")
+                               : `<tr><td colspan="3" style="color:var(--dim)">No times yet</td></tr>`;
+      document.getElementById("boards").insertAdjacentHTML("beforeend", `<div><table><caption>Viaduct time trial</caption>${body}</table></div>`);
+    });
   });
 }).catch(() => { document.getElementById("boards").textContent = "Couldn't reach the ranking server."; });
 
