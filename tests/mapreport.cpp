@@ -8,6 +8,7 @@
 #include <fstream>
 #include <map>
 #include <queue>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -45,9 +46,16 @@ struct Metrics {
     float jumpLinks = 0;       // share of nav links that need a jump (rise > step height)
     float grapple = 0;         // share of points with a hookable surface >= 3 m up within grapple range
     float headroom = 0;        // share of points with > 6 m above (vertical dash, rocket jumps)
+    float roofed = 0;          // share of points with a ceiling within 12 m (indoor spaces)
+    float fill = 1;            // share of the footprint's bounding box that is floor (1 = a plain rectangle)
+    bool liquids = false;      // water / lava surfaces
     float lanes = 0;           // 90th percentile of the longest straight run from a point (m): dash / bhop lanes
     float voidEdge = 0;        // share of points within 2 m of a lethal drop
     int ladders = 0;
+    // movement sub-scores (0-10 each; the movement score is their mean) and what they measured
+    float mGrapple = 0, mLanes = 0, mVertical = 0, mHeadroom = 0, mRisk = 0, mTech = 0;
+    std::string techLine;
+    float lLevels = 0, lLoops = 0, lCover = 0, lRange = 0, lDead = 0; // layout parts (points out of 2, 2, 3, 3, minus)      // race: the shortcut check per leg; other modes: how much movement tech shortens trips
     // modes
     std::vector<std::pair<std::string, std::string>> modes; // mode -> measured line
     float fairness = -1;       // 0-1, min/max of team distances (team maps)
@@ -121,6 +129,160 @@ float navToBox(const NavGraph& g, const Vec3& a, const AABB& box) {
     return best;
 }
 
+float clamp10(float v) { return std::clamp(v, 0.0f, 10.0f); }
+
+// Movement-tech graph over the floor samples: walking steps, jump / dash leaps (up to 12 m across, 2.5 m up,
+// any drop) and grapple pulls (to any hookable surface in 45 m: you land on the floor nearest the anchor).
+// Shortest paths here are what a good player can do; the nav graph is the intended route.
+struct TechGraph {
+    std::vector<Vec3> p;
+    std::vector<std::vector<std::pair<int, float>>> adj;  // running, jumps, ladders + leaps and grapple pulls
+    std::vector<std::vector<std::pair<int, float>>> walk; // running, ordinary jumps (2.6 m gaps, 1.15 m up) and ladders only
+    std::vector<char> narrow;                              // sample stands on a surface under 2 m across
+    std::set<std::pair<int, int>> jumps;                   // walk links that need a jump (a gap or more than a step up)
+    std::map<std::pair<int, int>, std::vector<int>> cells;
+    static std::pair<int, int> cell(const Vec3& q) { return {(int)std::floor(q.x / 6), (int)std::floor(q.z / 6)}; }
+    int nearest(const Vec3& q, float maxD = 1e9f) const {
+        int best = -1; float bd = maxD;
+        auto c = cell(q);
+        for (int dx = -2; dx <= 2; dx++)
+            for (int dz = -2; dz <= 2; dz++) {
+                auto it = cells.find({c.first + dx, c.second + dz});
+                if (it == cells.end()) continue;
+                for (int j : it->second) { float d = length(p[j] - q); if (d < bd) { bd = d; best = j; } }
+            }
+        if (best < 0 && maxD >= 1e8f) for (size_t j = 0; j < p.size(); j++) { float d = length(p[j] - q); if (d < bd) { bd = d; best = (int)j; } }
+        return best;
+    }
+    void build(const Map& m, const NavGraph& g, const std::vector<Vec3>& pts) {
+        p = pts;
+        std::vector<int> node(p.size());
+        narrow.assign(p.size(), 0);
+        for (size_t i = 0; i < p.size(); i++) {
+            node[i] = g.nodeAt(p[i] + Vec3(0, 0.05f, 0));
+            if (node[i] >= 0) { auto& n = g.nodes[node[i]]; narrow[i] = std::min(n.x1 - n.x0, n.z1 - n.z0) < 2.0f; }
+        }
+        auto navLinked = [&](int a, int b) {
+            if (a < 0 || b < 0) return false;
+            if (a == b) return true;
+            for (auto& l : g.links[a]) if (l.first == b) return true;
+            return false;
+        };
+        adj.assign(p.size(), {});
+        walk.assign(p.size(), {});
+        for (size_t i = 0; i < p.size(); i++) cells[cell(p[i])].push_back((int)i);
+        auto clear = [&](const Vec3& a, const Vec3& b) { Vec3 d = b - a; float l = length(d); return l < 0.01f || !m.raycastAny(a, d / l, l); };
+        for (size_t i = 0; i < p.size(); i++) {
+            auto c = cell(p[i]);
+            for (int dx = -2; dx <= 2; dx++)
+                for (int dz = -2; dz <= 2; dz++) {
+                    auto it = cells.find({c.first + dx, c.second + dz});
+                    if (it == cells.end()) continue;
+                    for (int j : it->second) {
+                        if (j == (int)i) continue;
+                        Vec3 d = p[j] - p[i];
+                        float h = std::sqrt(d.x * d.x + d.z * d.z);
+                        // the run: what the bots' nav calls walkable (same surface, or a step / ordinary jump between two)
+                        if (h <= 6.0f && navLinked(node[i], node[j])) {
+                            walk[i].push_back({j, length(d)}); adj[i].push_back({j, length(d)});
+                            if (node[i] != node[j]) {
+                                auto &na = g.nodes[node[i]], &nb = g.nodes[node[j]];
+                                float gx = std::max(0.0f, std::max(na.x0, nb.x0) - std::min(na.x1, nb.x1));
+                                float gz = std::max(0.0f, std::max(na.z0, nb.z0) - std::min(na.z1, nb.z1));
+                                if (gx * gx + gz * gz > 0.3f * 0.3f || nb.y - na.y > 0.55f) jumps.insert({(int)i, j});
+                            }
+                            continue;
+                        }
+                        // jump / dash leaps: a dash-jump carries ~16 m and the tilted dash lifts ~3.5 m
+                        if (h > 16.0f || d.y > 3.5f || d.y < -15.0f) continue;
+                        // the arc: clear at chest height between, and over the higher end
+                        float top = std::max(p[i].y, p[j].y) + 1.2f;
+                        if (!clear(p[i] + Vec3(0, 1.0f, 0), Vec3(p[i].x, top, p[i].z)) || !clear(Vec3(p[i].x, top, p[i].z), Vec3(p[j].x, top, p[j].z)) ||
+                            !clear(Vec3(p[j].x, top, p[j].z), p[j] + Vec3(0, 1.0f, 0))) continue;
+                        adj[i].push_back({j, length(d)});
+                    }
+                }
+            // grapple pulls
+            Vec3 eye = p[i] + Vec3(0, kEye, 0);
+            for (int k = 0; k < 16; k++)
+                for (float el : {0.3f, 0.7f, 1.1f}) {
+                    float a = k * 6.2831853f / 16;
+                    Vec3 d = normalize(Vec3(std::sin(a) * std::cos(el), std::sin(el), std::cos(a) * std::cos(el)));
+                    float t = m.raycast(eye, d, kGrappleRange);
+                    if (t < 2.0f) continue;
+                    Vec3 hit = eye + d * t;
+                    int j = nearest(hit, 4.0f);
+                    if (j < 0 || j == (int)i || p[j].y > hit.y + 0.5f) continue;
+                    adj[i].push_back({j, t + length(p[j] - hit)});
+                }
+        }
+        // ladders: from the floor at the foot to the floor at the top, in both graphs
+        for (const AABB& l : m.ladders) {
+            Vec3 c = l.center();
+            int lo = nearest({c.x, l.mn.y, c.z}, 2.5f);
+            int hi = -1; float bd = 3.0f;
+            for (size_t j = 0; j < p.size(); j++) {
+                if (std::fabs(p[j].y - l.mx.y) > 0.8f) continue;
+                float dd = std::hypot(p[j].x - c.x, p[j].z - c.z);
+                if (dd < bd) { bd = dd; hi = (int)j; }
+            }
+            if (lo < 0 || hi < 0 || lo == hi) continue;
+            float cost = (l.mx.y - l.mn.y) * 1.8f + bd; // climbing is slower than running
+            adj[lo].push_back({hi, cost}); walk[lo].push_back({hi, cost});
+            adj[hi].push_back({lo, cost}); walk[hi].push_back({lo, cost});
+        }
+    }
+    std::vector<float> from(int s, bool tech = true, std::vector<int>* prev = nullptr) const {
+        const auto& G = tech ? adj : walk;
+        if (prev) prev->assign(p.size(), -1);
+        std::vector<float> d(p.size(), 1e30f);
+        if (s < 0) return d;
+        using QE = std::pair<float, int>;
+        std::priority_queue<QE, std::vector<QE>, std::greater<QE>> q;
+        d[s] = 0; q.push({0, s});
+        while (!q.empty()) {
+            auto [du, u] = q.top(); q.pop();
+            if (du > d[u]) continue;
+            for (auto& [v, c] : G[u]) if (du + c < d[v]) { d[v] = du + c; if (prev) (*prev)[v] = u; q.push({d[v], v}); }
+        }
+        return d;
+    }
+    // shortest tech distance from a to anywhere inside box (or near point b when box is empty)
+    float toBox(const Vec3& a, const AABB& box, bool tech = true) const {
+        auto d = from(nearest(a), tech);
+        float best = -1;
+        for (size_t i = 0; i < p.size(); i++) {
+            if (d[i] > 1e29f) continue;
+            const Vec3& q = p[i];
+            if (q.x < box.mn.x - 0.5f || q.x > box.mx.x + 0.5f || q.z < box.mn.z - 0.5f || q.z > box.mx.z + 0.5f || q.y < box.mn.y - 1.0f || q.y > box.mx.y) continue;
+            if (best < 0 || d[i] < best) best = d[i];
+        }
+        return best;
+    }
+    // the plain-running route to a box, with what it asks of you: jumps taken and metres on narrow footing
+    struct Leg { float len = -1; int jumps = 0; float narrowLen = 0; };
+    Leg walkLeg(const Vec3& a, const AABB& box) const {
+        std::vector<int> prev;
+        auto d = from(nearest(a), false, &prev);
+        int best = -1;
+        for (size_t i = 0; i < p.size(); i++) {
+            if (d[i] > 1e29f) continue;
+            const Vec3& q = p[i];
+            if (q.x < box.mn.x - 0.5f || q.x > box.mx.x + 0.5f || q.z < box.mn.z - 0.5f || q.z > box.mx.z + 0.5f || q.y < box.mn.y - 1.0f || q.y > box.mx.y) continue;
+            if (best < 0 || d[i] < d[best]) best = (int)i;
+        }
+        Leg L;
+        if (best < 0) return L;
+        L.len = d[best];
+        for (int v = best; prev[v] >= 0; v = prev[v]) {
+            int u = prev[v];
+            L.jumps += jumps.count({u, v}) > 0;
+            if (narrow[u] && narrow[v]) L.narrowLen += length(p[v] - p[u]);
+        }
+        return L;
+    }
+};
+
 bool los(const Map& m, const Vec3& a, const Vec3& b) {
     Vec3 d = b - a;
     float len = length(d);
@@ -162,8 +324,10 @@ void measure(Metrics& r, const Map& m, const NavGraph& g) {
         r.area += a;
         levelArea[(int)std::floor(n.y / 1.5f)] += a;
         ymin = std::min(ymin, n.y); ymax = std::max(ymax, n.y);
-        for (float x = n.x0 + 1; x < n.x1; x += 2)
-            for (float z = n.z0 + 1; z < n.z1; z += 2) {
+        // every 2 m; a surface under 2 m across (a stair step, a beam) gets one row down its middle
+        float sx = n.x1 - n.x0 < 2 ? (n.x0 + n.x1) / 2 : n.x0 + 1, sz = n.z1 - n.z0 < 2 ? (n.z0 + n.z1) / 2 : n.z0 + 1;
+        for (float x = sx; x < n.x1; x += 2)
+            for (float z = sz; z < n.z1; z += 2) {
                 Vec3 p = {x, n.y, z};
                 if (!m.boxSolid(playerBox(p + Vec3(0, 0.02f, 0), false))) pts.push_back({p, (int)i});
             }
@@ -203,6 +367,13 @@ void measure(Metrics& r, const Map& m, const NavGraph& g) {
             cams << q.x << " " << q.y + kEye << " " << q.z << " " << bestYaw * 57.29578f << " " << -8 << "\n";
         }
     }
+    TechGraph tech;
+    {
+        std::vector<Vec3> tp;
+        size_t stride = pts.size() / 2500 + 1; // up to ~2500 points
+        for (size_t i = 0; i < pts.size(); i += stride) tp.push_back(pts[i].p);
+        tech.build(m, g, tp);
+    }
     if (pts.size() > 1500) { // keep it quick: an even subsample
         std::vector<Pt> sub;
         for (size_t i = 0; i < pts.size(); i += pts.size() / 1500 + 1) sub.push_back(pts[i]);
@@ -213,6 +384,7 @@ void measure(Metrics& r, const Map& m, const NavGraph& g) {
     // ---- nav graph shape
     r.nodes = (int)g.nodes.size();
     int jumpLinks = 0;
+    auto spawnReach = navDist(g, nearestNode(g, m.spawns.empty() ? Vec3() : m.spawns[0].pos));
     for (size_t i = 0; i < g.links.size(); i++) {
         int deg = 0;
         for (auto& [j, c] : g.links[i]) {
@@ -220,8 +392,27 @@ void measure(Metrics& r, const Map& m, const NavGraph& g) {
             deg++;
             if ((int)i < j && std::fabs(g.nodes[j].y - g.nodes[i].y) > 0.55f) jumpLinks++;
         }
+        // a dead end is a floor you can only leave one way (a corridor end), not a crate top you can drop off
+        // on every side: probe each side for a way out (room to stand, and a non-lethal floor within 6 m below)
         auto& n = g.nodes[i];
-        if (deg == 1 && (n.x1 - n.x0) * (n.z1 - n.z0) > 4) r.deadEnds++;
+        if ((n.x1 - n.x0) * (n.z1 - n.z0) <= 4 || deg > 1 || spawnReach[i] > 1e29f) continue; // one link in, and somewhere you can get to
+        int exits = 0;
+        for (int side = 0; side < 4; side++) {
+            bool out = false;
+            for (float f : {0.25f, 0.5f, 0.75f}) {
+                float x = side < 2 ? n.x0 + (n.x1 - n.x0) * f : (side == 2 ? n.x0 - 0.7f : n.x1 + 0.7f);
+                float z = side < 2 ? (side == 0 ? n.z0 - 0.7f : n.z1 + 0.7f) : n.z0 + (n.z1 - n.z0) * f;
+                Vec3 q = {x, n.y + 0.6f, z};
+                if (m.boxSolid(playerBox(q, false))) continue;
+                float down = m.raycast(q, {0, -1, 0}, 6.6f);
+                if (down >= 0 && q.y - down > m.killY() + 0.5f) { out = true; break; }
+            }
+            exits += out;
+        }
+        if (exits <= 1) {
+            r.deadEnds++;
+            if (getenv("MR_DEAD") && r.name == getenv("MR_DEAD")) fprintf(stderr, "dead end: x %.1f..%.1f z %.1f..%.1f at y %.1f\n", n.x0, n.x1, n.z0, n.z1, n.y);
+        }
     }
     {   // components (for loops = E - V + C)
         std::vector<int> comp(g.nodes.size(), -1);
@@ -237,7 +428,7 @@ void measure(Metrics& r, const Map& m, const NavGraph& g) {
     }
     r.jumpLinks = r.links ? (float)jumpLinks / r.links : 0;
     // ---- per-point rays: cover, lanes, headroom, grapple, void edges, bare walls
-    int wallHits = 0, bareHits = 0, covered = 0, grapple = 0, head = 0, nearVoid = 0;
+    int wallHits = 0, bareHits = 0, covered = 0, grapple = 0, head = 0, nearVoid = 0, roofedN = 0;
     std::vector<float> lanes;
     float coverSum = 0;
     for (auto& pt : pts) {
@@ -276,6 +467,7 @@ void measure(Metrics& r, const Map& m, const NavGraph& g) {
         lanes.push_back(longest);
         float up = m.raycast(eye, {0, 1, 0}, 30.0f);
         head += up < 0 || up > 6.0f;
+        roofedN += up >= 0 && up < 12.0f;
         bool hook = false;
         for (int k = 0; k < 8 && !hook; k++)
             for (float el : {0.5f, 1.0f}) {
@@ -299,6 +491,8 @@ void measure(Metrics& r, const Map& m, const NavGraph& g) {
     r.coverPts = (float)covered / P;
     r.grapple = (float)grapple / P;
     r.headroom = (float)head / P;
+    r.roofed = (float)roofedN / P;
+    for (auto& b : m.brushes) r.liquids |= b.material == 6 || b.material == 7;
     r.voidEdge = (float)nearVoid / P;
     r.bareWalls = wallHits ? (float)bareHits / wallHits : 0;
     std::sort(lanes.begin(), lanes.end());
@@ -330,6 +524,58 @@ void measure(Metrics& r, const Map& m, const NavGraph& g) {
         int cz = std::clamp((int)((pt.p.z - bz0) / std::max(1.0f, bz1 - bz0) * 24), 0, 23);
         float h = r.vertRange > 0.1f ? (pt.p.y - ymin) / r.vertRange : 0;
         r.occ[cz * 24 + cx] = std::max(r.occ[cz * 24 + cx], h);
+    }
+    {   int used = 0; for (float v : r.occ) used += v >= 0; r.fill = used / 576.0f; }
+    // ---- movement tech: race = the shortcut check per leg; other modes = how much tech shortens the main trips
+    {
+        char tb[160];
+        if (!m.checkpoints.empty() && m.supportsMode(MODE_RACE)) {
+            Vec3 at = m.spawns.empty() ? Vec3() : m.spawns[0].pos;
+            for (auto& sp : m.spawns) if (sp.team == SPAWN_RACE) { at = sp.pos; break; }
+            float worst = 1; int worstLeg = 0, totJumps = 0; float totLen = 0, totNarrow = 0;
+            std::string legs;
+            for (size_t k = 0; k < m.checkpoints.size(); k++) {
+                const AABB& c = m.checkpoints[k];
+                auto L = tech.walkLeg(at, c);
+                float route = L.len, skip = tech.toBox(at, c);
+                if (route > 0) { totLen += route; totJumps += L.jumps; totNarrow += L.narrowLen; }
+                if (route < 0 && std::getenv("MR_WALK")) {
+                    auto d = tech.from(tech.nearest(at), false);
+                    for (size_t i = 0; i < tech.p.size(); i++) if (std::getenv("MR_ALL") ? (tech.p[i].z > -17 && tech.p[i].z < -10) : d[i] < 1e29f) fprintf(stderr, "  leg %zu reach %.1f %.1f %.1f\n", k + 1, tech.p[i].x, tech.p[i].y, tech.p[i].z);
+                }
+                float ratio = (route > 0 && skip > 0) ? route / skip : 1;
+                snprintf(tb, sizeof tb, "%s%zu: %.0f m, %d jumps, %.0f m narrow, %.0f m with tech (%.2fx)", legs.empty() ? "" : "; ", k + 1, route, L.jumps, L.narrowLen, skip, ratio);
+                legs += tb;
+                if (ratio > worst) { worst = ratio; worstLeg = (int)k + 1; }
+                at = c.center(); at.y = c.mn.y;
+            }
+            // a race is only as good as its weakest part: no leg you can cut (shortcut), and a course that asks for
+            // jumps (6 per 100 m for full marks) and narrow footing (a quarter of the way on beams, steps, ledges)
+            float shortcut = clamp10((2.5f - worst) / (2.5f - 1.25f) * 10);
+            float jp = totLen > 0 ? totJumps * 100.0f / totLen : 0, ns = totLen > 0 ? totNarrow / totLen : 0;
+            float challenge = 5 * std::min(jp / 6.0f, 1.0f) + 5 * std::min(ns / 0.25f, 1.0f);
+            // (on a map built for another mode the race is a side mode: there only the shortcut check counts)
+            r.mTech = m.preferredMode == MODE_RACE ? std::min(shortcut, challenge) : shortcut;
+            snprintf(tb, sizeof tb, "race: shortcut %.1f (worst leg %d at %.2fx; 10 at <= 1.25x, 0 at >= 2.5x), challenge %.1f (%.1f jumps per 100 m, %.0f%% narrow) - legs: ",
+                     shortcut, worstLeg, worst, challenge, jp, ns * 100);
+            r.techLine = tb + legs;
+        } else {
+            // trips from every spawn to the objectives / the other spawns: tech should help (>= 1.15x) without breaking (<= 1.8x)
+            std::vector<AABB> targets;
+            if (m.hasHill) targets.push_back(m.hill);
+            for (auto& b : m.bombSites) targets.push_back(b);
+            if (targets.empty()) for (auto& sp : m.spawns) targets.push_back({sp.pos - Vec3(1, 0, 1), sp.pos + Vec3(1, 2, 1)});
+            float sum = 0; int n = 0;
+            for (size_t i = 0; i < m.spawns.size() && i < 8; i++)
+                for (size_t t = 0; t < targets.size() && t < 8; t++) {
+                    float route = tech.toBox(m.spawns[i].pos, targets[t], false), skip = tech.toBox(m.spawns[i].pos, targets[t]);
+                    if (route > 3 && skip > 0) { sum += route / skip; n++; }
+                }
+            float avg = n ? sum / n : 1;
+            r.mTech = avg < 1.15f ? clamp10(4 + (avg - 1) / 0.15f * 6) : avg <= 1.8f ? 10 : clamp10(10 - (avg - 1.8f) / 0.7f * 10);
+            snprintf(tb, sizeof tb, "movement tech shortens main trips by %.2fx on average (10 for 1.15-1.8x: it pays off without trivialising the map)", avg);
+            r.techLine = tb;
+        }
     }
     // ---- modes: what each mode cares about, measured on this map
     std::vector<Vec3> spA, spB;
@@ -436,23 +682,25 @@ void measure(Metrics& r, const Map& m, const NavGraph& g) {
     }
     if (!fair.empty()) { float s = 0; for (float f : fair) s += f; r.fairness = s / fair.size(); }
     // ---- feature list (creativity)
+    // distinct things the map does (creativity counts these; each one is a reason to play it differently)
     if (r.ladders) r.features.push_back("ladders");
     if (m.hasVoid || r.voidEdge > 0.05f) r.features.push_back("lethal drops");
+    if (r.liquids) r.features.push_back("water / lava");
     if (r.wallbang) r.features.push_back("wallbangs");
     if (m.payloadPath.size() >= 2) r.features.push_back("moving cart");
-    if (r.levels >= 4) r.features.push_back(std::to_string(r.levels) + " floor levels");
-    if (r.grapple > 0.6f) r.features.push_back("grapple-friendly");
-    if (r.lanes > 30) r.features.push_back("long speed lanes");
-    if (r.lights >= 6) r.features.push_back("lit interiors");
-    if (r.far > 0) r.features.push_back("skyline");
+    if (r.levels >= 5) r.features.push_back("5+ floor levels");
+    if (r.vertRange >= 12) r.features.push_back("12 m+ of height");
+    if (r.roofed >= 0.15f && r.roofed <= 0.85f) r.features.push_back("indoor and outdoor");
+    if (r.roofed > 0.85f) r.features.push_back("fully indoor");
+    if (r.fill < 0.8f) r.features.push_back("irregular outline");
+    if (r.lights >= 12) r.features.push_back("lit interiors");
     if (r.hideSpots > 0.15f) r.features.push_back("lots of hiding spots");
 }
 
-float clamp10(float v) { return std::clamp(v, 0.0f, 10.0f); }
 
 } // namespace
 
-void mapReport(const char* outPath) {
+int mapReport(const char* outPath) {
     std::vector<Metrics> all;
     for (const std::string& name : listMaps()) {
         Map m;
@@ -505,22 +753,34 @@ void mapReport(const char* outPath) {
     }
     // scores (formulas in docs/MAP_METRICS.md)
     std::map<std::string, int> featureCount;
-    for (auto& r : all) for (auto& f : r.features) featureCount[f.substr(f.find(' ') == std::string::npos || !isdigit((unsigned char)f[0]) ? 0 : f.find(' ') + 1)]++;
+    for (auto& r : all) for (auto& f : r.features) featureCount[f]++;
     for (auto& r : all) {
         r.sDecor = clamp10(4 * std::min(r.detailDensity / 12, 1.0f) + 4 * (1 - r.bareWalls) + 2 * std::min(r.lights / 30.0f, 1.0f));
         float bandMix = 0; // evenness of close / mid / long sightlines (entropy of the first three bands, 0-1)
         for (int b = 0; b < 3; b++) if (r.band[b] > 0) bandMix -= r.band[b] * std::log(r.band[b]) / std::log(3.0f);
         float loopsPerK = r.loops / std::max(1.0f, r.area / 1000);
-        r.sLayout = clamp10(2 * std::min(r.levels / 8.0f, 1.0f) + 2 * std::min(loopsPerK / 20, 1.0f) + 3 * std::min(r.coverPts / 0.45f, 1.0f) + 3 * bandMix - 0.15f * r.deadEnds);
-        r.sMovement = clamp10(3 * r.grapple + 1.5f * r.headroom + 2.5f * std::min(r.lanes / 40, 1.0f) + 2 * std::min(r.jumpLinks / 0.6f, 1.0f) + (r.ladders ? 1 : 0));
-        float uniq = 0;
-        for (auto& f : r.features) {
-            std::string k = f.substr(isdigit((unsigned char)f[0]) ? f.find(' ') + 1 : 0);
-            uniq += featureCount[k] <= (int)all.size() / 3 ? 1.0f : 0.4f;
-        }
-        r.sCreativity = clamp10(uniq * 1.5f + std::min(r.vertRange / 4, 2.0f));
+        r.lLevels = 2 * std::min(r.levels / 8.0f, 1.0f); r.lLoops = 2 * std::min(loopsPerK / 20, 1.0f);
+        r.lCover = 3 * std::min(r.coverPts / 0.45f, 1.0f); r.lRange = 3 * bandMix; r.lDead = 0.15f * r.deadEnds;
+        r.sLayout = clamp10(r.lLevels + r.lLoops + r.lCover + r.lRange - r.lDead);
+        r.mGrapple = clamp10(r.grapple / 0.8f * 10);                       // anchors over most of the floor
+        r.mLanes = clamp10(r.lanes / 40 * 10);                              // room to build speed
+        r.mVertical = clamp10(r.jumpLinks / 0.5f * 7 + std::min(r.levels, 6) * 0.5f + (r.ladders ? 1 : 0)); // jumps / levels / ladders
+        r.mHeadroom = clamp10(r.headroom / 0.9f * 10);                      // vertical dashes, rocket jumps
+        r.mRisk = r.preferred == "race" ? 10 : r.voidEdge < 0.08f ? 6 + r.voidEdge / 0.08f * 4 : r.voidEdge <= 0.35f ? 10 : clamp10(10 - (r.voidEdge - 0.35f) / 0.4f * 8); // some edges to play around, not everywhere
+        r.sMovement = (r.mGrapple + r.mLanes + r.mVertical + r.mHeadroom + r.mRisk + r.mTech) / 6;
+        float rare = 0; // a small bonus for features at most a quarter of the maps have
+        for (auto& f : r.features) rare += featureCount[f] <= (int)all.size() / 4 ? 0.5f : 0.0f;
+        r.sCreativity = clamp10((float)r.features.size() + std::min(rare, 2.0f));
         r.sBalance = r.fairness >= 0 ? clamp10(r.fairness * 10) : -1;
         r.sOriginality = clamp10(r.originality * 8);
+    }
+    // ---- the bar every map has to clear: 7 in every category but originality (a map can't help resembling
+    // the others), and balance where the map has team modes
+    int below = 0;
+    for (auto& r : all) {
+        std::pair<const char*, float> cats[] = {{"decor", r.sDecor}, {"layout", r.sLayout}, {"movement", r.sMovement}, {"creativity", r.sCreativity}, {"balance", r.sBalance}};
+        for (auto& [k, v] : cats)
+            if (v >= 0 && v < 7.0f - 1e-3f) { fprintf(stderr, "  FAIL %s: %s %.1f is below 7\n", r.name.c_str(), k, v); below++; }
     }
     // ---- write the report
     std::ofstream o(outPath);
@@ -544,11 +804,20 @@ void mapReport(const char* outPath) {
                  r.visible * 100, r.band[0] * 100, r.band[1] * 100, r.band[2] * 100, r.band[3] * 100, r.coverPts * 100);
         o << b;
     }
-    o << "\n## Movement\n\n| map | grapple anchors | headroom > 6 m | speed lanes (p90) | jump links | ladders | near a lethal drop |\n|---|---|---|---|---|---|---|\n";
+    o << "\n### Layout points\n\n| map | levels (/2) | loops (/2) | cover (/3) | range mix (/3) | dead ends (-) |\n|---|---|---|---|---|---|\n";
     for (auto& r : all) {
-        snprintf(b, sizeof b, "| %s | %.0f%% | %.0f%% | %.0f m | %.0f%% | %d | %.0f%% |\n", r.name.c_str(), r.grapple * 100, r.headroom * 100, r.lanes, r.jumpLinks * 100, r.ladders, r.voidEdge * 100);
+        snprintf(b, sizeof b, "| %s | %.1f | %.1f | %.1f | %.1f | -%.1f |\n", r.name.c_str(), r.lLevels, r.lLoops, r.lCover, r.lRange, r.lDead);
         o << b;
     }
+    o << "\n## Movement\n\nSub-scores 0-10 (the movement score is their mean); the measurement behind each in brackets.\n\n"
+         "| map | grapple (anchors) | speed lanes (p90) | vertical (jump links, levels) | headroom (>6 m) | risk (near a lethal drop) | tech payoff |\n|---|---|---|---|---|---|---|\n";
+    for (auto& r : all) {
+        snprintf(b, sizeof b, "| %s | %.1f (%.0f%%) | %.1f (%.0f m) | %.1f (%.0f%%, %d) | %.1f (%.0f%%) | %.1f (%.0f%%) | %.1f |\n", r.name.c_str(), r.mGrapple, r.grapple * 100,
+                 r.mLanes, r.lanes, r.mVertical, r.jumpLinks * 100, r.levels, r.mHeadroom, r.headroom * 100, r.mRisk, r.voidEdge * 100, r.mTech);
+        o << b;
+    }
+    o << "\nTech payoff:\n\n";
+    for (auto& r : all) o << "- **" << r.name << "**: " << r.techLine << "\n";
     o << "\n## Per map: shots and modes\n\n";
     for (auto& r : all) {
         o << "### " << r.name << "\n\n![" << r.name << ": 8 orbits and 8 eye-level views](map_shots/" << r.name << ".jpg)\n\n";
@@ -558,4 +827,6 @@ void mapReport(const char* outPath) {
         o << b;
     }
     printf("map report written to %s\n", outPath);
+    if (below) printf("FAIL: %d map scores below 7 (see above)\n", below);
+    return below;
 }

@@ -1,4 +1,5 @@
 #include "common/profile.h"
+#include <filesystem>
 #include <fstream>
 // Headless tests: movement, map parsing, and real client/server sessions over UDP
 // on localhost, including every game mode.
@@ -192,7 +193,15 @@ static void testAllMaps() {
         NavGraph g;
         g.build(m);
         std::vector<Vec3> goals;
-        if (m.hasHill) goals.push_back({m.hill.center().x, m.hill.mn.y, m.hill.center().z});
+        if (m.hasHill) { // the hill's centre can be a pit: any standable floor inside it will do
+            Vec3 hp = {m.hill.center().x, m.hill.mn.y, m.hill.center().z};
+            for (float fx = 0.1f; fx < 1; fx += 0.2f)
+                for (float fz = 0.1f; fz < 1; fz += 0.2f) {
+                    Vec3 q = {m.hill.mn.x + (m.hill.mx.x - m.hill.mn.x) * fx, m.hill.mn.y, m.hill.mn.z + (m.hill.mx.z - m.hill.mn.z) * fz};
+                    if (g.nodeAt(q + Vec3(0, 0.5f, 0)) >= 0 && g.nodeAt(hp + Vec3(0, 0.5f, 0)) < 0) hp = q;
+                }
+            goals.push_back(hp);
+        }
         for (auto& s : m.bombSites) goals.push_back(s.center());
         if (m.payloadPath.size() >= 2) { goals.push_back(m.payloadPath.front()); goals.push_back(m.payloadPath.back()); }
         for (auto& c : m.checkpoints) goals.push_back(c.center());
@@ -201,13 +210,17 @@ static void testAllMaps() {
         for (auto& sp : m.spawns)
             for (auto& gl : goals) {
                 int a = g.nodeAt(sp.pos + Vec3(0, 0.1f, 0)), b = g.nodeAt(gl + Vec3(0, 0.5f, 0));
-                if (a < 0 || b < 0) { unreachable++; continue; }
+                if (a < 0 || b < 0) {
+                    unreachable++;
+                    printf("    %s: %s at %.1f %.1f %.1f is off the walkable surfaces\n", name.c_str(), a < 0 ? "spawn" : "goal", a < 0 ? sp.pos.x : gl.x, a < 0 ? sp.pos.y : gl.y, a < 0 ? sp.pos.z : gl.z);
+                    continue;
+                }
                 std::vector<char> seen(g.nodes.size(), 0);
                 std::vector<int> q = {a};
                 seen[a] = 1;
                 for (size_t i = 0; i < q.size(); i++)
                     for (auto& l : g.links[q[i]]) if (!seen[l.first]) { seen[l.first] = 1; q.push_back(l.first); }
-                unreachable += !seen[b];
+                if (!seen[b]) { unreachable++; printf("    %s: spawn %.1f %.1f %.1f can't reach %.1f %.1f %.1f\n", name.c_str(), sp.pos.x, sp.pos.y, sp.pos.z, gl.x, gl.y, gl.z); }
             }
         if (unreachable) printf("  %s: %d spawn->objective routes missing\n", name.c_str(), unreachable);
         CHECK(unreachable == 0);
@@ -221,7 +234,7 @@ static void testGridQueries() {
     auto brute = [&](const Vec3& o, const Vec3& d, float maxT) {
         Vec3 inv = safeInv(d);
         float best = -1;
-        for (auto& b : m.brushes) { if (b.material == 5) continue; float t = rayAABB(o, inv, b.box, best < 0 ? maxT : best); if (t >= 0 && (best < 0 || t < best)) best = t; }
+        for (auto& b : m.brushes) { if (b.material >= 5) continue; float t = rayAABB(o, inv, b.box, best < 0 ? maxT : best); if (t >= 0 && (best < 0 || t < best)) best = t; }
         return best;
     };
     srand(7);
@@ -242,7 +255,7 @@ static void testGridQueries() {
         if (m.raycastAny(o, d, 120) != (b >= 0)) mism++;
         AABB box = playerBox(o, false);
         bool solidBrute = false;
-        for (auto& br : m.brushes) solidBrute |= br.material != 5 && box.overlaps(br.box);
+        for (auto& br : m.brushes) solidBrute |= br.material < 5 && box.overlaps(br.box);
         if (m.boxSolid(box) != solidBrute) mism++;
     }
     CHECK(mism == 0);
@@ -918,7 +931,7 @@ static void testBotAim(uint16_t& port) {
 // scoped rifle fires at half rate.
 // Every ladder on every map gets you to the top: stand at its foot, hold forward (into the wall) and you
 // end up standing on whatever it leads to.
-void mapReport(const char* outPath); // tests/mapreport.cpp
+int mapReport(const char* outPath); // tests/mapreport.cpp (returns how many map scores are below 7)
 
 static void testLadders() {
     printf("ladders: every one climbable\n");
@@ -937,6 +950,7 @@ static void testLadders() {
                 for (int t = 0; t < 1000 && !ok; t++) {   // up to 8 s: standing on top at any point counts
                     cmd.forward = t < 700 ? 127 : -127;            // a ladder that ends at a wall: step back off it
                     pmove(ms, cmd, m);
+                    if (getenv("LADDER_TRACE") && t % 50 == 0 && name == getenv("LADDER_TRACE")) printf("      t %d yaw %.2f pos %.2f %.2f %.2f vel %.2f %.2f %.2f ladder %d\n", t, yaw, ms.pos.x, ms.pos.y, ms.pos.z, ms.vel.x, ms.vel.y, ms.vel.z, (int)m.onLadder(playerBox(ms.pos, false)));
                     ok = ms.pos.y > l.mx.y - 1.3f && (ms.flags & MF_ONGROUND) && !m.onLadder(playerBox(ms.pos, false));
                 }
                 if (ok) break;
@@ -1115,7 +1129,7 @@ static void testAltFires(uint16_t port) {
             pump(s, cls, 0.3, idle);
             CHECK(sb.health == hp0);
             pump(s, cls, 1.2, idle);
-            sa.move.pos = {28.5f, 0, 26}; sb.move.pos = {24, 0, 26}; sa.move.vel = sb.move.vel = {}; // the match may have started: put them back
+            sa.move.pos = {26.5f, 0, -20}; sb.move.pos = {22, 0, -20}; sa.move.vel = sb.move.vel = {}; // the match may have started: put them back
             hp0 = sb.health;
             float lf = sa.lastFire;
             pump(s, cls, 0.05, [&](int i) { return aim(i, BTN_ALTFIRE); });       // ricochet comes back at the target
@@ -1584,7 +1598,7 @@ static void testNetcode(uint16_t port) {
     auto hiddenToA = [&]() { for (auto& p : a.latest().players) if (p.id == b.clientId()) return p.hidden; return false; };
     place({0, 0, -28}, {0, 0, 28});
     bool hid = hiddenToA();
-    place({-22, 0, -28}, {-22, 0, 28});
+    place({-9, 0, -26}, {-9, 0, 26});
     bool open = !hiddenToA();
     printf("  behind walls: %s, in the open: %s\n", hid ? "hidden" : "SENT", open ? "sent" : "HIDDEN");
     CHECK(hid && open);
@@ -1820,11 +1834,16 @@ int main(int argc, char** argv) {
     testMaps();
     testTickRateIndependence();
     testAllMaps();
+    {   // the map bar: every map scores at least 7 in every category but originality (docs/MAP_METRICS.md)
+        printf("map scores\n");
+        std::string p = (std::filesystem::temp_directory_path() / "quark_map_report.md").string();
+        if (mapReport(p.c_str())) g_fail++;
+    }
     testGridQueries();
     uint16_t port = 28500;
     if (argc >= 2 && std::string(argv[1]) == "ranked") { testRanked(29610); testRankedVoteAndRestart(29620); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(29600); testEditSession(29601); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "mapreport") { mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md"); return 0; }
+    if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
     if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(29960); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(29950); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(29900); return g_fail ? 1 : 0; }

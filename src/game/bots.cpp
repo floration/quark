@@ -186,7 +186,7 @@ void NavGraph::build(const Map& m) {
         if (bottom < 0) continue;
         for (size_t j = 0; j < nodes.size(); j++) {
             const Node& n = nodes[j];
-            if (std::fabs(n.y - l.mx.y) > 0.8f || (int)j == bottom) continue;
+            if (n.y > l.mx.y + 0.2f || n.y < l.mx.y - 1.8f || (int)j == bottom) continue; // the climb volume ends ~1 m over the top floor
             float gx = std::max(0.0f, std::max(l.mn.x, n.x0) - std::min(l.mx.x, n.x1));
             float gz = std::max(0.0f, std::max(l.mn.z, n.z0) - std::min(l.mx.z, n.z1));
             if (gx * gx + gz * gz > 1.5f * 1.5f) continue;

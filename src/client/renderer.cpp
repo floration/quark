@@ -97,7 +97,7 @@ vec3 finish(vec3 c) {
 }
 void main() {
     int mat = int(vMat + 0.5);
-    if (mat >= 4) { // glow trim / far scenery: unlit, skip everything below
+    if (mat >= 4 && mat < 8) { // glow trim / far scenery / water / lava: unlit, skip everything below
         vec3 c = mat == 4 ? uGlow * 0.9
                : mat == 6 ? mix(vec3(0.02, 0.10, 0.20), vec3(0.10, 0.32, 0.50), 1.0 - abs(vN.y) * 0.6)   // water: deep blue, lighter at grazing faces
                : mat == 7 ? vec3(1.6, 0.42, 0.08)                                                         // lava: glowing
@@ -106,7 +106,7 @@ void main() {
         return;
     }
     vec2 lm = texture(uLightmap, vUV).rg;
-    vec3 albedo = mat == 0 ? uBaseL : mat == 1 ? uAccentL : mat == 2 ? uWallbangL : uMetalL;
+    vec3 albedo = mat == 0 ? uBaseL : (mat == 1 || mat == 8) ? uAccentL : mat == 2 ? uWallbangL : uMetalL; // 8: trim (decor, not solid)
     // surface detail: 2 m panels (4 m on floors) with a faint per-panel tint and thin seams, world-space so it
     // tiles across brushes; floor contact darkening on walls
     vec3 an = abs(vN);

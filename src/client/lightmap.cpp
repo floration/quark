@@ -162,7 +162,7 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
         f.wv = std::max(2, (int)std::ceil((f.v1 - f.v0) * density));
         f.wu = std::min(f.wu, 1000);
         f.wv = std::min(f.wv, 1000);
-        if (f.material >= 4) f.wu = f.wv = 2;
+        if (f.material >= 4 && f.material < 8) f.wu = f.wv = 2;
     }
     // 3. Shelf-pack.
     std::vector<int> order(faces.size());
