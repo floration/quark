@@ -35,6 +35,8 @@ struct BotBrain {
     uint32_t rng = 1;
     int forceWeapon = -1;      // tests: always use this weapon
     float fleeUntil = 0;       // hide and seek / tag: committed to the current escape route until then
+    float hookUntil = 0, nextHookTry = 0; // grapple: holding toward hookAnchor until then
+    Vec3 hookAnchor;
 };
 
 // Walkable surfaces (tops of blocks) and which ones a player can jump between.

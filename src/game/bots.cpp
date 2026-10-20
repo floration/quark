@@ -413,6 +413,35 @@ UserCmd botThink(Server& s, int id) {
             wantYaw = std::atan2(-md.x, -md.z);
         }
         wantPitch = 0;
+        // Grapple (advanced and up, or when it's the only way to move): up to a ledge on the route, or across a
+        // long open stretch. Only when the hook would catch near that point; hold until close or out of time.
+        bool grappleOnly = (me.move.mods & MOVE_GRAPPLE_ONLY) != 0;
+        if ((sp.dash || grappleOnly) && !(me.move.mods & MOVE_RUN_ONLY)) {
+            if (now < b.hookUntil) {
+                Vec3 d = normalize(b.hookAnchor - eye);
+                wantYaw = std::atan2(-d.x, -d.z);
+                wantPitch = std::asin(clampf(d.y, -1, 1));
+                cmd.buttons |= BTN_GRAPPLE;
+                if ((me.move.flags & MF_HOOKED) && length(b.hookAnchor - me.move.pos) < 3.0f) b.hookUntil = 0; // arrived: let go
+            } else if (me.move.hookCooldown <= 0 && now >= b.nextHookTry) {
+                b.nextHookTry = now + (grappleOnly ? 0.2f : 0.5f);
+                // the next waypoint if it's a ledge up, else the end of the route if it's a long open stretch
+                for (const Vec3& cand : {b.waypoint, b.pathGoal}) {
+                    Vec3 off = cand - me.move.pos;
+                    float rise = off.y, hd = std::sqrt(off.x * off.x + off.z * off.z);
+                    bool want = grappleOnly ? hd > 2.0f : (rise > 2.0f && hd < 30.0f) || (hd > 14.0f && rise > -3.0f);
+                    if (!want) continue;
+                    Vec3 tgt = cand - Vec3(0, 0.1f, 0); // just into the walkable surface, so the hook catches on it
+                    Vec3 d = normalize(tgt - eye);
+                    float t = s.map_.raycast(eye, d, kGrappleRange);
+                    if (t >= 0 && length(eye + d * t - tgt) < 3.0f) {
+                        b.hookAnchor = eye + d * t;
+                        b.hookUntil = now + 1.6f;
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     // Turn like a hand on a mouse: turn speed is capped and can only change at a limited rate,

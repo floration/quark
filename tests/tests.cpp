@@ -1603,11 +1603,21 @@ static void testBots(uint16_t& port) {
         NetClient a;
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "human");
         std::vector<NetClient*> cls = {&a};
-        pump(s, cls, 40.0, idle);
+        int hooks = 0;
+        bool was[kMaxPlayers] = {};
+        for (int i = 0; i < 400; i++) { // 40 s, counting grapple grabs as we go
+            pump(s, cls, 0.1, idle);
+            for (int k = 0; k < kMaxPlayers; k++) {
+                bool h = s.players_[k].connected && s.players_[k].isBot && (s.players_[k].move.flags & MF_HOOKED);
+                hooks += h && !was[k];
+                was[k] = h;
+            }
+        }
         int kills = 0;
         for (auto& p : s.players_) if (p.connected) kills += p.kills;
-        printf("  ffa vs 3 expert bots: %d kills in 40 s (phase %d)\n", kills, s.ms_.phase);
+        printf("  ffa vs 3 expert bots: %d kills, %d grapples in 40 s (phase %d)\n", kills, hooks, s.ms_.phase);
         CHECK(kills >= 2);
+        CHECK(hooks >= 1); // bots use the grapple
         s.stop();
     }
     { // pregame (no bots) -> vote start -> vote balance bots -> bots join; then votes
