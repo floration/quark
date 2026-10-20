@@ -15,24 +15,32 @@ a chat log.
 
 ## Phase 1 — audit (no behaviour changes, only notes + screenshots)
 Write each finding into `docs/AUDIT.md` as: area / what / severity (bug, polish, perf) / fix plan.
-1. [ ] **Menus & UI logic** — walk every screen with `--screenshot` debug flags (main, host, play vs bots,
+1. [x] **Menus & UI logic** — walk every screen with `--screenshot` debug flags (main, host, play vs bots,
        server browser, settings + all tabs, HUD editor, controls, crosshair, leaderboard, map editor,
        pause, vote menu, every picker). Check: text overflow, alignment, dead buttons, back/escape
        paths, state that leaks between screens (the vs-bots/ranked bug class), defaults.
-2. [ ] **Modes** — read every rule path in `gamemodes.cpp` (12 modes): start/end conditions, scoring,
+2. [x] **Modes** — read every rule path in `gamemodes.cpp` (12 modes): start/end conditions, scoring,
        respawn, round flow, overtime, disconnect mid-round, late join, spectators, 1-player edge cases.
        Bot playtest each mode on its map (`quark_tests playtest`), record numbers.
-3. [ ] **Maps** — screenshot all 15 (orbit + spawn view), rate style / gameplay / creativity, list
+3. [x] **Maps** — screenshot all 15 (orbit + spawn view), rate style / gameplay / creativity, list
        remaining issues (stair directions, spawn sightlines, stuck spots, pits, symmetry on ranked).
        Automated: add a check that every stair run leads onto the surface it touches.
-4. [ ] **Gameplay & balance** — weapons table (TTK, DPS, range role), alt-fires, movement numbers vs
+4. [x] **Gameplay & balance** — weapons table (TTK, DPS, range role), alt-fires, movement numbers vs
        references (Quake / Diabotical-style arena shooters), duel rulesets, vampire fade, ranked ladders.
        Weapons/movement are owner-defined placeholders: report proposals, change only clear bugs.
-5. [ ] **Website** — layout at 390 / 1280 px, links, live data (leaderboard, changelog, weapons),
+5. [x] **Website** — layout at 390 / 1280 px, links, live data (leaderboard, changelog, weapons),
        screenshots up to date (15 maps), copy accuracy vs the game.
-6. [ ] **Code scan** — dead code, duplicated logic, debug leftovers, per-frame allocations, O(n²) loops
+6. [x] **Code scan** — dead code, duplicated logic, debug leftovers, per-frame allocations, O(n²) loops
        in hot paths, redundant state; list each with file:line in AUDIT.md.
-7. [ ] Rank everything found (impact × effort), decide the fix list for 1.0.0.
+7. [x] Rank everything found (impact × effort), decide the fix list for 1.0.0.
+
+## Execution order (decided after the audit)
+1. Rule bugs + menu polish from AUDIT.md §1-2 (one release).
+2. Phase 2 client frame rate (AUDIT §6) incl. the anti-aliasing option.
+3. Phase 3 server CPU (AUDIT §7) — snapshot send rate becomes a server setting (default keeps
+   interpolation delay low; measured and reported).
+4. Phase 4 bandwidth (AUDIT §8).
+5. Phase 5 final scan, 1.0.0.
 
 ## Phase 2 — client frame rate (judge by 1% / 0.1% lows, not averages)
 Measure first: a fixed benchmark (`--perf` style run: scripted camera over each map, bots fighting,
