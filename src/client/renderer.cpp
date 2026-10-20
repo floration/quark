@@ -614,6 +614,12 @@ void Renderer::viewBox(const Vec3& offset, const Vec3& half, const Vec3& color) 
     emitBox(view_, xf, half, color, 1.0f);
 }
 
+Vec3 Renderer::viewPoint(const Vec3& o) const {
+    float cp = std::cos(camPitch_), sp = std::sin(camPitch_), cy = std::cos(camYaw_), sy = std::sin(camYaw_);
+    Vec3 p = {o.x, cp * o.y - sp * o.z, sp * o.y + cp * o.z};          // rotX(pitch)
+    return camPos_ + Vec3(cy * p.x + sy * p.z, p.y, -sy * p.x + cy * p.z); // rotY(yaw)
+}
+
 void Renderer::translucentBox(const AABB& b, const Color& c) {
     Vec3 p[8];
     for (int i = 0; i < 8; i++) p[i] = {i & 1 ? b.mx.x : b.mn.x, i & 2 ? b.mx.y : b.mn.y, i & 4 ? b.mx.z : b.mn.z};

@@ -74,7 +74,9 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     if ((s.flags & MF_FROZEN) || (s.mods & MOVE_GRAPPLE_ONLY)) wish = {};
     float wishLen = length(wish);
     Vec3 wishDir = wishLen > 0 ? wish / wishLen : Vec3();
-    float maxSpeed = crouched ? kCrouchSpeed : kGroundSpeed;
+    const MoveTuning& mt = moveTuning(); // a custom mode's movement (all 1 / on normally)
+    const float jumpSpeed = kJumpSpeed * mt.jump;
+    float maxSpeed = (crouched ? kCrouchSpeed : kGroundSpeed) * mt.speed;
     float wishSpeed = std::min(wishLen, 1.0f) * maxSpeed;
 
     bool onGround = (s.flags & MF_ONGROUND) != 0;
@@ -83,14 +85,14 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     bool frozen = (s.flags & MF_FROZEN) != 0;
     // Holding jump bunny-hops: jump on the first grounded tick, before friction applies.
     if (onGround && jumpHeld && !frozen) {
-        s.vel.y = kJumpSpeed;
+        s.vel.y = jumpSpeed;
         onGround = false;
     }
 
     // Dash: one burst in the movement direction (or forward), on a cooldown.
     s.dashCooldown = std::max(0.0f, s.dashCooldown - dt);
     s.hookCooldown = std::max(0.0f, s.hookCooldown - dt);
-    bool dashHeld = (cmd.buttons & BTN_DASH) != 0 && !grappleOnly && !(s.mods & MOVE_RUN_ONLY);
+    bool dashHeld = (cmd.buttons & BTN_DASH) != 0 && !grappleOnly && !(s.mods & MOVE_RUN_ONLY) && mt.dash;
     if (dashHeld && !(s.flags & MF_DASHHELD) && s.dashCooldown <= 0 && !frozen) {
         Vec3 d = wishLen > 0 ? wishDir : fwd;
         float h = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
@@ -119,7 +121,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     // Grapple: hold to fire, hold to be pulled; momentum is kept. While held it keeps trying every tick
     // until it catches something (sweep your aim across a thin bar and it grabs it), also waiting out the
     // cooldown; one grab per press (MF_HOOKHELD: this press already grabbed), release to fire again.
-    bool hookHeld = (cmd.buttons & BTN_GRAPPLE) != 0 && !(s.mods & MOVE_RUN_ONLY);
+    bool hookHeld = (cmd.buttons & BTN_GRAPPLE) != 0 && !(s.mods & MOVE_RUN_ONLY) && mt.grapple;
     bool wasHooked = (s.flags & MF_HOOKED) != 0;
     if (!hookHeld) s.flags &= ~MF_HOOKHELD;
     if (hookHeld && !(s.flags & MF_HOOKHELD) && !(s.flags & MF_HOOKED) && !frozen && s.hookCooldown <= 0) {
@@ -154,7 +156,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     if (onLadder) {
         bool jumpPress = jumpHeld && !(s.flags & MF_JUMPHELD);
         if (jumpPress) {
-            s.vel = fwd * -4.0f + Vec3(0, kJumpSpeed * 0.7f, 0);
+            s.vel = fwd * -4.0f + Vec3(0, jumpSpeed * 0.7f, 0);
         } else {
             float climb = std::min(wishLen, 1.0f) * kLadderSpeed * (cmd.pitch < -0.45f ? -1.0f : 1.0f);
             s.vel = {wishDir.x * std::min(wishSpeed, kLadderSide), wishLen > 0 ? climb : 0.0f, wishDir.z * std::min(wishSpeed, kLadderSide)};
@@ -182,7 +184,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
                 float nl = std::sqrt(nx * nx + nz * nz);
                 if (nl > 1e-4f) { s.vel.x = nx / nl * h; s.vel.z = nz / nl * h; }
             }
-            s.vel.y -= kGravity * dt * (hooked ? kHookGravityScale : 1.0f) * ((s.mods & MOVE_LOW_GRAVITY) ? 0.4f : 1.0f);
+            s.vel.y -= kGravity * mt.gravity * dt * (hooked ? kHookGravityScale : 1.0f) * ((s.mods & MOVE_LOW_GRAVITY) ? 0.4f : 1.0f);
         }
     }
 
@@ -190,9 +192,10 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     MoveState before = s;
     int blocked = slideMove(s, map, delta, crouched);
 
-    // Step up small ledges when walking into them; also in the air (after a jump, hook or blast) as long
-    // as you aren't still rising fast, so touching the lip of a step lands you on it instead of sticking.
-    bool airStep = !onGround && !dashing && !hooked && s.vel.y <= 1.0f;
+    // Step up small ledges when walking into them, and in the air too (jumping, falling, hooked, dashing):
+    // running into a stair's riser carries you over its lip like walking does, keeping your speed, instead
+    // of stopping you dead. Only ledges up to a step's height qualify, so walls still block.
+    bool airStep = !onGround;
     if ((onGround || airStep) && (blocked & 0b101)) {
         MoveState step = before;
         AABB b = playerBox(step.pos, crouched);
@@ -200,15 +203,13 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         step.pos.y += up;
         slideMove(step, map, {delta.x, 0, delta.z}, crouched);
         AABB b2 = playerBox(step.pos, crouched);
-        step.pos.y += map.sweepAxis(b2, 1, -up);
+        // walking: back down onto the step; in the air: back down, then on with this move's own rise or fall
+        float rest = airStep ? delta.y - up : -up;
+        float moved = map.sweepAxis(b2, 1, rest);
+        step.pos.y += moved;
         float d0 = (s.pos.x - before.pos.x) * (s.pos.x - before.pos.x) + (s.pos.z - before.pos.z) * (s.pos.z - before.pos.z);
         float d1 = (step.pos.x - before.pos.x) * (step.pos.x - before.pos.x) + (step.pos.z - before.pos.z) * (step.pos.z - before.pos.z);
-        bool landed = true;
-        if (airStep) { // only take an air step if it puts you on the ledge (something right below)
-            AABB b3 = playerBox(step.pos, crouched);
-            landed = map.sweepAxis(b3, 1, -0.06f) > -0.05f;
-        }
-        if (d1 > d0 + 1e-6f && landed) { s.pos = step.pos; blocked &= ~0b101; }
+        if (d1 > d0 + 1e-6f) { s.pos = step.pos; blocked &= ~0b101; }
     }
     if (blocked & 1) s.vel.x = 0;
     if (blocked & 4) s.vel.z = 0;
@@ -223,10 +224,10 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     if (nowGround) {
         s.pos.y += probe; // settle onto the floor
         float impact = -before.vel.y;
-        if (jumpHeld && !frozen && !grappleOnly && impact > kJumpSpeed && !onLadder) {
+        if (jumpHeld && !frozen && !grappleOnly && impact > jumpSpeed && !onLadder) {
             // bhop off a hard landing: bounce higher than a normal jump (the landing speed is the only input,
             // so prediction replays it exactly)
-            s.vel.y = kJumpSpeed + std::min((impact - kJumpSpeed) * kBounceGain, kBounceMax);
+            s.vel.y = jumpSpeed + std::min((impact - jumpSpeed) * kBounceGain, kBounceMax);
             nowGround = false;
         } else if (s.vel.y < 0) s.vel.y = 0;
     } else if (onGround && s.vel.y <= 0) {

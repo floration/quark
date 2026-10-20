@@ -46,6 +46,7 @@ struct Settings {
     int hostDuelSize = 1;       // duel: 1 = 1v1, 2 = 2v2
     bool hostPublic = true;     // show hosted games on the internet server list
     bool hostRanked = false;    // rated matches (no bots)
+    std::string hostCustom;     // custom mode to host (empty = none)
     int hostArenaVariant = 0, botArenaVariant = 0; // 1v1 ruleset
     // crosshair
     int chStyle = 0;            // 0 cross, 1 cross + dot, 2 dot, 3 circle, 4 T

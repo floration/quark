@@ -74,7 +74,7 @@ public:
     void afterSwap();     // low-latency fence waits + F3 input-latency measurement
 
 private:
-    enum class Screen { Main, Join, Host, Settings, Connecting, InGame, VsBots, Editor, Leaderboard };
+    enum class Screen { Main, Join, Host, Settings, Connecting, InGame, VsBots, Editor, Leaderboard, CustomMode };
     void setScreen(Screen s);
     void startHost(bool vsBots = false);
     void stopHost();
@@ -124,6 +124,13 @@ private:
     std::atomic<bool> hostQuit_{false};
     std::string hostPortStr_;
     int hostMapIdx_ = 0, hostModeIdx_ = 0;
+    uint8_t lastCmdWeapon_ = 255;   // the weapon the last command asked for (switching with fire held locks fire)
+    // custom modes: the one being edited, its tab, and the rules arriving from a server in pieces
+    CustomRules editRules_;
+    std::string editOrigName_;
+    int customTab_ = 0;
+    std::vector<std::string> rulesParts_;
+    void drawCustomModeEditor(float cx, float y);
     std::vector<std::string> maps_;
     struct MapInfo { std::string title; int preferredMode = -1; uint32_t modes = 0; uint16_t ranked = 0; }; // ranked: ladders it's a ranked map for // modes: bit per supported mode
     std::vector<MapInfo> mapInfo_;

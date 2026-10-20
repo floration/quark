@@ -39,6 +39,16 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     cfg_ = cfg;
     if (cfg_.maxPlayers < 1) cfg_.maxPlayers = 1;
     if (cfg_.maxPlayers > kMaxPlayers) cfg_.maxPlayers = kMaxPlayers;
+    if (cfg_.ranked) cfg_.custom = CustomRules();   // ranked plays by the standard rules
+    if (cfg_.custom.active()) { // a custom mode: its mode, limits and map pool
+        const CustomRules& c = cfg_.custom;
+        cfg_.mode = c.baseMode;
+        if (c.timeLimit) cfg_.timeLimit = c.timeLimit;
+        if (c.scoreLimit) cfg_.scoreLimit = c.scoreLimit;
+        if (c.roundsToWin) cfg_.roundsToWin = c.roundsToWin;
+        if (!c.maps.empty() && std::find(c.maps.begin(), c.maps.end(), cfg_.map) == c.maps.end()) cfg_.map = c.maps[0];
+    }
+    setActiveRules(cfg_.custom);   // (the weapon table and movement everything in this process uses)
     if (cfg_.ranked) { // ranked = 1v1 on one of the ladder rulesets
         cfg_.mode = MODE_ARENA;
         if (!arenaVariantRanked(cfg_.arenaVariant)) cfg_.arenaVariant = 0;
@@ -101,6 +111,7 @@ void Server::stop() {
     for (int i = 0; i < kMaxPlayers; i++)
         if (players_[i].connected) dropPlayer(i, "server shutting down", true);
     sock_.close();
+    if (cfg_.custom.active()) setActiveRules(CustomRules());
     if (upnp_) { upnp_->stop(); upnp_.reset(); }
     if (master_) { master_->stop(); master_.reset(); }
     running_ = false;
@@ -319,10 +330,21 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
     GameEvent noRank; noRank.type = EV_RANKINFO; noRank.a = (uint8_t)id; // the slot's previous owner's id is gone
     broadcastEvent(noRank);
     message(name + " joined");
+    sendRules(id);
     log(name + " connected from " + from.toString() + " as #" + std::to_string(id));
 
     float d = rulesRespawnDelay(*this);
     if (d >= 0 && p.team != TEAM_SPECTATOR) p.respawnAt = time() + 0.5f;
+}
+
+void Server::sendRules(int id) {
+    if (!cfg_.custom.active()) return;
+    std::string t = cfg_.custom.toText();
+    int n = (int)(t.size() + 239) / 240;
+    for (int k = 0; k < n; k++) {
+        GameEvent e; e.type = EV_RULES; e.a = (uint8_t)k; e.b = (uint8_t)n; e.text = t.substr(k * 240, 240);
+        sendEvent(id, e);
+    }
 }
 
 void Server::autoTeam(int id) {
@@ -545,6 +567,9 @@ void Server::handleStringCmd(int id, const std::string& s) {
             Map m;
             std::string why;   // say exactly what's wrong instead of a generic refusal
             if (mode < 0) why = "unknown mode '" + (what == "mode" ? arg : m2) + "'";
+            else if (cfg_.custom.active() && !cfg_.custom.maps.empty() && std::find(cfg_.custom.maps.begin(), cfg_.custom.maps.end(), mapName) == cfg_.custom.maps.end())
+                why = mapName + " isn't in this custom mode's map pool";
+            else if (cfg_.custom.active() && mode != cfg_.custom.baseMode) why = "this server plays the custom mode " + cfg_.custom.name;
             else if (mapName.find_first_of("/\\.") != std::string::npos || !m.load(mapName)) why = "this server doesn't have the map '" + mapName + "' (it may be on an older version)";
             else if (!m.supportsMode(mode)) why = mapName + " can't run " + modeTitle(mode);
             bool ok = why.empty();
@@ -725,7 +750,7 @@ void Server::spawnPlayer(int id) {
     if (!weaponAllowed(p.weapon)) // restricted pool: first allowed weapon, in slot order
         for (int k = 0; k < WPN_COUNT; k++) if (weaponAllowed(kWeaponSlots[k])) { p.weapon = kWeaponSlots[k]; break; }
     const DuelModDef& dm = duelModDef(duelMod()); // duel: this life's modifier (none outside duel)
-    p.health = dm.health;
+    p.health = dm.health == kMaxHealth ? maxHealth() : dm.health;   // (a custom mode sets its own health)
     p.move.mods |= dm.moveMods;
     if (arenaRules() & AR_QUICK_DASH) p.move.mods |= MOVE_QUICK_DASH;
     if (arenaRules() & AR_LOW_GRAVITY) p.move.mods |= MOVE_LOW_GRAVITY;
@@ -790,9 +815,10 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
         killPlayer(victim, attacker, WPN_KNIFE); // found
         return;
     }
+    Vec3 kb = cfg_.custom.active() ? knock * cfg_.custom.knockback : knock;   // (a custom mode's knockback)
     if (!friendly) {
-        v.move.vel += knock;
-        if (knock.y > 0.5f) v.move.flags &= ~MF_ONGROUND;
+        v.move.vel += kb;
+        if (kb.y > 0.5f) v.move.flags &= ~MF_ONGROUND;
     }
     if (!canHurt || dmg <= 0) return;
     uint8_t rules = arenaRules();
@@ -812,7 +838,7 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
         ServerPlayer& a = players_[attacker];
         if ((rules & AR_VAMPIRE) && a.alive) { // healing fades as the round goes on
             float f = clampf((time() - roundStart_) / kVampireFadeTime, 0, 1);
-            a.health = std::min((float)kMaxHealth, a.health + dmg * (1.0f - (1.0f - kVampireMinHeal) * f));
+            a.health = std::min(maxHealth(), a.health + dmg * (1.0f - (1.0f - kVampireMinHeal) * f));
         }
     }
     glog(LOG_VERBOSE, "hit attacker=%d victim=%d dmg=%.2f weapon=%d health=%.2f", attacker, victim, dmg, weapon, v.health);
@@ -880,8 +906,8 @@ void Server::simulate() {
         if (!p.connected) continue;
         if (p.alive && p.move.pos.y < map_.killY()) killPlayer(i, -1, 252);
         if (!p.alive && p.respawnAt >= 0 && time() >= p.respawnAt && p.team != TEAM_SPECTATOR) spawnPlayer(i);
-        if (p.alive && (arenaRules() & AR_REGEN) && tick_ - p.lastDamagedTick > (uint32_t)(3 * tickRate()) && p.health < kMaxHealth)
-            p.health = std::min((float)kMaxHealth, p.health + 10.0f * dt()); // regeneration: 10 hp/s after 3 s untouched
+        if (p.alive && (arenaRules() & AR_REGEN) && tick_ - p.lastDamagedTick > (uint32_t)(3 * tickRate()) && p.health < maxHealth())
+            p.health = std::min(maxHealth(), p.health + 10.0f * dt()); // regeneration: 10 hp/s after 3 s untouched
     }
     rulesTick(*this);
 }
@@ -919,10 +945,13 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     // the knife can't be drawn while it's away after a throw (unless it's the only weapon this mode allows)
     auto otherWeapon = [&]() { for (int k = 0; k < WPN_COUNT; k++) { int w = kWeaponSlots[k]; if (w != WPN_KNIFE && weaponAllowed(w)) return w; } return -1; };
     bool knifeAway = time() < p.knifeBackAt;
+    int heldWeapon = p.weapon;
     if (cmd.weapon < WPN_COUNT && weaponAllowed(cmd.weapon) && !(knifeAway && cmd.weapon == WPN_KNIFE && otherWeapon() >= 0)) p.weapon = cmd.weapon;
     if (knifeAway && p.weapon == WPN_KNIFE && otherWeapon() >= 0) p.weapon = otherWeapon();
+    // a weapon switch never fires the new weapon with a button held from before: let go and press again
+    if (p.weapon != heldWeapon && (cmd.buttons & (BTN_FIRE | BTN_ALTFIRE))) p.fireLocked = true;
     // Sticky launcher: alt-fire detonates your armed stickies.
-    if (p.weapon == WPN_STICKY && (cmd.buttons & BTN_ALTFIRE))
+    if (p.weapon == WPN_STICKY && (cmd.buttons & BTN_ALTFIRE) && !p.fireLocked)
         for (auto& pr : projectiles_)
             if (pr.active && pr.owner == id && pr.type == WPN_STICKY && time() >= pr.armAt) {
                 pr.active = false;
@@ -1086,7 +1115,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
                 pr.type = WPN_BUBBLE;
                 pr.owner = id;
                 pr.pos = eye + aim * 0.3f;
-                pr.vel = spreadDir(aim, 0.09f, cmd.seq, n) * kBubbleStreamSpeeds[n];
+                pr.vel = spreadDir(aim, 0.09f, cmd.seq, n) * kBubbleStreamSpeeds[n] * (wd.projSpeed / baseWeaponDef(WPN_BUBBLE).projSpeed);
                 pr.dieAt = time() + wd.life;
                 if (++n == kBubbleStream) break;
             }
@@ -1616,8 +1645,10 @@ bool Server::switchMapKeepRules(const std::string& name) {
 
 uint16_t Server::weaponMask() const {
     if (isItMode(ms_.mode)) return (uint16_t)(1u << WPN_KNIFE); // only "it" can use it; everyone else is unarmed
-    if (ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY) return arenaVariant(ms_.arenaVariant).weapons;
-    return duelModDef(duelMod()).weapons;
+    uint16_t m = ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY ? arenaVariant(ms_.arenaVariant).weapons : duelModDef(duelMod()).weapons;
+    uint16_t c = cfg_.custom.active() ? cfg_.custom.weapons : 0;   // a custom mode's weapons (narrowed by a duel life's, if any)
+    if (c && m && (m & c)) return m & c;
+    return c ? c : m;
 }
 
 AABB Server::hitBox(const Vec3& feet, bool crouched) const {
@@ -1778,6 +1809,7 @@ std::string Server::rankedResult(int winner, std::string* whyNot) {
 }
 
 std::string Server::listName() const {
+    if (cfg_.custom.active()) return "[" + cfg_.custom.name + "] " + cfg_.name;
     return cfg_.ranked ? std::string("[RANKED ") + arenaVariant(ms_.arenaVariant).title + "] " + cfg_.name : cfg_.name;
 }
 

@@ -16,6 +16,7 @@
 #include "protocol.h"
 #include "bots.h"
 #include "master.h"
+#include "customrules.h"
 
 // Tests running on a sped-up clock turn off the warmup tick-rate check (it would see "late" ticks).
 extern bool g_serverRateCheck;
@@ -54,6 +55,7 @@ struct ServerConfig {
     std::string restartFlag;    // if this file appears (an update was installed), restart once no match is being played
     bool timeTrial = false;     // solo ranked race on Viaduct: no bots, checkpoint splits sent to the racer
     bool ranked = false;        // matches are rated (OpenSkill) once every player reports the same result; no bots
+    CustomRules custom;         // a custom mode (name empty = none): its mode, weapons, movement, map pool, ...
 };
 enum LogLevel { LOG_OFF = 0, LOG_SIMPLE, LOG_VERBOSE, LOG_EXTREME };
 inline int logLevelFromName(const std::string& s) {
@@ -259,7 +261,14 @@ public:
     int duelMod() const { return ms_.mode == MODE_DUEL ? ms_.duelMod : 255; } // 255 in warmup (rulesReset clears it)
     // Weapons allowed right now (bit per weapon, 0 = all) and the 1v1 ruleset's AR_* rules.
     uint16_t weaponMask() const;
-    uint8_t arenaRules() const { return ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY ? arenaVariant(ms_.arenaVariant).rules : duelModDef(duelMod()).rules; }
+    uint8_t arenaRules() const {
+        uint8_t r = ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY ? arenaVariant(ms_.arenaVariant).rules : duelModDef(duelMod()).rules;
+        const CustomRules& c = cfg_.custom;
+        if (c.active()) r |= (c.instagib ? AR_INSTAGIB : 0) | (c.vampire ? AR_VAMPIRE : 0) | (c.regen ? AR_REGEN : 0) | (!c.selfDamage ? AR_NO_SELF_DAMAGE : 0);
+        return r;
+    }
+    float maxHealth() const { return cfg_.custom.active() ? (float)cfg_.custom.health : (float)kMaxHealth; }
+    void sendRules(int id);     // a custom mode's rules to one player (they set them before playing)
     bool weaponAllowed(int w) const { uint16_t m = weaponMask(); return !m || (m >> w & 1); }
     AABB hitBox(const Vec3& feet, bool crouched) const; // damage hull (scaled by the duel modifier's size)
 

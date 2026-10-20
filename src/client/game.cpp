@@ -119,6 +119,12 @@ void Game::startHost(bool vsBots) {
     sc.arenaVariant = cfg_.hostArenaVariant;
     sc.publicList = cfg_.hostPublic;
     sc.ranked = cfg_.hostRanked;
+    if (!vsBots && !sc.ranked && !cfg_.hostCustom.empty()) { // a custom mode: its rules, its mode, a map from its pool
+        if (loadCustomMode(cfg_.hostCustom, sc.custom)) {
+            sc.mode = sc.custom.baseMode;
+            if (!sc.custom.maps.empty() && std::find(sc.custom.maps.begin(), sc.custom.maps.end(), sc.map) == sc.custom.maps.end()) sc.map = sc.custom.maps[0];
+        } else cfg_.hostCustom.clear();
+    }
     if (sc.ranked) { // 1v1 on a ladder ruleset (the 1v1 ruleset picked, if it's one of them)
         sc.mode = MODE_ARENA;
         if (!arenaVariantRanked(sc.arenaVariant)) sc.arenaVariant = 0;
@@ -230,6 +236,8 @@ void Game::leaveGame(const std::string& error) {
     edSession_ = edOnline_ = false;
     net_.disconnect();
     stopHost();
+    setActiveRules(CustomRules());   // back to the standard rules (a custom server set its own)
+    rulesParts_.clear();
     error_ = error;
     paused_ = chatting_ = false;
     killFeed_.clear(); chatFeed_.clear(); notices_.clear();
@@ -650,6 +658,19 @@ void Game::handleEvents() {
             case EV_RACE_SPLIT:
                 if (e.a == net_.clientId()) onRaceSplit(e.b, atoi(e.text.c_str()));
                 break;
+            case EV_RULES: { // a custom mode's rules, in pieces: play by them once they're all here
+                if (e.b == 0 || e.a >= e.b) break;
+                if ((int)rulesParts_.size() != e.b) rulesParts_.assign(e.b, std::string("\x01"));
+                rulesParts_[e.a] = e.text;
+                std::string all;
+                bool done = true;
+                for (auto& p : rulesParts_) { if (p == "\x01") { done = false; break; } all += p; }
+                if (!done) break;
+                CustomRules r;
+                if (r.fromText(all)) { setActiveRules(r); notify("CUSTOM MODE: " + upper(r.name), 4); }
+                rulesParts_.clear();
+                break;
+            }
             case EV_ROUND_WIN:
                 centerText_ = e.text;
                 centerUntil_ = time_ + (e.b ? 8.0 : 3.5);
@@ -760,7 +781,9 @@ void Game::frame(double dt) {
             bool altShot = altFires(net_.selfWeapon()) && (c.buttons & BTN_ALTFIRE) && // knife throw / shotgun bounce (no throws in hide and seek / tag)
                            !(net_.selfWeapon() == WPN_KNIFE && net_.hasSnapshot() && isItMode(net_.mode().mode));
             bool wantFire = (c.buttons & BTN_FIRE) != 0 || altShot;
-            if (localFireLocked_) { // mirror the server: after a knife throw, let go before the next weapon fires
+            if (c.weapon != lastCmdWeapon_ && (c.buttons & (BTN_FIRE | BTN_ALTFIRE))) localFireLocked_ = true; // switched with fire held
+            lastCmdWeapon_ = c.weapon;
+            if (localFireLocked_) { // mirror the server: after a knife throw or a switch, let go before the next weapon fires
                 if (!(c.buttons & (BTN_FIRE | BTN_ALTFIRE))) localFireLocked_ = false;
                 else wantFire = false;
             }
@@ -1065,8 +1088,12 @@ void Game::drawWorld(float alpha) {
         Vec3 d = angleForward(yaw_, pitch_);
         float range = weaponDef(WPN_LASER).range;
         float bangT, t = map.raycastBullet(eye, d, range, &bangT);
+        // from the laser model's emitter, wherever the HUD settings put it (or a default spot if it's hidden)
+        const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
+        Vec3 at = {0.2f + vm.x * 0.0005f, -0.17f - vm.y * 0.0005f, -0.55f - vm.z * 0.001f + (float)recoil_ * 0.06f};
         Vec3 right = normalize(cross(d, {0, 1, 0}));
-        Vec3 a = eye + d * 0.5f + right * 0.15f - Vec3(0, 0.12f, 0), b = eye + d * (t < 0 ? range : t);
+        Vec3 a = vm.hidden ? eye + d * 0.5f + right * 0.15f - Vec3(0, 0.12f, 0) : r_.viewPoint(at + Vec3(0, 0, -0.193f) * vm.scale);
+        Vec3 b = eye + d * (t < 0 ? range : t);
         r_.line(a, b, 0.05f, rgba(cfg_.colorFriendly, 0.9f));
         if (isDown(A_ALTFIRE))
             for (int k = 0; k < 6; k++) {
@@ -2515,7 +2542,7 @@ void Game::drawMenu() {
         }
         case Screen::Host: {
             float lw = 460 * s, lx = cx - lw * 0.5f;
-            ui_.panel(lx - 16 * s, y - 16 * s, lw + 32 * s, 528 * s);
+            ui_.panel(lx - 16 * s, y - 16 * s, lw + 32 * s, 528 * s + bh + gap);
             ui_.label(lx, y, "SERVER NAME");
             y += 22 * s;
             ui_.textField(3, lx, y, lw, bh, cfg_.hostName, 32);
@@ -2523,6 +2550,30 @@ void Game::drawMenu() {
             if (!maps_.empty()) {
                 if (ui_.button(lx, y, lw, bh, "MAP: " + upper(maps_[hostMapIdx_ % maps_.size()]) + "  >")) picker_ = PICK_HOST_MAP;
                 y += bh + gap;
+                {   // custom mode: click to go through your saved ones (or none); EDIT / NEW open the builder
+                    float ew = 74 * s, cw = lw - 2 * (ew + 6 * s);
+                    if (cfg_.hostRanked) ui_.button(lx, y, cw, bh, "CUSTOM MODE: OFF (RANKED)", false);
+                    else if (ui_.button(lx, y, cw, bh, "CUSTOM MODE: " + (cfg_.hostCustom.empty() ? std::string("NONE") : upper(cfg_.hostCustom)) + "  >")) {
+                        auto list = listCustomModes();
+                        auto it = std::find(list.begin(), list.end(), cfg_.hostCustom);
+                        cfg_.hostCustom = list.empty() ? "" : it == list.end() ? list[0] : it + 1 == list.end() ? "" : *(it + 1);
+                    }
+                    if (ui_.button(lx + cw + 6 * s, y, ew, bh, "EDIT", !cfg_.hostCustom.empty())) {
+                        editRules_ = CustomRules();
+                        if (loadCustomMode(cfg_.hostCustom, editRules_)) { editOrigName_ = editRules_.name; customTab_ = 0; setScreen(Screen::CustomMode); }
+                    }
+                    if (ui_.button(lx + cw + ew + 12 * s, y, ew, bh, "NEW")) {
+                        editRules_ = CustomRules(); editRules_.name = "my mode"; editRules_.baseMode = MODE_FFA;
+                        editOrigName_.clear(); customTab_ = 0; setScreen(Screen::CustomMode);
+                    }
+                    CustomRules cur;
+                    if (!cfg_.hostRanked && !cfg_.hostCustom.empty() && loadCustomMode(cfg_.hostCustom, cur)) {
+                        hostModeIdx_ = cur.baseMode;   // the mode comes from the custom mode
+                        if (!cur.maps.empty() && std::find(cur.maps.begin(), cur.maps.end(), maps_[hostMapIdx_ % maps_.size()]) == cur.maps.end())
+                            for (size_t k = 0; k < maps_.size(); k++) if (maps_[k] == cur.maps[0]) hostMapIdx_ = (int)k;
+                    }
+                    y += bh + gap;
+                }
                 if (cfg_.hostRanked) { // ranked is always 1v1 on a ladder: the mode button picks the ladder instead
                     hostModeIdx_ = MODE_ARENA;
                     if (!arenaVariantRanked(cfg_.hostArenaVariant)) cfg_.hostArenaVariant = 0;
@@ -2604,6 +2655,7 @@ void Game::drawMenu() {
             break;
         }
         case Screen::Leaderboard: drawLeaderboard(cx, y); break;
+        case Screen::CustomMode: drawCustomModeEditor(cx, y); break;
         case Screen::Connecting: {
             float dlp = net_.downloadProgress();
             if (dlp >= 0) ui_.labelCentered(cx, y, "DOWNLOADING MAP " + upper(net_.downloadName()) + " - " + std::to_string((int)(dlp * 100)) + "%", kWhite);
@@ -2614,6 +2666,93 @@ void Game::drawMenu() {
         }
         default: break;
     }
+}
+
+void Game::drawCustomModeEditor(float cx, float y) {
+    float s = ui_.s(), w = 640 * s, x = cx - w * 0.5f, bh = 30 * s, gap = 6 * s, hw = (w - gap) * 0.5f;
+    CustomRules& r = editRules_;
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 640 * s, 0.85f);
+    ui_.labelCentered(cx, y, "CUSTOM MODE");
+    y += 34 * s;
+    ui_.label(x, y + 7 * s, "NAME");
+    ui_.textField(901, x + 90 * s, y, w - 90 * s, bh, r.name, 24);
+    y += bh + gap * 2;
+    static const char* tabs[3] = {"GENERAL", "WEAPONS", "MAPS"};
+    float tw = (w - 2 * gap) / 3;
+    for (int t = 0; t < 3; t++)
+        if (ui_.button(x + t * (tw + gap), y, tw, bh, customTab_ == t ? std::string("> ") + tabs[t] + " <" : tabs[t])) customTab_ = t;
+    y += bh + gap * 2;
+    if (customTab_ == 0) {
+        std::vector<std::string> modes;
+        for (int m = 0; m < MODE_COUNT; m++) modes.push_back(std::string("PLAYS AS: ") + upper(modeName(m)));
+        ui_.cycle(x, y, w, bh, "", r.baseMode, MODE_COUNT, modes);
+        if (r.baseMode == MODE_TOURNEY || r.baseMode == MODE_ARENA) r.baseMode = MODE_FFA; // tourney and ranked arena keep their own rules
+        y += bh + gap;
+        float hp = (float)r.health;
+        ui_.slider(x, y, hw, bh, "HEALTH", hp, 1, 500, "%.0f"); r.health = (int)std::lround(hp);
+        ui_.slider(x + hw + gap, y, hw, bh, "GRAVITY", r.gravity, 0.1f, 3, "%.2fx"); y += bh + gap;
+        ui_.slider(x, y, hw, bh, "MOVE SPEED", r.moveSpeed, 0.25f, 3, "%.2fx");
+        ui_.slider(x + hw + gap, y, hw, bh, "JUMP", r.jump, 0.25f, 3, "%.2fx"); y += bh + gap;
+        ui_.slider(x, y, hw, bh, "KNOCKBACK", r.knockback, 0, 5, "%.2fx"); y += bh + gap;
+        ui_.toggle(x, y, hw, bh, "DASH", r.dash);
+        ui_.toggle(x + hw + gap, y, hw, bh, "GRAPPLE", r.grapple); y += bh + gap;
+        ui_.toggle(x, y, hw, bh, "SELF DAMAGE", r.selfDamage);
+        ui_.toggle(x + hw + gap, y, hw, bh, "INSTAGIB", r.instagib); y += bh + gap;
+        ui_.toggle(x, y, hw, bh, "VAMPIRE", r.vampire);
+        ui_.toggle(x + hw + gap, y, hw, bh, "REGEN", r.regen); y += bh + gap;
+        float tl = (float)r.timeLimit, sl = (float)r.scoreLimit, rw = (float)r.roundsToWin;
+        ui_.slider(x, y, hw, bh, "TIME (S, 0=DEFAULT)", tl, 0, 3600, "%.0f"); r.timeLimit = (int)std::lround(tl / 30) * 30;
+        ui_.slider(x + hw + gap, y, hw, bh, "SCORE (0=DEFAULT)", sl, 0, 200, "%.0f"); r.scoreLimit = (int)std::lround(sl); y += bh + gap;
+        ui_.slider(x, y, hw, bh, "ROUNDS (0=DEFAULT)", rw, 0, 15, "%.0f"); r.roundsToWin = (int)std::lround(rw); y += bh + gap;
+    } else if (customTab_ == 1) {
+        float sw = (w - 130 * s - 3 * gap) / 3;
+        for (int i = 0; i < WPN_COUNT; i++) {
+            int wp = kWeaponSlots[i];
+            bool on = r.weapons == 0 || (r.weapons >> wp & 1);
+            if (ui_.toggle(x, y, 124 * s, bh, upper(baseWeaponDef(wp).name), on)) {
+                uint16_t all = (uint16_t)((1u << WPN_COUNT) - 1), m = r.weapons ? r.weapons : all;
+                m = on ? (uint16_t)(m | 1u << wp) : (uint16_t)(m & ~(1u << wp));
+                if (m == 0) m = (uint16_t)(1u << wp);   // keep at least one
+                r.weapons = m == all ? 0 : m;
+            }
+            float fx = x + 130 * s;
+            ui_.slider(fx, y, sw, bh, "FIRE", r.fireRate[wp], 0.25f, 4, "%.2fx");
+            ui_.slider(fx + sw + gap, y, sw, bh, "DMG", r.damage[wp], 0.1f, 5, "%.2fx");
+            ui_.slider(fx + 2 * (sw + gap), y, sw, bh, "PROJ", r.projSpeed[wp], 0.25f, 4, "%.2fx");
+            y += bh + gap;
+        }
+    } else {
+        ui_.label(x, y, "MAP POOL (ROTATES EACH MATCH; NONE = HOST'S MAP)", Color{0.7f, 0.7f, 0.7f, 1}, 0.8f);
+        y += 24 * s;
+        int col = 0;
+        for (size_t i = 0; i < maps_.size() && i < mapInfo_.size(); i++) {
+            if (!(mapInfo_[i].modes >> r.baseMode & 1)) continue;
+            auto it = std::find(r.maps.begin(), r.maps.end(), maps_[i]);
+            bool on = it != r.maps.end();
+            if (ui_.toggle(x + col * (hw + gap), y, hw, bh, upper(maps_[i]), on)) {
+                if (on) r.maps.push_back(maps_[i]); else r.maps.erase(it);
+            }
+            if (++col == 2) { col = 0; y += bh + gap; }
+        }
+        // drop maps that no longer support the mode
+        r.maps.erase(std::remove_if(r.maps.begin(), r.maps.end(), [&](const std::string& n) {
+            for (size_t i = 0; i < maps_.size() && i < mapInfo_.size(); i++) if (maps_[i] == n) return !(mapInfo_[i].modes >> r.baseMode & 1);
+            return true; }), r.maps.end());
+    }
+    float by = y + gap * 2;
+    float bw = (w - 2 * gap) / 3;
+    bool named = !r.name.empty();
+    if (ui_.button(x, by, bw, 36 * s, "SAVE", named)) {
+        if (!editOrigName_.empty() && editOrigName_ != r.name) deleteCustomMode(editOrigName_);
+        if (saveCustomMode(r)) { editOrigName_ = r.name; cfg_.hostCustom = r.name; cfg_.save(); notify("SAVED " + upper(r.name), 2); setScreen(Screen::Host); }
+        else notify("COULD NOT SAVE", 3);
+    }
+    if (ui_.button(x + bw + gap, by, bw, 36 * s, "DELETE", !editOrigName_.empty())) {
+        deleteCustomMode(editOrigName_);
+        if (cfg_.hostCustom == editOrigName_) cfg_.hostCustom.clear();
+        setScreen(Screen::Host);
+    }
+    if (ui_.button(x + 2 * (bw + gap), by, bw, 36 * s, "BACK")) setScreen(Screen::Host);
 }
 
 void Game::drawPerf() {

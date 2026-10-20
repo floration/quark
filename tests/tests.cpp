@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include "game/server.h"
+#include "game/customrules.h"
 #include "game/netclient.h"
 #include "game/gamemodes.h"
 #include "game/ranked.h"
@@ -646,6 +647,18 @@ static void testSemiAuto(uint16_t port) {
     pump(s, cls, 1.5, [&](int) { UserCmd c; c.weapon = WPN_RIFLE; c.buttons = BTN_FIRE; if (p.lastFire != last) { shots++; last = p.lastFire; } return c; });
     printf("  held 1.5 s: %d shots\n", shots);
     CHECK(shots >= 5);
+    // switching weapons with fire or alt-fire still held doesn't fire the new one: let go and press again
+    for (uint16_t btn : {(uint16_t)BTN_ALTFIRE, (uint16_t)BTN_FIRE}) {
+        pump(s, cls, 0.6, [&](int) { UserCmd c; c.weapon = WPN_SNIPER; c.buttons = btn; return c; });
+        last = p.lastFire;
+        pump(s, cls, 0.6, [&](int) { UserCmd c; c.weapon = WPN_RIFLE; c.buttons = btn; return c; });
+        bool fired = p.lastFire != last;
+        if (fired) printf("  switching with button %d held fired the new weapon\n", btn);
+        CHECK(!fired);
+        pump(s, cls, 0.1, [](int) { UserCmd c; c.weapon = WPN_RIFLE; return c; });
+        pump(s, cls, 0.3, [](int) { UserCmd c; c.weapon = WPN_RIFLE; c.buttons = BTN_FIRE; return c; });
+        CHECK(p.lastFire != last);   // a fresh press fires
+    }
     s.stop();
 }
 
@@ -1007,6 +1020,44 @@ static void testRejoin(uint16_t port) {
     }
 }
 
+// A custom mode: the server plays by its rules, sends them to a joining client in pieces that rebuild the
+// same rules, and moves on to the next map of its pool when a match ends.
+static void testCustomMode(uint16_t port) {
+    printf("custom mode\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = true; cfg.map = "bastion"; cfg.port = port;
+    CustomRules& c = cfg.custom;
+    c.name = "test rules"; c.baseMode = MODE_FFA; c.health = 150; c.gravity = 0.5f; c.timeLimit = 5;
+    c.damage[WPN_RIFLE] = 2; c.fireRate[WPN_ROCKET] = 2;
+    c.weapons = (uint16_t)(1u << WPN_RIFLE | 1u << WPN_ROCKET);
+    c.maps = {"harbor", "bastion"};
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    CHECK(s.config().map == "bastion" && s.config().mode == MODE_FFA);   // the host's map is in the pool: it stays
+    CHECK(std::fabs(weaponDef(WPN_RIFLE).damage - baseWeaponDef(WPN_RIFLE).damage * 2) < 1e-3f);
+    CHECK(std::fabs(weaponDef(WPN_ROCKET).refire - baseWeaponDef(WPN_ROCKET).refire / 2) < 1e-4f);
+    CHECK(std::fabs(moveTuning().gravity - 0.5f) < 1e-4f);
+    NetClient a;
+    a.connect("127.0.0.1:" + std::to_string(port), "ann");
+    std::vector<NetClient*> cls = {&a};
+    std::vector<std::string> parts;
+    auto collect = [&] { for (auto& e : a.takeEvents()) if (e.type == EV_RULES && e.b > 0 && e.a < e.b) { parts.resize(e.b); parts[e.a] = e.text; } };
+    pump(s, cls, 1.0, idle);
+    collect();
+    std::string all;
+    for (auto& p : parts) all += p;
+    CustomRules got;
+    CHECK(!parts.empty() && got.fromText(all));
+    CHECK(got.name == c.name && got.health == 150 && got.weapons == c.weapons && got.maps == c.maps);
+    CHECK(std::fabs(got.damage[WPN_RIFLE] - 2) < 1e-3f && std::fabs(got.gravity - 0.5f) < 1e-3f);
+    s.command("forcestart");
+    for (int i = 0; i < 70 && s.config().map == "bastion"; i++) { pump(s, cls, 0.5, idle); collect(); }
+    CHECK(s.config().map == "harbor");   // the pool rotated
+    s.stop();
+    CHECK(!activeRules().active() && std::fabs(weaponDef(WPN_RIFLE).damage - baseWeaponDef(WPN_RIFLE).damage) < 1e-4f);
+}
+
 // Every staircase (recorded by tools/make_maps.py as "# stairs x0 z0 x1 z1 base top axis rising solid"):
 // walked from the bottom to the top by the real movement code, and checked against the paths around it:
 // no walkable surface may pass through a solid flight, or run underneath an open one with less than a
@@ -1059,6 +1110,28 @@ static void testStairs() {
                 if (up) break;
             }
             CHECK(up);
+            {   // jumping up it (and falling onto it) must carry you over the risers like walking: never stopped dead in the air
+                MoveState js;
+                js.pos = P(lo - dir * 0.7f, mid, base + 0.05f);
+                int bonks = 0;
+                if (!m.boxSolid(playerBox(js.pos, false))) {
+                    for (int t = 0; t < 40; t++) { UserCmd idle; idle.msec = 8; pmove(js, idle, m); }
+                    Vec3 goal = P(hi - dir * 0.3f, mid, top);
+                    for (int t = 0; t < 500; t++) {
+                        Vec3 to = goal - js.pos;
+                        if (length(Vec3(to.x, 0, to.z)) < 0.4f) break;
+                        UserCmd cmd; cmd.yaw = std::atan2(-to.x, -to.z); cmd.forward = 127; cmd.msec = 8;
+                        cmd.buttons = (t / 30) % 2 ? 0 : BTN_JUMP;
+                        float h0 = std::sqrt(js.vel.x * js.vel.x + js.vel.z * js.vel.z);
+                        pmove(js, cmd, m);
+                        float h1 = std::sqrt(js.vel.x * js.vel.x + js.vel.z * js.vel.z);
+                        if (!(js.flags & MF_ONGROUND) && h0 > 3 && h1 < h0 * 0.5f) bonks++;
+                        if (js.pos.y < base - 1.0f) break;
+                    }
+                }
+                CHECK(bonks == 0);
+                if (bonks) printf("  %s: stairs %g %g - %g %g: jumping up them stops you dead %d times\n", name.c_str(), x0, z0, x1, z1, bonks);
+            }
             if (!up) printf("  %s: stairs %g %g - %g %g (%g to %g) can't be walked up (got to %.1f %.1f %.1f)\n", name.c_str(), x0, z0, x1, z1, base, top, ms.pos.x, ms.pos.y, ms.pos.z);
             // paths through it or under it
             int n = std::max(1, (int)std::ceil((top - base) / 0.5f - 1e-4f));
@@ -1958,6 +2031,7 @@ int main(int argc, char** argv) {
     }
     if (argc >= 2 && std::string(argv[1]) == "ladders") { testLadders(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "stairs") { testStairs(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "custom") { testCustomMode(29990); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(29980); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(29450); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = 29500; testBotAim(p); return g_fail ? 1 : 0; }
@@ -1967,6 +2041,7 @@ int main(int argc, char** argv) {
     testAllMaps();
     testStairs();
     testRejoin(29980);
+    testCustomMode(29990);
     {   // the map bar: every map scores at least 7 in every category but originality (docs/MAP_METRICS.md)
         printf("map scores\n");
         std::string p = (std::filesystem::temp_directory_path() / "quark_map_report.md").string();

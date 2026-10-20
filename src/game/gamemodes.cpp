@@ -832,6 +832,13 @@ void rulesTick(Server& s) {
             m.timeLeft = std::max(0.0f, s.phaseEnd_ - s.time());
             if (s.time() >= s.phaseEnd_) {
                 for (auto& p : s.players_) p.alive = false;
+                const CustomRules& c = s.cfg_.custom;
+                if (c.active() && c.maps.size() > 1) { // a custom mode's map pool: on to the next map
+                    auto it = std::find(c.maps.begin(), c.maps.end(), s.cfg_.map);
+                    std::string next = it == c.maps.end() || it + 1 == c.maps.end() ? c.maps[0] : *(it + 1);
+                    s.command("map " + next + " " + modeName(c.baseMode));
+                    if (s.cfg_.map == next) break;
+                }
                 rulesReset(s);
             }
             break;

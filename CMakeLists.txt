@@ -47,6 +47,7 @@ add_library(quark_core STATIC
   src/game/bots.cpp
   src/game/master.cpp
   src/game/ranked.cpp
+  src/game/customrules.cpp
 )
 target_include_directories(quark_core PUBLIC src ${CMAKE_BINARY_DIR}/generated)
 # Official maps (ranked only runs on these): name + sha256 of each shipped maps/*.qmap, line endings

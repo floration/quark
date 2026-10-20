@@ -152,7 +152,9 @@ inline void spreadOffset(uint32_t seq, int pellet, float spread, float& a, float
     a = (h1 & 0xFFFFFF) / 16777216.0f * 6.2831853f;
     r = __builtin_sqrtf((h2 & 0xFFFFFF) / 16777216.0f) * spread;
 }
-inline const WeaponDef& weaponDef(int w) {
+// The standard weapon table. weaponDef() is what everything uses: this, scaled by the active custom mode
+// (customrules.h; identical when none is active).
+inline const WeaponDef& baseWeaponDef(int w) {
     static const WeaponDef defs[WPN_COUNT] = {
         // Tuned by the owner (1.6.0: every cooldown 25% shorter except the laser's damage tick; every damage 15% lower
         // except laser and knife; crossbow 50 / 60 head on a 2 s cooldown; the bubble gun added).
@@ -176,9 +178,14 @@ constexpr float kSniperHeadDamage = 42.5f; // hits on the head (top 20% of the h
 constexpr float kCrossbowHeadDamage = 60.0f; // rifle bullet and each shotgun pellet
 constexpr float kRifleHeadDamage = 8.5f;
 constexpr float kPelletHeadDamage = 2.55f;
+const WeaponDef& weaponDef(int w);   // customrules.cpp
+float tunedDamage(int w);            // the active custom mode's damage multiplier for this weapon (1 = standard)
+// Movement settings of the active custom mode (pmove reads these; all 1 / on by default)
+struct MoveTuning { float gravity = 1, speed = 1, jump = 1; bool dash = true, grapple = true; };
+const MoveTuning& moveTuning();
 inline float headDamage(int w) {
-    return w == WPN_SNIPER ? kSniperHeadDamage : w == WPN_CROSSBOW ? kCrossbowHeadDamage : w == WPN_RIFLE ? kRifleHeadDamage
-         : w == WPN_SHOTGUN ? kPelletHeadDamage : 0.0f;
+    return tunedDamage(w) * (w == WPN_SNIPER ? kSniperHeadDamage : w == WPN_CROSSBOW ? kCrossbowHeadDamage : w == WPN_RIFLE ? kRifleHeadDamage
+         : w == WPN_SHOTGUN ? kPelletHeadDamage : 0.0f);
 }
 constexpr float kHeadFraction = 0.2f;
 constexpr float kRocketLobSpeed = 0.7f, kRocketLobGravity = 3.0f; // rocket alt-fire: a lob at 70% speed with 3x gravity
@@ -225,6 +232,7 @@ enum EventType : uint8_t {
     EV_RANKINFO,     // a = player id, text = their ranked id (32 hex), empty = none
     EV_RANKED,       // ranked match over: text = "<matchId> <mode> slot:team:place,..." (each player reports it)
     EV_EDIT,         // map edit session: text = "<crcBefore hex> <crcAfter hex> <op>" (see applyMapEdit)
+    EV_RULES,        // custom mode: a = chunk index, b = chunk count, text = that piece of CustomRules::toText()
     EV_RACE_SPLIT,   // race: a = player, b = checkpoint reached (1-based; the last one is the finish), text = ms since the start
 };
 
