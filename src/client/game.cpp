@@ -126,6 +126,7 @@ void Game::startHost(bool vsBots) {
         sc.lanOnly = true;
         sc.maxPlayers = kMaxPlayers;
         sc.vsBots = true;
+        sc.ranked = false; // never ranked, whatever Host Game is set to
         sc.botSkill = cfg_.botSkill;
         sc.botsEnemy = cfg_.botEnemies;
         sc.botsAlly = modeIsTeamBased(sc.mode) ? cfg_.botAllies : 0;
