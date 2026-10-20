@@ -1190,7 +1190,8 @@ void Game::drawWorld(float alpha) {
 
     // viewmodel (hide and seek / tag: only "it" holds anything)
     bool unarmed = isItMode(net_.mode().mode) && !(mep && (mep->flags & PS_HASBOMB));
-    if (alive && !(scoped_ && scopeOverlay_) && !unarmed) {
+    const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
+    if (alive && !(scoped_ && scopeOverlay_) && !unarmed && !vm.hidden) {
         int w = net_.selfWeapon();
         recoil_ = std::max(0.0, recoil_ - 0.016 * 8);
         float kick = (float)recoil_ * 0.06f;
@@ -1198,9 +1199,11 @@ void Game::drawWorld(float alpha) {
         // the map's own palette: metal body, base-coloured highlights, its glow colour on emitters / sights
         auto lin = [](const Vec3& c) { return Vec3(std::pow(c.x, 2.2f), std::pow(c.y, 2.2f), std::pow(c.z, 2.2f)); };
         const Vec3 mid = lin(r_.metalColor) * 1.6f + Vec3(0.05f, 0.05f, 0.05f), dark = mid * 0.55f, light = lin(r_.baseColor) * 1.1f;
-        const Vec3 acc = cfg_.colorFriendly, glow = r_.glowColor;
-        Vec3 at = {0.2f, -0.17f, -0.55f + kick};
-        auto part = [&](float x, float y, float z, float hx, float hy, float hz, const Vec3& c) { r_.viewBox(at + Vec3(x, y, z), {hx, hy, hz}, c); };
+        const Vec3 acc = vm.custom ? vm.color : cfg_.colorFriendly, glow = r_.glowColor;
+        // placed from the HUD settings: x / y in 720p units (+y down the screen), depth in mm, scale
+        Vec3 at = {0.2f + vm.x * 0.0005f, -0.17f - vm.y * 0.0005f, -0.55f - vm.z * 0.001f + kick};
+        const float k = vm.scale;
+        auto part = [&](float x, float y, float z, float hx, float hy, float hz, const Vec3& c) { r_.viewBox(at + Vec3(x, y, z) * k, Vec3(hx, hy, hz) * k, c); };
         switch (w) {
             case WPN_RIFLE:      // receiver, long barrel with a front sight, magazine, stock, accent rail
                 part(0, 0, 0, 0.026f, 0.032f, 0.12f, dark);
@@ -1458,7 +1461,7 @@ void Game::drawHud() {
     if (net_.selfAlive()) {
         auto he = [&](int i) { return cfg_.hud[i]; };
         auto tint = [&](int i, Color c) { const auto& e = cfg_.hud[i]; return e.custom ? Color{e.color.x, e.color.y, e.color.z, c.a} : c; };
-        {   // health: number + bar, bottom left
+        if (!he(Settings::HUD_HEALTH).hidden) {   // health: number + bar, bottom left
             auto e = he(Settings::HUD_HEALTH);
             float k = s * e.scale, ox = 24 * s + e.x * s, oy = H + e.y * s;
             int hp = net_.selfHealth();
@@ -1468,14 +1471,14 @@ void Game::drawHud() {
             r_.rect(ox, oy - 28 * k, 200 * k * clampf(hp / 100.0f, 0, 1), 8 * k, hp > 30 ? tint(Settings::HUD_HEALTH, fc) : kRed);
         }
         bool unarmed = isItMode(ms.mode) && !(mep && (mep->flags & PS_HASBOMB));
-        if (!unarmed) {   // current weapon name, bottom right
+        if (!unarmed && !he(Settings::HUD_WEAPON).hidden) {   // current weapon name, bottom right
             auto e = he(Settings::HUD_WEAPON);
             float wts = std::max(1.0f, std::round(ts * 1.5f * e.scale));
             std::string wn = weaponDef(net_.selfWeapon()).name;
             r_.text(W - 24 * s + e.x * s - r_.textWidth(wn, wts), H - 50 * s * e.scale + e.y * s, wts, wn, tint(Settings::HUD_WEAPON, kWhite));
         }
         const MoveState& mv = net_.predicted();
-        if (!paused_ && !(mv.mods & MOVE_RUN_ONLY)) {   // dash + grapple cooldown bars under the crosshair (full = ready); hidden behind menus / without abilities
+        if (!paused_ && !(mv.mods & MOVE_RUN_ONLY) && !he(Settings::HUD_BARS).hidden) {   // dash + grapple cooldown bars under the crosshair (full = ready); hidden behind menus / without abilities
             auto e = he(Settings::HUD_BARS);
             float k = s * e.scale, bcx = cx + e.x * s, bcy = cy + e.y * s;
             Color full = tint(Settings::HUD_BARS, fc);
@@ -1492,7 +1495,7 @@ void Game::drawHud() {
             bar(bcy + 52 * k, "DASH", mv.dashCooldown, kDashCooldown);
             bar(bcy + 64 * k, "HOOK", mv.hookCooldown, kHookCooldown);
         }
-        if (!paused_) {   // speed meter: speed is unbounded, so the bar fills on a saturating exponential curve
+        if (!paused_ && !he(Settings::HUD_SPEED).hidden) {   // speed meter: speed is unbounded, so the bar fills on a saturating exponential curve
             // (1 - e^(-v/20)): half full at ~14 m/s, 90% at ~46 m/s, always room to grow. Number shows the real value.
             auto e = he(Settings::HUD_SPEED);
             float k = s * e.scale, bcx = cx + e.x * s, y = cy + 80 * k + e.y * s;
@@ -1509,7 +1512,7 @@ void Game::drawHud() {
             r_.text(bx - r_.textWidth("SPEED", lts) - 6 * k, y - 2 * k, lts, "SPEED", kWhite);
             r_.text(bx + bw + 6 * k, y - 2 * k, lts, buf, kWhite);
         }
-        if (!unarmed) {   // weapon slots in kWeaponSlots order: 1 rocket, 2 rifle, 3 laser, ...
+        if (!unarmed && !he(Settings::HUD_SLOTS).hidden) {   // weapon slots in kWeaponSlots order: 1 rocket, 2 rifle, 3 laser, ...
             auto e = he(Settings::HUD_SLOTS);
             float bx = W - 24 * s + e.x * s;
             float sts = std::max(1.0f, std::round(ts * 0.75f * e.scale));
@@ -3041,10 +3044,13 @@ void Game::drawHudSettings(float x0, float y0, float wTotal) {
     float h = 32 * s, gap = 7 * s;
     float w = std::max(360 * s, wTotal * 0.5f);
     float x = x0 + wTotal * 0.5f - w * 0.5f, y = y0;
-    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 12 * (h + gap) + 3 * gap + 48 * s);
-    static const std::vector<std::string> names = {"HEALTH", "WEAPON NAME", "COOLDOWN BARS", "SPEED METER", "WEAPON LIST"};
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 14 * (h + gap) + 3 * gap + 48 * s);
+    static const std::vector<std::string> names = {"HEALTH", "WEAPON NAME", "COOLDOWN BARS", "SPEED METER", "WEAPON LIST", "WEAPON MODEL"};
     ui_.cycle(x, y, w, h, "ELEMENT", hudSel_, Settings::HUD_COUNT, names);
     auto& e = cfg_.hud[hudSel_];
+    y += h + gap;
+    bool shown = !e.hidden;
+    ui_.toggle(x, y, w, h, "SHOW", shown); e.hidden = !shown;
     y += h + gap;
     ui_.slider(x, y, w, h, "X OFFSET", e.x, -640, 640, "%.0f"); e.x = std::round(e.x);
     y += h + gap;
@@ -3052,7 +3058,9 @@ void Game::drawHudSettings(float x0, float y0, float wTotal) {
     y += h + gap;
     ui_.slider(x, y, w, h, "SIZE", e.scale, 0.5f, 3, "%.2f");
     y += h + gap;
-    ui_.toggle(x, y, w, h, "CUSTOM COLOR", e.custom);
+    if (hudSel_ == Settings::HUD_VIEWMODEL) { ui_.slider(x, y, w, h, "DEPTH", e.z, -300, 300, "%.0f"); e.z = std::round(e.z); }
+    y += h + gap;
+    ui_.toggle(x, y, w, h, hudSel_ == Settings::HUD_VIEWMODEL ? "CUSTOM ACCENT COLOR" : "CUSTOM COLOR", e.custom);
     y += h + gap;
     if (e.custom) {
         float sw = (w - 2 * gap) / 3;

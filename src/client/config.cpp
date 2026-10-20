@@ -83,9 +83,10 @@ void Settings::load() {
         else if (k == "bot_allies") botAllies = std::min(std::max(iv, 0), 3);
         else if (k == "bot_mode") botMode = std::min(std::max(iv, 0), 5);
         else if (k.rfind("hud_", 0) == 0) {
-            int i = atoi(k.c_str() + 4), c = 0; HudElem e;
-            if (i >= 0 && i < HUD_COUNT && sscanf(v.c_str(), "%f,%f,%f,%d,%f,%f,%f", &e.x, &e.y, &e.scale, &c, &e.color.x, &e.color.y, &e.color.z) == 7) {
+            int i = atoi(k.c_str() + 4), c = 0, hid = 0; HudElem e;
+            if (i >= 0 && i < HUD_COUNT && sscanf(v.c_str(), "%f,%f,%f,%d,%f,%f,%f,%d,%f", &e.x, &e.y, &e.scale, &c, &e.color.x, &e.color.y, &e.color.z, &hid, &e.z) >= 7) {
                 e.x = clampf(e.x, -1280, 1280); e.y = clampf(e.y, -720, 720); e.scale = clampf(e.scale, 0.5f, 3); e.custom = c != 0;
+                e.hidden = hid != 0; e.z = clampf(e.z, -300, 300);
                 hud[i] = e;
             }
         }
@@ -116,7 +117,7 @@ void Settings::save() const {
       << "\nbot_enemies=" << botEnemies << "\nbot_allies=" << botAllies << "\nbot_mode=" << botMode << "\n";
     for (int i = 0; i < HUD_COUNT; i++)
         f << "hud_" << i << "=" << hud[i].x << "," << hud[i].y << "," << hud[i].scale << "," << hud[i].custom << ","
-          << hud[i].color.x << "," << hud[i].color.y << "," << hud[i].color.z << "\n";
+          << hud[i].color.x << "," << hud[i].color.y << "," << hud[i].color.z << "," << hud[i].hidden << "," << hud[i].z << "\n";
     for (int m = 0; m < MODE_COUNT; m++) {
         if (!modeHud[m].empty()) f << "mode_hud_" << modeName(m) << "=" << modeHud[m] << "\n";
         if (!modeCtl[m].empty()) f << "mode_controls_" << modeName(m) << "=" << modeCtl[m] << "\n";

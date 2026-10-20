@@ -468,7 +468,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
         if (p.alive) killPlayer(id, -1, 255);
         if (t == TEAM_SPECTATOR) p.letIn = false;   // (sitting out gives the slot back)
         p.team = t;
-        message(p.name + (t == TEAM_SPECTATOR ? " is spectating" : t == TEAM_A ? " joined team A" : " joined team B"));
+        message(p.name + (t == TEAM_SPECTATOR ? " is spectating" : !modeIsTeamBased(cfg_.mode) ? " joined the game" : t == TEAM_A ? " joined team A" : " joined team B"));
         if (t != TEAM_SPECTATOR && rulesRespawnDelay(*this) >= 0) p.respawnAt = time() + 1.0f;
     } else if (cmd == "name") {
         if (rest.empty()) return;
@@ -1357,6 +1357,7 @@ int Server::addBot(int team, int skill, bool balance) {
     p.joinId = nextJoinId_++;
     p.isBot = true;
     p.balanceBot = balance;
+    if (!modeIsTeamBased(cfg_.mode) && team != TEAM_SPECTATOR) team = TEAM_A;   // FFA and the like: no sides
     p.team = team;
     p.lastRecv = timeNow();
     p.name = uniqueName(std::string("BOT ") + names[(id * 7 + tick_) % 16], id);

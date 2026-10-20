@@ -53,8 +53,10 @@ struct Settings {
     bool chTeamColor = true;    // use your team color, else chColor
     Vec3 chColor = {1, 1, 1};
     // HUD layout: offset (pixels at 720p) from the default spot, size, and an optional color override
-    enum { HUD_HEALTH, HUD_WEAPON, HUD_BARS, HUD_SPEED, HUD_SLOTS, HUD_COUNT };
-    struct HudElem { float x = 0, y = 0, scale = 1; bool custom = false; Vec3 color = {1, 1, 1}; };
+    enum { HUD_HEALTH, HUD_WEAPON, HUD_BARS, HUD_SPEED, HUD_SLOTS, HUD_VIEWMODEL, HUD_COUNT };
+    // x / y / scale move and size an element (720p units); hidden removes it. For the weapon model, x / y / depth
+    // move it in front of the camera (depth: z, + = further away) and colour tints its accent parts.
+    struct HudElem { float x = 0, y = 0, scale = 1; bool custom = false; Vec3 color = {1, 1, 1}; bool hidden = false; float z = 0; };
     HudElem hud[HUD_COUNT];
     // play vs bots
     int botSkill = 1;           // 0 beginner .. 3 expert
