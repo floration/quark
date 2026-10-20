@@ -106,7 +106,7 @@ Biggest win: world geometry in 12 m chunks, frustum-culled, one `glMultiDrawArra
       buffers / cache text that only changes with its inputs.
 - [ ] **perf (med)** — `interpolatedProjectiles()` returns a new vector per call; scoreboard copies +
       sorts every frame while open; `playerName()` returns by value.
-- [ ] **perf (med)** — audio mixer holds its mutex while mixing (a `play()` from the game thread can wait a
+- [~] **perf (med)** — audio mixer holds its mutex while mixing (a `play()` from the game thread can wait a
       whole mix period); `erase` from the middle of the voice list. Swap a pending list; swap-and-pop.
 - [x] **perf (low)** — frame cap drifts below target (`frameStart = now`); `glClearColor(pow…)` per frame; *(0.35.0)*
       duplicate `lin` lambdas in drawWorld.
@@ -115,10 +115,10 @@ Biggest win: world geometry in 12 m chunks, frustum-culled, one `glMultiDrawArra
 - [ ] **polish** — misplaced comment in `config.h`; duplicated "return to editor" logic.
 
 ## 7. Code: server CPU
-- [ ] **perf (high)** — a snapshot is built, delta-encoded and sent to every client **every tick** (1000/s).
+- [x] **perf (high)** — a snapshot is built, delta-encoded and sent to every client **every tick** (1000/s). *(0.36.0: 500/s default, capped on big servers)*
       Separate send rate from tick rate (tick 1000 Hz, snapshots at a configurable rate, default 125 Hz);
       prediction / reconciliation unchanged (acks ride on whichever snapshot arrives).
-- [ ] **perf (med)** — per-send vector copies of the player / projectile lists per client; linear search of
+- [~] **perf (med)** — per-send vector copies of the player / projectile lists per client; *(0.36.0: shared scratch lists, no per-tick allocations; O(n²) delta matching left — n ≤ 32)* linear search of
       the 256-entry sent ring for the delta base; mode state encoded twice per client; O(n²) entity matching
       in the delta encoder. Shared per-send lists + hidden bitmask, index ring by tick, encode mode once,
       id-indexed base lookup.
@@ -126,13 +126,27 @@ Biggest win: world geometry in 12 m chunks, frustum-culled, one `glMultiDrawArra
       moving goal shifts 1 m; ladder link lookup is a scan. Precompute next-hop table per map.
 - [ ] **perf (low-med)** — bot target scan raycasts every enemy in range 10×/s; check by distance first,
       stop at the first visible.
-- [ ] **perf (low)** — hit-flush scans 1024 cells per tick; keep a pending flag.
-- [ ] **perf (low-med)** — idle loop spins the last 0.3 ms of every tick (≈30% CPU with nobody connected).
+- [x] **perf (low)** — hit-flush scans 1024 cells per tick; keep a pending flag. *(0.36.1)*
+- [x] **perf (low-med)** — idle loop spins the last 0.3 ms of every tick (≈30% CPU with nobody connected).
       Empty server: long sleeps; populated: allow a little lateness instead of spinning.
 
 ## 8. Netcode bandwidth
-- [ ] send rate (above) is by far the largest saving (1000 → 125 packets/s per client).
-- [ ] self block: hook point and dash fields only when active (flag byte); `timeMs` derived from tick.
-- [ ] projectiles: velocity only when it changes (bounces / sticks), position each send.
-- [ ] events: resend unacked reliable events at most every ~RTT/2, not every send.
+- [x] send rate (above) is by far the largest saving: 1000 → 500 packets/s per client, −62% bytes/s *(0.36.0)*
+- [x] self block: hook point and dash fields only when active (flag byte). *(0.36.0)*
+- [x] projectiles: velocity only when it changes (bounces / sticks), position each send. *(0.36.0)*
+- [x] events: resend unacked reliable events once per round trip, not every send; a big event no longer blocks small ones. *(0.36.0, 0.38.0)*
 - [ ] tick rate field only when it changes.
+
+## 9. Post-audit fixes found later (0.37-0.38)
+- [x] **bug (major)** — since 0.36 the client counted snapshot loss per tick while snapshots go out every other
+      tick: exactly 50% "loss", so self-hosted servers stepped down to 500 / 250 Hz. Counted per snapshot now,
+      and a loopback test with the rate check on guards it. *(0.38.0)*
+- [x] **bug** — snapshot cap rounded down (500 Hz servers with 17-24 players sent 500/s, not ≤ 333). *(0.38.0)*
+- [x] **bug** — delta-base ring indexed by tick / interval broke when the interval changed. *(0.38.0)*
+- [x] **polish** — buttons / cycles / toggles overflowed at some sizes; text now shrinks to fit. *(0.38.0)*
+
+## 10. Known issues at 1.0.0 (not blocking)
+- Ranked leaver can't be rated without server-signed results (§2).
+- Balance proposals for rocket / sniper (§4) await the owner's call; numbers unchanged.
+- Remaining medium perf items (§6, §7): one dyn VBO upload per frame, HUD string building, bot nav next-hop
+  tables. None show up in the 1% / 0.1% lows measured on the benchmark.

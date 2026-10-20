@@ -92,8 +92,9 @@ Measure: bytes per snapshot and kbit/s per client at 8 / 16 players (existing ne
       and controls, per-mode HUD / controls rules (never in ranked) — all shipped in 0.37.0
 
 ## Phase 5 — final scan & 1.0.0
-- [ ] Re-run every test, playtest, benchmark; compare with phase 2–4 baselines.
-- [ ] Re-screenshot all maps + menus; refresh site images.
-- [ ] Final code scan for sloppy / redundant / slow code introduced along the way.
-- [ ] VERSION 1.0.0, changelog summarising the road to 1.0, report back: what changed, measured gains,
-      why it's ready (and any known issues left).
+- [x] Re-run every test, playtest, benchmark; compare with phase 2–4 baselines.
+- [x] Final passes: UI (every screen screenshotted, text fits), server modes / maps (playtest all 15),
+      client modes / maps (all maps shot), customisation (models, packs, widgets, scripts, rules, ranked locks).
+- [x] Re-screenshot all maps + menus; refresh site images; website redone for 1.0.
+- [x] Final code scan (review of everything since 0.33: 13 findings, all real ones fixed in 0.38.0).
+- [x] VERSION 1.0.0, changelog summarising the road to 1.0.
