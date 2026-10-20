@@ -38,6 +38,9 @@ struct LaunchOptions {
     bool debugWidgets = false;
     bool debugHudLayout = false; // --hudlayout: open HUD layout settings in game
     bool debugModels = false;
+    bool camSet = false;         // --cam: fixed backdrop camera (map analysis shots)
+    Vec3 camPos;
+    float camYaw = 0, camPitch = 0;
     bool timeTrial = false;      // --timetrial: start a Viaduct time trial
     bool debugRaceStats = false; // --racestats: the leaderboard's race stats page    // --models: every player model lined up in front of you  // --widgets: open the HUD widget editor in game
     bool debugSettings = false; // --settings: open the settings screen in game
@@ -139,7 +142,9 @@ private:
     Vec3 bgCenter_;
     float bgRadius_ = 30;
     float bgTop_ = 0;
-    void setBackdropFrame(const AABB& b);
+    void setBackdropFrame(const Map& m);
+    bool bgIndoor_ = false;
+    float bgCeil_ = 0, bgHalfX_ = 0, bgHalfZ_ = 0;
     void loadMenuBackdrop();
     void rescanMaps();          // re-list maps/ so new or edited files show up without restarting
     std::string testMap_;       // set while play-testing a map from the editor

@@ -130,6 +130,7 @@ bool Map::parse(const std::string& text, std::string* err) {
     hasWallbang = false;
     hasPalette = false;
     hasVoid = false;
+    indoor = false;
     preferredMode = -1;
     allowedModes = 0;
     rankedLadders = 0;
@@ -150,14 +151,14 @@ bool Map::parse(const std::string& text, std::string* err) {
         if (kw == "title") {
             std::getline(ls, title);
             while (!title.empty() && title[0] == ' ') title.erase(0, 1);
-        } else if (kw == "box" || kw == "accent" || kw == "wallbang" || kw == "metal" || kw == "glow" || kw == "far") {
+        } else if (kw == "box" || kw == "accent" || kw == "wallbang" || kw == "metal" || kw == "glow" || kw == "far" || kw == "water" || kw == "lava") {
             Brush b;
             ok = readBox(ls, b.box);
-            b.material = kw == "accent" ? 1 : kw == "wallbang" ? 2 : kw == "metal" ? 3 : kw == "glow" ? 4 : kw == "far" ? 5 : 0;
+            b.material = kw == "accent" ? 1 : kw == "wallbang" ? 2 : kw == "metal" ? 3 : kw == "glow" ? 4 : kw == "far" ? 5 : kw == "water" ? 6 : kw == "lava" ? 7 : 0;
             hasWallbang |= b.material == 2;
             if (ok) {
                 brushes.push_back(b);
-                if (b.material == 5) continue; // far scenery: not part of the playable bounds
+                if (b.material >= 5) continue; // far scenery / water / lava surfaces: not part of the playable bounds
                 bounds.mn = vmin(bounds.mn, b.box.mn);
                 bounds.mx = vmax(bounds.mx, b.box.mx);
             }
@@ -195,6 +196,8 @@ bool Map::parse(const std::string& text, std::string* err) {
             ok = (bool)(ls >> l.pos.x >> l.pos.y >> l.pos.z >> l.radius);
             ls >> l.intensity;
             if (ok) lights.push_back(l);
+        } else if (kw == "indoor") { // "indoor <ceiling y>": roofed all over (menu / shot cameras stay under the roof)
+            ok = (bool)(ls >> ceilingY); indoor = ok;
         } else if (kw == "void") {
             ok = (bool)(ls >> voidY); hasVoid = ok;
         } else if (kw == "palette") {
@@ -245,11 +248,12 @@ std::string Map::serialize() const {
     snprintf(b, sizeof b, "sun %g %g %g\n\n", sunDir.x, sunDir.y, sunDir.z);
     o += b;
     if (hasVoid) { snprintf(b, sizeof b, "void %g\n", voidY); o += b; }
+    if (indoor) { snprintf(b, sizeof b, "indoor %g\n", ceilingY); o += b; }
     if (hasPalette) {
         auto c = [&](const char* k, Vec3 v) { snprintf(b, sizeof b, " %s %g %g %g", k, v.x, v.y, v.z); o += b; };
         o += "palette"; c("base", palBase); c("accent", palAccent); c("metal", palMetal); c("glow", palGlow); c("sky", palSky); o += "\n\n";
     }
-    static const char* matNames[] = {"box", "accent", "wallbang", "metal", "glow", "far"};
+    static const char* matNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava"};
     for (auto& br : brushes) box(matNames[br.material], br.box);
     o += "\n";
     static const char* teams[] = {"a", "b", "any", "race"};
@@ -370,7 +374,7 @@ void Map::rebuild() {
     bounds = {{1e9f, 1e9f, 1e9f}, {-1e9f, -1e9f, -1e9f}};
     hasWallbang = false;
     for (auto& b : brushes) {
-        if (b.material == 5) continue; // far scenery: outside play, never collides
+        if (b.material >= 5) continue; // far scenery, water / lava surfaces: never collide
         bounds.mn = vmin(bounds.mn, b.box.mn);
         bounds.mx = vmax(bounds.mx, b.box.mx);
         hasWallbang |= b.material == 2;
@@ -386,7 +390,7 @@ void Map::buildGrid() {
     gridH = std::max(1, (int)std::ceil((bounds.mx.z - gridZ0) / kCell));
     std::vector<std::vector<uint16_t>> cells((size_t)gridW * gridH);
     for (size_t i = 0; i < brushes.size(); i++) {
-        if (brushes[i].material == 5) continue; // far scenery: not solid, not hit by shots
+        if (brushes[i].material >= 5) continue; // far scenery, water / lava: not solid, not hit by shots
         const AABB& b = brushes[i].box;
         int x0 = std::max(0, (int)((b.mn.x - gridX0) / kCell)), x1 = std::min(gridW - 1, (int)((b.mx.x - gridX0) / kCell));
         int z0 = std::max(0, (int)((b.mn.z - gridZ0) / kCell)), z1 = std::min(gridH - 1, (int)((b.mx.z - gridZ0) / kCell));

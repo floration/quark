@@ -160,7 +160,7 @@ if(QUARK_BUILD_CLIENT)
 endif()
 
 if(QUARK_BUILD_TESTS)
-  add_executable(quark_tests tests/tests.cpp)
+  add_executable(quark_tests tests/tests.cpp tests/mapreport.cpp)
   target_link_libraries(quark_tests quark_core)
 endif()
 

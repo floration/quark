@@ -278,7 +278,7 @@ void Game::loadMapIfNeeded() {
         }
         drawBakeProgress(net_.map().name, p);
     });
-    setBackdropFrame(net_.map().bounds);
+    setBackdropFrame(net_.map());
 }
 
 void Game::drawBakeProgress(const std::string& name, float p) {
@@ -320,7 +320,7 @@ void Game::loadMenuBackdrop() {
     std::string name = !opts_.backdrop.empty() ? opts_.backdrop : "crucible";
     if (!menuMap_.load(name) && (maps_.empty() || !menuMap_.load(maps_[0]))) return;
     r_.loadWorld(menuMap_, [&](float p) { drawBakeProgress(menuMap_.name, p); });
-    setBackdropFrame(menuMap_.bounds);
+    setBackdropFrame(menuMap_);
 }
 
 // ---------------------------------------------------------------------------
@@ -859,8 +859,14 @@ void Game::frame(double dt) {
         float ang = opts_.backdropAngle >= 0 ? deg2rad(opts_.backdropAngle) : (float)time_ * 0.04f;
         Vec3 camPos = bgCenter_ + Vec3(std::sin(ang) * bgRadius_, bgRadius_ * 0.6f, std::cos(ang) * bgRadius_);
         camPos.y = std::max(camPos.y, bgTop_ + 3.0f); // above the walls (pits make the bounds deep)
-        Vec3 to = bgCenter_ - camPos;
-        r_.setCamera(camPos, std::atan2(-to.x, -to.z), std::atan2(to.y, std::sqrt(to.x * to.x + to.z * to.z)), 75);
+        Vec3 look = bgCenter_;
+        if (bgIndoor_) { // under the roof: circle just inside the walls, high up, looking across the floor
+            camPos = {bgCenter_.x + std::sin(ang) * (bgHalfX_ - 5), bgCeil_ - 5.5f, bgCenter_.z + std::cos(ang) * (bgHalfZ_ - 5)};
+            look = {bgCenter_.x, 0, bgCenter_.z};
+        }
+        Vec3 to = look - camPos;
+        if (opts_.camSet) r_.setCamera(opts_.camPos, deg2rad(opts_.camYaw), deg2rad(opts_.camPitch), 90);
+        else r_.setCamera(camPos, std::atan2(-to.x, -to.z), std::atan2(to.y, std::sqrt(to.x * to.x + to.z * to.z)), 75);
         if (r_.worldLoaded()) r_.drawScene(false);
         else {
             r_.rect(0, 0, (float)r_.width(), (float)r_.height(), {0.05f, 0.06f, 0.08f, 1});
@@ -3173,8 +3179,12 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
 }
 
 // Orbit frame for a backdrop map: centred on the playable floor (pits and shafts reach far below it).
-void Game::setBackdropFrame(const AABB& b) {
+void Game::setBackdropFrame(const Map& m) {
+    const AABB& b = m.bounds;
     float floorY = std::max(b.mn.y, -1.0f);
+    bgIndoor_ = m.indoor;
+    bgCeil_ = m.ceilingY;
+    bgHalfX_ = (b.mx.x - b.mn.x) * 0.5f; bgHalfZ_ = (b.mx.z - b.mn.z) * 0.5f;
     bgCenter_ = {(b.mn.x + b.mx.x) * 0.5f, (floorY + b.mx.y) * 0.5f, (b.mn.z + b.mx.z) * 0.5f};
     bgRadius_ = length(Vec3(b.mx.x - b.mn.x, b.mx.y - floorY, b.mx.z - b.mn.z)) * 0.26f;
     bgTop_ = b.mx.y;

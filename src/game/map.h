@@ -8,7 +8,7 @@ enum SpawnTeam { SPAWN_A = 0, SPAWN_B = 1, SPAWN_ANY = 2, SPAWN_RACE = 3 };
 
 struct Brush {
     AABB box;
-    int material = 0; // 0 = base, 1 = accent, 2 = wallbang (dark grey: solid, but hitscan goes through it), 3 = metal, 4 = glow (emissive trim), 5 = far (distant scenery outside the walls: flat-shaded, no lightmap)
+    int material = 0; // 0 = base, 1 = accent, 2 = wallbang (dark grey: solid, but hitscan goes through it), 3 = metal, 4 = glow (emissive trim), 5 = far (distant scenery outside the walls: flat-shaded, no lightmap), 6 = water, 7 = lava (unlit surfaces of deadly pits: not solid, you fall through and die)
 };
 
 struct SpawnPoint {
@@ -35,6 +35,8 @@ struct Map {
     // "palette base r g b accent r g b metal r g b glow r g b sky r g b" (linear 0..1): per-map colours
     // "void <y>": falling below this height kills (pits, water, the drop off a bridge); default 20 m below the map
     bool hasVoid = false;
+    bool indoor = false;   // "indoor <y>": a roof over everything at y (cameras that orbit the map stay below it)
+    float ceilingY = 0;
     float voidY = 0;
     float killY() const { return hasVoid ? voidY : bounds.mn.y - 20.0f; }
     bool hasPalette = false;

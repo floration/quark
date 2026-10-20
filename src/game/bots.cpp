@@ -153,7 +153,7 @@ void NavGraph::build(const Map& m) {
     mapCrc = m.crc;
     for (const Brush& b : m.brushes) {
         const AABB& a = b.box;
-        if (b.material == 5) continue; // far scenery
+        if (b.material >= 5) continue; // far scenery, water / lava
         if (a.mx.x - a.mn.x < 0.6f || a.mx.z - a.mn.z < 0.6f) continue;
         // standable if a player fits on top somewhere (5x5 samples: other blocks may cover parts of it)
         bool free = false;

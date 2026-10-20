@@ -507,7 +507,7 @@ static void testWeapons(uint16_t port) {
         auto& sa = s.players_[a.clientId()];
         auto& sb = s.players_[b.clientId()];
         float dist = (w == WPN_LASER || w == WPN_SHOTGUN) ? 8.0f : 20.0f;
-        sa.move.pos = {9, 0, 6}; sb.move.pos = {9, 0, 6 - dist};
+        sa.move.pos = {10, 0, 19}; sb.move.pos = {10 - dist, 0, 19}; // open courtyard between the inner ward wall and the spawns
         sa.move.vel = sb.move.vel = {};
         pump(s, cls, 0.3, idle);
         auto aim = [&](int i, uint16_t extra) {
@@ -918,6 +918,8 @@ static void testBotAim(uint16_t& port) {
 // scoped rifle fires at half rate.
 // Every ladder on every map gets you to the top: stand at its foot, hold forward (into the wall) and you
 // end up standing on whatever it leads to.
+void mapReport(const char* outPath); // tests/mapreport.cpp
+
 static void testLadders() {
     printf("ladders: every one climbable\n");
     for (auto& name : listMaps()) {
@@ -1073,9 +1075,9 @@ static void testAltFires(uint16_t port) {
         auto& sa = s.players_[a.clientId()];
         auto& sb = s.players_[b.clientId()];
         int w = kase == 0 ? WPN_KNIFE : kase == 1 ? WPN_SHOTGUN : WPN_RIFLE;
-        // knife: target 12 m ahead. shotgun: facing the +x wall (x = 32) from 3 m, target 5 m behind.
-        if (kase == 1) { sa.move.pos = {28.5f, 0, 26}; sb.move.pos = {24, 0, 26}; }
-        else { sa.move.pos = {9, 0, 6}; sb.move.pos = {9, 0, -6}; }
+        // knife: target 12 m ahead. shotgun: facing the +x curtain wall (x = 30) from 3.5 m, target 4.5 m behind.
+        if (kase == 1) { sa.move.pos = {26.5f, 0, -20}; sb.move.pos = {22, 0, -20}; }
+        else { sa.move.pos = {9, 0, 19}; sb.move.pos = {-3, 0, 19}; }
         sa.move.vel = sb.move.vel = {};
         pump(s, cls, 0.3, idle);
         auto aim = [&](int i, uint16_t buttons) {
@@ -1822,6 +1824,7 @@ int main(int argc, char** argv) {
     uint16_t port = 28500;
     if (argc >= 2 && std::string(argv[1]) == "ranked") { testRanked(29610); testRankedVoteAndRestart(29620); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(29600); testEditSession(29601); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "mapreport") { mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md"); return 0; }
     if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(29960); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(29950); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(29900); return g_fail ? 1 : 0; }

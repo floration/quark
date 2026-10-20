@@ -98,7 +98,10 @@ vec3 finish(vec3 c) {
 void main() {
     int mat = int(vMat + 0.5);
     if (mat >= 4) { // glow trim / far scenery: unlit, skip everything below
-        vec3 c = mat == 4 ? uGlow * 0.9 : mix(uMetal * (0.55 + 0.25 * vN.y + 0.15 * abs(vN.x)), uFogColor, 0.45); // far: hazy silhouette
+        vec3 c = mat == 4 ? uGlow * 0.9
+               : mat == 6 ? mix(vec3(0.02, 0.10, 0.20), vec3(0.10, 0.32, 0.50), 1.0 - abs(vN.y) * 0.6)   // water: deep blue, lighter at grazing faces
+               : mat == 7 ? vec3(1.6, 0.42, 0.08)                                                         // lava: glowing
+               : mix(uMetal * (0.55 + 0.25 * vN.y + 0.15 * abs(vN.x)), uFogColor, 0.45); // far: hazy silhouette
         fragColor = vec4(finish(c), 1.0);
         return;
     }
@@ -432,7 +435,7 @@ void Renderer::loadWorld(const Map& map, const std::function<void(float)>& progr
             float cx = 0, cz = 0;
             for (int k = 0; k < 6; k++) { cx += v[k].pos[0]; cz += v[k].pos[2]; }
             int64_t gx = (int64_t)std::floor(cx / 6 / kChunk) + 100000, gz = (int64_t)std::floor(cz / 6 / kChunk) + 100000;
-            bool far = v[0].material > 4.5f; // distant scenery: its own chunks (huge, rarely all in view)
+            bool far = v[0].material > 4.5f && v[0].material < 5.5f; // distant scenery: its own chunks (huge, rarely all in view)
             key[f] = {((uint64_t)far << 40) | ((uint64_t)gx << 20) | (uint64_t)gz, (uint32_t)f};
         }
         std::sort(key.begin(), key.end());
