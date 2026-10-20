@@ -8,11 +8,18 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
     w.u32(s.tick);
     w.u32(s.timeMs);
     w.u16(s.tickRate);
+    w.u16(s.snapRate);
     w.u32(s.ackCmdSeq);
     w.u16(s.ackStringCmd);
     w.u8(s.clientId);
-    w.vec(s.self.pos); w.vec(s.self.vel); w.u8(s.self.flags); w.f32(s.self.dashCooldown); w.vec(s.self.hookPoint);
-    w.f32(s.self.dashTimer); w.f32(s.self.dashDirX); w.f32(s.self.dashDirZ); w.f32(s.self.dashExitSpeed); w.f32(s.self.dashUp); w.f32(s.self.hookCooldown); w.u8(s.self.mods);
+    // own movement state, exact (prediction replays from it); the grapple / dash parts only while active
+    const MoveState& m = s.self;
+    uint8_t opt = ((m.flags & MF_HOOKED) ? 1 : 0) | (m.dashTimer > 0 ? 2 : 0) | (m.dashCooldown > 0 ? 4 : 0) | (m.hookCooldown > 0 ? 8 : 0);
+    w.vec(m.pos); w.vec(m.vel); w.u8(m.flags); w.u8(m.mods); w.u8(opt);
+    if (opt & 1) w.vec(m.hookPoint);
+    if (opt & 2) { w.f32(m.dashTimer); w.f32(m.dashDirX); w.f32(m.dashDirZ); w.f32(m.dashExitSpeed); w.f32(m.dashUp); }
+    if (opt & 4) w.f32(m.dashCooldown);
+    if (opt & 8) w.f32(m.hookCooldown);
     w.u8(s.selfHealth); w.u8(s.selfWeapon); w.u8(s.knifeAway);
     w.u32(s.baseTick);
 }
@@ -21,11 +28,18 @@ bool readSnapshotClient(Reader& r, Snapshot& s) {
     s.tick = r.u32();
     s.timeMs = r.u32();
     s.tickRate = r.u16();
+    s.snapRate = r.u16();
     s.ackCmdSeq = r.u32();
     s.ackStringCmd = r.u16();
     s.clientId = r.u8();
-    s.self.pos = r.vec(); s.self.vel = r.vec(); s.self.flags = r.u8(); s.self.dashCooldown = r.f32(); s.self.hookPoint = r.vec();
-    s.self.dashTimer = r.f32(); s.self.dashDirX = r.f32(); s.self.dashDirZ = r.f32(); s.self.dashExitSpeed = r.f32(); s.self.dashUp = r.f32(); s.self.hookCooldown = r.f32(); s.self.mods = r.u8();
+    MoveState& m = s.self;
+    m = MoveState();
+    m.pos = r.vec(); m.vel = r.vec(); m.flags = r.u8(); m.mods = r.u8();
+    uint8_t opt = r.u8();
+    if (opt & 1) m.hookPoint = r.vec();
+    if (opt & 2) { m.dashTimer = r.f32(); m.dashDirX = r.f32(); m.dashDirZ = r.f32(); m.dashExitSpeed = r.f32(); m.dashUp = r.f32(); }
+    if (opt & 4) m.dashCooldown = r.f32();
+    if (opt & 8) m.hookCooldown = r.f32();
     s.selfHealth = r.u8(); s.selfWeapon = r.u8(); s.knifeAway = r.u8();
     s.baseTick = r.u32();
     return !r.bad();
@@ -63,7 +77,7 @@ enum : uint16_t {
 static int16_t q16(float v) { return (int16_t)clampf(std::round(v * 64.0f), -32767, 32767); }
 static bool samePos(const Vec3& a, const Vec3& b) { return q16(a.x) == q16(b.x) && q16(a.y) == q16(b.y) && q16(a.z) == q16(b.z); }
 
-void writeSnapshotWorld(Writer& w, const Snapshot& s, const Snapshot* base) {
+void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
     // mode state: 0 = same as base, 1 = full copy follows
     uint8_t mb[96], bb[96];
     Writer mw(mb, sizeof mb), bw(bb, sizeof bb);
@@ -108,14 +122,19 @@ void writeSnapshotWorld(Writer& w, const Snapshot& s, const Snapshot* base) {
         if (m & P_CHECK) w.u8(p.checkpoint);
         if (m & P_HOOK) { w.u8(p.hooked); if (p.hooked) w.vecq(p.hookPoint); }
     }
-    // projectiles: id, 1 = new (type, owner follow); position and velocity always (they move every tick)
+    // projectiles: id, bits (1 = new: type and owner follow, 2 = velocity follows), position always.
+    // Velocity only when it changed by more than 0.5 m/s since what the client has (the client only uses it
+    // to extrapolate a few ms); the snapshot we keep as the next base records the velocity the client has.
     w.u8((uint8_t)s.projectiles.size());
     for (auto& p : s.projectiles) {
-        bool known = false;
-        if (base) for (auto& o : base->projectiles) if (o.id == p.id) { known = true; break; }
-        w.u16(p.id); w.u8(known ? 0 : 1);
-        if (!known) { w.u8(p.type); w.u8(p.owner); }
-        w.vecq(p.pos); w.vecq(p.vel);
+        const ProjectileSnap* b = nullptr;
+        if (base) for (auto& o : base->projectiles) if (o.id == p.id) { b = &o; break; }
+        bool vel = !b || length(p.vel - b->vel) > 0.5f;
+        w.u16(p.id); w.u8((b ? 0 : 1) | (vel ? 2 : 0));
+        if (!b) { w.u8(p.type); w.u8(p.owner); }
+        w.vecq(p.pos);
+        if (vel) w.vecq(p.vel);
+        else p.vel = b->vel;
     }
 }
 
@@ -152,14 +171,18 @@ bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base) {
     s.projectiles.resize(r.u8());
     for (auto& p : s.projectiles) {
         p.id = r.u16();
-        if (r.u8()) { p.type = r.u8(); p.owner = r.u8(); }
+        uint8_t bits = r.u8();
+        const ProjectileSnap* b = nullptr;
+        if (bits & 1) { p.type = r.u8(); p.owner = r.u8(); }
         else {
-            const ProjectileSnap* b = nullptr;
             if (base) for (auto& o : base->projectiles) if (o.id == p.id) { b = &o; break; }
             if (!b) return false;
             p.type = b->type; p.owner = b->owner;
         }
-        p.pos = r.vecq(); p.vel = r.vecq();
+        p.pos = r.vecq();
+        if (bits & 2) p.vel = r.vecq();
+        else if (b) p.vel = b->vel;
+        else return false;
     }
     return !r.bad();
 }

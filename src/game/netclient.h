@@ -68,7 +68,8 @@ public:
     // Render other players this far behind the newest snapshot: 3 snapshots + 10 ms jitter margin.
     // Render other players this far behind the newest snapshot: 2 snapshots plus the measured arrival
     // jitter (99th percentile), between 1 and 50 ms. On a clean connection that's a few ms instead of 13.
-    float interpDelay() const { return 2.0f / tickRate() + std::min(0.05f, std::max(0.001f, jitter_ + 0.001f)); }
+    float interpDelay() const { return 2.0f / snapRate() + std::min(0.05f, std::max(0.001f, jitter_ + 0.001f)); }
+    int snapRate() const { return hasSnapshot() && latest().snapRate ? latest().snapRate : 1000; }
     uint32_t baseMisses() const { return baseMisses_; } // delta snapshots we couldn't decode (should stay ~0)
     int snapshotLoss() const { return lossPct_; }
     void overrideReportedLoss(int pct) { lossOverride_ = pct; } // tests: pretend to lose snapshots

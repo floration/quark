@@ -27,6 +27,7 @@ struct ServerConfig {
     int maxPlayers = 8;         // up to kMaxPlayers (32); big servers start at a lower tick rate
     bool upnp = false;          // try to open the port on the router automatically
     int maxTickRate = 1000;     // starting (highest) tick rate; lowered automatically if the host can't keep up
+    int snapRate = 500;         // snapshots per second to each client (<= tick rate): 1000 = lowest latency, lower = less CPU / bandwidth
     // Bots
     bool balanceBots = true;    // team modes: an extra bot joins the side with fewer humans (vote can turn off)
     int balanceBotSkill = BOT_INTERMEDIATE;
@@ -75,7 +76,8 @@ struct ServerPlayer {
     float health = 0;
     int weapon = WPN_ROCKET;
     int selectedWeapon = WPN_ROCKET; // last weapon the player picked (slot 1 to start); kept across respawns
-    float knifeBackAt = 0;      // a thrown knife is away until then: no knife (and no throws) before it
+    float knifeBackAt = 0;
+    bool fireLocked = false;    // after a knife throw: nothing fires until both buttons are let go      // a thrown knife is away until then: no knife (and no throws) before it
     float nextFire = 0;
     float lastFire = -10;
     float fireQueuedUntil = -1; // semi-auto: a click waiting for the weapon to be ready
@@ -164,6 +166,16 @@ public:
     float roundStart_ = 0;
     float lastProgress_ = 0;    // vs: last time damage was dealt
     int lastIt_ = -1;
+    std::vector<float>* tickTimes_ = nullptr;
+    Snapshot snapScratch_;                     // reused every send (no per-tick allocations)
+    std::vector<PlayerSnap> snapPlayers_;
+    std::vector<ProjectileSnap> snapProj_;
+    int snapEvery() const {
+        int rate = std::min(cfg_.snapRate, tickRate());
+        if (cfg_.maxPlayers > 24) rate = std::min(rate, 250);       // big servers: upload bandwidth grows with players x rate
+        else if (cfg_.maxPlayers > 16) rate = std::min(rate, 333);
+        return std::max(1, tickRate() / std::max(1, rate));
+    } // benchmarks: every tick's simulate + send time goes here
     int hideRounds_ = 0;        // hide and seek: rounds this match (fixed at the start: everyone seeks once)
     uint32_t nextJoinId_ = 1;           // hide and seek: the last seeker (everyone takes a turn)
     float drainAccum_ = 0;

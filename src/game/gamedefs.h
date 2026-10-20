@@ -12,7 +12,7 @@ constexpr int kMaxPlayers = 32;        // engine limit; servers default to 8 (Se
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 18;
+constexpr uint16_t kProtocolVersion = 19;
 
 // Player hull
 constexpr float kPlayerHalfWidth = 0.4f;
@@ -166,7 +166,7 @@ inline const WeaponDef& weaponDef(int w) {
 }
 // Alt-fires: knife throw (a projectile that hits for knife damage), shotgun bouncing pellets (ricochet off
 // walls, half damage), rifle scope (zooms like the sniper, half the fire rate).
-constexpr float kRocketLobSpeed = 0.5f, kRocketLobGravity = 3.0f; // rocket alt-fire: a lob at half speed with 3x gravity
+constexpr float kRocketLobSpeed = 0.7f, kRocketLobGravity = 3.0f; // rocket alt-fire: a lob at 70% speed with 3x gravity
 constexpr float kKnifeThrowSpeed = 38.0f, kKnifeThrowGravity = 14.0f, kKnifeThrowLife = 2.0f;
 constexpr float kKnifeAway = 5.0f; // after a throw the knife is gone this long: you switch to another weapon (no delay on it)
 constexpr int kShotgunBounces = 2;

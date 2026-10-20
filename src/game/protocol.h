@@ -69,6 +69,7 @@ struct ProjectileSnap {
 };
 
 struct GameEvent {
+    float sentAt = -1;      // server only (not sent): when this copy last went out, for resend pacing
     uint32_t id = 0;
     uint8_t type = 0;
     uint8_t a = 0, b = 0;
@@ -113,6 +114,7 @@ struct Snapshot {
     uint32_t tick = 0;        // server tick counter (one snapshot per tick; gaps = loss)
     uint32_t timeMs = 0;      // server clock in ms
     uint16_t tickRate = 1000; // current server tick rate (Hz)
+    uint16_t snapRate = 1000; // snapshots per second this client gets (interpolation buffers 2 of them)
     uint32_t ackCmdSeq = 0;
     uint32_t baseTick = 0;    // the players / projectiles / mode part is a delta against this tick (0 = full)
     uint16_t ackStringCmd = 0;
@@ -131,7 +133,7 @@ struct Snapshot {
 // projectiles) delta-encoded against `base` (the client's last acknowledged snapshot; nullptr = full),
 // then reliable events. Unchanged players cost 3 bytes, unchanged mode state 1 byte.
 void writeSnapshotClient(Writer& w, const Snapshot& s);
-void writeSnapshotWorld(Writer& w, const Snapshot& s, const Snapshot* base);
+void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base); // also records into s what the client will have (delta base)
 void writeSnapshotEvents(Writer& w, const std::vector<GameEvent>& events);
 bool readSnapshotClient(Reader& r, Snapshot& s);              // header: tells which base the world part needs
 bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base);

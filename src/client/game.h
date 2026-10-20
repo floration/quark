@@ -203,7 +203,7 @@ private:
     double lastMx_ = 0, lastMy_ = 0;
     bool mouseCaptured_ = false, firstMouse_ = true;
     bool fireLatched_ = false;
-    bool localFireHeld_ = false, scopeOverlay_ = false;
+    bool localFireHeld_ = false, scopeOverlay_ = false, localFireLocked_ = false;
     double localFireQueued_ = -1;
     double nextLaserSound_ = 0;
     double knifeSlash_[kMaxPlayers] = {}; // when each player last swung the knife (slash trail)

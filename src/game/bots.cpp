@@ -1,4 +1,5 @@
 #include "bots.h"
+#include "../common/profile.h"
 #include "gamemodes.h"
 #include "server.h"
 
@@ -305,6 +306,7 @@ UserCmd botThink(Server& s, int id) {
         Vec3 goal = objective(s, id, b);
         if (s.nav_.mapCrc != s.map_.crc) s.nav_.build(s.map_);
         if (now >= b.repathAt || length(goal - b.pathGoal) > 1.0f || length(b.waypoint - me.move.pos) < 0.8f) {
+            QZONE("bot nav path");
             b.waypoint = s.nav_.nextWaypoint(me.move.pos, goal);
             b.pathGoal = goal;
             b.repathAt = now + 0.25f;

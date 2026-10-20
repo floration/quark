@@ -697,6 +697,10 @@ void Game::frame(double dt) {
             // local fire feedback (server is authoritative for damage)
             bool altShot = altFires(net_.selfWeapon()) && (c.buttons & BTN_ALTFIRE); // knife throw / shotgun bounce
             bool wantFire = (c.buttons & BTN_FIRE) != 0 || altShot;
+            if (localFireLocked_) { // mirror the server: after a knife throw, let go before the next weapon fires
+                if (!(c.buttons & (BTN_FIRE | BTN_ALTFIRE))) localFireLocked_ = false;
+                else wantFire = false;
+            }
             if (weaponDef(net_.selfWeapon()).semiAuto) { // mirror the server: one shot per click, short buffer
                 if (wantFire && !localFireHeld_) localFireQueued_ = time_ + kFireBuffer;
                 localFireHeld_ = wantFire;
@@ -712,6 +716,7 @@ void Game::frame(double dt) {
                     nextLaserSound_ = time_ + 0.05;
                 }
                 if (w == WPN_KNIFE && !alt) knifeSlash_[net_.clientId() % kMaxPlayers] = time_;
+                if (w == WPN_KNIFE && alt) localFireLocked_ = true;
                 recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
                 if (w == WPN_LASER) laserUntil_ = time_ + 0.07;
                 else if (!weaponDef(w).projectile && w != WPN_KNIFE) { // (knife throw: the projectile shows it)

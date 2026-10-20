@@ -1,3 +1,4 @@
+#include "common/profile.h"
 #include <fstream>
 // Headless tests: movement, map parsing, and real client/server sessions over UDP
 // on localhost, including every game mode.
@@ -999,6 +1000,11 @@ static void testAltFires(uint16_t port) {
         if (kase == 0) {
             pump(s, cls, 0.05, [&](int i) { return aim(i, BTN_ALTFIRE); });
             CHECK(sa.weapon != WPN_KNIFE && sa.knifeBackAt > s.time());          // knife away: switched weapon
+            { // still holding the button: the weapon we switched to must not fire until it's let go
+                float before = sa.lastFire;
+                pump(s, cls, 0.3, [&](int i) { UserCmd c = aim(i, BTN_ALTFIRE); c.weapon = kNoWeaponChange; return c; });
+                CHECK(sa.lastFire == before);
+            }
             CHECK(a.hasSnapshot());
             pump(s, cls, 1.0, idle);
             CHECK(hp0 - sb.health >= weaponDef(WPN_KNIFE).damage - 0.01f);
@@ -1607,6 +1613,40 @@ static void testBots(uint16_t& port) {
     }
 }
 
+// Server CPU benchmark: a full server (bots fighting + human clients receiving snapshots) on a busy map;
+// prints the time per tick (simulate + snapshots) against the 1 ms budget of a 1000 Hz server.
+static void serverBench(uint16_t port, int bots, int humans, double seconds, const char* map) {
+    g_serverRateCheck = false; // measure at 1000 Hz, don't step down
+    Server s;
+    ServerConfig cfg;
+    cfg.map = map; cfg.mode = MODE_FFA; cfg.port = port; cfg.autoStart = true; cfg.maxPlayers = kMaxPlayers;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { printf("  start failed\n"); return; }
+    std::vector<std::unique_ptr<NetClient>> owned;
+    std::vector<NetClient*> cls;
+    for (int i = 0; i < humans; i++) {
+        owned.push_back(std::make_unique<NetClient>());
+        owned.back()->connect("127.0.0.1:" + std::to_string(port), "h" + std::to_string(i));
+        cls.push_back(owned.back().get());
+    }
+    for (int i = 0; i < bots; i++) s.addBot(TEAM_A, BOT_ADVANCED);
+    pump(s, cls, 2.0, idle);
+    std::vector<float> t;
+    t.reserve(200000);
+    s.tickTimes_ = &t;
+    pump(s, cls, seconds, [](int i) { UserCmd c; c.forward = 127; c.yaw = i * 1.3f + (float)timeNow(); c.buttons = BTN_JUMP | BTN_FIRE; return c; });
+    s.tickTimes_ = nullptr;
+    std::sort(t.begin(), t.end());
+    double sum = 0;
+    for (float v : t) sum += v;
+    auto pct = [&](double p) { return t.empty() ? 0.0 : t[std::min(t.size() - 1, (size_t)(t.size() * p))] * 1e6; };
+    printf("  SERVERBENCH %s: %d bots + %d clients, %zu ticks at %d Hz: avg %.1f us  p99 %.1f us  p99.9 %.1f us  worst %.1f us  (%.1f%% of the tick budget)\n",
+           map, bots, humans, t.size(), s.tickRate(), t.empty() ? 0 : sum / t.size() * 1e6, pct(0.99), pct(0.999), t.empty() ? 0 : t.back() * 1e6,
+           t.empty() ? 0 : sum / t.size() * s.tickRate() * 100);
+    qzoneDump();
+    s.stop();
+}
+
 // Bots play every map in the mode it's built for; prints kills / deaths (deaths beyond kills = falls and
 // self-kills) and the objective state, to spot layouts where nothing happens or bots keep falling.
 static void playtestMaps(uint16_t port, double seconds) {
@@ -1658,6 +1698,11 @@ int main(int argc, char** argv) {
     setTimeScale(kTestTimeScale);
     g_serverRateCheck = false;
     if (argc >= 2 && std::string(argv[1]) == "playtest") { playtestMaps(29400, argc > 2 ? atof(argv[2]) : 40); return 0; }
+    if (argc >= 2 && std::string(argv[1]) == "serverbench") {
+        serverBench(29300, 12, 4, argc > 2 ? atof(argv[2]) : 15, "harbor");
+        serverBench(29301, 24, 8, argc > 2 ? atof(argv[2]) : 15, "hamlet");
+        return 0;
+    }
     if (argc >= 2 && std::string(argv[1]) == "ladders") { testLadders(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(29450); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = 29500; testBotAim(p); return g_fail ? 1 : 0; }

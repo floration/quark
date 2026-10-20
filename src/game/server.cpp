@@ -59,10 +59,9 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     tick_ = 0;
     timeMs_ = 0;
     rateLevel_ = 0;
-    // Bandwidth grows with players x tick rate: big servers start lower (warmup can still step down more).
+    // Bandwidth grows with players x snapshot rate: big servers send fewer snapshots (snapEvery), the
+    // simulation itself keeps the full tick rate.
     int cap = cfg_.maxTickRate > 0 ? cfg_.maxTickRate : 1000;
-    if (cfg_.maxPlayers > 24) cap = std::min(cap, 250);
-    else if (cfg_.maxPlayers > 16) cap = std::min(cap, 500);
     while (rateLevel_ < kTickRateLevels - 1 && kTickRates[rateLevel_] > cap) rateLevel_++;
     nextTick_ = timeNow();
     resetRateWindow();
@@ -125,6 +124,9 @@ void Server::run(std::atomic<bool>& quit) {
 void Server::idle(double wait) {
     // Sleep in the socket until the next tick (wakes early for packets); the last ~0.3 ms is spun
     // by the caller's loop so 1 ms ticks stay on time.
+    bool anyHuman = false;
+    for (auto& p : players_) anyHuman |= p.connected && !p.isBot;
+    if (!anyHuman) { if (wait > 0) sock_.waitUs((int)std::min(wait * 1e6, 5000.0)); return; } // nobody to be on time for: no spinning
     if (wait > 0.0003) sock_.waitUs((int)std::min((wait - 0.0003) * 1e6, 5000.0));
 }
 
@@ -173,12 +175,15 @@ double Server::frame() {
         if (now - nextTick_ > period * 2) windowLate_++;
         windowTicks_++;
         double t0 = timeNow();
+        QZONE("server tick");
         { QZONE("server simulate"); simulate(); }
         logTick();
         tick_++;
         timeMs_ += 1000 / tickRate();
-        { QZONE("server snapshots"); sendSnapshots(); }
-        windowBusy_ += timeNow() - t0;
+        if (tick_ % snapEvery() == 0) { QZONE("server snapshots"); sendSnapshots(); } // input still runs every tick
+        double busy = timeNow() - t0;
+        windowBusy_ += busy;
+        if (tickTimes_) tickTimes_->push_back((float)busy);
         nextTick_ += 1.0 / tickRate();
         now = timeNow();
     }
@@ -817,15 +822,16 @@ void Server::simulate() {
         ServerPlayer& p = players_[i];
         if (!p.connected) continue;
         if (p.isBot) {
-            UserCmd c = botThink(*this, i);
+            UserCmd c;
+            { QZONE("bot think"); c = botThink(*this, i); }
             c.seq = tick_; // distinct shot spread per shot
             c.msec = (uint8_t)(1000 / tickRate());
             c.viewTick = timeMs_;
-            runPlayerCmd(i, c);
+            { QZONE("bot cmd"); runPlayerCmd(i, c); }
             continue;
         }
         p.cmdTokensMs = std::min(p.cmdTokensMs + 1000.0f / tickRate(), kMaxCmdTokensMs);
-        drainCmds(i);
+        { QZONE("human cmds"); drainCmds(i); }
     }
     // Record positions for lag compensation.
     for (auto& p : players_) {
@@ -836,7 +842,7 @@ void Server::simulate() {
         h.crouched = p.move.flags & MF_CROUCHED;
         h.alive = p.alive;
     }
-    tickProjectiles();
+    { QZONE("projectiles"); tickProjectiles(); }
     tickVote();
     if (time() >= nextBalanceCheck_) { nextBalanceCheck_ = time() + 1.0f; updateBalanceBots(); }
     for (int i = 0; i < kMaxPlayers; i++) {
@@ -896,6 +902,10 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     bool itMode = isItMode(ms_.mode);
     bool altShot = altFires(p.weapon) && (cmd.buttons & BTN_ALTFIRE) && !(p.weapon == WPN_KNIFE && knifeAway) && !itMode; // no throwing in hide and seek / tag
     bool wantFire = ((cmd.buttons & BTN_FIRE) != 0 || altShot) && (!itMode || p.it); // only "it" has a knife
+    if (p.fireLocked) { // the click that threw the knife doesn't also fire the weapon you switched to
+        if (!(cmd.buttons & (BTN_FIRE | BTN_ALTFIRE))) p.fireLocked = false;
+        else wantFire = altShot = false;
+    }
     if (weaponDef(p.weapon).semiAuto) { // one shot per click
         if (wantFire && !(p.prevButtons & BTN_FIRE)) p.fireQueuedUntil = time() + kFireBuffer;
         wantFire = time() <= p.fireQueuedUntil;
@@ -914,6 +924,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
         fireWeapon(id, cmd);
         if (threw) { // the knife is away: switch to the next weapon, ready to fire right away
             p.knifeBackAt = time() + kKnifeAway;
+            p.fireLocked = true;
             if (otherWeapon() >= 0) p.weapon = otherWeapon();
             p.nextFire = time();
             p.fireQueuedUntil = -1;
@@ -1174,14 +1185,17 @@ void Server::updateVisibility() {
 
 void Server::sendSnapshots() {
     updateVisibility();
-    Snapshot s;
+    Snapshot& s = snapScratch_;
     s.tick = tick_;
     s.timeMs = timeMs_;
     s.tickRate = (uint16_t)tickRate();
+    s.snapRate = (uint16_t)(tickRate() / snapEvery());
+    s.projectiles.clear();
     s.ms = ms_;
     if (editing_) s.ms.flags |= MS_EDITING | (tempEdit_ ? MS_TEMP_EDIT : 0);
     if (cfg_.ranked) s.ms.flags |= MS_RANKED;
-    std::vector<PlayerSnap> all;
+    std::vector<PlayerSnap>& all = snapPlayers_;
+    all.clear();
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
         if (!p.connected) continue;
@@ -1215,7 +1229,8 @@ void Server::sendSnapshots() {
         if (s.projectiles.size() >= 48) break;
         s.projectiles.push_back({pr.id, (uint8_t)pr.type, (uint8_t)pr.owner, pr.pos, pr.vel});
     }
-    const std::vector<ProjectileSnap> allProj = s.projectiles;
+    snapProj_ = s.projectiles;
+    const std::vector<ProjectileSnap>& allProj = snapProj_;
     uint8_t buf[kMaxPacket], world[kMaxPacket];
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
@@ -1237,7 +1252,7 @@ void Server::sendSnapshots() {
         // delta base: the newest snapshot the client confirmed, if we still remember it
         const Snapshot* base = nullptr;
         for (auto& o : p.sent)
-            if (o.tick && o.timeMs == p.ackSnapMs && tick_ - o.tick < (uint32_t)ServerPlayer::kSentRing) { base = &o; break; }
+            if (o.tick && o.timeMs == p.ackSnapMs && tick_ - o.tick < (uint32_t)(ServerPlayer::kSentRing * snapEvery())) { base = &o; break; }
         s.baseTick = base ? base->tick : 0;
         Writer ww(world, sizeof world);
         writeSnapshotWorld(ww, s, base);
@@ -1253,18 +1268,22 @@ void Server::sendSnapshots() {
         w.bytes(world, ww.size());
         // Reliable events fill whatever room is left.
         int room = kMaxPacket - w.size() - 1;
+        // An event goes out at once, then again only after a round trip without an ack (not every snapshot).
         events_.clear();
+        float resend = std::max(0.03f, p.ping * 0.001f + 0.01f);
         for (auto& e : p.events) {
+            if (e.sentAt >= 0 && time() - e.sentAt < resend) continue;
             int sz = 10 + (int)e.text.size();
             if (sz > room || events_.size() >= 16) break;
             room -= sz;
+            e.sentAt = time();
             events_.push_back(e);
         }
         writeSnapshotEvents(w, events_);
         snapBytes_ += w.size(); snapCount_++;
         if (!sock_.send(p.addr, buf, w.size())) windowSendFail_++;
         // remember exactly what we sent (world part) as a future delta base
-        Snapshot& keep = p.sent[tick_ % ServerPlayer::kSentRing];
+        Snapshot& keep = p.sent[(tick_ / snapEvery()) % ServerPlayer::kSentRing];
         keep.tick = tick_; keep.timeMs = timeMs_; keep.ms = s.ms;
         keep.players = s.players; keep.projectiles = s.projectiles;
     }
