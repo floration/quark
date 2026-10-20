@@ -22,6 +22,8 @@ constexpr float kHookAccel = 38.0f;     // pull acceleration toward the anchor (
 constexpr float kHookMaxSpeed = 24.0f;
 constexpr float kHookGravityScale = 0.5f;
 constexpr float kHookRelease = 1.2f;    // auto-release this close to the anchor
+constexpr float kLadderSpeed = 4.5f;    // climbing speed
+constexpr float kLadderSide = 3.0f;     // sideways speed on a ladder
 }
 
 AABB playerBox(const Vec3& f, bool crouched) {
@@ -84,7 +86,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     // Dash: one burst in the movement direction (or forward), on a cooldown.
     s.dashCooldown = std::max(0.0f, s.dashCooldown - dt);
     s.hookCooldown = std::max(0.0f, s.hookCooldown - dt);
-    bool dashHeld = (cmd.buttons & BTN_DASH) != 0 && !grappleOnly;
+    bool dashHeld = (cmd.buttons & BTN_DASH) != 0 && !grappleOnly && !(s.mods & MOVE_RUN_ONLY);
     if (dashHeld && !(s.flags & MF_DASHHELD) && s.dashCooldown <= 0 && !frozen) {
         Vec3 d = wishLen > 0 ? wishDir : fwd;
         float h = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
@@ -112,7 +114,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     // Grapple: hold to fire, hold to be pulled; momentum is kept. While held it keeps trying every tick
     // until it catches something (sweep your aim across a thin bar and it grabs it), also waiting out the
     // cooldown; one grab per press (MF_HOOKHELD: this press already grabbed), release to fire again.
-    bool hookHeld = (cmd.buttons & BTN_GRAPPLE) != 0;
+    bool hookHeld = (cmd.buttons & BTN_GRAPPLE) != 0 && !(s.mods & MOVE_RUN_ONLY);
     bool wasHooked = (s.flags & MF_HOOKED) != 0;
     if (!hookHeld) s.flags &= ~MF_HOOKHELD;
     if (hookHeld && !(s.flags & MF_HOOKHELD) && !(s.flags & MF_HOOKED) && !frozen && s.hookCooldown <= 0) {
@@ -141,7 +143,19 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     }
     if (wasHooked && !(s.flags & MF_HOOKED)) s.hookCooldown = kHookCooldown;
 
-    if (onGround) {
+    // Ladders: inside a ladder volume, moving climbs (look down to climb down), no input holds you there,
+    // a fresh jump kicks you off backwards. No gravity while on it.
+    bool onLadder = !hooked && !dashing && !frozen && map.onLadder(playerBox(s.pos, crouched));
+    if (onLadder) {
+        bool jumpPress = jumpHeld && !(s.flags & MF_JUMPHELD);
+        if (jumpPress) {
+            s.vel = fwd * -4.0f + Vec3(0, kJumpSpeed * 0.7f, 0);
+        } else {
+            float climb = std::min(wishLen, 1.0f) * kLadderSpeed * (cmd.pitch < -0.45f ? -1.0f : 1.0f);
+            s.vel = {wishDir.x * std::min(wishSpeed, kLadderSide), wishLen > 0 ? climb : 0.0f, wishDir.z * std::min(wishSpeed, kLadderSide)};
+        }
+        onGround = false;
+    } else if (onGround) {
         float sp = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
         if (sp > 0) {
             float drop = std::max(sp, kStopSpeed) * kFriction * dt;
@@ -152,7 +166,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         accelerate(s.vel, wishDir, wishSpeed, kGroundAccel, dt);
         s.vel.y = 0;
     } else {
-        if (!dashing) {
+        if (!dashing && !onLadder) {
             accelerate(s.vel, wishDir, std::min(wishSpeed, kAirSpeedCap), kAirAccel * 10.0f, dt);
             // Air control: bend horizontal momentum toward the held direction without changing speed.
             float h = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);

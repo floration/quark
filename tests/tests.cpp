@@ -155,6 +155,7 @@ static void testAllMaps() {
         for (auto& s : m.bombSites) goals.push_back(s.center());
         if (m.payloadPath.size() >= 2) { goals.push_back(m.payloadPath.front()); goals.push_back(m.payloadPath.back()); }
         for (auto& c : m.checkpoints) goals.push_back(c.center());
+        if (m.preferredMode == MODE_HIDE || m.preferredMode == MODE_TAG) for (auto& sp2 : m.spawns) goals.push_back(sp2.pos); // every spawn reaches every other
         int unreachable = 0;
         for (auto& sp : m.spawns)
             for (auto& gl : goals) {
@@ -825,6 +826,72 @@ static void testBotAim(uint16_t& port) {
 
 // Alt-fires: thrown knife hits at range, shotgun ricochets hit someone behind you (off the wall in front),
 // scoped rifle fires at half rate.
+// Hide and seek and tag: one seeker / "it" with a knife, run-and-jump only, the seeker waits out the
+// hiders' head start, one stab finds a hider (tag: passes "it" on), time up eliminates "it" in tag.
+static void testItModes(uint16_t port) {
+    printf("hide and seek, tag\n");
+    for (int mode : {MODE_HIDE, MODE_TAG}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.autoStart = false; cfg.map = "hamlet"; cfg.mode = mode; cfg.port = port++;
+        s.setLog([](const std::string&) {});
+        if (!s.start(cfg)) { g_fail++; continue; }
+        NetClient c[3];
+        std::vector<NetClient*> cls;
+        for (int i = 0; i < 3; i++) { c[i].connect("127.0.0.1:" + std::to_string(cfg.port), "p" + std::to_string(i)); cls.push_back(&c[i]); }
+        pump(s, cls, 1.5, idle);
+        s.command("forcestart");
+        pump(s, cls, 0.3, idle);
+        int it = -1, n = 0;
+        for (int i = 0; i < 3; i++) if (s.players_[c[i].clientId()].it) { it = c[i].clientId(); n++; }
+        CHECK(n == 1);
+        if (it < 0) { s.stop(); continue; }
+        auto& seeker = s.players_[it];
+        CHECK(seeker.weapon == WPN_KNIFE && (seeker.move.mods & MOVE_RUN_ONLY));
+        int h1 = c[0].clientId() == it ? c[1].clientId() : c[0].clientId();
+        int h2 = 0; for (int i = 0; i < 3; i++) if (c[i].clientId() != it && c[i].clientId() != h1) h2 = c[i].clientId();
+        if (mode == MODE_HIDE) {                       // head start: the seeker can't move, hiders can
+            CHECK(s.ms_.phase == PHASE_FREEZE);
+            Vec3 p0 = seeker.move.pos, q0 = s.players_[h1].move.pos;
+            pump(s, cls, 0.5, [](int) { UserCmd u; u.forward = 127; return u; });
+            CHECK(length(seeker.move.pos - p0) < 0.05f && length(s.players_[h1].move.pos - q0) > 1.0f);
+        }
+        s.phaseEnd_ = s.time();                        // skip to the live round
+        pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.phase == PHASE_LIVE);
+        auto stab = [&](int from, int to) {            // stand 1 m apart, the attacker facing the victim
+            for (int k = 0; k < 8; k++) {
+                s.players_[from].move.pos = {0, 0, 6}; s.players_[from].move.vel = {};
+                s.players_[to].move.pos = {0, 0, 5}; s.players_[to].move.vel = {};
+                pump(s, cls, 0.05, [&](int i) { UserCmd u; u.yaw = 0; u.pitch = -0.3f; if (cls[i]->clientId() == from) u.buttons = BTN_FIRE; return u; });
+            }
+        };
+        stab(h1, it);                                  // hiders have nothing to hit with
+        CHECK(s.players_[it].alive && s.players_[it].it);
+        stab(it, h1);
+        if (mode == MODE_HIDE) {
+            CHECK(!s.players_[h1].alive);              // found with one stab
+            s.players_[it].itFreezeUntil = 0;
+            stab(it, h2);
+            pump(s, cls, 0.2, idle);
+            CHECK(s.ms_.phase == PHASE_ROUND_END && s.players_[it].score >= 3);
+        } else {
+            CHECK(s.players_[h1].it && !s.players_[it].it && s.players_[h1].alive);   // tagged: "it" moved on
+            CHECK(rulesFrozen(s, h1));                 // the new "it" waits a moment
+            s.phaseEnd_ = s.time();                    // time's up: h1 is out
+            pump(s, cls, 0.2, idle);
+            CHECK(s.players_[h1].out && s.ms_.phase == PHASE_ROUND_END);
+            s.phaseEnd_ = s.time(); pump(s, cls, 0.2, idle);           // next round: two left
+            int it2 = -1; for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].it) it2 = i;
+            CHECK(it2 >= 0 && it2 != h1 && !s.players_[h1].alive);
+            s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);           // freeze over
+            s.phaseEnd_ = s.time(); pump(s, cls, 0.2, idle);           // time's up again: one left wins
+            CHECK(s.ms_.phase == PHASE_MATCH_END);
+        }
+        s.stop();
+    }
+}
+
 // Rocket alt-fire: a lob at half speed that falls 3x faster.
 // "Reset maps": every shipped map is written back from the copy built into the game.
 static void testResetMaps() {
@@ -1489,8 +1556,8 @@ static void testBots(uint16_t& port) {
         s.stop();
     }
     // every mode with bots on both sides: no crashes, things happen
-    const char* maps[MODE_COUNT] = {"bastion", "bastion", "foundry", "bastion", "bastion", "bastion", "bastion", "crucible", "crucible", "crucible"};
-    static_assert(MODE_COUNT == 10, "add the new mode's map here");
+    const char* maps[MODE_COUNT] = {"bastion", "bastion", "foundry", "bastion", "bastion", "bastion", "bastion", "crucible", "crucible", "crucible", "hamlet", "hamlet"};
+    static_assert(MODE_COUNT == 12, "add the new mode's map here");
     for (int mode = 0; mode < MODE_COUNT; mode++) {
         Server s;
         ServerConfig cfg;
@@ -1518,6 +1585,7 @@ static void playtestMaps(uint16_t port, double seconds) {
         Map m;
         if (!m.load(name)) continue;
         int mode = m.preferredMode >= 0 ? m.preferredMode : MODE_FFA;
+        if (getenv("PT_MODE")) mode = modeFromName(getenv("PT_MODE"));
         Server s;
         ServerConfig cfg;
         cfg.map = name; cfg.mode = mode; cfg.port = port++; cfg.autoStart = true;
@@ -1544,6 +1612,7 @@ static void playtestMaps(uint16_t port, double seconds) {
         } else pump(s, none, seconds, idle);
         int kills = 0, deaths = 0;
         for (auto& p : s.players_) if (p.connected) { kills += p.kills; deaths += p.deaths; }
+        if (isItMode(mode)) { int out = 0; for (auto& p : s.players_) out += p.connected && p.out; printf("  round %d phase %d, eliminated %d\n", s.ms_.round, s.ms_.phase, out); }
         printf("  %-10s %-8s kills %3d  deaths %3d  (falls/self %d)  score %d-%d  payload %.0f/%.0f  cp %d\n", name.c_str(), modeName(mode), kills, deaths,
                deaths - kills, s.ms_.scoreA, s.ms_.scoreB, s.ms_.payloadDist, s.ms_.payloadLen, [&] { int b = 0; for (auto& p : s.players_) if (p.connected) b = std::max(b, (int)p.checkpoint); return b; }());
         s.stop();
@@ -1559,6 +1628,7 @@ int main(int argc, char** argv) {
     setTimeScale(kTestTimeScale);
     g_serverRateCheck = false;
     if (argc >= 2 && std::string(argv[1]) == "playtest") { playtestMaps(29400, argc > 2 ? atof(argv[2]) : 40); return 0; }
+    if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(29450); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = 29500; testBotAim(p); return g_fail ? 1 : 0; }
     testMovement();
     testMaps();
@@ -1585,6 +1655,7 @@ int main(int argc, char** argv) {
     testSemiAuto(port++);
     testMapVote(port++);
     testResetMaps();
+    testItModes(port); port += 2;
     testRocketLob(port++);
     testAltFires(port); port += 3;
     testMapDownload(port++);

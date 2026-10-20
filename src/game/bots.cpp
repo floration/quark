@@ -42,6 +42,7 @@ bool isEnemy(const Server& s, int a, int b) {
     if (a == b) return false;
     const auto& pb = s.players_[b];
     if (!pb.connected || !pb.alive || pb.team == TEAM_SPECTATOR) return false;
+    if (isItMode(s.ms_.mode)) return s.players_[a].it && !pb.it; // only "it" hunts; everyone else runs
     if (!modeIsTeamBased(s.ms_.mode)) return true;
     return s.players_[a].team != pb.team;
 }
@@ -83,6 +84,39 @@ Vec3 objective(Server& s, int id, BotBrain& b) {
                 return site.center();
             }
             break;
+        }
+        case MODE_HIDE:
+        case MODE_TAG: {
+            if (s.nav_.nodes.empty()) break;
+            auto randomNode = [&]() { const auto& n = s.nav_.nodes[(size_t)(rnd(b) * s.nav_.nodes.size()) % s.nav_.nodes.size()];
+                                      return Vec3((n.x0 + n.x1) * 0.5f, n.y, (n.z0 + n.z1) * 0.5f); };
+            if (me.it) { // seek: wander everywhere (targets are chased by the fight code once seen)
+                if (s.time() > b.goalUntil || length(b.goal - me.move.pos) < 2.0f) { b.goal = randomNode(); b.goalUntil = s.time() + 12.0f; }
+                return b.goal;
+            }
+            int it = -1;
+            for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].alive && s.players_[i].it) it = i;
+            Vec3 eye = me.move.pos + Vec3(0, kEyeHeight, 0);
+            bool threat = it >= 0 && length(s.players_[it].move.pos - me.move.pos) < (m.mode == MODE_TAG ? 30.0f : 18.0f) &&
+                          canSee(s, eye, s.players_[it].move.pos + Vec3(0, 1.1f, 0));
+            if (threat && s.time() > b.fleeUntil) { // run: the reachable-looking spot farthest from it
+                Vec3 itPos = s.players_[it].move.pos, best = b.goal;
+                float bestScore = -1e9f;
+                for (int k = 0; k < 12; k++) {
+                    Vec3 c = randomNode();
+                    float sc = length(c - itPos) - 0.5f * length(c - me.move.pos);
+                    if (sc > bestScore) { bestScore = sc; best = c; }
+                }
+                b.goal = best; b.goalUntil = s.time() + 6.0f; b.fleeUntil = s.time() + 1.5f;
+                return b.goal;
+            }
+            if (m.mode == MODE_HIDE && !threat) { // pick a hiding spot once and stay put
+                if (s.time() > b.goalUntil) { b.goal = randomNode(); b.goalUntil = s.time() + 90.0f; }
+                if (length(b.goal - me.move.pos) < 1.2f) return me.move.pos;
+                return b.goal;
+            }
+            if (s.time() > b.goalUntil || length(b.goal - me.move.pos) < 2.0f) { b.goal = randomNode(); b.goalUntil = s.time() + 10.0f; }
+            return b.goal;
         }
         default: break;
     }
@@ -143,6 +177,22 @@ void NavGraph::build(const Map& m) {
             float cx = ((a.x0 + a.x1) - (b.x0 + b.x1)) * 0.5f, cz = ((a.z0 + a.z1) - (b.z0 + b.z1)) * 0.5f;
             links[i].push_back({(int)j, std::sqrt(cx * cx + cz * cz) + gap * 2 + std::max(up, 0.0f) * 2});
         }
+    // ladders: from the surface at the foot of each ladder up to the surfaces at its top
+    ladderLinks.clear();
+    for (const AABB& l : m.ladders) {
+        Vec3 c = l.center();
+        int bottom = nodeAt({c.x, l.mn.y + 0.05f, c.z});
+        if (bottom < 0) continue;
+        for (size_t j = 0; j < nodes.size(); j++) {
+            const Node& n = nodes[j];
+            if (std::fabs(n.y - l.mx.y) > 0.8f || (int)j == bottom) continue;
+            float gx = std::max(0.0f, std::max(l.mn.x, n.x0) - std::min(l.mx.x, n.x1));
+            float gz = std::max(0.0f, std::max(l.mn.z, n.z0) - std::min(l.mx.z, n.z1));
+            if (gx * gx + gz * gz > 1.5f * 1.5f) continue;
+            links[bottom].push_back({(int)j, (l.mx.y - l.mn.y) * 2 + 2});
+            ladderLinks.push_back({{bottom, (int)j}, Vec3(c.x, l.mn.y, c.z)});
+        }
+    }
 }
 
 int NavGraph::nodeAt(const Vec3& p) const {
@@ -183,7 +233,17 @@ Vec3 NavGraph::nextWaypoint(const Vec3& from, const Vec3& to) const {
     for (auto it = path.rbegin(); it != path.rend(); ++it) {
         const Node& n = nodes[*it];
         const Node& pn = nodes[prevNode];
+        bool ladder = false;
+        for (auto& ll : ladderLinks)
+            if (ll.first.first == prevNode && ll.first.second == *it) { // climb: walk into the ladder
+                float dx = ll.second.x - from.x, dz = ll.second.z - from.z;
+                if (dx * dx + dz * dz > 0.36f) return ll.second;
+                ladder = true;
+            }
         prevNode = *it;
+        if (ladder) { // on it: keep pushing toward the surface at the top (that climbs)
+            return {(n.x0 + n.x1) * 0.5f, n.y, (n.z0 + n.z1) * 0.5f};
+        }
         auto span = [](float a0, float a1, float b0, float b1, float& lo, float& hi) {
             lo = std::max(a0, b0); hi = std::min(a1, b1);
             if (lo > hi) { lo = hi = (a1 < b0 ? b0 : b1); return; }        // no overlap: the near edge of the next surface
@@ -278,7 +338,7 @@ UserCmd botThink(Server& s, int id) {
         int w = b.forceWeapon >= 0 ? b.forceWeapon : pickWeapon(s, sp, dist);
         if (w == WPN_KNIFE && now < me.knifeBackAt && me.weapon != WPN_KNIFE) w = me.weapon; // thrown it: use what we switched to
         const WeaponDef& wd = weaponDef(w);
-        bool throwKnife = w == WPN_KNIFE && dist > wd.range + 0.5f && dist < 18.0f && sp.lead; // out of reach: throw it
+        bool throwKnife = w == WPN_KNIFE && dist > wd.range + 0.5f && dist < 18.0f && sp.lead && !isItMode(s.ms_.mode); // out of reach: throw it
         aimAt -= t.move.vel * sp.trackLag; // reacts to movement late: trails strafing targets
         if (throwKnife) {
             float tf = dist / kKnifeThrowSpeed;

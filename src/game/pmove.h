@@ -32,6 +32,7 @@ enum : uint8_t {
     MOVE_GRAPPLE_ONLY = 1, // no walking, jumping or dashing: the grapple is the only way to move
     MOVE_QUICK_DASH = 2,   // dash recharges 3x faster
     MOVE_LOW_GRAVITY = 4,  // 40% gravity
+    MOVE_RUN_ONLY = 8,     // no dash, no grapple: run and jump (and climb ladders) only
 };
 enum : uint8_t {
     MF_ONGROUND = 1, MF_CROUCHED = 2, MF_JUMPHELD = 4, MF_FROZEN = 8,

@@ -28,6 +28,7 @@ struct Map {
     std::vector<AABB> bombSites;
     bool hasHill = false;
     AABB hill;
+    std::vector<AABB> ladders;        // "ladder x0 y0 z0 x1 y1 z1": climbable volumes (stand in it and move)
     std::vector<AABB> checkpoints;    // race; the last one is the finish line
     std::vector<Vec3> payloadPath;    // ordered waypoints
     Vec3 sunDir = normalize(Vec3(0.4f, 1.0f, 0.25f)); // points toward the sun
@@ -45,6 +46,7 @@ struct Map {
     std::string source;               // the .qmap text this was parsed from (sent to clients that lack it)
 
     bool load(const std::string& name, std::string* err = nullptr);
+    bool onLadder(const AABB& player) const { for (auto& l : ladders) if (player.overlaps(l)) return true; return false; }
     bool parse(const std::string& text, std::string* err = nullptr);
     std::string serialize() const;    // back to .qmap text (what the editor saves)
     void rebuild();                   // after editing brushes in place: bounds, wallbang flag, grid

@@ -144,6 +144,45 @@ class M:
                 for o in (-0.7, 0.7): s.box(x0, -0.05, az + o - 0.08, x1, 0, az + o + 0.08, mat="metal")
                 x = x0 + 0.4
                 while x < x1 - 0.3: s.box(x - 0.12, -0.06, az - 1.0, x + 0.12, -0.01, az + 1.0, accent=True); x += 1.4
+    def ladder(s, x, z, y0, y1, face, width=0.9):
+        """a climbable ladder against a wall at (x, z) from y0 to y1; face = direction the climber faces
+        ('n' = -z, 's' = +z, 'w' = -x, 'e' = +x). Rails and rungs to see, a volume to climb in (it reaches a
+        little above y1 so you step off onto the top)."""
+        w = width / 2
+        d = {"n": (0, -1), "s": (0, 1), "w": (-1, 0), "e": (1, 0)}[face]
+        # the wall is in front of the climber, so the ladder sits on the climber's side of (x, z)
+        ox, oz = -d[0] * 0.12, -d[1] * 0.12
+        if d[0] == 0:
+            for sx in (-w, w): s.metal(x + sx - 0.05, y0, z + oz - 0.05, x + sx + 0.05, y1 + 0.9, z + oz + 0.05)
+            y = y0 + 0.35
+            while y < y1: s.box(x - w, y, z + oz - 0.03, x + w, y + 0.06, z + oz + 0.03, accent=True); y += 0.4
+            z0, z1 = sorted((z, z - d[1] * 0.7))
+            s.raw(f"ladder {x - w:g} {y0:g} {z0:g} {x + w:g} {y1 + 0.3:g} {z1:g}")
+        else:
+            for sz in (-w, w): s.metal(x + ox - 0.05, y0, z + sz - 0.05, x + ox + 0.05, y1 + 0.9, z + sz + 0.05)
+            y = y0 + 0.35
+            while y < y1: s.box(x + ox - 0.03, y, z - w, x + ox + 0.03, y + 0.06, z + w, accent=True); y += 0.4
+            x0, x1 = sorted((x, x - d[0] * 0.7))
+            s.raw(f"ladder {x0:g} {y0:g} {z - w:g} {x1:g} {y1 + 0.3:g} {z + w:g}")
+    def tree(s, x, z, size=1.0):
+        """trunk and a stepped canopy"""
+        s.box(x - 0.3 * size, 0, z - 0.3 * size, x + 0.3 * size, 2.6 * size, z + 0.3 * size, mat="metal")
+        for k, (r, y0, y1) in enumerate(((1.8, 2.2, 3.6), (1.4, 3.6, 4.8), (0.8, 4.8, 5.8))):
+            s.box(x - r * size, y0 * size, z - r * size, x + r * size, y1 * size, z + r * size, accent=(k % 2 == 0))
+    def house(s, x0, z0, x1, z1, h, doors, roof="flat", ladder=None, windows=True):
+        """a house: walls with doors / windows and a lamp inside; a flat roof (walkable, with a parapet) or a
+        pitched one (stepped, not walkable); ladder = (x, z, face) up the outside onto a flat roof"""
+        s.building(x0, z0, x1, z1, h, doors, roof=True, windows=windows)
+        if roof == "flat":
+            for (a0, b0, a1, b1) in ((x0 - 0.3, z0 - 0.3, x1 + 0.3, z0), (x0 - 0.3, z1, x1 + 0.3, z1 + 0.3), (x0 - 0.3, z0, x0, z1), (x1, z0, x1 + 0.3, z1)):
+                s.box(a0, h + 0.35, b0, a1, h + 0.9, b1, accent=True)
+        else:
+            ax = (x1 - x0) >= (z1 - z0)
+            for k in range(1, 4):
+                i = k * 0.55 * (min(x1 - x0, z1 - z0) / 2) / 3
+                if ax: s.box(x0 - 0.3, h + 0.35 * k, z0 - 0.3 + i, x1 + 0.3, h + 0.35 * (k + 1), z1 + 0.3 - i, accent=True)
+                else: s.box(x0 - 0.3 + i, h + 0.35 * k, z0 - 0.3, x1 + 0.3 - i, h + 0.35 * (k + 1), z1 + 0.3, accent=True)
+        if ladder: s.ladder(ladder[0], ladder[1], 0, h + 0.35, ladder[2])
     def container(s, x0, z0, x1, z1, h=2.6, mirror=False):
         """shipping container: a box with a ribbed accent band and a lid"""
         s.box(x0, 0, z0, x1, h, z1, mat="metal", mirror=mirror)
@@ -446,6 +485,7 @@ PALETTES = {
     "furnace":   ((0.46, 0.40, 0.38), (0.36, 0.14, 0.10), (0.20, 0.19, 0.20), (1.00, 0.28, 0.08), (0.50, 0.38, 0.34)),  # blood red heat
     "gantry":    ((0.56, 0.58, 0.62), (0.40, 0.34, 0.12), (0.24, 0.26, 0.30), (0.95, 0.90, 0.30), (0.58, 0.64, 0.72)),  # steel + yellow
     "anvil":     ((0.62, 0.62, 0.66), (0.30, 0.22, 0.40), (0.26, 0.26, 0.30), (0.75, 0.40, 1.00), (0.64, 0.64, 0.74)),  # neutral, violet
+    "hamlet":    ((0.74, 0.68, 0.58), (0.46, 0.24, 0.17), (0.32, 0.28, 0.25), (1.00, 0.78, 0.42), (0.70, 0.78, 0.90)),  # plaster, clay roofs, lanterns
     "viaduct":   ((0.62, 0.58, 0.52), (0.30, 0.34, 0.40), (0.26, 0.27, 0.30), (1.00, 0.75, 0.30), (0.72, 0.76, 0.84)),  # stone viaduct, amber markers
 }
 
@@ -941,4 +981,102 @@ m.metal(-8, 1, -79, -7.4, 7, -78.4); m.metal(7.4, 1, -79, 8, 7, -78.4)
 m.raw("checkpoint -6 1 -79 6 5 -72")
 for x in (-3, 0, 3): m.spawn("race", x, 0, 74, 0)
 m.save("viaduct")
+
+# ======================================================================================================
+# HAMLET: hide and seek / tag. A village in a valley: streets around a green with a well, a church with a
+# bell tower you climb by ladder, a dozen houses (flat roofs reached by ladders, or pitched), a barn with a
+# hayloft, a windmill on a terraced hill, a water tower, a pond, a creek with footbridges, an orchard,
+# hedges, haystacks and carts. Every building has a way in; plenty of places to hide and to be found.
+m = M("Hamlet", "hide", sun=(0.45, 1.0, 0.3))
+m.raw("modes hide tag ffa")
+m.room(56, 56, 16, sunken=[(-46, 26, -30, 42, 1.0, "accent"), (-56, -6, -20, -2, 1.3, "metal")], style="yard", skyline="mountains")
+# the green and the well (centrepiece of the village)
+m.box(-12, -0.05, -12, 12, 0, 12, accent=True)
+for (a, b, c, d) in ((-1.6, -1.6, 1.6, -1.2), (-1.6, 1.2, 1.6, 1.6), (-1.6, -1.2, -1.2, 1.2), (1.2, -1.2, 1.6, 1.2)): m.box(a, 0, b, c, 1.0, d)
+m.glow(-1.2, 0.2, -1.2, 1.2, 0.3, 1.2)
+for (x, z) in ((-1.4, -1.4), (1.4, 1.4)): m.metal(x - 0.1, 1.0, z - 0.1, x + 0.1, 3.0, z + 0.1)
+m.box(-2.0, 3.0, -2.0, 2.0, 3.3, 2.0, accent=True); m.glow(-0.15, 2.4, -0.15, 0.15, 2.9, 0.15)
+for (x, z) in ((-8, -8), (8, -8), (-8, 8), (8, 8)): m.tree(x, z, 1.1)
+m.box(-6, 0, 5, -3, 0.6, 5.6); m.box(3, 0, -5.6, 6, 0.6, -5)                  # benches
+# the church (north of the green) with its bell tower: ladder inside up to the belfry
+m.building(-10, -34, 6, -20, 7, [("s", -2, 3.0), ("w", -27, 2.4)], windows=True)
+for k in range(1, 5): m.box(-10.3 + k * 0.9, 7 + 0.4 * k, -34.3, 6.3 - k * 0.9, 7.4 + 0.4 * k, -19.7, accent=True)
+m.doorwall(6, -26, 12, -25.6, 16, [(9, 2.4, 2.6)], axis="x"); m.doorwall(6, -20.4, 12, -20, 16, [], axis="x")
+m.doorwall(6, -26, 6.4, -20, 16, [], axis="z"); m.doorwall(11.6, -26, 12, -20, 16, [], axis="z")
+for (a, b, c, d) in ((6.4, -25.6, 11.6, -24.0), (6.4, -22.4, 11.6, -20.4), (6.4, -24.0, 7.8, -22.4)):   # belfry floor (hole over the ladder)
+    m.box(a, 11.6, b, c, 12, d)
+m.ladder(11.48, -23.2, 0, 12, "e")
+for (a, b, c, d) in ((6, -26, 12, -25.6), (6, -20.4, 12, -20)): m.box(a, 12, b, c, 12.5, d)               # belfry: open arches above 12.5
+m.box(5.7, 15.4, -26.3, 12.3, 15.8, -19.7, accent=True); m.box(6.6, 15.8, -25.4, 11.4, 16.6, -20.6, accent=True)
+m.box(7.6, 16.6, -24.4, 10.4, 18.2, -21.6, accent=True); m.glow(8.8, 18.2, -23.2, 9.2, 19.6, -22.8)    # spire + light
+m.metal(8.3, 13.6, -23.7, 9.7, 15.0, -22.3)                                                          # the bell
+m.light(9, 14, -23, 6, 0.6, fixture=False)
+for z in (-31, -28, -24): m.box(-8, 0, z, -0.5, 0.5, z + 0.7); m.box(0.5, 0, z, 4, 0.5, z + 0.7)     # pews
+m.box(-3, 0, -33.5, 1, 1.2, -32.5, accent=True)                                                      # altar
+# houses: flat roofs with ladders (rooftop hiding) and pitched ones
+houses = [((-34, -36, -24, -28), 3.6, [("s", -29, 1.6)], "flat", (-23.88, -32, "w")),
+          ((-48, -24, -38, -14), 3.6, [("e", -19, 1.6)], "pitched", None),
+          ((-30, -16, -20, -8), 3.8, [("n", -25, 1.6), ("s", -25, 1.6)], "flat", (-30.12, -12, "e")),
+          ((16, -38, 26, -30), 3.6, [("s", 21, 1.6)], "pitched", None),
+          ((-46, 8, -36, 18), 3.6, [("e", 13, 1.6)], "flat", (-46.12, 13, "e")),
+          ((-26, 10, -16, 20), 4.0, [("n", -21, 1.6), ("e", 15, 1.6)], "pitched", None),
+          ((-14, 22, -4, 32), 3.6, [("n", -9, 1.6)], "flat", (-9, 32.12, "n")),
+          ((4, 24, 14, 32), 3.6, [("n", 9, 1.6), ("w", 28, 1.6)], "pitched", None),
+          ((18, 6, 28, 16), 3.8, [("w", 11, 1.6)], "flat", (28.12, 11, "w")),
+          ((32, -16, 44, -6), 3.6, [("w", -11, 1.6), ("s", 38, 1.6)], "pitched", None),
+          ((-12, 40, 0, 50), 3.6, [("n", -6, 1.6)], "flat", (0.12, 45, "w")),
+          ((18, 44, 30, 52), 3.6, [("n", 24, 1.6)], "pitched", None)]
+for (r, h, doors, roof, lad) in houses:
+    m.house(r[0], r[1], r[2], r[3], h, doors, roof=roof, ladder=lad)
+    m.box(r[0] + 1, 0, r[1] + 1, r[0] + 2.2, 0.8, r[1] + 2.2)                     # a table / chest inside
+# the barn (south-east) with a hayloft up a ladder
+m.building(30, 22, 48, 42, 8, [("w", 32, 4.0), ("n", 39, 2.4)], windows=False)
+for k in range(1, 5): m.box(29.7 + k * 1.1, 8 + 0.45 * k, 21.7, 48.3 - k * 1.1, 8.45 + 0.45 * k, 42.3, accent=True)
+m.box(38, 3.7, 22.4, 47.6, 4.0, 41.6)                                              # hayloft floor
+m.box(38, 0, 31.8, 38.3, 3.7, 34.2)                                                 # wall behind the loft ladder
+m.ladder(37.88, 33, 0, 4.0, "e")
+m.box(38, 4.0, 22.4, 38.1, 5.0, 32, accent=True); m.box(38, 4.0, 34, 38.1, 5.0, 41.6, accent=True)   # loft rail (gap at the ladder)
+for (x, z) in ((40, 25), (44, 26), (42, 38), (45, 35)): m.box(x - 1, 4.0, z - 0.7, x + 1, 5.2, z + 0.7, accent=True)   # bales up top
+for (x, z) in ((33, 26), (34, 38), (44, 30)): m.box(x - 1, 0, z - 0.7, x + 1, 1.2, z + 0.7, accent=True)                # and below
+m.light(39, 6.5, 32, 12, 0.8)
+# terraced hill with the windmill (north-east)
+for k, (a, b) in enumerate(((22, 52), (26, 48), (30, 44), (33, 41))):
+    m.box(a, 0, -b, b, 1.5 * (k + 1), -a)
+m.stairs(36, -22, 38, -20, 1.5, "z", -1)
+m.stairs(20, -38, 22, -34, 1.5, "x", 1)
+m.stairs(36, -26, 38, -22, 3.0, "z", -1, base=1.5); m.stairs(22, -38, 26, -36, 3.0, "x", 1, base=1.5)
+m.stairs(36, -30, 38, -26, 4.5, "z", -1, base=3.0)
+m.stairs(36, -33, 38, -30, 6.0, "z", -1, base=4.5)
+m.box(35, 6, -39, 39, 14, -35, accent=True)                                         # the windmill tower
+m.box(34.5, 14, -39.5, 39.5, 15, -34.5); m.box(35.5, 15, -38.5, 38.5, 16.2, -35.5)
+m.metal(36.7, 13.6, -35, 37.3, 14.2, -33.8)                                          # hub, sails
+m.box(36.85, 9, -33.8, 37.15, 18.8, -33.5, mat="metal"); m.box(32.2, 13.75, -33.8, 41.8, 14.05, -33.5, mat="metal")
+for (y0, y1) in ((14.4, 18.6), (9.2, 13.4)): m.box(36.2, y0, -33.7, 36.85, y1, -33.6, accent=True)
+for (x0, x1) in ((32.4, 36.6), (37.4, 41.6)): m.box(x0, 14.05, -33.7, x1, 14.7, -33.6, accent=True)
+# water tower (north-west) with a ladder to the walkable tank top
+for (x, z) in ((-50, -50), (-44, -50), (-50, -44), (-44, -44)): m.metal(x - 0.3, 0, z - 0.3, x + 0.3, 8, z + 0.3)
+m.box(-51, 8, -51, -43, 11, -43, accent=True); m.box(-51.3, 11, -51.3, -42.7, 11.3, -42.7)
+m.ladder(-47, -42.88, 0, 11.3, "n")
+m.metal(-51, 3.8, -50.1, -43, 4.1, -49.9); m.metal(-51, 3.8, -44.1, -43, 4.1, -43.9)
+# pond (south-west) with reeds and a jetty
+for (x, z) in ((-44, 28), (-32, 40), (-45, 39), (-31, 27)): m.metal(x - 0.06, -1, z - 0.06, x + 0.06, 0.8, z + 0.06)
+m.box(-38, -1.0, 34, -36, 0, 42)
+# creek (west) with two footbridges
+for x in (-48, -30): m.box(x - 1.2, -0.25, -6.2, x + 1.2, 0, -1.8, accent=True); m.box(x - 1.3, 0, -6.2, x - 1.2, 0.9, -1.8, accent=True); m.box(x + 1.2, 0, -6.2, x + 1.3, 0.9, -1.8, accent=True)
+# orchard (south-east of the green), hedges, haystacks, carts, fences
+for (x, z) in ((36, 4), (42, 8), (48, 4), (36, 14), (48, 14), (42, -2), (50, -18)): m.tree(x, z, 0.9)
+for (x, z) in ((-20, -44), (-8, -46), (0, -44), (-40, -2), (-26, 34), (40, 50), (48, 48), (-52, 50), (8, 52)): m.tree(x, z, 1.0)
+for (a, b, c, d) in ((-18, 4, -14, 5), (-18, -5, -14, -4), (14, -18, 15, -14), (24, 0, 34, 1), (-52, 20, -48, 21), (0, 36, 10, 37)):
+    m.box(a, 0, b, c, 1.6, d, accent=True)                                         # hedges
+for (x, z) in ((-22, 26), (12, 18), (-38, -40), (46, -48), (30, 0)): m.box(x - 1.2, 0, z - 1.2, x + 1.2, 2.2, z + 1.2, accent=True); m.box(x - 0.8, 2.2, z - 0.8, x + 0.8, 3.0, z + 0.8, accent=True)   # haystacks
+for (x, z, ax) in ((-14, -18, 1), (24, 20, 0), (-34, 4, 1)):                         # hay carts
+    w, l = (1.0, 1.8) if ax else (1.8, 1.0)
+    m.box(x - w, 0.5, z - l, x + w, 1.4, z + l, accent=True)
+    m.metal(x - 0.5 if not ax else x - w - 0.15, 0, z - 0.5 if ax else z - l - 0.15, x + 0.5 if not ax else x - w, 1.0, z + 0.5 if ax else z - l)
+for z in range(-54, 56, 4): m.box(54.2, 0, z, 54.4, 1.1, z + 0.2, accent=True)       # fence along the east wall
+for (x, z, yaw) in ((0, 14, 180), (0, -14, 0), (14, 0, 90), (-14, 0, -90), (-34, -22, 90), (-40, 0, 0), (-12, -40, 0), (20, -20, 180),
+                    (28, -44, 0), (-50, 32, 90), (-22, 42, 180), (10, 40, 180), (34, 46, 180), (50, 26, -90), (52, -12, -90), (-6, 52, 180),
+                    (24, 22, 0), (-24, 2, 90), (-48, -32, 0), (8, -46, 0)):
+    m.spawn("any", x, 3.0 if (x, z) == (28, -44) else 0, z, yaw)
+m.save("hamlet")
 print("maps written")

@@ -34,6 +34,7 @@ struct BotBrain {
     float repathAt = 0;
     uint32_t rng = 1;
     int forceWeapon = -1;      // tests: always use this weapon
+    float fleeUntil = 0;       // hide and seek / tag: committed to the current escape route until then
 };
 
 // Walkable surfaces (tops of blocks) and which ones a player can jump between.
@@ -42,6 +43,7 @@ struct NavGraph {
     struct Node { float x0, z0, x1, z1, y; };
     std::vector<Node> nodes;
     std::vector<std::vector<std::pair<int, float>>> links; // (node, cost)
+    std::vector<std::pair<std::pair<int, int>, Vec3>> ladderLinks; // (from node, to node) climbed at this point
     uint32_t mapCrc = 0;
     void build(const Map& m);
     int nodeAt(const Vec3& p) const;                       // surface the point stands on (or -1)

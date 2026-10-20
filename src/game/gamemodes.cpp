@@ -44,6 +44,8 @@ float roundTime(const Server& s) {
         case MODE_PAYLOAD: return 240.0f;
         case MODE_NPAYLOAD: return 300.0f;
         case MODE_FFA: return s.cfg_.timeLimit > 0 ? (float)s.cfg_.timeLimit : 600.0f;
+        case MODE_HIDE: return kHideRoundTime;
+        case MODE_TAG: return kTagRoundTime;
         default: return 0.0f; // no limit
     }
 }
@@ -71,6 +73,95 @@ void enterMatchEnd(Server& s, const std::string& text, int winner) {
         else { GameEvent r; r.type = EV_RANKED; r.text = res; s.broadcastEvent(r); s.glog(LOG_SIMPLE, "ranked %s", res.c_str()); }
     }
     setPhase(s, PHASE_MATCH_END, kMatchEndTime);
+}
+
+// ---- hide and seek / tag ----
+bool inPlay(const Server& s, int i) { const auto& p = s.players_[i]; return p.connected && p.team != TEAM_SPECTATOR && !(s.ms_.mode == MODE_TAG && p.out); }
+int playersInPlay(const Server& s) { int n = 0; for (int i = 0; i < kMaxPlayers; i++) n += inPlay(s, i); return n; }
+
+// Hide and seek: everyone takes a turn seeking, in order. Tag: a random player still in.
+void pickIt(Server& s) {
+    for (auto& p : s.players_) p.it = false;
+    std::vector<int> c;
+    for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i)) c.push_back(i);
+    if (c.empty()) return;
+    int pick = c[rand() % c.size()];
+    if (s.ms_.mode == MODE_HIDE) {
+        pick = c[0];
+        for (int i : c) if (i > s.lastIt_) { pick = i; break; }
+    }
+    s.lastIt_ = pick;
+    s.players_[pick].it = true;
+}
+
+// A round result with no team score (the scores are per player in these modes).
+void endRoundText(Server& s, const std::string& text) {
+    GameEvent e;
+    e.type = EV_ROUND_WIN;
+    e.a = 255;
+    e.text = text;
+    s.broadcastEvent(e);
+    s.log(text);
+    s.glog(LOG_SIMPLE, "round %d end: %s", s.ms_.round, text.c_str());
+    setPhase(s, PHASE_ROUND_END, kRoundEndTime);
+}
+
+int bestScorer(const Server& s) {
+    int best = -1;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const auto& p = s.players_[i];
+        if (!p.connected || p.team == TEAM_SPECTATOR) continue;
+        if (best < 0 || p.score > s.players_[best].score) best = i;
+    }
+    return best;
+}
+
+int hideRounds(const Server& s) { return std::max(3, std::min(6, playersInPlay(s))); } // everyone seeks once (3..6 rounds)
+
+void tickHide(Server& s) {
+    ModeState& m = s.ms_;
+    m.timeLeft = std::max(0.0f, s.phaseEnd_ - s.time());
+    int seeker = -1, hiding = 0;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (!inPlay(s, i)) continue;
+        if (s.players_[i].it) seeker = i;
+        else if (s.players_[i].alive) hiding++;
+    }
+    if (seeker < 0) { endRoundText(s, "the seeker left"); return; }
+    if (hiding == 0) {
+        s.players_[seeker].score += 3;
+        endRoundText(s, s.players_[seeker].name + " found everyone");
+        return;
+    }
+    if (s.time() >= s.phaseEnd_) {
+        std::string who;
+        for (int i = 0; i < kMaxPlayers; i++)
+            if (inPlay(s, i) && !s.players_[i].it && s.players_[i].alive) { s.players_[i].score += 2; who += (who.empty() ? "" : ", ") + s.players_[i].name; }
+        endRoundText(s, "the hiders win - " + who + " stayed hidden");
+    }
+}
+
+void tickTag(Server& s) {
+    ModeState& m = s.ms_;
+    m.timeLeft = std::max(0.0f, s.phaseEnd_ - s.time());
+    int it = -1;
+    for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i) && s.players_[i].it) it = i;
+    if (it < 0) { pickIt(s); return; }          // "it" left: someone else is it now
+    if (s.time() < s.phaseEnd_) return;
+    auto& p = s.players_[it];                     // time's up: whoever is it is out
+    p.out = true;
+    p.it = false;
+    p.alive = false;
+    p.respawnAt = -1;
+    int left = playersInPlay(s);
+    for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i)) s.players_[i].score += 1; // survived the round
+    if (left <= 1) {
+        int w = -1;
+        for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i)) w = i;
+        enterMatchEnd(s, w >= 0 ? s.players_[w].name + " wins tag" : "nobody left", w);
+        return;
+    }
+    endRoundText(s, p.name + " was it - out! " + std::to_string(left) + " left");
 }
 
 void startRound(Server& s) {
@@ -107,11 +198,15 @@ void startRound(Server& s) {
         p.finished = false;
         p.checkpoint = 0;
         p.respawnAt = -1;
+        p.it = false;
+        p.itFreezeUntil = 0;
+        if (m.mode == MODE_HIDE) p.out = false; // tag: eliminations last the whole match
     }
+    if (isItMode(m.mode)) pickIt(s);
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = s.players_[i];
         if (!p.connected) continue;
-        if (p.team == TEAM_SPECTATOR) { p.alive = false; continue; }
+        if (p.team == TEAM_SPECTATOR || (m.mode == MODE_TAG && p.out)) { p.alive = false; continue; }
         s.spawnPlayer(i);
     }
     // Remove leftover projectiles between rounds.
@@ -126,10 +221,15 @@ void startRound(Server& s) {
             m.bombState = BOMB_CARRIED;
         }
     }
-    s.roundStart_ = s.time() + kFreezeTime;
+    float freeze = m.mode == MODE_HIDE ? kHideTime : kFreezeTime; // hide and seek: the hiders' head start
+    s.roundStart_ = s.time() + freeze;
     s.lastProgress_ = s.roundStart_;
     s.payloadIdleSince_ = s.roundStart_;
-    setPhase(s, PHASE_FREEZE, kFreezeTime);
+    setPhase(s, PHASE_FREEZE, freeze);
+    if (m.mode == MODE_HIDE)
+        for (auto& p : s.players_) if (p.connected && p.it) s.message(p.name + " is seeking - hide! (" + std::to_string((int)kHideTime) + " s)");
+    if (m.mode == MODE_TAG)
+        for (auto& p : s.players_) if (p.connected && p.it) s.message(p.name + " is it - run!");
 }
 
 // ---- tourney: single elimination, one 1v1 at a time, everyone else spectates ----
@@ -207,7 +307,8 @@ void startMatch(Server& s) {
     s.kothPoints_[0] = s.kothPoints_[1] = 0;
     s.bestProgress_[0] = s.bestProgress_[1] = 0;
     s.completeTime_[0] = s.completeTime_[1] = 0;
-    for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; }
+    for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; p.out = false; p.it = false; }
+    s.lastIt_ = -1;
     if (m.mode == MODE_TOURNEY) {
         tourneyBegin(s);
         s.message("tourney started - " + std::to_string(s.tourney_.rounds[0].size()) + " slot bracket");
@@ -303,6 +404,14 @@ bool checkMatchOver(Server& s) {
                     return true;
                 }
             return false;
+        case MODE_HIDE:
+            if (m.round < hideRounds(s)) return false;
+            { int w = bestScorer(s); enterMatchEnd(s, w >= 0 ? s.players_[w].name + " wins the match" : "match over", w); }
+            return true;
+        case MODE_TAG:
+            if (playersInPlay(s) > 1) return false;
+            { int w = -1; for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i)) w = i; enterMatchEnd(s, w >= 0 ? s.players_[w].name + " wins tag" : "nobody left", w); }
+            return true;
         case MODE_PAYLOAD: {
             if (m.round < 2 || m.round % 2 != 0) return false;
             int w = payloadWinner(s);
@@ -318,6 +427,8 @@ bool enoughPlayers(const Server& s) {
     switch (s.ms_.mode) {
         case MODE_RACE: return s.teamCount(TEAM_A) >= 1;
         case MODE_FFA:
+        case MODE_HIDE:
+        case MODE_TAG:
         case MODE_TOURNEY: return s.teamCount(TEAM_A) >= 2;
         default: return s.teamCount(TEAM_A) >= 1 && s.teamCount(TEAM_B) >= 1;
     }
@@ -593,7 +704,7 @@ void tickFFA(Server& s) {
 } // namespace
 
 // Tourney warmup is a free for all; during matches the two players are on teams A and B.
-bool modeIsTeamBased(int mode) { return mode != MODE_FFA && mode != MODE_RACE && mode != MODE_TOURNEY; }
+bool modeIsTeamBased(int mode) { return mode != MODE_FFA && mode != MODE_RACE && mode != MODE_TOURNEY && !isItMode(mode); }
 
 void rulesReset(Server& s) {
     ModeState& m = s.ms_;
@@ -656,6 +767,8 @@ void rulesTick(Server& s) {
                 case MODE_PAYLOAD: tickPayload(s); break;
                 case MODE_NPAYLOAD: tickNeutralPayload(s); break;
                 case MODE_FFA: tickFFA(s); break;
+                case MODE_HIDE: tickHide(s); break;
+                case MODE_TAG: tickTag(s); break;
             }
             break;
         case PHASE_ROUND_END:
@@ -695,7 +808,8 @@ float rulesRespawnDelay(const Server& s) {
         case MODE_PAYLOAD:
         case MODE_NPAYLOAD: return 5.0f;
         case MODE_FFA: return 2.0f;
-        default: return -1.0f; // VS, BOMB: no respawn
+        case MODE_TAG: return 2.0f;   // fell off something: back in (eliminations don't respawn)
+        default: return -1.0f; // VS, BOMB, hide and seek: no respawn
     }
 }
 
@@ -708,6 +822,8 @@ bool rulesCanDamage(const Server& s, int attacker, int victim) {
 }
 
 bool rulesFrozen(const Server& s, int id) {
+    if (s.ms_.mode == MODE_HIDE && s.ms_.phase == PHASE_FREEZE) return s.players_[id].it; // hiders hide, the seeker faces the wall
+    if (s.ms_.mode == MODE_TAG && s.ms_.phase == PHASE_LIVE) return s.players_[id].it && s.time() < s.players_[id].itFreezeUntil;
     if (s.ms_.phase == PHASE_FREEZE) return true;
     if (s.ms_.mode == MODE_BOMB && s.ms_.actionPlayer == id && s.ms_.phase == PHASE_LIVE) return true;
     return false;

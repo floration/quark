@@ -82,6 +82,9 @@ struct ServerPlayer {
     int kills = 0, deaths = 0, score = 0;
     float respawnAt = -1;
     int checkpoint = 0;         // race: next checkpoint index
+    bool it = false;            // hide and seek / tag: the seeker / tagger (has the knife)
+    bool out = false;           // hide and seek: found this round; tag: eliminated for the match
+    float itFreezeUntil = 0;    // tag: just got tagged, stands still until then
     uint32_t lastCmdSeq = 0;
     std::deque<UserCmd> cmdQueue;
     float cmdTokensMs = 16.0f;
@@ -157,6 +160,7 @@ public:
     float phaseEnd_ = 0;
     float roundStart_ = 0;
     float lastProgress_ = 0;    // vs: last time damage was dealt
+    int lastIt_ = -1;           // hide and seek: the last seeker (everyone takes a turn)
     float drainAccum_ = 0;
     // payload/race per-round bookkeeping
     float payloadIdleSince_ = 0;

@@ -125,7 +125,7 @@ static bool readBox(std::istringstream& ls, AABB& b) {
 }
 
 bool Map::parse(const std::string& text, std::string* err) {
-    brushes.clear(); spawns.clear(); bombSites.clear(); checkpoints.clear(); payloadPath.clear(); lights.clear();
+    brushes.clear(); spawns.clear(); bombSites.clear(); checkpoints.clear(); ladders.clear(); payloadPath.clear(); lights.clear();
     hasHill = false;
     hasWallbang = false;
     hasPalette = false;
@@ -174,6 +174,8 @@ bool Map::parse(const std::string& text, std::string* err) {
             AABB b; ok = readBox(ls, b); if (ok) bombSites.push_back(b);
         } else if (kw == "hill") {
             ok = readBox(ls, hill); hasHill = ok;
+        } else if (kw == "ladder") {
+            AABB b; ok = readBox(ls, b); if (ok) ladders.push_back(b);
         } else if (kw == "checkpoint") {
             AABB b; ok = readBox(ls, b); if (ok) checkpoints.push_back(b);
         } else if (kw == "path") {
@@ -257,6 +259,7 @@ std::string Map::serialize() const {
     }
     for (auto& a : bombSites) box("site", a);
     if (hasHill) box("hill", hill);
+    for (auto& a : ladders) box("ladder", a);
     for (auto& a : checkpoints) box("checkpoint", a);
     for (auto& p : payloadPath) { snprintf(b, sizeof b, "path %g %g %g\n", p.x, p.y, p.z); o += b; }
     for (auto& l : lights) { snprintf(b, sizeof b, "light %g %g %g %g %g\n", l.pos.x, l.pos.y, l.pos.z, l.radius, l.intensity); o += b; }
@@ -551,6 +554,8 @@ bool Map::canSupportMode(int mode) const {
         case MODE_PAYLOAD:
         case MODE_NPAYLOAD: return teams && payloadPath.size() >= 2;
         case MODE_FFA: return !spawns.empty();
+        case MODE_HIDE:
+        case MODE_TAG: return spawns.size() >= 2;
     }
     return false;
 }

@@ -877,8 +877,16 @@ void Game::drawWorld(float alpha) {
             r_.box(at(1.62f) + fwd * (0.2f * bs), Vec3(0.16f, 0.05f, 0.02f) * bs, yaw, {0.05f, 0.05f, 0.06f}, sv, false);
             Vec3 shoulder = at(1.3f) + Vec3(std::cos(yaw), 0, -std::sin(yaw)) * (0.3f * bs);
             r_.boxPitched(shoulder, Vec3(0, 0, -0.35f) * bs, Vec3(0.06f, 0.07f, 0.35f) * bs, yaw, pitch, {0.12f, 0.12f, 0.14f}, sv);
-            if (p.flags & PS_HASBOMB)
+            if ((p.flags & PS_HASBOMB) && !isItMode(net_.mode().mode))
                 r_.box(at(1.15f) + fwd * -0.32f, {0.2f, 0.22f, 0.1f}, yaw, {0.1f, 0.1f, 0.1f}, sv);
+        }
+        if (!self && (p.flags & PS_HASBOMB) && isItMode(net_.mode().mode)) { // hide and seek / tag: mark who's "it"
+            float sx, sy;
+            if (r_.project(pos + Vec3(0, 2.3f, 0), sx, sy)) {
+                float ts = std::max(1.0f, std::round(ui_.textScale()));
+                const char* t = net_.mode().mode == MODE_TAG ? "IT" : "SEEKER";
+                r_.text(sx - r_.textWidth(t, ts) * 0.5f, sy, ts, t, kRed);
+            }
         }
         // name tags for teammates
         if (!self && isFriendly(i) && i != viewing) {
@@ -1052,8 +1060,9 @@ void Game::drawWorld(float alpha) {
         }
     }
 
-    // viewmodel
-    if (alive && !(scoped_ && scopeOverlay_)) {
+    // viewmodel (hide and seek / tag: only "it" holds anything)
+    bool unarmed = isItMode(net_.mode().mode) && !(mep && (mep->flags & PS_HASBOMB));
+    if (alive && !(scoped_ && scopeOverlay_) && !unarmed) {
         int w = net_.selfWeapon();
         recoil_ = std::max(0.0, recoil_ - 0.016 * 8);
         float kick = (float)recoil_ * 0.06f;
@@ -1168,6 +1177,25 @@ void Game::drawHud() {
         r_.rect(0, cy + R, W, H - cy - R, k);
         r_.rect(cx - R, cy - 0.5f, 2 * R, 1, {0, 0, 0, 0.9f});
         r_.rect(cx - 0.5f, cy - R, 1, 2 * R, {0, 0, 0, 0.9f});
+    }
+    if (isItMode(ms.mode) && ms.phase != PHASE_WARMUP && mep && mep->team() != TEAM_SPECTATOR) {
+        bool it = (mep->flags & PS_HASBOMB) != 0;
+        float bts = std::max(1.0f, std::round(ts * 1.2f));
+        auto banner = [&](const std::string& t, Color c, float y) { r_.text(cx - r_.textWidth(t, bts) * 0.5f, y, bts, t, c); };
+        if (ms.mode == MODE_HIDE && ms.phase == PHASE_FREEZE && it) { // the seeker faces the wall while everyone hides
+            r_.rect(0, 0, W, H, {0.02f, 0.02f, 0.03f, 1});
+            float big = std::max(2.0f, std::round(ts * 3));
+            std::string n = std::to_string((int)std::ceil(ms.timeLeft));
+            r_.text(cx - r_.textWidth(n, big) * 0.5f, cy - 40 * s, big, n, kWhite);
+            banner("YOU'RE SEEKING - FACE THE WALL AND COUNT", kWhite, cy + 30 * s);
+        } else {
+            int left = 0;
+            for (auto& p : net_.latest().players) if ((p.flags & PS_ALIVE) && !(p.flags & PS_HASBOMB) && p.team() != TEAM_SPECTATOR) left++;
+            std::string t = ms.mode == MODE_HIDE ? (it ? "SEEKING - " + std::to_string(left) + " STILL HIDDEN" : ms.phase == PHASE_FREEZE ? "HIDE! THE SEEKER IS COUNTING" : "STAY HIDDEN - " + std::to_string(left) + " LEFT")
+                                                 : (it ? "YOU'RE IT - TAG SOMEONE BEFORE TIME RUNS OUT" : "RUN - DON'T BE IT WHEN TIME RUNS OUT");
+            if (!(mep->flags & PS_ALIVE) && ms.mode == MODE_HIDE) t = "FOUND - WATCH THE REST OF THE ROUND";
+            banner(t, it ? kRed : kWhite, 92 * s);
+        }
     }
     // crosshair (scoped: the scope's reticle replaces it)
     if (!(scoped_ && scopeOverlay_) && !paused_) drawCrosshair(cx, cy, s, time_ < hitUntil_); // menus open: no crosshair through them
@@ -1307,14 +1335,15 @@ void Game::drawHud() {
             r_.rect(ox, oy - 28 * k, 200 * k, 8 * k, {0, 0, 0, 0.5f});
             r_.rect(ox, oy - 28 * k, 200 * k * clampf(hp / 100.0f, 0, 1), 8 * k, hp > 30 ? tint(Settings::HUD_HEALTH, fc) : kRed);
         }
-        {   // current weapon name, bottom right
+        bool unarmed = isItMode(ms.mode) && !(mep && (mep->flags & PS_HASBOMB));
+        if (!unarmed) {   // current weapon name, bottom right
             auto e = he(Settings::HUD_WEAPON);
             float wts = std::max(1.0f, std::round(ts * 1.5f * e.scale));
             std::string wn = weaponDef(net_.selfWeapon()).name;
             r_.text(W - 24 * s + e.x * s - r_.textWidth(wn, wts), H - 50 * s * e.scale + e.y * s, wts, wn, tint(Settings::HUD_WEAPON, kWhite));
         }
         const MoveState& mv = net_.predicted();
-        if (!paused_) {   // dash + grapple cooldown bars under the crosshair (full = ready); hidden behind menus
+        if (!paused_ && !(mv.mods & MOVE_RUN_ONLY)) {   // dash + grapple cooldown bars under the crosshair (full = ready); hidden behind menus / without abilities
             auto e = he(Settings::HUD_BARS);
             float k = s * e.scale, bcx = cx + e.x * s, bcy = cy + e.y * s;
             Color full = tint(Settings::HUD_BARS, fc);
@@ -1348,7 +1377,7 @@ void Game::drawHud() {
             r_.text(bx - r_.textWidth("SPEED", lts) - 6 * k, y - 2 * k, lts, "SPEED", kWhite);
             r_.text(bx + bw + 6 * k, y - 2 * k, lts, buf, kWhite);
         }
-        {   // weapon slots in kWeaponSlots order: 1 rocket, 2 rifle, 3 laser, ...
+        if (!unarmed) {   // weapon slots in kWeaponSlots order: 1 rocket, 2 rifle, 3 laser, ...
             auto e = he(Settings::HUD_SLOTS);
             float bx = W - 24 * s + e.x * s;
             float sts = std::max(1.0f, std::round(ts * 0.75f * e.scale));

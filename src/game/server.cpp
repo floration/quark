@@ -693,6 +693,7 @@ void Server::spawnPlayer(int id) {
     p.move.mods |= dm.moveMods;
     if (arenaRules() & AR_QUICK_DASH) p.move.mods |= MOVE_QUICK_DASH;
     if (arenaRules() & AR_LOW_GRAVITY) p.move.mods |= MOVE_LOW_GRAVITY;
+    if (isItMode(ms_.mode)) p.move.mods |= MOVE_RUN_ONLY;
     p.nextFire = time() + 0.25f;
     p.respawnAt = -1;
     GameEvent e;
@@ -736,6 +737,23 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
     bool friendly = attacker >= 0 && attacker != victim && modeIsTeamBased(cfg_.mode) && players_[attacker].team == v.team;
     // Race: you can only affect yourself (rocket jumps etc.), never other racers.
     if (ms_.mode == MODE_RACE && ms_.phase != PHASE_WARMUP && attacker >= 0 && attacker != victim) return;
+    if (isItMode(ms_.mode) && attacker >= 0 && attacker != victim) {
+        // hide and seek / tag: only "it" can touch anyone, with the knife, once the round is live.
+        // Hide and seek: one stab finds (kills) a hider. Tag: the stab passes "it" on.
+        ServerPlayer& a = players_[attacker];
+        if (ms_.phase != PHASE_LIVE || !a.it || v.it || weapon != WPN_KNIFE) return;
+        if (ms_.mode == MODE_TAG) {
+            a.it = false;
+            v.it = true;
+            v.itFreezeUntil = time() + kTagFreeze;
+            a.score++;
+            message(v.name + " is it");
+            glog(LOG_SIMPLE, "tag %d -> %d", attacker, victim);
+            return;
+        }
+        killPlayer(victim, attacker, WPN_KNIFE); // found
+        return;
+    }
     if (!friendly) {
         v.move.vel += knock;
         if (knock.y > 0.5f) v.move.flags &= ~MF_ONGROUND;
@@ -866,8 +884,9 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
                 explode(pr.pos, id, WPN_STICKY);
             }
     // Knife and shotgun: alt-fire is its own shot (throw / bouncing pellets); it takes priority over fire.
-    bool altShot = altFires(p.weapon) && (cmd.buttons & BTN_ALTFIRE) && !(p.weapon == WPN_KNIFE && knifeAway);
-    bool wantFire = (cmd.buttons & BTN_FIRE) != 0 || altShot;
+    bool itMode = isItMode(ms_.mode);
+    bool altShot = altFires(p.weapon) && (cmd.buttons & BTN_ALTFIRE) && !(p.weapon == WPN_KNIFE && knifeAway) && !itMode; // no throwing in hide and seek / tag
+    bool wantFire = ((cmd.buttons & BTN_FIRE) != 0 || altShot) && (!itMode || p.it); // only "it" has a knife
     if (weaponDef(p.weapon).semiAuto) { // one shot per click
         if (wantFire && !(p.prevButtons & BTN_FIRE)) p.fireQueuedUntil = time() + kFireBuffer;
         wantFire = time() <= p.fireQueuedUntil;
@@ -1163,6 +1182,7 @@ void Server::sendSnapshots() {
         if (p.alive) ps.flags |= PS_ALIVE;
         if (p.move.flags & MF_CROUCHED) ps.flags |= PS_CROUCHED;
         if (ms_.bombState == BOMB_CARRIED && ms_.bombCarrier == i) ps.flags |= PS_HASBOMB;
+        if (isItMode(ms_.mode) && p.it) ps.flags |= PS_HASBOMB; // hide and seek / tag: "it"
         if (p.team == TEAM_SPECTATOR) ps.flags |= PS_SPECTATOR;
         if (p.team == TEAM_B) ps.flags |= PS_TEAM_B;
         if (p.finished) ps.flags |= PS_FINISHED;
@@ -1467,6 +1487,7 @@ bool Server::switchMapKeepRules(const std::string& name) {
 }
 
 uint16_t Server::weaponMask() const {
+    if (isItMode(ms_.mode)) return (uint16_t)(1u << WPN_KNIFE); // only "it" can use it; everyone else is unarmed
     if (ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY) return arenaVariant(ms_.arenaVariant).weapons;
     return duelModDef(duelMod()).weapons;
 }
