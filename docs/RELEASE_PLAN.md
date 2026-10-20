@@ -9,6 +9,9 @@ a chat log.
 
 ## Phase 0 — fix reported bug
 - [x] Depot: north trench stairs rose toward the trench instead of the street (0.33.1)
+- [x] Hamlet ladders: rungs stuck out into the climb space, roof overhang / parapet / glow trim blocked the
+      top, climb volume ended too low; new `quark_tests ladders` check climbs every ladder on every map (0.33.2)
+- [x] Hamlet verticality: climbable church roof, two-storey house, rooftop plank bridge, lookout tower (0.33.2)
 
 ## Phase 1 — audit (no behaviour changes, only notes + screenshots)
 Write each finding into `docs/AUDIT.md` as: area / what / severity (bug, polish, perf) / fix plan.

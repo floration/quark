@@ -826,6 +826,36 @@ static void testBotAim(uint16_t& port) {
 
 // Alt-fires: thrown knife hits at range, shotgun ricochets hit someone behind you (off the wall in front),
 // scoped rifle fires at half rate.
+// Every ladder on every map gets you to the top: stand at its foot, hold forward (into the wall) and you
+// end up standing on whatever it leads to.
+static void testLadders() {
+    printf("ladders: every one climbable\n");
+    for (auto& name : listMaps()) {
+        Map m;
+        if (!m.load(name)) continue;
+        for (auto& l : m.ladders) {
+            bool ok = false;
+            for (float yaw : {0.0f, PI, PI * 0.5f, -PI * 0.5f}) {
+                MoveState ms;
+                Vec3 c = l.center();
+                Vec3 back = -angleForward(yaw, 0) * 0.3f;          // start a step away from the wall
+                ms.pos = {c.x + back.x, l.mn.y + 0.05f, c.z + back.z};
+                if (m.boxSolid(playerBox(ms.pos, false))) continue;
+                UserCmd cmd; cmd.yaw = yaw; cmd.pitch = 0.2f; cmd.forward = 127; cmd.msec = 8;
+                for (int t = 0; t < 1000 && !ok; t++) {   // up to 8 s: standing on top at any point counts
+                    cmd.forward = t < 700 ? 127 : -127;            // a ladder that ends at a wall: step back off it
+                    pmove(ms, cmd, m);
+                    ok = ms.pos.y > l.mx.y - 1.3f && (ms.flags & MF_ONGROUND) && !m.onLadder(playerBox(ms.pos, false));
+                }
+                if (ok) break;
+                if (getenv("LADDER_DEBUG")) printf("    yaw %.2f -> %.2f %.2f %.2f ground %d\n", yaw, ms.pos.x, ms.pos.y, ms.pos.z, ms.flags & MF_ONGROUND);
+            }
+            if (!ok) printf("  %s: ladder at %.1f %.1f %.1f can't be climbed\n", name.c_str(), l.center().x, l.mn.y, l.center().z);
+            CHECK(ok);
+        }
+    }
+}
+
 // Hide and seek and tag: one seeker / "it" with a knife, run-and-jump only, the seeker waits out the
 // hiders' head start, one stab finds a hider (tag: passes "it" on), time up eliminates "it" in tag.
 static void testItModes(uint16_t port) {
@@ -1628,6 +1658,7 @@ int main(int argc, char** argv) {
     setTimeScale(kTestTimeScale);
     g_serverRateCheck = false;
     if (argc >= 2 && std::string(argv[1]) == "playtest") { playtestMaps(29400, argc > 2 ? atof(argv[2]) : 40); return 0; }
+    if (argc >= 2 && std::string(argv[1]) == "ladders") { testLadders(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(29450); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = 29500; testBotAim(p); return g_fail ? 1 : 0; }
     testMovement();
@@ -1655,6 +1686,7 @@ int main(int argc, char** argv) {
     testSemiAuto(port++);
     testMapVote(port++);
     testResetMaps();
+    testLadders();
     testItModes(port); port += 2;
     testRocketLob(port++);
     testAltFires(port); port += 3;

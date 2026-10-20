@@ -56,7 +56,7 @@ class M:
             y0 = min(base, 0) - (1 if base < 0 else 0)
             if axis == "x": s.box(x0 + a, y0, z0, x0 + b, h, z1, mirror=mirror)
             else: s.box(x0, y0, z0 + a, x1, h, z0 + b, mirror=mirror)
-    def building(s, x0, z0, x1, z1, h, doors, roof=True, windows=False, lights=True, mirror=False, base=0.0):
+    def building(s, x0, z0, x1, z1, h, doors, roof=True, windows=False, lights=True, mirror=False, base=0.0, notch=None):
         """a walled building with doorways and a roof: doors = [(side, center, width)], side in n/s/w/e"""
         t = 0.4
         sides = {"n": (x0, z0, x1, z0 + t, "x"), "s": (x0, z1 - t, x1, z1, "x"), "w": (x0, z0, x0 + t, z1, "z"), "e": (x1 - t, z0, x1, z1, "z")}
@@ -68,8 +68,10 @@ class M:
                 s.doorwall(a, b, c, d, h, ds, axis=ax, mirror=mirror, base=base)
         if roof:
             y = base + h
-            s.box(x0 - 0.3, y, z0 - 0.3, x1 + 0.3, y + 0.35, z1 + 0.3, accent=True, mirror=mirror)
-            s.glow(x0 - 0.32, y - 0.1, z0 - 0.32, x1 + 0.32, y, z0 - 0.3, mirror=mirror); s.glow(x0 - 0.32, y - 0.1, z1 + 0.3, x1 + 0.32, y, z1 + 0.32, mirror=mirror)
+            for (a, b, c, d) in minus((x0 - 0.3, z0 - 0.3, x1 + 0.3, z1 + 0.3), [notch] if notch else []):   # notch: open above a ladder
+                s.box(a, y, b, c, y + 0.35, d, accent=True, mirror=mirror)
+            for strip in ((x0 - 0.32, z0 - 0.32, x1 + 0.32, z0 - 0.3), (x0 - 0.32, z1 + 0.3, x1 + 0.32, z1 + 0.32)):
+                for (a, b, c, d) in minus(strip, [notch] if notch else []): s.glow(a, y - 0.1, b, c, y, d, mirror=mirror)
             if lights: s.light((x0 + x1) / 2, y - 0.6, (z0 + z1) / 2, max(x1 - x0, z1 - z0) * 0.8 + 2, 0.8, mirror=mirror)
     def spawn(s, team, x, y, z, yaw, mirror_team=None):
         s.lines.append(f"spawn {team} {x:g} {y:g} {z:g} {yaw:g}")
@@ -145,25 +147,25 @@ class M:
                 x = x0 + 0.4
                 while x < x1 - 0.3: s.box(x - 0.12, -0.06, az - 1.0, x + 0.12, -0.01, az + 1.0, accent=True); x += 1.4
     def ladder(s, x, z, y0, y1, face, width=0.9):
-        """a climbable ladder against a wall at (x, z) from y0 to y1; face = direction the climber faces
-        ('n' = -z, 's' = +z, 'w' = -x, 'e' = +x). Rails and rungs to see, a volume to climb in (it reaches a
-        little above y1 so you step off onto the top)."""
+        """a climbable ladder 0.12 m off a wall at (x, z) from y0 to y1; face = direction the climber faces
+        ('n' = -z, 's' = +z, 'w' = -x, 'e' = +x), i.e. toward the wall. Rails and rungs sit flush against the
+        wall (nothing for the climber to snag on); the climb volume reaches a metre above y1 so you come out
+        over the top."""
         w = width / 2
         d = {"n": (0, -1), "s": (0, 1), "w": (-1, 0), "e": (1, 0)}[face]
-        # the wall is in front of the climber, so the ladder sits on the climber's side of (x, z)
-        ox, oz = -d[0] * 0.12, -d[1] * 0.12
+        rx, rz = x + d[0] * 0.09, z + d[1] * 0.09   # centre of the rail / rung layer, against the wall
         if d[0] == 0:
-            for sx in (-w, w): s.metal(x + sx - 0.05, y0, z + oz - 0.05, x + sx + 0.05, y1 + 0.9, z + oz + 0.05)
+            for sx in (-w, w): s.metal(x + sx - 0.04, y0, rz - 0.03, x + sx + 0.04, y1 + 0.9, rz + 0.03)
             y = y0 + 0.35
-            while y < y1: s.box(x - w, y, z + oz - 0.03, x + w, y + 0.06, z + oz + 0.03, accent=True); y += 0.4
+            while y < y1: s.box(x - w, y, rz - 0.03, x + w, y + 0.06, rz + 0.03, accent=True); y += 0.4
             z0, z1 = sorted((z, z - d[1] * 0.7))
-            s.raw(f"ladder {x - w:g} {y0:g} {z0:g} {x + w:g} {y1 + 0.3:g} {z1:g}")
+            s.raw(f"ladder {x - w:g} {y0:g} {z0:g} {x + w:g} {y1 + 1.0:g} {z1:g}")
         else:
-            for sz in (-w, w): s.metal(x + ox - 0.05, y0, z + sz - 0.05, x + ox + 0.05, y1 + 0.9, z + sz + 0.05)
+            for sz in (-w, w): s.metal(rx - 0.03, y0, z + sz - 0.04, rx + 0.03, y1 + 0.9, z + sz + 0.04)
             y = y0 + 0.35
-            while y < y1: s.box(x + ox - 0.03, y, z - w, x + ox + 0.03, y + 0.06, z + w, accent=True); y += 0.4
+            while y < y1: s.box(rx - 0.03, y, z - w, rx + 0.03, y + 0.06, z + w, accent=True); y += 0.4
             x0, x1 = sorted((x, x - d[0] * 0.7))
-            s.raw(f"ladder {x0:g} {y0:g} {z - w:g} {x1:g} {y1 + 0.3:g} {z + w:g}")
+            s.raw(f"ladder {x0:g} {y0:g} {z - w:g} {x1:g} {y1 + 1.0:g} {z + w:g}")
     def tree(s, x, z, size=1.0):
         """trunk and a stepped canopy"""
         s.box(x - 0.3 * size, 0, z - 0.3 * size, x + 0.3 * size, 2.6 * size, z + 0.3 * size, mat="metal")
@@ -172,10 +174,16 @@ class M:
     def house(s, x0, z0, x1, z1, h, doors, roof="flat", ladder=None, windows=True):
         """a house: walls with doors / windows and a lamp inside; a flat roof (walkable, with a parapet) or a
         pitched one (stepped, not walkable); ladder = (x, z, face) up the outside onto a flat roof"""
-        s.building(x0, z0, x1, z1, h, doors, roof=True, windows=windows)
+        notch = None
+        if ladder:   # cut the roof's overhang and parapet above the ladder so you can climb over the edge
+            lx, lz, f = ladder
+            notch = {"w": (x1 - 0.05, lz - 0.75, x1 + 0.45, lz + 0.75), "e": (x0 - 0.45, lz - 0.75, x0 + 0.05, lz + 0.75),
+                     "n": (lx - 0.75, z1 - 0.05, lx + 0.75, z1 + 0.45), "s": (lx - 0.75, z0 - 0.45, lx + 0.75, z0 + 0.05)}[f]
+        s.building(x0, z0, x1, z1, h, doors, roof=True, windows=windows, notch=notch)
         if roof == "flat":
             for (a0, b0, a1, b1) in ((x0 - 0.3, z0 - 0.3, x1 + 0.3, z0), (x0 - 0.3, z1, x1 + 0.3, z1 + 0.3), (x0 - 0.3, z0, x0, z1), (x1, z0, x1 + 0.3, z1)):
-                s.box(a0, h + 0.35, b0, a1, h + 0.9, b1, accent=True)
+                for (a, b, c, d) in minus((a0, b0, a1, b1), [notch] if notch else []):
+                    s.box(a, h + 0.35, b, c, h + 0.9, d, accent=True)
         else:
             ax = (x1 - x0) >= (z1 - z0)
             for k in range(1, 4):
@@ -999,11 +1007,12 @@ m.box(-2.0, 3.0, -2.0, 2.0, 3.3, 2.0, accent=True); m.glow(-0.15, 2.4, -0.15, 0.
 for (x, z) in ((-8, -8), (8, -8), (-8, 8), (8, 8)): m.tree(x, z, 1.1)
 m.box(-6, 0, 5, -3, 0.6, 5.6); m.box(3, 0, -5.6, 6, 0.6, -5)                  # benches
 # the church (north of the green) with its bell tower: ladder inside up to the belfry
-m.building(-10, -34, 6, -20, 7, [("s", -2, 3.0), ("w", -27, 2.4)], windows=True)
-for k in range(1, 5): m.box(-10.3 + k * 0.9, 7 + 0.4 * k, -34.3, 6.3 - k * 0.9, 7.4 + 0.4 * k, -19.7, accent=True)
+m.building(-10, -34, 6, -20, 7, [("s", -2, 3.0), ("w", -27, 2.4)], windows=True, notch=(-6.75, -34.45, -5.25, -33.95))
+m.ladder(-6, -34.12, 0, 7.35, "s")                                                 # up onto the church roof (walk the tiers to the ridge)
+for k in range(1, 5): m.box(-10.3 + k * 0.9, 7 + 0.4 * k, -34.3 + k * 0.9, 6.3 - k * 0.9, 7.4 + 0.4 * k, -19.7 - k * 0.9, accent=True)   # stepped roof (walk up it)
 m.doorwall(6, -26, 12, -25.6, 16, [(9, 2.4, 2.6)], axis="x"); m.doorwall(6, -20.4, 12, -20, 16, [], axis="x")
 m.doorwall(6, -26, 6.4, -20, 16, [], axis="z"); m.doorwall(11.6, -26, 12, -20, 16, [], axis="z")
-for (a, b, c, d) in ((6.4, -25.6, 11.6, -24.0), (6.4, -22.4, 11.6, -20.4), (6.4, -24.0, 7.8, -22.4)):   # belfry floor (hole over the ladder)
+for (a, b, c, d) in minus((6.4, -25.6, 11.6, -20.4), [(10.65, -23.7, 11.6, -22.7)]):   # belfry floor (a hole just over the ladder)
     m.box(a, 11.6, b, c, 12, d)
 m.ladder(11.48, -23.2, 0, 12, "e")
 for (a, b, c, d) in ((6, -26, 12, -25.6), (6, -20.4, 12, -20)): m.box(a, 12, b, c, 12.5, d)               # belfry: open arches above 12.5
@@ -1019,7 +1028,7 @@ houses = [((-34, -36, -24, -28), 3.6, [("s", -29, 1.6)], "flat", (-23.88, -32, "
           ((-30, -16, -20, -8), 3.8, [("n", -25, 1.6), ("s", -25, 1.6)], "flat", (-30.12, -12, "e")),
           ((16, -38, 26, -30), 3.6, [("s", 21, 1.6)], "pitched", None),
           ((-46, 8, -36, 18), 3.6, [("e", 13, 1.6)], "flat", (-46.12, 13, "e")),
-          ((-26, 10, -16, 20), 4.0, [("n", -21, 1.6), ("e", 15, 1.6)], "pitched", None),
+
           ((-14, 22, -4, 32), 3.6, [("n", -9, 1.6)], "flat", (-9, 32.12, "n")),
           ((4, 24, 14, 32), 3.6, [("n", 9, 1.6), ("w", 28, 1.6)], "pitched", None),
           ((18, 6, 28, 16), 3.8, [("w", 11, 1.6)], "flat", (28.12, 11, "w")),
@@ -1029,6 +1038,26 @@ houses = [((-34, -36, -24, -28), 3.6, [("s", -29, 1.6)], "flat", (-23.88, -32, "
 for (r, h, doors, roof, lad) in houses:
     m.house(r[0], r[1], r[2], r[3], h, doors, roof=roof, ladder=lad)
     m.box(r[0] + 1, 0, r[1] + 1, r[0] + 2.2, 0.8, r[1] + 2.2)                     # a table / chest inside
+# a two-storey house: upper floor up a ladder inside, windows on both floors
+m.building(-26, 10, -16, 20, 7.0, [("n", -21, 1.8), ("e", 15, 1.8)], windows=True)
+for (a, b, c, d) in minus((-25.6, 10.4, -16.4, 19.6), [(-25.3, 18.7, -24.3, 19.6)]):
+    m.box(a, 3.3, b, c, 3.6, d)                                                    # upper floor (hole over the ladder)
+m.ladder(-24.8, 19.48, 0, 3.6, "s")
+for k in range(1, 4): m.box(-26.3 + k * 1.4, 7 + 0.35 * k, 9.7, -15.7 - k * 1.4, 7.35 + 0.35 * k, 20.3, accent=True)
+m.light(-21, 6.2, 15, 7, 0.7)
+m.box(-19, 3.6, 12, -17.5, 4.4, 13.5); m.box(-25, 3.6, 11, -22, 4.1, 12)         # furniture upstairs
+# rooftop plank bridges between neighbouring flat roofs (sitting on the parapets)
+m.metal(-28.6, 4.2, -28.3, -27.2, 4.5, -22); m.metal(-28.6, 4.4, -22, -27.2, 4.7, -15.7)
+# lookout tower at the orchard's edge: posts, a platform 7 m up with rails, a ladder
+for (x, z) in ((46, 8), (50, 8), (46, 12), (50, 12)): m.metal(x - 0.2, 0, z - 0.2, x + 0.2, 7, z + 0.2)
+m.box(45.6, 6.7, 7.6, 50.4, 7.0, 12.4, accent=True)
+for (a, b, c, d) in ((45.6, 7.6, 50.4, 7.75), (45.6, 12.25, 50.4, 12.4), (50.25, 7.75, 50.4, 12.25)): m.box(a, 7.0, b, c, 8.0, d, accent=True)
+m.box(45.6, 7.0, 7.75, 45.75, 8.0, 9.2, accent=True); m.box(45.6, 7.0, 10.8, 45.75, 8.0, 12.25, accent=True)
+m.box(45.4, 9.6, 7.4, 50.6, 9.9, 12.6, accent=True)                               # little roof
+for (x, z) in ((45.6, 7.6), (50.2, 7.6), (45.6, 12.2), (50.2, 12.2)): m.metal(x, 7.0, z, x + 0.2, 9.6, z + 0.2)
+m.box(45.6, 0, 9.2, 45.8, 6.7, 10.8)                                              # board behind the ladder
+m.ladder(45.48, 10, 0, 7.0, "e")
+m.light(48, 8.8, 10, 5, 0.5, fixture=False)
 # the barn (south-east) with a hayloft up a ladder
 m.building(30, 22, 48, 42, 8, [("w", 32, 4.0), ("n", 39, 2.4)], windows=False)
 for k in range(1, 5): m.box(29.7 + k * 1.1, 8 + 0.45 * k, 21.7, 48.3 - k * 1.1, 8.45 + 0.45 * k, 42.3, accent=True)
@@ -1055,7 +1084,7 @@ for (y0, y1) in ((14.4, 18.6), (9.2, 13.4)): m.box(36.2, y0, -33.7, 36.85, y1, -
 for (x0, x1) in ((32.4, 36.6), (37.4, 41.6)): m.box(x0, 14.05, -33.7, x1, 14.7, -33.6, accent=True)
 # water tower (north-west) with a ladder to the walkable tank top
 for (x, z) in ((-50, -50), (-44, -50), (-50, -44), (-44, -44)): m.metal(x - 0.3, 0, z - 0.3, x + 0.3, 8, z + 0.3)
-m.box(-51, 8, -51, -43, 11, -43, accent=True); m.box(-51.3, 11, -51.3, -42.7, 11.3, -42.7)
+m.box(-51, 8, -51, -43, 11, -43, accent=True); m.box(-51.3, 11, -51.3, -42.7, 11.3, -43)
 m.ladder(-47, -42.88, 0, 11.3, "n")
 m.metal(-51, 3.8, -50.1, -43, 4.1, -49.9); m.metal(-51, 3.8, -44.1, -43, 4.1, -43.9)
 # pond (south-west) with reeds and a jetty
