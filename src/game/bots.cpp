@@ -154,7 +154,7 @@ void NavGraph::build(const Map& m) {
     for (const Brush& b : m.brushes) {
         const AABB& a = b.box;
         if (b.material >= 5) continue; // far scenery, water / lava
-        if (a.mx.x - a.mn.x < 0.6f || a.mx.z - a.mn.z < 0.6f) continue;
+        if (a.mx.x - a.mn.x < 0.4f || a.mx.z - a.mn.z < 0.4f) continue; // (0.5 m stair steps are floor)
         // standable if a player fits on top somewhere (5x5 samples: other blocks may cover parts of it)
         bool free = false;
         for (int k = 0; k < 25 && !free; k++) {

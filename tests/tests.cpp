@@ -1,5 +1,6 @@
 #include "common/profile.h"
 #include <filesystem>
+#include <sstream>
 #include <fstream>
 // Headless tests: movement, map parsing, and real client/server sessions over UDP
 // on localhost, including every game mode.
@@ -744,7 +745,7 @@ static void testDuel(uint16_t port) {
     Server s;
     ServerConfig cfg;
     cfg.autoStart = true;
-    cfg.map = "crucible"; cfg.mode = MODE_DUEL; cfg.port = port;
+    cfg.map = "clockwork"; cfg.mode = MODE_DUEL; cfg.port = port;
     cfg.logLevel = LOG_EXTREME; cfg.logFile = logPath;
     s.setLog([](const std::string&) {});
     if (!s.start(cfg)) { g_fail++; return; }
@@ -819,7 +820,7 @@ static void testDuel(uint16_t port) {
         int ticks = 0;
         while (fgets(line, sizeof line, f)) { all += line; if (strstr(line, " tick ")) ticks++; }
         fclose(f);
-        CHECK(all.find("map crucible mode duel") != std::string::npos);
+        CHECK(all.find("map clockwork mode duel") != std::string::npos);
         CHECK(all.find("kill killer=") != std::string::npos);
         CHECK(all.find("round 1 modifier") != std::string::npos);
         CHECK(all.find("chat ") != std::string::npos);
@@ -835,7 +836,7 @@ static void testDuel2v2(uint16_t port) {
     Server s;
     ServerConfig cfg;
     cfg.autoStart = true;
-    cfg.map = "crucible"; cfg.mode = MODE_DUEL; cfg.port = port; cfg.duelTeamSize = 2;
+    cfg.map = "clockwork"; cfg.mode = MODE_DUEL; cfg.port = port; cfg.duelTeamSize = 2;
     s.setLog([](const std::string&) {});
     if (!s.start(cfg)) { g_fail++; return; }
     std::vector<std::unique_ptr<NetClient>> c;
@@ -950,7 +951,7 @@ static void testLadders() {
                 for (int t = 0; t < 1000 && !ok; t++) {   // up to 8 s: standing on top at any point counts
                     cmd.forward = t < 700 ? 127 : -127;            // a ladder that ends at a wall: step back off it
                     pmove(ms, cmd, m);
-                    if (getenv("LADDER_TRACE") && t % 50 == 0 && name == getenv("LADDER_TRACE")) printf("      t %d yaw %.2f pos %.2f %.2f %.2f vel %.2f %.2f %.2f ladder %d\n", t, yaw, ms.pos.x, ms.pos.y, ms.pos.z, ms.vel.x, ms.vel.y, ms.vel.z, (int)m.onLadder(playerBox(ms.pos, false)));
+                    if (getenv("LADDER_TRACE") && t % 50 == 0 && name == getenv("LADDER_TRACE") && (!getenv("LADDER_AT") || std::fabs(c.x - atof(getenv("LADDER_AT"))) < 0.5f)) printf("      t %d yaw %.2f pos %.2f %.2f %.2f vel %.2f %.2f %.2f ladder %d\n", t, yaw, ms.pos.x, ms.pos.y, ms.pos.z, ms.vel.x, ms.vel.y, ms.vel.z, (int)m.onLadder(playerBox(ms.pos, false)));
                     ok = ms.pos.y > l.mx.y - 1.3f && (ms.flags & MF_ONGROUND) && !m.onLadder(playerBox(ms.pos, false));
                 }
                 if (ok) break;
@@ -960,6 +961,90 @@ static void testLadders() {
             CHECK(ok);
         }
     }
+}
+
+// Every staircase (recorded by tools/make_maps.py as "# stairs x0 z0 x1 z1 base top axis rising solid"):
+// walked from the bottom to the top by the real movement code, and checked against the paths around it:
+// no walkable surface may pass through a solid flight, or run underneath an open one with less than a
+// player's height of clearance.
+static void testStairs() {
+    printf("stairs: every flight walkable, none cutting a path\n");
+    int flights = 0;
+    for (auto& name : listMaps()) {
+        Map m;
+        if (!m.load(name)) continue;
+        NavGraph g;
+        g.build(m);
+        std::istringstream src(m.source);
+        std::string line;
+        while (std::getline(src, line)) {
+            if (line.rfind("# stairs ", 0) != 0) continue;
+            std::istringstream ls(line.substr(9));
+            float x0, z0, x1, z1, base, top, rising; std::string axis; int solid;
+            if (!(ls >> x0 >> z0 >> x1 >> z1 >> base >> top >> axis >> rising >> solid)) continue;
+            flights++;
+            bool ax = axis == "x";
+            // walk it: from in front of the low end, or from either side of the lowest step, run at the top
+            // of the flight (the real movement code, 8 ms ticks)
+            float lo = ax ? (rising > 0 ? x0 : x1) : (rising > 0 ? z0 : z1), hi = ax ? (rising > 0 ? x1 : x0) : (rising > 0 ? z1 : z0);
+            float dir = rising > 0 ? 1.0f : -1.0f, mid = ax ? (z0 + z1) / 2 : (x0 + x1) / 2;
+            float half = (ax ? (z1 - z0) : (x1 - x0)) / 2, step0 = lo + dir * 0.4f;
+            auto P = [&](float along, float across, float y) { return ax ? Vec3(along, y, across) : Vec3(across, y, along); };
+            bool up = false;
+            MoveState ms;
+            for (Vec3 start : {P(lo - dir * 0.7f, mid, base + 0.05f), P(lo - dir * 0.7f, mid - half * 0.6f, base + 0.05f), P(lo - dir * 0.7f, mid + half * 0.6f, base + 0.05f),
+                               P(step0, mid - half - 0.6f, base + 0.05f), P(step0, mid + half + 0.6f, base + 0.05f)}) {
+                float across = ax ? start.z : start.x, a0 = mid - half + 0.45f, a1 = mid + half - 0.45f;
+                Vec3 goal = P(hi - dir * 0.3f, a0 < a1 ? std::clamp(across, a0, a1) : mid, top);
+                ms = MoveState();
+                ms.pos = start;
+                if (m.boxSolid(playerBox(ms.pos, false))) continue;
+                for (int t = 0; t < 40; t++) { UserCmd idle; idle.msec = 8; pmove(ms, idle, m); }   // settle: is there floor here?
+                if (getenv("STAIRS_TRACE") && name == getenv("STAIRS_TRACE")) printf("    start %.2f %.2f %.2f ground %d\n", ms.pos.x, ms.pos.y, ms.pos.z, (int)(ms.flags & MF_ONGROUND));
+                if (!(ms.flags & MF_ONGROUND) || std::fabs(ms.pos.y - base) > 0.3f) continue;
+                bool side = std::fabs(across - mid) > half;   // from the side: step onto the lowest step first
+                for (int t = 0; t < 700 && !up; t++) {
+                    Vec3 to = (side && t < 50) ? P(step0, mid, base) - ms.pos : goal - ms.pos;
+                    UserCmd cmd; cmd.yaw = std::atan2(-to.x, -to.z); cmd.pitch = 0; cmd.forward = 127; cmd.msec = 8;
+                    if (dot(angleForward(cmd.yaw, 0), Vec3(to.x, 0, to.z)) < 0) cmd.yaw += PI;
+                    pmove(ms, cmd, m);
+                    if (getenv("STAIRS_TRACE") && name == getenv("STAIRS_TRACE") && t % 40 == 0) printf("      t %d pos %.2f %.2f %.2f vel %.2f %.2f %.2f\n", t, ms.pos.x, ms.pos.y, ms.pos.z, ms.vel.x, ms.vel.y, ms.vel.z);
+                    up = ms.pos.y > top - 0.1f && (ms.flags & MF_ONGROUND);
+                    if (ms.pos.y < base - 1.0f) break;
+                }
+                if (up) break;
+            }
+            CHECK(up);
+            if (!up) printf("  %s: stairs %g %g - %g %g (%g to %g) can't be walked up (got to %.1f %.1f %.1f)\n", name.c_str(), x0, z0, x1, z1, base, top, ms.pos.x, ms.pos.y, ms.pos.z);
+            // paths through it or under it
+            int n = std::max(1, (int)std::ceil((top - base) / 0.5f - 1e-4f));
+            for (size_t k = 0; k < g.nodes.size(); k++) {
+                auto& nd = g.nodes[k];
+                float ox = std::min(nd.x1, x1) - std::max(nd.x0, x0), oz = std::min(nd.z1, z1) - std::max(nd.z0, z0);
+                if (ox < 0.3f || oz < 0.3f) continue;
+                bool inside = nd.x0 >= x0 - 0.2f && nd.x1 <= x1 + 0.2f && nd.z0 >= z0 - 0.2f && nd.z1 <= z1 + 0.2f;
+                if (inside && nd.y >= base - 0.01f && nd.y <= top + 0.01f) continue; // its own steps (or what stands on them)
+                if (std::fabs(nd.y - base) < 0.3f || nd.y >= top - 0.01f) continue;  // the floor it stands on / the landing
+                bool bad = false;
+                if (solid) bad = nd.y > base && nd.y < top; // a surface inside the block
+                else {
+                    // under an open flight: the lowest step bottom above this surface must clear a player
+                    for (int i = 0; i < n && !bad; i++) {
+                        float a = (float)i / n, b = (float)(i + 1) / n;
+                        float h = base + (top - base) * (rising > 0 ? (i + 1) : (n - i)) / n;
+                        float s0 = (ax ? x0 : z0) + ((ax ? x1 : z1) - (ax ? x0 : z0)) * a, s1 = (ax ? x0 : z0) + ((ax ? x1 : z1) - (ax ? x0 : z0)) * b;
+                        float n0 = ax ? nd.x0 : nd.z0, n1 = ax ? nd.x1 : nd.z1;
+                        if (std::min(n1, s1) - std::max(n0, s0) < 0.3f) continue;
+                        float bottom = h - 1.0f;
+                        bad = nd.y < bottom && bottom - nd.y < kPlayerHeight;
+                    }
+                }
+                if (bad) printf("  %s: stairs %g %g - %g %g (%g to %g) cut the path at %.1f..%.1f %.1f..%.1f, y %.1f\n", name.c_str(), x0, z0, x1, z1, base, top, nd.x0, nd.x1, nd.z0, nd.z1, nd.y);
+                CHECK(!bad);
+            }
+        }
+    }
+    printf("  %d flights\n", flights);
 }
 
 // Hide and seek and tag: one seeker / "it" with a knife, run-and-jump only, the seeker waits out the
@@ -1478,7 +1563,7 @@ static void testArenaAndTourney(uint16_t& port) {
         Server s;
         ServerConfig cfg;
         cfg.autoStart = true;
-        cfg.map = "crucible"; cfg.mode = MODE_ARENA; cfg.port = port++; cfg.arenaVariant = arenaVariantFromName("classic");
+        cfg.map = "clockwork"; cfg.mode = MODE_ARENA; cfg.port = port++; cfg.arenaVariant = arenaVariantFromName("classic");
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; return; }
         NetClient a, b;
@@ -1505,8 +1590,8 @@ static void testArenaAndTourney(uint16_t& port) {
         Server s;
         ServerConfig cfg;
         cfg.autoStart = true;
-        cfg.map = "crucible"; cfg.mode = MODE_TOURNEY; cfg.port = port++;
-        cfg.tourneyMaps = {"crucible", "temple"};
+        cfg.map = "clockwork"; cfg.mode = MODE_TOURNEY; cfg.port = port++;
+        cfg.tourneyMaps = {"clockwork", "temple"};
         cfg.tourneyVariants = {arenaVariantFromName("classic"), arenaVariantFromName("hitscan")};
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; return; }
@@ -1611,7 +1696,7 @@ static void testBots(uint16_t& port) {
         Server s;
         ServerConfig cfg;
         cfg.autoStart = true;
-        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port++;
+        cfg.map = "clockwork"; cfg.mode = MODE_FFA; cfg.port = port++;   // (a compact map: bastion is a big team map now)
         cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botSkill = BOT_EXPERT; cfg.timeLimit = 60;
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; return; }
@@ -1716,7 +1801,7 @@ static void testBots(uint16_t& port) {
         s.stop();
     }
     // every mode with bots on both sides: no crashes, things happen
-    const char* maps[MODE_COUNT] = {"bastion", "bastion", "foundry", "bastion", "bastion", "bastion", "bastion", "crucible", "crucible", "crucible", "hamlet", "hamlet"};
+    const char* maps[MODE_COUNT] = {"bastion", "bastion", "foundry", "bastion", "bastion", "bastion", "bastion", "clockwork", "clockwork", "clockwork", "hamlet", "hamlet"};
     static_assert(MODE_COUNT == 12, "add the new mode's map here");
     for (int mode = 0; mode < MODE_COUNT; mode++) {
         Server s;
@@ -1828,12 +1913,14 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (argc >= 2 && std::string(argv[1]) == "ladders") { testLadders(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "stairs") { testStairs(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(29450); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = 29500; testBotAim(p); return g_fail ? 1 : 0; }
     testMovement();
     testMaps();
     testTickRateIndependence();
     testAllMaps();
+    testStairs();
     {   // the map bar: every map scores at least 7 in every category but originality (docs/MAP_METRICS.md)
         printf("map scores\n");
         std::string p = (std::filesystem::temp_directory_path() / "quark_map_report.md").string();

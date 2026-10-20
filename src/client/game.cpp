@@ -317,7 +317,7 @@ void Game::rescanMaps() {
 }
 
 void Game::loadMenuBackdrop() {
-    std::string name = !opts_.backdrop.empty() ? opts_.backdrop : "crucible";
+    std::string name = !opts_.backdrop.empty() ? opts_.backdrop : "clockwork";
     if (!menuMap_.load(name) && (maps_.empty() || !menuMap_.load(maps_[0]))) return;
     r_.loadWorld(menuMap_, [&](float p) { drawBakeProgress(menuMap_.name, p); });
     setBackdropFrame(menuMap_);

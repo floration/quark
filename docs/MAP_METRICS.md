@@ -27,6 +27,7 @@ The numbers say *what* a map is. The sheets are for the judgement calls: whether
 | extreme | over 32 m | sniper (and the scoped rifle) only |
 
 ## Samples and paths
+- **Playable floor:** surfaces you can walk to from a spawn (running, ordinary jumps, ladders) and that are above the kill height. Roofs and wall tops only a grapple reaches don't count as floor (they are still used for the movement-tech check, as cheese surfaces).
 - **Floor samples:** a point every 2 m on every walkable surface of the bots' nav graph, kept only where a player fits. A surface under 2 m across (a stair step, a beam) gets one row down its middle. Up to 1500 per map for the sightline metrics, evenly spread; the route and shortcut checks use up to 2500.
 - **Walking distance:** measured along the nav graph the bots use. Links cost centre-to-centre distance, plus extra for gaps you jump and steps you climb. From your spot to your floor's centre, and from the last floor's centre to the target, it's a straight line.
 - **Area objectives** (the hill, bomb sites): distance to the nearest standable floor inside the area.
@@ -39,7 +40,7 @@ The numbers say *what* a map is. The sheets are for the judgement calls: whether
 | bare walls | From every floor sample, 16 rays at eye height. Each wall hit 6–40 m away (a wall you look at) is checked for a detail brush within 1 m. The share with none is "bare". Lower is better. |
 | materials, glow, metal, lights | Counts straight from the map file. |
 
-**Decor score** = 4·min(detail per 100 m² ÷ 12, 1) + 4·(1 − bare walls) + 2·min(lights ÷ 30, 1)
+**Decor score** = 4·min(detail per 100 m² ÷ 16, 1) + 4·(1 − bare walls) + 2·min(lights ÷ 40, 1)
 
 ## Layout and sightlines
 | metric | how it's measured |
@@ -48,12 +49,12 @@ The numbers say *what* a map is. The sheets are for the judgement calls: whether
 | levels | Floor heights, grouped in 1.5 m bands, that have at least 10 m² of floor. |
 | height range | Highest floor minus lowest floor. |
 | loops | Independent cycles in the nav graph (links − surfaces + connected parts). More loops means more ways around: flanks, rotations, escapes. Scored per 1000 m². |
-| dead ends | Surfaces over 4 m² that you can reach from a spawn, with only one nav link and no more than one side you can step off. Crate tops and ledges you can drop off are not dead ends. Each one costs 0.15. |
+| dead ends | Playable surfaces over 4 m² with only one nav link and no more than one side you can step off. Crate tops and ledges you can drop off are not dead ends. Each one costs 0.3. |
 | visible pairs | 30,000 random pairs of floor samples; the share that can see each other at eye height (1.6 m). |
 | range bands | Of the pairs that see each other, the share in each weapon band above. |
 | cover | From each sample, 16 directions at chest height (1 m). A direction counts as blocked if something solid is within 3 m. "Cover" is the share of samples with at least 4 blocked directions. |
 
-**Layout score** = 2·min(levels ÷ 8, 1) + 2·min(loops per 1000 m² ÷ 20, 1) + 3·min(cover ÷ 0.45, 1) + 3·range mix − 0.15·dead ends
+**Layout score** = 2·min(levels ÷ 8, 1) + 2·min(loops per 1000 m² ÷ 25, 1) + 3·min(cover ÷ 0.55, 1) + 3·range mix − 0.3·dead ends
 
 **Range mix** is the evenness of the close / mid / long shares: their entropy, 0–1. A map where every fight happens at one range scores 0; an even three-way split scores 1. Extreme range is left out because only the sniper uses it.
 
@@ -72,13 +73,19 @@ Movement is the mean of six sub-scores, each 0–10:
 ### Tech: what dash, grapple and good jumps do to the map
 Two graphs over the same floor samples:
 - **The run:** links the bots' nav graph allows: along a surface, steps, ordinary jumps (gaps up to 2.6 m, 1.15 m up) and ladders.
-- **The tech path:** all of that, plus dash-jumps (up to 16 m across, 3.5 m up, any drop, with the arc clear of solids) and grapple pulls (any surface hit within 45 m, landing on the floor next to the anchor).
+- **The tech path:** all of that, plus dash-jumps and grapple pulls.
+  - A dash-jump goes up to 16 m across and 3.5 m up, with any drop. The arc must be clear for a player-wide body: three lines, the middle and both shoulders, so a 0.4 m slit doesn't count as a way through.
+  - A grapple pull reaches any surface hit within 45 m and lands you on the floor next to the anchor.
 
 Both are measured in metres along the samples, so the two compare like for like.
 
 **Race maps**, per leg (from one checkpoint to the next):
 - **Shortcut:** run length ÷ tech length. A good player should not cut a leg: 10 at 1.25× or less, 0 at 2.5×. The worst leg counts.
-- **Challenge:** what the run asks of you. Jumps per 100 m (full marks at 6) and the share of the route on narrow footing under 2 m wide (beams, ledges, stepping stones; full marks at 25%). 5 points each.
+- **Challenge, measured on the tech path:** what the course still asks of a player who dashes and grapples well.
+  - Jumps per 100 m: full marks at 8. A dash-jump counts as one jump; a grapple pull counts as none.
+  - Narrow footing actually run on (under 2 m wide: beams, ledges, pads): full marks at 30%.
+  - How much of the course the grapple carries you: 2 points at 0%, none at 30% or more.
+  - The three are worth 4, 4 and 2 points.
 - On a map built for racing, tech = the lower of the two. On a map where the race is a side mode, only the shortcut counts.
 
 The report lists every leg's length, jumps, narrow metres and tech length, so you can see which stretch is too easy or can be cut.
@@ -105,13 +112,32 @@ Each mode the map supports gets the measurement that matters for it:
 ## Creativity and originality
 | metric | how it's measured |
 |---|---|
+| setting | Each map declares the place it is (`# setting city block`, `# setting space station`...). A setting no other map has is worth 1.5. |
 | features | Present or not: ladders, lethal drops, water / lava, wallbangs, a moving cart, 5+ floor levels, 12 m+ of height, indoor and outdoor (15–85% of the floor roofed), fully indoor (over 85%), irregular outline (the footprint fills under 80% of its bounding box), lit interiors (12+ lights), lots of hiding spots (over 15%). |
-| creativity score | 1 per feature, plus 0.5 for each feature at most a quarter of the maps have (up to 2). |
+| creativity score | 0.75 per feature, plus 0.5 for each feature at most a quarter of the maps have (up to 2), plus 1.5 for a setting of its own. A map can't reach 7 on a checklist alone. |
 | originality | Each map is turned into 9 numbers: levels, height range, loops per area, visible pairs, cover, grapple anchors, speed lanes, short-range share, detail density. These are normalised across all maps. Distance to the nearest other map is the root mean square of the differences, reduced by up to half when the top-down footprints match. **Footprint** = a 24×24 grid of floor heights, compared in all 4 rotations. |
 | originality score | 8 × distance to the nearest map, capped at 10. "Most similar map" names that neighbour. |
 
+## Mode fit
+Each map is built for one mode (its `for` line), and is judged on what that mode needs:
+
+| mode | what it needs (10 when) |
+|---|---|
+| duel / 1v1 / tourney | fair spawns (3), a compact map of 300–2000 m² (2.5), spawns 2.5–7 s apart at a run (2.5), loops (2) |
+| team vs | fair spawns (3), 700–3000 m² (2.5), spawns 4–9 s apart (2.5), loops (2) |
+| bomb | defenders reach a site 3–10 s before the attackers (4), two sites (3), loops (3) |
+| king of the hill | equal walks to the hill (4), 4+ ways onto it (3), cover on 35% of it (3) |
+| payload / neutral payload | a 70–160 m track (3.5), cover on 35% of the floor beside it (3.5), fairness (3, neutral only) |
+| free for all | 12+ spawns (3), no spawn in sight of another (4; 30% in sight scores nothing), loops (3) |
+| race | the race tech check above |
+| hide and seek / tag | hiding spots on 15% of the floor and loops; hide weighs hiding 6:4, tag weighs loops 6:4 (a chase needs ways round) |
+
 ## The bar
-Every map must score **at least 7 in decor, layout, movement, creativity and balance** (where it has team modes). Originality is left out: a map can't help resembling the others. `quark_tests` fails if any map is below the bar, and `quark_tests mapreport` prints which.
+Every map must score **at least 7 in decor, layout, movement, creativity, mode fit and balance** (balance where it has team modes). It must also declare one mode and a setting.
+
+The tests also climb every ladder and walk up every staircase with the real movement code (`quark_tests ladders`, `quark_tests stairs`). No staircase may cut through another walkable surface, or hang over one with less than a player's height of clearance.
+
+Debugging: `MR_DEAD=<map>` lists dead ends, `MR_LEVELS=<map>` the floor area per height band, and `MR_PATH=1` every link of the tech paths. `LADDER_TRACE=<map>` (with `LADDER_AT=<x>`) and `STAIRS_TRACE=<map>` trace a climb. Originality is left out: a map can't help resembling the others. `quark_tests` fails if any map is below the bar, and `quark_tests mapreport` prints which.
 
 Every structure on a map should have a reason to be there, for the game or for the place. [MAP_STRUCTURES.md](MAP_STRUCTURES.md) lists them.
 
