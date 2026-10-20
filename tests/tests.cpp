@@ -419,7 +419,9 @@ static int runBot(const std::string& addr, double seconds, const std::string& na
 
 static void testWeapons(uint16_t port) {
     printf("weapons: sniper (scoped/unscoped), laser, rocket\n");
-    for (int w : {WPN_SNIPER, WPN_LASER, WPN_ROCKET, WPN_SHOTGUN, WPN_CROSSBOW, WPN_STICKY}) {
+    for (int wi : std::initializer_list<int>{WPN_SNIPER, -WPN_SNIPER - 1, WPN_LASER, WPN_ROCKET, WPN_SHOTGUN, WPN_CROSSBOW, WPN_STICKY}) {
+        bool head = wi < 0; // the second sniper pass aims at the head
+        int w = head ? -wi - 1 : wi;
         Server s;
         ServerConfig cfg;
         cfg.autoStart = true;
@@ -441,7 +443,7 @@ static void testWeapons(uint16_t port) {
             UserCmd c;
             if (i != 0) return c;
             Vec3 eye = a.predicted().pos + Vec3(0, kEyeHeight, 0);
-            Vec3 tgt = sb.move.pos + Vec3(0, w == WPN_ROCKET ? 0.2f : 1.0f, 0);
+            Vec3 tgt = sb.move.pos + Vec3(0, w == WPN_ROCKET ? 0.2f : head ? 1.72f : 1.0f, 0);
             const WeaponDef& wd = weaponDef(w);
             if (wd.projectile && wd.gravity > 0) { // aim above for the drop
                 float t = length(tgt - eye) / wd.projSpeed;
@@ -463,7 +465,10 @@ static void testWeapons(uint16_t port) {
         double elapsed = timeNow() - t0;
         if (w == WPN_ROCKET || w == WPN_CROSSBOW || w == WPN_STICKY) pump(s, cls, 1.0, idle); // let it fly
         float dealt = (sb.deaths > deaths0) ? 100.0f : hp0 - sb.health;
-        if (w == WPN_SNIPER) CHECK(dealt >= weaponDef(WPN_SNIPER).damage); // one scoped shot
+        if (w == WPN_SNIPER) { // one scoped shot: 40 on the body, 50 on the head
+            printf("  sniper %s: %.0f damage\n", head ? "head" : "body", dealt);
+            CHECK(std::fabs(dealt - (head ? kSniperHeadDamage : weaponDef(WPN_SNIPER).damage)) < 0.5f);
+        }
         if (w == WPN_LASER) {                                     // ~5 dmg every 0.05 s
             float expect = (float)(elapsed / weaponDef(WPN_LASER).refire) * weaponDef(WPN_LASER).damage;
             printf("  laser: %.1f damage in %.2f s (expected ~%.1f)\n", dealt, elapsed, expect);

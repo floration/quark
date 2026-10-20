@@ -78,6 +78,7 @@ Perfect-aim time to kill from 100 hp: knife 1.4 s (3 hits, 2.8 m), crossbow 1.5 
 - Sniper TTK 4.0 s at 3 hits makes a 2-hit crossbow strictly better at range ≤ 90 m/s travel. Proposal: sniper
   50 dmg (2 hits, 2.0 s) or headshots.
 - No changes to numbers in 1.0 without the owner's call.
+- 1.0.1 (owner): rocket refire 1.6 s, crossbow 2.0 s reload at 76.5 m/s, sniper headshots 50.
 
 ## 5. Website
 Checked at 390 px and 1280 px: layout, links, live leaderboard / changelog / weapons, 15 map screenshots

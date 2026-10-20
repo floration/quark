@@ -272,7 +272,7 @@ private:
     void fireWeapon(int id, const UserCmd& cmd);
     void tickProjectiles();
     void explode(const Vec3& at, int owner, int weapon);
-    void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t viewMs, float* dmgPerPlayer, float dmg);
+    void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t viewMs, float* dmgPerPlayer, float dmg, float headDmg = 0);
     Vec3 spreadDir(const Vec3& dir, float spread, uint32_t seq, int pellet);
     void sendSnapshots();
     void updateVisibility();

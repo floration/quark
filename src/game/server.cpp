@@ -964,11 +964,12 @@ Vec3 Server::spreadDir(const Vec3& dir, float spread, uint32_t seq, int pellet) 
 
 // One lag-compensated ray: adds dmg to the first player it hits (tested against where players
 // were at the shooter's view time).
-void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t vt, float* dmgPer, float dmg) {
+void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t vt, float* dmgPer, float dmg, float headDmg) {
     float bang;
     float wall = map_.raycastBullet(eye, dir, range, &bang); // goes through wallbang brushes
     float best = wall >= 0 ? wall : range;
     int hit = -1;
+    AABB hitBb;
     Vec3 inv = safeInv(dir);
     for (int i = 0; i < kMaxPlayers; i++) {
         if (i == id || !players_[i].connected || !players_[i].alive) continue;
@@ -980,10 +981,14 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
             if (h.tick == 0xFFFFFFFFu || h.tick > timeMs_) break;
             if (h.tick <= vt) { if (h.alive) { pos = h.pos; crouched = h.crouched; } break; }
         }
-        float t = rayAABB(eye, inv, hitBox(pos, crouched), best);
-        if (t >= 0 && t < best) { best = t; hit = i; }
+        AABB bb = hitBox(pos, crouched);
+        float t = rayAABB(eye, inv, bb, best);
+        if (t >= 0 && t < best) { best = t; hit = i; hitBb = bb; }
     }
-    if (hit >= 0) dmgPer[hit] += (bang >= 0 && best > bang) ? dmg * kWallbangDamage : dmg;
+    if (hit < 0) return;
+    float y = eye.y + dir.y * best; // headshot: the ray enters the top of the box
+    if (headDmg > 0 && y >= hitBb.mx.y - (hitBb.mx.y - hitBb.mn.y) * kHeadFraction) dmg = std::max(dmg, headDmg);
+    dmgPer[hit] += (bang >= 0 && best > bang) ? dmg * kWallbangDamage : dmg;
 }
 
 // A pellet that ricochets: straight until it hits a player (done) or a wall, then reflects off it, up to
@@ -1080,7 +1085,7 @@ void Server::fireWeapon(int id, const UserCmd& cmd) {
     for (int k = 0; k < wd.pellets; k++) {
         Vec3 d = spreadDir(aim, spread, cmd.seq, k);
         if (bounce) bounceShot(id, eye, d, range, vt, dmgPer, dmg * kShotgunBounceDamage);
-        else hitscan(id, eye, d, range, vt, dmgPer, dmg);
+        else hitscan(id, eye, d, range, vt, dmgPer, dmg, p.weapon == WPN_SNIPER ? kSniperHeadDamage : 0);
     }
     for (int i = 0; i < kMaxPlayers; i++) {
         if (dmgPer[i] <= 0) continue;
