@@ -55,6 +55,12 @@ RankKey loadOrCreateRankKey(const std::string& path) {
     return k;
 }
 
+static std::string hexName(const std::string& name) {
+    std::string h;
+    for (char c : name.substr(0, 20)) if (c >= 32 && c < 127) { char b[3]; snprintf(b, sizeof b, "%02x", (unsigned char)c); h += b; }
+    return h;
+}
+
 std::string buildRankReport(const std::string& text, const std::vector<std::string>& ids, const RankKey& me,
                             std::vector<std::string>* playersOut, std::string* ladderOut, const std::string& name) {
     if (me.secret.empty()) return "";
@@ -77,10 +83,29 @@ std::string buildRankReport(const std::string& text, const std::vector<std::stri
     if (!mine) return "";
     if (playersOut) *playersOut = players;
     if (ladderOut) *ladderOut = mode;
-    std::string nameHex; // shown on the leaderboard; hex keeps the form body plain
-    for (char c : name.substr(0, 20)) if (c >= 32 && c < 127) { char b[3]; snprintf(b, sizeof b, "%02x", (unsigned char)c); nameHex += b; }
+    std::string nameHex = hexName(name); // shown on the leaderboard; hex keeps the form body plain
     return "secret=" + me.secret + "&match=" + match + "&ladder=" + mode + "&p=" + p + (nameHex.empty() ? "" : "&name=" + nameHex);
 }
+
+
+std::string buildRaceReport(const std::string& map, int ms, const std::vector<int>& splits, const RankKey& me, const std::string& name) {
+    if (me.secret.empty() || splits.empty() || splits.back() != ms) return "";
+    std::string sp;
+    for (int x : splits) sp += (sp.empty() ? "" : ",") + std::to_string(x);
+    std::string nh = hexName(name);
+    return "secret=" + me.secret + "&map=" + map + "&ms=" + std::to_string(ms) + "&splits=" + sp + "&v=" QUARK_VERSION + (nh.empty() ? "" : "&name=" + nh);
+}
+
+void RankService::submitRace(const std::string& body, const std::string& map) {
+    Job j{timeNow(), true, body, "race:" + map, {}};
+    j.path = "/racetime";
+    push(j);
+    Job b{timeNow() + 2, false, "", "race:" + map, {}}; // then the board, with the new time on it
+    b.board = true;
+    push(b);
+}
+
+void RankService::fetchRaceBoard(const std::string& map) { Job j{timeNow(), false, "", "race:" + map, {}}; j.board = true; push(j); }
 
 int Rating::display() const { return (int)std::lround(std::max(0.0, mu - 3 * sigma) * 40); }
 
@@ -146,16 +171,20 @@ void RankService::run() {
         std::map<std::string, Rating> got;
         std::vector<LeaderRow> board;
         bool gotBoard = false;
-        bool okLadderName = !j.ladder.empty();
-        for (char c : j.ladder) okLadderName &= (bool)isalnum((unsigned char)c);
+        bool race = j.ladder.rfind("race:", 0) == 0; // "race:<map>": time trial board / submission
+        std::string key = race ? j.ladder.substr(5) : j.ladder;
+        bool okLadderName = !key.empty();
+        for (char c : key) okLadderName &= (bool)isalnum((unsigned char)c);
         if (j.board) {
-            if (!base.empty() && okLadderName && httpGetText(base + "/leaderboard?ladder=" + j.ladder + "&n=25", out, 6000, &err)) {
+            std::string url = race ? base + "/raceboard?map=" + key + "&n=25" : base + "/leaderboard?ladder=" + key + "&n=25";
+            if (!base.empty() && okLadderName && httpGetText(url, out, 6000, &err)) {
                 std::istringstream in(out);
                 std::string line;
                 while (std::getline(in, line)) {
                     LeaderRow r;
                     std::istringstream ls(line);
-                    if (!(ls >> r.rating >> r.games)) continue;
+                    if (!(ls >> r.rating)) continue;
+                    if (!race && !(ls >> r.games)) continue;
                     std::getline(ls, r.name);
                     while (!r.name.empty() && r.name[0] == ' ') r.name.erase(0, 1);
                     board.push_back(r);
@@ -168,7 +197,8 @@ void RankService::run() {
             }
         } else if (base.empty()) msg = "ranked: no server configured";
         else if (j.report) {
-            msg = httpPostForm(base + "/report", j.body, out, 8000, &err) ? "ranked result: " + out : "ranked report failed: " + err;
+            msg = httpPostForm(base + j.path, j.body, out, 8000, &err) ? (race ? "race time: " : "ranked result: ") + out
+                                                                      : (race ? "race time not sent: " : "ranked report failed: ") + err;
         } else {
             std::string ids;
             for (auto& id : j.ids) if (isHex(id, 32)) ids += (ids.empty() ? "" : ",") + id;

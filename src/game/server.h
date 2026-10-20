@@ -52,6 +52,7 @@ struct ServerConfig {
     std::vector<int> tourneyVariants;
     bool editMode = false;      // start as a map edit session (anyone connected can edit; the host autosaves)
     std::string restartFlag;    // if this file appears (an update was installed), restart once no match is being played
+    bool timeTrial = false;     // solo ranked race on Viaduct: no bots, checkpoint splits sent to the racer
     bool ranked = false;        // matches are rated (OpenSkill) once every player reports the same result; no bots
 };
 enum LogLevel { LOG_OFF = 0, LOG_SIMPLE, LOG_VERBOSE, LOG_EXTREME };

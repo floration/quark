@@ -321,6 +321,37 @@ static void testSession(int mode, const char* mapName, uint16_t port) {
     s.stop();
 }
 
+// Time trial: solo Viaduct race, every checkpoint sends the racer a split (increasing ms, last = finish).
+static void testTimeTrial(uint16_t port) {
+    printf("time trial: solo race splits on viaduct\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "viaduct"; cfg.mode = MODE_RACE; cfg.port = port;
+    cfg.timeTrial = true; cfg.vsBots = true; cfg.autoStart = true; cfg.maxPlayers = 1; cfg.roundsToWin = 10000;
+    cfg.botsEnemy = cfg.botsAlly = 0;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    NetClient a;
+    a.connect("127.0.0.1:" + std::to_string(port), "racer");
+    std::vector<NetClient*> cls = {&a};
+    for (int i = 0; i < 300 && !(a.hasSnapshot() && a.mode().phase == PHASE_LIVE); i++) pump(s, cls, 0.1, idle);
+    CHECK(a.hasSnapshot() && a.mode().phase == PHASE_LIVE);
+    CHECK(a.hasSnapshot() && (a.mode().flags & MS_TIMETRIAL));
+    a.takeEvents();
+    const auto& cps = s.map_.checkpoints;
+    auto& p = s.players_[a.clientId()];
+    std::vector<int> splits;
+    for (size_t c = 0; c < cps.size(); c++) {
+        p.move.pos = cps[c].center(); p.move.pos.y = cps[c].mn.y + 0.05f; p.move.vel = {};
+        pump(s, cls, 0.3, idle);
+        for (auto& e : a.takeEvents()) if (e.type == EV_RACE_SPLIT && e.a == a.clientId()) splits.push_back(atoi(e.text.c_str()));
+    }
+    printf("  %zu checkpoints, %zu splits, finish %d ms\n", cps.size(), splits.size(), splits.empty() ? 0 : splits.back());
+    CHECK(splits.size() == cps.size() && cps.size() >= 8);
+    for (size_t i = 1; i < splits.size(); i++) CHECK(splits[i] > splits[i - 1]);
+    s.stop();
+}
+
 static void testPayloadPush(uint16_t port) {
     printf("payload push\n");
     Server s;
@@ -1725,6 +1756,7 @@ int main(int argc, char** argv) {
     uint16_t port = 28500;
     if (argc >= 2 && std::string(argv[1]) == "ranked") { testRanked(29610); testRankedVoteAndRestart(29620); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(29600); testEditSession(29601); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(29960); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(29950); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(29900); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
@@ -1736,6 +1768,7 @@ int main(int argc, char** argv) {
     testSession(MODE_PAYLOAD, "bastion", port++);
     testSession(MODE_FFA, "bastion", port++);
     testSession(MODE_RACE, "foundry", port++);
+    testTimeTrial(port++);
     testPayloadPush(port++);
     testPacketLoss(port++);
     testWeapons(port); port += 8;

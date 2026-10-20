@@ -98,5 +98,19 @@ const ratings = async (ns, ladder = "vanilla") => Object.fromEntries((await call
 }
 check((await call("/report", { secret: secret(1), match: "cccccccccccccccc", ladder: "vanilla", p: `${id(1)}:0:0` })) === "bad result", "one player refused");
 check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", ladder: "vanilla", p: `${id(1)}:0:0,${id(2)}:0:1` })) === "bad result", "one side refused");
+// race time trials: only a faster run replaces your best; the board is fastest first
+{
+  const name = Buffer.from("racer").toString("hex");
+  check((await call("/racetime", { secret: secret(5), map: "viaduct", ms: "40000", splits: "10000,25000,40000", name })) === "first time", "first race time");
+  check((await call("/racetime", { secret: secret(5), map: "viaduct", ms: "41000", splits: "10000,25000,41000" })).startsWith("not faster"), "slower time kept out");
+  check((await call("/racetime", { secret: secret(5), map: "viaduct", ms: "38000", splits: "9000,24000,38000" })) === "new best (was 40000)", "faster time replaces");
+  check((await call("/racetime", { secret: secret(6), map: "viaduct", ms: "39000", splits: "9000,39000" })) === "first time", "second racer");
+  check((await call("/racetime", { secret: secret(6), map: "viaduct", ms: "30000", splits: "9000,29000" })) === "bad splits", "last split must be the time");
+  check((await call("/racetime", { secret: secret(6), map: "viaduct", ms: "30000", splits: "9000,8000,30000" })) === "bad splits", "splits must increase");
+  check((await call("/racetime", { secret: secret(6), map: "viaduct", ms: "900", splits: "900" })) === "bad time", "impossible time");
+  check((await call("/racetime", { secret: secret(6), map: "temple", ms: "30000", splits: "30000" })) === "not a ranked race map", "race map only");
+  const board = (await call("/raceboard?map=viaduct")).split("\n");
+  check(board[0] === "38000 racer" && board[1] === "39000 player" && board.length === 2, "race board " + JSON.stringify(board));
+}
 console.log(fails ? fails + " FAILURE(S)" : "worker tests passed");
 process.exit(fails ? 1 : 0);

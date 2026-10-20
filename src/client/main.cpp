@@ -36,6 +36,8 @@ int main(int argc, char** argv) {
         else if (a == "--crosshair") { opts.debugSettings = true; opts.debugCrosshair = true; }
         else if (a == "--hudlayout") { opts.debugSettings = true; opts.debugHudLayout = true; }
         else if (a == "--models") opts.debugModels = true;
+        else if (a == "--timetrial") opts.timeTrial = true;
+        else if (a == "--racestats") { opts.debugLeaderboard = true; opts.debugRaceStats = true; }
         else if (a == "--widgets") { opts.debugSettings = true; opts.debugWidgets = true; }
         else if (a == "--controls") { opts.debugSettings = true; opts.debugControls = true; }
         else if (a == "--editor") opts.editMap = next();

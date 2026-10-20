@@ -7,3 +7,6 @@ CREATE TABLE IF NOT EXISTS reports (match TEXT NOT NULL, reporter TEXT NOT NULL,
 CREATE INDEX IF NOT EXISTS matches_created ON matches (created);
 -- leaderboard names (0.28.0+): the latest name each player reported with
 CREATE TABLE IF NOT EXISTS names (id TEXT PRIMARY KEY, name TEXT NOT NULL, updated INTEGER NOT NULL);
+-- race time trials (1.1.0+): each player's best run per map, with its checkpoint log (ms at each checkpoint)
+CREATE TABLE IF NOT EXISTS race_times (map TEXT NOT NULL, id TEXT NOT NULL, ms INTEGER NOT NULL, splits TEXT NOT NULL, version TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY (map, id));
+CREATE INDEX IF NOT EXISTS race_times_ms ON race_times (map, ms);

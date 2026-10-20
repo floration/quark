@@ -9,6 +9,11 @@
 //   POST /report  form: secret, match, ladder, p=id:team:place,...   one player's account of a finished match
 //   GET  /ratings?ladder=L&ids=a,b,c                                 "id mu sigma games" per line (unknown ids: defaults)
 //   GET  /leaderboard?ladder=L[&n=25]                                "rating games name" per line, best first (3+ games)
+// Race time trials (single player, Viaduct):
+//   POST /racetime  form: secret, map, ms, splits=ms,ms,... (time at each checkpoint), name (hex), v   kept only if
+//                   it beats this player's best. The splits are stored so odd runs can be checked and deleted by
+//                   hand: DELETE FROM race_times WHERE map = 'viaduct' AND id = '<id>' (ids: SELECT ... JOIN names).
+//   GET  /raceboard?map=M[&n=25]                                      "ms name" per line, fastest first
 // Ladders (each its own ratings): vanilla (all weapons), vampire (laser vampire), instagib. Rows are keyed "ladder:id".
 // A player's id is the first 32 hex chars of sha256(secret); the secret never leaves their game except to
 // here. A match counts only when every player in it has reported the exact same result; any disagreement
@@ -18,6 +23,36 @@ const FRESH_MS = 150000;
 const MU = 25, SIGMA = 25 / 3, BETA = SIGMA / 2, TAU = MU / 300, EPS = 1e-4;
 const PENDING_MS = 3600000;
 const LADDERS = new Set(["vanilla", "vampire", "instagib"]);
+const RACE_MAPS = new Set(["viaduct"]);
+const RACE_MIN_MS = 5000; // nothing finishes faster: below this it's not a real run
+
+async function saveName(env, me, nameHex, now) {
+  if (!/^([0-9a-f]{2}){1,20}$/.test(nameHex)) return;
+  const name = nameHex.match(/../g).map((h) => String.fromCharCode(parseInt(h, 16))).join("");
+  if (/^[\x20-\x7e]+$/.test(name))
+    await env.DB.prepare("INSERT INTO names (id, name, updated) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, updated = excluded.updated")
+      .bind(me, name.trim().slice(0, 20) || "player", now).run();
+}
+
+async function raceTime(env, form, now) {
+  const secret = String(form.get("secret") || ""), map = String(form.get("map") || "");
+  if (!/^[0-9a-f]{64}$/.test(secret)) return "bad request";
+  if (!RACE_MAPS.has(map)) return "not a ranked race map";
+  const ms = parseInt(String(form.get("ms") || ""), 10);
+  const splits = String(form.get("splits") || "").split(",").map((x) => parseInt(x, 10));
+  if (!(ms >= RACE_MIN_MS && ms < 3600000)) return "bad time";
+  // checkpoint times: increasing, the last one is the finish
+  if (!splits.length || splits.length > 64 || splits.some((x, i) => !(x > 0) || (i && x <= splits[i - 1])) || splits[splits.length - 1] !== ms) return "bad splits";
+  const me = (await sha256hex(secret)).slice(0, 32);
+  await saveName(env, me, String(form.get("name") || ""), now);
+  const best = await env.DB.prepare("SELECT ms FROM race_times WHERE map = ? AND id = ?").bind(map, me).first();
+  if (best && best.ms <= ms) return `not faster (best ${best.ms})`;
+  await env.DB.prepare(
+    "INSERT INTO race_times (map, id, ms, splits, version, created) VALUES (?, ?, ?, ?, ?, ?) " +
+    "ON CONFLICT(map, id) DO UPDATE SET ms = excluded.ms, splits = excluded.splits, version = excluded.version, created = excluded.created"
+  ).bind(map, me, ms, splits.join(","), String(form.get("v") || "").slice(0, 16), now).run();
+  return best ? `new best (was ${best.ms})` : "first time";
+}
 
 async function sha256hex(s) {
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
@@ -90,13 +125,7 @@ async function report(env, form, now) {
   const me = (await sha256hex(secret)).slice(0, 32);
   if (!res.entries.some((e) => e.id === me)) return "not in this match";
   // the reporter's display name for the leaderboard (hex-encoded printable ASCII, up to 20 chars)
-  const nameHex = String(form.get("name") || "");
-  if (/^([0-9a-f]{2}){1,20}$/.test(nameHex)) {
-    const name = nameHex.match(/../g).map((h) => String.fromCharCode(parseInt(h, 16))).join("");
-    if (/^[\x20-\x7e]+$/.test(name))
-      await env.DB.prepare("INSERT INTO names (id, name, updated) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, updated = excluded.updated")
-        .bind(me, name.trim().slice(0, 20) || "player", now).run();
-  }
+  await saveName(env, me, String(form.get("name") || ""), now);
   const result = ladder + "|" + res.text;
   if (Math.random() < 0.02) await env.DB.prepare("UPDATE matches SET status = 'expired' WHERE status = 'pending' AND created < ?").bind(now - PENDING_MS).run();
   let m = await env.DB.prepare("SELECT result, players, status, created FROM matches WHERE id = ?").bind(match).first();
@@ -182,6 +211,18 @@ export default {
         "ORDER BY (p.mu - 3 * p.sigma) DESC LIMIT ?"
       ).bind(ladder.length + 2, ladder + ":%", n).all();
       return text(results.map((r) => `${Math.round(Math.max(0, r.mu - 3 * r.sigma) * 40)} ${r.games} ${r.name}`).join("\n"));
+    }
+    if (u.pathname === "/racetime" && req.method === "POST") {
+      return text(await raceTime(env, await req.formData(), now));
+    }
+    if (u.pathname === "/raceboard") {
+      if (!RACE_MAPS.has(q("map"))) return text("not a ranked race map", 400);
+      const n = Math.min(100, Math.max(1, parseInt(q("n"), 10) || 25));
+      const { results } = await env.DB.prepare(
+        "SELECT r.ms, COALESCE(n.name, 'player') AS name FROM race_times r LEFT JOIN names n ON n.id = r.id " +
+        "WHERE r.map = ? ORDER BY r.ms ASC, r.created ASC LIMIT ?"
+      ).bind(q("map"), n).all();
+      return text(results.map((r) => `${r.ms} ${r.name}`).join("\n"));
     }
     if (u.pathname === "/ratings") {
       const ids = q("ids").split(",").filter((id) => /^[0-9a-f]{32}$/.test(id)).slice(0, 64);

@@ -1,3 +1,4 @@
+#include <fstream>
 #include <sstream>
 #include "../common/profile.h"
 #include <array>
@@ -9,6 +10,7 @@
 #include <cstdio>
 #include "../game/gamemodes.h"
 
+static std::string fmtRace(int ms);
 static std::string hudCfgPath() { return findDataPath("maps") + "/../hud.cfg"; } // scriptable widgets, next to quark.cfg
 
 namespace {
@@ -52,7 +54,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     rescanMaps();
     rankKey_ = loadOrCreateRankKey(findDataPath("maps") + "/../quark.key"); // ranked identity: stays on this computer
     if (opts_.hostMode < 0 && opts_.vsBotsMode < 0 && opts_.connect.empty() && opts_.editMap.empty()) loadMenuBackdrop();
-    if (opts_.debugLeaderboard) setScreen(Screen::Leaderboard);
+    if (opts_.debugLeaderboard) { setScreen(Screen::Leaderboard); raceStatsView_ = opts_.debugRaceStats; }
     if (!opts_.editMap.empty()) { openEditor(opts_.editMap); if (opts_.editSession) edHostSession(); if (opts_.editSel >= 0) edSel_ = {ED_BRUSH, opts_.editSel}; }
     for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == cfg_.hostMap) hostMapIdx_ = (int)i;
     hostModeIdx_ = clampf((float)cfg_.hostMode, 0, MODE_COUNT - 1);
@@ -67,7 +69,8 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     audio_.setMasterVolume(cfg_.volume);
 
     botMapIdx_ = bestMapFor(cfg_.botMode);
-    if (opts_.vsBotsMode >= 0) {
+    if (opts_.timeTrial) startTimeTrial();
+    else if (opts_.vsBotsMode >= 0) {
         cfg_.botMode = opts_.vsBotsMode;
         botMapIdx_ = bestMapFor(cfg_.botMode);
         if (!opts_.hostMap.empty())
@@ -120,7 +123,23 @@ void Game::startHost(bool vsBots) {
         sc.mode = MODE_ARENA;
         if (!arenaVariantRanked(sc.arenaVariant)) sc.arenaVariant = 0;
     }
-    if (vsBots) { // private local game: any free port, no port forwarding, fixed bots
+    if (vsBots && timeTrialStart_) { // solo ranked race: Viaduct, nobody else, rounds forever (each one is a run)
+        timeTrialStart_ = false;
+        sc.name = "time trial";
+        sc.map = "viaduct";
+        sc.mode = MODE_RACE;
+        sc.port = 0;
+        sc.upnp = false;
+        sc.lanOnly = true;
+        sc.publicList = false;
+        sc.maxPlayers = 1;
+        sc.vsBots = true;
+        sc.autoStart = true;
+        sc.ranked = false;
+        sc.timeTrial = true;
+        sc.botsEnemy = sc.botsAlly = 0;
+        sc.roundsToWin = 10000;
+    } else if (vsBots) { // private local game: any free port, no port forwarding, fixed bots
         sc.name = "vs bots";
         sc.map = maps_[botMapIdx_ % maps_.size()];
         sc.mode = cfg_.botMode;
@@ -537,7 +556,7 @@ UserCmd Game::buildCmd() {
     }
     // Opposite movement keys held together (SOCD): cancel out (default), or the last / first pressed wins.
     // Ranked always uses the default.
-    bool ranked = net_.hasSnapshot() && (net_.mode().flags & MS_RANKED);
+    bool ranked = fairRules();
     int socd = ranked ? 0 : modeCtlActive_ ? modeSocd_ : cfg_.socd;
     auto axis = [&](int pos, int neg, int& lastDir, bool& pPrev, bool& nPrev) {
         bool p = isDown(pos), n = isDown(neg);
@@ -628,6 +647,9 @@ void Game::handleEvents() {
                 notify("RANKED MATCH OVER - REPORTING THE RESULT", 4);
                 break;
             }
+            case EV_RACE_SPLIT:
+                if (e.a == net_.clientId()) onRaceSplit(e.b, atoi(e.text.c_str()));
+                break;
             case EV_ROUND_WIN:
                 centerText_ = e.text;
                 centerUntil_ = time_ + (e.b ? 8.0 : 3.5);
@@ -689,16 +711,16 @@ void Game::frame(double dt) {
     r_.setMsaa(cfg_.msaa);
     {   // per-mode HUD / controls rules follow the running mode (back to your defaults outside a game)
         // ranked never takes a rule: the default HUD and your own binds, no control scripts
-        int m = net_.state() == ConnState::Connected && net_.hasSnapshot() && !(net_.mode().flags & MS_RANKED) ? (int)net_.mode().mode : -1;
+        int m = net_.state() == ConnState::Connected && net_.hasSnapshot() && !fairRules() ? (int)net_.mode().mode : -1;
         if (m != appliedMode_) applyModeRules(m);
     }
     if (net_.state() == ConnState::Connected && net_.hasSnapshot() && time_ >= modelSentAt_ + 1.0 &&
-        ((!(net_.mode().flags & MS_RANKED) && net_.playerModel(net_.clientId()) != cfg_.model) || net_.playerSoundPack(net_.clientId()) != cfg_.soundPack)) {
+        ((!fairRules() && net_.playerModel(net_.clientId()) != cfg_.model) || net_.playerSoundPack(net_.clientId()) != cfg_.soundPack)) {
         net_.sendCommand("model " + std::to_string(cfg_.model) + " " + std::to_string(cfg_.soundPack)); // everyone sees / hears your picks (cosmetic only)
         modelSentAt_ = time_;
     }
     if (audio_.pack() != cfg_.soundPack) audio_.setPack(cfg_.soundPack);
-    net_.setInterpFixed(net_.hasSnapshot() && (net_.mode().flags & MS_RANKED) ? 0.010f : cfg_.interpMs > 0 ? cfg_.interpMs * 0.001f : -1.0f);
+    net_.setInterpFixed(fairRules() ? 0.010f : cfg_.interpMs > 0 ? cfg_.interpMs * 0.001f : -1.0f);
     frameInput_ = pendingInput_; // the oldest input this frame will show
     pendingInput_ = -1;
     if (opts_.bench > 0 && screen_ == Screen::InGame) benchFrame(dt);
@@ -935,7 +957,7 @@ void Game::drawWorld(float alpha) {
         auto part = [&](const Vec3& c, const Vec3& half, const Vec3& colr, bool shadow = true) { r_.box(c, half * bs, yaw, colr, sv, shadow, vis); };
         const Vec3 grey = {0.32f, 0.33f, 0.36f}, dark = {0.05f, 0.05f, 0.06f};
         int model = opts_.debugModels && i >= kMaxPlayers - kPlayerModels ? i - (kMaxPlayers - kPlayerModels) : net_.playerModel(i);
-        switch ((net_.mode().flags & MS_RANKED) ? 0 : model) { // ranked: default model for everyone
+        switch (fairRules() ? 0 : model) { // ranked / time trial: default model for everyone
             case 1: // HEAVY: wide armoured body, shoulder pads, small helmet
                 part(at(0.45f), Vec3(0.32f, 0.45f * hs, 0.24f), col * 0.45f);
                 part(at(1.15f), Vec3(0.44f, 0.3f * hs, 0.28f), col);
@@ -1338,6 +1360,7 @@ void Game::drawHud() {
         case PHASE_LIVE:
             if (ms.mode == MODE_VS || ms.mode == MODE_DUEL || ms.mode == MODE_ARENA || ms.mode == MODE_TOURNEY) phase = (ms.flags & MS_DRAIN) ? "STALEMATE - HEALTH DRAINING" : "DRAIN IN " + fmtTime(ms.timeLeft);
             else if (ms.mode == MODE_KOTH) phase = "FIRST TO " + std::to_string(ms.target);
+            else if (ms.flags & MS_TIMETRIAL) phase = fmtRace((int)std::lround((300.0f - ms.timeLeft) * 1000)).substr(0, 7); // run time so far
             else phase = fmtTime(ms.timeLeft) + ((ms.flags & MS_OVERTIME) ? " OVERTIME" : "");
             break;
         case PHASE_ROUND_END: phase = "ROUND OVER"; break;
@@ -1345,6 +1368,7 @@ void Game::drawHud() {
     }
     bool rankedGame = ms.flags & MS_RANKED;
     if (rankedGame) title = std::string("RANKED 1V1 - ") + arenaVariant(ms.arenaVariant).title;
+    if (ms.flags & MS_TIMETRIAL) title = "TIME TRIAL - VIADUCT";
     ui_.panel(cx - 220 * s, 8 * s, 440 * s, 64 * s, 0.55f);
     if (rankedGame) { // always visible on a ranked server
         const Color gold = {1.0f, 0.78f, 0.25f, 1};
@@ -1499,9 +1523,13 @@ void Game::drawHud() {
         ui_.labelCentered(cx, H - 60 * s, t, kGrey);
     }
 
+    if (time_ < splitUntil_) { // race split, with the difference to your best run
+        float k = std::max(1.0f, std::round(ts * 1.2f));
+        r_.text(cx - r_.textWidth(splitText_, k) * 0.5f, cy + 120 * s, k, splitText_, splitColor_);
+    }
     // kill feed (top right), under the verbose info block; hud.cfg widgets. Ranked: the default HUD only.
     float y = 12 * s;
-    if (!rankedGame) {
+    if (!fairRules()) {
         if (cfg_.hudVerbose || cfg_.hudWidgets) computeHudVals();
         if (cfg_.hudVerbose) drawVerboseHud(W, s, y);
         if (cfg_.hudWidgets && !widgetEdit_) {
@@ -1869,10 +1897,168 @@ void Game::drawWidgetEditor() {
     if (ui_.button(px, y, pw, h, "DELETE WIDGET")) { L.erase(L.begin() + widgetSel_); widgetSel_ = -1; }
 }
 
+static std::string raceLogPath() { return findDataPath("maps") + "/../race_times.log"; }
+
+static std::string fmtRace(int ms) {
+    char b[32];
+    snprintf(b, sizeof b, "%d:%02d.%03d", ms / 60000, ms / 1000 % 60, ms % 1000);
+    return b;
+}
+
+// race_times.log: one finished run per line, "unix-time map ms trial(0/1) split,split,..."
+void Game::loadRaceRuns() {
+    raceRunsLoaded_ = true;
+    raceRuns_.clear();
+    std::ifstream f(raceLogPath());
+    std::string line;
+    while (std::getline(f, line)) {
+        std::istringstream ls(line);
+        RaceRun r;
+        int trial = 0;
+        std::string sp, tok;
+        if (!(ls >> r.when >> r.map >> r.ms >> trial >> sp)) continue;
+        r.trial = trial != 0;
+        std::istringstream ss(sp);
+        while (std::getline(ss, tok, ',')) r.splits.push_back(atoi(tok.c_str()));
+        if (!r.splits.empty() && r.splits.back() == r.ms) raceRuns_.push_back(r);
+    }
+}
+
+const Game::RaceRun* Game::bestRun(const std::string& map, bool trial) const {
+    const RaceRun* b = nullptr;
+    for (auto& r : raceRuns_) if (r.map == map && (!trial || r.trial) && (!b || r.ms < b->ms)) b = &r;
+    return b;
+}
+
+void Game::onRaceSplit(int cp, int ms) {
+    if (!raceRunsLoaded_) loadRaceRuns();
+    if (cp == 1) raceSplits_.clear();
+    if ((int)raceSplits_.size() != cp - 1) { raceSplits_.clear(); return; } // missed one: this run doesn't count
+    raceSplits_.push_back(ms);
+    const std::string map = net_.map().name;
+    bool trial = (net_.mode().flags & MS_TIMETRIAL) != 0;
+    const RaceRun* best = bestRun(map, trial);
+    int total = (int)net_.map().checkpoints.size();
+    // the split, and how it compares with the same checkpoint on your best run (green = ahead)
+    splitText_ = (cp == total ? "FINISH " : "CHECKPOINT " + std::to_string(cp) + "  ") + fmtRace(ms);
+    splitColor_ = kWhite;
+    if (best && (int)best->splits.size() == total && cp <= total) {
+        int d = ms - best->splits[cp - 1];
+        char b[32];
+        snprintf(b, sizeof b, "  %c%d.%03d", d < 0 ? '-' : '+', std::abs(d) / 1000, std::abs(d) % 1000);
+        splitText_ += b;
+        splitColor_ = d < 0 ? Color{0.3f, 1.0f, 0.4f, 1} : Color{1.0f, 0.4f, 0.35f, 1};
+    }
+    splitUntil_ = time_ + 2.5;
+    if (cp != total) return;
+    RaceRun run;
+    run.when = (long long)::time(nullptr);
+    run.map = map; run.ms = ms; run.trial = trial; run.splits = raceSplits_;
+    raceSplits_.clear();
+    {   // every finished run is kept locally, for the stats page
+        std::ofstream f(raceLogPath(), std::ios::app);
+        f << run.when << " " << run.map << " " << run.ms << " " << (run.trial ? 1 : 0) << " ";
+        for (size_t i = 0; i < run.splits.size(); i++) f << (i ? "," : "") << run.splits[i];
+        f << "\n";
+    }
+    bool pb = !best || ms < best->ms;
+    raceRuns_.push_back(run);
+    if (trial && pb) { // only a new personal best goes to the board (the Worker also keeps only your best)
+        std::string body = buildRaceReport(map, ms, run.splits, rankKey_, cfg_.name);
+        if (!body.empty()) rank_.submitRace(body, map);
+        notify("NEW PERSONAL BEST " + fmtRace(ms) + " - SENT TO THE LEADERBOARD", 5);
+    } else if (pb) notify("NEW PERSONAL BEST " + fmtRace(ms), 5);
+}
+
+void Game::startTimeTrial() {
+    timeTrialStart_ = true;
+    startHost(true);
+}
+
+// Your own race history from race_times.log: best, recent runs, average, best possible from your best splits.
+void Game::drawRaceStats(float cx, float y) {
+    if (!raceRunsLoaded_) loadRaceRuns();
+    float s = ui_.s(), w = 720 * s, x = cx - w * 0.5f, rowH = 17 * s;
+    float ts = std::max(1.0f, std::round(ui_.textScale() * 0.6f));
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 26 * rowH + 60 * s, 0.85f);
+    ui_.labelCentered(cx, y, "MY VIADUCT RUNS");
+    y += 34 * s;
+    std::vector<const RaceRun*> runs;
+    for (auto& r : raceRuns_) if (r.map == "viaduct") runs.push_back(&r);
+    if (runs.empty()) { r_.text(x, y, ts, "NO RUNS YET - FINISH VIADUCT IN A TIME TRIAL OR A RACE", kGrey); return; }
+    int total = 0;
+    for (auto* r : runs) total = std::max(total, (int)r->splits.size());
+    const RaceRun* best = nullptr;
+    long long sum = 0;
+    for (auto* r : runs) { sum += r->ms; if (!best || r->ms < best->ms) best = r; }
+    int recentN = std::min<int>(10, (int)runs.size());
+    long long recent = 0;
+    for (int i = 0; i < recentN; i++) recent += runs[runs.size() - 1 - i]->ms;
+    // best segment times across every complete run: their sum is the best run you've shown you can do
+    std::vector<int> bestSeg(total, INT32_MAX);
+    for (auto* r : runs) {
+        if ((int)r->splits.size() != total) continue;
+        for (int i = 0; i < total; i++) bestSeg[i] = std::min(bestSeg[i], r->splits[i] - (i ? r->splits[i - 1] : 0));
+    }
+    long long possible = 0;
+    for (int v : bestSeg) possible += v == INT32_MAX ? 0 : v;
+    auto row = [&](float cx0, float yy, const std::string& a, const std::string& b, Color c = kWhite) {
+        r_.text(cx0, yy, ts, a, kGrey);
+        r_.text(cx0 + 230 * s - r_.textWidth(b, ts), yy, ts, b, c);
+    };
+    float lx = x, rx = x + 260 * s, yy = y;
+    row(lx, yy, "RUNS", std::to_string(runs.size())); yy += rowH;
+    row(lx, yy, "TIME TRIAL RUNS", std::to_string(std::count_if(runs.begin(), runs.end(), [](const RaceRun* r) { return r->trial; }))); yy += rowH;
+    row(lx, yy, "BEST", fmtRace(best->ms), Color{1.0f, 0.8f, 0.3f, 1}); yy += rowH;
+    row(lx, yy, "BEST POSSIBLE (SEGMENTS)", fmtRace((int)possible), ui_.accent); yy += rowH;
+    row(lx, yy, "AVERAGE", fmtRace((int)(sum / runs.size()))); yy += rowH;
+    row(lx, yy, "AVERAGE, LAST " + std::to_string(recentN), fmtRace((int)(recent / recentN))); yy += rowH;
+    row(lx, yy, "LAST RUN", fmtRace(runs.back()->ms)); yy += rowH * 2;
+    // best run's splits vs your best segment at each checkpoint
+    r_.text(lx, yy, ts, "CHECKPOINT   BEST RUN   BEST SEGMENT", kGrey); yy += rowH;
+    for (int i = 0; i < total && i < 16; i++) {
+        char b[96];
+        int seg = (int)best->splits.size() == total ? best->splits[i] - (i ? best->splits[i - 1] : 0) : 0;
+        snprintf(b, sizeof b, "%-12s %9s  %s", i == total - 1 ? "FINISH" : ("CP " + std::to_string(i + 1)).c_str(),
+                 (int)best->splits.size() == total ? fmtRace(best->splits[i]).c_str() : "-",
+                 bestSeg[i] == INT32_MAX ? "-" : (fmtRace(bestSeg[i]) + (seg > bestSeg[i] ? "  (LOSES " + fmtRace(seg - bestSeg[i]) + ")" : "")).c_str());
+        r_.text(lx, yy, ts, b, kWhite);
+        yy += rowH;
+    }
+    // recent runs, newest first, with a bar against your best
+    yy = y;
+    r_.text(rx + 120 * s, yy, ts, "RECENT RUNS", kGrey); yy += rowH;
+    for (int i = 0; i < 22 && i < (int)runs.size(); i++) {
+        const RaceRun* r = runs[runs.size() - 1 - i];
+        char d[24];
+        time_t t = (time_t)r->when;
+        struct tm lt;
+#ifdef _WIN32
+        localtime_s(&lt, &t);
+#else
+        localtime_r(&t, &lt);
+#endif
+        strftime(d, sizeof d, "%m-%d %H:%M", &lt);
+        Color c = r == best ? Color{1.0f, 0.8f, 0.3f, 1} : kWhite;
+        r_.text(rx + 120 * s, yy, ts, std::string(d) + (r->trial ? "  TT  " : "      ") + fmtRace(r->ms), c);
+        float f = clampf((float)best->ms / r->ms, 0, 1);
+        r_.rect(rx + 120 * s + 210 * s, yy + 2 * s, 100 * s * f, rowH - 6 * s, {c.r, c.g, c.b, 0.5f});
+        yy += rowH;
+    }
+}
+
 void Game::drawLeaderboard(float cx, float y) {
     static const int ladders[3] = {0, 1, 5};
-    float s = ui_.s(), colW = 300 * s, gap = 16 * s, w = 3 * colW + 2 * gap, x0 = cx - w * 0.5f;
+    float s = ui_.s(), colW = 236 * s, gap = 14 * s, w = 4 * colW + 3 * gap, x0 = cx - w * 0.5f;
+    if (raceStatsView_) {
+        drawRaceStats(cx, y);
+        float by = y + 26 * 17 * s + 54 * s;
+        if (ui_.button(cx - 210 * s, by, 200 * s, 36 * s, "LEADERBOARD")) raceStatsView_ = false;
+        if (ui_.button(cx + 10 * s, by, 200 * s, 36 * s, "PLAY TIME TRIAL")) startTimeTrial();
+        return;
+    }
     if (time_ >= nextBoardFetch_) {
+        rank_.fetchRaceBoard("viaduct");
         for (int v : ladders) rank_.fetchLeaderboard(arenaVariant(v).name);
         if (!rankKey_.id.empty()) for (int v : ladders) rank_.fetch(arenaVariant(v).name, {rankKey_.id});
         nextBoardFetch_ = time_ + 30;
@@ -1893,7 +2079,7 @@ void Game::drawLeaderboard(float cx, float y) {
         if (!rows.empty() && rows[0].rating < 0) { r_.text(x + 6 * s, yy, ts, upper(rows[0].name), kGrey); continue; }
         for (size_t i = 0; i < rows.size() && i < 20; i++) {
             std::string n = std::to_string(i + 1) + ". " + upper(rows[i].name);
-            if (n.size() > 22) n.resize(22);
+            if (n.size() > 18) n.resize(18);
             Color c2 = i == 0 ? Color{1.0f, 0.8f, 0.3f, 1} : i < 3 ? kWhite : Color{0.8f, 0.82f, 0.85f, 1};
             r_.text(x + 6 * s, yy, ts, n, c2);
             std::string rt = std::to_string(rows[i].rating);
@@ -1904,8 +2090,34 @@ void Game::drawLeaderboard(float cx, float y) {
         if (rank_.rating(ladder, rankKey_.id, mine))
             r_.text(x + 6 * s, y + 32 * s + 20 * rowH + 6 * s, ts, "YOU: " + std::to_string(mine.display()) + (mine.games < 5 ? "? " : " ") + "(" + std::to_string(mine.games) + " GAMES)", ui_.accent);
     }
-    float by = y + 32 * s + 20 * rowH + 30 * s;
-    if (ui_.button(cx - 100 * s, by, 200 * s, 36 * s, "BACK")) setScreen(Screen::Main);
+    {   // race: fastest Viaduct time trials
+        float x = x0 + 3 * (colW + gap), yy = y;
+        r_.rect(x, yy, colW, 26 * s, {1.0f * 0.45f, 0.78f * 0.45f, 0.25f * 0.45f, 0.95f});
+        ui_.labelCentered(x + colW * 0.5f, yy + 4 * s, "VIADUCT TIME TRIAL", kWhite, 0.8f);
+        yy += 32 * s;
+        std::vector<RankService::LeaderRow> rows;
+        if (!rank_.raceBoard("viaduct", rows)) r_.text(x + 6 * s, yy, ts, "LOADING...", kGrey);
+        else if (!rows.empty() && rows[0].rating < 0) r_.text(x + 6 * s, yy, ts, upper(rows[0].name), kGrey);
+        else {
+            if (rows.empty()) r_.text(x + 6 * s, yy, ts, "NO TIMES YET", kGrey);
+            for (size_t i = 0; i < rows.size() && i < 20; i++) {
+                std::string n = std::to_string(i + 1) + ". " + upper(rows[i].name);
+                if (n.size() > 16) n.resize(16);
+                Color c2 = i == 0 ? Color{1.0f, 0.8f, 0.3f, 1} : i < 3 ? kWhite : Color{0.8f, 0.82f, 0.85f, 1};
+                r_.text(x + 6 * s, yy, ts, n, c2);
+                std::string t = fmtRace(rows[i].rating);
+                r_.text(x + colW - 6 * s - r_.textWidth(t, ts), yy, ts, t, c2);
+                yy += rowH;
+            }
+        }
+        if (!raceRunsLoaded_) loadRaceRuns();
+        if (const RaceRun* b = bestRun("viaduct", true))
+            r_.text(x + 6 * s, y + 32 * s + 20 * rowH + 6 * s, ts, "YOU: " + fmtRace(b->ms), ui_.accent);
+    }
+    float by = y + 32 * s + 20 * rowH + 30 * s, bw3 = 200 * s;
+    if (ui_.button(cx - bw3 * 1.5f - 10 * s, by, bw3, 36 * s, "BACK")) setScreen(Screen::Main);
+    if (ui_.button(cx - bw3 * 0.5f, by, bw3, 36 * s, "MY RACE STATS")) raceStatsView_ = true;
+    if (ui_.button(cx + bw3 * 0.5f + 10 * s, by, bw3, 36 * s, "PLAY TIME TRIAL")) startTimeTrial();
 }
 
 void Game::drawScoreboard() {
@@ -2210,7 +2422,8 @@ void Game::drawMenu() {
             y += 16 * s;
             if (ui_.textField(9, x, y, bw, bh, cfg_.name, 20)) cfg_.save();
             y += bh + gap * 2;
-            if (ui_.button(x, y, bw, bh, "PLAY VS BOTS")) setScreen(Screen::VsBots);
+            if (ui_.button(x, y, bw * 0.5f - gap * 0.5f, bh, "PLAY VS BOTS")) setScreen(Screen::VsBots);
+            if (ui_.button(x + bw * 0.5f + gap * 0.5f, y, bw * 0.5f - gap * 0.5f, bh, "TIME TRIAL")) startTimeTrial();
             y += bh + gap;
             if (ui_.button(x, y, bw, bh, "JOIN GAME")) setScreen(Screen::Join);
             y += bh + gap;

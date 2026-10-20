@@ -28,3 +28,18 @@ The same Worker stores ranked ratings. To turn it on for an existing setup:
 Each player's game makes a random key once (`quark.key` next to `quark.cfg`); their id is a hash of it, and the
 key itself only goes to this Worker. After a ranked match every player's game posts its own report, and the
 match is rated (OpenSkill, Plackett-Luce) only when all of them agree. Test locally: `node tools/master/test.mjs`.
+
+## Race time trials (1.1.0+)
+Solo Viaduct runs go to the same Worker. Each player keeps only their best time, along with the time at every checkpoint.
+1. D1 → `quark` → **Console**: paste the `-- race time trials` part of `schema.sql` (the `race_times` table and index) and run it.
+2. Worker → **Edit code**: replace everything with the new `worker.js` → **Deploy**.
+
+`…/raceboard?map=viaduct` should answer with an empty page.
+
+**Checking or removing a suspicious time** (D1 console):
+```sql
+SELECT r.id, n.name, r.ms, r.splits, r.version, datetime(r.created / 1000, 'unixepoch') FROM race_times r
+  LEFT JOIN names n ON n.id = r.id WHERE r.map = 'viaduct' ORDER BY r.ms LIMIT 50;
+DELETE FROM race_times WHERE map = 'viaduct' AND id = '<id>';
+```
+`splits` is the run time in ms at each checkpoint, so a gap that's impossible to cover stands out.

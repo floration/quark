@@ -40,7 +40,7 @@ int roundsToWin(const Server& s) {
 float roundTime(const Server& s) {
     switch (s.ms_.mode) {
         case MODE_BOMB: return 105.0f;
-        case MODE_RACE: return 180.0f;
+        case MODE_RACE: return 300.0f; // two loops of Viaduct
         case MODE_PAYLOAD: return 240.0f;
         case MODE_NPAYLOAD: return 300.0f;
         case MODE_FFA: return s.cfg_.timeLimit > 0 ? (float)s.cfg_.timeLimit : 600.0f;
@@ -592,6 +592,10 @@ void tickRace(Server& s) {
         if (!p.connected || !p.alive || p.finished) continue;
         if (p.checkpoint < (int)cps.size() && feetIn(s, i, cps[p.checkpoint])) {
             p.checkpoint++;
+            GameEvent e; // the split: race time at this checkpoint, to the ms (time trials log these)
+            e.type = EV_RACE_SPLIT; e.a = (uint8_t)i; e.b = (uint8_t)p.checkpoint;
+            e.text = std::to_string((long long)std::lround((roundTime(s) - (s.phaseEnd_ - s.time())) * 1000.0));
+            s.broadcastEvent(e);
             if (p.checkpoint == (int)cps.size()) {
                 p.finished = true;
                 endRound(s, i, "");

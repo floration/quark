@@ -12,7 +12,7 @@ constexpr int kMaxPlayers = 32;        // engine limit; servers default to 8 (Se
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 20;
+constexpr uint16_t kProtocolVersion = 21;
 
 // Player hull
 constexpr float kPlayerHalfWidth = 0.4f;
@@ -207,6 +207,7 @@ enum EventType : uint8_t {
     EV_RANKINFO,     // a = player id, text = their ranked id (32 hex), empty = none
     EV_RANKED,       // ranked match over: text = "<matchId> <mode> slot:team:place,..." (each player reports it)
     EV_EDIT,         // map edit session: text = "<crcBefore hex> <crcAfter hex> <op>" (see applyMapEdit)
+    EV_RACE_SPLIT,   // race: a = player, b = checkpoint reached (1-based; the last one is the finish), text = ms since the start
 };
 
 #define WB(w) (1u << (w))

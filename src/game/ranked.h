@@ -30,6 +30,9 @@ std::string rankIdFromSecret(const std::string& secret);
 std::string buildRankReport(const std::string& eventText, const std::vector<std::string>& ids, const RankKey& me,
                             std::vector<std::string>* playersOut = nullptr, std::string* ladderOut = nullptr, const std::string& name = "");
 
+// Time trial: the form body for /racetime (best time + the time at every checkpoint, the last being the finish).
+std::string buildRaceReport(const std::string& map, int ms, const std::vector<int>& splits, const RankKey& me, const std::string& name);
+
 struct Rating {
     double mu = 25, sigma = 25.0 / 3;
     int games = 0;
@@ -49,8 +52,13 @@ public:
     struct LeaderRow { int rating = 0, games = 0; std::string name; };
     void fetchLeaderboard(const std::string& ladder);
     bool leaderboard(const std::string& ladder, std::vector<LeaderRow>& out);
+    // Race time trials: post a run (the Worker keeps it only if it's your best), and the fastest times per map
+    // ("rating" holds the time in ms; -1 = couldn't reach the server, message in name).
+    void submitRace(const std::string& body, const std::string& map);
+    void fetchRaceBoard(const std::string& map);
+    bool raceBoard(const std::string& map, std::vector<LeaderRow>& out) { return leaderboard("race:" + map, out); }
 private:
-    struct Job { double due; bool report; std::string body, ladder; std::vector<std::string> ids; bool board = false; };
+    struct Job { double due; bool report; std::string body, ladder; std::vector<std::string> ids; bool board = false; std::string path = "/report"; };
     void run();
     void push(Job j);
     std::thread thread_;

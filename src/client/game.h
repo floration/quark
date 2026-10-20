@@ -37,7 +37,9 @@ struct LaunchOptions {
     float backdropAngle = -1;   // --orbit DEG: fixed orbit position for --backdrop   // --picker: open the host menu's map list
     bool debugWidgets = false;
     bool debugHudLayout = false; // --hudlayout: open HUD layout settings in game
-    bool debugModels = false;    // --models: every player model lined up in front of you  // --widgets: open the HUD widget editor in game
+    bool debugModels = false;
+    bool timeTrial = false;      // --timetrial: start a Viaduct time trial
+    bool debugRaceStats = false; // --racestats: the leaderboard's race stats page    // --models: every player model lined up in front of you  // --widgets: open the HUD widget editor in game
     bool debugSettings = false; // --settings: open the settings screen in game
     bool debugControls = false; // --controls
     std::string editMap;        // --editor MAP: open the map editor on that map
@@ -288,6 +290,19 @@ private:
     std::string widgetMsg_;
     double widgetMsgUntil_ = 0;
     void computeHudVals();
+    // race: splits of the current run, every finished run (race_times.log), time trial starts / submits
+    struct RaceRun { long long when = 0; std::string map; int ms = 0; bool trial = false; std::vector<int> splits; };
+    std::vector<RaceRun> raceRuns_;
+    bool raceRunsLoaded_ = false, timeTrialStart_ = false, raceStatsView_ = false;
+    std::vector<int> raceSplits_;
+    std::string splitText_;
+    Color splitColor_ = {1, 1, 1, 1};
+    double splitUntil_ = 0;
+    void loadRaceRuns();
+    const RaceRun* bestRun(const std::string& map, bool trial) const;
+    void onRaceSplit(int checkpoint, int ms);
+    void startTimeTrial();
+    void drawRaceStats(float cx, float y);
     // profiles: per-mode rules swap the HUD layout / controls while that mode is running
     Binds modeBinds_;
     bool modeCtlActive_ = false, modeAlt_ = false;
@@ -295,6 +310,8 @@ private:
     std::string modeHudPath_;               // "" = hud.cfg
     int ruleMode_ = MODE_FFA;               // mode shown in the rule rows
     int filePick_ = 0;                      // import file list open: 1 huds, 2 controls
+    // ranked and time trials: default model, HUD, controls and 10 ms interp for everyone
+    bool fairRules() const { return net_.hasSnapshot() && (net_.mode().flags & (MS_RANKED | MS_TIMETRIAL)); }
     const Binds& binds() const { return modeCtlActive_ ? modeBinds_ : cfg_.binds; }
     std::string activeHudPath() const;
     void applyModeRules(int mode);

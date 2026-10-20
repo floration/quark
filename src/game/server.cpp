@@ -1220,6 +1220,7 @@ void Server::sendSnapshots() {
     s.ms = ms_;
     if (editing_) s.ms.flags |= MS_EDITING | (tempEdit_ ? MS_TEMP_EDIT : 0);
     if (cfg_.ranked) s.ms.flags |= MS_RANKED;
+    if (cfg_.timeTrial) s.ms.flags |= MS_TIMETRIAL;
     std::vector<PlayerSnap>& all = snapPlayers_;
     all.clear();
     for (int i = 0; i < kMaxPlayers; i++) {
