@@ -553,7 +553,7 @@ m.box(-5, 0, 10, -2, 1.4, 12); m.box(3, 0, 12, 6, 1.4, 14)                 # yar
 m.box(18, 0, -16, 26, 1.2, 16, accent=True)
 m.stairs(18, 16, 21, 19, 1.2, "z", -1)
 m.container(20, -12, 25, -6); m.container(20, 4, 25, 10); m.container(20, 4, 25, 10, h=5.2)
-m.stairs(12, 18, 18, 21, 0, "z", 1, base=-2.5); m.stairs(12, -21, 18, -18, 0, "z", 1, base=-2.5)
+m.stairs(12, 18, 18, 21, 0, "z", 1, base=-2.5); m.stairs(12, -21, 18, -18, 0, "z", -1, base=-2.5)
 m.box(14, -2.5, -4, 16, -1.1, 0)                                           # cover down in the trench
 m.metal(11.6, 0, -14, 12, 1.0, 14); m.metal(18, 1.2, -14, 18.4, 2.2, 14)   # trench railings
 for x in (-6, -2, 2, 6): m.spawn("a", x, 0, 31, 0); m.spawn("b", x, 0, -24, 180)
