@@ -116,21 +116,22 @@ int bestScorer(const Server& s) {
     return best;
 }
 
-int hideRounds(const Server& s) { return std::max(3, std::min(6, playersInPlay(s))); } // everyone seeks once (3..6 rounds)
+int hideRounds(const Server& s) { return s.hideRounds_ > 0 ? s.hideRounds_ : std::max(3, std::min(6, playersInPlay(s))); } // everyone seeks once (3..6 rounds, fixed at the start)
 
 void tickHide(Server& s) {
     ModeState& m = s.ms_;
     m.timeLeft = std::max(0.0f, s.phaseEnd_ - s.time());
-    int seeker = -1, hiding = 0;
+    int seeker = -1, hiding = 0, found = 0;
     for (int i = 0; i < kMaxPlayers; i++) {
         if (!inPlay(s, i)) continue;
         if (s.players_[i].it) seeker = i;
         else if (s.players_[i].alive) hiding++;
+        else found += s.players_[i].found;
     }
     if (seeker < 0) { endRoundText(s, "the seeker left"); return; }
-    if (hiding == 0) {
-        s.players_[seeker].score += 3;
-        endRoundText(s, s.players_[seeker].name + " found everyone");
+    if (hiding == 0) {                            // nobody left hiding: the seeker scores if they found anyone (falls don't count)
+        if (found > 0) s.players_[seeker].score += 3;
+        endRoundText(s, found > 0 ? s.players_[seeker].name + " found everyone" : "no hiders left");
         return;
     }
     if (s.time() >= s.phaseEnd_) {
@@ -144,9 +145,19 @@ void tickHide(Server& s) {
 void tickTag(Server& s) {
     ModeState& m = s.ms_;
     m.timeLeft = std::max(0.0f, s.phaseEnd_ - s.time());
+    if (playersInPlay(s) <= 1) {                  // everyone else left: the last one standing wins
+        int w = -1;
+        for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i)) w = i;
+        enterMatchEnd(s, w >= 0 ? s.players_[w].name + " wins tag" : "nobody left", w);
+        return;
+    }
     int it = -1;
     for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i) && s.players_[i].it) it = i;
-    if (it < 0) { pickIt(s); return; }          // "it" left: someone else is it now
+    if (it < 0) {                                 // "it" left: someone else is it now (same short freeze as a tag)
+        pickIt(s);
+        for (auto& p : s.players_) if (p.connected && p.it) p.itFreezeUntil = s.time() + kTagFreeze;
+        return;
+    }
     if (s.time() < s.phaseEnd_) return;
     auto& p = s.players_[it];                     // time's up: whoever is it is out
     p.out = true;
@@ -199,6 +210,7 @@ void startRound(Server& s) {
         p.checkpoint = 0;
         p.respawnAt = -1;
         p.it = false;
+        p.found = false;
         p.itFreezeUntil = 0;
         if (m.mode == MODE_HIDE) p.out = false; // tag: eliminations last the whole match
     }
@@ -247,7 +259,8 @@ int tourneyAdvance(Server& s) {
         for (int m = 0; m < (int)cur.size() / 2; m++) {
             if (next[m] != -2) continue; // decided
             int a = cur[2 * m], b = cur[2 * m + 1];
-            bool aIn = a >= 0 && s.players_[a].connected, bIn = b >= 0 && s.players_[b].connected;
+            auto in = [&](int i) { return i >= 0 && s.players_[i].connected && s.players_[i].joinId == t.join[i]; };
+            bool aIn = in(a), bIn = in(b);
             if (aIn && bIn) { t.match = m; played = true; break; }
             next[m] = aIn ? a : bIn ? b : -1; // walkover (bye or left)
         }
@@ -293,6 +306,7 @@ void tourneyBegin(Server& s) {
         first[slot] = entrants[i];
         (void)k;
     }
+    for (int i : entrants) t.join[i] = s.players_[i].joinId;
     t.rounds.push_back(first);
     for (size_t n = size / 2; n >= 1; n /= 2) t.rounds.push_back(std::vector<int>(n, -2));
     t.running = true;
@@ -309,6 +323,8 @@ void startMatch(Server& s) {
     s.completeTime_[0] = s.completeTime_[1] = 0;
     for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; p.out = false; p.it = false; }
     s.lastIt_ = -1;
+    s.hideRounds_ = 0;
+    s.hideRounds_ = hideRounds(s);
     if (m.mode == MODE_TOURNEY) {
         tourneyBegin(s);
         s.message("tourney started - " + std::to_string(s.tourney_.rounds[0].size()) + " slot bracket");
@@ -415,7 +431,13 @@ bool checkMatchOver(Server& s) {
         case MODE_PAYLOAD: {
             if (m.round < 2 || m.round % 2 != 0) return false;
             int w = payloadWinner(s);
-            if (w < 0 && m.round < 4) { s.message("tied - tiebreaker rounds"); return false; }
+            if (w < 0 && m.round < 4) { // the tiebreaker is decided on its own two rounds
+                s.message("tied - tiebreaker rounds");
+                m.scoreA = m.scoreB = 0;
+                s.bestProgress_[0] = s.bestProgress_[1] = 0;
+                s.completeTime_[0] = s.completeTime_[1] = 0;
+                return false;
+            }
             enterMatchEnd(s, w >= 0 ? std::string(teamName(w)) + " wins the match" : "match draw", w);
             return true;
         }
@@ -440,6 +462,23 @@ bool feetIn(const Server& s, int id, const AABB& zone) {
 
 void tickVS(Server& s) {
     ModeState& m = s.ms_;
+    if (m.mode == MODE_TOURNEY && s.tourney_.running) { // a finalist left: walkover, straight to the next match
+        auto& t = s.tourney_;
+        int a = t.rounds[t.round][2 * t.match], b = t.rounds[t.round][2 * t.match + 1];
+        auto in = [&](int i) { return i >= 0 && s.players_[i].connected && s.players_[i].joinId == t.join[i]; };
+        if (!in(a) || !in(b)) {
+            int w = in(a) ? a : in(b) ? b : -1;
+            t.rounds[t.round + 1][t.match] = w;
+            t.played++;
+            if (w >= 0) s.message(tourneyName(s, w) + " advances (walkover)");
+            int champ = tourneyAdvance(s);
+            s.broadcastBracket();
+            if (champ != -1) { t.running = false; enterMatchEnd(s, champ >= 0 ? tourneyName(s, champ) + " wins the tourney!" : "tourney over", champ); return; }
+            tourneySetupMatch(s);
+            startRound(s);
+            return;
+        }
+    }
     int a = s.aliveCount(TEAM_A), b = s.aliveCount(TEAM_B);
     if (a == 0 || b == 0) {
         endRound(s, a > 0 ? TEAM_A : b > 0 ? TEAM_B : -1, "");
@@ -685,7 +724,9 @@ void finishFFA(Server& s) {
         if (p.score > bestScore) { bestScore = p.score; best = i; ties = 1; }
         else if (p.score == bestScore) ties++;
     }
-    if (best >= 0 && ties == 1) {
+    if (best < 0) {
+        enterMatchEnd(s, "match over", -1); // nobody left playing
+    } else if (ties == 1) {
         enterMatchEnd(s, s.players_[best].name + " wins the match", best);
     } else if (!(s.ms_.flags & MS_OVERTIME)) {
         s.ms_.flags |= MS_OVERTIME;
@@ -719,6 +760,7 @@ void rulesReset(Server& s) {
         s.tourney_.running = false;
         for (auto& p : s.players_) if (p.connected && m.mode == MODE_TOURNEY) p.team = TEAM_A;
     }
+    for (auto& p : s.players_) { p.it = false; p.out = false; p.found = false; } // nothing from the last match carries into warmup
     setPhase(s, PHASE_WARMUP, 0);
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = s.players_[i];
@@ -789,7 +831,8 @@ void rulesOnDeath(Server& s, int victim, int killer) {
     ModeState& m = s.ms_;
     if (m.mode == MODE_BOMB && m.bombState == BOMB_CARRIED && m.bombCarrier == victim) {
         m.bombState = BOMB_DROPPED;
-        m.bombPos = s.players_[victim].move.pos;
+        const auto& v = s.players_[victim];
+        m.bombPos = v.move.pos.y < s.map_.killY() + 2.0f ? v.lastGround : v.move.pos; // fell off: drop it where they last stood
         m.bombCarrier = 255;
     }
     if (m.actionPlayer == victim) { m.actionPlayer = 255; m.actionProgress = 0; }

@@ -40,6 +40,7 @@ struct LaunchOptions {
     bool editSession = false;   // --editsession MAP: and host it as an edit session
     int editSel = -1;           // --edsel N: select box N (screenshots)
     bool debugLeaderboard = false; // --leaderboard: open the leaderboard screen
+    bool menuShot = false;      // --menushot: screenshot whatever menu is up (main / settings / controls)
 };
 
 class Game {

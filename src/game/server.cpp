@@ -288,6 +288,8 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
     ServerPlayer& p = players_[id];
     p = ServerPlayer();
     p.connected = true;
+    p.joinId = nextJoinId_++;
+    vote_.yes &= ~(1u << id); vote_.no &= ~(1u << id); // a newcomer in this slot hasn't voted
     p.addr = from;
     p.nonce = nonce;
     p.name = name;
@@ -352,6 +354,7 @@ void Server::dropPlayer(int id, const std::string& reason, bool notify) {
         sock_.send(p.addr, out, w.size());
     }
     rulesOnLeave(*this, id);
+    vote_.yes &= ~(1u << id); vote_.no &= ~(1u << id);
     std::string name = p.name;
     p.connected = false;
     p.alive = false;
@@ -431,6 +434,10 @@ void Server::handleStringCmd(int id, const std::string& s) {
     } else if (cmd == "team") {
         int t = rest == "a" ? TEAM_A : rest == "b" ? TEAM_B : rest == "spec" ? TEAM_SPECTATOR : -1;
         if (t < 0 || t == p.team) return;
+        if (tourney_.running && t != TEAM_SPECTATOR) { // the bracket decides who plays
+            GameEvent e; e.type = EV_MESSAGE; e.text = "a tourney is running - you can join the next one"; sendEvent(id, e);
+            return;
+        }
         if (!modeIsTeamBased(cfg_.mode) && t == TEAM_B) t = TEAM_A;
         if ((cfg_.mode == MODE_DUEL || cfg_.mode == MODE_ARENA) && t != TEAM_SPECTATOR) {
             int n = 0;
@@ -751,6 +758,7 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
             glog(LOG_SIMPLE, "tag %d -> %d", attacker, victim);
             return;
         }
+        v.found = true;
         killPlayer(victim, attacker, WPN_KNIFE); // found
         return;
     }
@@ -870,6 +878,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     if (rulesFrozen(*this, id)) p.move.flags |= MF_FROZEN;
     else p.move.flags &= ~MF_FROZEN;
     pmove(p.move, cmd, map_);
+    if (p.move.flags & MF_ONGROUND) p.lastGround = p.move.pos;
 
     // the knife can't be drawn while it's away after a throw (unless it's the only weapon this mode allows)
     auto otherWeapon = [&]() { for (int k = 0; k < WPN_COUNT; k++) { int w = kWeaponSlots[k]; if (w != WPN_KNIFE && weaponAllowed(w)) return w; } return -1; };
@@ -1280,6 +1289,7 @@ int Server::addBot(int team, int skill, bool balance) {
     p = ServerPlayer();
     for (auto& h : p.history) h.tick = 0xFFFFFFFFu;
     p.connected = true;
+    p.joinId = nextJoinId_++;
     p.isBot = true;
     p.balanceBot = balance;
     p.team = team;

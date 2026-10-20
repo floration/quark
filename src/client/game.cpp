@@ -324,7 +324,7 @@ int Game::bestMapFor(int mode) const {
     for (size_t i = 0; i < maps_.size(); i++) {
         Map m;
         if (!m.load(maps_[i]) || !m.supportsMode(mode)) continue;
-        if (m.preferredMode == mode) return (int)i;
+        if (m.preferredMode == mode || (mode == MODE_TAG && m.preferredMode == MODE_HIDE)) return (int)i; // tag plays on the hide and seek map
         if (fallback < 0) fallback = (int)i;
     }
     return fallback < 0 ? 0 : fallback;
@@ -662,7 +662,7 @@ void Game::frame(double dt) {
     frameIdx_ = (frameIdx_ + 1) % frameTimes_.size();
     frameCount_ = std::min(frameCount_ + 1, frameTimes_.size());
     { QZONE("net poll"); net_.poll(); }
-    if ((screen_ == Screen::InGame || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty()) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
+    if ((screen_ == Screen::InGame || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
 
     if (screen_ == Screen::Join) browser_.poll();
     if (screen_ == Screen::Connecting || screen_ == Screen::InGame || (screen_ == Screen::Editor && edOnline_)) {
@@ -800,7 +800,7 @@ void Game::frame(double dt) {
     if (showPerf_) drawPerf();
     { QZONE("flush2D"); r_.flush2D(); }
 
-    if (shotAt_ > 0 && time_ >= shotAt_ && (screen_ == Screen::InGame || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty())) {
+    if (shotAt_ > 0 && time_ >= shotAt_ && (screen_ == Screen::InGame || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot)) {
         r_.screenshot(opts_.screenshot);
         printf("screenshot written to %s\n", opts_.screenshot.c_str());
         quit_ = true;
@@ -2208,7 +2208,7 @@ void Game::drawPicker(float cx, float y) {
         } else if (modes) {
             label = modeTitle(i);
             cur = i == mode && !rankedNow;
-            for (auto& mi : mapInfo_) if (mi.preferredMode == i) sub = "MAP: " + upper(mi.title);
+            for (auto& mi : mapInfo_) if (mi.preferredMode == i || (i == MODE_TAG && mi.preferredMode == MODE_HIDE)) sub = "MAP: " + upper(mi.title);
             if (i == MODE_ARENA) sub = "9 RULESETS >";
             if (i == MODE_TOURNEY) sub = "BRACKET OF 1V1S - RULESETS >";
         } else {

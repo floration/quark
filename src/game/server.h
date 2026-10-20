@@ -82,7 +82,10 @@ struct ServerPlayer {
     int kills = 0, deaths = 0, score = 0;
     float respawnAt = -1;
     int checkpoint = 0;         // race: next checkpoint index
+    uint32_t joinId = 0;        // unique per connection (a new player in a reused slot gets a new one)
     bool it = false;            // hide and seek / tag: the seeker / tagger (has the knife)
+    bool found = false;         // hide and seek: found by the seeker this round (falling off doesn't count)
+    Vec3 lastGround;            // where the player last stood (a dropped bomb goes here, not into a pit)
     bool out = false;           // hide and seek: found this round; tag: eliminated for the match
     float itFreezeUntil = 0;    // tag: just got tagged, stands still until then
     uint32_t lastCmdSeq = 0;
@@ -160,7 +163,9 @@ public:
     float phaseEnd_ = 0;
     float roundStart_ = 0;
     float lastProgress_ = 0;    // vs: last time damage was dealt
-    int lastIt_ = -1;           // hide and seek: the last seeker (everyone takes a turn)
+    int lastIt_ = -1;
+    int hideRounds_ = 0;        // hide and seek: rounds this match (fixed at the start: everyone seeks once)
+    uint32_t nextJoinId_ = 1;           // hide and seek: the last seeker (everyone takes a turn)
     float drainAccum_ = 0;
     // payload/race per-round bookkeeping
     float payloadIdleSince_ = 0;
@@ -184,6 +189,7 @@ public:
         std::vector<std::vector<int>> rounds; // rounds[r]: entrants (player id, -1 bye, -2 not decided yet)
         int round = 0, match = 0;             // current match: rounds[round][2*match] vs [2*match+1]
         int played = 0;                       // matches played (map / ruleset rotation)
+        uint32_t join[kMaxPlayers] = {};      // each entrant's joinId: a newcomer in a departed entrant's slot isn't them
     } tourney_;
     void broadcastBracket();
     bool switchMapKeepRules(const std::string& name); // change map for the next tourney match

@@ -7,13 +7,13 @@ and the fix. `[x]` = fixed (version), `[ ]` = open, `[-]` = won't fix (with reas
 Screens walked: main, host, play vs bots, settings, controls, crosshair, HUD editor, leaderboard, pause,
 vote, every picker (host / bot / live map + mode, rulesets, tourney lists, ranked ladders), map editor.
 
-- [ ] **bug** — `--picker 5` (live map picker opened with no game) segfaulted in `drawPicker`. Only reachable
+- [x] **bug** — `--picker 5` (live map picker opened with no game) segfaulted in `drawPicker`. Only reachable *(0.34.0)*
       by debug flag, but the picker now closes itself when there's no connection.
-- [ ] **polish** — the VS mode tile says "MAP: FOUNDRY": Foundry (all-mode) was marked `for vs` and sorts
+- [x] **polish** — the VS mode tile says "MAP: FOUNDRY": Foundry (all-mode) was marked `for vs` and sorts *(0.34.0)*
       before Bastion. All-mode maps other than Bastion/Colosseum get no `for` line ("ALL MODES").
-- [ ] **polish** — the Tag tile shows no default map (Hamlet is `for hide`); a mode without its own map
+- [x] **polish** — the Tag tile shows no default map (Hamlet is `for hide`); a mode without its own map *(0.34.0)*
       falls back to the hide map for tag.
-- [ ] **polish** — menu screens can't be screenshotted headless (`--backdrop` hides menus, no backdrop =
+- [x] **polish** — menu screens can't be screenshotted headless (`--backdrop` hides menus, no backdrop = *(0.34.0)*
       no screenshot). Add `--menushot` so audits can capture them.
 - Checked and fine: pause menu, vote menu, leaderboard layout, map / mode pickers (greyed entries explain
   why), host screen, editor panel (0.31).
@@ -22,29 +22,30 @@ vote, every picker (host / bot / live map + mode, rulesets, tourney lists, ranke
 Playtest (bots, 40 s, `quark_tests playtest`): every mode starts, scores, ends; hide and seek: seeker found
 4/7 in a 5 min round; tag: 2 eliminations in 3 rounds.
 
-- [ ] **bug** — ranked: the losing player can quit before the end and the match isn't rated (only one
-      player connected at the end). Record both participants at match start; a leaver loses.
-- [ ] **bug** — tourney bracket stores slot numbers: a newcomer reusing a departed entrant's slot plays
+- [-] **bug** — ranked: the losing player can quit before the end and the match isn't rated. The ranking
+      Worker only rates a match every player confirmed (that is what stops one-sided fake reports), so a
+      leaver can't be scored without server-signed results. Post-1.0: sign results on the server.
+- [x] **bug** — tourney bracket stores slot numbers: a newcomer reusing a departed entrant's slot plays *(0.34.0)*
       their match. Store a per-connection join id.
-- [ ] **bug** — tourney: `team a/b` while a bracket runs lets spectators into a 1v1 (or both finalists onto A).
+- [x] **bug** — tourney: `team a/b` while a bracket runs lets spectators into a 1v1 (or both finalists onto A).
       Refuse team changes during a running tourney (spectate only).
-- [ ] **bug** — tourney stalls if a finalist leaves (draws forever when both leave; 3 forfeit rounds when
+- [x] **bug** — tourney stalls if a finalist leaves (draws forever when both leave; 3 forfeit rounds when *(0.34.0)*
       one leaves). Walkover: advance the remaining player at once.
-- [ ] **bug** — tag: if everyone else leaves, the last player is eliminated at the timer and the match
+- [x] **bug** — tag: if everyone else leaves, the last player is eliminated at the timer and the match *(0.34.0)*
       ends with "nobody left". End the match with that player winning as soon as ≤ 1 remain.
-- [ ] **bug** — FFA with zero players never ends (enters overtime every tick). No players → draw.
-- [ ] **bug** — hide and seek round count follows the live player count (leavers end the match early,
+- [x] **bug** — FFA with zero players never ends (enters overtime every tick). No players → draw.
+- [x] **bug** — hide and seek round count follows the live player count (leavers end the match early, *(0.34.0)*
       joiners extend it). Fix the round count at match start.
-- [ ] **bug** — hide and seek: hiders who fall into the void count as "found" (seeker +3). Only knife
+- [x] **bug** — hide and seek: hiders who fall into the void count as "found" (seeker +3). Only knife *(0.34.0)*
       finds count; a void death is just out.
-- [ ] **bug** — bomb dropped by a carrier who fell off the map lands below the kill plane: unreachable.
+- [x] **bug** — bomb dropped by a carrier who fell off the map lands below the kill plane: unreachable.
       Drop it at the carrier's last grounded spot.
-- [ ] **polish** — `it` / `out` flags carry into warmup after a hide / tag match (the old seeker keeps
+- [x] **polish** — `it` / `out` flags carry into warmup after a hide / tag match (the old seeker keeps *(0.34.0)*
       the knife). Reset in `rulesReset`.
-- [ ] **polish** — payload tiebreaker reuses rounds 1-2 progress. Reset the per-team bests for 3-4.
-- [ ] **polish** — vote ballots are per slot: a newcomer in a leaver's slot inherits the vote. Clear the
+- [x] **polish** — payload tiebreaker reuses rounds 1-2 progress. Reset the per-team bests for 3-4.
+- [x] **polish** — vote ballots are per slot: a newcomer in a leaver's slot inherits the vote. Clear the *(0.34.0)*
       slot's ballot on connect / drop.
-- [ ] **polish** — tag: a new "it" picked because the old one left gets no 2 s freeze. Give it the same.
+- [x] **polish** — tag: a new "it" picked because the old one left gets no 2 s freeze. Give it the same.
 - [-] koth same-tick double finish favours A — unreachable in practice.
 
 ## 3. Maps (style / gameplay / creativity, out of 10)
