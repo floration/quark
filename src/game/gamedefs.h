@@ -163,12 +163,12 @@ inline const WeaponDef& baseWeaponDef(int w) {
         {"RIFLE",       0.75f*2.0f/9.9f, 5.95f, 300.0f, false, 0, 0, 0.0f, 0.0f, 60.0f, false, 1, 0, false, 0},  // 17 shots, 2.4 s (scoped: 3/4 fire rate)
         {"ROCKET",      1.2f,    34,      0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  12.0f, false, 5}, // 3, 2.4 s
         {"KNIFE",       0.525f,  40,      3.5f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 3, 1.05 s
-        {"SNIPER",      1.5f,    34,    500.0f, false,  0,    0,     0.09f, 0.0f, 45.0f,  false, 1,  0,    false, 0},  // 3, 3.0 s (headshots 42.5: 3)
+        {"SNIPER",      1.5f,    34,    500.0f, false,  0,    0,     0.0f,  0.0f, 45.0f,  false, 1,  0,    false, 0},  // 3, 3.0 s (headshots 42.5: 3)
         {"LASER",       0.001f,  0.04f,  32.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},  // every 1 ms, 2500 hits, 2.5 s
         {"SHOTGUN",     0.75f,   1.7f,   60.0f, false,  0,    0,     0.085f,-1,     0,    false, 20, 0,    false, 0},  // 20 x 1.7 = 34 per blast, 3, 1.5 s
         {"STICKY",      0.75f,   29.75f,  0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30}, // 4, 2.25 s
         {"CROSSBOW",    2.0f,    50,      0,    true,  76.5f, 0,     0.0f,  0.0f, 70.0f,  false, 1,  6.0f, false, 3},  // 2, 2.0 s (headshots 60)
-        {"BUBBLE",      1.0f/3,  10,      0,    true,  13.0f, 1.8f,  0.04f, -1,     0,    false, 1, -1.5f, false, 4}, // 10 pops, 3.0 s (floats up a little)
+        {"BUBBLE",      1.0f/3,  10,      0,    true,  15.6f, 1.8f,  0.04f, -1,     0,    false, 1, -1.5f, false, 4}, // 10 pops, 3.0 s (floats up a little)
     };
     return defs[w < 0 || w >= WPN_COUNT ? 0 : w];
 }
@@ -199,7 +199,7 @@ constexpr float kRifleScopedRefire = 4.0f / 3.0f; // refire multiplier while sco
 // Bubble gun alt-fire: a stream of bubbles all at once, each at its own speed, then a long reload.
 constexpr int kBubbleStream = 5;
 constexpr float kBubbleStreamRefire = 1.8f;
-constexpr float kBubbleStreamSpeeds[kBubbleStream] = {7.0f, 10.0f, 13.0f, 16.5f, 20.0f};
+constexpr float kBubbleStreamSpeeds[kBubbleStream] = {8.4f, 12.0f, 15.6f, 19.8f, 24.0f};
 constexpr float kBubbleKnock = 0.35f; // a pop shoves you a third as hard as a rocket blast of the same strength
 constexpr float kVampireFadeTime = 60.0f, kVampireMinHeal = 0.5f; // laser vampire: healing fades 100% -> 50% over the first minute of a round
 // The refire for this shot: alt-fire modes change it.
