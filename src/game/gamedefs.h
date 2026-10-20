@@ -161,6 +161,7 @@ inline const WeaponDef& weaponDef(int w) {
 }
 // Alt-fires: knife throw (a projectile that hits for knife damage), shotgun bouncing pellets (ricochet off
 // walls, half damage), rifle scope (zooms like the sniper, half the fire rate).
+constexpr float kRocketLobSpeed = 0.5f, kRocketLobGravity = 3.0f; // rocket alt-fire: a lob at half speed with 3x gravity
 constexpr float kKnifeThrowSpeed = 38.0f, kKnifeThrowGravity = 14.0f, kKnifeThrowLife = 2.0f;
 constexpr float kKnifeAway = 5.0f; // after a throw the knife is gone this long: you switch to another weapon (no delay on it)
 constexpr int kShotgunBounces = 2;
@@ -177,7 +178,7 @@ inline float shotRefire(int w, bool alt) {
 // Slot order (number keys, scroll wheel, HUD list): the weapon ids themselves stay as they are.
 constexpr int kWeaponSlots[WPN_COUNT] = {WPN_ROCKET, WPN_RIFLE, WPN_LASER, WPN_SHOTGUN, WPN_SNIPER, WPN_STICKY, WPN_CROSSBOW, WPN_KNIFE};
 inline int weaponSlot(int w) { for (int i = 0; i < WPN_COUNT; i++) if (kWeaponSlots[i] == w) return i; return 0; }
-inline bool altFires(int w) { return w == WPN_KNIFE || w == WPN_SHOTGUN; } // knife (throw) and shotgun (bounce): alt-fire is a shot of its own
+inline bool altFires(int w) { return w == WPN_KNIFE || w == WPN_SHOTGUN || w == WPN_ROCKET; } // knife (throw), shotgun (bounce), rocket (lob): alt-fire is a shot of its own
 constexpr int kMaxStickies = 6;       // per player; firing a 7th removes the oldest
 constexpr float kStickyArmTime = 0.35f;
 

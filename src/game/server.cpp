@@ -1000,6 +1000,7 @@ void Server::fireWeapon(int id, const UserCmd& cmd) {
             pr.owner = id;
             pr.pos = eye + aim * 0.3f;
             pr.vel = spreadDir(aim, spread, cmd.seq, 0) * wd.projSpeed;
+            if (p.weapon == WPN_ROCKET && alt) { pr.vel = pr.vel * kRocketLobSpeed; pr.gravMul = kRocketLobGravity; }
             pr.dieAt = time() + wd.life;
             pr.armAt = time() + kStickyArmTime;
             return;
@@ -1039,7 +1040,7 @@ void Server::tickProjectiles() {
         }
         if (pr.stuck) continue;
         const WeaponDef& wd = weaponDef(pr.type);
-        pr.vel.y -= (pr.type == WPN_KNIFE ? kKnifeThrowGravity : wd.gravity) * dt();
+        pr.vel.y -= (pr.type == WPN_KNIFE ? kKnifeThrowGravity : wd.gravity * pr.gravMul) * dt();
         Vec3 step = pr.vel * dt();
         float len = length(step);
         if (len < 1e-6f) continue;

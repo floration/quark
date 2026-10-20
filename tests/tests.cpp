@@ -823,6 +823,31 @@ static void testBotAim(uint16_t& port) {
 
 // Alt-fires: thrown knife hits at range, shotgun ricochets hit someone behind you (off the wall in front),
 // scoped rifle fires at half rate.
+// Rocket alt-fire: a lob at half speed that falls 3x faster.
+static void testRocketLob(uint16_t port) {
+    printf("rocket lob (alt-fire)\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = false; cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    NetClient a;
+    a.connect("127.0.0.1:" + std::to_string(port), "lobber");
+    std::vector<NetClient*> cls = {&a};
+    pump(s, cls, 2.0, idle);
+    auto fire = [&](uint16_t b) { return [&, b](int) { UserCmd c; c.weapon = WPN_ROCKET; c.buttons = b; c.pitch = 0.3f; return c; }; };
+    pump(s, cls, 0.3, fire(0));
+    pump(s, cls, 0.03, fire(BTN_ALTFIRE));
+    const Projectile* lob = nullptr;
+    for (auto& pr : s.projectiles_) if (pr.active && pr.type == WPN_ROCKET) lob = &pr;
+    CHECK(lob && lob->gravMul == kRocketLobGravity);
+    if (lob) {
+        float sp = weaponDef(WPN_ROCKET).projSpeed;
+        CHECK(length(Vec3(lob->vel.x, 0, lob->vel.z)) < sp * kRocketLobSpeed + 0.5f);
+    }
+    s.stop();
+}
+
 static void testAltFires(uint16_t port) {
     printf("alt-fires: knife throw, shotgun ricochet, scoped rifle\n");
     for (int kase = 0; kase < 3; kase++) {
@@ -1503,6 +1528,7 @@ int main(int argc, char** argv) {
     testCartDash(port++);
     testSemiAuto(port++);
     testMapVote(port++);
+    testRocketLob(port++);
     testAltFires(port); port += 3;
     testMapDownload(port++);
     testEditSession(port++);
