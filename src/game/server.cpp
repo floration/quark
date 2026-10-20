@@ -447,16 +447,26 @@ void Server::handleStringCmd(int id, const std::string& s) {
             return;
         }
         if (!modeIsTeamBased(cfg_.mode) && t == TEAM_B) t = TEAM_A;
-        if ((cfg_.mode == MODE_DUEL || cfg_.mode == MODE_ARENA) && t != TEAM_SPECTATOR) {
-            int n = 0;
+        if ((cfg_.mode == MODE_DUEL || cfg_.mode == MODE_ARENA) && t != TEAM_SPECTATOR && !p.letIn) {
+            int n[2] = {0, 0};
             for (int i = 0; i < kMaxPlayers; i++)
-                n += i != id && players_[i].connected && !players_[i].balanceBot && players_[i].team == t;
-            if (n >= (cfg_.mode == MODE_ARENA ? 1 : std::min(std::max(cfg_.duelTeamSize, 1), 2))) {
-                GameEvent e; e.type = EV_MESSAGE; e.text = "that side is full"; sendEvent(id, e);
-                return;
+                if (i != id && players_[i].connected && !players_[i].balanceBot && (players_[i].team == TEAM_A || players_[i].team == TEAM_B)) n[players_[i].team == TEAM_B]++;
+            int size = cfg_.mode == MODE_ARENA ? 1 : std::min(std::max(cfg_.duelTeamSize, 1), 2);
+            int mine = n[t == TEAM_B], other = n[t != TEAM_B];
+            if (mine >= size) {
+                if (other < size) {            // uneven: no vote needed, take the side with room
+                    t = t == TEAM_A ? TEAM_B : TEAM_A;
+                } else if (n[0] == n[1] && !cfg_.ranked) {   // even and full: the players decide
+                    callVote(id, VOTE_LETIN, id);
+                    return;
+                } else {
+                    GameEvent e; e.type = EV_MESSAGE; e.text = cfg_.ranked ? "that side is full (ranked is 1v1)" : "that side is full"; sendEvent(id, e);
+                    return;
+                }
             }
         }
         if (p.alive) killPlayer(id, -1, 255);
+        if (t == TEAM_SPECTATOR) p.letIn = false;   // (sitting out gives the slot back)
         p.team = t;
         message(p.name + (t == TEAM_SPECTATOR ? " is spectating" : t == TEAM_A ? " joined team A" : " joined team B"));
         if (t != TEAM_SPECTATOR && rulesRespawnDelay(*this) >= 0) p.respawnAt = time() + 1.0f;
@@ -1407,6 +1417,7 @@ void Server::callVote(int caller, int kind, int arg, const std::string& map, int
                : kind == VOTE_TMAPS       ? "TOURNEY MAPS: " + map
                : kind == VOTE_TMODES      ? "TOURNEY RULESETS: " + map
                : kind == VOTE_EDIT        ? std::string(arg ? "EDIT THE MAP TOGETHER (CHANGES LAST UNTIL THE MAP CHANGES)" : "STOP EDITING AND PLAY THE MAP")
+               : kind == VOTE_LETIN       ? "LET " + players_[arg].name + " IN (TEAMS GO UNEVEN)"
                : kind == VOTE_RANKED      ? (arg < 0 ? std::string("RANKED OFF") : std::string("RANKED ON - ") + arenaVariant(arg).title + " 1V1")
                                           : std::string("FILL THE UNEVEN TEAMS WITH BOTS?");
     GameEvent e; e.type = EV_VOTE; e.a = (uint8_t)(caller < 0 ? 255 : caller); e.text = vote_.text;
@@ -1470,6 +1481,20 @@ void Server::tickVote() {
             message("vote passed: " + vote_.text);
             vote_ = Vote();
             command(on ? "editmode on" : "editmode off");
+            return;
+        }
+        if (vote_.kind == VOTE_LETIN) {
+            int who = vote_.arg;
+            message("vote passed: " + vote_.text);
+            vote_ = Vote();
+            auto& q = players_[who];
+            if (q.connected && q.team == TEAM_SPECTATOR) {
+                int a = humanCount(TEAM_A), b = humanCount(TEAM_B);
+                q.letIn = true;
+                q.team = a <= b ? TEAM_A : TEAM_B;
+                message(q.name + (q.team == TEAM_A ? " joined team A" : " joined team B"));
+                if (rulesRespawnDelay(*this) >= 0) q.respawnAt = time() + 1.0f;
+            }
             return;
         }
         if (vote_.kind == VOTE_RANKED) {

@@ -759,6 +759,18 @@ static void testDuel(uint16_t port) {
     pump(s, cls, 0.5, idle);
     CHECK(s.players_[a.clientId()].team != s.players_[b.clientId()].team);
     CHECK(s.players_[c.clientId()].team == TEAM_SPECTATOR);
+    {   // the sides are even and full: joining calls a vote to let them in; passing it makes the teams uneven
+        c.sendCommand("team a");
+        pump(s, cls, 0.3, idle);
+        CHECK(s.vote_.kind == Server::VOTE_LETIN);
+        a.sendCommand("vote yes");
+        pump(s, cls, 0.3, idle);
+        CHECK(s.players_[c.clientId()].team == TEAM_A || s.players_[c.clientId()].team == TEAM_B);
+        CHECK(s.players_[c.clientId()].letIn);
+        c.sendCommand("team spec");                  // (back out, so the rest is a plain 1v1)
+        pump(s, cls, 0.3, idle);
+        CHECK(s.players_[c.clientId()].team == TEAM_SPECTATOR && !s.players_[c.clientId()].letIn);
+    }
     pump(s, cls, 6.0, idle); // warmup countdown -> round 1
     CHECK(s.ms_.phase == PHASE_FREEZE || s.ms_.phase == PHASE_LIVE);
     unsigned seen = 0; int prev = -1;
