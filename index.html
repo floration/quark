@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>quark</title>
-<meta name="description" content="quark is a free, fast arena shooter: grapples, rockets, ranked 1v1 and a built-in map editor.">
+<meta name="description" content="quark 1.0: a free, fast arena shooter. 1000 Hz servers, grapples, rockets, ranked 1v1, twelve modes, a built-in map editor and a fully customisable HUD.">
 <link rel="icon" type="image/png" href="icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -36,6 +36,20 @@ h2 { font-size: 24px; margin: 0 0 6px; letter-spacing: -.01em; }
 .feat { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px 32px; }
 .feat p { margin: 0; color: var(--dim); }
 .feat b { color: var(--text); display: block; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-top: 18px; }
+.stats div { background: var(--panel); padding: 14px 18px; }
+.stats b { display: block; font-size: 26px; letter-spacing: -.02em; }
+.stats span { color: var(--dim); font-size: 13px; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; align-items: start; }
+.two img { width: 100%; height: auto; display: block; border-radius: 6px; background: var(--panel); }
+.list { margin: 0; padding-left: 18px; color: var(--dim); }
+.list li { margin: 4px 0; }
+.list b { color: var(--text); }
+.note { border-left: 3px solid var(--acc); padding: 8px 14px; background: var(--panel); border-radius: 0 6px 6px 0; color: #c9cacc; font-size: 15px; margin-top: 18px; }
+.modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 28px; }
+.modes p { margin: 0; color: var(--dim); font-size: 15px; }
+.modes b { color: var(--text); }
+.badge { display: inline-block; font: 12px "JetBrains Mono", monospace; color: #17130a; background: var(--acc); border-radius: 4px; padding: 1px 7px; vertical-align: middle; margin-left: 10px; }
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
 figure { margin: 0; }
 figure img { width: 100%; height: auto; display: block; border-radius: 6px; background: var(--panel); }
@@ -66,6 +80,7 @@ footer { margin: 64px 0 0; padding: 24px 0 40px; border-top: 1px solid var(--lin
 <div class="wrap">
 <nav>
   <a class="logo" href="#">quark</a>
+  <a class="hide" href="#custom">Customise</a>
   <a class="hide" href="#maps">Maps</a>
   <a class="hide" href="#weapons">Weapons</a>
   <a class="hide" href="#ranks">Leaderboard</a>
@@ -76,22 +91,71 @@ footer { margin: 64px 0 0; padding: 24px 0 40px; border-top: 1px solid var(--lin
 <div class="hero">
   <img src="img/temple.jpg" alt="Temple, a ranked 1v1 map" width="960" height="540">
   <div class="over">
-    <h1>quark</h1>
-    <p class="lead">A free arena shooter with rocket jumps, a grappling hook and ranked 1v1. Written from scratch in C++ so it runs fast on anything. <span id="ver"></span></p>
+    <h1>quark <span class="badge">1.0</span></h1>
+    <p class="lead">A free arena shooter with rocket jumps, a grappling hook and ranked 1v1. Written from scratch in C++ for the lowest latency and the steadiest frame rate. <span id="ver"></span></p>
     <a class="btn" id="dl" href="https://github.com/floration/quark/releases/latest">Download</a><a class="btn alt" href="https://discord.gg/RERYWNWSXg">Discord</a>
     <div class="plat" id="platforms"></div>
   </div>
 </div>
 
+<div class="stats">
+  <div><b>1000 Hz</b><span>server tick, 500 snapshots/s</span></div>
+  <div><b>12</b><span>game modes</span></div>
+  <div><b>15</b><span>hand-tuned maps</span></div>
+  <div><b>8</b><span>weapons, each with an alt-fire</span></div>
+  <div><b>0</b><span>files to configure: it just runs</span></div>
+</div>
+
 <section>
   <h2>The game</h2>
   <div class="feat">
-    <p><b>Movement</b>Dash, grapple, rocket jump and bunny hop. Physics runs in fixed 1 ms steps, so movement feels the same at any frame rate.</p>
-    <p><b>Netcode</b>Servers tick at 1000 Hz, with lag compensation and delta-compressed snapshots.</p>
-    <p><b>Ranked 1v1</b>Three ladders: Vanilla, Laser Vampire and Instagib. Each ladder has its own symmetric maps.</p>
-    <p><b>Modes</b>Free for all, team VS, bomb, payload, neutral payload, king of the hill, race, duel (first to 11, 30 rulesets), tourney, hide and seek, and tag.</p>
-    <p><b>Map editor</b>Built into the game. Edit with friends over the network, then vote to play it.</p>
-    <p><b>Hosting</b>Host from the menu, or run a dedicated server on Linux that updates itself.</p>
+    <p><b>Movement</b>Dash, grapple, rocket jump, bunny hop and climb ladders. Physics runs in fixed 1 ms steps, so movement feels the same at any frame rate.</p>
+    <p><b>Netcode</b>1000 Hz servers with client prediction, lag compensation and delta-compressed snapshots. A cheap VPS can host it.</p>
+    <p><b>Built for frame time</b>The renderer is judged by its 1% and 0.1% lows, not its average. F3 shows them live. Low-latency present modes and optional anti-aliasing (off by default) are included.</p>
+    <p><b>Ranked 1v1</b>Three ladders: Vanilla, Laser Vampire and Instagib, each with its own symmetric maps and rating.</p>
+    <p><b>Map editor</b>Built into the game. Edit with friends over the network, then vote to play the result.</p>
+    <p><b>Hosting</b>Host from the menu, or run a dedicated Linux server that updates itself.</p>
+  </div>
+</section>
+
+<section id="custom">
+  <h2>Make it yours</h2>
+  <p class="intro">Every part of the HUD and the controls can be changed, saved and shared.</p>
+  <div class="two">
+    <figure><img src="img/hud.jpg" alt="The in-game HUD widget editor" loading="lazy" width="960" height="540"><figcaption><b>Widget editor</b> Drag widgets anywhere and choose what they show.</figcaption></figure>
+    <ul class="list">
+      <li><b>HUD widgets</b>: show health, speed, dash, hook, fps, fps min, ping, loss, enemies or teammates alive, K/D, score or tick rate. Each can be a number, a bar, a colour-graded bar, an icon whose opacity follows the value, or an icon with a bar.</li>
+      <li><b>Verbose HUD</b>: clock, version, fps and fps min, speed, ping, loss, tick and snapshot rate, players alive, map, mode and K/D in the top right.</li>
+      <li><b>Control scripts</b>: for opposite movement keys, choose cancel, last pressed wins (snap tap) or first pressed wins. Alt-fire can be hold or toggle.</li>
+      <li><b>Import / export</b>: HUD layouts and control profiles copy to the clipboard and save as files you can share.</li>
+      <li><b>Mode rules</b>: load a different HUD or control profile automatically in each mode.</li>
+    </ul>
+  </div>
+  <div class="two" style="margin-top:24px">
+    <ul class="list">
+      <li><b>Five player models</b>: Standard, Heavy, Scout, Robot and Knight. They're cosmetic with identical hitboxes, and everyone sees yours.</li>
+      <li><b>Five sound packs</b>: Standard, Arcade, Heavy, Retro and Soft. Other players hear your guns and hurt sounds in your pack. Every pack is normalised to the same loudness.</li>
+    </ul>
+    <figure><img src="img/models.jpg" alt="The five player models" loading="lazy" width="960" height="540"><figcaption><b>Player models</b> Standard, Heavy, Scout, Robot, Knight</figcaption></figure>
+  </div>
+  <p class="note"><b>Ranked is the same for everyone.</b> Ranked matches always use the default model, the default HUD and no control scripts or mode rules, so nobody has an advantage. Your own key binds and sound pack still apply.</p>
+</section>
+
+<section id="modes">
+  <h2>Modes</h2>
+  <div class="modes">
+    <p><b>Free for all</b> Most kills wins.</p>
+    <p><b>VS</b> Team rounds: last team standing wins.</p>
+    <p><b>Duel</b> 1v1 or 2v2, first to 11, 30 rulesets.</p>
+    <p><b>1v1</b> Nine rulesets, from Vanilla to Moon Shotgun.</p>
+    <p><b>Tourney</b> A bracket of 1v1s.</p>
+    <p><b>Bomb</b> Plant it or defuse it.</p>
+    <p><b>Payload</b> Push the cart or stop it, then swap sides.</p>
+    <p><b>Neutral payload</b> One cart, two goals.</p>
+    <p><b>King of the hill</b> Hold the point.</p>
+    <p><b>Race</b> Run every checkpoint first.</p>
+    <p><b>Hide and seek</b> One seeker with a knife.</p>
+    <p><b>Tag</b> Don't be "it" when the timer runs out.</p>
   </div>
 </section>
 
