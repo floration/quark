@@ -347,11 +347,16 @@ def run_bot(cfg: dict):
         tid = state.d["messages"].get("total_channel")
         tch = bot.guild.get_channel(tid) if tid else None
         if not tch:
-            tch = await bot.guild.create_voice_channel(total_name(total), category=cat, position=0,
+            tch = await bot.guild.create_voice_channel(total_name(total), category=None, position=0,
                                                        overwrites={bot.guild.default_role: discord.PermissionOverwrite(connect=False)})
             state.d["messages"]["total_channel"] = tch.id
             bot.last_total_rename = now
-        elif tch.name != total_name(total) and now - bot.last_total_rename >= cfg["rename_min_seconds"]:
+        if (tch.category is not None or tch.position != 0):   # the very top of the server, above every category
+            try:
+                await tch.edit(category=None, position=0)
+            except discord.Forbidden:
+                log.warning("can't move the player-count channel to the top: give the bot Manage Channels")
+        if tch.name != total_name(total) and now - bot.last_total_rename >= cfg["rename_min_seconds"]:
             bot.last_total_rename = now
             try:
                 await tch.edit(name=total_name(total))
