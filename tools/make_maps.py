@@ -649,6 +649,7 @@ PALETTES = {
     "canal":       ((0.54, 0.56, 0.52), (0.24, 0.36, 0.26), (0.26, 0.28, 0.28), (0.55, 1.00, 0.30), (0.62, 0.68, 0.62)),  # green yard
     "foundry":   ((0.52, 0.48, 0.46), (0.30, 0.26, 0.24), (0.22, 0.22, 0.24), (1.00, 0.50, 0.12), (0.55, 0.48, 0.44)),  # molten orange
     "temple":    ((0.72, 0.66, 0.54), (0.42, 0.30, 0.18), (0.36, 0.30, 0.22), (1.00, 0.80, 0.40), (0.78, 0.72, 0.60)),  # sandstone + gold
+    "dojo":      ((0.86, 0.80, 0.66), (0.46, 0.24, 0.14), (0.30, 0.22, 0.16), (1.00, 0.72, 0.42), (0.80, 0.74, 0.64)),  # tatami + dark lacquered wood, paper lantern glow
     "colosseum": ((0.74, 0.70, 0.62), (0.48, 0.22, 0.18), (0.32, 0.30, 0.30), (1.00, 0.60, 0.30), (0.62, 0.72, 0.88)),  # marble, crimson
     "harbor": ((0.58, 0.55, 0.52), (0.14, 0.24, 0.38), (0.24, 0.26, 0.30), (1.00, 0.62, 0.25), (0.95, 0.62, 0.42)),  # sunset docks, navy + amber
     "bastion": ((0.60, 0.58, 0.54), (0.46, 0.12, 0.12), (0.26, 0.25, 0.25), (1.00, 0.62, 0.22), (0.62, 0.72, 0.86)),  # castle stone, royal red, torchlight
@@ -1527,6 +1528,62 @@ m.ladder(1.6, 0.6, 5.0, 10.0, "w", width=0.8); m.ladder(-1.6, -0.6, 5.0, 10.0, "
 m.ladder(-10, 6.8, 0, 4.4, "s", width=0.8); m.ladder(10, -6.8, 0, 4.4, "n", width=0.8)
 m.raw("# setting blast furnace")
 m.save("furnace")
+
+# ======================================================================================================
+# DOJO: ranked LASER VAMPIRE. A great training hall: the two fighters start across the tatami in sight of
+# each other, facing, and bow (no firing for the first 5 s of a round) before the laser duel. A raised ring in
+# the middle, two rows of pillars, galleries along both sides behind paper screens (the laser goes through
+# them), balconies at both ends and the roof beams above (a ladder up from each balcony). Point symmetric.
+m = M("Dojo", "1v1", sun=(0.4, 1.0, 0.3))
+m.raw("ranked vampire")
+m.raw("holdfire 5")
+m.raw("indoor 16")
+m.room(22, 15, 16, sunken=[(8, -2, 11, 2, 0.6, "accent"), (-11, -2, -8, 2, 0.6, "accent")], style="temple", skyline="pagodas")
+m.box(8, -0.25, -2, 11, -0.2, 2, mat="water", mirror=True)                   # koi pools beside the ring (shallow: stand in them)
+for x in range(-20, 21, 2): m.box(x - 0.04, 0, -12, x + 0.04, 0.02, 12, mat="trim")   # the tatami: mats 2 x 2 m
+for z in range(-10, 11, 2): m.box(-22, 0, z - 0.04, 22, 0.02, z + 0.04, mat="trim")
+m.box(-6, 0, -4, 6, 0.5, 4, accent=True)                                      # the fighting ring
+m.box(-6.1, 0.5, -4.1, 6.1, 0.6, 4.1, mat="trim")
+for (x, z) in ((-6, -4), (6, 4), (-6, 4), (6, -4)): m.box(x - 0.3, 0.5, z - 0.3, x + 0.3, 1.4, z + 0.3, mat="glow")   # corner posts
+for (x, z) in ((-12, -8), (-12, 8), (-6, -8), (-6, 8)): m.pillar(x, z, 16.0, r=0.45, mirror=True)
+# two judges' platforms (2.6 m) between the pillars and the galleries, steps up the side
+m.box(7.5, 0, -11.5, 11, 2.6, -8.5, accent=True, mirror=True); m.box(7.4, 2.6, -11.6, 11.1, 2.7, -8.4, mat="trim", mirror=True)
+m.stairs(7.5, -8.5, 11, -5.3, 2.6, "z", -1, mirror=True)                     # (steps down toward the ring, between the pillars)
+# the galleries: raised 1.2 m along both long walls, steps up in the middle, paper screens in front with gaps
+m.box(-20, 0, 12, 20, 1.2, 15, accent=True, mirror=True)
+m.stairs(-2, 10.6, 2, 12, 1.2, "z", 1, mirror=True)
+for x0 in (-18, -12, 5, 11):
+    m.wallbang(x0, 1.2, 11.85, x0 + 4, 3.6, 12.0, mirror=True)
+    m.box(x0, 3.6, 11.8, x0 + 4, 3.8, 12.05, mat="trim", mirror=True)
+for x in range(-18, 19, 4):
+    m.glow(x - 0.25, 2.6, 14.5, x + 0.25, 3.2, 14.9, mirror=True); m.light(x, 2.8, 14.2, 5, 0.45, fixture=False, mirror=True)   # gallery lanterns
+# the balconies at both ends (4 m up, stairs at one side each) over the weapon racks and the shrine
+m.box(-22, 3.7, -12, -17, 4.0, 12, accent=True, mirror=True)
+for (z0, z1) in ((-12, -2), (2, 8), (10.6, 12)): m.box(-17.2, 4.0, z0, -17, 5.0, z1, mat="trim", mirror=True)   # its rail (open in the middle and over the stairs)
+for z in (-11, -6, 6, 11): m.box(-17.4, 0, z - 0.2, -17, 3.7, z + 0.2, accent=True, mirror=True)   # posts under it
+m.stairs(-17, 8, -13, 10.6, 4.0, "x", -1, mirror=True)
+for z in (-9, -7, -5, 5, 7, 9): m.box(-21.9, 0.8, z - 0.05, -21.6, 2.8, z + 0.05, mat="metal", mirror=True)   # weapon racks: staffs
+m.box(-21.9, 0.6, -10, -21.5, 0.8, 10, accent=True, mirror=True)
+m.glow(-21.95, 1.0, -1.2, -21.85, 3.0, 1.2, mirror=True); m.box(-21.9, 0.0, -1.6, -21.4, 1.0, 1.6, accent=True, mirror=True)   # the shrine
+m.glow(-21.95, 4.8, -8, -21.85, 7.5, -6, mirror=True); m.glow(-21.95, 4.8, 6, -21.85, 7.5, 8, mirror=True)   # hanging scrolls
+# roof beams across the hall (their tops walkable: the high route), a ladder from each balcony onto the middle one
+for z in (-6, 0, 6): m.box(-22, 7.2, z - 0.35, 22, 7.6, z + 0.35, accent=True)
+m.box(-19.4, 4.0, -1.4, -18.6, 7.6, -0.35, accent=True, mirror=True)          # a post from each balcony to the middle beam
+m.ladder(-19.0, -1.4, 4.0, 7.6, "s", width=0.8); m.ladder(19.0, 1.4, 4.0, 7.6, "n", width=0.8)
+# the ridge walk (12.2 m, under the roof beams): the highest perch, a ladder up a king post from the middle beam
+m.box(-8.6, 11.8, -0.4, 8.6, 12.2, 0.4, accent=True)                          # (between the king posts)
+m.box(-9.4, 7.6, -0.35, -8.6, 12.2, 0.35, accent=True, mirror=True)            # king posts on the middle beam
+m.ladder(-9.4, 0.0, 7.6, 12.2, "e", width=0.6); m.ladder(9.4, 0.0, 7.6, 12.2, "w", width=0.6)
+# lanterns hanging over the mats
+for x in (-15, -9, -3, 3, 9, 15):
+    for z in (-9, 9):
+        m.glow(x - 0.3, 5.6, z - 0.3, x + 0.3, 6.3, z + 0.3); m.metal(x - 0.03, 6.3, z - 0.03, x + 0.03, 10, z + 0.03)
+        m.light(x, 5.8, z, 7, 0.55, fixture=False)
+m.light(0, 3.0, 0, 10, 0.6, fixture=False)
+for z in (-3, 3): m.spawn("a", -13, 0, z, -90, "b")   # across the mats, facing each other: the bow
+m.spawn("any", -19.5, 4.0, -9, -90, "any")
+m.raw("# setting dojo")
+m.save("dojo")
 
 # ======================================================================================================
 # GANTRY: ranked INSTAGIB. The crane hall: catwalks along both walls, a bridge across the middle over the

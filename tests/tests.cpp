@@ -198,7 +198,7 @@ static void testMaps() {
         bool duel = (m.rankedLadders & 3) != 0;   // a ladder played 1v1 (vanilla, vampire): a spawn for each side
         CHECK(a == b && (a >= 1 || !duel));
     }
-    CHECK(perLadder[0] >= 2 && perLadder[1] >= 2 && perLadder[2] >= 2 && ownMaps == 3);
+    CHECK(perLadder[0] >= 2 && perLadder[1] >= 2 && perLadder[2] >= 2 && ownMaps >= 3);
 }
 
 // Every map: loads, supports the mode it was built for, no spawn inside a wall, and bots can

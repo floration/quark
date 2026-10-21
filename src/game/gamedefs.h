@@ -218,6 +218,7 @@ inline int bubbleStreamCount(float nearestEnemy) {
     f = f < 0 ? 0 : f > 1 ? 1 : f;
     return kBubbleStreamMin + (int)(f * (kBubbleStreamMax - kBubbleStreamMin) + 0.5f);
 }
+constexpr float kProjInherit = 0.9f;    // rockets / stickies keep 90% of the shooter's velocity (all of it: a rocket fired down while moving lands under you and can't boost you on)
 constexpr float kCrossbowKnock = 16.0f; // a bolt hit shoves hard (m/s along the bolt)
 constexpr float kBubbleKnock = 0.35f; // a pop shoves you a third as hard as a rocket blast of the same strength
 constexpr float kVampireFadeTime = 60.0f, kVampireMinHeal = 0.5f; // laser vampire: healing fades 100% -> 50% over the first minute of a round

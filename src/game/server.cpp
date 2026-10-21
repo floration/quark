@@ -1217,7 +1217,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             pr.pos = eye + aim * 0.3f;
             pr.vel = spreadDir(aim, spread, cmd.seq, 0) * wd.projSpeed;
             if (p.weapon == WPN_ROCKET && alt) { pr.vel = pr.vel * kRocketLobSpeed; pr.gravMul = kRocketLobGravity; }
-            if (p.weapon == WPN_ROCKET || p.weapon == WPN_STICKY) pr.vel += p.move.vel; // launched from a moving player: it keeps your velocity
+            if (p.weapon == WPN_ROCKET || p.weapon == WPN_STICKY) pr.vel += p.move.vel * kProjInherit; // launched from a moving player: most of your velocity
             pr.dieAt = time() + wd.life;
             pr.armAt = time() + kStickyArmTime;
             return false;
