@@ -41,6 +41,17 @@ VOICES = [   # (folder, {file: lines}) in voice set order: 0 male, 1 female, the
                             ("YOU_LOSE", 24.75, 26.34), ("ROUND_OVER", 26.82, 28.53)]}),
 ] + [(v, {"all.wav": ALL}) for v in ("egirl", "india", "spy")]   # same script as female, clear pauses: split at them
 
+# the second take (more.wav in each voice's folder): the mode calls, in this order; times found with the Vosk recogniser
+MORE = {
+    "male": [('BOMB_PLANTED', 1.41, 3.42), ('BOMB_DEFUSED', 4.2, 5.88), ('HILL_TAKEN', 6.33, 7.65), ('HILL_LOST', 8.22, 9.54), ('POINT_TAKEN', 10.02, 11.4), ('POINT_LOST', 11.88, 13.35), ('ROUND_WON', 13.62, 15.27), ('ROUND_LOST', 15.39, 16.86), ('OVERTIME', 17.31, 18.42), ('HIGH_SCORE', 18.9, 20.88), ('NEW_LEADER', 21.24, 23.04)],
+    "female": [('BOMB_PLANTED', 0.75, 2.6), ('BOMB_DEFUSED', 3.15, 4.59), ('HILL_TAKEN', 5.01, 6.15), ('HILL_LOST', 6.6, 7.71), ('POINT_TAKEN', 8.16, 9.27), ('POINT_LOST', 9.66, 10.8), ('ROUND_WON', 11.19, 12.36), ('ROUND_LOST', 12.69, 13.98), ('OVERTIME', 14.46, 15.45), ('HIGH_SCORE', 15.66, 17.1), ('NEW_LEADER', 17.37, 18.6)],
+    "british": [('BOMB_PLANTED', 1.05, 2.67), ('BOMB_DEFUSED', 3.39, 4.92), ('HILL_TAKEN', 5.34, 6.51), ('HILL_LOST', 6.96, 8.16), ('POINT_TAKEN', 8.79, 9.93), ('POINT_LOST', 10.41, 11.64), ('ROUND_WON', 12.18, 13.47), ('ROUND_LOST', 13.83, 15.33), ('OVERTIME', 16.08, 17.04), ('HIGH_SCORE', 17.43, 19.08), ('NEW_LEADER', 19.44, 20.85)],
+    "oldman": [('BOMB_PLANTED', 0.75, 2.94), ('BOMB_DEFUSED', 3.69, 5.46), ('HILL_TAKEN', 6.12, 7.47), ('HILL_LOST', 8.16, 9.6), ('POINT_TAKEN', 10.41, 11.76), ('POINT_LOST', 12.48, 13.92), ('ROUND_WON', 14.73, 16.23), ('ROUND_LOST', 16.74, 18.45), ('OVERTIME', 19.2, 20.4), ('HIGH_SCORE', 20.88, 22.83), ('NEW_LEADER', 23.34, 25.08)],
+    "egirl": [('BOMB_PLANTED', 0.9, 2.69), ('BOMB_DEFUSED', 3.21, 4.5), ('HILL_TAKEN', 4.86, 6.06), ('HILL_LOST', 6.45, 7.56), ('POINT_TAKEN', 8.01, 9.18), ('POINT_LOST', 9.51, 10.68), ('ROUND_WON', 11.1, 12.24), ('ROUND_LOST', 12.6, 13.89), ('OVERTIME', 14.37, 15.3), ('HIGH_SCORE', 15.66, 17.1), ('NEW_LEADER', 17.49, 18.6)],
+    "india": [('BOMB_PLANTED', 1.05, 2.64), ('BOMB_DEFUSED', 3.27, 4.47), ('HILL_TAKEN', 5.04, 6.09), ('HILL_LOST', 6.66, 7.68), ('POINT_TAKEN', 8.37, 9.51), ('POINT_LOST', 10.14, 11.31), ('ROUND_WON', 12.0, 13.05), ('ROUND_LOST', 13.59, 14.82), ('OVERTIME', 15.54, 16.5), ('HIGH_SCORE', 17.07, 18.39), ('NEW_LEADER', 18.87, 19.98)],
+    "spy": [('BOMB_PLANTED', 1.95, 3.92), ('BOMB_DEFUSED', 4.35, 5.94), ('HILL_TAKEN', 6.24, 7.56), ('HILL_LOST', 7.92, 9.18), ('POINT_TAKEN', 9.54, 10.74), ('POINT_LOST', 11.04, 12.18), ('ROUND_WON', 12.54, 13.86), ('ROUND_LOST', 14.16, 15.57), ('OVERTIME', 15.93, 17.04), ('HIGH_SCORE', 17.31, 19.14), ('NEW_LEADER', 19.53, 20.88), ('_SKIP', 21.09, 22.38)],
+}
+
 def line_ids():
     """the announcer line order, from make_voice.py's LINES (without running it)"""
     src = open(os.path.join(ROOT, "tools", "make_voice.py")).read()
@@ -108,11 +119,14 @@ def main():
     ids = line_ids()
     clips = {}   # (voice set, line name) -> samples
     for vset, (folder, files) in enumerate(VOICES):
+        files = dict(files)
+        if folder in MORE: files["more.wav"] = MORE[folder]
         for f, lines in files.items():
             x = load(os.path.join(ROOT, "assets", "voice", folder, f))
             if isinstance(lines[0], tuple): parts = cut_timed(x, lines)
             else: parts = list(zip(lines, split(x, len(lines)) if len(lines) > 1 else [x]))
             for name, p in parts:
+                if name.startswith("_"): continue   # (a part to drop)
                 p = trim(p)
                 peak = max(1e-6, max(abs(v) for v in p))
                 clips[(vset, name)] = [int(round(v / peak * 0.89 * 32767)) for v in p]   # each line to -1 dB
