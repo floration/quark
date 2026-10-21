@@ -394,15 +394,28 @@ def run_bot(cfg: dict):
                               allowed_mentions=discord.AllowedMentions(roles=[role]))
                 rec["pinged"] = now
             rec["players"] = i.players
+            # a voice channel for the people on that server (open to everyone, gone when the server is)
+            vname = f"🔊 {i.name}"[:90]
+            vch = bot.guild.get_channel(rec.get("voice", 0)) if rec.get("voice") else None
+            try:
+                if not vch:
+                    vch = await bot.guild.create_voice_channel(vname, category=cat)
+                    rec["voice"] = vch.id
+                elif vch.name != vname and now - rec.get("vrenamed", 0) >= cfg["rename_min_seconds"]:
+                    rec["vrenamed"] = now
+                    await vch.edit(name=vname)
+            except discord.Forbidden:
+                log.warning("can't make or rename a server's voice channel: give the bot Manage Channels")
 
         for addr in list(servers):
             if addr in seen:
                 continue
             bot.missing[addr] = bot.missing.get(addr, 0) + 1
             if bot.missing[addr] >= 2:  # gone two polls in a row: not just a dropped UDP reply
-                ch = bot.guild.get_channel(servers[addr]["channel"])
-                if ch:
-                    await ch.delete(reason="server went offline")
+                for cid in (servers[addr]["channel"], servers[addr].get("voice", 0)):
+                    ch = bot.guild.get_channel(cid) if cid else None
+                    if ch:
+                        await ch.delete(reason="server went offline")
                 del servers[addr]
                 bot.missing.pop(addr, None)
         bot.first_server_pass = False
