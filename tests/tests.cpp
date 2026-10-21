@@ -178,7 +178,7 @@ static void testMaps() {
         Map m;
         if (!m.load(name) || !m.rankedLadders) continue;
         CHECK(isRankedMap(m, 0) || isRankedMap(m, 1) || isRankedMap(m, 5));
-        CHECK(m.supportsMode(MODE_ARENA));
+        for (int v : {0, 1, 5}) if (m.rankedLadders >> v & 1) CHECK(m.supportsMode(rankedMode(v)));   // (instagib: free for all)
         int k = 0;
         for (int v : {0, 1, 5}) if (m.rankedLadders >> v & 1) perLadder[k++ < 3 ? (v == 0 ? 0 : v == 1 ? 1 : 2) : 0]++;
         if (__builtin_popcount(m.rankedLadders) == 1) ownMaps++;
@@ -195,7 +195,8 @@ static void testMaps() {
         CHECK(lonely == 0);
         int a = 0, b = 0;
         for (auto& sp : m.spawns) { a += sp.team == SPAWN_A; b += sp.team == SPAWN_B; }
-        CHECK(a == b && a >= 1);
+        bool duel = (m.rankedLadders & 3) != 0;   // a ladder played 1v1 (vanilla, vampire): a spawn for each side
+        CHECK(a == b && (a >= 1 || !duel));
     }
     CHECK(perLadder[0] >= 2 && perLadder[1] >= 2 && perLadder[2] >= 2 && ownMaps == 3);
 }

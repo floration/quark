@@ -1532,42 +1532,66 @@ m.save("furnace")
 # GANTRY: ranked INSTAGIB. The crane hall: catwalks along both walls, a bridge across the middle over the
 # open loading bay (no floor: fall and you're out), two overhead cranes with their cabs and a hanging
 # container each. Long sightlines on every level, always a way to break line of sight. Point symmetric.
-m = M("Gantry", "1v1", sun=(0.55, 1.0, 0.25))
+m = M("Gantry", "ffa", sun=(0.55, 1.0, 0.25))   # (ranked instagib is a free for all)
 m.raw("ranked instagib")
-m.room(32, 12, 14, pits=[(-3.5, -7.5, 3.5, 7.5, "water")], sunken=[(-24, -7, -18, 7, 3.0, "metal"), (18, -7, 24, 7, 3.0, "metal")], style="hall", skyline="cranes")   # the flooded dock under the bridge; lorry docks sunk at each end
-m.catwalk(-26, -11.8, 26, -9.6, 4.0, rails="z", mirror=True)
-m.stairs(26, -11.8, 30, -9.6, 4.0, "x", -1, mirror=True); m.stairs(-30, -11.8, -26, -9.6, 4.0, "x", 1, mirror=True)
-m.catwalk(-1.2, -9.6, 1.2, 9.6, 4.0, rails="x")
-m.metal(-3.5, -0.3, -7.6, 3.5, 0, -7.5); m.metal(-3.5, -0.3, 7.5, 3.5, 0, 7.6)
-m.box(-3.6, 0, -7.6, -3.5, 0.9, 7.6, accent=True, mirror=True)              # bay railings
-for (x0, z0, x1, z1, h) in ((-20, -3, -18, 3, 1.4), (-12, 4, -9, 6, 2.2), (-7, -6, -5, -2, 1.4), (-24, -7, -22, -5, 2.6)):
+# (1.13: rebuilt 1.5x longer, 2x wider and 2x taller: 96 x 48 m and 28 m to the roof line; two catwalk tiers,
+# cranes 18 m up, and a container yard in the middle so nobody has a shot from spawn to spawn)
+GX, GZ, GH = 48, 24, 28
+m.room(GX, GZ, GH, pits=[(-5, -14, 5, 14, "water")], sunken=[(-36, -12, -28, 12, 3.0, "metal"), (28, -12, 36, 12, 3.0, "metal")],
+       style="hall", skyline="cranes")   # the flooded dock under the bridges; lorry docks sunk at each end
+m.metal(-5, -0.3, -14.1, 5, 0, -14); m.metal(-5, -0.3, 14, 5, 0, 14.1)
+m.box(-5.1, 0, -14.1, -5, 0.9, 14.1, accent=True, mirror=True)              # bay railings
+m.metal(-5, -0.3, -1.5, 5, 0, 1.5)                                            # a gangway across the dock at floor level
+for x in (-4, -1, 2): m.box(x, 0, -1.5, x + 0.15, 0.9, -1.35, accent=True, mirror=True)   # its rail posts
+# catwalks: the low tier (4 m) the length of both long walls, the high tier (10 m) over its middle
+m.catwalk(-42, -23.8, 42, -21.4, 4.0, rails="z", mirror=True)
+m.stairs(42, -23.8, 46, -21.4, 4.0, "x", -1, mirror=True); m.stairs(-46, -23.8, -42, -21.4, 4.0, "x", 1, mirror=True)
+m.catwalk(-30, -23.8, 30, -21.4, 10.0, rails="z", mirror=True)
+m.box(30, 4.0, -23.8, 31, 10.0, -22.6, accent=True, mirror=True)          # low tier -> high tier: a ladder up a pier at each end
+m.ladder(31, -23.2, 4.0, 10.0, "w", width=0.8); m.ladder(-31, 23.2, 4.0, 10.0, "e", width=0.8)
+# bridges across the hall: the low one over the flooded dock, two high ones between the high tiers
+m.catwalk(-1.6, -21.4, 1.6, 21.4, 4.0, rails="x")
+m.catwalk(-15.6, -21.4, -12.4, 21.4, 10.0, rails="x", mirror=True)
+# the container yard in the middle of each half: stacks you fight around, one high enough to stand on
+for (x0, z0, x1, z1, h) in ((-12, -10, -6, -7.6, 2.6), (-12, 6, -6, 8.4, 2.6), (-20, -3, -14, -0.6, 2.6), (-24, 9, -18, 11.4, 2.6),
+                            (-26, -13, -23.6, -7, 2.6)):
+    m.container(x0, z0, x1, z1, h, mirror=True)
+m.container(-20, -3, -14, -0.6, 2.6, mirror=True); m.box(-19.5, 2.6, -2.8, -14.5, 5.2, -0.8, mat="metal", mirror=True)   # a stack of two
+m.stairs(-14, -3, -11, -0.6, 2.6, "x", -1, mirror=True)                     # up the side of the stack
+for (x0, z0, x1, z1, h) in ((-9, -2, -8, 2, 1.4), (-31, -17, -29, -15, 1.4), (-22, 15, -20, 17, 2.2), (-40, -6, -38, -4, 1.4)):
     m.box(x0, 0, z0, x1, h, z1, mirror=True)
-m.pillar(-14, -4, 14.0, r=0.5, mirror=True)
-m.wallbang(-9, 0, -0.2, -7, 2.6, 0.2, mirror=True)
-m.box(-32, 9, -12, 32, 9.6, -11, accent=True, mirror=True)
-# each crane's leg down to the catwalk, with a maintenance ladder up it onto the crane bridge (9 m: the high
-# perch over the whole hall, and a long fall)
-m.metal(-10, 4.0, -10.7, -8.1, 8.4, -9.7, mirror=True)
-m.ladder(-10, -10.2, 4.0, 9.0, "e", width=0.8); m.ladder(10, 10.2, 4.0, 9.0, "w", width=0.8)
-m.box(-10, 8.4, -11, -8, 9.0, 11, accent=True); m.box(8, 8.4, -11, 10, 9.0, 11, accent=True)
-m.box(-10.6, 6.9, 2, -8.6, 8.4, 4.2, mirror=True); m.wallbang(-10.65, 7.4, 2.3, -10.6, 8.1, 3.9, mirror=True)   # crane cabs
-m.glow(-10.7, 6.9, 2, -8.5, 7.0, 4.2, mirror=True)
-m.metal(-9.1, 6.5, -0.1, -8.9, 8.4, 0.1, mirror=True)
-m.metal(-10.4, 4.8, -1.2, -7.6, 6.5, 1.2, mirror=True); m.box(-10.45, 5.5, -1.25, -7.55, 5.7, 1.25, accent=True, mirror=True)  # hanging containers
-for x in (-16, 16): m.light(x, 3.4, -10.7, 7, 0.5, fixture=False, mirror=True)
-m.light(0, -1.5, 0, 9, 0.5, fixture=False)
-# the loading sheds at both ends: roofed bays under the crane rails where each player starts (a dim, covered
-# end to fight out of, the bright open hall between)
-m.box(-32, 9.6, -11, -21, 10.0, 11, accent=True, mirror=True)
-m.glow(-21.1, 9.4, -11, -20.9, 9.6, 11, mirror=True)
-for z in (-6, 0, 6): m.light(-26, 8.6, z, 7, 0.6, mirror=True)
-# the lorry docks: sunk 3 m beside each loading shed, steps down at both ends (the low ground: cover from the
-# catwalks, a way to cross the end of the hall unseen)
-m.stairs(-24, -7, -18, -3, 0, "z", -1, mirror=True, base=-3.0); m.stairs(-24, 3, -18, 7, 0, "z", 1, mirror=True, base=-3.0)
-m.crates(-21, 0, 1, size=1.2, mirror=True)
-m.light(-21, -1.0, -2, 6, 0.6, fixture=False, mirror=True)
-for z in (-3, 3): m.spawn("a", -29, 0, z, -90, "b")
-m.spawn("any", -24, 4, -10.7, -90, "any")
+m.wallbang(-10, 0, -0.2, -6, 2.6, 0.2, mirror=True)
+m.wallbang(-30, 4.0, -21.4, -29.8, 6.4, -19.8, mirror=True)                 # screens on the low tier
+for x in (-34, -20, -8): m.pillar(x, -19, GH, r=0.6, mirror=True)
+# cranes: rails along both walls 18 m up, a crane bridge across the hall at each end of the yard, cabs and
+# hanging containers; a ladder up each crane's leg from the high tier (the perch over the whole hall, a long fall)
+m.box(-GX, 18, -GZ, GX, 18.6, -22.6, accent=True, mirror=True)
+for cx in (-21,):
+    m.box(cx - 1, 18.4, -22.6, cx + 1, 19.0, 22.6, accent=True, mirror=True)
+    m.metal(cx + 1.0, 10.0, -23.4, cx + 1.8, 19.0, -22.6, mirror=True)   # the crane's leg, on the high tier against the wall
+    m.ladder(cx + 1.4, -22.6, 10.0, 19.0, "n", width=0.8); m.ladder(-(cx + 1.4), 22.6, 10.0, 19.0, "s", width=0.8)   # up onto the crane
+    m.box(cx - 1.2, 15.4, 3, cx + 1.2, 18.4, 6, mirror=True); m.wallbang(cx - 1.25, 16.2, 3.4, cx - 1.2, 17.6, 5.6, mirror=True)  # the cab
+    m.glow(cx - 1.3, 15.4, 3, cx + 1.3, 15.5, 6, mirror=True)
+    m.metal(cx - 0.1, 14.5, -0.1, cx + 0.1, 18.4, 0.1, mirror=True)
+    m.metal(cx - 1.5, 12.5, -3, cx + 1.5, 14.5, 3, mirror=True); m.box(cx - 1.55, 13.3, -3.05, cx + 1.55, 13.5, 3.05, accent=True, mirror=True)
+for x in (-36, -24, -12):
+    m.light(x, 3.4, -22.5, 9, 0.5, fixture=False, mirror=True); m.light(x, 9.4, -22.5, 9, 0.5, fixture=False, mirror=True)
+for x in (-18, -6): m.light(x, 6, 0, 14, 0.6, fixture=False, mirror=True)
+m.light(0, -1.5, 0, 12, 0.5, fixture=False)
+m.light(-21, 17, 0, 12, 0.6, fixture=False, mirror=True)
+# the loading sheds at both ends: roofed bays under the low tier's ends where each player starts (dim and
+# covered, the bright open hall between)
+m.box(-GX, 9.6, -21.4, -38, 10.0, 21.4, accent=True, mirror=True)
+m.glow(-38.1, 9.4, -21.4, -37.9, 9.6, 21.4, mirror=True)
+for z in (-12, 0, 12): m.light(-43, 8.6, z, 9, 0.6, mirror=True)
+m.box(-38, 0, -21.4, -37.6, 7.0, -4, mirror=True); m.box(-38, 0, 4, -37.6, 7.0, 21.4, mirror=True)   # shed fronts, a doorway in the middle
+m.box(-38.05, 3.0, -4, -37.55, 7.0, 4, mirror=True)                                                       # (over the doorway)
+# the lorry docks: sunk 3 m beside each loading shed, steps down at both ends
+m.stairs(-36, -12, -28, -6, 0, "z", -1, mirror=True, base=-3.0); m.stairs(-36, 6, -28, 12, 0, "z", 1, mirror=True, base=-3.0)
+m.crates(-33, 0, 2, size=1.2, mirror=True)
+m.light(-32, -1.0, -3, 8, 0.6, fixture=False, mirror=True)
+for (x, y, z, yaw) in ((-44, 0, -12, -90), (-44, 0, 12, -90), (-32, -3, 0, -90), (-41, 4, -22.6, -90), (-30, -3, -4, -90), (-9, 0, -12.5, 0), (-26, 0, 16, 180)):
+    m.spawn("any", x, y, z, yaw, "any")   # free for all: 14 spots, sheds, docks, both tiers and the yard (each point-mirrored)
 m.raw("# setting crane hall")
 m.save("gantry")
 
