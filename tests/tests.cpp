@@ -1962,7 +1962,7 @@ static void testVotedEdit(uint16_t port) {
     pumpMsgs(1.5);
     a.sendCommand("callvote edit on");
     pumpMsgs(0.3);
-    a.sendCommand("vote yes"); b.sendCommand("vote yes");
+    b.sendCommand("callvote edit on");   // (calling the same vote again counts as a yes: no F1 needed)
     pumpMsgs(1.0);
     CHECK(s.editing_ && (a.mode().flags & MS_EDITING));
     size_t nb = s.map_.brushes.size();

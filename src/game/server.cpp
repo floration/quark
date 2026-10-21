@@ -1578,6 +1578,8 @@ void Server::updateBalanceBots(bool matchStarting) {
 
 void Server::callVote(int caller, int kind, int arg, const std::string& map, int arg2) {
     if (vote_.kind != VOTE_NONE) {
+        // calling the same vote that's already running is a yes to it
+        if (caller >= 0 && kind == vote_.kind && arg == vote_.arg && arg2 == vote_.arg2 && map == vote_.map) { castVote(caller, true); return; }
         GameEvent e; e.type = EV_MESSAGE; e.text = "a vote is already in progress";
         sendEvent(caller, e);
         return;
