@@ -25,7 +25,7 @@ old() { [ -f "$ENVFILE" ] && grep -E "^$1=" "$ENVFILE" | head -1 | cut -d= -f2- 
 ask() { # name, prompt, secret
     local cur; cur="$(old "$1")"
     local shown="${cur:+(saved)}"
-    if [ "${3:-}" = secret ]; then read -r -s -p "$2 $shown: " v; echo; else read -r -p "$2 ${cur:+[$cur]}: " v; fi
+    if [ "${3:-}" = secret ]; then read -r -s -p "$2 $shown: " v; echo >&2; [ -n "$v" ] && echo "  (got ${#v} characters - a bot token is about 72)" >&2; else read -r -p "$2 ${cur:+[$cur]}: " v; fi
     printf '%s' "${v:-$cur}"
 }
 TOKEN="$(ask DISCORD_TOKEN 'Discord bot token' secret)"
@@ -42,7 +42,7 @@ sudo -u "$RUNAS" "$HERE/.venv/bin/pip" install -q --upgrade pip
 sudo -u "$RUNAS" "$HERE/.venv/bin/pip" install -q -r "$HERE/requirements.txt"
 
 echo "== dry run (reads the live server list, leaderboards and latest release; nothing is posted)"
-sudo -u "$RUNAS" env $(cat "$ENVFILE" | xargs) "$HERE/.venv/bin/python" "$HERE/bot.py" --dry-run | head -40 || true
+( set -a; . "$ENVFILE"; set +a; sudo -u "$RUNAS" env DISCORD_TOKEN="$DISCORD_TOKEN" GUILD_ID="$GUILD_ID" BOT_KEY="$BOT_KEY" "$HERE/.venv/bin/python" "$HERE/bot.py" --dry-run 2>&1 | head -40 ) || true
 
 echo "== service"
 cat > /etc/systemd/system/quark-discord.service <<UNIT
