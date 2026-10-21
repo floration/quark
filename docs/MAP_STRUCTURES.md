@@ -200,7 +200,7 @@ The numbers in brackets are measured by `build/quark_tests mapreport` (see [MAP_
 - **The quay canopy and quay clutter.** Break the 60 m quay into stretches.
 - **The dock crane.** Landmark and grapple anchor.
 
-## Lodestone: multi point. Setting: a mine.
+## Lodestone: multi point (and every other mode). Setting: a mine.
 **Why it suits multi point:**
 - An attack in five stages down the mine (A pithead, B pit floor, C workings, D crystal grotto, E mother lode). Each point is 25–90 m on from the last: every capture is a push, not a hop.
 - Every stage has its own spawns for both sides. The defenders' spawns reach each point 2–10 s before the attackers', so the defence can set up. As a point falls, both sides' spawns move on and the fight moves down the mine.
@@ -235,6 +235,26 @@ The numbers in brackets are measured by `build/quark_tests mapreport` (see [MAP_
 - **Ledges at 12 m round both caverns, with stairs and ladders.** High ground over D and E, and the defenders' last spawns.
 - **Rock ribs across the cavern floors, stalagmites and stalactites.** They split each cavern into bays, so fights happen at rifle range rather than across 100 m.
 - **Lamp posts, crystal veins in the walls, fissures with daylight.** Light, and something to steer by.
+
+*Every other mode (Lodestone is the map built for all of them):*
+- **Team spawns in the two caverns, mirrored either side of the spine.** The portals into the workings are symmetric, so neither side is closer to the middle.
+- **The hill on the loading bay (C)**, as far from either cavern; **bomb sites at D and E**.
+- **An ore-cart track** from the grotto, through the spine tunnel, to the shaft station, with checkpoints at 1/3 and 2/3.
+- **A race course** from the surface down the mine to the shaft station's ledge (an unranked course: Viaduct is the ranked one).
+
+## Midtown: multi point. Setting: a city centre.
+**Why it suits multi point:**
+- An attack across the city in five stages: A the north intersection, B an office roof, C the park, D the elevated railway's west station, E the city hall plaza. Each point is 25–90 m on from the last.
+- Staged spawns for both sides; the defenders reach each point first (3–13 s).
+- Three levels to fight on: the streets, the offices' first floors, and the roofs (with the railway deck at 9 m in between). B is on a roof and D on the railway, so the attack has to climb.
+
+**Structures:**
+- **Three avenues each way, sixteen blocks, a kerb round every block.** The street grid: lanes to push down, blocks to flank round.
+- **Two-storey offices.** Doors on all four sides, stairs to the first floor and on to the flat roof, a fire-escape ladder outside. Desks with cubicle screens inside (cover). Billboards, water tanks and air handlers on the roofs break the roof-to-roof lines.
+- **The elevated railway.** A deck at 9 m down the middle avenue on columns, two stations with stairs, stopped trains as cover on the deck.
+- **Traffic.** Parked cars and buses in the lanes, trees down the medians and at the block corners, street lamps, traffic lights, bus shelters with glass backs (wallbangs). These are the street cover, and they break the long lines down the avenues.
+- **The park (C).** Lawns, hedges, trees, benches, a fountain and a pond (fall in and you drown).
+- **City hall (E).** A colonnade and a clock tower over the plaza that holds the last point.
 
 ## Orbital: team vs. Setting: a space station.
 **Why it suits team vs:**

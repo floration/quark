@@ -49,6 +49,7 @@ struct LaunchOptions {
     bool editSession = false;   // --editsession MAP: and host it as an edit session
     int editSel = -1;           // --edsel N: select box N (screenshots)
     bool debugLeaderboard = false; // --leaderboard: open the leaderboard screen
+    int debugInfo = 0;             // --info <tab>: open the info screen on that tab (stored +1; 0 = off)
     bool menuShot = false;      // --menushot: screenshot whatever menu is up (main / settings / controls)
     double bench = 0;           // --bench SECONDS: measure frame times in a vs-bots game, print, quit
 };
@@ -74,7 +75,7 @@ public:
     void afterSwap();     // low-latency fence waits + F3 input-latency measurement
 
 private:
-    enum class Screen { Main, Join, Host, Settings, Connecting, InGame, VsBots, Editor, Leaderboard, CustomMode };
+    enum class Screen { Main, Join, Host, Settings, Connecting, InGame, VsBots, Editor, Leaderboard, CustomMode, Info };
     void setScreen(Screen s);
     void startHost(bool vsBots = false);
     void stopHost();
@@ -98,6 +99,7 @@ private:
     ModeState annPrev_;
     bool annPrevValid_ = false;
     int annCount_ = 0;
+    int annLeader_ = -2;   // FFA: who leads (-1 nobody yet, -2 not counting)
 
     GLFWwindow* win_ = nullptr;
     Settings cfg_;
@@ -135,6 +137,9 @@ private:
     int customTab_ = 0;
     std::vector<std::string> rulesParts_;
     void drawCustomModeEditor(float cx, float y);
+    void drawInfo(float cx, float y);
+    int infoTab_ = 0;
+    float infoScroll_ = 0;
     std::vector<std::string> maps_;
     struct MapInfo { std::string title; int preferredMode = -1; uint32_t modes = 0; uint16_t ranked = 0; }; // ranked: ladders it's a ranked map for // modes: bit per supported mode
     std::vector<MapInfo> mapInfo_;

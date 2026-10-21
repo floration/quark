@@ -17,7 +17,7 @@ enum SoundId {
     // the announcer (recorded lines from voice_data.h, in its order; the same in every sound pack)
     SND_VOICE_THREE, SND_VOICE_TWO, SND_VOICE_ONE, SND_VOICE_GO, SND_VOICE_BOMB_PLANTED, SND_VOICE_BOMB_DEFUSED,
     SND_VOICE_HILL_TAKEN, SND_VOICE_HILL_LOST, SND_VOICE_POINT_TAKEN, SND_VOICE_POINT_LOST, SND_VOICE_ROUND_WON,
-    SND_VOICE_ROUND_LOST, SND_VOICE_OVERTIME,
+    SND_VOICE_ROUND_LOST, SND_VOICE_OVERTIME, SND_VOICE_YOU_WIN, SND_VOICE_YOU_LOSE, SND_VOICE_HIGH_SCORE, SND_VOICE_NEW_LEADER,
     SND_COUNT
 };
 
@@ -35,6 +35,7 @@ public:
     void play3D(int id, const Vec3& pos, float volume = 1.0f, float pitch = 1.0f, int pack = -1);
     void setListener(const Vec3& pos, float yaw) { std::lock_guard<std::mutex> l(mu_); listener_ = pos; listenerYaw_ = yaw; }
     void setMasterVolume(float v) { master_ = v; }
+    void setAnnouncer(int set) { if (set != announcer_) { if (running_) loadAnnouncer(set); else announcer_ = set; } } // 0 male, 1 female
     // Sound packs: the same synthesized sounds, voiced differently (STANDARD, ARCADE, HEAVY, RETRO, SOFT).
     // All packs are built at startup, so switching is free and every player can sound different.
     static constexpr int kPacks = 5;
@@ -49,6 +50,8 @@ public:
 private:
     struct Voice { int id, pack; float pos; float step; float gainL, gainR; bool spatial; Vec3 at; float volume; };
     void synthesize();
+    void loadAnnouncer(int set);
+    int announcer_ = 0;
     std::atomic<int> pack_{0};
     void voiceGains(Voice& v);
     void backendThread();

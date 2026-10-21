@@ -55,6 +55,7 @@ void Settings::load() {
         else if (k == "msaa") msaa = (iv == 1 || iv == 2 || iv == 4) ? iv : 0;
         else if (k == "volume") volume = clampf(fv, 0, 1);
         else if (k == "hitsounds") hitsounds = iv != 0;
+        else if (k == "announcer_voice") announcerVoice = iv == 1 ? 1 : 0;
         else if (k == "announcer") announcer = iv < 0 ? 0 : iv > 2 ? 2 : iv;
         else if (k == "shadowres") shadowRes = iv;
         else if (k == "color_friendly") colorFriendly = parseColor(v, colorFriendly);
@@ -113,7 +114,7 @@ void Settings::save() const {
       << "\npresent_mode=" << presentMode << "\nlow_latency=" << lowLatency << "\ninterp_ms=" << interpMs
       << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height
       << "\nshadows=" << shadows << "\nmsaa=" << msaa << "\nmodel=" << model << "\nsoundpack=" << soundPack << "\nsocd=" << socd << "\nalt_toggle=" << altToggle
-      << "\nhud_verbose=" << hudVerbose << "\nhud_widgets=" << hudWidgets << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nhitsounds=" << hitsounds << "\nannouncer=" << announcer
+      << "\nhud_verbose=" << hudVerbose << "\nhud_widgets=" << hudWidgets << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nhitsounds=" << hitsounds << "\nannouncer=" << announcer << "\nannouncer_voice=" << announcerVoice
       << "\ncolor_friendly=" << colorHex(colorFriendly) << "\ncolor_enemy=" << colorHex(colorEnemy)
       << "\nch_style=" << chStyle << "\nch_length=" << chLength << "\nch_thickness=" << chThickness << "\nch_gap=" << chGap
       << "\nch_outline=" << chOutline << "\nch_team_color=" << chTeamColor << "\nch_color=" << colorHex(chColor)

@@ -144,9 +144,9 @@ static void testTickRateIndependence() {
 static void testMaps() {
     printf("maps\n");
     std::string err;
-    // the three all-mode maps support every mode
+    // Lodestone is the map built for every mode
     { Map v; CHECK(v.load("viaduct") && v.supportsMode(MODE_RACE) && v.preferredMode == MODE_RACE && v.hasVoid && v.checkpoints.size() >= 5); }
-    for (const char* name : {"bastion", "foundry", "colosseum"}) {
+    for (const char* name : {"lodestone"}) {
         Map m;
         CHECK(m.load(name, &err));
         if (!err.empty()) printf("  %s\n", err.c_str());

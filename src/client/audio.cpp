@@ -123,10 +123,18 @@ void Audio::synthesize() {
     s[SND_GRAPPLE_HIT] = make(0.35f);
     for (float f : {1180.0f, 1630.0f, 2360.0f}) addTone(s[SND_GRAPPLE_HIT], f, 0.35f, 0.001f, 0.07f);
     addThump(s[SND_GRAPPLE_HIT], 400, 200, 0.01f, 0.5f, 0.001f, 0.02f); addRoom(s[SND_GRAPPLE_HIT], 0.25f, 0.6f); finish(s[SND_GRAPPLE_HIT], 0.2f);
-    // the announcer: 8-bit 16 kHz lines, up to the mix rate (linear)
-    for (int k = 0; k < (int)(sizeof kVoiceClips / sizeof kVoiceClips[0]) && SND_VOICE_THREE + k < SND_COUNT; k++) {
-        const VoiceClip& c = kVoiceClips[k];
-        auto& v = s[SND_VOICE_THREE + k];
+    for (int p = 1; p < kPacks; p++)
+        for (int i = 0; i < SND_VOICE_THREE; i++) { sounds_[p][i] = s[i]; voice(sounds_[p][i], p); }
+    loadAnnouncer(announcer_);
+}
+
+// The announcer's lines (8-bit 16 kHz, voice_data.h) up to the mix rate, the same in every sound pack.
+void Audio::loadAnnouncer(int set) {
+    set = set < 0 || set >= kVoiceSets ? 0 : set;
+    std::vector<float> lines[kVoiceLines];
+    for (int k = 0; k < kVoiceLines; k++) {
+        const VoiceClip& c = kVoiceClips[set][k];
+        auto& v = lines[k];
         size_t n = c.size * R / kVoiceRate;
         v.resize(n);
         for (size_t i = 0; i < n; i++) {
@@ -135,8 +143,11 @@ void Audio::synthesize() {
             v[i] = (x0 + (x1 - x0) * f) * 0.9f;
         }
     }
-    for (int p = 1; p < kPacks; p++)
-        for (int i = 0; i < SND_COUNT; i++) { sounds_[p][i] = s[i]; if (i < SND_VOICE_THREE) voice(sounds_[p][i], p); }
+    std::lock_guard<std::mutex> l(mu_);
+    voices_.erase(std::remove_if(voices_.begin(), voices_.end(), [](const Voice& v) { return v.id >= SND_VOICE_THREE; }), voices_.end());
+    for (int p = 0; p < kPacks; p++)
+        for (int k = 0; k < kVoiceLines && SND_VOICE_THREE + k < SND_COUNT; k++) sounds_[p][SND_VOICE_THREE + k] = lines[k];
+    announcer_ = set;
 }
 
 // Sound packs re-voice every synthesized sound: pitch (by resampling), extra room, a low-pass, and for RETRO

@@ -54,6 +54,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     rescanMaps();
     rankKey_ = loadOrCreateRankKey(findDataPath("maps") + "/../quark.key"); // ranked identity: stays on this computer
     if (opts_.hostMode < 0 && opts_.vsBotsMode < 0 && opts_.connect.empty() && opts_.editMap.empty()) loadMenuBackdrop();
+    if (opts_.debugInfo) { setScreen(Screen::Info); infoTab_ = opts_.debugInfo - 1; }
     if (opts_.debugLeaderboard) { setScreen(Screen::Leaderboard); raceStatsView_ = opts_.debugRaceStats; }
     if (!opts_.editMap.empty()) { openEditor(opts_.editMap); if (opts_.editSession) edHostSession(); if (opts_.editSel >= 0) edSel_ = {ED_BRUSH, opts_.editSel}; }
     for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == cfg_.hostMap) hostMapIdx_ = (int)i;
@@ -65,6 +66,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     applyDisplayMode();
     applyPresentMode();
     for (auto& q : latQ_) glGenQueries(1, &q.q);
+    audio_.setAnnouncer(cfg_.announcerVoice);
     if (!audio_.start()) printf("audio: no output device - running without sound\n");
     audio_.setMasterVolume(cfg_.volume);
 
@@ -539,6 +541,7 @@ void Game::onScroll(double dy) {
     markInput();
     if (dy == 0) return;
     if (screen_ == Screen::Editor) { edSpeed_ = clampf(edSpeed_ * (float)std::pow(1.25, dy), 2, 80); return; }
+    if (screen_ == Screen::Info) { infoScroll_ -= (float)dy * 60.0f; return; }
     // One action per whole notch: smooth-scrolling trackpads and high-res wheels send many small
     // steps, which used to skip through several weapons at once. Reversing direction starts over.
     if ((dy > 0) != (wheelAccum_ > 0)) wheelAccum_ = 0;
@@ -645,8 +648,20 @@ void Game::updateAnnouncer() {
             if (ms.mode == MODE_POINTS && ms.point > pv.point && myTeam >= 0)
                 say(myTeam == ms.attackers ? SND_VOICE_POINT_TAKEN : SND_VOICE_POINT_LOST, 2);
             if ((ms.flags & MS_OVERTIME) && !(pv.flags & MS_OVERTIME)) say(SND_VOICE_OVERTIME, 2);
+            if (ms.mode == MODE_FFA) {   // free for all: someone new has the most kills (a clear lead, not a tie)
+                int lead = -1, best = 0; bool tie = false;
+                for (auto& p : net_.latest().players) {
+                    if (p.flags & PS_SPECTATOR) continue;
+                    if (p.score > best) { best = p.score; lead = p.id; tie = false; } else if (p.score == best && best > 0) tie = true;
+                }
+                if (tie) lead = -1;
+                if (lead >= 0 && lead != annLeader_ && annLeader_ != -2) say(SND_VOICE_NEW_LEADER, 2);
+                if (lead >= 0) annLeader_ = lead;
+            }
         }
     }
+    if (ms.phase != PHASE_LIVE) annLeader_ = -2;   // (a new match: the first lead isn't "new")
+    else if (annLeader_ == -2) annLeader_ = -1;
     annPrev_ = ms;
     annPrevValid_ = true;
 }
@@ -708,14 +723,18 @@ void Game::handleEvents() {
                 rulesParts_.clear();
                 break;
             }
-            case EV_ROUND_WIN:   // (team modes: the announcer calls it for your side)
-                if (cfg_.announcer >= 2 && e.a != 255 && modeIsTeamBased(net_.mode().mode) && net_.mode().mode != MODE_TOURNEY) {
-                    const PlayerSnap* me = net_.findPlayer(net_.clientId());
-                    if (me && me->team() != TEAM_SPECTATOR) audio_.play(e.a == me->team() ? SND_VOICE_ROUND_WON : SND_VOICE_ROUND_LOST, 1.0f);
+            case EV_ROUND_WIN: { // the announcer: "you win / you lose" when the match ends, "round won / lost" between rounds
+                const PlayerSnap* me = net_.findPlayer(net_.clientId());
+                bool teams = modeIsTeamBased(net_.mode().mode) && net_.mode().mode != MODE_TOURNEY;   // (a = the winning team, else the winning player)
+                if (me && me->team() != TEAM_SPECTATOR && e.a != 255) {
+                    bool won = teams ? e.a == me->team() : e.a == net_.clientId();
+                    if (e.b && cfg_.announcer >= 1) audio_.play(won ? SND_VOICE_YOU_WIN : SND_VOICE_YOU_LOSE, 1.0f);
+                    else if (!e.b && teams && cfg_.announcer >= 2) audio_.play(won ? SND_VOICE_ROUND_WON : SND_VOICE_ROUND_LOST, 1.0f);
                 }
                 centerText_ = e.text;
                 centerUntil_ = time_ + (e.b ? 8.0 : 3.5);
                 break;
+            }
             case EV_BRACKET: {
                 bracket_.clear();
                 std::istringstream ls(e.text);
@@ -2168,6 +2187,7 @@ void Game::onRaceSplit(int cp, int ms) {
         if (!body.empty()) rank_.submitRace(body, map);
         notify("NEW PERSONAL BEST " + fmtRace(ms) + " - SENT TO THE LEADERBOARD", 5);
     } else if (pb) notify("NEW PERSONAL BEST " + fmtRace(ms), 5);
+    if (pb && cfg_.announcer >= 1) audio_.play(SND_VOICE_HIGH_SCORE, 1.0f);
 }
 
 void Game::startTimeTrial() {
@@ -2535,7 +2555,9 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     y += h + gap;
     {
         static const std::vector<std::string> an = {"ANNOUNCER: OFF", "ANNOUNCER: COUNTDOWN", "ANNOUNCER: ALL CALLS"};
-        if (ui_.cycle(x, y, w, h, "ANNOUNCER", cfg_.announcer, 3, an) && cfg_.announcer > 0) audio_.play(SND_VOICE_GO, 1.0f);
+        static const std::vector<std::string> av = {"MALE VOICE", "FEMALE VOICE"};
+        if (ui_.cycle(x, y, w * 0.6f, h, "ANNOUNCER", cfg_.announcer, 3, an) && cfg_.announcer > 0) audio_.play(SND_VOICE_GO, 1.0f);
+        if (ui_.cycle(x + w * 0.6f + gap, y, w * 0.4f - gap, h, "VOICE", cfg_.announcerVoice, 2, av)) { audio_.setAnnouncer(cfg_.announcerVoice); audio_.play(SND_VOICE_BOMB_PLANTED, 1.0f); }
         y += h + gap;
     }
     {   // cosmetics: player model (everyone sees it) and sound pack
@@ -2637,7 +2659,8 @@ void Game::drawMenu() {
             if (ui_.button(x, y, bw * 0.5f - gap * 0.5f, bh, "MAP EDITOR")) openEditor("");
             if (ui_.button(x + bw * 0.5f + gap * 0.5f, y, bw * 0.5f - gap * 0.5f, bh, "LEADERBOARD")) { nextBoardFetch_ = 0; setScreen(Screen::Leaderboard); }
             y += bh + gap;
-            if (ui_.button(x, y, bw, bh, "SETTINGS")) setScreen(Screen::Settings);
+            if (ui_.button(x, y, bw * 0.5f - gap * 0.5f, bh, "SETTINGS")) setScreen(Screen::Settings);
+            if (ui_.button(x + bw * 0.5f + gap * 0.5f, y, bw * 0.5f - gap * 0.5f, bh, "INFO")) setScreen(Screen::Info);   // how everything works
             y += bh + gap;
             if (ui_.button(x, y, bw * 0.5f - gap * 0.5f, bh, "DISCORD")) openUrl(kDiscordUrl);
             if (ui_.button(x + bw * 0.5f + gap * 0.5f, y, bw * 0.5f - gap * 0.5f, bh, "QUIT")) quit_ = true;
@@ -2742,7 +2765,7 @@ void Game::drawMenu() {
                     ui_.label(lx, y, "RANKED MAPS ONLY - EACH LADDER HAS ITS OWN RATING", kGrey, 0.5f);
                     ui_.label(lx, y + 12 * s, "FAIRNESS: DEFAULT MODEL, HUD, CONTROLS, 10 MS INTERP", kGrey, 0.5f);
                 }
-                else if (!m.supportsMode(hostModeIdx_)) ui_.label(lx, y, "THIS MAP DOES NOT SUPPORT THAT MODE", kRed);
+                else if (!m.supportsMode(hostModeIdx_)) ui_.label(lx, y, "NOT BUILT FOR THIS MODE - IT MAY NOT WORK", kRed);
                 else if (hostModeIdx_ == MODE_DUEL && ui_.button(lx, y - 2 * s, lw, 24 * s, cfg_.hostDuelSize == 2 ? "TEAMS: 2V2 (CLICK FOR 1V1)" : "TEAMS: 1V1 (CLICK FOR 2V2)"))
                     cfg_.hostDuelSize = cfg_.hostDuelSize == 2 ? 1 : 2;
                 y += 24 * s;
@@ -2805,6 +2828,7 @@ void Game::drawMenu() {
             break;
         }
         case Screen::Leaderboard: drawLeaderboard(cx, y); break;
+        case Screen::Info: drawInfo(cx, y - 8 * s); break;
         case Screen::CustomMode: drawCustomModeEditor(cx, y); break;
         case Screen::Connecting: {
             float dlp = net_.downloadProgress();
@@ -2903,6 +2927,140 @@ void Game::drawCustomModeEditor(float cx, float y) {
         setScreen(Screen::Host);
     }
     if (ui_.button(x + 2 * (bw + gap), by, bw, 36 * s, "BACK")) setScreen(Screen::Host);
+}
+
+// ---------------------------------------------------------------------------
+// INFO: how everything works, one tab per topic (main menu > INFO). Lines starting with '#' are headings.
+static const char* const kInfoTabs[] = {"MODES", "CONTROLS", "HUD & SETTINGS", "HOSTING", "EDITOR", "MAPS"};
+static const char* const kInfoPages[][48] = {
+    {   // MODES
+        "# TEAM MODES",
+        "VS - one life each per round; last team standing wins the round. If nobody makes progress for 30 s, health drains. First to 5 rounds.",
+        "BOMB - attackers carry the bomb to a site and plant it (hold E). Defenders defuse it (hold E) or hold out until time runs out. 7 rounds, then the sides swap.",
+        "KING OF THE HILL - stand on the hill with no enemy on it to score a point a second. First to 100.",
+        "PAYLOAD - attackers push the cart along its track by standing next to it; defenders stop it. Checkpoints along the track add time and stop it rolling back. Each team attacks once.",
+        "NEUTRAL PAYLOAD - either team pushes the cart toward the other team's end. The team whose side it's on when time runs out wins.",
+        "MULTI POINT - attackers take the points in order (A, B, C...). Only they capture; a defender on the point holds it. Each point taken adds 90 s and moves both teams' spawns forward. Each team attacks once.",
+        "# DUELS",
+        "DUEL - 1v1 (or 2v2): every life has a random modifier (low gravity, giants, rockets only...). First to 11.",
+        "1V1 - rounds on one ruleset (vanilla, laser vampire, instagib...). First to 5. Ranked 1v1 rates you on its own ladder.",
+        "TOURNEY - a single-elimination bracket of 1v1s; everyone else spectates the match in progress.",
+        "# EVERYONE FOR THEMSELVES",
+        "FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).",
+        "RACE - the course's checkpoints in order. It starts as untimed practice; vote start (F4) to race. TIME TRIAL (main menu) is the ranked race on Viaduct.",
+        "HIDE AND SEEK - one seeker with a knife, everyone else hides first. Seekers take turns.",
+        "TAG - whoever is IT when the timer runs out is eliminated. Last one standing wins.",
+        "# CUSTOM MODES",
+        "Host Game > CUSTOM MODE > NEW: any base mode with your own health, gravity, speed, jump, knockback, weapons (fire rate, damage, projectile speed) and map pool. Players who join get the rules automatically.",
+        "# MAPS AND MODES",
+        "Each map is built for one mode, plus free for all; Lodestone is built for every mode. You can still start any map in any mode: the menus warn when it isn't built for it (it may be missing spawns or objectives).",
+    },
+    {   // CONTROLS
+        "# DEFAULT KEYS (Settings > CONTROLS to change any of them, two keys per action)",
+        "W A S D - move.   SPACE - jump (hold it as you land to bounce: bunny hop).",
+        "SHIFT - dash: a burst of speed in the direction you're moving, tilted by where you look.",
+        "Q - grapple: hold to hook what you're aiming at and pull toward it; release to let go.",
+        "LEFT MOUSE - fire.   RIGHT MOUSE - alt-fire (scope, knife throw, rocket lob, bubble stream, syringe throw...).",
+        "E - use (plant / defuse the bomb).   1-9, 0 - weapons.   MOUSE WHEEL - next / previous weapon.",
+        "TAB - scoreboard.   ENTER - chat.   F1 / F2 - vote yes / no.   F4 - vote to start the match.",
+        "F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.",
+        "# MOVEMENT",
+        "Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping.",
+        "You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb.",
+        "# WEAPONS",
+        "ROCKET (splash; rocket jump off the floor for 10% damage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you; alt throws it: +30 hp and reset cooldowns for a teammate).",
+        "Switching weapons with fire held doesn't fire the new one: let go and press again.",
+        "# CONTROL PROFILES",
+        "Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).",
+    },
+    {   // HUD & SETTINGS
+        "# SETTINGS (main menu, or ESC in game)",
+        "Name, mouse sensitivity (or cm/360 with your DPI), field of view, team and enemy colours, volume, hit sounds, the announcer (off / countdown / all calls; male or female voice), player model and sound pack.",
+        "Display: window mode, vsync, low latency mode, frame cap, player shadows, brightness, anti-aliasing and interpolation. Lower latency settings cost smoothness: the notes under them say how.",
+        "# HUD LAYOUT (Settings > HUD LAYOUT)",
+        "Pick an element in the dropdown (health, weapon name, cooldown bars, speed meter, weapon list) and move it, resize it, recolour it or hide it.",
+        "WEAPON MODEL (its own button): move the gun model left / right / up / down, change its size and depth, give it its own accent colour, or hide it. Your shots come out of the model wherever you put it.",
+        "CUSTOM WIDGETS: build your own HUD pieces (number, bar, icon) from any value, drag them around, and import / export layouts.",
+        "# CROSSHAIR (Settings > CROSSHAIR)",
+        "Style, length, thickness, gap, colour and outline, with a live preview.",
+        "# RANKED",
+        "Ranked games use the default model, HUD and controls and 10 ms interpolation, so everyone plays the same game.",
+    },
+    {   // HOSTING
+        "# HOST A GAME (main menu > HOST GAME)",
+        "Pick the mode and map, a server name and the max players. The game picks the map built for the mode; any other map works with a warning.",
+        "The server listens on UDP port 27500 (change it under UDP PORT). Quark asks your router to forward it automatically (UPnP); if friends can't connect, forward that UDP port on your router by hand.",
+        "PUBLIC lists the server on the internet server list (off: friends join with your IP, shown on the host screen). Games on your network show up for everyone on it.",
+        "BALANCE BOTS evens out uneven teams with bots. MODE > RANKED runs rated 1v1 on the ranked maps (no bots). SERVER LOG keeps a log of the match.",
+        "CUSTOM MODE: pick one of your saved custom modes (or NEW / EDIT to build one).",
+        "# IN GAME (ESC as host)",
+        "CHANGE MAP / MODE (pick the mode, then the map), FORCE START, RELOAD MAP, EDIT MODE (everyone edits the map together).",
+        "# JOIN A GAME (main menu > JOIN GAME)",
+        "Pick a server from the list (internet and LAN), or type its address as IP:PORT.",
+        "# VOTES (ESC > VOTE, then F1 yes / F2 no)",
+        "Start the match, change map / mode, ranked on / off, edit the map together, bots on. A majority of the human players decides.",
+        "# PLAY VS BOTS",
+        "A private game with bots at your chosen level (beginner, intermediate, advanced, expert), on any mode and map.",
+    },
+    {   // EDITOR
+        "# THE MAP EDITOR (main menu > MAP EDITOR)",
+        "Hold the RIGHT MOUSE button to look around; W A S D to fly, SPACE / C up and down, SHIFT faster, the wheel sets the speed.",
+        "CLICK anything to select it. New things go where the crosshair (the middle of the view) points.",
+        "ADD: boxes (base / accent / wallbang: bullets go through wallbangs for half damage), spawns, lights, payload path points, bomb sites, the hill, race checkpoints, and LADDERS (one object: stretch it and the rungs follow).",
+        "Drag the squares on a selected box's faces to resize it; drag the arrows to move it. The keyboard works too: ARROWS / PGUP / PGDN move it by the grid, SHIFT + ARROWS grow a side, CTRL + ARROWS shrink it.",
+        "M cycles the material (or a spawn's team), CTRL+D duplicates, DEL deletes, CTRL+Z undoes, CTRL+S saves. [ and ] change the grid.",
+        "BUILT FOR sets the mode the map is made for; the MODES grid sets what it's offered for. PLAYABLE AS shows what it has the pieces for (team modes need A and B spawns).",
+        "TEST plays the map right away; BAKE LIGHT previews the real lighting.",
+        "HOST EDIT SESSION: friends join and build with you; everyone's camera shows in the view.",
+        "Maps are saved to the maps folder (MAPS FOLDER opens it) as .qmap text files. RESET MAPS puts the built-in maps back.",
+    },
+    {   // MAPS
+        "# THE MAPS AND WHAT THEY'RE BUILT FOR",
+        "LODESTONE - a working mine, two storeys deep: built for multi point and for every other mode.",
+        "MIDTOWN - a city centre with offices you can climb through to the roofs, an elevated railway and a park: multi point.",
+        "BASTION / ORBITAL - team vs.   DEPOT - bomb.   SUMMIT / DOWNTOWN - king of the hill.",
+        "RAILYARD - payload.   CANAL - neutral payload.   HARBOR - free for all.",
+        "CLOCKWORK - duel.   COLOSSEUM - tourney.   FOUNDRY - tag.   HAMLET - hide and seek.   VIADUCT - race (and the ranked time trial).",
+        "TEMPLE, FURNACE, GANTRY, ANVIL - ranked 1v1 (vanilla, laser vampire, instagib, all three).",
+        "# YOUR OWN MAPS",
+        "Anything in the maps folder shows up in the lists. Servers send their map to players who don't have it.",
+    },
+};
+
+void Game::drawInfo(float cx, float y) {
+    float s = ui_.s(), w = std::min(1100 * s, (float)r_.width() - 40 * s), x = cx - w * 0.5f;
+    float bh = 34 * s, gap = 6 * s, H = (float)r_.height();
+    int nt = (int)(sizeof kInfoTabs / sizeof kInfoTabs[0]);
+    float tw = (w - gap * (nt - 1)) / nt;
+    for (int t = 0; t < nt; t++)
+        if (ui_.button(x + t * (tw + gap), y, tw, bh, infoTab_ == t ? std::string("> ") + kInfoTabs[t] + " <" : kInfoTabs[t])) { infoTab_ = t; infoScroll_ = 0; }
+    y += bh + gap * 2;
+    float top = y, bottom = H - 70 * s;
+    ui_.panel(x - 12 * s, top - 8 * s, w + 24 * s, bottom - top + 16 * s, 0.85f);
+    float ts = std::max(1.0f, std::round(ui_.textScale() * 0.62f)), lh = r_.textHeight(ts) + 5 * s;
+    // wrap every line to the panel, then draw the part that's scrolled into view
+    std::vector<std::pair<std::string, bool>> rows;
+    for (const char* line : kInfoPages[infoTab_]) {
+        if (!line) break;
+        bool head = line[0] == '#';
+        std::string rest = head ? std::string(line + 2) : std::string(line);
+        if (head && !rows.empty()) rows.push_back({"", false});
+        while (!rest.empty()) {
+            size_t cut = rest.size();
+            while (r_.textWidth(rest.substr(0, cut), ts) > w && cut > 0) { size_t sp = rest.rfind(' ', cut - 1); cut = sp == std::string::npos ? cut - 1 : sp; }
+            rows.push_back({rest.substr(0, cut), head});
+            rest = cut < rest.size() ? rest.substr(cut + 1) : "";
+        }
+    }
+    float total = rows.size() * lh, view = bottom - top;
+    infoScroll_ = clampf(infoScroll_, 0, std::max(0.0f, total - view));
+    for (size_t i = 0; i < rows.size(); i++) {
+        float ry = top + i * lh - infoScroll_;
+        if (ry < top - 1 || ry + lh > bottom + 1) continue;
+        r_.text(x, ry, ts, rows[i].first, rows[i].second ? ui_.accent : Color{0.88f, 0.9f, 0.93f, 1});
+    }
+    if (total > view) ui_.label(x + w - 150 * s, bottom + 2 * s, "WHEEL TO SCROLL", kGrey, 0.5f);
+    if (ui_.button(cx - 100 * s, H - 52 * s, 200 * s, 36 * s, "BACK")) setScreen(Screen::Main);
 }
 
 void Game::drawPerf() {
@@ -3183,7 +3341,7 @@ void Game::drawPicker(float cx, float y) {
     for (int i = 0; i < n; i++) {
         float bx = x + (i % cols) * (bw + gap), by = y + (i / cols) * rowH;
         std::string label, sub;
-        bool ok = true, cur;
+        bool ok = true, cur, warnRow = false;
         if (ladders) {
             label = arenaVariant(kLadders[i]).title;
             sub = std::string(arenaVariant(kLadders[i]).desc) + " - OWN RATING";
@@ -3206,11 +3364,13 @@ void Game::drawPicker(float cx, float y) {
             const MapInfo& mi = mapInfo_[i];
             label = upper(maps_[i]);
             cur = multi ? multiSel_[i] : i == mapIdx;
-            ok = (mi.modes >> (multi ? MODE_TOURNEY : mode)) & 1;
+            bool built = (mi.modes >> (multi ? MODE_TOURNEY : mode)) & 1;
             int ladderNow = live ? net_.mode().arenaVariant : cfg_.hostArenaVariant;
             bool rankedOnly = rankedNow && !(mi.ranked >> ladderNow & 1);
-            sub = rankedOnly ? "NOT A RANKED MAP FOR THIS LADDER" : !ok ? "DOESN'T SUPPORT THIS MODE" : mi.preferredMode >= 0 ? std::string("BUILT FOR ") + modeTitle(mi.preferredMode) : "ALL MODES";
-            ok = ok && !rankedOnly;
+            // any map can be picked for any mode; one not built for it says so (it may be missing what the mode needs)
+            sub = rankedOnly ? "NOT A RANKED MAP FOR THIS LADDER" : !built ? "WARNING: NOT BUILT FOR THIS MODE - MAY NOT WORK" : mi.preferredMode >= 0 ? std::string("BUILT FOR ") + modeTitle(mi.preferredMode) : "ALL MODES";
+            ok = !rankedOnly;
+            warnRow = !built && !rankedOnly;
         }
         if (cur) r_.rect(bx - 2 * s, by - 2 * s, bw + 4 * s, bh + 4 * s, ui_.accent);
         if (ui_.button(bx, by, bw, bh, label, ok)) {
@@ -3248,7 +3408,7 @@ void Game::drawPicker(float cx, float y) {
             line2 = line1.substr(sp + 1) + (line2.empty() ? "" : " " + line2);
             line1 = line1.substr(0, sp);
         }
-        Color sc = ok ? Color{0.7f, 0.72f, 0.75f, 1} : Color{0.5f, 0.3f, 0.3f, 1};
+        Color sc = warnRow ? Color{1.0f, 0.55f, 0.3f, 1} : ok ? Color{0.7f, 0.72f, 0.75f, 1} : Color{0.5f, 0.3f, 0.3f, 1};
         r_.text(bx + 2 * s, by + bh + 3 * s, sts, line1, sc);
         if (!line2.empty()) r_.text(bx + 2 * s, by + bh + 3 * s + r_.textHeight(sts) + 2 * s, sts, line2, sc);
     }

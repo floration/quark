@@ -59,10 +59,8 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
         cfg_.mode = map_.supportsMode(MODE_FFA) ? MODE_FFA : cfg_.mode;
     if (cfg_.ranked && !isRankedMap(map_, cfg_.arenaVariant)) { if (err) *err = "ranked only runs on the ranked maps for its ladder"; return false; }
     if (cfg_.ranked) cfg_.editMode = false;
-    if (!cfg_.editMode && !map_.supportsMode(cfg_.mode)) {
-        if (err) *err = "map '" + cfg_.map + "' does not support mode " + modeName(cfg_.mode);
-        return false;
-    }
+    // any map runs any mode (one not built for it may be missing what the mode needs: the host was warned)
+    if (!cfg_.editMode && !map_.supportsMode(cfg_.mode)) log("warning: " + cfg_.map + " isn't built for " + modeTitle(cfg_.mode) + " - it may not work");
     if (!sock_.open(cfg_.port, true)) {
         if (err) *err = "could not bind UDP port " + std::to_string(cfg_.port) + " (already in use?)";
         return false;
@@ -571,7 +569,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
                 why = mapName + " isn't in this custom mode's map pool";
             else if (cfg_.custom.active() && mode != cfg_.custom.baseMode) why = "this server plays the custom mode " + cfg_.custom.name;
             else if (mapName.find_first_of("/\\.") != std::string::npos || !m.load(mapName)) why = "this server doesn't have the map '" + mapName + "' (it may be on an older version)";
-            else if (!m.supportsMode(mode)) why = mapName + " can't run " + modeTitle(mode);
+
             bool ok = why.empty();
             if (ok && cfg_.ranked && (mode != MODE_ARENA || !arenaVariantRanked(variant) || !isRankedMap(m, variant))) {
                 GameEvent e; e.type = EV_MESSAGE; e.text = "ranked server: 1v1 on a ranked map for the ladder (vanilla / vampire / instagib), or vote ranked off"; sendEvent(id, e);
@@ -629,7 +627,7 @@ void Server::command(const std::string& line, int fromPlayer) {
         Map m;
         std::string err;
         if (!m.load(newMap, &err)) { reply(err); return; }
-        if (!m.supportsMode(newMode)) { reply("map does not support that mode"); return; }
+        if (!m.supportsMode(newMode)) reply("warning: " + newMap + " isn't built for " + modeTitle(newMode) + " - it may not work");
         if (cfg_.ranked && (newMode != MODE_ARENA || !arenaVariantRanked(cfg_.arenaVariant) || !isRankedMap(m, cfg_.arenaVariant))) {
             reply("ranked: only 1v1 on vanilla, laser vampire or instagib, on that ladder's ranked maps");
             return;
