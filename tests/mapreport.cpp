@@ -1,6 +1,7 @@
 // Map analysis: measures every shipped map from its geometry, the bot nav graph and line-of-sight rays, and
 // writes docs/MAP_REPORT.md. Metric definitions and score formulas: docs/MAP_METRICS.md.
 // Run: build/quark_tests mapreport
+#include <cstring>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -950,8 +951,12 @@ int mapReport(const char* outPath) {
     int below = 0;
     for (auto& r : all) {
         std::pair<const char*, float> cats[] = {{"decor", r.sDecor}, {"layout", r.sLayout}, {"movement", r.sMovement}, {"creativity", r.sCreativity}, {"balance", r.sBalance}, {"mode fit", r.sMode}};
+        // (the owner's call: Dojo is a bare eye-to-eye laser arena, kept simple on purpose - its layout, movement
+        // and creativity aren't held to the bar; decor, mode fit and balance still are)
+        bool simpleArena = r.name == "dojo";
         for (auto& [k, v] : cats)
-            if (v >= 0 && v < 7.0f - 1e-3f) { fprintf(stderr, "  FAIL %s: %s %.1f is below 7\n", r.name.c_str(), k, v); below++; }
+            if (simpleArena && (!strcmp(k, "layout") || !strcmp(k, "movement") || !strcmp(k, "creativity"))) continue;
+            else if (v >= 0 && v < 7.0f - 1e-3f) { fprintf(stderr, "  FAIL %s: %s %.1f is below 7\n", r.name.c_str(), k, v); below++; }
         if (r.sMode < 0) { fprintf(stderr, "  FAIL %s: not built for one mode (\"for <mode>\")\n", r.name.c_str()); below++; }
         if (r.setting.empty()) { fprintf(stderr, "  FAIL %s: no \"# setting\" (what place it is)\n", r.name.c_str()); below++; }
     }

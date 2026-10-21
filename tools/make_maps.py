@@ -600,7 +600,7 @@ class M:
         # (any map can still be started in any mode: the menus warn that it may not work)
         mode = next((l.split()[1] for l in s.lines if l.startswith("for ")), None)
         s.lines = [l for l in s.lines if not l.startswith("modes ")]
-        if mode and name not in EVERY_MODE: s.lines.insert(3, "modes " + (mode if mode == "ffa" else mode + " ffa"))
+        if mode and name not in EVERY_MODE: s.lines.insert(3, "modes " + " ".join([mode] + getattr(s, "also", []) + ([] if mode == "ffa" else ["ffa"])))
         if dress: s.props(); s.dress(name); s.detail_pass(); s.skyline_pass(name)
         s.clear_doorways()
         p = PALETTES.get(name)
@@ -1546,59 +1546,41 @@ m.ladder(-10, 6.8, 0, 4.4, "s", width=0.8); m.ladder(10, -6.8, 0, 4.4, "n", widt
 m.raw("# setting blast furnace")
 m.save("furnace")
 
-# ======================================================================================================
-# DOJO: ranked LASER VAMPIRE. A great training hall: the two fighters start across the tatami in sight of
-# each other, facing, and bow (no firing for the first 5 s of a round) before the laser duel. A raised ring in
-# the middle, two rows of pillars, galleries along both sides behind paper screens (the laser goes through
-# them), balconies at both ends and the roof beams above (a ladder up from each balcony). Point symmetric.
+# DOJO: ranked LASER VAMPIRE, eye to eye. Keep it simple: one open square platform (24 x 24 m, nothing on it)
+# in a lava moat, on a mountain top. Both fighters start on it facing each other and bow (no firing for the
+# first 5 s); a careless pull off the edge is a swim in the lava. The ring path outside the moat (jump or hook
+# back) carries all the decoration: pillars, lanterns, shrines. Point symmetric.
 m = M("Dojo", "1v1", sun=(0.4, 1.0, 0.3))
 m.raw("ranked vampire")
 m.raw("holdfire 5")
-m.raw("indoor 16")
-m.room(22, 15, 16, sunken=[(8, -2, 11, 2, 0.6, "accent"), (-11, -2, -8, 2, 0.6, "accent")], style="temple", skyline="pagodas")
-m.box(8, -0.25, -2, 11, -0.2, 2, mat="water", mirror=True)                   # koi pools beside the ring (shallow: stand in them)
-for x in range(-20, 21, 2): m.box(x - 0.04, 0, -12, x + 0.04, 0.02, 12, mat="trim")   # the tatami: mats 2 x 2 m
-for z in range(-10, 11, 2): m.box(-22, 0, z - 0.04, 22, 0.02, z + 0.04, mat="trim")
-m.box(-6, 0, -4, 6, 0.5, 4, accent=True)                                      # the fighting ring
-m.box(-6.1, 0.5, -4.1, 6.1, 0.6, 4.1, mat="trim")
-for (x, z) in ((-6, -4), (6, 4), (-6, 4), (6, -4)): m.box(x - 0.3, 0.5, z - 0.3, x + 0.3, 1.4, z + 0.3, mat="glow")   # corner posts
-for (x, z) in ((-12, -8), (-12, 8), (-6, -8), (-6, 8)): m.pillar(x, z, 16.0, r=0.45, mirror=True)
-# two judges' platforms (2.6 m) between the pillars and the galleries, steps up the side
-m.box(7.5, 0, -11.5, 11, 2.6, -8.5, accent=True, mirror=True); m.box(7.4, 2.6, -11.6, 11.1, 2.7, -8.4, mat="trim", mirror=True)
-m.stairs(7.5, -8.5, 11, -5.3, 2.6, "z", -1, mirror=True)                     # (steps down toward the ring, between the pillars)
-# the galleries: raised 1.2 m along both long walls, steps up in the middle, paper screens in front with gaps
-m.box(-20, 0, 12, 20, 1.2, 15, accent=True, mirror=True)
-m.stairs(-2, 10.6, 2, 12, 1.2, "z", 1, mirror=True)
-for x0 in (-18, -12, 5, 11):
-    m.wallbang(x0, 1.2, 11.85, x0 + 4, 3.6, 12.0, mirror=True)
-    m.box(x0, 3.6, 11.8, x0 + 4, 3.8, 12.05, mat="trim", mirror=True)
-for x in range(-18, 19, 4):
-    m.glow(x - 0.25, 2.6, 14.5, x + 0.25, 3.2, 14.9, mirror=True); m.light(x, 2.8, 14.2, 5, 0.45, fixture=False, mirror=True)   # gallery lanterns
-# the balconies at both ends (4 m up, stairs at one side each) over the weapon racks and the shrine
-m.box(-22, 3.7, -12, -17, 4.0, 12, accent=True, mirror=True)
-for (z0, z1) in ((-12, -2), (2, 8), (10.6, 12)): m.box(-17.2, 4.0, z0, -17, 5.0, z1, mat="trim", mirror=True)   # its rail (open in the middle and over the stairs)
-for z in (-11, -6, 6, 11): m.box(-17.4, 0, z - 0.2, -17, 3.7, z + 0.2, accent=True, mirror=True)   # posts under it
-m.stairs(-17, 8, -13, 10.6, 4.0, "x", -1, mirror=True)
-for z in (-9, -7, -5, 5, 7, 9): m.box(-21.9, 0.8, z - 0.05, -21.6, 2.8, z + 0.05, mat="metal", mirror=True)   # weapon racks: staffs
-m.box(-21.9, 0.6, -10, -21.5, 0.8, 10, accent=True, mirror=True)
-m.glow(-21.95, 1.0, -1.2, -21.85, 3.0, 1.2, mirror=True); m.box(-21.9, 0.0, -1.6, -21.4, 1.0, 1.6, accent=True, mirror=True)   # the shrine
-m.glow(-21.95, 4.8, -8, -21.85, 7.5, -6, mirror=True); m.glow(-21.95, 4.8, 6, -21.85, 7.5, 8, mirror=True)   # hanging scrolls
-# roof beams across the hall (their tops walkable: the high route), a ladder from each balcony onto the middle one
-for z in (-6, 0, 6): m.box(-22, 7.2, z - 0.35, 22, 7.6, z + 0.35, accent=True)
-m.box(-19.4, 4.0, -1.4, -18.6, 7.6, -0.35, accent=True, mirror=True)          # a post from each balcony to the middle beam
-m.ladder(-19.0, -1.4, 4.0, 7.6, "s", width=0.8); m.ladder(19.0, 1.4, 4.0, 7.6, "n", width=0.8)
-# the ridge walk (12.2 m, under the roof beams): the highest perch, a ladder up a king post from the middle beam
-m.box(-8.6, 11.8, -0.4, 8.6, 12.2, 0.4, accent=True)                          # (between the king posts)
-m.box(-9.4, 7.6, -0.35, -8.6, 12.2, 0.35, accent=True, mirror=True)            # king posts on the middle beam
-m.ladder(-9.4, 0.0, 7.6, 12.2, "e", width=0.6); m.ladder(9.4, 0.0, 7.6, 12.2, "w", width=0.6)
-# lanterns hanging over the mats
-for x in (-15, -9, -3, 3, 9, 15):
-    for z in (-9, 9):
-        m.glow(x - 0.3, 5.6, z - 0.3, x + 0.3, 6.3, z + 0.3); m.metal(x - 0.03, 6.3, z - 0.03, x + 0.03, 10, z + 0.03)
-        m.light(x, 5.8, z, 7, 0.55, fixture=False)
-m.light(0, 3.0, 0, 10, 0.6, fixture=False)
-for z in (-3, 3): m.spawn("a", -13, 0, z, -90, "b")   # across the mats, facing each other: the bow
-m.spawn("any", -19.5, 4.0, -9, -90, "any")
+P, W = 12, 4.5                                                                 # platform half size, moat width
+moat = [(-P - W, -P - W, P + W, -P, "molten"), (-P - W, P, P + W, P + W, "molten"),
+        (-P - W, -P, -P, P, "molten"), (P, -P, P + W, P, "molten")]
+m.room(23, 23, 3.5, pits=moat, style="temple", skyline="mountains")
+m.box(-P, -0.02, -P, P, 0.02, P, mat="trim")                                   # the stone of the platform
+m.box(-P + 0.6, 0.02, -P + 0.6, P - 0.6, 0.04, P - 0.6, accent=True)            # the mat (flush: nothing to trip on)
+m.box(-1.6, 0.04, -1.6, 1.6, 0.06, 1.6, mat="glow")                            # the centre mark
+for (x0, z0, x1, z1) in ((-P, -P, P, -P + 0.3), (-P, P - 0.3, P, P), (-P, -P, -P + 0.3, P), (P - 0.3, -P, P, P)):
+    m.box(x0, 0.0, z0, x1, 0.08, z1, mat="glow")                               # glowing edge line: here be lava
+m.light(0, 4, 0, 14, 0.5, fixture=False)
+for (x, z) in ((-P - W / 2, 0), (P + W / 2, 0), (0, -P - W / 2), (0, P + W / 2)):
+    m.light(x, -0.6, z, 12, 0.9, fixture=False)                                # the moat glows up at the walls
+# outside the moat only: pillars, lanterns, shrines on the ring path
+R = P + W + 0.5
+for t in (-14, -7, 0, 7, 14):
+    m.pillar(-22, t, 6.0, r=0.6, mirror=True); m.pillar(t, -22, 6.0, r=0.6, mirror=True)
+for (x, z) in ((-R - 1, -R - 1), (R + 1, R + 1), (-R - 1, R + 1), (R + 1, -R - 1)):
+    m.box(x - 0.6, 0, z - 0.6, x + 0.6, 1.0, z + 0.6, accent=True)             # stone lanterns at the corners
+    m.glow(x - 0.35, 1.0, z - 0.35, x + 0.35, 1.7, z + 0.35)
+    m.box(x - 0.7, 1.7, z - 0.7, x + 0.7, 1.9, z + 0.7, mat="trim")
+    m.light(x, 1.4, z, 6, 0.6, fixture=False)
+for (x, z) in ((-22.5, 0), (22.5, 0)):
+    m.box(x - 0.5, 0, z - 2, x + 0.5, 1.0, z + 2, accent=True)                 # the shrines (against the wall)
+    m.glow(x - 0.1, 1.0, z - 1.2, x + 0.1, 3.0, z + 1.2)
+for (x, z) in ((0, -22.5), (0, 22.5)):
+    m.box(x - 3, 0, z - 0.5, x + 3, 0.5, z + 0.5, mat="trim")                  # bamboo racks
+    for k in range(-2, 3): m.metal(x + k * 1.0 - 0.05, 0.5, z - 0.05, x + k * 1.0 + 0.05, 2.6, z + 0.05)
+m.spawn("a", -8, 0.1, 0, -90, "b")   # eye to eye across the platform
 m.raw("# setting dojo")
 m.save("dojo")
 
@@ -2855,4 +2837,130 @@ LANES = [(-MHX, c - 1, MHX, c + 1) for c in AVES] + [(c - 1, -MHZ, c + 1, MHZ) f
 scatter((-MHX, -MHZ, MHX, MHZ), 0, 4, CITY, "midtown", avoid=LANES + [(-MHX, -6.5, MHX, 6.5)] + [(o[0] - 1.5, o[1] - 1.5, o[2] + 1.5, o[3] + 1.5) for o in OFFICES] + [PARK, (-56, 36, -8, 56)])
 m.raw("# setting city centre")
 m.save("midtown")
+# ======================================================================================================
+# HIGHTOWN: built for hide and seek (tag too). The top five floors of a skyscraper and its roof, high over a
+# city far below: offices round an open atrium, corner rooms and storerooms to hide in, two lift shafts with
+# maintenance ladders through every floor, stairs at opposite corners (each flight in a different place, so
+# getting up and down means crossing the floor), windows on every side (the panes are invisible but solid) and
+# the roof terrace with its pool, plant and helipad. Step off the roof and it's a long way down.
+m = M("Hightown", "hide", sun=(0.5, 1.0, 0.35))
+m.also = ["tag"]
+m.raw("void -12")
+HT, FH = 20, 4.5                        # half size, floor to floor
+FLOORS = [0, 4.5, 9, 13.5, 18]
+ROOF = 22.5
+ATRIUM = (-5, -5, 5, 5)
+SHAFTS = [(8, -11, 11, -8), (-11, 8, -8, 11)]
+def flight(k):   # the two flights up from floor k (k even: the outer bands, odd: the inner ones)
+    za, zb = ((-19.6, -17.6), (17.6, 19.6)) if k % 2 == 0 else ((-17.2, -15.2), (15.2, 17.2))
+    return [(-19.6, za[0], -14.0, za[1], 1), (14.0, zb[0], 19.6, zb[1], -1)]   # (rect, rising along x)
+for k, y in enumerate(FLOORS + [ROOF]):
+    holes = list(SHAFTS)
+    if 0 < k < len(FLOORS): holes.append(ATRIUM)
+    if k > 0: holes += [f[:4] for f in flight(k - 1)]
+    for r in tiles(minus((-HT, -HT, HT, HT), holes), 10): m.box(r[0], y - 0.4, r[1], r[2], y, r[3])
+for k, y in enumerate(FLOORS):
+    top = y + FH - 0.4                  # (the ceiling: the next slab's underside)
+    # flights to the floor above, a rail along their open side
+    for (x0, z0, x1, z1, rise) in flight(k):
+        m.stairs(x0, z0, x1, z1, y + FH, "x", rise, base=y)
+    # the facade: sill, lintel and piers every 4 m on all four sides; the window openings are clip (you can see
+    # and shoot out, nobody falls out)
+    for (a0, a1, side, axis) in ((-HT, HT, -HT, "x"), (-HT, HT, HT, "x"), (-HT, HT, -HT, "z"), (-HT, HT, HT, "z")):
+        t0, t1 = (side - 0.4, side) if side < 0 else (side, side + 0.4)
+        def wbox(p0, y0, p1, y1, mat=None):
+            if axis == "x": m.box(p0, y0, t0, p1, y1, t1, mat=mat)
+            else: m.box(t0, y0, p0, t1, y1, p1, mat=mat)
+        wbox(a0 - (0.4 if axis == "x" else 0), y, a1 + (0.4 if axis == "x" else 0), y + 0.9)
+        wbox(a0, y + 3.3, a1, y + FH)
+        for p in range(int(a0), int(a1) + 1, 4): wbox(p - 0.3 if p > a0 else p, y + 0.9, p + 0.3 if p < a1 else p, y + 3.3)
+        wbox(a0, y + 0.9, a1, y + 3.3, mat="clip")
+        wbox(a0, y + 0.85, a1, y + 0.9, mat="trim")
+    # the atrium rail (floors above the lobby), gaps where nothing is
+    if k > 0:
+        for (a, b, c, d) in ((-5.15, -5.15, 5.15, -5), (-5.15, 5, 5.15, 5.15), (-5.15, -5, -5, 5), (5, -5, 5.15, 5)):
+            m.box(a, y, b, c, y + 1.0, d, accent=True)
+    # lift shafts: walls round each shaft with a doorway onto every floor, a ladder up the inside
+    for (x0, z0, x1, z1) in SHAFTS:
+        m.metal(x0 - 0.2, y, z0 - 0.2, x0, top, z1 + 0.2); m.metal(x1, y, z0 - 0.2, x1 + 0.2, top, z1 + 0.2)
+        far_z, near_z = (z0, z1) if z0 < 0 else (z1, z0)    # the doorway faces the atrium
+        m.metal(x0, y, far_z - (0.2 if far_z == z0 else 0), x1, top, far_z + (0.2 if far_z == z1 else 0))
+        dz0, dz1 = (near_z, near_z + 0.2) if near_z == z1 else (near_z - 0.2, near_z)
+        m.metal(x0, y, dz0, x0 + 0.8, top, dz1); m.metal(x1 - 0.8, y, dz0, x1, top, dz1); m.metal(x0, y + 2.4, dz0, x1, top, dz1)
+    # corner rooms (|x|, |z| > 12) behind partitions with a door each, the wings between them open plan
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            zs = sorted((sz * 12, sz * HT)); xs = sorted((sx * 12, sx * HT))
+            wx0, wx1 = sorted((sx * 12, sx * 12 + sx * 0.2))
+            wz0, wz1 = sorted((sz * 12, sz * 12 + sz * 0.2))
+            dz = sz * 16; dx = sx * 16
+            for (q0, q1) in ((zs[0], dz - 0.8), (dz + 0.8, zs[1])): m.box(wx0, y, q0, wx1, top, q1)
+            m.box(wx0, y + 2.4, dz - 0.8, wx1, top, dz + 0.8)
+            for (q0, q1) in ((xs[0], dx - 0.8), (dx + 0.8, xs[1])): m.box(q0, y, wz0, q1, top, wz1)
+            m.box(dx - 0.8, y + 2.4, wz0, dx + 0.8, top, wz1)
+    # lights: a grid of ceiling panels
+    for (lx, lz) in ((-16, 0), (16, 0), (0, -16), (0, 16), (-16, -16), (16, 16), (16, -16), (-16, 16), (-8, -8), (8, 8)):
+        m.light(lx, top - 0.5, lz, 10, 0.9)
+R = random.Random("hightown")
+def free(x0, z0, x1, z1, k):
+    keep = [ATRIUM] + SHAFTS + [f[:4] for f in flight(k)] + ([f[:4] for f in flight(k - 1)] if k > 0 else [])
+    keep += [(-12.4, 15, -11.8, 17), (11.8, -17, 12.4, -15), (-17, -12.4, -15, -11.8), (15, 11.8, 17, 12.4),
+             (-12.4, -17, -11.8, -15), (11.8, 15, 12.4, 17), (-17, 11.8, -15, 12.4), (15, -12.4, 17, -11.8)]   # partition doors
+    keep += [(-5.6, -5.6, 5.6, 5.6)] + [(s0 - 1.4, s1 - 1.4, s2 + 1.4, s3 + 1.4) for (s0, s1, s2, s3) in SHAFTS]
+    keep += [(-20, -20, 20, -19.2), (-20, 19.2, 20, 20), (-20, -20, -19.2, 20), (19.2, -20, 20, 20)]   # (the facade)
+    return not any(x0 < b[2] + 0.6 and x1 > b[0] - 0.6 and z0 < b[3] + 0.6 and z1 > b[1] - 0.6 for b in keep)
+for k, y in enumerate(FLOORS):
+    # office furniture: desks with screens in the wings, cabinets, sofas, plants (cover and things to hide behind)
+    for (x0, z0, x1, z1) in ((-11, -19, 11, -12.6), (-11, 12.6, 11, 19), (-19, -11, -12.6, 11), (12.6, -11, 19, 11)):
+        for xx in range(int(x0) + 1, int(x1) - 2, 4):
+            for zz in range(int(z0) + 1, int(z1) - 1, 3):
+                if R.random() < 0.3 or not free(xx, zz, xx + 2.2, zz + 1.1, k): continue
+                m.box(xx, y, zz, xx + 2.2, y + 0.8, zz + 1.0, accent=True); m.metal(xx, y, zz + 1.0, xx + 2.2, y + 1.5, zz + 1.1)
+    for (x0, z0, x1, z1) in ((-19, -19, -12.6, -12.6), (12.6, 12.6, 19, 19), (12.6, -19, 19, -12.6), (-19, 12.6, -12.6, 19)):
+        for _ in range(6):   # the corner rooms: storerooms of crates, cabinets and boxes to crawl among
+            w, d, h = R.choice([(1.2, 1.2, 1.2), (2.0, 0.6, 2.0), (0.8, 0.8, 1.6), (1.6, 1.0, 1.0)])
+            cx, cz = R.uniform(x0, x1 - w), R.uniform(z0, z1 - d)
+            if free(cx, cz, cx + w, cz + d, k): m.box(cx, y, cz, cx + w, y + h, cz + d, accent=R.random() < 0.5)
+    for (px, pz) in ((-6.5, -9), (6.5, 9), (-9, 6.5), (9, -6.5)):    # plants by the atrium
+        if free(px - 0.4, pz - 0.4, px + 0.4, pz + 0.4, k):
+            m.box(px - 0.45, y, pz - 0.45, px + 0.45, y + 0.6, pz + 0.45, accent=True); m.glow(px - 0.3, y + 0.6, pz - 0.3, px + 0.3, y + 1.8, pz + 0.3)
+# the lift shafts' maintenance ladders: floor to roof, up the far wall inside each shaft
+m.ladder(9.5, -10.8, 0, ROOF, "s", width=0.8)
+m.ladder(-9.5, 10.8, 0, ROOF, "n", width=0.8)
+# the lobby (bottom floor): reception desk and a fountain under the atrium
+m.box(-3, 0, -3, 3, 0.5, 3, accent=True); m.box(-2.4, 0.5, -2.4, 2.4, 0.6, 2.4, mat="water"); m.glow(-0.3, 0.5, -0.3, 0.3, 2.0, 0.3)
+m.box(-8, 0, 6, -3, 1.1, 7, accent=True); m.box(-8, 1.1, 6, -3, 1.2, 7, mat="trim")
+for y in FLOORS[1:]: m.glow(-5.1, y - 0.45, -5.1, 5.1, y - 0.4, -5)   # light strips under the atrium edges
+m.light(0, 3.0, 0, 12, 1.0, fixture=False); m.light(0, 12, 0, 14, 0.9, fixture=False)
+# the roof: parapet, plant room, water tanks, a pool and the helipad
+for (a, b, c, d) in ((-HT, -HT, HT, -HT + 0.4), (-HT, HT - 0.4, HT, HT), (-HT, -HT, -HT + 0.4, HT), (HT - 0.4, -HT, HT, HT)):
+    m.box(a, ROOF, b, c, ROOF + 1.2, d, accent=True)
+m.box(-19, ROOF, -6, -11, ROOF + 3.2, 4)                                   # plant room (a door in its side)
+m.box(-11.2, ROOF, -6, -11, ROOF + 2.4, -2, mat="trim")
+for (tx, tz) in ((6, -15), (12, -15)):
+    for (dx, dz) in ((-1, -1), (1, -1), (-1, 1), (1, 1)): m.metal(tx + dx * 1.1 - 0.15, ROOF, tz + dz * 1.1 - 0.15, tx + dx * 1.1 + 0.15, ROOF + 2.0, tz + dz * 1.1 + 0.15)
+    m.box(tx - 1.6, ROOF + 2.0, tz - 1.6, tx + 1.6, ROOF + 5.0, tz + 1.6); m.box(tx - 1.8, ROOF + 5.0, tz - 1.8, tx + 1.8, ROOF + 5.3, tz + 1.8, accent=True)
+for (a, b, c, d) in ((6, 8, 18, 8.4), (6, 17.6, 18, 18), (6, 8, 6.4, 18), (17.6, 8, 18, 18)): m.box(a, ROOF, b, c, ROOF + 0.6, d, accent=True)
+m.box(6.4, ROOF + 0.35, 8.4, 17.6, ROOF + 0.4, 17.6, mat="water")           # the pool (wade in it)
+m.box(-14, ROOF, 9, -4, ROOF + 0.3, 19, mat="metal"); m.glow(-9.4, ROOF + 0.3, 11, -8.6, ROOF + 0.32, 17); m.glow(-12, ROOF + 0.3, 13.6, -6, ROOF + 0.32, 14.4)   # helipad "H"
+for (ax, az) in ((-2, -12), (2, -16), (-6, -17)):
+    m.metal(ax - 1.2, ROOF, az - 0.9, ax + 1.2, ROOF + 1.4, az + 0.9); m.glow(ax - 1.25, ROOF + 0.7, az - 0.95, ax + 1.25, ROOF + 0.8, az + 0.95)
+for (lx, lz) in ((-15, 15), (15, -15), (0, 0), (12, 13)): m.light(lx, ROOF + 2.5, lz, 12, 0.7)
+# the tower's body below the playable floors, and the city far below (unlit 'far' scenery, beyond reach)
+m.box(-20.4, -160, -20.4, 20.4, -0.4, 20.4, mat="far")
+CR = random.Random("hightown/city")
+for _ in range(90):
+    cx, cz = CR.uniform(-320, 320), CR.uniform(-320, 320)
+    if abs(cx) < 45 and abs(cz) < 45: continue
+    w, d = CR.uniform(12, 34), CR.uniform(12, 34)
+    top = CR.uniform(-130, -30) if CR.random() < 0.85 else CR.uniform(-20, 30)   # a few neighbours nearly as tall
+    m.box(cx, -160, cz, cx + w, top, cz + d, mat="far")
+m.box(-400, -161, -400, 400, -160, 400, mat="far")                        # the streets, 160 m down
+# spawns: hiders anywhere in the building, every floor and the roof
+for (x, y, z, yaw) in ((-15, 0, 0, 90), (15, 0, 6, -90), (0, 4.5, -15, 0), (-8, 4.5, 15, 180), (15, 9, -6, -90), (-15, 9, 6, 90),
+                       (6, 13.5, 15, 180), (-6, 13.5, -15, 0), (-15, 18, -6, 90), (15, 18, 6, -90), (0, ROOF, -10, 0), (-2, ROOF, 15, 180)):
+    m.spawn("any", x, y, z, yaw)
+m.raw("# setting skyscraper over a city")
+# m.save("hightown")   # (work in progress: not in the pool yet)
+
 print("maps written")
