@@ -5,6 +5,8 @@
 #include <random>
 #include <fstream>
 #include <sstream>
+#include <cstdio>
+#include <cstring>
 
 namespace {
 constexpr double kConnectRetry = 0.5;
@@ -51,6 +53,8 @@ bool NetClient::connect(const std::string& address, const std::string& name) {
 }
 
 void NetClient::disconnect() {
+    stopRecording();
+    if (play_.active) { play_ = Playback(); state_ = ConnState::Disconnected; return; }
     if (state_ == ConnState::Connected) {
         uint8_t buf[16];
         Writer w(buf, sizeof buf);
@@ -65,6 +69,7 @@ void NetClient::disconnect() {
 }
 
 void NetClient::poll() {
+    if (play_.active) { pollPlayback(); return; }
     if (state_ == ConnState::Disconnected) return;
     uint8_t buf[2048];
     NetAddr from;
@@ -307,9 +312,11 @@ void NetClient::onSnapshot(Snapshot& s) {
     else clockOffset_ = offset > clockOffset_ ? clockOffset_ * 0.9 + offset * 0.1 : clockOffset_ * 0.99 + offset * 0.01;
 
     // Reliable events (in order, skip already seen).
+    std::vector<GameEvent> fresh;
     for (auto& e : s.events) {
         if (e.id <= lastEventId_) continue;
         lastEventId_ = e.id;
+        if (rec_) fresh.push_back(e);
         if (e.type == EV_PLAYERINFO && e.a < kMaxPlayers) { names_[e.a] = e.text; int m = e.b & 15, sp = e.b >> 4;
             models_[e.a] = m < kPlayerModels ? m : 0; packs_[e.a] = sp < kSoundPacks ? sp : 0; }
         if (e.type == EV_RANKINFO && e.a < kMaxPlayers) rankIds_[e.a] = e.text;
@@ -352,13 +359,14 @@ void NetClient::onSnapshot(Snapshot& s) {
         errorOffset_ = length(err) < 2.0f ? err : Vec3();
     }
 
+    if (rec_) recordSnapshot(s, fresh);
     snaps_.push_back(std::move(s));
     // keep enough history to decode deltas based on any snapshot we acked within the last round trip
     while (snaps_.size() > 512) snaps_.pop_front();
 }
 
 void NetClient::tick(UserCmd cmd) {
-    if (state_ != ConnState::Connected || !mapReady_) return;
+    if (play_.active || state_ != ConnState::Connected || !mapReady_) return;
     cmd.seq = nextSeq_++;
     cmd.msec = (uint8_t)(1000 / tickRate());
     cmd.viewTick = (uint32_t)std::max(0.0, renderTime_ * 1000.0); // server ms we're looking at
@@ -569,5 +577,153 @@ void ServerBrowser::poll() {
             if (s.addr == from || (s.addr.port == from.port && s.name == si.name && s.map == si.map)) { dup = true; break; }
         }
         if (!dup) servers_.push_back(si);
+    }
+}
+
+// ---- demos ----
+// File: "QDEM", u16 protocol, then records: u8 type, f64 seconds since the start, u32 length, payload.
+//   type 1 (map): name, source text, client id. Written first and whenever the map changes (or is edited).
+//   type 2 (snapshot): client header + world (delta against the previous recorded snapshot) + events.
+static constexpr uint32_t kDemoMagic = 0x4D454451; // "QDEM"
+
+bool NetClient::startRecording(const std::string& path) {
+    stopRecording();
+    if (!hasSnapshot() || !mapReady_) return false;
+    rec_ = fopen(path.c_str(), "wb");
+    if (!rec_) return false;
+    uint32_t magic = kDemoMagic; uint16_t ver = kProtocolVersion;
+    fwrite(&magic, 4, 1, rec_); fwrite(&ver, 2, 1, rec_);
+    recStart_ = timeNow(); recLast_ = -1; recMapRev_ = 0xFFFFFFFFu; recEventId_ = 0; recHavePrev_ = false;
+    // who's who so far (names, models, ranked ids arrived as events before the recording started)
+    recEvents_.clear();
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (names_[i].empty()) continue;
+        GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)i; e.b = (uint8_t)(models_[i] | packs_[i] << 4); e.text = names_[i];
+        recEvents_.push_back(e);
+        if (!rankIds_[i].empty()) { GameEvent r; r.type = EV_RANKINFO; r.a = (uint8_t)i; r.text = rankIds_[i]; recEvents_.push_back(r); }
+    }
+    return true;
+}
+
+void NetClient::stopRecording() {
+    if (rec_) fclose(rec_);
+    rec_ = nullptr;
+}
+
+double NetClient::recordingTime() const { return rec_ ? timeNow() - recStart_ : 0; }
+
+void NetClient::recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& events) {
+    for (auto e : events) recEvents_.push_back(e);
+    double t = timeNow() - recStart_;
+    if (recLast_ >= 0 && t - recLast_ < 1.0 / 60 && recMapRev_ == mapRevision()) return; // 60 Hz is plenty to watch
+    recLast_ = t;
+    auto record = [&](uint8_t type, const uint8_t* p, uint32_t n) {
+        fwrite(&type, 1, 1, rec_); fwrite(&t, 8, 1, rec_); fwrite(&n, 4, 1, rec_); fwrite(p, 1, n, rec_);
+    };
+    if (recMapRev_ != mapRevision()) {   // the map (new, or edited): its whole text, so the demo plays anywhere
+        recMapRev_ = mapRevision();
+        std::string src = map_.serialize();
+        std::vector<uint8_t> buf(src.size() + map_.name.size() + 64);
+        Writer w(buf.data(), buf.size());
+        w.str(map_.name.substr(0, 255)); w.u32((uint32_t)src.size());
+        for (char c : src) w.u8((uint8_t)c);
+        w.u8((uint8_t)clientId_);
+        record(1, buf.data(), (uint32_t)w.size());
+        recHavePrev_ = false;   // a full snapshot after a map change
+    }
+    Snapshot c = s;
+    c.baseTick = recHavePrev_ ? recPrev_.tick : 0;
+    for (auto& e : recEvents_) e.id = ++recEventId_;   // numbered from 1 in the demo's own order
+    std::vector<uint8_t> buf(64 * 1024);
+    Writer w(buf.data(), buf.size());
+    writeSnapshotClient(w, c);
+    writeSnapshotWorld(w, c, recHavePrev_ ? &recPrev_ : nullptr);
+    writeSnapshotEvents(w, recEvents_);
+    if (w.overflowed()) return;   // (too big: skip this one, the next will be against the same base)
+    record(2, buf.data(), (uint32_t)w.size());
+    recEvents_.clear();
+    recPrev_ = c;
+    recHavePrev_ = true;
+    fflush(rec_);
+}
+
+bool NetClient::startPlayback(const std::string& path, std::string& err) {
+    disconnect();
+    std::ifstream f(path, std::ios::binary);
+    std::stringstream ss;
+    ss << f.rdbuf();
+    std::string d = ss.str();
+    if (!f || d.size() < 6) { err = "can't read " + path; return false; }
+    uint32_t magic; uint16_t ver;
+    memcpy(&magic, d.data(), 4); memcpy(&ver, d.data() + 4, 2);
+    if (magic != kDemoMagic) { err = "not a quark demo"; return false; }
+    if (ver != kProtocolVersion) { err = "demo from another version (protocol " + std::to_string(ver) + ", this is " + std::to_string(kProtocolVersion) + ")"; return false; }
+    play_ = Playback();
+    play_.data = std::move(d);
+    play_.pos = 6;
+    for (size_t p = 6; p + 13 <= play_.data.size();) { // its length: the last record's time
+        uint32_t n; memcpy(&play_.length, play_.data.data() + p + 1, 8); memcpy(&n, play_.data.data() + p + 9, 4);
+        p += 13 + n;
+    }
+    play_.active = true;
+    play_.wall = timeNow();
+    snaps_.clear(); events_.clear(); lastEventId_ = 0; clockInit_ = false; mapReady_ = false;
+    for (auto& n : names_) n.clear();
+    state_ = ConnState::Connected;
+    addrStr_ = "demo";
+    error_.clear();
+    pollPlayback();
+    if (!mapReady_) { err = "demo has no map"; play_ = Playback(); state_ = ConnState::Disconnected; return false; }
+    return true;
+}
+
+void NetClient::pollPlayback() {
+    double now = timeNow();
+    play_.t += (now - play_.wall) * play_.speed;
+    play_.wall = now;
+    const std::string& d = play_.data;
+    while (play_.pos + 13 <= d.size()) {
+        uint8_t type = (uint8_t)d[play_.pos];
+        double t; uint32_t n;
+        memcpy(&t, d.data() + play_.pos + 1, 8); memcpy(&n, d.data() + play_.pos + 9, 4);
+        if (t > play_.t && mapReady_) break;
+        if (play_.pos + 13 + n > d.size()) break;
+        Reader r((const uint8_t*)d.data() + play_.pos + 13, (int)n);
+        play_.pos += 13 + n;
+        if (type == 1) {
+            std::string name = r.str();
+            uint32_t len = r.u32();
+            std::string src;
+            for (uint32_t i = 0; i < len && !r.bad(); i++) src += (char)r.u8();
+            int id = r.u8();
+            Map m;
+            if (r.bad() || !m.parse(src)) continue;
+            m.name = name;
+            map_ = std::move(m);
+            mapReady_ = true;
+            mapGen_++;
+            clientId_ = id;
+            play_.havePrev = false;
+            snaps_.clear();
+            clockInit_ = false;   // (the next snapshot sets the clock: map changes can jump the server clock)
+        } else if (type == 2) {
+            Snapshot s;
+            if (!readSnapshotClient(r, s)) continue;
+            if (!readSnapshotWorld(r, s, s.baseTick && play_.havePrev ? &play_.prev : nullptr)) continue;
+            if (!readSnapshotEvents(r, s)) continue;
+            play_.prev = s;
+            play_.havePrev = true;
+            // the snapshot's server time, shifted so it arrives "now" at the demo's pace
+            onSnapshot(s);
+        }
+    }
+    if (clockInit_) {
+        float target = (float)(timeNow() + clockOffset_) - interpDelay();
+        renderTime_ = target;
+    }
+    if (play_.pos + 13 > d.size() && play_.t > play_.length + 0.5) {
+        error_ = "demo finished";
+        play_ = Playback();
+        state_ = ConnState::Disconnected;
     }
 }

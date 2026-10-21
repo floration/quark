@@ -92,7 +92,9 @@ struct ServerPlayer {
     float respawnAt = -1;
     int checkpoint = 0;         // race: next checkpoint index
     uint32_t joinId = 0;
-    float dmgDealt = 0, objTime = 0;   // scoreboard: damage to enemies, seconds on the objective (score = dmg / 10 + obj)
+    float dmgDealt = 0, objTime = 0;
+    int shotsFired = 0, shotsHit = 0;   // accuracy: shots (hitscan or projectile) that damaged an enemy
+    bool hitSinceShot = false;   // scoreboard: damage to enemies, seconds on the objective (score = dmg / 10 + obj)
     int model = 0;              // player model (cosmetic, kPlayerModels looks, same hitbox)        // unique per connection (a new player in a reused slot gets a new one)
     int soundPack = 0;      // cosmetic: the sound pack others hear this player with
     bool it = false;            // hide and seek / tag: the seeker / tagger (has the knife)
@@ -262,6 +264,7 @@ public:
     int duelMod() const { return ms_.mode == MODE_DUEL ? ms_.duelMod : 255; } // 255 in warmup (rulesReset clears it)
     // Weapons allowed right now (bit per weapon, 0 = all) and the 1v1 ruleset's AR_* rules.
     uint16_t weaponMask() const;
+    bool shotHit(int id) { bool h = players_[id].hitSinceShot; players_[id].hitSinceShot = false; return h; } // and reset for the next shot
     uint8_t arenaRules() const {
         uint8_t r = ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY || (cfg_.ranked && ms_.mode == MODE_FFA) ? arenaVariant(ms_.arenaVariant).rules : duelModDef(duelMod()).rules;
         const CustomRules& c = cfg_.custom;

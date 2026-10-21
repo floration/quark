@@ -49,6 +49,7 @@ struct LaunchOptions {
     bool editSession = false;   // --editsession MAP: and host it as an edit session
     int editSel = -1;           // --edsel N: select box N (screenshots)
     bool debugLeaderboard = false; // --leaderboard: open the leaderboard screen
+    std::string demo;              // --demo <file>: watch it
     int debugInfo = 0;             // --info <tab>: open the info screen on that tab (stored +1; 0 = off)
     bool menuShot = false;      // --menushot: screenshot whatever menu is up (main / settings / controls)
     double bench = 0;           // --bench SECONDS: measure frame times in a vs-bots game, print, quit
@@ -75,7 +76,7 @@ public:
     void afterSwap();     // low-latency fence waits + F3 input-latency measurement
 
 private:
-    enum class Screen { Main, Join, Host, Settings, Connecting, InGame, VsBots, Editor, Leaderboard, CustomMode, Info };
+    enum class Screen { Main, Join, Host, Settings, Connecting, InGame, VsBots, Editor, Leaderboard, CustomMode, Info, Demos };
     void setScreen(Screen s);
     void startHost(bool vsBots = false);
     void stopHost();
@@ -139,6 +140,11 @@ private:
     std::vector<std::string> rulesParts_;
     void drawCustomModeEditor(float cx, float y);
     void drawInfo(float cx, float y);
+    void drawDemos(float cx, float y);      // the demos folder: newest first, click to watch
+    void startRecording();
+    bool playDemo(const std::string& path);
+    std::vector<std::string> demoFiles_;
+    double demoListAt_ = -1;
     int infoTab_ = 0;
     float infoScroll_ = 0;
     std::vector<std::string> maps_;
@@ -300,6 +306,7 @@ private:
     RemoteAudio remoteAudio_[kMaxPlayers];
     // rebinding
     bool isDown(int action) const;
+    void drawKeyOverlay(float W, float H, float s);
     int bestMapFor(int mode) const;
     int bestRankedMap(int ladder) const; // the ladder's own ranked map, else any ranked map for it
     bool pressInput(int code);

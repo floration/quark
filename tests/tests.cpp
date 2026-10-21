@@ -449,7 +449,7 @@ static void testPoints(uint16_t port) {
     std::vector<NetClient*> cls = {&a, &b};
     pump(s, cls, 0.4, idle);
     s.command("forcestart");
-    pump(s, cls, 3.2, idle);
+    for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE; i++) pump(s, cls, 0.1, idle);   // (a slow machine takes longer)
     CHECK(s.ms_.phase == PHASE_LIVE && s.ms_.pointCount == 5 && s.ms_.point == 0);
     int att = -1, def = -1;
     for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected) (s.players_[i].team == s.ms_.attackers ? att : def) = i;
@@ -1074,6 +1074,7 @@ static void testInternetList(uint16_t port) {
 }
 
 // Each bot level shoots at a strafing player for a while; damage per second must rise with skill.
+static constexpr float kAimSample = 25.0f; // s per level: shorter samples let neighbouring levels swap places
 static void testBotAim(uint16_t& port) {
     printf("bot aim: damage per second vs a strafing player, by level\n");
     float dps[BOT_SKILLS] = {};
@@ -1094,21 +1095,26 @@ static void testBotAim(uint16_t& port) {
         auto& bp = s.players_[bot];
         float dealt = 0, lastShot = -1;
         int shots = 0;
-        double t0 = s.time();
-        pump(s, cls, 15.0, [&](int) {
+        int dir = 127;
+        float nextJuke = s.time() + 1.2f;
+        pump(s, cls, kAimSample, [&](int) {
             if (!p.alive || !bp.alive) return UserCmd();
             dealt += 100 - p.health;
             if (bp.lastFire != lastShot) { shots++; lastShot = bp.lastFire; }
             p.health = 100;
-            p.move.pos.x = -7;                                   // strafe back and forth along z
-            if (std::fabs(p.move.pos.z + 24) > 4) p.move.pos.z = -24;
+            p.move.pos.x = -7;                                   // strafe back and forth along z, turning at +-4 m
+            if (std::fabs(p.move.pos.z + 24) > 8) p.move.pos.z = -24; // (from its spawn: put it in front of the bot)
+            float off = p.move.pos.z + 24;                       // (and every 1.2 s of game time: jukes. Game time,
+            if ((off > 4 && p.move.vel.z > 0) || (off < -4 && p.move.vel.z < 0)) { dir = -dir; nextJuke = s.time() + 1.2f; } // so the same however loaded the machine)
+            else if (s.time() >= nextJuke) { dir = -dir; nextJuke = s.time() + 1.2f; }
             bp.move.pos = {7, 0, -24}; bp.move.vel = {};          // bot 14 m away, open floor, standing (aim only)
             UserCmd c;
-            c.side = (int)((s.time() - t0) / 0.6) % 2 ? 127 : -127; // (game time: the same strafe however loaded the machine)
+            c.side = (int8_t)dir;
             c.yaw = -PI / 2;
             return c;
         });
-        dps[k] = dealt / 15.0f;
+        dps[k] = dealt / kAimSample;
+        CHECK(bp.shotsFired + 1 >= shots && (dealt <= 0 || (bp.shotsHit > 0 && bp.shotsHit <= bp.shotsFired))); // scoreboard accuracy counts them
         printf("  %-12s %5.1f dps, %.0f%% of shots hit\n", botSkillName(k), dps[k], shots ? dealt / weaponDef(WPN_RIFLE).damage / shots * 100 : 0.0f);
         s.stop();
     }
@@ -1840,6 +1846,52 @@ static void testEditSession(uint16_t port) {
     for (uint32_t crc : {a.map().crc, c.map().crc}) std::remove(downloadedMapPath(name, crc).c_str());
 }
 
+// Demos: record a match from one client, play it back into another: the map, players, names and events come back.
+static void testDemo(uint16_t port) {
+    printf("demo record + playback\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "harbor"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    NetClient a;
+    a.connect("127.0.0.1:" + std::to_string(port), "recorder");
+    std::vector<NetClient*> cls = {&a};
+    pump(s, cls, 1.0, idle);
+    s.addBot(TEAM_A, 2); s.addBot(TEAM_A, 2);
+    pump(s, cls, 0.5, idle);
+    std::string path = findDataPath("maps") + "/../zz_test.qdemo";
+    CHECK(a.startRecording(path) && a.recording());
+    std::vector<Vec3> botPos;
+    a.sendCommand("say hello demo");
+    pump(s, cls, 2.0, [](int) { UserCmd c; c.forward = 127; return c; });
+    a.stopRecording();
+    s.stop();
+    NetClient p;
+    std::string err;
+    CHECK(p.startPlayback(path, err) && p.playback() && p.mapReady() && p.map().name == "harbor");
+    if (!err.empty()) printf("  %s\n", err.c_str());
+    std::vector<NetClient*> none;
+    int snaps = 0, maxPlayers = 0;
+    bool chat = false, moved = false;
+    Vec3 first;
+    double end = timeNow() + 6;
+    while (p.playback() && timeNow() < end) {
+        p.poll();
+        if (p.hasSnapshot()) {
+            snaps++;
+            maxPlayers = std::max(maxPlayers, (int)p.latest().players.size());
+            if (const PlayerSnap* me = p.findPlayer(p.clientId())) { if (snaps == 1) first = me->pos; else moved |= length(me->pos - first) > 1.0f; }
+        }
+        for (auto& e : p.takeEvents()) chat |= e.type == EV_CHAT && e.text == "hello demo";
+        sleepMs(5);
+    }
+    printf("  %d polls with snapshots, %d players, %.1f kB\n", snaps, maxPlayers, std::filesystem::file_size(path) / 1024.0);
+    CHECK(!p.playback() && p.error() == "demo finished");   // played to the end
+    CHECK(snaps > 50 && maxPlayers == 3 && chat && moved && p.playerName(p.clientId()) == "recorder");
+    if (!getenv("QUARK_KEEP_DEMO")) std::remove(path.c_str());   // (keep it to watch: build/quark --demo <it>)
+}
+
 // Edit by vote on a normal server, then "VOTE: PLAY IT" (callvote edit off): everyone plays the edited copy.
 static void testVotedEdit(uint16_t port) {
     printf("voted map editing, then vote to play it\n");
@@ -2276,6 +2328,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "ranked") { testRanked(29610); testRankedVoteAndRestart(29620); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(29600); testEditSession(29601); testVotedEdit(29602); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
+    if (argc >= 2 && std::string(argv[1]) == "demo") { testDemo(29603); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(29960); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(29950); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(29900); return g_fail ? 1 : 0; }
@@ -2303,6 +2356,7 @@ int main(int argc, char** argv) {
     testMapDownload(port++);
     testEditSession(port++);
     testVotedEdit(port++);
+    testDemo(port++);
     testRanked(port); port += 3;
     testRankedVoteAndRestart(port++);
     testArenaAndTourney(port);

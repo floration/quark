@@ -343,7 +343,7 @@ void startMatch(Server& s) {
     s.kothPoints_[0] = s.kothPoints_[1] = 0;
     s.bestProgress_[0] = s.bestProgress_[1] = 0;
     s.completeTime_[0] = s.completeTime_[1] = 0;
-    for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; p.dmgDealt = p.objTime = 0; p.out = false; p.it = false; }
+    for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; p.dmgDealt = p.objTime = 0; p.shotsFired = p.shotsHit = 0; p.out = false; p.it = false; }
     s.lastIt_ = -1;
     s.hideRounds_ = 0;
     s.hideRounds_ = hideRounds(s);

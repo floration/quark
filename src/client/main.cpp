@@ -47,6 +47,7 @@ int main(int argc, char** argv) {
         else if (a == "--controls") { opts.debugSettings = true; opts.debugControls = true; }
         else if (a == "--editor") opts.editMap = next();
         else if (a == "--leaderboard") opts.debugLeaderboard = true;
+        else if (a == "--demo") opts.demo = next();   // watch a demo file
         else if (a == "--info") opts.debugInfo = atoi(next().c_str()) + 1;   // the info screen on that tab (screenshots)
         else if (a == "--menushot") opts.menuShot = true;
         else if (a == "--bench") opts.bench = atof(next().c_str());

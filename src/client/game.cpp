@@ -1,4 +1,7 @@
 #include <fstream>
+#include <filesystem>
+#include <ctime>
+#include <algorithm>
 #include <sstream>
 #include "../common/profile.h"
 #include <array>
@@ -55,6 +58,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     rankKey_ = loadOrCreateRankKey(findDataPath("maps") + "/../quark.key"); // ranked identity: stays on this computer
     if (opts_.hostMode < 0 && opts_.vsBotsMode < 0 && opts_.connect.empty() && opts_.editMap.empty()) loadMenuBackdrop();
     if (opts_.debugInfo) { setScreen(Screen::Info); infoTab_ = opts_.debugInfo - 1; }
+    if (!opts_.demo.empty()) playDemo(opts_.demo);
     if (opts_.debugLeaderboard) { setScreen(Screen::Leaderboard); raceStatsView_ = opts_.debugRaceStats; }
     if (!opts_.editMap.empty()) { openEditor(opts_.editMap); if (opts_.editSession) edHostSession(); if (opts_.editSel >= 0) edSel_ = {ED_BRUSH, opts_.editSel}; }
     for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == cfg_.hostMap) hostMapIdx_ = (int)i;
@@ -281,6 +285,7 @@ void Game::loadMapIfNeeded() {
     double lastKeepAlive = 0;
     r_.loadWorld(net_.map(), [&](float p) {
         // Keep the connection alive and show progress while lighting bakes.
+        if (net_.playback()) { drawBakeProgress(net_.map().name, p); return; }   // (a demo waits for it)
         net_.poll();
         if (timeNow() - lastKeepAlive > 0.05) {
             UserCmd c; c.yaw = yaw_; c.pitch = pitch_;
@@ -290,6 +295,7 @@ void Game::loadMapIfNeeded() {
         drawBakeProgress(net_.map().name, p);
     });
     setBackdropFrame(net_.map());
+    if (net_.playback()) net_.holdPlaybackClock();
 }
 
 void Game::drawBakeProgress(const std::string& name, float p) {
@@ -488,7 +494,7 @@ void Game::onKey(int key, int action, int mods) {
         if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
         if (controlsOpen_ || crosshairOpen_ || hudOpen_) { controlsOpen_ = crosshairOpen_ = hudOpen_ = false; cfg_.save(); return; }
         if (picker_ != PICK_NONE) { picker_ = PICK_NONE; return; }
-        if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::Settings || screen_ == Screen::VsBots || screen_ == Screen::Leaderboard) {
+        if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::Settings || screen_ == Screen::VsBots || screen_ == Screen::Leaderboard || screen_ == Screen::Demos) {
             cfg_.save();
             setScreen(Screen::Main);
         } else if (screen_ == Screen::Connecting) {
@@ -825,7 +831,9 @@ void Game::frame(double dt) {
     if (screen_ == Screen::Join) browser_.poll();
     if (screen_ == Screen::Connecting || screen_ == Screen::InGame || (screen_ == Screen::Editor && edOnline_)) {
         if (net_.state() == ConnState::Disconnected) {
+            bool demoEnd = net_.error() == "demo finished";
             leaveGame(net_.error().empty() ? "disconnected" : net_.error());
+            if (demoEnd) { error_.clear(); setScreen(Screen::Demos); }
         } else if (net_.state() == ConnState::Connected && net_.mapReady() && (screen_ != Screen::Connecting || net_.hasSnapshot())) {
             bool editing = net_.hasSnapshot() && (net_.mode().flags & MS_EDITING);
             if (editing) { // an edit session (or the host switched back to editing)
@@ -845,6 +853,7 @@ void Game::frame(double dt) {
         // fixed-rate input + prediction
         tickAcc_ += dt;
         if (tickAcc_ > 0.25) tickAcc_ = 0.25;
+        if (net_.playback()) tickAcc_ = 0;   // watching a demo: no input
         const double period = net_.tickPeriod();
         QZONE("input + prediction ticks");
         while (tickAcc_ >= period) {
@@ -1022,13 +1031,16 @@ void Game::drawWorld(float alpha) {
     auto players = net_.interpolatedPlayers();
     int me = net_.clientId();
     bool alive = net_.selfAlive();
+    // demo playback: through the recorder's eyes (their recorded view, interpolated like everyone else)
+    const bool demoView = net_.playback() && me >= 0 && me < kMaxPlayers && players[me].valid;
+    if (demoView) { yaw_ = players[me].snap.yaw; pitch_ = players[me].snap.pitch; }
 
     // camera: own prediction when alive, else spectate someone
     Vec3 eye;
     float camYaw = yaw_, camPitch = pitch_;
     int viewing = me;
     if (alive) {
-        Vec3 p = net_.smoothedPos(alpha);
+        Vec3 p = demoView ? players[me].snap.pos : net_.smoothedPos(alpha);
         bool crouch = net_.predicted().flags & MF_CROUCHED;
         eye = p + Vec3(0, (crouch ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
     } else {
@@ -1787,10 +1799,22 @@ void Game::drawHud() {
     if (!fairRules()) {
         if (cfg_.hudVerbose || cfg_.hudWidgets) computeHudVals();
         if (cfg_.hudVerbose) drawVerboseHud(W, s, y);
-        if (cfg_.hudWidgets && !widgetEdit_) {
-            widgets_.poll(activeHudPath());
-            if (!widgets_.empty()) widgets_.draw(r_, hudVals_, W, H, s);
+        if (cfg_.hudVerbose && !cfg_.hud[Settings::HUD_KEYS].hidden && net_.selfAlive()) drawKeyOverlay(W, H, s);
+    }
+    {   // demos: what's playing / that you're recording
+        float dts = std::max(1.0f, std::round(ts * 0.75f));
+        if (net_.playback()) {
+            float bw = 260 * s, bx = 24 * s, by = H * 0.5f;
+            r_.text(bx, by - 22 * s, dts, "DEMO - ESC TO STOP", kWhite);
+            r_.rect(bx, by, bw, 6 * s, {0, 0, 0, 0.5f});
+            r_.rect(bx, by, bw * net_.playbackProgress(), 6 * s, fc);
+        } else if (net_.recording() && std::fmod(time_, 1.0) < 0.7) {
+            r_.text(24 * s, H * 0.5f, dts, "REC " + fmtTime((float)net_.recordingTime()), kRed);
         }
+    }
+    if (!fairRules() && cfg_.hudWidgets && !widgetEdit_) {
+        widgets_.poll(activeHudPath());
+        if (!widgets_.empty()) widgets_.draw(r_, hudVals_, W, H, s);
     }
     while (!killFeed_.empty() && killFeed_.front().until < time_) killFeed_.pop_front();
     for (auto& k : killFeed_) {
@@ -1959,6 +1983,27 @@ void Game::computeHudVals() {
 }
 
 // Dense info block, top right: one line per value, label left / value right, all snprintf into one buffer.
+// Key overlay (part of the verbose HUD): the movement / action keys, lit while held. Moved, sized and
+// tinted like any HUD element.
+void Game::drawKeyOverlay(float W, float H, float s) {
+    const auto& e = cfg_.hud[Settings::HUD_KEYS];
+    float k = s * e.scale, u = 30 * k, g = 4 * k;
+    float ox = W * 0.5f - (4 * u + 3 * g) * 0.5f + e.x * s, oy = H - 230 * s + e.y * s;
+    Color lit = e.custom ? Color{e.color.x, e.color.y, e.color.z, 0.9f} : rgba(cfg_.colorFriendly, 0.9f);
+    float ts = std::max(1.0f, std::round(ui_.textScale() * 0.5f * e.scale));
+    auto key = [&](float col, float row, float wUnits, const char* label, int action) {
+        float x = ox + col * (u + g), y = oy + row * (u + g), w = wUnits * u + (wUnits - 1) * g;
+        bool on = isDown(action);
+        r_.rect(x, y, w, u, on ? lit : Color{0.05f, 0.06f, 0.08f, 0.55f});
+        r_.text(x + (w - r_.textWidth(label, ts)) * 0.5f, y + (u - r_.textHeight(ts)) * 0.5f, ts, label, on ? Color{0, 0, 0, 1} : Color{0.85f, 0.87f, 0.9f, 0.9f});
+    };
+    key(1, 0, 1, "W", A_FORWARD);
+    key(0, 1, 1, "A", A_LEFT); key(1, 1, 1, "S", A_BACK); key(2, 1, 1, "D", A_RIGHT);
+    key(3, 0, 1, "LMB", A_FIRE); key(3, 1, 1, "RMB", A_ALTFIRE);
+    key(0, 2, 2, "JUMP", A_JUMP); key(2, 2, 2, "CROUCH", A_CROUCH);
+    key(0, 3, 2, "DASH", A_DASH); key(2, 3, 2, "HOOK", A_GRAPPLE);
+}
+
 void Game::drawVerboseHud(float W, float s, float& y) {
     const HudVals& h = hudVals_;
     const ModeState& ms = net_.mode();
@@ -2383,7 +2428,7 @@ void Game::drawLeaderboard(float cx, float y) {
 void Game::drawScoreboard() {
     const float W = (float)r_.width(), H = (float)r_.height(), s = H / 720.0f;
     float ts = ui_.textScale();
-    float w = 640 * s, x = (W - w) * 0.5f, y = 140 * s;
+    float w = 760 * s, x = (W - w) * 0.5f, y = 140 * s;
     const ModeState& ms = net_.mode();
     std::vector<PlayerSnap> ps = net_.latest().players;
     std::sort(ps.begin(), ps.end(), [](const PlayerSnap& a, const PlayerSnap& b) {
@@ -2408,7 +2453,8 @@ void Game::drawScoreboard() {
     r_.text(x + w * 0.62f, cy, ts, "D", kGrey);
     r_.text(x + w * 0.68f, cy, ts, "DMG", kGrey);
     r_.text(x + w * 0.76f, cy, ts, "OBJ", kGrey);
-    r_.text(x + w * 0.84f, cy, ts, "PING", kGrey);
+    r_.text(x + w * 0.84f, cy, ts, "ACC", kGrey);
+    r_.text(x + w * 0.91f, cy, ts, "PING", kGrey);
     cy += rowH;
     for (auto& p : ps) {
         Color c = (p.flags & PS_SPECTATOR) ? kGrey : rgba(teamColor(p.id));
@@ -2423,8 +2469,9 @@ void Game::drawScoreboard() {
         r_.text(x + w * 0.62f, cy, ts, std::to_string(p.deaths), kWhite);
         r_.text(x + w * 0.68f, cy, ts, std::to_string(p.dmg), kWhite);
         r_.text(x + w * 0.76f, cy, ts, fmtTime(p.obj), kWhite);
+        r_.text(x + w * 0.84f, cy, ts, std::to_string(p.acc) + "%", kWhite);
         bool bot = net_.playerName(p.id).rfind("BOT ", 0) == 0;
-        r_.text(x + w * 0.84f, cy, ts, bot ? "BOT" : std::to_string(p.ping), kWhite);
+        r_.text(x + w * 0.91f, cy, ts, bot ? "BOT" : std::to_string(p.ping), kWhite);
         cy += rowH;
     }
 }
@@ -2495,8 +2542,19 @@ void Game::drawPauseMenu(float cx, float y) {
     }
     if (picker_ != PICK_NONE) { drawPicker(cx, y); return; }
     if (voteMenu_) { drawVoteMenu(cx, y); return; }
+    if (net_.playback()) { // watching a demo
+        ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 4 * (h + gap) + 24 * s);
+        if (ui_.button(x, y, w, h, "RESUME")) { paused_ = false; }
+        y += h + gap;
+        if (ui_.button(x, y, w, h, "STOP DEMO")) { leaveGame(); setScreen(Screen::Demos); return; }
+        y += h + gap;
+        if (ui_.button(x, y, w, h, "SETTINGS")) settingsInGame_ = true;
+        y += h + gap;
+        if (ui_.button(x, y, w, h, "QUIT")) quit_ = true;
+        return;
+    }
     bool teamMode = modeIsTeamBased(net_.mode().mode);
-    int rows = 7 + (host_ ? 2 : 0) + (host_ && !(net_.mode().flags & MS_RANKED) ? 1 : 0);
+    int rows = 8 + (host_ ? 2 : 0) + (host_ && !(net_.mode().flags & MS_RANKED) ? 1 : 0);
     ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, rows * (h + gap) + 24 * s);
     if (ui_.button(x, y, w, h, "RESUME")) { paused_ = false; }
     y += h + gap;
@@ -2524,6 +2582,10 @@ void Game::drawPauseMenu(float cx, float y) {
         if (!(net_.mode().flags & MS_RANKED) && ui_.button(x, y, w, h, "EDIT MODE")) { net_.sendCommand("editmode on"); paused_ = false; } // edit together
         if (!(net_.mode().flags & MS_RANKED)) y += h + gap;
     }
+    if (net_.recording()) {
+        if (ui_.button(x, y, w, h, "STOP RECORDING (" + fmtTime((float)net_.recordingTime()) + ")")) { net_.stopRecording(); notify("DEMO SAVED - MAIN MENU > DEMOS", 4); }
+    } else if (ui_.button(x, y, w, h, "RECORD DEMO")) startRecording();
+    y += h + gap;
     if (ui_.button(x, y, w, h, "SETTINGS")) settingsInGame_ = true;
     y += h + gap;
     if (ui_.button(x, y, w, h, !testMap_.empty() ? "BACK TO EDITOR" : host_ ? "STOP HOSTING" : "DISCONNECT")) { leaveGame(); return; }
@@ -2718,8 +2780,12 @@ void Game::drawMenu() {
             if (ui_.button(x, y, bw * 0.5f - gap * 0.5f, bh, "SETTINGS")) setScreen(Screen::Settings);
             if (ui_.button(x + bw * 0.5f + gap * 0.5f, y, bw * 0.5f - gap * 0.5f, bh, "INFO")) setScreen(Screen::Info);   // how everything works
             y += bh + gap;
-            if (ui_.button(x, y, bw * 0.5f - gap * 0.5f, bh, "DISCORD")) openUrl(kDiscordUrl);
-            if (ui_.button(x + bw * 0.5f + gap * 0.5f, y, bw * 0.5f - gap * 0.5f, bh, "QUIT")) quit_ = true;
+            {
+                float tw = (bw - 2 * gap) / 3;
+                if (ui_.button(x, y, tw, bh, "DISCORD")) openUrl(kDiscordUrl);
+                if (ui_.button(x + tw + gap, y, tw, bh, "DEMOS")) setScreen(Screen::Demos);
+                if (ui_.button(x + 2 * (tw + gap), y, tw, bh, "QUIT")) quit_ = true;
+            }
             y += bh + gap * 2;
             if (!error_.empty()) ui_.labelCentered(cx, y, error_, kRed);
             break;
@@ -2885,6 +2951,7 @@ void Game::drawMenu() {
         }
         case Screen::Leaderboard: drawLeaderboard(cx, y); break;
         case Screen::Info: drawInfo(cx, y - 8 * s); break;
+        case Screen::Demos: drawDemos(cx, y); break;
         case Screen::CustomMode: drawCustomModeEditor(cx, y); break;
         case Screen::Connecting: {
             float dlp = net_.downloadProgress();
@@ -3082,6 +3149,57 @@ static const char* const kInfoPages[][48] = {
         "Anything in the maps folder shows up in the lists. Servers send their map to players who don't have it.",
     },
 };
+
+// ---- demos ----
+static std::string demoDir() { return findDataPath("maps") + "/../demos"; }
+
+void Game::startRecording() {
+    std::error_code ec;
+    std::filesystem::create_directories(demoDir(), ec);
+    time_t t = time(nullptr);
+    char stamp[32];
+    strftime(stamp, sizeof stamp, "%Y-%m-%d_%H-%M-%S", localtime(&t));
+    std::string path = demoDir() + "/" + net_.map().name + "_" + modeName(net_.mode().mode) + "_" + stamp + ".qdemo";
+    if (net_.startRecording(path)) notify("RECORDING DEMO - ESC > STOP RECORDING", 3);
+    else notify("COULDN'T START RECORDING", 3);
+}
+
+bool Game::playDemo(const std::string& path) {
+    leaveGame();
+    std::string err;
+    if (!net_.startPlayback(path, err)) { error_ = "demo: " + err; return false; }
+    paused_ = false;
+    setScreen(Screen::Connecting);   // (the connection loop bakes the map and switches to the game)
+    return true;
+}
+
+void Game::drawDemos(float cx, float y) {
+    float s = ui_.s(), w = 560 * s, h = 32 * s, gap = 6 * s, x = cx - w * 0.5f;
+    if (time_ >= demoListAt_) { // rescan now and then (a demo you just recorded shows up)
+        demoListAt_ = time_ + 2;
+        demoFiles_.clear();
+        std::error_code ec;
+        std::vector<std::pair<std::filesystem::file_time_type, std::string>> fs;
+        for (auto& e : std::filesystem::directory_iterator(demoDir(), ec))
+            if (e.path().extension() == ".qdemo") fs.push_back({e.last_write_time(ec), e.path().string()});
+        std::sort(fs.begin(), fs.end(), [](auto& a, auto& b) { return a.first > b.first; });
+        for (auto& f : fs) demoFiles_.push_back(f.second);
+    }
+    int rows = std::min<int>((int)demoFiles_.size(), 12);
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, (rows + 3) * (h + gap) + 24 * s);
+    ui_.labelCentered(cx, y, "DEMOS", kWhite, 1.4f);
+    y += h + gap;
+    if (demoFiles_.empty()) {
+        ui_.labelCentered(cx, y + 6 * s, "NONE YET - IN A GAME, ESC > RECORD DEMO", kGrey, 0.6f);
+        y += h + gap;
+    }
+    for (int i = 0; i < rows; i++, y += h + gap) {
+        std::string name = std::filesystem::path(demoFiles_[i]).stem().string();
+        for (auto& c : name) c = c == '_' ? ' ' : (char)toupper((unsigned char)c);
+        if (ui_.button(x, y, w, h, name)) { playDemo(demoFiles_[i]); return; }
+    }
+    if (ui_.button(x, y, w, h, "BACK")) setScreen(Screen::Main);
+}
 
 void Game::drawInfo(float cx, float y) {
     float s = ui_.s(), w = std::min(1100 * s, (float)r_.width() - 40 * s), x = cx - w * 0.5f;
@@ -3569,7 +3687,9 @@ void Game::drawHudSettings(float x0, float y0, float wTotal) {
     float w = std::max(360 * s, wTotal * 0.5f);
     float x = x0 + wTotal * 0.5f - w * 0.5f, y = y0;
     ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 14 * (h + gap) + 3 * gap + 48 * s);
-    static const char* names[] = {"HEALTH", "WEAPON NAME", "COOLDOWN BARS", "SPEED METER", "WEAPON LIST", "WEAPON MODEL"};
+    static const char* names[] = {"HEALTH", "WEAPON NAME", "COOLDOWN BARS", "SPEED METER", "WEAPON LIST", "WEAPON MODEL", "KEY OVERLAY (VERBOSE)"};
+    static const int listed[] = {Settings::HUD_HEALTH, Settings::HUD_WEAPON, Settings::HUD_BARS, Settings::HUD_SPEED, Settings::HUD_SLOTS, Settings::HUD_KEYS};
+    const int nListed = (int)(sizeof listed / sizeof listed[0]);
     // HUD elements in a dropdown; the weapon model (a 3D model, not a HUD element) has its own button
     bool vmSel = hudSel_ == Settings::HUD_VIEWMODEL;
     float dw = w * 0.62f, bw2 = w - dw - gap;
@@ -3577,9 +3697,11 @@ void Game::drawHudSettings(float x0, float y0, float wTotal) {
     if (ui_.button(x + dw + gap, y, bw2, h, vmSel ? "> WEAPON MODEL <" : "WEAPON MODEL")) { hudSel_ = Settings::HUD_VIEWMODEL; hudDrop_ = false; }
     y += h + gap;
     if (hudDrop_) { // modal until one is picked
-        ui_.panel(x - 4 * s, y - 4 * s, dw + 8 * s, Settings::HUD_VIEWMODEL * (h + gap) + 4 * s, 0.97f);
-        for (int i = 0; i < Settings::HUD_VIEWMODEL; i++, y += h + gap)
+        ui_.panel(x - 4 * s, y - 4 * s, dw + 8 * s, nListed * (h + gap) + 4 * s, 0.97f);
+        for (int k = 0; k < nListed; k++, y += h + gap) {
+            int i = listed[k];
             if (ui_.button(x, y, dw, h, (i == hudSel_ ? "> " : "") + std::string(names[i]))) { hudSel_ = i; hudDrop_ = false; }
+        }
         return;
     }
     auto& e = cfg_.hud[hudSel_];

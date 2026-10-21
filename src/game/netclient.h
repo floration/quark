@@ -79,8 +79,38 @@ public:
     int snapshotLoss() const { return lossPct_; }
     void overrideReportedLoss(int pct) { lossOverride_ = pct; } // tests: pretend to lose snapshots
 
+    // Demos: recording writes what this client sees (snapshots at up to 60 Hz, delta-encoded, with events, plus
+    // the map whenever it changes) to a file; playback feeds a file back through the same snapshot path, in real time.
+    bool startRecording(const std::string& path);
+    void stopRecording();
+    bool recording() const { return rec_ != nullptr; }
+    double recordingTime() const;
+    bool startPlayback(const std::string& path, std::string& err);
+    bool playback() const { return play_.active; }
+    float playbackProgress() const { return play_.active && play_.length > 0 ? (float)(play_.t / play_.length) : 0; }
+    void setPlaybackSpeed(float s) { play_.speed = s; }
+    void holdPlaybackClock() { play_.wall = timeNow(); }   // don't count time spent elsewhere (a map bake) as watched
+    float playbackSpeed() const { return play_.speed; }
+
 private:
     void handlePacket(const uint8_t* data, int len);
+    void recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& events);
+    void pollPlayback();
+    FILE* rec_ = nullptr;
+    double recStart_ = 0, recLast_ = -1;
+    uint32_t recMapRev_ = 0xFFFFFFFFu, recEventId_ = 0;
+    Snapshot recPrev_;
+    bool recHavePrev_ = false;
+    std::vector<GameEvent> recEvents_;
+    struct Playback {
+        bool active = false;
+        std::string data;
+        size_t pos = 0;
+        double t = 0, length = 0, wall = 0;
+        float speed = 1;
+        Snapshot prev;
+        bool havePrev = false;
+    } play_;
     void onSnapshot(Snapshot& s);
     void sendInput();
     bool useMap(const std::string& name, uint32_t crc); // load name (own copy, else a downloaded one) if its CRC matches

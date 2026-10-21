@@ -105,7 +105,7 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
             if (b->kills != p.kills) m |= P_KILLS;
             if (b->deaths != p.deaths) m |= P_DEATHS;
             if (b->score != p.score) m |= P_SCORE;
-            if (b->dmg != p.dmg || b->obj != p.obj) m |= P_STATS;
+            if (b->dmg != p.dmg || b->obj != p.obj || b->acc != p.acc) m |= P_STATS;
             if (b->ping != p.ping) m |= P_PING;
             if (b->checkpoint != p.checkpoint) m |= P_CHECK;
             if (!p.hidden && (b->hooked != p.hooked || (p.hooked && !samePos(b->hookPoint, p.hookPoint)))) m |= P_HOOK;
@@ -121,7 +121,7 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
         if (m & P_KILLS) w.i16(p.kills);
         if (m & P_DEATHS) w.i16(p.deaths);
         if (m & P_SCORE) w.i16(p.score);
-        if (m & P_STATS) { w.i16(p.dmg); w.i16(p.obj); }
+        if (m & P_STATS) { w.i16(p.dmg); w.i16(p.obj); w.u8(p.acc); }
         if (m & P_PING) w.u16(p.ping);
         if (m & P_CHECK) w.u8(p.checkpoint);
         if (m & P_HOOK) { w.u8(p.hooked); if (p.hooked) w.vecq(p.hookPoint); }
@@ -167,7 +167,7 @@ bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base) {
         if (m & P_KILLS) p.kills = r.i16();
         if (m & P_DEATHS) p.deaths = r.i16();
         if (m & P_SCORE) p.score = r.i16();
-        if (m & P_STATS) { p.dmg = r.i16(); p.obj = r.i16(); }
+        if (m & P_STATS) { p.dmg = r.i16(); p.obj = r.i16(); p.acc = r.u8(); }
         if (m & P_PING) p.ping = r.u16();
         if (m & P_CHECK) p.checkpoint = r.u8();
         if (m & P_HOOK) { p.hooked = r.u8(); if (p.hooked) p.hookPoint = r.vecq(); }

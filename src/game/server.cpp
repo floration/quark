@@ -183,7 +183,13 @@ double Server::frame() {
         windowLate_ += 20;
         nextTick_ = now;
     }
+    int caught = 0;
     while (now >= nextTick_) {
+        if (++caught > 20) { // still behind after 20 ticks (each one slower than real time): skip ahead and get back
+            windowLate_ += 20; //  to the network. Checking only before the loop let a slow machine spin here forever.
+            nextTick_ = now + period;
+            break;
+        }
         if (now - nextTick_ > period * 2) windowLate_++;
         windowTicks_++;
         double t0 = timeNow();
@@ -830,6 +836,7 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
     if (attacker == victim && (rules & AR_NO_SELF_DAMAGE)) return;
     if (attacker >= 0 && attacker != victim) dmg *= duelModDef(duelMod()).damageMul; // glass cannons / double damage
     if (attacker >= 0 && attacker != victim && (rules & AR_INSTAGIB)) dmg = std::max(dmg, v.health + 1);
+    if (attacker >= 0 && attacker != victim && !friendly) players_[attacker].hitSinceShot = true;
     if (attacker >= 0 && attacker != victim && !friendly) players_[attacker].dmgDealt += std::min(dmg, std::max(0.0f, v.health)); // (the health it took)
     v.health -= dmg;
     v.lastDamagedTick = tick_;
@@ -1158,6 +1165,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             pr.id = nextProjId_++;
             pr.type = p.weapon;
             pr.owner = id;
+            if (p.weapon != WPN_SYRINGE) p.shotsFired++;   // accuracy: a hit is counted when it lands
             pr.pos = eye + aim * 0.3f;
             pr.vel = spreadDir(aim, spread, cmd.seq, 0) * wd.projSpeed;
             if (p.weapon == WPN_ROCKET && alt) { pr.vel = pr.vel * kRocketLobSpeed; pr.gravMul = kRocketLobGravity; }
@@ -1167,6 +1175,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
         }
         return false;
     }
+    p.shotsFired++;
     uint32_t vt = cmd.viewTick; // ms on the server clock
     if (vt > timeMs_) vt = timeMs_;
     if (timeMs_ - vt > kMaxRewindMs) vt = timeMs_ - kMaxRewindMs;
@@ -1190,6 +1199,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
         damagePlayer(i, id, dmgPer[i], p.weapon, knock);
         any = true;
     }
+    if (shotHit(id)) p.shotsHit++;
     return any;
 }
 
@@ -1253,6 +1263,7 @@ void Server::tickProjectiles() {
                 float y = pr.pos.y + dir.y * best;
                 if (head > 0 && y >= hitBb.mx.y - (hitBb.mx.y - hitBb.mn.y) * kHeadFraction) dmg = std::max(dmg, head);
                 damagePlayer(hitPlayer, pr.owner, dmg, pr.type, dir * 3.0f);
+                if (pr.owner >= 0 && shotHit(pr.owner)) players_[pr.owner].shotsHit++;
             }
             pr.active = false;
         } else {
@@ -1289,6 +1300,7 @@ void Server::explode(const Vec3& at, int owner, int weapon) {
         if (!self) knock.y *= 2.0f; // enemies get launched: twice the vertical knockback
         damagePlayer(i, owner, dmg, weapon, knock);
     }
+    if (owner >= 0 && weapon != WPN_BUBBLE && shotHit(owner)) players_[owner].shotsHit++;
     // Blasts set off any sticky in range, anyone's (yours and the enemy's): chain reactions. Each one is
     // switched off before it goes, so a chain always ends.
     for (auto& pr : projectiles_) {
@@ -1372,6 +1384,7 @@ void Server::sendSnapshots() {
         ps.score = (int16_t)p.score;
         ps.dmg = (int16_t)std::min(p.dmgDealt, 32000.0f);
         ps.obj = (int16_t)std::min(p.objTime, 32000.0f);
+        ps.acc = (uint8_t)(p.shotsFired ? std::min(100, p.shotsHit * 100 / p.shotsFired) : 0);
         ps.ping = (uint16_t)p.ping;
         ps.checkpoint = (uint8_t)p.checkpoint;
         ps.hooked = p.alive && (p.move.flags & MF_HOOKED);
