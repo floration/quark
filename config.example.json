@@ -7,5 +7,8 @@
   "leaderboard_channel": "leaderboard",
   "info_channel": "info",
   "queue_channel": "queues",
-  "ping_role": "Game Pings"
+  "ping_role": "Game Pings",
+  "role_first": "🥇 #1",
+  "role_top10": "Top 10",
+  "bot_key": ""
 }
