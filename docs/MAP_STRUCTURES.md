@@ -186,6 +186,20 @@ The numbers in brackets are measured by `build/quark_tests mapreport` (see [MAP_
 - **Field walls and log piles.** Break up the open valley.
 - **Street lamps.** Light, and they show who's coming.
 
+## Hightown: hide and seek (tag too). Setting: a skyscraper over a city.
+**Why it suits hide and seek:**
+- Six levels (five office floors and the roof) round an open atrium: seekers can look across floors but have to walk round to reach them.
+- Two big staircases on opposite facades, so every floor has two separate ways up and down and a hider can always slip round the seeker.
+- Corner storerooms, desks and cabinets give plenty of places to crouch out of sight.
+
+**Structures:**
+- **Two switchback staircases along the west and east facades.** 2.6 m flights beside the windows, alternating between the outer and inner lane each floor, with landings at both ends, railed stairwells and openings in the slab above, lobby to roof.
+- **The atrium with railed edges.** Sightlines between floors; the lobby fountain at the bottom.
+- **Corner rooms behind partitions with a door each.** Storerooms of crates and cabinets to hide among.
+- **Office wings of desks and screens, plants by the atrium.** Cover and things to hide behind.
+- **The facade of piers and windows.** You can see and shoot out; nobody falls out.
+- **The roof: parapet, plant room, water tanks, pool and helipad.** The top floor's hiding spots, high above the city.
+
 ## Harbor: free for all. Setting: a harbour.
 **Why it suits free for all:**
 - 12 spawns spread round the map; only 20% of spawn pairs can see each other.

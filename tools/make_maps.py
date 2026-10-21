@@ -2867,9 +2867,9 @@ m.raw("# setting city centre")
 m.save("midtown")
 # ======================================================================================================
 # HIGHTOWN: built for hide and seek (tag too). The top five floors of a skyscraper and its roof, high over a
-# city far below: offices round an open atrium, corner rooms and storerooms to hide in, two lift shafts with
-# maintenance ladders through every floor, stairs at opposite corners (each flight in a different place, so
-# getting up and down means crossing the floor), windows on every side (the panes are invisible but solid) and
+# city far below: offices round an open atrium, corner rooms and storerooms to hide in, and two big switchback
+# staircases (2.6 m flights with landings) hugging the west and east facades from the lobby to the roof, so
+# there are always two separate ways between floors on opposite sides of the building; windows on every side (the panes are invisible but solid) and
 # the roof terrace with its pool, plant and helipad. Step off the roof and it's a long way down.
 m = M("Hightown", "hide", sun=(0.5, 1.0, 0.35))
 m.also = ["tag"]
@@ -2878,25 +2878,26 @@ HT, FH = 20, 4.5                        # half size, floor to floor
 FLOORS = [0, 4.5, 9, 13.5, 18]
 ROOF = 22.5
 ATRIUM = (-5, -5, 5, 5)
-SHAFTS = [(8, -11, 11, -8), (-11, 8, -8, 11)]
-def flight(k):   # the two flights up from floor k (k even: the outer bands, odd: the inner ones)
-    za, zb = ((-19.6, -17.6), (17.6, 19.6)) if k % 2 == 0 else ((-17.2, -15.2), (15.2, 17.2))
-    return [(-18.4, za[0], -13.4, za[1], -1), (13.4, zb[0], 18.4, zb[1], 1)]   # (rect, rising along x toward the facade:
-                                                                                 # a landing at the top, room at the foot)
-def shaft_strip(sh, k):   # the opening in floor k's slab over shaft sh: a strip along the wall its ladder climbs
-    x0, z0, x1, z1 = sh
-    if (k - 1) % 2 == 0: return (x0, z0, x1, z0 + 1.0) if z0 < 0 else (x0, z1 - 1.0, x1, z1)       # the far wall
-    return (x0, z0, x0 + 1.0, z1) if x0 > 0 else (x1 - 1.0, z0, x1, z1)                           # the side wall
+STAIR_Z = 4.5                           # flights run z -4.5..4.5 beside the facade, landings beyond both ends
+def flights(k):  # the two flights up from floor k: (rect, axis rise along z); west lane A (by the windows) on even
+                 # floors rising +z, lane B (inboard) on odd ones rising back -z; the east stair is the same turned 180
+    w = (-19.6, -STAIR_Z, -17.0, STAIR_Z, 1) if k % 2 == 0 else (-17.0, -STAIR_Z, -14.4, STAIR_Z, -1)
+    return [w, (-w[2], -w[3], -w[0], -w[1], -w[4])]
 for k, y in enumerate(FLOORS + [ROOF]):
-    holes = [shaft_strip(sh, k) for sh in SHAFTS] if k > 0 else []   # (a landing in the shaft on every floor)
+    holes = [f[:4] for f in flights(k - 1)] if k > 0 else []   # (the stairwell over the flight below)
     if 0 < k < len(FLOORS): holes.append(ATRIUM)
-    if k > 0: holes += [f[:4] for f in flight(k - 1)]
     for r in tiles(minus((-HT, -HT, HT, HT), holes), 10): m.box(r[0], y - 0.4, r[1], r[2], y, r[3])
 for k, y in enumerate(FLOORS):
     top = y + FH - 0.4                  # (the ceiling: the next slab's underside)
     # flights to the floor above, a rail along their open side
-    for (x0, z0, x1, z1, rise) in flight(k):
-        m.stairs(x0, z0, x1, z1, y + FH, "x", rise, base=y, solid=k == 0)   # (upper flights: slabs, not blocks to the lobby)
+    for (x0, z0, x1, z1, rise) in flights(k):
+        m.stairs(x0, z0, x1, z1, y + FH, "z", rise, base=y, solid=k == 0)   # (upper flights: slabs, not blocks to the lobby)
+    for sx in (-1, 1):   # rails: the inboard side of the staircase, and the drop end of the stairwell from below
+        x_in = sorted((sx * 14.4, sx * 14.2)); m.box(x_in[0], y, -STAIR_Z, x_in[1], y + 1.0, STAIR_Z, accent=True)
+        if k > 0:
+            (hx0, hz0, hx1, hz1, rise) = flights(k - 1)[(sx + 1) // 2]
+            ze = hz0 if rise > 0 else hz1   # the foot of the flight below: the open end
+            m.box(hx0, y, ze - 0.2 if ze == hz0 else ze, hx1, y + 1.0, ze if ze == hz0 else ze + 0.2, accent=True)
     # the facade: sill, lintel and piers every 4 m on all four sides; the window openings are clip (you can see
     # and shoot out, nobody falls out)
     for (a0, a1, side, axis) in ((-HT, HT, -HT, "x"), (-HT, HT, HT, "x"), (-HT, HT, -HT, "z"), (-HT, HT, HT, "z")):
@@ -2913,13 +2914,6 @@ for k, y in enumerate(FLOORS):
     if k > 0:
         for (a, b, c, d) in ((-5.15, -5.15, 5.15, -5), (-5.15, 5, 5.15, 5.15), (-5.15, -5, -5, 5), (5, -5, 5.15, 5)):
             m.box(a, y, b, c, y + 1.0, d, accent=True)
-    # lift shafts: walls round each shaft with a doorway onto every floor, a ladder up the inside
-    for (x0, z0, x1, z1) in SHAFTS:
-        m.metal(x0 - 0.2, y, z0 - 0.2, x0, top, z1 + 0.2); m.metal(x1, y, z0 - 0.2, x1 + 0.2, top, z1 + 0.2)
-        far_z, near_z = (z0, z1) if z0 < 0 else (z1, z0)    # the doorway faces the atrium
-        m.metal(x0, y, far_z - (0.2 if far_z == z0 else 0), x1, top, far_z + (0.2 if far_z == z1 else 0))
-        dz0, dz1 = (near_z, near_z + 0.2) if near_z == z1 else (near_z - 0.2, near_z)
-        m.metal(x0, y, dz0, x0 + 0.8, top, dz1); m.metal(x1 - 0.8, y, dz0, x1, top, dz1); m.metal(x0, y + 2.4, dz0, x1, top, dz1)
     # corner rooms (|x|, |z| > 12) behind partitions with a door each, the wings between them open plan
     for sx in (-1, 1):
         for sz in (-1, 1):
@@ -2935,15 +2929,15 @@ for k, y in enumerate(FLOORS):
     for (lx, lz) in ((-16, 0), (16, 0), (0, -16), (0, 16), (-16, -16), (16, 16), (16, -16), (-16, 16), (-8, -8), (8, 8)):
         m.light(lx, top - 0.5, lz, 10, 0.9)
 # spawns: hiders anywhere in the building, every floor and the roof (the furniture keeps clear of them)
-HT_SPAWNS = ((-15, 0, 0, 90), (15, 0, 6, -90), (0, 4.5, -15, 0), (-8, 4.5, 15, 180), (15, 9, -6, -90), (-15, 9, 6, 90),
+HT_SPAWNS = ((-10, 0, 0, 90), (15, 0, 6, -90), (0, 4.5, -15, 0), (-8, 4.5, 15, 180), (15, 9, -6, -90), (-15, 9, 6, 90),
              (6, 13.5, 15, 180), (-6, 13.5, -15, 0), (-15, 18, -6, 90), (15, 18, 6, -90), (0, ROOF, -10, 0), (-2, ROOF, 15, 180))
 R = random.Random("hightown")
 def free(x0, z0, x1, z1, k):
-    keep = [ATRIUM] + SHAFTS + [f[:4] for f in flight(k)] + [(f[0] - 1.6, f[1], f[2] + 1.6, f[3]) for f in flight(k)] + ([f[:4] for f in flight(k - 1)] if k > 0 else [])
+    keep = [ATRIUM] + [(-19.6, -STAIR_Z - 4, -14.0, STAIR_Z + 4), (14.0, -STAIR_Z - 4, 19.6, STAIR_Z + 4)]   # the stairs and their landings
     keep += [(-12.4, 15, -11.8, 17), (11.8, -17, 12.4, -15), (-17, -12.4, -15, -11.8), (15, 11.8, 17, 12.4),
              (-12.4, -17, -11.8, -15), (11.8, 15, 12.4, 17), (-17, 11.8, -15, 12.4), (15, -12.4, 17, -11.8)]   # partition doors
     keep += [(sx - 0.8, sz - 0.8, sx + 0.8, sz + 0.8) for (sx, sy, sz, _) in HT_SPAWNS if sy == FLOORS[k]]
-    keep += [(-5.6, -5.6, 5.6, 5.6)] + [(s0 - 1.4, s1 - 1.4, s2 + 1.4, s3 + 1.4) for (s0, s1, s2, s3) in SHAFTS]
+    keep += [(-5.6, -5.6, 5.6, 5.6)]
     keep += [(-20, -20, 20, -19.2), (-20, 19.2, 20, 20), (-20, -20, -19.2, 20), (19.2, -20, 20, 20)]   # (the facade)
     return not any(x0 < b[2] + 0.6 and x1 > b[0] - 0.6 and z0 < b[3] + 0.6 and z1 > b[1] - 0.6 for b in keep)
 for k, y in enumerate(FLOORS):
@@ -2961,27 +2955,24 @@ for k, y in enumerate(FLOORS):
     for (px, pz) in ((-6.5, -9), (6.5, 9), (-9, 6.5), (9, -6.5)):    # plants by the atrium
         if free(px - 0.4, pz - 0.4, px + 0.4, pz + 0.4, k):
             m.box(px - 0.45, y, pz - 0.45, px + 0.45, y + 0.6, pz + 0.45, accent=True); m.glow(px - 0.3, y + 0.6, pz - 0.3, px + 0.3, y + 1.8, pz + 0.3)
-# the lift shafts' maintenance ladders: one a floor, alternating between the far and the side wall, a landing
-# at the top of each (through the opening in the slab above)
-for k, y in enumerate(FLOORS):
-    if k % 2 == 0: m.ladder(9.5, -10.88, y, y + FH, "n", width=0.8); m.ladder(-9.5, 10.88, y, y + FH, "s", width=0.8)
-    else: m.ladder(8.12, -9.5, y, y + FH, "w", width=0.8); m.ladder(-8.12, 9.5, y, y + FH, "e", width=0.8)
 # the lobby (bottom floor): reception desk and a fountain under the atrium
 m.box(-3, 0, -3, 3, 0.5, 3, accent=True); m.box(-2.4, 0.5, -2.4, 2.4, 0.6, 2.4, mat="water"); m.glow(-0.3, 0.5, -0.3, 0.3, 2.0, 0.3)
 m.box(-8, 0, 6, -3, 1.1, 7, accent=True); m.box(-8, 1.1, 6, -3, 1.2, 7, mat="trim")
 for y in FLOORS[1:]: m.glow(-5.1, y - 0.45, -5.1, 5.1, y - 0.4, -5)   # light strips under the atrium edges
 m.light(0, 3.0, 0, 12, 1.0, fixture=False); m.light(0, 12, 0, 14, 0.9, fixture=False)
 # the roof: parapet, plant room, water tanks, a pool and the helipad
+for (a, b, c, d) in ((-17.0, -STAIR_Z, -16.8, STAIR_Z), (16.8, -STAIR_Z, 17.0, STAIR_Z), (-19.6, -STAIR_Z - 0.2, -17.0, -STAIR_Z), (17.0, STAIR_Z, 19.6, STAIR_Z + 0.2)):   # stairwell rails
+    m.box(a, ROOF, b, c, ROOF + 1.0, d, accent=True)
 for (a, b, c, d) in ((-HT, -HT, HT, -HT + 0.4), (-HT, HT - 0.4, HT, HT), (-HT, -HT, -HT + 0.4, HT), (HT - 0.4, -HT, HT, HT)):
     m.box(a, ROOF, b, c, ROOF + 1.2, d, accent=True)
-m.box(-19, ROOF, -6, -11, ROOF + 3.2, 4)                                   # plant room (a door in its side)
-m.box(-11.2, ROOF, -6, -11, ROOF + 2.4, -2, mat="trim")
+m.box(-11, ROOF, -3, -6, ROOF + 3.2, 4)                                    # plant room (a door in its side)
+m.box(-11.2, ROOF, -1, -11, ROOF + 2.4, 2, mat="trim")
 for (tx, tz) in ((6, -15), (12, -15)):
     for (dx, dz) in ((-1, -1), (1, -1), (-1, 1), (1, 1)): m.metal(tx + dx * 1.1 - 0.15, ROOF, tz + dz * 1.1 - 0.15, tx + dx * 1.1 + 0.15, ROOF + 2.0, tz + dz * 1.1 + 0.15)
     m.box(tx - 1.6, ROOF + 2.0, tz - 1.6, tx + 1.6, ROOF + 5.0, tz + 1.6); m.box(tx - 1.8, ROOF + 5.0, tz - 1.8, tx + 1.8, ROOF + 5.3, tz + 1.8, accent=True)
 for (a, b, c, d) in ((6, 8, 18, 8.4), (6, 17.6, 18, 18), (6, 8, 6.4, 18), (17.6, 8, 18, 18)): m.box(a, ROOF, b, c, ROOF + 0.6, d, accent=True)
 m.box(6.4, ROOF + 0.35, 8.4, 17.6, ROOF + 0.4, 17.6, mat="water")           # the pool (wade in it)
-m.box(-19.2, ROOF, 12.2, -12.2, ROOF + 0.3, 19.2, mat="metal")   # helipad (clear of the lift shaft), its "H"
+m.box(-19.2, ROOF, 12.2, -12.2, ROOF + 0.3, 19.2, mat="metal")   # helipad (clear of the stairwell), its "H"
 for hx in (-17.4, -14.0): m.glow(hx, ROOF + 0.3, 13.6, hx + 0.6, ROOF + 0.32, 17.8)
 m.glow(-16.8, ROOF + 0.3, 15.4, -14.0, ROOF + 0.32, 16.0)
 for (ax, az) in ((-2, -12), (2, -16), (-6, -17)):
