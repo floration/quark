@@ -112,5 +112,24 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   const board = (await call("/raceboard?map=viaduct")).split("\n");
   check(board[0] === "38000 racer" && board[1] === "39000 player" && board.length === 2, "race board " + JSON.stringify(board));
 }
+// Discord link, crowns, queues shared with the bot
+{
+  const hex = (t) => Buffer.from(t).toString("hex");
+  check((await call("/link", { secret: secret(5), discord: hex("racer#1"), name: hex("racer") })) === "linked racer#1", "link");
+  const cr = (await call("/crowns")).split("\n").filter(Boolean);
+  check(cr.some((l) => l === `race:viaduct 1 ${id(5)} ${hex("racer")} ${hex("racer#1")}`), "crowns: race leader with discord " + JSON.stringify(cr));
+  check(cr.some((l) => l.startsWith(`race:viaduct 2 ${id(6)} `) && l.endsWith(" -")), "crowns: no discord linked");
+  env.BOT_KEY = "botkey";
+  check((await call("/queue", { secret: secret(5), mode: "ranked-vampire", name: hex("racer") })) === "queued ranked-vampire 1/2", "game joins a queue");
+  check((await call("/queue", { secret: secret(5), mode: "ffa" })) === "queued ffa 1/4", "and another");
+  check((await call("/queue")).split("\n").sort().join("|") === "ffa 1 4|ranked-vampire 1 2", "queue counts");
+  check((await call("/queue", { bot: "nope", discord: hex("dima"), mode: "ranked-vampire" })) === "bad request", "only the bot adds discord users");
+  check((await call("/queue", { bot: "botkey", discord: hex("dima"), mode: "ranked-vampire" })) === "filled ranked-vampire", "bot fills it");
+  const filled = (await call("/filled?since=0")).split("\n").filter(Boolean);
+  check(filled.length === 1 && filled[0].includes(`${id(5)}:${hex("racer")}:${hex("racer#1")}`) && filled[0].includes(`d:dima:${hex("dima")}:${hex("dima")}`), "filled row " + JSON.stringify(filled));
+  check((await call("/queue")) === "", "filled players leave every queue");
+  check((await call("/filled?since=" + filled[0].split(" ")[0])) === "", "nothing newer");
+  check((await call("/queue", { secret: secret(6), mode: "nope" })) === "not a queue", "unknown queue");
+}
 console.log(fails ? fails + " FAILURE(S)" : "worker tests passed");
 process.exit(fails ? 1 : 0);

@@ -10,3 +10,7 @@ CREATE TABLE IF NOT EXISTS names (id TEXT PRIMARY KEY, name TEXT NOT NULL, updat
 -- race time trials (1.1.0+): each player's best run per map, with its checkpoint log (ms at each checkpoint)
 CREATE TABLE IF NOT EXISTS race_times (map TEXT NOT NULL, id TEXT NOT NULL, ms INTEGER NOT NULL, splits TEXT NOT NULL, version TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY (map, id));
 CREATE INDEX IF NOT EXISTS race_times_ms ON race_times (map, ms);
+-- Discord link, queues (1.12.0+): the Discord name a player linked in game; queues shared by the game and the bot
+CREATE TABLE IF NOT EXISTS links (id TEXT PRIMARY KEY, discord TEXT NOT NULL, updated INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS queue (mode TEXT NOT NULL, who TEXT NOT NULL, name TEXT NOT NULL, discord TEXT NOT NULL, joined INTEGER NOT NULL, PRIMARY KEY (mode, who));
+CREATE TABLE IF NOT EXISTS filled (id INTEGER PRIMARY KEY AUTOINCREMENT, mode TEXT NOT NULL, members TEXT NOT NULL, created INTEGER NOT NULL);

@@ -121,6 +121,7 @@ if(QUARK_BUILD_CLIENT)
   add_executable(quark WIN32 MACOSX_BUNDLE
     src/client/main.cpp
     src/client/game.cpp
+    src/client/community.cpp
     src/client/editor.cpp
     src/client/openurl.cpp
     src/client/gl.cpp

@@ -57,8 +57,13 @@ public:
     void submitRace(const std::string& body, const std::string& map);
     void fetchRaceBoard(const std::string& map);
     bool raceBoard(const std::string& map, std::vector<LeaderRow>& out) { return leaderboard("race:" + map, out); }
+    // Plain requests to the Worker (Discord link, queues, crowns): GET when body is empty, else a form POST.
+    // The reply (or "!" + the error) lands under key; takeText hands it over once.
+    void request(const std::string& key, const std::string& pathAndQuery, const std::string& body = "");
+    bool takeText(const std::string& key, std::string& out);
 private:
-    struct Job { double due; bool report; std::string body, ladder; std::vector<std::string> ids; bool board = false; std::string path = "/report"; };
+    struct Job { double due; bool report; std::string body, ladder; std::vector<std::string> ids; bool board = false; std::string path = "/report";
+                 std::string rawKey; };   // rawKey: a plain request (see request())
     void run();
     void push(Job j);
     std::thread thread_;
@@ -69,4 +74,5 @@ private:
     std::map<std::string, Rating> ratings_; // "ladder:id"
     std::vector<std::string> messages_;
     std::map<std::string, std::vector<LeaderRow>> boards_;
+    std::map<std::string, std::string> texts_;
 };

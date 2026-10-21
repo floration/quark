@@ -444,7 +444,12 @@ void Server::handleStringCmd(int id, const std::string& s) {
     std::string rest;
     std::getline(ss, rest);
     while (!rest.empty() && rest[0] == ' ') rest.erase(0, 1);
-    if (cmd == "say") {
+    if (cmd == "typing") { // chat keystrokes: at most 4 a second each, to everyone else
+        if (time() < p.typingAt) return;
+        p.typingAt = time() + 0.25f;
+        GameEvent e; e.type = EV_TYPING; e.a = (uint8_t)id;
+        for (int i = 0; i < kMaxPlayers; i++) if (i != id && players_[i].connected && !players_[i].isBot) sendEvent(i, e);
+    } else if (cmd == "say") {
         if (rest.empty()) return;
         if (rest.size() > 120) rest.resize(120);
         GameEvent e; e.type = EV_CHAT; e.a = (uint8_t)id; e.text = rest;
@@ -792,7 +797,9 @@ void Server::killPlayer(int victim, int killer, int weapon) {
     e.type = EV_KILL;
     e.a = (uint8_t)(killer < 0 ? 255 : killer);
     e.b = (uint8_t)victim;
-    e.c = (int16_t)weapon;
+    // c: the weapon, plus how it happened (the announcer's headshot / airborne / air rocket calls)
+    bool airborne = !(v.move.flags & MF_ONGROUND) && !map_.onLadder(playerBox(v.move.pos, v.move.flags & MF_CROUCHED));
+    e.c = (int16_t)(weapon < 0 ? weapon : weapon | (headHit_[victim] ? KILL_HEADSHOT : 0) | (airborne ? KILL_AIRBORNE : 0));
     broadcastEvent(e);
     glog(LOG_SIMPLE, "kill killer=%d \"%s\" victim=%d \"%s\" weapon=%d", killer, killer >= 0 ? players_[killer].name.c_str() : "", victim,
          v.name.c_str(), weapon);
@@ -1045,7 +1052,7 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
             float t = rayAABB(eye, inv, bb, best);
             if (t < 0) continue;
             float y = eye.y + dir.y * t, d = dmg;
-            if (headDmg > 0 && y >= bb.mx.y - (bb.mx.y - bb.mn.y) * kHeadFraction) d = std::max(d, headDmg);
+            if (headDmg > 0 && y >= bb.mx.y - (bb.mx.y - bb.mn.y) * kHeadFraction) { d = std::max(d, headDmg); headHit_[i] = true; }
             dmgPer[i] += (bang >= 0 && t > bang) ? d * kWallbangDamage : d;
             continue;
         }
@@ -1054,7 +1061,7 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
     }
     if (hit < 0) return;
     float y = eye.y + dir.y * best; // headshot: the ray enters the top of the box
-    if (headDmg > 0 && y >= hitBb.mx.y - (hitBb.mx.y - hitBb.mn.y) * kHeadFraction) dmg = std::max(dmg, headDmg);
+    if (headDmg > 0 && y >= hitBb.mx.y - (hitBb.mx.y - hitBb.mn.y) * kHeadFraction) { dmg = std::max(dmg, headDmg); headHit_[hit] = true; }
     dmgPer[hit] += (bang >= 0 && best > bang) ? dmg * kWallbangDamage : dmg;
 }
 
@@ -1177,6 +1184,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             pr.pos = eye + aim * 0.3f;
             pr.vel = spreadDir(aim, spread, cmd.seq, 0) * wd.projSpeed;
             if (p.weapon == WPN_ROCKET && alt) { pr.vel = pr.vel * kRocketLobSpeed; pr.gravMul = kRocketLobGravity; }
+            if (p.weapon == WPN_ROCKET || p.weapon == WPN_STICKY) pr.vel += p.move.vel; // launched from a moving player: it keeps your velocity
             pr.dieAt = time() + wd.life;
             pr.armAt = time() + kStickyArmTime;
             return false;
@@ -1184,6 +1192,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
         return false;
     }
     p.shotsFired++;
+    for (bool& h : headHit_) h = false;
     uint32_t vt = cmd.viewTick; // ms on the server clock
     if (vt > timeMs_) vt = timeMs_;
     if (timeMs_ - vt > kMaxRewindMs) vt = timeMs_ - kMaxRewindMs;
@@ -1208,6 +1217,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
         any = true;
     }
     if (shotHit(id)) p.shotsHit++;
+    for (bool& h : headHit_) h = false;
     return any;
 }
 
@@ -1269,8 +1279,9 @@ void Server::tickProjectiles() {
             if (hitPlayer >= 0) {
                 float dmg = (float)wd.damage, head = headDamage(pr.type); // bolts: headshots (the knife has none)
                 float y = pr.pos.y + dir.y * best;
-                if (head > 0 && y >= hitBb.mx.y - (hitBb.mx.y - hitBb.mn.y) * kHeadFraction) dmg = std::max(dmg, head);
+                if (head > 0 && y >= hitBb.mx.y - (hitBb.mx.y - hitBb.mn.y) * kHeadFraction) { dmg = std::max(dmg, head); headHit_[hitPlayer] = true; }
                 damagePlayer(hitPlayer, pr.owner, dmg, pr.type, dir * (pr.type == WPN_CROSSBOW ? kCrossbowKnock : 3.0f));
+                headHit_[hitPlayer] = false;
                 if (pr.owner >= 0 && shotHit(pr.owner)) players_[pr.owner].shotsHit++;
             }
             pr.active = false;

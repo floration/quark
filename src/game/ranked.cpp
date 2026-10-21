@@ -157,6 +157,25 @@ std::vector<std::string> RankService::takeMessages() {
     return m;
 }
 
+void RankService::request(const std::string& key, const std::string& pathAndQuery, const std::string& body) {
+    Job j;
+    j.due = timeNow();
+    j.report = false;
+    j.rawKey = key;
+    j.path = pathAndQuery;
+    j.body = body;
+    push(j);
+}
+
+bool RankService::takeText(const std::string& key, std::string& out) {
+    std::lock_guard<std::mutex> g(mu_);
+    auto it = texts_.find(key);
+    if (it == texts_.end()) return false;
+    out = it->second;
+    texts_.erase(it);
+    return true;
+}
+
 void RankService::run() {
     std::unique_lock<std::mutex> l(mu_);
     while (!quit_) {
@@ -168,6 +187,12 @@ void RankService::run() {
         jobs_.erase(next);
         l.unlock();
         std::string base = masterUrl(), out, err, msg;
+        if (!j.rawKey.empty()) {
+            bool ok = !base.empty() && (j.body.empty() ? httpGetText(base + j.path, out, 6000, &err) : httpPostForm(base + j.path, j.body, out, 8000, &err));
+            l.lock();
+            texts_[j.rawKey] = ok ? out : "!" + (base.empty() ? std::string("no server configured") : err);
+            continue;
+        }
         std::map<std::string, Rating> got;
         std::vector<LeaderRow> board;
         bool gotBoard = false;

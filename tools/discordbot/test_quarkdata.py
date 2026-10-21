@@ -63,6 +63,51 @@ class Parsing(unittest.TestCase):
         self.assertTrue(all(len(m) <= 2000 for m in bot.info_messages(pages)))
 
 
+class MasterQueues(unittest.TestCase):
+    def test_hex(self):
+        self.assertEqual(qd.from_hex(qd.to_hex("Kev")), "Kev")
+        self.assertEqual(qd.from_hex("-"), "")
+
+    def test_crowns(self):
+        h = qd.to_hex
+        body = "\n".join([f"vanilla 1 {'a'*32} {h('Kev')} {h('kevin')}", f"vampire 5 {'a'*32} {h('Kev')} {h('kevin')}",
+                          f"instagib 2 {'b'*32} {h('Ace')} {h('ACE_d')}", f"race:viaduct 1 {'c'*32} {h('nolink')} -", "bad line"])
+        cr = qd.parse_crowns(body)
+        self.assertEqual(len(cr), 4)
+        self.assertEqual((cr[3].board, cr[3].place, cr[3].name, cr[3].discord), ("race:viaduct", 1, "nolink", ""))
+        self.assertEqual(qd.crown_roles(cr), {"kevin": "first", "ace_d": "top10"})
+        # #5 seen before #1 still ends up first
+        self.assertEqual(qd.crown_roles(list(reversed(cr[:2]))), {"kevin": "first"})
+
+    def test_filled(self):
+        h = qd.to_hex
+        body = f"7 ranked-vampire 1700000000000 d:alice:{h('Alice')}:{h('alice')},{'f'*32}:{h('Bob')}:-\nnot a row"
+        f = qd.parse_filled(body)
+        self.assertEqual(len(f), 1)
+        self.assertEqual((f[0].id, f[0].mode, f[0].created), (7, "ranked-vampire", 1700000000000))
+        a, b = f[0].members
+        self.assertTrue(a.from_discord); self.assertEqual((a.who, a.name, a.discord), ("d:alice", "Alice", "alice"))
+        self.assertFalse(b.from_discord); self.assertEqual((b.name, b.discord), ("Bob", ""))
+        self.assertEqual(bot.fill_message(["<@1>", "**Bob**"], "ranked-vampire"),
+                         "<@1> and **Bob** your queue for RANKED LASER VAMPIRE has been filled, please proceed to a server and begin the game")
+
+    def test_queue_counts(self):
+        c = qd.parse_queue_counts("ranked-vanilla 1 2\nffa 3 4\nquark server list")
+        self.assertEqual((c["ffa"].count, c["ffa"].size), (3, 4))
+        self.assertEqual(len(c), 2)
+
+    def test_not_deployed(self):
+        with self.assertRaises(qd.EndpointMissing):
+            qd._check_deployed("quark server list\n")
+
+    def test_sizes_match_worker(self):
+        import re
+        js = (ROOT / "tools/master/worker.js").read_text()
+        block = re.search(r"QUEUE_SIZES = \{(.*?)\};", js, re.S).group(1)
+        sizes = {k.strip('"'): int(v) for k, v in re.findall(r'("?[\w-]+"?): (\d+)', block)}
+        self.assertEqual(sizes, {k: n for k, (_, n) in bot.QUEUES.items()})
+
+
 @unittest.skipUnless(os.environ.get("QUARK_SERVER_BIN"), "set QUARK_SERVER_BIN=build/quark_server")
 class LiveServer(unittest.TestCase):
     def test_query(self):

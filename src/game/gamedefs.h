@@ -12,7 +12,7 @@ constexpr int kMaxPlayers = 32;        // engine limit; servers default to 8 (Se
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 24;
+constexpr uint16_t kProtocolVersion = 25;
 
 // Player hull
 constexpr float kPlayerHalfWidth = 0.4f;
@@ -58,6 +58,7 @@ enum ArenaRule : uint8_t {
     AR_QUICK_DASH = 8,     // dash recharges 3x faster
     AR_LOW_GRAVITY = 16,   // 40% gravity
 };
+constexpr int KILL_HEADSHOT = 0x100, KILL_AIRBORNE = 0x200, KILL_WEAPON = 0xFF; // EV_KILL c: weapon in the low byte
 #define WB(w) (1u << (w))
 
 // DUEL (1v1 or 2v2): every life (round) is played under one of these, picked at random (never the same twice
@@ -237,7 +238,7 @@ constexpr float kStickyArmTime = 0.35f;
 
 // Reliable game events, delivered in order to every client.
 enum EventType : uint8_t {
-    EV_KILL = 0,     // a = killer, b = victim, c = weapon
+    EV_KILL = 0,     // a = killer, b = victim, c = weapon | KILL_* flags
     EV_CHAT,         // a = sender, text
     EV_MESSAGE,      // server announcement, text
     EV_ROUND_WIN,    // a = winning team (or player for ffa/race), text
@@ -253,6 +254,7 @@ enum EventType : uint8_t {
     EV_RULES,        // custom mode: a = chunk index, b = chunk count, text = that piece of CustomRules::toText()
     EV_HEALED,       // syringe throw: a was healed by b
     EV_RACE_SPLIT,   // race: a = player, b = checkpoint reached (1-based; the last one is the finish), text = ms since the start
+    EV_TYPING,       // a is typing in chat (others hear key clicks and see "..." over them)
 };
 
 #define WB(w) (1u << (w))

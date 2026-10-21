@@ -1,5 +1,7 @@
 // The client application: menus, hosting, connection, input, world/HUD rendering.
 #pragma once
+#include <map>
+#include <set>
 #include <atomic>
 #include <deque>
 #include <memory>
@@ -251,7 +253,7 @@ private:
     int specTarget_ = -1;
 
     // effects + feeds
-    struct Feed { std::string text; Color color; double until; };
+    struct Feed { std::string text; Color color; double until; int crown = 0; };   // crown: the sender's leaderboard place (chat)
     std::deque<Feed> killFeed_, chatFeed_, notices_;
     std::deque<Feed> chatLog_;   // the chat history shown while typing (Enter)
     void addChat(const Feed& f) { chatFeed_.push_back(f); chatLog_.push_back(f); while (chatFeed_.size() > 8) chatFeed_.pop_front(); while (chatLog_.size() > 30) chatLog_.pop_front(); }
@@ -307,6 +309,27 @@ private:
     // rebinding
     bool isDown(int action) const;
     void drawKeyOverlay(float W, float H, float s);
+    // community (community.cpp): Discord link, queues shared with the Discord bot, leaderboard crowns
+    struct QueueDef { const char* key; const char* title; int size; };
+    static const QueueDef kQueues[];
+    static const int kQueueCount;
+    static const char* queueTitle(const std::string& key);
+    void updateCommunity();
+    void linkDiscord();
+    void queueAction(const std::string& mode, const char* action);
+    void drawQueueMenu(float cx, float y);
+    int crownOf(int playerId) const;              // 1 = #1 on a ranked board, 2-10 top 10, 0 none (or crowns off)
+    void drawCrown(float x, float y, float w, int place);
+    std::map<std::string, int> crowns_;           // ranked id -> best place on any board
+    std::set<std::string> queued_;
+    std::map<std::string, int> queueCounts_;
+    double nextCrownFetch_ = 0, nextQueuePoll_ = 0, nextFilledPoll_ = 0;
+    long long lastFilled_ = -1;
+    std::string pendingFilled_, linkedDiscord_;
+    bool queueMenu_ = false;
+    void onKillFeedback(int killer, int victim, int weapon, bool head, bool airborne);
+    int streak_[kMaxPlayers] = {};
+    double typingUntil_[kMaxPlayers] = {}, nextTypingSend_ = 0;   // kills since their last death (killstreak calls)
     bool console_ = false;               // the settings console (`)
     std::deque<std::string> consoleLog_;
     void consolePrint(const std::string& t);

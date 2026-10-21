@@ -19,6 +19,7 @@ ranked leaderboards and an info channel generated from the game's own INFO scree
 - **Leaderboards**: `GET <master>/leaderboard?ladder=vanilla|vampire|instagib&n=10` (`rating games name`) and
   `GET <master>/raceboard?map=viaduct&n=10` (`ms name`) (`src/game/ranked.cpp`, `tools/master/worker.js`).
 - **Updates**: `https://api.github.com/repos/floration/quark/releases/latest`; the release body is `changelogs/<VERSION>.md`.
+- **Queues / crowns**: `POST|GET /queue`, `GET /filled?since=N`, `GET /crowns` on the master (`tools/master/worker.js`).
 - **Info**: `kInfoTabs` / `kInfoPages` parsed from `src/client/game.cpp` (local checkout if present, else from GitHub).
 
 ## What it does
@@ -31,11 +32,21 @@ ranked leaderboards and an info channel generated from the game's own INFO scree
   A channel is deleted when its server is missing from two polls in a row.
 - **Game Pings** role: toggled by the button in #queues or `/pings`. When a server goes from 0 to some players
   it's pinged in that server's channel (at most once per 30 min per server, never on the first poll after a restart).
-- **#queues**: a panel with one button per queue (press to join, again to leave) and `/queue`, `/leave`, `/queues`.
-  Sizes: ranked vanilla 2, ranked laser vampire 2, ranked instagib 4, duel/1v1/race 2, ffa/tourney/hide/tag 4,
-  team modes 6 (edit `QUEUES` in `bot.py`). When one fills, its players are pinged 5 times, 3 s apart:
-  `@a and @b your queue for RANKED LASER VAMPIRE has been filled, please proceed to a server and begin the game`,
-  and they're removed from every queue.
+- **#queues**: queues live on the master server and are shared with players queueing from inside the game.
+  The panel has one button per mode (join) plus **Leave all**; commands `/queue`, `/leave [mode]`, `/queues`.
+  The bot sends `POST <master>/queue` with `bot=<BOT_KEY>`, `discord=<hex of member.name>`, `mode`, `action`, `name`,
+  and refreshes the panel counts from `GET <master>/queue` every 20 s and after each press. Entries drop after 30 min.
+  Sizes (same as `QUEUE_SIZES` in `tools/master/worker.js`, checked by a test): ranked vanilla 2, ranked laser vampire 2,
+  ranked instagib 4, duel/1v1/race 2, ffa/tourney/hide/tag 4, team modes 6.
+  Every 10 s the bot reads `GET <master>/filled?since=<last id>`; for each new fill it pings the members 5 times, 3 s apart:
+  `@a and @b your queue for RANKED LASER VAMPIRE has been filled, please proceed to a server and begin the game`.
+  Discord entries (`d:<name>`) and game players who linked a Discord name are mentioned if found in the server
+  (by username, then display name/nickname, case-insensitive); anyone else appears as their **in-game name**.
+  Fills from before the bot started are not pinged. Local state keeps only the last fill id and message ids.
+- **Leaderboard roles**: every 5 min the bot reads `GET <master>/crowns` (top 10 of vanilla, vampire, instagib and
+  the Viaduct time trial, with each player's linked Discord name). Linked members who are #1 on any board get
+  **🥇 #1** (gold, `role_first`); places 2-10 get **Top 10** (silver, `role_top10`), never both. Members who drop
+  out lose the role. Players link their Discord name in game (`POST /link`).
 - **#leaderboard**: one message, edited every minute, with the top 10 of each ladder and the time trial.
 - **#info**: install, hosting and joining, then every in-game INFO tab. Re-checked every 6 h, edited in place on change.
 - Also `/servers` and `/leaderboard`.
@@ -44,14 +55,26 @@ Everything it needs (category, channels, role) is created on startup if missing;
 
 ## Create the bot
 1. https://discord.com/developers/applications -> New Application -> **Bot** -> Reset Token, copy it.
-   No privileged intents are needed.
+   Under **Privileged Gateway Intents** turn on **Server Members Intent** (needed to find members by name
+   for queue pings and leaderboard roles).
 2. Invite it (replace `APP_ID` with the Application ID from General Information):
    `https://discord.com/oauth2/authorize?client_id=APP_ID&scope=bot+applications.commands&permissions=268659728`
    (Manage Channels, Manage Roles, View Channels, Send Messages, Manage Messages (pinning), Embed Links,
    Read Message History, Mention Everyone (lets it ping the role even if not mentionable).)
    Or tick those boxes in OAuth2 -> URL Generator.
-3. In Server Settings -> Roles, drag the bot's role **above** "Game Pings" so it can hand that role out.
+3. In Server Settings -> Roles, drag the bot's role **above** "Game Pings", "🥇 #1" and "Top 10" so it can hand them out.
 4. Enable Developer Mode (User Settings -> Advanced), right-click your server -> Copy Server ID.
+
+## Master server (queues, links, crowns)
+The queue / link / crowns endpoints need the 1.12.0 Worker:
+1. Cloudflare dashboard -> D1 -> the quark database -> Console: run the `-- Discord link, queues` part of
+   `tools/master/schema.sql` (the `CREATE TABLE IF NOT EXISTS` lines after that comment).
+2. Workers -> the quark master worker -> Settings -> Variables and Secrets: add `BOT_KEY` (type Secret) with a long
+   random value, e.g. `python -c "import secrets;print(secrets.token_hex(32))"`.
+3. Redeploy `tools/master/worker.js`.
+4. Give the bot the same value as `BOT_KEY` (env var or `bot_key` in config.json).
+Until the Worker is updated those endpoints answer with the fallback text `quark server list`; the bot treats that
+as "not available yet" (panel shows a note, no roles touched) and keeps running everything else.
 
 ## Configure and run
 ```
@@ -60,6 +83,7 @@ python -m pip install -r requirements.txt
 cp config.example.json config.json      # set guild_id; optional names/overrides
 export DISCORD_TOKEN=...                # never put it in git
 export GUILD_ID=...                     # or in config.json
+export BOT_KEY=...                      # same as the Worker's BOT_KEY secret
 python bot.py --dry-run                 # see what it would post, no Discord
 python bot.py
 ```
@@ -79,6 +103,7 @@ User=quark
 WorkingDirectory=/home/quark/quark/tools/discordbot
 Environment=DISCORD_TOKEN=xxxxx
 Environment=GUILD_ID=123456789012345678
+Environment=BOT_KEY=xxxxx
 ExecStart=/usr/bin/python3 bot.py
 Restart=always
 RestartSec=10

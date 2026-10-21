@@ -45,6 +45,12 @@ DEFAULT_CONFIG = {
     "release_poll_seconds": 300,
     "rename_min_seconds": 300,        # Discord allows 2 renames per channel per 10 min
     "server_ping_cooldown_seconds": 1800,
+    "bot_key": "",                    # BOT_KEY env: same secret as the Worker's BOT_KEY variable
+    "role_first": "🥇 #1",
+    "role_top10": "Top 10",
+    "queue_poll_seconds": 20,
+    "filled_poll_seconds": 10,
+    "crowns_seconds": 300,
     "queue_pings": 5,
     "queue_ping_spacing_seconds": 3,
 }
@@ -80,6 +86,8 @@ def load_config() -> dict:
         cfg["guild_id"] = int(os.environ["GUILD_ID"])
     if os.environ.get("GITHUB_TOKEN"):
         cfg["github_token"] = os.environ["GITHUB_TOKEN"]
+    if os.environ.get("BOT_KEY"):
+        cfg["bot_key"] = os.environ["BOT_KEY"]
     if os.environ.get("QUARK_MASTER"):
         cfg["master_url"] = os.environ["QUARK_MASTER"]
     cfg["guild_id"] = int(cfg["guild_id"] or 0)
@@ -98,7 +106,7 @@ class State:
             except Exception:
                 log.exception("state file unreadable, starting fresh")
         self.d.setdefault("servers", {})   # address -> {channel, msg, name, renamed}
-        self.d.setdefault("queues", {})    # key -> [user ids]
+        self.d.pop("queues", None)         # queues live on the master now
         self.d.setdefault("messages", {})  # purpose -> message id (or list)
 
     def save(self):
@@ -161,10 +169,34 @@ async def dry_run(cfg: dict):
         await section("LIVE SERVERS", servers())
         await section("LEADERBOARD", board())
         await section("INFO", info())
-        print("\n===== QUEUES =====")
+
+        async def queues():
+            counts = await api.queue_counts()
+            print("GET /queue:", ", ".join(f"{c.mode} {c.count}/{c.size}" for c in counts.values()) or "(all empty)")
+            rows = await api.filled(0)
+            print(f"GET /filled?since=0: {len(rows)} fill(s) in the last hour")
+            for f in rows:
+                names = [f"@{m.who[2:]}" if m.from_discord else (f"@{m.discord}" if m.discord else f"**{m.name}**") for m in f.members]
+                print(f"  #{f.id} -> " + fill_message(names, f.mode, QUEUES.get(f.mode, (f.mode.upper(),))[0]))
+
+        async def crowns():
+            cr = await api.crowns()
+            roles = qd.crown_roles(cr)
+            print(f"GET /crowns: {len(cr)} rows, {sum(1 for c in cr if c.discord)} linked")
+            for c in cr:
+                print(f"  {c.board:<14} #{c.place:<2} {c.name:<20} discord={c.discord or '-'}")
+            for name, kind in sorted(roles.items()):
+                print(f"  would give @{name}: {cfg['role_first'] if kind == 'first' else cfg['role_top10']}")
+
+        await section("SHARED QUEUES (master)", queues())
+        await section("LEADERBOARD ROLES (/crowns)", crowns())
+        print("\n===== QUEUE PANEL =====")
         for k, (t, n) in QUEUES.items():
             print(f"  {k:<16} {t:<22} {n} players")
         print("  fill message: " + fill_message(["@alice", "@bob"], "ranked-vampire"))
+
+
+BOT_STARTED_MS = int(time.time() * 1000)
 
 
 def server_channel_name(i: qd.ServerInfo) -> str:
@@ -175,9 +207,9 @@ def total_name(total: int) -> str:
     return f"🟢 {total} player{'s' if total != 1 else ''} live"
 
 
-def fill_message(mentions: list[str], key: str) -> str:
+def fill_message(mentions: list[str], key: str, title: str | None = None) -> str:
     who = " and ".join([", ".join(mentions[:-1]), mentions[-1]]) if len(mentions) > 1 else mentions[0]
-    return f"{who} your queue for {QUEUES[key][0]} has been filled, please proceed to a server and begin the game"
+    return f"{who} your queue for {title or QUEUES[key][0]} has been filled, please proceed to a server and begin the game"
 
 
 def info_messages(pages) -> list[str]:
@@ -198,9 +230,8 @@ def run_bot(cfg: dict):
         sys.exit("set DISCORD_TOKEN and GUILD_ID (env or config.json)")
 
     intents = discord.Intents.default()
-    intents.members = False  # not needed: slash commands and buttons carry the member
+    intents.members = True  # privileged "Server Members" intent: find members by name for queue pings and leaderboard roles
     state = State(cfg["state_file"])
-    queue_lock = asyncio.Lock()
 
     class QuarkBot(commands.Bot):
         session: aiohttp.ClientSession
@@ -420,26 +451,96 @@ def run_bot(cfg: dict):
     async def info_loop():
         await post_info()
 
-    # ---------- 4: queues
+    # ---------- 4: queues, shared with the game on the master (POST/GET /queue, GET /filled)
+    bot.queue_counts = {}
+    bot.queue_note = ""
+
     def queue_text() -> str:
-        lines = ["**Queues** - press a button to join (press again to leave). When a queue fills, everyone in it gets pinged."]
+        lines = ["**Queues** (shared with players queueing in game) - press a mode to join, **Leave all** to leave. "
+                 "Queues drop you after 30 min. When one fills, everyone in it gets pinged."]
+        if bot.queue_note:
+            lines.append(f"-# {bot.queue_note}")
         for k, (title, n) in QUEUES.items():
-            users = state.d["queues"].get(k, [])
-            who = " ".join(f"<@{u}>" for u in users)
-            lines.append(f"`{title:<21}` **{len(users)}/{n}** {who}")
+            c = bot.queue_counts.get(k)
+            lines.append(f"`{title:<21}` **{c.count if c else 0}/{n}**")
         return "\n".join(lines)
 
-    async def refresh_queue_panel():
+    async def refresh_counts():
         try:
+            bot.queue_counts = await bot.api.queue_counts()
+            bot.queue_note = ""
+        except qd.EndpointMissing:
+            bot.queue_note = "queues unavailable: the master server hasn't been updated yet"
+        except Exception as e:
+            bot.queue_note = f"queues unavailable ({type(e).__name__})"
+            log.warning("GET /queue failed: %s", e)
+
+    async def refresh_queue_panel(fetch: bool = True):
+        try:
+            if fetch:
+                await refresh_counts()
             ch = await ensure_text(cfg["queue_channel"], await ensure_category(cfg["info_category"]))
-            await upsert_message(ch, "queue_panel", queue_text(), view=QueueView(),
-                                 allowed_mentions=discord.AllowedMentions.none())
+            text = queue_text()
+            if text != state.d.get("queue_panel_text"):  # don't edit an unchanged message every 20 s
+                await upsert_message(ch, "queue_panel", text, view=QueueView(), allowed_mentions=discord.AllowedMentions.none())
+                state.d["queue_panel_text"] = text
+                state.save()
         except Exception:
             log.exception("queue panel refresh failed")
 
-    async def fire_queue(key: str, users: list[int], channel: discord.abc.Messageable):
-        text = fill_message([f"<@{u}>" for u in users], key)
-        am = discord.AllowedMentions(users=[discord.Object(u) for u in users], roles=False, everyone=False)
+    @tasks.loop(seconds=cfg["queue_poll_seconds"])
+    @guarded
+    async def queue_loop():
+        await refresh_queue_panel()
+
+    async def queue_request(member: discord.Member, key: str, action: str) -> str:
+        if not cfg["bot_key"]:
+            return "Queues aren't set up on this bot (no BOT_KEY)."
+        title = QUEUES[key][0] if key in QUEUES else ""
+        try:
+            r = await bot.api.queue_action(cfg["bot_key"], member.name, key, action, member.display_name)
+        except qd.EndpointMissing:
+            return "The queue server isn't updated yet, try again later."
+        except Exception as e:
+            log.warning("POST /queue failed: %s", e)
+            return f"Couldn't reach the queue server ({type(e).__name__})."
+        if r.startswith("queued"):
+            return f"You're in the {title} queue ({r.split()[-1]})."
+        if r.startswith("filled"):
+            asyncio.create_task(filled_loop_once())  # ping right away instead of waiting for the next poll
+            return f"The {title} queue is full - pinging everyone!"
+        if r == "left all":
+            return "You left every queue."
+        if r.startswith("left"):
+            return f"You left the {title} queue."
+        return f"Queue server said: {r}"
+
+    # resolving names -> members (needs the Server Members intent)
+    def find_member(name: str) -> discord.Member | None:
+        n = name.strip().lower()
+        if not n or not bot.guild:
+            return None
+        for m in bot.guild.members:
+            if m.name.lower() == n:
+                return m
+        for m in bot.guild.members:  # fallback: global display name, then server nickname
+            if (m.global_name or "").lower() == n or (m.nick or "").lower() == n:
+                return m
+        return None
+
+    def mention_for(fm: qd.FilledMember) -> tuple[str, int | None]:
+        dname = fm.who[2:] if fm.from_discord else fm.discord
+        m = find_member(dname) if dname else None
+        if m:
+            return m.mention, m.id
+        label = (fm.name or dname or "player").replace("*", "")
+        return f"**{label}**", None
+
+    async def fire_queue(f: qd.Filled, channel: discord.abc.Messageable):
+        pairs = [mention_for(m) for m in f.members]
+        title = QUEUES[f.mode][0] if f.mode in QUEUES else f.mode.upper()
+        text = fill_message([p[0] for p in pairs], f.mode, title)
+        am = discord.AllowedMentions(users=[discord.Object(i) for _, i in pairs if i], roles=False, everyone=False)
         for k in range(cfg["queue_pings"]):
             try:
                 await channel.send(text, allowed_mentions=am)
@@ -448,28 +549,31 @@ def run_bot(cfg: dict):
             if k + 1 < cfg["queue_pings"]:
                 await asyncio.sleep(cfg["queue_ping_spacing_seconds"])
 
-    async def join_queue(user: discord.abc.User, key: str, toggle: bool) -> str:
-        async with queue_lock:
-            q = state.d["queues"].setdefault(key, [])
-            title, n = QUEUES[key]
-            if user.id in q:
-                if toggle:
-                    q.remove(user.id); state.save()
-                    return f"You left the {title} queue."
-                return f"You're already in the {title} queue ({len(q)}/{n})."
-            q.append(user.id)
-            filled = None
-            if len(q) >= n:
-                filled = q[:n]
-                state.d["queues"][key] = q[n:]
-                for other in state.d["queues"]:  # people in the game don't stay queued elsewhere
-                    state.d["queues"][other] = [u for u in state.d["queues"][other] if u not in filled]
+    filled_lock = asyncio.Lock()
+
+    async def filled_loop_once():
+        async with filled_lock:
+            since = int(state.d.get("filled_since", 0))
+            try:
+                rows = await bot.api.filled(since)
+            except qd.EndpointMissing:
+                return
+            ch = bot.get_channel(state.d["messages"].get("queue_channel_id", 0)) or \
+                discord.utils.get(bot.guild.text_channels, name=cfg["queue_channel"])
+            for f in rows:
+                state.d["filled_since"] = max(int(state.d.get("filled_since", 0)), f.id)
+                # skip fills from before this bot started (first run / long downtime): /filled keeps an hour of them
+                if ch and f.created >= BOT_STARTED_MS - 120000:
+                    asyncio.create_task(fire_queue(f, ch))
+            state.d.setdefault("filled_since", since)
             state.save()
-        if filled:
-            ch = bot.get_channel(state.d["messages"].get("queue_channel_id", 0)) or discord.utils.get(bot.guild.text_channels, name=cfg["queue_channel"])
-            asyncio.create_task(fire_queue(key, filled, ch))
-            return f"The {title} queue is full - pinging everyone!"
-        return f"You joined the {title} queue ({len(q)}/{n})."
+        if rows:
+            await refresh_queue_panel()
+
+    @tasks.loop(seconds=cfg["filled_poll_seconds"])
+    @guarded
+    async def filled_loop():
+        await filled_loop_once()
 
     class QueueButton(discord.ui.Button):
         def __init__(self, key: str, row: int):
@@ -478,15 +582,25 @@ def run_bot(cfg: dict):
             self.key = key
 
         async def callback(self, it: discord.Interaction):
-            msg = await join_queue(it.user, self.key, toggle=True)
-            await it.response.send_message(msg, ephemeral=True)
+            await it.response.defer(ephemeral=True, thinking=True)
+            await it.followup.send(await queue_request(it.user, self.key, "join"), ephemeral=True)
+            await refresh_queue_panel()
+
+    class LeaveAllButton(discord.ui.Button):
+        def __init__(self):
+            super().__init__(label="Leave all", custom_id="quark:q:leaveall", row=4, style=discord.ButtonStyle.primary)
+
+        async def callback(self, it: discord.Interaction):
+            await it.response.defer(ephemeral=True, thinking=True)
+            await it.followup.send(await queue_request(it.user, "", "leaveall"), ephemeral=True)
             await refresh_queue_panel()
 
     class QueueView(discord.ui.View):
         def __init__(self):
             super().__init__(timeout=None)
             for k, key in enumerate(QUEUES):
-                self.add_item(QueueButton(key, min(k // 4, 4)))
+                self.add_item(QueueButton(key, min(k // 4, 3)))
+            self.add_item(LeaveAllButton())
 
     class RoleView(discord.ui.View):
         def __init__(self):
@@ -504,28 +618,59 @@ def run_bot(cfg: dict):
         await member.add_roles(role, reason="self-assign")
         return f"Added **{role.name}**: you'll be pinged when a server goes live."
 
+    # ---------- leaderboard roles from GET /crowns
+    async def ensure_named_role(name: str, colour: int) -> discord.Role:
+        r = discord.utils.get(bot.guild.roles, name=name)
+        if not r:
+            r = await bot.guild.create_role(name=name, colour=discord.Colour(colour), hoist=True, reason="quark bot: leaderboard role")
+        return r
+
+    @tasks.loop(seconds=cfg["crowns_seconds"])
+    @guarded
+    async def crowns_loop():
+        try:
+            crowns = await bot.api.crowns()
+        except qd.EndpointMissing:
+            return
+        want = qd.crown_roles(crowns)  # discord name -> first/top10
+        first = await ensure_named_role(cfg["role_first"], 0xF1C40F)
+        top10 = await ensure_named_role(cfg["role_top10"], 0xC0C0C0)
+        target: dict[int, str] = {}
+        for dname, kind in want.items():
+            m = find_member(dname)
+            if m and (target.get(m.id) != "first"):
+                target[m.id] = kind
+        for role, kind in ((first, "first"), (top10, "top10")):
+            for m in list(role.members):
+                if target.get(m.id) != kind:
+                    await m.remove_roles(role, reason="no longer on the leaderboard")
+            for mid, k in target.items():
+                if k == kind:
+                    m = bot.guild.get_member(mid)
+                    if m and role not in m.roles:
+                        await m.add_roles(role, reason="leaderboard")
+
     queue_choices = [app_commands.Choice(name=t.title(), value=k) for k, (t, _) in QUEUES.items()]
 
-    @bot.tree.command(name="queue", description="Join the queue for a game mode")
+    @bot.tree.command(name="queue", description="Join the queue for a game mode (shared with players in game)")
     @app_commands.choices(mode=queue_choices)
     async def queue_cmd(it: discord.Interaction, mode: app_commands.Choice[str]):
-        await it.response.send_message(await join_queue(it.user, mode.value, toggle=False), ephemeral=True)
+        await it.response.defer(ephemeral=True, thinking=True)
+        await it.followup.send(await queue_request(it.user, mode.value, "join"), ephemeral=True)
         await refresh_queue_panel()
 
     @bot.tree.command(name="leave", description="Leave a queue (or all queues)")
     @app_commands.choices(mode=queue_choices)
     async def leave_cmd(it: discord.Interaction, mode: app_commands.Choice[str] | None = None):
-        async with queue_lock:
-            for k, q in state.d["queues"].items():
-                if (mode is None or k == mode.value) and it.user.id in q:
-                    q.remove(it.user.id)
-            state.save()
-        await it.response.send_message("Left " + (mode.name if mode else "all queues") + ".", ephemeral=True)
+        await it.response.defer(ephemeral=True, thinking=True)
+        await it.followup.send(await queue_request(it.user, mode.value if mode else "", "leave" if mode else "leaveall"), ephemeral=True)
         await refresh_queue_panel()
 
     @bot.tree.command(name="queues", description="Show every queue")
     async def queues_cmd(it: discord.Interaction):
-        await it.response.send_message(queue_text(), ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+        await it.response.defer(ephemeral=True)
+        await refresh_counts()
+        await it.followup.send(queue_text(), ephemeral=True)
 
     @bot.tree.command(name="pings", description="Toggle the role that gets pinged when a server goes live")
     async def pings_cmd(it: discord.Interaction):
@@ -577,7 +722,7 @@ def run_bot(cfg: dict):
             await ensure_category(cfg["live_category"])
         except Exception:
             log.exception("setup failed (check the bot's Manage Channels / Manage Roles permissions)")
-        for loop in (release_loop, server_loop, leaderboard_loop, info_loop):
+        for loop in (release_loop, server_loop, leaderboard_loop, info_loop, queue_loop, filled_loop, crowns_loop):
             if not loop.is_running():
                 loop.start()
 

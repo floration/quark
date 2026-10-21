@@ -14,6 +14,15 @@
 //                   it beats this player's best. The splits are stored so odd runs can be checked and deleted by
 //                   hand: DELETE FROM race_times WHERE map = 'viaduct' AND id = '<id>' (ids: SELECT ... JOIN names).
 //   GET  /raceboard?map=M[&n=25]                                      "ms name" per line, fastest first
+// Discord link, crowns and queues (1.12.0+):
+//   POST /link    form: secret, discord (hex), name (hex)       links a player to a Discord name (the bot gives them roles)
+//   GET  /crowns                                                 "board place id name discord" for the top 10 of every
+//                                                                ladder and the race board ("-" = no Discord linked)
+//   POST /queue   form: (secret | bot + discord), mode, action=join|leave|leaveall, name (hex)
+//                 game players are their ranked id, Discord users "d:<name>" (only the bot, with BOT_KEY, may add those)
+//   GET  /queue                                                  "mode count size" per queue that has anyone in it
+//   GET  /filled?since=N                                         "n mode created who:namehex:discordhex,..." per filled
+//                                                                queue after n = N (the game and the bot both poll this)
 // Ladders (each its own ratings): vanilla (all weapons), vampire (laser vampire), instagib. Rows are keyed "ladder:id".
 // A player's id is the first 32 hex chars of sha256(secret); the secret never leaves their game except to
 // here. A match counts only when every player in it has reported the exact same result; any disagreement
@@ -52,6 +61,78 @@ async function raceTime(env, form, now) {
     "ON CONFLICT(map, id) DO UPDATE SET ms = excluded.ms, splits = excluded.splits, version = excluded.version, created = excluded.created"
   ).bind(map, me, ms, splits.join(","), String(form.get("v") || "").slice(0, 16), now).run();
   return best ? `new best (was ${best.ms})` : "first time";
+}
+
+// Queues shared by the game and the Discord bot: when a mode has enough players, they're all taken out of every
+// queue and a "filled" row tells everyone (the bot pings them on Discord, the game shows it in game).
+const QUEUE_SIZES = {
+  "ranked-vanilla": 2, "ranked-vampire": 2, "ranked-instagib": 4, vs: 6, bomb: 6, koth: 6, payload: 6, npayload: 6,
+  points: 6, duel: 2, "1v1": 2, tourney: 4, ffa: 4, race: 2, hide: 4, tag: 4,
+};
+const QUEUE_STALE_MS = 30 * 60000; // nobody waits forever: entries older than 30 minutes drop out
+const hexText = (h, max) => /^([0-9a-f]{2})+$/.test(h || "") ? h.match(/../g).map((x) => String.fromCharCode(parseInt(x, 16))).join("").replace(/[^\x20-\x7e]/g, "").slice(0, max) : "";
+const textHex = (t) => [...String(t)].map((c) => c.charCodeAt(0).toString(16).padStart(2, "0")).join("");
+
+async function link(env, form, now) {
+  const secret = String(form.get("secret") || "");
+  if (!/^[0-9a-f]{64}$/.test(secret)) return "bad request";
+  const me = (await sha256hex(secret)).slice(0, 32);
+  await saveName(env, me, String(form.get("name") || ""), now);
+  const discord = hexText(String(form.get("discord") || ""), 40).trim();
+  if (!discord) { await env.DB.prepare("DELETE FROM links WHERE id = ?").bind(me).run(); return "unlinked"; }
+  await env.DB.prepare("INSERT INTO links (id, discord, updated) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET discord = excluded.discord, updated = excluded.updated")
+    .bind(me, discord, now).run();
+  return "linked " + discord;
+}
+
+async function crowns(env) {
+  const out = [];
+  for (const ladder of LADDERS) {
+    const { results } = await env.DB.prepare(
+      "SELECT substr(p.id, ?) AS id, COALESCE(n.name, 'player') AS name, COALESCE(l.discord, '-') AS discord FROM players p " +
+      "LEFT JOIN names n ON n.id = substr(p.id, ?) LEFT JOIN links l ON l.id = substr(p.id, ?) " +
+      "WHERE p.id LIKE ? AND p.games >= 3 ORDER BY (p.mu - 3 * p.sigma) DESC LIMIT 10"
+    ).bind(ladder.length + 2, ladder.length + 2, ladder.length + 2, ladder + ":%").all();
+    results.forEach((r, i) => out.push(`${ladder} ${i + 1} ${r.id} ${textHex(r.name)} ${r.discord === "-" ? "-" : textHex(r.discord)}`));
+  }
+  for (const map of RACE_MAPS) {
+    const { results } = await env.DB.prepare(
+      "SELECT r.id AS id, COALESCE(n.name, 'player') AS name, COALESCE(l.discord, '-') AS discord FROM race_times r " +
+      "LEFT JOIN names n ON n.id = r.id LEFT JOIN links l ON l.id = r.id WHERE r.map = ? ORDER BY r.ms ASC, r.created ASC LIMIT 10"
+    ).bind(map).all();
+    results.forEach((r, i) => out.push(`race:${map} ${i + 1} ${r.id} ${textHex(r.name)} ${r.discord === "-" ? "-" : textHex(r.discord)}`));
+  }
+  return out.join("\n");
+}
+
+async function queue(env, form, now) {
+  const mode = String(form.get("mode") || ""), action = String(form.get("action") || "join");
+  let who, discord = "";
+  const secret = String(form.get("secret") || "");
+  if (/^[0-9a-f]{64}$/.test(secret)) {
+    who = (await sha256hex(secret)).slice(0, 32);
+    await saveName(env, who, String(form.get("name") || ""), now);
+    const l = await env.DB.prepare("SELECT discord FROM links WHERE id = ?").bind(who).first();
+    if (l) discord = l.discord;
+  } else if (env.BOT_KEY && String(form.get("bot") || "") === env.BOT_KEY) {
+    discord = hexText(String(form.get("discord") || ""), 40).trim();
+    if (!discord) return "bad request";
+    who = "d:" + discord;
+  } else return "bad request";
+  const name = hexText(String(form.get("name") || ""), 20) || discord || "player";
+  await env.DB.prepare("DELETE FROM queue WHERE joined < ?").bind(now - QUEUE_STALE_MS).run();
+  if (action === "leaveall") { await env.DB.prepare("DELETE FROM queue WHERE who = ?").bind(who).run(); return "left all"; }
+  if (!(mode in QUEUE_SIZES)) return "not a queue";
+  if (action === "leave") { await env.DB.prepare("DELETE FROM queue WHERE mode = ? AND who = ?").bind(mode, who).run(); return "left " + mode; }
+  await env.DB.prepare("INSERT OR IGNORE INTO queue (mode, who, name, discord, joined) VALUES (?, ?, ?, ?, ?)").bind(mode, who, name, discord, now).run();
+  const { results } = await env.DB.prepare("SELECT who, name, discord FROM queue WHERE mode = ? ORDER BY joined ASC").bind(mode).all();
+  const size = QUEUE_SIZES[mode];
+  if (results.length < size) return `queued ${mode} ${results.length}/${size}`;
+  const take = results.slice(0, size);
+  const members = take.map((r) => `${r.who}:${textHex(r.name)}:${r.discord ? textHex(r.discord) : "-"}`).join(",");
+  await env.DB.prepare("INSERT INTO filled (mode, members, created) VALUES (?, ?, ?)").bind(mode, members, now).run();
+  for (const r of take) await env.DB.prepare("DELETE FROM queue WHERE who = ?").bind(r.who).run();
+  return `filled ${mode}`;
 }
 
 async function sha256hex(s) {
@@ -223,6 +304,20 @@ export default {
         "WHERE r.map = ? ORDER BY r.ms ASC, r.created ASC LIMIT ?"
       ).bind(q("map"), n).all();
       return text(results.map((r) => `${r.ms} ${r.name}`).join("\n"));
+    }
+    if (u.pathname === "/link" && req.method === "POST") return text(await link(env, await req.formData(), now));
+    if (u.pathname === "/crowns") return text(await crowns(env));
+    if (u.pathname === "/queue" && req.method === "POST") return text(await queue(env, await req.formData(), now));
+    if (u.pathname === "/queue") {
+      await env.DB.prepare("DELETE FROM queue WHERE joined < ?").bind(now - QUEUE_STALE_MS).run();
+      const { results } = await env.DB.prepare("SELECT mode, COUNT(*) AS n FROM queue GROUP BY mode").all();
+      return text(results.map((r) => `${r.mode} ${r.n} ${QUEUE_SIZES[r.mode] || 0}`).join("\n"));
+    }
+    if (u.pathname === "/filled") {
+      const since = parseInt(q("since"), 10) || 0;
+      const { results } = await env.DB.prepare("SELECT id, mode, members, created FROM filled WHERE id > ? AND created > ? ORDER BY id ASC LIMIT 50")
+        .bind(since, now - 3600000).all();
+      return text(results.map((r) => `${r.id} ${r.mode} ${r.created} ${r.members}`).join("\n"));
     }
     if (u.pathname === "/ratings") {
       const ids = q("ids").split(",").filter((id) => /^[0-9a-f]{32}$/.test(id)).slice(0, 64);

@@ -248,6 +248,7 @@ void Game::leaveGame(const std::string& error) {
     error_ = error;
     paused_ = chatting_ = false;
     killFeed_.clear(); chatFeed_.clear(); chatLog_.clear(); notices_.clear();
+    for (int i = 0; i < kMaxPlayers; i++) { streak_[i] = 0; typingUntil_[i] = 0; }
     tracers_.clear(); explosions_.clear(); lastProjectiles_.clear();
     loadedMapGen_ = 0;
     if (!testMap_.empty()) { std::string m = testMap_; testMap_.clear(); testEdit_ = false; openEditor(m); return; } // back to the editor (autosaved)
@@ -496,7 +497,7 @@ void Game::onKey(int key, int action, int mods) {
             if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
             if (controlsOpen_ || crosshairOpen_ || hudOpen_) { controlsOpen_ = crosshairOpen_ = hudOpen_ = false; cfg_.save(); return; }
             if (settingsInGame_) { settingsInGame_ = false; cfg_.save(); return; }
-            if (voteMenu_ || picker_ != PICK_NONE) { voteMenu_ = false; picker_ = PICK_NONE; return; }
+            if (voteMenu_ || queueMenu_ || picker_ != PICK_NONE) { voteMenu_ = queueMenu_ = false; picker_ = PICK_NONE; return; }
             paused_ = !paused_;
             captureMouse(!paused_);
             return;
@@ -667,6 +668,10 @@ void Game::updateAnnouncer() {
             if (ms.mode == MODE_POINTS && ms.point > pv.point && myTeam >= 0)
                 say(myTeam == ms.attackers ? SND_VOICE_POINT_TAKEN : SND_VOICE_POINT_LOST, 2);
             if ((ms.flags & MS_OVERTIME) && !(pv.flags & MS_OVERTIME)) say(SND_VOICE_OVERTIME, 2);
+            if (!(ms.flags & MS_TIMETRIAL) && pv.phase == PHASE_LIVE && ms.timeLeft > 0) { // time left: 1 min, 30 s, 10 s, 5 s
+                static const struct { float t; int snd; } marks[] = {{60, SND_VOICE_ONE_MINUTE}, {30, SND_VOICE_THIRTY_SECONDS}, {10, SND_VOICE_TEN_SECONDS}, {5, SND_VOICE_FIVE_SECONDS}};
+                for (auto& m : marks) if (pv.timeLeft > m.t && ms.timeLeft <= m.t && pv.timeLeft - ms.timeLeft < 2) say(m.snd, 2);
+            }
             if (ms.mode == MODE_FFA) {   // free for all: someone new has the most kills (a clear lead, not a tie)
                 int lead = -1, best = 0; bool tie = false;
                 for (auto& p : net_.latest().players) {
@@ -700,13 +705,42 @@ Vec3 Game::outlineColor(int id) const {
     return k == 2 ? teamColor(id) : c[k];
 }
 
+// Kill feedback: your death, your style kills (headshot, air rocket, airborne), killstreaks (yours called out,
+// anyone else's a sting and a notice).
+void Game::onKillFeedback(int killer, int victim, int weapon, bool head, bool airborne) {
+    const int me = net_.clientId();
+    if (victim >= 0 && victim < kMaxPlayers) streak_[victim] = 0;
+    if (victim == me) {
+        audio_.play(SND_DEATH, 0.8f);
+        if (cfg_.announcer >= 2) audio_.play(SND_VOICE_YOU_DIED, 1.0f);
+    }
+    if (killer < 0 || killer >= kMaxPlayers || killer == victim || (modeIsTeamBased(net_.mode().mode) && isFriendly(killer) == isFriendly(victim))) return;
+    int n = ++streak_[killer];
+    static const struct { int kills; int snd; const char* what; } streaks[] = {
+        {3, SND_VOICE_SPREE, "IS ON A KILLING SPREE"}, {5, SND_VOICE_RAMPAGE, "IS ON A RAMPAGE"},
+        {7, SND_VOICE_UNSTOPPABLE, "IS UNSTOPPABLE"}, {10, SND_VOICE_GODLIKE, "IS GODLIKE"}};
+    int streakSnd = -1;
+    for (auto& st : streaks) if (n == st.kills) {
+        streakSnd = st.snd;
+        if (killer != me) { notify(upper(net_.playerName(killer)) + " " + st.what, 3); audio_.play(SND_STREAK, 0.7f); }
+        else notify(std::string("YOU'RE ") + (st.what + 3), 3);   // ("IS ..." -> "YOU'RE ...")
+    }
+    if (killer != me || cfg_.announcer < 2) return;
+    if (streakSnd >= 0) audio_.play(streakSnd, 1.0f);
+    else if (head) audio_.play(SND_VOICE_HEADSHOT, 1.0f);
+    else if (airborne && weapon == WPN_ROCKET) audio_.play(SND_VOICE_AIR_ROCKET, 1.0f);
+    else if (airborne) audio_.play(SND_VOICE_AIRBORNE, 1.0f);
+}
+
 void Game::handleEvents() {
     for (auto& e : net_.takeEvents()) {
         switch (e.type) {
             case EV_KILL: {
+                const int wpn = e.c >= 0 ? (e.c & KILL_WEAPON) : e.c;
                 std::string killer = e.a == 255 ? "" : net_.playerName(e.a);
-                std::string t = killer.empty() || e.a == e.b ? net_.playerName(e.b) + " [" + weaponName(e.c) + "]"
-                                                             : killer + " [" + weaponName(e.c) + "] " + net_.playerName(e.b);
+                std::string t = killer.empty() || e.a == e.b ? net_.playerName(e.b) + " [" + weaponName(wpn) + "]"
+                                                             : killer + " [" + weaponName(wpn) + "] " + net_.playerName(e.b);
+                onKillFeedback(e.a, e.b, wpn, e.c >= 0 && (e.c & KILL_HEADSHOT), e.c >= 0 && (e.c & KILL_AIRBORNE));
                 Color c = e.a == net_.clientId() ? rgba(cfg_.colorFriendly) : e.b == net_.clientId() ? rgba(cfg_.colorEnemy) : kWhite;
                 killFeed_.push_back({t, c, time_ + 6});
                 while (killFeed_.size() > 6) killFeed_.pop_front();
@@ -715,7 +749,7 @@ void Game::handleEvents() {
                 break;
             }
             case EV_CHAT:
-                addChat({net_.playerName(e.a) + ": " + e.text, isFriendly(e.a) ? rgba(cfg_.colorFriendly) : rgba(cfg_.colorEnemy), time_ + 10});
+                addChat({net_.playerName(e.a) + ": " + e.text, isFriendly(e.a) ? rgba(cfg_.colorFriendly) : rgba(cfg_.colorEnemy), time_ + 10, crownOf(e.a)});
                 break;
             case EV_MESSAGE:
                 addChat({e.text, kGrey, time_ + 8});
@@ -733,6 +767,13 @@ void Game::handleEvents() {
                 notify("RANKED MATCH OVER - REPORTING THE RESULT", 4);
                 break;
             }
+            case EV_TYPING:   // someone's typing: soft key clicks from them and "..." over their head
+                if (e.a < kMaxPlayers) {
+                    typingUntil_[e.a] = time_ + 0.8;
+                    if (const PlayerSnap* tp = net_.findPlayer(e.a)) audio_.play3D(SND_TYPING, tp->pos + Vec3(0, 1.5f, 0), 0.6f, 0.9f + (rand() % 20) * 0.01f);
+                    else audio_.play(SND_TYPING, 0.4f);
+                }
+                break;
             case EV_HEALED:   // a teammate's syringe hit someone
                 if (e.a == net_.clientId()) { notify("HEALED BY " + upper(net_.playerName(e.b)) + " - COOLDOWNS RESET", 2); audio_.play(SND_SYRINGE, 0.8f, 1.3f); }
                 else if (e.b == net_.clientId()) notify("YOU HEALED " + upper(net_.playerName(e.a)), 2);
@@ -760,6 +801,7 @@ void Game::handleEvents() {
                     bool won = teams ? e.a == me->team() : e.a == net_.clientId();
                     if (e.b && cfg_.announcer >= 1) audio_.play(won ? SND_VOICE_YOU_WIN : SND_VOICE_YOU_LOSE, 1.0f);
                     else if (!e.b && teams && cfg_.announcer >= 2) audio_.play(won ? SND_VOICE_ROUND_WON : SND_VOICE_ROUND_LOST, 1.0f);
+                    else if (!e.b && cfg_.announcer >= 2) audio_.play(SND_VOICE_ROUND_OVER, 1.0f);
                 }
                 centerText_ = e.text;
                 centerUntil_ = time_ + (e.b ? 8.0 : 3.5);
@@ -839,6 +881,7 @@ void Game::frame(double dt) {
     frameIdx_ = (frameIdx_ + 1) % frameTimes_.size();
     frameCount_ = std::min(frameCount_ + 1, frameTimes_.size());
     { QZONE("net poll"); net_.poll(); }
+    updateCommunity();
     if ((screen_ == Screen::InGame || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
 
     if (screen_ == Screen::Join) browser_.poll();
@@ -1166,6 +1209,10 @@ void Game::drawWorld(float alpha) {
                 r_.text(sx - r_.textWidth(t, ts) * 0.5f, sy, ts, t, kRed);
             }
         }
+        if (!self && i != viewing) if (int place = crownOf(i)) { // leaderboard crown over their head
+            float sx, sy;
+            if (r_.project(pos + Vec3(0, 2.0f * bs + 0.95f, 0), sx, sy)) { float cw = 18 * ui_.s(); drawCrown(sx - cw * 0.5f, sy, cw, place); }
+        }
         // health bars over other players (VISUALS > HEALTH BARS; not in ranked)
         if (cfg_.healthBars && !fairRules() && !self && i != viewing) {
             float sx, sy;
@@ -1174,6 +1221,14 @@ void Game::drawWorld(float alpha) {
                 float f = clampf(p.health / 100.0f, 0, 1);
                 r_.rect(sx - bw * 0.5f - 1, sy - 1, bw + 2, bh + 2, {0, 0, 0, 0.7f});
                 r_.rect(sx - bw * 0.5f, sy, bw * f, bh, p.health > 30 ? rgba(col) : kRed);
+            }
+        }
+        if (!self && time_ < typingUntil_[i]) { // typing in chat
+            float sx, sy;
+            if (r_.project(pos + Vec3(0, 2.0f * bs + 0.7f, 0), sx, sy)) {
+                float tts = std::max(1.0f, std::round(ui_.textScale()));
+                const char* dots = std::fmod(time_, 0.9) < 0.3 ? "." : std::fmod(time_, 0.9) < 0.6 ? ".." : "...";
+                r_.text(sx - r_.textWidth("...", tts) * 0.5f, sy, tts, dots, kWhite);
             }
         }
         // name tags for teammates
@@ -1863,12 +1918,18 @@ void Game::drawHud() {
     const auto& lines = chatting_ ? chatLog_ : chatFeed_;   // typing: the whole recent history
     y = H - 110 * s - lines.size() * (r_.textHeight(ts) + 4 * s);
     if (chatting_ && !lines.empty()) r_.rect(18 * s, y - 4 * s, 520 * s, lines.size() * (r_.textHeight(ts) + 4 * s) + 4 * s, {0, 0, 0, 0.4f});
-    for (auto& c : lines) { r_.text(24 * s, y, ts, c.text, c.color); y += r_.textHeight(ts) + 4 * s; }
+    for (auto& c : lines) {
+        float cw = c.crown ? r_.textHeight(ts) * 1.2f : 0;
+        if (c.crown) drawCrown(24 * s, y + r_.textHeight(ts) * 0.1f, cw, c.crown);
+        r_.text(24 * s + (cw ? cw + 4 * s : 0), y, ts, c.text, c.color);
+        y += r_.textHeight(ts) + 4 * s;
+    }
     }
     if (chatting_ && console_) drawConsole(W, H, s, ts);
     else if (chatting_) {
         ui_.label(24 * s, H - 100 * s, "SAY: " + chatText_ + (std::fmod(time_, 1.0) < 0.5 ? "_" : ""), kWhite);
         for (char c : uiIn_.chars) if (c >= 32 && c < 127 && chatText_.size() < 120) chatText_ += c;
+        if ((!uiIn_.chars.empty() || uiIn_.backspace) && time_ >= nextTypingSend_) { net_.sendCommand("typing"); nextTypingSend_ = time_ + 0.25; }
         if (uiIn_.backspace && !chatText_.empty()) chatText_.pop_back();
     }
     // notices
@@ -2558,7 +2619,9 @@ void Game::drawScoreboard() {
         Color c = (p.flags & PS_SPECTATOR) ? kGrey : rgba(teamColor(p.id));
         std::string n = net_.playerName(p.id) + ((p.flags & PS_ALIVE) ? "" : " (dead)");
         if (p.id == net_.clientId()) r_.rect(x + 4 * s, cy - 4 * s, w - 8 * s, rowH - 2 * s, {1, 1, 1, 0.06f});
-        r_.text(x + 12 * s, cy, ts, n, c);
+        float cw = 0;
+        if (int place = crownOf(p.id)) { cw = r_.textHeight(ts) * 1.2f; drawCrown(x + 12 * s, cy + r_.textHeight(ts) * 0.1f, cw, place); cw += 5 * s; }
+        r_.text(x + 12 * s + cw, cy, ts, n, c);
         Rating rt;
         if (ranked && rank_.rating(ladder, net_.rankId(p.id), rt))
             r_.text(x + w * 0.36f, cy, ts, rt.games < 5 ? std::to_string(rt.display()) + "?" : std::to_string(rt.display()), kWhite); // ? = still placing
@@ -2645,6 +2708,7 @@ void Game::drawPauseMenu(float cx, float y) {
     }
     if (picker_ != PICK_NONE) { drawPicker(cx, y); return; }
     if (voteMenu_) { drawVoteMenu(cx, y); return; }
+    if (queueMenu_) { drawQueueMenu(cx, y); return; }
     if (net_.playback()) { // watching a demo
         ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 4 * (h + gap) + 24 * s);
         if (ui_.button(x, y, w, h, "RESUME")) { paused_ = false; }
@@ -2672,7 +2736,11 @@ void Game::drawPauseMenu(float cx, float y) {
     }
     if (ui_.button(x, y, w, h, "SPECTATE")) { net_.sendCommand("team spec"); paused_ = false; }
     y += h + gap;
-    if (ui_.button(x, y, w, h, "VOTE")) voteMenu_ = true;
+    {
+        float hw = (w - gap) * 0.5f;
+        if (ui_.button(x, y, hw, h, "VOTE")) voteMenu_ = true;
+        if (ui_.button(x + hw + gap, y, hw, h, queued_.empty() ? "QUEUE" : "QUEUE (" + std::to_string(queued_.size()) + ")")) queueMenu_ = true;
+    }
     y += h + gap;
     if (host_) {
         // Host controls: change mode/map live.
@@ -2715,8 +2783,10 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     // --- left column: player, mouse, colors
     float y = y0;
     ui_.label(x, y, "NAME");
+    ui_.label(x + w * 0.5f + gap * 0.5f, y, "DISCORD NAME");
     y += 22 * s;
-    ui_.textField(1, x, y, w, h, cfg_.name, 20);
+    ui_.textField(1, x, y, w * 0.5f - gap * 0.5f, h, cfg_.name, 20);
+    ui_.textField(43, x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, cfg_.discordName, 40);
     y += h + gap;
     {   // sensitivity, or the same thing as cm per 360 at your mouse DPI (drag either)
         ui_.slider(x, y, w, h, "SENSITIVITY", cfg_.sensitivity, 0.1f, 10.0f, "%.2f");
@@ -2844,6 +2914,7 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     y += h + gap;
     if (ui_.button(xr, y, w, h, "BACK")) {
         cfg_.save();
+        linkDiscord();
         if (net_.state() == ConnState::Connected) net_.sendCommand("name " + cfg_.name);
         if (settingsInGame_) settingsInGame_ = false;
         else setScreen(Screen::Main);

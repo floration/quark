@@ -223,6 +223,19 @@ class QuarkAPI:
             blocks.append(f"TIME TRIAL\n  unavailable ({type(e).__name__})")
         return "\n\n".join(blocks)
 
+    # shared queues / crowns (defined below with their parsers)
+    async def crowns(self):
+        return await _crowns(self)
+
+    async def queue_counts(self):
+        return await _queue_counts(self)
+
+    async def filled(self, since: int):
+        return await _filled(self, since)
+
+    async def queue_action(self, bot_key: str, discord_name: str, mode: str, action: str, name: str = "") -> str:
+        return await _queue_action(self, bot_key, discord_name, mode, action, name)
+
     def _gh_headers(self) -> dict:
         h = {"Accept": "application/vnd.github+json", "User-Agent": "quark-discord-bot"}
         if self.token:
@@ -374,3 +387,153 @@ def split_message(text: str, limit: int = 1990) -> list[str]:
 def slugify(name: str, maxlen: int = 80) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     return (s or "server")[:maxlen].strip("-") or "server"
+
+
+# ---------------------------------------------------------------- Discord link, crowns, shared queues (master 1.12.0+)
+FALLBACK_BODY = "quark server list"  # what the Worker answers for a path it doesn't know (not deployed yet)
+
+
+class EndpointMissing(Exception):
+    """The master doesn't have this endpoint yet (old worker.js deployed)."""
+
+
+def to_hex(s: str) -> str:
+    return s.encode("utf-8", "replace").hex()
+
+
+def from_hex(h: str) -> str:
+    if h in ("", "-"):
+        return ""
+    try:
+        return bytes.fromhex(h).decode("utf-8", "replace")
+    except ValueError:
+        return ""
+
+
+@dataclass
+class Crown:
+    board: str     # vanilla | vampire | instagib | race:viaduct
+    place: int
+    id: str
+    name: str
+    discord: str   # "" when not linked
+
+
+def parse_crowns(body: str) -> list[Crown]:
+    out = []
+    for line in body.splitlines():
+        p = line.split()
+        if len(p) != 5:
+            continue
+        try:
+            out.append(Crown(p[0], int(p[1]), p[2], from_hex(p[3]), from_hex(p[4])))
+        except ValueError:
+            continue
+    return out
+
+
+@dataclass
+class QueueCount:
+    mode: str
+    count: int
+    size: int
+
+
+def parse_queue_counts(body: str) -> dict[str, QueueCount]:
+    out = {}
+    for line in body.splitlines():
+        p = line.split()
+        if len(p) == 3 and p[1].isdigit() and p[2].isdigit():
+            out[p[0]] = QueueCount(p[0], int(p[1]), int(p[2]))
+    return out
+
+
+@dataclass
+class FilledMember:
+    who: str       # ranked id of a game player, or "d:<discord name>" for Discord-sourced entries
+    name: str
+    discord: str   # "" when unknown
+
+    @property
+    def from_discord(self) -> bool:
+        return self.who.startswith("d:")
+
+
+@dataclass
+class Filled:
+    id: int
+    mode: str
+    created: int
+    members: list[FilledMember] = field(default_factory=list)
+
+
+def parse_filled(body: str) -> list[Filled]:
+    out = []
+    for line in body.splitlines():
+        p = line.split()
+        if len(p) != 4 or not p[0].isdigit() or not p[2].isdigit():
+            continue
+        f = Filled(int(p[0]), p[1], int(p[2]))
+        for m in p[3].split(","):
+            # who may itself contain ':' ("d:name"), so split the two hex fields off the right
+            parts = m.rsplit(":", 2)
+            if len(parts) == 3:
+                f.members.append(FilledMember(parts[0], from_hex(parts[1]), from_hex(parts[2])))
+        out.append(f)
+    return out
+
+
+def _check_deployed(body: str):
+    if body.strip() == FALLBACK_BODY:
+        raise EndpointMissing("master has no such endpoint yet (redeploy tools/master/worker.js)")
+
+
+async def _new_api_get(self: "QuarkAPI", path: str) -> str:
+    url = f"{await self.master()}{path}"
+    async with self.s.get(url, timeout=aiohttp.ClientTimeout(total=8)) as r:
+        if r.status == 404:
+            raise EndpointMissing(path)
+        r.raise_for_status()
+        body = await r.text()
+    _check_deployed(body)
+    return body
+
+
+async def _crowns(self: "QuarkAPI") -> list[Crown]:
+    return parse_crowns(await _new_api_get(self, "/crowns"))
+
+
+async def _queue_counts(self: "QuarkAPI") -> dict[str, QueueCount]:
+    return parse_queue_counts(await _new_api_get(self, "/queue"))
+
+
+async def _filled(self: "QuarkAPI", since: int) -> list[Filled]:
+    return parse_filled(await _new_api_get(self, f"/filled?since={int(since)}"))
+
+
+async def _queue_action(self: "QuarkAPI", bot_key: str, discord_name: str, mode: str, action: str, name: str = "") -> str:
+    """POST /queue as the bot for a Discord member. Replies: queued <mode> n/size, filled <mode>, left <mode>, left all, ..."""
+    form = {"bot": bot_key, "discord": to_hex(discord_name), "mode": mode, "action": action, "name": to_hex(name[:20])}
+    async with self.s.post(f"{await self.master()}/queue", data=form, timeout=aiohttp.ClientTimeout(total=8)) as r:
+        if r.status == 404:
+            raise EndpointMissing("/queue")
+        r.raise_for_status()
+        body = (await r.text()).strip()
+    _check_deployed(body)
+    return body
+
+
+
+
+def crown_roles(crowns: list[Crown]) -> dict[str, str]:
+    """lowercased Discord name -> "first" (place 1 on any board) or "top10" (places 2-10 on any board, never #1)."""
+    out: dict[str, str] = {}
+    for c in crowns:
+        if not c.discord or not 1 <= c.place <= 10:
+            continue
+        k = c.discord.strip().lower()
+        if c.place == 1:
+            out[k] = "first"
+        else:
+            out.setdefault(k, "top10")
+    return out

@@ -38,6 +38,7 @@ struct Settings {
     bool healthBars = false;    // health bars over other players (not in ranked)
     float scopeOpacity = 1.0f;  // the sniper scope's black surround (0 = none, just the zoom)
     bool stickyCounter = true;  // "STICKIES 3/6" while you hold the sticky launcher or have any out
+    std::string discordName;    // linked on the master for the Discord bot (roles, queue pings)
     bool crowns = true;         // gold / silver crowns on ranked leaders
     int outlineFriendly = 0, outlineEnemy = 0; // player outline presets (kOutlineNames: black, white, team, ...)
     int announcerVoice = 0;     // 0 male, 1 female (both deep, in a big hall)
