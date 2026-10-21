@@ -131,6 +131,12 @@ void Audio::synthesize() {
     s[SND_STREAK] = make(0.5f); addTone(s[SND_STREAK], 660, 0.5f, 0.003f, 0.09f); addTone(s[SND_STREAK], 990, 0.5f, 0.003f, 0.16f, 0.1f);
     addRoom(s[SND_STREAK], 0.3f, 0.8f); finish(s[SND_STREAK], 0.22f);
     s[SND_TYPING] = make(0.05f); addThump(s[SND_TYPING], 2400, 1600, 0.004f, 1, 0.0005f, 0.006f); addBand(s[SND_TYPING], 2000, 7000, 0.3f, 0.0005f, 0.004f, 21); finish(s[SND_TYPING], 0.12f);
+    // race: a bright two-tone ding for a checkpoint, a rising three-note chime for the finish
+    s[SND_CHECKPOINT] = make(0.35f); addTone(s[SND_CHECKPOINT], 1320, 0.5f, 0.002f, 0.08f); addTone(s[SND_CHECKPOINT], 1760, 0.5f, 0.002f, 0.14f, 0.06f);
+    addRoom(s[SND_CHECKPOINT], 0.25f, 0.7f); finish(s[SND_CHECKPOINT], 0.26f);
+    s[SND_FINISH] = make(0.8f);
+    for (int k = 0; k < 3; k++) { float f = 1047.0f * std::pow(1.26f, (float)k); addTone(s[SND_FINISH], f, 0.45f, 0.002f, k == 2 ? 0.3f : 0.1f, k * 0.09f); addTone(s[SND_FINISH], 2 * f, 0.12f, 0.002f, 0.08f, k * 0.09f); }
+    addRoom(s[SND_FINISH], 0.3f, 0.9f); finish(s[SND_FINISH], 0.3f);
     // the kits: RETRO re-voices these (chiptune), HEAVY METAL / MAGICAL / WOODEN are recorded (sfx_recorded.h);
     // anything a kit lacks is the DEFAULT sound
     for (int p = 1; p < kPacks; p++)

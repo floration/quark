@@ -42,6 +42,8 @@ KITS = {
         "DEATH": (0.8, [L("impact/impactPlate_heavy_002", pitch=0.7), L("rpg/metalPot1", 0.6, 0.8, 0.08)]),
         "STREAK": (0.6, [L("impact/impactBell_heavy_002", pitch=1.2), L("impact/impactBell_heavy_004", 0.7, 1.6, 0.1)]),
         "TYPING": (0.06, [L("rpg/metalClick", pitch=1.6)]),
+        "CHECKPOINT": (0.5, [L("impact/impactBell_heavy_004", pitch=1.5)]),
+        "FINISH": (1.0, [L("impact/impactBell_heavy_004", pitch=1.3), L("impact/impactBell_heavy_004", 0.9, 1.65, 0.1), L("impact/impactBell_heavy_002", 0.9, 2.0, 0.2)]),
     },
     2: {   # MAGICAL: glass chimes, shimmering force fields, plucks and whooshes (with a hall reverb added in audio.cpp)
         "HIT": (0.2, [L("iface/glass_002")]),
@@ -69,6 +71,8 @@ KITS = {
         "DEATH": (0.8, [L("iface/minimize_005", pitch=0.7), L("iface/glass_004", 0.5, 0.6)]),
         "STREAK": (0.6, [L("iface/confirmation_002")]),
         "TYPING": (0.06, [L("iface/tick_001")]),
+        "CHECKPOINT": (0.4, [L("iface/glass_001", pitch=1.2), L("iface/glass_003", 0.6, 1.8, 0.05)]),
+        "FINISH": (0.9, [L("iface/confirmation_004"), L("iface/glass_001", 0.6, 1.5, 0.15), L("iface/glass_003", 0.5, 2.0, 0.25)]),
     },
     4: {   # WOODEN: knocks, planks, chops, creaks and doors slamming
         "HIT": (0.2, [L("impact/impactWood_light_000", pitch=1.2)]),
@@ -96,6 +100,8 @@ KITS = {
         "DEATH": (0.7, [L("rpg/doorClose_4", pitch=0.8)]),
         "STREAK": (0.5, [L("impact/impactWood_medium_002", pitch=1.3), L("impact/impactWood_medium_003", 0.9, 1.8, 0.1)]),
         "TYPING": (0.06, [L("impact/impactWood_light_001", pitch=2.2)]),
+        "CHECKPOINT": (0.3, [L("impact/impactWood_light_002", pitch=2.0), L("impact/impactWood_light_003", 0.9, 2.5, 0.07)]),
+        "FINISH": (0.5, [L("impact/impactWood_light_002", pitch=1.8), L("impact/impactWood_light_003", 0.9, 2.25, 0.09), L("impact/impactWood_light_004", 1.0, 2.7, 0.18)]),
     },
 }
 

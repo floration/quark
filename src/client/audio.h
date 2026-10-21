@@ -22,6 +22,7 @@ enum SoundId {
     SND_EXPLOSION, SND_STICKY_ATTACH, SND_BOLT_HIT,
     SND_DASH, SND_GRAPPLE_FIRE, SND_GRAPPLE_HIT,
     SND_DEATH, SND_STREAK, SND_TYPING,   // your death thud, someone else's killstreak sting, someone typing (a key click)
+    SND_CHECKPOINT, SND_FINISH,          // race: you passed a checkpoint (a ding), you crossed the finish (a rising chime)
     // the announcer (recorded lines from voice_data.h, in its order; the same in every sound pack)
     SND_VOICE_THREE, SND_VOICE_TWO, SND_VOICE_ONE, SND_VOICE_GO, SND_VOICE_BOMB_PLANTED, SND_VOICE_BOMB_DEFUSED,
     SND_VOICE_HILL_TAKEN, SND_VOICE_HILL_LOST, SND_VOICE_POINT_TAKEN, SND_VOICE_POINT_LOST, SND_VOICE_ROUND_WON,
