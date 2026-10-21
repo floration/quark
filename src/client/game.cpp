@@ -2547,13 +2547,14 @@ const Game::RaceRun* Game::bestRun(const std::string& map, bool trial) const {
 void Game::onRaceSplit(int cp, int ms) {
     if (!raceRunsLoaded_) loadRaceRuns();
     if (cp == 1) raceSplits_.clear();
-    if ((int)raceSplits_.size() != cp - 1) { raceSplits_.clear(); return; } // missed one: this run doesn't count
+    if ((int)raceSplits_.size() != cp - 1) { raceSplits_.clear(); audio_.play(cp == (int)net_.map().checkpoints.size() ? SND_FINISH : SND_CHECKPOINT, 0.9f); return; } // missed one: this run doesn't count
     raceSplits_.push_back(ms);
     const std::string map = net_.map().name;
     // a time trial run counts (and is compared) only on the shipped Viaduct, unchanged (the server says so too)
     bool trial = (net_.mode().flags & MS_TIMETRIAL) != 0 && map == "viaduct" && isOfficialMap(net_.map());
     const RaceRun* best = bestRun(map, trial);
     int total = (int)net_.map().checkpoints.size();
+    audio_.play(cp == total ? SND_FINISH : SND_CHECKPOINT, 0.9f);
     // the split, and how it compares with the same checkpoint on your best run (green = ahead)
     splitText_ = (cp == total ? "FINISH " : "CHECKPOINT " + std::to_string(cp) + "  ") + fmtRace(ms);
     splitColor_ = kWhite;
@@ -3016,7 +3017,7 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     {   // cosmetics: player model (everyone sees it) and sound pack
         std::vector<std::string> mn;
         for (int i = 0; i < kPlayerModels; i++) mn.push_back(std::string("PLAYER MODEL: ") + playerModelName(i));
-        static const std::vector<std::string> sn = {"SOUND PACK: STANDARD", "SOUND PACK: ARCADE", "SOUND PACK: HEAVY", "SOUND PACK: RETRO", "SOUND PACK: SOFT"};
+        static const std::vector<std::string> sn = {"SOUND PACK: DEFAULT", "SOUND PACK: HEAVY METAL", "SOUND PACK: MAGICAL", "SOUND PACK: RETRO", "SOUND PACK: WOODEN"};
         ui_.cycle(x, y, w * 0.5f - gap * 0.5f, h, "MODEL", cfg_.model, kPlayerModels, mn);
         ui_.cycle(x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "SOUNDS", cfg_.soundPack, 5, sn);
     }
