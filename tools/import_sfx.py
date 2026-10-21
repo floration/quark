@@ -144,7 +144,7 @@ def build(maxlen, layers):
     return [int(round(v / peak * 0.89 * 32767)) for v in out]
 
 CUSTOM = os.path.join(SRC, "custom")
-KIT_DIRS = ["default", "heavy_metal", "magical", "retro", "wooden"]
+KIT_DIRS = ["default", "heavy_metal", "magical", "retro", "mouth"]
 
 def decode_file(path):
     raw = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-ac", "1", "-ar", str(RATE), "-f", "s16le", "-"],

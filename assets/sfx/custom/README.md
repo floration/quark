@@ -3,7 +3,7 @@
 Put a file named after the sound into the folder of the kit it belongs to, then run `python3 tools/import_sfx.py`
 (needs ffmpeg) and rebuild. Your file replaces that sound in that kit. Anything you don't supply keeps its current sound.
 
-Folders: `default/`, `heavy_metal/`, `magical/`, `retro/`, `wooden/` (the SOUND PACK setting's five kits).
+Folders: `default/`, `heavy_metal/`, `magical/`, `retro/`, `mouth/` (the SOUND PACK setting's five kits).
 Formats: .wav, .ogg, .mp3 or .flac, any sample rate. The importer makes it mono, trims the silence at the start,
 cuts it at 3 s and normalises it. In the other kits it is matched to the DEFAULT sound's loudness.
 Example: `heavy_metal/ROCKET.wav`.
