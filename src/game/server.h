@@ -104,6 +104,7 @@ struct ServerPlayer {
     bool out = false;           // hide and seek: found this round; tag: eliminated for the match
     float itFreezeUntil = 0;    // tag: just got tagged, stands still until then
     uint32_t lastCmdSeq = 0;
+    uint16_t keys = 0;          // KEY_* from the last command
     std::deque<UserCmd> cmdQueue;
     float cmdTokensMs = 16.0f;
     uint8_t reportedLoss = 0;   // % of snapshots the client says it missed

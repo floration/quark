@@ -980,6 +980,9 @@ void Server::drainCmds(int id) {
 void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     ServerPlayer& p = players_[id];
     p.lastCmdSeq = cmd.seq;
+    p.keys = (cmd.forward > 0 ? KEY_FWD : 0) | (cmd.forward < 0 ? KEY_BACK : 0) | (cmd.side < 0 ? KEY_LEFT : 0) | (cmd.side > 0 ? KEY_RIGHT : 0) |
+             (cmd.buttons & BTN_JUMP ? KEY_JUMP : 0) | (cmd.buttons & BTN_CROUCH ? KEY_CROUCH : 0) | (cmd.buttons & BTN_FIRE ? KEY_FIRE : 0) |
+             (cmd.buttons & BTN_ALTFIRE ? KEY_ALT : 0) | (cmd.buttons & BTN_DASH ? KEY_DASH : 0) | (cmd.buttons & BTN_GRAPPLE ? KEY_HOOK : 0);
     p.yaw = cmd.yaw;
     p.pitch = cmd.pitch;
     p.prevButtons = p.buttons;
@@ -1437,6 +1440,7 @@ void Server::sendSnapshots() {
         ps.acc = (uint8_t)(p.shotsFired ? std::min(100, p.shotsHit * 100 / p.shotsFired) : 0);
         ps.ping = (uint16_t)p.ping;
         ps.checkpoint = (uint8_t)p.checkpoint;
+        ps.keys = p.alive ? p.keys : 0;
         ps.hooked = p.alive && (p.move.flags & MF_HOOKED);
         ps.hookPoint = p.move.hookPoint;
         all.push_back(ps);

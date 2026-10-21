@@ -36,6 +36,7 @@ struct Settings {
     int ownShots = 0;           // your tracers / beam: 0 with the weapon model, 1 always, 2 never
     bool enemyShots = true;     // other players' tracers and beams
     bool healthBars = false;    // health bars over other players (not in ranked)
+    bool healthBarsBottom = false;  // ... at their feet instead of over the head
     float scopeOpacity = 1.0f;  // the sniper scope's black surround (0 = none, just the zoom)
     bool stickyCounter = true;  // "STICKIES 3/6" while you hold the sticky launcher or have any out
     bool demoFullRate = false;  // demos: every snapshot (up to 1000 Hz) instead of 62.5 Hz

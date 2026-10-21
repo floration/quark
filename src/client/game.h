@@ -319,8 +319,11 @@ private:
     void queueAction(const std::string& mode, const char* action);
     void drawQueueMenu(float cx, float y);
     int crownOf(int playerId) const;              // 1 = #1 on a ranked board, 2-10 top 10, 0 none (or crowns off)
-    void drawCrown(float x, float y, float w, int place);
-    std::map<std::string, int> crowns_;           // ranked id -> best place on any board
+    const char* crownLetter(int playerId) const;  // the board of that best place: Q vanilla, LG laser vampire, I instagib, R race
+    int specKeysOf() const;
+    void drawCrown(float x, float y, float w, int place, const char* letter = "");
+    struct Crown { int place; const char* letter; };
+    std::map<std::string, Crown> crowns_;         // ranked id -> best place on any board (and which board)
     std::set<std::string> queued_;
     std::map<std::string, int> queueCounts_;
     double nextCrownFetch_ = 0, nextQueuePoll_ = 0, nextFilledPoll_ = 0;
@@ -338,6 +341,10 @@ private:
     bool console_ = false;               // the settings console (`)
     std::deque<std::string> consoleLog_;
     void consolePrint(const std::string& t);
+    std::vector<std::string> consoleWords() const;
+    void consoleComplete();
+    std::vector<std::string> consoleHistory_;
+    int consoleHistoryAt_ = -1;
     void runConsole(const std::string& line);
     void drawConsole(float W, float H, float s, float ts);
     int bestMapFor(int mode) const;

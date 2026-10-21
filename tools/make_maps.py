@@ -2853,9 +2853,14 @@ ATRIUM = (-5, -5, 5, 5)
 SHAFTS = [(8, -11, 11, -8), (-11, 8, -8, 11)]
 def flight(k):   # the two flights up from floor k (k even: the outer bands, odd: the inner ones)
     za, zb = ((-19.6, -17.6), (17.6, 19.6)) if k % 2 == 0 else ((-17.2, -15.2), (15.2, 17.2))
-    return [(-19.6, za[0], -14.0, za[1], 1), (14.0, zb[0], 19.6, zb[1], -1)]   # (rect, rising along x)
+    return [(-18.4, za[0], -13.4, za[1], -1), (13.4, zb[0], 18.4, zb[1], 1)]   # (rect, rising along x toward the facade:
+                                                                                 # a landing at the top, room at the foot)
+def shaft_strip(sh, k):   # the opening in floor k's slab over shaft sh: a strip along the wall its ladder climbs
+    x0, z0, x1, z1 = sh
+    if (k - 1) % 2 == 0: return (x0, z0, x1, z0 + 1.0) if z0 < 0 else (x0, z1 - 1.0, x1, z1)       # the far wall
+    return (x0, z0, x0 + 1.0, z1) if x0 > 0 else (x1 - 1.0, z0, x1, z1)                           # the side wall
 for k, y in enumerate(FLOORS + [ROOF]):
-    holes = list(SHAFTS)
+    holes = [shaft_strip(sh, k) for sh in SHAFTS] if k > 0 else []   # (a landing in the shaft on every floor)
     if 0 < k < len(FLOORS): holes.append(ATRIUM)
     if k > 0: holes += [f[:4] for f in flight(k - 1)]
     for r in tiles(minus((-HT, -HT, HT, HT), holes), 10): m.box(r[0], y - 0.4, r[1], r[2], y, r[3])
@@ -2863,7 +2868,7 @@ for k, y in enumerate(FLOORS):
     top = y + FH - 0.4                  # (the ceiling: the next slab's underside)
     # flights to the floor above, a rail along their open side
     for (x0, z0, x1, z1, rise) in flight(k):
-        m.stairs(x0, z0, x1, z1, y + FH, "x", rise, base=y)
+        m.stairs(x0, z0, x1, z1, y + FH, "x", rise, base=y, solid=k == 0)   # (upper flights: slabs, not blocks to the lobby)
     # the facade: sill, lintel and piers every 4 m on all four sides; the window openings are clip (you can see
     # and shoot out, nobody falls out)
     for (a0, a1, side, axis) in ((-HT, HT, -HT, "x"), (-HT, HT, HT, "x"), (-HT, HT, -HT, "z"), (-HT, HT, HT, "z")):
@@ -2901,11 +2906,15 @@ for k, y in enumerate(FLOORS):
     # lights: a grid of ceiling panels
     for (lx, lz) in ((-16, 0), (16, 0), (0, -16), (0, 16), (-16, -16), (16, 16), (16, -16), (-16, 16), (-8, -8), (8, 8)):
         m.light(lx, top - 0.5, lz, 10, 0.9)
+# spawns: hiders anywhere in the building, every floor and the roof (the furniture keeps clear of them)
+HT_SPAWNS = ((-15, 0, 0, 90), (15, 0, 6, -90), (0, 4.5, -15, 0), (-8, 4.5, 15, 180), (15, 9, -6, -90), (-15, 9, 6, 90),
+             (6, 13.5, 15, 180), (-6, 13.5, -15, 0), (-15, 18, -6, 90), (15, 18, 6, -90), (0, ROOF, -10, 0), (-2, ROOF, 15, 180))
 R = random.Random("hightown")
 def free(x0, z0, x1, z1, k):
-    keep = [ATRIUM] + SHAFTS + [f[:4] for f in flight(k)] + ([f[:4] for f in flight(k - 1)] if k > 0 else [])
+    keep = [ATRIUM] + SHAFTS + [f[:4] for f in flight(k)] + [(f[0] - 1.6, f[1], f[2] + 1.6, f[3]) for f in flight(k)] + ([f[:4] for f in flight(k - 1)] if k > 0 else [])
     keep += [(-12.4, 15, -11.8, 17), (11.8, -17, 12.4, -15), (-17, -12.4, -15, -11.8), (15, 11.8, 17, 12.4),
              (-12.4, -17, -11.8, -15), (11.8, 15, 12.4, 17), (-17, 11.8, -15, 12.4), (15, -12.4, 17, -11.8)]   # partition doors
+    keep += [(sx - 0.8, sz - 0.8, sx + 0.8, sz + 0.8) for (sx, sy, sz, _) in HT_SPAWNS if sy == FLOORS[k]]
     keep += [(-5.6, -5.6, 5.6, 5.6)] + [(s0 - 1.4, s1 - 1.4, s2 + 1.4, s3 + 1.4) for (s0, s1, s2, s3) in SHAFTS]
     keep += [(-20, -20, 20, -19.2), (-20, 19.2, 20, 20), (-20, -20, -19.2, 20), (19.2, -20, 20, 20)]   # (the facade)
     return not any(x0 < b[2] + 0.6 and x1 > b[0] - 0.6 and z0 < b[3] + 0.6 and z1 > b[1] - 0.6 for b in keep)
@@ -2924,9 +2933,11 @@ for k, y in enumerate(FLOORS):
     for (px, pz) in ((-6.5, -9), (6.5, 9), (-9, 6.5), (9, -6.5)):    # plants by the atrium
         if free(px - 0.4, pz - 0.4, px + 0.4, pz + 0.4, k):
             m.box(px - 0.45, y, pz - 0.45, px + 0.45, y + 0.6, pz + 0.45, accent=True); m.glow(px - 0.3, y + 0.6, pz - 0.3, px + 0.3, y + 1.8, pz + 0.3)
-# the lift shafts' maintenance ladders: floor to roof, up the far wall inside each shaft
-m.ladder(9.5, -10.8, 0, ROOF, "s", width=0.8)
-m.ladder(-9.5, 10.8, 0, ROOF, "n", width=0.8)
+# the lift shafts' maintenance ladders: one a floor, alternating between the far and the side wall, a landing
+# at the top of each (through the opening in the slab above)
+for k, y in enumerate(FLOORS):
+    if k % 2 == 0: m.ladder(9.5, -10.88, y, y + FH, "n", width=0.8); m.ladder(-9.5, 10.88, y, y + FH, "s", width=0.8)
+    else: m.ladder(8.12, -9.5, y, y + FH, "w", width=0.8); m.ladder(-8.12, 9.5, y, y + FH, "e", width=0.8)
 # the lobby (bottom floor): reception desk and a fountain under the atrium
 m.box(-3, 0, -3, 3, 0.5, 3, accent=True); m.box(-2.4, 0.5, -2.4, 2.4, 0.6, 2.4, mat="water"); m.glow(-0.3, 0.5, -0.3, 0.3, 2.0, 0.3)
 m.box(-8, 0, 6, -3, 1.1, 7, accent=True); m.box(-8, 1.1, 6, -3, 1.2, 7, mat="trim")
@@ -2942,7 +2953,9 @@ for (tx, tz) in ((6, -15), (12, -15)):
     m.box(tx - 1.6, ROOF + 2.0, tz - 1.6, tx + 1.6, ROOF + 5.0, tz + 1.6); m.box(tx - 1.8, ROOF + 5.0, tz - 1.8, tx + 1.8, ROOF + 5.3, tz + 1.8, accent=True)
 for (a, b, c, d) in ((6, 8, 18, 8.4), (6, 17.6, 18, 18), (6, 8, 6.4, 18), (17.6, 8, 18, 18)): m.box(a, ROOF, b, c, ROOF + 0.6, d, accent=True)
 m.box(6.4, ROOF + 0.35, 8.4, 17.6, ROOF + 0.4, 17.6, mat="water")           # the pool (wade in it)
-m.box(-14, ROOF, 9, -4, ROOF + 0.3, 19, mat="metal"); m.glow(-9.4, ROOF + 0.3, 11, -8.6, ROOF + 0.32, 17); m.glow(-12, ROOF + 0.3, 13.6, -6, ROOF + 0.32, 14.4)   # helipad "H"
+m.box(-19.2, ROOF, 12.2, -12.2, ROOF + 0.3, 19.2, mat="metal")   # helipad (clear of the lift shaft), its "H"
+for hx in (-17.4, -14.0): m.glow(hx, ROOF + 0.3, 13.6, hx + 0.6, ROOF + 0.32, 17.8)
+m.glow(-16.8, ROOF + 0.3, 15.4, -14.0, ROOF + 0.32, 16.0)
 for (ax, az) in ((-2, -12), (2, -16), (-6, -17)):
     m.metal(ax - 1.2, ROOF, az - 0.9, ax + 1.2, ROOF + 1.4, az + 0.9); m.glow(ax - 1.25, ROOF + 0.7, az - 0.95, ax + 1.25, ROOF + 0.8, az + 0.95)
 for (lx, lz) in ((-15, 15), (15, -15), (0, 0), (12, 13)): m.light(lx, ROOF + 2.5, lz, 12, 0.7)
@@ -2956,11 +2969,8 @@ for _ in range(90):
     top = CR.uniform(-130, -30) if CR.random() < 0.85 else CR.uniform(-20, 30)   # a few neighbours nearly as tall
     m.box(cx, -160, cz, cx + w, top, cz + d, mat="far")
 m.box(-400, -161, -400, 400, -160, 400, mat="far")                        # the streets, 160 m down
-# spawns: hiders anywhere in the building, every floor and the roof
-for (x, y, z, yaw) in ((-15, 0, 0, 90), (15, 0, 6, -90), (0, 4.5, -15, 0), (-8, 4.5, 15, 180), (15, 9, -6, -90), (-15, 9, 6, 90),
-                       (6, 13.5, 15, 180), (-6, 13.5, -15, 0), (-15, 18, -6, 90), (15, 18, 6, -90), (0, ROOF, -10, 0), (-2, ROOF, 15, 180)):
-    m.spawn("any", x, y, z, yaw)
+for (x, y, z, yaw) in HT_SPAWNS: m.spawn("any", x, y, z, yaw)
 m.raw("# setting skyscraper over a city")
-# m.save("hightown")   # (work in progress: not in the pool yet)
+m.save("hightown")
 
 print("maps written")

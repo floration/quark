@@ -74,7 +74,7 @@ static void readMode(Reader& r, ModeState& m) {
 enum : uint16_t {
     P_FLAGS = 1 << 0, P_POS = 1 << 1, P_YAW = 1 << 2, P_PITCH = 1 << 3, P_HEALTH = 1 << 4, P_WEAPON = 1 << 5,
     P_KILLS = 1 << 6, P_DEATHS = 1 << 7, P_SCORE = 1 << 8, P_PING = 1 << 9, P_CHECK = 1 << 10, P_HOOK = 1 << 11,
-    P_HIDDEN = 1 << 12, P_STATS = 1 << 13, P_FULL = 1 << 15,
+    P_HIDDEN = 1 << 12, P_STATS = 1 << 13, P_KEYS = 1 << 14, P_FULL = 1 << 15,
 };
 static int16_t q16(float v) { return (int16_t)clampf(std::round(v * 64.0f), -32767, 32767); }
 static bool samePos(const Vec3& a, const Vec3& b) { return q16(a.x) == q16(b.x) && q16(a.y) == q16(b.y) && q16(a.z) == q16(b.z); }
@@ -94,7 +94,7 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
         const PlayerSnap* b = nullptr;
         if (base) for (auto& o : base->players) if (o.id == p.id) { b = &o; break; }
         uint16_t m = p.hidden ? P_HIDDEN : 0;
-        if (!b || b->hidden != p.hidden) m |= P_FULL | 0x0FFF | P_STATS;
+        if (!b || b->hidden != p.hidden) m |= P_FULL | 0x0FFF | P_STATS | P_KEYS;
         else {
             if (b->flags != p.flags) m |= P_FLAGS;
             if (!p.hidden && !samePos(b->pos, p.pos)) m |= P_POS;
@@ -107,10 +107,11 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
             if (b->score != p.score) m |= P_SCORE;
             if (b->dmg != p.dmg || b->obj != p.obj || b->acc != p.acc) m |= P_STATS;
             if (b->ping != p.ping) m |= P_PING;
+            if (b->keys != p.keys) m |= P_KEYS;
             if (b->checkpoint != p.checkpoint) m |= P_CHECK;
             if (!p.hidden && (b->hooked != p.hooked || (p.hooked && !samePos(b->hookPoint, p.hookPoint)))) m |= P_HOOK;
         }
-        if (p.hidden) m &= ~(P_POS | P_YAW | P_PITCH | P_HOOK);
+        if (p.hidden) m &= ~(P_POS | P_YAW | P_PITCH | P_HOOK | P_KEYS);
         w.u8(p.id); w.u16(m);
         if (m & P_FLAGS) w.u8(p.flags);
         if (m & P_POS) w.vecq(p.pos);
@@ -123,6 +124,7 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
         if (m & P_SCORE) w.i16(p.score);
         if (m & P_STATS) { w.i16(p.dmg); w.i16(p.obj); w.u8(p.acc); }
         if (m & P_PING) w.u16(p.ping);
+        if (m & P_KEYS) w.u16(p.keys);
         if (m & P_CHECK) w.u8(p.checkpoint);
         if (m & P_HOOK) { w.u8(p.hooked); if (p.hooked) w.vecq(p.hookPoint); }
     }
@@ -169,6 +171,7 @@ bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base) {
         if (m & P_SCORE) p.score = r.i16();
         if (m & P_STATS) { p.dmg = r.i16(); p.obj = r.i16(); p.acc = r.u8(); }
         if (m & P_PING) p.ping = r.u16();
+        if (m & P_KEYS) p.keys = r.u16();
         if (m & P_CHECK) p.checkpoint = r.u8();
         if (m & P_HOOK) { p.hooked = r.u8(); if (p.hooked) p.hookPoint = r.vecq(); }
         if (p.hidden) p.hooked = 0;

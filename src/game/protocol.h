@@ -58,6 +58,7 @@ struct PlayerSnap {
     uint16_t ping = 0;
     uint8_t checkpoint = 0;
     uint8_t hooked = 0;
+    uint16_t keys = 0;          // held keys (KEY_*), for the spectators' key overlay
     Vec3 hookPoint;
     bool hidden = false;    // not visible to this client: only scoreboard fields are valid (no position)
     int team() const { return (flags & PS_SPECTATOR) ? TEAM_SPECTATOR : (flags & PS_TEAM_B) ? TEAM_B : TEAM_A; }

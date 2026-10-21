@@ -457,7 +457,11 @@ void Game::onKey(int key, int action, int mods) {
         return;
     }
     if (cmd && key == GLFW_KEY_C && (ui_.typing() || chatting_)) {
-        if (chatting_) glfwSetClipboardString(win_, chatText_.c_str());
+        if (console_ && chatting_ && (chatText_.empty() || (mods & GLFW_MOD_SHIFT))) {   // console: copy the whole log
+            std::string all;
+            for (auto& l : consoleLog_) all += l + "\n";
+            glfwSetClipboardString(win_, all.c_str());
+        } else if (chatting_) glfwSetClipboardString(win_, chatText_.c_str());
         else uiIn_.copy = true;
         return;
     }
@@ -484,7 +488,20 @@ void Game::onKey(int key, int action, int mods) {
     if (screen_ == Screen::InGame) {
         if (chatting_ && console_) {
             if (key == GLFW_KEY_ESCAPE) { console_ = chatting_ = false; chatText_.clear(); captureMouse(!paused_); }
-            else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) { runConsole(chatText_); chatText_.clear(); }
+            else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
+                if (!chatText_.empty() && (consoleHistory_.empty() || consoleHistory_.back() != chatText_)) consoleHistory_.push_back(chatText_);
+                if (consoleHistory_.size() > 50) consoleHistory_.erase(consoleHistory_.begin());
+                consoleHistoryAt_ = -1;
+                runConsole(chatText_); chatText_.clear();
+            }
+            else if (key == GLFW_KEY_TAB) consoleComplete();
+            else if ((key == GLFW_KEY_UP || key == GLFW_KEY_DOWN) && !consoleHistory_.empty()) {   // history
+                int n = (int)consoleHistory_.size();
+                consoleHistoryAt_ = key == GLFW_KEY_UP ? (consoleHistoryAt_ < 0 ? n - 1 : std::max(0, consoleHistoryAt_ - 1))
+                                                       : (consoleHistoryAt_ < 0 ? -1 : consoleHistoryAt_ + 1);
+                if (consoleHistoryAt_ >= n) consoleHistoryAt_ = -1;
+                chatText_ = consoleHistoryAt_ < 0 ? "" : consoleHistory_[consoleHistoryAt_];
+            }
             return;
         }
         if (chatting_) {
@@ -896,7 +913,7 @@ void Game::frame(double dt) {
         modelSentAt_ = time_;
     }
     if (audio_.pack() != cfg_.soundPack) audio_.setPack(cfg_.soundPack);
-    net_.setInterpFixed(fairRules() ? 0.010f : cfg_.interpMs > 0 ? cfg_.interpMs * 0.001f : -1.0f);
+    net_.setInterpFixed(fairRules() ? 0.010f : cfg_.interpMs > 0 ? cfg_.interpMs * 0.001f : cfg_.interpMs < 0 ? 0.0f : -1.0f);
     frameInput_ = pendingInput_; // the oldest input this frame will show
     pendingInput_ = -1;
     if (opts_.bench > 0 && screen_ == Screen::InGame) benchFrame(dt);
@@ -1232,21 +1249,32 @@ void Game::drawWorld(float alpha) {
                 r_.text(sx - r_.textWidth(t, ts) * 0.5f, sy, ts, t, kRed);
             }
         }
-        if (!self && i != viewing) if (int place = crownOf(i)) { // leaderboard crown over their head
-            float sx, sy;
-            if (r_.project(pos + Vec3(0, 2.0f * bs + 0.95f, 0), sx, sy)) { float cw = 18 * ui_.s(); drawCrown(sx - cw * 0.5f, sy, cw, place); }
+        if (vis && !fairRules()) if (int place = crownOf(i)) { // leaderboard crown on their head (a model; not in ranked)
+            Vec3 gold = place == 1 ? Vec3{1.0f, 0.78f, 0.15f} : Vec3{0.82f, 0.85f, 0.9f};
+            Vec3 top = pos + Vec3(0, kPlayerHeight * hs * bs + 0.04f * bs, 0);
+            r_.box(top + Vec3(0, 0.06f, 0) * bs, Vec3(0.17f, 0.06f, 0.17f) * bs, yaw, gold, sv, false);            // band
+            for (int k = 0; k < 4; k++) {                                                                          // four points
+                Vec3 d = (k & 1 ? rgt : fwd) * ((k & 2) ? -0.14f : 0.14f);
+                r_.box(top + d * bs + Vec3(0, 0.17f, 0) * bs, Vec3(0.035f, 0.06f, 0.035f) * bs, yaw, gold, sv, false);
+            }
+            const char* letter = crownLetter(i);
+            float sx, sy;   // the board's letter on the front of the band
+            if (*letter && !self && i != viewing && r_.project(top + Vec3(0, 0.06f, 0) * bs, sx, sy)) {
+                float d = length(top - r_.cameraPos()), ts = std::max(1.0f, std::round(ui_.textScale() * std::min(1.0f, 8.0f / std::max(d, 1.0f))));
+                r_.text(sx - r_.textWidth(letter, ts) * 0.5f, sy - r_.textHeight(ts) * 0.5f, ts, letter, {0.1f, 0.08f, 0.02f, 1});
+            }
         }
         // health bars over other players (VISUALS > HEALTH BARS; not in ranked)
         if (cfg_.healthBars && !fairRules() && !self && i != viewing) {
-            float sx, sy;
-            if (r_.project(pos + Vec3(0, 2.0f * bs + 0.35f, 0), sx, sy)) {
+            float sx, sy;   // over their head, or at their feet (VISUALS > HEALTH BAR POSITION)
+            if (r_.project(cfg_.healthBarsBottom ? pos + Vec3(0, -0.15f, 0) : pos + Vec3(0, 2.0f * bs + 0.35f, 0), sx, sy)) {
                 float bw = 44 * ui_.s(), bh = 5 * ui_.s();
                 float f = clampf(p.health / 100.0f, 0, 1);
                 r_.rect(sx - bw * 0.5f - 1, sy - 1, bw + 2, bh + 2, {0, 0, 0, 0.7f});
                 r_.rect(sx - bw * 0.5f, sy, bw * f, bh, p.health > 30 ? rgba(col) : kRed);
             }
         }
-        if (!self && time_ < typingUntil_[i]) { // typing in chat
+        if (!self && time_ < typingUntil_[i] && !fairRules()) { // typing in chat (not in ranked)
             float sx, sy;
             if (r_.project(pos + Vec3(0, 2.0f * bs + 0.7f, 0), sx, sy)) {
                 float tts = std::max(1.0f, std::round(ui_.textScale()));
@@ -1512,10 +1540,13 @@ void Game::drawWorld(float alpha) {
     }
 
     // viewmodel (hide and seek / tag: only "it" holds anything)
-    bool unarmed = isItMode(net_.mode().mode) && !(mep && (mep->flags & PS_HASBOMB));
+    // (spectating: the gun of whoever we're watching)
+    const bool specGun = !alive && viewing != me && viewing >= 0 && players[viewing].valid;
+    const PlayerSnap* holder = specGun ? &players[viewing].snap : mep;
+    bool unarmed = isItMode(net_.mode().mode) && !(holder && (holder->flags & PS_HASBOMB));
     const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
-    if (alive && !(scoped_ && scopeOverlay_) && !unarmed && !vm.hidden) {
-        int w = net_.selfWeapon();
+    if ((alive || specGun) && !(scoped_ && scopeOverlay_ && !specGun) && !unarmed && !vm.hidden) {
+        int w = specGun ? (int)players[viewing].snap.weapon : net_.selfWeapon();
         recoil_ = std::max(0.0, recoil_ - 0.016 * 8);
         float kick = (float)recoil_ * 0.06f;
         // Each weapon is a handful of boxes around `at` (camera space: +x right, +y up, -z forward).
@@ -1931,7 +1962,7 @@ void Game::drawHud() {
     if (!fairRules()) {
         if (cfg_.hudVerbose || cfg_.hudWidgets) computeHudVals();
         if (cfg_.hudVerbose) drawVerboseHud(W, s, y);
-        if (cfg_.hudVerbose && !cfg_.hud[Settings::HUD_KEYS].hidden && net_.selfAlive()) drawKeyOverlay(W, H, s);
+        if (cfg_.hudVerbose && !cfg_.hud[Settings::HUD_KEYS].hidden && (net_.selfAlive() || specKeysOf() >= 0)) drawKeyOverlay(W, H, s);
     }
     {   // demos: what's playing / that you're recording
         float dts = std::max(1.0f, std::round(ts * 0.75f));
@@ -2142,6 +2173,7 @@ void Game::runConsole(const std::string& line) {
     if (k == "help") {
         consolePrint("<setting>          show it          <setting> <value>   set it (saved)");
         consolePrint("list [text]        settings (containing text)     clear    empty this log");
+        consolePrint("TAB completes   UP/DOWN history   CTRL+V pastes   CTRL+C copies the line (empty line or CTRL+SHIFT+C: the log)");
         consolePrint("/<command>         a server command (callvote, team, kill, ...)");
         consolePrint("e.g.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5");
         return;
@@ -2165,6 +2197,31 @@ void Game::runConsole(const std::string& line) {
     for (auto& l : lines()) if (l.rfind(k + "=", 0) == 0) consolePrint("  " + k + " = " + l.substr(k.size() + 1));
 }
 
+// Every word the console knows: its commands and every setting name.
+std::vector<std::string> Game::consoleWords() const {
+    std::vector<std::string> out = {"help", "list", "clear"};
+    std::istringstream t(cfg_.toText());
+    std::string l;
+    while (std::getline(t, l)) if (size_t e = l.find('='); e != std::string::npos && e > 0) out.push_back(l.substr(0, e));
+    return out;
+}
+
+// Tab: complete the first word (a setting or command). One match fills it in; several fill the common
+// part and list them.
+void Game::consoleComplete() {
+    if (chatText_.empty() || chatText_.find(' ') != std::string::npos || chatText_[0] == '/') return;
+    std::vector<std::string> hits;
+    for (auto& w : consoleWords()) if (w.rfind(chatText_, 0) == 0) hits.push_back(w);
+    if (hits.empty()) return;
+    std::string common = hits[0];
+    for (auto& h : hits) { size_t n = 0; while (n < common.size() && n < h.size() && common[n] == h[n]) n++; common.resize(n); }
+    if (hits.size() == 1) { chatText_ = hits[0] + " "; return; }
+    chatText_ = common;
+    std::string line;
+    for (auto& h : hits) { if (line.size() + h.size() > 90) { consolePrint("  " + line); line.clear(); } line += h + "  "; }
+    if (!line.empty()) consolePrint("  " + line);
+}
+
 void Game::drawConsole(float W, float H, float s, float ts) {
     float ch = H * 0.45f, lh = r_.textHeight(ts) + 4 * s;
     r_.rect(0, 0, W, ch, {0.03f, 0.04f, 0.06f, 0.92f});
@@ -2172,10 +2229,33 @@ void Game::drawConsole(float W, float H, float s, float ts) {
     for (char c : uiIn_.chars) if (c >= 32 && c < 127 && c != '`' && chatText_.size() < 200) chatText_ += c;
     if (uiIn_.backspace && !chatText_.empty()) chatText_.pop_back();
     float y = ch - 12 * s - lh;
-    r_.text(16 * s, y, ts, "> " + chatText_ + (std::fmod(time_, 1.0) < 0.5 ? "_" : ""), kWhite);
+    // highlighting: the first word green when it's a known setting / command, red when not, a /command in the
+    // accent colour; the value white
+    const Color good = {0.45f, 0.95f, 0.55f, 1}, bad = {1.0f, 0.4f, 0.35f, 1}, key = {0.55f, 0.8f, 1.0f, 1}, dim = {0.75f, 0.78f, 0.82f, 1};
+    auto words = consoleWords();
+    auto known = [&](const std::string& w) { return std::find(words.begin(), words.end(), w) != words.end(); };
+    float x = 16 * s;
+    r_.text(x, y, ts, "> ", kWhite); x += r_.textWidth("> ", ts);
+    size_t sp = chatText_.find(' ');
+    std::string first = chatText_.substr(0, sp), rest = sp == std::string::npos ? "" : chatText_.substr(sp);
+    Color fc = first.empty() ? kWhite : first[0] == '/' ? rgba(cfg_.colorFriendly) : known(first) ? good : bad;
+    r_.text(x, y, ts, first, fc); x += r_.textWidth(first, ts);
+    r_.text(x, y, ts, rest, kWhite); x += r_.textWidth(rest, ts);
+    if (std::fmod(time_, 1.0) < 0.5) r_.text(x, y, ts, "_", kWhite);
     y -= lh * 1.3f;
-    for (auto it = consoleLog_.rbegin(); it != consoleLog_.rend() && y > 4 * s; ++it, y -= lh)
-        r_.text(16 * s, y, ts, *it, {0.75f, 0.78f, 0.82f, 1});
+    for (auto it = consoleLog_.rbegin(); it != consoleLog_.rend() && y > 4 * s; ++it, y -= lh) {
+        const std::string& l = *it;
+        size_t eq = l.find(" = ");
+        if (l.rfind("> ", 0) == 0) r_.text(16 * s, y, ts, l, rgba(cfg_.colorFriendly));                  // what was typed
+        else if (l.rfind("unknown", 0) == 0) r_.text(16 * s, y, ts, l, bad);
+        else if (eq != std::string::npos) {                                                                 // "  key = value"
+            std::string k = l.substr(0, eq), v = l.substr(eq);
+            r_.text(16 * s, y, ts, k, key); r_.text(16 * s + r_.textWidth(k, ts), y, ts, v, kWhite);
+        } else if (size_t e = l.find('='); e != std::string::npos && l.rfind("  ", 0) == 0 && l.find(' ', 2) > e) {   // list: "  key=value"
+            std::string k = l.substr(0, e), v = l.substr(e);
+            r_.text(16 * s, y, ts, k, key); r_.text(16 * s + r_.textWidth(k, ts), y, ts, v, kWhite);
+        } else r_.text(16 * s, y, ts, l, dim);
+    }
     if (consoleLog_.empty()) r_.text(16 * s, y, ts, "CONSOLE - TYPE help (` OR ESC CLOSES)", kGrey);
 }
 
@@ -2185,17 +2265,27 @@ void Game::drawKeyOverlay(float W, float H, float s) {
     float ox = W * 0.5f - (4 * u + 3 * g) * 0.5f + e.x * s, oy = H - 230 * s + e.y * s;
     Color lit = e.custom ? Color{e.color.x, e.color.y, e.color.z, 0.9f} : rgba(cfg_.colorFriendly, 0.9f);
     float ts = std::max(1.0f, std::round(ui_.textScale() * 0.5f * e.scale));
-    auto key = [&](float col, float row, float wUnits, const char* label, int action) {
+    // alive: our own keys; spectating: what the watched player is holding (from the snapshot)
+    const int spec = net_.selfAlive() ? -1 : specKeysOf();
+    const uint16_t held = spec >= 0 ? net_.findPlayer(spec)->keys : 0;
+    auto key = [&](float col, float row, float wUnits, const char* label, int action, uint16_t bit) {
         float x = ox + col * (u + g), y = oy + row * (u + g), w = wUnits * u + (wUnits - 1) * g;
-        bool on = isDown(action);
+        bool on = spec >= 0 ? (held & bit) != 0 : isDown(action);
         r_.rect(x, y, w, u, on ? lit : Color{0.05f, 0.06f, 0.08f, 0.55f});
         r_.text(x + (w - r_.textWidth(label, ts)) * 0.5f, y + (u - r_.textHeight(ts)) * 0.5f, ts, label, on ? Color{0, 0, 0, 1} : Color{0.85f, 0.87f, 0.9f, 0.9f});
     };
-    key(1, 0, 1, "W", A_FORWARD);
-    key(0, 1, 1, "A", A_LEFT); key(1, 1, 1, "S", A_BACK); key(2, 1, 1, "D", A_RIGHT);
-    key(3, 0, 1, "LMB", A_FIRE); key(3, 1, 1, "RMB", A_ALTFIRE);
-    key(0, 2, 2, "JUMP", A_JUMP); key(2, 2, 2, "CROUCH", A_CROUCH);
-    key(0, 3, 2, "DASH", A_DASH); key(2, 3, 2, "HOOK", A_GRAPPLE);
+    key(1, 0, 1, "W", A_FORWARD, KEY_FWD);
+    key(0, 1, 1, "A", A_LEFT, KEY_LEFT); key(1, 1, 1, "S", A_BACK, KEY_BACK); key(2, 1, 1, "D", A_RIGHT, KEY_RIGHT);
+    key(3, 0, 1, "LMB", A_FIRE, KEY_FIRE); key(3, 1, 1, "RMB", A_ALTFIRE, KEY_ALT);
+    key(0, 2, 2, "JUMP", A_JUMP, KEY_JUMP); key(2, 2, 2, "CROUCH", A_CROUCH, KEY_CROUCH);
+    key(0, 3, 2, "DASH", A_DASH, KEY_DASH); key(2, 3, 2, "HOOK", A_GRAPPLE, KEY_HOOK);
+}
+
+// The player we're spectating, if they're alive and in the snapshot (else -1).
+int Game::specKeysOf() const {
+    if (specTarget_ < 0) return -1;
+    const PlayerSnap* p = net_.findPlayer(specTarget_);
+    return p && (p->flags & PS_ALIVE) && !p->hidden ? specTarget_ : -1;
 }
 
 void Game::drawVerboseHud(float W, float s, float& y) {
@@ -2663,7 +2753,7 @@ void Game::drawScoreboard() {
         std::string n = net_.playerName(p.id) + ((p.flags & PS_ALIVE) ? "" : " (dead)");
         if (p.id == net_.clientId()) r_.rect(x + 4 * s, cy - 4 * s, w - 8 * s, rowH - 2 * s, {1, 1, 1, 0.06f});
         float cw = 0;
-        if (int place = crownOf(p.id)) { cw = r_.textHeight(ts) * 1.2f; drawCrown(x + 12 * s, cy + r_.textHeight(ts) * 0.1f, cw, place); cw += 5 * s; }
+        if (int place = crownOf(p.id)) { cw = r_.textHeight(ts) * 1.2f; drawCrown(x + 12 * s, cy + r_.textHeight(ts) * 0.1f, cw, place, crownLetter(p.id)); cw += 5 * s; }
         r_.text(x + 12 * s + cw, cy, ts, n, c);
         Rating rt;
         if (ranked && rank_.rating(ladder, net_.rankId(p.id), rt))
@@ -2891,15 +2981,15 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     {
         static const std::vector<std::string> an = {"ANNOUNCER: OFF", "ANNOUNCER: COUNTDOWN", "ANNOUNCER: ALL CALLS"};
         static std::vector<std::string> av;
-        if (av.empty()) for (int v = 0; v < kAnnouncerVoices; v++) av.push_back(std::string(announcerVoiceName(v)) + " VOICE");
+        if (av.empty()) for (int v = 0; v < kAnnouncerVoices; v++) av.push_back(std::string("VOICE: ") + announcerVoiceName(v));
         if (ui_.cycle(x, y, w * 0.6f, h, "ANNOUNCER", cfg_.announcer, 3, an) && cfg_.announcer > 0) audio_.play(SND_VOICE_GO, 1.0f);
         if (ui_.cycle(x + w * 0.6f + gap, y, w * 0.4f - gap, h, "VOICE", cfg_.announcerVoice, kAnnouncerVoices, av)) { audio_.setAnnouncer(cfg_.announcerVoice); audio_.play(SND_VOICE_GODLIKE, 1.0f); }
         y += h + gap;
     }
     {   // cosmetics: player model (everyone sees it) and sound pack
         std::vector<std::string> mn;
-        for (int i = 0; i < kPlayerModels; i++) mn.push_back(playerModelName(i));
-        static const std::vector<std::string> sn = {"STANDARD SFX", "ARCADE SFX", "HEAVY SFX", "RETRO SFX", "SOFT SFX"};
+        for (int i = 0; i < kPlayerModels; i++) mn.push_back(std::string("PLAYER MODEL: ") + playerModelName(i));
+        static const std::vector<std::string> sn = {"SOUND PACK: STANDARD", "SOUND PACK: ARCADE", "SOUND PACK: HEAVY", "SOUND PACK: RETRO", "SOUND PACK: SOFT"};
         ui_.cycle(x, y, w * 0.5f - gap * 0.5f, h, "MODEL", cfg_.model, kPlayerModels, mn);
         ui_.cycle(x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "SOUNDS", cfg_.soundPack, 5, sn);
     }
@@ -2932,12 +3022,16 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     if (ui_.cycle(xr, y, w, h, "ANTI-ALIASING", ai, 4, aaNames)) cfg_.msaa = aaModes[ai];
     y += h + gap;
     {   // other players' interpolation delay (ranked: always 10 ms)
-        static const int ims[] = {0, 5, 8, 10, 15, 20, 30, 50, 100};
-        static const std::vector<std::string> imn = {"INTERP: AUTO (ADAPTIVE)", "INTERP: 5 MS", "INTERP: 8 MS", "INTERP: 10 MS", "INTERP: 15 MS",
-                                                     "INTERP: 20 MS", "INTERP: 30 MS", "INTERP: 50 MS", "INTERP: 100 MS"};
-        int ii = 0;
-        for (int i = 0; i < 9; i++) if (ims[i] == cfg_.interpMs) ii = i;
-        if (ui_.cycle(xr, y, w, h, "INTERP", ii, 9, imn)) cfg_.interpMs = ims[ii];
+        // default (adaptive), disabled (no delay: newest snapshot), or a custom delay set on a slider
+        static const std::vector<std::string> imn = {"INTERP: DEFAULT (ADAPTIVE)", "INTERP: CUSTOM", "INTERP: DISABLED"};
+        int ii = cfg_.interpMs == 0 ? 0 : cfg_.interpMs < 0 ? 2 : 1;
+        if (ui_.cycle(xr, y, w, h, "INTERP", ii, 3, imn)) cfg_.interpMs = ii == 0 ? 0 : ii == 2 ? -1 : 10;
+        if (cfg_.interpMs > 0) {
+            y += h + gap;
+            float v = (float)cfg_.interpMs;
+            ui_.slider(xr, y, w, h, "INTERP DELAY (MS)", v, 1, 200, "%.0f");
+            cfg_.interpMs = std::max(1, (int)std::lround(v));
+        }
         y += h + gap;
     }
     const char* help[] = {
@@ -3926,6 +4020,12 @@ void Game::drawVisualSettings(float x0, float y0, float wTotal) {
     ui_.cycle(x, y, w, h, "YOUR SHOTS", cfg_.ownShots, 3, own); y += h + gap;
     ui_.toggle(x, y, w, h, "OTHER PLAYERS' TRACERS / BEAMS", cfg_.enemyShots); y += h + gap;
     ui_.toggle(x, y, w, h, "HEALTH BARS OVER PLAYERS", cfg_.healthBars); y += h + gap;
+    {
+        static const std::vector<std::string> hbp = {"HEALTH BAR POSITION: TOP (OVER THE HEAD)", "HEALTH BAR POSITION: BOTTOM (AT THE FEET)"};
+        int hi = cfg_.healthBarsBottom ? 1 : 0;
+        if (ui_.cycle(x, y, w, h, "HEALTH BAR POSITION", hi, 2, hbp)) cfg_.healthBarsBottom = hi == 1;
+        y += h + gap;
+    }
     ui_.slider(x, y, w, h, "SCOPE OVERLAY", cfg_.scopeOpacity, 0, 1, "%.2f"); y += h + gap;
     ui_.toggle(x, y, w, h, "STICKY COUNTER", cfg_.stickyCounter); y += h + gap;
     ui_.toggle(x, y, w, h, "WINNERS CROWN", cfg_.crowns); y += h + gap;

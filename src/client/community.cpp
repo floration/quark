@@ -63,8 +63,9 @@ void Game::updateCommunity() {
         std::string board, id, name, discord;
         int place;
         while (in >> board >> place >> id >> name >> discord) {
+            const char* letter = board == "vanilla" ? "Q" : board == "vampire" ? "LG" : board == "instagib" ? "I" : board.rfind("race", 0) == 0 ? "R" : "";
             auto it = crowns_.find(id);
-            if (it == crowns_.end() || place < it->second) crowns_[id] = place;
+            if (it == crowns_.end() || place < it->second.place) crowns_[id] = {place, letter};
         }
     }
     // queue replies, counts, and filled queues
@@ -132,11 +133,17 @@ int Game::crownOf(int playerId) const {
     if (!cfg_.crowns) return 0;
     const std::string& id = playerId == net_.clientId() ? rankKey_.id : net_.rankId(playerId);
     auto it = crowns_.find(id);
-    return it == crowns_.end() ? 0 : it->second;
+    return it == crowns_.end() ? 0 : it->second.place;
+}
+
+const char* Game::crownLetter(int playerId) const {
+    const std::string& id = playerId == net_.clientId() ? rankKey_.id : net_.rankId(playerId);
+    auto it = crowns_.find(id);
+    return it == crowns_.end() ? "" : it->second.letter;
 }
 
 // A small crown (w wide): gold for #1, silver for #2-10. (x, y) is its top left.
-void Game::drawCrown(float x, float y, float w, int place) {
+void Game::drawCrown(float x, float y, float w, int place, const char* letter) {
     if (place <= 0) return;
     Color c = place == 1 ? Color{1.0f, 0.78f, 0.15f, 1} : Color{0.82f, 0.85f, 0.9f, 1};
     Color edge = {0.1f, 0.08f, 0.02f, 0.9f};
@@ -147,6 +154,10 @@ void Game::drawCrown(float x, float y, float w, int place) {
         float px = x + k * 3 * u;
         r_.rect(px - 1, y - 1, u + 2, h * 0.5f + 2, edge);
         r_.rect(px, y, u, h * 0.5f, c);
+    }
+    if (*letter) {   // the board's letter on the band
+        float ts = std::max(1.0f, std::floor(h * 0.5f / r_.textHeight(1)));
+        r_.text(x + (w - r_.textWidth(letter, ts)) * 0.5f, y + h * 0.5f, ts, letter, edge);
     }
 }
 

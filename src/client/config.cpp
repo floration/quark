@@ -43,7 +43,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "brightness") brightness = clampf(fv, 0.6f, 1.8f);
         else if (k == "vsync") presentMode = iv != 0 ? 1 : 0; // old setting
         else if (k == "display_mode") displayMode = std::min(std::max(iv, 0), 2);
-        else if (k == "interp_ms") interpMs = std::min(std::max(iv, 0), 200);
+        else if (k == "interp_ms") interpMs = std::min(std::max(iv, -1), 200);
         else if (k == "present_mode") presentMode = std::min(std::max(iv, 0), 2);
         else if (k == "low_latency") lowLatency = std::min(std::max(iv, 0), 2);
         else if (k == "maxfps") maxFps = iv;
@@ -66,6 +66,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "own_shots") ownShots = std::min(std::max(iv, 0), 2);
         else if (k == "enemy_shots") enemyShots = iv != 0;
         else if (k == "health_bars") healthBars = iv != 0;
+        else if (k == "health_bars_bottom") healthBarsBottom = iv != 0;
         else if (k == "scope_opacity") scopeOpacity = clampf(fv, 0, 1);
         else if (k == "sticky_counter") stickyCounter = iv != 0;
         else if (k == "crowns") crowns = iv != 0;
@@ -141,7 +142,7 @@ std::string Settings::toText() const {
       << "\npresent_mode=" << presentMode << "\nlow_latency=" << lowLatency << "\ninterp_ms=" << interpMs
       << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height
       << "\nshadows=" << shadows << "\nmsaa=" << msaa << "\nmodel=" << model << "\nsoundpack=" << soundPack << "\nsocd=" << socd << "\nalt_toggle=" << altToggle
-      << "\nhud_verbose=" << hudVerbose << "\nhud_widgets=" << hudWidgets << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nhitsounds=" << hitsounds << "\nannouncer=" << announcer << "\nvoice=" << announcerVoice << "\nfullbright=" << fullbright << "\nown_shots=" << ownShots << "\nenemy_shots=" << enemyShots << "\nhealth_bars=" << healthBars
+      << "\nhud_verbose=" << hudVerbose << "\nhud_widgets=" << hudWidgets << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nhitsounds=" << hitsounds << "\nannouncer=" << announcer << "\nvoice=" << announcerVoice << "\nfullbright=" << fullbright << "\nown_shots=" << ownShots << "\nenemy_shots=" << enemyShots << "\nhealth_bars=" << healthBars << "\nhealth_bars_bottom=" << healthBarsBottom
       << "\nscope_opacity=" << scopeOpacity << "\nsticky_counter=" << stickyCounter << "\ncrowns=" << crowns << "\ndiscord=" << discordName << "\ndemo_full_rate=" << demoFullRate << "\noutline_friendly=" << outlineFriendly << "\noutline_enemy=" << outlineEnemy
       << "\ncolor_friendly=" << colorHex(colorFriendly) << "\ncolor_enemy=" << colorHex(colorEnemy)
       << "\nch_style=" << chStyle << "\nch_length=" << chLength << "\nch_thickness=" << chThickness << "\nch_gap=" << chGap

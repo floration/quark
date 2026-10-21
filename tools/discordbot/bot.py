@@ -328,7 +328,7 @@ def run_bot(cfg: dict):
                 e.title, e.url = f"Quark {tag} is out!", rel.get("html_url")
             if i == len(chunks) - 1:
                 e.set_footer(text="Update from the launcher, or download from the release page.")
-            await ch.send(embed=e)
+            await ch.send(content="@everyone" if i == 0 else None, embed=e, allowed_mentions=discord.AllowedMentions(everyone=True))
         state.d["last_tag"] = tag
         state.save()
 
@@ -352,8 +352,11 @@ def run_bot(cfg: dict):
             state.d["messages"]["total_channel"] = tch.id
             bot.last_total_rename = now
         elif tch.name != total_name(total) and now - bot.last_total_rename >= cfg["rename_min_seconds"]:
-            await tch.edit(name=total_name(total))
             bot.last_total_rename = now
+            try:
+                await tch.edit(name=total_name(total))
+            except discord.Forbidden:   # (needs Manage Channels on that channel; don't fail the whole loop over it)
+                log.warning("can't rename the player-count channel: give the bot Manage Channels (and View Channel) on it")
 
         servers = state.d["servers"]
         seen = set()
@@ -516,6 +519,9 @@ def run_bot(cfg: dict):
             return "You left every queue."
         if r.startswith("left"):
             return f"You left the {title} queue."
+        if r == "bad request":
+            log.warning("the master rejected the bot's queue request: BOT_KEY in /etc/quark-discord.env must match the worker's BOT_KEY secret")
+            return "The queue server didn't accept the bot (its BOT_KEY doesn't match the server's). Tell an admin."
         return f"Queue server said: {r}"
 
     # resolving names -> members (needs the Server Members intent)
