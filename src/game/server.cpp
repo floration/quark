@@ -185,11 +185,9 @@ double Server::frame() {
     }
     int caught = 0;
     while (now >= nextTick_) {
-        if (++caught > 20) { // still behind after 20 ticks (each one slower than real time): skip ahead and get back
-            windowLate_ += 20; //  to the network. Checking only before the loop let a slow machine spin here forever.
-            nextTick_ = now + period;
-            break;
-        }
+        if (++caught > 20) break; // 20 ticks per frame at most, then back to the network; the rest of the backlog
+                                  // next frame (time stays continuous; a backlog past 20 periods is skipped above).
+                                  // Catching up without a limit let a slow machine spin here forever.
         if (now - nextTick_ > period * 2) windowLate_++;
         windowTicks_++;
         double t0 = timeNow();
