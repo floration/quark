@@ -2885,9 +2885,10 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     y += h + gap;
     {
         static const std::vector<std::string> an = {"ANNOUNCER: OFF", "ANNOUNCER: COUNTDOWN", "ANNOUNCER: ALL CALLS"};
-        static const std::vector<std::string> av = {"MALE VOICE", "FEMALE VOICE"};
+        static std::vector<std::string> av;
+        if (av.empty()) for (int v = 0; v < kAnnouncerVoices; v++) av.push_back(std::string(announcerVoiceName(v)) + " VOICE");
         if (ui_.cycle(x, y, w * 0.6f, h, "ANNOUNCER", cfg_.announcer, 3, an) && cfg_.announcer > 0) audio_.play(SND_VOICE_GO, 1.0f);
-        if (ui_.cycle(x + w * 0.6f + gap, y, w * 0.4f - gap, h, "VOICE", cfg_.announcerVoice, 2, av)) { audio_.setAnnouncer(cfg_.announcerVoice); audio_.play(SND_VOICE_BOMB_PLANTED, 1.0f); }
+        if (ui_.cycle(x + w * 0.6f + gap, y, w * 0.4f - gap, h, "VOICE", cfg_.announcerVoice, kAnnouncerVoices, av)) { audio_.setAnnouncer(cfg_.announcerVoice); audio_.play(SND_VOICE_GODLIKE, 1.0f); }
         y += h + gap;
     }
     {   // cosmetics: player model (everyone sees it) and sound pack

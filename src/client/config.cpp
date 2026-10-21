@@ -72,7 +72,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "discord") discordName = v.substr(0, 40);
         else if (k == "outline_friendly") outlineFriendly = iv;
         else if (k == "outline_enemy") outlineEnemy = iv;
-        else if (k == "voice") announcerVoice = iv == 1 ? 1 : 0;
+        else if (k == "voice") announcerVoice = iv >= 0 && iv < 7 ? iv : 0;
         else if (k == "announcer") announcer = iv < 0 ? 0 : iv > 2 ? 2 : iv;
         else if (k == "shadowres") shadowRes = iv;
         else if (k == "color_friendly") colorFriendly = parseColor(v, colorFriendly);

@@ -144,8 +144,9 @@ void Audio::synthesize() {
 // The announcer's lines (8-bit 16 kHz, voice_data.h) up to the mix rate, the same in every sound pack.
 // Each voice: its recorded lines (voice_recorded.h), the generated one (voice_data.h) for any line not recorded.
 void Audio::loadAnnouncer(int set) {
-    set = set < 0 || set >= kVoiceSets ? 0 : set;
-    const int tts = set;
+    set = set < 0 || set >= kAnnouncerVoices ? 0 : set;
+    static const int fallback[kAnnouncerVoices] = {0, 1, 0, 0, 1, 1, 0};   // the generated voice for lines not recorded
+    const int tts = std::min(fallback[set], kVoiceSets - 1);
     constexpr int kLines = SND_COUNT - SND_VOICE_THREE;
     std::vector<float> lines[kLines];
     for (int k = 0; k < kVoiceLines && k < kLines; k++) {

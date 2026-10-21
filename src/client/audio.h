@@ -8,6 +8,13 @@
 #include <vector>
 #include "../common/qmath.h"
 
+// Announcer voices (Settings > VOICE): recorded lines (voice_recorded.h sets, in this order), generated for the rest.
+constexpr int kAnnouncerVoices = 7;
+inline const char* announcerVoiceName(int v) {
+    static const char* n[kAnnouncerVoices] = {"MALE", "FEMALE", "BRITISH", "OLD MAN", "E-GIRL", "INDIA", "SPY"};
+    return n[v < 0 || v >= kAnnouncerVoices ? 0 : v];
+}
+
 enum SoundId {
     SND_HIT, SND_KILL, SND_HURT,
     SND_STEP, SND_JUMP, SND_LAND,

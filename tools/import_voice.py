@@ -11,7 +11,10 @@ import os, struct, wave
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "src", "client", "voice_recorded.h")
 RATE = 16000
-VOICES = [   # (folder, {file: lines}) in voice set order: 0 male, 1 female
+# the whole script in one take, in this order (female, british, old man, e-girl, india, spy)
+ALL = ["THREE", "TWO", "ONE", "GO", "YOU_DIED", "HEADSHOT", "AIR_ROCKET", "SPREE", "RAMPAGE", "GODLIKE", "UNSTOPPABLE",
+       "ONE_MINUTE", "THIRTY_SECONDS", "YOU_WIN", "YOU_LOSE", "ROUND_OVER"]
+VOICES = [   # (folder, {file: lines}) in voice set order: 0 male, 1 female, then the recorded-only voices
     ("male", {
         "321fight.wav": ["THREE", "TWO", "ONE", "GO"],
         "youwin.wav": ["YOU_WIN"], "youlose.wav": ["YOU_LOSE"], "roundover.wav": ["ROUND_OVER"],
@@ -26,7 +29,17 @@ VOICES = [   # (folder, {file: lines}) in voice set order: 0 male, 1 female
                     ("ONE_MINUTE", 15.18, 16.68), ("THIRTY_SECONDS", 17.13, 18.81), ("YOU_WIN", 19.17, 20.16),
                     ("YOU_LOSE", 20.67, 21.90), ("ROUND_OVER", 22.23, 23.76)],
     }),
-]
+    ("british", {"all.wav": [("THREE", 0.90, 1.59), ("TWO", 1.86, 2.43), ("ONE", 2.79, 3.39), ("GO", 3.75, 4.62),
+                             ("YOU_DIED", 5.31, 6.24), ("HEADSHOT", 6.63, 7.41), ("AIR_ROCKET", 7.71, 8.61), ("SPREE", 9.09, 10.32),
+                             ("RAMPAGE", 10.68, 11.91), ("GODLIKE", 12.25, 13.44), ("UNSTOPPABLE", 13.89, 15.42),
+                             ("ONE_MINUTE", 16.20, 17.73), ("THIRTY_SECONDS", 18.42, 20.22), ("YOU_WIN", 20.70, 21.72),
+                             ("YOU_LOSE", 22.20, 23.34), ("ROUND_OVER", 23.73, 25.11)]}),
+    ("oldman", {"all.wav": [("THREE", 1.17, 1.83), ("TWO", 2.22, 2.70), ("ONE", 3.30, 3.87), ("GO", 4.62, 5.25),
+                            ("YOU_DIED", 6.09, 7.38), ("HEADSHOT", 7.80, 8.76), ("AIR_ROCKET", 9.09, 9.99), ("SPREE", 10.56, 11.88),
+                            ("RAMPAGE", 12.33, 13.83), ("GODLIKE", 14.40, 15.51), ("UNSTOPPABLE", 15.99, 17.58),
+                            ("ONE_MINUTE", 18.30, 19.92), ("THIRTY_SECONDS", 20.58, 22.41), ("YOU_WIN", 22.92, 24.21),
+                            ("YOU_LOSE", 24.75, 26.34), ("ROUND_OVER", 26.82, 28.53)]}),
+] + [(v, {"all.wav": ALL}) for v in ("egirl", "india", "spy")]   # same script as female, clear pauses: split at them
 
 def line_ids():
     """the announcer line order, from make_voice.py's LINES (without running it)"""
