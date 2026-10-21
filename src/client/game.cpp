@@ -11,6 +11,7 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <cstdio>
+#include <cstring>
 #include "../game/gamemodes.h"
 
 static std::string fmtRace(int ms);
@@ -246,7 +247,14 @@ void Game::leaveGame(const std::string& error) {
     annPrevValid_ = false;
     rulesParts_.clear();
     error_ = error;
-    paused_ = chatting_ = false;
+    paused_ = chatting_ = console_ = false;
+    // in-game menus start closed next time (a dropped connection mid-menu left them open)
+    if (widgetEdit_) widgets_.save(activeHudPath());
+    if (settingsInGame_) cfg_.save();
+    settingsInGame_ = voteMenu_ = queueMenu_ = controlsOpen_ = crosshairOpen_ = hudOpen_ = visualsOpen_ = widgetEdit_ = hudDrop_ = false;
+    picker_ = PICK_NONE;
+    filePick_ = 0;
+    captureAction_ = -1;
     killFeed_.clear(); chatFeed_.clear(); chatLog_.clear(); notices_.clear();
     for (int i = 0; i < kMaxPlayers; i++) { streak_[i] = 0; typingUntil_[i] = 0; }
     tracers_.clear(); explosions_.clear(); lastProjectiles_.clear();
@@ -261,7 +269,8 @@ void Game::setScreen(Screen s) {
     uiIn_.pressed = false; // the click that changed screens doesn't also press whatever is under it on the new one
     ui_.clearFocus();
     captureMouse(s == Screen::InGame && !paused_ && !chatting_);
-    if (s == Screen::Join) browser_.refresh();
+    if (s == Screen::Join) { browser_.refresh(); joinScroll_ = 0; }
+    if (s == Screen::Demos) demoScroll_ = 0;
     if (s == Screen::Host || s == Screen::VsBots) rescanMaps();
 }
 
@@ -535,7 +544,7 @@ void Game::onKey(int key, int action, int mods) {
         if (key == GLFW_KEY_ESCAPE) {
             if (filePick_) { filePick_ = 0; return; }
             if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
-            if (controlsOpen_ || crosshairOpen_ || hudOpen_) { controlsOpen_ = crosshairOpen_ = hudOpen_ = false; cfg_.save(); return; }
+            if (controlsOpen_ || crosshairOpen_ || hudOpen_ || visualsOpen_) { controlsOpen_ = crosshairOpen_ = hudOpen_ = visualsOpen_ = false; captureAction_ = -1; cfg_.save(); return; }
             if (settingsInGame_) { settingsInGame_ = false; cfg_.save(); return; }
             if (voteMenu_ || queueMenu_ || picker_ != PICK_NONE) { voteMenu_ = queueMenu_ = false; picker_ = PICK_NONE; return; }
             paused_ = !paused_;
@@ -546,9 +555,11 @@ void Game::onKey(int key, int action, int mods) {
         uiIn_.escape = true;
         if (filePick_) { filePick_ = 0; return; }
         if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
-        if (controlsOpen_ || crosshairOpen_ || hudOpen_ || visualsOpen_) { controlsOpen_ = crosshairOpen_ = hudOpen_ = visualsOpen_ = false; cfg_.save(); return; }
+        if (controlsOpen_ || crosshairOpen_ || hudOpen_ || visualsOpen_) { controlsOpen_ = crosshairOpen_ = hudOpen_ = visualsOpen_ = false; captureAction_ = -1; cfg_.save(); return; }
         if (picker_ != PICK_NONE) { picker_ = PICK_NONE; return; }
-        if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::Settings || screen_ == Screen::VsBots || screen_ == Screen::Leaderboard || screen_ == Screen::Demos) {
+        if (screen_ == Screen::Leaderboard && raceStatsView_) { raceStatsView_ = false; return; } // race stats: back to the board
+        if (screen_ == Screen::CustomMode) { setScreen(Screen::Host); return; }                  // same as its BACK (unsaved changes dropped)
+        if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::Settings || screen_ == Screen::VsBots || screen_ == Screen::Leaderboard || screen_ == Screen::Demos || screen_ == Screen::Info) {
             cfg_.save();
             setScreen(Screen::Main);
         } else if (screen_ == Screen::Connecting) {
@@ -602,6 +613,8 @@ void Game::onScroll(double dy) {
     if (dy == 0) return;
     if (screen_ == Screen::Editor) { edSpeed_ = clampf(edSpeed_ * (float)std::pow(1.25, dy), 2, 80); return; }
     if (screen_ == Screen::Info) { infoScroll_ -= (float)dy * 60.0f; return; }
+    if (screen_ == Screen::Demos && picker_ == PICK_NONE) { demoScroll_ = std::max(0, demoScroll_ - (dy > 0 ? 1 : -1)); return; }   // clamped when drawn
+    if (screen_ == Screen::Join) { joinScroll_ = std::max(0, joinScroll_ - (dy > 0 ? 1 : -1)); return; }
     // One action per whole notch: smooth-scrolling trackpads and high-res wheels send many small
     // steps, which used to skip through several weapons at once. Reversing direction starts over.
     if ((dy > 0) != (wheelAccum_ > 0)) wheelAccum_ = 0;
@@ -2011,7 +2024,9 @@ void Game::drawHud() {
     drawVotePanel(cx, s, ts);
 
     // host info
-    if (host_ && paused_) {
+    // the tall in-game submenus (settings, map / mode lists) start higher up, over where the host info sits
+    bool tallMenu = paused_ && (settingsInGame_ || picker_ != PICK_NONE);
+    if (host_ && paused_ && !tallMenu) {
         // under the top panel, clear of the pause menu
         std::string st = "HOSTING ON UDP PORT " + std::to_string(host_->port());
         ui_.labelCentered(cx, 100 * s, st, kGrey, 0.6f);
@@ -2026,7 +2041,12 @@ void Game::drawHud() {
                        (showScores_ || ms.phase == PHASE_ROUND_END || (ms.phase == PHASE_FREEZE && ms.round <= 1));
     if (showBracket && !paused_) drawBracket();
     else if (showScores_ && !paused_) drawScoreboard();
-    if (paused_) drawPauseMenu(cx, H * 0.25f);
+    if (paused_) {
+        // dim the game behind the menu so HUD text doesn't show through its panels; not on the pages
+        // that preview the HUD / crosshair over the game
+        if (!(settingsInGame_ && (hudOpen_ || widgetEdit_ || crosshairOpen_))) r_.rect(0, 0, W, H, {0.03f, 0.035f, 0.05f, 0.55f});
+        drawPauseMenu(cx, tallMenu ? 96 * s : H * 0.25f);
+    }
 }
 
 std::vector<std::string> Game::rankIdsInGame() const {
@@ -2072,9 +2092,18 @@ void Game::applyModeRules(int mode) {
 }
 
 // The .cfg files in huds/ or controls/ as buttons; returns true with the clicked name.
+// listProfiles for menus drawn every frame: the folder is re-read once a second, not every frame.
+static const std::vector<std::string>& profilesCached(const char* sub, double now) {
+    struct Entry { double at = -1; std::vector<std::string> files; };
+    static Entry huds, controls;
+    Entry& e = std::strcmp(sub, "huds") == 0 ? huds : controls;
+    if (now >= e.at || now < e.at - 1.0) { e.files = listProfiles(sub); e.at = now + 1.0; }
+    return e.files;
+}
+
 bool Game::drawFileList(const char* sub, float x, float y, float w, std::string& picked) {
     float s = ui_.s(), h = 22 * s, gap = 3 * s;
-    auto files = listProfiles(sub);
+    const auto& files = profilesCached(sub, time_);
     ui_.panel(x - 8 * s, y - 8 * s, w + 16 * s, (std::min<int>((int)files.size(), 14) + 2) * (h + gap) + 24 * s, 0.95f);
     ui_.label(x, y, files.empty() ? std::string("NO FILES IN ") + upper(sub) + "/ - USE OPEN FOLDER" : "PICK A FILE TO IMPORT", kWhite, 0.5f);
     y += 16 * s;
@@ -2087,10 +2116,10 @@ bool Game::drawFileList(const char* sub, float x, float y, float w, std::string&
 // "In <mode> use <profile>" for HUD layouts (hud) or control profiles.
 void Game::ruleRow(float x, float y, float w, float h, bool hud) {
     float gap = 5 * ui_.s(), mw = w * 0.35f;
-    std::vector<std::string> mn;
-    for (int m = 0; m < MODE_COUNT; m++) mn.push_back(std::string("IN ") + upper(modeName(m)));
+    static std::vector<std::string> mn;
+    if (mn.empty()) for (int m = 0; m < MODE_COUNT; m++) mn.push_back(std::string("IN ") + upper(modeName(m)));
     ui_.cycle(x, y, mw, h, "MODE", ruleMode_, MODE_COUNT, mn);
-    auto files = listProfiles(hud ? "huds" : "controls");
+    const auto& files = profilesCached(hud ? "huds" : "controls", time_);
     std::string& rule = hud ? cfg_.modeHud[ruleMode_] : cfg_.modeCtl[ruleMode_];
     std::vector<std::string> fn = {hud ? "MY HUD" : "MY CONTROLS"};
     int cur = 0;
@@ -2777,7 +2806,7 @@ void Game::drawScoreboard() {
     cy += rowH;
     for (auto& p : ps) {
         Color c = (p.flags & PS_SPECTATOR) ? kGrey : rgba(teamColor(p.id));
-        std::string n = net_.playerName(p.id) + ((p.flags & PS_ALIVE) ? "" : " (dead)");
+        std::string n = net_.playerName(p.id) + ((p.flags & PS_ALIVE) ? "" : " (DEAD)");
         if (p.id == net_.clientId()) r_.rect(x + 4 * s, cy - 4 * s, w - 8 * s, rowH - 2 * s, {1, 1, 1, 0.06f});
         float cw = 0;
         if (int place = crownOf(p.id)) { cw = r_.textHeight(ts) * 1.2f; drawCrown(x + 12 * s, cy + r_.textHeight(ts) * 0.1f, cw, place, crownLetter(p.id)); cw += 5 * s; }
@@ -2910,7 +2939,7 @@ void Game::drawPauseMenu(float cx, float y) {
         if (ui_.button(x, y, hw, h, "FORCE START")) { net_.sendCommand("forcestart"); paused_ = false; }
         if (ui_.button(x + hw + gap, y, hw, h, "RELOAD MAP")) { net_.sendCommand("reload"); paused_ = false; } // picks up edits to the map file
         y += h + gap;
-        if (!(net_.mode().flags & MS_RANKED) && ui_.button(x, y, w, h, "EDIT MODE")) { net_.sendCommand("editmode on"); paused_ = false; } // edit together
+        if (!(net_.mode().flags & MS_RANKED) && ui_.button(x, y, w, h, "EDIT THE MAP TOGETHER")) { net_.sendCommand("editmode on"); paused_ = false; } // edit together
         if (!(net_.mode().flags & MS_RANKED)) y += h + gap;
     }
     if (net_.recording()) {
@@ -2938,7 +2967,9 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     float w = std::max(320 * s, wTotal * 0.5f);
     float x = x0 + wTotal * 0.5f - w - colGap * 0.5f; // two columns centred on the old area
     float xr = x + w + colGap;
-    ui_.panel(x - 16 * s, y0 - 16 * s, w * 2 + colGap + 32 * s, 11 * (h + gap) + 150 * s);
+    float ph = 12 * (h + gap) + 150 * s;
+    y0 = std::max(24 * s, std::min(y0, (float)r_.height() - ph + 8 * s)); // panel bottom stays on screen
+    ui_.panel(x - 16 * s, y0 - 16 * s, w * 2 + colGap + 32 * s, ph);
 
     // --- left column: player, mouse, colors
     float y = y0;
@@ -2996,10 +3027,12 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     ui_.accent = rgba(cfg_.colorFriendly);
     y += h + gap;
     {   // player outlines
-        std::vector<std::string> ot, oe;
-        for (int i = 0; i < kOutlineColors; i++) { ot.push_back(std::string("TEAM OUTLINE: ") + kOutlineNames[i]); oe.push_back(std::string("ENEMY OUTLINE: ") + kOutlineNames[i]); }
-        ui_.cycle(x, y, w * 0.5f - gap * 0.5f, h, "TEAM OUTLINE", cfg_.outlineFriendly, kOutlineColors, ot);
-        ui_.cycle(x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "ENEMY OUTLINE", cfg_.outlineEnemy, kOutlineColors, oe);
+        static std::vector<std::string> ot, oe;
+        if (ot.empty()) for (int i = 0; i < kOutlineColors; i++) { ot.push_back(std::string("TEAM OUTLINE: ") + kOutlineNames[i]); oe.push_back(std::string("ENEMY OUTLINE: ") + kOutlineNames[i]); }
+        // full-width rows: at half width the names shrank to an unreadable size
+        ui_.cycle(x, y, w, h, "TEAM OUTLINE", cfg_.outlineFriendly, kOutlineColors, ot);
+        y += h + gap;
+        ui_.cycle(x, y, w, h, "ENEMY OUTLINE", cfg_.outlineEnemy, kOutlineColors, oe);
         y += h + gap;
     }
     if (ui_.slider(x, y, w * 0.6f, h, "VOLUME", cfg_.volume, 0, 1, "%.2f")) audio_.setMasterVolume(cfg_.volume);
@@ -3014,11 +3047,12 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
         y += h + gap;
     }
     {   // cosmetics: player model (everyone sees it) and sound pack
-        std::vector<std::string> mn;
-        for (int i = 0; i < kPlayerModels; i++) mn.push_back(std::string("PLAYER MODEL: ") + playerModelName(i));
+        static std::vector<std::string> mn;
+        if (mn.empty()) for (int i = 0; i < kPlayerModels; i++) mn.push_back(std::string("PLAYER MODEL: ") + playerModelName(i));
         static const std::vector<std::string> sn = {"SOUND PACK: STANDARD", "SOUND PACK: ARCADE", "SOUND PACK: HEAVY", "SOUND PACK: RETRO", "SOUND PACK: SOFT"};
-        ui_.cycle(x, y, w * 0.5f - gap * 0.5f, h, "MODEL", cfg_.model, kPlayerModels, mn);
-        ui_.cycle(x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "SOUNDS", cfg_.soundPack, 5, sn);
+        ui_.cycle(x, y, w, h, "MODEL", cfg_.model, kPlayerModels, mn);
+        y += h + gap;
+        ui_.cycle(x, y, w, h, "SOUNDS", cfg_.soundPack, 5, sn);
     }
 
     // --- right column: display + latency
@@ -3117,7 +3151,7 @@ void Game::drawMenu() {
             if (ui_.button(x, y, bw, bh, "HOST GAME")) setScreen(Screen::Host);
             y += bh + gap;
             if (ui_.button(x, y, bw * 0.5f - gap * 0.5f, bh, "MAP EDITOR")) openEditor("");
-            if (ui_.button(x + bw * 0.5f + gap * 0.5f, y, bw * 0.5f - gap * 0.5f, bh, "LEADERBOARD")) { nextBoardFetch_ = 0; setScreen(Screen::Leaderboard); }
+            if (ui_.button(x + bw * 0.5f + gap * 0.5f, y, bw * 0.5f - gap * 0.5f, bh, "LEADERBOARD")) { nextBoardFetch_ = 0; raceStatsView_ = false; setScreen(Screen::Leaderboard); }
             y += bh + gap;
             if (ui_.button(x, y, bw * 0.5f - gap * 0.5f, bh, "SETTINGS")) setScreen(Screen::Settings);
             if (ui_.button(x + bw * 0.5f + gap * 0.5f, y, bw * 0.5f - gap * 0.5f, bh, "INFO")) setScreen(Screen::Info);   // how everything works
@@ -3146,7 +3180,11 @@ void Game::drawMenu() {
             y += 30 * s;
             ui_.panel(lx, y, lw, 220 * s, 0.6f);
             float ry = y + 8 * s;
-            for (auto& sv : browser_.servers()) {
+            const int kJoinRows = 6;   // rows that fit the list panel; the wheel scrolls the rest
+            int nsv = (int)browser_.servers().size();
+            joinScroll_ = std::min(joinScroll_, std::max(0, nsv - kJoinRows));
+            for (int si = joinScroll_; si < nsv && si < joinScroll_ + kJoinRows; si++) {
+                auto& sv = browser_.servers()[si];
                 // name on the left (a long one scrolls back and forth so all of it can be read), details on the right
                 char info[96];
                 if (sv.noReply) snprintf(info, sizeof info, "NO RESPONSE - CLICK TO TRY");
@@ -3169,9 +3207,12 @@ void Game::drawMenu() {
                 }
                 r_.text(bx + 8 * s, ty, ts, name, kWhite);
                 ry += 34 * s;
-                if (ry > y + 200 * s) break;
             }
             if (browser_.servers().empty()) ui_.label(lx + 10 * s, ry, "NO GAMES FOUND", kGrey);
+            else if (nsv > kJoinRows) {
+                std::string more = std::to_string(joinScroll_ + 1) + "-" + std::to_string(std::min(nsv, joinScroll_ + kJoinRows)) + " OF " + std::to_string(nsv) + " - WHEEL TO SCROLL";
+                ui_.label(lx + lw - r_.textWidth(more, std::max(1.0f, std::round(ui_.textScale() * 0.5f))), y + 222 * s, more, kGrey, 0.5f);
+            }
             y += 230 * s;
             if (ui_.button(x, y, bw, bh, "BACK")) setScreen(Screen::Main);
             if (!error_.empty()) ui_.labelCentered(cx, y + bh + gap, error_, kRed);
@@ -3203,8 +3244,17 @@ void Game::drawMenu() {
                         editRules_ = CustomRules(); editRules_.name = "my mode"; editRules_.baseMode = MODE_FFA;
                         editOrigName_.clear(); customTab_ = 0; setScreen(Screen::CustomMode);
                     }
-                    CustomRules cur;
-                    if (!cfg_.hostRanked && !cfg_.hostCustom.empty() && loadCustomMode(cfg_.hostCustom, cur)) {
+                    // the chosen custom mode, re-read twice a second at most (not a file read every frame)
+                    static CustomRules cur;
+                    static std::string curName;
+                    static double curAt = -1;
+                    static bool curOk = false;
+                    if (curName != cfg_.hostCustom || time_ >= curAt) {
+                        curName = cfg_.hostCustom; curAt = time_ + 0.5;
+                        cur = CustomRules();
+                        curOk = !curName.empty() && loadCustomMode(curName, cur);
+                    }
+                    if (!cfg_.hostRanked && !cfg_.hostCustom.empty() && curOk) {
                         hostModeIdx_ = cur.baseMode;   // the mode comes from the custom mode
                         if (!cur.maps.empty() && std::find(cur.maps.begin(), cur.maps.end(), maps_[hostMapIdx_ % maps_.size()]) == cur.maps.end())
                             for (size_t k = 0; k < maps_.size(); k++) if (maps_[k] == cur.maps[0]) hostMapIdx_ = (int)k;
@@ -3217,8 +3267,7 @@ void Game::drawMenu() {
                     if (hostMapIdx_ >= (int)mapInfo_.size() || !(mapInfo_[hostMapIdx_].ranked >> cfg_.hostArenaVariant & 1))
                         hostMapIdx_ = bestRankedMap(cfg_.hostArenaVariant);
                 }
-                Map m;
-                m.load(maps_[hostMapIdx_]);
+                bool built = hostMapIdx_ < (int)mapInfo_.size() && (mapInfo_[hostMapIdx_].modes >> hostModeIdx_ & 1); // (no map file read every frame)
                 if (cfg_.hostRanked) {
                     static const int ladders[3] = {0, 1, 5};
                     int k = cfg_.hostArenaVariant == 1 ? 1 : cfg_.hostArenaVariant == 5 ? 2 : 0;
@@ -3229,7 +3278,7 @@ void Game::drawMenu() {
                     ui_.label(lx, y, "RANKED MAPS ONLY - EACH LADDER HAS ITS OWN RATING", kGrey, 0.5f);
                     ui_.label(lx, y + 12 * s, "FAIRNESS: DEFAULT MODEL, HUD, CONTROLS, 10 MS INTERP", kGrey, 0.5f);
                 }
-                else if (!m.supportsMode(hostModeIdx_)) ui_.label(lx, y, "NOT BUILT FOR THIS MODE - IT MAY NOT WORK", kRed);
+                else if (!built) ui_.label(lx, y, "NOT BUILT FOR THIS MODE - IT MAY NOT WORK", kRed);
                 else if (hostModeIdx_ == MODE_DUEL && ui_.button(lx, y - 2 * s, lw, 24 * s, cfg_.hostDuelSize == 2 ? "TEAMS: 2V2 (CLICK FOR 1V1)" : "TEAMS: 1V1 (CLICK FOR 2V2)"))
                     cfg_.hostDuelSize = cfg_.hostDuelSize == 2 ? 1 : 2;
                 y += 24 * s;
@@ -3269,9 +3318,9 @@ void Game::drawMenu() {
             y += bh + gap;
             if (!maps_.empty()) {
                 // only offer maps that support the chosen mode
-                Map m;
-                for (size_t k = 0; k < maps_.size(); k++) {
-                    if (m.load(maps_[botMapIdx_ % maps_.size()]) && m.supportsMode(cfg_.botMode)) break;
+                for (size_t k = 0; k < maps_.size(); k++) {   // (from the scan, not a map file read every frame)
+                    size_t i = botMapIdx_ % maps_.size();
+                    if (i < mapInfo_.size() && (mapInfo_[i].modes >> cfg_.botMode & 1)) break;
                     botMapIdx_ = (botMapIdx_ + 1) % (int)maps_.size();
                 }
                 if (ui_.button(lx, y, lw, bh, "MAP: " + upper(maps_[botMapIdx_ % maps_.size()]) + "  >")) picker_ = PICK_BOT_MAP;
@@ -3527,18 +3576,28 @@ void Game::drawDemos(float cx, float y) {
         std::sort(fs.begin(), fs.end(), [](auto& a, auto& b) { return a.first > b.first; });
         for (auto& f : fs) demoFiles_.push_back(f.second);
     }
-    int rows = std::min<int>((int)demoFiles_.size(), 12);
-    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, (rows + 4) * (h + gap) + 40 * s);
+    // as many rows as fit above the rate row and BACK; the wheel scrolls the rest
+    int fitRows = std::max(3, (int)(((float)r_.height() - y - 4 * (h + gap) - 60 * s) / (h + gap)));
+    int nd = (int)demoFiles_.size();
+    demoScroll_ = std::min(demoScroll_, std::max(0, nd - fitRows));
+    int rows = std::min(nd - demoScroll_, fitRows);
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, (rows + 4) * (h + gap) + (nd > rows ? 52 : 40) * s);
     ui_.labelCentered(cx, y, "DEMOS", kWhite, 1.4f);
     y += h + gap;
     if (demoFiles_.empty()) {
         ui_.labelCentered(cx, y + 6 * s, "NONE YET - IN A GAME, ESC > RECORD DEMO", kGrey, 0.6f);
         y += h + gap;
     }
-    for (int i = 0; i < rows; i++, y += h + gap) {
+    for (int k = 0; k < rows; k++, y += h + gap) {
+        int i = demoScroll_ + k;
         std::string name = std::filesystem::path(demoFiles_[i]).stem().string();
         for (auto& c : name) c = c == '_' ? ' ' : (char)toupper((unsigned char)c);
         if (ui_.button(x, y, w, h, name)) { playDemo(demoFiles_[i]); return; }
+    }
+    if (nd > rows) {
+        std::string more = std::to_string(demoScroll_ + 1) + "-" + std::to_string(demoScroll_ + rows) + " OF " + std::to_string(nd) + " - WHEEL TO SCROLL";
+        ui_.labelCentered(cx, y - gap + 2 * s, more, kGrey, 0.5f);
+        y += 12 * s;
     }
     float tw = (w - 2 * gap) / 3;
     static const std::vector<std::string> rates = {"RECORD AT 62.5 HZ", "RECORD AT FULL RATE"};
@@ -3764,14 +3823,16 @@ void Game::drawControls(float x0, float y0, float wTotal) {
     for (int a = 0; a < A_COUNT; a++) if (a != A_CROUCH) actions.push_back(a);
     int perCol = ((int)actions.size() + 1) / 2;
     float h = perCol * (rowH + gap) + 266 * s;
-    float y = std::max(8 * s, y0 - 40 * s);
+    float y = std::max(24 * s, std::min(y0 - 40 * s, (float)r_.height() - h + 8 * s)); // keep the BACK row on screen
     ui_.panel(x - 16 * s, y - 16 * s, colW * 2 + colGap + 32 * s, h);
     float lts = std::max(1.0f, std::round(ui_.textScale() * 0.75f));
     for (int ai = 0; ai < (int)actions.size(); ai++) {
         int a = actions[ai];
         float cx = x + (ai / perCol) * (colW + colGap), cy = y + (ai % perCol) * (rowH + gap);
-        r_.text(cx, cy + 5 * s, lts, actionName(a), {0.85f, 0.87f, 0.9f, 1});
         float bw = colW * 0.24f, xw = rowH;
+        float nts = lts;   // a long name drops a size rather than run under its key buttons (small windows)
+        if (nts > 1 && r_.textWidth(actionName(a), nts) > colW - xw - 2 * (bw + 4 * s) - 10 * s) nts -= 1;
+        r_.text(cx, cy + 5 * s, nts, actionName(a), {0.85f, 0.87f, 0.9f, 1});
         if (ui_.button(cx + colW - xw, cy, xw, rowH, "X")) { // unbind both slots
             cfg_.binds.code[a][0] = cfg_.binds.code[a][1] = 0;
             if (captureAction_ == a) captureAction_ = -1;
@@ -3843,10 +3904,18 @@ void Game::drawPicker(float cx, float y) {
     int n = ladders ? 3 : variants ? kArenaVariants : modes ? MODE_COUNT + (rankedTile ? 1 : 0) : (int)maps_.size();
     if ((int)multiSel_.size() != n) multiSel_.assign(n, false);
     int cols = 3;
-    float bw = 250 * s, w = cols * bw + (cols - 1) * gap;
+    float bw = 250 * s;
+    float rowH = bh + (variants ? 30 : 18) * s + gap;
+    {   // a long list (your own maps too): more, narrower columns so BACK stays on screen
+        int fitRows = std::max(1, (int)(((float)r_.height() - y - 34 * s - bh - 40 * s) / rowH));
+        if ((n + cols - 1) / cols > fitRows) {
+            cols = std::min(8, (n + fitRows - 1) / fitRows);
+            bw = std::min(bw, ((float)r_.width() - 64 * s - (cols - 1) * gap) / cols);
+        }
+    }
+    float w = cols * bw + (cols - 1) * gap;
     float x = cx - w * 0.5f;
     int rows = (n + cols - 1) / cols;
-    float rowH = bh + (variants ? 30 : 18) * s + gap;
     ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 40 * s + rows * rowH + bh + 30 * s);
     std::string title = picker_ == PICK_TMAPS ? "TOURNEY MAPS (PICK ANY, THEY ROTATE)" : picker_ == PICK_TMODES ? "TOURNEY RULESETS (PICK ANY, THEY ROTATE)"
                       : ladders ? "RANKED - CHOOSE A LADDER"
@@ -3885,7 +3954,8 @@ void Game::drawPicker(float cx, float y) {
         } else if (modes) {
             label = modeTitle(i);
             cur = i == mode && !rankedNow;
-            for (auto& mi : mapInfo_) if (mi.preferredMode == i || (i == MODE_TAG && mi.preferredMode == MODE_HIDE)) sub = "MAP: " + upper(mi.title);
+            for (auto& mi : mapInfo_) if (mi.preferredMode == i) sub = "MAP: " + upper(mi.title);
+            if (sub.empty() && i == MODE_TAG) for (auto& mi : mapInfo_) if (mi.preferredMode == MODE_HIDE) sub = "MAP: " + upper(mi.title);
             if (i == MODE_ARENA) sub = "9 RULESETS >";
             if (i == MODE_TOURNEY) sub = "BRACKET OF 1V1S - RULESETS >";
         } else {
@@ -4067,8 +4137,9 @@ void Game::drawHudSettings(float x0, float y0, float wTotal) {
     float s = ui_.s();
     float h = 32 * s, gap = 7 * s;
     float w = std::max(360 * s, wTotal * 0.5f);
-    float x = x0 + wTotal * 0.5f - w * 0.5f, y = y0;
-    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 14 * (h + gap) + 3 * gap + 48 * s);
+    float ph = 14 * (h + gap) + 3 * gap + 48 * s;
+    float x = x0 + wTotal * 0.5f - w * 0.5f, y = std::max(24 * s, std::min(y0, (float)r_.height() - ph + 8 * s)); // panel bottom stays on screen
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, ph);
     static const char* names[] = {"HEALTH", "WEAPON NAME", "COOLDOWN BARS", "SPEED METER", "WEAPON LIST", "WEAPON MODEL", "KEY OVERLAY (VERBOSE)"};
     static const int listed[] = {Settings::HUD_HEALTH, Settings::HUD_WEAPON, Settings::HUD_BARS, Settings::HUD_SPEED, Settings::HUD_SLOTS, Settings::HUD_KEYS};
     const int nListed = (int)(sizeof listed / sizeof listed[0]);

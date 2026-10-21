@@ -149,6 +149,7 @@ private:
     double demoListAt_ = -1;
     int infoTab_ = 0;
     float infoScroll_ = 0;
+    int demoScroll_ = 0, joinScroll_ = 0;   // first row shown in the demo list / server list (mouse wheel)
     std::vector<std::string> maps_;
     struct MapInfo { std::string title; int preferredMode = -1; uint32_t modes = 0; uint16_t ranked = 0; }; // ranked: ladders it's a ranked map for // modes: bit per supported mode
     std::vector<MapInfo> mapInfo_;
