@@ -224,6 +224,9 @@ def run_bot(cfg: dict):
     import discord
     from discord import app_commands
     from discord.ext import commands, tasks
+    # (annotations are strings here - "from __future__ import annotations" - and discord.py resolves the slash
+    # command ones against the module globals, so these have to be visible there too)
+    globals().update(discord=discord, app_commands=app_commands)
 
     token = os.environ.get("DISCORD_TOKEN") or cfg.get("token")
     if not token or not cfg["guild_id"]:
@@ -252,7 +255,7 @@ def run_bot(cfg: dict):
             await self.tree.sync(guild=g)
 
         async def close(self):
-            await self.session.close()
+            if getattr(self, "session", None): await self.session.close()
             await super().close()
 
     bot = QuarkBot(command_prefix="!quark ", intents=intents)
