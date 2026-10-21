@@ -55,6 +55,22 @@ class M:
         (players only: shots, hooks and sight go through)"""
         s.box(x0 - 2, h, z0 - 2, x0, h + up, z1 + 2, mat="clip"); s.box(x1, h, z0 - 2, x1 + 2, h + up, z1 + 2, mat="clip")
         s.box(x0, h, z0 - 2, x1, h + up, z0, mat="clip"); s.box(x0, h, z1, x1, h + up, z1 + 2, mat="clip")
+    def keep_clear(s, x0, z0, x1, z1, y=2.4):
+        """a doorway (and the step in front and behind it): nothing placed later may stand in it"""
+        s.__dict__.setdefault("clear_zones", []).append((x0, z0, x1, z1, y))
+    def clear_doorways(s):
+        """drop solid props / dressing that ended up in a doorway (walls beside it only touch the zone's edge)"""
+        zones = getattr(s, "clear_zones", [])
+        if not zones: return
+        solid = {"box", "accent", "metal", "wallbang", "trim", "glow"}
+        out = []
+        for l in s.lines:
+            w = l.split()
+            if w and w[0] in solid and len(w) >= 7:
+                x0, y0, z0, x1, y1, z1 = map(float, w[1:7])
+                if y1 > 0.3 and any(x0 < b[2] - 1e-3 and x1 > b[0] + 1e-3 and z0 < b[3] - 1e-3 and z1 > b[1] + 1e-3 and y0 < b[4] for b in zones): continue
+            out.append(l)
+        s.lines = out
     def scale_xz(s, f):
         """spread everything built so far out by f across the ground (heights unchanged): a map made roomier
         without moving every piece by hand. Boxes, stairs, ladders, spawns and lights; lights reach f as far."""
@@ -586,6 +602,7 @@ class M:
         s.lines = [l for l in s.lines if not l.startswith("modes ")]
         if mode and name not in EVERY_MODE: s.lines.insert(3, "modes " + (mode if mode == "ffa" else mode + " ffa"))
         if dress: s.props(); s.dress(name); s.detail_pass(); s.skyline_pass(name)
+        s.clear_doorways()
         p = PALETTES.get(name)
         if p:
             p = [tuple(round(v * 0.85, 3) for v in p[0])] + list(p[1:])
@@ -2652,6 +2669,17 @@ def office(x0, z0, x1, z1, doors, roof_holes=()):
     """a two-storey office: doors on the ground floor, stairs up the west wall to the first floor and up the east
     wall to the flat roof (a parapet round it, gaps where skybridges land), windows on the long sides"""
     m.building(x0, z0, x1, z1, 6, doors, roof=False, windows=True)
+    # each doorway kept clear 1.5 m in and out (nothing dressed in front of it), and the facade bands cut round it
+    dgaps = []
+    for (sd, c, w) in doors:
+        if sd == "n": g = (c - w / 2, z0 - 1.5, c + w / 2, z0 + 1.5)
+        elif sd == "s": g = (c - w / 2, z1 - 1.5, c + w / 2, z1 + 1.5)
+        elif sd == "w": g = (x0 - 1.5, c - w / 2, x0 + 1.5, c + w / 2)
+        else: g = (x1 - 1.5, c - w / 2, x1 + 1.5, c + w / 2)
+        m.keep_clear(*g, y=2.6); dgaps.append(g)
+    for (fy, n) in ((4.6, 3), (10.6, 3)):                                  # ceiling lights inside, both floors
+        for k in range(n):
+            m.light((x0 + x1) / 2, fy, z0 + (z1 - z0) * (k + 0.5) / n, 12, 1.25)
     L = (x0 + 0.4, z0 + 2, x0 + 2.6, z0 + 14); U = (x1 - 2.6, z1 - 14, x1 - 0.4, z1 - 2)
     for r in minus((x0 + 0.4, z0 + 0.4, x1 - 0.4, z1 - 0.4), [L]): m.box(r[0], 5.6, r[1], r[2], 6, r[3])
     m.stairs(*L, 6, "z", 1, base=0.15)   # (from the pavement the offices stand on)
@@ -2663,14 +2691,18 @@ def office(x0, z0, x1, z1, doors, roof_holes=()):
     m.ladder(fx, z1 + 0.12, 0.15, 12.35, "n", width=0.8)
     gaps = [U, FE] + list(roof_holes)
     # facade: floor-line bands and pilasters every 3 m (the building reads as storeys from the street)
-    for y in (1.0, 5.9, 7.0, 11.9):
-        for r in minus((x0 - 0.06, z0 - 0.06, x1 + 0.06, z1 + 0.06), [(x0, z0, x1, z1)]): m.box(r[0], y, r[1], r[2], y + 0.12, r[3], mat="trim")
+    for y in (1.0, 5.9, 7.0, 11.9):   # (the bands below the door lintels stop at the doorways)
+        for r in minus((x0 - 0.06, z0 - 0.06, x1 + 0.06, z1 + 0.06), [(x0, z0, x1, z1)] + (dgaps if y < 2.6 else [])):
+            m.box(r[0], y, r[1], r[2], y + 0.12, r[3], mat="trim")
+    inDoor = lambda a, b, c, d: any(a < g[2] and c > g[0] and b < g[3] and d > g[1] for g in dgaps)
     for k in range(1, int((x1 - x0) / 3)):
         x = x0 + k * 3
-        for (za, zb) in ((z0 - 0.08, z0), (z1, z1 + 0.08)): m.box(x - 0.12, 0.15, za, x + 0.12, 12, zb, mat="trim")
+        for (za, zb) in ((z0 - 0.08, z0), (z1, z1 + 0.08)):
+            if not inDoor(x - 0.12, za, x + 0.12, zb): m.box(x - 0.12, 0.15, za, x + 0.12, 12, zb, mat="trim")
     for k in range(1, int((z1 - z0) / 3)):
         z = z0 + k * 3
-        for (xa, xb) in ((x0 - 0.08, x0), (x1, x1 + 0.08)): m.box(xa, 0.15, z - 0.12, xb, 12, z + 0.12, mat="trim")
+        for (xa, xb) in ((x0 - 0.08, x0), (x1, x1 + 0.08)):
+            if not inDoor(xa, z - 0.12, xb, z + 0.12): m.box(xa, 0.15, z - 0.12, xb, 12, z + 0.12, mat="trim")
     for (a0, b0, a1, b1) in ((x0 - 0.3, z0 - 0.3, x1 + 0.3, z0), (x0 - 0.3, z1, x1 + 0.3, z1 + 0.3), (x0 - 0.3, z0, x0, z1), (x1, z0, x1 + 0.3, z1)):
         for r in minus((a0, b0, a1, b1), gaps): m.box(r[0], 12.35, r[1], r[2], 12.95, r[3], accent=True)
     R = random.Random(int(x0 * 13 + z0))
