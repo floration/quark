@@ -18,7 +18,7 @@ class M:
         """the arena: floor, four walls. pits = [(x0, z0, x1, z1, kind)] are holes you fall through and die
         (kind: molten / water / abyss / chasm); sunken = [(x0, z0, x1, z1, depth, mat)] are lower floors.
         style picks the wall dress (hall / temple / yard / fort), skyline the distant scenery."""
-        s.hx, s.hz, s.h, s.style, s.skyline = hx, hz, h, style, skyline
+        s.hx, s.hz, s.h, s.style, s.skyline, s.walls = hx, hz, h, style, skyline, walls
         s.pits = [tuple(p) for p in pits]
         s.sunken = [tuple(p) for p in sunken]
         s.holes = [p[:4] for p in s.pits] + [p[:4] for p in s.sunken]
@@ -55,6 +55,24 @@ class M:
         (players only: shots, hooks and sight go through)"""
         s.box(x0 - 2, h, z0 - 2, x0, h + up, z1 + 2, mat="clip"); s.box(x1, h, z0 - 2, x1 + 2, h + up, z1 + 2, mat="clip")
         s.box(x0, h, z0 - 2, x1, h + up, z0, mat="clip"); s.box(x0, h, z1, x1, h + up, z1 + 2, mat="clip")
+    def scale_xz(s, f):
+        """spread everything built so far out by f across the ground (heights unchanged): a map made roomier
+        without moving every piece by hand. Boxes, stairs, ladders, spawns and lights; lights reach f as far."""
+        boxes = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "ladder"}
+        g = lambda v: f"{float(v) * f:g}"
+        out = []
+        for l in s.lines:
+            w = l.split()
+            if w and w[0] in boxes and len(w) >= 7: w[1], w[3], w[4], w[6] = g(w[1]), g(w[3]), g(w[4]), g(w[6])
+            elif w and w[0] == "spawn": w[2], w[4] = g(w[2]), g(w[4])
+            elif w and w[0] == "light": w[1], w[3], w[4] = g(w[1]), g(w[3]), g(w[4])
+            elif l.startswith("# stairs"): w[2], w[3], w[4], w[5] = g(w[2]), g(w[3]), g(w[4]), g(w[5])
+            out.append(" ".join(w) if w and (w[0] in boxes or w[0] in ("spawn", "light") or l.startswith("# stairs")) else l)
+        s.lines = out
+        if hasattr(s, "hx"):
+            s.hx, s.hz = s.hx * f, s.hz * f
+            sc = lambda r: tuple(v * f for v in r[:4]) + tuple(r[4:])
+            s.pits, s.sunken, s.holes = [sc(p) for p in s.pits], [sc(p) for p in s.sunken], [sc(p) for p in s.holes]
     def over_hole(s, x, z, r=0.0):
         return any(x0 - r < x < x1 + r and z0 - r < z < z1 + r for (x0, z0, x1, z1) in getattr(s, "holes", []))
     def stairs(s, x0, z0, x1, z1, top, axis, rising, mirror=False, base=0.0, solid=True):
@@ -251,6 +269,7 @@ class M:
         style decides which pieces it gets: hall (industrial), temple, yard (outdoors), fort."""
         if not hasattr(s, "hx"): return
         hx, hz, h, style, wb = s.hx, s.hz, s.h, s.style, s.wall_base
+        if not getattr(s, "walls", True) and style not in ("castle", "factory"): return   # open maps: no walls to dress
         rnd = random.Random(name)
         pts = s.keepouts()
         if style == "mine": return            # (the mine dresses its own rock: timber sets, strata, lamps)
@@ -1313,8 +1332,11 @@ m.save("foundry")
 # a pagoda shrine over the altar, a golden idol under it. Point symmetric.
 m = M("Temple", "1v1", sun=(0.35, 1.0, 0.55))
 m.raw("ranked vanilla")
-m.room(22, 30, 12, sunken=[(-7, 9, 7, 12.5, 0.8, "accent"), (-7, -12.5, 7, -9, 0.8, "accent")], style="temple", skyline="pagodas")
-m.trim(22, 30); m.trim(22, 30, y=11.4, h=0.6)
+# (1.13: open on a mountain top, no outer walls: the courts end at the cliff edge; built at the old size, then
+# spread out 1.4x across the ground at the end)
+m.room(22, 30, 12, sunken=[(-7, 9, 7, 12.5, 0.8, "accent"), (-7, -12.5, 7, -9, 0.8, "accent")], style="temple", skyline="pagodas", walls=False)
+m.raw("void -6")
+m.box(-24, -40, -32, 24, -1, 32, mat="far")   # the mountain top under the courts: rock falling away to the void
 m.box(-8, 0, -6, 8, 0.6, 6, accent=True)
 m.stairs(-4, 6, 4, 8, 0.6, "z", -1); m.stairs(-4, -8, 4, -6, 0.6, "z", 1)
 m.box(-2, 0.6, -2, 2, 1.6, 2); m.box(-1.2, 1.6, -1.2, 1.2, 1.9, 1.2, accent=True)   # altar and the idol on it
@@ -1334,7 +1356,7 @@ m.glow(-0.25, 7.55, -0.25, 0.25, 8.3, 0.25)
 m.light(-10, 2.6, 0, 7, 0.6, mirror=True)
 for x in (-6, -2, 2, 6): m.glow(x - 0.2, -0.8, 10.6, x + 0.2, -0.75, 10.9, mirror=True)   # lanterns in the pools
 m.doorwall(-22, 13.8, 22, 14.2, 5.0, [(-10, 3.0, 3.2), (0, 4.0, 3.6), (10, 3.0, 3.2)], axis="x", mirror=True)
-for x in (-3, 3): m.spawn("a", x, 0, 26, 0, "b")
+for x in (-3, 3): m.spawn("a", x, 0, 23, 0, "b")   # (1.13: nearer the middle, the map grew)
 m.spawn("any", -19, 3.5, 0, 90, "any")
 # the reflecting pools hold water (a surface over the sunken floors: shallow, safe to stand in)
 m.box(-7, -0.35, 9, 7, -0.3, 12.5, mat="water", mirror=True)
@@ -1358,7 +1380,54 @@ for (x, z) in ((-1.8, 22.2), (1.6, 22.2), (-1.8, 25.6), (1.6, 25.6)): m.box(x, 1
 for (a0, b0, a1, b1) in minus((-2.3, 21.7, 2.3, 26.3), [(-0.7, 21.7, 0.7, 22.4)]): m.box(a0, 14.0, b0, a1, 14.3, b1, accent=True, mirror=True)   # (open over the ladder)
 m.glow(-0.3, 14.3, 23.7, 0.3, 15.0, 24.3, mirror=True)
 m.light(0, 12.6, 24, 6, 0.6, fixture=False, mirror=True)
-m.raw("# setting pagoda temple")
+# the cliff edge: a knee-high stone balustrade (posts with lanterns, rails with gaps to drop through), lantern
+# posts at the corners. Built on one side and point-mirrored (ranked maps are point symmetric).
+for (ks, fixed, axis) in ((range(-20, 21, 4), 30.6, "x"), (range(-28, 29, 4), 22.6, "z")):
+    for k in ks:
+        if axis == "x": m.box(k - 0.25, 0, fixed - 0.25, k + 0.25, 1.1, fixed + 0.25, accent=True, mirror=True)
+        else: m.box(fixed - 0.25, 0, k - 0.25, fixed + 0.25, 1.1, k + 0.25, accent=True, mirror=True)
+        gx, gz = (k, fixed) if axis == "x" else (fixed, k)
+        m.glow(gx - 0.12, 1.1, gz - 0.12, gx + 0.12, 1.35, gz + 0.12, mirror=True)       # a lantern on every post
+        if k % 8 == 0: m.light(gx, 1.6, gz, 6, 0.45, fixture=False, mirror=True)
+    for k in list(ks)[:-1:2]:   # rails between pairs of posts, the next gap left open
+        if axis == "x": m.box(k + 0.25, 0.85, fixed - 0.12, k + 3.75, 1.0, fixed + 0.12, mat="trim", mirror=True)
+        else: m.box(fixed - 0.12, 0.85, k + 0.25, fixed + 0.12, 1.0, k + 3.75, mat="trim", mirror=True)
+for (x, z) in ((-21, -29), (21, -29), (-21, 29), (21, 29)):
+    m.box(x - 0.4, 0, z - 0.4, x + 0.4, 3.2, z + 0.4, accent=True); m.glow(x - 0.3, 3.2, z - 0.3, x + 0.3, 3.8, z + 0.3)
+    m.light(x, 3.4, z, 9, 0.7, fixture=False)
+# two ruined tower stubs (point-mirrored): a broken floor at 2.2 m and its standing half 7.2 m up, stairs up the side
+for (x, z) in ((-17.5, -12),):
+    m.box(x - 2, 0, z - 2, x + 2, 2.2, z + 2, mirror=True)
+    m.box(x - 2, 2.2, z - 2, x + 2, 7.2, z, mirror=True)                                   # the standing half, 7.2 m
+    m.box(x - 2.1, 7.05, z - 2.1, x + 2.1, 7.2, z + 0.1, mat="trim", mirror=True)
+    m.stairs(x + 2, z - 2, x + 6.5, z + 2, 2.2, "x", -1, mirror=True)                       # up to the broken floor
+    m.ladder(x, z, 2.2, 7.2, "n", width=0.5)                                                # ...and up the standing half
+    m.ladder(-x, -z, 2.2, 7.2, "s", width=0.5)
+    m.light(x, 3.0, z, 7, 0.6, fixture=False, mirror=True)
+# more to fight around in the open courts: broken column drums and fallen lintels, waist and head high
+m.clutter(-20, -28, 20, 28, 10, [(1.2, 1.2, 1.4), (3.0, 0.8, 1.0), (0.8, 3.0, 1.0), (1.6, 1.6, 2.2)], seed=11, mirror=True, accent=0.4)
+# ruins of the old outer cloister: broken wall runs, chest to head high, with fallen blocks at their feet (cover
+# and something to strafe around, without closing the courts in again)
+for (x0, z0, x1, z1, h) in ((-19, -25.6, -14, -25, 2.6), (-20.6, -20, -20, -15, 1.8), (13, -21, 13.6, -16.5, 2.2),
+                            (-9.5, -26.4, -6.5, -25.8, 1.4), (17, -9, 17.6, -5, 2.0), (-16.8, 9, -16.2, 12.5, 1.6),
+                            (-5, -4.2, -2, -3.6, 1.5), (5.5, 9.4, 9.5, 10, 1.3), (-20.2, -6, -19.6, -2.5, 1.7), (-14, 25, -10, 25.6, 2.2)):
+    m.box(x0, 0, z0, x1, h, z1, mirror=True)
+    m.box(x0, h, z0, x0 + (x1 - x0) * 0.55, h + 0.5, z1, mirror=True)                      # the broken top, stepped
+    m.box(x0 - 0.2, h - 0.15, z0 - 0.1, x1 + 0.2, h, z1 + 0.1, mat="trim", mirror=True)     # its worn coping
+    bx, bz = (x1 + 0.4, z0 - 0.9) if x1 - x0 > z1 - z0 else (x0 - 1.2, z1 + 0.4)
+    m.box(bx, 0, bz, bx + 0.9, 0.7, bz + 0.8, accent=True, mirror=True)                    # a fallen block
+# two raised offering plinths (a step up, a lantern each): a little height to fight from in the open courts
+for (x, z) in ((-9, -22), (9, 22)):
+    m.box(x - 2.5, 0, z - 2.5, x + 2.5, 1.0, z + 2.5, accent=True)
+    m.stairs(x - 2.5, z + (2.5 if z < 0 else -3.5), x + 2.5, z + (3.5 if z < 0 else -2.5), 1.0, "z", 1 if z > 0 else -1)
+    m.box(x - 0.3, 1.0, z - 0.3, x + 0.3, 2.4, z + 0.3, accent=True); m.glow(x - 0.25, 2.4, z - 0.25, x + 0.25, 2.9, z + 0.25)
+    m.light(x, 2.6, z, 7, 0.6, fixture=False)
+# carved bands on every column: base, mid and capital rings
+for (x, z) in ((-12, -18), (-12, -8), (-12, 8), (-12, 18)):
+    for (y, t) in ((0.6, 0.25), (5.2, 0.15), (10.2, 0.3)):
+        m.box(x - 1.0, y, z - 1.0, x + 1.0, y + t, z + 1.0, mat="trim", mirror=True)
+m.scale_xz(1.15)
+m.raw("# setting pagoda temple on a mountain top")
 m.save("temple")
 
 # ======================================================================================================
