@@ -1401,8 +1401,8 @@ for (x, z) in ((-17.5, -12),):
     m.box(x - 2, 2.2, z - 2, x + 2, 7.2, z, mirror=True)                                   # the standing half, 7.2 m
     m.box(x - 2.1, 7.05, z - 2.1, x + 2.1, 7.2, z + 0.1, mat="trim", mirror=True)
     m.stairs(x + 2, z - 2, x + 6.5, z + 2, 2.2, "x", -1, mirror=True)                       # up to the broken floor
-    m.ladder(x, z, 2.2, 7.2, "n", width=0.5)                                                # ...and up the standing half
-    m.ladder(-x, -z, 2.2, 7.2, "s", width=0.5)
+    m.ladder(x, z, 2.3, 7.2, "n", width=0.8)                                                # ...and up the standing half
+    m.ladder(-x, -z, 2.3, 7.2, "s", width=0.8)
     m.light(x, 3.0, z, 7, 0.6, fixture=False, mirror=True)
 # more to fight around in the open courts: broken column drums and fallen lintels, waist and head high
 m.clutter(-20, -28, 20, 28, 10, [(1.2, 1.2, 1.4), (3.0, 0.8, 1.0), (0.8, 3.0, 1.0), (1.6, 1.6, 2.2)], seed=11, mirror=True, accent=0.4)

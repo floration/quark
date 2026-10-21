@@ -285,7 +285,10 @@ bool Audio::start() {
     wf.nBlockAlign = 4;
     wf.nAvgBytesPerSec = R * 4;
     HWAVEOUT h = nullptr;
-    if (waveOutOpen(&h, WAVE_MAPPER, &wf, 0, 0, CALLBACK_NULL) != MMSYSERR_NOERROR) return false;
+    // the device signals this event whenever it finishes a buffer: the mixing thread wakes right then, instead of
+    // polling with Sleep(1) (which Windows rounds up to ~15.6 ms, longer than the queue: gaps of silence)
+    waveEvent_ = CreateEventA(nullptr, FALSE, FALSE, nullptr);
+    if (waveOutOpen(&h, WAVE_MAPPER, &wf, (DWORD_PTR)waveEvent_, 0, CALLBACK_EVENT) != MMSYSERR_NOERROR) { CloseHandle(waveEvent_); waveEvent_ = nullptr; return false; }
     backend_ = h;
     running_ = true;
     quit_ = false;
@@ -294,8 +297,9 @@ bool Audio::start() {
 }
 void Audio::backendThread() {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+    timeBeginPeriod(1);   // (1 ms timer resolution for the wait's timeout)
     HWAVEOUT h = (HWAVEOUT)backend_;
-    constexpr int kBufs = 4; // 4 x 5 ms queued
+    constexpr int kBufs = 6; // 6 x 5 ms queued: a little slack for the scheduler
     static int16_t data[kBufs][kPeriod * 2];
     WAVEHDR hdr[kBufs] = {};
     for (int i = 0; i < kBufs; i++) {
@@ -313,11 +317,14 @@ void Audio::backendThread() {
             waveOutWrite(h, &hdr[i], sizeof(WAVEHDR));
             wrote = true;
         }
-        if (!wrote) Sleep(1);
+        if (!wrote) WaitForSingleObject((HANDLE)waveEvent_, 5);
     }
+    timeEndPeriod(1);
     waveOutReset(h);
     for (int i = 0; i < kBufs; i++) waveOutUnprepareHeader(h, &hdr[i], sizeof(WAVEHDR));
     waveOutClose(h);
+    CloseHandle((HANDLE)waveEvent_);
+    waveEvent_ = nullptr;
 }
 void Audio::stop() {
     if (!running_) return;

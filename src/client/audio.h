@@ -77,4 +77,5 @@ private:
     std::atomic<bool> running_{false}, quit_{false};
     std::thread thread_;
     void* backend_ = nullptr;
+    void* waveEvent_ = nullptr;   // Windows: signalled when the device finishes a buffer
 };
