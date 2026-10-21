@@ -330,7 +330,9 @@ private:
     void onKillFeedback(int killer, int victim, int weapon, bool head, bool airborne);
     int streak_[kMaxPlayers] = {};
     double typingUntil_[kMaxPlayers] = {}, nextTypingSend_ = 0;
-    double locatorReady_ = 0, locateUntil_ = 0;   // tag / hide and seek locator
+    double locatorReady_ = 0, locateUntil_ = 0;
+    double liveSeenAt_ = -1e9;   // when this round went live (here): the map's holdfire counts from it
+    float holdFireLeft() const { return net_.hasSnapshot() && net_.mode().phase == PHASE_LIVE && net_.map().holdFire > 0 ? net_.map().holdFire - (float)(time_ - liveSeenAt_) : 0; }   // tag / hide and seek locator
     Vec3 locatePos_;
     int locateId_ = 0;   // kills since their last death (killstreak calls)
     bool console_ = false;               // the settings console (`)

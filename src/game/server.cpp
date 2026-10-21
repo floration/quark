@@ -1128,6 +1128,7 @@ void Server::bounceShot(int id, Vec3 o, Vec3 dir, float range, uint32_t vt, floa
 
 bool Server::fireWeapon(int id, const UserCmd& cmd) {
     ServerPlayer& p = players_[id];
+    if (map_.holdFire > 0 && ms_.phase == PHASE_LIVE && time() < liveSince_ + map_.holdFire) return false;   // the bow before the fight
     const WeaponDef& wd = weaponDef(p.weapon);
     float eyeH = ((p.move.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(); // giants shoot from their own eyes
     Vec3 eye = p.move.pos + Vec3(0, eyeH, 0);

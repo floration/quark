@@ -473,11 +473,15 @@ static void testPoints(uint16_t port) {
     if (att < 0 || def < 0) { s.stop(); return; }
     auto standOn = [&](int id, int pt) { const AABB& z = s.map_.points[pt]; s.players_[id].move.pos = {z.center().x, z.mn.y + 0.6f, z.center().z}; s.players_[id].move.vel = {}; };
     auto away = [&](int id) { s.players_[id].move.pos = s.map_.spawns[0].pos; };
+    for (int k = 0; k < 6; k++) { standOn(def, 0); away(att); pump(s, cls, 0.1, idle); }
+    CHECK(s.players_[def].objTime == 0);              // a defender alone on it isn't contesting: no objective time
     for (int k = 0; k < 10; k++) { standOn(att, 0); away(def); pump(s, cls, 0.1, idle); }
     CHECK(s.ms_.capture > 0.02f);                     // filling
+    CHECK(s.players_[att].objTime > 0);
     float c0 = s.ms_.capture;
     for (int k = 0; k < 10; k++) { standOn(att, 0); standOn(def, 0); pump(s, cls, 0.1, idle); }
     CHECK(s.ms_.flags & MS_CONTESTED);                // a defender on it holds it
+    CHECK(s.players_[def].objTime > 0);               // (and contesting earns them time)
     CHECK(s.ms_.capture <= c0 + 0.01f);
     float end0 = s.phaseEnd_;
     s.ms_.capture = 0.98f;

@@ -130,6 +130,7 @@ bool Map::parse(const std::string& text, std::string* err) {
     hasWallbang = false;
     hasPalette = false;
     hasVoid = false;
+    holdFire = 0;
     indoor = false;
     preferredMode = -1;
     allowedModes = 0;
@@ -207,6 +208,8 @@ bool Map::parse(const std::string& text, std::string* err) {
             if (ok) lights.push_back(l);
         } else if (kw == "indoor") { // "indoor <ceiling y>": roofed all over (menu / shot cameras stay under the roof)
             ok = (bool)(ls >> ceilingY); indoor = ok;
+        } else if (kw == "holdfire") {
+            ok = (bool)(ls >> holdFire) && holdFire >= 0 && holdFire <= 30;
         } else if (kw == "void") {
             ok = (bool)(ls >> voidY); hasVoid = ok;
         } else if (kw == "palette") {
@@ -259,6 +262,7 @@ std::string Map::serialize() const {
     o += b;
     if (hasVoid) { snprintf(b, sizeof b, "void %g\n", voidY); o += b; }
     if (indoor) { snprintf(b, sizeof b, "indoor %g\n", ceilingY); o += b; }
+    if (holdFire > 0) { snprintf(b, sizeof b, "holdfire %g\n", holdFire); o += b; }
     if (hasPalette) {
         auto c = [&](const char* k, Vec3 v) { snprintf(b, sizeof b, " %s %g %g %g", k, v.x, v.y, v.z); o += b; };
         o += "palette"; c("base", palBase); c("accent", palAccent); c("metal", palMetal); c("glow", palGlow); c("sky", palSky); o += "\n\n";

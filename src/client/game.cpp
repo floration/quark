@@ -666,6 +666,7 @@ void Game::updateAnnouncer() {
         const PlayerSnap* me = net_.findPlayer(net_.clientId());
         int myTeam = me && me->team() != TEAM_SPECTATOR ? me->team() : -1;
         if (pv.phase == PHASE_FREEZE && ms.phase == PHASE_LIVE) say(SND_VOICE_GO, 1);
+        if (pv.phase != PHASE_LIVE && ms.phase == PHASE_LIVE) liveSeenAt_ = time_;
         if (pv.mode == ms.mode && pv.round == ms.round && ms.phase == PHASE_LIVE) {
             if (ms.mode == MODE_BOMB && pv.bombState != ms.bombState) {
                 if (ms.bombState == BOMB_PLANTED) say(SND_VOICE_BOMB_PLANTED, 2);
@@ -939,7 +940,7 @@ void Game::frame(double dt) {
             // local fire feedback (server is authoritative for damage)
             bool altShot = altFires(net_.selfWeapon()) && (c.buttons & BTN_ALTFIRE) && // knife throw / shotgun bounce (no throws in hide and seek / tag)
                            !(net_.selfWeapon() == WPN_KNIFE && net_.hasSnapshot() && isItMode(net_.mode().mode));
-            bool wantFire = (c.buttons & BTN_FIRE) != 0 || altShot;
+            bool wantFire = ((c.buttons & BTN_FIRE) != 0 || altShot) && holdFireLeft() <= 0;   // (the map's holdfire: no shots yet)
             if (c.weapon != lastCmdWeapon_ && (c.buttons & (BTN_FIRE | BTN_ALTFIRE))) localFireLocked_ = true; // switched with fire held
             lastCmdWeapon_ = c.weapon;
             if (localFireLocked_) { // mirror the server: after a knife throw or a switch, let go before the next weapon fires
@@ -1648,6 +1649,11 @@ void Game::drawHud() {
         r_.rect(0, cy + R, W, H - cy - R, k);
         r_.rect(cx - R, cy - 0.5f, 2 * R, 1, {0, 0, 0, 0.9f * std::max(cfg_.scopeOpacity, 0.3f)});
         r_.rect(cx - 0.5f, cy - R, 1, 2 * R, {0, 0, 0, 0.9f * std::max(cfg_.scopeOpacity, 0.3f)});
+    }
+    if (float hold = holdFireLeft(); hold > 0) { // the map's holdfire (the dojo): face each other, no shots yet
+        float big = std::max(2.0f, std::round(ts * 2));
+        std::string t = "HOLD FIRE " + std::to_string((int)std::ceil(hold));
+        r_.text(cx - r_.textWidth(t, big) * 0.5f, cy - 90 * s, big, t, Color{1, 0.85f, 0.3f, 1});
     }
     if (isItMode(ms.mode) && ms.phase == PHASE_LIVE && mep && (mep->flags & PS_HASBOMB)) { // the locator
         float sx, sy;

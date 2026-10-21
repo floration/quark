@@ -48,6 +48,7 @@ struct Map {
     // "palette base r g b accent r g b metal r g b glow r g b sky r g b" (linear 0..1): per-map colours
     // "void <y>": falling below this height kills (pits, water, the drop off a bridge); default 20 m below the map
     bool hasVoid = false;
+    float holdFire = 0;        // "holdfire <s>": nobody can fire for this long after a round goes live (the dojo's bow)
     bool indoor = false;   // "indoor <y>": a roof over everything at y (cameras that orbit the map stay below it)
     float ceilingY = 0;
     float voidY = 0;

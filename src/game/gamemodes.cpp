@@ -65,6 +65,7 @@ int defenders(const Server& s) { return other(s.ms_.attackers); }
 void setPhase(Server& s, Phase p, float duration) {
     s.ms_.phase = p;
     s.phaseEnd_ = duration > 0 ? s.time() + duration : 0;
+    if (p == PHASE_LIVE) s.liveSince_ = s.time();
 }
 
 void enterMatchEnd(Server& s, const std::string& text, int winner) {
@@ -676,9 +677,13 @@ void tickPayload(Server& s) {
         auto& p = s.players_[i];
         if (!p.connected || !p.alive) continue;
         if (length(p.move.pos - cart) >= kCartRange) continue;
-        p.objTime += s.dt();
         if (p.team == att) na++;
         else if (p.team == def) nd++;
+    }
+    // objective time: attackers by the cart; defenders only while blocking it (an attacker is there too)
+    for (int i = 0; i < kMaxPlayers; i++) {
+        auto& p = s.players_[i];
+        if (p.connected && p.alive && length(p.move.pos - cart) < kCartRange && (p.team == att || (p.team == def && na > 0))) p.objTime += s.dt();
     }
     m.flags &= ~MS_CONTESTED;
     if (na > 0 && nd == 0) {
@@ -723,9 +728,13 @@ void tickPoints(Server& s) {
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = s.players_[i];
         if (!p.connected || !p.alive || !feetIn(s, i, zone)) continue;
-        p.objTime += s.dt();
         if (p.team == att) na++;
         else if (p.team == def) nd++;
+    }
+    // objective time: attackers on the point; defenders only while contesting it (an attacker is on it too)
+    for (int i = 0; i < kMaxPlayers; i++) {
+        auto& p = s.players_[i];
+        if (p.connected && p.alive && feetIn(s, i, zone) && (p.team == att || (p.team == def && na > 0))) p.objTime += s.dt();
     }
     m.flags &= ~MS_CONTESTED;
     m.hillOwner = 255;

@@ -176,6 +176,7 @@ public:
     uint16_t nextProjId_ = 1;
     ModeState ms_;
     float phaseEnd_ = 0;
+    float liveSince_ = 0;        // when the round went live (the map's holdfire counts from it)
     float roundStart_ = 0;
     float lastProgress_ = 0;    // vs: last time damage was dealt
     int lastIt_ = -1;
