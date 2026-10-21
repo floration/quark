@@ -10,7 +10,7 @@ The numbers say *what* a map is. The sheets are for the judgement calls: whether
 
 ## The game the numbers are tuned to
 - **Movement**:
-  - running speed: 12 m/s;
+  - running speed: 8 m/s;
   - jump: 7 m/s up, clears about 1.2 m;
   - step-up: 0.55 m;
   - dash: a 0.12 s burst, then you keep your speed + 3 m/s; it can be tilted up or down;
@@ -97,13 +97,13 @@ Each mode the map supports gets the measurement that matters for it:
 
 | mode | measured |
 |---|---|
-| vs / duel / 1v1 | Walking distance from A's spawns to the nearest B spawn, and from B's to A's. **Fairness = shorter ÷ longer.** It doesn't depend on direction, so a symmetric map scores 1.00. Also the time to cross at 12 m/s. |
+| vs / duel / 1v1 | Walking distance from A's spawns to the nearest B spawn, and from B's to A's. **Fairness = shorter ÷ longer.** It doesn't depend on direction, so a symmetric map scores 1.00. Also the time to cross at 8 m/s. |
 | king of the hill | Each team's mean walking distance to the hill. Fairness = shorter ÷ longer. |
 | neutral payload | Each team's distance to the cart's starting point (halfway along the track). Fairness = shorter ÷ longer. |
 | payload | Attackers to the cart, defenders to the halfway point, and the track length. One-sided by design (sides swap), so no fairness score. |
 | bomb | Each team's distance to the nearest site. Defenders should arrive first so they can set up. |
 | ffa / tourney | Spawn count, the closest pair of spawns, and the share of spawn pairs that can see each other. Lower is better: spawns in view of each other mean spawn kills. |
-| race | Walking length of the checkpoint route, as time at running speed (12 m/s) and at a good strafe-jump speed (20 m/s). |
+| race | Walking length of the checkpoint route, as time at running speed (8 m/s) and at a good strafe-jump speed (20 m/s). |
 | multi point | For each point: the attackers' and the defenders' walk to it from the spawns that stage uses. One-sided by design (sides swap), so no fairness score. |
 | hide and seek / tag | Hiding spots: the share of floor samples visible from fewer than 5% of the others. |
 | ranked | The share of sightlines under 20 m (rifle / rocket fights) and over 20 m (laser / crossbow / sniper). Vanilla wants a mix, vampire (laser) wants mid range, instagib (sniper) wants long. |

@@ -23,7 +23,7 @@ namespace {
 // Weapon range bands (from the weapon set): close = shotgun / knife, mid = rifle / rocket / sticky,
 // long = laser (32 m max) / crossbow, extreme = only the sniper (and a scoped rifle) reaches.
 constexpr float kBandClose = 6.0f, kBandMid = 20.0f, kBandLong = 32.0f;
-constexpr float kRunSpeed = 12.0f;   // pmove kGroundSpeed
+constexpr float kRunSpeed = 8.0f;   // pmove kGroundSpeed
 constexpr float kJumpReach = 1.2f;     // a standing jump clears ~1.2 m (pmove: 7.34 m/s up, 22 m/s^2 gravity)
 constexpr float kEye = 1.6f;
 
@@ -688,7 +688,7 @@ void measure(Metrics& r, const Map& m, const NavGraph& g) {
             else {
                 float f = std::min(ab, ba) / std::max(ab, ba);
                 fair.push_back(f);
-                snprintf(buf, sizeof buf, "A to B spawns %.0f m, B to A %.0f m (fairness %.2f, %.1f s apart at 12 m/s)", ab, ba, f, std::max(ab, ba) / kRunSpeed);
+                snprintf(buf, sizeof buf, "A to B spawns %.0f m, B to A %.0f m (fairness %.2f, %.1f s apart at 8 m/s)", ab, ba, f, std::max(ab, ba) / kRunSpeed);
                 line = buf;
             }
         } else if (mode == MODE_FFA || mode == MODE_TOURNEY) {
@@ -706,7 +706,7 @@ void measure(Metrics& r, const Map& m, const NavGraph& g) {
             float total = 0;
             bool ok = true;
             for (auto& c : m.checkpoints) { float d = navBetween(g, at, c.center()); if (d < 0) ok = false; else total += d; at = c.center(); }
-            snprintf(buf, sizeof buf, "%zu checkpoints, %s %.0f m walked (%.0f s at 12 m/s, %.0f s at 20 m/s)", m.checkpoints.size(), ok ? "route" : "PARTLY UNREACHABLE route", total, total / kRunSpeed, total / 20);
+            snprintf(buf, sizeof buf, "%zu checkpoints, %s %.0f m walked (%.0f s at 8 m/s, %.0f s at 20 m/s)", m.checkpoints.size(), ok ? "route" : "PARTLY UNREACHABLE route", total, total / kRunSpeed, total / 20);
             line = buf;
         } else if (mode == MODE_POINTS && !m.points.empty()) {
             std::string t = std::to_string(m.points.size()) + " points;";

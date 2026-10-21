@@ -2089,6 +2089,12 @@ static void testNetcode(uint16_t port) {
     // limit: two snapshot intervals plus up to 15 ms of measured timing jitter (machine dependent: shared CI
     // runners and cloud VMs measure 4-10 ms on their own; snapshots at 125/s would already be 17+ ms)
     float limit = 2.0f / cls[0]->snapRate() + 0.015f;
+    // one scheduling hiccup on a shared machine inflates the jitter estimate for a moment (the released 1.14.0 shows
+    // it too): over the limit, keep playing 3 s more and measure again - a real regression stays over it
+    if (cls[0]->interpDelay() >= limit) {
+        printf("  (interpolation delay %.1f ms: measuring again)\n", cls[0]->interpDelay() * 1000);
+        pump(s, cls, 3.0, [](int i) { UserCmd c; c.forward = 127; c.yaw = i * 1.5f + (float)timeNow(); c.buttons = BTN_JUMP; return c; });
+    }
     printf("  8 players moving: %.0f bytes per snapshot, %u undecodable deltas, interpolation delay %.1f ms (limit %.1f)\n", avg, misses,
            cls[0]->interpDelay() * 1000, limit * 1000);
     CHECK(cls[0]->interpDelay() < limit);
