@@ -1,4 +1,9 @@
 #include <thread>
+#include <functional>
+#ifndef _WIN32
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 #include <chrono>
 #include <cstdlib>
 #include "common/profile.h"
@@ -407,7 +412,7 @@ static void testTimeTrial(uint16_t port) {
     cfg.timeTrial = true; cfg.vsBots = true; cfg.autoStart = true; cfg.maxPlayers = 1; cfg.roundsToWin = 10000;
     cfg.botsEnemy = cfg.botsAlly = 0;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     NetClient a;
     a.connect("127.0.0.1:" + std::to_string(port), "racer");
     std::vector<NetClient*> cls = {&a};
@@ -441,7 +446,7 @@ static void testTimeTrial(uint16_t port) {
     // a "time trial" anywhere but the shipped Viaduct doesn't count for the board
     Server s2;
     cfg.map = "foundry"; cfg.port = port + 1;
-    if (!s2.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!s2.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     NetClient b;
     b.connect("127.0.0.1:" + std::to_string(port + 1), "racer");
     std::vector<NetClient*> cls2 = {&b};
@@ -459,7 +464,7 @@ static void testPoints(uint16_t port) {
     cfg.autoStart = true;
     cfg.map = "lodestone"; cfg.mode = MODE_POINTS; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     NetClient a, b;
     a.connect("127.0.0.1:" + std::to_string(port), "a");
     b.connect("127.0.0.1:" + std::to_string(port), "b");
@@ -509,7 +514,7 @@ static void testCartChecks(uint16_t port) {
     cfg.autoStart = true;
     cfg.map = "railyard"; cfg.mode = MODE_PAYLOAD; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     NetClient a, b;
     a.connect("127.0.0.1:" + std::to_string(port), "a");
     b.connect("127.0.0.1:" + std::to_string(port), "b");
@@ -539,7 +544,7 @@ static void testPayloadPush(uint16_t port) {
     cfg.autoStart = true;
     cfg.map = "bastion"; cfg.mode = MODE_PAYLOAD; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     NetClient a, b;
     a.connect("127.0.0.1:" + std::to_string(port), "a");
     b.connect("127.0.0.1:" + std::to_string(port), "b");
@@ -568,7 +573,7 @@ static void testPacketLoss(uint16_t port) {
     cfg.autoStart = true;
     cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     NetClient a, b;
     a.connect("127.0.0.1:" + std::to_string(port), "shooter");
     b.connect("127.0.0.1:" + std::to_string(port), "target");
@@ -727,7 +732,7 @@ static void testCartDash(uint16_t port) {
     ServerConfig cfg;
     cfg.map = "railyard"; cfg.mode = MODE_PAYLOAD; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     std::vector<NetClient*> none;
     pump(s, none, 0.2, idle);
     // sticky on the cart moves with it
@@ -760,7 +765,7 @@ static void testSemiAuto(uint16_t port) {
     ServerConfig cfg;
     cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     NetClient a;
     a.connect("127.0.0.1:" + std::to_string(port), "holder");
     std::vector<NetClient*> cls = {&a};
@@ -797,7 +802,7 @@ static void testTickRateFallback(uint16_t port) {
     cfg.autoStart = true;
     cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     CHECK(s.tickRate() == 1000);
     NetClient a;
     a.connect("127.0.0.1:" + std::to_string(port), "solo");
@@ -825,7 +830,7 @@ static void testRocketSelfDamage(uint16_t port) {
     cfg.autoStart = true;
     cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     NetClient a;
     a.connect("127.0.0.1:" + std::to_string(port), "jumper");
     std::vector<NetClient*> cls = {&a};
@@ -870,7 +875,7 @@ static void testSyringe(uint16_t port) {
     ServerConfig cfg;
     cfg.map = "bastion"; cfg.mode = MODE_KOTH; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     NetClient a, b;
     a.connect("127.0.0.1:" + std::to_string(port), "a");
     b.connect("127.0.0.1:" + std::to_string(port), "b");
@@ -976,7 +981,7 @@ static void testDuel(uint16_t port) {
     cfg.map = "clockwork"; cfg.mode = MODE_DUEL; cfg.port = port;
     cfg.logLevel = LOG_EXTREME; cfg.logFile = logPath;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     NetClient a, b, c;
     a.connect("127.0.0.1:" + std::to_string(port), "ann");
     b.connect("127.0.0.1:" + std::to_string(port), "bob");
@@ -1078,7 +1083,7 @@ static void testDuel2v2(uint16_t port) {
     cfg.autoStart = true;
     cfg.map = "clockwork"; cfg.mode = MODE_DUEL; cfg.port = port; cfg.duelTeamSize = 2;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     std::vector<std::unique_ptr<NetClient>> c;
     std::vector<NetClient*> cls;
     for (int i = 0; i < 5; i++) {
@@ -1110,7 +1115,7 @@ static void testInternetList(uint16_t port) {
     ServerConfig cfg;
     cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.publicList = true; cfg.name = "listed";
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     std::vector<NetClient*> none;
     pump(s, none, 3.0, idle); // announce
     ServerBrowser b;
@@ -1134,7 +1139,7 @@ static void testBotAim(uint16_t& port) {
         ServerConfig cfg;
         cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port++;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; return; }
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
         NetClient a;
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "target");
         std::vector<NetClient*> cls = {&a};
@@ -1254,7 +1259,7 @@ static void testCustomMode(uint16_t port) {
     c.weapons = (uint16_t)(1u << WPN_RIFLE | 1u << WPN_ROCKET);
     c.maps = {"harbor", "bastion"};
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     CHECK(s.config().map == "bastion" && s.config().mode == MODE_FFA);   // the host's map is in the pool: it stays
     CHECK(std::fabs(weaponDef(WPN_RIFLE).damage - baseWeaponDef(WPN_RIFLE).damage * 2) < 1e-3f);
     CHECK(std::fabs(weaponDef(WPN_ROCKET).refire - baseWeaponDef(WPN_ROCKET).refire / 2) < 1e-4f);
@@ -1480,7 +1485,7 @@ static void testRocketLob(uint16_t port) {
     ServerConfig cfg;
     cfg.autoStart = false; cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     NetClient a;
     a.connect("127.0.0.1:" + std::to_string(port), "lobber");
     std::vector<NetClient*> cls = {&a};
@@ -1583,7 +1588,7 @@ static void testMapVote(uint16_t port) {
     ServerConfig cfg;
     cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     NetClient a, b;
     a.connect("127.0.0.1:" + std::to_string(port), "a");
     b.connect("127.0.0.1:" + std::to_string(port), "b");
@@ -1770,7 +1775,7 @@ static void testRankedVoteAndRestart(uint16_t port) {
     ServerConfig cfg;
     cfg.map = "foundry"; cfg.mode = MODE_FFA; cfg.port = port; cfg.restartFlag = flag;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     NetClient a, b;
     a.connect("127.0.0.1:" + std::to_string(port), "a");
     b.connect("127.0.0.1:" + std::to_string(port), "b");
@@ -1907,7 +1912,7 @@ static void testDemo(uint16_t port) {
     ServerConfig cfg;
     cfg.map = "harbor"; cfg.mode = MODE_FFA; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     NetClient a;
     a.connect("127.0.0.1:" + std::to_string(port), "recorder");
     std::vector<NetClient*> cls = {&a};
@@ -1953,7 +1958,7 @@ static void testVotedEdit(uint16_t port) {
     ServerConfig cfg;
     cfg.map = "bastion"; cfg.mode = MODE_VS; cfg.port = port; cfg.autoStart = true;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     NetClient a, b;
     a.connect("127.0.0.1:" + std::to_string(port), "a");
     b.connect("127.0.0.1:" + std::to_string(port), "b");
@@ -1999,7 +2004,7 @@ static void testArenaAndTourney(uint16_t& port) {
         cfg.autoStart = true;
         cfg.map = "clockwork"; cfg.mode = MODE_ARENA; cfg.port = port++; cfg.arenaVariant = arenaVariantFromName("classic");
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; return; }
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
         NetClient a, b;
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "a");
         b.connect("127.0.0.1:" + std::to_string(cfg.port), "b");
@@ -2028,7 +2033,7 @@ static void testArenaAndTourney(uint16_t& port) {
         cfg.tourneyMaps = {"clockwork", "temple"};
         cfg.tourneyVariants = {arenaVariantFromName("classic"), arenaVariantFromName("hitscan")};
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; return; }
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
         NetClient h;
         h.connect("127.0.0.1:" + std::to_string(cfg.port), "human");
         std::vector<NetClient*> cls = {&h};
@@ -2066,7 +2071,7 @@ static void testNetcode(uint16_t port) {
     ServerConfig cfg;
     cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
     s.setLog([](const std::string&) {});
-    if (!s.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     std::vector<std::unique_ptr<NetClient>> owned;
     std::vector<NetClient*> cls;
     for (int i = 0; i < 4; i++) {
@@ -2101,7 +2106,7 @@ static void testNetcode(uint16_t port) {
     Server v;
     cfg.port = port + 1;
     v.setLog([](const std::string&) {});
-    if (!v.start(cfg)) { g_fail++; return; }
+    { std::string e_; if (!v.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     NetClient a, b;
     a.connect("127.0.0.1:" + std::to_string(cfg.port), "a");
     b.connect("127.0.0.1:" + std::to_string(cfg.port), "b");
@@ -2133,7 +2138,7 @@ static void testBots(uint16_t& port) {
         cfg.map = "clockwork"; cfg.mode = MODE_FFA; cfg.port = port++;   // (a compact map: bastion is a big team map now)
         cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botSkill = BOT_EXPERT; cfg.timeLimit = 60;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; return; }
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
         CHECK(s.playerCount() == 3);
         NetClient a;
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "human");
@@ -2160,7 +2165,7 @@ static void testBots(uint16_t& port) {
         ServerConfig cfg;
         cfg.map = "bastion"; cfg.mode = MODE_VS; cfg.port = port++;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; return; }
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
         NetClient a, b;
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "one");
         std::vector<NetClient*> cls = {&a};
@@ -2204,7 +2209,7 @@ static void testBots(uint16_t& port) {
         cfg.autoStart = true;
         cfg.map = "bastion"; cfg.mode = MODE_NPAYLOAD; cfg.port = port++;
         s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { g_fail++; return; }
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
         NetClient a, b;
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "a");
         b.connect("127.0.0.1:" + std::to_string(cfg.port), "b");
@@ -2363,25 +2368,6 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(29980); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(29450); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = 29500; testBotAim(p); return g_fail ? 1 : 0; }
-    testMovement();
-    testMaps();
-    testTickRateIndependence();
-    testAllMaps();
-    testStairs();
-    testEditorLadder();
-    testEditorGroups();
-    testRejoin(29980);
-    testCustomMode(29990);
-    testPoints(29995);
-    testSyringe(29996);
-    testCartChecks(29997);
-    {   // the map bar: every map scores at least 7 in every category but originality (docs/MAP_METRICS.md)
-        printf("map scores\n");
-        std::string p = (std::filesystem::temp_directory_path() / "quark_map_report.md").string();
-        if (mapReport(p.c_str())) g_fail++;
-    }
-    testGridQueries();
-    uint16_t port = 28500;
     if (argc >= 2 && std::string(argv[1]) == "ranked") { testRanked(29610); testRankedVoteAndRestart(29620); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(29600); testEditSession(29601); testVotedEdit(29602); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
@@ -2392,41 +2378,88 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = 29800; testArenaAndTourney(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = 29700; testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); return g_fail ? 1 : 0; }
-    testSession(MODE_VS, "bastion", port++);
-    testSession(MODE_BOMB, "bastion", port++);
-    testSession(MODE_KOTH, "bastion", port++);
-    testSession(MODE_PAYLOAD, "bastion", port++);
-    testSession(MODE_FFA, "bastion", port++);
-    testSession(MODE_RACE, "foundry", port++);
-    testTimeTrial(port++);
-    testPayloadPush(port++);
-    testPacketLoss(port++);
-    testWeapons(port); port += 8;
-    testCartDash(port++);
-    testSemiAuto(port++);
-    testMapVote(port++);
-    testResetMaps();
-    testLadders();
-    testItModes(port); port += 2;
-    testRocketLob(port++);
-    testAltFires(port); port += 3;
-    testMapDownload(port++);
-    testEditSession(port++);
-    testVotedEdit(port++);
-    testDemo(port++);
-    testRanked(port); port += 3;
-    testRankedVoteAndRestart(port++);
-    testArenaAndTourney(port);
-    testNetcode(port); port += 2;
-    testTickRateFallback(port++);
-    testRocketSelfDamage(port++);
-    testTimeToKill();
-    testWallbang();
-    testDuel(port++);
-    testDuel2v2(port++);
-    testInternetList(port++);
-    testBotAim(port);
-    testBots(port);
+    // ---- the whole suite. Most tests wait on real-time network play rather than the CPU, so each runs in its own
+    // process, several at once (output kept in order); a few timing-sensitive ones run alone afterwards.
+    // "quark_tests serial" runs everything in this process, one after another, as before.
+    struct T { const char* name; std::function<void()> run; };
+    std::vector<T> par = {   // (longest first: they set the wall time)
+        {"bots", [] { uint16_t p = 28900; testBots(p); }},
+        {"botaim", [] { uint16_t p = 29000; testBotAim(p); }},
+        {"tourney", [] { uint16_t p = 29100; testArenaAndTourney(p); }},
+        {"duel", [] { testDuel(28520); testDuel2v2(28521); }},
+        {"weapons", [] { testWeapons(28530); testRocketSelfDamage(28540); testAltFires(28545); testRocketLob(28550); testTimeToKill(); testWallbang(); }},
+        {"maps", [] {
+            testMaps(); testAllMaps(); testStairs(); testLadders();
+            printf("map scores\n");   // the map bar: every map scores at least 7 in every category but originality
+            std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
+            if (mapReport(p.c_str())) g_fail++;
+        }},
+        {"movement", [] { testMovement(); testTickRateIndependence(); testGridQueries(); testEditorLadder(); testEditorGroups(); }},
+        {"sessions", [] { testSession(MODE_VS, "bastion", 28560); testSession(MODE_BOMB, "bastion", 28561); testSession(MODE_KOTH, "bastion", 28562); }},
+        {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", 28563); testSession(MODE_FFA, "bastion", 28564); testSession(MODE_RACE, "foundry", 28565); }},
+        {"modes", [] { testCustomMode(28570); testPoints(28571); testSyringe(28572); testCartChecks(28573); testItModes(28574); }},
+        {"race", [] { testTimeTrial(28580); testPayloadPush(28581); testPacketLoss(28582); testCartDash(28583); testSemiAuto(28584); }},
+        {"votes", [] { testRejoin(28590); testMapVote(28591); }},
+        {"edit", [] { testMapDownload(28600); testEditSession(28601); testVotedEdit(28602); testDemo(28603); }},
+        {"ranked", [] { testRanked(28610); testRankedVoteAndRestart(28620); testInternetList(28625); }},
+    };
+    std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
+        {"netcode", [] { testNetcode(28700); }},
+        {"tickrate", [] { testTickRateFallback(28710); }},
+        {"resetmaps", [] { testResetMaps(); }},
+    };
+    bool serial = argc >= 2 && std::string(argv[1]) == "serial";
+#ifndef _WIN32
+    if (!serial) {
+        unsigned jobs = std::max(2u, std::thread::hardware_concurrency());
+        struct Job { pid_t pid; std::string out; size_t idx; };
+        std::vector<Job> running;
+        std::vector<std::string> outputs(par.size());
+        std::vector<int> done(par.size(), -1);
+        size_t next = 0, printed = 0;
+        auto tmp = std::filesystem::temp_directory_path();
+        auto start = [&](size_t i) {
+            std::string out = (tmp / ("quark_test_" + std::to_string(getpid()) + "_" + par[i].name + ".log")).string();
+            fflush(stdout);
+            pid_t pid = fork();
+            if (pid == 0) {   // the child: one test group, its output to a file
+                if (!freopen(out.c_str(), "w", stdout)) std::_Exit(99);
+                dup2(fileno(stdout), 2);
+                setvbuf(stdout, nullptr, _IOLBF, 0);
+                srand(1234);
+                par[i].run();
+                fflush(stdout);
+                std::_Exit(std::min(g_fail, 100));
+            }
+            running.push_back({pid, out, i});
+        };
+        while (next < par.size() && running.size() < jobs) start(next++);
+        while (!running.empty()) {
+            int st = 0;
+            pid_t pid = wait(&st);
+            if (pid <= 0) break;
+            for (size_t k = 0; k < running.size(); k++) {
+                if (running[k].pid != pid) continue;
+                size_t i = running[k].idx;
+                std::ifstream f(running[k].out);
+                std::stringstream ss; ss << f.rdbuf();
+                outputs[i] = ss.str();
+                std::remove(running[k].out.c_str());
+                done[i] = WIFEXITED(st) ? WEXITSTATUS(st) : 1;
+                if (!WIFEXITED(st)) outputs[i] += std::string("  FAIL ") + par[i].name + ": crashed\n";
+                running.erase(running.begin() + k);
+                break;
+            }
+            while (printed < par.size() && done[printed] >= 0) { fputs(outputs[printed].c_str(), stdout); g_fail += done[printed]; printed++; }
+            if (next < par.size()) start(next++);
+        }
+        for (auto& t : alone) t.run();
+    } else
+#endif
+    {
+        for (auto& t : par) t.run();
+        for (auto& t : alone) t.run();
+    }
     netShutdown();
     printf(g_fail ? "%d FAILURE(S)\n" : "all tests passed\n", g_fail);
     return g_fail ? 1 : 0;
