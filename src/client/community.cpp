@@ -178,7 +178,8 @@ void Game::drawQueueMenu(float cx, float y) {
         if (ui_.button(x, y, w, h, t)) queueAction(q.key, in ? "leave" : "join");
     }
     y += gap;
-    float hw = (w - gap) * 0.5f;
-    if (ui_.button(x, y, hw, h, "LEAVE ALL")) queueAction("", "leaveall");
-    if (ui_.button(x + hw + gap, y, hw, h, "BACK")) queueMenu_ = false;
+    float tw = (w - 2 * gap) / 3;
+    if (ui_.button(x, y, tw, h, "QUEUE FOR ALL")) for (int i = 0; i < kQueueCount; i++) if (!queued_.count(kQueues[i].key)) queueAction(kQueues[i].key, "join");
+    if (ui_.button(x + tw + gap, y, tw, h, "LEAVE ALL")) queueAction("", "leaveall");
+    if (ui_.button(x + 2 * (tw + gap), y, tw, h, "BACK")) queueMenu_ = false;
 }

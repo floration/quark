@@ -462,7 +462,7 @@ def run_bot(cfg: dict):
     bot.queue_note = ""
 
     def queue_text() -> str:
-        lines = ["**Queues** (shared with players queueing in game) - press a mode to join, **Leave all** to leave. "
+        lines = ["**Queues** (shared with players queueing in game) - press a mode to join, **Queue for all** to join every one, **Leave all** to leave. "
                  "Queues drop you after 30 min. When one fills, everyone in it gets pinged."]
         if bot.queue_note:
             lines.append(f"-# {bot.queue_note}")
@@ -595,6 +595,17 @@ def run_bot(cfg: dict):
             await it.followup.send(await queue_request(it.user, self.key, "join"), ephemeral=True)
             await refresh_queue_panel()
 
+    class QueueAllButton(discord.ui.Button):
+        def __init__(self):
+            super().__init__(label="Queue for all", custom_id="quark:q:joinall", row=4, style=discord.ButtonStyle.success)
+
+        async def callback(self, it: discord.Interaction):
+            await it.response.defer(ephemeral=True, thinking=True)
+            replies = [await queue_request(it.user, k, "join") for k in QUEUES]   # (one request a mode, in order)
+            filled = [r for r in replies if "filled" in r.lower()]
+            await it.followup.send(filled[0] if filled else f"Queued for all {len(QUEUES)} modes.", ephemeral=True)
+            await refresh_queue_panel()
+
     class LeaveAllButton(discord.ui.Button):
         def __init__(self):
             super().__init__(label="Leave all", custom_id="quark:q:leaveall", row=4, style=discord.ButtonStyle.primary)
@@ -609,6 +620,7 @@ def run_bot(cfg: dict):
             super().__init__(timeout=None)
             for k, key in enumerate(QUEUES):
                 self.add_item(QueueButton(key, min(k // 4, 3)))
+            self.add_item(QueueAllButton())
             self.add_item(LeaveAllButton())
 
     class RoleView(discord.ui.View):
