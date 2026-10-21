@@ -86,6 +86,21 @@ static void testMovement() {
     }
     printf("  strafe-jumping: %.1f -> %.1f m/s in 4 s\n", run, hspeed(b));
     CHECK(hspeed(b) > run * 1.3f);
+    { // the strafe window: turning at a range of speeds all gain; turning far too fast (overstrafing) costs only a little
+        auto strafeAt = [&](float degPerSec) {
+            MoveState q; q.pos = {0, 0, 0}; q.flags = MF_ONGROUND;
+            UserCmd u; u.msec = 1; u.forward = 127;
+            for (int i = 0; i < 1000; i++) pmove(q, u, open);
+            u.forward = 0; u.side = 127; u.buttons = BTN_JUMP;
+            for (int i = 0; i < 2000; i++) { u.yaw -= degPerSec * PI / 180 * 0.001f; pmove(q, u, open); }
+            return hspeed(q);
+        };
+        printf("  strafe window (2 s): ");
+        for (float r : {30.0f, 60.0f, 90.0f, 180.0f, 360.0f, 720.0f}) printf("%.0f deg/s %.1f  ", r, strafeAt(r));
+        printf("\n");
+        for (float r : {45.0f, 90.0f, 180.0f}) CHECK(strafeAt(r) > run * 1.1f);   // a wide range of turn speeds gains
+        CHECK(strafeAt(720.0f) > run * 0.7f);    // overstrafing (way too fast) loses some speed (the old air control: 5.0 m/s of 8)
+    }
     // a dash leaves you faster than you started (it used to settle back down)
     MoveState d = b; d.dashCooldown = 0; d.flags &= ~MF_DASHHELD;
     float before = hspeed(d);

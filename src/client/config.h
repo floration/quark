@@ -31,6 +31,14 @@ struct Settings {
     int msaa = 0;               // anti-aliasing: 0 off, 1 smooth edges (FXAA-style pass), 2 / 4 MSAA
     float volume = 0.6f;
     bool hitsounds = true;
+    // VISUALS
+    bool fullbright = false;    // flat white world, black outlines, no lighting
+    int ownShots = 0;           // your tracers / beam: 0 with the weapon model, 1 always, 2 never
+    bool enemyShots = true;     // other players' tracers and beams
+    bool healthBars = false;    // health bars over other players (not in ranked)
+    float scopeOpacity = 1.0f;  // the sniper scope's black surround (0 = none, just the zoom)
+    bool stickyCounter = true;  // "STICKIES 3/6" while you hold the sticky launcher or have any out
+    bool crowns = true;         // gold / silver crowns on ranked leaders
     int outlineFriendly = 0, outlineEnemy = 0; // player outline presets (kOutlineNames: black, white, team, ...)
     int announcerVoice = 0;     // 0 male, 1 female (both deep, in a big hall)
     int announcer = 2;          // voice lines: 0 off, 1 the round countdown only, 2 also the mode's calls (bomb planted, hill captured...)
@@ -74,4 +82,7 @@ struct Settings {
     Settings() { binds.setDefaults(); }
     void load();
     void save() const;
+    void set(const std::string& key, const std::string& value); // one setting from text (file or console)
+    std::string toText() const;                                 // every setting as key=value lines
+    void finishLoad();
 };

@@ -1143,6 +1143,13 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             if (count >= kMaxStickies && oldest >= 0) projectiles_[oldest].active = false;
         }
         if (p.weapon == WPN_BUBBLE && alt) { // the stream: every bubble at once, each at its own speed
+            float nearest = 1e9f;
+            for (int i = 0; i < kMaxPlayers; i++) {
+                const auto& o = players_[i];
+                if (i == id || !o.connected || !o.alive || (modeIsTeamBased(cfg_.mode) && o.team == p.team)) continue;
+                nearest = std::min(nearest, length(o.move.pos - p.move.pos));
+            }
+            const int count = bubbleStreamCount(nearest);
             int n = 0;
             for (auto& pr : projectiles_) {
                 if (pr.active) continue;
@@ -1152,9 +1159,10 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
                 pr.type = WPN_BUBBLE;
                 pr.owner = id;
                 pr.pos = eye + aim * 0.3f;
-                pr.vel = spreadDir(aim, 0.09f, cmd.seq, n) * kBubbleStreamSpeeds[n] * (wd.projSpeed / baseWeaponDef(WPN_BUBBLE).projSpeed);
+                float speed = kBubbleStreamSlow + (kBubbleStreamFast - kBubbleStreamSlow) * n / std::max(1, count - 1);
+                pr.vel = spreadDir(aim, 0.09f, cmd.seq, n) * speed * (wd.projSpeed / baseWeaponDef(WPN_BUBBLE).projSpeed);
                 pr.dieAt = time() + wd.life;
-                if (++n == kBubbleStream) break;
+                if (++n == count) break;
             }
             return false;
         }
@@ -1262,7 +1270,7 @@ void Server::tickProjectiles() {
                 float dmg = (float)wd.damage, head = headDamage(pr.type); // bolts: headshots (the knife has none)
                 float y = pr.pos.y + dir.y * best;
                 if (head > 0 && y >= hitBb.mx.y - (hitBb.mx.y - hitBb.mn.y) * kHeadFraction) dmg = std::max(dmg, head);
-                damagePlayer(hitPlayer, pr.owner, dmg, pr.type, dir * 3.0f);
+                damagePlayer(hitPlayer, pr.owner, dmg, pr.type, dir * (pr.type == WPN_CROSSBOW ? kCrossbowKnock : 3.0f));
                 if (pr.owner >= 0 && shotHit(pr.owner)) players_[pr.owner].shotsHit++;
             }
             pr.active = false;

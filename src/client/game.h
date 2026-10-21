@@ -307,6 +307,11 @@ private:
     // rebinding
     bool isDown(int action) const;
     void drawKeyOverlay(float W, float H, float s);
+    bool console_ = false;               // the settings console (`)
+    std::deque<std::string> consoleLog_;
+    void consolePrint(const std::string& t);
+    void runConsole(const std::string& line);
+    void drawConsole(float W, float H, float s, float ts);
     int bestMapFor(int mode) const;
     int bestRankedMap(int ladder) const; // the ladder's own ranked map, else any ranked map for it
     bool pressInput(int code);
@@ -317,6 +322,8 @@ private:
     bool controlsOpen_ = false;
     bool crosshairOpen_ = false;
     bool hudOpen_ = false;
+    bool visualsOpen_ = false;
+    void drawVisualSettings(float x0, float y0, float wTotal);
     // scriptable HUD: hud.cfg widgets, the verbose info block, and the in-game widget editor
     HudWidgets widgets_;
     HudVals hudVals_;

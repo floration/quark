@@ -123,6 +123,18 @@ void Audio::synthesize() {
     s[SND_GRAPPLE_HIT] = make(0.35f);
     for (float f : {1180.0f, 1630.0f, 2360.0f}) addTone(s[SND_GRAPPLE_HIT], f, 0.35f, 0.001f, 0.07f);
     addThump(s[SND_GRAPPLE_HIT], 400, 200, 0.01f, 0.5f, 0.001f, 0.02f); addRoom(s[SND_GRAPPLE_HIT], 0.25f, 0.6f); finish(s[SND_GRAPPLE_HIT], 0.2f);
+    // feedback: your death (a low falling thud), someone else's killstreak (a rising two-note sting), typing (a soft click)
+    s[SND_DEATH] = make(0.7f); addThump(s[SND_DEATH], 180, 40, 0.15f, 1, 0.004f, 0.25f); addTone(s[SND_DEATH], 220, 0.25f, 0.01f, 0.2f); addTone(s[SND_DEATH], 165, 0.25f, 0.01f, 0.3f, 0.12f);
+    addRoom(s[SND_DEATH], 0.35f, 1.2f); finish(s[SND_DEATH], 0.34f);
+    s[SND_STREAK] = make(0.5f); addTone(s[SND_STREAK], 660, 0.5f, 0.003f, 0.09f); addTone(s[SND_STREAK], 990, 0.5f, 0.003f, 0.16f, 0.1f);
+    addRoom(s[SND_STREAK], 0.3f, 0.8f); finish(s[SND_STREAK], 0.22f);
+    s[SND_TYPING] = make(0.05f); addThump(s[SND_TYPING], 2400, 1600, 0.004f, 1, 0.0005f, 0.006f); addBand(s[SND_TYPING], 2000, 7000, 0.3f, 0.0005f, 0.004f, 21); finish(s[SND_TYPING], 0.12f);
+    // feedback: your death (a low falling thud), someone else's killstreak (a rising two-note sting), typing (a soft click)
+    s[SND_DEATH] = make(0.7f); addThump(s[SND_DEATH], 180, 40, 0.15f, 1, 0.004f, 0.25f); addTone(s[SND_DEATH], 220, 0.25f, 0.01f, 0.2f); addTone(s[SND_DEATH], 165, 0.25f, 0.01f, 0.3f, 0.12f);
+    addRoom(s[SND_DEATH], 0.35f, 1.2f); finish(s[SND_DEATH], 0.34f);
+    s[SND_STREAK] = make(0.5f); addTone(s[SND_STREAK], 660, 0.5f, 0.003f, 0.09f); addTone(s[SND_STREAK], 990, 0.5f, 0.003f, 0.16f, 0.1f);
+    addRoom(s[SND_STREAK], 0.3f, 0.8f); finish(s[SND_STREAK], 0.22f);
+    s[SND_TYPING] = make(0.05f); addThump(s[SND_TYPING], 2400, 1600, 0.004f, 1, 0.0005f, 0.006f); addBand(s[SND_TYPING], 2000, 7000, 0.3f, 0.0005f, 0.004f, 21); finish(s[SND_TYPING], 0.12f);
     for (int p = 1; p < kPacks; p++)
         for (int i = 0; i < SND_VOICE_THREE; i++) { sounds_[p][i] = s[i]; voice(sounds_[p][i], p); }
     loadAnnouncer(announcer_);

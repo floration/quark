@@ -165,13 +165,13 @@ inline const WeaponDef& baseWeaponDef(int w) {
         //  name        refire   dmg    range   proj  speed  splash spread scoped zoom   beam  pel grav  sticky life
         {"RIFLE",       0.75f*2.0f/9.9f, 5.95f, 300.0f, false, 0, 0, 0.0f, 0.0f, 60.0f, false, 1, 0, false, 0},  // 17 shots, 2.4 s (scoped: 3/4 fire rate)
         {"ROCKET",      1.2f,    34,      0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  12.0f, false, 5}, // 3, 2.4 s
-        {"KNIFE",       0.525f,  40,      3.5f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 3, 1.05 s
+        {"KNIFE",       0.75f,   30,      3.5f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 4, 2.25 s (1.11: 30 every 0.75 s)
         {"SNIPER",      1.5f,    34,    500.0f, false,  0,    0,     0.0f,  0.0f, 45.0f,  false, 1,  0,    false, 0},  // 3, 3.0 s (headshots 42.5: 3)
         {"LASER",       0.001f,  0.04f,  32.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},  // every 1 ms, 2500 hits, 2.5 s
         {"SHOTGUN",     0.75f,   1.7f,   60.0f, false,  0,    0,     0.085f,-1,     0,    false, 20, 0,    false, 0},  // 20 x 1.7 = 34 per blast, 3, 1.5 s
         {"STICKY",      0.75f,   29.75f,  0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30}, // 4, 2.25 s
         {"CROSSBOW",    2.0f,    50,      0,    true,  76.5f, 0,     0.0f,  0.0f, 70.0f,  false, 1,  6.0f, false, 3},  // 2, 2.0 s (headshots 60)
-        {"BUBBLE",      1.0f/3,  10,      0,    true,  15.6f, 1.8f,  0.04f, -1,     0,    false, 1, -1.5f, false, 4}, // 10 pops, 3.0 s (floats up a little)
+        {"BUBBLE",      1.0f/5,  10,      0,    true,  15.6f, 1.8f,  0.04f, -1,     0,    false, 1, -1.5f, false, 4}, // 10 pops, 1.8 s (floats up a little; 5 a second)
         {"SYRINGE",     0.1f,    1,       0,    false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // heals you 1 hp every 0.1 s (damage = heal)
     };
     return defs[w < 0 || w >= WPN_COUNT ? 0 : w];
@@ -179,7 +179,7 @@ inline const WeaponDef& baseWeaponDef(int w) {
 // Alt-fires: knife throw (a projectile that hits for knife damage), shotgun bouncing pellets (ricochet off
 // walls, half damage), rifle scope (zooms like the sniper, 25% slower fire rate).
 constexpr float kSniperHeadDamage = 42.5f; // hits on the head (top 20% of the hitbox): sniper, crossbow bolt,
-constexpr float kCrossbowHeadDamage = 60.0f; // rifle bullet and each shotgun pellet
+constexpr float kCrossbowHeadDamage = 75.0f; // rifle bullet and each shotgun pellet
 constexpr float kRifleHeadDamage = 8.5f;
 constexpr float kPelletHeadDamage = 2.55f;
 const WeaponDef& weaponDef(int w);   // customrules.cpp
@@ -205,9 +205,18 @@ constexpr int kShotgunBounces = 2;
 constexpr float kShotgunBounceDamage = 0.5f;
 constexpr float kRifleScopedRefire = 4.0f / 3.0f; // refire multiplier while scoped (25% slower fire rate)
 // Bubble gun alt-fire: a stream of bubbles all at once, each at its own speed, then a long reload.
-constexpr int kBubbleStream = 5;
+// The stream: 5 bubbles with the nearest enemy within 5 m, up to 15 from 30 m away (so it can't one-shot up close),
+// spread evenly from slow to fast.
+constexpr int kBubbleStreamMin = 5, kBubbleStreamMax = 15;
+constexpr float kBubbleStreamNear = 5.0f, kBubbleStreamFar = 30.0f;
 constexpr float kBubbleStreamRefire = 1.8f;
-constexpr float kBubbleStreamSpeeds[kBubbleStream] = {8.4f, 12.0f, 15.6f, 19.8f, 24.0f};
+constexpr float kBubbleStreamSlow = 8.4f, kBubbleStreamFast = 24.0f;
+inline int bubbleStreamCount(float nearestEnemy) {
+    float f = (nearestEnemy - kBubbleStreamNear) / (kBubbleStreamFar - kBubbleStreamNear);
+    f = f < 0 ? 0 : f > 1 ? 1 : f;
+    return kBubbleStreamMin + (int)(f * (kBubbleStreamMax - kBubbleStreamMin) + 0.5f);
+}
+constexpr float kCrossbowKnock = 16.0f; // a bolt hit shoves hard (m/s along the bolt)
 constexpr float kBubbleKnock = 0.35f; // a pop shoves you a third as hard as a rocket blast of the same strength
 constexpr float kVampireFadeTime = 60.0f, kVampireMinHeal = 0.5f; // laser vampire: healing fades 100% -> 50% over the first minute of a round
 // The refire for this shot: alt-fire modes change it.

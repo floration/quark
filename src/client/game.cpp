@@ -464,7 +464,20 @@ void Game::onKey(int key, int action, int mods) {
     if (captureAction_ >= 0 || !typing) {
         if (pressInput(key)) return;
     }
+    if (screen_ == Screen::InGame && key == GLFW_KEY_GRAVE_ACCENT && (!chatting_ || console_)) { // the console: ` opens / closes
+        console_ = !console_;
+        chatting_ = console_;
+        chatText_.clear();
+        uiIn_.chars.clear();
+        captureMouse(!console_ && !paused_);
+        return;
+    }
     if (screen_ == Screen::InGame) {
+        if (chatting_ && console_) {
+            if (key == GLFW_KEY_ESCAPE) { console_ = chatting_ = false; chatText_.clear(); captureMouse(!paused_); }
+            else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) { runConsole(chatText_); chatText_.clear(); }
+            return;
+        }
         if (chatting_) {
             if (key == GLFW_KEY_ESCAPE) { chatting_ = false; chatText_.clear(); captureMouse(!paused_); }
             else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
@@ -492,7 +505,7 @@ void Game::onKey(int key, int action, int mods) {
         uiIn_.escape = true;
         if (filePick_) { filePick_ = 0; return; }
         if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
-        if (controlsOpen_ || crosshairOpen_ || hudOpen_) { controlsOpen_ = crosshairOpen_ = hudOpen_ = false; cfg_.save(); return; }
+        if (controlsOpen_ || crosshairOpen_ || hudOpen_ || visualsOpen_) { controlsOpen_ = crosshairOpen_ = hudOpen_ = visualsOpen_ = false; cfg_.save(); return; }
         if (picker_ != PICK_NONE) { picker_ = PICK_NONE; return; }
         if (screen_ == Screen::Join || screen_ == Screen::Host || screen_ == Screen::Settings || screen_ == Screen::VsBots || screen_ == Screen::Leaderboard || screen_ == Screen::Demos) {
             cfg_.save();
@@ -885,7 +898,7 @@ void Game::frame(double dt) {
                 if (w == WPN_KNIFE && !alt) knifeSlash_[net_.clientId() % kMaxPlayers] = time_;
                 if (w == WPN_KNIFE && alt) localFireLocked_ = true;
                 recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
-                bool showShot = !cfg_.hud[Settings::HUD_VIEWMODEL].hidden; // weapon model hidden: no own tracers / beam either
+                bool showShot = cfg_.ownShots == 1 || (cfg_.ownShots == 0 && !cfg_.hud[Settings::HUD_VIEWMODEL].hidden); // VISUALS > YOUR SHOTS
                 if (w == WPN_LASER) laserUntil_ = showShot ? time_ + 0.07 : 0;
                 else if (showShot && !weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE) { // (knife throw: the projectile shows it)
                     const MoveState& m = net_.predicted();
@@ -1017,7 +1030,7 @@ static const Vec3 kMuzzle[WPN_COUNT] = {
 Vec3 Game::muzzlePoint(int weapon, const Vec3& eye) const {
     const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
     Vec3 d = angleForward(yaw_, pitch_), right = normalize(cross(d, {0, 1, 0}));
-    if (vm.hidden || weapon < 0 || weapon >= WPN_COUNT) return eye + d * 0.5f + right * 0.15f - Vec3(0, 0.12f, 0);
+    if (weapon < 0 || weapon >= WPN_COUNT) return eye + d * 0.5f + right * 0.15f - Vec3(0, 0.12f, 0); // (hidden model: where it would be)
     Vec3 o = Vec3(0.2f + vm.x * 0.0005f, -0.17f - vm.y * 0.0005f, -0.55f - vm.z * 0.001f + (float)recoil_ * 0.06f) + kMuzzle[weapon] * vm.scale;
     float cp = std::cos(pitch_), sp = std::sin(pitch_), cy = std::cos(yaw_), sy = std::sin(yaw_);
     Vec3 p = {o.x, cp * o.y - sp * o.z, sp * o.y + cp * o.z};           // the viewmodel's own transform (rotX, then rotY)
@@ -1153,6 +1166,16 @@ void Game::drawWorld(float alpha) {
                 r_.text(sx - r_.textWidth(t, ts) * 0.5f, sy, ts, t, kRed);
             }
         }
+        // health bars over other players (VISUALS > HEALTH BARS; not in ranked)
+        if (cfg_.healthBars && !fairRules() && !self && i != viewing) {
+            float sx, sy;
+            if (r_.project(pos + Vec3(0, 2.0f * bs + 0.35f, 0), sx, sy)) {
+                float bw = 44 * ui_.s(), bh = 5 * ui_.s();
+                float f = clampf(p.health / 100.0f, 0, 1);
+                r_.rect(sx - bw * 0.5f - 1, sy - 1, bw + 2, bh + 2, {0, 0, 0, 0.7f});
+                r_.rect(sx - bw * 0.5f, sy, bw * f, bh, p.health > 30 ? rgba(col) : kRed);
+            }
+        }
         // name tags for teammates
         if (!self && isFriendly(i) && i != viewing) {
             float sx, sy;
@@ -1184,7 +1207,7 @@ void Game::drawWorld(float alpha) {
             const PlayerSnap& p = players[i].snap;
             int w = p.weapon;
             if (w == WPN_KNIFE && !remoteFiring_[i]) knifeSlash_[i] = time_;
-            if (w == WPN_SHOTGUN && !remoteFiring_[i]) { // a spread of pellet tracers (the server's spread pattern isn't sent)
+            if (w == WPN_SHOTGUN && !remoteFiring_[i] && cfg_.enemyShots) { // a spread of pellet tracers (the server's spread pattern isn't sent)
                 const PlayerSnap& q = players[i].snap;
                 Vec3 eyeP = q.pos + Vec3(0, (q.flags & PS_CROUCHED) ? kCrouchEyeHeight : kEyeHeight, 0);
                 Vec3 aim = angleForward(q.yaw, q.pitch), right = normalize(cross(aim, {0, 1, 0})), up = cross(right, aim);
@@ -1197,7 +1220,7 @@ void Game::drawWorld(float alpha) {
                     tracers_.push_back({eyeP + d * 0.6f, eyeP + d * (t < 0 ? wd.range : t), time_ + 0.2});
                 }
             }
-            if (w == WPN_LASER || (w == WPN_SNIPER && !remoteFiring_[i])) {
+            if (cfg_.enemyShots && (w == WPN_LASER || (w == WPN_SNIPER && !remoteFiring_[i]))) {
                 Vec3 eyeP = p.pos + Vec3(0, (p.flags & PS_CROUCHED) ? kCrouchEyeHeight : kEyeHeight, 0);
                 Vec3 d = angleForward(p.yaw, p.pitch);
                 float range = weaponDef(w).range;
@@ -1511,6 +1534,7 @@ void Game::drawWorld(float alpha) {
         }
     }
     r_.brightness = cfg_.brightness;
+    r_.fullbright = cfg_.fullbright;
     r_.drawScene(cfg_.shadows);
 }
 
@@ -1534,7 +1558,7 @@ void Game::drawHud() {
     if (scoped_ && scopeOverlay_) {
         // circular scope mask built from horizontal strips (one batch, no texture)
         float R = H * 0.46f;
-        const Color k = {0, 0, 0, 1};
+        const Color k = {0, 0, 0, cfg_.scopeOpacity}; // VISUALS > SCOPE OVERLAY
         int strips = 96;
         for (int i = 0; i < strips; i++) {
             float y0 = cy - R + 2 * R * i / strips, y1 = cy - R + 2 * R * (i + 1) / strips;
@@ -1545,8 +1569,8 @@ void Game::drawHud() {
         }
         r_.rect(0, 0, W, cy - R, k);
         r_.rect(0, cy + R, W, H - cy - R, k);
-        r_.rect(cx - R, cy - 0.5f, 2 * R, 1, {0, 0, 0, 0.9f});
-        r_.rect(cx - 0.5f, cy - R, 1, 2 * R, {0, 0, 0, 0.9f});
+        r_.rect(cx - R, cy - 0.5f, 2 * R, 1, {0, 0, 0, 0.9f * std::max(cfg_.scopeOpacity, 0.3f)});
+        r_.rect(cx - 0.5f, cy - R, 1, 2 * R, {0, 0, 0, 0.9f * std::max(cfg_.scopeOpacity, 0.3f)});
     }
     if (isItMode(ms.mode) && ms.phase != PHASE_WARMUP && mep && mep->team() != TEAM_SPECTATOR) {
         bool it = (mep->flags & PS_HASBOMB) != 0;
@@ -1769,6 +1793,16 @@ void Game::drawHud() {
             r_.text(bx - r_.textWidth("SPEED", lts) - 6 * k, y - 2 * k, lts, "SPEED", kWhite);
             r_.text(bx + bw + 6 * k, y - 2 * k, lts, buf, kWhite);
         }
+        if (cfg_.stickyCounter && !unarmed) {   // stickies out (the 7th removes the oldest)
+            int out = 0;
+            for (auto& pr : net_.interpolatedProjectiles()) out += pr.type == WPN_STICKY && pr.owner == net_.clientId();
+            if (out > 0 || net_.selfWeapon() == WPN_STICKY) {
+                auto e = he(Settings::HUD_WEAPON);
+                float k = std::max(1.0f, std::round(ts * 0.9f * e.scale));
+                std::string t = "STICKIES " + std::to_string(out) + "/" + std::to_string(kMaxStickies);
+                r_.text(W - 24 * s - r_.textWidth(t, k) + e.x * s, H - 128 * s * e.scale + e.y * s, k, t, out >= kMaxStickies ? Color{1, 0.6f, 0.2f, 1} : tint(Settings::HUD_WEAPON, kWhite));
+            }
+        }
         if (!unarmed && !he(Settings::HUD_SLOTS).hidden) {   // weapon slots in kWeaponSlots order: 1 rocket, 2 rifle, 3 laser, ...
             auto e = he(Settings::HUD_SLOTS);
             float bx = W - 24 * s + e.x * s;
@@ -1831,7 +1865,8 @@ void Game::drawHud() {
     if (chatting_ && !lines.empty()) r_.rect(18 * s, y - 4 * s, 520 * s, lines.size() * (r_.textHeight(ts) + 4 * s) + 4 * s, {0, 0, 0, 0.4f});
     for (auto& c : lines) { r_.text(24 * s, y, ts, c.text, c.color); y += r_.textHeight(ts) + 4 * s; }
     }
-    if (chatting_) {
+    if (chatting_ && console_) drawConsole(W, H, s, ts);
+    else if (chatting_) {
         ui_.label(24 * s, H - 100 * s, "SAY: " + chatText_ + (std::fmod(time_, 1.0) < 0.5 ? "_" : ""), kWhite);
         for (char c : uiIn_.chars) if (c >= 32 && c < 127 && chatText_.size() < 120) chatText_ += c;
         if (uiIn_.backspace && !chatText_.empty()) chatText_.pop_back();
@@ -1985,6 +2020,61 @@ void Game::computeHudVals() {
 // Dense info block, top right: one line per value, label left / value right, all snprintf into one buffer.
 // Key overlay (part of the verbose HUD): the movement / action keys, lit while held. Moved, sized and
 // tinted like any HUD element.
+// ---- console (`): edit any setting on the fly ----
+void Game::consolePrint(const std::string& t) {
+    consoleLog_.push_back(t);
+    while (consoleLog_.size() > 200) consoleLog_.pop_front();
+}
+
+void Game::runConsole(const std::string& line) {
+    consolePrint("> " + line);
+    std::istringstream in(line);
+    std::string k, v;
+    in >> k;
+    std::getline(in, v);
+    while (!v.empty() && v[0] == ' ') v.erase(0, 1);
+    if (k.empty()) return;
+    auto lines = [&] { std::vector<std::string> out; std::istringstream t(cfg_.toText()); std::string l; while (std::getline(t, l)) out.push_back(l); return out; };
+    if (k == "help") {
+        consolePrint("<setting>          show it          <setting> <value>   set it (saved)");
+        consolePrint("list [text]        settings (containing text)     clear    empty this log");
+        consolePrint("/<command>         a server command (callvote, team, kill, ...)");
+        consolePrint("e.g.  sensitivity 1.8   fov 110   fullbright 1   scope_opacity 0.3   volume 0.5");
+        return;
+    }
+    if (k == "clear") { consoleLog_.clear(); return; }
+    if (k == "list") {
+        for (auto& l : lines()) if (v.empty() || l.find(v) != std::string::npos) consolePrint("  " + l);
+        return;
+    }
+    if (k[0] == '/') { net_.sendCommand(line.substr(1)); return; }
+    std::string current;
+    for (auto& l : lines()) if (l.rfind(k + "=", 0) == 0) current = l.substr(k.size() + 1);
+    if (current.empty() && v.empty()) { bool known = false; for (auto& l : lines()) known |= l.rfind(k + "=", 0) == 0; if (!known) { consolePrint("unknown setting '" + k + "' - try: list"); return; } }
+    if (v.empty()) { consolePrint("  " + k + " = " + current); return; }
+    cfg_.set(k, v);
+    cfg_.finishLoad();
+    cfg_.save();
+    audio_.setMasterVolume(cfg_.volume);   // (the ones that need applying; the rest are read every frame)
+    audio_.setAnnouncer(cfg_.announcerVoice);
+    ui_.accent = rgba(cfg_.colorFriendly);
+    for (auto& l : lines()) if (l.rfind(k + "=", 0) == 0) consolePrint("  " + k + " = " + l.substr(k.size() + 1));
+}
+
+void Game::drawConsole(float W, float H, float s, float ts) {
+    float ch = H * 0.45f, lh = r_.textHeight(ts) + 4 * s;
+    r_.rect(0, 0, W, ch, {0.03f, 0.04f, 0.06f, 0.92f});
+    r_.rect(0, ch, W, 2 * s, rgba(cfg_.colorFriendly));
+    for (char c : uiIn_.chars) if (c >= 32 && c < 127 && c != '`' && chatText_.size() < 200) chatText_ += c;
+    if (uiIn_.backspace && !chatText_.empty()) chatText_.pop_back();
+    float y = ch - 12 * s - lh;
+    r_.text(16 * s, y, ts, "> " + chatText_ + (std::fmod(time_, 1.0) < 0.5 ? "_" : ""), kWhite);
+    y -= lh * 1.3f;
+    for (auto it = consoleLog_.rbegin(); it != consoleLog_.rend() && y > 4 * s; ++it, y -= lh)
+        r_.text(16 * s, y, ts, *it, {0.75f, 0.78f, 0.82f, 1});
+    if (consoleLog_.empty()) r_.text(16 * s, y, ts, "CONSOLE - TYPE help (` OR ESC CLOSES)", kGrey);
+}
+
 void Game::drawKeyOverlay(float W, float H, float s) {
     const auto& e = cfg_.hud[Settings::HUD_KEYS];
     float k = s * e.scale, u = 30 * k, g = 4 * k;
@@ -2448,12 +2538,20 @@ void Game::drawScoreboard() {
     if (ranked) r_.text(x + w * 0.36f, cy, ts, "RATING", kGrey);
     // score: the mode's own points in race / hide and seek / tag; elsewhere damage / 10 + seconds on the objective
     const bool ownScore = ms.mode == MODE_RACE || isItMode(ms.mode);
-    r_.text(x + w * 0.46f, cy, ts, ms.mode == MODE_RACE ? "WINS" : "SCORE", kGrey);
-    r_.text(x + w * 0.56f, cy, ts, "K", kGrey);
-    r_.text(x + w * 0.62f, cy, ts, "D", kGrey);
-    r_.text(x + w * 0.68f, cy, ts, "DMG", kGrey);
-    r_.text(x + w * 0.76f, cy, ts, "OBJ", kGrey);
-    r_.text(x + w * 0.84f, cy, ts, "ACC", kGrey);
+    // instagib (1v1 / tourney ruleset or ranked instagib): every hit kills, so only accuracy and gibs (kills) count
+    const bool gib = (arenaVariant(ms.arenaVariant).rules & AR_INSTAGIB) &&
+                     (ms.mode == MODE_ARENA || ms.mode == MODE_TOURNEY || (ranked && ms.mode == MODE_FFA));
+    if (gib) {
+        r_.text(x + w * 0.62f, cy, ts, "GIBS", kGrey);
+        r_.text(x + w * 0.76f, cy, ts, "ACC", kGrey);
+    } else {
+        r_.text(x + w * 0.46f, cy, ts, ms.mode == MODE_RACE ? "WINS" : "SCORE", kGrey);
+        r_.text(x + w * 0.56f, cy, ts, "K", kGrey);
+        r_.text(x + w * 0.62f, cy, ts, "D", kGrey);
+        r_.text(x + w * 0.68f, cy, ts, "DMG", kGrey);
+        r_.text(x + w * 0.76f, cy, ts, "OBJ", kGrey);
+        r_.text(x + w * 0.84f, cy, ts, "ACC", kGrey);
+    }
     r_.text(x + w * 0.91f, cy, ts, "PING", kGrey);
     cy += rowH;
     for (auto& p : ps) {
@@ -2464,12 +2562,17 @@ void Game::drawScoreboard() {
         Rating rt;
         if (ranked && rank_.rating(ladder, net_.rankId(p.id), rt))
             r_.text(x + w * 0.36f, cy, ts, rt.games < 5 ? std::to_string(rt.display()) + "?" : std::to_string(rt.display()), kWhite); // ? = still placing
-        r_.text(x + w * 0.46f, cy, ts, std::to_string(ownScore ? p.score : p.dmg / 10 + p.obj), kWhite);
-        r_.text(x + w * 0.56f, cy, ts, std::to_string(p.kills), kWhite);
-        r_.text(x + w * 0.62f, cy, ts, std::to_string(p.deaths), kWhite);
-        r_.text(x + w * 0.68f, cy, ts, std::to_string(p.dmg), kWhite);
-        r_.text(x + w * 0.76f, cy, ts, fmtTime(p.obj), kWhite);
-        r_.text(x + w * 0.84f, cy, ts, std::to_string(p.acc) + "%", kWhite);
+        if (gib) {
+            r_.text(x + w * 0.62f, cy, ts, std::to_string(p.kills), kWhite);
+            r_.text(x + w * 0.76f, cy, ts, std::to_string(p.acc) + "%", kWhite);
+        } else {
+            r_.text(x + w * 0.46f, cy, ts, std::to_string(ownScore ? p.score : p.dmg / 10 + p.obj), kWhite);
+            r_.text(x + w * 0.56f, cy, ts, std::to_string(p.kills), kWhite);
+            r_.text(x + w * 0.62f, cy, ts, std::to_string(p.deaths), kWhite);
+            r_.text(x + w * 0.68f, cy, ts, std::to_string(p.dmg), kWhite);
+            r_.text(x + w * 0.76f, cy, ts, fmtTime(p.obj), kWhite);
+            r_.text(x + w * 0.84f, cy, ts, std::to_string(p.acc) + "%", kWhite);
+        }
         bool bot = net_.playerName(p.id).rfind("BOT ", 0) == 0;
         r_.text(x + w * 0.91f, cy, ts, bot ? "BOT" : std::to_string(p.ping), kWhite);
         cy += rowH;
@@ -2601,6 +2704,7 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     if (crosshairOpen_) { drawCrosshairSettings(x0, y0, wTotal); return; }
     if (widgetEdit_) { drawWidgetEditor(); return; }
     if (hudOpen_) { drawHudSettings(x0, y0, wTotal); return; }
+    if (visualsOpen_) { drawVisualSettings(x0, y0, wTotal); return; }
     float s = ui_.s();
     float h = 32 * s, gap = 7 * s, colGap = 24 * s;
     float w = std::max(320 * s, wTotal * 0.5f);
@@ -2736,7 +2840,9 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     if (ui_.button(xr + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "CROSSHAIR")) crosshairOpen_ = true;
     y += h + gap;
     if (ui_.button(xr, y, w * 0.5f - gap * 0.5f, h, "HUD LAYOUT")) hudOpen_ = true;
-    if (ui_.button(xr + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "BACK")) {
+    if (ui_.button(xr + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "VISUALS")) visualsOpen_ = true;
+    y += h + gap;
+    if (ui_.button(xr, y, w, h, "BACK")) {
         cfg_.save();
         if (net_.state() == ConnState::Connected) net_.sendCommand("name " + cfg_.name);
         if (settingsInGame_) settingsInGame_ = false;
@@ -3679,6 +3785,28 @@ void Game::drawCrosshair(float cx, float cy, float scale, bool hit) {
         for (auto& r : rs) r_.rect(r[0] - 1, r[1] - 1, r[2] + 2, r[3] + 2, {0, 0, 0, c.a * 0.9f});
     for (auto& r : rs) r_.rect(r[0], r[1], r[2], r[3], c);
     if (hit && st != 1 && st != 2) r_.rect(cx - t, cy - t, 2 * t, 2 * t, {1, 1, 1, 1});
+}
+
+// VISUALS: what's drawn (world look, shot effects, overlays)
+void Game::drawVisualSettings(float x0, float y0, float wTotal) {
+    float s = ui_.s();
+    float h = 32 * s, gap = 7 * s;
+    float w = std::max(360 * s, wTotal * 0.5f);
+    float x = x0 + wTotal * 0.5f - w * 0.5f, y = y0;
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 10 * (h + gap) + 48 * s);
+    ui_.toggle(x, y, w, h, "FULLBRIGHT (FLAT WHITE MAP)", cfg_.fullbright); y += h + gap;
+    static const std::vector<std::string> own = {"YOUR SHOTS: WITH THE WEAPON MODEL", "YOUR SHOTS: ALWAYS", "YOUR SHOTS: NEVER"};
+    ui_.cycle(x, y, w, h, "YOUR SHOTS", cfg_.ownShots, 3, own); y += h + gap;
+    ui_.toggle(x, y, w, h, "OTHER PLAYERS' TRACERS / BEAMS", cfg_.enemyShots); y += h + gap;
+    ui_.toggle(x, y, w, h, "HEALTH BARS OVER PLAYERS", cfg_.healthBars); y += h + gap;
+    ui_.slider(x, y, w, h, "SCOPE OVERLAY", cfg_.scopeOpacity, 0, 1, "%.2f"); y += h + gap;
+    ui_.toggle(x, y, w, h, "STICKY COUNTER", cfg_.stickyCounter); y += h + gap;
+    ui_.toggle(x, y, w, h, "WINNERS CROWN", cfg_.crowns); y += h + gap;
+    ui_.label(x, y, "YOUR SHOTS: TRACERS AND THE LASER BEAM COME FROM WHERE THE GUN IS (OR WOULD BE)", {0.7f, 0.72f, 0.75f, 1}, 0.5f);
+    y += 14 * s;
+    ui_.label(x, y, "RANKED: NO HEALTH BARS", {0.7f, 0.72f, 0.75f, 1}, 0.5f);
+    y += 14 * s + gap * 2;
+    if (ui_.button(x, y, w, h, "BACK")) { visualsOpen_ = false; cfg_.save(); }
 }
 
 void Game::drawHudSettings(float x0, float y0, float wTotal) {

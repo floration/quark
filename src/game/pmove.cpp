@@ -9,7 +9,8 @@ constexpr float kGroundSpeed = 8.0f;
 constexpr float kCrouchSpeed = 4.0f;
 constexpr float kGroundAccel = 12.0f;
 constexpr float kAirAccel = 2.2f;
-constexpr float kAirSpeedCap = 2.0f; // quake-style air strafe cap (higher = more air control)
+constexpr float kAirSpeedCap = 2.3f; // quake-style air strafe cap: a wider window of angles that gain speed (was 2.0)
+constexpr float kOverstrafeBrake = 0.35f; // turning past the window: only this much of the push against your momentum applies
 constexpr float kAirControl = 4.0f;  // how fast held direction bends momentum in the air (rad/s-ish), speed kept
 constexpr float kFriction = 7.0f;
 constexpr float kStopSpeed = 2.0f;
@@ -18,7 +19,7 @@ constexpr float kDashSpeed = 24.0f;     // burst speed
 constexpr float kDashTime = 0.12f;      // burst length; then speed settles back
 constexpr float kDashExitMin = 11.0f;   // speed you leave a dash with at least
 constexpr float kDashKeep = 3.0f;       // ...and your old speed plus this, so dashes build momentum
-constexpr float kDashExitMax = 24.0f;   // same as the grapple's top speed
+constexpr float kDashExitMax = 28.0f;   // (1.12: above the grapple's 24, so a dash out of a fast strafe still adds speed)
 constexpr float kDashVertical = 0.6375f;  // looking straight up / down makes the dash this vertical (sine)
 constexpr float kBounceGain = 0.5f;     // bhop: landing faster than a jump adds this share of the extra to the jump
 constexpr float kBounceMax = 8.0f;
@@ -33,6 +34,22 @@ constexpr float kLadderSide = 3.0f;     // sideways speed on a ladder
 AABB playerBox(const Vec3& f, bool crouched) {
     float h = crouched ? kPlayerCrouchHeight : kPlayerHeight;
     return {{f.x - kPlayerHalfWidth, f.y, f.z - kPlayerHalfWidth}, {f.x + kPlayerHalfWidth, f.y + h, f.z + kPlayerHalfWidth}};
+}
+
+// Air strafing: Quake acceleration, except that the part of the push that would brake you (wish direction turned
+// past 90 degrees from your momentum: overstrafing) is softened, so a sloppy turn costs a little, not a lot.
+static void airAccelerate(Vec3& vel, const Vec3& wishDir, float wishSpeed, float accel, float dt) {
+    float cur = dot(vel, wishDir);
+    float add = wishSpeed - cur;
+    if (add <= 0) return;
+    Vec3 push = wishDir * std::min(accel * wishSpeed * dt, add);
+    float h = std::sqrt(vel.x * vel.x + vel.z * vel.z);
+    if (h > 1e-3f) {
+        Vec3 along = {vel.x / h, 0, vel.z / h};
+        float pa = dot(push, along);
+        if (pa < 0) push = push - along * (pa * (1.0f - kOverstrafeBrake));
+    }
+    vel += push;
 }
 
 static void accelerate(Vec3& vel, const Vec3& wishDir, float wishSpeed, float accel, float dt) {
@@ -107,7 +124,8 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     if (dashing) {
         // Short, strong burst, tilted a little by where you look: no gravity, no steering.
         float hs = std::sqrt(std::max(0.0f, 1.0f - s.dashUp * s.dashUp)); // aiming up / down trades horizontal for vertical
-        s.vel = {s.dashDirX * kDashSpeed * hs, s.dashUp * kDashSpeed, s.dashDirZ * kDashSpeed * hs};
+        float burst = std::max(kDashSpeed, s.dashExitSpeed); // (never slower than what you leave it with)
+        s.vel = {s.dashDirX * burst * hs, s.dashUp * burst, s.dashDirZ * burst * hs};
         onGround = false;
         s.dashTimer -= dt;
         if (s.dashTimer <= 0) {
@@ -174,7 +192,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         s.vel.y = 0;
     } else {
         if (!dashing && !onLadder) {
-            accelerate(s.vel, wishDir, std::min(wishSpeed, kAirSpeedCap), kAirAccel * 10.0f, dt);
+            airAccelerate(s.vel, wishDir, std::min(wishSpeed, kAirSpeedCap), kAirAccel * 10.0f, dt);
             // Air control (CPM style), forward / back only: bend momentum toward where you look without changing
             // speed. Holding a strafe key turns it off, so strafe-and-turn gains speed like in Quake.
             float h = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);

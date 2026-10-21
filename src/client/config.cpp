@@ -26,7 +26,14 @@ void Settings::load() {
     while (std::getline(f, line)) {
         size_t eq = line.find('=');
         if (eq == std::string::npos) continue;
-        std::string k = line.substr(0, eq), v = line.substr(eq + 1);
+        set(line.substr(0, eq), line.substr(eq + 1));
+    }
+    finishLoad();
+}
+
+// One setting from text (the config file's key=value, or the console's "key value").
+void Settings::set(const std::string& k, const std::string& v) {
+    {
         float fv = (float)atof(v.c_str());
         int iv = atoi(v.c_str());
         if (k == "name") name = v;
@@ -55,6 +62,13 @@ void Settings::load() {
         else if (k == "msaa") msaa = (iv == 1 || iv == 2 || iv == 4) ? iv : 0;
         else if (k == "volume") volume = clampf(fv, 0, 1);
         else if (k == "hitsounds") hitsounds = iv != 0;
+        else if (k == "fullbright") fullbright = iv != 0;
+        else if (k == "own_shots") ownShots = std::min(std::max(iv, 0), 2);
+        else if (k == "enemy_shots") enemyShots = iv != 0;
+        else if (k == "health_bars") healthBars = iv != 0;
+        else if (k == "scope_opacity") scopeOpacity = clampf(fv, 0, 1);
+        else if (k == "sticky_counter") stickyCounter = iv != 0;
+        else if (k == "crowns") crowns = iv != 0;
         else if (k == "outline_friendly") outlineFriendly = iv;
         else if (k == "outline_enemy") outlineEnemy = iv;
         else if (k == "announcer_voice") announcerVoice = iv == 1 ? 1 : 0;
@@ -101,6 +115,9 @@ void Settings::load() {
             if (a >= 0 && a < A_COUNT && sscanf(v.c_str(), "%d,%d", &c0, &c1) >= 1) { binds.code[a][0] = c0; binds.code[a][1] = c1; }
         }
     }
+}
+
+void Settings::finishLoad() {
     // slots 9 and 10 (knife, syringe) came later: unbound in an older config, they get keys 9 and 0
     if (!binds.code[A_WEAPON9][0] && !binds.code[A_WEAPON9][1]) binds.code[A_WEAPON9][0] = 57;    // (GLFW 9)
     if (!binds.code[A_WEAPON10][0] && !binds.code[A_WEAPON10][1]) binds.code[A_WEAPON10][0] = 48;   // (GLFW 0)
@@ -112,11 +129,17 @@ void Settings::load() {
 
 void Settings::save() const {
     std::ofstream f(cfgPath());
+    f << toText();
+}
+
+std::string Settings::toText() const {
+    std::ostringstream f;
     f << "name=" << name << "\nsensitivity=" << sensitivity << "\ndpi=" << dpi << "\nfov=" << fov << "\nbrightness=" << brightness << "\ndisplay_mode=" << displayMode
       << "\npresent_mode=" << presentMode << "\nlow_latency=" << lowLatency << "\ninterp_ms=" << interpMs
       << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height
       << "\nshadows=" << shadows << "\nmsaa=" << msaa << "\nmodel=" << model << "\nsoundpack=" << soundPack << "\nsocd=" << socd << "\nalt_toggle=" << altToggle
-      << "\nhud_verbose=" << hudVerbose << "\nhud_widgets=" << hudWidgets << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nhitsounds=" << hitsounds << "\nannouncer=" << announcer << "\nannouncer_voice=" << announcerVoice << "\noutline_friendly=" << outlineFriendly << "\noutline_enemy=" << outlineEnemy
+      << "\nhud_verbose=" << hudVerbose << "\nhud_widgets=" << hudWidgets << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nhitsounds=" << hitsounds << "\nannouncer=" << announcer << "\nannouncer_voice=" << announcerVoice << "\nfullbright=" << fullbright << "\nown_shots=" << ownShots << "\nenemy_shots=" << enemyShots << "\nhealth_bars=" << healthBars
+      << "\nscope_opacity=" << scopeOpacity << "\nsticky_counter=" << stickyCounter << "\ncrowns=" << crowns << "\noutline_friendly=" << outlineFriendly << "\noutline_enemy=" << outlineEnemy
       << "\ncolor_friendly=" << colorHex(colorFriendly) << "\ncolor_enemy=" << colorHex(colorEnemy)
       << "\nch_style=" << chStyle << "\nch_length=" << chLength << "\nch_thickness=" << chThickness << "\nch_gap=" << chGap
       << "\nch_outline=" << chOutline << "\nch_team_color=" << chTeamColor << "\nch_color=" << colorHex(chColor)
@@ -132,4 +155,5 @@ void Settings::save() const {
         if (!modeCtl[m].empty()) f << "mode_controls_" << modeName(m) << "=" << modeCtl[m] << "\n";
     }
     for (int a = 0; a < A_COUNT; a++) f << "bind_" << a << "=" << binds.code[a][0] << "," << binds.code[a][1] << "\n";
+    return f.str();
 }

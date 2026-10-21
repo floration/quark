@@ -88,6 +88,7 @@ uniform vec3 uSunColor, uSkyColor, uMetal, uGlow, uFogColor, uCamPos;
 uniform vec3 uBaseL, uAccentL, uWallbangL, uMetalL, uFloorL;
 uniform float uFogDensity;
 uniform float uBright;   // the brightness setting (exposure, before the filmic curve)
+uniform float uFull;     // fullbright: flat white, black outlines, no light or fog
 out vec4 fragColor;
 float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 vec3 finish(vec3 c) {
@@ -98,6 +99,11 @@ vec3 finish(vec3 c) {
 }
 void main() {
     int mat = int(vMat + 0.5);
+    if (uFull > 0.5) {
+        float g = mat == 2 ? 0.35 : mat == 5 ? 0.6 : mat == 6 ? 0.5 : mat == 7 ? 0.9 : abs(vN.y) > 0.5 ? 0.8 : 0.95;
+        fragColor = vec4(vec3(g) * (mat >= 4 && mat < 8 ? 1.0 : outline(vEdge)), 1.0);
+        return;
+    }
     if (mat >= 4 && mat < 8) { // glow trim / far scenery / water / lava: unlit, skip everything below
         vec3 c = mat == 4 ? uGlow * 0.9
                : mat == 6 ? mix(vec3(0.02, 0.10, 0.20), vec3(0.10, 0.32, 0.50), 1.0 - abs(vN.y) * 0.6)   // water: deep blue, lighter at grazing faces
@@ -748,6 +754,7 @@ void Renderer::drawScene(bool shadows) {
         setVec3(worldProg_, "uCamPos", camPos_);
         glUniform1f(U(worldProg_, "uFogDensity"), fog);
         glUniform1f(U(worldProg_, "uBright"), brightness);
+        glUniform1f(U(worldProg_, "uFull"), fullbright ? 1.0f : 0.0f);
         glBindTexture(GL_TEXTURE_2D, lightmapTex_);
         glBindVertexArray(worldVao_);
         drawWorldChunks();

@@ -19,6 +19,10 @@ LINES = [
     ("POINT_TAKEN", "Point captured."), ("POINT_LOST", "Point lost."),
     ("ROUND_WON", "Round won."), ("ROUND_LOST", "Round lost."), ("OVERTIME", "Overtime!"),
     ("YOU_WIN", "You win!"), ("YOU_LOSE", "You lose."), ("HIGH_SCORE", "New high score!"), ("NEW_LEADER", "New leader!"),
+    ("YOU_DIED", "You died."), ("HEADSHOT", "Headshot!"), ("AIRBORNE", "Airborne!"), ("AIR_ROCKET", "Air rocket!"),
+    ("SPREE", "Killing spree!"), ("RAMPAGE", "Rampage!"), ("UNSTOPPABLE", "Unstoppable!"), ("GODLIKE", "Godlike!"),
+    ("ONE_MINUTE", "One minute remaining."), ("THIRTY_SECONDS", "Thirty seconds remaining."),
+    ("TEN_SECONDS", "Ten seconds remaining."), ("FIVE_SECONDS", "Five seconds."), ("ROUND_OVER", "Round over."),
 ]
 # name, model, length scale (slower > 1), pitch (resample: < 1 = deeper and slower), echoes [(delay s, gain)]
 HALL = [(0.045, 0.30), (0.09, 0.20), (0.16, 0.12), (0.27, 0.06)]
