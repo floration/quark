@@ -231,6 +231,8 @@ private:
     void edModify(const std::function<void(Map&)>& f, bool coalesce);
     void edDelete();
     void edDuplicate();
+    enum { ED_ROT_Y, ED_ROT_X, ED_ROT_Z, ED_MIR_X, ED_MIR_Y, ED_MIR_Z };
+    void edTransform(int op);
     void edAdd(int kind, int variant);
     void edGroupSelection();            // GROUP: the selected boxes / groups become one custom group
     void edUngroup();                   // UNGROUP: the selected group's boxes become plain boxes
@@ -330,6 +332,8 @@ private:
     int crownOf(int playerId) const;              // 1 = #1 on a ranked board, 2-10 top 10, 0 none (or crowns off)
     const char* crownLetter(int playerId) const;  // the board of that best place: Q vanilla, LG laser vampire, I instagib, R race
     int specKeysOf() const;
+    void drawChatBox(float W, float H, float s, float ts);
+    void drawVotePanel(float cx, float s, float ts);
     void drawCrown(float x, float y, float w, int place, const char* letter = "");
     struct Crown { int place; const char* letter; };
     std::map<std::string, Crown> crowns_;         // ranked id -> best place on any board (and which board)

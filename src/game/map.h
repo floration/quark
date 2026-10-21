@@ -78,6 +78,8 @@ struct Map {
     // Movement collision: returns how far along `axis` the box may move (clamped delta).
     float sweepAxis(const AABB& box, int axis, float delta) const;
     bool boxSolid(const AABB& box) const;
+    bool inLava(const AABB& box) const { for (auto& l : lava) if (box.mn.x < l.mx.x && box.mx.x > l.mn.x && box.mn.y < l.mx.y && box.mx.y > l.mn.y && box.mn.z < l.mx.z && box.mx.z > l.mn.z) return true; return false; }
+    std::vector<AABB> lava;   // lava brushes (touch one and you die), from rebuild()
     // Returns hit distance or -1. normal receives the face normal on hit.
     float raycast(const Vec3& origin, const Vec3& dir, float maxDist, Vec3* normal = nullptr) const;
     bool raycastAny(const Vec3& origin, const Vec3& dir, float maxDist) const; // shadow-ray style early out

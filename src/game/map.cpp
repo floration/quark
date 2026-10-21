@@ -189,12 +189,12 @@ bool Map::parse(const std::string& text, std::string* err) {
             if (ok) { ladders.push_back(b); ladderAuto.push_back(ls >> flag && flag == "auto"); }
         } else if (kw == "group") {
             std::string t; Group g;
-            ok = (bool)(ls >> t >> g.material >> g.dir) && readBox(ls, g.box) && g.material >= 0 && g.material <= 5 && g.dir >= 0 && g.dir < 4;
+            ok = (bool)(ls >> t >> g.material >> g.dir) && readBox(ls, g.box) && g.material >= 0 && g.material <= 7 && g.dir >= 0 && g.dir < 4;
             g.type = t == "room" ? GROUP_ROOM : t == "stairs" ? GROUP_STAIRS : GROUP_CUSTOM;
             ok = ok && (t == "room" || t == "stairs" || t == "custom");
             if (ok) groups.push_back(g);
         } else if (kw == "part") {
-            Brush b; ok = !groups.empty() && groups.back().type == GROUP_CUSTOM && (bool)(ls >> b.material) && b.material >= 0 && b.material <= 5 && readBox(ls, b.box);
+            Brush b; ok = !groups.empty() && groups.back().type == GROUP_CUSTOM && (bool)(ls >> b.material) && b.material >= 0 && b.material <= 7 && readBox(ls, b.box);
             if (ok) groups.back().parts.push_back(b);
         } else if (kw == "checkpoint") {
             AABB b; ok = readBox(ls, b); if (ok) checkpoints.push_back(b);
@@ -387,7 +387,7 @@ bool applyMapEdit(Map& m, const std::string& op) {
         return true;
     };
     bool ok = false;
-    if (kind == "b") ok = edit(m.brushes, [&](Brush& b) { return (bool)(in >> b.material) && b.material >= 0 && b.material <= 5 && readBox(b.box); }, 1, 60000);
+    if (kind == "b") ok = edit(m.brushes, [&](Brush& b) { return (bool)(in >> b.material) && b.material >= 0 && b.material <= 7 && readBox(b.box); }, 1, 60000);
     else if (kind == "s") ok = edit(m.spawns, [&](SpawnPoint& sp) {
         float yaw;
         if (!(in >> sp.team) || sp.team < 0 || sp.team > stagedSpawn(kMaxSpawnStage, true) || !readVec(sp.pos) || !(in >> yaw) || !okNum(yaw)) return false;
@@ -421,8 +421,8 @@ bool applyMapEdit(Map& m, const std::string& op) {
         } else {
             Map::Group g;
             ok = verb == "part" ? i >= 0 && (size_t)i < m.groups.size() && m.groups[i].type == Map::GROUP_CUSTOM && m.groups[i].parts.size() < 1024
-                                  && (bool)(in >> g.material) && g.material >= 0 && g.material <= 5 && readBox(g.box)
-                                : (bool)(in >> g.type >> g.material >> g.dir) && g.type >= 0 && g.type <= 2 && g.material >= 0 && g.material <= 5
+                                  && (bool)(in >> g.material) && g.material >= 0 && g.material <= 7 && readBox(g.box)
+                                : (bool)(in >> g.type >> g.material >> g.dir) && g.type >= 0 && g.type <= 2 && g.material >= 0 && g.material <= 7
                                   && g.dir >= 0 && g.dir < 4 && readBox(g.box) && g.box.mx.y - g.box.mn.y <= 64;
             if (ok && verb == "part") m.groups[i].parts.push_back({g.box, g.material});
             else if (ok && verb == "ins") { ok = i >= 0 && (size_t)i <= m.groups.size() && m.groups.size() < 256; if (ok) m.groups.insert(m.groups.begin() + i, g); }
@@ -528,6 +528,8 @@ void Map::rebuild() {
 }
 
 void Map::buildGrid() {
+    lava.clear();   // (touch it and die)
+    for (auto& b : brushes) if (b.material == 7) lava.push_back(b.box);
     gridX0 = std::floor(bounds.mn.x / kCell) * kCell;
     gridZ0 = std::floor(bounds.mn.z / kCell) * kCell;
     gridW = std::max(1, (int)std::ceil((bounds.mx.x - gridX0) / kCell));

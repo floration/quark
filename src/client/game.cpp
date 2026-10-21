@@ -466,6 +466,21 @@ void Game::onKey(int key, int action, int mods) {
         return;
     }
     if (screen_ == Screen::Editor) {
+        if (edOnline_ && chatting_) {   // chat while editing together: Enter sends, Esc cancels
+            if (action == GLFW_PRESS && key == GLFW_KEY_ESCAPE) { chatting_ = false; chatText_.clear(); }
+            else if (action == GLFW_PRESS && (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER)) {
+                if (!chatText_.empty()) net_.sendCommand(chatText_[0] == '/' ? chatText_.substr(1) : "say " + chatText_);
+                chatText_.clear();
+                chatting_ = false;
+            }
+            return;
+        }
+        if (edOnline_ && action == GLFW_PRESS && !ui_.typing()) {   // ...and the chat key and the vote keys
+            const Binds& eb = binds();
+            if (eb.has(A_CHAT, key)) { chatting_ = true; chatText_.clear(); uiIn_.chars.clear(); return; }
+            if (eb.has(A_VOTEYES, key)) { net_.sendCommand("vote yes"); return; }
+            if (eb.has(A_VOTENO, key)) { net_.sendCommand("vote no"); return; }
+        }
         if (key == GLFW_KEY_ESCAPE) uiIn_.escape = true;
         if (ui_.typing()) { if (key == GLFW_KEY_ESCAPE) ui_.clearFocus(); return; }
         editorKey(key, mods); // presses and key repeat (hold an arrow to keep nudging)
@@ -1987,38 +2002,13 @@ void Game::drawHud() {
         y += r_.textHeight(ts) + 8 * s;
     }
     // chat (bottom left)
-    while (!chatFeed_.empty() && chatFeed_.front().until < time_ && !chatting_) chatFeed_.pop_front();
-    {
-    const auto& lines = chatting_ ? chatLog_ : chatFeed_;   // typing: the whole recent history
-    y = H - 110 * s - lines.size() * (r_.textHeight(ts) + 4 * s);
-    if (chatting_ && !lines.empty()) r_.rect(18 * s, y - 4 * s, 520 * s, lines.size() * (r_.textHeight(ts) + 4 * s) + 4 * s, {0, 0, 0, 0.4f});
-    for (auto& c : lines) {
-        float cw = c.crown ? r_.textHeight(ts) * 1.2f : 0;
-        if (c.crown) drawCrown(24 * s, y + r_.textHeight(ts) * 0.1f, cw, c.crown);
-        r_.text(24 * s + (cw ? cw + 4 * s : 0), y, ts, c.text, c.color);
-        y += r_.textHeight(ts) + 4 * s;
-    }
-    }
-    if (chatting_ && console_) drawConsole(W, H, s, ts);
-    else if (chatting_) {
-        ui_.label(24 * s, H - 100 * s, "SAY: " + chatText_ + (std::fmod(time_, 1.0) < 0.5 ? "_" : ""), kWhite);
-        for (char c : uiIn_.chars) if (c >= 32 && c < 127 && chatText_.size() < 120) chatText_ += c;
-        if ((!uiIn_.chars.empty() || uiIn_.backspace) && time_ >= nextTypingSend_) { net_.sendCommand("typing"); nextTypingSend_ = time_ + 0.25; }
-        if (uiIn_.backspace && !chatText_.empty()) chatText_.pop_back();
-    }
+    drawChatBox(W, H, s, ts);
     // notices
     while (!notices_.empty() && notices_.front().until < time_) notices_.pop_front();
     y = H * 0.3f;
     for (auto& n : notices_) { ui_.labelCentered(cx, y, n.text, n.color); y += r_.textHeight(ts) + 6 * s; }
     if (time_ < centerUntil_) ui_.labelCentered(cx, H * 0.36f, centerText_, kWhite, 1.5f);
-    if (ms.voteActive) {
-        char vb[200];
-        snprintf(vb, sizeof vb, "VOTE: %s   YES %d  NO %d  OF %d   F1 YES / F2 NO   %ds", voteText_.c_str(), ms.voteYes, ms.voteNo,
-                 ms.voteVoters, (int)std::ceil(ms.voteTimeLeft));
-        float vw = r_.textWidth(vb, ts) + 24 * s;
-        r_.rect(cx - vw * 0.5f, 122 * s, vw, r_.textHeight(ts) + 12 * s, {0, 0, 0, 0.6f});
-        ui_.labelCentered(cx, 128 * s, vb, kWhite);
-    }
+    drawVotePanel(cx, s, ts);
 
     // host info
     if (host_ && paused_) {
@@ -2257,6 +2247,43 @@ void Game::drawConsole(float W, float H, float s, float ts) {
         } else r_.text(16 * s, y, ts, l, dim);
     }
     if (consoleLog_.empty()) r_.text(16 * s, y, ts, "CONSOLE - TYPE help (` OR ESC CLOSES)", kGrey);
+}
+
+// The chat lines (all recent history while typing) and the SAY: / console input. In game and while editing together.
+void Game::drawChatBox(float W, float H, float s, float ts) {
+    float y;
+    while (!chatFeed_.empty() && chatFeed_.front().until < time_ && !chatting_) chatFeed_.pop_front();
+    {
+    const auto& lines = chatting_ ? chatLog_ : chatFeed_;   // typing: the whole recent history
+    y = H - 110 * s - lines.size() * (r_.textHeight(ts) + 4 * s);
+    if (chatting_ && !lines.empty()) r_.rect(18 * s, y - 4 * s, 520 * s, lines.size() * (r_.textHeight(ts) + 4 * s) + 4 * s, {0, 0, 0, 0.4f});
+    for (auto& c : lines) {
+        float cw = c.crown ? r_.textHeight(ts) * 1.2f : 0;
+        if (c.crown) drawCrown(24 * s, y + r_.textHeight(ts) * 0.1f, cw, c.crown);
+        r_.text(24 * s + (cw ? cw + 4 * s : 0), y, ts, c.text, c.color);
+        y += r_.textHeight(ts) + 4 * s;
+    }
+    }
+    if (chatting_ && console_) drawConsole(W, H, s, ts);
+    else if (chatting_) {
+        ui_.label(24 * s, H - 100 * s, "SAY: " + chatText_ + (std::fmod(time_, 1.0) < 0.5 ? "_" : ""), kWhite);
+        for (char c : uiIn_.chars) if (c >= 32 && c < 127 && chatText_.size() < 120) chatText_ += c;
+        if ((!uiIn_.chars.empty() || uiIn_.backspace) && time_ >= nextTypingSend_) { net_.sendCommand("typing"); nextTypingSend_ = time_ + 0.25; }
+        if (uiIn_.backspace && !chatText_.empty()) chatText_.pop_back();
+    }
+}
+
+// A running vote: what it is, the count, F1 / F2.
+void Game::drawVotePanel(float cx, float s, float ts) {
+    const ModeState& ms = net_.mode();
+    if (ms.voteActive) {
+        char vb[200];
+        snprintf(vb, sizeof vb, "VOTE: %s   YES %d  NO %d  OF %d   F1 YES / F2 NO   %ds", voteText_.c_str(), ms.voteYes, ms.voteNo,
+                 ms.voteVoters, (int)std::ceil(ms.voteTimeLeft));
+        float vw = r_.textWidth(vb, ts) + 24 * s;
+        r_.rect(cx - vw * 0.5f, 122 * s, vw, r_.textHeight(ts) + 12 * s, {0, 0, 0, 0.6f});
+        ui_.labelCentered(cx, 128 * s, vb, kWhite);
+    }
 }
 
 void Game::drawKeyOverlay(float W, float H, float s) {

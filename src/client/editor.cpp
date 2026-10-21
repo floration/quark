@@ -26,7 +26,7 @@ const Color kRed = {1, 0.35f, 0.3f, 1};
 const float kGrids[] = {0.25f, 0.5f, 1.0f, 2.0f, 4.0f};
 const char kKindChar[] = "bslzhcpdg"; // ED_* -> edit op kind
 const char* kKindNames[] = {"BOX", "SPAWN", "LIGHT", "BOMB SITE", "HILL", "CHECKPOINT", "PAYLOAD PATH POINT", "LADDER", "GROUP"};
-const char* kMatNames[] = {"box", "accent", "wallbang", "metal", "glow", "far"};
+const char* kMatNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava"};
 const char* kGroupTypes[] = {"custom", "room", "stairs"};
 const Vec3 kTeamColors[] = {{0.25f, 0.6f, 1.0f}, {1.0f, 0.35f, 0.25f}, {0.9f, 0.9f, 0.9f}, {0.3f, 1.0f, 0.4f}};
 
@@ -122,7 +122,7 @@ bool parseGroupText(const std::string& text, Map::Group& g) {
             continue;
         }
         int mat = -1;
-        for (int k = 0; k < 6; k++) if (kw == kMatNames[k]) mat = k;
+        for (int k = 0; k < 8; k++) if (kw == kMatNames[k]) mat = k;
         Vec3 a, c;
         if (mat < 0 || !hasSize || !(ls >> a.x >> a.y >> a.z >> c.x >> c.y >> c.z) || g.parts.size() >= 1024) return false;
         Vec3 lo = vmin(a, c), hi = vmax(a, c);
@@ -294,6 +294,88 @@ void Game::edModify(const std::function<void(Map&)>& f, bool coalesce) {
     f(tmp);
     char k = kKindChar[edSel_.kind];
     edDo(describeMapObject(tmp, k, "set", edSel_.idx), describeMapObject(ed_, k, "set", edSel_.idx), coalesce);
+}
+
+// Rotate (90 degrees, about Y / X / Z) or mirror (across X / Y / Z) everything selected, about the middle of
+// it all: boxes, groups (a room's or stairs' direction turns with it; a custom group's parts too), ladders,
+// spawns (their facing too), lights, and the other point / box objects. One undo step.
+void Game::edTransform(int op) {
+    if (!edSelValid()) return;
+    std::vector<EdSel> sel = {edSel_};
+    for (auto& m : edMulti_) if (m.kind != edSel_.kind || m.idx != edSel_.idx) sel.push_back(m);
+    Map& m = ed_;
+    auto boxOf = [&](const EdSel& e, AABB& b) -> bool {
+        switch (e.kind) {
+            case ED_BRUSH: b = m.brushes[e.idx].box; return true;
+            case ED_GROUP: b = m.groups[e.idx].box; return true;
+            case ED_LADDER: b = m.ladders[e.idx]; return true;
+            case ED_CHECK: b = m.checkpoints[e.idx]; return true;
+            case ED_SPAWN: b = {m.spawns[e.idx].pos, m.spawns[e.idx].pos}; return true;
+            case ED_LIGHT: b = {m.lights[e.idx].pos, m.lights[e.idx].pos}; return true;
+            case ED_PATH: b = {m.payloadPath[e.idx], m.payloadPath[e.idx]}; return true;
+            default: return false;
+        }
+    };
+    AABB all = {{1e9f, 1e9f, 1e9f}, {-1e9f, -1e9f, -1e9f}};
+    for (auto& e : sel) { AABB b; if (boxOf(e, b)) { all.mn = vmin(all.mn, b.mn); all.mx = vmax(all.mx, b.mx); } }
+    if (all.mn.x > all.mx.x) { edNotify("can't turn that"); return; }
+    const Vec3 c = (all.mn + all.mx) * 0.5f;
+    auto pt = [&](Vec3 p, const Vec3& o) {   // about o
+        Vec3 d = p - o;
+        switch (op) {
+            case ED_ROT_Y: d = {-d.z, d.y, d.x}; break;
+            case ED_ROT_X: d = {d.x, -d.z, d.y}; break;
+            case ED_ROT_Z: d = {-d.y, d.x, d.z}; break;
+            case ED_MIR_X: d.x = -d.x; break;
+            case ED_MIR_Y: d.y = -d.y; break;
+            case ED_MIR_Z: d.z = -d.z; break;
+        }
+        return o + d;
+    };
+    auto box = [&](const AABB& b, const Vec3& o) { Vec3 p = pt(b.mn, o), q = pt(b.mx, o); return AABB{vmin(p, q), vmax(p, q)}; };
+    Map tmp = m;
+    for (auto& e : sel) {
+        switch (e.kind) {
+            case ED_BRUSH: tmp.brushes[e.idx].box = box(m.brushes[e.idx].box, c); break;
+            case ED_LADDER: tmp.ladders[e.idx] = box(m.ladders[e.idx], c); break;
+            case ED_CHECK: tmp.checkpoints[e.idx] = box(m.checkpoints[e.idx], c); break;
+            case ED_LIGHT: tmp.lights[e.idx].pos = pt(m.lights[e.idx].pos, c); break;
+            case ED_PATH: tmp.payloadPath[e.idx] = pt(m.payloadPath[e.idx], c); break;
+            case ED_SPAWN: {
+                auto& sp = tmp.spawns[e.idx];
+                sp.pos = pt(m.spawns[e.idx].pos, c);
+                float y = m.spawns[e.idx].yaw;   // facing = (-sin yaw, -cos yaw)
+                sp.yaw = op == ED_ROT_Y ? y - PI * 0.5f : op == ED_MIR_X ? -y : op == ED_MIR_Z ? PI - y : y;
+                break;
+            }
+            case ED_GROUP: {
+                auto& g = tmp.groups[e.idx];
+                g.box = box(m.groups[e.idx].box, c);
+                static const int rotY[4] = {2, 3, 1, 0};   // stairs rise toward +X, -X, +Z, -Z
+                if (op == ED_ROT_Y) g.dir = rotY[g.dir];
+                else if (op == ED_MIR_X && g.dir < 2) g.dir ^= 1;
+                else if (op == ED_MIR_Z && g.dir >= 2) g.dir ^= 1;
+                for (auto& p : g.parts) p.box = box(p.box, Vec3(0.5f, 0.5f, 0.5f));   // (parts: 0-1 fractions of the box)
+                break;
+            }
+        }
+    }
+    bool first = true;
+    for (auto& e : sel) {
+        char k = kKindChar[e.kind];
+        if (e.kind == ED_GROUP && !tmp.groups[e.idx].parts.empty()) {   // a custom group: rewrite it whole (its parts follow)
+            std::string del = "g del " + std::to_string(e.idx) + "\n";
+            edDo(del + insertOps(tmp, k, e.idx), del + insertOps(m, k, e.idx), !first);
+            first = false;
+            continue;
+        }
+        if (e.kind == ED_GROUP || e.kind == ED_BRUSH || e.kind == ED_LADDER || e.kind == ED_CHECK || e.kind == ED_LIGHT || e.kind == ED_PATH || e.kind == ED_SPAWN) {
+            edDo(describeMapObject(tmp, k, "set", e.idx), describeMapObject(m, k, "set", e.idx), !first);
+            first = false;
+        }
+    }
+    static const char* names[] = {"rotated about Y", "rotated about X", "rotated about Z", "mirrored left / right", "mirrored upside down", "mirrored front / back"};
+    edNotify(names[op]);
 }
 
 void Game::edDelete() {
@@ -686,6 +768,8 @@ void Game::editorKey(int key, int mods) {
         return;
     }
     if (ctrl && key == GLFW_KEY_Z) { edUndoLast(); return; }
+    if (key == GLFW_KEY_R && edSelValid()) { edTransform(ctrl ? ED_ROT_Z : shift ? ED_ROT_X : ED_ROT_Y); return; }
+    if (key == GLFW_KEY_F && edSelValid()) { edTransform(ctrl ? ED_MIR_Y : shift ? ED_MIR_Z : ED_MIR_X); return; }
     if (ctrl && key == GLFW_KEY_S) {
         if (!edOnline_) edSave();
         else if (host_ && !(net_.hasSnapshot() && (net_.mode().flags & MS_TEMP_EDIT))) edNotify("your map is autosaved");
@@ -700,8 +784,8 @@ void Game::editorKey(int key, int mods) {
     int kind = edSel_.kind, i = edSel_.idx;
     if (key == GLFW_KEY_M) { // material / team
         edModify([&](Map& m) {
-            if (kind == ED_BRUSH) edMat_ = m.brushes[i].material = (m.brushes[i].material + 1) % 6;
-            else if (kind == ED_GROUP && m.groups[i].type != Map::GROUP_CUSTOM) edMat_ = m.groups[i].material = (m.groups[i].material + 1) % 6;
+            if (kind == ED_BRUSH) edMat_ = m.brushes[i].material = (m.brushes[i].material + 1) % 8;
+            else if (kind == ED_GROUP && m.groups[i].type != Map::GROUP_CUSTOM) edMat_ = m.groups[i].material = (m.groups[i].material + 1) % 8;
             else if (kind == ED_SPAWN) m.spawns[i].team = (m.spawns[i].team + 1) % 4;
         }, false);
         return;
@@ -1036,7 +1120,7 @@ void Game::editorFrame(double dt) {
     y += 6 * s;
     ui_.label(x, y, "ADD (AT THE SCREEN CENTER)", kGrey, 0.5f);
     y += 12 * s;
-    static const std::vector<std::string> mats = {"BASE", "ACCENT", "WALLBANG", "METAL", "GLOW", "FAR"};
+    static const std::vector<std::string> mats = {"BASE", "ACCENT", "WALLBANG", "METAL", "GLOW", "FAR", "WATER (WADE IN IT)", "LAVA (KILLS)"};
     {   // rooms, stairs and ladders are one object each: stretch it and its pieces follow (UNGROUP to split a room / stairs)
         float w4 = (w - 3 * gap) / 4;
         if (ui_.button(x, y, w4, h, "BOX")) edAdd(ED_BRUSH, 0);
@@ -1044,8 +1128,8 @@ void Game::editorFrame(double dt) {
         if (ui_.button(x + 2 * (w4 + gap), y, w4, h, "STAIRS")) edAdd(ED_GROUP, Map::GROUP_STAIRS);
         if (ui_.button(x + 3 * (w4 + gap), y, w4, h, "LADDER")) edAdd(ED_LADDER, 0);
         row();
-        static const std::vector<std::string> newMats = {"NEW ONES: BASE", "NEW ONES: ACCENT", "NEW ONES: WALLBANG", "NEW ONES: METAL", "NEW ONES: GLOW", "NEW ONES: FAR"};
-        ui_.cycle(x, y, w, h, "MATERIAL", edMat_, 6, newMats);
+        static const std::vector<std::string> newMats = {"NEW ONES: BASE", "NEW ONES: ACCENT", "NEW ONES: WALLBANG", "NEW ONES: METAL", "NEW ONES: GLOW", "NEW ONES: FAR", "NEW ONES: WATER", "NEW ONES: LAVA"};
+        ui_.cycle(x, y, w, h, "MATERIAL", edMat_, 8, newMats);
         row();
     }
     if (ui_.button(x, y, w3, h, "SPAWN")) edAdd(ED_SPAWN, SPAWN_ANY);
@@ -1112,7 +1196,7 @@ void Game::editorFrame(double dt) {
         y += 14 * s;
         if (kind == ED_BRUSH) {
             int m = ed_.brushes[i].material;
-            if (ui_.cycle(x, y, w, h, "MATERIAL (M)", m, 6, mats)) { edMat_ = m; edModify([&](Map& mm) { mm.brushes[i].material = m; }, false); }
+            if (ui_.cycle(x, y, w, h, "MATERIAL (M)", m, 8, mats)) { edMat_ = m; edModify([&](Map& mm) { mm.brushes[i].material = m; }, false); }
             row();
         } else if (kind == ED_GROUP) {
             auto& gr = ed_.groups[i];
@@ -1121,7 +1205,7 @@ void Game::editorFrame(double dt) {
                 y += 14 * s;
             } else {
                 int m = gr.material;
-                if (ui_.cycle(x, y, w, h, "MATERIAL (M)", m, 6, mats)) { edMat_ = m; edModify([&](Map& mm) { mm.groups[i].material = m; }, false); }
+                if (ui_.cycle(x, y, w, h, "MATERIAL (M)", m, 8, mats)) { edMat_ = m; edModify([&](Map& mm) { mm.groups[i].material = m; }, false); }
                 row();
             }
             if (gr.type == Map::GROUP_STAIRS) {
@@ -1149,6 +1233,16 @@ void Game::editorFrame(double dt) {
         if (ui_.button(x, y, w2, h, "DUPLICATE")) edDuplicate();
         if (ui_.button(x + w2 + gap, y, w2, h, "DELETE")) edDelete();
         row();
+        {   // rotate 90 degrees about each axis, mirror across each plane (everything selected, about its middle)
+            float w3 = (w - 2 * gap) / 3;
+            static const char* rot[] = {"ROTATE Y (R)", "ROTATE X (SH+R)", "ROTATE Z (CT+R)"};
+            static const char* mir[] = {"MIRROR X (F)", "MIRROR Z (SH+F)", "MIRROR Y (CT+F)"};
+            static const int rotOp[] = {ED_ROT_Y, ED_ROT_X, ED_ROT_Z}, mirOp[] = {ED_MIR_X, ED_MIR_Z, ED_MIR_Y};
+            for (int k = 0; k < 3; k++) if (ui_.button(x + k * (w3 + gap), y, w3, h, rot[k])) edTransform(rotOp[k]);
+            row();
+            for (int k = 0; k < 3; k++) if (ui_.button(x + k * (w3 + gap), y, w3, h, mir[k])) edTransform(mirOp[k]);
+            row();
+        }
     } else {
         ui_.label(x, y, "CLICK SOMETHING TO SELECT IT", kGrey, 0.5f);
         y += 16 * s;
@@ -1173,10 +1267,16 @@ void Game::editorFrame(double dt) {
         "CLICK: SELECT (SHIFT: ADD MORE, THEN GROUP)    ARROWS / PGUP / PGDN: MOVE BY GRID (ALONG YOUR VIEW)",
         "SHIFT + ARROWS: GROW THAT SIDE    CTRL + ARROWS: SHRINK IT    M: MATERIAL / TEAM",
         "CTRL+D: DUPLICATE    DEL: DELETE    CTRL+Z: UNDO    CTRL+S: SAVE    ESC: DESELECT / LEAVE",
+        "R: ROTATE 90 (SHIFT: ABOUT X, CTRL: ABOUT Z)    F: MIRROR LEFT / RIGHT (SHIFT: FRONT / BACK, CTRL: UPSIDE DOWN)",
     };
-    float hy = H - 12 * s - 4 * 13 * s;
+    float hy = H - 12 * s - 5 * 13 * s;
     r_.rect(0, hy - 6 * s, panelX, H - hy + 6 * s, {0, 0, 0, 0.45f});
     for (const char* t : help) { ui_.label(10 * s, hy, t, kGrey, 0.5f); hy += 13 * s; }
     if (edGroupMenu_ || edExportAsk_) drawEditorGroupMenu(panelX * 0.5f - 200 * s, 70 * s, 400 * s);
     if (time_ < edMsgUntil_) ui_.labelCentered(panelX * 0.5f, 20 * s, edMsg_, kWhite);
+    if (edOnline_) {   // editing together: the chat (Enter) and any running vote (F1 / F2)
+        float ts = std::max(2.0f, std::round(H / 360.0f));
+        drawChatBox(panelX, H, s, ts);
+        if (net_.hasSnapshot() && net_.mode().voteActive) drawVotePanel(panelX * 0.5f, s, ts);
+    }
 }

@@ -210,6 +210,7 @@ static void testAllMaps() {
         std::string err;
         if (!m.load(name, &err)) { printf("  %s: %s\n", name.c_str(), err.c_str()); g_fail++; continue; }
         if (m.preferredMode >= 0) CHECK(m.supportsMode(m.preferredMode));
+        if (name == "dojo") { CHECK(!m.lava.empty() && m.inLava(playerBox({14, -1.5f, 0}, false)) && !m.inLava(playerBox({0, 0.1f, 0}, false))); }   // lava kills on touch
         for (auto& sp : m.spawns) CHECK(!m.boxSolid(playerBox(sp.pos + Vec3(0, 0.02f, 0), false)));
         NavGraph g;
         g.build(m);
