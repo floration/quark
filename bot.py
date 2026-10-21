@@ -36,8 +36,11 @@ DEFAULT_CONFIG = {
     "leaderboard_channel": "leaderboard",
     "info_channel": "info",
     "queue_channel": "queues",
-    "roles_channel": "",              # where the "get pings" button goes; default: the queue channel
     "ping_role": "Game Pings",
+    "update_role": "Update Pings",    # pinged by release announcements
+    "other_role": "Other Pings",      # for anything else worth a ping (events, tournaments...)
+    "pings_channel": "get-pings",     # new members are greeted here and pick their pings (no Discord onboarding needed)
+    "welcome_delete_seconds": 900,    # the greeting that mentions a new member goes away after this
     "game_source": str(REPO_ROOT / "src" / "client" / "game.cpp"),  # local file, else fetched from GitHub
     "state_file": str(HERE / "state.json"),
     "server_poll_seconds": 60,
@@ -280,10 +283,12 @@ def run_bot(cfg: dict):
                                                       reason="quark bot setup")
         return ch
 
-    async def ensure_role() -> discord.Role:
-        r = discord.utils.get(bot.guild.roles, name=cfg["ping_role"])
+    async def ensure_role(name: str = None) -> discord.Role:
+        """a ping role anyone can give themselves (game pings by default), made if missing"""
+        name = name or cfg["ping_role"]
+        r = discord.utils.get(bot.guild.roles, name=name)
         if not r:
-            r = await bot.guild.create_role(name=cfg["ping_role"], mentionable=True, reason="quark bot: game pings")
+            r = await bot.guild.create_role(name=name, mentionable=True, reason="quark bot: ping role")
         return r
 
     async def upsert_message(ch: discord.abc.Messageable, purpose: str, content: str = None, **kw) -> discord.Message:
@@ -330,7 +335,8 @@ def run_bot(cfg: dict):
                 e.title, e.url = f"Quark {tag} is out!", rel.get("html_url")
             if i == len(chunks) - 1:
                 e.set_footer(text="Update from the launcher, or download from the release page.")
-            await ch.send(content="@everyone" if i == 0 else None, embed=e, allowed_mentions=discord.AllowedMentions(everyone=True))
+            urole = await ensure_role(cfg["update_role"])
+            await ch.send(content=urole.mention if i == 0 else None, embed=e, allowed_mentions=discord.AllowedMentions(roles=[urole]))
         state.d["last_tag"] = tag
         state.save()
 
@@ -643,21 +649,52 @@ def run_bot(cfg: dict):
             self.add_item(QueueAllButton())
             self.add_item(LeaveAllButton())
 
+    PING_KINDS = {   # custom id -> (role config key, what it's for)
+        "quark:role:update": ("update_role", "new versions of the game"),
+        "quark:role": ("ping_role", "a server going live"),          # (the old id: existing panels keep working)
+        "quark:role:other": ("other_role", "events, tournaments and other news"),
+    }
+
+    class PingButton(discord.ui.Button):
+        def __init__(self, cid: str, label: str, style):
+            super().__init__(label=label, custom_id=cid, style=style)
+
+        async def callback(self, it: discord.Interaction):
+            await it.response.send_message(await toggle_role(it.user, self.custom_id), ephemeral=True)
+
     class RoleView(discord.ui.View):
         def __init__(self):
             super().__init__(timeout=None)
+            self.add_item(PingButton("quark:role:update", "Update pings", discord.ButtonStyle.primary))
+            self.add_item(PingButton("quark:role", "Game pings", discord.ButtonStyle.success))
+            self.add_item(PingButton("quark:role:other", "Other pings", discord.ButtonStyle.secondary))
 
-        @discord.ui.button(label="Toggle game pings", custom_id="quark:role", style=discord.ButtonStyle.success)
-        async def toggle(self, it: discord.Interaction, _b):
-            await it.response.send_message(await toggle_role(it.user), ephemeral=True)
-
-    async def toggle_role(member: discord.Member) -> str:
-        role = await ensure_role()
+    async def toggle_role(member: discord.Member, cid: str = "quark:role") -> str:
+        key, what = PING_KINDS.get(cid, PING_KINDS["quark:role"])
+        role = await ensure_role(cfg[key])
         if role in member.roles:
             await member.remove_roles(role, reason="self-unassign")
-            return f"Removed **{role.name}**: no more game pings."
+            return f"Removed **{role.name}**: no more pings for {what}."
         await member.add_roles(role, reason="self-assign")
-        return f"Added **{role.name}**: you'll be pinged when a server goes live."
+        return f"Added **{role.name}**: you'll be pinged for {what}. Press it again to turn it off."
+
+    def ping_panel_text() -> str:
+        return ("**Pick your pings** - press a button to turn it on, again to turn it off:\n"
+                f"- **{cfg['update_role']}**: a new version of the game is out\n"
+                f"- **{cfg['ping_role']}**: a server goes live\n"
+                f"- **{cfg['other_role']}**: events, tournaments and other news")
+
+    @bot.event
+    async def on_member_join(member: discord.Member):
+        """greet them in the pings channel (it mentions them, so they see it) and point at the buttons"""
+        if not bot.guild or member.guild.id != bot.guild.id or member.bot:
+            return
+        try:
+            ch = await ensure_text(cfg["pings_channel"], await ensure_category(cfg["info_category"]))
+            await ch.send(f"Welcome {member.mention}! Choose which pings you want with the buttons above.",
+                          allowed_mentions=discord.AllowedMentions(users=[member]), delete_after=cfg["welcome_delete_seconds"])
+        except discord.HTTPException:
+            log.warning("couldn't greet %s in #%s", member, cfg["pings_channel"])
 
     # ---------- leaderboard roles from GET /crowns
     async def ensure_named_role(name: str, colour: int) -> discord.Role:
@@ -753,12 +790,19 @@ def run_bot(cfg: dict):
             return
         log.info("ready as %s in %s", bot.user, bot.guild.name)
         try:
-            await ensure_role()
+            for key in ("update_role", "ping_role", "other_role"): await ensure_role(cfg[key])
             qch = await ensure_text(cfg["queue_channel"], await ensure_category(cfg["info_category"]))
             state.d["messages"]["queue_channel_id"] = qch.id
-            rch = discord.utils.get(bot.guild.text_channels, name=cfg["roles_channel"]) if cfg["roles_channel"] else qch
-            await upsert_message(rch, "role_panel", f"Want a ping when a game goes live? Toggle the **{cfg['ping_role']}** role:",
-                                 view=RoleView())
+            pch = await ensure_text(cfg["pings_channel"], await ensure_category(cfg["info_category"]))
+            if state.d["messages"].get("role_panel_channel") != pch.id and state.d["messages"].get("role_panel"):
+                old = bot.guild.get_channel(state.d["messages"].get("role_panel_channel") or qch.id)   # (it used to be in the queue channel)
+                try:
+                    if old: await (await old.fetch_message(state.d["messages"]["role_panel"])).delete()
+                except discord.HTTPException:
+                    pass
+                state.d["messages"].pop("role_panel", None)
+            state.d["messages"]["role_panel_channel"] = pch.id
+            await upsert_message(pch, "role_panel", ping_panel_text(), view=RoleView())
             await refresh_queue_panel()
             await ensure_category(cfg["live_category"])
         except Exception:
