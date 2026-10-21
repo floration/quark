@@ -217,8 +217,9 @@ static void voice(std::vector<float>& b, int pack) {
 // The recorded kits (sfx_recorded.h, 22.05 kHz) up to the mix rate, each matched to the DEFAULT sound's loudness.
 // All done once at startup: the mixer only ever reads ready float buffers.
 void Audio::loadRecordedKits() {
+    for (int pass = 0; pass < 2; pass++)   // (DEFAULT's own recordings first: the other kits match their loudness)
     for (const SfxClip& c : kSfxClips) {
-        if (c.kit <= 0 || c.kit >= kPacks || c.id < 0 || c.id >= SND_VOICE_THREE || c.size < 2) continue;
+        if ((c.kit == 0) != (pass == 0) || c.kit < 0 || c.kit >= kPacks || c.id < 0 || c.id >= SND_VOICE_THREE || c.size < 2) continue;
         std::vector<float> v((size_t)((double)c.size * R / kSfxRate));
         for (size_t i = 0; i < v.size(); i++) {
             float t = (float)((double)i * kSfxRate / R); size_t a = (size_t)t; float f = t - a;
@@ -226,8 +227,9 @@ void Audio::loadRecordedKits() {
             v[i] = x0 + (x1 - x0) * f;
         }
         if (c.kit == kPackMagical) { v.resize(v.size() + R / 10, 0.0f); addRoom(v, 0.3f, 1.3f); finish(v, 1.0f); }  // a shimmering hall
-        float want = loudness(sounds_[0][c.id]), have = loudness(v);
-        if (have > 1e-6f) { float g = want / have; for (auto& x : v) x = std::clamp(x * g, -1.0f, 1.0f); }
+        float want = c.kit == 0 ? 0.0f : loudness(sounds_[0][c.id]), have = loudness(v);
+        if (want > 1e-6f && have > 1e-6f) { float g = want / have; for (auto& x : v) x = std::clamp(x * g, -1.0f, 1.0f); }
+        if (c.kit == 0) for (int p = 1; p < kPacks; p++) if (sounds_[p][c.id] == sounds_[0][c.id]) sounds_[p][c.id] = v;   // (kits without their own take the new DEFAULT)
         sounds_[c.kit][c.id].swap(v);
     }
 }
