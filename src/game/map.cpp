@@ -125,7 +125,7 @@ static bool readBox(std::istringstream& ls, AABB& b) {
 }
 
 bool Map::parse(const std::string& text, std::string* err) {
-    brushes.clear(); spawns.clear(); bombSites.clear(); checkpoints.clear(); ladders.clear(); ladderAuto.clear(); payloadPath.clear(); lights.clear(); points.clear(); cartChecks.clear();
+    brushes.clear(); spawns.clear(); bombSites.clear(); checkpoints.clear(); ladders.clear(); ladderAuto.clear(); groups.clear(); payloadPath.clear(); lights.clear(); points.clear(); cartChecks.clear();
     hasHill = false;
     hasWallbang = false;
     hasPalette = false;
@@ -187,6 +187,15 @@ bool Map::parse(const std::string& text, std::string* err) {
             AABB b; ok = readBox(ls, b);
             std::string flag;
             if (ok) { ladders.push_back(b); ladderAuto.push_back(ls >> flag && flag == "auto"); }
+        } else if (kw == "group") {
+            std::string t; Group g;
+            ok = (bool)(ls >> t >> g.material >> g.dir) && readBox(ls, g.box) && g.material >= 0 && g.material <= 5 && g.dir >= 0 && g.dir < 4;
+            g.type = t == "room" ? GROUP_ROOM : t == "stairs" ? GROUP_STAIRS : GROUP_CUSTOM;
+            ok = ok && (t == "room" || t == "stairs" || t == "custom");
+            if (ok) groups.push_back(g);
+        } else if (kw == "part") {
+            Brush b; ok = !groups.empty() && groups.back().type == GROUP_CUSTOM && (bool)(ls >> b.material) && b.material >= 0 && b.material <= 5 && readBox(ls, b.box);
+            if (ok) groups.back().parts.push_back(b);
         } else if (kw == "checkpoint") {
             AABB b; ok = readBox(ls, b); if (ok) checkpoints.push_back(b);
         } else if (kw == "path") {
@@ -230,11 +239,12 @@ bool Map::parse(const std::string& text, std::string* err) {
             return false;
         }
     }
+    genLadderBrushes();
     if (brushes.empty() || spawns.empty()) {
         if (err) *err = "map needs at least one box and one spawn";
         return false;
     }
-    genLadderBrushes();
+    for (auto& b : brushes) if (b.generated && b.material < 5) { bounds.mn = vmin(bounds.mn, b.box.mn); bounds.mx = vmax(bounds.mx, b.box.mx); }
     buildGrid();
     return true;
 }
@@ -285,6 +295,12 @@ std::string Map::serialize() const {
                  k < ladderAuto.size() && ladderAuto[k] ? " auto" : "");
         o += b;
     }
+    static const char* groupTypes[] = {"custom", "room", "stairs"};
+    for (auto& g : groups) {
+        snprintf(b, sizeof b, "group %s %d %d %g %g %g %g %g %g\n", groupTypes[g.type], g.material, g.dir, g.box.mn.x, g.box.mn.y, g.box.mn.z, g.box.mx.x, g.box.mx.y, g.box.mx.z);
+        o += b;
+        for (auto& p : g.parts) { snprintf(b, sizeof b, "part %d %.6g %.6g %.6g %.6g %.6g %.6g\n", p.material, p.box.mn.x, p.box.mn.y, p.box.mn.z, p.box.mx.x, p.box.mx.y, p.box.mx.z); o += b; }
+    }
     for (auto& a : checkpoints) box("checkpoint", a);
     for (auto& p : payloadPath) { snprintf(b, sizeof b, "path %g %g %g\n", p.x, p.y, p.z); o += b; }
     for (auto& l : lights) { snprintf(b, sizeof b, "light %g %g %g %g %g\n", l.pos.x, l.pos.y, l.pos.z, l.radius, l.intensity); o += b; }
@@ -309,6 +325,7 @@ std::string describeMapObject(const Map& m, char kind, const char* verb, int i) 
         case 'h': snprintf(t, sizeof t, "h set 0 %d %s", m.hasHill ? 1 : 0, fmtBox(m.hill).c_str()); break;
         case 'o': snprintf(t, sizeof t, "o %s %d %s", verb, i, fmtBox(m.points[i]).c_str()); break;
         case 'd': snprintf(t, sizeof t, "d %s %d %d %s", verb, i, i < (int)m.ladderAuto.size() ? m.ladderAuto[i] : 0, fmtBox(m.ladders[i]).c_str()); break;
+        case 'g': { auto& g = m.groups[i]; snprintf(t, sizeof t, "g %s %d %d %d %d %s", verb, i, g.type, g.material, g.dir, fmtBox(g.box).c_str()); break; }
         default: t[0] = 0;
     }
     return t;
@@ -340,7 +357,7 @@ bool applyMapEdit(Map& m, const std::string& op) {
         return true;
     }
     int i;
-    if (!(in >> verb >> i) || (verb != "ins" && verb != "set" && verb != "del")) return false;
+    if (!(in >> verb >> i) || (verb != "ins" && verb != "set" && verb != "del" && !(verb == "part" && kind == "g"))) return false;
     auto okNum = [](float v) { return std::isfinite(v) && std::fabs(v) <= 4096.0f; };
     auto readVec = [&](Vec3& v) { return (bool)(in >> v.x >> v.y >> v.z) && okNum(v.x) && okNum(v.y) && okNum(v.z); };
     auto readBox = [&](AABB& b) {
@@ -397,13 +414,28 @@ bool applyMapEdit(Map& m, const std::string& op) {
             else if (ok) { ok = i >= 0 && (size_t)i < m.ladders.size(); if (ok) { m.ladders[i] = b; m.ladderAuto[i] = au != 0; } }
         }
     }
+    else if (kind == "g") { // groups: ins (empty) / set (keeps its parts) / del, and part to fill a custom one
+        if (verb == "del") {
+            ok = i >= 0 && (size_t)i < m.groups.size();
+            if (ok) m.groups.erase(m.groups.begin() + i);
+        } else {
+            Map::Group g;
+            ok = verb == "part" ? i >= 0 && (size_t)i < m.groups.size() && m.groups[i].type == Map::GROUP_CUSTOM && m.groups[i].parts.size() < 1024
+                                  && (bool)(in >> g.material) && g.material >= 0 && g.material <= 5 && readBox(g.box)
+                                : (bool)(in >> g.type >> g.material >> g.dir) && g.type >= 0 && g.type <= 2 && g.material >= 0 && g.material <= 5
+                                  && g.dir >= 0 && g.dir < 4 && readBox(g.box) && g.box.mx.y - g.box.mn.y <= 64;
+            if (ok && verb == "part") m.groups[i].parts.push_back({g.box, g.material});
+            else if (ok && verb == "ins") { ok = i >= 0 && (size_t)i <= m.groups.size() && m.groups.size() < 256; if (ok) m.groups.insert(m.groups.begin() + i, g); }
+            else if (ok) { ok = i >= 0 && (size_t)i < m.groups.size(); if (ok) { g.parts = std::move(m.groups[i].parts); m.groups[i] = std::move(g); } }
+        }
+    }
     else if (kind == "h") {
         int has;
         AABB b;
         ok = verb == "set" && (bool)(in >> has) && readBox(b);
         if (ok) { m.hasHill = has != 0; m.hill = b; }
     }
-    if (ok && (kind == "b" || kind == "d")) m.rebuild();
+    if (ok && (kind == "b" || kind == "d" || kind == "g")) m.rebuild();
     return ok;
 }
 
@@ -428,6 +460,56 @@ void Map::genLadderBrushes() {
         add(w0, l.mn.y, w0 + 0.08f, top, dc - 0.04f, dc + 0.04f);
         add(w1 - 0.08f, l.mn.y, w1, top, dc - 0.04f, dc + 0.04f);
         for (float y = l.mn.y + 0.35f; y < top; y += 0.4f) add(w0 + 0.08f, y, w1 - 0.08f, y + 0.06f, dc - 0.03f, dc + 0.03f);
+    }
+    std::vector<Brush> parts;
+    for (auto& g : groups) groupBoxes(g, parts);
+    for (auto& b : parts) { b.generated = true; brushes.push_back(b); }
+}
+
+void Map::groupBoxes(const Group& g, std::vector<Brush>& out) {
+    const AABB& b = g.box;
+    Vec3 sz = b.mx - b.mn;
+    auto add = [&](Vec3 a, Vec3 c) { if (c.x - a.x > 1e-3f && c.y - a.y > 1e-3f && c.z - a.z > 1e-3f) out.push_back({{a, c}, g.material}); };
+    if (g.type == GROUP_CUSTOM) {
+        for (auto& p : g.parts) {
+            Brush q = p;
+            q.box = {b.mn + Vec3(p.box.mn.x * sz.x, p.box.mn.y * sz.y, p.box.mn.z * sz.z), b.mn + Vec3(p.box.mx.x * sz.x, p.box.mx.y * sz.y, p.box.mx.z * sz.z)};
+            out.push_back(q);
+        }
+    } else if (g.type == GROUP_ROOM) { // walls / floor / ceiling 0.25 m (thinner in a tiny room); doors 1.6 x 2.4 m where they fit
+        float t = std::min(0.25f, std::min(sz.x, std::min(sz.y, sz.z)) * 0.25f);
+        add(b.mn, {b.mx.x, b.mn.y + t, b.mx.z});                  // floor
+        add({b.mn.x, b.mx.y - t, b.mn.z}, b.mx);                  // ceiling
+        float y0 = b.mn.y + t, y1 = b.mx.y - t, dh = std::min(2.4f, (y1 - y0) * 0.85f);
+        for (int w = 0; w < 4; w++) { // walls along x (at -z, +z), then along z (at -x, +x, between those)
+            bool alongX = w < 2;
+            int a = alongX ? 0 : 2;
+            float s0 = alongX ? b.mn.x : b.mn.z + t, s1 = alongX ? b.mx.x : b.mx.z - t;
+            float d0 = alongX ? (w == 0 ? b.mn.z : b.mx.z - t) : (w == 2 ? b.mn.x : b.mx.x - t), d1 = d0 + t;
+            auto wall = [&](float u0, float v0, float u1, float v1) {
+                Vec3 p, q;
+                p[a] = u0; q[a] = u1; p.y = v0; q.y = v1; p[2 - a] = d0; q[2 - a] = d1;
+                add(p, q);
+            };
+            float len = s1 - s0, dw = std::min(1.6f, len - 2 * t - 0.5f);
+            if (dw < 0.9f || dh < 1.0f) { wall(s0, y0, s1, y1); continue; } // too small for a door
+            float m = (s0 + s1) * 0.5f;
+            wall(s0, y0, m - dw * 0.5f, y1);
+            wall(m + dw * 0.5f, y0, s1, y1);
+            wall(m - dw * 0.5f, y0 + dh, m + dw * 0.5f, y1);           // over the door
+        }
+    } else { // stairs: solid steps, as many as keep each rise <= 0.5 m (pmove steps up 0.55 m)
+        int a = g.dir < 2 ? 0 : 2;
+        bool neg = g.dir & 1;
+        int n = std::min(128, std::max(1, (int)std::ceil(sz.y / 0.5f - 1e-4f)));
+        float run = sz[a] / n, rise = sz.y / n;
+        for (int k = 0; k < n; k++) {
+            Vec3 p = b.mn, q = b.mx;
+            q.y = b.mn.y + rise * (k + 1);
+            if (neg) { q[a] = b.mx[a] - run * k; p[a] = q[a] - run; }
+            else { p[a] = b.mn[a] + run * k; q[a] = p[a] + run; }
+            add(p, q);
+        }
     }
 }
 
