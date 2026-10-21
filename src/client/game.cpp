@@ -410,8 +410,8 @@ bool Game::pressInput(int code) {
     uint16_t pool = net_.mode().weaponMask;
     bool knifeAway = net_.hasSnapshot() && net_.latest().knifeAway > 0;
     auto allowed = [&](int w) { return (!pool || (pool >> w & 1)) && !(w == WPN_KNIFE && knifeAway); }; // a thrown knife is away for a bit
-    for (int k = 0; k < WPN_COUNT; k++) // slot keys 1-8, in kWeaponSlots order
-        if (b.has(A_WEAPON1 + k, code)) { int w = kWeaponSlots[k]; if (allowed(w)) desiredWeapon_ = w; return true; }
+    for (int k = 0; k < WPN_COUNT; k++) // slot keys 1-9 and 0, in kWeaponSlots order
+        if (b.has(slotAction(k), code)) { int w = kWeaponSlots[k]; if (allowed(w)) desiredWeapon_ = w; return true; }
     int cur = weaponSlot(desiredWeapon_ >= 0 ? desiredWeapon_ : net_.selfWeapon());
     for (int dir : {1, -1}) {
         if (!b.has(dir > 0 ? A_NEXTWEAPON : A_PREVWEAPON, code)) continue;
@@ -655,6 +655,10 @@ void Game::handleEvents() {
                 notify("RANKED MATCH OVER - REPORTING THE RESULT", 4);
                 break;
             }
+            case EV_HEALED:   // a teammate's syringe hit someone
+                if (e.a == net_.clientId()) { notify("HEALED BY " + upper(net_.playerName(e.b)) + " - COOLDOWNS RESET", 2); audio_.play(SND_SYRINGE, 0.8f, 1.3f); }
+                else if (e.b == net_.clientId()) notify("YOU HEALED " + upper(net_.playerName(e.a)), 2);
+                break;
             case EV_RACE_SPLIT:
                 if (e.a == net_.clientId()) onRaceSplit(e.b, atoi(e.text.c_str()));
                 break;
@@ -805,7 +809,7 @@ void Game::frame(double dt) {
                 if (w == WPN_KNIFE && alt) localFireLocked_ = true;
                 recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
                 if (w == WPN_LASER) laserUntil_ = time_ + 0.07;
-                else if (!weaponDef(w).projectile && w != WPN_KNIFE) { // (knife throw: the projectile shows it)
+                else if (!weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE) { // (knife throw: the projectile shows it)
                     const MoveState& m = net_.predicted();
                     Vec3 eye = m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
                     Vec3 aim = angleForward(yaw_, pitch_);
@@ -819,7 +823,7 @@ void Game::frame(double dt) {
                             spreadOffset(net_.nextSeq(), k, spread, a, r);
                             d = normalize(aim + right * (std::cos(a) * r) + up * (std::sin(a) * r));
                         }
-                        Vec3 from = eye + aim * 0.5f + right * 0.15f - Vec3(0, 0.12f, 0);
+                        Vec3 from = muzzlePoint(w, eye);
                         if (w == WPN_SHOTGUN && alt) { // ricochet: draw each leg (players ignored, like the server's walls)
                             Vec3 o = eye;
                             float range = wd.range;
@@ -914,6 +918,33 @@ void Game::frame(double dt) {
 
 // ---------------------------------------------------------------------------
 // world rendering
+
+// The barrel tip of each weapon model, in the model's own units (camera space: +x right, +y up, -z forward),
+// matching the boxes drawn in drawWorld's viewmodel switch.
+static const Vec3 kMuzzle[WPN_COUNT] = {
+    {0, 0.008f, -0.29f},    // rifle
+    {0, 0, -0.25f},         // rocket
+    {0, 0, -0.21f},         // knife
+    {0, 0.006f, -0.448f},   // sniper
+    {0, 0, -0.193f},        // laser
+    {0, 0.012f, -0.3f},     // shotgun
+    {0, 0, -0.212f},        // sticky
+    {0, 0.032f, -0.23f},    // crossbow
+    {0, 0.004f, -0.257f},   // bubble
+    {0, 0, -0.2f},          // syringe
+};
+
+// Where your shots come out: the muzzle of the weapon model wherever the HUD settings put it (x / y / depth /
+// size), so beams, tracers and your projectiles leave the gun you see. Hidden model: a spot low and right.
+Vec3 Game::muzzlePoint(int weapon, const Vec3& eye) const {
+    const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
+    Vec3 d = angleForward(yaw_, pitch_), right = normalize(cross(d, {0, 1, 0}));
+    if (vm.hidden || weapon < 0 || weapon >= WPN_COUNT) return eye + d * 0.5f + right * 0.15f - Vec3(0, 0.12f, 0);
+    Vec3 o = Vec3(0.2f + vm.x * 0.0005f, -0.17f - vm.y * 0.0005f, -0.55f - vm.z * 0.001f + (float)recoil_ * 0.06f) + kMuzzle[weapon] * vm.scale;
+    float cp = std::cos(pitch_), sp = std::sin(pitch_), cy = std::cos(yaw_), sy = std::sin(yaw_);
+    Vec3 p = {o.x, cp * o.y - sp * o.z, sp * o.y + cp * o.z};           // the viewmodel's own transform (rotX, then rotY)
+    return eye + Vec3(cy * p.x + sy * p.z, p.y, -sy * p.x + cy * p.z);
+}
 
 void Game::drawWorld(float alpha) {
     QZONE("drawWorld");
@@ -1088,11 +1119,7 @@ void Game::drawWorld(float alpha) {
         Vec3 d = angleForward(yaw_, pitch_);
         float range = weaponDef(WPN_LASER).range;
         float bangT, t = map.raycastBullet(eye, d, range, &bangT);
-        // from the laser model's emitter, wherever the HUD settings put it (or a default spot if it's hidden)
-        const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
-        Vec3 at = {0.2f + vm.x * 0.0005f, -0.17f - vm.y * 0.0005f, -0.55f - vm.z * 0.001f + (float)recoil_ * 0.06f};
-        Vec3 right = normalize(cross(d, {0, 1, 0}));
-        Vec3 a = vm.hidden ? eye + d * 0.5f + right * 0.15f - Vec3(0, 0.12f, 0) : r_.viewPoint(at + Vec3(0, 0, -0.193f) * vm.scale);
+        Vec3 a = muzzlePoint(WPN_LASER, eye);   // from the laser model's emitter
         Vec3 b = eye + d * (t < 0 ? range : t);
         r_.line(a, b, 0.05f, rgba(cfg_.colorFriendly, 0.9f));
         if (isDown(A_ALTFIRE))
@@ -1111,16 +1138,55 @@ void Game::drawWorld(float alpha) {
         drawKnifeSlash(e, selfView ? yaw_ : p.yaw, selfView ? pitch_ : p.pitch, t, teamColor(i));
     }
 
-    // projectiles
-    for (auto& pr : lastProjectiles_) {
+    // projectiles (yours: from your weapon model's muzzle, blending onto the real path over 0.2 s)
+    {
+        std::vector<ProjStart> keep;
+        for (auto& pr : lastProjectiles_) {
+            if (pr.owner != me) continue;
+            ProjStart st{pr.id, time_, {}};
+            bool found = false;
+            for (auto& o : projStarts_) if (o.id == pr.id) { st = o; found = true; }
+            if (!found && alive) {
+                // where the weapon that fired it points out of the screen (thrown knife: from the knife hand)
+                int w = pr.type < WPN_COUNT ? pr.type : net_.selfWeapon();
+                Vec3 muz = muzzlePoint(w, eye);
+                if (length(pr.pos - eye) < 3.0f) st.offset = muz - pr.pos;   // only shots just fired
+            }
+            keep.push_back(st);
+        }
+        projStarts_.swap(keep);
+    }
+    for (auto pr : lastProjectiles_) {
+        for (auto& st : projStarts_)
+            if (st.id == pr.id) { float f = 1.0f - (float)(time_ - st.seen) / 0.2f; if (f > 0) pr.pos = pr.pos + st.offset * f; }
         Vec3 col = teamColor(pr.owner);
         float sp = length(pr.vel);
         Vec3 dir = sp > 0.01f ? pr.vel / sp : Vec3(0, 0, -1);
         float yaw = std::atan2(-dir.x, -dir.z);
-        if (pr.type == WPN_STICKY) {
-            bool resting = sp < 0.01f; // stuck: pulse so they're easy to spot
-            float k = resting ? 0.75f + 0.25f * std::sin((float)time_ * 10) : 1.0f;
-            r_.box(pr.pos, {0.14f, 0.14f, 0.14f}, (float)time_ * (resting ? 0 : 6), col * k, 1.0f);
+        float pitch = std::asin(clampf(dir.y, -1, 1));
+        const Vec3 metalC = {0.22f, 0.23f, 0.26f};
+        if (pr.type == WPN_STICKY) { // a spiked mine: dark shell, team-coloured core, spikes; stuck ones blink their core
+            bool resting = sp < 0.01f;
+            float spin = (float)time_ * (resting ? 0 : 6);
+            float k = resting ? 0.6f + 0.4f * (std::fmod((float)time_ * 2.5f, 1.0f) < 0.5f ? 1.0f : 0.0f) : 1.0f;
+            r_.box(pr.pos, {0.11f, 0.11f, 0.11f}, spin, metalC, 1.0f);
+            r_.box(pr.pos, {0.075f, 0.135f, 0.075f}, spin, col * 1.3f * k, 1.0f);
+            r_.box(pr.pos, {0.135f, 0.075f, 0.075f}, spin, metalC * 0.7f, 1.0f);
+            r_.box(pr.pos, {0.075f, 0.075f, 0.135f}, spin, metalC * 0.7f, 1.0f);
+        } else if (pr.type == WPN_ROCKET) { // a rocket: nose cone, body with a team band, four fins and a flickering flame
+            float fl = 0.8f + 0.2f * std::sin((float)time_ * 60 + pr.id);
+            r_.boxPitched(pr.pos, {0, 0, 0.05f}, {0.07f, 0.07f, 0.22f}, yaw, pitch, metalC * 1.6f, 1.0f);
+            r_.boxPitched(pr.pos, {0, 0, -0.22f}, {0.045f, 0.045f, 0.06f}, yaw, pitch, col * 1.2f, 1.0f);
+            r_.boxPitched(pr.pos, {0, 0, 0.0f}, {0.075f, 0.075f, 0.03f}, yaw, pitch, col, 1.0f);
+            r_.boxPitched(pr.pos, {0, 0, 0.24f}, {0.14f, 0.012f, 0.05f}, yaw, pitch, metalC, 1.0f);
+            r_.boxPitched(pr.pos, {0, 0, 0.24f}, {0.012f, 0.14f, 0.05f}, yaw, pitch, metalC, 1.0f);
+            r_.boxPitched(pr.pos, {0, 0, 0.34f}, {0.05f * fl, 0.05f * fl, 0.08f * fl}, yaw, pitch, Vec3(2.0f, 1.3f, 0.5f), 1.0f);
+            r_.line(pr.pos + dir * -0.35f, pr.pos - dir * 3.5f, 0.1f, rgba(col, 0.4f));
+        } else if (pr.type == WPN_SYRINGE) { // thrown syringe: serum barrel, needle first, a team-coloured trail
+            r_.boxPitched(pr.pos, {0, 0, 0}, {0.03f, 0.03f, 0.12f}, yaw, pitch, Vec3(0.8f, 0.85f, 0.9f), 1.0f);
+            r_.boxPitched(pr.pos, {0, 0, 0}, {0.022f, 0.022f, 0.09f}, yaw, pitch, r_.glowColor * 1.5f, 1.0f);
+            r_.boxPitched(pr.pos, {0, 0, -0.17f}, {0.005f, 0.005f, 0.06f}, yaw, pitch, metalC * 2.0f, 1.0f);
+            r_.line(pr.pos, pr.pos - dir * 1.5f, 0.03f, rgba(col, 0.5f));
         } else if (pr.type == WPN_KNIFE) { // thrown knife: spins end over end
             r_.boxPitched(pr.pos, {0, 0, 0}, {0.012f, 0.03f, 0.18f}, yaw, (float)time_ * 25.0f, {0.75f, 0.77f, 0.8f}, 1.0f);
             r_.line(pr.pos, pr.pos - dir * 2.0f, 0.03f, rgba(col, 0.4f));
@@ -1129,8 +1195,11 @@ void Game::drawWorld(float alpha) {
             float r = 0.17f + wob;
             r_.translucentBox({pr.pos - Vec3(r, r - wob, r), pr.pos + Vec3(r, r - wob, r)}, rgba(col, 0.35f));
             r_.box(pr.pos + Vec3(0.05f, 0.06f, 0), {0.035f, 0.035f, 0.035f}, 0, Vec3(1, 1, 1) * 1.5f, 1.0f);
-        } else if (pr.type == WPN_CROSSBOW) {
-            r_.boxPitched(pr.pos, {0, 0, 0}, {0.03f, 0.03f, 0.35f}, yaw, std::asin(clampf(dir.y, -1, 1)), {0.1f, 0.1f, 0.12f}, 1.0f);
+        } else if (pr.type == WPN_CROSSBOW) { // a bolt: dark shaft, steel broadhead, team-coloured fletching
+            r_.boxPitched(pr.pos, {0, 0, 0}, {0.02f, 0.02f, 0.33f}, yaw, pitch, {0.12f, 0.09f, 0.06f}, 1.0f);
+            r_.boxPitched(pr.pos, {0, 0, -0.36f}, {0.045f, 0.012f, 0.05f}, yaw, pitch, Vec3(0.8f, 0.82f, 0.86f), 1.0f);
+            r_.boxPitched(pr.pos, {0, 0, 0.28f}, {0.06f, 0.006f, 0.06f}, yaw, pitch, col * 1.2f, 1.0f);
+            r_.boxPitched(pr.pos, {0, 0, 0.28f}, {0.006f, 0.06f, 0.06f}, yaw, pitch, col * 1.2f, 1.0f);
             r_.line(pr.pos, pr.pos - dir * 4.0f, 0.04f, rgba(col, 0.5f));
         } else {
             r_.box(pr.pos, {0.12f, 0.12f, 0.12f}, 0, col * 1.3f, 1.0f);
@@ -1178,6 +1247,18 @@ void Game::drawWorld(float alpha) {
             Vec3 c = blink ? Vec3(1, 0.2f, 0.2f) : Vec3(0.15f, 0.15f, 0.15f);
             r_.box(ms.bombPos + Vec3(0, 0.15f, 0), {0.25f, 0.15f, 0.18f}, 0, c, 1.0f);
             labelAt(ms.bombPos + Vec3(0, 0.8f, 0), ms.bombState == BOMB_PLANTED ? "BOMB" : "BOMB (DROPPED)", rgba(teamCol(ms.attackers)));
+        }
+    } else if (ms.mode == MODE_POINTS && !map.points.empty()) {
+        // the point under attack glows (attacker colour while it fills); taken points are dim; later ones outlined
+        for (size_t i = 0; i < map.points.size(); i++) {
+            const AABB& z = map.points[i];
+            std::string name = std::string("POINT ") + char('A' + i);
+            Vec3 top = {z.center().x, z.mx.y + 0.5f, z.center().z};
+            if ((int)i < ms.point) { r_.translucentBox(z, rgba(teamCol(ms.attackers), 0.04f)); continue; }
+            if ((int)i > ms.point) { r_.translucentBox(z, rgba({1, 1, 1}, 0.03f)); continue; }
+            Vec3 c = (ms.flags & MS_CONTESTED) ? Vec3(1, 1, 1) : teamCol(ms.attackers);
+            r_.translucentBox(z, rgba(c, 0.1f + 0.06f * ms.capture + 0.04f * std::sin((float)time_ * 4)));
+            labelAt(top, name + ((ms.flags & MS_CONTESTED) ? " - CONTESTED" : ms.capture > 0 ? " - " + std::to_string((int)(ms.capture * 100)) + "%" : ""), rgba(c));
         }
     } else if (ms.mode == MODE_KOTH && map.hasHill) {
         Vec3 c = ms.hillOwner == 255 ? Vec3(1, 1, 1) : teamCol(ms.hillOwner);
@@ -1305,6 +1386,13 @@ void Game::drawWorld(float alpha) {
                 part(0, 0.004f, -0.205f, 0.03f, 0.03f, 0.006f, acc);
                 part(0, 0.004f, -0.235f, 0.022f, 0.022f, 0.022f, glow);
                 part(0, -0.06f, 0.03f, 0.014f, 0.035f, 0.02f, dark);
+                break;
+            case WPN_SYRINGE:    // barrel full of glowing serum, plunger and finger grips behind, steel needle in front
+                part(0, 0, 0, 0.022f, 0.022f, 0.09f, light);
+                part(0, 0, -0.01f, 0.016f, 0.016f, 0.07f, glow);
+                part(0, 0, 0.1f, 0.006f, 0.006f, 0.03f, mid); part(0, 0, 0.135f, 0.02f, 0.02f, 0.006f, dark);
+                part(0, 0, 0.085f, 0.045f, 0.008f, 0.006f, acc);
+                part(0, 0, -0.1f, 0.01f, 0.01f, 0.01f, dark); part(0, 0, -0.15f, 0.0025f, 0.0025f, 0.05f, mid);
                 break;
             case WPN_CROSSBOW:   // stock, bow limbs with a string, a bolt on top
                 part(0, 0, 0.02f, 0.02f, 0.025f, 0.2f, dark);
@@ -1466,6 +1554,11 @@ void Game::drawHud() {
     } else if (ms.mode == MODE_PAYLOAD) {
         obj = myTeam == ms.attackers ? "PUSH THE PAYLOAD" : "STOP THE PAYLOAD";
         if (ms.payloadLen > 0) progress = ms.payloadDist / ms.payloadLen;
+    } else if (ms.mode == MODE_POINTS && ms.pointCount > 0) {
+        bool att = myTeam == ms.attackers;
+        std::string pn = std::string("POINT ") + char('A' + std::min<int>(ms.point, ms.pointCount - 1)) + " (" + std::to_string(ms.point + 1) + "/" + std::to_string(ms.pointCount) + ")";
+        obj = (ms.flags & MS_CONTESTED) ? pn + " CONTESTED" : (att ? "CAPTURE " : "DEFEND ") + pn;
+        if (ms.phase == PHASE_LIVE) progress = ms.capture;
     } else if (ms.mode == MODE_NPAYLOAD) {
         obj = (ms.flags & MS_CONTESTED) ? "PAYLOAD CONTESTED" : ms.hillOwner == 255 ? "PUSH THE PAYLOAD TO THE ENEMY END"
               : ms.hillOwner == myTeam ? "YOUR TEAM IS PUSHING" : "ENEMY IS PUSHING";
@@ -1488,7 +1581,7 @@ void Game::drawHud() {
     if (progress >= 0) {
         float bw = 300 * s;
         r_.rect(cx - bw * 0.5f, 104 * s, bw, 8 * s, {0, 0, 0, 0.5f});
-        r_.rect(cx - bw * 0.5f, 104 * s, bw * clampf(progress, 0, 1), 8 * s, ms.mode == MODE_PAYLOAD ? rgba(myTeam == ms.attackers ? cfg_.colorFriendly : cfg_.colorEnemy) : kWhite);
+        r_.rect(cx - bw * 0.5f, 104 * s, bw * clampf(progress, 0, 1), 8 * s, (ms.mode == MODE_PAYLOAD || ms.mode == MODE_POINTS) ? rgba(myTeam == ms.attackers ? cfg_.colorFriendly : cfg_.colorEnemy) : kWhite);
     }
     if (ms.mode == MODE_NPAYLOAD && ms.payloadLen > 0) {
         // tug-of-war bar: your side's end on the left
@@ -1562,7 +1655,7 @@ void Game::drawHud() {
             float sts = std::max(1.0f, std::round(ts * 0.75f * e.scale));
             for (int k = WPN_COUNT - 1; k >= 0; k--) {
                 int wi = kWeaponSlots[k];
-                std::string t = std::to_string(k + 1) + " " + weaponDef(wi).name;
+                std::string t = std::to_string((k + 1) % 10) + " " + weaponDef(wi).name;
                 int away = wi == WPN_KNIFE && net_.hasSnapshot() ? net_.latest().knifeAway : 0;
                 if (away > 0) t += " " + std::to_string((away + 9) / 10); // thrown: seconds until it's back
                 float tw = r_.textWidth(t, sts);
@@ -2246,8 +2339,8 @@ void Game::drawVoteMenu(float cx, float y) {
         if (ui_.button(x + hw + gap, y, hw, h, "TOURNEY RULES")) { multiSel_.clear(); picker_ = PICK_TMODES; }
         y += h + gap;
     }
-    if (ui_.button(x, y, hw, h, "MODE")) openLivePicker(PICK_LIVE_MODE, true);
-    if (ui_.button(x + hw + gap, y, hw, h, "MAP") && !maps_.empty()) openLivePicker(PICK_LIVE_MAP, true);
+    // one vote for both: pick the mode, then a map for it
+    if (ui_.button(x, y, w, h, "CHANGE MAP / MODE") && !maps_.empty()) openLivePicker(PICK_LIVE_MODE, true);
     y += h + gap;
     // ranked: on with a ladder / switch ladder / off (no bots while it's on)
     if (ui_.button(x, y, ranked ? hw : w, h, ranked ? "LADDER" : "RANKED")) { variantCtx_ = 2; livePickVote_ = true; picker_ = PICK_RANKED; }
@@ -2304,8 +2397,7 @@ void Game::drawPauseMenu(float cx, float y) {
     if (host_) {
         // Host controls: change mode/map live.
         float hw = (w - gap) * 0.5f;
-        if (ui_.button(x, y, hw, h, "CHANGE MODE")) openLivePicker(PICK_LIVE_MODE, false);
-        if (ui_.button(x + hw + gap, y, hw, h, "CHANGE MAP") && !maps_.empty()) openLivePicker(PICK_LIVE_MAP, false);
+        if (ui_.button(x, y, w, h, "CHANGE MAP / MODE") && !maps_.empty()) openLivePicker(PICK_LIVE_MODE, false);
         y += h + gap;
         if (ui_.button(x, y, hw, h, "FORCE START")) { net_.sendCommand("forcestart"); paused_ = false; }
         if (ui_.button(x + hw + gap, y, hw, h, "RELOAD MAP")) { net_.sendCommand("reload"); paused_ = false; } // picks up edits to the map file
@@ -2925,7 +3017,7 @@ void Game::drawControls(float x0, float y0, float wTotal) {
     float colW = std::max(330 * s, wTotal * 0.5f);
     float x = x0 + wTotal * 0.5f - colW - colGap * 0.5f;
     std::vector<int> actions; // every rebindable action (crouch was removed from the game)
-    for (int a = 0; a < A_COUNT; a++) if (a != A_CROUCH && a != A_WEAPON9) actions.push_back(a);
+    for (int a = 0; a < A_COUNT; a++) if (a != A_CROUCH) actions.push_back(a);
     int perCol = ((int)actions.size() + 1) / 2;
     float h = perCol * (rowH + gap) + 266 * s;
     float y = std::max(8 * s, y0 - 40 * s);
@@ -3076,7 +3168,7 @@ void Game::drawPicker(float cx, float y) {
                 if (!(mapInfo_[mapIdx].ranked >> variant & 1)) mapIdx = bestRankedMap(variant);
                 finish();
             }
-            else if (variants) { variant = i; finish(); }
+            else if (variants) { variant = i; if (live) picker_ = PICK_LIVE_MAP; else finish(); }   // in game: then the map
             else if (modes && i == MODE_COUNT) { variantCtx_ = live ? 2 : 0; picker_ = PICK_RANKED; }
             else if (modes) {
                 if (host) cfg_.hostRanked = false; // any other mode: unranked
@@ -3086,7 +3178,8 @@ void Game::drawPicker(float cx, float y) {
                 if (i == MODE_ARENA || i == MODE_TOURNEY) { // second step: which 1v1 ruleset
                     variantCtx_ = live ? 2 : host ? 0 : 1;
                     picker_ = PICK_VARIANT;
-                } else finish();
+                } else if (live) picker_ = PICK_LIVE_MAP;    // in game: then a map for it (one vote / change for both)
+                else finish();
             } else { mapIdx = i; finish(); }
         }
         // wrap long descriptions onto two small lines
@@ -3202,10 +3295,20 @@ void Game::drawHudSettings(float x0, float y0, float wTotal) {
     float w = std::max(360 * s, wTotal * 0.5f);
     float x = x0 + wTotal * 0.5f - w * 0.5f, y = y0;
     ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 14 * (h + gap) + 3 * gap + 48 * s);
-    static const std::vector<std::string> names = {"HEALTH", "WEAPON NAME", "COOLDOWN BARS", "SPEED METER", "WEAPON LIST", "WEAPON MODEL"};
-    ui_.cycle(x, y, w, h, "ELEMENT", hudSel_, Settings::HUD_COUNT, names);
-    auto& e = cfg_.hud[hudSel_];
+    static const char* names[] = {"HEALTH", "WEAPON NAME", "COOLDOWN BARS", "SPEED METER", "WEAPON LIST", "WEAPON MODEL"};
+    // HUD elements in a dropdown; the weapon model (a 3D model, not a HUD element) has its own button
+    bool vmSel = hudSel_ == Settings::HUD_VIEWMODEL;
+    float dw = w * 0.62f, bw2 = w - dw - gap;
+    if (ui_.button(x, y, dw, h, std::string(vmSel ? "HUD ELEMENT" : names[hudSel_]) + (hudDrop_ ? "  ^" : "  V"))) hudDrop_ = !hudDrop_;
+    if (ui_.button(x + dw + gap, y, bw2, h, vmSel ? "> WEAPON MODEL <" : "WEAPON MODEL")) { hudSel_ = Settings::HUD_VIEWMODEL; hudDrop_ = false; }
     y += h + gap;
+    if (hudDrop_) { // modal until one is picked
+        ui_.panel(x - 4 * s, y - 4 * s, dw + 8 * s, Settings::HUD_VIEWMODEL * (h + gap) + 4 * s, 0.97f);
+        for (int i = 0; i < Settings::HUD_VIEWMODEL; i++, y += h + gap)
+            if (ui_.button(x, y, dw, h, (i == hudSel_ ? "> " : "") + std::string(names[i]))) { hudSel_ = i; hudDrop_ = false; }
+        return;
+    }
+    auto& e = cfg_.hud[hudSel_];
     bool shown = !e.hidden;
     ui_.toggle(x, y, w, h, "SHOW", shown); e.hidden = !shown;
     y += h + gap;

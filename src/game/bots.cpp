@@ -1,3 +1,4 @@
+#include <queue>
 #include "bots.h"
 #include "../common/profile.h"
 #include "gamemodes.h"
@@ -22,10 +23,11 @@ struct SkillParams {
 };
 const SkillParams kSkills[BOT_SKILLS] = {
     // react  error  jitter trkLag lapse  turn   accel  cone    strafe bhop   dash   lead   weapons
-    {0.48f, 0.064f, 0.012f, 0.14f, 0.32f, 4.2f,  24.0f, 0.10f,  true,  false, false, false, false}, // beginner
-    {0.34f, 0.032f, 0.007f, 0.08f, 0.22f, 6.0f,  40.0f, 0.07f,  true,  false, false, true,  true},  // intermediate
-    {0.26f, 0.020f, 0.004f, 0.04f, 0.14f, 9.0f,  75.0f, 0.05f,  true,  true,  true,  true,  true},  // advanced
-    {0.17f, 0.010f, 0.002f, 0.015f, 0.07f, 15.0f, 150.0f, 0.035f, true, true,  true,  true,  true},  // expert
+    // (each level is what the one above it used to be; beginner is a notch below the old beginner)
+    {0.60f, 0.085f, 0.016f, 0.19f, 0.40f, 3.4f,  18.0f, 0.12f,  true,  false, false, false, false}, // beginner
+    {0.48f, 0.064f, 0.012f, 0.14f, 0.32f, 4.2f,  24.0f, 0.10f,  true,  false, false, false, false}, // intermediate
+    {0.34f, 0.032f, 0.007f, 0.08f, 0.22f, 6.0f,  40.0f, 0.07f,  true,  false, false, true,  true},  // advanced
+    {0.26f, 0.020f, 0.004f, 0.04f, 0.14f, 9.0f,  75.0f, 0.05f,  true,  true,  true,  true,  true},  // expert
 };
 
 float rnd(BotBrain& b) { // xorshift, 0..1
@@ -70,6 +72,9 @@ Vec3 objective(Server& s, int id, BotBrain& b) {
         case MODE_PAYLOAD:
         case MODE_NPAYLOAD:
             if (map.payloadPath.size() >= 2) return map.payloadPoint(m.payloadDist);
+            break;
+        case MODE_POINTS:   // both sides go to the point under attack (its floor)
+            if (m.point < map.points.size()) { const AABB& p = map.points[m.point]; return {p.center().x, p.mn.y, p.center().z}; }
             break;
         case MODE_BOMB: {
             bool att = me.team == m.attackers;
@@ -133,12 +138,12 @@ Vec3 objective(Server& s, int id, BotBrain& b) {
 // Best weapon for the range that this mode allows (1v1 rulesets / duel lives restrict the pool).
 // Beginners stick to the rifle when they can.
 int pickWeapon(const Server& s, const SkillParams& sp, float dist) {
-    static const int close[] = {WPN_SHOTGUN, WPN_KNIFE, WPN_LASER, WPN_BUBBLE, WPN_ROCKET, WPN_RIFLE, WPN_STICKY, WPN_CROSSBOW, WPN_SNIPER};
-    static const int mid[]   = {WPN_ROCKET, WPN_LASER, WPN_RIFLE, WPN_STICKY, WPN_BUBBLE, WPN_CROSSBOW, WPN_SHOTGUN, WPN_SNIPER, WPN_KNIFE};
-    static const int midNoLead[] = {WPN_RIFLE, WPN_LASER, WPN_SHOTGUN, WPN_ROCKET, WPN_STICKY, WPN_CROSSBOW, WPN_BUBBLE, WPN_SNIPER, WPN_KNIFE};
-    static const int far[]   = {WPN_CROSSBOW, WPN_RIFLE, WPN_SNIPER, WPN_LASER, WPN_ROCKET, WPN_STICKY, WPN_SHOTGUN, WPN_BUBBLE, WPN_KNIFE};
-    static const int farNoLead[] = {WPN_RIFLE, WPN_SNIPER, WPN_LASER, WPN_CROSSBOW, WPN_ROCKET, WPN_STICKY, WPN_SHOTGUN, WPN_BUBBLE, WPN_KNIFE};
-    static const int vfar[]  = {WPN_SNIPER, WPN_CROSSBOW, WPN_RIFLE, WPN_ROCKET, WPN_STICKY, WPN_LASER, WPN_SHOTGUN, WPN_BUBBLE, WPN_KNIFE};
+    static const int close[] = {WPN_SHOTGUN, WPN_KNIFE, WPN_LASER, WPN_BUBBLE, WPN_ROCKET, WPN_RIFLE, WPN_STICKY, WPN_CROSSBOW, WPN_SNIPER, WPN_SYRINGE};
+    static const int mid[]   = {WPN_ROCKET, WPN_LASER, WPN_RIFLE, WPN_STICKY, WPN_BUBBLE, WPN_CROSSBOW, WPN_SHOTGUN, WPN_SNIPER, WPN_KNIFE, WPN_SYRINGE};
+    static const int midNoLead[] = {WPN_RIFLE, WPN_LASER, WPN_SHOTGUN, WPN_ROCKET, WPN_STICKY, WPN_CROSSBOW, WPN_BUBBLE, WPN_SNIPER, WPN_KNIFE, WPN_SYRINGE};
+    static const int far[]   = {WPN_CROSSBOW, WPN_RIFLE, WPN_SNIPER, WPN_LASER, WPN_ROCKET, WPN_STICKY, WPN_SHOTGUN, WPN_BUBBLE, WPN_KNIFE, WPN_SYRINGE};
+    static const int farNoLead[] = {WPN_RIFLE, WPN_SNIPER, WPN_LASER, WPN_CROSSBOW, WPN_ROCKET, WPN_STICKY, WPN_SHOTGUN, WPN_BUBBLE, WPN_KNIFE, WPN_SYRINGE};
+    static const int vfar[]  = {WPN_SNIPER, WPN_CROSSBOW, WPN_RIFLE, WPN_ROCKET, WPN_STICKY, WPN_LASER, WPN_SHOTGUN, WPN_BUBBLE, WPN_KNIFE, WPN_SYRINGE};
     if (!sp.weapons && s.weaponAllowed(WPN_RIFLE)) return WPN_RIFLE;
     const int* order = dist < 7 ? close : dist < 18 ? (sp.lead ? mid : midNoLead) : dist < 35 ? (sp.lead ? far : farNoLead) : (sp.lead ? vfar : farNoLead);
     for (int k = 0; k < WPN_COUNT; k++) if (s.weaponAllowed(order[k])) return order[k];
@@ -211,17 +216,18 @@ int NavGraph::nodeAt(const Vec3& p) const {
 Vec3 NavGraph::nextWaypoint(const Vec3& from, const Vec3& to) const {
     int a = nodeAt(from), b = nodeAt(to + Vec3(0, 0.5f, 0));
     if (a < 0 || b < 0 || a == b) return to;
-    // Dijkstra (maps have at most a few hundred surfaces)
+    // Dijkstra with a binary heap (big maps have thousands of surfaces; stops once the goal is settled)
     std::vector<float> dist(nodes.size(), 1e30f);
     std::vector<int> prev(nodes.size(), -1);
-    std::vector<bool> done(nodes.size(), false);
+    std::priority_queue<std::pair<float, int>, std::vector<std::pair<float, int>>, std::greater<>> open;
     dist[a] = 0;
-    for (;;) {
-        int u = -1;
-        for (size_t i = 0; i < nodes.size(); i++) if (!done[i] && (u < 0 || dist[i] < dist[u])) u = (int)i;
-        if (u < 0 || dist[u] >= 1e30f || u == b) break;
-        done[u] = true;
-        for (auto& [v, c] : links[u]) if (dist[u] + c < dist[v]) { dist[v] = dist[u] + c; prev[v] = u; }
+    open.push({0.0f, a});
+    while (!open.empty()) {
+        auto [d, u] = open.top();
+        open.pop();
+        if (d > dist[u]) continue;
+        if (u == b) break;
+        for (auto& [v, c] : links[u]) if (d + c < dist[v]) { dist[v] = d + c; prev[v] = u; open.push({dist[v], v}); }
     }
     if (prev[b] < 0) return to;
     std::vector<int> path; // a (exclusive) .. b
@@ -324,6 +330,7 @@ UserCmd botThink(Server& s, int id) {
             if (m.bombState == BOMB_PLANTED && me.team != m.attackers && length(m.bombPos - me.move.pos) < 1.5f) { buttons |= BTN_USE; dirOut = {}; }
         }
         if (m.mode == MODE_KOTH && s.map_.hasHill && playerBox(me.move.pos, false).overlaps(s.map_.hill)) dirOut = dirOut * 0.3f;
+        if (m.mode == MODE_POINTS && m.point < s.map_.points.size() && playerBox(me.move.pos, false).overlaps(s.map_.points[m.point])) dirOut = dirOut * 0.3f;
     };
     const ModeState& ms = s.ms_;
     bool urgent = ms.mode == MODE_BOMB && ((ms.bombState == BOMB_CARRIED && ms.bombCarrier == id) ||

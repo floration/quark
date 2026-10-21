@@ -713,6 +713,13 @@ void Server::spawnPlayer(int id) {
     ServerPlayer& p = players_[id];
     int want = rulesSpawnType(*this, id);
     std::vector<const SpawnPoint*> cands;
+    if (isStagedSpawn(want)) { // multi point: the latest stage reached (points taken) that has spawns for this side
+        bool defending = spawnDefends(want);
+        int stage = -1;
+        for (auto& sp : map_.spawns)
+            if (isStagedSpawn(sp.team) && spawnDefends(sp.team) == defending && spawnStage(sp.team) <= ms_.point) stage = std::max(stage, spawnStage(sp.team));
+        want = stagedSpawn(std::max(stage, 0), defending);
+    }
     for (auto& sp : map_.spawns) if (sp.team == want) cands.push_back(&sp);
     if (cands.empty()) for (auto& sp : map_.spawns) if (sp.team == SPAWN_ANY) cands.push_back(&sp);
     if (cands.empty()) for (auto& sp : map_.spawns) cands.push_back(&sp);
@@ -1094,6 +1101,22 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
         }
         return false;
     }
+    if (p.weapon == WPN_SYRINGE) {
+        if (!alt) { p.health = std::min(maxHealth(), p.health + wd.damage); return false; }   // a dose for yourself
+        for (auto& pr : projectiles_) {   // thrown: an arcing dart that heals the teammate it hits
+            if (pr.active) continue;
+            pr = Projectile();
+            pr.active = true;
+            pr.id = nextProjId_++;
+            pr.type = WPN_SYRINGE;
+            pr.owner = id;
+            pr.pos = eye + aim * 0.3f;
+            pr.vel = aim * kSyringeThrowSpeed;
+            pr.dieAt = time() + kSyringeThrowLife;
+            return false;
+        }
+        return false;
+    }
     if (wd.projectile) {
         if (wd.sticky) { // too many out: the oldest one fizzles
             int count = 0, oldest = -1;
@@ -1173,7 +1196,7 @@ void Server::tickProjectiles() {
         }
         if (pr.stuck) continue;
         const WeaponDef& wd = weaponDef(pr.type);
-        pr.vel.y -= (pr.type == WPN_KNIFE ? kKnifeThrowGravity : wd.gravity * pr.gravMul) * dt();
+        pr.vel.y -= (pr.type == WPN_KNIFE ? kKnifeThrowGravity : pr.type == WPN_SYRINGE ? kSyringeThrowGravity : wd.gravity * pr.gravMul) * dt();
         Vec3 step = pr.vel * dt();
         float len = length(step);
         if (len < 1e-6f) continue;
@@ -1193,7 +1216,19 @@ void Server::tickProjectiles() {
         }
         if (wall < 0 && hitPlayer < 0) { pr.pos += step; continue; }
         Vec3 at = pr.pos + dir * std::max(0.0f, best - 0.05f);
-        if (wd.sticky) {               // stick where it landed (on a player: it drops there)
+        if (pr.type == WPN_SYRINGE) {  // a teammate: 30 hp and every cooldown reset; anyone else: nothing
+            auto& o = players_[pr.owner];
+            if (hitPlayer >= 0 && modeIsTeamBased(ms_.mode) && players_[hitPlayer].team == o.team) {
+                auto& t = players_[hitPlayer];
+                t.health = std::min(maxHealth(), t.health + kSyringeHeal * tunedDamage(WPN_SYRINGE));
+                t.nextFire = time();
+                t.move.dashCooldown = 0;
+                t.move.hookCooldown = 0;
+                if (t.knifeBackAt > time()) t.knifeBackAt = time();
+                GameEvent e; e.type = EV_HEALED; e.a = (uint8_t)hitPlayer; e.b = (uint8_t)pr.owner; broadcastEvent(e);
+            }
+            pr.active = false;
+        } else if (wd.sticky) {               // stick where it landed (on a player: it drops there)
             pr.pos = hitPlayer < 0 ? at + n * 0.08f : at;
             pr.vel = {};
             pr.stuck = hitPlayer < 0;

@@ -200,6 +200,42 @@ The numbers in brackets are measured by `build/quark_tests mapreport` (see [MAP_
 - **The quay canopy and quay clutter.** Break the 60 m quay into stretches.
 - **The dock crane.** Landmark and grapple anchor.
 
+## Lodestone: multi point. Setting: a mine.
+**Why it suits multi point:**
+- An attack in five stages down the mine (A pithead, B pit floor, C workings, D crystal grotto, E mother lode). Each point is 25–90 m on from the last: every capture is a push, not a hop.
+- Every stage has its own spawns for both sides. The defenders' spawns reach each point 2–10 s before the attackers', so the defence can set up. As a point falls, both sides' spawns move on and the fight moves down the mine.
+- Each point is a raised dais with 7+ ways onto it and a ring of crates and ore bins on it, so it can be flanked and has to be held.
+- Two storeys over the whole north half (surface over workings), and caverns with ledges at 12 m in the south. Every point can be reached from above and below.
+
+**Structures:**
+
+*The surface (14 m, open sky):*
+- **The pithead (A).** The headframe over the shaft, and a ladder down the shaft into the workings. The winding house beside it.
+- **The mill.** A walk-through shed with ore bins and the crusher. The attack's first cover.
+- **Spoil heaps, sheds and a rail line with ore tubs.** They break up the long open surface.
+
+*The open pit:*
+- **Three benches down from the rim to the pit floor, with haul ramps between them.** The way from A to B. Drops of 4.5–5 m between benches are a fast, risky way down.
+- **The pit floor (B).** Sunlit, open to the rim above. The defenders get there through the adits from the workings.
+- **Adits on three sides.** Tunnels from the pit floor into the workings: the way on to C.
+- **The pit crane.** A landmark and a grapple anchor over the pit.
+
+*The workings (0 m, under the surface):*
+- **Rock pillars on a staggered 16 m grid.** Room-and-pillar mining. Alternate rows are offset, so no lane runs across the whole level.
+- **The loading bay (C).** Ore tubs on a siding, timber cribs.
+- **Two declines and two ladders up to the surface.** Ways between the storeys besides the pit and the shaft.
+- **Overhead lamps, timbering on the walls, rails with tubs.** Light, detail and cover.
+
+*The caverns (under the mountain):*
+- **Four portals from the workings.**
+- **The spine.** A rock wall between the two caverns, with two tunnels through at floor level and one along the ledges.
+- **The shaft station.** The cage landing under a sun shaft 32 m up, with a mid-shaft platform and a catwalk to the east ledge.
+- **The mother lode (E).** Ringed by big crystals.
+- **The crystal grotto.** An underground lake (fall in and you die), crystal forests, and the shore point (D).
+- **Ledges at 12 m round both caverns, with stairs and ladders.** High ground over D and E, and the defenders' last spawns.
+- **Rock ribs across the cavern floors, stalagmites and stalactites.** They split each cavern into bays, so fights happen at rifle range rather than across 100 m.
+- **Lamp posts, crystal veins in the walls, fissures with daylight.** Light, and something to steer by.
+
 ## Orbital: team vs. Setting: a space station.
 **Why it suits team vs:**
 - Each team starts in its own docking bay (fairness 1.00, spawns 5.4 s apart).
@@ -308,6 +344,7 @@ The numbers in brackets are measured by `build/quark_tests mapreport` (see [MAP_
 
 *Around the course:*
 - **Thin rods beside every weave and pad.** Staggered in height. Hopping their tops is harder than the beam.
-- **Spandrel walls across the gorge, with an arch per leg.** What carries a viaduct. They split the gorge into bays.
+- **Spandrel walls across the gorge, with an arch per leg.** What carries a viaduct. Five of them split the gorge into bays.
+- **Buttress fins beside every arch.** They stand 5 m out from both faces, so each leg threads its arch down a walled channel. Hooking the open middle of a wall and dashing along its face to an arch goes nowhere.
 - **Lanterns and strata.** Light and detail.
 - **The river far below.** What cut the gorge.

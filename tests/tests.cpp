@@ -207,6 +207,7 @@ static void testAllMaps() {
         for (auto& s : m.bombSites) goals.push_back(s.center());
         if (m.payloadPath.size() >= 2) { goals.push_back(m.payloadPath.front()); goals.push_back(m.payloadPath.back()); }
         for (auto& c : m.checkpoints) goals.push_back(c.center());
+        for (auto& p : m.points) goals.push_back({p.center().x, p.mn.y, p.center().z});   // (each point's floor)
         if (m.preferredMode == MODE_HIDE || m.preferredMode == MODE_TAG) for (auto& sp2 : m.spawns) goals.push_back(sp2.pos); // every spawn reaches every other
         int unreachable = 0;
         for (auto& sp : m.spawns)
@@ -404,6 +405,53 @@ static void testTimeTrial(uint16_t port) {
     printf("  %zu checkpoints, %zu splits, finish %d ms\n", cps.size(), splits.size(), splits.empty() ? 0 : splits.back());
     CHECK(splits.size() == cps.size() && cps.size() >= 8);
     for (size_t i = 1; i < splits.size(); i++) CHECK(splits[i] > splits[i - 1]);
+    s.stop();
+}
+
+// Multi point: attackers capture the points in order (a defender on the point holds it), each capture adds time,
+// and the spawns move up a stage.
+static void testPoints(uint16_t port) {
+    printf("multi point\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = true;
+    cfg.map = "lodestone"; cfg.mode = MODE_POINTS; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    NetClient a, b;
+    a.connect("127.0.0.1:" + std::to_string(port), "a");
+    b.connect("127.0.0.1:" + std::to_string(port), "b");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 0.4, idle);
+    s.command("forcestart");
+    pump(s, cls, 3.2, idle);
+    CHECK(s.ms_.phase == PHASE_LIVE && s.ms_.pointCount == 5 && s.ms_.point == 0);
+    int att = -1, def = -1;
+    for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected) (s.players_[i].team == s.ms_.attackers ? att : def) = i;
+    CHECK(att >= 0 && def >= 0);
+    if (att < 0 || def < 0) { s.stop(); return; }
+    auto standOn = [&](int id, int pt) { const AABB& z = s.map_.points[pt]; s.players_[id].move.pos = {z.center().x, z.mn.y + 0.6f, z.center().z}; s.players_[id].move.vel = {}; };
+    auto away = [&](int id) { s.players_[id].move.pos = s.map_.spawns[0].pos; };
+    for (int k = 0; k < 10; k++) { standOn(att, 0); away(def); pump(s, cls, 0.1, idle); }
+    CHECK(s.ms_.capture > 0.02f);                     // filling
+    float c0 = s.ms_.capture;
+    for (int k = 0; k < 10; k++) { standOn(att, 0); standOn(def, 0); pump(s, cls, 0.1, idle); }
+    CHECK(s.ms_.flags & MS_CONTESTED);                // a defender on it holds it
+    CHECK(s.ms_.capture <= c0 + 0.01f);
+    float end0 = s.phaseEnd_;
+    s.ms_.capture = 0.98f;
+    for (int k = 0; k < 10 && s.ms_.point == 0; k++) { standOn(att, 0); away(def); pump(s, cls, 0.1, idle); }
+    CHECK(s.ms_.point == 1 && s.ms_.capture < 0.5f);  // A taken: on to B
+    CHECK(s.phaseEnd_ > end0 + 60);                   // with time added
+    s.killPlayer(att, -1, 254);                        // respawn: at the stage-1 attacker spawns
+    pump(s, cls, 6.0, idle);
+    CHECK(s.players_[att].alive);
+    bool stage1 = false;
+    for (auto& sp : s.map_.spawns)
+        if (sp.team == stagedSpawn(1, false) && length(sp.pos - s.players_[att].move.pos) < 1.5f) stage1 = true;
+    CHECK(stage1);
+    pump(s, cls, 0.3, idle);
+    CHECK(a.mode().point == 1);                       // the clients know
     s.stop();
 }
 
@@ -737,9 +785,69 @@ static void testWallbang() {
     CHECK(m.boxSolid(playerBox({0, 0, 0}, false)));                        // and you can't walk through it
 }
 
+// Syringe: holding fire heals you 1 hp per 0.1 s; a thrown one heals the teammate it hits by 30 and resets their
+// cooldowns; it does nothing to an enemy.
+static void testSyringe(uint16_t port) {
+    printf("syringe\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_KOTH; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    NetClient a, b;
+    a.connect("127.0.0.1:" + std::to_string(port), "a");
+    b.connect("127.0.0.1:" + std::to_string(port), "b");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 1.0, idle);
+    b.sendCommand("team " + std::string(s.players_[a.clientId()].team == TEAM_A ? "a" : "b"));
+    pump(s, cls, 2.5, idle);   // (respawns on the new team)
+    auto& pa = s.players_[a.clientId()];
+    auto& pb = s.players_[b.clientId()];
+    CHECK(pa.team == pb.team && pa.alive && pb.alive);
+    pump(s, cls, 0.2, [](int) { UserCmd c; c.weapon = WPN_SYRINGE; return c; });   // (out first: switching with fire held doesn't fire)
+    pa.health = 50;
+    pump(s, cls, 1.0, [](int i) { UserCmd c; c.weapon = WPN_SYRINGE; if (i == 0) c.buttons = BTN_FIRE; return c; });
+    printf("  held 1 s: %.0f hp (from 50)\n", pa.health);
+    CHECK(pa.health >= 55 && pa.health <= 62);
+    // b throws at a, 5 m in front of it (yaw 0 looks down -z)
+    pa.health = 40; pa.move.dashCooldown = 1.5f; pa.nextFire = s.time() + 5;
+    Vec3 base = pb.move.pos;
+    auto place = [&] { pb.move.pos = base; pb.move.vel = {}; pa.move.pos = base + Vec3(0, 0, -5); pa.move.vel = {}; };
+    for (int k = 0; k < 5; k++) { place(); pump(s, cls, 0.02, idle); }
+    int tick = 0;
+    pump(s, cls, 0.5, [&](int i) { UserCmd c; c.weapon = WPN_SYRINGE; if (i == 1) { c.yaw = 0; c.pitch = -0.05f; if (tick++ < 30) c.buttons = BTN_ALTFIRE; } if (i == 0) place(); return c; });
+    printf("  thrown: %.0f hp (from 40), dash cooldown %.2f\n", pa.health, pa.move.dashCooldown);
+    CHECK(pa.health >= 69 && pa.health <= 72);
+    CHECK(pa.move.dashCooldown <= 0.01f && pa.nextFire <= s.time());
+    s.stop();
+}
+
+// An editor ladder is one object: its rails and rungs are generated from the volume (re-spaced when it's stretched),
+// never saved as boxes, and climbable like any other ladder.
+static void testEditorLadder() {
+    printf("editor ladder\n");
+    Map m;
+    CHECK(m.parse("box -10 -1 -10 10 0 10\nbox -10 0 -1 10 6 0\nladder -0.45 0 0 0.45 5 0.7 auto\nspawn any 0 0 4\n"));
+    size_t made = m.brushes.size() - m.editableBrushes();
+    CHECK(m.editableBrushes() == 2 && made >= 10);             // 2 rails + a rung every 0.4 m
+    CHECK(m.serialize().find("ladder -0.45 0 0 0.45 5 0.7 auto") != std::string::npos);
+    CHECK(m.serialize().find("trim") == std::string::npos);    // (the rungs aren't saved)
+    CHECK(applyMapEdit(m, "d set 0 1 -0.45 0 0 0.45 9 0.7"));   // stretch it 4 m taller
+    CHECK(m.brushes.size() - m.editableBrushes() > made + 8);
+    CHECK(applyMapEdit(m, "b ins 2 0 3 0 3 4 1 4"));            // a new box goes before the generated ones
+    CHECK(m.editableBrushes() == 3 && !m.brushes[2].generated);
+    CHECK(applyMapEdit(m, "d del 0") && m.brushes.size() == 3);
+    MoveState ms; ms.pos = {0, 0, 0.45f};                       // and it climbs (put one back, plain volume)
+    CHECK(applyMapEdit(m, "d ins 0 1 -0.45 0 0 0.45 7 0.7"));
+    for (int t = 0; t < 600 && ms.pos.y <= 5.0f; t++) { UserCmd c; c.forward = 127; c.yaw = 0; c.pitch = 0.3f; c.msec = 8; pmove(ms, c, m); }
+    if (ms.pos.y <= 5.0f) printf("  climbed to %.2f %.2f %.2f\n", ms.pos.x, ms.pos.y, ms.pos.z);
+    CHECK(ms.pos.y > 5.0f);
+}
+
 static void testTimeToKill() {
     printf("time to kill with perfect aim (1-4.5 s), no shot over 50\n");
     for (int w = 0; w < WPN_COUNT; w++) {
+        if (w == WPN_SYRINGE) continue;    // (it heals)
         const WeaponDef& d = weaponDef(w);
         float perShot = d.damage * d.pellets;
         int shots = (int)std::ceil(kMaxHealth / perShot - 1e-4f);
@@ -1103,7 +1211,7 @@ static void testStairs() {
                     UserCmd cmd; cmd.yaw = std::atan2(-to.x, -to.z); cmd.pitch = 0; cmd.forward = 127; cmd.msec = 8;
                     if (dot(angleForward(cmd.yaw, 0), Vec3(to.x, 0, to.z)) < 0) cmd.yaw += PI;
                     pmove(ms, cmd, m);
-                    if (getenv("STAIRS_TRACE") && name == getenv("STAIRS_TRACE") && t % 40 == 0) printf("      t %d pos %.2f %.2f %.2f vel %.2f %.2f %.2f\n", t, ms.pos.x, ms.pos.y, ms.pos.z, ms.vel.x, ms.vel.y, ms.vel.z);
+                    if (getenv("STAIRS_TRACE") && name == getenv("STAIRS_TRACE") && (t % 40 == 0 || (getenv("STAIRS_ALL") && t > 110 && t < 150))) printf("      t %d pos %.2f %.2f %.2f vel %.2f %.2f %.2f\n", t, ms.pos.x, ms.pos.y, ms.pos.z, ms.vel.x, ms.vel.y, ms.vel.z);
                     up = ms.pos.y > top - 0.1f && (ms.flags & MF_ONGROUND);
                     if (ms.pos.y < base - 1.0f) break;
                 }
@@ -1918,8 +2026,8 @@ static void testBots(uint16_t& port) {
         s.stop();
     }
     // every mode with bots on both sides: no crashes, things happen
-    const char* maps[MODE_COUNT] = {"bastion", "bastion", "foundry", "bastion", "bastion", "bastion", "bastion", "clockwork", "clockwork", "clockwork", "hamlet", "hamlet"};
-    static_assert(MODE_COUNT == 12, "add the new mode's map here");
+    const char* maps[MODE_COUNT] = {"bastion", "bastion", "foundry", "bastion", "bastion", "bastion", "bastion", "clockwork", "clockwork", "clockwork", "hamlet", "hamlet", "lodestone"};
+    static_assert(MODE_COUNT == 13, "add the new mode's map here");
     for (int mode = 0; mode < MODE_COUNT; mode++) {
         Server s;
         ServerConfig cfg;
@@ -2031,6 +2139,10 @@ int main(int argc, char** argv) {
     }
     if (argc >= 2 && std::string(argv[1]) == "ladders") { testLadders(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "stairs") { testStairs(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "points") { setTimeScale(kTestTimeScale); testPoints(29995); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "syringe") { setTimeScale(kTestTimeScale); testSyringe(29996); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "edladder") { testEditorLadder(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "allmaps") { testAllMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "custom") { testCustomMode(29990); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(29980); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(29450); return g_fail ? 1 : 0; }
@@ -2040,8 +2152,11 @@ int main(int argc, char** argv) {
     testTickRateIndependence();
     testAllMaps();
     testStairs();
+    testEditorLadder();
     testRejoin(29980);
     testCustomMode(29990);
+    testPoints(29995);
+    testSyringe(29996);
     {   // the map bar: every map scores at least 7 in every category but originality (docs/MAP_METRICS.md)
         printf("map scores\n");
         std::string p = (std::filesystem::temp_directory_path() / "quark_map_report.md").string();

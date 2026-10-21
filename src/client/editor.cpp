@@ -18,8 +18,8 @@ const Color kWhite = {1, 1, 1, 1};
 const Color kGrey = {0.7f, 0.72f, 0.75f, 1};
 const Color kRed = {1, 0.35f, 0.3f, 1};
 const float kGrids[] = {0.25f, 0.5f, 1.0f, 2.0f, 4.0f};
-const char kKindChar[] = "bslzhcp"; // ED_* -> edit op kind
-const char* kKindNames[] = {"BOX", "SPAWN", "LIGHT", "BOMB SITE", "HILL", "CHECKPOINT", "PAYLOAD PATH POINT"};
+const char kKindChar[] = "bslzhcpd"; // ED_* -> edit op kind
+const char* kKindNames[] = {"BOX", "SPAWN", "LIGHT", "BOMB SITE", "HILL", "CHECKPOINT", "PAYLOAD PATH POINT", "LADDER"};
 const Vec3 kTeamColors[] = {{0.25f, 0.6f, 1.0f}, {1.0f, 0.35f, 0.25f}, {0.9f, 0.9f, 0.9f}, {0.3f, 1.0f, 0.4f}};
 
 float snapTo(float v, float g) { return std::round(v / g) * g; }
@@ -28,13 +28,14 @@ AABB around(const Vec3& p, const Vec3& half) { return {p - half, p + half}; }
 
 size_t kindCount(const Map& m, int kind) {
     switch (kind) {
-        case 0: return m.brushes.size();
+        case 0: return m.editableBrushes();   // (an editor ladder's rails and rungs come after these)
         case 1: return m.spawns.size();
         case 2: return m.lights.size();
         case 3: return m.bombSites.size();
         case 4: return m.hasHill ? 1 : 0;
         case 5: return m.checkpoints.size();
         case 6: return m.payloadPath.size();
+        case 7: return m.ladders.size();
     }
     return 0;
 }
@@ -45,6 +46,7 @@ AABB* kindBox(Map& m, int kind, int i) {
         case 3: return &m.bombSites[i];
         case 4: return &m.hill;
         case 5: return &m.checkpoints[i];
+        case 7: return &m.ladders[i];
     }
     return nullptr;
 }
@@ -163,6 +165,7 @@ AABB Game::edBounds(const Map& m, EdSel sel) const {
         case ED_HILL: return m.hill;
         case ED_CHECK: return m.checkpoints[sel.idx];
         case ED_PATH: return around(m.payloadPath[sel.idx], {0.3f, 0.3f, 0.3f});
+        case ED_LADDER: return m.ladders[sel.idx];
     }
     return {};
 }
@@ -207,7 +210,8 @@ void Game::edDuplicate() {
     Map tmp = ed_;
     int i = edSel_.idx;
     switch (edSel_.kind) {
-        case ED_BRUSH: tmp.brushes.push_back(tmp.brushes[i]); break;
+        case ED_BRUSH: tmp.brushes.insert(tmp.brushes.begin() + tmp.editableBrushes(), tmp.brushes[i]); break;
+        case ED_LADDER: tmp.ladders.push_back(tmp.ladders[i]); tmp.ladderAuto.resize(tmp.ladders.size() - 1, 0); tmp.ladderAuto.push_back(tmp.ladderAuto[i]); break;
         case ED_SPAWN: tmp.spawns.push_back(tmp.spawns[i]); break;
         case ED_LIGHT: tmp.lights.push_back(tmp.lights[i]); break;
         case ED_SITE: tmp.bombSites.push_back(tmp.bombSites[i]); break;
@@ -228,7 +232,15 @@ void Game::edAdd(int kind, int variant) {
     if (t >= 0 && n.y < -0.5f) at.y -= 1; // hit a ceiling: hang below it
     Map tmp = ed_;
     switch (kind) {
-        case ED_BRUSH: tmp.brushes.push_back({{at - Vec3(1, 0, 1), at + Vec3(1, 1, 1)}, variant}); break;
+        case ED_BRUSH: tmp.brushes.insert(tmp.brushes.begin() + tmp.editableBrushes(), Brush{{at - Vec3(1, 0, 1), at + Vec3(1, 1, 1)}, variant}); break;
+        case ED_LADDER: { // a ladder facing you, 4 m tall: one object (drag its sides to stretch it; rungs follow)
+            Vec3 f = angleForward(yaw_, 0);
+            Vec3 half = std::fabs(f.x) > std::fabs(f.z) ? Vec3(0.35f, 0, 0.45f) : Vec3(0.45f, 0, 0.35f);
+            tmp.ladders.push_back({at - half, at + half + Vec3(0, 5, 0)});
+            tmp.ladderAuto.resize(tmp.ladders.size() - 1, 0);
+            tmp.ladderAuto.push_back(1);
+            break;
+        }
         case ED_SPAWN: tmp.spawns.push_back({at, std::round(yaw_ / (PI / 4)) * (PI / 4), variant}); break;
         case ED_LIGHT: tmp.lights.push_back({at + Vec3(0, 2, 0), 10, 1}); break;
         case ED_SITE: tmp.bombSites.push_back({at - Vec3(3, 0, 3), at + Vec3(3, 3, 3)}); break;
@@ -251,7 +263,8 @@ Game::EdSel Game::edPick(const Vec3& o, const Vec3& dir) const {
     for (size_t i = 0; i < ed_.spawns.size(); i++) test(ED_SPAWN, (int)i, edBounds(ed_, {ED_SPAWN, (int)i}), -0.5f);
     for (size_t i = 0; i < ed_.lights.size(); i++) test(ED_LIGHT, (int)i, edBounds(ed_, {ED_LIGHT, (int)i}), -0.5f);
     for (size_t i = 0; i < ed_.payloadPath.size(); i++) test(ED_PATH, (int)i, edBounds(ed_, {ED_PATH, (int)i}), -0.5f);
-    for (size_t i = 0; i < ed_.brushes.size(); i++) test(ED_BRUSH, (int)i, ed_.brushes[i].box, 0);
+    for (size_t i = 0; i < ed_.brushes.size(); i++) if (!ed_.brushes[i].generated) test(ED_BRUSH, (int)i, ed_.brushes[i].box, 0);
+    for (size_t i = 0; i < ed_.ladders.size(); i++) test(ED_LADDER, (int)i, ed_.ladders[i], -0.3f);
     for (size_t i = 0; i < ed_.bombSites.size(); i++) test(ED_SITE, (int)i, ed_.bombSites[i], 0.25f);
     for (size_t i = 0; i < ed_.checkpoints.size(); i++) test(ED_CHECK, (int)i, ed_.checkpoints[i], 0.25f);
     if (ed_.hasHill) test(ED_HILL, 0, ed_.hill, 0.25f);
@@ -273,6 +286,12 @@ std::vector<Game::EdHandle> Game::edHandles() const {
             else p[a] = sg > 0 ? b.mx[a] : b.mn[a];
             hs.push_back({p, a, sg, point});
         }
+    if (!point) // boxes, zones, ladders: three move arrows out past the + faces (the face squares resize)
+        for (int a = 0; a < 3; a++) {
+            Vec3 p = c;
+            p[a] = b.mx[a] + std::max(1.0f, (b.mx[a] - b.mn[a]) * 0.25f);
+            hs.push_back({p, a, 1, true});
+        }
     return hs;
 }
 
@@ -281,7 +300,9 @@ Vec3 Game::edMouseRay() const {
     Vec3 f = angleForward(yaw_, pitch_);
     if (edLook_) return f;
     Vec3 right = normalize(cross(f, {0, 1, 0})), up = cross(right, f);
-    float H = (float)r_.height(), W = (float)r_.width() - 320 * (H / 720.0f); // the 3D view stops at the panel
+    // the 3D view stops at the panel (while the view is drawn the renderer is already that wide: don't take the
+    // panel off twice, or the ray only matches the mouse at the centre of the view)
+    float H = (float)r_.height(), W = std::min((float)r_.width(), (float)edFullW_ - 320 * (H / 720.0f));
     float tx = std::tan(deg2rad(cfg_.fov) * 0.5f), ty = tx * H / W;
     float nx = uiIn_.mx / W * 2 - 1, ny = 1 - uiIn_.my / H * 2;
     return normalize(f + right * (nx * tx) + up * (ny * ty));
@@ -463,6 +484,7 @@ void Game::editorFrame(double dt) {
     // ---- the 3D view covers the screen left of the panel (so its center, where things get added, is
     // the middle of what you see)
     const int fullW = r_.width();
+    edFullW_ = fullW;
     r_.resize((int)panelX, (int)H);
     r_.setCamera(edCam_, yaw_, pitch_, cfg_.fov);
     auto closestOnAxis = [&](const Vec3& p0, int axis, const Vec3& d) { // param along the axis nearest the mouse ray
@@ -524,7 +546,10 @@ void Game::editorFrame(double dt) {
     // ---- 3D view
     const Vec3 matColor[6] = {r_.baseColor, r_.accentColor, {0.22f, 0.22f, 0.24f}, r_.metalColor, r_.glowColor, r_.metalColor * 0.7f};
     if (!edBaked_)
-        for (auto& b : ed_.brushes) r_.box(b.box.center(), (b.box.mx - b.box.mn) * 0.5f, 0, matColor[b.material], 1.0f, false);
+        for (auto& b : ed_.brushes) { // (water, lava and trim, 6-8, past the table: blue, orange, accent)
+            Vec3 c = b.material < 6 ? matColor[b.material] : b.material == 6 ? Vec3(0.2f, 0.4f, 0.8f) : b.material == 7 ? Vec3(1.0f, 0.4f, 0.1f) : r_.accentColor;
+            r_.box(b.box.center(), (b.box.mx - b.box.mn) * 0.5f, 0, c, 1.0f, false);
+        }
     for (auto& sp : ed_.spawns) {
         Vec3 c = kTeamColors[sp.team & 3];
         r_.box(sp.pos + Vec3(0, 0.9f, 0), {0.3f, 0.9f, 0.3f}, sp.yaw, c, 1.0f, false);
@@ -539,6 +564,7 @@ void Game::editorFrame(double dt) {
     for (size_t i = 0; i < ed_.checkpoints.size(); i++)
         r_.translucentBox(ed_.checkpoints[i], i + 1 == ed_.checkpoints.size() ? Color{1, 1, 1, 0.3f} : Color{0.3f, 1.0f, 0.4f, 0.22f});
     if (ed_.hasHill) r_.translucentBox(ed_.hill, {1.0f, 0.9f, 0.3f, 0.22f});
+    for (auto& l : ed_.ladders) r_.translucentBox(l, {0.4f, 0.8f, 1.0f, 0.18f});
     if (edSelValid()) {
         AABB b = edBounds(ed_, edSel_);
         b.mn -= Vec3(0.02f, 0.02f, 0.02f); b.mx += Vec3(0.02f, 0.02f, 0.02f);
@@ -685,6 +711,8 @@ void Game::editorFrame(double dt) {
     if (ui_.button(x, y, w3, h, "BOMB SITE")) edAdd(ED_SITE, 0);
     if (ui_.button(x + w3 + gap, y, w3, h, "HILL")) edAdd(ED_HILL, 0);
     if (ui_.button(x + 2 * (w3 + gap), y, w3, h, "CHECKPT")) edAdd(ED_CHECK, 0);
+    row();
+    if (ui_.button(x, y, w, h, "LADDER (ONE OBJECT: STRETCH IT, RUNGS FOLLOW)")) edAdd(ED_LADDER, 0);
     row();
     {
         static const std::vector<std::string> grids = {"GRID 0.25 M", "GRID 0.5 M", "GRID 1 M", "GRID 2 M", "GRID 4 M"};

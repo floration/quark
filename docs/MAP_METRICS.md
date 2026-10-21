@@ -104,6 +104,7 @@ Each mode the map supports gets the measurement that matters for it:
 | bomb | Each team's distance to the nearest site. Defenders should arrive first so they can set up. |
 | ffa / tourney | Spawn count, the closest pair of spawns, and the share of spawn pairs that can see each other. Lower is better: spawns in view of each other mean spawn kills. |
 | race | Walking length of the checkpoint route, as time at running speed (8 m/s) and at a good strafe-jump speed (20 m/s). |
+| multi point | For each point: the attackers' and the defenders' walk to it from the spawns that stage uses. One-sided by design (sides swap), so no fairness score. |
 | hide and seek / tag | Hiding spots: the share of floor samples visible from fewer than 5% of the others. |
 | ranked | The share of sightlines under 20 m (rifle / rocket fights) and over 20 m (laser / crossbow / sniper). Vanilla wants a mix, vampire (laser) wants mid range, instagib (sniper) wants long. |
 
@@ -131,6 +132,7 @@ Each map is built for one mode (its `for` line), and is judged on what that mode
 | free for all | 12+ spawns (3), no spawn in sight of another (4; 30% in sight scores nothing), loops (3) |
 | race | the race tech check above |
 | hide and seek / tag | hiding spots on 15% of the floor and loops; hide weighs hiding 6:4, tag weighs loops 6:4 (a chase needs ways round) |
+| multi point | 3–6 points (1.5), 25–90 m of walking from one point to the next (2), the defenders' stage spawns reach each point 2–10 s before the attackers' (3), cover on 35% of each point (2), 3+ ways onto each point (1.5) |
 
 ## The bar
 Every map must score **at least 7 in decor, layout, movement, creativity, mode fit and balance** (balance where it has team modes). It must also declare one mode and a setting.

@@ -125,7 +125,7 @@ static bool readBox(std::istringstream& ls, AABB& b) {
 }
 
 bool Map::parse(const std::string& text, std::string* err) {
-    brushes.clear(); spawns.clear(); bombSites.clear(); checkpoints.clear(); ladders.clear(); payloadPath.clear(); lights.clear();
+    brushes.clear(); spawns.clear(); bombSites.clear(); checkpoints.clear(); ladders.clear(); ladderAuto.clear(); payloadPath.clear(); lights.clear(); points.clear();
     hasHill = false;
     hasWallbang = false;
     hasPalette = false;
@@ -170,13 +170,19 @@ bool Map::parse(const std::string& text, std::string* err) {
             ls >> yawDeg;
             s.yaw = deg2rad(yawDeg);
             s.team = team == "a" ? SPAWN_A : team == "b" ? SPAWN_B : team == "race" ? SPAWN_RACE : SPAWN_ANY;
+            if ((team.rfind("att", 0) == 0 || team.rfind("def", 0) == 0) && team.size() == 4 && team[3] >= '0' && team[3] <= '0' + kMaxSpawnStage)
+                s.team = stagedSpawn(team[3] - '0', team[0] == 'd');
             if (ok) spawns.push_back(s);
         } else if (kw == "site") {
             AABB b; ok = readBox(ls, b); if (ok) bombSites.push_back(b);
+        } else if (kw == "point") {
+            AABB b; ok = readBox(ls, b); if (ok) points.push_back(b);
         } else if (kw == "hill") {
             ok = readBox(ls, hill); hasHill = ok;
         } else if (kw == "ladder") {
-            AABB b; ok = readBox(ls, b); if (ok) ladders.push_back(b);
+            AABB b; ok = readBox(ls, b);
+            std::string flag;
+            if (ok) { ladders.push_back(b); ladderAuto.push_back(ls >> flag && flag == "auto"); }
         } else if (kw == "checkpoint") {
             AABB b; ok = readBox(ls, b); if (ok) checkpoints.push_back(b);
         } else if (kw == "path") {
@@ -222,6 +228,7 @@ bool Map::parse(const std::string& text, std::string* err) {
         if (err) *err = "map needs at least one box and one spawn";
         return false;
     }
+    genLadderBrushes();
     buildGrid();
     return true;
 }
@@ -254,16 +261,22 @@ std::string Map::serialize() const {
         o += "palette"; c("base", palBase); c("accent", palAccent); c("metal", palMetal); c("glow", palGlow); c("sky", palSky); o += "\n\n";
     }
     static const char* matNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim"};
-    for (auto& br : brushes) box(matNames[br.material], br.box);
+    for (auto& br : brushes) if (!br.generated) box(matNames[br.material], br.box);
     o += "\n";
     static const char* teams[] = {"a", "b", "any", "race"};
     for (auto& sp : spawns) {
-        snprintf(b, sizeof b, "spawn %s %g %g %g %g\n", teams[sp.team & 3], sp.pos.x, sp.pos.y, sp.pos.z, std::round(sp.yaw * 180.0f / PI));
+        std::string tn = isStagedSpawn(sp.team) ? std::string(spawnDefends(sp.team) ? "def" : "att") + char('0' + spawnStage(sp.team)) : teams[sp.team & 3];
+        snprintf(b, sizeof b, "spawn %s %g %g %g %g\n", tn.c_str(), sp.pos.x, sp.pos.y, sp.pos.z, std::round(sp.yaw * 180.0f / PI));
         o += b;
     }
     for (auto& a : bombSites) box("site", a);
     if (hasHill) box("hill", hill);
-    for (auto& a : ladders) box("ladder", a);
+    for (auto& a : points) box("point", a);
+    for (size_t k = 0; k < ladders.size(); k++) {
+        snprintf(b, sizeof b, "ladder %g %g %g %g %g %g%s\n", ladders[k].mn.x, ladders[k].mn.y, ladders[k].mn.z, ladders[k].mx.x, ladders[k].mx.y, ladders[k].mx.z,
+                 k < ladderAuto.size() && ladderAuto[k] ? " auto" : "");
+        o += b;
+    }
     for (auto& a : checkpoints) box("checkpoint", a);
     for (auto& p : payloadPath) { snprintf(b, sizeof b, "path %g %g %g\n", p.x, p.y, p.z); o += b; }
     for (auto& l : lights) { snprintf(b, sizeof b, "light %g %g %g %g %g\n", l.pos.x, l.pos.y, l.pos.z, l.radius, l.intensity); o += b; }
@@ -286,6 +299,8 @@ std::string describeMapObject(const Map& m, char kind, const char* verb, int i) 
         case 'c': snprintf(t, sizeof t, "c %s %d %s", verb, i, fmtBox(m.checkpoints[i]).c_str()); break;
         case 'p': { auto& p = m.payloadPath[i]; snprintf(t, sizeof t, "p %s %d %.9g %.9g %.9g", verb, i, p.x, p.y, p.z); break; }
         case 'h': snprintf(t, sizeof t, "h set 0 %d %s", m.hasHill ? 1 : 0, fmtBox(m.hill).c_str()); break;
+        case 'o': snprintf(t, sizeof t, "o %s %d %s", verb, i, fmtBox(m.points[i]).c_str()); break;
+        case 'd': snprintf(t, sizeof t, "d %s %d %d %s", verb, i, i < (int)m.ladderAuto.size() ? m.ladderAuto[i] : 0, fmtBox(m.ladders[i]).c_str()); break;
         default: t[0] = 0;
     }
     return t;
@@ -350,7 +365,7 @@ bool applyMapEdit(Map& m, const std::string& op) {
     if (kind == "b") ok = edit(m.brushes, [&](Brush& b) { return (bool)(in >> b.material) && b.material >= 0 && b.material <= 5 && readBox(b.box); }, 1, 60000);
     else if (kind == "s") ok = edit(m.spawns, [&](SpawnPoint& sp) {
         float yaw;
-        if (!(in >> sp.team) || sp.team < 0 || sp.team > 3 || !readVec(sp.pos) || !(in >> yaw) || !okNum(yaw)) return false;
+        if (!(in >> sp.team) || sp.team < 0 || sp.team > stagedSpawn(kMaxSpawnStage, true) || !readVec(sp.pos) || !(in >> yaw) || !okNum(yaw)) return false;
         sp.yaw = deg2rad(yaw);
         return true;
     }, 1, 256);
@@ -360,17 +375,56 @@ bool applyMapEdit(Map& m, const std::string& op) {
     else if (kind == "z") ok = edit(m.bombSites, readBox, 0, 16);
     else if (kind == "c") ok = edit(m.checkpoints, readBox, 0, 128);
     else if (kind == "p") ok = edit(m.payloadPath, readVec, 0, 512);
+    else if (kind == "o") ok = edit(m.points, readBox, 0, 16);
+    else if (kind == "d") { // ladders: the volume and whether it draws its own rails / rungs (kept in step)
+        m.ladderAuto.resize(m.ladders.size(), 0);
+        if (verb == "del") {
+            ok = i >= 0 && (size_t)i < m.ladders.size();
+            if (ok) { m.ladders.erase(m.ladders.begin() + i); m.ladderAuto.erase(m.ladderAuto.begin() + i); }
+        } else {
+            int au = 0;
+            AABB b;
+            ok = (bool)(in >> au) && readBox(b) && b.mx.y - b.mn.y <= 64;
+            if (ok && verb == "ins") { ok = i >= 0 && (size_t)i <= m.ladders.size() && m.ladders.size() < 256; if (ok) { m.ladders.insert(m.ladders.begin() + i, b); m.ladderAuto.insert(m.ladderAuto.begin() + i, au != 0); } }
+            else if (ok) { ok = i >= 0 && (size_t)i < m.ladders.size(); if (ok) { m.ladders[i] = b; m.ladderAuto[i] = au != 0; } }
+        }
+    }
     else if (kind == "h") {
         int has;
         AABB b;
         ok = verb == "set" && (bool)(in >> has) && readBox(b);
         if (ok) { m.hasHill = has != 0; m.hill = b; }
     }
-    if (ok && kind == "b") m.rebuild();
+    if (ok && (kind == "b" || kind == "d")) m.rebuild();
     return ok;
 }
 
+// An editor ladder is one object: its climb volume. Its rails (both sides) and rungs (every 0.4 m) are made from
+// it, so moving or stretching the ladder moves and re-spaces them. They're decoration (trim: not solid).
+void Map::genLadderBrushes() {
+    brushes.erase(std::remove_if(brushes.begin(), brushes.end(), [](const Brush& b) { return b.generated; }), brushes.end());
+    for (size_t k = 0; k < ladders.size() && k < ladderAuto.size(); k++) {
+        if (!ladderAuto[k]) continue;
+        const AABB& l = ladders[k];
+        bool alongX = (l.mx.x - l.mn.x) >= (l.mx.z - l.mn.z);   // the rungs run along the wider side
+        float top = std::max(l.mn.y + 0.5f, l.mx.y - 1.0f);       // (the volume reaches a metre over the top)
+        auto add = [&](float a0, float y0, float a1, float y1, float d0, float d1) {
+            Brush b;
+            b.material = 8;
+            b.generated = true;
+            b.box = alongX ? AABB{{a0, y0, d0}, {a1, y1, d1}} : AABB{{d0, y0, a0}, {d1, y1, a1}};
+            brushes.push_back(b);
+        };
+        float w0 = alongX ? l.mn.x : l.mn.z, w1 = alongX ? l.mx.x : l.mx.z;
+        float dc = alongX ? (l.mn.z + l.mx.z) * 0.5f : (l.mn.x + l.mx.x) * 0.5f;
+        add(w0, l.mn.y, w0 + 0.08f, top, dc - 0.04f, dc + 0.04f);
+        add(w1 - 0.08f, l.mn.y, w1, top, dc - 0.04f, dc + 0.04f);
+        for (float y = l.mn.y + 0.35f; y < top; y += 0.4f) add(w0 + 0.08f, y, w1 - 0.08f, y + 0.06f, dc - 0.03f, dc + 0.03f);
+    }
+}
+
 void Map::rebuild() {
+    genLadderBrushes();
     bounds = {{1e9f, 1e9f, 1e9f}, {-1e9f, -1e9f, -1e9f}};
     hasWallbang = false;
     for (auto& b : brushes) {
@@ -560,6 +614,11 @@ bool Map::canSupportMode(int mode) const {
         case MODE_FFA: return !spawns.empty();
         case MODE_HIDE:
         case MODE_TAG: return spawns.size() >= 2;
+        case MODE_POINTS: { // capture zones, and attacker and defender spawns for the start
+            bool att = false, def = false;
+            for (auto& s : spawns) if (isStagedSpawn(s.team) && spawnStage(s.team) == 0) (spawnDefends(s.team) ? def : att) = true;
+            return points.size() >= 2 && att && def;
+        }
     }
     return false;
 }

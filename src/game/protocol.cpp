@@ -55,6 +55,7 @@ static void writeMode(Writer& w, const ModeState& m) {
     w.u8((uint8_t)clampf(std::round(m.actionProgress * 255.0f), 0, 255)); w.u8(m.actionPlayer);
     w.u8(m.hillOwner); w.i16(m.target);
     w.f32(m.payloadDist); w.f32(m.payloadLen); // exact: the cart is solid and prediction must match
+    w.u8(m.point); w.u8(m.pointCount); w.u8((uint8_t)clampf(std::round(m.capture * 100.0f), 0, 100));
     w.u8(m.voteActive); w.u8(m.voteYes); w.u8(m.voteNo); w.u8(m.voteVoters); ds(m.voteTimeLeft); w.u8(m.duelMod); w.u8(m.arenaVariant); w.u16(m.weaponMask);
 }
 static void readMode(Reader& r, ModeState& m) {
@@ -64,6 +65,7 @@ static void readMode(Reader& r, ModeState& m) {
     m.actionProgress = r.u8() / 255.0f; m.actionPlayer = r.u8();
     m.hillOwner = r.u8(); m.target = r.i16();
     m.payloadDist = r.f32(); m.payloadLen = r.f32();
+    m.point = r.u8(); m.pointCount = r.u8(); m.capture = r.u8() / 100.0f;
     m.voteActive = r.u8(); m.voteYes = r.u8(); m.voteNo = r.u8(); m.voteVoters = r.u8(); m.voteTimeLeft = r.u16() / 10.0f; m.duelMod = r.u8(); m.arenaVariant = r.u8(); m.weaponMask = r.u16();
 }
 

@@ -17,6 +17,8 @@ void Binds::setDefaults() {
     set(A_DASH, GLFW_KEY_LEFT_SHIFT);
     set(A_GRAPPLE, GLFW_KEY_Q);
     for (int w = 0; w < 8; w++) set(A_WEAPON1 + w, GLFW_KEY_1 + w);
+    set(A_WEAPON9, GLFW_KEY_9);
+    set(A_WEAPON10, GLFW_KEY_0);
     set(A_NEXTWEAPON, kWheelDown);
     set(A_PREVWEAPON, kWheelUp);
     set(A_SCORES, GLFW_KEY_TAB);
@@ -31,8 +33,8 @@ void Binds::setDefaults() {
 const char* actionName(int a) {
     static const char* n[A_COUNT] = {
         "FORWARD", "BACK", "LEFT", "RIGHT", "JUMP", "CROUCH", "FIRE", "ALT FIRE", "USE", "DASH", "GRAPPLE",
-        "ROCKET", "RIFLE", "LASER", "SHOTGUN", "SNIPER", "STICKY", "CROSSBOW", "KNIFE", // weapon slots 1-8
-        "NEXT WEAP", "PREV WEAP", "SCOREBOARD", "CHAT", "VOTE YES", "VOTE NO", "PERF STATS", "SCREENSHOT", "VOTE START", "(UNUSED)",
+        "ROCKET", "RIFLE", "LASER", "SHOTGUN", "SNIPER", "STICKY", "CROSSBOW", "BUBBLE", // weapon slots 1-8
+        "NEXT WEAP", "PREV WEAP", "SCOREBOARD", "CHAT", "VOTE YES", "VOTE NO", "PERF STATS", "SCREENSHOT", "VOTE START", "KNIFE", "SYRINGE",
     };
     return a >= 0 && a < A_COUNT ? n[a] : "?";
 }

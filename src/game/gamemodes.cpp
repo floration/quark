@@ -22,6 +22,11 @@ constexpr float kCartRange = 4.0f;
 constexpr float kCartSpeed = 1.6f;
 constexpr float kCartRollback = 0.6f;
 constexpr float kCartIdleBeforeRollback = 10.0f;
+// MULTI POINT
+constexpr float kPointRoundTime = 150.0f;  // the attackers' clock at the start
+constexpr float kPointBonus = 90.0f;       // added for every point taken
+constexpr float kCaptureTime = 12.0f;      // one attacker alone; more go faster (up to twice as fast)
+constexpr float kCaptureDecay = 0.05f;     // a point the attackers leave loses this much capture a second
 
 int roundsToWin(const Server& s) {
     if (s.cfg_.roundsToWin > 0) return s.cfg_.roundsToWin;
@@ -32,7 +37,8 @@ int roundsToWin(const Server& s) {
         case MODE_TOURNEY: return 3; // best of 5 per match
         case MODE_BOMB: return 7;
         case MODE_RACE: return 3;
-        case MODE_PAYLOAD: return 1; // each team attacks once
+        case MODE_PAYLOAD:
+        case MODE_POINTS: return 1; // each team attacks once
         default: return 1;
     }
 }
@@ -42,6 +48,7 @@ float roundTime(const Server& s) {
         case MODE_BOMB: return 105.0f;
         case MODE_RACE: return 300.0f; // two loops of Viaduct
         case MODE_PAYLOAD: return 240.0f;
+        case MODE_POINTS: return kPointRoundTime;
         case MODE_NPAYLOAD: return 300.0f;
         case MODE_FFA: return s.cfg_.timeLimit > 0 ? (float)s.cfg_.timeLimit : 600.0f;
         case MODE_HIDE: return kHideRoundTime;
@@ -207,6 +214,11 @@ void startRound(Server& s) {
         m.attackers = (m.round % 2 == 1) ? TEAM_A : TEAM_B;
         m.payloadDist = 0;
         m.payloadLen = s.map_.payloadLength();
+    } else if (m.mode == MODE_POINTS) { // the sides swap every round; the attack starts at the first point
+        m.attackers = (m.round % 2 == 1) ? TEAM_A : TEAM_B;
+        m.point = 0;
+        m.capture = 0;
+        m.pointCount = (uint8_t)s.map_.points.size();
     } else if (m.mode == MODE_NPAYLOAD) {
         m.payloadLen = s.map_.payloadLength();
         m.payloadDist = m.payloadLen * 0.5f; // starts in the middle; team A pushes to the end, B to the start
@@ -434,7 +446,8 @@ bool checkMatchOver(Server& s) {
             if (playersInPlay(s) > 1) return false;
             { int w = -1; for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i)) w = i; enterMatchEnd(s, w >= 0 ? s.players_[w].name + " wins tag" : "nobody left", w); }
             return true;
-        case MODE_PAYLOAD: {
+        case MODE_PAYLOAD:
+        case MODE_POINTS: {   // (multi point: progress = points taken + the capture on the next one)
             if (m.round < 2 || m.round % 2 != 0) return false;
             int w = payloadWinner(s);
             if (w < 0 && m.round < 4) { // the tiebreaker is decided on its own two rounds
@@ -669,6 +682,53 @@ void tickPayload(Server& s) {
     if (s.time() >= s.phaseEnd_) endRound(s, def, "time", false);
 }
 
+// Multi point: the attackers take the map's points one at a time, in order. Only they capture: standing on the
+// point with no defender on it fills it (more attackers fill it faster); a defender on it holds it; left alone it
+// slowly drains. Each point taken adds time to the clock and moves both teams' spawns up (staged spawns). All
+// points taken: the attack wins the round. Time out: the defence holds.
+void tickPoints(Server& s) {
+    ModeState& m = s.ms_;
+    const int att = m.attackers, def = defenders(s);
+    m.timeLeft = std::max(0.0f, s.phaseEnd_ - s.time());
+    m.pointCount = (uint8_t)s.map_.points.size();
+    if (m.point >= m.pointCount) return;
+    const AABB& zone = s.map_.points[m.point];
+    int na = 0, nd = 0;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        auto& p = s.players_[i];
+        if (!p.connected || !p.alive || !feetIn(s, i, zone)) continue;
+        if (p.team == att) na++;
+        else if (p.team == def) nd++;
+    }
+    m.flags &= ~MS_CONTESTED;
+    m.hillOwner = 255;
+    if (na > 0 && nd == 0) {
+        m.capture += std::min(1.0f + 0.5f * (na - 1), 2.0f) * s.dt() / kCaptureTime;
+        m.hillOwner = (uint8_t)att;
+    } else if (na > 0) m.flags |= MS_CONTESTED;
+    else m.capture = std::max(0.0f, m.capture - kCaptureDecay * s.dt());
+    if (m.capture >= 1.0f) {
+        m.capture = 0;
+        m.point++;
+        float& best = s.bestProgress_[att];
+        best = std::max(best, (float)m.point);
+        if (m.point >= m.pointCount) {
+            s.completeTime_[att] = s.time() - s.roundStart_;
+            endRound(s, att, "every point taken");
+            return;
+        }
+        s.phaseEnd_ += kPointBonus;
+        s.message(std::string(teamName(att)) + " took point " + char('A' + m.point - 1) + " - +" + std::to_string((int)kPointBonus) + " s, on to point " + char('A' + m.point));
+        s.glog(LOG_SIMPLE, "point %d taken by team %d", m.point, att);
+        return;
+    }
+    s.bestProgress_[att] = std::max(s.bestProgress_[att], m.point + m.capture * 0.99f);
+    if (s.time() >= s.phaseEnd_) {
+        if (m.flags & MS_CONTESTED) { m.timeLeft = 0; return; } // overtime: the attack goes on while it's on the point
+        endRound(s, def, "time", false);
+    }
+}
+
 // Neutral payload: whichever team is alone at the cart pushes it toward the far end of the track
 // (team A toward the end, team B toward the start). Reaching an end wins; at time-out the side of
 // the track the cart is on wins.
@@ -822,6 +882,7 @@ void rulesTick(Server& s) {
                 case MODE_FFA: tickFFA(s); break;
                 case MODE_HIDE: tickHide(s); break;
                 case MODE_TAG: tickTag(s); break;
+                case MODE_POINTS: tickPoints(s); break;
             }
             break;
         case PHASE_ROUND_END:
@@ -866,6 +927,7 @@ float rulesRespawnDelay(const Server& s) {
     switch (s.ms_.mode) {
         case MODE_RACE: return 1.0f;
         case MODE_KOTH: return 4.0f;
+        case MODE_POINTS: return 5.0f;
         case MODE_PAYLOAD:
         case MODE_NPAYLOAD: return 5.0f;
         case MODE_FFA: return 2.0f;
@@ -896,5 +958,7 @@ int rulesSpawnType(const Server& s, int id) {
     if (mode == MODE_TOURNEY && s.tourney_.running && s.map_.supportsMode(MODE_VS))
         return s.players_[id].team == TEAM_B ? SPAWN_B : SPAWN_A; // a match: opposite ends
     if (!modeIsTeamBased(mode)) return SPAWN_ANY;
+    if (mode == MODE_POINTS && s.map_.supportsMode(MODE_POINTS)) // staged: the spawns for how far the attack has got
+        return stagedSpawn(0, s.players_[id].team != s.ms_.attackers);
     return s.players_[id].team == TEAM_B ? SPAWN_B : SPAWN_A;
 }

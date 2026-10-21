@@ -645,6 +645,15 @@ void measure(Metrics& r, const Map& m, const NavGraph& g) {
         return std::string(buf);
     };
     auto teamLine = [&](const char* what, const Vec3& target) { return fairLine(what, teamDist(spA, target), teamDist(spB, target)); };
+    // multi point: mean walk to point i from the spawns that side uses while attacking / defending it (staged spawns)
+    auto pointDist = [&](size_t i, bool defending) {
+        int stage = -1;
+        for (auto& sp : m.spawns) if (isStagedSpawn(sp.team) && spawnDefends(sp.team) == defending && spawnStage(sp.team) <= (int)i) stage = std::max(stage, spawnStage(sp.team));
+        std::vector<Vec3> sps;
+        for (auto& sp : m.spawns) if (sp.team == stagedSpawn(std::max(stage, 0), defending)) sps.push_back(sp.pos);
+        if (getenv("MR_POINTS")) for (auto& p : sps) printf("    point %zu %s spawn %.0f %.0f %.0f: %.0f m (node %d)\n", i, defending ? "def" : "att", p.x, p.y, p.z, navToBox(g, p, m.points[i]), nearestNode(g, p));
+        return boxDist(sps, m.points[i]);
+    };
     for (int mode = 0; mode < MODE_COUNT; mode++) {
         if (!m.supportsMode(mode)) continue;
         std::string line;
@@ -697,6 +706,14 @@ void measure(Metrics& r, const Map& m, const NavGraph& g) {
             for (auto& c : m.checkpoints) { float d = navBetween(g, at, c.center()); if (d < 0) ok = false; else total += d; at = c.center(); }
             snprintf(buf, sizeof buf, "%zu checkpoints, %s %.0f m walked (%.0f s at 8 m/s, %.0f s at 20 m/s)", m.checkpoints.size(), ok ? "route" : "PARTLY UNREACHABLE route", total, total / 8, total / 20);
             line = buf;
+        } else if (mode == MODE_POINTS && !m.points.empty()) {
+            std::string t = std::to_string(m.points.size()) + " points;";
+            for (size_t i = 0; i < m.points.size(); i++) {
+                float a = pointDist(i, false), d = pointDist(i, true);
+                snprintf(buf, sizeof buf, " %c: attackers %.0f m, defenders %.0f m;", char('A' + i), a, d);
+                t += buf;
+            }
+            line = t;
         } else if (mode == MODE_HIDE || mode == MODE_TAG) {
             snprintf(buf, sizeof buf, "%.0f%% of floor is a hiding spot (seen from < 5%% of the map)", r.hideSpots * 100);
             line = buf;
@@ -781,6 +798,36 @@ void measure(Metrics& r, const Map& m, const NavGraph& g) {
         } else if (pm == MODE_RACE) {
             fit = r.mTech;
             snprintf(buf, sizeof buf, "race: the race movement check (shortcut and challenge on the tech path, see movement)");
+        } else if (pm == MODE_POINTS && m.points.size() >= 2) {
+            // an attack in stages: 3-6 points; 25-90 m of walking from one to the next (a push, not a hop); the
+            // defenders' spawns reach each point 2-10 s before the attackers' (set up, then hold); 3+ ways onto every
+            // point (it can be flanked) and cover on it (35%) so a team can hold or take it
+            size_t n = m.points.size();
+            float count = band((float)n, 3, 6, 2), spacing = 0, lead = 0, cover = 0, ways = 0;
+            int minWays = 1 << 30;
+            std::string leads;
+            for (size_t i = 0; i < n; i++) {
+                const AABB& z = m.points[i];
+                if (i > 0) spacing += band(navToBox(g, {m.points[i - 1].center().x, m.points[i - 1].mn.y, m.points[i - 1].center().z}, z), 25, 90, 30);
+                float la = (pointDist(i, false) - pointDist(i, true)) / 8;
+                lead += band(la, 2, 10, 4);
+                snprintf(buf, sizeof buf, "%s%.1f", i ? "/" : "", la); leads += buf;
+                auto in = [&](const NavGraph::Node& nd) { float cx = (nd.x0 + nd.x1) / 2, cz = (nd.z0 + nd.z1) / 2; return cx > z.mn.x && cx < z.mx.x && cz > z.mn.z && cz < z.mx.z && nd.y >= z.mn.y - 0.5f && nd.y <= z.mx.y; };
+                int w = 0;
+                for (size_t k = 0; k < g.nodes.size(); k++) if (!in(g.nodes[k])) for (auto& l : g.links[k]) w += in(g.nodes[l.first]);
+                minWays = std::min(minWays, w);
+                ways += std::min(w / 3.0f, 1.0f);
+                int hc = 0, hn = 0;
+                for (size_t k = 0; k < pts.size() && k < coveredAt.size(); k++) {
+                    const Vec3& q = pts[k].p;
+                    if (q.x > z.mn.x && q.x < z.mx.x && q.z > z.mn.z && q.z < z.mx.z && q.y >= z.mn.y - 0.5f && q.y <= z.mx.y) { hn++; hc += coveredAt[k]; }
+                }
+                cover += std::min((hn ? (float)hc / hn : 0) / 0.35f, 1.0f);
+            }
+            spacing /= (n - 1); lead /= n; cover /= n; ways /= n;
+            fit = 1.5f * count + 2 * spacing + 3 * lead + 2 * cover + 1.5f * ways;
+            snprintf(buf, sizeof buf, "points: %zu points (3-6 ideal), spacing %.2f (25-90 m), defenders first by %s s (2-10 ideal), cover %.2f (35%% ideal), fewest ways onto a point %d (3+)",
+                     n, spacing, leads.c_str(), cover, minWays);
         } else if (pm == MODE_HIDE || pm == MODE_TAG) {
             // hiding needs spots seen from almost nowhere; tag needs loops to run round (and hiding spots matter less)
             bool tag = pm == MODE_TAG;
@@ -826,7 +873,7 @@ int mapReport(const char* outPath) {
         g.build(m);
         Metrics r;
         measure(r, m, g);
-        printf("  %-10s %4d brushes, %4.0f m2, %d levels, visible %.0f%%, grapple %.0f%%\n", r.name.c_str(), r.brushes, r.area, r.levels, r.visible * 100, r.grapple * 100);
+        printf("  %-10s %4d brushes, %4zu surfaces, %4.0f m2, %d levels, visible %.0f%%, grapple %.0f%%\n", r.name.c_str(), r.brushes, g.nodes.size(), r.area, r.levels, r.visible * 100, r.grapple * 100);
         all.push_back(std::move(r));
     }
     // originality: distance to the nearest other map in normalised feature space, and footprint overlap

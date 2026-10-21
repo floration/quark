@@ -201,7 +201,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         AABB b = playerBox(step.pos, crouched);
         float up = map.sweepAxis(b, 1, kStepHeight);
         step.pos.y += up;
-        slideMove(step, map, {delta.x, 0, delta.z}, crouched);
+        int sb = slideMove(step, map, {delta.x, 0, delta.z}, crouched);
         AABB b2 = playerBox(step.pos, crouched);
         // walking: back down onto the step; in the air: back down, then on with this move's own rise or fall
         float rest = airStep ? delta.y - up : -up;
@@ -209,7 +209,9 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         step.pos.y += moved;
         float d0 = (s.pos.x - before.pos.x) * (s.pos.x - before.pos.x) + (s.pos.z - before.pos.z) * (s.pos.z - before.pos.z);
         float d1 = (step.pos.x - before.pos.x) * (step.pos.x - before.pos.x) + (step.pos.z - before.pos.z) * (step.pos.z - before.pos.z);
-        if (d1 > d0 + 1e-6f) { s.pos = step.pos; blocked &= ~0b101; }
+        // take the step if it gets further, or if the raised path was clear (a hair short of the riser, both
+        // moves stop at the same spot: refusing would zero your speed and leave you stuck against a 0.5 m step)
+        if (d1 > d0 + 1e-6f || (!(sb & 0b101) && d1 >= d0)) { s.pos = step.pos; blocked &= ~0b101; }
     }
     if (blocked & 1) s.vel.x = 0;
     if (blocked & 4) s.vel.z = 0;

@@ -101,6 +101,9 @@ struct ModeState {
     // payload
     float payloadDist = 0;
     float payloadLen = 0;
+    // multi point: the point being attacked (= points captured so far), how many the map has, its capture 0..1
+    uint8_t point = 0, pointCount = 0;
+    float capture = 0;
     // vote in progress (text arrives as an EV_VOTE event)
     uint8_t voteActive = 0, voteYes = 0, voteNo = 0, voteVoters = 0;
     float voteTimeLeft = 0;

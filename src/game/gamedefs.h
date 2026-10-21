@@ -12,7 +12,7 @@ constexpr int kMaxPlayers = 32;        // engine limit; servers default to 8 (Se
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 21;
+constexpr uint16_t kProtocolVersion = 22;
 
 // Player hull
 constexpr float kPlayerHalfWidth = 0.4f;
@@ -22,7 +22,7 @@ constexpr float kEyeHeight = 1.6f;
 constexpr float kCrouchEyeHeight = 1.05f;
 constexpr int kMaxHealth = 100;
 
-enum GameModeId : uint8_t { MODE_VS = 0, MODE_BOMB, MODE_RACE, MODE_KOTH, MODE_PAYLOAD, MODE_FFA, MODE_NPAYLOAD, MODE_DUEL, MODE_ARENA, MODE_TOURNEY, MODE_HIDE, MODE_TAG, MODE_COUNT };
+enum GameModeId : uint8_t { MODE_VS = 0, MODE_BOMB, MODE_RACE, MODE_KOTH, MODE_PAYLOAD, MODE_FFA, MODE_NPAYLOAD, MODE_DUEL, MODE_ARENA, MODE_TOURNEY, MODE_HIDE, MODE_TAG, MODE_POINTS, MODE_COUNT };
 inline bool isPayloadMode(int m) { return m == MODE_PAYLOAD || m == MODE_NPAYLOAD; }
 constexpr int kPlayerModels = 5;          // STANDARD, HEAVY, SCOUT, ROBOT, KNIGHT: cosmetic, every one has the same hitbox
 constexpr int kSoundPacks = 5;            // STANDARD, ARCADE, HEAVY, RETRO, SOFT
@@ -33,11 +33,11 @@ constexpr float kHideRoundTime = 300.0f; // hiders win if anyone lasts this long
 constexpr float kTagRoundTime = 60.0f;   // tag: whoever is "it" when this runs out is eliminated
 constexpr float kTagFreeze = 2.0f;       // a newly tagged player stands still this long (no instant tag-back)
 inline const char* modeName(int m) {
-    static const char* n[] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "1v1", "tourney", "hide", "tag"};
+    static const char* n[] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "1v1", "tourney", "hide", "tag", "points"};
     return (m >= 0 && m < MODE_COUNT) ? n[m] : "?";
 }
 inline const char* modeTitle(int m) {
-    static const char* n[] = {"VS", "BOMB", "RACE", "KING OF THE HILL", "PAYLOAD", "FREE FOR ALL", "NEUTRAL PAYLOAD", "DUEL", "1V1", "TOURNEY", "HIDE AND SEEK", "TAG"};
+    static const char* n[] = {"VS", "BOMB", "RACE", "KING OF THE HILL", "PAYLOAD", "FREE FOR ALL", "NEUTRAL PAYLOAD", "DUEL", "1V1", "TOURNEY", "HIDE AND SEEK", "TAG", "MULTI POINT"};
     return (m >= 0 && m < MODE_COUNT) ? n[m] : "?";
 }
 inline int modeFromName(const char* s) {
@@ -118,7 +118,7 @@ enum : uint16_t {
 
 // Weapon set. Rifle and knife are placeholders. No single shot does more than 50 (of 100 health).
 enum WeaponId : uint8_t {
-    WPN_RIFLE = 0, WPN_ROCKET, WPN_KNIFE, WPN_SNIPER, WPN_LASER, WPN_SHOTGUN, WPN_STICKY, WPN_CROSSBOW, WPN_BUBBLE, WPN_COUNT
+    WPN_RIFLE = 0, WPN_ROCKET, WPN_KNIFE, WPN_SNIPER, WPN_LASER, WPN_SHOTGUN, WPN_STICKY, WPN_CROSSBOW, WPN_BUBBLE, WPN_SYRINGE, WPN_COUNT
 };
 constexpr uint8_t kNoWeaponChange = 255;
 struct WeaponDef {
@@ -169,6 +169,7 @@ inline const WeaponDef& baseWeaponDef(int w) {
         {"STICKY",      0.75f,   29.75f,  0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30}, // 4, 2.25 s
         {"CROSSBOW",    2.0f,    50,      0,    true,  76.5f, 0,     0.0f,  0.0f, 70.0f,  false, 1,  6.0f, false, 3},  // 2, 2.0 s (headshots 60)
         {"BUBBLE",      1.0f/3,  10,      0,    true,  15.6f, 1.8f,  0.04f, -1,     0,    false, 1, -1.5f, false, 4}, // 10 pops, 3.0 s (floats up a little)
+        {"SYRINGE",     0.1f,    1,       0,    false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // heals you 1 hp every 0.1 s (damage = heal)
     };
     return defs[w < 0 || w >= WPN_COUNT ? 0 : w];
 }
@@ -193,6 +194,10 @@ constexpr float kKnifeThrowSpeed = 38.0f, kKnifeThrowGravity = 14.0f, kKnifeThro
 constexpr float kKnifeGrow = 0.04f;    // a swing hits boxes 10% wider (0.04 m each side of 0.8)
 constexpr float kKnifeSwingTime = 0.12f; // ...and keeps cutting this long after the click if it hasn't hit yet
 constexpr float kKnifeAway = 5.0f; // after a throw the knife is gone this long: you switch to another weapon (no delay on it)
+// Syringe: fire heals you (1 hp per 0.1 s, held); alt-fire throws it: a teammate it hits gets 30 hp at once and
+// every cooldown reset (weapon, dash, grapple). The throw has a 2 s cooldown.
+constexpr float kSyringeThrowSpeed = 30.0f, kSyringeThrowGravity = 9.0f, kSyringeThrowLife = 2.0f;
+constexpr float kSyringeHeal = 30.0f, kSyringeThrowRefire = 2.0f;
 constexpr int kShotgunBounces = 2;
 constexpr float kShotgunBounceDamage = 0.5f;
 constexpr float kRifleScopedRefire = 4.0f / 3.0f; // refire multiplier while scoped (25% slower fire rate)
@@ -208,12 +213,13 @@ inline float shotRefire(int w, bool alt) {
     if (alt && w == WPN_KNIFE) return 0;                    // knife throw: no delay (you switch weapons)
     if (alt && w == WPN_RIFLE) return r * kRifleScopedRefire;       // scoped rifle
     if (alt && w == WPN_BUBBLE) return kBubbleStreamRefire;         // the bubble stream
+    if (alt && w == WPN_SYRINGE) return kSyringeThrowRefire;        // the syringe throw
     return r;
 }
 // Slot order (number keys, scroll wheel, HUD list): the weapon ids themselves stay as they are.
-constexpr int kWeaponSlots[WPN_COUNT] = {WPN_ROCKET, WPN_RIFLE, WPN_LASER, WPN_SHOTGUN, WPN_SNIPER, WPN_STICKY, WPN_CROSSBOW, WPN_BUBBLE, WPN_KNIFE};
+constexpr int kWeaponSlots[WPN_COUNT] = {WPN_ROCKET, WPN_RIFLE, WPN_LASER, WPN_SHOTGUN, WPN_SNIPER, WPN_STICKY, WPN_CROSSBOW, WPN_BUBBLE, WPN_KNIFE, WPN_SYRINGE};
 inline int weaponSlot(int w) { for (int i = 0; i < WPN_COUNT; i++) if (kWeaponSlots[i] == w) return i; return 0; }
-inline bool altFires(int w) { return w == WPN_KNIFE || w == WPN_SHOTGUN || w == WPN_ROCKET || w == WPN_BUBBLE; } // knife (throw), shotgun (bounce), rocket (lob): alt-fire is a shot of its own
+inline bool altFires(int w) { return w == WPN_KNIFE || w == WPN_SHOTGUN || w == WPN_ROCKET || w == WPN_BUBBLE || w == WPN_SYRINGE; } // knife (throw), shotgun (bounce), rocket (lob): alt-fire is a shot of its own
 constexpr int kMaxStickies = 6;       // per player; firing a 7th removes the oldest
 constexpr float kStickyArmTime = 0.35f;
 
@@ -233,6 +239,7 @@ enum EventType : uint8_t {
     EV_RANKED,       // ranked match over: text = "<matchId> <mode> slot:team:place,..." (each player reports it)
     EV_EDIT,         // map edit session: text = "<crcBefore hex> <crcAfter hex> <op>" (see applyMapEdit)
     EV_RULES,        // custom mode: a = chunk index, b = chunk count, text = that piece of CustomRules::toText()
+    EV_HEALED,       // syringe throw: a was healed by b
     EV_RACE_SPLIT,   // race: a = player, b = checkpoint reached (1-based; the last one is the finish), text = ms since the start
 };
 

@@ -7,7 +7,8 @@ enum Action {
     A_FORWARD = 0, A_BACK, A_LEFT, A_RIGHT, A_JUMP, A_CROUCH, A_FIRE, A_ALTFIRE, A_USE, A_DASH, A_GRAPPLE,
     A_WEAPON1, A_WEAPON2, A_WEAPON3, A_WEAPON4, A_WEAPON5, A_WEAPON6, A_WEAPON7, A_WEAPON8,
     A_NEXTWEAPON, A_PREVWEAPON, A_SCORES, A_CHAT, A_VOTEYES, A_VOTENO, A_PERF, A_SCREENSHOT, A_VOTESTART,
-    A_WEAPON9, // unused (was the grenade launcher); kept so saved binds keep their indices
+    A_WEAPON9,  // slot 9 (the knife)
+    A_WEAPON10, // slot 10, key 0 (the syringe)
     A_COUNT
 };
 
@@ -23,4 +24,5 @@ struct Binds {
 };
 
 const char* actionName(int action);
+inline int slotAction(int slot) { return slot < 8 ? A_WEAPON1 + slot : slot == 8 ? A_WEAPON9 : A_WEAPON10; } // weapon slot -> its key action
 std::string inputName(int code);

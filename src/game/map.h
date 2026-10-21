@@ -4,11 +4,19 @@
 #include <vector>
 #include "../common/qmath.h"
 
-enum SpawnTeam { SPAWN_A = 0, SPAWN_B = 1, SPAWN_ANY = 2, SPAWN_RACE = 3 };
+enum SpawnTeam { SPAWN_A = 0, SPAWN_B = 1, SPAWN_ANY = 2, SPAWN_RACE = 3, SPAWN_STAGED = 4 };
+// Multi point spawns ("spawn att2 ..." / "spawn def0 ..."): team = SPAWN_STAGED + 2 * stage + (defenders ? 1 : 0).
+// A stage's spawns are used once that many points have fallen (the highest stage reached so far wins).
+constexpr int kMaxSpawnStage = 9;
+inline int stagedSpawn(int stage, bool defenders) { return SPAWN_STAGED + 2 * stage + (defenders ? 1 : 0); }
+inline bool isStagedSpawn(int team) { return team >= SPAWN_STAGED; }
+inline int spawnStage(int team) { return (team - SPAWN_STAGED) / 2; }
+inline bool spawnDefends(int team) { return ((team - SPAWN_STAGED) & 1) != 0; }
 
 struct Brush {
     AABB box;
     int material = 0; // 0 = base, 1 = accent, 2 = wallbang (dark grey: solid, but hitscan goes through it), 3 = metal, 4 = glow (emissive trim), 5 = far (distant scenery outside the walls: flat-shaded, no lightmap), 6 = water, 7 = lava (unlit surfaces of deadly pits: not solid, you fall through and die), 8 = trim (accent-coloured decoration: lit, but not solid)
+    bool generated = false; // made from another object (an editor ladder's rails and rungs): not saved, not editable
 };
 
 struct SpawnPoint {
@@ -28,9 +36,13 @@ struct Map {
     std::vector<AABB> bombSites;
     bool hasHill = false;
     AABB hill;
-    std::vector<AABB> ladders;        // "ladder x0 y0 z0 x1 y1 z1": climbable volumes (stand in it and move)
+    std::vector<AABB> ladders;        // "ladder x0 y0 z0 x1 y1 z1 [auto]": climbable volumes (stand in it and move)
+    std::vector<uint8_t> ladderAuto;  // per ladder: draws its own rails and rungs (one editor object; else separate boxes do)
+    void genLadderBrushes();          // (re)makes the generated rails / rungs of the auto ladders, at the end of brushes
+    size_t editableBrushes() const { size_t n = 0; for (auto& b : brushes) n += !b.generated; return n; }
     std::vector<AABB> checkpoints;    // race; the last one is the finish line
     std::vector<Vec3> payloadPath;    // ordered waypoints
+    std::vector<AABB> points;         // multi point: the capture zones, in the order they're attacked ("point x0 y0 z0 x1 y1 z1")
     Vec3 sunDir = normalize(Vec3(0.4f, 1.0f, 0.25f)); // points toward the sun
     // "palette base r g b accent r g b metal r g b glow r g b sky r g b" (linear 0..1): per-map colours
     // "void <y>": falling below this height kills (pits, water, the drop off a bridge); default 20 m below the map
@@ -86,7 +98,8 @@ struct Map {
 
 // Map edit ops (the editor's undo steps and what multiplayer editing sends through the server), one line each:
 //   <kind> ins|set|del <index> [fields]   kind: b brush (material + box), s spawn (team x y z yawDeg), l light (x y z radius
-//                                         intensity), z bomb site (box), c checkpoint (box), p path point (x y z), h hill (has + box)
+//                                         intensity), z bomb site (box), c checkpoint (box), p path point (x y z), h hill (has + box),
+//                                         o multi point capture zone (box)
 //   t <title>    f <preferred mode, -1 any>    m <allowed modes bitmask, 0 = all>
 // applyMapEdit validates (indices, sizes, finite numbers, at least one box and spawn) and rebuilds the grid.
 bool applyMapEdit(Map& m, const std::string& op);

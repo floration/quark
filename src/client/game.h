@@ -168,7 +168,7 @@ private:
     std::vector<std::string> rankIdsInGame() const;
     // map editor (editor.cpp). Every change is an edit op (applyMapEdit): applied locally when editing
     // alone, sent through the server in an edit session so everyone's copy stays the same.
-    enum { ED_BRUSH, ED_SPAWN, ED_LIGHT, ED_SITE, ED_HILL, ED_CHECK, ED_PATH };
+    enum { ED_BRUSH, ED_SPAWN, ED_LIGHT, ED_SITE, ED_HILL, ED_CHECK, ED_PATH, ED_LADDER };
     struct EdSel { int kind = -1, idx = -1; bool valid() const { return kind >= 0; } };
     Map ed_;
     std::string edName_ = "mymap", edMsg_, edTitle_;
@@ -178,6 +178,7 @@ private:
     float edSpeed_ = 12;
     Vec3 edCam_;
     bool edLook_ = false, edDirty_ = false, edBaked_ = false;
+    int edFullW_ = 1280;   // the window width (the editor's 3D view is narrower: the panel is on the right)
     bool edOnline_ = false;     // in an edit session (connected to a server in edit mode)
     bool edSession_ = false;    // this connection has been an edit session (leaving offers to save a copy)
     bool testEdit_ = false;     // hosting an edit session started from the editor
@@ -244,6 +245,10 @@ private:
     struct Explosion { Vec3 at; double start; float size = 1; bool bubble = false; };
     std::vector<Explosion> explosions_;
     std::vector<ProjectileSnap> lastProjectiles_;
+    // your own projectiles start drawn at your weapon model's muzzle and blend onto their real path
+    struct ProjStart { uint16_t id; double seen; Vec3 offset; };
+    std::vector<ProjStart> projStarts_;
+    Vec3 muzzlePoint(int weapon, const Vec3& eye) const;   // world point of the weapon model's barrel tip (HUD layout)
     double shotAt_ = -1;
     bool scoped_ = false;
     double laserUntil_ = 0;            // local laser beam visible until
@@ -338,6 +343,7 @@ private:
     void drawVerboseHud(float W, float s, float& y);
     void drawWidgetEditor();
     int hudSel_ = 0;
+    bool hudDrop_ = false;   // HUD settings: the element dropdown is open
     int captureAction_ = -1, captureSlot_ = 0;
     std::string voteText_;
     // tourney bracket (EV_BRACKET): rounds of player ids (-1 bye, -2 undecided), current match
