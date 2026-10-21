@@ -920,6 +920,36 @@ static void testEditorLadder() {
     CHECK(ms.pos.y > 5.0f);
 }
 
+// Editor groups (room / stairs / custom): one object whose boxes are made from its box, saved as the group, stretched as one.
+static void testEditorGroups() {
+    printf("editor groups\n");
+    Map m;
+    CHECK(m.parse("box -20 -1 -20 20 0 20\nspawn any 0 0 -10\n"));
+    CHECK(applyMapEdit(m, "g ins 0 2 0 0 0 0 0 2 2 4"));       // stairs 2 up over 2 wide, rising toward +x
+    size_t steps = m.brushes.size() - m.editableBrushes();
+    CHECK(steps == 4);
+    for (auto& b : m.brushes) if (b.generated) CHECK(b.box.mx.y - b.box.mn.y <= 2.0f);
+    CHECK(applyMapEdit(m, "g set 0 2 0 0 0 0 0 8 5 4"));       // stretched: more steps, each still <= a step up
+    CHECK(m.brushes.size() - m.editableBrushes() == 10);
+    MoveState ms; ms.pos = {-1, 0, 3};                          // and you can walk up it
+    float top = 0;
+    for (int t = 0; t < 600 && ms.pos.x < 7.5f; t++) { UserCmd c; c.forward = 127; c.yaw = -PI / 2; c.msec = 8; pmove(ms, c, m); top = std::max(top, ms.pos.y); }
+    if (top < 4.9f) printf("  walked to %.2f %.2f %.2f\n", ms.pos.x, ms.pos.y, ms.pos.z);
+    CHECK(top > 4.9f);
+    CHECK(applyMapEdit(m, "g ins 1 1 3 0 -10 0 -10 -2 3.5 -2")); // a room: floor, ceiling, 4 walls of 3 pieces (a door each)
+    CHECK(m.brushes.size() - m.editableBrushes() == 10 + 2 + 12);
+    CHECK(!m.boxSolid({{-6.4f, 0.3f, -10.5f}, {-5.6f, 2.0f, -9.5f}})); // the doorway on the -z wall is open
+    CHECK(applyMapEdit(m, "g ins 2 0 0 0 5 0 5 7 2 7") && applyMapEdit(m, "g part 2 1 0 0 0 0.5 0.5 1") && applyMapEdit(m, "g part 2 0 0.5 0.5 0 1 1 1"));
+    CHECK(!applyMapEdit(m, "g part 0 1 0 0 0 1 1 1"));           // only custom groups take parts
+    CHECK(applyMapEdit(m, "g set 2 0 0 0 5 0 5 9 4 7"));          // stretched: its parts follow
+    bool found = false;
+    for (auto& b : m.brushes) found |= b.generated && b.material == 1 && b.box.mx.x == 7 && b.box.mx.y == 2;
+    CHECK(found);
+    Map back;
+    CHECK(back.parse(m.serialize()) && back.groups.size() == 3 && back.groups[2].parts.size() == 2 && back.brushes.size() == m.brushes.size());
+    CHECK(applyMapEdit(m, "g del 0") && m.groups.size() == 2);
+}
+
 static void testTimeToKill() {
     printf("time to kill with perfect aim (1-4.5 s), no shot over 50\n");
     for (int w = 0; w < WPN_COUNT; w++) {
@@ -2321,6 +2351,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "points") { setTimeScale(kTestTimeScale); testPoints(29995); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "syringe") { setTimeScale(kTestTimeScale); testSyringe(29996); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edladder") { testEditorLadder(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "edgroups") { testEditorGroups(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(29997); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "allmaps") { testAllMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "custom") { testCustomMode(29990); return g_fail ? 1 : 0; }
@@ -2333,6 +2364,7 @@ int main(int argc, char** argv) {
     testAllMaps();
     testStairs();
     testEditorLadder();
+    testEditorGroups();
     testRejoin(29980);
     testCustomMode(29990);
     testPoints(29995);

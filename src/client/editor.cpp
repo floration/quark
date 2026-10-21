@@ -1,10 +1,12 @@
-// Map editor: fly around, place and resize boxes (base / accent / wallbang), spawns, lights and the
-// gameplay zones, then save to maps/<name>.qmap or play-test it right away. Everything snaps to a grid.
+// Map editor: fly around, place and resize boxes, rooms, stairs and ladders (in the material picked last), spawns,
+// lights and the gameplay zones, then save to maps/<name>.qmap or play-test it right away. Everything snaps to a grid.
 // The view draws the boxes directly (no bake) so edits show instantly; BAKE LIGHT previews real lighting.
 //
 // Every change is an edit op (see applyMapEdit) with its inverse kept for undo. Editing alone, ops apply
 // to ed_ directly; in an edit session they go through the server, which applies them in one order and
-// sends them to everyone, and ed_ follows the client's copy of the map.
+// sends them to everyone, and ed_ follows the client's copy of the map. A step that takes several ops (grouping,
+// a custom group's parts) is one string of '\n'-separated ops, sent one by one, undone as one.
+// Groups (rooms, stairs, your own) save to / load from groups/ next to demos/ as "quark-group 1" text.
 #include "game.h"
 #include "openurl.h"
 #define GLFW_INCLUDE_NONE
@@ -12,14 +14,20 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <ctime>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 
 namespace {
 const Color kWhite = {1, 1, 1, 1};
 const Color kGrey = {0.7f, 0.72f, 0.75f, 1};
 const Color kRed = {1, 0.35f, 0.3f, 1};
 const float kGrids[] = {0.25f, 0.5f, 1.0f, 2.0f, 4.0f};
-const char kKindChar[] = "bslzhcpd"; // ED_* -> edit op kind
-const char* kKindNames[] = {"BOX", "SPAWN", "LIGHT", "BOMB SITE", "HILL", "CHECKPOINT", "PAYLOAD PATH POINT", "LADDER"};
+const char kKindChar[] = "bslzhcpdg"; // ED_* -> edit op kind
+const char* kKindNames[] = {"BOX", "SPAWN", "LIGHT", "BOMB SITE", "HILL", "CHECKPOINT", "PAYLOAD PATH POINT", "LADDER", "GROUP"};
+const char* kMatNames[] = {"box", "accent", "wallbang", "metal", "glow", "far"};
+const char* kGroupTypes[] = {"custom", "room", "stairs"};
 const Vec3 kTeamColors[] = {{0.25f, 0.6f, 1.0f}, {1.0f, 0.35f, 0.25f}, {0.9f, 0.9f, 0.9f}, {0.3f, 1.0f, 0.4f}};
 
 float snapTo(float v, float g) { return std::round(v / g) * g; }
@@ -36,6 +44,7 @@ size_t kindCount(const Map& m, int kind) {
         case 5: return m.checkpoints.size();
         case 6: return m.payloadPath.size();
         case 7: return m.ladders.size();
+        case 8: return m.groups.size();
     }
     return 0;
 }
@@ -47,6 +56,7 @@ AABB* kindBox(Map& m, int kind, int i) {
         case 4: return &m.hill;
         case 5: return &m.checkpoints[i];
         case 7: return &m.ladders[i];
+        case 8: return &m.groups[i].box;
     }
     return nullptr;
 }
@@ -56,6 +66,102 @@ void moveObject(Map& m, int kind, int i, const Vec3& d) {
     if (kind == 1) m.spawns[i].pos += d;
     else if (kind == 2) m.lights[i].pos += d;
     else if (kind == 6) m.payloadPath[i] += d;
+}
+
+// The "ins" op for object i, plus (a custom group) the ops that add its parts back.
+std::string insertOps(const Map& m, char k, int i) {
+    std::string o = describeMapObject(m, k, "ins", i);
+    if (k == 'g')
+        for (auto& p : m.groups[i].parts) {
+            char t[200];
+            snprintf(t, sizeof t, "\ng part %d %d %.7g %.7g %.7g %.7g %.7g %.7g", i, p.material, p.box.mn.x, p.box.mn.y, p.box.mn.z, p.box.mx.x, p.box.mx.y, p.box.mx.z);
+            o += t;
+        }
+    return o;
+}
+
+// ---- group files: "quark-group 1", "size sx sy sz", "type custom|room|stairs material dir", then (custom) one
+// "<material> x0 y0 z0 x1 y1 z1" per box, in metres from the group's low corner (so it pastes anywhere)
+std::string groupDir() { return findDataPath("maps") + "/../groups"; }
+
+std::string groupText(const Map::Group& g) {
+    Vec3 sz = g.box.mx - g.box.mn;
+    char t[200];
+    snprintf(t, sizeof t, "quark-group 1\nsize %g %g %g\ntype %s %d %d\n", sz.x, sz.y, sz.z, kGroupTypes[g.type], g.material, g.dir);
+    std::string o = t;
+    for (auto& p : g.parts) {
+        Vec3 a(p.box.mn.x * sz.x, p.box.mn.y * sz.y, p.box.mn.z * sz.z), c(p.box.mx.x * sz.x, p.box.mx.y * sz.y, p.box.mx.z * sz.z);
+        snprintf(t, sizeof t, "%s %g %g %g %g %g %g\n", kMatNames[p.material], a.x, a.y, a.z, c.x, c.y, c.z);
+        o += t;
+    }
+    return o;
+}
+
+// Fills g (box from the origin, size big) from a group text; false if it isn't one.
+bool parseGroupText(const std::string& text, Map::Group& g) {
+    std::istringstream in(text);
+    std::string line, kw;
+    if (!std::getline(in, line) || line.rfind("quark-group 1", 0) != 0) return false;
+    auto okNum = [](float v) { return std::isfinite(v) && std::fabs(v) <= 4096.0f; };
+    Vec3 sz;
+    bool hasSize = false, hasType = false;
+    while (std::getline(in, line)) {
+        std::istringstream ls(line);
+        if (!(ls >> kw) || kw[0] == '#') continue;
+        if (kw == "size") {
+            hasSize = (bool)(ls >> sz.x >> sz.y >> sz.z) && sz.x > 0.01f && sz.y > 0.01f && sz.z > 0.01f && okNum(sz.x) && okNum(sz.z) && sz.y <= 64;
+            if (!hasSize) return false;
+            continue;
+        }
+        if (kw == "type") {
+            std::string t;
+            if (!(ls >> t >> g.material >> g.dir) || g.material < 0 || g.material > 5 || g.dir < 0 || g.dir > 3) return false;
+            g.type = t == "room" ? Map::GROUP_ROOM : t == "stairs" ? Map::GROUP_STAIRS : Map::GROUP_CUSTOM;
+            hasType = t == "room" || t == "stairs" || t == "custom";
+            if (!hasType) return false;
+            continue;
+        }
+        int mat = -1;
+        for (int k = 0; k < 6; k++) if (kw == kMatNames[k]) mat = k;
+        Vec3 a, c;
+        if (mat < 0 || !hasSize || !(ls >> a.x >> a.y >> a.z >> c.x >> c.y >> c.z) || g.parts.size() >= 1024) return false;
+        Vec3 lo = vmin(a, c), hi = vmax(a, c);
+        g.parts.push_back({{{lo.x / sz.x, lo.y / sz.y, lo.z / sz.z}, {hi.x / sz.x, hi.y / sz.y, hi.z / sz.z}}, mat});
+    }
+    if (!hasSize || !hasType || (g.type == Map::GROUP_CUSTOM) == g.parts.empty()) return false;
+    for (auto& p : g.parts) if (!okNum(p.box.mn.x) || !okNum(p.box.mx.x) || !okNum(p.box.mn.y) || !okNum(p.box.mx.y) || !okNum(p.box.mn.z) || !okNum(p.box.mx.z)) return false;
+    g.box = {{0, 0, 0}, sz};
+    return true;
+}
+
+// groups/group-<date>-<n>.txt, the first n not taken; "" if it can't be written
+std::string writeGroupFile(const std::string& text) {
+    std::error_code ec;
+    std::filesystem::create_directories(groupDir(), ec);
+    time_t now = time(nullptr);
+    char stamp[16];
+    strftime(stamp, sizeof stamp, "%Y-%m-%d", localtime(&now));
+    for (int n = 1; n < 10000; n++) {
+        std::string path = groupDir() + "/group-" + stamp + "-" + std::to_string(n) + ".txt";
+        if (std::filesystem::exists(path, ec)) continue;
+        std::ofstream f(path, std::ios::binary);
+        if (!(f << text)) return "";
+        return path;
+    }
+    return "";
+}
+
+std::string readFile(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    std::stringstream ss;
+    ss << f.rdbuf();
+    return ss.str();
+}
+
+void openGroupFolder() {
+    std::error_code ec;
+    std::filesystem::create_directories(groupDir(), ec);
+    openUrl(std::filesystem::absolute(groupDir(), ec).lexically_normal().string());
 }
 
 void resetEditorView(const Map& m, Vec3& cam, float& yaw, float& pitch) {
@@ -76,6 +182,8 @@ void Game::openEditor(const std::string& name) {
     ed_ = Map();
     edUndo_.clear();
     edSel_ = EdSel();
+    edMulti_.clear();
+    edGroupMenu_ = edExportAsk_ = false;
     edDirty_ = edBaked_ = edOnline_ = false;
     std::string err;
     if (!name.empty() && ed_.load(name, &err)) {
@@ -107,6 +215,8 @@ void Game::enterOnlineEditor() {
     edName_ = ed_.name;
     edUndo_.clear();
     edSel_ = EdSel();
+    edMulti_.clear();
+    edGroupMenu_ = edExportAsk_ = false;
     edBaked_ = edDirty_ = false;
     if (fromGame) edCam_ = net_.predicted().pos + Vec3(0, kEyeHeight, 0); // keep looking from where you were playing
     else resetEditorView(ed_, edCam_, yaw_, pitch_);
@@ -143,9 +253,15 @@ void Game::edDo(const std::string& op, const std::string& inverse, bool coalesce
         }
         edLastPush_ = coalesce ? time_ : 0;
     }
-    if (edOnline_) net_.sendCommand("ed " + op);
-    else if (applyMapEdit(ed_, op)) edChanged();
-    else edNotify("can't do that");
+    for (size_t a = 0; a < op.size();) {
+        size_t e = op.find('\n', a);
+        if (e == std::string::npos) e = op.size();
+        std::string one = op.substr(a, e - a);
+        a = e + 1;
+        if (edOnline_) net_.sendCommand("ed " + one);
+        else if (applyMapEdit(ed_, one)) edChanged();
+        else { edNotify("can't do that"); return; }
+    }
 }
 
 void Game::edUndoLast() {
@@ -166,6 +282,7 @@ AABB Game::edBounds(const Map& m, EdSel sel) const {
         case ED_CHECK: return m.checkpoints[sel.idx];
         case ED_PATH: return around(m.payloadPath[sel.idx], {0.3f, 0.3f, 0.3f});
         case ED_LADDER: return m.ladders[sel.idx];
+        case ED_GROUP: return m.groups[sel.idx].box;
     }
     return {};
 }
@@ -185,8 +302,9 @@ void Game::edDelete() {
     if (edSel_.kind == ED_SPAWN && ed_.spawns.size() <= 1) { edNotify("a map needs at least one spawn"); return; }
     char k = kKindChar[edSel_.kind];
     if (edSel_.kind == ED_HILL) edModify([](Map& m) { m.hasHill = false; }, false);
-    else edDo(std::string(1, k) + " del " + std::to_string(edSel_.idx), describeMapObject(ed_, k, "ins", edSel_.idx));
+    else edDo(std::string(1, k) + " del " + std::to_string(edSel_.idx), insertOps(ed_, k, edSel_.idx));
     edSel_ = EdSel();
+    edMulti_.clear();
 }
 
 // tmp is ed_ plus one new object at the end of `kind`'s list (or a new hill): insert it and select it.
@@ -197,7 +315,7 @@ static int addFrom(const Map& tmp, const Map& cur, int kind, const std::function
         return 0;
     }
     int i = (int)kindCount(tmp, kind) - 1;
-    doOp(describeMapObject(tmp, k, "ins", i), std::string(1, k) + " del " + std::to_string(i));
+    doOp(insertOps(tmp, k, i), std::string(1, k) + " del " + std::to_string(i));
     return i; // index of the new object
 }
 
@@ -212,12 +330,14 @@ void Game::edDuplicate() {
     switch (edSel_.kind) {
         case ED_BRUSH: tmp.brushes.insert(tmp.brushes.begin() + tmp.editableBrushes(), tmp.brushes[i]); break;
         case ED_LADDER: tmp.ladders.push_back(tmp.ladders[i]); tmp.ladderAuto.resize(tmp.ladders.size() - 1, 0); tmp.ladderAuto.push_back(tmp.ladderAuto[i]); break;
+        case ED_GROUP: tmp.groups.push_back(tmp.groups[i]); break;
         case ED_SPAWN: tmp.spawns.push_back(tmp.spawns[i]); break;
         case ED_LIGHT: tmp.lights.push_back(tmp.lights[i]); break;
         case ED_SITE: tmp.bombSites.push_back(tmp.bombSites[i]); break;
         case ED_CHECK: tmp.checkpoints.push_back(tmp.checkpoints[i]); break;
         case ED_PATH: tmp.payloadPath.push_back(tmp.payloadPath[i]); break;
     }
+    edMulti_.clear();
     moveObject(tmp, edSel_.kind, (int)kindCount(tmp, edSel_.kind) - 1, off);
     edSel_.idx = addFrom(tmp, ed_, edSel_.kind, [&](const std::string& op, const std::string& inv) { edDo(op, inv); });
 }
@@ -232,7 +352,25 @@ void Game::edAdd(int kind, int variant) {
     if (t >= 0 && n.y < -0.5f) at.y -= 1; // hit a ceiling: hang below it
     Map tmp = ed_;
     switch (kind) {
-        case ED_BRUSH: tmp.brushes.insert(tmp.brushes.begin() + tmp.editableBrushes(), Brush{{at - Vec3(1, 0, 1), at + Vec3(1, 1, 1)}, variant}); break;
+        case ED_BRUSH: tmp.brushes.insert(tmp.brushes.begin() + tmp.editableBrushes(), Brush{{at - Vec3(1, 0, 1), at + Vec3(1, 1, 1)}, edMat_}); break;
+        case ED_GROUP: { // variant: GROUP_ROOM (8 x 3.5 x 8, a door each side) or GROUP_STAIRS (2 wide, 2 up over 4, rising away from you)
+            Map::Group gr;
+            gr.type = variant;
+            gr.material = edMat_;
+            if (variant == Map::GROUP_ROOM) gr.box = {at - Vec3(4, 0, 4), at + Vec3(4, 3.5f, 4)};
+            else {
+                Vec3 f = angleForward(yaw_, 0);
+                int a = std::fabs(f.x) > std::fabs(f.z) ? 0 : 2;
+                bool neg = f[a] < 0;
+                gr.dir = (a == 0 ? 0 : 2) + (neg ? 1 : 0);
+                Vec3 lo = at - Vec3(1, 0, 1), hi = at + Vec3(1, 2, 1);
+                lo[a] = neg ? at[a] - 4 : at[a];
+                hi[a] = neg ? at[a] : at[a] + 4;
+                gr.box = {lo, hi};
+            }
+            tmp.groups.push_back(gr);
+            break;
+        }
         case ED_LADDER: { // a ladder facing you, 4 m tall: one object (drag its sides to stretch it; rungs follow)
             Vec3 f = angleForward(yaw_, 0);
             Vec3 half = std::fabs(f.x) > std::fabs(f.z) ? Vec3(0.35f, 0, 0.45f) : Vec3(0.45f, 0, 0.35f);
@@ -248,7 +386,185 @@ void Game::edAdd(int kind, int variant) {
         case ED_CHECK: tmp.checkpoints.push_back({at - Vec3(2, 0, 2), at + Vec3(2, 4, 2)}); break;
         case ED_PATH: tmp.payloadPath.push_back(at + Vec3(0, 0.1f, 0)); break;
     }
+    edMulti_.clear();
     edSel_ = {kind, addFrom(tmp, ed_, kind, [&](const std::string& op, const std::string& inv) { edDo(op, inv); })};
+}
+
+// The selected boxes / groups (edSel_ + edMulti_) as one custom group: parts are 0..1 fractions of their bounds.
+template <class Sel> static bool groupOf(const Map& m, const std::vector<Sel>& sel, Map::Group& g, std::string& why) {
+    std::vector<Brush> all;
+    for (auto& e : sel) {
+        if (e.kind == 0) all.push_back(m.brushes[e.idx]);
+        else Map::groupBoxes(m.groups[e.idx], all);
+    }
+    if (all.empty()) { why = "select boxes / groups (shift+click to add more)"; return false; }
+    AABB b = all[0].box;
+    for (auto& p : all) { b.mn = vmin(b.mn, p.box.mn); b.mx = vmax(b.mx, p.box.mx); }
+    Vec3 sz = b.mx - b.mn;
+    if (sz.y > 64 || all.size() > 1024) { why = "too big for one group"; return false; }
+    g = Map::Group();
+    g.box = b;
+    for (auto& p : all) {
+        Vec3 a = p.box.mn - b.mn, c = p.box.mx - b.mn;
+        g.parts.push_back({{{a.x / sz.x, a.y / sz.y, a.z / sz.z}, {c.x / sz.x, c.y / sz.y, c.z / sz.z}}, std::min(p.material, 5)});
+    }
+    return true;
+}
+
+// edSel_ + edMulti_, only the boxes and groups that still exist, each once
+template <class Sel> static std::vector<Sel> groupable(const Map& m, Sel first, const std::vector<Sel>& more) {
+    std::vector<Sel> out;
+    auto add = [&](Sel e) {
+        bool ok = (e.kind == 0 && (size_t)e.idx < m.brushes.size() && !m.brushes[e.idx].generated) || (e.kind == 8 && (size_t)e.idx < m.groups.size());
+        for (auto& o : out) ok &= !(o.kind == e.kind && o.idx == e.idx);
+        if (ok && e.idx >= 0) out.push_back(e);
+    };
+    add(first);
+    for (auto& e : more) add(e);
+    return out;
+}
+
+void Game::edGroupSelection() {
+    auto sel = groupable(ed_, edSel_, edMulti_);
+    if (sel.size() == 1 && sel[0].kind == ED_GROUP) { edNotify("that's already a group"); return; }
+    Map::Group g;
+    std::string why;
+    if (!groupOf(ed_, sel, g, why)) { edNotify(why); return; }
+    // add the group first (a map always keeps a box), then take away what went into it, highest index first
+    int gi = (int)ed_.groups.size();
+    Map tmp = ed_;
+    tmp.groups.push_back(g);
+    std::vector<std::string> ops = {insertOps(tmp, 'g', gi)}, inv = {"g del " + std::to_string(gi)};
+    std::sort(sel.begin(), sel.end(), [](const EdSel& a, const EdSel& b) { return a.kind != b.kind ? a.kind < b.kind : a.idx > b.idx; });
+    int groupsGone = 0;
+    for (auto& e : sel) {
+        char k = kKindChar[e.kind];
+        ops.push_back(std::string(1, k) + " del " + std::to_string(e.idx));
+        inv.push_back(insertOps(ed_, k, e.idx));
+        groupsGone += e.kind == ED_GROUP;
+    }
+    std::string op, undo;
+    for (size_t k = 0; k < ops.size(); k++) { op += (k ? "\n" : "") + ops[k]; undo += (k ? "\n" : "") + inv[inv.size() - 1 - k]; }
+    edDo(op, undo);
+    edSel_ = {ED_GROUP, gi - groupsGone};
+    edMulti_.clear();
+    edNotify("grouped " + std::to_string(sel.size()) + " - it moves and stretches as one");
+}
+
+void Game::edUngroup() {
+    if (!edSelValid() || edSel_.kind != ED_GROUP) return;
+    int gi = edSel_.idx, n = (int)ed_.editableBrushes();
+    std::vector<Brush> parts;
+    Map::groupBoxes(ed_.groups[gi], parts);
+    std::string op, undo = insertOps(ed_, 'g', gi);
+    for (size_t k = 0; k < parts.size(); k++) {
+        char t[220];
+        const AABB& b = parts[k].box;
+        snprintf(t, sizeof t, "b ins %d %d %.9g %.9g %.9g %.9g %.9g %.9g\n", n + (int)k, parts[k].material, b.mn.x, b.mn.y, b.mn.z, b.mx.x, b.mx.y, b.mx.z);
+        op += t;
+        undo = "b del " + std::to_string(n + (int)k) + "\n" + undo;
+    }
+    op += "g del " + std::to_string(gi);
+    edDo(op, undo);
+    edSel_ = EdSel();
+    edMulti_.clear();
+    for (size_t k = 0; k < parts.size(); k++) (k ? edMulti_.push_back({ED_BRUSH, n + (int)k}) : (void)(edSel_ = {ED_BRUSH, n}));
+    edNotify("ungrouped into " + std::to_string(parts.size()) + " boxes");
+}
+
+bool Game::edPlaceGroup(const std::string& text) {
+    Map::Group g;
+    if (!parseGroupText(text, g)) return false;
+    const float gr = kGrids[edGridIdx_];
+    Vec3 dir = angleForward(yaw_, pitch_), n;
+    float t = ed_.raycast(edCam_, dir, 200, &n);
+    Vec3 at = snapTo(t >= 0 ? edCam_ + dir * t + n * 0.001f : edCam_ + dir * 8.0f, gr);
+    Vec3 sz = g.box.mx;
+    if (t >= 0 && n.y < -0.5f) at.y -= sz.y; // hit a ceiling: hang below it
+    g.box.mn = snapTo(at - Vec3(sz.x * 0.5f, 0, sz.z * 0.5f), gr);
+    g.box.mx = g.box.mn + sz;
+    Map tmp = ed_;
+    tmp.groups.push_back(g);
+    int gi = (int)ed_.groups.size();
+    edDo(insertOps(tmp, 'g', gi), "g del " + std::to_string(gi));
+    edSel_ = {ED_GROUP, gi};
+    edMulti_.clear();
+    return true;
+}
+
+void Game::edImportGroup() {
+    const char* clip = glfwGetClipboardString(win_);
+    Map::Group g;
+    if (clip && parseGroupText(clip, g)) { // a group on the clipboard: keep it in groups/ (once) and place it
+        std::string text = clip;
+        bool have = false;
+        std::error_code ec;
+        for (auto& e : std::filesystem::directory_iterator(groupDir(), ec)) have |= e.path().extension() == ".txt" && readFile(e.path().string()) == text;
+        std::string path = have ? "" : writeGroupFile(text);
+        edPlaceGroup(text);
+        edNotify(have ? "placed the group from the clipboard" : "placed the group from the clipboard (saved as groups/" + std::filesystem::path(path).filename().string() + ")");
+        return;
+    }
+    edGroupFiles_.clear();
+    std::error_code ec;
+    std::vector<std::pair<std::filesystem::file_time_type, std::string>> fs;
+    for (auto& e : std::filesystem::directory_iterator(groupDir(), ec))
+        if (e.path().extension() == ".txt") fs.push_back({e.last_write_time(ec), e.path().string()});
+    std::sort(fs.begin(), fs.end(), [](auto& a, auto& b) { return a.first > b.first; });
+    for (auto& f : fs) edGroupFiles_.push_back(f.second);
+    edGroupMenu_ = true;
+    edExportAsk_ = false;
+}
+
+void Game::edExportGroup() {
+    Map::Group g;
+    if (edSelValid() && edSel_.kind == ED_GROUP && groupable(ed_, edSel_, edMulti_).size() == 1) g = ed_.groups[edSel_.idx];
+    else if (edExportAsk_) { // YES: group it, then export that
+        edExportAsk_ = false;
+        std::string why;
+        if (!groupOf(ed_, groupable(ed_, edSel_, edMulti_), g, why)) { edNotify(why); return; }
+        edGroupSelection();
+    } else if (!groupable(ed_, edSel_, edMulti_).empty()) { edExportAsk_ = true; edGroupMenu_ = false; return; }
+    else { edNotify("select a group to export"); return; }
+    std::string text = groupText(g), path = writeGroupFile(text);
+    if (path.empty()) { edNotify("could not write to the groups folder"); return; }
+    glfwSetClipboardString(win_, text.c_str());
+    openGroupFolder();
+    edNotify("exported groups/" + std::filesystem::path(path).filename().string() + " (and copied it) - rename it there");
+}
+
+// IMPORT GROUP's list (newest first, click one to place it) / EXPORT's question, over the 3D view
+void Game::drawEditorGroupMenu(float x, float y, float w) {
+    float s = ui_.s(), h = 28 * s, gap = 5 * s;
+    if (edExportAsk_) {
+        ui_.panel(x - 12 * s, y - 12 * s, w + 24 * s, 2 * h + 3 * gap + 40 * s, 0.92f);
+        ui_.labelCentered(x + w * 0.5f, y, "NOT A GROUP - MAKE IT A GROUP FIRST?", kWhite, 0.7f);
+        y += 24 * s;
+        float bw = (w - gap) * 0.5f;
+        if (ui_.button(x, y, bw, h, "YES")) edExportGroup();
+        if (ui_.button(x + bw + gap, y, bw, h, "NO")) edExportAsk_ = false;
+        return;
+    }
+    int rows = std::min<int>((int)edGroupFiles_.size(), 12);
+    ui_.panel(x - 12 * s, y - 12 * s, w + 24 * s, (rows + 2) * (h + gap) + (edGroupFiles_.empty() ? 50 : 34) * s, 0.92f);
+    ui_.labelCentered(x + w * 0.5f, y, "CUSTOM GROUPS", kWhite);
+    y += 24 * s;
+    if (edGroupFiles_.empty()) {
+        ui_.labelCentered(x + w * 0.5f, y, "NONE YET - EXPORT ONE, OR COPY A GROUP AND IMPORT", kGrey, 0.5f);
+        y += 16 * s;
+    }
+    for (int i = 0; i < rows; i++, y += h + gap) {
+        std::string name = std::filesystem::path(edGroupFiles_[i]).stem().string();
+        for (auto& c : name) c = (char)toupper((unsigned char)c);
+        if (ui_.button(x, y, w, h, name)) {
+            edGroupMenu_ = false;
+            if (!edPlaceGroup(readFile(edGroupFiles_[i]))) edNotify("not a quark group file");
+            return;
+        }
+    }
+    float bw = (w - gap) * 0.5f;
+    if (ui_.button(x, y, bw, h, "OPEN FOLDER")) openGroupFolder();
+    if (ui_.button(x + bw + gap, y, bw, h, "CLOSE")) edGroupMenu_ = false;
 }
 
 Game::EdSel Game::edPick(const Vec3& o, const Vec3& dir) const {
@@ -265,6 +581,11 @@ Game::EdSel Game::edPick(const Vec3& o, const Vec3& dir) const {
     for (size_t i = 0; i < ed_.payloadPath.size(); i++) test(ED_PATH, (int)i, edBounds(ed_, {ED_PATH, (int)i}), -0.5f);
     for (size_t i = 0; i < ed_.brushes.size(); i++) if (!ed_.brushes[i].generated) test(ED_BRUSH, (int)i, ed_.brushes[i].box, 0);
     for (size_t i = 0; i < ed_.ladders.size(); i++) test(ED_LADDER, (int)i, ed_.ladders[i], -0.3f);
+    for (size_t i = 0; i < ed_.groups.size(); i++) { // a group: where you hit one of its boxes (a room's inside is open)
+        std::vector<Brush> parts;
+        Map::groupBoxes(ed_.groups[i], parts);
+        for (auto& p : parts) test(ED_GROUP, (int)i, p.box, 0);
+    }
     for (size_t i = 0; i < ed_.bombSites.size(); i++) test(ED_SITE, (int)i, ed_.bombSites[i], 0.25f);
     for (size_t i = 0; i < ed_.checkpoints.size(); i++) test(ED_CHECK, (int)i, ed_.checkpoints[i], 0.25f);
     if (ed_.hasHill) test(ED_HILL, 0, ed_.hill, 0.25f);
@@ -357,7 +678,8 @@ void Game::editorKey(int key, int mods) {
     const float g = kGrids[edGridIdx_];
     if (key == GLFW_KEY_ESCAPE) {
         if (edLook_) { edLook_ = false; captureMouse(false); return; }
-        if (edSel_.valid()) { edSel_ = EdSel(); return; }
+        if (edGroupMenu_ || edExportAsk_) { edGroupMenu_ = edExportAsk_ = false; return; }
+        if (edSel_.valid()) { edSel_ = EdSel(); edMulti_.clear(); return; }
         if (!edOnline_ && edDirty_ && time_ > edLeaveArmed_) { edLeaveArmed_ = time_ + 2; edNotify("unsaved changes - press ESC again to leave"); return; }
         if (edOnline_ && time_ > edLeaveArmed_) { edLeaveArmed_ = time_ + 2; edNotify("press ESC again to leave the session"); return; }
         closeEditor();
@@ -378,7 +700,8 @@ void Game::editorKey(int key, int mods) {
     int kind = edSel_.kind, i = edSel_.idx;
     if (key == GLFW_KEY_M) { // material / team
         edModify([&](Map& m) {
-            if (kind == ED_BRUSH) m.brushes[i].material = (m.brushes[i].material + 1) % 6;
+            if (kind == ED_BRUSH) edMat_ = m.brushes[i].material = (m.brushes[i].material + 1) % 6;
+            else if (kind == ED_GROUP && m.groups[i].type != Map::GROUP_CUSTOM) edMat_ = m.groups[i].material = (m.groups[i].material + 1) % 6;
             else if (kind == ED_SPAWN) m.spawns[i].team = (m.spawns[i].team + 1) % 4;
         }, false);
         return;
@@ -495,7 +818,7 @@ void Game::editorFrame(double dt) {
         return den < 1e-4f ? 0.0f : (bb * dot(d, w) - dot(a, w)) / den;
     };
     // ---- click: grab a handle of the selection, else select what's under the mouse
-    if (uiIn_.pressed && uiIn_.mx < panelX) {
+    if (uiIn_.pressed && uiIn_.mx < panelX && !edGroupMenu_ && !edExportAsk_) {
         ui_.clearFocus();
         int best = -1;
         float bestD = 14 * s;
@@ -515,8 +838,19 @@ void Game::editorFrame(double dt) {
             edDragBase_ = ed_;
             edDragLast_.clear();
             edDragPushed_ = false;
-        } else {
-            edSel_ = edPick(edCam_, edMouseRay());
+        } else { // shift+click adds boxes / groups to the selection (or takes one back out)
+            EdSel p = edPick(edCam_, edMouseRay());
+            auto multi = [](EdSel e) { return e.kind == ED_BRUSH || e.kind == ED_GROUP; };
+            auto same = [&](EdSel e) { return e.kind == p.kind && e.idx == p.idx; };
+            if (glfwGetKey(win_, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS && multi(p) && edSelValid() && multi(edSel_)) {
+                auto it = std::find_if(edMulti_.begin(), edMulti_.end(), same);
+                if (it != edMulti_.end()) edMulti_.erase(it);
+                else if (same(edSel_)) { edSel_ = edMulti_.empty() ? EdSel() : edMulti_.back(); if (!edMulti_.empty()) edMulti_.pop_back(); }
+                else { edMulti_.push_back(edSel_); edSel_ = p; }
+            } else {
+                edSel_ = p;
+                edMulti_.clear();
+            }
         }
     }
     if (edDragAxis_ >= 0 && (!uiIn_.down || !edSelValid())) edDragAxis_ = -1;
@@ -542,6 +876,7 @@ void Game::editorFrame(double dt) {
         }
     }
     if (edSel_.valid() && !edSelValid() && !edOnline_) edSel_ = EdSel(); // (online: a new object may not have arrived yet)
+    if (!edOnline_) edMulti_.erase(std::remove_if(edMulti_.begin(), edMulti_.end(), [&](EdSel e) { return (size_t)e.idx >= kindCount(ed_, e.kind); }), edMulti_.end());
 
     // ---- 3D view
     const Vec3 matColor[6] = {r_.baseColor, r_.accentColor, {0.22f, 0.22f, 0.24f}, r_.metalColor, r_.glowColor, r_.metalColor * 0.7f};
@@ -565,6 +900,7 @@ void Game::editorFrame(double dt) {
         r_.translucentBox(ed_.checkpoints[i], i + 1 == ed_.checkpoints.size() ? Color{1, 1, 1, 0.3f} : Color{0.3f, 1.0f, 0.4f, 0.22f});
     if (ed_.hasHill) r_.translucentBox(ed_.hill, {1.0f, 0.9f, 0.3f, 0.22f});
     for (auto& l : ed_.ladders) r_.translucentBox(l, {0.4f, 0.8f, 1.0f, 0.18f});
+    for (auto& e : edMulti_) if ((size_t)e.idx < kindCount(ed_, e.kind)) { AABB b = edBounds(ed_, e); b.mn -= Vec3(0.03f, 0.03f, 0.03f); b.mx += Vec3(0.03f, 0.03f, 0.03f); r_.translucentBox(b, {1.0f, 0.85f, 0.1f, 0.15f}); }
     if (edSelValid()) {
         AABB b = edBounds(ed_, edSel_);
         b.mn -= Vec3(0.02f, 0.02f, 0.02f); b.mx += Vec3(0.02f, 0.02f, 0.02f);
@@ -700,10 +1036,18 @@ void Game::editorFrame(double dt) {
     y += 6 * s;
     ui_.label(x, y, "ADD (AT THE SCREEN CENTER)", kGrey, 0.5f);
     y += 12 * s;
-    if (ui_.button(x, y, w3, h, "BOX")) edAdd(ED_BRUSH, 0);
-    if (ui_.button(x + w3 + gap, y, w3, h, "ACCENT")) edAdd(ED_BRUSH, 1);
-    if (ui_.button(x + 2 * (w3 + gap), y, w3, h, "WALLBANG")) edAdd(ED_BRUSH, 2);
-    row();
+    static const std::vector<std::string> mats = {"BASE", "ACCENT", "WALLBANG", "METAL", "GLOW", "FAR"};
+    {   // rooms, stairs and ladders are one object each: stretch it and its pieces follow (UNGROUP to split a room / stairs)
+        float w4 = (w - 3 * gap) / 4;
+        if (ui_.button(x, y, w4, h, "BOX")) edAdd(ED_BRUSH, 0);
+        if (ui_.button(x + w4 + gap, y, w4, h, "ROOM")) edAdd(ED_GROUP, Map::GROUP_ROOM);
+        if (ui_.button(x + 2 * (w4 + gap), y, w4, h, "STAIRS")) edAdd(ED_GROUP, Map::GROUP_STAIRS);
+        if (ui_.button(x + 3 * (w4 + gap), y, w4, h, "LADDER")) edAdd(ED_LADDER, 0);
+        row();
+        static const std::vector<std::string> newMats = {"NEW ONES: BASE", "NEW ONES: ACCENT", "NEW ONES: WALLBANG", "NEW ONES: METAL", "NEW ONES: GLOW", "NEW ONES: FAR"};
+        ui_.cycle(x, y, w, h, "MATERIAL", edMat_, 6, newMats);
+        row();
+    }
     if (ui_.button(x, y, w3, h, "SPAWN")) edAdd(ED_SPAWN, SPAWN_ANY);
     if (ui_.button(x + w3 + gap, y, w3, h, "LIGHT")) edAdd(ED_LIGHT, 0);
     if (ui_.button(x + 2 * (w3 + gap), y, w3, h, "PATH PT")) edAdd(ED_PATH, 0);
@@ -712,8 +1056,13 @@ void Game::editorFrame(double dt) {
     if (ui_.button(x + w3 + gap, y, w3, h, "HILL")) edAdd(ED_HILL, 0);
     if (ui_.button(x + 2 * (w3 + gap), y, w3, h, "CHECKPT")) edAdd(ED_CHECK, 0);
     row();
-    if (ui_.button(x, y, w, h, "LADDER (ONE OBJECT: STRETCH IT, RUNGS FOLLOW)")) edAdd(ED_LADDER, 0);
-    row();
+    {
+        bool oneGroup = edSelValid() && edSel_.kind == ED_GROUP && edMulti_.empty();
+        if (ui_.button(x, y, w3, h, oneGroup ? "UNGROUP" : "GROUP")) { if (oneGroup) edUngroup(); else edGroupSelection(); }
+        if (ui_.button(x + w3 + gap, y, w3, h, "IMPORT GROUP")) edImportGroup();
+        if (ui_.button(x + 2 * (w3 + gap), y, w3, h, "EXPORT GROUP")) edExportGroup();
+        row();
+    }
     {
         static const std::vector<std::string> grids = {"GRID 0.25 M", "GRID 0.5 M", "GRID 1 M", "GRID 2 M", "GRID 4 M"};
         ui_.cycle(x, y, w, h, "GRID ([ ])", edGridIdx_, 5, grids);
@@ -748,6 +1097,8 @@ void Game::editorFrame(double dt) {
         AABB b = edBounds(ed_, edSel_);
         int kind = edSel_.kind, i = edSel_.idx;
         std::string what = kKindNames[kind];
+        if (kind == ED_GROUP) what = ed_.groups[i].type == Map::GROUP_ROOM ? "ROOM" : ed_.groups[i].type == Map::GROUP_STAIRS ? "STAIRS" : "GROUP";
+        if (!edMulti_.empty()) what += " + " + std::to_string(edMulti_.size()) + " MORE";
         if (kind == ED_CHECK) what += " " + std::to_string(i + 1) + (i + 1 == (int)ed_.checkpoints.size() ? " (FINISH)" : "");
         if (kind == ED_PATH) what += " " + std::to_string(i + 1);
         ui_.label(x, y, "SELECTED: " + what, ui_.accent, 0.6f);
@@ -761,9 +1112,24 @@ void Game::editorFrame(double dt) {
         y += 14 * s;
         if (kind == ED_BRUSH) {
             int m = ed_.brushes[i].material;
-            static const std::vector<std::string> mats = {"BASE", "ACCENT", "WALLBANG", "METAL", "GLOW", "FAR"};
-            if (ui_.cycle(x, y, w, h, "MATERIAL (M)", m, 6, mats)) edModify([&](Map& mm) { mm.brushes[i].material = m; }, false);
+            if (ui_.cycle(x, y, w, h, "MATERIAL (M)", m, 6, mats)) { edMat_ = m; edModify([&](Map& mm) { mm.brushes[i].material = m; }, false); }
             row();
+        } else if (kind == ED_GROUP) {
+            auto& gr = ed_.groups[i];
+            if (gr.type == Map::GROUP_CUSTOM) {
+                ui_.label(x, y, std::to_string(gr.parts.size()) + " BOXES, STRETCHED AS ONE - UNGROUP TO EDIT THEM", kGrey, 0.5f);
+                y += 14 * s;
+            } else {
+                int m = gr.material;
+                if (ui_.cycle(x, y, w, h, "MATERIAL (M)", m, 6, mats)) { edMat_ = m; edModify([&](Map& mm) { mm.groups[i].material = m; }, false); }
+                row();
+            }
+            if (gr.type == Map::GROUP_STAIRS) {
+                static const std::vector<std::string> dirs = {"+X", "-X", "+Z", "-Z"};
+                int d = gr.dir;
+                if (ui_.cycle(x, y, w, h, "RISING TOWARD", d, 4, dirs)) edModify([&](Map& mm) { mm.groups[i].dir = d; }, false);
+                row();
+            }
         } else if (kind == ED_SPAWN) {
             static const std::vector<std::string> teams = {"TEAM A", "TEAM B", "ANY TEAM", "RACE"};
             int t = ed_.spawns[i].team;
@@ -804,12 +1170,13 @@ void Game::editorFrame(double dt) {
     // help, bottom left
     static const char* help[] = {
         "RIGHT MOUSE + MOVE: LOOK    WASD: FLY    SPACE / C: UP / DOWN    SHIFT: FAST    WHEEL: SPEED",
-        "CLICK: SELECT    ARROWS / PGUP / PGDN: MOVE BY GRID (ALONG YOUR VIEW)",
+        "CLICK: SELECT (SHIFT: ADD MORE, THEN GROUP)    ARROWS / PGUP / PGDN: MOVE BY GRID (ALONG YOUR VIEW)",
         "SHIFT + ARROWS: GROW THAT SIDE    CTRL + ARROWS: SHRINK IT    M: MATERIAL / TEAM",
         "CTRL+D: DUPLICATE    DEL: DELETE    CTRL+Z: UNDO    CTRL+S: SAVE    ESC: DESELECT / LEAVE",
     };
     float hy = H - 12 * s - 4 * 13 * s;
     r_.rect(0, hy - 6 * s, panelX, H - hy + 6 * s, {0, 0, 0, 0.45f});
     for (const char* t : help) { ui_.label(10 * s, hy, t, kGrey, 0.5f); hy += 13 * s; }
+    if (edGroupMenu_ || edExportAsk_) drawEditorGroupMenu(panelX * 0.5f - 200 * s, 70 * s, 400 * s);
     if (time_ < edMsgUntil_) ui_.labelCentered(panelX * 0.5f, 20 * s, edMsg_, kWhite);
 }

@@ -186,13 +186,16 @@ private:
     std::vector<std::string> rankIdsInGame() const;
     // map editor (editor.cpp). Every change is an edit op (applyMapEdit): applied locally when editing
     // alone, sent through the server in an edit session so everyone's copy stays the same.
-    enum { ED_BRUSH, ED_SPAWN, ED_LIGHT, ED_SITE, ED_HILL, ED_CHECK, ED_PATH, ED_LADDER };
+    enum { ED_BRUSH, ED_SPAWN, ED_LIGHT, ED_SITE, ED_HILL, ED_CHECK, ED_PATH, ED_LADDER, ED_GROUP };
     struct EdSel { int kind = -1, idx = -1; bool valid() const { return kind >= 0; } };
     Map ed_;
     std::string edName_ = "mymap", edMsg_, edTitle_;
     double edResetArmed_ = 0, edMsgUntil_ = 0, edLastPush_ = 0, edLeaveArmed_ = 0, edNextCam_ = 0, edTickAcc_ = 0;
     EdSel edSel_;
-    int edGridIdx_ = 1, edLoadIdx_ = 0;
+    std::vector<EdSel> edMulti_; // shift+click: more selected boxes / groups (for GROUP)
+    int edGridIdx_ = 1, edLoadIdx_ = 0, edMat_ = 0; // edMat_: the material new boxes / rooms / stairs get (the last one picked)
+    bool edGroupMenu_ = false, edExportAsk_ = false; // IMPORT GROUP's list of saved groups; EXPORT's "make it a group first?"
+    std::vector<std::string> edGroupFiles_;
     float edSpeed_ = 12;
     Vec3 edCam_;
     bool edLook_ = false, edDirty_ = false, edBaked_ = false;
@@ -229,6 +232,12 @@ private:
     void edDelete();
     void edDuplicate();
     void edAdd(int kind, int variant);
+    void edGroupSelection();            // GROUP: the selected boxes / groups become one custom group
+    void edUngroup();                   // UNGROUP: the selected group's boxes become plain boxes
+    bool edPlaceGroup(const std::string& text); // a "quark-group 1" text, added at the screen center
+    void edImportGroup();               // clipboard first (saved to groups/), else the groups menu
+    void edExportGroup();               // the selected group to groups/<new file> + clipboard, then open the folder
+    void drawEditorGroupMenu(float x, float y, float w);
     EdSel edPick(const Vec3& o, const Vec3& dir) const;
     Vec3 edMouseRay() const;
     bool edSave();
