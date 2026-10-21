@@ -304,6 +304,8 @@ def run_bot(cfg: dict):
         async def wrapper(*a, **kw):
             try:
                 await fn(*a, **kw)
+            except (aiohttp.ClientError, asyncio.TimeoutError, ConnectionError) as e:   # a network blip: one line, no traceback
+                log.warning("%s: network error, will retry next tick (%s)", fn.__name__, type(e).__name__)
             except Exception:
                 log.exception("%s failed (will retry next tick)", fn.__name__)
         wrapper.__name__ = fn.__name__

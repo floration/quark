@@ -1901,6 +1901,18 @@ void Game::drawHud() {
     } else if (ms.mode == MODE_DUEL && ms.phase != PHASE_WARMUP && ms.duelMod < DUEL_MOD_COUNT) {
         obj = std::string("THIS LIFE: ") + duelModTitle(ms.duelMod);
     }
+    // spectating: a big banner under the score box, impossible to miss (the objective line would be for a team you're not on)
+    const bool spectator = mep && mep->team() == TEAM_SPECTATOR;
+    if (spectator) {
+        obj.clear(); progress = -1;
+        float bts = std::max(2.0f, std::round(ts * 1.5f));
+        const char* t = "SPECTATOR";
+        float bw = r_.textWidth(t, bts) + 48 * s, bh = r_.textHeight(bts) + 16 * s, by = 8 * s + boxH + 8 * s;
+        r_.rect(cx - bw * 0.5f, by, bw, bh, {0.05f, 0.06f, 0.08f, 0.8f});
+        r_.rect(cx - bw * 0.5f, by, bw, 3 * s, rgba(cfg_.colorFriendly));
+        r_.text(cx - r_.textWidth(t, bts) * 0.5f, by + 8 * s, bts, t, kWhite);
+        ui_.labelCentered(cx, by + bh + 6 * s, "JOIN A TEAM FROM THE MENU (ESC)", kGrey, 0.5f);
+    }
     if (!obj.empty()) ui_.labelCentered(cx, 80 * s, obj, kWhite);
     if (progress >= 0) {
         float bw = 300 * s;
