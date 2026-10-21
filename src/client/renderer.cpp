@@ -179,6 +179,18 @@ void main() {
     vec3 c = mix(uSky, zenith, pow(up, 0.6));
     float s = max(dot(d, uSunDir), 0.0);
     c += vec3(1.0, 0.9, 0.7) * (pow(s, 600.0) * 4.0 + pow(s, 12.0) * 0.25);
+    // a dark sky (space) gets a starfield: one hash per pixel on a 3D grid of directions, no geometry
+    float dark = 1.0 - smoothstep(0.03, 0.08, dot(uSky, vec3(0.3, 0.59, 0.11)));
+    if (dark > 0.0) {
+        vec3 g = d * 260.0, cell = floor(g);
+        float h = fract(sin(dot(cell, vec3(127.1, 311.7, 74.7))) * 43758.5453);
+        if (h > 0.985) {
+            vec3 j = fract(vec3(h * 17.0, h * 31.0, h * 47.0)) * 0.5 + 0.25;
+            float r = length(g - cell - j);
+            float b = (h - 0.985) / 0.015;
+            c += mix(vec3(0.7, 0.8, 1.0), vec3(1.0, 0.9, 0.75), fract(h * 91.0)) * smoothstep(0.22, 0.0, r) * (0.6 + 2.4 * b * b) * dark;
+        }
+    }
     c *= uBright;
     c = clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0) * 1.08;
     fragColor = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);

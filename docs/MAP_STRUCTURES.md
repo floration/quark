@@ -291,6 +291,8 @@ The numbers in brackets are measured by `build/quark_tests mapreport` (see [MAP_
 - **Observation windows.** Lethal: out into space.
 - **The observation gallery at 8 m, up a ladder.** Each side's high perch, in plain sight of the other.
 - **Ceiling lights and the spine pipe.** Light, and a hook down the middle.
+- **Hull windows (clip glass, metal frames, a mullion and a sill light strip).** Tall ones in the docking bays, one per side corridor, two beside the hub walkway and a long band at the gallery. You can see and shoot out, but nobody falls out. They're there to show that you're in orbit.
+- **The view outside: a ringed gas giant to the south, a moon and a moonlet to the north, and stars.** Unlit `far` scenery (no collision, no lightmap cost). The black sky (palette `sky`) makes the sky shader draw a starfield, so the stars need no brushes.
 
 ## Railyard: payload. Setting: a rail yard.
 **Why it suits payload:**
