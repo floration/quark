@@ -1800,32 +1800,41 @@ void Game::drawHud() {
     bool rankedGame = ms.flags & MS_RANKED;
     if (rankedGame) title = std::string(rankedKind(ms.arenaVariant)) + " - " + arenaVariant(ms.arenaVariant).title;
     if (ms.flags & MS_TIMETRIAL) title = "TIME TRIAL - VIADUCT";
-    ui_.panel(cx - 220 * s, 8 * s, 440 * s, 64 * s, 0.55f);
+    // score box sized from the real text sizes (HUD text is rounded to whole steps, so it's relatively
+    // bigger at small heights): the scores sit outside the widest centre line, the phase under the title
+    std::string scoreA, scoreB;
+    if (teamMode) {
+        scoreA = std::to_string(myTeam == TEAM_A ? ms.scoreA : ms.scoreB);
+        scoreB = std::to_string(myTeam == TEAM_A ? ms.scoreB : ms.scoreA);
+    } else if (mep) {
+        int best = -9999;
+        for (auto& p : net_.latest().players) if (p.id != me && !(p.flags & PS_SPECTATOR)) best = std::max<int>(best, p.score);
+        scoreA = std::to_string(mep->score);
+        scoreB = best == -9999 ? "-" : std::to_string(best);
+    }
+    const float sts = ts * 1.5f, th = r_.textHeight(ts);
+    const float scoreW = std::max(r_.textWidth(scoreA, sts), r_.textWidth(scoreB, sts));
+    const float midW = std::max(r_.textWidth(title, ts), r_.textWidth(phase, ts));
+    const float half = std::min(W * 0.5f - 8 * s, std::max(220 * s, midW * 0.5f + scoreW + 32 * s));
+    const float phaseY = 16 * s + std::max(22 * s, th + 4 * s);
+    const float boxH = std::max(64 * s, phaseY + th);
+    const float scoreY = 8 * s + (boxH - r_.textHeight(sts)) * 0.5f;
+    ui_.panel(cx - half, 8 * s, half * 2, boxH, 0.55f);
     if (rankedGame) { // always visible on a ranked server
         const Color gold = {1.0f, 0.78f, 0.25f, 1};
-        r_.rect(cx - 220 * s, 8 * s, 440 * s, 3 * s, gold);
+        r_.rect(cx - half, 8 * s, half * 2, 3 * s, gold);
         float tts = std::max(1.0f, std::round(ts * 0.5f));
         float tw = r_.textWidth("RANKED", tts) + 12 * s; // tag on the panel's right edge, clear of the objective line
-        r_.rect(cx + 224 * s, 8 * s, tw, r_.textHeight(tts) + 8 * s, gold);
-        r_.text(cx + 230 * s, 12 * s, tts, "RANKED", {0.1f, 0.08f, 0.02f, 1});
+        r_.rect(cx + half + 4 * s, 8 * s, tw, r_.textHeight(tts) + 8 * s, gold);
+        r_.text(cx + half + 10 * s, 12 * s, tts, "RANKED", {0.1f, 0.08f, 0.02f, 1});
         if (ms.phase == PHASE_WARMUP || ms.phase == PHASE_FREEZE)
             ui_.labelCentered(cx, 104 * s, "RANKED: DEFAULT MODEL, HUD, CONTROLS AND 10 MS INTERP FOR FAIRNESS", gold, 0.5f); // under the ruleset line
     }
     ui_.labelCentered(cx, 16 * s, title, kWhite);
-    ui_.labelCentered(cx, 16 * s + 22 * s, phase, kGrey);
-    if (teamMode) {
-        int mine = myTeam == TEAM_A ? ms.scoreA : ms.scoreB;
-        int theirs = myTeam == TEAM_A ? ms.scoreB : ms.scoreA;
-        std::string a = std::to_string(mine), b = std::to_string(theirs);
-        r_.text(cx - 200 * s, 22 * s, ts * 1.5f, a, fc);
-        r_.text(cx + 200 * s - r_.textWidth(b, ts * 1.5f), 22 * s, ts * 1.5f, b, ec);
-    } else if (mep) {
-        std::string a = std::to_string(mep->score);
-        int best = -9999;
-        for (auto& p : net_.latest().players) if (p.id != me && !(p.flags & PS_SPECTATOR)) best = std::max<int>(best, p.score);
-        std::string b = best == -9999 ? "-" : std::to_string(best);
-        r_.text(cx - 200 * s, 22 * s, ts * 1.5f, a, fc);
-        r_.text(cx + 200 * s - r_.textWidth(b, ts * 1.5f), 22 * s, ts * 1.5f, b, ec);
+    ui_.labelCentered(cx, phaseY, phase, kGrey);
+    if (!scoreA.empty()) {
+        r_.text(cx - half + 20 * s, scoreY, sts, scoreA, fc);
+        r_.text(cx + half - 20 * s - r_.textWidth(scoreB, sts), scoreY, sts, scoreB, ec);
     }
 
     // objective line
@@ -2017,9 +2026,7 @@ void Game::drawHud() {
     // chat (bottom left)
     drawChatBox(W, H, s, ts);
     // notices
-    while (!notices_.empty() && notices_.front().until < time_) notices_.pop_front();
-    y = H * 0.3f;
-    for (auto& n : notices_) { ui_.labelCentered(cx, y, n.text, n.color); y += r_.textHeight(ts) + 6 * s; }
+    drawNotices(H * 0.3f, ts, s);
     if (time_ < centerUntil_) ui_.labelCentered(cx, H * 0.36f, centerText_, kWhite, 1.5f);
     drawVotePanel(cx, s, ts);
 
@@ -2695,7 +2702,15 @@ void Game::drawRaceStats(float cx, float y) {
 
 void Game::drawLeaderboard(float cx, float y) {
     static const int ladders[3] = {0, 1, 5};
-    float s = ui_.s(), colW = 236 * s, gap = 14 * s, w = 4 * colW + 3 * gap, x0 = cx - w * 0.5f;
+    float s = ui_.s(), gap = 14 * s;
+    // four columns of 236 at 16:9; narrower ones (names cut shorter) when the screen is squarer, e.g. 4:3
+    float colW = std::min(236 * s, ((float)r_.width() - 48 * s - 3 * gap) / 4), w = 4 * colW + 3 * gap, x0 = cx - w * 0.5f;
+    const size_t nameMax = (size_t)(18 * colW / (236 * s)), raceNameMax = (size_t)(16 * colW / (236 * s));
+    auto head = [&](float x, float yy, const std::string& t) { // column title, a whole step smaller if it won't fit
+        float hs = std::max(1.0f, std::round(ui_.textScale() * 0.8f));
+        while (hs > 1 && r_.textWidth(t, hs) > colW - 8 * s) hs -= 1;
+        r_.text(x + (colW - r_.textWidth(t, hs)) * 0.5f, yy + 4 * s, hs, t, kWhite);
+    };
     if (raceStatsView_) {
         drawRaceStats(cx, y);
         float by = y + 26 * 17 * s + 54 * s;
@@ -2717,7 +2732,7 @@ void Game::drawLeaderboard(float cx, float y) {
         float x = x0 + c * (colW + gap), yy = y;
         std::string ladder = arenaVariant(ladders[c]).name;
         r_.rect(x, yy, colW, 26 * s, {ui_.accent.r * 0.45f, ui_.accent.g * 0.45f, ui_.accent.b * 0.45f, 0.95f});
-        ui_.labelCentered(x + colW * 0.5f, yy + 4 * s, arenaVariant(ladders[c]).title, kWhite, 0.8f);
+        head(x, yy, arenaVariant(ladders[c]).title);
         yy += 32 * s;
         std::vector<RankService::LeaderRow> rows;
         if (!rank_.leaderboard(ladder, rows)) { r_.text(x + 6 * s, yy, ts, "LOADING...", kGrey); continue; }
@@ -2725,7 +2740,7 @@ void Game::drawLeaderboard(float cx, float y) {
         if (!rows.empty() && rows[0].rating < 0) { r_.text(x + 6 * s, yy, ts, upper(rows[0].name), kGrey); continue; }
         for (size_t i = 0; i < rows.size() && i < 20; i++) {
             std::string n = std::to_string(i + 1) + ". " + upper(rows[i].name);
-            if (n.size() > 18) n.resize(18);
+            if (n.size() > nameMax) n.resize(nameMax);
             Color c2 = i == 0 ? Color{1.0f, 0.8f, 0.3f, 1} : i < 3 ? kWhite : Color{0.8f, 0.82f, 0.85f, 1};
             r_.text(x + 6 * s, yy, ts, n, c2);
             std::string rt = std::to_string(rows[i].rating);
@@ -2739,7 +2754,7 @@ void Game::drawLeaderboard(float cx, float y) {
     {   // race: fastest Viaduct time trials
         float x = x0 + 3 * (colW + gap), yy = y;
         r_.rect(x, yy, colW, 26 * s, {1.0f * 0.45f, 0.78f * 0.45f, 0.25f * 0.45f, 0.95f});
-        ui_.labelCentered(x + colW * 0.5f, yy + 4 * s, "VIADUCT TIME TRIAL", kWhite, 0.8f);
+        head(x, yy, "VIADUCT TIME TRIAL");
         yy += 32 * s;
         std::vector<RankService::LeaderRow> rows;
         if (!rank_.raceBoard("viaduct", rows)) r_.text(x + 6 * s, yy, ts, "LOADING...", kGrey);
@@ -2748,7 +2763,7 @@ void Game::drawLeaderboard(float cx, float y) {
             if (rows.empty()) r_.text(x + 6 * s, yy, ts, "NO TIMES YET", kGrey);
             for (size_t i = 0; i < rows.size() && i < 20; i++) {
                 std::string n = std::to_string(i + 1) + ". " + upper(rows[i].name);
-                if (n.size() > 16) n.resize(16);
+                if (n.size() > raceNameMax) n.resize(raceNameMax);
                 Color c2 = i == 0 ? Color{1.0f, 0.8f, 0.3f, 1} : i < 3 ? kWhite : Color{0.8f, 0.82f, 0.85f, 1};
                 r_.text(x + 6 * s, yy, ts, n, c2);
                 std::string t = fmtRace(rows[i].rating);
@@ -3121,6 +3136,11 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     }
 }
 
+void Game::drawNotices(float y, float ts, float s) {
+    while (!notices_.empty() && notices_.front().until < time_) notices_.pop_front();
+    for (auto& n : notices_) { ui_.labelCentered(r_.width() * 0.5f, y, n.text, n.color); y += r_.textHeight(ts) + 6 * s; }
+}
+
 void Game::drawMenu() {
     QZONE("drawMenu");
     if (screen_ == Screen::InGame || screen_ == Screen::Editor) return;
@@ -3128,6 +3148,7 @@ void Game::drawMenu() {
     float s = H / 720.0f;
     ui_.begin(&r_, uiIn_, s);
     r_.rect(0, 0, W, H, {0.03f, 0.035f, 0.05f, r_.worldLoaded() ? 0.6f : 1.0f});
+    drawNotices(12 * s, ui_.textScale(), s); // e.g. "SAVED <mode>": the strip above the title, clear of the buttons
     float cx = W * 0.5f;
     float bw = 340 * s, bh = 40 * s, gap = 10 * s;
     float x = cx - bw * 0.5f;

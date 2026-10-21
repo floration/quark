@@ -90,6 +90,7 @@ private:
     void handleEvents();
     void drawWorld(float alpha);
     void drawHud();
+    void drawNotices(float y, float ts, float s); // notify() lines, centred from y down (HUD and menus)
     void drawScoreboard();
     void drawMenu();
     void drawPauseMenu(float cx, float y);
