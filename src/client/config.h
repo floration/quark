@@ -21,7 +21,7 @@ struct Settings {
     int width = 1280, height = 720;
     bool shadows = true;
     int model = 0;              // player model (cosmetic): STANDARD, HEAVY, SCOUT, ROBOT, KNIGHT
-    int soundPack = 0;          // STANDARD, ARCADE, HEAVY, RETRO, SOFT
+    int soundPack = 0;          // DEFAULT, HEAVY METAL, MAGICAL, RETRO, WOODEN
     int socd = 0;               // opposite movement keys held together: 0 cancel out, 1 last pressed wins, 2 first pressed wins
     bool altToggle = false;     // alt-fire (scope) toggles on a tap instead of hold
     bool hudVerbose = false;    // the info block top right (clock, version, fps min, speed, players alive, ...)

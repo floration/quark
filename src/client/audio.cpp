@@ -1,6 +1,7 @@
 #include "audio.h"
 #include "voice_data.h"
 #include "voice_recorded.h"
+#include "sfx_recorded.h"
 #include "../common/profile.h"
 #include <algorithm>
 #include <cmath>
@@ -130,14 +131,11 @@ void Audio::synthesize() {
     s[SND_STREAK] = make(0.5f); addTone(s[SND_STREAK], 660, 0.5f, 0.003f, 0.09f); addTone(s[SND_STREAK], 990, 0.5f, 0.003f, 0.16f, 0.1f);
     addRoom(s[SND_STREAK], 0.3f, 0.8f); finish(s[SND_STREAK], 0.22f);
     s[SND_TYPING] = make(0.05f); addThump(s[SND_TYPING], 2400, 1600, 0.004f, 1, 0.0005f, 0.006f); addBand(s[SND_TYPING], 2000, 7000, 0.3f, 0.0005f, 0.004f, 21); finish(s[SND_TYPING], 0.12f);
-    // feedback: your death (a low falling thud), someone else's killstreak (a rising two-note sting), typing (a soft click)
-    s[SND_DEATH] = make(0.7f); addThump(s[SND_DEATH], 180, 40, 0.15f, 1, 0.004f, 0.25f); addTone(s[SND_DEATH], 220, 0.25f, 0.01f, 0.2f); addTone(s[SND_DEATH], 165, 0.25f, 0.01f, 0.3f, 0.12f);
-    addRoom(s[SND_DEATH], 0.35f, 1.2f); finish(s[SND_DEATH], 0.34f);
-    s[SND_STREAK] = make(0.5f); addTone(s[SND_STREAK], 660, 0.5f, 0.003f, 0.09f); addTone(s[SND_STREAK], 990, 0.5f, 0.003f, 0.16f, 0.1f);
-    addRoom(s[SND_STREAK], 0.3f, 0.8f); finish(s[SND_STREAK], 0.22f);
-    s[SND_TYPING] = make(0.05f); addThump(s[SND_TYPING], 2400, 1600, 0.004f, 1, 0.0005f, 0.006f); addBand(s[SND_TYPING], 2000, 7000, 0.3f, 0.0005f, 0.004f, 21); finish(s[SND_TYPING], 0.12f);
+    // the kits: RETRO re-voices these (chiptune), HEAVY METAL / MAGICAL / WOODEN are recorded (sfx_recorded.h);
+    // anything a kit lacks is the DEFAULT sound
     for (int p = 1; p < kPacks; p++)
-        for (int i = 0; i < SND_VOICE_THREE; i++) { sounds_[p][i] = s[i]; voice(sounds_[p][i], p); }
+        for (int i = 0; i < SND_VOICE_THREE; i++) { sounds_[p][i] = s[i]; if (p == kPackRetro) voice(sounds_[p][i], p); }
+    loadRecordedKits();
     loadAnnouncer(announcer_);
 }
 
@@ -178,13 +176,23 @@ void Audio::loadAnnouncer(int set) {
     announcer_ = set;
 }
 
-// Sound packs re-voice every synthesized sound: pitch (by resampling), extra room, a low-pass, and for RETRO
-// a bit-crush with a sample-and-hold down to ~11 kHz. STANDARD leaves them as synthesized.
+// short-term loudness: the loudest 20 ms (RMS), so a clip's level doesn't depend on how long its tail rings
+static float loudness(const std::vector<float>& v) {
+    const size_t w = R / 50;
+    double best = 0, e = 0;
+    for (size_t i = 0; i < v.size(); i++) {
+        e += (double)v[i] * v[i];
+        if (i >= w) e -= (double)v[i - w] * v[i - w];
+        best = std::max(best, e);
+    }
+    return (float)std::sqrt(best / w);
+}
+
+// RETRO: the DEFAULT sounds a little higher, crushed to 4-bit levels held for 4 samples (~12 kHz): chiptune.
 static void voice(std::vector<float>& b, int pack) {
-    if (pack == 0 || b.empty()) return;
-    auto rms = [](const std::vector<float>& v) { double e = 0; for (float x : v) e += (double)x * x; return std::sqrt(e / std::max<size_t>(1, v.size())); };
-    double before = rms(b);
-    float pitch = pack == 1 ? 1.35f : pack == 2 ? 0.72f : pack == 3 ? 1.1f : 0.9f;
+    if (pack != Audio::kPackRetro || b.empty()) return;
+    float before = loudness(b);
+    const float pitch = 1.1f;
     std::vector<float> o((size_t)(b.size() / pitch) + 1);
     for (size_t i = 0; i < o.size(); i++) {
         float x = i * pitch;
@@ -192,22 +200,31 @@ static void voice(std::vector<float>& b, int pack) {
         float f = x - k;
         o[i] = k + 1 < b.size() ? b[k] + (b[k + 1] - b[k]) * f : (k < b.size() ? b[k] : 0.0f);
     }
-    if (pack == 2) addRoom(o, 0.35f, 1.4f);                       // HEAVY: lower, bigger room
-    if (pack == 3) {                                              // RETRO: 4-bit levels, held for 4 samples
-        float held = 0;
-        for (size_t i = 0; i < o.size(); i++) { if (i % 4 == 0) held = std::round(o[i] * 8.0f) / 8.0f; o[i] = held; }
-    }
-    if (pack == 4) {                                              // SOFT: one-pole low-pass, rounder and quieter
-        float y = 0;
-        for (auto& v : o) { y += (v - y) * 0.18f; v = y * 0.85f; }
-    }
-    if (pack == 1) for (auto& v : o) v = std::tanh(v * 1.6f) * 0.75f; // ARCADE: brighter, saturated
-    // fairness: every pack is as loud as STANDARD (same RMS energy), so no pack hears or hides footsteps better
-    double after = rms(o);
-    if (after > 1e-6) { float g = (float)(before / after); for (auto& v : o) v = std::clamp(v * g, -1.0f, 1.0f); }
+    float held = 0;
+    for (size_t i = 0; i < o.size(); i++) { if (i % 4 == 0) held = std::round(o[i] * 8.0f) / 8.0f; o[i] = held; }
+    // fairness: as loud as DEFAULT, so no kit hears or hides footsteps better
+    float after = loudness(o);
+    if (after > 1e-6f) { float g = before / after; for (auto& v : o) v = std::clamp(v * g, -1.0f, 1.0f); }
     b.swap(o);
 }
 
+// The recorded kits (sfx_recorded.h, 22.05 kHz) up to the mix rate, each matched to the DEFAULT sound's loudness.
+// All done once at startup: the mixer only ever reads ready float buffers.
+void Audio::loadRecordedKits() {
+    for (const SfxClip& c : kSfxClips) {
+        if (c.kit <= 0 || c.kit >= kPacks || c.id < 0 || c.id >= SND_VOICE_THREE || c.size < 2) continue;
+        std::vector<float> v((size_t)((double)c.size * R / kSfxRate));
+        for (size_t i = 0; i < v.size(); i++) {
+            float t = (float)((double)i * kSfxRate / R); size_t a = (size_t)t; float f = t - a;
+            float x0 = c.data[std::min(a, c.size - 1)] / 32768.0f, x1 = c.data[std::min(a + 1, c.size - 1)] / 32768.0f;
+            v[i] = x0 + (x1 - x0) * f;
+        }
+        if (c.kit == kPackMagical) { v.resize(v.size() + R / 10, 0.0f); addRoom(v, 0.3f, 1.3f); finish(v, 1.0f); }  // a shimmering hall
+        float want = loudness(sounds_[0][c.id]), have = loudness(v);
+        if (have > 1e-6f) { float g = want / have; for (auto& x : v) x = std::clamp(x * g, -1.0f, 1.0f); }
+        sounds_[c.kit][c.id].swap(v);
+    }
+}
 
 void Audio::voiceGains(Voice& v) {
     if (!v.spatial) { v.gainL = v.gainR = v.volume; return; }

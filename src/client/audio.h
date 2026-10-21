@@ -1,5 +1,5 @@
 // Audio: a small low-latency mixer on top of the OS audio API (WinMM on Windows, CoreAudio on
-// macOS, ALSA on Linux loaded at runtime). All sounds are synthesized at startup (sounds.cpp),
+// macOS, ALSA on Linux loaded at runtime). All sounds are synthesized or decoded at startup (audio.cpp),
 // so there are no sound files.
 #pragma once
 #include <atomic>
@@ -48,9 +48,10 @@ public:
     void setListener(const Vec3& pos, float yaw) { std::lock_guard<std::mutex> l(mu_); listener_ = pos; listenerYaw_ = yaw; }
     void setMasterVolume(float v) { master_ = v; }
     void setAnnouncer(int set) { if (set != announcer_) { if (running_) loadAnnouncer(set); else announcer_ = set; } } // 0 male, 1 female
-    // Sound packs: the same synthesized sounds, voiced differently (STANDARD, ARCADE, HEAVY, RETRO, SOFT).
+    // Sound kits: DEFAULT (synthesized), HEAVY METAL, MAGICAL, WOODEN (recorded CC0 clips, sfx_recorded.h), RETRO (DEFAULT, chiptuned).
     // All packs are built at startup, so switching is free and every player can sound different.
     static constexpr int kPacks = 5;
+    enum { kPackDefault, kPackMetal, kPackMagical, kPackRetro, kPackWooden };
     void setPack(int pack) { pack_ = (pack < 0 || pack >= kPacks) ? 0 : pack; }
     int pack() const { return pack_; }
     bool ok() const { return running_; }
@@ -62,6 +63,7 @@ public:
 private:
     struct Voice { int id, pack; float pos; float step; float gainL, gainR; bool spatial; Vec3 at; float volume; };
     void synthesize();
+    void loadRecordedKits();
     void loadAnnouncer(int set);
     int announcer_ = 0;
     std::atomic<int> pack_{0};

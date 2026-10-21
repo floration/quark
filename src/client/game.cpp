@@ -3016,7 +3016,7 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     {   // cosmetics: player model (everyone sees it) and sound pack
         std::vector<std::string> mn;
         for (int i = 0; i < kPlayerModels; i++) mn.push_back(std::string("PLAYER MODEL: ") + playerModelName(i));
-        static const std::vector<std::string> sn = {"SOUND PACK: STANDARD", "SOUND PACK: ARCADE", "SOUND PACK: HEAVY", "SOUND PACK: RETRO", "SOUND PACK: SOFT"};
+        static const std::vector<std::string> sn = {"SOUND PACK: DEFAULT", "SOUND PACK: HEAVY METAL", "SOUND PACK: MAGICAL", "SOUND PACK: RETRO", "SOUND PACK: WOODEN"};
         ui_.cycle(x, y, w * 0.5f - gap * 0.5f, h, "MODEL", cfg_.model, kPlayerModels, mn);
         ui_.cycle(x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "SOUNDS", cfg_.soundPack, 5, sn);
     }
