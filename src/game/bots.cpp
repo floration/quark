@@ -71,7 +71,7 @@ Vec3 objective(Server& s, int id, BotBrain& b) {
             break;
         case MODE_PAYLOAD:
         case MODE_NPAYLOAD:
-            if (map.payloadPath.size() >= 2) return map.payloadPoint(m.payloadDist);
+            if (map.payloadPath.size() >= 2) return map.cartPoint(m.mode, m.attackers, m.payloadDist);
             break;
         case MODE_POINTS:   // both sides go to the point under attack (its floor)
             if (m.point < map.points.size()) { const AABB& p = map.points[m.point]; return {p.center().x, p.mn.y, p.center().z}; }

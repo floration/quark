@@ -1304,10 +1304,25 @@ void Game::drawWorld(float alpha) {
                 }
         }
         // health bars over other players (VISUALS > HEALTH BARS; not in ranked)
-        if (cfg_.healthBars && !fairRules() && !self && i != viewing) {
-            float sx, sy;   // over their head, or at their feet (VISUALS > HEALTH BAR POSITION)
-            if (r_.project(cfg_.healthBarsBottom ? pos + Vec3(0, -0.15f, 0) : pos + Vec3(0, 2.0f * bs + 0.35f, 0), sx, sy)) {
-                float bw = 44 * ui_.s(), bh = 5 * ui_.s();
+        // only when the whole body is in sight (no seeing a bar through a wall or over cover: every corner and the
+        // middle of the hitbox has a clear line from the camera), and exactly as wide as the hitbox on screen
+        auto wholeBodySeen = [&] {
+            AABB hb = playerBox(pos, crouch);
+            const Vec3 cam = r_.cameraPos();
+            for (int k = 0; k < 9; k++) {
+                Vec3 q = k == 8 ? (hb.mn + hb.mx) * 0.5f : Vec3(k & 1 ? hb.mx.x - 0.02f : hb.mn.x + 0.02f, k & 2 ? hb.mx.y - 0.02f : hb.mn.y + 0.05f, k & 4 ? hb.mx.z - 0.02f : hb.mn.z + 0.02f);
+                Vec3 d = q - cam;
+                float dist = length(d);
+                if (dist > 0.01f && map.raycastAny(cam, d / dist, dist - 0.05f)) return false;
+            }
+            return true;
+        };
+        if (cfg_.healthBars && !fairRules() && !self && i != viewing && wholeBodySeen()) {
+            float sx, sy, lx, ly, rx, ry;   // over their head, or at their feet (VISUALS > HEALTH BAR POSITION)
+            Vec3 at = cfg_.healthBarsBottom ? pos + Vec3(0, -0.15f, 0) : pos + Vec3(0, 2.0f * bs + 0.35f, 0);
+            Vec3 side = Vec3(std::cos(camYaw), 0, -std::sin(camYaw)) * kPlayerHalfWidth;   // (the hitbox's half width, across the view)
+            if (r_.project(at, sx, sy) && r_.project(at - side, lx, ly) && r_.project(at + side, rx, ry)) {
+                float bw = std::max(4.0f, std::fabs(rx - lx)), bh = std::max(2.0f, std::min(5 * ui_.s(), bw * 0.15f));
                 float f = clampf(p.health / 100.0f, 0, 1);
                 r_.rect(sx - bw * 0.5f - 1, sy - 1, bw + 2, bh + 2, {0, 0, 0, 0.7f});
                 r_.rect(sx - bw * 0.5f, sy, bw * f, bh, p.health > 30 ? rgba(col) : kRed);
@@ -1537,7 +1552,7 @@ void Game::drawWorld(float alpha) {
         // checkpoints along the track: a gate each (lit once the cart has reached it)
         float plen = map.payloadLength();
         for (size_t k = 0; k < map.cartChecks.size() && !neutral; k++) {
-            Vec3 at = map.payloadPoint(map.cartChecks[k] * plen), ah = map.payloadPoint(map.cartChecks[k] * plen + 0.5f) - at;
+            Vec3 at = map.cartPoint(ms.mode, ms.attackers, map.cartChecks[k] * plen), ah = map.cartPoint(ms.mode, ms.attackers, map.cartChecks[k] * plen + 0.5f) - at;
             Vec3 side = normalize(Vec3(-ah.z, 0, ah.x)) * 1.8f;
             bool reached = (int)k < ms.point;
             Vec3 gc = reached ? teamCol(ms.attackers) : Vec3(0.8f, 0.8f, 0.8f);
@@ -1545,8 +1560,8 @@ void Game::drawWorld(float alpha) {
             r_.box(at - side + Vec3(0, 1.4f, 0), {0.12f, 1.4f, 0.12f}, 0, gc, 1.0f);
             labelAt(at + Vec3(0, 3.2f, 0), "CHECKPOINT " + std::to_string(k + 1), rgba(gc));
         }
-        Vec3 cart = map.payloadPoint(ms.payloadDist);
-        Vec3 ahead = map.payloadPoint(ms.payloadDist + 0.5f);
+        Vec3 cart = map.cartPoint(ms.mode, ms.attackers, ms.payloadDist);
+        Vec3 ahead = map.cartPoint(ms.mode, ms.attackers, ms.payloadDist + 0.5f);
         Vec3 d = ahead - cart;
         float yaw = (length(d) > 1e-3f) ? std::atan2(-d.x, -d.z) : 0;
         float sv = sunVisibility(map, cart + Vec3(0, 1, 0));

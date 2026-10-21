@@ -45,6 +45,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: linux, path: "quark-linux.tar.gz\nquark-linux.qpak\nquark-launcher-linux" }
   macos:
+    # skipped for now: GitHub's hosted macOS runners kept failing to pick up the job (capacity). Remove this `if`
+    # (and add macos back to the release job's needs) to build macOS again.
+    if: false
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -60,7 +63,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: macos, path: "quark-macos.zip\nquark-macos.qpak\nquark-launcher-macos.zip" }
   release:
-    needs: [windows, linux, macos]
+    needs: [windows, linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

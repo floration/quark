@@ -740,3 +740,9 @@ Vec3 Map::payloadPoint(float d) const {
     }
     return payloadPath.back();
 }
+
+float Map::cartTrack(int mode, int attackers, float progress) const {
+    if (mode != MODE_PAYLOAD || attackers != TEAM_B) return progress;
+    for (auto& sp : spawns) if (isStagedSpawn(sp.team)) return progress;   // (staged: the attackers always start at the start)
+    return payloadLength() - progress;
+}

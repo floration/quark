@@ -106,6 +106,10 @@ struct Map {
     AABB payloadCartBox(float dist) const;
     float payloadLength() const;
     Vec3 payloadPoint(float dist) const;
+    // Payload: where on the track the cart is after `progress` metres pushed. With unstaged spawns each team spawns
+    // at its own end, so in the rounds team B attacks the cart starts at B's end and runs the track the other way.
+    float cartTrack(int mode, int attackers, float progress) const;
+    Vec3 cartPoint(int mode, int attackers, float progress) const { return payloadPoint(cartTrack(mode, attackers, progress)); }
 };
 
 // Map edit ops (the editor's undo steps and what multiplayer editing sends through the server), one line each:

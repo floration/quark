@@ -671,7 +671,7 @@ void tickPayload(Server& s) {
     ModeState& m = s.ms_;
     const int att = m.attackers, def = defenders(s);
     m.timeLeft = std::max(0.0f, s.phaseEnd_ - s.time());
-    Vec3 cart = s.map_.payloadPoint(m.payloadDist);
+    Vec3 cart = s.map_.cartPoint(m.mode, m.attackers, m.payloadDist);
     int na = 0, nd = 0;
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = s.players_[i];
@@ -771,7 +771,7 @@ void tickPoints(Server& s) {
 void tickNeutralPayload(Server& s) {
     ModeState& m = s.ms_;
     m.timeLeft = std::max(0.0f, s.phaseEnd_ - s.time());
-    Vec3 cart = s.map_.payloadPoint(m.payloadDist);
+    Vec3 cart = s.map_.cartPoint(m.mode, m.attackers, m.payloadDist);
     int na = 0, nb = 0;
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = s.players_[i];

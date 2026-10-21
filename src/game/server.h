@@ -169,6 +169,10 @@ public:
     uint32_t tick_ = 0;
     uint32_t timeMs_ = 0;       // server clock (advances 1000/rate ms per tick)
     int rateLevel_ = 0;         // index into kTickRates
+    int rateTopLevel_ = 0;      // the highest rate allowed (maxTickRate)
+    double rateUpAt_ = 0;       // after stepping down: when to try the next rate up again (backs off each time it fails)
+    double rateUpWait_ = 60;
+    double rateRaisedAt_ = -1e9; // a step up that doesn't hold steps straight back down, in any phase
     int tickRate() const { return kTickRates[rateLevel_]; }
     float dt() const { return 1.0f / tickRate(); }
     float time() const { return timeMs_ * 0.001f; }

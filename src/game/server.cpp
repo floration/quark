@@ -74,6 +74,8 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     // simulation itself keeps the full tick rate.
     int cap = cfg_.maxTickRate > 0 ? cfg_.maxTickRate : 1000;
     while (rateLevel_ < kTickRateLevels - 1 && kTickRates[rateLevel_] > cap) rateLevel_++;
+    rateTopLevel_ = rateLevel_;
+    rateUpWait_ = 60; rateUpAt_ = 0;
     nextTick_ = timeNow();
     resetRateWindow();
     rulesReset(*this);
@@ -153,7 +155,7 @@ void Server::checkTickRate() {
     double now = timeNow();
     if (now - rateWindowStart_ < kRateWindow) return;
     if (!g_serverRateCheck) { resetRateWindow(); return; }
-    if (editing_ || ms_.phase != PHASE_WARMUP || playerCount() == 0 || rateLevel_ >= kTickRateLevels - 1) { resetRateWindow(); return; }
+    if (editing_ || playerCount() == 0) { resetRateWindow(); return; }
     int worstLoss = windowWorstLoss_;
     double lateFrac = windowTicks_ ? windowLate_ / (double)windowTicks_ : 0;
     double busy = windowBusy_ / std::max(1e-6, now - rateWindowStart_); // share of the time spent simulating + sending
@@ -161,10 +163,24 @@ void Server::checkTickRate() {
     // while the CPU is nearly idle, and the catch-up loop still runs every tick. Step down only when the
     // work itself is heavy (or late ticks come with real load), or packets / clients are being lost.
     bool bad = busy > 0.5 || (lateFrac > kMaxLateFraction && busy > 0.2) || windowSendFail_ > 0 || worstLoss > kMaxClientLossPct;
-    if (bad) {
+    // Below the top rate, now and then try the next one up: a clean, lightly loaded window, and the wait since the
+    // last step down is over. If it steps straight back down, the wait doubles (up to 15 min), so a host that can't
+    // hold it isn't bounced up and down. (Any phase: one step is a small change, and it's rare.)
+    bool clean = !bad && busy < 0.2 && lateFrac < kMaxLateFraction * 0.5 && worstLoss == 0;
+    if (rateLevel_ > rateTopLevel_ && clean && now >= rateUpAt_) {
+        rateLevel_--;
+        rateRaisedAt_ = now;
+        message("server tick rate raised to " + std::to_string(tickRate()) + " Hz");
+        log("tick rate -> " + std::to_string(tickRate()) + " Hz (trying the next rate up: busy " + std::to_string((int)(busy * 100)) + "%)");
+        resetRateWindow();
+        return;
+    }
+    if (bad && (ms_.phase == PHASE_WARMUP || now - rateRaisedAt_ < 3 * kRateWindow) && rateLevel_ < kTickRateLevels - 1) {   // (stepping down: warmup only, as before)
         char why[200];
         snprintf(why, sizeof why, "busy %.0f%%, late %.1f%%, send failures %d, worst client loss %d%%", busy * 100, lateFrac * 100, windowSendFail_, worstLoss);
         rateLevel_++;
+        rateUpAt_ = now + rateUpWait_;
+        rateUpWait_ = std::min(rateUpWait_ * 2, 900.0);
         message("server tick rate lowered to " + std::to_string(tickRate()) + " Hz");
         log("tick rate -> " + std::to_string(tickRate()) + " Hz (" + why + ")");
     }
@@ -1219,7 +1235,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             pr.pos = eye + aim * 0.3f;
             pr.vel = spreadDir(aim, spread, cmd.seq, 0) * wd.projSpeed;
             if (p.weapon == WPN_ROCKET && alt) { pr.vel = pr.vel * kRocketLobSpeed; pr.gravMul = kRocketLobGravity; }
-            if (p.weapon == WPN_ROCKET || p.weapon == WPN_STICKY) pr.vel += p.move.vel * kProjInherit; // launched from a moving player: most of your velocity
+            if (p.weapon == WPN_STICKY) pr.vel += p.move.vel * kProjInherit; // stickies only (1.14.2: rockets fly straight again): launched from a moving player, most of your velocity
             pr.dieAt = time() + wd.life;
             pr.armAt = time() + kStickyArmTime;
             return false;
@@ -1262,7 +1278,7 @@ void Server::tickProjectiles() {
         if (time() >= pr.dieAt) { pr.active = false; continue; }
         if (pr.stuck && pr.onCart) {
             if (map_.dynSolids.empty()) pr.active = false; // cart gone (round over)
-            else pr.pos = map_.payloadPoint(ms_.payloadDist) + pr.cartOffset;
+            else pr.pos = map_.cartPoint(ms_.mode, ms_.attackers, ms_.payloadDist) + pr.cartOffset;
         }
         if (pr.stuck) continue;
         const WeaponDef& wd = weaponDef(pr.type);
@@ -1307,7 +1323,7 @@ void Server::tickProjectiles() {
                 cart.mn -= Vec3(0.2f, 0.2f, 0.2f); cart.mx += Vec3(0.2f, 0.2f, 0.2f);
                 if (cart.contains(pr.pos)) {
                     pr.onCart = true;
-                    pr.cartOffset = pr.pos - map_.payloadPoint(ms_.payloadDist);
+                    pr.cartOffset = pr.pos - map_.cartPoint(ms_.mode, ms_.attackers, ms_.payloadDist);
                 }
             }
         } else if (wd.splashRadius <= 0) { // crossbow bolt / thrown knife: direct hit only
