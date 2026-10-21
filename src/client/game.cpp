@@ -243,7 +243,7 @@ void Game::leaveGame(const std::string& error) {
     rulesParts_.clear();
     error_ = error;
     paused_ = chatting_ = false;
-    killFeed_.clear(); chatFeed_.clear(); notices_.clear();
+    killFeed_.clear(); chatFeed_.clear(); chatLog_.clear(); notices_.clear();
     tracers_.clear(); explosions_.clear(); lastProjectiles_.clear();
     loadedMapGen_ = 0;
     if (!testMap_.empty()) { std::string m = testMap_; testMap_.clear(); testEdit_ = false; openEditor(m); return; } // back to the editor (autosaved)
@@ -666,7 +666,20 @@ void Game::updateAnnouncer() {
     annPrevValid_ = true;
 }
 
-Vec3 Game::teamColor(int id) const { return isFriendly(id) ? cfg_.colorFriendly : cfg_.colorEnemy; }
+Vec3 Game::teamColor(int id) const {
+    if (net_.mode().mode == MODE_TAG) { // tag: the tagger alone is red (on every screen, theirs too), everyone else blue
+        const PlayerSnap* p = net_.findPlayer(id);
+        return p && (p->flags & PS_HASBOMB) ? Vec3(0.9f, 0.15f, 0.12f) : Vec3(0.2f, 0.42f, 1.0f);
+    }
+    return isFriendly(id) ? cfg_.colorFriendly : cfg_.colorEnemy;
+}
+const char* const kOutlineNames[kOutlineColors] = {"BLACK", "WHITE", "TEAM", "RED", "YELLOW", "GREEN", "CYAN", "MAGENTA"};
+Vec3 Game::outlineColor(int id) const {
+    static const Vec3 c[kOutlineColors] = {{0, 0, 0}, {1, 1, 1}, {0, 0, 0}, {1, 0.1f, 0.1f}, {1, 0.9f, 0.1f}, {0.1f, 1, 0.2f}, {0.1f, 0.95f, 1}, {1, 0.2f, 1}};
+    int k = isFriendly(id) ? cfg_.outlineFriendly : cfg_.outlineEnemy;
+    if (k < 0 || k >= kOutlineColors) k = 0;
+    return k == 2 ? teamColor(id) : c[k];
+}
 
 void Game::handleEvents() {
     for (auto& e : net_.takeEvents()) {
@@ -683,12 +696,10 @@ void Game::handleEvents() {
                 break;
             }
             case EV_CHAT:
-                chatFeed_.push_back({net_.playerName(e.a) + ": " + e.text, isFriendly(e.a) ? rgba(cfg_.colorFriendly) : rgba(cfg_.colorEnemy), time_ + 10});
-                while (chatFeed_.size() > 8) chatFeed_.pop_front();
+                addChat({net_.playerName(e.a) + ": " + e.text, isFriendly(e.a) ? rgba(cfg_.colorFriendly) : rgba(cfg_.colorEnemy), time_ + 10});
                 break;
             case EV_MESSAGE:
-                chatFeed_.push_back({e.text, kGrey, time_ + 8});
-                while (chatFeed_.size() > 8) chatFeed_.pop_front();
+                addChat({e.text, kGrey, time_ + 8});
                 break;
             case EV_RANKED: {
                 std::vector<std::string> ids, players;
@@ -865,8 +876,9 @@ void Game::frame(double dt) {
                 if (w == WPN_KNIFE && !alt) knifeSlash_[net_.clientId() % kMaxPlayers] = time_;
                 if (w == WPN_KNIFE && alt) localFireLocked_ = true;
                 recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
-                if (w == WPN_LASER) laserUntil_ = time_ + 0.07;
-                else if (!weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE) { // (knife throw: the projectile shows it)
+                bool showShot = !cfg_.hud[Settings::HUD_VIEWMODEL].hidden; // weapon model hidden: no own tracers / beam either
+                if (w == WPN_LASER) laserUntil_ = showShot ? time_ + 0.07 : 0;
+                else if (showShot && !weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE) { // (knife throw: the projectile shows it)
                     const MoveState& m = net_.predicted();
                     Vec3 eye = m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
                     Vec3 aim = angleForward(yaw_, pitch_);
@@ -896,7 +908,7 @@ void Game::frame(double dt) {
                         }
                         float bangT, t = net_.map().raycastBullet(eye, d, wd.range, &bangT);
                         if (t < 0) t = wd.range;
-                        tracers_.push_back({from, eye + d * t, time_ + (w == WPN_SNIPER ? 0.9 : 0.25)});
+                        tracers_.push_back({from, eye + d * t, time_ + (w == WPN_SNIPER ? 0.9 : 0.2)});
                     }
                 }
             }
@@ -1068,13 +1080,14 @@ void Game::drawWorld(float alpha) {
         bool crouch = self && alive ? (net_.predicted().flags & MF_CROUCHED) : (p.flags & PS_CROUCHED);
         float hs = crouch ? kPlayerCrouchHeight / kPlayerHeight : 1.0f;
         Vec3 col = teamColor(i);
+        r_.outlineColor = outlineColor(i);
         float sv = sunVisibility(map, pos + Vec3(0, 1.0f * hs * bs, 0));
         bool vis = !firstPerson;
         auto at = [&](float h) { return pos + Vec3(0, h * hs * bs, 0); };
         Vec3 fwd = {-std::sin(yaw), 0, -std::cos(yaw)}, rgt = {std::cos(yaw), 0, -std::sin(yaw)};
         // the player model (cosmetic: every model fits the same hitbox)
         auto part = [&](const Vec3& c, const Vec3& half, const Vec3& colr, bool shadow = true) { r_.box(c, half * bs, yaw, colr, sv, shadow, vis); };
-        const Vec3 grey = {0.32f, 0.33f, 0.36f}, dark = {0.05f, 0.05f, 0.06f};
+        const Vec3 grey = col * 0.6f + Vec3(0.06f, 0.06f, 0.07f), dark = {0.05f, 0.05f, 0.06f};
         int model = opts_.debugModels && i >= kMaxPlayers - kPlayerModels ? i - (kMaxPlayers - kPlayerModels) : net_.playerModel(i);
         switch (fairRules() ? 0 : model) { // ranked / time trial: default model for everyone
             case 1: // HEAVY: wide armoured body, shoulder pads, small helmet
@@ -1124,7 +1137,7 @@ void Game::drawWorld(float alpha) {
             float sx, sy;
             if (r_.project(pos + Vec3(0, 2.3f, 0), sx, sy)) {
                 float ts = std::max(1.0f, std::round(ui_.textScale()));
-                const char* t = net_.mode().mode == MODE_TAG ? "IT" : "SEEKER";
+                const char* t = net_.mode().mode == MODE_TAG ? "TAGGER" : "SEEKER";
                 r_.text(sx - r_.textWidth(t, ts) * 0.5f, sy, ts, t, kRed);
             }
         }
@@ -1140,6 +1153,7 @@ void Game::drawWorld(float alpha) {
         }
     }
 
+    r_.outlineColor = {0, 0, 0};
     // grapple ropes
     if (alive && (net_.predicted().flags & MF_HOOKED)) {
         Vec3 d = angleForward(yaw_, pitch_);
@@ -1158,6 +1172,19 @@ void Game::drawWorld(float alpha) {
             const PlayerSnap& p = players[i].snap;
             int w = p.weapon;
             if (w == WPN_KNIFE && !remoteFiring_[i]) knifeSlash_[i] = time_;
+            if (w == WPN_SHOTGUN && !remoteFiring_[i]) { // a spread of pellet tracers (the server's spread pattern isn't sent)
+                const PlayerSnap& q = players[i].snap;
+                Vec3 eyeP = q.pos + Vec3(0, (q.flags & PS_CROUCHED) ? kCrouchEyeHeight : kEyeHeight, 0);
+                Vec3 aim = angleForward(q.yaw, q.pitch), right = normalize(cross(aim, {0, 1, 0})), up = cross(right, aim);
+                const WeaponDef& wd = weaponDef(w);
+                for (int k = 0; k < wd.pellets; k++) {
+                    float a, r;
+                    spreadOffset((uint32_t)(time_ * 1000) + i * 977u, k, wd.spread, a, r);
+                    Vec3 d = normalize(aim + right * (std::cos(a) * r) + up * (std::sin(a) * r));
+                    float bangT, t = map.raycastBullet(eyeP, d, wd.range, &bangT);
+                    tracers_.push_back({eyeP + d * 0.6f, eyeP + d * (t < 0 ? wd.range : t), time_ + 0.2});
+                }
+            }
             if (w == WPN_LASER || (w == WPN_SNIPER && !remoteFiring_[i])) {
                 Vec3 eyeP = p.pos + Vec3(0, (p.flags & PS_CROUCHED) ? kCrouchEyeHeight : kEyeHeight, 0);
                 Vec3 d = angleForward(p.yaw, p.pitch);
@@ -1523,7 +1550,7 @@ void Game::drawHud() {
             int left = 0;
             for (auto& p : net_.latest().players) if ((p.flags & PS_ALIVE) && !(p.flags & PS_HASBOMB) && p.team() != TEAM_SPECTATOR) left++;
             std::string t = ms.mode == MODE_HIDE ? (it ? "SEEKING - " + std::to_string(left) + " STILL HIDDEN" : ms.phase == PHASE_FREEZE ? "HIDE! THE SEEKER IS COUNTING" : "STAY HIDDEN - " + std::to_string(left) + " LEFT")
-                                                 : (it ? "YOU'RE IT - TAG SOMEONE BEFORE TIME RUNS OUT" : "RUN - DON'T BE IT WHEN TIME RUNS OUT");
+                                                 : (it ? "YOU'RE THE TAGGER - TAG SOMEONE BEFORE TIME RUNS OUT" : "RUN - DON'T BE THE TAGGER WHEN TIME RUNS OUT");
             if (!(mep->flags & PS_ALIVE) && ms.mode == MODE_HIDE) t = "FOUND - WATCH THE REST OF THE ROUND";
             banner(t, it ? kRed : kWhite, 92 * s);
         }
@@ -1665,7 +1692,17 @@ void Game::drawHud() {
     if (ms.mode == MODE_BOMB && ms.bombState == BOMB_PLANTED && ms.phase == PHASE_LIVE)
         ui_.labelCentered(cx, 118 * s, fmtTime(ms.bombTimer), kRed, 1.5f);
 
-    // health / weapon (each element moved / sized / recolored by the HUD settings)
+    // health / weapon (each element moved / sized / recolored by the HUD settings); spectating: their health
+    const PlayerSnap* specP = !net_.selfAlive() && specTarget_ >= 0 ? net_.findPlayer(specTarget_) : nullptr;
+    if (specP && (specP->flags & PS_ALIVE) && !cfg_.hud[Settings::HUD_HEALTH].hidden) {
+        const auto& e = cfg_.hud[Settings::HUD_HEALTH];
+        float k = s * e.scale, ox = 24 * s + e.x * s, oy = H + e.y * s;
+        int hp = specP->health;
+        float hts = std::max(1.0f, std::round(ts * 2 * e.scale));
+        r_.text(ox, oy - 70 * k, hts, std::to_string(hp), hp > 30 ? kWhite : kRed);
+        r_.rect(ox, oy - 28 * k, 200 * k, 8 * k, {0, 0, 0, 0.5f});
+        r_.rect(ox, oy - 28 * k, 200 * k * clampf(hp / 100.0f, 0, 1), 8 * k, hp > 30 ? rgba(teamColor(specTarget_)) : kRed);
+    }
     if (net_.selfAlive()) {
         auto he = [&](int i) { return cfg_.hud[i]; };
         auto tint = [&](int i, Color c) { const auto& e = cfg_.hud[i]; return e.custom ? Color{e.color.x, e.color.y, e.color.z, c.a} : c; };
@@ -1764,8 +1801,12 @@ void Game::drawHud() {
     }
     // chat (bottom left)
     while (!chatFeed_.empty() && chatFeed_.front().until < time_ && !chatting_) chatFeed_.pop_front();
-    y = H - 110 * s - chatFeed_.size() * (r_.textHeight(ts) + 4 * s);
-    for (auto& c : chatFeed_) { r_.text(24 * s, y, ts, c.text, c.color); y += r_.textHeight(ts) + 4 * s; }
+    {
+    const auto& lines = chatting_ ? chatLog_ : chatFeed_;   // typing: the whole recent history
+    y = H - 110 * s - lines.size() * (r_.textHeight(ts) + 4 * s);
+    if (chatting_ && !lines.empty()) r_.rect(18 * s, y - 4 * s, 520 * s, lines.size() * (r_.textHeight(ts) + 4 * s) + 4 * s, {0, 0, 0, 0.4f});
+    for (auto& c : lines) { r_.text(24 * s, y, ts, c.text, c.color); y += r_.textHeight(ts) + 4 * s; }
+    }
     if (chatting_) {
         ui_.label(24 * s, H - 100 * s, "SAY: " + chatText_ + (std::fmod(time_, 1.0) < 0.5 ? "_" : ""), kWhite);
         for (char c : uiIn_.chars) if (c >= 32 && c < 127 && chatText_.size() < 120) chatText_ += c;
@@ -1817,8 +1858,7 @@ void Game::updateRanked() {
     for (auto& m : rank_.takeMessages()) {
         std::string t = m;
         for (auto& c : t) c = (char)toupper((unsigned char)c);
-        chatFeed_.push_back({t, kGrey, time_ + 8});
-        while (chatFeed_.size() > 8) chatFeed_.pop_front();
+        addChat({t, kGrey, time_ + 8});
     }
     if (!net_.hasSnapshot() || !(net_.mode().flags & MS_RANKED)) return;
     std::string ladder = arenaVariant(net_.mode().arenaVariant).name;
@@ -2361,9 +2401,13 @@ void Game::drawScoreboard() {
     bool ranked = ms.flags & MS_RANKED;
     std::string ladder = arenaVariant(ms.arenaVariant).name;
     if (ranked) r_.text(x + w * 0.36f, cy, ts, "RATING", kGrey);
-    r_.text(x + w * 0.5f, cy, ts, ms.mode == MODE_RACE ? "WINS" : "SCORE", kGrey);
-    r_.text(x + w * 0.64f, cy, ts, "K", kGrey);
-    r_.text(x + w * 0.74f, cy, ts, "D", kGrey);
+    // score: the mode's own points in race / hide and seek / tag; elsewhere damage / 10 + seconds on the objective
+    const bool ownScore = ms.mode == MODE_RACE || isItMode(ms.mode);
+    r_.text(x + w * 0.46f, cy, ts, ms.mode == MODE_RACE ? "WINS" : "SCORE", kGrey);
+    r_.text(x + w * 0.56f, cy, ts, "K", kGrey);
+    r_.text(x + w * 0.62f, cy, ts, "D", kGrey);
+    r_.text(x + w * 0.68f, cy, ts, "DMG", kGrey);
+    r_.text(x + w * 0.76f, cy, ts, "OBJ", kGrey);
     r_.text(x + w * 0.84f, cy, ts, "PING", kGrey);
     cy += rowH;
     for (auto& p : ps) {
@@ -2374,9 +2418,11 @@ void Game::drawScoreboard() {
         Rating rt;
         if (ranked && rank_.rating(ladder, net_.rankId(p.id), rt))
             r_.text(x + w * 0.36f, cy, ts, rt.games < 5 ? std::to_string(rt.display()) + "?" : std::to_string(rt.display()), kWhite); // ? = still placing
-        r_.text(x + w * 0.5f, cy, ts, std::to_string(p.score), kWhite);
-        r_.text(x + w * 0.64f, cy, ts, std::to_string(p.kills), kWhite);
-        r_.text(x + w * 0.74f, cy, ts, std::to_string(p.deaths), kWhite);
+        r_.text(x + w * 0.46f, cy, ts, std::to_string(ownScore ? p.score : p.dmg / 10 + p.obj), kWhite);
+        r_.text(x + w * 0.56f, cy, ts, std::to_string(p.kills), kWhite);
+        r_.text(x + w * 0.62f, cy, ts, std::to_string(p.deaths), kWhite);
+        r_.text(x + w * 0.68f, cy, ts, std::to_string(p.dmg), kWhite);
+        r_.text(x + w * 0.76f, cy, ts, fmtTime(p.obj), kWhite);
         bool bot = net_.playerName(p.id).rfind("BOT ", 0) == 0;
         r_.text(x + w * 0.84f, cy, ts, bot ? "BOT" : std::to_string(p.ping), kWhite);
         cy += rowH;
@@ -2514,11 +2560,14 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
         float cm = 360.0f / (cfg_.sensitivity * 0.022f) / cfg_.dpi * 2.54f;
         if (ui_.slider(x, y, cw, h, "CM/360", cm, 5, 120, "%.1f"))
             cfg_.sensitivity = clampf(360.0f / (cm / 2.54f * cfg_.dpi) / 0.022f, 0.01f, 50.0f);
-        static const int dpis[] = {400, 800, 1000, 1200, 1600, 2400, 3200, 6400};
-        static const std::vector<std::string> dpiNames = {"400 DPI", "800 DPI", "1000 DPI", "1200 DPI", "1600 DPI", "2400 DPI", "3200 DPI", "6400 DPI"};
-        int di = 1;
-        for (int i = 0; i < 8; i++) if (dpis[i] == cfg_.dpi) di = i;
-        if (ui_.button(x + cw + gap, y, dw, h, dpiNames[di])) cfg_.dpi = dpis[(di + 1) % 8]; // click: next DPI
+        static std::string dpiText;   // click and type any DPI
+        if (!ui_.typing()) dpiText = std::to_string(cfg_.dpi);
+        if (ui_.textField(42, x + cw + gap, y, dw, h, dpiText, 6)) {
+            dpiText.erase(std::remove_if(dpiText.begin(), dpiText.end(), [](char ch) { return ch < '0' || ch > '9'; }), dpiText.end());
+            int v = atoi(dpiText.c_str());
+            if (v >= 50 && v <= 100000) cfg_.dpi = v;
+        }
+        ui_.label(x + cw + gap + dw - r_.textWidth("DPI", ui_.textScale()) - 6 * s, y + (h - r_.textHeight(ui_.textScale())) * 0.5f, "DPI", {0.6f, 0.62f, 0.66f, 1});
     }
     y += h + gap;
     ui_.slider(x, y, w, h, "FOV", cfg_.fov, 70, 130, "%.0f");
@@ -2550,6 +2599,13 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     }
     ui_.accent = rgba(cfg_.colorFriendly);
     y += h + gap;
+    {   // player outlines
+        std::vector<std::string> ot, oe;
+        for (int i = 0; i < kOutlineColors; i++) { ot.push_back(std::string("TEAM OUTLINE: ") + kOutlineNames[i]); oe.push_back(std::string("ENEMY OUTLINE: ") + kOutlineNames[i]); }
+        ui_.cycle(x, y, w * 0.5f - gap * 0.5f, h, "TEAM OUTLINE", cfg_.outlineFriendly, kOutlineColors, ot);
+        ui_.cycle(x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "ENEMY OUTLINE", cfg_.outlineEnemy, kOutlineColors, oe);
+        y += h + gap;
+    }
     if (ui_.slider(x, y, w * 0.6f, h, "VOLUME", cfg_.volume, 0, 1, "%.2f")) audio_.setMasterVolume(cfg_.volume);
     ui_.toggle(x + w * 0.6f + gap, y, w * 0.4f - gap, h, "HITSOUND", cfg_.hitsounds);
     y += h + gap;
@@ -2949,7 +3005,7 @@ static const char* const kInfoPages[][48] = {
         "FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).",
         "RACE - the course's checkpoints in order. It starts as untimed practice; vote start (F4) to race. TIME TRIAL (main menu) is the ranked race on Viaduct.",
         "HIDE AND SEEK - one seeker with a knife, everyone else hides first. Seekers take turns.",
-        "TAG - whoever is IT when the timer runs out is eliminated. Last one standing wins.",
+        "TAG - whoever is the TAGGER when the timer runs out is eliminated. Last one standing wins.",
         "# CUSTOM MODES",
         "Host Game > CUSTOM MODE > NEW: any base mode with your own health, gravity, speed, jump, knockback, weapons (fire rate, damage, projectile speed) and map pool. Players who join get the rules automatically.",
         "# MAPS AND MODES",
@@ -3653,7 +3709,8 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
             if (firing && p.weapon == WPN_LASER && time_ >= ra.nextLaser) {
                 audio_.play3D(SND_LASER, p.pos + Vec3(0, 1.5f, 0), 0.7f, 1.0f, sp);
                 ra.nextLaser = time_ + 0.05;
-            } else if (firing && !remoteFiring_[i] && p.weapon != WPN_LASER) {
+            } else if (firing && !remoteFiring_[i] && p.weapon != WPN_LASER && time_ >= ra.nextShot) {
+                ra.nextShot = time_ + weaponDef(p.weapon).refire * 0.6f; // (a flag flicker between snapshots isn't a second shot)
                 audio_.play3D(SND_RIFLE + p.weapon, p.pos + Vec3(0, 1.5f, 0), 1.0f, 0.97f + (rand() % 7) * 0.01f, sp);
             }
         }

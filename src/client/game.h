@@ -93,6 +93,7 @@ private:
     void drawSettings(float x, float y, float w);
     void captureMouse(bool on);
     Vec3 teamColor(int playerId) const;
+    Vec3 outlineColor(int playerId) const; // the player outline (settings: friendly / enemy presets)
     bool isFriendly(int playerId) const;
     void notify(const std::string& s, float seconds = 4.0f);
     void updateAnnouncer();
@@ -246,6 +247,8 @@ private:
     // effects + feeds
     struct Feed { std::string text; Color color; double until; };
     std::deque<Feed> killFeed_, chatFeed_, notices_;
+    std::deque<Feed> chatLog_;   // the chat history shown while typing (Enter)
+    void addChat(const Feed& f) { chatFeed_.push_back(f); chatLog_.push_back(f); while (chatFeed_.size() > 8) chatFeed_.pop_front(); while (chatLog_.size() > 30) chatLog_.pop_front(); }
     std::string centerText_;
     double centerUntil_ = 0, hitUntil_ = 0, damageUntil_ = 0, recoil_ = 0, localNextFire_ = 0;
     int lastHealth_ = 0;
@@ -293,7 +296,7 @@ private:
     MoveState prevMove_;
     bool prevAlive_ = false;
     float stepDist_ = 0;
-    struct RemoteAudio { Vec3 pos; bool valid = false; float stepDist = 0; bool hooked = false; double nextLaser = 0, nextHurt = 0; int health = 0; };
+    struct RemoteAudio { Vec3 pos; bool valid = false; float stepDist = 0; bool hooked = false; double nextLaser = 0, nextShot = 0, nextHurt = 0; int health = 0; };
     RemoteAudio remoteAudio_[kMaxPlayers];
     // rebinding
     bool isDown(int action) const;

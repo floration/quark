@@ -1,5 +1,7 @@
 // Client settings, persisted as key=value lines in quark.cfg.
 #pragma once
+constexpr int kOutlineColors = 8;
+extern const char* const kOutlineNames[kOutlineColors];
 #include <string>
 #include "../common/qmath.h"
 #include "binds.h"
@@ -29,6 +31,7 @@ struct Settings {
     int msaa = 0;               // anti-aliasing: 0 off, 1 smooth edges (FXAA-style pass), 2 / 4 MSAA
     float volume = 0.6f;
     bool hitsounds = true;
+    int outlineFriendly = 0, outlineEnemy = 0; // player outline presets (kOutlineNames: black, white, team, ...)
     int announcerVoice = 0;     // 0 male, 1 female (both deep, in a big hall)
     int announcer = 2;          // voice lines: 0 off, 1 the round countdown only, 2 also the mode's calls (bomb planted, hill captured...)
     int shadowRes = 2048;

@@ -183,17 +183,18 @@ layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
 layout(location=2) in vec4 aColor;
 layout(location=3) in vec4 aEdge;
+layout(location=4) in vec3 aOutline;
 uniform mat4 uViewProj;
 uniform mat4 uShadowMat;
-out vec3 vPos; out vec3 vN; out vec4 vColor; out vec4 vShadow; out vec4 vEdge;
+out vec3 vPos; out vec3 vN; out vec4 vColor; out vec4 vShadow; out vec4 vEdge; out vec3 vOutline;
 void main() {
-    vPos = aPos; vN = aNormal; vColor = aColor; vEdge = aEdge;
+    vPos = aPos; vN = aNormal; vColor = aColor; vEdge = aEdge; vOutline = aOutline;
     vShadow = uShadowMat * vec4(aPos + aNormal * 0.03, 1.0);
     gl_Position = uViewProj * vec4(aPos, 1.0);
 })";
 
 const char* kDynFS = R"(
-in vec3 vPos; in vec3 vN; in vec4 vColor; in vec4 vShadow; in vec4 vEdge;
+in vec3 vPos; in vec3 vN; in vec4 vColor; in vec4 vShadow; in vec4 vEdge; in vec3 vOutline;
 uniform vec3 uSunColor, uSkyColor, uSunDir, uFogColor, uCamPos;
 uniform float uFogDensity;
 uniform int uReceiveShadow;
@@ -203,7 +204,7 @@ void main() {
     float sh = uReceiveShadow != 0 ? shadowAt(vShadow) : 1.0;
     float ndl = max(dot(normalize(vN), uSunDir), 0.0);
     vec3 light = uSkyColor * (0.6 + 0.25 * vN.y) + uSunColor * ndl * vColor.a * sh;
-    vec3 c = vColor.rgb * (light * 0.7 + 0.3) * outline(vEdge); // partly emissive so team colors stay readable
+    vec3 c = mix(vOutline, vColor.rgb * (light * 0.7 + 0.3), outline(vEdge)); // partly emissive so team colors stay readable; edges in the outline colour
     float d = length(vPos - uCamPos);
     c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity)) * uBright;
     fragColor = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
@@ -369,6 +370,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)12);
     glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)24);
     glEnableVertexAttribArray(3); glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)40);
+    glEnableVertexAttribArray(4); glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)56);
 
     glGenVertexArrays(1, &flatVao_);
     glGenBuffers(1, &flatVbo_);
@@ -557,6 +559,7 @@ void Renderer::addQuad(std::vector<DynVertex>& out, const Vec3* c, const Vec3& n
         memcpy(v.normal, &n.x, 12);
         v.color[0] = col.x; v.color[1] = col.y; v.color[2] = col.z; v.color[3] = sv;
         v.edge[0] = eu[i]; v.edge[1] = ev[i]; v.edge[2] = w; v.edge[3] = h;
+        memcpy(v.outline, &outlineColor.x, 12);
         out.push_back(v);
     }
 }

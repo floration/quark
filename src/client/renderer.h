@@ -9,7 +9,7 @@
 #include "gl.h"
 #include "lightmap.h"
 
-struct DynVertex { float pos[3]; float normal[3]; float color[4]; float edge[4]; }; // color.a = sun visibility
+struct DynVertex { float pos[3]; float normal[3]; float color[4]; float edge[4]; float outline[3]; }; // color.a = sun visibility; outline = edge colour (black unless set)
 struct FlatVertex { float pos[3]; float color[4]; };
 // 16 bytes: screen pixels, font texel coords (u16 fixed point: (texel + 1) * 64), color (RGBA8), and for text the outline width in
 // font texels (scale; 0 = no outline) plus the glyph's atlas cell, so the outline is done in the shader
@@ -68,6 +68,9 @@ private:
     unsigned compile(const char* vs, const char* fs, std::string* err);
     void addQuad(std::vector<DynVertex>& out, const Vec3* c, const Vec3& n, const Vec3& col, float sv);
     void emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& half, const Vec3& color, float sunVis);
+public:
+    Vec3 outlineColor;   // the edge colour for the boxes drawn while it's set (players' outline setting); black by default
+private:
 
     int width_ = 1280, height_ = 720;
     unsigned worldProg_ = 0, dynProg_ = 0, flatProg_ = 0, shadowProg_ = 0, uiProg_ = 0, skyProg_ = 0;

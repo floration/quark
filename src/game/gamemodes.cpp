@@ -342,7 +342,7 @@ void startMatch(Server& s) {
     s.kothPoints_[0] = s.kothPoints_[1] = 0;
     s.bestProgress_[0] = s.bestProgress_[1] = 0;
     s.completeTime_[0] = s.completeTime_[1] = 0;
-    for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; p.out = false; p.it = false; }
+    for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; p.dmgDealt = p.objTime = 0; p.out = false; p.it = false; }
     s.lastIt_ = -1;
     s.hideRounds_ = 0;
     s.hideRounds_ = hideRounds(s);
@@ -647,7 +647,7 @@ void tickKoth(Server& s) {
     int in[2] = {0, 0};
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = s.players_[i];
-        if (p.connected && p.alive && p.team < 2 && feetIn(s, i, s.map_.hill)) in[p.team]++;
+        if (p.connected && p.alive && p.team < 2 && feetIn(s, i, s.map_.hill)) { in[p.team]++; p.objTime += s.dt(); }
     }
     m.flags &= ~MS_CONTESTED;
     if (in[0] > 0 && in[1] > 0) { m.flags |= MS_CONTESTED; m.hillOwner = 255; }
@@ -675,6 +675,7 @@ void tickPayload(Server& s) {
         auto& p = s.players_[i];
         if (!p.connected || !p.alive) continue;
         if (length(p.move.pos - cart) >= kCartRange) continue;
+        p.objTime += s.dt();
         if (p.team == att) na++;
         else if (p.team == def) nd++;
     }
@@ -721,6 +722,7 @@ void tickPoints(Server& s) {
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = s.players_[i];
         if (!p.connected || !p.alive || !feetIn(s, i, zone)) continue;
+        p.objTime += s.dt();
         if (p.team == att) na++;
         else if (p.team == def) nd++;
     }
@@ -764,6 +766,7 @@ void tickNeutralPayload(Server& s) {
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = s.players_[i];
         if (!p.connected || !p.alive || length(p.move.pos - cart) >= kCartRange) continue;
+        p.objTime += s.dt();
         if (p.team == TEAM_A) na++;
         else if (p.team == TEAM_B) nb++;
     }

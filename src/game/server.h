@@ -92,6 +92,7 @@ struct ServerPlayer {
     float respawnAt = -1;
     int checkpoint = 0;         // race: next checkpoint index
     uint32_t joinId = 0;
+    float dmgDealt = 0, objTime = 0;   // scoreboard: damage to enemies, seconds on the objective (score = dmg / 10 + obj)
     int model = 0;              // player model (cosmetic, kPlayerModels looks, same hitbox)        // unique per connection (a new player in a reused slot gets a new one)
     int soundPack = 0;      // cosmetic: the sound pack others hear this player with
     bool it = false;            // hide and seek / tag: the seeker / tagger (has the knife)
@@ -286,7 +287,7 @@ private:
     bool fireWeapon(int id, const UserCmd& cmd);   // true if it hit a player (hitscan weapons)
     void tickProjectiles();
     void explode(const Vec3& at, int owner, int weapon);
-    void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t viewMs, float* dmgPerPlayer, float dmg, float headDmg = 0, float grow = 0);
+    void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t viewMs, float* dmgPerPlayer, float dmg, float headDmg = 0, float grow = 0, bool pierce = false);
     Vec3 spreadDir(const Vec3& dir, float spread, uint32_t seq, int pellet);
     void sendSnapshots();
     void updateVisibility();

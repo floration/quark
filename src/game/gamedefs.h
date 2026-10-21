@@ -12,7 +12,7 @@ constexpr int kMaxPlayers = 32;        // engine limit; servers default to 8 (Se
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 22;
+constexpr uint16_t kProtocolVersion = 23;
 
 // Player hull
 constexpr float kPlayerHalfWidth = 0.4f;
@@ -142,7 +142,7 @@ struct WeaponDef {
 constexpr float kFireBuffer = 0.15f;
 constexpr float kWallbangDamage = 0.5f; // hitscan through a wallbang wall
 constexpr float kLaserPush = 20.0f;        // laser knockback (m/s per second of beam on target)
-constexpr float kLaserPullScale = 1.3f;    // alt-fire pulls this much harder than the normal beam pushes
+constexpr float kLaserPullScale = 1.82f;   // alt-fire pulls this much harder than the normal beam pushes
 constexpr float kLaserPullDamage = 0.75f;  // ...for 75% damage
 
 // Shot spread from the command's sequence number, so the client draws exactly the shot the server fired.

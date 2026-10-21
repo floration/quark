@@ -603,9 +603,9 @@ void Server::command(const std::string& line, int fromPlayer) {
         if (mode < 0 && map_.preferredMode >= 0 && map_.supportsMode(map_.preferredMode)) mode = map_.preferredMode;
         if (mode < 0 && map_.supportsMode(MODE_FFA)) mode = MODE_FFA;
         for (int m = 0; m < MODE_COUNT && mode < 0; m++) if (map_.supportsMode(m)) mode = m;
-        if (mode < 0) { reply("this map can't be played in any mode yet (add spawns)"); return; }
+        if (mode < 0) { { std::string why = "this map can't be played in any mode yet (add spawns)"; reply(why); message(why); return; } }
         if (tempEdit_) { setEditing(false); playMap(mode); return; } // play the edited copy; it's gone at the next map change
-        if (!autosave()) { reply("could not save the map"); return; }
+        if (!autosave()) { { std::string why = "could not save the map"; reply(why); message(why); return; } }
         setEditing(false);
         command("map " + cfg_.map + " " + modeName(mode), fromPlayer);
         return;
@@ -830,6 +830,7 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
     if (attacker == victim && (rules & AR_NO_SELF_DAMAGE)) return;
     if (attacker >= 0 && attacker != victim) dmg *= duelModDef(duelMod()).damageMul; // glass cannons / double damage
     if (attacker >= 0 && attacker != victim && (rules & AR_INSTAGIB)) dmg = std::max(dmg, v.health + 1);
+    if (attacker >= 0 && attacker != victim && !friendly) players_[attacker].dmgDealt += std::min(dmg, std::max(0.0f, v.health)); // (the health it took)
     v.health -= dmg;
     v.lastDamagedTick = tick_;
     if (attacker >= 0 && attacker != victim) {
@@ -1014,7 +1015,7 @@ Vec3 Server::spreadDir(const Vec3& dir, float spread, uint32_t seq, int pellet) 
 
 // One lag-compensated ray: adds dmg to the first player it hits (tested against where players
 // were at the shooter's view time).
-void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t vt, float* dmgPer, float dmg, float headDmg, float grow) {
+void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t vt, float* dmgPer, float dmg, float headDmg, float grow, bool pierce) {
     float bang;
     float wall = map_.raycastBullet(eye, dir, range, &bang); // goes through wallbang brushes
     float best = wall >= 0 ? wall : range;
@@ -1033,6 +1034,14 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
         }
         AABB bb = hitBox(pos, crouched);
         bb.mn.x -= grow; bb.mn.z -= grow; bb.mx.x += grow; bb.mx.z += grow;
+        if (pierce) { // sniper collateral: every player along the line up to the wall is hit
+            float t = rayAABB(eye, inv, bb, best);
+            if (t < 0) continue;
+            float y = eye.y + dir.y * t, d = dmg;
+            if (headDmg > 0 && y >= bb.mx.y - (bb.mx.y - bb.mn.y) * kHeadFraction) d = std::max(d, headDmg);
+            dmgPer[i] += (bang >= 0 && t > bang) ? d * kWallbangDamage : d;
+            continue;
+        }
         float t = rayAABB(eye, inv, bb, best);
         if (t >= 0 && t < best) { best = t; hit = i; hitBb = bb; }
     }
@@ -1171,7 +1180,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
     for (int k = 0; k < wd.pellets; k++) {
         Vec3 d = spreadDir(aim, spread, cmd.seq, k);
         if (bounce) bounceShot(id, eye, d, range, vt, dmgPer, dmg * kShotgunBounceDamage);
-        else hitscan(id, eye, d, range, vt, dmgPer, dmg, pull ? 0.0f : headDamage(p.weapon), p.weapon == WPN_KNIFE ? kKnifeGrow : 0.0f);
+        else hitscan(id, eye, d, range, vt, dmgPer, dmg, pull ? 0.0f : headDamage(p.weapon), p.weapon == WPN_KNIFE ? kKnifeGrow : 0.0f, p.weapon == WPN_SNIPER);
     }
     bool any = false;
     for (int i = 0; i < kMaxPlayers; i++) {
@@ -1361,6 +1370,8 @@ void Server::sendSnapshots() {
         ps.kills = (int16_t)p.kills;
         ps.deaths = (int16_t)p.deaths;
         ps.score = (int16_t)p.score;
+        ps.dmg = (int16_t)std::min(p.dmgDealt, 32000.0f);
+        ps.obj = (int16_t)std::min(p.objTime, 32000.0f);
         ps.ping = (uint16_t)p.ping;
         ps.checkpoint = (uint8_t)p.checkpoint;
         ps.hooked = p.alive && (p.move.flags & MF_HOOKED);
@@ -1480,6 +1491,7 @@ void Server::removeBot(int id) {
 // Team modes: keep teams even by adding intermediate bots to the side with fewer humans.
 void Server::updateBalanceBots(bool matchStarting) {
     // No balance bots during warmup: they're added when a match starts (if voted / enabled).
+    if (tourney_.running) return; // tourney: entrants waiting their turn are spectators, and a bot removed here would forfeit (a BYE advancing)
     bool inMatch = ms_.phase != PHASE_WARMUP || matchStarting;
     bool wanted = inMatch && cfg_.balanceBots && !cfg_.vsBots && modeIsTeamBased(cfg_.mode) && humanCount() > 0;
     int hA = humanCount(TEAM_A), hB = humanCount(TEAM_B);

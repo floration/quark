@@ -53,6 +53,7 @@ struct PlayerSnap {
     uint8_t health = 0;
     uint8_t weapon = 0;
     int16_t kills = 0, deaths = 0, score = 0;
+    int16_t dmg = 0, obj = 0;   // damage dealt to enemies, whole seconds on the objective
     uint16_t ping = 0;
     uint8_t checkpoint = 0;
     uint8_t hooked = 0;

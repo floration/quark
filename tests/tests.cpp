@@ -1,3 +1,6 @@
+#include <thread>
+#include <chrono>
+#include <cstdlib>
 #include "common/profile.h"
 #include <filesystem>
 #include <sstream>
@@ -398,7 +401,8 @@ static void testTimeTrial(uint16_t port) {
     const auto& cps = s.map_.checkpoints;
     auto& p = s.players_[a.clientId()];
     a.takeEvents();
-    for (size_t c = 0; c < 2; c++) { p.move.pos = cps[c].center(); p.move.pos.y = cps[c].mn.y + 0.05f; p.move.vel = {}; pump(s, cls, 0.3, idle); }
+    for (size_t c = 0; c < 2; c++) // (each until it counts: a loaded machine can miss a short pump)
+        for (int k = 0; k < 30 && p.checkpoint <= (int)c; k++) { p.move.pos = cps[c].center(); p.move.pos.y = cps[c].mn.y + 0.05f; p.move.vel = {}; pump(s, cls, 0.1, idle); }
     CHECK(p.checkpoint == 2);
     for (auto& e : a.takeEvents()) CHECK(e.type != EV_RACE_SPLIT);
     a.sendCommand("callvote start");                               // starting it: the race proper
@@ -407,11 +411,13 @@ static void testTimeTrial(uint16_t port) {
     a.takeEvents();
     std::vector<int> splits;
     for (size_t c = 0; c < cps.size(); c++) {
-        p.move.pos = cps[c].center(); p.move.pos.y = cps[c].mn.y + 0.05f; p.move.vel = {};
-        pump(s, cls, 0.3, idle);
-        for (auto& e : a.takeEvents()) if (e.type == EV_RACE_SPLIT && e.a == a.clientId()) splits.push_back(atoi(e.text.c_str()));
+        for (int k = 0; k < (c ? 30 : 120) && splits.size() <= c; k++) { // (the first may wait out the start on a slow machine)
+            p.move.pos = cps[c].center(); p.move.pos.y = cps[c].mn.y + 0.05f; p.move.vel = {};
+            pump(s, cls, 0.1, idle);
+            for (auto& e : a.takeEvents()) if (e.type == EV_RACE_SPLIT && e.a == a.clientId()) splits.push_back(atoi(e.text.c_str()));
+        }
     }
-    printf("  %zu checkpoints, %zu splits, finish %d ms\n", cps.size(), splits.size(), splits.empty() ? 0 : splits.back());
+    printf("  %zu checkpoints, %zu splits, finish %d ms (at checkpoint %d, phase %d)\n", cps.size(), splits.size(), splits.empty() ? 0 : splits.back(), p.checkpoint, (int)a.mode().phase);
     CHECK(splits.size() == cps.size() && cps.size() >= 8);
     for (size_t i = 1; i < splits.size(); i++) CHECK(splits[i] > splits[i - 1]);
     s.stop();
@@ -1830,6 +1836,48 @@ static void testEditSession(uint16_t port) {
     for (uint32_t crc : {a.map().crc, c.map().crc}) std::remove(downloadedMapPath(name, crc).c_str());
 }
 
+// Edit by vote on a normal server, then "VOTE: PLAY IT" (callvote edit off): everyone plays the edited copy.
+static void testVotedEdit(uint16_t port) {
+    printf("voted map editing, then vote to play it\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_VS; cfg.port = port; cfg.autoStart = true;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    NetClient a, b;
+    a.connect("127.0.0.1:" + std::to_string(port), "a");
+    b.connect("127.0.0.1:" + std::to_string(port), "b");
+    std::vector<NetClient*> cls = {&a, &b};
+    std::vector<std::string> msgs;
+    auto pumpMsgs = [&](double t) {
+        pump(s, cls, t, idle);
+        for (auto* c : cls) for (auto& e : c->takeEvents()) if (e.type == EV_MESSAGE || e.type == EV_CHAT) msgs.push_back(e.text);
+    };
+    pumpMsgs(1.5);
+    a.sendCommand("callvote edit on");
+    pumpMsgs(0.3);
+    a.sendCommand("vote yes"); b.sendCommand("vote yes");
+    pumpMsgs(1.0);
+    CHECK(s.editing_ && (a.mode().flags & MS_EDITING));
+    size_t nb = s.map_.brushes.size();
+    a.sendCommand("ed b ins " + std::to_string(nb) + " 1 0 10 0 2 11 2");
+    pumpMsgs(0.5);
+    CHECK(s.map_.brushes.size() == nb + 1 && a.map().crc == s.map_.crc && b.map().crc == s.map_.crc);
+    uint32_t edited = s.map_.crc;
+    b.sendCommand("callvote edit off");
+    pumpMsgs(0.3);
+    a.sendCommand("vote yes"); b.sendCommand("vote yes");
+    pumpMsgs(5.0);
+    CHECK(!s.editing_ && !(a.mode().flags & MS_EDITING) && !(b.mode().flags & MS_EDITING));
+    CHECK(s.map_.crc == edited && a.map().crc == edited && b.map().crc == edited && a.mapReady() && b.mapReady());
+    CHECK(a.hasSnapshot() && b.hasSnapshot() && a.clientId() >= 0 && b.clientId() >= 0);
+    bool anyAlive = false;
+    for (auto& p : s.players_) anyAlive |= p.connected && p.alive;
+    CHECK(anyAlive);
+    for (auto& m : msgs) printf("    | %s\n", m.c_str());
+    s.stop();
+}
+
 // 1v1 rulesets: weapon pools, instagib, no self damage, vampire. Tourney: 5 players (byes), the bracket
 // runs to a champion with map and ruleset rotation, non-players spectate.
 static void testArenaAndTourney(uint16_t& port) {
@@ -2179,6 +2227,11 @@ int main(int argc, char** argv) {
     setTimeScale(kTestTimeScale); // bot subprocesses share the test clock speed
     if (argc >= 4 && std::string(argv[1]) == "bot") return runBot(argv[2], atof(argv[3]), argc > 4 ? argv[4] : "bot");
     srand(1234);
+    setvbuf(stdout, nullptr, _IOLBF, 0); // (CI: see how far it got)
+    std::thread([] { // a hung test fails the run instead of stalling CI for an hour
+        std::this_thread::sleep_for(std::chrono::minutes(25));
+        printf("TIMEOUT: the test above never finished\n"); fflush(stdout); std::_Exit(2);
+    }).detach();
     setTimeScale(kTestTimeScale);
     g_serverRateCheck = false;
     if (argc >= 2 && std::string(argv[1]) == "playtest") { playtestMaps(29400, argc > 2 ? atof(argv[2]) : 40); return 0; }
@@ -2217,7 +2270,7 @@ int main(int argc, char** argv) {
     testGridQueries();
     uint16_t port = 28500;
     if (argc >= 2 && std::string(argv[1]) == "ranked") { testRanked(29610); testRankedVoteAndRestart(29620); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(29600); testEditSession(29601); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(29600); testEditSession(29601); testVotedEdit(29602); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
     if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(29960); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(29950); return g_fail ? 1 : 0; }
@@ -2245,6 +2298,7 @@ int main(int argc, char** argv) {
     testAltFires(port); port += 3;
     testMapDownload(port++);
     testEditSession(port++);
+    testVotedEdit(port++);
     testRanked(port); port += 3;
     testRankedVoteAndRestart(port++);
     testArenaAndTourney(port);
