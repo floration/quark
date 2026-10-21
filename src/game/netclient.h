@@ -81,7 +81,7 @@ public:
 
     // Demos: recording writes what this client sees (snapshots at up to 60 Hz, delta-encoded, with events, plus
     // the map whenever it changes) to a file; playback feeds a file back through the same snapshot path, in real time.
-    bool startRecording(const std::string& path);
+    bool startRecording(const std::string& path, bool fullRate = false); // full rate: every snapshot, else 62.5 Hz
     void stopRecording();
     bool recording() const { return rec_ != nullptr; }
     double recordingTime() const;
@@ -97,7 +97,7 @@ private:
     void recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& events);
     void pollPlayback();
     FILE* rec_ = nullptr;
-    double recStart_ = 0, recLast_ = -1;
+    double recStart_ = 0, recLast_ = -1, recEvery_ = 0.016;
     uint32_t recMapRev_ = 0xFFFFFFFFu, recEventId_ = 0;
     Snapshot recPrev_;
     bool recHavePrev_ = false;

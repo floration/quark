@@ -586,14 +586,14 @@ void ServerBrowser::poll() {
 //   type 2 (snapshot): client header + world (delta against the previous recorded snapshot) + events.
 static constexpr uint32_t kDemoMagic = 0x4D454451; // "QDEM"
 
-bool NetClient::startRecording(const std::string& path) {
+bool NetClient::startRecording(const std::string& path, bool fullRate) {
     stopRecording();
     if (!hasSnapshot() || !mapReady_) return false;
     rec_ = fopen(path.c_str(), "wb");
     if (!rec_) return false;
     uint32_t magic = kDemoMagic; uint16_t ver = kProtocolVersion;
     fwrite(&magic, 4, 1, rec_); fwrite(&ver, 2, 1, rec_);
-    recStart_ = timeNow(); recLast_ = -1; recMapRev_ = 0xFFFFFFFFu; recEventId_ = 0; recHavePrev_ = false;
+    recStart_ = timeNow(); recLast_ = -1; recEvery_ = fullRate ? 0.0 : 0.016; recMapRev_ = 0xFFFFFFFFu; recEventId_ = 0; recHavePrev_ = false;
     // who's who so far (names, models, ranked ids arrived as events before the recording started)
     recEvents_.clear();
     for (int i = 0; i < kMaxPlayers; i++) {
@@ -615,7 +615,7 @@ double NetClient::recordingTime() const { return rec_ ? timeNow() - recStart_ : 
 void NetClient::recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& events) {
     for (auto e : events) recEvents_.push_back(e);
     double t = timeNow() - recStart_;
-    if (recLast_ >= 0 && t - recLast_ < 1.0 / 60 && recMapRev_ == mapRevision()) return; // 60 Hz is plenty to watch
+    if (recLast_ >= 0 && t - recLast_ < recEvery_ && recMapRev_ == mapRevision()) return; // 62.5 Hz, or every snapshot (full rate)
     recLast_ = t;
     auto record = [&](uint8_t type, const uint8_t* p, uint32_t n) {
         fwrite(&type, 1, 1, rec_); fwrite(&t, 8, 1, rec_); fwrite(&n, 4, 1, rec_); fwrite(p, 1, n, rec_);

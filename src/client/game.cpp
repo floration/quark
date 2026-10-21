@@ -676,8 +676,8 @@ void Game::updateAnnouncer() {
             if (ms.mode == MODE_POINTS && ms.point > pv.point && myTeam >= 0)
                 say(myTeam == ms.attackers ? SND_VOICE_POINT_TAKEN : SND_VOICE_POINT_LOST, 2);
             if ((ms.flags & MS_OVERTIME) && !(pv.flags & MS_OVERTIME)) say(SND_VOICE_OVERTIME, 2);
-            if (!(ms.flags & MS_TIMETRIAL) && pv.phase == PHASE_LIVE && ms.timeLeft > 0) { // time left: 1 min, 30 s, 10 s, 5 s
-                static const struct { float t; int snd; } marks[] = {{60, SND_VOICE_ONE_MINUTE}, {30, SND_VOICE_THIRTY_SECONDS}, {10, SND_VOICE_TEN_SECONDS}, {5, SND_VOICE_FIVE_SECONDS}};
+            if (!(ms.flags & MS_TIMETRIAL) && pv.phase == PHASE_LIVE && ms.timeLeft > 0) { // time left: 1 min, 30 s
+                static const struct { float t; int snd; } marks[] = {{60, SND_VOICE_ONE_MINUTE}, {30, SND_VOICE_THIRTY_SECONDS}};
                 for (auto& m : marks) if (pv.timeLeft > m.t && ms.timeLeft <= m.t && pv.timeLeft - ms.timeLeft < 2) say(m.snd, 2);
             }
             if (ms.mode == MODE_FFA) {   // free for all: someone new has the most kills (a clear lead, not a tie)
@@ -737,7 +737,6 @@ void Game::onKillFeedback(int killer, int victim, int weapon, bool head, bool ai
     if (streakSnd >= 0) audio_.play(streakSnd, 1.0f);
     else if (head) audio_.play(SND_VOICE_HEADSHOT, 1.0f);
     else if (airborne && weapon == WPN_ROCKET) audio_.play(SND_VOICE_AIR_ROCKET, 1.0f);
-    else if (airborne) audio_.play(SND_VOICE_AIRBORNE, 1.0f);
 }
 
 void Game::handleEvents() {
@@ -3376,7 +3375,7 @@ void Game::startRecording() {
     char stamp[32];
     strftime(stamp, sizeof stamp, "%Y-%m-%d_%H-%M-%S", localtime(&t));
     std::string path = demoDir() + "/" + net_.map().name + "_" + modeName(net_.mode().mode) + "_" + stamp + ".qdemo";
-    if (net_.startRecording(path)) notify("RECORDING DEMO - ESC > STOP RECORDING", 3);
+    if (net_.startRecording(path, cfg_.demoFullRate)) notify(cfg_.demoFullRate ? "RECORDING DEMO (FULL RATE) - ESC > STOP RECORDING" : "RECORDING DEMO (62.5 HZ) - ESC > STOP RECORDING", 3);
     else notify("COULDN'T START RECORDING", 3);
 }
 
@@ -3402,7 +3401,7 @@ void Game::drawDemos(float cx, float y) {
         for (auto& f : fs) demoFiles_.push_back(f.second);
     }
     int rows = std::min<int>((int)demoFiles_.size(), 12);
-    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, (rows + 3) * (h + gap) + 24 * s);
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, (rows + 4) * (h + gap) + 40 * s);
     ui_.labelCentered(cx, y, "DEMOS", kWhite, 1.4f);
     y += h + gap;
     if (demoFiles_.empty()) {
@@ -3414,6 +3413,18 @@ void Game::drawDemos(float cx, float y) {
         for (auto& c : name) c = c == '_' ? ' ' : (char)toupper((unsigned char)c);
         if (ui_.button(x, y, w, h, name)) { playDemo(demoFiles_[i]); return; }
     }
+    float tw = (w - 2 * gap) / 3;
+    static const std::vector<std::string> rates = {"RECORD AT 62.5 HZ", "RECORD AT FULL RATE"};
+    int rate = cfg_.demoFullRate ? 1 : 0;
+    if (ui_.cycle(x, y, tw * 2 + gap, h, "RATE", rate, 2, rates)) { cfg_.demoFullRate = rate == 1; cfg_.save(); }
+    if (ui_.button(x + 2 * (tw + gap), y, tw, h, "OPEN FOLDER")) {
+        std::error_code ec;
+        std::filesystem::create_directories(demoDir(), ec);
+        openUrl(std::filesystem::absolute(demoDir(), ec).lexically_normal().string());
+    }
+    y += h + gap;
+    ui_.label(x, y, "FULL RATE: EVERY SNAPSHOT (UP TO 1000 HZ) - SMOOTHER, MUCH BIGGER FILES", kGrey, 0.5f);
+    y += 16 * s;
     if (ui_.button(x, y, w, h, "BACK")) setScreen(Screen::Main);
 }
 
