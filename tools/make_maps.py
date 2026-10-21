@@ -1361,8 +1361,11 @@ m.box(-2, 0.6, -2, 2, 1.6, 2); m.box(-1.2, 1.6, -1.2, 1.2, 1.9, 1.2, accent=True
 m.box(-0.45, 1.9, -0.45, 0.45, 2.6, 0.45); m.glow(-0.3, 2.6, -0.3, 0.3, 2.95, 0.3)
 for (x, z) in ((-12, -18), (-12, -8), (-12, 8), (-12, 18)): m.pillar(x, z, 11.0, mirror=True)
 m.wallbang(-7, 0.6, -0.3, -3, 3.2, 0.3, mirror=True)
-m.box(-22, 0, -4, -17, 3.5, 4); m.stairs(-17, -4, -14, 4, 3.5, "x", -1)
-m.box(17, 0, -4, 22, 3.5, 4); m.stairs(14, -4, 17, 4, 3.5, "x", 1)
+# the flights up to the side platforms, either side of the catwalk (stone under it: nobody runs up the middle
+# and cracks their head on it)
+m.box(-22, 0, -4, -17, 3.5, 4); m.stairs(-17, -4, -14, -1, 3.5, "x", -1); m.stairs(-17, 1, -14, 4, 3.5, "x", -1)
+m.box(17, 0, -4, 22, 3.5, 4); m.stairs(14, -4, 17, -1, 3.5, "x", 1); m.stairs(14, 1, 17, 4, 3.5, "x", 1)
+m.box(-17, 0, -1, -14, 3.5, 1, accent=True); m.box(14, 0, -1, 17, 3.5, 1, accent=True)
 m.box(-22, 3.5, -4.2, -17, 4.4, -4, accent=True); m.box(17, 3.5, 4, 22, 4.4, 4.2, accent=True)
 m.box(-6, 0, 18, -3, 2.4, 19, mirror=True); m.box(3, 0, 18, 6, 2.4, 19, mirror=True)
 m.crates(-19, 22, mirror=True); m.crates(15, 13, 1, mirror=True)
@@ -1878,6 +1881,24 @@ for (z, holes) in ((50, [(-2.5, 0, 2.5, 4), (12.5, 10, 16, 14), (-16, 18, -12.4,
                 y = max(y, c1)
             if y < 35: ys.append((y, 35))
             for (y0, y1) in ys: m.box(f0, y0, z - 5, f1, y1, z + 6, mat="metal")
+# nothing goes over the walls: an invisible ceiling level with their tops, right across the gorge
+m.box(-16, 35, -82, 16, 40, 82, mat="clip")
+# lava falls down the middle of every bay between two walls: a curtain of lava (touch it and you're back at your
+# checkpoint) everywhere but the four legs' own ways through, so nobody hooks or dashes round a leg across the
+# open middle of the gorge. Each leg's way through a bay runs from its arch in one wall to its arch in the next.
+WALLS = [(50, [(-2.5, 0, 2.5, 4), (12.5, 10, 16, 14), (-16, 18, -12.4, 22), (-2, 30, 2, 34)]),
+         (20, [(-12.6, 1.5, -7.4, 6.2), (12.5, 10, 16, 14.5), (-16, 20, -12.4, 23.2), (-2.4, 29.5, 2.4, 34)]),
+         (-2.1, [(-12.6, 1.5, -7.4, 8.5), (12.5, 10, 16, 13.6), (-16, 20, -12.4, 23.2), (-2.4, 29.5, 2.4, 34)]),
+         (-29.5, [(7.5, 3, 12.5, 7), (12.5, 8, 16, 12), (-16, 20, -12.4, 24), (-2, 28, 2, 32)]),
+         (-62.5, [(1.5, 1, 6.5, 5), (12.5, 4, 16, 11), (-16, 19, -12.4, 26), (-2, 27, 2, 32)])]
+for (za, ha), (zb, hb) in zip(WALLS, WALLS[1:]):
+    zm = (za + zb + 1) / 2
+    ways = [(min(p[0], q[0]) - 2.0, min(p[1], q[1]) - 2.5, max(p[2], q[2]) + 2.0, max(p[3], q[3]) + 3.0) for p, q in zip(ha, hb)]
+    for (x0, y0, x1, y1) in minus((-16, -12, 16, 35), ways):
+        if x1 - x0 < 0.5 or y1 - y0 < 0.5: continue
+        m.box(x0, y0, zm - 0.2, x1, y1, zm + 0.2, mat="lava")
+        m.glow(x0, y0, zm - 0.02, x1, y0 + 0.1, zm + 0.02)
+    m.light(0, 18, zm, 22, 0.8, fixture=False)
 # the river that cut the gorge, far below (fall and you're back at your checkpoint long before you reach it)
 m.box(-16, -20.3, -82, 16, -20, 82, mat="water")
 # pavilions over the start grid and the lap gate: shade for the crowd, posts to weave past, the roof reads as the
@@ -2558,6 +2579,8 @@ for lx in range(-100, LHX - 4, 22):
         if -8 < lx < 8: continue
         if any(x0 - 2 < lx < x1 + 2 and z0 - 2 < lz < z1 + 2 for (x0, z0, x1, z1) in LEDGES + RIBS + [LAKE, (46, 16, 62, 32)]): continue
         if any(x0 - 2 < lx < x1 + 2 and z0 - 2 < lz < z1 + 2 for (x0, z0, x1, z1) in (A_ZONE, B_ZONE, C_ZONE, D_ZONE, E_ZONE)): continue
+        flights = [tuple(map(float, l.split()[2:6])) for l in m.lines if l.startswith("# stairs ")]
+        if any(x0 - 1 < lx < x1 + 1 and z0 - 1 < lz < z1 + 1 for (x0, z0, x1, z1) in flights): continue   # (never on a staircase)
         m.box(lx - 0.15, 0, lz - 0.15, lx + 0.15, 6.2, lz + 0.15, accent=True)
         m.box(lx - 0.1, 6.0, lz - 0.1, lx + 0.9, 6.2, lz + 0.1, accent=True)
         lamp(lx + 0.8, lz, 6.0, drop=0.5, radius=16, intensity=0.9)

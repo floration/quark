@@ -1346,7 +1346,10 @@ static void testStairs() {
                         float h0 = std::sqrt(js.vel.x * js.vel.x + js.vel.z * js.vel.z);
                         pmove(js, cmd, m);
                         float h1 = std::sqrt(js.vel.x * js.vel.x + js.vel.z * js.vel.z);
-                        if (!(js.flags & MF_ONGROUND) && h0 > 3 && h1 < h0 * 0.5f) bonks++;
+                        if (!(js.flags & MF_ONGROUND) && h0 > 3 && h1 < h0 * 0.5f) {
+                            bonks++;
+                            if (getenv("STAIRS_TRACE")) printf("    bonk t %d at %.2f %.2f %.2f vel %.2f %.2f %.2f (h %.1f -> %.1f)\n", t, js.pos.x, js.pos.y, js.pos.z, js.vel.x, js.vel.y, js.vel.z, h0, h1);
+                        }
                         if (js.pos.y < base - 1.0f) break;
                     }
                 }
@@ -1971,9 +1974,10 @@ static void testVotedEdit(uint16_t port) {
     pumpMsgs(0.5);
     CHECK(s.map_.brushes.size() == nb + 1 && a.map().crc == s.map_.crc && b.map().crc == s.map_.crc);
     uint32_t edited = s.map_.crc;
-    b.sendCommand("callvote edit off");
-    pumpMsgs(0.3);
-    a.sendCommand("vote yes"); b.sendCommand("vote yes");
+    b.sendCommand("callvote edit off");   // (nobody else votes: "play it" passes when the 30 s are up, as nobody said no)
+    pumpMsgs(1.0);
+    CHECK(s.editing_);                    // (not yet: one yes of two)
+    s.vote_.endsAt = s.time();            // (the 30 s are up)
     pumpMsgs(5.0);
     CHECK(!s.editing_ && !(a.mode().flags & MS_EDITING) && !(b.mode().flags & MS_EDITING));
     CHECK(s.map_.crc == edited && a.map().crc == edited && b.map().crc == edited && a.mapReady() && b.mapReady());

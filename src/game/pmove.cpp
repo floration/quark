@@ -3,14 +3,14 @@
 
 // Placeholder tuning; movement will be redefined later.
 namespace {
-constexpr float kGravity = 20.0f;
-constexpr float kJumpSpeed = 7.0f;
-constexpr float kGroundSpeed = 8.0f;
+constexpr float kGravity = 22.0f;   // (1.14: +10%, less floaty)
+constexpr float kJumpSpeed = 7.34f;  // (with the heavier gravity: still a 1.22 m standing jump, maps rely on it)
+constexpr float kGroundSpeed = 12.0f;  // (1.14: was 8)
 constexpr float kCrouchSpeed = 4.0f;
 constexpr float kGroundAccel = 12.0f;
 constexpr float kAirAccel = 2.2f;
 constexpr float kAirSpeedCap = 2.3f; // quake-style air strafe cap: a wider window of angles that gain speed (was 2.0)
-constexpr float kOverstrafeBrake = 0.35f; // turning past the window: only this much of the push against your momentum applies
+constexpr float kOverstrafeBrake = 0.1f; // turning past the window: only this much of the push against your momentum applies (1.14: lighter with the 12 m/s run, whose air accel pushes harder)
 constexpr float kAirControl = 4.0f;  // how fast held direction bends momentum in the air (rad/s-ish), speed kept
 constexpr float kFriction = 7.0f;
 constexpr float kStopSpeed = 2.0f;
@@ -19,7 +19,7 @@ constexpr float kDashSpeed = 24.0f;     // burst speed
 constexpr float kDashTime = 0.12f;      // burst length; then speed settles back
 constexpr float kDashExitMin = 11.0f;   // speed you leave a dash with at least
 constexpr float kDashKeep = 3.0f;       // ...and your old speed plus this, so dashes build momentum
-constexpr float kDashExitMax = 28.0f;   // (1.12: above the grapple's 24, so a dash out of a fast strafe still adds speed)
+constexpr float kDashExitMax = 32.0f;   // (1.12: above the grapple's 24, so a dash out of a fast strafe still adds speed)
 constexpr float kDashVertical = 0.6375f;  // looking straight up / down makes the dash this vertical (sine)
 constexpr float kBounceGain = 0.5f;     // bhop: landing faster than a jump adds this share of the extra to the jump
 constexpr float kBounceMax = 8.0f;

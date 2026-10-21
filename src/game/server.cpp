@@ -913,6 +913,7 @@ void Server::simulate() {
             p.cmdQueue.clear();
         }
         if (editDirty_ && !tempEdit_ && time() >= nextAutosave_) autosave();
+        tickVote();   // (votes still time out: "play it" passes unless someone said no)
         return;
     }
     if (hitPending_) { // batched hit feedback waiting to go out (skip the 32x32 scan when there's none)
@@ -1626,7 +1627,10 @@ void Server::tickVote() {
         n += (vote_.no >> i) & 1;
     }
     bool pass = y * 2 > humans, fail = n * 2 >= humans || humans == 0;
-    if (time() >= vote_.endsAt) { pass = y > n; fail = !pass; }
+    if (time() >= vote_.endsAt) {   // time's up: more yes than no passes ("play it" while editing: passes unless someone said no)
+        pass = (vote_.kind == VOTE_EDIT && vote_.arg == 0) ? n == 0 : y > n;
+        fail = !pass;
+    }
     if (vote_.kind == VOTE_STARTBOTS && (pass || fail)) {
         // follow-up to a passed start vote: decides balance bots, then the match starts either way
         cfg_.balanceBots = pass;
