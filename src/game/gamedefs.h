@@ -85,6 +85,9 @@ inline const ArenaVariant& arenaVariant(int v) {
 #undef WB
 // Ranked ladders: 1v1 on one of these rulesets, each with its own rating.
 inline bool arenaVariantRanked(int v) { return v == 0 || v == 1 || v == 5; } // vanilla (all weapons), laser vampire, instagib
+inline int rankedMode(int v) { return v == 5 ? MODE_FFA : MODE_ARENA; }       // ranked instagib is a free for all, the rest 1v1
+inline const char* rankedKind(int v) { return v == 5 ? "RANKED FFA" : "RANKED 1V1"; }
+constexpr float kRankedFfaTime = 300.0f;                                       // ranked instagib: 5 minutes
 inline int arenaVariantFromName(const char* s) {
     for (int i = 0; i < kArenaVariants; i++) {
         const char* a = arenaVariant(i).name; const char* b = s;

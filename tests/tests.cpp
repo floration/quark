@@ -1094,7 +1094,7 @@ static void testBotAim(uint16_t& port) {
         auto& bp = s.players_[bot];
         float dealt = 0, lastShot = -1;
         int shots = 0;
-        double t0 = timeNow();
+        double t0 = s.time();
         pump(s, cls, 15.0, [&](int) {
             if (!p.alive || !bp.alive) return UserCmd();
             dealt += 100 - p.health;
@@ -1104,7 +1104,7 @@ static void testBotAim(uint16_t& port) {
             if (std::fabs(p.move.pos.z + 24) > 4) p.move.pos.z = -24;
             bp.move.pos = {7, 0, -24}; bp.move.vel = {};          // bot 14 m away, open floor, standing (aim only)
             UserCmd c;
-            c.side = (int)((timeNow() - t0) / 0.6) % 2 ? 127 : -127;
+            c.side = (int)((s.time() - t0) / 0.6) % 2 ? 127 : -127; // (game time: the same strafe however loaded the machine)
             c.yaw = -PI / 2;
             return c;
         });
@@ -1721,8 +1721,12 @@ static void testRankedVoteAndRestart(uint16_t port) {
     pump(s, cls, 0.2, idle);
     b.sendCommand("vote yes");
     pump(s, cls, 0.5, idle);
-    CHECK(s.config().ranked && s.config().mode == MODE_ARENA && s.ms_.arenaVariant == 5 && isOfficialMap(s.map_));
+    CHECK(s.config().ranked && s.config().mode == MODE_FFA && s.ms_.arenaVariant == 5 && isOfficialMap(s.map_));
     CHECK(a.hasSnapshot() && (a.mode().flags & MS_RANKED));
+    CHECK((s.arenaRules() & AR_INSTAGIB) && s.weaponMask() == arenaVariant(5).weapons);   // ranked instagib: a free for all on instagib rules
+    s.command("forcestart");
+    for (int i = 0; i < 50 && s.ms_.phase != PHASE_LIVE; i++) pump(s, cls, 0.1, idle);
+    CHECK(s.ms_.phase == PHASE_LIVE && s.ms_.timeLeft > 290 && s.ms_.timeLeft <= 300.5f);   // ... for 5 minutes
     bool bots = false;
     for (auto& p : s.players_) bots |= p.connected && p.isBot;
     CHECK(!bots);

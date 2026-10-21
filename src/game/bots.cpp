@@ -27,7 +27,7 @@ const SkillParams kSkills[BOT_SKILLS] = {
     {0.60f, 0.085f, 0.016f, 0.19f, 0.40f, 3.4f,  18.0f, 0.12f,  true,  false, false, false, false}, // beginner
     {0.48f, 0.064f, 0.012f, 0.14f, 0.32f, 4.2f,  24.0f, 0.10f,  true,  false, false, false, false}, // intermediate
     {0.34f, 0.032f, 0.007f, 0.08f, 0.22f, 6.0f,  40.0f, 0.07f,  true,  false, false, true,  true},  // advanced
-    {0.26f, 0.020f, 0.004f, 0.04f, 0.14f, 9.0f,  75.0f, 0.05f,  true,  true,  true,  true,  true},  // expert
+    {0.20f, 0.012f, 0.003f, 0.02f, 0.08f, 10.0f, 90.0f, 0.04f,  true,  true,  true,  true,  true},  // expert (1.10: sharper aim)
 };
 
 float rnd(BotBrain& b) { // xorshift, 0..1
@@ -431,12 +431,12 @@ UserCmd botThink(Server& s, int id) {
                 cmd.buttons |= BTN_GRAPPLE;
                 if ((me.move.flags & MF_HOOKED) && length(b.hookAnchor - me.move.pos) < 3.0f) b.hookUntil = 0; // arrived: let go
             } else if (me.move.hookCooldown <= 0 && now >= b.nextHookTry) {
-                b.nextHookTry = now + (grappleOnly ? 0.2f : 0.5f);
+                b.nextHookTry = now + (grappleOnly ? 0.2f : sp.bhop ? 0.25f : 0.5f); // (expert: hooks around all the time)
                 // the next waypoint if it's a ledge up, else the end of the route if it's a long open stretch
                 for (const Vec3& cand : {b.waypoint, b.pathGoal}) {
                     Vec3 off = cand - me.move.pos;
                     float rise = off.y, hd = std::sqrt(off.x * off.x + off.z * off.z);
-                    bool want = grappleOnly ? hd > 2.0f : (rise > 2.0f && hd < 30.0f) || (hd > 14.0f && rise > -3.0f);
+                    bool want = grappleOnly ? hd > 2.0f : (rise > (sp.bhop ? 1.2f : 2.0f) && hd < 30.0f) || (hd > (sp.bhop ? 8.0f : 14.0f) && rise > -3.0f);
                     if (!want) continue;
                     Vec3 tgt = cand - Vec3(0, 0.1f, 0); // just into the walkable surface, so the hook catches on it
                     Vec3 d = normalize(tgt - eye);

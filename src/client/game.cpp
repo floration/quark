@@ -1605,7 +1605,7 @@ void Game::drawHud() {
         case PHASE_MATCH_END: phase = "MATCH OVER"; break;
     }
     bool rankedGame = ms.flags & MS_RANKED;
-    if (rankedGame) title = std::string("RANKED 1V1 - ") + arenaVariant(ms.arenaVariant).title;
+    if (rankedGame) title = std::string(rankedKind(ms.arenaVariant)) + " - " + arenaVariant(ms.arenaVariant).title;
     if (ms.flags & MS_TIMETRIAL) title = "TIME TRIAL - VIADUCT";
     ui_.panel(cx - 220 * s, 8 * s, 440 * s, 64 * s, 0.55f);
     if (rankedGame) { // always visible on a ranked server
@@ -2804,8 +2804,8 @@ void Game::drawMenu() {
                     y += bh + gap;
                 }
                 if (cfg_.hostRanked) { // ranked is always 1v1 on a ladder: the mode button picks the ladder instead
-                    hostModeIdx_ = MODE_ARENA;
                     if (!arenaVariantRanked(cfg_.hostArenaVariant)) cfg_.hostArenaVariant = 0;
+                    hostModeIdx_ = rankedMode(cfg_.hostArenaVariant);
                     if (hostMapIdx_ >= (int)mapInfo_.size() || !(mapInfo_[hostMapIdx_].ranked >> cfg_.hostArenaVariant & 1))
                         hostMapIdx_ = bestRankedMap(cfg_.hostArenaVariant);
                 }
@@ -2814,7 +2814,7 @@ void Game::drawMenu() {
                 if (cfg_.hostRanked) {
                     static const int ladders[3] = {0, 1, 5};
                     int k = cfg_.hostArenaVariant == 1 ? 1 : cfg_.hostArenaVariant == 5 ? 2 : 0;
-                    if (ui_.button(lx, y, lw, bh, std::string("MODE: RANKED 1V1 - ") + arenaVariant(ladders[k]).title + "  >")) picker_ = PICK_HOST_MODE;
+                    if (ui_.button(lx, y, lw, bh, std::string("MODE: ") + rankedKind(ladders[k]) + " - " + arenaVariant(ladders[k]).title + "  >")) picker_ = PICK_HOST_MODE;
                 } else if (ui_.button(lx, y, lw, bh, std::string("MODE: ") + modeTitle(hostModeIdx_) + (hostModeIdx_ == MODE_ARENA || hostModeIdx_ == MODE_TOURNEY ? std::string(" - ") + arenaVariant(cfg_.hostArenaVariant).title : "") + "  >")) picker_ = PICK_HOST_MODE;
                 y += bh + gap;
                 if (cfg_.hostRanked) {
@@ -3077,7 +3077,7 @@ static const char* const kInfoPages[][48] = {
         "BASTION / ORBITAL - team vs.   DEPOT - bomb.   SUMMIT / DOWNTOWN - king of the hill.",
         "RAILYARD - payload.   CANAL - neutral payload.   HARBOR - free for all.",
         "CLOCKWORK - duel.   COLOSSEUM - tourney.   FOUNDRY - tag.   HAMLET - hide and seek.   VIADUCT - race (and the ranked time trial).",
-        "TEMPLE, FURNACE, GANTRY, ANVIL - ranked 1v1 (vanilla, laser vampire, instagib, all three).",
+        "TEMPLE, FURNACE, GANTRY, ANVIL - ranked (vanilla 1v1, laser vampire 1v1, instagib free for all with a 5 minute limit, all three).",
         "# YOUR OWN MAPS",
         "Anything in the maps folder shows up in the lists. Servers send their map to players who don't have it.",
     },
@@ -3377,7 +3377,7 @@ void Game::drawPicker(float cx, float y) {
     float rowH = bh + (variants ? 30 : 18) * s + gap;
     ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 40 * s + rows * rowH + bh + 30 * s);
     std::string title = picker_ == PICK_TMAPS ? "TOURNEY MAPS (PICK ANY, THEY ROTATE)" : picker_ == PICK_TMODES ? "TOURNEY RULESETS (PICK ANY, THEY ROTATE)"
-                      : ladders ? "RANKED 1V1 - CHOOSE A LADDER"
+                      : ladders ? "RANKED - CHOOSE A LADDER"
                       : variants ? std::string(modeTitle(mode)) + " - CHOOSE A RULESET" : modes ? "CHOOSE A MODE"
                       : std::string("CHOOSE A MAP FOR ") + (rankedNow ? "RANKED" : modeTitle(mode));
     if ((live && livePickVote_) || multi) title = "VOTE: " + title;
@@ -3408,7 +3408,7 @@ void Game::drawPicker(float cx, float y) {
             cur = multi ? multiSel_[i] : i == variant;
         } else if (modes && i == MODE_COUNT) {
             label = "RANKED";
-            sub = "1V1 LADDERS - DEFAULT MODEL, HUD, CONTROLS >";
+            sub = "LADDERS (1V1, INSTAGIB FFA) - DEFAULT MODEL, HUD, CONTROLS >";
             cur = rankedNow;
         } else if (modes) {
             label = modeTitle(i);

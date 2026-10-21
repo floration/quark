@@ -51,7 +51,8 @@ float roundTime(const Server& s) {
         case MODE_PAYLOAD: return 240.0f;
         case MODE_POINTS: return kPointRoundTime;
         case MODE_NPAYLOAD: return 300.0f;
-        case MODE_FFA: return s.cfg_.timeLimit > 0 ? (float)s.cfg_.timeLimit : 600.0f;
+        case MODE_FFA: if (s.cfg_.ranked) return kRankedFfaTime;
+            return s.cfg_.timeLimit > 0 ? (float)s.cfg_.timeLimit : 600.0f;
         case MODE_HIDE: return kHideRoundTime;
         case MODE_TAG: return kTagRoundTime;
         default: return 0.0f; // no limit

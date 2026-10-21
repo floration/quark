@@ -50,8 +50,8 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     }
     setActiveRules(cfg_.custom);   // (the weapon table and movement everything in this process uses)
     if (cfg_.ranked) { // ranked = 1v1 on one of the ladder rulesets
-        cfg_.mode = MODE_ARENA;
         if (!arenaVariantRanked(cfg_.arenaVariant)) cfg_.arenaVariant = 0;
+        cfg_.mode = rankedMode(cfg_.arenaVariant);
     }
     std::string e;
     if (!map_.load(cfg_.map, &e)) { if (err) *err = e; return false; }
@@ -571,8 +571,8 @@ void Server::handleStringCmd(int id, const std::string& s) {
             else if (mapName.find_first_of("/\\.") != std::string::npos || !m.load(mapName)) why = "this server doesn't have the map '" + mapName + "' (it may be on an older version)";
 
             bool ok = why.empty();
-            if (ok && cfg_.ranked && (mode != MODE_ARENA || !arenaVariantRanked(variant) || !isRankedMap(m, variant))) {
-                GameEvent e; e.type = EV_MESSAGE; e.text = "ranked server: 1v1 on a ranked map for the ladder (vanilla / vampire / instagib), or vote ranked off"; sendEvent(id, e);
+            if (ok && cfg_.ranked && (!arenaVariantRanked(variant) || mode != rankedMode(variant) || !isRankedMap(m, variant))) {
+                GameEvent e; e.type = EV_MESSAGE; e.text = "ranked server: a ranked map for the ladder (vanilla / vampire 1v1, instagib free for all), or vote ranked off"; sendEvent(id, e);
                 return;
             }
             if (!ok) { GameEvent e; e.type = EV_MESSAGE; e.text = "can't vote: " + why; sendEvent(id, e); }
@@ -628,8 +628,8 @@ void Server::command(const std::string& line, int fromPlayer) {
         std::string err;
         if (!m.load(newMap, &err)) { reply(err); return; }
         if (!m.supportsMode(newMode)) reply("warning: " + newMap + " isn't built for " + modeTitle(newMode) + " - it may not work");
-        if (cfg_.ranked && (newMode != MODE_ARENA || !arenaVariantRanked(cfg_.arenaVariant) || !isRankedMap(m, cfg_.arenaVariant))) {
-            reply("ranked: only 1v1 on vanilla, laser vampire or instagib, on that ladder's ranked maps");
+        if (cfg_.ranked && (!arenaVariantRanked(cfg_.arenaVariant) || newMode != rankedMode(cfg_.arenaVariant) || !isRankedMap(m, cfg_.arenaVariant))) {
+            reply("ranked: vanilla or laser vampire 1v1, or instagib free for all, on that ladder's ranked maps");
             return;
         }
         if (editing_ && tempEdit_) setEditing(false); // a voted edit was temporary: the new map loads as it is on disk
@@ -1691,7 +1691,7 @@ bool Server::switchMapKeepRules(const std::string& name) {
 
 uint16_t Server::weaponMask() const {
     if (isItMode(ms_.mode)) return (uint16_t)(1u << WPN_KNIFE); // only "it" can use it; everyone else is unarmed
-    uint16_t m = ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY ? arenaVariant(ms_.arenaVariant).weapons : duelModDef(duelMod()).weapons;
+    uint16_t m = ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY || (cfg_.ranked && ms_.mode == MODE_FFA) ? arenaVariant(ms_.arenaVariant).weapons : duelModDef(duelMod()).weapons;
     uint16_t c = cfg_.custom.active() ? cfg_.custom.weapons : 0;   // a custom mode's weapons (narrowed by a duel life's, if any)
     if (c && m && (m & c)) return m & c;
     return c ? c : m;
@@ -1824,7 +1824,7 @@ bool Server::autosave() {
 // loser 1, both 0 on a draw); free-for-all modes rank players by score (ties share a place). Every
 // player in it must have a ranked id and be human, else the match isn't rated.
 std::string Server::rankedResult(int winner, std::string* whyNot) {
-    if (cfg_.mode != MODE_ARENA) { *whyNot = "only 1v1 is ranked"; return ""; }
+    if (cfg_.mode != rankedMode(ms_.arenaVariant)) { *whyNot = "not the ladder's mode"; return ""; }
     if (!arenaVariantRanked(ms_.arenaVariant)) { *whyNot = std::string(arenaVariant(ms_.arenaVariant).title) + " isn't a ranked ruleset"; return ""; }
     bool teams = modeIsTeamBased(cfg_.mode);
     struct Entry { int slot, team, score; };
@@ -1880,12 +1880,12 @@ void Server::setRanked(bool on, int ladder) {
     if (editing_) setEditing(false);
     std::string mapName = cfg_.map;
     Map m;
-    if (!(m.load(mapName) && isRankedMap(m, ladder) && m.supportsMode(MODE_ARENA))) {
+    if (!(m.load(mapName) && isRankedMap(m, ladder) && m.supportsMode(rankedMode(ladder)))) {
         // the ladder's own map first (built for just that ruleset), else any ranked map that takes it
         mapName.clear();
         for (auto& n : listMaps()) {
             Map c;
-            if (!c.load(n) || !isRankedMap(c, ladder) || !c.supportsMode(MODE_ARENA)) continue;
+            if (!c.load(n) || !isRankedMap(c, ladder) || !c.supportsMode(rankedMode(ladder))) continue;
             bool own = c.rankedLadders == (1u << ladder);
             if (mapName.empty() || own) mapName = n;
             if (own) break;
@@ -1897,7 +1897,7 @@ void Server::setRanked(bool on, int ladder) {
     cfg_.balanceBots = false;
     for (int i = kMaxPlayers - 1; i >= 0; i--) if (players_[i].connected && players_[i].isBot) removeBot(i);
     cfg_.arenaVariant = ladder;
-    command("map " + mapName + " 1v1 " + arenaVariant(ladder).name);
+    command("map " + mapName + " " + modeName(rankedMode(ladder)) + " " + arenaVariant(ladder).name);
     message(std::string("ranked on - ") + arenaVariant(ladder).title + " ladder");
 }
 
