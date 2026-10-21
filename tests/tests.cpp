@@ -1250,6 +1250,30 @@ static void testRejoin(uint16_t port) {
 // same rules, and moves on to the next map of its pool when a match ends.
 static void testCustomMode(uint16_t port) {
     printf("custom mode\n");
+    {   // the MOVEMENT page: every constant round-trips through the file / network text, and actually applies
+        CustomRules r; r.name = "move test";
+        for (int k = 0; k < MV_COUNT; k++) r.move[k] = 1.0f + 0.05f * (k + 1);
+        CustomRules back;
+        CHECK(back.fromText(r.toText()));
+        bool same = true;
+        for (int k = 0; k < MV_COUNT; k++) same &= std::fabs(back.move[k] - r.move[k]) < 1e-4f;
+        CHECK(same);
+        Map open;
+        open.brushes.push_back({{{-200, -1, -200}, {200, 0, 200}}, 0});
+        open.rebuild();
+        auto speedAfter = [&](float accel) {   // run speed 0.05 s after starting from a standstill
+            CustomRules g; g.name = "accel"; g.move[MV_GROUND_ACCEL] = accel; setActiveRules(g);
+            MoveState q; q.pos = {0, 0.01f, 0};
+            UserCmd u; u.msec = 1; u.forward = 127;
+            for (int i = 0; i < 50; i++) pmove(q, UserCmd{}, open);
+            for (int i = 0; i < 50; i++) pmove(q, u, open);
+            return std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z);
+        };
+        float normal = speedAfter(1), quick = speedAfter(2);
+        setActiveRules(CustomRules());
+        printf("  ground accel x2: %.1f m/s after 0.05 s (normal %.1f)\n", quick, normal);
+        CHECK(quick > normal + 1.0f);
+    }
     Server s;
     ServerConfig cfg;
     cfg.autoStart = true; cfg.map = "bastion"; cfg.port = port;

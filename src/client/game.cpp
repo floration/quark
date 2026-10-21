@@ -1965,8 +1965,8 @@ void Game::drawHud() {
             };
             int cw = net_.selfWeapon();
             bar(bcy + 40 * k, "WEAPON", (float)std::max(0.0, localNextFire_ - time_), weaponDef(cw).refire);
-            bar(bcy + 52 * k, "DASH", mv.dashCooldown, kDashCooldown);
-            bar(bcy + 64 * k, "HOOK", mv.hookCooldown, kHookCooldown);
+            bar(bcy + 52 * k, "DASH", mv.dashCooldown, kDashCooldown * moveTuning().m[MV_DASH_COOLDOWN]);
+            bar(bcy + 64 * k, "HOOK", mv.hookCooldown, kHookCooldown * moveTuning().m[MV_HOOK_COOLDOWN]);
         }
         if (!paused_ && !he(Settings::HUD_SPEED).hidden) {   // speed meter: speed is unbounded, so the bar fills on a saturating exponential curve
             // (1 - e^(-v/20)): half full at ~14 m/s, 90% at ~46 m/s, always room to grow. Number shows the real value.
@@ -2174,8 +2174,8 @@ void Game::computeHudVals() {
     auto set = [&](int i, float v, float mx) { h.v[i] = v; h.max[i] = mx; };
     set(HV_HEALTH, (float)net_.selfHealth(), 100);
     set(HV_SPEED, std::sqrt(mv.vel.x * mv.vel.x + mv.vel.z * mv.vel.z), 40);
-    set(HV_DASH, 100.0f * (1.0f - clampf(mv.dashCooldown / kDashCooldown, 0, 1)), 100);   // % ready
-    set(HV_HOOK, 100.0f * (1.0f - clampf(mv.hookCooldown / kHookCooldown, 0, 1)), 100);
+    set(HV_DASH, 100.0f * (1.0f - clampf(mv.dashCooldown / (kDashCooldown * moveTuning().m[MV_DASH_COOLDOWN]), 0, 1)), 100);   // % ready
+    set(HV_HOOK, 100.0f * (1.0f - clampf(mv.hookCooldown / (kHookCooldown * moveTuning().m[MV_HOOK_COOLDOWN]), 0, 1)), 100);
     {   // fps over the last second: average and the worst frame
         double sum = 0, worst = 0;
         int n = 0;
@@ -2827,7 +2827,7 @@ void Game::drawScoreboard() {
     r_.text(x + 12 * s, cy, ts, "PLAYER", kGrey);
     bool ranked = ms.flags & MS_RANKED;
     std::string ladder = arenaVariant(ms.arenaVariant).name;
-    if (ranked) r_.text(x + w * 0.36f, cy, ts, "RATING", kGrey);
+    r_.text(x + w * 0.36f, cy, ts, ranked ? "RATING" : "TOTAL K / D", kGrey);   // (outside ranked: lifetime kills / deaths)
     // score: the mode's own points in race / hide and seek / tag; elsewhere damage / 10 + seconds on the objective
     const bool ownScore = ms.mode == MODE_RACE || isItMode(ms.mode);
     // instagib (1v1 / tourney ruleset or ranked instagib): every hit kills, so only accuracy and gibs (kills) count
@@ -2856,6 +2856,10 @@ void Game::drawScoreboard() {
         Rating rt;
         if (ranked && rank_.rating(ladder, net_.rankId(p.id), rt))
             r_.text(x + w * 0.36f, cy, ts, rt.games < 5 ? std::to_string(rt.display()) + "?" : std::to_string(rt.display()), kWhite); // ? = still placing
+        if (!ranked) {
+            auto lt = lifetime_.find(p.id == net_.clientId() ? rankKey_.id : net_.rankId(p.id));
+            if (lt != lifetime_.end()) r_.text(x + w * 0.36f, cy, ts, std::to_string(lt->second.first) + " / " + std::to_string(lt->second.second), kWhite);
+        }
         if (gib) {
             r_.text(x + w * 0.62f, cy, ts, std::to_string(p.kills), kWhite);
             r_.text(x + w * 0.76f, cy, ts, std::to_string(p.acc) + "%", kWhite);
@@ -3413,9 +3417,9 @@ void Game::drawCustomModeEditor(float cx, float y) {
     ui_.label(x, y + 7 * s, "NAME");
     ui_.textField(901, x + 90 * s, y, w - 90 * s, bh, r.name, 24);
     y += bh + gap * 2;
-    static const char* tabs[3] = {"GENERAL", "WEAPONS", "MAPS"};
-    float tw = (w - 2 * gap) / 3;
-    for (int t = 0; t < 3; t++)
+    static const char* tabs[4] = {"GENERAL", "WEAPONS", "MAPS", "MOVEMENT"};
+    float tw = (w - 3 * gap) / 4;
+    for (int t = 0; t < 4; t++)
         if (ui_.button(x + t * (tw + gap), y, tw, bh, customTab_ == t ? std::string("> ") + tabs[t] + " <" : tabs[t])) customTab_ = t;
     y += bh + gap * 2;
     if (customTab_ == 0) {
@@ -3440,6 +3444,17 @@ void Game::drawCustomModeEditor(float cx, float y) {
         ui_.slider(x, y, hw, bh, "TIME (S, 0=DEFAULT)", tl, 0, 3600, "%.0f"); r.timeLimit = (int)std::lround(tl / 30) * 30;
         ui_.slider(x + hw + gap, y, hw, bh, "SCORE (0=DEFAULT)", sl, 0, 200, "%.0f"); r.scoreLimit = (int)std::lround(sl); y += bh + gap;
         ui_.slider(x, y, hw, bh, "ROUNDS (0=DEFAULT)", rw, 0, 15, "%.0f"); r.roundsToWin = (int)std::lround(rw); y += bh + gap;
+    } else if (customTab_ == 3) {   // every movement constant, x its normal value (gravity / speed / jump are on GENERAL)
+        ui_.label(x, y, "EVERY MOVEMENT SETTING - X THE NORMAL VALUE (1.00 = STANDARD)", kGrey, 0.5f);
+        y += 16 * s;
+        float rh = std::min(bh, (430 * s) / ((MV_COUNT + 1) / 2) - gap);
+        for (int k = 0; k < MV_COUNT; k++) {
+            float cx2 = x + (k % 2) * (hw + gap), cy2 = y + (k / 2) * (rh + gap);
+            if (ui_.slider(cx2, cy2, hw, rh, moveParamLabel(k), r.move[k], 0.1f, 5, "%.2fx")) r.move[k] = std::round(r.move[k] * 20) / 20;
+        }
+        y += ((MV_COUNT + 1) / 2) * (rh + gap);
+        if (ui_.button(x, y, w, bh, "RESET MOVEMENT TO STANDARD")) for (float& v : r.move) v = 1;
+        y += bh + gap;
     } else if (customTab_ == 1) {
         float sw = (w - 130 * s - 3 * gap) / 3;
         for (int i = 0; i < WPN_COUNT; i++) {

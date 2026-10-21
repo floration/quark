@@ -85,6 +85,36 @@ async function link(env, form, now) {
   return "linked " + discord;
 }
 
+// Lifetime kills / deaths: each game client adds what it got since its last report (at the end of a match, or when
+// it leaves). Capped per report, and at most one report every 20 s per player, so a cheater can't inflate it fast.
+const LIFETIME_MAX_PER_REPORT = 300;
+async function lifetimeReport(env, form, now) {
+  const secret = String(form.get("secret") || "");
+  if (!/^[0-9a-f]{64}$/.test(secret)) return "bad request";
+  const kills = parseInt(String(form.get("kills") || "0"), 10), deaths = parseInt(String(form.get("deaths") || "0"), 10);
+  if (!(kills >= 0 && deaths >= 0 && kills <= LIFETIME_MAX_PER_REPORT && deaths <= LIFETIME_MAX_PER_REPORT)) return "bad numbers";
+  const me = (await sha256hex(secret)).slice(0, 32);
+  await saveName(env, me, String(form.get("name") || ""), now);
+  const row = await env.DB.prepare("SELECT updated FROM lifetime WHERE id = ?").bind(me).first();
+  if (row && now - row.updated < 20000) return "too soon";
+  await env.DB.prepare("INSERT INTO lifetime (id, kills, deaths, updated) VALUES (?, ?, ?, ?) " +
+    "ON CONFLICT(id) DO UPDATE SET kills = kills + excluded.kills, deaths = deaths + excluded.deaths, updated = excluded.updated")
+    .bind(me, kills, deaths, now).run();
+  return "ok";
+}
+// GET /lifetime?ids=a,b,c (ranked ids, up to 32): "id kills deaths" lines. GET /lifetime: the top 10 by kills,
+// "kills deaths id namehex" lines.
+async function lifetimeGet(env, ids) {
+  if (ids) {
+    const list = ids.split(",").filter((x) => /^[0-9a-f]{32}$/.test(x)).slice(0, 32);
+    if (!list.length) return "";
+    const { results } = await env.DB.prepare(`SELECT id, kills, deaths FROM lifetime WHERE id IN (${list.map(() => "?").join(",")})`).bind(...list).all();
+    return results.map((r) => `${r.id} ${r.kills} ${r.deaths}`).join("\n");
+  }
+  const { results } = await env.DB.prepare("SELECT l.id, l.kills, l.deaths, COALESCE(n.name, 'player') AS name FROM lifetime l LEFT JOIN names n ON n.id = l.id ORDER BY l.kills DESC LIMIT 10").all();
+  return results.map((r) => `${r.kills} ${r.deaths} ${r.id} ${textHex(r.name)}`).join("\n");
+}
+
 async function crowns(env) {
   const out = [];
   for (const ladder of LADDERS) {
@@ -307,6 +337,8 @@ export default {
     }
     if (u.pathname === "/link" && req.method === "POST") return text(await link(env, await req.formData(), now));
     if (u.pathname === "/crowns") return text(await crowns(env));
+    if (u.pathname === "/lifetime" && req.method === "POST") return text(await lifetimeReport(env, await req.formData(), now));
+    if (u.pathname === "/lifetime") return text(await lifetimeGet(env, q("ids")));
     if (u.pathname === "/queue" && req.method === "POST") return text(await queue(env, await req.formData(), now));
     if (u.pathname === "/queue") {
       await env.DB.prepare("DELETE FROM queue WHERE joined < ?").bind(now - QUEUE_STALE_MS).run();

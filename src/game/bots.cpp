@@ -440,7 +440,7 @@ UserCmd botThink(Server& s, int id) {
                     if (!want) continue;
                     Vec3 tgt = cand - Vec3(0, 0.1f, 0); // just into the walkable surface, so the hook catches on it
                     Vec3 d = normalize(tgt - eye);
-                    float t = s.map_.raycast(eye, d, kGrappleRange);
+                    float t = s.map_.raycast(eye, d, kGrappleRange * moveTuning().m[MV_HOOK_RANGE]);
                     if (t >= 0 && length(eye + d * t - tgt) < 3.0f) {
                         b.hookAnchor = eye + d * t;
                         b.hookUntil = now + 1.6f;

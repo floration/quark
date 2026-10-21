@@ -5,7 +5,7 @@ Put a file named after the sound into the folder of the kit it belongs to, then 
 
 Folders: `default/`, `heavy_metal/`, `magical/`, `retro/`, `mouth/` (the SOUND PACK setting's five kits).
 Formats: .wav, .ogg, .mp3 or .flac, any sample rate. The importer makes it mono, trims the silence at the start,
-cuts it at 3 s and normalises it. In the other kits it is matched to the DEFAULT sound's loudness.
+cuts it at the length in the table below (with a short fade) and normalises it. In the other kits it is matched to the DEFAULT sound's loudness.
 Example: `heavy_metal/ROCKET.wav`.
 
 Keep them short and starting instantly (no silence before the sound): they play the moment the thing happens.

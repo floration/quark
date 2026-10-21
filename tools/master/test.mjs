@@ -131,5 +131,15 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   check((await call("/filled?since=" + filled[0].split(" ")[0])) === "", "nothing newer");
   check((await call("/queue", { secret: secret(6), mode: "nope" })) === "not a queue", "unknown queue");
 }
+// lifetime kills / deaths: added up across reports, capped, rate limited
+{
+  check((await call("/lifetime", { secret: secret(7), kills: "12", deaths: "5", name: Buffer.from("vet").toString("hex") })) === "ok", "lifetime first report");
+  check((await call("/lifetime", { secret: secret(7), kills: "3", deaths: "1" })) === "too soon", "lifetime rate limit");
+  check((await call("/lifetime", { secret: secret(8), kills: "999", deaths: "0" })) === "bad numbers", "lifetime cap");
+  db.prepare("UPDATE lifetime SET updated = 0").run();
+  check((await call("/lifetime", { secret: secret(7), kills: "3", deaths: "1" })) === "ok", "lifetime adds up");
+  check((await call("/lifetime?ids=" + id(7) + "," + id(8))) === `${id(7)} 15 6`, "lifetime lookup");
+  check((await call("/lifetime")).startsWith(`15 6 ${id(7)} `), "lifetime top");
+}
 console.log(fails ? fails + " FAILURE(S)" : "worker tests passed");
 process.exit(fails ? 1 : 0);

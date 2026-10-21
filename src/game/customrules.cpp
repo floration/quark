@@ -27,6 +27,7 @@ void rebuild() {
     if (g_rules.active()) {
         g_move.gravity = g_rules.gravity; g_move.speed = g_rules.moveSpeed; g_move.jump = g_rules.jump;
         g_move.dash = g_rules.dash; g_move.grapple = g_rules.grapple;
+        for (int k = 0; k < MV_COUNT; k++) g_move.m[k] = g_rules.move[k];
     }
     g_init = true;
 }
@@ -40,6 +41,7 @@ std::string safeName(const std::string& n) {
 } // namespace
 
 CustomRules::CustomRules() {
+    for (float& v : move) v = 1;
     for (int w = 0; w < WPN_COUNT; w++) fireRate[w] = damage[w] = projSpeed[w] = 1;
 }
 
@@ -59,6 +61,7 @@ std::string CustomRules::toText() const {
       << "\nhealth=" << health << "\ndash=" << dash << "\ngrapple=" << grapple << "\nselfdamage=" << selfDamage
       << "\ninstagib=" << instagib << "\nvampire=" << vampire << "\nregen=" << regen
       << "\ntimelimit=" << timeLimit << "\nscorelimit=" << scoreLimit << "\nrounds=" << roundsToWin;
+    for (int k = 0; k < MV_COUNT; k++) if (move[k] != 1) o << "\nmove_" << moveParamKey(k) << "=" << move[k];   // (only the changed ones)
     for (int w = 0; w < WPN_COUNT; w++)
         o << "\nweapon=" << w << "," << fireRate[w] << "," << damage[w] << "," << projSpeed[w];
     o << "\nmaps=";
@@ -87,6 +90,7 @@ bool CustomRules::fromText(const std::string& text) {
         else if (k == "speed") moveSpeed = clampf_(f, 0.25f, 3);
         else if (k == "jump") jump = clampf_(f, 0.25f, 3);
         else if (k == "knockback") knockback = clampf_(f, 0, 5);
+        else if (k.rfind("move_", 0) == 0) { for (int m = 0; m < MV_COUNT; m++) if (k.compare(5, std::string::npos, moveParamKey(m)) == 0) move[m] = clampf_(f, 0.1f, 5); }
         else if (k == "health") health = std::max(1, std::min(1000, i));
         else if (k == "dash") dash = i != 0;
         else if (k == "grapple") grapple = i != 0;

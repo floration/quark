@@ -126,7 +126,43 @@ void Game::updateCommunity() {
         audio_.play(SND_STREAK, 1.0f);
         pendingFilled_.clear();
     }
+    updateLifetime();
     if (rank_.takeText("link", out) && !out.empty()) notify(out[0] == '!' ? "DISCORD LINK: COULDN'T REACH THE SERVER" : "DISCORD: " + out, 3);
+}
+
+// Lifetime kills / deaths: what you got since the last report goes to the master at the end of a match or when you
+// leave (at most every 25 s, 300 a report: the master's limits); everyone's totals are fetched for the scoreboard.
+void Game::updateLifetime() {
+    const PlayerSnap* me = screen_ == Screen::InGame && net_.hasSnapshot() && !net_.playback() ? net_.findPlayer(net_.clientId()) : nullptr;
+    if (me) {
+        if (lifeSeenK_ < 0 || me->kills < lifeSeenK_) lifeSeenK_ = 0;    // just joined, or a new match reset the scores:
+        if (lifeSeenD_ < 0 || me->deaths < lifeSeenD_) lifeSeenD_ = 0;   // count from zero
+        lifePendK_ += me->kills - lifeSeenK_; lifePendD_ += me->deaths - lifeSeenD_;
+        lifeSeenK_ = me->kills; lifeSeenD_ = me->deaths;
+    } else lifeSeenK_ = lifeSeenD_ = -1;   // (left: the next game counts from its own start)
+    bool due = !me || net_.mode().phase == PHASE_MATCH_END || time_ >= nextLifeReport_ + 300;
+    if ((lifePendK_ > 0 || lifePendD_ > 0) && due && time_ >= nextLifeReport_ && !rankKey_.secret.empty()) {
+        int k = std::min(lifePendK_, 300), d = std::min(lifePendD_, 300);
+        rank_.request("lifetime", "/lifetime", "secret=" + rankKey_.secret + "&kills=" + std::to_string(k) + "&deaths=" + std::to_string(d) + "&name=" + toHex(cfg_.name));
+        lifePendK_ -= k; lifePendD_ -= d;
+        nextLifeReport_ = time_ + 25;
+    }
+    std::string out;
+    rank_.takeText("lifetime", out);
+    if (me && time_ >= nextLifeFetch_) {   // everyone in the game, once a minute
+        nextLifeFetch_ = time_ + 60;
+        std::string ids;
+        for (int i = 0; i < kMaxPlayers; i++) {
+            const std::string& id = i == net_.clientId() ? rankKey_.id : net_.rankId(i);
+            if (id.size() == 32 && ids.find(id) == std::string::npos) ids += (ids.empty() ? "" : ",") + id;
+        }
+        if (!ids.empty()) rank_.request("lifetimes", "/lifetime?ids=" + ids);
+    }
+    if (rank_.takeText("lifetimes", out) && (out.empty() || out[0] != '!')) {
+        std::istringstream in(out);
+        std::string id; int k, d;
+        while (in >> id >> k >> d) lifetime_[id] = {k, d};
+    }
 }
 
 int Game::crownOf(int playerId) const {

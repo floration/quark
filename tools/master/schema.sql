@@ -14,3 +14,5 @@ CREATE INDEX IF NOT EXISTS race_times_ms ON race_times (map, ms);
 CREATE TABLE IF NOT EXISTS links (id TEXT PRIMARY KEY, discord TEXT NOT NULL, updated INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS queue (mode TEXT NOT NULL, who TEXT NOT NULL, name TEXT NOT NULL, discord TEXT NOT NULL, joined INTEGER NOT NULL, PRIMARY KEY (mode, who));
 CREATE TABLE IF NOT EXISTS filled (id INTEGER PRIMARY KEY AUTOINCREMENT, mode TEXT NOT NULL, members TEXT NOT NULL, created INTEGER NOT NULL);
+-- lifetime stats (1.15.0+): every kill and death a player has had, across all sessions, versions and modes
+CREATE TABLE IF NOT EXISTS lifetime (id TEXT PRIMARY KEY, kills INTEGER NOT NULL, deaths INTEGER NOT NULL, updated INTEGER NOT NULL);

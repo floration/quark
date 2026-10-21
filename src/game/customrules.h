@@ -14,6 +14,7 @@ struct CustomRules {
     float projSpeed[WPN_COUNT];       // per weapon: x projectile speed
     uint16_t weapons = 0;             // weapons allowed (bit per weapon id); 0 = all
     float gravity = 1, moveSpeed = 1, jump = 1, knockback = 1;
+    float move[MV_COUNT];             // every other movement constant: x the normal value (MOVEMENT page)
     int health = 100;
     bool dash = true, grapple = true, selfDamage = true, instagib = false, vampire = false, regen = false;
     int timeLimit = 0, scoreLimit = 0, roundsToWin = 0;   // 0 = the mode's default

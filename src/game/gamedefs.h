@@ -189,7 +189,33 @@ constexpr float kPelletHeadDamage = 2.55f;
 const WeaponDef& weaponDef(int w);   // customrules.cpp
 float tunedDamage(int w);            // the active custom mode's damage multiplier for this weapon (1 = standard)
 // Movement settings of the active custom mode (pmove reads these; all 1 / on by default)
-struct MoveTuning { float gravity = 1, speed = 1, jump = 1; bool dash = true, grapple = true; };
+// Every movement constant a custom mode can scale (x the normal value; pmove.cpp / pmove.h hold the normal values)
+enum MoveParam {
+    MV_CROUCH_SPEED, MV_GROUND_ACCEL, MV_FRICTION, MV_STOP_SPEED, MV_AIR_ACCEL, MV_AIR_CAP, MV_OVERSTRAFE, MV_AIR_CONTROL,
+    MV_STEP, MV_DASH_SPEED, MV_DASH_TIME, MV_DASH_EXIT_MIN, MV_DASH_KEEP, MV_DASH_EXIT_MAX, MV_DASH_VERTICAL, MV_DASH_COOLDOWN,
+    MV_BOUNCE_GAIN, MV_BOUNCE_MAX, MV_HOOK_RANGE, MV_HOOK_ACCEL, MV_HOOK_MAX, MV_HOOK_GRAVITY, MV_HOOK_RELEASE, MV_HOOK_COOLDOWN,
+    MV_LADDER_SPEED, MV_LADDER_SIDE, MV_COUNT
+};
+// (key in the .qmode file, label in the editor)
+inline const char* moveParamKey(int i) {
+    static const char* k[MV_COUNT] = {"crouch_speed", "ground_accel", "friction", "stop_speed", "air_accel", "air_cap", "overstrafe", "air_control",
+        "step", "dash_speed", "dash_time", "dash_exit_min", "dash_keep", "dash_exit_max", "dash_vertical", "dash_cooldown",
+        "bounce_gain", "bounce_max", "hook_range", "hook_accel", "hook_max", "hook_gravity", "hook_release", "hook_cooldown",
+        "ladder_speed", "ladder_side"};
+    return k[i];
+}
+inline const char* moveParamLabel(int i) {
+    static const char* k[MV_COUNT] = {"CROUCH SPEED", "GROUND ACCELERATION", "GROUND FRICTION", "STOPPING SPEED", "AIR ACCELERATION", "AIR STRAFE CAP",
+        "OVERSTRAFE BRAKE", "AIR CONTROL", "STEP HEIGHT", "DASH SPEED", "DASH LENGTH", "DASH EXIT SPEED (MIN)", "DASH SPEED KEPT",
+        "DASH EXIT SPEED (MAX)", "DASH VERTICAL", "DASH COOLDOWN", "BHOP BOUNCE", "BHOP BOUNCE (MAX)", "GRAPPLE RANGE", "GRAPPLE PULL",
+        "GRAPPLE TOP SPEED", "GRAPPLE GRAVITY", "GRAPPLE RELEASE DISTANCE", "GRAPPLE COOLDOWN", "LADDER CLIMB SPEED", "LADDER SIDE SPEED"};
+    return k[i];
+}
+struct MoveTuning {
+    float gravity = 1, speed = 1, jump = 1; bool dash = true, grapple = true;
+    float m[MV_COUNT];
+    MoveTuning() { for (float& v : m) v = 1; }
+};
 const MoveTuning& moveTuning();
 inline float headDamage(int w) {
     return tunedDamage(w) * (w == WPN_SNIPER ? kSniperHeadDamage : w == WPN_CROSSBOW ? kCrossbowHeadDamage : w == WPN_RIFLE ? kRifleHeadDamage

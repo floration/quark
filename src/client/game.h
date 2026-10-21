@@ -338,7 +338,12 @@ private:
     void drawVotePanel(float cx, float s, float ts);
     void drawCrown(float x, float y, float w, int place, const char* letter = "");
     struct Crown { int place; const char* letter; };
-    std::map<std::string, Crown> crowns_;         // ranked id -> best place on any board (and which board)
+    std::map<std::string, Crown> crowns_;
+    // lifetime kills / deaths (every session, version and mode; the master adds up what each client reports)
+    std::map<std::string, std::pair<int, int>> lifetime_;   // ranked id -> kills, deaths
+    int lifeSeenK_ = -1, lifeSeenD_ = -1, lifePendK_ = 0, lifePendD_ = 0;
+    double nextLifeReport_ = 0, nextLifeFetch_ = 0;
+    void updateLifetime();         // ranked id -> best place on any board (and which board)
     std::set<std::string> queued_;
     std::map<std::string, int> queueCounts_;
     double nextCrownFetch_ = 0, nextQueuePoll_ = 0, nextFilledPoll_ = 0;

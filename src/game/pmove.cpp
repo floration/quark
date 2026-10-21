@@ -3,6 +3,7 @@
 
 // Placeholder tuning; movement will be redefined later.
 namespace {
+inline float tune(int i) { return moveTuning().m[i]; }   // a custom mode's x on that constant (1 normally)
 constexpr float kGravity = 22.0f;   // (1.14: +10%, less floaty)
 constexpr float kJumpSpeed = 7.34f;  // (with the heavier gravity: still a 1.22 m standing jump, maps rely on it)
 constexpr float kGroundSpeed = 8.0f;
@@ -47,7 +48,7 @@ static void airAccelerate(Vec3& vel, const Vec3& wishDir, float wishSpeed, float
     if (h > 1e-3f) {
         Vec3 along = {vel.x / h, 0, vel.z / h};
         float pa = dot(push, along);
-        if (pa < 0) push = push - along * (pa * (1.0f - kOverstrafeBrake));
+        if (pa < 0) push = push - along * (pa * (1.0f - (kOverstrafeBrake * tune(MV_OVERSTRAFE))));
     }
     vel += push;
 }
@@ -93,7 +94,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     Vec3 wishDir = wishLen > 0 ? wish / wishLen : Vec3();
     const MoveTuning& mt = moveTuning(); // a custom mode's movement (all 1 / on normally)
     const float jumpSpeed = kJumpSpeed * mt.jump;
-    float maxSpeed = (crouched ? kCrouchSpeed : kGroundSpeed) * mt.speed;
+    float maxSpeed = (crouched ? (kCrouchSpeed * tune(MV_CROUCH_SPEED)) : kGroundSpeed) * mt.speed;
     float wishSpeed = std::min(wishLen, 1.0f) * maxSpeed;
 
     bool onGround = (s.flags & MF_ONGROUND) != 0;
@@ -115,16 +116,16 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         float h = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
         s.dashDirX = d.x;
         s.dashDirZ = d.z;
-        s.dashExitSpeed = std::min(kDashExitMax, std::max(kDashExitMin, h + kDashKeep));
-        s.dashUp = std::sin(cmd.pitch) * kDashVertical;
-        s.dashTimer = kDashTime;
-        s.dashCooldown = (s.mods & MOVE_QUICK_DASH) ? kDashCooldown / 3 : kDashCooldown;
+        s.dashExitSpeed = std::min((kDashExitMax * tune(MV_DASH_EXIT_MAX)), std::max((kDashExitMin * tune(MV_DASH_EXIT_MIN)), h + (kDashKeep * tune(MV_DASH_KEEP))));
+        s.dashUp = std::sin(cmd.pitch) * (kDashVertical * tune(MV_DASH_VERTICAL));
+        s.dashTimer = (kDashTime * tune(MV_DASH_TIME));
+        s.dashCooldown = (s.mods & MOVE_QUICK_DASH) ? (kDashCooldown * tune(MV_DASH_COOLDOWN)) / 3 : (kDashCooldown * tune(MV_DASH_COOLDOWN));
     }
     bool dashing = s.dashTimer > 0;
     if (dashing) {
         // Short, strong burst, tilted a little by where you look: no gravity, no steering.
         float hs = std::sqrt(std::max(0.0f, 1.0f - s.dashUp * s.dashUp)); // aiming up / down trades horizontal for vertical
-        float burst = std::max(kDashSpeed, s.dashExitSpeed); // (never slower than what you leave it with)
+        float burst = std::max((kDashSpeed * tune(MV_DASH_SPEED)), s.dashExitSpeed); // (never slower than what you leave it with)
         s.vel = {s.dashDirX * burst * hs, s.dashUp * burst, s.dashDirZ * burst * hs};
         onGround = false;
         s.dashTimer -= dt;
@@ -145,7 +146,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     if (hookHeld && !(s.flags & MF_HOOKHELD) && !(s.flags & MF_HOOKED) && !frozen && s.hookCooldown <= 0) {
         float eyeH = crouched ? kCrouchEyeHeight : kEyeHeight;
         Vec3 eye = s.pos + Vec3(0, eyeH, 0);
-        float t = map.raycast(eye, angleForward(cmd.yaw, cmd.pitch), kGrappleRange);
+        float t = map.raycast(eye, angleForward(cmd.yaw, cmd.pitch), (kGrappleRange * tune(MV_HOOK_RANGE)));
         if (t >= 0) {
             s.hookPoint = eye + angleForward(cmd.yaw, cmd.pitch) * t;
             s.flags |= MF_HOOKED | MF_HOOKHELD;
@@ -156,17 +157,17 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     if (hooked) {
         Vec3 to = s.hookPoint - (s.pos + Vec3(0, 1.0f, 0));
         float dist = length(to);
-        if (dist < kHookRelease) {
+        if (dist < (kHookRelease * tune(MV_HOOK_RELEASE))) {
             s.flags &= ~MF_HOOKED;
             hooked = false;
         } else if (!dashing) {
-            s.vel += to / dist * (kHookAccel * dt);
+            s.vel += to / dist * ((kHookAccel * tune(MV_HOOK_ACCEL)) * dt);
             float sp = length(s.vel);
-            if (sp > kHookMaxSpeed) s.vel *= kHookMaxSpeed / sp;
+            if (sp > (kHookMaxSpeed * tune(MV_HOOK_MAX))) s.vel *= (kHookMaxSpeed * tune(MV_HOOK_MAX)) / sp;
             onGround = false;
         }
     }
-    if (wasHooked && !(s.flags & MF_HOOKED)) s.hookCooldown = kHookCooldown;
+    if (wasHooked && !(s.flags & MF_HOOKED)) s.hookCooldown = (kHookCooldown * tune(MV_HOOK_COOLDOWN));
 
     // Ladders: inside a ladder volume, moving climbs (look down to climb down), no input holds you there,
     // a fresh jump kicks you off backwards. No gravity while on it.
@@ -176,33 +177,33 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         if (jumpPress) {
             s.vel = fwd * -4.0f + Vec3(0, jumpSpeed * 0.7f, 0);
         } else {
-            float climb = std::min(wishLen, 1.0f) * kLadderSpeed * (cmd.pitch < -0.45f ? -1.0f : 1.0f);
-            s.vel = {wishDir.x * std::min(wishSpeed, kLadderSide), wishLen > 0 ? climb : 0.0f, wishDir.z * std::min(wishSpeed, kLadderSide)};
+            float climb = std::min(wishLen, 1.0f) * (kLadderSpeed * tune(MV_LADDER_SPEED)) * (cmd.pitch < -0.45f ? -1.0f : 1.0f);
+            s.vel = {wishDir.x * std::min(wishSpeed, (kLadderSide * tune(MV_LADDER_SIDE))), wishLen > 0 ? climb : 0.0f, wishDir.z * std::min(wishSpeed, (kLadderSide * tune(MV_LADDER_SIDE)))};
         }
         onGround = false;
     } else if (onGround) {
         float sp = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
         if (sp > 0) {
-            float drop = std::max(sp, kStopSpeed) * kFriction * dt;
+            float drop = std::max(sp, (kStopSpeed * tune(MV_STOP_SPEED))) * (kFriction * tune(MV_FRICTION)) * dt;
             float ns = std::max(sp - drop, 0.0f) / sp;
             s.vel.x *= ns;
             s.vel.z *= ns;
         }
-        accelerate(s.vel, wishDir, wishSpeed, kGroundAccel, dt);
+        accelerate(s.vel, wishDir, wishSpeed, (kGroundAccel * tune(MV_GROUND_ACCEL)), dt);
         s.vel.y = 0;
     } else {
         if (!dashing && !onLadder) {
-            airAccelerate(s.vel, wishDir, std::min(wishSpeed, kAirSpeedCap), kAirAccel * 10.0f, dt);
+            airAccelerate(s.vel, wishDir, std::min(wishSpeed, (kAirSpeedCap * tune(MV_AIR_CAP))), (kAirAccel * tune(MV_AIR_ACCEL)) * 10.0f, dt);
             // Air control (CPM style), forward / back only: bend momentum toward where you look without changing
             // speed. Holding a strafe key turns it off, so strafe-and-turn gains speed like in Quake.
             float h = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
             if (wishLen > 0 && cmd.side == 0 && h > 0.5f) {
-                float k = std::min(1.0f, kAirControl * dt);
+                float k = std::min(1.0f, (kAirControl * tune(MV_AIR_CONTROL)) * dt);
                 float nx = s.vel.x / h + (wishDir.x - s.vel.x / h) * k, nz = s.vel.z / h + (wishDir.z - s.vel.z / h) * k;
                 float nl = std::sqrt(nx * nx + nz * nz);
                 if (nl > 1e-4f) { s.vel.x = nx / nl * h; s.vel.z = nz / nl * h; }
             }
-            s.vel.y -= kGravity * mt.gravity * dt * (hooked ? kHookGravityScale : 1.0f) * ((s.mods & MOVE_LOW_GRAVITY) ? 0.4f : 1.0f);
+            s.vel.y -= kGravity * mt.gravity * dt * (hooked ? (kHookGravityScale * tune(MV_HOOK_GRAVITY)) : 1.0f) * ((s.mods & MOVE_LOW_GRAVITY) ? 0.4f : 1.0f);
         }
     }
 
@@ -217,7 +218,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     if ((onGround || airStep) && (blocked & 0b101)) {
         MoveState step = before;
         AABB b = playerBox(step.pos, crouched);
-        float up = map.sweepAxis(b, 1, kStepHeight);
+        float up = map.sweepAxis(b, 1, (kStepHeight * tune(MV_STEP)));
         step.pos.y += up;
         int sb = slideMove(step, map, {delta.x, 0, delta.z}, crouched);
         AABB b2 = playerBox(step.pos, crouched);
@@ -247,12 +248,12 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         if (jumpHeld && !frozen && !grappleOnly && impact > jumpSpeed && !onLadder) {
             // bhop off a hard landing: bounce higher than a normal jump (the landing speed is the only input,
             // so prediction replays it exactly)
-            s.vel.y = jumpSpeed + std::min((impact - jumpSpeed) * kBounceGain, kBounceMax);
+            s.vel.y = jumpSpeed + std::min((impact - jumpSpeed) * (kBounceGain * tune(MV_BOUNCE_GAIN)), (kBounceMax * tune(MV_BOUNCE_MAX)));
             nowGround = false;
         } else if (s.vel.y < 0) s.vel.y = 0;
     } else if (onGround && s.vel.y <= 0) {
-        float down = map.sweepAxis(feet, 1, -kStepHeight);
-        if (down > -kStepHeight + 0.001f) { s.pos.y += down; nowGround = true; s.vel.y = 0; }
+        float down = map.sweepAxis(feet, 1, -(kStepHeight * tune(MV_STEP)));
+        if (down > -(kStepHeight * tune(MV_STEP)) + 0.001f) { s.pos.y += down; nowGround = true; s.vel.y = 0; }
     }
 
     s.flags &= (MF_FROZEN | MF_HOOKED);

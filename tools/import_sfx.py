@@ -154,6 +154,13 @@ def decode_file(path):
     on = next(i for i, v in enumerate(x) if abs(v) > peak * 0.03)
     return x[max(0, on - int(0.002 * RATE)):]
 
+# the longest each sound may be (the length guide in assets/sfx/custom/README.md): a custom clip is cut there, with
+# a short fade, so a long take (several footsteps, a long tail) plays as one short sound
+MAXLEN = {"HIT": 0.2, "KILL": 0.6, "HURT": 0.3, "STEP": 0.15, "JUMP": 0.2, "LAND": 0.3, "RIFLE": 0.3, "ROCKET": 0.7,
+          "KNIFE": 0.35, "SNIPER": 1.0, "LASER": 0.1, "SHOTGUN": 0.6, "STICKY": 0.4, "CROSSBOW": 0.5, "BUBBLE": 0.3,
+          "SYRINGE": 0.4, "EXPLOSION": 1.0, "STICKY_ATTACH": 0.2, "BOLT_HIT": 0.3, "DASH": 0.4, "GRAPPLE_FIRE": 0.3,
+          "GRAPPLE_HIT": 0.3, "DEATH": 0.7, "STREAK": 0.6, "TYPING": 0.06, "CHECKPOINT": 0.35, "FINISH": 0.8}
+
 def custom_sounds(ids):
     """{kit: {SOUND: path}} from assets/sfx/custom/<kit>/<SOUND>.<ext> (the owner's own recordings win)"""
     out = {}
@@ -183,9 +190,9 @@ def main():
             if name not in custom.get(kit, {}): jobs.append((kit, name, lambda m=maxlen, l=layers: build(m, l)))
     for kit, sounds in custom.items():
         for name, path in sounds.items():
-            def one(path=path):
-                x = decode_file(path)[:3 * RATE]
-                fade = min(len(x), int(0.015 * RATE))
+            def one(path=path, name=name):
+                x = decode_file(path)[:int(MAXLEN.get(name, 3.0) * RATE)]
+                fade = min(len(x), int(min(0.04, MAXLEN.get(name, 3.0) * 0.25) * RATE))
                 for i in range(fade): x[len(x) - 1 - i] *= i / fade
                 peak = max(1e-6, max(abs(v) for v in x))
                 return [int(round(v / peak * 0.89 * 32767)) for v in x]
