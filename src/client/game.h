@@ -52,6 +52,7 @@ struct LaunchOptions {
     int editSel = -1;           // --edsel N: select box N (screenshots)
     bool debugLeaderboard = false; // --leaderboard: open the leaderboard screen
     std::string demo;              // --demo <file>: watch it
+    int debugCustom = 0;           // --customshot <tab>: open the custom mode editor on that tab (stored +1; 0 = off)
     int debugInfo = 0;             // --info <tab>: open the info screen on that tab (stored +1; 0 = off)
     bool menuShot = false;      // --menushot: screenshot whatever menu is up (main / settings / controls)
     double bench = 0;           // --bench SECONDS: measure frame times in a vs-bots game, print, quit

@@ -59,6 +59,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     rankKey_ = loadOrCreateRankKey(findDataPath("maps") + "/../quark.key"); // ranked identity: stays on this computer
     if (opts_.hostMode < 0 && opts_.vsBotsMode < 0 && opts_.connect.empty() && opts_.editMap.empty()) loadMenuBackdrop();
     if (opts_.debugInfo) { setScreen(Screen::Info); infoTab_ = opts_.debugInfo - 1; }
+    if (opts_.debugCustom) { rescanMaps(); editRules_ = CustomRules(); editRules_.name = "my mode"; editRules_.move[MV_AIR_ACCEL] = 2; editRules_.gravity = 0.5f; customTab_ = opts_.debugCustom - 1; setScreen(Screen::CustomMode); }
     if (!opts_.demo.empty()) playDemo(opts_.demo);
     if (opts_.debugLeaderboard) { setScreen(Screen::Leaderboard); raceStatsView_ = opts_.debugRaceStats; }
     if (!opts_.editMap.empty()) { openEditor(opts_.editMap); if (opts_.editSession) edHostSession(); if (opts_.editSel >= 0) edSel_ = {ED_BRUSH, opts_.editSel}; }
@@ -3420,10 +3421,17 @@ void Game::drawMenu() {
     }
 }
 
+// "NAME 2.2 -> 4.4 M/S": a custom mode's setting as the standard value and what this mode makes it
+static std::string stdTo(const char* name, float base, float mul, const char* unit = "") {
+    auto num = [](float v) { char b[32]; snprintf(b, sizeof b, v >= 100 ? "%.0f" : v >= 10 ? "%.1f" : "%.2f", v); return std::string(b); };
+    std::string u = *unit ? std::string(" ") + upper(unit) : "";
+    return std::string(name) + " " + num(base) + (std::fabs(mul - 1) > 1e-3f ? " -> " + num(base * mul) : "") + u;
+}
+
 void Game::drawCustomModeEditor(float cx, float y) {
     float s = ui_.s(), w = 640 * s, x = cx - w * 0.5f, bh = 30 * s, gap = 6 * s, hw = (w - gap) * 0.5f;
     CustomRules& r = editRules_;
-    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 640 * s, 0.85f);
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, std::min(640 * s, r_.height() - (y - 16 * s) - 8 * s), 0.85f);
     ui_.labelCentered(cx, y, "CUSTOM MODE");
     y += 34 * s;
     ui_.label(x, y + 7 * s, "NAME");
@@ -3442,9 +3450,9 @@ void Game::drawCustomModeEditor(float cx, float y) {
         y += bh + gap;
         float hp = (float)r.health;
         ui_.slider(x, y, hw, bh, "HEALTH", hp, 1, 500, "%.0f"); r.health = (int)std::lround(hp);
-        ui_.slider(x + hw + gap, y, hw, bh, "GRAVITY", r.gravity, 0.1f, 3, "%.2fx"); y += bh + gap;
-        ui_.slider(x, y, hw, bh, "MOVE SPEED", r.moveSpeed, 0.25f, 3, "%.2fx");
-        ui_.slider(x + hw + gap, y, hw, bh, "JUMP", r.jump, 0.25f, 3, "%.2fx"); y += bh + gap;
+        ui_.slider(x + hw + gap, y, hw, bh, stdTo("GRAVITY", moveBaseGravity(), r.gravity, "m/s2"), r.gravity, 0.1f, 3, "%.2fx"); y += bh + gap;
+        ui_.slider(x, y, hw, bh, stdTo("RUN SPEED", moveBaseSpeed(), r.moveSpeed, "m/s"), r.moveSpeed, 0.25f, 3, "%.2fx");
+        ui_.slider(x + hw + gap, y, hw, bh, stdTo("JUMP", moveBaseJump(), r.jump, "m/s"), r.jump, 0.25f, 3, "%.2fx"); y += bh + gap;
         ui_.slider(x, y, hw, bh, "KNOCKBACK", r.knockback, 0, 5, "%.2fx"); y += bh + gap;
         ui_.toggle(x, y, hw, bh, "DASH", r.dash);
         ui_.toggle(x + hw + gap, y, hw, bh, "GRAPPLE", r.grapple); y += bh + gap;
@@ -3457,14 +3465,17 @@ void Game::drawCustomModeEditor(float cx, float y) {
         ui_.slider(x + hw + gap, y, hw, bh, "SCORE (0=DEFAULT)", sl, 0, 200, "%.0f"); r.scoreLimit = (int)std::lround(sl); y += bh + gap;
         ui_.slider(x, y, hw, bh, "ROUNDS (0=DEFAULT)", rw, 0, 15, "%.0f"); r.roundsToWin = (int)std::lround(rw); y += bh + gap;
     } else if (customTab_ == 3) {   // every movement constant, x its normal value (gravity / speed / jump are on GENERAL)
-        ui_.label(x, y, "EVERY MOVEMENT SETTING - X THE NORMAL VALUE (1.00 = STANDARD)", kGrey, 0.5f);
+        ui_.label(x, y, "EVERY MOVEMENT SETTING: STANDARD -> THIS MODE (THE SLIDER IS THE MULTIPLIER, 1.00X = STANDARD)", kGrey, 0.5f);
         y += 16 * s;
-        float rh = std::min(bh, (430 * s) / ((MV_COUNT + 1) / 2) - gap);
+        // as many columns as fit above RESET / SAVE / BACK (720p and smaller: three)
+        const float rh = bh, avail = r_.height() - y - 2 * (bh + gap) - 60 * s;
+        int cols = Ui::fitColumns(MV_COUNT, avail, rh + gap, 2, 3), rows = (MV_COUNT + cols - 1) / cols;
+        float cw = (w - (cols - 1) * gap) / cols;
         for (int k = 0; k < MV_COUNT; k++) {
-            float cx2 = x + (k % 2) * (hw + gap), cy2 = y + (k / 2) * (rh + gap);
-            if (ui_.slider(cx2, cy2, hw, rh, moveParamLabel(k), r.move[k], 0.1f, 5, "%.2fx")) r.move[k] = std::round(r.move[k] * 20) / 20;
+            float cx2 = x + (k % cols) * (cw + gap), cy2 = y + (k / cols) * (rh + gap);
+            if (ui_.slider(cx2, cy2, cw, rh, stdTo(moveParamLabel(k), moveParamBase(k), r.move[k], moveParamUnit(k)), r.move[k], 0.1f, 5, "%.2fx")) r.move[k] = std::round(r.move[k] * 20) / 20;
         }
-        y += ((MV_COUNT + 1) / 2) * (rh + gap);
+        y += rows * (rh + gap);
         if (ui_.button(x, y, w, bh, "RESET MOVEMENT TO STANDARD")) for (float& v : r.move) v = 1;
         y += bh + gap;
     } else if (customTab_ == 1) {
@@ -3479,24 +3490,31 @@ void Game::drawCustomModeEditor(float cx, float y) {
                 r.weapons = m == all ? 0 : m;
             }
             float fx = x + 130 * s;
-            ui_.slider(fx, y, sw, bh, "FIRE", r.fireRate[wp], 0.25f, 4, "%.2fx");
-            ui_.slider(fx + sw + gap, y, sw, bh, "DMG", r.damage[wp], 0.1f, 5, "%.2fx");
-            ui_.slider(fx + 2 * (sw + gap), y, sw, bh, "PROJ", r.projSpeed[wp], 0.25f, 4, "%.2fx");
+            const WeaponDef& bd = baseWeaponDef(wp);   // standard -> this mode
+            ui_.slider(fx, y, sw, bh, stdTo("SHOTS/S", bd.refire > 0 ? 1.0f / bd.refire : 0, r.fireRate[wp]), r.fireRate[wp], 0.25f, 4, "%.2fx");
+            ui_.slider(fx + sw + gap, y, sw, bh, stdTo("DMG", bd.damage, r.damage[wp]), r.damage[wp], 0.1f, 5, "%.2fx");
+            ui_.slider(fx + 2 * (sw + gap), y, sw, bh, (bd.projSpeed > 0 ? stdTo("SPEED", bd.projSpeed, r.projSpeed[wp], "m/s") : std::string("SPEED: HITSCAN")), r.projSpeed[wp], 0.25f, 4, "%.2fx");
             y += bh + gap;
         }
     } else {
         ui_.label(x, y, "MAP POOL (ROTATES EACH MATCH; NONE = HOST'S MAP)", Color{0.7f, 0.7f, 0.7f, 1}, 0.8f);
         y += 24 * s;
-        int col = 0;
+        int n = 0;
+        for (size_t i = 0; i < maps_.size() && i < mapInfo_.size(); i++) n += mapInfo_[i].modes >> r.baseMode & 1;
+        // as many columns as fit above SAVE / BACK (more maps: more, narrower columns, never off the bottom)
+        int cols = Ui::fitColumns(n, r_.height() - y - 80 * s, bh + gap, 2);
+        float cw = (w - (cols - 1) * gap) / cols;
+        int k = 0;
         for (size_t i = 0; i < maps_.size() && i < mapInfo_.size(); i++) {
             if (!(mapInfo_[i].modes >> r.baseMode & 1)) continue;
             auto it = std::find(r.maps.begin(), r.maps.end(), maps_[i]);
             bool on = it != r.maps.end();
-            if (ui_.toggle(x + col * (hw + gap), y, hw, bh, upper(maps_[i]), on)) {
+            if (ui_.toggle(x + (k % cols) * (cw + gap), y + (k / cols) * (bh + gap), cw, bh, upper(maps_[i]), on)) {
                 if (on) r.maps.push_back(maps_[i]); else r.maps.erase(it);
             }
-            if (++col == 2) { col = 0; y += bh + gap; }
+            k++;
         }
+        y += ((n + cols - 1) / cols) * (bh + gap) - gap;
         // drop maps that no longer support the mode
         r.maps.erase(std::remove_if(r.maps.begin(), r.maps.end(), [&](const std::string& n) {
             for (size_t i = 0; i < maps_.size() && i < mapInfo_.size(); i++) if (maps_[i] == n) return !(mapInfo_[i].modes >> r.baseMode & 1);

@@ -269,3 +269,19 @@ void pmove(MoveState& s, const UserCmd& cmd, const Map& map) {
     int n = cmd.msec < 1 ? 1 : (cmd.msec > 8 ? 8 : cmd.msec);
     for (int i = 0; i < n; i++) pmoveStep(s, cmd, map, kMoveStep);
 }
+
+float moveParamBase(int i) {
+    static const float v[MV_COUNT] = {kCrouchSpeed, kGroundAccel, kFriction, kStopSpeed, kAirAccel, kAirSpeedCap, kOverstrafeBrake, kAirControl,
+        kStepHeight, kDashSpeed, kDashTime, kDashExitMin, kDashKeep, kDashExitMax, kDashVertical, kDashCooldown,
+        kBounceGain, kBounceMax, kGrappleRange, kHookAccel, kHookMaxSpeed, kHookGravityScale, kHookRelease, kHookCooldown,
+        kLadderSpeed, kLadderSide};
+    return i >= 0 && i < MV_COUNT ? v[i] : 1.0f;
+}
+const char* moveParamUnit(int i) {
+    static const char* u[MV_COUNT] = {"m/s", "", "", "m/s", "", "m/s", "", "", "m", "m/s", "s", "m/s", "m/s", "m/s", "", "s",
+        "", "m/s", "m", "m/s2", "m/s", "x", "m", "s", "m/s", "m/s"};
+    return i >= 0 && i < MV_COUNT ? u[i] : "";
+}
+float moveBaseGravity() { return kGravity; }
+float moveBaseSpeed() { return kGroundSpeed; }
+float moveBaseJump() { return kJumpSpeed; }

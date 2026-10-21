@@ -43,5 +43,9 @@ constexpr float kDashCooldown = 1.2f;
 constexpr float kHookCooldown = 1.0f;   // after the hook is released
 
 AABB playerBox(const Vec3& feet, bool crouched);
+// the standard values a custom mode scales (MOVEMENT / GENERAL pages show "standard -> this mode"), and their units
+float moveParamBase(int param);           // MV_*
+const char* moveParamUnit(int param);
+float moveBaseGravity(), moveBaseSpeed(), moveBaseJump();
 // Advances movement by cmd.msec milliseconds, in fixed 1 ms steps (tick-rate independent).
 void pmove(MoveState& s, const UserCmd& cmd, const Map& map);

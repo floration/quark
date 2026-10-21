@@ -1,5 +1,6 @@
 // Tiny immediate-mode UI for menus (buttons, text fields, option cyclers, sliders).
 #pragma once
+#include <algorithm>
 #include <string>
 #include <vector>
 #include "renderer.h"
@@ -28,6 +29,13 @@ public:
     bool toggle(float x, float y, float w, float h, const std::string& label, bool& v);
     bool slider(float x, float y, float w, float h, const std::string& label, float& v, float lo, float hi, const char* fmt = "%.1f");
     void clearFocus() { focus_ = -1; }
+    // A list of n items in a box `w` wide with `availH` of height left: as many columns as it takes to fit (at least
+    // `minCols`), so long lists grow sideways instead of running off the bottom. Returns the column count.
+    static int fitColumns(int n, float availH, float rowH, int minCols = 1, int maxCols = 6) {
+        int cols = std::max(1, minCols);
+        while (cols < maxCols && (float)((n + cols - 1) / cols) * rowH > availH) cols++;
+        return cols;
+    }
     bool typing() const { return focus_ >= 0; }
     // Text the focused field wants on the clipboard (Ctrl+C); empty if none.
     std::string takeCopy() { std::string c; c.swap(copied_); return c; }
