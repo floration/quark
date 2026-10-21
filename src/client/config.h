@@ -29,6 +29,7 @@ struct Settings {
     int msaa = 0;               // anti-aliasing: 0 off, 1 smooth edges (FXAA-style pass), 2 / 4 MSAA
     float volume = 0.6f;
     bool hitsounds = true;
+    int announcer = 2;          // voice lines: 0 off, 1 the round countdown only, 2 also the mode's calls (bomb planted, hill captured...)
     int shadowRes = 2048;
     // The two-color palette: your team, and the enemy (everyone else in FFA/race).
     Vec3 colorFriendly = {0.25f, 0.85f, 1.0f};

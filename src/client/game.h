@@ -94,6 +94,10 @@ private:
     Vec3 teamColor(int playerId) const;
     bool isFriendly(int playerId) const;
     void notify(const std::string& s, float seconds = 4.0f);
+    void updateAnnouncer();
+    ModeState annPrev_;
+    bool annPrevValid_ = false;
+    int annCount_ = 0;
 
     GLFWwindow* win_ = nullptr;
     Settings cfg_;

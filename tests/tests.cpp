@@ -294,7 +294,8 @@ static void testSession(int mode, const char* mapName, uint16_t port) {
     CHECK(a.playerName(b.clientId()) == "bravo");
     CHECK(a.mode().phase == PHASE_WARMUP || a.mode().phase == PHASE_FREEZE);
 
-    // Warmup countdown (5s) then freeze (3s); then live.
+    // Warmup countdown (5s) then freeze (3s); then live. (Race waits in practice until someone starts it.)
+    if (mode == MODE_RACE) { pump(s, cls, 1.0, idle); CHECK(s.ms_.phase == PHASE_WARMUP); s.command("forcestart"); }
     pump(s, cls, 8.6, idle);
     CHECK(s.ms_.phase == PHASE_LIVE);
     CHECK(a.mode().phase == PHASE_LIVE);
@@ -390,12 +391,20 @@ static void testTimeTrial(uint16_t port) {
     NetClient a;
     a.connect("127.0.0.1:" + std::to_string(port), "racer");
     std::vector<NetClient*> cls = {&a};
-    for (int i = 0; i < 300 && !(a.hasSnapshot() && a.mode().phase == PHASE_LIVE); i++) pump(s, cls, 0.1, idle);
-    CHECK(a.hasSnapshot() && a.mode().phase == PHASE_LIVE);
-    CHECK(a.hasSnapshot() && (a.mode().flags & MS_TIMETRIAL));
-    a.takeEvents();
+    // race starts in practice: untimed, never starts by itself; the course works, nothing is timed or sent
+    pump(s, cls, 3.0, idle);
+    CHECK(a.hasSnapshot() && a.mode().phase == PHASE_WARMUP);
+    CHECK(a.hasSnapshot() && (a.mode().flags & MS_TIMETRIAL));   // (the shipped viaduct: it counts)
     const auto& cps = s.map_.checkpoints;
     auto& p = s.players_[a.clientId()];
+    a.takeEvents();
+    for (size_t c = 0; c < 2; c++) { p.move.pos = cps[c].center(); p.move.pos.y = cps[c].mn.y + 0.05f; p.move.vel = {}; pump(s, cls, 0.3, idle); }
+    CHECK(p.checkpoint == 2);
+    for (auto& e : a.takeEvents()) CHECK(e.type != EV_RACE_SPLIT);
+    a.sendCommand("callvote start");                               // starting it: the race proper
+    for (int i = 0; i < 300 && !(a.hasSnapshot() && a.mode().phase == PHASE_LIVE); i++) pump(s, cls, 0.1, idle);
+    CHECK(a.hasSnapshot() && a.mode().phase == PHASE_LIVE);
+    a.takeEvents();
     std::vector<int> splits;
     for (size_t c = 0; c < cps.size(); c++) {
         p.move.pos = cps[c].center(); p.move.pos.y = cps[c].mn.y + 0.05f; p.move.vel = {};
@@ -406,6 +415,16 @@ static void testTimeTrial(uint16_t port) {
     CHECK(splits.size() == cps.size() && cps.size() >= 8);
     for (size_t i = 1; i < splits.size(); i++) CHECK(splits[i] > splits[i - 1]);
     s.stop();
+    // a "time trial" anywhere but the shipped Viaduct doesn't count for the board
+    Server s2;
+    cfg.map = "foundry"; cfg.port = port + 1;
+    if (!s2.start(cfg)) { g_fail++; return; }
+    NetClient b;
+    b.connect("127.0.0.1:" + std::to_string(port + 1), "racer");
+    std::vector<NetClient*> cls2 = {&b};
+    pump(s2, cls2, 1.0, idle);
+    CHECK(b.hasSnapshot() && !(b.mode().flags & MS_TIMETRIAL));
+    s2.stop();
 }
 
 // Multi point: attackers capture the points in order (a defender on the point holds it), each capture adds time,
@@ -2042,7 +2061,7 @@ static void testBots(uint16_t& port) {
         for (auto& p : s.players_) { kills += p.kills; cps += p.checkpoint; }
         printf("  %-8s with 5 bots: phase %d, round %d, kills %d, score %d-%d, cart %.1f, bomb %d, race checkpoints %d\n",
                modeName(mode), s.ms_.phase, s.ms_.round, kills, s.ms_.scoreA, s.ms_.scoreB, s.ms_.payloadDist, s.ms_.bombState, cps);
-        CHECK(s.ms_.phase != PHASE_WARMUP); // bots alone start a match
+        CHECK(mode == MODE_RACE ? s.ms_.phase == PHASE_WARMUP : s.ms_.phase != PHASE_WARMUP); // bots alone start a match (race: practice until someone starts it)
         s.stop();
     }
 }

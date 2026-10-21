@@ -726,7 +726,7 @@ void Server::spawnPlayer(int id) {
 
     Vec3 pos;
     float yaw = 0;
-    if (ms_.mode == MODE_RACE && p.checkpoint > 0 && p.checkpoint <= (int)map_.checkpoints.size() && ms_.phase == PHASE_LIVE) {
+    if (ms_.mode == MODE_RACE && p.checkpoint > 0 && p.checkpoint <= (int)map_.checkpoints.size() && (ms_.phase == PHASE_LIVE || ms_.phase == PHASE_WARMUP)) { // (practice too)
         const AABB& c = map_.checkpoints[p.checkpoint - 1];
         pos = {(c.mn.x + c.mx.x) * 0.5f, c.mn.y + 0.05f, (c.mn.z + c.mx.z) * 0.5f};
         yaw = p.yaw;
@@ -1337,7 +1337,8 @@ void Server::sendSnapshots() {
     s.ms = ms_;
     if (editing_) s.ms.flags |= MS_EDITING | (tempEdit_ ? MS_TEMP_EDIT : 0);
     if (cfg_.ranked) s.ms.flags |= MS_RANKED;
-    if (cfg_.timeTrial) s.ms.flags |= MS_TIMETRIAL;
+    // a time trial counts for the race board only on the shipped Viaduct, unchanged
+    if (cfg_.timeTrial && cfg_.map == "viaduct" && isOfficialMap(map_)) s.ms.flags |= MS_TIMETRIAL;
     std::vector<PlayerSnap>& all = snapPlayers_;
     all.clear();
     for (int i = 0; i < kMaxPlayers; i++) {

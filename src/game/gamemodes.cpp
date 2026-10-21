@@ -625,6 +625,20 @@ void tickRace(Server& s) {
     if (s.time() >= s.phaseEnd_) endRound(s, -1, "time");
 }
 
+// Race practice (warmup): run the course, checkpoints in order (a fall puts you back at the last one), no clock,
+// nothing recorded. The finish sends you round again.
+void tickRacePractice(Server& s) {
+    const auto& cps = s.map_.checkpoints;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        auto& p = s.players_[i];
+        if (!p.connected || !p.alive || p.checkpoint >= (int)cps.size() || !feetIn(s, i, cps[p.checkpoint])) continue;
+        if (++p.checkpoint == (int)cps.size()) {
+            s.message(p.name + " finished the course (practice) - vote start to race");
+            p.checkpoint = 0;
+        }
+    }
+}
+
 void tickKoth(Server& s) {
     ModeState& m = s.ms_;
     int in[2] = {0, 0};
@@ -851,8 +865,10 @@ void rulesTick(Server& s) {
     switch (m.phase) {
         case PHASE_WARMUP:
             // Warmup lasts until players vote to start (F4). Play-vs-bots / autostart servers
-            // start by themselves once both sides have someone.
-            if (!s.cfg_.autoStart || !enoughPlayers(s)) { s.phaseEnd_ = 0; m.timeLeft = 0; break; }
+            // start by themselves once both sides have someone. Race never starts itself: its warmup is
+            // practice (the course, untimed) until someone starts the race.
+            if (m.mode == MODE_RACE) tickRacePractice(s);
+            if (!s.cfg_.autoStart || !enoughPlayers(s) || m.mode == MODE_RACE) { s.phaseEnd_ = 0; m.timeLeft = 0; break; }
             if (s.phaseEnd_ == 0) {
                 s.phaseEnd_ = s.time() + kWarmupCountdown;
                 s.message("match starting");

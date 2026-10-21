@@ -880,6 +880,19 @@ light 29.2 3.2 10 7 0.7
 light 20 3.2 29.2 7 0.7
 light 29.2 3.2 20 7 0.7
 # setting castle
+point -5 0 -5 5 3 5
+point -24 0 -28 -16 3 -20
+point 16 0 -28 24 3 -20
+spawn att0 -12 0 26 0
+spawn def0 12 0 -26 180
+spawn att0 -6 0 27 0
+spawn def0 6 0 -27 180
+spawn att0 0 0 26 0
+spawn def0 0 0 -26 180
+spawn att0 6 0 27 0
+spawn def0 -6 0 -27 180
+spawn att0 12 0 26 0
+spawn def0 -12 0 -26 180
 accent -20.06 3 -2.06 -11.94 3.1 2.06
 glow -20.02 0.3 -2.02 -11.98 0.38 2.02
 accent 11.94 3 -2.06 20.06 3.1 2.06

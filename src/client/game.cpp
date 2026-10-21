@@ -237,6 +237,7 @@ void Game::leaveGame(const std::string& error) {
     net_.disconnect();
     stopHost();
     setActiveRules(CustomRules());   // back to the standard rules (a custom server set its own)
+    annPrevValid_ = false;
     rulesParts_.clear();
     error_ = error;
     paused_ = chatting_ = false;
@@ -618,6 +619,38 @@ bool Game::isFriendly(int id) const {
     return p->team() == myTeam;
 }
 
+// The announcer: 3-2-1 and "fight" as each round starts, and (setting) the mode's calls as they happen, read off
+// the mode state each frame (bomb planted / defused, the hill taken / lost, a point taken / lost, overtime).
+void Game::updateAnnouncer() {
+    if (!net_.hasSnapshot()) return;
+    const ModeState& ms = net_.mode();
+    auto say = [&](int id, int level) { if (cfg_.announcer >= level) audio_.play(id, 1.0f); };
+    if (ms.phase == PHASE_FREEZE) {
+        int c = (int)std::ceil(ms.timeLeft - 0.02f);
+        if (c != annCount_ && c >= 1 && c <= 3) say(SND_VOICE_ONE - (c - 1), 1);
+        annCount_ = c;
+    } else annCount_ = 0;
+    if (annPrevValid_) {
+        const ModeState& pv = annPrev_;
+        const PlayerSnap* me = net_.findPlayer(net_.clientId());
+        int myTeam = me && me->team() != TEAM_SPECTATOR ? me->team() : -1;
+        if (pv.phase == PHASE_FREEZE && ms.phase == PHASE_LIVE) say(SND_VOICE_GO, 1);
+        if (pv.mode == ms.mode && pv.round == ms.round && ms.phase == PHASE_LIVE) {
+            if (ms.mode == MODE_BOMB && pv.bombState != ms.bombState) {
+                if (ms.bombState == BOMB_PLANTED) say(SND_VOICE_BOMB_PLANTED, 2);
+                else if (ms.bombState == BOMB_DEFUSED) say(SND_VOICE_BOMB_DEFUSED, 2);
+            }
+            if (ms.mode == MODE_KOTH && pv.hillOwner != ms.hillOwner && ms.hillOwner != 255 && myTeam >= 0)
+                say(ms.hillOwner == myTeam ? SND_VOICE_HILL_TAKEN : SND_VOICE_HILL_LOST, 2);
+            if (ms.mode == MODE_POINTS && ms.point > pv.point && myTeam >= 0)
+                say(myTeam == ms.attackers ? SND_VOICE_POINT_TAKEN : SND_VOICE_POINT_LOST, 2);
+            if ((ms.flags & MS_OVERTIME) && !(pv.flags & MS_OVERTIME)) say(SND_VOICE_OVERTIME, 2);
+        }
+    }
+    annPrev_ = ms;
+    annPrevValid_ = true;
+}
+
 Vec3 Game::teamColor(int id) const { return isFriendly(id) ? cfg_.colorFriendly : cfg_.colorEnemy; }
 
 void Game::handleEvents() {
@@ -675,7 +708,11 @@ void Game::handleEvents() {
                 rulesParts_.clear();
                 break;
             }
-            case EV_ROUND_WIN:
+            case EV_ROUND_WIN:   // (team modes: the announcer calls it for your side)
+                if (cfg_.announcer >= 2 && e.a != 255 && modeIsTeamBased(net_.mode().mode) && net_.mode().mode != MODE_TOURNEY) {
+                    const PlayerSnap* me = net_.findPlayer(net_.clientId());
+                    if (me && me->team() != TEAM_SPECTATOR) audio_.play(e.a == me->team() ? SND_VOICE_ROUND_WON : SND_VOICE_ROUND_LOST, 1.0f);
+                }
                 centerText_ = e.text;
                 centerUntil_ = time_ + (e.b ? 8.0 : 3.5);
                 break;
@@ -773,6 +810,7 @@ void Game::frame(double dt) {
 
     if (screen_ == Screen::InGame) {
         handleEvents();
+        updateAnnouncer();
         updateRanked();
         // fixed-rate input + prediction
         tickAcc_ += dt;
@@ -1494,6 +1532,7 @@ void Game::drawHud() {
     switch (ms.phase) {
         case PHASE_WARMUP:
             phase = ms.timeLeft > 0 ? "MATCH STARTS IN " + std::to_string((int)std::ceil(ms.timeLeft))
+                                    : ms.mode == MODE_RACE ? "PRACTICE (UNTIMED) - " + inputName(binds().code[A_VOTESTART][0]) + " TO START THE RACE"
                                     : "WARMUP - " + inputName(binds().code[A_VOTESTART][0]) + " TO VOTE START";
             break;
         case PHASE_FREEZE: // free for all is one long round: just the countdown
@@ -2083,7 +2122,8 @@ void Game::onRaceSplit(int cp, int ms) {
     if ((int)raceSplits_.size() != cp - 1) { raceSplits_.clear(); return; } // missed one: this run doesn't count
     raceSplits_.push_back(ms);
     const std::string map = net_.map().name;
-    bool trial = (net_.mode().flags & MS_TIMETRIAL) != 0;
+    // a time trial run counts (and is compared) only on the shipped Viaduct, unchanged (the server says so too)
+    bool trial = (net_.mode().flags & MS_TIMETRIAL) != 0 && map == "viaduct" && isOfficialMap(net_.map());
     const RaceRun* best = bestRun(map, trial);
     int total = (int)net_.map().checkpoints.size();
     // the split, and how it compares with the same checkpoint on your best run (green = ahead)
@@ -2480,6 +2520,11 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     if (ui_.slider(x, y, w * 0.6f, h, "VOLUME", cfg_.volume, 0, 1, "%.2f")) audio_.setMasterVolume(cfg_.volume);
     ui_.toggle(x + w * 0.6f + gap, y, w * 0.4f - gap, h, "HITSOUND", cfg_.hitsounds);
     y += h + gap;
+    {
+        static const std::vector<std::string> an = {"ANNOUNCER: OFF", "ANNOUNCER: COUNTDOWN", "ANNOUNCER: ALL CALLS"};
+        if (ui_.cycle(x, y, w, h, "ANNOUNCER", cfg_.announcer, 3, an) && cfg_.announcer > 0) audio_.play(SND_VOICE_GO, 1.0f);
+        y += h + gap;
+    }
     {   // cosmetics: player model (everyone sees it) and sound pack
         std::vector<std::string> mn;
         for (int i = 0; i < kPlayerModels; i++) mn.push_back(playerModelName(i));
