@@ -357,6 +357,9 @@ int main(int argc, char** argv) {
     // that was itself started by a hand-over never hands over again (no relaunch loops).
     fs::path self = install::selfPath(argv[0]);
     fs::path launcherPath = install::installSelf(argv[0]);
+    // a desktop icon and a start menu / app menu entry, always (recreated if missing)
+    if (!install::hasDesktop()) install::setDesktop(true, launcherPath);
+    if (!install::hasMenu()) install::setMenu(true, launcherPath);
     std::error_code eqEc;
     if (!handedOver && install::runningFromOutside(argv[0]) && fs::exists(launcherPath) && !fs::equivalent(launcherPath, self, eqEc)) {
         if (install::relaunchInstalled(launcherPath, self)) return 0; // it waits for us to exit, then takes the lock
@@ -489,25 +492,10 @@ int main(int argc, char** argv) {
             r.text(36 * s, y, ts, line, {0.85f, 0.85f, 0.88f, 1});
             y += 10 * ts;
         }
-        // desktop integration
+        // desktop integration: the desktop icon and start menu entry are made automatically (at startup);
+        // only UNINSTALL is left here
         {
-            std::vector<int> opts = {0, 1}; // "installed programs" entry is automatic (on every install)
-            int n = (int)opts.size() + 1;
-            float bw = (fw - 48 * s - (n - 1) * 8 * s) / n, bx = 24 * s, by = 344 * s, bh = 40 * s;
-            for (int o : opts) {
-                bool on = o == 0 ? install::hasDesktop() : o == 1 ? install::hasMenu() : install::hasPrograms();
-                std::string label = std::string(o == 0 ? install::desktopLabel() : o == 1 ? install::menuLabel() : install::programsLabel()) +
-                                    (on ? ": ON" : ": OFF");
-                if (ui.button(bx, by, bw, bh, label)) {
-                    std::string ver = readFile(dir / "version.txt");
-                    bool ok = o == 0 ? install::setDesktop(!on, launcherPath)
-                            : o == 1 ? install::setMenu(!on, launcherPath)
-                                     : install::setPrograms(!on, launcherPath, ver.empty() ? latest : ver);
-                    std::lock_guard<std::mutex> l(st.mu);
-                    if (!ok) st.status = "could not change that (permissions?)";
-                }
-                bx += bw + 8 * s;
-            }
+            float bw = fw - 48 * s, bx = 24 * s, by = 344 * s, bh = 40 * s;
             bool armed = timeNow() < uninstallArmed;
             if (ui.button(bx, by, bw, bh, armed ? "CLICK TO CONFIRM" : "UNINSTALL", !st.busy)) {
                 if (armed) {

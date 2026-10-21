@@ -1285,12 +1285,23 @@ void Game::drawWorld(float alpha) {
                 Vec3 d = (k & 1 ? rgt : fwd) * ((k & 2) ? -0.14f : 0.14f);
                 r_.box(top + d * bs + Vec3(0, 0.17f, 0) * bs, Vec3(0.035f, 0.06f, 0.035f) * bs, yaw, gold, sv, false);
             }
+            // the board's letter in the front of the band: raised blocks from a 3x5 pixel font (Q, L, G, I, R)
             const char* letter = crownLetter(i);
-            float sx, sy;   // the board's letter on the front of the band
-            if (*letter && !self && i != viewing && r_.project(top + Vec3(0, 0.06f, 0) * bs, sx, sy)) {
-                float d = length(top - r_.cameraPos()), ts = std::max(1.0f, std::round(ui_.textScale() * std::min(1.0f, 8.0f / std::max(d, 1.0f))));
-                r_.text(sx - r_.textWidth(letter, ts) * 0.5f, sy - r_.textHeight(ts) * 0.5f, ts, letter, {0.1f, 0.08f, 0.02f, 1});
-            }
+            static const struct { char c; uint16_t rows[5]; } kGlyphs[] = {   // 3 bits a row, top row first
+                {'Q', {7, 5, 5, 7, 1}}, {'L', {4, 4, 4, 4, 7}}, {'G', {7, 4, 5, 5, 7}}, {'I', {7, 2, 2, 2, 7}}, {'R', {6, 5, 6, 5, 5}}};
+            int nl = (int)strlen(letter);
+            const float px = 0.022f * bs, gw = 4 * px;                      // pixel size, glyph advance
+            Vec3 face = top + Vec3(0, 0.06f * bs, 0) + fwd * (0.175f * bs);   // the band's front face, its middle
+            const Vec3 dark = place == 1 ? Vec3{0.35f, 0.18f, 0.02f} : Vec3{0.2f, 0.22f, 0.26f};
+            for (int li = 0; li < nl; li++)
+                for (auto& g : kGlyphs) {
+                    if (g.c != letter[li]) continue;
+                    float x0 = (li - (nl - 1) * 0.5f) * gw - px;               // the glyph's left column
+                    for (int r = 0; r < 5; r++)
+                        for (int c = 0; c < 3; c++)
+                            if (g.rows[r] >> (2 - c) & 1)
+                                r_.box(face + rgt * (x0 + c * px) + Vec3(0, (2 - r) * px, 0), Vec3(px * 0.5f, px * 0.5f, 0.012f * bs), yaw, dark, sv, false);
+                }
         }
         // health bars over other players (VISUALS > HEALTH BARS; not in ranked)
         if (cfg_.healthBars && !fairRules() && !self && i != viewing) {
