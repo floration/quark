@@ -329,7 +329,10 @@ private:
     bool queueMenu_ = false;
     void onKillFeedback(int killer, int victim, int weapon, bool head, bool airborne);
     int streak_[kMaxPlayers] = {};
-    double typingUntil_[kMaxPlayers] = {}, nextTypingSend_ = 0;   // kills since their last death (killstreak calls)
+    double typingUntil_[kMaxPlayers] = {}, nextTypingSend_ = 0;
+    double locatorReady_ = 0, locateUntil_ = 0;   // tag / hide and seek locator
+    Vec3 locatePos_;
+    int locateId_ = 0;   // kills since their last death (killstreak calls)
     bool console_ = false;               // the settings console (`)
     std::deque<std::string> consoleLog_;
     void consolePrint(const std::string& t);

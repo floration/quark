@@ -72,7 +72,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "discord") discordName = v.substr(0, 40);
         else if (k == "outline_friendly") outlineFriendly = iv;
         else if (k == "outline_enemy") outlineEnemy = iv;
-        else if (k == "announcer_voice") announcerVoice = iv == 1 ? 1 : 0;
+        else if (k == "voice") announcerVoice = iv == 1 ? 1 : 0;
         else if (k == "announcer") announcer = iv < 0 ? 0 : iv > 2 ? 2 : iv;
         else if (k == "shadowres") shadowRes = iv;
         else if (k == "color_friendly") colorFriendly = parseColor(v, colorFriendly);
@@ -122,6 +122,7 @@ void Settings::finishLoad() {
     // slots 9 and 10 (knife, syringe) came later: unbound in an older config, they get keys 9 and 0
     if (!binds.code[A_WEAPON9][0] && !binds.code[A_WEAPON9][1]) binds.code[A_WEAPON9][0] = 57;    // (GLFW 9)
     if (!binds.code[A_WEAPON10][0] && !binds.code[A_WEAPON10][1]) binds.code[A_WEAPON10][0] = 48;   // (GLFW 0)
+    if (!binds.code[A_QUIP][0] && !binds.code[A_QUIP][1]) binds.code[A_QUIP][0] = 71;               // (GLFW G; added 1.12)
     // old default chat keys (T / Y) move to the new default, Enter; a key someone picked themselves stays
     if (binds.code[A_CHAT][0] == 84 && binds.code[A_CHAT][1] == 89) { binds.code[A_CHAT][0] = 257; binds.code[A_CHAT][1] = 335; } // GLFW T, Y -> ENTER, KP_ENTER
     if (width < 320) width = 1280;
@@ -139,7 +140,7 @@ std::string Settings::toText() const {
       << "\npresent_mode=" << presentMode << "\nlow_latency=" << lowLatency << "\ninterp_ms=" << interpMs
       << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height
       << "\nshadows=" << shadows << "\nmsaa=" << msaa << "\nmodel=" << model << "\nsoundpack=" << soundPack << "\nsocd=" << socd << "\nalt_toggle=" << altToggle
-      << "\nhud_verbose=" << hudVerbose << "\nhud_widgets=" << hudWidgets << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nhitsounds=" << hitsounds << "\nannouncer=" << announcer << "\nannouncer_voice=" << announcerVoice << "\nfullbright=" << fullbright << "\nown_shots=" << ownShots << "\nenemy_shots=" << enemyShots << "\nhealth_bars=" << healthBars
+      << "\nhud_verbose=" << hudVerbose << "\nhud_widgets=" << hudWidgets << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nhitsounds=" << hitsounds << "\nannouncer=" << announcer << "\nvoice=" << announcerVoice << "\nfullbright=" << fullbright << "\nown_shots=" << ownShots << "\nenemy_shots=" << enemyShots << "\nhealth_bars=" << healthBars
       << "\nscope_opacity=" << scopeOpacity << "\nsticky_counter=" << stickyCounter << "\ncrowns=" << crowns << "\ndiscord=" << discordName << "\noutline_friendly=" << outlineFriendly << "\noutline_enemy=" << outlineEnemy
       << "\ncolor_friendly=" << colorHex(colorFriendly) << "\ncolor_enemy=" << colorHex(colorEnemy)
       << "\nch_style=" << chStyle << "\nch_length=" << chLength << "\nch_thickness=" << chThickness << "\nch_gap=" << chGap

@@ -408,6 +408,14 @@ bool Game::pressInput(int code) {
     if (b.has(A_VOTEYES, code)) { net_.sendCommand("vote yes"); return true; }
     if (b.has(A_VOTENO, code)) { net_.sendCommand("vote no"); return true; }
     if (b.has(A_VOTESTART, code)) { net_.sendCommand("callvote start"); return true; }
+    if (b.has(A_QUIP, code) && !paused_) { net_.sendCommand("quip"); return true; }
+    if (b.has(A_USE, code) && !paused_ && net_.hasSnapshot() && isItMode(net_.mode().mode)) { // the locator (tagger / seeker)
+        const PlayerSnap* mp = net_.findPlayer(net_.clientId());
+        if (mp && (mp->flags & PS_HASBOMB)) {
+            if (time_ >= locatorReady_) { net_.sendCommand("locate"); locatorReady_ = time_ + kLocatorCooldown; }
+            return true;
+        }
+    }
     if (paused_) return false;
     if (b.has(A_CHAT, code)) {
         chatting_ = true;
@@ -765,6 +773,21 @@ void Game::handleEvents() {
                 if (rank_.rating(ladder, rankKey_.id, r)) { rankBefore_ = r.display(); rankGamesBefore_ = r.games; }
                 rank_.submit(body, ladder, players);
                 notify("RANKED MATCH OVER - REPORTING THE RESULT", 4);
+                break;
+            }
+            case EV_QUIP: {   // someone's quip: a voice line from the pack (only lines that are recorded), from where they are
+                std::vector<int> lines;
+                for (int id = SND_VOICE_THREE; id < SND_COUNT; id++) if (audio_.hasSound(id)) lines.push_back(id);
+                if (lines.empty() || e.a >= kMaxPlayers) break;
+                int line = lines[e.b % lines.size()];
+                if (e.a == net_.clientId()) audio_.play(line, 0.9f);
+                else if (const PlayerSnap* qp = net_.findPlayer(e.a)) audio_.play3D(line, qp->pos + Vec3(0, 1.6f, 0), 1.0f);
+                break;
+            }
+            case EV_LOCATE: {   // the locator found someone: show them through walls for a second
+                std::istringstream ls(e.text);
+                Vec3 p;
+                if (ls >> p.x >> p.y >> p.z) { locatePos_ = p; locateId_ = e.a; locateUntil_ = time_ + kLocatorShow; audio_.play(SND_GRAPPLE_HIT, 0.6f, 1.4f); }
                 break;
             }
             case EV_TYPING:   // someone's typing: soft key clicks from them and "..." over their head
@@ -1626,6 +1649,21 @@ void Game::drawHud() {
         r_.rect(0, cy + R, W, H - cy - R, k);
         r_.rect(cx - R, cy - 0.5f, 2 * R, 1, {0, 0, 0, 0.9f * std::max(cfg_.scopeOpacity, 0.3f)});
         r_.rect(cx - 0.5f, cy - R, 1, 2 * R, {0, 0, 0, 0.9f * std::max(cfg_.scopeOpacity, 0.3f)});
+    }
+    if (isItMode(ms.mode) && ms.phase == PHASE_LIVE && mep && (mep->flags & PS_HASBOMB)) { // the locator
+        float sx, sy;
+        if (time_ < locateUntil_ && r_.project(locatePos_ + Vec3(0, 1.0f, 0), sx, sy)) { // through walls: a box around them
+            float bw = 26 * s, bh = 60 * s, th = 2 * s;
+            Color c = {1, 0.85f, 0.2f, (float)std::min(1.0, (locateUntil_ - time_) * 3)};
+            r_.rect(sx - bw, sy - bh, 2 * bw, th, c); r_.rect(sx - bw, sy + bh * 0.6f, 2 * bw, th, c);
+            r_.rect(sx - bw, sy - bh, th, bh * 1.6f, c); r_.rect(sx + bw - th, sy - bh, th, bh * 1.6f, c);
+            std::string n = net_.playerName(locateId_);
+            r_.text(sx - r_.textWidth(n, ts) * 0.5f, sy - bh - r_.textHeight(ts) - 4 * s, ts, n, c);
+        }
+        std::string key = inputName(binds().code[A_USE][0]);
+        std::string t = time_ >= locatorReady_ ? "LOCATOR READY - " + key : "LOCATOR " + std::to_string((int)std::ceil(locatorReady_ - time_)) + "s";
+        float lts = std::max(1.0f, std::round(ts * 0.9f));
+        r_.text(cx - r_.textWidth(t, lts) * 0.5f, H - 140 * s, lts, t, time_ >= locatorReady_ ? Color{1, 0.85f, 0.2f, 1} : kGrey);
     }
     if (isItMode(ms.mode) && ms.phase != PHASE_WARMUP && mep && mep->team() != TEAM_SPECTATOR) {
         bool it = (mep->flags & PS_HASBOMB) != 0;

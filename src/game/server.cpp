@@ -444,6 +444,29 @@ void Server::handleStringCmd(int id, const std::string& s) {
     std::string rest;
     std::getline(ss, rest);
     while (!rest.empty() && rest[0] == ' ') rest.erase(0, 1);
+    if (cmd == "locate") { // the tagger / seeker's locator: where a random runner / hider is, every 5 s
+        if (!isItMode(ms_.mode) || ms_.phase != PHASE_LIVE || !p.it || !p.alive || time() < p.locateAt) return;
+        std::vector<int> targets;
+        for (int i = 0; i < kMaxPlayers; i++) {
+            const auto& o = players_[i];
+            if (i != id && o.connected && o.alive && !o.it && o.team != TEAM_SPECTATOR && !(ms_.mode == MODE_TAG && o.out)) targets.push_back(i);
+        }
+        if (targets.empty()) return;
+        p.locateAt = time() + kLocatorCooldown;
+        int t = targets[rand() % targets.size()];
+        char pos[64];
+        snprintf(pos, sizeof pos, "%.2f %.2f %.2f", players_[t].move.pos.x, players_[t].move.pos.y, players_[t].move.pos.z);
+        GameEvent e; e.type = EV_LOCATE; e.a = (uint8_t)t; e.text = pos;
+        sendEvent(id, e);
+        return;
+    }
+    if (cmd == "quip") { // a random voice line, heard from where they stand; one every 1.5 s at most
+        if (time() < p.quipAt) return;
+        p.quipAt = time() + 1.5f;
+        GameEvent e; e.type = EV_QUIP; e.a = (uint8_t)id; e.b = (uint8_t)(rand() & 255);
+        broadcastEvent(e);
+        return;
+    }
     if (cmd == "typing") { // chat keystrokes: at most 4 a second each, to everyone else
         if (time() < p.typingAt) return;
         p.typingAt = time() + 0.25f;
@@ -740,16 +763,25 @@ void Server::spawnPlayer(int id) {
         pos = {(c.mn.x + c.mx.x) * 0.5f, c.mn.y + 0.05f, (c.mn.z + c.mx.z) * 0.5f};
         yaw = p.yaw;
     } else {
-        // Pick the free spawn farthest from other living players.
+        // Pick the free spawn farthest from other living players. Free for all and instagib (one hit kills):
+        // above all, one nobody can see (a clear line from anyone's eyes), so nobody is shot as they appear.
+        const bool unseen = ms_.mode == MODE_FFA || (arenaRules() & AR_INSTAGIB);
         const SpawnPoint* best = cands[rand() % cands.size()];
-        float bestScore = -1;
+        float bestScore = -1e9f;
         for (auto* sp : cands) {
             float nearest = 1e9f;
-            for (int i = 0; i < kMaxPlayers; i++)
-                if (i != id && players_[i].connected && players_[i].alive)
-                    nearest = std::min(nearest, length(players_[i].move.pos - sp->pos));
+            int seenBy = 0;
+            Vec3 chest = sp->pos + Vec3(0, 1.2f, 0);
+            for (int i = 0; i < kMaxPlayers; i++) {
+                if (i == id || !players_[i].connected || !players_[i].alive) continue;
+                nearest = std::min(nearest, length(players_[i].move.pos - sp->pos));
+                if (!unseen) continue;
+                Vec3 eye = players_[i].move.pos + Vec3(0, kEyeHeight, 0), to = chest - eye;
+                float d = length(to);
+                if (d > 0.1f && map_.raycast(eye, to / d, d) < 0) seenBy++;   // nothing in between
+            }
             if (map_.boxSolid(playerBox(sp->pos, false))) continue;
-            float score = nearest + (rand() % 100) * 0.01f;
+            float score = nearest + (rand() % 100) * 0.01f - seenBy * 1000.0f;
             if (score > bestScore) { bestScore = score; best = sp; }
         }
         pos = best->pos;

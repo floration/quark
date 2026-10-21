@@ -88,6 +88,7 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
     // 1. Collect visible faces.
     std::vector<Face> faces;
     for (const Brush& br : map.brushes) {
+        if (br.material == 9) continue;   // clip: invisible
         for (int axis = 0; axis < 3; axis++)
             for (int sign = -1; sign <= 1; sign += 2) {
                 Face f;

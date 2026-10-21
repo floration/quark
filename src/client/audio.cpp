@@ -1,5 +1,6 @@
 #include "audio.h"
 #include "voice_data.h"
+#include "voice_recorded.h"
 #include "../common/profile.h"
 #include <algorithm>
 #include <cmath>
@@ -141,11 +142,14 @@ void Audio::synthesize() {
 }
 
 // The announcer's lines (8-bit 16 kHz, voice_data.h) up to the mix rate, the same in every sound pack.
+// Each voice: its recorded lines (voice_recorded.h), the generated one (voice_data.h) for any line not recorded.
 void Audio::loadAnnouncer(int set) {
     set = set < 0 || set >= kVoiceSets ? 0 : set;
-    std::vector<float> lines[kVoiceLines];
-    for (int k = 0; k < kVoiceLines; k++) {
-        const VoiceClip& c = kVoiceClips[set][k];
+    const int tts = set;
+    constexpr int kLines = SND_COUNT - SND_VOICE_THREE;
+    std::vector<float> lines[kLines];
+    for (int k = 0; k < kVoiceLines && k < kLines; k++) {
+        const VoiceClip& c = kVoiceClips[tts][k];
         auto& v = lines[k];
         size_t n = c.size * R / kVoiceRate;
         v.resize(n);
@@ -155,10 +159,21 @@ void Audio::loadAnnouncer(int set) {
             v[i] = (x0 + (x1 - x0) * f) * 0.9f;
         }
     }
+    for (const RecordedClip& c : kRecordedVoice) {
+            if (c.set != set || c.line < 0 || c.line >= kLines) continue;
+            auto& v = lines[c.line];
+            size_t n = c.size * R / kRecordedRate;
+            v.assign(n, 0.0f);
+            for (size_t i = 0; i < n; i++) {
+                float t = (float)i * kRecordedRate / R; size_t a = (size_t)t; float f = t - a;
+                float x0 = c.data[std::min(a, c.size - 1)] / 32768.0f, x1 = c.data[std::min(a + 1, c.size - 1)] / 32768.0f;
+                v[i] = (x0 + (x1 - x0) * f) * 0.9f;
+            }
+        }
     std::lock_guard<std::mutex> l(mu_);
     voices_.erase(std::remove_if(voices_.begin(), voices_.end(), [](const Voice& v) { return v.id >= SND_VOICE_THREE; }), voices_.end());
     for (int p = 0; p < kPacks; p++)
-        for (int k = 0; k < kVoiceLines && SND_VOICE_THREE + k < SND_COUNT; k++) sounds_[p][SND_VOICE_THREE + k] = lines[k];
+        for (int k = 0; k < kLines; k++) sounds_[p][SND_VOICE_THREE + k] = lines[k];
     announcer_ = set;
 }
 

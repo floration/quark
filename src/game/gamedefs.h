@@ -12,7 +12,7 @@ constexpr int kMaxPlayers = 32;        // engine limit; servers default to 8 (Se
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 25;
+constexpr uint16_t kProtocolVersion = 26;
 
 // Player hull
 constexpr float kPlayerHalfWidth = 0.4f;
@@ -58,6 +58,7 @@ enum ArenaRule : uint8_t {
     AR_QUICK_DASH = 8,     // dash recharges 3x faster
     AR_LOW_GRAVITY = 16,   // 40% gravity
 };
+constexpr float kLocatorCooldown = 5.0f, kLocatorShow = 1.0f; // tag / hide and seek: the tagger / seeker sees one target this long
 constexpr int KILL_HEADSHOT = 0x100, KILL_AIRBORNE = 0x200, KILL_WEAPON = 0xFF; // EV_KILL c: weapon in the low byte
 #define WB(w) (1u << (w))
 
@@ -255,6 +256,8 @@ enum EventType : uint8_t {
     EV_HEALED,       // syringe throw: a was healed by b
     EV_RACE_SPLIT,   // race: a = player, b = checkpoint reached (1-based; the last one is the finish), text = ms since the start
     EV_TYPING,       // a is typing in chat (others hear key clicks and see "..." over them)
+    EV_QUIP,         // a says a line from the voice pack (b: which one, the same pick for everyone)
+    EV_LOCATE,       // tag / hide and seek locator, to the tagger / seeker only: a = who, text = "x y z" where they are
 };
 
 #define WB(w) (1u << (w))

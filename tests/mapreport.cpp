@@ -869,6 +869,9 @@ int mapReport(const char* outPath) {
     for (const std::string& name : listMaps()) {
         Map m;
         if (!m.load(name)) continue;
+        // clip (invisible, out of reach above the walls) is no part of what anyone sees or plays on
+        m.brushes.erase(std::remove_if(m.brushes.begin(), m.brushes.end(), [](const Brush& b) { return b.material == 9; }), m.brushes.end());
+        m.rebuild();
         NavGraph g;
         g.build(m);
         Metrics r;

@@ -151,10 +151,10 @@ bool Map::parse(const std::string& text, std::string* err) {
         if (kw == "title") {
             std::getline(ls, title);
             while (!title.empty() && title[0] == ' ') title.erase(0, 1);
-        } else if (kw == "box" || kw == "accent" || kw == "wallbang" || kw == "metal" || kw == "glow" || kw == "far" || kw == "water" || kw == "lava" || kw == "trim") {
+        } else if (kw == "box" || kw == "accent" || kw == "wallbang" || kw == "metal" || kw == "glow" || kw == "far" || kw == "water" || kw == "lava" || kw == "trim" || kw == "clip") {
             Brush b;
             ok = readBox(ls, b.box);
-            b.material = kw == "accent" ? 1 : kw == "wallbang" ? 2 : kw == "metal" ? 3 : kw == "glow" ? 4 : kw == "far" ? 5 : kw == "water" ? 6 : kw == "lava" ? 7 : kw == "trim" ? 8 : 0;
+            b.material = kw == "accent" ? 1 : kw == "wallbang" ? 2 : kw == "metal" ? 3 : kw == "glow" ? 4 : kw == "far" ? 5 : kw == "water" ? 6 : kw == "lava" ? 7 : kw == "trim" ? 8 : kw == "clip" ? 9 : 0;
             hasWallbang |= b.material == 2;
             if (ok) {
                 brushes.push_back(b);
@@ -263,7 +263,7 @@ std::string Map::serialize() const {
         auto c = [&](const char* k, Vec3 v) { snprintf(b, sizeof b, " %s %g %g %g", k, v.x, v.y, v.z); o += b; };
         o += "palette"; c("base", palBase); c("accent", palAccent); c("metal", palMetal); c("glow", palGlow); c("sky", palSky); o += "\n\n";
     }
-    static const char* matNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim"};
+    static const char* matNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip"};
     for (auto& br : brushes) if (!br.generated) box(matNames[br.material], br.box);
     o += "\n";
     static const char* teams[] = {"a", "b", "any", "race"};
@@ -432,7 +432,7 @@ void Map::rebuild() {
     bounds = {{1e9f, 1e9f, 1e9f}, {-1e9f, -1e9f, -1e9f}};
     hasWallbang = false;
     for (auto& b : brushes) {
-        if (b.material >= 5) continue; // far scenery, water / lava surfaces: never collide
+        if (b.material >= 5) continue; // far scenery, water / lava surfaces: never collide (clip: not part of the bounds)
         bounds.mn = vmin(bounds.mn, b.box.mn);
         bounds.mx = vmax(bounds.mx, b.box.mx);
         hasWallbang |= b.material == 2;
@@ -448,7 +448,7 @@ void Map::buildGrid() {
     gridH = std::max(1, (int)std::ceil((bounds.mx.z - gridZ0) / kCell));
     std::vector<std::vector<uint16_t>> cells((size_t)gridW * gridH);
     for (size_t i = 0; i < brushes.size(); i++) {
-        if (brushes[i].material >= 5) continue; // far scenery, water / lava: not solid, not hit by shots
+        if (brushes[i].material >= 5 && brushes[i].material != 9) continue; // far scenery, water / lava: not solid, not hit by shots (clip: solid)
         const AABB& b = brushes[i].box;
         int x0 = std::max(0, (int)((b.mn.x - gridX0) / kCell)), x1 = std::min(gridW - 1, (int)((b.mx.x - gridX0) / kCell));
         int z0 = std::max(0, (int)((b.mn.z - gridZ0) / kCell)), z1 = std::min(gridH - 1, (int)((b.mx.z - gridZ0) / kCell));
@@ -544,6 +544,7 @@ float Map::raycast(const Vec3& o, const Vec3& dir, float maxDist, Vec3* normal) 
     int bestAxis = -1;
     walkCells(*this, o, dir, maxDist, [&](size_t c, float tExit) {
         for (uint32_t k = cellStart[c]; k < cellStart[c + 1]; k++) {
+            if (brushes[cellBrushes[k]].material == 9) continue;   // clip: players only
             int axis;
             float t = rayAABB(o, inv, brushes[cellBrushes[k]].box, best < 0 ? maxDist : best, &axis);
             if (t >= 0 && (best < 0 || t < best)) { best = t; bestAxis = axis; }
@@ -570,6 +571,7 @@ float Map::raycastBullet(const Vec3& o, const Vec3& dir, float maxDist, float* b
     walkCells(*this, o, dir, maxDist, [&](size_t c, float tExit) {
         for (uint32_t k = cellStart[c]; k < cellStart[c + 1]; k++) {
             const Brush& br = brushes[cellBrushes[k]];
+            if (br.material == 9) continue;   // clip: players only
             float t = rayAABB(o, inv, br.box, best < 0 ? maxDist : best);
             if (t < 0) continue;
             if (br.material == 2) { if (bang < 0 || t < bang) bang = t; }

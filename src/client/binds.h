@@ -9,6 +9,7 @@ enum Action {
     A_NEXTWEAPON, A_PREVWEAPON, A_SCORES, A_CHAT, A_VOTEYES, A_VOTENO, A_PERF, A_SCREENSHOT, A_VOTESTART,
     A_WEAPON9,  // slot 9 (the knife)
     A_WEAPON10, // slot 10, key 0 (the syringe)
+    A_QUIP,     // say a random line from the voice pack, out loud where you stand (G)
     A_COUNT
 };
 

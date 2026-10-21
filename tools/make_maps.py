@@ -31,6 +31,7 @@ class M:
         if walls:   # (castle / factory maps build their own shell)
             s.box(-hx - 2, wb, -hz - 2, -hx, h, hz + 2); s.box(hx, wb, -hz - 2, hx + 2, h, hz + 2)
             s.box(-hx, wb, -hz - 2, hx, h, -hz); s.box(-hx, wb, hz, hx, h, hz + 2)
+            s.clip_walls(-hx, -hz, hx, hz, h)
         if deep:   # the chasm keeps going: unlit rock far below
             s.box(-hx - 2, -60, -hz - 2, -hx, wb, hz + 2, mat="far"); s.box(hx, -60, -hz - 2, hx + 2, wb, hz + 2, mat="far")
             s.box(-hx, -60, -hz - 2, hx, wb, -hz, mat="far"); s.box(-hx, -60, hz, hx, wb, hz + 2, mat="far")
@@ -49,6 +50,11 @@ class M:
             s.box(x0, -depth - 1, z0, x1, -depth, z1, mat=mat)
             for (a, b, c, d) in ((x0 - 0.5, z0 - 0.5, x1 + 0.5, z0), (x0 - 0.5, z1, x1 + 0.5, z1 + 0.5), (x0 - 0.5, z0, x0, z1), (x1, z0, x1 + 0.5, z1)):
                 s.box(a, -depth - 1, b, c, -1, d, accent=True)
+    def clip_walls(s, x0, z0, x1, z1, h, up=80):
+        """invisible clip on top of the outer walls, up out of reach: nobody hooks or jumps out of the map
+        (players only: shots, hooks and sight go through)"""
+        s.box(x0 - 2, h, z0 - 2, x0, h + up, z1 + 2, mat="clip"); s.box(x1, h, z0 - 2, x1 + 2, h + up, z1 + 2, mat="clip")
+        s.box(x0, h, z0 - 2, x1, h + up, z0, mat="clip"); s.box(x0, h, z1, x1, h + up, z1 + 2, mat="clip")
     def over_hole(s, x, z, r=0.0):
         return any(x0 - r < x < x1 + r and z0 - r < z < z1 + r for (x0, z0, x1, z1) in getattr(s, "holes", []))
     def stairs(s, x0, z0, x1, z1, top, axis, rising, mirror=False, base=0.0, solid=True):
