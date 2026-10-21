@@ -125,7 +125,7 @@ static bool readBox(std::istringstream& ls, AABB& b) {
 }
 
 bool Map::parse(const std::string& text, std::string* err) {
-    brushes.clear(); spawns.clear(); bombSites.clear(); checkpoints.clear(); ladders.clear(); ladderAuto.clear(); payloadPath.clear(); lights.clear(); points.clear();
+    brushes.clear(); spawns.clear(); bombSites.clear(); checkpoints.clear(); ladders.clear(); ladderAuto.clear(); payloadPath.clear(); lights.clear(); points.clear(); cartChecks.clear();
     hasHill = false;
     hasWallbang = false;
     hasPalette = false;
@@ -175,6 +175,9 @@ bool Map::parse(const std::string& text, std::string* err) {
             if (ok) spawns.push_back(s);
         } else if (kw == "site") {
             AABB b; ok = readBox(ls, b); if (ok) bombSites.push_back(b);
+        } else if (kw == "cartcheck") {   // a payload checkpoint this far along the track (0..1)
+            float f; ok = (bool)(ls >> f) && f > 0 && f < 1;
+            if (ok) { cartChecks.push_back(f); std::sort(cartChecks.begin(), cartChecks.end()); }
         } else if (kw == "point") {
             AABB b; ok = readBox(ls, b); if (ok) points.push_back(b);
         } else if (kw == "hill") {
@@ -272,6 +275,7 @@ std::string Map::serialize() const {
     for (auto& a : bombSites) box("site", a);
     if (hasHill) box("hill", hill);
     for (auto& a : points) box("point", a);
+    for (float f : cartChecks) { snprintf(b, sizeof b, "cartcheck %g\n", f); o += b; }
     for (size_t k = 0; k < ladders.size(); k++) {
         snprintf(b, sizeof b, "ladder %g %g %g %g %g %g%s\n", ladders[k].mn.x, ladders[k].mn.y, ladders[k].mn.z, ladders[k].mx.x, ladders[k].mx.y, ladders[k].mx.z,
                  k < ladderAuto.size() && ladderAuto[k] ? " auto" : "");

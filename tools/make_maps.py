@@ -939,6 +939,7 @@ m.spawn("any", -20, 0, 30, 90); m.spawn("any", 20, 0, -30, -90)
 # fallbacks and the attackers' pushes)
 m.clutter(-30, -60, 30, 60, 6, [(1.4, 1.4, 1.4), (2.6, 1.2, 1.2), (1.2, 2.6, 1.2), (1.6, 1.6, 2.2)], seed=7)
 m.raw("# setting rail yard")
+m.raw("cartcheck 0.33"); m.raw("cartcheck 0.66")   # checkpoints a third and two thirds along: time, and no rolling back past them
 m.save("railyard")
 
 # ======================================================================================================
@@ -2410,6 +2411,47 @@ scatter((4, -6, LHX, LHZ), 0, 6, SHAPES, "station", avoid=RAILS + [(46, 16, 62, 
 scatter((-LHX, -6, -4, LHZ), 0, 6, SHAPES, "grotto", avoid=[LAKE])
 
 # ---- spawns (stage by stage) and the setting
+def trim_to_rock():
+    """the strata bands and timbering are long strips laid along the rock: cut them wherever nothing solid is
+    behind them (a tunnel mouth, a stair slot, a portal), so no band runs across an opening in mid-air"""
+    solid, grid = [], {}
+    for ln in m.lines:
+        w = ln.split()
+        if len(w) == 7 and w[0] in ("box", "accent", "metal"):
+            b = tuple(map(float, w[1:])); solid.append(b)
+            for gx in range(int(b[0] // 8), int(b[3] // 8) + 1):
+                for gz in range(int(b[2] // 8), int(b[5] // 8) + 1): grid.setdefault((gx, gz), []).append(b)
+    def backed(q):   # does a solid box touch this piece (within 0.15 m)?
+        e = 0.15
+        for gx in range(int((q[0] - e) // 8), int((q[3] + e) // 8) + 1):
+            for gz in range(int((q[2] - e) // 8), int((q[5] + e) // 8) + 1):
+                for b in grid.get((gx, gz), ()):
+                    if b[0] < q[3] + e and b[3] > q[0] - e and b[1] < q[4] and b[4] > q[1] and b[2] < q[5] + e and b[5] > q[2] - e: return True
+        return False
+    out = []
+    for ln in m.lines:
+        w = ln.split()
+        if not (len(w) == 7 and w[0] == "trim"): out.append(ln); continue
+        b = list(map(float, w[1:]))
+        ext = [b[3] - b[0], b[4] - b[1], b[5] - b[2]]
+        ax = max(range(3), key=lambda i: ext[i])
+        if ext[ax] < 2: out.append(ln); continue
+        lo, hi = b[ax], b[ax + 3]
+        n = max(1, int(math.ceil((hi - lo) / 0.5)))
+        keep, start = [], None
+        for i in range(n + 1):
+            ok = False
+            if i < n:
+                q = list(b); q[ax] = lo + (hi - lo) * i / n; q[ax + 3] = lo + (hi - lo) * (i + 1) / n
+                ok = backed(q)
+            if ok and start is None: start = i
+            if not ok and start is not None: keep.append((start, i)); start = None
+        for (i0, i1) in keep:
+            q = list(b); q[ax] = lo + (hi - lo) * i0 / n; q[ax + 3] = lo + (hi - lo) * i1 / n
+            out.append("trim " + " ".join(f"{v:g}" for v in q))
+    m.lines = out
 m.raw("# setting mine")
-m.save("lodestone")
+m.props(); m.dress("lodestone"); m.detail_pass(); m.skyline_pass("lodestone")
+trim_to_rock()
+m.save("lodestone", dress=False)
 print("maps written")

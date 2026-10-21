@@ -22,6 +22,7 @@ constexpr float kCartRange = 4.0f;
 constexpr float kCartSpeed = 1.6f;
 constexpr float kCartRollback = 0.6f;
 constexpr float kCartIdleBeforeRollback = 10.0f;
+constexpr float kCartCheckBonus = 60.0f;   // time added when the cart reaches a checkpoint (it can't roll back past one)
 // MULTI POINT
 constexpr float kPointRoundTime = 150.0f;  // the attackers' clock at the start
 constexpr float kPointBonus = 90.0f;       // added for every point taken
@@ -214,6 +215,8 @@ void startRound(Server& s) {
         m.attackers = (m.round % 2 == 1) ? TEAM_A : TEAM_B;
         m.payloadDist = 0;
         m.payloadLen = s.map_.payloadLength();
+        m.point = 0;   // (checkpoints reached)
+        m.pointCount = (uint8_t)s.map_.cartChecks.size();
     } else if (m.mode == MODE_POINTS) { // the sides swap every round; the attack starts at the first point
         m.attackers = (m.round % 2 == 1) ? TEAM_A : TEAM_B;
         m.point = 0;
@@ -684,7 +687,14 @@ void tickPayload(Server& s) {
         m.flags |= MS_CONTESTED;
         s.payloadIdleSince_ = s.time();
     } else if (na == 0 && s.time() - s.payloadIdleSince_ > kCartIdleBeforeRollback) {
-        m.payloadDist = std::max(0.0f, m.payloadDist - kCartRollback * s.dt());
+        float floor = m.point > 0 && m.point <= s.map_.cartChecks.size() ? s.map_.cartChecks[m.point - 1] * m.payloadLen : 0.0f;
+        m.payloadDist = std::max(floor, m.payloadDist - kCartRollback * s.dt());   // (never back past a checkpoint)
+    }
+    // checkpoints: more time for the attack, the cart stays past it, and the spawns move up a stage (staged maps)
+    while (m.point < s.map_.cartChecks.size() && m.payloadDist >= s.map_.cartChecks[m.point] * m.payloadLen) {
+        m.point++;
+        s.phaseEnd_ += kCartCheckBonus;
+        s.message(std::string(teamName(att)) + " reached checkpoint " + std::to_string(m.point) + " - +" + std::to_string((int)kCartCheckBonus) + " s");
     }
     float& best = s.bestProgress_[att];
     best = std::max(best, m.payloadDist);
@@ -974,6 +984,9 @@ int rulesSpawnType(const Server& s, int id) {
     if (mode == MODE_TOURNEY && s.tourney_.running && s.map_.supportsMode(MODE_VS))
         return s.players_[id].team == TEAM_B ? SPAWN_B : SPAWN_A; // a match: opposite ends
     if (!modeIsTeamBased(mode)) return SPAWN_ANY;
+    bool staged = false;   // (payload maps may stage their spawns by checkpoint, like multi point)
+    for (auto& sp : s.map_.spawns) staged |= isStagedSpawn(sp.team);
+    if (mode == MODE_PAYLOAD && staged) return stagedSpawn(0, s.players_[id].team != s.ms_.attackers);
     if (mode == MODE_POINTS && s.map_.supportsMode(MODE_POINTS)) // staged: the spawns for how far the attack has got
         return stagedSpawn(0, s.players_[id].team != s.ms_.attackers);
     return s.players_[id].team == TEAM_B ? SPAWN_B : SPAWN_A;

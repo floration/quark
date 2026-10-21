@@ -42,6 +42,7 @@ struct Map {
     size_t editableBrushes() const { size_t n = 0; for (auto& b : brushes) n += !b.generated; return n; }
     std::vector<AABB> checkpoints;    // race; the last one is the finish line
     std::vector<Vec3> payloadPath;    // ordered waypoints
+    std::vector<float> cartChecks;    // payload checkpoints, as fractions of the track ("cartcheck 0.33"), ascending
     std::vector<AABB> points;         // multi point: the capture zones, in the order they're attacked ("point x0 y0 z0 x1 y1 z1")
     Vec3 sunDir = normalize(Vec3(0.4f, 1.0f, 0.25f)); // points toward the sun
     // "palette base r g b accent r g b metal r g b glow r g b sky r g b" (linear 0..1): per-map colours

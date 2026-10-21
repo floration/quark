@@ -474,6 +474,37 @@ static void testPoints(uint16_t port) {
     s.stop();
 }
 
+// Payload checkpoints ("cartcheck 0.33"): reaching one adds time, and the cart never rolls back past it.
+static void testCartChecks(uint16_t port) {
+    printf("payload checkpoints\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = true;
+    cfg.map = "railyard"; cfg.mode = MODE_PAYLOAD; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    NetClient a, b;
+    a.connect("127.0.0.1:" + std::to_string(port), "a");
+    b.connect("127.0.0.1:" + std::to_string(port), "b");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 0.4, idle);
+    s.command("forcestart");
+    pump(s, cls, 3.2, idle);
+    CHECK(s.ms_.phase == PHASE_LIVE && s.ms_.pointCount == 2);
+    int att = -1;
+    for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].team == s.ms_.attackers) att = i;
+    if (att < 0) { g_fail++; s.stop(); return; }
+    float first = s.map_.cartChecks[0] * s.ms_.payloadLen, end0 = s.phaseEnd_;
+    s.ms_.payloadDist = first - 0.5f;
+    for (int k = 0; k < 20 && s.ms_.point == 0; k++) { s.players_[att].move.pos = s.map_.payloadPoint(s.ms_.payloadDist) + Vec3(0, 0, 2.5f); pump(s, cls, 0.1, idle); }
+    CHECK(s.ms_.point == 1 && s.phaseEnd_ > end0 + 30);
+    s.players_[att].move.pos = s.map_.spawns[0].pos;          // walk off: after the idle delay it rolls back, but only to the checkpoint
+    s.payloadIdleSince_ = s.time() - 100;
+    pump(s, cls, 2.0, [&](int) { s.players_[att].move.pos = s.map_.spawns[0].pos; return UserCmd(); });
+    CHECK(s.ms_.payloadDist >= first - 0.01f);
+    s.stop();
+}
+
 static void testPayloadPush(uint16_t port) {
     printf("payload push\n");
     Server s;
@@ -2161,6 +2192,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "points") { setTimeScale(kTestTimeScale); testPoints(29995); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "syringe") { setTimeScale(kTestTimeScale); testSyringe(29996); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edladder") { testEditorLadder(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(29997); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "allmaps") { testAllMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "custom") { testCustomMode(29990); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(29980); return g_fail ? 1 : 0; }
@@ -2176,6 +2208,7 @@ int main(int argc, char** argv) {
     testCustomMode(29990);
     testPoints(29995);
     testSyringe(29996);
+    testCartChecks(29997);
     {   // the map bar: every map scores at least 7 in every category but originality (docs/MAP_METRICS.md)
         printf("map scores\n");
         std::string p = (std::filesystem::temp_directory_path() / "quark_map_report.md").string();

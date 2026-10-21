@@ -1308,6 +1308,17 @@ void Game::drawWorld(float alpha) {
         Vec3 cartCol = cartTeam < 0 ? Vec3(0.75f, 0.75f, 0.78f) : teamCol(cartTeam);
         for (size_t i = 1; i < map.payloadPath.size(); i++)
             r_.line(map.payloadPath[i - 1] + Vec3(0, 0.05f, 0), map.payloadPath[i] + Vec3(0, 0.05f, 0), 0.25f, rgba(neutral ? Vec3(1, 1, 1) : teamCol(ms.attackers), 0.35f));
+        // checkpoints along the track: a gate each (lit once the cart has reached it)
+        float plen = map.payloadLength();
+        for (size_t k = 0; k < map.cartChecks.size() && !neutral; k++) {
+            Vec3 at = map.payloadPoint(map.cartChecks[k] * plen), ah = map.payloadPoint(map.cartChecks[k] * plen + 0.5f) - at;
+            Vec3 side = normalize(Vec3(-ah.z, 0, ah.x)) * 1.8f;
+            bool reached = (int)k < ms.point;
+            Vec3 gc = reached ? teamCol(ms.attackers) : Vec3(0.8f, 0.8f, 0.8f);
+            r_.box(at + side + Vec3(0, 1.4f, 0), {0.12f, 1.4f, 0.12f}, 0, gc, 1.0f);
+            r_.box(at - side + Vec3(0, 1.4f, 0), {0.12f, 1.4f, 0.12f}, 0, gc, 1.0f);
+            labelAt(at + Vec3(0, 3.2f, 0), "CHECKPOINT " + std::to_string(k + 1), rgba(gc));
+        }
         Vec3 cart = map.payloadPoint(ms.payloadDist);
         Vec3 ahead = map.payloadPoint(ms.payloadDist + 0.5f);
         Vec3 d = ahead - cart;
@@ -1622,6 +1633,8 @@ void Game::drawHud() {
         r_.rect(cx - bw * 0.5f, 104 * s, bw, 8 * s, {0, 0, 0, 0.5f});
         r_.rect(cx - bw * 0.5f, 104 * s, bw * clampf(progress, 0, 1), 8 * s, (ms.mode == MODE_PAYLOAD || ms.mode == MODE_POINTS) ? rgba(myTeam == ms.attackers ? cfg_.colorFriendly : cfg_.colorEnemy) : kWhite);
     }
+    if (ms.mode == MODE_PAYLOAD && progress >= 0)   // the checkpoints on the bar
+        for (float f : net_.map().cartChecks) r_.rect(cx - 150 * s + 300 * s * f - 1, 100 * s, 2, 16 * s, kWhite);
     if (ms.mode == MODE_NPAYLOAD && ms.payloadLen > 0) {
         // tug-of-war bar: your side's end on the left
         float bw = 300 * s, f = ms.payloadDist / ms.payloadLen;
