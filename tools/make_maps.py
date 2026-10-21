@@ -1593,8 +1593,10 @@ m.raw("ranked instagib")
 # (1.13: rebuilt 1.5x longer, 2x wider and 2x taller: 96 x 48 m and 28 m to the roof line; two catwalk tiers,
 # cranes 18 m up, and a container yard in the middle so nobody has a shot from spawn to spawn)
 GX, GZ, GH = 48, 24, 28
-m.room(GX, GZ, GH, pits=[(-5, -14, 5, 14, "water")], sunken=[(-36, -12, -28, 12, 3.0, "metal"), (28, -12, 36, 12, 3.0, "metal")],
+m.room(GX, GZ, GH, pits=[(-5, -14, 5, 14, "water")], sunken=[(-34, -12, -27, 12, 3.0, "metal"), (27, -12, 34, 12, 3.0, "metal")],
        style="hall", skyline="cranes")   # the flooded dock under the bridges; lorry docks sunk at each end
+m.lines = [l for l in m.lines if not l.startswith("void ")]; m.raw("void -4.2")   # (the lorry docks' floor at -3 is solid ground:
+                                                                                   #  only the flooded dock kills, under its water)
 m.metal(-5, -0.3, -14.1, 5, 0, -14); m.metal(-5, -0.3, 14, 5, 0, 14.1)
 m.box(-5.1, 0, -14.1, -5, 0.9, 14.1, accent=True, mirror=True)              # bay railings
 m.metal(-5, -0.3, -1.5, 5, 0, 1.5)                                            # a gangway across the dock at floor level
@@ -1628,7 +1630,10 @@ for cx in (-21,):
     m.ladder(cx + 1.4, -22.6, 10.0, 19.0, "n", width=0.8); m.ladder(-(cx + 1.4), 22.6, 10.0, 19.0, "s", width=0.8)   # up onto the crane
     m.box(cx - 1.2, 15.4, 3, cx + 1.2, 18.4, 6, mirror=True); m.wallbang(cx - 1.25, 16.2, 3.4, cx - 1.2, 17.6, 5.6, mirror=True)  # the cab
     m.glow(cx - 1.3, 15.4, 3, cx + 1.3, 15.5, 6, mirror=True)
-    m.metal(cx - 0.1, 14.5, -0.1, cx + 0.1, 18.4, 0.1, mirror=True)
+    for (dx, dz) in ((-1.2, -2.6), (1.2, -2.6), (-1.2, 2.6), (1.2, 2.6)):   # the hanging container's four slings, up to the hook block
+        m.metal(cx + dx * 0.15 - 0.05, 14.5, dz * 0.15 - 0.05, cx + dx * 0.15 + 0.05, 16.4, dz * 0.15 + 0.05, mirror=True)
+    m.metal(cx - 0.45, 16.4, -0.45, cx + 0.45, 17.0, 0.45, mirror=True); m.metal(cx - 0.08, 17.0, -0.08, cx + 0.08, 18.4, 0.08, mirror=True)
+    m.metal(cx - 1.55, 14.5, -3.05, cx + 1.55, 14.65, 3.05, mirror=True)   # spreader beam on the lid
     m.metal(cx - 1.5, 12.5, -3, cx + 1.5, 14.5, 3, mirror=True); m.box(cx - 1.55, 13.3, -3.05, cx + 1.55, 13.5, 3.05, accent=True, mirror=True)
 for x in (-36, -24, -12):
     m.light(x, 3.4, -22.5, 9, 0.5, fixture=False, mirror=True); m.light(x, 9.4, -22.5, 9, 0.5, fixture=False, mirror=True)
@@ -1639,15 +1644,38 @@ m.light(-21, 17, 0, 12, 0.6, fixture=False, mirror=True)
 # covered, the bright open hall between)
 m.box(-GX, 9.6, -21.4, -38, 10.0, 21.4, accent=True, mirror=True)
 m.glow(-38.1, 9.4, -21.4, -37.9, 9.6, 21.4, mirror=True)
-for z in (-12, 0, 12): m.light(-43, 8.6, z, 9, 0.6, mirror=True)
+for z in (-12, 0, 12):
+    m.light(-43, 8.6, z, 9, 0.6, mirror=True); m.metal(-43.04, 8.95, z - 0.04, -42.96, 9.6, z + 0.04, mirror=True)   # lamps hung off the shed roof
 m.box(-38, 0, -21.4, -37.6, 7.0, -4, mirror=True); m.box(-38, 0, 4, -37.6, 7.0, 21.4, mirror=True)   # shed fronts, a doorway in the middle
 m.box(-38.05, 3.0, -4, -37.55, 7.0, 4, mirror=True)                                                       # (over the doorway)
 # the lorry docks: sunk 3 m beside each loading shed, steps down at both ends
-m.stairs(-36, -12, -28, -6, 0, "z", -1, mirror=True, base=-3.0); m.stairs(-36, 6, -28, 12, 0, "z", 1, mirror=True, base=-3.0)
-m.crates(-33, 0, 2, size=1.2, mirror=True)
-m.light(-32, -1.0, -3, 8, 0.6, fixture=False, mirror=True)
-for (x, y, z, yaw) in ((-44, 0, -12, -90), (-44, 0, 12, -90), (-32, -3, 0, -90), (-41, 4, -22.6, -90), (-30, -3, -4, -90), (-9, 0, -12.5, 0), (-26, 0, 16, 180)):
+# (4 m of solid floor between each shed's doorway and the dock's edge: you never step out of spawn into a drop)
+m.stairs(-34, -12, -27, -6, 0, "z", -1, mirror=True, base=-3.0); m.stairs(-34, 6, -27, 12, 0, "z", 1, mirror=True, base=-3.0)
+for (x0, z0, x1, z1, y) in ((-33.6, 0, -32.45, 1.15, -3), (-32.4, 0, -31.25, 1.15, -3), (-33.1, 0.1, -31.95, 1.05, -1.85)):
+    m.box(x0, y, z0, x1, y + 1.15, z1, accent=(y > -2), mirror=True)          # crates on the dock floor
+m.glow(-34.05, -0.06, -6, -33.95, 0, 6, mirror=True); m.glow(-27.05, -0.06, -6, -26.95, 0, 6, mirror=True)   # dock edge strips
+m.box(-33.9, -3, -5.5, -33.5, -1.6, -5.1, accent=True, mirror=True); m.box(-33.9, -3, 5.1, -33.5, -1.6, 5.5, accent=True, mirror=True)  # buffers
+m.light(-30.5, -1.0, -3, 8, 0.6, fixture=False, mirror=True)
+for (x, y, z, yaw) in ((-44, 0, -12, -90), (-44, 0, 12, -90), (-29.5, -3, 0, -90), (-41, 4, -22.6, -90), (-29, -3, -4, -90), (-9, 0, -12.5, 0), (-26, 0, 16, 180)):
     m.spawn("any", x, y, z, yaw, "any")   # free for all: 14 spots, sheds, docks, both tiers and the yard (each point-mirrored)
+# dressing (kept to the walls, the sheds and under the tiers: the lanes stay clear for instagib)
+for (y, d) in ((1.0, 0.0), (1.6, 0.0)):   # pipes along both long walls under the low tier, brackets every 6 m
+    m.metal(-40, y, -23.98, 40, y + 0.3, -23.68, mirror=True)
+for x in range(-36, 37, 12):
+    m.box(x - 0.1, 0, -24, x + 0.1, 2.0, -23.6, accent=True, mirror=True)
+    m.metal(x + 2.9, 0, -24, x + 3.3, GH - 2, -23.6, mirror=True)               # downpipes to the roof
+for x in (-24, 0, 24):   # glow signage on the long walls between the tiers and on the end walls over the sheds
+    m.glow(x - 4, 7.0, -24, x + 4, 7.3, -23.92, mirror=True)
+m.glow(-48, 12.0, -6, -47.92, 12.5, 6, mirror=True); m.box(-48, 11.6, -6.4, -47.8, 11.8, 6.4, accent=True, mirror=True)
+def spool(x, z, r=0.9, w=0.8):   # a cable drum standing on the floor: two flanges and a wound core
+    m.box(x - r, 0, z - w / 2, x + r, 2 * r, z - w / 2 + 0.12, accent=True, mirror=True)
+    m.box(x - r, 0, z + w / 2 - 0.12, x + r, 2 * r, z + w / 2, accent=True, mirror=True)
+    m.metal(x - r + 0.25, 0.25, z - w / 2 + 0.12, x + r - 0.25, 2 * r - 0.25, z + w / 2 - 0.12, mirror=True)
+spool(-45.5, -19.0); spool(-45.5, 18.6); spool(-17, -20.5, 0.7, 0.7)
+m.crates(-46.2, -14.6, 2, size=1.1, mirror=True); m.crates(-12.5, 18.8, 2, size=1.1, mirror=True)
+for x in (-40, -36):   # bollards along the dock road
+    m.box(x - 0.2, 0, -21.0, x + 0.2, 0.9, -20.6, accent=True, mirror=True); m.glow(x - 0.22, 0.7, -21.02, x + 0.22, 0.78, -20.58, mirror=True)
+m.glow(-5.1, -0.05, -14, -4.9, 0.01, 14, mirror=True)   # hazard strip at the flooded dock's edge
 m.raw("# setting crane hall")
 m.save("gantry")
 

@@ -159,7 +159,7 @@ The numbers in brackets are measured by `build/quark_tests mapreport` (see [MAP_
 - Long ones run down the catwalks and from the crane bridges at 9 m (up ladders on the crane legs).
 - Breaks come from the floor blocks, cabs and containers.
 - The flooded dock under the bridge is the lethal middle.
-- The lorry docks, sunk 3 m, let you cross an end unseen.
+- The lorry docks, sunk 3 m, let you cross an end unseen. Their floor is solid (only the water kills), and 4 m of floor separates each shed's doorway from the dock edge.
 
 **Structures:**
 - **Catwalks and the bridge.** The long sightlines.
@@ -167,7 +167,8 @@ The numbers in brackets are measured by `build/quark_tests mapreport` (see [MAP_
 - **Cranes with cabs (the windows are wallbang) and hanging containers.** Cover in the air, and grapple points.
 - **Crane legs with ladders.** Up to the crane bridges.
 - **Loading sheds.** The roofed ends where you start.
-- **Lorry docks with steps.** The low ground.
+- **Lorry docks with steps.** The low ground, with crates and buffers on the dock floor.
+- **Wall dressing: pipes, downpipes, glow signage, cable drums, crates and bollards.** Kept against the walls and in the sheds so the instagib lanes stay clear. Every lamp and hanging container is hung from something (rods, slings and hook block).
 
 ## Hamlet: hide and seek. Setting: a valley village.
 **Why it suits hide and seek:**
