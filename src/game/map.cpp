@@ -1,6 +1,7 @@
 #include "official_map_data.h"
 #include "map.h"
 #include "gamedefs.h"
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <sstream>
@@ -67,6 +68,17 @@ std::vector<std::string> listMaps() {
     return out;
 }
 
+bool validMapName(const std::string& name) {
+    if (name.empty() || name.size() > 40) return false;
+    for (char c : name) if (!(isalnum((unsigned char)c) || c == '_' || c == '-')) return false;
+    std::string low;
+    for (char c : name) low += (char)tolower((unsigned char)c);
+    static const char* dev[] = {"con", "prn", "aux", "nul"};
+    for (const char* d : dev) if (low == d) return false;
+    if (low.size() == 4 && (low.rfind("com", 0) == 0 || low.rfind("lpt", 0) == 0) && low[3] >= '0' && low[3] <= '9') return false;
+    return true;
+}
+
 std::string downloadedMapPath(const std::string& name, uint32_t crc) {
     char hex[16];
     snprintf(hex, sizeof hex, "%08x", crc);
@@ -107,6 +119,7 @@ uint32_t crc32(const void* data, size_t len) {
 bool Map::load(const std::string& requested, std::string* err) {
     // renamed maps: old configs / votes for these still work
     std::string mapName = requested == "arena" ? "bastion" : requested == "tug" ? "canal" : requested;
+    if (!validMapName(mapName)) { if (err) *err = "bad map name: " + mapName; return false; }
     std::string path = findDataPath("maps/" + mapName + ".qmap");
     std::ifstream f(path, std::ios::binary);
     if (!f) { if (err) *err = "map not found: " + path; return false; }

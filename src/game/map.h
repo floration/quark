@@ -128,6 +128,10 @@ std::string findDataPath(const std::string& rel); // resolves maps/... next to t
 void setExecutableDir(const char* argv0);
 const std::string& executableDir();       // empty if unknown
 std::vector<std::string> listMaps();
+// A map name is a name, never a path: 1-40 letters, digits, - and _ (the editor's rule), and not a Windows device
+// name (con, nul, com1, ...: opening "maps/con.qmap" opens the device). Names from servers and demos become file
+// names (map, download, light cache, demo), so every one is checked with this.
+bool validMapName(const std::string& name);
 // Writes every shipped map back to its original text (and drops their light caches); returns how many.
 int resetOfficialMaps();
 std::string mapsFolder(); // absolute path of the maps folder

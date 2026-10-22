@@ -2066,6 +2066,43 @@ static void testReplayBound(uint16_t port) {
     CHECK(c.nextSeq() == 1);   // a new connection or a demo starts with no old commands
 }
 
+// Map names from servers and demos become file names (map, download, light cache, demo): a name, never a path
+// (REVIEW CLI-2: "../x" from PKT_ACCEPT reached the download cache; a demo's map record wasn't checked at all).
+static void testMapNames(uint16_t port) {
+    printf("map names: never paths\n");
+    for (const char* bad : {"", "../x", "a/b", "a\\b", "C:x", "x.qmap", "con", "NUL", "com1", "Lpt9", "two words",
+                            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}) {
+        CHECK(!validMapName(bad));
+        Map m;
+        CHECK(!m.load(bad));
+    }
+    for (const char* good : {"bastion", "My_Map-2", "console", "com10", "a"}) CHECK(validMapName(good));
+    // a server that names a path: refused before anything touches the disk
+    FakeServer f;
+    CHECK(f.sock.open(port));
+    NetClient c;
+    c.connect("127.0.0.1:" + std::to_string(port), "x");
+    CHECK(f.until(c, [&] { return f.heard; }));
+    f.accept("../../pwned", 1234);
+    CHECK(f.until(c, [&] { return c.state() == ConnState::Disconnected; }));
+    CHECK(!c.mapReady() && c.error().find("map name") != std::string::npos);
+    // a demo whose map record names a path: no map, so it doesn't play
+    std::string src = "box -20 -1 -20 20 0 20\nspawn any 0 0 0\n", d;
+    uint32_t magic = 0x4D454451; uint16_t ver = kProtocolVersion;
+    d.append((const char*)&magic, 4); d.append((const char*)&ver, 2);
+    std::vector<uint8_t> b(src.size() + 64);
+    Writer w(b.data(), (int)b.size());
+    w.str("../../pwned"); w.u32((uint32_t)src.size()); for (char ch : src) w.u8((uint8_t)ch); w.u8(0);
+    double t = 0; uint32_t n = (uint32_t)w.size();
+    d.push_back(1); d.append((const char*)&t, 8); d.append((const char*)&n, 4); d.append((const char*)b.data(), n);
+    std::string path = (std::filesystem::temp_directory_path() / ("quark_badname_" + std::to_string(port) + ".qdemo")).string();
+    { std::ofstream o(path, std::ios::binary); o << d; }
+    NetClient p;
+    std::string err;
+    CHECK(!p.startPlayback(path, err) && !p.mapReady());
+    std::remove(path.c_str());
+}
+
 // A demo record's length near 2^32 made `13 + n` wrap to 0 and startPlayback scan forever (REVIEW CLI-4).
 static void testDemoLengthWrap() {
     printf("demo: record lengths can't wrap\n");
@@ -2547,7 +2584,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(29610); testRankedVoteAndRestart(29620); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(29600); testEditSession(29601); testVotedEdit(29602); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
-    if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(29604); testDemo(29603); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(29604); testMapNames(29605); testDemo(29603); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(29960); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(29950); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(29900); return g_fail ? 1 : 0; }
@@ -2576,7 +2613,7 @@ int main(int argc, char** argv) {
         {"modes", [] { testCustomMode(28570); testPoints(28571); testSyringe(28572); testCartChecks(28573); testItModes(28574); }},
         {"race", [] { testTimeTrial(28580); testPayloadPush(28581); testPacketLoss(28582); testCartDash(28583); testSemiAuto(28584); }},
         {"votes", [] { testRejoin(28590); testMapVote(28591); }},
-        {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(28604); testMapDownload(28600); testEditSession(28601); testVotedEdit(28602); testDemo(28603); }},
+        {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(28604); testMapNames(28605); testMapDownload(28600); testEditSession(28601); testVotedEdit(28602); testDemo(28603); }},
         {"ranked", [] { testFilledParse(); testRanked(28610); testRankedVoteAndRestart(28620); testInternetList(28625); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine

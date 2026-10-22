@@ -134,6 +134,11 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
             uint32_t crc = r.u32();
             r.u8(); // mode
             if (r.bad() || id >= kMaxPlayers) return;
+            if (!validMapName(mapName)) {   // it becomes a file name (map, download, light cache, demo): never a path
+                error_ = "server sent a bad map name";
+                disconnect();
+                return;
+            }
             clientId_ = id;
             if (!mapReady_ || map_.name != mapName || map_.crc != crc) {
                 if (useMap(mapName, crc)) dl_ = Download();
@@ -247,7 +252,7 @@ void NetClient::applyEditEvent(const std::string& text) {
 }
 
 bool NetClient::useMap(const std::string& name, uint32_t crc) {
-    if (name.find_first_of("/\\.") != std::string::npos) return false; // just a name, never a path
+    if (!validMapName(name)) return false; // just a name, never a path
     Map m;
     if (!(m.load(name) && m.crc == crc)) {
         std::ifstream f(downloadedMapPath(name, crc), std::ios::binary);
@@ -715,7 +720,7 @@ void NetClient::pollPlayback() {
             for (uint32_t i = 0; i < len && !r.bad(); i++) src += (char)r.u8();
             int id = r.u8();
             Map m;
-            if (r.bad() || id >= kMaxPlayers || !m.parse(src)) continue;
+            if (r.bad() || id >= kMaxPlayers || !validMapName(name) || !m.parse(src)) continue;
             m.name = name;
             map_ = std::move(m);
             mapReady_ = true;

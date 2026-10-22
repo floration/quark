@@ -596,7 +596,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
             std::string it;
             while (std::getline(ls, it, ',')) {
                 Map m;
-                if (what == "tmaps" ? (it.find_first_of("/\\.") != std::string::npos || !m.load(it) || !m.supportsMode(MODE_TOURNEY))
+                if (what == "tmaps" ? (!validMapName(it) || !m.load(it) || !m.supportsMode(MODE_TOURNEY))
                                     : arenaVariantFromName(it.c_str()) < 0) ok = false;
             }
             if (!ok) { GameEvent e; e.type = EV_MESSAGE; e.text = "can't vote for that list"; sendEvent(id, e); }
@@ -616,7 +616,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
             else if (cfg_.custom.active() && !cfg_.custom.maps.empty() && std::find(cfg_.custom.maps.begin(), cfg_.custom.maps.end(), mapName) == cfg_.custom.maps.end())
                 why = mapName + " isn't in this custom mode's map pool";
             else if (cfg_.custom.active() && mode != cfg_.custom.baseMode) why = "this server plays the custom mode " + cfg_.custom.name;
-            else if (mapName.find_first_of("/\\.") != std::string::npos || !m.load(mapName)) why = "this server doesn't have the map '" + mapName + "' (it may be on an older version)";
+            else if (!validMapName(mapName) || !m.load(mapName)) why = "this server doesn't have the map '" + mapName + "' (it may be on an older version)";
 
             bool ok = why.empty();
             if (ok && cfg_.ranked && (!arenaVariantRanked(variant) || mode != rankedMode(variant) || !isRankedMap(m, variant))) {
@@ -1901,7 +1901,7 @@ bool Server::applyEdit(int from, const std::string& op) {
 }
 
 bool Server::autosave() {
-    if (cfg_.map.find_first_of("/\\.") != std::string::npos) return false;
+    if (!validMapName(cfg_.map)) return false;
     std::string text = map_.serialize();
     if (!saveMapFile(findDataPath("maps") + "/" + cfg_.map + ".qmap", text)) { log("autosave failed: maps/" + cfg_.map + ".qmap"); return false; }
     editDirty_ = false;
