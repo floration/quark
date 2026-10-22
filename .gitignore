@@ -1,5 +1,7 @@
+# local secrets and state: never commit (they stay on the server)
+config.json
 state.json
 state.tmp
-config.json
-__pycache__/
+*.env
 .venv/
+__pycache__/
