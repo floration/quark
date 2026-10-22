@@ -30,6 +30,8 @@ const float kKnifeRange = weaponDef(WPN_KNIFE).range; // the knife's reach (also
 constexpr float kRocketLife = 5.0f;
 
 bool isLoopback(const NetAddr& a) { return (a.ip >> 24) == 127; }
+constexpr double kProbeTimeout = 3.0;     // no PKT_PROBE_REPLY on the game port by then: not reachable
+constexpr double kProbeRecheck = 300.0;   // re-check every 5 minutes (and on the menu button)
 constexpr double kCookieBucket = 10.0;     // connect cookies are good for 10-20 s
 constexpr float kMapReqPerSec = 400.0f;    // PKT_MAP_REQUEST chunks per second per player (a download asks ~128/s)
 constexpr float kMapReqBurst = 64.0f;
@@ -118,6 +120,13 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
         upnp_ = std::make_unique<PortMapper>();
         upnp_->start(port());
     }
+    if (cfg_.probe && !cfg_.lanOnly && probeSock_.open(0)) {
+        reach_ = REACH_CHECKING;
+        { std::lock_guard<std::mutex> l(reachMu_); reachDetail_ = "finding a server to test with"; }
+        probeSentAt_ = 0; probeNextAt_ = timeNow() + 0.5; probeStartedAt_ = timeNow(); upnpWasDone_ = false;
+        reachPicked_ = false;
+        reachThread_ = std::thread([this] { pickProber(); });
+    }
     return true;
 }
 
@@ -127,6 +136,9 @@ void Server::stop() {
     for (int i = 0; i < kMaxPlayers; i++)
         if (players_[i].connected) dropPlayer(i, "server shutting down", true);
     sock_.close();
+    if (reachThread_.joinable()) reachThread_.join();
+    probeSock_.close();
+    reach_ = REACH_OFF;
     if (upnp_) { upnp_->stop(); upnp_.reset(); }
     if (master_) { master_->stop(); master_.reset(); }
     running_ = false;
@@ -209,6 +221,7 @@ double Server::frame() {
     NetAddr from;
     int n;
     while ((n = sock_.recv(from, buf, sizeof buf)) > 0) handlePacket(from, buf, n);
+    if (probeSock_.isOpen()) tickReachability();
 
     double now = timeNow();
     double period = 1.0 / tickRate();
@@ -281,6 +294,15 @@ void Server::handlePacket(const NetAddr& from, const uint8_t* data, int len) {
         sock_.send(from, out, w.size());
         return;
     }
+    if (type == PKT_PROBE_REQUEST) { handleProbeRequest(from, r, len); return; }
+    if (type == PKT_PROBE_REPLY) {   // (to our game socket: the port is reachable from wherever the prober is)
+        uint32_t nonce = r.u32();
+        if (!r.bad() && probeSentAt_ > 0 && nonce == probeNonce_) {
+            probeSentAt_ = 0; probeNextAt_ = timeNow() + kProbeRecheck;
+            setReach(REACH_OK, from.toString());
+        }
+        return;
+    }
     if (type == PKT_CONNECT) { handleConnect(from, r); return; }
     int id = findPlayer(from);
     if (id < 0) return;
@@ -306,6 +328,121 @@ void Server::handlePacket(const NetAddr& from, const uint8_t* data, int len) {
         w.bytes((const uint8_t*)map_.source.data() + off, n);
         sock_.send(from, out, w.size());
     }
+}
+
+// ---- reachability probe ----
+// Prober side: one 9 byte reply per (padded, 32 byte) request, only ever to the request's own source IP, at the
+// port it names. Nothing is allocated; a fixed table rate-limits each source IP and a global cap bounds the total.
+void Server::handleProbeRequest(const NetAddr& from, Reader& r, int len) {
+    if (len < kProbeRequestBytes) return;          // unpadded: the reply must never be bigger than the request
+    uint32_t nonce = r.u32();
+    uint16_t askPort = r.u16();
+    if (r.bad() || askPort == 0 || from.ip == 0) return;
+    double now = timeNow();
+    if (now - probeWindowAt_ >= 1.0) { probeWindowAt_ = now; probeWindowCount_ = 0; }
+    if (++probeWindowCount_ > 50) return;          // global: at most 50 probe replies a second
+    ProbeSlot& sl = probeSlots_[(from.ip * 2654435761u) >> 26];
+    if (sl.ip == from.ip && now - sl.at < 0.5) return; // per source IP: one every half second (allows the client's retry)
+    sl.ip = from.ip; sl.at = now;
+    uint8_t out[16];
+    Writer w(out, sizeof out);
+    writeHeader(w, PKT_PROBE_REPLY);
+    w.u32(nonce);
+    sock_.send(NetAddr{from.ip, askPort}, out, w.size()); // the source's own IP, never one named in the packet
+}
+
+void Server::setReach(Reach rv, const std::string& detail) {
+    { std::lock_guard<std::mutex> l(reachMu_); reachDetail_ = detail; }
+    if (reach_.exchange(rv) != rv) log("reachability: " + reachStatus());
+}
+
+std::string Server::reachStatus() {
+    std::string d;
+    { std::lock_guard<std::mutex> l(reachMu_); d = reachDetail_; }
+    std::string p = std::to_string(cfg_.probeAskPort ? cfg_.probeAskPort : port());
+    switch (reachability()) {
+    case REACH_CHECKING: return "checking if UDP " + p + " is reachable from the internet... (" + d + ")";
+    case REACH_OK: return "UDP " + p + " is reachable from the internet - friends can join";
+    case REACH_BLOCKED: return "UDP " + p + " is not reachable from the internet - forward UDP " + p + " on your router to this PC";
+    case REACH_UNKNOWN: return "couldn't check reachability: " + d;
+    default: return "";
+    }
+}
+
+// Background thread: choose the server that will probe us (blocking HTTP for the list and our public IP).
+void Server::pickProber() {
+    NetAddr a;
+    std::string over = cfg_.prober;
+    if (over.empty()) if (const char* e = getenv("QUARK_PROBER")) over = e;
+    if (!over.empty()) {
+        if (!NetAddr::parse(over, kDefaultPort, a)) a = NetAddr{};
+    } else {
+        std::vector<std::string> list;
+        fetchServerList(list);
+        NetAddr own;
+        std::string ip = publicIpv4();
+        if (!ip.empty()) NetAddr::parse(ip, 0, own);
+        std::vector<NetAddr> others, same;
+        for (auto& s : list) {
+            NetAddr c;
+            if (!NetAddr::parse(s, kDefaultPort, c)) continue;
+            if (own.ip && c.ip == own.ip) { if (c.port != port()) same.push_back(c); } // (our own IP: hairpin NAT may lie)
+            else others.push_back(c);
+        }
+        std::vector<NetAddr>& pool = others.empty() ? same : others;
+        if (!pool.empty()) a = pool[std::random_device{}() % pool.size()];
+    }
+    { std::lock_guard<std::mutex> l(reachMu_); reachProber_ = a; }
+    reachPicked_ = true;
+}
+
+void Server::tickReachability() {
+    uint8_t buf[64]; NetAddr from;
+    while (probeSock_.recv(from, buf, sizeof buf) > 0) {}   // (nothing is expected here)
+    if (!reachPicked_) return;
+    double now = timeNow();
+    NetAddr prober;
+    { std::lock_guard<std::mutex> l(reachMu_); prober = reachProber_; }
+    bool again = reachAgain_.exchange(false);
+    if (prober.ip == 0) {
+        setReach(REACH_UNKNOWN, "no public quark server to test with (set QUARK_PROBER=host:port)");
+        if (again) { // look again
+            if (reachThread_.joinable()) reachThread_.join();
+            reachPicked_ = false; reach_ = REACH_CHECKING;
+            { std::lock_guard<std::mutex> l(reachMu_); reachDetail_ = "finding a server to test with"; }
+            reachThread_ = std::thread([this] { pickProber(); });
+        }
+        return;
+    }
+    // UPnP finishing (or failing) changes the answer: check again then
+    bool upDone = upnp_ && upnp_->done();
+    if (upDone && !upnpWasDone_) { upnpWasDone_ = true; if (probeSentAt_ == 0) probeNextAt_ = std::min(probeNextAt_, now); }
+    if (probeSentAt_ > 0) {
+        if (probeTries_ < 2 && now - probeSentAt_ >= 1.0 * probeTries_) sendProbe(prober);  // one retry (packet loss)
+        else if (now - probeSentAt_ >= kProbeTimeout) {
+            probeSentAt_ = 0; probeNextAt_ = now + kProbeRecheck;
+            setReach(REACH_BLOCKED, prober.toString());
+        }
+        return;
+    }
+    if (again) probeNextAt_ = now;
+    if (now < probeNextAt_) return;
+    if (upnp_ && !upDone && now - probeStartedAt_ < 10) return;   // give the router a moment to map the port first
+    { std::lock_guard<std::mutex> l(reachMu_); reachDetail_ = "asking " + prober.toString(); }
+    if (reach_ == REACH_UNKNOWN) reach_ = REACH_CHECKING;
+    probeNonce_ = (uint32_t)std::random_device{}() | 1u;
+    probeTries_ = 0;
+    probeSentAt_ = now;
+    sendProbe(prober);
+}
+
+void Server::sendProbe(const NetAddr& prober) {
+    uint8_t out[kProbeRequestBytes] = {};
+    Writer w(out, sizeof out);
+    writeHeader(w, PKT_PROBE_REQUEST);
+    w.u32(probeNonce_); w.u16(cfg_.probeAskPort ? cfg_.probeAskPort : port());
+    probeSock_.send(prober, out, sizeof out);   // from the separate socket: the reply must come in unsolicited
+    probeTries_++;
 }
 
 static void sendAccept(UdpSocket& sock, const NetAddr& to, uint32_t nonce, int id, const Map& map, int mode) {

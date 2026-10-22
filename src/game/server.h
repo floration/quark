@@ -8,6 +8,7 @@
 #include <deque>
 #include <functional>
 #include <mutex>
+#include <thread>
 #include <string>
 #include <vector>
 #include "../common/net.h"
@@ -37,6 +38,10 @@ struct ServerConfig {
     bool autoStart = false;     // start the match automatically once both sides have players (else: vote)
     int botsEnemy = 0, botsAlly = 0, botSkill = BOT_INTERMEDIATE;
     bool lanOnly = false;
+    // Reachability check (in-game hosting): ask a public server to send one packet to our public ip:port.
+    bool probe = false;
+    std::string prober;         // "host:port" of the prober; empty = QUARK_PROBER env, else a server from the internet list
+    uint16_t probeAskPort = 0;  // tests only: ask about this port instead of ours (simulates an unforwarded port)
     // Mode tuning (0 = mode default)
     int roundsToWin = 0;
     int timeLimit = 0;          // seconds (ffa)
@@ -171,6 +176,13 @@ public:
     std::string statusText();
     const ServerConfig& config() const { return cfg_; }
     std::string upnpStatus() { return upnp_ ? upnp_->status() : std::string(); }
+    // Reachability from the internet (cfg.probe). Thread safe: the host's menu reads it while the server thread runs.
+    enum Reach { REACH_OFF, REACH_CHECKING, REACH_OK, REACH_BLOCKED, REACH_UNKNOWN };
+    Reach reachability() const { return (Reach)reach_.load(); }
+    std::string reachStatus();
+    void recheckReachability() { reachAgain_ = true; }
+    bool upnpDone() { return upnp_ && upnp_->done(); }
+    bool upnpOk() { return upnp_ && upnp_->ok(); }
     std::string listStatus() { return master_ ? master_->status() : std::string(); }
 
     // ---- state used by the game mode rules (gamemodes.cpp) ----
@@ -310,6 +322,31 @@ public:
 
 private:
     std::atomic<uint32_t> hostNonce_{0};
+    // reachability probe: host side
+    std::atomic<int> reach_{REACH_OFF};
+    std::atomic<bool> reachAgain_{false};
+    std::mutex reachMu_;
+    std::string reachDetail_;
+    std::thread reachThread_;                 // picks a prober from the internet list (blocking HTTP)
+    std::atomic<bool> reachPicked_{false};
+    NetAddr reachProber_;
+    UdpSocket probeSock_;                     // separate ephemeral socket: no NAT mapping toward the prober for the game port
+    uint32_t probeNonce_ = 0;
+    double probeSentAt_ = 0, probeNextAt_ = 0;
+    int probeTries_ = 0;
+    double probeStartedAt_ = 0;
+    bool upnpWasDone_ = false;
+    void tickReachability();
+    void pickProber();
+    void sendProbe(const NetAddr& prober);
+    void setReach(Reach r, const std::string& detail);
+    // prober side: per source IP rate limit (fixed table, no per-request allocation)
+    struct ProbeSlot { uint32_t ip = 0; double at = -1e9; };
+    ProbeSlot probeSlots_[64];
+    double probeWindowAt_ = 0; int probeWindowCount_ = 0;
+public:
+    void handleProbeRequest(const NetAddr& from, Reader& r, int len); // (public: tests feed it spoofed sources)
+private:
     uint8_t cookieKey_[16] = {};              // secret for the stateless connect challenge
     std::vector<std::string> mapList_;        // maps on disk (cached at start: votes check names against it)
     uint32_t challengeCookie(const NetAddr& a, uint32_t nonce, int64_t bucket) const;
