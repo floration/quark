@@ -1117,14 +1117,16 @@ bool rulesFrozen(const Server& s, int id) {
 
 int rulesSpawnType(const Server& s, int id) {
     const int mode = s.ms_.mode;
-    if (mode == MODE_RACE && s.map_.supportsMode(MODE_RACE)) return SPAWN_RACE;
-    if (mode == MODE_TOURNEY && s.tourney_.running && s.map_.supportsMode(MODE_VS))
+    // (canSupportMode, not supportsMode: whether the map HAS these spawns, not whether its "modes" line offers the
+    // mode. Colosseum is built for tourney and doesn't offer vs, so its a/b spawns were never used: REVIEW MAP-7.)
+    if (mode == MODE_RACE && s.map_.canSupportMode(MODE_RACE)) return SPAWN_RACE;
+    if (mode == MODE_TOURNEY && s.tourney_.running && s.map_.canSupportMode(MODE_VS))
         return s.players_[id].team == TEAM_B ? SPAWN_B : SPAWN_A; // a match: opposite ends
     if (!modeIsTeamBased(mode)) return SPAWN_ANY;
     bool staged = false;   // (payload maps may stage their spawns by checkpoint, like multi point)
     for (auto& sp : s.map_.spawns) staged |= isStagedSpawn(sp.team);
     if (mode == MODE_PAYLOAD && staged) return stagedSpawn(0, s.players_[id].team != s.ms_.attackers);
-    if (mode == MODE_POINTS && s.map_.supportsMode(MODE_POINTS)) // staged: the spawns for how far the attack has got
+    if (mode == MODE_POINTS && s.map_.canSupportMode(MODE_POINTS)) // staged: the spawns for how far the attack has got
         return stagedSpawn(0, s.players_[id].team != s.ms_.attackers);
     return s.players_[id].team == TEAM_B ? SPAWN_B : SPAWN_A;
 }

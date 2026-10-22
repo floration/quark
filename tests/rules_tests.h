@@ -495,6 +495,26 @@ static void testBalanceBotDefer(uint16_t port) {
     s.stop();
 }
 
+// MAP-7: the spawn type depends on whether the map has those spawns (canSupportMode), not on its "modes" line:
+// Colosseum (tourney, doesn't offer vs) uses its a/b spawns for tourney matches.
+static void testSpawnTypes(uint16_t port) {
+    printf("spawn types from the spawns a map has\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "colosseum"; cfg.mode = MODE_TOURNEY; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    CHECK(!s.map_.supportsMode(MODE_VS) && s.map_.canSupportMode(MODE_VS));   // (the case: a/b spawns, no "vs")
+    s.tourney_.running = true;
+    s.players_[0].connected = s.players_[1].connected = true;
+    s.players_[0].team = TEAM_A; s.players_[1].team = TEAM_B;
+    CHECK(rulesSpawnType(s, 0) == SPAWN_A && rulesSpawnType(s, 1) == SPAWN_B);
+    s.spawnPlayer(0); s.spawnPlayer(1);   // at opposite ends (the a / b spawns are 34 m apart)
+    CHECK(length(s.players_[0].move.pos - s.players_[1].move.pos) > 30);
+    s.players_[0].connected = s.players_[1].connected = false;
+    s.stop();
+}
+
 // "quark_tests rules [name]": all of them, or the one named.
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
@@ -509,6 +529,7 @@ static void testGameRules(const std::string& only) {
         {"tag", [] { testTagEscape(TP(29248)); }},
         {"bomb", [] { testBombDrop(TP(29249)); }},
         {"botdefer", [] { testBalanceBotDefer(TP(29250)); }},
+        {"spawns", [] { testSpawnTypes(TP(29251)); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
 }
