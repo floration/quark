@@ -1,113 +1,277 @@
+# Builds and tests every push. Publishes only from two places (docs: CLAUDE.md "Releases"):
+#   TESTING     a push to the `testing` branch: a signed GitHub *prerelease* tagged test-<VERSION>-test.<run number>,
+#               built as version <VERSION>-test.<run number> (never "latest"; the website isn't redeployed). The tag
+#               must not start with v<digit> or a digit: launchers 0.12-1.16 install the highest such tag even when
+#               it's a prerelease. macOS is optional: the prerelease goes out with
+#               Windows + Linux, and the macOS files are added when (if) that build finishes.
+#   PRODUCTION  a pushed tag v<VERSION> (no suffix) on a commit of the protected default branch: a signed release
+#               marked latest, only when Windows, Linux AND macOS all built and passed; then the website.
+# Any other push (or a manual run) builds and tests only.
 name: build-and-release
 on:
   push:
     branches: ['**']
+    tags: ['v*']
   workflow_dispatch:
 permissions:
-  contents: read   # build jobs only read; release and pages get write below
+  contents: read   # every job only reads; release and pages get write below
+env:
+  # testing builds carry their own version (<VERSION>-test.<N>: below the production release it leads to)
+  QUARK_VERSION_SUFFIX: ${{ github.ref == 'refs/heads/testing' && github.event_name == 'push' && format('-test.{0}', github.run_number) || '' }}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # a newer push to a work branch replaces its build; a release (testing branch or tag) always runs to the end
+  cancel-in-progress: ${{ github.ref_type == 'branch' && github.ref_name != 'testing' }}
 jobs:
+  meta:
+    runs-on: ubuntu-24.04
+    outputs:
+      channel: ${{ steps.c.outputs.channel }}
+      version: ${{ steps.c.outputs.version }}   # what the build says it is (testing: <VERSION>-test.<N>)
+      base: ${{ steps.c.outputs.base }}         # the VERSION file (changelogs/<base>.md)
+      tag: ${{ steps.c.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: c
+        name: which channel this run publishes to (production / testing / none)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -eu
+          V=$(head -n1 VERSION | tr -d '[:space:]')
+          echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::VERSION '$V' isn't x.y.z"; exit 1; }
+          CHANNEL=none; TAG=""
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF_TYPE" = tag ]; then
+            TAG="$GITHUB_REF_NAME"
+            if ! echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "::error::tag $TAG isn't a production tag (v<x.y.z>, no suffix): nothing is published"; exit 1
+            fi
+            [ "$TAG" = "v$V" ] || { echo "::error::tag $TAG doesn't match VERSION $V"; exit 1; }
+            git fetch -q origin "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
+            if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/$DEFAULT_BRANCH"; then
+              echo "::error::$TAG ($GITHUB_SHA) isn't on $DEFAULT_BRANCH: production releases are tagged on the protected default branch"; exit 1
+            fi
+            CHANNEL=production
+          elif [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/testing ]; then
+            TAG="test-$V$QUARK_VERSION_SUFFIX"
+            CHANNEL=testing
+            LATEST=$(gh release view -R "$GITHUB_REPOSITORY" --json tagName -q .tagName 2>/dev/null || true)
+            NEWEST=$(printf '%s\n%s\n' "${LATEST#v}" "$V" | sort -V | tail -n1)
+            if [ -n "$LATEST" ] && { [ "$NEWEST" != "$V" ] || [ "${LATEST#v}" = "$V" ]; }; then
+              echo "::warning::VERSION $V isn't newer than production $LATEST: testing launchers may see this build as older (bump VERSION)"
+            fi
+          fi
+          if [ "$CHANNEL" != none ]; then
+            [ -f "changelogs/$V.md" ] || { [ "$CHANNEL" = testing ] || { echo "::error::changelogs/$V.md is missing"; exit 1; }; }
+            if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "::error::release $TAG already exists: bump VERSION (releases are never replaced)"; exit 1
+            fi
+          fi
+          { echo "channel=$CHANNEL"; echo "version=$V$QUARK_VERSION_SUFFIX"; echo "base=$V"; echo "tag=$TAG"; } >> "$GITHUB_OUTPUT"
+          echo "### $CHANNEL ${TAG:-(build only)}" >> "$GITHUB_STEP_SUMMARY"
+
   windows:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - run: sudo apt-get update && sudo apt-get install -y mingw-w64
       - name: cross-compile (MinGW, static, Windows 7+)
         run: |
-          cat > mingw.cmake <<'T'
-          set(CMAKE_SYSTEM_NAME Windows)
-          set(CMAKE_C_COMPILER x86_64-w64-mingw32-gcc-posix)
-          set(CMAKE_CXX_COMPILER x86_64-w64-mingw32-g++-posix)
-          set(CMAKE_RC_COMPILER x86_64-w64-mingw32-windres)
-          T
-          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=mingw.cmake -DCMAKE_BUILD_TYPE=Release -DQUARK_BUILD_TESTS=OFF
+          cmake -S . -B build -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc-posix -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++-posix \
+            -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres -DCMAKE_BUILD_TYPE=Release \
+            -DQUARK_VERSION_SUFFIX="$QUARK_VERSION_SUFFIX"
           cmake --build build -j
-          mkdir -p pkg && cp build/quark.exe build/quark_server.exe pkg/ && cp -r maps mods pkg/
+          mkdir -p pkg && cp build/quark.exe build/quark_server.exe build/quark_launcher.exe pkg/ && cp -r maps mods pkg/
           python3 tools/pack.py pkg quark-windows.qpak
-          mkdir -p quark-windows && cp -r pkg/* build/quark_launcher.exe README.md quark-windows/
-          zip -r quark-windows.zip quark-windows
+          mkdir -p quark-windows && cp -r pkg/* README.md quark-windows/
+          zip -qr quark-windows.zip quark-windows
           cp build/quark_launcher.exe quark-launcher-windows.exe
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: { name: windows, path: "quark-windows.zip\nquark-windows.qpak\nquark-launcher-windows.exe" }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with: { name: windows-tests, path: build/quark_tests.exe, retention-days: 7 }
+
+  windows-tests:   # the release's own MinGW build of the tests, run on Windows (REVIEW ENG-1)
+    needs: windows
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { name: windows-tests, path: build }
+      - name: quark_tests (Windows)
+        shell: bash
+        env:
+          QUARK_SOURCE_DIR: ${{ github.workspace }}   # tools/ and tests/data/ (the exe was built on another machine)
+        run: ./build/quark_tests.exe
+
   linux:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - run: sudo apt-get update && sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev
       - run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DQUARK_VERSION_SUFFIX="$QUARK_VERSION_SUFFIX"
           cmake --build build -j
-          ./build/quark_tests
-          mkdir -p pkg && cp build/quark build/quark_server pkg/ && cp -r maps mods pkg/
+          ctest --test-dir build --output-on-failure
+          python3 tools/site_changelog.py .   # the website's data builds (checked here, before anything is published)
+          mkdir -p pkg && cp build/quark build/quark_server build/quark_launcher pkg/ && cp -r maps mods pkg/
           python3 tools/pack.py pkg quark-linux.qpak
-          mkdir -p quark-linux && cp -r pkg/* build/quark_launcher README.md quark-linux/
+          mkdir -p quark-linux && cp -r pkg/* README.md quark-linux/
           tar czf quark-linux.tar.gz quark-linux
           cp build/quark_launcher quark-launcher-linux
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: { name: linux, path: "quark-linux.tar.gz\nquark-linux.qpak\nquark-launcher-linux" }
+
   macos:
+    needs: meta
     runs-on: macos-latest
     timeout-minutes: 60
+    continue-on-error: ${{ needs.meta.outputs.channel != 'production' }}   # required for production only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15 \
+            -DQUARK_VERSION_SUFFIX="$QUARK_VERSION_SUFFIX"
           cmake --build build -j
-          mkdir -p pkg && cp -r build/quark.app build/quark_server pkg/ && cp -r maps pkg/
+          mkdir -p pkg && cp -r build/quark.app build/quark_server build/quark_launcher pkg/ && cp -r maps pkg/
           mkdir -p pkg/quark.app/Contents/Resources && cp -r maps mods pkg/quark.app/Contents/Resources/
           python3 tools/pack.py pkg quark-macos.qpak
-          mkdir -p quark-macos && cp -r pkg/* build/quark_launcher README.md quark-macos/
-          zip -ry quark-macos.zip quark-macos
+          mkdir -p quark-macos && cp -r pkg/* README.md quark-macos/
+          zip -qry quark-macos.zip quark-macos
           zip -j quark-launcher-macos.zip build/quark_launcher
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: { name: macos, path: "quark-macos.zip\nquark-macos.qpak\nquark-launcher-macos.zip" }
-  release:
-    needs: [windows, linux, macos]
-    runs-on: ubuntu-latest
+
+  release:   # PRODUCTION: every platform, signed, latest
+    needs: [meta, windows, windows-tests, linux, macos]
+    if: needs.meta.outputs.channel == 'production'
+    runs-on: ubuntu-24.04
+    environment: production
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - id: v
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { path: dist }
+      - name: all three platforms are here (no macOS, no release)
         run: |
-          echo "version=$(head -n1 VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
-      - uses: actions/download-artifact@v4
-      - name: sign update packages (Ed25519, docs/SIGNING.md)
+          rm -rf dist/windows-tests
+          for p in windows linux macos; do test -f "dist/$p/quark-$p.qpak" || { echo "::error::no $p build"; exit 1; }; done
+      - name: release manifest + sign (Ed25519, docs/SIGNING.md)
         env:
           QUARK_SIGNING_KEY: ${{ secrets.QUARK_SIGNING_KEY }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          VER: ${{ needs.meta.outputs.version }}
         run: |
-          if [ -z "$QUARK_SIGNING_KEY" ]; then
-            echo "::error::QUARK_SIGNING_KEY secret is missing: refusing to publish unsigned update packages (see docs/SIGNING.md)"
-            exit 1
-          fi
-          cmake -S . -B signbuild -DQUARK_BUILD_CLIENT=OFF -DQUARK_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
-          cmake --build signbuild --target quark_sign -j
-          n=0
-          for f in */quark-*.qpak; do
-            ./signbuild/quark_sign sign "$f"
-            ./signbuild/quark_sign verify "$f"   # against the public key built into the launcher: catches a wrong secret
-            n=$((n+1))
-          done
-          [ "$n" -gt 0 ] || { echo "::error::no qpak to sign"; exit 1; }
-          rm -rf signbuild
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.v.outputs.version }}
-          name: quark ${{ steps.v.outputs.version }}
-          target_commitish: ${{ github.sha }}
-          body_path: changelogs/${{ steps.v.outputs.version }}.md
-          make_latest: true
-          files: |
-            windows/*
-            linux/*
-            macos/*
-  pages:
-    needs: release
-    runs-on: ubuntu-latest
+          # what servers check before updating (tools/server/autoupdate.sh): this tag is this commit, signed
+          printf 'quark release\nchannel production\ntag %s\nversion %s\ncommit %s\n' "$TAG" "$VER" "$GITHUB_SHA" > dist/quark-release.txt
+          sh tools/sign/sign_release.sh dist/*/quark-*.qpak dist/quark-release.txt
+          (cd dist && sha256sum -- */* quark-release.txt quark-release.txt.sig | sed 's#  [a-z]*/#  #' > SHA256SUMS)
+      - name: publish (marked latest; fails if it already exists)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          VER: ${{ needs.meta.outputs.version }}
+        run: |
+          gh release create "$TAG" -R "$GITHUB_REPOSITORY" --verify-tag --latest \
+            --title "quark $VER" --notes-file "changelogs/$VER.md" \
+            dist/windows/* dist/linux/* dist/macos/* dist/quark-release.txt dist/quark-release.txt.sig dist/SHA256SUMS
+
+  release-testing:   # TESTING: Windows + Linux, signed prerelease (macOS follows in release-testing-macos)
+    needs: [meta, windows, windows-tests, linux]
+    if: needs.meta.outputs.channel == 'testing'
+    runs-on: ubuntu-24.04
+    environment: testing
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { path: dist }
+      - name: release manifest + sign
+        env:
+          QUARK_SIGNING_KEY: ${{ secrets.QUARK_SIGNING_KEY }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          VER: ${{ needs.meta.outputs.version }}
+        run: |
+          rm -rf dist/windows-tests dist/macos
+          printf 'quark release\nchannel testing\ntag %s\nversion %s\ncommit %s\n' "$TAG" "$VER" "$GITHUB_SHA" > dist/quark-release.txt
+          sh tools/sign/sign_release.sh dist/*/quark-*.qpak dist/quark-release.txt
+          (cd dist && sha256sum -- */* quark-release.txt quark-release.txt.sig | sed 's#  [a-z]*/#  #' > SHA256SUMS)
+      - name: publish the prerelease (never latest)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          VER: ${{ needs.meta.outputs.version }}
+          BASE: ${{ needs.meta.outputs.base }}
+        run: |
+          {
+            echo "**Testing build** $VER (\`${GITHUB_SHA::7}\`, branch \`testing\`). Not a production release."
+            echo
+            if [ -f "changelogs/$BASE.md" ]; then cat "changelogs/$BASE.md"; fi
+          } > notes.md
+          gh release create "$TAG" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title "quark $VER (testing)" --notes-file notes.md \
+            dist/windows/* dist/linux/* dist/quark-release.txt dist/quark-release.txt.sig dist/SHA256SUMS
+
+  release-testing-macos:   # adds the macOS files to the testing prerelease when that build succeeded
+    needs: [meta, macos, release-testing]
+    if: needs.meta.outputs.channel == 'testing' && needs.macos.result == 'success' && needs.release-testing.result == 'success'
+    runs-on: ubuntu-24.04
+    environment: testing
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - id: dl   # (no artifact when the macOS build failed: then nothing to add, and that's not an error)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        continue-on-error: true
+        with: { name: macos, path: dist/macos }
+      - name: sign + upload
+        if: steps.dl.outcome == 'success'
+        env:
+          QUARK_SIGNING_KEY: ${{ secrets.QUARK_SIGNING_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.meta.outputs.tag }}
+        run: |
+          sh tools/sign/sign_release.sh dist/macos/quark-macos.qpak
+          (cd dist/macos && sha256sum -- * > SHA256SUMS-macos)
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" dist/macos/*
+
+  pages:   # the website follows production only
+    needs: [meta, release]
+    if: needs.meta.outputs.channel == 'production' && needs.release.result == 'success'
+    runs-on: ubuntu-24.04
+    environment: production
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: publish site/ to the gh-pages branch (served at floration.github.io/quark)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           python3 tools/site_changelog.py .
           cd site
@@ -116,5 +280,5 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
           git add -A
-          git commit -qm "site for ${GITHUB_SHA}"
-          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+          git commit -qm "site for ${GITHUB_REF_NAME} (${GITHUB_SHA})"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages

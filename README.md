@@ -7,15 +7,24 @@ Runs on Windows 7/10/11, macOS and Linux.
 ```
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
+ctest --test-dir build          # or build/quark_tests
 ```
 Linux needs X11/GL dev packages (`libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev`).
-Windows: Visual Studio 2017+ or MinGW-w64. macOS: Xcode command line tools.
+Windows: MinGW-w64 (gcc; what releases are built with; MSVC isn't supported). macOS: Xcode command line tools.
+The build needs `python3` (standard library only): it generates the recorded announcer lines from `assets/voice/`.
 Executables: `quark` (game), `quark_server` (dedicated server), `quark_tests` (headless tests).
 Keep the `maps/` folder next to the executables.
 
 ## Multiplayer
 - **Host in the game:** Host Game -> pick map/mode/port -> Start. "Auto port forward (UPnP)" asks your router to open the UDP port.
 - **Dedicated server:** `quark_server --mode bomb --map arena --port 27500 --upnp` (type `help`-style commands into its console: `map`, `mode`, `forcestart`, `kick`, `status`, `quit`).
+- **Always-on Linux server (systemd):** from a checkout, `tools/server/install.sh --public --name "my server"` (plus any
+  `quark_server` options). It runs the server as a dedicated `quark` user from `/opt/quark` with systemd sandboxing,
+  keeps data in `/var/lib/quark`, and every minute `tools/server/autoupdate.sh` checks for a new **production**
+  release: it verifies the release's signed manifest and Linux package, builds exactly the signed commit, and the
+  server restarts once no match is being played. A failed or stuck update logs at critical priority
+  (`journalctl -p crit -t quark-update`) and can post to a Discord webhook (`QUARK_ALERT_WEBHOOK` in
+  `/etc/quark/update.env`). Older installs: `git pull`, then run `install.sh` again (options and data carry over).
 - **Join:** Join Game -> enter `ip:port`, or pick a LAN game.
 - If UPnP fails, forward **UDP 27500** (or your chosen port) on your router to the host machine.
 

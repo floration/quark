@@ -1,0 +1,24 @@
+# The protected default branch only takes pull requests from `testing` (owner, 2.2): make this check required in the
+# branch protection rule, and a PR from any other branch can't be merged.
+name: main-guard
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited]
+permissions:
+  contents: read
+jobs:
+  from-testing:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: PRs into the default branch come from testing
+        env:
+          BASE: ${{ github.base_ref }}
+          HEAD: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [ "$BASE" = "$DEFAULT_BRANCH" ] && { [ "$HEAD" != testing ] || [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; }; then
+            echo "::error::$DEFAULT_BRANCH only takes pull requests from this repository's testing branch (this one is $HEAD_REPO:$HEAD)"
+            exit 1
+          fi
+          echo "ok: $HEAD_REPO:$HEAD -> $BASE"

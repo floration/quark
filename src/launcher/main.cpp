@@ -2,6 +2,7 @@
 // version the player picked) after checking its signature, keeps itself current, shows the changelog, starts the game.
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#include "../common/version.h"
 #include <algorithm>
 #include <atomic>
 #include <cstdio>

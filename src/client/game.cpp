@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <cstring>
 #include "../game/gamemodes.h"
+#include "../common/version.h"
 
 static std::string fmtRace(int ms);
 static std::string hudCfgPath() { return userDataPath("hud.cfg"); } // scriptable widgets, next to quark.cfg
@@ -3305,7 +3306,7 @@ void Game::drawMenu() {
     float x = cx - bw * 0.5f;
     float y = H * 0.12f;
     ui_.labelCentered(cx, y, "QUARK", rgba(cfg_.colorFriendly), 4.0f);
-    r_.text(8 * s, H - 20 * s, std::max(1.0f, std::round(s)), "V" QUARK_VERSION, kGrey);
+    r_.text(8 * s, H - 20 * s, std::max(1.0f, std::round(s)), std::string("V") + QUARK_VERSION, kGrey);
     y += 80 * s;
 
     if (picker_ != PICK_NONE && (screen_ == Screen::Host || screen_ == Screen::VsBots)) { drawPicker(cx, y); return; }
@@ -3883,7 +3884,7 @@ void Game::drawPerf() {
         perfText_ = b;
     }
     float ts = std::max(1.0f, std::round(r_.height() / 720.0f * 2.0f));
-    std::string tick = "QUARK V" QUARK_VERSION;
+    std::string tick = std::string("QUARK V") + QUARK_VERSION;
     if (net_.hasSnapshot()) tick += "  SERVER " + std::to_string(net_.tickRate()) + " HZ  LOSS " + std::to_string(net_.snapshotLoss()) + "%";
     float lh = r_.textHeight(ts) + 6;
     float w = std::max(std::max(r_.textWidth(perfText_, ts), r_.textWidth(latText_, ts)), r_.textWidth(tick, ts));

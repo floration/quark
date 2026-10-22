@@ -85,7 +85,8 @@ bool CustomRules::fromText(const std::string& text) {
         size_t eq = line.find('=');
         if (eq == std::string::npos) continue;
         std::string k = line.substr(0, eq), v = line.substr(eq + 1);
-        float f = (float)atof(v.c_str());
+        float f = 0;   // (sscanf, not atof: the Windows CRT's atof reads "nan" / "inf" as 0, so a value meant to fall
+        if (sscanf(v.c_str(), "%f", &f) != 1) f = 0;   //  back to the default was clamped instead, and differed from Linux)
         int i = atoi(v.c_str());
         if (k == "custommode") { name = safeName(v); any = true; }
         else if (k == "mode") { int m = modeFromName(v.c_str()); if (m >= 0 && m != MODE_TOURNEY) baseMode = m; }

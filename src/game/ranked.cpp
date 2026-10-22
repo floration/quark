@@ -12,6 +12,7 @@
 #include "map.h"
 #include "official_maps.h"
 #include "gamedefs.h"
+#include "../common/version.h"
 
 static bool isHex(const std::string& s, size_t n) {
     if (s.size() != n) return false;
@@ -220,7 +221,7 @@ std::string buildRaceRunForm(const std::string& ticket, const std::string& map, 
     std::string sp;
     for (int x : splits) sp += (sp.empty() ? "" : ",") + std::to_string(x);
     std::string nh = hexName(name);
-    return "ticket=" + ticket + "&map=" + map + "&id=" + rankId + "&ms=" + std::to_string(ms) + "&splits=" + sp + "&v=" QUARK_VERSION +
+    return "ticket=" + ticket + "&map=" + map + "&id=" + rankId + "&ms=" + std::to_string(ms) + "&splits=" + sp + "&v=" + QUARK_VERSION +
            (nh.empty() ? "" : "&name=" + nh);
 }
 

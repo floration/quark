@@ -11,8 +11,13 @@
 - In-game F3 overlay shows avg / 1% low / 0.1% low FPS; use it (and `--screenshot` runs) to check changes.
 
 ## Releases, versions, changelogs
-- Every push builds Windows (.exe), Linux and macOS packages + launchers via `.github/workflows/release.yml`, publishes GitHub release `v<VERSION>`, and deploys `site/` to https://floration.github.io/quark. Keep that workflow passing.
-- Every update: bump `VERSION` (semver; started at 0.1.0) and add `changelogs/<VERSION>.md` describing what changed. The release notes, the website and the launcher all show that file.
+- All work is pushed to the `testing` branch (not the default branch). `.github/workflows/release.yml` builds and tests every push on every branch (Linux tests, Windows tests on a Windows runner, macOS build) but publishes from two places only:
+  - **TESTING**: a push to `testing` publishes a signed GitHub *prerelease* tagged `test-<VERSION>-test.<run number>`, built as version `<VERSION>-test.<run number>` (never "latest"; the website isn't redeployed; the tag must never start with `v<digit>` or a digit, or launchers 0.12-1.16 would install it). macOS is optional there: the prerelease goes out with Windows + Linux and the macOS files are added when that build succeeds. The launcher's TESTING channel and the Discord testing channel follow these.
+  - **PRODUCTION**: only a tag `v<VERSION>` (exactly; no suffix) pushed on a commit of the protected default branch, which is only updated by a PR from `testing`. It needs Windows, Linux AND macOS green (no macOS runner = no release), fails if that release already exists, publishes it as latest, then deploys `site/` to https://floration.github.io/quark. Dedicated servers auto-update to production only.
+  - Any other branch: build + test only. Keep the workflow passing.
+- To ship production (owner): merge the `testing` → default-branch PR, then `git tag v<VERSION> <merge commit> && git push origin v<VERSION>`.
+- Every update: bump `VERSION` (semver; started at 0.1.0) and add `changelogs/<VERSION>.md` describing what changed. The release notes, the website and the launcher all show that file (a production tag without it fails).
+- Every qpak and the release manifest `quark-release.txt` are signed with `QUARK_SIGNING_KEY` (docs/SIGNING.md); each platform's qpak also carries its `quark_launcher`. Actions are pinned by commit SHA (Dependabot bumps them); keep `persist-credentials: false` and write permissions only on the release / pages jobs.
 - The launcher (`src/launcher/`) installs/updates from the release's `quark-<platform>.qpak` (made by `tools/pack.py`); keep those asset names stable.
 
 ## Maps

@@ -12,6 +12,7 @@
 #include <cstdarg>
 #include <ctime>
 #include <filesystem>
+#include "../common/version.h"
 
 // EV_PLAYERINFO's b byte: model in the low 4 bits, sound pack in the high 4
 static uint8_t looksByte(const ServerPlayer& p) { return (uint8_t)((p.model & 15) | ((p.soundPack & 15) << 4)); }
