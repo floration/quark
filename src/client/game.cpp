@@ -63,8 +63,9 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     rankKey_ = loadOrCreateRankKey(userDataPath("quark.key")); // ranked identity: stays on this computer
     net_.setRankKey(rankKey_);   // (servers check the id against it; the key itself never goes to them)
     // 1.17 ranked ids come from the key's public half: the Worker moves this key's old id (ratings, race times, Discord
-    // link, lifetime stats) over the first time it sees the secret. Once per start, in the background.
-    if (!rankKey_.secret.empty() && opts_.screenshot.empty()) rank_.request("hello", "/hello", "secret=" + rankKey_.secret);
+    // link, lifetime stats) over the first time it sees the secret. Sent in the background, retried until it takes
+    // (REVIEW 3.6), then recorded in the config so later starts don't send it again.
+    if (!rankKey_.secret.empty() && opts_.screenshot.empty() && cfg_.rankHello != rankKey_.id) { rank_.hello(rankKey_); helloPending_ = true; }
     ui_.steadyCaret = !opts_.screenshot.empty();
     if (opts_.hostMode < 0 && opts_.vsBotsMode < 0 && opts_.connect.empty() && opts_.editMap.empty()) loadMenuBackdrop();
     if (opts_.debugInfo) { setScreen(Screen::Info); infoTab_ = opts_.debugInfo - 1; }
@@ -1014,6 +1015,7 @@ void Game::frame(double dt) {
         }
     }
 
+    if (helloPending_ && rank_.helloDone()) { helloPending_ = false; cfg_.rankHello = rankKey_.id; cfg_.save(); }   // (any screen)
     if (screen_ == Screen::InGame) {
         handleEvents();
         updateAnnouncer();

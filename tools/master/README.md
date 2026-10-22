@@ -111,8 +111,11 @@ What changed:
 - **Ranked ids prove their key.** The id is now the first 32 hex of sha256 of an Ed25519 public key derived from the
   secret (seed = sha256(`quark-rank-ed25519-v1:` + secret)). Game servers check it at connect (the player signs the
   connect challenge), so nobody can use someone else's id (REVIEW NET-12). Old ids (sha256 of the secret) move to the
-  new id the first time that secret reaches the Worker (`POST /hello`, sent by the game at start-up, or any request
-  with the secret): ratings, account, name, Discord link, lifetime stats and race times (`id_moves` records it).
+  new id the first time that secret reaches the Worker (`POST /hello`, sent by the game at start-up and retried until
+  it takes, or any request with the secret): ratings, account, name, Discord link, lifetime stats and race times
+  (`id_moves` records it). If the new id already has rows (a match rated before the secret arrived), they're merged:
+  a ladder keeps the rating of the row with more games and adds up the games; the account keeps the most ticketed
+  games and the earliest start; the faster race time stays.
   Players who never start 1.17 keep their old rows (harmless; unplaced players aren't on the boards).
 - **Tickets carry every player's signature** of the match id and of the server address their game dialled (`keys`,
   `sigs`, `addrs`), so a server can only ticket players who are really in the match, on it: a signature naming

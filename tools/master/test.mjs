@@ -466,6 +466,33 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   check(db.prepare("SELECT ms FROM race_times WHERE id = ?").get(id(n)).ms === 50000, "race time moved");
   check((await call("/hello", { secret: secret(n) })) === "id " + id(n), "once");
 }
+// REVIEW 3.6: the new id already has rows (a match rated before the secret reached the Worker): merged, not dropped
+{
+  const n = 78, old = legacy(n), q = (sql, ...a) => db.prepare(sql).run(...a);
+  q("INSERT INTO players (id, mu, sigma, games, updated, ver) VALUES (?, 31, 4, 40, 100, 7)", "vanilla:" + old);   // the veteran's rating
+  q("INSERT INTO players (id, mu, sigma, games, updated, ver) VALUES (?, 27, 8, 1, 200, 1)", "vanilla:" + id(n));   // one match since, as the new id
+  q("INSERT INTO players (id, mu, sigma, games, updated, ver) VALUES (?, 20, 7, 2, 50, 3)", "vampire:" + old);
+  q("INSERT INTO players (id, mu, sigma, games, updated, ver) VALUES (?, 26, 6, 3, 300, 2)", "vampire:" + id(n));  // more games on the new id: it stays
+  q("INSERT INTO players (id, mu, sigma, games, updated, ver) VALUES (?, 22, 6, 4, 60, 0)", "instagib:" + old);    // only the old one: moves
+  q("INSERT INTO accounts (id, tgames, created) VALUES (?, 40, 1000)", old);
+  q("INSERT INTO accounts (id, tgames, created) VALUES (?, 2, 5000)", id(n));
+  q("INSERT INTO names (id, name, updated) VALUES (?, 'old name', 0)", old);
+  q("INSERT INTO names (id, name, updated) VALUES (?, 'new name', 9)", id(n));
+  q("INSERT INTO race_times (map, id, ms, splits, version, created) VALUES ('viaduct', ?, 50000, '1', 'x', 0)", old);
+  q("INSERT INTO race_times (map, id, ms, splits, version, created) VALUES ('viaduct', ?, 52000, '1', 'y', 9)", id(n));
+  check((await call("/hello", { secret: secret(n) })) === "id " + id(n), "hello with rows on both ids");
+  const row = (ladder) => db.prepare("SELECT mu, sigma, games, updated, ver FROM players WHERE id = ?").get(ladder + ":" + id(n));
+  const v = row("vanilla"), vp = row("vampire"), ig = row("instagib");
+  check(v.mu === 31 && v.sigma === 4 && v.games === 41 && v.updated === 200 && v.ver === 8, "the row with more games keeps its rating, games add up " + JSON.stringify(v));
+  check(vp.mu === 26 && vp.sigma === 6 && vp.games === 5, "the new id's rating stays when it has more games " + JSON.stringify(vp));
+  check(ig.mu === 22 && ig.games === 4, "a ladder only the old id played moves " + JSON.stringify(ig));
+  check(db.prepare("SELECT COUNT(*) AS c FROM players WHERE id LIKE ?").get("%:" + old).c === 0, "no old ladder rows left");
+  const acc = db.prepare("SELECT tgames, created FROM accounts WHERE id = ?").get(id(n));
+  check(acc.tgames === 40 && acc.created === 1000 && !db.prepare("SELECT 1 FROM accounts WHERE id = ?").get(old), "account: most ticketed games, earliest start " + JSON.stringify(acc));
+  check(db.prepare("SELECT name FROM names WHERE id = ?").get(id(n)).name === "new name" && !db.prepare("SELECT 1 FROM names WHERE id = ?").get(old), "the newer name stays");
+  check(db.prepare("SELECT ms FROM race_times WHERE id = ?").get(id(n)).ms === 50000 && !db.prepare("SELECT 1 FROM race_times WHERE id = ?").get(old), "the faster race time");
+  check((await call("/hello", { secret: secret(n) })) === "id " + id(n) && row("vanilla").games === 41, "merged once");
+}
 // queue fills are atomic: two joins racing for the last place fill it once
 {
   const hx = (t) => Buffer.from(t).toString("hex");

@@ -190,6 +190,7 @@ private:
     RankService rank_;
     double nextRankFetch_ = 0;
     int rankBefore_ = -1, rankGamesBefore_ = -1;
+    bool helloPending_ = false;   // POST /hello in flight (retried in the background) until it took: then recorded in the config
     void updateRanked();
     double nextBoardFetch_ = 0;
     void drawLeaderboard(float cx, float y);

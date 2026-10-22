@@ -11,6 +11,10 @@
 #ifndef _WIN32
 #include <sys/wait.h>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <sys/select.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #endif
 #include <chrono>
 #include <random>
@@ -2974,6 +2978,74 @@ static void testTourneySeeding(uint16_t port) {
     s.stop();
 }
 
+// REVIEW 3.6: POST /hello is retried (with backoff, on the ranked thread) until the Worker answers "id <id>", then
+// never again. A tiny local HTTP server refuses the first one. (POSIX sockets: Linux / macOS only.)
+static void testHelloRetry() {
+    printf("ranked: /hello retried until it takes\n");
+    CHECK(RankService::helloRetryDelay(1) == 10 && RankService::helloRetryDelay(2) == 20 && RankService::helloRetryDelay(8) == 900 &&
+          RankService::helloRetryDelay(50) == 900);
+#ifndef _WIN32
+    int ls = socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in a{};
+    a.sin_family = AF_INET; a.sin_addr.s_addr = htonl(INADDR_LOOPBACK); a.sin_port = 0;
+    socklen_t al = sizeof a;
+    if (ls < 0 || bind(ls, (sockaddr*)&a, sizeof a) != 0 || listen(ls, 4) != 0 || getsockname(ls, (sockaddr*)&a, &al) != 0) {
+        printf("  FAIL %s:%d: no local listener\n", __FILE__, __LINE__); g_fail++; if (ls >= 0) close(ls); return;
+    }
+    RankKey k = rankKeyFromSecret(sha256Hex("hello" + std::to_string(qrand())));
+    std::atomic<int> requests{0};
+    std::atomic<bool> quit{false};
+    std::thread srv([&] {
+        while (!quit) {
+            fd_set fs; FD_ZERO(&fs); FD_SET(ls, &fs);
+            timeval tv{0, 50000};
+            if (select(ls + 1, &fs, nullptr, nullptr, &tv) <= 0) continue;
+            int c = accept(ls, nullptr, nullptr);
+            if (c < 0) continue;
+            std::string req;
+            char buf[4096];
+            for (;;) {   // headers, then the form body (Content-Length)
+                size_t h = req.find("\r\n\r\n");
+                if (h != std::string::npos) {
+                    size_t cl = req.find("Content-Length: ");
+                    size_t len = cl == std::string::npos ? 0 : (size_t)atoi(req.c_str() + cl + 16);
+                    if (req.size() >= h + 4 + len) break;
+                }
+                ssize_t n = recv(c, buf, sizeof buf, 0);
+                if (n <= 0) break;
+                req.append(buf, (size_t)n);
+            }
+            int nth = ++requests;
+            bool ok = req.rfind("POST /hello ", 0) == 0 && req.find("secret=" + k.secret) != std::string::npos;
+            std::string body = nth == 1 || !ok ? "busy" : "id " + k.id + "\n";
+            std::string resp = std::string(nth == 1 || !ok ? "HTTP/1.1 503 Busy" : "HTTP/1.1 200 OK") + "\r\nContent-Length: " +
+                               std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
+            send(c, resp.data(), resp.size(), 0);
+            close(c);
+        }
+    });
+    const char* prev = getenv("QUARK_MASTER");
+    std::string was = prev ? prev : "off";
+    setenv("QUARK_MASTER", ("http://127.0.0.1:" + std::to_string(ntohs(a.sin_port))).c_str(), 1);
+    {
+        RankService rs;
+        rs.hello(k);
+        // (the retry comes 10 s of game time later; real time here: a loaded CI box can be slow to start curl)
+        auto end = std::chrono::steady_clock::now() + std::chrono::seconds(90);
+        while (std::chrono::steady_clock::now() < end && !rs.helloDone()) sleepMs(20);
+        if (!rs.helloDone() || requests != 2) printf("  hello: done %d after %d requests\n", (int)rs.helloDone(), requests.load());
+        CHECK(rs.helloDone() && requests == 2);   // refused once, then taken
+        double settle = timeNow() + 15;
+        while (timeNow() < settle) sleepMs(20);
+        CHECK(requests == 2);                      // and not sent again
+    }
+    setenv("QUARK_MASTER", was.c_str(), 1);
+    quit = true;
+    srv.join();
+    close(ls);
+#endif
+}
+
 // master.txt can move the Worker only with a release-key signature of exactly that file.
 static void testMasterSignature() {
     printf("signed master.txt\n");
@@ -4246,7 +4318,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "nav") { testNavGraph(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testRankedRelay(TP(29630)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterReplies(TP(29629)); testMasterSignature(); testPlacementConstant(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testRankedRelay(TP(29630)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterReplies(TP(29629)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(TP(29600)); testEditSession(TP(29601)); testVotedEdit(TP(29602)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
     if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(29604)); testMapNames(TP(29605)); testDemo(TP(29603)); return g_fail ? 1 : 0; }
@@ -4281,7 +4353,7 @@ int main(int argc, char** argv) {
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
         {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
-        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testMasterSignature(); testPlacementConstant(); }},
+        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); }},
         {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
         {"rules", [] { testGameRules(""); }},
     };

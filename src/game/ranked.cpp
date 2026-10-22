@@ -376,6 +376,20 @@ void RankService::request(const std::string& key, const std::string& pathAndQuer
     push(j);
 }
 
+void RankService::hello(const RankKey& key) {
+    if (key.secret.empty() || key.id.empty()) return;
+    Job j;
+    j.due = timeNow();
+    j.report = false;
+    j.rawKey = "hello";
+    j.path = "/hello";
+    j.body = "secret=" + key.secret;
+    j.expect = "id " + key.id;
+    push(j);
+}
+
+double RankService::helloRetryDelay(int tries) { return std::min(900.0, 10.0 * std::pow(2.0, std::min(tries, 10) - 1)); }
+
 bool RankService::takeText(const std::string& key, std::string& out) {
     std::lock_guard<std::mutex> g(mu_);
     auto it = texts_.find(key);
@@ -399,6 +413,12 @@ void RankService::run() {
         if (!j.rawKey.empty()) {
             bool ok = !base.empty() && (j.body.empty() ? httpGetText(base + j.path, out, 6000, &err) : httpPostForm(base + j.path, j.body, out, 8000, &err));
             l.lock();
+            if (!j.expect.empty()) {   // (hello: until it took)
+                while (!out.empty() && (unsigned char)out.back() <= ' ') out.pop_back();
+                if (ok && out == j.expect) helloDone_ = true;
+                else if (!base.empty()) { j.tries++; j.due = timeNow() + helloRetryDelay(j.tries); jobs_.push_back(j); }
+                continue;
+            }
             texts_[j.rawKey] = ok ? out : "!" + (base.empty() ? std::string("no server configured") : err);
             continue;
         }

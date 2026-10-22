@@ -158,6 +158,12 @@ async function ed25519Verify(pubHex, sigHex, msg) {
 
 // The player behind a secret, after moving a pre-1.17 id's rows (ratings, account, name, Discord link, lifetime
 // stats, race times) to the new id the first time this secret shows up. "" if the secret is malformed.
+// The new id can already have rows (REVIEW 3.6): a match rated before this secret reached us (the other player's
+// report, the cron) creates its ladder row and account. They're merged, not dropped: a ladder keeps the rating of
+// the row with more games (the old one, normally: the new one has the match or two since) and counts both rows'
+// games; the account keeps the most ticketed games and the earliest start. A name the new id already has is newer
+// (only a server's race run saves one without the secret) and stays; links and lifetime need the secret, so the new
+// id can't have them yet; race times keep the faster run.
 const moved = new Set();
 async function playerOf(env, secret, now) {
   const k = await rankKeyOf(secret);
@@ -168,8 +174,16 @@ async function playerOf(env, secret, now) {
     const old = k.legacy, id = k.id, ladderIds = [...LADDERS].map((l) => l + ":" + old);
     const q = (sql, ...a) => env.DB.prepare(sql).bind(...a);
     await env.DB.batch([
-      ...[...LADDERS].map((l) => q("UPDATE OR IGNORE players SET id = ? WHERE id = ?", l + ":" + id, l + ":" + old)),
-      q(`DELETE FROM players WHERE id IN (${ladderIds.map(() => "?").join(",")})`, ...ladderIds),   // (the new id had its own already)
+      // both rows: merge into the new one (ver + 1, so a rating computed from either row before this can't land)
+      ...[...LADDERS].map((l) => q(
+        "UPDATE players SET mu = CASE WHEN o.games > players.games THEN o.mu ELSE players.mu END, " +
+        "sigma = CASE WHEN o.games > players.games THEN o.sigma ELSE players.sigma END, games = players.games + o.games, " +
+        "updated = MAX(players.updated, o.updated), ver = MAX(players.ver, o.ver) + 1 " +
+        "FROM (SELECT mu, sigma, games, updated, ver FROM players WHERE id = ?) AS o WHERE players.id = ?", l + ":" + old, l + ":" + id)),
+      ...[...LADDERS].map((l) => q("UPDATE OR IGNORE players SET id = ? WHERE id = ?", l + ":" + id, l + ":" + old)),   // only the old row: it moves
+      q(`DELETE FROM players WHERE id IN (${ladderIds.map(() => "?").join(",")})`, ...ladderIds),   // (merged above)
+      q("UPDATE accounts SET tgames = MAX(accounts.tgames, o.tgames), created = MIN(accounts.created, o.created) " +
+        "FROM (SELECT tgames, created FROM accounts WHERE id = ?) AS o WHERE accounts.id = ?", old, id),
       ...["accounts", "names", "links", "lifetime"].flatMap((t) => [q(`UPDATE OR IGNORE ${t} SET id = ? WHERE id = ?`, id, old), q(`DELETE FROM ${t} WHERE id = ?`, old)]),
       q("INSERT INTO race_times (map, id, ms, splits, version, created) SELECT map, ?, ms, splits, version, created FROM race_times WHERE id = ? AND 1 " +
         "ON CONFLICT(map, id) DO UPDATE SET ms = excluded.ms, splits = excluded.splits, version = excluded.version, created = excluded.created WHERE excluded.ms < race_times.ms", id, old),

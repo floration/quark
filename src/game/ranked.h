@@ -2,6 +2,7 @@
 // (tools/master/worker.js). The key's secret only ever goes to the Worker; servers see the public id
 // (first 32 hex chars of sha256(secret)). A match is rated once every player reported the same result.
 #pragma once
+#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <map>
@@ -121,9 +122,16 @@ public:
     // The reply (or "!" + the error) lands under key; takeText hands it over once.
     void request(const std::string& key, const std::string& pathAndQuery, const std::string& body = "");
     bool takeText(const std::string& key, std::string& out);
+    // POST /hello (moves a pre-1.17 id's rows to this key's id, see rankIdFromPublic), retried with backoff on this
+    // service's thread until the Worker answers "id <id>" (REVIEW 3.6: one lost hello, then a rated match, and the
+    // old rating used to be dropped). helloDone() turns true then (the game records it and doesn't send it again).
+    void hello(const RankKey& key);
+    bool helloDone() const { return helloDone_.load(std::memory_order_relaxed); }
+    static double helloRetryDelay(int tries);   // seconds before try `tries` + 1: 10 s doubling, at most 15 min
 private:
     struct Job { double due; bool report; std::string body, ladder; std::vector<std::string> ids; bool board = false; std::string path = "/report";
-                 std::string rawKey = {}; };   // rawKey: a plain request (see request())
+                 std::string rawKey = {};      // rawKey: a plain request (see request())
+                 std::string expect = {}; int tries = 0; };   // expect: retry until the reply is exactly this (hello)
     void run();
     void push(Job j);
     std::thread thread_;
@@ -135,4 +143,5 @@ private:
     std::vector<std::string> messages_;
     std::map<std::string, std::vector<LeaderRow>> boards_;
     std::map<std::string, std::string> texts_;
+    std::atomic<bool> helloDone_{false};
 };
