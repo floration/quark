@@ -222,16 +222,54 @@ bool parse(const std::string& json, const std::string& platform, std::vector<Rel
     return true;
 }
 
+const char* const kFirstSigned = "1.17.0-0";
+
+bool fetchAll(const PageGetter& getPage, const std::string& platform, std::vector<Release>* out, bool* complete, std::string* err) {
+    std::vector<Release> all;
+    *complete = false;
+    for (int page = 1;; page++) {
+        std::string json, e;
+        std::vector<Release> got;
+        if (!getPage(page, &json, &e)) {
+            if (page == 1) { *err = e; return false; }
+            break;
+        }
+        // a JSON array of release objects; anything else (an API error object) on a later page = stop there
+        if (!parse(json, platform, &got)) {
+            if (page == 1) { *err = "unreadable release list"; return false; }
+            break;
+        }
+        bool fresh = got.empty();
+        for (const Release& r : got)
+            fresh = fresh || std::none_of(all.begin(), all.end(), [&](const Release& x) { return x.tag == r.tag; });
+        if (!fresh) break; // the same releases again: the server ignores ?page=, don't loop
+        all.insert(all.end(), got.begin(), got.end());
+        if ((int)got.size() < kPageSize) { *complete = true; break; } // a short page is the last one
+    }
+    out->insert(out->end(), all.begin(), all.end());
+    return true;
+}
+
 std::vector<Release> forChannel(const std::vector<Release>& all, Channel c) {
     std::vector<Release> list;
     for (const Release& r : all) {
         if (r.draft || r.prerelease != (c == Channel::Testing)) continue;
-        if (r.version.empty() || r.url.empty() || r.sigUrl.empty()) continue;
-        if (std::any_of(list.begin(), list.end(), [&](const Release& x) { return x.version == r.version; })) continue;
+        if (r.version.empty() || r.url.empty()) continue;
+        if (!r.isSigned() && versionCmp(r.version, kFirstSigned) >= 0) continue; // signed-era version without a .sig
+        auto dup = std::find_if(list.begin(), list.end(), [&](const Release& x) { return x.version == r.version; });
+        if (dup != list.end()) {
+            if (!dup->isSigned() && r.isSigned()) *dup = r;
+            continue;
+        }
         list.push_back(r);
     }
     std::stable_sort(list.begin(), list.end(), [](const Release& x, const Release& y) { return versionCmp(x.version, y.version) > 0; });
     return list;
+}
+
+int latestIndex(const std::vector<Release>& list) {
+    for (size_t i = 0; i < list.size(); i++) if (list[i].isSigned()) return (int)i;
+    return -1;
 }
 
 std::string asciiText(const std::string& u) {
@@ -287,7 +325,22 @@ std::string formatConfig(const Config& c) {
 int selectIndex(const std::vector<Release>& list, const Config& c) {
     if (c.pinned())
         for (size_t i = 0; i < list.size(); i++) if (list[i].version == c.pin) return (int)i;
-    return 0;
+    return std::max(0, latestIndex(list));
+}
+
+Plan startupPlan(const std::vector<Release>& list, const Config& c, const std::string& installed, bool complete) {
+    Plan p;
+    if (list.empty()) return p;
+    p.index = selectIndex(list, c);
+    p.pinned = c.pinned() && list[p.index].version == c.pin;
+    if (c.pinned() && !p.pinned && !complete) return p; // the pin may be on a page we couldn't read: change nothing
+    const Release& r = list[p.index];
+    if (!r.isSigned()) { // only ever the player's pin (LATEST is always signed)
+        p.confirm = p.pinned && r.version != installed;
+        return p;
+    }
+    p.install = shouldAutoInstall(r.version, installed, p.pinned);
+    return p;
 }
 
 } // namespace releases

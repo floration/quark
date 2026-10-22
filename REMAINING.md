@@ -54,13 +54,11 @@ Each item has a priority:
 | 2.7 | Child-process pipes aren't close-on-exec, so two web requests at once can hang each other. The SIGPIPE swap is racy. |
 | 3.6 | Ranked id migration drops the old rating if the new id already has rows, and `/hello` isn't retried. |
 | 3.7 | The README's deploy SQL is incomplete. Replace it with the list in FINAL_REVIEW.md section 3. |
-| 4.3 | The launcher-upgrade thread the game starts is detached, so quitting at the wrong moment can leave a Windows launcher missing. |
 | 5.2 | Two sets of map limit constants, with dead checks and repeated literals. Keep one set. |
 | 5.3 | Maps removed from the generator stay in `build/maps` and fail local test runs. A stray `.qmap` is embedded as official (ranked). |
 | 5.4 | Forked test groups share one maps folder; the map report can grade a test's temporary map. |
 | 6.2 | Players who joined mid tag match are forced onto team A next match, skipping 1v1 / duel seat limits. |
 | 6.3 | Checkpoint time bonuses are cut short during overtime. |
-| 1.4 | Old launchers read only 50 releases. Prune old testing prereleases, keeping about 10. |
 
 ### P2
 | # | What |
@@ -80,7 +78,6 @@ Each item has a priority:
 | 5.6 | Map parsing doesn't limit the title or reset every field. |
 | 6.4 | A giant can spawn inside a wall on maps not built for duel. |
 | 6.5 | `addbot` during a tag match skips the team lock. |
-| 1.5 | An old pinned launcher version silently moves to the newest. |
 | 1.8 | Update installs keep every retired file forever. |
 
 ### Cleanup (all the "Clean" rows in FINAL_REVIEW.md)

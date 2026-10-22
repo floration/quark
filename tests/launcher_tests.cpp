@@ -81,10 +81,16 @@ static void testChannels() {
     LCHECK(!json.empty());
     std::vector<releases::Release> all;
     LCHECK(releases::parse(json, "linux", &all));
-    LCHECK(all.size() == 7);
+    LCHECK(all.size() == 8);
     using V = std::vector<std::string>;
-    // production: no prereleases, no draft, no unsigned 1.9.0, newest first (1.10 above 1.9 numerically)
-    LCHECK((versions(releases::forChannel(all, releases::Channel::Production)) == V{"1.16.0", "1.15.1", "1.10.0"}));
+    // production: no prereleases, no draft, newest first (1.10 above 1.9 numerically); the releases from before
+    // signing (1.15.0, 1.9.0: no .sig) are listed too, marked unsigned
+    auto prodList = releases::forChannel(all, releases::Channel::Production);
+    LCHECK((versions(prodList) == V{"1.16.0", "1.15.1", "1.15.0", "1.10.0", "1.9.0"}));
+    LCHECK(prodList.size() == 5 && prodList[0].isSigned() && prodList[1].isSigned() && !prodList[2].isSigned() &&
+           prodList[3].isSigned() && !prodList[4].isSigned());
+    LCHECK(prodList.size() == 5 && prodList[2].url == "https://github.com/floration/quark/releases/download/v1.15.0/quark-linux.qpak" &&
+           prodList[2].sigUrl.empty());
     LCHECK((versions(releases::forChannel(all, releases::Channel::Testing)) == V{"1.17.0-test.2", "1.17.0-test.1"}));
     auto test = releases::forChannel(all, releases::Channel::Testing);
     LCHECK(!test.empty() && test[0].url == "https://github.com/floration/quark/releases/download/test-1.17.0-test.2/quark-linux.qpak");
@@ -97,7 +103,7 @@ static void testChannels() {
     std::vector<releases::Release> win, mac;
     LCHECK(releases::parse(json, "windows", &win) && releases::parse(json, "macos", &mac));
     using V2 = std::vector<std::string>;
-    LCHECK((versions(releases::forChannel(win, releases::Channel::Production)) == V2{"1.16.0", "1.15.1"}));
+    LCHECK((versions(releases::forChannel(win, releases::Channel::Production)) == V2{"1.16.0", "1.15.1", "1.15.0"}));
     LCHECK((versions(releases::forChannel(mac, releases::Channel::Production)) == V2{"1.16.0"}));
     LCHECK(releases::forChannel(mac, releases::Channel::Testing).empty());
     std::vector<releases::Release> none;
@@ -123,6 +129,144 @@ static void testChannels() {
     auto prod = releases::forChannel(all, releases::Channel::Production);
     LCHECK(releases::selectIndex(prod, old) == 1);
     LCHECK(releases::selectIndex(prod, releases::parseConfig("pin=1.2.3")) == 0); // gone: the newest
+    LCHECK(releases::selectIndex(prod, releases::parseConfig("pin=1.15.0")) == 2); // unsigned versions can be pinned
+    LCHECK(releases::latestIndex(prod) == 0);
+}
+
+// Owner decision (review 1.4 / 1.5): every release stays playable. Unsigned (pre-signing) releases are listed, never
+// installed on their own, and an old launcher.cfg pinned to one keeps its pin instead of moving to the newest.
+static void testUnsignedAndPins() {
+    using releases::Release;
+    auto rel = [](const std::string& v, bool sig) {
+        Release r;
+        r.tag = "v" + v;
+        r.version = v;
+        r.url = "https://example.invalid/" + v + "/quark-linux.qpak";
+        if (sig) r.sigUrl = r.url + ".sig";
+        return r;
+    };
+    std::vector<Release> prod = {rel("1.17.0", true), rel("1.16.2", false), rel("1.16.0", false), rel("1.15.1", false)};
+    releases::Config follow, pinOld = releases::parseConfig("pin=1.16.0\n"), gone = releases::parseConfig("pin=1.2.3\n");
+    // following the newest: the newest signed one installs (a newer one than installed only)
+    releases::Plan p = releases::startupPlan(prod, follow, "1.16.0", true);
+    LCHECK(p.index == 0 && p.install && !p.confirm && !p.pinned);
+    p = releases::startupPlan(prod, follow, "1.17.0", true);
+    LCHECK(p.index == 0 && !p.install && !p.confirm);
+    // 1.5: an old launcher.cfg pinned to an unsigned version keeps it - installed: nothing to do, the player plays it
+    p = releases::startupPlan(prod, pinOld, "1.16.0", true);
+    LCHECK(p.index == 2 && p.pinned && !p.install && !p.confirm);
+    // ... and if something else is installed it is NOT auto-installed (nor silently moved to 1.17.0): confirm first
+    p = releases::startupPlan(prod, pinOld, "1.17.0", true);
+    LCHECK(p.index == 2 && p.pinned && !p.install && p.confirm);
+    p = releases::startupPlan(prod, pinOld, "", true);
+    LCHECK(p.index == 2 && !p.install && p.confirm);
+    // a pinned signed version installs whenever it differs (the player picked it)
+    std::vector<Release> mixed = {rel("1.18.0", true), rel("1.17.0", true), rel("1.16.0", false)};
+    p = releases::startupPlan(mixed, releases::parseConfig("pin=1.17.0"), "1.18.0", true);
+    LCHECK(p.index == 1 && p.pinned && p.install && !p.confirm);
+    // a pin that isn't listed: the newest, but only when the whole list was read
+    p = releases::startupPlan(prod, gone, "1.16.0", true);
+    LCHECK(p.index == 0 && !p.pinned && p.install);
+    p = releases::startupPlan(prod, gone, "1.16.0", false);
+    LCHECK(!p.install && !p.confirm);
+    // nothing signed at all (an old platform build only): listed, no LATEST, nothing automatic
+    std::vector<Release> old = {rel("1.16.0", false), rel("1.15.0", false)};
+    LCHECK(releases::latestIndex(old) == -1 && releases::selectIndex(old, follow) == 0);
+    p = releases::startupPlan(old, follow, "", true);
+    LCHECK(p.index == 0 && !p.install && !p.confirm);
+    LCHECK(releases::startupPlan({}, follow, "", true).index == -1);
+    // LATEST skips an unsigned version newer than every signed one (that one can only be picked by hand)
+    std::vector<Release> odd = {rel("1.16.9", false), rel("1.16.5", true)};
+    LCHECK(releases::latestIndex(odd) == 1 && releases::selectIndex(odd, follow) == 1);
+    p = releases::startupPlan(odd, follow, "1.16.0", true);
+    LCHECK(p.index == 1 && p.install);
+    // the same version twice (re-uploaded): the signed one is offered
+    std::vector<Release> twice = {rel("1.16.0", false), rel("1.16.0", true)};
+    auto list = releases::forChannel(twice, releases::Channel::Production);
+    LCHECK(list.size() == 1 && list[0].isSigned());
+    // only versions from before signing may come unsigned: an unsigned 1.17+ release isn't genuine, never offered
+    std::vector<Release> forged = {rel("1.18.0", false), rel("1.17.0", false), rel("1.17.0-test.1", false), rel("1.16.9", false)};
+    using V = std::vector<std::string>;
+    LCHECK((versions(releases::forChannel(forged, releases::Channel::Production)) == V{"1.16.9"}));
+    // the old rule still holds: an older package never replaces a newer launcher
+    LCHECK(!selfupdate::isNewer("", "1.17.0") && !selfupdate::isNewer("1.16.0", "1.17.0"));
+}
+
+// A GitHub releases page: `tests` signed prereleases numbered from `firstTest` down, then production releases `prod`
+// (signed or not).
+static std::string fakePage(int firstTest, int tests, const std::vector<std::string>& prod, bool signedProd) {
+    auto asset = [](const std::string& tag, const char* name) {
+        return "{\"name\": \"" + std::string(name) + "\", \"browser_download_url\": \"https://github.com/floration/quark/releases/download/" +
+               tag + "/" + name + "\"}";
+    };
+    std::string j = "[";
+    auto add = [&](const std::string& tag, bool pre, bool sig) {
+        j += j.size() == 1 ? "\n" : ",\n";
+        j += "{\"tag_name\": \"" + tag + "\", \"draft\": false, \"prerelease\": " + (pre ? "true" : "false") + ", \"assets\": [" +
+             asset(tag, "quark-linux.qpak") + (sig ? ", " + asset(tag, "quark-linux.qpak.sig") : std::string()) + "], \"body\": \"\"}";
+    };
+    for (int i = 0; i < tests; i++) add("test-1.18.0-test." + std::to_string(firstTest - i), true, true);
+    for (auto& v : prod) add("v" + v, false, signedProd);
+    return j + "]";
+}
+
+static void testManyPages() {
+    // 370 test builds since the last production release (launchers <= 1.16 read 50 releases, the previous new one
+    // 300): every page is read until a short one, so 1.17.0 and the unsigned 1.16.x behind it are still listed.
+    // Page 4: 70 tests, then 1.17.0 (signed), 1.16.1 and 1.16.0 (from before signing) = 73 < 100, the last page.
+    std::vector<std::string> pages = {fakePage(370, 100, {}, true), fakePage(270, 100, {}, true), fakePage(170, 100, {}, true)};
+    std::string p4 = fakePage(70, 70, {"1.17.0"}, true), unsignedTail = fakePage(0, 0, {"1.16.1", "1.16.0"}, false);
+    p4.pop_back(); // "]"
+    pages.push_back(p4 + "," + unsignedTail.substr(1));
+    int asked = 0;
+    auto getter = [&](int page, std::string* json, std::string*) {
+        asked = page;
+        *json = page >= 1 && page <= (int)pages.size() ? pages[page - 1] : "[]";
+        return true;
+    };
+    std::vector<releases::Release> all;
+    bool complete = false;
+    std::string err;
+    LCHECK(releases::fetchAll(getter, "linux", &all, &complete, &err));
+    LCHECK(complete && asked == 4 && all.size() == 373);
+    auto prod = releases::forChannel(all, releases::Channel::Production);
+    using V = std::vector<std::string>;
+    LCHECK((versions(prod) == V{"1.17.0", "1.16.1", "1.16.0"}));
+    LCHECK(prod.size() == 3 && prod[0].isSigned() && !prod[1].isSigned() && !prod[2].isSigned());
+    auto test = releases::forChannel(all, releases::Channel::Testing);
+    LCHECK(test.size() == 370 && test[0].version == "1.18.0-test.370" && test.back().version == "1.18.0-test.1");
+    // an old launcher.cfg pinned to 1.16.0 (on page 4) keeps it
+    releases::Plan plan = releases::startupPlan(prod, releases::parseConfig("pin=1.16.0\n"), "1.16.0", complete);
+    LCHECK(plan.index == 2 && plan.pinned && !plan.install && !plan.confirm);
+
+    // exactly 100 on the last full page: one more (empty) page ends it
+    std::string even = fakePage(100, 100, {}, true);
+    auto evenGet = [&](int page, std::string* json, std::string*) { *json = page == 1 ? even : "[]"; asked = page; return true; };
+    all.clear();
+    LCHECK(releases::fetchAll(evenGet, "linux", &all, &complete, &err) && complete && asked == 2 && all.size() == 100);
+
+    // page 1 fails: no list; a later page fails (or answers with an API error): what was read, marked incomplete
+    auto fail1 = [](int, std::string*, std::string* e) { *e = "HTTP 403"; return false; };
+    all.clear();
+    LCHECK(!releases::fetchAll(fail1, "linux", &all, &complete, &err) && err == "HTTP 403" && all.empty());
+    auto fail2 = [&](int page, std::string* json, std::string* e) {
+        if (page == 1) { *json = pages[0]; return true; }
+        *e = "HTTP 500";
+        return false;
+    };
+    LCHECK(releases::fetchAll(fail2, "linux", &all, &complete, &err) && !complete && all.size() == 100);
+    auto limited = [&](int page, std::string* json, std::string*) {
+        *json = page == 1 ? pages[0] : "{\"message\": \"API rate limit exceeded\"}";
+        return true;
+    };
+    all.clear();
+    LCHECK(releases::fetchAll(limited, "linux", &all, &complete, &err) && !complete && all.size() == 100);
+    // a server that ignores ?page= (the same full page every time): stops instead of looping
+    auto same = [&](int page, std::string* json, std::string*) { *json = pages[0]; asked = page; return true; };
+    all.clear();
+    LCHECK(releases::fetchAll(same, "linux", &all, &complete, &err) && !complete && asked == 2 && all.size() == 100);
+    auto bad = [](int, std::string* json, std::string*) { *json = "not json"; return true; };
+    LCHECK(!releases::fetchAll(bad, "linux", &all, &complete, &err));
 }
 
 static void testLauncherSwap() {
@@ -180,6 +324,17 @@ static void testLauncherSwap() {
     LCHECK(!fs::exists(sp.old));
     LCHECK(selfupdate::replaceFile(t / "new" / "quark_launcher", d / "fresh" / "quark_launcher", &err)); // into a new folder
     LCHECK(!selfupdate::replaceFile(t / "nope", d / "x", &err) && !fs::exists(d / "x"));
+    { // review 4.3: once the game is shutting down no swap starts (the target is untouched, nothing staged is left)
+        selfupdate::ShutdownGate gate;
+        fakeLauncher(d / "gated", "");
+        LCHECK(selfupdate::replaceFile(t / "new" / "quark_launcher", d / "gated", &err, &gate) &&
+               selfupdate::fileVersion(d / "gated") == "1.17.0");
+        fakeLauncher(d / "gated", "");
+        gate.stop = true;
+        LCHECK(!selfupdate::replaceFile(t / "new" / "quark_launcher", d / "gated", &err, &gate) && err == "shutting down");
+        LCHECK(selfupdate::fileVersion(d / "gated").empty() && !fs::exists(selfupdate::swapPaths(d / "gated").staged));
+        LCHECK(selfupdate::finishFromGame(2.0)); // never started (not a launcher install): nothing to wait for
+    }
 
     // the game's install root: version.txt in the game folder (macOS: three levels above the executable)
     fs::create_directories(t / "g" / "quark.app" / "Contents" / "MacOS");
@@ -207,6 +362,13 @@ static void testLauncherSwap() {
         std::ofstream(home / ".local/share/applications/quark.desktop") << "[Desktop Entry]\nExec=\"" << (app / "quark-launcher-linux").string() << "\"\n";
         // a player file an old version kept in the game folder
         std::ofstream(app / "game" / "quark.key") << "secret";
+        { // the game quit before the thread got going: nothing touched, all of it next start
+            selfupdate::ShutdownGate stopped;
+            stopped.stop = true;
+            selfupdate::Report q = selfupdate::updateLaunchersFromGame(app / "game", &stopped);
+            LCHECK(q.replaced == 0 && !q.installedFresh && selfupdate::fileVersion(app / "quark-launcher-linux").empty());
+            LCHECK(!fs::exists(app / "quark_launcher") && !fs::exists(home / "Desktop/quark.desktop"));
+        }
         selfupdate::Report r = selfupdate::updateLaunchersFromGame(app / "game");
         LCHECK(r.replaced == 1 && r.installedFresh);
         LCHECK(selfupdate::fileVersion(app / "quark-launcher-linux") == "1.17.0"); // old name: replaced in place
@@ -248,6 +410,8 @@ int launcherTests() {
     printf("launcher\n");
     testVersions();
     testChannels();
+    testUnsignedAndPins();
+    testManyPages();
     testLauncherSwap();
     return g_lfail;
 }

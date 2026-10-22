@@ -70,19 +70,46 @@ whatever a branch put in `master.txt`. The pages job only has to publish `site/`
   `test-<VERSION>-test.<N>` (e.g. `test-1.17.0-test.3`; the launcher reads the version from the first digit on).
   Testing tags must never start with `v<digit>` or a digit: launchers 0.12 - 1.16 install the highest
   `v<digit>`/digit tag they see, prerelease or not. Both channels use the same asset names
-  (`quark-<platform>.qpak` + `.qpak.sig`) and are signed with the same key; drafts and releases without a `.sig`
-  are never offered.
+  (`quark-<platform>.qpak` + `.qpak.sig`) and are signed with the same key; drafts are never offered.
+- The launcher reads **every page** of the GitHub releases list (100 per page, until a short page), so production
+  releases stay listed however many test builds come after them, and no release is ever pruned: every version,
+  production and testing, stays installable (owner decision). If a later page fails, what was read is shown and a
+  pinned version that isn't in it is left alone (nothing is installed).
 - The launcher's CHANNEL button switches the version list (remembered in `launcher.cfg`). On its own it only ever
-  installs a *newer* version than the installed one; an older one only when the player picks it.
+  installs a *newer* version than the installed one; an older one only when the player picks it. LATEST is always
+  the newest *signed* release.
 - Every qpak carries the launcher (`quark_launcher[.exe]` next to the game). A launcher that installs a package
   with a newer launcher swaps itself (POSIX: rename over; Windows: running exe -> `.old`, new one in, `.old` deleted
   next start) and restarts once. The game, at startup, replaces every older launcher it finds (the folder above
   its game folder, the install folder, `%LOCALAPPDATA%\quark` from before 0.12) and repoints the shortcuts, so
   players on any earlier launcher get the new one through a normal game update. The version is read from a
-  `QUARK-LAUNCHER-VERSION:<VERSION>` marker in the binary (launchers without it count as older).
+  `QUARK-LAUNCHER-VERSION:<VERSION>` marker in the binary (launchers without it count as older). Installing an
+  older package (picked by hand, signed or not) never downgrades the launcher: only a newer marker replaces it.
+- The game's launcher update runs on a background thread that the game stops and joins when it quits: no new
+  step (a launcher swap's rename pair, the shortcuts, the programs entry) starts after quitting began, the one
+  running finishes, and the game waits at most 2 s for the thread. Automated runs (`--screenshot`, `--bench`,
+  `--edscript`, `--textheavy`, `--menushot`, `--chatshot`, `--consoleshot`, `--perf`) don't start it at all.
+
+## Rolling back to a version from before signing
+
+Releases published before signing (every release up to 1.16.x) have no `.sig`. They are still listed, marked
+**UNSIGNED**, so any version stays playable if a player chooses it:
+
+- Only versions below 1.17.0 can be unsigned. A release without a `.sig` that claims 1.17.0 or later (including
+  1.17.0 test builds) can't be genuine and is not listed at all.
+- They are **never installed automatically**: LATEST only ever means the newest signed release, and startup never
+  installs an unsigned package on its own.
+- A player installs one only by picking it in the version list, pressing `INSTALL <version> (UNSIGNED)`, reading
+  the warning ("UNSIGNED: from before signed updates; only install if you trust it") and clicking again to confirm
+  within 10 s. The package is then installed without a signature check (it comes from the GitHub release over
+  HTTPS, nothing more is verified). Signed releases are always verified; a signed package that fails its check is
+  refused as before.
+- An old `launcher.cfg` pinned to an unsigned version keeps its pin (it is no longer treated as "latest", so the
+  launcher doesn't silently move that player to the newest). If that version is installed, it just plays; if not,
+  the launcher shows the confirmation instead of installing anything.
+- Old packages may carry no launcher (or an older one, which never replaces the current launcher) and speak older
+  network protocols, so online play may need servers of the same version.
 
 ## Notes
 
-- Releases published before signing have no `.sig`; the launcher refuses to install them ("the release has no
-  signature file"), so players can't roll back to those versions through the launcher.
 - Never paste the private key into an issue, commit, log or chat. If you think it leaked, make a new key.

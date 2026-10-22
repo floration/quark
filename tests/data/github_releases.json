@@ -80,6 +80,18 @@
     "body": "unsigned"
   },
   {
+    "tag_name": "v1.15.0",
+    "name": "quark 1.15.0 (before signing: no .sig)",
+    "draft": false,
+    "prerelease": false,
+    "assets": [
+      {"name": "quark-linux.qpak", "browser_download_url": "https://github.com/floration/quark/releases/download/v1.15.0/quark-linux.qpak"},
+      {"name": "quark-windows.qpak", "browser_download_url": "https://github.com/floration/quark/releases/download/v1.15.0/quark-windows.qpak"},
+      {"name": "quark-launcher-linux", "browser_download_url": "https://github.com/floration/quark/releases/download/v1.15.0/quark-launcher-linux"}
+    ],
+    "body": "1.15.0 notes"
+  },
+  {
     "tag_name": "v1.10.0",
     "name": "quark 1.10.0",
     "draft": false,
