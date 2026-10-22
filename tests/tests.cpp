@@ -4,6 +4,7 @@
 #include <regex>
 #include <cstring>
 #include <algorithm>
+#include <queue>
 #include <thread>
 #include "../src/common/rng.h"
 #include <functional>
@@ -1355,53 +1356,157 @@ static void testInternetList(uint16_t port) {
 }
 
 // Each bot level shoots at a strafing player for a while; damage per second must rise with skill.
-static constexpr float kAimSample = 25.0f; // s per level: shorter samples let neighbouring levels swap places
+// The bots' nav graph uses a grid for neighbours and nodeAt, and A* for routes (REVIEW PERF-10): the same graph
+// and equally short routes as checking every pair and running Dijkstra, on every map.
+static void testNavGraph() {
+    printf("nav graph: grid build and A* match the brute force on every map\n");
+    size_t maps = 0, surfaces = 0, links = 0;
+    double worstBuild = 0;
+    for (auto& name : listMaps()) {
+        Map m;
+        if (!m.load(name)) continue;
+        NavGraph g;
+        double t0 = timeNow();
+        g.build(m);
+        double bt = (timeNow() - t0) * 1000;
+        worstBuild = std::max(worstBuild, bt);
+        size_t n = g.nodes.size(), bad = 0;
+        maps++; surfaces += n;
+        for (auto& l : g.links) links += l.size();
+        for (size_t i = 0; i < n; i++) {   // links: every pair, the old way (ladder links come after, same as build)
+            std::vector<std::pair<int, float>> want;
+            for (size_t j = 0; j < n; j++) {
+                if (i == j) continue;
+                const auto &a = g.nodes[i], &b = g.nodes[j];
+                float gx = std::max(0.0f, std::max(a.x0, b.x0) - std::min(a.x1, b.x1));
+                float gz = std::max(0.0f, std::max(a.z0, b.z0) - std::min(a.z1, b.z1));
+                float gap = std::sqrt(gx * gx + gz * gz), up = b.y - a.y;
+                if (gap > 2.6f || up > 1.15f || up < -8.0f) continue;
+                float cx = ((a.x0 + a.x1) - (b.x0 + b.x1)) * 0.5f, cz = ((a.z0 + a.z1) - (b.z0 + b.z1)) * 0.5f;
+                want.push_back({(int)j, std::sqrt(cx * cx + cz * cz) + gap * 2 + std::max(up, 0.0f) * 2});
+            }
+            bool same = g.links[i].size() >= want.size() && std::equal(want.begin(), want.end(), g.links[i].begin());
+            bad += !same;
+        }
+        CHECK(bad == 0);
+        uint32_t r = 12345;
+        auto rf = [&] { r = r * 1664525u + 1013904223u; return (r >> 8) / 16777216.0f; };
+        int nodeMismatch = 0, pathMismatch = 0;
+        for (int k = 0; k < 400 && n; k++) {   // nodeAt: grid vs every surface
+            const auto& nd = g.nodes[(size_t)(rf() * n) % n];
+            Vec3 p = {nd.x0 - 0.5f + rf() * (nd.x1 - nd.x0 + 1.0f), nd.y + rf() * 0.5f, nd.z0 - 0.5f + rf() * (nd.z1 - nd.z0 + 1.0f)};
+            int best = -1; float by = -1e9f;
+            for (size_t i = 0; i < n; i++) {
+                const auto& q = g.nodes[i];
+                if (p.x < q.x0 - 0.3f || p.x > q.x1 + 0.3f || p.z < q.z0 - 0.3f || p.z > q.z1 + 0.3f || q.y > p.y + 0.6f || q.y < p.y - 6.0f) continue;
+                if (q.y > by) { by = q.y; best = (int)i; }
+            }
+            nodeMismatch += best != g.nodeAt(p);
+        }
+        std::vector<int> path;
+        for (int k = 0; k < 40 && n; k++) {    // A* route length == Dijkstra distance
+            int a = (int)(rf() * n) % (int)n, b = (int)(rf() * n) % (int)n;
+            std::vector<float> d(n, 1e30f);
+            std::priority_queue<std::pair<float, int>, std::vector<std::pair<float, int>>, std::greater<>> q;
+            d[a] = 0; q.push({0, a});
+            while (!q.empty()) { auto [du, u] = q.top(); q.pop(); if (du > d[u]) continue; for (auto& [v, c] : g.links[u]) if (du + c < d[v]) { d[v] = du + c; q.push({d[v], v}); } }
+            bool ok = g.findPath(a, b, path);
+            if (ok != (d[b] < 1e29f)) { pathMismatch++; continue; }
+            if (!ok || a == b) continue;
+            float len = 0; int prev = a;
+            for (int v : path) { float c = 1e30f; for (auto& l : g.links[prev]) if (l.first == v) c = std::min(c, l.second); len += c; prev = v; }
+            pathMismatch += prev != b || std::fabs(len - d[b]) > 1e-3f * std::max(1.0f, d[b]);
+        }
+        if (nodeMismatch || pathMismatch || bad) printf("    %s: %zu link lists, %d nodeAt, %d routes differ\n", name.c_str(), bad, nodeMismatch, pathMismatch);
+        CHECK(nodeMismatch == 0 && pathMismatch == 0);
+    }
+    printf("  %zu maps, %zu surfaces, %zu links; slowest build %.2f ms (in the background on a server)\n", maps, surfaces, links, worstBuild);
+    CHECK(maps >= 20);
+}
+
+static constexpr float kAimSample = 75.0f; // s of game time per tick rate (all four levels at once)
+// Bot aim by level, at three server tick rates: damage per second with the rifle against a player strafing (and
+// juking) 14 m away. The target is a scripted player that moves on game time, so it moves the same way at every
+// tick rate however loaded the machine is. One bot of each level stands side by side (2 m apart, facing the
+// target) and they all shoot at it, so every level gets the same movement; their places rotate between rates.
+// Levels must be clearly ordered, play the same at every tick rate (their timing is all game time), and even
+// the expert must stay beatable (well under perfect aim).
 static void testBotAim(uint16_t& port) {
-    printf("bot aim: damage per second vs a strafing player, by level\n");
-    float dps[BOT_SKILLS] = {};
-    for (int k = 0; k < BOT_SKILLS; k++) {
+    printf("bot aim: damage per second vs a strafing player, by level and server tick rate\n");
+    int rates[] = {1000, 250, 125};
+    if (getenv("AIM_RATE")) rates[0] = rates[1] = rates[2] = atoi(getenv("AIM_RATE")); // (noise check: three samples at one rate)
+    float dps[3][BOT_SKILLS] = {}, acc[3][BOT_SKILLS] = {};
+    for (int r = 0; r < 3; r++) {
         Server s;
         ServerConfig cfg;
-        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port++;
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port++; cfg.maxTickRate = rates[r];
         s.setLog([](const std::string&) {});
         { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
-        NetClient a;
-        a.connect("127.0.0.1:" + std::to_string(cfg.port), "target");
-        std::vector<NetClient*> cls = {&a};
-        pump(s, cls, 2.0, idle);
-        int bot = s.addBot(TEAM_A, k);
-        s.bots_[bot].forceWeapon = WPN_RIFLE;
-        pump(s, cls, 1.0, idle);
-        auto& p = s.players_[a.clientId()];
-        auto& bp = s.players_[bot];
-        float dealt = 0; double lastShot = -1;
-        int shots = 0;
+        CHECK(s.tickRate() == rates[r]);
+        int tid = s.addBot(TEAM_A, BOT_BEGINNER);      // the target (first: its script runs before the others think)
+        int bot[BOT_SKILLS];
+        for (int k = 0; k < BOT_SKILLS; k++) {
+            bot[k] = s.addBot(TEAM_A, k);
+            s.bots_[bot[k]].forceWeapon = WPN_RIFLE;
+            s.bots_[bot[k]].aimYaw = PI / 2;          // (facing the target's side: no searching, aim only)
+            s.bots_[bot[k]].onlyEnemy = tid;          // (side by side, the experts' wide view would take in the neighbours)
+            s.bots_[bot[k]].rng = 0x51ED270Bu + 7919u * k + 104729u * r;
+        }
         int dir = 127;
-        double nextJuke = s.time() + 1.2f;
-        pump(s, cls, kAimSample, [&](int) {
-            if (!p.alive || !bp.alive) return UserCmd();
-            dealt += 100 - p.health;
-            if (bp.lastFire != lastShot) { shots++; lastShot = bp.lastFire; }
+        double nextJuke = 0;
+        s.bots_[tid].script = [&](Server& sv, int id) {
+            for (int k = 0; k < BOT_SKILLS; k++) {     // bots 14 m from the target's line, 2 m apart, standing
+                auto& bp = sv.players_[bot[k]];
+                bp.move.pos = {7, 0, -27.0f + 2.0f * ((k + r) % BOT_SKILLS)}; bp.move.vel = {};
+                bp.health = 100;
+            }
+            auto& p = sv.players_[id];
+            UserCmd c;
+            c.weapon = kNoWeaponChange;
+            if (!p.alive) return c;
             p.health = 100;
             p.move.pos.x = -7;                                   // strafe back and forth along z, turning at +-4 m
-            if (std::fabs(p.move.pos.z + 24) > 8) p.move.pos.z = -24; // (from its spawn: put it in front of the bot)
-            float off = p.move.pos.z + 24;                       // (and every 1.2 s of game time: jukes. Game time,
-            if ((off > 4 && p.move.vel.z > 0) || (off < -4 && p.move.vel.z < 0)) { dir = -dir; nextJuke = s.time() + 1.2f; } // so the same however loaded the machine)
-            else if (s.time() >= nextJuke) { dir = -dir; nextJuke = s.time() + 1.2f; }
-            bp.move.pos = {7, 0, -24}; bp.move.vel = {};          // bot 14 m away, open floor, standing (aim only)
-            UserCmd c;
+            if (std::fabs(p.move.pos.z + 24) > 8) p.move.pos.z = -24;
+            float off = p.move.pos.z + 24;                       // and every 1.2 s: jukes
+            if ((off > 4 && p.move.vel.z > 0) || (off < -4 && p.move.vel.z < 0)) { dir = -dir; nextJuke = sv.time() + 1.2; }
+            else if (sv.time() >= nextJuke) { dir = -dir; nextJuke = sv.time() + 1.2; }
             c.side = (int8_t)dir;
             c.yaw = -PI / 2;
             return c;
-        });
-        dps[k] = dealt / kAimSample;
-        CHECK(bp.shotsFired + 1 >= shots && (dealt <= 0 || (bp.shotsHit > 0 && bp.shotsHit <= bp.shotsFired))); // scoreboard accuracy counts them
-        printf("  %-12s %5.1f dps, %.0f%% of shots hit\n", botSkillName(k), dps[k], shots ? dealt / weaponDef(WPN_RIFLE).damage / shots * 100 : 0.0f);
+        };
+        s.players_[tid].move.pos = {-7, 0, -24}; s.players_[tid].move.vel = {}; // (in front of them from the start)
+        for (int k = 0; k < BOT_SKILLS; k++) s.players_[bot[k]].move.pos = {7, 0, -27.0f + 2.0f * ((k + r) % BOT_SKILLS)};
+        std::vector<NetClient*> none;
+        pump(s, none, 1.0, idle);
+        float dealt0[BOT_SKILLS]; int fired0[BOT_SKILLS], hit0[BOT_SKILLS];
+        for (int k = 0; k < BOT_SKILLS; k++) { auto& bp = s.players_[bot[k]]; dealt0[k] = bp.dmgDealt; fired0[k] = bp.shotsFired; hit0[k] = bp.shotsHit; }
+        double t0 = s.time();
+        pump(s, none, kAimSample, idle);
+        double span = std::max(1.0, s.time() - t0);
+        for (int k = 0; k < BOT_SKILLS; k++) {
+            auto& bp = s.players_[bot[k]];
+            int fired = bp.shotsFired - fired0[k], hit = bp.shotsHit - hit0[k];
+            dps[r][k] = (float)((bp.dmgDealt - dealt0[k]) / span);
+            acc[r][k] = fired ? (float)hit / fired : 0.0f;
+            CHECK(hit <= fired && s.bots_[bot[k]].target == tid); // (nobody went for anybody else)
+            printf("  %4d Hz  %-12s %5.1f dps, %.0f%% of %d shots hit\n", rates[r], botSkillName(k), dps[r][k], acc[r][k] * 100, fired);
+        }
+        CHECK(s.players_[tid].deaths == 0);
+        s.bots_[tid].script = nullptr;
         s.stop();
     }
-    // short samples are noisy between neighbouring levels; the spread across levels must hold
-    CHECK(dps[0] < dps[2] && dps[1] < dps[3] && dps[2] < dps[3]);
-    CHECK(dps[0] > 1); // beginners still land some hits (15 s samples vary: about 2-5 dps)
+    const float perfect = weaponDef(WPN_RIFLE).damage / weaponDef(WPN_RIFLE).refire; // every shot a body hit
+    float mean[BOT_SKILLS] = {};
+    for (int k = 0; k < BOT_SKILLS; k++) {
+        for (int r = 0; r < 3; r++) mean[k] += dps[r][k] / 3;
+        printf("  %-12s %5.1f dps on average (%.0f%% of perfect aim)\n", botSkillName(k), mean[k], mean[k] / perfect * 100);
+    }
+    for (int k = 0; k + 1 < BOT_SKILLS; k++) CHECK(mean[k] * 1.25f < mean[k + 1]);   // every level clearly above the one below
+    for (int r = 0; r < 3; r++) for (int k = 0; k + 1 < BOT_SKILLS; k++) CHECK(dps[r][k] < dps[r][k + 1]); // at every tick rate too
+    for (int k = 0; k < BOT_SKILLS; k++)
+        for (int r = 0; r < 3; r++) CHECK(std::fabs(dps[r][k] - mean[k]) <= std::max(1.5f, 0.3f * mean[k])); // the tick rate doesn't matter (beyond sampling noise)
+    CHECK(mean[0] > 1);                          // beginners still land some hits
+    CHECK(mean[BOT_SKILLS - 1] < perfect * 0.6f); // experts are strong, but a human can beat them
 }
 
 // Alt-fires: thrown knife hits at range, shotgun ricochets hit someone behind you (off the wall in front),
@@ -3386,6 +3491,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(TP(29980)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "nav") { testNavGraph(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(TP(29600)); testEditSession(TP(29601)); testVotedEdit(TP(29602)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
@@ -3395,6 +3501,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(TP(29900)); testInputBacklog(TP(29901)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = TP(29800); testArenaAndTourney(p); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "bots") { uint16_t p = TP(28900); testBots(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); return g_fail ? 1 : 0; }
     // ---- the whole suite. Most tests wait on real-time network play rather than the CPU, so each runs in its own
     // process, several at once (output kept in order); a few timing-sensitive ones run alone afterwards.
@@ -3402,7 +3509,7 @@ int main(int argc, char** argv) {
     struct T { const char* name; std::function<void()> run; };
     std::vector<T> par = {   // (longest first: they set the wall time)
         {"bots", [] { uint16_t p = TP(28900); testBots(p); }},
-        {"botaim", [] { uint16_t p = TP(29000); testBotAim(p); }},
+        {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotAim(p); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
         {"weapons", [] { testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testTimeToKill(); testWallbang(); }},
