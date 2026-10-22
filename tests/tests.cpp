@@ -1213,6 +1213,102 @@ static void testEditorGroups() {
     CHECK(applyMapEdit(m, "g del 0") && m.groups.size() == 2);
 }
 
+// FINAL_REVIEW 5.1: trim (8) and clip (9) boxes, on every shipped map, go through every edit op and its undo like any
+// other box (they were refused: a nudged clip wall stayed put, a deleted one couldn't come back), groups and parts
+// take them too, and the editor's material cycle reaches them.
+static void testTrimClipEdits() {
+    printf("trim and clip boxes: set / ins / del and their undo\n");
+    std::vector<int> seen;
+    for (int k = 0, mat = 0; k < kMapMaterials; k++) { seen.push_back(mat); mat = nextMapMaterial(mat); }
+    CHECK(seen.size() == 10 && seen[8] == 8 && seen[9] == 9 && nextMapMaterial(9) == 0);   // M: ..., lava, trim, clip, base
+    for (const char* name : {"bastion", "orbital"}) {
+        Map m;
+        CHECK(m.load(name));
+        if (m.brushes.empty()) continue;
+        const std::string orig = m.serialize();
+        const size_t refs0 = m.gridRefs;
+        // bastion has no clip of its own: one is added (and the undo of that add is a del)
+        int editable = (int)m.editableBrushes();
+        int trimAt = -1, clipAt = -1;
+        for (int i = 0; i < editable; i++) {
+            if (m.brushes[i].material == 8 && trimAt < 0) trimAt = i;
+            if (m.brushes[i].material == 9 && clipAt < 0) clipAt = i;
+        }
+        CHECK(trimAt >= 0);
+        if (trimAt < 0) continue;
+        std::vector<std::string> undo;   // (as the editor keeps it: the inverse of each op, newest last)
+        auto apply = [&](const std::string& op, const std::string& inv) {
+            bool ok = applyMapEdit(m, op);
+            if (!ok) printf("  %s: refused: %s\n", name, op.c_str());
+            CHECK(ok);
+            if (ok) undo.push_back(inv);
+            return ok;
+        };
+        if (clipAt < 0) {
+            if (!apply("b ins " + std::to_string(editable) + " 9 -2 20 -2 2 24 2", "b del " + std::to_string(editable))) continue;
+            clipAt = editable++;
+            CHECK(m.brushes[clipAt].material == 9 && !m.brushes[clipAt].generated);
+        }
+        for (int at : {std::max(trimAt, clipAt), std::min(trimAt, clipAt)}) {   // (the higher first: deleting it moves nothing below)
+            const int mat = m.brushes[at].material;
+            // nudge it 0.25 m along x (the arrow keys): set, undone by a set back
+            Map moved = m;
+            moved.brushes[at].box.mn.x += 0.25f; moved.brushes[at].box.mx.x += 0.25f;
+            CHECK(apply(describeMapObject(moved, 'b', "set", at), describeMapObject(m, 'b', "set", at)));
+            CHECK(m.brushes[at].material == mat && m.brushes[at].box.mn.x == moved.brushes[at].box.mn.x);
+            if (mat == 9) {   // still a wall for players where it went, still nothing to light and shots
+                AABB in = m.brushes[at].box;
+                Vec3 c = in.center();
+                CHECK(m.boxSolid({c - Vec3(0.05f, 0.05f, 0.05f), c + Vec3(0.05f, 0.05f, 0.05f)}));
+                CHECK(m.raycast(c + Vec3(0, 0, -0.01f), {0, 0, 1}, 0.02f) < 0);
+            }
+            // a copy inserted after the editable ones (ctrl+D), undone by a del
+            int n = (int)m.editableBrushes();
+            CHECK(apply(describeMapObject(m, 'b', "ins", at).replace(6, std::to_string(at).size(), std::to_string(n)), "b del " + std::to_string(n)));
+            CHECK(m.brushes[n].material == mat && !m.brushes[n].generated);
+            // delete it, undone by inserting it back
+            CHECK(apply("b del " + std::to_string(at), describeMapObject(m, 'b', "ins", at)));
+        }
+        // the material cycle on a box (M): every step is an edit that goes through, trim and clip included
+        {
+            int at = 0;
+            for (int k = 0; k < kMapMaterials; k++) {
+                Map next = m;
+                next.brushes[at].material = nextMapMaterial(m.brushes[at].material);
+                CHECK(apply(describeMapObject(next, 'b', "set", at), describeMapObject(m, 'b', "set", at)));
+            }
+        }
+        // groups and their parts take trim and clip as well, and save / load as they were
+        {
+            size_t gi = m.groups.size();
+            std::string g = std::to_string(gi);
+            CHECK(apply("g ins " + g + " 0 9 0 -3 30 -3 3 33 3", "g del " + g));
+            CHECK(apply("g part " + g + " 8 0 0 0 0.5 0.5 0.5", "g set " + g + " 0 9 0 -3 30 -3 3 33 3"));   // (set: no parts)
+            CHECK(apply("g part " + g + " 9 0.5 0.5 0.5 1 1 1", "g set " + g + " 0 9 0 -3 30 -3 3 33 3"));
+            CHECK(apply("g set " + g + " 2 9 1 -3 30 -3 3 32 3", describeMapObject(m, 'g', "set", (int)gi)));   // clip stairs
+            Map back;
+            CHECK(back.parse(m.serialize()) && back.groups.size() == gi + 1 && back.groups[gi].material == 9 && back.serialize() == m.serialize());
+            size_t clipSteps = 0;
+            for (auto& b : m.brushes) clipSteps += b.generated && b.material == 9;
+            CHECK(clipSteps >= 2);
+        }
+        // undo everything, newest first: back to the map as it loaded
+        while (!undo.empty()) {
+            std::string inv = undo.back();
+            undo.pop_back();
+            std::istringstream lines(inv);
+            for (std::string op; std::getline(lines, op);) {
+                bool ok = applyMapEdit(m, op);
+                if (!ok) printf("  %s: undo refused: %s\n", name, op.c_str());
+                CHECK(ok);
+            }
+        }
+        CHECK(m.serialize() == orig && m.gridRefs == refs0);
+        Map full = m;
+        CHECK(full.rebuild() && full.gridRefs == m.gridRefs && full.brushes.size() == m.brushes.size());
+    }
+}
+
 // MAP-12: brush and group-part edits update the map in place. After every op the map must be exactly what a full
 // rebuild makes of it (brushes, bounds, wallbang flag, lava, every grid cell's brushes in order), and its text must
 // load back to the same map.
@@ -1242,7 +1338,7 @@ static void testIncrementalEdits() {
         int editable = (int)m.editableBrushes(), k = (int)(rng() % (unsigned)editable);
         char op[200];
         int what = (int)(rng() % 10);
-        int mat = (int)(rng() % 8);
+        int mat = (int)(rng() % kMapMaterials);   // (trim and clip too)
         float x = r(-40, 40), y = r(-2, 12), z = r(-40, 40);
         if (rng() % 25 == 0) x = r(-120, 120);   // now and then out past the edge: the grid has to move
         if (what < 4) snprintf(op, sizeof op, "b set %d %d %g %g %g %g %g %g", k, mat, x, y, z, x + r(0.1f, 9), y + r(0.1f, 4), z + r(0.1f, 9));
@@ -3835,7 +3931,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "points") { setTimeScale(kTestTimeScale); testPoints(TP(29995)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "syringe") { setTimeScale(kTestTimeScale); testSyringe(TP(29996)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edladder") { testEditorLadder(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "edgroups") { testEditorGroups(); testIncrementalEdits(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "edgroups") { testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(TP(29997)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "allmaps") { testAllMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "chat") { testChatAndVoteLimits(TP(29592)); return g_fail ? 1 : 0; }
@@ -3873,7 +3969,7 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testIncrementalEdits(); }},
+        {"movement", [] { testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); }},

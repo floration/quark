@@ -23,10 +23,12 @@ namespace {
 const Color kWhite = {1, 1, 1, 1};
 const Color kGrey = {0.7f, 0.72f, 0.75f, 1};
 const Color kRed = {1, 0.35f, 0.3f, 1};
+const Color kClipColor = {0.75f, 0.35f, 1.0f, 0.22f};   // clip boxes (invisible in play) in the editor
 const float kGrids[] = {0.25f, 0.5f, 1.0f, 2.0f, 4.0f};
 const char kKindChar[] = "bslzhcpdg"; // ED_* -> edit op kind
 const char* kKindNames[] = {"BOX", "SPAWN", "LIGHT", "BOMB SITE", "HILL", "CHECKPOINT", "PAYLOAD PATH POINT", "LADDER", "GROUP"};
-const char* kMatNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava"};
+const char* kMatNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip"};   // (group files)
+static_assert(sizeof kMatNames / sizeof *kMatNames == kMapMaterials, "a name per material");
 const char* kGroupTypes[] = {"custom", "room", "stairs"};
 const Vec3 kTeamColors[] = {{0.25f, 0.6f, 1.0f}, {1.0f, 0.35f, 0.25f}, {0.9f, 0.9f, 0.9f}, {0.3f, 1.0f, 0.4f}};
 
@@ -115,14 +117,14 @@ bool parseGroupText(const std::string& text, Map::Group& g) {
         }
         if (kw == "type") {
             std::string t;
-            if (!(ls >> t >> g.material >> g.dir) || g.material < 0 || g.material > 5 || g.dir < 0 || g.dir > 3) return false;
+            if (!(ls >> t >> g.material >> g.dir) || !validMapMaterial(g.material) || g.dir < 0 || g.dir > 3) return false;
             g.type = t == "room" ? Map::GROUP_ROOM : t == "stairs" ? Map::GROUP_STAIRS : Map::GROUP_CUSTOM;
             hasType = t == "room" || t == "stairs" || t == "custom";
             if (!hasType) return false;
             continue;
         }
         int mat = -1;
-        for (int k = 0; k < 8; k++) if (kw == kMatNames[k]) mat = k;
+        for (int k = 0; k < kMapMaterials; k++) if (kw == kMatNames[k]) mat = k;
         Vec3 a, c;
         if (mat < 0 || !hasSize || !(ls >> a.x >> a.y >> a.z >> c.x >> c.y >> c.z) || g.parts.size() >= 1024) return false;
         Vec3 lo = vmin(a, c), hi = vmax(a, c);
@@ -196,11 +198,13 @@ void Game::edScriptStep() {
     else if (cmd == "enter") uiIn_.enter = true;
     else if (cmd == "bs") { int n = 0; in >> n; uiIn_.backspace = true; if (n > 1) edScript_.insert(edScript_.begin(), "bs " + std::to_string(n - 1)); }
     else if (cmd == "sel") { int k = 0, i = 0; in >> k >> i; edSel_ = {k, i}; }
+    else if (cmd == "key") { int k = 0, mods = 0; in >> k >> mods; editorKey(k, mods); }   // a key press (GLFW key code), as the editor gets it
     else if (cmd == "cam") { in >> edCam_.x >> edCam_.y >> edCam_.z >> yaw_ >> pitch_; yaw_ = deg2rad(yaw_); pitch_ = deg2rad(pitch_); }
     else if (cmd == "openidx") { int i = 0; in >> i; if (!maps_.empty()) openEditor(maps_[i % maps_.size()]); } // exactly what OPEN does
     else if (cmd == "print") {
         printf("edscript: name=%s map=%s title=%s brushes=%zu sel=%d/%d", edName_.c_str(), ed_.name.c_str(), ed_.title.c_str(), ed_.brushes.size(), edSel_.kind, edSel_.idx);
         if (edSelValid()) { AABB b = edBounds(ed_, edSel_); printf(" box=%g %g %g %g %g %g", b.mn.x, b.mn.y, b.mn.z, b.mx.x, b.mx.y, b.mx.z); }
+        if (edSelValid() && edSel_.kind == ED_BRUSH) printf(" material=%d", ed_.brushes[edSel_.idx].material);
         printf("\n");
         fflush(stdout);
     } else if (cmd == "quit") quit_ = true;
@@ -524,7 +528,7 @@ template <class Sel> static bool groupOf(const Map& m, const std::vector<Sel>& s
     g.box = b;
     for (auto& p : all) {
         Vec3 a = p.box.mn - b.mn, c = p.box.mx - b.mn;
-        g.parts.push_back({{{a.x / sz.x, a.y / sz.y, a.z / sz.z}, {c.x / sz.x, c.y / sz.y, c.z / sz.z}}, std::min(p.material, 5)});
+        g.parts.push_back({{{a.x / sz.x, a.y / sz.y, a.z / sz.z}, {c.x / sz.x, c.y / sz.y, c.z / sz.z}}, p.material});   // (every material, trim and clip too)
     }
     return true;
 }
@@ -697,12 +701,13 @@ Game::EdSel Game::edPick(const Vec3& o, const Vec3& dir) const {
     for (size_t i = 0; i < ed_.spawns.size(); i++) test(ED_SPAWN, (int)i, edBounds(ed_, {ED_SPAWN, (int)i}), -0.5f);
     for (size_t i = 0; i < ed_.lights.size(); i++) test(ED_LIGHT, (int)i, edBounds(ed_, {ED_LIGHT, (int)i}), -0.5f);
     for (size_t i = 0; i < ed_.payloadPath.size(); i++) test(ED_PATH, (int)i, edBounds(ed_, {ED_PATH, (int)i}), -0.5f);
-    for (size_t i = 0; i < ed_.brushes.size(); i++) if (!ed_.brushes[i].generated) test(ED_BRUSH, (int)i, ed_.brushes[i].box, 0);
+    for (size_t i = 0; i < ed_.brushes.size(); i++) // (clip is drawn see-through, so like a zone it only wins when nothing's closer)
+        if (!ed_.brushes[i].generated) test(ED_BRUSH, (int)i, ed_.brushes[i].box, ed_.brushes[i].material == 9 ? 0.25f : 0);
     for (size_t i = 0; i < ed_.ladders.size(); i++) test(ED_LADDER, (int)i, ed_.ladders[i], -0.3f);
     for (size_t i = 0; i < ed_.groups.size(); i++) { // a group: where you hit one of its boxes (a room's inside is open)
         std::vector<Brush> parts;
         Map::groupBoxes(ed_.groups[i], parts);
-        for (auto& p : parts) test(ED_GROUP, (int)i, p.box, 0);
+        for (auto& p : parts) test(ED_GROUP, (int)i, p.box, p.material == 9 ? 0.25f : 0);
     }
     for (size_t i = 0; i < ed_.bombSites.size(); i++) test(ED_SITE, (int)i, ed_.bombSites[i], 0.25f);
     for (size_t i = 0; i < ed_.checkpoints.size(); i++) test(ED_CHECK, (int)i, ed_.checkpoints[i], 0.25f);
@@ -820,8 +825,8 @@ void Game::editorKey(int key, int mods) {
     int kind = edSel_.kind, i = edSel_.idx;
     if (key == GLFW_KEY_M) { // material / team
         edModify([&](Map& m) {
-            if (kind == ED_BRUSH) edMat_ = m.brushes[i].material = (m.brushes[i].material + 1) % 8;
-            else if (kind == ED_GROUP && m.groups[i].type != Map::GROUP_CUSTOM) edMat_ = m.groups[i].material = (m.groups[i].material + 1) % 8;
+            if (kind == ED_BRUSH) edMat_ = m.brushes[i].material = nextMapMaterial(m.brushes[i].material);
+            else if (kind == ED_GROUP && m.groups[i].type != Map::GROUP_CUSTOM) edMat_ = m.groups[i].material = nextMapMaterial(m.groups[i].material);
             else if (kind == ED_SPAWN) m.spawns[i].team = (m.spawns[i].team + 1) % 4;
         }, false);
         return;
@@ -1001,10 +1006,13 @@ void Game::editorFrame(double dt) {
     // ---- 3D view
     const Vec3 matColor[6] = {r_.baseColor, r_.accentColor, {0.22f, 0.22f, 0.24f}, r_.metalColor, r_.glowColor, r_.metalColor * 0.7f};
     if (!edBaked_)
-        for (auto& b : ed_.brushes) { // (water, lava and trim, 6-8, past the table: blue, orange, accent)
+        for (auto& b : ed_.brushes) { // (water, lava and trim, 6-8, past the table: blue, orange, accent; clip below)
+            if (b.material == 9) continue;
             Vec3 c = b.material < 6 ? matColor[b.material] : b.material == 6 ? Vec3(0.2f, 0.4f, 0.8f) : b.material == 7 ? Vec3(1.0f, 0.4f, 0.1f) : r_.accentColor;
             r_.box(b.box.center(), (b.box.mx - b.box.mn) * 0.5f, 0, c, 1.0f, false);
         }
+    for (auto& b : ed_.brushes) // clip: invisible in play (the baked world leaves it out too), see-through violet here so it can be found and edited
+        if (b.material == 9) r_.translucentBox(b.box, kClipColor);
     for (auto& sp : ed_.spawns) {
         Vec3 c = kTeamColors[sp.team & 3];
         r_.box(sp.pos + Vec3(0, 0.9f, 0), {0.3f, 0.9f, 0.3f}, sp.yaw, c, 1.0f, false);
@@ -1168,7 +1176,7 @@ void Game::editorFrame(double dt) {
     y += 6 * s;
     ui_.label(x, y, "ADD (AT THE SCREEN CENTER)", kGrey, 0.5f);
     y += 12 * s;
-    static const std::vector<std::string> mats = {"BASE", "ACCENT", "WALLBANG", "METAL", "GLOW", "FAR", "WATER (WADE IN IT)", "LAVA (KILLS)"};
+    static const std::vector<std::string> mats = {"BASE", "ACCENT", "WALLBANG", "METAL", "GLOW", "FAR", "WATER (WADE IN IT)", "LAVA (KILLS)", "TRIM (NOT SOLID)", "CLIP (INVISIBLE WALL)"};
     {   // rooms, stairs and ladders are one object each: stretch it and its pieces follow (UNGROUP to split a room / stairs)
         float w4 = (w - 3 * gap) / 4;
         if (ui_.button(x, y, w4, h, "BOX")) edAdd(ED_BRUSH, 0);
@@ -1176,8 +1184,8 @@ void Game::editorFrame(double dt) {
         if (ui_.button(x + 2 * (w4 + gap), y, w4, h, "STAIRS")) edAdd(ED_GROUP, Map::GROUP_STAIRS);
         if (ui_.button(x + 3 * (w4 + gap), y, w4, h, "LADDER")) edAdd(ED_LADDER, 0);
         row();
-        static const std::vector<std::string> newMats = {"NEW ONES: BASE", "NEW ONES: ACCENT", "NEW ONES: WALLBANG", "NEW ONES: METAL", "NEW ONES: GLOW", "NEW ONES: FAR", "NEW ONES: WATER", "NEW ONES: LAVA"};
-        ui_.cycle(x, y, w, h, "MATERIAL", edMat_, 8, newMats);
+        static const std::vector<std::string> newMats = {"NEW ONES: BASE", "NEW ONES: ACCENT", "NEW ONES: WALLBANG", "NEW ONES: METAL", "NEW ONES: GLOW", "NEW ONES: FAR", "NEW ONES: WATER", "NEW ONES: LAVA", "NEW ONES: TRIM", "NEW ONES: CLIP"};
+        ui_.cycle(x, y, w, h, "MATERIAL", edMat_, kMapMaterials, newMats);
         row();
     }
     if (ui_.button(x, y, w3, h, "SPAWN")) edAdd(ED_SPAWN, SPAWN_ANY);
@@ -1244,7 +1252,7 @@ void Game::editorFrame(double dt) {
         y += 14 * s;
         if (kind == ED_BRUSH) {
             int m = ed_.brushes[i].material;
-            if (ui_.cycle(x, y, w, h, "MATERIAL (M)", m, 8, mats)) { edMat_ = m; edModify([&](Map& mm) { mm.brushes[i].material = m; }, false); }
+            if (ui_.cycle(x, y, w, h, "MATERIAL (M)", m, kMapMaterials, mats)) { edMat_ = m; edModify([&](Map& mm) { mm.brushes[i].material = m; }, false); }
             row();
         } else if (kind == ED_GROUP) {
             auto& gr = ed_.groups[i];
@@ -1253,7 +1261,7 @@ void Game::editorFrame(double dt) {
                 y += 14 * s;
             } else {
                 int m = gr.material;
-                if (ui_.cycle(x, y, w, h, "MATERIAL (M)", m, 8, mats)) { edMat_ = m; edModify([&](Map& mm) { mm.groups[i].material = m; }, false); }
+                if (ui_.cycle(x, y, w, h, "MATERIAL (M)", m, kMapMaterials, mats)) { edMat_ = m; edModify([&](Map& mm) { mm.groups[i].material = m; }, false); }
                 row();
             }
             if (gr.type == Map::GROUP_STAIRS) {

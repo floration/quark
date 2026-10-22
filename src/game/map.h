@@ -18,6 +18,10 @@ struct Brush {
     int material = 0; // 0 = base, 1 = accent, 2 = wallbang (dark grey: solid, but hitscan goes through it), 3 = metal, 4 = glow (emissive trim), 5 = far (distant scenery outside the walls: flat-shaded, no lightmap), 6 = water, 7 = lava (unlit surfaces of deadly pits: not solid, you fall through and die), 8 = trim (accent-coloured decoration: lit, but not solid), 9 = clip (invisible: blocks players only, not shots, hooks or sight; tops off the outer walls so nobody leaves the map)
     bool generated = false; // made from another object (an editor ladder's rails and rungs): not saved, not editable
 };
+// Brush materials are 0..kMapMaterials-1 everywhere: a map's boxes, groups and group parts, in files, edits and the editor.
+constexpr int kMapMaterials = 10;
+inline bool validMapMaterial(int m) { return m >= 0 && m < kMapMaterials; }
+inline int nextMapMaterial(int m) { return (m + 1) % kMapMaterials; }   // the editor's M key: base .. lava, trim, clip, base
 
 // What any map may hold, however it arrives (file, download, demo, edits): Map::validate checks all of it, after
 // groups and ladders are expanded, before the collision grid is built. Shipped maps use a small fraction of this.
@@ -162,6 +166,7 @@ struct Map {
 //                                         o multi point capture zone (box), d ladder (auto + box),
 //                                         g group (type material dir box; ins makes it empty, set keeps its parts)
 //   g part <index> <material> <6 fractions of the box>: adds a part to custom group <index>
+//   (materials: 0..kMapMaterials-1 for boxes, groups and parts alike, trim 8 and clip 9 included)
 //   t <title>    f <preferred mode, -1 any>    m <allowed modes bitmask, 0 = all>
 // applyMapEdit validates (indices, sizes, finite numbers, at least one box and spawn) and updates the grid (in place
 // for brushes and custom group parts). It doesn't serialize: m.source goes stale until m.sourceText() is asked for.

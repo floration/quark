@@ -477,12 +477,12 @@ bool Map::parseText(const std::string& text, std::string* err) {
             if (ok) { ladders.push_back(b); ladderAuto.push_back(ls >> flag && flag == "auto"); }
         } else if (kw == "group") {
             std::string t; Group g;
-            ok = (bool)(ls >> t >> g.material >> g.dir) && readBox(ls, g.box) && g.material >= 0 && g.material <= 7 && g.dir >= 0 && g.dir < 4 && g.box.mx.y - g.box.mn.y <= 64 && groups.size() < 256;
+            ok = (bool)(ls >> t >> g.material >> g.dir) && readBox(ls, g.box) && validMapMaterial(g.material) && g.dir >= 0 && g.dir < 4 && g.box.mx.y - g.box.mn.y <= 64 && groups.size() < 256;
             g.type = t == "room" ? GROUP_ROOM : t == "stairs" ? GROUP_STAIRS : GROUP_CUSTOM;
             ok = ok && (t == "room" || t == "stairs" || t == "custom");
             if (ok) groups.push_back(g);
         } else if (kw == "part") {
-            Brush b; ok = !groups.empty() && groups.back().type == GROUP_CUSTOM && groups.back().parts.size() < kMaxGroupParts && (bool)(ls >> b.material) && b.material >= 0 && b.material <= 7 && readBox(ls, b.box);
+            Brush b; ok = !groups.empty() && groups.back().type == GROUP_CUSTOM && groups.back().parts.size() < kMaxGroupParts && (bool)(ls >> b.material) && validMapMaterial(b.material) && readBox(ls, b.box);
             if (ok) groups.back().parts.push_back(b);
         } else if (kw == "checkpoint") {
             AABB b; ok = readBox(ls, b) && checkpoints.size() < 128; if (ok) checkpoints.push_back(b);
@@ -561,7 +561,7 @@ bool Map::validate(std::string* err) const {
         bombSites.size() > kMaxMapSites || checkpoints.size() > kMaxMapCheckpoints || payloadPath.size() > kMaxMapPath ||
         points.size() > kMaxMapPoints || cartChecks.size() > kMaxMapCartChecks)
         return fail("too many spawns, lights, ladders, groups, sites, checkpoints, path points or capture points");
-    for (auto& b : brushes) if (!box(b.box) || b.material < 0 || b.material > 9) return fail("a box is out of range (coordinates within 4096 m)");
+    for (auto& b : brushes) if (!box(b.box) || !validMapMaterial(b.material)) return fail("a box is out of range (coordinates within 4096 m)");
     for (auto& s : spawns) if (!vec(s.pos) || !std::isfinite(s.yaw)) return fail("a spawn is out of range");
     for (auto& l : lights)
         if (!vec(l.pos) || !(l.radius >= 0.5f && l.radius <= 100) || !(l.intensity >= 0 && l.intensity <= 10)) return fail("a light is out of range (radius 0.5-100, intensity 0-10)");
@@ -692,7 +692,7 @@ bool applyMapEdit(Map& m, const std::string& op) {
         int editable = (int)m.editableBrushes();
         if (i < 0 || i > editable || (verb != "ins" && i == editable) || (verb == "del" && editable <= 1)) return false;
     }
-    auto okNum = [](float v) { return std::isfinite(v) && std::fabs(v) <= 4096.0f; };
+    auto okNum = [](float v) { return std::isfinite(v) && std::fabs(v) <= kMapExtent; };
     auto readVec = [&](Vec3& v) { return (bool)(in >> v.x >> v.y >> v.z) && okNum(v.x) && okNum(v.y) && okNum(v.z); };
     auto readBox = [&](AABB& b) {
         Vec3 a, c;
@@ -731,8 +731,8 @@ bool applyMapEdit(Map& m, const std::string& op) {
         if (verb == "del") ok = i >= 0 && (size_t)i < n && n > 1 && m.eraseBrush((size_t)i);
         else {
             Brush b;
-            if (!((bool)(in >> b.material) && b.material >= 0 && b.material <= 7 && readBox(b.box))) return false;
-            if (verb == "ins") ok = i >= 0 && (size_t)i <= n && n < kMapMaxBrushes && m.insertBrush((size_t)i, b);
+            if (!((bool)(in >> b.material) && validMapMaterial(b.material) && readBox(b.box))) return false;
+            if (verb == "ins") ok = i >= 0 && (size_t)i <= n && n < kMaxMapBrushes && m.insertBrush((size_t)i, b);
             else ok = i >= 0 && (size_t)i < n && m.setBrush((size_t)i, b);
         }
         if (ok) m.sourceStale = true;
@@ -740,8 +740,8 @@ bool applyMapEdit(Map& m, const std::string& op) {
     }
     if (kind == "g" && verb == "part") {
         Brush part;
-        if (!(i >= 0 && (size_t)i < m.groups.size() && m.groups[i].type == Map::GROUP_CUSTOM && m.groups[i].parts.size() < 1024
-              && (bool)(in >> part.material) && part.material >= 0 && part.material <= 7 && readBox(part.box)))
+        if (!(i >= 0 && (size_t)i < m.groups.size() && m.groups[i].type == Map::GROUP_CUSTOM && m.groups[i].parts.size() < kMaxGroupParts
+              && (bool)(in >> part.material) && validMapMaterial(part.material) && readBox(part.box)))
             return false;
         // its box in the world goes right after group i's others: the generated brushes are the ladders' rails and
         // rungs, then each group's boxes in order (genLadderBrushes)
@@ -778,14 +778,14 @@ bool applyMapEdit(Map& m, const std::string& op) {
         if (!(in >> sp.team) || sp.team < 0 || sp.team > stagedSpawn(kMaxSpawnStage, true) || !readVec(sp.pos) || !(in >> yaw) || !okNum(yaw)) return false;
         sp.yaw = deg2rad(yaw);
         return true;
-    }, 1, 256);
+    }, 1, kMaxMapSpawns);
     else if (kind == "l") ok = edit(m.lights, [&](Map::Light& l) {
         return readVec(l.pos) && (bool)(in >> l.radius >> l.intensity) && l.radius >= 0.5f && l.radius <= 100 && l.intensity > 0 && l.intensity <= 10;
-    }, 0, 512);
-    else if (kind == "z") ok = edit(m.bombSites, readBox, 0, 16);
-    else if (kind == "c") ok = edit(m.checkpoints, readBox, 0, 128);
-    else if (kind == "p") ok = edit(m.payloadPath, readVec, 0, 512);
-    else if (kind == "o") ok = edit(m.points, readBox, 0, 16);
+    }, 0, kMaxMapLights);
+    else if (kind == "z") ok = edit(m.bombSites, readBox, 0, kMaxMapSites);
+    else if (kind == "c") ok = edit(m.checkpoints, readBox, 0, kMaxMapCheckpoints);
+    else if (kind == "p") ok = edit(m.payloadPath, readVec, 0, kMaxMapPath);
+    else if (kind == "o") ok = edit(m.points, readBox, 0, kMaxMapPoints);
     else if (kind == "d") { // ladders: the volume and whether it draws its own rails / rungs (kept in step)
         m.ladderAuto.resize(m.ladders.size(), 0);
         if (verb == "del") {
@@ -794,8 +794,8 @@ bool applyMapEdit(Map& m, const std::string& op) {
         } else {
             int au = 0;
             AABB b;
-            ok = (bool)(in >> au) && readBox(b) && b.mx.y - b.mn.y <= 64;
-            if (ok && verb == "ins") { ok = i >= 0 && (size_t)i <= m.ladders.size() && m.ladders.size() < 256; if (ok) { m.ladders.insert(m.ladders.begin() + i, b); m.ladderAuto.insert(m.ladderAuto.begin() + i, au != 0); } }
+            ok = (bool)(in >> au) && readBox(b) && b.mx.y - b.mn.y <= kMaxObjectHeight;
+            if (ok && verb == "ins") { ok = i >= 0 && (size_t)i <= m.ladders.size() && m.ladders.size() < kMaxMapLadders; if (ok) { m.ladders.insert(m.ladders.begin() + i, b); m.ladderAuto.insert(m.ladderAuto.begin() + i, au != 0); } }
             else if (ok) { ok = i >= 0 && (size_t)i < m.ladders.size(); if (ok) { m.ladders[i] = b; m.ladderAuto[i] = au != 0; } }
         }
     }
@@ -805,9 +805,9 @@ bool applyMapEdit(Map& m, const std::string& op) {
             if (ok) m.groups.erase(m.groups.begin() + i);
         } else {
             Map::Group g;   // (part: above)
-            ok = (bool)(in >> g.type >> g.material >> g.dir) && g.type >= 0 && g.type <= 2 && g.material >= 0 && g.material <= 7
-                 && g.dir >= 0 && g.dir < 4 && readBox(g.box) && g.box.mx.y - g.box.mn.y <= 64;
-            if (ok && verb == "ins") { ok = i >= 0 && (size_t)i <= m.groups.size() && m.groups.size() < 256; if (ok) m.groups.insert(m.groups.begin() + i, g); }
+            ok = (bool)(in >> g.type >> g.material >> g.dir) && g.type >= 0 && g.type <= 2 && validMapMaterial(g.material)
+                 && g.dir >= 0 && g.dir < 4 && readBox(g.box) && g.box.mx.y - g.box.mn.y <= kMaxObjectHeight;
+            if (ok && verb == "ins") { ok = i >= 0 && (size_t)i <= m.groups.size() && m.groups.size() < kMaxMapGroups; if (ok) m.groups.insert(m.groups.begin() + i, g); }
             else if (ok) {
                 ok = i >= 0 && (size_t)i < m.groups.size();
                 if (ok && g.type == Map::GROUP_CUSTOM && m.groups[i].type == Map::GROUP_CUSTOM) g.parts = std::move(m.groups[i].parts);   // (else none)
