@@ -1837,6 +1837,8 @@ static void testRankedVoteAndRestart(uint16_t port) {
     pump(s, cls, 0.2, idle);
     b.sendCommand("vote yes");
     pump(s, cls, 0.5, idle);
+    // (the switch loads maps on the tick: give it time on slow machines instead of a fixed wait)
+    for (int i = 0; i < 40 && !(a.hasSnapshot() && (a.mode().flags & MS_RANKED)); i++) pump(s, cls, 0.1, idle);
     CHECK(s.config().ranked && s.config().mode == MODE_FFA && s.ms_.arenaVariant == 5 && isOfficialMap(s.map_));
     CHECK(a.hasSnapshot() && (a.mode().flags & MS_RANKED));
     CHECK((s.arenaRules() & AR_INSTAGIB) && s.weaponMask() == arenaVariant(5).weapons);   // ranked instagib: a free for all on instagib rules
