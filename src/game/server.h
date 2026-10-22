@@ -20,6 +20,11 @@
 #include "bots.h"
 #include "master.h"
 #include "customrules.h"
+#include "ranked.h"
+
+// Every game: a player whose connection drops keeps their slot, team, score and state this long (seconds) and gets
+// them back by reconnecting (matched by their proven ranked id, else by the token from PKT_ACCEPT).
+constexpr double kReconnectGrace = 10.0;
 
 // Tests running on a sped-up clock turn off the warmup tick-rate check (it would see "late" ticks).
 extern bool g_serverRateCheck;
@@ -61,7 +66,6 @@ struct ServerConfig {
     bool editMode = false;      // start as a map edit session (anyone connected can edit; the host autosaves)
     std::string restartFlag;    // if this file appears (an update was installed), restart once no match is being played
     bool timeTrial = false;     // solo ranked race on Viaduct: no bots, checkpoint splits sent to the racer
-    std::string adminPassword;  // dedicated: players become admin with "login <password>" (empty = only the in-process host)
     bool ranked = false;        // matches are rated (OpenSkill) once every player reports the same result; no bots
     CustomRules custom;         // a custom mode (name empty = none): its mode, weapons, movement, map pool, ...
 };
@@ -79,10 +83,13 @@ struct ServerPlayer {
     NetAddr addr;
     uint32_t nonce = 0;
     std::string name;
-    std::string rankId;         // 32 hex chars from the player's key (ranked), empty if unknown
-    bool admin = false;         // logged in with the admin password (the in-process host is admin by nonce)
+    std::string rankId;         // 32 hex chars (ranked), proven at connect by signing the challenge; empty if none
+    std::string rankPub;        // the Ed25519 public key behind rankId (checks the match ticket signature)
+    std::string ticketSig;      // this player's signature of the current ranked match id (forwarded with the ticket)
+    uint64_t reconnectToken = 0; // given in PKT_ACCEPT: a reconnect that shows it gets this slot back
+    double awayUntil = 0;       // > 0: the connection dropped; slot, team, score and state kept until then (timeNow())
+    std::string awayReason;
     double voteAt = 0;           // no new vote from this player before then (after one of theirs failed)
-    double loginAt = 0;          // next admin login attempt allowed
     float mapTokens = 64;       // PKT_MAP_REQUEST rate limit (token bucket)
     double mapTokensAt = 0;
     int team = TEAM_A;
@@ -177,12 +184,13 @@ public:
     void command(const std::string& line, int fromPlayer = -1); // console / admin commands
 
     void setLog(LogFn fn) { log_ = std::move(fn); }
-    // The in-process host's client (its session nonce): admin without a password. Thread safe.
+    // The in-process host's client (its session nonce): the only admin (REVIEW NET-8). Thread safe.
     void setHostNonce(uint32_t n) { hostNonce_ = n; }
     void handlePacket(const NetAddr& from, const uint8_t* data, int len); // (public: tests feed it spoofed sources)
     float voteCooldown_ = 5.0f; // seconds a player waits to call another vote after theirs failed (tests set 0)
     uint16_t port() const { return sock_.localPort(); }
     int playerCount() const;
+    bool away(int id) const { return players_[id].awayUntil > 0; }   // dropped, slot held for the reconnect grace
     std::string statusText();
     const ServerConfig& config() const { return cfg_; }
     std::string upnpStatus() { return upnp_ ? upnp_->status() : std::string(); }
@@ -308,6 +316,25 @@ public:
     // race ticket for the racer, and this server (not the racer's game) posts each finished run. All HTTP runs on
     // the MasterAnnouncer thread; replies are picked up in run().
     std::string rankedMatch_, raceTicket_, raceTicketFor_;
+    // While a ranked match is live (ticket opened at the first round going live, until the match ends) nothing may
+    // change it: no votes, no map / mode / ranked changes, no team switches, no kicking its players (OWNER 3.4).
+    bool rankedLive() const { return cfg_.ranked && !rankedMatch_.empty() && ms_.phase != PHASE_WARMUP && ms_.phase != PHASE_MATCH_END; }
+    bool rankedTicketSent_ = false;   // the ticket went out (or was given up on): no more signatures needed
+    double rankedSigDeadline_ = 0;    // players must sign the match id by then, else the match isn't rated
+    void maybeSendRankedTicket(bool giveUp = false);
+    // Players who left the live ranked match (gone past the reconnect grace), first leaver first. The first leaver
+    // takes the loss (a ranked 1v1 ends there); whoever stays and leaves later isn't punished.
+    struct RankedLeaver { int slot; std::string rankId; int team, score, kills; };
+    std::vector<RankedLeaver> rankedLeft_;
+    bool isRankedParticipant(int id) const;
+    // Tourney seeding: the average of each entrant's three ladder ratings (kUnratedSeed for a ladder without games,
+    // or no ranked id), fetched in the background (never on the tick) whenever someone with a ranked id joins a
+    // tourney server or one starts; a rating still on its way counts as unrated.
+    std::vector<int> tourneySeeding(const std::vector<int>& entrants); // the first round (rounds[0]) for these players
+    int seedRating(int id);
+    void prefetchSeedRatings();
+    std::unique_ptr<RankService> seedRatings_;
+    std::map<std::string, int> seedFixed_;   // tests: ranked id -> seed rating (instead of asking the Worker)
     std::vector<int> raceFloors_;
     void openRankedTicket();
     void openRaceTicket();
@@ -377,7 +404,12 @@ private:
     void handleConnect(const NetAddr& from, Reader& r);
     void handleInput(int id, Reader& r);
     void handleStringCmd(int id, const std::string& s);
-    void dropPlayer(int id, const std::string& reason, bool notify);
+    void dropPlayer(int id, const std::string& reason, bool notify, bool left = false); // left: past the reconnect grace
+    void holdPlayer(int id, const std::string& reason);   // connection lost: keep the slot for kReconnectGrace
+    bool restorePlayer(int id, const NetAddr& from, uint32_t nonce, const std::string& rankPub);
+    void sendWelcome(int id);   // what a (re)joining client needs to know about everyone
+    float verifyTokens_ = 50;   // connect signature checks per second (each ~0.1 ms of CPU; a flood waits and retries)
+    double verifyAt_ = 0;
     void simulate();
     void drainCmds(int id);
     void checkTickRate();

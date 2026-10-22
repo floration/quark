@@ -2,6 +2,7 @@
 #include "../common/rng.h"
 #include "ranked.h"
 #include "../common/sha256.h"
+#include <climits>
 #include <cstring>
 #include <random>
 #include "../common/profile.h"
@@ -201,6 +202,7 @@ void Server::stop() {
     if (editDirty_ && !tempEdit_) autosave();
     for (int i = 0; i < kMaxPlayers; i++)
         if (players_[i].connected) dropPlayer(i, "server shutting down", true);
+    seedRatings_.reset();
     sock_.close();
     if (reachThread_.joinable()) reachThread_.join();
     probeSock_.close();
@@ -315,8 +317,14 @@ double Server::frame() {
         nextTick_ += 1.0 / tickRate();
         now = timeNow();
     }
-    for (int i = 0; i < kMaxPlayers; i++)
-        if (players_[i].connected && !players_[i].isBot && now - players_[i].lastRecv > kTimeout) dropPlayer(i, "timed out", false);
+    for (int i = 0; i < kMaxPlayers; i++) {
+        ServerPlayer& p = players_[i];
+        if (!p.connected || p.isBot) continue;
+        if (p.awayUntil > 0) { if (now >= p.awayUntil) dropPlayer(i, p.awayReason, false, true); } // the grace is over: gone
+        else if (now - p.lastRecv > kTimeout) holdPlayer(i, "timed out");
+    }
+    if (rankedLive() && !rankedTicketSent_ && time() >= rankedSigDeadline_) maybeSendRankedTicket(true);
+    if (!rankedMatch_.empty() && ms_.phase == PHASE_WARMUP) rankedMatch_.clear(); // (a match that fell back to warmup: the next one gets its own ticket)
     checkTickRate();
     checkRestartFlag();
     return nextTick_ - timeNow();
@@ -375,7 +383,7 @@ void Server::handlePacket(const NetAddr& from, const uint8_t* data, int len) {
     if (r.u32() != players_[id].nonce) return;
     players_[id].lastRecv = timeNow();
     if (type == PKT_INPUT) handleInput(id, r);
-    else if (type == PKT_DISCONNECT) dropPlayer(id, "disconnected", false);
+    else if (type == PKT_DISCONNECT) holdPlayer(id, "disconnected");   // (a crash or a mis-click: 10 s to come back)
     else if (type == PKT_MAP_REQUEST) { // client lacks this map (or has a different copy): send it a piece
         uint32_t crc = r.u32(), off = r.u32();
         (void)crc; // always serve the current map: in an edit session it may have changed since the client asked
@@ -511,12 +519,13 @@ void Server::sendProbe(const NetAddr& prober) {
     probeTries_++;
 }
 
-static void sendAccept(UdpSocket& sock, const NetAddr& to, uint32_t nonce, int id, const Map& map, int mode) {
+static void sendAccept(UdpSocket& sock, const ServerPlayer& p, int id, const Map& map, int mode) {
     uint8_t out[512];
     Writer w(out, sizeof out);
     writeHeader(w, PKT_ACCEPT);
-    w.u32(nonce); w.u8((uint8_t)id); w.str(map.name); w.u32(map.crc); w.u8((uint8_t)mode);
-    sock.send(to, out, w.size());
+    w.u32(p.nonce); w.u8((uint8_t)id); w.str(map.name); w.u32(map.crc); w.u8((uint8_t)mode);
+    w.u32((uint32_t)p.reconnectToken); w.u32((uint32_t)(p.reconnectToken >> 32));
+    sock.send(p.addr, out, w.size());
 }
 
 // Stateless connect challenge (like Quake 3's getchallenge): a keyed hash of the sender's address, its
@@ -531,10 +540,11 @@ uint32_t Server::challengeCookie(const NetAddr& a, uint32_t nonce, int64_t bucke
     return c ? c : 1;
 }
 
+// Admin is the in-process host only (its client's session, over loopback): no passwords, no IP rules (NET-8).
 bool Server::isAdmin(int id) const {
     const ServerPlayer& p = players_[id];
     uint32_t host = hostNonce_.load(std::memory_order_relaxed);
-    return p.admin || (host != 0 && p.nonce == host && isLoopback(p.addr));
+    return host != 0 && p.nonce == host && p.awayUntil <= 0 && isLoopback(p.addr);
 }
 
 void Server::handleConnect(const NetAddr& from, Reader& r) {
@@ -569,18 +579,53 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
         w.str(why);
         sock_.send(from, out, w.size());
     };
-    int existing = findPlayer(from);
-    if (existing >= 0) {
-        if (players_[existing].nonce == nonce) { sendAccept(sock_, from, nonce, existing, map_, cfg_.mode); return; }
-        dropPlayer(existing, "reconnecting", false); // (a new session that passed the cookie check: it owns the address)
+    // Optional (every client from protocol 29 sends them): the reconnect token it was given here before, and its
+    // ranked id's public key with a signature of this connect challenge (proof that it holds the key: REVIEW NET-12).
+    uint64_t token = 0;
+    std::string rpub, rsig;
+    if (r.remaining() > 0) {
+        uint32_t lo = r.u32(), hi = r.u32();
+        rpub = r.str(); rsig = r.str();
+        if (r.bad()) rpub.clear();
+        else token = (uint64_t)hi << 32 | lo;
     }
+    int existing = findPlayer(from);
+    if (existing >= 0 && players_[existing].nonce == nonce) { sendAccept(sock_, players_[existing], existing, map_, cfg_.mode); return; } // (a resend)
+    std::string rankId;
+    auto hexLen = [](const std::string& h, size_t n) { return h.size() == n && h.find_first_not_of("0123456789abcdef") == std::string::npos; };
+    if (hexLen(rpub, 64) && hexLen(rsig, 128)) {   // (anything else: no ranked id, and no signature check spent on it)
+        double now = timeNow();
+        verifyTokens_ = std::min(50.0f, verifyTokens_ + (float)(now - verifyAt_) * 50.0f);
+        verifyAt_ = now;
+        if (verifyTokens_ < 1) return;   // a flood of signed connects: this one waits for the client's resend
+        verifyTokens_ -= 1;
+        if (rankVerify(rpub, rankConnectMessage(cookie, nonce), rsig)) rankId = rankIdFromPublic(rpub);
+        else log("connect from " + from.toString() + ": ranked key proof failed (joins without a ranked id)");
+    }
+    // Back within the reconnect grace (or a new session of the same player taking over its old one): same slot,
+    // team, score and state. Matched by the proven ranked id, else by the token.
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const ServerPlayer& o = players_[i];
+        if (!o.connected || o.isBot) continue;
+        if ((!rankId.empty() && o.rankId == rankId) || (token != 0 && o.reconnectToken == token)) {
+            if (existing >= 0 && existing != i) dropPlayer(existing, "reconnecting", false);
+            restorePlayer(i, from, nonce, rankId.empty() ? std::string() : rpub);
+            return;
+        }
+    }
+    if (existing >= 0) dropPlayer(existing, "reconnecting", false); // (a new session that passed the cookie check: it owns the address)
     if (playerCount() >= cfg_.maxPlayers) {
         for (int i = kMaxPlayers - 1; i >= 0; i--)
             if (players_[i].connected && players_[i].isBot) { removeBot(i); break; }
     }
     if (playerCount() >= cfg_.maxPlayers) { reject("server is full"); return; }
     int id = -1;
-    for (int i = 0; i < kMaxPlayers; i++) if (!players_[i].connected) { id = i; break; }
+    for (int i = 0; i < kMaxPlayers && id < 0; i++) {
+        if (players_[i].connected) continue;
+        bool reserved = false;   // a ranked leaver's slot stays theirs until the match's result is out
+        if (rankedLive()) for (auto& l : rankedLeft_) reserved |= l.slot == i;
+        if (!reserved) id = i;
+    }
     if (id < 0) { reject("server is full"); return; }
 
     name = uniqueName(name, -1);
@@ -593,29 +638,87 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
     p.addr = from;
     p.nonce = nonce;
     p.name = name;
-    p.admin = false;   // admin: the in-process host (isAdmin) or "login <password>"
+    p.rankId = rankId;
+    if (!rankId.empty()) p.rankPub = rpub;
+    {
+        std::random_device rd;
+        do p.reconnectToken = (uint64_t)rd() << 32 ^ rd(); while (p.reconnectToken == 0);
+    }
     p.lastRecv = timeNow();
     for (auto& h : p.history) h.tick = 0xFFFFFFFFu;
     autoTeam(id);
-    sendAccept(sock_, from, nonce, id, map_, cfg_.mode);
+    sendAccept(sock_, p, id, map_, cfg_.mode);
+    sendWelcome(id);
+    GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.text = name;
+    broadcastEvent(e);
+    GameEvent rk; rk.type = EV_RANKINFO; rk.a = (uint8_t)id; rk.text = rankId; // (empty: the slot's previous owner's id is gone)
+    broadcastEvent(rk);
+    message(name + " joined");
+    sendRules(id);
+    log(name + " connected from " + from.toString() + " as #" + std::to_string(id) + (rankId.empty() ? "" : " (ranked id " + rankId + ")"));
+    if (cfg_.mode == MODE_TOURNEY && !rankId.empty() && !tourney_.running) prefetchSeedRatings();
 
-    // Tell the newcomer about everyone, and everyone about the newcomer.
+    float d = rulesRespawnDelay(*this);
+    if (d >= 0 && p.team != TEAM_SPECTATOR) p.respawnAt = time() + 0.5f;
+}
+
+// Everyone's name, looks and ranked id, to one (re)joining client.
+void Server::sendWelcome(int id) {
     for (int i = 0; i < kMaxPlayers; i++) {
         if (!players_[i].connected || i == id) continue;
         GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)i; e.b = looksByte(players_[i]); e.text = players_[i].name;
         sendEvent(id, e);
         if (!players_[i].rankId.empty()) { GameEvent r; r.type = EV_RANKINFO; r.a = (uint8_t)i; r.text = players_[i].rankId; sendEvent(id, r); }
     }
-    GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.text = name;
-    broadcastEvent(e);
-    GameEvent noRank; noRank.type = EV_RANKINFO; noRank.a = (uint8_t)id; // the slot's previous owner's id is gone
-    broadcastEvent(noRank);
-    message(name + " joined");
-    sendRules(id);
-    log(name + " connected from " + from.toString() + " as #" + std::to_string(id));
+}
 
-    float d = rulesRespawnDelay(*this);
-    if (d >= 0 && p.team != TEAM_SPECTATOR) p.respawnAt = time() + 0.5f;
+// The connection dropped (timed out, or the client said goodbye): the player stays in the game, standing where they
+// were, for kReconnectGrace; a reconnect gets it all back (restorePlayer), else dropPlayer when the grace is over.
+void Server::holdPlayer(int id, const std::string& reason) {
+    ServerPlayer& p = players_[id];
+    if (!p.connected || p.isBot || p.awayUntil > 0) return;
+    p.awayUntil = timeNow() + kReconnectGrace;
+    p.awayReason = reason;
+    p.addr = NetAddr{};   // (no packets to or from it until a reconnect)
+    p.cmdQueue.clear();
+    p.events.clear();
+    p.keys = 0;
+    vote_.yes &= ~(1u << id); vote_.no &= ~(1u << id);
+    message(p.name + " " + (reason == "disconnected" ? "disconnected" : "lost connection") + " - their place is kept for " +
+            std::to_string((int)kReconnectGrace) + " s");
+    log(p.name + " away: " + reason);
+    glog(LOG_SIMPLE, "away %d \"%s\": %s", id, p.name.c_str(), reason.c_str());
+}
+
+bool Server::restorePlayer(int id, const NetAddr& from, uint32_t nonce, const std::string& rankPub) {
+    ServerPlayer& p = players_[id];
+    static const ServerPlayer fresh{};
+    bool wasAway = p.awayUntil > 0;
+    p.addr = from;
+    p.nonce = nonce;
+    if (!rankPub.empty()) p.rankPub = rankPub;
+    p.awayUntil = 0;
+    p.awayReason.clear();
+    // a new session: its own command / event / snapshot sequences start over
+    p.sentSeq = 0; p.sent.clear(); p.ackSnapMs = 0;
+    p.lastCmdSeq = 0; p.cmdQueue.clear(); p.cmdTokensMs = fresh.cmdTokensMs; p.deepTicks = 0; p.catchUp = fresh.catchUp;
+    p.lastStringCmd = 0; p.strTick = 0; p.strCount = p.edCount = 0;
+    p.nextEventId = 1; p.ackedEvent = 0; p.events.clear();
+    p.reportedLoss = 0; p.lastViewTick = 0; p.ping = 0; p.lastRecv = timeNow();
+    p.mapTokens = fresh.mapTokens; p.mapTokensAt = 0;
+    p.buttons = p.prevButtons = 0; p.keys = 0;
+    sendAccept(sock_, p, id, map_, cfg_.mode);
+    sendWelcome(id);
+    { GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.text = p.name; sendEvent(id, e); }
+    if (!p.rankId.empty()) { GameEvent r; r.type = EV_RANKINFO; r.a = (uint8_t)id; r.text = p.rankId; sendEvent(id, r); }
+    sendRules(id);
+    if (tourney_.running) broadcastBracket();
+    if (rankedLive() && !rankedTicketSent_ && isRankedParticipant(id) && p.ticketSig.empty()) {
+        GameEvent e; e.type = EV_RANKSIGN; e.text = rankedMatch_; sendEvent(id, e);
+    }
+    message(p.name + (wasAway ? " reconnected" : " rejoined"));
+    log(p.name + " reconnected from " + from.toString() + " as #" + std::to_string(id));
+    return true;
 }
 
 void Server::sendRules(int id) {
@@ -653,10 +756,10 @@ void Server::autoTeam(int id) {
     p.team = a <= b ? TEAM_A : TEAM_B;
 }
 
-void Server::dropPlayer(int id, const std::string& reason, bool notify) {
+void Server::dropPlayer(int id, const std::string& reason, bool notify, bool left) {
     ServerPlayer& p = players_[id];
     if (!p.connected) return;
-    if (notify) {
+    if (notify && p.awayUntil <= 0) {
         uint8_t out[300];
         Writer w(out, sizeof out);
         writeHeader(w, PKT_KICKED);
@@ -664,13 +767,37 @@ void Server::dropPlayer(int id, const std::string& reason, bool notify) {
         w.str(reason);
         sock_.send(p.addr, out, w.size());
     }
+    // Leaving a live ranked match (gone past the reconnect grace): the first to leave takes the loss.
+    bool rankedLeaver = left && rankedLive() && matchInProgress() && isRankedParticipant(id);
+    bool firstLeaver = rankedLeaver && rankedLeft_.empty();
+    if (rankedLeaver) rankedLeft_.push_back({id, p.rankId, p.team, p.score, p.kills});
     rulesOnLeave(*this, id);
     vote_.yes &= ~(1u << id); vote_.no &= ~(1u << id);
     std::string name = p.name;
+    int team = p.team;
     p.connected = false;
     p.alive = false;
+    p.awayUntil = 0;
     message(name + " left (" + reason + ")");
     log(name + " dropped: " + reason);
+    if (rankedLeaver) {
+        if (firstLeaver) message(name + " left the ranked match - it counts as a loss");
+        glog(LOG_SIMPLE, "ranked leaver %d \"%s\"%s", id, name.c_str(), firstLeaver ? " (first: takes the loss)" : "");
+        int still = 0;
+        for (int i = 0; i < kMaxPlayers; i++) still += isRankedParticipant(i);
+        // 1v1: the match is decided right there. Free for all: it goes on while two or more are left.
+        if (modeIsTeamBased(cfg_.mode) && firstLeaver) {
+            int winner = team == TEAM_A ? TEAM_B : TEAM_A;
+            rulesEndMatch(*this, name + " left the match", winner);
+        } else if (!modeIsTeamBased(cfg_.mode) && still < 2) {
+            rulesEndMatch(*this, "match over - the other players left", -1);
+        }
+    }
+}
+
+bool Server::isRankedParticipant(int id) const {
+    const ServerPlayer& p = players_[id];
+    return p.connected && !p.isBot && p.team != TEAM_SPECTATOR && !p.rankId.empty();
 }
 
 void Server::handleInput(int id, Reader& r) {
@@ -767,14 +894,11 @@ void Server::handleStringCmd(int id, const std::string& s) {
         broadcastEvent(e);
         log(p.name + ": " + rest);
         glog(LOG_SIMPLE, "chat %d \"%s\": %s", id, p.name.c_str(), rest.c_str());
-    } else if (cmd == "rankid") { // the player's ranked id (hash of their key); shown to everyone for the reports
-        bool ok = rest.size() == 32;
-        for (char c : rest) ok &= (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
-        if (!ok || rest == p.rankId) return;
-        for (int k = 0; k < kMaxPlayers; k++) if (k != id && players_[k].connected && players_[k].rankId == rest) return; // one key, one slot
-        p.rankId = rest;
-        GameEvent e; e.type = EV_RANKINFO; e.a = (uint8_t)id; e.text = rest;
-        broadcastEvent(e);
+    } else if (cmd == "ticketsig") { // the player's signature of the live ranked match id (EV_RANKSIGN): goes with the ticket
+        if (!rankedLive() || rankedTicketSent_ || !isRankedParticipant(id) || !p.ticketSig.empty()) return;
+        if (!rankVerify(p.rankPub, rankTicketMessage(rankedMatch_), rest)) return;
+        p.ticketSig = rest;
+        maybeSendRankedTicket();
     } else if (cmd == "ed" && editing_) {
         if (!applyEdit(id, rest)) { GameEvent e; e.type = EV_MESSAGE; e.text = "edit refused"; sendEvent(id, e); }
     } else if (cmd == "edcam" && editing_) { // where this editor's camera is, so others see it
@@ -784,6 +908,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
     } else if (cmd == "team") {
         int t = rest == "a" ? TEAM_A : rest == "b" ? TEAM_B : rest == "spec" ? TEAM_SPECTATOR : -1;
         if (t < 0 || t == p.team) return;
+        if (rankedLive()) { GameEvent e; e.type = EV_MESSAGE; e.text = "a ranked match is being played - teams stay as they are until it's over"; sendEvent(id, e); return; }
         if (tourney_.running && t != TEAM_SPECTATOR) { // the bracket decides who plays
             GameEvent e; e.type = EV_MESSAGE; e.text = "a tourney is running - you can join the next one"; sendEvent(id, e);
             return;
@@ -832,6 +957,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
         GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.text = p.name;
         broadcastEvent(e);
     } else if (cmd == "callvote") {
+        if (rankedLive()) { GameEvent e; e.type = EV_MESSAGE; e.text = "a ranked match is being played - no votes until it's over"; sendEvent(id, e); return; }
         if (time() < p.voteAt) { GameEvent e; e.type = EV_MESSAGE; e.text = "your last vote failed: wait a few seconds"; sendEvent(id, e); return; }
         std::istringstream vs(rest);
         std::string what, arg;
@@ -904,14 +1030,6 @@ void Server::handleStringCmd(int id, const std::string& s) {
         castVote(id, rest == "yes" || rest == "y" || rest == "1");
     } else if (cmd == "kill") {
         if (p.alive) killPlayer(id, -1, 255);
-    } else if (cmd == "login") { // login <admin password> (dedicated servers started with --admin-password)
-        if (cfg_.adminPassword.empty() || time() < p.loginAt) return;
-        p.loginAt = time() + 2.0f;
-        unsigned diff = rest.size() != cfg_.adminPassword.size();
-        for (size_t k = 0; k < rest.size(); k++) diff |= (unsigned char)rest[k] ^ (unsigned char)cfg_.adminPassword[k % cfg_.adminPassword.size()];
-        GameEvent e; e.type = EV_MESSAGE; e.text = diff ? "wrong admin password" : "you are admin";
-        if (!diff) { p.admin = true; log(p.name + " logged in as admin"); }
-        sendEvent(id, e);
     } else if (isAdmin(id)) {
         command(s, id);
     }
@@ -925,6 +1043,12 @@ void Server::command(const std::string& line, int fromPlayer) {
         if (fromPlayer >= 0) { GameEvent e; e.type = EV_MESSAGE; e.text = t; sendEvent(fromPlayer, e); }
         else log(t);
     };
+    if (rankedLive()) {   // a live ranked match can't be changed or dodged, by anyone, until it's over (OWNER 3.4)
+        bool blocked = cmd == "map" || cmd == "mode" || cmd == "reload" || cmd == "ranked" || cmd == "restart" || cmd == "editmode" ||
+                       cmd == "forcestart" || cmd == "addbot";
+        if (cmd == "kick") { int k = atoi(arg.c_str()); blocked = k >= 0 && k < kMaxPlayers && isRankedParticipant(k); }
+        if (blocked) { reply("a ranked match is being played: '" + cmd + "' has to wait until it's over"); return; }
+    }
     if (cmd == "editmode" && cfg_.ranked) { reply("no map editing on a ranked server (vote ranked off first)"); return; }
     if (cmd == "editmode") { // editmode on|off: switch between editing the map together and playing it
         if (arg == "on") { if (!editing_) setEditing(true); return; }
@@ -1035,7 +1159,7 @@ void Server::broadcastEvent(const GameEvent& e) {
 
 void Server::sendEvent(int id, const GameEvent& e) {
     ServerPlayer& p = players_[id];
-    if (p.isBot) return;
+    if (p.isBot || p.awayUntil > 0) return;   // (away: a reconnect starts a new session, with what it needs)
     if (p.events.size() >= kMaxUnackedEvents) { // hopelessly behind: dropping one would desync it for good
         if (!p.connected) return;
         p.events.clear();
@@ -1785,7 +1909,7 @@ void Server::sendSnapshots() {
     uint8_t buf[kMaxPacket], world[kMaxPacket];
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
-        if (!p.connected || p.isBot) continue;
+        if (!p.connected || p.isBot || p.awayUntil > 0) continue;
         if ((int)p.sent.size() != ServerPlayer::kSentRing) p.sent.assign(ServerPlayer::kSentRing, Snapshot());
         s.clientId = (uint8_t)i;
         s.ackCmdSeq = p.lastCmdSeq;
@@ -1950,10 +2074,10 @@ void Server::castVote(int id, bool yes) {
 void Server::tickVote() {
     ms_.voteActive = 0;
     if (vote_.kind == VOTE_NONE) return;
-    int humans = humanCount();
-    int y = 0, n = 0;
+    int humans = 0, y = 0, n = 0;
     for (int i = 0; i < kMaxPlayers; i++) {
-        if (!players_[i].connected || players_[i].isBot) continue;
+        if (!players_[i].connected || players_[i].isBot || players_[i].awayUntil > 0) continue;   // (away: can't vote)
+        humans++;
         y += (vote_.yes >> i) & 1;
         n += (vote_.no >> i) & 1;
     }
@@ -2092,7 +2216,7 @@ bool Server::switchMapKeepRules(const std::string& name) {
         if (!p.connected) continue;
         p.alive = false;
         p.cmdQueue.clear();
-        if (!p.isBot) sendAccept(sock_, p.addr, p.nonce, i, map_, cfg_.mode);
+        if (!p.isBot) sendAccept(sock_, p, i, map_, cfg_.mode);
     }
     glog(LOG_SIMPLE, "map %s mode %s", name.c_str(), modeName(cfg_.mode));
     return true;
@@ -2182,7 +2306,7 @@ void Server::playMap(int mode) {
         p.alive = false;
         p.cmdQueue.clear();
         if (p.team != TEAM_SPECTATOR) autoTeam(i);
-        sendAccept(sock_, p.addr, p.nonce, i, map_, cfg_.mode);
+        sendAccept(sock_, p, i, map_, cfg_.mode);
     }
     rulesReset(*this);
     message("now playing " + cfg_.map + (mapEdited_ ? " (edited)" : "") + " - " + modeTitle(mode));
@@ -2253,15 +2377,21 @@ std::string Server::rankedResult(int winner, std::string* whyNot) {
     if (cfg_.mode != rankedMode(ms_.arenaVariant)) { *whyNot = "not the ladder's mode"; return ""; }
     if (!arenaVariantRanked(ms_.arenaVariant)) { *whyNot = std::string(arenaVariant(ms_.arenaVariant).title) + " isn't a ranked ruleset"; return ""; }
     bool teams = modeIsTeamBased(cfg_.mode);
-    struct Entry { int slot, team, score; };
+    struct Entry { int slot, team; long long score; };
     std::vector<Entry> es;
     for (int i = 0; i < kMaxPlayers; i++) {
         const auto& p = players_[i];
         if (!p.connected || p.team == TEAM_SPECTATOR) continue;
         if (p.isBot) { *whyNot = "bots played"; return ""; }
         if (p.rankId.empty()) { *whyNot = p.name + " has no ranked id"; return ""; }
-        es.push_back({i, teams ? p.team : i, p.score * 1000 + p.kills});
+        es.push_back({i, teams ? p.team : i, (long long)p.score * 1000 + p.kills});
     }
+    // players who left during the match count too: the first leaver last (their side lost), later ones as they stood
+    for (size_t k = 0; k < rankedLeft_.size(); k++) {
+        const RankedLeaver& l = rankedLeft_[k];
+        es.push_back({l.slot, teams ? l.team : l.slot, k == 0 ? LLONG_MIN : (long long)l.score * 1000 + l.kills});
+    }
+    if (teams && !rankedLeft_.empty()) winner = rankedLeft_[0].team == TEAM_A ? TEAM_B : TEAM_A;
     if (es.size() > 16) { *whyNot = "ranked counts 16 players at most"; return ""; }
     std::vector<bool> sides(kMaxPlayers, false);
     int nSides = 0;
@@ -2275,6 +2405,7 @@ std::string Server::rankedResult(int winner, std::string* whyNot) {
         else for (auto& o : es) place += o.score > es[k].score;
         out += (k ? "," : "") + std::to_string(es[k].slot) + ":" + std::to_string(es[k].team) + ":" + std::to_string(place);
     }
+    for (size_t k = 0; k < rankedLeft_.size(); k++) out += (k ? "," : " left=") + std::to_string(rankedLeft_[k].slot);
     return out;
 }
 
@@ -2284,16 +2415,41 @@ void Server::ensureMaster() {
     master_->start(port(), cfg_.publicList); // not public: registers for a token, stays off the list
 }
 
+// The ranked match goes live: from here until it ends nothing may change it (rankedLive). Each player's game signs
+// the match id (EV_RANKSIGN -> "ticketsig"); with every signature in, the ticket goes to the Worker, which only
+// rates players who signed it, so a server can't put someone in a match they never played.
 void Server::openRankedTicket() {
     if (!cfg_.ranked || !rankedMatch_.empty()) return;
     rankedMatch_ = randomMatchId();
-    if (cfg_.lanOnly) { message("ranked: a LAN-only server can't open match tickets - this match won't be rated"); return; }
-    std::string players;
-    for (auto& p : players_)
-        if (p.connected && !p.isBot && p.team != TEAM_SPECTATOR && !p.rankId.empty()) players += (players.empty() ? "" : ",") + p.rankId;
+    rankedLeft_.clear();
+    rankedTicketSent_ = false;
+    rankedSigDeadline_ = time() + 15.0;
+    if (vote_.kind != VOTE_NONE) { message("vote cancelled: the ranked match is live"); vote_ = Vote(); }
+    if (cfg_.lanOnly) { rankedTicketSent_ = true; message("ranked: a LAN-only server can't open match tickets - this match won't be rated"); return; }
+    for (int i = 0; i < kMaxPlayers; i++) {
+        players_[i].ticketSig.clear();
+        if (isRankedParticipant(i)) { GameEvent e; e.type = EV_RANKSIGN; e.text = rankedMatch_; sendEvent(i, e); }
+    }
+}
+
+void Server::maybeSendRankedTicket(bool giveUp) {
+    if (!rankedLive() || rankedTicketSent_) return;
+    std::string players, keys, sigs;
+    bool all = true;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const ServerPlayer& p = players_[i];
+        if (!p.connected || p.isBot || p.team == TEAM_SPECTATOR) continue;
+        if (p.rankId.empty() || p.ticketSig.empty()) { all = false; continue; }
+        players += (players.empty() ? "" : ",") + p.rankId;
+        keys += (keys.empty() ? "" : ",") + p.rankPub;
+        sigs += (sigs.empty() ? "" : ",") + p.ticketSig;
+    }
+    if (!all && !giveUp) return;
+    rankedTicketSent_ = true;
+    if (!all) { message("ranked: not every player signed the match ticket - this match won't be rated"); return; }
     ensureMaster();
     if (master_) master_->post("ticket", "/ticket", "kind=match&match=" + rankedMatch_ + "&ladder=" + arenaVariant(ms_.arenaVariant).name +
-                                                     "&map=" + cfg_.map + "&players=" + players);
+                                                     "&map=" + cfg_.map + "&players=" + players + "&keys=" + keys + "&sigs=" + sigs);
     glog(LOG_SIMPLE, "ranked ticket %s players %s", rankedMatch_.c_str(), players.c_str());
 }
 
@@ -2327,8 +2483,44 @@ void Server::finishRaceRun(int id) {
 void Server::postRankedResult(const std::string& eventText) {
     std::vector<std::string> ids;
     for (auto& p : players_) ids.push_back(p.rankId);
-    std::string match, list = rankedResultIds(eventText, ids, &match);
-    if (master_ && !list.empty()) master_->post("result", "/result", "match=" + match + "&p=" + list);
+    std::string match, left, list = rankedResultIds(eventText, ids, &match, nullptr, nullptr, &left);
+    if (master_ && !list.empty()) master_->post("result", "/result", "match=" + match + "&p=" + list + (left.empty() ? "" : "&left=" + left));
+}
+
+// ---- tourney seeding ----
+void Server::prefetchSeedRatings() {
+    if (cfg_.lanOnly) return;
+    std::vector<std::string> ids;
+    for (auto& p : players_) if (p.connected && !p.isBot && !p.rankId.empty()) ids.push_back(p.rankId);
+    if (ids.empty()) return;
+    if (!seedRatings_) seedRatings_ = std::make_unique<RankService>();   // (its own thread: no HTTP on the tick)
+    for (int v = 0; v < kArenaVariants; v++) if (arenaVariantRanked(v)) seedRatings_->fetch(arenaVariant(v).name, ids);
+}
+
+int Server::seedRating(int id) {
+    const ServerPlayer& p = players_[id];
+    auto fixed = seedFixed_.find(p.rankId);
+    if (fixed != seedFixed_.end()) return fixed->second;
+    int sum = 0, n = 0;
+    for (int v = 0; v < kArenaVariants; v++) {
+        if (!arenaVariantRanked(v)) continue;
+        Rating r;
+        bool rated = !p.rankId.empty() && seedRatings_ && seedRatings_->rating(arenaVariant(v).name, p.rankId, r) && r.games > 0;
+        sum += rated ? r.display() : kUnratedSeed;
+        n++;
+    }
+    return n ? (int)std::lround((double)sum / n) : kUnratedSeed;
+}
+
+std::vector<int> Server::tourneySeeding(const std::vector<int>& entrants) {
+    std::vector<int> e = entrants;
+    for (size_t i = e.size(); i > 1; i--) std::swap(e[i - 1], e[qrand() % i]); // equal seeds: random order
+    std::vector<int> rating(kMaxPlayers, kUnratedSeed);
+    for (int i : e) rating[i] = seedRating(i);
+    std::stable_sort(e.begin(), e.end(), [&](int a, int b) { return rating[a] > rating[b]; });
+    for (size_t k = 0; k < e.size(); k++) glog(LOG_SIMPLE, "tourney seed %d: %s (%d)", (int)k + 1, players_[e[k]].name.c_str(), rating[e[k]]);
+    prefetchSeedRatings();   // (fresh numbers for the next one)
+    return seededBracket(e);
 }
 
 void Server::handleMasterReply(const std::string& key, const std::string& reply) {

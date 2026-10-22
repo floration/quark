@@ -329,19 +329,11 @@ void tourneyBegin(Server& s) {
     t = Server::Tourney();
     std::vector<int> entrants;
     for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].team != TEAM_SPECTATOR) entrants.push_back(i);
-    for (size_t i = entrants.size(); i > 1; i--) std::swap(entrants[i - 1], entrants[qrand() % i]); // random seeding
-    size_t size = 2;
-    while (size < entrants.size()) size *= 2;
-    // byes go against different players: fill pairs' second slots last
-    std::vector<int> first(size, -1);
-    for (size_t i = 0, k = 0; i < entrants.size(); i++) {
-        size_t slot = i < size / 2 ? 2 * i : 2 * (i - size / 2) + 1;
-        first[slot] = entrants[i];
-        (void)k;
-    }
+    // seeded by rating (the average of the three ladders; Server::tourneySeeding): top seeds get the byes
+    std::vector<int> first = s.tourneySeeding(entrants);
     for (int i : entrants) t.join[i] = s.players_[i].joinId;
     t.rounds.push_back(first);
-    for (size_t n = size / 2; n >= 1; n /= 2) t.rounds.push_back(std::vector<int>(n, -2));
+    for (size_t n = first.size() / 2; n >= 1; n /= 2) t.rounds.push_back(std::vector<int>(n, -2));
     t.running = true;
 }
 
@@ -974,6 +966,12 @@ void rulesOnDeath(Server& s, int victim, int killer) {
 }
 
 void rulesOnLeave(Server& s, int id) { rulesOnDeath(s, id, -1); }
+
+void rulesEndMatch(Server& s, const std::string& text, int winner) {
+    if (s.ms_.phase == PHASE_MATCH_END || s.ms_.phase == PHASE_WARMUP) return;
+    s.tourney_.running = false;
+    enterMatchEnd(s, text, winner);
+}
 
 float rulesRespawnDelay(const Server& s) {
     if (s.ms_.phase == PHASE_WARMUP) return 1.5f;

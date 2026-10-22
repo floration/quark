@@ -11,9 +11,12 @@
 #include <thread>
 #include <vector>
 
-// The list's base URL: QUARK_MASTER env var if set, else the one published on the website
-// (site/master.txt), so it can change without a new release. Empty = no internet list.
+// The list's (and ranked's) base URL: QUARK_MASTER env var if set (tests, local copies), else the address built into
+// the game, unless the website publishes a master.txt signed with the release key (master.txt.sig): then that one.
+// Empty = no internet list.
 std::string masterUrl();
+// The URL in a master.txt body if sigHex is a valid release-key (pubHex) signature of exactly that body.
+bool signedMasterUrl(const std::string& body, const std::string& sigHex, const std::string& pubHex, std::string* url);
 // ip:port of every public server running this version.
 bool fetchServerList(std::vector<std::string>& out, std::string* err = nullptr);
 // This machine's public IPv4 (empty if unknown).

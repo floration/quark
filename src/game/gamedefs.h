@@ -12,7 +12,7 @@ constexpr int kMaxPlayers = 32;        // engine limit; servers default to 8 (Se
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 28;
+constexpr uint16_t kProtocolVersion = 29;
 // PlayerSnap::keys: what a player is holding (spectators see it on the key overlay)
 enum : uint16_t { KEY_FWD = 1, KEY_BACK = 2, KEY_LEFT = 4, KEY_RIGHT = 8, KEY_JUMP = 16, KEY_CROUCH = 32, KEY_FIRE = 64, KEY_ALT = 128, KEY_DASH = 256, KEY_HOOK = 512 };
 
@@ -288,6 +288,7 @@ enum EventType : uint8_t {
     EV_TYPING,       // a is typing in chat (others hear key clicks and see "..." over them)
     EV_QUIP,         // a says a line from the voice pack (b: which one, the same pick for everyone)
     EV_LOCATE,       // tag / hide and seek locator, to the tagger / seeker only: a = who, text = "x y z" where they are
+    EV_RANKSIGN,     // ranked match live: text = the match id; the player's game answers "ticketsig <signature>"
 };
 
 #define WB(w) (1u << (w))

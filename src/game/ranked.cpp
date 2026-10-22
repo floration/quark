@@ -8,6 +8,7 @@
 #include "../common/http.h"
 #include "../common/net.h"
 #include "../common/sha256.h"
+#include "../common/sign.h"
 #include "master.h"
 #include "map.h"
 #include "official_maps.h"
@@ -35,24 +36,64 @@ bool isOfficialMap(const Map& m) {
 
 bool isRankedMap(const Map& m, int ladder) { return ladder >= 0 && ladder < 16 && (m.rankedLadders >> ladder & 1) && isOfficialMap(m); }
 
-std::string rankIdFromSecret(const std::string& secret) { return sha256Hex(secret).substr(0, 32); }
+std::string legacyRankId(const std::string& secret) { return sha256Hex(secret).substr(0, 32); }
+std::string rankSeedHex(const std::string& secret) { return sha256Hex("quark-rank-ed25519-v1:" + secret); }
+std::string rankIdFromPublic(const std::string& pub) { return isHex(pub, 64) ? sha256Hex(pub).substr(0, 32) : std::string(); }
+
+RankKey rankKeyFromSecret(const std::string& secret) {
+    RankKey k;
+    if (!isHex(secret, 64) || !sign::publicFromPrivate(rankSeedHex(secret), &k.pub)) return RankKey();
+    k.secret = secret;
+    k.id = rankIdFromPublic(k.pub);
+    return k;
+}
+
+std::string rankIdFromSecret(const std::string& secret) { return rankKeyFromSecret(secret).id; }
+
+std::string rankConnectMessage(uint32_t cookie, uint32_t nonce) {
+    char b[48];
+    snprintf(b, sizeof b, "quark-rankid-v1 %08x %08x", (unsigned)cookie, (unsigned)nonce);
+    return b;
+}
+std::string rankTicketMessage(const std::string& match) { return "quark-ticket-v1 " + match; }
+
+bool rankSign(const RankKey& key, const std::string& msg, std::string* sigHex) {
+    return !key.secret.empty() && sign::signMessage(msg, rankSeedHex(key.secret), sigHex);
+}
+bool rankVerify(const std::string& pub, const std::string& msg, const std::string& sig) {
+    return isHex(pub, 64) && isHex(sig, 128) && sign::verifyMessage(msg, sig, pub);
+}
+
+std::vector<int> seededBracket(const std::vector<int>& bestFirst) {
+    size_t size = 2;
+    while (size < bestFirst.size()) size *= 2;
+    std::vector<int> order = {0};   // seed indexes in bracket order: {0,1} -> {0,3,1,2} -> {0,7,3,4,1,6,2,5} ...
+    while (order.size() < size) {
+        std::vector<int> next;
+        int n = (int)order.size() * 2;
+        for (int o : order) { next.push_back(o); next.push_back(n - 1 - o); }
+        order = next;
+    }
+    std::vector<int> out(size, -1);
+    for (size_t i = 0; i < size; i++) out[i] = order[i] < (int)bestFirst.size() ? bestFirst[order[i]] : -1;
+    return out;
+}
 
 RankKey loadOrCreateRankKey(const std::string& path) {
-    RankKey k;
+    std::string secret;
     {
         std::ifstream f(path);
         std::string s;
-        if (f >> s && isHex(s, 64)) k.secret = s;
+        if (f >> s && isHex(s, 64)) secret = s;
     }
-    if (k.secret.empty()) {
+    if (secret.empty()) {
         std::random_device rd;
         char buf[72];
         for (int i = 0; i < 8; i++) snprintf(buf + i * 8, 9, "%08x", (unsigned)rd());
         if (!writeFileAtomic(path, std::string(buf) + "\n", true)) return RankKey();   // (the ranked identity: whole, and private)
-        k.secret = buf;
+        secret = buf;
     }
-    k.id = rankIdFromSecret(k.secret);
-    return k;
+    return rankKeyFromSecret(secret);
 }
 
 std::string fromHexText(const std::string& h) {
@@ -108,9 +149,11 @@ std::string randomMatchId() {
 // "match ladder slot:team:place,..." -> its entries (false if malformed)
 namespace {
 struct ResultEntry { int slot, team, place; };
-bool parseRankedText(const std::string& text, std::string& match, std::string& mode, std::vector<ResultEntry>& out) {
+// "match ladder slot:team:place,...[ left=slot,...]" -> its entries and leavers (first leaver first); false if malformed
+bool parseRankedText(const std::string& text, std::string& match, std::string& mode, std::vector<ResultEntry>& out,
+                     std::vector<int>* leftOut = nullptr) {
     std::istringstream in(text);
-    std::string list;
+    std::string list, extra, more;
     if (!(in >> match >> mode >> list) || !isHex(match, 16)) return false;
     for (char c : mode) if (!isalnum((unsigned char)c)) return false;
     std::istringstream ls(list);
@@ -122,15 +165,30 @@ bool parseRankedText(const std::string& text, std::string& match, std::string& m
         for (auto& o : out) if (o.slot == e.slot) return false;
         out.push_back(e);
     }
+    std::vector<int> left;
+    if (in >> extra) {
+        if (extra.rfind("left=", 0) != 0 || (in >> more)) return false;
+        std::istringstream lls(extra.substr(5));
+        while (std::getline(lls, part, ',')) {
+            char* end = nullptr;
+            long v = strtol(part.c_str(), &end, 10);
+            if (part.empty() || *end || std::find(left.begin(), left.end(), (int)v) != left.end()) return false;
+            if (std::none_of(out.begin(), out.end(), [&](const ResultEntry& e) { return e.slot == v; })) return false; // a leaver is in the result
+            left.push_back((int)v);
+        }
+        if (left.empty()) return false;
+    }
+    if (leftOut) *leftOut = left;
     return !out.empty();
 }
 }
 
 std::string rankedResultIds(const std::string& text, const std::vector<std::string>& ids, std::string* match, std::string* ladder,
-                            std::vector<std::string>* playersOut) {
+                            std::vector<std::string>* playersOut, std::string* leftOut) {
     std::string m, mode;
     std::vector<ResultEntry> es;
-    if (!parseRankedText(text, m, mode, es)) return "";
+    std::vector<int> left;
+    if (!parseRankedText(text, m, mode, es, &left)) return "";
     std::string p;
     std::vector<std::string> players;
     for (auto& e : es) {
@@ -141,6 +199,10 @@ std::string rankedResultIds(const std::string& text, const std::vector<std::stri
     if (match) *match = m;
     if (ladder) *ladder = mode;
     if (playersOut) *playersOut = players;
+    if (leftOut) {
+        leftOut->clear();
+        for (int l : left) *leftOut += (leftOut->empty() ? "" : ",") + ids[l];
+    }
     return p;
 }
 
@@ -161,22 +223,48 @@ bool rankedResultMatchesView(const std::string& text, const std::vector<SeenPlay
     auto fail = [&](const char* w) { if (why) *why = w; return false; };
     std::string match, mode;
     std::vector<ResultEntry> es;
-    if (!parseRankedText(text, match, mode, es)) return fail("malformed result");
-    int playing = 0;
-    for (auto& p : seen) playing += p.playing;
-    if ((int)es.size() != playing) return fail("the result lists different players than the match had");
-    int winner = scoreA > scoreB ? 0 : scoreB > scoreA ? 1 : -1; // TEAM_A / TEAM_B / draw
+    std::vector<int> left;
+    if (!parseRankedText(text, match, mode, es, &left)) return fail("malformed result");
+    auto isLeaver = [&](int slot) { return std::find(left.begin(), left.end(), slot) != left.end(); };
+    // everyone we saw playing is in the result, and everyone in it played (leavers may be gone from our view)
+    for (size_t i = 0; i < seen.size(); i++)
+        if (seen[i].playing && std::none_of(es.begin(), es.end(), [&](const ResultEntry& e) { return e.slot == (int)i; }))
+            return fail("the result lists different players than the match had");
     for (auto& e : es) {
-        if (e.slot >= (int)seen.size() || !seen[e.slot].playing) return fail("the result lists someone who didn't play");
-        const SeenPlayer& p = seen[e.slot];
+        if (e.slot >= (int)seen.size()) return fail("malformed result");
+        if (!seen[e.slot].playing && !isLeaver(e.slot)) return fail("the result lists someone who didn't play");
+        if (seen[e.slot].playing && isLeaver(e.slot)) return fail("the result says someone left who is still here");
+        if (!teams && e.team != e.slot) return fail("malformed result");
+    }
+    if (teams) {
+        int winner = scoreA > scoreB ? 0 : scoreB > scoreA ? 1 : -1; // TEAM_A / TEAM_B / draw
+        if (!left.empty()) {   // the first leaver's side lost, whatever the score was
+            int lt = -1;
+            for (auto& e : es) if (e.slot == left[0]) lt = e.team;
+            if (lt != 0 && lt != 1) return fail("malformed result");
+            winner = 1 - lt;
+        }
+        for (auto& e : es) {
+            const SeenPlayer& p = seen[e.slot];
+            if (p.playing && e.team != p.team) return fail("the result puts a player on the wrong side");
+            int place = winner < 0 ? 0 : e.team == winner ? 0 : 1;
+            if (e.place != place) return fail("the result doesn't match the score");
+        }
+        return true;
+    }
+    // free for all: places from score (then kills). Leavers' last scores aren't in our view: the first leaver must be
+    // last, and the players still here must be in the order we saw.
+    auto key = [&](const ResultEntry& e) { return (long long)seen[e.slot].score * 1000 + seen[e.slot].kills; };
+    for (auto& e : es) {
+        if (!left.empty() && e.slot == left[0]) {
+            for (auto& o : es) if (o.slot != e.slot && o.place >= e.place) return fail("the first leaver isn't last");
+            continue;
+        }
+        if (isLeaver(e.slot)) continue;
         int place = 0;
-        if (teams) {
-            if (e.team != p.team) return fail("the result puts a player on the wrong side");
-            place = winner < 0 ? 0 : p.team == winner ? 0 : 1;
-        } else {
-            if (e.team != e.slot) return fail("malformed result");
-            long long mine = (long long)p.score * 1000 + p.kills;
-            for (auto& o : es) place += (long long)seen[o.slot].score * 1000 + seen[o.slot].kills > mine;
+        for (auto& o : es) {
+            if (isLeaver(o.slot)) { place += o.slot != left[0] && o.place < e.place; continue; } // (a later leaver: take the host's word)
+            place += key(o) > key(e);
         }
         if (e.place != place) return fail("the result doesn't match the score");
     }

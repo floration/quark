@@ -10,6 +10,7 @@
 #include "../common/net.h"
 #include "map.h"
 #include "protocol.h"
+#include "ranked.h"
 
 enum class ConnState { Disconnected, Connecting, Connected };
 
@@ -21,6 +22,10 @@ struct InterpPlayer {
 class NetClient {
 public:
     bool connect(const std::string& address, const std::string& name);
+    // The ranked key: its id is proven to the server at connect (signing the connect challenge), and the client signs
+    // ranked match ids the server asks for (EV_RANKSIGN). No key = no ranked id.
+    void setRankKey(const RankKey& k) { rankKey_ = k; }
+    uint64_t reconnectToken() const { return token_; } // from the last PKT_ACCEPT; sent again when reconnecting there
     void disconnect();
     // Receive packets, handle timeouts/retries. Call every frame.
     void poll();
@@ -125,6 +130,10 @@ private:
     ConnState state_ = ConnState::Disconnected;
     uint32_t nonce_ = 0;
     uint32_t cookie_ = 0;         // connect challenge cookie from PKT_CHALLENGE (0 = none yet)
+    RankKey rankKey_;
+    std::string connectSig_;      // rankKey_'s signature of the current challenge
+    uint64_t token_ = 0;          // reconnect token the server at tokenAddr_ gave us
+    std::string tokenAddr_;
     int clientId_ = -1;
     double lastSend_ = 0, lastRecv_ = 0, connectStart_ = 0;
     Map map_;

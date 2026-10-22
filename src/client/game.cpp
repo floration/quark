@@ -60,6 +60,10 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     if (!r_.init(cfg_.shadowRes, err)) return false;
     rescanMaps();
     rankKey_ = loadOrCreateRankKey(userDataPath("quark.key")); // ranked identity: stays on this computer
+    net_.setRankKey(rankKey_);   // (servers check the id against it; the key itself never goes to them)
+    // 1.17 ranked ids come from the key's public half: the Worker moves this key's old id (ratings, race times, Discord
+    // link, lifetime stats) over the first time it sees the secret. Once per start, in the background.
+    if (!rankKey_.secret.empty() && opts_.screenshot.empty()) rank_.request("hello", "/hello", "secret=" + rankKey_.secret);
     ui_.steadyCaret = !opts_.screenshot.empty();
     if (opts_.hostMode < 0 && opts_.vsBotsMode < 0 && opts_.connect.empty() && opts_.editMap.empty()) loadMenuBackdrop();
     if (opts_.debugInfo) { setScreen(Screen::Info); infoTab_ = opts_.debugInfo - 1; }
@@ -237,7 +241,6 @@ void Game::connectTo(const std::string& rawAddr) {
     if (!net_.connect(addr, cfg_.name)) { error_ = net_.error(); return; }
     edSession_ = edOnline_ = false;
     rankBefore_ = rankGamesBefore_ = -1;
-    if (!rankKey_.id.empty()) net_.sendCommand("rankid " + rankKey_.id);
     if (!host_) { cfg_.lastAddress = addr; cfg_.save(); }
     setScreen(Screen::Connecting);
 }
@@ -840,7 +843,9 @@ void Game::handleEvents() {
                     const ModeState& ms = net_.mode();
                     std::string why;
                     if (!rankedResultMatchesView(e.text, seen, modeIsTeamBased(ms.mode), ms.scoreA, ms.scoreB, &why)) {
-                        notify("NOT REPORTED - THE HOST'S RESULT DOESN'T MATCH THE GAME (" + why + ")", 8);
+                        // we don't vouch for it: the report says so, and the match becomes a dispute instead of being rated
+                        rank_.submit(body + "&dispute=1", ladder, players);
+                        notify("DISPUTED - THE HOST'S RESULT DOESN'T MATCH THE GAME (" + why + ")", 8);
                         break;
                     }
                 }
@@ -2895,7 +2900,7 @@ void Game::drawLeaderboard(float cx, float y) {
         }
         Rating mine;
         if (rank_.rating(ladder, rankKey_.id, mine))
-            r_.text(x + 6 * s, y + 32 * s + 20 * rowH + 6 * s, ts, "YOU: " + std::to_string(mine.display()) + (mine.games < 5 ? "? " : " ") + "(" + std::to_string(mine.games) + " GAMES)", ui_.accent);
+            r_.text(x + 6 * s, y + 32 * s + 20 * rowH + 6 * s, ts, "YOU: " + std::to_string(mine.display()) + (mine.games < kPlacementGames ? "? " : " ") + "(" + std::to_string(mine.games) + " GAMES)", ui_.accent);
     }
     {   // race: fastest Viaduct time trials
         float x = x0 + 3 * (colW + gap), yy = y;
@@ -2975,7 +2980,7 @@ void Game::drawScoreboard() {
         r_.text(x + 12 * s + cw, cy, ts, n, c);
         Rating rt;
         if (ranked && rank_.rating(ladder, net_.rankId(p.id), rt))
-            r_.text(x + w * 0.31f, cy, ts, rt.games < 5 ? std::to_string(rt.display()) + "?" : std::to_string(rt.display()), kWhite); // ? = still placing
+            r_.text(x + w * 0.31f, cy, ts, rt.games < kPlacementGames ? std::to_string(rt.display()) + "?" : std::to_string(rt.display()), kWhite); // ? = still placing
         {   // lifetime totals so far + this game's kills / deaths (sent when the game ends), so it counts up live
             auto lt = lifetime_.find(p.id == net_.clientId() ? rankKey_.id : net_.rankId(p.id));
             if (lt != lifetime_.end()) r_.text(x + w * 0.79f, cy, ts, std::to_string(lt->second.first + p.kills) + " / " + std::to_string(lt->second.second + p.deaths), kWhite);
@@ -3141,7 +3146,8 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     float y = y0;
     ui_.label(x, y, "NAME");
     // Discord: run /link in the Discord server, type the 6-digit code the bot gives you here ("unlink" to remove it)
-    ui_.label(x + w * 0.5f + gap * 0.5f, y, cfg_.discordName.empty() ? "DISCORD CODE (/link)" : ("DISCORD: " + cfg_.discordName).c_str());
+    // (linking makes the Discord name public next to your game name and ranked id: crowns and queue fills)
+    ui_.label(x + w * 0.5f + gap * 0.5f, y, cfg_.discordName.empty() ? "DISCORD CODE (/link) - PUBLIC" : ("DISCORD: " + cfg_.discordName + " (PUBLIC)").c_str());
     y += 22 * s;
     ui_.textField(1, x, y, w * 0.5f - gap * 0.5f, h, cfg_.name, 20);
     ui_.textField(43, x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, discordCode_, 8);

@@ -11,14 +11,16 @@
 
 enum PacketType : uint8_t {
     // client -> server
-    PKT_CONNECT = 1,     // u16 version, u32 nonce, u32 cookie (0 = none yet, from PKT_CHALLENGE), str name
+    PKT_CONNECT = 1,     // u16 version, u32 nonce, u32 cookie (0 = none yet, from PKT_CHALLENGE), str name,
+                         // [u32 token lo, u32 token hi (reconnect, 0 = none), str rank public key hex, str signature hex
+                         //  of rankConnectMessage(cookie, nonce) (both empty = no ranked id)]
     PKT_INPUT,           // u32 nonce, u32 ackTimeMs, u32 ackEvent, u8 lossPct, u8 ncmds, cmds..., u8 nStr [u16 firstSeq, nStr x str]
     PKT_DISCONNECT,      // u32 nonce
     PKT_INFO_REQUEST,    // padded with zeros to kInfoRequestBytes (no reply bigger than the request)
     PKT_MAP_REQUEST,     // u32 nonce, u32 mapCrc, u32 offset: ask for a piece of the server's map file
     PKT_PROBE_REQUEST,   // u32 nonce, u16 port, padded to kProbeRequestBytes: "is <my ip>:<port> reachable?" (any server answers)
     // server -> client
-    PKT_ACCEPT = 64,     // u32 nonce, u8 clientId, str map, u32 mapCrc, u8 mode
+    PKT_ACCEPT = 64,     // u32 nonce, u8 clientId, str map, u32 mapCrc, u8 mode, u32 token lo, u32 token hi (reconnect token)
     PKT_REJECT,          // str reason
     PKT_SNAPSHOT,        // u32 nonce, see Snapshot
     PKT_INFO_REPLY,      // str serverName, str map, u8 mode, u8 players, u8 maxPlayers, u16 port
