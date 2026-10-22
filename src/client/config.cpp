@@ -105,7 +105,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "bot_skill") botSkill = std::min(std::max(iv, 0), 3);
         else if (k == "bot_enemies") botEnemies = std::min(std::max(iv, 1), 7);
         else if (k == "bot_allies") botAllies = std::min(std::max(iv, 0), 3);
-        else if (k == "bot_mode") botMode = std::min(std::max(iv, 0), 5);
+        else if (k == "bot_mode") botMode = std::min(std::max(iv, 0), MODE_COUNT - 1);   // (the vs-bots picker offers every mode)
         else if (k.rfind("hud_", 0) == 0) {
             int i = atoi(k.c_str() + 4), c = 0, hid = 0; HudElem e;
             if (i >= 0 && i < HUD_COUNT && sscanf(v.c_str(), "%f,%f,%f,%d,%f,%f,%f,%d,%f", &e.x, &e.y, &e.scale, &c, &e.color.x, &e.color.y, &e.color.z, &hid, &e.z) >= 7) {
