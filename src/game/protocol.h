@@ -142,7 +142,7 @@ inline int scoreboardValue(const PlayerSnap& p, const ModeState& ms) {
 }
 struct Snapshot {
     uint32_t tick = 0;        // server tick counter (one snapshot per tick; gaps = loss)
-    uint32_t timeMs = 0;      // server clock in ms
+    uint64_t timeMs = 0;      // server clock in ms (32 bits on the wire: the receiver unwraps it, see Server::timeMs_)
     uint16_t tickRate = 1000; // current server tick rate (Hz)
     uint16_t snapRate = 1000; // snapshots per second this client gets (interpolation buffers 2 of them)
     uint32_t ackCmdSeq = 0;

@@ -152,7 +152,7 @@ struct ServerPlayer {
     float catchUp = kCatchUpMax; // extra commands it may run to clear a backlog (refills very slowly)
     uint32_t cmdsRun = 0;       // commands simulated (nobody gets more than real time: see the tests)
     uint8_t reportedLoss = 0;   // % of snapshots the client says it missed
-    uint32_t lastViewTick = 0;
+    uint64_t lastViewTick = 0;   // the server ms its last command was looking at (unwrapped, see fromWireMs)
     uint16_t interpMs = 0;        // the fixed interpolation delay the client reported ("interp"; 0 = adaptive)
     double lastRecv = 0;
     float ping = 0;
@@ -164,11 +164,12 @@ struct ServerPlayer {
     // Delta snapshots: what we sent this client recently (ring by tick) and the newest one it confirmed.
     static constexpr int kSentRing = 256;
     std::vector<Snapshot> sent;
-    uint32_t ackSnapMs = 0;
+    uint64_t ackSnapMs = 0;
     // Visibility (anti-wallhack + bandwidth): when this client last had a line of sight to each player.
     double lastSeen[kMaxPlayers] = {};
     // lag compensation history
-    struct Hist { uint32_t tick; Vec3 pos; bool crouched; bool alive; };
+    struct Hist { uint64_t tick; Vec3 pos; bool crouched; bool alive; };   // tick: timeMs_ when recorded (kNoHistory: none)
+    static constexpr uint64_t kNoHistory = ~0ull;
     static constexpr int kHistory = 1024; // >= 1 s at any tick rate
     Hist history[kHistory];
 };
@@ -230,7 +231,14 @@ public:
     ServerConfig cfg_;
     Map map_;
     uint32_t tick_ = 0;
-    uint32_t timeMs_ = 0;       // server clock (advances 1000/rate ms per tick)
+    // Server clock: advances 1000/rate ms per tick. 64-bit: it never wraps (32 bits did after 49.7 days of uptime).
+    // On the wire (snapshot time, acks, view ticks) it stays 32 bits; each side unwraps what it gets to the value
+    // nearest its own clock (fromWireMs here, NetClient::onSnapshot there), so the protocol is unchanged.
+    uint64_t timeMs_ = 0;
+    uint64_t fromWireMs(uint32_t w) const {
+        int64_t t = (int64_t)timeMs_ + (int32_t)(w - (uint32_t)timeMs_);
+        return t < 0 ? 0 : (uint64_t)t;
+    }
     int rateLevel_ = 0;         // index into kTickRates
     int rateTopLevel_ = 0;      // the highest rate allowed (maxTickRate)
     double rateUpAt_ = 0;       // after stepping down: when to try the next rate up again (backs off each time it fails)
@@ -314,7 +322,7 @@ public:
     bool hitHead_[kMaxPlayers][kMaxPlayers] = {};   // the batched hit is a headshot (EV_HIT text "h": a red number)
     bool hitPending_ = false;
     void flushHit(int attacker, int victim);
-    void bounceShot(int id, Vec3 o, Vec3 dir, float range, uint32_t vt, float* dmgPer, float dmg);
+    void bounceShot(int id, Vec3 o, Vec3 dir, float range, uint64_t vt, float* dmgPer, float dmg);
     // Map edit sessions: everyone flies around and edits the map together; edits go through here so all
     // copies stay identical. The map file is autosaved (it's the host's copy) while dirty.
     bool editing_ = false, editDirty_ = false;
@@ -476,7 +484,7 @@ private:
     bool fireWeapon(int id, const UserCmd& cmd);   // true if it hit a player (hitscan weapons)
     void tickProjectiles();
     void explode(const Vec3& at, int owner, int weapon, int direct = -1);   // direct: the player a rocket hit itself
-    void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t viewMs, float* dmgPerPlayer, float dmg, float headDmg = 0, float grow = 0, bool pierce = false);
+    void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint64_t viewMs, float* dmgPerPlayer, float dmg, float headDmg = 0, float grow = 0, bool pierce = false);
     void sendSnapshots();
     void updateVisibility();
     double nextVisCheck_ = 0;

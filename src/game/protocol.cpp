@@ -9,7 +9,7 @@ static float angD(int16_t q) { return q * (PI / 32767.0f); }
 
 void writeSnapshotClient(Writer& w, const Snapshot& s) {
     w.u32(s.tick);
-    w.u32(s.timeMs);
+    w.u32((uint32_t)s.timeMs);
     w.u16(s.tickRate);
     w.u16(s.snapRate);
     w.u32(s.ackCmdSeq);

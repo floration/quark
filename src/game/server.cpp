@@ -778,7 +778,7 @@ void Server::handleConnect(const NetAddr& from, Reader& r, int len) {
         do p.reconnectToken = (uint64_t)rd() << 32 ^ rd(); while (p.reconnectToken == 0);
     }
     p.lastRecv = timeNow();
-    for (auto& h : p.history) h.tick = 0xFFFFFFFFu;
+    for (auto& h : p.history) h.tick = ServerPlayer::kNoHistory;
     autoTeam(id);
     // A live ranked match takes no one new: they watch it. (Else a leaver who comes back would be counted twice, and a
     // dodger's new session without a key would leave the match unrated: "has no ranked id".)
@@ -986,9 +986,10 @@ void Server::handleInput(int id, Reader& r) {
 
     p.reportedLoss = loss;
     windowWorstLoss_ = std::max(windowWorstLoss_, (int)loss);
-    if (ackMs <= timeMs_ && ackMs > p.ackSnapMs) p.ackSnapMs = ackMs; // newest snapshot it has: delta base
-    if (ackMs <= timeMs_ && ackMs + 10000 > timeMs_) {
-        float sample = (float)(timeMs_ - ackMs);
+    uint64_t ack = ackMs ? fromWireMs(ackMs) : 0;   // (0: no snapshot yet)
+    if (ack && ack <= timeMs_ && ack > p.ackSnapMs) p.ackSnapMs = ack; // newest snapshot it has: delta base
+    if (ack && ack <= timeMs_ && ack + 10000 > timeMs_) {
+        float sample = (float)(timeMs_ - ack);
         p.ping = p.ping == 0 ? sample : p.ping * 0.98f + sample * 0.02f;
     }
     if (ackEvent > p.ackedEvent) p.ackedEvent = ackEvent;
@@ -1617,7 +1618,7 @@ void Server::simulate() {
             { QZONE("bot think"); c = botThink(*this, i); }
             c.seq = tick_; // (a command number like a client's; spread doesn't depend on it, NET-9)
             c.msec = (uint8_t)(1000 / tickRate());
-            c.viewTick = timeMs_;
+            c.viewTick = (uint32_t)timeMs_;   // (as a client sends it: 32 bits)
             { QZONE("bot cmd"); runPlayerCmd(i, c); }
             continue;
         }
@@ -1681,7 +1682,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     p.pitch = cmd.pitch;
     p.prevButtons = p.buttons;
     p.buttons = cmd.buttons;
-    p.lastViewTick = cmd.viewTick;
+    p.lastViewTick = fromWireMs(cmd.viewTick);
     if (cmd.weapon < WPN_COUNT) p.selectedWeapon = cmd.weapon; // also while dead: you respawn with it
     if (!p.alive) return;
     if (rulesFrozen(*this, id)) p.move.flags |= MF_FROZEN;
@@ -1758,7 +1759,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
 
 // One lag-compensated ray: adds dmg to the first player it hits (tested against where players
 // were at the shooter's view time).
-void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t vt, float* dmgPer, float dmg, float headDmg, float grow, bool pierce) {
+void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint64_t vt, float* dmgPer, float dmg, float headDmg, float grow, bool pierce) {
     float bang;
     float wall = map_.raycastBullet(eye, dir, range, &bang); // goes through wallbang brushes
     float best = wall >= 0 ? wall : range;
@@ -1772,7 +1773,7 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
         // newest recorded state at or before the shooter's view time
         for (uint32_t k = 1; k <= (uint32_t)ServerPlayer::kHistory && k <= tick_; k++) {
             const auto& h = players_[i].history[(tick_ - k) % ServerPlayer::kHistory];
-            if (h.tick == 0xFFFFFFFFu || h.tick > timeMs_) break;
+            if (h.tick == ServerPlayer::kNoHistory || h.tick > timeMs_) break;
             if (h.tick <= vt) { if (h.alive) { pos = h.pos; crouched = h.crouched; } break; }
         }
         AABB bb = hitBox(pos, crouched);
@@ -1795,7 +1796,7 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
 
 // A pellet that ricochets: straight until it hits a player (done) or a wall, then reflects off it, up to
 // kShotgunBounces times, with whatever range is left. Players are tested where the shooter saw them.
-void Server::bounceShot(int id, Vec3 o, Vec3 dir, float range, uint32_t vt, float* dmgPer, float dmg) {
+void Server::bounceShot(int id, Vec3 o, Vec3 dir, float range, uint64_t vt, float* dmgPer, float dmg) {
     for (int b = 0; b <= kShotgunBounces && range > 0.01f; b++) {
         Vec3 n;
         float wall = map_.raycast(o, dir, range, &n);
@@ -1808,7 +1809,7 @@ void Server::bounceShot(int id, Vec3 o, Vec3 dir, float range, uint32_t vt, floa
             bool crouched = players_[i].move.flags & MF_CROUCHED;
             for (uint32_t k = 1; k <= (uint32_t)ServerPlayer::kHistory && k <= tick_; k++) {
                 const auto& h = players_[i].history[(tick_ - k) % ServerPlayer::kHistory];
-                if (h.tick == 0xFFFFFFFFu || h.tick > timeMs_) break;
+                if (h.tick == ServerPlayer::kNoHistory || h.tick > timeMs_) break;
                 if (h.tick <= vt) { if (h.alive) { pos = h.pos; crouched = h.crouched; } break; }
             }
             float t = rayAABB(o, inv, hitBox(pos, crouched), best);
@@ -1923,7 +1924,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
     }
     p.shotsFired++;
     for (bool& h : headHit_) h = false;
-    uint32_t vt = cmd.viewTick; // ms on the server clock
+    uint64_t vt = fromWireMs(cmd.viewTick); // ms on the server clock
     if (vt > timeMs_) vt = timeMs_;
     {   // rewind at most the measured ping + the interpolation this client uses + a little jitter: the adaptive delay's
         // most (two snapshots + 50 ms), or the fixed delay it reported ("interp", up to kMaxInterpMs: FINAL_REVIEW 2.5,
@@ -1931,7 +1932,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
         uint32_t interp = std::max<uint32_t>(2000u / (uint32_t)std::max(1, tickRate() / snapEvery()) + 50u, 100u);
         interp = std::max<uint32_t>(interp, std::min<uint32_t>(p.interpMs, (uint32_t)kMaxInterpMs));
         uint32_t cap = std::min<uint32_t>(kMaxRewindMs, (uint32_t)p.ping + interp + kRewindToleranceMs);
-        if (timeMs_ - vt > cap) vt = timeMs_ - cap;
+        if (timeMs_ - vt > cap) vt = timeMs_ - cap;   // (64-bit: never wraps)
     }
     float range = p.weapon == WPN_KNIFE ? kKnifeRange : wd.range;
     // Pellets add up per target so one shotgun blast is one hit (one damage event) per player.
@@ -2232,7 +2233,7 @@ int Server::addBot(int team, int skill, bool balance) {
     static const char* names[] = {"ANNA", "BRUNO", "CLEO", "DMITRI", "EZRA", "FAYE", "GUS", "HANA", "IVO", "JUNE", "KAI", "LENA", "MILO", "NOOR", "OTTO", "PIA"};
     ServerPlayer& p = players_[id];
     p = ServerPlayer();
-    for (auto& h : p.history) h.tick = 0xFFFFFFFFu;
+    for (auto& h : p.history) h.tick = ServerPlayer::kNoHistory;
     p.connected = true;
     p.joinId = nextJoinId_++;
     p.isBot = true;
@@ -2521,7 +2522,7 @@ void Server::openGameLog() {
 
 void Server::glog(int level, const char* fmt, ...) {
     if (!glog_ || cfg_.logLevel < level) return;
-    fprintf(glog_, "%u.%03u ", timeMs_ / 1000, timeMs_ % 1000);
+    fprintf(glog_, "%llu.%03u ", (unsigned long long)(timeMs_ / 1000), (unsigned)(timeMs_ % 1000));
     va_list ap;
     va_start(ap, fmt);
     vfprintf(glog_, fmt, ap);
@@ -2533,7 +2534,7 @@ void Server::glog(int level, const char* fmt, ...) {
 void Server::logTick() {
     if (!glog_ || cfg_.logLevel < LOG_VERBOSE) return;
     bool extreme = cfg_.logLevel >= LOG_EXTREME;
-    uint32_t next = timeMs_ + 1000 / tickRate();
+    uint64_t next = timeMs_ + 1000 / tickRate();
     if (!extreme && next / 8 == timeMs_ / 8) return; // only when this tick crosses an 8 ms boundary
     glog(LOG_VERBOSE, "tick %u phase %d round %d score %d-%d", tick_, ms_.phase, ms_.round, ms_.scoreA, ms_.scoreB);
     for (int i = 0; i < kMaxPlayers; i++) {

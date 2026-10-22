@@ -5,7 +5,7 @@
 
 struct UserCmd {
     uint32_t seq = 0;       // monotonically increasing per client
-    uint32_t viewTick = 0;  // server tick the client was rendering (lag compensation)
+    uint32_t viewTick = 0;  // server ms the client was rendering (lag compensation; low 32 bits, the server unwraps it)
     int8_t forward = 0;     // -127..127
     int8_t side = 0;
     uint16_t buttons = 0;

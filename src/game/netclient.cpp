@@ -316,7 +316,10 @@ void NetClient::pumpDownload(double now) {
 }
 
 void NetClient::onSnapshot(Snapshot& s) {
-    if (!snaps_.empty() && s.tick <= snaps_.back().tick) return; // out of order / duplicate
+    // out of order / duplicate (serial arithmetic: the tick counter wraps after 2^32 ticks)
+    if (!snaps_.empty() && (int32_t)(s.tick - snaps_.back().tick) <= 0) return;
+    // the server clock is 32 bits on the wire: unwrap it next to the last one (never jumps back at 2^32 ms)
+    if (!snaps_.empty()) s.timeMs = snaps_.back().timeMs + (int64_t)(int32_t)((uint32_t)s.timeMs - (uint32_t)snaps_.back().timeMs);
     double now = timeNow();
     // Snapshot loss for the server's tick-rate test. Snapshots go out every `every` ticks (snapshot rate is
     // separate from the tick rate), so count the gap in snapshots, not ticks: counting ticks read as exactly
@@ -417,7 +420,7 @@ void NetClient::tick(UserCmd cmd) {
     if (play_.active || state_ != ConnState::Connected || !mapReady_) return;
     cmd.seq = nextSeq_++;
     cmd.msec = (uint8_t)(1000 / tickRate());
-    cmd.viewTick = (uint32_t)std::max(0.0, renderTime_ * 1000.0); // server ms we're looking at
+    cmd.viewTick = (uint32_t)(uint64_t)std::max(0.0, renderTime_ * 1000.0); // server ms we're looking at (its low 32 bits)
     // a fixed interpolation delay goes to the server, whose lag compensation then rewinds that far (FINAL_REVIEW 2.5)
     int interpMs = interpFixed_ >= 0 ? std::min((int)std::lround(interpFixed_ * 1000.0f), kMaxInterpMs) : 0;
     if (interpMs != interpSent_) { interpSent_ = interpMs; sendCommand("interp " + std::to_string(interpMs)); }
@@ -435,7 +438,7 @@ void NetClient::sendInput() {
     Writer w(buf, sizeof buf);
     writeHeader(w, PKT_INPUT);
     w.u32(nonce_);
-    w.u32(hasSnapshot() ? latest().timeMs : 0);
+    w.u32(hasSnapshot() ? (uint32_t)latest().timeMs : 0);
     w.u32(lastEventId_);
     w.u8(lossOverride_ >= 0 ? (uint8_t)lossOverride_ : lossPct_);
     uint32_t first = nextSeq_ > (uint32_t)kCmdsPerPacket ? nextSeq_ - kCmdsPerPacket : 1;
