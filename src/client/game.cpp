@@ -3157,7 +3157,12 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     ui_.label(x, y, "NAME");
     // Discord: run /link in the Discord server, type the 6-digit code the bot gives you here ("unlink" to remove it)
     // (linking makes the Discord name public next to your game name and ranked id: crowns and queue fills)
-    ui_.label(x + w * 0.5f + gap * 0.5f, y, cfg_.discordName.empty() ? "DISCORD CODE (/link) - PUBLIC" : ("DISCORD: " + cfg_.discordName + " (PUBLIC)").c_str());
+    {   // (fits its half column: shrunk, then a long linked name clipped, keeping "(PUBLIC)")
+        float lw = w * 0.5f - gap * 0.5f;
+        std::string dl = cfg_.discordName.empty() ? "DISCORD CODE (/link) - PUBLIC"
+            : "DISCORD: " + r_.textClip(cfg_.discordName, Renderer::kMinTextScale, lw - r_.textWidth("DISCORD:  (PUBLIC)", Renderer::kMinTextScale)) + " (PUBLIC)";
+        ui_.labelFit(x + w * 0.5f + gap * 0.5f, y, lw, dl);
+    }
     y += 22 * s;
     ui_.textField(1, x, y, w * 0.5f - gap * 0.5f, h, cfg_.name, 20);
     ui_.textField(43, x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, discordCode_, 8);

@@ -23,6 +23,7 @@ public:
 
     void panel(float x, float y, float w, float h, float alpha = 0.75f);
     void label(float x, float y, const std::string& t, const Color& c = {1, 1, 1, 1}, float sizeMul = 1.0f);
+    void labelFit(float x, float y, float maxW, std::string t, const Color& c = {1, 1, 1, 1}); // shrunk / clipped to maxW
     void labelCentered(float cx, float y, const std::string& t, const Color& c = {1, 1, 1, 1}, float sizeMul = 1.0f);
     bool button(float x, float y, float w, float h, const std::string& label, bool enabled = true);
     bool textField(int id, float x, float y, float w, float h, std::string& value, size_t maxLen = 32);

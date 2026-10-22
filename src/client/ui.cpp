@@ -28,6 +28,11 @@ void Ui::label(float x, float y, const std::string& t, const Color& c, float siz
     r_->text(x, y, ts, t, c);
 }
 
+void Ui::labelFit(float x, float y, float maxW, std::string t, const Color& c) {
+    float ts = fit(t, maxW);
+    r_->text(x, y + (r_->textHeight(textScale_) - r_->textHeight(ts)) * 0.5f, ts, t, c);
+}
+
 void Ui::labelCentered(float cx, float y, const std::string& t, const Color& c, float sizeMul) {
     float ts = std::max(1.0f, std::round(textScale_ * sizeMul));
     r_->text(cx - r_->textWidth(t, ts) * 0.5f, y, ts, t, c);
