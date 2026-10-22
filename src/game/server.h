@@ -74,8 +74,8 @@ struct ServerPlayer {
     std::string name;
     std::string rankId;         // 32 hex chars from the player's key (ranked), empty if unknown
     bool admin = false;         // logged in with the admin password (the in-process host is admin by nonce)
-    float voteAt = 0;           // no new vote from this player before then (after one of theirs failed)
-    float loginAt = 0;          // next admin login attempt allowed
+    double voteAt = 0;           // no new vote from this player before then (after one of theirs failed)
+    double loginAt = 0;          // next admin login attempt allowed
     float mapTokens = 64;       // PKT_MAP_REQUEST rate limit (token bucket)
     double mapTokensAt = 0;
     int team = TEAM_A;
@@ -87,28 +87,28 @@ struct ServerPlayer {
     float health = 0;
     int weapon = WPN_ROCKET;
     int selectedWeapon = WPN_ROCKET; // last weapon the player picked (slot 1 to start); kept across respawns
-    float knifeBackAt = 0;      // a thrown knife is away until then: no knife (and no throws) before it
-    float knifeSwingUntil = -1; // a swing that missed keeps cutting along your aim until then
+    double knifeBackAt = 0;      // a thrown knife is away until then: no knife (and no throws) before it
+    double knifeSwingUntil = -1; // a swing that missed keeps cutting along your aim until then
     bool fireLocked = false;    // after a knife throw: nothing fires until both buttons are let go
-    float nextFire = 0;
-    float lastFire = -10;
-    float fireQueuedUntil = -1; // semi-auto: a click waiting for the weapon to be ready
+    double nextFire = 0;
+    double lastFire = -10;
+    double fireQueuedUntil = -1; // semi-auto: a click waiting for the weapon to be ready
     int kills = 0, deaths = 0, score = 0;
-    float respawnAt = -1;
+    double respawnAt = -1;
     int checkpoint = 0;         // race: next checkpoint index
     std::vector<int> raceSplits;   // race: ms at each checkpoint of the current run (time trials report it)
     uint32_t joinId = 0;        // unique per connection (a new player in a reused slot gets a new one)
     float dmgDealt = 0, objTime = 0;    // scoreboard: damage to enemies, seconds on the objective (score = dmg / 10 + obj)
     int shotsFired = 0, shotsHit = 0;   // accuracy: shots (hitscan or projectile) that damaged an enemy
     bool hitSinceShot = false;
-    float typingAt = 0, quipAt = 0, locateAt = 0;   // next "typing" relay allowed (and quip / locate pings)
+    double typingAt = 0, quipAt = 0, locateAt = 0;   // next "typing" relay allowed (and quip / locate pings)
     int model = 0;              // player model (cosmetic, kPlayerModels looks, same hitbox)
     int soundPack = 0;      // cosmetic: the sound pack others hear this player with
     bool it = false;            // hide and seek / tag: the seeker / tagger (has the knife)
     bool found = false;         // hide and seek: found by the seeker this round (falling off doesn't count)
     Vec3 lastGround;            // where the player last stood (a dropped bomb goes here, not into a pit)
     bool out = false;           // hide and seek: found this round; tag: eliminated for the match
-    float itFreezeUntil = 0;    // tag: just got tagged, stands still until then
+    double itFreezeUntil = 0;    // tag: just got tagged, stands still until then
     uint32_t lastCmdSeq = 0;
     uint16_t keys = 0;          // KEY_* from the last command
     std::deque<UserCmd> cmdQueue;
@@ -127,7 +127,7 @@ struct ServerPlayer {
     std::vector<Snapshot> sent;
     uint32_t ackSnapMs = 0;
     // Visibility (anti-wallhack + bandwidth): when this client last had a line of sight to each player.
-    float lastSeen[kMaxPlayers] = {};
+    double lastSeen[kMaxPlayers] = {};
     // lag compensation history
     struct Hist { uint32_t tick; Vec3 pos; bool crouched; bool alive; };
     static constexpr int kHistory = 1024; // >= 1 s at any tick rate
@@ -140,8 +140,8 @@ struct Projectile {
     int type = WPN_ROCKET;
     int owner = 0;
     Vec3 pos, vel;
-    float dieAt = 0;
-    float armAt = 0;    // stickies can't be detonated before this
+    double dieAt = 0;
+    double armAt = 0;    // stickies can't be detonated before this
     float gravMul = 1;  // rocket lob (alt-fire) falls faster
     bool stuck = false; // stickies: attached to a surface
     bool onCart = false; // stuck to the payload cart: rides along at cartOffset from its center
@@ -185,15 +185,15 @@ public:
     double rateRaisedAt_ = -1e9; // a step up that doesn't hold steps straight back down, in any phase
     int tickRate() const { return kTickRates[rateLevel_]; }
     float dt() const { return 1.0f / tickRate(); }
-    float time() const { return timeMs_ * 0.001f; }
+    double time() const { return timeMs_ * 0.001; } // double: a float runs out of millisecond precision after a few hours of uptime
     ServerPlayer players_[kMaxPlayers];
     Projectile projectiles_[kMaxProjectiles];
     uint16_t nextProjId_ = 1;
     ModeState ms_;
-    float phaseEnd_ = 0;
-    float liveSince_ = 0;        // when the round went live (the map's holdfire counts from it)
-    float roundStart_ = 0;
-    float lastProgress_ = 0;    // vs: last time damage was dealt
+    double phaseEnd_ = 0;
+    double liveSince_ = 0;        // when the round went live (the map's holdfire counts from it)
+    double roundStart_ = 0;
+    double lastProgress_ = 0;    // vs: last time damage was dealt
     int lastIt_ = -1;
     std::vector<float>* tickTimes_ = nullptr;
     Snapshot snapScratch_;                     // reused every send (no per-tick allocations)
@@ -211,7 +211,7 @@ public:
     float drainAccum_ = 0;
     uint32_t duelUsed_ = 0;      // duel: modifiers already played this match (bit per modifier), never repeated
     // payload/race per-round bookkeeping
-    float payloadIdleSince_ = 0;
+    double payloadIdleSince_ = 0;
     float bestProgress_[2] = {0, 0};
     float completeTime_[2] = {0, 0};
     float kothPoints_[2] = {0, 0};
@@ -224,7 +224,7 @@ public:
     void updateBalanceBots(bool matchStarting = false);
     // Votes (bots on/off, bot difficulty): majority of human players decides.
     enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL, VOTE_START, VOTE_STARTBOTS, VOTE_MAP, VOTE_TMAPS, VOTE_TMODES, VOTE_RANKED, VOTE_EDIT, VOTE_LETIN };
-    struct Vote { int kind = VOTE_NONE; int caller = -1; int arg = 0, arg2 = 0; std::string map; uint32_t yes = 0, no = 0; float endsAt = 0; std::string text; } vote_;
+    struct Vote { int kind = VOTE_NONE; int caller = -1; int arg = 0, arg2 = 0; std::string map; uint32_t yes = 0, no = 0; double endsAt = 0; std::string text; } vote_;
     void callVote(int caller, int kind, int arg, const std::string& map = "", int arg2 = 0);
     // Tourney: single elimination bracket of everyone in the server, one 1v1 at a time.
     struct Tourney {
@@ -238,7 +238,7 @@ public:
     bool switchMapKeepRules(const std::string& name); // change map for the next tourney match
     void castVote(int id, bool yes);
     void tickVote();
-    float nextBalanceCheck_ = 0;
+    double nextBalanceCheck_ = 0;
 
     void broadcastEvent(const GameEvent& e);
     void sendEvent(int player, const GameEvent& e);
@@ -250,7 +250,8 @@ public:
     int teamCount(int team) const;
     void log(const std::string& s);
     size_t snapBytes_ = 0, snapCount_ = 0; // snapshot bytes sent (stats for tests / logs)
-    float hitAccum_[kMaxPlayers][kMaxPlayers] = {}, hitFlushAt_[kMaxPlayers][kMaxPlayers] = {};
+    float hitAccum_[kMaxPlayers][kMaxPlayers] = {};
+    double hitFlushAt_[kMaxPlayers][kMaxPlayers] = {};
     bool hitPending_ = false;
     void flushHit(int attacker, int victim);
     void bounceShot(int id, Vec3 o, Vec3 dir, float range, uint32_t vt, float* dmgPer, float dmg);
@@ -260,7 +261,7 @@ public:
     bool tempEdit_ = false;     // editing was voted on a normal server: never saved, reverts at the next map change
     bool mapEdited_ = false;    // map_ differs from its file (temporary edits being played)
     void playMap(int mode);
-    float nextAutosave_ = 0;
+    double nextAutosave_ = 0;
     void setEditing(bool on);
     void setRanked(bool on, int ladder);            // ranked on (1v1 on that ladder, official map) / off
     bool rankedBlocks(int id, const std::string& what); // tells the player and returns true if ranked forbids it
@@ -329,7 +330,7 @@ private:
     Vec3 spreadDir(const Vec3& dir, float spread, uint32_t seq, int pellet);
     void sendSnapshots();
     void updateVisibility();
-    float nextVisCheck_ = 0;
+    double nextVisCheck_ = 0;
     void openGameLog();
     void logTick();
     int findPlayer(const NetAddr& a) const;

@@ -75,7 +75,7 @@ struct ProjectileSnap {
 };
 
 struct GameEvent {
-    float sentAt = -1;      // server only (not sent): when this copy last went out, for resend pacing
+    double sentAt = -1;      // server only (not sent): when this copy last went out, for resend pacing
     uint32_t id = 0;
     uint8_t type = 0;
     uint8_t a = 0, b = 0;

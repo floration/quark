@@ -140,7 +140,7 @@ int hideRounds(const Server& s) { return s.hideRounds_ > 0 ? s.hideRounds_ : std
 
 void tickHide(Server& s) {
     ModeState& m = s.ms_;
-    m.timeLeft = std::max(0.0f, s.phaseEnd_ - s.time());
+    m.timeLeft = (float)std::max(0.0, s.phaseEnd_ - s.time());
     int seeker = -1, hiding = 0, found = 0;
     for (int i = 0; i < kMaxPlayers; i++) {
         if (!inPlay(s, i)) continue;
@@ -164,7 +164,7 @@ void tickHide(Server& s) {
 
 void tickTag(Server& s) {
     ModeState& m = s.ms_;
-    m.timeLeft = std::max(0.0f, s.phaseEnd_ - s.time());
+    m.timeLeft = (float)std::max(0.0, s.phaseEnd_ - s.time());
     if (playersInPlay(s) <= 1) {                  // everyone else left: the last one standing wins
         int w = -1;
         for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i)) w = i;
@@ -539,7 +539,7 @@ void tickBomb(Server& s) {
     ModeState& m = s.ms_;
     const int att = m.attackers, def = defenders(s);
     const float dt = s.dt();
-    m.timeLeft = m.bombState == BOMB_PLANTED ? m.bombTimer : std::max(0.0f, s.phaseEnd_ - s.time());
+    m.timeLeft = m.bombState == BOMB_PLANTED ? m.bombTimer : (float)std::max(0.0, s.phaseEnd_ - s.time());
 
     if (m.bombState == BOMB_DROPPED) {
         for (int i = 0; i < kMaxPlayers; i++) {
@@ -619,7 +619,7 @@ void tickBomb(Server& s) {
 
 void tickRace(Server& s) {
     ModeState& m = s.ms_;
-    m.timeLeft = std::max(0.0f, s.phaseEnd_ - s.time());
+    m.timeLeft = (float)std::max(0.0, s.phaseEnd_ - s.time());
     const auto& cps = s.map_.checkpoints;
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = s.players_[i];
@@ -685,7 +685,7 @@ void tickKoth(Server& s) {
 void tickPayload(Server& s) {
     ModeState& m = s.ms_;
     const int att = m.attackers, def = defenders(s);
-    m.timeLeft = std::max(0.0f, s.phaseEnd_ - s.time());
+    m.timeLeft = (float)std::max(0.0, s.phaseEnd_ - s.time());
     Vec3 cart = s.map_.cartPoint(m.mode, m.attackers, m.payloadDist);
     int na = 0, nd = 0;
     for (int i = 0; i < kMaxPlayers; i++) {
@@ -735,7 +735,7 @@ void tickPayload(Server& s) {
 void tickPoints(Server& s) {
     ModeState& m = s.ms_;
     const int att = m.attackers, def = defenders(s);
-    m.timeLeft = std::max(0.0f, s.phaseEnd_ - s.time());
+    m.timeLeft = (float)std::max(0.0, s.phaseEnd_ - s.time());
     m.pointCount = (uint8_t)s.map_.points.size();
     if (m.point >= m.pointCount) return;
     const AABB& zone = s.map_.points[m.point];
@@ -785,7 +785,7 @@ void tickPoints(Server& s) {
 // the track the cart is on wins.
 void tickNeutralPayload(Server& s) {
     ModeState& m = s.ms_;
-    m.timeLeft = std::max(0.0f, s.phaseEnd_ - s.time());
+    m.timeLeft = (float)std::max(0.0, s.phaseEnd_ - s.time());
     Vec3 cart = s.map_.cartPoint(m.mode, m.attackers, m.payloadDist);
     int na = 0, nb = 0;
     for (int i = 0; i < kMaxPlayers; i++) {
@@ -858,7 +858,7 @@ void finishFFA(Server& s) {
 
 void tickFFA(Server& s) {
     ModeState& m = s.ms_;
-    m.timeLeft = std::max(0.0f, s.phaseEnd_ - s.time());
+    m.timeLeft = (float)std::max(0.0, s.phaseEnd_ - s.time());
     if (s.cfg_.scoreLimit > 0)
         for (auto& p : s.players_)
             if (p.connected && p.score >= s.cfg_.scoreLimit) { finishFFA(s); return; }
@@ -911,11 +911,11 @@ void rulesTick(Server& s) {
                 s.phaseEnd_ = s.time() + kWarmupCountdown;
                 s.message("match starting");
             }
-            m.timeLeft = std::max(0.0f, s.phaseEnd_ - s.time());
+            m.timeLeft = (float)std::max(0.0, s.phaseEnd_ - s.time());
             if (s.time() >= s.phaseEnd_) startMatch(s);
             break;
         case PHASE_FREEZE:
-            m.timeLeft = std::max(0.0f, s.phaseEnd_ - s.time());
+            m.timeLeft = (float)std::max(0.0, s.phaseEnd_ - s.time());
             if (s.time() >= s.phaseEnd_) {
                 float rt = roundTime(s);
                 setPhase(s, PHASE_LIVE, rt);
@@ -940,11 +940,11 @@ void rulesTick(Server& s) {
             }
             break;
         case PHASE_ROUND_END:
-            m.timeLeft = std::max(0.0f, s.phaseEnd_ - s.time());
+            m.timeLeft = (float)std::max(0.0, s.phaseEnd_ - s.time());
             if (s.time() >= s.phaseEnd_ && !checkMatchOver(s)) startRound(s);
             break;
         case PHASE_MATCH_END:
-            m.timeLeft = std::max(0.0f, s.phaseEnd_ - s.time());
+            m.timeLeft = (float)std::max(0.0, s.phaseEnd_ - s.time());
             if (s.time() >= s.phaseEnd_) {
                 for (auto& p : s.players_) p.alive = false;
                 const CustomRules& c = s.cfg_.custom;

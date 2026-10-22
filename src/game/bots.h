@@ -15,27 +15,28 @@ const char* botSkillName(int skill);
 struct BotBrain {
     int skill = BOT_INTERMEDIATE;
     int target = -1;           // player id being fought
-    float seenAt = -1;         // when the current target was first seen (reaction time)
+    double seenAt = -1;         // when the current target was first seen (reaction time)
     float aimYaw = 0, aimPitch = 0;
     float yawVel = 0, pitchVel = 0;      // current turn speed (rad/s): limited speed and acceleration
     float errYaw = 0, errPitch = 0;      // aim error (rad), drifting toward errTo*
     float errToYaw = 0, errToPitch = 0;
-    float errorRetargetAt = 0;
-    float lapseUntil = 0;                // a moment of bad aim (lost track, panic)
-    float nextLapseRoll = 0;
+    double errorRetargetAt = 0;
+    double lapseUntil = 0;                // a moment of bad aim (lost track, panic)
+    double nextLapseRoll = 0;
     Vec3 goal;
-    float goalUntil = 0;
+    double goalUntil = 0;
     Vec3 lastPos;
-    float stuckCheckAt = 0;
-    float strafeDir = 1, strafeSwitchAt = 0;
-    float nextTargetScan = 0;
+    double stuckCheckAt = 0;
+    float strafeDir = 1;
+    double strafeSwitchAt = 0;
+    double nextTargetScan = 0;
     Vec3 waypoint;             // next point on the nav path
     Vec3 pathGoal;
-    float repathAt = 0;
+    double repathAt = 0;
     uint32_t rng = 1;
     int forceWeapon = -1;      // tests: always use this weapon
-    float fleeUntil = 0;       // hide and seek / tag: committed to the current escape route until then
-    float hookUntil = 0, nextHookTry = 0; // grapple: holding toward hookAnchor until then
+    double fleeUntil = 0;       // hide and seek / tag: committed to the current escape route until then
+    double hookUntil = 0, nextHookTry = 0; // grapple: holding toward hookAnchor until then
     Vec3 hookAnchor;
 };
 

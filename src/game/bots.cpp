@@ -276,7 +276,7 @@ UserCmd botThink(Server& s, int id) {
     ServerPlayer& me = s.players_[id];
     BotBrain& b = s.bots_[id];
     const SkillParams& sp = kSkills[b.skill < 0 || b.skill >= BOT_SKILLS ? 1 : b.skill];
-    const float now = s.time(), dt = s.dt();
+    const double now = s.time(); const float dt = s.dt();
     UserCmd cmd;
     cmd.weapon = kNoWeaponChange;
     if (!me.alive) {

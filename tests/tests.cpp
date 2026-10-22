@@ -676,15 +676,17 @@ static int runBot(const std::string& addr, double seconds, const std::string& na
 
 static void testWeapons(uint16_t port) {
     printf("weapons: sniper (scoped/unscoped), laser, rocket\n");
-    for (int wi : std::initializer_list<int>{WPN_SNIPER, -WPN_SNIPER - 1, -WPN_CROSSBOW - 1, -WPN_RIFLE - 1, WPN_LASER, WPN_ROCKET, WPN_SHOTGUN, WPN_CROSSBOW, WPN_STICKY}) {
+    for (int wi : std::initializer_list<int>{WPN_SNIPER, -WPN_SNIPER - 1, -WPN_CROSSBOW - 1, -WPN_RIFLE - 1, WPN_LASER, 100, WPN_ROCKET, WPN_SHOTGUN, WPN_CROSSBOW, WPN_STICKY}) {
         bool head = wi < 0; // negative entries: the same weapon aimed at the head
-        int w = head ? -wi - 1 : wi;
+        bool uptime = wi == 100; // the laser on a server that has been up for days (a float clock lost the 1 ms refire)
+        int w = uptime ? WPN_LASER : head ? -wi - 1 : wi;
         Server s;
         ServerConfig cfg;
         cfg.autoStart = true;
         cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port++;
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; continue; }
+        if (uptime) s.timeMs_ += 5u * 86400u * 1000u;
         NetClient a, b;
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "shooter");
         b.connect("127.0.0.1:" + std::to_string(cfg.port), "target");
@@ -728,7 +730,7 @@ static void testWeapons(uint16_t port) {
         }
         if (w == WPN_LASER) {                                     // ~5 dmg every 0.05 s
             float expect = (float)(elapsed / weaponDef(WPN_LASER).refire) * weaponDef(WPN_LASER).damage;
-            printf("  laser: %.1f damage in %.2f s (expected ~%.1f)\n", dealt, elapsed, expect);
+            printf("  laser%s: %.1f damage in %.2f s (expected ~%.1f)\n", uptime ? " (5 days up)" : "", dealt, elapsed, expect);
             CHECK(dealt > expect * 0.6f && dealt < expect * 1.4f + 5);
         }
         if (w == WPN_ROCKET) { printf("  rocket direct hit: %.0f damage\n", dealt); CHECK(std::fabs(dealt - kRocketDirectDamage) < 0.5f); }   // aimed at the body: a direct hit
@@ -813,7 +815,7 @@ static void testSemiAuto(uint16_t port) {
     pump(s, cls, 2.0, idle);
     auto& p = s.players_[a.clientId()];
     pump(s, cls, 0.3, [](int) { UserCmd c; c.weapon = WPN_RIFLE; return c; });
-    float last = p.lastFire;
+    double last = p.lastFire;
     int shots = 0;
     pump(s, cls, 1.5, [&](int) { UserCmd c; c.weapon = WPN_RIFLE; c.buttons = BTN_FIRE; if (p.lastFire != last) { shots++; last = p.lastFire; } return c; });
     printf("  held 1.5 s: %d shots\n", shots);
@@ -1190,10 +1192,10 @@ static void testBotAim(uint16_t& port) {
         pump(s, cls, 1.0, idle);
         auto& p = s.players_[a.clientId()];
         auto& bp = s.players_[bot];
-        float dealt = 0, lastShot = -1;
+        float dealt = 0; double lastShot = -1;
         int shots = 0;
         int dir = 127;
-        float nextJuke = s.time() + 1.2f;
+        double nextJuke = s.time() + 1.2f;
         pump(s, cls, kAimSample, [&](int) {
             if (!p.alive || !bp.alive) return UserCmd();
             dealt += 100 - p.health;
@@ -1719,7 +1721,7 @@ static void testAltFires(uint16_t port) {
             pump(s, cls, 0.05, [&](int i) { return aim(i, BTN_ALTFIRE); });
             CHECK(sa.weapon != WPN_KNIFE && sa.knifeBackAt > s.time());          // knife away: switched weapon
             { // still holding the button: the weapon we switched to must not fire until it's let go
-                float before = sa.lastFire;
+                double before = sa.lastFire;
                 pump(s, cls, 0.3, [&](int i) { UserCmd c = aim(i, BTN_ALTFIRE); c.weapon = kNoWeaponChange; return c; });
                 CHECK(sa.lastFire == before);
             }
@@ -1738,7 +1740,7 @@ static void testAltFires(uint16_t port) {
             pump(s, cls, 1.2, idle);
             sa.move.pos = {26.5f, 0, -20}; sb.move.pos = {22, 0, -20}; sa.move.vel = sb.move.vel = {}; // the match may have started: put them back
             hp0 = sb.health;
-            float lf = sa.lastFire;
+            double lf = sa.lastFire;
             pump(s, cls, 0.05, [&](int i) { return aim(i, BTN_ALTFIRE); });       // ricochet comes back at the target
             pump(s, cls, 0.3, idle);
             CHECK(sa.lastFire != lf);
@@ -1746,7 +1748,7 @@ static void testAltFires(uint16_t port) {
             CHECK(sa.health == 100); // never your own ricochet
         } else {
             int shots = 0;
-            float last = sa.lastFire;
+            double last = sa.lastFire;
             pump(s, cls, 2.0, [&](int i) {
                 if (sa.lastFire != last) { shots++; last = sa.lastFire; }
                 return aim(i, BTN_FIRE | BTN_ALTFIRE);
