@@ -27,3 +27,6 @@ WASD move · Space jump · Ctrl/C crouch · Mouse1 fire · 1/2/3 weapons · E pl
 
 ## Maps
 Plain text files in `maps/` (see the header of `maps/bastion.qmap`). Lighting is baked on first load and cached as `.qlm`.
+
+## Fonts
+The in-game UI text is **Work Sans Bold** (Copyright 2019 The Work Sans Project Authors, SIL Open Font License 1.1: `assets/fonts/WorkSans-OFL.txt`), baked into `src/client/font_ui.h` as a distance-field atlas by `python3 tools/make_font_atlas.py` (Pillow + numpy; re-run it after changing the font). The logo, launcher and website title font is **Rubik** (SIL OFL 1.1: `assets/fonts/Rubik-OFL.txt`).

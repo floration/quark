@@ -11,9 +11,9 @@
 
 struct DynVertex { float pos[3]; float normal[3]; float color[4]; float edge[4]; float outline[3]; }; // color.a = sun visibility; outline = edge colour (black unless set)
 struct FlatVertex { float pos[3]; float color[4]; };
-// 16 bytes: screen pixels, font texel coords (u16 fixed point: (texel + 1) * 64), color (RGBA8), and for text the outline width in
-// font texels (scale; 0 = no outline) plus the glyph's atlas cell, so the outline is done in the shader
-// with one quad per character.
+// 16 bytes: screen pixels, font atlas texel coords (u16 fixed point: (texel + 1) * 32), color (RGBA8), and for text
+// the text scale (integer part + 1/256ths; 0 = plain rect), which sets the distance-field edge and outline width
+// in the shader, so each character is one quad.
 struct Vertex2D { int16_t pos[2]; uint16_t uv[2]; uint8_t color[4]; uint8_t outline, glyph, pad[2]; };
 
 struct Color { float r, g, b, a; };
@@ -49,8 +49,15 @@ public:
     // 2D (pixels, origin top-left)
     void rect(float x, float y, float w, float h, const Color& c);
     void text(float x, float y, float scale, const std::string& s, const Color& c);
-    float textWidth(const std::string& s, float scale) const { return s.size() * 6.0f * scale; }
-    float textHeight(float scale) const { return 8.0f * scale; }
+    // proportional UI font (Work Sans Bold): widths come from per-glyph advances and kerning
+    float textWidth(const std::string& s, float scale) const;
+    void textMono(float x, float y, float scale, const std::string& s, const Color& c); // fixed advance (console)
+    float textWidthMono(const std::string& s, float scale) const;
+    size_t textFit(const std::string& s, float scale, float maxW) const; // how many leading chars fit in maxW
+    std::string textClip(const std::string& s, float scale, float maxW) const; // fit, with "..." if cut
+    // smallest drawn text scale: the proportional font's caps are ~5 units tall, so scale 1 would be unreadable
+    static constexpr float kMinTextScale = 1.3f;
+    float textHeight(float scale) const { return 8.0f * (scale < kMinTextScale ? kMinTextScale : scale); }
     void flush2D();
 
     void setShadowsAvailable(bool b) { shadowsOn_ = b; }

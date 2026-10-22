@@ -14,6 +14,7 @@
 #include <chrono>
 #include <cstdlib>
 #include "common/profile.h"
+#include "../src/client/complete.h"
 #include <filesystem>
 #include <sstream>
 #include <fstream>
@@ -54,6 +55,41 @@ static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F inpu
         }
         sleepMs(1);
     }
+}
+
+// Console tab completion: unique -> filled in + space; several -> common prefix and every option listed.
+static void testCompletion() {
+    printf("console completion\n");
+    auto cands = [](const std::vector<std::string>& w) -> std::vector<std::string> {
+        if (w.empty()) return {"fov", "fullbright", "sensitivity", "/callvote", "/team"};
+        if (w[0] == "/team" && w.size() == 1) return {"a", "b", "spec"};
+        if (w[0] == "/callvote" && w.size() == 1) return {"map", "mode", "start"};
+        if (w[0] == "/callvote" && w.size() == 2 && w[1] == "map") return {"temple", "furnace", "foundry"};
+        return {};
+    };
+    Completion c = completeLine("sen", cands);
+    CHECK(c.line == "sensitivity " && c.options.empty());
+    c = completeLine("f", cands);
+    CHECK(c.line == "f" && c.options.size() == 2);          // fov, fullbright: nothing more in common, both listed
+    c = completeLine("fu", cands);
+    CHECK(c.line == "fullbright ");
+    c = completeLine("/callvote m", cands);
+    CHECK(c.line == "/callvote m" && c.options.size() == 2); // map, mode
+    c = completeLine("/callvote map f", cands);
+    CHECK(c.line == "/callvote map f" && c.options.size() == 2);
+    c = completeLine("/callvote map fo", cands);
+    CHECK(c.line == "/callvote map foundry ");
+    c = completeLine("/callvote map ", cands);
+    CHECK(c.line == "/callvote map " && c.options.size() == 3); // nothing typed yet: every option
+    c = completeLine("/team S", cands);
+    CHECK(c.line == "/team spec ");
+    c = completeLine("xyz", cands);
+    CHECK(c.line == "xyz" && c.options.empty());
+    c = completeLine("/callvote fo", cands);
+    CHECK(c.line == "/callvote fo" && c.options.empty());
+    auto pre = [](const std::vector<std::string>&) -> std::vector<std::string> { return {"volume", "volume_music"}; };
+    c = completeLine("vo", pre);
+    CHECK(c.line == "volume" && c.options.size() == 2);
 }
 
 static void testMovement() {
@@ -2927,7 +2963,7 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testSigning(); testHostileInput(); testMovement(); testTickRateIndependence(); testGridQueries(); testEditorLadder(); testEditorGroups(); }},
+        {"movement", [] { testCompletion(); testSigning(); testHostileInput(); testMovement(); testTickRateIndependence(); testGridQueries(); testEditorLadder(); testEditorGroups(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); }},

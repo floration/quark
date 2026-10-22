@@ -18,6 +18,8 @@ public:
     void begin(Renderer* r, const UiInput& in, float scale);
     float s() const { return scale_; }           // layout scale (1.0 at 720p)
     float textScale() const { return textScale_; }
+    float caretWidth() const;
+    void caret(float x, float y); // blinking text caret at x (text top y), in the current text scale
 
     void panel(float x, float y, float w, float h, float alpha = 0.75f);
     void label(float x, float y, const std::string& t, const Color& c = {1, 1, 1, 1}, float sizeMul = 1.0f);
@@ -29,6 +31,8 @@ public:
     bool toggle(float x, float y, float w, float h, const std::string& label, bool& v);
     bool slider(float x, float y, float w, float h, const std::string& label, float& v, float lo, float hi, const char* fmt = "%.1f");
     void clearFocus() { focus_ = -1; }
+    void focus(int id) { focus_ = id; }  // (screenshot runs: --edfocus)
+    bool steadyCaret = false;            // carets don't blink (screenshot runs)
     // A list of n items in a box `w` wide with `availH` of height left: as many columns as it takes to fit (at least
     // `minCols`), so long lists grow sideways instead of running off the bottom. Returns the column count.
     static int fitColumns(int n, float availH, float rowH, int minCols = 1, int maxCols = 6) {

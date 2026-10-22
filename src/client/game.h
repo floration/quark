@@ -32,6 +32,7 @@ struct LaunchOptions {
     int debugWeapon = -1;       // --weapon N (1-5), for screenshots
     bool debugScope = false, debugFire = false; // --scope, --fire
     bool debugPerf = false;     // --perf: F3 overlay on, with a synthetic input event every frame
+    bool textHeavy = false;     // --textheavy: scoreboard + F3 + chat lines always on, to measure text cost (with --bench)
     bool debugCrosshair = false;
     int debugPicker = 0;        // --picker N: open that host-menu list (1 maps, 2 modes, 7 rulesets)
     bool debugPause = false, debugVote = false; // --pause / --votemenu
@@ -55,6 +56,9 @@ struct LaunchOptions {
     std::string demo;              // --demo <file>: watch it
     int debugCustom = 0;           // --customshot <tab>: open the custom mode editor on that tab (stored +1; 0 = off)
     int debugInfo = 0;             // --info <tab>: open the info screen on that tab (stored +1; 0 = off)
+    std::string chatShot;       // --chatshot TEXT: in game, chat open with TEXT typed and the caret in the middle
+    std::string consoleShot;    // --consoleshot TEXT: in game, the console open with TEXT typed, then Tab pressed
+    bool edFocus = false;       // --edfocus: the editor's map title field focused (caret screenshot)
     bool menuShot = false;      // --menushot: screenshot whatever menu is up (main / settings / controls)
     double bench = 0;           // --bench SECONDS: measure frame times in a vs-bots game, print, quit
 };
@@ -128,6 +132,8 @@ private:
     void benchFrame(double dt);
     bool paused_ = false, chatting_ = false, showScores_ = false, settingsInGame_ = false;
     std::string chatText_, joinAddr_, error_;
+    size_t chatCursor_ = 0;      // caret in chatText_ (chat / console input)
+    std::string chatSeen_;       // chatText_ as last edited: any other change (clear, history, completion) puts the caret at the end
     double time_ = 0, tickAcc_ = 0;
     uint32_t loadedMapGen_ = 0;
 
@@ -370,6 +376,11 @@ private:
     void consolePrint(const std::string& t);
     std::vector<std::string> consoleWords() const;
     void consoleComplete();
+    std::vector<std::string> consoleCandidates(const std::vector<std::string>& words) const;
+    void chatSync();                       // caret to the end if chatText_ was replaced
+    bool chatCaretKey(int key);            // Left / Right / Home / End / Delete in the chat or console input
+    void chatEdit(size_t maxLen, bool console); // typed characters + backspace at the caret
+    void drawCaret(float x, float y, float ts, bool mono, const std::string& before);
     std::vector<std::string> consoleHistory_;
     int consoleHistoryAt_ = -1;
     void runConsole(const std::string& line);

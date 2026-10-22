@@ -22,7 +22,7 @@ def main():
             shutil.copyfile(src, dst)
         ids.add(item["id"]); items.append(item)
     version = open(os.path.join(ROOT, "VERSION")).read().strip()
-    # what the game renders from code (sounds, models, the pixel font...): the exporter's own manifest
+    # what the game renders from code (sounds, models...): the exporter's own manifest
     man = os.path.join(export, "manifest.json")
     if os.path.exists(man):
         for it in json.load(open(man))["items"]:
@@ -46,6 +46,9 @@ def main():
         if f.lower().endswith((".jpg", ".png")):
             add({"id": "website/" + os.path.splitext(f)[0], "category": "Website", "name": os.path.splitext(f)[0].upper(),
                  "file": "website/" + f, "kind": "image", "desc": "map picture on the website"}, os.path.join(img, f))
+    add({"id": "font/worksans", "category": "Fonts", "name": "WORK SANS", "file": "fonts/WorkSans.ttf", "kind": "font",
+         "desc": "in-game UI text (Bold); baked by tools/make_font_atlas.py - Work Sans Project Authors, SIL OFL 1.1"},
+        os.path.join(ROOT, "assets", "fonts", "WorkSans.ttf"))
     add({"id": "font/rubik", "category": "Fonts", "name": "RUBIK", "file": "fonts/Rubik.ttf", "kind": "font",
          "desc": "launcher and website text"}, os.path.join(ROOT, "assets", "fonts", "Rubik.ttf"))
     # the owner's own sounds already in the game (assets/sfx/custom/<kit>/<SOUND>.wav), when the exporter didn't render them

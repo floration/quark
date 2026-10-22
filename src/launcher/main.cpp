@@ -564,12 +564,17 @@ int main(int argc, char** argv) {
         std::istringstream ls(log);
         std::string line;
         float ts = std::max(1.0f, std::round(ui.textScale() * 0.75f));
-        size_t maxChars = (size_t)((fw - 80 * s - listW - 8 * s) / (6 * ts));
+        float maxW = fw - 80 * s - listW - 8 * s;
         while (std::getline(ls, line) && y < 322 * s) {
             while (!line.empty() && (line[0] == '#' || line[0] == ' ')) line.erase(0, 1);
-            while (line.size() > maxChars && y < 322 * s) {
-                r.text(36 * s, y, ts, line.substr(0, maxChars), {0.85f, 0.85f, 0.88f, 1});
-                line = line.substr(maxChars);
+            // wrap by width (the UI font is proportional): break at the last space that fits
+            while (r.textWidth(line, ts) > maxW && y < 322 * s) {
+                size_t cut = std::max<size_t>(1, r.textFit(line, ts, maxW));
+                size_t sp = line.rfind(' ', cut);
+                if (sp != std::string::npos && sp > 0) cut = sp;
+                r.text(36 * s, y, ts, line.substr(0, cut), {0.85f, 0.85f, 0.88f, 1});
+                line = line.substr(cut);
+                while (!line.empty() && line[0] == ' ') line.erase(0, 1);
                 y += 10 * ts;
             }
             r.text(36 * s, y, ts, line, {0.85f, 0.85f, 0.88f, 1});

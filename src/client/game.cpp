@@ -7,6 +7,7 @@
 #include "../common/profile.h"
 #include <array>
 #include "game.h"
+#include "complete.h"
 #include "openurl.h"
 #include "profiles.h"
 #define GLFW_INCLUDE_NONE
@@ -59,12 +60,13 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     if (!r_.init(cfg_.shadowRes, err)) return false;
     rescanMaps();
     rankKey_ = loadOrCreateRankKey(userDataPath("quark.key")); // ranked identity: stays on this computer
+    ui_.steadyCaret = !opts_.screenshot.empty();
     if (opts_.hostMode < 0 && opts_.vsBotsMode < 0 && opts_.connect.empty() && opts_.editMap.empty()) loadMenuBackdrop();
     if (opts_.debugInfo) { setScreen(Screen::Info); infoTab_ = opts_.debugInfo - 1; }
     if (opts_.debugCustom) { rescanMaps(); editRules_ = CustomRules(); editRules_.name = "my mode"; editRules_.move[MV_AIR_ACCEL] = 2; editRules_.gravity = 0.5f; customTab_ = opts_.debugCustom - 1; setScreen(Screen::CustomMode); }
     if (!opts_.demo.empty()) playDemo(opts_.demo);
     if (opts_.debugLeaderboard) { setScreen(Screen::Leaderboard); raceStatsView_ = opts_.debugRaceStats; }
-    if (!opts_.editMap.empty()) { openEditor(opts_.editMap); if (opts_.editSession) edHostSession(); if (opts_.editSel >= 0) edSel_ = {ED_BRUSH, opts_.editSel}; }
+    if (!opts_.editMap.empty()) { openEditor(opts_.editMap); if (opts_.editSession) edHostSession(); if (opts_.editSel >= 0) edSel_ = {ED_BRUSH, opts_.editSel}; if (opts_.edFocus) { edTitle_ = ed_.title; ui_.focus(41); } }
     if (!opts_.editScript.empty()) { std::stringstream ss(opts_.editScript); std::string st; while (std::getline(ss, st, ';')) if (!st.empty()) edScript_.push_back(st); }
     for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == cfg_.hostMap) hostMapIdx_ = (int)i;
     hostModeIdx_ = clampf((float)cfg_.hostMode, 0, MODE_COUNT - 1);
@@ -490,6 +492,7 @@ void Game::onKey(int key, int action, int mods) {
     }
     if (screen_ == Screen::Editor) {
         if (edOnline_ && chatting_) {   // chat while editing together: Enter sends, Esc cancels
+            if (chatCaretKey(key)) return;
             if (action == GLFW_PRESS && key == GLFW_KEY_ESCAPE) { chatting_ = false; chatText_.clear(); }
             else if (action == GLFW_PRESS && (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER)) {
                 if (!chatText_.empty()) net_.sendCommand(chatText_[0] == '/' ? chatText_.substr(1) : "say " + chatText_);
@@ -524,6 +527,7 @@ void Game::onKey(int key, int action, int mods) {
         return;
     }
     if (screen_ == Screen::InGame) {
+        if (chatting_ && chatCaretKey(key)) return;
         if (chatting_ && console_) {
             if (key == GLFW_KEY_ESCAPE) { console_ = chatting_ = false; chatText_.clear(); captureMouse(!paused_); }
             else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) {
@@ -790,7 +794,7 @@ void Game::onKillFeedback(int killer, int victim, int weapon, bool head, bool ai
     int streakSnd = -1;
     for (auto& st : streaks) if (n == st.kills) {
         streakSnd = st.snd;
-        if (killer != me) { notify(upper(net_.playerName(killer)) + " " + st.what, 3); audio_.play(SND_STREAK, 0.7f); }
+        if (killer != me) { notify(net_.playerName(killer) + " " + st.what, 3); audio_.play(SND_STREAK, 0.7f); }
         else notify(std::string("YOU'RE ") + (st.what + 3), 3);   // ("IS ..." -> "YOU'RE ...")
     }
     if (killer != me || cfg_.announcer < 2) return;
@@ -869,8 +873,8 @@ void Game::handleEvents() {
                 }
                 break;
             case EV_HEALED:   // a teammate's syringe hit someone
-                if (e.a == net_.clientId()) { notify("HEALED BY " + upper(net_.playerName(e.b)) + " - COOLDOWNS RESET", 2); audio_.play(SND_SYRINGE, 0.8f, 1.3f); }
-                else if (e.b == net_.clientId()) notify("YOU HEALED " + upper(net_.playerName(e.a)), 2);
+                if (e.a == net_.clientId()) { notify("HEALED BY " + net_.playerName(e.b) + " - COOLDOWNS RESET", 2); audio_.play(SND_SYRINGE, 0.8f, 1.3f); }
+                else if (e.b == net_.clientId()) notify("YOU HEALED " + net_.playerName(e.a), 2);
                 break;
             case EV_RACE_SPLIT:
                 if (e.a == net_.clientId()) onRaceSplit(e.b, atoi(e.text.c_str()));
@@ -952,6 +956,20 @@ void Game::frame(double dt) {
     QZONE("Game::frame");
     struct CpuTime { double t0 = timeNow(); double* out; ~CpuTime() { *out = timeNow() - t0; } } cpuTime{timeNow(), &lastCpu_}; // --bench: CPU part of the frame
     time_ += dt;
+    if (screen_ == Screen::InGame && (!opts_.chatShot.empty() || !opts_.consoleShot.empty())) {
+        bool con = !opts_.consoleShot.empty();
+        chatting_ = true; console_ = con;
+        chatText_ = con ? opts_.consoleShot : opts_.chatShot;
+        if (con) { consolePrint("> help"); consoleComplete(); chatCursor_ = chatText_.size(); }
+        else { addChat({"bot: nice shot", Color{1, 1, 1, 1}, time_ + 1e9}); chatSync(); chatCursor_ = chatText_.size() / 2; }
+        chatSeen_ = chatText_;
+        time_ = std::floor(time_); // caret visible
+        opts_.chatShot.clear(); opts_.consoleShot.clear();
+    }
+    if (opts_.textHeavy && screen_ == Screen::InGame) {
+        showPerf_ = true;
+        while (chatFeed_.size() < 8) addChat({"Player" + std::to_string(chatFeed_.size()) + ": the quick brown fox jumps over the lazy dog 0123456789", Color{1, 1, 1, 1}, time_ + 1e9});
+    }
     if (opts_.debugPerf) { showPerf_ = true; if (pendingInput_ < 0) pendingInput_ = timeNow(); }
     if (opts_.debugPause && screen_ == Screen::InGame && !paused_) { paused_ = true; voteMenu_ = opts_.debugVote; opts_.debugPause = false; }
     if (opts_.debugSettings && screen_ == Screen::InGame && !settingsInGame_) { paused_ = true; settingsInGame_ = true; controlsOpen_ = opts_.debugControls; crosshairOpen_ = opts_.debugCrosshair; widgetEdit_ = opts_.debugWidgets; hudOpen_ = opts_.debugHudLayout; widgetSel_ = opts_.debugWidgets ? 0 : -1; opts_.debugSettings = false; }
@@ -2112,7 +2130,7 @@ void Game::drawHud() {
         }
     }
 
-    showScores_ = isDown(A_SCORES) || ms.phase == PHASE_MATCH_END;
+    showScores_ = (isDown(A_SCORES) && !chatting_) || opts_.textHeavy || ms.phase == PHASE_MATCH_END;
     // tourney: the bracket between matches / rounds and on TAB, so everyone sees who's still in
     bool showBracket = ms.mode == MODE_TOURNEY && !bracket_.empty() &&
                        (showScores_ || ms.phase == PHASE_ROUND_END || (ms.phase == PHASE_FREEZE && ms.round <= 1));
@@ -2302,19 +2320,56 @@ std::vector<std::string> Game::consoleWords() const {
     return out;
 }
 
-// Tab: complete the first word (a setting or command). One match fills it in; several fill the common
-// part and list them.
+// Tab: completes the word being typed - commands and settings, then each command's arguments (settings,
+// server commands and their arguments, maps, modes, ladders, bot skills, player names). One match fills it
+// in; several fill the common part and list them all.
+std::vector<std::string> Game::consoleCandidates(const std::vector<std::string>& w) const {
+    auto modes = [] { std::vector<std::string> o; for (int m = 0; m < MODE_COUNT; m++) o.push_back(modeName(m)); return o; };
+    auto skills = [] { std::vector<std::string> o; for (int i = 0; i < BOT_SKILLS; i++) o.push_back(botSkillName(i)); return o; };
+    auto ladders = [] { std::vector<std::string> o; for (int v : {0, 1, 5}) o.push_back(arenaVariant(v).name); return o; };
+    auto players = [&] { std::vector<std::string> o; for (int i = 0; i < kMaxPlayers; i++) { std::string n = net_.playerName(i); if (!n.empty() && n.find(' ') == std::string::npos) o.push_back(n); } return o; };
+    const std::vector<std::string> onOff = {"on", "off"};
+    const std::vector<std::string> server = {"/say", "/team", "/name", "/model", "/callvote", "/vote", "/kill", "/login", "/editmode", "/reload",
+                                             "/map", "/mode", "/addbot", "/ranked", "/kickbots", "/forcestart", "/restart", "/kick", "/status", "/locate", "/quip"};
+    if (w.empty()) { auto o = consoleWords(); o.insert(o.end(), server.begin(), server.end()); return o; }
+    const std::string& c = w[0];
+    if (w.size() == 1) {
+        if (c == "list") { auto o = consoleWords(); o.erase(o.begin(), o.begin() + 3); return o; }
+        if (c == "/team") return {"a", "b", "spec"};
+        if (c == "/vote") return {"yes", "no"};
+        if (c == "/callvote") return {"edit", "ranked", "bots", "botskill", "start", "tmaps", "tmodes", "map", "mode"};
+        if (c == "/map") return maps_;
+        if (c == "/mode") return modes();
+        if (c == "/editmode" || c == "/ranked") return onOff;
+        if (c == "/kick") return players();
+        if (c == "/addbot") return skills();
+        // a setting: its current value
+        std::istringstream t(cfg_.toText());
+        std::string l;
+        while (std::getline(t, l)) if (l.rfind(c + "=", 0) == 0 && l.size() > c.size() + 1) return {l.substr(c.size() + 1)};
+        return {};
+    }
+    if (c == "/callvote") {
+        const std::string& what = w[1];
+        if (w.size() == 2) {
+            if (what == "edit" || what == "bots" || what == "ranked") return onOff;
+            if (what == "botskill") return skills();
+            if (what == "map" || what == "tmaps") return maps_;
+            if (what == "mode" || what == "tmodes") return modes();
+        }
+        if (w.size() == 3 && what == "ranked" && w[2] == "on") return ladders();
+        if (w.size() == 3 && what == "map") return modes();
+    }
+    if (c == "/ranked" && w.size() == 2 && w[1] == "on") return ladders();
+    return {};
+}
+
 void Game::consoleComplete() {
-    if (chatText_.empty() || chatText_.find(' ') != std::string::npos || chatText_[0] == '/') return;
-    std::vector<std::string> hits;
-    for (auto& w : consoleWords()) if (w.rfind(chatText_, 0) == 0) hits.push_back(w);
-    if (hits.empty()) return;
-    std::string common = hits[0];
-    for (auto& h : hits) { size_t n = 0; while (n < common.size() && n < h.size() && common[n] == h[n]) n++; common.resize(n); }
-    if (hits.size() == 1) { chatText_ = hits[0] + " "; return; }
-    chatText_ = common;
+    Completion r = completeLine(chatText_, [&](const std::vector<std::string>& w) { return consoleCandidates(w); });
+    chatText_ = r.line;
+    if (r.options.empty()) return;
     std::string line;
-    for (auto& h : hits) { if (line.size() + h.size() > 90) { consolePrint("  " + line); line.clear(); } line += h + "  "; }
+    for (auto& h : r.options) { if (line.size() + h.size() > 90) { consolePrint("  " + line); line.clear(); } line += h + "  "; }
     if (!line.empty()) consolePrint("  " + line);
 }
 
@@ -2322,8 +2377,7 @@ void Game::drawConsole(float W, float H, float s, float ts) {
     float ch = H * 0.45f, lh = r_.textHeight(ts) + 4 * s;
     r_.rect(0, 0, W, ch, {0.03f, 0.04f, 0.06f, 0.92f});
     r_.rect(0, ch, W, 2 * s, rgba(cfg_.colorFriendly));
-    for (char c : uiIn_.chars) if (c >= 32 && c < 127 && c != '`' && chatText_.size() < 200) chatText_ += c;
-    if (uiIn_.backspace && !chatText_.empty()) chatText_.pop_back();
+    chatEdit(200, true);
     float y = ch - 12 * s - lh;
     // highlighting: the first word green when it's a known setting / command, red when not, a /command in the
     // accent colour; the value white
@@ -2331,28 +2385,61 @@ void Game::drawConsole(float W, float H, float s, float ts) {
     auto words = consoleWords();
     auto known = [&](const std::string& w) { return std::find(words.begin(), words.end(), w) != words.end(); };
     float x = 16 * s;
-    r_.text(x, y, ts, "> ", kWhite); x += r_.textWidth("> ", ts);
+    r_.textMono(x, y, ts, "> ", kWhite); x += r_.textWidthMono("> ", ts);
     size_t sp = chatText_.find(' ');
     std::string first = chatText_.substr(0, sp), rest = sp == std::string::npos ? "" : chatText_.substr(sp);
     Color fc = first.empty() ? kWhite : first[0] == '/' ? rgba(cfg_.colorFriendly) : known(first) ? good : bad;
-    r_.text(x, y, ts, first, fc); x += r_.textWidth(first, ts);
-    r_.text(x, y, ts, rest, kWhite); x += r_.textWidth(rest, ts);
-    if (std::fmod(time_, 1.0) < 0.5) r_.text(x, y, ts, "_", kWhite);
+    r_.textMono(x, y, ts, first, fc); x += r_.textWidthMono(first, ts);
+    r_.textMono(x, y, ts, rest, kWhite);
+    drawCaret(16 * s, y, ts, true, "> " + chatText_.substr(0, chatCursor_));
     y -= lh * 1.3f;
     for (auto it = consoleLog_.rbegin(); it != consoleLog_.rend() && y > 4 * s; ++it, y -= lh) {
         const std::string& l = *it;
         size_t eq = l.find(" = ");
-        if (l.rfind("> ", 0) == 0) r_.text(16 * s, y, ts, l, rgba(cfg_.colorFriendly));                  // what was typed
-        else if (l.rfind("unknown", 0) == 0) r_.text(16 * s, y, ts, l, bad);
+        if (l.rfind("> ", 0) == 0) r_.textMono(16 * s, y, ts, l, rgba(cfg_.colorFriendly));                  // what was typed
+        else if (l.rfind("unknown", 0) == 0) r_.textMono(16 * s, y, ts, l, bad);
         else if (eq != std::string::npos) {                                                                 // "  key = value"
             std::string k = l.substr(0, eq), v = l.substr(eq);
-            r_.text(16 * s, y, ts, k, key); r_.text(16 * s + r_.textWidth(k, ts), y, ts, v, kWhite);
+            r_.textMono(16 * s, y, ts, k, key); r_.textMono(16 * s + r_.textWidthMono(k, ts), y, ts, v, kWhite);
         } else if (size_t e = l.find('='); e != std::string::npos && l.rfind("  ", 0) == 0 && l.find(' ', 2) > e) {   // list: "  key=value"
             std::string k = l.substr(0, e), v = l.substr(e);
-            r_.text(16 * s, y, ts, k, key); r_.text(16 * s + r_.textWidth(k, ts), y, ts, v, kWhite);
-        } else r_.text(16 * s, y, ts, l, dim);
+            r_.textMono(16 * s, y, ts, k, key); r_.textMono(16 * s + r_.textWidthMono(k, ts), y, ts, v, kWhite);
+        } else r_.textMono(16 * s, y, ts, l, dim);
     }
-    if (consoleLog_.empty()) r_.text(16 * s, y, ts, "CONSOLE - TYPE help (` OR ESC CLOSES)", kGrey);
+    if (consoleLog_.empty()) r_.textMono(16 * s, y, ts, "CONSOLE - TYPE help (` OR ESC CLOSES)", kGrey);
+}
+
+void Game::chatSync() {
+    if (chatText_ != chatSeen_) { chatCursor_ = chatText_.size(); chatSeen_ = chatText_; }
+    if (chatCursor_ > chatText_.size()) chatCursor_ = chatText_.size();
+}
+
+bool Game::chatCaretKey(int key) {
+    chatSync();
+    size_t n = chatText_.size();
+    if (key == GLFW_KEY_LEFT) { if (chatCursor_ > 0) chatCursor_--; }
+    else if (key == GLFW_KEY_RIGHT) { if (chatCursor_ < n) chatCursor_++; }
+    else if (key == GLFW_KEY_HOME) chatCursor_ = 0;
+    else if (key == GLFW_KEY_END) chatCursor_ = n;
+    else if (key == GLFW_KEY_DELETE) { if (chatCursor_ < n) chatText_.erase(chatCursor_, 1); chatSeen_ = chatText_; }
+    else return false;
+    return true;
+}
+
+void Game::chatEdit(size_t maxLen, bool console) {
+    chatSync();
+    if (uiIn_.backspace && chatCursor_ > 0) chatText_.erase(--chatCursor_, 1);
+    for (char c : uiIn_.chars)
+        if (c >= 32 && c < 127 && !(console && c == '`') && chatText_.size() < maxLen) chatText_.insert(chatCursor_++, 1, c);
+    chatSeen_ = chatText_;
+}
+
+// The blinking caret: a thin bar after `before` (the text left of it, drawn from x).
+void Game::drawCaret(float x, float y, float ts, bool mono, const std::string& before) {
+    if (std::fmod(time_, 1.0) >= 0.5 && opts_.screenshot.empty()) return; // (screenshots: always shown)
+    float cx = x + (mono ? r_.textWidthMono(before, ts) : r_.textWidth(before, ts)), h = r_.textHeight(ts), w = std::max(1.0f, std::round(ts * 0.6f));
+    r_.rect(cx, y - h * 0.05f, w + 2, h * 1.05f + 2, {0, 0, 0, 0.8f});
+    r_.rect(cx + 1, y - h * 0.05f + 1, w, h * 1.05f, kWhite);
 }
 
 // The chat lines (all recent history while typing) and the SAY: / console input. In game and while editing together.
@@ -2372,10 +2459,11 @@ void Game::drawChatBox(float W, float H, float s, float ts) {
     }
     if (chatting_ && console_) drawConsole(W, H, s, ts);
     else if (chatting_) {
-        ui_.label(24 * s, H - 100 * s, "SAY: " + chatText_ + (std::fmod(time_, 1.0) < 0.5 ? "_" : ""), kWhite);
-        for (char c : uiIn_.chars) if (c >= 32 && c < 127 && chatText_.size() < 120) chatText_ += c;
         if ((!uiIn_.chars.empty() || uiIn_.backspace) && time_ >= nextTypingSend_) { net_.sendCommand("typing"); nextTypingSend_ = time_ + 0.25; }
-        if (uiIn_.backspace && !chatText_.empty()) chatText_.pop_back();
+        chatEdit(120, false);
+        float lts = std::max(1.0f, std::round(ui_.textScale()));
+        ui_.label(24 * s, H - 100 * s, "SAY: " + chatText_, kWhite);
+        drawCaret(24 * s, H - 100 * s, lts, false, "SAY: " + chatText_.substr(0, chatCursor_));
     }
 }
 
@@ -2774,7 +2862,6 @@ void Game::drawLeaderboard(float cx, float y) {
     float s = ui_.s(), gap = 14 * s;
     // four columns of 236 at 16:9; narrower ones (names cut shorter) when the screen is squarer, e.g. 4:3
     float colW = std::min(236 * s, ((float)r_.width() - 48 * s - 3 * gap) / 4), w = 4 * colW + 3 * gap, x0 = cx - w * 0.5f;
-    const size_t nameMax = (size_t)(18 * colW / (236 * s)), raceNameMax = (size_t)(16 * colW / (236 * s));
     auto head = [&](float x, float yy, const std::string& t) { // column title, a whole step smaller if it won't fit
         float hs = std::max(1.0f, std::round(ui_.textScale() * 0.8f));
         while (hs > 1 && r_.textWidth(t, hs) > colW - 8 * s) hs -= 1;
@@ -2808,11 +2895,10 @@ void Game::drawLeaderboard(float cx, float y) {
         if (rows.empty()) r_.text(x + 6 * s, yy, ts, "NOBODY RANKED YET (3 GAMES)", kGrey);
         if (!rows.empty() && rows[0].rating < 0) { r_.text(x + 6 * s, yy, ts, upper(rows[0].name), kGrey); continue; }
         for (size_t i = 0; i < rows.size() && i < 20; i++) {
-            std::string n = std::to_string(i + 1) + ". " + upper(rows[i].name);
-            if (n.size() > nameMax) n.resize(nameMax);
+            std::string rt = std::to_string(rows[i].rating);
+            std::string n = r_.textClip(std::to_string(i + 1) + ". " + rows[i].name, ts, colW - 18 * s - r_.textWidth(rt, ts));
             Color c2 = i == 0 ? Color{1.0f, 0.8f, 0.3f, 1} : i < 3 ? kWhite : Color{0.8f, 0.82f, 0.85f, 1};
             r_.text(x + 6 * s, yy, ts, n, c2);
-            std::string rt = std::to_string(rows[i].rating);
             r_.text(x + colW - 6 * s - r_.textWidth(rt, ts), yy, ts, rt, c2);
             yy += rowH;
         }
@@ -2831,11 +2917,10 @@ void Game::drawLeaderboard(float cx, float y) {
         else {
             if (rows.empty()) r_.text(x + 6 * s, yy, ts, "NO TIMES YET", kGrey);
             for (size_t i = 0; i < rows.size() && i < 20; i++) {
-                std::string n = std::to_string(i + 1) + ". " + upper(rows[i].name);
-                if (n.size() > raceNameMax) n.resize(raceNameMax);
+                std::string t = fmtRace(rows[i].rating);
+                std::string n = r_.textClip(std::to_string(i + 1) + ". " + rows[i].name, ts, colW - 18 * s - r_.textWidth(t, ts));
                 Color c2 = i == 0 ? Color{1.0f, 0.8f, 0.3f, 1} : i < 3 ? kWhite : Color{0.8f, 0.82f, 0.85f, 1};
                 r_.text(x + 6 * s, yy, ts, n, c2);
-                std::string t = fmtRace(rows[i].rating);
                 r_.text(x + colW - 6 * s - r_.textWidth(t, ts), yy, ts, t, c2);
                 yy += rowH;
             }

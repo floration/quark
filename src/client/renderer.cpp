@@ -5,39 +5,13 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include "font_ui.h"
 
 namespace {
 
-// 5x7 bitmap font for ASCII 32..126 (lowercase drawn as uppercase). One byte per row, bit 4 = leftmost.
-const uint8_t kFont[95][7] = {
-    {0x00,0x00,0x00,0x00,0x00,0x00,0x00},{0x04,0x04,0x04,0x04,0x00,0x00,0x04},{0x0A,0x0A,0x0A,0x00,0x00,0x00,0x00},
-    {0x0A,0x0A,0x1F,0x0A,0x1F,0x0A,0x0A},{0x04,0x0F,0x14,0x0E,0x05,0x1E,0x04},{0x18,0x19,0x02,0x04,0x08,0x13,0x03},
-    {0x0C,0x12,0x14,0x08,0x15,0x12,0x0D},{0x0C,0x04,0x08,0x00,0x00,0x00,0x00},{0x02,0x04,0x08,0x08,0x08,0x04,0x02},
-    {0x08,0x04,0x02,0x02,0x02,0x04,0x08},{0x00,0x04,0x15,0x0E,0x15,0x04,0x00},{0x00,0x04,0x04,0x1F,0x04,0x04,0x00},
-    {0x00,0x00,0x00,0x00,0x0C,0x04,0x08},{0x00,0x00,0x00,0x1F,0x00,0x00,0x00},{0x00,0x00,0x00,0x00,0x00,0x0C,0x0C},
-    {0x00,0x01,0x02,0x04,0x08,0x10,0x00},{0x0E,0x11,0x13,0x15,0x19,0x11,0x0E},{0x04,0x0C,0x04,0x04,0x04,0x04,0x0E},
-    {0x0E,0x11,0x01,0x02,0x04,0x08,0x1F},{0x1F,0x02,0x04,0x02,0x01,0x11,0x0E},{0x02,0x06,0x0A,0x12,0x1F,0x02,0x02},
-    {0x1F,0x10,0x1E,0x01,0x01,0x11,0x0E},{0x06,0x08,0x10,0x1E,0x11,0x11,0x0E},{0x1F,0x01,0x02,0x04,0x08,0x08,0x08},
-    {0x0E,0x11,0x11,0x0E,0x11,0x11,0x0E},{0x0E,0x11,0x11,0x0F,0x01,0x02,0x0C},{0x00,0x0C,0x0C,0x00,0x0C,0x0C,0x00},
-    {0x00,0x0C,0x0C,0x00,0x0C,0x04,0x08},{0x02,0x04,0x08,0x10,0x08,0x04,0x02},{0x00,0x00,0x1F,0x00,0x1F,0x00,0x00},
-    {0x08,0x04,0x02,0x01,0x02,0x04,0x08},{0x0E,0x11,0x01,0x02,0x04,0x00,0x04},{0x0E,0x11,0x01,0x0D,0x15,0x15,0x0E},
-    {0x0E,0x11,0x11,0x11,0x1F,0x11,0x11},{0x1E,0x11,0x11,0x1E,0x11,0x11,0x1E},{0x0E,0x11,0x10,0x10,0x10,0x11,0x0E},
-    {0x1C,0x12,0x11,0x11,0x11,0x12,0x1C},{0x1F,0x10,0x10,0x1E,0x10,0x10,0x1F},{0x1F,0x10,0x10,0x1E,0x10,0x10,0x10},
-    {0x0E,0x11,0x10,0x17,0x11,0x11,0x0F},{0x11,0x11,0x11,0x1F,0x11,0x11,0x11},{0x0E,0x04,0x04,0x04,0x04,0x04,0x0E},
-    {0x07,0x02,0x02,0x02,0x02,0x12,0x0C},{0x11,0x12,0x14,0x18,0x14,0x12,0x11},{0x10,0x10,0x10,0x10,0x10,0x10,0x1F},
-    {0x11,0x1B,0x15,0x15,0x11,0x11,0x11},{0x11,0x11,0x19,0x15,0x13,0x11,0x11},{0x0E,0x11,0x11,0x11,0x11,0x11,0x0E},
-    {0x1E,0x11,0x11,0x1E,0x10,0x10,0x10},{0x0E,0x11,0x11,0x11,0x15,0x12,0x0D},{0x1E,0x11,0x11,0x1E,0x14,0x12,0x11},
-    {0x0F,0x10,0x10,0x0E,0x01,0x01,0x1E},{0x1F,0x04,0x04,0x04,0x04,0x04,0x04},{0x11,0x11,0x11,0x11,0x11,0x11,0x0E},
-    {0x11,0x11,0x11,0x11,0x11,0x0A,0x04},{0x11,0x11,0x11,0x15,0x15,0x15,0x0A},{0x11,0x11,0x0A,0x04,0x0A,0x11,0x11},
-    {0x11,0x11,0x11,0x0A,0x04,0x04,0x04},{0x1F,0x01,0x02,0x04,0x08,0x10,0x1F},{0x0E,0x08,0x08,0x08,0x08,0x08,0x0E},
-    {0x00,0x10,0x08,0x04,0x02,0x01,0x00},{0x0E,0x02,0x02,0x02,0x02,0x02,0x0E},{0x04,0x0A,0x11,0x00,0x00,0x00,0x00},
-    {0x00,0x00,0x00,0x00,0x00,0x00,0x1F},{0x08,0x04,0x02,0x00,0x00,0x00,0x00},
-    // a-z placeholder rows (remapped to uppercase at draw time)
-    {0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},
-    {0x02,0x04,0x04,0x08,0x04,0x04,0x02},{0x04,0x04,0x04,0x04,0x04,0x04,0x04},{0x08,0x04,0x04,0x02,0x04,0x04,0x08},
-    {0x00,0x00,0x08,0x15,0x02,0x00,0x00},
-};
-constexpr int kFontTexW = 96, kFontTexH = 56; // 16x6 cells of 6x8 + a solid block row
+// UI font: Work Sans Bold as a signed distance field (font_ui.h, made by tools/make_font_atlas.py).
+// Font units: a line is 8 tall; advances and kerning are proportional.
+inline int glyphIndex(char ch) { unsigned char uc = (unsigned char)ch; return (uc < 32 || uc > 126) ? '?' - 32 : uc - 32; }
 
 const char* kWorldVS = R"(#version 330 core
 layout(location=0) in vec3 aPos;
@@ -251,35 +225,31 @@ const char* kUiVS = R"(#version 330 core
 layout(location=0) in vec2 aPos;
 layout(location=1) in vec2 aUV;
 layout(location=2) in vec4 aColor;
-layout(location=3) in vec2 aText; // x: text scale (0 = plain rect), y: glyph cell index
+layout(location=3) in vec2 aText; // text scale: x integer part, y 1/256ths (0 = plain rect)
 uniform vec2 uScreen;
-out vec2 vUV; out vec4 vColor; flat out vec2 vText;
+uniform vec2 uFontSize;
+out vec2 vUV; out vec4 vColor; flat out float vScale;
 void main() {
-    vUV = aUV / 64.0 - 1.0; vColor = aColor; vText = aText; // font texels
+    vUV = (aUV / 32.0 - 1.0) / uFontSize; vColor = aColor; vScale = aText.x + aText.y / 256.0;
     gl_Position = vec4(aPos.x / uScreen.x * 2.0 - 1.0, 1.0 - aPos.y / uScreen.y * 2.0, 0.0, 1.0);
 })";
-// Text: the glyph quad is 1 px bigger on each side; a pixel that isn't part of the glyph but has a glyph
-// texel within 1 screen pixel becomes the black outline (samples clamped to the glyph's own atlas cell).
+// Text: one distance-field sample per pixel. The glyph edge (0.5) is smoothed over one screen pixel; a band
+// outside it (1 px, wider on big text) is the black outline, coverage-blended under the fill.
 const char* kUiFS = R"(#version 330 core
-in vec2 vUV; in vec4 vColor; flat in vec2 vText;
+in vec2 vUV; in vec4 vColor; flat in float vScale;
 uniform sampler2D uFont;
-uniform vec2 uFontSize;
+uniform float uK; // distance-field units per screen pixel at scale 1 (texels per font unit / (2 * spread))
 out vec4 fragColor;
-float glyphAt(vec2 texel, vec2 cell0) {
-    if (any(lessThan(texel, cell0)) || any(greaterThanEqual(texel, cell0 + vec2(6.0, 8.0)))) return 0.0;
-    return texture(uFont, texel / uFontSize).r;
-}
 void main() {
-    if (vText.x <= 0.0) { fragColor = vec4(vColor.rgb, vColor.a * texture(uFont, vUV / uFontSize).r); return; }
-    vec2 t = vUV;
-    float g = vText.y;
-    vec2 cell0 = vec2(mod(g, 16.0) * 6.0, floor(g / 16.0) * 8.0);
-    if (glyphAt(t, cell0) > 0.5) { fragColor = vColor; return; }
-    float d = 1.0 / vText.x, o = 0.0;
-    for (int y = -1; y <= 1; y++)
-        for (int x = -1; x <= 1; x++) o = max(o, glyphAt(t + vec2(x, y) * d, cell0));
-    if (o < 0.5) discard;
-    fragColor = vec4(0.0, 0.0, 0.0, vColor.a);
+    float d = texture(uFont, vUV).r;
+    if (vScale <= 0.0) { fragColor = vec4(vColor.rgb, vColor.a * d); return; }
+    float px = uK / vScale;                       // one screen pixel in distance-field units
+    float w = 0.5 * px;
+    float od = 0.5 - max(1.0, vScale * 0.15) * px; // outline edge
+    float o = smoothstep(od - w, od + w, d);
+    if (o <= 0.004) discard;
+    float fill = smoothstep(0.5 - w, 0.5 + w, d);
+    fragColor = vec4(vColor.rgb * fill, vColor.a * o);
 })";
 
 // Uniform locations cached by (program, literal pointer): no string lookups in the frame loop.
@@ -407,21 +377,13 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glEnableVertexAttribArray(3); glVertexAttribPointer(3, 2, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(Vertex2D), (void*)12);
     glBindVertexArray(0);
 
-    // Font texture
-    std::vector<uint8_t> font(kFontTexW * kFontTexH, 0);
-    for (int g = 0; g < 95; g++) {
-        int cx = (g % 16) * 6, cy = (g / 16) * 8;
-        for (int r = 0; r < 7; r++)
-            for (int b = 0; b < 5; b++)
-                if (kFont[g][r] & (0x10 >> b)) font[(cy + r) * kFontTexW + cx + b] = 255;
-    }
-    for (int y = 48; y < 56; y++) for (int x = 0; x < 8; x++) font[y * kFontTexW + x] = 255; // solid block
+    // Font texture: the UI font's distance field (linear filtering: one atlas serves every text size)
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glGenTextures(1, &fontTex_);
     glBindTexture(GL_TEXTURE_2D, fontTex_);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, kFontTexW, kFontTexH, 0, GL_RED, GL_UNSIGNED_BYTE, font.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, kUiTexW, kUiTexH, 0, GL_RED, GL_UNSIGNED_BYTE, kUiAtlas);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
@@ -851,7 +813,7 @@ void Renderer::drawScene(bool shadows) {
 }
 
 static inline uint8_t u8c(float v) { return (uint8_t)std::lround(clampf(v, 0, 1) * 255.0f); }
-static inline uint16_t u16uv(float texel) { return (uint16_t)std::lround(clampf((texel + 1) * 64.0f, 0, 65535)); }
+static inline uint16_t u16uv(float texel) { return (uint16_t)std::lround(clampf((texel + 1) * 32.0f, 0, 65535)); }
 static inline int16_t px(float v) { return (int16_t)clampf(std::round(v), -32768, 32767); }
 
 // one quad (2 triangles) into the UI batch
@@ -870,28 +832,79 @@ static void uiQuad(std::vector<Vertex2D>& out, float x0, float y0, float x1, flo
 }
 
 void Renderer::rect(float x, float y, float w, float h, const Color& c) {
-    const float u = 2.0f, v = 52.0f; // texels inside the solid block
+    const float u = kUiCell * 0.5f, v = kUiCell * 6.5f; // texel inside the solid block
     uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, c, 0, 0);
 }
 
+static inline float glyphAdv(int prev, int g) { return kUiAdv[prev] + kUiKern[prev * 95 + g] * (1.0f / 16.0f); }
+
 void Renderer::text(float x, float y, float s, const std::string& str, const Color& c) {
-    float cx = std::round(x), cy = std::round(y);
-    uint8_t scale = (uint8_t)clampf(std::round(s), 1, 255);
+    if (s <= 0) return;
+    if (s < kMinTextScale) s = kMinTextScale;
+    float cx = x, cy = std::round(y);
+    float sc = clampf(s, 1.0f / 256, 255);
+    uint8_t si = (uint8_t)sc, sf = (uint8_t)std::lround((sc - si) * 256 > 255 ? 255 : (sc - si) * 256);
+    const float pad = kUiPad * s, box = 8.0f * s;
+    int prev = -1;
     for (char ch : str) {
-        unsigned char uc = (unsigned char)ch;
-        if (uc >= 'a' && uc <= 'z') uc -= 32;
-        if (uc < 32 || uc > 126) uc = '?';
-        int g = uc - 32;
-        if (g != 0) {
-            // glyph cell plus 1 screen pixel of padding on every side for the outline
-            float pad = 1.0f / s; // in font texels
-            float tx0 = (g % 16) * 6.0f - pad, ty0 = (g / 16) * 8.0f - pad;
-            float tx1 = (g % 16) * 6.0f + 6 + pad, ty1 = (g / 16) * 8.0f + 8 + pad;
-            uiQuad(ui_, cx - 1, cy - 1, cx + 6 * s + 1, cy + 8 * s + 1, tx0, ty0, tx1, ty1,
-                   c, scale, (uint8_t)g);
-        }
-        cx += 6 * s;
+        int g = glyphIndex(ch);
+        if (prev >= 0) cx += glyphAdv(prev, g) * s;
+        prev = g;
+        if (g == 0) continue;
+        // the glyph box plus its padding (the outline and anti-aliasing reach into it); snapped to whole pixels
+        float qx = std::round(cx - kUiOrigin * s) - pad, qy = cy - pad;
+        float tx = (g % 16) * kUiCell, ty = (g / 16) * kUiCell;
+        uiQuad(ui_, qx, qy, qx + box + 2 * pad, qy + box + 2 * pad, tx, ty, tx + kUiCell, ty + kUiCell, c, si, sf);
     }
+}
+
+// Monospaced (console): every glyph gets the same advance (a little over a digit's), centred in it, no kerning;
+// glyphs wider than that (M, W, m, w) are narrowed to fit so columns line up and nothing overlaps.
+static constexpr float kMonoAdv = 5.3f;
+
+void Renderer::textMono(float x, float y, float s, const std::string& str, const Color& c) {
+    if (s <= 0) return;
+    if (s < kMinTextScale) s = kMinTextScale;
+    float sc = clampf(s, 1.0f / 256, 255);
+    uint8_t si = (uint8_t)sc, sf = (uint8_t)std::lround((sc - si) * 256 > 255 ? 255 : (sc - si) * 256);
+    const float pad = kUiPad * s, cy = std::round(y);
+    for (size_t i = 0; i < str.size(); i++) {
+        int g = glyphIndex(str[i]);
+        if (g == 0) continue;
+        float sx = s * std::min(1.0f, kMonoAdv / kUiAdv[g]); // horizontal scale
+        float cx = x + i * kMonoAdv * s + (kMonoAdv * s - kUiAdv[g] * sx) * 0.5f;
+        float qx = std::round(cx - kUiOrigin * sx) - kUiPad * sx, qy = cy - pad;
+        float tx = (g % 16) * kUiCell, ty = (g / 16) * kUiCell;
+        uiQuad(ui_, qx, qy, qx + (8.0f + 2 * kUiPad) * sx, qy + 8.0f * s + 2 * pad, tx, ty, tx + kUiCell, ty + kUiCell, c, si, sf);
+    }
+}
+
+float Renderer::textWidthMono(const std::string& str, float scale) const { return str.size() * kMonoAdv * std::max(scale, kMinTextScale); }
+
+float Renderer::textWidth(const std::string& str, float scale) const {
+    float w = 0;
+    int prev = -1;
+    for (char ch : str) { int g = glyphIndex(ch); if (prev >= 0) w += glyphAdv(prev, g); prev = g; }
+    if (prev >= 0) w += kUiAdv[prev];
+    return w * std::max(scale, kMinTextScale);
+}
+
+std::string Renderer::textClip(const std::string& str, float scale, float maxW) const {
+    if (textWidth(str, scale) <= maxW) return str;
+    size_t n = textFit(str, scale, maxW - textWidth("...", scale));
+    return str.substr(0, n) + "...";
+}
+
+size_t Renderer::textFit(const std::string& str, float scale, float maxW) const {
+    float w = 0;
+    int prev = -1;
+    for (size_t i = 0; i < str.size(); i++) {
+        int g = glyphIndex(str[i]);
+        float nw = w + (prev >= 0 ? glyphAdv(prev, g) - kUiAdv[prev] : 0) + kUiAdv[g];
+        if (nw * std::max(scale, kMinTextScale) > maxW) return i;
+        w = nw; prev = g;
+    }
+    return str.size();
 }
 
 void Renderer::flush2D() {
@@ -909,7 +922,8 @@ void Renderer::flush2D() {
     glUseProgram(uiProg_);
     glUniform2f(U(uiProg_, "uScreen"), (float)width_, (float)height_);
     glUniform1i(U(uiProg_, "uFont"), 0);
-    glUniform2f(U(uiProg_, "uFontSize"), (float)kFontTexW, (float)kFontTexH);
+    glUniform2f(U(uiProg_, "uFontSize"), (float)kUiTexW, (float)kUiTexH);
+    glUniform1f(U(uiProg_, "uK"), kUiTpu / (2.0f * kUiSpread));
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, fontTex_);
     glBindVertexArray(uiVao_);

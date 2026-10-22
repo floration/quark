@@ -36,7 +36,7 @@ void Ui::labelCentered(float cx, float y, const std::string& t, const Color& c, 
 // Text scale that fits maxW: the normal size, or shrunk only as much as needed.
 float Ui::fit(const std::string& t, float maxW) const {
     if (t.empty() || r_->textWidth(t, textScale_) <= maxW) return textScale_;
-    return std::max(0.5f, maxW / r_->textWidth(t, 1.0f));
+    return std::max(0.5f, maxW / (r_->textWidth(t, 10.0f) * 0.1f)); // (width at 10: above the renderer's minimum scale)
 }
 
 bool Ui::button(float x, float y, float w, float h, const std::string& label, bool enabled) {
@@ -65,11 +65,21 @@ bool Ui::textField(int id, float x, float y, float w, float h, std::string& valu
     r_->rect(x, y, w, h, focused ? Color{0.1f, 0.12f, 0.16f, 1} : Color{0.08f, 0.09f, 0.11f, 0.95f});
     r_->rect(x, y + h - 2 * scale_, w, 2 * scale_, focused ? accent : Color{0.3f, 0.3f, 0.35f, 1});
     std::string shown = value;
-    float maxW = w - 12 * scale_;
-    while (!shown.empty() && r_->textWidth(shown + "_", textScale_) > maxW) shown.erase(0, 1);
-    if (focused && std::fmod(timeNow(), 1.0) < 0.5) shown += "_";
-    r_->text(x + 6 * scale_, y + (h - r_->textHeight(textScale_)) * 0.5f, textScale_, shown, {1, 1, 1, 1});
+    float cw = caretWidth(), maxW = w - 12 * scale_ - cw - 2 * scale_;
+    while (!shown.empty() && r_->textWidth(shown, textScale_) > maxW) shown.erase(0, 1); // long: show the end
+    float tx = x + 6 * scale_, ty = y + (h - r_->textHeight(textScale_)) * 0.5f;
+    r_->text(tx, ty, textScale_, shown, {1, 1, 1, 1});
+    if (focused) caret(tx + r_->textWidth(shown, textScale_), ty);
     return changed;
+}
+
+float Ui::caretWidth() const { return std::max(1.0f, std::round(textScale_ * 0.6f)); }
+
+// Blinking text caret (a bar the height of the text) at x.
+void Ui::caret(float x, float y) {
+    if (std::fmod(timeNow(), 1.0) >= 0.5 && !steadyCaret) return;
+    float h = r_->textHeight(textScale_), w = caretWidth();
+    r_->rect(x + scale_, y - h * 0.05f, w, h * 1.05f, {1, 1, 1, 1});
 }
 
 bool Ui::cycle(float x, float y, float w, float h, const std::string& label, int& index, int count,
@@ -134,10 +144,12 @@ bool Ui::slider(float x, float y, float w, float h, const std::string& label, fl
     r_->rect(x, y, w, h, {0.08f, 0.09f, 0.11f, 0.95f});
     r_->rect(x, y, w * t, h, {accent.r * 0.45f, accent.g * 0.45f, accent.b * 0.45f, 0.95f});
     if (editing) {
-        std::string s = prefix + editText_ + (std::fmod(timeNow(), 1.0) < 0.5 ? "_" : " ");
-        float ex = x + (w - r_->textWidth(s, textScale_)) * 0.5f;
-        r_->rect(ex + r_->textWidth(prefix, textScale_) - 3 * scale_, y + 3 * scale_, r_->textWidth(editText_ + "_", textScale_) + 6 * scale_, h - 6 * scale_, {0, 0, 0, 0.6f});
+        std::string s = prefix + editText_;
+        float cw = caretWidth() + 2 * scale_;
+        float ex = x + (w - r_->textWidth(s, textScale_) - cw) * 0.5f, ew = r_->textWidth(s, textScale_);
+        r_->rect(ex + r_->textWidth(prefix, textScale_) - 3 * scale_, y + 3 * scale_, r_->textWidth(editText_, textScale_) + cw + 6 * scale_, h - 6 * scale_, {0, 0, 0, 0.6f});
         r_->text(ex, ty, textScale_, s, {1, 1, 1, 1});
+        caret(ex + ew, ty);
         r_->rect(x, y + h - 2 * scale_, w, 2 * scale_, accent);
     } else {
         snprintf(buf, sizeof buf, fmt, v);
