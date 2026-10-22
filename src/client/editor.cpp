@@ -709,13 +709,17 @@ void Game::drawEditorGroupMenu(float x, float y, float w) {
     if (ui_.button(x + bw + gap, y, bw, h, "CLOSE")) edGroupMenu_ = false;
 }
 
-Game::EdSel Game::edPick(const Vec3& o, const Vec3& dir) const {
+// Everything under the ray, nearest first (each object once). A box the camera is inside (a big clip volume,
+// an invisible ceiling you're flying in, a zone) comes after everything else: it's all around you, so a click
+// means what's in front; clicking again on the same spot steps back through the list to reach it.
+std::vector<Game::EdSel> Game::edPickAll(const Vec3& o, const Vec3& dir) const {
     Vec3 inv = safeInv(dir);
-    EdSel best;
-    float bestT = 1e9f;
+    std::vector<std::pair<float, EdSel>> hits;
     auto test = [&](int kind, int idx, const AABB& b, float bias) {
         float t = rayAABB(o, inv, b, 1000);
-        if (t >= 0 && t + bias < bestT) { bestT = t + bias; best = {kind, idx}; }
+        if (t < 0) return;
+        bool inside = o.x > b.mn.x && o.x < b.mx.x && o.y > b.mn.y && o.y < b.mx.y && o.z > b.mn.z && o.z < b.mx.z;
+        hits.push_back({inside ? 1e6f + length(b.mx - b.mn) : t + bias, EdSel{kind, idx}});
     };
     // markers win over the box they sit on / inside (zones are see-through, so they only win when nothing's closer)
     for (size_t i = 0; i < ed_.spawns.size(); i++) test(ED_SPAWN, (int)i, edBounds(ed_, {ED_SPAWN, (int)i}), -0.5f);
@@ -732,8 +736,13 @@ Game::EdSel Game::edPick(const Vec3& o, const Vec3& dir) const {
     for (size_t i = 0; i < ed_.bombSites.size(); i++) test(ED_SITE, (int)i, ed_.bombSites[i], 0.25f);
     for (size_t i = 0; i < ed_.checkpoints.size(); i++) test(ED_CHECK, (int)i, ed_.checkpoints[i], 0.25f);
     if (ed_.hasHill) test(ED_HILL, 0, ed_.hill, 0.25f);
-    return best;
+    std::stable_sort(hits.begin(), hits.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    std::vector<EdSel> out;
+    for (auto& h : hits)
+        if (std::none_of(out.begin(), out.end(), [&](EdSel e) { return e.kind == h.second.kind && e.idx == h.second.idx; })) out.push_back(h.second);
+    return out;
 }
+
 
 // Grab points on the selection: one per face of a box (drag = resize that side, Shift+drag = move), or
 // arrows out of a point object along each axis (drag = move).
@@ -965,6 +974,11 @@ void Game::editorFrame(double dt) {
     // ---- click: grab a handle of the selection, else select what's under the mouse
     if (uiIn_.pressed && uiIn_.mx < panelX && !edGroupMenu_ && !edExportAsk_) {
         ui_.clearFocus();
+        bool shiftHeld = glfwGetKey(win_, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
+        // the spot the last selecting click was on, same view: this click steps along the ray (below), even where
+        // the selection's handle now sits under the mouse
+        bool again = !shiftHeld && std::hypot(uiIn_.mx - edLastClickX_, uiIn_.my - edLastClickY_) < 4 * s && length(edCam_ - edLastClickCam_) < 1e-4f &&
+                     std::fabs(yaw_ - edLastClickYaw_) < 1e-5f && std::fabs(pitch_ - edLastClickPitch_) < 1e-5f;
         int best = -1;
         float bestD = 14 * s;
         auto hs = edHandles();
@@ -980,7 +994,7 @@ void Game::editorFrame(double dt) {
         if (best >= 0)
             for (size_t k = 0; k < hs.size(); k++)
                 if (hd[k] < 14 * s && hd[k] <= bestD + 8 * s && length(hs[k].pos - edCam_) < length(hs[best].pos - edCam_)) best = (int)k;
-        if (best >= 0 && !edLook_) {
+        if (best >= 0 && !edLook_ && !again) {
             edDragAxis_ = hs[best].axis;
             edDragSign_ = hs[best].sign;
             edDragMove_ = hs[best].move || glfwGetKey(win_, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
@@ -990,10 +1004,17 @@ void Game::editorFrame(double dt) {
             edDragLast_.clear();
             edDragPushed_ = false;
         } else { // shift+click adds boxes / groups to the selection (or takes one back out)
-            EdSel p = edPick(edCam_, edMouseRay());
+            // a click on the spot clicked last (same view) steps to the next thing along the ray: what's behind a
+            // see-through clip box or zone, or the clip / zone behind a wall, or the volume you're inside
+            auto hitsAll = edPickAll(edCam_, edMouseRay());
+            EdSel p = hitsAll.empty() ? EdSel() : hitsAll[0];
+            if (again && hitsAll.size() > 1)
+                for (size_t k = 0; k < hitsAll.size(); k++)
+                    if (hitsAll[k].kind == edSel_.kind && hitsAll[k].idx == edSel_.idx) { p = hitsAll[(k + 1) % hitsAll.size()]; break; }
+            edLastClickX_ = uiIn_.mx; edLastClickY_ = uiIn_.my; edLastClickCam_ = edCam_; edLastClickYaw_ = yaw_; edLastClickPitch_ = pitch_;
             auto multi = [](EdSel e) { return e.kind == ED_BRUSH || e.kind == ED_GROUP; };
             auto same = [&](EdSel e) { return e.kind == p.kind && e.idx == p.idx; };
-            if (glfwGetKey(win_, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS && multi(p) && edSelValid() && multi(edSel_)) {
+            if (shiftHeld && multi(p) && edSelValid() && multi(edSel_)) {
                 auto it = std::find_if(edMulti_.begin(), edMulti_.end(), same);
                 if (it != edMulti_.end()) edMulti_.erase(it);
                 else if (same(edSel_)) { edSel_ = edMulti_.empty() ? EdSel() : edMulti_.back(); if (!edMulti_.empty()) edMulti_.pop_back(); }
@@ -1326,8 +1347,25 @@ void Game::editorFrame(double dt) {
             row();
         }
     } else {
-        ui_.label(x, y, "CLICK SOMETHING TO SELECT IT", kGrey, 0.5f);
+        ui_.label(x, y, "CLICK SOMETHING TO SELECT IT (AGAIN: THE ONE BEHIND)", kGrey, 0.5f);
         y += 16 * s;
+        // clip boxes are invisible in play and easy to lose in a big map: step through them (selects one and
+        // flies the camera back from it, keeping the view direction)
+        int nClip = 0;
+        for (auto& br : ed_.brushes) nClip += !br.generated && br.material == 9;
+        if (nClip && ui_.button(x, y, w, h, "FIND CLIP BOXES (INVISIBLE WALLS): " + std::to_string(nClip))) {
+            for (size_t k = 1; k <= ed_.brushes.size(); k++) {
+                int j = (int)((edClipFind_ + k + ed_.brushes.size()) % ed_.brushes.size());
+                if (ed_.brushes[j].generated || ed_.brushes[j].material != 9) continue;
+                edClipFind_ = j;
+                edSel_ = {ED_BRUSH, j};
+                edMulti_.clear();
+                const AABB& cb = ed_.brushes[j].box;
+                edCam_ = cb.center() - angleForward(yaw_, pitch_) * clampf(length(cb.mx - cb.mn) * 0.8f, 6, 120);
+                break;
+            }
+        }
+        y += h + gap;
     }
     // what this map can be played as
     y = std::max(y + 6 * s, H - 150 * s);
@@ -1346,7 +1384,7 @@ void Game::editorFrame(double dt) {
     // help, bottom left
     static const char* help[] = {
         "RIGHT MOUSE + MOVE: LOOK    WASD: FLY    SPACE / C: UP / DOWN    SHIFT: FAST    WHEEL: SPEED",
-        "CLICK: SELECT (SHIFT: ADD MORE, THEN GROUP)    ARROWS / PGUP / PGDN: MOVE BY GRID (ALONG YOUR VIEW)",
+        "CLICK: SELECT (AGAIN: THE ONE BEHIND, SHIFT: ADD MORE, THEN GROUP)    ARROWS / PGUP / PGDN: MOVE BY GRID (ALONG YOUR VIEW)",
         "SHIFT + ARROWS: GROW THAT SIDE    CTRL + ARROWS: SHRINK IT    M: MATERIAL / TEAM",
         "CTRL+D: DUPLICATE    DEL: DELETE    CTRL+Z: UNDO    CTRL+S: SAVE    ESC: DESELECT / LEAVE",
         "R: ROTATE 90 (SHIFT: ABOUT X, CTRL: ABOUT Z)    F: MIRROR LEFT / RIGHT (SHIFT: FRONT / BACK, CTRL: UPSIDE DOWN)",

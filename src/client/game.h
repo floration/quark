@@ -256,7 +256,10 @@ private:
     void edImportGroup();               // clipboard first (saved to groups/), else the groups menu
     void edExportGroup();               // the selected group to groups/<new file> + clipboard, then open the folder
     void drawEditorGroupMenu(float x, float y, float w);
-    EdSel edPick(const Vec3& o, const Vec3& dir) const;
+    std::vector<EdSel> edPickAll(const Vec3& o, const Vec3& dir) const;   // everything under the ray, nearest first
+    float edLastClickX_ = -1e9f, edLastClickY_ = -1e9f, edLastClickYaw_ = 0, edLastClickPitch_ = 0;   // (clicking the same spot again cycles)
+    Vec3 edLastClickCam_;
+    int edClipFind_ = -1;   // FIND CLIP: the clip box shown last
     Vec3 edMouseRay() const;
     bool edSave();
     bool edSaveCopy(const Map& m, const std::string& name);
