@@ -369,6 +369,13 @@ static void testMapLimits() {
     CHECK(refused(floor + "group custom 0 0 0 0 0 4000 1 1\npart 0 0 0 0 2 1 1\n"));   // in range until the part is placed
     CHECK(refused(floor + "light 0 1 0 1e9 1\n") && refused(floor + "spawn a 1e9 0 0\n"));
     CHECK(!refused(floor + "box 4000 0 -4096 4096 1 4096\n"));               // the edges of the range are fine
+    {   // a light of intensity 0 is refused the same way by the parser, an edit and validate()
+        Map m;
+        CHECK(refused(floor + "light 0 1 0 5 0\n") && m.parse(floor + "light 0 1 0 5 1\n"));
+        CHECK(!applyMapEdit(m, "l set 0 0 1 0 5 0") && applyMapEdit(m, "l set 0 0 1 0 5 0.1"));
+        m.lights[0].intensity = 0;
+        CHECK(!m.validate());
+    }
     // edits, from the fuzzer's base map: the review's sequences each end in a map that loads again
     const std::string base = "title t\nbox -20 -1 -20 20 0 20\nbox 2 0 2 4 2 4\nladder 5 0 5 6 4 6\ngroup stairs 0 1 -8 0 -8 -4 2 -6\n"
                              "group custom 1 0 8 0 8 10 2 10\npart 2 0 0 0 1 0.5 1\nspawn a 0 0 0\nspawn b 1 0 1\nlight 0 5 0 10 1\n";
@@ -3949,12 +3956,12 @@ static void testHostileInput() {
         CHECK(!m.parse(base + "box 1 2 3 4 5 x # why\n", &err) && err == "parse error on line 3: box 1 2 3 4 5 x ");
     }
     // map names: a stem, never a path
-    CHECK(isValidMapName("temple") && isValidMapName("my-map_2"));
+    CHECK(validMapName("temple") && validMapName("my-map_2"));
     // the editor's name field: what you type is what it saves as (a space used to make every save fail)
-    CHECK(typedMapName("My Castle 2") == "My_Castle_2" && isValidMapName(typedMapName("My Castle 2")));
+    CHECK(typedMapName("My Castle 2") == "My_Castle_2" && validMapName(typedMapName("My Castle 2")));
     CHECK(typedMapName("../x.qmap") == "xqmap" && typedMapName("").empty() && typedMapName(std::string(60, 'a')).size() == 40);
-    CHECK(!isValidMapName("") && !isValidMapName("../x") && !isValidMapName("a/b") && !isValidMapName("a\\b") && !isValidMapName("c:x")
-          && !isValidMapName("a.b") && !isValidMapName(std::string(41, 'a')) && !isValidMapName(std::string("a\0b", 3)));
+    CHECK(!validMapName("") && !validMapName("../x") && !validMapName("a/b") && !validMapName("a\\b") && !validMapName("c:x")
+          && !validMapName("a.b") && !validMapName(std::string(41, 'a')) && !validMapName(std::string("a\0b", 3)));
     CHECK(safeMapName("../../etc/x") == "______etc_x" && safeMapName("") == "map" && safeMapName("temple") == "temple");
     CHECK(downloadedMapPath("../../x", 1).find("..") == std::string::npos);
     // custom rules: NaN / inf keep the default, out of range is clamped

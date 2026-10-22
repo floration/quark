@@ -180,9 +180,12 @@ std::vector<std::string> listMaps() {
     return out;
 }
 
+static bool mapNameChar(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-'; }
+static constexpr size_t kMaxMapName = 40;   // (what the editor lets you save)
+
 bool validMapName(const std::string& name) {
-    if (name.empty() || name.size() > 40) return false;
-    for (char c : name) if (!(isalnum((unsigned char)c) || c == '_' || c == '-')) return false;
+    if (name.empty() || name.size() > kMaxMapName) return false;
+    for (char c : name) if (!mapNameChar(c)) return false;
     std::string low;
     for (char c : name) low += (char)tolower((unsigned char)c);
     static const char* dev[] = {"con", "prn", "aux", "nul"};
@@ -197,18 +200,16 @@ bool plainFileName(const std::string& name) {
     return true;
 }
 
-static bool mapNameChar(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-'; }
-bool isValidMapName(const std::string& name) { return validMapName(name); }
 std::string typedMapName(const std::string& typed) {
     std::string o;
     for (char c : typed) {
         if (c == ' ') c = '_';
-        if (mapNameChar(c) && o.size() < 40) o += c;
+        if (mapNameChar(c) && o.size() < kMaxMapName) o += c;
     }
     return o;
 }
 std::string safeMapName(const std::string& name) {
-    std::string o = name.substr(0, 40);
+    std::string o = name.substr(0, kMaxMapName);
     for (char& c : o) if (!mapNameChar(c)) c = '_';
     return o.empty() ? "map" : o;
 }
@@ -285,7 +286,7 @@ bool Map::load(const std::string& requested, std::string* err) {
 
 // Limits shared by the parser and the edit path: a map comes from untrusted servers too, so nothing in it may be
 // big enough to blow up the collision grid, the bake or the brush index (cellBrushes is uint16_t).
-static bool okCoord(float v) { return std::isfinite(v) && std::fabs(v) <= kMapMaxCoord; }
+static bool okCoord(float v) { return std::isfinite(v) && std::fabs(v) <= kMapExtent; }
 // One line of a map, read the way std::istringstream reads it (same results, same failures) without the stream
 // machinery: building a stream per line was most of the cost of parsing a big map (owner decision 1.5).
 //   >> word    skips whitespace, takes up to the next whitespace
@@ -453,7 +454,7 @@ bool Map::parseText(const std::string& text, std::string* err) {
         } else if (kw == "spawn") {
             std::string team;
             SpawnPoint s;
-            ok = (bool)(ls >> team >> s.pos.x >> s.pos.y >> s.pos.z) && okCoord(s.pos.x) && okCoord(s.pos.y) && okCoord(s.pos.z) && spawns.size() < 256;
+            ok = (bool)(ls >> team >> s.pos.x >> s.pos.y >> s.pos.z) && okCoord(s.pos.x) && okCoord(s.pos.y) && okCoord(s.pos.z) && spawns.size() < kMaxMapSpawns;
             float yawDeg = 0;
             ls >> yawDeg;
             if (!std::isfinite(yawDeg)) ok = false;
@@ -463,21 +464,21 @@ bool Map::parseText(const std::string& text, std::string* err) {
                 s.team = stagedSpawn(team[3] - '0', team[0] == 'd');
             if (ok) spawns.push_back(s);
         } else if (kw == "site") {
-            AABB b; ok = readBox(ls, b) && bombSites.size() < 16; if (ok) bombSites.push_back(b);
+            AABB b; ok = readBox(ls, b) && bombSites.size() < kMaxMapSites; if (ok) bombSites.push_back(b);
         } else if (kw == "cartcheck") {   // a payload checkpoint this far along the track (0..1)
-            float f; ok = (bool)(ls >> f) && f > 0 && f < 1 && cartChecks.size() < 64;
+            float f; ok = (bool)(ls >> f) && f > 0 && f < 1 && cartChecks.size() < kMaxMapCartChecks;
             if (ok) { cartChecks.push_back(f); std::sort(cartChecks.begin(), cartChecks.end()); }
         } else if (kw == "point") {
-            AABB b; ok = readBox(ls, b) && points.size() < 16; if (ok) points.push_back(b);
+            AABB b; ok = readBox(ls, b) && points.size() < kMaxMapPoints; if (ok) points.push_back(b);
         } else if (kw == "hill") {
             ok = readBox(ls, hill); hasHill = ok;
         } else if (kw == "ladder") {
-            AABB b; ok = readBox(ls, b) && b.mx.y - b.mn.y <= 64 && ladders.size() < 256;
+            AABB b; ok = readBox(ls, b) && b.mx.y - b.mn.y <= kMaxObjectHeight && ladders.size() < kMaxMapLadders;
             std::string flag;
             if (ok) { ladders.push_back(b); ladderAuto.push_back(ls >> flag && flag == "auto"); }
         } else if (kw == "group") {
             std::string t; Group g;
-            ok = (bool)(ls >> t >> g.material >> g.dir) && readBox(ls, g.box) && validMapMaterial(g.material) && g.dir >= 0 && g.dir < 4 && g.box.mx.y - g.box.mn.y <= 64 && groups.size() < 256;
+            ok = (bool)(ls >> t >> g.material >> g.dir) && readBox(ls, g.box) && validMapMaterial(g.material) && g.dir >= 0 && g.dir < 4 && g.box.mx.y - g.box.mn.y <= kMaxObjectHeight && groups.size() < kMaxMapGroups;
             g.type = t == "room" ? GROUP_ROOM : t == "stairs" ? GROUP_STAIRS : GROUP_CUSTOM;
             ok = ok && (t == "room" || t == "stairs" || t == "custom");
             if (ok) groups.push_back(g);
@@ -485,9 +486,9 @@ bool Map::parseText(const std::string& text, std::string* err) {
             Brush b; ok = !groups.empty() && groups.back().type == GROUP_CUSTOM && groups.back().parts.size() < kMaxGroupParts && (bool)(ls >> b.material) && validMapMaterial(b.material) && readBox(ls, b.box);
             if (ok) groups.back().parts.push_back(b);
         } else if (kw == "checkpoint") {
-            AABB b; ok = readBox(ls, b) && checkpoints.size() < 128; if (ok) checkpoints.push_back(b);
+            AABB b; ok = readBox(ls, b) && checkpoints.size() < kMaxMapCheckpoints; if (ok) checkpoints.push_back(b);
         } else if (kw == "path") {
-            Vec3 p; ok = (bool)(ls >> p.x >> p.y >> p.z) && okCoord(p.x) && okCoord(p.y) && okCoord(p.z) && payloadPath.size() < 512; if (ok) payloadPath.push_back(p);
+            Vec3 p; ok = (bool)(ls >> p.x >> p.y >> p.z) && okCoord(p.x) && okCoord(p.y) && okCoord(p.z) && payloadPath.size() < kMaxMapPath; if (ok) payloadPath.push_back(p);
         } else if (kw == "for") {
             std::string mode;
             ok = (bool)(ls >> mode);
@@ -502,7 +503,7 @@ bool Map::parseText(const std::string& text, std::string* err) {
             Light l;
             ok = (bool)(ls >> l.pos.x >> l.pos.y >> l.pos.z >> l.radius) && okCoord(l.pos.x) && okCoord(l.pos.y) && okCoord(l.pos.z);
             ls >> l.intensity;
-            ok = ok && l.radius >= 0.5f && l.radius <= 100 && l.intensity > 0 && l.intensity <= 10 && lights.size() < 512;
+            ok = ok && validMapLight(l.radius, l.intensity) && lights.size() < kMaxMapLights;
             if (ok) lights.push_back(l);
         } else if (kw == "indoor") { // "indoor <ceiling y>": roofed all over (menu / shot cameras stay under the roof)
             ok = (bool)(ls >> ceilingY) && okCoord(ceilingY); indoor = ok;
@@ -530,10 +531,6 @@ bool Map::parseText(const std::string& text, std::string* err) {
     }
     if (!validate(err)) return false;   // (before ladders and groups make their boxes from these)
     genLadderBrushes();
-    if (brushes.size() > kMapMaxTotalBrushes) {
-        if (err) *err = "map has too many brushes (" + std::to_string(brushes.size()) + ")";
-        return false;
-    }
     if (brushes.empty() || spawns.empty()) {
         if (err) *err = "map needs at least one box and one spawn";
         return false;
@@ -564,7 +561,7 @@ bool Map::validate(std::string* err) const {
     for (auto& b : brushes) if (!box(b.box) || !validMapMaterial(b.material)) return fail("a box is out of range (coordinates within 4096 m)");
     for (auto& s : spawns) if (!vec(s.pos) || !std::isfinite(s.yaw)) return fail("a spawn is out of range");
     for (auto& l : lights)
-        if (!vec(l.pos) || !(l.radius >= 0.5f && l.radius <= 100) || !(l.intensity >= 0 && l.intensity <= 10)) return fail("a light is out of range (radius 0.5-100, intensity 0-10)");
+        if (!vec(l.pos) || !validMapLight(l.radius, l.intensity)) return fail("a light is out of range (radius 0.5-100, intensity above 0, at most 10)");
     for (auto& l : ladders) if (!box(l) || l.mx.y - l.mn.y > kMaxObjectHeight) return fail("a ladder is out of range (at most 64 m tall)");
     for (auto& g : groups) {
         if (!box(g.box) || g.box.mx.y - g.box.mn.y > kMaxObjectHeight || g.parts.size() > kMaxGroupParts) return fail("a group is out of range (at most 64 m tall, 1024 parts)");
@@ -721,8 +718,6 @@ bool applyMapEdit(Map& m, const std::string& op) {
         return true;
     };
     bool ok = false;
-    // room for what one op can generate (a ladder's rails and rungs, a staircase) under the uint16_t brush index
-    if ((kind == "b" || kind == "d" || kind == "g") && verb != "del" && m.brushes.size() + 200 > kMapMaxTotalBrushes) return false;
     // Brushes and custom group parts (what the editor sends by the hundred) change the map in place: checked first,
     // then one brush and the grid cells it touches are updated (Map::changeBrush). The same checks as a full rebuild:
     // sizes, ranges, the grid's limit.
@@ -780,7 +775,7 @@ bool applyMapEdit(Map& m, const std::string& op) {
         return true;
     }, 1, kMaxMapSpawns);
     else if (kind == "l") ok = edit(m.lights, [&](Map::Light& l) {
-        return readVec(l.pos) && (bool)(in >> l.radius >> l.intensity) && l.radius >= 0.5f && l.radius <= 100 && l.intensity > 0 && l.intensity <= 10;
+        return readVec(l.pos) && (bool)(in >> l.radius >> l.intensity) && validMapLight(l.radius, l.intensity);
     }, 0, kMaxMapLights);
     else if (kind == "z") ok = edit(m.bombSites, readBox, 0, kMaxMapSites);
     else if (kind == "c") ok = edit(m.checkpoints, readBox, 0, kMaxMapCheckpoints);
@@ -975,7 +970,7 @@ bool Map::buildGrid() {
 // that applied the edits collide alike.
 bool Map::changeBrush(int op, size_t i, const Brush& b) {
     if (op == 1 ? i > brushes.size() : i >= brushes.size()) return false;
-    if (op == 1 && brushes.size() >= kMapMaxTotalBrushes) return false;   // (cell indices are 16 bits)
+    if (op == 1 && brushes.size() >= kMaxMapBrushes) return false;   // (cell indices are 16 bits)
     const Brush old = op == 1 ? Brush() : brushes[i];
     // bounds and the wallbang flag over the brushes as they will be (as rebuild: far scenery, water, lava, clip aren't in the bounds)
     // Usually neither changes and nobody has to look at every brush: the old brush wasn't on the edge of the bounds (so

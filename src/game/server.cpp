@@ -1142,7 +1142,7 @@ void Server::command(const std::string& line, int fromPlayer) {
         if (arg == "saveas") { // editmode saveas NAME: the session's map is saved (and autosaved from now on) under NAME
             std::string name;
             ss >> name;
-            if (!isValidMapName(name)) { reply("map name: letters, digits, - and _ only"); return; }
+            if (!validMapName(name)) { reply("map name: letters, digits, - and _ only (not a device name like con)"); return; }
             std::string old = cfg_.map;
             cfg_.map = name;
             map_.name = name;

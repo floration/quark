@@ -234,7 +234,7 @@ void Game::openEditor(std::string name) {
         ed_.rebuild();
         // a new map keeps the name it was opened with (it used to fall back to "mymap", so saving overwrote that);
         // a file that's there but won't load (an older / over-limit map) isn't overwritten by the blank one
-        if (!isValidMapName(name)) edName_ = "mymap";
+        if (!validMapName(name)) edName_ = "mymap";
         else edName_ = err.rfind("map not found", 0) == 0 ? name : typedMapName(name + "_new");
     }
     for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == edName_) edLoadIdx_ = (int)i;
@@ -1136,7 +1136,7 @@ void Game::editorFrame(double dt) {
         if (temp || !host_) {
             if (ui_.button(x, y, w, h, "SAVE A COPY AS " + edName_)) edSaveCopy(ed_, edName_);
         } else if (ui_.button(x, y, w, h, "SAVE AS " + edName_)) {
-            if (!isValidMapName(edName_)) edNotify("name: letters, digits, - and _ only");
+            if (!validMapName(edName_)) edNotify("name: letters, digits, - and _ only (not a device name like con)");
             else net_.sendCommand("editmode saveas " + edName_); // your session's file: saved under this name from now on
         }
         row();

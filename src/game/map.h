@@ -26,23 +26,22 @@ inline int nextMapMaterial(int m) { return (m + 1) % kMapMaterials; }   // the e
 // What any map may hold, however it arrives (file, download, demo, edits): Map::validate checks all of it, after
 // groups and ladders are expanded, before the collision grid is built. Shipped maps use a small fraction of this.
 constexpr float kMapExtent = 4096.0f;        // every coordinate, |x| <= this
-constexpr size_t kMaxMapBrushes = 60000;     // generated ones included (grid cells index brushes with 16 bits)
+constexpr size_t kMaxMapBrushes = 60000;     // generated ones included, on every path (file, download, edit)
+static_assert(kMaxMapBrushes <= 0xFFFF, "the collision grid's cells index brushes with 16 bits (Map::cellBrushes)");
 constexpr size_t kMaxMapGridRefs = 16u << 20; // brush references in the collision grid (32 MB; one box over the whole range is 4.2M)
 constexpr size_t kMaxMapSpawns = 256, kMaxMapLights = 512, kMaxMapLadders = 256, kMaxMapGroups = 256, kMaxGroupParts = 1024;
 constexpr size_t kMaxMapSites = 16, kMaxMapCheckpoints = 128, kMaxMapPath = 512, kMaxMapPoints = 16, kMaxMapCartChecks = 64;
 constexpr float kMaxObjectHeight = 64.0f;    // ladders and groups (a ladder's rungs are made every 0.4 m)
+constexpr float kMinLightRadius = 0.5f, kMaxLightRadius = 100.0f, kMaxLightIntensity = 10.0f;   // intensity > 0 (0 lights nothing)
+inline bool validMapLight(float radius, float intensity) {
+    return radius >= kMinLightRadius && radius <= kMaxLightRadius && intensity > 0 && intensity <= kMaxLightIntensity;   // (NaN fails)
+}
 
 struct SpawnPoint {
     Vec3 pos;
     float yaw = 0;
     int team = SPAWN_ANY;
 };
-
-// Hard limits on a map (from disk, a server download or an edit): keep in step with applyMapEdit.
-constexpr float kMapMaxCoord = 4096.0f;          // |coordinate| of anything placed
-constexpr size_t kMapMaxBrushes = 60000;          // authored brushes
-constexpr size_t kMapMaxTotalBrushes = 65535;     // with ladder rails / group parts: cellBrushes indexes are uint16_t
-constexpr size_t kMapMaxGridRefs = 16u << 20;     // brush references in the collision grid
 
 struct Map {
     std::string name;
@@ -197,11 +196,9 @@ bool plainFileName(const std::string& name);
 // Writes every shipped map back to its original text (and drops their light caches); returns how many.
 int resetOfficialMaps();
 std::string mapsFolder(); // absolute path of your maps folder (userMapsDir)
-// Maps fetched from servers live apart from your own, keyed by content: <user>/maps/downloads/<name>-<crc>.qmap
-// A map name is a file stem, never a path: [A-Za-z0-9_-]{1,40} (40 = what the editor lets you save).
-bool isValidMapName(const std::string& name);
-std::string typedMapName(const std::string& typed); // what the editor's name field keeps of what you type: a valid map name (space -> _)
+std::string typedMapName(const std::string& typed); // what the editor's name field keeps of what you type: validMapName's characters (space -> _), at most 40
 std::string safeMapName(const std::string& name); // for building file names: anything else becomes '_', capped
+// Maps fetched from servers live apart from your own, keyed by content: <user>/maps/downloads/<name>-<crc>.qmap
 std::string downloadedMapPath(const std::string& name, uint32_t crc);
 bool saveMapFile(const std::string& path, const std::string& text);
 // Writes a file whole or not at all: a temp file next to it, then a rename over it, so a crash or a full disk
