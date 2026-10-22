@@ -763,6 +763,10 @@ static void testPoints(uint16_t port) {
     CHECK(stage1);
     pump(s, cls, 0.3, idle);
     CHECK(a.mode().point == 1);                       // the clients know
+    s.phaseEnd_ = s.time() - 20;                      // B taken 20 s into overtime: the full bonus, from now
+    s.ms_.capture = 0.98f;
+    for (int k = 0; k < 10 && s.ms_.point == 1; k++) { standOn(att, 1); away(def); pump(s, cls, 0.1, idle); }
+    CHECK(s.ms_.point == 2 && s.ms_.phase == PHASE_LIVE && s.phaseEnd_ > s.time() + 85);
     s.stop();
 }
 
@@ -794,6 +798,14 @@ static void testCartChecks(uint16_t port) {
     s.payloadIdleSince_ = s.time() - 100;
     pump(s, cls, 2.0, [&](int) { s.players_[att].move.pos = s.map_.spawns[0].pos; return UserCmd(); });
     CHECK(s.ms_.payloadDist >= first - 0.01f);
+    if (s.map_.cartChecks.size() >= 2) {   // a checkpoint 20 s into overtime: the full bonus, from now
+        s.ms_.payloadDist = s.map_.cartChecks[1] * s.ms_.payloadLen - 0.5f;
+        s.phaseEnd_ = s.time() - 20;
+        for (int k = 0; k < 20 && s.ms_.point == 1 && s.ms_.phase == PHASE_LIVE; k++) {
+            s.players_[att].move.pos = s.map_.payloadPoint(s.ms_.payloadDist) + Vec3(0, 0, 2.5f); pump(s, cls, 0.1, idle);
+        }
+        CHECK(s.ms_.point == 2 && s.ms_.phase == PHASE_LIVE && s.phaseEnd_ > s.time() + 55);
+    }
     s.stop();
 }
 

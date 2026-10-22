@@ -777,7 +777,7 @@ void tickPayload(Server& s) {
     // checkpoints: more time for the attack, the cart stays past it, and the spawns move up a stage (staged maps)
     while (m.point < s.map_.cartChecks.size() && m.payloadDist >= s.map_.cartChecks[m.point] * m.payloadLen) {
         m.point++;
-        s.phaseEnd_ += kCartCheckBonus;
+        s.phaseEnd_ = std::max(s.phaseEnd_, s.time()) + kCartCheckBonus;   // (in overtime the clock is past: from now)
         s.message(std::string(teamName(att)) + " reached checkpoint " + std::to_string(m.point) + " - +" + std::to_string((int)kCartCheckBonus) + " s");
     }
     float& best = s.bestProgress_[att];
@@ -832,7 +832,7 @@ void tickPoints(Server& s) {
             endRound(s, att, "every point taken");
             return;
         }
-        s.phaseEnd_ += kPointBonus;
+        s.phaseEnd_ = std::max(s.phaseEnd_, s.time()) + kPointBonus;   // (in overtime the clock is past: from now)
         s.message(std::string(teamName(att)) + " took point " + char('A' + m.point - 1) + " - +" + std::to_string((int)kPointBonus) + " s, on to point " + char('A' + m.point));
         s.glog(LOG_SIMPLE, "point %d taken by team %d", m.point, att);
         return;
