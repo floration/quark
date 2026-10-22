@@ -47,7 +47,7 @@ public:
     // Prediction
     const MoveState& predicted() const { return pred_; }
     uint32_t nextSeq() const { return nextSeq_; } // seq the next tick()'s command will get
-    static constexpr uint32_t kCmdRing = 256;      // commands (and predicted states) kept for replay
+    static constexpr uint32_t kCmdRing = 1024;     // commands (and predicted states) kept for replay: over 1 s at 1000 Hz
     uint32_t lastReplayCount() const { return lastReplay_; } // commands the last reconcile re-ran (0 = prediction matched)
     Vec3 smoothedPos(float alpha) const; // predicted position interpolated between ticks + error smoothing
     bool selfAlive() const;

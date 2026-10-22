@@ -2238,6 +2238,12 @@ static void testReplayBound(uint16_t port) {
     CHECK(f.until(c, [&] { return c.hasSnapshot() && c.latest().tick == 2; }));
     printf("  replayed %u commands for an ack %u behind\n", c.lastReplayCount(), c.nextSeq() - 1 - s.ackCmdSeq);
     CHECK(c.lastReplayCount() > 0 && c.lastReplayCount() <= NetClient::kCmdRing);
+    // 400 ms of round trip at 1000 Hz: every command since the ack is replayed (a 256 ring dropped the oldest 144, so
+    // high-ping players rubber-banded; REVIEW PERF-6)
+    s.tick = 3; s.timeMs = 1004; s.ackCmdSeq = c.nextSeq() - 1 - 400; s.self.pos.y += 1;
+    f.snapshot(s);
+    CHECK(f.until(c, [&] { return c.hasSnapshot() && c.latest().tick == 3; }));
+    CHECK(c.lastReplayCount() == 400);
     c.disconnect();
     CHECK(c.nextSeq() == 1);   // a new connection or a demo starts with no old commands
 }
