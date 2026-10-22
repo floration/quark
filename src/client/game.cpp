@@ -817,6 +817,18 @@ void Game::handleEvents() {
                 std::string body = buildRankReport(e.text, ids, rankKey_, &players, &ladder, cfg_.name);
                 if (body.empty()) break;
                 if (!isRankedMap(net_.map(), arenaVariantFromName(ladder.c_str()))) { notify("NOT REPORTED - NOT A RANKED MAP FOR THIS LADDER", 6); break; } // a host on another map gets no result
+                {   // the host's result must match the score we saw ourselves, else we don't vouch for it
+                    std::vector<SeenPlayer> seen(kMaxPlayers);
+                    for (int i = 0; i < kMaxPlayers; i++)
+                        if (const PlayerSnap* ps = net_.findPlayer(i))
+                            if ((ps->flags & PS_CONNECTED) && ps->team() != TEAM_SPECTATOR) seen[i] = {true, ps->team(), ps->score, ps->kills};
+                    const ModeState& ms = net_.mode();
+                    std::string why;
+                    if (!rankedResultMatchesView(e.text, seen, modeIsTeamBased(ms.mode), ms.scoreA, ms.scoreB, &why)) {
+                        notify("NOT REPORTED - THE HOST'S RESULT DOESN'T MATCH THE GAME (" + why + ")", 8);
+                        break;
+                    }
+                }
                 Rating r;
                 if (rank_.rating(ladder, rankKey_.id, r)) { rankBefore_ = r.display(); rankGamesBefore_ = r.games; }
                 rank_.submit(body, ladder, players);
@@ -2655,10 +2667,9 @@ void Game::onRaceSplit(int cp, int ms) {
     }
     bool pb = !best || ms < best->ms;
     raceRuns_.push_back(run);
-    if (trial && pb) { // only a new personal best goes to the board (the Worker also keeps only your best)
-        std::string body = buildRaceReport(map, ms, run.splits, rankKey_, cfg_.name);
-        if (!body.empty()) rank_.submitRace(body, map);
-        notify("NEW PERSONAL BEST " + fmtRace(ms) + " - SENT TO THE LEADERBOARD", 5);
+    if (trial && pb) { // the game server posts every run itself (the Worker keeps only your best); refresh the board after
+        rank_.fetchRaceBoard(map, 3);
+        notify("NEW PERSONAL BEST " + fmtRace(ms) + " - THE SERVER SENDS IT TO THE LEADERBOARD", 5);
     } else if (pb) notify("NEW PERSONAL BEST " + fmtRace(ms), 5);
     if (pb && cfg_.announcer >= 1) audio_.play(SND_VOICE_HIGH_SCORE, 1.0f);
 }
@@ -3035,10 +3046,11 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     // --- left column: player, mouse, colors
     float y = y0;
     ui_.label(x, y, "NAME");
-    ui_.label(x + w * 0.5f + gap * 0.5f, y, "DISCORD NAME");
+    // Discord: run /link in the Discord server, type the 6-digit code the bot gives you here ("unlink" to remove it)
+    ui_.label(x + w * 0.5f + gap * 0.5f, y, cfg_.discordName.empty() ? "DISCORD CODE (/link)" : ("DISCORD: " + cfg_.discordName).c_str());
     y += 22 * s;
     ui_.textField(1, x, y, w * 0.5f - gap * 0.5f, h, cfg_.name, 20);
-    ui_.textField(43, x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, cfg_.discordName, 40);
+    ui_.textField(43, x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, discordCode_, 8);
     y += h + gap;
     {   // sensitivity, or the same thing as cm per 360 at your mouse DPI (drag either)
         ui_.slider(x, y, w, h, "SENSITIVITY", cfg_.sensitivity, 0.1f, 10.0f, "%.2f");

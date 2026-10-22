@@ -412,6 +412,39 @@ static void testSession(int mode, const char* mapName, uint16_t port) {
 }
 
 // Time trial: solo Viaduct race, every checkpoint sends the racer a split (increasing ms, last = finish).
+// Race runs: the fastest plausible split per leg (path gap at the speed ceiling); the Worker keeps the same table.
+static void testRaceFloors() {
+    printf("race split floors (and the Worker's copy)\n");
+    Map m;
+    CHECK(m.load("viaduct"));
+    std::vector<int> f = raceSplitFloorsMs(m);
+    CHECK(f.size() == m.checkpoints.size() && !f.empty());
+    int total = 0;
+    for (int x : f) { CHECK(x >= 0); total += x; }
+    CHECK(total > 1000);   // the course is long: well over a second even flat out
+    std::vector<int> ok, fast;
+    int t = 0;
+    for (int x : f) { t += x * 3 + 200; ok.push_back(t); }
+    CHECK(raceSplitsPlausible(ok, f));
+    fast = ok;
+    size_t big = std::max_element(f.begin(), f.end()) - f.begin();
+    for (size_t i = big; i < fast.size(); i++) fast[i] -= ok[big] - (big ? ok[big - 1] : 0) - f[big] / 2; // one leg at half the floor
+    CHECK(!raceSplitsPlausible(fast, f));
+    CHECK(!raceSplitsPlausible({}, f));
+    CHECK(!raceSplitsPlausible(std::vector<int>(ok.begin(), ok.end() - 1), f));
+    // tools/master/worker.js: RACE_FLOORS = { viaduct: [a, b, ...] } must be this table (re-run "quark_tests racefloors")
+    std::ifstream w(findDataPath("maps") + "/../tools/master/worker.js");
+    std::stringstream ws;
+    ws << w.rdbuf();
+    std::string js = ws.str(), want = "viaduct: [";
+    for (size_t i = 0; i < f.size(); i++) want += (i ? ", " : "") + std::to_string(f[i]);
+    want += "]";
+    if (!js.empty()) CHECK(js.find(want) != std::string::npos);
+    else printf("  (tools/master/worker.js not found next to the maps: skipped the table check)\n");
+    CHECK(buildRaceRunForm("0123456789abcdef", "viaduct", std::string(32, 'a'), ok.back(), ok, "Racer").find("ticket=0123456789abcdef&map=viaduct&id=") == 0);
+    CHECK(buildRaceRunForm("0123456789abcdef", "viaduct", std::string(32, 'a'), ok.back() + 1, ok, "Racer").empty());
+}
+
 static void testTimeTrial(uint16_t port) {
     printf("time trial: solo race splits on viaduct\n");
     Server s;
@@ -1117,7 +1150,7 @@ static void testDuel2v2(uint16_t port) {
 
 // Internet list end to end; only runs with QUARK_MASTER pointing at a test copy of tools/master/worker.js.
 static void testInternetList(uint16_t port) {
-    if (!getenv("QUARK_MASTER")) return;
+    if (!getenv("QUARK_MASTER") || strncmp(getenv("QUARK_MASTER"), "http", 4) != 0) return;
     printf("internet server list via %s\n", getenv("QUARK_MASTER"));
     Server s;
     ServerConfig cfg;
@@ -1982,6 +2015,7 @@ static void testRanked(uint16_t port) {
         int teamA = 0;
         for (auto& p : s.players_) teamA += p.connected && p.team == TEAM_A;
         CHECK(teamA == teamSize);
+        s.openRankedTicket();   // (what going live does; there's no list in tests, so the ticket request just fails)
         std::string why, res = s.rankedResult(TEAM_A, &why);
         CHECK(!res.empty() && res.find(variant == 1 ? " vampire " : " vanilla ") == 16);
         // every player builds the same list of results (only the secret differs)
@@ -2003,6 +2037,31 @@ static void testRanked(uint16_t port) {
         std::vector<std::string> ids;
         for (int k = 0; k < kMaxPlayers; k++) ids.push_back(cls[0]->rankId(k));
         CHECK(buildRankReport(res, ids, outsider).empty());
+        {   // each client checks the host's result against the score it saw before reporting it
+            std::vector<SeenPlayer> seen(kMaxPlayers);
+            for (auto* c : cls) seen[c->clientId()] = {true, s.players_[c->clientId()].team, 0, 0};
+            CHECK(rankedResultMatchesView(res, seen, true, 3, 1));          // team A won 3-1: the host's "A won" agrees
+            std::string why;
+            CHECK(!rankedResultMatchesView(res, seen, true, 1, 3, &why) && why.find("score") != std::string::npos); // B won: a lie
+            CHECK(!rankedResultMatchesView(res, seen, true, 2, 2));         // a draw reported as a win
+            std::vector<SeenPlayer> more = seen;
+            more[kMaxPlayers - 1] = {true, TEAM_B, 0, 0};                    // someone played who isn't in the result
+            CHECK(!rankedResultMatchesView(res, more, true, 3, 1));
+            std::vector<SeenPlayer> swapped = seen;
+            for (auto& p : swapped) if (p.playing) p.team = 1 - p.team;    // sides swapped
+            CHECK(!rankedResultMatchesView(res, swapped, true, 3, 1));
+            // free for all: places come from score (then kills)
+            std::vector<SeenPlayer> f(kMaxPlayers);
+            f[0] = {true, 0, 5, 9}; f[1] = {true, 1, 7, 2}; f[2] = {true, 2, 5, 9};
+            CHECK(rankedResultMatchesView("0123456789abcdef instagib 0:0:1,1:1:0,2:2:1", f, false, 0, 0));
+            CHECK(!rankedResultMatchesView("0123456789abcdef instagib 0:0:0,1:1:1,2:2:1", f, false, 0, 0));
+            CHECK(!rankedResultMatchesView("0123456789abcdef instagib 0:0:1,1:1:0", f, false, 0, 0));
+            CHECK(!rankedResultMatchesView("0123456789abcdef instagib 0:0:1,0:0:1,1:1:0,2:2:1", f, false, 0, 0)); // a slot twice
+            // the server's own result for the Worker: ids in place of slots, and the ticket's match id
+            CHECK(s.rankedMatch_.size() == 16 && res.compare(0, 16, s.rankedMatch_) == 0);
+            std::string match, list = rankedResultIds(res, ids, &match);
+            CHECK(match == s.rankedMatch_ && list == expectP);
+        }
         s.addBot(TEAM_B, 1); // a bot in the match: not rated
         CHECK(s.rankedResult(TEAM_A, &why).empty());
         s.stop();
@@ -2734,6 +2793,13 @@ int main(int argc, char** argv) {
     }).detach();
     setTimeScale(kTestTimeScale);
     g_serverRateCheck = false;
+    if (!getenv("QUARK_MASTER")) { // ranked / time trial servers register with the list: not from tests ("off" = no list)
+#ifdef _WIN32
+        _putenv("QUARK_MASTER=off");
+#else
+        setenv("QUARK_MASTER", "off", 1);
+#endif
+    }
     if (argc >= 2 && std::string(argv[1]) == "playtest") { playtestMaps(TP(29400), argc > 2 ? atof(argv[2]) : 40); return 0; }
     if (argc >= 2 && std::string(argv[1]) == "serverbench") {
         serverBench(TP(29300), 12, 4, argc > 2 ? atof(argv[2]) : 15, "harbor");
@@ -2741,6 +2807,15 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (argc >= 2 && std::string(argv[1]) == "signing") { testSigning(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "racefloors") { // the RACE_FLOORS table for tools/master/worker.js
+        Map m;
+        if (!m.load("viaduct")) return 1;
+        std::vector<int> f = raceSplitFloorsMs(m);
+        printf("viaduct: [");
+        for (size_t i = 0; i < f.size(); i++) printf("%s%d", i ? ", " : "", f[i]);
+        printf("]\n");
+        return 0;
+    }
     if (argc >= 2 && std::string(argv[1]) == "hostile") { testHostileInput(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "userdata") { testUserData(); testResetMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "ladders") { testLadders(); return g_fail ? 1 : 0; }
@@ -2785,7 +2860,7 @@ int main(int argc, char** argv) {
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); }},
-        {"race", [] { testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
+        {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
         {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testHandshake(TP(28592)); }},
         {"edit", [] { testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
         {"ranked", [] { testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); }},

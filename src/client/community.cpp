@@ -41,10 +41,18 @@ const char* Game::queueTitle(const std::string& key) {
     return "?";
 }
 
+// Linking proves you own the Discord account: /link in Discord gives a 6-digit code (10 minutes), typed here.
+// Your ranked id and Discord name are then public on /crowns (shown as leaderboard roles).
 void Game::linkDiscord() {
-    if (rankKey_.secret.empty() || cfg_.discordName == linkedDiscord_) return;
-    linkedDiscord_ = cfg_.discordName;
-    rank_.request("link", "/link", "secret=" + rankKey_.secret + "&discord=" + toHex(cfg_.discordName) + "&name=" + toHex(cfg_.name));
+    std::string code = discordCode_;
+    discordCode_.clear();
+    code.erase(std::remove(code.begin(), code.end(), ' '), code.end());
+    if (code.empty()) return;
+    if (rankKey_.secret.empty()) { notify("DISCORD LINK NEEDS A RANKED KEY (quark.key)", 4); return; }
+    bool unlink = code == "unlink";
+    bool digits = code.size() == 6 && std::all_of(code.begin(), code.end(), [](char c) { return c >= '0' && c <= '9'; });
+    if (!unlink && !digits) { notify("DISCORD: TYPE THE 6-DIGIT CODE FROM /link IN DISCORD", 4); return; }
+    rank_.request("link", "/link", "secret=" + rankKey_.secret + (unlink ? std::string("&unlink=1") : "&code=" + code) + "&name=" + toHex(cfg_.name));
 }
 
 void Game::queueAction(const std::string& mode, const char* action) {
@@ -132,7 +140,14 @@ void Game::updateCommunity() {
         pendingFilled_.clear();
     }
     updateLifetime();
-    if (rank_.takeText("link", out) && !out.empty()) notify(out[0] == '!' ? "DISCORD LINK: COULDN'T REACH THE SERVER" : "DISCORD: " + out, 3);
+    if (rank_.takeText("link", out) && !out.empty()) {
+        if (out[0] == '!') notify("DISCORD LINK: COULDN'T REACH THE SERVER", 3);
+        else {
+            if (out.rfind("linked ", 0) == 0) { cfg_.discordName = out.substr(7, 40); cfg_.save(); }
+            else if (out == "unlinked") { cfg_.discordName.clear(); cfg_.save(); }
+            notify("DISCORD: " + out, 4);
+        }
+    }
 }
 
 // Lifetime kills / deaths. The scoreboard shows each player's stored total plus this game's kills / deaths, so it

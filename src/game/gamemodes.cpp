@@ -66,7 +66,11 @@ int defenders(const Server& s) { return other(s.ms_.attackers); }
 void setPhase(Server& s, Phase p, float duration) {
     s.ms_.phase = p;
     s.phaseEnd_ = duration > 0 ? s.time() + duration : 0;
-    if (p == PHASE_LIVE) s.liveSince_ = s.time();
+    if (p == PHASE_LIVE) {
+        s.liveSince_ = s.time();
+        if (s.cfg_.ranked) s.openRankedTicket();   // (once per match: the first round going live)
+        if (s.cfg_.timeTrial) s.openRaceTicket();
+    }
 }
 
 void enterMatchEnd(Server& s, const std::string& text, int winner) {
@@ -81,7 +85,12 @@ void enterMatchEnd(Server& s, const std::string& text, int winner) {
     if (s.cfg_.ranked) {
         std::string why, res = s.rankedResult(winner, &why);
         if (res.empty()) s.message("not rated: " + why);
-        else { GameEvent r; r.type = EV_RANKED; r.text = res; s.broadcastEvent(r); s.glog(LOG_SIMPLE, "ranked %s", res.c_str()); }
+        else {
+            GameEvent r; r.type = EV_RANKED; r.text = res; s.broadcastEvent(r); s.glog(LOG_SIMPLE, "ranked %s", res.c_str());
+            // the server's own account goes to the Worker under the ticket; players' reports must agree with it
+            s.postRankedResult(res);
+        }
+        s.rankedMatch_.clear(); // the next match gets a new ticket
     }
     setPhase(s, PHASE_MATCH_END, kMatchEndTime);
 }
@@ -619,10 +628,15 @@ void tickRace(Server& s) {
             p.checkpoint++;
             GameEvent e; // the split: race time at this checkpoint, to the ms (time trials log these)
             e.type = EV_RACE_SPLIT; e.a = (uint8_t)i; e.b = (uint8_t)p.checkpoint;
-            e.text = std::to_string((long long)std::lround((roundTime(s) - (s.phaseEnd_ - s.time())) * 1000.0));
+            long long ms = std::lround((roundTime(s) - (s.phaseEnd_ - s.time())) * 1000.0);
+            e.text = std::to_string(ms);
             s.broadcastEvent(e);
+            if (p.checkpoint == 1) p.raceSplits.clear();
+            if ((int)p.raceSplits.size() == p.checkpoint - 1) p.raceSplits.push_back((int)ms);
+            else p.raceSplits.clear(); // (joined mid-run: this one doesn't count)
             if (p.checkpoint == (int)cps.size()) {
                 p.finished = true;
+                if ((int)p.raceSplits.size() == p.checkpoint) s.finishRaceRun(i);
                 endRound(s, i, "");
                 return;
             }

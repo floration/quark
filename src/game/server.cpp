@@ -145,6 +145,7 @@ void Server::run(std::atomic<bool>& quit) {
         if (master_) {
             std::string st = master_->status();
             if (!st.empty() && st != lastMaster) { log(st); lastMaster = st; }
+            if (master_->hasReplies()) for (auto& r : master_->takeReplies()) handleMasterReply(r.first, r.second);
         }
         idle(wait);
     }
@@ -2022,10 +2023,8 @@ std::string Server::rankedResult(int winner, std::string* whyNot) {
     int nSides = 0;
     for (auto& e : es) if (!sides[e.team]) { sides[e.team] = true; nSides++; }
     if (es.size() < 2 || nSides < 2) { *whyNot = "not enough players"; return ""; }
-    std::random_device rd;
-    char id[24];
-    snprintf(id, sizeof id, "%08x%08x", (unsigned)rd(), (unsigned)rd());
-    std::string out = std::string(id) + " " + arenaVariant(ms_.arenaVariant).name + " "; // the ladder
+    // the ticket's match id (opened when the match went live); without one the Worker won't rate it
+    std::string out = (rankedMatch_.empty() ? randomMatchId() : rankedMatch_) + " " + arenaVariant(ms_.arenaVariant).name + " "; // the ladder
     for (size_t k = 0; k < es.size(); k++) {
         int place = 0;
         if (teams) place = winner < 0 ? 0 : es[k].team == winner ? 0 : 1;
@@ -2033,6 +2032,69 @@ std::string Server::rankedResult(int winner, std::string* whyNot) {
         out += (k ? "," : "") + std::to_string(es[k].slot) + ":" + std::to_string(es[k].team) + ":" + std::to_string(place);
     }
     return out;
+}
+
+void Server::ensureMaster() {
+    if (master_ || cfg_.lanOnly) return;
+    master_ = std::make_unique<MasterAnnouncer>();
+    master_->start(port(), cfg_.publicList); // not public: registers for a token, stays off the list
+}
+
+void Server::openRankedTicket() {
+    if (!cfg_.ranked || !rankedMatch_.empty()) return;
+    rankedMatch_ = randomMatchId();
+    if (cfg_.lanOnly) { message("ranked: a LAN-only server can't open match tickets - this match won't be rated"); return; }
+    std::string players;
+    for (auto& p : players_)
+        if (p.connected && !p.isBot && p.team != TEAM_SPECTATOR && !p.rankId.empty()) players += (players.empty() ? "" : ",") + p.rankId;
+    ensureMaster();
+    if (master_) master_->post("ticket", "/ticket", "kind=match&match=" + rankedMatch_ + "&ladder=" + arenaVariant(ms_.arenaVariant).name +
+                                                     "&map=" + cfg_.map + "&players=" + players);
+    glog(LOG_SIMPLE, "ranked ticket %s players %s", rankedMatch_.c_str(), players.c_str());
+}
+
+bool Server::timeTrialCounts() const { return cfg_.timeTrial && cfg_.map == "viaduct" && isOfficialMap(map_); }
+
+void Server::openRaceTicket() {
+    if (!cfg_.timeTrial || cfg_.lanOnly) return;
+    std::string racer;
+    for (auto& p : players_) if (p.connected && !p.isBot && !p.rankId.empty()) { racer = p.rankId; break; }
+    if (racer.empty() || (racer == raceTicketFor_ && !raceTicket_.empty()) || !timeTrialCounts()) return;
+    raceTicket_ = randomMatchId();
+    raceTicketFor_ = racer;
+    raceFloors_ = raceSplitFloorsMs(map_);
+    ensureMaster();
+    if (master_) master_->post("raceticket", "/ticket", "kind=race&match=" + raceTicket_ + "&map=" + cfg_.map + "&players=" + racer);
+}
+
+void Server::finishRaceRun(int id) {
+    ServerPlayer& p = players_[id];
+    if (raceTicket_.empty() || p.rankId != raceTicketFor_ || p.raceSplits.empty() || !master_) return;
+    if (!raceSplitsPlausible(p.raceSplits, raceFloors_)) {
+        GameEvent e; e.type = EV_MESSAGE; e.text = "run not sent to the leaderboard: a checkpoint was reached faster than the course allows";
+        sendEvent(id, e);
+        glog(LOG_SIMPLE, "race run rejected (implausible splits)");
+        return;
+    }
+    std::string form = buildRaceRunForm(raceTicket_, cfg_.map, p.rankId, p.raceSplits.back(), p.raceSplits, p.name);
+    if (!form.empty()) master_->post("racerun:" + std::to_string(id), "/racerun", form);
+}
+
+void Server::postRankedResult(const std::string& eventText) {
+    std::vector<std::string> ids;
+    for (auto& p : players_) ids.push_back(p.rankId);
+    std::string match, list = rankedResultIds(eventText, ids, &match);
+    if (master_ && !list.empty()) master_->post("result", "/result", "match=" + match + "&p=" + list);
+}
+
+void Server::handleMasterReply(const std::string& key, const std::string& reply) {
+    log("ranking server (" + key + "): " + reply);
+    if (key == "ticket" && reply.rfind("ticket ", 0) != 0) message("ranked: no match ticket (" + reply + ") - this match won't be rated");
+    else if (key == "raceticket" && reply.rfind("ticket ", 0) != 0) { message("time trial: no race ticket (" + reply + ") - runs won't reach the leaderboard"); raceTicket_.clear(); }
+    else if (key.rfind("racerun:", 0) == 0) {
+        int id = atoi(key.c_str() + 8);
+        if (id >= 0 && id < kMaxPlayers && players_[id].connected) { GameEvent e; e.type = EV_MESSAGE; e.text = "leaderboard: " + reply; sendEvent(id, e); }
+    }
 }
 
 std::string Server::listName() const {
