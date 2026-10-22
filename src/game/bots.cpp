@@ -236,14 +236,6 @@ Vec3 NavGraph::steer(const Vec3& from, int prevNode, const std::vector<int>& pat
     return to;
 }
 
-Vec3 NavGraph::nextWaypoint(const Vec3& from, const Vec3& to) const {
-    int a = nodeAt(from), b = nodeAt(to + Vec3(0, 0.5f, 0));
-    if (a < 0 || b < 0 || a == b) return to;
-    thread_local std::vector<int> path;
-    if (!findPath(a, b, path)) return to;
-    return steer(from, a, path, to);
-}
-
 void NavGraph::buildAsync(Map m) {
     auto j = std::make_shared<NavJob>();
     j->map = std::move(m);

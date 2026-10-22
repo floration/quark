@@ -398,7 +398,7 @@ static void testTagEscape(uint16_t port) {
     c[ci].sendCommand("team a");      // no rejoining mid-match
     pump(s, cls, 0.3, idle);
     CHECK(s.players_[it].team == TEAM_SPECTATOR);
-    // the eliminated player leaves and comes back: still out (by name; rank id when there is one)
+    // the eliminated player leaves and comes back after the reconnect grace: a newcomer, who watches the rest of the match
     c[ci].disconnect();
     pump(s, cls, 0.1, idle);
     for (auto& sp : s.players_) if (sp.awayUntil > 0) sp.awayUntil = 1e-9;   // (skip the 10 s reconnect grace: gone for good)
@@ -410,9 +410,9 @@ static void testTagEscape(uint16_t port) {
     int back = again.clientId();
     CHECK(back >= 0 && s.players_[back].connected && s.players_[back].team == TEAM_SPECTATOR);   // joins mid-match as a spectator
     if (back >= 0) {
-        s.players_[back].team = TEAM_A;    // (even if it were put on a side) it stays out
-        pump(s, cls, 0.2, idle);
-        CHECK(s.players_[back].out && !s.players_[back].alive);
+        again.sendCommand("team a");      // and can't join a side until it's over
+        pump(s, cls, 0.3, idle);
+        CHECK(s.players_[back].team == TEAM_SPECTATOR && !s.players_[back].alive && s.players_[back].waitingToPlay);
     }
     // next round: two left. "It" disconnecting ends the match: the other one wins
     s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);

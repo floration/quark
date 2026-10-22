@@ -1,4 +1,3 @@
-#include <cmath>
 #include "customrules.h"
 #include <algorithm>
 #include <cmath>

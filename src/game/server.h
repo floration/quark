@@ -238,8 +238,6 @@ public:
     double roundStart_ = 0;
     double lastProgress_ = 0;    // vs: last time damage was dealt
     int lastIt_ = -1;
-    // tag: who has been eliminated this match ({rank id, name}): someone who leaves and comes back is still out
-    std::vector<std::pair<std::string, std::string>> tagOut_;
     std::vector<float>* tickTimes_ = nullptr;
     Snapshot snapScratch_;                     // reused every send (no per-tick allocations)
     std::vector<PlayerSnap> snapPlayers_;
@@ -251,8 +249,7 @@ public:
         // round up (500 Hz at a 333 cap -> every 2nd tick, not every tick), but 1000 / 333 = 3.003 stays 3
         return std::max(1, (int)std::ceil((float)tickRate() / std::max(1, rate) - 0.02f));
     } // benchmarks: every tick's simulate + send time goes here
-    int hideRounds_ = 0;        // hide and seek: rounds so far planned (everyone in play seeks once: grows if someone joins)
-    uint32_t nextJoinId_ = 1;           // hide and seek: the last seeker (everyone takes a turn)
+    uint32_t nextJoinId_ = 1;           // the next connection's joinId (tourney: an entrant's slot taken by someone new isn't them)
     float drainAccum_ = 0;
     uint32_t duelUsed_ = 0;      // duel: modifiers already played this match (bit per modifier), never repeated
     // payload/race per-round bookkeeping

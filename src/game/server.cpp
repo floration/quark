@@ -1756,7 +1756,9 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
     // a throw needs the knife in hand and a mode that allows it (holding alt while clicking fire used to throw
     // past both checks: endless knives in hide and seek / tag)
     if (p.weapon == WPN_KNIFE) alt = alt && time() >= p.knifeBackAt && !isItMode(ms_.mode);
-    if (isThrow(p.weapon, alt) && time() < p.throwReadyAt) alt = false;   // the shared throw cooldown (syringe: a dose for yourself instead)
+    // The shared throw cooldown. Alt alone on cooldown never gets here (no altShot); with FIRE held too, it's the
+    // weapon's plain fire instead: a stab, or a syringe dose for yourself.
+    if (isThrow(p.weapon, alt) && time() < p.throwReadyAt) alt = false;
     if (p.weapon == WPN_KNIFE && alt) { // thrown knife: a fast arcing projectile, hits for knife damage
         for (auto& pr : projectiles_) {
             if (pr.active) continue;
@@ -2158,6 +2160,7 @@ int Server::addBot(int team, int skill, bool balance) {
     p.isBot = true;
     p.balanceBot = balance;
     if (!modeIsTeamBased(cfg_.mode) && team != TEAM_SPECTATOR) team = TEAM_A;   // FFA and the like: no sides
+    if (rulesTeamLocked(*this) && team != TEAM_SPECTATOR) { team = TEAM_SPECTATOR; p.waitingToPlay = true; } // tag: like any newcomer, plays the next match
     p.team = team;
     p.lastRecv = timeNow();
     p.name = uniqueName(std::string("BOT ") + names[(id * 7 + tick_) % 16], id);
@@ -2169,7 +2172,7 @@ int Server::addBot(int team, int skill, bool balance) {
     p.soundPack = (int)((bots_[id].rng >> 8) % kSoundPacks);
     GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.text = p.name;
     broadcastEvent(e);
-    message(p.name + " (" + botSkillName(skill) + ") joined " + (team == TEAM_B ? "team B" : modeIsTeamBased(cfg_.mode) ? "team A" : "the game"));
+    message(p.name + " (" + botSkillName(skill) + ") joined " + (p.waitingToPlay ? "(plays the next match)" : team == TEAM_B ? "team B" : modeIsTeamBased(cfg_.mode) ? "team A" : "the game"));
     if (rulesRespawnDelay(*this) >= 0) p.respawnAt = time() + 0.5f;
     return id;
 }

@@ -88,8 +88,6 @@ struct NavGraph {
     uint32_t generation = 0;   // bumped by every build (bots drop routes from an older graph)
     void build(const Map& m);  // O(N log N)-ish: a grid finds the neighbours (same graph as checking every pair)
     int nodeAt(const Vec3& p) const;                       // surface the point stands on (or -1)
-    // Next point to walk toward on the way from `from` to `to`.
-    Vec3 nextWaypoint(const Vec3& from, const Vec3& to) const;
     // A* from surface a to b: the surfaces after a, up to and including b. Reuses its buffers (no allocations
     // once warm). False if there's no route.
     bool findPath(int a, int b, std::vector<int>& out) const;

@@ -2267,6 +2267,15 @@ static void testTagLateJoin(uint16_t port) {
     CHECK(late >= 0 && late < kMaxPlayers);
     if (late < 0 || late >= kMaxPlayers) { s.stop(); return; }
     CHECK(s.players_[late].team == TEAM_SPECTATOR && s.players_[late].waitingToPlay);
+    { // an admin's addbot mid match: the team lock holds for bots too (it used to put them straight into play)
+        int before[kMaxPlayers]; for (int i = 0; i < kMaxPlayers; i++) before[i] = s.players_[i].connected;
+        s.command("addbot a");
+        pump(s, cls, 0.3, idle);
+        int bot = -1;
+        for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && !before[i] && s.players_[i].isBot) bot = i;
+        CHECK(bot >= 0 && s.players_[bot].team == TEAM_SPECTATOR && s.players_[bot].waitingToPlay && !s.players_[bot].alive);
+        if (bot >= 0) s.removeBot(bot);
+    }
     s.command("map temple 1v1");
     pump(s, cls, 0.5, idle);
     int a = 0, b = 0, spec = 0;
