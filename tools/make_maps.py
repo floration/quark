@@ -5,7 +5,8 @@ The maps are a build artifact: CMake runs this (python3, nothing else needed) an
   python3 tools/make_maps.py [--out DIR]   writes every map (default: maps/ next to tools/)
   python3 tools/make_maps.py --list        prints the names of the maps it makes, writes nothing
 Output is byte-for-byte deterministic (seeded generators only; LF line endings on every platform)."""
-import os, random, math, argparse
+import os, random, math, argparse, contextlib
+from collections import Counter
 _ap = argparse.ArgumentParser(description="generate the shipped maps")
 _ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "maps"))
 _ap.add_argument("--list", action="store_true", help="print the map names instead of writing the maps")
@@ -64,6 +65,47 @@ class M:
         (players only: shots, hooks and sight go through)"""
         s.box(x0 - 2, h, z0 - 2, x0, h + up, z1 + 2, mat="clip"); s.box(x1, h, z0 - 2, x1 + 2, h + up, z1 + 2, mat="clip")
         s.box(x0, h, z0 - 2, x1, h + up, z0, mat="clip"); s.box(x0, h, z1, x1, h + up, z1 + 2, mat="clip")
+    # ---- the keep-clear registry (REVIEW MAP-5): volumes nothing solid may stand in (the payload cart's sweep along
+    # its track, a lane's narrow openings, ...). save() checks every placement against it: generated decor (dress,
+    # props, detail, skyline, clutter, cribs, scatter) that lands in one is dropped; anything placed by hand there
+    # stops the build with the line and the volume it's in.
+    def keep_clear_box(s, x0, y0, z0, x1, y1, z1, why, mirror=False):
+        s.__dict__.setdefault("clear_boxes", []).append((min(x0, x1), min(y0, y1), min(z0, z1), max(x0, x1), max(y0, y1), max(z0, z1), why))
+        if mirror: s.keep_clear_box(-x1, y0, -z1, -x0, y1, -z0, why)
+    @contextlib.contextmanager
+    def generated(s):
+        """the lines added inside are generated decor (dropped, not an error, where they'd block a keep-clear volume)"""
+        before = Counter(s.lines)
+        yield
+        s.__dict__.setdefault("auto_lines", Counter()).update(Counter(s.lines) - before)
+    def cart_clear(s):
+        """the payload cart's sweep (its box: 2.4 x 1.8 x 1.5 m, Map::payloadCartBox) along every leg of the track,
+        with 10 cm to spare, into the registry"""
+        path = [tuple(map(float, l.split()[1:4])) for l in s.lines if l.startswith("path ")]
+        for (ax, ay, az), (bx, by, bz) in zip(path, path[1:]):
+            lo, hi = min(ay, by) + 0.02, max(ay, by) + 1.6
+            if abs(bx - ax) >= abs(bz - az): s.keep_clear_box(min(ax, bx) - 1.3, lo, az - 1.0, max(ax, bx) + 1.3, hi, bz + 1.0, "the payload cart's track")
+            else: s.keep_clear_box(ax - 1.0, lo, min(az, bz) - 1.3, bx + 1.0, hi, max(az, bz) + 1.3, "the payload cart's track")
+    def check_clear(s):
+        """every solid (or visible) box against the keep-clear registry: generated ones in a volume go, hand-placed
+        ones are an error"""
+        boxes = getattr(s, "clear_boxes", [])
+        if not boxes: return
+        auto = getattr(s, "auto_lines", Counter())
+        kinds = {"box", "accent", "wallbang", "metal", "glow", "trim", "clip"}
+        out, errors = [], []
+        for l in s.lines:
+            w = l.split()
+            if w and w[0] in kinds and len(w) == 7:
+                b = tuple(map(float, w[1:7]))
+                hit = next((z for z in boxes if b[0] < z[3] - 1e-3 and b[3] > z[0] + 1e-3 and b[1] < z[4] - 1e-3 and b[4] > z[1] + 1e-3
+                            and b[2] < z[5] - 1e-3 and b[5] > z[2] + 1e-3), None)
+                if hit:
+                    if auto[l] > 0: auto[l] -= 1; continue
+                    errors.append(f"  {l}   is in {hit[6]} ({' '.join(f'{v:g}' for v in hit[:6])})")
+            out.append(l)
+        if errors: raise SystemExit(f"make_maps.py: {s.name}: placed in a keep-clear volume (move it, or the volume):\n" + "\n".join(errors))
+        s.lines = out
     def keep_clear(s, x0, z0, x1, z1, y=2.4):
         """a doorway (and the step in front and behind it): nothing placed later may stand in it"""
         s.__dict__.setdefault("clear_zones", []).append((x0, z0, x1, z1, y))
@@ -85,15 +127,16 @@ class M:
         without moving every piece by hand. Boxes, stairs, ladders, spawns and lights; lights reach f as far."""
         boxes = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "ladder"}
         g = lambda v: f"{float(v) * f:g}"
-        out = []
-        for l in s.lines:
+        def scaled(l):
             w = l.split()
             if w and w[0] in boxes and len(w) >= 7: w[1], w[3], w[4], w[6] = g(w[1]), g(w[3]), g(w[4]), g(w[6])
             elif w and w[0] == "spawn": w[2], w[4] = g(w[2]), g(w[4])
             elif w and w[0] == "light": w[1], w[3], w[4] = g(w[1]), g(w[3]), g(w[4])
             elif l.startswith("# stairs"): w[2], w[3], w[4], w[5] = g(w[2]), g(w[3]), g(w[4]), g(w[5])
-            out.append(" ".join(w) if w and (w[0] in boxes or w[0] in ("spawn", "light") or l.startswith("# stairs")) else l)
-        s.lines = out
+            return " ".join(w) if w and (w[0] in boxes or w[0] in ("spawn", "light") or l.startswith("# stairs")) else l
+        s.lines = [scaled(l) for l in s.lines]
+        if hasattr(s, "auto_lines"): s.auto_lines = Counter({scaled(l): n for l, n in s.auto_lines.items()})
+        s.clear_boxes = [tuple(v * f if i in (0, 2, 3, 5) else v for i, v in enumerate(z[:6])) + (z[6],) for z in getattr(s, "clear_boxes", [])]
         if hasattr(s, "hx"):
             s.hx, s.hz = s.hx * f, s.hz * f
             sc = lambda r: tuple(v * f for v in r[:4]) + tuple(r[4:])
@@ -556,6 +599,8 @@ class M:
     def clutter(s, x0, z0, x1, z1, step, shapes, seed=0, mirror=False, accent=0.3):
         """low solid props on a jittered grid, skipping anywhere within 1.3 m of an existing brush, 3 m of a spawn or
         3 m of the payload track; mirror=True places each one point-symmetrically too (only where both are free)"""
+        with s.generated(): s._clutter(x0, z0, x1, z1, step, shapes, seed, mirror, accent)
+    def _clutter(s, x0, z0, x1, z1, step, shapes, seed, mirror, accent):
         rnd = random.Random(seed); solid = []; spawns = []; path = []
         for ln in s.lines:
             w = ln.split()
@@ -588,6 +633,8 @@ class M:
     def cribs(s, cands, size=3.4, h=2.8, count=4, mirror=False):
         """small walled rooms with one doorway (tool cribs, sheds, closets) at the first `count` candidate
         centres where the floor is free: places to hide and to break a chase"""
+        with s.generated(): return s._cribs(cands, size, h, count, mirror)
+    def _cribs(s, cands, size, h, count, mirror):
         solid = []
         for ln in s.lines:
             w = ln.split()
@@ -612,8 +659,13 @@ class M:
         mode = next((l.split()[1] for l in s.lines if l.startswith("for ")), None)
         s.lines = [l for l in s.lines if not l.startswith("modes ")]
         if mode and name not in EVERY_MODE: s.lines.insert(3, "modes " + " ".join([mode] + getattr(s, "also", []) + ([] if mode == "ffa" else ["ffa"])))
-        if dress: s.props(); s.dress(name); s.detail_pass(); s.skyline_pass(name)
+        s.name = name
+        offered = next((l.split()[1:] for l in s.lines if l.startswith("modes ")), None)   # (None: every mode)
+        if offered is None or "payload" in offered or "npayload" in offered: s.cart_clear()
+        with s.generated():
+            if dress: s.props(); s.dress(name); s.detail_pass(); s.skyline_pass(name)
         s.clear_doorways()
+        s.check_clear()
         p = PALETTES.get(name)
         if p:
             p = [tuple(round(v * 0.85, 3) for v in p[0])] + list(p[1:])
@@ -922,7 +974,7 @@ m.container(-23, -40, -17, -37); m.container(17, 37, 23, 40)
 m.container(-23, -40, -17, -37, h=5.2); m.container(17, 37, 23, 40, h=5.2)
 m.wallbang(21.5, 0, 33, 24, 2.4, 33.3); m.wallbang(-23, 0, -33.3, -20, 2.4, -33)
 for (x0, z0, x1, z1, h) in [(4, 30, 8, 34, 1.6), (-8, 30, -4, 34, 1.6), (4, -2, 7, 2, 1.4), (-6, -4, -3, 0, 2.2),
-                           (18, -20, 21, -14, 1.6), (12.5, -25, 15.5, -21, 1.4), (-8, -34, -4, -30, 1.6), (4, -34, 8, -30, 1.6)]:
+                           (18, -20, 21, -14, 1.6), (9.4, -25, 12.4, -21, 1.4), (-8, -34, -4, -30, 1.6), (4, -34, 8, -30, 1.6)]:
     m.box(x0, 0, z0, x1, h, z1)
 # the tunnel over the west leg of the track (doors in both walls half-way)
 m.doorwall(-18.4, 9, -18, 23, 4.6, [(16, 2.4, 2.6)], axis="z"); m.doorwall(-10, 9, -9.6, 23, 4.6, [(16, 2.4, 2.6)], axis="z")
@@ -1781,6 +1833,13 @@ def weave(xc, z0, z1, top, dz=3.5, off=1.0, w=0.7, gap=0.0, rise=0.0):
         for j, px in enumerate((xo, xc)):               # cross beams: no straight line along the weave stays clear.
             ph = 4.0 if (k + j) % 2 == 0 else 8.5       # (thin, staggered: hopping the rod tops is harder than the beam)
             m.box(px - 0.18, t - 3, (za + zb) / 2 - 0.18, px + 0.18, t + ph, (za + zb) / 2 + 0.18, mat="metal")
+def slalom(walls, X0, X1, top):
+    """walls across a lane (X0..X1 wide, its floor at top), each leaving a 0.9 m opening at one side. The openings
+    are kept clear: a wall pillar of the dressing beside one left a hull-width slot nobody could get through."""
+    for (z, x0, x1) in walls:
+        m.box(x0, top, z, x1, top + 1.6, z + 0.6, accent=True)
+        o0, o1 = (x1, X1) if x0 <= X0 else (X0, x0)
+        m.keep_clear_box(o0, top, z - 1.0, o1, top + 2.2, z + 1.6, "a slalom opening")
 # ---- leg 1, ground level, north to south
 deck(-6, 66, 6, 78, 0)                                                     # start
 deck(-2, 50, 2, 66, 0)                                                     # bridge on arches
@@ -1803,7 +1862,7 @@ m.metal(-4.2, 4.5, -13.2, -3.8, 12, -12.8); m.box(-5, 12.5, -14, 5, 13, -12, acc
 deck(-2, -22, 12, -16, 4.5)
 m.raw("checkpoint 4 4.5 -22 10 7.5 -16")
 deck(8, -40, 12, -22, 3.0)                                                 # slalom lane: 0.9 m openings
-for (z, x0, x1) in ((-26, 8, 11.1), (-30, 8.9, 12), (-34, 8, 11.1), (-38, 8.9, 12)): m.box(x0, 3.0, z, x1, 4.6, z + 0.6, accent=True)
+slalom(((-26, 8, 11.1), (-30, 8.9, 12), (-34, 8, 11.1), (-38, 8.9, 12)), 8, 12, 3.0)
 pads([(10.8, -42.5, 2.6), (9.2, -45.4, 2.2), (10.8, -48.3, 1.8)], 0)     # pads down
 deck(2, -60, 12, -51, 1.0)
 m.raw("checkpoint 2 1 -60 12 4 -52")
@@ -1816,7 +1875,7 @@ m.raw("checkpoint -6 1 -79 6 5 -72")
 deck(8, -79, 15.5, -73, 1.0)
 m.stairs(12.5, -73, 15.5, -57, 8, "z", 1, base=1.0, solid=False)
 deck(12.5, -57, 15.5, -20, 8)
-for (z, x0, x1) in ((-50, 12.5, 14.6), (-44, 13.4, 15.5), (-38, 12.5, 14.6), (-32, 13.4, 15.5)): m.box(x0, 8, z, x1, 9.6, z + 0.6, accent=True)
+slalom(((-50, 12.5, 14.6), (-44, 13.4, 15.5), (-38, 12.5, 14.6), (-32, 13.4, 15.5)), 12.5, 15.5, 8)
 m.raw("checkpoint 12.5 8 -28 15.5 11 -20")
 m.stairs(12.5, -20, 15.5, -12, 10, "z", 1, base=8, solid=False)
 # the aqueduct gallery: roofed (nothing to hook, nothing to jump over), its floor broken in three places
@@ -1852,7 +1911,7 @@ m.raw("checkpoint -12.5 22 -81 1.5 25 -77")
 # ---- leg 4, the skyway south down the middle, 22 to 31 m
 m.stairs(-1.5, -77, 1.5, -65, 28, "z", 1, base=22, solid=False)
 deck(-1.5, -65, 1.5, -20, 28, piers=False)
-for (z, x0, x1) in ((-55, -1.5, 0.6), (-47, -0.6, 1.5), (-39, -1.5, 0.6), (-31, -0.6, 1.5)): m.box(x0, 28, z, x1, 29.6, z + 0.6, accent=True)
+slalom(((-55, -1.5, 0.6), (-47, -0.6, 1.5), (-39, -1.5, 0.6), (-31, -0.6, 1.5)), -1.5, 1.5, 28)
 m.raw("checkpoint -1.5 28 -28 1.5 31 -20")
 m.stairs(-1.5, -20, 1.5, -12, 30, "z", 1, base=28, solid=False)
 # stepping pads in the sky: 0.9 m landings, 2-2.4 m gaps, zig-zag, rising and falling up to a metre
@@ -2594,7 +2653,7 @@ for (x, z) in ((-64, 10), (-60, 10), (-64, 14), (-60, 14), (-52, 10), (-52, 14))
 m.raw("hill %g 0 %g %g 4 %g" % (C_ZONE[0] - 1, C_ZONE[1] - 1, C_ZONE[2] + 1, C_ZONE[3] + 1))
 for z in (D_ZONE, E_ZONE): m.raw("site %g 0 %g %g 3 %g" % (z[0] - 1, z[1] - 1, z[2] + 1, z[3] + 1))
 # the payload: an ore cart from the grotto, through the spine tunnel, to the shaft station (checkpoints at 1/3, 2/3)
-CART = [(-70, 18), (-30, 18), (30, 18), (70, 18)]
+CART = [(-70, 15.5), (-30, 15.5), (30, 15.5), (70, 15.5)]   # (beside the station's landing, z 18..30: not through it)
 for (x, z) in CART: m.raw(f"path {x:g} 0 {z:g}")
 m.raw("cartcheck 0.33"); m.raw("cartcheck 0.66")
 # race: from the surface down the mine to the shaft station's ledge (not a ranked course: Viaduct is that)
@@ -2635,6 +2694,8 @@ for lx in range(-100, LHX - 4, 22):
 for (x, z) in ((-62, 46), (-78, 58), (-56, 98), (-24, 76), (22, 75), (14, 60)): m.light(x, 3, z, 10, 0.7, fixture=False)   # crystal glow
 # cover scattered over every floor: crates, ore bins, rubble, timber cribs (none on rails, spawns, points or stairs)
 def scatter(region, y, step, shapes, seed, avoid=()):
+    with m.generated(): _scatter(region, y, step, shapes, seed, avoid)   # (generated decor: kept off keep-clear volumes)
+def _scatter(region, y, step, shapes, seed, avoid=()):
     R = random.Random(seed); solid = [list(a) for a in avoid]
     for ln in m.lines:
         w = ln.split()
@@ -2665,14 +2726,14 @@ def scatter(region, y, step, shapes, seed, avoid=()):
                 solid.append([cx - hw, cz - hd, cx + hw, cz + hd])
             z += step
         x += step
-RAILS = [(-72, 15, 72, 21), (-LHX, -72.5, LHX, -69.5), (23.5, -LHZ, 26.5, 52), (-LHX, -85.5, LHX, -82.5), (23, 22.5, 46, 25.5), (-43, -94, -39, -34)]
+RAILS = [(-72, 13, 72, 21), (-LHX, -72.5, LHX, -69.5), (23.5, -LHZ, 26.5, 52), (-LHX, -85.5, LHX, -82.5), (23, 22.5, 46, 25.5), (-43, -94, -39, -34)]
 SHAPES = [(1.4, 1.4, 1.3, "box"), (2.2, 1.2, 1.5, "box"), (1.8, 1.8, 1.4, "crib"), (2.4, 1.6, 1.3, "bin"), (3.0, 3.0, 1.6, "heap"), (1.2, 2.4, 1.1, "box")]
 scatter((-LHX, -LHZ, LHX, -8), 0, 6, SHAPES, "workings", avoid=RAILS + [PIT, (-14, -40, 14, -16)])
 scatter((PIT[0] + 12, PIT[1] + 12, PIT[2] - 12, PIT[3] - 12), 0, 6, SHAPES, "pitfloor", avoid=RAILS)
 scatter((-LHX, -LHZ, LHX, -8), SURF, 7, SHAPES + [(4, 3, 2.6, "box"), (5, 3, 2.2, "bin")], "surface",
         avoid=RAILS + [(PIT[0] - 1, PIT[1] - 1, PIT[2] + 1, PIT[3] + 1), DECL_E, DECL_W, SHAFT] + LADW + RIMHOLES)
 scatter((4, -6, LHX, LHZ), 0, 6, SHAPES, "station", avoid=RAILS + [(46, 16, 62, 32)])
-scatter((-LHX, -6, -4, LHZ), 0, 6, SHAPES, "grotto", avoid=[LAKE])
+scatter((-LHX, -6, -4, LHZ), 0, 6, SHAPES, "grotto", avoid=RAILS + [LAKE])
 
 # ---- spawns (stage by stage) and the setting
 def trim_to_rock():

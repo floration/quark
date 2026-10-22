@@ -358,6 +358,36 @@ static void testMaps() {
     CHECK(perLadder[0] >= 2 && perLadder[1] >= 2 && perLadder[2] >= 2 && ownMaps >= 3);
 }
 
+// The payload cart drives the whole track without going through anything (REVIEW MAP-5: a box on Railyard's track at
+// 102-106 m, a pillar and a dais on Lodestone's at 117.5 m and 127.5 m): its box, every 10 cm along the track, against
+// every brush you can see or bump into (solid, clip, trim; not far scenery, water or lava surfaces).
+static void testCartSweep() {
+    printf("payload cart: the whole track clear of the map\n");
+    for (auto& name : testedMaps()) {
+        Map m;
+        if (!m.load(name) || !(m.supportsMode(MODE_PAYLOAD) || m.supportsMode(MODE_NPAYLOAD))) continue;   // (the maps that offer it)
+        float len = m.payloadLength();
+        int hits = 0;
+        std::vector<char> reported(m.brushes.size(), 0);
+        for (float d = 0; d <= len + 1e-3f; d += 0.1f) {
+            AABB cart = m.payloadCartBox(std::min(d, len));
+            cart.mn = cart.mn + Vec3(0.02f, 0.02f, 0.02f);   // (touching is fine: the cart rides on the floor)
+            cart.mx = cart.mx - Vec3(0.02f, 0.02f, 0.02f);
+            for (size_t i = 0; i < m.brushes.size(); i++) {
+                const Brush& b = m.brushes[i];
+                if (b.material == 5 || b.material == 6 || b.material == 7 || !cart.overlaps(b.box)) continue;
+                hits++;
+                if (reported[i]) continue;
+                reported[i] = 1;
+                printf("  %s: the cart at %.1f m of %.1f goes through material %d %.2f %.2f %.2f .. %.2f %.2f %.2f\n", name.c_str(), d, len, b.material,
+                       b.box.mn.x, b.box.mn.y, b.box.mn.z, b.box.mx.x, b.box.mx.y, b.box.mx.z);
+            }
+        }
+        printf("  %-10s %.1f m of track%s\n", name.c_str(), len, hits ? ": BLOCKED" : ", clear");
+        CHECK(hits == 0);
+    }
+}
+
 // Every map: loads, supports the mode it was built for, no spawn inside a wall, and bots can
 // navigate from every spawn to every objective.
 static void testAllMaps() {
@@ -4734,6 +4764,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "edladder") { testEditorLadder(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edgroups") { testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(TP(29997)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "cartsweep") { testCartSweep(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "allmaps") { testAllMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "chat") { testChatAndVoteLimits(TP(29592)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "limits") { testMapSaveExact(); testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
@@ -4766,7 +4797,7 @@ int main(int argc, char** argv) {
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
         {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testTimeToKill(); testWallbang(); }},
         {"maps", [] {
-            testMaps(); testAllMaps(); testStairs(); testLadders();
+            testMaps(); testAllMaps(); testCartSweep(); testStairs(); testLadders();
             printf("map scores\n");   // the map bar: every map scores at least 7 in every category but originality
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
