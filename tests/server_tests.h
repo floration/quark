@@ -56,6 +56,7 @@ struct SlowHttp {
     std::atomic<int> requests{0};
     std::atomic<bool> quit{false};
     std::thread th;
+    std::vector<std::thread> conns;  // one per connection (answered concurrently)
     std::mutex mu;
     std::vector<std::string> seen;   // the request lines
     SlowHttp(int holdMs, std::string body) {
@@ -72,16 +73,19 @@ struct SlowHttp {
                 if (select(ls + 1, &fs, nullptr, nullptr, &tv) <= 0) continue;
                 int c = accept(ls, nullptr, nullptr);
                 if (c < 0) continue;
-                std::string req;
-                char buf[4096];
-                while (req.find("\r\n\r\n") == std::string::npos) { ssize_t n = recv(c, buf, sizeof buf, 0); if (n <= 0) break; req.append(buf, (size_t)n); }
-                requests++;
-                { std::lock_guard<std::mutex> l(mu); seen.push_back(req.substr(0, req.find("\r\n"))); }
-                for (int t = 0; t < holdMs / 10 && !quit; t++) sleepMs(10);
-                std::string resp = "HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
-                send(c, resp.data(), resp.size(), 0);
-                close(c);
+                conns.emplace_back([this, c, holdMs, body] {
+                    std::string req;
+                    char buf[4096];
+                    while (req.find("\r\n\r\n") == std::string::npos) { ssize_t n = recv(c, buf, sizeof buf, 0); if (n <= 0) break; req.append(buf, (size_t)n); }
+                    requests++;
+                    { std::lock_guard<std::mutex> l(mu); seen.push_back(req.substr(0, req.find("\r\n"))); }
+                    for (int t = 0; t < holdMs / 10 && !quit; t++) sleepMs(10);
+                    std::string resp = "HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
+                    send(c, resp.data(), resp.size(), 0);
+                    close(c);
+                });
             }
+            for (auto& t : conns) t.join();
         });
     }
     bool ok() const { return port != 0; }
@@ -128,7 +132,44 @@ static void testSeedFetchDedupe() {
 #endif
 }
 
+// FINAL_REVIEW 2.10: leaving a hosted game ran Server::stop() on the UI thread, which joined the reachability
+// thread (internet list + public IP lookups), the seed-rating thread, the list announcer and UPnP: up to ~15 s frozen.
+// Here every one of them is stuck on a slow ranking server when the host stops.
+static void testStopDoesNotBlock(uint16_t port) {
+    printf("stopping a hosted game doesn't wait on the network\n");
+#ifndef _WIN32
+    SlowHttp http(2500, "");
+    CHECK(http.ok());
+    if (!http.ok()) return;
+    setenv("QUARK_MASTER", http.url().c_str(), 1);
+    unsetenv("QUARK_PROBER");
+    {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "colosseum"; cfg.mode = MODE_TOURNEY; cfg.port = port;
+        cfg.probe = true; cfg.publicList = true;   // reachability check (list lookup) + announcer
+        s.setLog([](const std::string&) {});
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; setenv("QUARK_MASTER", "off", 1); return; } }
+        s.players_[0].connected = true; s.players_[0].rankId = std::string(32, 'c');
+        s.prefetchSeedRatings();   // the seed-rating thread
+        double end = timeNow() + 0.6;
+        while (timeNow() < end) { s.frame(); sleepMs(2); }
+        int inFlight = http.requests;
+        s.players_[0].connected = false;
+        auto t0 = std::chrono::steady_clock::now();
+        s.stop();
+        double took = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        printf("  %d requests in flight; stop() took %.0f ms (%d cleanup jobs left in the background)\n", inFlight, took * 1000, Server::backgroundJobs());
+        CHECK(inFlight >= 3);   // the list (prober), the announce, a rating lookup
+        CHECK(took < 0.3);
+    }
+    CHECK(Server::waitBackground(30));   // and they do finish (an exiting game gives them a few seconds)
+    setenv("QUARK_MASTER", "off", 1);
+#endif
+}
+
 static void serverTests() {
     testVersionReject(TP(28800));
     testSeedFetchDedupe();
+    testStopDoesNotBlock(TP(28801));
 }

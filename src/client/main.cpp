@@ -6,6 +6,7 @@
 #include <cstring>
 #include <string>
 #include "game.h"
+#include "../game/server.h"
 #include "gl.h"
 #include "../launcher/selfupdate.h"
 
@@ -140,6 +141,7 @@ int main(int argc, char** argv) {
     game.shutdown();
     glfwDestroyWindow(win);
     glfwTerminate();
+    Server::waitBackground(3.0);   // (window gone: a hosted game's UPnP / list removal may finish, FINAL_REVIEW 2.10)
     netShutdown();
     return 0;
 }

@@ -29,6 +29,7 @@ public:
     // ranked tickets and race runs) but the list never shows it.
     void start(uint16_t port, bool listed = true);
     void stop();
+    void requestStop();   // stop() without waiting (the thread ends after its current request)
     std::string status();
     // Requests to the list made as this server (ranked match tickets and results, race runs): queued, sent in
     // order on the announcer thread once it holds a token (port, token and ip are appended to the form). The
@@ -46,6 +47,7 @@ private:
     bool haveToken_ = false;
     bool listed_ = true;
     uint16_t port_ = 0;
+    uint64_t generation_ = 0;   // start() order for this port: a late stop doesn't /remove a newer announcer's listing
     std::thread thread_;
     std::mutex mu_;
     std::condition_variable cv_;

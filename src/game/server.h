@@ -202,6 +202,11 @@ public:
     void command(const std::string& line, int fromPlayer = -1); // console / admin commands
 
     void setLog(LogFn fn) { log_ = std::move(fn); }
+    // stop() never waits on the network (FINAL_REVIEW 2.10: leaving a hosted game froze the menu up to ~15 s): what
+    // still has HTTP in flight (UPnP removal, the list's /remove, rating lookups) finishes on a detached thread.
+    // A process about to exit can give those a moment: true if all finished within `seconds`.
+    static bool waitBackground(double seconds);
+    static int backgroundJobs();
     // The in-process host's client (its session nonce): the only admin (REVIEW NET-8). Thread safe.
     void setHostNonce(uint32_t n) { hostNonce_ = n; }
     void handlePacket(const NetAddr& from, const uint8_t* data, int len); // (public: tests feed it spoofed sources)
@@ -419,9 +424,10 @@ private:
     std::atomic<bool> reachAgain_{false};
     std::mutex reachMu_;
     std::string reachDetail_;
-    std::thread reachThread_;                 // picks a prober from the internet list (blocking HTTP)
-    std::atomic<bool> reachPicked_{false};
-    NetAddr reachProber_;
+    // Picking a prober from the internet list (blocking HTTP) runs on a detached thread that writes only this
+    // shared state, so stop() never waits for it (FINAL_REVIEW 2.10).
+    struct ProberPick { std::mutex mu; NetAddr prober; std::atomic<bool> picked{false}; };
+    std::shared_ptr<ProberPick> reachPick_;
     UdpSocket probeSock_;                     // separate ephemeral socket: no NAT mapping toward the prober for the game port
     uint32_t probeNonce_ = 0;
     double probeSentAt_ = 0, probeNextAt_ = 0;
@@ -429,7 +435,7 @@ private:
     double probeStartedAt_ = 0;
     bool upnpWasDone_ = false;
     void tickReachability();
-    void pickProber();
+    void startProberPick();
     void sendProbe(const NetAddr& prober);
     void setReach(Reach r, const std::string& detail);
     // prober side: per source IP rate limit (fixed table, no per-request allocation)

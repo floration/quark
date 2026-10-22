@@ -1,4 +1,5 @@
 #include "master.h"
+#include <map>
 #include <cstdlib>
 #include <chrono>
 #include "../common/http.h"
@@ -84,19 +85,30 @@ std::string publicIpv4() {
     return "";
 }
 
+namespace {
+std::mutex g_genMu;   // the newest announcer per port (see MasterAnnouncer::stop)
+std::map<uint16_t, uint64_t> g_portGen;
+uint64_t g_nextGen = 1;
+}
+
 void MasterAnnouncer::start(uint16_t port, bool listed) {
     stop();
     port_ = port;
+    { std::lock_guard<std::mutex> l(g_genMu); generation_ = g_nextGen++; g_portGen[port] = generation_; }
     listed_ = listed;
     quit_ = false;
     haveToken_ = false;
     thread_ = std::thread([this] { run(); });
 }
 
-void MasterAnnouncer::stop() {
-    if (!thread_.joinable()) return;
+void MasterAnnouncer::requestStop() {
     { std::lock_guard<std::mutex> l(mu_); quit_ = true; }
     cv_.notify_all();
+}
+
+void MasterAnnouncer::stop() {
+    if (!thread_.joinable()) return;
+    requestStop();
     thread_.join();
 }
 
@@ -159,7 +171,9 @@ void MasterAnnouncer::run() {
         std::unique_lock<std::mutex> l(mu_);
         if (cv_.wait_until(l, nextAnnounce, [this] { return quit_ || (!posts_.empty() && haveToken_); }) && quit_) break;
     }
-    if (!base.empty() && listed_) { // leave the list right away instead of timing out
+    bool newest;   // (Server::stop() lets this finish on a detached thread: the server may be hosting again on this port)
+    { std::lock_guard<std::mutex> l(g_genMu); auto it = g_portGen.find(port_); newest = it != g_portGen.end() && it->second == generation_; }
+    if (!base.empty() && listed_ && newest) { // leave the list right away instead of timing out
         std::string body;
         httpPostForm(base + "/remove", "port=" + std::to_string(port_) + (ip.empty() ? "" : "&ip=" + ip) +
                      (token.empty() ? "" : "&token=" + token), body, 2000);

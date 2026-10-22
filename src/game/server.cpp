@@ -14,6 +14,7 @@
 #include <cstdarg>
 #include <ctime>
 #include <filesystem>
+#include <condition_variable>
 #include "../common/version.h"
 
 // EV_PLAYERINFO's b byte: model in the low 4 bits, sound pack in the high 4
@@ -56,6 +57,34 @@ constexpr size_t kMaxUnackedEvents = 256;
 }
 
 bool g_serverRateCheck = true;
+
+// Detached cleanup (stop()): counted, so an exiting process can wait for them a little (waitBackground).
+namespace {
+struct Background { std::mutex mu; std::condition_variable cv; int running = 0; };
+Background& background() { static Background* b = new Background; return *b; }   // (never destroyed: threads may outlive exit)
+void runInBackground(std::function<void()> fn) {
+    Background& b = background();
+    { std::lock_guard<std::mutex> l(b.mu); b.running++; }
+    std::thread([fn = std::move(fn)] {
+        try { fn(); } catch (...) {}
+        Background& bg = background();
+        { std::lock_guard<std::mutex> l(bg.mu); bg.running--; }
+        bg.cv.notify_all();
+    }).detach();
+}
+}
+
+bool Server::waitBackground(double seconds) {
+    Background& b = background();
+    std::unique_lock<std::mutex> l(b.mu);
+    return b.cv.wait_for(l, std::chrono::milliseconds((int64_t)(seconds * 1000)), [&] { return b.running == 0; });
+}
+
+int Server::backgroundJobs() {
+    Background& b = background();
+    std::lock_guard<std::mutex> l(b.mu);
+    return b.running;
+}
 
 void Server::log(const std::string& s) {
     if (log_) log_(s);
@@ -223,8 +252,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
         reach_ = REACH_CHECKING;
         { std::lock_guard<std::mutex> l(reachMu_); reachDetail_ = "finding a server to test with"; }
         probeSentAt_ = 0; probeNextAt_ = timeNow() + 0.5; probeStartedAt_ = timeNow(); upnpWasDone_ = false;
-        reachPicked_ = false;
-        reachThread_ = std::thread([this] { pickProber(); });
+        startProberPick();
     }
     return true;
 }
@@ -235,13 +263,25 @@ void Server::stop() {
     if (editDirty_ && !tempEdit_) autosave();
     for (int i = 0; i < kMaxPlayers; i++)
         if (players_[i].connected) dropPlayer(i, "server shutting down", true, true);
-    seedRatings_.reset();
     sock_.close();
-    if (reachThread_.joinable()) reachThread_.join();
+    reachPick_.reset();   // (its thread finishes by itself)
     probeSock_.close();
     reach_ = REACH_OFF;
-    if (upnp_) { upnp_->stop(); upnp_.reset(); }
-    if (master_) { master_->stop(); master_.reset(); }
+    // UPnP's mapping removal, the list's /remove and rating lookups can each wait seconds on the network: they finish
+    // on a detached thread (the objects only touch themselves). Each asks to quit right away; a newer mapper or
+    // announcer on the same port isn't undone by them (upnp.cpp / master.cpp).
+    if (upnp_ || master_ || seedRatings_) {
+        std::shared_ptr<PortMapper> up(std::move(upnp_));
+        std::shared_ptr<MasterAnnouncer> ma(std::move(master_));
+        std::shared_ptr<RankService> rs(std::move(seedRatings_));
+        if (up) up->requestStop();
+        if (ma) ma->requestStop();
+        runInBackground([up, ma, rs]() mutable {
+            if (up) up->stop();
+            if (ma) ma->stop();
+            up.reset(); ma.reset(); rs.reset();
+        });
+    }
     if (publicIp_) { publicIp_->quit = true; publicIp_.reset(); }
     running_ = false;
     log("stopped");
@@ -494,48 +534,55 @@ std::string Server::reachStatus() {
     }
 }
 
-// Background thread: choose the server that will probe us (blocking HTTP for the list and our public IP).
-void Server::pickProber() {
-    NetAddr a;
+// Choose the server that will probe us, on a detached thread (blocking HTTP for the list and our public IP): it
+// writes only its ProberPick, so stop() never waits for it.
+void Server::startProberPick() {
+    auto pick = std::make_shared<ProberPick>();
+    reachPick_ = pick;
     std::string over = cfg_.prober;
     if (over.empty()) if (const char* e = getenv("QUARK_PROBER")) over = e;
-    if (!over.empty()) {
-        if (!NetAddr::parse(over, kDefaultPort, a)) a = NetAddr{};
-    } else {
-        std::vector<std::string> list;
-        fetchServerList(list);
-        NetAddr own;
-        std::string ip = publicIpv4();
-        if (!ip.empty()) NetAddr::parse(ip, 0, own);
-        std::vector<NetAddr> others, same;
-        for (auto& s : list) {
-            NetAddr c;
-            if (!NetAddr::parse(s, kDefaultPort, c)) continue;
-            if (own.ip && c.ip == own.ip) { if (c.port != port()) same.push_back(c); } // (our own IP: hairpin NAT may lie)
-            else others.push_back(c);
-        }
-        std::vector<NetAddr>& pool = others.empty() ? same : others;
-        if (!pool.empty()) a = pool[std::random_device{}() % pool.size()];
-    }
-    { std::lock_guard<std::mutex> l(reachMu_); reachProber_ = a; }
-    reachPicked_ = true;
+    uint16_t ourPort = port();
+    std::thread([pick, over, ourPort] {
+        NetAddr a;
+        try {
+            if (!over.empty()) {
+                if (!NetAddr::parse(over, kDefaultPort, a)) a = NetAddr{};
+            } else {
+                std::vector<std::string> list;
+                fetchServerList(list);
+                NetAddr own;
+                std::string ip = publicIpv4();
+                if (!ip.empty()) NetAddr::parse(ip, 0, own);
+                std::vector<NetAddr> others, same;
+                for (auto& s : list) {
+                    NetAddr c;
+                    if (!NetAddr::parse(s, kDefaultPort, c)) continue;
+                    if (own.ip && c.ip == own.ip) { if (c.port != ourPort) same.push_back(c); } // (our own IP: hairpin NAT may lie)
+                    else others.push_back(c);
+                }
+                std::vector<NetAddr>& pool = others.empty() ? same : others;
+                if (!pool.empty()) a = pool[std::random_device{}() % pool.size()];
+            }
+        } catch (const std::exception&) { a = NetAddr{}; }   // (a bad reply: no prober, "couldn't check")
+        { std::lock_guard<std::mutex> l(pick->mu); pick->prober = a; }
+        pick->picked = true;
+    }).detach();
 }
 
 void Server::tickReachability() {
     uint8_t buf[64]; NetAddr from;
     while (probeSock_.recv(from, buf, sizeof buf) > 0) {}   // (nothing is expected here)
-    if (!reachPicked_) return;
+    if (!reachPick_ || !reachPick_->picked) return;
     double now = timeNow();
     NetAddr prober;
-    { std::lock_guard<std::mutex> l(reachMu_); prober = reachProber_; }
+    { std::lock_guard<std::mutex> l(reachPick_->mu); prober = reachPick_->prober; }
     bool again = reachAgain_.exchange(false);
     if (prober.ip == 0) {
         setReach(REACH_UNKNOWN, "no public quark server to test with (set QUARK_PROBER=host:port)");
         if (again) { // look again
-            if (reachThread_.joinable()) reachThread_.join();
-            reachPicked_ = false; reach_ = REACH_CHECKING;
+            reach_ = REACH_CHECKING;
             { std::lock_guard<std::mutex> l(reachMu_); reachDetail_ = "finding a server to test with"; }
-            reachThread_ = std::thread([this] { pickProber(); });
+            startProberPick();
         }
         return;
     }
