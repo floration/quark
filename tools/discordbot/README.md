@@ -18,7 +18,10 @@ checkout it uses the local `src/client/game.cpp` and `VERSION` to save a downloa
 one elsewhere). The protocol and mode constants in `quarkdata.py` are copies of the game's (marked there).
 
 ## Where the data comes from (same as the game)
-- **Server list**: base URL read from `https://floration.github.io/quark/master.txt` (re-read hourly), then
+- **Server list**: the Worker's address is pinned: `master_url` in `config.json` (or `QUARK_MASTER`), else the game's
+  built-in address (`MASTER_URL` in `quarkdata.py`, a copy of `kPinnedMasterUrl`). The bot never reads the website's
+  `master.txt`: it sends BOT_KEY to that address, and only the game checks master.txt's signature. If the Worker
+  moves, set `master_url` (https only). Then
   `GET <master>/list?v=<version>` gives `ip:port` lines of servers on that version (`src/game/master.cpp`).
   Each server is then asked directly over UDP: `u32 0x51524B31 "QRK1", u8 4` zero-padded to 160 bytes (PKT_INFO_REQUEST; servers ignore shorter requests), reply type 67
   with name, map, mode, players, max players, port (`src/game/protocol.h`, `server.cpp`, `netclient.cpp`).
@@ -118,7 +121,7 @@ export BOT_KEY=...                      # same as the Worker's BOT_KEY secret
 python bot.py --dry-run                 # see what it would post, no Discord
 python bot.py
 ```
-Optional env: `GITHUB_TOKEN` (higher GitHub API limits), `QUARK_MASTER` (other master URL), `QUARKBOT_CONFIG` (config path).
+Optional env: `GITHUB_TOKEN` (higher GitHub API limits), `QUARK_MASTER` (the Worker's URL, https; default the game's built-in one), `QUARKBOT_CONFIG` (config path).
 All config keys and defaults are in `DEFAULT_CONFIG` in `bot.py` (poll intervals, rename spacing, ping count...).
 The bot needs outbound UDP to reach game servers (same as the game's Join screen).
 

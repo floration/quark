@@ -43,7 +43,7 @@ MIN_SEEN_SECONDS = 120   # a server must keep answering this long before it gets
 DEFAULT_CONFIG = {
     "guild_id": 0,
     "github_token": "",
-    "master_url": "",                 # override (else read from floration.github.io/quark/master.txt)
+    "master_url": "",                 # the Worker (else quarkdata.MASTER_URL, the game's built-in one; master.txt is never read)
     "game_version": "",               # override (else the latest GitHub release)
     "live_category": "🟢 LIVE SERVERS",
     "info_category": "QUARK",

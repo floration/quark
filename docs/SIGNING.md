@@ -74,6 +74,10 @@ build/quark_sign verify-master site/master.txt                                  
 git add site/master.txt site/master.txt.sig
 ```
 
+The Discord bot doesn't read master.txt (it sends BOT_KEY to the Worker, so it only uses an address its operator
+configured): when you move the Worker, also set `master_url` in the bot's `config.json` (or `QUARK_MASTER` in
+`/etc/quark-discord.env`) and restart it.
+
 Do this on your own machine, not in CI: CI runs for pushes to any branch, so a signature made there would vouch for
 whatever a branch put in `master.txt`. The pages job only has to publish `site/` as it is (the `.sig` included).
 

@@ -2001,6 +2001,15 @@ static void testCrossLanguageConstants(uint16_t port) {
         bool ok = qj.count(k) && qj[k] == v.second && qb.count(k) && qb[k] == v;
         if (!ok) { printf("  queue %s differs between community.cpp, worker.js and bot.py\n", k.c_str()); g_fail++; }
     }
+    // quarkdata.py: the pinned Worker address (the bot never follows master.txt: it sends BOT_KEY there)
+    {
+        std::string mc = readSource("src/game/master.cpp"), a, b;
+        std::smatch mm;
+        static const std::regex rxPin("kPinnedMasterUrl = \"([^\"]+)\""), rxPy("\nMASTER_URL = \"([^\"]+)\"");
+        if (std::regex_search(mc, mm, rxPin)) a = mm[1];
+        if (std::regex_search(qd, mm, rxPy)) b = mm[1];
+        CHECK(!a.empty() && a == b);
+    }
     // quarkdata.py: protocol constants and mode names/titles
     auto pyInt = [&](const char* name) {
         std::regex r(std::string("\\n") + name + " = (0x[0-9A-Fa-f]+|\\d+)");

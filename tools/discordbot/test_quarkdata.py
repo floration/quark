@@ -235,6 +235,29 @@ class Releases(unittest.TestCase):
         self.assertNotEqual(cfg["testing_role"], cfg["update_role"])
 
 
+class PinnedMaster(unittest.TestCase):
+    """The bot sends BOT_KEY to the Worker: it uses the configured or built-in address, never master.txt."""
+    def test_default_and_override(self):
+        old = os.environ.pop("QUARK_MASTER", None)
+        try:
+            self.assertEqual(asyncio.run(qd.QuarkAPI(None).master()), qd.MASTER_URL)
+            self.assertEqual(asyncio.run(qd.QuarkAPI(None, None, "https://w.example.dev/").master()), "https://w.example.dev")
+            os.environ["QUARK_MASTER"] = "http://127.0.0.1:8787"
+            self.assertEqual(asyncio.run(qd.QuarkAPI(None).master()), "http://127.0.0.1:8787")
+        finally:
+            os.environ.pop("QUARK_MASTER", None)
+            if old is not None:
+                os.environ["QUARK_MASTER"] = old
+        for bad in ("http://w.example.dev", "ftp://x", "https://a b", "https://x/'y", "javascript:alert(1)", ""):
+            with self.assertRaises(ValueError):
+                qd.QuarkAPI(None, None, bad or " ")
+
+    def test_never_fetches_master_txt(self):
+        src = (HERE / "quarkdata.py").read_text(encoding="utf-8") + (HERE / "bot.py").read_text(encoding="utf-8")
+        self.assertNotIn("floration.github.io/quark/master.txt", src)
+        self.assertTrue(qd.MASTER_URL.startswith("https://"))
+
+
 class LiveListing(unittest.TestCase):
     """Owner: at most 5 servers listed; one needs MIN_SEEN_SECONDS of answers before it gets channels (BOT-3)."""
     def test_limit_and_uptime(self):
