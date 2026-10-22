@@ -1416,8 +1416,8 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
         if (pierce) { // sniper collateral: every player along the line up to the wall is hit
             float t = rayAABB(eye, inv, bb, best);
             if (t < 0) continue;
-            float y = eye.y + dir.y * t, d = dmg;
-            if (headDmg > 0 && y >= bb.mx.y - (bb.mx.y - bb.mn.y) * kHeadFraction) { d = std::max(d, headDmg); headHit_[i] = true; }
+            float d = dmg;
+            if (headDmg > 0 && rayHitsHead(eye, dir, bb)) { d = std::max(d, headDmg); headHit_[i] = true; }
             dmgPer[i] += (bang >= 0 && t > bang) ? d * kWallbangDamage : d;
             continue;
         }
@@ -1425,8 +1425,7 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
         if (t >= 0 && t < best) { best = t; hit = i; hitBb = bb; }
     }
     if (hit < 0) return;
-    float y = eye.y + dir.y * best; // headshot: the ray enters the top of the box
-    if (headDmg > 0 && y >= hitBb.mx.y - (hitBb.mx.y - hitBb.mn.y) * kHeadFraction) { dmg = std::max(dmg, headDmg); headHit_[hit] = true; }
+    if (headDmg > 0 && rayHitsHead(eye, dir, hitBb)) { dmg = std::max(dmg, headDmg); headHit_[hit] = true; }   // (the head, not the shoulders)
     dmgPer[hit] += (bang >= 0 && best > bang) ? dmg * kWallbangDamage : dmg;
 }
 
@@ -1650,8 +1649,7 @@ void Server::tickProjectiles() {
         } else if (wd.splashRadius <= 0) { // crossbow bolt / thrown knife: direct hit only
             if (hitPlayer >= 0) {
                 float dmg = (float)wd.damage, head = headDamage(pr.type); // bolts: headshots (the knife has none)
-                float y = pr.pos.y + dir.y * best;
-                if (head > 0 && y >= hitBb.mx.y - (hitBb.mx.y - hitBb.mn.y) * kHeadFraction) { dmg = std::max(dmg, head); headHit_[hitPlayer] = true; }
+                if (head > 0 && rayHitsHead(pr.pos, dir, hitBb)) { dmg = std::max(dmg, head); headHit_[hitPlayer] = true; }
                 damagePlayer(hitPlayer, pr.owner, dmg, pr.type, dir * (pr.type == WPN_CROSSBOW ? kCrossbowKnock : 3.0f));
                 headHit_[hitPlayer] = false;
                 if (pr.owner >= 0 && shotHit(pr.owner)) players_[pr.owner].shotsHit++;

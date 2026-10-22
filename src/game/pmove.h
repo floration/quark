@@ -51,6 +51,10 @@ constexpr float kHookCooldown = 1.0f;   // after the hook is released
 // The hull: kPlayerHalfWidth each side, kPlayerHeight tall (crouched: kPlayerCrouchHeight), times scale (size modifiers).
 AABB playerBox(const Vec3& feet, bool crouched, float scale = 1.0f);
 inline AABB playerBox(const MoveState& m) { return playerBox(m.pos, (m.flags & MF_CROUCHED) != 0, moveScale(m.mods)); }
+// The head inside a hitbox: a head-sized box on top, centred (owner 5.5: shoulders aren't headshots).
+AABB headBox(const AABB& hitbox);
+// A shot along o + dir * t that hit `hitbox` at entry: is it a headshot? (It passes through the head box.)
+bool rayHitsHead(const Vec3& o, const Vec3& dir, const AABB& hitbox);
 // the standard values a custom mode scales (MOVEMENT / GENERAL pages show "standard -> this mode"), and their units
 float moveParamBase(int param);           // MV_*
 const char* moveParamUnit(int param);

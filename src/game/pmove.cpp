@@ -37,6 +37,17 @@ AABB playerBox(const Vec3& f, bool crouched, float scale) {
     return {{f.x - w, f.y, f.z - w}, {f.x + w, f.y + h, f.z + w}};
 }
 
+AABB headBox(const AABB& b) {
+    Vec3 c = b.center();
+    float hx = (b.mx.x - b.mn.x) * 0.5f * kHeadWidthFraction, hz = (b.mx.z - b.mn.z) * 0.5f * kHeadWidthFraction;
+    return {{c.x - hx, b.mx.y - (b.mx.y - b.mn.y) * kHeadFraction, c.z - hz}, {c.x + hx, b.mx.y, c.z + hz}};
+}
+
+bool rayHitsHead(const Vec3& o, const Vec3& dir, const AABB& hitbox) {
+    float far = length(hitbox.mx - hitbox.mn) + length(hitbox.center() - o) + 1.0f;   // (anywhere along the line through the box)
+    return rayAABB(o, safeInv(dir), headBox(hitbox), far) >= 0;
+}
+
 // Air strafing: Quake acceleration, except that the part of the push that would brake you (wish direction turned
 // past 90 degrees from your momentum: overstrafing) is softened, so a sloppy turn costs a little, not a lot.
 static void airAccelerate(Vec3& vel, const Vec3& wishDir, float wishSpeed, float accel, float dt) {

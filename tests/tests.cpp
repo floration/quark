@@ -906,7 +906,7 @@ static void testWeapons(uint16_t port) {
         double elapsed = timeNow() - t0;
         if (w == WPN_ROCKET || w == WPN_CROSSBOW || w == WPN_STICKY) pump(s, cls, 1.0, idle); // let it fly
         float dealt = (sb.deaths > deaths0) ? 100.0f : hp0 - sb.health;
-        if (w == WPN_SNIPER) { // one scoped shot: 40 on the body, 50 on the head
+        if (w == WPN_SNIPER) { // one scoped shot: a flat 50, body or head
             printf("  sniper %s: %.0f damage\n", head ? "head" : "body", dealt);
             CHECK(std::fabs(dealt - (head ? kSniperHeadDamage : weaponDef(WPN_SNIPER).damage)) < 0.5f);
         }

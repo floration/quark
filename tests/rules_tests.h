@@ -264,6 +264,54 @@ static void testGrappleNoBrake() {
     }
 }
 
+// 5.5: the head is a head-sized box on top, not the full-width top 20%: shoulders are body shots. The sniper does a
+// flat 50.
+static void testHeadBox(uint16_t port) {
+    printf("headshots: the head, not the shoulders\n");
+    CHECK(weaponDef(WPN_SNIPER).damage == 50 && headDamage(WPN_SNIPER) == 50);
+    AABB hb = playerBox(Vec3(0, 0, 0), false);
+    AABB h = headBox(hb);
+    CHECK(h.mx.y == hb.mx.y && std::fabs(h.mn.y - (hb.mx.y - kPlayerHeight * kHeadFraction)) < 1e-5f);
+    CHECK(h.mx.x - h.mn.x < (hb.mx.x - hb.mn.x) * 0.5f && std::fabs(h.center().x) < 1e-6f);
+    Vec3 o(0, 1.62f, 10);   // level shots from 10 m in front (+z), at head height
+    CHECK(rayHitsHead(o, normalize(Vec3(0, 1.62f, 0) - o), hb));          // the middle of the head
+    CHECK(!rayHitsHead(o + Vec3(0.3f, 0, 0), Vec3(0, 0, -1), hb));       // the shoulder, at the same height
+    CHECK(!rayHitsHead(Vec3(0.3f, 5, 0), Vec3(0, -1, 0), hb));           // straight down onto the shoulder
+    CHECK(rayHitsHead(Vec3(0.05f, 5, 0), Vec3(0, -1, 0), hb));           // ...or onto the head
+    CHECK(!rayHitsHead(o + Vec3(0, -0.6f, 0), Vec3(0, 0, -1), hb));      // the chest
+    // in play: rifle bullets at the shoulder are body shots
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls, false)) { s.stop(); return; }
+    pump(s, cls, 2.0, idle);
+    auto& sa = s.players_[c[0].clientId()];
+    auto& sb = s.players_[c[1].clientId()];
+    for (float side : {0.0f, 0.3f}) {   // the head, then the shoulder
+        sa.move.pos = {10, 0, 19}; sb.move.pos = {-10, 0, 19}; sa.move.vel = sb.move.vel = {};
+        sb.health = 100;
+        auto aim = [&](int i, uint16_t b) {
+            UserCmd u; if (i != 0) return u;
+            Vec3 eye = sa.move.pos + Vec3(0, kEyeHeight, 0), tgt = sb.move.pos + Vec3(0, 1.62f, side);
+            Vec3 d = normalize(tgt - eye);
+            u.pitch = std::asin(d.y); u.yaw = std::atan2(-d.x, -d.z); u.weapon = WPN_RIFLE; u.buttons = b;
+            return u;
+        };
+        pump(s, cls, 0.4, [&](int i) { sb.move.pos = {-10, 0, 19}; return aim(i, 0); });
+        float hp0 = sb.health;
+        int d0 = sb.deaths;
+        pump(s, cls, 0.25, [&](int i) { sb.move.pos = {-10, 0, 19}; return aim(i, BTN_FIRE); });
+        float dealt = hp0 - sb.health;
+        float per = side == 0 ? kRifleHeadDamage : weaponDef(WPN_RIFLE).damage;
+        float n = dealt / per;
+        printf("  rifle at the %s: %.2f damage (%.2f bullets of %.2f)\n", side == 0 ? "head" : "shoulder", dealt, n, per);
+        CHECK(sb.deaths == d0 && dealt > 0 && std::fabs(n - std::round(n)) < 0.02f);
+    }
+    s.stop();
+}
+
 // "quark_tests rules [name]": all of them, or the one named.
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
@@ -273,6 +321,7 @@ static void testGameRules(const std::string& only) {
         {"throws", [] { testThrowCooldown(TP(29240)); }},
         {"hull", [] { testSizeHull(TP(29242)); }},
         {"grapple", [] { testGrappleNoBrake(); }},
+        {"head", [] { testHeadBox(TP(29246)); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
 }
