@@ -1,6 +1,7 @@
 // Client side of the protocol: connection, input sending, prediction, interpolation.
 // Has no rendering dependencies so tests and bots can use it headless.
 #pragma once
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <array>
@@ -207,10 +208,16 @@ public:
     std::string internetStatus();
 private:
     UdpSocket sock_;
-    std::thread fetch_;
-    std::mutex mu_;
-    std::vector<std::string> fetched_; // addresses from the internet list, waiting to be queried
-    std::string netStatus_, myIp_;
+    // The internet list is fetched on a detached thread that shares only this with the browser: refresh() never
+    // waits for an earlier fetch (it used to join it on the UI thread: a hitch up to the HTTP timeout), and a
+    // fetch that a newer refresh() superseded (gen) drops its result. Nothing to join at exit either.
+    struct Fetch {
+        std::mutex mu;
+        uint64_t gen = 0;
+        std::vector<std::string> fetched;  // addresses from the internet list, waiting to be queried
+        std::string netStatus, myIp;
+    };
+    std::shared_ptr<Fetch> fetch_ = std::make_shared<Fetch>();
     struct Listed { NetAddr addr; double since; int tries; bool mine; };
     std::vector<Listed> listed_;       // internet entries not heard from yet
     std::vector<ServerInfo> servers_;

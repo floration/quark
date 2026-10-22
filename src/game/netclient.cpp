@@ -535,27 +535,28 @@ std::vector<ProjectileSnap> NetClient::interpolatedProjectiles() const {
 
 // ---------------------------------------------------------------------------
 
-ServerBrowser::~ServerBrowser() { if (fetch_.joinable()) fetch_.join(); }
+ServerBrowser::~ServerBrowser() = default;   // (a fetch still running keeps its own Fetch alive and drops its result)
 
-std::string ServerBrowser::internetStatus() { std::lock_guard<std::mutex> l(mu_); return netStatus_; }
+std::string ServerBrowser::internetStatus() { std::lock_guard<std::mutex> l(fetch_->mu); return fetch_->netStatus; }
 
 void ServerBrowser::refresh() {
     if (!sock_.isOpen()) sock_.open(0, true);
     servers_.clear();
     listed_.clear();
-    if (fetch_.joinable()) fetch_.join();
-    { std::lock_guard<std::mutex> l(mu_); netStatus_ = "SEARCHING THE INTERNET..."; fetched_.clear(); }
-    fetch_ = std::thread([this] {
+    uint64_t gen;
+    { std::lock_guard<std::mutex> l(fetch_->mu); gen = ++fetch_->gen; fetch_->netStatus = "SEARCHING THE INTERNET..."; fetch_->fetched.clear(); }
+    std::thread([f = fetch_, gen] {
         std::vector<std::string> list;
         std::string err;
         bool ok = fetchServerList(list, &err);
         std::string me = ok && !list.empty() ? publicIpv4() : "";
-        std::lock_guard<std::mutex> l(mu_);
-        fetched_ = list;
-        myIp_ = me;
-        netStatus_ = ok ? std::to_string(list.size()) + " INTERNET SERVER(S) LISTED" : "INTERNET LIST: " + err;
-        for (auto& c : netStatus_) c = (char)toupper((unsigned char)c);
-    });
+        std::lock_guard<std::mutex> l(f->mu);
+        if (f->gen != gen) return;   // a newer refresh() is under way: its answer counts
+        f->fetched = list;
+        f->myIp = me;
+        f->netStatus = ok ? std::to_string(list.size()) + " INTERNET SERVER(S) LISTED" : "INTERNET LIST: " + err;
+        for (auto& c : f->netStatus) c = (char)toupper((unsigned char)c);
+    }).detach();
     uint8_t buf[kInfoRequestBytes] = {}; // padded: servers don't answer a request smaller than the reply
     Writer w(buf, sizeof buf);
     writeHeader(w, PKT_INFO_REQUEST);
@@ -581,7 +582,7 @@ void ServerBrowser::poll() {
     if (!sock_.isOpen()) return;
     std::vector<std::string> addrs;
     std::string me;
-    { std::lock_guard<std::mutex> l(mu_); addrs.swap(fetched_); me = myIp_; }
+    { std::lock_guard<std::mutex> l(fetch_->mu); addrs.swap(fetch_->fetched); me = fetch_->myIp; }
     for (auto& a : addrs) {
         NetAddr na;
         if (!NetAddr::parse(a, kDefaultPort, na)) continue;
