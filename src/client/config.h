@@ -72,6 +72,8 @@ struct Settings {
     bool chOutline = true;      // 1 px black outline
     bool chTeamColor = true;    // use your team color, else chColor
     Vec3 chColor = {1, 1, 1};
+    bool chHitFlash = true;     // a hit flashes the crosshair in chHitColor (and a center square on styles without a dot)
+    Vec3 chHitColor = {1, 1, 1};
     // HUD layout: offset (pixels at 720p) from the default spot, size, and an optional color override
     enum { HUD_HEALTH, HUD_WEAPON, HUD_BARS, HUD_SPEED, HUD_SLOTS, HUD_VIEWMODEL, HUD_KEYS, HUD_COUNT }; // (keys: after the model, so saved layouts keep their indices)
     // x / y / scale move and size an element (720p units); hidden removes it. For the weapon model, x / y / depth

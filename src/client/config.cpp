@@ -87,6 +87,8 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "ch_outline") chOutline = iv != 0;
         else if (k == "ch_team_color") chTeamColor = iv != 0;
         else if (k == "ch_color") chColor = parseColor(v, chColor);
+        else if (k == "ch_hit_flash") chHitFlash = iv != 0;
+        else if (k == "ch_hit_color") chHitColor = parseColor(v, chHitColor);
         else if (k == "last_address") lastAddress = v;
         else if (k == "rank_hello") rankHello = v;
         else if (k == "host_name") hostName = v;
@@ -149,6 +151,7 @@ std::string Settings::toText() const {
       << "\ncolor_friendly=" << colorHex(colorFriendly) << "\ncolor_enemy=" << colorHex(colorEnemy)
       << "\nch_style=" << chStyle << "\nch_length=" << chLength << "\nch_thickness=" << chThickness << "\nch_gap=" << chGap
       << "\nch_outline=" << chOutline << "\nch_team_color=" << chTeamColor << "\nch_color=" << colorHex(chColor)
+      << "\nch_hit_flash=" << chHitFlash << "\nch_hit_color=" << colorHex(chHitColor)
       << "\nlast_address=" << lastAddress << "\nrank_hello=" << rankHello << "\nhost_name=" << hostName << "\nhost_prober=" << hostProber << "\nhost_map=" << hostMap
       << "\nhost_mode=" << hostMode << "\nhost_port=" << hostPort << "\nhost_max=" << hostMaxPlayers
       << "\nhost_upnp=" << hostUpnp << "\nhost_balance_bots=" << hostBalanceBots << "\nhost_log=" << hostLog << "\nhost_duel_size=" << hostDuelSize << "\nhost_public=" << hostPublic << "\nhost_ranked=" << hostRanked << "\nhost_custom=" << hostCustom << "\nhost_variant=" << hostArenaVariant << "\nbot_variant=" << botArenaVariant << "\nbot_skill=" << botSkill

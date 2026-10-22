@@ -4309,7 +4309,8 @@ void Game::drawBracket() {
 void Game::drawCrosshair(float cx, float cy, float scale, bool hit) {
     float u = std::max(1.0f, std::round(scale));
     float t = std::max(1.0f, std::round(cfg_.chThickness * u)), len = std::round(cfg_.chLength * u), g = std::round(cfg_.chGap * u);
-    Color c = hit ? Color{1, 1, 1, 1} : rgba(cfg_.chTeamColor ? cfg_.colorFriendly : cfg_.chColor);
+    hit = hit && cfg_.chHitFlash;   // (settings: HIT FLASH off, or its colour)
+    Color c = hit ? rgba(cfg_.chHitColor) : rgba(cfg_.chTeamColor ? cfg_.colorFriendly : cfg_.chColor);
     cx = std::round(cx); cy = std::round(cy);
     std::vector<std::array<float, 4>> rs; // x, y, w, h
     int st = cfg_.chStyle;
@@ -4333,7 +4334,7 @@ void Game::drawCrosshair(float cx, float cy, float scale, bool hit) {
     if (cfg_.chOutline)
         for (auto& r : rs) r_.rect(r[0] - 1, r[1] - 1, r[2] + 2, r[3] + 2, {0, 0, 0, c.a * 0.9f});
     for (auto& r : rs) r_.rect(r[0], r[1], r[2], r[3], c);
-    if (hit && st != 1 && st != 2) r_.rect(cx - t, cy - t, 2 * t, 2 * t, {1, 1, 1, 1});
+    if (hit && st != 1 && st != 2) r_.rect(cx - t, cy - t, 2 * t, 2 * t, c);
 }
 
 // VISUALS: what's drawn (world look, shot effects, overlays)
@@ -4430,11 +4431,14 @@ void Game::drawCrosshairSettings(float x0, float y0, float wTotal) {
     float w = std::max(360 * s, wTotal * 0.5f);
     float x = x0 + wTotal * 0.5f - w * 0.5f;
     float y = y0;
-    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 110 * s + 7 * (h + gap) + 6 * gap + 32 * s);
-    // preview on a mid-grey square, like the world behind it
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 110 * s + 9 * (h + gap) + 2 * gap + 32 * s);
+    // preview on a mid-grey square, like the world behind it: as it is, and as a hit flashes it
     float ph = 110 * s;
     r_.rect(x, y, w, ph, {0.42f, 0.43f, 0.45f, 1});
-    drawCrosshair(x + w * 0.5f, y + ph * 0.5f, s, false);
+    drawCrosshair(x + w * 0.3f, y + ph * 0.5f, s, false);
+    drawCrosshair(x + w * 0.7f, y + ph * 0.5f, s, true);
+    ui_.labelCentered(x + w * 0.3f, y + ph - 18 * s, "NORMAL", {0.85f, 0.86f, 0.88f, 1}, 0.5f);
+    ui_.labelCentered(x + w * 0.7f, y + ph - 18 * s, "ON HIT", {0.85f, 0.86f, 0.88f, 1}, 0.5f);
     y += ph + gap;
     static const std::vector<std::string> styles = {"CROSS", "CROSS + DOT", "DOT", "CIRCLE", "T"};
     ui_.cycle(x, y, w, h, "STYLE", cfg_.chStyle, 5, styles);
@@ -4459,11 +4463,24 @@ void Game::drawCrosshairSettings(float x0, float y0, float wTotal) {
             if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f")) cfg_.chColor[i] = std::round(v) / 255.0f;
         }
     }
+    y += h + gap;
+    // HIT FLASH: off, or the colour a hit flashes the crosshair (white by default)
+    ui_.toggle(x, y, w, h, "HIT FLASH", cfg_.chHitFlash);
+    y += h + gap;
+    if (cfg_.chHitFlash) {
+        float sw = (w - 2 * gap) / 3;
+        const char* ch[3] = {"HIT R", "HIT G", "HIT B"};
+        for (int i = 0; i < 3; i++) {
+            float v = cfg_.chHitColor[i] * 255.0f;
+            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f")) cfg_.chHitColor[i] = std::round(v) / 255.0f;
+        }
+    }
     y += h + gap * 3;
     if (ui_.button(x, y, w * 0.5f - gap * 0.5f, h, "RESET")) {
         Settings d;
         cfg_.chStyle = d.chStyle; cfg_.chLength = d.chLength; cfg_.chThickness = d.chThickness; cfg_.chGap = d.chGap;
         cfg_.chOutline = d.chOutline; cfg_.chTeamColor = d.chTeamColor; cfg_.chColor = d.chColor;
+        cfg_.chHitFlash = d.chHitFlash; cfg_.chHitColor = d.chHitColor;
     }
     if (ui_.button(x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "BACK")) { crosshairOpen_ = false; cfg_.save(); }
 }
