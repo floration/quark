@@ -163,9 +163,12 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             s.flags &= ~MF_HOOKED;
             hooked = false;
         } else if (!dashing) {
+            // The pull adds speed up to the grapple's top speed; it never brakes you (owner 5.4): faster than that
+            // already, it only bends your path toward the anchor and keeps your speed.
+            float before = length(s.vel);
             s.vel += to / dist * ((kHookAccel * tune(MV_HOOK_ACCEL)) * dt);
-            float sp = length(s.vel);
-            if (sp > (kHookMaxSpeed * tune(MV_HOOK_MAX))) s.vel *= (kHookMaxSpeed * tune(MV_HOOK_MAX)) / sp;
+            float sp = length(s.vel), cap = std::max(kHookMaxSpeed * tune(MV_HOOK_MAX), before);
+            if (sp > cap) s.vel *= cap / sp;
             onGround = false;
         }
     }

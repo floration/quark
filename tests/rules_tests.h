@@ -239,6 +239,31 @@ static void testSizeHull(uint16_t port) {
     }
 }
 
+// 5.4: the grapple doesn't brake you when it catches: faster than its top speed, the pull only bends your path.
+static void testGrappleNoBrake() {
+    printf("grapple never brakes\n");
+    Map m;
+    std::string err;
+    CHECK(m.parse("box -200 -1 -200 200 0 200\nbox -200 20 -200 200 21 200\nspawn any 0 0 0\n", &err));   // floor, ceiling at 20 m
+    for (float v0 : {40.0f, 5.0f}) {
+        MoveState s;
+        s.pos = {0, 5, 0};
+        s.vel = {v0, 0, 0};
+        UserCmd c; c.msec = 1; c.yaw = -PI / 2; c.pitch = 1.2f; c.buttons = BTN_GRAPPLE;   // look up at the ceiling, hook it
+        float lowest = 1e9f, highest = 0;
+        for (int t = 0; t < 400; t++) {
+            pmove(s, c, m);
+            if (!(s.flags & MF_HOOKED)) break;
+            lowest = std::min(lowest, length(s.vel));
+            highest = std::max(highest, length(s.vel));
+        }
+        printf("  from %.0f m/s: speed while hooked %.1f..%.1f m/s\n", v0, lowest, highest);
+        CHECK(lowest < 1e8f);   // (it caught)
+        if (v0 > 24) CHECK(lowest >= v0 - 3.0f);   // no brake on the catch (it used to clamp to 24 at once; what's lost is gravity on the way up)
+        else CHECK(highest <= 24.0f + 1e-3f && highest > v0 + 1);   // the pull itself still tops out at 24
+    }
+}
+
 // "quark_tests rules [name]": all of them, or the one named.
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
@@ -247,6 +272,7 @@ static void testGameRules(const std::string& only) {
         {"syringe", [] { testSyringeModes(); }},
         {"throws", [] { testThrowCooldown(TP(29240)); }},
         {"hull", [] { testSizeHull(TP(29242)); }},
+        {"grapple", [] { testGrappleNoBrake(); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
 }
