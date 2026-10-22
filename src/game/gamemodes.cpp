@@ -18,6 +18,7 @@ constexpr float kBombFuse = 40.0f;
 constexpr float kBombRadius = 18.0f;
 constexpr float kDefuseRange = 1.8f;
 constexpr float kPickupRange = 1.2f;
+constexpr float kBombReturn = 15.0f;   // a dropped bomb nobody picks up goes back to an attacker after this
 // PAYLOAD
 constexpr float kCartRange = 4.0f;
 constexpr float kCartSpeed = 1.6f;
@@ -602,6 +603,16 @@ void tickBomb(Server& s) {
             }
         }
     }
+    if (m.bombState == BOMB_DROPPED && s.time() - s.bombDroppedAt_ >= kBombReturn) {   // out of reach, or nobody went for it
+        std::vector<int> c;
+        for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].alive && s.players_[i].team == att) c.push_back(i);
+        if (!c.empty()) {
+            int k = c[qrand() % c.size()];
+            m.bombState = BOMB_CARRIED;
+            m.bombCarrier = (uint8_t)k;
+            s.message("the bomb went back to " + s.players_[k].name);
+        }
+    }
     if (m.bombState == BOMB_CARRIED) {
         int c = m.bombCarrier;
         auto& p = s.players_[c];
@@ -1035,8 +1046,15 @@ void rulesOnDeath(Server& s, int victim, int killer) {
     if (m.mode == MODE_BOMB && m.bombState == BOMB_CARRIED && m.bombCarrier == victim) {
         m.bombState = BOMB_DROPPED;
         const auto& v = s.players_[victim];
-        m.bombPos = v.move.pos.y < s.map_.killY() + 2.0f ? v.lastGround : v.move.pos; // fell off: drop it where they last stood
+        // It falls to the floor under where they died (REVIEW GAME-5: it used to hang in the air where an airborne
+        // carrier died, out of reach). Over the void, or into lava: where they last stood.
+        Vec3 at = v.move.pos;
+        float down = s.map_.raycast(at + Vec3(0, 0.05f, 0), Vec3(0, -1, 0), std::max(0.0f, at.y - s.map_.killY()) + 0.05f);
+        Vec3 floor = at - Vec3(0, std::max(0.0f, down - 0.05f), 0);
+        bool lava = !s.map_.lava.empty() && s.map_.inLava(AABB{floor - Vec3(0.2f, 0, 0.2f), floor + Vec3(0.2f, 0.3f, 0.2f)});
+        m.bombPos = (at.y < s.map_.killY() + 2.0f || down < 0 || lava) ? v.lastGround : floor;
         m.bombCarrier = 255;
+        s.bombDroppedAt_ = s.time();
     }
     if (m.actionPlayer == victim) { m.actionPlayer = 255; m.actionProgress = 0; }
     if (m.mode == MODE_HIDE && m.phase == PHASE_LIVE && !s.players_[victim].it) {   // a hider is out: split the points by time hidden

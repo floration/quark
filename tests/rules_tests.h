@@ -425,6 +425,38 @@ static void testTagEscape(uint16_t port) {
     s.stop();
 }
 
+// GAME-5: a bomb carrier killed in mid-air drops the bomb on the floor below, not in the air; a bomb nobody picks up
+// goes back to an attacker.
+static void testBombDrop(uint16_t port) {
+    printf("bomb: dropped on the floor, returned if left\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "depot"; cfg.mode = MODE_BOMB; cfg.port = port; cfg.balanceBots = false;
+    NetClient c[3];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 3, cls)) { s.stop(); return; }
+    int carrier = s.ms_.bombCarrier, other = -1;
+    for (int i = 0; i < 3; i++) { int id = c[i].clientId(); if (id != carrier && s.players_[id].team == s.ms_.attackers) other = id; }
+    CHECK(s.ms_.bombState == BOMB_CARRIED && carrier < kMaxPlayers && other >= 0);
+    if (carrier >= kMaxPlayers || other < 0) { s.stop(); return; }
+    Vec3 ground = s.players_[carrier].move.pos;   // (standing at its spawn)
+    Vec3 away = s.players_[other].move.pos + Vec3(0, 0, 0);
+    if (length(away - ground) < 3) away = s.map_.spawns[0].pos;
+    float up = s.map_.raycast(ground + Vec3(0, 0.1f, 0), Vec3(0, 1, 0), 50);
+    float lift = up < 0 ? 6.0f : std::min(6.0f, up - 0.5f);   // (under the ceiling, if there is one)
+    CHECK(lift > 2.0f);
+    s.players_[carrier].move.pos = ground + Vec3(0, lift, 0);   // blown into the air...
+    s.killPlayer(carrier, -1, 254);                          // ...and killed there
+    printf("  died %.1f m up: bomb at %.2f (floor %.2f)\n", lift, s.ms_.bombPos.y, ground.y);
+    CHECK(s.ms_.bombState == BOMB_DROPPED && std::fabs(s.ms_.bombPos.y - ground.y) < 0.15f);
+    auto keepAway = [&](int) { s.players_[other].move.pos = away; s.players_[other].move.vel = {}; return UserCmd(); };
+    pumpServerTime(s, cls, 10.0, keepAway);
+    CHECK(s.ms_.bombState == BOMB_DROPPED);                 // still lying there
+    pumpServerTime(s, cls, 6.0, keepAway);
+    CHECK(s.ms_.phase == PHASE_LIVE && s.ms_.bombState == BOMB_CARRIED && s.ms_.bombCarrier == other);   // back to the attack
+    s.stop();
+}
+
 // "quark_tests rules [name]": all of them, or the one named.
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
@@ -437,6 +469,7 @@ static void testGameRules(const std::string& only) {
         {"head", [] { testHeadBox(TP(29246)); }},
         {"hide", [] { testHideScoring(TP(29247)); }},
         {"tag", [] { testTagEscape(TP(29248)); }},
+        {"bomb", [] { testBombDrop(TP(29249)); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
 }
