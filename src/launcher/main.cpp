@@ -7,6 +7,8 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <functional>
+#include <memory>
 #include <fstream>
 #include <mutex>
 #include <sstream>
@@ -18,6 +20,7 @@
 #include "../client/ui.h"
 #include "../common/net.h"
 #include "install.h"
+#include "../common/proc.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -63,8 +66,11 @@ bool httpGet(const std::string& url, std::ostream& out, const Progress& prog, st
     if (!WinHttpCrackUrl(wurl.c_str(), 0, 0, &uc)) { *err = "bad url"; return false; }
     HINTERNET s = WinHttpOpen(L"quark-launcher", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!s) { *err = "WinHttpOpen failed"; return false; }
-    DWORD protos = 0x00000800 /*TLS1_2*/ | 0x00000200 /*TLS1_1*/;
-    WinHttpSetOption(s, WINHTTP_OPTION_SECURE_PROTOCOLS, &protos, sizeof protos);
+    DWORD protos = 0x00000800 /*TLS1_2*/ | 0x00002000 /*TLS1_3*/;
+    if (!WinHttpSetOption(s, WINHTTP_OPTION_SECURE_PROTOCOLS, &protos, sizeof protos)) { // pre-1903 Windows rejects the 1.3 bit
+        protos = 0x00000800;
+        WinHttpSetOption(s, WINHTTP_OPTION_SECURE_PROTOCOLS, &protos, sizeof protos);
+    }
     HINTERNET c = WinHttpConnect(s, host, uc.nPort, 0);
     HINTERNET r = c ? WinHttpOpenRequest(c, L"GET", path, nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
                                          uc.nScheme == INTERNET_SCHEME_HTTPS ? WINHTTP_FLAG_SECURE : 0) : nullptr;
@@ -95,21 +101,20 @@ bool httpGet(const std::string& url, std::ostream& out, const Progress& prog, st
     return ok;
 }
 #else
-// macOS and Linux ship curl; use it for TLS instead of bundling a TLS stack.
+// macOS and Linux ship curl; use it for TLS instead of bundling a TLS stack. Run without a shell
+// (argv array), so nothing in the URL (from the GitHub JSON or QUARK_UPDATE_API) can become a command.
 bool httpGet(const std::string& url, std::ostream& out, const Progress& prog, std::string* err) {
-    std::string cmd = "curl -fsSL -A quark-launcher '" + url + "'";
-    FILE* p = popen(cmd.c_str(), "r");
-    if (!p) { *err = "could not run curl"; return false; }
-    std::vector<char> buf(1 << 16);
+    for (char ch : url)
+        if ((unsigned char)ch < 32) { *err = "bad url"; return false; }
     uint64_t done = 0;
-    size_t n;
-    while ((n = fread(buf.data(), 1, buf.size(), p)) > 0) {
-        out.write(buf.data(), n);
-        done += n;
-        if (prog) prog(done, 0);
-    }
-    int rc = pclose(p);
-    if (rc != 0) { *err = "download failed (curl exit " + std::to_string(rc) + ")"; return false; }
+    int rc = procRun({"curl", "-fsSL", "-A", "quark-launcher", "--proto", "=https", "--url", url}, "",
+                     [&](const char* d, size_t n) {
+                         out.write(d, n);
+                         done += n;
+                         if (prog) prog(done, 0);
+                         return true;
+                     });
+    if (rc != 0) { *err = rc < 0 ? "could not run curl" : "download failed (curl exit " + std::to_string(rc) + ")"; return false; }
     return true;
 }
 #endif
@@ -149,13 +154,29 @@ int versionCmp(const std::string& a, const std::string& b) {
     return 0;
 }
 
+// A qpak entry name is safe when it is a plain relative path inside the install: no root name
+// (C:, \\server), no root directory (/ or \), no "..", nothing empty.
+bool safeEntryName(const std::string& name) {
+    if (name.empty() || name.find('\0') != std::string::npos || name.find(':') != std::string::npos) return false;
+    if (name[0] == '/' || name[0] == '\\') return false;
+    if (name.find("..") != std::string::npos) return false; // also catches ..\ on Windows
+    fs::path p = fs::u8path(name);
+    return p.is_relative() && !p.has_root_name() && !p.has_root_directory();
+}
+
 // .qpak: "QPAK1\n", then per file: u32 nameLen, name, u32 mode, u64 size, bytes. Little endian.
-bool extractPak(const std::string& pak, const fs::path& dest, std::string* err) {
+// Everything is extracted into `stage` (a fresh directory); the caller swaps it into place on success,
+// so a failed or interrupted install never leaves a half-updated game.
+bool extractPak(const std::string& pak, const fs::path& stage, std::string* err) {
+    std::error_code ec;
+    uint64_t remaining = fs::file_size(pak, ec);
+    if (ec || remaining < 6) { *err = "corrupt download"; return false; }
     std::ifstream f(pak, std::ios::binary);
     char magic[6];
     f.read(magic, 6);
     if (!f || memcmp(magic, "QPAK1\n", 6) != 0) { *err = "corrupt download"; return false; }
-    auto rd = [&](void* p, size_t n) { f.read((char*)p, n); return (bool)f; };
+    remaining -= 6;
+    auto rd = [&](void* p, size_t n) { f.read((char*)p, n); if (f) remaining -= n; return (bool)f; };
     std::vector<char> buf;
     for (;;) {
         uint32_t nl, mode;
@@ -164,22 +185,54 @@ bool extractPak(const std::string& pak, const fs::path& dest, std::string* err) 
         if (nl == 0 || nl > 4096) { *err = "corrupt archive"; return false; }
         std::string name(nl, 0);
         if (!rd(&name[0], nl) || !rd(&mode, 4) || !rd(&size, 8)) { *err = "corrupt archive"; return false; }
-        if (name.find("..") != std::string::npos || name[0] == '/') { *err = "unsafe path in archive"; return false; }
-        fs::path out = dest / fs::u8path(name);
-        std::error_code ec;
+        if (!safeEntryName(name)) { *err = "unsafe path in archive"; return false; }
+        if (size > remaining) { *err = "truncated archive"; return false; } // never trust size for the allocation
+        fs::path out = stage / fs::u8path(name);
         fs::create_directories(out.parent_path(), ec);
-        buf.resize(size);
-        if (size && !rd(buf.data(), size)) { *err = "truncated archive"; return false; }
-        // Never overwrite the player's settings.
-        if (out.filename() == "quark.cfg" && fs::exists(out)) continue;
+        buf.resize((size_t)size);
+        if (size && !rd(buf.data(), (size_t)size)) { *err = "truncated archive"; return false; }
         std::ofstream o(out, std::ios::binary | std::ios::trunc);
-        if (!o) { *err = "cannot write " + out.string() + " (is the game running?)"; return false; }
-        o.write(buf.data(), size);
+        if (!o) { *err = "cannot write " + out.string(); return false; }
+        o.write(buf.data(), (std::streamsize)size);
         o.close();
+        if (!o) { *err = "cannot write " + out.string() + " (disk full?)"; return false; }
 #ifndef _WIN32
         chmod(out.string().c_str(), mode & 0777);
 #endif
     }
+    return true;
+}
+
+// Swaps a fully extracted `stage` into `dir`: files of the old install the package doesn't carry (the
+// player's quark.cfg, demos, screenshots...) are copied into the stage first, quark.cfg always wins
+// over a packaged one. Then dir -> dir.old, stage -> dir. On failure the old install is put back.
+bool swapInstall(const fs::path& stage, const fs::path& dir, std::string* err) {
+    std::error_code ec;
+    fs::path old = dir.parent_path() / (dir.filename().u8string() + ".old");
+    fs::remove_all(old, ec);
+    if (fs::exists(dir, ec)) {
+        for (auto it = fs::recursive_directory_iterator(dir, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
+            std::error_code e2;
+            fs::path rel = fs::relative(it->path(), dir, e2);
+            if (e2) continue;
+            fs::path dst = stage / rel;
+            if (it->is_directory(e2)) continue;
+            if (fs::exists(dst, e2) && rel.filename() != "quark.cfg") continue;
+            fs::create_directories(dst.parent_path(), e2);
+            fs::copy_file(it->path(), dst, fs::copy_options::overwrite_existing, e2);
+        }
+        ec.clear();
+        fs::rename(dir, old, ec);
+        if (ec) { *err = "cannot replace " + dir.string() + " (is the game running?)"; return false; }
+    }
+    fs::rename(stage, dir, ec);
+    if (ec) {
+        std::error_code e2;
+        fs::rename(old, dir, e2);
+        *err = "cannot move the new version into place";
+        return false;
+    }
+    fs::remove_all(old, ec);
     return true;
 }
 
@@ -204,11 +257,9 @@ bool launchGame(const fs::path& dir) {
     CloseHandle(pi.hProcess);
     return true;
 #elif defined(__APPLE__)
-    std::string cmd = "open '" + (dir / kGameExe).string() + "'";
-    return system(cmd.c_str()) == 0;
+    return procSpawnDetached({"open", (dir / kGameExe).string()});
 #else
-    std::string cmd = "cd '" + dir.string() + "' && ./" + kGameExe + " >/dev/null 2>&1 &";
-    return system(cmd.c_str()) == 0;
+    return procSpawnDetached({"./" + std::string(kGameExe)}, dir.string());
 #endif
 }
 
@@ -261,7 +312,7 @@ bool fetchReleases(State* st, std::string* err) {
     return true;
 }
 
-void installRelease(State* st, fs::path dir, Release r) {
+void installRelease(std::shared_ptr<State> st, fs::path dir, Release r) {
     auto setStatus = [&](const std::string& s) { std::lock_guard<std::mutex> l(st->mu); st->status = s; };
     std::string err;
     setStatus("downloading version " + r.version + "...");
@@ -279,7 +330,11 @@ void installRelease(State* st, fs::path dir, Release r) {
     }
     setStatus("installing version " + r.version + "...");
     st->progress = -1;
-    if (!extractPak(tmp.string(), dir, &err)) {
+    fs::path stage = dir.parent_path() / (dir.filename().u8string() + ".new");
+    fs::remove_all(stage, ec);
+    fs::create_directories(stage, ec);
+    if (!extractPak(tmp.string(), stage, &err) || !swapInstall(stage, dir, &err)) {
+        fs::remove_all(stage, ec);
         setStatus("install failed: " + err);
     } else {
         std::ofstream(dir / "version.txt") << r.version << "\n";
@@ -300,7 +355,7 @@ void installRelease(State* st, fs::path dir, Release r) {
 }
 
 // Startup: get the list, then install the pinned version (or the newest if following latest).
-void updater(State* st, fs::path dir) {
+void updater(std::shared_ptr<State> st, fs::path dir) {
     std::string installed = readFile(dir / "version.txt");
     std::string pin = readFile(launcherCfg());
     if (pin.rfind("pin=", 0) == 0) pin = pin.substr(4);
@@ -310,7 +365,7 @@ void updater(State* st, fs::path dir) {
         st->ready = !installed.empty();
     }
     std::string err;
-    if (!fetchReleases(st, &err)) {
+    if (!fetchReleases(st.get(), &err)) {
         std::lock_guard<std::mutex> l(st->mu);
         st->status = installed.empty() ? "offline - " + err : "offline - playing installed version " + installed;
         st->busy = false;
@@ -330,7 +385,7 @@ void updater(State* st, fs::path dir) {
             return;
         }
     }
-    installRelease(st, dir, target);
+    installRelease(std::move(st), dir, target);
 }
 } // namespace
 
@@ -384,8 +439,11 @@ int main(int argc, char** argv) {
     std::string err;
     if (!r.init(256, &err)) { fprintf(stderr, "%s\n", err.c_str()); return 1; }
 
-    State st;
-    std::thread worker(updater, &st, dir);
+    // Shared with the worker thread: if the window closes mid-download the detached worker holds its own
+    // reference, so it never touches freed memory (and an unfinished install only leaves a stage dir).
+    auto stp = std::make_shared<State>();
+    State& st = *stp;
+    std::thread worker(updater, stp, dir);
     Ui ui;
     UiInput in;
     static UiInput* g_in = &in;
@@ -510,7 +568,7 @@ int main(int argc, char** argv) {
             if (ui.button(fw - 224 * s, 414 * s, 200 * s, 48 * s, "INSTALL " + sel.version)) {
                 st.busy = true;
                 if (worker.joinable()) worker.join();
-                worker = std::thread(installRelease, &st, dir, sel);
+                worker = std::thread(installRelease, stp, dir, sel);
             }
         } else if (ui.button(fw - 224 * s, 414 * s, 200 * s, 48 * s, st.busy ? "WORKING..." : "PLAY", canPlay) || (autoPlay && canPlay)) {
             if (launchGame(dir)) quit = true;

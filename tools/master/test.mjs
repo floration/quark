@@ -18,8 +18,10 @@ let fails = 0;
 const check = (ok, what) => { if (!ok) { fails++; console.log("FAIL", what); } };
 const secret = (n) => createHash("sha256").update("s" + n).digest("hex");
 const id = (n) => createHash("sha256").update(secret(n)).digest("hex").slice(0, 32);
-const call = async (path, form) => {
-  const init = form ? { method: "POST", body: new URLSearchParams(form) } : {};
+let callN = 0; // each call from its own (IPv6) client so per-IP rate limits don't trip; announce tests pass `from`
+const call = async (path, form, from) => {
+  const headers = { "CF-Connecting-IP": from || "2001:db8::" + (++callN).toString(16) };
+  const init = form ? { method: "POST", body: new URLSearchParams(form), headers } : { headers };
   return (await worker.fetch(new Request("https://x" + path, init), env)).text();
 };
 const ratings = async (ns, ladder = "vanilla") => Object.fromEntries((await call("/ratings?ladder=" + ladder + "&ids=" + ns.map(id).join(","))).split("\n")
@@ -131,6 +133,23 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   check((await call("/filled?since=" + filled[0].split(" ")[0])) === "", "nothing newer");
   check((await call("/queue", { secret: secret(6), mode: "nope" })) === "not a queue", "unknown queue");
 }
+// server list: own source IPv4 only, ?ip= needs the token from an earlier announce
+{
+  const a = await call("/announce?port=27500&v=t1", null, "198.51.100.7");
+  check(/^ok [0-9a-f]{32}$/.test(a), "announce gives a token " + a);
+  const tok = a.split(" ")[1];
+  check((await call("/list?v=t1")) === "198.51.100.7:27500", "listed");
+  check((await call("/announce?port=27501&v=t1&ip=203.0.113.9", null, "2001:db8::99")).startsWith("forbidden"), "ipv6 can't list another address");
+  check((await call("/remove?port=27500&ip=198.51.100.7", null, "2001:db8::99")).startsWith("forbidden"), "ipv6 can't remove without token");
+  await call("/remove?port=27500&ip=198.51.100.7", null, "192.0.2.1"); // an IPv4 caller only ever names itself
+  check((await call("/list?v=t1")) === "198.51.100.7:27500", "other ipv4 can't remove");
+  check((await call(`/announce?port=27500&v=t1&ip=198.51.100.7&token=${tok}`, null, "2001:db8::5")) === "ok " + tok, "token announce over ipv6");
+  check((await call(`/remove?port=27500&ip=198.51.100.7&token=${tok}`, null, "2001:db8::5")) === "removed", "token remove");
+  check((await call("/list?v=t1")) === "", "removed from list");
+  let limited = false;
+  for (let i = 0; i < 40 && !limited; i++) limited = (await call("/link", { secret: secret(40 + i) }, "192.0.2.50")) === "rate limited";
+  check(limited, "writes rate-limited per IP");
+}
 // lifetime kills / deaths: added up across reports, capped, rate limited
 {
   check((await call("/lifetime", { secret: secret(7), kills: "12", deaths: "5", name: Buffer.from("vet").toString("hex") })) === "ok", "lifetime first report");
@@ -139,6 +158,8 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   db.prepare("UPDATE lifetime SET updated = 0").run();
   check((await call("/lifetime", { secret: secret(7), kills: "3", deaths: "1" })) === "ok", "lifetime adds up");
   check((await call("/lifetime?ids=" + id(7) + "," + id(8))) === `${id(7)} 15 6`, "lifetime lookup");
+  db.prepare("UPDATE lifetime SET updated = 0, hour_kills = 1100 WHERE id = ?").run(id(7));
+  check((await call("/lifetime", { secret: secret(7), kills: "200", deaths: "0" })) === "hourly limit", "lifetime hourly cap");
   check((await call("/lifetime")).startsWith(`15 6 ${id(7)} `), "lifetime top");
 }
 console.log(fails ? fails + " FAILURE(S)" : "worker tests passed");

@@ -43,3 +43,15 @@ SELECT r.id, n.name, r.ms, r.splits, r.version, datetime(r.created / 1000, 'unix
 DELETE FROM race_times WHERE map = 'viaduct' AND id = '<id>';
 ```
 `splits` is the run time in ms at each checkpoint, so a gap that's impossible to cover stands out.
+
+## Server tokens, rate limits (security update)
+Run this once in D1 → `quark` → **Console** before deploying the new `worker.js`:
+```sql
+ALTER TABLE servers ADD COLUMN token TEXT;
+ALTER TABLE lifetime ADD COLUMN hour_start INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE lifetime ADD COLUMN hour_kills INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE lifetime ADD COLUMN hour_deaths INTEGER NOT NULL DEFAULT 0;
+```
+`/announce` answers `ok <token>`. A server may announce or remove its own source IPv4 address; through an IPv6
+path (`?ip=`) it needs the token from an earlier IPv4 announce. Writes are rate-limited per IP and per player id
+(in memory, per isolate), and `/lifetime` adds at most 1200 kills and 1200 deaths per id per hour.

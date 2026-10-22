@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <fstream>
 #include "icon_data.h"
+#include "../common/proc.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -83,8 +84,7 @@ bool writeDesktopFile(const fs::path& path, const fs::path& launcher) {
       << (appDir() / "quark.png").string() << "\nTerminal=false\nCategories=Game;ActionGame;\n";
     f.close();
     chmod(path.string().c_str(), 0755);
-    std::string cmd = "gio set '" + path.string() + "' metadata::trusted true >/dev/null 2>&1";
-    if (system(cmd.c_str())) {} // best effort: marks the desktop icon as launchable on GNOME
+    procRun({"gio", "set", path.string(), "metadata::trusted", "true"}, "", [](const char*, size_t) { return true; }); // best effort: marks the desktop icon as launchable on GNOME
     return (bool)f;
 }
 #else
@@ -177,8 +177,7 @@ bool relaunchInstalled(const fs::path& installed, const fs::path& original) {
     CloseHandle(pi.hProcess);
     return true;
 #else
-    std::string cmd = "'" + installed.string() + "' --cleanup '" + original.string() + "' >/dev/null 2>&1 &";
-    return system(cmd.c_str()) == 0;
+    return procSpawnDetached({installed.string(), "--cleanup", original.string()});
 #endif
 }
 

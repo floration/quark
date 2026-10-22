@@ -18,8 +18,11 @@ static bool request(const wchar_t* method, const std::string& url, const std::st
     if (!WinHttpCrackUrl(wurl.c_str(), 0, 0, &uc)) { if (err) *err = "bad url"; return false; }
     HINTERNET s = WinHttpOpen(L"quark", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!s) { if (err) *err = "WinHttpOpen failed"; return false; }
-    DWORD protos = 0x00000800 /*TLS1_2*/ | 0x00000200 /*TLS1_1*/;
-    WinHttpSetOption(s, WINHTTP_OPTION_SECURE_PROTOCOLS, &protos, sizeof protos);
+    DWORD protos = 0x00000800 /*TLS1_2*/ | 0x00002000 /*TLS1_3*/;
+    if (!WinHttpSetOption(s, WINHTTP_OPTION_SECURE_PROTOCOLS, &protos, sizeof protos)) { // pre-1903 Windows rejects the 1.3 bit
+        protos = 0x00000800;
+        WinHttpSetOption(s, WINHTTP_OPTION_SECURE_PROTOCOLS, &protos, sizeof protos);
+    }
     WinHttpSetTimeouts(s, timeoutMs, timeoutMs, timeoutMs, timeoutMs);
     HINTERNET c = WinHttpConnect(s, host, uc.nPort, 0);
     HINTERNET r = c ? WinHttpOpenRequest(c, method, path, nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
@@ -52,34 +55,32 @@ bool httpPostForm(const std::string& url, const std::string& body, std::string& 
     return request(L"POST", url, &body, out, timeoutMs, err);
 }
 #else
-bool httpGetText(const std::string& url, std::string& out, int timeoutMs, std::string* err) {
+#include "proc.h"
+// The system curl, run without a shell (argv array). Form bodies go through stdin (--data-binary @-) so
+// secrets never appear on a command line (visible to every local user in ps / /proc).
+static bool curlRun(const std::string& url, const std::string* body, std::string& out, int timeoutMs, std::string* err) {
     out.clear();
     for (char ch : url)
-        if (ch == '\'' || ch == '\\' || (unsigned char)ch < 32) { if (err) *err = "bad url"; return false; }
-    std::string cmd = "curl -fsS -A quark --max-time " + std::to_string(timeoutMs / 1000 + 1) + " '" + url + "' 2>/dev/null";
-    FILE* p = popen(cmd.c_str(), "r");
-    if (!p) { if (err) *err = "could not run curl"; return false; }
-    char buf[4096];
-    size_t n;
-    while ((n = fread(buf, 1, sizeof buf, p)) > 0 && out.size() < (1 << 20)) out.append(buf, n);
-    int rc = pclose(p);
-    if (rc != 0) { if (err) *err = "request failed"; return false; }
+        if ((unsigned char)ch < 32) { if (err) *err = "bad url"; return false; }
+    std::vector<std::string> argv = {"curl", "-fsS", "-A", "quark", "--proto", "=https,http", "--max-time", std::to_string(timeoutMs / 1000 + 1)};
+    if (body) { argv.push_back("--data-binary"); argv.push_back("@-"); }
+    argv.push_back("--url");
+    argv.push_back(url);
+    int rc = procRun(argv, body ? *body : std::string(), [&](const char* d, size_t n) {
+        out.append(d, n);
+        return out.size() < (1 << 20);
+    });
+    if (rc != 0) { if (err) *err = rc < 0 ? "could not run curl" : "request failed"; return false; }
     return true;
+}
+
+bool httpGetText(const std::string& url, std::string& out, int timeoutMs, std::string* err) {
+    return curlRun(url, nullptr, out, timeoutMs, err);
 }
 
 bool httpPostForm(const std::string& url, const std::string& body, std::string& out, int timeoutMs, std::string* err) {
     for (char ch : body)
         if (!(isalnum((unsigned char)ch) || std::string("=&:,._-").find(ch) != std::string::npos)) { if (err) *err = "bad body"; return false; }
-    for (char ch : url)
-        if (ch == '\'' || ch == '\\' || (unsigned char)ch < 32) { if (err) *err = "bad url"; return false; }
-    out.clear();
-    std::string cmd = "curl -fsS -A quark --max-time " + std::to_string(timeoutMs / 1000 + 1) + " --data '" + body + "' '" + url + "' 2>/dev/null";
-    FILE* p = popen(cmd.c_str(), "r");
-    if (!p) { if (err) *err = "could not run curl"; return false; }
-    char buf[4096];
-    size_t n;
-    while ((n = fread(buf, 1, sizeof buf, p)) > 0 && out.size() < (1 << 20)) out.append(buf, n);
-    if (pclose(p) != 0) { if (err) *err = "request failed"; return false; }
-    return true;
+    return curlRun(url, &body, out, timeoutMs, err);
 }
 #endif

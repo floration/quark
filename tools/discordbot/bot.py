@@ -24,6 +24,9 @@ import quarkdata as qd
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent.parent
 log = logging.getLogger("quarkbot")
+S = qd.safe_text   # every piece of external text that goes into a message passes through this
+MAX_LIVE_CHANNELS = 15   # live server text+voice channel pairs at most (fake servers can't flood the guild)
+MIN_SEEN_SECONDS = 120   # a server must keep answering this long before it gets channels
 
 DEFAULT_CONFIG = {
     "guild_id": 0,
@@ -179,7 +182,7 @@ async def dry_run(cfg: dict):
             rows = await api.filled(0)
             print(f"GET /filled?since=0: {len(rows)} fill(s) in the last hour")
             for f in rows:
-                names = [f"@{m.who[2:]}" if m.from_discord else (f"@{m.discord}" if m.discord else f"**{m.name}**") for m in f.members]
+                names = [f"@{m.who[2:]}" if m.from_discord else (f"@{S(m.discord, 40)}" if m.discord else f"**{S(m.name, 40)}**") for m in f.members]
                 print(f"  #{f.id} -> " + fill_message(names, f.mode, QUEUES.get(f.mode, (f.mode.upper(),))[0]))
 
         async def crowns():
@@ -246,6 +249,7 @@ def run_bot(cfg: dict):
         version: str = ""
         first_server_pass = True
         missing: dict[str, int] = {}
+        first_seen: dict[str, float] = {}
         last_total_rename = 0.0
 
         async def setup_hook(self):
@@ -373,19 +377,28 @@ def run_bot(cfg: dict):
 
         servers = state.d["servers"]
         seen = set()
+        live = {i.address for i in infos}
+        for a in list(bot.first_seen):
+            if a not in live:
+                del bot.first_seen[a]
         for i in infos:
+            bot.first_seen.setdefault(i.address, now)
+            if i.address not in servers:
+                # new servers wait MIN_SEEN_SECONDS, and only up to MAX_LIVE_CHANNELS servers get channels
+                if now - bot.first_seen[i.address] < MIN_SEEN_SECONDS or len(servers) >= MAX_LIVE_CHANNELS:
+                    continue
             seen.add(i.address)
             bot.missing.pop(i.address, None)
             rec = servers.get(i.address)
             ch = bot.guild.get_channel(rec["channel"]) if rec else None
             want = server_channel_name(i)
             if not ch:
-                ch = await bot.guild.create_text_channel(want, category=cat, overwrites=readonly(), topic=f"{i.name} ({i.address})")
+                ch = await bot.guild.create_text_channel(want, category=cat, overwrites=readonly(), topic=f"{S(i.name)} ({i.address})")
                 rec = servers[i.address] = {"channel": ch.id, "msg": 0, "renamed": now, "players": 0, "pinged": 0}
             elif ch.name != want and now - rec.get("renamed", 0) >= cfg["rename_min_seconds"]:
                 await ch.edit(name=want)
                 rec["renamed"] = now
-            text = (f"**{i.name}**\nMap **{i.map}** · Mode **{i.mode_title}** · **{i.players}/{i.max_players}** players\n"
+            text = (f"**{S(i.name)}**\nMap **{S(i.map)}** · Mode **{S(i.mode_title)}** · **{i.players}/{i.max_players}** players\n"
                     f"Join: `{i.address}` (Join Game > internet list)\n-# updated <t:{int(now)}:R>")
             try:
                 msg = await ch.fetch_message(rec["msg"]) if rec.get("msg") else None
@@ -403,12 +416,12 @@ def run_bot(cfg: dict):
             # ping when a game starts (players appear) on a server; not on the first pass after a restart
             if (i.players > 0 and rec.get("players", 0) == 0 and not bot.first_server_pass
                     and now - rec.get("pinged", 0) >= cfg["server_ping_cooldown_seconds"]):
-                await ch.send(f"{role.mention} **{i.name}** is live: {i.map} {i.mode_title} {i.players}/{i.max_players} - `{i.address}`",
+                await ch.send(f"{role.mention} **{S(i.name)}** is live: {S(i.map)} {S(i.mode_title)} {i.players}/{i.max_players} - `{i.address}`",
                               allowed_mentions=discord.AllowedMentions(roles=[role]))
                 rec["pinged"] = now
             rec["players"] = i.players
             # a voice channel for the people on that server (open to everyone, gone when the server is)
-            vname = f"🔊 {i.name}"[:90]
+            vname = f"🔊 {qd.slugify(i.name, 80)}"[:90]   # plain words only: no links or markdown in channel names
             vch = bot.guild.get_channel(rec.get("voice", 0)) if rec.get("voice") else None
             try:
                 if not vch:
@@ -568,7 +581,7 @@ def run_bot(cfg: dict):
         m = find_member(dname) if dname else None
         if m:
             return m.mention, m.id
-        label = (fm.name or dname or "player").replace("*", "")
+        label = S(fm.name or dname or "player", 40)
         return f"**{label}**", None
 
     async def fire_queue(f: qd.Filled, channel: discord.abc.Messageable):
@@ -774,7 +787,7 @@ def run_bot(cfg: dict):
         except Exception as e:
             await it.followup.send(f"Server list unavailable ({type(e).__name__}).", ephemeral=True)
             return
-        lines = [f"**{i.name}** - {i.map} {i.mode_title} {i.players}/{i.max_players} `{i.address}`" for i in infos]
+        lines = [f"**{S(i.name)}** - {S(i.map)} {S(i.mode_title)} {i.players}/{i.max_players} `{i.address}`" for i in infos]
         await it.followup.send("\n".join(lines) or "No servers live right now.", ephemeral=True)
 
     @bot.tree.command(name="leaderboard", description="Ranked top 10s")
