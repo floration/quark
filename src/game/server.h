@@ -249,6 +249,7 @@ public:
     bool editing_ = false, editDirty_ = false;
     bool tempEdit_ = false;     // editing was voted on a normal server: never saved, reverts at the next map change
     bool mapEdited_ = false;    // map_ differs from its file (temporary edits being played)
+    bool autosaveBackedUp_ = false; // this edit session's first autosave copied the file to <name>.qmap.bak
     void playMap(int mode);
     float nextAutosave_ = 0;
     void setEditing(bool on);

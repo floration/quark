@@ -1873,6 +1873,7 @@ void Server::setEditing(bool on) {
     editing_ = on;
     if (!on) { if (tempEdit_) editDirty_ = false; return; }
     tempEdit_ = !cfg_.editMode; // voted on a normal server: edits live until the map changes, never saved
+    autosaveBackedUp_ = false;
     for (int i = kMaxPlayers - 1; i >= 0; i--) if (players_[i].connected && players_[i].isBot) removeBot(i);
     for (auto& pr : projectiles_) pr.active = false;
     for (auto& p : players_) { p.alive = false; p.respawnAt = -1; p.cmdQueue.clear(); }
@@ -1886,8 +1887,13 @@ void Server::setEditing(bool on) {
 bool Server::applyEdit(int from, const std::string& op) {
     if (op.size() > 220) return false;
     uint32_t before = map_.crc;
-    if (!applyMapEdit(map_, op)) return false;
-    map_.source = map_.serialize();
+    try {   // (applyMapEdit checks the result against the same limits a map file gets, and leaves map_ as it was if it fails)
+        if (!applyMapEdit(map_, op)) return false;
+        map_.source = map_.serialize();
+    } catch (const std::exception& e) {   // (out of memory: refuse the edit, keep the server)
+        log(std::string("edit refused: ") + e.what());
+        return false;
+    }
     map_.crc = crc32(map_.source.data(), map_.source.size());
     mapEdited_ = true;
     if (!editDirty_) nextAutosave_ = time() + 5;
@@ -1903,7 +1909,18 @@ bool Server::applyEdit(int from, const std::string& op) {
 bool Server::autosave() {
     if (!validMapName(cfg_.map)) return false;
     std::string text = map_.serialize();
-    if (!saveMapFile(findDataPath("maps") + "/" + cfg_.map + ".qmap", text)) { log("autosave failed: maps/" + cfg_.map + ".qmap"); return false; }
+    // Never write a file that wouldn't load again. (Checked here, not per edit: parsing Midtown takes ~100 ms, and
+    // edit sessions autosave at most every 5 s.)
+    Map check;
+    std::string err;
+    if (!check.parse(text, &err)) { log("autosave skipped, the edited map wouldn't load: " + err); nextAutosave_ = time() + 5; return false; }
+    std::string path = findDataPath("maps") + "/" + cfg_.map + ".qmap";
+    if (!autosaveBackedUp_) {   // the file as it was before this edit session: maps/<name>.qmap.bak
+        std::error_code ec;
+        std::filesystem::copy_file(path, path + ".bak", std::filesystem::copy_options::overwrite_existing, ec);
+        autosaveBackedUp_ = true;
+    }
+    if (!saveMapFile(path, text)) { log("autosave failed: maps/" + cfg_.map + ".qmap"); return false; }
     editDirty_ = false;
     nextAutosave_ = time() + 5;
     return true;

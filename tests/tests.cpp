@@ -265,6 +265,66 @@ static void testAllMaps() {
     }
 }
 
+// One set of limits for every map, however it arrives (REVIEW CLI-3, NET-3, NET-15): files, downloads and demos are
+// refused with an error instead of a 240 GB grid, a non-solid floor or brushes past 65535 dropping out of collision;
+// edits that would break those limits, or leave a map that won't load again, are refused and change nothing.
+static void testMapLimits() {
+    printf("map limits: hostile maps and edits are refused\n");
+    for (const char* f : {"map_hugegrid.qmap", "map_floatmax.qmap"}) {   // the review's repro files
+        std::ifstream in(std::string(QUARK_TEST_DATA) + "/" + f, std::ios::binary);
+        std::stringstream ss;
+        ss << in.rdbuf();
+        Map m;
+        std::string err;
+        CHECK(!ss.str().empty() && !m.parse(ss.str(), &err) && !err.empty());
+    }
+    auto refused = [](const std::string& text) { Map m; std::string err; return !m.parse(text, &err) && !err.empty(); };
+    const std::string floor = "box -20 -1 -20 20 0 20\nspawn any 0 0 0\n";
+    {   // 65537 boxes (the review's map_65k: indices past 65535 wrapped and those boxes lost collision)
+        std::string t;
+        for (int i = 0; i < 65537; i++) t += "box -1 -1 -1 1 0 1\n";
+        CHECK(refused(t + "spawn any 0 0 0\n"));
+    }
+    {   // generated boxes count too: 60 custom groups of 1024 parts
+        std::string t = floor;
+        for (int g = 0; g < 60; g++) { t += "group custom 0 0 0 0 0 1 1 1\n"; for (int k = 0; k < 1024; k++) t += "part 0 0 0 0 1 1 1\n"; }
+        CHECK(refused(t));
+    }
+    CHECK(refused(floor + "ladder 0 0 0 1 1e30 1 auto\n"));                 // its rungs would never end
+    CHECK(refused(floor + "box 0 0 0 5000 1 1\n"));
+    CHECK(refused(floor + "group custom 0 0 0 0 0 4000 1 1\npart 0 0 0 0 2 1 1\n"));   // in range until the part is placed
+    CHECK(refused(floor + "light 0 1 0 1e9 1\n") && refused(floor + "spawn a 1e9 0 0\n"));
+    CHECK(!refused(floor + "box 4000 0 -4096 4096 1 4096\n"));               // the edges of the range are fine
+    // edits, from the fuzzer's base map: the review's sequences each end in a map that loads again
+    const std::string base = "title t\nbox -20 -1 -20 20 0 20\nbox 2 0 2 4 2 4\nladder 5 0 5 6 4 6\ngroup stairs 0 1 -8 0 -8 -4 2 -6\n"
+                             "group custom 1 0 8 0 8 10 2 10\npart 2 0 0 0 1 0.5 1\nspawn a 0 0 0\nspawn b 1 0 1\nlight 0 5 0 10 1\n";
+    for (const char* seq : {"g set 1 1 0 0 8 0 8 10 2 10",                       // custom -> room kept its parts: unloadable
+                            "b del 0\nb del 0\nb del 0",                          // deleting every real box
+                            "d set 0 1 5 0 5 6 4 6\nb del 0\nb del 0",
+                            "b del 0\nb del 0\ng del 0\ng del 0"}) {
+        Map m;
+        CHECK(m.parse(base));
+        std::istringstream ops(seq);
+        std::string op, err;
+        while (std::getline(ops, op)) applyMapEdit(m, op);
+        Map again;
+        CHECK(again.parse(m.serialize(), &err) && m.editableBrushes() >= 1);
+        if (!err.empty()) printf("  \"%s\": %s\n", seq, err.c_str());
+    }
+    {   // the group bypass: parts are fractions of the group's box, so in-range numbers made boxes ~33,000 km out
+        Map m;
+        CHECK(m.parse(base));
+        size_t n = m.brushes.size();
+        uint32_t crc = crc32(m.serialize().data(), m.serialize().size());
+        CHECK(applyMapEdit(m, "g set 1 0 0 0 -4096 -1 -4096 4096 1 4096"));   // a big custom group: fine
+        CHECK(!applyMapEdit(m, "g part 1 0 -4096 0 -4096 4096 1 4096"));       // a part 4096 times its size: refused
+        CHECK(!applyMapEdit(m, "b set 2 0 0 0 0 1 1 1"));                      // generated boxes aren't edited directly
+        CHECK(applyMapEdit(m, "g set 1 0 1 0 8 0 8 10 2 10") && m.brushes.size() == n);   // (back as it was)
+        std::string again = m.serialize();
+        CHECK(crc32(again.data(), again.size()) == crc);                      // refused edits changed nothing
+    }
+}
+
 static void testGridQueries() {
     printf("grid raycast / collision vs brute force\n");
     Map m;
@@ -1954,7 +2014,15 @@ static void testEditSession(uint16_t port) {
     CHECK(c.map().crc == s.map_.crc && c.map().brushes.size() == nb);
     s.stop(); // autosaves
     CHECK(saved.load(name) && saved.brushes.size() == nb);
+    {   // the first autosave kept the file as it was before the session (REVIEW NET-15)
+        std::ifstream bf(path + ".bak", std::ios::binary);
+        std::stringstream bs;
+        bs << bf.rdbuf();
+        Map bak;
+        CHECK(bak.parse(bs.str()) && bak.brushes.size() == base.brushes.size());
+    }
     std::remove(path.c_str());
+    std::remove((path + ".bak").c_str());
     for (uint32_t crc : {a.map().crc, c.map().crc}) std::remove(downloadedMapPath(name, crc).c_str());
 }
 
@@ -2577,6 +2645,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "edgroups") { testEditorGroups(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(29997); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "allmaps") { testAllMaps(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "limits") { testMapLimits(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "custom") { testCustomMode(29990); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(29980); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(29450); return g_fail ? 1 : 0; }
@@ -2607,7 +2676,7 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testSleepPrecision(); testMovement(); testTickRateIndependence(); testGridQueries(); testEditorLadder(); testEditorGroups(); }},
+        {"movement", [] { testSleepPrecision(); testMovement(); testTickRateIndependence(); testMapLimits(); testGridQueries(); testEditorLadder(); testEditorGroups(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", 28560); testSession(MODE_BOMB, "bastion", 28561); testSession(MODE_KOTH, "bastion", 28562); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", 28563); testSession(MODE_FFA, "bastion", 28564); testSession(MODE_RACE, "foundry", 28565); }},
         {"modes", [] { testCustomMode(28570); testPoints(28571); testSyringe(28572); testCartChecks(28573); testItModes(28574); }},

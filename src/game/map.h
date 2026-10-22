@@ -19,6 +19,15 @@ struct Brush {
     bool generated = false; // made from another object (an editor ladder's rails and rungs): not saved, not editable
 };
 
+// What any map may hold, however it arrives (file, download, demo, edits): Map::validate checks all of it, after
+// groups and ladders are expanded, before the collision grid is built. Shipped maps use a small fraction of this.
+constexpr float kMapExtent = 4096.0f;        // every coordinate, |x| <= this
+constexpr size_t kMaxMapBrushes = 60000;     // generated ones included (grid cells index brushes with 16 bits)
+constexpr size_t kMaxMapGridRefs = 16u << 20; // brush references in the collision grid (32 MB; one box over the whole range is 4.2M)
+constexpr size_t kMaxMapSpawns = 256, kMaxMapLights = 512, kMaxMapLadders = 256, kMaxMapGroups = 256, kMaxGroupParts = 1024;
+constexpr size_t kMaxMapSites = 16, kMaxMapCheckpoints = 128, kMaxMapPath = 512, kMaxMapPoints = 16, kMaxMapCartChecks = 64;
+constexpr float kMaxObjectHeight = 64.0f;    // ladders and groups (a ladder's rungs are made every 0.4 m)
+
 struct SpawnPoint {
     Vec3 pos;
     float yaw = 0;
@@ -71,9 +80,11 @@ struct Map {
 
     bool load(const std::string& name, std::string* err = nullptr);
     bool onLadder(const AABB& player) const { for (auto& l : ladders) if (player.overlaps(l)) return true; return false; }
-    bool parse(const std::string& text, std::string* err = nullptr);
+    bool parse(const std::string& text, std::string* err = nullptr);   // never throws: a bad map is an error
+    bool parseText(const std::string& text, std::string* err);          // (parse's body)
+    bool validate(std::string* err = nullptr) const;   // the limits above (counts, finite, in range)
     std::string serialize() const;    // back to .qmap text (what the editor saves)
-    void rebuild();                   // after editing brushes in place: bounds, wallbang flag, grid
+    bool rebuild();                   // after editing brushes in place: bounds, wallbang flag, grid (false: over the limits)
 
     // Movement collision: returns how far along `axis` the box may move (clamped delta).
     float sweepAxis(const AABB& box, int axis, float delta) const;
@@ -97,7 +108,7 @@ struct Map {
     float gridX0 = 0, gridZ0 = 0;
     std::vector<uint32_t> cellStart;   // gridW*gridH+1 offsets into cellBrushes
     std::vector<uint16_t> cellBrushes;
-    void buildGrid();
+    bool buildGrid();                  // false: more grid references than kMaxMapGridRefs
     template <class F> void forBox(const AABB& b, F f) const; // calls f(brush) for brushes in overlapped cells (may repeat)
 
     // Moving solids that aren't part of the static geometry (the payload cart). Collision and
