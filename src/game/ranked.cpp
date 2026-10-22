@@ -52,12 +52,12 @@ RankKey rankKeyFromSecret(const std::string& secret) {
 
 std::string rankIdFromSecret(const std::string& secret) { return rankKeyFromSecret(secret).id; }
 
-std::string rankConnectMessage(uint32_t cookie, uint32_t nonce) {
+std::string rankConnectMessage(uint32_t cookie, uint32_t nonce, const std::string& server) {
     char b[48];
-    snprintf(b, sizeof b, "quark-rankid-v1 %08x %08x", (unsigned)cookie, (unsigned)nonce);
-    return b;
+    snprintf(b, sizeof b, "quark-rankid-v2 %08x %08x ", (unsigned)cookie, (unsigned)nonce);
+    return b + server;
 }
-std::string rankTicketMessage(const std::string& match) { return "quark-ticket-v1 " + match; }
+std::string rankTicketMessage(const std::string& match, const std::string& server) { return "quark-ticket-v2 " + match + " " + server; }
 
 bool rankSign(const RankKey& key, const std::string& msg, std::string* sigHex) {
     return !key.secret.empty() && sign::signMessage(msg, rankSeedHex(key.secret), sigHex);

@@ -34,7 +34,8 @@ const keys = new Map();
 const key = (n) => { if (!keys.has(n)) keys.set(n, keyOf(secret(n))); return keys.get(n); };
 const id = (n) => key(n).id;
 const legacy = (n) => sha(secret(n)).slice(0, 32);
-const signTicket = (n, match) => edSign(null, Buffer.from("quark-ticket-v1 " + match), key(n).priv).toString("hex");
+// the game signs the match id and the server address it dialled (ranked.cpp rankTicketMessage; quark_tests checks the text)
+const signTicket = (n, match, addr) => edSign(null, Buffer.from("quark-ticket-v2 " + match + " " + addr), key(n).priv).toString("hex");
 let callN = 0; // each call from its own (IPv6) client so per-IP rate limits don't trip; announce tests pass `from`
 const fetchRaw = async (path, form, from, extra = {}) => {
   const headers = { "CF-Connecting-IP": from || "2001:db8::" + (++callN).toString(16), ...extra };
@@ -81,14 +82,17 @@ let srvN = 0;
 const server = async () => {
   const ip = "198.18.0." + (++srvN), port = 27600 + srvN;
   const tok = (await call("/announce", { port: String(port), v: "t9", hidden: "1" }, ip)).split(" ")[1];
-  const S = { ip, f: { port: String(port), token: tok } };
+  const S = { ip, addr: ip + ":" + port, f: { port: String(port), token: tok } };
   S.post = (path, form) => call(path, { ...S.f, ...form }, S.ip);
   // every player signs the match id in the game; the server forwards keys and signatures with the ticket
-  S.ticket = (match, ladder, ns, map = "temple", signers = ns) => S.post("/ticket", { kind: "match", match, ladder, map, players: ns.map(id).join(","),
-    keys: ns.map((n) => key(n).pub).join(","), sigs: ns.map((n, i) => signTicket(signers[i], match)).join(",") });
+  // (each signature names the address that player's game dialled: this server's, unless a test says otherwise)
+  S.ticket = (match, ladder, ns, map = "temple", signers = ns, dialled = ns.map(() => S.addr)) => S.post("/ticket", { kind: "match", match, ladder, map,
+    players: ns.map(id).join(","), keys: ns.map((n) => key(n).pub).join(","), sigs: ns.map((n, i) => signTicket(signers[i], match, dialled[i])).join(","),
+    addrs: dialled.join(",") });
   S.result = (match, p) => S.post("/result", { match, p });
   // a time trial: the racer's game signs the race ticket's id the same way
-  S.race = (match, n, map = "viaduct", signer = n) => S.post("/ticket", { kind: "race", match, map, players: id(n), keys: key(n).pub, sigs: signTicket(signer, match) });
+  S.race = (match, n, map = "viaduct", signer = n, dialled = S.addr) => S.post("/ticket", { kind: "race", match, map, players: id(n), keys: key(n).pub,
+    sigs: signTicket(signer, match, dialled), addrs: dialled });
   return S;
 };
 const age = (match, ms = 120000) => db.prepare("UPDATE tickets SET created = created - ? WHERE id = ?").run(ms, match);
@@ -114,7 +118,22 @@ check((await call("/list?v=t9")) === "", "hidden servers aren't listed");
   check((await S.post("/ticket", { kind: "match", match, ladder: "vanilla", map: "temple", players: [1, 2, 3, 4].map(id).join(",") })) === "missing signatures", "a ticket needs every player's signature");
   check((await S.ticket(match, "vanilla", [1, 2, 3, 4], "temple", [1, 2, 3, 9])) === "bad signature for " + id(4), "a player who didn't sign can't be ticketed (someone else's signature)");
   check((await S.post("/ticket", { kind: "match", match, ladder: "vanilla", map: "temple", players: [1, 2].map(id).join(","), keys: [key(1).pub, key(3).pub].join(","),
-    sigs: [signTicket(1, match), signTicket(3, match)].join(",") })) === "bad key for " + id(2), "a key must hash to the id");
+    sigs: [signTicket(1, match, S.addr), signTicket(3, match, S.addr)].join(","), addrs: [S.addr, S.addr].join(",") })) === "bad key for " + id(2), "a key must hash to the id");
+  {   // REVIEW 2.2: a signature made for another server (relayed by the one the player joined) opens no ticket here
+    const other = await server(), S3 = await server();
+    const elsewhere = [S.addr, S.addr, S.addr, other.addr];
+    check((await S.ticket(match, "vanilla", [1, 2, 3, 4], "temple", [1, 2, 3, 4], elsewhere)) === "signed for another server: " + id(4), "ticket signed for another server refused");
+    const lie = { kind: "match", match, ladder: "vanilla", map: "temple", players: [1, 2].map(id).join(","), keys: [key(1).pub, key(2).pub].join(","),
+      sigs: [signTicket(1, match, S.addr), signTicket(2, match, other.addr)].join(","), addrs: [S.addr, S.addr].join(",") };
+    check((await S.post("/ticket", lie)) === "bad signature for " + id(2), "a signature for another server can't be passed off as ours");
+    const { addrs: _, ...unnamed } = lie;
+    check((await S.post("/ticket", unnamed)).startsWith("update the server"), "old servers (no addrs) can't ticket");
+    const port3 = S3.addr.split(":")[1];
+    check((await S3.ticket("abcdabcdabcdabcd", "vanilla", [1, 2], "temple", [1, 2], ["10.1.2.3:" + (+port3 + 1), S3.addr])) === "signed for another server: " + id(1), "a LAN address on another port refused");
+    check((await S3.ticket("abcdabcdabcdabcd", "vanilla", [1, 2], "temple", [1, 2], ["8.8.8.8:" + port3, S3.addr])) === "signed for another server: " + id(1), "a public address that isn't the server refused");
+    check((await S3.race("abcdabcdabcdabce", 1, "viaduct", 1, other.addr)) === "signed for another server: " + id(1), "race ticket signed for another server refused");
+    check((await S3.ticket("abcdabcdabcdabcd", "vanilla", [1, 2], "temple", [1, 2], ["192.168.1.20:" + port3, "127.0.0.1:" + port3])) === "ticket abcdabcdabcdabcd", "LAN / same-machine players on the server's port");
+  }
   check((await S.ticket(match, "vanilla", [1, 2, 3, 4])) === "ticket " + match, "ticket opened");
   check((await S.ticket("abababababababab", "vanilla", [1, 2])) === "too soon", "one ticket a minute per server");
   check((await call("/report", { secret: secret(1), match, ladder: "vanilla", p })) === "pending 1/4", "an early report is kept, waiting for the server's result");
@@ -322,7 +341,7 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   // a race ticket needs the racer's signature: a server can't put someone who isn't on it on the board (or rename them)
   check((await S.post("/ticket", { kind: "race", match: "1111111111111111", map: "viaduct", players: id(5) })) === "missing signatures", "unsigned race ticket refused");
   check((await S.race("1111111111111111", 5, "viaduct", 6)) === "bad signature for " + id(5), "race ticket signed by someone else refused");
-  check((await S.post("/ticket", { kind: "race", match: "1111111111111111", map: "viaduct", players: id(5), keys: key(6).pub, sigs: signTicket(6, "1111111111111111") })) === "bad key for " + id(5), "race ticket key must hash to the racer");
+  check((await S.post("/ticket", { kind: "race", match: "1111111111111111", map: "viaduct", players: id(5), keys: key(6).pub, sigs: signTicket(6, "1111111111111111", S.addr), addrs: S.addr })) === "bad key for " + id(5), "race ticket key must hash to the racer");
   check((await S.race("1111111111111111", 5)) === "ticket 1111111111111111", "race ticket");
   check((await S.race("2222222222222222", 6)) === "ticket 2222222222222222", "second racer ticket");
   check((await S.race("3333333333333333", 6, "temple")) === "not a ranked race map", "race map only");

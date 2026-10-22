@@ -185,6 +185,22 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     }
     log("listening on UDP " + std::to_string(port()) + " - map " + cfg_.map + ", mode " + modeName(cfg_.mode));
     openGameLog();
+    ownAddrs_.clear();
+    for (auto& s : cfg_.ownAddrs) { NetAddr a; if (NetAddr::parse(s, port(), a)) ownAddrs_.push_back(a); else log("own_addr " + s + ": not an address"); }
+    localIps_ = localIpv4Addresses(); localIpsAt_ = timeNow();
+    const char* pubOff = getenv("QUARK_PUBLIC_IP");
+    if (!cfg_.lanOnly && !(pubOff && strcmp(pubOff, "off") == 0)) {   // our public IPv4 (behind a NAT), for ownAddress
+        auto look = std::make_shared<PublicIpLookup>();
+        publicIp_ = look;
+        std::thread([look] {   // (detached: a slow lookup never holds up stop(); retried with backoff until it works)
+            for (int wait = 5; !look->quit; wait = std::min(wait * 2, 600)) {
+                NetAddr a;
+                std::string ip = publicIpv4();
+                if (!ip.empty() && NetAddr::parse(ip, 0, a)) { look->ip = a.ip; return; }
+                for (int s = 0; s < wait * 10 && !look->quit; s++) sleepMs(100);
+            }
+        }).detach();
+    }
     if (cfg_.publicList && !cfg_.lanOnly) {
         master_ = std::make_unique<MasterAnnouncer>();
         master_->start(port());
@@ -217,6 +233,7 @@ void Server::stop() {
     reach_ = REACH_OFF;
     if (upnp_) { upnp_->stop(); upnp_.reset(); }
     if (master_) { master_->stop(); master_.reset(); }
+    if (publicIp_) { publicIp_->quit = true; publicIp_.reset(); }
     running_ = false;
     log("stopped");
     if (glog_) { glog(LOG_SIMPLE, "server stopped"); fclose(glog_); glog_ = nullptr; }
@@ -572,6 +589,25 @@ bool Server::isAdmin(int id) const {
     return host != 0 && p.nonce == host && p.awayUntil <= 0 && isLoopback(p.addr);
 }
 
+// Is the address a client dialled (and signed, REVIEW 2.2) this server? A relaying server could only make the player sign
+// its own address, so this is what keeps a player's ranked id from being used through someone else's server. Ours: an
+// --own-addr the host configured; else our port and loopback (only from this machine), one of this machine's interface
+// addresses (LAN, or a public address on the interface), or our public IPv4 behind a NAT (looked up at start, or
+// the router's, from UPnP).
+bool Server::ownAddress(const NetAddr& d, const NetAddr& from) {
+    if (d.ip == 0) return false;
+    for (auto& a : ownAddrs_) if (a == d) return true;
+    if (d.port != port()) return false;
+    if (isLoopback(d)) return isLoopback(from);
+    if (publicIp_ && publicIp_->ip.load(std::memory_order_relaxed) == d.ip) return true;
+    auto local = [&] { for (uint32_t ip : localIps_) if (ip == d.ip) return true; return false; };
+    if (local()) return true;
+    double now = timeNow();
+    if (now - localIpsAt_ >= 10) { localIps_ = localIpv4Addresses(); localIpsAt_ = now; if (local()) return true; }   // (a new interface / DHCP lease)
+    if (upnp_ && upnp_->ok()) { NetAddr ext; if (NetAddr::parse(upnp_->externalIp(), 0, ext) && ext.ip == d.ip) return true; }
+    return false;
+}
+
 void Server::handleConnect(const NetAddr& from, Reader& r) {
     uint16_t version = r.u16();
     uint32_t nonce = r.u32();
@@ -608,10 +644,12 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
     // ranked id's public key with a signature of this connect challenge (proof that it holds the key: REVIEW NET-12).
     uint64_t token = 0;
     std::string rpub, rsig;
+    NetAddr dialled;   // the address the client dialled: what it signed (REVIEW 2.2)
     if (r.remaining() > 0) {
         uint32_t lo = r.u32(), hi = r.u32();
         rpub = r.str(); rsig = r.str();
-        if (r.bad()) rpub.clear();
+        dialled.ip = r.u32(); dialled.port = r.u16();
+        if (r.bad()) { rpub.clear(); dialled = NetAddr{}; }
         else token = (uint64_t)hi << 32 | lo;
     }
     int existing = findPlayer(from);
@@ -624,7 +662,10 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
         verifyAt_ = now;
         if (verifyTokens_ < 1) return;   // a flood of signed connects: this one waits for the client's resend
         verifyTokens_ -= 1;
-        if (rankVerify(rpub, rankConnectMessage(cookie, nonce), rsig)) rankId = rankIdFromPublic(rpub);
+        if (!ownAddress(dialled, from))   // signed for another server: relayed through the one the player joined
+            log("connect from " + from.toString() + ": ranked key proof is for " + dialled.toString() + ", not this server (joins without a ranked id; " +
+                "if players reach it there, start the server with --own-addr " + dialled.toString() + ")");
+        else if (rankVerify(rpub, rankConnectMessage(cookie, nonce, dialled.toString()), rsig)) rankId = rankIdFromPublic(rpub);
         else log("connect from " + from.toString() + ": ranked key proof failed (joins without a ranked id)");
     }
     // Back within the reconnect grace (or a new session of the same player taking over its old one): same slot,
@@ -634,7 +675,7 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
         if (!o.connected || o.isBot) continue;
         if ((!rankId.empty() && o.rankId == rankId) || (token != 0 && o.reconnectToken == token)) {
             if (existing >= 0 && existing != i) dropPlayer(existing, "reconnecting", false);
-            restorePlayer(i, from, nonce, rankId.empty() ? std::string() : rpub);
+            restorePlayer(i, from, nonce, rankId.empty() ? std::string() : rpub, dialled);
             return;
         }
     }
@@ -664,7 +705,7 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
     p.nonce = nonce;
     p.name = name;
     p.rankId = rankId;
-    if (!rankId.empty()) p.rankPub = rpub;
+    if (!rankId.empty()) { p.rankPub = rpub; p.dialled = dialled; }
     {
         std::random_device rd;
         do p.reconnectToken = (uint64_t)rd() << 32 ^ rd(); while (p.reconnectToken == 0);
@@ -718,13 +759,13 @@ void Server::holdPlayer(int id, const std::string& reason) {
     glog(LOG_SIMPLE, "away %d \"%s\": %s", id, p.name.c_str(), reason.c_str());
 }
 
-bool Server::restorePlayer(int id, const NetAddr& from, uint32_t nonce, const std::string& rankPub) {
+bool Server::restorePlayer(int id, const NetAddr& from, uint32_t nonce, const std::string& rankPub, const NetAddr& dialled) {
     ServerPlayer& p = players_[id];
     static const ServerPlayer fresh{};
     bool wasAway = p.awayUntil > 0;
     p.addr = from;
     p.nonce = nonce;
-    if (!rankPub.empty()) p.rankPub = rankPub;
+    if (!rankPub.empty()) { p.rankPub = rankPub; p.dialled = dialled; }
     p.awayUntil = 0;
     p.awayReason.clear();
     p.dropPending = false;
@@ -966,9 +1007,9 @@ void Server::handleStringCmd(int id, const std::string& s) {
     } else if (cmd == "ticketsig") { // the player's signature of the live ranked match id (EV_RANKSIGN): goes with the ticket
         // (or of the time trial's race ticket id, from its racer)
         if (!raceTicket_.empty() && !raceTicketSent_ && !p.rankId.empty() && p.rankId == raceTicketFor_ &&
-            rankVerify(p.rankPub, rankTicketMessage(raceTicket_), rest)) { sendRaceTicket(p.rankPub, rest); return; }
+            rankVerify(p.rankPub, rankTicketMessage(raceTicket_, p.dialled.toString()), rest)) { sendRaceTicket(p.rankPub, rest, p.dialled.toString()); return; }
         if (!rankedLive() || rankedTicketSent_ || !isRankedParticipant(id) || !p.ticketSig.empty()) return;
-        if (!rankVerify(p.rankPub, rankTicketMessage(rankedMatch_), rest)) return;
+        if (!rankVerify(p.rankPub, rankTicketMessage(rankedMatch_, p.dialled.toString()), rest)) return;   // (names the address it signed at connect)
         p.ticketSig = rest;
         maybeSendRankedTicket();
     } else if (cmd == "ed" && editing_) {
@@ -2556,7 +2597,7 @@ void Server::openRankedTicket() {
 
 void Server::maybeSendRankedTicket(bool giveUp) {
     if (!rankedLive() || rankedTicketSent_) return;
-    std::string players, keys, sigs;
+    std::string players, keys, sigs, addrs;
     bool all = true;
     for (int i = 0; i < kMaxPlayers; i++) {
         const ServerPlayer& p = players_[i];
@@ -2565,13 +2606,14 @@ void Server::maybeSendRankedTicket(bool giveUp) {
         players += (players.empty() ? "" : ",") + p.rankId;
         keys += (keys.empty() ? "" : ",") + p.rankPub;
         sigs += (sigs.empty() ? "" : ",") + p.ticketSig;
+        addrs += (addrs.empty() ? "" : ",") + p.dialled.toString();   // (what each signature names: the Worker checks it's us)
     }
     if (!all && !giveUp) return;
     rankedTicketSent_ = true;
     if (!all) { message("ranked: not every player signed the match ticket - this match won't be rated"); return; }
     ensureMaster();
     if (master_) master_->post("ticket", "/ticket", "kind=match&match=" + rankedMatch_ + "&ladder=" + arenaVariant(ms_.arenaVariant).name +
-                                                     "&map=" + cfg_.map + "&players=" + players + "&keys=" + keys + "&sigs=" + sigs);
+                                                     "&map=" + cfg_.map + "&players=" + players + "&keys=" + keys + "&sigs=" + sigs + "&addrs=" + addrs);
     glog(LOG_SIMPLE, "ranked ticket %s players %s", rankedMatch_.c_str(), players.c_str());
 }
 
@@ -2591,11 +2633,11 @@ void Server::openRaceTicket() {
     GameEvent e; e.type = EV_RANKSIGN; e.text = raceTicket_; sendEvent(racer, e);
 }
 
-void Server::sendRaceTicket(const std::string& pub, const std::string& sig) {
+void Server::sendRaceTicket(const std::string& pub, const std::string& sig, const std::string& addr) {
     raceTicketSent_ = true;
     ensureMaster();
     if (master_) master_->post("raceticket", "/ticket", "kind=race&match=" + raceTicket_ + "&map=" + cfg_.map + "&players=" + raceTicketFor_ +
-                                                         "&keys=" + pub + "&sigs=" + sig);
+                                                         "&keys=" + pub + "&sigs=" + sig + "&addrs=" + addr);
 }
 
 void Server::finishRaceRun(int id) {

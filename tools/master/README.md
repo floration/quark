@@ -114,8 +114,10 @@ What changed:
   new id the first time that secret reaches the Worker (`POST /hello`, sent by the game at start-up, or any request
   with the secret): ratings, account, name, Discord link, lifetime stats and race times (`id_moves` records it).
   Players who never start 1.17 keep their old rows (harmless; unplaced players aren't on the boards).
-- **Tickets carry every player's signature** of the match id (`keys`, `sigs`), so a server can only ticket players
-  who are really in the match.
+- **Tickets carry every player's signature** of the match id and of the server address their game dialled (`keys`,
+  `sigs`, `addrs`), so a server can only ticket players who are really in the match, on it: a signature naming
+  another server (relayed from the server the player joined) is refused (`signed for another server`). The address
+  must be the ticketing server's announced ip:port, or a private / loopback address on its port (LAN players).
 - **Leaving loses.** The server's `/result` names who left (`left=`, first leaver first). The first leaver takes the
   loss (a 1v1 ends there; the stayer leaving afterwards isn't punished). Leavers aren't waited for.
 - **Disputes, not voids.** A report against the server's result (`dispute=1`, sent by a game that saw a different

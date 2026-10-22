@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <string>
+#include <vector>
 
 struct NetAddr {
     uint32_t ip = 0;   // host byte order
@@ -14,6 +15,9 @@ struct NetAddr {
     static bool parse(const std::string& s, uint16_t defaultPort, NetAddr& out);
     static NetAddr broadcast(uint16_t port) { return {0xFFFFFFFFu, port}; }
 };
+
+// This machine's IPv4 addresses (host byte order): every interface's, as the OS lists them.
+std::vector<uint32_t> localIpv4Addresses();
 
 bool netInit();
 void netShutdown();

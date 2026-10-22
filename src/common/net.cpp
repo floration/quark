@@ -20,6 +20,7 @@
   #include <netdb.h>
   #include <unistd.h>
   #include <fcntl.h>
+  #include <ifaddrs.h>
   #include <cerrno>
 #endif
 
@@ -48,6 +49,27 @@ bool NetAddr::parse(const std::string& s, uint16_t defaultPort, NetAddr& out) {
     out.port = port;
     freeaddrinfo(res);
     return true;
+}
+
+std::vector<uint32_t> localIpv4Addresses() {
+    std::vector<uint32_t> out;
+#ifdef _WIN32
+    char host[256];   // (Winsock resolves the machine's own name to every adapter's address: no iphlpapi needed)
+    addrinfo hints{}, *res = nullptr;
+    hints.ai_family = AF_INET;
+    if (gethostname(host, sizeof host) == 0 && getaddrinfo(host, nullptr, &hints, &res) == 0) {
+        for (addrinfo* a = res; a; a = a->ai_next) out.push_back(ntohl(((sockaddr_in*)a->ai_addr)->sin_addr.s_addr));
+        freeaddrinfo(res);
+    }
+#else
+    ifaddrs* list = nullptr;
+    if (getifaddrs(&list) == 0) {
+        for (ifaddrs* i = list; i; i = i->ifa_next)
+            if (i->ifa_addr && i->ifa_addr->sa_family == AF_INET) out.push_back(ntohl(((sockaddr_in*)i->ifa_addr)->sin_addr.s_addr));
+        freeifaddrs(list);
+    }
+#endif
+    return out;
 }
 
 bool netInit() {

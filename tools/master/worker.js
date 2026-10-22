@@ -18,13 +18,14 @@
 // old id's rows to the new id once (id_moves).
 //   POST /hello   form: secret                                  "id <id>" (and the move above)
 // Match tickets (servers, with their announce token; form also carries port, token[, ip]):
-//   POST /ticket  form: kind=match, match (16 hex), ladder, map, players=id,..., keys=pub,..., sigs=sig,...
+//   POST /ticket  form: kind=match, match (16 hex), ladder, map, players=id,..., keys=pub,..., sigs=sig,..., addrs=ip:port,...
 //                 when a ranked match goes live; each player's key must hash to their id and have signed
-//                 "quark-ticket-v1 <match>" (their game signs it in the match), so a server can only ticket players
-//                 who are really in it.
-//                 form: kind=race, match (16 hex), map, players=<racer id>, keys=pub, sigs=sig   when a time trial
-//                 starts; the racer's game signs "quark-ticket-v1 <match>" the same way, so a server can only post runs
-//                 (and the name that goes with them) for a player who is really on it.
+//                 "quark-ticket-v2 <match> <ip:port>" (their game signs it in the match; ip:port is the server address
+//                 it dialled, which must be this server's: see signedForServer), so a server can only ticket players
+//                 who are really in it, on it.
+//                 form: kind=race, match (16 hex), map, players=<racer id>, keys=pub, sigs=sig, addrs=ip:port   when a
+//                 time trial starts; the racer's game signs "quark-ticket-v2 <match> <ip:port>" the same way, so a
+//                 server can only post runs (and the name that goes with them) for a player who is really on it.
 //                 answers "ticket <match>". One open match ticket per server (a new one voids the last if that has
 //                 no result yet); a server opens at most one a minute.
 //   POST /result  form: match, p=id:team:place,...[, left=id,...]   the server's own account of the ticketed match;
@@ -202,6 +203,17 @@ async function serverAuth(env, form, srcIp, now) {
   return addr;
 }
 
+// Is `dialled` (the ip:port a player's game signed) the server at `server` (its announced ip:port)? Exactly, or a LAN /
+// same-machine address on the same port: 10/8, 172.16/12, 192.168/16, 100.64/10 (carrier NAT), 169.254/16, 127/8.
+export function signedForServer(dialled, server) {
+  const m = /^(\d{1,3}(?:\.\d{1,3}){3}):(\d{1,5})$/.exec(String(dialled || ""));
+  if (!m || !ipv4(m[1])) return false;
+  if (m[0] === server) return true;
+  if (m[2] !== server.slice(server.lastIndexOf(":") + 1)) return false;
+  const [a, b] = m[1].split(".").map(Number);
+  return a === 10 || a === 127 || (a === 172 && b >= 16 && b < 32) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b < 128) || (a === 169 && b === 254);
+}
+
 async function openTicket(env, form, addr, now) {
   const kind = String(form.get("kind") || ""), match = String(form.get("match") || ""), map = String(form.get("map") || "");
   if (!/^[0-9a-f]{16}$/.test(match) || !/^[a-z0-9_]{1,32}$/.test(map)) return "bad request";
@@ -218,11 +230,16 @@ async function openTicket(env, form, addr, now) {
   } else return "bad request";
   // every player vouched for this match / time trial: their key (which hashes to their id) signed its id in the game,
   // so a server can only ticket players who are really on it (a race ticket names whose time and name it may post)
-  const keys = String(form.get("keys") || "").split(","), sigs = String(form.get("sigs") || "").split(",");
+  // The signature names the server the player's game dialled (REVIEW 2.2: else a server could relay the match ids of
+  // a real ranked server to its own players and get their signatures for it): this server's ip:port, or, for a player
+  // on its LAN or its own machine, a private / loopback address on its port (which only that server could check).
+  const keys = String(form.get("keys") || "").split(","), sigs = String(form.get("sigs") || "").split(","), addrs = String(form.get("addrs") || "").split(",");
   if (!form.get("keys") || !form.get("sigs") || keys.length !== players.length || sigs.length !== players.length) return "missing signatures";
+  if (!form.get("addrs") || addrs.length !== players.length) return "update the server: signatures must name it";
   for (let i = 0; i < players.length; i++) {
     if (!/^[0-9a-f]{64}$/.test(keys[i]) || (await sha256hex(keys[i])).slice(0, 32) !== players[i]) return "bad key for " + players[i];
-    if (!(await ed25519Verify(keys[i], sigs[i], "quark-ticket-v1 " + match))) return "bad signature for " + players[i];
+    if (!signedForServer(addrs[i], addr)) return "signed for another server: " + players[i];
+    if (!(await ed25519Verify(keys[i], sigs[i], "quark-ticket-v2 " + match + " " + addrs[i]))) return "bad signature for " + players[i];
   }
   if (kind === "match") {
     const last = await env.DB.prepare("SELECT MAX(created) AS t FROM tickets WHERE server = ? AND kind = 'match'").bind(addr).first();

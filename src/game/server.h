@@ -45,6 +45,10 @@ struct ServerConfig {
     bool autoStart = false;     // start the match automatically once both sides have players (else: vote)
     int botsEnemy = 0, botsAlly = 0, botSkill = BOT_INTERMEDIATE;
     bool lanOnly = false;
+    // More addresses ("host:port") that reach this server, for checking ranked signatures (REVIEW 2.2): needed only
+    // when players dial an address the server can't see itself (a router forwarding another port to it, a container).
+    // Its own interface addresses, loopback and its public IPv4 (looked up at start, or from UPnP) are known anyway.
+    std::vector<std::string> ownAddrs;
     // Reachability check (in-game hosting): ask a public server to send one packet to our public ip:port.
     bool probe = false;
     std::string prober;         // "host:port" of the prober; empty = QUARK_PROBER env, else a server from the internet list
@@ -86,6 +90,7 @@ struct ServerPlayer {
     std::string rankId;         // 32 hex chars (ranked), proven at connect by signing the challenge; empty if none
     std::string rankPub;        // the Ed25519 public key behind rankId (checks the match ticket signature)
     std::string ticketSig;      // this player's signature of the current ranked match id (forwarded with the ticket)
+    NetAddr dialled;            // the server address this player's game signed at connect (one of ours): its ticket signature names it too
     uint64_t reconnectToken = 0; // given in PKT_ACCEPT: a reconnect that shows it gets this slot back
     double awayUntil = 0;       // > 0: the connection dropped; slot, team, score and state kept until then (timeNow())
     std::string awayReason;
@@ -329,7 +334,7 @@ public:
     // the race ticket goes to the Worker once the racer's game has signed its id (like a match ticket): the Worker
     // takes runs (and the racer's name) only for a player who is really on this server
     bool raceTicketSent_ = false;
-    void sendRaceTicket(const std::string& pub, const std::string& sig);
+    void sendRaceTicket(const std::string& pub, const std::string& sig, const std::string& addr);
     // While a ranked match is live (ticket opened at the first round going live, until the match ends) nothing may
     // change it: no votes, no map / mode / ranked changes, no team switches, no kicking its players (OWNER 3.4).
     bool rankedLive() const { return cfg_.ranked && !rankedMatch_.empty() && ms_.phase != PHASE_WARMUP && ms_.phase != PHASE_MATCH_END; }
@@ -359,6 +364,13 @@ public:
     void postRankedResult(const std::string& eventText);
     bool timeTrialCounts() const;
     void ensureMaster();
+    // Is `dialled` (the address a connecting client signed, REVIEW 2.2) this server? See server.cpp.
+    bool ownAddress(const NetAddr& dialled, const NetAddr& from);
+    struct PublicIpLookup { std::atomic<uint32_t> ip{0}; std::atomic<bool> quit{false}; };
+    std::shared_ptr<PublicIpLookup> publicIp_;   // looked up on a detached thread at start (stop() never waits for it)
+    std::vector<NetAddr> ownAddrs_;              // cfg_.ownAddrs, resolved at start
+    std::vector<uint32_t> localIps_;             // this machine's interface addresses (re-read on a miss, at most every 10 s)
+    double localIpsAt_ = -1e9;
     void handleMasterReply(const std::string& key, const std::string& reply);
     bool applyEdit(int from, const std::string& op);
     bool autosave();
@@ -433,7 +445,7 @@ private:
     // stopping (shutdown) doesn't (REVIEW 2.1).
     void dropPlayer(int id, const std::string& reason, bool notify, bool shutdown = false);
     void holdPlayer(int id, const std::string& reason);   // connection lost: keep the slot for kReconnectGrace
-    bool restorePlayer(int id, const NetAddr& from, uint32_t nonce, const std::string& rankPub);
+    bool restorePlayer(int id, const NetAddr& from, uint32_t nonce, const std::string& rankPub, const NetAddr& dialled = NetAddr{});
     void sendWelcome(int id);   // what a (re)joining client needs to know about everyone
     float verifyTokens_ = 50;   // connect signature checks per second (each ~0.1 ms of CPU; a flood waits and retries)
     double verifyAt_ = 0;

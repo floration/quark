@@ -34,8 +34,14 @@ std::string legacyRankId(const std::string& secret);
 std::string rankSeedHex(const std::string& secret); // Ed25519 seed: sha256("quark-rank-ed25519-v1:" + secret)
 // What a player signs: the server's connect challenge (cookie + the client's session nonce), and a ranked match id
 // (the server forwards those signatures with its ticket: the Worker only tickets players who really joined).
-std::string rankConnectMessage(uint32_t cookie, uint32_t nonce);
-std::string rankTicketMessage(const std::string& match);
+// Both name the server: the address the player's game dialled, as "a.b.c.d:port" (NetAddr::toString, after DNS).
+// Without it a server the player joined could relay its own connect challenge and match ids from a real ranked
+// server, have the player sign them, and play there under their id (REVIEW 2.2). Whatever the real server puts in
+// its challenge, a relay can forward too; only the address the player chose can't be forwarded. The real server
+// takes a signature only for one of its own addresses (Server::ownAddress), and the Worker takes a ticket signature
+// only for the ticketing server's ip:port (or, a LAN / same-machine player, a private address on its port).
+std::string rankConnectMessage(uint32_t cookie, uint32_t nonce, const std::string& server);
+std::string rankTicketMessage(const std::string& match, const std::string& server);
 bool rankSign(const RankKey& key, const std::string& msg, std::string* sigHex);
 bool rankVerify(const std::string& pubHex, const std::string& msg, const std::string& sigHex);
 // Games on a ladder before a rating counts as placed ("?" in game; off the leaderboard and crowns). The Worker's
