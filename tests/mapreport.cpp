@@ -18,6 +18,7 @@
 #include "game/gamedefs.h"
 #include "game/map.h"
 #include "game/pmove.h"
+#include "walkgrid.h"
 
 namespace {
 
@@ -1130,6 +1131,17 @@ int mapReport(const char* outPath) {
         g.build(m);
         Metrics r;
         measure(r, m, solid, g);
+        {   // every route each offered mode needs, walked with the player's hull (REVIEW MAP-3): one missing scores 0
+            WalkGrid w;
+            w.build(solid);
+            int routes = 0;
+            std::vector<std::string> missing = walkRoutesMissing(solid, w, &routes);
+            char wb[256];
+            if (missing.empty()) snprintf(wb, sizeof wb, "all %d spawn-to-objective routes walkable (the player's hull against the map's collision)", routes);
+            else snprintf(wb, sizeof wb, "%zu of %d routes missing, e.g. %s", missing.size(), routes, missing[0].c_str());
+            r.modes.push_back({"routes", wb});
+            if (!missing.empty()) { r.sMode = 0; r.modeFit = std::string("0: unreachable (") + wb + ")"; }
+        }
         printf("  %-10s %4d brushes, %4zu surfaces, %4.0f m2, %d levels, visible %.0f%%, grapple %.0f%%\n", r.name.c_str(), r.brushes, g.nodes.size(), r.area, r.levels, r.visible * 100, r.grapple * 100);
         all.push_back(std::move(r));
     }

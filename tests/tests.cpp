@@ -41,6 +41,7 @@
 #include "common/sha256.h"
 #include "common/sign.h"
 #include "game/bots.h"
+#include "walkgrid.h"
 #include "common/proc.h"
 #ifndef _WIN32
 #include <fcntl.h>
@@ -388,10 +389,54 @@ static void testCartSweep() {
     }
 }
 
-// Every map: loads, supports the mode it was built for, no spawn inside a wall, and bots can
-// navigate from every spawn to every objective.
+// The collision-checked walk (WalkGrid, REVIEW MAP-3) on small maps: what a player can and can't get past.
+static void testWalkGrid() {
+    printf("walk grid: sealed rooms, slots, steps, gaps, ladders, crouching, clip, lava\n");
+    const std::string F = "box -20 -1 -20 20 0 20\nspawn any 0 0 0\n";   // a 40 m floor
+    auto reaches = [](const std::string& text, Vec3 a, Vec3 b) {
+        Map m;
+        std::string err;
+        if (!m.parse(text, &err)) { printf("  parse: %s\n", err.c_str()); return -1; }
+        WalkGrid w;
+        w.build(m);
+        w.components();
+        int na = w.nodeAt(a), nb = w.nodeAt(b);
+        if (na < 0 || nb < 0) return -2;   // (nowhere to stand there)
+        return (int)w.reach(na)[w.comp[nb]];
+    };
+    const Vec3 W(-10, 0, 0), E(10, 0, 0);
+    CHECK(reaches(F, W, E) == 1);
+    // a room with no way out (3 m walls: higher than a jump), then the same room with a 1 m doorway
+    const std::string room = "box -13 0 -2.4 -12.6 3 2.4\nbox -7.4 0 -2.4 -7 3 2.4\nbox -12.6 0 -2.4 -7.4 3 -2\n";
+    CHECK(reaches(F + room + "box -12.6 0 2 -7.4 3 2.4\n", W, E) == 0 && reaches(F + room + "box -12.6 0 2 -7.4 3 2.4\n", E, W) == 0);
+    CHECK(reaches(F + room + "box -12.6 0 2 -10.5 3 2.4\nbox -9.5 0 2 -7.4 3 2.4\n", W, E) == 1);
+    // a wall right across with a slot (off the grid's 0.25 m spacing): 0.9 m lets the 0.8 m hull through, 0.7 m doesn't
+    auto slot = [&](float w) { char t[200]; snprintf(t, sizeof t, "box -0.2 0 -20 0.2 4 3.07\nbox -0.2 0 %g 0.2 4 20\n", 3.07 + w); return F + t; };
+    CHECK(reaches(slot(0.9f), W, E) == 1 && reaches(slot(0.7f), W, E) == 0);
+    // steps up: 0.5 m walks, 1.1 m is a jump, 1.4 m is too high; down is always fine
+    auto ledge = [&](float h) { char t[100]; snprintf(t, sizeof t, "box 2 0 -20 20 %g 20\n", h); return F + t; };
+    CHECK(reaches(ledge(0.5f), W, {10, 0.5f, 0}) == 1 && reaches(ledge(1.1f), W, {10, 1.1f, 0}) == 1);
+    CHECK(reaches(ledge(1.4f), W, {10, 1.4f, 0}) == 0 && reaches(ledge(1.4f), {10, 1.4f, 0}, W) == 1);
+    // a gap with nothing under it: 2 m is jumped, 3.6 m isn't
+    auto gap = [](float g) { char t[160]; snprintf(t, sizeof t, "box -20 -1 -20 -1 0 20\nbox %g -1 -20 20 0 20\nspawn any -10 0 0\n", -1 + g); return std::string(t); };
+    CHECK(reaches(gap(2.0f), W, E) == 1 && reaches(gap(3.6f), W, E) == 0);
+    // a 5 m platform: only up its ladder
+    const std::string tower = "box 5 0 -2 9 5 2\n";
+    CHECK(reaches(F + tower, W, {7, 5, 0}) == 0 && reaches(F + tower + "ladder 4.3 0 -0.45 5 6 0.45\n", W, {7, 5, 0}) == 1);
+    // a hole under a wall: 1.4 m high is crawled through, 1 m isn't
+    auto hole = [&](float h) { char t[200]; snprintf(t, sizeof t, "box -0.2 0 -20 0.2 4 -1\nbox -0.2 0 1 0.2 4 20\nbox -0.2 %g -1 0.2 4 1\n", h); return F + t; };
+    CHECK(reaches(hole(1.4f), W, E) == 1 && reaches(hole(1.0f), W, E) == 0);
+    // clip blocks players (an invisible wall in a doorway)
+    CHECK(reaches(slot(1.2f), W, E) == 1 && reaches(slot(1.2f) + "clip -0.2 0 3.07 0.2 4 4.27\n", W, E) == 0);
+    // lava across the floor: 1 m is jumped over, 3 m isn't
+    CHECK(reaches(F + "lava -0.5 0 -20 0.5 0.2 20\n", W, E) == 1 && reaches(F + "lava -1.5 0 -20 1.5 0.2 20\n", W, E) == 0);
+}
+
+// Every map: loads, supports the mode it was built for, no spawn inside a wall, players can get from every spawn to
+// every objective (and the enemy) in every mode it offers, walking the real collision (WalkGrid), and the bots' nav
+// graph links them too.
 static void testAllMaps() {
-    printf("all maps: modes, spawns, bot navigation\n");
+    printf("all maps: modes, spawns, collision-checked routes, bot navigation\n");
     for (auto& name : testedMaps()) {
         Map m;
         std::string err;
@@ -399,6 +444,18 @@ static void testAllMaps() {
         if (m.preferredMode >= 0) CHECK(m.supportsMode(m.preferredMode));
         if (name == "dojo") { CHECK(!m.lava.empty() && m.inLava(playerBox({14, -1.5f, 0}, false)) && !m.inLava(playerBox({0, 0.1f, 0}, false))); }   // lava kills on touch
         for (auto& sp : m.spawns) CHECK(!m.boxSolid(playerBox(sp.pos + Vec3(0, 0.02f, 0), false)));
+        {   // walked with the player's hull against the map's collision: a route that isn't there fails
+            double t0 = timeNow();
+            WalkGrid w;
+            w.build(m);
+            int routes = 0;
+            std::vector<std::string> missing = walkRoutesMissing(m, w, &routes);
+            printf("  %-10s %7zu standing spots, %4d routes walked (%.0f ms)%s\n", name.c_str(), w.nodes.size(), routes, (timeNow() - t0) * 1000,
+                   missing.empty() ? "" : ": MISSING");
+            for (size_t k = 0; k < missing.size() && k < 12; k++) printf("    %s\n", missing[k].c_str());
+            if (missing.size() > 12) printf("    (%zu more)\n", missing.size() - 12);
+            CHECK(missing.empty());
+        }
         NavGraph g;
         g.build(m);
         std::vector<Vec3> goals;
@@ -4765,7 +4822,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "edgroups") { testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(TP(29997)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "cartsweep") { testCartSweep(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "allmaps") { testAllMaps(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "allmaps") { testWalkGrid(); testAllMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "chat") { testChatAndVoteLimits(TP(29592)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "limits") { testMapSaveExact(); testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(TP(29990)); return g_fail ? 1 : 0; }
@@ -4797,7 +4854,7 @@ int main(int argc, char** argv) {
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
         {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testTimeToKill(); testWallbang(); }},
         {"maps", [] {
-            testMaps(); testAllMaps(); testCartSweep(); testStairs(); testLadders();
+            testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testStairs(); testLadders();
             printf("map scores\n");   // the map bar: every map scores at least 7 in every category but originality
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
