@@ -37,6 +37,10 @@
 #include "common/sha256.h"
 #include "common/sign.h"
 #include "game/bots.h"
+#include "common/proc.h"
+#ifndef _WIN32
+#include <fcntl.h>
+#endif
 
 // The source tree (tools/, tests/data/): where this was built, or QUARK_SOURCE_DIR in the environment when the binary
 // runs on another machine (CI cross-builds the Windows tests on Linux and runs them on a Windows runner).
@@ -124,6 +128,58 @@ static void testCompletion() {
 
 // sleepMs(1) is the frame cap's and pump()'s wait: it must sleep about 1 ms, not a 15 ms scheduler quantum
 // (MinGW's sleep_for did, REVIEW PERF-14).
+// procRun (curl for every HTTP request, xdg-open...): its pipes close on exec, so a child started meanwhile (on another
+// thread) holds none of them; concurrent children all finish (FINAL_REVIEW 2.7: two POSTs could wait on each other's
+// stdin EOF); SIGPIPE stays ignored for good instead of being swapped per call.
+static void testProcPipes() {
+#ifndef _WIN32
+    printf("procRun: close-on-exec pipes, concurrent children\n");
+    auto openFds = [] { std::vector<int> v; for (int fd = 0; fd < 1024; fd++) if (fcntl(fd, F_GETFD) != -1) v.push_back(fd); return v; };
+    std::vector<int> before = openFds();
+    std::string outA, leaked;
+    size_t inFlight = 0;
+    bool checked = false;
+    int rc = procRun({"sh", "-c", "echo hello; sleep 0.1"}, "", [&](const char* d, size_t n) {
+        outA.append(d, n);
+        if (checked) return true;
+        checked = true;   // the first child is running and its pipe is open here: start a second one, which mustn't have it
+        std::string script = "for n in";
+        for (int fd : openFds())
+            if (std::find(before.begin(), before.end(), fd) == before.end()) { script += " " + std::to_string(fd); inFlight++; }
+        script += "; do [ -e /dev/fd/$n ] && echo $n; done; true";
+        procRun({"sh", "-c", script}, "", [&](const char* d2, size_t n2) { leaked.append(d2, n2); return true; });
+        return true;
+    });
+    printf("  %zu pipe end(s) of a running child open, inherited by the next child: %s\n", inFlight, leaked.empty() ? "none" : leaked.c_str());
+    CHECK(rc == 0 && outA == "hello\n" && inFlight >= 1 && leaked.empty());
+    // several at once, each feeding its stdin and reading it back: every one finishes
+    std::atomic<int> ok{0}, finished{0};
+    const int kThreads = 6, kRounds = 15;
+    std::string input(16000, 'x');
+    for (size_t i = 0; i < input.size(); i++) input[i] = (char)('a' + i % 26);
+    for (int t = 0; t < kThreads; t++)
+        std::thread([&ok, &finished, input] {
+            for (int r = 0; r < kRounds; r++) {
+                std::string got;
+                int c = procRun({"sh", "-c", "cat"}, input, [&](const char* d, size_t n) { got.append(d, n); return true; });
+                if (c == 0 && got == input) ok++;
+            }
+            finished++;
+        }).detach();
+    double end = timeNow() + 60 * std::min(4.0, kTestTimeScale);
+    while (finished < kThreads && timeNow() < end) sleepMs(5);
+    printf("  %d threads x %d concurrent children: %d of %d finished and echoed their input\n", kThreads, kRounds, ok.load(), kThreads * kRounds);
+    CHECK(finished == kThreads && ok == kThreads * kRounds);
+    // SIGPIPE: still ignored after the calls (it used to be swapped back and forth around every write)
+    struct sigaction sa {};
+    sigaction(SIGPIPE, nullptr, &sa);
+    CHECK(sa.sa_handler == SIG_IGN);
+    // a child whose reader is gone: the write fails instead of killing us, and a missing program is -1
+    CHECK(procRun({"sh", "-c", "exit 3"}, std::string(200000, 'y'), [](const char*, size_t) { return true; }) == 3);
+    CHECK(procRun({"quark-no-such-program-xyz"}, "", [](const char*, size_t) { return true; }) == -1);
+#endif
+}
+
 static void testSleepPrecision() {
     auto t0 = std::chrono::steady_clock::now();
     for (int i = 0; i < 20; i++) sleepMs(1);
@@ -4243,6 +4299,7 @@ int main(int argc, char** argv) {
         printf("]\n");
         return 0;
     }
+    if (argc >= 2 && std::string(argv[1]) == "proc") { testProcPipes(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "hostile") { testHostileInput(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "userdata") { testUserData(); testResetMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "ladders") { testLadders(); return g_fail ? 1 : 0; }
@@ -4289,7 +4346,7 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); }},
