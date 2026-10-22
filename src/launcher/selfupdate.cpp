@@ -12,13 +12,15 @@
 #include <sys/stat.h>
 #endif
 
+#include "../common/version.h"
+
 namespace fs = std::filesystem;
 
 namespace selfupdate {
 
-// Found in a launcher file by fileVersion(). Defined here, and referenced by ownVersion(), so every launcher has it.
-extern const char kMarker[];
-const char kMarker[] = "QUARK-LAUNCHER-VERSION:" QUARK_VERSION;
+// Found in a launcher file by fileVersion(). Defined in the generated version.cpp (one file recompiles on a version
+// bump), and referenced by ownVersion(), so every launcher has it.
+static const char* const kMarker = kQuarkLauncherMarker;
 static const size_t kMarkerPrefix = 23; // strlen("QUARK-LAUNCHER-VERSION:")
 
 const char* ownVersion() { return kMarker + kMarkerPrefix; }

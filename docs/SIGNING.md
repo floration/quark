@@ -17,7 +17,16 @@ quark_sign sign <file>               # key from $QUARK_SIGNING_KEY (or stdin); w
 quark_sign verify <file> [pubkey]    # checks <file>.sig; default key = the one built into the launcher
 ```
 
-The release job in `.github/workflows/release.yml` **fails if the `QUARK_SIGNING_KEY` secret is missing**, or if the
+Each release (production and testing) also carries `quark-release.txt` + `.sig`: a signed manifest naming the
+channel, tag, version and commit. Dedicated servers check it before building, so they only ever build the exact commit
+a signed production release names.
+
+Signing runs in the `release` / `release-testing` jobs of `.github/workflows/release.yml` (tools/sign/sign_release.sh),
+inside the GitHub environments `production` and `testing`. The secret can be a repository secret, or (better) an
+environment secret on those two environments with a deployment rule (production: tags `v*`; testing: branch
+`testing`), so no other branch's workflow can read it.
+
+The release jobs **fail if the `QUARK_SIGNING_KEY` secret is missing**, or if the
 secret doesn't match the public key in the source, so no unsigned release goes out.
 
 ## Owner: one-time setup

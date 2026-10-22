@@ -3,6 +3,7 @@
 #include <chrono>
 #include "../common/http.h"
 #include "../common/sign.h"
+#include "../common/version.h"
 
 namespace {
 // The Worker's address is built in (REVIEW WEB-11: whoever answers there receives every player's ranked secret).
@@ -63,7 +64,7 @@ bool fetchServerList(std::vector<std::string>& out, std::string* err) {
     std::string base = masterUrl();
     if (base.empty()) { if (err) *err = "no internet server list configured"; return false; }
     std::string body;
-    if (!httpGetText(base + "/list?v=" QUARK_VERSION, body, 5000, err)) return false;
+    if (!httpGetText(base + "/list?v=" + QUARK_VERSION, body, 5000, err)) return false;
     size_t i = 0;
     while (i < body.size() && out.size() < 256) {
         size_t j = body.find('\n', i);
@@ -124,7 +125,7 @@ void MasterAnnouncer::run() {
             if (base.empty()) st = "internet list: not configured";
             else {
                 std::string body, err;   // (writes are POST only: no web page can make a browser announce or remove)
-                std::string form = "port=" + std::to_string(port_) + "&v=" QUARK_VERSION + (ip.empty() ? "" : "&ip=" + ip) +
+                std::string form = "port=" + std::to_string(port_) + "&v=" + QUARK_VERSION + (ip.empty() ? "" : "&ip=" + ip) +
                                    (token.empty() ? "" : "&token=" + token) + (listed_ ? "" : "&hidden=1");
                 bool ok = httpPostForm(base + "/announce", form, body, 5000, &err);
                 st = !ok ? "internet list: " + err : listed_ ? "listed on the internet server list" : "registered with the ranking server (not listed)";

@@ -37,10 +37,37 @@
 #include "common/sign.h"
 #include "game/bots.h"
 
+// The source tree (tools/, tests/data/): where this was built, or QUARK_SOURCE_DIR in the environment when the binary
+// runs on another machine (CI cross-builds the Windows tests on Linux and runs them on a Windows runner).
+static std::string sourceDir() {
+    const char* e = getenv("QUARK_SOURCE_DIR");
+    if (e && *e) return e;
+#ifdef QUARK_SOURCE_DIR
+    return QUARK_SOURCE_DIR;
+#else
+    return "";
+#endif
+}
+static std::string testDataDir() {
+    const char* e = getenv("QUARK_SOURCE_DIR");
+    return e && *e ? std::string(e) + "/tests/data" : std::string(QUARK_TEST_DATA);
+}
+
 static int g_fail = 0;
 int launcherTests(); // tests/launcher_tests.cpp
-// Multiplayer tests run on a clock this many times faster than real time.
-static constexpr double kTestTimeScale = 4.0;
+// Game time runs this many times faster than real time in the network tests. Windows' socket and timer path can't
+// keep 4x pace (checked under Wine: dozens of phase / weapon-switch checks miss at 4x, none at 1x), so it runs them
+// in real time. QUARK_TEST_TIMESCALE overrides it (bot subprocesses inherit it, so they keep the same clock).
+static double testTimeScale() {
+    const char* e = getenv("QUARK_TEST_TIMESCALE");
+    double v = e ? atof(e) : 0;
+#ifdef _WIN32
+    return v > 0 ? v : 1.0;
+#else
+    return v > 0 ? v : 4.0;
+#endif
+}
+static const double kTestTimeScale = testTimeScale();
 #define CHECK(c) do { if (!(c)) { printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); g_fail++; } } while (0)
 
 // Pump a server and some clients for `seconds` of real time, feeding each client an input.
@@ -317,7 +344,7 @@ static void testAllMaps() {
 static void testMapLimits() {
     printf("map limits: hostile maps and edits are refused\n");
     for (const char* f : {"map_hugegrid.qmap", "map_floatmax.qmap"}) {   // the review's repro files
-        std::ifstream in(std::string(QUARK_TEST_DATA) + "/" + f, std::ios::binary);
+        std::ifstream in(testDataDir() + "/" + f, std::ios::binary);
         std::stringstream ss;
         ss << in.rdbuf();
         Map m;
@@ -1377,7 +1404,7 @@ static void testDuel2v2(uint16_t port) {
     }
     CHECK(a == 2 && b == 2 && spec == 1);
     pump(s, cls, 6.0, idle);
-    while (s.ms_.phase == PHASE_FREEZE) pump(s, cls, 0.2, idle);
+    for (int i = 0; i < 30 && (s.ms_.phase == PHASE_WARMUP || s.ms_.phase == PHASE_FREEZE); i++) pump(s, cls, 0.2, idle);   // (a slow host's clock lags)
     CHECK(s.ms_.phase == PHASE_LIVE && s.ms_.duelMod < DUEL_MOD_COUNT);
     int alive = 0;
     for (auto& p : s.players_) alive += p.connected && p.alive;
@@ -1565,12 +1592,9 @@ static void testHostedRulesPerThread(uint16_t port) {
 // Constants written out in more than one language: the queue list (community.cpp, the master Worker, the
 // Discord bot) and the UDP info query the bot speaks (quarkdata.py). Parsed from the sources; any mismatch fails.
 static std::string readSource(const char* rel) {
-#ifdef QUARK_SOURCE_DIR
-    std::ifstream f(std::string(QUARK_SOURCE_DIR) + "/" + rel, std::ios::binary);
+    if (sourceDir().empty()) return "";
+    std::ifstream f(sourceDir() + "/" + rel, std::ios::binary);
     std::stringstream ss; ss << f.rdbuf(); return ss.str();
-#else
-    return "";
-#endif
 }
 static std::string blockAfter(const std::string& s, const std::string& start, const std::string& end) {
     size_t a = s.find(start); if (a == std::string::npos) return "";
@@ -2730,7 +2754,7 @@ static void testEditSession(uint16_t port) {
 // A test demo recorded by an older build, stamped with this build's protocol version (the bytes after it are what's
 // being tested, not the version check).
 static std::string stampedDemo(const std::string& name) {
-    std::ifstream f(std::string(QUARK_TEST_DATA) + "/" + name, std::ios::binary);
+    std::ifstream f(testDataDir() + "/" + name, std::ios::binary);
     std::stringstream ss; ss << f.rdbuf();
     std::string d = ss.str();
     if (d.size() >= 6) { uint16_t v = kProtocolVersion; memcpy(&d[4], &v, 2); }
@@ -3315,6 +3339,7 @@ static void testBots(uint16_t& port) {
         pump(s, cls, 0.5, idle);
         s.command("forcestart");
         pump(s, cls, 3.3, idle);
+        for (int i = 0; i < 15 && s.ms_.phase != PHASE_LIVE; i++) pump(s, cls, 0.2, idle);   // (a slow host's clock lags)
         CHECK(s.ms_.phase == PHASE_LIVE);
         float mid = s.ms_.payloadLen * 0.5f;
         CHECK(std::fabs(s.ms_.payloadDist - mid) < 0.5f);
@@ -3655,9 +3680,14 @@ int main(int argc, char** argv) {
     setTimeScale(kTestTimeScale); // bot subprocesses share the test clock speed
     if (argc >= 4 && std::string(argv[1]) == "bot") return runBot(argv[2], atof(argv[3]), argc > 4 ? argv[4] : "bot");
     qsrand(1234);
+#ifdef _WIN32
+    setvbuf(stdout, nullptr, _IONBF, 0); // (CI: see how far it got; the Windows CRT has no line buffering, and _IOLBF
+                                         //  with size 0 is an invalid-parameter abort there, REVIEW ENG-1)
+#else
     setvbuf(stdout, nullptr, _IOLBF, 0); // (CI: see how far it got)
+#endif
     std::thread([] { // a hung test fails the run instead of stalling CI for an hour
-        std::this_thread::sleep_for(std::chrono::minutes(25));
+        std::this_thread::sleep_for(std::chrono::duration<double>(25 * 60 * 4.0 / std::min(4.0, kTestTimeScale)));   // (25 min at 4x)
         printf("TIMEOUT: the test above never finished\n"); fflush(stdout); std::_Exit(2);
     }).detach();
     setTimeScale(kTestTimeScale);
@@ -3744,7 +3774,7 @@ int main(int argc, char** argv) {
         {"resetmaps", [] { testResetMaps(); }},
         {"userdata", [] { testUserData(); }},
     };
-    bool serial = argc >= 2 && std::string(argv[1]) == "serial";
+    [[maybe_unused]] bool serial = argc >= 2 && std::string(argv[1]) == "serial";   // (Windows: always serial)
 #ifndef _WIN32
     if (!serial) {
         unsigned jobs = std::max(2u, std::thread::hardware_concurrency());

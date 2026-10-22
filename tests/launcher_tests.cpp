@@ -8,6 +8,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include "../src/common/version.h"
 #include "../src/launcher/install.h"
 #include "../src/launcher/releases.h"
 #include "../src/launcher/selfupdate.h"
@@ -76,7 +77,7 @@ static void testVersions() {
 }
 
 static void testChannels() {
-    std::string json = slurp(std::string(QUARK_TEST_DATA) + "/github_releases.json");
+    std::string json = slurp((getenv("QUARK_SOURCE_DIR") && *getenv("QUARK_SOURCE_DIR") ? std::string(getenv("QUARK_SOURCE_DIR")) + "/tests/data" : std::string(QUARK_TEST_DATA)) + "/github_releases.json");
     LCHECK(!json.empty());
     std::vector<releases::Release> all;
     LCHECK(releases::parse(json, "linux", &all));
