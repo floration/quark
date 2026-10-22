@@ -2,6 +2,7 @@
 #pragma once
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace install {
 
@@ -14,8 +15,10 @@ inline std::filesystem::path gameDir() { return appDir() / "game"; }
 std::filesystem::path installSelf(const char* argv0);
 // True if `self` is not the installed copy (e.g. run from Downloads).
 bool runningFromOutside(const char* argv0);
-// Starts the installed launcher, asking it to delete the copy we were started from.
+// Starts the installed launcher, asking it to delete the copy we were started from (empty: delete nothing).
 bool relaunchInstalled(const std::filesystem::path& installed, const std::filesystem::path& original);
+// Starts `exe` with `args` (detached). Used to restart into a just-swapped launcher.
+bool relaunch(const std::filesystem::path& exe, const std::vector<std::string>& args);
 // Called by the installed launcher: deletes the downloaded copy once that process has exited.
 void cleanupDownloaded(const std::filesystem::path& original);
 std::filesystem::path selfPath(const char* argv0);
@@ -41,9 +44,22 @@ bool setPrograms(bool on, const std::filesystem::path& launcher, const std::stri
 // Support/quark, $XDG_DATA_HOME/quark. Must match userDataPath() in src/game/map.cpp. On macOS / Linux it is the same
 // folder as appDir(), so uninstalling removes only the files the launcher put there.
 std::filesystem::path userDataDir();
+// Windows: records where that data lives under HKCU\Software\quark (DataDir, InstallDir) so cleanup tools can
+// find it. The launcher never deletes DataDir or the data (owner decision 2.5). Elsewhere: nothing.
+void registerDataDir();
 
-// Removes shortcuts, the programs entry, and the install (the running launcher is removed right after it exits).
-// The player's data is kept unless removeUserData.
-void uninstallAll(bool removeUserData);
+// Folders older launchers installed into that the current one doesn't use (Windows before 0.12:
+// %LOCALAPPDATA%\quark). Empty elsewhere.
+std::vector<std::filesystem::path> legacyAppDirs();
+// The icon the .desktop files point at (appDir()/quark.png).
+void writeIcon();
+// Points the desktop icon and the start menu / app menu entry at `launcher` when they point anywhere else (an old
+// launcher name or folder; macOS: an app bundle holding an old launcher copy). `create`: also make missing ones.
+void repairShortcuts(const std::filesystem::path& launcher, bool create);
+
+// Removes shortcuts, the programs entry and the install (the running launcher is removed right after it exits).
+// Never the player's data: anything still kept in the game folder by an old version is copied to userDataDir()
+// first (owner decision 2.5: only cleanup tools / the player delete it).
+void uninstallAll();
 
 } // namespace install

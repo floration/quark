@@ -1,5 +1,5 @@
-// quark launcher: checks GitHub for the newest release, downloads and installs it,
-// shows the changelog, and starts the game.
+// quark launcher: lists the releases of the chosen channel (production / testing), installs the newest (or the
+// version the player picked) after checking its signature, keeps itself current, shows the changelog, starts the game.
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <algorithm>
@@ -20,6 +20,8 @@
 #include "../client/ui.h"
 #include "../common/net.h"
 #include "install.h"
+#include "releases.h"
+#include "selfupdate.h"
 #include "../common/proc.h"
 #include "../common/sign.h"
 
@@ -35,7 +37,9 @@
 namespace fs = std::filesystem;
 
 namespace {
-const char* kApi = "https://api.github.com/repos/floration/quark/releases?per_page=50";
+// Releases of both channels, newest first; a few pages so production releases stay listed among many test builds.
+const char* kApi = "https://api.github.com/repos/floration/quark/releases?per_page=100";
+const int kApiPages = 3;
 #if defined(_WIN32)
 const char* kPlatform = "windows";
 const char* kGameExe = "quark.exe";
@@ -119,41 +123,6 @@ bool httpGet(const std::string& url, std::ostream& out, const Progress& prog, st
     return true;
 }
 #endif
-
-// Extracts a JSON string value starting at the opening quote; handles common escapes.
-std::string jsonString(const std::string& j, size_t q) {
-    std::string out;
-    for (size_t i = q + 1; i < j.size(); i++) {
-        char c = j[i];
-        if (c == '"') break;
-        if (c != '\\') { out += c; continue; }
-        char e = j[++i];
-        switch (e) {
-            case 'n': out += '\n'; break;
-            case 'r': break;
-            case 't': out += "  "; break;
-            case 'u': i += 4; out += '?'; break;
-            default: out += e;
-        }
-    }
-    return out;
-}
-
-std::string jsonField(const std::string& j, const std::string& key, size_t from = 0, size_t* at = nullptr) {
-    size_t k = j.find("\"" + key + "\"", from);
-    if (k == std::string::npos) return "";
-    size_t q = j.find('"', j.find(':', k) + 1);
-    if (at) *at = q;
-    return jsonString(j, q);
-}
-
-int versionCmp(const std::string& a, const std::string& b) {
-    int va[3] = {0, 0, 0}, vb[3] = {0, 0, 0};
-    sscanf(a.c_str(), "%d.%d.%d", &va[0], &va[1], &va[2]);
-    sscanf(b.c_str(), "%d.%d.%d", &vb[0], &vb[1], &vb[2]);
-    for (int i = 0; i < 3; i++) if (va[i] != vb[i]) return va[i] < vb[i] ? -1 : 1;
-    return 0;
-}
 
 // A qpak entry name is safe when it is a plain relative path inside the install: no root name
 // (C:, \\server), no root directory (/ or \), no "..", nothing empty.
@@ -264,55 +233,68 @@ bool launchGame(const fs::path& dir) {
 #endif
 }
 
-struct Release { std::string version, body, url, sigUrl; }; // sigUrl: the qpak's Ed25519 signature (docs/SIGNING.md)
+using releases::Release;
+using releases::Channel;
 
 struct State {
     std::mutex mu;
     std::string status = "checking for updates...";
-    std::vector<Release> releases;     // newest first (only ones with a build for this platform)
+    std::vector<Release> all;          // every release fetched (both channels)
+    std::vector<Release> releases;     // the channel's installable ones, newest first
+    releases::Config cfg;              // channel + pinned version (launcher.cfg)
     std::string installed;
     int selected = 0;                  // index into releases; 0 = newest
-    bool pinLatest = true;             // follow the newest version automatically
+    bool fetched = false;
     std::atomic<float> progress{-1};
     std::atomic<bool> busy{true}, ready{false};
+    std::atomic<bool> relaunch{false}; // a newer launcher was swapped in: restart into it when idle
+    bool noSelfUpdate = false;         // this process is that restart: never swap again (no loops)
 };
 
 fs::path launcherCfg() { return install::appDir() / "launcher.cfg"; }
+void saveCfg(const releases::Config& c) { std::ofstream(launcherCfg(), std::ios::trunc) << releases::formatConfig(c); }
 
-// Every release (tag, notes, our platform's .qpak) from the GitHub releases list.
+// Under st->mu: the visible list for the current channel and the selection the config asks for.
+void applyChannel(State* st) {
+    st->releases = releases::forChannel(st->all, st->cfg.channel);
+    st->selected = releases::selectIndex(st->releases, st->cfg);
+}
+
+// Every release (both channels) from the GitHub releases list.
 bool fetchReleases(State* st, std::string* err) {
-    std::ostringstream json;
-    const char* api = getenv("QUARK_UPDATE_API"); // override for testing
-    if (!httpGet(api ? api : kApi, json, nullptr, err)) return false;
-    std::string j = json.str();
-    std::string want = std::string("quark-") + kPlatform + ".qpak";
-    std::vector<Release> list;
-    size_t pos = 0, at;
-    for (;;) {
-        std::string tag = jsonField(j, "tag_name", pos, &at);
-        if (tag.empty()) break;
-        size_t next = j.find("\"tag_name\"", at + 1); // this release's fields end where the next one's tag starts
-        std::string seg = j.substr(at, next == std::string::npos ? std::string::npos : next - at);
-        pos = at + 1;
-        Release r;
-        r.version = tag.size() && (tag[0] == 'v' || tag[0] == 'V') ? tag.substr(1) : tag;
-        r.body = jsonField(seg, "body");
-        size_t p2 = 0, a2;
-        for (;;) {
-            std::string u = jsonField(seg, "browser_download_url", p2, &a2);
-            if (u.empty()) break;
-            p2 = a2 + 1;
-            auto endsWith = [&](const std::string& w) { return u.size() >= w.size() && u.compare(u.size() - w.size(), w.size(), w) == 0; };
-            if (endsWith(want)) r.url = u;
-            else if (endsWith(want + ".sig")) r.sigUrl = u;
-        }
-        if (!r.url.empty() && isdigit((unsigned char)r.version[0])) list.push_back(r);
+    const char* api = getenv("QUARK_UPDATE_API"); // override for testing: one URL, one page
+    std::vector<Release> all;
+    for (int page = 1; page <= (api ? 1 : kApiPages); page++) {
+        std::ostringstream json;
+        std::string url = api ? std::string(api) : std::string(kApi) + "&page=" + std::to_string(page);
+        if (!httpGet(url, json, nullptr, err)) { if (page == 1) return false; break; }
+        std::vector<Release> got;
+        if (!releases::parse(json.str(), kPlatform, &got)) { if (page == 1) { *err = "unreadable release list"; return false; } break; }
+        all.insert(all.end(), got.begin(), got.end());
+        if (got.size() < 100) break;
     }
-    std::sort(list.begin(), list.end(), [](const Release& x, const Release& y) { return versionCmp(x.version, y.version) > 0; });
     std::lock_guard<std::mutex> l(st->mu);
-    st->releases = list;
-    if (list.empty()) { *err = "no " + std::string(kPlatform) + " builds published yet"; return false; }
+    st->all = all;
+    st->fetched = true;
+    applyChannel(st);
+    if (st->releases.empty()) {
+        *err = std::string("no signed ") + kPlatform + " builds in the " + releases::channelName(st->cfg.channel) + " channel yet";
+        return false;
+    }
     return true;
+}
+
+// The package just installed (or already installed) carries a launcher: if it's newer than this one, swap it in
+// over the installed launcher and ask the UI to restart into it.
+void checkSelfUpdate(State* st, const fs::path& dir) {
+    if (st->noSelfUpdate) return;
+    fs::path packaged = dir / selfupdate::exeName(), target = install::installedLauncher();
+    std::string pv = selfupdate::fileVersion(packaged);
+    if (!selfupdate::isNewer(pv, selfupdate::ownVersion())) return;
+    if (!selfupdate::isNewer(pv, selfupdate::fileVersion(target))) { st->relaunch = true; return; } // already swapped (by the game)
+    std::string err;
+    if (selfupdate::replaceFile(packaged, target, &err) && selfupdate::fileVersion(target) == pv) st->relaunch = true;
+    else { std::lock_guard<std::mutex> l(st->mu); st->status += " (launcher update failed: " + err + ")"; }
 }
 
 void installRelease(std::shared_ptr<State> st, fs::path dir, Release r) {
@@ -326,6 +308,8 @@ void installRelease(std::shared_ptr<State> st, fs::path dir, Release r) {
         std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
         bool ok = httpGet(r.url, out, [&](uint64_t d, uint64_t t) { st->progress = t ? (float)d / t : -1.0f; }, &err);
         if (!ok) {
+            out.close();
+            fs::remove(tmp, ec);
             setStatus("download failed: " + err);
             st->busy = false;
             return;
@@ -365,20 +349,22 @@ void installRelease(std::shared_ptr<State> st, fs::path dir, Release r) {
             "quark_launcher"
 #endif
             ), r.version); // always listed in "installed programs" (uninstall from there), version kept current
-        std::lock_guard<std::mutex> l(st->mu);
-        st->installed = r.version;
-        st->status = "installed version " + r.version;
-        st->ready = true;
+        {
+            std::lock_guard<std::mutex> l(st->mu);
+            st->installed = r.version;
+            st->status = "installed version " + r.version;
+            st->ready = true;
+        }
+        checkSelfUpdate(st.get(), dir);
     }
     fs::remove(tmp, ec);
     st->busy = false;
 }
 
-// Startup: get the list, then install the pinned version (or the newest if following latest).
+// Startup: get the channel's list, then install what the config asks for (the newest, or the pinned version), but
+// never an older version than the installed one unless the player picked it.
 void updater(std::shared_ptr<State> st, fs::path dir) {
     std::string installed = readFile(dir / "version.txt");
-    std::string pin = readFile(launcherCfg());
-    if (pin.rfind("pin=", 0) == 0) pin = pin.substr(4);
     {
         std::lock_guard<std::mutex> l(st->mu);
         st->installed = installed;
@@ -386,40 +372,40 @@ void updater(std::shared_ptr<State> st, fs::path dir) {
     }
     std::string err;
     if (!fetchReleases(st.get(), &err)) {
-        std::lock_guard<std::mutex> l(st->mu);
-        st->status = installed.empty() ? "offline - " + err : "offline - playing installed version " + installed;
+        {
+            std::lock_guard<std::mutex> l(st->mu);
+            if (!st->fetched) st->status = installed.empty() ? "offline - " + err : "offline - playing installed version " + installed;
+            else st->status = installed.empty() ? err : err + " - installed: " + installed;
+        }
+        if (!installed.empty()) checkSelfUpdate(st.get(), dir);
         st->busy = false;
         return;
     }
     Release target;
+    bool doInstall = false;
     {
         std::lock_guard<std::mutex> l(st->mu);
-        st->pinLatest = pin.empty() || pin == "latest";
-        st->selected = 0;
-        if (!st->pinLatest)
-            for (size_t i = 0; i < st->releases.size(); i++) if (st->releases[i].version == pin) st->selected = (int)i;
         target = st->releases[st->selected];
-        if (installed == target.version) {
-            st->status = st->pinLatest ? "up to date - version " + installed : "version " + installed + " (pinned)";
-            st->busy = false;
-            return;
-        }
+        bool pinned = st->cfg.pinned() && target.version == st->cfg.pin; // a pin that isn't listed counts as "newest"
+        std::string ch = releases::channelName(st->cfg.channel);
+        if (installed == target.version) st->status = pinned ? "version " + installed + " (pinned)" : "up to date - " + ch + " " + installed;
+        else if (releases::shouldAutoInstall(target.version, installed, pinned)) doInstall = true;
+        else st->status = "installed " + installed + " is newer than the latest " + ch + " release " + target.version + " - pick a version to change";
     }
-    installRelease(std::move(st), dir, target);
+    if (doInstall) { installRelease(std::move(st), dir, target); return; }
+    checkSelfUpdate(st.get(), dir);
+    st->busy = false;
 }
 } // namespace
 
 int main(int argc, char** argv) {
     if (argc > 1 && std::string(argv[1]) == "--uninstall") {
-        bool wipe = false;
 #ifdef _WIN32
-        if (MessageBoxW(nullptr, L"Remove quark, its shortcuts and downloaded game files?", L"Uninstall quark",
-                        MB_YESNO | MB_ICONQUESTION) != IDYES) return 0;
-        std::wstring q = L"Also delete your settings, ranked identity, demos and maps?\n\n" + install::userDataDir().wstring() +
-                         L"\n\nChoose No to keep them for a later reinstall.";
-        wipe = MessageBoxW(nullptr, q.c_str(), L"Uninstall quark", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES;
+        std::wstring q = L"Remove quark, its shortcuts and game files?\n\nYour settings, ranked identity, demos and maps stay in\n" +
+                         install::userDataDir().wstring();
+        if (MessageBoxW(nullptr, q.c_str(), L"Uninstall quark", MB_YESNO | MB_ICONQUESTION) != IDYES) return 0;
 #endif
-        install::uninstallAll(wipe);
+        install::uninstallAll();
         return 0;
     }
     fs::path dir = install::gameDir();
@@ -430,18 +416,22 @@ int main(int argc, char** argv) {
     // One launcher at a time: a second start (double click, or an older build relaunching itself)
     // just brings the running one to the front.
     bool handedOver = argc > 2 && std::string(argv[1]) == "--cleanup";
-    if (!install::acquireSingleInstance(handedOver)) return 0;
+    bool relaunched = argc > 1 && std::string(argv[1]) == "--relaunched"; // restarted into a swapped-in launcher
+    if (!install::acquireSingleInstance(handedOver || relaunched)) return 0;
     // Started from Downloads (or anywhere else): install into the program folder, then hand over
     // to that copy, which deletes the downloaded file. Never hands over to itself, and a process
     // that was itself started by a hand-over never hands over again (no relaunch loops).
     fs::path self = install::selfPath(argv[0]);
+    selfupdate::removeLeftovers(self); // the .old a previous self-update parked
     fs::path launcherPath = install::installSelf(argv[0]);
-    // a desktop icon and a start menu / app menu entry, always (recreated if missing)
-    if (!install::hasDesktop()) install::setDesktop(true, launcherPath);
-    if (!install::hasMenu()) install::setMenu(true, launcherPath);
+    // a desktop icon and a start menu / app menu entry, always (recreated if missing, repointed if they run an old copy)
+    install::repairShortcuts(launcherPath, true);
+    install::registerDataDir();
     std::error_code eqEc;
-    if (!handedOver && install::runningFromOutside(argv[0]) && fs::exists(launcherPath) && !fs::equivalent(launcherPath, self, eqEc)) {
-        if (install::relaunchInstalled(launcherPath, self)) return 0; // it waits for us to exit, then takes the lock
+    if (!handedOver && !relaunched && install::runningFromOutside(argv[0]) && fs::exists(launcherPath) && !fs::equivalent(launcherPath, self, eqEc)) {
+        // macOS: an old Quark.app held a launcher copy; it is a script now, never delete what's in the bundle
+        bool inBundle = self.string().find(".app/Contents/MacOS/") != std::string::npos;
+        if (install::relaunchInstalled(launcherPath, inBundle ? fs::path() : self)) return 0; // it waits for us to exit, then takes the lock
     }
     { // always listed in "installed programs" (Windows Apps & features); no option needed
         std::string ver = readFile(dir / "version.txt");
@@ -467,6 +457,9 @@ int main(int argc, char** argv) {
     // reference, so it never touches freed memory (and an unfinished install only leaves a stage dir).
     auto stp = std::make_shared<State>();
     State& st = *stp;
+    st.cfg = releases::parseConfig(readFile(launcherCfg()));
+    // only the installed launcher swaps itself, and never twice in a row
+    st.noSelfUpdate = relaunched || !fs::equivalent(self, install::installedLauncher(), eqEc);
     std::thread worker(updater, stp, dir);
     Ui ui;
     UiInput in;
@@ -479,8 +472,8 @@ int main(int argc, char** argv) {
     });
     bool quit = false;
     double uninstallArmed = 0;
-    bool uninstallWipe = false; // also delete the player's data (settings, ranked key, demos, maps)
-    bool autoPlay = argc > 1 && std::string(argv[1]) == "--play";
+    bool autoPlay = false;
+    for (int i = 1; i < argc; i++) autoPlay = autoPlay || std::string(argv[i]) == "--play";
     while (!glfwWindowShouldClose(win) && !quit) {
         glfwPollEvents();
         int fw, fh, ww, wh;
@@ -495,11 +488,20 @@ int main(int argc, char** argv) {
         ui.begin(&r, in, s * 0.7f);
         r.rect(0, 0, (float)fw, (float)fh, {0.04f, 0.045f, 0.06f, 1});
         ui.label(24 * s, 20 * s, "QUARK", ui.accent, 2.5f);
+        // a newer launcher was swapped in: restart into it (keeping a pending --play)
+        if (st.relaunch && !st.busy) {
+            std::vector<std::string> args = {"--relaunched"};
+            if (autoPlay) args.push_back("--play");
+            if (install::relaunch(install::installedLauncher(), args)) { quit = true; continue; }
+            st.relaunch = false;
+        }
         std::string status, latest, log, installed;
         std::vector<std::string> versionNames, versions;
         Release sel;
+        Channel channel;
         {
             std::lock_guard<std::mutex> l(st.mu);
+            channel = st.cfg.channel;
             status = st.status;
             installed = st.installed;
             for (size_t i = 0; i < st.releases.size(); i++) versions.push_back(st.releases[i].version);
@@ -508,7 +510,7 @@ int main(int argc, char** argv) {
             if (!st.releases.empty()) {
                 sel = st.releases[std::min<size_t>(st.selected, st.releases.size() - 1)];
                 latest = sel.version;
-                log = sel.body;
+                log = releases::asciiText(sel.body);
             }
         }
         ui.label(24 * s, 70 * s, status, {0.8f, 0.82f, 0.85f, 1});
@@ -520,7 +522,7 @@ int main(int argc, char** argv) {
         // version list (right): scroll with the wheel; LATEST follows updates, older ones stay pinned
         float listW = 190 * s, listX = fw - 24 * s - listW, listY = 110 * s, listH = 222 * s, rowH = 24 * s;
         ui.panel(listX, listY, listW, listH, 0.6f);
-        ui.label(listX + 10 * s, listY + 8 * s, "VERSIONS", ui.accent);
+        ui.label(listX + 10 * s, listY + 8 * s, channel == Channel::Testing ? "TESTING VERSIONS" : "VERSIONS", ui.accent);
         {
             float top = listY + 30 * s, viewH = listH - 36 * s;
             int n = (int)versionNames.size();
@@ -544,8 +546,8 @@ int main(int argc, char** argv) {
                 if (hov && in.pressed) {
                     std::lock_guard<std::mutex> l(st.mu);
                     st.selected = i;
-                    st.pinLatest = i == 0;
-                    std::ofstream(launcherCfg()) << "pin=" << (i == 0 ? std::string("latest") : versions[i]) << "\n";
+                    st.cfg.pin = i == 0 ? std::string("latest") : versions[i];
+                    saveCfg(st.cfg);
                 }
             }
             if (maxScroll > 0) { // scrollbar
@@ -580,28 +582,40 @@ int main(int argc, char** argv) {
             r.text(36 * s, y, ts, line, {0.85f, 0.85f, 0.88f, 1});
             y += 10 * ts;
         }
-        // desktop integration: the desktop icon and start menu entry are made automatically (at startup);
-        // only UNINSTALL is left here
+        // the desktop icon and start menu entry are made automatically (at startup). Here: the release channel
+        // (switches the version list; installing from it is the player's click) and UNINSTALL (never the player's data)
         {
             float bw = (fw - 56 * s) * 0.5f, bx = 24 * s, by = 344 * s, bh = 40 * s;
             bool armed = timeNow() < uninstallArmed;
-            if (ui.button(bx + bw + 8 * s, by, bw, bh, uninstallWipe ? "MY DATA: DELETE" : "MY DATA: KEEP", !st.busy)) uninstallWipe = !uninstallWipe;
+            if (ui.button(bx + bw + 8 * s, by, bw, bh, channel == Channel::Testing ? "CHANNEL: TESTING" : "CHANNEL: PRODUCTION", !st.busy)) {
+                std::lock_guard<std::mutex> l(st.mu);
+                st.cfg.channel = channel == Channel::Testing ? Channel::Production : Channel::Testing;
+                st.cfg.pin = "latest";
+                saveCfg(st.cfg);
+                applyChannel(&st);
+                listScroll = 0;
+                std::string ch = releases::channelName(st.cfg.channel);
+                if (!st.fetched) st.status = ch + " channel - offline";
+                else if (st.releases.empty()) st.status = "no " + ch + " builds published yet";
+                else st.status = ch + " channel - latest " + st.releases[0].version + (st.installed.empty() ? "" : ", installed " + st.installed);
+            }
             if (ui.button(bx, by, bw, bh, armed ? "CLICK TO CONFIRM" : "UNINSTALL", !st.busy)) {
                 if (armed) {
-                    install::uninstallAll(uninstallWipe);
+                    install::uninstallAll();
                     quit = true;
                 } else uninstallArmed = timeNow() + 3.0;
             }
         }
         bool needInstall = !sel.version.empty() && sel.version != installed;
         bool canPlay = st.ready && !st.busy;
-        if (needInstall && !st.busy) {
-            if (ui.button(fw - 224 * s, 414 * s, 200 * s, 48 * s, "INSTALL " + sel.version)) {
-                st.busy = true;
-                if (worker.joinable()) worker.join();
-                worker = std::thread(installRelease, stp, dir, sel);
-            }
-        } else if (ui.button(fw - 224 * s, 414 * s, 200 * s, 48 * s, st.busy ? "WORKING..." : "PLAY", canPlay) || (autoPlay && canPlay)) {
+        bool offerInstall = needInstall && !st.busy;
+        // installing is always the player's click (or startup's newer-only rule); the installed version stays playable
+        if (offerInstall && ui.button(fw - (canPlay ? 432 : 224) * s, 414 * s, 200 * s, 48 * s, "INSTALL " + sel.version)) {
+            st.busy = true;
+            if (worker.joinable()) worker.join();
+            worker = std::thread(installRelease, stp, dir, sel);
+        } else if ((!offerInstall || canPlay) &&
+                   (ui.button(fw - 224 * s, 414 * s, 200 * s, 48 * s, st.busy ? "WORKING..." : "PLAY", canPlay) || (autoPlay && canPlay))) {
             if (launchGame(dir)) quit = true;
             else { std::lock_guard<std::mutex> l(st.mu); st.status = "could not start the game in " + dir.string(); autoPlay = false; }
         }

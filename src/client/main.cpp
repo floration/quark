@@ -7,6 +7,7 @@
 #include <string>
 #include "game.h"
 #include "gl.h"
+#include "../launcher/selfupdate.h"
 
 static Game* g_game = nullptr;
 
@@ -67,6 +68,8 @@ int main(int argc, char** argv) {
         }
     }
 
+    // started from a launcher install: bring every older launcher (and its shortcuts) up to the one in this package
+    selfupdate::startFromGame(argv[0]);
     netInit();
     if (!glfwInit()) { fprintf(stderr, "glfwInit failed\n"); return 1; }
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);

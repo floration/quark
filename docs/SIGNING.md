@@ -40,6 +40,23 @@ written (outside the repo, never committed) to the session scratchpad file `quar
 4. Note: launchers already installed only trust the old key. Players must download the new launcher once
    (from the website / release page) to get updates signed with the new key.
 
+## Release channels and launcher updates
+
+- **Production** = normal GitHub releases, tag `v<VERSION>`. **Testing** = GitHub *prereleases*, tag
+  `test-<VERSION>-test.<N>` (e.g. `test-1.17.0-test.3`; the launcher reads the version from the first digit on).
+  Testing tags must never start with `v<digit>` or a digit: launchers 0.12 - 1.16 install the highest
+  `v<digit>`/digit tag they see, prerelease or not. Both channels use the same asset names
+  (`quark-<platform>.qpak` + `.qpak.sig`) and are signed with the same key; drafts and releases without a `.sig`
+  are never offered.
+- The launcher's CHANNEL button switches the version list (remembered in `launcher.cfg`). On its own it only ever
+  installs a *newer* version than the installed one; an older one only when the player picks it.
+- Every qpak carries the launcher (`quark_launcher[.exe]` next to the game). A launcher that installs a package
+  with a newer launcher swaps itself (POSIX: rename over; Windows: running exe -> `.old`, new one in, `.old` deleted
+  next start) and restarts once. The game, at startup, replaces every older launcher it finds (the folder above
+  its game folder, the install folder, `%LOCALAPPDATA%\quark` from before 0.12) and repoints the shortcuts, so
+  players on any earlier launcher get the new one through a normal game update. The version is read from a
+  `QUARK-LAUNCHER-VERSION:<VERSION>` marker in the binary (launchers without it count as older).
+
 ## Notes
 
 - Releases published before signing have no `.sig`; the launcher refuses to install them ("the release has no
