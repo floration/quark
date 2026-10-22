@@ -3824,14 +3824,16 @@ void Game::applyPresentMode() {
 }
 
 void Game::beforeInput() {
-    // Low latency "on": allow at most one frame queued on the GPU. We wait for the previous
-    // frame to finish before sampling input, so input is never stuck behind a deep queue.
+    // Low latency "on": allow at most one frame queued on the GPU. We wait for the frame before the
+    // previous one to finish before sampling input, so input is never stuck behind a deep queue.
+    // (afterSwap just stored the previous frame's fence at fenceIdx_ ^ 1 and flipped the index: fenceIdx_ holds
+    // the frame before it, the slot afterSwap overwrites next. Waiting on fenceIdx_ ^ 1 queued nothing: "ultra".)
     if (cfg_.lowLatency == 1) {
-        int prev = fenceIdx_ ^ 1;
-        if (fence_[prev]) {
-            glClientWaitSync((GLsync)fence_[prev], GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
-            glDeleteSync((GLsync)fence_[prev]);
-            fence_[prev] = nullptr;
+        int older = fenceIdx_;
+        if (fence_[older]) {
+            glClientWaitSync((GLsync)fence_[older], GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
+            glDeleteSync((GLsync)fence_[older]);
+            fence_[older] = nullptr;
         }
     }
 }
