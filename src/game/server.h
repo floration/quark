@@ -165,8 +165,10 @@ struct ServerPlayer {
     static constexpr int kSentRing = 256;
     std::vector<Snapshot> sent;
     uint64_t ackSnapMs = 0;
-    // Visibility (anti-wallhack + bandwidth): when this client last had a line of sight to each player.
+    // Visibility (anti-wallhack + bandwidth): when this client last had a line of sight to each player, and when
+    // each line is next checked (0: at once).
     double lastSeen[kMaxPlayers] = {};
+    double visDue[kMaxPlayers] = {};
     // lag compensation history
     struct Hist { uint64_t tick; Vec3 pos; bool crouched; bool alive; };   // tick: timeMs_ when recorded (kNoHistory: none)
     static constexpr uint64_t kNoHistory = ~0ull;
@@ -490,7 +492,11 @@ private:
     void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint64_t viewMs, float* dmgPerPlayer, float dmg, float headDmg = 0, float grow = 0, bool pierce = false);
     void sendSnapshots();
     void updateVisibility();
-    double nextVisCheck_ = 0;
+    uint32_t visCursor_ = 0;   // the viewer x target pair the next tick's checks start from (round robin)
+public:
+    uint64_t visRays_ = 0;     // lines of sight cast (tests, benchmarks)
+    void updateVisibilityForTest() { updateVisibility(); }
+private:
     void openGameLog();
     void logTick();
     int findPlayer(const NetAddr& a) const;

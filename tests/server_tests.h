@@ -433,10 +433,10 @@ static double threadCpu() {
 #endif
 }
 
-struct SnapBenchResult { double avgUs = 0, p50Us = 0, p99Us = 0, maxUs = 0, allocsPerSend = 0; };
-// `humans` fake clients (snapshots go to closed loopback ports) walking around a map's spawns, a snapshot every 4 ms
-// of server time (1000 Hz, every 4th tick) for `seconds`, each client acking the one sent 48 ms before. CPU time of
-// each send (visibility included), and heap allocations per send after the first second.
+struct SnapBenchResult { double avgUs = 0, p50Us = 0, p99Us = 0, maxUs = 0, allocsPerSend = 0, tickAvgUs = 0, tickP999Us = 0, tickMaxUs = 0, raysPerSec = 0; };
+// `humans` fake clients (snapshots go to closed loopback ports) walking around a map's spawns, 1000 Hz ticks with a
+// snapshot every 4th (32 players: 250 a second) for `seconds`, each client acking the one sent 48 ms before. CPU
+// time of each send and of each tick's visibility + send, and heap allocations per send, after the first 2.4 s.
 static SnapBenchResult snapBench(const char* mapName, int humans, double seconds, uint16_t port, bool print = true) {
     SnapBenchResult res;
     Server s;
@@ -458,13 +458,12 @@ static SnapBenchResult snapBench(const char* mapName, int humans, double seconds
         home[i] = p.move.pos;
         p.events.clear();
     }
-    std::vector<double> t;
+    std::vector<double> t, ticks;
     long long allocs = 0;
+    uint64_t rays0 = 0;
     int counted = 0;
     const int sends = (int)(seconds * 250);
     for (int k = 0; k < sends; k++) {
-        s.timeMs_ += 4;
-        s.tick_ += 4;
         for (int i = 0; i < humans; i++) {   // a slow random walk around each one's spawn (positions and velocities)
             auto& p = s.players_[i];
             float a = (float)(k * 0.004 * (0.5 + (i % 5) * 0.2) + i);
@@ -481,13 +480,32 @@ static SnapBenchResult snapBench(const char* mapName, int humans, double seconds
             while (!p.events.empty() && p.events.front().id + 8 < p.nextEventId) p.events.pop_front();
         }
         bool count = k >= 600;   // (after the delta-base rings have filled)
-        g_countAllocs = count;
-        long long a0 = g_allocs.load();
-        double c0 = threadCpu();
-        s.sendSnapshotsForTest();
-        double c1 = threadCpu();
-        g_countAllocs = false;
-        if (count) { allocs += g_allocs.load() - a0; counted++; t.push_back((c1 - c0) * 1e6); }
+        if (k == 600) rays0 = s.visRays_;
+        for (int tk = 0; tk < 4; tk++) {   // 4 ticks: visibility every tick, the snapshot on the 4th
+            s.timeMs_ += 1;
+            s.tick_ += 1;
+            double c0 = threadCpu();
+            s.updateVisibilityForTest();
+            double cv = threadCpu();
+            if (tk == 3) {
+                g_countAllocs = count;
+                long long a0 = g_allocs.load();
+                s.sendSnapshotsForTest();
+                g_countAllocs = false;
+                if (count) allocs += g_allocs.load() - a0;
+            }
+            double c1 = threadCpu();
+            if (count) { ticks.push_back((c1 - c0) * 1e6); if (tk == 3) { counted++; t.push_back((c1 - cv) * 1e6); } }
+        }
+    }
+    std::sort(ticks.begin(), ticks.end());
+    if (!ticks.empty()) {
+        double ts = 0;
+        for (double v : ticks) ts += v;
+        res.tickAvgUs = ts / ticks.size();
+        res.tickP999Us = ticks[std::min(ticks.size() - 1, (size_t)(ticks.size() * 0.999))];
+        res.tickMaxUs = ticks.back();
+        res.raysPerSec = (double)(s.visRays_ - rays0) / (ticks.size() * 0.001);
     }
     std::sort(t.begin(), t.end());
     double sum = 0;
@@ -500,11 +518,63 @@ static SnapBenchResult snapBench(const char* mapName, int humans, double seconds
     }
     res.allocsPerSend = counted ? (double)allocs / counted : 0;
     if (print)
-        printf("  SNAPBENCH %s: %d clients, %d sends: CPU avg %.1f us  p50 %.1f us  p99 %.1f us  worst %.1f us, %.2f heap allocations per send\n", mapName,
-               humans, counted, res.avgUs, res.p50Us, res.p99Us, res.maxUs, res.allocsPerSend);
+        printf("  SNAPBENCH %s: %d clients: ticks (visibility + send) avg %.1f us  p99.9 %.1f us  worst %.1f us, %.0f rays/s; sends: avg %.1f us  p50 %.1f us"
+               "  worst %.1f us, %.2f heap allocations per send\n", mapName, humans, res.tickAvgUs, res.tickP999Us, res.tickMaxUs, res.raysPerSec, res.avgUs,
+               res.p50Us, res.maxUs, res.allocsPerSend);
     for (auto& p : s.players_) p.connected = false;
     s.stop();
     return res;
+}
+
+// PERF-9: lines of sight are checked a share per tick (never more than the ray budget in one tick, which was ~31000
+// rays in one ~10 ms tick on Midtown with 32 players), yet every line still gets checked about every 50 ms.
+static void testVisibilitySpread(uint16_t port) {
+    printf("visibility: spread over the ticks, every line still fresh\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "midtown"; cfg.mode = MODE_FFA; cfg.port = port; cfg.maxPlayers = kMaxPlayers;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { printf("  FAIL %s:%d: server start\n", __FILE__, __LINE__); g_fail++; return; }
+    std::vector<Vec3> home(kMaxPlayers);
+    for (int i = 0; i < kMaxPlayers; i++) {
+        auto& p = s.players_[i];
+        p = ServerPlayer();
+        p.connected = true; p.isBot = false; p.team = TEAM_A; p.name = "v" + std::to_string(i);
+        p.addr = NetAddr{0x7F000001u, (uint16_t)(port + 100 + i)};
+        for (auto& h : p.history) h.tick = ServerPlayer::kNoHistory;
+        s.spawnPlayer(i);
+        home[i] = p.move.pos;
+    }
+    const int cap = std::max(64, 1000000 / s.tickRate()) + 31;   // (server.cpp kVisRaysPerSecond; a line's 32 rays can straddle it)
+    uint64_t maxRays = 0;
+    double worstAge = 0;
+    int pairsNear = 0;
+    for (int k = 0; k < 1500; k++) {   // 1.5 s of 1000 Hz ticks
+        s.timeMs_ += 1; s.tick_ += 1;
+        for (int i = 0; i < kMaxPlayers; i++) {
+            auto& p = s.players_[i];
+            float a = (float)(k * 0.001 * (0.5 + (i % 5) * 0.2) + i);
+            Vec3 want = home[i] + Vec3(std::cos(a) * 3.0f, 0, std::sin(a) * 3.0f);
+            p.move.vel = (want - p.move.pos) * 1000.0f;
+            p.move.pos = want;
+        }
+        uint64_t r0 = s.visRays_;
+        s.updateVisibilityForTest();
+        maxRays = std::max(maxRays, s.visRays_ - r0);
+        if (k < 200) continue;
+        for (int v = 0; v < kMaxPlayers; v++)
+            for (int t = 0; t < kMaxPlayers; t++) {
+                if (v == t || length(s.players_[t].move.pos - s.players_[v].move.pos) >= 19.0f) continue;   // (near: always seen)
+                pairsNear++;
+                worstAge = std::max(worstAge, s.time() - s.players_[v].lastSeen[t]);
+            }
+    }
+    printf("  32 players on midtown: at most %llu rays in a tick (cap %d), near lines at most %.0f ms old (%d samples)\n", (unsigned long long)maxRays, cap,
+           worstAge * 1000, pairsNear);
+    CHECK(maxRays <= (uint64_t)cap);
+    CHECK(pairsNear > 0 && worstAge <= 0.075);
+    for (auto& p : s.players_) p.connected = false;
+    s.stop();
 }
 
 static void serverTests() {
@@ -521,4 +591,5 @@ static void serverTests() {
         printf("  %.2f allocations per send, CPU p50 %.1f us\n", r.allocsPerSend, r.p50Us);
         CHECK(r.allocsPerSend == 0);
     }
+    testVisibilitySpread(TP(28806));
 }

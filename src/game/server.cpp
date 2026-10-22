@@ -46,6 +46,13 @@ constexpr double kMaxLateFraction = 0.01;  // ticks that ran more than 2 periods
 constexpr int kMaxClientLossPct = 2;       // snapshot loss any client may report
 const float kKnifeRange = weaponDef(WPN_KNIFE).range; // the knife's reach (also what clients draw)
 constexpr float kRocketLife = 5.0f;
+// Visibility (PERF-9): each viewer's line to each player is re-checked every kVisInterval, spread over the ticks in
+// between (round robin over the pairs that are due) instead of all at once 20 times a second, which on Midtown with
+// 32 players was a ~10 ms tick. A tick casts at most kVisRaysPerSecond / tick rate rays; past that the rest wait for
+// the next tick (they're late, never skipped: the 0.6 s a player stays visible covers it).
+constexpr double kVisInterval = 0.05;
+constexpr int kVisRaysPerSecond = 1000000;   // ~1/3 of a core on Midtown, only when every pair is a hidden one
+constexpr int kVisMinRaysPerTick = 64;
 
 bool isLoopback(const NetAddr& a) { return (a.ip >> 24) == 127; }
 constexpr double kProbeTimeout = 3.0;     // no PKT_PROBE_REPLY on the game port by then: not reachable
@@ -1654,6 +1661,7 @@ void Server::simulate() {
             p.health = std::min(lifeMaxHealth(), p.health + 10.0f * dt()); // regeneration: 10 hp/s after 3 s untouched
     }
     rulesTick(*this);
+    { QZONE("visibility"); updateVisibility(); }   // (every tick, a share of the lines of sight: PERF-9)
 }
 
 // Commands cost one token each and tokens refill at the tick rate, so a client can't
@@ -2071,40 +2079,58 @@ void Server::explode(const Vec3& at, int owner, int weapon, int direct) {
 // Line of sight from each human to each enemy, 20 times a second. Players you can't see are sent
 // without a position (wallhacks get nothing); anyone within earshot, teammates, and everyone while you
 // are dead or spectating are always sent. A player stays visible for 0.6 s after line of sight breaks,
-// so peeking around a corner never pops in late.
+// so peeking around a corner never pops in late. Runs every tick, checking the pairs that are due, within a ray
+// budget (kVisRaysPerSecond: no tick spikes however many players).
 void Server::updateVisibility() {
-    if (time() < nextVisCheck_) return;
-    nextVisCheck_ = time() + 0.05f;
-    for (int v = 0; v < kMaxPlayers; v++) {
+    const double now = time();
+    const int pairs = kMaxPlayers * kMaxPlayers;
+    static_assert((kMaxPlayers * kMaxPlayers & (kMaxPlayers * kMaxPlayers - 1)) == 0, "the cursor wraps with uint32");
+    int viewers = 0, targets = 0;
+    for (auto& p : players_) { targets += p.connected && p.alive; viewers += p.connected && p.alive && !p.isBot; }
+    const int active = viewers * std::max(0, targets - 1);
+    if (!active) return;
+    // this tick's share: every line once per kVisInterval, evenly (a burst of due lines - everyone spawning at once -
+    // spreads out over the next interval instead of recurring), and never past the ray budget
+    int quota = (int)std::ceil(active / (kVisInterval * tickRate())) + 1;
+    int budget = std::max(kVisMinRaysPerTick, kVisRaysPerSecond / tickRate());
+    const bool teams = modeIsTeamBased(ms_.mode);
+    const float eyeH = kEyeHeight * bodyScale();
+    for (int n = 0; n < pairs && budget > 0 && quota > 0; n++) {
+        uint32_t idx = visCursor_++ % pairs;
+        int v = (int)(idx / kMaxPlayers), t = (int)(idx % kMaxPlayers);
         auto& pv = players_[v];
-        if (!pv.connected || pv.isBot || !pv.alive) continue;
-        Vec3 eye = pv.move.pos + Vec3(0, kEyeHeight * bodyScale(), 0);
-        for (int t = 0; t < kMaxPlayers; t++) {
-            auto& pt = players_[t];
-            if (t == v || !pt.connected || !pt.alive) continue;
-            bool mate = modeIsTeamBased(ms_.mode) && pt.team == pv.team;
-            Vec3 d = pt.move.pos - pv.move.pos;
-            if (mate || length(d) < 20.0f) { pv.lastSeen[t] = time(); continue; }
-            // Generous on purpose (a player popping out of view while their shoulder shows is worse than a
-            // wallhack seeing a little): rays from both sides of your head to the target's head, chest, knees
-            // and both shoulders, where they are and where they'll be in 0.25 s (and where you'll be).
-            Vec3 lead = pt.move.vel * 0.25f, mine = pv.move.vel * 0.15f;
-            Vec3 side = normalize(Vec3(-d.z, 0, d.x)) * 0.45f;
-            bool seen = false;
-            for (const Vec3& from : {eye, eye + side * 0.7f, eye - side * 0.7f, eye + mine})
-                if (!seen) for (const Vec3& off : {Vec3(0, 1.75f, 0), Vec3(0, 1.0f, 0), Vec3(0, 0.25f, 0), side + Vec3(0, 1.3f, 0), Vec3() - side + Vec3(0, 1.3f, 0),
-                                        lead + Vec3(0, 1.0f, 0), lead + side + Vec3(0, 1.3f, 0), lead - side + Vec3(0, 1.3f, 0)}) {
-                    Vec3 to = pt.move.pos + off - from;
-                    float len = length(to);
-                    if (len < 0.01f || !map_.raycastAny(from, to / len, len)) { seen = true; break; }
-                }
-            if (seen) pv.lastSeen[t] = time();
-        }
+        if (!pv.connected || pv.isBot || !pv.alive) { visCursor_ += kMaxPlayers - 1 - t; n += kMaxPlayers - 1 - t; continue; }   // (the rest of this viewer's row)
+        if (now < pv.visDue[t] || t == v) continue;
+        auto& pt = players_[t];
+        if (!pt.connected || !pt.alive) continue;
+        pv.visDue[t] = now + kVisInterval;
+        quota--;
+        bool mate = teams && pt.team == pv.team;
+        Vec3 d = pt.move.pos - pv.move.pos;
+        if (mate || length(d) < 20.0f) { pv.lastSeen[t] = now; continue; }
+        // Generous on purpose (a player popping out of view while their shoulder shows is worse than a
+        // wallhack seeing a little): rays from both sides of your head to the target's head, chest, knees
+        // and both shoulders, where they are and where they'll be in 0.25 s (and where you'll be).
+        Vec3 eye = pv.move.pos + Vec3(0, eyeH, 0);
+        Vec3 lead = pt.move.vel * 0.25f, mine = pv.move.vel * 0.15f;
+        Vec3 side = normalize(Vec3(-d.z, 0, d.x)) * 0.45f;
+        bool seen = false;
+        int rays = 0;
+        for (const Vec3& from : {eye, eye + side * 0.7f, eye - side * 0.7f, eye + mine})
+            if (!seen) for (const Vec3& off : {Vec3(0, 1.75f, 0), Vec3(0, 1.0f, 0), Vec3(0, 0.25f, 0), side + Vec3(0, 1.3f, 0), Vec3() - side + Vec3(0, 1.3f, 0),
+                                    lead + Vec3(0, 1.0f, 0), lead + side + Vec3(0, 1.3f, 0), lead - side + Vec3(0, 1.3f, 0)}) {
+                Vec3 to = pt.move.pos + off - from;
+                float len = length(to);
+                rays++;
+                if (len < 0.01f || !map_.raycastAny(from, to / len, len)) { seen = true; break; }
+            }
+        budget -= rays;
+        visRays_ += rays;
+        if (seen) pv.lastSeen[t] = now;
     }
 }
 
 void Server::sendSnapshots() {
-    updateVisibility();
     ModeState ms = ms_;
     if (editing_) ms.flags |= MS_EDITING | (tempEdit_ ? MS_TEMP_EDIT : 0);
     if (cfg_.ranked) ms.flags |= MS_RANKED;
