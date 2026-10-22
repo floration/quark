@@ -413,8 +413,16 @@ bool Renderer::init(int shadowRes, std::string* err) {
 }
 
 void Renderer::loadWorld(const Map& map, const std::function<void(float)>& progress) {
-    BakedWorld bw;
-    buildWorld(map, bw, progress);
+    PreparedWorld w;
+    prepareWorld(map, w, progress);
+    uploadWorld(map, w);
+}
+
+void Renderer::prepareWorld(const Map& map, PreparedWorld& w, const std::function<void(float)>& progress, const std::atomic<bool>* cancel) {
+    BakedWorld& bw = w.bw;
+    buildWorld(map, bw, progress, cancel);
+    if (bw.cancelled) return;
+    std::vector<WorldChunk>& chunks_ = w.chunks;
     {   // sort the faces (6 vertices each) into 12 m columns and remember each column's bounds
         QZONE("world chunks");
         const float kChunk = 12.0f;
@@ -445,9 +453,15 @@ void Renderer::loadWorld(const Map& map, const std::function<void(float)>& progr
             c.count += 6;
         }
         bw.verts.swap(sorted);
-        drawFirst_.reserve(chunks_.size());
-        drawCount_.reserve(chunks_.size());
     }
+}
+
+void Renderer::uploadWorld(const Map& map, PreparedWorld& w) {
+    QZONE("world upload");
+    BakedWorld& bw = w.bw;
+    chunks_.swap(w.chunks);
+    drawFirst_.reserve(chunks_.size());
+    drawCount_.reserve(chunks_.size());
     sunDir_ = map.sunDir;
     {   // per-map palette (falls back to the stock greys)
         skyColor = map.hasPalette ? map.palSky : Vec3{0.62f, 0.66f, 0.72f};

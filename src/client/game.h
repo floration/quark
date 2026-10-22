@@ -6,6 +6,7 @@
 #include <deque>
 #include <memory>
 #include <string>
+#include <chrono>
 #include <thread>
 #include <vector>
 #include "hudwidgets.h"
@@ -91,6 +92,19 @@ private:
     void connectTo(const std::string& addr);
     void leaveGame(const std::string& error = "");
     void loadMapIfNeeded();
+    // PERF-3: a joined map's lighting bakes on a worker thread from a private copy of the map, while frame() keeps
+    // polling the network and window events and draws a loading bar; the world is swapped in (uploaded) when it's done.
+    struct BakeJob {
+        std::thread th;
+        Map map;                           // (the worker's own copy: the connection's map can change meanwhile)
+        Renderer::PreparedWorld out;
+        std::atomic<float> progress{0};
+        std::atomic<bool> done{false}, cancel{false};
+        uint32_t gen = 0;                  // net_.mapGeneration() it was started for
+    };
+    std::unique_ptr<BakeJob> bake_;
+    void stopBake();                       // cancel a running bake and wait for its worker (leaving, shutdown)
+    void drawBakeScreen(const std::string& name, float p);   // the loading bar (no flush / swap)
     void updateInput(double dt);
     UserCmd buildCmd();
     void handleEvents();

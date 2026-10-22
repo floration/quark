@@ -255,6 +255,7 @@ void Game::leaveGame(const std::string& error) {
     }
     bool wasEditing = edOnline_;
     edSession_ = edOnline_ = false;
+    stopBake();
     net_.disconnect();
     stopHost();
     setActiveRules(CustomRules());   // back to the standard rules (a custom server set its own)
@@ -303,26 +304,49 @@ static std::string upper(std::string t) {
     return t;
 }
 
+// The connection's map changed (joined, map vote, the host switched): bake its lighting on a worker thread
+// (PERF-3). Called every frame while in game; the frame loop goes on (network, input events, a loading bar) and
+// the new world replaces the old one only once it's ready. A newer map arriving mid-bake cancels it and restarts.
 void Game::loadMapIfNeeded() {
-    if (!net_.mapReady() || net_.mapGeneration() == loadedMapGen_) return;
-    loadedMapGen_ = net_.mapGeneration();
-    double lastKeepAlive = 0;
-    r_.loadWorld(net_.map(), [&](float p) {
-        // Keep the connection alive and show progress while lighting bakes.
-        if (net_.playback()) { drawBakeProgress(net_.map().name, p); return; }   // (a demo waits for it)
-        net_.poll();
-        if (timeNow() - lastKeepAlive > 0.05) {
-            UserCmd c; c.yaw = yaw_; c.pitch = pitch_;
-            net_.tick(c);
-            lastKeepAlive = timeNow();
+    if (!net_.mapReady()) return;
+    const uint32_t gen = net_.mapGeneration();
+    if (bake_) {
+        if (!bake_->done.load()) { if (bake_->gen != gen) bake_->cancel = true; return; }
+        bake_->th.join();
+        std::unique_ptr<BakeJob> job = std::move(bake_);
+        if (job->gen == gen && !job->out.bw.cancelled) {
+            r_.uploadWorld(job->map, job->out);
+            loadedMapGen_ = gen;
+            setBackdropFrame(job->map);
+            if (net_.playback()) net_.holdPlaybackClock();
+            return;
         }
-        drawBakeProgress(net_.map().name, p);
+    }
+    if (gen == loadedMapGen_) return;
+    bake_ = std::make_unique<BakeJob>();
+    bake_->map = net_.map();
+    bake_->gen = gen;
+    BakeJob* j = bake_.get();
+    j->th = std::thread([j] {
+        Renderer::prepareWorld(j->map, j->out, [j](float p) { j->progress = p; }, &j->cancel);
+        j->done = true;
     });
-    setBackdropFrame(net_.map());
-    if (net_.playback()) net_.holdPlaybackClock();
+}
+
+void Game::stopBake() {
+    if (!bake_) return;
+    bake_->cancel = true;
+    if (bake_->th.joinable()) bake_->th.join();
+    bake_.reset();
 }
 
 void Game::drawBakeProgress(const std::string& name, float p) {
+    drawBakeScreen(name, p);
+    r_.flush2D();
+    glfwSwapBuffers(win_);
+}
+
+void Game::drawBakeScreen(const std::string& name, float p) {
     r_.rect(0, 0, (float)r_.width(), (float)r_.height(), {0.05f, 0.06f, 0.08f, 1});
     float bw = r_.width() * 0.4f, bx = (r_.width() - bw) * 0.5f, by = r_.height() * 0.55f;
     r_.rect(bx, by, bw, 8, {0.2f, 0.2f, 0.25f, 1});
@@ -330,8 +354,6 @@ void Game::drawBakeProgress(const std::string& name, float p) {
     float ts = std::max(2.0f, std::round(r_.height() / 360.0f));
     std::string t = "BAKING LIGHT - " + upper(name);
     r_.text((r_.width() - r_.textWidth(t, ts)) * 0.5f, by - 30 * ts / 2, ts, t, kWhite);
-    r_.flush2D();
-    glfwSwapBuffers(win_);
 }
 
 // The map behind the main menu (lighting is baked once, then cached like any map).
@@ -993,13 +1015,14 @@ void Game::frame(double dt) {
     net_.setInterpFixed(fairRules() ? 0.010f : cfg_.interpMs > 0 ? cfg_.interpMs * 0.001f : cfg_.interpMs < 0 ? 0.0f : -1.0f);
     frameInput_ = pendingInput_; // the oldest input this frame will show
     pendingInput_ = -1;
-    if (opts_.bench > 0 && screen_ == Screen::InGame) benchFrame(dt);
+    if (opts_.bench > 0 && screen_ == Screen::InGame && !bake_) benchFrame(dt);
     frameTimes_[frameIdx_] = (float)dt;
     frameIdx_ = (frameIdx_ + 1) % frameTimes_.size();
     frameCount_ = std::min(frameCount_ + 1, frameTimes_.size());
+    if (bake_ && net_.playback()) net_.holdPlaybackClock();   // a demo waits for its map's bake
     { QZONE("net poll"); net_.poll(); }
     updateCommunity();
-    if ((screen_ == Screen::InGame || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
+    if (((screen_ == Screen::InGame && !bake_) || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
 
     if (screen_ == Screen::Join) browser_.poll();
     if (screen_ == Screen::Connecting || screen_ == Screen::InGame || (screen_ == Screen::Editor && edOnline_)) {
@@ -1031,6 +1054,12 @@ void Game::frame(double dt) {
         const double period = net_.tickPeriod();
         QZONE("input + prediction ticks");
         while (tickAcc_ >= period) {
+            if (bake_) {   // the world isn't there yet: keep the connection alive, nothing else
+                UserCmd k; k.yaw = yaw_; k.pitch = pitch_;
+                net_.tick(k);
+                tickAcc_ -= period;
+                continue;
+            }
             UserCmd c = buildCmd();
             // local fire feedback (server is authoritative for damage)
             bool altShot = altFires(net_.selfWeapon()) && (c.buttons & BTN_ALTFIRE) && // knife throw / shotgun bounce (no throws in hide and seek / tag)
@@ -1126,13 +1155,16 @@ void Game::frame(double dt) {
                 if (ps[id].valid && (ps[id].snap.flags & PS_ALIVE) && id != net_.clientId()) { specTarget_ = id; break; }
             }
         }
-        captureMouse(!paused_ && !chatting_);
+        captureMouse(!paused_ && !chatting_ && !bake_);
     }
 
     // ---- render ----
     if (screen_ == Screen::Editor) {
         if (!edScript_.empty()) edScriptStep();
         editorFrame(dt);
+    } else if (screen_ == Screen::InGame && bake_) {
+        drawBakeScreen(bake_->map.name, bake_->progress.load());
+        std::this_thread::sleep_for(std::chrono::milliseconds(12));   // (a loading bar needs no more than ~60 fps: the cores go to the bake)
     } else if (screen_ == Screen::InGame && net_.hasSnapshot() && r_.worldLoaded()) {
         drawWorld((float)clampf((float)(tickAcc_ / net_.tickPeriod()), 0, 1));
         drawHud();

@@ -25,6 +25,15 @@ public:
     void resize(int w, int h) { width_ = w; height_ = h; }
     int width() const { return width_; }
     int height() const { return height_; }
+    // World geometry grouped into spatial chunks (12 m columns) so the world pass only draws what's in
+    // the view frustum: one glMultiDrawArrays over the visible ranges.
+    struct WorldChunk { Vec3 mn, mx; int first, count; };
+    // A map's world, built and lit but not on the GPU yet: prepareWorld needs no GL context (any thread, on its
+    // own copy of the map), uploadWorld puts it on the GPU (the GL thread). loadWorld = both, here and now.
+    struct PreparedWorld { BakedWorld bw; std::vector<WorldChunk> chunks; };
+    static void prepareWorld(const Map& map, PreparedWorld& out, const std::function<void(float)>& progress,
+                             const std::atomic<bool>* cancel = nullptr);
+    void uploadWorld(const Map& map, PreparedWorld& w);
     void loadWorld(const Map& map, const std::function<void(float)>& progress);
     void warmup(const Map& map); // compile every shader / state now, not on the first match frame
     bool worldLoaded() const { return worldVerts_ > 0; }
@@ -89,9 +98,6 @@ private:
     float tanX_ = 1, tanY_ = 1;
     unsigned worldVao_ = 0, worldVbo_ = 0, lightmapTex_ = 0;
     int worldVerts_ = 0;
-    // World geometry grouped into spatial chunks (12 m columns) so the world pass only draws what's in
-    // the view frustum: one glMultiDrawArrays over the visible ranges.
-    struct WorldChunk { Vec3 mn, mx; int first, count; };
     std::vector<WorldChunk> chunks_;
     std::vector<int> drawFirst_, drawCount_;
     void drawWorldChunks();

@@ -87,7 +87,7 @@ float sunVisibility(const Map& map, const Vec3& p) {
     return anyHit(map, p, map.sunDir, 500.0f) ? 0.0f : 1.0f;
 }
 
-void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)>& progress) {
+void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)>& progress, const std::atomic<bool>* cancel) {
     out = BakedWorld();
     // 1. Collect visible faces.
     std::vector<Face> faces;
@@ -275,6 +275,7 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
         for (;;) {
             int fi = next++;
             if (fi >= (int)faces.size()) break;
+            if (cancel && cancel->load(std::memory_order_relaxed)) { doneCount++; continue; }   // (stopped: count the rest done)
             const Face& f = faces[fi];
             Vec3 n = faceNormal(f);
             Vec3 t, b;
@@ -351,6 +352,7 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
         }
     }
     for (auto& th : threads) th.join();
+    if (cancel && cancel->load()) { out.cancelled = true; return; }
     saveCache(map, out);
     if (progress) progress(1.0f);
 }
