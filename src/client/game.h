@@ -351,7 +351,8 @@ private:
     std::map<std::string, int> queueCounts_;
     double nextCrownFetch_ = 0, nextQueuePoll_ = 0, nextFilledPoll_ = 0;
     long long lastFilled_ = -1;
-    std::string pendingFilled_, linkedDiscord_;
+    std::string pendingFilled_;
+    std::string discordCode_;   // settings: the one-time code from the bot's /link (or "unlink"), sent on BACK
     bool queueMenu_ = false;
     void onKillFeedback(int killer, int victim, int weapon, bool head, bool airborne);
     int streak_[kMaxPlayers] = {};

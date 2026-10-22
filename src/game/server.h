@@ -96,6 +96,7 @@ struct ServerPlayer {
     int kills = 0, deaths = 0, score = 0;
     float respawnAt = -1;
     int checkpoint = 0;         // race: next checkpoint index
+    std::vector<int> raceSplits;   // race: ms at each checkpoint of the current run (time trials report it)
     uint32_t joinId = 0;
     float dmgDealt = 0, objTime = 0;
     int shotsFired = 0, shotsHit = 0;   // accuracy: shots (hitscan or projectile) that damaged an enemy
@@ -272,6 +273,19 @@ public:
     double nextFlagCheck_ = 0, restartAt_ = 0;
     void checkRestartFlag();
     std::string rankedResult(int winner, std::string* whyNot); // EV_RANKED text for the match that just ended
+    // Match tickets (tools/master/worker.js /ticket): a ranked match is rated only under a ticket this server opened
+    // with its list token when the match went live, binding the match id, players, ladder and map. Time trials get a
+    // race ticket for the racer, and this server (not the racer's game) posts each finished run. All HTTP runs on
+    // the MasterAnnouncer thread; replies are picked up in run().
+    std::string rankedMatch_, raceTicket_, raceTicketFor_;
+    std::vector<int> raceFloors_;
+    void openRankedTicket();
+    void openRaceTicket();
+    void finishRaceRun(int id);
+    void postRankedResult(const std::string& eventText);
+    bool timeTrialCounts() const;
+    void ensureMaster();
+    void handleMasterReply(const std::string& key, const std::string& reply);
     bool applyEdit(int from, const std::string& op);
     bool autosave();
     void handleStringCmdForTest(int id, const std::string& s) { handleStringCmd(id, s); }

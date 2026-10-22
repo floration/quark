@@ -55,3 +55,40 @@ ALTER TABLE lifetime ADD COLUMN hour_deaths INTEGER NOT NULL DEFAULT 0;
 `/announce` answers `ok <token>`. A server may announce or remove its own source IPv4 address; through an IPv6
 path (`?ip=`) it needs the token from an earlier IPv4 announce. Writes are rate-limited per IP and per player id
 (in memory, per isolate), and `/lifetime` adds at most 1200 kills and 1200 deaths per id per hour.
+
+## Match tickets, server-reported race runs, verified Discord links (anti-cheat update)
+What changed:
+- **Ranked results need a ticket.** When a ranked match goes live, the game server (registered with the list by
+  announcing, `&hidden=1` if it isn't public) opens a ticket (`POST /ticket`, with its announce token) naming the
+  match id, ladder, map and players. `/report` is accepted only under an open ticket, from its players, once each,
+  between 1 minute and 2 hours after it opened; the server posts its own result (`POST /result`) and the match is
+  rated only when the server and every player agree. Each player's game also checks the host's result against the
+  score it saw and refuses to report on a mismatch. A server opens at most one match ticket a minute.
+- **Provisional accounts.** A player counts as established after 5 ticketed matches (`accounts.tgames`). Before that
+  they're off the leaderboard and crowns, and an established player's rating doesn't move in a match against them,
+  so fresh accounts can't be farmed for rating.
+- **Race runs come from the server** (`POST /racerun`, under a race ticket for that racer), with every leg checked
+  against `RACE_FLOORS` (straight-line gap between checkpoints at 48 m/s, from `build/quark_tests racefloors`).
+  `POST /racetime` (the old self-report from the racer's game) is refused.
+- **Discord links are verified**: `/link` in Discord gives a one-time code (`POST /linkcode`, bot only), typed in game.
+  Old unverified links get no roles and no queue pings.
+
+Run this once in D1 -> `quark` -> **Console**, then deploy the new `worker.js` (and restart the bot):
+```sql
+ALTER TABLE links ADD COLUMN verified INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS tickets (id TEXT PRIMARY KEY, kind TEXT NOT NULL, server TEXT NOT NULL, ladder TEXT NOT NULL, map TEXT NOT NULL, players TEXT NOT NULL, created INTEGER NOT NULL, status TEXT NOT NULL, result TEXT);
+CREATE INDEX IF NOT EXISTS tickets_server ON tickets (server, created);
+CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, tgames INTEGER NOT NULL, created INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS link_codes (code TEXT PRIMARY KEY, discord TEXT NOT NULL, created INTEGER NOT NULL);
+```
+Existing ratings and race times stay, but with an empty `accounts` table nobody is established, so the leaderboards
+and crowns are empty until players finish 5 ticketed matches. To keep today's boards visible, grandfather the
+players who already have ranked games (they were rated under the old, forgeable reports, so check the top first):
+```sql
+INSERT OR IGNORE INTO accounts (id, tgames, created)
+  SELECT substr(id, instr(id, ':') + 1), MAX(games), MIN(updated) FROM players GROUP BY substr(id, instr(id, ':') + 1);
+```
+Optionally clear suspicious old race times (see above), since they were self-reported. Old game versions can't
+report ranked results or race times any more (they get "no ticket" / "update the game"), so release the matching
+game version at the same time. When the course of Viaduct changes, re-run `build/quark_tests racefloors` and update
+`RACE_FLOORS` (quark_tests fails until they match).

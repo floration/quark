@@ -757,6 +757,29 @@ def run_bot(cfg: dict):
         await it.followup.send(await queue_request(it.user, mode.value if mode else "", "leave" if mode else "leaveall"), ephemeral=True)
         await refresh_queue_panel()
 
+    # Linking is verified: the code only goes to the Discord user who ran /link (ephemeral), and only a player who
+    # types it in game gets linked. Unverified (old) links never get leaderboard roles or queue pings.
+    @bot.tree.command(name="link", description="Get a code to link your quark player to this Discord account")
+    async def link_cmd(it: discord.Interaction):
+        await it.response.defer(ephemeral=True, thinking=True)
+        if not cfg["bot_key"]:
+            await it.followup.send("Linking isn't set up on this bot (no BOT_KEY).", ephemeral=True)
+            return
+        try:
+            code = await bot.api.link_code(cfg["bot_key"], it.user.name)
+        except qd.EndpointMissing:
+            await it.followup.send("The ranking server isn't updated yet, try again later.", ephemeral=True)
+            return
+        except Exception as e:
+            log.warning("POST /linkcode failed: %s", e)
+            await it.followup.send(f"Couldn't reach the ranking server ({type(e).__name__}).", ephemeral=True)
+            return
+        if not code:
+            await it.followup.send("The ranking server refused (BOT_KEY mismatch?). Tell an admin.", ephemeral=True)
+            return
+        await it.followup.send(f"Your code: **{code}** (valid 10 minutes, works once).\nIn quark: Settings -> DISCORD CODE, type it, "
+                               "then BACK. Your quark name and this Discord name will show on the public leaderboard.", ephemeral=True)
+
     @bot.tree.command(name="queues", description="Show every queue")
     async def queues_cmd(it: discord.Interaction):
         await it.response.defer(ephemeral=True)

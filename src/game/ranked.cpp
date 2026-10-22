@@ -11,6 +11,7 @@
 #include "master.h"
 #include "map.h"
 #include "official_maps.h"
+#include "gamedefs.h"
 
 static bool isHex(const std::string& s, size_t n) {
     if (s.size() != n) return false;
@@ -61,51 +62,133 @@ static std::string hexName(const std::string& name) {
     return h;
 }
 
-std::string buildRankReport(const std::string& text, const std::vector<std::string>& ids, const RankKey& me,
-                            std::vector<std::string>* playersOut, std::string* ladderOut, const std::string& name) {
-    if (me.secret.empty()) return "";
+std::string randomMatchId() {
+    std::random_device rd;
+    char id[24];
+    snprintf(id, sizeof id, "%08x%08x", (unsigned)rd(), (unsigned)rd());
+    return id;
+}
+
+// "match ladder slot:team:place,..." -> its entries (false if malformed)
+namespace {
+struct ResultEntry { int slot, team, place; };
+bool parseRankedText(const std::string& text, std::string& match, std::string& mode, std::vector<ResultEntry>& out) {
     std::istringstream in(text);
-    std::string match, mode, list;
-    if (!(in >> match >> mode >> list) || !isHex(match, 16)) return "";
-    for (char c : mode) if (!isalnum((unsigned char)c)) return "";
-    std::string p;
-    bool mine = false;
-    std::vector<std::string> players;
+    std::string list;
+    if (!(in >> match >> mode >> list) || !isHex(match, 16)) return false;
+    for (char c : mode) if (!isalnum((unsigned char)c)) return false;
     std::istringstream ls(list);
     std::string part;
     while (std::getline(ls, part, ',')) {
-        int slot, team, place;
-        if (sscanf(part.c_str(), "%d:%d:%d", &slot, &team, &place) != 3 || slot < 0 || slot >= (int)ids.size() || !isHex(ids[slot], 32)) return "";
-        mine |= ids[slot] == me.id;
-        players.push_back(ids[slot]);
-        p += (p.empty() ? "" : ",") + ids[slot] + ":" + std::to_string(team) + ":" + std::to_string(place);
+        ResultEntry e;
+        char tail;
+        if (sscanf(part.c_str(), "%d:%d:%d%c", &e.slot, &e.team, &e.place, &tail) != 3 || e.slot < 0 || e.slot >= kMaxPlayers) return false;
+        for (auto& o : out) if (o.slot == e.slot) return false;
+        out.push_back(e);
     }
-    if (!mine) return "";
+    return !out.empty();
+}
+}
+
+std::string rankedResultIds(const std::string& text, const std::vector<std::string>& ids, std::string* match, std::string* ladder,
+                            std::vector<std::string>* playersOut) {
+    std::string m, mode;
+    std::vector<ResultEntry> es;
+    if (!parseRankedText(text, m, mode, es)) return "";
+    std::string p;
+    std::vector<std::string> players;
+    for (auto& e : es) {
+        if (e.slot >= (int)ids.size() || !isHex(ids[e.slot], 32)) return "";
+        players.push_back(ids[e.slot]);
+        p += (p.empty() ? "" : ",") + ids[e.slot] + ":" + std::to_string(e.team) + ":" + std::to_string(e.place);
+    }
+    if (match) *match = m;
+    if (ladder) *ladder = mode;
+    if (playersOut) *playersOut = players;
+    return p;
+}
+
+std::string buildRankReport(const std::string& text, const std::vector<std::string>& ids, const RankKey& me,
+                            std::vector<std::string>* playersOut, std::string* ladderOut, const std::string& name) {
+    if (me.secret.empty()) return "";
+    std::string match, mode;
+    std::vector<std::string> players;
+    std::string p = rankedResultIds(text, ids, &match, &mode, &players);
+    if (p.empty() || std::find(players.begin(), players.end(), me.id) == players.end()) return "";
     if (playersOut) *playersOut = players;
     if (ladderOut) *ladderOut = mode;
     std::string nameHex = hexName(name); // shown on the leaderboard; hex keeps the form body plain
     return "secret=" + me.secret + "&match=" + match + "&ladder=" + mode + "&p=" + p + (nameHex.empty() ? "" : "&name=" + nameHex);
 }
 
+bool rankedResultMatchesView(const std::string& text, const std::vector<SeenPlayer>& seen, bool teams, int scoreA, int scoreB, std::string* why) {
+    auto fail = [&](const char* w) { if (why) *why = w; return false; };
+    std::string match, mode;
+    std::vector<ResultEntry> es;
+    if (!parseRankedText(text, match, mode, es)) return fail("malformed result");
+    int playing = 0;
+    for (auto& p : seen) playing += p.playing;
+    if ((int)es.size() != playing) return fail("the result lists different players than the match had");
+    int winner = scoreA > scoreB ? 0 : scoreB > scoreA ? 1 : -1; // TEAM_A / TEAM_B / draw
+    for (auto& e : es) {
+        if (e.slot >= (int)seen.size() || !seen[e.slot].playing) return fail("the result lists someone who didn't play");
+        const SeenPlayer& p = seen[e.slot];
+        int place = 0;
+        if (teams) {
+            if (e.team != p.team) return fail("the result puts a player on the wrong side");
+            place = winner < 0 ? 0 : p.team == winner ? 0 : 1;
+        } else {
+            if (e.team != e.slot) return fail("malformed result");
+            long long mine = (long long)p.score * 1000 + p.kills;
+            for (auto& o : es) place += (long long)seen[o.slot].score * 1000 + seen[o.slot].kills > mine;
+        }
+        if (e.place != place) return fail("the result doesn't match the score");
+    }
+    return true;
+}
 
-std::string buildRaceReport(const std::string& map, int ms, const std::vector<int>& splits, const RankKey& me, const std::string& name) {
-    if (me.secret.empty() || splits.empty() || splits.back() != ms) return "";
+std::vector<int> raceSplitFloorsMs(const Map& m) {
+    std::vector<int> out;
+    if (m.checkpoints.empty() || m.spawns.empty()) return out;
+    auto gap = [](const Vec3& amn, const Vec3& amx, const Vec3& bmn, const Vec3& bmx) { // shortest distance between two boxes
+        float lo[3] = {std::max(amn.x, bmn.x), std::max(amn.y, bmn.y), std::max(amn.z, bmn.z)};
+        float hi[3] = {std::min(amx.x, bmx.x), std::min(amx.y, bmx.y), std::min(amx.z, bmx.z)};
+        float d2 = 0;
+        for (int k = 0; k < 3; k++) if (lo[k] > hi[k]) d2 += (lo[k] - hi[k]) * (lo[k] - hi[k]);
+        return std::sqrt(d2);
+    };
+    const AABB& c0 = m.checkpoints[0];
+    float first = 1e30f;
+    for (auto& sp : m.spawns) first = std::min(first, gap(sp.pos, sp.pos, c0.mn, c0.mx));
+    out.push_back((int)(first / kRaceSpeedCeiling * 1000.0f));
+    for (size_t i = 1; i < m.checkpoints.size(); i++) {
+        const AABB &a = m.checkpoints[i - 1], &b = m.checkpoints[i];
+        out.push_back((int)(gap(a.mn, a.mx, b.mn, b.mx) / kRaceSpeedCeiling * 1000.0f));
+    }
+    return out;
+}
+
+bool raceSplitsPlausible(const std::vector<int>& splits, const std::vector<int>& floors) {
+    if (splits.empty() || splits.size() != floors.size()) return false;
+    for (size_t i = 0; i < splits.size(); i++) {
+        int leg = splits[i] - (i ? splits[i - 1] : 0);
+        if (leg <= 0 || leg < floors[i]) return false;
+    }
+    return true;
+}
+
+std::string buildRaceRunForm(const std::string& ticket, const std::string& map, const std::string& rankId, int ms,
+                             const std::vector<int>& splits, const std::string& name) {
+    if (!isHex(ticket, 16) || !isHex(rankId, 32) || splits.empty() || splits.back() != ms || map.empty()) return "";
+    for (char c : map) if (!isalnum((unsigned char)c) && c != '_') return "";
     std::string sp;
     for (int x : splits) sp += (sp.empty() ? "" : ",") + std::to_string(x);
     std::string nh = hexName(name);
-    return "secret=" + me.secret + "&map=" + map + "&ms=" + std::to_string(ms) + "&splits=" + sp + "&v=" QUARK_VERSION + (nh.empty() ? "" : "&name=" + nh);
+    return "ticket=" + ticket + "&map=" + map + "&id=" + rankId + "&ms=" + std::to_string(ms) + "&splits=" + sp + "&v=" QUARK_VERSION +
+           (nh.empty() ? "" : "&name=" + nh);
 }
 
-void RankService::submitRace(const std::string& body, const std::string& map) {
-    Job j{timeNow(), true, body, "race:" + map, {}};
-    j.path = "/racetime";
-    push(j);
-    Job b{timeNow() + 2, false, "", "race:" + map, {}}; // then the board, with the new time on it
-    b.board = true;
-    push(b);
-}
-
-void RankService::fetchRaceBoard(const std::string& map) { Job j{timeNow(), false, "", "race:" + map, {}}; j.board = true; push(j); }
+void RankService::fetchRaceBoard(const std::string& map, double delay) { Job j{timeNow() + delay, false, "", "race:" + map, {}}; j.board = true; push(j); }
 
 int Rating::display() const { return (int)std::lround(std::max(0.0, mu - 3 * sigma) * 40); }
 

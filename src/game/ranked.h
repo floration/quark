@@ -30,8 +30,28 @@ std::string rankIdFromSecret(const std::string& secret);
 std::string buildRankReport(const std::string& eventText, const std::vector<std::string>& ids, const RankKey& me,
                             std::vector<std::string>* playersOut = nullptr, std::string* ladderOut = nullptr, const std::string& name = "");
 
-// Time trial: the form body for /racetime (best time + the time at every checkpoint, the last being the finish).
-std::string buildRaceReport(const std::string& map, int ms, const std::vector<int>& splits, const RankKey& me, const std::string& name);
+// The result list of an EV_RANKED text with ranked ids in place of slots ("id:team:place,..."), as the Worker wants
+// it; empty if malformed or a slot has no id. match / ladder: the text's match id and ladder.
+std::string rankedResultIds(const std::string& eventText, const std::vector<std::string>& ids, std::string* match = nullptr,
+                            std::string* ladder = nullptr, std::vector<std::string>* playersOut = nullptr);
+
+// What this client saw of the match (from its own snapshots), to check the host's EV_RANKED result against
+// before reporting it: a host that lies about who won gets no report. seen: kMaxPlayers entries.
+struct SeenPlayer { bool playing = false; int team = 0, score = 0, kills = 0; };
+bool rankedResultMatchesView(const std::string& eventText, const std::vector<SeenPlayer>& seen, bool teams, int scoreA, int scoreB,
+                             std::string* why = nullptr);
+
+// Race runs are reported by the game server that saw them (with its list token, under a race ticket), never by
+// the racer's game. The fastest plausible time between checkpoints: the straight-line gap from the start (nearest
+// spawn) to checkpoint 1, then between consecutive checkpoint boxes, at kRaceSpeedCeiling. One entry per checkpoint;
+// the Worker keeps the same table (RACE_FLOORS in tools/master/worker.js; quark_tests checks they match).
+constexpr float kRaceSpeedCeiling = 48.0f; // m/s: 1.5x the fastest dash exit (32); no run sustains this over a leg
+std::vector<int> raceSplitFloorsMs(const Map& m);
+bool raceSplitsPlausible(const std::vector<int>& splits, const std::vector<int>& floors);
+// The /racerun form body a server posts for a finished run (port and token are added by MasterAnnouncer::post).
+std::string buildRaceRunForm(const std::string& ticket, const std::string& map, const std::string& rankId, int ms,
+                             const std::vector<int>& splits, const std::string& name);
+std::string randomMatchId(); // 16 hex chars
 
 struct Rating {
     double mu = 25, sigma = 25.0 / 3;
@@ -52,10 +72,9 @@ public:
     struct LeaderRow { int rating = 0, games = 0; std::string name; };
     void fetchLeaderboard(const std::string& ladder);
     bool leaderboard(const std::string& ladder, std::vector<LeaderRow>& out);
-    // Race time trials: post a run (the Worker keeps it only if it's your best), and the fastest times per map
-    // ("rating" holds the time in ms; -1 = couldn't reach the server, message in name).
-    void submitRace(const std::string& body, const std::string& map);
-    void fetchRaceBoard(const std::string& map);
+    // Race time trials: the fastest times per map ("rating" holds the time in ms; -1 = couldn't reach the server,
+    // message in name). Runs themselves are posted by the game server (see buildRaceRunForm).
+    void fetchRaceBoard(const std::string& map, double delay = 0);
     bool raceBoard(const std::string& map, std::vector<LeaderRow>& out) { return leaderboard("race:" + map, out); }
     // Plain requests to the Worker (Discord link, queues, crowns): GET when body is empty, else a form POST.
     // The reply (or "!" + the error) lands under key; takeText hands it over once.

@@ -64,6 +64,11 @@ class Parsing(unittest.TestCase):
 
 
 class MasterQueues(unittest.TestCase):
+    def test_link_code(self):
+        self.assertEqual(qd.parse_link_code("code 012345\n"), "012345")
+        self.assertEqual(qd.parse_link_code("bad request"), "")
+        self.assertEqual(qd.parse_link_code("code 12345"), "")
+
     def test_hex(self):
         self.assertEqual(qd.from_hex(qd.to_hex("Kev")), "Kev")
         self.assertEqual(qd.from_hex("-"), "")
