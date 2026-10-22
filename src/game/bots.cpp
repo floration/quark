@@ -476,14 +476,15 @@ UserCmd botThink(Server& s, int id) {
         cmd.side = (int8_t)clampf(dot(moveDir, right) * 127, -127, 127);
         // jump over obstacles (something knee-high ahead) and across gaps (no floor ahead)
         Vec3 knee = me.move.pos + Vec3(0, 0.6f, 0);
-        if (s.map_.raycastAny(knee, moveDir, 1.2f)) cmd.buttons |= BTN_JUMP;
+        // (movement probes: clip blocks players, so it counts here)
+        if (s.map_.raycastAny(knee, moveDir, 1.2f, true)) cmd.buttons |= BTN_JUMP;
         Vec3 ahead = me.move.pos + moveDir * 0.7f + Vec3(0, 0.2f, 0);
-        if ((me.move.flags & MF_ONGROUND) && !s.map_.raycastAny(ahead, {0, -1, 0}, 1.5f)) {
+        if ((me.move.flags & MF_ONGROUND) && !s.map_.raycastAny(ahead, {0, -1, 0}, 1.5f, true)) {
             // a drop ahead: on maps with pits, only go if there's ground below before the void, or a
             // landing within jumping distance; otherwise stop at the edge (the stuck check re-plans)
             float depth = ahead.y - s.map_.killY();
-            bool safe = !s.map_.hasVoid || s.map_.raycastAny(ahead, {0, -1, 0}, std::max(depth, 0.1f));
-            bool landing = s.map_.raycastAny(me.move.pos + moveDir * 2.6f + Vec3(0, 0.6f, 0), {0, -1, 0}, 2.0f);
+            bool safe = !s.map_.hasVoid || s.map_.raycastAny(ahead, {0, -1, 0}, std::max(depth, 0.1f), true);
+            bool landing = s.map_.raycastAny(me.move.pos + moveDir * 2.6f + Vec3(0, 0.6f, 0), {0, -1, 0}, 2.0f, true);
             if (safe || landing) cmd.buttons |= BTN_JUMP;
             else { cmd.forward = 0; cmd.side = 0; }
         }
@@ -494,9 +495,9 @@ UserCmd botThink(Server& s, int id) {
             Vec3 hv = {me.move.vel.x, 0, me.move.vel.z};
             Vec3 probe = me.move.pos + hv * 0.35f + moveDir * 0.6f + Vec3(0, 0.3f, 0);
             float depth = std::max(probe.y - s.map_.killY(), 0.1f);
-            bool ground = s.map_.raycastAny(probe, {0, -1, 0}, depth);
+            bool ground = s.map_.raycastAny(probe, {0, -1, 0}, depth, true);
             Vec3 far = me.move.pos + hv * 0.35f + moveDir * 2.6f + Vec3(0, 0.6f, 0);
-            bool landing = (me.move.flags & MF_ONGROUND) && s.map_.raycastAny(far, {0, -1, 0}, 2.0f);
+            bool landing = (me.move.flags & MF_ONGROUND) && s.map_.raycastAny(far, {0, -1, 0}, 2.0f, true);
             if (!ground && !landing) {
                 Vec3 back = length(hv) > 0.5f ? normalize(hv) * -1.0f : moveDir * -1.0f;
                 cmd.forward = (int8_t)clampf(dot(back, fwd) * 127, -127, 127);

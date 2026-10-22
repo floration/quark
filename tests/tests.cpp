@@ -349,6 +349,37 @@ static void testRulesValues() {
     for (const char* bad : {"", "../x.cfg", "a/b.cfg", "a\\b.cfg", "C:x.cfg", ".hidden", "tab\there"}) CHECK(!plainFileName(bad));
 }
 
+// Clip (material 9) blocks players only: light, sight and shots go through it (REVIEW MAP-1: raycastAny, used for
+// the baked sun and for visibility, stopped at clip, so the outer clip walls shadowed most floors).
+static void testClipRays() {
+    printf("clip: blocks players, not light or sight\n");
+    Map m;
+    std::string err;
+    CHECK(m.parse("box -20 -1 -20 20 0 20\nclip 4 0 -20 5 10 20\nbox -8 0 -20 -7 10 20\nspawn any 0 0 0\n", &err));
+    Vec3 o(0, 1, 0), east(1, 0, 0), west(-1, 0, 0);
+    CHECK(!m.raycastAny(o, east, 10));                 // through the clip wall
+    CHECK(m.raycastAny(o, east, 10, true));            // a movement probe still meets it
+    CHECK(m.raycastAny(o, west, 10));                  // a real wall still blocks
+    CHECK(m.raycast(o, east, 10) < 0);                 // (same as shots)
+    CHECK(m.boxSolid(playerBox({4.5f, 0.01f, 0}, false)) && !m.boxSolid(playerBox({0, 0.01f, 0}, false)));   // players collide
+    // a shipped map ringed by clip (Dojo: 85% of its floor was in clip shadow): sun rays as if the clip weren't there
+    Map d, open;
+    CHECK(d.load("dojo"));
+    open = d;
+    open.brushes.erase(std::remove_if(open.brushes.begin(), open.brushes.end(), [](const Brush& b) { return b.material == 9; }), open.brushes.end());
+    open.rebuild();
+    int differ = 0, clipMatters = 0;
+    for (float x = d.bounds.mn.x; x <= d.bounds.mx.x; x += 2)
+        for (float z = d.bounds.mn.z; z <= d.bounds.mx.z; z += 2) {
+            Vec3 p(x, 1.0f, z);
+            bool lit = !d.raycastAny(p, d.sunDir, 500);
+            differ += lit != !open.raycastAny(p, d.sunDir, 500);
+            clipMatters += lit != !d.raycastAny(p, d.sunDir, 500, true);
+        }
+    printf("  dojo: %d sun samples the clip would have shadowed, %d differ from a clip-free map\n", clipMatters, differ);
+    CHECK(differ == 0 && clipMatters > 0);
+}
+
 static void testGridQueries() {
     printf("grid raycast / collision vs brute force\n");
     Map m;
@@ -2669,7 +2700,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "edgroups") { testEditorGroups(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(29997); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "allmaps") { testAllMaps(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "limits") { testMapLimits(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "limits") { testMapLimits(); testClipRays(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(29990); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(29980); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(29450); return g_fail ? 1 : 0; }
@@ -2700,7 +2731,7 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testSleepPrecision(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testGridQueries(); testEditorLadder(); testEditorGroups(); }},
+        {"movement", [] { testSleepPrecision(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testClipRays(); testGridQueries(); testEditorLadder(); testEditorGroups(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", 28560); testSession(MODE_BOMB, "bastion", 28561); testSession(MODE_KOTH, "bastion", 28562); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", 28563); testSession(MODE_FFA, "bastion", 28564); testSession(MODE_RACE, "foundry", 28565); }},
         {"modes", [] { testCustomMode(28570); testPoints(28571); testSyringe(28572); testCartChecks(28573); testItModes(28574); }},

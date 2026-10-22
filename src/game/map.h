@@ -93,7 +93,9 @@ struct Map {
     std::vector<AABB> lava;   // lava brushes (touch one and you die), from rebuild()
     // Returns hit distance or -1. normal receives the face normal on hit.
     float raycast(const Vec3& origin, const Vec3& dir, float maxDist, Vec3* normal = nullptr) const;
-    bool raycastAny(const Vec3& origin, const Vec3& dir, float maxDist) const; // shadow-ray style early out
+    // Shadow-ray style early out: light, sight and line of fire, so clip (material 9) doesn't block it unless
+    // hitClip (movement probes: clip blocks players).
+    bool raycastAny(const Vec3& origin, const Vec3& dir, float maxDist, bool hitClip = false) const;
     // Hitscan bullets: like raycast, but passes through wallbang brushes; *through is set if it went
     // through at least one before the returned hit (or maxDist); *bangDist = distance to the first one.
     float raycastBullet(const Vec3& origin, const Vec3& dir, float maxDist, float* bangDist) const;

@@ -767,12 +767,15 @@ float Map::raycastBullet(const Vec3& o, const Vec3& dir, float maxDist, float* b
     return best;
 }
 
-bool Map::raycastAny(const Vec3& o, const Vec3& dir, float maxDist) const {
+bool Map::raycastAny(const Vec3& o, const Vec3& dir, float maxDist, bool hitClip) const {
     Vec3 inv = safeInv(dir);
     bool hit = false;
     walkCells(*this, o, dir, maxDist, [&](size_t c, float) {
-        for (uint32_t k = cellStart[c]; k < cellStart[c + 1] && !hit; k++)
-            hit = rayAABB(o, inv, brushes[cellBrushes[k]].box, maxDist) >= 0;
+        for (uint32_t k = cellStart[c]; k < cellStart[c + 1] && !hit; k++) {
+            const Brush& br = brushes[cellBrushes[k]];
+            if (br.material == 9 && !hitClip) continue;   // clip: players only (light, sight and shots pass)
+            hit = rayAABB(o, inv, br.box, maxDist) >= 0;
+        }
         return !hit;
     });
     for (const AABB& b : dynSolids) hit = hit || rayAABB(o, inv, b, maxDist) >= 0;
