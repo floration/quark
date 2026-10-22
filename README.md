@@ -46,10 +46,13 @@ ranked leaderboards and an info channel generated from the game's own INFO scree
 - **Leaderboard roles**: every 5 min the bot reads `GET <master>/crowns` (top 10 of vanilla, vampire, instagib and
   the Viaduct time trial, with each player's linked Discord name). Linked members who are #1 on any board get
   **🥇 #1** (gold, `role_first`); places 2-10 get **Top 10** (silver, `role_top10`), never both. Members who drop
-  out lose the role. Players link their Discord name in game (`POST /link`).
+  out lose the role. Only **verified** links count: a member runs `/link`, the bot asks the Worker for a one-time
+  6-digit code (`POST /linkcode` with `BOT_KEY`, valid 10 min) and shows it to them only (ephemeral); they type it in
+  game (Settings -> DISCORD CODE), which links their ranked id to their Discord username. Links made the old way
+  (any name typed in game) stay unverified: no roles, no queue pings.
 - **#leaderboard**: one message, edited every minute, with the top 10 of each ladder and the time trial.
 - **#info**: install, hosting and joining, then every in-game INFO tab. Re-checked every 6 h, edited in place on change.
-- Also `/servers` and `/leaderboard`.
+- Also `/servers`, `/leaderboard` and `/link`.
 
 Everything it needs (category, channels, role) is created on startup if missing; channels it posts in are read-only for @everyone.
 

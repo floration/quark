@@ -238,6 +238,10 @@ class QuarkAPI:
     async def queue_action(self, bot_key: str, discord_name: str, mode: str, action: str, name: str = "") -> str:
         return await _queue_action(self, bot_key, discord_name, mode, action, name)
 
+    async def link_code(self, bot_key: str, discord_name: str) -> str:
+        """A one-time code (6 digits) that links this Discord user to whoever types it in game; "" if refused."""
+        return await _link_code(self, bot_key, discord_name)
+
     def _gh_headers(self) -> dict:
         h = {"Accept": "application/vnd.github+json", "User-Agent": "quark-discord-bot"}
         if self.token:
@@ -542,6 +546,23 @@ async def _queue_action(self: "QuarkAPI", bot_key: str, discord_name: str, mode:
     return body
 
 
+
+
+def parse_link_code(body: str) -> str:
+    """The Worker's /linkcode reply "code NNNNNN" -> "NNNNNN" ("" for anything else)."""
+    m = re.fullmatch(r"code (\d{6})", body.strip())
+    return m.group(1) if m else ""
+
+
+async def _link_code(self: "QuarkAPI", bot_key: str, discord_name: str) -> str:
+    form = {"bot": bot_key, "discord": to_hex(discord_name)}
+    async with self.s.post(f"{await self.master()}/linkcode", data=form, timeout=aiohttp.ClientTimeout(total=8)) as r:
+        if r.status == 404:
+            raise EndpointMissing("/linkcode")
+        r.raise_for_status()
+        body = (await r.text()).strip()
+    _check_deployed(body)
+    return parse_link_code(body)
 
 
 def crown_roles(crowns: list[Crown]) -> dict[str, str]:
