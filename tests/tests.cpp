@@ -1,4 +1,11 @@
+#include <atomic>
+#include <fstream>
+#include <map>
+#include <regex>
+#include <cstring>
+#include <algorithm>
 #include <thread>
+#include "../src/common/rng.h"
 #include <functional>
 #ifndef _WIN32
 #include <sys/wait.h>
@@ -265,8 +272,8 @@ static void testGridQueries() {
         for (auto& b : m.brushes) { if (b.material >= 5) continue; float t = rayAABB(o, inv, b.box, best < 0 ? maxT : best); if (t >= 0 && (best < 0 || t < best)) best = t; }
         return best;
     };
-    srand(7);
-    auto rnd = [](float a, float b) { return a + (b - a) * (rand() / (float)RAND_MAX); };
+    qsrand(7);
+    auto rnd = [](float a, float b) { return a + (b - a) * ((qrand() >> 8) / (float)(1u << 24)); };
     int mism = 0;
     double tGrid = 0, tBrute = 0;
     for (int i = 0; i < 20000; i++) {
@@ -1248,6 +1255,114 @@ static void testRejoin(uint16_t port) {
 
 // A custom mode: the server plays by its rules, sends them to a joining client in pieces that rebuild the
 // same rules, and moves on to the next map of its pool when a match ends.
+// Rules are per thread: a server hosted on its own thread (as the game does) plays its custom rules there,
+// the client thread predicts with the copy it got by EV_RULES, and stopping the server can't reset the client's.
+static void testHostedRulesPerThread(uint16_t port) {
+    printf("custom rules per thread (hosted server)\n");
+    setActiveRules(CustomRules());
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = true; cfg.map = "bastion"; cfg.port = port;
+    cfg.custom.name = "thread rules"; cfg.custom.gravity = 0.25f; cfg.custom.damage[WPN_RIFLE] = 3;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    setActiveRules(CustomRules());   // the client thread starts on the standard rules whatever start() did here
+    std::atomic<bool> quit{false};
+    std::atomic<float> serverGravity{0};
+    std::thread host([&] { s.run(quit); serverGravity = moveTuning().gravity; });
+    NetClient a;
+    a.connect("127.0.0.1:" + std::to_string(port), "pred");
+    std::vector<std::string> parts;
+    for (int i = 0; i < 400 && (parts.empty() || std::any_of(parts.begin(), parts.end(), [](auto& p) { return p.empty(); })); i++) {
+        a.poll(); UserCmd c{}; a.tick(c);
+        for (auto& e : a.takeEvents()) if (e.type == EV_RULES && e.b > 0 && e.a < e.b) { parts.resize(e.b); parts[e.a] = e.text; }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    std::string all; for (auto& p : parts) all += p;
+    CustomRules got;
+    CHECK(got.fromText(all));
+    setActiveRules(got);   // what Game does on EV_RULES
+    CHECK(std::fabs(moveTuning().gravity - 0.25f) < 1e-4f);
+    quit = true; host.join(); s.stop();
+    CHECK(std::fabs(serverGravity - 0.25f) < 1e-4f);                 // the server thread played by them
+    CHECK(activeRules().name == "thread rules" && std::fabs(moveTuning().gravity - 0.25f) < 1e-4f
+          && std::fabs(weaponDef(WPN_RIFLE).damage - baseWeaponDef(WPN_RIFLE).damage * 3) < 1e-3f);   // the client's: untouched
+    setActiveRules(CustomRules());
+}
+
+// Constants written out in more than one language: the queue list (community.cpp, the master Worker, the
+// Discord bot) and the UDP info query the bot speaks (quarkdata.py). Parsed from the sources; any mismatch fails.
+static std::string readSource(const char* rel) {
+#ifdef QUARK_SOURCE_DIR
+    std::ifstream f(std::string(QUARK_SOURCE_DIR) + "/" + rel, std::ios::binary);
+    std::stringstream ss; ss << f.rdbuf(); return ss.str();
+#else
+    return "";
+#endif
+}
+static std::string blockAfter(const std::string& s, const std::string& start, const std::string& end) {
+    size_t a = s.find(start); if (a == std::string::npos) return "";
+    size_t b = s.find(end, a + start.size()); return s.substr(a, b == std::string::npos ? std::string::npos : b - a);
+}
+static void testCrossLanguageConstants(uint16_t port) {
+    printf("cross-language constants\n");
+    std::string cpp = readSource("src/client/community.cpp"), js = readSource("tools/master/worker.js"),
+                bot = readSource("tools/discordbot/bot.py"), qd = readSource("tools/discordbot/quarkdata.py");
+    if (cpp.empty() || js.empty() || bot.empty() || qd.empty()) { printf("  (sources not found: skipped)\n"); return; }
+    // queues: key -> (title, size)
+    std::map<std::string, std::pair<std::string, int>> qc, qb; std::map<std::string, int> qj;
+    std::smatch m;
+    std::string b = blockAfter(cpp, "Game::kQueues[] = {", "};");
+    static const std::regex rx83946("\\{\"([\\w-]+)\", \"([^\"]*)\", (\\d+)\\}"); for (std::sregex_iterator it(b.begin(), b.end(), rx83946), e; it != e; ++it)
+        qc[(*it)[1]] = {(*it)[2], std::stoi((*it)[3])};
+    b = blockAfter(js, "const QUEUE_SIZES = {", "};");
+    static const std::regex rx7847("\"?([\\w-]+)\"?: (\\d+)"); for (std::sregex_iterator it(b.begin(), b.end(), rx7847), e; it != e; ++it) qj[(*it)[1]] = std::stoi((*it)[2]);
+    b = blockAfter(bot, "QUEUES: dict", "\n}");
+    static const std::regex rx61002("\"([\\w-]+)\": \\(\"([^\"]*)\", (\\d+)\\)"); for (std::sregex_iterator it(b.begin(), b.end(), rx61002), e; it != e; ++it)
+        qb[(*it)[1]] = {(*it)[2], std::stoi((*it)[3])};
+    CHECK(qc.size() >= 10);
+    CHECK(qj.size() == qc.size() && qb.size() == qc.size());
+    for (auto& [k, v] : qc) {
+        bool ok = qj.count(k) && qj[k] == v.second && qb.count(k) && qb[k] == v;
+        if (!ok) { printf("  queue %s differs between community.cpp, worker.js and bot.py\n", k.c_str()); g_fail++; }
+    }
+    // quarkdata.py: protocol constants and mode names/titles
+    auto pyInt = [&](const char* name) {
+        std::regex r(std::string("\\n") + name + " = (0x[0-9A-Fa-f]+|\\d+)");
+        return std::regex_search(qd, m, r) ? (long)std::stol(m[1].str(), nullptr, 0) : -1L;
+    };
+    CHECK(pyInt("PROTOCOL_MAGIC") == (long)kProtocolMagic);
+    CHECK(pyInt("PKT_INFO_REQUEST") == PKT_INFO_REQUEST && pyInt("PKT_INFO_REPLY") == PKT_INFO_REPLY);
+    CHECK(pyInt("INFO_REQUEST_BYTES") == kInfoRequestBytes);
+    auto pyList = [&](const char* name) {
+        std::vector<std::string> out;
+        std::string l = blockAfter(qd, std::string("\n") + name + " = [", "]");
+        static const std::regex rx13224("\"([^\"]*)\""); for (std::sregex_iterator it(l.begin(), l.end(), rx13224), e; it != e; ++it) out.push_back((*it)[1]);
+        return out;
+    };
+    auto names = pyList("MODE_NAMES"), titles = pyList("MODE_TITLES");
+    CHECK((int)names.size() == MODE_COUNT && (int)titles.size() == MODE_COUNT);
+    for (int i = 0; i < MODE_COUNT && i < (int)names.size() && i < (int)titles.size(); i++)
+        if (names[i] != modeName(i) || titles[i] != modeTitle(i)) { printf("  mode %d: quarkdata.py says %s / %s\n", i, names[i].c_str(), titles[i].c_str()); g_fail++; }
+    // the info reply layout quarkdata.parse_info_reply reads: u32 magic, u8 type, str name, str map, u8 mode, u8 players, u8 max, u16 port
+    Server s; ServerConfig cfg; cfg.map = "bastion"; cfg.mode = MODE_KOTH; cfg.port = port; cfg.maxPlayers = 7;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { printf("  FAIL: server start\n"); g_fail++; return; }
+    UdpSocket q; CHECK(q.open(0));
+    uint8_t req[kInfoRequestBytes] = {};
+    uint32_t mg = kProtocolMagic; memcpy(req, &mg, 4); req[4] = (uint8_t)pyInt("PKT_INFO_REQUEST");   // little endian, as struct.pack("<IB")
+    NetAddr to; NetAddr::parse("127.0.0.1", port, to);
+    q.send(to, req, sizeof req);
+    uint8_t rep[512]; int n = 0; NetAddr from;
+    for (int i = 0; i < 500 && n <= 0; i++) { s.frame(); n = q.recv(from, rep, sizeof rep); sleepMs(1); }
+    bool ok = n > 5 && rep[4] == (uint8_t)pyInt("PKT_INFO_REPLY");
+    int off = 5; std::string str[2];
+    for (int k = 0; ok && k < 2; k++) { int l = rep[off++]; ok = off + l <= n; if (ok) str[k].assign((char*)rep + off, l); off += l; }
+    ok = ok && off + 5 <= n;
+    CHECK(ok && str[1] == "bastion" && rep[off] == MODE_KOTH && rep[off + 1] == 0 && rep[off + 2] == 7 && (rep[off + 3] | rep[off + 4] << 8) == port);
+    s.stop();
+}
+
 static void testCustomMode(uint16_t port) {
     printf("custom mode\n");
     {   // the MOVEMENT page: every constant round-trips through the file / network text, and actually applies
@@ -1305,7 +1420,9 @@ static void testCustomMode(uint16_t port) {
     for (int i = 0; i < 70 && s.config().map == "bastion"; i++) { pump(s, cls, 0.5, idle); collect(); }
     CHECK(s.config().map == "harbor");   // the pool rotated
     s.stop();
+    setActiveRules(CustomRules());
     CHECK(!activeRules().active() && std::fabs(weaponDef(WPN_RIFLE).damage - baseWeaponDef(WPN_RIFLE).damage) < 1e-4f);
+    testHostedRulesPerThread((uint16_t)(port + 100));
 }
 
 // Every staircase (recorded by tools/make_maps.py as "# stairs x0 z0 x1 z1 base top axis rising solid"):
@@ -1770,7 +1887,7 @@ static void testMapDownload(uint16_t port) {
     CHECK(base.load("bastion"));
     std::string text = base.serialize() + "accent 0 8 0 1 9 1\n";
     char tag[16];
-    snprintf(tag, sizeof tag, "%u", (unsigned)rand());
+    snprintf(tag, sizeof tag, "%u", (unsigned)qrand());
     std::string name = std::string("zz_dltest") + tag, path = findDataPath("maps") + "/" + name + ".qmap";
     CHECK(saveMapFile(path, text));
     Server s;
@@ -1809,7 +1926,7 @@ static void testRanked(uint16_t port) {
     CHECK(sha256Hex("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
     CHECK(sha256Hex(std::string(1000, 'a')).substr(0, 16) == "41edece42d63e8d9");
     char tag[16];
-    snprintf(tag, sizeof tag, "%u", (unsigned)rand());
+    snprintf(tag, sizeof tag, "%u", (unsigned)qrand());
     std::string keyPath = findDataPath("maps") + "/../zz_test" + tag + ".key";
     RankKey k1 = loadOrCreateRankKey(keyPath), again = loadOrCreateRankKey(keyPath);
     std::remove(keyPath.c_str());
@@ -1894,7 +2011,7 @@ static void testRanked(uint16_t port) {
 static void testRankedVoteAndRestart(uint16_t port) {
     printf("ranked vote, restart for updates\n");
     char tag[16];
-    snprintf(tag, sizeof tag, "%u", (unsigned)rand());
+    snprintf(tag, sizeof tag, "%u", (unsigned)qrand());
     std::string flag = findDataPath("maps") + "/../zz_update" + tag + ".pending";
     Server s;
     ServerConfig cfg;
@@ -1973,7 +2090,7 @@ static void testEditSession(uint16_t port) {
     Map base;
     CHECK(base.load("bastion"));
     char tag[16];
-    snprintf(tag, sizeof tag, "%u", (unsigned)rand());
+    snprintf(tag, sizeof tag, "%u", (unsigned)qrand());
     std::string name = std::string("zz_edtest") + tag, path = findDataPath("maps") + "/" + name + ".qmap";
     CHECK(saveMapFile(path, base.serialize()));
     Server s;
@@ -2468,12 +2585,31 @@ static void playtestMaps(uint16_t port, double seconds) {
     }
 }
 
+// Test ports: the numbers in main() are offsets into a per-run block (TP), so two test runs on one machine
+// (two checkouts, CI + local) don't fight over 28530 and friends. Picked once before the groups fork.
+static int g_portShift = 0;
+static uint16_t TP(int port) { return (uint16_t)(port + g_portShift); }
+static void pickPortBlock() {
+#ifdef _WIN32
+    unsigned seed = (unsigned)std::chrono::steady_clock::now().time_since_epoch().count();
+#else
+    unsigned seed = (unsigned)getpid();
+#endif
+    for (int k = 0; k < 16; k++) {   // blocks of 2000 from 28500 to ~60000; the first whose sample ports are free
+        int shift = (int)((seed + k) % 16) * 2000;
+        bool ok = true;
+        for (int p : {28520, 28700, 28900, 29300, 29600, 29997}) { UdpSocket s; if (!s.open((uint16_t)(p + shift))) { ok = false; break; } }
+        if (ok) { g_portShift = shift; return; }
+    }
+}
+
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
     netInit();
+    pickPortBlock();
     setTimeScale(kTestTimeScale); // bot subprocesses share the test clock speed
     if (argc >= 4 && std::string(argv[1]) == "bot") return runBot(argv[2], atof(argv[3]), argc > 4 ? argv[4] : "bot");
-    srand(1234);
+    qsrand(1234);
     setvbuf(stdout, nullptr, _IOLBF, 0); // (CI: see how far it got)
     std::thread([] { // a hung test fails the run instead of stalling CI for an hour
         std::this_thread::sleep_for(std::chrono::minutes(25));
@@ -2481,44 +2617,44 @@ int main(int argc, char** argv) {
     }).detach();
     setTimeScale(kTestTimeScale);
     g_serverRateCheck = false;
-    if (argc >= 2 && std::string(argv[1]) == "playtest") { playtestMaps(29400, argc > 2 ? atof(argv[2]) : 40); return 0; }
+    if (argc >= 2 && std::string(argv[1]) == "playtest") { playtestMaps(TP(29400), argc > 2 ? atof(argv[2]) : 40); return 0; }
     if (argc >= 2 && std::string(argv[1]) == "serverbench") {
-        serverBench(29300, 12, 4, argc > 2 ? atof(argv[2]) : 15, "harbor");
-        serverBench(29301, 24, 8, argc > 2 ? atof(argv[2]) : 15, "hamlet");
+        serverBench(TP(29300), 12, 4, argc > 2 ? atof(argv[2]) : 15, "harbor");
+        serverBench(TP(29301), 24, 8, argc > 2 ? atof(argv[2]) : 15, "hamlet");
         return 0;
     }
     if (argc >= 2 && std::string(argv[1]) == "ladders") { testLadders(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "stairs") { testStairs(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "points") { setTimeScale(kTestTimeScale); testPoints(29995); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "syringe") { setTimeScale(kTestTimeScale); testSyringe(29996); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "points") { setTimeScale(kTestTimeScale); testPoints(TP(29995)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "syringe") { setTimeScale(kTestTimeScale); testSyringe(TP(29996)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edladder") { testEditorLadder(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edgroups") { testEditorGroups(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(29997); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(TP(29997)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "allmaps") { testAllMaps(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "custom") { testCustomMode(29990); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(29980); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(29450); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = 29500; testBotAim(p); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "ranked") { testRanked(29610); testRankedVoteAndRestart(29620); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(29600); testEditSession(29601); testVotedEdit(29602); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "custom") { testCustomMode(TP(29990)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(TP(29980)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "ranked") { testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(TP(29600)); testEditSession(TP(29601)); testVotedEdit(TP(29602)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
-    if (argc >= 2 && std::string(argv[1]) == "demo") { testDemo(29603); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(29960); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(29950); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(29900); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "demo") { testDemo(TP(29603)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(TP(29960)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(TP(29950)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(TP(29900)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = 29800; testArenaAndTourney(p); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = 29700; testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = TP(29800); testArenaAndTourney(p); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); return g_fail ? 1 : 0; }
     // ---- the whole suite. Most tests wait on real-time network play rather than the CPU, so each runs in its own
     // process, several at once (output kept in order); a few timing-sensitive ones run alone afterwards.
     // "quark_tests serial" runs everything in this process, one after another, as before.
     struct T { const char* name; std::function<void()> run; };
     std::vector<T> par = {   // (longest first: they set the wall time)
-        {"bots", [] { uint16_t p = 28900; testBots(p); }},
-        {"botaim", [] { uint16_t p = 29000; testBotAim(p); }},
-        {"tourney", [] { uint16_t p = 29100; testArenaAndTourney(p); }},
-        {"duel", [] { testDuel(28520); testDuel2v2(28521); }},
-        {"weapons", [] { testWeapons(28530); testRocketSelfDamage(28540); testAltFires(28545); testRocketLob(28550); testTimeToKill(); testWallbang(); }},
+        {"bots", [] { uint16_t p = TP(28900); testBots(p); }},
+        {"botaim", [] { uint16_t p = TP(29000); testBotAim(p); }},
+        {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
+        {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
+        {"weapons", [] { testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testTimeToKill(); testWallbang(); }},
         {"maps", [] {
             testMaps(); testAllMaps(); testStairs(); testLadders();
             printf("map scores\n");   // the map bar: every map scores at least 7 in every category but originality
@@ -2526,17 +2662,17 @@ int main(int argc, char** argv) {
             if (mapReport(p.c_str())) g_fail++;
         }},
         {"movement", [] { testMovement(); testTickRateIndependence(); testGridQueries(); testEditorLadder(); testEditorGroups(); }},
-        {"sessions", [] { testSession(MODE_VS, "bastion", 28560); testSession(MODE_BOMB, "bastion", 28561); testSession(MODE_KOTH, "bastion", 28562); }},
-        {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", 28563); testSession(MODE_FFA, "bastion", 28564); testSession(MODE_RACE, "foundry", 28565); }},
-        {"modes", [] { testCustomMode(28570); testPoints(28571); testSyringe(28572); testCartChecks(28573); testItModes(28574); }},
-        {"race", [] { testTimeTrial(28580); testPayloadPush(28581); testPacketLoss(28582); testCartDash(28583); testSemiAuto(28584); }},
-        {"votes", [] { testRejoin(28590); testMapVote(28591); testHandshake(28592); }},
-        {"edit", [] { testMapDownload(28600); testEditSession(28601); testVotedEdit(28602); testDemo(28603); }},
-        {"ranked", [] { testRanked(28610); testRankedVoteAndRestart(28620); testInternetList(28625); }},
+        {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
+        {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
+        {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); }},
+        {"race", [] { testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
+        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testHandshake(TP(28592)); }},
+        {"edit", [] { testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
+        {"ranked", [] { testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
-        {"netcode", [] { testNetcode(28700); }},
-        {"tickrate", [] { testTickRateFallback(28710); }},
+        {"netcode", [] { testNetcode(TP(28700)); testCrossLanguageConstants(TP(28705)); }},
+        {"tickrate", [] { testTickRateFallback(TP(28710)); }},
         {"resetmaps", [] { testResetMaps(); }},
     };
     bool serial = argc >= 2 && std::string(argv[1]) == "serial";
@@ -2557,7 +2693,7 @@ int main(int argc, char** argv) {
                 if (!freopen(out.c_str(), "w", stdout)) std::_Exit(99);
                 dup2(fileno(stdout), 2);
                 setvbuf(stdout, nullptr, _IOLBF, 0);
-                srand(1234);
+                qsrand(1234);
                 par[i].run();
                 fflush(stdout);
                 std::_Exit(std::min(g_fail, 100));

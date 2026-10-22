@@ -1,4 +1,5 @@
 #include <fstream>
+#include "../common/rng.h"
 #include <filesystem>
 #include <ctime>
 #include <algorithm>
@@ -840,7 +841,7 @@ void Game::handleEvents() {
             case EV_TYPING:   // someone's typing: soft key clicks from them and "..." over their head
                 if (e.a < kMaxPlayers) {
                     typingUntil_[e.a] = time_ + 0.8;
-                    if (const PlayerSnap* tp = net_.findPlayer(e.a)) audio_.play3D(SND_TYPING, tp->pos + Vec3(0, 1.5f, 0), 0.6f, 0.9f + (rand() % 20) * 0.01f);
+                    if (const PlayerSnap* tp = net_.findPlayer(e.a)) audio_.play3D(SND_TYPING, tp->pos + Vec3(0, 1.5f, 0), 0.6f, 0.9f + (qrand() % 20) * 0.01f);
                     else audio_.play(SND_TYPING, 0.4f);
                 }
                 break;
@@ -1005,7 +1006,7 @@ void Game::frame(double dt) {
                 bool alt = (c.buttons & BTN_ALTFIRE) != 0 && (w != WPN_KNIFE || altShot); // same throw rule as above
                 localNextFire_ = time_ + shotRefire(w, alt);
                 if (w != WPN_LASER || time_ >= nextLaserSound_) { // laser fires every 10 ms: sound at 20 Hz
-                    audio_.play(SND_RIFLE + w, w == WPN_LASER ? 0.6f : 0.8f, 0.97f + (rand() % 7) * 0.01f);
+                    audio_.play(SND_RIFLE + w, w == WPN_LASER ? 0.6f : 0.8f, 0.97f + (qrand() % 7) * 0.01f);
                     nextLaserSound_ = time_ + 0.05;
                 }
                 if (w == WPN_KNIFE && !alt) knifeSlash_[net_.clientId() % kMaxPlayers] = time_;
@@ -4344,7 +4345,7 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
         float h = std::sqrt(d.x * d.x + d.z * d.z);
         if (now && h < 2.0f) {
             stepDist_ += h;
-            if (stepDist_ > 2.4f) { stepDist_ = 0; audio_.play(SND_STEP, 0.55f, 0.9f + (rand() % 20) * 0.01f); }
+            if (stepDist_ > 2.4f) { stepDist_ = 0; audio_.play(SND_STEP, 0.55f, 0.9f + (qrand() % 20) * 0.01f); }
         }
         if (was && !now && m.vel.y > 3) audio_.play(SND_JUMP, 0.5f);
         if (!was && now && prevMove_.vel.y < -6) audio_.play(SND_LAND, clampf(-prevMove_.vel.y / 20.0f, 0.3f, 1.0f));
@@ -4367,7 +4368,7 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
             float h = std::sqrt(d.x * d.x + d.z * d.z);
             if (h < 2.0f && std::fabs(d.y) < 0.05f) { // walking on the ground
                 ra.stepDist += h;
-                if (ra.stepDist > 2.4f) { ra.stepDist = 0; audio_.play3D(SND_STEP, p.pos, 0.8f, 0.9f + (rand() % 20) * 0.01f, sp); }
+                if (ra.stepDist > 2.4f) { ra.stepDist = 0; audio_.play3D(SND_STEP, p.pos, 0.8f, 0.9f + (qrand() % 20) * 0.01f, sp); }
             }
             if (p.health < ra.health && time_ >= ra.nextHurt) { // their hurt sound, at most 5 a second (beams, drain)
                 ra.nextHurt = time_ + 0.2;
@@ -4380,7 +4381,7 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
                 ra.nextLaser = time_ + 0.05;
             } else if (firing && !remoteFiring_[i] && p.weapon != WPN_LASER && time_ >= ra.nextShot) {
                 ra.nextShot = time_ + weaponDef(p.weapon).refire * 0.6f; // (a flag flicker between snapshots isn't a second shot)
-                audio_.play3D(SND_RIFLE + p.weapon, p.pos + Vec3(0, 1.5f, 0), 1.0f, 0.97f + (rand() % 7) * 0.01f, sp);
+                audio_.play3D(SND_RIFLE + p.weapon, p.pos + Vec3(0, 1.5f, 0), 1.0f, 0.97f + (qrand() % 7) * 0.01f, sp);
             }
         }
         ra.pos = p.pos;

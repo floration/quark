@@ -26,7 +26,7 @@ struct CustomRules {
 };
 
 const CustomRules& activeRules();
-void setActiveRules(const CustomRules& r);   // the rules everything in this process plays by (and the weapon table)
+void setActiveRules(const CustomRules& r);   // the rules the CALLING THREAD plays by (and its weapon table); per thread, so a hosted server and the client never share them
 std::string customModesDir();                 // where presets are saved
 std::vector<std::string> listCustomModes();   // preset names, sorted
 bool loadCustomMode(const std::string& name, CustomRules& out);

@@ -1,4 +1,5 @@
 #include "gamemodes.h"
+#include "../common/rng.h"
 #include "server.h"
 #include <cstdlib>
 
@@ -95,7 +96,7 @@ void pickIt(Server& s) {
     std::vector<int> c;
     for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i)) c.push_back(i);
     if (c.empty()) return;
-    int pick = c[rand() % c.size()];
+    int pick = c[qrand() % c.size()];
     if (s.ms_.mode == MODE_HIDE) {
         pick = c[0];
         for (int i : c) if (i > s.lastIt_) { pick = i; break; }
@@ -202,7 +203,7 @@ void startRound(Server& s) {
         if ((s.duelUsed_ & all) == all) s.duelUsed_ = 0; // only if a match ever outlasts the list
         int left = 0, pick = 0;
         for (int i = 0; i < DUEL_MOD_COUNT; i++) left += !(s.duelUsed_ >> i & 1);
-        int n = rand() % left;
+        int n = qrand() % left;
         for (int i = 0; i < DUEL_MOD_COUNT; i++)
             if (!(s.duelUsed_ >> i & 1) && n-- == 0) { pick = i; break; }
         s.duelUsed_ |= 1u << pick;
@@ -252,7 +253,7 @@ void startRound(Server& s) {
         for (int i = 0; i < kMaxPlayers; i++)
             if (s.players_[i].connected && s.players_[i].alive && s.players_[i].team == m.attackers) cands.push_back(i);
         if (!cands.empty()) {
-            m.bombCarrier = (uint8_t)cands[rand() % cands.size()];
+            m.bombCarrier = (uint8_t)cands[qrand() % cands.size()];
             m.bombState = BOMB_CARRIED;
         }
     }
@@ -319,7 +320,7 @@ void tourneyBegin(Server& s) {
     t = Server::Tourney();
     std::vector<int> entrants;
     for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].team != TEAM_SPECTATOR) entrants.push_back(i);
-    for (size_t i = entrants.size(); i > 1; i--) std::swap(entrants[i - 1], entrants[rand() % i]); // random seeding
+    for (size_t i = entrants.size(); i > 1; i--) std::swap(entrants[i - 1], entrants[qrand() % i]); // random seeding
     size_t size = 2;
     while (size < entrants.size()) size *= 2;
     // byes go against different players: fill pairs' second slots last

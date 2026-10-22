@@ -19,10 +19,12 @@ option(QUARK_BUILD_CLIENT "Build the game client (needs OpenGL)" ON)
 option(QUARK_BUILD_TESTS "Build headless tests" ON)
 
 if(MSVC)
-  add_compile_options(/W3 /O2 /fp:fast)
+  # precise FP everywhere: client prediction (pmove / map / collision) must match a server built by another
+  # toolchain bit for bit, so no fast-math and no FMA contraction on any compiler
+  add_compile_options(/W3 /O2 /fp:precise)
   add_definitions(-D_CRT_SECURE_NO_WARNINGS -D_WIN32_WINNT=0x0601) # Windows 7
 else()
-  add_compile_options(-Wall -Wno-unused-parameter)
+  add_compile_options(-Wall -Wextra -Wno-unused-parameter -fno-fast-math -ffp-contract=off)
   if(CMAKE_BUILD_TYPE STREQUAL "Release")
     add_compile_options(-O2)
   endif()
@@ -117,6 +119,9 @@ if(QUARK_BUILD_CLIENT)
   set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
   set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
   add_subdirectory(third_party/glfw EXCLUDE_FROM_ALL)
+  if(NOT MSVC)
+    target_compile_options(glfw PRIVATE -Wno-sign-compare -Wno-missing-field-initializers)   # third party: our -Wextra is for our code
+  endif()
 
   add_executable(quark WIN32 MACOSX_BUNDLE
     src/client/main.cpp
@@ -164,6 +169,7 @@ endif()
 if(QUARK_BUILD_TESTS)
   add_executable(quark_tests tests/tests.cpp tests/mapreport.cpp)
   target_link_libraries(quark_tests quark_core)
+  target_compile_definitions(quark_tests PRIVATE QUARK_SOURCE_DIR="${CMAKE_SOURCE_DIR}")   # cross-language constant checks read tools/
 endif()
 
 # Copy maps next to the executables so builds run in place.
