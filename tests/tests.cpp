@@ -11,6 +11,10 @@
 #ifndef _WIN32
 #include <sys/wait.h>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <sys/select.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #endif
 #include <chrono>
 #include <random>
@@ -2546,9 +2550,13 @@ static void testRanked(uint16_t port) {
         RankKey f = rankKeyFromSecret(std::string(64, 'a'));
         CHECK(f.pub == "7361c4bb035a82708b4b001bcfd4b748ff9f89b9647a51d2dc4a7f0dc20d497d" && f.id == "694e20014c510c34c129e731ef06fe1d");
         std::string sig;
-        CHECK(rankSign(f, rankConnectMessage(0x1234abcd, 7), &sig) && rankVerify(f.pub, rankConnectMessage(0x1234abcd, 7), sig));
-        CHECK(!rankVerify(f.pub, rankConnectMessage(0x1234abcd, 8), sig));        // another challenge
-        CHECK(!rankVerify(k1.pub, rankConnectMessage(0x1234abcd, 7), sig));       // another key
+        const std::string srv = "203.0.113.5:27500";
+        CHECK(rankConnectMessage(0x1234abcd, 7, srv) == "quark-rankid-v2 1234abcd 00000007 203.0.113.5:27500");
+        CHECK(rankTicketMessage("00112233aabbccdd", srv) == "quark-ticket-v2 00112233aabbccdd 203.0.113.5:27500");   // (test.mjs signs the same)
+        CHECK(rankSign(f, rankConnectMessage(0x1234abcd, 7, srv), &sig) && rankVerify(f.pub, rankConnectMessage(0x1234abcd, 7, srv), sig));
+        CHECK(!rankVerify(f.pub, rankConnectMessage(0x1234abcd, 8, srv), sig));        // another challenge
+        CHECK(!rankVerify(k1.pub, rankConnectMessage(0x1234abcd, 7, srv), sig));       // another key
+        CHECK(!rankVerify(f.pub, rankConnectMessage(0x1234abcd, 7, "203.0.113.6:27500"), sig));   // another server (REVIEW 2.2)
         CHECK(rankKeyFromSecret("nothex").id.empty());
     }
     {   // tourney seeding: seed 1 meets the last seed, top seeds get the byes, 1 and 2 only meet in the final
@@ -2712,7 +2720,8 @@ static void testRankedLeaver(uint16_t port) {
     CHECK(s.ms_.phase == PHASE_LIVE && s.rankedLive());
     pump(s, cls, 0.5, idle);
     CHECK(!s.players_[ia].ticketSig.empty() && !s.players_[ib].ticketSig.empty() && s.rankedTicketSent_);   // both signed
-    CHECK(rankVerify(kb.pub, rankTicketMessage(s.rankedMatch_), s.players_[ib].ticketSig));
+    CHECK(rankVerify(kb.pub, rankTicketMessage(s.rankedMatch_, addr), s.players_[ib].ticketSig) && s.players_[ib].dialled.toString() == addr);
+    CHECK(!rankVerify(kb.pub, rankTicketMessage(s.rankedMatch_, "127.0.0.1:" + std::to_string(port + 1)), s.players_[ib].ticketSig));   // names this server only
     // locked while live: votes, map / mode / ranked changes, kicking a player of the match, switching teams
     a.sendCommand("callvote map furnace");
     a.sendCommand("callvote ranked off");
@@ -2760,6 +2769,65 @@ static void testRankedLeaver(uint16_t port) {
     pump(s, onlyA, kReconnectGrace + 0.5, idle);
     CHECK(s.rankedLeft_.size() == 1);
     s.stop();
+}
+
+// REVIEW 2.2: a server the player joined relays its connect to a real server (forwarding the real server's challenge
+// to the player and the player's signed CONNECT back) to play there under the player's ranked id. The player's game
+// signs the address it dialled - the relay's - so the real server gives the relayed session no ranked id.
+static void testRankedRelay(uint16_t port) {
+    printf("ranked: a relayed connect gets no ranked id (signatures name the server dialled)\n");
+    char tag[16];
+    snprintf(tag, sizeof tag, "%u", (unsigned)qrand());
+    RankKey kv = rankKeyFromSecret(sha256Hex(std::string("relayV") + tag));
+    UdpSocket front, back;   // the relay: players dial `front`; it talks to the real server from `back`
+    CHECK(front.open(0) && back.open(0));
+    const NetAddr real{0x7F000001u, port};
+    const std::string relayAddr = "127.0.0.1:" + std::to_string(front.localPort());
+    for (int pass = 0; pass < 2; pass++) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "temple"; cfg.mode = MODE_ARENA; cfg.port = port;
+        if (pass == 1) cfg.ownAddrs = {relayAddr};   // (control: if the host says that address reaches it, the same connect is taken)
+        std::vector<std::string> logs;
+        s.setLog([&](const std::string& l) { logs.push_back(l); });
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+        NetClient v;
+        v.setRankKey(kv);
+        v.connect(relayAddr, "victim");
+        NetAddr victim{};
+        double end = timeNow() + 1.5, nextTick = timeNow();
+        while (timeNow() < end && !(v.state() == ConnState::Connected && v.clientId() >= 0)) {
+            s.frame();
+            uint8_t buf[2048]; NetAddr from; int n;
+            while ((n = front.recv(from, buf, sizeof buf)) > 0) { victim = from; back.send(real, buf, n); }
+            while ((n = back.recv(from, buf, sizeof buf)) > 0) if (victim.port) front.send(victim, buf, n);
+            v.poll();
+            while (timeNow() >= nextTick) { v.tick(idle(0)); nextTick += v.tickPeriod(); }
+            sleepMs(1);
+        }
+        int id = v.clientId();
+        CHECK(v.state() == ConnState::Connected && id >= 0);
+        if (id < 0) { s.stop(); continue; }
+        if (pass == 0) {
+            CHECK(s.players_[id].rankId.empty());   // joined, but not as the victim
+            bool logged = false;
+            for (auto& l : logs) logged |= l.find("is for " + relayAddr + ", not this server") != std::string::npos;
+            CHECK(logged);
+        } else CHECK(s.players_[id].rankId == kv.id && s.players_[id].dialled.toString() == relayAddr);
+        // which addresses count as this server's
+        const NetAddr lo{0x7F000001u, port}, outside{0xC6336401u, 5000};   // (198.51.100.1)
+        CHECK(s.ownAddress(lo, NetAddr{0x7F000001u, 5000}));                       // loopback, from this machine
+        CHECK(!s.ownAddress(lo, outside));                                          // loopback named from elsewhere: a relay on their machine
+        CHECK(!s.ownAddress(NetAddr{0x7F000001u, (uint16_t)(port + 1)}, NetAddr{0x7F000001u, 5000}));   // another port
+        CHECK(!s.ownAddress(NetAddr{0xC6336402u, port}, outside));                  // someone else's address
+        for (uint32_t ip : localIpv4Addresses())
+            if ((ip >> 24) != 127) CHECK(s.ownAddress(NetAddr{ip, port}, outside));   // an interface's (LAN) address
+        s.publicIp_ = std::make_shared<Server::PublicIpLookup>();
+        s.publicIp_->ip = 0xC6336402u;                                              // our public IP behind a NAT
+        CHECK(s.ownAddress(NetAddr{0xC6336402u, port}, outside));
+        v.disconnect();
+        s.stop();
+    }
 }
 
 // REVIEW 2.1: every way a live ranked player is dropped counts as leaving, not just the grace running out: a new
@@ -2997,6 +3065,74 @@ static void testTourneySeeding(uint16_t port) {
     CHECK((first == std::vector<int>{1, -1, 2, 0, 4, -1, 3, -1}));
     for (auto& p : s.players_) p.connected = false;
     s.stop();
+}
+
+// REVIEW 3.6: POST /hello is retried (with backoff, on the ranked thread) until the Worker answers "id <id>", then
+// never again. A tiny local HTTP server refuses the first one. (POSIX sockets: Linux / macOS only.)
+static void testHelloRetry() {
+    printf("ranked: /hello retried until it takes\n");
+    CHECK(RankService::helloRetryDelay(1) == 10 && RankService::helloRetryDelay(2) == 20 && RankService::helloRetryDelay(8) == 900 &&
+          RankService::helloRetryDelay(50) == 900);
+#ifndef _WIN32
+    int ls = socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in a{};
+    a.sin_family = AF_INET; a.sin_addr.s_addr = htonl(INADDR_LOOPBACK); a.sin_port = 0;
+    socklen_t al = sizeof a;
+    if (ls < 0 || bind(ls, (sockaddr*)&a, sizeof a) != 0 || listen(ls, 4) != 0 || getsockname(ls, (sockaddr*)&a, &al) != 0) {
+        printf("  FAIL %s:%d: no local listener\n", __FILE__, __LINE__); g_fail++; if (ls >= 0) close(ls); return;
+    }
+    RankKey k = rankKeyFromSecret(sha256Hex("hello" + std::to_string(qrand())));
+    std::atomic<int> requests{0};
+    std::atomic<bool> quit{false};
+    std::thread srv([&] {
+        while (!quit) {
+            fd_set fs; FD_ZERO(&fs); FD_SET(ls, &fs);
+            timeval tv{0, 50000};
+            if (select(ls + 1, &fs, nullptr, nullptr, &tv) <= 0) continue;
+            int c = accept(ls, nullptr, nullptr);
+            if (c < 0) continue;
+            std::string req;
+            char buf[4096];
+            for (;;) {   // headers, then the form body (Content-Length)
+                size_t h = req.find("\r\n\r\n");
+                if (h != std::string::npos) {
+                    size_t cl = req.find("Content-Length: ");
+                    size_t len = cl == std::string::npos ? 0 : (size_t)atoi(req.c_str() + cl + 16);
+                    if (req.size() >= h + 4 + len) break;
+                }
+                ssize_t n = recv(c, buf, sizeof buf, 0);
+                if (n <= 0) break;
+                req.append(buf, (size_t)n);
+            }
+            int nth = ++requests;
+            bool ok = req.rfind("POST /hello ", 0) == 0 && req.find("secret=" + k.secret) != std::string::npos;
+            std::string body = nth == 1 || !ok ? "busy" : "id " + k.id + "\n";
+            std::string resp = std::string(nth == 1 || !ok ? "HTTP/1.1 503 Busy" : "HTTP/1.1 200 OK") + "\r\nContent-Length: " +
+                               std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
+            send(c, resp.data(), resp.size(), 0);
+            close(c);
+        }
+    });
+    const char* prev = getenv("QUARK_MASTER");
+    std::string was = prev ? prev : "off";
+    setenv("QUARK_MASTER", ("http://127.0.0.1:" + std::to_string(ntohs(a.sin_port))).c_str(), 1);
+    {
+        RankService rs;
+        rs.hello(k);
+        // (the retry comes 10 s of game time later; real time here: a loaded CI box can be slow to start curl)
+        auto end = std::chrono::steady_clock::now() + std::chrono::seconds(90);
+        while (std::chrono::steady_clock::now() < end && !rs.helloDone()) sleepMs(20);
+        if (!rs.helloDone() || requests != 2) printf("  hello: done %d after %d requests\n", (int)rs.helloDone(), requests.load());
+        CHECK(rs.helloDone() && requests == 2);   // refused once, then taken
+        double settle = timeNow() + 15;
+        while (timeNow() < settle) sleepMs(20);
+        CHECK(requests == 2);                      // and not sent again
+    }
+    setenv("QUARK_MASTER", was.c_str(), 1);
+    quit = true;
+    srv.join();
+    close(ls);
+#endif
 }
 
 // master.txt can move the Worker only with a release-key signature of exactly that file.
@@ -4235,6 +4371,13 @@ int main(int argc, char** argv) {
         setenv("QUARK_MASTER", "off", 1);
 #endif
     }
+    if (!getenv("QUARK_PUBLIC_IP")) { // servers look up their public IPv4 at start (ranked signatures): not from tests
+#ifdef _WIN32
+        _putenv("QUARK_PUBLIC_IP=off");
+#else
+        setenv("QUARK_PUBLIC_IP", "off", 1);
+#endif
+    }
     if (argc >= 2 && std::string(argv[1]) == "playtest") { playtestMaps(TP(29400), argc > 2 ? atof(argv[2]) : 40); return 0; }
     if (argc >= 2 && std::string(argv[1]) == "serverbench") {
         serverBench(TP(29300), 12, 4, argc > 2 ? atof(argv[2]) : 15, "harbor");
@@ -4270,7 +4413,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); testTagLateJoin(TP(29455)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "nav") { testNavGraph(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterReplies(TP(29629)); testMasterSignature(); testPlacementConstant(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testRankedRelay(TP(29630)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterReplies(TP(29629)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(TP(29600)); testEditSession(TP(29601)); testVotedEdit(TP(29602)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
     if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(29604)); testMapNames(TP(29605)); testDemo(TP(29603)); return g_fail ? 1 : 0; }
@@ -4305,8 +4448,8 @@ int main(int argc, char** argv) {
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
         {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
-        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testMasterSignature(); testPlacementConstant(); }},
-        {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
+        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); }},
+        {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
         {"rules", [] { testGameRules(""); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine

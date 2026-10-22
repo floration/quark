@@ -18,13 +18,14 @@
 // old id's rows to the new id once (id_moves).
 //   POST /hello   form: secret                                  "id <id>" (and the move above)
 // Match tickets (servers, with their announce token; form also carries port, token[, ip]):
-//   POST /ticket  form: kind=match, match (16 hex), ladder, map, players=id,..., keys=pub,..., sigs=sig,...
+//   POST /ticket  form: kind=match, match (16 hex), ladder, map, players=id,..., keys=pub,..., sigs=sig,..., addrs=ip:port,...
 //                 when a ranked match goes live; each player's key must hash to their id and have signed
-//                 "quark-ticket-v1 <match>" (their game signs it in the match), so a server can only ticket players
-//                 who are really in it.
-//                 form: kind=race, match (16 hex), map, players=<racer id>, keys=pub, sigs=sig   when a time trial
-//                 starts; the racer's game signs "quark-ticket-v1 <match>" the same way, so a server can only post runs
-//                 (and the name that goes with them) for a player who is really on it.
+//                 "quark-ticket-v2 <match> <ip:port>" (their game signs it in the match; ip:port is the server address
+//                 it dialled, which must be this server's: see signedForServer), so a server can only ticket players
+//                 who are really in it, on it.
+//                 form: kind=race, match (16 hex), map, players=<racer id>, keys=pub, sigs=sig, addrs=ip:port   when a
+//                 time trial starts; the racer's game signs "quark-ticket-v2 <match> <ip:port>" the same way, so a
+//                 server can only post runs (and the name that goes with them) for a player who is really on it.
 //                 answers "ticket <match>". One open match ticket per server (a new one voids the last if that has
 //                 no result yet); a server opens at most one a minute.
 //   POST /result  form: match, p=id:team:place,...[, left=id,...]   the server's own account of the ticketed match;
@@ -157,6 +158,12 @@ async function ed25519Verify(pubHex, sigHex, msg) {
 
 // The player behind a secret, after moving a pre-1.17 id's rows (ratings, account, name, Discord link, lifetime
 // stats, race times) to the new id the first time this secret shows up. "" if the secret is malformed.
+// The new id can already have rows (REVIEW 3.6): a match rated before this secret reached us (the other player's
+// report, the cron) creates its ladder row and account. They're merged, not dropped: a ladder keeps the rating of
+// the row with more games (the old one, normally: the new one has the match or two since) and counts both rows'
+// games; the account keeps the most ticketed games and the earliest start. A name the new id already has is newer
+// (only a server's race run saves one without the secret) and stays; links and lifetime need the secret, so the new
+// id can't have them yet; race times keep the faster run.
 const moved = new Set();
 async function playerOf(env, secret, now) {
   const k = await rankKeyOf(secret);
@@ -167,8 +174,16 @@ async function playerOf(env, secret, now) {
     const old = k.legacy, id = k.id, ladderIds = [...LADDERS].map((l) => l + ":" + old);
     const q = (sql, ...a) => env.DB.prepare(sql).bind(...a);
     await env.DB.batch([
-      ...[...LADDERS].map((l) => q("UPDATE OR IGNORE players SET id = ? WHERE id = ?", l + ":" + id, l + ":" + old)),
-      q(`DELETE FROM players WHERE id IN (${ladderIds.map(() => "?").join(",")})`, ...ladderIds),   // (the new id had its own already)
+      // both rows: merge into the new one (ver + 1, so a rating computed from either row before this can't land)
+      ...[...LADDERS].map((l) => q(
+        "UPDATE players SET mu = CASE WHEN o.games > players.games THEN o.mu ELSE players.mu END, " +
+        "sigma = CASE WHEN o.games > players.games THEN o.sigma ELSE players.sigma END, games = players.games + o.games, " +
+        "updated = MAX(players.updated, o.updated), ver = MAX(players.ver, o.ver) + 1 " +
+        "FROM (SELECT mu, sigma, games, updated, ver FROM players WHERE id = ?) AS o WHERE players.id = ?", l + ":" + old, l + ":" + id)),
+      ...[...LADDERS].map((l) => q("UPDATE OR IGNORE players SET id = ? WHERE id = ?", l + ":" + id, l + ":" + old)),   // only the old row: it moves
+      q(`DELETE FROM players WHERE id IN (${ladderIds.map(() => "?").join(",")})`, ...ladderIds),   // (merged above)
+      q("UPDATE accounts SET tgames = MAX(accounts.tgames, o.tgames), created = MIN(accounts.created, o.created) " +
+        "FROM (SELECT tgames, created FROM accounts WHERE id = ?) AS o WHERE accounts.id = ?", old, id),
       ...["accounts", "names", "links", "lifetime"].flatMap((t) => [q(`UPDATE OR IGNORE ${t} SET id = ? WHERE id = ?`, id, old), q(`DELETE FROM ${t} WHERE id = ?`, old)]),
       q("INSERT INTO race_times (map, id, ms, splits, version, created) SELECT map, ?, ms, splits, version, created FROM race_times WHERE id = ? AND 1 " +
         "ON CONFLICT(map, id) DO UPDATE SET ms = excluded.ms, splits = excluded.splits, version = excluded.version, created = excluded.created WHERE excluded.ms < race_times.ms", id, old),
@@ -202,6 +217,17 @@ async function serverAuth(env, form, srcIp, now) {
   return addr;
 }
 
+// Is `dialled` (the ip:port a player's game signed) the server at `server` (its announced ip:port)? Exactly, or a LAN /
+// same-machine address on the same port: 10/8, 172.16/12, 192.168/16, 100.64/10 (carrier NAT), 169.254/16, 127/8.
+export function signedForServer(dialled, server) {
+  const m = /^(\d{1,3}(?:\.\d{1,3}){3}):(\d{1,5})$/.exec(String(dialled || ""));
+  if (!m || !ipv4(m[1])) return false;
+  if (m[0] === server) return true;
+  if (m[2] !== server.slice(server.lastIndexOf(":") + 1)) return false;
+  const [a, b] = m[1].split(".").map(Number);
+  return a === 10 || a === 127 || (a === 172 && b >= 16 && b < 32) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b < 128) || (a === 169 && b === 254);
+}
+
 async function openTicket(env, form, addr, now) {
   const kind = String(form.get("kind") || ""), match = String(form.get("match") || ""), map = String(form.get("map") || "");
   if (!/^[0-9a-f]{16}$/.test(match) || !/^[a-z0-9_]{1,32}$/.test(map)) return "bad request";
@@ -218,11 +244,16 @@ async function openTicket(env, form, addr, now) {
   } else return "bad request";
   // every player vouched for this match / time trial: their key (which hashes to their id) signed its id in the game,
   // so a server can only ticket players who are really on it (a race ticket names whose time and name it may post)
-  const keys = String(form.get("keys") || "").split(","), sigs = String(form.get("sigs") || "").split(",");
+  // The signature names the server the player's game dialled (REVIEW 2.2: else a server could relay the match ids of
+  // a real ranked server to its own players and get their signatures for it): this server's ip:port, or, for a player
+  // on its LAN or its own machine, a private / loopback address on its port (which only that server could check).
+  const keys = String(form.get("keys") || "").split(","), sigs = String(form.get("sigs") || "").split(","), addrs = String(form.get("addrs") || "").split(",");
   if (!form.get("keys") || !form.get("sigs") || keys.length !== players.length || sigs.length !== players.length) return "missing signatures";
+  if (!form.get("addrs") || addrs.length !== players.length) return "update the server: signatures must name it";
   for (let i = 0; i < players.length; i++) {
     if (!/^[0-9a-f]{64}$/.test(keys[i]) || (await sha256hex(keys[i])).slice(0, 32) !== players[i]) return "bad key for " + players[i];
-    if (!(await ed25519Verify(keys[i], sigs[i], "quark-ticket-v1 " + match))) return "bad signature for " + players[i];
+    if (!signedForServer(addrs[i], addr)) return "signed for another server: " + players[i];
+    if (!(await ed25519Verify(keys[i], sigs[i], "quark-ticket-v2 " + match + " " + addrs[i]))) return "bad signature for " + players[i];
   }
   if (kind === "match") {
     const last = await env.DB.prepare("SELECT MAX(created) AS t FROM tickets WHERE server = ? AND kind = 'match'").bind(addr).first();

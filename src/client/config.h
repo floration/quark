@@ -50,6 +50,7 @@ struct Settings {
     Vec3 colorFriendly = {0.25f, 0.85f, 1.0f};
     Vec3 colorEnemy = {1.0f, 0.3f, 0.25f};
     std::string lastAddress = "127.0.0.1";
+    std::string rankHello;      // the ranked id the Worker confirmed a /hello for (its old rows moved): not sent again
     // hosting
     std::string hostName = "quark server";
     std::string hostProber;     // "host:port" that checks our port is reachable (empty: QUARK_PROBER, else a listed server)

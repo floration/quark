@@ -77,6 +77,7 @@ bool fetchServerList(std::vector<std::string>& out, std::string* err) {
 }
 
 std::string publicIpv4() {
+    if (const char* e = getenv("QUARK_PUBLIC_IP")) { std::string v = trim(e); return isIpv4(v) ? v : ""; }   // (tests: "off")
     std::string b;
     if (httpGetText(kIpv4Echo, b, 4000) && isIpv4(trim(b))) return trim(b);
     return "";

@@ -13,7 +13,7 @@ constexpr int kMaxPlayers = 32;        // engine limit; servers default to 8 (Se
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 31;   // 31: hull scaling + grapple change in shared pmove; 30:  signed ranked ids, reconnect tokens; edit sessions name the map by an edit chain (mapEditCrc), map data carries the text CRC
+constexpr uint16_t kProtocolVersion = 32;   // 32: ranked signatures name the dialled server address (REVIEW 2.2); 31: hull scaling + grapple change in shared pmove; 30:  signed ranked ids, reconnect tokens; edit sessions name the map by an edit chain (mapEditCrc), map data carries the text CRC
 // PlayerSnap::keys: what a player is holding (spectators see it on the key overlay)
 enum : uint16_t { KEY_FWD = 1, KEY_BACK = 2, KEY_LEFT = 4, KEY_RIGHT = 8, KEY_JUMP = 16, KEY_CROUCH = 32, KEY_FIRE = 64, KEY_ALT = 128, KEY_DASH = 256, KEY_HOOK = 512 };
 

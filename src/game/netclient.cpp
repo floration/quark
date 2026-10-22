@@ -108,6 +108,7 @@ void NetClient::poll() {
                 w.u32((uint32_t)token_); w.u32((uint32_t)(token_ >> 32));
                 w.str(connectSig_.empty() ? "" : rankKey_.pub);
                 w.str(connectSig_);
+                w.u32(server_.ip); w.u16(server_.port);   // (the address we signed: the one we dialled)
             }
             sock_.send(server_, out, w.size());
             lastSend_ = now;
@@ -215,7 +216,7 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
             if (r.bad() || state_ != ConnState::Connecting || c == cookie_) return;
             cookie_ = c;
             connectSig_.clear();
-            if (!rankKey_.secret.empty()) rankSign(rankKey_, rankConnectMessage(cookie_, nonce_), &connectSig_);
+            if (!rankKey_.secret.empty()) rankSign(rankKey_, rankConnectMessage(cookie_, nonce_, server_.toString()), &connectSig_);
             lastSend_ = -1e9; // send the CONNECT with the cookie right away (next poll)
             break;
         }
@@ -357,7 +358,7 @@ void NetClient::onSnapshot(Snapshot& s) {
         if (e.type == EV_RANKSIGN) {   // a ranked match went live (or a time trial started): vouch that we're in it (the server forwards it with the ticket)
             std::string sig;
             bool hex16 = e.text.size() == 16 && e.text.find_first_not_of("0123456789abcdef") == std::string::npos;
-            if (!play_.active && hex16 && rankSign(rankKey_, rankTicketMessage(e.text), &sig)) sendCommand("ticketsig " + sig);
+            if (!play_.active && hex16 && rankSign(rankKey_, rankTicketMessage(e.text, server_.toString()), &sig)) sendCommand("ticketsig " + sig);
             continue;
         }
         if (e.type == EV_EDIT) { applyEditEvent(e.text); continue; }

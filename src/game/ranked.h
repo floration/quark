@@ -2,6 +2,7 @@
 // (tools/master/worker.js). The key's secret only ever goes to the Worker; servers see the public id
 // (first 32 hex chars of sha256(secret)). A match is rated once every player reported the same result.
 #pragma once
+#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <map>
@@ -34,8 +35,14 @@ std::string legacyRankId(const std::string& secret);
 std::string rankSeedHex(const std::string& secret); // Ed25519 seed: sha256("quark-rank-ed25519-v1:" + secret)
 // What a player signs: the server's connect challenge (cookie + the client's session nonce), and a ranked match id
 // (the server forwards those signatures with its ticket: the Worker only tickets players who really joined).
-std::string rankConnectMessage(uint32_t cookie, uint32_t nonce);
-std::string rankTicketMessage(const std::string& match);
+// Both name the server: the address the player's game dialled, as "a.b.c.d:port" (NetAddr::toString, after DNS).
+// Without it a server the player joined could relay its own connect challenge and match ids from a real ranked
+// server, have the player sign them, and play there under their id (REVIEW 2.2). Whatever the real server puts in
+// its challenge, a relay can forward too; only the address the player chose can't be forwarded. The real server
+// takes a signature only for one of its own addresses (Server::ownAddress), and the Worker takes a ticket signature
+// only for the ticketing server's ip:port (or, a LAN / same-machine player, a private address on its port).
+std::string rankConnectMessage(uint32_t cookie, uint32_t nonce, const std::string& server);
+std::string rankTicketMessage(const std::string& match, const std::string& server);
 bool rankSign(const RankKey& key, const std::string& msg, std::string* sigHex);
 bool rankVerify(const std::string& pubHex, const std::string& msg, const std::string& sigHex);
 // Games on a ladder before a rating counts as placed ("?" in game; off the leaderboard and crowns). The Worker's
@@ -115,9 +122,16 @@ public:
     // The reply (or "!" + the error) lands under key; takeText hands it over once.
     void request(const std::string& key, const std::string& pathAndQuery, const std::string& body = "");
     bool takeText(const std::string& key, std::string& out);
+    // POST /hello (moves a pre-1.17 id's rows to this key's id, see rankIdFromPublic), retried with backoff on this
+    // service's thread until the Worker answers "id <id>" (REVIEW 3.6: one lost hello, then a rated match, and the
+    // old rating used to be dropped). helloDone() turns true then (the game records it and doesn't send it again).
+    void hello(const RankKey& key);
+    bool helloDone() const { return helloDone_.load(std::memory_order_relaxed); }
+    static double helloRetryDelay(int tries);   // seconds before try `tries` + 1: 10 s doubling, at most 15 min
 private:
     struct Job { double due; bool report; std::string body, ladder; std::vector<std::string> ids; bool board = false; std::string path = "/report";
-                 std::string rawKey = {}; };   // rawKey: a plain request (see request())
+                 std::string rawKey = {};      // rawKey: a plain request (see request())
+                 std::string expect = {}; int tries = 0; };   // expect: retry until the reply is exactly this (hello)
     void run();
     void push(Job j);
     std::thread thread_;
@@ -129,4 +143,5 @@ private:
     std::vector<std::string> messages_;
     std::map<std::string, std::vector<LeaderRow>> boards_;
     std::map<std::string, std::string> texts_;
+    std::atomic<bool> helloDone_{false};
 };

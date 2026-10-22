@@ -39,6 +39,8 @@ static void usage() {
         "                   QUARK_DATA_DIR does the same)\n"
         "  --teamsize N     duel: 1 (1v1, default) or 2 (2v2)\n"
         "  --public         list this server on the internet server list (players see it under Join)\n"
+        "  --own-addr H:P   players reach this server at H:P although it can't see that address itself (a router\n"
+        "                   forwarding another port here, a container): ranked ids are signed for the address dialled\n"
         "  --variant NAME   1v1 / tourney ruleset: vampire, classic, quirky, hitscan, instagib, boomers, blades, moon\n"
         "  --tourney-maps a,b      maps tourney matches rotate through\n"
         "  --tourney-modes a,b     1v1 rulesets tourney matches rotate through\n"
@@ -81,6 +83,7 @@ int main(int argc, char** argv) {
         else if (a == "--logfile") { cfg.logFile = next(); if (!cfg.logLevel) cfg.logLevel = LOG_SIMPLE; }
         else if (a == "--teamsize") cfg.duelTeamSize = atoi(next().c_str());
         else if (a == "--public") cfg.publicList = true;
+        else if (a == "--own-addr") cfg.ownAddrs.push_back(next());
         else if (a == "--variant") {
             std::string v = next();
             cfg.arenaVariant = arenaVariantFromName(v.c_str());

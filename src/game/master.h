@@ -19,7 +19,7 @@ std::string masterUrl();
 bool signedMasterUrl(const std::string& body, const std::string& sigHex, const std::string& pubHex, std::string* url);
 // ip:port of every public server running this version.
 bool fetchServerList(std::vector<std::string>& out, std::string* err = nullptr);
-// This machine's public IPv4 (empty if unknown).
+// This machine's public IPv4 (empty if unknown). Blocks on HTTP. QUARK_PUBLIC_IP overrides it ("off": none, no request).
 std::string publicIpv4();
 
 class MasterAnnouncer {
