@@ -297,10 +297,54 @@ static void testGiantSpawns() {
     }
 }
 
+// FINAL_REVIEW 6.5: an admin's addbot during a tag match put the bot straight on a side (past the team lock), and a
+// bot reusing an eliminated bot's name was marked out at once (tag-outs were matched by name).
+static void testTagAddbot(uint16_t port) {
+    printf("tag: addbot mid-match waits for the next match; bots aren't matched by name\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "hamlet"; cfg.mode = MODE_TAG; cfg.port = port; cfg.autoStart = false;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient c[3];
+    std::vector<NetClient*> cls;
+    for (int i = 0; i < 3; i++) { c[i].connect("127.0.0.1:" + std::to_string(port), "p" + std::to_string(i)); cls.push_back(&c[i]); }
+    pump(s, cls, 0.6, idle);
+    int early = s.addBot(TEAM_A, BOT_BEGINNER);
+    CHECK(early >= 0);
+    s.command("forcestart");
+    for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE; i++) { if (s.ms_.phase == PHASE_FREEZE) s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+    CHECK(s.ms_.phase == PHASE_LIVE && rulesTeamLocked(s));
+    if (early < 0 || s.ms_.phase != PHASE_LIVE) { s.stop(); return; }
+    if (s.players_[early].it) { s.players_[early].it = false; s.players_[c[0].clientId()].it = true; }   // (a human is it)
+    std::string outName = s.players_[early].name;
+    s.removeBot(early);   // a bot leaving mid-match: out (and remembered, if it were a human)
+    pump(s, cls, 0.1, idle);
+    s.command("addbot");  // the admin's
+    int late = -1;
+    for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].isBot) late = i;
+    CHECK(late >= 0);
+    if (late < 0) { s.stop(); return; }
+    pump(s, cls, 0.2, idle);
+    CHECK(s.players_[late].team == TEAM_SPECTATOR && s.players_[late].waitingToPlay && !s.players_[late].alive);
+    // even a bot named like the eliminated one, on a side (as before the lock), isn't out
+    s.players_[late].name = outName;
+    s.players_[late].team = TEAM_A;
+    pump(s, cls, 0.2, idle);
+    CHECK(!s.players_[late].out);
+    s.players_[late].team = TEAM_SPECTATOR;
+    // the match over: it plays the next one
+    s.command("restart");
+    pump(s, cls, 0.2, idle);
+    CHECK(s.players_[late].connected && s.players_[late].team != TEAM_SPECTATOR && !s.players_[late].waitingToPlay);
+    s.stop();
+}
+
 static void serverTests() {
     testVersionReject(TP(28800));
     testSeedFetchDedupe();
     testStopDoesNotBlock(TP(28801));
     testRestoreKeepsIdentity(TP(28802));
     testGiantSpawns();
+    testTagAddbot(TP(28803));
 }

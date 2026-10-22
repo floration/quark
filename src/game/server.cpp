@@ -2238,6 +2238,10 @@ int Server::addBot(int team, int skill, bool balance) {
     p.isBot = true;
     p.balanceBot = balance;
     if (!modeIsTeamBased(cfg_.mode) && team != TEAM_SPECTATOR) team = TEAM_A;   // FFA and the like: no sides
+    // A tag match takes no one new, bots included (FINAL_REVIEW 6.5: an admin's addbot skipped the team lock): it
+    // watches, and plays the next match.
+    bool waits = rulesTeamLocked(*this) && team != TEAM_SPECTATOR;
+    if (waits) { team = TEAM_SPECTATOR; p.waitingToPlay = true; }
     p.team = team;
     p.lastRecv = timeNow();
     p.name = uniqueName(std::string("BOT ") + names[(id * 7 + tick_) % 16], id);
@@ -2249,8 +2253,8 @@ int Server::addBot(int team, int skill, bool balance) {
     p.soundPack = (int)((bots_[id].rng >> 8) % kSoundPacks);
     GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.text = p.name;
     broadcastEvent(e);
-    message(p.name + " (" + botSkillName(skill) + ") joined " + (team == TEAM_B ? "team B" : modeIsTeamBased(cfg_.mode) ? "team A" : "the game"));
-    if (rulesRespawnDelay(*this) >= 0) p.respawnAt = time() + 0.5f;
+    message(p.name + " (" + botSkillName(skill) + ") joined " + (waits ? "- plays the next match" : team == TEAM_B ? "team B" : modeIsTeamBased(cfg_.mode) ? "team A" : "the game"));
+    if (rulesRespawnDelay(*this) >= 0 && team != TEAM_SPECTATOR) p.respawnAt = time() + 0.5f;
     return id;
 }
 
