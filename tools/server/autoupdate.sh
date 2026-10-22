@@ -26,6 +26,12 @@ API=${QUARK_RELEASE_API:-}   # (tests only: another release JSON URL, e.g. file:
 log() { echo "quark-update: $*"; }
 die() { echo "quark-update: ERROR: $*" >&2; exit 1; }
 command -v python3 >/dev/null || die "python3 is needed (to read GitHub's JSON)"
+# Run by an install from before 1.17 (its unit sets no QUARK_STATE): that unit's old script already built this
+# release; this one needs the new layout, so it waits for the operator instead of failing every minute.
+if [ -z "${QUARK_STATE:-}" ] && [ ! -w /var/lib/quark ]; then
+    log "this server was installed by an older install.sh: run 'sh tools/server/install.sh' once to keep getting updates"
+    exit 0
+fi
 mkdir -p "$STATE"
 
 REPO=$(git remote get-url origin | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##')

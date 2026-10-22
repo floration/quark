@@ -49,7 +49,7 @@ if [ -f "$OLDUNIT" ] && ! grep -q '^User=quark$' "$OLDUNIT"; then
     OLDUSER=$(sed -n 's/^User=//p' "$OLDUNIT")
     OLDDIR=$(sed -n 's/^WorkingDirectory=//p' "$OLDUNIT")
     echo "upgrading the old install (user ${OLDUSER:-?}, $OLDDIR)"
-    $SUDO systemctl disable --now quark-update.timer quark.service 2>/dev/null || true
+    OLDINSTALL=1   # (its units are stopped once the new build is ready, so a failed build leaves it running)
     OLDHOME=$(getent passwd "$OLDUSER" | cut -d: -f6 || true)
     for d in "$OLDHOME/.local/share/quark" "$OLDDIR/logs" "$OLDDIR/custom_modes" "$OLDDIR/groups"; do
         [ -n "$d" ] && [ -d "$d" ] || continue
@@ -78,7 +78,8 @@ TAG=$(git -C "$FROM" describe --exact-match --tags --match 'v[0-9]*.[0-9]*.[0-9]
 asquark sh -c "cd '$PREFIX' && cmake -S . -B build-update -DQUARK_BUILD_CLIENT=OFF -DQUARK_BUILD_TESTS=OFF \
     -DCMAKE_BUILD_TYPE=Release >/dev/null && nice cmake --build build-update -j\$(nproc) --target quark_server quark_sign >/dev/null \
     && mkdir -p bin && cp build-update/quark_server bin/quark_server.new && mv -f bin/quark_server.new bin/quark_server" \
-    || { echo "build failed"; exit 1; }
+    || { echo "build failed (any old install is still running)"; exit 1; }
+[ -n "${OLDINSTALL:-}" ] && { $SUDO systemctl disable --now quark-update.timer quark.service 2>/dev/null || true; }
 if [ -n "$TAG" ]; then echo "$TAG" | asquark tee "$STATE/built-tag" >/dev/null; else $SUDO rm -f "$STATE/built-tag"; fi
 asquark env QUARK_STATE="$STATE" HOME="$STATE" sh "$PREFIX/tools/server/autoupdate.sh" || echo "(the update check failed: see above; the server starts on the build from this checkout)"
 $SUDO rm -f "$STATE/update.pending"
