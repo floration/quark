@@ -162,12 +162,30 @@ def fmt_race_time(ms: int) -> str:
     return f"{ms // 60000}:{ms // 1000 % 60:02d}.{ms % 1000:03d}"
 
 
+_URL = re.compile(r"(?i)(?:https?://|www\.|discord(?:app)?\.(?:gg|com/invite)/)\S*")
+_MD = re.compile(r"([\\*_~|>#\[\]()<:`-])")
+
+
+def safe_text(s: str, maxlen: int = 64) -> str:
+    """A name a game server or player chose (server, map, mode, player), made inert for a Discord message: one line,
+    no links, no mentions, no markdown (bold, masked links, spoilers, code blocks, <@id> / <t:..> tags)."""
+    s = re.sub(r"[\x00-\x1f\x7f]", " ", s)[:maxlen]
+    s = _URL.sub("[link]", s)
+    s = s.replace("@", "@​")   # never a mention, whatever allowed_mentions says
+    return _MD.sub(r"\\\1", s)
+
+
+def board_name(s: str) -> str:
+    """A player name inside the leaderboard's code block: it can't close the block or start a new line."""
+    return re.sub(r"[\x00-\x1f\x7f`]", "'", s)
+
+
 def format_board(title: str, rows: list[LeaderRow], race: bool = False, n: int = 10) -> str:
     lines = [title, "-" * max(len(title), 34)]
     if not rows:
         lines.append("  no ranked players yet")
     for i, r in enumerate(rows[:n], 1):
-        name = r.name[:20]
+        name = board_name(r.name)[:20]
         if race:
             lines.append(f"{i:>2}. {name:<20} {fmt_race_time(r.rating):>10}")
         else:

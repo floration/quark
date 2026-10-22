@@ -261,7 +261,9 @@ def run_bot(cfg: dict):
             if getattr(self, "session", None): await self.session.close()
             await super().close()
 
-    bot = QuarkBot(command_prefix="!quark ", intents=intents)
+    # nothing in a message pings anyone unless that send opts in (role pings, queue fills, the welcome): a server named
+    # "@everyone" can't ping the guild
+    bot = QuarkBot(command_prefix="!quark ", intents=intents, allowed_mentions=discord.AllowedMentions.none())
 
     # ---------- helpers
     async def ensure_category(name: str) -> discord.CategoryChannel:
@@ -380,12 +382,12 @@ def run_bot(cfg: dict):
             ch = bot.guild.get_channel(rec["channel"]) if rec else None
             want = server_channel_name(i)
             if not ch:
-                ch = await bot.guild.create_text_channel(want, category=cat, overwrites=readonly(), topic=f"{i.name} ({i.address})")
+                ch = await bot.guild.create_text_channel(want, category=cat, overwrites=readonly(), topic=f"{qd.safe_text(i.name)} ({i.address})")
                 rec = servers[i.address] = {"channel": ch.id, "msg": 0, "renamed": now, "players": 0, "pinged": 0}
             elif ch.name != want and now - rec.get("renamed", 0) >= cfg["rename_min_seconds"]:
                 await ch.edit(name=want)
                 rec["renamed"] = now
-            text = (f"**{i.name}**\nMap **{i.map}** · Mode **{i.mode_title}** · **{i.players}/{i.max_players}** players\n"
+            text = (f"**{qd.safe_text(i.name)}**\nMap **{qd.safe_text(i.map)}** · Mode **{qd.safe_text(i.mode_title)}** · **{i.players}/{i.max_players}** players\n"
                     f"Join: `{i.address}` (Join Game > internet list)\n-# updated <t:{int(now)}:R>")
             try:
                 msg = await ch.fetch_message(rec["msg"]) if rec.get("msg") else None
@@ -403,7 +405,7 @@ def run_bot(cfg: dict):
             # ping when a game starts (players appear) on a server; not on the first pass after a restart
             if (i.players > 0 and rec.get("players", 0) == 0 and not bot.first_server_pass
                     and now - rec.get("pinged", 0) >= cfg["server_ping_cooldown_seconds"]):
-                await ch.send(f"{role.mention} **{i.name}** is live: {i.map} {i.mode_title} {i.players}/{i.max_players} - `{i.address}`",
+                await ch.send(f"{role.mention} **{qd.safe_text(i.name)}** is live: {qd.safe_text(i.map)} {qd.safe_text(i.mode_title)} {i.players}/{i.max_players} - `{i.address}`",
                               allowed_mentions=discord.AllowedMentions(roles=[role]))
                 rec["pinged"] = now
             rec["players"] = i.players
@@ -568,12 +570,12 @@ def run_bot(cfg: dict):
         m = find_member(dname) if dname else None
         if m:
             return m.mention, m.id
-        label = (fm.name or dname or "player").replace("*", "")
+        label = qd.safe_text(fm.name or dname or "player", 40)
         return f"**{label}**", None
 
     async def fire_queue(f: qd.Filled, channel: discord.abc.Messageable):
         pairs = [mention_for(m) for m in f.members]
-        title = QUEUES[f.mode][0] if f.mode in QUEUES else f.mode.upper()
+        title = QUEUES[f.mode][0] if f.mode in QUEUES else qd.safe_text(f.mode.upper(), 32)
         text = fill_message([p[0] for p in pairs], f.mode, title)
         am = discord.AllowedMentions(users=[discord.Object(i) for _, i in pairs if i], roles=False, everyone=False)
         for k in range(cfg["queue_pings"]):
@@ -774,7 +776,7 @@ def run_bot(cfg: dict):
         except Exception as e:
             await it.followup.send(f"Server list unavailable ({type(e).__name__}).", ephemeral=True)
             return
-        lines = [f"**{i.name}** - {i.map} {i.mode_title} {i.players}/{i.max_players} `{i.address}`" for i in infos]
+        lines = [f"**{qd.safe_text(i.name)}** - {qd.safe_text(i.map)} {qd.safe_text(i.mode_title)} {i.players}/{i.max_players} `{i.address}`" for i in infos]
         await it.followup.send("\n".join(lines) or "No servers live right now.", ephemeral=True)
 
     @bot.tree.command(name="leaderboard", description="Ranked top 10s")
