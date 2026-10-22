@@ -48,6 +48,87 @@ static void testVersionReject(uint16_t port) {
     s.stop();
 }
 
+#ifndef _WIN32
+// A local HTTP server that holds each request holdMs before answering 200 with `body`, counting them (POSIX only).
+struct SlowHttp {
+    int ls = -1;
+    uint16_t port = 0;
+    std::atomic<int> requests{0};
+    std::atomic<bool> quit{false};
+    std::thread th;
+    std::mutex mu;
+    std::vector<std::string> seen;   // the request lines
+    SlowHttp(int holdMs, std::string body) {
+        ls = socket(AF_INET, SOCK_STREAM, 0);
+        sockaddr_in a{};
+        a.sin_family = AF_INET; a.sin_addr.s_addr = htonl(INADDR_LOOPBACK); a.sin_port = 0;
+        socklen_t al = sizeof a;
+        if (ls < 0 || bind(ls, (sockaddr*)&a, sizeof a) != 0 || listen(ls, 16) != 0 || getsockname(ls, (sockaddr*)&a, &al) != 0) return;
+        port = ntohs(a.sin_port);
+        th = std::thread([this, holdMs, body] {
+            while (!quit) {
+                fd_set fs; FD_ZERO(&fs); FD_SET(ls, &fs);
+                timeval tv{0, 20000};
+                if (select(ls + 1, &fs, nullptr, nullptr, &tv) <= 0) continue;
+                int c = accept(ls, nullptr, nullptr);
+                if (c < 0) continue;
+                std::string req;
+                char buf[4096];
+                while (req.find("\r\n\r\n") == std::string::npos) { ssize_t n = recv(c, buf, sizeof buf, 0); if (n <= 0) break; req.append(buf, (size_t)n); }
+                requests++;
+                { std::lock_guard<std::mutex> l(mu); seen.push_back(req.substr(0, req.find("\r\n"))); }
+                for (int t = 0; t < holdMs / 10 && !quit; t++) sleepMs(10);
+                std::string resp = "HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
+                send(c, resp.data(), resp.size(), 0);
+                close(c);
+            }
+        });
+    }
+    bool ok() const { return port != 0; }
+    std::string url() const { return "http://127.0.0.1:" + std::to_string(port); }
+    ~SlowHttp() { quit = true; if (th.joinable()) th.join(); if (ls >= 0) close(ls); }
+};
+#endif
+
+// FINAL_REVIEW 2.8: tourney seed ratings are fetched whenever someone with a ranked id joins; rotating keys could
+// queue ~150 lookups a second. Now one lookup per ladder waits behind the one in flight, with every new id in it.
+static void testSeedFetchDedupe() {
+    printf("tourney seed ratings: one pending lookup per ladder\n");
+#ifndef _WIN32
+    SlowHttp http(400, "");
+    CHECK(http.ok());
+    if (!http.ok()) return;
+    setenv("QUARK_MASTER", http.url().c_str(), 1);
+    {
+        Server s;
+        s.cfg_.mode = MODE_TOURNEY;
+        auto& p = s.players_[0];
+        p.connected = true; p.isBot = false; p.team = TEAM_A;
+        int ladders = 0;
+        for (int v = 0; v < kArenaVariants; v++) ladders += arenaVariantRanked(v);
+        size_t worst = 0;
+        for (int k = 0; k < 300; k++) {   // a new key every time (each join would do this)
+            p.rankId = sha256Hex("seed" + std::to_string(k)).substr(0, 32);
+            s.prefetchSeedRatings();
+            worst = std::max(worst, s.seedRatings_->pendingJobs());
+            sleepMs(1);
+        }
+        printf("  300 joins: at most %zu lookups queued (%d ladders), %d sent so far\n", worst, ladders, http.requests.load());
+        CHECK(worst <= (size_t)ladders);
+        double end = timeNow() + 20;
+        while (timeNow() < end && s.seedRatings_->pendingJobs() > 0) sleepMs(20);
+        sleepMs(500);
+        CHECK(http.requests <= 3 * ladders);   // ~the first per ladder, and the merged one behind it
+        bool sawLast = false;   // the newest key made it into a lookup
+        { std::lock_guard<std::mutex> l(http.mu); for (auto& r : http.seen) sawLast |= r.find(p.rankId) != std::string::npos; }
+        CHECK(sawLast);
+        p.connected = false;
+    }
+    setenv("QUARK_MASTER", "off", 1);
+#endif
+}
+
 static void serverTests() {
     testVersionReject(TP(28800));
+    testSeedFetchDedupe();
 }

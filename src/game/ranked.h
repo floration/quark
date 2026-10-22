@@ -107,7 +107,9 @@ public:
     ~RankService();
     // ladder: the ranked ruleset ("vanilla", "vampire", "instagib"); each has its own ratings
     void submit(const std::string& body, const std::string& ladder, const std::vector<std::string>& players); // then re-fetches their ratings
-    void fetch(const std::string& ladder, const std::vector<std::string>& ids);
+    void fetch(const std::string& ladder, const std::vector<std::string>& ids);   // merged into a pending one (see ranked.cpp)
+    static constexpr size_t kMaxLookupIds = 64;   // ids in one /ratings lookup
+    size_t pendingJobs();                         // jobs queued, not started (tests)
     bool rating(const std::string& ladder, const std::string& id, Rating& out);
     std::vector<std::string> takeMessages();
     // Top players of a ladder ("rating games name" rows); fetched in the background, empty until it arrives.

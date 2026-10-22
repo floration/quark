@@ -335,7 +335,31 @@ void RankService::submit(const std::string& body, const std::string& ladder, con
     for (double d : {4.0, 15.0, 45.0}) push({now + d, false, "", ladder, players}); // others' reports may finish it later
 }
 
-void RankService::fetch(const std::string& ladder, const std::vector<std::string>& ids) { if (!ids.empty()) push({timeNow(), false, "", ladder, ids}); }
+// One pending lookup per ladder (FINAL_REVIEW 2.8): new ids join a lookup that's due and not started yet, each id
+// once, so players joining (or a flood of new keys) never queue more than one request per ladder behind the one
+// in flight. (Lookups scheduled for later, after a report, are left alone.)
+void RankService::fetch(const std::string& ladder, const std::vector<std::string>& ids) {
+    if (ids.empty()) return;
+    {
+        std::lock_guard<std::mutex> l(mu_);
+        double now = timeNow();
+        for (auto& j : jobs_) {
+            if (j.report || j.board || !j.rawKey.empty() || j.ladder != ladder || j.due > now) continue;
+            for (auto& id : ids)
+                if (std::find(j.ids.begin(), j.ids.end(), id) == j.ids.end()) j.ids.push_back(id);
+            if (j.ids.size() > kMaxLookupIds) j.ids.erase(j.ids.begin(), j.ids.end() - kMaxLookupIds);   // (the newest stay)
+            return;
+        }
+    }
+    std::vector<std::string> mine;
+    for (auto& id : ids) if (mine.size() < kMaxLookupIds && std::find(mine.begin(), mine.end(), id) == mine.end()) mine.push_back(id);
+    push({timeNow(), false, "", ladder, mine});
+}
+
+size_t RankService::pendingJobs() {
+    std::lock_guard<std::mutex> l(mu_);
+    return jobs_.size();
+}
 
 void RankService::fetchLeaderboard(const std::string& ladder) { Job j{timeNow(), false, "", ladder, {}}; j.board = true; push(j); }
 
