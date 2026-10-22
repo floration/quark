@@ -3169,6 +3169,28 @@ static void testHostileInput() {
         Map m; std::string err; CHECK(!m.parse(t, &err));
     }
     { Map m; CHECK(m.parse(base) && m.brushes.size() == 1); } // a sane map still parses after all that
+    { // the hand-written line reader reads exactly what std::istringstream read (checked against it on 60k fuzzed maps)
+        auto one = [&](const std::string& line, Map& m) { return m.parse(base + line + "\n"); };
+        Map m;
+        CHECK(one("box 1.2.3 0 0 1 1", m) && m.brushes[1].box.mn.y == 0.3f && m.brushes[1].box.mx.x == 1.2f);   // "1.2" then ".3"
+        CHECK(one("box 0 0 0 1 1 1abc", m));     // trailing junk after the last number: ignored, as before
+        CHECK(!one("box 1e 0 0 1 1 1", m) && !one("box 0x10 0 0 1 1 1", m) && !one("box -+1 0 0 1 1 1", m) && !one("box 1.5abc 0 0 1 1 1", m));
+        CHECK(one("box .5 -.5 +.5 1. 1e1 1E+1", m) && m.brushes[1].box.mn.y == -0.5f && m.brushes[1].box.mx.y == 10.0f);
+        CHECK(one("box 0.1 1234.567 -8.25 3402.8234 1e-30 0.000000000012345", m) && m.brushes[1].box.mn.x == strtof("0.1", nullptr) &&
+              m.brushes[1].box.mx.y == strtof("1234.567", nullptr) && m.brushes[1].box.mn.z == -8.25f && m.brushes[1].box.mx.x == strtof("3402.8234", nullptr) &&
+              m.brushes[1].box.mn.y == strtof("1e-30", nullptr) && m.brushes[1].box.mx.z == strtof("0.000000000012345", nullptr));
+        CHECK(one("spawn a 0 0 0 xyz", m) && m.spawns[1].yaw == 0);     // a bad optional yaw reads as 0
+        CHECK(one("light 0 2 0 5", m) && m.lights[0].intensity == 1);   // a missing one keeps its default
+        CHECK(!one("light 0 2 0 5 x", m));
+        CHECK(one("group custom 1 0 0 0 0 4 4 4\npart +2 0 0 0 1 1 1", m) && m.groups[0].parts[0].material == 2);
+        CHECK(!one("group custom 99999999999 0 0 0 0 1 1 1", m) && !one("group custom 1.5 0 0 0 0 1 1 1", m));
+        m.title = "kept";
+        CHECK(m.parse("title\n" + base) && m.title == "kept");      // a bare "title" leaves it alone, as getline did
+        CHECK(m.parse("title  Hi there\t\r\n" + base) && m.title == "Hi there\t\r");
+        CHECK(m.parse(base + "box 1 2 3 4 5 6 # a comment\n  \t accent\t1 2 3 4 5 6\r") && m.brushes.size() == 3 && m.brushes[2].material == 1);
+        std::string err;
+        CHECK(!m.parse(base + "box 1 2 3 4 5 x # why\n", &err) && err == "parse error on line 3: box 1 2 3 4 5 x ");
+    }
     // map names: a stem, never a path
     CHECK(isValidMapName("temple") && isValidMapName("my-map_2"));
     // the editor's name field: what you type is what it saves as (a space used to make every save fail)

@@ -177,4 +177,4 @@ bool saveMapFile(const std::string& path, const std::string& text);
 // leaves the old file (settings, profiles, the ranked key, custom modes, maps). privateFile: only this user may
 // read it (POSIX 0600: the ranked key).
 bool writeFileAtomic(const std::string& path, const std::string& data, bool privateFile = false);
-uint32_t crc32(const void* data, size_t len);
+uint32_t crc32(const void* data, size_t len, uint32_t prev = 0); // zlib's CRC-32; prev continues an earlier one

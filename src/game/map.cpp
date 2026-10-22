@@ -12,6 +12,9 @@
 #include <type_traits>
 #include <mutex>
 #include <cstdlib>
+#include <cerrno>
+#include <cfloat>
+#include <climits>
 #include <algorithm>
 
 namespace fs = std::filesystem;
@@ -238,20 +241,30 @@ bool writeFileAtomic(const std::string& path, const std::string& data, bool priv
     return true;
 }
 
-uint32_t crc32(const void* data, size_t len) {
-    static uint32_t table[256];
-    static bool init = false;
-    if (!init) {
-        for (uint32_t i = 0; i < 256; i++) {
-            uint32_t c = i;
-            for (int k = 0; k < 8; k++) c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
-            table[i] = c;
+// CRC-32 (zlib's), eight bytes a step ("slicing by 8": about 5x the byte-at-a-time loop; every map load hashes the
+// whole text). prev continues an earlier CRC, as zlib's crc32(prev, ...) does.
+uint32_t crc32(const void* data, size_t len, uint32_t prev) {
+    struct Tables {
+        uint32_t t[8][256];
+        Tables() {
+            for (uint32_t i = 0; i < 256; i++) {
+                uint32_t c = i;
+                for (int k = 0; k < 8; k++) c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+                t[0][i] = c;
+            }
+            for (int s = 1; s < 8; s++)
+                for (uint32_t i = 0; i < 256; i++) t[s][i] = (t[s - 1][i] >> 8) ^ t[0][t[s - 1][i] & 255];
         }
-        init = true;
-    }
-    uint32_t c = 0xFFFFFFFFu;
+    };
+    static const Tables tables;   // (built once, thread-safe)
+    const auto& t = tables.t;
+    uint32_t c = prev ^ 0xFFFFFFFFu;
     const uint8_t* p = (const uint8_t*)data;
-    for (size_t i = 0; i < len; i++) c = table[(c ^ p[i]) & 255] ^ (c >> 8);
+    for (; len >= 8; len -= 8, p += 8) {   // (byte loads: no alignment or endianness assumptions)
+        uint32_t a = c ^ ((uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24);
+        c = t[7][a & 255] ^ t[6][(a >> 8) & 255] ^ t[5][(a >> 16) & 255] ^ t[4][a >> 24] ^ t[3][p[4]] ^ t[2][p[5]] ^ t[1][p[6]] ^ t[0][p[7]];
+    }
+    for (; len; len--) c = t[0][(c ^ *p++) & 255] ^ (c >> 8);
     return c ^ 0xFFFFFFFFu;
 }
 
@@ -273,7 +286,105 @@ bool Map::load(const std::string& requested, std::string* err) {
 // Limits shared by the parser and the edit path: a map comes from untrusted servers too, so nothing in it may be
 // big enough to blow up the collision grid, the bake or the brush index (cellBrushes is uint16_t).
 static bool okCoord(float v) { return std::isfinite(v) && std::fabs(v) <= kMapMaxCoord; }
-static bool readBox(std::istringstream& ls, AABB& b) {
+// One line of a map, read the way std::istringstream reads it (same results, same failures) without the stream
+// machinery: building a stream per line was most of the cost of parsing a big map (owner decision 1.5).
+//   >> word    skips whitespace, takes up to the next whitespace
+//   >> float   libstdc++'s num_get grammar ([sign] digits [. digits] [e [sign] digits], the longest such prefix),
+//              converted by strtof (C locale: the game never changes it); nothing usable -> 0 and failed, out of range
+//              -> +-FLT_MAX and failed
+//   >> int     [sign] digits by strtoll; none -> 0 and failed, out of range -> INT_MAX / INT_MIN and failed
+// As with a stream, a read at the end of the line fails and leaves its target alone, and once a read has failed every
+// later one does too.
+struct LineIn {
+    const char* p;
+    const char* e;
+    bool failed = false;
+    LineIn(const char* b, const char* end) : p(b), e(end) {}
+    static bool space(char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r'; }
+    static bool digit(char c) { return c >= '0' && c <= '9'; }
+    explicit operator bool() const { return !failed; }
+    bool start() {   // the stream's sentry: skip whitespace; nothing left fails
+        if (failed) return false;
+        while (p < e && space(*p)) p++;
+        if (p == e) { failed = true; return false; }
+        return true;
+    }
+    LineIn& operator>>(std::string& w) {
+        if (!start()) return *this;
+        const char* b = p;
+        while (p < e && !space(*p)) p++;
+        w.assign(b, p);
+        return *this;
+    }
+    // runs f (strtof / strtoll) on the accepted characters [b, q), terminated; second: it used all of them
+    template <class F> static auto convert(const char* b, const char* q, F f) {
+        char small[64];
+        std::string big;
+        size_t n = (size_t)(q - b);
+        const char* s = small;
+        if (n < sizeof small) { memcpy(small, b, n); small[n] = 0; } else { big.assign(b, q); s = big.c_str(); }
+        char* end = nullptr;
+        auto v = f(s, &end);
+        return std::make_pair(v, n > 0 && end == s + n);
+    }
+    LineIn& operator>>(float& v) {
+        if (!start()) return *this;
+        const char* b = p;
+        const char* q = p;
+        bool neg = *q == '-';
+        if (*q == '+' || *q == '-') q++;
+        bool mantissa = false, exact = true;   // exact: the digits as an integer m < 2^24, and fewer than 11 decimals
+        uint32_t m = 0;
+        int decimals = 0;
+        auto take = [&](char c) { m = m * 10 + (uint32_t)(c - '0'); exact = exact && m <= (1u << 24); };
+        while (q < e && digit(*q)) { if (exact) take(*q); q++; mantissa = true; }
+        if (q < e && *q == '.') { q++; while (q < e && digit(*q)) { if (exact) take(*q); decimals++; q++; mantissa = true; } }
+        if (mantissa && q < e && (*q == 'e' || *q == 'E')) {
+            exact = false;
+            q++;
+            if (q < e && (*q == '+' || *q == '-')) q++;
+            while (q < e && digit(*q)) q++;
+        }
+        p = q;
+        if (mantissa && exact && decimals <= 10) {
+            // Clinger's fast path: m and 10^decimals are both exact floats, so one IEEE division rounds once, to the
+            // same float strtof gives. (Nearly every number in a map takes it; strtof was most of the parse.)
+            static const float pow10[] = {1e0f, 1e1f, 1e2f, 1e3f, 1e4f, 1e5f, 1e6f, 1e7f, 1e8f, 1e9f, 1e10f};
+            float f = (float)m / pow10[decimals];
+            v = neg ? -f : f;
+            return *this;
+        }
+        auto r = convert(b, q, [](const char* s, char** end) { return strtof(s, end); });
+        if (!r.second) { v = 0; failed = true; }
+        else if (std::isinf(r.first)) { v = r.first > 0 ? FLT_MAX : -FLT_MAX; failed = true; }
+        else v = r.first;
+        return *this;
+    }
+    LineIn& operator>>(int& v) {
+        if (!start()) return *this;
+        const char* b = p;
+        const char* q = p;
+        if (*q == '+' || *q == '-') q++;
+        const char* d = q;
+        while (q < e && digit(*q)) q++;
+        p = q;
+        if (q == d) { v = 0; failed = true; return *this; }
+        errno = 0;
+        auto r = convert(b, q, [](const char* s, char** end) { return strtoll(s, end, 10); });
+        if (errno == ERANGE || r.first > INT_MAX || r.first < INT_MIN) { v = *b == '-' ? INT_MIN : INT_MAX; failed = true; }
+        else v = (int)r.first;
+        return *this;
+    }
+    // std::getline(ls, s) after the keyword: the rest of the line as it is (at the end: fails, s left alone)
+    bool rest(std::string& s) {
+        if (failed || p == e) { failed = true; return false; }
+        s.assign(p, e);
+        p = e;
+        return true;
+    }
+};
+
+static bool readBox(LineIn& ls, AABB& b) {
     Vec3 a, c;
     if (!(ls >> a.x >> a.y >> a.z >> c.x >> c.y >> c.z)) return false;
     if (!okCoord(a.x) || !okCoord(a.y) || !okCoord(a.z) || !okCoord(c.x) || !okCoord(c.y) || !okCoord(c.z)) return false;
@@ -306,20 +417,23 @@ bool Map::parseText(const std::string& text, std::string* err) {
     rankedLadders = 0;
     crc = crc32(text.data(), text.size());
     source = text;
-    std::istringstream in(text);
-    std::string line;
     int lineNo = 0;
     bounds = {{1e9f, 1e9f, 1e9f}, {-1e9f, -1e9f, -1e9f}};
-    while (std::getline(in, line)) {
+    const char* next = text.data();
+    const char* textEnd = text.data() + text.size();
+    std::string kw;
+    while (next < textEnd) {   // (as std::getline splits: lines end at '\n'; the last one needn't)
+        const char* lineStart = next;
+        const char* lineEnd = (const char*)memchr(lineStart, '\n', (size_t)(textEnd - lineStart));
+        if (!lineEnd) lineEnd = textEnd;
+        next = lineEnd < textEnd ? lineEnd + 1 : textEnd;
         lineNo++;
-        size_t h = line.find('#');
-        if (h != std::string::npos) line.resize(h);
-        std::istringstream ls(line);
-        std::string kw;
+        if (const char* h = (const char*)memchr(lineStart, '#', (size_t)(lineEnd - lineStart))) lineEnd = h;
+        LineIn ls(lineStart, lineEnd);
         if (!(ls >> kw)) continue;
         bool ok = true;
         if (kw == "title") {
-            std::getline(ls, title);
+            ls.rest(title);
             while (!title.empty() && title[0] == ' ') title.erase(0, 1);
         } else if (kw == "box" || kw == "accent" || kw == "wallbang" || kw == "metal" || kw == "glow" || kw == "far" || kw == "water" || kw == "lava" || kw == "trim" || kw == "clip") {
             Brush b;
@@ -407,7 +521,7 @@ bool Map::parseText(const std::string& text, std::string* err) {
             ok = false;
         }
         if (!ok) {
-            if (err) *err = "parse error on line " + std::to_string(lineNo) + ": " + line;
+            if (err) *err = "parse error on line " + std::to_string(lineNo) + ": " + std::string(lineStart, lineEnd);
             return false;
         }
     }
