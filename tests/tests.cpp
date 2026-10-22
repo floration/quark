@@ -248,6 +248,14 @@ static void testTickRateIndependence() {
     printf("  end position (%.3f, %.3f, %.3f)\n", results[0].pos.x, results[0].pos.y, results[0].pos.z);
 }
 
+// The maps a test grades: listMaps() without the zz_* test maps other tests write (the forked groups each have their
+// own data dir, so none should be there; this keeps a stray one from failing the map checks if one is).
+static std::vector<std::string> testedMaps() {
+    std::vector<std::string> v = listMaps();
+    v.erase(std::remove_if(v.begin(), v.end(), [](const std::string& n) { return n.rfind("zz_", 0) == 0; }), v.end());
+    return v;
+}
+
 static void testMaps() {
     printf("maps\n");
     std::string err;
@@ -294,7 +302,7 @@ static void testMaps() {
 // navigate from every spawn to every objective.
 static void testAllMaps() {
     printf("all maps: modes, spawns, bot navigation\n");
-    for (auto& name : listMaps()) {
+    for (auto& name : testedMaps()) {
         Map m;
         std::string err;
         if (!m.load(name, &err)) { printf("  %s: %s\n", name.c_str(), err.c_str()); g_fail++; continue; }
@@ -1705,7 +1713,7 @@ int mapReport(const char* outPath); // tests/mapreport.cpp (returns how many map
 
 static void testLadders() {
     printf("ladders: every one climbable\n");
-    for (auto& name : listMaps()) {
+    for (auto& name : testedMaps()) {
         Map m;
         if (!m.load(name)) continue;
         for (auto& l : m.ladders) {
@@ -1941,7 +1949,7 @@ static void testCustomMode(uint16_t port) {
 static void testStairs() {
     printf("stairs: every flight walkable, none cutting a path\n");
     int flights = 0;
-    for (auto& name : listMaps()) {
+    for (auto& name : testedMaps()) {
         Map m;
         if (!m.load(name)) continue;
         NavGraph g;
@@ -2116,18 +2124,39 @@ static void testItModes(uint16_t port) {
 }
 
 // Rocket alt-fire: a lob at half speed that falls 3x faster.
-// "Reset maps": every shipped map is written back from the copy built into the game.
+// "Reset maps": every shipped map is written back from the copy built into the game. Only the temp data dir is
+// written: the install's maps folder is played by a copy of it there.
 static void testResetMaps() {
     printf("reset built-in maps\n");
+    namespace fs = std::filesystem;
     Map orig;
     CHECK(orig.load("temple"));
     CHECK(saveMapFile(userMapsDir() + "/temple.qmap", orig.source + "box 0 0 0 1 1 1\n")); // your edit shadows the shipped one
     Map m;
     CHECK(m.load("temple") && !isOfficialMap(m));
-    CHECK(resetOfficialMaps() >= 13);
+    std::string shipped = userDataPath("zz_install_maps");
+    std::error_code ec;
+    fs::remove_all(shipped, ec);
+    fs::create_directories(shipped, ec);
+    CHECK(saveMapFile(shipped + "/temple.qmap", orig.source + "box 0 0 0 1 1 1\n"));   // a shipped map changed in place
+    CHECK(saveMapFile(shipped + "/crucible.qmap", orig.source) && saveMapFile(shipped + "/crucible.qlm", "x"));   // retired
+    CHECK(resetOfficialMaps(shipped) >= 13);
+    CHECK(!fs::exists(shipped + "/crucible.qmap", ec) && !fs::exists(shipped + "/crucible.qlm", ec));
     Map r;
-    CHECK(r.load("temple") && isOfficialMap(r));
-    for (auto& n : listMaps()) { Map k; CHECK(k.load(n) && isOfficialMap(k)); }
+    CHECK(r.load("temple") && isOfficialMap(r));   // (your edited copy is gone)
+    int n = 0;
+    for (auto& e : fs::directory_iterator(shipped, ec)) {
+        if (e.path().extension() != ".qmap") continue;
+        std::ifstream f(e.path(), std::ios::binary);
+        std::stringstream ss;
+        ss << f.rdbuf();
+        Map k;
+        k.name = e.path().stem().string();
+        CHECK(k.parse(ss.str()) && isOfficialMap(k));
+        n++;
+    }
+    CHECK(n >= 13);
+    fs::remove_all(shipped, ec);
 }
 
 static void testRocketLob(uint16_t port) {
@@ -4237,14 +4266,22 @@ int main(int argc, char** argv) {
         std::vector<int> done(par.size(), -1);
         size_t next = 0, printed = 0;
         auto tmp = std::filesystem::temp_directory_path();
+        // each group gets its own user data dir (maps, demos, keys) under this run's: the edit and ranked groups write
+        // zz_* maps that the maps group would otherwise list and grade. Removed when the group ends.
+        auto groupDir = [&](size_t i) { return userDataPath(std::string("groups/") + par[i].name); };
         auto start = [&](size_t i) {
             std::string out = (tmp / ("quark_test_" + std::to_string(getpid()) + "_" + par[i].name + ".log")).string();
+            std::string data = groupDir(i);
             fflush(stdout);
             pid_t pid = fork();
             if (pid == 0) {   // the child: one test group, its output to a file
                 if (!freopen(out.c_str(), "w", stdout)) std::_Exit(99);
                 dup2(fileno(stdout), 2);
                 setvbuf(stdout, nullptr, _IOLBF, 0);
+                std::error_code ec;
+                std::filesystem::remove_all(data, ec);
+                std::filesystem::create_directories(data, ec);   // (the parent made the root already: set it, then make it)
+                setUserDataDir(data);
                 qsrand(1234);
                 par[i].run();
                 fflush(stdout);
@@ -4264,6 +4301,7 @@ int main(int argc, char** argv) {
                 std::stringstream ss; ss << f.rdbuf();
                 outputs[i] = ss.str();
                 std::remove(running[k].out.c_str());
+                { std::error_code ec; std::filesystem::remove_all(groupDir(i), ec); }
                 done[i] = WIFEXITED(st) ? WEXITSTATUS(st) : 1;
                 if (!WIFEXITED(st)) outputs[i] += std::string("  FAIL ") + par[i].name + ": crashed\n";
                 running.erase(running.begin() + k);

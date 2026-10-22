@@ -140,9 +140,9 @@ std::string userDataPath(const std::string& rel) {
 
 std::string userMapsDir() { return userDataPath("maps"); }
 
-int resetOfficialMaps() {
+int resetOfficialMaps(const std::string& shippedDir) {
     std::error_code ec;
-    std::string dir = findDataPath("maps"), mine = userMapsDir(), cache = userDataPath("cache");
+    std::string dir = shippedDir.empty() ? findDataPath("maps") : shippedDir, mine = userMapsDir(), cache = userDataPath("cache");
     fs::create_directories(dir, ec);
     int n = 0;
     for (const OfficialMapData* m = kOfficialMapData; m->name; m++) {

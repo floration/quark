@@ -193,8 +193,9 @@ bool validMapName(const std::string& name);
 // A plain file name inside one folder (a HUD or controls profile): printable, no folder separators or drive, doesn't
 // start with '.', at most 128 characters.
 bool plainFileName(const std::string& name);
-// Writes every shipped map back to its original text (and drops their light caches); returns how many.
-int resetOfficialMaps();
+// Writes every shipped map back to its original text (and drops their light caches and your edited copies) and removes
+// retired ones; returns how many. shippedDir: the install's maps folder (findDataPath("maps")) unless given (tests).
+int resetOfficialMaps(const std::string& shippedDir = std::string());
 std::string mapsFolder(); // absolute path of your maps folder (userMapsDir)
 std::string typedMapName(const std::string& typed); // what the editor's name field keeps of what you type: validMapName's characters (space -> _), at most 40
 std::string safeMapName(const std::string& name); // for building file names: anything else becomes '_', capped

@@ -1118,6 +1118,7 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g) {
 int mapReport(const char* outPath) {
     std::vector<Metrics> all;
     for (const std::string& name : listMaps()) {
+        if (name.rfind("zz_", 0) == 0) continue;   // (test maps other tests write: never graded)
         if (std::getenv("MR_ONLY") && name != std::getenv("MR_ONLY")) continue;   // (debugging one map: its scores against itself only)
         Map m;
         if (!m.load(name)) continue;
