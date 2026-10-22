@@ -750,7 +750,7 @@ Vec3 Game::edMouseRay() const {
 }
 
 bool Game::edSaveCopy(const Map& m, const std::string& name) {
-    if (!isValidMapName(name)) { edNotify("name: letters, digits, - and _ only"); return false; }
+    if (!validMapName(name)) { edNotify("name: letters, digits, - and _ only (not a device name like con)"); return false; }
     std::string text = m.serialize();
     Map check;
     std::string err;

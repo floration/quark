@@ -150,3 +150,7 @@ void writeSnapshotEvents(Writer& w, const std::vector<GameEvent>& events);
 bool readSnapshotClient(Reader& r, Snapshot& s);              // header: tells which base the world part needs
 bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base);
 bool readSnapshotEvents(Reader& r, Snapshot& s);
+// EV_BRACKET text (one "|"-separated row of entrants per round, then "@round,match") -> the tourney bracket.
+// Entrants are player ids, -1 a bye, -2 not decided yet; anything else becomes -2, the current round and match
+// are clamped into the bracket, and a malformed bracket comes back empty (false).
+bool parseBracket(const std::string& text, std::vector<std::vector<int>>& rounds, int& round, int& match);

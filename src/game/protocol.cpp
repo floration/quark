@@ -1,3 +1,6 @@
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include "protocol.h"
 
@@ -42,6 +45,7 @@ bool readSnapshotClient(Reader& r, Snapshot& s) {
     if (opt & 8) m.hookCooldown = r.f32();
     s.selfHealth = r.u8(); s.selfWeapon = r.u8(); s.knifeAway = r.u8();
     s.baseTick = r.u32();
+    if (s.clientId >= kMaxPlayers || s.selfWeapon >= WPN_COUNT) return false;   // (ids index fixed arrays on the client)
     return !r.bad();
 }
 
@@ -58,7 +62,7 @@ static void writeMode(Writer& w, const ModeState& m) {
     w.u8(m.point); w.u8(m.pointCount); w.u8((uint8_t)clampf(std::round(m.capture * 100.0f), 0, 100));
     w.u8(m.voteActive); w.u8(m.voteYes); w.u8(m.voteNo); w.u8(m.voteVoters); ds(m.voteTimeLeft); w.u8(m.duelMod); w.u8(m.arenaVariant); w.u16(m.weaponMask);
 }
-static void readMode(Reader& r, ModeState& m) {
+static bool readMode(Reader& r, ModeState& m) {
     m.mode = r.u8(); m.phase = r.u8(); m.timeLeft = r.u16() / 10.0f; m.round = r.u8(); m.roundsToWin = r.u8();
     m.scoreA = r.i16(); m.scoreB = r.i16(); m.attackers = r.u8(); m.flags = r.u8();
     m.bombState = r.u8(); m.bombCarrier = r.u8(); m.bombPos = r.vecq(); m.bombTimer = r.u16() / 10.0f;
@@ -67,6 +71,7 @@ static void readMode(Reader& r, ModeState& m) {
     m.payloadDist = r.f32(); m.payloadLen = r.f32();
     m.point = r.u8(); m.pointCount = r.u8(); m.capture = r.u8() / 100.0f;
     m.voteActive = r.u8(); m.voteYes = r.u8(); m.voteNo = r.u8(); m.voteVoters = r.u8(); m.voteTimeLeft = r.u16() / 10.0f; m.duelMod = r.u8(); m.arenaVariant = r.u8(); m.weaponMask = r.u16();
+    return m.mode < MODE_COUNT;   // (indexes the per-mode HUD / controls tables)
 }
 
 // Player field bits. P_FULL: every field follows (new player, or visibility changed). P_HIDDEN is
@@ -145,13 +150,17 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
 }
 
 bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base) {
-    if (r.u8()) readMode(r, s.ms);
+    if (r.u8()) { if (!readMode(r, s.ms)) return false; }
     else if (base) s.ms = base->ms;
     else return false;
     s.players.resize(r.u8());
+    static_assert(kMaxPlayers <= 32, "one bit per player id");
+    uint32_t seen = 0;   // player ids index fixed kMaxPlayers arrays on the client: in range, and each once
     for (auto& p : s.players) {
         p = PlayerSnap();
         p.id = r.u8();
+        if (p.id >= kMaxPlayers || (seen >> p.id & 1)) return false;
+        seen |= 1u << p.id;
         uint16_t m = r.u16();
         if (!(m & P_FULL)) {
             const PlayerSnap* b = nullptr;
@@ -175,13 +184,14 @@ bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base) {
         if (m & P_CHECK) p.checkpoint = r.u8();
         if (m & P_HOOK) { p.hooked = r.u8(); if (p.hooked) p.hookPoint = r.vecq(); }
         if (p.hidden) p.hooked = 0;
+        if (p.weapon >= WPN_COUNT) return false;
     }
     s.projectiles.resize(r.u8());
     for (auto& p : s.projectiles) {
         p.id = r.u16();
         uint8_t bits = r.u8();
         const ProjectileSnap* b = nullptr;
-        if (bits & 1) { p.type = r.u8(); p.owner = r.u8(); }
+        if (bits & 1) { p.type = r.u8(); p.owner = r.u8(); if (p.owner >= kMaxPlayers) return false; }
         else {
             if (base) for (auto& o : base->projectiles) if (o.id == p.id) { b = &o; break; }
             if (!b) return false;
@@ -200,6 +210,31 @@ void writeSnapshotEvents(Writer& w, const std::vector<GameEvent>& events) {
     for (auto& e : events) {
         w.u32(e.id); w.u8(e.type); w.u8(e.a); w.u8(e.b); w.i16(e.c); w.str(e.text);
     }
+}
+
+bool parseBracket(const std::string& text, std::vector<std::vector<int>>& rounds, int& round, int& match) {
+    rounds.clear();
+    round = match = 0;
+    size_t p = 0;
+    while (p < text.size()) {
+        size_t e = text.find('\n', p);
+        std::string line = text.substr(p, e == std::string::npos ? std::string::npos : e - p);
+        p = e == std::string::npos ? text.size() : e + 1;
+        if (!line.empty() && line[0] == '@') { if (sscanf(line.c_str() + 1, "%d,%d", &round, &match) != 2) round = match = 0; continue; }
+        std::vector<int> r;
+        for (size_t q = 0; q < line.size();) {
+            size_t bar = line.find('|', q);
+            if (bar == std::string::npos) bar = line.size();
+            int id = atoi(line.substr(q, bar - q).c_str());
+            r.push_back(id >= -2 && id < kMaxPlayers ? id : -2);
+            q = bar + 1;
+        }
+        if (rounds.size() >= 8 || r.size() > 2 * (size_t)kMaxPlayers) { rounds.clear(); return false; }
+        rounds.push_back(std::move(r));
+    }
+    round = std::max(0, std::min(round, (int)rounds.size()));
+    match = std::max(0, std::min(match, 2 * kMaxPlayers));
+    return !rounds.empty();
 }
 
 bool readSnapshotEvents(Reader& r, Snapshot& s) {

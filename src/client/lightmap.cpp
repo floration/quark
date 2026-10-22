@@ -11,7 +11,7 @@
 
 namespace {
 constexpr uint32_t kCacheMagic = 0x314D4C51; // "QLM1"
-constexpr uint32_t kBakeVersion = 10;   // 10: point lights 10% brighter // 6: point lights
+constexpr uint32_t kBakeVersion = 11;   // 11: sun and bounce rays pass clip // 10: point lights 10% brighter // 6: point lights
 constexpr int kSkySamples = 48;
 constexpr int kSunSamples = 6;
 constexpr float kAlbedo = 0.65f;

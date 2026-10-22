@@ -7,9 +7,11 @@
 #include <memory>
 #include <deque>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <thread>
 #include <string>
+#include <thread>
 #include <vector>
 #include "../common/net.h"
 #include "../common/upnp.h"
@@ -116,8 +118,15 @@ struct ServerPlayer {
     double itFreezeUntil = 0;    // tag: just got tagged, stands still until then
     uint32_t lastCmdSeq = 0;
     uint16_t keys = 0;          // KEY_* from the last command
+    float chatTokens = 5;       // say: a burst of 5, then one a second (REVIEW NET-7)
+    double chatAt = 0;
+    uint32_t strTick = 0;       // string commands handled this tick (a budget: the rest wait, the client resends them)
+    int strCount = 0, edCount = 0;
     std::deque<UserCmd> cmdQueue;
     float cmdTokensMs = 16.0f;
+    int deepTicks = 0;          // ticks in a row the command queue has held a backlog (see kDeepQueue)
+    float catchUp = 12;         // extra commands it may run to clear a backlog (kCatchUpMax; refills very slowly)
+    uint32_t cmdsRun = 0;       // commands simulated (nobody gets more than real time: see the tests)
     uint8_t reportedLoss = 0;   // % of snapshots the client says it missed
     uint32_t lastViewTick = 0;
     double lastRecv = 0;
@@ -157,6 +166,7 @@ class Server {
 public:
     using LogFn = std::function<void(const std::string&)>;
 
+    ~Server() { stopMapInfo(); }
     bool start(const ServerConfig& cfg, std::string* err = nullptr);
     void stop();
     // Blocking loop for a dedicated server or a hosting thread.
@@ -272,9 +282,16 @@ public:
     bool editing_ = false, editDirty_ = false;
     bool tempEdit_ = false;     // editing was voted on a normal server: never saved, reverts at the next map change
     bool mapEdited_ = false;    // map_ differs from its file (temporary edits being played)
+    bool autosaveBackedUp_ = false; // this edit session's first autosave copied the file to <name>.qmap.bak
     void playMap(int mode);
     double nextAutosave_ = 0;
     void setEditing(bool on);
+    // What votes and ranked need to know about a map file, without parsing it on the tick (REVIEW NET-6): read in
+    // the background when the server starts, re-read only when the file changes (size or time).
+    struct MapInfo { int64_t stamp = 0; bool ok = false; uint32_t supports = 0; uint16_t ranked = 0; };
+    MapInfo mapInfo(const std::string& name);
+    uint32_t mapInfoLoads_ = 0;  // map files actually parsed for it (tests)
+    void stopMapInfo();
     void setRanked(bool on, int ladder);            // ranked on (1v1 on that ladder, official map) / off
     bool rankedBlocks(int id, const std::string& what); // tells the player and returns true if ranked forbids it
     bool balanceBotsUnranked_ = true;                // balance bots setting to go back to when ranked is voted off
@@ -351,6 +368,12 @@ private:
     std::vector<std::string> mapList_;        // maps on disk (cached at start: votes check names against it)
     uint32_t challengeCookie(const NetAddr& a, uint32_t nonce, int64_t bucket) const;
     bool isAdmin(int id) const;
+    std::map<std::string, MapInfo> mapInfo_;
+    std::mutex mapInfoMu_;
+    std::thread mapInfoThread_;
+    std::atomic<bool> mapInfoQuit_{false};
+    static int64_t mapStamp(const std::string& name);
+    static MapInfo readMapInfo(const std::string& name, int64_t stamp);
     void handleConnect(const NetAddr& from, Reader& r);
     void handleInput(int id, Reader& r);
     void handleStringCmd(int id, const std::string& s);

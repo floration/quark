@@ -1,6 +1,7 @@
 #include "official_map_data.h"
 #include "map.h"
 #include "gamedefs.h"
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <sstream>
@@ -176,12 +177,25 @@ std::vector<std::string> listMaps() {
     return out;
 }
 
-static bool mapNameChar(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-'; }
-bool isValidMapName(const std::string& name) {
+bool validMapName(const std::string& name) {
     if (name.empty() || name.size() > 40) return false;
-    for (char c : name) if (!mapNameChar(c)) return false;
+    for (char c : name) if (!(isalnum((unsigned char)c) || c == '_' || c == '-')) return false;
+    std::string low;
+    for (char c : name) low += (char)tolower((unsigned char)c);
+    static const char* dev[] = {"con", "prn", "aux", "nul"};
+    for (const char* d : dev) if (low == d) return false;
+    if (low.size() == 4 && (low.rfind("com", 0) == 0 || low.rfind("lpt", 0) == 0) && low[3] >= '0' && low[3] <= '9') return false;
     return true;
 }
+
+bool plainFileName(const std::string& name) {
+    if (name.empty() || name.size() > 128 || name[0] == '.') return false;
+    for (char c : name) if ((unsigned char)c < 32 || (unsigned char)c > 126 || c == '/' || c == '\\' || c == ':') return false;
+    return true;
+}
+
+static bool mapNameChar(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-'; }
+bool isValidMapName(const std::string& name) { return validMapName(name); }
 std::string typedMapName(const std::string& typed) {
     std::string o;
     for (char c : typed) {
@@ -205,15 +219,23 @@ std::string downloadedMapPath(const std::string& name, uint32_t crc) {
 bool saveMapFile(const std::string& path, const std::string& text) {
     std::error_code ec;
     fs::create_directories(fs::path(path).parent_path(), ec);
+    return writeFileAtomic(path, text);
+}
+
+bool writeFileAtomic(const std::string& path, const std::string& data, bool privateFile) {
+    std::error_code ec;
     std::string tmp = path + ".tmp";
     {
         std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
         if (!f) return false;
-        f.write(text.data(), (std::streamsize)text.size());
-        if (!f) return false;
+        if (privateFile) fs::permissions(tmp, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace, ec);
+        f.write(data.data(), (std::streamsize)data.size());
+        f.flush();
+        if (!f) { f.close(); fs::remove(tmp, ec); return false; }
     }
-    fs::rename(tmp, path, ec);
-    return !ec;
+    fs::rename(tmp, path, ec);   // (replaces the old file in one step)
+    if (ec) { fs::remove(tmp, ec); return false; }
+    return true;
 }
 
 uint32_t crc32(const void* data, size_t len) {
@@ -236,6 +258,7 @@ uint32_t crc32(const void* data, size_t len) {
 bool Map::load(const std::string& requested, std::string* err) {
     // renamed maps: old configs / votes for these still work
     std::string mapName = requested == "arena" ? "bastion" : requested == "tug" ? "canal" : requested;
+    if (!validMapName(mapName)) { if (err) *err = "bad map name: " + mapName; return false; }
     std::string path = userMapsDir() + "/" + mapName + ".qmap"; // yours (edited / made) first, then the shipped one
     std::error_code ec;
     if (!fs::exists(path, ec)) path = findDataPath("maps/" + mapName + ".qmap");
@@ -303,7 +326,7 @@ bool Map::parseText(const std::string& text, std::string* err) {
             ok = readBox(ls, b.box);
             b.material = kw == "accent" ? 1 : kw == "wallbang" ? 2 : kw == "metal" ? 3 : kw == "glow" ? 4 : kw == "far" ? 5 : kw == "water" ? 6 : kw == "lava" ? 7 : kw == "trim" ? 8 : kw == "clip" ? 9 : 0;
             hasWallbang |= b.material == 2;
-            ok = ok && brushes.size() < kMapMaxBrushes;
+            if (ok && brushes.size() >= kMaxMapBrushes) { if (err) *err = "too many boxes (limit " + std::to_string(kMaxMapBrushes) + ")"; return false; }
             if (ok) {
                 brushes.push_back(b);
                 if (b.material >= 5) continue; // far scenery / water / lava surfaces: not part of the playable bounds
@@ -342,7 +365,7 @@ bool Map::parseText(const std::string& text, std::string* err) {
             ok = ok && (t == "room" || t == "stairs" || t == "custom");
             if (ok) groups.push_back(g);
         } else if (kw == "part") {
-            Brush b; ok = !groups.empty() && groups.back().type == GROUP_CUSTOM && groups.back().parts.size() < 1024 && (bool)(ls >> b.material) && b.material >= 0 && b.material <= 7 && readBox(ls, b.box);
+            Brush b; ok = !groups.empty() && groups.back().type == GROUP_CUSTOM && groups.back().parts.size() < kMaxGroupParts && (bool)(ls >> b.material) && b.material >= 0 && b.material <= 7 && readBox(ls, b.box);
             if (ok) groups.back().parts.push_back(b);
         } else if (kw == "checkpoint") {
             AABB b; ok = readBox(ls, b) && checkpoints.size() < 128; if (ok) checkpoints.push_back(b);
@@ -388,6 +411,7 @@ bool Map::parseText(const std::string& text, std::string* err) {
             return false;
         }
     }
+    if (!validate(err)) return false;   // (before ladders and groups make their boxes from these)
     genLadderBrushes();
     if (brushes.size() > kMapMaxTotalBrushes) {
         if (err) *err = "map has too many brushes (" + std::to_string(brushes.size()) + ")";
@@ -397,11 +421,35 @@ bool Map::parseText(const std::string& text, std::string* err) {
         if (err) *err = "map needs at least one box and one spawn";
         return false;
     }
+    if (!validate(err)) return false;   // and what they made
     for (auto& b : brushes) if (b.generated && b.material < 5) { bounds.mn = vmin(bounds.mn, b.box.mn); bounds.mx = vmax(bounds.mx, b.box.mx); }
-    if (!buildGrid()) {
-        if (err) *err = "map geometry is too dense for the collision grid";
-        return false;
+    if (!buildGrid()) { if (err) *err = "too much geometry for the collision grid"; return false; }
+    return true;
+}
+
+bool Map::validate(std::string* err) const {
+    auto fail = [&](const std::string& why) { if (err) *err = why; return false; };
+    auto num = [](float v) { return std::isfinite(v) && std::fabs(v) <= kMapExtent; };
+    auto vec = [&](const Vec3& v) { return num(v.x) && num(v.y) && num(v.z); };
+    auto box = [&](const AABB& b) { return vec(b.mn) && vec(b.mx); };
+    if (brushes.size() > kMaxMapBrushes)
+        return fail("too many boxes: " + std::to_string(brushes.size()) + " with ladders' and groups' (limit " + std::to_string(kMaxMapBrushes) + ")");
+    if (spawns.size() > kMaxMapSpawns || lights.size() > kMaxMapLights || ladders.size() > kMaxMapLadders || groups.size() > kMaxMapGroups ||
+        bombSites.size() > kMaxMapSites || checkpoints.size() > kMaxMapCheckpoints || payloadPath.size() > kMaxMapPath ||
+        points.size() > kMaxMapPoints || cartChecks.size() > kMaxMapCartChecks)
+        return fail("too many spawns, lights, ladders, groups, sites, checkpoints, path points or capture points");
+    for (auto& b : brushes) if (!box(b.box) || b.material < 0 || b.material > 9) return fail("a box is out of range (coordinates within 4096 m)");
+    for (auto& s : spawns) if (!vec(s.pos) || !std::isfinite(s.yaw)) return fail("a spawn is out of range");
+    for (auto& l : lights)
+        if (!vec(l.pos) || !(l.radius >= 0.5f && l.radius <= 100) || !(l.intensity >= 0 && l.intensity <= 10)) return fail("a light is out of range (radius 0.5-100, intensity 0-10)");
+    for (auto& l : ladders) if (!box(l) || l.mx.y - l.mn.y > kMaxObjectHeight) return fail("a ladder is out of range (at most 64 m tall)");
+    for (auto& g : groups) {
+        if (!box(g.box) || g.box.mx.y - g.box.mn.y > kMaxObjectHeight || g.parts.size() > kMaxGroupParts) return fail("a group is out of range (at most 64 m tall, 1024 parts)");
+        if (g.type != GROUP_CUSTOM && !g.parts.empty()) return fail("only a custom group has parts");
     }
+    for (auto* list : {&bombSites, &checkpoints, &points}) for (auto& b : *list) if (!box(b)) return fail("a bomb site, checkpoint or capture point is out of range");
+    for (auto& p : payloadPath) if (!vec(p)) return fail("a payload path point is out of range");
+    if ((hasHill && !box(hill)) || (hasVoid && !num(voidY)) || (indoor && !num(ceilingY)) || !vec(sunDir)) return fail("the hill, void, ceiling or sun is out of range");
     return true;
 }
 
@@ -514,7 +562,14 @@ bool applyMapEdit(Map& m, const std::string& op) {
     }
     int i;
     if (!(in >> verb >> i) || (verb != "ins" && verb != "set" && verb != "del" && !(verb == "part" && kind == "g"))) return false;
-    auto okNum = okCoord;
+    if (kind == "b") {   // generated boxes (ladders' rails, groups' parts) sit after the editable ones and aren't edited directly
+        int editable = (int)m.editableBrushes();
+        if (i < 0 || i > editable || (verb != "ins" && i == editable) || (verb == "del" && editable <= 1)) return false;
+    }
+    // the edit happens on m itself; on any failure m goes back to this copy (the source text isn't part of it)
+    std::string source = std::move(m.source);
+    Map before = m;
+    auto okNum = [](float v) { return std::isfinite(v) && std::fabs(v) <= 4096.0f; };
     auto readVec = [&](Vec3& v) { return (bool)(in >> v.x >> v.y >> v.z) && okNum(v.x) && okNum(v.y) && okNum(v.z); };
     auto readBox = [&](AABB& b) {
         Vec3 a, c;
@@ -584,7 +639,11 @@ bool applyMapEdit(Map& m, const std::string& op) {
                                   && g.dir >= 0 && g.dir < 4 && readBox(g.box) && g.box.mx.y - g.box.mn.y <= 64;
             if (ok && verb == "part") m.groups[i].parts.push_back({g.box, g.material});
             else if (ok && verb == "ins") { ok = i >= 0 && (size_t)i <= m.groups.size() && m.groups.size() < 256; if (ok) m.groups.insert(m.groups.begin() + i, g); }
-            else if (ok) { ok = i >= 0 && (size_t)i < m.groups.size(); if (ok) { g.parts = std::move(m.groups[i].parts); m.groups[i] = std::move(g); } }
+            else if (ok) {
+                ok = i >= 0 && (size_t)i < m.groups.size();
+                if (ok && g.type == Map::GROUP_CUSTOM && m.groups[i].type == Map::GROUP_CUSTOM) g.parts = std::move(m.groups[i].parts);   // (else none)
+                if (ok) m.groups[i] = std::move(g);
+            }
         }
     }
     else if (kind == "h") {
@@ -593,7 +652,9 @@ bool applyMapEdit(Map& m, const std::string& op) {
         ok = verb == "set" && (bool)(in >> has) && readBox(b);
         if (ok) { m.hasHill = has != 0; m.hill = b; }
     }
-    if (ok && (kind == "b" || kind == "d" || kind == "g")) m.rebuild();
+    if (ok) ok = kind == "b" || kind == "d" || kind == "g" ? m.rebuild() : m.validate();
+    if (!ok) m = std::move(before);
+    m.source = std::move(source);
     return ok;
 }
 
@@ -671,8 +732,10 @@ void Map::groupBoxes(const Group& g, std::vector<Brush>& out) {
     }
 }
 
-void Map::rebuild() {
+bool Map::rebuild() {
+    if (!validate()) return false;
     genLadderBrushes();
+    if (!validate()) return false;
     bounds = {{1e9f, 1e9f, 1e9f}, {-1e9f, -1e9f, -1e9f}};
     hasWallbang = false;
     for (auto& b : brushes) {
@@ -682,42 +745,48 @@ void Map::rebuild() {
         hasWallbang |= b.material == 2;
     }
     if (brushes.empty()) bounds = {{-1, -1, -1}, {1, 1, 1}};
-    buildGrid();
+    return buildGrid();
 }
 
 bool Map::buildGrid() {
     lava.clear();   // (touch it and die)
     for (auto& b : brushes) if (b.material == 7) lava.push_back(b.box);
+    // validate() keeps the bounds within kMapExtent (the grid is at most 2048 x 2048 cells) and brushes under 65536
+    // (16-bit indices); with no solid brush the bounds are the empty sentinel and the grid is one cell
     gridX0 = std::floor(bounds.mn.x / kCell) * kCell;
     gridZ0 = std::floor(bounds.mn.z / kCell) * kCell;
-    gridW = std::max(1, std::min(4096, (int)std::ceil((bounds.mx.x - gridX0) / kCell)));
-    gridH = std::max(1, std::min(4096, (int)std::ceil((bounds.mx.z - gridZ0) / kCell)));
-    size_t nb = std::min(brushes.size(), kMapMaxTotalBrushes); // (parse / edits keep it under this; never wrap the uint16_t)
-    auto range = [&](const AABB& b, int& x0, int& x1, int& z0, int& z1) {
-        x0 = std::max(0, (int)((b.mn.x - gridX0) / kCell)); x1 = std::min(gridW - 1, (int)((b.mx.x - gridX0) / kCell));
-        z0 = std::max(0, (int)((b.mn.z - gridZ0) / kCell)); z1 = std::min(gridH - 1, (int)((b.mx.z - gridZ0) / kCell));
-    };
-    auto solid = [&](size_t i) { return !(brushes[i].material >= 5 && brushes[i].material != 9); }; // far / water / lava: not solid (clip: solid)
-    // counting sort: count per cell, prefix-sum, fill (same order as before: by brush index within a cell)
+    gridW = std::max(1, (int)std::min(4096.0f, std::ceil((bounds.mx.x - gridX0) / kCell)));
+    gridH = std::max(1, (int)std::min(4096.0f, std::ceil((bounds.mx.z - gridZ0) / kCell)));
     size_t cells = (size_t)gridW * gridH;
-    cellStart.assign(cells + 1, 0);
-    cellBrushes.clear();
+    auto span = [&](const AABB& b, int& x0, int& x1, int& z0, int& z1) {
+        x0 = (int)clampf((b.mn.x - gridX0) / kCell, 0, (float)(gridW - 1)); x1 = (int)clampf((b.mx.x - gridX0) / kCell, 0, (float)(gridW - 1));
+        z0 = (int)clampf((b.mn.z - gridZ0) / kCell, 0, (float)(gridH - 1)); z1 = (int)clampf((b.mx.z - gridZ0) / kCell, 0, (float)(gridH - 1));
+    };
+    auto solid = [&](const Brush& b) { return b.material < 5 || b.material == 9; }; // far scenery, water / lava: not solid, not hit by shots (clip: solid)
+    // count per cell, then fill: one allocation, refused before it's made if it's too big
     size_t total = 0;
-    for (size_t i = 0; i < nb; i++) {
-        if (!solid(i)) continue;
-        int x0, x1, z0, z1; range(brushes[i].box, x0, x1, z0, z1);
-        if (x1 < x0 || z1 < z0) continue;
+    for (auto& br : brushes) {
+        if (!solid(br)) continue;
+        int x0, x1, z0, z1;
+        span(br.box, x0, x1, z0, z1);
         total += (size_t)(x1 - x0 + 1) * (z1 - z0 + 1);
-        if (total > kMapMaxGridRefs) { cellStart.assign(cells + 1, 0); return false; }
+        if (total > kMaxMapGridRefs) { cellStart.assign(2, 0); cellBrushes.clear(); gridW = gridH = 1; return false; }
+    }
+    cellStart.assign(cells + 1, 0);
+    cellBrushes.assign(total, 0);
+    for (auto& br : brushes) {
+        if (!solid(br)) continue;
+        int x0, x1, z0, z1;
+        span(br.box, x0, x1, z0, z1);
         for (int z = z0; z <= z1; z++)
             for (int x = x0; x <= x1; x++) cellStart[(size_t)z * gridW + x + 1]++;
     }
     for (size_t c = 0; c < cells; c++) cellStart[c + 1] += cellStart[c];
-    cellBrushes.resize(total);
     std::vector<uint32_t> fill(cellStart.begin(), cellStart.end() - 1);
-    for (size_t i = 0; i < nb; i++) {
-        if (!solid(i)) continue;
-        int x0, x1, z0, z1; range(brushes[i].box, x0, x1, z0, z1);
+    for (size_t i = 0; i < brushes.size(); i++) {   // (in brush order within each cell, as before)
+        if (!solid(brushes[i])) continue;
+        int x0, x1, z0, z1;
+        span(brushes[i].box, x0, x1, z0, z1);
         for (int z = z0; z <= z1; z++)
             for (int x = x0; x <= x1; x++) cellBrushes[fill[(size_t)z * gridW + x]++] = (uint16_t)i;
     }
@@ -847,12 +916,15 @@ float Map::raycastBullet(const Vec3& o, const Vec3& dir, float maxDist, float* b
     return best;
 }
 
-bool Map::raycastAny(const Vec3& o, const Vec3& dir, float maxDist) const {
+bool Map::raycastAny(const Vec3& o, const Vec3& dir, float maxDist, bool hitClip) const {
     Vec3 inv = safeInv(dir);
     bool hit = false;
     walkCells(*this, o, dir, maxDist, [&](size_t c, float) {
-        for (uint32_t k = cellStart[c]; k < cellStart[c + 1] && !hit; k++)
-            hit = rayAABB(o, inv, brushes[cellBrushes[k]].box, maxDist) >= 0;
+        for (uint32_t k = cellStart[c]; k < cellStart[c + 1] && !hit; k++) {
+            const Brush& br = brushes[cellBrushes[k]];
+            if (br.material == 9 && !hitClip) continue;   // clip: players only (light, sight and shots pass)
+            hit = rayAABB(o, inv, br.box, maxDist) >= 0;
+        }
         return !hit;
     });
     for (const AABB& b : dynSolids) hit = hit || rayAABB(o, inv, b, maxDist) >= 0;

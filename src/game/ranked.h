@@ -53,6 +53,17 @@ std::string buildRaceRunForm(const std::string& ticket, const std::string& map, 
                              const std::vector<int>& splits, const std::string& name);
 std::string randomMatchId(); // 16 hex chars
 
+// Worker hex text ("-" or empty = none) -> printable text; empty if it isn't valid hex. Never throws.
+std::string fromHexText(const std::string& hex);
+// One member of a /filled row ("who:namehex:discordhex"). who is a ranked id, or "d:<discord name>" for a
+// Discord user, so it may itself contain ':'.
+struct FilledMember { std::string who, name, discord; };
+// A /filled row's members field (comma separated). Malformed members are skipped.
+std::vector<FilledMember> parseFilledMembers(const std::string& members);
+// One /filled line, "n mode created members"; false if malformed.
+struct FilledRow { long long n = 0, created = 0; std::string mode; std::vector<FilledMember> members; };
+bool parseFilledRow(const std::string& line, FilledRow& out);
+
 struct Rating {
     double mu = 25, sigma = 25.0 / 3;
     int games = 0;

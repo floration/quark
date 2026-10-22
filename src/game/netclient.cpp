@@ -21,6 +21,15 @@ uint32_t randomNonce() {
 }
 }
 
+void NetClient::resetPrediction() {
+    nextSeq_ = 1;
+    for (auto& c : cmds_) c = UserCmd();
+    for (auto& q : predictedSeq_) q = 0;
+    pred_ = predPrev_ = MoveState();
+    errorOffset_ = {};
+    lastReplay_ = 0;
+}
+
 bool NetClient::connect(const std::string& address, const std::string& name) {
     disconnect();
     error_.clear();
@@ -36,17 +45,15 @@ bool NetClient::connect(const std::string& address, const std::string& name) {
     lastRecv_ = timeNow();
     snaps_.clear();
     clockInit_ = false;
-    nextSeq_ = 1;
+    resetPrediction();
     lossExpected_ = lossReceived_ = 0;
     lossPct_ = 0;
-    for (auto& q : predictedSeq_) q = 0;
     lastEventId_ = 0;
     events_.clear();
     stringCmds_.clear();
     stringSeq_ = stringAcked_ = 0;
     mapReady_ = false;
     dl_ = Download();
-    pred_ = predPrev_ = MoveState();
     for (auto& n : names_) n.clear();
     for (auto& n : rankIds_) n.clear();
     poll();
@@ -55,6 +62,7 @@ bool NetClient::connect(const std::string& address, const std::string& name) {
 
 void NetClient::disconnect() {
     stopRecording();
+    resetPrediction();
     if (play_.active) { play_ = Playback(); state_ = ConnState::Disconnected; return; }
     if (state_ == ConnState::Connected) {
         uint8_t buf[16];
@@ -127,9 +135,9 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
             std::string mapName = r.str();
             uint32_t crc = r.u32();
             r.u8(); // mode
-            if (r.bad()) return;
-            if (!isValidMapName(mapName)) { // a name, never a path: it ends up in cache / demo file names
-                error_ = "server sent an invalid map name";
+            if (r.bad() || id >= kMaxPlayers) return;
+            if (!validMapName(mapName)) {   // it becomes a file name (map, download, light cache, demo): never a path
+                error_ = "server sent a bad map name";
                 disconnect();
                 return;
             }
@@ -254,7 +262,7 @@ void NetClient::applyEditEvent(const std::string& text) {
 }
 
 bool NetClient::useMap(const std::string& name, uint32_t crc) {
-    if (!isValidMapName(name)) return false; // just a name, never a path
+    if (!validMapName(name)) return false; // just a name, never a path
     Map m;
     if (!(m.load(name) && m.crc == crc)) {
         std::ifstream f(downloadedMapPath(name, crc), std::ios::binary);
@@ -353,22 +361,28 @@ void NetClient::onSnapshot(Snapshot& s) {
     // predicted for it, our prediction is already right: skip the replay (the common case).
     bool alive = false;
     for (auto& p : s.players) if (p.id == s.clientId) alive = p.flags & PS_ALIVE;
-    const MoveState& mine = predicted_[s.ackCmdSeq % 256];
-    bool match = predictedSeq_[s.ackCmdSeq % 256] == s.ackCmdSeq && length(mine.pos - s.self.pos) < 1e-4f &&
+    const MoveState& mine = predicted_[s.ackCmdSeq % kCmdRing];
+    bool match = predictedSeq_[s.ackCmdSeq % kCmdRing] == s.ackCmdSeq && length(mine.pos - s.self.pos) < 1e-4f &&
                  length(mine.vel - s.self.vel) < 1e-3f && mine.flags == s.self.flags;
+    lastReplay_ = 0;
     if (!alive || !mapReady_) {
         pred_ = predPrev_ = s.self;
         errorOffset_ = {};
     } else if (!match) {
         Vec3 oldVisual = pred_.pos + errorOffset_;
         pred_ = s.self;
-        for (uint32_t seq = s.ackCmdSeq + 1; seq < nextSeq_; seq++) {
-            const UserCmd& c = cmds_[seq % 256];
+        // only commands still in the ring can be replayed (an ack far behind, from a server or a demo, would
+        // otherwise loop over millions of sequence numbers)
+        uint32_t first = s.ackCmdSeq + 1;
+        if (nextSeq_ > kCmdRing && first < nextSeq_ - kCmdRing) first = nextSeq_ - kCmdRing;
+        for (uint32_t seq = first; seq < nextSeq_; seq++) {
+            const UserCmd& c = cmds_[seq % kCmdRing];
+            lastReplay_++;
             if (c.seq != seq) continue;
             predPrev_ = pred_;
             pmove(pred_, c, map_);
-            predicted_[seq % 256] = pred_;
-            predictedSeq_[seq % 256] = seq;
+            predicted_[seq % kCmdRing] = pred_;
+            predictedSeq_[seq % kCmdRing] = seq;
         }
         Vec3 err = oldVisual - pred_.pos;
         errorOffset_ = length(err) < 2.0f ? err : Vec3();
@@ -385,11 +399,11 @@ void NetClient::tick(UserCmd cmd) {
     cmd.seq = nextSeq_++;
     cmd.msec = (uint8_t)(1000 / tickRate());
     cmd.viewTick = (uint32_t)std::max(0.0, renderTime_ * 1000.0); // server ms we're looking at
-    cmds_[cmd.seq % 256] = cmd;
+    cmds_[cmd.seq % kCmdRing] = cmd;
     predPrev_ = pred_;
     if (selfAlive()) pmove(pred_, cmd, map_);
-    predicted_[cmd.seq % 256] = pred_;
-    predictedSeq_[cmd.seq % 256] = cmd.seq;
+    predicted_[cmd.seq % kCmdRing] = pred_;
+    predictedSeq_[cmd.seq % kCmdRing] = cmd.seq;
     errorOffset_ *= std::exp(-cmd.msec / 60.0f); // fade corrections out over ~60 ms, at any tick rate
     sendInput();
 }
@@ -404,7 +418,7 @@ void NetClient::sendInput() {
     w.u8(lossOverride_ >= 0 ? (uint8_t)lossOverride_ : lossPct_);
     uint32_t first = nextSeq_ > (uint32_t)kCmdsPerPacket ? nextSeq_ - kCmdsPerPacket : 1;
     w.u8((uint8_t)(nextSeq_ - first));
-    for (uint32_t s = first; s < nextSeq_; s++) writeCmd(w, cmds_[s % 256]);
+    for (uint32_t s = first; s < nextSeq_; s++) writeCmd(w, cmds_[s % kCmdRing]);
     // every unacknowledged string command that fits (resent until the server acks it), so a burst of
     // editor ops or chat doesn't trickle out one per round trip
     int nStr = 0, room = (int)sizeof buf - w.size() - 3;
@@ -467,7 +481,7 @@ NetClient::PlayerArray NetClient::interpolatedPlayers() const {
     float ta = a->timeMs * 0.001f, tb = b->timeMs * 0.001f;
     float t = tb > ta ? clampf((renderTime_ - ta) / (tb - ta), 0, 1) : 1.0f;
     for (auto& pb : b->players) {
-        if (pb.hidden) continue; // out of sight: the server didn't send where they are
+        if (pb.hidden || pb.id >= kMaxPlayers) continue; // out of sight: the server didn't send where they are (ids: checked at decode too)
         InterpPlayer& ip = out[pb.id];
         ip.valid = true;
         ip.snap = pb;
@@ -600,6 +614,7 @@ void ServerBrowser::poll() {
 //   type 1 (map): name, source text, client id. Written first and whenever the map changes (or is edited).
 //   type 2 (snapshot): client header + world (delta against the previous recorded snapshot) + events.
 static constexpr uint32_t kDemoMagic = 0x4D454451; // "QDEM"
+static constexpr uint64_t kMaxDemoBytes = 512ull << 20; // (about 9 h of play; playback reads the whole file)
 
 bool NetClient::startRecording(const std::string& path, bool fullRate) {
     stopRecording();
@@ -664,7 +679,9 @@ void NetClient::recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& 
 
 bool NetClient::startPlayback(const std::string& path, std::string& err) {
     disconnect();
-    std::ifstream f(path, std::ios::binary);
+    std::ifstream f(path, std::ios::binary | std::ios::ate);
+    if (f && (uint64_t)f.tellg() > kMaxDemoBytes) { err = "demo too big"; return false; }
+    f.seekg(0);
     std::stringstream ss;
     ss << f.rdbuf();
     std::string d = ss.str();
@@ -678,7 +695,8 @@ bool NetClient::startPlayback(const std::string& path, std::string& err) {
     play_.pos = 6;
     for (size_t p = 6; p + 13 <= play_.data.size();) { // its length: the last record's time
         uint32_t n; memcpy(&play_.length, play_.data.data() + p + 1, 8); memcpy(&n, play_.data.data() + p + 9, 4);
-        p += 13 + n;
+        if (n > play_.data.size() - p - 13) break;   // (truncated; and 13 + n in 32 bits could wrap to 0)
+        p += 13 + (size_t)n;
     }
     play_.active = true;
     play_.wall = timeNow();
@@ -702,9 +720,9 @@ void NetClient::pollPlayback() {
         double t; uint32_t n;
         memcpy(&t, d.data() + play_.pos + 1, 8); memcpy(&n, d.data() + play_.pos + 9, 4);
         if (t > play_.t && mapReady_) break;
-        if (play_.pos + 13 + n > d.size()) break;
+        if (n > d.size() - play_.pos - 13) break;
         Reader r((const uint8_t*)d.data() + play_.pos + 13, (int)n);
-        play_.pos += 13 + n;
+        play_.pos += 13 + (size_t)n;
         if (type == 1) {
             std::string name = r.str();
             uint32_t len = r.u32();
@@ -712,7 +730,7 @@ void NetClient::pollPlayback() {
             for (uint32_t i = 0; i < len && !r.bad(); i++) src += (char)r.u8();
             int id = r.u8();
             Map m;
-            if (r.bad() || !m.parse(src)) continue;
+            if (r.bad() || id >= kMaxPlayers || !validMapName(name) || !m.parse(src)) continue;
             m.name = name;
             map_ = std::move(m);
             mapReady_ = true;

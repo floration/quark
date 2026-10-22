@@ -15,16 +15,6 @@ std::string toHex(const std::string& t) {
     for (unsigned char c : t) if (c >= 32 && c < 127) { out += d[c >> 4]; out += d[c & 15]; }
     return out;
 }
-std::string fromHex(const std::string& h) {
-    std::string out;
-    auto nib = [](char c) { return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1; };
-    for (size_t i = 0; i + 1 < h.size(); i += 2) { // (a Worker reply: never throw on junk, just stop)
-        int a = nib(h[i]), b = nib(h[i + 1]);
-        if (a < 0 || b < 0) break;
-        out += (char)(a * 16 + b);
-    }
-    return out;
-}
 } // namespace
 
 // Same keys and sizes as the Worker's QUEUE_SIZES and the bot's QUEUES.
@@ -107,27 +97,19 @@ void Game::updateCommunity() {
         bool baseline = lastFilled_ < 0;   // the first look only learns where the list is
         if (baseline) lastFilled_ = 0;
         while (std::getline(in, line)) {
-            std::istringstream ls(line);
-            long long n; std::string mode, members; long long created;
-            if (!(ls >> n >> mode >> created >> members)) continue;
-            lastFilled_ = std::max(lastFilled_, n);
+            FilledRow row;
+            if (!parseFilledRow(line, row)) continue;
+            lastFilled_ = std::max(lastFilled_, row.n);
             if (baseline) continue;
-            std::vector<std::string> names;
             bool mine = false;
-            std::istringstream ms(members);
-            std::string m;
-            while (std::getline(ms, m, ',')) {
-                size_t a = m.find(':'), b = m.find(':', a + 1);
-                if (a == std::string::npos || b == std::string::npos) continue;
-                std::string who = m.substr(0, a);
-                if (who == rankKey_.id) mine = true;
-                names.push_back(fromHex(m.substr(a + 1, b - a - 1)));
+            std::string with;
+            for (auto& m : row.members) {
+                if (m.who == rankKey_.id) mine = true;
+                with += (with.empty() ? "" : ", ") + m.name;
             }
             if (!mine) continue;
             queued_.clear();   // (filled players leave every queue)
-            std::string with;
-            for (auto& nm : names) with += (with.empty() ? "" : ", ") + nm;
-            pendingFilled_ = std::string("YOUR QUEUE FOR ") + queueTitle(mode) + " HAS BEEN FILLED (" + with + ") - FIND A SERVER AND BEGIN THE GAME";
+            pendingFilled_ = std::string("YOUR QUEUE FOR ") + queueTitle(row.mode) + " HAS BEEN FILLED (" + with + ") - FIND A SERVER AND BEGIN THE GAME";
         }
     }
     // tell them, unless they're in a ranked match right now (then once it's over)

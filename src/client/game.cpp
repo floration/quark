@@ -815,7 +815,7 @@ void Game::handleEvents() {
                 Color c = e.a == net_.clientId() ? rgba(cfg_.colorFriendly) : e.b == net_.clientId() ? rgba(cfg_.colorEnemy) : kWhite;
                 killFeed_.push_back({t, c, time_ + 6});
                 while (killFeed_.size() > 6) killFeed_.pop_front();
-                if (e.b == net_.clientId() && e.a != 255 && e.a != e.b) specTarget_ = e.a;
+                if (e.b == net_.clientId() && e.a < kMaxPlayers && e.a != e.b) specTarget_ = e.a;
                 if (e.a == net_.clientId() && e.b != e.a && cfg_.hitsounds) audio_.play(SND_KILL, 0.9f);
                 break;
             }
@@ -906,17 +906,7 @@ void Game::handleEvents() {
                 break;
             }
             case EV_BRACKET: {
-                bracket_.clear();
-                std::istringstream ls(e.text);
-                std::string line;
-                while (std::getline(ls, line)) {
-                    if (!line.empty() && line[0] == '@') { sscanf(line.c_str() + 1, "%d,%d", &bracketRound_, &bracketMatch_); continue; }
-                    std::vector<int> r;
-                    std::istringstream es(line);
-                    std::string v;
-                    while (std::getline(es, v, '|')) r.push_back(atoi(v.c_str()));
-                    bracket_.push_back(r);
-                }
+                parseBracket(e.text, bracket_, bracketRound_, bracketMatch_);
                 for (int i = 0; i < kMaxPlayers; i++) { std::string n = net_.playerName(i); if (!n.empty()) bracketNames_[i] = n; }
                 break;
             }
@@ -2176,6 +2166,7 @@ std::string Game::activeHudPath() const { return modeHudPath_.empty() ? hudCfgPa
 
 void Game::applyModeRules(int mode) {
     appliedMode_ = mode;
+    if (mode >= MODE_COUNT) mode = -1;
     std::string hud = mode >= 0 ? cfg_.modeHud[mode] : "", ctl = mode >= 0 ? cfg_.modeCtl[mode] : "";
     modeHudPath_ = hud.empty() ? "" : profileDir("huds") + "/" + hud;
     widgets_ = HudWidgets{}; // forces a reload from the new path
@@ -3950,14 +3941,16 @@ void Game::applyPresentMode() {
 }
 
 void Game::beforeInput() {
-    // Low latency "on": allow at most one frame queued on the GPU. We wait for the previous
-    // frame to finish before sampling input, so input is never stuck behind a deep queue.
+    // Low latency "on": allow at most one frame queued on the GPU. We wait for the frame before the
+    // previous one to finish before sampling input, so input is never stuck behind a deep queue.
+    // (afterSwap just stored the previous frame's fence at fenceIdx_ ^ 1 and flipped the index: fenceIdx_ holds
+    // the frame before it, the slot afterSwap overwrites next. Waiting on fenceIdx_ ^ 1 queued nothing: "ultra".)
     if (cfg_.lowLatency == 1) {
-        int prev = fenceIdx_ ^ 1;
-        if (fence_[prev]) {
-            glClientWaitSync((GLsync)fence_[prev], GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
-            glDeleteSync((GLsync)fence_[prev]);
-            fence_[prev] = nullptr;
+        int older = fenceIdx_;
+        if (fence_[older]) {
+            glClientWaitSync((GLsync)fence_[older], GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
+            glDeleteSync((GLsync)fence_[older]);
+            fence_[older] = nullptr;
         }
     }
 }
@@ -4271,8 +4264,9 @@ void Game::drawBracket() {
             float slot = areaH / n;
             float y = y0 + slot * i + (slot - boxH) * 0.5f;
             int id = col[i];
-            bool won = r + 1 < nr && id >= 0 && bracket_[r + 1][i / 2] == id;
-            bool lost = r + 1 < nr && id >= 0 && bracket_[r + 1][i / 2] >= 0 && bracket_[r + 1][i / 2] != id;
+            int next = r + 1 < nr && i / 2 < (int)bracket_[r + 1].size() ? bracket_[r + 1][i / 2] : -2;   // who went through
+            bool won = id >= 0 && next == id;
+            bool lost = id >= 0 && next >= 0 && next != id;
             bool current = r == bracketRound_ && i / 2 == bracketMatch_ && net_.mode().phase != PHASE_MATCH_END;
             if (current) r_.rect(x - 2 * s, y - 2 * s, colW + 4 * s, boxH + 4 * s, fc);
             r_.rect(x, y, colW, boxH, won || (r == nr - 1 && id >= 0) ? Color{fc.r * 0.35f, fc.g * 0.35f, fc.b * 0.35f, 1} : Color{0.1f, 0.11f, 0.14f, 1});

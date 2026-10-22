@@ -265,7 +265,9 @@ def run_bot(cfg: dict):
             if getattr(self, "session", None): await self.session.close()
             await super().close()
 
-    bot = QuarkBot(command_prefix="!quark ", intents=intents)
+    # nothing in a message pings anyone unless that send opts in (role pings, queue fills, the welcome): a server named
+    # "@everyone" can't ping the guild
+    bot = QuarkBot(command_prefix="!quark ", intents=intents, allowed_mentions=discord.AllowedMentions.none())
 
     # ---------- helpers
     async def ensure_category(name: str) -> discord.CategoryChannel:
@@ -586,7 +588,7 @@ def run_bot(cfg: dict):
 
     async def fire_queue(f: qd.Filled, channel: discord.abc.Messageable):
         pairs = [mention_for(m) for m in f.members]
-        title = QUEUES[f.mode][0] if f.mode in QUEUES else f.mode.upper()
+        title = QUEUES[f.mode][0] if f.mode in QUEUES else qd.safe_text(f.mode.upper(), 32)
         text = fill_message([p[0] for p in pairs], f.mode, title)
         am = discord.AllowedMentions(users=[discord.Object(i) for _, i in pairs if i], roles=False, everyone=False)
         for k in range(cfg["queue_pings"]):

@@ -1,5 +1,6 @@
 #include "hudwidgets.h"
 #include <sys/stat.h>
+#include "../game/map.h"   // (writeFileAtomic)
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -130,10 +131,7 @@ std::string HudWidgets::toText() const {
 }
 
 bool HudWidgets::save(const std::string& path) {
-    std::ofstream f(path);
-    if (!f) return false;
-    f << toText();
-    f.close();
+    if (!writeFileAtomic(path, toText())) return false;
     struct stat st;
     if (stat(path.c_str(), &st) == 0) mtime_ = (long long)st.st_mtime * 1000003LL + (long long)st.st_size; // don't reload our own write
     return true;

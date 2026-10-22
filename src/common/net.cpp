@@ -188,7 +188,12 @@ void setTimeScale(double scale) {
     g_timeScale = scale;
 }
 
+#ifdef _WIN32
+// MinGW's sleep_for ignores timeBeginPeriod and sleeps ~15 ms per call; Sleep honours netInit's 1 ms period.
+void sleepMs(int ms) { Sleep((DWORD)ms); }
+#else
 void sleepMs(int ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); }
+#endif
 
 void raiseThreadPriority() {
 #ifdef _WIN32

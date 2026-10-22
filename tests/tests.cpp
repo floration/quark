@@ -92,6 +92,16 @@ static void testCompletion() {
     CHECK(c.line == "volume" && c.options.size() == 2);
 }
 
+// sleepMs(1) is the frame cap's and pump()'s wait: it must sleep about 1 ms, not a 15 ms scheduler quantum
+// (MinGW's sleep_for did, REVIEW PERF-14).
+static void testSleepPrecision() {
+    auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < 20; i++) sleepMs(1);
+    double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    printf("  sleepMs(1): %.2f ms average\n", ms / 20);
+    CHECK(ms < 20 * 5.0);
+}
+
 static void testMovement() {
     printf("movement\n");
     Map m;
@@ -297,6 +307,142 @@ static void testAllMaps() {
         if (unreachable) printf("  %s: %d spawn->objective routes missing\n", name.c_str(), unreachable);
         CHECK(unreachable == 0);
     }
+}
+
+// One set of limits for every map, however it arrives (REVIEW CLI-3, NET-3, NET-15): files, downloads and demos are
+// refused with an error instead of a 240 GB grid, a non-solid floor or brushes past 65535 dropping out of collision;
+// edits that would break those limits, or leave a map that won't load again, are refused and change nothing.
+static void testMapLimits() {
+    printf("map limits: hostile maps and edits are refused\n");
+    for (const char* f : {"map_hugegrid.qmap", "map_floatmax.qmap"}) {   // the review's repro files
+        std::ifstream in(std::string(QUARK_TEST_DATA) + "/" + f, std::ios::binary);
+        std::stringstream ss;
+        ss << in.rdbuf();
+        Map m;
+        std::string err;
+        CHECK(!ss.str().empty() && !m.parse(ss.str(), &err) && !err.empty());
+    }
+    auto refused = [](const std::string& text) { Map m; std::string err; return !m.parse(text, &err) && !err.empty(); };
+    const std::string floor = "box -20 -1 -20 20 0 20\nspawn any 0 0 0\n";
+    {   // 65537 boxes (the review's map_65k: indices past 65535 wrapped and those boxes lost collision)
+        std::string t;
+        for (int i = 0; i < 65537; i++) t += "box -1 -1 -1 1 0 1\n";
+        CHECK(refused(t + "spawn any 0 0 0\n"));
+    }
+    {   // generated boxes count too: 60 custom groups of 1024 parts
+        std::string t = floor;
+        for (int g = 0; g < 60; g++) { t += "group custom 0 0 0 0 0 1 1 1\n"; for (int k = 0; k < 1024; k++) t += "part 0 0 0 0 1 1 1\n"; }
+        CHECK(refused(t));
+    }
+    CHECK(refused(floor + "ladder 0 0 0 1 1e30 1 auto\n"));                 // its rungs would never end
+    CHECK(refused(floor + "box 0 0 0 5000 1 1\n"));
+    CHECK(refused(floor + "group custom 0 0 0 0 0 4000 1 1\npart 0 0 0 0 2 1 1\n"));   // in range until the part is placed
+    CHECK(refused(floor + "light 0 1 0 1e9 1\n") && refused(floor + "spawn a 1e9 0 0\n"));
+    CHECK(!refused(floor + "box 4000 0 -4096 4096 1 4096\n"));               // the edges of the range are fine
+    // edits, from the fuzzer's base map: the review's sequences each end in a map that loads again
+    const std::string base = "title t\nbox -20 -1 -20 20 0 20\nbox 2 0 2 4 2 4\nladder 5 0 5 6 4 6\ngroup stairs 0 1 -8 0 -8 -4 2 -6\n"
+                             "group custom 1 0 8 0 8 10 2 10\npart 2 0 0 0 1 0.5 1\nspawn a 0 0 0\nspawn b 1 0 1\nlight 0 5 0 10 1\n";
+    for (const char* seq : {"g set 1 1 0 0 8 0 8 10 2 10",                       // custom -> room kept its parts: unloadable
+                            "b del 0\nb del 0\nb del 0",                          // deleting every real box
+                            "d set 0 1 5 0 5 6 4 6\nb del 0\nb del 0",
+                            "b del 0\nb del 0\ng del 0\ng del 0"}) {
+        Map m;
+        CHECK(m.parse(base));
+        std::istringstream ops(seq);
+        std::string op, err;
+        while (std::getline(ops, op)) applyMapEdit(m, op);
+        Map again;
+        CHECK(again.parse(m.serialize(), &err) && m.editableBrushes() >= 1);
+        if (!err.empty()) printf("  \"%s\": %s\n", seq, err.c_str());
+    }
+    {   // the group bypass: parts are fractions of the group's box, so in-range numbers made boxes ~33,000 km out
+        Map m;
+        CHECK(m.parse(base));
+        size_t n = m.brushes.size();
+        uint32_t crc = crc32(m.serialize().data(), m.serialize().size());
+        CHECK(applyMapEdit(m, "g set 1 0 0 0 -4096 -1 -4096 4096 1 4096"));   // a big custom group: fine
+        CHECK(!applyMapEdit(m, "g part 1 0 -4096 0 -4096 4096 1 4096"));       // a part 4096 times its size: refused
+        CHECK(!applyMapEdit(m, "b set 2 0 0 0 0 1 1 1"));                      // generated boxes aren't edited directly
+        CHECK(applyMapEdit(m, "g set 1 0 1 0 8 0 8 10 2 10") && m.brushes.size() == n);   // (back as it was)
+        std::string again = m.serialize();
+        CHECK(crc32(again.data(), again.size()) == crc);                      // refused edits changed nothing
+    }
+}
+
+// Custom rules come from servers (EV_RULES) and files: NaN / inf must not get through the clamps, and a name has to
+// survive its own round trip (REVIEW CLI-6, the review's rules_nan*.txt and rules_spaces_name.txt).
+static void testRulesValues() {
+    printf("custom rules: finite values, names that round-trip\n");
+    const CustomRules def;
+    CustomRules r;
+    CHECK(r.fromText("custommode=x\ngravity=nan\nspeed=inf\njump=-inf\nmove_air=nan\n"));
+    // (UCRT reads "nan" as NaN and gets the default; msvcrt / some libcs read 0 and get the low bound: finite either way)
+    auto in = [](float v, float lo, float hi) { return std::isfinite(v) && v >= lo && v <= hi; };
+    CHECK(in(r.gravity, 0.1f, 3) && in(r.moveSpeed, 0.25f, 3) && in(r.jump, 0.25f, 3));
+    for (float v : r.move) CHECK(in(v, 0.1f, 5));
+    CHECK(r.fromText("custommode=x\nweapon=1,nan,nan,nan\n"));
+    CHECK(in(r.fireRate[1], 0.1f, 10) && in(r.damage[1], 0, 10) && in(r.projSpeed[1], 0.1f, 5));
+    (void)def;
+    CHECK(r.fromText("custommode=x\ngravity=99\nweapon=2,0,99,0\n") && r.gravity == 3 && r.damage[2] == 10);   // in range still clamps
+    CHECK(!r.fromText("custommode=" + std::string(40, ' ') + "x\n"));   // cut to 40 first: all spaces, so no mode
+    CustomRules a, b;
+    CHECK(a.fromText("custommode=  my mode  \ngravity=2\nweapon=3,2,0.5,1\nmaps=temple,../x\n"));
+    CHECK(b.fromText(a.toText()) && b.toText() == a.toText());
+    CHECK(clampf(NAN, 1, 2) == 1 && clampf(5, 1, 2) == 2 && clampf(1.5f, 1, 2) == 1.5f);
+    CHECK(plainFileName("my hud.cfg") && plainFileName("mode-2.cfg"));
+    for (const char* bad : {"", "../x.cfg", "a/b.cfg", "a\\b.cfg", "C:x.cfg", ".hidden", "tab\there"}) CHECK(!plainFileName(bad));
+}
+
+// Clip (material 9) blocks players only: light, sight and shots go through it (REVIEW MAP-1: raycastAny, used for
+// the baked sun and for visibility, stopped at clip, so the outer clip walls shadowed most floors).
+static void testClipRays() {
+    printf("clip: blocks players, not light or sight\n");
+    Map m;
+    std::string err;
+    CHECK(m.parse("box -20 -1 -20 20 0 20\nclip 4 0 -20 5 10 20\nbox -8 0 -20 -7 10 20\nspawn any 0 0 0\n", &err));
+    Vec3 o(0, 1, 0), east(1, 0, 0), west(-1, 0, 0);
+    CHECK(!m.raycastAny(o, east, 10));                 // through the clip wall
+    CHECK(m.raycastAny(o, east, 10, true));            // a movement probe still meets it
+    CHECK(m.raycastAny(o, west, 10));                  // a real wall still blocks
+    CHECK(m.raycast(o, east, 10) < 0);                 // (same as shots)
+    CHECK(m.boxSolid(playerBox({4.5f, 0.01f, 0}, false)) && !m.boxSolid(playerBox({0, 0.01f, 0}, false)));   // players collide
+    // a shipped map ringed by clip (Dojo: 85% of its floor was in clip shadow): sun rays as if the clip weren't there
+    Map d, open;
+    CHECK(d.load("dojo"));
+    open = d;
+    open.brushes.erase(std::remove_if(open.brushes.begin(), open.brushes.end(), [](const Brush& b) { return b.material == 9; }), open.brushes.end());
+    open.rebuild();
+    int differ = 0, clipMatters = 0;
+    for (float x = d.bounds.mn.x; x <= d.bounds.mx.x; x += 2)
+        for (float z = d.bounds.mn.z; z <= d.bounds.mx.z; z += 2) {
+            Vec3 p(x, 1.0f, z);
+            bool lit = !d.raycastAny(p, d.sunDir, 500);
+            differ += lit != !open.raycastAny(p, d.sunDir, 500);
+            clipMatters += lit != !d.raycastAny(p, d.sunDir, 500, true);
+        }
+    printf("  dojo: %d sun samples the clip would have shadowed, %d differ from a clip-free map\n", clipMatters, differ);
+    CHECK(differ == 0 && clipMatters > 0);
+}
+
+// Settings, profiles, the ranked key, custom modes and maps are written whole or not at all (REVIEW COR-2: they were
+// truncated, then written, so a crash or a full disk lost every bind, or the ranked identity).
+static void testAtomicWrite() {
+    printf("files are written whole or not at all\n");
+    namespace fs = std::filesystem;
+    std::string path = (fs::temp_directory_path() / ("quark_atomic_" + std::to_string(rand()) + ".cfg")).string();
+    auto read = [&] { std::ifstream f(path, std::ios::binary); std::stringstream ss; ss << f.rdbuf(); return ss.str(); };
+    CHECK(writeFileAtomic(path, "first\n") && read() == "first\n");
+    std::string big(100000, 'x');
+    CHECK(writeFileAtomic(path, big) && read() == big);               // replaces the old file (Windows too)
+    std::error_code ec;
+    CHECK(!fs::exists(path + ".tmp", ec));
+    CHECK(writeFileAtomic(path, "key\n", true) && read() == "key\n");
+#ifndef _WIN32
+    auto p = fs::status(path, ec).permissions();
+    CHECK((p & (fs::perms::group_all | fs::perms::others_all)) == fs::perms::none);   // the ranked key: 0600
+#endif
+    CHECK(!writeFileAtomic((fs::temp_directory_path() / "no_such_dir_quark" / "x.cfg").string(), "x"));   // a failed write says so
+    fs::remove(path, ec);
 }
 
 static void testGridQueries() {
@@ -1830,6 +1976,7 @@ static void testMapVote(uint16_t port) {
             a.sendCommand("vote no"); b.sendCommand("vote no");
             pump(s, cls, 0.2, idle);
             s.vote_.kind = Server::VOTE_NONE;
+            s.players_[b.clientId()].voteAt = 0;   // (a failed vote's caller waits before the next: not what this checks)
         }
     }
     s.stop();
@@ -1991,6 +2138,23 @@ static void testMapDownload(uint16_t port) {
     s.stop();
 }
 
+// The Worker's /filled rows, as the game reads them (REVIEW COR-1: a Discord member "d:<name>:<hex>:<hex>"
+// was split at the first ':' and its raw name hex-decoded with a throwing stoi, crashing every queued client).
+static void testFilledParse() {
+    FilledRow row;
+    CHECK(parseFilledRow("7 ranked-vanilla 1700000000 8c722bbbb3748b9da426cedf20c3e396:7261636572:-,d:dima:64696d61:64696d61", row));
+    CHECK(row.n == 7 && row.mode == "ranked-vanilla" && row.created == 1700000000 && row.members.size() == 2);
+    if (row.members.size() == 2) {
+        CHECK(row.members[0].who == "8c722bbbb3748b9da426cedf20c3e396" && row.members[0].name == "racer" && row.members[0].discord.empty());
+        CHECK(row.members[1].who == "d:dima" && row.members[1].name == "dima" && row.members[1].discord == "dima");
+    }
+    CHECK(parseFilledRow("8 vs 1 d:a:b:zz:x1,d:two words:6869:-", row) && row.members.size() == 2);   // garbage hex, a spaced name
+    if (row.members.size() == 2) CHECK(row.members[0].who == "d:a:b" && row.members[0].name.empty() && row.members[1].who == "d:two words" && row.members[1].name == "hi");
+    CHECK(fromHexText("6869") == "hi" && fromHexText("686") == "" && fromHexText("6g") == "" && fromHexText("-") == "" && fromHexText("0a41") == "A");
+    CHECK(parseFilledMembers("a,a:b,:6869:,").size() == 0);
+    CHECK(!parseFilledRow("x vs 1 a:b:c", row) && !parseFilledRow("9 vs 1", row));
+}
+
 // Ranked: ids from keys, the server's result event, and the report each player's game builds from it
 // (the Worker side is tested by tools/master/test.mjs).
 static void testRanked(uint16_t port) {
@@ -2127,6 +2291,8 @@ static void testRankedVoteAndRestart(uint16_t port) {
     pump(s, cls, 0.2, idle);
     b.sendCommand("vote yes");
     pump(s, cls, 0.5, idle);
+    // (the switch loads maps on the tick: give it time on slow machines instead of a fixed wait)
+    for (int i = 0; i < 40 && !(a.hasSnapshot() && (a.mode().flags & MS_RANKED)); i++) pump(s, cls, 0.1, idle);
     CHECK(s.config().ranked && s.config().mode == MODE_FFA && s.ms_.arenaVariant == 5 && isOfficialMap(s.map_));
     CHECK(a.hasSnapshot() && (a.mode().flags & MS_RANKED));
     CHECK((s.arenaRules() & AR_INSTAGIB) && s.weaponMask() == arenaVariant(5).weapons);   // ranked instagib: a free for all on instagib rules
@@ -2252,12 +2418,293 @@ static void testEditSession(uint16_t port) {
     s.stop(); // autosaves
     CHECK(renamed.load(name2) && renamed.title == "Renamed" && renamed.brushes.size() == nb);
     CHECK(saved.load(name) && saved.title == "Edited Arena"); // the old file keeps its last save
+    {   // the first autosave kept the file as it was before the session (REVIEW NET-15)
+        std::ifstream bf(path + ".bak", std::ios::binary);
+        std::stringstream bs;
+        bs << bf.rdbuf();
+        Map bak;
+        CHECK(bak.parse(bs.str()) && bak.brushes.size() == base.brushes.size());
+    }
     std::remove(path.c_str());
+    std::remove((path + ".bak").c_str());
     std::remove(path2.c_str());
     for (uint32_t crc : {a.map().crc, c.map().crc}) std::remove(downloadedMapPath(name, crc).c_str());
 }
 
 // Demos: record a match from one client, play it back into another: the map, players, names and events come back.
+// Ids from a server or a demo index fixed kMaxPlayers arrays on the client (REVIEW CLI-1: a snapshot player id of 33
+// wrote past a 32-entry stack array every frame). The decoder rejects them, and the client survives the review's demo.
+// A test demo recorded by an older build, stamped with this build's protocol version (the bytes after it are what's
+// being tested, not the version check).
+static std::string stampedDemo(const std::string& name) {
+    std::ifstream f(std::string(QUARK_TEST_DATA) + "/" + name, std::ios::binary);
+    std::stringstream ss; ss << f.rdbuf();
+    std::string d = ss.str();
+    if (d.size() >= 6) { uint16_t v = kProtocolVersion; memcpy(&d[4], &v, 2); }
+    std::string out = (std::filesystem::temp_directory_path() / ("quark_" + std::to_string(getpid()) + "_" + name)).string();
+    std::ofstream(out, std::ios::binary) << d;
+    return out;
+}
+
+static void testSnapshotBounds() {
+    printf("snapshot decode: ids in range\n");
+    auto decodes = [](Snapshot s) {
+        std::vector<uint8_t> b(64 * 1024);
+        Writer w(b.data(), (int)b.size());
+        writeSnapshotClient(w, s); writeSnapshotWorld(w, s, nullptr); writeSnapshotEvents(w, s.events);
+        Reader r(b.data(), w.size());
+        Snapshot out;
+        return readSnapshotClient(r, out) && readSnapshotWorld(r, out, nullptr) && readSnapshotEvents(r, out);
+    };
+    Snapshot ok;
+    ok.clientId = kMaxPlayers - 1;
+    for (int id : {0, kMaxPlayers - 1}) { PlayerSnap p; p.id = (uint8_t)id; ok.players.push_back(p); }
+    ProjectileSnap pr; pr.id = 1; pr.owner = kMaxPlayers - 1; ok.projectiles.push_back(pr);
+    CHECK(decodes(ok));
+    { Snapshot s = ok; s.players[1].id = 33; CHECK(!decodes(s)); }
+    { Snapshot s = ok; s.players[1].id = 0; CHECK(!decodes(s)); }               // the same id twice
+    { Snapshot s = ok; s.players[0].weapon = WPN_COUNT; CHECK(!decodes(s)); }
+    { Snapshot s = ok; s.projectiles[0].owner = kMaxPlayers; CHECK(!decodes(s)); }
+    { Snapshot s = ok; s.clientId = kMaxPlayers; CHECK(!decodes(s)); }
+    { Snapshot s = ok; s.selfWeapon = WPN_COUNT; CHECK(!decodes(s)); }
+    { Snapshot s = ok; s.ms.mode = MODE_COUNT; CHECK(!decodes(s)); }
+    // the review's demo: a map, then snapshots with player id 33
+    NetClient nc;
+    std::string err;
+    CHECK(nc.startPlayback(stampedDemo("demo_oob_id33.qdemo"), err));
+    for (int k = 0; k < 10 && nc.playback(); k++) { nc.poll(); nc.interpolatedPlayers(); }
+    CHECK(!nc.hasSnapshot());   // every snapshot in it is out of range
+    // tourney bracket text: ids, the round and the match are all used as indices
+    std::vector<std::vector<int>> rounds;
+    int round = 0, match = 0;
+    CHECK(parseBracket("0|1|31|99\n-2|-7\n@-5,999999", rounds, round, match) && rounds.size() == 2);
+    CHECK(rounds[0] == std::vector<int>({0, 1, 31, -2}) && rounds[1] == std::vector<int>({-2, -2}) && round == 0 && match == 2 * kMaxPlayers);
+    CHECK(parseBracket("0|1\n@7,0", rounds, round, match) && round == 1);
+    CHECK(!parseBracket("1\n1\n1\n1\n1\n1\n1\n1\n1\n@0,0", rounds, round, match) && rounds.empty());
+}
+
+// After a client hitch, the burst of commands it sends to catch up stayed queued on the server for good: tokens refill
+// at exactly the command rate, so +12 ms of input latency at 1000 Hz (+96 ms at 125 Hz) until something else cleared
+// it (REVIEW PERF-1). A lasting backlog now drains a command a tick from a small allowance; a client sending faster
+// than real time still gets no more than real time out of it.
+static void testInputBacklog(uint16_t port) {
+    printf("input backlog drains; a speedhack still doesn't pay\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a;
+    a.connect("127.0.0.1:" + std::to_string(port), "a");
+    std::vector<NetClient*> cls = {&a};
+    pump(s, cls, 1.0, idle);
+    int id = a.clientId();
+    CHECK(a.hasSnapshot() && id >= 0 && id < kMaxPlayers);
+    if (!a.hasSnapshot() || id < 0 || id >= kMaxPlayers) { s.stop(); return; }
+    // a 150 ms stall (the network, or the server's machine) while the client keeps playing: its commands then arrive
+    // all at once, more than the token burst covers
+    double until = timeNow() + 0.15, next = timeNow();
+    while (timeNow() < until) { a.poll(); while (timeNow() >= next) { a.tick(UserCmd()); next += a.tickPeriod(); } sleepMs(1); }
+    s.frame();
+    size_t after = s.players_[id].cmdQueue.size();
+    // then normal play: over the last 3/4 of a second the queue empties again. (Before, it never went below 3: the
+    // backlog stayed for good. Its average depth also depends on how bursty the client's sends are, i.e. machine load,
+    // so the test looks at the lowest.)
+    size_t lowest = 99;
+    double sum = 0;
+    int samples = 0;
+    for (double stop = timeNow() + 1.0, first = timeNow() + 0.25; timeNow() < stop;) {
+        s.frame(); a.poll();
+        while (timeNow() >= next) { a.tick(UserCmd()); next += a.tickPeriod(); }
+        if (timeNow() >= first) { size_t q = s.players_[id].cmdQueue.size(); lowest = std::min(lowest, q); sum += (double)q; samples++; }
+        sleepMs(1);
+    }
+    printf("  queued after the stall %zu, later at least %zu (%.2f on average)\n", after, lowest, samples ? sum / samples : 0.0);
+    CHECK(after > 2 && lowest <= 1);
+    // twice real time: the server runs about real time's worth (plus its token burst and the catch-up allowance)
+    uint32_t t0 = s.tick_, c0 = s.players_[id].cmdsRun;
+    double end = timeNow() + 1.0;
+    next = timeNow();
+    while (timeNow() < end) {
+        s.frame(); a.poll();
+        while (timeNow() >= next) { a.tick(UserCmd()); a.tick(UserCmd()); next += a.tickPeriod(); }
+        sleepMs(1);
+    }
+    double ran = (double)(s.players_[id].cmdsRun - c0), ticks = (double)(s.tick_ - t0);
+    printf("  speedhack: %.0f commands run in %.0f ticks\n", ran, ticks);
+    CHECK(ran <= ticks * 1.05 + 60);
+    s.stop();
+}
+
+// Chat and votes can't flood everyone's reliable events or stall the tick (REVIEW NET-7, NET-6): chat is rate
+// limited and printable only, votes check maps from a cache (no file parsing on the tick), a failed vote's caller
+// waits, and string commands over the per-tick budget are handled later, not lost.
+static void testChatAndVoteLimits(uint16_t port) {
+    printf("chat and vote limits\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a, b;
+    a.connect("127.0.0.1:" + std::to_string(port), "a");
+    b.connect("127.0.0.1:" + std::to_string(port), "b");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 1.0, idle);
+    b.takeEvents();
+    int ia = a.clientId();
+    CHECK(ia >= 0 && ia < kMaxPlayers);
+    if (ia < 0 || ia >= kMaxPlayers) { s.stop(); return; }
+    for (int k = 0; k < 30; k++) a.sendCommand("say spam " + std::to_string(k) + " \x1b[2J\x07");
+    pump(s, cls, 1.0, idle);
+    int chats = 0;
+    bool clean = true;
+    for (auto& e : b.takeEvents()) if (e.type == EV_CHAT) { chats++; for (char c : e.text) clean &= c >= 32 && c < 127; }
+    printf("  30 messages at once: %d went out\n", chats);
+    CHECK(chats >= 5 && chats <= 8 && clean);   // a burst of 5, then one a second
+    // tourney map lists: each map is read at most once, then comes from the cache
+    a.sendCommand("callvote tmaps colosseum,lodestone,colosseum,lodestone");
+    pump(s, cls, 0.3, idle);
+    uint32_t loads = s.mapInfoLoads_;
+    a.sendCommand("callvote tmaps lodestone,colosseum");   // (a vote is already running: refused, after the checks)
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_TMAPS && s.mapInfoLoads_ == loads);
+    // the vote fails: its caller can't call another straight away
+    b.sendCommand("vote no");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE);
+    a.sendCommand("callvote bots off");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE);
+    // more string commands than a tick's budget: all handled, a few a tick
+    uint16_t before = s.players_[ia].lastStringCmd;
+    for (int k = 0; k < 40; k++) a.sendCommand("nothing " + std::to_string(k));
+    pump(s, cls, 0.5, idle);
+    CHECK((uint16_t)(s.players_[ia].lastStringCmd - before) == 40);
+    s.stop();
+}
+
+// A scripted server on a UDP socket for hostile-server tests: it answers the client's connect, then sends
+// whatever the test builds. The client has to survive anything a server says.
+struct FakeServer {
+    UdpSocket sock;
+    NetAddr client;
+    uint32_t nonce = 0;
+    bool heard = false;
+    void poll() {   // the client's address and nonce, from its CONNECT
+        uint8_t buf[2048];
+        NetAddr from;
+        int n;
+        while ((n = sock.recv(from, buf, sizeof buf)) > 0) {
+            Reader r(buf, n);
+            if (r.u32() != kProtocolMagic || r.u8() != PKT_CONNECT) continue;
+            r.u16();
+            uint32_t nn = r.u32();
+            if (!r.bad()) { nonce = nn; client = from; heard = true; }
+        }
+    }
+    void accept(const std::string& map, uint32_t crc, int id = 0) {
+        uint8_t out[512];
+        Writer w(out, sizeof out);
+        writeHeader(w, PKT_ACCEPT); w.u32(nonce); w.u8((uint8_t)id); w.str(map); w.u32(crc); w.u8(MODE_FFA);
+        sock.send(client, out, w.size());
+    }
+    void snapshot(Snapshot s) {
+        std::vector<uint8_t> b(4096);
+        Writer w(b.data(), (int)b.size());
+        writeHeader(w, PKT_SNAPSHOT); w.u32(nonce);
+        writeSnapshotClient(w, s); writeSnapshotWorld(w, s, nullptr); writeSnapshotEvents(w, s.events);
+        sock.send(client, b.data(), w.size());
+    }
+    // pump the client (and listen) until done() or about a second of real time
+    template <class F> bool until(NetClient& c, F done) {
+        for (int i = 0; i < 1000 && !done(); i++) { c.poll(); poll(); sleepMs(1); }
+        return done();
+    }
+};
+
+// Prediction replays only what's still in the command ring: a snapshot acking a command far behind (a server or a
+// demo can say anything) cost one loop iteration per sequence number since (REVIEW CLI-5).
+static void testReplayBound(uint16_t port) {
+    printf("prediction replay is bounded by the command ring\n");
+    FakeServer f;
+    CHECK(f.sock.open(port));
+    NetClient c;
+    c.connect("127.0.0.1:" + std::to_string(port), "x");
+    CHECK(f.until(c, [&] { return f.heard; }));
+    Map m;
+    CHECK(m.load("bastion"));
+    f.accept("bastion", m.crc);
+    CHECK(f.until(c, [&] { return c.mapReady(); }));
+    Snapshot s;
+    s.tick = 1; s.timeMs = 1000; s.tickRate = 1000; s.snapRate = 500; s.clientId = 0;
+    PlayerSnap me; me.id = 0; me.flags = PS_ALIVE; s.players.push_back(me);
+    s.self.pos = m.spawns[0].pos;
+    f.snapshot(s);
+    CHECK(f.until(c, [&] { return c.hasSnapshot(); }));
+    for (int i = 0; i < 3000; i++) { UserCmd cmd; cmd.forward = 127; c.tick(cmd); }
+    s.tick = 2; s.timeMs = 1002; s.ackCmdSeq = 1; s.self.pos.y += 5;   // a mismatch: replay from command 2
+    f.snapshot(s);
+    CHECK(f.until(c, [&] { return c.hasSnapshot() && c.latest().tick == 2; }));
+    printf("  replayed %u commands for an ack %u behind\n", c.lastReplayCount(), c.nextSeq() - 1 - s.ackCmdSeq);
+    CHECK(c.lastReplayCount() > 0 && c.lastReplayCount() <= NetClient::kCmdRing);
+    // 400 ms of round trip at 1000 Hz: every command since the ack is replayed (a 256 ring dropped the oldest 144, so
+    // high-ping players rubber-banded; REVIEW PERF-6)
+    s.tick = 3; s.timeMs = 1004; s.ackCmdSeq = c.nextSeq() - 1 - 400; s.self.pos.y += 1;
+    f.snapshot(s);
+    CHECK(f.until(c, [&] { return c.hasSnapshot() && c.latest().tick == 3; }));
+    CHECK(c.lastReplayCount() == 400);
+    c.disconnect();
+    CHECK(c.nextSeq() == 1);   // a new connection or a demo starts with no old commands
+}
+
+// Map names from servers and demos become file names (map, download, light cache, demo): a name, never a path
+// (REVIEW CLI-2: "../x" from PKT_ACCEPT reached the download cache; a demo's map record wasn't checked at all).
+static void testMapNames(uint16_t port) {
+    printf("map names: never paths\n");
+    for (const char* bad : {"", "../x", "a/b", "a\\b", "C:x", "x.qmap", "con", "NUL", "com1", "Lpt9", "two words",
+                            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}) {
+        CHECK(!validMapName(bad));
+        Map m;
+        CHECK(!m.load(bad));
+    }
+    for (const char* good : {"bastion", "My_Map-2", "console", "com10", "a"}) CHECK(validMapName(good));
+    // a server that names a path: refused before anything touches the disk
+    FakeServer f;
+    CHECK(f.sock.open(port));
+    NetClient c;
+    c.connect("127.0.0.1:" + std::to_string(port), "x");
+    CHECK(f.until(c, [&] { return f.heard; }));
+    f.accept("../../pwned", 1234);
+    CHECK(f.until(c, [&] { return c.state() == ConnState::Disconnected; }));
+    CHECK(!c.mapReady() && c.error().find("map name") != std::string::npos);
+    // a demo whose map record names a path: no map, so it doesn't play
+    std::string src = "box -20 -1 -20 20 0 20\nspawn any 0 0 0\n", d;
+    uint32_t magic = 0x4D454451; uint16_t ver = kProtocolVersion;
+    d.append((const char*)&magic, 4); d.append((const char*)&ver, 2);
+    std::vector<uint8_t> b(src.size() + 64);
+    Writer w(b.data(), (int)b.size());
+    w.str("../../pwned"); w.u32((uint32_t)src.size()); for (char ch : src) w.u8((uint8_t)ch); w.u8(0);
+    double t = 0; uint32_t n = (uint32_t)w.size();
+    d.push_back(1); d.append((const char*)&t, 8); d.append((const char*)&n, 4); d.append((const char*)b.data(), n);
+    std::string path = (std::filesystem::temp_directory_path() / ("quark_badname_" + std::to_string(port) + ".qdemo")).string();
+    { std::ofstream o(path, std::ios::binary); o << d; }
+    NetClient p;
+    std::string err;
+    CHECK(!p.startPlayback(path, err) && !p.mapReady());
+    std::remove(path.c_str());
+}
+
+// A demo record's length near 2^32 made `13 + n` wrap to 0 and startPlayback scan forever (REVIEW CLI-4).
+static void testDemoLengthWrap() {
+    printf("demo: record lengths can't wrap\n");
+    NetClient nc;
+    std::string err;
+    auto t0 = std::chrono::steady_clock::now();
+    CHECK(!nc.startPlayback(stampedDemo("demo_len_wrap.qdemo"), err) && !nc.playback());
+    CHECK(std::chrono::steady_clock::now() - t0 < std::chrono::seconds(2));
+}
+
 static void testDemo(uint16_t port) {
     printf("demo record + playback\n");
     Server s;
@@ -2933,17 +3380,19 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "edgroups") { testEditorGroups(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(TP(29997)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "allmaps") { testAllMaps(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "custom") { testCustomMode(TP(29990)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "chat") { testChatAndVoteLimits(TP(29592)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "limits") { testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(TP(29990)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(TP(29980)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "ranked") { testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(TP(29600)); testEditSession(TP(29601)); testVotedEdit(TP(29602)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
-    if (argc >= 2 && std::string(argv[1]) == "demo") { testDemo(TP(29603)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(29604)); testMapNames(TP(29605)); testDemo(TP(29603)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(TP(29960)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(TP(29950)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(TP(29900)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(TP(29900)); testInputBacklog(TP(29901)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = TP(29800); testArenaAndTourney(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); return g_fail ? 1 : 0; }
@@ -2963,17 +3412,17 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testCompletion(); testSigning(); testHostileInput(); testMovement(); testTickRateIndependence(); testGridQueries(); testEditorLadder(); testEditorGroups(); }},
+        {"movement", [] { testSleepPrecision(); testCompletion(); testSigning(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
-        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testHandshake(TP(28592)); testReachProbe(TP(28593)); }},
-        {"edit", [] { testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
-        {"ranked", [] { testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); }},
+        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); }},
+        {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
+        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
-        {"netcode", [] { testNetcode(TP(28700)); testCrossLanguageConstants(TP(28705)); }},
+        {"netcode", [] { testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
         {"tickrate", [] { testTickRateFallback(TP(28710)); }},
         {"resetmaps", [] { testResetMaps(); }},
         {"userdata", [] { testUserData(); }},

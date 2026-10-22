@@ -1,6 +1,7 @@
 #include <cmath>
 #include "customrules.h"
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -36,8 +37,9 @@ void rebuild() {
 std::string safeName(const std::string& n) {
     std::string s;
     for (char c : n) s += (isalnum((unsigned char)c) || c == '-' || c == '_' || c == ' ') ? c : '_';
+    if (s.size() > 40) s.resize(40);   // (cut first, then trim: else 40 spaces + "x" left an all-space name)
     while (!s.empty() && s.back() == ' ') s.pop_back();
-    return s.substr(0, 40);
+    return s;
 }
 } // namespace
 
@@ -76,7 +78,7 @@ bool CustomRules::fromText(const std::string& text) {
     std::istringstream in(text);
     std::string line;
     bool any = false;
-    // non-finite (atof("nan"), "inf") keeps the default: NaN would pass both compares and break prediction for good
+    // out of range: the nearest bound; not a number (nan, inf): the default (the member's value from CustomRules())
     auto clampf_ = [](float v, float a, float b, float def) { return !std::isfinite(v) ? def : v < a ? a : v > b ? b : v; };
     while (std::getline(in, line)) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
@@ -141,8 +143,7 @@ bool saveCustomMode(const CustomRules& r) {
     if (!r.active()) return false;
     std::error_code ec;
     std::filesystem::create_directories(customModesDir(), ec);
-    std::ofstream f(customModesDir() + "/" + safeName(r.name) + ".qmode");
-    return (bool)(f << r.toText());
+    return writeFileAtomic(customModesDir() + "/" + safeName(r.name) + ".qmode", r.toText());
 }
 
 bool deleteCustomMode(const std::string& name) {

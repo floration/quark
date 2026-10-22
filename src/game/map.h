@@ -19,6 +19,15 @@ struct Brush {
     bool generated = false; // made from another object (an editor ladder's rails and rungs): not saved, not editable
 };
 
+// What any map may hold, however it arrives (file, download, demo, edits): Map::validate checks all of it, after
+// groups and ladders are expanded, before the collision grid is built. Shipped maps use a small fraction of this.
+constexpr float kMapExtent = 4096.0f;        // every coordinate, |x| <= this
+constexpr size_t kMaxMapBrushes = 60000;     // generated ones included (grid cells index brushes with 16 bits)
+constexpr size_t kMaxMapGridRefs = 16u << 20; // brush references in the collision grid (32 MB; one box over the whole range is 4.2M)
+constexpr size_t kMaxMapSpawns = 256, kMaxMapLights = 512, kMaxMapLadders = 256, kMaxMapGroups = 256, kMaxGroupParts = 1024;
+constexpr size_t kMaxMapSites = 16, kMaxMapCheckpoints = 128, kMaxMapPath = 512, kMaxMapPoints = 16, kMaxMapCartChecks = 64;
+constexpr float kMaxObjectHeight = 64.0f;    // ladders and groups (a ladder's rungs are made every 0.4 m)
+
 struct SpawnPoint {
     Vec3 pos;
     float yaw = 0;
@@ -77,10 +86,11 @@ struct Map {
 
     bool load(const std::string& name, std::string* err = nullptr);
     bool onLadder(const AABB& player) const { for (auto& l : ladders) if (player.overlaps(l)) return true; return false; }
-    bool parse(const std::string& text, std::string* err = nullptr); // never throws; a bad map just fails
-    bool parseText(const std::string& text, std::string* err);
+    bool parse(const std::string& text, std::string* err = nullptr);   // never throws: a bad map is an error
+    bool parseText(const std::string& text, std::string* err);          // (parse's body)
+    bool validate(std::string* err = nullptr) const;   // the limits above (counts, finite, in range)
     std::string serialize() const;    // back to .qmap text (what the editor saves)
-    void rebuild();                   // after editing brushes in place: bounds, wallbang flag, grid
+    bool rebuild();                   // after editing brushes in place: bounds, wallbang flag, grid (false: over the limits)
 
     // Movement collision: returns how far along `axis` the box may move (clamped delta).
     float sweepAxis(const AABB& box, int axis, float delta) const;
@@ -89,7 +99,9 @@ struct Map {
     std::vector<AABB> lava;   // lava brushes (touch one and you die), from rebuild()
     // Returns hit distance or -1. normal receives the face normal on hit.
     float raycast(const Vec3& origin, const Vec3& dir, float maxDist, Vec3* normal = nullptr) const;
-    bool raycastAny(const Vec3& origin, const Vec3& dir, float maxDist) const; // shadow-ray style early out
+    // Shadow-ray style early out: light, sight and line of fire, so clip (material 9) doesn't block it unless
+    // hitClip (movement probes: clip blocks players).
+    bool raycastAny(const Vec3& origin, const Vec3& dir, float maxDist, bool hitClip = false) const;
     // Hitscan bullets: like raycast, but passes through wallbang brushes; *through is set if it went
     // through at least one before the returned hit (or maxDist); *bangDist = distance to the first one.
     float raycastBullet(const Vec3& origin, const Vec3& dir, float maxDist, float* bangDist) const;
@@ -104,7 +116,7 @@ struct Map {
     float gridX0 = 0, gridZ0 = 0;
     std::vector<uint32_t> cellStart;   // gridW*gridH+1 offsets into cellBrushes
     std::vector<uint16_t> cellBrushes;
-    bool buildGrid(); // false (and an empty grid) if the map would need too many cell references
+    bool buildGrid();                  // false: more grid references than kMaxMapGridRefs
     template <class F> void forBox(const AABB& b, F f) const; // calls f(brush) for brushes in overlapped cells (may repeat)
 
     // Moving solids that aren't part of the static geometry (the payload cart). Collision and
@@ -144,6 +156,13 @@ int migrateUserData(const std::string& oldRoot, const std::string& newRoot); // 
 void setExecutableDir(const char* argv0);
 const std::string& executableDir();       // empty if unknown
 std::vector<std::string> listMaps();
+// A map name is a name, never a path: 1-40 letters, digits, - and _ (the editor's rule), and not a Windows device
+// name (con, nul, com1, ...: opening "maps/con.qmap" opens the device). Names from servers and demos become file
+// names (map, download, light cache, demo), so every one is checked with this.
+bool validMapName(const std::string& name);
+// A plain file name inside one folder (a HUD or controls profile): printable, no folder separators or drive, doesn't
+// start with '.', at most 128 characters.
+bool plainFileName(const std::string& name);
 // Writes every shipped map back to its original text (and drops their light caches); returns how many.
 int resetOfficialMaps();
 std::string mapsFolder(); // absolute path of your maps folder (userMapsDir)
@@ -154,4 +173,8 @@ std::string typedMapName(const std::string& typed); // what the editor's name fi
 std::string safeMapName(const std::string& name); // for building file names: anything else becomes '_', capped
 std::string downloadedMapPath(const std::string& name, uint32_t crc);
 bool saveMapFile(const std::string& path, const std::string& text);
+// Writes a file whole or not at all: a temp file next to it, then a rename over it, so a crash or a full disk
+// leaves the old file (settings, profiles, the ranked key, custom modes, maps). privateFile: only this user may
+// read it (POSIX 0600: the ranked key).
+bool writeFileAtomic(const std::string& path, const std::string& data, bool privateFile = false);
 uint32_t crc32(const void* data, size_t len);
