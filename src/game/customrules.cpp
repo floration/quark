@@ -119,7 +119,7 @@ bool CustomRules::fromText(const std::string& text) {
     return any;
 }
 
-std::string customModesDir() { return findDataPath("maps") + "/../custom_modes"; }
+std::string customModesDir() { return userDataPath("custom_modes"); }
 
 std::vector<std::string> listCustomModes() {
     std::vector<std::string> out;

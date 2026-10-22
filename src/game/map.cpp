@@ -9,6 +9,9 @@
 #include <cmath>
 #include <exception>
 #include <type_traits>
+#include <mutex>
+#include <cstdlib>
+#include <algorithm>
 
 namespace fs = std::filesystem;
 static std::string g_exeDir;
@@ -35,15 +38,117 @@ std::string findDataPath(const std::string& rel) {
     return rel;
 }
 
+// ---- per-user data -------------------------------------------------------------------------------------
+static std::string g_userDir;       // set by setUserDataDir, else the platform default
+static bool g_userMigrate = true;
+static std::once_flag g_userOnce;
+
+void setUserDataDir(const std::string& dir, bool migrate) { g_userDir = dir; g_userMigrate = migrate; }
+
+static std::string defaultUserDir() {
+    auto env = [](const char* n) -> std::string { const char* v = getenv(n); return v && *v ? v : ""; };
+#if defined(_WIN32)
+    std::string base = env("APPDATA");
+    if (!base.empty()) return base + "/quark";
+#elif defined(__APPLE__)
+    std::string home = env("HOME");
+    if (!home.empty()) return home + "/Library/Application Support/quark";
+#else
+    std::string x = env("XDG_DATA_HOME"), home = env("HOME");
+    if (!x.empty()) return x + "/quark";
+    if (!home.empty()) return home + "/.local/share/quark";
+#endif
+    return findDataPath("maps") + "/.."; // nowhere better: the old place next to the install
+}
+
+// The shipped copy of an official map, or null.
+static const OfficialMapData* officialData(const std::string& name) {
+    for (const OfficialMapData* m = kOfficialMapData; m->name; m++) if (name == m->name) return m;
+    return nullptr;
+}
+static std::string readAll(const fs::path& p) {
+    std::ifstream f(p, std::ios::binary);
+    std::stringstream ss;
+    ss << f.rdbuf();
+    return ss.str();
+}
+static std::string noCR(std::string s) { s.erase(std::remove(s.begin(), s.end(), '\r'), s.end()); return s; }
+
+// Copies one file unless the destination already exists; verified by comparing the bytes. Returns 1 if copied.
+static int migrateFile(const fs::path& src, const fs::path& dst) {
+    std::error_code ec;
+    if (!fs::is_regular_file(src, ec) || fs::exists(dst, ec)) return 0;
+    fs::create_directories(dst.parent_path(), ec);
+    fs::path tmp = dst;
+    tmp += ".migrating";
+    if (!fs::copy_file(src, tmp, fs::copy_options::overwrite_existing, ec) || readAll(tmp) != readAll(src)) { fs::remove(tmp, ec); return 0; }
+    fs::rename(tmp, dst, ec);
+    if (ec) { fs::remove(tmp, ec); return 0; }
+    return 1;
+}
+static int migrateDir(const fs::path& src, const fs::path& dst) {
+    std::error_code ec;
+    int n = 0;
+    if (!fs::is_directory(src, ec)) return 0;
+    for (auto it = fs::recursive_directory_iterator(src, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec))
+        if (it->is_regular_file(ec)) n += migrateFile(it->path(), dst / fs::relative(it->path(), src, ec));
+    return n;
+}
+
+int migrateUserData(const std::string& oldRoot, const std::string& newRoot) {
+    std::error_code ec;
+    fs::path o = fs::u8path(oldRoot), d = fs::u8path(newRoot);
+    if (fs::exists(o, ec) && fs::exists(d, ec) && fs::equivalent(o, d, ec)) return 0;
+    int n = 0;
+    for (const char* f : {"quark.cfg", "quark.key", "hud.cfg", "race_times.log"}) n += migrateFile(o / f, d / f);
+    for (const char* sub : {"demos", "groups", "custom_modes", "huds", "controls", "logs"}) n += migrateDir(o / sub, d / sub);
+    n += migrateDir(o / "maps" / "downloads", d / "maps" / "downloads");
+    // your maps: everything that isn't an untouched shipped map (those stay in the install, read-only).
+    // Light caches (.qlm) are rebuilt on demand, so they aren't carried over.
+    for (auto& e : fs::directory_iterator(o / "maps", ec)) {
+        if (e.path().extension() != ".qmap") continue;
+        std::string name = e.path().stem().string();
+        if (const OfficialMapData* m = officialData(name))
+            if (noCR(readAll(e.path())) == noCR(std::string((const char*)m->data, m->size))) continue;
+        n += migrateFile(e.path(), d / "maps" / e.path().filename());
+    }
+    return n;
+}
+
+std::string userDataPath(const std::string& rel) {
+    std::call_once(g_userOnce, [] {
+        if (g_userDir.empty()) {
+            const char* e = getenv("QUARK_DATA_DIR");
+            if (e && *e) { g_userDir = e; g_userMigrate = false; }
+            else g_userDir = defaultUserDir();
+        }
+        std::error_code ec;
+        fs::create_directories(fs::u8path(g_userDir), ec);
+        if (g_userMigrate && !fs::exists(fs::u8path(g_userDir) / ".migrated", ec)) {
+            std::string oldRoot = findDataPath("maps") + "/..";
+            int n = migrateUserData(oldRoot, g_userDir);
+            if (!executableDir().empty()) n += migrateDir(fs::u8path(executableDir()) / "logs", fs::u8path(g_userDir) / "logs");
+            std::ofstream(fs::u8path(g_userDir) / ".migrated") << "copied " << n << " files from " << oldRoot << " (originals kept)\n";
+        }
+    });
+    return rel.empty() ? g_userDir : g_userDir + "/" + rel;
+}
+
+std::string userMapsDir() { return userDataPath("maps"); }
+
 int resetOfficialMaps() {
     std::error_code ec;
-    std::string dir = findDataPath("maps");
+    std::string dir = findDataPath("maps"), mine = userMapsDir(), cache = userDataPath("cache");
     fs::create_directories(dir, ec);
     int n = 0;
     for (const OfficialMapData* m = kOfficialMapData; m->name; m++) {
-        std::ofstream f(dir + "/" + m->name + ".qmap", std::ios::binary | std::ios::trunc);
-        if (!f.write((const char*)m->data, (std::streamsize)m->size)) continue;
-        fs::remove(dir + "/" + m->name + ".qlm", ec);
+        fs::remove(mine + "/" + m->name + ".qmap", ec); // your edited copy shadows the shipped one: reset drops it
+        fs::remove(cache + "/" + m->name + ".qlm", ec);
+        std::string path = dir + "/" + m->name + ".qmap";
+        if (noCR(readAll(path)) != noCR(std::string((const char*)m->data, m->size))) { // install may be read-only: write only if needed
+            std::ofstream f(path, std::ios::binary | std::ios::trunc);
+            if (!f.write((const char*)m->data, (std::streamsize)m->size)) continue;
+        }
         n++;
     }
     for (const char* old : {"arena", "tug", "duel", "sprint"}) { // retired built-in maps left by older versions
@@ -55,16 +160,19 @@ int resetOfficialMaps() {
 
 std::string mapsFolder() {
     std::error_code ec;
-    auto p = fs::absolute(findDataPath("maps"), ec);
-    return ec ? findDataPath("maps") : p.string();
+    fs::create_directories(userMapsDir(), ec);
+    auto p = fs::absolute(userMapsDir(), ec);
+    return ec ? userMapsDir() : p.lexically_normal().string();
 }
 
 std::vector<std::string> listMaps() {
     std::vector<std::string> out;
     std::error_code ec;
-    for (auto& e : fs::directory_iterator(findDataPath("maps"), ec))
-        if (e.path().extension() == ".qmap") out.push_back(e.path().stem().string());
+    for (const std::string& dir : {findDataPath("maps"), userMapsDir()})
+        for (auto& e : fs::directory_iterator(dir, ec))
+            if (e.path().extension() == ".qmap") out.push_back(e.path().stem().string());
     std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
     return out;
 }
 
@@ -83,7 +191,7 @@ std::string safeMapName(const std::string& name) {
 std::string downloadedMapPath(const std::string& name, uint32_t crc) {
     char hex[16];
     snprintf(hex, sizeof hex, "%08x", crc);
-    return findDataPath("maps") + "/downloads/" + safeMapName(name) + "-" + hex + ".qmap";
+    return userMapsDir() + "/downloads/" + safeMapName(name) + "-" + hex + ".qmap";
 }
 
 bool saveMapFile(const std::string& path, const std::string& text) {
@@ -120,7 +228,9 @@ uint32_t crc32(const void* data, size_t len) {
 bool Map::load(const std::string& requested, std::string* err) {
     // renamed maps: old configs / votes for these still work
     std::string mapName = requested == "arena" ? "bastion" : requested == "tug" ? "canal" : requested;
-    std::string path = findDataPath("maps/" + mapName + ".qmap");
+    std::string path = userMapsDir() + "/" + mapName + ".qmap"; // yours (edited / made) first, then the shipped one
+    std::error_code ec;
+    if (!fs::exists(path, ec)) path = findDataPath("maps/" + mapName + ".qmap");
     std::ifstream f(path, std::ios::binary);
     if (!f) { if (err) *err = "map not found: " + path; return false; }
     std::stringstream ss;

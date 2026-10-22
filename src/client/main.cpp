@@ -16,7 +16,8 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         auto next = [&]() -> std::string { return i + 1 < argc ? argv[++i] : ""; };
-        if (a == "--connect") opts.connect = next();
+        if (a == "--data-dir") setUserDataDir(next()); // settings, key, demos, your maps (default: per-user folder)
+        else if (a == "--connect") opts.connect = next();
         else if (a == "--host") opts.hostMode = modeFromName(next().c_str());
         else if (a == "--vsbots") opts.vsBotsMode = modeFromName(next().c_str());
         else if (a == "--map") opts.hostMap = next();
@@ -56,7 +57,7 @@ int main(int argc, char** argv) {
         else if (a == "--editsession") { opts.editMap = next(); opts.editSession = true; }
         else if (a == "--pitch") opts.spawnPitch = (float)atof(next().c_str());
         else if (a == "-h" || a == "--help") {
-            printf("quark [--connect ip:port] [--host mode --map name]\n");
+            printf("quark [--connect ip:port] [--host mode --map name] [--data-dir DIR]\n");
             return 0;
         }
     }

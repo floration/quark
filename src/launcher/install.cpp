@@ -105,6 +105,30 @@ fs::path appDir() {
 #endif
 }
 
+fs::path userDataDir() {
+#ifdef _WIN32
+    return knownFolder(CSIDL_APPDATA) / L"quark";
+#elif defined(__APPLE__)
+    return home() / "Library/Application Support/quark";
+#else
+    return dataHome() / "quark";
+#endif
+}
+
+namespace {
+// Only what the launcher put there: the game build (and its update leftovers), the launcher, its settings and icon.
+[[maybe_unused]] void removeInstallFiles() {
+    fs::path a = appDir();
+    for (const char* f : {"game", "game.old", "game.new", "update.qpak", "launcher.cfg", "quark.png", ".launcher.lock"})
+        fs::remove_all(a / f, ec);
+    fs::remove(installedLauncher(), ec);
+}
+void removeUserData(bool on) {
+    if (!on) return;
+    for (auto& e : fs::directory_iterator(userDataDir(), ec)) fs::remove_all(e.path(), ec);
+}
+} // namespace
+
 // Moves an install from the old location (%LOCALAPPDATA%\quark, before 0.12) to the new one.
 void migrateOldInstall() {
 #ifdef _WIN32
@@ -250,7 +274,7 @@ bool setPrograms(bool on, const fs::path& l, const std::string& version) {
     RegCloseKey(k);
     return true;
 }
-void uninstallAll() {
+void uninstallAll(bool userData) {
     fs::path launcher;
     wchar_t buf[MAX_PATH];
     if (GetModuleFileNameW(nullptr, buf, MAX_PATH)) launcher = fs::path(buf);
@@ -258,6 +282,8 @@ void uninstallAll() {
     setMenu(false, launcher);
     setPrograms(false, launcher, "");
     fs::remove_all(gameDir(), ec);
+    removeUserData(userData);
+    fs::remove(userDataDir(), ec); // only if empty
     // The running exe can't delete itself: a detached cmd removes the folder once we've exited.
     std::wstring cmd = L"cmd.exe /c ping 127.0.0.1 -n 3 > nul & rmdir /s /q \"" + appDir().wstring() + L"\"";
     STARTUPINFOW si{};
@@ -296,10 +322,12 @@ bool setDesktop(bool on, const fs::path& l) {
     return !ec;
 }
 bool setPrograms(bool, const fs::path&, const std::string&) { return false; }
-void uninstallAll() {
+void uninstallAll(bool userData) {
     setDesktop(false, {});
     setMenu(false, {});
-    fs::remove_all(appDir(), ec);
+    removeInstallFiles();
+    removeUserData(userData);
+    fs::remove(appDir(), ec); // only if nothing is left
 }
 #else
 const char* desktopLabel() { return "DESKTOP ICON"; }
@@ -311,10 +339,12 @@ bool hasPrograms() { return false; }
 bool setDesktop(bool on, const fs::path& l) { if (!on) return fs::remove(desktopEntry(), ec), true; return writeDesktopFile(desktopEntry(), l); }
 bool setMenu(bool on, const fs::path& l) { if (!on) return fs::remove(menuEntry(), ec), true; return writeDesktopFile(menuEntry(), l); }
 bool setPrograms(bool, const fs::path&, const std::string&) { return false; }
-void uninstallAll() {
+void uninstallAll(bool userData) {
     setDesktop(false, {});
     setMenu(false, {});
-    fs::remove_all(appDir(), ec);
+    removeInstallFiles();
+    removeUserData(userData);
+    fs::remove(appDir(), ec); // only if nothing is left
 }
 #endif
 

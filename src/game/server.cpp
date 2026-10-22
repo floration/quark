@@ -1889,7 +1889,7 @@ void Server::openGameLog() {
     if (cfg_.logLevel <= LOG_OFF || glog_) return;
     std::string path = cfg_.logFile;
     if (path.empty()) {
-        std::string dir = (executableDir().empty() ? std::string(".") : executableDir()) + "/logs";
+        std::string dir = userDataPath("logs");
         std::error_code ec;
         std::filesystem::create_directories(dir, ec);
         time_t t = ::time(nullptr);
@@ -1994,7 +1994,7 @@ bool Server::applyEdit(int from, const std::string& op) {
 bool Server::autosave() {
     if (cfg_.map.find_first_of("/\\.") != std::string::npos) return false;
     std::string text = map_.serialize();
-    if (!saveMapFile(findDataPath("maps") + "/" + cfg_.map + ".qmap", text)) { log("autosave failed: maps/" + cfg_.map + ".qmap"); return false; }
+    if (!saveMapFile(userMapsDir() + "/" + cfg_.map + ".qmap", text)) { log("autosave failed: maps/" + cfg_.map + ".qmap"); return false; }
     editDirty_ = false;
     nextAutosave_ = time() + 5;
     return true;

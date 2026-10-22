@@ -32,9 +32,11 @@ static void usage() {
         "  --bots N         play-vs-bots server: N bots (team modes: on team B; humans join team A)\n"
         "  --allies N       team modes with --bots: N bots on the humans' team\n"
         "  --botskill N     0 beginner, 1 intermediate (default), 2 advanced, 3 expert\n"
-        "  --log LEVEL      game log to logs/: simple (deaths, map changes, chat, wins),\n"
+        "  --log LEVEL      game log to <data>/logs/: simple (deaths, map changes, chat, wins),\n"
         "                   verbose (+ 125 Hz gameplay), extreme (every tick, everything)\n"
         "  --logfile PATH   write the game log here instead\n"
+        "  --data-dir DIR   where logs, edited maps and custom modes go (default: the per-user data folder;\n"
+        "                   QUARK_DATA_DIR does the same)\n"
         "  --teamsize N     duel: 1 (1v1, default) or 2 (2v2)\n"
         "  --public         list this server on the internet server list (players see it under Join)\n"
         "  --variant NAME   1v1 / tourney ruleset: vampire, classic, quirky, hitscan, instagib, boomers, blades, moon\n"
@@ -53,7 +55,8 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         auto next = [&]() -> std::string { return i + 1 < argc ? argv[++i] : ""; };
-        if (a == "--port") cfg.port = (uint16_t)atoi(next().c_str());
+        if (a == "--data-dir") setUserDataDir(next());
+        else if (a == "--port") cfg.port = (uint16_t)atoi(next().c_str());
         else if (a == "--map") cfg.map = next();
         else if (a == "--mode") {
             std::string m = next();

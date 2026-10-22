@@ -495,7 +495,7 @@ static bool readWav(const std::string& path, std::vector<float>& out, int& rate)
 }
 
 void Audio::loadModSounds() {
-    std::string root = findDataPath("maps") + "/../mods/sounds";
+    std::string root = findDataPath("mods/sounds");
     for (int pass = 0; pass < 2; pass++)   // "all" first, a kit's own folder wins over it
     for (int kit = 0; kit < kPacks && kit < 5; kit++) {
         std::string dir = root + "/" + (pass == 0 ? "all" : kModKitDirs[kit]);

@@ -1,4 +1,5 @@
 #include "lightmap.h"
+#include <filesystem>
 #include <unordered_map>
 #include <algorithm>
 #include <atomic>
@@ -57,7 +58,7 @@ void basis(const Vec3& n, Vec3& t, Vec3& b) {
     b = cross(n, t);
 }
 
-std::string cachePath(const Map& m) { return findDataPath("maps") + "/" + safeMapName(m.name) + ".qlm"; }
+std::string cachePath(const Map& m) { return userDataPath("cache") + "/" + safeMapName(m.name) + ".qlm"; }
 
 bool loadCache(const Map& m, BakedWorld& out) {
     std::ifstream f(cachePath(m), std::ios::binary);
@@ -72,6 +73,8 @@ bool loadCache(const Map& m, BakedWorld& out) {
 }
 
 void saveCache(const Map& m, const BakedWorld& w) {
+    std::error_code ec;
+    std::filesystem::create_directories(userDataPath("cache"), ec);
     std::ofstream f(cachePath(m), std::ios::binary);
     if (!f) return;
     uint32_t hdr[5] = {kCacheMagic, kBakeVersion, m.crc, (uint32_t)w.atlasW, (uint32_t)w.atlasH};

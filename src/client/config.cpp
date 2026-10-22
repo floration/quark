@@ -6,7 +6,7 @@
 #include <sstream>
 #include "../game/map.h"
 
-static std::string cfgPath() { return findDataPath("maps") + "/../quark.cfg"; }
+static std::string cfgPath() { return userDataPath("quark.cfg"); }
 
 static Vec3 parseColor(const std::string& s, Vec3 def) {
     unsigned v;
