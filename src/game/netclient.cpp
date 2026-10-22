@@ -642,10 +642,10 @@ static constexpr uint64_t kMaxDemoBytes = 512ull << 20; // (about 9 h of play; p
 bool NetClient::startRecording(const std::string& path, bool fullRate) {
     stopRecording();
     if (!hasSnapshot() || !mapReady_) return false;
-    rec_ = u8fopen(path, "wb");
-    if (!rec_) return false;
+    rec_ = std::make_unique<AsyncFileWriter>();
+    if (!rec_->open(path)) { rec_.reset(); return false; }
     uint32_t magic = kDemoMagic; uint16_t ver = kProtocolVersion;
-    fwrite(&magic, 4, 1, rec_); fwrite(&ver, 2, 1, rec_);
+    rec_->write(&magic, 4); rec_->write(&ver, 2);
     recStart_ = timeNow(); recLast_ = -1; recEvery_ = fullRate ? 0.0 : 0.016; recMapRev_ = 0xFFFFFFFFu; recEventId_ = 0; recHavePrev_ = false;
     // who's who so far (names, models, ranked ids arrived as events before the recording started)
     recEvents_.clear();
@@ -659,8 +659,7 @@ bool NetClient::startRecording(const std::string& path, bool fullRate) {
 }
 
 void NetClient::stopRecording() {
-    if (rec_) fclose(rec_);
-    rec_ = nullptr;
+    rec_.reset();   // (closes it: what was recorded reaches the file first)
 }
 
 double NetClient::recordingTime() const { return rec_ ? timeNow() - recStart_ : 0; }
@@ -671,7 +670,7 @@ void NetClient::recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& 
     if (recLast_ >= 0 && t - recLast_ < recEvery_ && recMapRev_ == mapRevision()) return; // 62.5 Hz, or every snapshot (full rate)
     recLast_ = t;
     auto record = [&](uint8_t type, const uint8_t* p, uint32_t n) {
-        fwrite(&type, 1, 1, rec_); fwrite(&t, 8, 1, rec_); fwrite(&n, 4, 1, rec_); fwrite(p, 1, n, rec_);
+        rec_->write(&type, 1); rec_->write(&t, 8); rec_->write(&n, 4); rec_->write(p, n);
     };
     if (recMapRev_ != mapRevision()) {   // the map (new, or edited): its whole text, so the demo plays anywhere
         recMapRev_ = mapRevision();
@@ -697,7 +696,7 @@ void NetClient::recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& 
     recEvents_.clear();
     recPrev_ = c;
     recHavePrev_ = true;
-    fflush(rec_);
+    rec_->flush();   // (to the writer thread)
 }
 
 bool NetClient::startPlayback(const std::string& path, std::string& err) {

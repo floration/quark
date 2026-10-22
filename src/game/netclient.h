@@ -8,6 +8,7 @@
 #include <deque>
 #include <string>
 #include <vector>
+#include "../common/asyncwriter.h"
 #include "../common/net.h"
 #include "map.h"
 #include "protocol.h"
@@ -105,7 +106,7 @@ private:
     void handlePacket(const uint8_t* data, int len);
     void recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& events);
     void pollPlayback();
-    FILE* rec_ = nullptr;
+    std::unique_ptr<AsyncFileWriter> rec_;   // (written on its own thread: no disk I/O in the frame loop)
     double recStart_ = 0, recLast_ = -1, recEvery_ = 0.016;
     uint32_t recMapRev_ = 0xFFFFFFFFu, recEventId_ = 0;
     Snapshot recPrev_;
