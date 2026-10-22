@@ -252,6 +252,22 @@ check((await call("/list?v=t9")) === "", "hidden servers aren't listed");
   await prune(env, Date.now()); await prune(env, Date.now());
   check(ids.every((m) => status(m) === "void/void"), "expired rows all decided over the runs (50 a run)");
 }
+// the server's next ticket voids its last one only if that has no result: a late dispute still counts
+{
+  const status = (m) => [db.prepare("SELECT status FROM matches WHERE id = ?").get(m)?.status, db.prepare("SELECT status FROM tickets WHERE id = ?").get(m)?.status].join("/");
+  const p = `${id(25)}:0:0,${id(26)}:1:1`, S = await server();
+  await S.ticket("c6c6c6c6c6c6c6c6", "vanilla", [25, 26]);
+  age("c6c6c6c6c6c6c6c6");
+  await S.result("c6c6c6c6c6c6c6c6", p);
+  await call("/report", { secret: secret(25), match: "c6c6c6c6c6c6c6c6", ladder: "vanilla", p });
+  check((await S.ticket("c7c7c7c7c7c7c7c7", "vanilla", [25, 26])) === "ticket c7c7c7c7c7c7c7c7", "next match's ticket");
+  check(status("c6c6c6c6c6c6c6c6") === "pending/open", "a match with a result isn't voided by the next ticket " + status("c6c6c6c6c6c6c6c6"));
+  check((await call("/report", { secret: secret(26), match: "c6c6c6c6c6c6c6c6", ladder: "vanilla", p, dispute: "1" })) === "disputed", "its late dispute counts");
+  // one without a result (a report came, the server never posted) is void, its pending match row too
+  age("c7c7c7c7c7c7c7c7");
+  await call("/report", { secret: secret(25), match: "c7c7c7c7c7c7c7c7", ladder: "vanilla", p });
+  check((await S.ticket("c8c8c8c8c8c8c8c8", "vanilla", [25, 26])) === "ticket c8c8c8c8c8c8c8c8" && status("c7c7c7c7c7c7c7c7") === "void/void", "no result: the next ticket voids it " + status("c7c7c7c7c7c7c7c7"));
+}
 // ladders are separate: an instagib win doesn't touch vanilla
 {
   const S = await server();

@@ -25,7 +25,8 @@
 //                 form: kind=race, match (16 hex), map, players=<racer id>, keys=pub, sigs=sig   when a time trial
 //                 starts; the racer's game signs "quark-ticket-v1 <match>" the same way, so a server can only post runs
 //                 (and the name that goes with them) for a player who is really on it.
-//                 answers "ticket <match>". One open match ticket per server; a server opens at most one a minute.
+//                 answers "ticket <match>". One open match ticket per server (a new one voids the last if that has
+//                 no result yet); a server opens at most one a minute.
 //   POST /result  form: match, p=id:team:place,...[, left=id,...]   the server's own account of the ticketed match;
 //                 left: players who left during it (first leaver first; their game can't report)
 //   POST /racerun form: ticket, map, id, ms, splits, name (hex), v   a finished run the server saw, under a race ticket
@@ -225,8 +226,13 @@ async function openTicket(env, form, addr, now) {
   if (kind === "match") {
     const last = await env.DB.prepare("SELECT MAX(created) AS t FROM tickets WHERE server = ? AND kind = 'match'").bind(addr).first();
     if (last && last.t && now - last.t < TICKET_GAP_MS) return "too soon";
-    // a server runs one ranked match at a time: its older open ticket is void
-    await env.DB.prepare("UPDATE tickets SET status = 'void' WHERE server = ? AND kind = 'match' AND status = 'open'").bind(addr).run();
+    // a server runs one ranked match at a time: its older open ticket that never got a result is void (and so is the
+    // pending match its players' reports made). One with a result stays: its reports and disputes still count.
+    await env.DB.batch([
+      env.DB.prepare("UPDATE matches SET status = 'void' WHERE status = 'pending' AND id IN " +
+        "(SELECT id FROM tickets WHERE server = ? AND kind = 'match' AND status = 'open' AND result IS NULL)").bind(addr),
+      env.DB.prepare("UPDATE tickets SET status = 'void' WHERE server = ? AND kind = 'match' AND status = 'open' AND result IS NULL").bind(addr),
+    ]);
   }
   const r = await env.DB.prepare("INSERT OR IGNORE INTO tickets (id, kind, server, ladder, map, players, created, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'open')")
     .bind(match, kind, addr, ladder, map, [...players].sort().join(","), now).run();
