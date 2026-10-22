@@ -2,7 +2,8 @@
 
 Every release's `quark-<platform>.qpak` is signed in CI and published with a `quark-<platform>.qpak.sig` next to it.
 The launcher downloads both and refuses to install a package whose signature doesn't verify against the public key
-built into it (`kReleasePublicKey` in `src/common/sign.cpp`). Server autoupdate (`tools/server/autoupdate.sh`) checks
+built into it (`kReleasePublicKey` in `src/common/sign.cpp`), or that the release's signed manifest (below) doesn't
+name. Server autoupdate (`tools/server/autoupdate.sh`) checks
 the Linux package the same way before it installs a new version.
 
 - Algorithm: Ed25519ph (RFC 8032, SHA-512 prehash) via vendored [Monocypher](https://monocypher.org) 4.0.2
@@ -18,8 +19,25 @@ quark_sign verify <file> [pubkey]    # checks <file>.sig; default key = the one 
 ```
 
 Each release (production and testing) also carries `quark-release.txt` + `.sig`: a signed manifest naming the
-channel, tag, version and commit. Dedicated servers check it before building, so they only ever build the exact commit
-a signed production release names.
+channel, tag, version and commit, and the sha256 of every package (`tools/sign/release_manifest.sh`):
+
+```
+quark release
+channel testing
+tag test-1.17.0-test.3
+version 1.17.0-test.3
+commit <40 hex>
+sha256 quark-linux.qpak <64 hex>
+sha256 quark-windows.qpak <64 hex>
+```
+
+Dedicated servers check it before building, so they only ever build the exact commit a signed production release
+names. The launcher checks it before installing: the package's own `.sig` only proves the release key signed *some*
+package, so the manifest must also verify and name this release's tag, version and channel (a prerelease = testing)
+and the downloaded package's sha256, or the install is refused (a validly signed old or testing package can't be
+passed off as another release or channel). A testing build's macOS package is added after the prerelease went out, so
+it comes with its own signed `quark-release-macos.txt`, which the launcher prefers over `quark-release.txt` when
+present. Releases from before signing (<= 1.16) have neither and stay installable only after the player confirms.
 
 Signing runs in the `release` / `release-testing` jobs of `.github/workflows/release.yml` (tools/sign/sign_release.sh),
 inside the GitHub environments `production` and `testing`. The secret can be a repository secret, or (better) an

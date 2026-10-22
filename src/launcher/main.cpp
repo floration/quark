@@ -25,6 +25,7 @@
 #include "releases.h"
 #include "selfupdate.h"
 #include "../common/proc.h"
+#include "../common/sha256.h"
 #include "../common/sign.h"
 
 #ifdef _WIN32
@@ -303,6 +304,21 @@ void checkSelfUpdate(State* st, const fs::path& dir) {
     else { std::lock_guard<std::mutex> l(st->mu); st->status += " (launcher update failed: " + err + ")"; }
 }
 
+// The package's .sig only proves the release key signed it, not which release it is: the signed manifest
+// (quark-release.txt) must name this release's tag, version and channel and this package's sha256, or a validly
+// signed package (an old or testing build) could be passed off as another release. Empty: fine; else why not.
+std::string checkReleaseManifest(const Release& r, const fs::path& package) {
+    if (r.manifestUrl.empty()) return "it has no signed release manifest";
+    std::ostringstream text, sig;
+    std::string err;
+    if (!httpGet(r.manifestUrl, text, nullptr, &err) || !httpGet(r.manifestSigUrl, sig, nullptr, &err))
+        return "could not download its release manifest (" + err + ")";
+    std::ifstream in(package, std::ios::binary);
+    std::string sha = in ? sha256StreamHex(in) : "";
+    if (sha.empty()) return "could not read the download";
+    return releases::verifyManifest(text.str(), sig.str(), sign::kReleasePublicKey, r, sha);
+}
+
 // `allowUnsigned`: the player picked a release from before signing and confirmed the warning. Only then is a
 // package without a .sig installed; a signed one is always verified.
 void installRelease(std::shared_ptr<State> st, fs::path dir, Release r, bool allowUnsigned) {
@@ -334,7 +350,7 @@ void installRelease(std::shared_ptr<State> st, fs::path dir, Release r, bool all
         if (r.sigUrl.empty()) err = "it is unsigned (from before signed updates) - pick it and confirm to install it anyway";
         else if (!httpGet(r.sigUrl, sig, nullptr, &err)) err = "could not download its signature (" + err + ")";
         else if (!sign::verifyFile(tmp.string(), sig.str(), sign::kReleasePublicKey, &err)) err = "its signature does not verify";
-        else err.clear();
+        else err = checkReleaseManifest(r, tmp);
         if (!err.empty()) {
             fs::remove(tmp, ec);
             setStatus("refused version " + r.version + ": " + err + " - the download may have been tampered with");

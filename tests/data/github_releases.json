@@ -13,7 +13,11 @@
       {"name": "quark-linux.qpak", "size": 100, "browser_download_url": "https://github.com/floration/quark/releases/download/test-1.17.0-test.2/quark-linux.qpak"},
       {"name": "quark-linux.qpak.sig", "size": 128, "browser_download_url": "https://github.com/floration/quark/releases/download/test-1.17.0-test.2/quark-linux.qpak.sig"},
       {"name": "quark-windows.qpak", "size": 100, "browser_download_url": "https://github.com/floration/quark/releases/download/test-1.17.0-test.2/quark-windows.qpak"},
-      {"name": "quark-windows.qpak.sig", "size": 128, "browser_download_url": "https://github.com/floration/quark/releases/download/test-1.17.0-test.2/quark-windows.qpak.sig"}
+      {"name": "quark-windows.qpak.sig", "size": 128, "browser_download_url": "https://github.com/floration/quark/releases/download/test-1.17.0-test.2/quark-windows.qpak.sig"},
+      {"name": "quark-release.txt", "size": 300, "browser_download_url": "https://github.com/floration/quark/releases/download/test-1.17.0-test.2/quark-release.txt"},
+      {"name": "quark-release.txt.sig", "size": 129, "browser_download_url": "https://github.com/floration/quark/releases/download/test-1.17.0-test.2/quark-release.txt.sig"},
+      {"name": "quark-release-macos.txt", "size": 300, "browser_download_url": "https://github.com/floration/quark/releases/download/test-1.17.0-test.2/quark-release-macos.txt"},
+      {"name": "quark-release-macos.txt.sig", "size": 129, "browser_download_url": "https://github.com/floration/quark/releases/download/test-1.17.0-test.2/quark-release-macos.txt.sig"}
     ],
     "tarball_url": null,
     "body": "## Testing\n- grapple keeps speed — \"tag_name\": \"v9.9.9\" in notes must not confuse the reader\n- emoji 🚀 ok"

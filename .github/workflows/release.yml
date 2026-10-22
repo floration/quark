@@ -179,8 +179,9 @@ jobs:
           TAG: ${{ needs.meta.outputs.tag }}
           VER: ${{ needs.meta.outputs.version }}
         run: |
-          # what servers check before updating (tools/server/autoupdate.sh): this tag is this commit, signed
-          printf 'quark release\nchannel production\ntag %s\nversion %s\ncommit %s\n' "$TAG" "$VER" "$GITHUB_SHA" > dist/quark-release.txt
+          # what servers check before updating (tools/server/autoupdate.sh): this tag is this commit, signed; and the
+          # launcher before installing: this release, this channel, these packages (sha256)
+          sh tools/sign/release_manifest.sh production "$TAG" "$VER" "$GITHUB_SHA" dist/*/quark-*.qpak > dist/quark-release.txt
           sh tools/sign/sign_release.sh dist/*/quark-*.qpak dist/quark-release.txt
           (cd dist && sha256sum -- */* quark-release.txt quark-release.txt.sig | sed 's#  [a-z]*/#  #' > SHA256SUMS)
       - name: publish (marked latest; fails if it already exists)
@@ -213,7 +214,7 @@ jobs:
           VER: ${{ needs.meta.outputs.version }}
         run: |
           rm -rf dist/windows-tests dist/macos
-          printf 'quark release\nchannel testing\ntag %s\nversion %s\ncommit %s\n' "$TAG" "$VER" "$GITHUB_SHA" > dist/quark-release.txt
+          sh tools/sign/release_manifest.sh testing "$TAG" "$VER" "$GITHUB_SHA" dist/*/quark-*.qpak > dist/quark-release.txt
           sh tools/sign/sign_release.sh dist/*/quark-*.qpak dist/quark-release.txt
           (cd dist && sha256sum -- */* quark-release.txt quark-release.txt.sig | sed 's#  [a-z]*/#  #' > SHA256SUMS)
       - name: publish the prerelease (never latest)
@@ -253,8 +254,11 @@ jobs:
           QUARK_SIGNING_KEY: ${{ secrets.QUARK_SIGNING_KEY }}
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.meta.outputs.tag }}
+          VER: ${{ needs.meta.outputs.version }}
         run: |
-          sh tools/sign/sign_release.sh dist/macos/quark-macos.qpak
+          # quark-release.txt went out without this package: its own signed manifest (the launcher prefers it)
+          sh tools/sign/release_manifest.sh testing "$TAG" "$VER" "$GITHUB_SHA" dist/macos/quark-macos.qpak > dist/macos/quark-release-macos.txt
+          sh tools/sign/sign_release.sh dist/macos/quark-macos.qpak dist/macos/quark-release-macos.txt
           (cd dist/macos && sha256sum -- * > SHA256SUMS-macos)
           gh release upload "$TAG" -R "$GITHUB_REPOSITORY" dist/macos/*
 
