@@ -3,6 +3,8 @@
   python3 tools/embed_maps.py <out dir> <map.qmap>...
 writes <out dir>/official_maps.h (name + sha256 of each map: ranked only runs on these) and
 <out dir>/official_map_data.h (each map's text, so the game can put a map back to its original version).
+The maps are the ones CMake names (the generator's, plus the hand-made ones .gitignore un-ignores), never whatever
+happens to be in maps/: a stray or retired .qmap there must not become an official (ranked) map.
 Line endings are normalized (CR dropped) so a CRLF checkout hashes the same. zz_* maps are test maps: left out.
 Headers are only rewritten when their contents change, so an unchanged map set recompiles nothing; the stamp file
 (always written) is what the build tracks."""

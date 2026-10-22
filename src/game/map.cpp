@@ -155,7 +155,7 @@ int resetOfficialMaps() {
         }
         n++;
     }
-    for (const char* old : {"arena", "tug", "duel", "sprint"}) { // retired built-in maps left by older versions
+    for (const char* old : {"arena", "tug", "duel", "sprint", "crucible"}) { // retired built-in maps left by older versions
         fs::remove(dir + "/" + old + ".qmap", ec);
         fs::remove(dir + "/" + old + ".qlm", ec);
     }

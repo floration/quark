@@ -94,8 +94,9 @@ target_include_directories(quark_core PUBLIC src ${CMAKE_BINARY_DIR}/generated)
 # ---- maps (a build artifact) ---------------------------------------------------------------------------
 # tools/make_maps.py generates the shipped maps at build time (python3, nothing else) into maps/, which .gitignore
 # leaves out: the generator is the only source. maps/ is where the game looks (next to the source tree when run from
-# it, copied next to the executables below) and what release packaging copies. Hand-made maps (a maps/*.qmap the
-# generator doesn't write) are shipped and embedded too.
+# it, copied next to the executables below) and what release packaging copies. A hand-made map ships (embedded and
+# copied) only when .gitignore un-ignores it with a "!/maps/<name>.qmap" line, i.e. it's tracked: any other *.qmap
+# in maps/ (one the generator no longer makes, a test leftover, a stray file) is neither embedded nor copied.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(QUARK_MAPS_DIR ${CMAKE_SOURCE_DIR}/maps)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/make_maps.py)
@@ -114,12 +115,17 @@ add_custom_command(OUTPUT ${QUARK_GEN_MAPS}
   COMMAND ${CMAKE_COMMAND} -E env PYTHONHASHSEED=0 ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/make_maps.py --out ${QUARK_MAPS_DIR}
   DEPENDS ${CMAKE_SOURCE_DIR}/tools/make_maps.py
   COMMENT "Generating maps (tools/make_maps.py)" VERBATIM)
-file(GLOB QUARK_MAP_FILES CONFIGURE_DEPENDS ${QUARK_MAPS_DIR}/*.qmap)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/.gitignore)
+file(STRINGS ${CMAKE_SOURCE_DIR}/.gitignore QUARK_HAND_MAP_LINES REGEX "^!/maps/[A-Za-z0-9_-]+\\.qmap")
 set(QUARK_HAND_MAPS "")
-foreach(f ${QUARK_MAP_FILES})
-  get_filename_component(n ${f} NAME_WE)
-  if(NOT n IN_LIST QUARK_GEN_MAP_NAMES)
-    list(APPEND QUARK_HAND_MAPS ${f})
+foreach(l ${QUARK_HAND_MAP_LINES})
+  string(REGEX REPLACE "^!/maps/([A-Za-z0-9_-]+)\\.qmap.*$" "\\1" n "${l}")
+  if(n IN_LIST QUARK_GEN_MAP_NAMES)
+    continue()
+  elseif(EXISTS ${QUARK_MAPS_DIR}/${n}.qmap)
+    list(APPEND QUARK_HAND_MAPS ${QUARK_MAPS_DIR}/${n}.qmap)
+  else()
+    message(WARNING ".gitignore ships maps/${n}.qmap, but there's no such file")
   endif()
 endforeach()
 # Official maps (ranked only runs on these): name + sha256 of each shipped map, and its text, embedded in the game.
@@ -250,7 +256,10 @@ if(QUARK_BUILD_TESTS)
   set_tests_properties(quark_tests PROPERTIES TIMEOUT 1800)
 endif()
 
-# Copy maps (generated + hand-made) next to the executables so builds run in place.
+# Copy the shipped maps (generated + hand-made, as embedded above) next to the executables so builds run in place;
+# any other *.qmap there (a map since retired from the generator, a stray file) is removed.
+string(REPLACE ";" "|" QUARK_SHIPPED_MAPS_ARG "${QUARK_GEN_MAPS};${QUARK_HAND_MAPS}")
 add_custom_target(copy_maps ALL
-  COMMAND ${CMAKE_COMMAND} -E copy_directory ${QUARK_MAPS_DIR} ${CMAKE_BINARY_DIR}/maps)
+  COMMAND ${CMAKE_COMMAND} "-DMAPS=${QUARK_SHIPPED_MAPS_ARG}" -DDEST=${CMAKE_BINARY_DIR}/maps -P ${CMAKE_SOURCE_DIR}/tools/copy_maps.cmake
+  VERBATIM)
 add_dependencies(copy_maps quark_maps)
