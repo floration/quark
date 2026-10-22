@@ -55,6 +55,7 @@ struct BotBrain {
     // movement
     Vec3 goal;
     double goalUntil = 0;
+    uint32_t goalMapCrc = 0, goalNavGen = 0; // the map / nav graph the goal was picked on (another one: picked again)
     Vec3 lastPos;
     double stuckCheckAt = 0;
     float strafeDir = 1;

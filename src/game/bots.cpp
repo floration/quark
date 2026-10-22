@@ -473,7 +473,8 @@ Vec3 objective(Server& s, int id, BotBrain& b, const SkillParams& sp) {
         }
         case MODE_HIDE:
         case MODE_TAG: {
-            if (s.nav_.nodes.empty()) break;
+            // (the graph is still the previous map's while this one's builds: roam between spawns until it's ready)
+            if (s.nav_.nodes.empty() || s.nav_.mapCrc != map.crc) break;
             auto randomNode = [&]() { const auto& n = s.nav_.nodes[(size_t)(rnd(b) * s.nav_.nodes.size()) % s.nav_.nodes.size()];
                                       return Vec3((n.x0 + n.x1) * 0.5f, n.y, (n.z0 + n.z1) * 0.5f); };
             if (me.it) { // seek: wander everywhere, toward anything heard (targets are chased by the fight code once seen)
@@ -570,6 +571,12 @@ UserCmd botThink(Server& s, int id) {
     UserCmd cmd;
     cmd.weapon = kNoWeaponChange;
     bool navOk = s.nav_.ready(s.map_);
+    // a goal from the previous map, or picked before this map's graph was ready, is picked again
+    if (b.goalMapCrc != s.map_.crc || (navOk && b.goalNavGen != s.nav_.generation)) {
+        b.goalMapCrc = s.map_.crc;
+        if (navOk) b.goalNavGen = s.nav_.generation;
+        b.goalUntil = 0; b.fleeUntil = 0;
+    }
     if (!me.alive) {
         b.target = -1;
         b.engagedAt = -1;

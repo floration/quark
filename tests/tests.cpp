@@ -2209,6 +2209,41 @@ static void testStairs() {
     printf("  %d flights\n", flights);
 }
 
+// Hide and seek / tag bots pick spots from the nav graph. After a map change they must not head for a spot on the
+// previous map's graph (it's still there while the new map's builds in the background), nor keep one picked on it.
+static void testBotGoalsAfterMapChange(uint16_t port) {
+    printf("bot goals after a map change\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = false; cfg.map = "hamlet"; cfg.mode = MODE_HIDE; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    int bot = s.addBot(TEAM_A, BOT_ADVANCED);
+    std::vector<NetClient*> none;
+    for (int k = 0; k < 50 && !s.nav_.ready(s.map_); k++) pump(s, none, 0.1, idle);
+    CHECK(bot >= 0 && s.nav_.ready(s.map_));
+    if (bot < 0) { s.stop(); return; }
+    auto onGraph = [](const Vec3& g, const std::vector<NavGraph::Node>& nodes) {
+        for (auto& n : nodes)
+            if (std::fabs((n.x0 + n.x1) * 0.5f - g.x) < 1e-3f && std::fabs((n.z0 + n.z1) * 0.5f - g.z) < 1e-3f && std::fabs(n.y - g.y) < 1e-3f) return true;
+        return false;
+    };
+    auto& p = s.players_[bot];
+    p.alive = true; p.it = false;
+    s.bots_[bot].goalUntil = 0;
+    botThink(s, bot);
+    std::vector<NavGraph::Node> old = s.nav_.nodes;
+    CHECK(onGraph(s.bots_[bot].goal, old));                  // a hiding spot on hamlet, kept for a while
+    s.command("map hightown hide");
+    p.alive = true; p.it = false; p.move.pos = s.map_.spawns[0].pos; p.move.vel = {};
+    for (int k = 0; k < 5; k++) { botThink(s, bot); CHECK(!onGraph(s.bots_[bot].goal, old)); }   // (graph built or not)
+    for (int k = 0; k < 50 && !s.nav_.ready(s.map_); k++) pump(s, none, 0.1, idle);
+    p.alive = true; p.it = false;
+    botThink(s, bot);
+    CHECK(s.nav_.ready(s.map_) && onGraph(s.bots_[bot].goal, s.nav_.nodes)); // and once it's ready, a spot on the new one
+    s.stop();
+}
+
 // Joined mid tag match, then a vote to 1v1: everyone is placed like a newcomer (one per side, the rest watch),
 // not all put on team A.
 static void testTagLateJoin(uint16_t port) {
@@ -4638,7 +4673,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(TP(29990)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(TP(29980)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); testAddbotArgs(TP(29982)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); testTagLateJoin(TP(29455)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); testTagLateJoin(TP(29455)); testBotGoalsAfterMapChange(TP(29456)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "nav") { testNavGraph(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testRankedRelay(TP(29630)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterReplies(TP(29629)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); return g_fail ? 1 : 0; }
@@ -4672,7 +4707,7 @@ int main(int argc, char** argv) {
         {"movement", [] { testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
-        {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); }},
+        {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
         {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
