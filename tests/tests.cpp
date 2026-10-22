@@ -778,6 +778,10 @@ static void testPoints(uint16_t port) {
     CHECK(stage1);
     pump(s, cls, 0.3, idle);
     CHECK(a.mode().point == 1);                       // the clients know
+    s.phaseEnd_ = s.time() - 20;                      // B taken 20 s into overtime: the full bonus, from now
+    s.ms_.capture = 0.98f;
+    for (int k = 0; k < 10 && s.ms_.point == 1; k++) { standOn(att, 1); away(def); pump(s, cls, 0.1, idle); }
+    CHECK(s.ms_.point == 2 && s.ms_.phase == PHASE_LIVE && s.phaseEnd_ > s.time() + 85);
     s.stop();
 }
 
@@ -809,6 +813,14 @@ static void testCartChecks(uint16_t port) {
     s.payloadIdleSince_ = s.time() - 100;
     pump(s, cls, 2.0, [&](int) { s.players_[att].move.pos = s.map_.spawns[0].pos; return UserCmd(); });
     CHECK(s.ms_.payloadDist >= first - 0.01f);
+    if (s.map_.cartChecks.size() >= 2) {   // a checkpoint 20 s into overtime: the full bonus, from now
+        s.ms_.payloadDist = s.map_.cartChecks[1] * s.ms_.payloadLen - 0.5f;
+        s.phaseEnd_ = s.time() - 20;
+        for (int k = 0; k < 20 && s.ms_.point == 1 && s.ms_.phase == PHASE_LIVE; k++) {
+            s.players_[att].move.pos = s.map_.payloadPoint(s.ms_.payloadDist) + Vec3(0, 0, 2.5f); pump(s, cls, 0.1, idle);
+        }
+        CHECK(s.ms_.point == 2 && s.ms_.phase == PHASE_LIVE && s.phaseEnd_ > s.time() + 55);
+    }
     s.stop();
 }
 
@@ -2051,6 +2063,43 @@ static void testStairs() {
     printf("  %d flights\n", flights);
 }
 
+// Joined mid tag match, then a vote to 1v1: everyone is placed like a newcomer (one per side, the rest watch),
+// not all put on team A.
+static void testTagLateJoin(uint16_t port) {
+    printf("tag late joiner, then 1v1\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = false; cfg.map = "hamlet"; cfg.mode = MODE_TAG; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    NetClient c[4];
+    std::vector<NetClient*> cls;
+    for (int i = 0; i < 3; i++) { c[i].connect("127.0.0.1:" + std::to_string(port), "p" + std::to_string(i)); cls.push_back(&c[i]); }
+    pump(s, cls, 1.5, idle);
+    s.command("forcestart");
+    pump(s, cls, 0.3, idle);
+    CHECK(rulesTeamLocked(s));
+    c[3].connect("127.0.0.1:" + std::to_string(port), "late");
+    cls.push_back(&c[3]);
+    pump(s, cls, 1.0, idle);
+    int late = c[3].clientId();
+    CHECK(late >= 0 && late < kMaxPlayers);
+    if (late < 0 || late >= kMaxPlayers) { s.stop(); return; }
+    CHECK(s.players_[late].team == TEAM_SPECTATOR && s.players_[late].waitingToPlay);
+    s.command("map temple 1v1");
+    pump(s, cls, 0.5, idle);
+    int a = 0, b = 0, spec = 0;
+    for (auto* cl : cls) {
+        int id = cl->clientId();
+        if (id < 0 || id >= kMaxPlayers) continue;
+        int t = s.players_[id].team;
+        (t == TEAM_A ? a : t == TEAM_B ? b : spec)++;
+    }
+    CHECK(s.config().mode == MODE_ARENA && a == 1 && b == 1 && spec == 2);
+    for (auto& p : s.players_) CHECK(!p.waitingToPlay);
+    s.stop();
+}
+
 // Hide and seek and tag: one seeker / "it" with a knife, run-and-jump only, the seeker waits out the
 // hiders' head start, one stab finds a hider (tag: passes "it" on), time up eliminates "it" in tag.
 static void testItModes(uint16_t port) {
@@ -2131,9 +2180,12 @@ static void testResetMaps() {
     namespace fs = std::filesystem;
     Map orig;
     CHECK(orig.load("temple"));
+    Server s;   // (not started: just its map facts cache)
+    CHECK(s.mapInfo("temple").ok && s.mapInfo("temple").ranked != 0);
     CHECK(saveMapFile(userMapsDir() + "/temple.qmap", orig.source + "box 0 0 0 1 1 1\n")); // your edit shadows the shipped one
     Map m;
     CHECK(m.load("temple") && !isOfficialMap(m));
+    CHECK(s.mapInfo("temple").ok && s.mapInfo("temple").ranked == 0);   // votes / ranked see the file that's played
     std::string shipped = userDataPath("zz_install_maps");
     std::error_code ec;
     fs::remove_all(shipped, ec);
@@ -2144,6 +2196,7 @@ static void testResetMaps() {
     CHECK(!fs::exists(shipped + "/crucible.qmap", ec) && !fs::exists(shipped + "/crucible.qlm", ec));
     Map r;
     CHECK(r.load("temple") && isOfficialMap(r));   // (your edited copy is gone)
+    CHECK(s.mapInfo("temple").ranked != 0);
     int n = 0;
     for (auto& e : fs::directory_iterator(shipped, ec)) {
         if (e.path().extension() != ".qmap") continue;
@@ -3356,6 +3409,12 @@ static void testChatAndVoteLimits(uint16_t port) {
     a.sendCommand("callvote tmaps lodestone,colosseum");   // (a vote is already running: refused, after the checks)
     pump(s, cls, 0.3, idle);
     CHECK(s.vote_.kind == Server::VOTE_TMAPS && s.mapInfoLoads_ == loads);
+    // made-up map names (callvote map <random>) aren't cached: the cache stays the size of the maps folder
+    for (int k = 0; k < 20; k++) b.sendCommand("callvote map zz_nomap" + std::to_string(k));
+    pump(s, cls, 0.5, idle);
+    for (int k = 0; k < 1000; k++) CHECK(!s.mapInfo("zz_nomap_" + std::to_string(qrand())).ok);
+    printf("  map facts cached after 1020 made-up names: %zu (%zu maps)\n", s.mapInfoCached(), listMaps().size());
+    CHECK(s.mapInfoCached() <= listMaps().size() + 8);   // (+: test maps other groups write meanwhile)
     // the vote fails: its caller can't call another straight away
     b.sendCommand("vote no");
     pump(s, cls, 0.3, idle);
@@ -4208,7 +4267,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(TP(29990)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(TP(29980)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); testAddbotArgs(TP(29982)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); testTagLateJoin(TP(29455)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "nav") { testNavGraph(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterReplies(TP(29629)); testMasterSignature(); testPlacementConstant(); return g_fail ? 1 : 0; }
@@ -4242,7 +4301,7 @@ int main(int argc, char** argv) {
         {"movement", [] { testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
-        {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); }},
+        {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
         {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},

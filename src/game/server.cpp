@@ -55,6 +55,7 @@ constexpr double kCookieBucket = 10.0;     // connect cookies are good for 10-20
 constexpr float kMapReqPerSec = 400.0f;    // PKT_MAP_REQUEST chunks per second per player (a download asks ~128/s)
 constexpr float kMapReqBurst = 64.0f;
 constexpr size_t kMaxVoteListItems = 8;    // callvote tmaps / tmodes
+constexpr size_t kMaxMapInfo = 1024;       // map facts cached (only maps whose file exists; past this it starts over)
 constexpr size_t kMaxUnackedEvents = 256;
 }
 
@@ -65,14 +66,17 @@ void Server::log(const std::string& s) {
     else printf("[server] %s\n", s.c_str());
 }
 
+// Stamps the file Map::load reads (your maps folder first, then the shipped one), so an edited or new copy of a
+// map is re-read, and switching between the two counts as a change. -1: no such map file.
 int64_t Server::mapStamp(const std::string& name) {
     std::error_code ec;
-    std::string path = findDataPath("maps/" + name + ".qmap");
+    std::string path = mapFilePath(name);
+    if (path.empty()) return -1;
     auto size = std::filesystem::file_size(path, ec);
     if (ec) return -1;
     auto t = std::filesystem::last_write_time(path, ec);
     if (ec) return -1;
-    return (int64_t)size * 1000003 ^ (int64_t)t.time_since_epoch().count();
+    return ((int64_t)size * 1000003 ^ (int64_t)t.time_since_epoch().count() ^ (int64_t)std::hash<std::string>()(path)) & INT64_MAX;
 }
 
 Server::MapInfo Server::readMapInfo(const std::string& name, int64_t stamp) {
@@ -89,6 +93,11 @@ Server::MapInfo Server::readMapInfo(const std::string& name, int64_t stamp) {
 Server::MapInfo Server::mapInfo(const std::string& name) {
     if (!validMapName(name)) return MapInfo();
     int64_t stamp = mapStamp(name);
+    if (stamp < 0) {   // no such file: nothing to cache (a vote for any made-up name must not grow the cache)
+        std::lock_guard<std::mutex> lk(mapInfoMu_);
+        mapInfo_.erase(name);
+        return MapInfo();
+    }
     {
         std::lock_guard<std::mutex> lk(mapInfoMu_);
         auto it = mapInfo_.find(name);
@@ -97,6 +106,7 @@ Server::MapInfo Server::mapInfo(const std::string& name) {
     MapInfo mi = readMapInfo(name, stamp);   // new or changed since: read it now (once)
     mapInfoLoads_++;
     std::lock_guard<std::mutex> lk(mapInfoMu_);
+    if (mapInfo_.size() >= kMaxMapInfo && !mapInfo_.count(name)) mapInfo_.clear();   // (bounded: re-read as needed)
     mapInfo_[name] = mi;
     return mi;
 }
@@ -116,8 +126,11 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
                 std::lock_guard<std::mutex> lk(mapInfoMu_);
                 if (mapInfo_.count(n)) continue;
             }
-            MapInfo mi = readMapInfo(n, mapStamp(n));
+            int64_t stamp = mapStamp(n);
+            if (stamp < 0) continue;   // (gone since it was listed)
+            MapInfo mi = readMapInfo(n, stamp);
             std::lock_guard<std::mutex> lk(mapInfoMu_);
+            if (mapInfo_.size() >= kMaxMapInfo) return;
             mapInfo_.emplace(n, mi);
         }
     });
@@ -2698,7 +2711,7 @@ void Server::setRanked(bool on, int ladder) {
     if (!fits(mapInfo(mapName))) {
         // the ladder's own map first (built for just that ruleset), else any ranked map that takes it
         mapName.clear();
-        for (auto& n : listMaps()) {
+        for (auto& n : mapList_) {   // (the list cached at start / saveas: no folder scan on the tick)
             MapInfo c = mapInfo(n);
             if (!fits(c)) continue;
             bool own = c.ranked == (1u << ladder);

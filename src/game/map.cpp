@@ -269,13 +269,24 @@ uint32_t crc32(const void* data, size_t len, uint32_t prev) {
     return c ^ 0xFFFFFFFFu;
 }
 
-bool Map::load(const std::string& requested, std::string* err) {
-    // renamed maps: old configs / votes for these still work
-    std::string mapName = requested == "arena" ? "bastion" : requested == "tug" ? "canal" : requested;
-    if (!validMapName(mapName)) { if (err) *err = "bad map name: " + mapName; return false; }
+// renamed maps: old configs / votes for these still work
+static std::string currentMapName(const std::string& requested) {
+    return requested == "arena" ? "bastion" : requested == "tug" ? "canal" : requested;
+}
+
+std::string mapFilePath(const std::string& requested) {
+    std::string mapName = currentMapName(requested);
+    if (!validMapName(mapName)) return std::string();
     std::string path = userMapsDir() + "/" + mapName + ".qmap"; // yours (edited / made) first, then the shipped one
     std::error_code ec;
     if (!fs::exists(path, ec)) path = findDataPath("maps/" + mapName + ".qmap");
+    return path;
+}
+
+bool Map::load(const std::string& requested, std::string* err) {
+    std::string mapName = currentMapName(requested);
+    if (!validMapName(mapName)) { if (err) *err = "bad map name: " + mapName; return false; }
+    std::string path = mapFilePath(mapName);
     std::ifstream f(path, std::ios::binary);
     if (!f) { if (err) *err = "map not found: " + path; return false; }
     std::stringstream ss;

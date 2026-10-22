@@ -283,6 +283,7 @@ public:
     void sendEvent(int player, const GameEvent& e);
     void message(const std::string& text);
     void spawnPlayer(int id);
+    void autoTeam(int id);      // a newcomer's team (or spectator): mode, seat limits, balance
     void killPlayer(int victim, int killer, int weapon);
     void damagePlayer(int victim, int attacker, float dmg, int weapon, const Vec3& knock);
     int aliveCount(int team) const;
@@ -309,6 +310,7 @@ public:
     struct MapInfo { int64_t stamp = 0; bool ok = false; uint32_t supports = 0; uint16_t ranked = 0; };
     MapInfo mapInfo(const std::string& name);
     uint32_t mapInfoLoads_ = 0;  // map files actually parsed for it (tests)
+    size_t mapInfoCached() { std::lock_guard<std::mutex> lk(mapInfoMu_); return mapInfo_.size(); }   // (tests)
     void stopMapInfo();
     void setRanked(bool on, int ladder);            // ranked on (1v1 on that ladder, official map) / off
     bool rankedBlocks(int id, const std::string& what); // tells the player and returns true if ranked forbids it
@@ -454,7 +456,6 @@ private:
     void openGameLog();
     void logTick();
     int findPlayer(const NetAddr& a) const;
-    void autoTeam(int id);
     std::string uniqueName(std::string name, int self) const;
 
     UdpSocket sock_;

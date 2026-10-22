@@ -777,7 +777,7 @@ void tickPayload(Server& s) {
     // checkpoints: more time for the attack, the cart stays past it, and the spawns move up a stage (staged maps)
     while (m.point < s.map_.cartChecks.size() && m.payloadDist >= s.map_.cartChecks[m.point] * m.payloadLen) {
         m.point++;
-        s.phaseEnd_ += kCartCheckBonus;
+        s.phaseEnd_ = std::max(s.phaseEnd_, s.time()) + kCartCheckBonus;   // (in overtime the clock is past: from now)
         s.message(std::string(teamName(att)) + " reached checkpoint " + std::to_string(m.point) + " - +" + std::to_string((int)kCartCheckBonus) + " s");
     }
     float& best = s.bestProgress_[att];
@@ -832,7 +832,7 @@ void tickPoints(Server& s) {
             endRound(s, att, "every point taken");
             return;
         }
-        s.phaseEnd_ += kPointBonus;
+        s.phaseEnd_ = std::max(s.phaseEnd_, s.time()) + kPointBonus;   // (in overtime the clock is past: from now)
         s.message(std::string(teamName(att)) + " took point " + char('A' + m.point - 1) + " - +" + std::to_string((int)kPointBonus) + " s, on to point " + char('A' + m.point));
         s.glog(LOG_SIMPLE, "point %d taken by team %d", m.point, att);
         return;
@@ -953,8 +953,17 @@ void rulesReset(Server& s) {
     }
     for (auto& p : s.players_) { p.it = false; p.out = false; p.found = false; } // nothing from the last match carries into warmup
     s.tagOut_.clear();
-    for (auto& p : s.players_) if (p.waitingToPlay) { p.waitingToPlay = false; if (p.connected && p.team == TEAM_SPECTATOR) p.team = TEAM_A; }   // (joined mid tag match)
+    // Joined mid tag match (or were playing it when a map / mode vote passed): placed like a newcomer once the tag
+    // match is over, so the next mode's seat limits (1v1, duel) and team balance hold, not all on team A.
+    uint32_t waiting = 0;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        auto& p = s.players_[i];
+        if (!p.waitingToPlay) continue;
+        p.waitingToPlay = false;
+        if (p.connected && p.team == TEAM_SPECTATOR) waiting |= 1u << i;
+    }
     setPhase(s, PHASE_WARMUP, 0);
+    for (int i = 0; i < kMaxPlayers; i++) if (waiting >> i & 1) s.autoTeam(i);   // (warmup: the team lock is off)
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = s.players_[i];
         if (p.connected && p.team != TEAM_SPECTATOR && !p.alive) s.spawnPlayer(i);
