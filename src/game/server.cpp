@@ -734,6 +734,9 @@ bool Server::restorePlayer(int id, const NetAddr& from, uint32_t nonce, const st
     if (rankedLive() && !rankedTicketSent_ && isRankedParticipant(id) && p.ticketSig.empty()) {
         GameEvent e; e.type = EV_RANKSIGN; e.text = rankedMatch_; sendEvent(id, e);
     }
+    if (!raceTicket_.empty() && !raceTicketSent_ && !p.rankId.empty() && p.rankId == raceTicketFor_) {   // (the race ticket, unsigned yet)
+        GameEvent e; e.type = EV_RANKSIGN; e.text = raceTicket_; sendEvent(id, e);
+    }
     message(p.name + (wasAway ? " reconnected" : " rejoined"));
     log(p.name + " reconnected from " + from.toString() + " as #" + std::to_string(id));
     return true;
@@ -923,6 +926,9 @@ void Server::handleStringCmd(int id, const std::string& s) {
         log(p.name + ": " + rest);
         glog(LOG_SIMPLE, "chat %d \"%s\": %s", id, p.name.c_str(), rest.c_str());
     } else if (cmd == "ticketsig") { // the player's signature of the live ranked match id (EV_RANKSIGN): goes with the ticket
+        // (or of the time trial's race ticket id, from its racer)
+        if (!raceTicket_.empty() && !raceTicketSent_ && !p.rankId.empty() && p.rankId == raceTicketFor_ &&
+            rankVerify(p.rankPub, rankTicketMessage(raceTicket_), rest)) { sendRaceTicket(p.rankPub, rest); return; }
         if (!rankedLive() || rankedTicketSent_ || !isRankedParticipant(id) || !p.ticketSig.empty()) return;
         if (!rankVerify(p.rankPub, rankTicketMessage(rankedMatch_), rest)) return;
         p.ticketSig = rest;
@@ -2517,21 +2523,35 @@ void Server::maybeSendRankedTicket(bool giveUp) {
 
 bool Server::timeTrialCounts() const { return cfg_.timeTrial && cfg_.map == "viaduct" && isOfficialMap(map_); }
 
+// A time trial's race ticket: the racer's game signs its id (EV_RANKSIGN -> "ticketsig", as for a ranked match),
+// then sendRaceTicket opens it on the Worker with the racer's key and signature.
 void Server::openRaceTicket() {
     if (!cfg_.timeTrial || cfg_.lanOnly) return;
-    std::string racer;
-    for (auto& p : players_) if (p.connected && !p.isBot && !p.rankId.empty()) { racer = p.rankId; break; }
-    if (racer.empty() || (racer == raceTicketFor_ && !raceTicket_.empty()) || !timeTrialCounts()) return;
+    int racer = -1;
+    for (int i = 0; i < kMaxPlayers && racer < 0; i++) if (players_[i].connected && !players_[i].isBot && !players_[i].rankId.empty()) racer = i;
+    if (racer < 0 || (players_[racer].rankId == raceTicketFor_ && !raceTicket_.empty()) || !timeTrialCounts()) return;
     raceTicket_ = randomMatchId();
-    raceTicketFor_ = racer;
+    raceTicketFor_ = players_[racer].rankId;
+    raceTicketSent_ = false;
     raceFloors_ = raceSplitFloorsMs(map_);
+    GameEvent e; e.type = EV_RANKSIGN; e.text = raceTicket_; sendEvent(racer, e);
+}
+
+void Server::sendRaceTicket(const std::string& pub, const std::string& sig) {
+    raceTicketSent_ = true;
     ensureMaster();
-    if (master_) master_->post("raceticket", "/ticket", "kind=race&match=" + raceTicket_ + "&map=" + cfg_.map + "&players=" + racer);
+    if (master_) master_->post("raceticket", "/ticket", "kind=race&match=" + raceTicket_ + "&map=" + cfg_.map + "&players=" + raceTicketFor_ +
+                                                         "&keys=" + pub + "&sigs=" + sig);
 }
 
 void Server::finishRaceRun(int id) {
     ServerPlayer& p = players_[id];
     if (raceTicket_.empty() || p.rankId != raceTicketFor_ || p.raceSplits.empty() || !master_) return;
+    if (!raceTicketSent_) {
+        GameEvent e; e.type = EV_MESSAGE; e.text = "run not sent to the leaderboard: your game didn't sign the time trial ticket";
+        sendEvent(id, e);
+        return;
+    }
     if (!raceSplitsPlausible(p.raceSplits, raceFloors_)) {
         GameEvent e; e.type = EV_MESSAGE; e.text = "run not sent to the leaderboard: a checkpoint was reached faster than the course allows";
         sendEvent(id, e);

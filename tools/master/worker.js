@@ -22,19 +22,26 @@
 //                 when a ranked match goes live; each player's key must hash to their id and have signed
 //                 "quark-ticket-v1 <match>" (their game signs it in the match), so a server can only ticket players
 //                 who are really in it.
-//                 form: kind=race, match (16 hex), map, players=<racer id>          when a time trial starts
-//                 answers "ticket <match>". One open match ticket per server; a server opens at most one a minute.
+//                 form: kind=race, match (16 hex), map, players=<racer id>, keys=pub, sigs=sig   when a time trial
+//                 starts; the racer's game signs "quark-ticket-v1 <match>" the same way, so a server can only post runs
+//                 (and the name that goes with them) for a player who is really on it.
+//                 answers "ticket <match>". One open match ticket per server (a new one voids the last if that has
+//                 no result yet); a server opens at most one a minute.
 //   POST /result  form: match, p=id:team:place,...[, left=id,...]   the server's own account of the ticketed match;
 //                 left: players who left during it (first leaver first; their game can't report)
 //   POST /racerun form: ticket, map, id, ms, splits, name (hex), v   a finished run the server saw, under a race ticket
+//                 (the name is saved only with a run that's kept)
 // Ranked (OpenSkill / Weng-Lin Plackett-Luce ratings):
 //   POST /report  form: secret, match, ladder, p=id:team:place,...[, dispute=1]   one player's account of a finished
 //                 match (dispute=1: their game saw a different result than the host's p)
-//                 Accepted only under a ticket from that ticket's players, once each, MIN_MATCH_MS to TICKET_MS after
-//                 it opened. Rated when the server's result and the players' reports agree: every player who didn't
+//                 Accepted only under a ticket from that ticket's players, once each, until TICKET_MS after it opened.
+//                 The server's /result must come MIN_MATCH_MS or more after the ticket opened (sooner only when it
+//                 names a leaver, so leaving in the first minute still loses), else the match is void. Rated when the server's result and the players' reports agree: every player who didn't
 //                 leave reported it, or REPORT_WAIT_MS passed with at least one agreeing and nobody against. A report
 //                 against it makes a dispute (not rated; the owner settles it with /resolve), unless no player agrees
-//                 with the server and two or more contradict it: then it's void. New accounts are provisional (see
+//                 with the server and two or more contradict it: then it's void. A match still undecided when its
+//                 ticket expires (TICKET_MS) is rated if the server's result is in and a player agreed with nobody
+//                 against, else void. New accounts are provisional (see
 //                 PROVISIONAL_GAMES).
 //   POST /resolve form: key (ADMIN_KEY), match, action=rate|void                    the owner settles a dispute
 //   GET  /disputes?key=ADMIN_KEY                                    "match ladder created result" per open dispute
@@ -61,7 +68,8 @@
 // together (that's what the Discord roles and pings need); unlinking (type "unlink" in game) removes the Discord part.
 // The game says so where you link (the settings screen's Discord box).
 // Ladders (each its own ratings): vanilla (all weapons), vampire (laser vampire), instagib. Rows are keyed "ladder:id".
-// Cron (scheduled handler, every 15 minutes): rates matches whose report wait is over and prunes old rows.
+// Cron (scheduled handler, every 15 minutes): rates matches whose report wait is over, decides (rates or voids)
+// matches whose ticket expired undecided, and prunes old rows.
 const FRESH_MS = 150000;
 const MU = 25, SIGMA = 25 / 3, BETA = SIGMA / 2, TAU = MU / 300, EPS = 1e-4;
 const PENDING_MS = 3600000;
@@ -74,7 +82,7 @@ const RACE_FLOORS = {
   viaduct: [792, 606, 485, 625, 250, 928, 1333, 341, 1818, 979, 1022, 1583],
 };
 const TICKET_MS = 2 * 3600000;       // a match ticket takes reports for this long
-const MIN_MATCH_MS = 60000;          // ...but not before this: no ranked match is over in under a minute
+const MIN_MATCH_MS = 60000;          // no server result before this (no ranked match is over in under a minute) unless someone left
 const TICKET_GAP_MS = 60000;         // a server opens at most one match ticket per this
 const RACE_TICKET_MS = 12 * 3600000; // a time trial session
 const RACE_SLACK_MS = 30000;         // a run can't be longer than its ticket is old (plus request delays)
@@ -95,11 +103,15 @@ const LINK_CODE_MS = 10 * 60000;
 
 // Rate limiting: token buckets kept in memory per isolate (Cloudflare runs a few isolates per region, so the
 // real limit is a small multiple of these; cheap, and enough to stop a single client hammering D1). Keyed by
-// endpoint plus client IP, and endpoint plus player id for the account endpoints.
+// client IP, by player id for the account endpoints, and by server address for the server endpoints.
+// Many players can share one address (a LAN party, a dorm, carrier NAT), so the per-IP buckets are generous and
+// the per-id bucket is the real limit on a player. The Discord bot (a write carrying BOT_KEY) has its own bucket
+// and spends none of its address's: one "Queue for all" is 16 POSTs.
 const LIMITS = {
-  ip: { burst: 120, perSec: 2 },        // any endpoint, per client IP
-  write: { burst: 20, perSec: 0.2 },    // /report /racetime /lifetime /queue /link, per client IP
+  ip: { burst: 240, perSec: 6 },        // any endpoint, per client IP (a few dozen games polling /queue, /filled)
+  write: { burst: 60, perSec: 0.5 },    // player writes (/hello /report /lifetime /queue /link ...), per client IP
   id: { burst: 10, perSec: 0.1 },       // the same, per player id
+  bot: { burst: 200, perSec: 5 },       // writes with BOT_KEY (/queue /linkcode from the Discord bot), instead of ip + write
   linkfail: { burst: 5, perSec: 1 / 60 }, // /link code attempts per client IP (a right code gives its token back)
   server: { burst: 30, perSec: 0.2 },   // /ticket /result /racerun per server address
 };
@@ -200,21 +212,29 @@ async function openTicket(env, form, addr, now) {
     ladder = String(form.get("ladder") || "");
     if (!LADDERS.has(ladder)) return "not a ranked ladder";
     if (players.length < 2 || players.length > 16) return "bad players";
-    // every player vouched for this match: their key (which hashes to their id) signed its id in the game
-    const keys = String(form.get("keys") || "").split(","), sigs = String(form.get("sigs") || "").split(",");
-    if (keys.length !== players.length || sigs.length !== players.length) return "missing signatures";
-    for (let i = 0; i < players.length; i++) {
-      if (!/^[0-9a-f]{64}$/.test(keys[i]) || (await sha256hex(keys[i])).slice(0, 32) !== players[i]) return "bad key for " + players[i];
-      if (!(await ed25519Verify(keys[i], sigs[i], "quark-ticket-v1 " + match))) return "bad signature for " + players[i];
-    }
-    const last = await env.DB.prepare("SELECT MAX(created) AS t FROM tickets WHERE server = ? AND kind = 'match'").bind(addr).first();
-    if (last && last.t && now - last.t < TICKET_GAP_MS) return "too soon";
-    // a server runs one ranked match at a time: its older open ticket is void
-    await env.DB.prepare("UPDATE tickets SET status = 'void' WHERE server = ? AND kind = 'match' AND status = 'open'").bind(addr).run();
   } else if (kind === "race") {
     if (!RACE_MAPS.has(map)) return "not a ranked race map";
     if (players.length !== 1) return "bad players";
   } else return "bad request";
+  // every player vouched for this match / time trial: their key (which hashes to their id) signed its id in the game,
+  // so a server can only ticket players who are really on it (a race ticket names whose time and name it may post)
+  const keys = String(form.get("keys") || "").split(","), sigs = String(form.get("sigs") || "").split(",");
+  if (!form.get("keys") || !form.get("sigs") || keys.length !== players.length || sigs.length !== players.length) return "missing signatures";
+  for (let i = 0; i < players.length; i++) {
+    if (!/^[0-9a-f]{64}$/.test(keys[i]) || (await sha256hex(keys[i])).slice(0, 32) !== players[i]) return "bad key for " + players[i];
+    if (!(await ed25519Verify(keys[i], sigs[i], "quark-ticket-v1 " + match))) return "bad signature for " + players[i];
+  }
+  if (kind === "match") {
+    const last = await env.DB.prepare("SELECT MAX(created) AS t FROM tickets WHERE server = ? AND kind = 'match'").bind(addr).first();
+    if (last && last.t && now - last.t < TICKET_GAP_MS) return "too soon";
+    // a server runs one ranked match at a time: its older open ticket that never got a result is void (and so is the
+    // pending match its players' reports made). One with a result stays: its reports and disputes still count.
+    await env.DB.batch([
+      env.DB.prepare("UPDATE matches SET status = 'void' WHERE status = 'pending' AND id IN " +
+        "(SELECT id FROM tickets WHERE server = ? AND kind = 'match' AND status = 'open' AND result IS NULL)").bind(addr),
+      env.DB.prepare("UPDATE tickets SET status = 'void' WHERE server = ? AND kind = 'match' AND status = 'open' AND result IS NULL").bind(addr),
+    ]);
+  }
   const r = await env.DB.prepare("INSERT OR IGNORE INTO tickets (id, kind, server, ladder, map, players, created, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'open')")
     .bind(match, kind, addr, ladder, map, [...players].sort().join(","), now).run();
   if (!r.meta || r.meta.changes !== 1) return "ticket exists";
@@ -236,13 +256,13 @@ async function raceRun(env, form, addr, now) {
   if (!floors || splits.length !== floors.length || splits[splits.length - 1] !== ms) return "bad splits";
   // checkpoint times increase, and no leg is faster than the course allows
   if (splits.some((x, i) => !(x > 0) || x - (i ? splits[i - 1] : 0) < floors[i])) return "bad splits";
-  await saveName(env, me, String(form.get("name") || ""), now);
   const best = await env.DB.prepare("SELECT ms FROM race_times WHERE map = ? AND id = ?").bind(map, me).first();
   if (best && best.ms <= ms) return `not faster (best ${best.ms})`;
   await env.DB.prepare(
     "INSERT INTO race_times (map, id, ms, splits, version, created) VALUES (?, ?, ?, ?, ?, ?) " +
     "ON CONFLICT(map, id) DO UPDATE SET ms = excluded.ms, splits = excluded.splits, version = excluded.version, created = excluded.created"
   ).bind(map, me, ms, splits.join(","), String(form.get("v") || "").slice(0, 16), now).run();
+  await saveName(env, me, String(form.get("name") || ""), now);   // (only with an accepted run)
   return best ? `new best (was ${best.ms})` : "first time";
 }
 
@@ -470,8 +490,10 @@ async function report(env, form, now) {
   const t = await env.DB.prepare("SELECT kind, ladder, players, created, status FROM tickets WHERE id = ?").bind(match).first();
   if (!t || t.kind !== "match") return "no ticket";
   if (t.ladder !== ladder || t.players !== res.entries.map((e) => e.id).join(",")) return "not the ticket's players";
-  if (now - t.created < MIN_MATCH_MS) return "too soon";
+  // (no "too soon" here: the server's result decides when the match can have ended - MIN_MATCH_MS, sooner only when
+  // someone left - and a report alone rates nothing. The game sends its report once, so an early one is kept.)
   if (t.status === "open" && now - t.created > TICKET_MS) return "expired";
+  if (t.status === "void") return "void";   // (before the matches row below: it would only sit there pending)
   // the reporter's display name for the leaderboard (hex-encoded printable ASCII, up to 20 chars)
   await saveName(env, me, String(form.get("name") || ""), now);
   const result = ladder + "|" + res.text, dispute = String(form.get("dispute") || "") === "1" ? 1 : 0;
@@ -479,7 +501,6 @@ async function report(env, form, now) {
     .bind(match, result, res.entries.length, now).run();
   const m = await env.DB.prepare("SELECT status FROM matches WHERE id = ?").bind(match).first();
   if (m.status !== "pending" && m.status !== "disputed") return m.status;   // (a dispute can still turn void)
-  if (t.status === "void") return "void";
   await env.DB.prepare("INSERT OR IGNORE INTO reports (match, reporter, result, dispute) VALUES (?, ?, ?, ?)").bind(match, me, result, dispute).run();
   return finishMatch(env, match, now);
 }
@@ -501,11 +522,12 @@ async function serverResult(env, form, addr, now) {
   if (!t || t.kind !== "match" || t.server !== addr) return "no ticket";
   if (t.status !== "open") return t.status;
   if (t.players !== res.entries.map((e) => e.id).join(",")) { await voidMatch(env, match); return "void: not the ticket's players"; }
-  if (now - t.created < MIN_MATCH_MS || now - t.created > TICKET_MS) { await voidMatch(env, match); return "void: outside the ticket's window"; }
-  if (t.result) return "already reported";
   const left = String(form.get("left") || "") ? String(form.get("left")).split(",") : [];
   const ids = res.entries.map((e) => e.id);
   if (left.some((id) => !ids.includes(id)) || new Set(left).size !== left.length || left.length >= ids.length) return "bad left";
+  // no ranked match is over in under a minute, unless someone left it: leaving early doesn't escape the loss
+  if ((now - t.created < MIN_MATCH_MS && !left.length) || now - t.created > TICKET_MS) { await voidMatch(env, match); return "void: outside the ticket's window"; }
+  if (t.result) return "already reported";
   const result = t.ladder + "|" + res.text;
   await env.DB.batch([
     env.DB.prepare("UPDATE tickets SET result = ?, leavers = ?, resulted = ? WHERE id = ? AND result IS NULL").bind(result, left.join(","), now, match),
@@ -515,9 +537,15 @@ async function serverResult(env, form, addr, now) {
 }
 
 // What a ticketed match comes to, from the server's result and the players' reports (see /report at the top).
+// Once the ticket is TICKET_MS old no report or result can come any more, so nothing stays pending: it's rated if
+// the server's result is in, someone agreed and nobody objected, else void (a dispute still waits for the owner).
 export function decideMatch(t, reports, now) {
   const players = t.players.split(","), left = new Set(t.leavers ? t.leavers.split(",") : []);
-  if (!t.result) return { state: "pending", text: reports.length < players.length ? `pending ${reports.length}/${players.length}` : "pending server" };
+  const expired = now - t.created > TICKET_MS;
+  if (!t.result) {
+    if (expired) return { state: "void", text: "void: no result from the server" };
+    return { state: "pending", text: reports.length < players.length ? `pending ${reports.length}/${players.length}` : "pending server" };
+  }
   const byId = new Map(reports.map((r) => [r.reporter, r]));
   const against = reports.filter((r) => r.dispute || (r.result !== null && r.result !== t.result));
   const agree = reports.filter((r) => !r.dispute && (r.result === null || r.result === t.result));
@@ -527,15 +555,17 @@ export function decideMatch(t, reports, now) {
   }
   const missing = players.filter((id) => !left.has(id) && !byId.has(id));
   if (!missing.length) return { state: "rate" };
-  if (agree.length >= 1 && t.resulted && now - t.resulted >= REPORT_WAIT_MS) return { state: "rate" };
+  if (agree.length >= 1 && (expired || (t.resulted && now - t.resulted >= REPORT_WAIT_MS))) return { state: "rate" };
+  if (expired) return { state: "void", text: "void: no player confirmed the server's result" };
   return { state: "pending", text: `pending ${players.length - left.size - missing.length}/${players.length - left.size}` };
 }
 
 async function finishMatch(env, match, now, force = false) {
-  const t = await env.DB.prepare("SELECT ladder, players, result, leavers, resulted, status FROM tickets WHERE id = ?").bind(match).first();
+  const t = await env.DB.prepare("SELECT ladder, players, created, result, leavers, resulted, status FROM tickets WHERE id = ?").bind(match).first();
   const m = await env.DB.prepare("SELECT status FROM matches WHERE id = ?").bind(match).first();
   if (!t || !m) return "pending";
   if (m.status !== "pending" && m.status !== "disputed") return m.status;
+  if (t.status === "void" && m.status === "pending") { await voidMatch(env, match); return "void"; }   // (its ticket went first)
   const { results: reports } = await env.DB.prepare("SELECT reporter, result, dispute FROM reports WHERE match = ?").bind(match).all();
   let d = force ? (t.result ? { state: "rate" } : { state: "pending", text: "pending server" }) : decideMatch(t, reports, now);
   if (m.status === "disputed" && !force && d.state !== "void") return "disputed";   // only the owner settles it, or more dissent voids it
@@ -610,13 +640,25 @@ function ipv4(s) {
   return s.split(".").every((p) => +p <= 255) ? s : null;
 }
 
-// Old rows go (cron, WEB-12), and matches whose report wait is over get rated.
+// Old rows go (cron, WEB-12), and pending matches that can be decided are: rated once their report wait is over (with
+// a report in: without one it would only stay pending), and rated or voided once their ticket has expired (see
+// decideMatch). Oldest first, so the same rows can't fill every run; one failing match doesn't stop the rest.
+// Returns how many it rated.
 export async function prune(env, now) {
   const q = (sql, ...a) => env.DB.prepare(sql).bind(...a);
-  const { results: due } = await q("SELECT t.id AS id FROM tickets t JOIN matches m ON m.id = t.id WHERE m.status = 'pending' AND t.resulted IS NOT NULL AND t.resulted < ? LIMIT 50", now - REPORT_WAIT_MS).all();
-  for (const r of due) await finishMatch(env, r.id, now);
+  const { results: due } = await q(
+    "SELECT t.id AS id FROM tickets t JOIN matches m ON m.id = t.id WHERE m.status = 'pending' AND (t.created < ? OR " +
+    "(t.resulted IS NOT NULL AND t.resulted < ? AND EXISTS (SELECT 1 FROM reports r WHERE r.match = t.id))) " +
+    "ORDER BY COALESCE(t.resulted, t.created) LIMIT 50", now - TICKET_MS, now - REPORT_WAIT_MS).all();
+  let rated = 0;
+  for (const r of due) {
+    try { if ((await finishMatch(env, r.id, now)) === "done") rated++; }
+    catch (e) { console.log("prune: match " + r.id + ": " + String(e && e.message || e)); }
+  }
   await env.DB.batch([
     q("DELETE FROM servers WHERE seen < ?", now - 3600000),
+    // tickets that never got a result: void, and so is the pending match their players' reports made
+    q("UPDATE matches SET status = 'void' WHERE status = 'pending' AND id IN (SELECT id FROM tickets WHERE status = 'open' AND created < ? AND result IS NULL)", now - TICKET_MS),
     q("UPDATE tickets SET status = 'void' WHERE status = 'open' AND created < ? AND result IS NULL", now - TICKET_MS),
     q("DELETE FROM reports WHERE match IN (SELECT id FROM tickets WHERE created < ? AND status != 'open')", now - 30 * 86400000),
     q("DELETE FROM matches WHERE created < ? AND status != 'pending' AND status != 'disputed'", now - 30 * 86400000),
@@ -626,7 +668,7 @@ export async function prune(env, now) {
     q("DELETE FROM link_codes WHERE created < ?", now - LINK_CODE_MS),
     q("DELETE FROM rate_guard"),
   ]);
-  return due.length;
+  return rated;
 }
 
 // Short-lived caching of public reads (WEB-6): the Cache API (per data center) plus Cache-Control for clients.
@@ -660,7 +702,6 @@ export default {
     // reads may be fetched by web pages (the website's leaderboard); writes never answer cross-origin
     const text = (body, status = 200) => new Response(body, { status, headers: isWrite ? { "content-type": "text/plain" } :
       { "content-type": "text/plain", "access-control-allow-origin": "*" } });
-    if (!allow("ip", conn, now)) return text("rate limited", 429);
     let form = null;
     if (isWrite) {
       if (req.method !== "POST") return text("POST only", 405);
@@ -669,7 +710,10 @@ export default {
       if (+(req.headers.get("content-length") || 0) > MAX_BODY) return text("too big", 413);
       try { form = await req.formData(); } catch { return text("bad request", 400); }
     }
-    if (isWrite && !SERVER_WRITES.has(u.pathname) && u.pathname !== "/announce" && u.pathname !== "/remove") {
+    // the bot's writes: their own bucket, none of its address's
+    const isBot = !!(form && env.BOT_KEY && String(form.get("bot") || "") === env.BOT_KEY);
+    if (!(isBot ? allow("bot", "bot", now) : allow("ip", conn, now))) return text("rate limited", 429);
+    if (isWrite && !isBot && !SERVER_WRITES.has(u.pathname) && u.pathname !== "/announce" && u.pathname !== "/remove") {
       if (!allow("write", conn, now)) return text("rate limited", 429);
       const pid = await idOf(String(form.get("secret") || ""));
       if (pid && !allow("id", pid, now)) return text("rate limited", 429);

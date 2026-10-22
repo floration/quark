@@ -22,7 +22,7 @@ directly over UDP, so it shows only servers it can reach, with their real ping. 
    branch's push can run CI, so a CI-made signature would vouch for anything. `site/master.txt` (unsigned) is still
    what the website's leaderboard reads.
 7. **Cron.** Worker → **Settings → Triggers → Cron Triggers → Add**: `*/15 * * * *`. It rates matches whose report
-   wait is over and prunes old rows (servers, tickets, matches, reports, queues, filled rows, link codes).
+   wait is over, rates or voids matches whose ticket expired undecided, and prunes old rows (servers, tickets, matches, reports, queues, filled rows, link codes).
 8. **Owner key (disputes).** Worker → **Settings → Variables and Secrets → Add → Secret**: `ADMIN_KEY`, a long random
    string. `GET /disputes?key=…` lists disputed matches; `POST /resolve` (key, match, action=rate|void) settles one.
 
@@ -64,21 +64,24 @@ ALTER TABLE lifetime ADD COLUMN hour_deaths INTEGER NOT NULL DEFAULT 0;
 ```
 `/announce` answers `ok <token>`. A server may announce or remove its own source IPv4 address; through an IPv6
 path (`?ip=`) it needs the token from an earlier IPv4 announce. Writes are rate-limited per IP and per player id
-(in memory, per isolate), and `/lifetime` adds at most 1200 kills and 1200 deaths per id per hour.
+(in memory, per isolate; the per-IP buckets leave room for many players behind one address, and the Discord bot's
+writes, carrying `BOT_KEY`, have their own larger bucket), and `/lifetime` adds at most 1200 kills and 1200 deaths per id per hour.
 
 ## Match tickets, server-reported race runs, verified Discord links (anti-cheat update)
 What changed:
 - **Ranked results need a ticket.** When a ranked match goes live, the game server (registered with the list by
   announcing, `&hidden=1` if it isn't public) opens a ticket (`POST /ticket`, with its announce token) naming the
   match id, ladder, map and players. `/report` is accepted only under an open ticket, from its players, once each,
-  between 1 minute and 2 hours after it opened; the server posts its own result (`POST /result`) and the match is
-  rated only when the server and every player agree. Each player's game also checks the host's result against the
+  up to 2 hours after it opened; the server posts its own result (`POST /result`, not before 1 minute unless it
+  names a leaver, so leaving in the first minute still loses) and the match is rated only when the server and every player agree. Each player's game also checks the host's result against the
   score it saw and refuses to report on a mismatch. A server opens at most one match ticket a minute.
 - **Provisional accounts.** A player counts as established after 5 ticketed matches (`accounts.tgames`). Before that
   they're off the leaderboard and crowns, and an established player's rating doesn't move in a match against them,
   so fresh accounts can't be farmed for rating.
 - **Race runs come from the server** (`POST /racerun`, under a race ticket for that racer), with every leg checked
   against `RACE_FLOORS` (straight-line gap between checkpoints at 48 m/s, from `build/quark_tests racefloors`).
+  The race ticket carries the racer's signature of its id, like a match ticket, and a run's name is saved only
+  when the run is kept, so a server can't rename or post times for a player who isn't on it.
   `POST /racetime` (the old self-report from the racer's game) is refused.
 - **Discord links are verified**: `/link` in Discord gives a one-time code (`POST /linkcode`, bot only), typed in game.
   Old unverified links get no roles and no queue pings.
@@ -119,7 +122,8 @@ What changed:
   score) makes the match `disputed`: not rated until the owner settles it (`/disputes`, `/resolve`). Only when no
   player agrees with the server and two or more contradict it is it void. A player who never reports doesn't hold
   the match up: `REPORT_WAIT_MS` (10 min) after the server's result, the cron rates it if someone agreed and nobody
-  objected.
+  objected. Nothing stays pending: when its ticket expires (2 h) a match is rated that way or else void (no result
+  from the server, or nobody confirmed it).
 - **One placement threshold**: `PLACEMENT_GAMES` = 5 (the game's `kPlacementGames`), for the boards and for
   established accounts. No rating decay, no rating-banded queues (owner decision 3.4).
 - **Hardening** (WEB-5 … WEB-12): writes are POST only and refused with an `Origin` header (no web page can make its

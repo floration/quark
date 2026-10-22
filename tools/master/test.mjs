@@ -87,6 +87,8 @@ const server = async () => {
   S.ticket = (match, ladder, ns, map = "temple", signers = ns) => S.post("/ticket", { kind: "match", match, ladder, map, players: ns.map(id).join(","),
     keys: ns.map((n) => key(n).pub).join(","), sigs: ns.map((n, i) => signTicket(signers[i], match)).join(",") });
   S.result = (match, p) => S.post("/result", { match, p });
+  // a time trial: the racer's game signs the race ticket's id the same way
+  S.race = (match, n, map = "viaduct", signer = n) => S.post("/ticket", { kind: "race", match, map, players: id(n), keys: key(n).pub, sigs: signTicket(signer, match) });
   return S;
 };
 const age = (match, ms = 120000) => db.prepare("UPDATE tickets SET created = created - ? WHERE id = ?").run(ms, match);
@@ -115,7 +117,7 @@ check((await call("/list?v=t9")) === "", "hidden servers aren't listed");
     sigs: [signTicket(1, match), signTicket(3, match)].join(",") })) === "bad key for " + id(2), "a key must hash to the id");
   check((await S.ticket(match, "vanilla", [1, 2, 3, 4])) === "ticket " + match, "ticket opened");
   check((await S.ticket("abababababababab", "vanilla", [1, 2])) === "too soon", "one ticket a minute per server");
-  check((await call("/report", { secret: secret(1), match, ladder: "vanilla", p })) === "too soon", "no result before the match could have been played");
+  check((await call("/report", { secret: secret(1), match, ladder: "vanilla", p })) === "pending 1/4", "an early report is kept, waiting for the server's result");
   age(match);
   check((await call("/report", { secret: secret(1), match, ladder: "vanilla", p })) === "pending 1/4", "first report pending");
   check((await call("/report", { secret: secret(1), match, ladder: "vanilla", p })) === "pending 1/4", "duplicate report ignored");
@@ -189,6 +191,93 @@ check((await call("/list?v=t9")) === "", "hidden servers aren't listed");
   check((await prune(env, Date.now())) === 1, "the cron rates it after the wait");
   r = await ratings([21, 22]);
   check(r[id(21)].games === 2 && r[id(22)].games === 2, "silent player rated (a non-report doesn't escape the result)");
+  // leaving in the first minute still loses: a result naming a leaver counts before MIN_MATCH_MS (the stayer's
+  // report may get there first); one without a leaver that early is void
+  const S3 = await server();
+  await S3.ticket("cfcfcfcfcfcfcfcf", "vanilla", [21, 22]);
+  check((await call("/report", { secret: secret(21), match: "cfcfcfcfcfcfcfcf", ladder: "vanilla", p })) === "pending 1/2", "the stayer's report, before the server's result");
+  check((await S3.post("/result", { match: "cfcfcfcfcfcfcfcf", p, left: id(22) })) === "done", "an early result with a leaver counts");
+  r = await ratings([21, 22]);
+  check(r[id(22)].games === 3 && r[id(22)].mu < 25, "the early leaver lost");
+  const S4 = await server();
+  await S4.ticket("cacacacacacacaca", "vanilla", [21, 22]);
+  check((await S4.result("cacacacacacacaca", p)) === "void: outside the ticket's window", "an early result without a leaver is void");
+}
+// nothing stays pending: once a ticket expires its match is rated (result in, someone agreed, nobody against) or void;
+// the cron goes oldest first, skips rows it can't decide yet, and one failing match doesn't stop the rest
+{
+  const status = (m) => [db.prepare("SELECT status FROM matches WHERE id = ?").get(m)?.status, db.prepare("SELECT status FROM tickets WHERE id = ?").get(m)?.status].join("/");
+  const p = `${id(23)}:0:0,${id(24)}:1:1`;
+  // the server's result, but no player ever reports: void once the ticket expires
+  const S1 = await server();
+  await S1.ticket("c1c1c1c1c1c1c1c1", "vanilla", [23, 24]);
+  age("c1c1c1c1c1c1c1c1");
+  await S1.result("c1c1c1c1c1c1c1c1", p);
+  db.prepare("UPDATE tickets SET resulted = resulted - ? WHERE id = ?").run(11 * 60000, "c1c1c1c1c1c1c1c1");
+  check((await prune(env, Date.now())) === 0 && status("c1c1c1c1c1c1c1c1") === "pending/open", "no report yet: waits");
+  // players report, the server never does
+  const S2 = await server();
+  await S2.ticket("c2c2c2c2c2c2c2c2", "vanilla", [23, 24]);
+  age("c2c2c2c2c2c2c2c2");
+  check((await call("/report", { secret: secret(23), match: "c2c2c2c2c2c2c2c2", ladder: "vanilla", p })) === "pending 1/2", "report without the server's result");
+  // the server's result and one agreeing report, the result posted just before the ticket ran out
+  const S3 = await server();
+  await S3.ticket("c3c3c3c3c3c3c3c3", "vanilla", [23, 24]);
+  age("c3c3c3c3c3c3c3c3");
+  await S3.result("c3c3c3c3c3c3c3c3", p);
+  check((await call("/report", { secret: secret(23), match: "c3c3c3c3c3c3c3c3", ladder: "vanilla", p })) === "pending 1/2", "one agreeing report");
+  for (const m of ["c1c1c1c1c1c1c1c1", "c2c2c2c2c2c2c2c2", "c3c3c3c3c3c3c3c3"]) age(m, 2 * 3600000);
+  check((await prune(env, Date.now())) === 1, "expired tickets decided: one rated");
+  check(status("c1c1c1c1c1c1c1c1") === "void/void", "result nobody confirmed: void " + status("c1c1c1c1c1c1c1c1"));
+  check(status("c2c2c2c2c2c2c2c2") === "void/void", "no result from the server: void, match row too " + status("c2c2c2c2c2c2c2c2"));
+  check(status("c3c3c3c3c3c3c3c3") === "done/done", "agreed and unopposed: rated at expiry " + status("c3c3c3c3c3c3c3c3"));
+  check((await ratings([23, 24]))[id(23)].games === 1, "rated once");
+  check((await call("/report", { secret: secret(24), match: "c2c2c2c2c2c2c2c2", ladder: "vanilla", p })) === "void", "a void ticket takes no reports");
+  // 60 rows that can't be decided yet (a result, no report) don't hide a match that can, made after them
+  const t0 = Date.now(), ids = [];
+  for (let k = 0; k < 60; k++) {
+    const m = "f0" + String(k).padStart(14, "0");
+    ids.push(m);
+    db.prepare("INSERT INTO tickets (id, kind, server, ladder, map, players, created, status, result, leavers, resulted) VALUES (?, 'match', 'x:1', 'vanilla', 'temple', ?, ?, 'open', ?, '', ?)")
+      .run(m, [id(23), id(24)].sort().join(","), t0 - 30 * 60000, "vanilla|" + p, t0 - 25 * 60000);
+    db.prepare("INSERT INTO matches (id, result, players, status, created) VALUES (?, ?, 2, 'pending', ?)").run(m, "vanilla|" + p, t0 - 25 * 60000);
+  }
+  const S4 = await server(), S5 = await server();
+  for (const [S, m] of [[S4, "c4c4c4c4c4c4c4c4"], [S5, "c5c5c5c5c5c5c5c5"]]) {
+    await S.ticket(m, "vanilla", [23, 24]);
+    age(m);
+    await S.result(m, p);
+    await call("/report", { secret: secret(23), match: m, ladder: "vanilla", p });
+    db.prepare("UPDATE tickets SET resulted = resulted - ? WHERE id = ?").run(m === "c4c4c4c4c4c4c4c4" ? 12 * 60000 : 11 * 60000, m);
+  }
+  // the older of the two throws: the cron logs it and still rates the other
+  const realPrepare = env.DB.prepare, realLog = console.log;
+  env.DB.prepare = (sql) => { const s = realPrepare(sql); return { ...s, bind: (...a) => { if (a.includes("c4c4c4c4c4c4c4c4") && sql.startsWith("SELECT ladder")) throw new Error("D1 hiccup"); return s.bind(...a); } }; };
+  console.log = () => {};
+  const n = await prune(env, Date.now());
+  env.DB.prepare = realPrepare; console.log = realLog;
+  check(n === 1 && status("c5c5c5c5c5c5c5c5") === "done/done" && status("c4c4c4c4c4c4c4c4") === "pending/open", "undecidable rows skipped, one failure doesn't stop the rest " + n);
+  check(ids.every((m) => status(m) === "pending/open"), "rows waiting for a report stay pending until the ticket expires");
+  check((await prune(env, Date.now())) === 1 && status("c4c4c4c4c4c4c4c4") === "done/done", "the failed one is rated on the next run");
+  for (const m of ids) age(m, 2 * 3600000);
+  await prune(env, Date.now()); await prune(env, Date.now());
+  check(ids.every((m) => status(m) === "void/void"), "expired rows all decided over the runs (50 a run)");
+}
+// the server's next ticket voids its last one only if that has no result: a late dispute still counts
+{
+  const status = (m) => [db.prepare("SELECT status FROM matches WHERE id = ?").get(m)?.status, db.prepare("SELECT status FROM tickets WHERE id = ?").get(m)?.status].join("/");
+  const p = `${id(25)}:0:0,${id(26)}:1:1`, S = await server();
+  await S.ticket("c6c6c6c6c6c6c6c6", "vanilla", [25, 26]);
+  age("c6c6c6c6c6c6c6c6");
+  await S.result("c6c6c6c6c6c6c6c6", p);
+  await call("/report", { secret: secret(25), match: "c6c6c6c6c6c6c6c6", ladder: "vanilla", p });
+  check((await S.ticket("c7c7c7c7c7c7c7c7", "vanilla", [25, 26])) === "ticket c7c7c7c7c7c7c7c7", "next match's ticket");
+  check(status("c6c6c6c6c6c6c6c6") === "pending/open", "a match with a result isn't voided by the next ticket " + status("c6c6c6c6c6c6c6c6"));
+  check((await call("/report", { secret: secret(26), match: "c6c6c6c6c6c6c6c6", ladder: "vanilla", p, dispute: "1" })) === "disputed", "its late dispute counts");
+  // one without a result (a report came, the server never posted) is void, its pending match row too
+  age("c7c7c7c7c7c7c7c7");
+  await call("/report", { secret: secret(25), match: "c7c7c7c7c7c7c7c7", ladder: "vanilla", p });
+  check((await S.ticket("c8c8c8c8c8c8c8c8", "vanilla", [25, 26])) === "ticket c8c8c8c8c8c8c8c8" && status("c7c7c7c7c7c7c7c7") === "void/void", "no result: the next ticket voids it " + status("c7c7c7c7c7c7c7c7"));
 }
 // ladders are separate: an instagib win doesn't touch vanilla
 {
@@ -230,13 +319,18 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   const run = (n, sp, ticket = "1111111111111111", extra = {}) =>
     S.post("/racerun", { ticket, map: "viaduct", id: id(n), ms: String(sp[sp.length - 1]), splits: sp.join(","), ...extra });
   check((await run(5, splitsFor(2000))) === "no ticket", "no race ticket, no run");
-  check((await S.post("/ticket", { kind: "race", match: "1111111111111111", map: "viaduct", players: id(5) })) === "ticket 1111111111111111", "race ticket");
-  check((await S.post("/ticket", { kind: "race", match: "2222222222222222", map: "viaduct", players: id(6) })) === "ticket 2222222222222222", "second racer ticket");
-  check((await S.post("/ticket", { kind: "race", match: "3333333333333333", map: "temple", players: id(6) })) === "not a ranked race map", "race map only");
+  // a race ticket needs the racer's signature: a server can't put someone who isn't on it on the board (or rename them)
+  check((await S.post("/ticket", { kind: "race", match: "1111111111111111", map: "viaduct", players: id(5) })) === "missing signatures", "unsigned race ticket refused");
+  check((await S.race("1111111111111111", 5, "viaduct", 6)) === "bad signature for " + id(5), "race ticket signed by someone else refused");
+  check((await S.post("/ticket", { kind: "race", match: "1111111111111111", map: "viaduct", players: id(5), keys: key(6).pub, sigs: signTicket(6, "1111111111111111") })) === "bad key for " + id(5), "race ticket key must hash to the racer");
+  check((await S.race("1111111111111111", 5)) === "ticket 1111111111111111", "race ticket");
+  check((await S.race("2222222222222222", 6)) === "ticket 2222222222222222", "second racer ticket");
+  check((await S.race("3333333333333333", 6, "temple")) === "not a ranked race map", "race map only");
   age("1111111111111111", 3600000); age("2222222222222222", 3600000);
   const s40 = splitsFor(2000), s41 = splitsFor(2100), s38 = splitsFor(1800), s39 = splitsFor(1900);
   check((await run(5, s40, "1111111111111111", { name })) === "first time", "first race time");
-  check((await run(5, s41)).startsWith("not faster"), "slower time kept out");
+  check((await run(5, s41, "1111111111111111", { name: Buffer.from("renamed").toString("hex") })).startsWith("not faster"), "slower time kept out");
+  check(db.prepare("SELECT name FROM names WHERE id = ?").get(id(5)).name === "racer", "a run that isn't kept doesn't change the name");
   check((await run(5, s38)) === `new best (was ${s40[11]})`, "faster time replaces");
   check((await run(6, s39, "2222222222222222")) === "first time", "second racer");
   check((await run(6, s38, "1111111111111111")) === "no ticket", "a ticket is for its racer");
@@ -246,7 +340,7 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   check((await run(5, [...s38.slice(0, 11), s38[11]], "1111111111111111", { ms: "99999" })) === "bad splits", "last split must be the time");
   const other = await server();
   check((await other.post("/racerun", { ticket: "1111111111111111", map: "viaduct", id: id(5), ms: String(s38[11]), splits: s38.join(",") })) === "no ticket", "only the ticket's server");
-  await other.post("/ticket", { kind: "race", match: "4444444444444444", map: "viaduct", players: id(7) });
+  await other.race("4444444444444444", 7);
   check((await other.post("/racerun", { ticket: "4444444444444444", map: "viaduct", id: id(7), ms: String(s38[11]), splits: s38.join(",") })) === "bad time", "a run can't be longer than its session");
   const board = (await call("/raceboard?map=viaduct")).split("\n");
   check(board[0] === `${s38[11]} racer` && board[1] === `${s39[11]} player` && board.length === 2, "race board " + JSON.stringify(board));
@@ -308,8 +402,36 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   check(last === "too many servers from this address", "per-address cap " + last);
   check((await call("/list?v=t2")).split("\n").length === 8, "one address can't flood the list");
   let limited = false;
-  for (let i = 0; i < 40 && !limited; i++) limited = (await call("/link", { secret: secret(40 + i) }, "192.0.2.50")) === "rate limited";
+  for (let i = 0; i < 100 && !limited; i++) limited = (await call("/link", { secret: secret(140 + i) }, "192.0.2.50")) === "rate limited";
   check(limited, "writes rate-limited per IP");
+}
+// rate limits with many calls from one address: the Discord bot, and players behind one NAT
+{
+  const hx = (t) => Buffer.from(t).toString("hex");
+  env.BOT_KEY = "botkey";
+  const ip = "192.0.2.60";
+  // two "Queue for all" presses and more (16 POSTs each): the bot has its own bucket
+  const replies = [];
+  for (let i = 0; i < 70; i++) replies.push(await call("/queue", { bot: "botkey", discord: hx("user" + (i % 16)), mode: "vs", action: "leave" }, ip));
+  check(replies.every((r) => r === "left vs"), "the bot's burst isn't rate limited " + replies.filter((r) => r !== "left vs").length);
+  check((await call("/hello", { secret: secret(100) }, ip)) === "id " + id(100), "the bot didn't spend its address's write bucket");
+  // a wrong BOT_KEY gets no bot bucket: the address's own limits apply
+  let limited = false;
+  for (let i = 0; i < 100 && !limited; i++) limited = (await call("/queue", { bot: "nope", discord: hx("x"), mode: "vs", action: "leave" }, "192.0.2.61")) === "rate limited";
+  check(limited, "a wrong bot key is limited like anyone");
+  // 16 players behind one address end a match together: everyone's /hello, /lifetime and /queue go through
+  const nat = "192.0.2.62", out = [];
+  for (let n = 100; n < 116; n++) {
+    out.push(await call("/hello", { secret: secret(n) }, nat));
+    out.push(await call("/lifetime", { secret: secret(n), kills: "1", deaths: "1" }, nat));
+    out.push(await call("/queue", { secret: secret(n), mode: "vs", action: "leave" }, nat));
+  }
+  check(!out.includes("rate limited"), "players sharing an address aren't limited by each other " + out.filter((r) => r === "rate limited").length);
+  // ...but one player hammering is still stopped by the per-id limit, without locking out their neighbours
+  let mine = "";
+  for (let i = 0; i < 12 && mine !== "rate limited"; i++) mine = await call("/queue", { secret: secret(116), mode: "vs", action: "leave" }, nat);
+  check(mine === "rate limited", "per-id limit still holds behind a shared address");
+  check((await call("/queue", { secret: secret(117), mode: "vs", action: "leave" }, nat)) === "left vs", "a neighbour still gets through");
 }
 // pre-1.17 ids move to the key-derived id the first time the secret shows up
 {

@@ -669,6 +669,8 @@ static void testTimeTrial(uint16_t port) {
     s.setLog([](const std::string&) {});
     { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     NetClient a;
+    RankKey rk = rankKeyFromSecret(sha256Hex("time trial racer"));
+    a.setRankKey(rk);
     a.connect("127.0.0.1:" + std::to_string(port), "racer");
     std::vector<NetClient*> cls = {&a};
     // race starts in practice: untimed, never starts by itself; the course works, nothing is timed or sent
@@ -685,6 +687,9 @@ static void testTimeTrial(uint16_t port) {
     a.sendCommand("callvote start");                               // starting it: the race proper
     for (int i = 0; i < 300 && !(a.hasSnapshot() && a.mode().phase == PHASE_LIVE); i++) pump(s, cls, 0.1, idle);
     CHECK(a.hasSnapshot() && a.mode().phase == PHASE_LIVE);
+    // the race ticket goes out only with the racer's signature of its id (the Worker refuses it otherwise)
+    for (int i = 0; i < 30 && !s.raceTicketSent_; i++) pump(s, cls, 0.1, idle);
+    CHECK(s.players_[a.clientId()].rankId == rk.id && s.raceTicketFor_ == rk.id && !s.raceTicket_.empty() && s.raceTicketSent_);
     a.takeEvents();
     std::vector<int> splits;
     for (size_t c = 0; c < cps.size(); c++) {
