@@ -1149,7 +1149,7 @@ void Game::frame(double dt) {
         Vec3 to = look - camPos;
         if (opts_.camSet) r_.setCamera(opts_.camPos, deg2rad(opts_.camYaw), deg2rad(opts_.camPitch), 90);
         else r_.setCamera(camPos, std::atan2(-to.x, -to.z), std::atan2(to.y, std::sqrt(to.x * to.x + to.z * to.z)), 75);
-        if (r_.worldLoaded()) { r_.brightness = cfg_.brightness; r_.drawScene(false); }
+        if (r_.worldLoaded()) { r_.brightness = cfg_.brightness; r_.worldOutline = cfg_.outlineWorld; r_.drawScene(false); }
         else {
             r_.rect(0, 0, (float)r_.width(), (float)r_.height(), {0.05f, 0.06f, 0.08f, 1});
         }
@@ -1268,6 +1268,7 @@ void Game::drawWorld(float alpha) {
         float hs = crouch ? kPlayerCrouchHeight / kPlayerHeight : 1.0f;
         Vec3 col = teamColor(i);
         r_.outlineColor = outlineColor(i);
+        r_.outlineWidth = cfg_.outlinePlayer;
         float sv = sunVisibility(map, pos + Vec3(0, 1.0f * hs * bs, 0));
         bool vis = !firstPerson;
         auto at = [&](float h) { return pos + Vec3(0, h * hs * bs, 0); };
@@ -1400,6 +1401,7 @@ void Game::drawWorld(float alpha) {
     }
 
     r_.outlineColor = {0, 0, 0};
+    r_.outlineWidth = 1.0f;
     // grapple ropes
     if (alive && (net_.predicted().flags & MF_HOOKED)) {
         Vec3 d = angleForward(yaw_, pitch_);
@@ -1747,6 +1749,7 @@ void Game::drawWorld(float alpha) {
     }
     r_.brightness = cfg_.brightness;
     r_.fullbright = cfg_.fullbright;
+    r_.worldOutline = cfg_.outlineWorld;
     r_.drawScene(cfg_.shadows);
 }
 
@@ -3154,7 +3157,7 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     float w = std::max(320 * s, wTotal * 0.5f);
     float x = x0 + wTotal * 0.5f - w - colGap * 0.5f; // two columns centred on the old area
     float xr = x + w + colGap;
-    float ph = 12 * (h + gap) + 150 * s;
+    float ph = 13 * (h + gap) + 150 * s;
     y0 = std::max(24 * s, std::min(y0, (float)r_.height() - ph + 8 * s)); // panel bottom stays on screen
     ui_.panel(x - 16 * s, y0 - 16 * s, w * 2 + colGap + 32 * s, ph);
 
@@ -3227,6 +3230,13 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
         ui_.cycle(x, y, w, h, "TEAM OUTLINE", cfg_.outlineFriendly, kOutlineColors, ot);
         y += h + gap;
         ui_.cycle(x, y, w, h, "ENEMY OUTLINE", cfg_.outlineEnemy, kOutlineColors, oe);
+        y += h + gap;
+        // outline widths (pixels): players' models and the map's edges; 0 = none
+        float hw = (w - gap) * 0.5f;
+        ui_.slider(x, y, hw, h, "PLAYER OUTLINE", cfg_.outlinePlayer, 0, 4, "%.1f");
+        ui_.slider(x + hw + gap, y, hw, h, "WORLD OUTLINE", cfg_.outlineWorld, 0, 4, "%.1f");
+        cfg_.outlinePlayer = std::round(clampf(cfg_.outlinePlayer, 0, 6) * 4) / 4;
+        cfg_.outlineWorld = std::round(clampf(cfg_.outlineWorld, 0, 6) * 4) / 4;
         y += h + gap;
     }
     if (ui_.slider(x, y, w * 0.6f, h, "VOLUME", cfg_.volume, 0, 1, "%.2f")) audio_.setMasterVolume(cfg_.volume);

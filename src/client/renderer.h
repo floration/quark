@@ -9,7 +9,7 @@
 #include "gl.h"
 #include "lightmap.h"
 
-struct DynVertex { float pos[3]; float normal[3]; float color[4]; float edge[4]; float outline[3]; }; // color.a = sun visibility; outline = edge colour (black unless set)
+struct DynVertex { float pos[3]; float normal[3]; float color[4]; float edge[4]; float outline[4]; }; // color.a = sun visibility; outline = edge colour (black unless set) + width (pixels)
 struct FlatVertex { float pos[3]; float color[4]; };
 // 16 bytes: screen pixels, font atlas texel coords (u16 fixed point: (texel + 1) * 32), color (RGBA8), and for text
 // the text scale (integer part + 1/256ths; 0 = plain rect), which sets the distance-field edge and outline width
@@ -72,6 +72,7 @@ public:
     Vec3 glowColor = {1.00f, 0.55f, 0.15f};
     bool fullbright = false;   // VISUALS > FULLBRIGHT: flat white world with black outlines
     float brightness = 1.0f;   // the player's brightness setting (scales the lit scene before tonemapping)
+    float worldOutline = 1.0f; // the baked world's outline width in pixels (settings); 0 = none
 
 private:
     unsigned compile(const char* vs, const char* fs, std::string* err);
@@ -79,6 +80,7 @@ private:
     void emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& half, const Vec3& color, float sunVis);
 public:
     Vec3 outlineColor;   // the edge colour for the boxes drawn while it's set (players' outline setting); black by default
+    float outlineWidth = 1.0f;   // ...and the edge width in pixels (players' / the editor's boxes: settings); 0 = none
 private:
 
     int width_ = 1280, height_ = 720;

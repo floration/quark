@@ -1052,12 +1052,15 @@ void Game::editorFrame(double dt) {
 
     // ---- 3D view
     const Vec3 matColor[6] = {r_.baseColor, r_.accentColor, {0.22f, 0.22f, 0.24f}, r_.metalColor, r_.glowColor, r_.metalColor * 0.7f};
+    r_.worldOutline = cfg_.outlineWorld;   // (the map's boxes, baked or not, take the world outline width)
+    r_.outlineWidth = cfg_.outlineWorld;
     if (!edBaked_)
         for (auto& b : ed_.brushes) { // (water, lava and trim, 6-8, past the table: blue, orange, accent; clip below)
             if (b.material == 9) continue;
             Vec3 c = b.material < 6 ? matColor[b.material] : b.material == 6 ? Vec3(0.2f, 0.4f, 0.8f) : b.material == 7 ? Vec3(1.0f, 0.4f, 0.1f) : r_.accentColor;
             r_.box(b.box.center(), (b.box.mx - b.box.mn) * 0.5f, 0, c, 1.0f, false);
         }
+    r_.outlineWidth = 1.0f;
     for (auto& b : ed_.brushes) // clip: invisible in play (the baked world leaves it out too), see-through violet here so it can be found and edited
         if (b.material == 9) r_.translucentBox(b.box, kClipColor);
     for (auto& sp : ed_.spawns) {

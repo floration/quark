@@ -30,11 +30,14 @@ void main() {
 
 const char* kShadowFn = R"(
 
-float outline(vec4 e) {
+// 1 at a face's middle, 0 on its edges: the outline. w = its width in pixels (settings; 1 = the default look,
+// smoothstep(1, 2)); 0 = no outline.
+float outline(vec4 e, float w) {
+    if (w <= 0.0) return 1.0;
     vec2 d2 = min(e.xy, e.zw - e.xy);
     float d = min(d2.x, d2.y);
     float px = fwidth(d);
-    return smoothstep(1.0, 2.0, d / max(px, 1e-5));
+    return smoothstep(w, w + 1.0, d / max(px, 1e-5));
 }
 uniform sampler2DShadow uShadow;
 uniform int uShadowOn;
@@ -63,6 +66,7 @@ uniform vec3 uBaseL, uAccentL, uWallbangL, uMetalL, uFloorL;
 uniform float uFogDensity;
 uniform float uBright;   // the brightness setting (exposure, before the filmic curve)
 uniform float uFull;     // fullbright: flat white, black outlines, no light or fog
+uniform float uOutlineW; // the world's outline width (pixels; settings)
 out vec4 fragColor;
 float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 vec3 finish(vec3 c) {
@@ -75,7 +79,7 @@ void main() {
     int mat = int(vMat + 0.5);
     if (uFull > 0.5) {
         float g = mat == 2 ? 0.35 : mat == 5 ? 0.6 : mat == 6 ? 0.5 : mat == 7 ? 0.9 : abs(vN.y) > 0.5 ? 0.8 : 0.95;
-        fragColor = vec4(vec3(g) * (mat >= 4 && mat < 8 ? 1.0 : outline(vEdge)), 1.0);
+        fragColor = vec4(vec3(g) * (mat >= 4 && mat < 8 ? 1.0 : outline(vEdge, uOutlineW)), 1.0);
         return;
     }
     if (mat >= 4 && mat < 8) { // glow trim / far scenery / water / lava: unlit, skip everything below
@@ -99,7 +103,7 @@ void main() {
     if (mat == 0 && vN.y > 0.5) albedo = mix(albedo, uFloorL, 0.55); // floors / tops: darker, cooler than walls
     if (an.y < 0.5) albedo *= mix(0.72, 1.0, smoothstep(0.0, 0.6, fract(vPos.y + 1000.0) + step(1.0, vPos.y)));
     vec3 light = uSkyColor * lm.g + uSunColor * lm.r * shadowAt(vShadow);
-    vec3 c = albedo * light * 0.62 * outline(vEdge);
+    vec3 c = albedo * light * 0.62 * outline(vEdge, uOutlineW);
     fragColor = vec4(finish(c), 1.0);
 })";
 
@@ -175,18 +179,18 @@ layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
 layout(location=2) in vec4 aColor;
 layout(location=3) in vec4 aEdge;
-layout(location=4) in vec3 aOutline;
+layout(location=4) in vec4 aOutline; // rgb: the edge colour, a: its width (pixels)
 uniform mat4 uViewProj;
 uniform mat4 uShadowMat;
-out vec3 vPos; out vec3 vN; out vec4 vColor; out vec4 vShadow; out vec4 vEdge; out vec3 vOutline;
+out vec3 vPos; out vec3 vN; out vec4 vColor; out vec4 vShadow; out vec4 vEdge; out vec3 vOutline; flat out float vOutlineW;
 void main() {
-    vPos = aPos; vN = aNormal; vColor = aColor; vEdge = aEdge; vOutline = aOutline;
+    vPos = aPos; vN = aNormal; vColor = aColor; vEdge = aEdge; vOutline = aOutline.rgb; vOutlineW = aOutline.a;
     vShadow = uShadowMat * vec4(aPos + aNormal * 0.03, 1.0);
     gl_Position = uViewProj * vec4(aPos, 1.0);
 })";
 
 const char* kDynFS = R"(
-in vec3 vPos; in vec3 vN; in vec4 vColor; in vec4 vShadow; in vec4 vEdge; in vec3 vOutline;
+in vec3 vPos; in vec3 vN; in vec4 vColor; in vec4 vShadow; in vec4 vEdge; in vec3 vOutline; flat in float vOutlineW;
 uniform vec3 uSunColor, uSkyColor, uSunDir, uFogColor, uCamPos;
 uniform float uFogDensity;
 uniform int uReceiveShadow;
@@ -196,7 +200,7 @@ void main() {
     float sh = uReceiveShadow != 0 ? shadowAt(vShadow) : 1.0;
     float ndl = max(dot(normalize(vN), uSunDir), 0.0);
     vec3 light = uSkyColor * (0.6 + 0.25 * vN.y) + uSunColor * ndl * vColor.a * sh;
-    vec3 c = mix(vOutline, vColor.rgb * (light * 0.7 + 0.3), outline(vEdge)); // partly emissive so team colors stay readable; edges in the outline colour
+    vec3 c = mix(vOutline, vColor.rgb * (light * 0.7 + 0.3), outline(vEdge, vOutlineW)); // partly emissive so team colors stay readable; edges in the outline colour
     float d = length(vPos - uCamPos);
     c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity)) * uBright;
     fragColor = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
@@ -358,7 +362,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)12);
     glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)24);
     glEnableVertexAttribArray(3); glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)40);
-    glEnableVertexAttribArray(4); glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)56);
+    glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)56);   // outline rgb + width
 
     glGenVertexArrays(1, &flatVao_);
     glGenBuffers(1, &flatVbo_);
@@ -540,6 +544,7 @@ void Renderer::addQuad(std::vector<DynVertex>& out, const Vec3* c, const Vec3& n
         v.color[0] = col.x; v.color[1] = col.y; v.color[2] = col.z; v.color[3] = sv;
         v.edge[0] = eu[i]; v.edge[1] = ev[i]; v.edge[2] = w; v.edge[3] = h;
         memcpy(v.outline, &outlineColor.x, 12);
+        v.outline[3] = outlineWidth;
         out.push_back(v);
     }
 }
@@ -733,6 +738,7 @@ void Renderer::drawScene(bool shadows) {
         glUniform1f(U(worldProg_, "uFogDensity"), fog);
         glUniform1f(U(worldProg_, "uBright"), brightness);
         glUniform1f(U(worldProg_, "uFull"), fullbright ? 1.0f : 0.0f);
+        glUniform1f(U(worldProg_, "uOutlineW"), worldOutline);
         glBindTexture(GL_TEXTURE_2D, lightmapTex_);
         glBindVertexArray(worldVao_);
         drawWorldChunks();

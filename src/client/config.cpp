@@ -75,6 +75,8 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "demo_full_rate") demoFullRate = iv != 0;
         else if (k == "outline_friendly") outlineFriendly = iv;
         else if (k == "outline_enemy") outlineEnemy = iv;
+        else if (k == "outline_player_width") outlinePlayer = clampf(fv, 0, 6);
+        else if (k == "outline_world_width") outlineWorld = clampf(fv, 0, 6);
         else if (k == "voice") announcerVoice = iv >= 0 && iv < 7 ? iv : 0;
         else if (k == "announcer") announcer = iv < 0 ? 0 : iv > 2 ? 2 : iv;
         else if (k == "shadowres") shadowRes = std::min(std::max(iv, 256), 8192);   // (a square depth texture: 8192 is 256 MB)
@@ -147,7 +149,7 @@ std::string Settings::toText() const {
       << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height
       << "\nshadows=" << shadows << "\nmsaa=" << msaa << "\nmodel=" << model << "\nsoundpack=" << soundPack << "\nsocd=" << socd << "\nalt_toggle=" << altToggle
       << "\nhud_verbose=" << hudVerbose << "\nhud_widgets=" << hudWidgets << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nhitsounds=" << hitsounds << "\nannouncer=" << announcer << "\nvoice=" << announcerVoice << "\nfullbright=" << fullbright << "\nown_shots=" << ownShots << "\nenemy_shots=" << enemyShots << "\nhealth_bars=" << healthBars << "\nhealth_bars_bottom=" << healthBarsBottom
-      << "\nscope_opacity=" << scopeOpacity << "\nsticky_counter=" << stickyCounter << "\ncrowns=" << crowns << "\ndiscord=" << discordName << "\ndemo_full_rate=" << demoFullRate << "\noutline_friendly=" << outlineFriendly << "\noutline_enemy=" << outlineEnemy
+      << "\nscope_opacity=" << scopeOpacity << "\nsticky_counter=" << stickyCounter << "\ncrowns=" << crowns << "\ndiscord=" << discordName << "\ndemo_full_rate=" << demoFullRate << "\noutline_friendly=" << outlineFriendly << "\noutline_enemy=" << outlineEnemy << "\noutline_player_width=" << outlinePlayer << "\noutline_world_width=" << outlineWorld
       << "\ncolor_friendly=" << colorHex(colorFriendly) << "\ncolor_enemy=" << colorHex(colorEnemy)
       << "\nch_style=" << chStyle << "\nch_length=" << chLength << "\nch_thickness=" << chThickness << "\nch_gap=" << chGap
       << "\nch_outline=" << chOutline << "\nch_team_color=" << chTeamColor << "\nch_color=" << colorHex(chColor)
