@@ -193,6 +193,37 @@ void tickHide(Server& s) {
     }
 }
 
+bool tagMatchOn(const Server& s) { return s.ms_.mode == MODE_TAG && (s.ms_.phase == PHASE_FREEZE || s.ms_.phase == PHASE_LIVE || s.ms_.phase == PHASE_ROUND_END); }
+
+// Tag: out for the rest of the match, remembered by rank id and name (a reconnect doesn't clear it).
+void tagOut(Server& s, int id) {
+    auto& p = s.players_[id];
+    p.out = true;
+    p.it = false;
+    p.alive = false;
+    p.respawnAt = -1;
+    s.tagOut_.push_back({p.rankId, p.name});
+}
+bool tagWasOut(const Server& s, const ServerPlayer& p) {
+    for (auto& o : s.tagOut_) if ((!o.first.empty() && o.first == p.rankId) || o.second == p.name) return true;
+    return false;
+}
+
+// Whoever is "it" is out (time's up, or they left / went to spectate while it): the rest score and the round ends.
+void tagEliminateIt(Server& s, int it, const std::string& why) {
+    std::string name = s.players_[it].name;
+    tagOut(s, it);
+    int left = playersInPlay(s);
+    for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i)) s.players_[i].score += 1; // survived the round
+    if (left <= 1) {
+        int w = -1;
+        for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i)) w = i;
+        enterMatchEnd(s, w >= 0 ? s.players_[w].name + " wins tag" : "nobody left", w);
+        return;
+    }
+    endRoundText(s, name + " was it - " + why + "! " + std::to_string(left) + " left");
+}
+
 void tickTag(Server& s) {
     ModeState& m = s.ms_;
     m.timeLeft = (float)std::max(0.0, s.phaseEnd_ - s.time());
@@ -210,20 +241,7 @@ void tickTag(Server& s) {
         return;
     }
     if (s.time() < s.phaseEnd_) return;
-    auto& p = s.players_[it];                     // time's up: whoever is it is out
-    p.out = true;
-    p.it = false;
-    p.alive = false;
-    p.respawnAt = -1;
-    int left = playersInPlay(s);
-    for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i)) s.players_[i].score += 1; // survived the round
-    if (left <= 1) {
-        int w = -1;
-        for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i)) w = i;
-        enterMatchEnd(s, w >= 0 ? s.players_[w].name + " wins tag" : "nobody left", w);
-        return;
-    }
-    endRoundText(s, p.name + " was it - out! " + std::to_string(left) + " left");
+    tagEliminateIt(s, it, "out");                 // time's up: whoever is it is out
 }
 
 void startRound(Server& s) {
@@ -388,6 +406,7 @@ void startMatch(Server& s) {
     s.completeTime_[0] = s.completeTime_[1] = 0;
     for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; p.dmgDealt = p.objTime = 0; p.shotsFired = p.shotsHit = 0; p.out = false; p.it = false; }
     s.lastIt_ = -1;
+    s.tagOut_.clear();
     for (auto& p : s.players_) p.sought = false;
     s.hideRounds_ = hideRounds(s);
     if (m.mode == MODE_TOURNEY) {
@@ -930,6 +949,8 @@ void rulesReset(Server& s) {
         for (auto& p : s.players_) if (p.connected && m.mode == MODE_TOURNEY) p.team = TEAM_A;
     }
     for (auto& p : s.players_) { p.it = false; p.out = false; p.found = false; } // nothing from the last match carries into warmup
+    s.tagOut_.clear();
+    for (auto& p : s.players_) if (p.waitingToPlay) { p.waitingToPlay = false; if (p.connected && p.team == TEAM_SPECTATOR) p.team = TEAM_A; }   // (joined mid tag match)
     setPhase(s, PHASE_WARMUP, 0);
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = s.players_[i];
@@ -946,6 +967,9 @@ void rulesTick(Server& s) {
     ModeState& m = s.ms_;
     m.weaponMask = s.weaponMask();
     updateCartSolid(s);
+    if (tagMatchOn(s))
+        for (auto& p : s.players_)   // tag: back after being eliminated (reconnected): still out
+            if (p.connected && !p.out && p.team != TEAM_SPECTATOR && tagWasOut(s, p)) { p.out = true; p.it = false; p.alive = false; p.respawnAt = -1; }
     switch (m.phase) {
         case PHASE_WARMUP:
             // Warmup lasts until players vote to start (F4). Play-vs-bots / autostart servers
@@ -1025,9 +1049,22 @@ void rulesOnDeath(Server& s, int victim, int killer) {
 }
 
 void rulesOnLeave(Server& s, int id) {
+    rulesOnSpectate(s, id);   // (tag: leaving is like going to spectate)
     if (s.ms_.mode == MODE_HIDE && !s.players_[id].alive) return;   // (already out: scored when found)
     rulesOnDeath(s, id, -1);
 }
+
+// Tag (REVIEW GAME-1): leaving or going to spectate during a match is elimination. "It" doing it ends the round like
+// time running out (it used to hand "it" to someone else and come back in later, never out).
+void rulesOnSpectate(Server& s, int id) {
+    if (!tagMatchOn(s)) return;
+    auto& p = s.players_[id];
+    if (!p.connected || p.team == TEAM_SPECTATOR || p.out) return;
+    if (p.it && s.ms_.phase != PHASE_ROUND_END) tagEliminateIt(s, id, "out");
+    else tagOut(s, id);
+}
+
+bool rulesTeamLocked(const Server& s) { return tagMatchOn(s); }
 
 float rulesRespawnDelay(const Server& s) {
     if (s.ms_.phase == PHASE_WARMUP) return 1.5f;

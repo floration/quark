@@ -115,6 +115,7 @@ struct ServerPlayer {
     bool it = false;            // hide and seek / tag: the seeker / tagger (has the knife)
     bool found = false;         // hide and seek: found by the seeker this round (falling off doesn't count)
     bool sought = false;        // hide and seek: has had their turn seeking this match
+    bool waitingToPlay = false; // joined during a tag match: spectates it, joins team A when it's over
     Vec3 lastGround;            // where the player last stood (a dropped bomb goes here, not into a pit)
     bool out = false;           // hide and seek: found this round; tag: eliminated for the match
     double itFreezeUntil = 0;    // tag: just got tagged, stands still until then
@@ -219,6 +220,8 @@ public:
     double roundStart_ = 0;
     double lastProgress_ = 0;    // vs: last time damage was dealt
     int lastIt_ = -1;
+    // tag: who has been eliminated this match ({rank id, name}): someone who leaves and comes back is still out
+    std::vector<std::pair<std::string, std::string>> tagOut_;
     std::vector<float>* tickTimes_ = nullptr;
     Snapshot snapScratch_;                     // reused every send (no per-tick allocations)
     std::vector<PlayerSnap> snapPlayers_;

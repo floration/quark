@@ -17,6 +17,13 @@ static bool rulesStart(Server& s, ServerConfig cfg, NetClient* c, int n, std::ve
     CHECK(s.ms_.phase == PHASE_LIVE);
     return s.ms_.phase == PHASE_LIVE;
 }
+// pump() runs for wall-clock (test-clock) time; under load the server's own clock can fall behind it (it skips
+// ahead rather than spiral). This pumps until the SERVER clock has moved on by `seconds` (at most 4x as long).
+template <class F>
+static void pumpServerTime(Server& s, std::vector<NetClient*>& cls, double seconds, F input) {
+    double end = s.time() + seconds;
+    for (int k = 0; k < 400 && s.time() < end; k++) pump(s, cls, std::min(0.05, end - s.time() + 0.001), input);
+}
 static int rulesTeamPlayer(const Server& s, int team) {
     for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && !s.players_[i].isBot && s.players_[i].team == team) return i;
     return -1;
@@ -56,7 +63,7 @@ static void testOvertime(uint16_t port) {
         };
         auto lose = [&](double t) { s.phaseEnd_ = t; };
         // nobody touched it: time's up at 0
-        onIt = false; pump(s, cls, 5.5, in);   // (pump times are game seconds)
+        onIt = false; pumpServerTime(s, cls, 5.5, in);   // (pump times are game seconds)
         CHECK(!(s.ms_.flags & MS_OVERTIME));
         float dist0 = s.ms_.payloadDist;
         // on it when the clock runs out: overtime, which holds while they stay
@@ -68,9 +75,9 @@ static void testOvertime(uint16_t port) {
         if (cs.mode == MODE_NPAYLOAD) s.ms_.payloadDist = dist0;   // (B pushed it back a little)
         // off it: it ends 5 s after the last touch, not before
         onIt = false;
-        pump(s, cls, 2.5, in);
+        pumpServerTime(s, cls, 2.5, in);
         CHECK(s.ms_.phase == PHASE_LIVE && (s.ms_.flags & MS_OVERTIME) && s.ms_.timeLeft < 3.0f);
-        pump(s, cls, 3.0, in);
+        pumpServerTime(s, cls, 3.0, in);
         CHECK(s.ms_.phase != PHASE_LIVE);
         if (cs.mode == MODE_NPAYLOAD) CHECK(s.ms_.phase == PHASE_MATCH_END);
         s.stop();
@@ -100,12 +107,14 @@ static void testOvertime(uint16_t port) {
         int a2 = rulesTeamPlayer(s2, s2.ms_.attackers);
         if (a2 < 0) { g_fail++; s2.stop(); continue; }
         Vec3 cart = s2.map_.cartPoint(s2.ms_.mode, s2.ms_.attackers, s2.ms_.payloadDist) + Vec3(0, 0, 2.5f);
+        Vec3 away = s2.map_.spawns[0].pos;
+        for (auto& sp : s2.map_.spawns) if (length(sp.pos - cart) > length(away - cart)) away = sp.pos;
         pump(s2, cls2, 0.1, [&](int) { s2.players_[a2].move.pos = cart; return UserCmd(); });
-        pump(s2, cls2, 1.0, [&](int) { s2.players_[a2].move.pos = s2.map_.spawns[0].pos; return UserCmd(); });
+        pumpServerTime(s2, cls2, 1.0, [&](int) { s2.players_[a2].move.pos = away; return UserCmd(); });
         s2.phaseEnd_ = s2.time();
-        pump(s2, cls2, 0.2, [&](int) { s2.players_[a2].move.pos = s2.map_.spawns[0].pos; return UserCmd(); });
+        pump(s2, cls2, 0.2, [&](int) { s2.players_[a2].move.pos = away; return UserCmd(); });
         CHECK(s2.ms_.phase == PHASE_LIVE && (s2.ms_.flags & MS_OVERTIME));
-        pump(s2, cls2, 4.0, [&](int) { s2.players_[a2].move.pos = s2.map_.spawns[0].pos; return UserCmd(); });
+        pumpServerTime(s2, cls2, 4.0, [&](int) { s2.players_[a2].move.pos = away; return UserCmd(); });
         CHECK(s2.ms_.phase != PHASE_LIVE);
         s2.stop();
     }
@@ -361,6 +370,61 @@ static void testHideScoring(uint16_t port) {
     s.stop();
 }
 
+// GAME-1: in tag, "it" going to spectate or leaving is eliminated (the round ends as if time ran out); nobody joins a
+// side mid-match; someone eliminated who reconnects is still out.
+static void testTagEscape(uint16_t port) {
+    printf("tag: no escaping elimination\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "hamlet"; cfg.mode = MODE_TAG; cfg.port = port;
+    NetClient c[3];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 3, cls, false)) { s.stop(); return; }
+    s.command("forcestart");
+    pump(s, cls, 0.1, idle);
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+    CHECK(s.ms_.phase == PHASE_LIVE);
+    auto itNow = [&] { for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].it) return i; return -1; };
+    int it = itNow();
+    CHECK(it >= 0);
+    if (it < 0) { s.stop(); return; }
+    int ci = 0; for (int i = 0; i < 3; i++) if (c[i].clientId() == it) ci = i;
+    std::string itName = s.players_[it].name;
+    c[ci].sendCommand("team spec");   // "it" runs to spectator: out, and the others survive the round
+    pump(s, cls, 0.3, idle);
+    printf("  it spectated: out %d, phase %d, others' scores %d %d\n", s.players_[it].out, s.ms_.phase, s.players_[c[(ci + 1) % 3].clientId()].score, s.players_[c[(ci + 2) % 3].clientId()].score);
+    CHECK(s.players_[it].out && s.players_[it].team == TEAM_SPECTATOR && s.ms_.phase == PHASE_ROUND_END);
+    CHECK(s.players_[c[(ci + 1) % 3].clientId()].score >= 1 && s.players_[c[(ci + 2) % 3].clientId()].score >= 1);
+    c[ci].sendCommand("team a");      // no rejoining mid-match
+    pump(s, cls, 0.3, idle);
+    CHECK(s.players_[it].team == TEAM_SPECTATOR);
+    // the eliminated player leaves and comes back: still out (by name; rank id when there is one)
+    c[ci].disconnect();
+    pump(s, cls, 0.3, idle);
+    NetClient again;
+    cls[ci] = &again;
+    again.connect("127.0.0.1:" + std::to_string(cfg.port), itName);
+    pump(s, cls, 0.5, idle);
+    int back = again.clientId();
+    CHECK(back >= 0 && s.players_[back].connected && s.players_[back].team == TEAM_SPECTATOR);   // joins mid-match as a spectator
+    if (back >= 0) {
+        s.players_[back].team = TEAM_A;    // (even if it were put on a side) it stays out
+        pump(s, cls, 0.2, idle);
+        CHECK(s.players_[back].out && !s.players_[back].alive);
+    }
+    // next round: two left. "It" disconnecting ends the match: the other one wins
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+    CHECK(s.ms_.phase == PHASE_LIVE);
+    int it2 = itNow();
+    CHECK(it2 >= 0 && it2 != back);
+    for (int i = 0; i < 3; i++) if (it2 >= 0 && i != ci && c[i].clientId() == it2) c[i].disconnect();
+    pump(s, cls, 0.3, idle);
+    printf("  it left: phase %d\n", s.ms_.phase);
+    CHECK(s.ms_.phase == PHASE_MATCH_END);
+    s.stop();
+}
+
 // "quark_tests rules [name]": all of them, or the one named.
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
@@ -372,6 +436,7 @@ static void testGameRules(const std::string& only) {
         {"grapple", [] { testGrappleNoBrake(); }},
         {"head", [] { testHeadBox(TP(29246)); }},
         {"hide", [] { testHideScoring(TP(29247)); }},
+        {"tag", [] { testTagEscape(TP(29248)); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
 }

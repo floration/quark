@@ -8,6 +8,8 @@ void rulesTick(Server& s);                        // once per server tick
 void rulesForceStart(Server& s);                  // start the match now, even short-handed
 void rulesOnDeath(Server& s, int victim, int killer);
 void rulesOnLeave(Server& s, int id);
+void rulesOnSpectate(Server& s, int id);          // a player is about to switch to spectator
+bool rulesTeamLocked(const Server& s);            // no joining a side now (a tag match is being played)
 float rulesRespawnDelay(const Server& s);         // < 0 means no respawn
 bool rulesCanDamage(const Server& s, int attacker, int victim);
 bool rulesFrozen(const Server& s, int id);         // movement locked (freeze time / planting)

@@ -631,6 +631,7 @@ void Server::sendRules(int id) {
 void Server::autoTeam(int id) {
     ServerPlayer& p = players_[id];
     if (cfg_.mode == MODE_TOURNEY) { p.team = tourney_.running ? TEAM_SPECTATOR : TEAM_A; return; } // joins the next tourney
+    if (rulesTeamLocked(*this)) { p.team = TEAM_SPECTATOR; p.waitingToPlay = true; return; }   // tag: watches this match, plays the next
     if (!modeIsTeamBased(cfg_.mode) || (cfg_.vsBots && !p.isBot)) { p.team = TEAM_A; return; }
     if (cfg_.mode == MODE_DUEL || cfg_.mode == MODE_ARENA) { // duelTeamSize (1v1: 1) humans per side; balance bots make way, anyone else spectates
         int takenA = 0, takenB = 0;
@@ -788,6 +789,11 @@ void Server::handleStringCmd(int id, const std::string& s) {
             GameEvent e; e.type = EV_MESSAGE; e.text = "a tourney is running - you can join the next one"; sendEvent(id, e);
             return;
         }
+        if (rulesTeamLocked(*this) && t != TEAM_SPECTATOR) { // tag: no joining (or rejoining) mid-match
+            GameEvent e; e.type = EV_MESSAGE; e.text = "a tag match is being played - you can join the next one"; sendEvent(id, e);
+            return;
+        }
+        if (t == TEAM_SPECTATOR) rulesOnSpectate(*this, id);   // (tag: that's elimination)
         if (!modeIsTeamBased(cfg_.mode) && t == TEAM_B) t = TEAM_A;
         if ((cfg_.mode == MODE_DUEL || cfg_.mode == MODE_ARENA) && t != TEAM_SPECTATOR && !p.letIn) {
             int n[2] = {0, 0};
