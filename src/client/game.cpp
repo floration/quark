@@ -3268,7 +3268,7 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
         if (cfg_.interpMs > 0) {
             y += h + gap;
             float v = (float)cfg_.interpMs;
-            ui_.slider(xr, y, w, h, "INTERP DELAY (MS)", v, 1, 200, "%.0f");
+            ui_.slider(xr, y, w, h, "INTERP DELAY (MS)", v, 1, (float)kMaxInterpMs, "%.0f");
             cfg_.interpMs = std::max(1, (int)std::lround(v));
         }
         y += h + gap;

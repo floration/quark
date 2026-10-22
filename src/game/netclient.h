@@ -180,6 +180,7 @@ private:
     std::vector<std::string> names_ = std::vector<std::string>(kMaxPlayers);
     uint8_t models_[kMaxPlayers] = {}, packs_[kMaxPlayers] = {};
     float interpFixed_ = -1;
+    int interpSent_ = 0;          // the fixed delay (ms) last reported to the server ("interp"; 0 = adaptive)
     std::vector<std::string> rankIds_ = std::vector<std::string>(kMaxPlayers);
 
     std::deque<std::string> stringCmds_;

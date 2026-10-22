@@ -3794,6 +3794,54 @@ static void testUptimeClock(uint16_t port) {
     s.stop();
 }
 
+// Lag compensation covers the longest fixed interpolation delay a client can set (FINAL_REVIEW 2.5: with interp_ms 200
+// the rewind was capped at ping + ~100 + 30 ms, so a rifle aimed exactly at a moving player, as drawn, hit behind him).
+static void testInterpRewind(uint16_t port) {
+    printf("lag compensation covers a 200 ms interpolation delay\n");
+    for (bool reported : {true, false}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.autoStart = false;   // (warmup: free play, no round reset of the shot counts)
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = (uint16_t)(port + (reported ? 0 : 1));
+        s.setLog([](const std::string&) {});
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+        NetClient a, b;
+        a.setInterpFixed(kMaxInterpMs * 0.001f);
+        a.connect("127.0.0.1:" + std::to_string(cfg.port), "interp200");
+        b.connect("127.0.0.1:" + std::to_string(cfg.port), "mover");
+        std::vector<NetClient*> cls = {&a, &b};
+        pump(s, cls, 2.5, idle);
+        auto& sa = s.players_[a.clientId()];
+        auto& sb = s.players_[b.clientId()];
+        if (!reported) sa.interpMs = 0;   // as before: the server doesn't know (the client already reported it once)
+        // the mover: back and forth across the shooter's view at 10 m/s, 15 m away in the open courtyard
+        auto moverAt = [](double t) { double ph = std::fmod(t, 1.0); return Vec3(-5, 0, 19 + 2.5f * (float)(ph < 0.5 ? ph * 4 - 1 : 3 - ph * 4)); };
+        Vec3 shooterPos(10, 0, 19);
+        auto input = [&](int i, bool fire) {
+            sa.move.pos = shooterPos; sa.move.vel = {};
+            sb.move.pos = moverAt(s.time()); sb.move.vel = {}; sb.health = 100;
+            UserCmd c;
+            c.weapon = WPN_RIFLE;
+            if (i != 0) return c;
+            NetClient::PlayerArray ps = a.interpolatedPlayers();   // where the shooter sees the mover
+            const InterpPlayer& ip = ps[b.clientId()];
+            if (!ip.valid) return c;
+            Vec3 d = normalize(ip.snap.pos + Vec3(0, 1.0f, 0) - (shooterPos + Vec3(0, kEyeHeight, 0)));
+            c.pitch = std::asin(d.y); c.yaw = std::atan2(-d.x, -d.z);
+            if (fire) c.buttons = BTN_FIRE;
+            return c;
+        };
+        pump(s, cls, 0.6, [&](int i) { return input(i, false); });
+        int fired0 = sa.shotsFired, hit0 = sa.shotsHit;
+        if (reported) CHECK(sa.interpMs == kMaxInterpMs);
+        pump(s, cls, 2.5, [&](int i) { return input(i, true); });
+        int fired = sa.shotsFired - fired0, hit = sa.shotsHit - hit0;
+        printf("  interp 200 %s: %d of %d rifle shots hit a player moving at 10 m/s\n", reported ? "reported" : "unknown to the server", hit, fired);
+        if (reported) CHECK(fired >= 8 && hit * 10 >= fired * 8);
+        s.stop();
+    }
+}
+
 static void testNetcode(uint16_t port) {
     printf("netcode: delta snapshots, visibility\n");
     Server s;
@@ -4361,7 +4409,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(29604)); testMapNames(TP(29605)); testDemo(TP(29603)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(TP(29960)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(TP(29950)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "net") { testUptimeClock(TP(29902)); testNetcode(TP(29900)); testInputBacklog(TP(29901)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "net") { testInterpRewind(TP(29903)); testUptimeClock(TP(29902)); testNetcode(TP(29900)); testInputBacklog(TP(29901)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = TP(29800); testArenaAndTourney(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "bots") { uint16_t p = TP(28900); testBots(p); return g_fail ? 1 : 0; }
@@ -4395,7 +4443,7 @@ int main(int argc, char** argv) {
         {"rules", [] { testGameRules(""); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
-        {"netcode", [] { testUptimeClock(TP(28702)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
+        {"netcode", [] { testInterpRewind(TP(28703)); testUptimeClock(TP(28702)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
         {"tickrate", [] { testTickRateFallback(TP(28710)); testRateBetweenRounds(TP(28711)); testRateUndoStepUp(TP(28712)); }},
         {"resetmaps", [] { testResetMaps(); }},
         {"userdata", [] { testUserData(); }},

@@ -142,6 +142,7 @@ struct ServerPlayer {
     uint32_t cmdsRun = 0;       // commands simulated (nobody gets more than real time: see the tests)
     uint8_t reportedLoss = 0;   // % of snapshots the client says it missed
     uint32_t lastViewTick = 0;
+    uint16_t interpMs = 0;        // the fixed interpolation delay the client reported ("interp"; 0 = adaptive)
     double lastRecv = 0;
     float ping = 0;
     uint16_t lastStringCmd = 0;

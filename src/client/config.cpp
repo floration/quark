@@ -44,7 +44,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "brightness") brightness = clampf(fv, 0.6f, 1.8f);
         else if (k == "vsync") presentMode = iv != 0 ? 1 : 0; // old setting
         else if (k == "display_mode") displayMode = std::min(std::max(iv, 0), 2);
-        else if (k == "interp_ms") interpMs = std::min(std::max(iv, -1), 200);
+        else if (k == "interp_ms") interpMs = std::min(std::max(iv, -1), kMaxInterpMs);
         else if (k == "present_mode") presentMode = std::min(std::max(iv, 0), 2);
         else if (k == "low_latency") lowLatency = std::min(std::max(iv, 0), 2);
         else if (k == "maxfps") maxFps = iv;

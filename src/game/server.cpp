@@ -1105,6 +1105,8 @@ void Server::handleStringCmd(int id, const std::string& s) {
         }
     } else if (cmd == "vote") {
         castVote(id, rest == "yes" || rest == "y" || rest == "1");
+    } else if (cmd == "interp") {   // the client's fixed interpolation delay in ms (0 = adaptive): the rewind cap covers it
+        p.interpMs = (uint16_t)std::min(std::max(std::atoi(rest.c_str()), 0), kMaxInterpMs);
     } else if (cmd == "kill") {
         if (p.alive) killPlayer(id, -1, 255);
     } else if (isAdmin(id)) {
@@ -1789,8 +1791,11 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
     for (bool& h : headHit_) h = false;
     uint32_t vt = cmd.viewTick; // ms on the server clock
     if (vt > timeMs_) vt = timeMs_;
-    {   // rewind at most the measured ping + the most interpolation a client uses + a little jitter
+    {   // rewind at most the measured ping + the interpolation this client uses + a little jitter: the adaptive delay's
+        // most (two snapshots + 50 ms), or the fixed delay it reported ("interp", up to kMaxInterpMs: FINAL_REVIEW 2.5,
+        // a 200 ms setting was clamped short and its hitscan missed movers)
         uint32_t interp = std::max<uint32_t>(2000u / (uint32_t)std::max(1, tickRate() / snapEvery()) + 50u, 100u);
+        interp = std::max<uint32_t>(interp, std::min<uint32_t>(p.interpMs, (uint32_t)kMaxInterpMs));
         uint32_t cap = std::min<uint32_t>(kMaxRewindMs, (uint32_t)p.ping + interp + kRewindToleranceMs);
         if (timeMs_ - vt > cap) vt = timeMs_ - cap;
     }

@@ -54,6 +54,7 @@ bool NetClient::connect(const std::string& address, const std::string& name) {
     events_.clear();
     stringCmds_.clear();
     stringSeq_ = stringAcked_ = 0;
+    interpSent_ = 0;
     mapReady_ = false;
     dl_ = Download();
     for (auto& n : names_) n.clear();
@@ -415,6 +416,9 @@ void NetClient::tick(UserCmd cmd) {
     cmd.seq = nextSeq_++;
     cmd.msec = (uint8_t)(1000 / tickRate());
     cmd.viewTick = (uint32_t)std::max(0.0, renderTime_ * 1000.0); // server ms we're looking at
+    // a fixed interpolation delay goes to the server, whose lag compensation then rewinds that far (FINAL_REVIEW 2.5)
+    int interpMs = interpFixed_ >= 0 ? std::min((int)std::lround(interpFixed_ * 1000.0f), kMaxInterpMs) : 0;
+    if (interpMs != interpSent_) { interpSent_ = interpMs; sendCommand("interp " + std::to_string(interpMs)); }
     cmds_[cmd.seq % kCmdRing] = cmd;
     predPrev_ = pred_;
     if (selfAlive()) pmove(pred_, cmd, map_);
