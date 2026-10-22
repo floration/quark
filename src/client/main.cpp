@@ -8,10 +8,39 @@
 #include "game.h"
 #include "gl.h"
 #include "../launcher/selfupdate.h"
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <shellapi.h>
+#include <filesystem>
+#include <vector>
+#endif
 
 static Game* g_game = nullptr;
 
 int main(int argc, char** argv) {
+#ifdef _WIN32
+    // argv is in the ANSI code page on Windows: take the command line as UTF-16 and keep UTF-8 strings, like every
+    // other path in the game (a demo / map / data dir under a non-ASCII folder), and argv[0] = this exe's real path
+    // (setExecutableDir finds the shipped data next to it; the install sits under the user's own folder) (COR-5)
+    static std::vector<std::string> u8args;
+    static std::vector<char*> u8argv;
+    if (int wn = 0; LPWSTR* w = CommandLineToArgvW(GetCommandLineW(), &wn)) {
+        for (int i = 0; i < wn; i++) u8args.push_back(std::filesystem::path(w[i]).u8string());
+        LocalFree(w);
+        static wchar_t exe[32768];
+        DWORD n = GetModuleFileNameW(nullptr, exe, 32768);
+        if (n > 0 && n < 32768 && !u8args.empty()) u8args[0] = std::filesystem::path(std::wstring(exe, n)).u8string();
+        for (auto& a : u8args) u8argv.push_back(&a[0]);
+        u8argv.push_back(nullptr);
+        if (!u8args.empty()) { argc = (int)u8args.size(); argv = u8argv.data(); }
+    }
+#endif
     setExecutableDir(argv[0]);
     LaunchOptions opts;
     for (int i = 1; i < argc; i++) {

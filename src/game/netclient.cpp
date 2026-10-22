@@ -1,4 +1,5 @@
 #include "netclient.h"
+#include "../common/u8file.h"
 #include <algorithm>
 #include <cctype>
 #include "master.h"
@@ -277,7 +278,7 @@ bool NetClient::useMap(const std::string& name, uint32_t crc) {
     if (!validMapName(name)) return false; // just a name, never a path
     Map m;
     if (!(m.load(name) && m.crc == crc)) {
-        std::ifstream f(downloadedMapPath(name, crc), std::ios::binary);
+        std::ifstream f(utf8Path(downloadedMapPath(name, crc)), std::ios::binary);
         std::stringstream ss;
         ss << f.rdbuf();
         if (!f || !m.parse(ss.str()) || m.crc != crc) return false;
@@ -641,7 +642,7 @@ static constexpr uint64_t kMaxDemoBytes = 512ull << 20; // (about 9 h of play; p
 bool NetClient::startRecording(const std::string& path, bool fullRate) {
     stopRecording();
     if (!hasSnapshot() || !mapReady_) return false;
-    rec_ = fopen(path.c_str(), "wb");
+    rec_ = u8fopen(path, "wb");
     if (!rec_) return false;
     uint32_t magic = kDemoMagic; uint16_t ver = kProtocolVersion;
     fwrite(&magic, 4, 1, rec_); fwrite(&ver, 2, 1, rec_);
@@ -701,7 +702,7 @@ void NetClient::recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& 
 
 bool NetClient::startPlayback(const std::string& path, std::string& err) {
     disconnect();
-    std::ifstream f(path, std::ios::binary | std::ios::ate);
+    std::ifstream f(utf8Path(path), std::ios::binary | std::ios::ate);
     if (f && (uint64_t)f.tellg() > kMaxDemoBytes) { err = "demo too big"; return false; }
     f.seekg(0);
     std::stringstream ss;

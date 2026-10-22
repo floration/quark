@@ -1,4 +1,5 @@
 #include "ranked.h"
+#include "../common/u8file.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -84,7 +85,7 @@ std::vector<int> seededBracket(const std::vector<int>& bestFirst) {
 RankKey loadOrCreateRankKey(const std::string& path) {
     std::string secret;
     {
-        std::ifstream f(path);
+        std::ifstream f(utf8Path(path));
         std::string s;
         if (f >> s && isHex(s, 64)) secret = s;
     }

@@ -1,4 +1,5 @@
 #include "lightmap.h"
+#include "../common/u8file.h"
 #include <filesystem>
 #include <unordered_map>
 #include <algorithm>
@@ -61,7 +62,7 @@ void basis(const Vec3& n, Vec3& t, Vec3& b) {
 std::string cachePath(const Map& m) { return userDataPath("cache") + "/" + safeMapName(m.name) + ".qlm"; }
 
 bool loadCache(const Map& m, BakedWorld& out) {
-    std::ifstream f(cachePath(m), std::ios::binary);
+    std::ifstream f(utf8Path(cachePath(m)), std::ios::binary);
     if (!f) return false;
     uint32_t hdr[5];
     f.read((char*)hdr, sizeof hdr);
@@ -75,7 +76,7 @@ bool loadCache(const Map& m, BakedWorld& out) {
 void saveCache(const Map& m, const BakedWorld& w) {
     std::error_code ec;
     std::filesystem::create_directories(userDataPath("cache"), ec);
-    std::ofstream f(cachePath(m), std::ios::binary);
+    std::ofstream f(utf8Path(cachePath(m)), std::ios::binary);
     if (!f) return;
     uint32_t hdr[5] = {kCacheMagic, kBakeVersion, m.crc, (uint32_t)w.atlasW, (uint32_t)w.atlasH};
     f.write((const char*)hdr, sizeof hdr);

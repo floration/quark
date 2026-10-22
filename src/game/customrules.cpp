@@ -1,4 +1,5 @@
 #include <cmath>
+#include "../common/u8file.h"
 #include "customrules.h"
 #include <algorithm>
 #include <cmath>
@@ -134,7 +135,7 @@ std::vector<std::string> listCustomModes() {
 }
 
 bool loadCustomMode(const std::string& name, CustomRules& out) {
-    std::ifstream f(customModesDir() + "/" + safeName(name) + ".qmode");
+    std::ifstream f(utf8Path(customModesDir() + "/" + safeName(name) + ".qmode"));
     if (!f) return false;
     std::stringstream ss; ss << f.rdbuf();
     return out.fromText(ss.str());

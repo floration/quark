@@ -1,4 +1,5 @@
 #include "official_map_data.h"
+#include "../common/u8file.h"
 #include "map.h"
 #include "gamedefs.h"
 #include <cctype>
@@ -22,8 +23,8 @@ static std::string g_exeDir;
 
 void setExecutableDir(const char* argv0) {
     std::error_code ec;
-    fs::path p = fs::absolute(fs::path(argv0), ec);
-    g_exeDir = p.parent_path().string();
+    fs::path p = fs::absolute(utf8Path(argv0), ec);   // (argv0: UTF-8, see main)
+    g_exeDir = p.parent_path().u8string();
 }
 
 const std::string& executableDir() { return g_exeDir; }
@@ -50,7 +51,7 @@ static std::once_flag g_userOnce;
 void setUserDataDir(const std::string& dir, bool migrate) { g_userDir = dir; g_userMigrate = migrate; }
 
 static std::string defaultUserDir() {
-    auto env = [](const char* n) -> std::string { const char* v = getenv(n); return v && *v ? v : ""; };
+    auto env = [](const char* n) -> std::string { return u8getenv(n); };   // (UTF-8: %APPDATA% under a non-ASCII user name)
 #if defined(_WIN32)
     std::string base = env("APPDATA");
     if (!base.empty()) return base + "/quark";
@@ -122,8 +123,8 @@ int migrateUserData(const std::string& oldRoot, const std::string& newRoot) {
 std::string userDataPath(const std::string& rel) {
     std::call_once(g_userOnce, [] {
         if (g_userDir.empty()) {
-            const char* e = getenv("QUARK_DATA_DIR");
-            if (e && *e) { g_userDir = e; g_userMigrate = false; }
+            std::string e = u8getenv("QUARK_DATA_DIR");
+            if (!e.empty()) { g_userDir = e; g_userMigrate = false; }
             else g_userDir = defaultUserDir();
         }
         std::error_code ec;
@@ -150,7 +151,7 @@ int resetOfficialMaps(const std::string& shippedDir) {
         fs::remove(cache + "/" + m->name + ".qlm", ec);
         std::string path = dir + "/" + m->name + ".qmap";
         if (noCR(readAll(path)) != noCR(std::string((const char*)m->data, m->size))) { // install may be read-only: write only if needed
-            std::ofstream f(path, std::ios::binary | std::ios::trunc);
+            std::ofstream f(utf8Path(path), std::ios::binary | std::ios::trunc);
             if (!f.write((const char*)m->data, (std::streamsize)m->size)) continue;
         }
         n++;
@@ -230,7 +231,7 @@ bool writeFileAtomic(const std::string& path, const std::string& data, bool priv
     std::error_code ec;
     std::string tmp = path + ".tmp";
     {
-        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+        std::ofstream f(utf8Path(tmp), std::ios::binary | std::ios::trunc);
         if (!f) return false;
         if (privateFile) fs::permissions(tmp, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace, ec);
         f.write(data.data(), (std::streamsize)data.size());
@@ -287,7 +288,7 @@ bool Map::load(const std::string& requested, std::string* err) {
     std::string mapName = currentMapName(requested);
     if (!validMapName(mapName)) { if (err) *err = "bad map name: " + mapName; return false; }
     std::string path = mapFilePath(mapName);
-    std::ifstream f(path, std::ios::binary);
+    std::ifstream f(utf8Path(path), std::ios::binary);
     if (!f) { if (err) *err = "map not found: " + path; return false; }
     std::stringstream ss;
     ss << f.rdbuf();

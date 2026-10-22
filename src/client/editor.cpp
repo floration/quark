@@ -8,6 +8,7 @@
 // a custom group's parts) is one string of '\n'-separated ops, sent one by one, undone as one.
 // Groups (rooms, stairs, your own) save to / load from groups/ next to demos/ as "quark-group 1" text.
 #include "game.h"
+#include "../common/u8file.h"
 #include "openurl.h"
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -163,7 +164,7 @@ std::string writeGroupFile(const std::string& text) {
     for (int n = 1; n < 10000; n++) {
         std::string path = groupDir() + "/group-" + stamp + "-" + std::to_string(n) + ".txt";
         if (std::filesystem::exists(path, ec)) continue;
-        std::ofstream f(path, std::ios::binary);
+        std::ofstream f(utf8Path(path), std::ios::binary);
         if (!(f << text)) return "";
         return path;
     }
@@ -171,7 +172,7 @@ std::string writeGroupFile(const std::string& text) {
 }
 
 std::string readFile(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
+    std::ifstream f(utf8Path(path), std::ios::binary);
     std::stringstream ss;
     ss << f.rdbuf();
     return ss.str();

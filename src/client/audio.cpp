@@ -1,4 +1,5 @@
 #include "audio.h"
+#include "../common/u8file.h"
 #include "voice_data.h"
 #include "voice_recorded.h"
 #include "sfx_recorded.h"
@@ -461,7 +462,7 @@ static_assert(sizeof(kModSoundNames) / sizeof(kModSoundNames[0]) == SND_VOICE_TH
 static const char* kModKitDirs[] = {"default", "heavy_metal", "magical", "retro", "mouth"};
 
 static bool readWav(const std::string& path, std::vector<float>& out, int& rate) {
-    FILE* f = fopen(path.c_str(), "rb");
+    FILE* f = u8fopen(path, "rb");
     if (!f) return false;
     std::vector<uint8_t> d;
     uint8_t buf[65536]; size_t n;

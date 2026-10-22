@@ -1,4 +1,5 @@
 #include "renderer.h"
+#include "../common/u8file.h"
 #include <unordered_map>
 #include "../common/profile.h"
 #include "../common/net.h"
@@ -994,7 +995,7 @@ bool Renderer::screenshot(const std::string& path) {
     chunk(out, "IHDR", ihdr);
     chunk(out, "IDAT", z);
     chunk(out, "IEND", {});
-    std::ofstream f(path, std::ios::binary);
+    std::ofstream f(utf8Path(path), std::ios::binary);
     f.write((const char*)out.data(), out.size());
     return (bool)f;
 }

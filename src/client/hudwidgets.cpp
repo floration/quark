@@ -1,4 +1,5 @@
 #include "hudwidgets.h"
+#include "../common/u8file.h"
 #include <sys/stat.h>
 #include "../game/map.h"   // (writeFileAtomic)
 #include <algorithm>
@@ -54,7 +55,7 @@ void HudWidgets::poll(const std::string& path) {
     long long mt = stat(path.c_str(), &st) == 0 ? (long long)st.st_mtime * 1000003LL + (long long)st.st_size : -2; // time + size: edits within a second still count
     if (mt == mtime_) return;
     mtime_ = mt;
-    std::ifstream f(path);
+    std::ifstream f(utf8Path(path));
     std::stringstream ss;
     ss << f.rdbuf();
     fromText(ss.str());

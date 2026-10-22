@@ -1,4 +1,5 @@
 #include "config.h"
+#include "../common/u8file.h"
 #include "../game/gamedefs.h"
 #include <cmath>
 #include <cstdio>
@@ -22,7 +23,7 @@ static std::string colorHex(const Vec3& c) {
 }
 
 void Settings::load() {
-    std::ifstream f(cfgPath());
+    std::ifstream f(utf8Path(cfgPath()));
     std::string line;
     while (std::getline(f, line)) {
         size_t eq = line.find('=');

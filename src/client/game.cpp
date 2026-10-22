@@ -1,4 +1,5 @@
 #include <fstream>
+#include "../common/u8file.h"
 #include "../common/rng.h"
 #include <filesystem>
 #include <ctime>
@@ -2781,7 +2782,7 @@ static std::string fmtRace(int ms) {
 void Game::loadRaceRuns() {
     raceRunsLoaded_ = true;
     raceRuns_.clear();
-    std::ifstream f(raceLogPath());
+    std::ifstream f(utf8Path(raceLogPath()));
     std::string line;
     while (std::getline(f, line)) {
         std::istringstream ls(line);
@@ -2830,7 +2831,7 @@ void Game::onRaceSplit(int cp, int ms) {
     run.map = map; run.ms = ms; run.trial = trial; run.splits = raceSplits_;
     raceSplits_.clear();
     {   // every finished run is kept locally, for the stats page
-        std::ofstream f(raceLogPath(), std::ios::app);
+        std::ofstream f(utf8Path(raceLogPath()), std::ios::app);
         f << run.when << " " << run.map << " " << run.ms << " " << (run.trial ? 1 : 0) << " ";
         for (size_t i = 0; i < run.splits.size(); i++) f << (i ? "," : "") << run.splits[i];
         f << "\n";

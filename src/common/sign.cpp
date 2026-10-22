@@ -1,4 +1,5 @@
 #include "sign.h"
+#include "u8file.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -67,7 +68,7 @@ bool expand(const std::string& privHex, uint8_t sk[64], uint8_t pk[32]) {
 }
 
 bool hashFile(const std::string& path, uint8_t hash[64], std::string* err) {
-    FILE* f = fopen(path.c_str(), "rb");
+    FILE* f = u8fopen(path, "rb");
     if (!f) { if (err) *err = "cannot open " + path; return false; }
     crypto_sha512_ctx ctx;
     crypto_sha512_init(&ctx);
