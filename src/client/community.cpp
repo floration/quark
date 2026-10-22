@@ -17,7 +17,12 @@ std::string toHex(const std::string& t) {
 }
 std::string fromHex(const std::string& h) {
     std::string out;
-    for (size_t i = 0; i + 1 < h.size(); i += 2) out += (char)std::stoi(h.substr(i, 2), nullptr, 16);
+    auto nib = [](char c) { return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1; };
+    for (size_t i = 0; i + 1 < h.size(); i += 2) { // (a Worker reply: never throw on junk, just stop)
+        int a = nib(h[i]), b = nib(h[i + 1]);
+        if (a < 0 || b < 0) break;
+        out += (char)(a * 16 + b);
+    }
     return out;
 }
 } // namespace

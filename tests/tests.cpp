@@ -2367,6 +2367,46 @@ static void playtestMaps(uint16_t port, double seconds) {
     }
 }
 
+// Maps and rules arrive from untrusted servers: junk must be refused (or clamped), never crash or blow up memory.
+static void testHostileInput() {
+    printf("hostile input\n");
+    const std::string base = "box -10 -1 -10 10 0 10\nspawn any 0 0 0\n";
+    { Map m; std::string err; CHECK(!m.parse(base + "box 0 0 0 400000 1 400000\n", &err) && !err.empty()); }
+    { Map m; CHECK(!m.parse(base + "box 0 0 0 nan 1 1\n")); }
+    { Map m; CHECK(!m.parse(base + "box 0 0 0 inf 1 1\n")); }
+    { Map m; CHECK(!m.parse("box -10 -1 -10 10 0 10\nspawn any nan 0 0\n")); }
+    { Map m; CHECK(!m.parse(base + "light 0 2 0 1e30 1\n")); }
+    { Map m; CHECK(!m.parse(base + "path 0 0 1e9\n")); }
+    { Map m; CHECK(!m.parse(base + "sun nan 1 0\n")); }
+    { // too many brushes
+        std::string t = base;
+        for (int i = 0; i < 60001; i++) t += "box 0 0 0 1 1 1\n";
+        Map m; std::string err; CHECK(!m.parse(t, &err) && m.brushes.empty());
+    }
+    { // ladders: capped in count (each would also generate rails and rungs)
+        std::string t = base;
+        for (int i = 0; i < 300; i++) t += "ladder 0 0 0 1 60 0.5 auto\n";
+        Map m; CHECK(!m.parse(t));
+    }
+    { // too dense for the collision grid: 1000 boxes covering the whole 8 km map
+        std::string t = base;
+        for (int i = 0; i < 1000; i++) t += "box -4096 0 -4096 4096 1 4096\n";
+        Map m; std::string err; CHECK(!m.parse(t, &err));
+    }
+    { Map m; CHECK(m.parse(base) && m.brushes.size() == 1); } // a sane map still parses after all that
+    // map names: a stem, never a path
+    CHECK(isValidMapName("temple") && isValidMapName("my-map_2"));
+    CHECK(!isValidMapName("") && !isValidMapName("../x") && !isValidMapName("a/b") && !isValidMapName("a\\b") && !isValidMapName("c:x")
+          && !isValidMapName("a.b") && !isValidMapName(std::string(41, 'a')) && !isValidMapName(std::string("a\0b", 3)));
+    CHECK(safeMapName("../../etc/x") == "______etc_x" && safeMapName("") == "map" && safeMapName("temple") == "temple");
+    CHECK(downloadedMapPath("../../x", 1).find("..") == std::string::npos);
+    // custom rules: NaN / inf keep the default, out of range is clamped
+    CustomRules def, r;
+    r.fromText("custommode=x\ngravity=nan\nspeed=inf\njump=-inf\nknockback=99\nweapon=0,nan,nan,nan\n");
+    CHECK(r.gravity == def.gravity && r.moveSpeed == def.moveSpeed && r.jump == def.jump && r.knockback == 5);
+    CHECK(r.fireRate[0] == def.fireRate[0] && r.damage[0] == def.damage[0] && r.projSpeed[0] == def.projSpeed[0]);
+}
+
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
     netInit();
@@ -2386,6 +2426,7 @@ int main(int argc, char** argv) {
         serverBench(29301, 24, 8, argc > 2 ? atof(argv[2]) : 15, "hamlet");
         return 0;
     }
+    if (argc >= 2 && std::string(argv[1]) == "hostile") { testHostileInput(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "ladders") { testLadders(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "stairs") { testStairs(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "points") { setTimeScale(kTestTimeScale); testPoints(29995); return g_fail ? 1 : 0; }
@@ -2424,7 +2465,7 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testMovement(); testTickRateIndependence(); testGridQueries(); testEditorLadder(); testEditorGroups(); }},
+        {"movement", [] { testHostileInput(); testMovement(); testTickRateIndependence(); testGridQueries(); testEditorLadder(); testEditorGroups(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", 28560); testSession(MODE_BOMB, "bastion", 28561); testSession(MODE_KOTH, "bastion", 28562); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", 28563); testSession(MODE_FFA, "bastion", 28564); testSession(MODE_RACE, "foundry", 28565); }},
         {"modes", [] { testCustomMode(28570); testPoints(28571); testSyringe(28572); testCartChecks(28573); testItModes(28574); }},

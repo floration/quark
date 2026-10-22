@@ -25,6 +25,12 @@ struct SpawnPoint {
     int team = SPAWN_ANY;
 };
 
+// Hard limits on a map (from disk, a server download or an edit): keep in step with applyMapEdit.
+constexpr float kMapMaxCoord = 4096.0f;          // |coordinate| of anything placed
+constexpr size_t kMapMaxBrushes = 60000;          // authored brushes
+constexpr size_t kMapMaxTotalBrushes = 65535;     // with ladder rails / group parts: cellBrushes indexes are uint16_t
+constexpr size_t kMapMaxGridRefs = 16u << 20;     // brush references in the collision grid
+
 struct Map {
     std::string name;
     std::string title;
@@ -71,7 +77,8 @@ struct Map {
 
     bool load(const std::string& name, std::string* err = nullptr);
     bool onLadder(const AABB& player) const { for (auto& l : ladders) if (player.overlaps(l)) return true; return false; }
-    bool parse(const std::string& text, std::string* err = nullptr);
+    bool parse(const std::string& text, std::string* err = nullptr); // never throws; a bad map just fails
+    bool parseText(const std::string& text, std::string* err);
     std::string serialize() const;    // back to .qmap text (what the editor saves)
     void rebuild();                   // after editing brushes in place: bounds, wallbang flag, grid
 
@@ -97,7 +104,7 @@ struct Map {
     float gridX0 = 0, gridZ0 = 0;
     std::vector<uint32_t> cellStart;   // gridW*gridH+1 offsets into cellBrushes
     std::vector<uint16_t> cellBrushes;
-    void buildGrid();
+    bool buildGrid(); // false (and an empty grid) if the map would need too many cell references
     template <class F> void forBox(const AABB& b, F f) const; // calls f(brush) for brushes in overlapped cells (may repeat)
 
     // Moving solids that aren't part of the static geometry (the payload cart). Collision and
@@ -132,6 +139,9 @@ std::vector<std::string> listMaps();
 int resetOfficialMaps();
 std::string mapsFolder(); // absolute path of the maps folder
 // Maps fetched from servers live apart from your own, keyed by content: maps/downloads/<name>-<crc>.qmap
+// A map name is a file stem, never a path: [A-Za-z0-9_-]{1,40} (40 = what the editor lets you save).
+bool isValidMapName(const std::string& name);
+std::string safeMapName(const std::string& name); // for building file names: anything else becomes '_', capped
 std::string downloadedMapPath(const std::string& name, uint32_t crc);
 bool saveMapFile(const std::string& path, const std::string& text);
 uint32_t crc32(const void* data, size_t len);

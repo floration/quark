@@ -3643,7 +3643,7 @@ void Game::startRecording() {
     time_t t = time(nullptr);
     char stamp[32];
     strftime(stamp, sizeof stamp, "%Y-%m-%d_%H-%M-%S", localtime(&t));
-    std::string path = demoDir() + "/" + net_.map().name + "_" + modeName(net_.mode().mode) + "_" + stamp + ".qdemo";
+    std::string path = demoDir() + "/" + safeMapName(net_.map().name) + "_" + modeName(net_.mode().mode) + "_" + stamp + ".qdemo";
     if (net_.startRecording(path, cfg_.demoFullRate)) notify(cfg_.demoFullRate ? "RECORDING DEMO (FULL RATE) - ESC > STOP RECORDING" : "RECORDING DEMO (62.5 HZ) - ESC > STOP RECORDING", 3);
     else notify("COULDN'T START RECORDING", 3);
 }

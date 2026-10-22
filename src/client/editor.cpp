@@ -712,9 +712,7 @@ Vec3 Game::edMouseRay() const {
 }
 
 bool Game::edSaveCopy(const Map& m, const std::string& name) {
-    bool okName = !name.empty() && name.size() <= 40;
-    for (char c : name) okName &= (bool)(isalnum((unsigned char)c) || c == '_' || c == '-');
-    if (!okName) { edNotify("name: letters, digits, - and _ only"); return false; }
+    if (!isValidMapName(name)) { edNotify("name: letters, digits, - and _ only"); return false; }
     std::string text = m.serialize();
     Map check;
     std::string err;

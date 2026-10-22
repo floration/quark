@@ -1,4 +1,5 @@
 #include "lightmap.h"
+#include <unordered_map>
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
@@ -56,7 +57,7 @@ void basis(const Vec3& n, Vec3& t, Vec3& b) {
     b = cross(n, t);
 }
 
-std::string cachePath(const Map& m) { return findDataPath("maps") + "/" + m.name + ".qlm"; }
+std::string cachePath(const Map& m) { return findDataPath("maps") + "/" + safeMapName(m.name) + ".qlm"; }
 
 bool loadCache(const Map& m, BakedWorld& out) {
     std::ifstream f(cachePath(m), std::ios::binary);
@@ -116,15 +117,50 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
     // 1b. Outline edges: an edge shared flush with another face of the same material in the same plane is
     // not a real edge (a wall built from several boxes reads as one wall), so its outline is turned off.
     // edgeOff[f] bit 0: u0 edge, 1: u1, 2: v0, 3: v1.
+    // Both passes below only compare faces on the same side of the same plane, near each other: bucket faces by
+    // (axis, sign, material, plane in mm, 8 m cell of the plane) so each lookup sees a handful of faces, not all
+    // of them (this was O(faces^2): minutes on a big map). Planes match within 1e-4, so the plane slot either
+    // side is checked too; huge faces (more than 32x32 cells) go in one list per plane instead of every cell.
+    const float kBucket = 8.0f;
+    auto cellOf = [&](float x) { return (int)std::floor(std::max(-8192.0f, std::min(8192.0f, x)) / kBucket); };
+    auto planeOf = [](float p) { return (int64_t)std::floor((double)p * 1000.0); };
+    auto key = [](int axis, int sign, int material, int64_t plane, int cu, int cv) {
+        uint64_t k = (uint64_t)axis | (uint64_t)(sign > 0) << 2 | (uint64_t)(material & 15) << 3;
+        k = k * 0x9E3779B97F4A7C15ull ^ (uint64_t)plane;
+        k = k * 0x9E3779B97F4A7C15ull ^ (uint64_t)(uint32_t)cu;
+        k = k * 0x9E3779B97F4A7C15ull ^ (uint64_t)(uint32_t)cv;
+        return k;
+    };
+    const int kBig = 1 << 20; // cell coordinate of the per-plane "huge faces" list
+    std::unordered_map<uint64_t, std::vector<uint32_t>> buckets;
+    buckets.reserve(faces.size() * 2);
+    for (size_t i = 0; i < faces.size(); i++) {
+        const Face& f = faces[i];
+        int cu0 = cellOf(f.u0), cu1 = cellOf(f.u1), cv0 = cellOf(f.v0), cv1 = cellOf(f.v1);
+        int64_t pl = planeOf(f.plane);
+        if ((int64_t)(cu1 - cu0 + 1) * (cv1 - cv0 + 1) > 32 * 32) { buckets[key(f.axis, f.sign, f.material, pl, kBig, kBig)].push_back((uint32_t)i); continue; }
+        for (int cv = cv0; cv <= cv1; cv++)
+            for (int cu = cu0; cu <= cu1; cu++) buckets[key(f.axis, f.sign, f.material, pl, cu, cv)].push_back((uint32_t)i);
+    }
+    // calls fn(k) for faces that might share f's plane with this material near cell (cu, cv); fn returns true to stop
+    auto near = [&](const Face& f, int material, int cu, int cv, auto fn) {
+        int64_t pl = planeOf(f.plane);
+        for (int64_t p = pl - 1; p <= pl + 1; p++)
+            for (int big = 0; big < 2; big++) {
+                auto it = buckets.find(big ? key(f.axis, f.sign, material, p, kBig, kBig) : key(f.axis, f.sign, material, p, cu, cv));
+                if (it == buckets.end()) continue;
+                for (uint32_t k : it->second) if (fn(k)) return true;
+            }
+        return false;
+    };
     std::vector<uint8_t> edgeOff(faces.size(), 0);
     auto covered = [&](size_t self, float u, float v) {
         const Face& f = faces[self];
-        for (size_t k = 0; k < faces.size(); k++) {
+        return near(f, f.material, cellOf(u), cellOf(v), [&](uint32_t k) {
             const Face& o = faces[k];
-            if (k == self || o.axis != f.axis || o.sign != f.sign || o.material != f.material || std::fabs(o.plane - f.plane) > 1e-4f) continue;
-            if (u > o.u0 && u < o.u1 && v > o.v0 && v < o.v1) return true;
-        }
-        return false;
+            if (k == self || o.axis != f.axis || o.sign != f.sign || o.material != f.material || std::fabs(o.plane - f.plane) > 1e-4f) return false;
+            return u > o.u0 && u < o.u1 && v > o.v0 && v < o.v1;
+        });
     };
     for (size_t i = 0; i < faces.size(); i++) {
         const Face& f = faces[i];
@@ -147,11 +183,22 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
     for (size_t i = 0; i < faces.size(); i++) {
         const Face& f = faces[i];
         if (f.material == 0) continue;
-        for (size_t k = 0; k < faces.size() && !needLift[i]; k++) {
+        auto overlaps = [&](uint32_t k) {
             const Face& o = faces[k];
-            if (o.material >= f.material || o.axis != f.axis || o.sign != f.sign || std::fabs(o.plane - f.plane) > 1e-4f) continue;
-            needLift[i] = f.u0 < o.u1 && o.u0 < f.u1 && f.v0 < o.v1 && o.v0 < f.v1;
+            if (o.material >= f.material || o.axis != f.axis || o.sign != f.sign || std::fabs(o.plane - f.plane) > 1e-4f) return false;
+            return f.u0 < o.u1 && o.u0 < f.u1 && f.v0 < o.v1 && o.v0 < f.v1;
+        };
+        int cu0 = cellOf(f.u0), cu1 = cellOf(f.u1), cv0 = cellOf(f.v0), cv1 = cellOf(f.v1);
+        bool hit = false;
+        for (int mat = 0; mat < f.material && !hit; mat++) {
+            if ((int64_t)(cu1 - cu0 + 1) * (cv1 - cv0 + 1) > 32 * 32) { // a huge face: just scan everything on its plane
+                for (size_t k = 0; k < faces.size() && !hit; k++) hit = overlaps((uint32_t)k);
+                break;
+            }
+            for (int cv = cv0; cv <= cv1 && !hit; cv++)
+                for (int cu = cu0; cu <= cu1 && !hit; cu++) hit = near(f, mat, cu, cv, overlaps);
         }
+        needLift[i] = hit;
     }
     // 2. Choose texel density so the atlas fits in 2048x2048.
     float area = 0;
