@@ -29,6 +29,7 @@ bool NetClient::connect(const std::string& address, const std::string& name) {
     addrStr_ = address;
     name_ = name;
     nonce_ = randomNonce();
+    cookie_ = 0;
     state_ = ConnState::Connecting;
     connectStart_ = timeNow();
     lastSend_ = -1e9;
@@ -91,6 +92,7 @@ void NetClient::poll() {
             writeHeader(w, PKT_CONNECT);
             w.u16(kProtocolVersion);
             w.u32(nonce_);
+            w.u32(cookie_);
             w.str(name_);
             sock_.send(server_, out, w.size());
             lastSend_ = now;
@@ -182,6 +184,14 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
                 }
                 if (last != map_.crc) startDownload(map_.name, last);
             }
+            break;
+        }
+        case PKT_CHALLENGE: { // echo the server's cookie: proves we receive at our address
+            if (r.u32() != nonce_) return;
+            uint32_t c = r.u32();
+            if (r.bad() || state_ != ConnState::Connecting || c == cookie_) return;
+            cookie_ = c;
+            lastSend_ = -1e9; // send the CONNECT with the cookie right away (next poll)
             break;
         }
         case PKT_REJECT:
@@ -506,12 +516,12 @@ void ServerBrowser::refresh() {
         netStatus_ = ok ? std::to_string(list.size()) + " INTERNET SERVER(S) LISTED" : "INTERNET LIST: " + err;
         for (auto& c : netStatus_) c = (char)toupper((unsigned char)c);
     });
-    uint8_t buf[16];
+    uint8_t buf[kInfoRequestBytes] = {}; // padded: servers don't answer a request smaller than the reply
     Writer w(buf, sizeof buf);
     writeHeader(w, PKT_INFO_REQUEST);
     for (uint16_t p = kDefaultPort; p < kDefaultPort + 10; p++) {
-        sock_.send(NetAddr::broadcast(p), buf, w.size());
-        sock_.send(NetAddr{0x7F000001u, p}, buf, w.size());
+        sock_.send(NetAddr::broadcast(p), buf, sizeof buf);
+        sock_.send(NetAddr{0x7F000001u, p}, buf, sizeof buf);
     }
     sentAt_ = timeNow();
 }
@@ -520,10 +530,10 @@ void ServerBrowser::query(const std::string& address) {
     if (!sock_.isOpen()) sock_.open(0, true);
     NetAddr a;
     if (!NetAddr::parse(address, kDefaultPort, a)) return;
-    uint8_t buf[16];
+    uint8_t buf[kInfoRequestBytes] = {};
     Writer w(buf, sizeof buf);
     writeHeader(w, PKT_INFO_REQUEST);
-    sock_.send(a, buf, w.size());
+    sock_.send(a, buf, sizeof buf);
     sentAt_ = timeNow();
 }
 

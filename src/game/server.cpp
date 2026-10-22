@@ -3,6 +3,8 @@
 // EV_PLAYERINFO's b byte: model in the low 4 bits, sound pack in the high 4
 static uint8_t looksByte(const ServerPlayer& p) { return (uint8_t)((p.model & 15) | ((p.soundPack & 15) << 4)); }
 #include "ranked.h"
+#include "../common/sha256.h"
+#include <cstring>
 #include <random>
 #include "../common/profile.h"
 #include "gamemodes.h"
@@ -16,7 +18,8 @@ static uint8_t looksByte(const ServerPlayer& p) { return (uint8_t)((p.model & 15
 namespace {
 constexpr double kTimeout = 10.0;
 constexpr int kMaxQueuedCmds = 12;
-constexpr uint32_t kMaxRewindMs = 500; // lag compensation window
+constexpr uint32_t kMaxRewindMs = 500; // lag compensation window (hard ceiling)
+constexpr uint32_t kRewindToleranceMs = 30; // over ping + interpolation (ping smoothing, jitter)
 constexpr float kMaxCmdTokensMs = 40.0f; // burst allowance after network jitter
 // Tick-rate test during warmup: each window must stay clean or the rate steps down.
 constexpr double kRateWindow = 3.0;
@@ -26,6 +29,13 @@ const float kKnifeRange = weaponDef(WPN_KNIFE).range; // the knife's reach (also
 constexpr float kRocketLife = 5.0f;
 
 bool isLoopback(const NetAddr& a) { return (a.ip >> 24) == 127; }
+constexpr double kCookieBucket = 10.0;     // connect cookies are good for 10-20 s
+constexpr float kMapReqPerSec = 400.0f;    // PKT_MAP_REQUEST chunks per second per player (a download asks ~128/s)
+constexpr float kMapReqBurst = 64.0f;
+constexpr size_t kMaxVoteListItems = 8;    // callvote tmaps / tmodes
+constexpr size_t kMaxUnackedEvents = 256;
+// Same printable filter as names: no control / escape sequences reach the console, logs or other clients.
+void printableOnly(std::string& s) { for (auto& c : s) if ((unsigned char)c < 32 || (unsigned char)c > 126) c = '?'; }
 }
 
 bool g_serverRateCheck = true;
@@ -53,6 +63,11 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
         if (!arenaVariantRanked(cfg_.arenaVariant)) cfg_.arenaVariant = 0;
         cfg_.mode = rankedMode(cfg_.arenaVariant);
     }
+    {   // the connect-challenge secret
+        std::random_device rd;
+        for (int i = 0; i < 16; i += 4) { uint32_t v = rd(); memcpy(cookieKey_ + i, &v, 4); }
+    }
+    mapList_ = listMaps();
     std::string e;
     if (!map_.load(cfg_.map, &e)) { if (err) *err = e; return false; }
     if (cfg_.editMode && !map_.supportsMode(cfg_.mode)) // an edit session runs whatever the map can't play yet
@@ -255,10 +270,11 @@ void Server::handlePacket(const NetAddr& from, const uint8_t* data, int len) {
     if (r.u32() != kProtocolMagic) return;
     uint8_t type = r.u8();
     if (type == PKT_INFO_REQUEST) {
-        uint8_t out[512];
+        if (len < kInfoRequestBytes) return; // unpadded: a reply bigger than the request would make us a reflector
+        uint8_t out[kInfoRequestBytes];
         Writer w(out, sizeof out);
         writeHeader(w, PKT_INFO_REPLY);
-        w.str(listName()); w.str(cfg_.map); w.u8((uint8_t)cfg_.mode);
+        w.str(listName().substr(0, kInfoNameMax)); w.str(cfg_.map.substr(0, kInfoMapMax)); w.u8((uint8_t)cfg_.mode);
         w.u8((uint8_t)playerCount()); w.u8((uint8_t)cfg_.maxPlayers); w.u16(port());
         sock_.send(from, out, w.size());
         return;
@@ -274,6 +290,12 @@ void Server::handlePacket(const NetAddr& from, const uint8_t* data, int len) {
         uint32_t crc = r.u32(), off = r.u32();
         (void)crc; // always serve the current map: in an edit session it may have changed since the client asked
         if (r.bad() || off >= map_.source.size()) return;
+        ServerPlayer& mp = players_[id];   // rate limit (token bucket)
+        double now = timeNow();
+        mp.mapTokens = std::min(kMapReqBurst, mp.mapTokens + (float)(now - mp.mapTokensAt) * kMapReqPerSec);
+        mp.mapTokensAt = now;
+        if (mp.mapTokens < 1.0f) return;
+        mp.mapTokens -= 1.0f;
         uint8_t out[kMaxPacket];
         Writer w(out, sizeof out);
         writeHeader(w, PKT_MAP_DATA);
@@ -292,11 +314,49 @@ static void sendAccept(UdpSocket& sock, const NetAddr& to, uint32_t nonce, int i
     sock.send(to, out, w.size());
 }
 
+// Stateless connect challenge (like Quake 3's getchallenge): a keyed hash of the sender's address, its
+// nonce and a time bucket. A spoofed CONNECT only ever gets this 13 byte reply, sent to the spoofed address;
+// nothing is allocated and nothing bigger goes out until the sender echoes the cookie it received.
+uint32_t Server::challengeCookie(const NetAddr& a, uint32_t nonce, int64_t bucket) const {
+    char msg[40];
+    memcpy(msg, cookieKey_, 16);
+    memcpy(msg + 16, &a.ip, 4); memcpy(msg + 20, &a.port, 2); memcpy(msg + 22, &nonce, 4); memcpy(msg + 26, &bucket, 8);
+    memcpy(msg + 34, cookieKey_, 6);
+    uint32_t c = (uint32_t)strtoul(sha256Hex(std::string(msg, sizeof msg)).substr(0, 8).c_str(), nullptr, 16);
+    return c ? c : 1;
+}
+
+bool Server::isAdmin(int id) const {
+    const ServerPlayer& p = players_[id];
+    uint32_t host = hostNonce_.load(std::memory_order_relaxed);
+    return p.admin || (host != 0 && p.nonce == host && isLoopback(p.addr));
+}
+
 void Server::handleConnect(const NetAddr& from, Reader& r) {
     uint16_t version = r.u16();
     uint32_t nonce = r.u32();
+    if (r.bad()) return;
+    if (version != kProtocolVersion) {   // (old clients: no cookie field; a short reject, no state)
+        uint8_t out[64];
+        Writer w(out, sizeof out);
+        writeHeader(w, PKT_REJECT);
+        w.str("version mismatch (server " + std::to_string(kProtocolVersion) + ")");
+        sock_.send(from, out, w.size());
+        return;
+    }
+    uint32_t cookie = r.u32();
     std::string name = r.str();
     if (r.bad()) return;
+    int64_t bucket = (int64_t)(timeNow() / kCookieBucket);
+    if (cookie == 0 || (cookie != challengeCookie(from, nonce, bucket) && cookie != challengeCookie(from, nonce, bucket - 1))) {
+        uint8_t out[16];
+        Writer w(out, sizeof out);
+        writeHeader(w, PKT_CHALLENGE);
+        w.u32(nonce); w.u32(challengeCookie(from, nonce, bucket));
+        sock_.send(from, out, w.size());
+        return;
+    }
+    // From here on the sender has proven it receives at `from`.
     auto reject = [&](const std::string& why) {
         uint8_t out[300];
         Writer w(out, sizeof out);
@@ -304,11 +364,10 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
         w.str(why);
         sock_.send(from, out, w.size());
     };
-    if (version != kProtocolVersion) { reject("version mismatch (server " + std::to_string(kProtocolVersion) + ")"); return; }
     int existing = findPlayer(from);
     if (existing >= 0) {
         if (players_[existing].nonce == nonce) { sendAccept(sock_, from, nonce, existing, map_, cfg_.mode); return; }
-        dropPlayer(existing, "reconnecting", false);
+        dropPlayer(existing, "reconnecting", false); // (a new session that passed the cookie check: it owns the address)
     }
     if (playerCount() >= cfg_.maxPlayers) {
         for (int i = kMaxPlayers - 1; i >= 0; i--)
@@ -319,7 +378,6 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
     for (int i = 0; i < kMaxPlayers; i++) if (!players_[i].connected) { id = i; break; }
     if (id < 0) { reject("server is full"); return; }
 
-    for (auto& c : name) if ((unsigned char)c < 32 || (unsigned char)c > 126) c = '?';
     name = uniqueName(name, -1);
 
     ServerPlayer& p = players_[id];
@@ -330,7 +388,7 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
     p.addr = from;
     p.nonce = nonce;
     p.name = name;
-    p.admin = isLoopback(from);
+    p.admin = false;   // admin: the in-process host (isAdmin) or "login <password>"
     p.lastRecv = timeNow();
     for (auto& h : p.history) h.tick = 0xFFFFFFFFu;
     autoTeam(id);
@@ -489,6 +547,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
     } else if (cmd == "say") {
         if (rest.empty()) return;
         if (rest.size() > 120) rest.resize(120);
+        printableOnly(rest);
         GameEvent e; e.type = EV_CHAT; e.a = (uint8_t)id; e.text = rest;
         broadcastEvent(e);
         log(p.name + ": " + rest);
@@ -558,6 +617,10 @@ void Server::handleStringCmd(int id, const std::string& s) {
         GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.text = p.name;
         broadcastEvent(e);
     } else if (cmd == "callvote") {
+        if (vote_.kind == VOTE_NONE && time() < p.voteAt) {
+            GameEvent e; e.type = EV_MESSAGE; e.text = "wait a few seconds before calling another vote"; sendEvent(id, e);
+            return;
+        }
         std::istringstream vs(rest);
         std::string what, arg;
         vs >> what >> arg;
@@ -594,10 +657,16 @@ void Server::handleStringCmd(int id, const std::string& s) {
             bool ok = !arg.empty();
             std::istringstream ls(arg);
             std::string it;
-            while (std::getline(ls, it, ',')) {
+            std::vector<std::string> items;
+            while (ok && std::getline(ls, it, ',')) {
+                items.push_back(it);
+                if (items.size() > kMaxVoteListItems) ok = false;
+                else if (what == "tmaps" ? std::find(mapList_.begin(), mapList_.end(), it) == mapList_.end()
+                                         : arenaVariantFromName(it.c_str()) < 0) ok = false;
+            }
+            for (size_t k = 0; ok && what == "tmaps" && k < items.size(); k++) { // (known names only: at most 8 loads)
                 Map m;
-                if (what == "tmaps" ? (it.find_first_of("/\\.") != std::string::npos || !m.load(it) || !m.supportsMode(MODE_TOURNEY))
-                                    : arenaVariantFromName(it.c_str()) < 0) ok = false;
+                if (!m.load(items[k]) || !m.supportsMode(MODE_TOURNEY)) ok = false;
             }
             if (!ok) { GameEvent e; e.type = EV_MESSAGE; e.text = "can't vote for that list"; sendEvent(id, e); }
             else callVote(id, what == "tmaps" ? VOTE_TMAPS : VOTE_TMODES, 0, arg);
@@ -616,7 +685,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
             else if (cfg_.custom.active() && !cfg_.custom.maps.empty() && std::find(cfg_.custom.maps.begin(), cfg_.custom.maps.end(), mapName) == cfg_.custom.maps.end())
                 why = mapName + " isn't in this custom mode's map pool";
             else if (cfg_.custom.active() && mode != cfg_.custom.baseMode) why = "this server plays the custom mode " + cfg_.custom.name;
-            else if (mapName.find_first_of("/\\.") != std::string::npos || !m.load(mapName)) why = "this server doesn't have the map '" + mapName + "' (it may be on an older version)";
+            else if (std::find(mapList_.begin(), mapList_.end(), mapName) == mapList_.end() || !m.load(mapName)) why = "this server doesn't have the map '" + mapName + "' (it may be on an older version)";
 
             bool ok = why.empty();
             if (ok && cfg_.ranked && (!arenaVariantRanked(variant) || mode != rankedMode(variant) || !isRankedMap(m, variant))) {
@@ -630,7 +699,15 @@ void Server::handleStringCmd(int id, const std::string& s) {
         castVote(id, rest == "yes" || rest == "y" || rest == "1");
     } else if (cmd == "kill") {
         if (p.alive) killPlayer(id, -1, 255);
-    } else if (p.admin) {
+    } else if (cmd == "login") { // login <admin password> (dedicated servers started with --admin-password)
+        if (cfg_.adminPassword.empty() || time() < p.loginAt) return;
+        p.loginAt = time() + 2.0f;
+        unsigned diff = rest.size() != cfg_.adminPassword.size();
+        for (size_t k = 0; k < rest.size(); k++) diff |= (unsigned char)rest[k] ^ (unsigned char)cfg_.adminPassword[k % cfg_.adminPassword.size()];
+        GameEvent e; e.type = EV_MESSAGE; e.text = diff ? "wrong admin password" : "you are admin";
+        if (!diff) { p.admin = true; log(p.name + " logged in as admin"); }
+        sendEvent(id, e);
+    } else if (isAdmin(id)) {
         command(s, id);
     }
 }
@@ -742,7 +819,12 @@ void Server::broadcastEvent(const GameEvent& e) {
 void Server::sendEvent(int id, const GameEvent& e) {
     ServerPlayer& p = players_[id];
     if (p.isBot) return;
-    if (p.events.size() > 256) p.events.pop_front(); // client is hopelessly behind
+    if (p.events.size() >= kMaxUnackedEvents) { // hopelessly behind: dropping one would desync it for good
+        if (!p.connected) return;
+        p.events.clear();
+        dropPlayer(id, "too many unacknowledged reliable messages (connection too lossy)", true);
+        return;
+    }
     GameEvent c = e;
     c.id = p.nextEventId++;
     p.events.push_back(c);
@@ -1246,7 +1328,11 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
     for (bool& h : headHit_) h = false;
     uint32_t vt = cmd.viewTick; // ms on the server clock
     if (vt > timeMs_) vt = timeMs_;
-    if (timeMs_ - vt > kMaxRewindMs) vt = timeMs_ - kMaxRewindMs;
+    {   // rewind at most the measured ping + the most interpolation a client uses + a little jitter
+        uint32_t interp = std::max<uint32_t>(2000u / (uint32_t)std::max(1, tickRate() / snapEvery()) + 50u, 100u);
+        uint32_t cap = std::min<uint32_t>(kMaxRewindMs, (uint32_t)p.ping + interp + kRewindToleranceMs);
+        if (timeMs_ - vt > cap) vt = timeMs_ - cap;
+    }
     float range = p.weapon == WPN_KNIFE ? kKnifeRange : wd.range;
     // Pellets add up per target so one shotgun blast is one hit (one damage event) per player.
     float dmgPer[kMaxPlayers] = {};
@@ -1603,6 +1689,7 @@ void Server::callVote(int caller, int kind, int arg, const std::string& map, int
         return;
     }
     vote_ = Vote();
+    vote_.caller = caller;
     vote_.kind = kind;
     vote_.arg = arg;
     vote_.map = map;
@@ -1722,7 +1809,10 @@ void Server::tickVote() {
         updateBalanceBots();
         return;
     }
-    if (fail) { message("vote failed: " + vote_.text); vote_ = Vote(); return; }
+    if (fail) {
+        if (vote_.caller >= 0) players_[vote_.caller].voteAt = time() + voteCooldown_; // no vote spam
+        message("vote failed: " + vote_.text); vote_ = Vote(); return;
+    }
     ms_.voteActive = 1;
     ms_.voteYes = (uint8_t)y;
     ms_.voteNo = (uint8_t)n;

@@ -28,6 +28,7 @@ DISCORD_INVITE = "https://discord.gg/RERYWNWSXg"
 PROTOCOL_MAGIC = 0x51524B31   # "QRK1", gamedefs.h kProtocolMagic
 PKT_INFO_REQUEST = 4           # protocol.h: PKT_CONNECT=1, INPUT, DISCONNECT, INFO_REQUEST
 PKT_INFO_REPLY = 67            # protocol.h: PKT_ACCEPT=64, REJECT, SNAPSHOT, INFO_REPLY
+INFO_REQUEST_BYTES = 160       # protocol.h kInfoRequestBytes
 
 # gamedefs.h modeName / modeTitle (index = GameModeId)
 MODE_NAMES = ["vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "1v1", "tourney", "hide", "tag", "points"]
@@ -44,7 +45,8 @@ def mode_title(m: int) -> str:
 
 # ---------------------------------------------------------------- UDP server query
 def build_info_request() -> bytes:
-    return struct.pack("<IB", PROTOCOL_MAGIC, PKT_INFO_REQUEST)
+    # padded to INFO_REQUEST_BYTES (protocol.h kInfoRequestBytes): servers ignore smaller requests
+    return struct.pack("<IB", PROTOCOL_MAGIC, PKT_INFO_REQUEST).ljust(INFO_REQUEST_BYTES, b"\0")
 
 
 @dataclass
