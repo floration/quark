@@ -1710,6 +1710,23 @@ static void testMapDownload(uint16_t port) {
     s.stop();
 }
 
+// The Worker's /filled rows, as the game reads them (REVIEW COR-1: a Discord member "d:<name>:<hex>:<hex>"
+// was split at the first ':' and its raw name hex-decoded with a throwing stoi, crashing every queued client).
+static void testFilledParse() {
+    FilledRow row;
+    CHECK(parseFilledRow("7 ranked-vanilla 1700000000 8c722bbbb3748b9da426cedf20c3e396:7261636572:-,d:dima:64696d61:64696d61", row));
+    CHECK(row.n == 7 && row.mode == "ranked-vanilla" && row.created == 1700000000 && row.members.size() == 2);
+    if (row.members.size() == 2) {
+        CHECK(row.members[0].who == "8c722bbbb3748b9da426cedf20c3e396" && row.members[0].name == "racer" && row.members[0].discord.empty());
+        CHECK(row.members[1].who == "d:dima" && row.members[1].name == "dima" && row.members[1].discord == "dima");
+    }
+    CHECK(parseFilledRow("8 vs 1 d:a:b:zz:x1,d:two words:6869:-", row) && row.members.size() == 2);   // garbage hex, a spaced name
+    if (row.members.size() == 2) CHECK(row.members[0].who == "d:a:b" && row.members[0].name.empty() && row.members[1].who == "d:two words" && row.members[1].name == "hi");
+    CHECK(fromHexText("6869") == "hi" && fromHexText("686") == "" && fromHexText("6g") == "" && fromHexText("-") == "" && fromHexText("0a41") == "A");
+    CHECK(parseFilledMembers("a,a:b,:6869:,").size() == 0);
+    CHECK(!parseFilledRow("x vs 1 a:b:c", row) && !parseFilledRow("9 vs 1", row));
+}
+
 // Ranked: ids from keys, the server's result event, and the report each player's game builds from it
 // (the Worker side is tested by tools/master/test.mjs).
 static void testRanked(uint16_t port) {
@@ -2408,7 +2425,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(29980); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(29450); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = 29500; testBotAim(p); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "ranked") { testRanked(29610); testRankedVoteAndRestart(29620); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(29610); testRankedVoteAndRestart(29620); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(29600); testEditSession(29601); testVotedEdit(29602); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
     if (argc >= 2 && std::string(argv[1]) == "demo") { testDemo(29603); return g_fail ? 1 : 0; }
@@ -2441,7 +2458,7 @@ int main(int argc, char** argv) {
         {"race", [] { testTimeTrial(28580); testPayloadPush(28581); testPacketLoss(28582); testCartDash(28583); testSemiAuto(28584); }},
         {"votes", [] { testRejoin(28590); testMapVote(28591); }},
         {"edit", [] { testMapDownload(28600); testEditSession(28601); testVotedEdit(28602); testDemo(28603); }},
-        {"ranked", [] { testRanked(28610); testRankedVoteAndRestart(28620); testInternetList(28625); }},
+        {"ranked", [] { testFilledParse(); testRanked(28610); testRankedVoteAndRestart(28620); testInternetList(28625); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
         {"netcode", [] { testNetcode(28700); }},

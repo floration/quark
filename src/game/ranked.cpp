@@ -55,6 +55,43 @@ RankKey loadOrCreateRankKey(const std::string& path) {
     return k;
 }
 
+std::string fromHexText(const std::string& h) {
+    auto nib = [](char c) { return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1; };
+    if (h.size() % 2) return "";
+    std::string out;
+    for (size_t i = 0; i < h.size(); i += 2) {
+        int a = nib(h[i]), b = nib(h[i + 1]);
+        if (a < 0 || b < 0) return "";
+        char c = (char)(a << 4 | b);
+        if (c >= 32 && c < 127) out += c;
+    }
+    return out;
+}
+
+std::vector<FilledMember> parseFilledMembers(const std::string& members) {
+    std::vector<FilledMember> out;
+    std::istringstream ms(members);
+    std::string m;
+    while (std::getline(ms, m, ',')) {
+        size_t b = m.rfind(':');   // split the two hex fields off the right: who may be "d:<name>"
+        if (b == std::string::npos || b == 0) continue;
+        size_t a = m.rfind(':', b - 1);
+        if (a == std::string::npos || a == 0) continue;
+        out.push_back({m.substr(0, a), fromHexText(m.substr(a + 1, b - a - 1)), fromHexText(m.substr(b + 1))});
+    }
+    return out;
+}
+
+bool parseFilledRow(const std::string& line, FilledRow& out) {
+    std::istringstream ls(line);
+    std::string members;
+    if (!(ls >> out.n >> out.mode >> out.created)) return false;
+    std::getline(ls >> std::ws, members);   // (the rest of the line: a Discord name may hold a space)
+    while (!members.empty() && (members.back() == '\r' || members.back() == ' ')) members.pop_back();
+    out.members = parseFilledMembers(members);
+    return !members.empty();
+}
+
 static std::string hexName(const std::string& name) {
     std::string h;
     for (char c : name.substr(0, 20)) if (c >= 32 && c < 127) { char b[3]; snprintf(b, sizeof b, "%02x", (unsigned char)c); h += b; }
