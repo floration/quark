@@ -114,6 +114,7 @@ struct ServerPlayer {
     int soundPack = 0;      // cosmetic: the sound pack others hear this player with
     bool it = false;            // hide and seek / tag: the seeker / tagger (has the knife)
     bool found = false;         // hide and seek: found by the seeker this round (falling off doesn't count)
+    bool sought = false;        // hide and seek: has had their turn seeking this match
     Vec3 lastGround;            // where the player last stood (a dropped bomb goes here, not into a pit)
     bool out = false;           // hide and seek: found this round; tag: eliminated for the match
     double itFreezeUntil = 0;    // tag: just got tagged, stands still until then
@@ -229,7 +230,7 @@ public:
         // round up (500 Hz at a 333 cap -> every 2nd tick, not every tick), but 1000 / 333 = 3.003 stays 3
         return std::max(1, (int)std::ceil((float)tickRate() / std::max(1, rate) - 0.02f));
     } // benchmarks: every tick's simulate + send time goes here
-    int hideRounds_ = 0;        // hide and seek: rounds this match (fixed at the start: everyone seeks once)
+    int hideRounds_ = 0;        // hide and seek: rounds so far planned (everyone in play seeks once: grows if someone joins)
     uint32_t nextJoinId_ = 1;           // hide and seek: the last seeker (everyone takes a turn)
     float drainAccum_ = 0;
     uint32_t duelUsed_ = 0;      // duel: modifiers already played this match (bit per modifier), never repeated

@@ -312,6 +312,49 @@ static void testHeadBox(uint16_t port) {
     s.stop();
 }
 
+// 5.6: hide and seek. Everyone seeks once (rounds = players, not clamp(players, 3, 6) in slot order), and a hider
+// and the seeker split the points by how long the hider stayed hidden (no +2 just for surviving).
+static void testHideScoring(uint16_t port) {
+    printf("hide and seek: everyone seeks once, points by time hidden\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "hamlet"; cfg.mode = MODE_HIDE; cfg.port = port;
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls, false)) { s.stop(); return; }
+    s.command("forcestart");
+    pump(s, cls, 0.2, idle);
+    auto itNow = [&] { for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].it) return i; return -1; };
+    int first = itNow();
+    CHECK(first >= 0);
+    if (first < 0) { s.stop(); return; }
+    int other = c[0].clientId() == first ? c[1].clientId() : c[0].clientId();
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // freeze over
+    CHECK(s.ms_.phase == PHASE_LIVE);
+    s.liveSince_ = s.time() - kHideRoundTime * 0.25;      // found a quarter of the way in: 1 of 4 to the hider, 3 to the seeker
+    s.players_[first].itFreezeUntil = 0;
+    for (int k = 0; k < 8 && s.players_[other].alive; k++) {
+        s.players_[first].move.pos = {0, 0, 6}; s.players_[first].move.vel = {};
+        s.players_[other].move.pos = {0, 0, 5}; s.players_[other].move.vel = {};
+        pump(s, cls, 0.05, [&](int i) { UserCmd u; u.yaw = 0; u.pitch = -0.3f; if (cls[i]->clientId() == first) u.buttons = BTN_FIRE; return u; });
+    }
+    pump(s, cls, 0.1, idle);
+    printf("  round 1: %s found at 1/4 -> seeker %d, hider %d\n", s.players_[other].name.c_str(), s.players_[first].score, s.players_[other].score);
+    CHECK(s.ms_.phase == PHASE_ROUND_END && s.players_[first].score == 3 && s.players_[other].score == 1);
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // round 2: the other player seeks
+    CHECK(s.ms_.round == 2 && itNow() == other);
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+    CHECK(s.ms_.phase == PHASE_LIVE);
+    s.liveSince_ = s.time() - kHideRoundTime;           // hidden the whole round: all 4
+    s.phaseEnd_ = s.time();
+    pump(s, cls, 0.1, idle);
+    printf("  round 2: hidden to the end -> %d, seeker %d\n", s.players_[first].score, s.players_[other].score);
+    CHECK(s.ms_.phase == PHASE_ROUND_END && s.players_[first].score == 7 && s.players_[other].score == 1);
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // two players, two rounds: over (it used to be 3, one seeking twice)
+    CHECK(s.ms_.phase == PHASE_MATCH_END && s.ms_.round == 2);
+    s.stop();
+}
+
 // "quark_tests rules [name]": all of them, or the one named.
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
@@ -322,6 +365,7 @@ static void testGameRules(const std::string& only) {
         {"hull", [] { testSizeHull(TP(29242)); }},
         {"grapple", [] { testGrappleNoBrake(); }},
         {"head", [] { testHeadBox(TP(29246)); }},
+        {"hide", [] { testHideScoring(TP(29247)); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
 }

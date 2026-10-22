@@ -114,16 +114,18 @@ void enterMatchEnd(Server& s, const std::string& text, int winner) {
 bool inPlay(const Server& s, int i) { const auto& p = s.players_[i]; return p.connected && p.team != TEAM_SPECTATOR && !(s.ms_.mode == MODE_TAG && p.out); }
 int playersInPlay(const Server& s) { int n = 0; for (int i = 0; i < kMaxPlayers; i++) n += inPlay(s, i); return n; }
 
-// Hide and seek: everyone takes a turn seeking, in order. Tag: a random player still in.
+// Hide and seek: everyone takes a turn seeking, in slot order, each once a match (someone who joins late gets a
+// turn too). Tag: a random player still in.
 void pickIt(Server& s) {
     for (auto& p : s.players_) p.it = false;
     std::vector<int> c;
-    for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i)) c.push_back(i);
+    for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i) && !(s.ms_.mode == MODE_HIDE && s.players_[i].sought)) c.push_back(i);
     if (c.empty()) return;
     int pick = c[qrand() % c.size()];
     if (s.ms_.mode == MODE_HIDE) {
         pick = c[0];
         for (int i : c) if (i > s.lastIt_) { pick = i; break; }
+        s.players_[pick].sought = true;
     }
     s.lastIt_ = pick;
     s.players_[pick].it = true;
@@ -151,7 +153,20 @@ int bestScorer(const Server& s) {
     return best;
 }
 
-int hideRounds(const Server& s) { return s.hideRounds_ > 0 ? s.hideRounds_ : std::max(3, std::min(6, playersInPlay(s))); } // everyone seeks once (3..6 rounds, fixed at the start)
+// Hide and seek: one round per player in play, each seeking once (was clamp(players, 3, 6) in slot order: with 7+
+// players some never sought, with 2 someone sought twice).
+int hidersYetToSeek(const Server& s) { int n = 0; for (int i = 0; i < kMaxPlayers; i++) n += inPlay(s, i) && !s.players_[i].sought; return n; }
+int hideRounds(const Server& s) { return s.ms_.round + hidersYetToSeek(s); }
+
+// Hide and seek scoring: each hider and the seeker split kHidePoints by how long the hider stayed hidden (from the
+// round going live): found at a quarter of the round, the hider gets a quarter and the seeker the rest; hidden to the
+// end, the hider gets them all. Falls give the seeker nothing. So nobody scores for just being there, and every
+// player plays the same rounds (one seeking, the rest hiding).
+constexpr int kHidePoints = 4;
+int hiderShare(const Server& s) {
+    double f = std::min(1.0, std::max(0.0, (s.time() - s.liveSince_) / kHideRoundTime));
+    return (int)std::lround(kHidePoints * f);
+}
 
 void tickHide(Server& s) {
     ModeState& m = s.ms_;
@@ -163,16 +178,17 @@ void tickHide(Server& s) {
         else if (s.players_[i].alive) hiding++;
         else found += s.players_[i].found;
     }
-    if (seeker < 0) { endRoundText(s, "the seeker left"); return; }
-    if (hiding == 0) {                            // nobody left hiding: the seeker scores if they found anyone (falls don't count)
-        if (found > 0) s.players_[seeker].score += 3;
+    auto payHidden = [&] { for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i) && !s.players_[i].it && s.players_[i].alive) s.players_[i].score += hiderShare(s); };
+    if (seeker < 0) { payHidden(); endRoundText(s, "the seeker left"); return; }   // (hidden so far: their share so far)
+    if (hiding == 0) {                            // nobody left hiding (each find was scored as it happened)
         endRoundText(s, found > 0 ? s.players_[seeker].name + " found everyone" : "no hiders left");
         return;
     }
     if (s.time() >= s.phaseEnd_) {
         std::string who;
         for (int i = 0; i < kMaxPlayers; i++)
-            if (inPlay(s, i) && !s.players_[i].it && s.players_[i].alive) { s.players_[i].score += 2; who += (who.empty() ? "" : ", ") + s.players_[i].name; }
+            if (inPlay(s, i) && !s.players_[i].it && s.players_[i].alive) who += (who.empty() ? "" : ", ") + s.players_[i].name;
+        payHidden();   // (the whole round: all kHidePoints)
         endRoundText(s, "the hiders win - " + who + " stayed hidden");
     }
 }
@@ -372,7 +388,7 @@ void startMatch(Server& s) {
     s.completeTime_[0] = s.completeTime_[1] = 0;
     for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; p.dmgDealt = p.objTime = 0; p.shotsFired = p.shotsHit = 0; p.out = false; p.it = false; }
     s.lastIt_ = -1;
-    s.hideRounds_ = 0;
+    for (auto& p : s.players_) p.sought = false;
     s.hideRounds_ = hideRounds(s);
     if (m.mode == MODE_TOURNEY) {
         tourneyBegin(s);
@@ -470,7 +486,7 @@ bool checkMatchOver(Server& s) {
                 }
             return false;
         case MODE_HIDE:
-            if (m.round < hideRounds(s)) return false;
+            if (hidersYetToSeek(s) > 0 && playersInPlay(s) > 1) return false;   // (everyone has had a turn seeking)
             { int w = bestScorer(s); enterMatchEnd(s, w >= 0 ? s.players_[w].name + " wins the match" : "match over", w); }
             return true;
         case MODE_TAG:
@@ -999,11 +1015,19 @@ void rulesOnDeath(Server& s, int victim, int killer) {
         m.bombCarrier = 255;
     }
     if (m.actionPlayer == victim) { m.actionPlayer = 255; m.actionProgress = 0; }
+    if (m.mode == MODE_HIDE && m.phase == PHASE_LIVE && !s.players_[victim].it) {   // a hider is out: split the points by time hidden
+        int share = hiderShare(s);
+        s.players_[victim].score += share;
+        if (killer >= 0 && s.players_[killer].it && s.players_[victim].found) s.players_[killer].score += kHidePoints - share;
+    }
     if (m.mode == MODE_FFA && m.phase == PHASE_LIVE && (m.flags & MS_OVERTIME) && killer >= 0 && killer != victim)
         finishFFA(s);
 }
 
-void rulesOnLeave(Server& s, int id) { rulesOnDeath(s, id, -1); }
+void rulesOnLeave(Server& s, int id) {
+    if (s.ms_.mode == MODE_HIDE && !s.players_[id].alive) return;   // (already out: scored when found)
+    rulesOnDeath(s, id, -1);
+}
 
 float rulesRespawnDelay(const Server& s) {
     if (s.ms_.phase == PHASE_WARMUP) return 1.5f;

@@ -1134,7 +1134,7 @@ void Server::killPlayer(int victim, int killer, int weapon) {
         ServerPlayer& k = players_[killer];
         bool teamkill = modeIsTeamBased(cfg_.mode) && k.team == v.team;
         if (teamkill) k.score--;
-        else { k.kills++; k.score++; }
+        else { k.kills++; k.score += ms_.mode == MODE_HIDE ? 0 : 1; }   // (hide and seek scores by time: rulesOnDeath)
     } else if (cfg_.mode == MODE_FFA && ms_.phase == PHASE_LIVE) {
         v.score--; // suicide
     }
