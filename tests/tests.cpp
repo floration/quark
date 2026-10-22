@@ -938,7 +938,7 @@ static void testWeapons(uint16_t port) {
         double elapsed = timeNow() - t0;
         if (w == WPN_ROCKET || w == WPN_CROSSBOW || w == WPN_STICKY) pump(s, cls, 1.0, idle); // let it fly
         float dealt = (sb.deaths > deaths0) ? 100.0f : hp0 - sb.health;
-        if (w == WPN_SNIPER) { // one scoped shot: 40 on the body, 50 on the head
+        if (w == WPN_SNIPER) { // one scoped shot: a flat 50, body or head
             printf("  sniper %s: %.0f damage\n", head ? "head" : "body", dealt);
             CHECK(std::fabs(dealt - (head ? kSniperHeadDamage : weaponDef(WPN_SNIPER).damage)) < 0.5f);
         }
@@ -3413,7 +3413,12 @@ static void testBots(uint16_t& port) {
         pump(s, cls, 1.5, idle);
         bots = 0;
         for (auto& p : s.players_) bots += p.connected && p.isBot;
-        CHECK(bots == 0);                                  // second human evens the teams
+        CHECK(bots == 1);                                  // second human evens the teams, but a bot alive in this round stays (GAME-10)...
+        for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].isBot) s.killPlayer(i, -1, 254);
+        pump(s, cls, 1.5, idle);
+        bots = 0;
+        for (auto& p : s.players_) bots += p.connected && p.isBot;
+        CHECK(bots == 0);                                  // ...until it's dead
         b.disconnect();
         cls.pop_back();
         pump(s, cls, kReconnectGrace + 1.5, idle);   // (gone once the reconnect grace is over)
@@ -3770,6 +3775,8 @@ static void testReachProbe(uint16_t port) {
     prober.stop();
 }
 
+#include "rules_tests.h"   // game rule tests (owner answers 5.x, REVIEW batch 2)
+
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
     { // never touch the real per-user folder: a fresh temp one per run, removed at exit by this (not a forked) process
@@ -3848,6 +3855,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = TP(29800); testArenaAndTourney(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "bots") { uint16_t p = TP(28900); testBots(p); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); return g_fail ? 1 : 0; }
     // ---- the whole suite. Most tests wait on real-time network play rather than the CPU, so each runs in its own
     // process, several at once (output kept in order); a few timing-sensitive ones run alone afterwards.
@@ -3874,10 +3882,11 @@ int main(int argc, char** argv) {
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
         {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterSignature(); testPlacementConstant(); }},
         {"ranked2", [] { testRankedLeaver(TP(28636)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
+        {"rules", [] { testGameRules(""); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
         {"netcode", [] { testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
-        {"tickrate", [] { testTickRateFallback(TP(28710)); }},
+        {"tickrate", [] { testTickRateFallback(TP(28710)); testRateBetweenRounds(TP(28711)); }},
         {"resetmaps", [] { testResetMaps(); }},
         {"userdata", [] { testUserData(); }},
     };

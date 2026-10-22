@@ -879,7 +879,10 @@ void Game::handleEvents() {
                 }
                 break;
             case EV_HEALED:   // a teammate's syringe hit someone
-                if (e.a == net_.clientId()) { notify("HEALED BY " + net_.playerName(e.b) + " - COOLDOWNS RESET", 2); audio_.play(SND_SYRINGE, 0.8f, 1.3f); }
+                if (e.a == net_.clientId()) {
+                    notify("HEALED BY " + net_.playerName(e.b) + " - COOLDOWNS RESET", 2); audio_.play(SND_SYRINGE, 0.8f, 1.3f);
+                    localNextFire_ = localThrowReadyAt_ = 0;   // (mirror the server's reset: weapon and throws)
+                }
                 else if (e.b == net_.clientId()) notify("YOU HEALED " + net_.playerName(e.a), 2);
                 break;
             case EV_RACE_SPLIT:
@@ -922,15 +925,16 @@ void Game::handleEvents() {
             case EV_HIT:
                 if (e.a == net_.clientId()) {
                     float dmg = e.c / 100.0f; // hundredths of a point
+                    bool head = e.text == "h"; // a headshot: its own red number
                     hitUntil_ = time_ + 0.15;
                     if (cfg_.hitsounds) audio_.play(SND_HIT, 0.9f, 1.25f - std::min(dmg, 50.0f) / 100.0f); // bigger hits sound deeper
                     // hits on the same target in quick succession add up into one number
                     bool merged = false;
                     for (auto& d : dmgNums_)
-                        if (d.victim == e.b && time_ - d.start < 0.35) { d.amount += dmg; d.start = time_; merged = true; }
+                        if (d.victim == e.b && d.head == head && time_ - d.start < 0.35) { d.amount += dmg; d.start = time_; merged = true; }
                     if (!merged) {
                         const PlayerSnap* v = net_.findPlayer(e.b);
-                        dmgNums_.push_back({e.b, dmg, time_, v ? v->pos : Vec3()});
+                        dmgNums_.push_back({e.b, dmg, time_, v ? v->pos : Vec3(), head});
                     }
                 }
                 break;
@@ -1024,7 +1028,8 @@ void Game::frame(double dt) {
             UserCmd c = buildCmd();
             // local fire feedback (server is authoritative for damage)
             bool altShot = altFires(net_.selfWeapon()) && (c.buttons & BTN_ALTFIRE) && // knife throw / shotgun bounce (no throws in hide and seek / tag)
-                           !(net_.selfWeapon() == WPN_KNIFE && net_.hasSnapshot() && isItMode(net_.mode().mode));
+                           !(net_.selfWeapon() == WPN_KNIFE && net_.hasSnapshot() && isItMode(net_.mode().mode)) &&
+                           !(isThrow(net_.selfWeapon(), true) && time_ < localThrowReadyAt_);   // the throws' shared cooldown
             bool wantFire = ((c.buttons & BTN_FIRE) != 0 || altShot) && holdFireLeft() <= 0;   // (the map's holdfire: no shots yet)
             if (c.weapon != lastCmdWeapon_ && (c.buttons & (BTN_FIRE | BTN_ALTFIRE))) localFireLocked_ = true; // switched with fire held
             lastCmdWeapon_ = c.weapon;
@@ -1040,8 +1045,9 @@ void Game::frame(double dt) {
             if (wantFire && net_.selfAlive() && time_ >= localNextFire_ && net_.mode().phase != PHASE_FREEZE) {
                 localFireQueued_ = -1;
                 int w = net_.selfWeapon();
-                bool alt = (c.buttons & BTN_ALTFIRE) != 0 && (w != WPN_KNIFE || altShot); // same throw rule as above
+                bool alt = (c.buttons & BTN_ALTFIRE) != 0 && ((w != WPN_KNIFE && w != WPN_SYRINGE) || altShot); // same throw rule as above
                 localNextFire_ = time_ + shotRefire(w, alt);
+                if (isThrow(w, alt)) localThrowReadyAt_ = time_ + throwCooldown(w);
                 if (w != WPN_LASER || time_ >= nextLaserSound_) { // laser fires every 10 ms: sound at 20 Hz
                     audio_.play(SND_RIFLE + w, w == WPN_LASER ? 0.6f : 0.8f, 0.97f + (qrand() % 7) * 0.01f);
                     nextLaserSound_ = time_ + 0.05;
@@ -1347,7 +1353,7 @@ void Game::drawWorld(float alpha) {
         // only when the whole body is in sight (no seeing a bar through a wall or over cover: every corner and the
         // middle of the hitbox has a clear line from the camera), and exactly as wide as the hitbox on screen
         auto wholeBodySeen = [&] {
-            AABB hb = playerBox(pos, crouch);
+            AABB hb = playerBox(pos, crouch, bs);
             const Vec3 cam = r_.cameraPos();
             for (int k = 0; k < 9; k++) {
                 Vec3 q = k == 8 ? (hb.mn + hb.mx) * 0.5f : Vec3(k & 1 ? hb.mx.x - 0.02f : hb.mn.x + 0.02f, k & 2 ? hb.mx.y - 0.02f : hb.mn.y + 0.05f, k & 4 ? hb.mx.z - 0.02f : hb.mn.z + 0.02f);
@@ -1360,7 +1366,7 @@ void Game::drawWorld(float alpha) {
         if (cfg_.healthBars && !rankedPlayer() && !self && i != viewing && wholeBodySeen()) {
             float sx, sy, lx, ly, rx, ry;   // over their head, or at their feet (VISUALS > HEALTH BAR POSITION)
             Vec3 at = cfg_.healthBarsBottom ? pos + Vec3(0, -0.15f, 0) : pos + Vec3(0, 2.0f * bs + 0.35f, 0);
-            Vec3 side = Vec3(std::cos(camYaw), 0, -std::sin(camYaw)) * kPlayerHalfWidth;   // (the hitbox's half width, across the view)
+            Vec3 side = Vec3(std::cos(camYaw), 0, -std::sin(camYaw)) * (kPlayerHalfWidth * bs);   // (the hitbox's half width, across the view)
             if (r_.project(at, sx, sy) && r_.project(at - side, lx, ly) && r_.project(at + side, rx, ry)) {
                 float bw = std::max(4.0f, std::fabs(rx - lx)), bh = std::max(2.0f, std::min(5 * ui_.s(), bw * 0.15f));
                 float f = clampf(p.health / 100.0f, 0, 1);
@@ -1827,7 +1833,8 @@ void Game::drawHud() {
             if (r_.project(d.pos + Vec3(0, 2.0f + t * 0.8f, 0), sx, sy)) {
                 std::string n = std::to_string((int)std::lround(d.amount));
                 float k = std::max(1.0f, std::round(ts * (d.amount >= 40 ? 1.5f : 1.0f)));
-                Color c = d.amount >= 40 ? Color{1, 0.85f, 0.2f, 1 - t / 0.9f} : Color{1, 1, 1, 1 - t / 0.9f};
+                Color c = d.head ? Color{1, 0.18f, 0.15f, 1 - t / 0.9f}   // headshots red (owner 5.6), big hits gold, the rest white
+                        : d.amount >= 40 ? Color{1, 0.85f, 0.2f, 1 - t / 0.9f} : Color{1, 1, 1, 1 - t / 0.9f};
                 r_.text(sx - r_.textWidth(n, k) * 0.5f, sy, k, n, c);
             }
             i++;
@@ -1858,7 +1865,8 @@ void Game::drawHud() {
             if (ms.mode == MODE_VS || ms.mode == MODE_DUEL || ms.mode == MODE_ARENA || ms.mode == MODE_TOURNEY) phase = (ms.flags & MS_DRAIN) ? "STALEMATE - HEALTH DRAINING" : "DRAIN IN " + fmtTime(ms.timeLeft);
             else if (ms.mode == MODE_KOTH) phase = "FIRST TO " + std::to_string(ms.target);
             else if (ms.flags & MS_TIMETRIAL) phase = fmtRace((int)std::lround((300.0f - ms.timeLeft) * 1000)).substr(0, 7); // run time so far
-            else phase = fmtTime(ms.timeLeft) + ((ms.flags & MS_OVERTIME) ? " OVERTIME" : "");
+            else if ((ms.flags & MS_OVERTIME) && ms.mode == MODE_FFA) phase = "OVERTIME - NEXT KILL WINS";
+            else if (ms.flags & MS_OVERTIME) phase = "OVERTIME " + fmtTime(ms.timeLeft);   // (ends this long after the objective was last touched)
             break;
         case PHASE_ROUND_END: phase = "ROUND OVER"; break;
         case PHASE_MATCH_END: phase = "MATCH OVER"; break;
@@ -2938,9 +2946,13 @@ void Game::drawScoreboard() {
     float w = std::min(900 * s, W - 32 * s), x = (W - w) * 0.5f, y = 140 * s;
     const ModeState& ms = net_.mode();
     std::vector<PlayerSnap> ps = net_.latest().players;
-    std::sort(ps.begin(), ps.end(), [](const PlayerSnap& a, const PlayerSnap& b) {
+    bool ranked = ms.flags & MS_RANKED;
+    // instagib (1v1 / tourney ruleset or ranked instagib): every hit kills, so only accuracy and gibs (kills) count
+    const bool gib = scoreboardGibs(ms);
+    auto shown = [&](const PlayerSnap& p) { return scoreboardValue(p, ms); };   // (shown and sorted by: REVIEW M6)
+    std::sort(ps.begin(), ps.end(), [&](const PlayerSnap& a, const PlayerSnap& b) {
         if (a.team() != b.team()) return a.team() < b.team();
-        return a.score > b.score;
+        return shown(a) > shown(b);
     });
     if (ps.size() > 12) { // big servers (up to 32): smaller rows so everyone fits
         ts = std::max(1.0f, std::round(ts * 0.75f));
@@ -2950,15 +2962,9 @@ void Game::drawScoreboard() {
     ui_.panel(x, y, w, (ps.size() + 2) * rowH + 10 * s, 0.8f);
     float cy = y + 10 * s;
     r_.text(x + 12 * s, cy, ts, "PLAYER", kGrey);
-    bool ranked = ms.flags & MS_RANKED;
     std::string ladder = arenaVariant(ms.arenaVariant).name;
     if (ranked) r_.text(x + w * 0.31f, cy, ts, "RATING", kGrey);
     r_.text(x + w * 0.79f, cy, ts, "TOTAL K / D", kGrey);   // lifetime kills / deaths (every game, live)
-    // score: the mode's own points in race / hide and seek / tag; elsewhere damage / 10 + seconds on the objective
-    const bool ownScore = ms.mode == MODE_RACE || isItMode(ms.mode);
-    // instagib (1v1 / tourney ruleset or ranked instagib): every hit kills, so only accuracy and gibs (kills) count
-    const bool gib = (arenaVariant(ms.arenaVariant).rules & AR_INSTAGIB) &&
-                     (ms.mode == MODE_ARENA || ms.mode == MODE_TOURNEY || (ranked && ms.mode == MODE_FFA));
     if (gib) {
         r_.text(x + w * 0.53f, cy, ts, "GIBS", kGrey);
         r_.text(x + w * 0.65f, cy, ts, "ACC", kGrey);
@@ -2990,7 +2996,7 @@ void Game::drawScoreboard() {
             r_.text(x + w * 0.53f, cy, ts, std::to_string(p.kills), kWhite);
             r_.text(x + w * 0.65f, cy, ts, std::to_string(p.acc) + "%", kWhite);
         } else {
-            r_.text(x + w * 0.40f, cy, ts, std::to_string(ownScore ? p.score : p.dmg / 10 + p.obj), kWhite);
+            r_.text(x + w * 0.40f, cy, ts, std::to_string(shown(p)), kWhite);
             r_.text(x + w * 0.48f, cy, ts, std::to_string(p.kills), kWhite);
             r_.text(x + w * 0.53f, cy, ts, std::to_string(p.deaths), kWhite);
             r_.text(x + w * 0.58f, cy, ts, std::to_string(p.dmg), kWhite);

@@ -281,7 +281,7 @@ private:
     std::deque<Feed> chatLog_;   // the chat history shown while typing (Enter)
     void addChat(const Feed& f) { chatFeed_.push_back(f); chatLog_.push_back(f); while (chatFeed_.size() > 8) chatFeed_.pop_front(); while (chatLog_.size() > 30) chatLog_.pop_front(); }
     std::string centerText_;
-    double centerUntil_ = 0, hitUntil_ = 0, damageUntil_ = 0, recoil_ = 0, localNextFire_ = 0;
+    double centerUntil_ = 0, hitUntil_ = 0, damageUntil_ = 0, recoil_ = 0, localNextFire_ = 0, localThrowReadyAt_ = 0;
     int lastHealth_ = 0;
     struct Tracer { Vec3 a, b; double until; };
     std::vector<Tracer> tracers_;
@@ -457,7 +457,7 @@ private:
     std::string bracketNames_[kMaxPlayers];
     int bracketRound_ = 0, bracketMatch_ = 0;
     void drawBracket();
-    struct DmgNum { int victim; float amount; double start; Vec3 pos; };
+    struct DmgNum { int victim; float amount; double start; Vec3 pos; bool head = false; };   // head: a headshot (drawn red)
     std::vector<DmgNum> dmgNums_;
     int botMapIdx_ = 0;
 };

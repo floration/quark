@@ -4,14 +4,18 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <random>
 #include <thread>
 
 namespace qrng_detail {
 inline uint32_t& state() {
     thread_local uint32_t s = [] {
         uint64_t t = (uint64_t)std::chrono::steady_clock::now().time_since_epoch().count();
+        uint64_t w = (uint64_t)std::chrono::system_clock::now().time_since_epoch().count();
         uint64_t h = std::hash<std::thread::id>()(std::this_thread::get_id());
-        uint32_t v = (uint32_t)(t ^ (t >> 32) ^ h ^ (h >> 32)) | 1u;
+        uint32_t d = 0;
+        try { d = std::random_device()(); } catch (...) {}   // (some old MinGW builds return a fixed sequence: the clocks still differ)
+        uint32_t v = (uint32_t)(t ^ (t >> 32) ^ w ^ (w >> 29) ^ h ^ (h >> 32) ^ d) | 1u;
         return v;
     }();
     return s;

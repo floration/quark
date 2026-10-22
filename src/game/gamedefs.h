@@ -3,7 +3,8 @@
 #include <cstdint>
 
 // Server tick rate is chosen at runtime: it starts at 1000 Hz and steps down
-// (500, 250, 125) during warmup if the host can't keep up. A snapshot is sent every tick.
+// (500, 250, 125) in warmup or between rounds if the host can't keep up (mid-round only if it can't keep up at all).
+// A snapshot is sent every tick.
 // Movement always simulates in fixed 1 ms steps, so it is identical at every rate.
 constexpr int kTickRates[] = {1000, 500, 250, 125};
 constexpr int kTickRateLevels = 4;
@@ -12,7 +13,7 @@ constexpr int kMaxPlayers = 32;        // engine limit; servers default to 8 (Se
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 30;   // 30 (29 + 29 merged): signed ranked ids, reconnect tokens; edit sessions name the map by an edit chain (mapEditCrc), map data carries the text CRC
+constexpr uint16_t kProtocolVersion = 31;   // 31: hull scaling + grapple change in shared pmove; 30:  signed ranked ids, reconnect tokens; edit sessions name the map by an edit chain (mapEditCrc), map data carries the text CRC
 // PlayerSnap::keys: what a player is holding (spectators see it on the key overlay)
 enum : uint16_t { KEY_FWD = 1, KEY_BACK = 2, KEY_LEFT = 4, KEY_RIGHT = 8, KEY_JUMP = 16, KEY_CROUCH = 32, KEY_FIRE = 64, KEY_ALT = 128, KEY_DASH = 256, KEY_HOOK = 512 };
 
@@ -29,6 +30,8 @@ inline bool isPayloadMode(int m) { return m == MODE_PAYLOAD || m == MODE_NPAYLOA
 constexpr int kPlayerModels = 5;          // STANDARD, HEAVY, SCOUT, ROBOT, KNIGHT: cosmetic, every one has the same hitbox
 constexpr int kSoundPacks = 5;            // DEFAULT, HEAVY METAL, MAGICAL, RETRO, WOODEN
 inline const char* playerModelName(int m) { static const char* n[] = {"STANDARD", "HEAVY", "SCOUT", "ROBOT", "KNIGHT"}; return n[(m < 0 || m >= kPlayerModels) ? 0 : m]; }
+// Modes where the dead respawn during play (the rest are rounds with one life: VS, bomb, duel, 1v1, tourney, hide and seek).
+inline bool modeRespawns(int m) { return m == MODE_FFA || m == MODE_KOTH || m == MODE_PAYLOAD || m == MODE_NPAYLOAD || m == MODE_POINTS || m == MODE_RACE || m == MODE_TAG; }
 inline bool isItMode(int m) { return m == MODE_HIDE || m == MODE_TAG; } // one player is "it" (seeker / tagger) with the knife
 constexpr float kHideTime = 30.0f;       // hide and seek: hiders' head start while the seeker faces the wall
 constexpr float kHideRoundTime = 300.0f; // hiders win if anyone lasts this long
@@ -170,7 +173,7 @@ inline const WeaponDef& baseWeaponDef(int w) {
         {"RIFLE",       0.75f*2.0f/9.9f, 5.95f, 300.0f, false, 0, 0, 0.0f, 0.0f, 60.0f, false, 1, 0, false, 0},  // 17 shots, 2.4 s (scoped: 3/4 fire rate)
         {"ROCKET",      1.2f,    34,      0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  12.0f, false, 5}, // 3, 2.4 s
         {"KNIFE",       0.75f,   30,      3.5f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 4, 2.25 s (1.11: 30 every 0.75 s)
-        {"SNIPER",      1.5f,    34,    500.0f, false,  0,    0,     0.0f,  0.0f, 45.0f,  false, 1,  0,    false, 0},  // 3, 3.0 s (headshots 42.5: 3)
+        {"SNIPER",      1.5f,    50,    500.0f, false,  0,    0,     0.0f,  0.0f, 45.0f,  false, 1,  0,    false, 0},  // 2, 1.5 s (owner 1.16: a flat 50, head or body)
         {"LASER",       0.001f,  0.04f,  32.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},  // every 1 ms, 2500 hits, 2.5 s
         {"SHOTGUN",     0.75f,   1.7f,   60.0f, false,  0,    0,     0.085f,-1,     0,    false, 20, 0,    false, 0},  // 20 x 1.7 = 34 per blast, 3, 1.5 s
         {"STICKY",      0.75f,   29.75f,  0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30}, // 4, 2.25 s
@@ -183,7 +186,7 @@ inline const WeaponDef& baseWeaponDef(int w) {
 // Alt-fires: knife throw (a projectile that hits for knife damage), shotgun bouncing pellets (ricochet off
 // walls, half damage), rifle scope (zooms like the sniper, 25% slower fire rate).
 constexpr float kRocketDirectDamage = 50.0f; // a rocket that hits a player itself (not the floor next to them)
-constexpr float kSniperHeadDamage = 50.0f; // hits on the head (top 20% of the hitbox): sniper, crossbow bolt,
+constexpr float kSniperHeadDamage = 50.0f; // hits on the head (headBox(): the top 20%, head-wide): sniper, crossbow bolt,
 constexpr float kCrossbowHeadDamage = 75.0f; // rifle bullet and each shotgun pellet
 constexpr float kRifleHeadDamage = 8.5f;
 constexpr float kPelletHeadDamage = 2.55f;
@@ -222,7 +225,8 @@ inline float headDamage(int w) {
     return tunedDamage(w) * (w == WPN_SNIPER ? kSniperHeadDamage : w == WPN_CROSSBOW ? kCrossbowHeadDamage : w == WPN_RIFLE ? kRifleHeadDamage
          : w == WPN_SHOTGUN ? kPelletHeadDamage : 0.0f);
 }
-constexpr float kHeadFraction = 0.2f;
+constexpr float kHeadFraction = 0.2f;       // the head: the top 20% of the hitbox...
+constexpr float kHeadWidthFraction = 0.45f; // ...and 45% of its width, centred (0.36 m of 0.8): the shoulders beside it are body
 constexpr float kRocketLobSpeed = 0.7f, kRocketLobGravity = 3.0f; // rocket alt-fire: a lob at 70% speed with 3x gravity
 constexpr float kKnifeThrowSpeed = 38.0f, kKnifeThrowGravity = 14.0f, kKnifeThrowLife = 2.0f;
 constexpr float kKnifeGrow = 0.04f;    // a swing hits boxes 10% wider (0.04 m each side of 0.8)
@@ -232,6 +236,11 @@ constexpr float kKnifeAway = 5.0f; // after a throw the knife is gone this long:
 // every cooldown reset (weapon, dash, grapple). The throw has a 2 s cooldown.
 constexpr float kSyringeThrowSpeed = 30.0f, kSyringeThrowGravity = 9.0f, kSyringeThrowLife = 2.0f;
 constexpr float kSyringeHeal = 30.0f, kSyringeThrowRefire = 2.0f;
+// Throws (knife, syringe) share one alt-fire cooldown (owner 5.3): after either, neither can be thrown for that
+// throw's cooldown. A thrown syringe that heals a teammate resets it like their other cooldowns.
+constexpr float kKnifeThrowCooldown = kSyringeThrowRefire;   // (placeholder: the syringe throw's 2 s until the owner sets one)
+inline bool isThrow(int w, bool alt) { return alt && (w == WPN_KNIFE || w == WPN_SYRINGE); }
+inline float throwCooldown(int w) { return w == WPN_KNIFE ? kKnifeThrowCooldown : kSyringeThrowRefire; }
 constexpr int kShotgunBounces = 2;
 constexpr float kShotgunBounceDamage = 0.5f;
 constexpr float kRifleScopedRefire = 4.0f / 3.0f; // refire multiplier while scoped (25% slower fire rate)
@@ -254,7 +263,7 @@ constexpr float kVampireFadeTime = 60.0f, kVampireMinHeal = 0.5f; // laser vampi
 // The refire for this shot: alt-fire modes change it.
 inline float shotRefire(int w, bool alt) {
     float r = weaponDef(w).refire;
-    if (alt && w == WPN_KNIFE) return 0;                    // knife throw: no delay (you switch weapons)
+    if (alt && w == WPN_KNIFE) return r;                    // knife throw: the weapon you switch to waits a knife swing (no throw + instant shot combo, GAME-8)
     if (alt && w == WPN_RIFLE) return r * kRifleScopedRefire;       // scoped rifle
     if (alt && w == WPN_BUBBLE) return kBubbleStreamRefire;         // the bubble stream
     if (alt && w == WPN_SYRINGE) return kSyringeThrowRefire;        // the syringe throw

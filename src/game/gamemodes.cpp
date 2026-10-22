@@ -18,6 +18,7 @@ constexpr float kBombFuse = 40.0f;
 constexpr float kBombRadius = 18.0f;
 constexpr float kDefuseRange = 1.8f;
 constexpr float kPickupRange = 1.2f;
+constexpr float kBombReturn = 15.0f;   // a dropped bomb nobody picks up goes back to an attacker after this
 // PAYLOAD
 constexpr float kCartRange = 4.0f;
 constexpr float kCartSpeed = 1.6f;
@@ -29,6 +30,9 @@ constexpr float kPointRoundTime = 150.0f;  // the attackers' clock at the start
 constexpr float kPointBonus = 90.0f;       // added for every point taken
 constexpr float kCaptureTime = 12.0f;      // one attacker alone; more go faster (up to twice as fast)
 constexpr float kCaptureDecay = 0.05f;     // a point the attackers leave loses this much capture a second
+// OVERTIME (every mode with a site or a cart): when the clock runs out, the round goes on while the side that needs
+// time is on the objective, or touched it in the last kOvertime seconds; it ends kOvertime s after their last touch.
+constexpr float kOvertime = 5.0f;
 
 int roundsToWin(const Server& s) {
     if (s.cfg_.roundsToWin > 0) return s.cfg_.roundsToWin;
@@ -62,6 +66,18 @@ float roundTime(const Server& s) {
 
 int other(int t) { return t == TEAM_A ? TEAM_B : TEAM_A; }
 int defenders(const Server& s) { return other(s.ms_.attackers); }
+
+// The clock has run out (call only then): true while overtime holds the round open (the objective was touched in
+// the last kOvertime seconds), with the overtime countdown in timeLeft. False: time's up for real.
+bool overtime(Server& s) {
+    ModeState& m = s.ms_;
+    double left = s.objTouch_ + kOvertime - s.time();
+    if (left <= 0) { m.flags &= ~MS_OVERTIME; return false; }
+    if (!(m.flags & MS_OVERTIME)) { s.message("overtime!"); s.glog(LOG_SIMPLE, "overtime"); }
+    m.flags |= MS_OVERTIME;
+    m.timeLeft = (float)left;
+    return true;
+}
 
 void setPhase(Server& s, Phase p, float duration) {
     s.ms_.phase = p;
@@ -99,16 +115,18 @@ void enterMatchEnd(Server& s, const std::string& text, int winner) {
 bool inPlay(const Server& s, int i) { const auto& p = s.players_[i]; return p.connected && p.team != TEAM_SPECTATOR && !(s.ms_.mode == MODE_TAG && p.out); }
 int playersInPlay(const Server& s) { int n = 0; for (int i = 0; i < kMaxPlayers; i++) n += inPlay(s, i); return n; }
 
-// Hide and seek: everyone takes a turn seeking, in order. Tag: a random player still in.
+// Hide and seek: everyone takes a turn seeking, in slot order, each once a match (someone who joins late gets a
+// turn too). Tag: a random player still in.
 void pickIt(Server& s) {
     for (auto& p : s.players_) p.it = false;
     std::vector<int> c;
-    for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i)) c.push_back(i);
+    for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i) && !(s.ms_.mode == MODE_HIDE && s.players_[i].sought)) c.push_back(i);
     if (c.empty()) return;
     int pick = c[qrand() % c.size()];
     if (s.ms_.mode == MODE_HIDE) {
         pick = c[0];
         for (int i : c) if (i > s.lastIt_) { pick = i; break; }
+        s.players_[pick].sought = true;
     }
     s.lastIt_ = pick;
     s.players_[pick].it = true;
@@ -136,7 +154,20 @@ int bestScorer(const Server& s) {
     return best;
 }
 
-int hideRounds(const Server& s) { return s.hideRounds_ > 0 ? s.hideRounds_ : std::max(3, std::min(6, playersInPlay(s))); } // everyone seeks once (3..6 rounds, fixed at the start)
+// Hide and seek: one round per player in play, each seeking once (was clamp(players, 3, 6) in slot order: with 7+
+// players some never sought, with 2 someone sought twice).
+int hidersYetToSeek(const Server& s) { int n = 0; for (int i = 0; i < kMaxPlayers; i++) n += inPlay(s, i) && !s.players_[i].sought; return n; }
+int hideRounds(const Server& s) { return s.ms_.round + hidersYetToSeek(s); }
+
+// Hide and seek scoring: each hider and the seeker split kHidePoints by how long the hider stayed hidden (from the
+// round going live): found at a quarter of the round, the hider gets a quarter and the seeker the rest; hidden to the
+// end, the hider gets them all. Falls give the seeker nothing. So nobody scores for just being there, and every
+// player plays the same rounds (one seeking, the rest hiding).
+constexpr int kHidePoints = 4;
+int hiderShare(const Server& s) {
+    double f = std::min(1.0, std::max(0.0, (s.time() - s.liveSince_) / kHideRoundTime));
+    return (int)std::lround(kHidePoints * f);
+}
 
 void tickHide(Server& s) {
     ModeState& m = s.ms_;
@@ -148,18 +179,50 @@ void tickHide(Server& s) {
         else if (s.players_[i].alive) hiding++;
         else found += s.players_[i].found;
     }
-    if (seeker < 0) { endRoundText(s, "the seeker left"); return; }
-    if (hiding == 0) {                            // nobody left hiding: the seeker scores if they found anyone (falls don't count)
-        if (found > 0) s.players_[seeker].score += 3;
+    auto payHidden = [&] { for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i) && !s.players_[i].it && s.players_[i].alive) s.players_[i].score += hiderShare(s); };
+    if (seeker < 0) { payHidden(); endRoundText(s, "the seeker left"); return; }   // (hidden so far: their share so far)
+    if (hiding == 0) {                            // nobody left hiding (each find was scored as it happened)
         endRoundText(s, found > 0 ? s.players_[seeker].name + " found everyone" : "no hiders left");
         return;
     }
     if (s.time() >= s.phaseEnd_) {
         std::string who;
         for (int i = 0; i < kMaxPlayers; i++)
-            if (inPlay(s, i) && !s.players_[i].it && s.players_[i].alive) { s.players_[i].score += 2; who += (who.empty() ? "" : ", ") + s.players_[i].name; }
+            if (inPlay(s, i) && !s.players_[i].it && s.players_[i].alive) who += (who.empty() ? "" : ", ") + s.players_[i].name;
+        payHidden();   // (the whole round: all kHidePoints)
         endRoundText(s, "the hiders win - " + who + " stayed hidden");
     }
+}
+
+bool tagMatchOn(const Server& s) { return s.ms_.mode == MODE_TAG && (s.ms_.phase == PHASE_FREEZE || s.ms_.phase == PHASE_LIVE || s.ms_.phase == PHASE_ROUND_END); }
+
+// Tag: out for the rest of the match, remembered by rank id and name (a reconnect doesn't clear it).
+void tagOut(Server& s, int id) {
+    auto& p = s.players_[id];
+    p.out = true;
+    p.it = false;
+    p.alive = false;
+    p.respawnAt = -1;
+    s.tagOut_.push_back({p.rankId, p.name});
+}
+bool tagWasOut(const Server& s, const ServerPlayer& p) {
+    for (auto& o : s.tagOut_) if ((!o.first.empty() && o.first == p.rankId) || o.second == p.name) return true;
+    return false;
+}
+
+// Whoever is "it" is out (time's up, or they left / went to spectate while it): the rest score and the round ends.
+void tagEliminateIt(Server& s, int it, const std::string& why) {
+    std::string name = s.players_[it].name;
+    tagOut(s, it);
+    int left = playersInPlay(s);
+    for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i)) s.players_[i].score += 1; // survived the round
+    if (left <= 1) {
+        int w = -1;
+        for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i)) w = i;
+        enterMatchEnd(s, w >= 0 ? s.players_[w].name + " wins tag" : "nobody left", w);
+        return;
+    }
+    endRoundText(s, name + " was it - " + why + "! " + std::to_string(left) + " left");
 }
 
 void tickTag(Server& s) {
@@ -179,20 +242,7 @@ void tickTag(Server& s) {
         return;
     }
     if (s.time() < s.phaseEnd_) return;
-    auto& p = s.players_[it];                     // time's up: whoever is it is out
-    p.out = true;
-    p.it = false;
-    p.alive = false;
-    p.respawnAt = -1;
-    int left = playersInPlay(s);
-    for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i)) s.players_[i].score += 1; // survived the round
-    if (left <= 1) {
-        int w = -1;
-        for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i)) w = i;
-        enterMatchEnd(s, w >= 0 ? s.players_[w].name + " wins tag" : "nobody left", w);
-        return;
-    }
-    endRoundText(s, p.name + " was it - out! " + std::to_string(left) + " left");
+    tagEliminateIt(s, it, "out");                 // time's up: whoever is it is out
 }
 
 void startRound(Server& s) {
@@ -206,6 +256,7 @@ void startRound(Server& s) {
     m.actionPlayer = 255;
     m.hillOwner = 255;
     s.drainAccum_ = 0;
+    s.objTouch_ = -1e9;   // (m.flags = 0 above ended any overtime)
     if (m.mode == MODE_DUEL) { // a new modifier every life, never one already played this match
         static_assert(DUEL_MOD_COUNT <= 32, "duelUsed_ is a 32-bit mask");
         const uint32_t all = DUEL_MOD_COUNT == 32 ? 0xFFFFFFFFu : (1u << DUEL_MOD_COUNT) - 1;
@@ -348,7 +399,8 @@ void startMatch(Server& s) {
     s.completeTime_[0] = s.completeTime_[1] = 0;
     for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; p.dmgDealt = p.objTime = 0; p.shotsFired = p.shotsHit = 0; p.out = false; p.it = false; }
     s.lastIt_ = -1;
-    s.hideRounds_ = 0;
+    s.tagOut_.clear();
+    for (auto& p : s.players_) p.sought = false;
     s.hideRounds_ = hideRounds(s);
     if (m.mode == MODE_TOURNEY) {
         tourneyBegin(s);
@@ -446,7 +498,7 @@ bool checkMatchOver(Server& s) {
                 }
             return false;
         case MODE_HIDE:
-            if (m.round < hideRounds(s)) return false;
+            if (hidersYetToSeek(s) > 0 && playersInPlay(s) > 1) return false;   // (everyone has had a turn seeking)
             { int w = bestScorer(s); enterMatchEnd(s, w >= 0 ? s.players_[w].name + " wins the match" : "match over", w); }
             return true;
         case MODE_TAG:
@@ -483,7 +535,7 @@ bool enoughPlayers(const Server& s) {
 }
 
 bool feetIn(const Server& s, int id, const AABB& zone) {
-    return playerBox(s.players_[id].move.pos, s.players_[id].move.flags & MF_CROUCHED).overlaps(zone);
+    return playerBox(s.players_[id].move).overlaps(zone);
 }
 
 void tickVS(Server& s) {
@@ -541,6 +593,16 @@ void tickBomb(Server& s) {
                 m.bombCarrier = (uint8_t)i;
                 break;
             }
+        }
+    }
+    if (m.bombState == BOMB_DROPPED && s.time() - s.bombDroppedAt_ >= kBombReturn) {   // out of reach, or nobody went for it
+        std::vector<int> c;
+        for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].alive && s.players_[i].team == att) c.push_back(i);
+        if (!c.empty()) {
+            int k = c[qrand() % c.size()];
+            m.bombState = BOMB_CARRIED;
+            m.bombCarrier = (uint8_t)k;
+            s.message("the bomb went back to " + s.players_[k].name);
         }
     }
     if (m.bombState == BOMB_CARRIED) {
@@ -606,7 +668,14 @@ void tickBomb(Server& s) {
 
     if (s.aliveCount(def) == 0) { endRound(s, att, "defenders eliminated"); return; }
     if (s.aliveCount(att) == 0 && m.bombState != BOMB_PLANTED) { endRound(s, def, "attackers eliminated"); return; }
-    if (m.bombState != BOMB_PLANTED && s.time() >= s.phaseEnd_) endRound(s, def, "time");
+    if (m.bombState == BOMB_PLANTED) { m.flags &= ~MS_OVERTIME; return; }   // (the fuse is the clock now)
+    for (int i = 0; i < kMaxPlayers; i++) {   // overtime: an attacker on a bomb site
+        const auto& p = s.players_[i];
+        if (!p.connected || !p.alive || p.team != att) continue;
+        for (auto& site : s.map_.bombSites) if (feetIn(s, i, site)) s.objTouch_ = s.time();
+    }
+    if (s.time() < s.phaseEnd_) m.flags &= ~MS_OVERTIME;
+    else if (!overtime(s)) endRound(s, def, "time");
 }
 
 void tickRace(Server& s) {
@@ -693,6 +762,7 @@ void tickPayload(Server& s) {
         if (p.connected && p.alive && length(p.move.pos - cart) < kCartRange && (p.team == att || (p.team == def && na > 0))) p.objTime += s.dt();
     }
     m.flags &= ~MS_CONTESTED;
+    if (na > 0) s.objTouch_ = s.time();   // (overtime: an attacker at the cart, contested or not)
     if (na > 0 && nd == 0) {
         float speed = std::min(kCartSpeed * (1.0f + 0.25f * (na - 1)), kCartSpeed * 2.0f);
         m.payloadDist = std::min(m.payloadDist + speed * s.dt(), m.payloadLen);
@@ -717,7 +787,8 @@ void tickPayload(Server& s) {
         endRound(s, att, "payload delivered");
         return;
     }
-    if (s.time() >= s.phaseEnd_) endRound(s, def, "time", false);
+    if (s.time() < s.phaseEnd_) m.flags &= ~MS_OVERTIME;
+    else if (!overtime(s)) endRound(s, def, "time", false);
 }
 
 // Multi point: the attackers take the map's points one at a time, in order. Only they capture: standing on the
@@ -745,6 +816,7 @@ void tickPoints(Server& s) {
     }
     m.flags &= ~MS_CONTESTED;
     m.hillOwner = 255;
+    if (na > 0) s.objTouch_ = s.time();   // (overtime: an attacker on the point, contested or not)
     if (na > 0 && nd == 0) {
         m.capture += std::min(1.0f + 0.5f * (na - 1), 2.0f) * s.dt() / kCaptureTime;
         m.hillOwner = (uint8_t)att;
@@ -766,10 +838,8 @@ void tickPoints(Server& s) {
         return;
     }
     s.bestProgress_[att] = std::max(s.bestProgress_[att], m.point + m.capture * 0.99f);
-    if (s.time() >= s.phaseEnd_) {
-        if (m.flags & MS_CONTESTED) { m.timeLeft = 0; return; } // overtime: the attack goes on while it's on the point
-        endRound(s, def, "time", false);
-    }
+    if (s.time() < s.phaseEnd_) m.flags &= ~MS_OVERTIME;
+    else if (!overtime(s)) endRound(s, def, "time", false);   // (overtime: the attack goes on while it's on the point)
 }
 
 // Neutral payload: whichever team is alone at the cart pushes it toward the far end of the track
@@ -798,7 +868,13 @@ void tickNeutralPayload(Server& s) {
     }
     if (m.payloadDist >= m.payloadLen - 1e-3f) { enterMatchEnd(s, "TEAM A delivered the payload", TEAM_A); return; }
     if (m.payloadDist <= 1e-3f) { enterMatchEnd(s, "TEAM B delivered the payload", TEAM_B); return; }
-    if (s.time() >= s.phaseEnd_) {
+    {   // overtime: the team that would lose at time-out (the cart on the other side) is at the cart
+        float mid = m.payloadLen * 0.5f;
+        bool even = std::fabs(m.payloadDist - mid) < 0.05f;
+        if ((na > 0 && (even || m.payloadDist < mid)) || (nb > 0 && (even || m.payloadDist > mid))) s.objTouch_ = s.time();
+    }
+    if (s.time() < s.phaseEnd_) m.flags &= ~MS_OVERTIME;
+    else if (!overtime(s)) {
         float mid = m.payloadLen * 0.5f;
         if (std::fabs(m.payloadDist - mid) < 0.05f) enterMatchEnd(s, "draw - the payload is in the middle", -1);
         else {
@@ -817,7 +893,7 @@ void updateCartSolid(Server& s) {
     s.map_.dynSolids.push_back(cart);
     for (auto& p : s.players_) {
         if (!p.connected || !p.alive) continue;
-        AABB b = playerBox(p.move.pos, p.move.flags & MF_CROUCHED);
+        AABB b = playerBox(p.move);
         if (!b.overlaps(cart)) continue;
         // smallest push out: sideways either way, or up onto the cart
         float pushes[5] = {cart.mx.x - b.mn.x, b.mx.x - cart.mn.x, cart.mx.z - b.mn.z, b.mx.z - cart.mn.z, cart.mx.y - b.mn.y};
@@ -876,6 +952,8 @@ void rulesReset(Server& s) {
         for (auto& p : s.players_) if (p.connected && m.mode == MODE_TOURNEY) p.team = TEAM_A;
     }
     for (auto& p : s.players_) { p.it = false; p.out = false; p.found = false; } // nothing from the last match carries into warmup
+    s.tagOut_.clear();
+    for (auto& p : s.players_) if (p.waitingToPlay) { p.waitingToPlay = false; if (p.connected && p.team == TEAM_SPECTATOR) p.team = TEAM_A; }   // (joined mid tag match)
     setPhase(s, PHASE_WARMUP, 0);
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = s.players_[i];
@@ -892,6 +970,9 @@ void rulesTick(Server& s) {
     ModeState& m = s.ms_;
     m.weaponMask = s.weaponMask();
     updateCartSolid(s);
+    if (tagMatchOn(s))
+        for (auto& p : s.players_)   // tag: back after being eliminated (reconnected): still out
+            if (p.connected && !p.out && p.team != TEAM_SPECTATOR && tagWasOut(s, p)) { p.out = true; p.it = false; p.alive = false; p.respawnAt = -1; }
     switch (m.phase) {
         case PHASE_WARMUP:
             // Warmup lasts until players vote to start (F4). Play-vs-bots / autostart servers
@@ -957,15 +1038,43 @@ void rulesOnDeath(Server& s, int victim, int killer) {
     if (m.mode == MODE_BOMB && m.bombState == BOMB_CARRIED && m.bombCarrier == victim) {
         m.bombState = BOMB_DROPPED;
         const auto& v = s.players_[victim];
-        m.bombPos = v.move.pos.y < s.map_.killY() + 2.0f ? v.lastGround : v.move.pos; // fell off: drop it where they last stood
+        // It falls to the floor under where they died (REVIEW GAME-5: it used to hang in the air where an airborne
+        // carrier died, out of reach). Over the void, or into lava: where they last stood.
+        Vec3 at = v.move.pos;
+        float down = s.map_.raycast(at + Vec3(0, 0.05f, 0), Vec3(0, -1, 0), std::max(0.0f, at.y - s.map_.killY()) + 0.05f);
+        Vec3 floor = at - Vec3(0, std::max(0.0f, down - 0.05f), 0);
+        bool lava = !s.map_.lava.empty() && s.map_.inLava(AABB{floor - Vec3(0.2f, 0, 0.2f), floor + Vec3(0.2f, 0.3f, 0.2f)});
+        m.bombPos = (at.y < s.map_.killY() + 2.0f || down < 0 || lava) ? v.lastGround : floor;
         m.bombCarrier = 255;
+        s.bombDroppedAt_ = s.time();
     }
     if (m.actionPlayer == victim) { m.actionPlayer = 255; m.actionProgress = 0; }
+    if (m.mode == MODE_HIDE && m.phase == PHASE_LIVE && !s.players_[victim].it) {   // a hider is out: split the points by time hidden
+        int share = hiderShare(s);
+        s.players_[victim].score += share;
+        if (killer >= 0 && s.players_[killer].it && s.players_[victim].found) s.players_[killer].score += kHidePoints - share;
+    }
     if (m.mode == MODE_FFA && m.phase == PHASE_LIVE && (m.flags & MS_OVERTIME) && killer >= 0 && killer != victim)
         finishFFA(s);
 }
 
-void rulesOnLeave(Server& s, int id) { rulesOnDeath(s, id, -1); }
+void rulesOnLeave(Server& s, int id) {
+    rulesOnSpectate(s, id);   // (tag: leaving is like going to spectate)
+    if (s.ms_.mode == MODE_HIDE && !s.players_[id].alive) return;   // (already out: scored when found)
+    rulesOnDeath(s, id, -1);
+}
+
+// Tag (REVIEW GAME-1): leaving or going to spectate during a match is elimination. "It" doing it ends the round like
+// time running out (it used to hand "it" to someone else and come back in later, never out).
+void rulesOnSpectate(Server& s, int id) {
+    if (!tagMatchOn(s)) return;
+    auto& p = s.players_[id];
+    if (!p.connected || p.team == TEAM_SPECTATOR || p.out) return;
+    if (p.it && s.ms_.phase != PHASE_ROUND_END) tagEliminateIt(s, id, "out");
+    else tagOut(s, id);
+}
+
+bool rulesTeamLocked(const Server& s) { return tagMatchOn(s); }
 
 void rulesEndMatch(Server& s, const std::string& text, int winner) {
     if (s.ms_.phase == PHASE_MATCH_END || s.ms_.phase == PHASE_WARMUP) return;
@@ -1006,14 +1115,16 @@ bool rulesFrozen(const Server& s, int id) {
 
 int rulesSpawnType(const Server& s, int id) {
     const int mode = s.ms_.mode;
-    if (mode == MODE_RACE && s.map_.supportsMode(MODE_RACE)) return SPAWN_RACE;
-    if (mode == MODE_TOURNEY && s.tourney_.running && s.map_.supportsMode(MODE_VS))
+    // (canSupportMode, not supportsMode: whether the map HAS these spawns, not whether its "modes" line offers the
+    // mode. Colosseum is built for tourney and doesn't offer vs, so its a/b spawns were never used: REVIEW MAP-7.)
+    if (mode == MODE_RACE && s.map_.canSupportMode(MODE_RACE)) return SPAWN_RACE;
+    if (mode == MODE_TOURNEY && s.tourney_.running && s.map_.canSupportMode(MODE_VS))
         return s.players_[id].team == TEAM_B ? SPAWN_B : SPAWN_A; // a match: opposite ends
     if (!modeIsTeamBased(mode)) return SPAWN_ANY;
     bool staged = false;   // (payload maps may stage their spawns by checkpoint, like multi point)
     for (auto& sp : s.map_.spawns) staged |= isStagedSpawn(sp.team);
     if (mode == MODE_PAYLOAD && staged) return stagedSpawn(0, s.players_[id].team != s.ms_.attackers);
-    if (mode == MODE_POINTS && s.map_.supportsMode(MODE_POINTS)) // staged: the spawns for how far the attack has got
+    if (mode == MODE_POINTS && s.map_.canSupportMode(MODE_POINTS)) // staged: the spawns for how far the attack has got
         return stagedSpawn(0, s.players_[id].team != s.ms_.attackers);
     return s.players_[id].team == TEAM_B ? SPAWN_B : SPAWN_A;
 }

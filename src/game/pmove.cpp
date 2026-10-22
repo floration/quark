@@ -32,9 +32,20 @@ constexpr float kLadderSpeed = 4.5f;    // climbing speed
 constexpr float kLadderSide = 3.0f;     // sideways speed on a ladder
 }
 
-AABB playerBox(const Vec3& f, bool crouched) {
-    float h = crouched ? kPlayerCrouchHeight : kPlayerHeight;
-    return {{f.x - kPlayerHalfWidth, f.y, f.z - kPlayerHalfWidth}, {f.x + kPlayerHalfWidth, f.y + h, f.z + kPlayerHalfWidth}};
+AABB playerBox(const Vec3& f, bool crouched, float scale) {
+    float h = (crouched ? kPlayerCrouchHeight : kPlayerHeight) * scale, w = kPlayerHalfWidth * scale;
+    return {{f.x - w, f.y, f.z - w}, {f.x + w, f.y + h, f.z + w}};
+}
+
+AABB headBox(const AABB& b) {
+    Vec3 c = b.center();
+    float hx = (b.mx.x - b.mn.x) * 0.5f * kHeadWidthFraction, hz = (b.mx.z - b.mn.z) * 0.5f * kHeadWidthFraction;
+    return {{c.x - hx, b.mx.y - (b.mx.y - b.mn.y) * kHeadFraction, c.z - hz}, {c.x + hx, b.mx.y, c.z + hz}};
+}
+
+bool rayHitsHead(const Vec3& o, const Vec3& dir, const AABB& hitbox) {
+    float far = length(hitbox.mx - hitbox.mn) + length(hitbox.center() - o) + 1.0f;   // (anywhere along the line through the box)
+    return rayAABB(o, safeInv(dir), headBox(hitbox), far) >= 0;
 }
 
 // Air strafing: Quake acceleration, except that the part of the push that would brake you (wish direction turned
@@ -65,8 +76,9 @@ static void accelerate(Vec3& vel, const Vec3& wishDir, float wishSpeed, float ac
 static int slideMove(MoveState& s, const Map& map, const Vec3& delta, bool crouched) {
     int blocked = 0;
     const int order[3] = {1, 0, 2};
+    const float scale = moveScale(s.mods);
     for (int i : order) {
-        AABB box = playerBox(s.pos, crouched);
+        AABB box = playerBox(s.pos, crouched, scale);
         float d = map.sweepAxis(box, i, delta[i]);
         if (std::fabs(d - delta[i]) > 1e-5f) blocked |= 1 << i;
         s.pos[i] += d;
@@ -78,12 +90,13 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     if (s.flags & MF_FROZEN) {
         s.vel = {0, std::min(s.vel.y, 0.0f), 0};
     }
+    const float scale = moveScale(s.mods);   // size modifiers scale the hull and the eyes
     bool wantCrouch = false; // crouching was removed from the game (BTN_CROUCH is ignored)
     bool crouched = (s.flags & MF_CROUCHED) != 0;
     if (wantCrouch && !crouched) {
         crouched = true;
     } else if (!wantCrouch && crouched) {
-        if (!map.boxSolid(playerBox(s.pos, false))) crouched = false;
+        if (!map.boxSolid(playerBox(s.pos, false, scale))) crouched = false;
     }
 
     Vec3 fwd = {-std::sin(cmd.yaw), 0, -std::cos(cmd.yaw)};
@@ -144,7 +157,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     bool wasHooked = (s.flags & MF_HOOKED) != 0;
     if (!hookHeld) s.flags &= ~MF_HOOKHELD;
     if (hookHeld && !(s.flags & MF_HOOKHELD) && !(s.flags & MF_HOOKED) && !frozen && s.hookCooldown <= 0) {
-        float eyeH = crouched ? kCrouchEyeHeight : kEyeHeight;
+        float eyeH = (crouched ? kCrouchEyeHeight : kEyeHeight) * scale;
         Vec3 eye = s.pos + Vec3(0, eyeH, 0);
         float t = map.raycast(eye, angleForward(cmd.yaw, cmd.pitch), (kGrappleRange * tune(MV_HOOK_RANGE)));
         if (t >= 0) {
@@ -155,15 +168,18 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     if (!hookHeld || frozen) s.flags &= ~MF_HOOKED;
     bool hooked = (s.flags & MF_HOOKED) != 0;
     if (hooked) {
-        Vec3 to = s.hookPoint - (s.pos + Vec3(0, 1.0f, 0));
+        Vec3 to = s.hookPoint - (s.pos + Vec3(0, 1.0f * scale, 0));
         float dist = length(to);
         if (dist < (kHookRelease * tune(MV_HOOK_RELEASE))) {
             s.flags &= ~MF_HOOKED;
             hooked = false;
         } else if (!dashing) {
+            // The pull adds speed up to the grapple's top speed; it never brakes you (owner 5.4): faster than that
+            // already, it only bends your path toward the anchor and keeps your speed.
+            float before = length(s.vel);
             s.vel += to / dist * ((kHookAccel * tune(MV_HOOK_ACCEL)) * dt);
-            float sp = length(s.vel);
-            if (sp > (kHookMaxSpeed * tune(MV_HOOK_MAX))) s.vel *= (kHookMaxSpeed * tune(MV_HOOK_MAX)) / sp;
+            float sp = length(s.vel), cap = std::max(kHookMaxSpeed * tune(MV_HOOK_MAX), before);
+            if (sp > cap) s.vel *= cap / sp;
             onGround = false;
         }
     }
@@ -171,7 +187,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
 
     // Ladders: inside a ladder volume, moving climbs (look down to climb down), no input holds you there,
     // a fresh jump kicks you off backwards. No gravity while on it.
-    bool onLadder = !hooked && !dashing && !frozen && map.onLadder(playerBox(s.pos, crouched));
+    bool onLadder = !hooked && !dashing && !frozen && map.onLadder(playerBox(s.pos, crouched, scale));
     if (onLadder) {
         bool jumpPress = jumpHeld && !(s.flags & MF_JUMPHELD);
         if (jumpPress) {
@@ -217,11 +233,11 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     bool airStep = !onGround;
     if ((onGround || airStep) && (blocked & 0b101)) {
         MoveState step = before;
-        AABB b = playerBox(step.pos, crouched);
+        AABB b = playerBox(step.pos, crouched, scale);
         float up = map.sweepAxis(b, 1, (kStepHeight * tune(MV_STEP)));
         step.pos.y += up;
         int sb = slideMove(step, map, {delta.x, 0, delta.z}, crouched);
-        AABB b2 = playerBox(step.pos, crouched);
+        AABB b2 = playerBox(step.pos, crouched, scale);
         // walking: back down onto the step; in the air: back down, then on with this move's own rise or fall
         float rest = airStep ? delta.y - up : -up;
         float moved = map.sweepAxis(b2, 1, rest);
@@ -239,7 +255,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     }
 
     // Ground check: probe slightly below.
-    AABB feet = playerBox(s.pos, crouched);
+    AABB feet = playerBox(s.pos, crouched, scale);
     float probe = map.sweepAxis(feet, 1, -0.05f);
     bool nowGround = probe > -0.049f && s.vel.y <= 0.01f;
     if (nowGround) {

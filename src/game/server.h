@@ -102,6 +102,7 @@ struct ServerPlayer {
     int weapon = WPN_ROCKET;
     int selectedWeapon = WPN_ROCKET; // last weapon the player picked (slot 1 to start); kept across respawns
     double knifeBackAt = 0;      // a thrown knife is away until then: no knife (and no throws) before it
+    double throwReadyAt = 0;     // the shared alt-fire cooldown of the throws (knife, syringe): no throw before it
     double knifeSwingUntil = -1; // a swing that missed keeps cutting along your aim until then
     bool fireLocked = false;    // after a knife throw: nothing fires until both buttons are let go
     double nextFire = 0;
@@ -120,6 +121,8 @@ struct ServerPlayer {
     int soundPack = 0;      // cosmetic: the sound pack others hear this player with
     bool it = false;            // hide and seek / tag: the seeker / tagger (has the knife)
     bool found = false;         // hide and seek: found by the seeker this round (falling off doesn't count)
+    bool sought = false;        // hide and seek: has had their turn seeking this match
+    bool waitingToPlay = false; // joined during a tag match: spectates it, joins team A when it's over
     Vec3 lastGround;            // where the player last stood (a dropped bomb goes here, not into a pit)
     bool out = false;           // hide and seek: found this round; tag: eliminated for the match
     double itFreezeUntil = 0;    // tag: just got tagged, stands still until then
@@ -142,7 +145,7 @@ struct ServerPlayer {
     uint32_t nextEventId = 1;
     uint32_t ackedEvent = 0;
     std::deque<GameEvent> events; // unacknowledged reliable events
-    uint32_t lastDamagedTick = 0;
+    double lastDamagedAt = -1e9;   // (regeneration waits 3 s after this: seconds, not ticks, so a rate change doesn't move it)
     // Delta snapshots: what we sent this client recently (ring by tick) and the newest one it confirmed.
     static constexpr int kSentRing = 256;
     std::vector<Snapshot> sent;
@@ -212,7 +215,7 @@ public:
     int rateTopLevel_ = 0;      // the highest rate allowed (maxTickRate)
     double rateUpAt_ = 0;       // after stepping down: when to try the next rate up again (backs off each time it fails)
     double rateUpWait_ = 60;
-    double rateRaisedAt_ = -1e9; // a step up that doesn't hold steps straight back down, in any phase
+    bool rateDownPending_ = false; // the host fell behind mid-round: step down at the next break (REVIEW GAME-11)
     int tickRate() const { return kTickRates[rateLevel_]; }
     float dt() const { return 1.0f / tickRate(); }
     double time() const { return timeMs_ * 0.001; } // double: a float runs out of millisecond precision after a few hours of uptime
@@ -225,6 +228,8 @@ public:
     double roundStart_ = 0;
     double lastProgress_ = 0;    // vs: last time damage was dealt
     int lastIt_ = -1;
+    // tag: who has been eliminated this match ({rank id, name}): someone who leaves and comes back is still out
+    std::vector<std::pair<std::string, std::string>> tagOut_;
     std::vector<float>* tickTimes_ = nullptr;
     Snapshot snapScratch_;                     // reused every send (no per-tick allocations)
     std::vector<PlayerSnap> snapPlayers_;
@@ -236,7 +241,7 @@ public:
         // round up (500 Hz at a 333 cap -> every 2nd tick, not every tick), but 1000 / 333 = 3.003 stays 3
         return std::max(1, (int)std::ceil((float)tickRate() / std::max(1, rate) - 0.02f));
     } // benchmarks: every tick's simulate + send time goes here
-    int hideRounds_ = 0;        // hide and seek: rounds this match (fixed at the start: everyone seeks once)
+    int hideRounds_ = 0;        // hide and seek: rounds so far planned (everyone in play seeks once: grows if someone joins)
     uint32_t nextJoinId_ = 1;           // hide and seek: the last seeker (everyone takes a turn)
     float drainAccum_ = 0;
     uint32_t duelUsed_ = 0;      // duel: modifiers already played this match (bit per modifier), never repeated
@@ -245,6 +250,8 @@ public:
     float bestProgress_[2] = {0, 0};
     float completeTime_[2] = {0, 0};
     float kothPoints_[2] = {0, 0};
+    double bombDroppedAt_ = 0;   // bomb: when it was dropped (it goes back to an attacker if nobody picks it up)
+    double objTouch_ = -1e9;     // payload / multi point / bomb / neutral payload: when the side that needs time last touched the objective (overtime)
 
     BotBrain bots_[kMaxPlayers];
     NavGraph nav_;
@@ -282,6 +289,7 @@ public:
     size_t snapBytes_ = 0, snapCount_ = 0; // snapshot bytes sent (stats for tests / logs)
     float hitAccum_[kMaxPlayers][kMaxPlayers] = {};
     double hitFlushAt_[kMaxPlayers][kMaxPlayers] = {};
+    bool hitHead_[kMaxPlayers][kMaxPlayers] = {};   // the batched hit is a headshot (EV_HIT text "h": a red number)
     bool hitPending_ = false;
     void flushHit(int attacker, int victim);
     void bounceShot(int id, Vec3 o, Vec3 dir, float range, uint32_t vt, float* dmgPer, float dmg);
@@ -351,7 +359,7 @@ public:
     bool editBacklogged() const;
     void handleStringCmdForTest(int id, const std::string& s) { handleStringCmd(id, s); }
     void glog(int level, const char* fmt, ...);   // game log file (no-op below cfg_.logLevel)
-    float bodyScale() const { return duelModDef(duelMod()).size; } // duel "double size": hitbox and eye height
+    float bodyScale() const { return duelModDef(duelMod()).size; } // duel "double size": hull, hitbox and eye height (MOVE_BIG / MOVE_TINY)
     int duelMod() const { return ms_.mode == MODE_DUEL ? ms_.duelMod : 255; } // 255 in warmup (rulesReset clears it)
     // Weapons allowed right now (bit per weapon, 0 = all) and the 1v1 ruleset's AR_* rules.
     uint16_t weaponMask() const;
@@ -364,6 +372,9 @@ public:
         return r;
     }
     float maxHealth() const { return cfg_.custom.active() ? (float)cfg_.custom.health : (float)kMaxHealth; }
+    // This life's full health (what you spawn with): a duel life's ("1 HP", "glass cannons" 50, "tanks" 250), else
+    // maxHealth(). Heals (syringe, vampire, regeneration) stop here (REVIEW GAME-2a: they capped at maxHealth()).
+    float lifeMaxHealth() const { float h = duelModDef(duelMod()).health; return h == kMaxHealth ? maxHealth() : h; }
     void sendRules(int id);     // a custom mode's rules to one player (they set them before playing)
     bool weaponAllowed(int w) const { uint16_t m = weaponMask(); return !m || (m >> w & 1); }
     AABB hitBox(const Vec3& feet, bool crouched) const; // damage hull (scaled by the duel modifier's size)
@@ -417,6 +428,7 @@ private:
     void simulate();
     void drainCmds(int id);
     void checkTickRate();
+    void stepRateDown(const char* why);
     void resetRateWindow();
     void runPlayerCmd(int id, const UserCmd& cmd);
     bool fireWeapon(int id, const UserCmd& cmd);   // true if it hit a player (hitscan weapons)
@@ -434,8 +446,6 @@ private:
     std::string uniqueName(std::string name, int self) const;
 
     UdpSocket sock_;
-    uint32_t rng_ = 0x9E3779B9u;
-    float randf() { rng_ = rng_ * 1664525u + 1013904223u; return (rng_ >> 8) / 16777216.0f; } // [0,1)
     std::vector<GameEvent> events_; // scratch for snapshot building
     bool running_ = false;
     double nextTick_ = 0;
