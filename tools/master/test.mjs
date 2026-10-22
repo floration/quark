@@ -87,6 +87,8 @@ const server = async () => {
   S.ticket = (match, ladder, ns, map = "temple", signers = ns) => S.post("/ticket", { kind: "match", match, ladder, map, players: ns.map(id).join(","),
     keys: ns.map((n) => key(n).pub).join(","), sigs: ns.map((n, i) => signTicket(signers[i], match)).join(",") });
   S.result = (match, p) => S.post("/result", { match, p });
+  // a time trial: the racer's game signs the race ticket's id the same way
+  S.race = (match, n, map = "viaduct", signer = n) => S.post("/ticket", { kind: "race", match, map, players: id(n), keys: key(n).pub, sigs: signTicket(signer, match) });
   return S;
 };
 const age = (match, ms = 120000) => db.prepare("UPDATE tickets SET created = created - ? WHERE id = ?").run(ms, match);
@@ -230,13 +232,18 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   const run = (n, sp, ticket = "1111111111111111", extra = {}) =>
     S.post("/racerun", { ticket, map: "viaduct", id: id(n), ms: String(sp[sp.length - 1]), splits: sp.join(","), ...extra });
   check((await run(5, splitsFor(2000))) === "no ticket", "no race ticket, no run");
-  check((await S.post("/ticket", { kind: "race", match: "1111111111111111", map: "viaduct", players: id(5) })) === "ticket 1111111111111111", "race ticket");
-  check((await S.post("/ticket", { kind: "race", match: "2222222222222222", map: "viaduct", players: id(6) })) === "ticket 2222222222222222", "second racer ticket");
-  check((await S.post("/ticket", { kind: "race", match: "3333333333333333", map: "temple", players: id(6) })) === "not a ranked race map", "race map only");
+  // a race ticket needs the racer's signature: a server can't put someone who isn't on it on the board (or rename them)
+  check((await S.post("/ticket", { kind: "race", match: "1111111111111111", map: "viaduct", players: id(5) })) === "missing signatures", "unsigned race ticket refused");
+  check((await S.race("1111111111111111", 5, "viaduct", 6)) === "bad signature for " + id(5), "race ticket signed by someone else refused");
+  check((await S.post("/ticket", { kind: "race", match: "1111111111111111", map: "viaduct", players: id(5), keys: key(6).pub, sigs: signTicket(6, "1111111111111111") })) === "bad key for " + id(5), "race ticket key must hash to the racer");
+  check((await S.race("1111111111111111", 5)) === "ticket 1111111111111111", "race ticket");
+  check((await S.race("2222222222222222", 6)) === "ticket 2222222222222222", "second racer ticket");
+  check((await S.race("3333333333333333", 6, "temple")) === "not a ranked race map", "race map only");
   age("1111111111111111", 3600000); age("2222222222222222", 3600000);
   const s40 = splitsFor(2000), s41 = splitsFor(2100), s38 = splitsFor(1800), s39 = splitsFor(1900);
   check((await run(5, s40, "1111111111111111", { name })) === "first time", "first race time");
-  check((await run(5, s41)).startsWith("not faster"), "slower time kept out");
+  check((await run(5, s41, "1111111111111111", { name: Buffer.from("renamed").toString("hex") })).startsWith("not faster"), "slower time kept out");
+  check(db.prepare("SELECT name FROM names WHERE id = ?").get(id(5)).name === "racer", "a run that isn't kept doesn't change the name");
   check((await run(5, s38)) === `new best (was ${s40[11]})`, "faster time replaces");
   check((await run(6, s39, "2222222222222222")) === "first time", "second racer");
   check((await run(6, s38, "1111111111111111")) === "no ticket", "a ticket is for its racer");
@@ -246,7 +253,7 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   check((await run(5, [...s38.slice(0, 11), s38[11]], "1111111111111111", { ms: "99999" })) === "bad splits", "last split must be the time");
   const other = await server();
   check((await other.post("/racerun", { ticket: "1111111111111111", map: "viaduct", id: id(5), ms: String(s38[11]), splits: s38.join(",") })) === "no ticket", "only the ticket's server");
-  await other.post("/ticket", { kind: "race", match: "4444444444444444", map: "viaduct", players: id(7) });
+  await other.race("4444444444444444", 7);
   check((await other.post("/racerun", { ticket: "4444444444444444", map: "viaduct", id: id(7), ms: String(s38[11]), splits: s38.join(",") })) === "bad time", "a run can't be longer than its session");
   const board = (await call("/raceboard?map=viaduct")).split("\n");
   check(board[0] === `${s38[11]} racer` && board[1] === `${s39[11]} player` && board.length === 2, "race board " + JSON.stringify(board));

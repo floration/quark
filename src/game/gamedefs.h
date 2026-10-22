@@ -297,7 +297,7 @@ enum EventType : uint8_t {
     EV_TYPING,       // a is typing in chat (others hear key clicks and see "..." over them)
     EV_QUIP,         // a says a line from the voice pack (b: which one, the same pick for everyone)
     EV_LOCATE,       // tag / hide and seek locator, to the tagger / seeker only: a = who, text = "x y z" where they are
-    EV_RANKSIGN,     // ranked match live: text = the match id; the player's game answers "ticketsig <signature>"
+    EV_RANKSIGN,     // ranked match live / time trial started: text = the match (race ticket) id; the game answers "ticketsig <signature>"
 };
 
 #define WB(w) (1u << (w))

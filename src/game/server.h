@@ -324,6 +324,10 @@ public:
     // race ticket for the racer, and this server (not the racer's game) posts each finished run. All HTTP runs on
     // the MasterAnnouncer thread; replies are picked up in run().
     std::string rankedMatch_, raceTicket_, raceTicketFor_;
+    // the race ticket goes to the Worker once the racer's game has signed its id (like a match ticket): the Worker
+    // takes runs (and the racer's name) only for a player who is really on this server
+    bool raceTicketSent_ = false;
+    void sendRaceTicket(const std::string& pub, const std::string& sig);
     // While a ranked match is live (ticket opened at the first round going live, until the match ends) nothing may
     // change it: no votes, no map / mode / ranked changes, no team switches, no kicking its players (OWNER 3.4).
     bool rankedLive() const { return cfg_.ranked && !rankedMatch_.empty() && ms_.phase != PHASE_WARMUP && ms_.phase != PHASE_MATCH_END; }

@@ -22,11 +22,14 @@
 //                 when a ranked match goes live; each player's key must hash to their id and have signed
 //                 "quark-ticket-v1 <match>" (their game signs it in the match), so a server can only ticket players
 //                 who are really in it.
-//                 form: kind=race, match (16 hex), map, players=<racer id>          when a time trial starts
+//                 form: kind=race, match (16 hex), map, players=<racer id>, keys=pub, sigs=sig   when a time trial
+//                 starts; the racer's game signs "quark-ticket-v1 <match>" the same way, so a server can only post runs
+//                 (and the name that goes with them) for a player who is really on it.
 //                 answers "ticket <match>". One open match ticket per server; a server opens at most one a minute.
 //   POST /result  form: match, p=id:team:place,...[, left=id,...]   the server's own account of the ticketed match;
 //                 left: players who left during it (first leaver first; their game can't report)
 //   POST /racerun form: ticket, map, id, ms, splits, name (hex), v   a finished run the server saw, under a race ticket
+//                 (the name is saved only with a run that's kept)
 // Ranked (OpenSkill / Weng-Lin Plackett-Luce ratings):
 //   POST /report  form: secret, match, ladder, p=id:team:place,...[, dispute=1]   one player's account of a finished
 //                 match (dispute=1: their game saw a different result than the host's p)
@@ -204,21 +207,24 @@ async function openTicket(env, form, addr, now) {
     ladder = String(form.get("ladder") || "");
     if (!LADDERS.has(ladder)) return "not a ranked ladder";
     if (players.length < 2 || players.length > 16) return "bad players";
-    // every player vouched for this match: their key (which hashes to their id) signed its id in the game
-    const keys = String(form.get("keys") || "").split(","), sigs = String(form.get("sigs") || "").split(",");
-    if (keys.length !== players.length || sigs.length !== players.length) return "missing signatures";
-    for (let i = 0; i < players.length; i++) {
-      if (!/^[0-9a-f]{64}$/.test(keys[i]) || (await sha256hex(keys[i])).slice(0, 32) !== players[i]) return "bad key for " + players[i];
-      if (!(await ed25519Verify(keys[i], sigs[i], "quark-ticket-v1 " + match))) return "bad signature for " + players[i];
-    }
-    const last = await env.DB.prepare("SELECT MAX(created) AS t FROM tickets WHERE server = ? AND kind = 'match'").bind(addr).first();
-    if (last && last.t && now - last.t < TICKET_GAP_MS) return "too soon";
-    // a server runs one ranked match at a time: its older open ticket is void
-    await env.DB.prepare("UPDATE tickets SET status = 'void' WHERE server = ? AND kind = 'match' AND status = 'open'").bind(addr).run();
   } else if (kind === "race") {
     if (!RACE_MAPS.has(map)) return "not a ranked race map";
     if (players.length !== 1) return "bad players";
   } else return "bad request";
+  // every player vouched for this match / time trial: their key (which hashes to their id) signed its id in the game,
+  // so a server can only ticket players who are really on it (a race ticket names whose time and name it may post)
+  const keys = String(form.get("keys") || "").split(","), sigs = String(form.get("sigs") || "").split(",");
+  if (!form.get("keys") || !form.get("sigs") || keys.length !== players.length || sigs.length !== players.length) return "missing signatures";
+  for (let i = 0; i < players.length; i++) {
+    if (!/^[0-9a-f]{64}$/.test(keys[i]) || (await sha256hex(keys[i])).slice(0, 32) !== players[i]) return "bad key for " + players[i];
+    if (!(await ed25519Verify(keys[i], sigs[i], "quark-ticket-v1 " + match))) return "bad signature for " + players[i];
+  }
+  if (kind === "match") {
+    const last = await env.DB.prepare("SELECT MAX(created) AS t FROM tickets WHERE server = ? AND kind = 'match'").bind(addr).first();
+    if (last && last.t && now - last.t < TICKET_GAP_MS) return "too soon";
+    // a server runs one ranked match at a time: its older open ticket is void
+    await env.DB.prepare("UPDATE tickets SET status = 'void' WHERE server = ? AND kind = 'match' AND status = 'open'").bind(addr).run();
+  }
   const r = await env.DB.prepare("INSERT OR IGNORE INTO tickets (id, kind, server, ladder, map, players, created, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'open')")
     .bind(match, kind, addr, ladder, map, [...players].sort().join(","), now).run();
   if (!r.meta || r.meta.changes !== 1) return "ticket exists";
@@ -240,13 +246,13 @@ async function raceRun(env, form, addr, now) {
   if (!floors || splits.length !== floors.length || splits[splits.length - 1] !== ms) return "bad splits";
   // checkpoint times increase, and no leg is faster than the course allows
   if (splits.some((x, i) => !(x > 0) || x - (i ? splits[i - 1] : 0) < floors[i])) return "bad splits";
-  await saveName(env, me, String(form.get("name") || ""), now);
   const best = await env.DB.prepare("SELECT ms FROM race_times WHERE map = ? AND id = ?").bind(map, me).first();
   if (best && best.ms <= ms) return `not faster (best ${best.ms})`;
   await env.DB.prepare(
     "INSERT INTO race_times (map, id, ms, splits, version, created) VALUES (?, ?, ?, ?, ?, ?) " +
     "ON CONFLICT(map, id) DO UPDATE SET ms = excluded.ms, splits = excluded.splits, version = excluded.version, created = excluded.created"
   ).bind(map, me, ms, splits.join(","), String(form.get("v") || "").slice(0, 16), now).run();
+  await saveName(env, me, String(form.get("name") || ""), now);   // (only with an accepted run)
   return best ? `new best (was ${best.ms})` : "first time";
 }
 

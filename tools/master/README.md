@@ -80,6 +80,8 @@ What changed:
   so fresh accounts can't be farmed for rating.
 - **Race runs come from the server** (`POST /racerun`, under a race ticket for that racer), with every leg checked
   against `RACE_FLOORS` (straight-line gap between checkpoints at 48 m/s, from `build/quark_tests racefloors`).
+  The race ticket carries the racer's signature of its id, like a match ticket, and a run's name is saved only
+  when the run is kept, so a server can't rename or post times for a player who isn't on it.
   `POST /racetime` (the old self-report from the racer's game) is refused.
 - **Discord links are verified**: `/link` in Discord gives a one-time code (`POST /linkcode`, bot only), typed in game.
   Old unverified links get no roles and no queue pings.

@@ -354,7 +354,7 @@ void NetClient::onSnapshot(Snapshot& s) {
         if (e.type == EV_PLAYERINFO && e.a < kMaxPlayers) { names_[e.a] = e.text; int m = e.b & 15, sp = e.b >> 4;
             models_[e.a] = m < kPlayerModels ? m : 0; packs_[e.a] = sp < kSoundPacks ? sp : 0; }
         if (e.type == EV_RANKINFO && e.a < kMaxPlayers) rankIds_[e.a] = e.text;
-        if (e.type == EV_RANKSIGN) {   // a ranked match went live: vouch that we're in it (the server forwards it with the ticket)
+        if (e.type == EV_RANKSIGN) {   // a ranked match went live (or a time trial started): vouch that we're in it (the server forwards it with the ticket)
             std::string sig;
             bool hex16 = e.text.size() == 16 && e.text.find_first_not_of("0123456789abcdef") == std::string::npos;
             if (!play_.active && hex16 && rankSign(rankKey_, rankTicketMessage(e.text), &sig)) sendCommand("ticketsig " + sig);
