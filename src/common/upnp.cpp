@@ -147,7 +147,12 @@ void PortMapper::start(uint16_t port) {
     ok_ = false;
     quit_ = false;
     setStatus("searching for router (UPnP)...");
-    thread_ = std::thread([this] { worker(); });
+    thread_ = std::thread([this] {
+        try { worker(); } catch (const std::exception& e) {   // (ENG-2: a router's reply that throws: no mapping, no crash)
+            setStatus(std::string("UPnP: failed (") + e.what() + ") - forward UDP port " + std::to_string(port_) + " manually");
+            done_ = true;
+        }
+    });
 }
 
 void PortMapper::stop() {

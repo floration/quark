@@ -240,7 +240,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
         std::thread([look] {   // (detached: a slow lookup never holds up stop(); retried with backoff until it works)
             for (int wait = 5; !look->quit; wait = std::min(wait * 2, 600)) {
                 NetAddr a;
-                std::string ip = publicIpv4();
+                std::string ip = publicIpv4();   // (never throws: ENG-2)
                 if (!ip.empty() && NetAddr::parse(ip, 0, a)) { look->ip = a.ip; return; }
                 for (int s = 0; s < wait * 10 && !look->quit; s++) sleepMs(100);
             }
@@ -382,7 +382,7 @@ double Server::frame() {
     uint8_t buf[2048];
     NetAddr from;
     int n;
-    while ((n = sock_.recv(from, buf, sizeof buf)) > 0) handlePacket(from, buf, n);
+    while ((n = sock_.recv(from, buf, sizeof buf)) > 0) receivePacket(from, buf, n);
     if (probeSock_.isOpen()) tickReachability();
 
     double now = timeNow();
@@ -422,7 +422,10 @@ double Server::frame() {
     if (!rankedMatch_.empty() && ms_.phase == PHASE_WARMUP) rankedMatch_.clear(); // (a match that fell back to warmup: the next one gets its own ticket)
     // Ranking server replies (tickets, race runs, results): here, not in run(), which dedicated servers don't use
     // (src/server/main.cpp drives frame() / idle() itself: REVIEW 2.3).
-    if (master_ && master_->hasReplies()) for (auto& r : master_->takeReplies()) handleMasterReply(r.first, r.second);
+    if (master_ && master_->hasReplies()) {
+        try { for (auto& r : master_->takeReplies()) handleMasterReply(r.first, r.second); }
+        catch (const std::exception& e) { log(std::string("ranking server reply dropped: ") + e.what()); }   // (ENG-2)
+    }
     checkTickRate();
     checkRestartFlag();
     return nextTick_ - timeNow();
@@ -450,6 +453,14 @@ int Server::teamCount(int team) const {
     int c = 0;
     for (auto& p : players_) c += p.connected && p.team == team;
     return c;
+}
+
+// ENG-2: a packet that makes anything throw (out of memory on the way) is dropped; the server goes on.
+void Server::receivePacket(const NetAddr& from, const uint8_t* data, int len) {
+    try { handlePacket(from, data, len); }
+    catch (const std::exception& e) {
+        try { log("packet from " + from.toString() + " dropped: " + e.what()); } catch (const std::exception&) {}
+    }
 }
 
 void Server::handlePacket(const NetAddr& from, const uint8_t* data, int len) {

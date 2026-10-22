@@ -42,7 +42,12 @@ bool signedMasterUrl(const std::string& body, const std::string& sigHex, const s
     return true;
 }
 
-std::string masterUrl() {
+static std::string masterUrlImpl();
+std::string masterUrl() {   // (ENG-2: anything throwing in the fetch or the check leaves the built-in address)
+    try { return masterUrlImpl(); } catch (const std::exception&) { return kPinnedMasterUrl; }
+}
+
+static std::string masterUrlImpl() {
     static std::mutex mu;
     static std::string cached = kPinnedMasterUrl;
     static bool fetched = false;
@@ -61,7 +66,13 @@ std::string masterUrl() {
     return cached;
 }
 
-bool fetchServerList(std::vector<std::string>& out, std::string* err) {
+static bool fetchServerListImpl(std::vector<std::string>& out, std::string* err);
+bool fetchServerList(std::vector<std::string>& out, std::string* err) {   // (ENG-2: a reply that throws is a failed fetch)
+    try { return fetchServerListImpl(out, err); }
+    catch (const std::exception& e) { out.clear(); if (err) *err = std::string("bad list reply: ") + e.what(); return false; }
+}
+
+static bool fetchServerListImpl(std::vector<std::string>& out, std::string* err) {
     out.clear();
     std::string base = masterUrl();
     if (base.empty()) { if (err) *err = "no internet server list configured"; return false; }
@@ -78,7 +89,12 @@ bool fetchServerList(std::vector<std::string>& out, std::string* err) {
     return true;
 }
 
+static std::string publicIpv4Impl();
 std::string publicIpv4() {
+    try { return publicIpv4Impl(); } catch (const std::exception&) { return ""; }
+}
+
+static std::string publicIpv4Impl() {
     if (const char* e = getenv("QUARK_PUBLIC_IP")) { std::string v = trim(e); return isIpv4(v) ? v : ""; }   // (tests: "off")
     std::string b;
     if (httpGetText(kIpv4Echo, b, 4000) && isIpv4(trim(b))) return trim(b);
@@ -128,6 +144,14 @@ std::vector<std::pair<std::string, std::string>> MasterAnnouncer::takeReplies() 
 }
 
 void MasterAnnouncer::run() {
+    try { runLoop(); } catch (const std::exception& e) {   // (ENG-2: never takes the server down; it just stops announcing)
+        std::lock_guard<std::mutex> l(mu_);
+        status_ = std::string("internet list: stopped (") + e.what() + ")";
+        haveToken_ = true;   // (queued posts aren't waited for)
+    }
+}
+
+void MasterAnnouncer::runLoop() {
     std::string ip, base, token; // token: issued by the list on our first announce, proves we own ip:port
     auto nextAnnounce = std::chrono::steady_clock::now();
     for (;;) {

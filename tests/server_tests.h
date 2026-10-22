@@ -412,7 +412,11 @@ static std::atomic<long long> g_allocs{0};
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmismatched-new-delete"
 #endif
+// Fault injection (ENG-2 tests): >= 0, the allocation that many from now on this thread throws bad_alloc.
+static thread_local long long g_failAllocIn = -1;
+static std::atomic<long long> g_injected{0};
 void* operator new(size_t n) {
+    if (g_failAllocIn >= 0 && g_failAllocIn-- == 0) { g_injected++; throw std::bad_alloc(); }
     if (g_countAllocs) g_allocs.fetch_add(1, std::memory_order_relaxed);
     void* p = std::malloc(n ? n : 1);
     if (!p) throw std::bad_alloc();
@@ -660,6 +664,121 @@ static void testRankDelaysRealTime() {
 #endif
 }
 
+// ENG-2: exception boundaries. Every allocation in turn fails (bad_alloc, injected on this thread) while a demo is
+// opened and played, and while the server takes connects and input: each ends in an error or a dropped packet,
+// never std::terminate, and both carry on afterwards.
+static void testExceptionBoundaries(uint16_t port) {
+    printf("exception boundaries: demos and packets with allocations failing\n");
+    std::string path = userDataPath() + "/zz_eng2.qdemo";
+    {   // a short demo
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "harbor"; cfg.mode = MODE_FFA; cfg.port = port;
+        s.setLog([](const std::string&) {});
+        if (!s.start(cfg)) { printf("  FAIL %s:%d: server start\n", __FILE__, __LINE__); g_fail++; return; }
+        NetClient a;
+        a.connect("127.0.0.1:" + std::to_string(port), "rec");
+        std::vector<NetClient*> cls = {&a};
+        pump(s, cls, 1.0, idle);
+        s.addBot(TEAM_A, 1);
+        CHECK(a.startRecording(path));
+        a.sendCommand("say an event in the demo");
+        pump(s, cls, 0.8, [](int) { UserCmd c; c.forward = 127; return c; });
+        a.stopRecording();
+        s.stop();
+    }
+    long long injected0 = g_injected;
+    int opened = 0, refused = 0, tries = 0;
+    for (long long n = 0; n < 400; n += (n < 100 ? 1 : 7)) {   // opening
+        NetClient p;
+        std::string err;
+        g_failAllocIn = n;
+        bool ok = p.startPlayback(path, err);
+        g_failAllocIn = -1;
+        tries++;
+        if (ok) opened++; else { refused++; CHECK(!err.empty()); }
+    }
+    int polls = 0, stopped = 0;
+    {   // playing (a failure ends the demo with the reason: start it again)
+        NetClient p;
+        for (long long n = 0; n < 600; n += 3) {
+            std::string err;
+            if (!p.playback() && !p.startPlayback(path, err)) { CHECK(false); break; }
+            g_failAllocIn = n;
+            p.poll();
+            g_failAllocIn = -1;
+            polls++;
+            if (!p.playback()) { stopped++; CHECK(p.error().rfind("demo stopped: ", 0) == 0 || p.error() == "demo finished"); }
+            sleepMs(1);
+        }
+    }
+    NetClient fine;
+    std::string err;
+    CHECK(fine.startPlayback(path, err) && fine.mapReady());   // and nothing is left broken
+    std::remove(path.c_str());
+    // the server: connects (challenge, then the real one) and input, each allocation failing in turn
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "harbor"; cfg.mode = MODE_FFA; cfg.port = (uint16_t)(port + 1);
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { printf("  FAIL %s:%d: server start\n", __FILE__, __LINE__); g_fail++; return; }
+    UdpSocket raw;
+    CHECK(raw.open(0));
+    NetAddr me{0x7F000001u, raw.localPort()};
+    auto connectPkt = [&cfg](uint32_t nonce, uint32_t cookie, std::vector<uint8_t>& out) {
+        uint8_t b[256];
+        Writer w(b, sizeof b);
+        writeHeader(w, PKT_CONNECT); w.u16(kProtocolVersion); w.u32(nonce); w.u32(cookie); w.str("injected");
+        w.u32(0); w.u32(0); w.str(""); w.str(""); w.u32(0x7F000001u); w.u16(cfg.port);
+        out.assign(b, b + w.size());
+    };
+    int serverTries = 0;
+    for (long long n = 0; n < 160; n++) {
+        uint32_t nonce = 0x5000 + (uint32_t)n;
+        std::vector<uint8_t> pkt;
+        connectPkt(nonce, 0, pkt);
+        g_failAllocIn = n;
+        s.receivePacket(me, pkt.data(), (int)pkt.size());   // the challenge
+        g_failAllocIn = -1;
+        uint32_t cookie = 0;
+        uint8_t buf[2048]; NetAddr from; int len;
+        for (int k = 0; k < 50 && !cookie; k++) {
+            while ((len = raw.recv(from, buf, sizeof buf)) > 0) { Reader r(buf, len); if (r.u32() == kProtocolMagic && r.u8() == PKT_CHALLENGE) { r.u32(); cookie = r.u32(); } }
+            if (!cookie) sleepMs(1);
+        }
+        if (!cookie) { connectPkt(nonce, 0, pkt); s.receivePacket(me, pkt.data(), (int)pkt.size()); continue; }   // (failed: next n)
+        connectPkt(nonce, cookie, pkt);
+        g_failAllocIn = n;
+        s.receivePacket(me, pkt.data(), (int)pkt.size());   // the real connect
+        g_failAllocIn = -1;
+        serverTries++;
+        int id = -1;
+        for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].nonce == nonce) id = i;
+        if (id >= 0) {   // input, a string command or two
+            uint8_t in[512];
+            Writer w(in, sizeof in);
+            writeHeader(w, PKT_INPUT); w.u32(nonce); w.u32(0); w.u32(0); w.u8(0); w.u8(1);
+            UserCmd c; c.seq = 1; c.msec = 1; writeCmd(w, c);
+            w.u8(2); w.u16(1); w.str("say a long chat line that has to be allocated somewhere"); w.str("name someone else entirely");
+            g_failAllocIn = n / 2;
+            s.receivePacket(me, in, w.size());
+            g_failAllocIn = -1;
+            s.command("kick " + std::to_string(id));
+        }
+        while (raw.recv(from, buf, sizeof buf) > 0) {}
+    }
+    long long injected = g_injected - injected0;
+    printf("  %lld allocations failed: demo opened %d / refused %d of %d tries, %d of %d polls stopped it; %d server connects\n", injected, opened, refused,
+           tries, stopped, polls, serverTries);
+    CHECK(injected > 50 && refused > 0 && opened > 0 && stopped > 0);
+    NetClient after;   // the server still takes a real player
+    after.connect("127.0.0.1:" + std::to_string(cfg.port), "after");
+    std::vector<NetClient*> cls = {&after};
+    pump(s, cls, 1.0, idle);
+    CHECK(after.state() == ConnState::Connected && after.hasSnapshot());
+    s.stop();
+}
+
 static void serverTests() {
     testVersionReject(TP(28800));
     testSeedFetchDedupe();
@@ -677,4 +796,5 @@ static void serverTests() {
     testVisibilitySpread(TP(28806));
     testAutosaveOffTick(TP(28807));
     testRankDelaysRealTime();
+    testExceptionBoundaries(TP(28808));
 }

@@ -436,6 +436,8 @@ void RankService::run() {
         Job j = *next;
         jobs_.erase(next);
         l.unlock();
+        // (ENG-2: a reply that makes anything throw - out of memory on a huge one - loses this job, never the game)
+        try {
         std::string base = masterUrl(), out, err, msg;
         if (!j.rawKey.empty()) {
             bool ok = !base.empty() && (j.body.empty() ? httpGetText(base + j.path, out, 6000, &err) : httpPostForm(base + j.path, j.body, out, 8000, &err));
@@ -496,5 +498,10 @@ void RankService::run() {
         if (gotBoard) boards_[j.ladder] = board;
         for (auto& g : got) ratings_[g.first] = g.second;
         if (!msg.empty()) messages_.push_back(msg);
+        } catch (const std::exception& e) {
+            if (!l.owns_lock()) l.lock();
+            if (!j.rawKey.empty() && j.expect.empty()) texts_[j.rawKey] = std::string("!") + e.what();
+            else messages_.push_back(std::string("ranked: bad reply from the ranking server (") + e.what() + ")");
+        }
     }
 }

@@ -82,13 +82,20 @@ void NetClient::disconnect() {
 }
 
 void NetClient::poll() {
-    if (play_.active) { pollPlayback(); return; }
+    if (play_.active) {   // (ENG-2: a demo that makes anything throw ends, with the reason; the game goes on)
+        try { pollPlayback(); }
+        catch (const std::exception& e) { error_ = std::string("demo stopped: ") + e.what(); play_ = Playback(); state_ = ConnState::Disconnected; }
+        return;
+    }
     if (state_ == ConnState::Disconnected) return;
     uint8_t buf[2048];
     NetAddr from;
     int n;
     while ((n = sock_.recv(from, buf, sizeof buf)) > 0)
-        if (from == server_) handlePacket(buf, n);
+        if (from == server_) {
+            try { handlePacket(buf, n); }   // (ENG-2: a packet that makes anything throw is dropped)
+            catch (const std::exception&) {}
+        }
     if (state_ == ConnState::Disconnected) return;
 
     double now = timeNow();
@@ -703,6 +710,16 @@ void NetClient::recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& 
 }
 
 bool NetClient::startPlayback(const std::string& path, std::string& err) {
+    try { return startPlaybackImpl(path, err); }
+    catch (const std::exception& e) {   // (ENG-2: a hostile or broken demo file is an error, never a crash)
+        err = std::string("can't play ") + path + ": " + e.what();
+        play_ = Playback();
+        state_ = ConnState::Disconnected;
+        return false;
+    }
+}
+
+bool NetClient::startPlaybackImpl(const std::string& path, std::string& err) {
     disconnect();
     std::ifstream f(path, std::ios::binary | std::ios::ate);
     if (f && (uint64_t)f.tellg() > kMaxDemoBytes) { err = "demo too big"; return false; }

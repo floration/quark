@@ -103,6 +103,7 @@ private:
     void handlePacket(const uint8_t* data, int len);
     void recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& events);
     void pollPlayback();
+    bool startPlaybackImpl(const std::string& path, std::string& err);
     FILE* rec_ = nullptr;
     double recStart_ = 0, recLast_ = -1, recEvery_ = 0.016;
     uint32_t recMapRev_ = 0xFFFFFFFFu, recEventId_ = 0;

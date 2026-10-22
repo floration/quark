@@ -40,6 +40,7 @@ public:
     static constexpr size_t kMaxReplies = 64;   // replies kept until taken (like the 64 queued posts)
 private:
     void run();
+    void runLoop();
     struct Post { std::string key, path, form; };
     std::deque<Post> posts_;
     std::vector<std::pair<std::string, std::string>> replies_;

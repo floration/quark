@@ -214,6 +214,7 @@ public:
     // The in-process host's client (its session nonce): the only admin (REVIEW NET-8). Thread safe.
     void setHostNonce(uint32_t n) { hostNonce_ = n; }
     void handlePacket(const NetAddr& from, const uint8_t* data, int len); // (public: tests feed it spoofed sources)
+    void receivePacket(const NetAddr& from, const uint8_t* data, int len); // handlePacket inside an exception boundary (ENG-2)
     float voteCooldown_ = 5.0f; // seconds a player waits to call another vote after theirs failed (tests set 0)
     uint16_t port() const { return sock_.localPort(); }
     int playerCount() const;
