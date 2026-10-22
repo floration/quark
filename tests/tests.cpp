@@ -689,7 +689,7 @@ static void testTimeTrial(uint16_t port) {
     CHECK(a.hasSnapshot() && a.mode().phase == PHASE_LIVE);
     // the race ticket goes out only with the racer's signature of its id (the Worker refuses it otherwise)
     for (int i = 0; i < 30 && !s.raceTicketSent_; i++) pump(s, cls, 0.1, idle);
-    CHECK(s.players_[a.clientId()].rankId == rk.id && s.raceTicketFor_ == rk.id && !s.raceTicket_.empty() && s.raceTicketSent_);
+    CHECK(s.players_[a.clientId()].rankId == rk.id && s.raceTicketFor_ == rk.id && s.raceTicketSent_);   // (the post then fails at once in tests, QUARK_MASTER=off, and frame() drops the ticket)
     a.takeEvents();
     std::vector<int> splits;
     for (size_t c = 0; c < cps.size(); c++) {
