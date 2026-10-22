@@ -449,7 +449,7 @@ private:
     std::atomic<bool> mapInfoQuit_{false};
     static int64_t mapStamp(const std::string& name);
     static MapInfo readMapInfo(const std::string& name, int64_t stamp);
-    void handleConnect(const NetAddr& from, Reader& r);
+    void handleConnect(const NetAddr& from, Reader& r, int len);
     void handleInput(int id, Reader& r);
     void handleStringCmd(int id, const std::string& s);
     // Every drop of a live ranked participant counts as leaving the match (the first leaver loses), whatever the path:

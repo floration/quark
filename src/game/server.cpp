@@ -427,7 +427,7 @@ void Server::handlePacket(const NetAddr& from, const uint8_t* data, int len) {
         }
         return;
     }
-    if (type == PKT_CONNECT) { handleConnect(from, r); return; }
+    if (type == PKT_CONNECT) { handleConnect(from, r, len); return; }
     int id = findPlayer(from);
     if (id < 0) return;
     if (r.u32() != players_[id].nonce) return;
@@ -617,16 +617,24 @@ bool Server::ownAddress(const NetAddr& d, const NetAddr& from) {
     return false;
 }
 
-void Server::handleConnect(const NetAddr& from, Reader& r) {
+void Server::handleConnect(const NetAddr& from, Reader& r, int len) {
     uint16_t version = r.u16();
     uint32_t nonce = r.u32();
     if (r.bad()) return;
-    if (version != kProtocolVersion) {   // (old clients: no cookie field; a short reject, no state)
-        uint8_t out[64];
-        Writer w(out, sizeof out);
-        writeHeader(w, PKT_REJECT);
-        w.str("version mismatch (server " + std::to_string(kProtocolVersion) + ")");
-        sock_.send(from, out, w.size());
+    if (version != kProtocolVersion) {
+        // A short reject, no state, and (like every reply before the cookie check) never bigger than the request,
+        // whose source may be spoofed (REVIEW 2.9): the longest wording that fits. Every real client sends its cookie
+        // and a name after the nonce (16 bytes at least), so it always hears why; a bare 11 byte probe gets nothing.
+        const std::string v = std::to_string(kProtocolVersion);
+        for (const std::string& why : {"version mismatch (server " + v + ")", "server version " + v, "version " + v}) {
+            if (kRejectHeaderBytes + 1 + (int)why.size() > len) continue;
+            uint8_t out[64];
+            Writer w(out, sizeof out);
+            writeHeader(w, PKT_REJECT);
+            w.str(why);
+            sock_.send(from, out, w.size());
+            break;
+        }
         return;
     }
     uint32_t cookie = r.u32();

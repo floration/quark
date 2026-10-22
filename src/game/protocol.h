@@ -34,6 +34,7 @@ enum PacketType : uint8_t {
 
 constexpr int kInfoRequestBytes = 160;      // PKT_INFO_REQUEST size; the reply is trimmed to fit (no amplification)
 constexpr int kInfoNameMax = 96, kInfoMapMax = 40; // 5 + 97 + 41 + 5 <= kInfoRequestBytes
+constexpr int kRejectHeaderBytes = 5;       // PKT_REJECT before its reason (u32 magic, u8 type)
 constexpr int kProbeRequestBytes = 32;      // PKT_PROBE_REQUEST size (the 9 byte reply is smaller: no amplification)
 constexpr int kMapChunk = 1200;              // map file bytes per PKT_MAP_DATA
 constexpr uint32_t kMaxMapBytes = 8u << 20;  // refuse to download anything bigger
