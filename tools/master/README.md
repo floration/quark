@@ -55,13 +55,9 @@ DELETE FROM race_times WHERE map = 'viaduct' AND id = '<id>';
 `splits` is the run time in ms at each checkpoint, so a gap that's impossible to cover stands out.
 
 ## Server tokens, rate limits (security update)
-Run this once in D1 → `quark` → **Console** before deploying the new `worker.js`:
-```sql
-ALTER TABLE servers ADD COLUMN token TEXT;
-ALTER TABLE lifetime ADD COLUMN hour_start INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE lifetime ADD COLUMN hour_kills INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE lifetime ADD COLUMN hour_deaths INTEGER NOT NULL DEFAULT 0;
-```
+Database: none of this was live before 1.17, so its SQL is in the one combined list under **Deploy** in
+"Ranked keys, leavers, disputes, hardening (1.17)" below. Run that list, not pieces of it.
+
 `/announce` answers `ok <token>`. A server may announce or remove its own source IPv4 address; through an IPv6
 path (`?ip=`) it needs the token from an earlier IPv4 announce. Writes are rate-limited per IP and per player id
 (in memory, per isolate; the per-IP buckets leave room for many players behind one address, and the Discord bot's
@@ -86,21 +82,13 @@ What changed:
 - **Discord links are verified**: `/link` in Discord gives a one-time code (`POST /linkcode`, bot only), typed in game.
   Old unverified links get no roles and no queue pings.
 
-Run this once in D1 -> `quark` -> **Console**, then deploy the new `worker.js` (and restart the bot):
-```sql
-ALTER TABLE links ADD COLUMN verified INTEGER NOT NULL DEFAULT 0;
-CREATE TABLE IF NOT EXISTS tickets (id TEXT PRIMARY KEY, kind TEXT NOT NULL, server TEXT NOT NULL, ladder TEXT NOT NULL, map TEXT NOT NULL, players TEXT NOT NULL, created INTEGER NOT NULL, status TEXT NOT NULL, result TEXT);
-CREATE INDEX IF NOT EXISTS tickets_server ON tickets (server, created);
-CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, tgames INTEGER NOT NULL, created INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS link_codes (code TEXT PRIMARY KEY, discord TEXT NOT NULL, created INTEGER NOT NULL);
-```
+Database: none of this was live before 1.17, so its SQL is in the one combined list under **Deploy** in
+"Ranked keys, leavers, disputes, hardening (1.17)" below. Run that list, not pieces of it.
+
 Existing ratings and race times stay, but with an empty `accounts` table nobody is established, so the leaderboards
-and crowns are empty until players finish 5 ticketed matches. To keep today's boards visible, grandfather the
-players who already have ranked games (they were rated under the old, forgeable reports, so check the top first):
-```sql
-INSERT OR IGNORE INTO accounts (id, tgames, created)
-  SELECT substr(id, instr(id, ':') + 1), MAX(games), MIN(updated) FROM players GROUP BY substr(id, instr(id, ':') + 1);
-```
+and crowns are empty until players finish 5 ticketed matches. The combined list ends with an optional statement that
+grandfathers the players who already have ranked games (they were rated under the old, forgeable reports, so check
+the top first).
 Optionally clear suspicious old race times (see above), since they were self-reported. Old game versions can't
 report ranked results or race times any more (they get "no ticket" / "update the game"), so release the matching
 game version at the same time. When the course of Viaduct changes, re-run `build/quark_tests racefloors` and update
@@ -142,15 +130,31 @@ What changed:
 
 Deploy (in this order, together with the matching game release, since old games announce with GET and can't sign
 tickets):
-1. D1 → `quark` → **Console**: run
+1. D1 → `quark` → **Console**: run this, in this order. It is everything the live v1.16.0 database lacks (the
+   "Server tokens", "Match tickets" and 1.17 changes above; checked against `schema.sql` at v1.16.0). Run it once,
+   all of it: the `ALTER TABLE` lines fail if run twice ("duplicate column"), the `CREATE ... IF NOT EXISTS` lines
+   don't. Then deploy the Worker (step 2) right away: the new `worker.js` needs every column here, and the old one
+   ignores them.
 ```sql
+-- server tokens, rate limits
+ALTER TABLE servers ADD COLUMN token TEXT;
+ALTER TABLE lifetime ADD COLUMN hour_start INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE lifetime ADD COLUMN hour_kills INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE lifetime ADD COLUMN hour_deaths INTEGER NOT NULL DEFAULT 0;
+-- match tickets, provisional accounts, verified Discord links
+ALTER TABLE links ADD COLUMN verified INTEGER NOT NULL DEFAULT 0;
+-- signed ranked ids, leavers and disputes, atomic writes
 ALTER TABLE players ADD COLUMN ver INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE reports ADD COLUMN result TEXT;
 ALTER TABLE reports ADD COLUMN dispute INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE tickets ADD COLUMN leavers TEXT;
-ALTER TABLE tickets ADD COLUMN resulted INTEGER;
+-- new tables (tickets is created with leavers / resulted: no ALTER TABLE tickets)
+CREATE TABLE IF NOT EXISTS tickets (id TEXT PRIMARY KEY, kind TEXT NOT NULL, server TEXT NOT NULL, ladder TEXT NOT NULL, map TEXT NOT NULL, players TEXT NOT NULL, created INTEGER NOT NULL, status TEXT NOT NULL, result TEXT, leavers TEXT, resulted INTEGER);
+CREATE INDEX IF NOT EXISTS tickets_server ON tickets (server, created);
+CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, tgames INTEGER NOT NULL, created INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS link_codes (code TEXT PRIMARY KEY, discord TEXT NOT NULL, created INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS id_moves (old TEXT PRIMARY KEY, new TEXT NOT NULL, moved INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS rate_guard (ok INTEGER NOT NULL CHECK (ok = 1));
+-- indexes for the boards, queues and pruning
 CREATE INDEX IF NOT EXISTS players_skill ON players ((mu - 3 * sigma));
 CREATE INDEX IF NOT EXISTS tickets_created ON tickets (created);
 CREATE INDEX IF NOT EXISTS matches_status ON matches (status, created);
@@ -158,7 +162,14 @@ CREATE INDEX IF NOT EXISTS queue_joined ON queue (joined);
 CREATE INDEX IF NOT EXISTS filled_created ON filled (created);
 CREATE INDEX IF NOT EXISTS link_codes_created ON link_codes (created);
 CREATE INDEX IF NOT EXISTS lifetime_kills ON lifetime (kills);
+-- optional: keep today's players on the boards (they'd otherwise be provisional for 5 matches)
+INSERT OR IGNORE INTO accounts (id, tgames, created)
+  SELECT substr(id, instr(id, ':') + 1), MAX(games), MIN(updated) FROM players GROUP BY substr(id, instr(id, ':') + 1);
+-- optional cleanup: 1.16 pending matches have no ticket and would never be pruned
+UPDATE matches SET status = 'void' WHERE status = 'pending' AND id NOT IN (SELECT id FROM tickets);
+DELETE FROM reports WHERE match NOT IN (SELECT id FROM tickets);
 ```
+   Check: `SELECT name FROM pragma_table_info('players')` lists `ver`; `SELECT COUNT(*) FROM tickets` answers 0.
 2. Worker → **Edit code**: replace everything with the new `worker.js` → **Deploy**.
 3. Add the cron trigger (step 7 of Setup) and the `ADMIN_KEY` secret (step 8).
 4. Tell the Discord bot's maintainer: its POSTs are unchanged, but it must not send an `Origin` header.
