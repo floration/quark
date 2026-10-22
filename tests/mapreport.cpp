@@ -561,7 +561,7 @@ void measure(Metrics& r, const Map& m, const NavGraph& g) {
     {   int used = 0; for (float v : r.occ) used += v >= 0; r.fill = used / 576.0f; }
     // ---- movement tech: race = the shortcut check per leg; other modes = how much tech shortens the main trips
     {
-        char tb[160];
+        char tb[512];
         if (!m.checkpoints.empty() && m.supportsMode(MODE_RACE)) {
             Vec3 at = m.spawns.empty() ? Vec3() : m.spawns[0].pos;
             for (auto& sp : m.spawns) if (sp.team == SPAWN_RACE) { at = sp.pos; break; }

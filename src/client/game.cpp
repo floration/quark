@@ -1203,7 +1203,6 @@ void Game::drawWorld(float alpha) {
         }
     }
     // players (duel "double size" rounds draw everyone at twice the size, matching the server hitboxes)
-    const ModeState& dms = net_.latest().ms;
     const float bs = bodyScale();
     for (int i = 0; i < kMaxPlayers; i++) {
         if (!players[i].valid) continue;
