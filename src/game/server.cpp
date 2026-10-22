@@ -1190,10 +1190,15 @@ void Server::command(const std::string& line, int fromPlayer) {
         else if (arg == "on" && v >= 0 && arenaVariantRanked(v)) setRanked(true, v);
         else reply("ranked on [vanilla|vampire|instagib] / ranked off");
     } else if (cmd == "addbot") {
+        // addbot [a|b] [skill]: the skill is 0-3 or its name in any case (what the console completes: REVIEW 4.2)
         std::string sk;
         ss >> sk;
+        if (arg != "a" && arg != "b" && sk.empty()) sk = arg;   // (just a skill)
         int team = arg == "b" ? TEAM_B : TEAM_A;
-        int skill = sk.empty() ? cfg_.botSkill : atoi(sk.c_str());
+        int skill = sk.empty() ? cfg_.botSkill : -1;
+        auto lower = [](std::string s) { for (auto& c : s) c = (char)tolower((unsigned char)c); return s; };
+        for (int i = 0; i < BOT_SKILLS && skill < 0; i++) if (sk == std::to_string(i) || lower(sk) == lower(botSkillName(i))) skill = i;
+        if (skill < 0) { reply("addbot [a|b] [0-3 or beginner|intermediate|advanced|expert]"); return; }
         if (addBot(team, std::min(std::max(skill, 0), BOT_SKILLS - 1)) < 0) reply("server is full");
     } else if (cmd == "kickbots") {
         for (int i = 0; i < kMaxPlayers; i++) if (players_[i].connected && players_[i].isBot) removeBot(i);
@@ -1215,7 +1220,7 @@ void Server::command(const std::string& line, int fromPlayer) {
     } else if (cmd == "status") {
         reply(statusText());
     } else {
-        reply("commands: map <name> [mode], mode <name>, reload, editmode on|off, ranked on [ladder]|off, forcestart, restart, kick <name|id>, say <text>, status, addbot [a|b] [0-3], kickbots");
+        reply("commands: map <name> [mode], mode <name>, reload, editmode on|off, ranked on [ladder]|off, forcestart, restart, kick <name|id>, say <text>, status, addbot [a|b] [0-3|skill], kickbots");
     }
 }
 

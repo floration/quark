@@ -2715,6 +2715,35 @@ static void testKickByName(uint16_t port) {
     s.stop();
 }
 
+// REVIEW 4.2: addbot [a|b] [skill], the skill as 0-3 or its name (the console completes a / b, then the names);
+// "/addbot EXPERT" added a default-skill bot.
+static void testAddbotArgs(uint16_t port) {
+    printf("addbot team and skill\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_KOTH; cfg.port = port; cfg.balanceBots = false; cfg.botSkill = 1;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    auto added = [&](const std::string& line, int team, int skill) {
+        int before = s.playerCount();
+        s.command(line);
+        int id = -1;
+        for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].isBot) id = i;   // (the newest: highest free slot so far)
+        bool ok = s.playerCount() == before + 1 && id >= 0 && s.players_[id].team == team && s.bots_[id].skill == skill;
+        if (!ok) printf("  '%s': players %d -> %d, team %d, skill %d\n", line.c_str(), before, s.playerCount(), id >= 0 ? s.players_[id].team : -1, id >= 0 ? s.bots_[id].skill : -1);
+        return ok;
+    };
+    CHECK(added("addbot", TEAM_A, 1));
+    CHECK(added("addbot b EXPERT", TEAM_B, 3));
+    CHECK(added("addbot a beginner", TEAM_A, 0));
+    CHECK(added("addbot b 2", TEAM_B, 2));
+    CHECK(added("addbot Advanced", TEAM_A, 2));   // (a skill alone: team a)
+    int n = s.playerCount();
+    s.command("addbot b nonsense");
+    CHECK(s.playerCount() == n);
+    s.stop();
+}
+
 // Every game: a dropped player keeps slot, team and score for the grace (found again by the reconnect token), and
 // is gone after it; votes don't count players who are away.
 static void testReconnectGrace(uint16_t port) {
@@ -4041,7 +4070,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "limits") { testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(TP(29990)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(TP(29980)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); testAddbotArgs(TP(29982)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "nav") { testNavGraph(); return g_fail ? 1 : 0; }
@@ -4078,7 +4107,7 @@ int main(int argc, char** argv) {
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
-        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); }},
+        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
         {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testMasterSignature(); testPlacementConstant(); }},
         {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},

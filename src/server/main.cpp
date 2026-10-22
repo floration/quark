@@ -44,7 +44,7 @@ static void usage() {
         "  --tourney-modes a,b     1v1 rulesets tourney matches rotate through\n"
         "  --nobalance      don't add bots to even out uneven teams (players can also vote it off)\n"
         "console commands: map <name> [mode], mode <name>, forcestart, restart, kick <name|id>, say <text>, status,\n"
-        "                  addbot [a|b] [0-3], kickbots, quit\n",
+        "                  addbot [a|b] [0-3|skill], kickbots, quit\n",
         kDefaultPort);
 }
 
