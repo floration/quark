@@ -1,8 +1,14 @@
 #include "master.h"
 #include <cstdlib>
+#include <chrono>
 #include "../common/http.h"
+#include "../common/sign.h"
 
 namespace {
+// The Worker's address is built in (REVIEW WEB-11: whoever answers there receives every player's ranked secret).
+// It can move only through a master.txt on the website that is signed with the release key (master.txt.sig, made in
+// CI by quark_sign like the update packages): an unsigned or wrongly signed file is ignored.
+const char* kPinnedMasterUrl = "https://quark-master.jamesrandallmcamis.workers.dev";
 const char* kMasterUrlFile = "https://floration.github.io/quark/master.txt";
 const char* kIpv4Echo = "https://api.ipify.org"; // IPv4-only: hosts on IPv6 still announce their v4 address
 
@@ -23,20 +29,31 @@ bool isIpv4(const std::string& s) {
 }
 }
 
+bool signedMasterUrl(const std::string& body, const std::string& sigHex, const std::string& pubHex, std::string* url) {
+    if (!sign::verifyData(body, sigHex, pubHex)) return false;
+    std::string u = trim(body);
+    if (u.rfind("https://", 0) != 0 || u.size() > 200 || u.find_first_of(" '\"\\\n\r\t") != std::string::npos) return false;
+    while (!u.empty() && u.back() == '/') u.pop_back();
+    if (u.size() <= 8) return false;
+    *url = u;
+    return true;
+}
+
 std::string masterUrl() {
     static std::mutex mu;
-    static std::string cached;
+    static std::string cached = kPinnedMasterUrl;
     static bool fetched = false;
+    static std::chrono::steady_clock::time_point retryAt{};
     std::lock_guard<std::mutex> l(mu);
-    if (const char* e = getenv("QUARK_MASTER")) { std::string u = trim(e); return u.rfind("http", 0) == 0 ? u : ""; } // ("off": no list)
-    if (!fetched) {
-        std::string body;
-        if (httpGetText(kMasterUrlFile, body)) {
-            body = trim(body);
-            if (body.rfind("https://", 0) == 0 && body.find_first_of(" '\"\\\n") == std::string::npos) cached = body;
-            while (!cached.empty() && cached.back() == '/') cached.pop_back();
-            fetched = true;
-        }
+    if (const char* e = getenv("QUARK_MASTER")) { std::string u = trim(e); return u.rfind("http", 0) == 0 ? u : ""; } // (tests, local copies; "off": no list)
+    if (!fetched && std::chrono::steady_clock::now() >= retryAt) {
+        std::string sig, body, err;
+        if (httpGetText(std::string(kMasterUrlFile) + ".sig", sig, 4000, &err)) {
+            std::string url;
+            if (httpGetText(kMasterUrlFile, body, 4000) && signedMasterUrl(body, sig, sign::kReleasePublicKey, &url)) cached = url;
+            fetched = true;   // (no valid signature: the built-in address stays)
+        } else if (err.find("HTTP") != std::string::npos) fetched = true;   // nothing published (404): the built-in address
+        else retryAt = std::chrono::steady_clock::now() + std::chrono::minutes(5);   // offline: try again later
     }
     return cached;
 }
@@ -106,10 +123,10 @@ void MasterAnnouncer::run() {
             std::string st;
             if (base.empty()) st = "internet list: not configured";
             else {
-                std::string body, err;
-                std::string url = base + "/announce?port=" + std::to_string(port_) + "&v=" QUARK_VERSION + (ip.empty() ? "" : "&ip=" + ip) +
-                                  (token.empty() ? "" : "&token=" + token) + (listed_ ? "" : "&hidden=1");
-                bool ok = httpGetText(url, body, 5000, &err);
+                std::string body, err;   // (writes are POST only: no web page can make a browser announce or remove)
+                std::string form = "port=" + std::to_string(port_) + "&v=" QUARK_VERSION + (ip.empty() ? "" : "&ip=" + ip) +
+                                   (token.empty() ? "" : "&token=" + token) + (listed_ ? "" : "&hidden=1");
+                bool ok = httpPostForm(base + "/announce", form, body, 5000, &err);
                 st = !ok ? "internet list: " + err : listed_ ? "listed on the internet server list" : "registered with the ranking server (not listed)";
                 if (ok && body.rfind("ok ", 0) == 0) {
                     std::string t = trim(body.substr(3));
@@ -140,7 +157,7 @@ void MasterAnnouncer::run() {
     }
     if (!base.empty() && listed_) { // leave the list right away instead of timing out
         std::string body;
-        httpGetText(base + "/remove?port=" + std::to_string(port_) + (ip.empty() ? "" : "&ip=" + ip) +
-                    (token.empty() ? "" : "&token=" + token), body, 2000);
+        httpPostForm(base + "/remove", "port=" + std::to_string(port_) + (ip.empty() ? "" : "&ip=" + ip) +
+                     (token.empty() ? "" : "&token=" + token), body, 2000);
     }
 }

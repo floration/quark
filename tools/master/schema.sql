@@ -1,9 +1,9 @@
 CREATE TABLE IF NOT EXISTS servers (addr TEXT PRIMARY KEY, version TEXT NOT NULL, seen INTEGER NOT NULL, token TEXT);
 CREATE INDEX IF NOT EXISTS servers_seen ON servers (seen);
 -- ranked (0.24.0+)
-CREATE TABLE IF NOT EXISTS players (id TEXT PRIMARY KEY, mu REAL NOT NULL, sigma REAL NOT NULL, games INTEGER NOT NULL, updated INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS players (id TEXT PRIMARY KEY, mu REAL NOT NULL, sigma REAL NOT NULL, games INTEGER NOT NULL, updated INTEGER NOT NULL, ver INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS matches (id TEXT PRIMARY KEY, result TEXT NOT NULL, players INTEGER NOT NULL, status TEXT NOT NULL, created INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS reports (match TEXT NOT NULL, reporter TEXT NOT NULL, PRIMARY KEY (match, reporter));
+CREATE TABLE IF NOT EXISTS reports (match TEXT NOT NULL, reporter TEXT NOT NULL, result TEXT, dispute INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (match, reporter));
 CREATE INDEX IF NOT EXISTS matches_created ON matches (created);
 -- leaderboard names (0.28.0+): the latest name each player reported with
 CREATE TABLE IF NOT EXISTS names (id TEXT PRIMARY KEY, name TEXT NOT NULL, updated INTEGER NOT NULL);
@@ -17,7 +17,17 @@ CREATE TABLE IF NOT EXISTS filled (id INTEGER PRIMARY KEY AUTOINCREMENT, mode TE
 -- lifetime stats (1.15.0+): every kill and death a player has had, across all sessions, versions and modes
 CREATE TABLE IF NOT EXISTS lifetime (id TEXT PRIMARY KEY, kills INTEGER NOT NULL, deaths INTEGER NOT NULL, updated INTEGER NOT NULL, hour_start INTEGER NOT NULL DEFAULT 0, hour_kills INTEGER NOT NULL DEFAULT 0, hour_deaths INTEGER NOT NULL DEFAULT 0);
 -- match tickets, provisional accounts, verified Discord links (anti-cheat update; see README "Match tickets")
-CREATE TABLE IF NOT EXISTS tickets (id TEXT PRIMARY KEY, kind TEXT NOT NULL, server TEXT NOT NULL, ladder TEXT NOT NULL, map TEXT NOT NULL, players TEXT NOT NULL, created INTEGER NOT NULL, status TEXT NOT NULL, result TEXT);
+CREATE TABLE IF NOT EXISTS tickets (id TEXT PRIMARY KEY, kind TEXT NOT NULL, server TEXT NOT NULL, ladder TEXT NOT NULL, map TEXT NOT NULL, players TEXT NOT NULL, created INTEGER NOT NULL, status TEXT NOT NULL, result TEXT, leavers TEXT, resulted INTEGER);
 CREATE INDEX IF NOT EXISTS tickets_server ON tickets (server, created);
 CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, tgames INTEGER NOT NULL, created INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS link_codes (code TEXT PRIMARY KEY, discord TEXT NOT NULL, created INTEGER NOT NULL);
+-- signed ranked ids, leavers and disputes, atomic writes, pruning (1.17; README "Ranked keys, leavers, hardening")
+CREATE TABLE IF NOT EXISTS id_moves (old TEXT PRIMARY KEY, new TEXT NOT NULL, moved INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS rate_guard (ok INTEGER NOT NULL CHECK (ok = 1));
+CREATE INDEX IF NOT EXISTS players_skill ON players ((mu - 3 * sigma));
+CREATE INDEX IF NOT EXISTS tickets_created ON tickets (created);
+CREATE INDEX IF NOT EXISTS matches_status ON matches (status, created);
+CREATE INDEX IF NOT EXISTS queue_joined ON queue (joined);
+CREATE INDEX IF NOT EXISTS filled_created ON filled (created);
+CREATE INDEX IF NOT EXISTS link_codes_created ON link_codes (created);
+CREATE INDEX IF NOT EXISTS lifetime_kills ON lifetime (kills);

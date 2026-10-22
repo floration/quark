@@ -17,4 +17,9 @@ bool signFile(const std::string& path, const std::string& privHex, std::string* 
 bool verifyData(const std::string& data, const std::string& sigHex, const std::string& pubHex);
 bool verifyFile(const std::string& path, const std::string& sigHex, const std::string& pubHex, std::string* err);
 
+// Plain Ed25519 (RFC 8032, no prehash) over a short message: ranked ids prove their key with it (ranked.h), and the
+// Worker checks the same signatures with WebCrypto's Ed25519.
+bool signMessage(const std::string& msg, const std::string& privHex, std::string* sigHex);
+bool verifyMessage(const std::string& msg, const std::string& sigHex, const std::string& pubHex);
+
 } // namespace sign

@@ -12,9 +12,19 @@ directly over UDP, so it shows only servers it can reach, with their real ping. 
 4. **Bind the database.** Worker → **Settings → Bindings → Add → D1 database**.
    Variable name `DB`, database `quark` → **Save/Deploy**.
 5. **Check it.** Open `https://quark-master.<your-subdomain>.workers.dev/list?v=0.13.0`.
-   An empty page with no error means it works. `…/announce?port=27500&v=test`, then `…/list?v=test`, should show your IP.
-6. **Point the game at it.** Put that base URL (`https://quark-master.<your-subdomain>.workers.dev`, no trailing
-   slash) as the only line of `site/master.txt` and push. Games read it from the website, so no new build is needed.
+   An empty page with no error means it works. `curl -d port=27500 -d v=test …/announce`, then `…/list?v=test`,
+   should show your IP (writes are POST only).
+6. **Point the game at it.** The URL is built into the game (`kPinnedMasterUrl` in `src/game/master.cpp`; whoever
+   answers there receives every player's ranked secret, REVIEW WEB-11). To move it without a new build, put the new
+   base URL as the only line of `site/master.txt` and sign that file with the release key
+   (`QUARK_SIGNING_KEY=<key> build/quark_sign sign site/master.txt`, which writes `site/master.txt.sig`), then commit
+   both. Games ignore a `master.txt` without a valid signature. Sign it on your own machine, never in CI: every
+   branch's push can run CI, so a CI-made signature would vouch for anything. `site/master.txt` (unsigned) is still
+   what the website's leaderboard reads.
+7. **Cron.** Worker → **Settings → Triggers → Cron Triggers → Add**: `*/15 * * * *`. It rates matches whose report
+   wait is over and prunes old rows (servers, tickets, matches, reports, queues, filled rows, link codes).
+8. **Owner key (disputes).** Worker → **Settings → Variables and Secrets → Add → Secret**: `ADMIN_KEY`, a long random
+   string. `GET /disputes?key=…` lists disputed matches; `POST /resolve` (key, match, action=rate|void) settles one.
 
 The free tier allows 100k requests a day and 100k D1 writes a day. That is about 70 servers announcing around the clock.
 For testing, the `QUARK_MASTER` environment variable overrides the URL.
@@ -92,3 +102,57 @@ Optionally clear suspicious old race times (see above), since they were self-rep
 report ranked results or race times any more (they get "no ticket" / "update the game"), so release the matching
 game version at the same time. When the course of Viaduct changes, re-run `build/quark_tests racefloors` and update
 `RACE_FLOORS` (quark_tests fails until they match).
+
+## Ranked keys, leavers, disputes, hardening (1.17)
+What changed:
+- **Ranked ids prove their key.** The id is now the first 32 hex of sha256 of an Ed25519 public key derived from the
+  secret (seed = sha256(`quark-rank-ed25519-v1:` + secret)). Game servers check it at connect (the player signs the
+  connect challenge), so nobody can use someone else's id (REVIEW NET-12). Old ids (sha256 of the secret) move to the
+  new id the first time that secret reaches the Worker (`POST /hello`, sent by the game at start-up, or any request
+  with the secret): ratings, account, name, Discord link, lifetime stats and race times (`id_moves` records it).
+  Players who never start 1.17 keep their old rows (harmless; unplaced players aren't on the boards).
+- **Tickets carry every player's signature** of the match id (`keys`, `sigs`), so a server can only ticket players
+  who are really in the match.
+- **Leaving loses.** The server's `/result` names who left (`left=`, first leaver first). The first leaver takes the
+  loss (a 1v1 ends there; the stayer leaving afterwards isn't punished). Leavers aren't waited for.
+- **Disputes, not voids.** A report against the server's result (`dispute=1`, sent by a game that saw a different
+  score) makes the match `disputed`: not rated until the owner settles it (`/disputes`, `/resolve`). Only when no
+  player agrees with the server and two or more contradict it is it void. A player who never reports doesn't hold
+  the match up: `REPORT_WAIT_MS` (10 min) after the server's result, the cron rates it if someone agreed and nobody
+  objected.
+- **One placement threshold**: `PLACEMENT_GAMES` = 5 (the game's `kPlacementGames`), for the boards and for
+  established accounts. No rating decay, no rating-banded queues (owner decision 3.4).
+- **Hardening** (WEB-5 … WEB-12): writes are POST only and refused with an `Origin` header (no web page can make its
+  visitors' browsers write); only reads send CORS `*`. At most 8 fresh servers per address. Reads are cached 5-60 s
+  (Cache API + `cache-control`). Rating writes and queue fills are atomic (one D1 batch with a guard row, retried on
+  a conflict). `GET /queue` no longer deletes. Indexes for the boards, queues and pruning; cron pruning; form size cap;
+  NaN guard on ratings.
+- **Privacy**: `/crowns` and `/filled` are public and show a linked player's ranked id, in-game name and Discord name
+  together. The game says so in the Discord box on the settings screen and when you link; type `unlink` there to
+  remove the Discord part.
+
+Deploy (in this order, together with the matching game release, since old games announce with GET and can't sign
+tickets):
+1. D1 → `quark` → **Console**: run
+```sql
+ALTER TABLE players ADD COLUMN ver INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE reports ADD COLUMN result TEXT;
+ALTER TABLE reports ADD COLUMN dispute INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE tickets ADD COLUMN leavers TEXT;
+ALTER TABLE tickets ADD COLUMN resulted INTEGER;
+CREATE TABLE IF NOT EXISTS id_moves (old TEXT PRIMARY KEY, new TEXT NOT NULL, moved INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS rate_guard (ok INTEGER NOT NULL CHECK (ok = 1));
+CREATE INDEX IF NOT EXISTS players_skill ON players ((mu - 3 * sigma));
+CREATE INDEX IF NOT EXISTS tickets_created ON tickets (created);
+CREATE INDEX IF NOT EXISTS matches_status ON matches (status, created);
+CREATE INDEX IF NOT EXISTS queue_joined ON queue (joined);
+CREATE INDEX IF NOT EXISTS filled_created ON filled (created);
+CREATE INDEX IF NOT EXISTS link_codes_created ON link_codes (created);
+CREATE INDEX IF NOT EXISTS lifetime_kills ON lifetime (kills);
+```
+2. Worker → **Edit code**: replace everything with the new `worker.js` → **Deploy**.
+3. Add the cron trigger (step 7 of Setup) and the `ADMIN_KEY` secret (step 8).
+4. Tell the Discord bot's maintainer: its POSTs are unchanged, but it must not send an `Origin` header.
+
+Check: `curl -s …/list?v=1.17.0` answers (empty is fine); `curl -s …/announce` answers `POST only`.
+Test locally first: `node tools/master/test.mjs`.

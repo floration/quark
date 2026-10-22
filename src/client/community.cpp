@@ -128,6 +128,9 @@ void Game::updateCommunity() {
             if (out.rfind("linked ", 0) == 0) { cfg_.discordName = out.substr(7, 40); cfg_.save(); }
             else if (out == "unlinked") { cfg_.discordName.clear(); cfg_.save(); }
             notify("DISCORD: " + out, 4);
+            // privacy (REVIEW WEB-12): what linking makes public, said where it's done
+            if (out.rfind("linked ", 0) == 0)
+                notify("DISCORD LINKED - YOUR DISCORD NAME IS NOW PUBLIC WITH YOUR GAME NAME AND RANKED ID (CROWNS, QUEUE FILLS). TYPE UNLINK TO REMOVE IT", 10);
         }
     }
 }

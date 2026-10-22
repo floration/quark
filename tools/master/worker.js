@@ -1,27 +1,45 @@
 // quark internet server list: a Cloudflare Worker with a D1 database bound as DB.
 // Setup steps: tools/master/README.md.
-//   GET /announce?port=N&v=VERSION[&ip=A.B.C.D][&token=T]  a server says it's up (every 60 s); answers "ok <token>"
-//   GET /remove?port=N[&ip=A.B.C.D][&token=T]              a server shuts down
-//   A server may announce / remove only its own source IPv4 address, or, through an IPv6 path (?ip=), an
-//   address it holds the token for (issued by an earlier announce from that IPv4). ?ip= alone is never trusted.
-//   GET /list?v=VERSION                           ip:port per line, servers seen in the last 150 s
+// Every write is a POST (application/x-www-form-urlencoded) and is refused when it carries an Origin header (a web
+// page making its visitors' browsers write here); only GET reads answer with CORS "*". GET reads are cached briefly.
+//   POST /announce form: port, v (version)[, ip=A.B.C.D, token=T][, hidden=1]  a server says it's up (every 60 s);
+//                  answers "ok <token>". At most MAX_SERVERS_PER_IP fresh entries per address.
+//   POST /remove   form: port[, ip, token]                                  a server shuts down
+//   A server may announce / remove only its own source IPv4 address, or, through an IPv6 path (ip=), an address it
+//   holds the token for (issued by an earlier announce from that IPv4). ip= alone is never trusted.
+//   GET  /list?v=VERSION                            ip:port per line, servers seen in the last 150 s
 // The game checks every listed server over UDP itself, so a bogus entry just never shows up.
+//   hidden=1 registers (for a token) without being listed: ranked / time trial hosts.
 //
-//   GET /announce ... &hidden=1                    registers (for a token) without being listed: ranked / time trial hosts
-//
+// Ranked ids: a player's game keeps a random 64-hex secret. Its Ed25519 key is derived from it (seed =
+// sha256("quark-rank-ed25519-v1:" + secret)); the id is the first 32 hex chars of sha256(public key hex). Game servers
+// check that id at connect (the player signs a challenge), so nobody can play under someone else's id. The secret
+// goes only to this Worker. Ids before 1.17 were sha256(secret): POST /hello (or any request with the secret) moves an
+// old id's rows to the new id once (id_moves).
+//   POST /hello   form: secret                                  "id <id>" (and the move above)
 // Match tickets (servers, with their announce token; form also carries port, token[, ip]):
-//   POST /ticket  form: kind=match, match (16 hex), ladder, map, players=id,id,...   when a ranked match goes live
+//   POST /ticket  form: kind=match, match (16 hex), ladder, map, players=id,..., keys=pub,..., sigs=sig,...
+//                 when a ranked match goes live; each player's key must hash to their id and have signed
+//                 "quark-ticket-v1 <match>" (their game signs it in the match), so a server can only ticket players
+//                 who are really in it.
 //                 form: kind=race, match (16 hex), map, players=<racer id>          when a time trial starts
 //                 answers "ticket <match>". One open match ticket per server; a server opens at most one a minute.
-//   POST /result  form: match, p=id:team:place,...    the server's own account of the ticketed match it ran
+//   POST /result  form: match, p=id:team:place,...[, left=id,...]   the server's own account of the ticketed match;
+//                 left: players who left during it (first leaver first; their game can't report)
 //   POST /racerun form: ticket, map, id, ms, splits, name (hex), v   a finished run the server saw, under a race ticket
 // Ranked (OpenSkill / Weng-Lin Plackett-Luce ratings):
-//   POST /report  form: secret, match, ladder, p=id:team:place,...   one player's account of a finished match
-//                 Accepted only under an open ticket from that ticket's players, once each, MIN_MATCH_MS to TICKET_MS
-//                 after it opened. Rated when the server and every player agree. New accounts are provisional: see
-//                 PROVISIONAL_GAMES.
+//   POST /report  form: secret, match, ladder, p=id:team:place,...[, dispute=1]   one player's account of a finished
+//                 match (dispute=1: their game saw a different result than the host's p)
+//                 Accepted only under a ticket from that ticket's players, once each, MIN_MATCH_MS to TICKET_MS after
+//                 it opened. Rated when the server's result and the players' reports agree: every player who didn't
+//                 leave reported it, or REPORT_WAIT_MS passed with at least one agreeing and nobody against. A report
+//                 against it makes a dispute (not rated; the owner settles it with /resolve), unless no player agrees
+//                 with the server and two or more contradict it: then it's void. New accounts are provisional (see
+//                 PROVISIONAL_GAMES).
+//   POST /resolve form: key (ADMIN_KEY), match, action=rate|void                    the owner settles a dispute
+//   GET  /disputes?key=ADMIN_KEY                                    "match ladder created result" per open dispute
 //   GET  /ratings?ladder=L&ids=a,b,c                                 "id mu sigma games" per line (unknown ids: defaults)
-//   GET  /leaderboard?ladder=L[&n=25]                                "rating games name" per line, best first (3+ games)
+//   GET  /leaderboard?ladder=L[&n=25]                                "rating games name" per line, best first (placed only)
 // Race time trials (single player, Viaduct): runs come from the game server (/racerun above), kept only if they
 //   beat that player's best and no leg is faster than RACE_FLOORS allows. POST /racetime (the old self-report from
 //   the racer's own game) is refused. Odd runs can still be deleted by hand:
@@ -39,13 +57,11 @@
 //   GET  /queue                                                  "mode count size" per queue that has anyone in it
 //   GET  /filled?since=N                                         "n mode created who:namehex:discordhex,..." per filled
 //                                                                queue after n = N (the game and the bot both poll this)
+// PRIVACY: /crowns and /filled are public. They show a linked player's ranked id, in-game name and Discord name
+// together (that's what the Discord roles and pings need); unlinking (type "unlink" in game) removes the Discord part.
+// The game says so where you link (the settings screen's Discord box).
 // Ladders (each its own ratings): vanilla (all weapons), vampire (laser vampire), instagib. Rows are keyed "ladder:id".
-// A player's id is the first 32 hex chars of sha256(secret); the secret never leaves their game except to
-// here. A match counts only when it was ticketed by a registered server and the server and every player in it
-// reported the exact same result; any disagreement voids it. Each player's game checks the host's result
-// against the score it saw before reporting, so a lying host gets no reports. A server that lies to both
-// players about the game itself (its own snapshots) can still fake a result: the ticket ties that to its
-// address and token, and the provisional rule stops it from minting fresh accounts to beat.
+// Cron (scheduled handler, every 15 minutes): rates matches whose report wait is over and prunes old rows.
 const FRESH_MS = 150000;
 const MU = 25, SIGMA = 25 / 3, BETA = SIGMA / 2, TAU = MU / 300, EPS = 1e-4;
 const PENDING_MS = 3600000;
@@ -67,7 +83,14 @@ const RACE_SLACK_MS = 30000;         // a run can't be longer than its ticket is
 // against them, and they're left off the leaderboard and crowns. Chosen over proof of work at account creation:
 // work is cheap for a farmer on a GPU and costly for a real player on a laptop, while ticketed games need a real
 // server, a minute each and a server address that can only open one a minute.
-const PROVISIONAL_GAMES = 5;
+// One placement threshold, everywhere: games before a ladder rating counts as placed (on the leaderboard and crowns)
+// and ticketed matches before an account is established. The game's kPlacementGames (ranked.h) is the same number.
+const PLACEMENT_GAMES = 5;
+const PROVISIONAL_GAMES = PLACEMENT_GAMES;
+const REPORT_WAIT_MS = 10 * 60000;   // after the server's result: missing reports stop holding the match up
+const MAX_SERVERS_PER_IP = 8;        // fresh /announce entries one address may hold (WEB-5)
+const MAX_BODY = 16384;              // bytes of form a request may carry
+const CACHE_S = { "/list": 20, "/leaderboard": 60, "/raceboard": 60, "/crowns": 60, "/lifetime": 30, "/queue": 10, "/filled": 5, "/ratings": 10 };
 const LINK_CODE_MS = 10 * 60000;
 
 // Rate limiting: token buckets kept in memory per isolate (Cloudflare runs a few isolates per region, so the
@@ -93,7 +116,59 @@ function allow(kind, key, now) {
   return true;
 }
 function refund(kind, key) { const b = buckets.get(kind + "|" + key); if (b) b.t = Math.min(LIMITS[kind].burst, b.t + 1); }
-async function idOf(secret) { return /^[0-9a-f]{64}$/.test(secret) ? (await sha256hex(secret)).slice(0, 32) : ""; }
+// Ranked identity from the secret (see the top of this file); kept per isolate so a busy player costs one derivation.
+const keyCache = new Map();
+const hexOf = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+const bytesOf = (hex) => new Uint8Array(hex.match(/../g).map((h) => parseInt(h, 16)));
+const PKCS8_ED25519 = "302e020100300506032b657004220420";
+export async function rankKeyOf(secret) {
+  if (!/^[0-9a-f]{64}$/.test(secret)) return null;
+  let k = keyCache.get(secret);
+  if (k) return k;
+  const seed = await sha256hex("quark-rank-ed25519-v1:" + secret);
+  const priv = await crypto.subtle.importKey("pkcs8", bytesOf(PKCS8_ED25519 + seed), { name: "Ed25519" }, true, ["sign"]);
+  const jwk = await crypto.subtle.exportKey("jwk", priv);
+  const pub = hexOf(Uint8Array.from(atob(jwk.x.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - jwk.x.length % 4) % 4)), (c) => c.charCodeAt(0)));
+  k = { pub, id: (await sha256hex(pub)).slice(0, 32), legacy: (await sha256hex(secret)).slice(0, 32) };
+  if (keyCache.size > 20000) keyCache.clear();
+  keyCache.set(secret, k);
+  return k;
+}
+async function idOf(secret) { const k = await rankKeyOf(secret); return k ? k.id : ""; }
+async function ed25519Verify(pubHex, sigHex, msg) {
+  if (!/^[0-9a-f]{64}$/.test(pubHex) || !/^[0-9a-f]{128}$/.test(sigHex)) return false;
+  try {
+    const key = await crypto.subtle.importKey("raw", bytesOf(pubHex), { name: "Ed25519" }, false, ["verify"]);
+    return await crypto.subtle.verify({ name: "Ed25519" }, key, bytesOf(sigHex), new TextEncoder().encode(msg));
+  } catch { return false; }
+}
+
+// The player behind a secret, after moving a pre-1.17 id's rows (ratings, account, name, Discord link, lifetime
+// stats, race times) to the new id the first time this secret shows up. "" if the secret is malformed.
+const moved = new Set();
+async function playerOf(env, secret, now) {
+  const k = await rankKeyOf(secret);
+  if (!k) return "";
+  if (moved.has(k.legacy)) return k.id;
+  const done = await env.DB.prepare("SELECT new FROM id_moves WHERE old = ?").bind(k.legacy).first();
+  if (!done) {
+    const old = k.legacy, id = k.id, ladderIds = [...LADDERS].map((l) => l + ":" + old);
+    const q = (sql, ...a) => env.DB.prepare(sql).bind(...a);
+    await env.DB.batch([
+      ...[...LADDERS].map((l) => q("UPDATE OR IGNORE players SET id = ? WHERE id = ?", l + ":" + id, l + ":" + old)),
+      q(`DELETE FROM players WHERE id IN (${ladderIds.map(() => "?").join(",")})`, ...ladderIds),   // (the new id had its own already)
+      ...["accounts", "names", "links", "lifetime"].flatMap((t) => [q(`UPDATE OR IGNORE ${t} SET id = ? WHERE id = ?`, id, old), q(`DELETE FROM ${t} WHERE id = ?`, old)]),
+      q("INSERT INTO race_times (map, id, ms, splits, version, created) SELECT map, ?, ms, splits, version, created FROM race_times WHERE id = ? AND 1 " +
+        "ON CONFLICT(map, id) DO UPDATE SET ms = excluded.ms, splits = excluded.splits, version = excluded.version, created = excluded.created WHERE excluded.ms < race_times.ms", id, old),
+      q("DELETE FROM race_times WHERE id = ?", old),
+      q("DELETE FROM queue WHERE who = ?", old),
+      q("INSERT OR IGNORE INTO id_moves (old, new, moved) VALUES (?, ?, ?)", old, id, now),
+    ]);
+  }
+  if (moved.size > 50000) moved.clear();
+  moved.add(k.legacy);
+  return k.id;
+}
 const randomToken = () => [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
 
 async function saveName(env, me, nameHex, now) {
@@ -125,6 +200,13 @@ async function openTicket(env, form, addr, now) {
     ladder = String(form.get("ladder") || "");
     if (!LADDERS.has(ladder)) return "not a ranked ladder";
     if (players.length < 2 || players.length > 16) return "bad players";
+    // every player vouched for this match: their key (which hashes to their id) signed its id in the game
+    const keys = String(form.get("keys") || "").split(","), sigs = String(form.get("sigs") || "").split(",");
+    if (keys.length !== players.length || sigs.length !== players.length) return "missing signatures";
+    for (let i = 0; i < players.length; i++) {
+      if (!/^[0-9a-f]{64}$/.test(keys[i]) || (await sha256hex(keys[i])).slice(0, 32) !== players[i]) return "bad key for " + players[i];
+      if (!(await ed25519Verify(keys[i], sigs[i], "quark-ticket-v1 " + match))) return "bad signature for " + players[i];
+    }
     const last = await env.DB.prepare("SELECT MAX(created) AS t FROM tickets WHERE server = ? AND kind = 'match'").bind(addr).first();
     if (last && last.t && now - last.t < TICKET_GAP_MS) return "too soon";
     // a server runs one ranked match at a time: its older open ticket is void
@@ -133,7 +215,6 @@ async function openTicket(env, form, addr, now) {
     if (!RACE_MAPS.has(map)) return "not a ranked race map";
     if (players.length !== 1) return "bad players";
   } else return "bad request";
-  if (Math.random() < 0.02) await env.DB.prepare("DELETE FROM tickets WHERE created < ?").bind(now - 7 * 86400000).run();
   const r = await env.DB.prepare("INSERT OR IGNORE INTO tickets (id, kind, server, ladder, map, players, created, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'open')")
     .bind(match, kind, addr, ladder, map, [...players].sort().join(","), now).run();
   if (!r.meta || r.meta.changes !== 1) return "ticket exists";
@@ -194,7 +275,7 @@ async function linkCode(env, form, now) {
 async function link(env, form, now, conn) {
   const secret = String(form.get("secret") || "");
   if (!/^[0-9a-f]{64}$/.test(secret)) return "bad request";
-  const me = (await sha256hex(secret)).slice(0, 32);
+  const me = await playerOf(env, secret, now);
   await saveName(env, me, String(form.get("name") || ""), now);
   if (String(form.get("unlink") || "") === "1") { await env.DB.prepare("DELETE FROM links WHERE id = ?").bind(me).run(); return "unlinked"; }
   const code = String(form.get("code") || "");
@@ -219,7 +300,7 @@ async function lifetimeReport(env, form, now) {
   if (!/^[0-9a-f]{64}$/.test(secret)) return "bad request";
   const kills = parseInt(String(form.get("kills") || "0"), 10), deaths = parseInt(String(form.get("deaths") || "0"), 10);
   if (!(kills >= 0 && deaths >= 0 && kills <= LIFETIME_MAX_PER_REPORT && deaths <= LIFETIME_MAX_PER_REPORT)) return "bad numbers";
-  const me = (await sha256hex(secret)).slice(0, 32);
+  const me = await playerOf(env, secret, now);
   await saveName(env, me, String(form.get("name") || ""), now);
   const row = await env.DB.prepare("SELECT updated, hour_start, hour_kills, hour_deaths FROM lifetime WHERE id = ?").bind(me).first();
   if (row && now - row.updated < 20000) return "too soon";
@@ -253,8 +334,8 @@ async function crowns(env) {
       "SELECT substr(p.id, ?) AS id, COALESCE(n.name, 'player') AS name, COALESCE(l.discord, '-') AS discord FROM players p " +
       "JOIN accounts a ON a.id = substr(p.id, ?) AND a.tgames >= ? " +
       "LEFT JOIN names n ON n.id = substr(p.id, ?) LEFT JOIN links l ON l.id = substr(p.id, ?) AND l.verified = 1 " +
-      "WHERE p.id LIKE ? AND p.games >= 3 ORDER BY (p.mu - 3 * p.sigma) DESC LIMIT 10"
-    ).bind(ladder.length + 2, ladder.length + 2, PROVISIONAL_GAMES, ladder.length + 2, ladder.length + 2, ladder + ":%").all();
+      "WHERE p.id >= ? AND p.id < ? AND p.games >= ? ORDER BY (p.mu - 3 * p.sigma) DESC LIMIT 10"
+    ).bind(ladder.length + 2, ladder.length + 2, PROVISIONAL_GAMES, ladder.length + 2, ladder.length + 2, ladder + ":", ladder + ";", PLACEMENT_GAMES).all();
     results.forEach((r, i) => out.push(`${ladder} ${i + 1} ${r.id} ${textHex(r.name)} ${r.discord === "-" ? "-" : textHex(r.discord)}`));
   }
   for (const map of RACE_MAPS) {
@@ -272,7 +353,7 @@ async function queue(env, form, now) {
   let who, discord = "";
   const secret = String(form.get("secret") || "");
   if (/^[0-9a-f]{64}$/.test(secret)) {
-    who = (await sha256hex(secret)).slice(0, 32);
+    who = await playerOf(env, secret, now);
     await saveName(env, who, String(form.get("name") || ""), now);
     const l = await env.DB.prepare("SELECT discord FROM links WHERE id = ? AND verified = 1").bind(who).first();
     if (l) discord = l.discord;
@@ -282,18 +363,30 @@ async function queue(env, form, now) {
     who = "d:" + discord;
   } else return "bad request";
   const name = hexText(String(form.get("name") || ""), 20) || discord || "player";
-  await env.DB.prepare("DELETE FROM queue WHERE joined < ?").bind(now - QUEUE_STALE_MS).run();
   if (action === "leaveall") { await env.DB.prepare("DELETE FROM queue WHERE who = ?").bind(who).run(); return "left all"; }
   if (!(mode in QUEUE_SIZES)) return "not a queue";
   if (action === "leave") { await env.DB.prepare("DELETE FROM queue WHERE mode = ? AND who = ?").bind(mode, who).run(); return "left " + mode; }
   await env.DB.prepare("INSERT OR IGNORE INTO queue (mode, who, name, discord, joined) VALUES (?, ?, ?, ?, ?)").bind(mode, who, name, discord, now).run();
-  const { results } = await env.DB.prepare("SELECT who, name, discord FROM queue WHERE mode = ? ORDER BY joined ASC").bind(mode).all();
+  const { results } = await env.DB.prepare("SELECT who, name, discord FROM queue WHERE mode = ? AND joined >= ? ORDER BY joined ASC").bind(mode, now - QUEUE_STALE_MS).all();
   const size = QUEUE_SIZES[mode];
   if (results.length < size) return `queued ${mode} ${results.length}/${size}`;
   const take = results.slice(0, size);
   const members = take.map((r) => `${r.who}:${textHex(r.name)}:${r.discord ? textHex(r.discord) : "-"}`).join(",");
-  await env.DB.prepare("INSERT INTO filled (mode, members, created) VALUES (?, ?, ?)").bind(mode, members, now).run();
-  for (const r of take) await env.DB.prepare("DELETE FROM queue WHERE who = ?").bind(r.who).run();
+  // atomic (WEB-8): the guard fails the batch unless every one of them is still waiting in this queue, so two joins
+  // racing here fill it once
+  const takers = take.map((r) => r.who);
+  try {
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO rate_guard (ok) VALUES ((SELECT COUNT(*) FROM queue WHERE mode = ? AND who IN (${takers.map(() => "?").join(",")})) = ?)`)
+        .bind(mode, ...takers, takers.length),
+      env.DB.prepare("DELETE FROM rate_guard"),
+      env.DB.prepare("INSERT INTO filled (mode, members, created) VALUES (?, ?, ?)").bind(mode, members, now),
+      env.DB.prepare(`DELETE FROM queue WHERE who IN (${takers.map(() => "?").join(",")})`).bind(...takers),
+    ]);
+  } catch (e) {
+    if (String(e && e.message || e).includes("CHECK")) return `queued ${mode}`;   // someone else's join filled it
+    throw e;
+  }
   return `filled ${mode}`;
 }
 
@@ -304,6 +397,13 @@ async function sha256hex(s) {
 
 // Plackett-Luce update (openskill.js). teams: [{ players: [{mu, sigma}], rank }] (lower rank = better, ties allowed).
 export function rateTeams(teams) {
+  if (!teams.every((t) => t.players.every((p) => isFinite(p.mu) && isFinite(p.sigma) && p.sigma > 0))) return; // (never write NaN)
+  const saved = teams.map((t) => t.players.map((p) => ({ mu: p.mu, sigma: p.sigma })));
+  rateTeamsInner(teams);
+  if (!teams.every((t) => t.players.every((p) => isFinite(p.mu) && isFinite(p.sigma))))
+    teams.forEach((t, i) => t.players.forEach((p, j) => Object.assign(p, saved[i][j])));
+}
+function rateTeamsInner(teams) {
   for (const t of teams) for (const p of t.players) p.sigma = Math.sqrt(p.sigma * p.sigma + TAU * TAU);
   const tr = teams.map((t) => ({
     mu: t.players.reduce((a, p) => a + p.mu, 0),
@@ -350,11 +450,11 @@ async function loadRatings(env, ladder, ids) {
   const map = new Map(ids.map((id) => [id, { id, mu: MU, sigma: SIGMA, games: 0 }]));
   if (!ids.length) return map;
   const { results } = await env.DB.prepare(
-    `SELECT id, mu, sigma, games FROM players WHERE id IN (${ids.map(() => "?").join(",")})`
+    `SELECT id, mu, sigma, games, ver FROM players WHERE id IN (${ids.map(() => "?").join(",")})`
   ).bind(...ids.map((id) => ladder + ":" + id)).all();
   for (const r of results) {
     const id = r.id.slice(ladder.length + 1);
-    map.set(id, { id, mu: r.mu, sigma: r.sigma, games: r.games });
+    map.set(id, { id, mu: r.mu, sigma: r.sigma, games: r.games, ver: r.ver });
   }
   return map;
 }
@@ -365,7 +465,7 @@ async function report(env, form, now) {
   if (!LADDERS.has(ladder)) return "not a ranked ladder";
   const res = parseResult(form.get("p"));
   if (!res) return "bad result";
-  const me = (await sha256hex(secret)).slice(0, 32);
+  const me = await playerOf(env, secret, now);
   if (!res.entries.some((e) => e.id === me)) return "not in this match";
   const t = await env.DB.prepare("SELECT kind, ladder, players, created, status FROM tickets WHERE id = ?").bind(match).first();
   if (!t || t.kind !== "match") return "no ticket";
@@ -374,20 +474,13 @@ async function report(env, form, now) {
   if (t.status === "open" && now - t.created > TICKET_MS) return "expired";
   // the reporter's display name for the leaderboard (hex-encoded printable ASCII, up to 20 chars)
   await saveName(env, me, String(form.get("name") || ""), now);
-  const result = ladder + "|" + res.text;
-  let m = await env.DB.prepare("SELECT result, players, status, created FROM matches WHERE id = ?").bind(match).first();
-  if (!m) {
-    await env.DB.prepare("INSERT OR IGNORE INTO matches (id, result, players, status, created) VALUES (?, ?, ?, 'pending', ?)")
-      .bind(match, result, res.entries.length, now).run();
-    m = await env.DB.prepare("SELECT result, players, status, created FROM matches WHERE id = ?").bind(match).first();
-  }
-  if (m.status !== "pending") return m.status;
+  const result = ladder + "|" + res.text, dispute = String(form.get("dispute") || "") === "1" ? 1 : 0;
+  await env.DB.prepare("INSERT OR IGNORE INTO matches (id, result, players, status, created) VALUES (?, ?, ?, 'pending', ?)")
+    .bind(match, result, res.entries.length, now).run();
+  const m = await env.DB.prepare("SELECT status FROM matches WHERE id = ?").bind(match).first();
+  if (m.status !== "pending" && m.status !== "disputed") return m.status;   // (a dispute can still turn void)
   if (t.status === "void") return "void";
-  if (m.result !== result) {
-    await voidMatch(env, match);
-    return "void: reports disagree";
-  }
-  await env.DB.prepare("INSERT OR IGNORE INTO reports (match, reporter) VALUES (?, ?)").bind(match, me).run();
+  await env.DB.prepare("INSERT OR IGNORE INTO reports (match, reporter, result, dispute) VALUES (?, ?, ?, ?)").bind(match, me, result, dispute).run();
   return finishMatch(env, match, now);
 }
 
@@ -410,29 +503,61 @@ async function serverResult(env, form, addr, now) {
   if (t.players !== res.entries.map((e) => e.id).join(",")) { await voidMatch(env, match); return "void: not the ticket's players"; }
   if (now - t.created < MIN_MATCH_MS || now - t.created > TICKET_MS) { await voidMatch(env, match); return "void: outside the ticket's window"; }
   if (t.result) return "already reported";
+  const left = String(form.get("left") || "") ? String(form.get("left")).split(",") : [];
+  const ids = res.entries.map((e) => e.id);
+  if (left.some((id) => !ids.includes(id)) || new Set(left).size !== left.length || left.length >= ids.length) return "bad left";
   const result = t.ladder + "|" + res.text;
-  await env.DB.prepare("UPDATE tickets SET result = ? WHERE id = ? AND result IS NULL").bind(result, match).run();
-  const m = await env.DB.prepare("SELECT result FROM matches WHERE id = ?").bind(match).first();
-  if (m && m.result !== result) { await voidMatch(env, match); return "void: reports disagree"; }
-  return m ? finishMatch(env, match, now) : "pending";
+  await env.DB.batch([
+    env.DB.prepare("UPDATE tickets SET result = ?, leavers = ?, resulted = ? WHERE id = ? AND result IS NULL").bind(result, left.join(","), now, match),
+    env.DB.prepare("INSERT OR IGNORE INTO matches (id, result, players, status, created) VALUES (?, ?, ?, 'pending', ?)").bind(match, result, ids.length, now),
+  ]);
+  return finishMatch(env, match, now);
 }
 
-// Rate the match once the server and every player have reported the same result.
-async function finishMatch(env, match, now) {
-  const t = await env.DB.prepare("SELECT ladder, result, status FROM tickets WHERE id = ?").bind(match).first();
-  const m = await env.DB.prepare("SELECT result, players, status FROM matches WHERE id = ?").bind(match).first();
+// What a ticketed match comes to, from the server's result and the players' reports (see /report at the top).
+export function decideMatch(t, reports, now) {
+  const players = t.players.split(","), left = new Set(t.leavers ? t.leavers.split(",") : []);
+  if (!t.result) return { state: "pending", text: reports.length < players.length ? `pending ${reports.length}/${players.length}` : "pending server" };
+  const byId = new Map(reports.map((r) => [r.reporter, r]));
+  const against = reports.filter((r) => r.dispute || (r.result !== null && r.result !== t.result));
+  const agree = reports.filter((r) => !r.dispute && (r.result === null || r.result === t.result));
+  if (against.length) {
+    if (agree.length === 0 && against.length >= 2) return { state: "void", text: "void: the players contradict the server" };
+    return { state: "disputed", text: "disputed" };
+  }
+  const missing = players.filter((id) => !left.has(id) && !byId.has(id));
+  if (!missing.length) return { state: "rate" };
+  if (agree.length >= 1 && t.resulted && now - t.resulted >= REPORT_WAIT_MS) return { state: "rate" };
+  return { state: "pending", text: `pending ${players.length - left.size - missing.length}/${players.length - left.size}` };
+}
+
+async function finishMatch(env, match, now, force = false) {
+  const t = await env.DB.prepare("SELECT ladder, players, result, leavers, resulted, status FROM tickets WHERE id = ?").bind(match).first();
+  const m = await env.DB.prepare("SELECT status FROM matches WHERE id = ?").bind(match).first();
   if (!t || !m) return "pending";
-  if (m.status !== "pending") return m.status;
-  const n = (await env.DB.prepare("SELECT COUNT(*) AS n FROM reports WHERE match = ?").bind(match).first()).n;
-  if (n < m.players) return `pending ${n}/${m.players}`;
-  if (!t.result) return `pending server`;
-  if (t.result !== m.result) { await voidMatch(env, match); return "void: reports disagree"; }
-  // everyone in: rate it (only once, even if two reports race here)
-  const claim = await env.DB.prepare("UPDATE matches SET status = 'done' WHERE id = ? AND status = 'pending'").bind(match).run();
-  if (!claim.meta || claim.meta.changes !== 1) return "done";
-  await env.DB.prepare("UPDATE tickets SET status = 'done' WHERE id = ?").bind(match).run();
+  if (m.status !== "pending" && m.status !== "disputed") return m.status;
+  const { results: reports } = await env.DB.prepare("SELECT reporter, result, dispute FROM reports WHERE match = ?").bind(match).all();
+  let d = force ? (t.result ? { state: "rate" } : { state: "pending", text: "pending server" }) : decideMatch(t, reports, now);
+  if (m.status === "disputed" && !force && d.state !== "void") return "disputed";   // only the owner settles it, or more dissent voids it
+  if (d.state === "void") { await voidMatch(env, match); return d.text; }
+  if (d.state === "disputed") {
+    await env.DB.prepare("UPDATE matches SET status = 'disputed' WHERE id = ? AND status = 'pending'").bind(match).run();
+    return "disputed";
+  }
+  if (d.state !== "rate") return d.text;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const r = await rateMatch(env, match, t, now, m.status);
+    if (r !== "retry") return r;
+  }
+  return "busy: try again";
+}
+
+// One atomic batch (a D1 batch is a transaction): a guard row checks that the match is still unrated and that no
+// rating changed since we read it (version column), so two matches finishing at once can't overwrite each other
+// (WEB-7) and a match is rated once. The guard's CHECK fails the whole batch otherwise.
+async function rateMatch(env, match, t, now, fromStatus) {
   const ladder = t.ladder;
-  const res = parseResult(m.result.slice(ladder.length + 1));
+  const res = parseResult(t.result.slice(ladder.length + 1));
   const ids = res.entries.map((e) => e.id);
   const ratings = await loadRatings(env, ladder, ids);
   const { results: acc } = await env.DB.prepare(`SELECT id, tgames FROM accounts WHERE id IN (${ids.map(() => "?").join(",")})`).bind(...ids).all();
@@ -452,15 +577,31 @@ async function finishMatch(env, match, now) {
     if (established(e.id) && vsProvisional) Object.assign(ratings.get(e.id), before.get(e.id));
     else counted.add(e.id);
   }
-  await env.DB.batch([
-    ...[...ratings.values()].map((r) =>
-      env.DB.prepare(
-        "INSERT INTO players (id, mu, sigma, games, updated) VALUES (?, ?, ?, ?, ?) " +
-        "ON CONFLICT(id) DO UPDATE SET mu = excluded.mu, sigma = excluded.sigma, games = excluded.games, updated = excluded.updated"
-      ).bind(ladder + ":" + r.id, r.mu, r.sigma, r.games + (counted.has(r.id) ? 1 : 0), now)),
-    ...ids.map((id) => env.DB.prepare(
-      "INSERT INTO accounts (id, tgames, created) VALUES (?, 1, ?) ON CONFLICT(id) DO UPDATE SET tgames = tgames + 1").bind(id, now)),
-  ]);
+  const q = (sql, ...a) => env.DB.prepare(sql).bind(...a);
+  const rows = [...ratings.values()];
+  const terms = ["(SELECT COUNT(*) FROM matches WHERE id = ? AND status = ?)"], args = [match, fromStatus];
+  for (const r of rows) {
+    if (r.ver === undefined) { terms.push("(SELECT COUNT(*) = 0 FROM players WHERE id = ?)"); args.push(ladder + ":" + r.id); }
+    else { terms.push("(SELECT COUNT(*) FROM players WHERE id = ? AND ver = ?)"); args.push(ladder + ":" + r.id, r.ver); }
+  }
+  try {
+    await env.DB.batch([
+      q(`INSERT INTO rate_guard (ok) VALUES ((${terms.join(" + ")}) = ?)`, ...args, terms.length),
+      q("DELETE FROM rate_guard"),
+      q("UPDATE matches SET status = 'done' WHERE id = ?", match),
+      q("UPDATE tickets SET status = 'done' WHERE id = ?", match),
+      ...rows.map((r) => q(
+        "INSERT INTO players (id, mu, sigma, games, updated, ver) VALUES (?, ?, ?, ?, ?, 1) " +
+        "ON CONFLICT(id) DO UPDATE SET mu = excluded.mu, sigma = excluded.sigma, games = excluded.games, updated = excluded.updated, ver = players.ver + 1",
+        ladder + ":" + r.id, r.mu, r.sigma, r.games + (counted.has(r.id) ? 1 : 0), now)),
+      ...ids.map((id) => q("INSERT INTO accounts (id, tgames, created) VALUES (?, 1, ?) ON CONFLICT(id) DO UPDATE SET tgames = tgames + 1", id, now)),
+    ]);
+  } catch (e) {
+    const st = await env.DB.prepare("SELECT status FROM matches WHERE id = ?").bind(match).first();
+    if (st && st.status === "done") return "done";
+    if (String(e && e.message || e).includes("CHECK")) return "retry";   // a rating moved meanwhile: read it again
+    throw e;
+  }
   return "done";
 }
 
@@ -469,26 +610,71 @@ function ipv4(s) {
   return s.split(".").every((p) => +p <= 255) ? s : null;
 }
 
+// Old rows go (cron, WEB-12), and matches whose report wait is over get rated.
+export async function prune(env, now) {
+  const q = (sql, ...a) => env.DB.prepare(sql).bind(...a);
+  const { results: due } = await q("SELECT t.id AS id FROM tickets t JOIN matches m ON m.id = t.id WHERE m.status = 'pending' AND t.resulted IS NOT NULL AND t.resulted < ? LIMIT 50", now - REPORT_WAIT_MS).all();
+  for (const r of due) await finishMatch(env, r.id, now);
+  await env.DB.batch([
+    q("DELETE FROM servers WHERE seen < ?", now - 3600000),
+    q("UPDATE tickets SET status = 'void' WHERE status = 'open' AND created < ? AND result IS NULL", now - TICKET_MS),
+    q("DELETE FROM reports WHERE match IN (SELECT id FROM tickets WHERE created < ? AND status != 'open')", now - 30 * 86400000),
+    q("DELETE FROM matches WHERE created < ? AND status != 'pending' AND status != 'disputed'", now - 30 * 86400000),
+    q("DELETE FROM tickets WHERE created < ? AND status != 'open' AND id NOT IN (SELECT id FROM matches WHERE status = 'disputed')", now - 30 * 86400000),
+    q("DELETE FROM queue WHERE joined < ?", now - QUEUE_STALE_MS),
+    q("DELETE FROM filled WHERE created < ?", now - 86400000),
+    q("DELETE FROM link_codes WHERE created < ?", now - LINK_CODE_MS),
+    q("DELETE FROM rate_guard"),
+  ]);
+  return due.length;
+}
+
+// Short-lived caching of public reads (WEB-6): the Cache API (per data center) plus Cache-Control for clients.
+async function cached(req, u, ctx, make) {
+  const ttl = CACHE_S[u.pathname];
+  const cache = typeof caches !== "undefined" && ttl ? caches.default : null;
+  const key = cache ? new Request(u.toString(), { method: "GET" }) : null;
+  if (cache) { const hit = await cache.match(key); if (hit) return hit; }
+  const res = await make();
+  if (cache && res.status === 200) {
+    const out = new Response(res.body, res);
+    out.headers.set("cache-control", "public, max-age=" + ttl);
+    if (ctx && ctx.waitUntil) ctx.waitUntil(cache.put(key, out.clone())); else await cache.put(key, out.clone());
+    return out;
+  }
+  return res;
+}
+
+const WRITES = new Set(["/announce", "/remove", "/hello", "/report", "/racetime", "/lifetime", "/queue", "/link", "/linkcode", "/resolve"]);
+const SERVER_WRITES = new Set(["/ticket", "/result", "/racerun"]);
+
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const u = new URL(req.url);
     const q = (k) => u.searchParams.get(k) || "";
     const now = Date.now();
     const conn = req.headers.get("CF-Connecting-IP") || "";
     const srcIp = ipv4(conn); // the caller's own IPv4, if it came over IPv4 (can't be spoofed over TCP)
-    const text = (body, status = 200) => new Response(body, { status, headers: { "content-type": "text/plain", "access-control-allow-origin": "*" } });
+    const isWrite = WRITES.has(u.pathname) && u.pathname !== "/queue" && u.pathname !== "/lifetime" || SERVER_WRITES.has(u.pathname) ||
+                    (req.method === "POST" && (u.pathname === "/queue" || u.pathname === "/lifetime"));
+    // reads may be fetched by web pages (the website's leaderboard); writes never answer cross-origin
+    const text = (body, status = 200) => new Response(body, { status, headers: isWrite ? { "content-type": "text/plain" } :
+      { "content-type": "text/plain", "access-control-allow-origin": "*" } });
     if (!allow("ip", conn, now)) return text("rate limited", 429);
-    const WRITES = new Set(["/report", "/racetime", "/lifetime", "/queue", "/link", "/linkcode"]);
-    const SERVER_WRITES = new Set(["/ticket", "/result", "/racerun"]);
     let form = null;
-    if (req.method === "POST" && WRITES.has(u.pathname)) {
+    if (isWrite) {
+      if (req.method !== "POST") return text("POST only", 405);
+      // a browser always says where a cross-site POST comes from; the game, servers and the bot never send Origin
+      if (req.headers.get("Origin")) return text("forbidden: no cross-site writes", 403);
+      if (+(req.headers.get("content-length") || 0) > MAX_BODY) return text("too big", 413);
+      try { form = await req.formData(); } catch { return text("bad request", 400); }
+    }
+    if (isWrite && !SERVER_WRITES.has(u.pathname) && u.pathname !== "/announce" && u.pathname !== "/remove") {
       if (!allow("write", conn, now)) return text("rate limited", 429);
-      form = await req.formData();
       const pid = await idOf(String(form.get("secret") || ""));
       if (pid && !allow("id", pid, now)) return text("rate limited", 429);
     }
-    if (req.method === "POST" && SERVER_WRITES.has(u.pathname)) {
-      form = await req.formData();
+    if (SERVER_WRITES.has(u.pathname)) {
       const addr = await serverAuth(env, form, srcIp, now);
       if (!addr) return text("forbidden: announce first, and send the token", 403);
       if (!allow("server", addr, now)) return text("rate limited", 429);
@@ -498,12 +684,13 @@ export default {
     }
 
     if (u.pathname === "/announce" || u.pathname === "/remove") {
-      // Which address: the source IPv4, or ?ip= from an IPv6 path. Allowed only for the source address itself
+      // Which address: the source IPv4, or ip= from an IPv6 path. Allowed only for the source address itself
       // or with the token an earlier announce from that address was given.
-      const port = parseInt(q("port"), 10);
-      const ip = srcIp || ipv4(q("ip"));
+      const f = (k) => String(form.get(k) || "");
+      const port = parseInt(f("port"), 10);
+      const ip = srcIp || ipv4(f("ip"));
       if (!ip || !(port > 0 && port < 65536)) return text("bad request", 400);
-      const addr = ip + ":" + port, token = q("token");
+      const addr = ip + ":" + port, token = f("token");
       const row = await env.DB.prepare("SELECT token FROM servers WHERE addr = ?").bind(addr).first();
       const ownSource = srcIp === ip;
       const tokenOk = !!(row && row.token && /^[0-9a-f]{32}$/.test(token) && row.token === token);
@@ -512,68 +699,96 @@ export default {
         await env.DB.prepare("DELETE FROM servers WHERE addr = ?").bind(addr).run();
         return text("removed");
       }
+      if (!row) {   // a new entry: one address can't fill the list (WEB-5)
+        const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM servers WHERE addr >= ? AND addr < ? AND seen > ?").bind(ip + ":", ip + ";", now - FRESH_MS).first();
+        if (n && n.n >= MAX_SERVERS_PER_IP) return text("too many servers from this address", 429);
+      }
       const newToken = tokenOk ? token : randomToken();
       await env.DB.prepare(
         "INSERT INTO servers (addr, version, seen, token) VALUES (?, ?, ?, ?) " +
         "ON CONFLICT(addr) DO UPDATE SET version = excluded.version, seen = excluded.seen, token = excluded.token"
-      ).bind(addr, (q("hidden") === "1" ? "~" : "") + q("v").slice(0, 16), now, newToken).run(); // "~": never matches /list
-      if (Math.random() < 0.02) await env.DB.prepare("DELETE FROM servers WHERE seen < ?").bind(now - 3600000).run();
+      ).bind(addr, (f("hidden") === "1" ? "~" : "") + f("v").slice(0, 16), now, newToken).run(); // "~": never matches /list
       return text("ok " + newToken);
     }
-    if (u.pathname === "/list") {
-      const { results } = await env.DB.prepare(
-        "SELECT addr FROM servers WHERE seen > ? AND version = ? ORDER BY seen DESC LIMIT 200"
-      ).bind(now - FRESH_MS, q("v").slice(0, 16)).all();
-      return text(results.map((r) => r.addr).join("\n"));
+    if (u.pathname === "/hello") {
+      const me = await playerOf(env, String(form.get("secret") || ""), now);
+      if (!me) return text("bad request", 400);
+      await saveName(env, me, String(form.get("name") || ""), now);
+      return text("id " + me);
     }
-    if (u.pathname === "/report" && req.method === "POST") {
-      return text(await report(env, form, now));
+    if (u.pathname === "/report") return text(await report(env, form, now));
+    if (u.pathname === "/racetime") return text("update the game: race times are sent by the game server");
+    if (u.pathname === "/link") return text(await link(env, form, now, conn));
+    if (u.pathname === "/linkcode") return text(await linkCode(env, form, now));
+    if (u.pathname === "/lifetime" && isWrite) return text(await lifetimeReport(env, form, now));
+    if (u.pathname === "/queue" && isWrite) return text(await queue(env, form, now));
+    if (u.pathname === "/resolve") {   // the owner settles a dispute: rate it as the server reported it, or void it
+      if (!env.ADMIN_KEY || String(form.get("key") || "") !== env.ADMIN_KEY) return text("forbidden", 403);
+      const match = String(form.get("match") || ""), action = String(form.get("action") || "");
+      const m = await env.DB.prepare("SELECT status FROM matches WHERE id = ?").bind(match).first();
+      if (!m || m.status !== "disputed") return text("not a dispute");
+      if (action === "void") { await voidMatch(env, match); return text("void"); }
+      if (action === "rate") return text(await finishMatch(env, match, now, true));
+      return text("action=rate|void");
     }
-    if (u.pathname === "/leaderboard") {
-      const ladder = q("ladder");
-      if (!LADDERS.has(ladder)) return text("not a ranked ladder", 400);
-      const n = Math.min(100, Math.max(1, parseInt(q("n"), 10) || 25));
-      const { results } = await env.DB.prepare(
-        "SELECT p.mu, p.sigma, p.games, COALESCE(n.name, 'player') AS name FROM players p " +
-        "JOIN accounts a ON a.id = substr(p.id, ?) AND a.tgames >= ? " +
-        "LEFT JOIN names n ON n.id = substr(p.id, ?) WHERE p.id LIKE ? AND p.games >= 3 " +
-        "ORDER BY (p.mu - 3 * p.sigma) DESC LIMIT ?"
-      ).bind(ladder.length + 2, PROVISIONAL_GAMES, ladder.length + 2, ladder + ":%", n).all();
-      return text(results.map((r) => `${Math.round(Math.max(0, r.mu - 3 * r.sigma) * 40)} ${r.games} ${r.name}`).join("\n"));
+    if (u.pathname === "/disputes") {
+      if (!env.ADMIN_KEY || q("key") !== env.ADMIN_KEY) return text("forbidden", 403);
+      const { results } = await env.DB.prepare("SELECT t.id, t.ladder, t.created, t.result, t.leavers FROM tickets t JOIN matches m ON m.id = t.id WHERE m.status = 'disputed' ORDER BY t.created LIMIT 100").all();
+      return text(results.map((r) => `${r.id} ${r.ladder} ${r.created} ${r.result}${r.leavers ? " left=" + r.leavers : ""}`).join("\n"));
     }
-    if (u.pathname === "/racetime" && req.method === "POST") return text("update the game: race times are sent by the game server");
-    if (u.pathname === "/raceboard") {
-      if (!RACE_MAPS.has(q("map"))) return text("not a ranked race map", 400);
-      const n = Math.min(100, Math.max(1, parseInt(q("n"), 10) || 25));
-      const { results } = await env.DB.prepare(
-        "SELECT r.ms, COALESCE(n.name, 'player') AS name FROM race_times r LEFT JOIN names n ON n.id = r.id " +
-        "WHERE r.map = ? ORDER BY r.ms ASC, r.created ASC LIMIT ?"
-      ).bind(q("map"), n).all();
-      return text(results.map((r) => `${r.ms} ${r.name}`).join("\n"));
-    }
-    if (u.pathname === "/link" && req.method === "POST") return text(await link(env, form, now, conn));
-    if (u.pathname === "/linkcode" && req.method === "POST") return text(await linkCode(env, form, now));
-    if (u.pathname === "/crowns") return text(await crowns(env));
-    if (u.pathname === "/lifetime" && req.method === "POST") return text(await lifetimeReport(env, form, now));
-    if (u.pathname === "/lifetime") return text(await lifetimeGet(env, q("ids")));
-    if (u.pathname === "/queue" && req.method === "POST") return text(await queue(env, form, now));
-    if (u.pathname === "/queue") {
-      await env.DB.prepare("DELETE FROM queue WHERE joined < ?").bind(now - QUEUE_STALE_MS).run();
-      const { results } = await env.DB.prepare("SELECT mode, COUNT(*) AS n FROM queue GROUP BY mode").all();
-      return text(results.map((r) => `${r.mode} ${r.n} ${QUEUE_SIZES[r.mode] || 0}`).join("\n"));
-    }
-    if (u.pathname === "/filled") {
-      const since = parseInt(q("since"), 10) || 0;
-      const { results } = await env.DB.prepare("SELECT id, mode, members, created FROM filled WHERE id > ? AND created > ? ORDER BY id ASC LIMIT 50")
-        .bind(since, now - 3600000).all();
-      return text(results.map((r) => `${r.id} ${r.mode} ${r.created} ${r.members}`).join("\n"));
-    }
-    if (u.pathname === "/ratings") {
-      const ids = q("ids").split(",").filter((id) => /^[0-9a-f]{32}$/.test(id)).slice(0, 64);
-      if (!LADDERS.has(q("ladder"))) return text("not a ranked ladder", 400);
-      const r = await loadRatings(env, q("ladder"), [...new Set(ids)]);
-      return text([...r.values()].map((p) => `${p.id} ${p.mu.toFixed(4)} ${p.sigma.toFixed(4)} ${p.games}`).join("\n"));
-    }
-    return text("quark server list");
+    if (req.method !== "GET") return text("bad request", 405);
+    return cached(req, u, ctx, async () => {
+      if (u.pathname === "/list") {
+        const { results } = await env.DB.prepare(
+          "SELECT addr FROM servers WHERE seen > ? AND version = ? ORDER BY seen DESC LIMIT 400"
+        ).bind(now - FRESH_MS, q("v").slice(0, 16)).all();
+        const per = new Map();   // (also capped here: entries from before the per-address limit)
+        const out = results.filter((r) => { const ip = r.addr.split(":")[0]; per.set(ip, (per.get(ip) || 0) + 1); return per.get(ip) <= MAX_SERVERS_PER_IP; });
+        return text(out.slice(0, 200).map((r) => r.addr).join("\n"));
+      }
+      if (u.pathname === "/leaderboard") {
+        const ladder = q("ladder");
+        if (!LADDERS.has(ladder)) return text("not a ranked ladder", 400);
+        const n = Math.min(100, Math.max(1, parseInt(q("n"), 10) || 25));
+        const { results } = await env.DB.prepare(
+          "SELECT p.mu, p.sigma, p.games, COALESCE(n.name, 'player') AS name FROM players p " +
+          "JOIN accounts a ON a.id = substr(p.id, ?) AND a.tgames >= ? " +
+          "LEFT JOIN names n ON n.id = substr(p.id, ?) WHERE p.id >= ? AND p.id < ? AND p.games >= ? " +
+          "ORDER BY (p.mu - 3 * p.sigma) DESC LIMIT ?"
+        ).bind(ladder.length + 2, PROVISIONAL_GAMES, ladder.length + 2, ladder + ":", ladder + ";", PLACEMENT_GAMES, n).all();
+        return text(results.map((r) => `${Math.round(Math.max(0, r.mu - 3 * r.sigma) * 40)} ${r.games} ${r.name}`).join("\n"));
+      }
+      if (u.pathname === "/raceboard") {
+        if (!RACE_MAPS.has(q("map"))) return text("not a ranked race map", 400);
+        const n = Math.min(100, Math.max(1, parseInt(q("n"), 10) || 25));
+        const { results } = await env.DB.prepare(
+          "SELECT r.ms, COALESCE(n.name, 'player') AS name FROM race_times r LEFT JOIN names n ON n.id = r.id " +
+          "WHERE r.map = ? ORDER BY r.ms ASC, r.created ASC LIMIT ?"
+        ).bind(q("map"), n).all();
+        return text(results.map((r) => `${r.ms} ${r.name}`).join("\n"));
+      }
+      if (u.pathname === "/crowns") return text(await crowns(env));
+      if (u.pathname === "/lifetime") return text(await lifetimeGet(env, q("ids")));
+      if (u.pathname === "/queue") {   // (read only: stale entries are pruned by the cron, not here - WEB-6)
+        const { results } = await env.DB.prepare("SELECT mode, COUNT(*) AS n FROM queue WHERE joined >= ? GROUP BY mode").bind(now - QUEUE_STALE_MS).all();
+        return text(results.map((r) => `${r.mode} ${r.n} ${QUEUE_SIZES[r.mode] || 0}`).join("\n"));
+      }
+      if (u.pathname === "/filled") {
+        const since = parseInt(q("since"), 10) || 0;
+        const { results } = await env.DB.prepare("SELECT id, mode, members, created FROM filled WHERE id > ? AND created > ? ORDER BY id ASC LIMIT 50")
+          .bind(since, now - 3600000).all();
+        return text(results.map((r) => `${r.id} ${r.mode} ${r.created} ${r.members}`).join("\n"));
+      }
+      if (u.pathname === "/ratings") {
+        const ids = q("ids").split(",").filter((id) => /^[0-9a-f]{32}$/.test(id)).slice(0, 64);
+        if (!LADDERS.has(q("ladder"))) return text("not a ranked ladder", 400);
+        const r = await loadRatings(env, q("ladder"), [...new Set(ids)]);
+        return text([...r.values()].map((p) => `${p.id} ${p.mu.toFixed(4)} ${p.sigma.toFixed(4)} ${p.games}`).join("\n"));
+      }
+      return text("quark server list");
+    });
+  },
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(prune(env, Date.now()));
   },
 };

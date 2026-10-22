@@ -590,7 +590,9 @@ static void testSession(int mode, const char* mapName, uint16_t port) {
 
     a.disconnect();
     pump(s, cls, 0.5, idle);
-    CHECK(s.humanCount() == 1); // a balance bot may take the empty slot
+    CHECK(s.humanCount() == 2 && s.away(a.clientId()));   // the reconnect grace keeps the slot...
+    pump(s, cls, kReconnectGrace + 0.5, idle);
+    CHECK(s.humanCount() == 1); // ...then it's gone (a balance bot may take the empty slot)
     s.stop();
 }
 
@@ -1459,12 +1461,13 @@ static void testRejoin(uint16_t port) {
         s.command("forcestart");
         pump(s, cls, 2.0, idle);
         for (int round = 0; round < 2; round++) {
+            int was = b.clientId();
             b.disconnect();
             pump(s, cls, 0.5, idle);
-            CHECK(s.humanCount() == 2);
+            CHECK(s.humanCount() == 3 && s.away(was));   // the slot waits for a reconnect (the grace)
             b.connect("127.0.0.1:" + std::to_string(cfg.port), "bob");
             pump(s, cls, 1.5, idle);
-            bool ok = b.state() == ConnState::Connected && s.humanCount() == 3;
+            bool ok = b.state() == ConnState::Connected && s.humanCount() == 3 && b.clientId() == was && !s.away(was);
             if (!ok) printf("  %s: rejoin %d failed: state %d, players %d, error '%s'\n", modeName(mode), round + 1, (int)b.state(), s.humanCount(), b.error().c_str());
             CHECK(ok);
         }
@@ -2168,7 +2171,23 @@ static void testRanked(uint16_t port) {
     std::string keyPath = userDataPath() + "/zz_test" + tag + ".key";
     RankKey k1 = loadOrCreateRankKey(keyPath), again = loadOrCreateRankKey(keyPath);
     std::remove(keyPath.c_str());
-    CHECK(k1.secret.size() == 64 && k1.id == again.id && k1.id == sha256Hex(k1.secret).substr(0, 32));
+    CHECK(k1.secret.size() == 64 && k1.id == again.id && k1.pub.size() == 64 && k1.id == sha256Hex(k1.pub).substr(0, 32));
+    CHECK(k1.id != legacyRankId(k1.secret) && legacyRankId(k1.secret) == sha256Hex(k1.secret).substr(0, 32));
+    {   // the key derivation the Worker repeats (tools/master/test.mjs checks the same numbers)
+        RankKey f = rankKeyFromSecret(std::string(64, 'a'));
+        CHECK(f.pub == "7361c4bb035a82708b4b001bcfd4b748ff9f89b9647a51d2dc4a7f0dc20d497d" && f.id == "694e20014c510c34c129e731ef06fe1d");
+        std::string sig;
+        CHECK(rankSign(f, rankConnectMessage(0x1234abcd, 7), &sig) && rankVerify(f.pub, rankConnectMessage(0x1234abcd, 7), sig));
+        CHECK(!rankVerify(f.pub, rankConnectMessage(0x1234abcd, 8), sig));        // another challenge
+        CHECK(!rankVerify(k1.pub, rankConnectMessage(0x1234abcd, 7), sig));       // another key
+        CHECK(rankKeyFromSecret("nothex").id.empty());
+    }
+    {   // tourney seeding: seed 1 meets the last seed, top seeds get the byes, 1 and 2 only meet in the final
+        CHECK((seededBracket({10, 11, 12, 13, 14, 15, 16, 17}) == std::vector<int>{10, 17, 13, 14, 11, 16, 12, 15}));
+        CHECK((seededBracket({10, 11, 12, 13, 14}) == std::vector<int>{10, -1, 13, 14, 11, -1, 12, -1}));
+        CHECK((seededBracket({5}) == std::vector<int>{5, -1}));
+        CHECK((seededBracket({5, 6, 7}) == std::vector<int>{5, -1, 6, 7}));
+    }
     // official maps: every shipped map hashes the same as at build time; an edited copy doesn't count
     for (auto& name : listMaps()) {
         if (name.rfind("zz_", 0) == 0) continue;
@@ -2204,12 +2223,10 @@ static void testRanked(uint16_t port) {
         for (int i = 0; i < 2 * teamSize; i++) {
             owned.push_back(std::make_unique<NetClient>());
             cls.push_back(owned.back().get());
-            RankKey k;
-            k.secret = sha256Hex("player" + std::to_string(i) + tag);
-            k.id = rankIdFromSecret(k.secret);
+            RankKey k = rankKeyFromSecret(sha256Hex("player" + std::to_string(i) + tag));
             keys.push_back(k);
+            cls[i]->setRankKey(k);   // (the id is proven at connect: the client signs the server's challenge)
             cls[i]->connect("127.0.0.1:" + std::to_string(cfg.port), "p" + std::to_string(i));
-            cls[i]->sendCommand("rankid " + k.id);
         }
         pump(s, cls, 1.0, idle);
         CHECK(cls[0]->hasSnapshot() && (cls[0]->mode().flags & MS_RANKED) && s.config().mode == MODE_ARENA); // ranked is always 1v1
@@ -2234,9 +2251,7 @@ static void testRanked(uint16_t port) {
             int me = cls[i]->clientId(), team = s.players_[me].team;
             CHECK(p.find(keys[i].id + ":" + std::to_string(team) + ":" + (team == TEAM_A ? "0" : "1")) != std::string::npos);
         }
-        RankKey outsider;
-        outsider.secret = sha256Hex("nobody");
-        outsider.id = rankIdFromSecret(outsider.secret);
+        RankKey outsider = rankKeyFromSecret(sha256Hex("nobody"));
         std::vector<std::string> ids;
         for (int k = 0; k < kMaxPlayers; k++) ids.push_back(cls[0]->rankId(k));
         CHECK(buildRankReport(res, ids, outsider).empty());
@@ -2260,6 +2275,23 @@ static void testRanked(uint16_t port) {
             CHECK(!rankedResultMatchesView("0123456789abcdef instagib 0:0:0,1:1:1,2:2:1", f, false, 0, 0));
             CHECK(!rankedResultMatchesView("0123456789abcdef instagib 0:0:1,1:1:0", f, false, 0, 0));
             CHECK(!rankedResultMatchesView("0123456789abcdef instagib 0:0:1,0:0:1,1:1:0,2:2:1", f, false, 0, 0)); // a slot twice
+            // leavers: the first one loses whatever the score said; they may be gone from our view
+            std::vector<SeenPlayer> one(kMaxPlayers);
+            one[1] = {true, TEAM_B, 0, 0};
+            CHECK(rankedResultMatchesView("0123456789abcdef vanilla 0:0:1,1:1:0 left=0", one, true, 3, 1));
+            CHECK(!rankedResultMatchesView("0123456789abcdef vanilla 0:0:0,1:1:1 left=0", one, true, 3, 1));
+            CHECK(!rankedResultMatchesView("0123456789abcdef vanilla 0:0:1,1:1:0", one, true, 3, 1));        // not playing, not a leaver
+            CHECK(!rankedResultMatchesView("0123456789abcdef vanilla 0:0:1,1:1:0 left=5", one, true, 3, 1)); // a leaver not in the result
+            std::vector<SeenPlayer> g(kMaxPlayers);
+            g[1] = {true, 1, 5, 0}; g[2] = {true, 2, 3, 0};
+            CHECK(rankedResultMatchesView("0123456789abcdef instagib 0:0:2,1:1:0,2:2:1 left=0", g, false, 0, 0));
+            CHECK(!rankedResultMatchesView("0123456789abcdef instagib 0:0:0,1:1:1,2:2:2 left=0", g, false, 0, 0)); // the leaver first
+            {
+                std::vector<std::string> lids(kMaxPlayers);
+                lids[0] = std::string(32, 'a'); lids[1] = std::string(32, 'b'); lids[2] = std::string(32, 'c');
+                std::string lm, ll, lp = rankedResultIds("0123456789abcdef instagib 0:0:2,1:1:0,2:2:1 left=0,2", lids, &lm, nullptr, nullptr, &ll);
+                CHECK(!lp.empty() && ll == std::string(32, 'a') + "," + std::string(32, 'c'));
+            }
             // the server's own result for the Worker: ids in place of slots, and the ticket's match id
             CHECK(s.rankedMatch_.size() == 16 && res.compare(0, 16, s.rankedMatch_) == 0);
             std::string match, list = rankedResultIds(res, ids, &match);
@@ -2269,6 +2301,184 @@ static void testRanked(uint16_t port) {
         CHECK(s.rankedResult(TEAM_A, &why).empty());
         s.stop();
     }
+}
+
+// A live ranked 1v1: players sign the match id for the ticket, nothing can change the match (votes, map, kicks, team
+// switches), a dropped player gets the slot back within the reconnect grace, and the first one gone past it loses.
+static void testRankedLeaver(uint16_t port) {
+    printf("ranked: live match lock, reconnect grace, first leaver loses\n");
+    char tag[16];
+    snprintf(tag, sizeof tag, "%u", (unsigned)qrand());
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "temple"; cfg.mode = MODE_ARENA; cfg.port = port; cfg.ranked = true; cfg.arenaVariant = 0;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a, b, c;
+    RankKey ka = rankKeyFromSecret(sha256Hex(std::string("leaverA") + tag)), kb = rankKeyFromSecret(sha256Hex(std::string("leaverB") + tag));
+    a.setRankKey(ka); b.setRankKey(kb);
+    std::string addr = "127.0.0.1:" + std::to_string(port);
+    a.connect(addr, "stayer"); b.connect(addr, "leaver");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 1.0, idle);
+    int ia = a.clientId(), ib = b.clientId();
+    CHECK(ia >= 0 && ib >= 0 && s.players_[ia].rankId == ka.id && s.players_[ib].rankId == kb.id);   // proven at connect
+    CHECK(a.rankId(ib) == kb.id);
+    {   // a squatter: someone else's public key without its secret gets no ranked id (and doesn't take the slot)
+        RankKey forged = kb;
+        forged.secret = std::string(64, '1');   // signs with another key
+        c.setRankKey(forged);
+        c.connect(addr, "squatter");
+        std::vector<NetClient*> cc = {&a, &b, &c};
+        pump(s, cc, 1.0, idle);
+        int ic = c.clientId();
+        CHECK(c.state() == ConnState::Connected && ic != ib && ic >= 0 && s.players_[ic].rankId.empty());
+        CHECK(s.players_[ib].connected && s.players_[ib].rankId == kb.id);
+        s.command("kick " + std::to_string(ic));   // (kicked: no grace)
+        CHECK(!s.players_[ic].connected);
+        c.disconnect();
+    }
+    s.command("forcestart");
+    for (int i = 0; i < 60 && s.ms_.phase != PHASE_LIVE; i++) pump(s, cls, 0.1, idle);
+    CHECK(s.ms_.phase == PHASE_LIVE && s.rankedLive());
+    pump(s, cls, 0.5, idle);
+    CHECK(!s.players_[ia].ticketSig.empty() && !s.players_[ib].ticketSig.empty() && s.rankedTicketSent_);   // both signed
+    CHECK(rankVerify(kb.pub, rankTicketMessage(s.rankedMatch_), s.players_[ib].ticketSig));
+    // locked while live: votes, map / mode / ranked changes, kicking a player of the match, switching teams
+    a.sendCommand("callvote map furnace");
+    a.sendCommand("callvote ranked off");
+    b.sendCommand("team spec");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE && s.players_[ib].team != TEAM_SPECTATOR);
+    s.command("map furnace");
+    s.command("kick " + std::to_string(ib));
+    CHECK(s.config().map == "temple" && s.players_[ib].connected && s.config().ranked);
+    // the leaver's connection drops: slot kept, and a reconnect within the grace gets it back
+    int scoreB = s.players_[ib].score = 2;
+    b.disconnect();
+    pump(s, cls, 0.3, idle);
+    CHECK(s.away(ib) && s.players_[ib].connected && s.rankedLive() && s.ms_.phase != PHASE_MATCH_END);
+    b.connect(addr, "leaver");
+    pump(s, cls, 1.0, idle);
+    CHECK(b.state() == ConnState::Connected && b.clientId() == ib && !s.away(ib) && s.players_[ib].score == scoreB && s.rankedLive());
+    // gone past the grace: the first leaver loses, the match ends there, and the stayer can report it
+    b.disconnect();
+    std::vector<NetClient*> onlyA = {&a};
+    std::string ranked;
+    double end = timeNow() + kReconnectGrace + 2.0;
+    while (timeNow() < end && ranked.empty()) {
+        pump(s, onlyA, 0.1, idle);
+        for (auto& e : a.takeEvents()) if (e.type == EV_RANKED) ranked = e.text;
+    }
+    CHECK(!s.players_[ib].connected && s.ms_.phase == PHASE_MATCH_END && !s.rankedLive());
+    CHECK(ranked.find(" left=" + std::to_string(ib)) != std::string::npos);
+    {
+        std::vector<std::string> ids, players;
+        for (int k = 0; k < kMaxPlayers; k++) ids.push_back(a.rankId(k));
+        std::string ladder, body = buildRankReport(ranked, ids, ka, &players, &ladder);
+        CHECK(body.find("&p=") != std::string::npos && players.size() == 2 && ladder == "vanilla");
+        CHECK(body.find(ka.id + ":" + std::to_string(s.players_[ia].team) + ":0") != std::string::npos);   // the stayer won
+        CHECK(body.find(kb.id + ":" + std::to_string(1 - s.players_[ia].team) + ":1") != std::string::npos);
+        std::vector<SeenPlayer> seen(kMaxPlayers);
+        seen[ia] = {true, s.players_[ia].team, 0, 0};
+        CHECK(rankedResultMatchesView(ranked, seen, true, s.players_[ia].team == TEAM_A ? 0 : 2, s.players_[ia].team == TEAM_A ? 2 : 0)); // even behind on score
+        std::string match, left, list = rankedResultIds(ranked, ids, &match, nullptr, nullptr, &left);
+        CHECK(left == kb.id);
+    }
+    // the stayer leaving afterwards changes nothing (the match is over)
+    a.disconnect();
+    pump(s, onlyA, kReconnectGrace + 0.5, idle);
+    CHECK(s.rankedLeft_.size() == 1);
+    s.stop();
+}
+
+// Every game: a dropped player keeps slot, team and score for the grace (found again by the reconnect token), and
+// is gone after it; votes don't count players who are away.
+static void testReconnectGrace(uint16_t port) {
+    printf("reconnect grace (token)\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_VS; cfg.port = port; cfg.balanceBots = true;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a, b;
+    std::string addr = "127.0.0.1:" + std::to_string(port);
+    a.connect(addr, "a"); b.connect(addr, "b");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 1.0, idle);
+    int ib = b.clientId(), teamB = s.players_[ib].team;
+    s.players_[ib].kills = 7;
+    uint64_t tok = b.reconnectToken();
+    CHECK(tok != 0 && tok == s.players_[ib].reconnectToken);
+    b.disconnect();
+    pump(s, cls, 0.3, idle);
+    CHECK(s.away(ib) && s.humanCount() == 2);
+    a.sendCommand("callvote bots off");   // b is away: a alone decides
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE && !s.config().balanceBots);
+    b.connect(addr, "b");
+    pump(s, cls, 1.0, idle);
+    CHECK(b.state() == ConnState::Connected && b.clientId() == ib && s.players_[ib].kills == 7 && s.players_[ib].team == teamB && !s.away(ib));
+    CHECK(b.hasSnapshot() && b.playerName(a.clientId()) == "a");   // a new session: it got everyone's info again
+    // without the token (a stranger): a new slot, b's place stays b's until the grace is over
+    b.disconnect();
+    pump(s, cls, 0.3, idle);
+    NetClient c;
+    c.connect(addr, "c");
+    std::vector<NetClient*> cc = {&a, &c};
+    pump(s, cc, 1.0, idle);
+    CHECK(c.clientId() != ib && s.away(ib));
+    pump(s, cc, kReconnectGrace + 0.5, idle);
+    CHECK(!s.players_[ib].connected && s.humanCount() == 2);
+    s.stop();
+}
+
+// Tourney seeding by the average of the three ladder ratings (200 for a ladder without games or no ranked id).
+static void testTourneySeeding(uint16_t port) {
+    printf("tourney seeding\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "colosseum"; cfg.mode = MODE_TOURNEY; cfg.port = port; cfg.lanOnly = true;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    const int ratings[5] = {150, 900, -1, 400, 650};   // -1: no ranked id
+    std::vector<int> entrants;
+    for (int i = 0; i < 5; i++) {
+        auto& p = s.players_[i];
+        p.connected = true; p.isBot = false; p.team = TEAM_A; p.name = "p" + std::to_string(i);
+        if (ratings[i] >= 0) { p.rankId = std::string(31, 'a') + (char)('0' + i); s.seedFixed_[p.rankId] = ratings[i]; }
+        entrants.push_back(i);
+    }
+    CHECK(s.seedRating(2) == kUnratedSeed);
+    std::vector<int> first = s.tourneySeeding(entrants);
+    // seeds: 1 (900), 4 (650), 3 (400), 2 (200, no id), 0 (150) -> 8 slots, the top three get byes
+    CHECK((first == std::vector<int>{1, -1, 2, 0, 4, -1, 3, -1}));
+    for (auto& p : s.players_) p.connected = false;
+    s.stop();
+}
+
+// master.txt can move the Worker only with a release-key signature of exactly that file.
+static void testMasterSignature() {
+    printf("signed master.txt\n");
+    std::string priv, pub, sig, url;
+    CHECK(sign::keygen(&priv, &pub));
+    std::string body = "https://quark-master.example.workers.dev/\n";
+    CHECK(sign::signData(body, priv, &sig));
+    CHECK(signedMasterUrl(body, sig, pub, &url) && url == "https://quark-master.example.workers.dev");
+    CHECK(!signedMasterUrl("https://evil.example.dev\n", sig, pub, &url));                 // another body
+    CHECK(!signedMasterUrl(body, sig, sign::kReleasePublicKey, &url));                     // not the release key
+    CHECK(!signedMasterUrl(body, "", pub, &url));
+    std::string sig2;
+    CHECK(sign::signData("http://plain.example\n", priv, &sig2) && !signedMasterUrl("http://plain.example\n", sig2, pub, &url)); // https only
+}
+
+// One placement threshold: the game's kPlacementGames is the Worker's PLACEMENT_GAMES.
+static void testPlacementConstant() {
+    printf("placement threshold matches the Worker\n");
+    std::string js = readSource("tools/master/worker.js");
+    if (js.empty()) { printf("  (worker.js not found: skipped)\n"); return; }
+    size_t at = js.find("const PLACEMENT_GAMES = ");
+    CHECK(at != std::string::npos && atoi(js.c_str() + at + 24) == kPlacementGames);
 }
 
 // Voting ranked on / off, what ranked forbids, and the update restart flag (waits for the match to end).
@@ -2305,8 +2515,15 @@ static void testRankedVoteAndRestart(uint16_t port) {
     CHECK(!bots);
     a.sendCommand("callvote bots on");          // refused while ranked
     a.sendCommand("callvote map harbor ffa");   // refused: not 1v1
+    a.sendCommand("callvote ranked off");       // refused: the ranked match is live (OWNER 3.4)
     pump(s, cls, 0.3, idle);
-    CHECK(s.vote_.kind == Server::VOTE_NONE);
+    CHECK(s.vote_.kind == Server::VOTE_NONE && s.rankedLive() && s.config().ranked);
+    std::string mapBefore = s.config().map;
+    s.command("map harbor ffa");                // not even the host: it waits until the match is over
+    s.command("ranked off");
+    CHECK(s.config().map == mapBefore && s.config().ranked);
+    rulesEndMatch(s, "test: match over", -1);   // over: votes and changes are allowed again
+    CHECK(!s.rankedLive());
     a.sendCommand("callvote ranked off");
     pump(s, cls, 0.2, idle);
     b.sendCommand("vote yes");
@@ -2995,7 +3212,7 @@ static void testBots(uint16_t& port) {
         CHECK(bots == 0);                                  // second human evens the teams
         b.disconnect();
         cls.pop_back();
-        pump(s, cls, 1.5, idle);
+        pump(s, cls, kReconnectGrace + 1.5, idle);   // (gone once the reconnect grace is over)
         bots = 0;
         for (auto& p : s.players_) bots += p.connected && p.isBot;
         CHECK(bots == 1);
@@ -3388,7 +3605,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(TP(29980)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterSignature(); testPlacementConstant(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(TP(29600)); testEditSession(TP(29601)); testVotedEdit(TP(29602)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
     if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(29604)); testMapNames(TP(29605)); testDemo(TP(29603)); return g_fail ? 1 : 0; }
@@ -3421,7 +3638,8 @@ int main(int argc, char** argv) {
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
         {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
-        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); }},
+        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterSignature(); testPlacementConstant(); }},
+        {"ranked2", [] { testRankedLeaver(TP(28636)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
         {"netcode", [] { testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},

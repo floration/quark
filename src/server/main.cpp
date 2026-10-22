@@ -43,7 +43,6 @@ static void usage() {
         "  --tourney-maps a,b      maps tourney matches rotate through\n"
         "  --tourney-modes a,b     1v1 rulesets tourney matches rotate through\n"
         "  --nobalance      don't add bots to even out uneven teams (players can also vote it off)\n"
-        "  --admin-password P  players who type \"login P\" in the console get admin commands (kick, map, ...)\n"
         "console commands: map <name> [mode], mode <name>, forcestart, restart, kick <id>, say <text>, status,\n"
         "                  addbot [a|b] [0-3], kickbots, quit\n",
         kDefaultPort);
@@ -96,7 +95,6 @@ int main(int argc, char** argv) {
         }
         else if (a == "--nobalance") cfg.balanceBots = false;
         else if (a == "--ranked") cfg.ranked = true;
-        else if (a == "--admin-password") cfg.adminPassword = next();
         else if (a == "--restart-flag") cfg.restartFlag = next();
         else if (a == "-h" || a == "--help") { usage(); return 0; }
         else { printf("unknown option %s\n", a.c_str()); usage(); return 1; }

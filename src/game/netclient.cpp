@@ -35,10 +35,12 @@ bool NetClient::connect(const std::string& address, const std::string& name) {
     error_.clear();
     if (!NetAddr::parse(address, kDefaultPort, server_)) { error_ = "bad address: " + address; return false; }
     if (!sock_.open(0)) { error_ = "could not open socket"; return false; }
+    if (address != tokenAddr_) token_ = 0;   // (a token is only good on the server that gave it)
     addrStr_ = address;
     name_ = name;
     nonce_ = randomNonce();
     cookie_ = 0;
+    connectSig_.clear();
     state_ = ConnState::Connecting;
     connectStart_ = timeNow();
     lastSend_ = -1e9;
@@ -95,13 +97,18 @@ void NetClient::poll() {
             return;
         }
         if (now - lastSend_ > kConnectRetry) {
-            uint8_t out[128];
+            uint8_t out[512];
             Writer w(out, sizeof out);
             writeHeader(w, PKT_CONNECT);
             w.u16(kProtocolVersion);
             w.u32(nonce_);
             w.u32(cookie_);
             w.str(name_);
+            if (cookie_) {   // (the first CONNECT only asks for the challenge)
+                w.u32((uint32_t)token_); w.u32((uint32_t)(token_ >> 32));
+                w.str(connectSig_.empty() ? "" : rankKey_.pub);
+                w.str(connectSig_);
+            }
             sock_.send(server_, out, w.size());
             lastSend_ = now;
         }
@@ -136,6 +143,8 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
             uint32_t crc = r.u32();
             r.u8(); // mode
             if (r.bad() || id >= kMaxPlayers) return;
+            uint32_t lo = r.u32(), hi = r.u32();
+            if (!r.bad()) { token_ = (uint64_t)hi << 32 | lo; tokenAddr_ = addrStr_; }
             if (!validMapName(mapName)) {   // it becomes a file name (map, download, light cache, demo): never a path
                 error_ = "server sent a bad map name";
                 disconnect();
@@ -204,6 +213,8 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
             uint32_t c = r.u32();
             if (r.bad() || state_ != ConnState::Connecting || c == cookie_) return;
             cookie_ = c;
+            connectSig_.clear();
+            if (!rankKey_.secret.empty()) rankSign(rankKey_, rankConnectMessage(cookie_, nonce_), &connectSig_);
             lastSend_ = -1e9; // send the CONNECT with the cookie right away (next poll)
             break;
         }
@@ -343,6 +354,12 @@ void NetClient::onSnapshot(Snapshot& s) {
         if (e.type == EV_PLAYERINFO && e.a < kMaxPlayers) { names_[e.a] = e.text; int m = e.b & 15, sp = e.b >> 4;
             models_[e.a] = m < kPlayerModels ? m : 0; packs_[e.a] = sp < kSoundPacks ? sp : 0; }
         if (e.type == EV_RANKINFO && e.a < kMaxPlayers) rankIds_[e.a] = e.text;
+        if (e.type == EV_RANKSIGN) {   // a ranked match went live: vouch that we're in it (the server forwards it with the ticket)
+            std::string sig;
+            bool hex16 = e.text.size() == 16 && e.text.find_first_not_of("0123456789abcdef") == std::string::npos;
+            if (!play_.active && hex16 && rankSign(rankKey_, rankTicketMessage(e.text), &sig)) sendCommand("ticketsig " + sig);
+            continue;
+        }
         if (e.type == EV_EDIT) { applyEditEvent(e.text); continue; }
         events_.push_back(e);
     }

@@ -140,4 +140,19 @@ bool verifyFile(const std::string& path, const std::string& sigHex, const std::s
     return true;
 }
 
+bool signMessage(const std::string& msg, const std::string& privHex, std::string* sigHex) {
+    uint8_t sk[64], pk[32], sig[64];
+    if (!expand(privHex, sk, pk)) return false;
+    crypto_ed25519_sign(sig, sk, (const uint8_t*)msg.data(), msg.size());
+    crypto_wipe(sk, sizeof sk);
+    *sigHex = toHex(sig, 64);
+    return true;
+}
+
+bool verifyMessage(const std::string& msg, const std::string& sigHex, const std::string& pubHex) {
+    uint8_t sig[64], pk[32];
+    if (!fromHex(sigHex, sig, 64) || !fromHex(pubHex, pk, 32)) return false;
+    return crypto_ed25519_check(sig, pk, (const uint8_t*)msg.data(), msg.size()) == 0;
+}
+
 } // namespace sign

@@ -70,7 +70,7 @@ static bool curlRun(const std::string& url, const std::string* body, std::string
         out.append(d, n);
         return out.size() < (1 << 20);
     });
-    if (rc != 0) { if (err) *err = rc < 0 ? "could not run curl" : "request failed"; return false; }
+    if (rc != 0) { if (err) *err = rc < 0 ? "could not run curl" : rc == 22 ? "HTTP error status" : "request failed"; return false; } // (22: curl -f)
     return true;
 }
 

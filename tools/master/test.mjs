@@ -1,8 +1,8 @@
 // Runs the worker against an in-memory SQLite with a tiny D1 lookalike: node tools/master/test.mjs
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
-import { createHash } from "node:crypto";
-import worker, { rateTeams } from "./worker.js";
+import { createHash, createPrivateKey, createPublicKey, sign as edSign } from "node:crypto";
+import worker, { rateTeams, rankKeyOf, prune } from "./worker.js";
 
 const db = new DatabaseSync(":memory:");
 db.exec(readFileSync(new URL("./schema.sql", import.meta.url), "utf8"));
@@ -12,18 +12,43 @@ const stmt = (sql, args = []) => ({
   first: async () => db.prepare(sql).get(...args) ?? null,
   all: async () => ({ results: db.prepare(sql).all(...args) }),
 });
-const env = { DB: { prepare: (sql) => stmt(sql), batch: async (list) => Promise.all(list.map((s) => s.run())) } };
+// a D1 batch is one transaction: all or nothing
+const env = { DB: { prepare: (sql) => stmt(sql), batch: async (list) => {
+  db.exec("BEGIN");
+  try { const out = []; for (const s of list) out.push(await s.run()); db.exec("COMMIT"); return out; }
+  catch (e) { db.exec("ROLLBACK"); throw e; }
+} } };
 
 let fails = 0;
 const check = (ok, what) => { if (!ok) { fails++; console.log("FAIL", what); } };
-const secret = (n) => createHash("sha256").update("s" + n).digest("hex");
-const id = (n) => createHash("sha256").update(secret(n)).digest("hex").slice(0, 32);
-let callN = 0; // each call from its own (IPv6) client so per-IP rate limits don't trip; announce tests pass `from`
-const call = async (path, form, from) => {
-  const headers = { "CF-Connecting-IP": from || "2001:db8::" + (++callN).toString(16) };
-  const init = form ? { method: "POST", body: new URLSearchParams(form), headers } : { headers };
-  return (await worker.fetch(new Request("https://x" + path, init), env)).text();
+const sha = (t) => createHash("sha256").update(t).digest("hex");
+const secret = (n) => sha("s" + n);
+// Ranked keys, derived independently of worker.js (node:crypto), exactly as the game does (ranked.cpp)
+const keyOf = (sec) => {
+  const seed = Buffer.from(sha("quark-rank-ed25519-v1:" + sec), "hex");
+  const priv = createPrivateKey({ key: Buffer.concat([Buffer.from("302e020100300506032b657004220420", "hex"), seed]), format: "der", type: "pkcs8" });
+  const pub = createPublicKey(priv).export({ format: "der", type: "spki" }).subarray(-32).toString("hex");
+  return { priv, pub, id: sha(pub).slice(0, 32) };
 };
+const keys = new Map();
+const key = (n) => { if (!keys.has(n)) keys.set(n, keyOf(secret(n))); return keys.get(n); };
+const id = (n) => key(n).id;
+const legacy = (n) => sha(secret(n)).slice(0, 32);
+const signTicket = (n, match) => edSign(null, Buffer.from("quark-ticket-v1 " + match), key(n).priv).toString("hex");
+let callN = 0; // each call from its own (IPv6) client so per-IP rate limits don't trip; announce tests pass `from`
+const fetchRaw = async (path, form, from, extra = {}) => {
+  const headers = { "CF-Connecting-IP": from || "2001:db8::" + (++callN).toString(16), ...extra };
+  const init = form ? { method: "POST", body: new URLSearchParams(form), headers } : { headers };
+  return worker.fetch(new Request("https://x" + path, init), env, { waitUntil: () => {} });
+};
+const call = async (path, form, from) => (await fetchRaw(path, form, from)).text();
+
+// key derivation: the same numbers as the game (quark_tests "ranked" checks this vector on the C++ side)
+{
+  const k = keyOf("a".repeat(64)), w = await rankKeyOf("a".repeat(64));
+  check(k.pub === "7361c4bb035a82708b4b001bcfd4b748ff9f89b9647a51d2dc4a7f0dc20d497d" && k.id === "694e20014c510c34c129e731ef06fe1d", "key vector " + k.pub);
+  check(w.pub === k.pub && w.id === k.id && w.legacy === sha("a".repeat(64)).slice(0, 32), "worker derives the same key");
+}
 const ratings = async (ns, ladder = "vanilla") => Object.fromEntries((await call("/ratings?ladder=" + ladder + "&ids=" + ns.map(id).join(","))).split("\n")
   .map((l) => l.split(" ")).map(([i, mu, s, g]) => [i, { mu: +mu, sigma: +s, games: +g }]));
 
@@ -55,10 +80,12 @@ const ratings = async (ns, ladder = "vanilla") => Object.fromEntries((await call
 let srvN = 0;
 const server = async () => {
   const ip = "198.18.0." + (++srvN), port = 27600 + srvN;
-  const tok = (await call(`/announce?port=${port}&v=t9&hidden=1`, null, ip)).split(" ")[1];
+  const tok = (await call("/announce", { port: String(port), v: "t9", hidden: "1" }, ip)).split(" ")[1];
   const S = { ip, f: { port: String(port), token: tok } };
   S.post = (path, form) => call(path, { ...S.f, ...form }, S.ip);
-  S.ticket = (match, ladder, ns, map = "temple") => S.post("/ticket", { kind: "match", match, ladder, map, players: ns.map(id).join(",") });
+  // every player signs the match id in the game; the server forwards keys and signatures with the ticket
+  S.ticket = (match, ladder, ns, map = "temple", signers = ns) => S.post("/ticket", { kind: "match", match, ladder, map, players: ns.map(id).join(","),
+    keys: ns.map((n) => key(n).pub).join(","), sigs: ns.map((n, i) => signTicket(signers[i], match)).join(",") });
   S.result = (match, p) => S.post("/result", { match, p });
   return S;
 };
@@ -82,6 +109,10 @@ check((await call("/list?v=t9")) === "", "hidden servers aren't listed");
   const p = `${id(1)}:0:0,${id(2)}:0:0,${id(3)}:1:1,${id(4)}:1:1`, match = "aaaaaaaaaaaaaaaa";
   check((await call("/report", { secret: secret(1), match, ladder: "vanilla", p })) === "no ticket", "no ticket, no report (R1: no game at all)");
   check((await call("/ticket", { port: "27999", token: "0".repeat(32), kind: "match", match, ladder: "vanilla", map: "temple", players: [1, 2, 3, 4].map(id).join(",") }, "198.18.9.9")).startsWith("forbidden"), "unregistered server can't open tickets");
+  check((await S.post("/ticket", { kind: "match", match, ladder: "vanilla", map: "temple", players: [1, 2, 3, 4].map(id).join(",") })) === "missing signatures", "a ticket needs every player's signature");
+  check((await S.ticket(match, "vanilla", [1, 2, 3, 4], "temple", [1, 2, 3, 9])) === "bad signature for " + id(4), "a player who didn't sign can't be ticketed (someone else's signature)");
+  check((await S.post("/ticket", { kind: "match", match, ladder: "vanilla", map: "temple", players: [1, 2].map(id).join(","), keys: [key(1).pub, key(3).pub].join(","),
+    sigs: [signTicket(1, match), signTicket(3, match)].join(",") })) === "bad key for " + id(2), "a key must hash to the id");
   check((await S.ticket(match, "vanilla", [1, 2, 3, 4])) === "ticket " + match, "ticket opened");
   check((await S.ticket("abababababababab", "vanilla", [1, 2])) === "too soon", "one ticket a minute per server");
   check((await call("/report", { secret: secret(1), match, ladder: "vanilla", p })) === "too soon", "no result before the match could have been played");
@@ -104,27 +135,60 @@ check((await call("/list?v=t9")) === "", "hidden servers aren't listed");
   r = await ratings([1]);
   check(r[id(1)].games === 1, "still one game");
 }
-// a disagreeing report voids the match; so does a server result that disagrees with the players
+// a lone dissent is a dispute (not rated until the owner settles it); every player against the server voids it
 {
+  env.ADMIN_KEY = "adminkey";
   const S = await server();
   const won = `${id(5)}:0:0,${id(6)}:1:1`, lost = `${id(5)}:0:1,${id(6)}:1:0`;
   await S.ticket("bbbbbbbbbbbbbbbb", "vanilla", [5, 6]);
   age("bbbbbbbbbbbbbbbb");
-  await call("/report", { secret: secret(5), match: "bbbbbbbbbbbbbbbb", ladder: "vanilla", p: won });
-  check((await call("/report", { secret: secret(6), match: "bbbbbbbbbbbbbbbb", ladder: "vanilla", p: lost })).startsWith("void"), "disagreement voids");
-  check((await call("/report", { secret: secret(6), match: "bbbbbbbbbbbbbbbb", ladder: "vanilla", p: won })) === "void", "stays void");
+  await S.result("bbbbbbbbbbbbbbbb", won);
+  check((await call("/report", { secret: secret(5), match: "bbbbbbbbbbbbbbbb", ladder: "vanilla", p: won })) === "pending 1/2", "agreeing report pending");
+  check((await call("/report", { secret: secret(6), match: "bbbbbbbbbbbbbbbb", ladder: "vanilla", p: won, dispute: "1" })) === "disputed", "a lone dissent is a dispute, not a void");
+  check((await call("/report", { secret: secret(6), match: "bbbbbbbbbbbbbbbb", ladder: "vanilla", p: lost })) === "disputed", "stays disputed");
+  let r = await ratings([5, 6]);
+  check(r[id(5)].games === 0 && r[id(6)].games === 0, "a dispute isn't rated");
+  check((await call("/disputes?key=adminkey")).startsWith("bbbbbbbbbbbbbbbb vanilla "), "the owner sees it");
+  check((await call("/resolve", { key: "wrong", match: "bbbbbbbbbbbbbbbb", action: "rate" })) === "forbidden", "only the owner settles");
+  check((await call("/resolve", { key: "adminkey", match: "bbbbbbbbbbbbbbbb", action: "rate" })) === "done", "the owner rates it as the server reported");
+  r = await ratings([5, 6]);
+  check(r[id(5)].games === 1 && r[id(5)].mu > 25 && r[id(6)].mu < 25, "settled dispute rated");
+  // a lying host: both players report the other result
   const S2 = await server();
   await S2.ticket("bcbcbcbcbcbcbcbc", "vanilla", [5, 6]);
   age("bcbcbcbcbcbcbcbc");
-  await S2.result("bcbcbcbcbcbcbcbc", lost);   // a lying host
-  await call("/report", { secret: secret(5), match: "bcbcbcbcbcbcbcbc", ladder: "vanilla", p: won });
-  check((await call("/report", { secret: secret(6), match: "bcbcbcbcbcbcbcbc", ladder: "vanilla", p: won })).startsWith("void"), "players vs server disagree: void");
-  const r = await ratings([5, 6]);
-  check(r[id(5)].games === 0 && r[id(6)].games === 0, "void match not rated");
+  await S2.result("bcbcbcbcbcbcbcbc", lost);
+  await call("/report", { secret: secret(5), match: "bcbcbcbcbcbcbcbc", ladder: "vanilla", p: lost, dispute: "1" });
+  check((await call("/report", { secret: secret(6), match: "bcbcbcbcbcbcbcbc", ladder: "vanilla", p: lost, dispute: "1" })).startsWith("void"), "every player against the server: void");
+  r = await ratings([5, 6]);
+  check(r[id(5)].games === 1 && r[id(6)].games === 1, "void match not rated");
   const S3 = await server();
   await S3.ticket("bdbdbdbdbdbdbdbd", "vanilla", [5, 6]);
   age("bdbdbdbdbdbdbdbd", 3 * 3600000);
   check((await call("/report", { secret: secret(5), match: "bdbdbdbdbdbdbdbd", ladder: "vanilla", p: won })) === "expired", "ticket window closes");
+}
+// leaving: the server names who left; the first leaver loses and isn't waited for. A silent player is waited for
+// REPORT_WAIT_MS, then the match is rated (by the cron) if someone agreed and nobody objected.
+{
+  const S = await server();
+  const p = `${id(21)}:0:0,${id(22)}:1:1`;
+  await S.ticket("cdcdcdcdcdcdcdcd", "vanilla", [21, 22]);
+  age("cdcdcdcdcdcdcdcd");
+  check((await S.post("/result", { match: "cdcdcdcdcdcdcdcd", p, left: id(9) })) === "bad left", "a leaver must be in the match");
+  await S.post("/result", { match: "cdcdcdcdcdcdcdcd", p, left: id(22) });
+  check((await call("/report", { secret: secret(21), match: "cdcdcdcdcdcdcdcd", ladder: "vanilla", p })) === "done", "the stayer's report rates it (the leaver can't report)");
+  let r = await ratings([21, 22]);
+  check(r[id(21)].mu > 25 && r[id(22)].mu < 25 && r[id(22)].games === 1, "the leaver lost");
+  const S2 = await server();
+  await S2.ticket("cececececececece", "vanilla", [21, 22]);
+  age("cececececececece");
+  await S2.result("cececececececece", p);
+  check((await call("/report", { secret: secret(21), match: "cececececececece", ladder: "vanilla", p })) === "pending 1/2", "waits for the other report");
+  check((await prune(env, Date.now())) === 0, "not yet");
+  db.prepare("UPDATE tickets SET resulted = resulted - ? WHERE id = ?").run(11 * 60000, "cececececececece");
+  check((await prune(env, Date.now())) === 1, "the cron rates it after the wait");
+  r = await ratings([21, 22]);
+  check(r[id(21)].games === 2 && r[id(22)].games === 2, "silent player rated (a non-report doesn't escape the result)");
 }
 // ladders are separate: an instagib win doesn't touch vanilla
 {
@@ -220,22 +284,75 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   check((await call("/queue", { secret: secret(6), mode: "ffa" })) === "queued ffa 1/4" && db.prepare("SELECT discord FROM queue WHERE who = ?").get(id(6)).discord === "", "unverified links aren't pinged");
   check((await call("/link", { secret: secret(5), unlink: "1" })) === "unlinked", "unlink");
 }
-// server list: own source IPv4 only, ?ip= needs the token from an earlier announce
+// server list: POST only, own source IPv4 only, ip= needs the token from an earlier announce, a few per address
 {
-  const a = await call("/announce?port=27500&v=t1", null, "198.51.100.7");
+  const ann = (form, from) => call("/announce", form, from);
+  check((await fetchRaw("/announce?port=27500&v=t1", null, "198.51.100.7")).status === 405, "writes are POST only (WEB-5)");
+  check((await fetchRaw("/announce", { port: "27500", v: "t1" }, "198.51.100.7", { Origin: "https://evil.example" })).status === 403, "no cross-site writes");
+  const wr = await fetchRaw("/announce", { port: "27500", v: "t1" }, "198.51.100.7");
+  const a = await wr.text();
   check(/^ok [0-9a-f]{32}$/.test(a), "announce gives a token " + a);
+  check(!wr.headers.get("access-control-allow-origin"), "no CORS on writes");
   const tok = a.split(" ")[1];
-  check((await call("/list?v=t1")) === "198.51.100.7:27500", "listed");
-  check((await call("/announce?port=27501&v=t1&ip=203.0.113.9", null, "2001:db8::99")).startsWith("forbidden"), "ipv6 can't list another address");
-  check((await call("/remove?port=27500&ip=198.51.100.7", null, "2001:db8::99")).startsWith("forbidden"), "ipv6 can't remove without token");
-  await call("/remove?port=27500&ip=198.51.100.7", null, "192.0.2.1"); // an IPv4 caller only ever names itself
+  const lr = await fetchRaw("/list?v=t1");
+  check((await lr.text()) === "198.51.100.7:27500" && lr.headers.get("access-control-allow-origin") === "*", "listed (reads keep CORS)");
+  check((await ann({ port: "27501", v: "t1", ip: "203.0.113.9" }, "2001:db8::99")).startsWith("forbidden"), "ipv6 can't list another address");
+  check((await call("/remove", { port: "27500", ip: "198.51.100.7" }, "2001:db8::99")).startsWith("forbidden"), "ipv6 can't remove without token");
+  await call("/remove", { port: "27500", ip: "198.51.100.7" }, "192.0.2.1"); // an IPv4 caller only ever names itself
   check((await call("/list?v=t1")) === "198.51.100.7:27500", "other ipv4 can't remove");
-  check((await call(`/announce?port=27500&v=t1&ip=198.51.100.7&token=${tok}`, null, "2001:db8::5")) === "ok " + tok, "token announce over ipv6");
-  check((await call(`/remove?port=27500&ip=198.51.100.7&token=${tok}`, null, "2001:db8::5")) === "removed", "token remove");
+  check((await ann({ port: "27500", v: "t1", ip: "198.51.100.7", token: tok }, "2001:db8::5")) === "ok " + tok, "token announce over ipv6");
+  check((await call("/remove", { port: "27500", ip: "198.51.100.7", token: tok }, "2001:db8::5")) === "removed", "token remove");
   check((await call("/list?v=t1")) === "", "removed from list");
+  let last = "";
+  for (let i = 0; i < 9; i++) last = await ann({ port: String(28000 + i), v: "t2" }, "198.51.100.8");
+  check(last === "too many servers from this address", "per-address cap " + last);
+  check((await call("/list?v=t2")).split("\n").length === 8, "one address can't flood the list");
   let limited = false;
   for (let i = 0; i < 40 && !limited; i++) limited = (await call("/link", { secret: secret(40 + i) }, "192.0.2.50")) === "rate limited";
   check(limited, "writes rate-limited per IP");
+}
+// pre-1.17 ids move to the key-derived id the first time the secret shows up
+{
+  const n = 77, old = legacy(n);
+  db.prepare("INSERT INTO players (id, mu, sigma, games, updated) VALUES (?, 30, 5, 9, 0)").run("vanilla:" + old);
+  db.prepare("INSERT INTO accounts (id, tgames, created) VALUES (?, 9, 0)").run(old);
+  db.prepare("INSERT INTO names (id, name, updated) VALUES (?, 'veteran', 0)").run(old);
+  db.prepare("INSERT INTO race_times (map, id, ms, splits, version, created) VALUES ('viaduct', ?, 50000, '1', 'x', 0)").run(old);
+  check((await call("/hello", { secret: secret(n) })) === "hello".replace("hello", "id " + id(n)), "hello answers the new id");
+  const r = await ratings([n]);
+  check(r[id(n)].mu === 30 && r[id(n)].games === 9, "ratings moved to the new id");
+  check(db.prepare("SELECT COUNT(*) AS c FROM players WHERE id = ?").get("vanilla:" + old).c === 0 && db.prepare("SELECT tgames FROM accounts WHERE id = ?").get(id(n)).tgames === 9, "old rows gone");
+  check(db.prepare("SELECT ms FROM race_times WHERE id = ?").get(id(n)).ms === 50000, "race time moved");
+  check((await call("/hello", { secret: secret(n) })) === "id " + id(n), "once");
+}
+// queue fills are atomic: two joins racing for the last place fill it once
+{
+  const hx = (t) => Buffer.from(t).toString("hex");
+  await call("/queue", { secret: secret(80), mode: "duel", name: hx("q1") });
+  const both = await Promise.all([call("/queue", { secret: secret(81), mode: "duel" }), call("/queue", { secret: secret(82), mode: "duel" })]);
+  const fills = db.prepare("SELECT COUNT(*) AS c FROM filled WHERE mode = 'duel'").get().c;
+  check(fills === 1 && both.filter((x) => x === "filled duel").length === 1, "one fill " + JSON.stringify(both));
+  check(db.prepare("SELECT COUNT(*) AS c FROM queue WHERE mode = 'duel'").get().c === 1, "the third waits");
+}
+// ratings: a write against a changed rating is refused as a whole (the version guard), then retried
+{
+  const S = await server();
+  const p = `${id(31)}:0:0,${id(32)}:1:1`;
+  await S.ticket("dededededededede", "instagib", [31, 32]);
+  age("dededededededede");
+  await S.result("dededededededede", p);
+  await call("/report", { secret: secret(31), match: "dededededededede", ladder: "instagib", p });
+  // someone else's match moves player 32 between this one's read and write: simulated by a trigger-free bump
+  const realBatch = env.DB.batch;
+  let bumped = false;
+  env.DB.batch = async (list) => {
+    if (!bumped) { bumped = true; db.prepare("INSERT INTO players (id, mu, sigma, games, updated, ver) VALUES (?, 20, 8, 1, 0, 1)").run("instagib:" + id(32)); }
+    return realBatch(list);
+  };
+  check((await call("/report", { secret: secret(32), match: "dededededededede", ladder: "instagib", p })) === "done", "rated after a retry");
+  env.DB.batch = realBatch;
+  const r = await ratings([31, 32], "instagib");
+  check(r[id(32)].games === 2 && r[id(32)].mu < 20 && r[id(31)].games === 1, "the retry saw the other match's rating " + JSON.stringify(r));
 }
 // lifetime kills / deaths: added up across reports, capped, rate limited
 {

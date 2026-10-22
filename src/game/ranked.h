@@ -18,12 +18,33 @@ bool isOfficialMapName(const std::string& name);
 bool isRankedMap(const Map& m, int ladder);
 
 struct RankKey {
-    std::string secret; // 64 hex chars
-    std::string id;     // 32 hex chars
+    std::string secret; // 64 hex chars: stays on this computer and goes only to the Worker
+    std::string pub;    // 64 hex chars: the Ed25519 public key derived from the secret (rankSeedHex)
+    std::string id;     // 32 hex chars: rankIdFromPublic(pub), what servers and other players see
 };
 // Loads the key file, creating it (random) the first time. Empty key if it can't be read or written.
 RankKey loadOrCreateRankKey(const std::string& path);
+RankKey rankKeyFromSecret(const std::string& secret); // empty if the secret isn't 64 hex chars
+// Ranked ids are the first 32 hex chars of sha256(public key hex), so a server can check that a player holds the
+// key behind the id they claim (they sign its connect challenge). Ids before 1.17 were sha256(secret): the Worker
+// moves an old id's rows to the new one the first time that secret reaches it (POST /hello, sent at start-up).
+std::string rankIdFromPublic(const std::string& pubHex);
 std::string rankIdFromSecret(const std::string& secret);
+std::string legacyRankId(const std::string& secret);
+std::string rankSeedHex(const std::string& secret); // Ed25519 seed: sha256("quark-rank-ed25519-v1:" + secret)
+// What a player signs: the server's connect challenge (cookie + the client's session nonce), and a ranked match id
+// (the server forwards those signatures with its ticket: the Worker only tickets players who really joined).
+std::string rankConnectMessage(uint32_t cookie, uint32_t nonce);
+std::string rankTicketMessage(const std::string& match);
+bool rankSign(const RankKey& key, const std::string& msg, std::string* sigHex);
+bool rankVerify(const std::string& pubHex, const std::string& msg, const std::string& sigHex);
+// Games on a ladder before a rating counts as placed ("?" in game; off the leaderboard and crowns). The Worker's
+// PLACEMENT_GAMES is the same number (quark_tests checks).
+constexpr int kPlacementGames = 5;
+// Tourney seeding: the bracket's first round for entrants sorted best seed first (-1 = bye). Standard order:
+// seed 1 meets the last seed, the top seeds get the byes, and seeds 1 and 2 can only meet in the final.
+std::vector<int> seededBracket(const std::vector<int>& bestFirst);
+constexpr int kUnratedSeed = 200;   // a ladder the player has no games on (or no ranked id) counts this much
 
 // From an EV_RANKED event text and the slot -> ranked id table: the form body this player posts to /report
 // (empty if the text is malformed, an id is missing, or we didn't play in it). ids: kMaxPlayers entries.
@@ -31,9 +52,12 @@ std::string buildRankReport(const std::string& eventText, const std::vector<std:
                             std::vector<std::string>* playersOut = nullptr, std::string* ladderOut = nullptr, const std::string& name = "");
 
 // The result list of an EV_RANKED text with ranked ids in place of slots ("id:team:place,..."), as the Worker wants
-// it; empty if malformed or a slot has no id. match / ladder: the text's match id and ladder.
+// it; empty if malformed or a slot has no id. match / ladder: the text's match id and ladder. leftOut: the ids of
+// players who left during the match (first leaver first), comma separated.
+// EV_RANKED text: "<match> <ladder> slot:team:place,...[ left=slot,slot]". The first leaver (gone past the reconnect
+// grace while the match was live) takes the loss; anyone who leaves after them isn't punished for it.
 std::string rankedResultIds(const std::string& eventText, const std::vector<std::string>& ids, std::string* match = nullptr,
-                            std::string* ladder = nullptr, std::vector<std::string>* playersOut = nullptr);
+                            std::string* ladder = nullptr, std::vector<std::string>* playersOut = nullptr, std::string* leftOut = nullptr);
 
 // What this client saw of the match (from its own snapshots), to check the host's EV_RANKED result against
 // before reporting it: a host that lies about who won gets no report. seen: kMaxPlayers entries.

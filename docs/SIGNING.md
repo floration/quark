@@ -32,6 +32,21 @@ written (outside the repo, never committed) to the session scratchpad file `quar
 4. Push as usual. The release job's "sign update packages" step should print `signed ...` and `signature OK` for each
    platform, and the release should list a `.qpak.sig` next to each `.qpak`.
 
+## Moving the ranking / server-list Worker (signed master.txt)
+
+The Worker's URL is built into the game (`kPinnedMasterUrl`, `src/game/master.cpp`). The website's `master.txt`
+can move it only when `master.txt.sig` next to it is a release-key signature of exactly that file:
+
+```
+echo https://new-worker.example.workers.dev > site/master.txt
+QUARK_SIGNING_KEY=<private key> build/quark_sign sign site/master.txt   # writes site/master.txt.sig
+build/quark_sign verify site/master.txt                                  # checks it against the built-in key
+git add site/master.txt site/master.txt.sig
+```
+
+Do this on your own machine, not in CI: CI runs for pushes to any branch, so a signature made there would vouch for
+whatever a branch put in `master.txt`. The pages job only has to publish `site/` as it is (the `.sig` included).
+
 ## Making a new key (only if the old one leaked or was lost)
 
 1. Build and run `build/quark_sign keygen`.
