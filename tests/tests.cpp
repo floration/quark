@@ -1998,6 +1998,16 @@ static void testSnapshotBounds() {
     CHECK(!parseBracket("1\n1\n1\n1\n1\n1\n1\n1\n1\n@0,0", rounds, round, match) && rounds.empty());
 }
 
+// A demo record's length near 2^32 made `13 + n` wrap to 0 and startPlayback scan forever (REVIEW CLI-4).
+static void testDemoLengthWrap() {
+    printf("demo: record lengths can't wrap\n");
+    NetClient nc;
+    std::string err;
+    auto t0 = std::chrono::steady_clock::now();
+    CHECK(!nc.startPlayback(std::string(QUARK_TEST_DATA) + "/demo_len_wrap.qdemo", err) && !nc.playback());
+    CHECK(std::chrono::steady_clock::now() - t0 < std::chrono::seconds(2));
+}
+
 static void testDemo(uint16_t port) {
     printf("demo record + playback\n");
     Server s;
@@ -2469,7 +2479,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(29610); testRankedVoteAndRestart(29620); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(29600); testEditSession(29601); testVotedEdit(29602); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
-    if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemo(29603); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemoLengthWrap(); testDemo(29603); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(29960); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(29950); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(29900); return g_fail ? 1 : 0; }
@@ -2498,7 +2508,7 @@ int main(int argc, char** argv) {
         {"modes", [] { testCustomMode(28570); testPoints(28571); testSyringe(28572); testCartChecks(28573); testItModes(28574); }},
         {"race", [] { testTimeTrial(28580); testPayloadPush(28581); testPacketLoss(28582); testCartDash(28583); testSemiAuto(28584); }},
         {"votes", [] { testRejoin(28590); testMapVote(28591); }},
-        {"edit", [] { testSnapshotBounds(); testMapDownload(28600); testEditSession(28601); testVotedEdit(28602); testDemo(28603); }},
+        {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testMapDownload(28600); testEditSession(28601); testVotedEdit(28602); testDemo(28603); }},
         {"ranked", [] { testFilledParse(); testRanked(28610); testRankedVoteAndRestart(28620); testInternetList(28625); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine

@@ -585,6 +585,7 @@ void ServerBrowser::poll() {
 //   type 1 (map): name, source text, client id. Written first and whenever the map changes (or is edited).
 //   type 2 (snapshot): client header + world (delta against the previous recorded snapshot) + events.
 static constexpr uint32_t kDemoMagic = 0x4D454451; // "QDEM"
+static constexpr uint64_t kMaxDemoBytes = 512ull << 20; // (about 9 h of play; playback reads the whole file)
 
 bool NetClient::startRecording(const std::string& path, bool fullRate) {
     stopRecording();
@@ -649,7 +650,9 @@ void NetClient::recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& 
 
 bool NetClient::startPlayback(const std::string& path, std::string& err) {
     disconnect();
-    std::ifstream f(path, std::ios::binary);
+    std::ifstream f(path, std::ios::binary | std::ios::ate);
+    if (f && (uint64_t)f.tellg() > kMaxDemoBytes) { err = "demo too big"; return false; }
+    f.seekg(0);
     std::stringstream ss;
     ss << f.rdbuf();
     std::string d = ss.str();
@@ -663,7 +666,8 @@ bool NetClient::startPlayback(const std::string& path, std::string& err) {
     play_.pos = 6;
     for (size_t p = 6; p + 13 <= play_.data.size();) { // its length: the last record's time
         uint32_t n; memcpy(&play_.length, play_.data.data() + p + 1, 8); memcpy(&n, play_.data.data() + p + 9, 4);
-        p += 13 + n;
+        if (n > play_.data.size() - p - 13) break;   // (truncated; and 13 + n in 32 bits could wrap to 0)
+        p += 13 + (size_t)n;
     }
     play_.active = true;
     play_.wall = timeNow();
@@ -687,9 +691,9 @@ void NetClient::pollPlayback() {
         double t; uint32_t n;
         memcpy(&t, d.data() + play_.pos + 1, 8); memcpy(&n, d.data() + play_.pos + 9, 4);
         if (t > play_.t && mapReady_) break;
-        if (play_.pos + 13 + n > d.size()) break;
+        if (n > d.size() - play_.pos - 13) break;
         Reader r((const uint8_t*)d.data() + play_.pos + 13, (int)n);
-        play_.pos += 13 + n;
+        play_.pos += 13 + (size_t)n;
         if (type == 1) {
             std::string name = r.str();
             uint32_t len = r.u32();
