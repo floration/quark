@@ -14,7 +14,7 @@ struct FlatVertex { float pos[3]; float color[4]; };
 // 16 bytes: screen pixels, font atlas texel coords (u16 fixed point: (texel + 1) * 32), color (RGBA8), and for text
 // the text scale (integer part + 1/256ths; 0 = plain rect), which sets the distance-field edge and outline width
 // in the shader, so each character is one quad.
-struct Vertex2D { int16_t pos[2]; uint16_t uv[2]; uint8_t color[4]; uint8_t outline, glyph, pad[2]; };
+struct Vertex2D { int16_t pos[2]; uint16_t uv[2]; uint8_t color[4]; uint8_t scaleInt, scaleFrac, pad[2]; };
 
 struct Color { float r, g, b, a; };
 inline Color rgba(const Vec3& c, float a = 1) { return {c.x, c.y, c.z, a}; }

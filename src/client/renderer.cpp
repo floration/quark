@@ -818,14 +818,14 @@ static inline int16_t px(float v) { return (int16_t)clampf(std::round(v), -32768
 
 // one quad (2 triangles) into the UI batch
 static void uiQuad(std::vector<Vertex2D>& out, float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1,
-                   const Color& c, uint8_t outline, uint8_t glyph) {
+                   const Color& c, uint8_t scaleInt, uint8_t scaleFrac) {
     Vertex2D q[4];
     const float xs[4] = {x0, x1, x1, x0}, ys[4] = {y0, y0, y1, y1}, us[4] = {u0, u1, u1, u0}, vs[4] = {v0, v0, v1, v1};
     for (int k = 0; k < 4; k++) {
         q[k].pos[0] = px(xs[k]); q[k].pos[1] = px(ys[k]);
         q[k].uv[0] = u16uv(us[k]); q[k].uv[1] = u16uv(vs[k]);
         q[k].color[0] = u8c(c.r); q[k].color[1] = u8c(c.g); q[k].color[2] = u8c(c.b); q[k].color[3] = u8c(c.a);
-        q[k].outline = outline; q[k].glyph = glyph; q[k].pad[0] = q[k].pad[1] = 0;
+        q[k].scaleInt = scaleInt; q[k].scaleFrac = scaleFrac; q[k].pad[0] = q[k].pad[1] = 0;
     }
     const int idx[6] = {0, 1, 2, 0, 2, 3};
     for (int i : idx) out.push_back(q[i]);
