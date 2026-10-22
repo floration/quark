@@ -240,9 +240,67 @@ static void testRestoreKeepsIdentity(uint16_t port) {
     for (auto& p : r.players_) p.connected = false;
 }
 
+// FINAL_REVIEW 6.4: a giant (duel "double size") spawned at a random spawn when none had a giant's room, inside the
+// geometry on maps not built for duel (anvil's a / b spawns, some on furnace and summit). Every map, both sides,
+// every size: the hull a player spawns with is never in a wall.
+static void testGiantSpawns() {
+    printf("giant / tiny spawns: never inside a wall\n");
+    int giant = -1, tiny = -1;
+    for (int m = 0; m < DUEL_MOD_COUNT; m++) {
+        if (giant < 0 && duelModDef(m).size > 1.01f) giant = m;
+        if (tiny < 0 && duelModDef(m).size < 0.99f) tiny = m;
+    }
+    CHECK(giant >= 0 && tiny >= 0);
+    int spawns = 0, blocked = 0, crouched = 0, shrunk = 0;
+    std::string where;
+    for (const std::string& name : listMaps()) {
+        if (name.rfind("zz_", 0) == 0) continue;
+        Server s;
+        s.setLog([](const std::string&) {});
+        if (!s.map_.load(name)) continue;
+        s.cfg_.mode = s.ms_.mode = MODE_DUEL;
+        s.ms_.phase = PHASE_LIVE;
+        for (int i = 0; i < 2; i++) { auto& p = s.players_[i]; p.connected = true; p.isBot = true; p.team = i ? TEAM_B : TEAM_A; }
+        for (int mod : {giant, tiny, 255}) {
+            s.ms_.duelMod = (uint8_t)mod;
+            for (int k = 0; k < 24; k++) {
+                int id = k & 1;
+                auto& p = s.players_[id];
+                p.alive = false;
+                s.spawnPlayer(id);
+                spawns++;
+                if (s.map_.boxSolid(playerBox(p.move))) { blocked++; if (where.find(name) == std::string::npos) where += " " + name; }
+                if (p.move.flags & MF_CROUCHED) crouched++;
+                if (mod == giant && !(p.move.mods & MOVE_BIG)) shrunk++;
+                p.alive = false;   // (out of the way of the next spawn's checks)
+            }
+        }
+        for (auto& p : s.players_) p.connected = false;
+    }
+    printf("  %d spawns: %d in a wall%s, %d crouched for room, %d giants at normal size for want of any\n", spawns, blocked, where.c_str(), crouched, shrunk);
+    CHECK(spawns > 0 && blocked == 0);
+    // the fallbacks, on made-up maps: a spawn 0.5 m from a wall (moved aside), one under a 2 m ceiling (normal size)
+    for (int room = 0; room < 2; room++) {
+        Server s;
+        s.setLog([](const std::string&) {});
+        std::string text = "box -50 -1 -50 50 0 50\n" + std::string(room == 0 ? "box 1 0 -50 2 6 50\n" : "box -50 2 -50 50 3 50\n") + "spawn any 0.5 0 0\n";
+        std::string err;
+        CHECK(s.map_.parse(text, &err));
+        s.cfg_.mode = s.ms_.mode = MODE_DUEL; s.ms_.phase = PHASE_LIVE; s.ms_.duelMod = (uint8_t)giant;
+        auto& p = s.players_[0];
+        p.connected = true; p.isBot = true; p.team = TEAM_A;
+        s.spawnPlayer(0);
+        bool big = (p.move.mods & MOVE_BIG) != 0;
+        CHECK(!s.map_.boxSolid(playerBox(p.move)));
+        CHECK(room == 0 ? big && p.move.pos.x <= 0.2f + 1e-4f : !big);
+        p.connected = false;
+    }
+}
+
 static void serverTests() {
     testVersionReject(TP(28800));
     testSeedFetchDedupe();
     testStopDoesNotBlock(TP(28801));
     testRestoreKeepsIdentity(TP(28802));
+    testGiantSpawns();
 }

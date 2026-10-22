@@ -1405,6 +1405,8 @@ void Server::spawnPlayer(int id) {
 
     Vec3 pos;
     float yaw = 0;
+    const float scale = bodyScale();
+    bool crouch = false, fits = true;
     if (ms_.mode == MODE_RACE && p.checkpoint > 0 && p.checkpoint <= (int)map_.checkpoints.size() && (ms_.phase == PHASE_LIVE || ms_.phase == PHASE_WARMUP)) { // (practice too)
         const AABB& c = map_.checkpoints[p.checkpoint - 1];
         pos = {(c.mn.x + c.mx.x) * 0.5f, c.mn.y + 0.05f, (c.mn.z + c.mx.z) * 0.5f};
@@ -1415,6 +1417,7 @@ void Server::spawnPlayer(int id) {
         const bool unseen = ms_.mode == MODE_FFA || (arenaRules() & AR_INSTAGIB);
         const SpawnPoint* best = cands[qrand() % cands.size()];
         float bestScore = -1e9f;
+        bool bestCrouched = false;
         for (auto* sp : cands) {
             float nearest = 1e9f;
             int seenBy = 0;
@@ -1427,12 +1430,34 @@ void Server::spawnPlayer(int id) {
                 float d = length(to);
                 if (d > 0.1f && map_.raycast(eye, to / d, d) < 0) seenBy++;   // nothing in between
             }
-            if (map_.boxSolid(playerBox(sp->pos, false, bodyScale()))) continue;   // (a giant needs a giant's room)
-            float score = nearest + (qrand() % 100) * 0.01f - seenBy * 1000.0f;
-            if (score > bestScore) { bestScore = score; best = sp; }
+            // a giant needs a giant's room: standing, else crouched (it stands up once there's room), always behind
+            // any spawn where it can stand
+            bool low = map_.boxSolid(playerBox(sp->pos, false, scale));
+            if (low && map_.boxSolid(playerBox(sp->pos, true, scale))) continue;
+            float score = nearest + (qrand() % 100) * 0.01f - seenBy * 1000.0f - (low ? 1e6f : 0.0f);
+            if (score > bestScore) { bestScore = score; best = sp; bestCrouched = low; }
         }
         pos = best->pos;
         yaw = best->yaw;
+        crouch = bestCrouched;
+        fits = bestScore > -1e9f;
+    }
+    // No spawn has room for this size (FINAL_REVIEW 6.4: a giant on a map not built for duel spawned inside the
+    // geometry): the nearest spot around the chosen spawn that has (a little higher, or up to 1.5 m aside),
+    // standing or crouched; failing that, this life is played at normal size.
+    uint8_t sizeMods = moveScaleMods(scale);
+    if (!fits || map_.boxSolid(playerBox(pos, crouch, scale))) {
+        bool found = false;
+        for (float r = 0.25f; r <= 1.5f && !found; r += 0.25f)
+            for (int k = 0; k < 8 && !found; k++)
+                for (float up : {0.0f, 0.3f, 0.6f})
+                    for (bool c : {false, true}) {
+                        float a = k * (PI / 4);
+                        Vec3 at = pos + Vec3(std::cos(a) * r, up, std::sin(a) * r);
+                        if (found || map_.boxSolid(playerBox(at, c, scale)) || map_.raycastAny(pos + Vec3(0, 0.5f, 0), normalize(at - pos + Vec3(0, 1e-4f, 0)), length(at - pos))) continue;
+                        pos = at; crouch = c; found = true;
+                    }
+        if (!found) { sizeMods = 0; crouch = map_.boxSolid(playerBox(pos, false, 1.0f)); }
     }
     p.move = MoveState();
     p.move.pos = pos;
@@ -1446,7 +1471,8 @@ void Server::spawnPlayer(int id) {
         for (int k = 0; k < WPN_COUNT; k++) if (weaponAllowed(kWeaponSlots[k])) { p.weapon = kWeaponSlots[k]; break; }
     const DuelModDef& dm = duelModDef(duelMod()); // duel: this life's modifier (none outside duel)
     p.health = lifeMaxHealth();   // (a duel life's own, or a custom mode's)
-    p.move.mods |= dm.moveMods | moveScaleMods(dm.size);   // (size modifiers: the hull, as well as the hitbox and eyes)
+    p.move.mods |= dm.moveMods | sizeMods;   // (size modifiers: the hull, as well as the hitbox and eyes)
+    if (crouch) p.move.flags |= MF_CROUCHED;
     if (arenaRules() & AR_QUICK_DASH) p.move.mods |= MOVE_QUICK_DASH;
     if (arenaRules() & AR_LOW_GRAVITY) p.move.mods |= MOVE_LOW_GRAVITY;
     p.nextFire = time() + 0.25f;
