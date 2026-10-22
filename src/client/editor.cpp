@@ -216,6 +216,7 @@ void Game::edScriptStep() {
     else if (cmd == "enter") uiIn_.enter = true;
     else if (cmd == "bs") { int n = 0; in >> n; uiIn_.backspace = true; if (n > 1) edScript_.insert(edScript_.begin(), "bs " + std::to_string(n - 1)); }
     else if (cmd == "sel") { int k = 0, i = 0; in >> k >> i; edSel_ = {k, i}; }
+    else if (cmd == "do") { std::string t; std::getline(in >> std::ws, t); for (auto& c : t) if (c == '|') c = '\n'; edDo(t, "", false, false); } // an edit step ('|' between ops)
     else if (cmd == "key") { int k = 0, mods = 0; in >> k >> mods; editorKey(k, mods); }   // a key press (GLFW key code), as the editor gets it
     else if (cmd == "cam") { in >> edCam_.x >> edCam_.y >> edCam_.z >> yaw_ >> pitch_; yaw_ = deg2rad(yaw_); pitch_ = deg2rad(pitch_); }
     else if (cmd == "openidx") { int i = 0; in >> i; if (!maps_.empty()) openEditor(maps_[i % maps_.size()]); } // exactly what OPEN does
@@ -308,21 +309,33 @@ void Game::edChanged() {
 // slider drags within 0.75 s share one undo step.
 void Game::edDo(const std::string& op, const std::string& inverse, bool coalesce, bool undoable) {
     if (op.empty() || op == inverse) return;
+    std::vector<std::string> ops;
+    for (size_t a = 0; a < op.size();) {
+        size_t e = op.find('\n', a);
+        if (e == std::string::npos) e = op.size();
+        ops.push_back(op.substr(a, e - a));
+        a = e + 1;
+    }
+    if (edOnline_) for (auto& one : ops) net_.sendCommand("ed " + one);
+    else {   // all of the step or none of it (COR-4): one op is atomic already (applyMapEdit leaves the map as it was
+             // if it fails); a step of several (grouping, a group's parts, an undo of those) goes onto a copy that
+             // replaces the map only if every op applied, so a failure part-way never leaves half a step behind
+        bool ok = true;
+        if (ops.size() == 1) ok = applyMapEdit(ed_, ops[0]);
+        else {
+            Map tmp = ed_;
+            for (auto& one : ops) if (!(ok = applyMapEdit(tmp, one))) break;
+            if (ok) ed_ = std::move(tmp);
+        }
+        if (!ok) { edNotify("can't do that"); return; }   // (and no undo step for what didn't happen)
+        edChanged();
+    }
     if (undoable) {
         if (!(coalesce && time_ - edLastPush_ < 0.75)) {
             edUndo_.push_back(inverse);
             if (edUndo_.size() > 500) edUndo_.erase(edUndo_.begin());
         }
         edLastPush_ = coalesce ? time_ : 0;
-    }
-    for (size_t a = 0; a < op.size();) {
-        size_t e = op.find('\n', a);
-        if (e == std::string::npos) e = op.size();
-        std::string one = op.substr(a, e - a);
-        a = e + 1;
-        if (edOnline_) net_.sendCommand("ed " + one);
-        else if (applyMapEdit(ed_, one)) edChanged();
-        else { edNotify("can't do that"); return; }
     }
 }
 
