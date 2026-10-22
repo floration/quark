@@ -7,6 +7,11 @@ Real endpoints (mirrors the game's C++):
   * UDP PKT_INFO_REQUEST to each ip:port -> PKT_INFO_REPLY               (src/game/protocol.h, server.cpp, netclient.cpp)
   * GET <master>/leaderboard?ladder=L&n=N -> "rating games name" lines   (src/game/ranked.cpp RankService::run)
   * GET <master>/raceboard?map=M&n=N      -> "ms name" lines
+  * GitHub releases: normal release = production (v1.2.3), prerelease = testing build (v1.2.3-test.4)
+
+Self-contained: nothing here imports or reads the game's repository. The constants below are COPIES of the game's
+(protocol and mode tables). While the bot lives in the game repo, tests/tests.cpp (cross-language constants) checks
+them against the C++; once it has its own repo, re-copy them by hand when the game changes them (MOVING.md).
 """
 from __future__ import annotations
 
@@ -25,6 +30,7 @@ RAW_BASE = f"https://raw.githubusercontent.com/{GITHUB_REPO}"
 SITE_URL = "https://floration.github.io/quark"
 DISCORD_INVITE = "https://discord.gg/RERYWNWSXg"
 
+# ---- copied from the game (src/game/gamedefs.h, src/game/protocol.h): keep in sync
 PROTOCOL_MAGIC = 0x51524B31   # "QRK1", gamedefs.h kProtocolMagic
 PKT_INFO_REQUEST = 4           # protocol.h: PKT_CONNECT=1, INPUT, DISCONNECT, INFO_REQUEST
 PKT_INFO_REPLY = 67            # protocol.h: PKT_ACCEPT=64, REJECT, SNAPSHOT, INFO_REPLY
@@ -37,6 +43,8 @@ MODE_TITLES = ["VS", "BOMB", "RACE", "KING OF THE HILL", "PAYLOAD", "FREE FOR AL
 # gamedefs.h arenaVariantRanked: 0 vanilla (1v1), 1 vampire (1v1), 5 instagib (FFA, 5 min)
 RANKED_LADDERS = [("vanilla", "RANKED VANILLA"), ("vampire", "RANKED LASER VAMPIRE"), ("instagib", "RANKED INSTAGIB")]
 RACE_MAP = "viaduct"  # TIME TRIAL is the ranked race on Viaduct (game.cpp INFO page)
+# ---- end of copied constants
+VERSION_RE = re.compile(r"\d+\.\d+\.\d+(?:-test\.\d+)?")   # 1.2.3 (production) or 1.2.3-test.4 (testing build)
 
 
 def mode_title(m: int) -> str:
@@ -259,6 +267,13 @@ class QuarkAPI:
             r.raise_for_status()
             return await r.json()
 
+    async def releases(self, n: int = 10) -> list[dict]:
+        """The newest releases, prereleases (testing builds) included, newest first."""
+        async with self.s.get(f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page={int(n)}", headers=self._gh_headers(),
+                              timeout=aiohttp.ClientTimeout(total=10)) as r:
+            r.raise_for_status()
+            return await r.json()
+
     async def changelog(self, version: str | None = None) -> tuple[str, str]:
         """(version, markdown) from changelogs/<version>.md on GitHub; latest release when version is None."""
         if not version:
@@ -267,8 +282,8 @@ class QuarkAPI:
             if rel.get("body"):
                 return version, rel["body"]  # the release body is changelogs/<VERSION>.md
         version = version.lstrip("v")
-        if not re.fullmatch(r"\d+\.\d+\.\d+", version):
-            raise ValueError("version must look like 1.2.3")
+        if not VERSION_RE.fullmatch(version):
+            raise ValueError("version must look like 1.2.3 (or 1.2.3-test.4)")
         async with self.s.get(f"https://api.github.com/repos/{GITHUB_REPO}/releases/tags/v{version}", headers=self._gh_headers(),
                               timeout=aiohttp.ClientTimeout(total=10)) as r:
             if r.status == 200:

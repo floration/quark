@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Installs the quark Discord bot as a service on a Linux server (Ubuntu / Debian / Oracle Linux), from this folder:
 #   sudo ./install.sh
-# It asks for the bot token, server (guild) id and BOT_KEY once, keeps them in /etc/quark-discord.env (root only),
-# makes a Python venv here, and runs the bot under systemd: it starts at boot and restarts if it crashes.
+# It asks for the bot token, server (guild) id and BOT_KEY once, keeps them in /etc/quark-discord.env (mode 600, owned
+# by the user the bot runs as; systemd reads it with EnvironmentFile=, so the secrets never appear on a command line
+# or in the unit file), makes a Python venv here with hash-checked requirements, and runs the bot under systemd: it
+# starts at boot and restarts if it crashes.
 # Re-run it after pulling updates (it keeps the saved settings unless you type new ones).
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -33,16 +35,23 @@ GUILD="$(ask GUILD_ID 'Discord server id')"
 BOTKEY="$(ask BOT_KEY 'BOT_KEY (same as the Cloudflare worker secret)' secret)"
 [ -n "$TOKEN" ] && [ -n "$GUILD" ] || { echo "token and server id are required"; exit 1; }
 umask 077
-printf 'DISCORD_TOKEN=%s\nGUILD_ID=%s\nBOT_KEY=%s\n' "$TOKEN" "$GUILD" "$BOTKEY" > "$ENVFILE"
-chmod 600 "$ENVFILE"
+# (printf is a shell builtin: the values never show up in a process list. The file is made 600 before anything is written.)
+TMPENV="$(mktemp "$ENVFILE.XXXXXX")"
+chmod 600 "$TMPENV"
+printf 'DISCORD_TOKEN=%s\nGUILD_ID=%s\nBOT_KEY=%s\n' "$TOKEN" "$GUILD" "$BOTKEY" > "$TMPENV"
+chown "$RUNAS:" "$TMPENV"
+mv -f "$TMPENV" "$ENVFILE"
+unset TOKEN BOTKEY
+[ "$RUNAS" = root ] && echo "note: the bot will run as root; run this with sudo from a normal user instead (sudo ./install.sh) to run it as that user"
 
 echo "== venv and requirements"
 sudo -u "$RUNAS" python3 -m venv "$HERE/.venv"
 sudo -u "$RUNAS" "$HERE/.venv/bin/pip" install -q --upgrade pip
-sudo -u "$RUNAS" "$HERE/.venv/bin/pip" install -q -r "$HERE/requirements.txt"
+sudo -u "$RUNAS" "$HERE/.venv/bin/pip" install -q --require-hashes -r "$HERE/requirements.txt"
 
 echo "== dry run (reads the live server list, leaderboards and latest release; nothing is posted)"
-( set -a; . "$ENVFILE"; set +a; sudo -u "$RUNAS" env DISCORD_TOKEN="$DISCORD_TOKEN" GUILD_ID="$GUILD_ID" BOT_KEY="$BOT_KEY" "$HERE/.venv/bin/python" "$HERE/bot.py" --dry-run 2>&1 | head -40 ) || true
+# (the dry run needs none of the secrets: they aren't passed to it)
+( sudo -u "$RUNAS" "$HERE/.venv/bin/python" "$HERE/bot.py" --dry-run 2>&1 | head -40 ) || true
 
 echo "== service"
 cat > /etc/systemd/system/quark-discord.service <<UNIT
@@ -58,6 +67,9 @@ EnvironmentFile=$ENVFILE
 ExecStart=$HERE/.venv/bin/python $HERE/bot.py
 Restart=always
 RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
 
 [Install]
 WantedBy=multi-user.target
@@ -68,4 +80,6 @@ systemctl restart quark-discord
 sleep 3
 systemctl --no-pager --lines=15 status quark-discord || true
 echo
+echo "If this replaced an older install that passed the token on the command line: reset the bot token"
+echo "(Discord developer portal -> Bot -> Reset Token) and BOT_KEY (Cloudflare worker secret), then re-run this."
 echo "done. live log: journalctl -u quark-discord -f    restart: sudo systemctl restart quark-discord"

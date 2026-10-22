@@ -1,0 +1,3 @@
+# Direct dependencies; requirements.txt is the hash-pinned lock made from this (see its header).
+discord.py>=2.3,<3
+aiohttp>=3.9

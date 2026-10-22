@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -22,10 +23,21 @@ import aiohttp
 import quarkdata as qd
 
 HERE = Path(__file__).resolve().parent
-REPO_ROOT = HERE.parent.parent
+
+
+def find_game_repo() -> Path | None:
+    """A local checkout of the game, if there is one: QUARK_REPO, else the repo this folder sits in (tools/discordbot).
+    The bot doesn't need it (it reads everything from the master and GitHub); it only saves a download of game.cpp."""
+    for p in (os.environ.get("QUARK_REPO"), HERE.parent.parent):
+        if p and (Path(p) / "src" / "client" / "game.cpp").is_file():
+            return Path(p).resolve()
+    return None
+
+
+GAME_REPO = find_game_repo()
 log = logging.getLogger("quarkbot")
 S = qd.safe_text   # every piece of external text that goes into a message passes through this
-MAX_LIVE_CHANNELS = 15   # live server text+voice channel pairs at most (fake servers can't flood the guild)
+MAX_LIVE_SERVERS = 5     # owner: at most 5 servers listed (channels, /servers); fake servers can't flood the guild
 MIN_SEEN_SECONDS = 120   # a server must keep answering this long before it gets channels
 
 DEFAULT_CONFIG = {
@@ -36,17 +48,21 @@ DEFAULT_CONFIG = {
     "live_category": "🟢 LIVE SERVERS",
     "info_category": "QUARK",
     "updates_channel": "updates",
+    "testing_channel": "testing-updates",   # testing builds (GitHub prereleases, tags v<VERSION>-test.N)
     "leaderboard_channel": "leaderboard",
     "info_channel": "info",
     "queue_channel": "queues",
     "ping_role": "Game Pings",
-    "update_role": "Update Pings",    # pinged by release announcements
+    "update_role": "Update Pings",    # pinged by production release announcements
+    "testing_role": "Testing Updates",  # pinged by testing (prerelease) announcements
     "other_role": "Other Pings",      # for anything else worth a ping (events, tournaments...)
     "pings_channel": "get-pings",     # new members are greeted here and pick their pings (no Discord onboarding needed)
     "welcome_delete_seconds": 900,    # the greeting that mentions a new member goes away after this
-    "game_source": str(REPO_ROOT / "src" / "client" / "game.cpp"),  # local file, else fetched from GitHub
+    "game_source": str(GAME_REPO / "src" / "client" / "game.cpp") if GAME_REPO else "",  # local file, else fetched from GitHub
     "state_file": str(HERE / "state.json"),
     "server_poll_seconds": 60,
+    "max_live_servers": MAX_LIVE_SERVERS,
+    "min_seen_seconds": MIN_SEEN_SECONDS,
     "leaderboard_seconds": 60,
     "release_poll_seconds": 300,
     "rename_min_seconds": 300,        # Discord allows 2 renames per channel per 10 min
@@ -123,9 +139,47 @@ class State:
 
 def local_version() -> str:
     try:
-        return (REPO_ROOT / "VERSION").read_text().strip()
+        return (GAME_REPO / "VERSION").read_text().strip() if GAME_REPO else ""
     except OSError:
         return ""
+
+
+def pick_listed(infos: list, listed: set, first_seen: dict, now: float, limit: int = MAX_LIVE_SERVERS,
+                min_seen: float = MIN_SEEN_SECONDS) -> list:
+    """Which live servers get listed (channels): the ones already listed stay (no churn), then new ones that have
+    answered for min_seen seconds, most players first, until `limit`. infos: servers that answered this poll."""
+    keep = [i for i in infos if i.address in listed][:limit]
+    new = [i for i in infos if i.address not in listed and now - first_seen.get(i.address, now) >= min_seen]
+    new.sort(key=lambda i: (-i.players, i.address))
+    return keep + new[:max(0, limit - len(keep))]
+
+
+def top_servers(infos: list, limit: int = MAX_LIVE_SERVERS) -> list:
+    """The servers /servers and the dry run show: most players first, at most `limit`."""
+    return sorted(infos, key=lambda i: (-i.players, i.address))[:limit]
+
+
+_PROD_TAG = re.compile(r"v?\d+\.\d+\.\d+")
+
+
+def release_kind(rel: dict) -> str | None:
+    """"production" for a normal release with a plain v1.2.3 tag, "testing" for a GitHub prerelease
+    (tags like v1.2.3-test.4), None for drafts and anything else. A prerelease is never production, and a
+    non-prerelease with a suffixed tag isn't announced at all (it's neither)."""
+    if not rel or rel.get("draft"):
+        return None
+    tag = str(rel.get("tag_name") or "")
+    if rel.get("prerelease"):
+        return "testing" if tag else None
+    return "production" if _PROD_TAG.fullmatch(tag) else None
+
+
+def newest_testing(releases: list[dict]) -> dict | None:
+    """The newest prerelease in a GitHub /releases listing (it's newest first)."""
+    for r in releases:
+        if release_kind(r) == "testing":
+            return r
+    return None
 
 
 # ---------------------------------------------------------------- dry run
@@ -145,10 +199,18 @@ async def dry_run(cfg: dict):
         async def release():
             nonlocal version
             rel = await api.latest_release()
-            version = version or rel["tag_name"].lstrip("v")
-            print(f"latest release {rel['tag_name']}  {rel.get('html_url')}")
-            for i, chunk in enumerate(qd.split_message(f"**Quark {rel['tag_name']} is out!**\n{rel.get('body') or ''}")):
-                print(f"--- #{cfg['updates_channel']} message {i + 1} ({len(chunk)} chars)\n{chunk}")
+            if release_kind(rel) != "production":
+                print(f"latest release {rel.get('tag_name')} is not a production release: not announced")
+            else:
+                version = version or rel["tag_name"].lstrip("v")
+                print(f"latest release {rel['tag_name']}  {rel.get('html_url')}")
+                for i, chunk in enumerate(qd.split_message(f"**Quark {rel['tag_name']} is out!**\n{rel.get('body') or ''}")):
+                    print(f"--- #{cfg['updates_channel']} (@{cfg['update_role']}) message {i + 1} ({len(chunk)} chars)\n{chunk}")
+            test = newest_testing(await api.releases())
+            if test:
+                print(f"--- #{cfg['testing_channel']} (@{cfg['testing_role']}): testing build {test['tag_name']}  {test.get('html_url')}")
+            else:
+                print(f"no testing build (prerelease) published: #{cfg['testing_channel']} stays quiet")
 
         async def servers():
             v = version or local_version()
@@ -156,10 +218,13 @@ async def dry_run(cfg: dict):
             infos = await api.live_servers(v)
             live = [i for i in infos if i.replied]
             total = sum(i.players for i in live)
-            print(f"category '{cfg['live_category']}'  total channel: '{total_name(total)}'")
+            shown = top_servers(live, cfg["max_live_servers"])
+            print(f"category '{cfg['live_category']}'  total channel: '{total_name(total)}'  listing {len(shown)} of {len(live)}")
             for i in infos:
-                if i.replied:
+                if i in shown:
                     print(f"  #{server_channel_name(i)}  {i.name!r} {i.map} {i.mode_title} {i.players}/{i.max_players} ({i.address}, {i.ping_ms:.0f} ms)")
+                elif i.replied:
+                    print(f"  {i.address}: live but over the {cfg['max_live_servers']}-server limit (not listed)")
                 else:
                     print(f"  {i.address}: listed but no UDP reply (skipped)")
 
@@ -289,12 +354,36 @@ def run_bot(cfg: dict):
                                                       reason="quark bot setup")
         return ch
 
+    # Manage Roles is only used on the bot's own roles: the ping roles and the two leaderboard roles, by their
+    # configured names, and only while they grant nothing @everyone doesn't already have (so renaming a staff role
+    # to "Game Pings" can't make the bot hand it out). The bot's own role must sit above them (README).
+    def own_role_names() -> set[str]:
+        return {cfg[k] for k in ("ping_role", "update_role", "testing_role", "other_role", "role_first", "role_top10")}
+
+    def can_manage(role: discord.Role) -> bool:
+        if role.name not in own_role_names():
+            return False
+        if role.permissions.value & ~bot.guild.default_role.permissions.value:
+            log.warning("role %r grants permissions beyond @everyone: the bot won't give it out", role.name)
+            return False
+        if role >= bot.guild.me.top_role:
+            log.warning("role %r is above the bot's role: drag the bot's role above it (Server Settings -> Roles)", role.name)
+            return False
+        return True
+
     async def ensure_role(name: str = None) -> discord.Role:
-        """a ping role anyone can give themselves (game pings by default), made if missing"""
+        """a ping role anyone can give themselves (game pings by default), made if missing. Ping roles are
+        mentionable so the bot can ping them without Mention Everyone."""
         name = name or cfg["ping_role"]
         r = discord.utils.get(bot.guild.roles, name=name)
         if not r:
-            r = await bot.guild.create_role(name=name, mentionable=True, reason="quark bot: ping role")
+            r = await bot.guild.create_role(name=name, mentionable=True, permissions=discord.Permissions.none(),
+                                            reason="quark bot: ping role")
+        elif not r.mentionable and can_manage(r):
+            try:
+                await r.edit(mentionable=True, reason="quark bot: the bot pings this role")
+            except discord.HTTPException:
+                log.warning("role %r isn't mentionable: turn on 'Allow anyone to @mention this role' or pings won't notify", name)
         return r
 
     async def upsert_message(ch: discord.abc.Messageable, purpose: str, content: str = None, **kw) -> discord.Message:
@@ -323,41 +412,51 @@ def run_bot(cfg: dict):
         return wrapper
 
     # ---------- 1/7: release announcements
+    async def announce(rel: dict, channel_key: str, role_key: str, title: str, footer: str, color: int):
+        tag = rel["tag_name"]
+        ch = await ensure_text(cfg[channel_key], await ensure_category(cfg["info_category"]))
+        role = await ensure_role(cfg[role_key])
+        body = rel.get("body") or "(no changelog)"
+        chunks = qd.split_message(body, 4000)  # embed descriptions allow 4096
+        for i, chunk in enumerate(chunks):
+            e = discord.Embed(description=chunk, color=color)
+            if i == 0:
+                e.title, e.url = title.format(tag=tag), rel.get("html_url")
+            if i == len(chunks) - 1:
+                e.set_footer(text=footer)
+            await ch.send(content=role.mention if i == 0 else None, embed=e,
+                          allowed_mentions=discord.AllowedMentions(roles=[role]) if i == 0 else discord.AllowedMentions.none())
+
     @tasks.loop(seconds=cfg["release_poll_seconds"])
     @guarded
     async def release_loop():
-        rel = await bot.api.latest_release()
+        rel = await bot.api.latest_release()   # GitHub's "latest" never is a prerelease or a draft
+        if release_kind(rel) != "production":  # (and in case it ever were: testing builds don't go in #updates)
+            log.warning("latest release %s isn't a production release: not announced", rel.get("tag_name"))
+            return
         tag = rel["tag_name"]
         if not cfg["game_version"]:
             bot.version = tag.lstrip("v")
         if state.d.get("last_tag") == tag:
             return
-        ch = await ensure_text(cfg["updates_channel"], await ensure_category(cfg["info_category"]))
-        body = rel.get("body") or "(no changelog)"
-        chunks = qd.split_message(body, 4000)  # embed descriptions allow 4096
-        for i, chunk in enumerate(chunks):
-            e = discord.Embed(description=chunk, color=0x3BA55D)
-            if i == 0:
-                e.title, e.url = f"Quark {tag} is out!", rel.get("html_url")
-            if i == len(chunks) - 1:
-                e.set_footer(text="Update from the launcher, or download from the release page.")
-            urole = await ensure_role(cfg["update_role"])
-            await ch.send(content=urole.mention if i == 0 else None, embed=e, allowed_mentions=discord.AllowedMentions(roles=[urole]))
+        await announce(rel, "updates_channel", "update_role", "Quark {tag} is out!",
+                       "Update from the launcher, or download from the release page.", 0x3BA55D)
         state.d["last_tag"] = tag
         state.save()
 
-    # ---------- 2/3: live servers
-    @tasks.loop(seconds=cfg["server_poll_seconds"])
+    @tasks.loop(seconds=cfg["release_poll_seconds"])
     @guarded
-    async def server_loop():
-        version = bot.version or cfg["game_version"] or local_version()
-        infos = [i for i in await bot.api.live_servers(version) if i.replied]
-        cat = await ensure_category(cfg["live_category"])
-        role = await ensure_role()
-        now = time.time()
-        total = sum(i.players for i in infos)
+    async def testing_loop():
+        """testing builds: GitHub prereleases (v<VERSION>-test.N) go to #testing-updates and ping Testing Updates only"""
+        rel = newest_testing(await bot.api.releases())
+        if not rel or state.d.get("last_test_tag") == rel["tag_name"]:
+            return
+        await announce(rel, "testing_channel", "testing_role", "Quark testing build {tag}",
+                       "Testing build: in the launcher switch to the testing branch to play it. Expect bugs.", 0xE67E22)
+        state.d["last_test_tag"] = rel["tag_name"]
+        state.save()
 
-        # total: a locked voice channel at the top (voice names may have spaces/emoji), renamed <= every 5 min
+    async def update_total_channel(total: int, now: float):
         tid = state.d["messages"].get("total_channel")
         tch = bot.guild.get_channel(tid) if tid else None
         if not tch:
@@ -377,73 +476,106 @@ def run_bot(cfg: dict):
             except discord.Forbidden:   # (needs Manage Channels on that channel; don't fail the whole loop over it)
                 log.warning("can't rename the player-count channel: give the bot Manage Channels (and View Channel) on it")
 
+    async def update_server_channel(i: qd.ServerInfo, servers: dict, cat, role, now: float):
+        rec = servers.get(i.address)
+        ch = bot.guild.get_channel(rec["channel"]) if rec else None
+        want = server_channel_name(i)
+        if not ch:
+            ch = await bot.guild.create_text_channel(want, category=cat, overwrites=readonly(), topic=f"{S(i.name)} ({i.address})")
+            rec = servers[i.address] = {**(rec or {}), "channel": ch.id, "msg": 0, "renamed": now,
+                                        "players": (rec or {}).get("players", 0), "pinged": (rec or {}).get("pinged", 0)}
+            state.save()   # (saved right away: a later failure this tick mustn't orphan the new channel)
+        elif ch.name != want and now - rec.get("renamed", 0) >= cfg["rename_min_seconds"]:
+            rec["renamed"] = now
+            await ch.edit(name=want)
+        text = (f"**{S(i.name)}**\nMap **{S(i.map)}** · Mode **{S(i.mode_title)}** · **{i.players}/{i.max_players}** players\n"
+                f"Join: `{i.address}` (Join Game > internet list)\n-# updated <t:{int(now)}:R>")
+        try:
+            msg = await ch.fetch_message(rec["msg"]) if rec.get("msg") else None
+            if msg:
+                await msg.edit(content=text)
+        except discord.NotFound:
+            msg = None
+        if not msg:
+            msg = await ch.send(text)
+            rec["msg"] = msg.id
+            try:
+                await msg.pin()
+            except discord.HTTPException:
+                pass
+        # ping when a game starts (players appear) on a server; not on the first pass after a restart
+        if (i.players > 0 and rec.get("players", 0) == 0 and not bot.first_server_pass
+                and now - rec.get("pinged", 0) >= cfg["server_ping_cooldown_seconds"]):
+            rec["pinged"] = now
+            await ch.send(f"{role.mention} **{S(i.name)}** is live: {S(i.map)} {S(i.mode_title)} {i.players}/{i.max_players} - `{i.address}`",
+                          allowed_mentions=discord.AllowedMentions(roles=[role]))
+        rec["players"] = i.players
+        # a voice channel for the people on that server (open to everyone, gone when the server is)
+        vname = f"🔊 {qd.slugify(i.name, 80)}"[:90]   # plain words only: no links or markdown in channel names
+        vch = bot.guild.get_channel(rec.get("voice", 0)) if rec.get("voice") else None
+        try:
+            if not vch:
+                vch = await bot.guild.create_voice_channel(vname, category=cat)
+                rec["voice"] = vch.id
+                state.save()
+            elif vch.name != vname and now - rec.get("vrenamed", 0) >= cfg["rename_min_seconds"]:
+                rec["vrenamed"] = now
+                await vch.edit(name=vname)
+        except discord.Forbidden:
+            log.warning("can't make or rename a server's voice channel: give the bot Manage Channels")
+
+    # ---------- 2/3: live servers
+    @tasks.loop(seconds=cfg["server_poll_seconds"])
+    @guarded
+    async def server_loop():
+        version = bot.version or cfg["game_version"] or local_version()
+        infos = [i for i in await bot.api.live_servers(version) if i.replied]
+        cat = await ensure_category(cfg["live_category"])
+        role = await ensure_role()
+        now = time.time()
+        total = sum(i.players for i in infos)
+
+        # total: a locked voice channel at the top (voice names may have spaces/emoji), renamed <= every 5 min
+        try:
+            await update_total_channel(total, now)
+        except discord.HTTPException as e:   # (a failure here doesn't stop the server channels below)
+            log.warning("player-count channel: %s", e)
+
         servers = state.d["servers"]
-        seen = set()
         live = {i.address for i in infos}
         for a in list(bot.first_seen):
             if a not in live:
                 del bot.first_seen[a]
         for i in infos:
             bot.first_seen.setdefault(i.address, now)
-            if i.address not in servers:
-                # new servers wait MIN_SEEN_SECONDS, and only up to MAX_LIVE_CHANNELS servers get channels
-                if now - bot.first_seen[i.address] < MIN_SEEN_SECONDS or len(servers) >= MAX_LIVE_CHANNELS:
-                    continue
+        # at most max_live_servers listed; new ones wait min_seen_seconds (a server that answers once isn't listed)
+        listed = pick_listed(infos, set(servers), bot.first_seen, now, cfg["max_live_servers"], cfg["min_seen_seconds"])
+        seen = set()
+        for i in listed:
             seen.add(i.address)
             bot.missing.pop(i.address, None)
-            rec = servers.get(i.address)
-            ch = bot.guild.get_channel(rec["channel"]) if rec else None
-            want = server_channel_name(i)
-            if not ch:
-                ch = await bot.guild.create_text_channel(want, category=cat, overwrites=readonly(), topic=f"{S(i.name)} ({i.address})")
-                rec = servers[i.address] = {"channel": ch.id, "msg": 0, "renamed": now, "players": 0, "pinged": 0}
-            elif ch.name != want and now - rec.get("renamed", 0) >= cfg["rename_min_seconds"]:
-                await ch.edit(name=want)
-                rec["renamed"] = now
-            text = (f"**{S(i.name)}**\nMap **{S(i.map)}** · Mode **{S(i.mode_title)}** · **{i.players}/{i.max_players}** players\n"
-                    f"Join: `{i.address}` (Join Game > internet list)\n-# updated <t:{int(now)}:R>")
-            try:
-                msg = await ch.fetch_message(rec["msg"]) if rec.get("msg") else None
-                if msg:
-                    await msg.edit(content=text)
-            except discord.NotFound:
-                msg = None
-            if not msg:
-                msg = await ch.send(text)
-                rec["msg"] = msg.id
-                try:
-                    await msg.pin()
-                except discord.HTTPException:
-                    pass
-            # ping when a game starts (players appear) on a server; not on the first pass after a restart
-            if (i.players > 0 and rec.get("players", 0) == 0 and not bot.first_server_pass
-                    and now - rec.get("pinged", 0) >= cfg["server_ping_cooldown_seconds"]):
-                await ch.send(f"{role.mention} **{S(i.name)}** is live: {S(i.map)} {S(i.mode_title)} {i.players}/{i.max_players} - `{i.address}`",
-                              allowed_mentions=discord.AllowedMentions(roles=[role]))
-                rec["pinged"] = now
-            rec["players"] = i.players
-            # a voice channel for the people on that server (open to everyone, gone when the server is)
-            vname = f"🔊 {qd.slugify(i.name, 80)}"[:90]   # plain words only: no links or markdown in channel names
-            vch = bot.guild.get_channel(rec.get("voice", 0)) if rec.get("voice") else None
-            try:
-                if not vch:
-                    vch = await bot.guild.create_voice_channel(vname, category=cat)
-                    rec["voice"] = vch.id
-                elif vch.name != vname and now - rec.get("vrenamed", 0) >= cfg["rename_min_seconds"]:
-                    rec["vrenamed"] = now
-                    await vch.edit(name=vname)
-            except discord.Forbidden:
-                log.warning("can't make or rename a server's voice channel: give the bot Manage Channels")
+            try:   # one server's channel failing (rate limit, a permission, a full category) doesn't stop the others
+                await update_server_channel(i, servers, cat, role, now)
+            except discord.HTTPException as e:
+                log.warning("live server %s: %s (retrying next tick)", i.address, e)
 
         for addr in list(servers):
             if addr in seen:
                 continue
+            # gone two polls in a row (not just a dropped UDP reply), or pushed out by the limit after a config change
             bot.missing[addr] = bot.missing.get(addr, 0) + 1
-            if bot.missing[addr] >= 2:  # gone two polls in a row: not just a dropped UDP reply
-                for cid in (servers[addr]["channel"], servers[addr].get("voice", 0)):
-                    ch = bot.guild.get_channel(cid) if cid else None
-                    if ch:
-                        await ch.delete(reason="server went offline")
+            if bot.missing[addr] >= 2 or addr in live:
+                try:
+                    for cid in (servers[addr]["channel"], servers[addr].get("voice", 0)):
+                        ch = bot.guild.get_channel(cid) if cid else None
+                        if ch:
+                            try:
+                                await ch.delete(reason="server went offline")
+                            except discord.NotFound:   # already gone (deleted by hand)
+                                pass
+                except discord.HTTPException as e:
+                    log.warning("deleting channels of %s: %s (retrying next tick)", addr, e)
+                    continue
                 del servers[addr]
                 bot.missing.pop(addr, None)
         bot.first_server_pass = False
@@ -666,6 +798,7 @@ def run_bot(cfg: dict):
 
     PING_KINDS = {   # custom id -> (role config key, what it's for)
         "quark:role:update": ("update_role", "new versions of the game"),
+        "quark:role:testing": ("testing_role", "new testing builds (the launcher's testing branch)"),
         "quark:role": ("ping_role", "a server going live"),          # (the old id: existing panels keep working)
         "quark:role:other": ("other_role", "events, tournaments and other news"),
     }
@@ -681,12 +814,15 @@ def run_bot(cfg: dict):
         def __init__(self):
             super().__init__(timeout=None)
             self.add_item(PingButton("quark:role:update", "Update pings", discord.ButtonStyle.primary))
+            self.add_item(PingButton("quark:role:testing", "Testing updates", discord.ButtonStyle.primary))
             self.add_item(PingButton("quark:role", "Game pings", discord.ButtonStyle.success))
             self.add_item(PingButton("quark:role:other", "Other pings", discord.ButtonStyle.secondary))
 
     async def toggle_role(member: discord.Member, cid: str = "quark:role") -> str:
         key, what = PING_KINDS.get(cid, PING_KINDS["quark:role"])
         role = await ensure_role(cfg[key])
+        if not can_manage(role):
+            return f"The bot can't change **{S(role.name)}** right now. Tell an admin (see the bot's log)."
         if role in member.roles:
             await member.remove_roles(role, reason="self-unassign")
             return f"Removed **{role.name}**: no more pings for {what}."
@@ -696,6 +832,7 @@ def run_bot(cfg: dict):
     def ping_panel_text() -> str:
         return ("**Pick your pings** - press a button to turn it on, again to turn it off:\n"
                 f"- **{cfg['update_role']}**: a new version of the game is out\n"
+                f"- **{cfg['testing_role']}**: a new testing build is out (in #{cfg['testing_channel']})\n"
                 f"- **{cfg['ping_role']}**: a server goes live\n"
                 f"- **{cfg['other_role']}**: events, tournaments and other news")
 
@@ -715,7 +852,8 @@ def run_bot(cfg: dict):
     async def ensure_named_role(name: str, colour: int) -> discord.Role:
         r = discord.utils.get(bot.guild.roles, name=name)
         if not r:
-            r = await bot.guild.create_role(name=name, colour=discord.Colour(colour), hoist=True, reason="quark bot: leaderboard role")
+            r = await bot.guild.create_role(name=name, colour=discord.Colour(colour), hoist=True, permissions=discord.Permissions.none(),
+                                            reason="quark bot: leaderboard role")
         return r
 
     @tasks.loop(seconds=cfg["crowns_seconds"])
@@ -728,6 +866,8 @@ def run_bot(cfg: dict):
         want = qd.crown_roles(crowns)  # discord name -> first/top10
         first = await ensure_named_role(cfg["role_first"], 0xF1C40F)
         top10 = await ensure_named_role(cfg["role_top10"], 0xC0C0C0)
+        if not (can_manage(first) and can_manage(top10)):
+            return
         target: dict[int, str] = {}
         for dname, kind in want.items():
             m = find_member(dname)
@@ -812,7 +952,10 @@ def run_bot(cfg: dict):
         except Exception as e:
             await it.followup.send(f"Server list unavailable ({type(e).__name__}).", ephemeral=True)
             return
-        lines = [f"**{S(i.name)}** - {S(i.map)} {S(i.mode_title)} {i.players}/{i.max_players} `{i.address}`" for i in infos]
+        shown = top_servers(infos, cfg["max_live_servers"])
+        lines = [f"**{S(i.name)}** - {S(i.map)} {S(i.mode_title)} {i.players}/{i.max_players} `{i.address}`" for i in shown]
+        if len(infos) > len(shown):
+            lines.append(f"-# and {len(infos) - len(shown)} more: see Join Game in quark")
         await it.followup.send("\n".join(lines) or "No servers live right now.", ephemeral=True)
 
     @bot.tree.command(name="leaderboard", description="Ranked top 10s")
@@ -828,7 +971,7 @@ def run_bot(cfg: dict):
             return
         log.info("ready as %s in %s", bot.user, bot.guild.name)
         try:
-            for key in ("update_role", "ping_role", "other_role"): await ensure_role(cfg[key])
+            for key in ("update_role", "testing_role", "ping_role", "other_role"): await ensure_role(cfg[key])
             qch = await ensure_text(cfg["queue_channel"], await ensure_category(cfg["info_category"]))
             state.d["messages"]["queue_channel_id"] = qch.id
             pch = await ensure_text(cfg["pings_channel"], await ensure_category(cfg["info_category"]))
@@ -840,12 +983,14 @@ def run_bot(cfg: dict):
                     pass
                 state.d["messages"].pop("role_panel", None)
             state.d["messages"]["role_panel_channel"] = pch.id
+            await ensure_text(cfg["updates_channel"], await ensure_category(cfg["info_category"]))
+            await ensure_text(cfg["testing_channel"], await ensure_category(cfg["info_category"]))
             await upsert_message(pch, "role_panel", ping_panel_text(), view=RoleView())
             await refresh_queue_panel()
             await ensure_category(cfg["live_category"])
         except Exception:
             log.exception("setup failed (check the bot's Manage Channels / Manage Roles permissions)")
-        for loop in (release_loop, server_loop, leaderboard_loop, info_loop, queue_loop, filled_loop, crowns_loop):
+        for loop in (release_loop, testing_loop, server_loop, leaderboard_loop, info_loop, queue_loop, filled_loop, crowns_loop):
             if not loop.is_running():
                 loop.start()
 
