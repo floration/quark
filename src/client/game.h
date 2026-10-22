@@ -457,7 +457,7 @@ private:
     std::string bracketNames_[kMaxPlayers];
     int bracketRound_ = 0, bracketMatch_ = 0;
     void drawBracket();
-    struct DmgNum { int victim; float amount; double start; Vec3 pos; };
+    struct DmgNum { int victim; float amount; double start; Vec3 pos; bool head = false; };   // head: a headshot (drawn red)
     std::vector<DmgNum> dmgNums_;
     int botMapIdx_ = 0;
 };

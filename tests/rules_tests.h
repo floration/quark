@@ -300,6 +300,7 @@ static void testHeadBox(uint16_t port) {
             return u;
         };
         pump(s, cls, 0.4, [&](int i) { sb.move.pos = {-10, 0, 19}; return aim(i, 0); });
+        c[0].takeEvents();
         float hp0 = sb.health;
         int d0 = sb.deaths;
         pump(s, cls, 0.25, [&](int i) { sb.move.pos = {-10, 0, 19}; return aim(i, BTN_FIRE); });
@@ -308,6 +309,11 @@ static void testHeadBox(uint16_t port) {
         float n = dealt / per;
         printf("  rifle at the %s: %.2f damage (%.2f bullets of %.2f)\n", side == 0 ? "head" : "shoulder", dealt, n, per);
         CHECK(sb.deaths == d0 && dealt > 0 && std::fabs(n - std::round(n)) < 0.02f);
+        pump(s, cls, 0.2, idle);
+        int heads = 0, bodies = 0;   // the hit events: headshots marked "h" (the client draws them red)
+        for (auto& e : c[0].takeEvents()) if (e.type == EV_HIT && e.b == c[1].clientId()) (e.text == "h" ? heads : bodies)++;
+        printf("  hit events: %d head, %d body\n", heads, bodies);
+        CHECK(side == 0 ? (heads > 0 && bodies == 0) : (heads == 0 && bodies > 0));
     }
     s.stop();
 }

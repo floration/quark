@@ -919,15 +919,16 @@ void Game::handleEvents() {
             case EV_HIT:
                 if (e.a == net_.clientId()) {
                     float dmg = e.c / 100.0f; // hundredths of a point
+                    bool head = e.text == "h"; // a headshot: its own red number
                     hitUntil_ = time_ + 0.15;
                     if (cfg_.hitsounds) audio_.play(SND_HIT, 0.9f, 1.25f - std::min(dmg, 50.0f) / 100.0f); // bigger hits sound deeper
                     // hits on the same target in quick succession add up into one number
                     bool merged = false;
                     for (auto& d : dmgNums_)
-                        if (d.victim == e.b && time_ - d.start < 0.35) { d.amount += dmg; d.start = time_; merged = true; }
+                        if (d.victim == e.b && d.head == head && time_ - d.start < 0.35) { d.amount += dmg; d.start = time_; merged = true; }
                     if (!merged) {
                         const PlayerSnap* v = net_.findPlayer(e.b);
-                        dmgNums_.push_back({e.b, dmg, time_, v ? v->pos : Vec3()});
+                        dmgNums_.push_back({e.b, dmg, time_, v ? v->pos : Vec3(), head});
                     }
                 }
                 break;
@@ -1826,7 +1827,8 @@ void Game::drawHud() {
             if (r_.project(d.pos + Vec3(0, 2.0f + t * 0.8f, 0), sx, sy)) {
                 std::string n = std::to_string((int)std::lround(d.amount));
                 float k = std::max(1.0f, std::round(ts * (d.amount >= 40 ? 1.5f : 1.0f)));
-                Color c = d.amount >= 40 ? Color{1, 0.85f, 0.2f, 1 - t / 0.9f} : Color{1, 1, 1, 1 - t / 0.9f};
+                Color c = d.head ? Color{1, 0.18f, 0.15f, 1 - t / 0.9f}   // headshots red (owner 5.6), big hits gold, the rest white
+                        : d.amount >= 40 ? Color{1, 0.85f, 0.2f, 1 - t / 0.9f} : Color{1, 1, 1, 1 - t / 0.9f};
                 r_.text(sx - r_.textWidth(n, k) * 0.5f, sy, k, n, c);
             }
             i++;

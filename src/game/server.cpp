@@ -1196,9 +1196,16 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
         lastProgress_ = time();
         // Hit feedback (hitsound, damage number): rapid small hits (laser) are batched every 50 ms
         // instead of sending a reliable event per tick. c = damage in hundredths.
-        hitAccum_[attacker][victim] += dmg;
-        hitPending_ = true;
-        if (time() >= hitFlushAt_[attacker][victim]) flushHit(attacker, victim);
+        if (headHit_[victim]) {   // a headshot goes out on its own, at once (the client shows it red)
+            flushHit(attacker, victim);
+            hitAccum_[attacker][victim] += dmg;
+            hitHead_[attacker][victim] = true;
+            flushHit(attacker, victim);
+        } else {
+            hitAccum_[attacker][victim] += dmg;
+            hitPending_ = true;
+            if (time() >= hitFlushAt_[attacker][victim]) flushHit(attacker, victim);
+        }
         // Vampire laser: damage dealt heals the attacker (up to full health).
         ServerPlayer& a = players_[attacker];
         if ((rules & AR_VAMPIRE) && a.alive) { // healing fades as the round goes on
@@ -1215,6 +1222,8 @@ void Server::flushHit(int attacker, int victim) {
     if (acc <= 0) return;
     GameEvent e; e.type = EV_HIT; e.a = (uint8_t)attacker; e.b = (uint8_t)victim;
     e.c = (int16_t)std::lround(std::min(acc, 300.0f) * 100.0f);
+    if (hitHead_[attacker][victim]) e.text = "h";   // a headshot
+    hitHead_[attacker][victim] = false;
     sendEvent(attacker, e);
     acc = 0;
     hitFlushAt_[attacker][victim] = time() + 0.05f;

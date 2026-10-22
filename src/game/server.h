@@ -277,6 +277,7 @@ public:
     size_t snapBytes_ = 0, snapCount_ = 0; // snapshot bytes sent (stats for tests / logs)
     float hitAccum_[kMaxPlayers][kMaxPlayers] = {};
     double hitFlushAt_[kMaxPlayers][kMaxPlayers] = {};
+    bool hitHead_[kMaxPlayers][kMaxPlayers] = {};   // the batched hit is a headshot (EV_HIT text "h": a red number)
     bool hitPending_ = false;
     void flushHit(int attacker, int victim);
     void bounceShot(int id, Vec3 o, Vec3 dir, float range, uint32_t vt, float* dmgPer, float dmg);
