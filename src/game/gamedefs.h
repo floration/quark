@@ -211,7 +211,7 @@ inline const WeaponDef& baseWeaponDef(int w) {
         // Perfect-aim time to kill from 100 hp in the trailing comment.
         //  name        refire   dmg    range   proj  speed  splash spread scoped zoom   beam  pel grav  sticky life
         {"RIFLE",       0.75f*2.0f/9.9f, 5.95f, 300.0f, false, 0, 0, 0.0f, 0.0f, 60.0f, false, 1, 0, false, 0},  // 17 shots, 2.4 s (scoped: 3/4 fire rate)
-        {"ROCKET",      1.2f,    34,      0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  12.0f, false, 5}, // 3, 2.4 s
+        {"ROCKET",      1.2f,    34,      0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  10.8f, false, 5}, // 3, 2.4 s (gravity 12 -> 10.8: owner, 1.17)
         {"KNIFE",       0.75f,   30,      3.5f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 4, 2.25 s (1.11: 30 every 0.75 s)
         {"SNIPER",      1.5f,    50,    500.0f, false,  0,    0,     0.0f,  0.0f, 45.0f,  false, 1,  0,    false, 0},  // 2, 1.5 s (owner 1.16: a flat 50, head or body)
         {"LASER",       0.001f,  0.04f,  32.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},  // every 1 ms, 2500 hits, 2.5 s
