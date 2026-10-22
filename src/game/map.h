@@ -37,6 +37,11 @@ inline bool validMapLight(float radius, float intensity) {
     return radius >= kMinLightRadius && radius <= kMaxLightRadius && intensity > 0 && intensity <= kMaxLightIntensity;   // (NaN fails)
 }
 
+// A map's title, from a file or an edit (one rule for both): the spaces around it dropped, then at most
+// kMaxMapTitle printable ASCII characters and no '#' (the comment mark). false: not a valid title.
+constexpr size_t kMaxMapTitle = 40;
+bool cleanMapTitle(std::string& title);
+
 struct SpawnPoint {
     Vec3 pos;
     float yaw = 0;
@@ -102,10 +107,14 @@ struct Map {
 
     bool load(const std::string& name, std::string* err = nullptr);
     bool onLadder(const AABB& player) const { for (auto& l : ladders) if (player.overlaps(l)) return true; return false; }
-    bool parse(const std::string& text, std::string* err = nullptr);   // never throws: a bad map is an error
+    // Never throws: a bad map is an error. Every field is reset first (only name is kept), so nothing of an earlier
+    // map or of a failed parse is left behind.
+    bool parse(const std::string& text, std::string* err = nullptr);
     bool parseText(const std::string& text, std::string* err);          // (parse's body)
     bool validate(std::string* err = nullptr) const;   // the limits above (counts, finite, in range)
-    std::string serialize() const;    // back to .qmap text (what the editor saves)
+    // Back to .qmap text (what the editor saves). Every number is written with as many digits as it needs to parse
+    // back to the same float (spawn yaws to the same radians), so a saved map is exactly the map its edits made.
+    std::string serialize() const;
     bool rebuild();                   // after editing brushes in place: bounds, wallbang flag, grid (false: over the limits)
     // One brush replaced, inserted or removed, with bounds, wallbang flag, lava list and grid left exactly as rebuild()
     // would leave them, but updated in place (the edit path: Midtown's full rebuild is ~0.3 ms, this a few us). The

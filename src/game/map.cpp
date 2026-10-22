@@ -411,22 +411,18 @@ bool Map::parse(const std::string& text, std::string* err) {
     } catch (const std::exception& e) { // a hostile map must fail cleanly, never take the game down
         if (err) *err = std::string("map rejected: ") + e.what();
     }
-    brushes.clear(); spawns.clear(); groups.clear(); ladders.clear(); ladderAuto.clear(); lights.clear();
-    cells.clear(); cellBrushes.clear(); gridRefs = 0; gridW = gridH = 0;
+    std::string keepName = std::move(name);   // nothing of the bad text is left behind
+    *this = Map();
+    name = std::move(keepName);
     return false;
 }
 
 bool Map::parseText(const std::string& text, std::string* err) {
-    brushes.clear(); spawns.clear(); bombSites.clear(); checkpoints.clear(); ladders.clear(); ladderAuto.clear(); groups.clear(); payloadPath.clear(); lights.clear(); points.clear(); cartChecks.clear();
-    hasHill = false;
-    hasWallbang = false;
-    hasPalette = false;
-    hasVoid = false;
-    holdFire = 0;
-    indoor = false;
-    preferredMode = -1;
-    allowedModes = 0;
-    rankedLadders = 0;
+    {   // every field back to a fresh map's (title, sun, palette, void, ceiling, hold fire, ...), but its name
+        std::string keepName = std::move(name);
+        *this = Map();
+        name = std::move(keepName);
+    }
     crc = crc32(text.data(), text.size());
     source = text;
     sourceStale = false;
@@ -449,7 +445,7 @@ bool Map::parseText(const std::string& text, std::string* err) {
         bool ok = true;
         if (kw == "title") {
             ls.rest(title);
-            while (!title.empty() && title[0] == ' ') title.erase(0, 1);
+            ok = cleanMapTitle(title);   // (the same rule as the editor's title edit)
         } else if (kw == "box" || kw == "accent" || kw == "wallbang" || kw == "metal" || kw == "glow" || kw == "far" || kw == "water" || kw == "lava" || kw == "trim" || kw == "clip") {
             Brush b;
             ok = readBox(ls, b.box);
@@ -531,7 +527,8 @@ bool Map::parseText(const std::string& text, std::string* err) {
             }
             hasPalette = ok;
         } else if (kw == "sun") {
-            Vec3 d; ok = (bool)(ls >> d.x >> d.y >> d.z) && okCoord(d.x) && okCoord(d.y) && okCoord(d.z) && length(d) > 1e-6f; if (ok) sunDir = normalize(d);
+            Vec3 d; ok = (bool)(ls >> d.x >> d.y >> d.z) && okCoord(d.x) && okCoord(d.y) && okCoord(d.z) && length(d) > 1e-6f;
+            if (ok) sunDir = std::fabs(length(d) - 1.0f) < 1e-6f ? d : normalize(d);   // (a saved, unit sun stays bit-exact)
         } else {
             ok = false;
         }
@@ -584,12 +581,54 @@ bool Map::validate(std::string* err) const {
     return true;
 }
 
+bool cleanMapTitle(std::string& t) {
+    auto space = [](char c) { return c == ' ' || c == '\t' || c == '\r'; };
+    size_t a = 0, e = t.size();
+    while (a < e && space(t[a])) a++;
+    while (e > a && space(t[e - 1])) e--;
+    t = t.substr(a, e - a);
+    if (t.size() > kMaxMapTitle) return false;
+    for (char c : t) if ((unsigned char)c < 32 || (unsigned char)c > 126 || c == '#') return false;
+    return true;
+}
+
+// v with the fewest digits (6 to 9 significant) that parse back to exactly v: "12.5", not "12.5000000", but an edit's
+// 1000.125 stays 1000.125 (6 digits saved it as 1000.12, and a client that downloaded the saved map collided
+// differently from one that applied the edit: FINAL_REVIEW 5.5). Map::parse reads numbers exactly as strtof does.
+static const char* exactNum(char* out, size_t n, float v) {
+    for (int digits = 6; digits < 9; digits++) {
+        snprintf(out, n, "%.*g", digits, v);
+        if (strtof(out, nullptr) == v) return out;
+    }
+    snprintf(out, n, "%.9g", v);   // (9 significant digits always round-trip a float)
+    return out;
+}
+// A spawn's yaw in degrees, with the digits deg2rad needs to give back exactly these radians (when some do).
+static const char* exactYawDeg(char* out, size_t n, float yaw) {
+    float deg = yaw * (180.0f / PI);
+    for (int digits = 6; digits <= 9; digits++) {
+        snprintf(out, n, "%.*g", digits, deg);
+        if (deg2rad(strtof(out, nullptr)) == yaw) return out;
+    }
+    for (float d : {std::nextafter(deg, -1e9f), std::nextafter(deg, 1e9f)}) {   // (radians -> degrees rounded off by one)
+        snprintf(out, n, "%.9g", d);
+        if (deg2rad(strtof(out, nullptr)) == yaw) return out;
+    }
+    snprintf(out, n, "%.9g", deg);
+    return out;
+}
+
 std::string Map::serialize() const {
     std::string o = "# made with the quark map editor\n";
-    char b[256];
+    char b[320];
+    char nb[6][24];
     auto box = [&](const char* kw, const AABB& a) {
-        snprintf(b, sizeof b, "%s %g %g %g %g %g %g\n", kw, a.mn.x, a.mn.y, a.mn.z, a.mx.x, a.mx.y, a.mx.z);
+        snprintf(b, sizeof b, "%s %s %s %s %s %s %s\n", kw, exactNum(nb[0], 24, a.mn.x), exactNum(nb[1], 24, a.mn.y), exactNum(nb[2], 24, a.mn.z),
+                 exactNum(nb[3], 24, a.mx.x), exactNum(nb[4], 24, a.mx.y), exactNum(nb[5], 24, a.mx.z));
         o += b;
+    };
+    auto nums = [&](int count, const float* v) {   // " v0 v1 ..." (count <= 6)
+        for (int i = 0; i < count; i++) { o += ' '; o += exactNum(nb[i], 24, v[i]); }
     };
     if (!title.empty()) o += "title " + title + "\n";
     if (preferredMode >= 0) o += std::string("for ") + modeName(preferredMode) + "\n";
@@ -603,13 +642,12 @@ std::string Map::serialize() const {
         for (int m = 0; m < MODE_COUNT; m++) if (allowedModes >> m & 1) o += std::string(" ") + modeName(m);
         o += "\n";
     }
-    snprintf(b, sizeof b, "sun %g %g %g\n\n", sunDir.x, sunDir.y, sunDir.z);
-    o += b;
-    if (hasVoid) { snprintf(b, sizeof b, "void %g\n", voidY); o += b; }
-    if (indoor) { snprintf(b, sizeof b, "indoor %g\n", ceilingY); o += b; }
-    if (holdFire > 0) { snprintf(b, sizeof b, "holdfire %g\n", holdFire); o += b; }
+    { float v[3] = {sunDir.x, sunDir.y, sunDir.z}; o += "sun"; nums(3, v); o += "\n\n"; }
+    if (hasVoid) { o += "void"; nums(1, &voidY); o += "\n"; }
+    if (indoor) { o += "indoor"; nums(1, &ceilingY); o += "\n"; }
+    if (holdFire > 0) { o += "holdfire"; nums(1, &holdFire); o += "\n"; }
     if (hasPalette) {
-        auto c = [&](const char* k, Vec3 v) { snprintf(b, sizeof b, " %s %g %g %g", k, v.x, v.y, v.z); o += b; };
+        auto c = [&](const char* k, Vec3 v) { float f[3] = {v.x, v.y, v.z}; o += ' '; o += k; nums(3, f); };
         o += "palette"; c("base", palBase); c("accent", palAccent); c("metal", palMetal); c("glow", palGlow); c("sky", palSky); o += "\n\n";
     }
     static const char* matNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip"};
@@ -618,27 +656,31 @@ std::string Map::serialize() const {
     static const char* teams[] = {"a", "b", "any", "race"};
     for (auto& sp : spawns) {
         std::string tn = isStagedSpawn(sp.team) ? std::string(spawnDefends(sp.team) ? "def" : "att") + char('0' + spawnStage(sp.team)) : teams[sp.team & 3];
-        snprintf(b, sizeof b, "spawn %s %g %g %g %g\n", tn.c_str(), sp.pos.x, sp.pos.y, sp.pos.z, std::round(sp.yaw * 180.0f / PI));
-        o += b;
+        float p[3] = {sp.pos.x, sp.pos.y, sp.pos.z};
+        o += "spawn " + tn;
+        nums(3, p);
+        o += ' ';
+        o += exactYawDeg(nb[3], 24, sp.yaw);
+        o += '\n';
     }
     for (auto& a : bombSites) box("site", a);
     if (hasHill) box("hill", hill);
     for (auto& a : points) box("point", a);
-    for (float f : cartChecks) { snprintf(b, sizeof b, "cartcheck %g\n", f); o += b; }
+    for (float f : cartChecks) { o += "cartcheck"; nums(1, &f); o += "\n"; }
     for (size_t k = 0; k < ladders.size(); k++) {
-        snprintf(b, sizeof b, "ladder %g %g %g %g %g %g%s\n", ladders[k].mn.x, ladders[k].mn.y, ladders[k].mn.z, ladders[k].mx.x, ladders[k].mx.y, ladders[k].mx.z,
-                 k < ladderAuto.size() && ladderAuto[k] ? " auto" : "");
-        o += b;
+        box("ladder", ladders[k]);
+        if (k < ladderAuto.size() && ladderAuto[k]) { o.pop_back(); o += " auto\n"; }
     }
     static const char* groupTypes[] = {"custom", "room", "stairs"};
     for (auto& g : groups) {
-        snprintf(b, sizeof b, "group %s %d %d %g %g %g %g %g %g\n", groupTypes[g.type], g.material, g.dir, g.box.mn.x, g.box.mn.y, g.box.mn.z, g.box.mx.x, g.box.mx.y, g.box.mx.z);
-        o += b;
-        for (auto& p : g.parts) { snprintf(b, sizeof b, "part %d %.6g %.6g %.6g %.6g %.6g %.6g\n", p.material, p.box.mn.x, p.box.mn.y, p.box.mn.z, p.box.mx.x, p.box.mx.y, p.box.mx.z); o += b; }
+        char kw[48];
+        snprintf(kw, sizeof kw, "group %s %d %d", groupTypes[g.type], g.material, g.dir);
+        box(kw, g.box);
+        for (auto& p : g.parts) { snprintf(kw, sizeof kw, "part %d", p.material); box(kw, p.box); }
     }
     for (auto& a : checkpoints) box("checkpoint", a);
-    for (auto& p : payloadPath) { snprintf(b, sizeof b, "path %g %g %g\n", p.x, p.y, p.z); o += b; }
-    for (auto& l : lights) { snprintf(b, sizeof b, "light %g %g %g %g %g\n", l.pos.x, l.pos.y, l.pos.z, l.radius, l.intensity); o += b; }
+    for (auto& p : payloadPath) { float v[3] = {p.x, p.y, p.z}; o += "path"; nums(3, v); o += "\n"; }
+    for (auto& l : lights) { float v[5] = {l.pos.x, l.pos.y, l.pos.z, l.radius, l.intensity}; o += "light"; nums(5, v); o += "\n"; }
     return o;
 }
 
@@ -673,9 +715,7 @@ bool applyMapEdit(Map& m, const std::string& op) {
     if (kind == "t") {
         std::string title;
         std::getline(in, title);
-        while (!title.empty() && title[0] == ' ') title.erase(0, 1);
-        if (title.size() > 40) return false;
-        for (char c : title) if ((unsigned char)c < 32 || (unsigned char)c > 126 || c == '#') return false;
+        if (!cleanMapTitle(title)) return false;
         m.title = title;
         m.sourceStale = true;
         return true;

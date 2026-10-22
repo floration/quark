@@ -407,6 +407,69 @@ static void testAllMaps() {
     }
 }
 
+// A saved map is exactly the map its edits made (FINAL_REVIEW 5.5: saves kept 6 significant digits while edits carry 9,
+// so an edit at x = 1000.125 reloaded as 1000.12), and parsing starts from a fresh map every time (5.6).
+static void testMapSaveExact() {
+    printf("map save: exact numbers, fresh parse, title rule\n");
+    auto same = [](const Map& a, const Map& b) {
+        if (a.brushes.size() != b.brushes.size() || a.spawns.size() != b.spawns.size() || a.lights.size() != b.lights.size() ||
+            a.groups.size() != b.groups.size() || a.ladders.size() != b.ladders.size() || a.payloadPath.size() != b.payloadPath.size()) return false;
+        auto eq = [](const AABB& x, const AABB& y) { return x.mn.x == y.mn.x && x.mn.y == y.mn.y && x.mn.z == y.mn.z && x.mx.x == y.mx.x && x.mx.y == y.mx.y && x.mx.z == y.mx.z; };
+        for (size_t i = 0; i < a.brushes.size(); i++) if (!eq(a.brushes[i].box, b.brushes[i].box) || a.brushes[i].material != b.brushes[i].material) return false;
+        for (size_t i = 0; i < a.spawns.size(); i++) {
+            auto &p = a.spawns[i], &q = b.spawns[i];
+            if (p.pos.x != q.pos.x || p.pos.y != q.pos.y || p.pos.z != q.pos.z || p.yaw != q.yaw || p.team != q.team) return false;
+        }
+        for (size_t i = 0; i < a.lights.size(); i++)
+            if (a.lights[i].pos.x != b.lights[i].pos.x || a.lights[i].pos.z != b.lights[i].pos.z || a.lights[i].radius != b.lights[i].radius || a.lights[i].intensity != b.lights[i].intensity) return false;
+        for (size_t i = 0; i < a.groups.size(); i++) {
+            if (!eq(a.groups[i].box, b.groups[i].box) || a.groups[i].parts.size() != b.groups[i].parts.size()) return false;
+            for (size_t k = 0; k < a.groups[i].parts.size(); k++) if (!eq(a.groups[i].parts[k].box, b.groups[i].parts[k].box)) return false;
+        }
+        for (size_t i = 0; i < a.ladders.size(); i++) if (!eq(a.ladders[i], b.ladders[i])) return false;
+        for (size_t i = 0; i < a.payloadPath.size(); i++) if (a.payloadPath[i].x != b.payloadPath[i].x || a.payloadPath[i].z != b.payloadPath[i].z) return false;
+        return a.title == b.title && a.gridRefs == b.gridRefs;
+    };
+    const std::string base = "title t\nbox -20 -1 -20 20 0 20\ngroup custom 1 0 8 0 8 10 2 10\npart 2 0 0 0 1 0.5 1\nspawn a 0 0 0\nlight 0 5 0 10 1\n";
+    Map m;
+    CHECK(m.parse(base));
+    for (const char* op : {"b ins 1 0 1000.125 0 -3.0000001 1001.0625 2.123456789 -2", "s set 0 0 1.23456789 0 -7.00390625 37.12345",
+                           "s ins 1 1 3 0 3 -123.456787", "l set 0 0.333333343 5.1 0.1 9.87654305 0.123456791", "g part 0 1 0.123456789 0 0.3333333 0.9 0.5 0.987654321",
+                           "p ins 0 1.00000012 0 2.5"})
+        CHECK(applyMapEdit(m, op));
+    Map again;
+    std::string text = m.serialize();
+    CHECK(again.parse(text) && same(m, again) && again.serialize() == text);
+    CHECK(text.find("1000.125 ") != std::string::npos && text.find("1000.12 ") == std::string::npos);
+    // shipped maps: save -> load gives the same map, and short numbers stay short (no 0.100000001)
+    for (auto& name : testedMaps()) {
+        Map a, b;
+        if (!a.load(name)) continue;
+        std::string t = a.serialize();
+        if (!b.parse(t) || !same(a, b) || b.serialize() != t) { printf("  %s: save -> load changed the map\n", name.c_str()); g_fail++; }
+        if (t.find("00000") != std::string::npos) { printf("  %s: saved with float noise\n", name.c_str()); g_fail++; }
+    }
+    // parse starts from a fresh map: nothing of the previous map or of a failed parse is left
+    Map f;
+    f.name = "kept";
+    CHECK(f.parse("title Old\nsun 1 1 0\nvoid -3\nindoor 9\nholdfire 4\npalette base 1 0 0 accent 0 1 0 metal 0 0 1 glow 1 1 0 sky 0 1 1\n"
+                  "for vs\nmodes vs ffa\nranked vanilla\nbox -5 -1 -5 5 0 5\nspawn a 0 0 0\nspawn b 1 0 1\nhill -1 0 -1 1 2 1\n"));
+    CHECK(f.hasVoid && f.indoor && f.holdFire == 4 && f.hasPalette && f.hasHill && f.rankedLadders && f.allowedModes);
+    CHECK(!f.parse("title Bad\nvoid -3\nbox 0 0 0 1 1 x\n"));
+    Map fresh;
+    CHECK(f.title.empty() && !f.hasVoid && f.voidY == 0 && !f.indoor && f.ceilingY == 0 && f.holdFire == 0 && !f.hasPalette && !f.hasHill &&
+          f.rankedLadders == 0 && f.allowedModes == 0 && f.preferredMode == -1 && f.brushes.empty() && f.cells.empty() && f.name == "kept");
+    CHECK(f.sunDir.x == fresh.sunDir.x && f.sunDir.y == fresh.sunDir.y && f.palBase.x == fresh.palBase.x);
+    CHECK(f.parse("box -5 -1 -5 5 0 5\nspawn any 0 0 0\n") && f.title.empty() && !f.hasVoid && f.sunDir.x == fresh.sunDir.x && f.name == "kept");
+    // the title: the same rule for a file and an edit (at most 40 printable characters, no '#'; spaces around dropped)
+    const std::string rest = "\nbox -5 -1 -5 5 0 5\nspawn any 0 0 0\n";
+    CHECK(f.parse("title   My Arena  \r" + rest) && f.title == "My Arena");
+    CHECK(f.parse("title " + std::string(40, 'x') + rest) && !f.parse("title " + std::string(41, 'x') + rest) && !f.parse("title a\tb" + rest));
+    CHECK(f.parse("title x" + rest) && applyMapEdit(f, "t  Edited  ") && f.title == "Edited");
+    CHECK(!applyMapEdit(f, "t " + std::string(41, 'y')) && !applyMapEdit(f, "t a\x01" "b") && f.title == "Edited");
+    CHECK(applyMapEdit(f, "t " + std::string(40, 'z')) && again.parse(f.serialize()) && again.title == f.title);
+}
+
 // One set of limits for every map, however it arrives (REVIEW CLI-3, NET-3, NET-15): files, downloads and demos are
 // refused with an error instead of a 240 GB grid, a non-solid floor or brushes past 65535 dropping out of collision;
 // edits that would break those limits, or leave a map that won't load again, are refused and change nothing.
@@ -4402,8 +4465,8 @@ static void testHostileInput() {
         CHECK(one("group custom 1 0 0 0 0 4 4 4\npart +2 0 0 0 1 1 1", m) && m.groups[0].parts[0].material == 2);
         CHECK(!one("group custom 99999999999 0 0 0 0 1 1 1", m) && !one("group custom 1.5 0 0 0 0 1 1 1", m));
         m.title = "kept";
-        CHECK(m.parse("title\n" + base) && m.title == "kept");      // a bare "title" leaves it alone, as getline did
-        CHECK(m.parse("title  Hi there\t\r\n" + base) && m.title == "Hi there\t\r");
+        CHECK(m.parse("title\n" + base) && m.title.empty());       // a bare "title": none (every parse starts from a fresh map)
+        CHECK(m.parse("title  Hi there\t\r\n" + base) && m.title == "Hi there");   // (the spaces around it dropped)
         CHECK(m.parse(base + "box 1 2 3 4 5 6 # a comment\n  \t accent\t1 2 3 4 5 6\r") && m.brushes.size() == 3 && m.brushes[2].material == 1);
         std::string err;
         CHECK(!m.parse(base + "box 1 2 3 4 5 x # why\n", &err) && err == "parse error on line 3: box 1 2 3 4 5 x ");
@@ -4673,7 +4736,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(TP(29997)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "allmaps") { testAllMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "chat") { testChatAndVoteLimits(TP(29592)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "limits") { testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "limits") { testMapSaveExact(); testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(TP(29990)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(TP(29980)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); testAddbotArgs(TP(29982)); return g_fail ? 1 : 0; }
@@ -4708,7 +4771,7 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapSaveExact(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); }},
