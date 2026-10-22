@@ -71,6 +71,24 @@ jobs:
         run: |
           echo "version=$(head -n1 VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
+      - name: sign update packages (Ed25519, docs/SIGNING.md)
+        env:
+          QUARK_SIGNING_KEY: ${{ secrets.QUARK_SIGNING_KEY }}
+        run: |
+          if [ -z "$QUARK_SIGNING_KEY" ]; then
+            echo "::error::QUARK_SIGNING_KEY secret is missing: refusing to publish unsigned update packages (see docs/SIGNING.md)"
+            exit 1
+          fi
+          cmake -S . -B signbuild -DQUARK_BUILD_CLIENT=OFF -DQUARK_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build signbuild --target quark_sign -j
+          n=0
+          for f in */quark-*.qpak; do
+            ./signbuild/quark_sign sign "$f"
+            ./signbuild/quark_sign verify "$f"   # against the public key built into the launcher: catches a wrong secret
+            n=$((n+1))
+          done
+          [ "$n" -gt 0 ] || { echo "::error::no qpak to sign"; exit 1; }
+          rm -rf signbuild
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.v.outputs.version }}

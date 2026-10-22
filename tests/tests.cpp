@@ -25,6 +25,7 @@
 #include "game/gamemodes.h"
 #include "game/ranked.h"
 #include "common/sha256.h"
+#include "common/sign.h"
 #include "game/bots.h"
 
 static int g_fail = 0;
@@ -2508,6 +2509,36 @@ static void testHostileInput() {
     CHECK(r.fireRate[0] == def.fireRate[0] && r.damage[0] == def.damage[0] && r.projSpeed[0] == def.projSpeed[0]);
 }
 
+// Update-package signatures (docs/SIGNING.md): round trip, tampering and wrong keys are rejected.
+void testSigning() {
+    printf("signing\n");
+    std::string priv, pub, priv2, pub2, sig, err;
+    CHECK(sign::keygen(&priv, &pub) && sign::keygen(&priv2, &pub2));
+    CHECK(priv.size() == 64 && pub.size() == 64 && pub != pub2);
+    std::string pubAgain;
+    CHECK(sign::publicFromPrivate(priv, &pubAgain) && pubAgain == pub);
+    CHECK(std::string(sign::kReleasePublicKey).size() == 64);
+    std::string data = "QPAK1\n";
+    for (int i = 0; i < 200000; i++) data += (char)(i * 31 + 7);
+    std::string path = (std::filesystem::temp_directory_path() / ("quark_sign_" + std::to_string(getpid()) + ".qpak")).string();
+    { std::ofstream(path, std::ios::binary) << data; }
+    CHECK(sign::signFile(path, priv, &sig, &err) && sig.size() == 128);
+    CHECK(sign::verifyFile(path, sig + "\n", pub, &err));             // round trip (.sig files end in a newline)
+    CHECK(sign::verifyData(data, sig, pub));
+    CHECK(!sign::verifyFile(path, sig, pub2, &err));                   // wrong key
+    std::string bad = data;
+    bad[100000] ^= 1;
+    { std::ofstream(path, std::ios::binary | std::ios::trunc) << bad; }
+    CHECK(!sign::verifyFile(path, sig, pub, &err));                    // one tampered byte
+    CHECK(!sign::verifyData(data + "x", sig, pub));                    // appended byte
+    std::string badSig = sig;
+    badSig[5] = badSig[5] == '0' ? '1' : '0';
+    CHECK(!sign::verifyData(data, badSig, pub));                       // tampered signature
+    CHECK(!sign::verifyData(data, "", pub) && !sign::verifyData(data, sig.substr(2), pub) && !sign::verifyData(data, sig, "zz"));
+    CHECK(!sign::verifyFile(path + ".missing", sig, pub, &err));
+    std::filesystem::remove(path);
+}
+
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
     netInit();
@@ -2527,6 +2558,7 @@ int main(int argc, char** argv) {
         serverBench(29301, 24, 8, argc > 2 ? atof(argv[2]) : 15, "hamlet");
         return 0;
     }
+    if (argc >= 2 && std::string(argv[1]) == "signing") { testSigning(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "hostile") { testHostileInput(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "ladders") { testLadders(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "stairs") { testStairs(); return g_fail ? 1 : 0; }
@@ -2566,7 +2598,7 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testHostileInput(); testMovement(); testTickRateIndependence(); testGridQueries(); testEditorLadder(); testEditorGroups(); }},
+        {"movement", [] { testSigning(); testHostileInput(); testMovement(); testTickRateIndependence(); testGridQueries(); testEditorLadder(); testEditorGroups(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", 28560); testSession(MODE_BOMB, "bastion", 28561); testSession(MODE_KOTH, "bastion", 28562); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", 28563); testSession(MODE_FFA, "bastion", 28564); testSession(MODE_RACE, "foundry", 28565); }},
         {"modes", [] { testCustomMode(28570); testPoints(28571); testSyringe(28572); testCartChecks(28573); testItModes(28574); }},
