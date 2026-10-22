@@ -543,7 +543,8 @@ void Renderer::setCamera(const Vec3& eye, float yaw, float pitch, float hfovDeg)
     camRight_ = normalize(cross(camFwd_, Vec3(0, 1, 0)));
     camUp_ = cross(camRight_, camFwd_);
     tanY_ = std::tan(vfov * 0.5f); tanX_ = tanY_ * aspect;
-    {   // frustum planes (a, b, c, d, |normal|) for culling dynamic objects
+    viewProj_ = proj_ * view_m_;   // (before the planes: they came from last frame's camera, so things popped in a frame late on flicks)
+    {   // frustum planes (a, b, c, d, |normal|): culls dynamic objects and the world chunks
         const float* m = viewProj_.m;
         for (int i = 0; i < 3; i++)
             for (int sgn = 0; sgn < 2; sgn++) {
@@ -553,7 +554,6 @@ void Renderer::setCamera(const Vec3& eye, float yaw, float pitch, float hfovDeg)
                 p[4] = std::sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
             }
     }
-    viewProj_ = proj_ * view_m_;
 }
 
 bool Renderer::project(const Vec3& p, float& sx, float& sy) const {
@@ -963,20 +963,12 @@ bool Renderer::screenshot(const std::string& path) {
 
 // World pass: chunks outside the view frustum are skipped; consecutive visible chunks merge into one range.
 void Renderer::drawWorldChunks() {
-    const float* m = viewProj_.m;
-    float pl[6][4];
-    for (int i = 0; i < 3; i++)
-        for (int sgn = 0; sgn < 2; sgn++) {
-            float* p = pl[i * 2 + sgn];
-            float k = sgn ? -1.0f : 1.0f;
-            p[0] = m[3] + k * m[i]; p[1] = m[7] + k * m[4 + i]; p[2] = m[11] + k * m[8 + i]; p[3] = m[15] + k * m[12 + i];
-        }
     drawFirst_.clear();
     drawCount_.clear();
     for (const WorldChunk& c : chunks_) {
         bool in = true;
         for (int i = 0; i < 6 && in; i++) { // the box corner farthest along the plane normal must be inside
-            const float* p = pl[i];
+            const float* p = frustum_[i];   // (setCamera's planes)
             float x = p[0] >= 0 ? c.mx.x : c.mn.x, y = p[1] >= 0 ? c.mx.y : c.mn.y, z = p[2] >= 0 ? c.mx.z : c.mn.z;
             in = p[0] * x + p[1] * y + p[2] * z + p[3] >= 0;
         }
