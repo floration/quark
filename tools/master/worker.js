@@ -95,11 +95,15 @@ const LINK_CODE_MS = 10 * 60000;
 
 // Rate limiting: token buckets kept in memory per isolate (Cloudflare runs a few isolates per region, so the
 // real limit is a small multiple of these; cheap, and enough to stop a single client hammering D1). Keyed by
-// endpoint plus client IP, and endpoint plus player id for the account endpoints.
+// client IP, by player id for the account endpoints, and by server address for the server endpoints.
+// Many players can share one address (a LAN party, a dorm, carrier NAT), so the per-IP buckets are generous and
+// the per-id bucket is the real limit on a player. The Discord bot (a write carrying BOT_KEY) has its own bucket
+// and spends none of its address's: one "Queue for all" is 16 POSTs.
 const LIMITS = {
-  ip: { burst: 120, perSec: 2 },        // any endpoint, per client IP
-  write: { burst: 20, perSec: 0.2 },    // /report /racetime /lifetime /queue /link, per client IP
+  ip: { burst: 240, perSec: 6 },        // any endpoint, per client IP (a few dozen games polling /queue, /filled)
+  write: { burst: 60, perSec: 0.5 },    // player writes (/hello /report /lifetime /queue /link ...), per client IP
   id: { burst: 10, perSec: 0.1 },       // the same, per player id
+  bot: { burst: 200, perSec: 5 },       // writes with BOT_KEY (/queue /linkcode from the Discord bot), instead of ip + write
   linkfail: { burst: 5, perSec: 1 / 60 }, // /link code attempts per client IP (a right code gives its token back)
   server: { burst: 30, perSec: 0.2 },   // /ticket /result /racerun per server address
 };
@@ -660,7 +664,6 @@ export default {
     // reads may be fetched by web pages (the website's leaderboard); writes never answer cross-origin
     const text = (body, status = 200) => new Response(body, { status, headers: isWrite ? { "content-type": "text/plain" } :
       { "content-type": "text/plain", "access-control-allow-origin": "*" } });
-    if (!allow("ip", conn, now)) return text("rate limited", 429);
     let form = null;
     if (isWrite) {
       if (req.method !== "POST") return text("POST only", 405);
@@ -669,7 +672,10 @@ export default {
       if (+(req.headers.get("content-length") || 0) > MAX_BODY) return text("too big", 413);
       try { form = await req.formData(); } catch { return text("bad request", 400); }
     }
-    if (isWrite && !SERVER_WRITES.has(u.pathname) && u.pathname !== "/announce" && u.pathname !== "/remove") {
+    // the bot's writes: their own bucket, none of its address's
+    const isBot = !!(form && env.BOT_KEY && String(form.get("bot") || "") === env.BOT_KEY);
+    if (!(isBot ? allow("bot", "bot", now) : allow("ip", conn, now))) return text("rate limited", 429);
+    if (isWrite && !isBot && !SERVER_WRITES.has(u.pathname) && u.pathname !== "/announce" && u.pathname !== "/remove") {
       if (!allow("write", conn, now)) return text("rate limited", 429);
       const pid = await idOf(String(form.get("secret") || ""));
       if (pid && !allow("id", pid, now)) return text("rate limited", 429);

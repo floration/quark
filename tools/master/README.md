@@ -64,7 +64,8 @@ ALTER TABLE lifetime ADD COLUMN hour_deaths INTEGER NOT NULL DEFAULT 0;
 ```
 `/announce` answers `ok <token>`. A server may announce or remove its own source IPv4 address; through an IPv6
 path (`?ip=`) it needs the token from an earlier IPv4 announce. Writes are rate-limited per IP and per player id
-(in memory, per isolate), and `/lifetime` adds at most 1200 kills and 1200 deaths per id per hour.
+(in memory, per isolate; the per-IP buckets leave room for many players behind one address, and the Discord bot's
+writes, carrying `BOT_KEY`, have their own larger bucket), and `/lifetime` adds at most 1200 kills and 1200 deaths per id per hour.
 
 ## Match tickets, server-reported race runs, verified Discord links (anti-cheat update)
 What changed:

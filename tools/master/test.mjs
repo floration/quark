@@ -308,8 +308,36 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   check(last === "too many servers from this address", "per-address cap " + last);
   check((await call("/list?v=t2")).split("\n").length === 8, "one address can't flood the list");
   let limited = false;
-  for (let i = 0; i < 40 && !limited; i++) limited = (await call("/link", { secret: secret(40 + i) }, "192.0.2.50")) === "rate limited";
+  for (let i = 0; i < 100 && !limited; i++) limited = (await call("/link", { secret: secret(140 + i) }, "192.0.2.50")) === "rate limited";
   check(limited, "writes rate-limited per IP");
+}
+// rate limits with many calls from one address: the Discord bot, and players behind one NAT
+{
+  const hx = (t) => Buffer.from(t).toString("hex");
+  env.BOT_KEY = "botkey";
+  const ip = "192.0.2.60";
+  // two "Queue for all" presses and more (16 POSTs each): the bot has its own bucket
+  const replies = [];
+  for (let i = 0; i < 70; i++) replies.push(await call("/queue", { bot: "botkey", discord: hx("user" + (i % 16)), mode: "vs", action: "leave" }, ip));
+  check(replies.every((r) => r === "left vs"), "the bot's burst isn't rate limited " + replies.filter((r) => r !== "left vs").length);
+  check((await call("/hello", { secret: secret(100) }, ip)) === "id " + id(100), "the bot didn't spend its address's write bucket");
+  // a wrong BOT_KEY gets no bot bucket: the address's own limits apply
+  let limited = false;
+  for (let i = 0; i < 100 && !limited; i++) limited = (await call("/queue", { bot: "nope", discord: hx("x"), mode: "vs", action: "leave" }, "192.0.2.61")) === "rate limited";
+  check(limited, "a wrong bot key is limited like anyone");
+  // 16 players behind one address end a match together: everyone's /hello, /lifetime and /queue go through
+  const nat = "192.0.2.62", out = [];
+  for (let n = 100; n < 116; n++) {
+    out.push(await call("/hello", { secret: secret(n) }, nat));
+    out.push(await call("/lifetime", { secret: secret(n), kills: "1", deaths: "1" }, nat));
+    out.push(await call("/queue", { secret: secret(n), mode: "vs", action: "leave" }, nat));
+  }
+  check(!out.includes("rate limited"), "players sharing an address aren't limited by each other " + out.filter((r) => r === "rate limited").length);
+  // ...but one player hammering is still stopped by the per-id limit, without locking out their neighbours
+  let mine = "";
+  for (let i = 0; i < 12 && mine !== "rate limited"; i++) mine = await call("/queue", { secret: secret(116), mode: "vs", action: "leave" }, nat);
+  check(mine === "rate limited", "per-id limit still holds behind a shared address");
+  check((await call("/queue", { secret: secret(117), mode: "vs", action: "leave" }, nat)) === "left vs", "a neighbour still gets through");
 }
 // pre-1.17 ids move to the key-derived id the first time the secret shows up
 {
