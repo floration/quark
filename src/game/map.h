@@ -131,14 +131,23 @@ bool applyMapEdit(Map& m, const std::string& op);
 // The op that sets (or inserts) object `idx` of `kind` to its current state in m: used to build edits and their undo.
 std::string describeMapObject(const Map& m, char kind, const char* verb, int idx);
 
-std::string findDataPath(const std::string& rel); // resolves maps/... next to the executable or cwd
+std::string findDataPath(const std::string& rel); // resolves shipped, read-only data (maps/..., mods/...) in the install
+// Per-user data (settings, ranked key, demos, your maps, downloaded maps, light caches, HUD/controls profiles, custom
+// modes, logs): never inside the install, so updates and uninstalls can't touch it.
+//   Windows %APPDATA%\quark   macOS ~/Library/Application Support/quark   Linux $XDG_DATA_HOME/quark (~/.local/share/quark)
+// --data-dir / QUARK_DATA_DIR override it. The first use of the default folder copies files left in the old
+// install-folder locations over (originals are kept; a .migrated marker stops it running again).
+void setUserDataDir(const std::string& dir, bool migrate = false); // call before the first userDataPath()
+std::string userDataPath(const std::string& rel = ""); // <root>/<rel>; the root is created on first use
+std::string userMapsDir();                              // your own / edited maps (searched before the shipped ones)
+int migrateUserData(const std::string& oldRoot, const std::string& newRoot); // files copied (exposed for tests)
 void setExecutableDir(const char* argv0);
 const std::string& executableDir();       // empty if unknown
 std::vector<std::string> listMaps();
 // Writes every shipped map back to its original text (and drops their light caches); returns how many.
 int resetOfficialMaps();
-std::string mapsFolder(); // absolute path of the maps folder
-// Maps fetched from servers live apart from your own, keyed by content: maps/downloads/<name>-<crc>.qmap
+std::string mapsFolder(); // absolute path of your maps folder (userMapsDir)
+// Maps fetched from servers live apart from your own, keyed by content: <user>/maps/downloads/<name>-<crc>.qmap
 // A map name is a file stem, never a path: [A-Za-z0-9_-]{1,40} (40 = what the editor lets you save).
 bool isValidMapName(const std::string& name);
 std::string safeMapName(const std::string& name); // for building file names: anything else becomes '_', capped

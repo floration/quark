@@ -411,11 +411,15 @@ void updater(std::shared_ptr<State> st, fs::path dir) {
 
 int main(int argc, char** argv) {
     if (argc > 1 && std::string(argv[1]) == "--uninstall") {
+        bool wipe = false;
 #ifdef _WIN32
         if (MessageBoxW(nullptr, L"Remove quark, its shortcuts and downloaded game files?", L"Uninstall quark",
                         MB_YESNO | MB_ICONQUESTION) != IDYES) return 0;
+        std::wstring q = L"Also delete your settings, ranked identity, demos and maps?\n\n" + install::userDataDir().wstring() +
+                         L"\n\nChoose No to keep them for a later reinstall.";
+        wipe = MessageBoxW(nullptr, q.c_str(), L"Uninstall quark", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES;
 #endif
-        install::uninstallAll();
+        install::uninstallAll(wipe);
         return 0;
     }
     fs::path dir = install::gameDir();
@@ -475,6 +479,7 @@ int main(int argc, char** argv) {
     });
     bool quit = false;
     double uninstallArmed = 0;
+    bool uninstallWipe = false; // also delete the player's data (settings, ranked key, demos, maps)
     bool autoPlay = argc > 1 && std::string(argv[1]) == "--play";
     while (!glfwWindowShouldClose(win) && !quit) {
         glfwPollEvents();
@@ -573,11 +578,12 @@ int main(int argc, char** argv) {
         // desktop integration: the desktop icon and start menu entry are made automatically (at startup);
         // only UNINSTALL is left here
         {
-            float bw = fw - 48 * s, bx = 24 * s, by = 344 * s, bh = 40 * s;
+            float bw = (fw - 56 * s) * 0.5f, bx = 24 * s, by = 344 * s, bh = 40 * s;
             bool armed = timeNow() < uninstallArmed;
+            if (ui.button(bx + bw + 8 * s, by, bw, bh, uninstallWipe ? "MY DATA: DELETE" : "MY DATA: KEEP", !st.busy)) uninstallWipe = !uninstallWipe;
             if (ui.button(bx, by, bw, bh, armed ? "CLICK TO CONFIRM" : "UNINSTALL", !st.busy)) {
                 if (armed) {
-                    install::uninstallAll();
+                    install::uninstallAll(uninstallWipe);
                     quit = true;
                 } else uninstallArmed = timeNow() + 3.0;
             }

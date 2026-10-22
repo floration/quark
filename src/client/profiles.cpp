@@ -12,7 +12,7 @@
 namespace fs = std::filesystem;
 
 std::string profileDir(const char* sub) {
-    std::string d = findDataPath("maps") + "/../" + sub;
+    std::string d = userDataPath(sub);
     std::error_code ec;
     fs::create_directories(d, ec);
     return d;

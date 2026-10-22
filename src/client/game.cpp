@@ -16,7 +16,7 @@
 #include "../game/gamemodes.h"
 
 static std::string fmtRace(int ms);
-static std::string hudCfgPath() { return findDataPath("maps") + "/../hud.cfg"; } // scriptable widgets, next to quark.cfg
+static std::string hudCfgPath() { return userDataPath("hud.cfg"); } // scriptable widgets, next to quark.cfg
 
 namespace {
 const Color kWhite = {1, 1, 1, 1};
@@ -57,7 +57,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     r_.resize(w, h);
     if (!r_.init(cfg_.shadowRes, err)) return false;
     rescanMaps();
-    rankKey_ = loadOrCreateRankKey(findDataPath("maps") + "/../quark.key"); // ranked identity: stays on this computer
+    rankKey_ = loadOrCreateRankKey(userDataPath("quark.key")); // ranked identity: stays on this computer
     if (opts_.hostMode < 0 && opts_.vsBotsMode < 0 && opts_.connect.empty() && opts_.editMap.empty()) loadMenuBackdrop();
     if (opts_.debugInfo) { setScreen(Screen::Info); infoTab_ = opts_.debugInfo - 1; }
     if (opts_.debugCustom) { rescanMaps(); editRules_ = CustomRules(); editRules_.name = "my mode"; editRules_.move[MV_AIR_ACCEL] = 2; editRules_.gravity = 0.5f; customTab_ = opts_.debugCustom - 1; setScreen(Screen::CustomMode); }
@@ -2587,7 +2587,7 @@ void Game::drawWidgetEditor() {
     if (ui_.button(px, y, pw, h, "DELETE WIDGET")) { L.erase(L.begin() + widgetSel_); widgetSel_ = -1; }
 }
 
-static std::string raceLogPath() { return findDataPath("maps") + "/../race_times.log"; }
+static std::string raceLogPath() { return userDataPath("race_times.log"); }
 
 static std::string fmtRace(int ms) {
     char b[32];
@@ -3637,7 +3637,7 @@ static const char* const kInfoPages[][48] = {
 };
 
 // ---- demos ----
-static std::string demoDir() { return findDataPath("maps") + "/../demos"; }
+static std::string demoDir() { return userDataPath("demos"); }
 
 void Game::startRecording() {
     std::error_code ec;

@@ -37,8 +37,13 @@ bool setDesktop(bool on, const std::filesystem::path& launcher);
 bool setMenu(bool on, const std::filesystem::path& launcher);
 bool setPrograms(bool on, const std::filesystem::path& launcher, const std::string& version);
 
-// Removes shortcuts, the programs entry, and the install folder (the running launcher is removed
-// right after it exits).
-void uninstallAll();
+// The game's per-user data (settings, ranked key, demos, your maps...): %APPDATA%\quark, ~/Library/Application
+// Support/quark, $XDG_DATA_HOME/quark. Must match userDataPath() in src/game/map.cpp. On macOS / Linux it is the same
+// folder as appDir(), so uninstalling removes only the files the launcher put there.
+std::filesystem::path userDataDir();
+
+// Removes shortcuts, the programs entry, and the install (the running launcher is removed right after it exits).
+// The player's data is kept unless removeUserData.
+void uninstallAll(bool removeUserData);
 
 } // namespace install

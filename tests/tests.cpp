@@ -1611,8 +1611,9 @@ static void testItModes(uint16_t port) {
 // "Reset maps": every shipped map is written back from the copy built into the game.
 static void testResetMaps() {
     printf("reset built-in maps\n");
-    std::string path = findDataPath("maps") + "/temple.qmap";
-    { std::ofstream f(path, std::ios::app); f << "box 0 0 0 1 1 1\n"; }
+    Map orig;
+    CHECK(orig.load("temple"));
+    CHECK(saveMapFile(userMapsDir() + "/temple.qmap", orig.source + "box 0 0 0 1 1 1\n")); // your edit shadows the shipped one
     Map m;
     CHECK(m.load("temple") && !isOfficialMap(m));
     CHECK(resetOfficialMaps() >= 13);
@@ -1889,7 +1890,7 @@ static void testMapDownload(uint16_t port) {
     std::string text = base.serialize() + "accent 0 8 0 1 9 1\n";
     char tag[16];
     snprintf(tag, sizeof tag, "%u", (unsigned)qrand());
-    std::string name = std::string("zz_dltest") + tag, path = findDataPath("maps") + "/" + name + ".qmap";
+    std::string name = std::string("zz_dltest") + tag, path = userMapsDir() + "/" + name + ".qmap";
     CHECK(saveMapFile(path, text));
     Server s;
     ServerConfig cfg;
@@ -1928,7 +1929,7 @@ static void testRanked(uint16_t port) {
     CHECK(sha256Hex(std::string(1000, 'a')).substr(0, 16) == "41edece42d63e8d9");
     char tag[16];
     snprintf(tag, sizeof tag, "%u", (unsigned)qrand());
-    std::string keyPath = findDataPath("maps") + "/../zz_test" + tag + ".key";
+    std::string keyPath = userDataPath() + "/zz_test" + tag + ".key";
     RankKey k1 = loadOrCreateRankKey(keyPath), again = loadOrCreateRankKey(keyPath);
     std::remove(keyPath.c_str());
     CHECK(k1.secret.size() == 64 && k1.id == again.id && k1.id == sha256Hex(k1.secret).substr(0, 32));
@@ -1944,7 +1945,7 @@ static void testRanked(uint16_t port) {
         Map edited = m;
         edited.source += "box 0 50 0 1 51 1\n";
         CHECK(!isOfficialMap(edited));
-        std::string path = findDataPath("maps") + "/zz_rk" + tag + ".qmap";
+        std::string path = userMapsDir() + "/zz_rk" + tag + ".qmap";
         CHECK(saveMapFile(path, edited.source));
         Server s;
         ServerConfig cfg;
@@ -2013,7 +2014,7 @@ static void testRankedVoteAndRestart(uint16_t port) {
     printf("ranked vote, restart for updates\n");
     char tag[16];
     snprintf(tag, sizeof tag, "%u", (unsigned)qrand());
-    std::string flag = findDataPath("maps") + "/../zz_update" + tag + ".pending";
+    std::string flag = userDataPath() + "/zz_update" + tag + ".pending";
     Server s;
     ServerConfig cfg;
     cfg.map = "foundry"; cfg.mode = MODE_FFA; cfg.port = port; cfg.restartFlag = flag;
@@ -2092,7 +2093,7 @@ static void testEditSession(uint16_t port) {
     CHECK(base.load("bastion"));
     char tag[16];
     snprintf(tag, sizeof tag, "%u", (unsigned)qrand());
-    std::string name = std::string("zz_edtest") + tag, path = findDataPath("maps") + "/" + name + ".qmap";
+    std::string name = std::string("zz_edtest") + tag, path = userMapsDir() + "/" + name + ".qmap";
     CHECK(saveMapFile(path, base.serialize()));
     Server s;
     ServerConfig cfg;
@@ -2162,7 +2163,7 @@ static void testDemo(uint16_t port) {
     pump(s, cls, 1.0, idle);
     s.addBot(TEAM_A, 2); s.addBot(TEAM_A, 2);
     pump(s, cls, 0.5, idle);
-    std::string path = findDataPath("maps") + "/../zz_test.qdemo";
+    std::string path = userDataPath() + "/zz_test.qdemo";
     CHECK(a.startRecording(path) && a.recording());
     std::vector<Vec3> botPos;
     a.sendCommand("say hello demo");
@@ -2674,8 +2675,53 @@ void testSigning() {
     std::filesystem::remove(path);
 }
 
+// Per-user data: every user file goes under userDataPath(); the first use of the default folder copies the old
+// install-folder files over without touching them, and shipped maps stay in the install.
+static void testUserData() {
+    printf("user data folder + migration\n");
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    fs::path root = fs::u8path(userDataPath());
+    fs::path old = root / "zz_oldinstall", dst = root / "zz_newdata";
+    fs::create_directories(old / "maps" / "downloads", ec);
+    fs::create_directories(old / "demos", ec);
+    { std::ofstream(old / "quark.cfg") << "sens=2\n"; }
+    { std::ofstream(old / "quark.key") << "secret\n"; }
+    { std::ofstream(old / "demos" / "a.qdemo") << "demo"; }
+    { std::ofstream(old / "maps" / "mine.qmap") << "box 0 0 0 1 1 1\n"; }
+    { std::ofstream(old / "maps" / "downloads" / "x-0000.qmap") << "dl"; }
+    { std::ofstream(old / "maps" / "mine.qlm") << "cache"; }
+    Map t;
+    CHECK(t.load("temple"));
+    { std::ofstream(old / "maps" / "temple.qmap", std::ios::binary) << t.source; }          // untouched shipped map
+    { std::ofstream(old / "maps" / "canal.qmap", std::ios::binary) << t.source << "\n"; }   // edited one
+    fs::create_directories(dst, ec);
+    { std::ofstream(dst / "quark.key") << "newer\n"; } // never overwritten
+    CHECK(migrateUserData(old.string(), dst.string()) == 5);
+    auto rd = [](const fs::path& p) { std::ifstream f(p); std::stringstream ss; ss << f.rdbuf(); return ss.str(); };
+    CHECK(rd(dst / "quark.cfg") == "sens=2\n" && rd(dst / "quark.key") == "newer\n" && rd(dst / "demos" / "a.qdemo") == "demo");
+    CHECK(fs::exists(dst / "maps" / "mine.qmap") && fs::exists(dst / "maps" / "canal.qmap") && fs::exists(dst / "maps" / "downloads" / "x-0000.qmap"));
+    CHECK(!fs::exists(dst / "maps" / "temple.qmap") && !fs::exists(dst / "maps" / "mine.qlm"));
+    CHECK(fs::exists(old / "quark.cfg") && fs::exists(old / "maps" / "mine.qmap")); // originals kept
+    CHECK(migrateUserData(old.string(), dst.string()) == 0);                         // idempotent
+    fs::remove_all(old, ec);
+    fs::remove_all(dst, ec);
+    // shipped maps are read from the install; your maps dir is searched first and listed too
+    CHECK(userMapsDir().find(userDataPath()) == 0 && downloadedMapPath("a", 1).find(userDataPath()) == 0);
+    std::vector<std::string> ml = listMaps();
+    CHECK(std::find(ml.begin(), ml.end(), "temple") != ml.end());
+}
+
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
+    { // never touch the real per-user folder: a fresh temp one per run, removed at exit by this (not a forked) process
+        static std::string dir = (std::filesystem::temp_directory_path() / ("quark_tests_data_" + std::to_string((long)getpid()))).string();
+        static long owner = (long)getpid();
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
+        setUserDataDir(dir);
+        atexit([] { if ((long)getpid() == owner) { std::error_code e; std::filesystem::remove_all(dir, e); } });
+    }
     netInit();
     pickPortBlock();
     setTimeScale(kTestTimeScale); // bot subprocesses share the test clock speed
@@ -2696,6 +2742,7 @@ int main(int argc, char** argv) {
     }
     if (argc >= 2 && std::string(argv[1]) == "signing") { testSigning(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "hostile") { testHostileInput(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "userdata") { testUserData(); testResetMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "ladders") { testLadders(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "stairs") { testStairs(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "points") { setTimeScale(kTestTimeScale); testPoints(TP(29995)); return g_fail ? 1 : 0; }
@@ -2747,6 +2794,7 @@ int main(int argc, char** argv) {
         {"netcode", [] { testNetcode(TP(28700)); testCrossLanguageConstants(TP(28705)); }},
         {"tickrate", [] { testTickRateFallback(TP(28710)); }},
         {"resetmaps", [] { testResetMaps(); }},
+        {"userdata", [] { testUserData(); }},
     };
     bool serial = argc >= 2 && std::string(argv[1]) == "serial";
 #ifndef _WIN32

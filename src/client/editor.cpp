@@ -82,7 +82,7 @@ std::string insertOps(const Map& m, char k, int i) {
 
 // ---- group files: "quark-group 1", "size sx sy sz", "type custom|room|stairs material dir", then (custom) one
 // "<material> x0 y0 z0 x1 y1 z1" per box, in metres from the group's low corner (so it pastes anywhere)
-std::string groupDir() { return findDataPath("maps") + "/../groups"; }
+std::string groupDir() { return userDataPath("groups"); }
 
 std::string groupText(const Map::Group& g) {
     Vec3 sz = g.box.mx - g.box.mn;
@@ -717,7 +717,7 @@ bool Game::edSaveCopy(const Map& m, const std::string& name) {
     Map check;
     std::string err;
     if (!check.parse(text, &err)) { edNotify("can't save: " + err); return false; }
-    if (!saveMapFile(findDataPath("maps") + "/" + name + ".qmap", text)) { edNotify("could not write maps/" + name + ".qmap"); return false; }
+    if (!saveMapFile(userMapsDir() + "/" + name + ".qmap", text)) { edNotify("could not write maps/" + name + ".qmap"); return false; }
     rescanMaps();
     edNotify("saved maps/" + name + ".qmap");
     return true;
