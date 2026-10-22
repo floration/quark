@@ -217,6 +217,7 @@ public:
     double rateUpAt_ = 0;       // after stepping down: when to try the next rate up again (backs off each time it fails)
     double rateUpWait_ = 60;
     bool rateDownPending_ = false; // the host fell behind mid-round: step down at the next break (REVIEW GAME-11)
+    double rateRaisedAt_ = -1e9;   // the last step up: undone in any phase if it doesn't hold for 3 windows (REVIEW 6.1)
     int tickRate() const { return kTickRates[rateLevel_]; }
     float dt() const { return 1.0f / tickRate(); }
     double time() const { return timeMs_ * 0.001; } // double: a float runs out of millisecond precision after a few hours of uptime

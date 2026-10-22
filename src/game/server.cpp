@@ -167,7 +167,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     while (rateLevel_ < kTickRateLevels - 1 && kTickRates[rateLevel_] > cap) rateLevel_++;
     rateTopLevel_ = rateLevel_;
     rateUpWait_ = 60; rateUpAt_ = 0;
-    rateDownPending_ = false;
+    rateDownPending_ = false; rateRaisedAt_ = -1e9;
     nextTick_ = timeNow();
     resetRateWindow();
     rulesReset(*this);
@@ -255,12 +255,14 @@ void Server::resetRateWindow() {
 
 // The tick rate changes only in warmup or between rounds (gamedefs.h; REVIEW GAME-11): if the host can't sustain the
 // current rate cleanly, it steps down a level then (mid-round only if it truly can't keep up: busy over 90%); now and
-// then, at a break, it tries the next rate up.
+// then, at a break, it tries the next rate up. A step up that doesn't hold is undone at once, in any phase (REVIEW
+// 6.1): else a raise made in a break could run late ticks for the whole next round.
 void Server::stepRateDown(const char* why) {
     rateLevel_++;
     rateUpAt_ = timeNow() + rateUpWait_;
     rateUpWait_ = std::min(rateUpWait_ * 2, 900.0);
     rateDownPending_ = false;
+    rateRaisedAt_ = -1e9;   // (undone: the next step down waits for a break again)
     message("server tick rate lowered to " + std::to_string(tickRate()) + " Hz");
     log("tick rate -> " + std::to_string(tickRate()) + " Hz (" + why + ")");
 }
@@ -285,6 +287,7 @@ void Server::checkTickRate() {
     bool clean = !bad && busy < 0.2 && lateFrac < kMaxLateFraction * 0.5 && worstLoss == 0;
     if (rateLevel_ > rateTopLevel_ && clean && now >= rateUpAt_ && between) {
         rateLevel_--;
+        rateRaisedAt_ = now;
         message("server tick rate raised to " + std::to_string(tickRate()) + " Hz");
         log("tick rate -> " + std::to_string(tickRate()) + " Hz (trying the next rate up: busy " + std::to_string((int)(busy * 100)) + "%)");
         resetRateWindow();
@@ -293,7 +296,8 @@ void Server::checkTickRate() {
     if (bad && rateLevel_ < kTickRateLevels - 1) {
         char why[200];
         snprintf(why, sizeof why, "busy %.0f%%, late %.1f%%, send failures %d, worst client loss %d%%", busy * 100, lateFrac * 100, windowSendFail_, worstLoss);
-        if (between || busy > 0.9) stepRateDown(why);   // (mid-round only if it can't keep up at all)
+        bool undo = now - rateRaisedAt_ < 3 * kRateWindow;   // our own recent step up didn't hold: back down now
+        if (between || busy > 0.9 || undo) stepRateDown(why);   // (else mid-round only if it can't keep up at all)
         else if (!rateDownPending_) { rateDownPending_ = true; log(std::string("tick rate: stepping down at the next break (") + why + ")"); }
     }
     resetRateWindow();
