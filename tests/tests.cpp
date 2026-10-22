@@ -12,6 +12,7 @@
 #include <unistd.h>
 #endif
 #include <chrono>
+#include <random>
 #include <cstdlib>
 #include "common/profile.h"
 #include "../src/client/complete.h"
@@ -1179,6 +1180,55 @@ static void testEditorGroups() {
     Map back;
     CHECK(back.parse(m.serialize()) && back.groups.size() == 3 && back.groups[2].parts.size() == 2 && back.brushes.size() == m.brushes.size());
     CHECK(applyMapEdit(m, "g del 0") && m.groups.size() == 2);
+}
+
+// MAP-12: brush and group-part edits update the map in place. After every op the map must be exactly what a full
+// rebuild makes of it (brushes, bounds, wallbang flag, lava, every grid cell's brushes in order), and its text must
+// load back to the same map.
+static void testIncrementalEdits() {
+    printf("map edits update the grid in place, same as a rebuild\n");
+    Map m;
+    CHECK(m.load("bastion"));
+    if (m.brushes.empty()) return;
+    std::mt19937 rng(7);
+    auto r = [&](float a, float b) { return std::uniform_real_distribution<float>(a, b)(rng); };
+    auto same = [&](const Map& a, const Map& b) {
+        if (a.brushes.size() != b.brushes.size() || a.gridW != b.gridW || a.gridH != b.gridH || a.gridX0 != b.gridX0 || a.gridZ0 != b.gridZ0 ||
+            a.gridRefs != b.gridRefs || a.hasWallbang != b.hasWallbang || a.lava.size() != b.lava.size() || a.cells.size() != b.cells.size() ||
+            memcmp(&a.bounds, &b.bounds, sizeof a.bounds) != 0)
+            return false;
+        for (size_t k = 0; k < a.brushes.size(); k++)
+            if (memcmp(&a.brushes[k].box, &b.brushes[k].box, sizeof(AABB)) || a.brushes[k].material != b.brushes[k].material || a.brushes[k].generated != b.brushes[k].generated) return false;
+        for (size_t k = 0; k < a.lava.size(); k++) if (memcmp(&a.lava[k], &b.lava[k], sizeof(AABB))) return false;
+        for (size_t c = 0; c < a.cells.size(); c++) {
+            uint32_t na = a.cells[c].end - a.cells[c].start, nb = b.cells[c].end - b.cells[c].start;
+            if (na != nb || memcmp(&a.cellBrushes[a.cells[c].start], &b.cellBrushes[b.cells[c].start], na * sizeof(uint16_t))) return false;
+        }
+        return true;
+    };
+    int applied = 0, mismatches = 0;
+    for (int it = 0; it < 1500; it++) {
+        int editable = (int)m.editableBrushes(), k = (int)(rng() % (unsigned)editable);
+        char op[200];
+        int what = (int)(rng() % 10);
+        int mat = (int)(rng() % 8);
+        float x = r(-40, 40), y = r(-2, 12), z = r(-40, 40);
+        if (rng() % 25 == 0) x = r(-120, 120);   // now and then out past the edge: the grid has to move
+        if (what < 4) snprintf(op, sizeof op, "b set %d %d %g %g %g %g %g %g", k, mat, x, y, z, x + r(0.1f, 9), y + r(0.1f, 4), z + r(0.1f, 9));
+        else if (what < 6) snprintf(op, sizeof op, "b ins %d %d %g %g %g %g %g %g", (int)(rng() % (unsigned)(editable + 1)), mat, x, y, z, x + r(0.1f, 30), y + r(0.1f, 4), z + r(0.1f, 2));
+        else if (what < 8) snprintf(op, sizeof op, "b del %d", k);
+        else if (what == 8 && m.groups.size() < 6) snprintf(op, sizeof op, "g ins %d 0 %d 0 %g %g %g %g %g %g", (int)(rng() % (m.groups.size() + 1)), mat, x, y, z, x + 6, y + 3, z + 6);
+        else if (!m.groups.empty()) snprintf(op, sizeof op, "g part %d %d %g %g %g %g %g %g", (int)(rng() % m.groups.size()), mat, r(0, 0.5f), r(0, 0.5f), r(0, 0.5f), r(0.5f, 1), r(0.5f, 1), r(0.5f, 1));
+        else continue;
+        if (!applyMapEdit(m, op)) continue;
+        applied++;
+        Map full = m;
+        if (!full.rebuild() || !same(m, full)) { if (!mismatches++) printf("  differs from a rebuild after: %s\n", op); }
+    }
+    CHECK(applied > 1000 && mismatches == 0);
+    CHECK(m.sourceStale);
+    Map back;
+    CHECK(back.parse(m.sourceText()) && back.serialize() == m.serialize() && !m.sourceStale);
 }
 
 static void testTimeToKill() {
@@ -2389,6 +2439,31 @@ static void testEditSession(uint16_t port) {
     for (int k = 0; k < 20; k++) b.sendCommand("ed p ins " + std::to_string(k) + " " + std::to_string(k) + " 0 0");
     pump(s, cls, 1.0, idle);
     CHECK(a.map().crc == s.map_.crc && b.map().crc == s.map_.crc && c.map().crc == s.map_.crc);
+    // a custom group the size the editor sends (one op per part): in place on every side, nobody re-serializes,
+    // and it gets through in well under a second (it used to go at 2 ops a tick)
+    {
+        size_t groupsBefore = s.map_.groups.size();
+        b.sendCommand("ed g ins " + std::to_string(groupsBefore) + " 0 1 0 -6 0 -6 6 3 6");
+        for (int k = 0; k < 200; k++) {
+            char op[96];
+            snprintf(op, sizeof op, "ed g part %zu %d %g 0 0 %g 0.5 0.1", groupsBefore, k % 4, (k % 20) * 0.05, (k % 20) * 0.05 + 0.04);
+            b.sendCommand(op);
+        }
+        double t0 = timeNow();
+        bool done = false;
+        while (!done && timeNow() - t0 < 3.0) {
+            pump(s, cls, 0.02, idle);
+            done = s.map_.groups.size() == groupsBefore + 1 && s.map_.groups.back().parts.size() == 200 && b.pendingCommands() == 0;
+        }
+        printf("  200-part group: %.0f ms\n", (timeNow() - t0) * 1000);
+        CHECK(done);
+        pump(s, cls, 0.3, idle);
+        CHECK(a.map().crc == s.map_.crc && b.map().crc == s.map_.crc && c.map().crc == s.map_.crc);
+        CHECK(c.map().brushes.size() == s.map_.brushes.size() && c.map().gridRefs == s.map_.gridRefs);
+        b.sendCommand("ed g del " + std::to_string(groupsBefore));   // (back as it was for the checks below)
+        pump(s, cls, 0.3, idle);
+        CHECK(s.map_.groups.size() == groupsBefore && c.map().crc == s.map_.crc);
+    }
     // switch to playing it: autosaved first, everyone spawns, then back to editing
     s.command("editmode off");
     pump(s, cls, 7.0, idle);
@@ -2412,7 +2487,7 @@ static void testEditSession(uint16_t port) {
     CHECK(s.cfg_.map == name);
     s.command("editmode saveas " + name2);
     Map renamed;
-    CHECK(s.cfg_.map == name2 && renamed.load(name2) && renamed.crc == s.map_.crc && renamed.brushes.size() == nb);
+    CHECK(s.cfg_.map == name2 && renamed.load(name2) && renamed.crc == s.map_.sourceTextCrc() && renamed.brushes.size() == nb);
     a.sendCommand("ed t Renamed");
     pump(s, cls, 0.5, idle);
     s.stop(); // autosaves
@@ -3399,7 +3474,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "points") { setTimeScale(kTestTimeScale); testPoints(TP(29995)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "syringe") { setTimeScale(kTestTimeScale); testSyringe(TP(29996)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edladder") { testEditorLadder(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "edgroups") { testEditorGroups(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "edgroups") { testEditorGroups(); testIncrementalEdits(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(TP(29997)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "allmaps") { testAllMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "chat") { testChatAndVoteLimits(TP(29592)); return g_fail ? 1 : 0; }
@@ -3434,7 +3509,7 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testSleepPrecision(); testCompletion(); testSigning(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); }},
+        {"movement", [] { testSleepPrecision(); testCompletion(); testSigning(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); }},

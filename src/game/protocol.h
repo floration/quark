@@ -23,7 +23,7 @@ enum PacketType : uint8_t {
     PKT_SNAPSHOT,        // u32 nonce, see Snapshot
     PKT_INFO_REPLY,      // str serverName, str map, u8 mode, u8 players, u8 maxPlayers, u16 port
     PKT_KICKED,          // u32 nonce, str reason
-    PKT_MAP_DATA,        // u32 nonce, u32 mapCrc, u32 totalBytes, u32 offset, u16 n, n bytes
+    PKT_MAP_DATA,        // u32 nonce, u32 mapCrc (its id: edits chain it), u32 textCrc (crc32 of the text sent), u32 totalBytes, u32 offset, u16 n, n bytes
     PKT_CHALLENGE,       // u32 nonce, u32 cookie: echo the cookie in PKT_CONNECT to prove you own your address
     PKT_PROBE_REPLY,     // u32 nonce: sent by a prober to the requester's own IP at the port it asked about
 };

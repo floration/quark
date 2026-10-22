@@ -151,31 +151,33 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
         }
         case PKT_MAP_DATA: {
             if (r.u32() != nonce_ || !dl_.active) return;
-            uint32_t crc = r.u32(), total = r.u32(), off = r.u32();
+            uint32_t crc = r.u32(), textCrc = r.u32(), total = r.u32(), off = r.u32();   // (crc: the map's id; textCrc: of this text)
             int n = r.u16();
             if (!r.bad() && crc != dl_.crc) startDownload(dl_.name, crc); // the map changed meanwhile (edit session): restart on the new one
             if (r.bad() || crc != dl_.crc || total == 0 || total > kMaxMapBytes || n <= 0 || n > r.remaining()) return;
             if (!dl_.total) {
                 dl_.total = total;
+                dl_.textCrc = textCrc;
                 dl_.data.assign(total, '\0');
                 size_t chunks = (total + kMapChunk - 1) / kMapChunk;
                 dl_.asked.assign(chunks, 0.0); dl_.have.assign(chunks, false);
             }
             size_t k = off / kMapChunk;
-            if (total != dl_.total || off % kMapChunk || k >= dl_.have.size() || off + n > total || dl_.have[k]) return;
+            if (total != dl_.total || textCrc != dl_.textCrc || off % kMapChunk || k >= dl_.have.size() || off + n > total || dl_.have[k]) return;
             for (int i = 0; i < n; i++) dl_.data[off + i] = (char)r.u8();
             dl_.have[k] = true;
             dl_.got += n;
             if (dl_.got >= dl_.total) {
                 Map m;
                 std::string err;
-                if (crc32(dl_.data.data(), dl_.data.size()) != dl_.crc || !m.parse(dl_.data, &err)) {
+                if (crc32(dl_.data.data(), dl_.data.size()) != dl_.textCrc || !m.parse(dl_.data, &err)) {
                     error_ = "downloaded map '" + dl_.name + "' is broken" + (err.empty() ? "" : ": " + err);
                     disconnect();
                     return;
                 }
                 m.name = dl_.name;
-                saveMapFile(downloadedMapPath(dl_.name, dl_.crc), dl_.data); // reused next time; failing just means re-downloading
+                m.crc = dl_.crc;   // its id (an edited map's comes from the edit chain, not its text)
+                if (dl_.crc == dl_.textCrc) saveMapFile(downloadedMapPath(dl_.name, dl_.crc), dl_.data); // reused next time; failing just means re-downloading
                 map_ = std::move(m);
                 mapReady_ = true;
                 mapGen_++;
@@ -190,8 +192,7 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
                     if (sscanf(t.c_str(), "%x %x %n", &b, &a, &n) < 2 || n <= 0) continue;
                     last = a;
                     if (b == map_.crc && applyMapEdit(map_, t.substr(n))) {
-                        map_.source = map_.serialize();
-                        map_.crc = crc32(map_.source.data(), map_.source.size());
+                        map_.crc = mapEditCrc(b, t.substr(n));
                         editRev_++;
                     }
                 }
@@ -252,9 +253,8 @@ void NetClient::applyEditEvent(const std::string& text) {
     if (dl_.active) { if (dl_.edits.size() < 4096) dl_.edits.push_back(text); return; } // replayed when the download is done
     if (!mapReady_) return;
     if (map_.crc == after) return;
-    if (map_.crc == before && applyMapEdit(map_, text.substr(n))) {
-        map_.source = map_.serialize();
-        map_.crc = crc32(map_.source.data(), map_.source.size());
+    if (map_.crc == before && applyMapEdit(map_, text.substr(n))) {   // (in place, no re-serializing: MAP-12)
+        map_.crc = mapEditCrc(before, text.substr(n));
         editRev_++;
         if (map_.crc == after) return;
     }
@@ -652,7 +652,7 @@ void NetClient::recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& 
     };
     if (recMapRev_ != mapRevision()) {   // the map (new, or edited): its whole text, so the demo plays anywhere
         recMapRev_ = mapRevision();
-        std::string src = map_.serialize();
+        const std::string& src = map_.sourceText();
         std::vector<uint8_t> buf(src.size() + map_.name.size() + 64);
         Writer w(buf.data(), buf.size());
         w.str(map_.name.substr(0, 255)); w.u32((uint32_t)src.size());
