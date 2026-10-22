@@ -297,8 +297,9 @@ void Game::closeEditor() {
     loadMenuBackdrop();
 }
 
+// After a local edit: applyMapEdit already updated the map's grid (in place for boxes, a full rebuild inside it for
+// the rest), exactly as the server and the session clients rely on, so there's nothing to rebuild here.
 void Game::edChanged() {
-    ed_.rebuild();
     edDirty_ = true;
     if (edBaked_) { edBaked_ = false; r_.unloadWorld(ed_.sunDir); }
 }
