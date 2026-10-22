@@ -1901,7 +1901,7 @@ int Server::addBot(int team, int skill, bool balance) {
     p.name = uniqueName(std::string("BOT ") + names[(id * 7 + tick_) % 16], id);
     bots_[id] = BotBrain();
     bots_[id].skill = skill;
-    bots_[id].rng = 0x9E3779B9u ^ (uint32_t)(id * 2654435761u) ^ tick_;
+    bots_[id].rng = (qrand() ^ (uint32_t)(id * 2654435761u)) | 1u;   // (qrand: seeded per thread at random, not from the tick count: REVIEW GAME-12)
     { GameEvent r; r.type = EV_RANKINFO; r.a = (uint8_t)id; broadcastEvent(r); }
     p.model = cfg_.ranked ? 0 : (int)(bots_[id].rng % kPlayerModels); // bots: a mix of looks (ranked: default)
     p.soundPack = (int)((bots_[id].rng >> 8) % kSoundPacks);

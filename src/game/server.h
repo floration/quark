@@ -407,8 +407,6 @@ private:
     std::string uniqueName(std::string name, int self) const;
 
     UdpSocket sock_;
-    uint32_t rng_ = 0x9E3779B9u;
-    float randf() { rng_ = rng_ * 1664525u + 1013904223u; return (rng_ >> 8) / 16777216.0f; } // [0,1)
     std::vector<GameEvent> events_; // scratch for snapshot building
     bool running_ = false;
     double nextTick_ = 0;

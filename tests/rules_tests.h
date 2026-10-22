@@ -539,6 +539,20 @@ static void testRateBetweenRounds(uint16_t port) {
     s.stop();
 }
 
+// GAME-12: nothing uses the unseeded rand(); each thread's qrand starts from its own random seed (a hosted server's
+// thread differs from the client's, and from the last run's), so modifiers, seeding, the first carrier / "it" vary.
+static void testRandomSeeds() {
+    printf("random seeds per thread\n");
+    uint32_t first[4] = {};
+    std::vector<std::thread> ts;
+    for (int i = 0; i < 4; i++) ts.emplace_back([&first, i] { first[i] = qrand(); });
+    for (auto& t : ts) t.join();
+    int same = 0;
+    for (int i = 0; i < 4; i++) for (int j = i + 1; j < 4; j++) same += first[i] == first[j];
+    CHECK(same == 0);
+    // (the source has no rand() / srand() calls left: checked by grep in review; qrand is the only generator)
+}
+
 // "quark_tests rules [name]": all of them, or the one named.
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
@@ -554,6 +568,7 @@ static void testGameRules(const std::string& only) {
         {"bomb", [] { testBombDrop(TP(29249)); }},
         {"botdefer", [] { testBalanceBotDefer(TP(29250)); }},
         {"spawns", [] { testSpawnTypes(TP(29251)); }},
+        {"seeds", [] { testRandomSeeds(); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
     if (only == "rate") testRateBetweenRounds(TP(29252));   // (timing-sensitive: the suite runs it alone, with "tickrate")
