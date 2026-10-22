@@ -22,7 +22,7 @@ def reply(name, map_, mode, players, maxp, port):
 
 class Parsing(unittest.TestCase):
     def test_request(self):
-        self.assertEqual(qd.build_info_request(), bytes([0x31, 0x4B, 0x52, 0x51, 4]))
+        self.assertEqual(qd.build_info_request(), bytes([0x31, 0x4B, 0x52, 0x51, 4]) + bytes(qd.INFO_REQUEST_BYTES - 5))
 
     def test_reply(self):
         i = qd.parse_info_reply(reply("Im Quarking It", "harbor", 5, 3, 8, 27500), "1.2.3.4:27500")

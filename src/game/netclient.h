@@ -40,6 +40,7 @@ public:
     const Map& map() const { return map_; }
     uint32_t mapRevision() const { return mapGen_ + editRev_; } // changes on every map load and every applied edit
     int clientId() const { return clientId_; }
+    uint32_t sessionNonce() const { return nonce_; } // (the in-process host makes this session admin)
     bool hasSnapshot() const { return !snaps_.empty(); }
     const Snapshot& latest() const { return snaps_.back(); }
     const ModeState& mode() const { return snaps_.back().ms; }
@@ -121,6 +122,7 @@ private:
     std::string addrStr_, name_, error_;
     ConnState state_ = ConnState::Disconnected;
     uint32_t nonce_ = 0;
+    uint32_t cookie_ = 0;         // connect challenge cookie from PKT_CHALLENGE (0 = none yet)
     int clientId_ = -1;
     double lastSend_ = 0, lastRecv_ = 0, connectStart_ = 0;
     Map map_;

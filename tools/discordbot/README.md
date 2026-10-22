@@ -13,7 +13,7 @@ ranked leaderboards and an info channel generated from the game's own INFO scree
 ## Where the data comes from (same as the game)
 - **Server list**: base URL read from `https://floration.github.io/quark/master.txt` (re-read hourly), then
   `GET <master>/list?v=<version>` gives `ip:port` lines of servers on that version (`src/game/master.cpp`).
-  Each server is then asked directly over UDP: `u32 0x51524B31 "QRK1", u8 4` (PKT_INFO_REQUEST), reply type 67
+  Each server is then asked directly over UDP: `u32 0x51524B31 "QRK1", u8 4` zero-padded to 160 bytes (PKT_INFO_REQUEST; servers ignore shorter requests), reply type 67
   with name, map, mode, players, max players, port (`src/game/protocol.h`, `server.cpp`, `netclient.cpp`).
   Only servers that answer are shown, like the in-game browser. The version is the latest GitHub release.
 - **Leaderboards**: `GET <master>/leaderboard?ladder=vanilla|vampire|instagib&n=10` (`rating games name`) and

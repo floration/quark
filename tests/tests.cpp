@@ -1609,6 +1609,7 @@ static void testAltFires(uint16_t port) {
 static void testMapVote(uint16_t port) {
     printf("vote to change map / mode\n");
     Server s;
+    s.voteCooldown_ = 0;   // (this test calls vote after failed vote)
     ServerConfig cfg;
     cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
     s.setLog([](const std::string&) {});
@@ -1641,6 +1642,106 @@ static void testMapVote(uint16_t port) {
             s.vote_.kind = Server::VOTE_NONE;
         }
     }
+    s.stop();
+}
+
+// Handshake hardening: a CONNECT without the address cookie only gets a tiny challenge (no slot, no
+// snapshots), a spoofed CONNECT from a connected player's address can't kick them, info requests must be
+// padded, tmaps only takes known names, a failed vote has a cooldown, and chat is printable only.
+static void testHandshake(uint16_t port) {
+    printf("handshake: connect cookie, spoofed kick, info padding, vote limits\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetAddr srv{0x7F000001u, port};
+    UdpSocket raw;
+    CHECK(raw.open(0));
+    auto connectPkt = [](uint32_t nonce, uint32_t cookie, std::vector<uint8_t>& out) {
+        uint8_t b[128];
+        Writer w(b, sizeof b);
+        writeHeader(w, PKT_CONNECT); w.u16(kProtocolVersion); w.u32(nonce); w.u32(cookie); w.str("spoof");
+        out.assign(b, b + w.size());
+    };
+    // drain what the raw socket got while the server runs: returns {packets, biggest, last cookie}
+    auto collect = [&](double secs, int& packets, int& biggest, uint32_t& cookie) {
+        packets = biggest = 0;
+        double end = timeNow() + secs;
+        while (timeNow() < end) {
+            s.frame();
+            uint8_t buf[2048]; NetAddr from; int n;
+            while ((n = raw.recv(from, buf, sizeof buf)) > 0) {
+                packets++; biggest = std::max(biggest, n);
+                Reader r(buf, n);
+                if (r.u32() == kProtocolMagic && r.u8() == PKT_CHALLENGE) { r.u32(); cookie = r.u32(); }
+            }
+            sleepMs(1);
+        }
+    };
+    std::vector<uint8_t> pkt;
+    int packets = 0, biggest = 0;
+    uint32_t cookie = 0;
+    connectPkt(0x1234, 0, pkt);
+    raw.send(srv, pkt.data(), pkt.size());
+    collect(0.4, packets, biggest, cookie);
+    CHECK(packets == 1 && biggest <= (int)pkt.size() && cookie != 0);   // only the small challenge
+    CHECK(s.playerCount() == 0);                                        // and no slot
+    connectPkt(0x1234, cookie ^ 0x5555, pkt);                           // a wrong cookie: still nothing
+    raw.send(srv, pkt.data(), pkt.size());
+    collect(0.3, packets, biggest, cookie);
+    CHECK(packets == 1 && biggest <= (int)pkt.size() && s.playerCount() == 0);
+    uint32_t myCookie = cookie;
+
+    // a real client gets through (two round trips) and plays
+    NetClient a;
+    a.connect("127.0.0.1:" + std::to_string(port), "victim");
+    std::vector<NetClient*> cls = {&a};
+    pump(s, cls, 1.0, idle);
+    CHECK(a.state() == ConnState::Connected && a.hasSnapshot() && s.playerCount() == 1);
+    int vid = a.clientId();
+    NetAddr victim = s.players_[vid].addr;
+    uint32_t vnonce = s.players_[vid].nonce;
+    // spoofed CONNECTs from the victim's address with another nonce: no cookie, and a cookie issued to our own address
+    connectPkt(0x9999, 0, pkt);
+    s.handlePacket(victim, pkt.data(), (int)pkt.size());
+    connectPkt(0x1234, myCookie, pkt);
+    s.handlePacket(victim, pkt.data(), (int)pkt.size());
+    pump(s, cls, 0.5, idle);
+    CHECK(s.players_[vid].connected && s.players_[vid].nonce == vnonce && a.state() == ConnState::Connected);
+
+    // info requests: unpadded ones get nothing, padded ones a reply no bigger than the request
+    {
+        uint8_t b[kInfoRequestBytes] = {};
+        Writer w(b, sizeof b);
+        writeHeader(w, PKT_INFO_REQUEST);
+        raw.send(srv, b, w.size());
+        collect(0.2, packets, biggest, cookie);
+        CHECK(packets == 0);
+        raw.send(srv, b, sizeof b);
+        collect(0.2, packets, biggest, cookie);
+        CHECK(packets == 1 && biggest <= kInfoRequestBytes);
+    }
+
+    // admin: a loopback player isn't admin unless it's the in-process host's session
+    a.sendCommand("addbot");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.playerCount() == 1);
+    s.setHostNonce(a.sessionNonce());
+    a.sendCommand("addbot");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.playerCount() == 2);
+    s.command("kickbots");
+
+    // chat is printable only; votes: unknown / too many tmaps refused, cooldown after a failed vote
+    a.sendCommand(std::string("say hi\x1b[2Jthere"));
+    a.sendCommand("callvote tmaps nosuchmap");
+    a.sendCommand("callvote tmaps temple,temple,temple,temple,temple,temple,temple,temple,temple");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE);
+    bool sawChat = false;
+    for (auto& e : a.takeEvents()) if (e.type == EV_CHAT) { sawChat = true; CHECK(e.text == "hi?[2Jthere"); }
+    CHECK(sawChat);
     s.stop();
 }
 
@@ -2429,7 +2530,7 @@ int main(int argc, char** argv) {
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", 28563); testSession(MODE_FFA, "bastion", 28564); testSession(MODE_RACE, "foundry", 28565); }},
         {"modes", [] { testCustomMode(28570); testPoints(28571); testSyringe(28572); testCartChecks(28573); testItModes(28574); }},
         {"race", [] { testTimeTrial(28580); testPayloadPush(28581); testPacketLoss(28582); testCartDash(28583); testSemiAuto(28584); }},
-        {"votes", [] { testRejoin(28590); testMapVote(28591); }},
+        {"votes", [] { testRejoin(28590); testMapVote(28591); testHandshake(28592); }},
         {"edit", [] { testMapDownload(28600); testEditSession(28601); testVotedEdit(28602); testDemo(28603); }},
         {"ranked", [] { testRanked(28610); testRankedVoteAndRestart(28620); testInternetList(28625); }},
     };
