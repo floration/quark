@@ -336,6 +336,9 @@ public:
     struct RankedLeaver { int slot; std::string rankId; int team, score, kills; };
     std::vector<RankedLeaver> rankedLeft_;
     bool isRankedParticipant(int id) const;
+    // The player "kick <who>" means: a connected slot's id (all digits), else an exact name (any case), else the
+    // start of exactly one name. -1 and *err when there's none or several (REVIEW 4.1).
+    int playerFromArg(const std::string& who, std::string* err) const;
     // Tourney seeding: the average of each entrant's three ladder ratings (kUnratedSeed for a ladder without games,
     // or no ranked id), fetched in the background (never on the tick) whenever someone with a ranked id joins a
     // tourney server or one starts; a rating still on its way counts as unrated.

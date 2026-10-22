@@ -829,6 +829,30 @@ bool Server::isRankedParticipant(int id) const {
     return p.connected && !p.isBot && p.team != TEAM_SPECTATOR && !p.rankId.empty();
 }
 
+// (The console completes /kick with names: atoi("Bob") was 0, so "/kick Bob" kicked slot 0, usually the host.)
+int Server::playerFromArg(const std::string& who, std::string* err) const {
+    auto lower = [](std::string s) { for (auto& c : s) c = (char)tolower((unsigned char)c); return s; };
+    if (who.empty()) { *err = "kick whom? a name or an id (status lists them)"; return -1; }
+    if (who.size() <= 2 && who.find_first_not_of("0123456789") == std::string::npos) {
+        int id = atoi(who.c_str());
+        if (id < kMaxPlayers && players_[id].connected) return id;
+    }
+    const std::string w = lower(who);
+    int exactCase = -1, exact = -1, prefix = -1, exacts = 0, prefixes = 0;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (!players_[i].connected) continue;
+        if (players_[i].name == who) exactCase = i;
+        std::string n = lower(players_[i].name);
+        if (n == w) { exact = i; exacts++; }
+        else if (n.compare(0, w.size(), w) == 0) { prefix = i; prefixes++; }
+    }
+    if (exactCase >= 0) return exactCase;
+    if (exacts == 1) return exact;
+    if (exacts == 0 && prefixes == 1) return prefix;
+    *err = exacts + prefixes ? "\"" + who + "\" matches more than one player: use the id (status lists them)" : "no player \"" + who + "\"";
+    return -1;
+}
+
 void Server::handleInput(int id, Reader& r) {
     ServerPlayer& p = players_[id];
     uint32_t ackMs = r.u32();
@@ -1086,10 +1110,19 @@ void Server::command(const std::string& line, int fromPlayer) {
         if (fromPlayer >= 0) { GameEvent e; e.type = EV_MESSAGE; e.text = t; sendEvent(fromPlayer, e); }
         else log(t);
     };
+    std::string who;   // kick: the rest of the line (names can have spaces), trimmed
+    if (cmd == "kick") {
+        std::istringstream t(line);
+        std::string c;
+        t >> c;
+        std::getline(t, who);
+        size_t a = who.find_first_not_of(" \t"), b = who.find_last_not_of(" \t\r\n");
+        who = a == std::string::npos ? std::string() : who.substr(a, b - a + 1);
+    }
     if (rankedLive()) {   // a live ranked match can't be changed or dodged, by anyone, until it's over (OWNER 3.4)
         bool blocked = cmd == "map" || cmd == "mode" || cmd == "reload" || cmd == "ranked" || cmd == "restart" || cmd == "editmode" ||
                        cmd == "forcestart" || cmd == "addbot";
-        if (cmd == "kick") { int k = atoi(arg.c_str()); blocked = k >= 0 && k < kMaxPlayers && isRankedParticipant(k); }
+        if (cmd == "kick") { std::string e; int k = playerFromArg(who, &e); blocked = k >= 0 && isRankedParticipant(k); }
         if (blocked) { reply("a ranked match is being played: '" + cmd + "' has to wait until it's over"); return; }
     }
     if (cmd == "editmode" && cfg_.ranked) { reply("no map editing on a ranked server (vote ranked off first)"); return; }
@@ -1171,8 +1204,10 @@ void Server::command(const std::string& line, int fromPlayer) {
         rulesReset(*this);
         message("match restarted");
     } else if (cmd == "kick") {
-        int id = atoi(arg.c_str());
-        if (id >= 0 && id < kMaxPlayers && players_[id].connected) dropPlayer(id, "kicked", true);
+        std::string err;
+        int id = playerFromArg(who, &err);
+        if (id >= 0) dropPlayer(id, "kicked", true);
+        else reply(err);
     } else if (cmd == "say") {
         std::string rest;
         std::getline(ss, rest);
@@ -1180,7 +1215,7 @@ void Server::command(const std::string& line, int fromPlayer) {
     } else if (cmd == "status") {
         reply(statusText());
     } else {
-        reply("commands: map <name> [mode], mode <name>, reload, editmode on|off, ranked on [ladder]|off, forcestart, restart, kick <id>, say <text>, status, addbot [a|b] [0-3], kickbots");
+        reply("commands: map <name> [mode], mode <name>, reload, editmode on|off, ranked on [ladder]|off, forcestart, restart, kick <name|id>, say <text>, status, addbot [a|b] [0-3], kickbots");
     }
 }
 

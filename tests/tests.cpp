@@ -2531,6 +2531,7 @@ static void testRankedLeaver(uint16_t port) {
     CHECK(s.vote_.kind == Server::VOTE_NONE && s.players_[ib].team != TEAM_SPECTATOR);
     s.command("map furnace");
     s.command("kick " + std::to_string(ib));
+    s.command("kick leaver");   // (by name too)
     CHECK(s.config().map == "temple" && s.players_[ib].connected && s.config().ranked);
     // the leaver's connection drops: slot kept, and a reconnect within the grace gets it back
     int scoreB = s.players_[ib].score = 2;
@@ -2668,6 +2669,49 @@ static void testRankedLeaverPaths(uint16_t port) {
         std::sort(want.begin(), want.end());
         CHECK(slots == want);
     }
+    s.stop();
+}
+
+// REVIEW 4.1: "kick" takes a name (what the console completes) or an id; atoi("Bob") was 0 and kicked the host.
+static void testKickByName(uint16_t port) {
+    printf("kick by name or id\n");
+    {   // resolving: id (a connected slot), exact name in any case, a unique prefix; else none
+        Server s;
+        const char* names[] = {"Host", "Bob", "bobby", "Alice Smith", "7"};
+        for (int i = 0; i < 5; i++) { s.players_[i].connected = true; s.players_[i].name = names[i]; }
+        std::string e;
+        CHECK(s.playerFromArg("1", &e) == 1 && s.playerFromArg("4", &e) == 4);
+        CHECK(s.playerFromArg("Bob", &e) == 1 && s.playerFromArg("BOB", &e) == 1);   // exact beats the prefix of "bobby"
+        CHECK(s.playerFromArg("bobb", &e) == 2 && s.playerFromArg("al", &e) == 3 && s.playerFromArg("alice smith", &e) == 3);
+        CHECK(s.playerFromArg("7", &e) == 4);                                        // slot 7 isn't connected: the name "7"
+        e.clear(); CHECK(s.playerFromArg("b", &e) == -1 && e.find("more than one") != std::string::npos);
+        e.clear(); CHECK(s.playerFromArg("zed", &e) == -1 && e.find("no player") != std::string::npos);
+        e.clear(); CHECK(s.playerFromArg("", &e) == -1 && !e.empty());
+        CHECK(s.playerFromArg("12", &e) == -1 && s.playerFromArg("0x1", &e) == -1);
+        for (auto& p : s.players_) p.connected = false;
+    }
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.balanceBots = false;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient h, b, c;
+    std::string addr = "127.0.0.1:" + std::to_string(port);
+    h.connect(addr, "Host");
+    std::vector<NetClient*> cls = {&h};
+    pump(s, cls, 0.5, idle);
+    b.connect(addr, "Bob"); c.connect(addr, "Carol");
+    cls = {&h, &b, &c};
+    pump(s, cls, 0.8, idle);
+    int ih = h.clientId(), ib = b.clientId(), ic = c.clientId();
+    CHECK(ih == 0 && ib > 0 && ic > 0);
+    s.command("kick Bob ");   // (completion leaves a space after the name)
+    pump(s, cls, 0.2, idle);
+    CHECK(s.players_[ih].connected && !s.players_[ib].connected && s.players_[ic].connected);
+    s.command("kick nobody");
+    s.command("kick " + std::to_string(ic));
+    pump(s, cls, 0.2, idle);
+    CHECK(s.players_[ih].connected && !s.players_[ic].connected);
     s.stop();
 }
 
@@ -3997,6 +4041,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "limits") { testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(TP(29990)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(TP(29980)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "nav") { testNavGraph(); return g_fail ? 1 : 0; }
@@ -4033,7 +4078,7 @@ int main(int argc, char** argv) {
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
-        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); }},
+        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
         {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testMasterSignature(); testPlacementConstant(); }},
         {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
