@@ -187,6 +187,9 @@ int migrateUserData(const std::string& oldRoot, const std::string& newRoot); // 
 void setExecutableDir(const char* argv0);
 const std::string& executableDir();       // empty if unknown
 std::vector<std::string> listMaps();
+// The file Map::load reads for a map name (old names mapped to the new ones): your maps folder first, then the
+// shipped one. Empty for a name that isn't valid.
+std::string mapFilePath(const std::string& name);
 // A map name is a name, never a path: 1-40 letters, digits, - and _ (the editor's rule), and not a Windows device
 // name (con, nul, com1, ...: opening "maps/con.qmap" opens the device). Names from servers and demos become file
 // names (map, download, light cache, demo), so every one is checked with this.

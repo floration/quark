@@ -309,6 +309,7 @@ public:
     struct MapInfo { int64_t stamp = 0; bool ok = false; uint32_t supports = 0; uint16_t ranked = 0; };
     MapInfo mapInfo(const std::string& name);
     uint32_t mapInfoLoads_ = 0;  // map files actually parsed for it (tests)
+    size_t mapInfoCached() { std::lock_guard<std::mutex> lk(mapInfoMu_); return mapInfo_.size(); }   // (tests)
     void stopMapInfo();
     void setRanked(bool on, int ladder);            // ranked on (1v1 on that ladder, official map) / off
     bool rankedBlocks(int id, const std::string& what); // tells the player and returns true if ranked forbids it

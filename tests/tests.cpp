@@ -2114,12 +2114,16 @@ static void testResetMaps() {
     printf("reset built-in maps\n");
     Map orig;
     CHECK(orig.load("temple"));
+    Server s;   // (not started: just its map facts cache)
+    CHECK(s.mapInfo("temple").ok && s.mapInfo("temple").ranked != 0);
     CHECK(saveMapFile(userMapsDir() + "/temple.qmap", orig.source + "box 0 0 0 1 1 1\n")); // your edit shadows the shipped one
     Map m;
     CHECK(m.load("temple") && !isOfficialMap(m));
+    CHECK(s.mapInfo("temple").ok && s.mapInfo("temple").ranked == 0);   // votes / ranked see the file that's played
     CHECK(resetOfficialMaps() >= 13);
     Map r;
     CHECK(r.load("temple") && isOfficialMap(r));
+    CHECK(s.mapInfo("temple").ranked != 0);
     for (auto& n : listMaps()) { Map k; CHECK(k.load(n) && isOfficialMap(k)); }
 }
 
@@ -3320,6 +3324,12 @@ static void testChatAndVoteLimits(uint16_t port) {
     a.sendCommand("callvote tmaps lodestone,colosseum");   // (a vote is already running: refused, after the checks)
     pump(s, cls, 0.3, idle);
     CHECK(s.vote_.kind == Server::VOTE_TMAPS && s.mapInfoLoads_ == loads);
+    // made-up map names (callvote map <random>) aren't cached: the cache stays the size of the maps folder
+    for (int k = 0; k < 20; k++) b.sendCommand("callvote map zz_nomap" + std::to_string(k));
+    pump(s, cls, 0.5, idle);
+    for (int k = 0; k < 1000; k++) CHECK(!s.mapInfo("zz_nomap_" + std::to_string(qrand())).ok);
+    printf("  map facts cached after 1020 made-up names: %zu (%zu maps)\n", s.mapInfoCached(), listMaps().size());
+    CHECK(s.mapInfoCached() <= listMaps().size() + 8);   // (+: test maps other groups write meanwhile)
     // the vote fails: its caller can't call another straight away
     b.sendCommand("vote no");
     pump(s, cls, 0.3, idle);
