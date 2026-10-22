@@ -165,6 +165,7 @@ struct Snapshot {
 void writeSnapshotClient(Writer& w, const Snapshot& s);
 void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base); // also records into s what the client will have (delta base)
 void writeSnapshotEvents(Writer& w, const std::vector<GameEvent>& events);
+void writeSnapshotEvents(Writer& w, const GameEvent* const* events, int n);   // (the server: no copies of the texts)
 bool readSnapshotClient(Reader& r, Snapshot& s);              // header: tells which base the world part needs
 bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base);
 bool readSnapshotEvents(Reader& r, Snapshot& s);

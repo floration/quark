@@ -2105,17 +2105,12 @@ void Server::updateVisibility() {
 
 void Server::sendSnapshots() {
     updateVisibility();
-    Snapshot& s = snapScratch_;
-    s.tick = tick_;
-    s.timeMs = timeMs_;
-    s.tickRate = (uint16_t)tickRate();
-    s.snapRate = (uint16_t)(tickRate() / snapEvery());
-    s.projectiles.clear();
-    s.ms = ms_;
-    if (editing_) s.ms.flags |= MS_EDITING | (tempEdit_ ? MS_TEMP_EDIT : 0);
-    if (cfg_.ranked) s.ms.flags |= MS_RANKED;
+    ModeState ms = ms_;
+    if (editing_) ms.flags |= MS_EDITING | (tempEdit_ ? MS_TEMP_EDIT : 0);
+    if (cfg_.ranked) ms.flags |= MS_RANKED;
     // a time trial counts for the race board only on the shipped Viaduct, unchanged
-    if (cfg_.timeTrial && cfg_.map == "viaduct" && isOfficialMap(map_)) s.ms.flags |= MS_TIMETRIAL;
+    if (cfg_.timeTrial && cfg_.map == "viaduct" && isOfficialMap(map_)) ms.flags |= MS_TIMETRIAL;
+    const uint16_t snapRate = (uint16_t)(tickRate() / snapEvery());
     std::vector<PlayerSnap>& all = snapPlayers_;
     all.clear();
     for (int i = 0; i < kMaxPlayers; i++) {
@@ -2150,18 +2145,35 @@ void Server::sendSnapshots() {
         ps.hookPoint = p.move.hookPoint;
         all.push_back(ps);
     }
+    std::vector<ProjectileSnap>& allProj = snapProj_;
+    allProj.clear();
     for (auto& pr : projectiles_) {
         if (!pr.active) continue;
-        if (s.projectiles.size() >= 48) break;
-        s.projectiles.push_back({pr.id, (uint8_t)pr.type, (uint8_t)pr.owner, pr.pos, pr.vel});
+        if (allProj.size() >= 48) break;
+        allProj.push_back({pr.id, (uint8_t)pr.type, (uint8_t)pr.owner, pr.pos, pr.vel});
     }
-    snapProj_ = s.projectiles;
-    const std::vector<ProjectileSnap>& allProj = snapProj_;
     uint8_t buf[kMaxPacket], world[kMaxPacket];
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
         if (!p.connected || p.isBot || p.awayUntil > 0) continue;
         if ((int)p.sent.size() != ServerPlayer::kSentRing) p.sent.assign(ServerPlayer::kSentRing, Snapshot());
+        // delta base: the newest snapshot the client confirmed, if we still remember it. Snapshot times rise with
+        // each send, so it's searched from the newest back: a round trip's worth of sends, not the whole ring.
+        const Snapshot* base = nullptr;
+        if (p.ackSnapMs)
+            for (uint32_t k = 1; k <= (uint32_t)ServerPlayer::kSentRing && k <= p.sentSeq; k++) {
+                const Snapshot& o = p.sent[(p.sentSeq - k) % ServerPlayer::kSentRing];
+                if (!o.tick || o.timeMs < p.ackSnapMs) break;   // older than the ack: it's gone from the ring
+                if (o.timeMs == p.ackSnapMs) { if (tick_ - o.tick < (uint32_t)(ServerPlayer::kSentRing * 8)) base = &o; break; }
+            }
+        // this snapshot is built in the ring slot that remembers it (exactly what we send: the next delta base)
+        Snapshot& s = p.sent[p.sentSeq % ServerPlayer::kSentRing];   // by send count: stays a ring when the snapshot interval changes
+        if (base == &s) base = nullptr;   // (an ack a whole ring old: its slot is this one)
+        s.tick = tick_;
+        s.timeMs = timeMs_;
+        s.tickRate = (uint16_t)tickRate();
+        s.snapRate = snapRate;
+        s.ms = ms;
         s.clientId = (uint8_t)i;
         s.ackCmdSeq = p.lastCmdSeq;
         s.ackStringCmd = p.lastStringCmd;
@@ -2171,14 +2183,10 @@ void Server::sendSnapshots() {
         s.knifeAway = (uint8_t)clampf(std::ceil((p.knifeBackAt - time()) * 10), 0, 255);
         // this client's view of the players: enemies out of sight are hidden
         bool seesAll = !p.alive || p.team == TEAM_SPECTATOR;
-        s.players = all;
+        s.players = all;          // (copies into the slot's own vectors: their capacity is reused)
         s.projectiles = allProj;
         for (auto& ps : s.players)
             ps.hidden = !seesAll && ps.id != i && (ps.flags & PS_ALIVE) && time() - p.lastSeen[ps.id] > 0.6f;
-        // delta base: the newest snapshot the client confirmed, if we still remember it
-        const Snapshot* base = nullptr;
-        for (auto& o : p.sent)
-            if (o.tick && o.timeMs == p.ackSnapMs && tick_ - o.tick < (uint32_t)(ServerPlayer::kSentRing * 8)) { base = &o; break; }
         s.baseTick = base ? base->tick : 0;
         Writer ww(world, sizeof world);
         writeSnapshotWorld(ww, s, base);
@@ -2195,24 +2203,21 @@ void Server::sendSnapshots() {
         // Reliable events fill whatever room is left.
         int room = kMaxPacket - w.size() - 1;
         // An event goes out at once, then again only after a round trip without an ack (not every snapshot).
-        events_.clear();
+        int nEvents = 0;
         float resend = std::max(0.03f, p.ping * 0.001f + 0.01f);
         for (auto& e : p.events) {
             if (e.sentAt >= 0 && time() - e.sentAt < resend) continue;
             int sz = 10 + (int)e.text.size();
-            if (events_.size() >= 16) break;
+            if (nEvents >= 16) break;
             if (sz > room) continue; // a big one waits for a roomier snapshot; smaller ones behind it still go
             room -= sz;
             e.sentAt = time();
-            events_.push_back(e);
+            eventPtrs_[nEvents++] = &e;
         }
-        writeSnapshotEvents(w, events_);
+        writeSnapshotEvents(w, eventPtrs_, nEvents);
         snapBytes_ += w.size(); snapCount_++;
         if (!sock_.send(p.addr, buf, w.size())) windowSendFail_++;
-        // remember exactly what we sent (world part) as a future delta base
-        Snapshot& keep = p.sent[p.sentSeq++ % ServerPlayer::kSentRing]; // by send count: stays a ring when the snapshot interval changes
-        keep.tick = tick_; keep.timeMs = timeMs_; keep.ms = s.ms;
-        keep.players = s.players; keep.projectiles = s.projectiles;
+        p.sentSeq++;   // (the slot keeps what went out as a future delta base)
     }
 }
 

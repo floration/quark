@@ -4652,6 +4652,13 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = TP(29800); testArenaAndTourney(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "bots") { uint16_t p = TP(28900); testBots(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "server") { serverTests(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "snapbench") {   // PERF-8 / PERF-9: snapshot + visibility CPU per send
+        double secs = argc > 2 ? atof(argv[2]) : 8;
+        snapBench("midtown", 32, secs, TP(28820));
+        snapBench("midtown", 8, secs, TP(28821));
+        snapBench("harbor", 16, secs, TP(28822));
+        return 0;
+    }
     if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testFixedSpread(p + 50); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); return g_fail ? 1 : 0; }
     // ---- the whole suite. Most tests wait on real-time network play rather than the CPU, so each runs in its own

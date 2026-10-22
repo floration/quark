@@ -260,7 +260,9 @@ public:
     // tag: who has been eliminated this match ({rank id, name}): someone who leaves and comes back is still out
     std::vector<std::pair<std::string, std::string>> tagOut_;
     std::vector<float>* tickTimes_ = nullptr;  // benchmarks: every tick's simulate + send time goes here
-    Snapshot snapScratch_;                     // reused every send (no per-tick allocations)
+    // Snapshot building reuses these and each client's delta-base ring (ServerPlayer::sent): the per-client snapshot
+    // is built in the ring slot it's remembered in, so a send copies the shared lists once and allocates nothing
+    // once the ring's vectors have grown (PERF-8).
     std::vector<PlayerSnap> snapPlayers_;
     std::vector<ProjectileSnap> snapProj_;
     int snapEvery() const {
@@ -404,6 +406,7 @@ public:
     bool editBacklogged() const;
     void handleStringCmdForTest(int id, const std::string& s) { handleStringCmd(id, s); }
     bool fireWeaponForTest(int id, const UserCmd& c) { return fireWeapon(id, c); }
+    void sendSnapshotsForTest() { sendSnapshots(); }   // (benchmarks: tests/server_tests.h snapbench)
     void glog(int level, const char* fmt, ...);   // game log file (no-op below cfg_.logLevel)
     float bodyScale() const { return duelModDef(duelMod()).size; } // duel "double size": hull, hitbox and eye height (MOVE_BIG / MOVE_TINY)
     int duelMod() const { return ms_.mode == MODE_DUEL ? ms_.duelMod : 255; } // 255 in warmup (rulesReset clears it)
@@ -494,7 +497,7 @@ private:
     std::string uniqueName(std::string name, int self) const;
 
     UdpSocket sock_;
-    std::vector<GameEvent> events_; // scratch for snapshot building
+    const GameEvent* eventPtrs_[16] = {}; // scratch for snapshot building: the events going out (in the player's queue)
     bool running_ = false;
     double nextTick_ = 0;
     double rateWindowStart_ = 0;

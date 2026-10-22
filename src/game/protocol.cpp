@@ -81,6 +81,37 @@ enum : uint16_t {
     P_KILLS = 1 << 6, P_DEATHS = 1 << 7, P_SCORE = 1 << 8, P_PING = 1 << 9, P_CHECK = 1 << 10, P_HOOK = 1 << 11,
     P_HIDDEN = 1 << 12, P_STATS = 1 << 13, P_KEYS = 1 << 14, P_FULL = 1 << 15,
 };
+// The delta base's players by id, and its projectiles by id (an open-addressed table: at most 48 of them), so each
+// entry finds its base in O(1) instead of a scan of the base (32 x 32 / 48 x 48 compares per client per snapshot).
+namespace {
+struct BaseIndex {
+    const PlayerSnap* player[kMaxPlayers] = {};
+    static constexpr int kSlots = 256;   // a power of two, well over the 48 projectiles a snapshot carries (any count works)
+    int16_t proj[kSlots];
+    const std::vector<ProjectileSnap>* projs = nullptr;
+    explicit BaseIndex(const Snapshot* base) {
+        if (!base) return;
+        for (auto& o : base->players) if (o.id < kMaxPlayers && !player[o.id]) player[o.id] = &o;
+        projs = &base->projectiles;
+        if (projs->size() >= (size_t)kSlots) { projs = nullptr; return; }   // (never: then each lookup scans)
+        std::memset(proj, 0xFF, sizeof proj);
+        for (size_t k = 0; k < projs->size(); k++) {
+            int h = slot((*projs)[k].id);
+            while (proj[h] >= 0 && (*projs)[proj[h]].id != (*projs)[k].id) h = (h + 1) & (kSlots - 1);
+            if (proj[h] < 0) proj[h] = (int16_t)k;   // (a duplicate id keeps the first, like the scan did)
+        }
+    }
+    static int slot(uint16_t id) { return (int)((id * 40503u) >> 8) & (kSlots - 1); }
+    const ProjectileSnap* projectile(const Snapshot* base, uint16_t id) const {
+        if (!base) return nullptr;
+        if (!projs) { for (auto& o : base->projectiles) if (o.id == id) return &o; return nullptr; }
+        for (int h = slot(id); proj[h] >= 0; h = (h + 1) & (kSlots - 1))
+            if ((*projs)[proj[h]].id == id) return &(*projs)[proj[h]];
+        return nullptr;
+    }
+};
+}
+
 static int16_t q16(float v) { return (int16_t)clampf(std::round(v * 64.0f), -32767, 32767); }
 static bool samePos(const Vec3& a, const Vec3& b) { return q16(a.x) == q16(b.x) && q16(a.y) == q16(b.y) && q16(a.z) == q16(b.z); }
 
@@ -94,10 +125,10 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
     w.u8(modeSame ? 0 : 1);
     if (!modeSame) w.bytes(mb, mw.size());
 
+    const BaseIndex bi(base);
     w.u8((uint8_t)s.players.size());
     for (auto& p : s.players) {
-        const PlayerSnap* b = nullptr;
-        if (base) for (auto& o : base->players) if (o.id == p.id) { b = &o; break; }
+        const PlayerSnap* b = p.id < kMaxPlayers ? bi.player[p.id] : nullptr;
         uint16_t m = p.hidden ? P_HIDDEN : 0;
         if (!b || b->hidden != p.hidden) m |= P_FULL | 0x0FFF | P_STATS | P_KEYS;
         else {
@@ -138,8 +169,7 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
     // to extrapolate a few ms); the snapshot we keep as the next base records the velocity the client has.
     w.u8((uint8_t)s.projectiles.size());
     for (auto& p : s.projectiles) {
-        const ProjectileSnap* b = nullptr;
-        if (base) for (auto& o : base->projectiles) if (o.id == p.id) { b = &o; break; }
+        const ProjectileSnap* b = bi.projectile(base, p.id);
         bool vel = !b || length(p.vel - b->vel) > 0.5f;
         w.u16(p.id); w.u8((b ? 0 : 1) | (vel ? 2 : 0));
         if (!b) { w.u8(p.type); w.u8(p.owner); }
@@ -153,6 +183,7 @@ bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base) {
     if (r.u8()) { if (!readMode(r, s.ms)) return false; }
     else if (base) s.ms = base->ms;
     else return false;
+    const BaseIndex bi(base);
     s.players.resize(r.u8());
     static_assert(kMaxPlayers <= 32, "one bit per player id");
     uint32_t seen = 0;   // player ids index fixed kMaxPlayers arrays on the client: in range, and each once
@@ -163,8 +194,7 @@ bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base) {
         seen |= 1u << p.id;
         uint16_t m = r.u16();
         if (!(m & P_FULL)) {
-            const PlayerSnap* b = nullptr;
-            if (base) for (auto& o : base->players) if (o.id == p.id) { b = &o; break; }
+            const PlayerSnap* b = bi.player[p.id];
             if (!b) return false; // delta against a player the base doesn't have
             p = *b;
         }
@@ -193,7 +223,7 @@ bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base) {
         const ProjectileSnap* b = nullptr;
         if (bits & 1) { p.type = r.u8(); p.owner = r.u8(); if (p.owner >= kMaxPlayers) return false; }
         else {
-            if (base) for (auto& o : base->projectiles) if (o.id == p.id) { b = &o; break; }
+            b = bi.projectile(base, p.id);
             if (!b) return false;
             p.type = b->type; p.owner = b->owner;
         }
@@ -208,6 +238,14 @@ bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base) {
 void writeSnapshotEvents(Writer& w, const std::vector<GameEvent>& events) {
     w.u8((uint8_t)events.size());
     for (auto& e : events) {
+        w.u32(e.id); w.u8(e.type); w.u8(e.a); w.u8(e.b); w.i16(e.c); w.str(e.text);
+    }
+}
+
+void writeSnapshotEvents(Writer& w, const GameEvent* const* events, int n) {
+    w.u8((uint8_t)n);
+    for (int k = 0; k < n; k++) {
+        const GameEvent& e = *events[k];
         w.u32(e.id); w.u8(e.type); w.u8(e.a); w.u8(e.b); w.i16(e.c); w.str(e.text);
     }
 }

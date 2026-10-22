@@ -403,6 +403,110 @@ static void testClockWrap(uint16_t port) {
     s.stop();
 }
 
+// ---- snapshot / visibility benchmark (PERF-8, PERF-9) ----
+// Counts heap allocations made on a thread while g_countAllocs is set (the whole test binary uses this operator new).
+static thread_local bool g_countAllocs = false;
+static std::atomic<long long> g_allocs{0};
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
+#endif
+void* operator new(size_t n) {
+    if (g_countAllocs) g_allocs.fetch_add(1, std::memory_order_relaxed);
+    void* p = std::malloc(n ? n : 1);
+    if (!p) throw std::bad_alloc();
+    return p;
+}
+void operator delete(void* p) noexcept { std::free(p); }
+void operator delete(void* p, size_t) noexcept { std::free(p); }
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+
+static double threadCpu() {
+#ifndef _WIN32
+    timespec ts;
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+    return ts.tv_sec + ts.tv_nsec * 1e-9;
+#else
+    return timeNow();
+#endif
+}
+
+struct SnapBenchResult { double avgUs = 0, p50Us = 0, p99Us = 0, maxUs = 0, allocsPerSend = 0; };
+// `humans` fake clients (snapshots go to closed loopback ports) walking around a map's spawns, a snapshot every 4 ms
+// of server time (1000 Hz, every 4th tick) for `seconds`, each client acking the one sent 48 ms before. CPU time of
+// each send (visibility included), and heap allocations per send after the first second.
+static SnapBenchResult snapBench(const char* mapName, int humans, double seconds, uint16_t port, bool print = true) {
+    SnapBenchResult res;
+    Server s;
+    ServerConfig cfg;
+    cfg.map = mapName; cfg.mode = MODE_FFA; cfg.port = port; cfg.maxPlayers = kMaxPlayers;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { printf("  FAIL %s:%d: server start\n", __FILE__, __LINE__); g_fail++; return res; }
+    uint32_t rng = 12345;
+    auto rnd = [&] { rng = rng * 1664525u + 1013904223u; return (rng >> 8) * (1.0f / 16777216.0f); };
+    std::vector<Vec3> home(kMaxPlayers);
+    for (int i = 0; i < humans && i < kMaxPlayers; i++) {
+        auto& p = s.players_[i];
+        p = ServerPlayer();
+        p.connected = true; p.isBot = false; p.team = TEAM_A; p.name = "h" + std::to_string(i);
+        p.addr = NetAddr{0x7F000001u, (uint16_t)(port + 100 + i)};
+        p.nonce = 1000 + i;
+        for (auto& h : p.history) h.tick = ServerPlayer::kNoHistory;
+        s.spawnPlayer(i);
+        home[i] = p.move.pos;
+        p.events.clear();
+    }
+    std::vector<double> t;
+    long long allocs = 0;
+    int counted = 0;
+    const int sends = (int)(seconds * 250);
+    for (int k = 0; k < sends; k++) {
+        s.timeMs_ += 4;
+        s.tick_ += 4;
+        for (int i = 0; i < humans; i++) {   // a slow random walk around each one's spawn (positions and velocities)
+            auto& p = s.players_[i];
+            float a = (float)(k * 0.004 * (0.5 + (i % 5) * 0.2) + i);
+            Vec3 want = home[i] + Vec3(std::cos(a) * 3.0f, 0, std::sin(a) * 3.0f);
+            p.move.vel = (want - p.move.pos) * 250.0f;
+            p.move.pos = want;
+            p.yaw = a; p.health = 100 - (k / 50) % 50;
+            p.ackSnapMs = s.timeMs_ >= 48 ? s.timeMs_ - 48 : 0;
+            if (rnd() < 0.002f) p.kills++;
+        }
+        if (k % 20 == 0) s.message("bench: an event with a text longer than the short-string buffer " + std::to_string(k));
+        for (int i = 0; i < humans; i++) {   // (each client acks events a few behind, like a real one a round trip later)
+            auto& p = s.players_[i];
+            while (!p.events.empty() && p.events.front().id + 8 < p.nextEventId) p.events.pop_front();
+        }
+        bool count = k >= 600;   // (after the delta-base rings have filled)
+        g_countAllocs = count;
+        long long a0 = g_allocs.load();
+        double c0 = threadCpu();
+        s.sendSnapshotsForTest();
+        double c1 = threadCpu();
+        g_countAllocs = false;
+        if (count) { allocs += g_allocs.load() - a0; counted++; t.push_back((c1 - c0) * 1e6); }
+    }
+    std::sort(t.begin(), t.end());
+    double sum = 0;
+    for (double v : t) sum += v;
+    if (!t.empty()) {
+        res.avgUs = sum / t.size();
+        res.p50Us = t[t.size() / 2];
+        res.p99Us = t[std::min(t.size() - 1, (size_t)(t.size() * 0.99))];
+        res.maxUs = t.back();
+    }
+    res.allocsPerSend = counted ? (double)allocs / counted : 0;
+    if (print)
+        printf("  SNAPBENCH %s: %d clients, %d sends: CPU avg %.1f us  p50 %.1f us  p99 %.1f us  worst %.1f us, %.2f heap allocations per send\n", mapName,
+               humans, counted, res.avgUs, res.p50Us, res.p99Us, res.maxUs, res.allocsPerSend);
+    for (auto& p : s.players_) p.connected = false;
+    s.stop();
+    return res;
+}
+
 static void serverTests() {
     testVersionReject(TP(28800));
     testSeedFetchDedupe();
@@ -411,4 +515,10 @@ static void serverTests() {
     testGiantSpawns();
     testTagAddbot(TP(28803));
     testClockWrap(TP(28804));
+    {   // PERF-8: a snapshot send allocates nothing once the delta-base rings have grown (events included)
+        printf("snapshots: no heap allocations per send\n");
+        SnapBenchResult r = snapBench("harbor", 8, 3.0, TP(28805), false);
+        printf("  %.2f allocations per send, CPU p50 %.1f us\n", r.allocsPerSend, r.p50Us);
+        CHECK(r.allocsPerSend == 0);
+    }
 }
