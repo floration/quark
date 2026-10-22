@@ -283,6 +283,7 @@ public:
     void sendEvent(int player, const GameEvent& e);
     void message(const std::string& text);
     void spawnPlayer(int id);
+    void autoTeam(int id);      // a newcomer's team (or spectator): mode, seat limits, balance
     void killPlayer(int victim, int killer, int weapon);
     void damagePlayer(int victim, int attacker, float dmg, int weapon, const Vec3& knock);
     int aliveCount(int team) const;
@@ -455,7 +456,6 @@ private:
     void openGameLog();
     void logTick();
     int findPlayer(const NetAddr& a) const;
-    void autoTeam(int id);
     std::string uniqueName(std::string name, int self) const;
 
     UdpSocket sock_;
