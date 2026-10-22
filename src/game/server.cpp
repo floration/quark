@@ -1127,7 +1127,7 @@ void Server::spawnPlayer(int id) {
     if (!weaponAllowed(p.weapon)) // restricted pool: first allowed weapon, in slot order
         for (int k = 0; k < WPN_COUNT; k++) if (weaponAllowed(kWeaponSlots[k])) { p.weapon = kWeaponSlots[k]; break; }
     const DuelModDef& dm = duelModDef(duelMod()); // duel: this life's modifier (none outside duel)
-    p.health = dm.health == kMaxHealth ? maxHealth() : dm.health;   // (a custom mode sets its own health)
+    p.health = lifeMaxHealth();   // (a duel life's own, or a custom mode's)
     p.move.mods |= dm.moveMods | moveScaleMods(dm.size);   // (size modifiers: the hull, as well as the hitbox and eyes)
     if (arenaRules() & AR_QUICK_DASH) p.move.mods |= MOVE_QUICK_DASH;
     if (arenaRules() & AR_LOW_GRAVITY) p.move.mods |= MOVE_LOW_GRAVITY;
@@ -1226,7 +1226,7 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
         ServerPlayer& a = players_[attacker];
         if ((rules & AR_VAMPIRE) && a.alive) { // healing fades as the round goes on
             float f = clampf((time() - roundStart_) / kVampireFadeTime, 0, 1);
-            a.health = std::min(maxHealth(), a.health + dmg * (1.0f - (1.0f - kVampireMinHeal) * f));
+            a.health = std::min(lifeMaxHealth(), a.health + dmg * (1.0f - (1.0f - kVampireMinHeal) * f));
         }
     }
     glog(LOG_VERBOSE, "hit attacker=%d victim=%d dmg=%.2f weapon=%d health=%.2f", attacker, victim, dmg, weapon, v.health);
@@ -1305,8 +1305,8 @@ void Server::simulate() {
         if (!p.connected) continue;
         if (p.alive && (p.move.pos.y < map_.killY() || (!map_.lava.empty() && map_.inLava(playerBox(p.move))))) killPlayer(i, -1, 252);
         if (!p.alive && p.respawnAt >= 0 && time() >= p.respawnAt && p.team != TEAM_SPECTATOR) spawnPlayer(i);
-        if (p.alive && (arenaRules() & AR_REGEN) && time() - p.lastDamagedAt > 3.0 && p.health < maxHealth())
-            p.health = std::min(maxHealth(), p.health + 10.0f * dt()); // regeneration: 10 hp/s after 3 s untouched
+        if (p.alive && (arenaRules() & AR_REGEN) && time() - p.lastDamagedAt > 3.0 && p.health < lifeMaxHealth())
+            p.health = std::min(lifeMaxHealth(), p.health + 10.0f * dt()); // regeneration: 10 hp/s after 3 s untouched
     }
     rulesTick(*this);
 }
@@ -1514,7 +1514,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
         return false;
     }
     if (p.weapon == WPN_SYRINGE) {
-        if (!alt) { p.health = std::min(maxHealth(), p.health + wd.damage); return false; }   // a dose for yourself
+        if (!alt) { p.health = std::min(lifeMaxHealth(), p.health + wd.damage); return false; }   // a dose for yourself
         for (auto& pr : projectiles_) {   // thrown: an arcing dart that heals the teammate it hits
             if (pr.active) continue;
             pr = Projectile();
@@ -1650,7 +1650,7 @@ void Server::tickProjectiles() {
             auto& o = players_[pr.owner];
             if (hitPlayer >= 0 && modeIsTeamBased(ms_.mode) && players_[hitPlayer].team == o.team) {
                 auto& t = players_[hitPlayer];
-                t.health = std::min(maxHealth(), t.health + kSyringeHeal * tunedDamage(WPN_SYRINGE));
+                t.health = std::min(lifeMaxHealth(), t.health + kSyringeHeal * tunedDamage(WPN_SYRINGE));
                 t.nextFire = time();
                 t.move.dashCooldown = 0;
                 t.move.hookCooldown = 0;

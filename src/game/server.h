@@ -341,6 +341,9 @@ public:
         return r;
     }
     float maxHealth() const { return cfg_.custom.active() ? (float)cfg_.custom.health : (float)kMaxHealth; }
+    // This life's full health (what you spawn with): a duel life's ("1 HP", "glass cannons" 50, "tanks" 250), else
+    // maxHealth(). Heals (syringe, vampire, regeneration) stop here (REVIEW GAME-2a: they capped at maxHealth()).
+    float lifeMaxHealth() const { float h = duelModDef(duelMod()).health; return h == kMaxHealth ? maxHealth() : h; }
     void sendRules(int id);     // a custom mode's rules to one player (they set them before playing)
     bool weaponAllowed(int w) const { uint16_t m = weaponMask(); return !m || (m >> w & 1); }
     AABB hitBox(const Vec3& feet, bool crouched) const; // damage hull (scaled by the duel modifier's size)

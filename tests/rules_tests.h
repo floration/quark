@@ -553,6 +553,38 @@ static void testRandomSeeds() {
     // (the source has no rand() / srand() calls left: checked by grep in review; qrand is the only generator)
 }
 
+// GAME-2a: heals (syringe, vampire, regeneration) stop at this life's full health, not the standard 100: a "tanks"
+// life heals to 250, "1 HP" / "glass cannons" lives never above 1 / 50.
+static void testLifeHealCap(uint16_t port) {
+    printf("heals cap at the life's health\n");
+    {
+        Server s;
+        s.ms_.mode = MODE_DUEL; s.cfg_.mode = MODE_DUEL;
+        for (int d = 0; d < DUEL_MOD_COUNT; d++) { s.ms_.duelMod = (uint8_t)d; CHECK(s.lifeMaxHealth() == duelModDef(d).health); }
+        s.ms_.mode = MODE_FFA; s.cfg_.mode = MODE_FFA;
+        CHECK(s.lifeMaxHealth() == 100);
+    }
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "clockwork"; cfg.mode = MODE_DUEL; cfg.port = port; cfg.balanceBots = false;
+    cfg.custom.name = "regen duel"; cfg.custom.baseMode = MODE_DUEL; cfg.custom.regen = true;   // (regeneration on every life)
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls, false)) { s.stop(); return; }
+    s.duelUsed_ = ~(1u << 22);   // the next life: TANKS (250)
+    s.command("forcestart");
+    for (int k = 0; k < 40 && s.ms_.phase != PHASE_LIVE; k++) { s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+    auto& p = s.players_[c[0].clientId()];
+    CHECK(s.ms_.duelMod == 22 && p.alive && p.health == 250);
+    p.health = 150;
+    p.lastDamagedAt = s.time() - 10;
+    auto apart = [&](int) { s.players_[c[0].clientId()].nextFire = s.players_[c[1].clientId()].nextFire = s.time() + 1; return UserCmd(); };
+    pumpServerTime(s, cls, 3.0, apart);
+    printf("  tanks + regeneration: 150 -> %.0f hp in 3 s\n", p.health);
+    CHECK(p.health > 170 && p.health <= 250);   // regenerates past 100 (it stopped at 100 before)
+    s.stop();
+}
+
 // "quark_tests rules [name]": all of them, or the one named.
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
@@ -569,6 +601,7 @@ static void testGameRules(const std::string& only) {
         {"botdefer", [] { testBalanceBotDefer(TP(29250)); }},
         {"spawns", [] { testSpawnTypes(TP(29251)); }},
         {"seeds", [] { testRandomSeeds(); }},
+        {"heal", [] { testLifeHealCap(TP(29253)); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
     if (only == "rate") testRateBetweenRounds(TP(29252));   // (timing-sensitive: the suite runs it alone, with "tickrate")
