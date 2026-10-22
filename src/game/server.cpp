@@ -145,6 +145,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     mapList_ = listMaps();
     std::string e;
     if (!map_.load(cfg_.map, &e)) { if (err) *err = e; return false; }
+    nav_.buildAsync(map_);   // bot navigation, built off the tick thread
     if (cfg_.editMode && !map_.supportsMode(cfg_.mode)) // an edit session runs whatever the map can't play yet
         cfg_.mode = map_.supportsMode(MODE_FFA) ? MODE_FFA : cfg_.mode;
     if (cfg_.ranked && !isRankedMap(map_, cfg_.arenaVariant)) { if (err) *err = "ranked only runs on the ranked maps for its ladder"; return false; }
@@ -1116,6 +1117,7 @@ void Server::command(const std::string& line, int fromPlayer) {
         }
         if (editing_ && tempEdit_) setEditing(false); // a voted edit was temporary: the new map loads as it is on disk
         map_ = m;
+        nav_.buildAsync(std::move(m));
         cfg_.map = newMap;
         mapEdited_ = false;
         playMap(newMode);
@@ -2230,6 +2232,7 @@ bool Server::switchMapKeepRules(const std::string& name) {
     if (!m.load(name) || !m.supportsMode(cfg_.mode)) return false;
     if (editing_ && tempEdit_) setEditing(false);
     map_ = m;
+    nav_.buildAsync(std::move(m));
     cfg_.map = name;
     mapEdited_ = false;
     for (auto& pr : projectiles_) pr.active = false;
