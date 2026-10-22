@@ -2751,6 +2751,61 @@ static void testMasterSignature() {
     CHECK(sign::signData("http://plain.example\n", priv, &sig2) && !signedMasterUrl("http://plain.example\n", sig2, pub, &url)); // https only
 }
 
+// REVIEW 2.3: a dedicated server (src/server/main.cpp: frame() and idle(), never run()) handles ranking server
+// replies: a failed race ticket clears and the racer is told. And replies nobody takes are capped.
+static void testMasterReplies(uint16_t port) {
+    printf("ranking server replies on a dedicated server\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "viaduct"; cfg.mode = MODE_RACE; cfg.port = port;
+    cfg.timeTrial = true; cfg.vsBots = true; cfg.maxPlayers = 1; cfg.botsEnemy = cfg.botsAlly = 0;
+    std::vector<std::string> logs;
+    std::mutex logMu;
+    s.setLog([&](const std::string& l) { std::lock_guard<std::mutex> g(logMu); logs.push_back(l); });
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a;
+    a.setRankKey(rankKeyFromSecret(sha256Hex("replies" + std::to_string(qrand()))));
+    a.connect("127.0.0.1:" + std::to_string(port), "racer");
+    auto dedicated = [&](double secs, const std::function<bool()>& until) {   // main.cpp's loop (and the client's)
+        double end = timeNow() + secs, nextTick = timeNow();
+        while (timeNow() < end && !until()) {
+            double wait = s.frame();
+            a.poll();
+            while (timeNow() >= nextTick) { a.tick(UserCmd()); nextTick += a.tickPeriod(); }
+            s.idle(std::min(wait, 0.002));
+        }
+    };
+    dedicated(1.0, [&] { return a.state() == ConnState::Connected && a.hasSnapshot(); });
+    CHECK(a.state() == ConnState::Connected);
+    s.openRaceTicket();   // (what the race going live does; QUARK_MASTER=off in tests: the request fails at once)
+    CHECK(!s.raceTicket_.empty());
+    std::string told;
+    dedicated(5.0, [&] {
+        for (auto& e : a.takeEvents()) if (e.type == EV_MESSAGE && e.text.find("no race ticket") != std::string::npos) told = e.text;
+        return s.raceTicket_.empty() && !told.empty();
+    });
+    CHECK(s.raceTicket_.empty() && !told.empty());
+    {
+        std::lock_guard<std::mutex> g(logMu);
+        bool logged = false;
+        for (auto& l : logs) logged |= l.find("ranking server (raceticket)") != std::string::npos;
+        CHECK(logged);
+    }
+    s.stop();
+    // nobody taking the replies: the oldest go, at most kMaxReplies are kept
+    MasterAnnouncer m;
+    m.start(0, false);
+    for (int batch = 0; batch < 2; batch++) {
+        for (int i = 0; i < 40; i++) m.post("k" + std::to_string(batch * 40 + i), "/x", "a=1");
+        sleepMs(1000);
+    }
+    auto r = m.takeReplies();
+    m.stop();
+    printf("  %zu replies kept of 80\n", r.size());
+    CHECK(!r.empty() && r.size() <= MasterAnnouncer::kMaxReplies);
+    if (!r.empty() && r.back().first == "k79") CHECK(r.size() == MasterAnnouncer::kMaxReplies && r.front().first == "k16");   // (all done: the newest 64)
+}
+
 // One placement threshold: the game's kPlacementGames is the Worker's PLACEMENT_GAMES.
 static void testPlacementConstant() {
     printf("placement threshold matches the Worker\n");
@@ -3945,7 +4000,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "nav") { testNavGraph(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterSignature(); testPlacementConstant(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterReplies(TP(29629)); testMasterSignature(); testPlacementConstant(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(TP(29600)); testEditSession(TP(29601)); testVotedEdit(TP(29602)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
     if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(29604)); testMapNames(TP(29605)); testDemo(TP(29603)); return g_fail ? 1 : 0; }
@@ -3980,7 +4035,7 @@ int main(int argc, char** argv) {
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
         {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
-        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterSignature(); testPlacementConstant(); }},
+        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testMasterSignature(); testPlacementConstant(); }},
         {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
         {"rules", [] { testGameRules(""); }},
     };

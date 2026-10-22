@@ -233,7 +233,6 @@ void Server::run(std::atomic<bool>& quit) {
         if (master_) {
             std::string st = master_->status();
             if (!st.empty() && st != lastMaster) { log(st); lastMaster = st; }
-            if (master_->hasReplies()) for (auto& r : master_->takeReplies()) handleMasterReply(r.first, r.second);
         }
         idle(wait);
     }
@@ -343,6 +342,9 @@ double Server::frame() {
     }
     if (rankedLive() && !rankedTicketSent_ && time() >= rankedSigDeadline_) maybeSendRankedTicket(true);
     if (!rankedMatch_.empty() && ms_.phase == PHASE_WARMUP) rankedMatch_.clear(); // (a match that fell back to warmup: the next one gets its own ticket)
+    // Ranking server replies (tickets, race runs, results): here, not in run(), which dedicated servers don't use
+    // (src/server/main.cpp drives frame() / idle() itself: REVIEW 2.3).
+    if (master_ && master_->hasReplies()) for (auto& r : master_->takeReplies()) handleMasterReply(r.first, r.second);
     checkTickRate();
     checkRestartFlag();
     return nextTick_ - timeNow();

@@ -36,6 +36,7 @@ public:
     void post(const std::string& key, const std::string& path, const std::string& form);
     bool hasReplies() const { return hasReplies_.load(std::memory_order_relaxed); }
     std::vector<std::pair<std::string, std::string>> takeReplies();
+    static constexpr size_t kMaxReplies = 64;   // replies kept until taken (like the 64 queued posts)
 private:
     void run();
     struct Post { std::string key, path, form; };
