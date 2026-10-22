@@ -873,7 +873,10 @@ void Game::handleEvents() {
                 }
                 break;
             case EV_HEALED:   // a teammate's syringe hit someone
-                if (e.a == net_.clientId()) { notify("HEALED BY " + net_.playerName(e.b) + " - COOLDOWNS RESET", 2); audio_.play(SND_SYRINGE, 0.8f, 1.3f); }
+                if (e.a == net_.clientId()) {
+                    notify("HEALED BY " + net_.playerName(e.b) + " - COOLDOWNS RESET", 2); audio_.play(SND_SYRINGE, 0.8f, 1.3f);
+                    localNextFire_ = localThrowReadyAt_ = 0;   // (mirror the server's reset: weapon and throws)
+                }
                 else if (e.b == net_.clientId()) notify("YOU HEALED " + net_.playerName(e.a), 2);
                 break;
             case EV_RACE_SPLIT:
@@ -1018,7 +1021,8 @@ void Game::frame(double dt) {
             UserCmd c = buildCmd();
             // local fire feedback (server is authoritative for damage)
             bool altShot = altFires(net_.selfWeapon()) && (c.buttons & BTN_ALTFIRE) && // knife throw / shotgun bounce (no throws in hide and seek / tag)
-                           !(net_.selfWeapon() == WPN_KNIFE && net_.hasSnapshot() && isItMode(net_.mode().mode));
+                           !(net_.selfWeapon() == WPN_KNIFE && net_.hasSnapshot() && isItMode(net_.mode().mode)) &&
+                           !(isThrow(net_.selfWeapon(), true) && time_ < localThrowReadyAt_);   // the throws' shared cooldown
             bool wantFire = ((c.buttons & BTN_FIRE) != 0 || altShot) && holdFireLeft() <= 0;   // (the map's holdfire: no shots yet)
             if (c.weapon != lastCmdWeapon_ && (c.buttons & (BTN_FIRE | BTN_ALTFIRE))) localFireLocked_ = true; // switched with fire held
             lastCmdWeapon_ = c.weapon;
@@ -1034,8 +1038,9 @@ void Game::frame(double dt) {
             if (wantFire && net_.selfAlive() && time_ >= localNextFire_ && net_.mode().phase != PHASE_FREEZE) {
                 localFireQueued_ = -1;
                 int w = net_.selfWeapon();
-                bool alt = (c.buttons & BTN_ALTFIRE) != 0 && (w != WPN_KNIFE || altShot); // same throw rule as above
+                bool alt = (c.buttons & BTN_ALTFIRE) != 0 && ((w != WPN_KNIFE && w != WPN_SYRINGE) || altShot); // same throw rule as above
                 localNextFire_ = time_ + shotRefire(w, alt);
+                if (isThrow(w, alt)) localThrowReadyAt_ = time_ + throwCooldown(w);
                 if (w != WPN_LASER || time_ >= nextLaserSound_) { // laser fires every 10 ms: sound at 20 Hz
                     audio_.play(SND_RIFLE + w, w == WPN_LASER ? 0.6f : 0.8f, 0.97f + (qrand() % 7) * 0.01f);
                     nextLaserSound_ = time_ + 0.05;

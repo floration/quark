@@ -1337,7 +1337,9 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
             }
     // Knife and shotgun: alt-fire is its own shot (throw / bouncing pellets); it takes priority over fire.
     bool itMode = isItMode(ms_.mode);
-    bool altShot = altFires(p.weapon) && (cmd.buttons & BTN_ALTFIRE) && !(p.weapon == WPN_KNIFE && knifeAway) && !itMode; // no throwing in hide and seek / tag
+    bool throwReady = time() >= p.throwReadyAt;   // (knife / syringe throws share a cooldown)
+    bool altShot = altFires(p.weapon) && (cmd.buttons & BTN_ALTFIRE) && !(p.weapon == WPN_KNIFE && knifeAway) && !itMode // no throwing in hide and seek / tag
+                   && !(isThrow(p.weapon, true) && !throwReady);
     bool wantFire = ((cmd.buttons & BTN_FIRE) != 0 || altShot) && (!itMode || p.it); // only "it" has a knife
     if (p.fireLocked) { // the click that threw the knife doesn't also fire the weapon you switched to
         if (!(cmd.buttons & (BTN_FIRE | BTN_ALTFIRE))) p.fireLocked = false;
@@ -1359,18 +1361,23 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
         // Holding fire keeps an exact cadence, catching up shots that fell between commands (the laser
         // fires every 1 ms, so late or batched commands must not drop shots). After a pause, or more
         // than 100 ms behind, the timer restarts from now.
-        float refire = shotRefire(p.weapon, (cmd.buttons & BTN_ALTFIRE) != 0);
+        bool altEff = (cmd.buttons & BTN_ALTFIRE) && !(isThrow(p.weapon, true) && !throwReady);   // (a throw on cooldown isn't one)
+        float refire = shotRefire(p.weapon, altEff);
         bool held = (p.prevButtons & (altShot ? BTN_ALTFIRE : BTN_FIRE)) != 0;
         p.nextFire = (held && time() - p.nextFire < 0.1f) ? p.nextFire + refire : time() + refire;
         p.lastFire = time();
-        bool threw = p.weapon == WPN_KNIFE && (cmd.buttons & BTN_ALTFIRE) && !itMode && !knifeAway; // same test as fireWeapon
+        bool threw = p.weapon == WPN_KNIFE && (cmd.buttons & BTN_ALTFIRE) && !itMode && !knifeAway && throwReady; // same test as fireWeapon
+        int firedWeapon = p.weapon;
         bool hit = fireWeapon(id, cmd);
+        if (isThrow(firedWeapon, altEff) && (firedWeapon != WPN_KNIFE || threw)) {
+            p.throwReadyAt = time() + throwCooldown(firedWeapon);
+            throwReady = false;
+        }
         p.knifeSwingUntil = (p.weapon == WPN_KNIFE && !threw && !hit) ? time() + kKnifeSwingTime : -1;
-        if (threw) { // the knife is away: switch to the next weapon, ready to fire right away
+        if (threw) { // the knife is away: switch to the next weapon
             p.knifeBackAt = time() + kKnifeAway;
             p.fireLocked = true;
-            if (otherWeapon() >= 0) p.weapon = otherWeapon();
-            p.nextFire = time();
+            if (otherWeapon() >= 0) p.weapon = otherWeapon();   // (ready after a knife swing's refire: nextFire above)
             p.fireQueuedUntil = -1;
             break;
         }
@@ -1466,6 +1473,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
     // a throw needs the knife in hand and a mode that allows it (holding alt while clicking fire used to throw
     // past both checks: endless knives in hide and seek / tag)
     if (p.weapon == WPN_KNIFE) alt = alt && time() >= p.knifeBackAt && !isItMode(ms_.mode);
+    if (isThrow(p.weapon, alt) && time() < p.throwReadyAt) alt = false;   // the shared throw cooldown (syringe: a dose for yourself instead)
     if (p.weapon == WPN_KNIFE && alt) { // thrown knife: a fast arcing projectile, hits for knife damage
         for (auto& pr : projectiles_) {
             if (pr.active) continue;
@@ -1623,6 +1631,7 @@ void Server::tickProjectiles() {
                 t.move.dashCooldown = 0;
                 t.move.hookCooldown = 0;
                 if (t.knifeBackAt > time()) t.knifeBackAt = time();
+                t.throwReadyAt = time();   // (the throws' shared cooldown too: it used to survive the reset)
                 GameEvent e; e.type = EV_HEALED; e.a = (uint8_t)hitPlayer; e.b = (uint8_t)pr.owner; broadcastEvent(e);
             }
             pr.active = false;

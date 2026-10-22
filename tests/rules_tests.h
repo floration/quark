@@ -135,12 +135,62 @@ static void testSyringeModes() {
     CHECK(!s.weaponAllowed(WPN_SYRINGE) && s.weaponAllowed(WPN_RIFLE));
 }
 
+// 5.3: the knife throw and the syringe throw share one alt-fire cooldown; a knife throw makes the weapon you switch
+// to wait a knife swing (no throw + instant crossbow headshot); a teammate's syringe resets the throw cooldown too.
+static void testThrowCooldown(uint16_t port) {
+    printf("shared throw cooldown\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_KOTH; cfg.port = port; cfg.balanceBots = false;
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls, false)) { s.stop(); return; }
+    c[1].sendCommand("team " + std::string(s.players_[c[0].clientId()].team == TEAM_A ? "a" : "b"));
+    pump(s, cls, 2.5, idle);
+    auto& pa = s.players_[c[0].clientId()];
+    auto& pb = s.players_[c[1].clientId()];
+    CHECK(pa.team == pb.team && pa.alive && pb.alive);
+    auto count = [&](int type, int owner) { int n = 0; for (auto& pr : s.projectiles_) n += pr.active && pr.type == type && pr.owner == owner; return n; };
+    int wa = WPN_KNIFE, wb = WPN_SYRINGE;
+    uint16_t ba = 0, bb = 0;
+    auto in = [&](int i) { UserCmd u; u.weapon = (uint8_t)(i == 0 ? wa : wb); u.buttons = i == 0 ? ba : bb; u.yaw = 0; u.pitch = -0.05f; return u; };
+    pump(s, cls, 0.3, in);
+    ba = BTN_ALTFIRE;
+    for (int k = 0; k < 20 && count(WPN_KNIFE, c[0].clientId()) == 0; k++) pump(s, cls, 0.02, in);   // throw the knife
+    CHECK(count(WPN_KNIFE, c[0].clientId()) == 1);
+    double t0 = s.time();
+    printf("  after the knife throw: weapon %d ready in %.2f s, throws in %.2f s\n", pa.weapon, pa.nextFire - t0, pa.throwReadyAt - t0);
+    CHECK(pa.weapon != WPN_KNIFE && pa.nextFire >= t0 + weaponDef(WPN_KNIFE).refire - 0.05);   // not instantly
+    CHECK(pa.throwReadyAt >= t0 + kKnifeThrowCooldown - 0.05);
+    ba = 0; wa = WPN_SYRINGE; pump(s, cls, 0.9, in);   // let go, take the syringe, wait out the weapon refire
+    ba = BTN_ALTFIRE; pump(s, cls, 0.5, in);           // throw it: refused (shared cooldown)
+    CHECK(count(WPN_SYRINGE, c[0].clientId()) == 0);
+    ba = 0;
+    // b throws a syringe at a (5 m in front): every cooldown resets, the throws' too
+    Vec3 base = pb.move.pos;
+    auto place = [&] { pb.move.pos = base; pb.move.vel = {}; pa.move.pos = base + Vec3(0, 0, -5); pa.move.vel = {}; };
+    pa.health = 40;
+    for (int k = 0; k < 5; k++) { place(); pump(s, cls, 0.02, in); }
+    CHECK(pa.throwReadyAt > s.time() + 0.3);
+    pa.throwReadyAt = s.time() + 30;   // (so only the reset can clear it)
+    int tick = 0;
+    pump(s, cls, 0.5, [&](int i) { place(); UserCmd u = in(i); if (i == 1 && tick++ < 30) u.buttons = BTN_ALTFIRE; return u; });
+    printf("  healed: %.0f hp, throws ready in %.2f s\n", pa.health, pa.throwReadyAt - s.time());
+    CHECK(pa.health > 60 && pa.throwReadyAt <= s.time());
+    CHECK(pb.throwReadyAt > s.time());   // (the thrower's own cooldown runs)
+    ba = BTN_ALTFIRE;
+    for (int k = 0; k < 20 && count(WPN_SYRINGE, c[0].clientId()) == 0; k++) pump(s, cls, 0.02, [&](int i) { place(); return in(i); });
+    CHECK(count(WPN_SYRINGE, c[0].clientId()) == 1);   // a can throw right away
+    s.stop();
+}
+
 // "quark_tests rules [name]": all of them, or the one named.
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
     std::vector<R> all = {
         {"overtime", [] { testOvertime(TP(29230)); }},
         {"syringe", [] { testSyringeModes(); }},
+        {"throws", [] { testThrowCooldown(TP(29240)); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
 }

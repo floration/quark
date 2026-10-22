@@ -234,6 +234,11 @@ constexpr float kKnifeAway = 5.0f; // after a throw the knife is gone this long:
 // every cooldown reset (weapon, dash, grapple). The throw has a 2 s cooldown.
 constexpr float kSyringeThrowSpeed = 30.0f, kSyringeThrowGravity = 9.0f, kSyringeThrowLife = 2.0f;
 constexpr float kSyringeHeal = 30.0f, kSyringeThrowRefire = 2.0f;
+// Throws (knife, syringe) share one alt-fire cooldown (owner 5.3): after either, neither can be thrown for that
+// throw's cooldown. A thrown syringe that heals a teammate resets it like their other cooldowns.
+constexpr float kKnifeThrowCooldown = kSyringeThrowRefire;   // (placeholder: the syringe throw's 2 s until the owner sets one)
+inline bool isThrow(int w, bool alt) { return alt && (w == WPN_KNIFE || w == WPN_SYRINGE); }
+inline float throwCooldown(int w) { return w == WPN_KNIFE ? kKnifeThrowCooldown : kSyringeThrowRefire; }
 constexpr int kShotgunBounces = 2;
 constexpr float kShotgunBounceDamage = 0.5f;
 constexpr float kRifleScopedRefire = 4.0f / 3.0f; // refire multiplier while scoped (25% slower fire rate)
@@ -256,7 +261,7 @@ constexpr float kVampireFadeTime = 60.0f, kVampireMinHeal = 0.5f; // laser vampi
 // The refire for this shot: alt-fire modes change it.
 inline float shotRefire(int w, bool alt) {
     float r = weaponDef(w).refire;
-    if (alt && w == WPN_KNIFE) return 0;                    // knife throw: no delay (you switch weapons)
+    if (alt && w == WPN_KNIFE) return r;                    // knife throw: the weapon you switch to waits a knife swing (no throw + instant shot combo, GAME-8)
     if (alt && w == WPN_RIFLE) return r * kRifleScopedRefire;       // scoped rifle
     if (alt && w == WPN_BUBBLE) return kBubbleStreamRefire;         // the bubble stream
     if (alt && w == WPN_SYRINGE) return kSyringeThrowRefire;        // the syringe throw
