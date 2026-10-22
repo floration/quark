@@ -182,7 +182,8 @@ inline const WeaponDef& baseWeaponDef(int w) {
 }
 // Alt-fires: knife throw (a projectile that hits for knife damage), shotgun bouncing pellets (ricochet off
 // walls, half damage), rifle scope (zooms like the sniper, 25% slower fire rate).
-constexpr float kSniperHeadDamage = 42.5f; // hits on the head (top 20% of the hitbox): sniper, crossbow bolt,
+constexpr float kRocketDirectDamage = 50.0f; // a rocket that hits a player itself (not the floor next to them)
+constexpr float kSniperHeadDamage = 50.0f; // hits on the head (top 20% of the hitbox): sniper, crossbow bolt,
 constexpr float kCrossbowHeadDamage = 75.0f; // rifle bullet and each shotgun pellet
 constexpr float kRifleHeadDamage = 8.5f;
 constexpr float kPelletHeadDamage = 2.55f;

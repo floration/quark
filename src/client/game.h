@@ -343,7 +343,9 @@ private:
     // lifetime kills / deaths (every session, version and mode; the master adds up what each client reports)
     std::map<std::string, std::pair<int, int>> lifetime_;   // ranked id -> kills, deaths
     int lifeSeenK_ = -1, lifeSeenD_ = -1, lifePendK_ = 0, lifePendD_ = 0;
-    double nextLifeReport_ = 0, nextLifeFetch_ = 0;
+    double nextLifeFetch_ = 0;
+    int lifePhase_ = -1;
+    std::string lifeAsked_;
     void updateLifetime();         // ranked id -> best place on any board (and which board)
     std::set<std::string> queued_;
     std::map<std::string, int> queueCounts_;

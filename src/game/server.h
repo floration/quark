@@ -297,7 +297,7 @@ private:
     void runPlayerCmd(int id, const UserCmd& cmd);
     bool fireWeapon(int id, const UserCmd& cmd);   // true if it hit a player (hitscan weapons)
     void tickProjectiles();
-    void explode(const Vec3& at, int owner, int weapon);
+    void explode(const Vec3& at, int owner, int weapon, int direct = -1);   // direct: the player a rocket hit itself
     void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t viewMs, float* dmgPerPlayer, float dmg, float headDmg = 0, float grow = 0, bool pierce = false);
     Vec3 spreadDir(const Vec3& dir, float spread, uint32_t seq, int pellet);
     void sendSnapshots();

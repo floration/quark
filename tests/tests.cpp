@@ -690,7 +690,7 @@ static void testWeapons(uint16_t port) {
             printf("  laser: %.1f damage in %.2f s (expected ~%.1f)\n", dealt, elapsed, expect);
             CHECK(dealt > expect * 0.6f && dealt < expect * 1.4f + 5);
         }
-        if (w == WPN_ROCKET) CHECK(dealt > 15);
+        if (w == WPN_ROCKET) { printf("  rocket direct hit: %.0f damage\n", dealt); CHECK(std::fabs(dealt - kRocketDirectDamage) < 0.5f); }   // aimed at the body: a direct hit
         if (w == WPN_SHOTGUN) CHECK(dealt >= 20);      // most of 20 x 2 pellets at 8 m
         if (w == WPN_CROSSBOW) { // one bolt: 40 body, 50 head
             printf("  crossbow %s: %.0f damage\n", head ? "head" : "body", dealt);

@@ -130,38 +130,48 @@ void Game::updateCommunity() {
     if (rank_.takeText("link", out) && !out.empty()) notify(out[0] == '!' ? "DISCORD LINK: COULDN'T REACH THE SERVER" : "DISCORD: " + out, 3);
 }
 
-// Lifetime kills / deaths: what you got since the last report goes to the master at the end of a match or when you
-// leave (at most every 25 s, 300 a report: the master's limits); everyone's totals are fetched for the scoreboard.
+// Lifetime kills / deaths. The scoreboard shows each player's stored total plus this game's kills / deaths, so it
+// counts up live; your own game reports this game's numbers once, when the match ends (or when you leave). Totals
+// are fetched when you join, when someone new appears and when a new match starts - never during the end screen,
+// where they'd already include this game.
 void Game::updateLifetime() {
-    const PlayerSnap* me = screen_ == Screen::InGame && net_.hasSnapshot() && !net_.playback() ? net_.findPlayer(net_.clientId()) : nullptr;
+    const bool inGame = screen_ == Screen::InGame && net_.hasSnapshot() && !net_.playback();
+    const PlayerSnap* me = inGame ? net_.findPlayer(net_.clientId()) : nullptr;
+    const int phase = inGame ? net_.mode().phase : -1;
+    auto report = [&] {
+        if (lifePendK_ <= 0 && lifePendD_ <= 0) return;
+        if (rankKey_.secret.empty()) { lifePendK_ = lifePendD_ = 0; return; }
+        int k = std::min(lifePendK_, 300), d = std::min(lifePendD_, 300);
+        rank_.request("lifetime", "/lifetime", "secret=" + rankKey_.secret + "&kills=" + std::to_string(k) + "&deaths=" + std::to_string(d) + "&name=" + toHex(cfg_.name));
+        lifePendK_ = lifePendD_ = 0;
+    };
     if (me) {
         if (lifeSeenK_ < 0 || me->kills < lifeSeenK_) lifeSeenK_ = 0;    // just joined, or a new match reset the scores:
         if (lifeSeenD_ < 0 || me->deaths < lifeSeenD_) lifeSeenD_ = 0;   // count from zero
         lifePendK_ += me->kills - lifeSeenK_; lifePendD_ += me->deaths - lifeSeenD_;
         lifeSeenK_ = me->kills; lifeSeenD_ = me->deaths;
-    } else lifeSeenK_ = lifeSeenD_ = -1;   // (left: the next game counts from its own start)
-    bool due = !me || net_.mode().phase == PHASE_MATCH_END || time_ >= nextLifeReport_ + 300;
-    if ((lifePendK_ > 0 || lifePendD_ > 0) && due && time_ >= nextLifeReport_ && !rankKey_.secret.empty()) {
-        int k = std::min(lifePendK_, 300), d = std::min(lifePendD_, 300);
-        rank_.request("lifetime", "/lifetime", "secret=" + rankKey_.secret + "&kills=" + std::to_string(k) + "&deaths=" + std::to_string(d) + "&name=" + toHex(cfg_.name));
-        lifePendK_ -= k; lifePendD_ -= d;
-        nextLifeReport_ = time_ + 25;
-    }
+    } else if (lifeSeenK_ >= 0) { report(); lifeSeenK_ = lifeSeenD_ = -1; }   // left the game: it ended for you
+    if (phase == PHASE_MATCH_END && lifePhase_ != PHASE_MATCH_END) report();   // the match is over: send it
+    bool newMatch = lifePhase_ == PHASE_MATCH_END && phase != PHASE_MATCH_END && phase >= 0;
+    lifePhase_ = phase;
     std::string out;
     rank_.takeText("lifetime", out);
-    if (me && time_ >= nextLifeFetch_) {   // everyone in the game, once a minute
-        nextLifeFetch_ = time_ + 60;
-        std::string ids;
+    if (me && phase != PHASE_MATCH_END) {
+        std::string ids; bool unknown = false;
         for (int i = 0; i < kMaxPlayers; i++) {
             const std::string& id = i == net_.clientId() ? rankKey_.id : net_.rankId(i);
-            if (id.size() == 32 && ids.find(id) == std::string::npos) ids += (ids.empty() ? "" : ",") + id;
+            if (id.size() != 32 || ids.find(id) != std::string::npos) continue;
+            ids += (ids.empty() ? "" : ",") + id;
+            unknown |= !lifetime_.count(id);
         }
-        if (!ids.empty()) rank_.request("lifetimes", "/lifetime?ids=" + ids);
+        if (!ids.empty() && (newMatch || (unknown && time_ >= nextLifeFetch_))) { nextLifeFetch_ = time_ + 10; lifeAsked_ = ids; rank_.request("lifetimes", "/lifetime?ids=" + ids); }
     }
     if (rank_.takeText("lifetimes", out) && (out.empty() || out[0] != '!')) {
         std::istringstream in(out);
         std::string id; int k, d;
         while (in >> id >> k >> d) lifetime_[id] = {k, d};
+        std::istringstream asked(lifeAsked_);   // asked about but not on the master yet: zero so far
+        for (std::string a; std::getline(asked, a, ',');) if (!lifetime_.count(a)) lifetime_[a] = {0, 0};
     }
 }
 

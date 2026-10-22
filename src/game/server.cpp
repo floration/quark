@@ -1338,12 +1338,12 @@ void Server::tickProjectiles() {
             pr.active = false;
         } else {
             pr.active = false;
-            explode(at, pr.owner, pr.type);
+            explode(at, pr.owner, pr.type, pr.type == WPN_ROCKET ? hitPlayer : -1);
         }
     }
 }
 
-void Server::explode(const Vec3& at, int owner, int weapon) {
+void Server::explode(const Vec3& at, int owner, int weapon, int direct) {
     const WeaponDef& wd = weaponDef(weapon);
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
@@ -1366,6 +1366,7 @@ void Server::explode(const Vec3& at, int owner, int weapon) {
         // Self damage: 10% when the blast is at or below your feet (rocket jumps), full otherwise.
         float selfScale = at.y <= p.move.pos.y + 0.3f ? 0.1f : 1.0f;
         float dmg = wd.damage * frac * (self ? selfScale : 1.0f);
+        if (i == direct && !self) dmg = std::max(dmg, kRocketDirectDamage * tunedDamage(weapon));   // a direct hit
         Vec3 knock = push * (11.0f * frac * (self ? 1.3f : 1.0f) * (weapon == WPN_BUBBLE ? kBubbleKnock : 1.0f));
         if (!self) knock.y *= 2.0f; // enemies get launched: twice the vertical knockback
         damagePlayer(i, owner, dmg, weapon, knock);

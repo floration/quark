@@ -2823,7 +2823,7 @@ void Game::drawLeaderboard(float cx, float y) {
 void Game::drawScoreboard() {
     const float W = (float)r_.width(), H = (float)r_.height(), s = H / 720.0f;
     float ts = ui_.textScale();
-    float w = 760 * s, x = (W - w) * 0.5f, y = 140 * s;
+    float w = std::min(900 * s, W - 32 * s), x = (W - w) * 0.5f, y = 140 * s;
     const ModeState& ms = net_.mode();
     std::vector<PlayerSnap> ps = net_.latest().players;
     std::sort(ps.begin(), ps.end(), [](const PlayerSnap& a, const PlayerSnap& b) {
@@ -2840,24 +2840,25 @@ void Game::drawScoreboard() {
     r_.text(x + 12 * s, cy, ts, "PLAYER", kGrey);
     bool ranked = ms.flags & MS_RANKED;
     std::string ladder = arenaVariant(ms.arenaVariant).name;
-    r_.text(x + w * 0.36f, cy, ts, ranked ? "RATING" : "TOTAL K / D", kGrey);   // (outside ranked: lifetime kills / deaths)
+    if (ranked) r_.text(x + w * 0.31f, cy, ts, "RATING", kGrey);
+    r_.text(x + w * 0.79f, cy, ts, "TOTAL K / D", kGrey);   // lifetime kills / deaths (every game, live)
     // score: the mode's own points in race / hide and seek / tag; elsewhere damage / 10 + seconds on the objective
     const bool ownScore = ms.mode == MODE_RACE || isItMode(ms.mode);
     // instagib (1v1 / tourney ruleset or ranked instagib): every hit kills, so only accuracy and gibs (kills) count
     const bool gib = (arenaVariant(ms.arenaVariant).rules & AR_INSTAGIB) &&
                      (ms.mode == MODE_ARENA || ms.mode == MODE_TOURNEY || (ranked && ms.mode == MODE_FFA));
     if (gib) {
-        r_.text(x + w * 0.62f, cy, ts, "GIBS", kGrey);
-        r_.text(x + w * 0.76f, cy, ts, "ACC", kGrey);
+        r_.text(x + w * 0.53f, cy, ts, "GIBS", kGrey);
+        r_.text(x + w * 0.65f, cy, ts, "ACC", kGrey);
     } else {
-        r_.text(x + w * 0.46f, cy, ts, ms.mode == MODE_RACE ? "WINS" : "SCORE", kGrey);
-        r_.text(x + w * 0.56f, cy, ts, "K", kGrey);
-        r_.text(x + w * 0.62f, cy, ts, "D", kGrey);
-        r_.text(x + w * 0.68f, cy, ts, "DMG", kGrey);
-        r_.text(x + w * 0.76f, cy, ts, "OBJ", kGrey);
-        r_.text(x + w * 0.84f, cy, ts, "ACC", kGrey);
+        r_.text(x + w * 0.40f, cy, ts, ms.mode == MODE_RACE ? "WINS" : "SCORE", kGrey);
+        r_.text(x + w * 0.48f, cy, ts, "K", kGrey);
+        r_.text(x + w * 0.53f, cy, ts, "D", kGrey);
+        r_.text(x + w * 0.58f, cy, ts, "DMG", kGrey);
+        r_.text(x + w * 0.65f, cy, ts, "OBJ", kGrey);
+        r_.text(x + w * 0.72f, cy, ts, "ACC", kGrey);
     }
-    r_.text(x + w * 0.91f, cy, ts, "PING", kGrey);
+    r_.text(x + w * 0.92f, cy, ts, "PING", kGrey);
     cy += rowH;
     for (auto& p : ps) {
         Color c = (p.flags & PS_SPECTATOR) ? kGrey : rgba(teamColor(p.id));
@@ -2868,24 +2869,24 @@ void Game::drawScoreboard() {
         r_.text(x + 12 * s + cw, cy, ts, n, c);
         Rating rt;
         if (ranked && rank_.rating(ladder, net_.rankId(p.id), rt))
-            r_.text(x + w * 0.36f, cy, ts, rt.games < 5 ? std::to_string(rt.display()) + "?" : std::to_string(rt.display()), kWhite); // ? = still placing
-        if (!ranked) {
+            r_.text(x + w * 0.31f, cy, ts, rt.games < 5 ? std::to_string(rt.display()) + "?" : std::to_string(rt.display()), kWhite); // ? = still placing
+        {   // lifetime totals so far + this game's kills / deaths (sent when the game ends), so it counts up live
             auto lt = lifetime_.find(p.id == net_.clientId() ? rankKey_.id : net_.rankId(p.id));
-            if (lt != lifetime_.end()) r_.text(x + w * 0.36f, cy, ts, std::to_string(lt->second.first) + " / " + std::to_string(lt->second.second), kWhite);
+            if (lt != lifetime_.end()) r_.text(x + w * 0.79f, cy, ts, std::to_string(lt->second.first + p.kills) + " / " + std::to_string(lt->second.second + p.deaths), kWhite);
         }
         if (gib) {
-            r_.text(x + w * 0.62f, cy, ts, std::to_string(p.kills), kWhite);
-            r_.text(x + w * 0.76f, cy, ts, std::to_string(p.acc) + "%", kWhite);
+            r_.text(x + w * 0.53f, cy, ts, std::to_string(p.kills), kWhite);
+            r_.text(x + w * 0.65f, cy, ts, std::to_string(p.acc) + "%", kWhite);
         } else {
-            r_.text(x + w * 0.46f, cy, ts, std::to_string(ownScore ? p.score : p.dmg / 10 + p.obj), kWhite);
-            r_.text(x + w * 0.56f, cy, ts, std::to_string(p.kills), kWhite);
-            r_.text(x + w * 0.62f, cy, ts, std::to_string(p.deaths), kWhite);
-            r_.text(x + w * 0.68f, cy, ts, std::to_string(p.dmg), kWhite);
-            r_.text(x + w * 0.76f, cy, ts, fmtTime(p.obj), kWhite);
-            r_.text(x + w * 0.84f, cy, ts, std::to_string(p.acc) + "%", kWhite);
+            r_.text(x + w * 0.40f, cy, ts, std::to_string(ownScore ? p.score : p.dmg / 10 + p.obj), kWhite);
+            r_.text(x + w * 0.48f, cy, ts, std::to_string(p.kills), kWhite);
+            r_.text(x + w * 0.53f, cy, ts, std::to_string(p.deaths), kWhite);
+            r_.text(x + w * 0.58f, cy, ts, std::to_string(p.dmg), kWhite);
+            r_.text(x + w * 0.65f, cy, ts, fmtTime(p.obj), kWhite);
+            r_.text(x + w * 0.72f, cy, ts, std::to_string(p.acc) + "%", kWhite);
         }
         bool bot = net_.playerName(p.id).rfind("BOT ", 0) == 0;
-        r_.text(x + w * 0.91f, cy, ts, bot ? "BOT" : std::to_string(p.ping), kWhite);
+        r_.text(x + w * 0.92f, cy, ts, bot ? "BOT" : std::to_string(p.ping), kWhite);
         cy += rowH;
     }
 }
