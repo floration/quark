@@ -3492,13 +3492,15 @@ static void testEditSession(uint16_t port) {
             snprintf(op, sizeof op, "ed g part %zu %d %g 0 0 %g 0.5 0.1", groupsBefore, k % 4, (k % 20) * 0.05, (k % 20) * 0.05 + 0.04);
             b.sendCommand(op);
         }
+        // (waits until it's through rather than for a fixed wall-clock window: a loaded machine only makes it slower)
         double t0 = timeNow();
+        uint32_t tick0 = s.timeMs_;
         bool done = false;
-        while (!done && timeNow() - t0 < 3.0) {
+        while (!done && timeNow() - t0 < 60.0) {
             pump(s, cls, 0.02, idle);
             done = s.map_.groups.size() == groupsBefore + 1 && s.map_.groups.back().parts.size() == 200 && b.pendingCommands() == 0;
         }
-        printf("  200-part group: %.0f ms\n", (timeNow() - t0) * 1000);
+        printf("  200-part group: %.0f ms (%u ms game time)\n", (timeNow() - t0) * 1000, s.timeMs_ - tick0);
         CHECK(done);
         pump(s, cls, 0.3, idle);
         CHECK(a.map().crc == s.map_.crc && b.map().crc == s.map_.crc && c.map().crc == s.map_.crc);
@@ -4424,20 +4426,57 @@ static void testHostileInput() {
 
 // Test ports: the numbers in main() are offsets into a per-run block (TP), so two test runs on one machine
 // (two checkouts, CI + local) don't fight over 28530 and friends. Picked once before the groups fork.
+// Blocks stay out of the OS's ephemeral range: every client socket (the tests' own, and any other program's) gets a
+// port from that range, so a block inside it could find one of its server ports taken mid-run.
 static int g_portShift = 0;
 static uint16_t TP(int port) { return (uint16_t)(port + g_portShift); }
+static std::vector<int> portBlockShifts(int ephLo, int ephHi) {
+    // the tests use ports 28500 .. ~30100 (+ the shift): blocks of 2000 from 10500 up that are clear of the range
+    std::vector<int> shifts;
+    for (int shift = -18000; shift <= 36000; shift += 2000) {
+        int lo = 28500 + shift, hi = 30500 + shift;
+        if (hi <= 65535 && (hi < ephLo || lo > ephHi)) shifts.push_back(shift);
+    }
+    if (shifts.empty()) shifts.push_back(0);
+    return shifts;
+}
+static void ephemeralPortRange(int& lo, int& hi) {
+    lo = 49152, hi = 65535;   // the IANA range (Windows, macOS)
+#ifdef __linux__
+    std::ifstream f("/proc/sys/net/ipv4/ip_local_port_range");
+    int a = 0, b = 0;
+    if (f >> a >> b && a > 0 && b >= a && b <= 65535) { lo = a; hi = b; }
+#endif
+}
 static void pickPortBlock() {
 #ifdef _WIN32
     unsigned seed = (unsigned)std::chrono::steady_clock::now().time_since_epoch().count();
 #else
     unsigned seed = (unsigned)getpid();
 #endif
-    for (int k = 0; k < 16; k++) {   // blocks of 2000 from 28500 to ~60000; the first whose sample ports are free
-        int shift = (int)((seed + k) % 16) * 2000;
+    int ephLo, ephHi;
+    ephemeralPortRange(ephLo, ephHi);
+    std::vector<int> shifts = portBlockShifts(ephLo, ephHi);
+    for (size_t k = 0; k < shifts.size(); k++) {   // from a per-run start, the first block whose sample ports are free
+        int shift = shifts[(seed + k) % shifts.size()];
         bool ok = true;
         for (int p : {28520, 28700, 28900, 29300, 29600, 29997}) { UdpSocket s; if (!s.open((uint16_t)(p + shift))) { ok = false; break; } }
         if (ok) { g_portShift = shift; return; }
     }
+    g_portShift = shifts[seed % shifts.size()];
+}
+// The blocks never overlap the ephemeral range (Linux's default 32768-60999, the IANA 49152-65535, this machine's).
+static void testPortBlocks() {
+    printf("test port blocks: clear of the ephemeral port range\n");
+    int lo, hi;
+    ephemeralPortRange(lo, hi);
+    for (auto [a, b] : std::vector<std::pair<int, int>>{{32768, 60999}, {49152, 65535}, {lo, hi}}) {
+        std::vector<int> s = portBlockShifts(a, b);
+        CHECK(s.size() >= 2);
+        for (int shift : s) CHECK(28500 + shift >= 1024 && (30500 + shift < a || 28500 + shift > b));
+    }
+    CHECK(30500 + g_portShift < lo || 28500 + g_portShift > hi);
+    printf("  ephemeral %d-%d, block %d-%d\n", lo, hi, 28500 + g_portShift, 30500 + g_portShift);
 }
 
 // Update-package signatures (docs/SIGNING.md): round trip, tampering and wrong keys are rejected.
@@ -4669,7 +4708,7 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); }},
