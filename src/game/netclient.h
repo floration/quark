@@ -71,7 +71,7 @@ public:
 
     // Reliable events received since last call.
     std::vector<GameEvent> takeEvents() { std::vector<GameEvent> e; e.swap(events_); return e; }
-    float renderTime() const { return renderTime_; }
+    double renderTime() const { return renderTime_; }
     uint32_t serverTick() const { return hasSnapshot() ? latest().tick : 0; }
     int tickRate() const { return hasSnapshot() ? latest().tickRate : 1000; }
     double tickPeriod() const { return 1.0 / tickRate(); }
@@ -160,7 +160,9 @@ private:
     double snapRecvTime_ = 0;
     double clockOffset_ = 0;      // estimated serverTime - localTime
     bool clockInit_ = false;
-    float renderTime_ = 0;        // server time (s) used for interpolating others
+    // server time (s) used for interpolating others. Double: a float of server uptime is 8 ms off after 18 h and 31 ms
+    // after 3 days, which jerked interpolation and the lag-compensation view tick (FINAL_REVIEW 2.6).
+    double renderTime_ = 0;
 
     UserCmd cmds_[kCmdRing];
     uint32_t nextSeq_ = 1;

@@ -3757,6 +3757,43 @@ static void testArenaAndTourney(uint16_t& port) {
 
 // Delta snapshots decode (no misses) and match the server; snapshots shrink; enemies out of sight are
 // sent hidden, in sight they're sent.
+// The client's interpolation clock is a double (FINAL_REVIEW 2.6): on a server that has been up for 5 days its render
+// times aren't stuck on a float's 31 ms grid (interpolation stalled, then jumped), and the view tick it sends for lag
+// compensation is the time it shows.
+static void testUptimeClock(uint16_t port) {
+    printf("client clock on a server up for 5 days\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    s.timeMs_ += 5u * 86400u * 1000u;
+    NetClient a;
+    a.setInterpFixed(0.05f);
+    a.connect("127.0.0.1:" + std::to_string(port), "uptime");
+    std::vector<NetClient*> cls = {&a};
+    pump(s, cls, 2.0, idle);
+    CHECK(a.renderTime() > 5 * 86400.0);
+    int samples = 0, onGrid = 0;
+    double prev = 0;
+    std::vector<int> lags;
+    pump(s, cls, 1.0, [&](int) {
+        double rt = a.renderTime(), g = rt * 32;
+        if (rt != prev) { samples++; if (std::fabs(g - std::round(g)) < 1e-6) onGrid++; prev = rt; }
+        // the view tick the server gets: the interpolation delay (plus the trip) behind its clock
+        UserCmd c;
+        uint32_t sent = s.players_[a.clientId()].lastViewTick;
+        if (sent) lags.push_back((int)(s.timeMs_ - sent));
+        return c;
+    });
+    std::sort(lags.begin(), lags.end());
+    int median = lags.empty() ? -1 : lags[lags.size() / 2];
+    printf("  %d of %d render times on a float's 1/32 s grid; view tick a median %d ms behind the server (interp 50)\n", onGrid, samples, median);
+    CHECK(samples > 20 && onGrid * 4 < samples);
+    CHECK(median >= 45 && median < 150);
+    s.stop();
+}
+
 static void testNetcode(uint16_t port) {
     printf("netcode: delta snapshots, visibility\n");
     Server s;
@@ -4324,7 +4361,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(29604)); testMapNames(TP(29605)); testDemo(TP(29603)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(TP(29960)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(TP(29950)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(TP(29900)); testInputBacklog(TP(29901)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "net") { testUptimeClock(TP(29902)); testNetcode(TP(29900)); testInputBacklog(TP(29901)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = TP(29800); testArenaAndTourney(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "bots") { uint16_t p = TP(28900); testBots(p); return g_fail ? 1 : 0; }
@@ -4358,7 +4395,7 @@ int main(int argc, char** argv) {
         {"rules", [] { testGameRules(""); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
-        {"netcode", [] { testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
+        {"netcode", [] { testUptimeClock(TP(28702)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
         {"tickrate", [] { testTickRateFallback(TP(28710)); testRateBetweenRounds(TP(28711)); testRateUndoStepUp(TP(28712)); }},
         {"resetmaps", [] { testResetMaps(); }},
         {"userdata", [] { testUserData(); }},

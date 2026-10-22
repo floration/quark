@@ -124,8 +124,7 @@ void NetClient::poll() {
         // ease toward the measured jitter so the render time never jumps
         jitter_ += (jitterTarget_ - jitter_) * (float)std::min(1.0, (now - lastJitterUpdate_) * 2.0);
         lastJitterUpdate_ = now;
-        float target = (float)(now + clockOffset_) - interpDelay();
-        renderTime_ = target;
+        renderTime_ = now + clockOffset_ - interpDelay();
     }
 }
 
@@ -488,15 +487,15 @@ NetClient::PlayerArray NetClient::interpolatedPlayers() const {
     const Snapshot* a = &snaps_.front();
     const Snapshot* b = &snaps_.back();
     for (size_t i = snaps_.size() - 1; i > 0; i--) {
-        if (snaps_[i - 1].timeMs * 0.001f <= renderTime_ && snaps_[i].timeMs * 0.001f >= renderTime_) {
+        if (snaps_[i - 1].timeMs * 0.001 <= renderTime_ && snaps_[i].timeMs * 0.001 >= renderTime_) {
             a = &snaps_[i - 1];
             b = &snaps_[i];
             break;
         }
     }
-    if (renderTime_ >= snaps_.back().timeMs * 0.001f) a = b = &snaps_.back();
-    float ta = a->timeMs * 0.001f, tb = b->timeMs * 0.001f;
-    float t = tb > ta ? clampf((renderTime_ - ta) / (tb - ta), 0, 1) : 1.0f;
+    if (renderTime_ >= snaps_.back().timeMs * 0.001) a = b = &snaps_.back();
+    double ta = a->timeMs * 0.001, tb = b->timeMs * 0.001;   // (doubles: server uptime in seconds)
+    float t = tb > ta ? clampf((float)((renderTime_ - ta) / (tb - ta)), 0, 1) : 1.0f;
     for (auto& pb : b->players) {
         if (pb.hidden || pb.id >= kMaxPlayers) continue; // out of sight: the server didn't send where they are (ids: checked at decode too)
         InterpPlayer& ip = out[pb.id];
@@ -521,7 +520,7 @@ std::vector<ProjectileSnap> NetClient::interpolatedProjectiles() const {
     if (snaps_.empty()) return out;
     // Projectiles fly straight: extrapolate the newest snapshot to "now" (they're visual only).
     const Snapshot& s = snaps_.back();
-    float dt = clampf(renderTime_ + interpDelay() - s.timeMs * 0.001f, 0, 0.2f);
+    float dt = clampf((float)(renderTime_ + interpDelay() - s.timeMs * 0.001), 0, 0.2f);
     for (auto p : s.projectiles) {
         p.pos += p.vel * dt;
         out.push_back(p);
@@ -768,8 +767,7 @@ void NetClient::pollPlayback() {
         }
     }
     if (clockInit_) {
-        float target = (float)(timeNow() + clockOffset_) - interpDelay();
-        renderTime_ = target;
+        renderTime_ = timeNow() + clockOffset_ - interpDelay();
     }
     if (play_.pos + 13 > d.size() && play_.t > play_.length + 0.5) {
         error_ = "demo finished";
