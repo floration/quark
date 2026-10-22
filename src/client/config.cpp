@@ -133,8 +133,7 @@ void Settings::finishLoad() {
 }
 
 void Settings::save() const {
-    std::ofstream f(cfgPath());
-    f << toText();
+    writeFileAtomic(cfgPath(), toText());   // (whole or not at all: a crash mid-write used to lose every bind)
 }
 
 std::string Settings::toText() const {

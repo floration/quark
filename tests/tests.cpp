@@ -380,6 +380,27 @@ static void testClipRays() {
     CHECK(differ == 0 && clipMatters > 0);
 }
 
+// Settings, profiles, the ranked key, custom modes and maps are written whole or not at all (REVIEW COR-2: they were
+// truncated, then written, so a crash or a full disk lost every bind, or the ranked identity).
+static void testAtomicWrite() {
+    printf("files are written whole or not at all\n");
+    namespace fs = std::filesystem;
+    std::string path = (fs::temp_directory_path() / ("quark_atomic_" + std::to_string(rand()) + ".cfg")).string();
+    auto read = [&] { std::ifstream f(path, std::ios::binary); std::stringstream ss; ss << f.rdbuf(); return ss.str(); };
+    CHECK(writeFileAtomic(path, "first\n") && read() == "first\n");
+    std::string big(100000, 'x');
+    CHECK(writeFileAtomic(path, big) && read() == big);               // replaces the old file (Windows too)
+    std::error_code ec;
+    CHECK(!fs::exists(path + ".tmp", ec));
+    CHECK(writeFileAtomic(path, "key\n", true) && read() == "key\n");
+#ifndef _WIN32
+    auto p = fs::status(path, ec).permissions();
+    CHECK((p & (fs::perms::group_all | fs::perms::others_all)) == fs::perms::none);   // the ranked key: 0600
+#endif
+    CHECK(!writeFileAtomic((fs::temp_directory_path() / "no_such_dir_quark" / "x.cfg").string(), "x"));   // a failed write says so
+    fs::remove(path, ec);
+}
+
 static void testGridQueries() {
     printf("grid raycast / collision vs brute force\n");
     Map m;
@@ -2759,7 +2780,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "edgroups") { testEditorGroups(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(29997); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "allmaps") { testAllMaps(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "limits") { testMapLimits(); testClipRays(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "limits") { testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(29990); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(29980); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(29450); return g_fail ? 1 : 0; }
@@ -2790,7 +2811,7 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testSleepPrecision(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testClipRays(); testGridQueries(); testEditorLadder(); testEditorGroups(); }},
+        {"movement", [] { testSleepPrecision(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", 28560); testSession(MODE_BOMB, "bastion", 28561); testSession(MODE_KOTH, "bastion", 28562); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", 28563); testSession(MODE_FFA, "bastion", 28564); testSession(MODE_RACE, "foundry", 28565); }},
         {"modes", [] { testCustomMode(28570); testPoints(28571); testSyringe(28572); testCartChecks(28573); testItModes(28574); }},

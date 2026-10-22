@@ -154,4 +154,8 @@ std::string mapsFolder(); // absolute path of the maps folder
 // Maps fetched from servers live apart from your own, keyed by content: maps/downloads/<name>-<crc>.qmap
 std::string downloadedMapPath(const std::string& name, uint32_t crc);
 bool saveMapFile(const std::string& path, const std::string& text);
+// Writes a file whole or not at all: a temp file next to it, then a rename over it, so a crash or a full disk
+// leaves the old file (settings, profiles, the ranked key, custom modes, maps). privateFile: only this user may
+// read it (POSIX 0600: the ranked key).
+bool writeFileAtomic(const std::string& path, const std::string& data, bool privateFile = false);
 uint32_t crc32(const void* data, size_t len);

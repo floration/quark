@@ -34,12 +34,7 @@ std::string readTextFile(const std::string& path) {
     return ss.str();
 }
 
-bool writeTextFile(const std::string& path, const std::string& text) {
-    std::ofstream f(path);
-    if (!f) return false;
-    f << text;
-    return (bool)f;
-}
+bool writeTextFile(const std::string& path, const std::string& text) { return writeFileAtomic(path, text); }
 
 std::string stampedName(const char* prefix) {
     time_t t = time(nullptr);

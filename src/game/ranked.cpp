@@ -47,8 +47,7 @@ RankKey loadOrCreateRankKey(const std::string& path) {
         std::random_device rd;
         char buf[72];
         for (int i = 0; i < 8; i++) snprintf(buf + i * 8, 9, "%08x", (unsigned)rd());
-        std::ofstream f(path, std::ios::trunc);
-        if (!(f << buf << "\n")) return RankKey();
+        if (!writeFileAtomic(path, std::string(buf) + "\n", true)) return RankKey();   // (the ranked identity: whole, and private)
         k.secret = buf;
     }
     k.id = rankIdFromSecret(k.secret);

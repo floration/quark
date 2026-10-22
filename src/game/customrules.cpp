@@ -142,8 +142,7 @@ bool saveCustomMode(const CustomRules& r) {
     if (!r.active()) return false;
     std::error_code ec;
     std::filesystem::create_directories(customModesDir(), ec);
-    std::ofstream f(customModesDir() + "/" + safeName(r.name) + ".qmode");
-    return (bool)(f << r.toText());
+    return writeFileAtomic(customModesDir() + "/" + safeName(r.name) + ".qmode", r.toText());
 }
 
 bool deleteCustomMode(const std::string& name) {

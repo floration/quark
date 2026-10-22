@@ -94,15 +94,23 @@ std::string downloadedMapPath(const std::string& name, uint32_t crc) {
 bool saveMapFile(const std::string& path, const std::string& text) {
     std::error_code ec;
     fs::create_directories(fs::path(path).parent_path(), ec);
+    return writeFileAtomic(path, text);
+}
+
+bool writeFileAtomic(const std::string& path, const std::string& data, bool privateFile) {
+    std::error_code ec;
     std::string tmp = path + ".tmp";
     {
         std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
         if (!f) return false;
-        f.write(text.data(), (std::streamsize)text.size());
-        if (!f) return false;
+        if (privateFile) fs::permissions(tmp, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace, ec);
+        f.write(data.data(), (std::streamsize)data.size());
+        f.flush();
+        if (!f) { f.close(); fs::remove(tmp, ec); return false; }
     }
-    fs::rename(tmp, path, ec);
-    return !ec;
+    fs::rename(tmp, path, ec);   // (replaces the old file in one step)
+    if (ec) { fs::remove(tmp, ec); return false; }
+    return true;
 }
 
 uint32_t crc32(const void* data, size_t len) {
