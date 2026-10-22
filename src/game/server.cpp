@@ -1089,11 +1089,11 @@ void Server::spawnPlayer(int id) {
                 if (i == id || !players_[i].connected || !players_[i].alive) continue;
                 nearest = std::min(nearest, length(players_[i].move.pos - sp->pos));
                 if (!unseen) continue;
-                Vec3 eye = players_[i].move.pos + Vec3(0, kEyeHeight, 0), to = chest - eye;
+                Vec3 eye = players_[i].move.pos + Vec3(0, kEyeHeight * bodyScale(), 0), to = chest - eye;
                 float d = length(to);
                 if (d > 0.1f && map_.raycast(eye, to / d, d) < 0) seenBy++;   // nothing in between
             }
-            if (map_.boxSolid(playerBox(sp->pos, false))) continue;
+            if (map_.boxSolid(playerBox(sp->pos, false, bodyScale()))) continue;   // (a giant needs a giant's room)
             float score = nearest + (qrand() % 100) * 0.01f - seenBy * 1000.0f;
             if (score > bestScore) { bestScore = score; best = sp; }
         }
@@ -1112,7 +1112,7 @@ void Server::spawnPlayer(int id) {
         for (int k = 0; k < WPN_COUNT; k++) if (weaponAllowed(kWeaponSlots[k])) { p.weapon = kWeaponSlots[k]; break; }
     const DuelModDef& dm = duelModDef(duelMod()); // duel: this life's modifier (none outside duel)
     p.health = dm.health == kMaxHealth ? maxHealth() : dm.health;   // (a custom mode sets its own health)
-    p.move.mods |= dm.moveMods;
+    p.move.mods |= dm.moveMods | moveScaleMods(dm.size);   // (size modifiers: the hull, as well as the hitbox and eyes)
     if (arenaRules() & AR_QUICK_DASH) p.move.mods |= MOVE_QUICK_DASH;
     if (arenaRules() & AR_LOW_GRAVITY) p.move.mods |= MOVE_LOW_GRAVITY;
     p.nextFire = time() + 0.25f;
@@ -1143,7 +1143,7 @@ void Server::killPlayer(int victim, int killer, int weapon) {
     e.a = (uint8_t)(killer < 0 ? 255 : killer);
     e.b = (uint8_t)victim;
     // c: the weapon, plus how it happened (the announcer's headshot / airborne / air rocket calls)
-    bool airborne = !(v.move.flags & MF_ONGROUND) && !map_.onLadder(playerBox(v.move.pos, v.move.flags & MF_CROUCHED));
+    bool airborne = !(v.move.flags & MF_ONGROUND) && !map_.onLadder(playerBox(v.move));
     e.c = (int16_t)(weapon < 0 ? weapon : weapon | (headHit_[victim] ? KILL_HEADSHOT : 0) | (airborne ? KILL_AIRBORNE : 0));
     broadcastEvent(e);
     glog(LOG_SIMPLE, "kill killer=%d \"%s\" victim=%d \"%s\" weapon=%d", killer, killer >= 0 ? players_[killer].name.c_str() : "", victim,
@@ -1278,7 +1278,7 @@ void Server::simulate() {
     for (int i = 0; i < kMaxPlayers; i++) {
         ServerPlayer& p = players_[i];
         if (!p.connected) continue;
-        if (p.alive && (p.move.pos.y < map_.killY() || (!map_.lava.empty() && map_.inLava(playerBox(p.move.pos, p.move.flags & MF_CROUCHED))))) killPlayer(i, -1, 252);
+        if (p.alive && (p.move.pos.y < map_.killY() || (!map_.lava.empty() && map_.inLava(playerBox(p.move))))) killPlayer(i, -1, 252);
         if (!p.alive && p.respawnAt >= 0 && time() >= p.respawnAt && p.team != TEAM_SPECTATOR) spawnPlayer(i);
         if (p.alive && (arenaRules() & AR_REGEN) && tick_ - p.lastDamagedTick > (uint32_t)(3 * tickRate()) && p.health < maxHealth())
             p.health = std::min(maxHealth(), p.health + 10.0f * dt()); // regeneration: 10 hp/s after 3 s untouched
@@ -2123,11 +2123,7 @@ uint16_t Server::weaponMask() const {
 }
 
 AABB Server::hitBox(const Vec3& feet, bool crouched) const {
-    AABB b = playerBox(feet, crouched);
-    float k = duelModDef(duelMod()).size;
-    if (k == 1.0f) return b;
-    Vec3 c = {feet.x, feet.y, feet.z};
-    return {c + (b.mn - c) * k, c + (b.mx - c) * k};
+    return playerBox(feet, crouched, bodyScale());   // (the same box as the hull: size modifiers scale both)
 }
 
 void Server::openGameLog() {

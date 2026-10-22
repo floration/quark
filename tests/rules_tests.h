@@ -184,6 +184,61 @@ static void testThrowCooldown(uint16_t port) {
     s.stop();
 }
 
+// 5.3: size modifiers scale the hull (collision), not just the hitbox and eyes; movement stays tick-rate independent.
+static void testSizeHull(uint16_t port) {
+    printf("size modifiers scale the hull\n");
+    for (int d = 0; d < DUEL_MOD_COUNT; d++) CHECK(moveScale(moveScaleMods(duelModDef(d).size)) == duelModDef(d).size);
+    Map m;
+    std::string err;
+    // a floor, a 2.5 m high slab to walk under at x 3..6, and a wall at x = 10
+    CHECK(m.parse("box -20 -1 -20 20 0 20\nbox 3 2.5 -20 6 3 20\nbox 10 0 -20 11 8 20\nspawn any 0 0 0\n", &err));
+    auto walk = [&](uint8_t mods, int msec) {
+        MoveState s;
+        s.pos = {0, 0, 0};
+        s.mods = mods;
+        for (int t = 0; t < 2500; t += msec) {
+            UserCmd c; c.msec = (uint8_t)msec; c.yaw = -PI / 2; c.forward = 127;   // +x
+            pmove(s, c, m);
+        }
+        return s;
+    };
+    MoveState n = walk(0, 8), big = walk(MOVE_BIG, 8), tiny = walk(MOVE_TINY, 8);
+    printf("  walked to x %.2f (normal), %.2f (double size), %.2f (tiny)\n", n.pos.x, big.pos.x, tiny.pos.x);
+    CHECK(std::fabs(n.pos.x - (10 - kPlayerHalfWidth)) < 0.02f);              // under the slab, up to the wall
+    CHECK(std::fabs(big.pos.x - (3 - kPlayerHalfWidth * kBigScale)) < 0.02f); // a giant's head hits the slab
+    CHECK(std::fabs(tiny.pos.x - (10 - kPlayerHalfWidth * kTinyScale)) < 0.02f);
+    for (int msec : {1, 2, 4}) {                                               // tick-rate independent, scaled too
+        MoveState b2 = walk(MOVE_BIG, msec);
+        CHECK(b2.pos.x == big.pos.x && b2.pos.y == big.pos.y);
+    }
+    CHECK(playerBox(big).mx.y - playerBox(big).mn.y == kPlayerHeight * kBigScale);
+    // a duel "double size" life: the server spawns a giant hull, its hitbox is the same box, and it fits the spawn
+    for (int mod : {4, 19}) {   // DOUBLE SIZE, TINY PLAYERS
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "clockwork"; cfg.mode = MODE_DUEL; cfg.port = port++; cfg.balanceBots = false;
+        NetClient c[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 2, cls, false)) { s.stop(); continue; }
+        s.duelUsed_ = ~(1u << mod);   // every other modifier played: the next life is this one
+        s.command("forcestart");
+        pump(s, cls, 0.3, idle);
+        CHECK(s.ms_.duelMod == mod);
+        float k = duelModDef(mod).size;
+        for (int i = 0; i < 2; i++) {
+            auto& p = s.players_[c[i].clientId()];
+            CHECK(p.alive && moveScale(p.move.mods) == k);
+            AABB hb = s.hitBox(p.move.pos, false), hull = playerBox(p.move);
+            CHECK(hb.mn.x == hull.mn.x && hb.mx.y == hull.mx.y && std::fabs(hull.mx.y - hull.mn.y - kPlayerHeight * k) < 1e-4f);
+            CHECK(!s.map_.boxSolid(hull));   // spawned with room for the hull
+        }
+        // the client predicts with the same hull: its predicted state carries the size
+        pump(s, cls, 0.5, idle);
+        CHECK(moveScale(c[0].predicted().mods) == k);
+        s.stop();
+    }
+}
+
 // "quark_tests rules [name]": all of them, or the one named.
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
@@ -191,6 +246,7 @@ static void testGameRules(const std::string& only) {
         {"overtime", [] { testOvertime(TP(29230)); }},
         {"syringe", [] { testSyringeModes(); }},
         {"throws", [] { testThrowCooldown(TP(29240)); }},
+        {"hull", [] { testSizeHull(TP(29242)); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
 }

@@ -507,7 +507,7 @@ bool enoughPlayers(const Server& s) {
 }
 
 bool feetIn(const Server& s, int id, const AABB& zone) {
-    return playerBox(s.players_[id].move.pos, s.players_[id].move.flags & MF_CROUCHED).overlaps(zone);
+    return playerBox(s.players_[id].move).overlaps(zone);
 }
 
 void tickVS(Server& s) {
@@ -855,7 +855,7 @@ void updateCartSolid(Server& s) {
     s.map_.dynSolids.push_back(cart);
     for (auto& p : s.players_) {
         if (!p.connected || !p.alive) continue;
-        AABB b = playerBox(p.move.pos, p.move.flags & MF_CROUCHED);
+        AABB b = playerBox(p.move);
         if (!b.overlaps(cart)) continue;
         // smallest push out: sideways either way, or up onto the cart
         float pushes[5] = {cart.mx.x - b.mn.x, b.mx.x - cart.mn.x, cart.mx.z - b.mn.z, b.mx.z - cart.mn.z, cart.mx.y - b.mn.y};

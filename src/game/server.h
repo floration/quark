@@ -322,7 +322,7 @@ public:
     bool autosave();
     void handleStringCmdForTest(int id, const std::string& s) { handleStringCmd(id, s); }
     void glog(int level, const char* fmt, ...);   // game log file (no-op below cfg_.logLevel)
-    float bodyScale() const { return duelModDef(duelMod()).size; } // duel "double size": hitbox and eye height
+    float bodyScale() const { return duelModDef(duelMod()).size; } // duel "double size": hull, hitbox and eye height (MOVE_BIG / MOVE_TINY)
     int duelMod() const { return ms_.mode == MODE_DUEL ? ms_.duelMod : 255; } // 255 in warmup (rulesReset clears it)
     // Weapons allowed right now (bit per weapon, 0 = all) and the 1v1 ruleset's AR_* rules.
     uint16_t weaponMask() const;

@@ -33,7 +33,13 @@ enum : uint8_t {
     MOVE_QUICK_DASH = 2,   // dash recharges 3x faster
     MOVE_LOW_GRAVITY = 4,  // 40% gravity
     MOVE_RUN_ONLY = 8,     // no dash, no grapple: run and jump (and climb ladders) only
+    MOVE_BIG = 16,         // duel "double size" / "giant snipers": the hull (and eyes) x kBigScale
+    MOVE_TINY = 32,        // duel "tiny players": x kTinyScale
 };
+constexpr float kBigScale = 2.0f, kTinyScale = 0.6f;
+inline float moveScale(uint8_t mods) { return (mods & MOVE_BIG) ? kBigScale : (mods & MOVE_TINY) ? kTinyScale : 1.0f; }
+// the MOVE_* size bit for a body scale (DuelModDef::size: 1, 2 or 0.6)
+inline uint8_t moveScaleMods(float size) { return size > 1.01f ? MOVE_BIG : size < 0.99f ? MOVE_TINY : 0; }
 enum : uint8_t {
     MF_ONGROUND = 1, MF_CROUCHED = 2, MF_JUMPHELD = 4, MF_FROZEN = 8,
     MF_HOOKHELD = 16, MF_HOOKED = 32, MF_DASHHELD = 64,
@@ -42,7 +48,9 @@ constexpr float kGrappleRange = 45.0f;
 constexpr float kDashCooldown = 1.2f;
 constexpr float kHookCooldown = 1.0f;   // after the hook is released
 
-AABB playerBox(const Vec3& feet, bool crouched);
+// The hull: kPlayerHalfWidth each side, kPlayerHeight tall (crouched: kPlayerCrouchHeight), times scale (size modifiers).
+AABB playerBox(const Vec3& feet, bool crouched, float scale = 1.0f);
+inline AABB playerBox(const MoveState& m) { return playerBox(m.pos, (m.flags & MF_CROUCHED) != 0, moveScale(m.mods)); }
 // the standard values a custom mode scales (MOVEMENT / GENERAL pages show "standard -> this mode"), and their units
 float moveParamBase(int param);           // MV_*
 const char* moveParamUnit(int param);

@@ -1346,7 +1346,7 @@ void Game::drawWorld(float alpha) {
         // only when the whole body is in sight (no seeing a bar through a wall or over cover: every corner and the
         // middle of the hitbox has a clear line from the camera), and exactly as wide as the hitbox on screen
         auto wholeBodySeen = [&] {
-            AABB hb = playerBox(pos, crouch);
+            AABB hb = playerBox(pos, crouch, bs);
             const Vec3 cam = r_.cameraPos();
             for (int k = 0; k < 9; k++) {
                 Vec3 q = k == 8 ? (hb.mn + hb.mx) * 0.5f : Vec3(k & 1 ? hb.mx.x - 0.02f : hb.mn.x + 0.02f, k & 2 ? hb.mx.y - 0.02f : hb.mn.y + 0.05f, k & 4 ? hb.mx.z - 0.02f : hb.mn.z + 0.02f);
@@ -1359,7 +1359,7 @@ void Game::drawWorld(float alpha) {
         if (cfg_.healthBars && !rankedPlayer() && !self && i != viewing && wholeBodySeen()) {
             float sx, sy, lx, ly, rx, ry;   // over their head, or at their feet (VISUALS > HEALTH BAR POSITION)
             Vec3 at = cfg_.healthBarsBottom ? pos + Vec3(0, -0.15f, 0) : pos + Vec3(0, 2.0f * bs + 0.35f, 0);
-            Vec3 side = Vec3(std::cos(camYaw), 0, -std::sin(camYaw)) * kPlayerHalfWidth;   // (the hitbox's half width, across the view)
+            Vec3 side = Vec3(std::cos(camYaw), 0, -std::sin(camYaw)) * (kPlayerHalfWidth * bs);   // (the hitbox's half width, across the view)
             if (r_.project(at, sx, sy) && r_.project(at - side, lx, ly) && r_.project(at + side, rx, ry)) {
                 float bw = std::max(4.0f, std::fabs(rx - lx)), bh = std::max(2.0f, std::min(5 * ui_.s(), bw * 0.15f));
                 float f = clampf(p.health / 100.0f, 0, 1);
