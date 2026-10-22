@@ -1,6 +1,8 @@
 // Shared gameplay constants and enums (client + server).
 #pragma once
 #include <cstdint>
+#include <cmath>
+#include "../common/qmath.h"
 
 // Server tick rate is chosen at runtime: it starts at 1000 Hz and steps down
 // (500, 250, 125) in warmup or between rounds if the host can't keep up (mid-round only if it can't keep up at all).
@@ -12,8 +14,9 @@ constexpr float kMoveStep = 0.001f;        // movement substep (s)
 constexpr int kMaxPlayers = 32;        // engine limit; servers default to 8 (ServerConfig::maxPlayers)
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
+constexpr int kMaxInterpMs = 200;      // the longest fixed interpolation delay a client can set (interp_ms; lag compensation covers it)
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 32;   // 32: ranked signatures name the dialled server address (REVIEW 2.2); 31: hull scaling + grapple change in shared pmove; 30:  signed ranked ids, reconnect tokens; edit sessions name the map by an edit chain (mapEditCrc), map data carries the text CRC
+constexpr uint16_t kProtocolVersion = 33;   // 33: fixed weapon spread pattern (NET-9), clients report a fixed interp delay ("interp"); 32: ranked signatures name the dialled server address (REVIEW 2.2); 31: hull scaling + grapple change in shared pmove; 30:  signed ranked ids, reconnect tokens; edit sessions name the map by an edit chain (mapEditCrc), map data carries the text CRC
 // PlayerSnap::keys: what a player is holding (spectators see it on the key overlay)
 enum : uint16_t { KEY_FWD = 1, KEY_BACK = 2, KEY_LEFT = 4, KEY_RIGHT = 8, KEY_JUMP = 16, KEY_CROUCH = 32, KEY_FIRE = 64, KEY_ALT = 128, KEY_DASH = 256, KEY_HOOK = 512 };
 
@@ -139,7 +142,7 @@ struct WeaponDef {
     bool projectile;
     float projSpeed;
     float splashRadius; // 0 = direct hit only
-    float spread;       // radians of random spread (hip fire)
+    float spread;       // radians of spread (hip fire; a fixed pattern: pelletOffset / burstOffset)
     float scopedSpread; // radians when scoped (alt-fire held); < 0 = can't scope
     float zoomFov;      // horizontal fov while scoped
     bool beam;          // continuous beam (laser)
@@ -155,12 +158,49 @@ constexpr float kLaserPush = 20.0f;        // laser knockback (m/s per second of
 constexpr float kLaserPullScale = 1.82f;   // alt-fire pulls this much harder than the normal beam pushes
 constexpr float kLaserPullDamage = 0.75f;  // ...for 75% damage
 
-// Shot spread from the command's sequence number, so the client draws exactly the shot the server fired.
-inline uint32_t spreadHash(uint32_t x) { x ^= x >> 16; x *= 0x7feb352dU; x ^= x >> 15; x *= 0x846ca68bU; x ^= x >> 16; return x; }
-inline void spreadOffset(uint32_t seq, int pellet, float spread, float& a, float& r) {
-    uint32_t h1 = spreadHash(seq * 31u + (uint32_t)pellet * 7919u + 1u), h2 = spreadHash(h1 ^ 0x9E3779B9u);
-    a = (h1 & 0xFFFFFF) / 16777216.0f * 6.2831853f;
-    r = __builtin_sqrtf((h2 & 0xFFFFFF) / 16777216.0f) * spread;
+// Weapon spread is a fixed pattern, never seeded by anything the client picks (REVIEW NET-9: it came from the
+// command's sequence number, and a client choosing its best numbers landed about twice the shotgun pellets).
+// An offset is an angle `a` around the aim and a radius `r` (radians) off it.
+// Pellets of one shot (shotgun, the bubble stream): one dead center, then rings around it. Every pellet covers an
+// equal share of the spread disc (each ring sits in the middle of its equal-area annulus, pellets per ring in
+// proportion to its size), so the density is that of the old uniform random spread (mean radius 2/3 of it);
+// 20 pellets = 1 + 6 at 0.45 + 13 at 0.82 of the spread.
+constexpr int kBurstPattern = 16;   // single-shot weapons with spread: shots per pattern cycle
+inline void pelletOffset(int k, int count, float spread, float& a, float& r) {
+    a = 0; r = 0;
+    if (count <= 1 || spread <= 0 || k <= 0 || k >= count) return;
+    int rest = count - 1;
+    int rings = (int)std::lround((std::sqrt(1.0 + 4.0 * rest / 3.0) - 1.0) / 2.0);   // ~6, 12, 18... per ring
+    if (rings < 1) rings = 1;
+    int tri = rings * (rings + 1) / 2, before = 1;
+    for (int j = 1; j <= rings; j++) {
+        int n = j == rings ? count - before : (int)std::lround((double)rest * j / tri);
+        if (n <= 0) continue;
+        if (k < before + n) {
+            r = spread * (float)std::sqrt((before + n * 0.5) / count);
+            a = 1.5707963f + 6.2831853f * ((k - before) + ((j & 1) ? 0.0f : 0.5f)) / n;   // from the top; rings staggered
+            return;
+        }
+        before += n;
+    }
+}
+// A single-shot weapon with spread: the shot's number in a held burst (0 = the first after letting go of fire)
+// walks a fixed sunflower sequence starting dead center, so consecutive shots land far apart and evenly.
+inline void burstOffset(uint32_t shot, float spread, float& a, float& r) {
+    uint32_t i = shot % kBurstPattern;
+    a = 2.3999632f * (float)i;   // the golden angle
+    r = spread <= 0 ? 0.0f : spread * std::sqrt((float)i / kBurstPattern);
+}
+// The direction of pellet `k` of `pellets` (burst shot `burst` when it's a single shot). The server fires this
+// and the client draws its tracers with it, so they always match.
+inline Vec3 spreadAim(const Vec3& aim, float spread, int k, int pellets, uint32_t burst) {
+    if (spread <= 0) return aim;
+    float a, r;
+    if (pellets > 1) pelletOffset(k, pellets, spread, a, r);
+    else burstOffset(burst, spread, a, r);
+    if (r <= 0) return aim;
+    Vec3 right = normalize(cross(aim, {0, 1, 0})), up = cross(right, aim);
+    return normalize(aim + right * (std::cos(a) * r) + up * (std::sin(a) * r));
 }
 // The standard weapon table. weaponDef() is what everything uses: this, scaled by the active custom mode
 // (customrules.h; identical when none is active).

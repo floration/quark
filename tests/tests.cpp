@@ -41,6 +41,10 @@
 #include "common/sha256.h"
 #include "common/sign.h"
 #include "game/bots.h"
+#include "common/proc.h"
+#ifndef _WIN32
+#include <fcntl.h>
+#endif
 
 // The source tree (tools/, tests/data/): where this was built, or QUARK_SOURCE_DIR in the environment when the binary
 // runs on another machine (CI cross-builds the Windows tests on Linux and runs them on a Windows runner).
@@ -128,6 +132,58 @@ static void testCompletion() {
 
 // sleepMs(1) is the frame cap's and pump()'s wait: it must sleep about 1 ms, not a 15 ms scheduler quantum
 // (MinGW's sleep_for did, REVIEW PERF-14).
+// procRun (curl for every HTTP request, xdg-open...): its pipes close on exec, so a child started meanwhile (on another
+// thread) holds none of them; concurrent children all finish (FINAL_REVIEW 2.7: two POSTs could wait on each other's
+// stdin EOF); SIGPIPE stays ignored for good instead of being swapped per call.
+static void testProcPipes() {
+#ifndef _WIN32
+    printf("procRun: close-on-exec pipes, concurrent children\n");
+    auto openFds = [] { std::vector<int> v; for (int fd = 0; fd < 1024; fd++) if (fcntl(fd, F_GETFD) != -1) v.push_back(fd); return v; };
+    std::vector<int> before = openFds();
+    std::string outA, leaked;
+    size_t inFlight = 0;
+    bool checked = false;
+    int rc = procRun({"sh", "-c", "echo hello; sleep 0.1"}, "", [&](const char* d, size_t n) {
+        outA.append(d, n);
+        if (checked) return true;
+        checked = true;   // the first child is running and its pipe is open here: start a second one, which mustn't have it
+        std::string script = "for n in";
+        for (int fd : openFds())
+            if (std::find(before.begin(), before.end(), fd) == before.end()) { script += " " + std::to_string(fd); inFlight++; }
+        script += "; do [ -e /dev/fd/$n ] && echo $n; done; true";
+        procRun({"sh", "-c", script}, "", [&](const char* d2, size_t n2) { leaked.append(d2, n2); return true; });
+        return true;
+    });
+    printf("  %zu pipe end(s) of a running child open, inherited by the next child: %s\n", inFlight, leaked.empty() ? "none" : leaked.c_str());
+    CHECK(rc == 0 && outA == "hello\n" && inFlight >= 1 && leaked.empty());
+    // several at once, each feeding its stdin and reading it back: every one finishes
+    std::atomic<int> ok{0}, finished{0};
+    const int kThreads = 6, kRounds = 15;
+    std::string input(16000, 'x');
+    for (size_t i = 0; i < input.size(); i++) input[i] = (char)('a' + i % 26);
+    for (int t = 0; t < kThreads; t++)
+        std::thread([&ok, &finished, input] {
+            for (int r = 0; r < kRounds; r++) {
+                std::string got;
+                int c = procRun({"sh", "-c", "cat"}, input, [&](const char* d, size_t n) { got.append(d, n); return true; });
+                if (c == 0 && got == input) ok++;
+            }
+            finished++;
+        }).detach();
+    double end = timeNow() + 60 * std::min(4.0, kTestTimeScale);
+    while (finished < kThreads && timeNow() < end) sleepMs(5);
+    printf("  %d threads x %d concurrent children: %d of %d finished and echoed their input\n", kThreads, kRounds, ok.load(), kThreads * kRounds);
+    CHECK(finished == kThreads && ok == kThreads * kRounds);
+    // SIGPIPE: still ignored after the calls (it used to be swapped back and forth around every write)
+    struct sigaction sa {};
+    sigaction(SIGPIPE, nullptr, &sa);
+    CHECK(sa.sa_handler == SIG_IGN);
+    // a child whose reader is gone: the write fails instead of killing us, and a missing program is -1
+    CHECK(procRun({"sh", "-c", "exit 3"}, std::string(200000, 'y'), [](const char*, size_t) { return true; }) == 3);
+    CHECK(procRun({"quark-no-such-program-xyz"}, "", [](const char*, size_t) { return true; }) == -1);
+#endif
+}
+
 static void testSleepPrecision() {
     auto t0 = std::chrono::steady_clock::now();
     for (int i = 0; i < 20; i++) sleepMs(1);
@@ -1046,14 +1102,100 @@ static void testCartDash(uint16_t port) {
     s.stop();
 }
 
-// Shot spread is seeded per command, so client tracers match the server. The rifle fires while held.
+// Weapon spread is a fixed pattern (NET-9: it was seeded by the client's command number, and the best numbers landed
+// about twice the pellets). The same blast whatever the command number; what the client's tracers show (spreadAim) is
+// exactly what the server hits; single-shot weapons walk a fixed sequence that restarts when fire is let go.
+static void testFixedSpread(uint16_t port) {
+    printf("fixed spread pattern (NET-9)\n");
+    const WeaponDef& sg = weaponDef(WPN_SHOTGUN);
+    {   // the layout: one pellet dead center, all inside the spread, evenly apart, the old random spread's density
+        std::vector<Vec3> pts;
+        float sum = 0, maxR = 0;
+        for (int k = 0; k < sg.pellets; k++) {
+            float a, r;
+            pelletOffset(k, sg.pellets, sg.spread, a, r);
+            sum += r; maxR = std::max(maxR, r);
+            pts.push_back({r * std::cos(a), r * std::sin(a), 0});
+        }
+        float minGap = 1e9f;
+        for (size_t i = 0; i < pts.size(); i++)
+            for (size_t j = i + 1; j < pts.size(); j++) minGap = std::min(minGap, length(pts[i] - pts[j]));
+        float mean = sum / sg.pellets / sg.spread;
+        printf("  %d pellets: mean radius %.2f of the spread (random: 0.67), widest %.2f, closest pair %.2f\n", sg.pellets, mean, maxR / sg.spread, minGap / sg.spread);
+        CHECK(length(pts[0]) == 0 && maxR <= sg.spread && std::fabs(mean - 2.0f / 3.0f) < 0.05f && minGap > sg.spread * 0.2f);
+        float a0, r0, a1, r1;
+        burstOffset(0, 0.04f, a0, r0);
+        CHECK(r0 == 0);   // a burst's first shot goes where you aim
+        bool distinct = true;
+        for (uint32_t i = 1; i < kBurstPattern; i++) {
+            burstOffset(i, 0.04f, a1, r1);
+            if (r1 <= 0 || r1 > 0.04f) distinct = false;
+            for (uint32_t j = 1; j < i; j++) { burstOffset(j, 0.04f, a0, r0); if (std::fabs(r0 - r1) < 1e-6f && std::fabs(a0 - a1) < 1e-6f) distinct = false; }
+        }
+        CHECK(distinct);
+    }
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = true;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a, b;
+    a.connect("127.0.0.1:" + std::to_string(port), "shooter");
+    b.connect("127.0.0.1:" + std::to_string(port), "target");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 2.5, idle);
+    auto& sa = s.players_[a.clientId()];
+    auto& sb = s.players_[b.clientId()];
+    sa.move.pos = {10, 0, 19}; sb.move.pos = {0, 0, 19};   // 10 m apart in the open courtyard (testWeapons)
+    sa.move.vel = sb.move.vel = {};
+    pump(s, cls, 0.4, [](int) { UserCmd c; c.weapon = WPN_SHOTGUN; return c; });   // (history: they stand there)
+    sa.weapon = WPN_SHOTGUN;
+    Vec3 eye = sa.move.pos + Vec3(0, kEyeHeight, 0);
+    // aimed low (no pellet reaches the head) and further and further to the side: fewer pellets land
+    bool same = true, matches = true;
+    for (float side : {0.0f, 0.4f, 0.8f}) {
+        Vec3 d = normalize(sb.move.pos + Vec3(0, 0.35f, side) - eye);
+        UserCmd c;
+        c.pitch = std::asin(d.y); c.yaw = std::atan2(-d.x, -d.z);
+        c.weapon = WPN_SHOTGUN; c.buttons = BTN_FIRE; c.viewTick = s.timeMs_;
+        Vec3 aim = angleForward(c.yaw, c.pitch);
+        int predicted = 0;   // the client's view: its tracer directions against the target's hitbox
+        for (int k = 0; k < sg.pellets; k++) {
+            Vec3 pd = spreadAim(aim, sg.spread, k, sg.pellets, 0);
+            float bang, wall = s.map_.raycastBullet(eye, pd, sg.range, &bang);
+            float t = rayAABB(eye, safeInv(pd), s.hitBox(sb.move.pos, false), wall >= 0 ? wall : sg.range);
+            if (t >= 0) { predicted++; CHECK((eye + pd * t).y < sb.move.pos.y + 1.4f); }
+        }
+        float first = -1;
+        for (uint32_t seq : {1u, 2u, 3u, 77u, 1000u, 123456u, 0xFFFFFFF0u}) {
+            c.seq = seq;
+            sb.health = 100; sb.move.vel = {};
+            s.fireWeaponForTest(a.clientId(), c);
+            float dealt = 100 - sb.health;
+            if (first < 0) first = dealt;
+            if (dealt != first) same = false;
+        }
+        printf("  aimed %.1f m to the side: %.1f damage for every command number, %d pellets on target in the client's tracers\n", side, first, predicted);
+        if (std::fabs(first - predicted * sg.damage) > 0.01f) matches = false;
+    }
+    CHECK(same);
+    CHECK(matches);
+    // the bubble (one projectile with spread): a held burst counts its shots; letting go starts over at the center
+    uint32_t most = 0;
+    pump(s, cls, 0.3, [](int) { UserCmd c; c.weapon = WPN_BUBBLE; return c; });   // (switched with nothing held)
+    pump(s, cls, 1.2, [&](int i) { UserCmd c; c.weapon = WPN_BUBBLE; if (i == 0) c.buttons = BTN_FIRE; most = std::max(most, sa.burstShot); return c; });
+    pump(s, cls, 0.4, [](int) { UserCmd c; c.weapon = WPN_BUBBLE; return c; });
+    double last = sa.lastFire;
+    pump(s, cls, 0.1, [](int i) { UserCmd c; c.weapon = WPN_BUBBLE; if (i == 0) c.buttons = BTN_FIRE; return c; });
+    printf("  bubble burst: %u shots counted, after letting go: shot %u\n", most + 1, sa.burstShot);
+    CHECK(most >= 3 && sa.lastFire != last && sa.burstShot == 0);
+    s.stop();
+}
+
+// The rifle fires while held.
 static void testSemiAuto(uint16_t port) {
-    printf("seeded spread, rifle auto fire\n");
-    float a1, r1, a2, r2;
-    spreadOffset(42, 0, 0.1f, a1, r1); spreadOffset(42, 0, 0.1f, a2, r2);
-    CHECK(a1 == a2 && r1 == r2 && r1 <= 0.1f);
-    spreadOffset(43, 0, 0.1f, a2, r2);
-    CHECK(a1 != a2);
+    printf("rifle auto fire\n");
     Server s;
     ServerConfig cfg;
     cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
@@ -3846,6 +3988,91 @@ static void testArenaAndTourney(uint16_t& port) {
 
 // Delta snapshots decode (no misses) and match the server; snapshots shrink; enemies out of sight are
 // sent hidden, in sight they're sent.
+// The client's interpolation clock is a double (FINAL_REVIEW 2.6): on a server that has been up for 5 days its render
+// times aren't stuck on a float's 31 ms grid (interpolation stalled, then jumped), and the view tick it sends for lag
+// compensation is the time it shows.
+static void testUptimeClock(uint16_t port) {
+    printf("client clock on a server up for 5 days\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    s.timeMs_ += 5u * 86400u * 1000u;
+    NetClient a;
+    a.setInterpFixed(0.05f);
+    a.connect("127.0.0.1:" + std::to_string(port), "uptime");
+    std::vector<NetClient*> cls = {&a};
+    pump(s, cls, 2.0, idle);
+    CHECK(a.renderTime() > 5 * 86400.0);
+    int samples = 0, onGrid = 0;
+    double prev = 0;
+    std::vector<int> lags;
+    pump(s, cls, 1.0, [&](int) {
+        double rt = a.renderTime(), g = rt * 32;
+        if (rt != prev) { samples++; if (std::fabs(g - std::round(g)) < 1e-6) onGrid++; prev = rt; }
+        // the view tick the server gets: the interpolation delay (plus the trip) behind its clock
+        UserCmd c;
+        uint32_t sent = s.players_[a.clientId()].lastViewTick;
+        if (sent) lags.push_back((int)(s.timeMs_ - sent));
+        return c;
+    });
+    std::sort(lags.begin(), lags.end());
+    int median = lags.empty() ? -1 : lags[lags.size() / 2];
+    printf("  %d of %d render times on a float's 1/32 s grid; view tick a median %d ms behind the server (interp 50)\n", onGrid, samples, median);
+    CHECK(samples > 20 && onGrid * 4 < samples);
+    CHECK(median >= 45 && median < 150);
+    s.stop();
+}
+
+// Lag compensation covers the longest fixed interpolation delay a client can set (FINAL_REVIEW 2.5: with interp_ms 200
+// the rewind was capped at ping + ~100 + 30 ms, so a rifle aimed exactly at a moving player, as drawn, hit behind him).
+static void testInterpRewind(uint16_t port) {
+    printf("lag compensation covers a 200 ms interpolation delay\n");
+    for (bool reported : {true, false}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.autoStart = false;   // (warmup: free play, no round reset of the shot counts)
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = (uint16_t)(port + (reported ? 0 : 1));
+        s.setLog([](const std::string&) {});
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+        NetClient a, b;
+        a.setInterpFixed(kMaxInterpMs * 0.001f);
+        a.connect("127.0.0.1:" + std::to_string(cfg.port), "interp200");
+        b.connect("127.0.0.1:" + std::to_string(cfg.port), "mover");
+        std::vector<NetClient*> cls = {&a, &b};
+        pump(s, cls, 2.5, idle);
+        auto& sa = s.players_[a.clientId()];
+        auto& sb = s.players_[b.clientId()];
+        if (!reported) sa.interpMs = 0;   // as before: the server doesn't know (the client already reported it once)
+        // the mover: back and forth across the shooter's view at 10 m/s, 15 m away in the open courtyard
+        auto moverAt = [](double t) { double ph = std::fmod(t, 1.0); return Vec3(-5, 0, 19 + 2.5f * (float)(ph < 0.5 ? ph * 4 - 1 : 3 - ph * 4)); };
+        Vec3 shooterPos(10, 0, 19);
+        auto input = [&](int i, bool fire) {
+            sa.move.pos = shooterPos; sa.move.vel = {};
+            sb.move.pos = moverAt(s.time()); sb.move.vel = {}; sb.health = 100;
+            UserCmd c;
+            c.weapon = WPN_RIFLE;
+            if (i != 0) return c;
+            NetClient::PlayerArray ps = a.interpolatedPlayers();   // where the shooter sees the mover
+            const InterpPlayer& ip = ps[b.clientId()];
+            if (!ip.valid) return c;
+            Vec3 d = normalize(ip.snap.pos + Vec3(0, 1.0f, 0) - (shooterPos + Vec3(0, kEyeHeight, 0)));
+            c.pitch = std::asin(d.y); c.yaw = std::atan2(-d.x, -d.z);
+            if (fire) c.buttons = BTN_FIRE;
+            return c;
+        };
+        pump(s, cls, 0.6, [&](int i) { return input(i, false); });
+        int fired0 = sa.shotsFired, hit0 = sa.shotsHit;
+        if (reported) CHECK(sa.interpMs == kMaxInterpMs);
+        pump(s, cls, 2.5, [&](int i) { return input(i, true); });
+        int fired = sa.shotsFired - fired0, hit = sa.shotsHit - hit0;
+        printf("  interp 200 %s: %d of %d rifle shots hit a player moving at 10 m/s\n", reported ? "reported" : "unknown to the server", hit, fired);
+        if (reported) CHECK(fired >= 8 && hit * 10 >= fired * 8);
+        s.stop();
+    }
+}
+
 static void testNetcode(uint16_t port) {
     printf("netcode: delta snapshots, visibility\n");
     Server s;
@@ -4395,6 +4622,7 @@ int main(int argc, char** argv) {
         printf("]\n");
         return 0;
     }
+    if (argc >= 2 && std::string(argv[1]) == "proc") { testProcPipes(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "hostile") { testHostileInput(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "userdata") { testUserData(); testResetMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "ladders") { testLadders(); return g_fail ? 1 : 0; }
@@ -4419,12 +4647,12 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(29604)); testMapNames(TP(29605)); testDemo(TP(29603)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(TP(29960)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(TP(29950)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(TP(29900)); testInputBacklog(TP(29901)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "net") { testInterpRewind(TP(29903)); testUptimeClock(TP(29902)); testNetcode(TP(29900)); testInputBacklog(TP(29901)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = TP(29800); testArenaAndTourney(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "bots") { uint16_t p = TP(28900); testBots(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testFixedSpread(p + 50); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); return g_fail ? 1 : 0; }
     // ---- the whole suite. Most tests wait on real-time network play rather than the CPU, so each runs in its own
     // process, several at once (output kept in order); a few timing-sensitive ones run alone afterwards.
     // "quark_tests serial" runs everything in this process, one after another, as before.
@@ -4434,14 +4662,14 @@ int main(int argc, char** argv) {
         {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotAim(p); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"weapons", [] { testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testTimeToKill(); testWallbang(); }},
+        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testTimeToKill(); testWallbang(); }},
         {"maps", [] {
             testMaps(); testAllMaps(); testStairs(); testLadders();
             printf("map scores\n");   // the map bar: every map scores at least 7 in every category but originality
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); }},
@@ -4453,7 +4681,7 @@ int main(int argc, char** argv) {
         {"rules", [] { testGameRules(""); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
-        {"netcode", [] { testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
+        {"netcode", [] { testInterpRewind(TP(28703)); testUptimeClock(TP(28702)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
         {"tickrate", [] { testTickRateFallback(TP(28710)); testRateBetweenRounds(TP(28711)); testRateUndoStepUp(TP(28712)); }},
         {"resetmaps", [] { testResetMaps(); }},
         {"userdata", [] { testUserData(); }},

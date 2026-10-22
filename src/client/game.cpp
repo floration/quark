@@ -1048,6 +1048,10 @@ void Game::frame(double dt) {
                 localFireQueued_ = -1;
                 int w = net_.selfWeapon();
                 bool alt = (c.buttons & BTN_ALTFIRE) != 0 && ((w != WPN_KNIFE && w != WPN_SYRINGE) || altShot); // same throw rule as above
+                // the shot's place in a held burst, like the server's (it picks the spread: burstOffset, NET-9)
+                bool held = (localPrevButtons_ & (altShot ? BTN_ALTFIRE : BTN_FIRE)) != 0;
+                localBurst_ = held && time_ - localNextFire_ < 0.1 && w == localBurstWeapon_ ? localBurst_ + 1 : 0;
+                localBurstWeapon_ = w;
                 localNextFire_ = time_ + shotRefire(w, alt);
                 if (isThrow(w, alt)) localThrowReadyAt_ = time_ + throwCooldown(w);
                 if (w != WPN_LASER || time_ >= nextLaserSound_) { // laser fires every 10 ms: sound at 20 Hz
@@ -1063,16 +1067,10 @@ void Game::frame(double dt) {
                     const MoveState& m = net_.predicted();
                     Vec3 eye = m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
                     Vec3 aim = angleForward(yaw_, pitch_);
-                    Vec3 right = normalize(cross(aim, {0, 1, 0})), up = cross(right, aim);
                     const WeaponDef& wd = weaponDef(w);
                     float spread = (wd.scopedSpread >= 0 && (c.buttons & BTN_ALTFIRE)) ? wd.scopedSpread : wd.spread;
-                    for (int k = 0; k < wd.pellets; k++) { // same seeded spread as the server, so tracers show the real shot
-                        Vec3 d = aim;
-                        if (spread > 0) {
-                            float a, r;
-                            spreadOffset(net_.nextSeq(), k, spread, a, r);
-                            d = normalize(aim + right * (std::cos(a) * r) + up * (std::sin(a) * r));
-                        }
+                    for (int k = 0; k < wd.pellets; k++) { // the server's fixed spread pattern, so tracers show the real shot
+                        Vec3 d = spreadAim(aim, spread, k, wd.pellets, localBurst_);
                         Vec3 from = muzzlePoint(w, eye);
                         if (w == WPN_SHOTGUN && alt) { // ricochet: draw each leg (players ignored, like the server's walls)
                             Vec3 o = eye;
@@ -1093,6 +1091,7 @@ void Game::frame(double dt) {
                     }
                 }
             }
+            localPrevButtons_ = c.buttons;
             net_.tick(c);
             tickAcc_ -= period;
         }
@@ -1415,15 +1414,13 @@ void Game::drawWorld(float alpha) {
             const PlayerSnap& p = players[i].snap;
             int w = p.weapon;
             if (w == WPN_KNIFE && !remoteFiring_[i]) knifeSlash_[i] = time_;
-            if (w == WPN_SHOTGUN && !remoteFiring_[i] && cfg_.enemyShots) { // a spread of pellet tracers (the server's spread pattern isn't sent)
+            if (w == WPN_SHOTGUN && !remoteFiring_[i] && cfg_.enemyShots) { // pellet tracers in the server's fixed pattern
                 const PlayerSnap& q = players[i].snap;
                 Vec3 eyeP = q.pos + Vec3(0, (q.flags & PS_CROUCHED) ? kCrouchEyeHeight : kEyeHeight, 0);
-                Vec3 aim = angleForward(q.yaw, q.pitch), right = normalize(cross(aim, {0, 1, 0})), up = cross(right, aim);
+                Vec3 aim = angleForward(q.yaw, q.pitch);
                 const WeaponDef& wd = weaponDef(w);
                 for (int k = 0; k < wd.pellets; k++) {
-                    float a, r;
-                    spreadOffset((uint32_t)(time_ * 1000) + i * 977u, k, wd.spread, a, r);
-                    Vec3 d = normalize(aim + right * (std::cos(a) * r) + up * (std::sin(a) * r));
+                    Vec3 d = spreadAim(aim, wd.spread, k, wd.pellets, 0);
                     float bangT, t = map.raycastBullet(eyeP, d, wd.range, &bangT);
                     tracers_.push_back({eyeP + d * 0.6f, eyeP + d * (t < 0 ? wd.range : t), time_ + 0.2});
                 }
@@ -3273,7 +3270,7 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
         if (cfg_.interpMs > 0) {
             y += h + gap;
             float v = (float)cfg_.interpMs;
-            ui_.slider(xr, y, w, h, "INTERP DELAY (MS)", v, 1, 200, "%.0f");
+            ui_.slider(xr, y, w, h, "INTERP DELAY (MS)", v, 1, (float)kMaxInterpMs, "%.0f");
             cfg_.interpMs = std::max(1, (int)std::lround(v));
         }
         y += h + gap;
