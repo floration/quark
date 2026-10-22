@@ -462,6 +462,13 @@ bool Game::pressInput(int code) {
 void Game::onKey(int key, int action, int mods) {
     markInput();
     if (action == GLFW_RELEASE) return;
+    // Alt+Enter: borderless fullscreen <-> windowed (exclusive fullscreen counts as fullscreen)
+    if ((key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) && (mods & GLFW_MOD_ALT) && action == GLFW_PRESS) {
+        cfg_.displayMode = cfg_.displayMode == 0 ? 1 : 0;
+        applyDisplayMode();
+        cfg_.save();
+        return;
+    }
     if (key == GLFW_KEY_BACKSPACE) uiIn_.backspace = true;
     if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) uiIn_.enter = true;
     if (key == GLFW_KEY_TAB) uiIn_.tab = true;
