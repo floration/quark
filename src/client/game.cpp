@@ -2980,14 +2980,18 @@ void Game::drawScoreboard() {
         r_.text(x + w * 0.72f, cy, ts, "ACC", kGrey);
     }
     r_.text(x + w * 0.92f, cy, ts, "PING", kGrey);
+    const float nextCol = ranked ? 0.31f : gib ? 0.53f : 0.40f;   // where the column right of PLAYER starts
     cy += rowH;
     for (auto& p : ps) {
         Color c = (p.flags & PS_SPECTATOR) ? kGrey : rgba(teamColor(p.id));
-        std::string n = net_.playerName(p.id) + ((p.flags & PS_ALIVE) ? "" : " (DEAD)");
         if (p.id == net_.clientId()) r_.rect(x + 4 * s, cy - 4 * s, w - 8 * s, rowH - 2 * s, {1, 1, 1, 0.06f});
         float cw = 0;
         if (int place = crownOf(p.id)) { cw = r_.textHeight(ts) * 1.2f; drawCrown(x + 12 * s, cy + r_.textHeight(ts) * 0.1f, cw, place, crownLetter(p.id)); cw += 5 * s; }
-        r_.text(x + 12 * s + cw, cy, ts, n, c);
+        {   // the name stops short of the next column (clipped with "..."); " (DEAD)" always shows
+            const char* dead = (p.flags & PS_ALIVE) ? "" : " (DEAD)";
+            float nameW = x + w * nextCol - (x + 12 * s + cw) - 8 * s - r_.textWidth(dead, ts);
+            r_.text(x + 12 * s + cw, cy, ts, r_.textClip(net_.playerName(p.id), ts, std::max(0.0f, nameW)) + dead, c);
+        }
         Rating rt;
         if (ranked && rank_.rating(ladder, net_.rankId(p.id), rt))
             r_.text(x + w * 0.31f, cy, ts, rt.games < kPlacementGames ? std::to_string(rt.display()) + "?" : std::to_string(rt.display()), kWhite); // ? = still placing
@@ -3392,12 +3396,14 @@ void Game::drawMenu() {
                 float ty = ry + (bhRow - r_.textHeight(ts)) * 0.5f, iw = r_.textWidth(infoU, ts);
                 r_.text(bx + bwRow - iw - 8 * s, ty, ts, infoU, kWhite);
                 std::string name = upper(sv.name);
-                float cw = r_.textWidth("M", ts);
-                int fit = std::max(1, (int)((bwRow - iw - 28 * s) / cw)), extra = (int)name.size() - fit;
+                float avail = std::max(0.0f, bwRow - iw - 28 * s);
+                int extra = 0;   // leading characters to drop before the rest fits (measured: W is wider than M)
+                while (extra < (int)name.size() && r_.textWidth(name.substr(extra), ts) > avail) extra++;
                 if (extra > 0) { // ping-pong: pause 1.5 s at each end, scroll 6 characters a second
                     double cycle = 2 * (extra / 6.0 + 1.5), t = std::fmod(time_, cycle);
                     double pos = t < 1.5 ? 0 : t < 1.5 + extra / 6.0 ? (t - 1.5) * 6 : t < 3 + extra / 6.0 ? extra : extra - (t - 3 - extra / 6.0) * 6;
-                    name = name.substr((size_t)std::clamp((int)pos, 0, extra), (size_t)fit);
+                    name = name.substr((size_t)std::clamp((int)pos, 0, extra));
+                    name.resize(r_.textFit(name, ts, avail));
                 }
                 r_.text(bx + 8 * s, ty, ts, name, kWhite);
                 ry += 34 * s;
