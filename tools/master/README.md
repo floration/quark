@@ -24,7 +24,10 @@ directly over UDP, so it shows only servers it can reach, with their real ping. 
 7. **Cron.** Worker → **Settings → Triggers → Cron Triggers → Add**: `*/15 * * * *`. It rates matches whose report
    wait is over, rates or voids matches whose ticket expired undecided, and prunes old rows (servers, tickets, matches, reports, queues, filled rows, link codes).
 8. **Owner key (disputes).** Worker → **Settings → Variables and Secrets → Add → Secret**: `ADMIN_KEY`, a long random
-   string. `GET /disputes?key=…` lists disputed matches; `POST /resolve` (key, match, action=rate|void) settles one.
+   string. `POST /disputes` (form: key) lists disputed matches; `POST /resolve` (key, match, action=rate|void) settles
+   one. The key only ever goes in the POST body, never in a URL (use letters and digits only, e.g. `openssl rand -hex 32`):
+   `read -rs K` (paste the key; it stays out of your shell history), then `curl -s -d "key=$K" https://<worker>/disputes`
+   and `curl -s -d "key=$K" -d match=<id> -d action=rate https://<worker>/resolve`. (`GET /disputes?key=` is gone.)
 
 The free tier allows 100k requests a day and 100k D1 writes a day. That is about 70 servers announcing around the clock.
 For testing, the `QUARK_MASTER` environment variable overrides the URL.

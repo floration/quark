@@ -1,7 +1,9 @@
 // quark internet server list: a Cloudflare Worker with a D1 database bound as DB.
 // Setup steps: tools/master/README.md.
-// Every write is a POST (application/x-www-form-urlencoded) and is refused when it carries an Origin header (a web
-// page making its visitors' browsers write here); only GET reads answer with CORS "*". GET reads are cached briefly.
+// Every write is a POST (application/x-www-form-urlencoded, at most MAX_BODY bytes) and is refused when it carries an
+// Origin header (a web page making its visitors' browsers write here); only GET reads answer with CORS "*". GET reads
+// are cached briefly. Keys (BOT_KEY, ADMIN_KEY, server tokens) are compared in constant time (keyEq) and only ever
+// travel in a POST body, never in a URL (URLs end up in logs and browser history).
 //   POST /announce form: port, v (version)[, ip=A.B.C.D, token=T][, hidden=1]  a server says it's up (every 60 s);
 //                  answers "ok <token>". At most MAX_SERVERS_PER_IP fresh entries per address.
 //   POST /remove   form: port[, ip, token]                                  a server shuts down
@@ -44,8 +46,8 @@
 //                 ticket expires (TICKET_MS) is rated if the server's result is in and a player agreed with nobody
 //                 against, else void. New accounts are provisional (see
 //                 PROVISIONAL_GAMES).
-//   POST /resolve form: key (ADMIN_KEY), match, action=rate|void                    the owner settles a dispute
-//   GET  /disputes?key=ADMIN_KEY                                    "match ladder created result" per open dispute
+//   POST /resolve  form: key (ADMIN_KEY), match, action=rate|void                   the owner settles a dispute
+//   POST /disputes form: key (ADMIN_KEY)                            "match ladder created result" per open dispute
 //   GET  /ratings?ladder=L&ids=a,b,c                                 "id mu sigma games" per line (unknown ids: defaults)
 //   GET  /leaderboard?ladder=L[&n=25]                                "rating games name" per line, best first (placed only)
 // Race time trials (single player, Viaduct): runs come from the game server (/racerun above), kept only if they
@@ -73,7 +75,6 @@
 // matches whose ticket expired undecided, and prunes old rows.
 const FRESH_MS = 150000;
 const MU = 25, SIGMA = 25 / 3, BETA = SIGMA / 2, TAU = MU / 300, EPS = 1e-4;
-const PENDING_MS = 3600000;
 const LADDERS = new Set(["vanilla", "vampire", "instagib"]);
 const RACE_MAPS = new Set(["viaduct"]);
 const RACE_MIN_MS = 5000; // nothing finishes faster: below this it's not a real run
@@ -98,7 +99,9 @@ const PLACEMENT_GAMES = 5;
 const PROVISIONAL_GAMES = PLACEMENT_GAMES;
 const REPORT_WAIT_MS = 10 * 60000;   // after the server's result: missing reports stop holding the match up
 const MAX_SERVERS_PER_IP = 8;        // fresh /announce entries one address may hold (WEB-5)
-const MAX_BODY = 16384;              // bytes of form a request may carry
+const MAX_BODY = 16384;              // bytes of form a request may carry (counted as it's read, not from Content-Length)
+// Cache API: only works on a custom domain (on *.workers.dev caches.default stores nothing); the Cache-Control
+// header still lets clients and proxies keep reads for these many seconds.
 const CACHE_S = { "/list": 20, "/leaderboard": 60, "/raceboard": 60, "/crowns": 60, "/lifetime": 30, "/queue": 10, "/filled": 5, "/ratings": 10 };
 const LINK_CODE_MS = 10 * 60000;
 
@@ -109,12 +112,13 @@ const LINK_CODE_MS = 10 * 60000;
 // the per-id bucket is the real limit on a player. The Discord bot (a write carrying BOT_KEY) has its own bucket
 // and spends none of its address's: one "Queue for all" is 16 POSTs.
 const LIMITS = {
-  ip: { burst: 240, perSec: 6 },        // any endpoint, per client IP (a few dozen games polling /queue, /filled)
-  write: { burst: 60, perSec: 0.5 },    // player writes (/hello /report /lifetime /queue /link ...), per client IP
-  id: { burst: 10, perSec: 0.1 },       // the same, per player id
-  bot: { burst: 200, perSec: 5 },       // writes with BOT_KEY (/queue /linkcode from the Discord bot), instead of ip + write
+  ip: { burst: 240, perSec: 6 },        // every request except the bot's, per client IP (a few dozen games polling /queue, /filled)
+  write: { burst: 60, perSec: 0.5 },    // also, per client IP: POST /hello /report /racetime /lifetime /queue /link /linkcode
+                                        // /resolve /disputes (not /announce /remove: they're per address and token)
+  id: { burst: 10, perSec: 0.1 },       // the same writes, per player id (when they carry a secret)
+  bot: { burst: 200, perSec: 5 },       // instead of ip + write: requests carrying the right BOT_KEY (/queue /linkcode)
   linkfail: { burst: 5, perSec: 1 / 60 }, // /link code attempts per client IP (a right code gives its token back)
-  server: { burst: 30, perSec: 0.2 },   // /ticket /result /racerun per server address
+  server: { burst: 30, perSec: 0.2 },   // /ticket /result /racerun per server address (after ip)
 };
 const buckets = new Map();
 function allow(kind, key, now) {
@@ -129,6 +133,35 @@ function allow(kind, key, now) {
   return true;
 }
 function refund(kind, key) { const b = buckets.get(kind + "|" + key); if (b) b.t = Math.min(LIMITS[kind].burst, b.t + 1); }
+// A secret key or token check that takes the same time however much of a guess is right (`!==` stops at the first
+// wrong character): it always runs over the whole expected key. False when no key is set.
+export function keyEq(given, expected) {
+  if (typeof expected !== "string" || !expected) return false;
+  const a = new TextEncoder().encode(String(given ?? "")), b = new TextEncoder().encode(expected);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < b.length; i++) diff |= b[i] ^ (i < a.length ? a[i] : 0);
+  return diff === 0;
+}
+// The request body as a form, read up to MAX_BODY bytes whatever Content-Length claims (a chunked or lying request
+// can't make the Worker buffer more). null: too big; throws on a body that isn't a form.
+async function readForm(req, max) {
+  const parts = [];
+  let n = 0;
+  if (req.body) {
+    const reader = req.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      n += value.byteLength;
+      if (n > max) { try { await reader.cancel(); } catch {} return null; }
+      parts.push(value);
+    }
+  }
+  const body = new Uint8Array(n);
+  let o = 0;
+  for (const p of parts) { body.set(p, o); o += p.byteLength; }
+  return new Response(body, { headers: { "content-type": req.headers.get("content-type") || "application/x-www-form-urlencoded" } }).formData();
+}
 // Ranked identity from the secret (see the top of this file); kept per isolate so a busy player costs one derivation.
 const keyCache = new Map();
 const hexOf = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -213,7 +246,7 @@ async function serverAuth(env, form, srcIp, now) {
   if (!ip || !(port > 0 && port < 65536) || !/^[0-9a-f]{32}$/.test(token)) return null;
   const addr = ip + ":" + port;
   const row = await env.DB.prepare("SELECT token, seen FROM servers WHERE addr = ?").bind(addr).first();
-  if (!row || row.token !== token || now - row.seen > FRESH_MS) return null;
+  if (!row || !keyEq(token, row.token) || now - row.seen > FRESH_MS) return null;
   return addr;
 }
 
@@ -310,7 +343,7 @@ const textHex = (t) => [...String(t)].map((c) => c.charCodeAt(0).toString(16).pa
 // Discord link, verified: the bot hands a Discord user (who ran /link there) a one-time code; the code typed in
 // game links that player. Wrong codes are rate-limited per IP (see "linkfail").
 async function linkCode(env, form, now) {
-  if (!env.BOT_KEY || String(form.get("bot") || "") !== env.BOT_KEY) return "bad request";
+  if (!keyEq(form.get("bot"), env.BOT_KEY)) return "bad request";
   const discord = hexText(String(form.get("discord") || ""), 40).trim();
   if (!discord) return "bad request";
   await env.DB.prepare("DELETE FROM link_codes WHERE discord = ? OR created < ?").bind(discord, now - LINK_CODE_MS).run();
@@ -408,7 +441,7 @@ async function queue(env, form, now) {
     await saveName(env, who, String(form.get("name") || ""), now);
     const l = await env.DB.prepare("SELECT discord FROM links WHERE id = ? AND verified = 1").bind(who).first();
     if (l) discord = l.discord;
-  } else if (env.BOT_KEY && String(form.get("bot") || "") === env.BOT_KEY) {
+  } else if (keyEq(form.get("bot"), env.BOT_KEY)) {
     discord = hexText(String(form.get("discord") || ""), 40).trim();
     if (!discord) return "bad request";
     who = "d:" + discord;
@@ -718,7 +751,8 @@ async function cached(req, u, ctx, make) {
   return res;
 }
 
-const WRITES = new Set(["/announce", "/remove", "/hello", "/report", "/racetime", "/lifetime", "/queue", "/link", "/linkcode", "/resolve"]);
+// (/disputes only reads, but it carries ADMIN_KEY: a POST like the writes, the key in the body, no CORS)
+const WRITES = new Set(["/announce", "/remove", "/hello", "/report", "/racetime", "/lifetime", "/queue", "/link", "/linkcode", "/resolve", "/disputes"]);
 const SERVER_WRITES = new Set(["/ticket", "/result", "/racerun"]);
 
 export default {
@@ -738,11 +772,12 @@ export default {
       if (req.method !== "POST") return text("POST only", 405);
       // a browser always says where a cross-site POST comes from; the game, servers and the bot never send Origin
       if (req.headers.get("Origin")) return text("forbidden: no cross-site writes", 403);
-      if (+(req.headers.get("content-length") || 0) > MAX_BODY) return text("too big", 413);
-      try { form = await req.formData(); } catch { return text("bad request", 400); }
+      if (+(req.headers.get("content-length") || 0) > MAX_BODY) return text("too big", 413);   // (early out; readForm counts)
+      try { form = await readForm(req, MAX_BODY); } catch { return text("bad request", 400); }
+      if (!form) return text("too big", 413);
     }
     // the bot's writes: their own bucket, none of its address's
-    const isBot = !!(form && env.BOT_KEY && String(form.get("bot") || "") === env.BOT_KEY);
+    const isBot = !!(form && keyEq(form.get("bot"), env.BOT_KEY));
     if (!(isBot ? allow("bot", "bot", now) : allow("ip", conn, now))) return text("rate limited", 429);
     if (isWrite && !isBot && !SERVER_WRITES.has(u.pathname) && u.pathname !== "/announce" && u.pathname !== "/remove") {
       if (!allow("write", conn, now)) return text("rate limited", 429);
@@ -768,7 +803,7 @@ export default {
       const addr = ip + ":" + port, token = f("token");
       const row = await env.DB.prepare("SELECT token FROM servers WHERE addr = ?").bind(addr).first();
       const ownSource = srcIp === ip;
-      const tokenOk = !!(row && row.token && /^[0-9a-f]{32}$/.test(token) && row.token === token);
+      const tokenOk = !!(row && row.token && /^[0-9a-f]{32}$/.test(token) && keyEq(token, row.token));
       if (!ownSource && !tokenOk) return text("forbidden: announce once over IPv4 to get a token", 403);
       if (u.pathname === "/remove") {
         await env.DB.prepare("DELETE FROM servers WHERE addr = ?").bind(addr).run();
@@ -798,7 +833,7 @@ export default {
     if (u.pathname === "/lifetime" && isWrite) return text(await lifetimeReport(env, form, now));
     if (u.pathname === "/queue" && isWrite) return text(await queue(env, form, now));
     if (u.pathname === "/resolve") {   // the owner settles a dispute: rate it as the server reported it, or void it
-      if (!env.ADMIN_KEY || String(form.get("key") || "") !== env.ADMIN_KEY) return text("forbidden", 403);
+      if (!keyEq(form.get("key"), env.ADMIN_KEY)) return text("forbidden", 403);
       const match = String(form.get("match") || ""), action = String(form.get("action") || "");
       const m = await env.DB.prepare("SELECT status FROM matches WHERE id = ?").bind(match).first();
       if (!m || m.status !== "disputed") return text("not a dispute");
@@ -807,7 +842,7 @@ export default {
       return text("action=rate|void");
     }
     if (u.pathname === "/disputes") {
-      if (!env.ADMIN_KEY || q("key") !== env.ADMIN_KEY) return text("forbidden", 403);
+      if (!keyEq(form.get("key"), env.ADMIN_KEY)) return text("forbidden", 403);
       const { results } = await env.DB.prepare("SELECT t.id, t.ladder, t.created, t.result, t.leavers FROM tickets t JOIN matches m ON m.id = t.id WHERE m.status = 'disputed' ORDER BY t.created LIMIT 100").all();
       return text(results.map((r) => `${r.id} ${r.ladder} ${r.created} ${r.result}${r.leavers ? " left=" + r.leavers : ""}`).join("\n"));
     }

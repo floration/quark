@@ -2,7 +2,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
 import { createHash, createPrivateKey, createPublicKey, sign as edSign } from "node:crypto";
-import worker, { rateTeams, rankKeyOf, prune } from "./worker.js";
+import worker, { rateTeams, rankKeyOf, prune, keyEq } from "./worker.js";
 
 const db = new DatabaseSync(":memory:");
 db.exec(readFileSync(new URL("./schema.sql", import.meta.url), "utf8"));
@@ -169,7 +169,15 @@ check((await call("/list?v=t9")) === "", "hidden servers aren't listed");
   check((await call("/report", { secret: secret(6), match: "bbbbbbbbbbbbbbbb", ladder: "vanilla", p: lost })) === "disputed", "stays disputed");
   let r = await ratings([5, 6]);
   check(r[id(5)].games === 0 && r[id(6)].games === 0, "a dispute isn't rated");
-  check((await call("/disputes?key=adminkey")).startsWith("bbbbbbbbbbbbbbbb vanilla "), "the owner sees it");
+  check((await call("/disputes", { key: "adminkey" })).startsWith("bbbbbbbbbbbbbbbb vanilla "), "the owner sees it");
+  // the key never in a URL, never readable cross-origin: GET is refused (even with the right key), no CORS header
+  const g = await fetchRaw("/disputes?key=adminkey");
+  check(g.status === 405 && !g.headers.get("access-control-allow-origin") && !(await g.text()).includes("bbbbbbbbbbbbbbbb"), "GET /disputes refused");
+  const pq = await fetchRaw("/disputes?key=adminkey", {});
+  check(pq.status === 403 && !pq.headers.get("access-control-allow-origin"), "a key in the query string doesn't count");
+  check((await call("/disputes", { key: "adminkex" })) === "forbidden" && (await call("/disputes", { key: "adminkey0" })) === "forbidden" &&
+        (await call("/disputes", {})) === "forbidden", "a wrong key sees nothing");
+  check((await fetchRaw("/disputes", { key: "adminkey" }, undefined, { Origin: "https://evil.example" })).status === 403, "no cross-site reads of disputes");
   check((await call("/resolve", { key: "wrong", match: "bbbbbbbbbbbbbbbb", action: "rate" })) === "forbidden", "only the owner settles");
   check((await call("/resolve", { key: "adminkey", match: "bbbbbbbbbbbbbbbb", action: "rate" })) === "done", "the owner rates it as the server reported");
   r = await ratings([5, 6]);
@@ -492,6 +500,19 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   check(db.prepare("SELECT name FROM names WHERE id = ?").get(id(n)).name === "new name" && !db.prepare("SELECT 1 FROM names WHERE id = ?").get(old), "the newer name stays");
   check(db.prepare("SELECT ms FROM race_times WHERE id = ?").get(id(n)).ms === 50000 && !db.prepare("SELECT 1 FROM race_times WHERE id = ?").get(old), "the faster race time");
   check((await call("/hello", { secret: secret(n) })) === "id " + id(n) && row("vanilla").games === 41, "merged once");
+}
+// keys: compared in constant time, nothing set = nothing matches
+{
+  check(keyEq("botkey", "botkey") && !keyEq("botkex", "botkey") && !keyEq("botke", "botkey") && !keyEq("botkeyy", "botkey"), "keyEq");
+  check(!keyEq("", "") && !keyEq(undefined, undefined) && !keyEq("x", undefined) && !keyEq(null, "botkey") && keyEq("\u00e9", "\u00e9"), "keyEq: unset keys never match");
+  // MAX_BODY counts the bytes actually sent, not Content-Length: a chunked (no length) or under-declared body is refused
+  const big = "secret=" + "a".repeat(20000);
+  const stream = (s) => new ReadableStream({ start(c) { const b = new TextEncoder().encode(s); for (let i = 0; i < b.length; i += 1000) c.enqueue(b.subarray(i, i + 1000)); c.close(); } });
+  const post = (body, headers = {}) => worker.fetch(new Request("https://x/hello", { method: "POST", body, duplex: "half",
+    headers: { "CF-Connecting-IP": "2001:db8::b0d" + (++callN).toString(16), "content-type": "application/x-www-form-urlencoded", ...headers } }), env, {});
+  check((await post(stream(big))).status === 413, "an oversized chunked body is refused");
+  check((await post(new URLSearchParams({ secret: "a".repeat(20000) }))).status === 413, "an oversized body is refused");
+  check((await (await post(stream("secret=" + secret(150)))).text()) === "id " + id(150), "a chunked body within the limit is read");
 }
 // queue fills are atomic: two joins racing for the last place fill it once
 {
