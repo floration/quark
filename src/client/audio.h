@@ -3,6 +3,7 @@
 // so there are no sound files.
 #pragma once
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -45,7 +46,7 @@ public:
     // pack: which sound pack to voice it with (-1 = yours; other players' sounds use the pack they picked)
     void play(int id, float volume = 1.0f, float pitch = 1.0f, int pack = -1);
     void play3D(int id, const Vec3& pos, float volume = 1.0f, float pitch = 1.0f, int pack = -1);
-    bool hasSound(int id) const { return id >= 0 && id < SND_COUNT && !sounds_[0][id].empty(); }
+    bool hasSound(int id) const { return id >= 0 && id < SND_COUNT && !samples(0, id).empty(); }
     void setListener(const Vec3& pos, float yaw) { std::lock_guard<std::mutex> l(mu_); listener_ = pos; listenerYaw_ = yaw; }
     void setMasterVolume(float v) { master_ = v; }
     void setAnnouncer(int set) { if (set != announcer_) { if (running_) loadAnnouncer(set); else announcer_ = set; } } // 0 male, 1 female
@@ -56,7 +57,11 @@ public:
     void setPack(int pack) { pack_ = (pack < 0 || pack >= kPacks) ? 0 : pack; }
     int pack() const { return pack_; }
     bool ok() const { return running_; }
-    const std::vector<float>& samples(int pack, int id) const { return sounds_[pack][id]; } // tests / tools
+    const std::vector<float>& samples(int pack, int id) const { // tests / tools (the game thread: announcerLines_' only writer)
+        static const std::vector<float> none;
+        if (id < SND_VOICE_THREE) return sounds_[pack][id];
+        return announcerLines_ ? announcerLines_->line[id - SND_VOICE_THREE] : none;
+    }
 
     // Mixes `frames` stereo frames into out (interleaved int16). Used by the backends and tests.
     void mix(int16_t* out, int frames);
@@ -68,11 +73,15 @@ private:
     void loadModSounds();     // players' own sounds: <game folder>/mods/sounds/<kit or all>/<SOUND>.wav
     void loadAnnouncer(int set);
     int announcer_ = 0;
+    // the announcer's lines, the same in every pack: built off the mixer's lock and swapped in as one pointer (a
+    // voice change used to copy every line into all 5 packs while holding the lock the audio thread mixes under)
+    struct AnnouncerLines { std::vector<float> line[SND_COUNT - SND_VOICE_THREE]; };
+    std::shared_ptr<const AnnouncerLines> announcerLines_;   // (written under mu_, by the game thread only)
     std::atomic<int> pack_{0};
     void voiceGains(Voice& v);
     void backendThread();
 
-    std::vector<float> sounds_[kPacks][SND_COUNT];
+    std::vector<float> sounds_[kPacks][SND_COUNT];   // (announcer ids stay empty: announcerLines_)
     std::vector<Voice> voices_;
     std::mutex mu_;
     Vec3 listener_;

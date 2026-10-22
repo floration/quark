@@ -154,7 +154,8 @@ void Audio::loadAnnouncer(int set) {
     static const int fallback[kAnnouncerVoices] = {0, 1, 0, 0, 1, 1, 0};   // the generated voice for lines not recorded
     const int tts = std::min(fallback[set], kVoiceSets - 1);
     constexpr int kLines = SND_COUNT - SND_VOICE_THREE;
-    std::vector<float> lines[kLines];
+    auto built = std::make_shared<AnnouncerLines>();
+    std::vector<float>* lines = built->line;
     for (int k = 0; k < kVoiceLines && k < kLines; k++) {
         const VoiceClip& c = kVoiceClips[tts][k];
         auto& v = lines[k];
@@ -177,10 +178,10 @@ void Audio::loadAnnouncer(int set) {
                 v[i] = (x0 + (x1 - x0) * f) * 0.9f;
             }
         }
-    std::lock_guard<std::mutex> l(mu_);
+    std::shared_ptr<const AnnouncerLines> old = std::move(built);   // (the old lines are freed after the lock is let go)
+    std::lock_guard<std::mutex> l(mu_);   // just the swap
     voices_.erase(std::remove_if(voices_.begin(), voices_.end(), [](const Voice& v) { return v.id >= SND_VOICE_THREE; }), voices_.end());
-    for (int p = 0; p < kPacks; p++)
-        for (int k = 0; k < kLines; k++) sounds_[p][SND_VOICE_THREE + k] = lines[k];
+    announcerLines_.swap(old);
     announcer_ = set;
 }
 
@@ -277,7 +278,9 @@ void Audio::mix(int16_t* out, int frames) {
         std::lock_guard<std::mutex> l(mu_);
         for (size_t k = 0; k < voices_.size();) {
             Voice& v = voices_[k];
-            const std::vector<float>& s = sounds_[v.pack][v.id];
+            static const std::vector<float> none;
+            const std::vector<float>& s = v.id < SND_VOICE_THREE ? sounds_[v.pack][v.id]
+                                        : announcerLines_ ? announcerLines_->line[v.id - SND_VOICE_THREE] : none;
             for (int i = 0; i < n; i++) {
                 size_t idx = (size_t)v.pos;
                 if (idx + 1 >= s.size()) { v.pos = (float)s.size(); break; }
