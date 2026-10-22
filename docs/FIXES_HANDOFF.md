@@ -198,9 +198,12 @@ Prepare the code or a proposal; don't deploy.
 
 ## 12. Fix log
 
+Work happens on the local branch `review-fixes` (made from `2ce3a44` at the user's request; it gets merged into `main`, the new production branch, later). Commit hashes below are filled in by the commit after each one, because a commit can't name its own hash.
+
 | Date | REVIEW id | Commit | Result / notes |
 |---|---|---|---|
-| | | | |
+| 2026-10-21 | (batch 0) | `75c2acb` | REVIEW.md and this file committed. MinGW GCC 13 build: OK in ~11 s, 3 warnings (the known baseline: `NOMINMAX` redefined in openurl.cpp, unused `serial` in tests.cpp, unused `dms` in game.cpp). |
+| 2026-10-21 | PERF-14 | (next) | `sleepMs` uses `Sleep()` on Windows (non-Windows path unchanged). New `testSleepPrecision`: 20 × `sleepMs(1)` must average < 5 ms; measured 1.93 ms. **Baseline suite (Windows, serial): all tests passed, 4m12s**, no flaky failure on this run. The run rewrites every `maps/*.qmap` with LF line endings (`testResetMaps`, contents identical; ENG-5): `git checkout -- maps` after each run. |
 
 **Owner decisions pending** (proposals waiting for the owner):
 

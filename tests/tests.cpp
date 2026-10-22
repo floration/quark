@@ -48,6 +48,16 @@ static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F inpu
     }
 }
 
+// sleepMs(1) is the frame cap's and pump()'s wait: it must sleep about 1 ms, not a 15 ms scheduler quantum
+// (MinGW's sleep_for did, REVIEW PERF-14).
+static void testSleepPrecision() {
+    auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < 20; i++) sleepMs(1);
+    double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    printf("  sleepMs(1): %.2f ms average\n", ms / 20);
+    CHECK(ms < 20 * 5.0);
+}
+
 static void testMovement() {
     printf("movement\n");
     Map m;
@@ -2424,7 +2434,7 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testMovement(); testTickRateIndependence(); testGridQueries(); testEditorLadder(); testEditorGroups(); }},
+        {"movement", [] { testSleepPrecision(); testMovement(); testTickRateIndependence(); testGridQueries(); testEditorLadder(); testEditorGroups(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", 28560); testSession(MODE_BOMB, "bastion", 28561); testSession(MODE_KOTH, "bastion", 28562); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", 28563); testSession(MODE_FFA, "bastion", 28564); testSession(MODE_RACE, "foundry", 28565); }},
         {"modes", [] { testCustomMode(28570); testPoints(28571); testSyringe(28572); testCartChecks(28573); testItModes(28574); }},
