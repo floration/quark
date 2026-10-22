@@ -6,7 +6,7 @@
 
 constexpr float PI = 3.14159265358979f;
 inline float deg2rad(float d) { return d * (PI / 180.0f); }
-inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
+inline float clampf(float v, float lo, float hi) { return v >= lo ? (v > hi ? hi : v) : lo; } // (NaN -> lo)
 inline float lerpf(float a, float b, float t) { return a + (b - a) * t; }
 
 struct Vec3 {

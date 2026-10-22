@@ -325,6 +325,30 @@ static void testMapLimits() {
     }
 }
 
+// Custom rules come from servers (EV_RULES) and files: NaN / inf must not get through the clamps, and a name has to
+// survive its own round trip (REVIEW CLI-6, the review's rules_nan*.txt and rules_spaces_name.txt).
+static void testRulesValues() {
+    printf("custom rules: finite values, names that round-trip\n");
+    const CustomRules def;
+    CustomRules r;
+    CHECK(r.fromText("custommode=x\ngravity=nan\nspeed=inf\njump=-inf\nmove_air=nan\n"));
+    // (UCRT reads "nan" as NaN and gets the default; msvcrt / some libcs read 0 and get the low bound: finite either way)
+    auto in = [](float v, float lo, float hi) { return std::isfinite(v) && v >= lo && v <= hi; };
+    CHECK(in(r.gravity, 0.1f, 3) && in(r.moveSpeed, 0.25f, 3) && in(r.jump, 0.25f, 3));
+    for (float v : r.move) CHECK(in(v, 0.1f, 5));
+    CHECK(r.fromText("custommode=x\nweapon=1,nan,nan,nan\n"));
+    CHECK(in(r.fireRate[1], 0.1f, 10) && in(r.damage[1], 0, 10) && in(r.projSpeed[1], 0.1f, 5));
+    (void)def;
+    CHECK(r.fromText("custommode=x\ngravity=99\nweapon=2,0,99,0\n") && r.gravity == 3 && r.damage[2] == 10);   // in range still clamps
+    CHECK(!r.fromText("custommode=" + std::string(40, ' ') + "x\n"));   // cut to 40 first: all spaces, so no mode
+    CustomRules a, b;
+    CHECK(a.fromText("custommode=  my mode  \ngravity=2\nweapon=3,2,0.5,1\nmaps=temple,../x\n"));
+    CHECK(b.fromText(a.toText()) && b.toText() == a.toText());
+    CHECK(clampf(NAN, 1, 2) == 1 && clampf(5, 1, 2) == 2 && clampf(1.5f, 1, 2) == 1.5f);
+    CHECK(plainFileName("my hud.cfg") && plainFileName("mode-2.cfg"));
+    for (const char* bad : {"", "../x.cfg", "a/b.cfg", "a\\b.cfg", "C:x.cfg", ".hidden", "tab\there"}) CHECK(!plainFileName(bad));
+}
+
 static void testGridQueries() {
     printf("grid raycast / collision vs brute force\n");
     Map m;
@@ -2646,7 +2670,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(29997); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "allmaps") { testAllMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "limits") { testMapLimits(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "custom") { testCustomMode(29990); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(29990); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(29980); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(29450); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = 29500; testBotAim(p); return g_fail ? 1 : 0; }
@@ -2676,7 +2700,7 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testSleepPrecision(); testMovement(); testTickRateIndependence(); testMapLimits(); testGridQueries(); testEditorLadder(); testEditorGroups(); }},
+        {"movement", [] { testSleepPrecision(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testGridQueries(); testEditorLadder(); testEditorGroups(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", 28560); testSession(MODE_BOMB, "bastion", 28561); testSession(MODE_KOTH, "bastion", 28562); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", 28563); testSession(MODE_FFA, "bastion", 28564); testSession(MODE_RACE, "foundry", 28565); }},
         {"modes", [] { testCustomMode(28570); testPoints(28571); testSyringe(28572); testCartChecks(28573); testItModes(28574); }},

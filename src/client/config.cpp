@@ -1,5 +1,6 @@
 #include "config.h"
 #include "../game/gamedefs.h"
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -37,9 +38,9 @@ void Settings::set(const std::string& k, const std::string& v) {
         float fv = (float)atof(v.c_str());
         int iv = atoi(v.c_str());
         if (k == "name") name = v;
-        else if (k == "sensitivity") sensitivity = fv;
+        else if (k == "sensitivity") { if (std::isfinite(fv)) sensitivity = clampf(fv, 0.01f, 50.0f); }   // (the settings menu's range)
         else if (k == "dpi") dpi = std::min(std::max(iv, 100), 32000);
-        else if (k == "fov") fov = clampf(fv, 60, 140);
+        else if (k == "fov") { if (std::isfinite(fv)) fov = clampf(fv, 60, 140); }
         else if (k == "brightness") brightness = clampf(fv, 0.6f, 1.8f);
         else if (k == "vsync") presentMode = iv != 0 ? 1 : 0; // old setting
         else if (k == "display_mode") displayMode = std::min(std::max(iv, 0), 2);
@@ -57,8 +58,8 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "alt_toggle") altToggle = iv != 0;
         else if (k == "hud_verbose") hudVerbose = iv != 0;
         else if (k == "hud_widgets") hudWidgets = iv != 0;
-        else if (k.rfind("mode_hud_", 0) == 0) { int m = modeFromName(k.c_str() + 9); if (m >= 0) modeHud[m] = v; }
-        else if (k.rfind("mode_controls_", 0) == 0) { int m = modeFromName(k.c_str() + 14); if (m >= 0) modeCtl[m] = v; }
+        else if (k.rfind("mode_hud_", 0) == 0) { int m = modeFromName(k.c_str() + 9); if (m >= 0 && (v.empty() || plainFileName(v))) modeHud[m] = v; }   // (a file in huds/)
+        else if (k.rfind("mode_controls_", 0) == 0) { int m = modeFromName(k.c_str() + 14); if (m >= 0 && (v.empty() || plainFileName(v))) modeCtl[m] = v; }
         else if (k == "msaa") msaa = (iv == 1 || iv == 2 || iv == 4) ? iv : 0;
         else if (k == "volume") volume = clampf(fv, 0, 1);
         else if (k == "hitsounds") hitsounds = iv != 0;
@@ -76,7 +77,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "outline_enemy") outlineEnemy = iv;
         else if (k == "voice") announcerVoice = iv >= 0 && iv < 7 ? iv : 0;
         else if (k == "announcer") announcer = iv < 0 ? 0 : iv > 2 ? 2 : iv;
-        else if (k == "shadowres") shadowRes = iv;
+        else if (k == "shadowres") shadowRes = std::min(std::max(iv, 256), 8192);   // (a square depth texture: 8192 is 256 MB)
         else if (k == "color_friendly") colorFriendly = parseColor(v, colorFriendly);
         else if (k == "color_enemy") colorEnemy = parseColor(v, colorEnemy);
         else if (k == "ch_style") chStyle = std::min(std::max(iv, 0), 4);

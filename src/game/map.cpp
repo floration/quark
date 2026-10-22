@@ -79,6 +79,12 @@ bool validMapName(const std::string& name) {
     return true;
 }
 
+bool plainFileName(const std::string& name) {
+    if (name.empty() || name.size() > 128 || name[0] == '.') return false;
+    for (char c : name) if ((unsigned char)c < 32 || (unsigned char)c > 126 || c == '/' || c == '\\' || c == ':') return false;
+    return true;
+}
+
 std::string downloadedMapPath(const std::string& name, uint32_t crc) {
     char hex[16];
     snprintf(hex, sizeof hex, "%08x", crc);

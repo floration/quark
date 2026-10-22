@@ -143,6 +143,9 @@ std::vector<std::string> listMaps();
 // name (con, nul, com1, ...: opening "maps/con.qmap" opens the device). Names from servers and demos become file
 // names (map, download, light cache, demo), so every one is checked with this.
 bool validMapName(const std::string& name);
+// A plain file name inside one folder (a HUD or controls profile): printable, no folder separators or drive, doesn't
+// start with '.', at most 128 characters.
+bool plainFileName(const std::string& name);
 // Writes every shipped map back to its original text (and drops their light caches); returns how many.
 int resetOfficialMaps();
 std::string mapsFolder(); // absolute path of the maps folder

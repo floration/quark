@@ -1,5 +1,6 @@
 #include "customrules.h"
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -35,8 +36,9 @@ void rebuild() {
 std::string safeName(const std::string& n) {
     std::string s;
     for (char c : n) s += (isalnum((unsigned char)c) || c == '-' || c == '_' || c == ' ') ? c : '_';
+    if (s.size() > 40) s.resize(40);   // (cut first, then trim: else 40 spaces + "x" left an all-space name)
     while (!s.empty() && s.back() == ' ') s.pop_back();
-    return s.substr(0, 40);
+    return s;
 }
 } // namespace
 
@@ -75,7 +77,8 @@ bool CustomRules::fromText(const std::string& text) {
     std::istringstream in(text);
     std::string line;
     bool any = false;
-    auto clampf_ = [](float v, float a, float b) { return v < a ? a : v > b ? b : v; };
+    // out of range: the nearest bound; not a number (nan, inf): the default (the member's value from CustomRules())
+    auto clampf_ = [](float v, float a, float b, float def) { return !std::isfinite(v) ? def : v < a ? a : v > b ? b : v; };
     while (std::getline(in, line)) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
         size_t eq = line.find('=');
@@ -86,11 +89,11 @@ bool CustomRules::fromText(const std::string& text) {
         if (k == "custommode") { name = safeName(v); any = true; }
         else if (k == "mode") { int m = modeFromName(v.c_str()); if (m >= 0 && m != MODE_TOURNEY) baseMode = m; }
         else if (k == "weapons") weapons = (uint16_t)(i & ((1 << WPN_COUNT) - 1));
-        else if (k == "gravity") gravity = clampf_(f, 0.1f, 3);
-        else if (k == "speed") moveSpeed = clampf_(f, 0.25f, 3);
-        else if (k == "jump") jump = clampf_(f, 0.25f, 3);
-        else if (k == "knockback") knockback = clampf_(f, 0, 5);
-        else if (k.rfind("move_", 0) == 0) { for (int m = 0; m < MV_COUNT; m++) if (k.compare(5, std::string::npos, moveParamKey(m)) == 0) move[m] = clampf_(f, 0.1f, 5); }
+        else if (k == "gravity") gravity = clampf_(f, 0.1f, 3, gravity);
+        else if (k == "speed") moveSpeed = clampf_(f, 0.25f, 3, moveSpeed);
+        else if (k == "jump") jump = clampf_(f, 0.25f, 3, jump);
+        else if (k == "knockback") knockback = clampf_(f, 0, 5, knockback);
+        else if (k.rfind("move_", 0) == 0) { for (int m = 0; m < MV_COUNT; m++) if (k.compare(5, std::string::npos, moveParamKey(m)) == 0) move[m] = clampf_(f, 0.1f, 5, move[m]); }
         else if (k == "health") health = std::max(1, std::min(1000, i));
         else if (k == "dash") dash = i != 0;
         else if (k == "grapple") grapple = i != 0;
@@ -104,7 +107,7 @@ bool CustomRules::fromText(const std::string& text) {
         else if (k == "weapon") {
             int w = -1; float a = 1, b = 1, c = 1;
             if (sscanf(v.c_str(), "%d,%f,%f,%f", &w, &a, &b, &c) == 4 && w >= 0 && w < WPN_COUNT) {
-                fireRate[w] = clampf_(a, 0.1f, 10); damage[w] = clampf_(b, 0, 10); projSpeed[w] = clampf_(c, 0.1f, 5);
+                fireRate[w] = clampf_(a, 0.1f, 10, fireRate[w]); damage[w] = clampf_(b, 0, 10, damage[w]); projSpeed[w] = clampf_(c, 0.1f, 5, projSpeed[w]);
             }
         } else if (k == "maps") {
             maps.clear();
