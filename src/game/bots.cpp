@@ -652,14 +652,15 @@ UserCmd botThink(Server& s, int id) {
         dirOut = d > 0.6f ? to / d : Vec3();
         if (d > 0.6f && now < b.unstickUntil && b.target < 0) dirOut += Vec3(-dirOut.z, 0, dirOut.x) * b.strafeDir; // unsticking
         const ModeState& m = s.ms_;
+        const AABB hull = playerBox(me.move);   // (the server's own zone test: size modifiers and crouching included)
         if (m.mode == MODE_BOMB) {
             bool inSite = false;
-            for (auto& site : s.map_.bombSites) inSite |= playerBox(me.move.pos, false).overlaps(site);
+            for (auto& site : s.map_.bombSites) inSite |= hull.overlaps(site);
             if (m.bombState == BOMB_CARRIED && m.bombCarrier == id && inSite) { buttons |= BTN_USE; dirOut = {}; }
             if (m.bombState == BOMB_PLANTED && me.team != m.attackers && length(m.bombPos - me.move.pos) < 1.5f) { buttons |= BTN_USE; dirOut = {}; }
         }
-        if (m.mode == MODE_KOTH && s.map_.hasHill && playerBox(me.move.pos, false).overlaps(s.map_.hill)) dirOut = dirOut * 0.3f;
-        if (m.mode == MODE_POINTS && m.point < s.map_.points.size() && playerBox(me.move.pos, false).overlaps(s.map_.points[m.point])) dirOut = dirOut * 0.3f;
+        if (m.mode == MODE_KOTH && s.map_.hasHill && hull.overlaps(s.map_.hill)) dirOut = dirOut * 0.3f;
+        if (m.mode == MODE_POINTS && m.point < s.map_.points.size() && hull.overlaps(s.map_.points[m.point])) dirOut = dirOut * 0.3f;
     };
     const ModeState& ms = s.ms_;
     bool urgent = ms.mode == MODE_BOMB && ((ms.bombState == BOMB_CARRIED && ms.bombCarrier == id) ||
