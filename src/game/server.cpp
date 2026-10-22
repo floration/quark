@@ -18,6 +18,14 @@ constexpr double kTimeout = 10.0;
 constexpr int kMaxQueuedCmds = 12;
 constexpr uint32_t kMaxRewindMs = 500; // lag compensation window
 constexpr float kMaxCmdTokensMs = 40.0f; // burst allowance after network jitter
+// Backlog: tokens refill at exactly the command rate, so after a client hitch the commands it then sends in a burst
+// stayed queued for good (+12 ms of input latency at 1000 Hz, +96 ms at 125 Hz). A queue that stays deeper than
+// kDeepQueue for kDeepTicks ticks runs one extra command a tick from a small catch-up allowance, which refills at 1%
+// of the tick rate: enough for any number of hitches, too little for a speedhack to gain anything.
+constexpr int kDeepQueue = 2;
+constexpr int kDeepTicks = 32;
+constexpr float kCatchUpMax = (float)kMaxQueuedCmds;
+constexpr float kCatchUpRefill = 0.01f;   // commands per tick
 // Tick-rate test during warmup: each window must stay clean or the rate steps down.
 constexpr double kRateWindow = 3.0;
 constexpr double kMaxLateFraction = 0.01;  // ticks that ran more than 2 periods late
@@ -955,6 +963,14 @@ void Server::simulate() {
         }
         p.cmdTokensMs = std::min(p.cmdTokensMs + 1000.0f / tickRate(), kMaxCmdTokensMs);
         { QZONE("human cmds"); drainCmds(i); }
+        p.deepTicks = (int)p.cmdQueue.size() > kDeepQueue ? p.deepTicks + 1 : 0;
+        p.catchUp = std::min(kCatchUpMax, p.catchUp + kCatchUpRefill);
+        if (p.deepTicks >= kDeepTicks && p.catchUp >= 1) {   // a backlog that isn't going away: one extra command
+            p.catchUp -= 1;
+            uint8_t ms = p.cmdQueue.front().msec;
+            p.cmdTokensMs += (ms == 1 || ms == 2 || ms == 4 || ms == 8) ? ms : 1;
+            drainCmds(i);
+        }
     }
     // Record positions for lag compensation.
     for (auto& p : players_) {
@@ -997,6 +1013,7 @@ void Server::drainCmds(int id) {
 void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     ServerPlayer& p = players_[id];
     p.lastCmdSeq = cmd.seq;
+    p.cmdsRun++;
     p.keys = (cmd.forward > 0 ? KEY_FWD : 0) | (cmd.forward < 0 ? KEY_BACK : 0) | (cmd.side < 0 ? KEY_LEFT : 0) | (cmd.side > 0 ? KEY_RIGHT : 0) |
              (cmd.buttons & BTN_JUMP ? KEY_JUMP : 0) | (cmd.buttons & BTN_CROUCH ? KEY_CROUCH : 0) | (cmd.buttons & BTN_FIRE ? KEY_FIRE : 0) |
              (cmd.buttons & BTN_ALTFIRE ? KEY_ALT : 0) | (cmd.buttons & BTN_DASH ? KEY_DASH : 0) | (cmd.buttons & BTN_GRAPPLE ? KEY_HOOK : 0);

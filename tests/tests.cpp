@@ -2121,6 +2121,59 @@ static void testSnapshotBounds() {
     CHECK(!parseBracket("1\n1\n1\n1\n1\n1\n1\n1\n1\n@0,0", rounds, round, match) && rounds.empty());
 }
 
+// After a client hitch, the burst of commands it sends to catch up stayed queued on the server for good: tokens refill
+// at exactly the command rate, so +12 ms of input latency at 1000 Hz (+96 ms at 125 Hz) until something else cleared
+// it (REVIEW PERF-1). A lasting backlog now drains a command a tick from a small allowance; a client sending faster
+// than real time still gets no more than real time out of it.
+static void testInputBacklog(uint16_t port) {
+    printf("input backlog drains; a speedhack still doesn't pay\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a;
+    a.connect("127.0.0.1:" + std::to_string(port), "a");
+    std::vector<NetClient*> cls = {&a};
+    pump(s, cls, 1.0, idle);
+    int id = a.clientId();
+    CHECK(a.hasSnapshot() && id >= 0 && id < kMaxPlayers);
+    if (!a.hasSnapshot() || id < 0 || id >= kMaxPlayers) { s.stop(); return; }
+    // a 150 ms stall (the network, or the server's machine) while the client keeps playing: its commands then arrive
+    // all at once, more than the token burst covers
+    double until = timeNow() + 0.15, next = timeNow();
+    while (timeNow() < until) { a.poll(); while (timeNow() >= next) { a.tick(UserCmd()); next += a.tickPeriod(); } sleepMs(1); }
+    s.frame();
+    size_t after = s.players_[id].cmdQueue.size();
+    // then normal play: over the last 3/4 of a second the queue empties again. (Before, it never went below 3: the
+    // backlog stayed for good. Its average depth also depends on how bursty the client's sends are, i.e. machine load,
+    // so the test looks at the lowest.)
+    size_t lowest = 99;
+    double sum = 0;
+    int samples = 0;
+    for (double stop = timeNow() + 1.0, first = timeNow() + 0.25; timeNow() < stop;) {
+        s.frame(); a.poll();
+        while (timeNow() >= next) { a.tick(UserCmd()); next += a.tickPeriod(); }
+        if (timeNow() >= first) { size_t q = s.players_[id].cmdQueue.size(); lowest = std::min(lowest, q); sum += (double)q; samples++; }
+        sleepMs(1);
+    }
+    printf("  queued after the stall %zu, later at least %zu (%.2f on average)\n", after, lowest, samples ? sum / samples : 0.0);
+    CHECK(after > 2 && lowest <= 1);
+    // twice real time: the server runs about real time's worth (plus its token burst and the catch-up allowance)
+    uint32_t t0 = s.tick_, c0 = s.players_[id].cmdsRun;
+    double end = timeNow() + 1.0;
+    next = timeNow();
+    while (timeNow() < end) {
+        s.frame(); a.poll();
+        while (timeNow() >= next) { a.tick(UserCmd()); a.tick(UserCmd()); next += a.tickPeriod(); }
+        sleepMs(1);
+    }
+    double ran = (double)(s.players_[id].cmdsRun - c0), ticks = (double)(s.tick_ - t0);
+    printf("  speedhack: %.0f commands run in %.0f ticks\n", ran, ticks);
+    CHECK(ran <= ticks * 1.05 + 60);
+    s.stop();
+}
+
 // A scripted server on a UDP socket for hostile-server tests: it answers the client's connect, then sends
 // whatever the test builds. The client has to survive anything a server says.
 struct FakeServer {
@@ -2711,7 +2764,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(29604); testMapNames(29605); testDemo(29603); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(29960); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(29950); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(29900); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(29900); testInputBacklog(29901); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = 29800; testArenaAndTourney(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = 29700; testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); return g_fail ? 1 : 0; }
@@ -2741,7 +2794,7 @@ int main(int argc, char** argv) {
         {"ranked", [] { testFilledParse(); testRanked(28610); testRankedVoteAndRestart(28620); testInternetList(28625); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
-        {"netcode", [] { testNetcode(28700); }},
+        {"netcode", [] { testNetcode(28700); testInputBacklog(28701); }},
         {"tickrate", [] { testTickRateFallback(28710); }},
         {"resetmaps", [] { testResetMaps(); }},
     };

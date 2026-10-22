@@ -107,6 +107,9 @@ struct ServerPlayer {
     uint16_t keys = 0;          // KEY_* from the last command
     std::deque<UserCmd> cmdQueue;
     float cmdTokensMs = 16.0f;
+    int deepTicks = 0;          // ticks in a row the command queue has held a backlog (see kDeepQueue)
+    float catchUp = 12;         // extra commands it may run to clear a backlog (kCatchUpMax; refills very slowly)
+    uint32_t cmdsRun = 0;       // commands simulated (nobody gets more than real time: see the tests)
     uint8_t reportedLoss = 0;   // % of snapshots the client says it missed
     uint32_t lastViewTick = 0;
     double lastRecv = 0;
