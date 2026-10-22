@@ -62,7 +62,11 @@ struct Map {
     struct Group { int type = GROUP_CUSTOM, material = 0, dir = 0; AABB box; std::vector<Brush> parts; };
     std::vector<Group> groups;
     static void groupBoxes(const Group& g, std::vector<Brush>& out); // its parts in world space
-    size_t editableBrushes() const { size_t n = 0; for (auto& b : brushes) n += !b.generated; return n; }
+    size_t editableBrushes() const { // (the generated brushes are always the last ones)
+        size_t n = brushes.size();
+        while (n && brushes[n - 1].generated) n--;
+        return n;
+    }
     std::vector<AABB> checkpoints;    // race; the last one is the finish line
     std::vector<Vec3> payloadPath;    // ordered waypoints
     std::vector<float> cartChecks;    // payload checkpoints, as fractions of the track ("cartcheck 0.33"), ascending
@@ -81,8 +85,17 @@ struct Map {
     struct Light { Vec3 pos; float radius = 10, intensity = 1; };
     std::vector<Light> lights;        // baked point lights ("light x y z radius [intensity]"): lit rooms under roofs
     AABB bounds;
+    // The map's identity: the CRC of the text it was parsed from, then in an edit session each edit op continues it
+    // (mapEditCrc), so nobody re-serializes the map to name it.
     uint32_t crc = 0;
-    std::string source;               // the .qmap text this was parsed from (sent to clients that lack it)
+    // The .qmap text (sent to clients that lack the map, saved, hashed for ranked): the parsed text, or after edits
+    // serialize()d the first time it's asked for. Read it with sourceText().
+    mutable std::string source;
+    mutable bool sourceStale = false;
+    mutable uint32_t sourceCrc = 0;          // crc32 of source, once known
+    mutable bool sourceCrcKnown = false;
+    const std::string& sourceText() const { if (sourceStale) { source = serialize(); sourceStale = false; sourceCrcKnown = false; } return source; }
+    uint32_t sourceTextCrc() const;          // crc32 of sourceText() (what a download checks; the same as crc until an edit)
 
     bool load(const std::string& name, std::string* err = nullptr);
     bool onLadder(const AABB& player) const { for (auto& l : ladders) if (player.overlaps(l)) return true; return false; }
@@ -91,6 +104,13 @@ struct Map {
     bool validate(std::string* err = nullptr) const;   // the limits above (counts, finite, in range)
     std::string serialize() const;    // back to .qmap text (what the editor saves)
     bool rebuild();                   // after editing brushes in place: bounds, wallbang flag, grid (false: over the limits)
+    // One brush replaced, inserted or removed, with bounds, wallbang flag, lava list and grid left exactly as rebuild()
+    // would leave them, but updated in place (the edit path: Midtown's full rebuild is ~0.3 ms, this a few us). The
+    // generated brushes aren't remade (the caller keeps them right). false: over the grid's limit, nothing changed.
+    bool setBrush(size_t i, const Brush& b) { return changeBrush(0, i, b); }
+    bool insertBrush(size_t i, const Brush& b) { return changeBrush(1, i, b); }
+    bool eraseBrush(size_t i) { return changeBrush(2, i, Brush()); }
+    bool changeBrush(int op, size_t i, const Brush& b);
 
     // Movement collision: returns how far along `axis` the box may move (clamped delta).
     float sweepAxis(const AABB& box, int axis, float delta) const;
@@ -114,9 +134,14 @@ struct Map {
     static constexpr float kCell = 4.0f;
     int gridW = 0, gridH = 0;
     float gridX0 = 0, gridZ0 = 0;
-    std::vector<uint32_t> cellStart;   // gridW*gridH+1 offsets into cellBrushes
+    // Cell c's brushes (indices, ascending) are cellBrushes[start, end); the slots up to the next cell's start are spare
+    // room, so an edit can add a brush to a cell without rebuilding the grid.
+    struct GridCell { uint32_t start = 0, end = 0; };
+    std::vector<GridCell> cells;       // gridW*gridH
     std::vector<uint16_t> cellBrushes;
+    size_t gridRefs = 0;               // brush references in use (spare room not counted)
     bool buildGrid();                  // false: more grid references than kMaxMapGridRefs
+    static bool gridSolid(const Brush& b) { return b.material < 5 || b.material == 9; } // in the grid: far scenery, water, lava aren't
     template <class F> void forBox(const AABB& b, F f) const; // calls f(brush) for brushes in overlapped cells (may repeat)
 
     // Moving solids that aren't part of the static geometry (the payload cart). Collision and
@@ -138,7 +163,8 @@ struct Map {
 //                                         g group (type material dir box; ins makes it empty, set keeps its parts)
 //   g part <index> <material> <6 fractions of the box>: adds a part to custom group <index>
 //   t <title>    f <preferred mode, -1 any>    m <allowed modes bitmask, 0 = all>
-// applyMapEdit validates (indices, sizes, finite numbers, at least one box and spawn) and rebuilds the grid.
+// applyMapEdit validates (indices, sizes, finite numbers, at least one box and spawn) and updates the grid (in place
+// for brushes and custom group parts). It doesn't serialize: m.source goes stale until m.sourceText() is asked for.
 bool applyMapEdit(Map& m, const std::string& op);
 // The op that sets (or inserts) object `idx` of `kind` to its current state in m: used to build edits and their undo.
 std::string describeMapObject(const Map& m, char kind, const char* verb, int idx);
@@ -177,4 +203,7 @@ bool saveMapFile(const std::string& path, const std::string& text);
 // leaves the old file (settings, profiles, the ranked key, custom modes, maps). privateFile: only this user may
 // read it (POSIX 0600: the ranked key).
 bool writeFileAtomic(const std::string& path, const std::string& data, bool privateFile = false);
-uint32_t crc32(const void* data, size_t len);
+uint32_t crc32(const void* data, size_t len, uint32_t prev = 0); // zlib's CRC-32; prev continues an earlier one
+// A map's identity after applying edit op to the map whose identity was before (both ends of an edit session compute
+// it; see Map::crc).
+inline uint32_t mapEditCrc(uint32_t before, const std::string& op) { return crc32(op.data(), op.size(), before); }

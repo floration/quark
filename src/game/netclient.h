@@ -144,7 +144,7 @@ private:
     struct Download {
         bool active = false;
         std::string name, data;
-        uint32_t crc = 0, total = 0, got = 0;
+        uint32_t crc = 0, textCrc = 0, total = 0, got = 0;   // crc: the map's id; textCrc: of the text being sent
         std::vector<double> asked;   // per chunk: when last requested (0 = never)
         std::vector<bool> have;
         std::vector<std::string> edits; // edit events that arrived meanwhile: replayed on top if they're newer

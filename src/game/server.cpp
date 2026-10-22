@@ -24,7 +24,12 @@ constexpr uint32_t kMaxRewindMs = 500; // lag compensation window (hard ceiling)
 constexpr uint32_t kRewindToleranceMs = 30; // over ping + interpolation (ping smoothing, jitter)
 constexpr float kMaxCmdTokensMs = 40.0f; // burst allowance after network jitter
 constexpr int kMaxStringCmdsPerTick = 8;   // per player (chat, votes, commands)
-constexpr int kMaxEditOpsPerTick = 2;      // per player: each re-serializes the map
+// Map edits (MAP-12): an op updates the map in place (a few us; a rebuild when the grid has to move or grow, ~0.3 ms
+// on Midtown), so a client's whole packet of them (16) can go in one tick, within a shared time budget. And while
+// any player still has half the reliable-event backlog unacknowledged, edits wait (the editor resends them): a host
+// editing over loopback can't outrun a far-away player's acks until that player gets dropped.
+constexpr int kMaxEditOpsPerTick = 16;     // per player (what one input packet carries)
+constexpr double kEditBudgetMs = 0.5;      // per tick, all players: past it, edits wait for the next tick
 constexpr float kChatBurst = 5, kChatPerSecond = 1;
 
 // Backlog: tokens refill at exactly the command rate, so after a stall (the network's or this machine's) the commands
@@ -387,7 +392,8 @@ void Server::handlePacket(const NetAddr& from, const uint8_t* data, int len) {
     else if (type == PKT_MAP_REQUEST) { // client lacks this map (or has a different copy): send it a piece
         uint32_t crc = r.u32(), off = r.u32();
         (void)crc; // always serve the current map: in an edit session it may have changed since the client asked
-        if (r.bad() || off >= map_.source.size()) return;
+        const std::string& text = map_.sourceText();   // (after edits: serialized here, once per change)
+        if (r.bad() || off >= text.size()) return;
         ServerPlayer& mp = players_[id];   // rate limit (token bucket)
         double now = timeNow();
         mp.mapTokens = std::min(kMapReqBurst, mp.mapTokens + (float)(now - mp.mapTokensAt) * kMapReqPerSec);
@@ -397,9 +403,9 @@ void Server::handlePacket(const NetAddr& from, const uint8_t* data, int len) {
         uint8_t out[kMaxPacket];
         Writer w(out, sizeof out);
         writeHeader(w, PKT_MAP_DATA);
-        uint16_t n = (uint16_t)std::min<size_t>(kMapChunk, map_.source.size() - off);
-        w.u32(players_[id].nonce); w.u32(map_.crc); w.u32((uint32_t)map_.source.size()); w.u32(off); w.u16(n);
-        w.bytes((const uint8_t*)map_.source.data() + off, n);
+        uint16_t n = (uint16_t)std::min<size_t>(kMapChunk, text.size() - off);
+        w.u32(players_[id].nonce); w.u32(map_.crc); w.u32(map_.sourceTextCrc()); w.u32((uint32_t)text.size()); w.u32(off); w.u16(n);
+        w.bytes((const uint8_t*)text.data() + off, n);
         sock_.send(from, out, w.size());
     }
 }
@@ -838,9 +844,18 @@ void Server::handleInput(int id, Reader& r) {
         // a budget per tick (map edits cost the most): what's over it stays unacknowledged and the client resends it
         if (p.strTick != tick_) { p.strTick = tick_; p.strCount = p.edCount = 0; }
         bool ed = strs[k].compare(0, 3, "ed ") == 0;
-        if (p.strCount >= kMaxStringCmdsPerTick || (ed && p.edCount >= kMaxEditOpsPerTick)) break;
+        if (ed) {   // edits have their own budget (they come by the hundred: a custom group is one op per part)
+            if (editTick_ != tick_) { editTick_ = tick_; editSpentMs_ = 0; }
+            if (p.edCount >= kMaxEditOpsPerTick || editSpentMs_ >= kEditBudgetMs || editBacklogged()) break;
+            double t0 = timeNow();
+            p.edCount++;
+            p.lastStringCmd = seq;
+            handleStringCmd(id, strs[k]);
+            editSpentMs_ += (timeNow() - t0) * 1000.0;
+            continue;
+        }
+        if (p.strCount >= kMaxStringCmdsPerTick) break;
         p.strCount++;
-        p.edCount += ed;
         p.lastStringCmd = seq;
         handleStringCmd(id, strs[k]);
     }
@@ -1150,6 +1165,12 @@ std::string Server::statusText() {
              std::to_string((int)p.ping) + " " + p.addr.toString();
     }
     return s;
+}
+
+bool Server::editBacklogged() const {
+    for (int i = 0; i < kMaxPlayers; i++)
+        if (players_[i].connected && !players_[i].isBot && players_[i].events.size() >= kMaxUnackedEvents / 2) return true;
+    return false;
 }
 
 void Server::broadcastEvent(const GameEvent& e) {
@@ -2332,13 +2353,12 @@ bool Server::applyEdit(int from, const std::string& op) {
     if (op.size() > 220) return false;
     uint32_t before = map_.crc;
     try {   // (applyMapEdit checks the result against the same limits a map file gets, and leaves map_ as it was if it fails)
-        if (!applyMapEdit(map_, op)) return false;
-        map_.source = map_.serialize();
+        if (!applyMapEdit(map_, op)) return false;   // (in place: the text is only made again when it's sent or saved)
     } catch (const std::exception& e) {   // (out of memory: refuse the edit, keep the server)
         log(std::string("edit refused: ") + e.what());
         return false;
     }
-    map_.crc = crc32(map_.source.data(), map_.source.size());
+    map_.crc = mapEditCrc(before, op);
     mapEdited_ = true;
     if (!editDirty_) nextAutosave_ = time() + 5;
     editDirty_ = true;
@@ -2352,7 +2372,7 @@ bool Server::applyEdit(int from, const std::string& op) {
 
 bool Server::autosave() {
     if (!validMapName(cfg_.map)) return false;
-    std::string text = map_.serialize();
+    const std::string& text = map_.sourceText();
     // Never write a file that wouldn't load again. (Checked here, not per edit: parsing Midtown takes ~100 ms, and
     // edit sessions autosave at most every 5 s.)
     Map check;

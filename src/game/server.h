@@ -345,6 +345,10 @@ public:
     void handleMasterReply(const std::string& key, const std::string& reply);
     bool applyEdit(int from, const std::string& op);
     bool autosave();
+    // map edits: this tick's time spent on them, and whether some player is too far behind on reliable events
+    uint32_t editTick_ = 0;
+    double editSpentMs_ = 0;
+    bool editBacklogged() const;
     void handleStringCmdForTest(int id, const std::string& s) { handleStringCmd(id, s); }
     void glog(int level, const char* fmt, ...);   // game log file (no-op below cfg_.logLevel)
     float bodyScale() const { return duelModDef(duelMod()).size; } // duel "double size": hitbox and eye height

@@ -26,9 +26,10 @@ bool isOfficialMapName(const std::string& name) {
 }
 
 bool isOfficialMap(const Map& m) {
+    const std::string& src = m.sourceText();   // (an edited map: its text as it is now)
     std::string text;
-    text.reserve(m.source.size());
-    for (char c : m.source) if (c != '\r') text += c;
+    text.reserve(src.size());
+    for (char c : src) if (c != '\r') text += c;
     std::string h = sha256Hex(text);
     for (const OfficialMap* o = kOfficialMaps; o->name; o++) if (m.name == o->name && h == o->sha256) return true;
     return false;

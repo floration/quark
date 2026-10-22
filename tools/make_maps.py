@@ -1,8 +1,17 @@
 #!/usr/bin/env python3
-"""Generates the per-mode maps in maps/ (symmetric layouts are mirrored so both teams get the same map).
-Edit and re-run: python3 tools/make_maps.py"""
-import os, random, math
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "maps")
+"""Generates the per-mode maps (symmetric layouts are mirrored so both teams get the same map).
+The maps are a build artifact: CMake runs this (python3, nothing else needed) and writes them to maps/, which
+.gitignore leaves out. Edit this file and rebuild; never hand-edit the .qmap files it writes.
+  python3 tools/make_maps.py [--out DIR]   writes every map (default: maps/ next to tools/)
+  python3 tools/make_maps.py --list        prints the names of the maps it makes, writes nothing
+Output is byte-for-byte deterministic (seeded generators only; LF line endings on every platform)."""
+import os, random, math, argparse
+_ap = argparse.ArgumentParser(description="generate the shipped maps")
+_ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "maps"))
+_ap.add_argument("--list", action="store_true", help="print the map names instead of writing the maps")
+ARGS = _ap.parse_args()
+OUT = ARGS.out
+MADE = []
 
 class M:
     def __init__(s, title, mode, sun=(0.45, 1.0, 0.3)):
@@ -596,6 +605,8 @@ class M:
                 if placed >= count: break
         return placed
     def save(s, name, dress=True):
+        MADE.append(name)
+        if ARGS.list: return
         # each map plays the mode it's built for, and free for all; Lodestone alone is built for every mode.
         # (any map can still be started in any mode: the menus warn that it may not work)
         mode = next((l.split()[1] for l in s.lines if l.startswith("for ")), None)
@@ -607,7 +618,8 @@ class M:
         if p:
             p = [tuple(round(v * 0.85, 3) for v in p[0])] + list(p[1:])
             s.lines.insert(4, "palette " + " ".join(f"{k} {c[0]:g} {c[1]:g} {c[2]:g}" for k, c in zip(("base", "accent", "metal", "glow", "sky"), p)))
-        open(os.path.join(OUT, name + ".qmap"), "w").write("\n".join(s.lines) + "\n")
+        os.makedirs(OUT, exist_ok=True)
+        with open(os.path.join(OUT, name + ".qmap"), "w", newline="\n") as f: f.write("\n".join(s.lines) + "\n")
 
 
 def tiles(rects, size):
@@ -1568,6 +1580,11 @@ for (x0, z0, x1, z1) in ((-P, -P, P, -P + 0.3), (-P, P - 0.3, P, P), (-P, -P, -P
 m.light(0, 4, 0, 14, 0.5, fixture=False)
 for (x, z) in ((-P - W / 2, 0), (P + W / 2, 0), (0, -P - W / 2), (0, P + W / 2)):
     m.light(x, -0.6, z, 12, 0.9, fixture=False)                                # the moat glows up at the walls
+# the fight stays on the platform: a running jump clears the 4.5 m moat (a dash-jump 13 m), so an invisible wall
+# stands at its far edge, up out of reach (the ring path beyond is scenery)
+E = P + W
+for (x0, z0, x1, z1) in ((-E - 0.6, -E - 0.6, E + 0.6, -E), (-E - 0.6, E, E + 0.6, E + 0.6), (-E - 0.6, -E, -E, E), (E, -E, E + 0.6, E)):
+    m.box(x0, -4, z0, x1, 80, z1, mat="clip")
 # outside the moat only: pillars, lanterns, shrines on the ring path
 R = P + W + 0.5
 for t in (-14, -7, 0, 7, 14):
@@ -3046,4 +3063,4 @@ for (x, y, z, yaw) in HT_SPAWNS: m.spawn("any", x, y, z, yaw)
 m.raw("# setting skyscraper over a city")
 m.save("hightown")
 
-print("maps written")
+print("\n".join(MADE) if ARGS.list else "%d maps written to %s" % (len(MADE), os.path.normpath(OUT)))

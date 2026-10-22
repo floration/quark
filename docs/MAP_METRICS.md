@@ -1,6 +1,6 @@
 # How maps are measured
 
-`build/quark_tests mapreport` measures every map in `maps/` and writes [MAP_REPORT.md](MAP_REPORT.md). Run it after you change a map or `tools/make_maps.py`.
+`build/quark_tests mapreport` measures every map in `maps/` and writes [MAP_REPORT.md](MAP_REPORT.md). Run it after you change `tools/make_maps.py` and rebuild (the build regenerates `maps/`).
 
 `sh tools/map_shots.sh` then takes 16 screenshots of each map and saves them as one 4×4 sheet in `docs/map_shots/<map>.jpg`:
 - **8 orbit shots**, from above, every 45°.
@@ -9,14 +9,18 @@
 The numbers say *what* a map is. The sheets are for the judgement calls: whether it reads well, whether it looks like a place, whether its landmarks stand out.
 
 ## The game the numbers are tuned to
-- **Movement**:
+- **Movement** (all intended, the owner's call: decision 5.4):
   - running speed: 8 m/s;
-  - jump: 7 m/s up, clears about 1.2 m;
+  - jump: 7.3 m/s up, clears about 1.2 m; holding jump bunny-hops on the first grounded tick, before friction (auto-bhop);
   - step-up: 0.55 m;
-  - dash: a 0.12 s burst, then you keep your speed + 3 m/s; it can be tilted up or down;
+  - air strafing gains speed without a limit;
+  - dash: a 0.12 s burst, then you keep your speed + 3 m/s, at most 32 m/s (the limit is intended); it can be tilted up, which turns speed into height;
   - grapple: 45 m reach;
-  - strafe-jumping builds speed;
   - ladders.
+- **The movement envelope** the tech checks use is not written down here but measured, with the game's own movement code, each time the report runs (so it follows any change to movement). The report's first table lists it:
+  - **speed from a standstill**: a good player holding jump, dashing on cooldown while the dash still adds speed, and strafing (each millisecond the strafe that gains the most): the metres of moving it takes to reach 12, 16, 20, 24 and 28 m/s. Circling builds speed too, so the metres count wherever they're run;
+  - **take-offs**: from each of those speeds, a jump and, after 0-0.4 s, a dash tilted 0-90° up (or none): every arc followed until 40 m below the take-off. The envelope is the highest any arc is at each distance across; a slower take-off is always possible, so each speed's envelope includes the slower ones'. Past 28 m/s an upward dash gets no higher (its exit speed is capped), so the speeds stop there;
+  - **grapple pulls**: the speed a pull leaves you with, from each speed.
 - **Weapon ranges** decide which fights a sightline allows:
 
 | band | distance | weapons |
@@ -73,11 +77,15 @@ Movement is the mean of six sub-scores, each 0–10:
 ### Tech: what dash, grapple and good jumps do to the map
 Two graphs over the same floor samples:
 - **The run:** links the bots' nav graph allows: along a surface, steps, ordinary jumps (gaps up to 2.6 m, 1.15 m up) and ladders.
-- **The tech path:** all of that, plus dash-jumps and grapple pulls.
-  - A dash-jump goes up to 16 m across and 3.5 m up, with any drop. The arc must be clear for a player-wide body: three lines, the middle and both shoulders, so a 0.4 m slit doesn't count as a way through.
-  - A grapple pull reaches any surface hit within 45 m and lands you on the floor next to the anchor.
+- **The tech path:** all of that, plus leaps and grapple pulls, with your speed as part of where you are:
+  - **Speed** is one of the envelope's speeds. Moving along the path builds it as the envelope's run-up says (a path that circles to gain speed pays for the metres it circles). A ladder costs all of it; a grapple pull leaves you at what the pull gives.
+  - **A leap** goes anywhere under the envelope of the speed you have: standing (8 m/s) that is 13.5 m across level, 4.2 m up at most; at 28 m/s, 61 m across or 12.5 m up. The arc must be clear for a player-wide body: three lines (the middle and both shoulders, so a 0.4 m slit doesn't count as a way through) up out of the take-off, across at chest height over the higher end (or over the arc's own apex, when only a fast take-off reaches), and down into the landing. Clip blocks it (players collide with clip). Leaps longer than 24 m are taken between every third sample, a few metres apart, to keep the report quick.
+  - **A grapple pull** reaches any surface hit within 45 m and lands you on the floor next to the anchor; the way there must be open to a player (the hook passes through clip, you don't).
+  - Nobody stands inside clip, whatever the nav graph says, so those samples are left out of both graphs.
 
 Both are measured in metres along the samples, so the two compare like for like.
+
+**Out of bounds:** with the whole envelope, from the first spawn, the report lists the floor a good player reaches that the run doesn't (roofs, wall tops: fine) and how much of it lies outside the playable floor's footprint (its bounding box, plus 1 m). Any out-of-bounds floor fails the map: keep players in with clip or walls they can't dash up.
 
 **Race maps**, per leg (from one checkpoint to the next):
 - **Shortcut:** run length ÷ tech length. A good player should not cut a leg: 10 at 1.25× or less, 0 at 2.5×. The worst leg counts.
@@ -135,11 +143,11 @@ Each map is built for one mode (its `for` line), and is judged on what that mode
 | multi point | 3–6 points (1.5), 25–90 m of walking from one point to the next (2), the defenders' stage spawns reach each point 2–10 s before the attackers' (3), cover on 35% of each point (2), 3+ ways onto each point (1.5) |
 
 ## The bar
-Every map must score **at least 7 in decor, layout, movement, creativity, mode fit and balance** (balance where it has team modes). It must also declare one mode and a setting.
+Every map must score **at least 7 in decor, layout, movement, creativity, mode fit and balance** (balance where it has team modes). It must also declare one mode and a setting, and nothing out of bounds may be reachable.
 
 The tests also climb every ladder and walk up every staircase with the real movement code (`quark_tests ladders`, `quark_tests stairs`). No staircase may cut through another walkable surface, or hang over one with less than a player's height of clearance.
 
-Debugging: `MR_DEAD=<map>` lists dead ends, `MR_LEVELS=<map>` the floor area per height band, and `MR_PATH=1` every link of the tech paths. `LADDER_TRACE=<map>` (with `LADDER_AT=<x>`) and `STAIRS_TRACE=<map>` trace a climb. Originality is left out: a map can't help resembling the others. `quark_tests` fails if any map is below the bar, and `quark_tests mapreport` prints which.
+Debugging: `MR_DEAD=<map>` lists dead ends, `MR_LEVELS=<map>` the floor area per height band, and `MR_PATH=1` every link of the tech paths. `LADDER_TRACE=<map>` (with `LADDER_AT=<x>`) and `STAIRS_TRACE=<map>` trace a climb. `MR_OOB=<map>` lists the out-of-bounds floor it reaches, `MR_ONLY=<map>` measures one map alone (quick, but its originality and rare-feature points are then against itself only) and `MR_TIME=1` times the envelope. Originality is left out: a map can't help resembling the others. `quark_tests` fails if any map is below the bar, and `quark_tests mapreport` prints which.
 
 Every structure on a map should have a reason to be there, for the game or for the place. [MAP_STRUCTURES.md](MAP_STRUCTURES.md) lists them.
 
