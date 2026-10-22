@@ -159,6 +159,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     while (rateLevel_ < kTickRateLevels - 1 && kTickRates[rateLevel_] > cap) rateLevel_++;
     rateTopLevel_ = rateLevel_;
     rateUpWait_ = 60; rateUpAt_ = 0;
+    rateDownPending_ = false;
     nextTick_ = timeNow();
     resetRateWindow();
     rulesReset(*this);
@@ -244,9 +245,22 @@ void Server::resetRateWindow() {
     windowBusy_ = 0;
 }
 
-// Warmup only: if the host can't sustain the current rate cleanly, step down a level.
+// The tick rate changes only in warmup or between rounds (gamedefs.h; REVIEW GAME-11): if the host can't sustain the
+// current rate cleanly, it steps down a level then (mid-round only if it truly can't keep up: busy over 90%); now and
+// then, at a break, it tries the next rate up.
+void Server::stepRateDown(const char* why) {
+    rateLevel_++;
+    rateUpAt_ = timeNow() + rateUpWait_;
+    rateUpWait_ = std::min(rateUpWait_ * 2, 900.0);
+    rateDownPending_ = false;
+    message("server tick rate lowered to " + std::to_string(tickRate()) + " Hz");
+    log("tick rate -> " + std::to_string(tickRate()) + " Hz (" + why + ")");
+}
+
 void Server::checkTickRate() {
     double now = timeNow();
+    const bool between = ms_.phase == PHASE_WARMUP || ms_.phase == PHASE_ROUND_END || ms_.phase == PHASE_MATCH_END;
+    if (rateDownPending_ && between && rateLevel_ < kTickRateLevels - 1) { stepRateDown("fell behind during the round"); resetRateWindow(); return; }
     if (now - rateWindowStart_ < kRateWindow) return;
     if (!g_serverRateCheck) { resetRateWindow(); return; }
     if (editing_ || playerCount() == 0) { resetRateWindow(); return; }
@@ -258,25 +272,21 @@ void Server::checkTickRate() {
     // work itself is heavy (or late ticks come with real load), or packets / clients are being lost.
     bool bad = busy > 0.5 || (lateFrac > kMaxLateFraction && busy > 0.2) || windowSendFail_ > 0 || worstLoss > kMaxClientLossPct;
     // Below the top rate, now and then try the next one up: a clean, lightly loaded window, and the wait since the
-    // last step down is over. If it steps straight back down, the wait doubles (up to 15 min), so a host that can't
-    // hold it isn't bounced up and down. (Any phase: one step is a small change, and it's rare.)
+    // last step down is over. If it steps back down, the wait doubles (up to 15 min), so a host that can't hold it
+    // isn't bounced up and down. (Between rounds only, like stepping down.)
     bool clean = !bad && busy < 0.2 && lateFrac < kMaxLateFraction * 0.5 && worstLoss == 0;
-    if (rateLevel_ > rateTopLevel_ && clean && now >= rateUpAt_) {
+    if (rateLevel_ > rateTopLevel_ && clean && now >= rateUpAt_ && between) {
         rateLevel_--;
-        rateRaisedAt_ = now;
         message("server tick rate raised to " + std::to_string(tickRate()) + " Hz");
         log("tick rate -> " + std::to_string(tickRate()) + " Hz (trying the next rate up: busy " + std::to_string((int)(busy * 100)) + "%)");
         resetRateWindow();
         return;
     }
-    if (bad && (ms_.phase == PHASE_WARMUP || now - rateRaisedAt_ < 3 * kRateWindow) && rateLevel_ < kTickRateLevels - 1) {   // (stepping down: warmup only, as before)
+    if (bad && rateLevel_ < kTickRateLevels - 1) {
         char why[200];
         snprintf(why, sizeof why, "busy %.0f%%, late %.1f%%, send failures %d, worst client loss %d%%", busy * 100, lateFrac * 100, windowSendFail_, worstLoss);
-        rateLevel_++;
-        rateUpAt_ = now + rateUpWait_;
-        rateUpWait_ = std::min(rateUpWait_ * 2, 900.0);
-        message("server tick rate lowered to " + std::to_string(tickRate()) + " Hz");
-        log("tick rate -> " + std::to_string(tickRate()) + " Hz (" + why + ")");
+        if (between || busy > 0.9) stepRateDown(why);   // (mid-round only if it can't keep up at all)
+        else if (!rateDownPending_) { rateDownPending_ = true; log(std::string("tick rate: stepping down at the next break (") + why + ")"); }
     }
     resetRateWindow();
 }
@@ -1197,7 +1207,7 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
     if (attacker >= 0 && attacker != victim && !friendly) players_[attacker].hitSinceShot = true;
     if (attacker >= 0 && attacker != victim && !friendly) players_[attacker].dmgDealt += std::min(dmg, std::max(0.0f, v.health)); // (the health it took)
     v.health -= dmg;
-    v.lastDamagedTick = tick_;
+    v.lastDamagedAt = time();
     if (attacker >= 0 && attacker != victim) {
         lastProgress_ = time();
         // Hit feedback (hitsound, damage number): rapid small hits (laser) are batched every 50 ms
@@ -1295,7 +1305,7 @@ void Server::simulate() {
         if (!p.connected) continue;
         if (p.alive && (p.move.pos.y < map_.killY() || (!map_.lava.empty() && map_.inLava(playerBox(p.move))))) killPlayer(i, -1, 252);
         if (!p.alive && p.respawnAt >= 0 && time() >= p.respawnAt && p.team != TEAM_SPECTATOR) spawnPlayer(i);
-        if (p.alive && (arenaRules() & AR_REGEN) && tick_ - p.lastDamagedTick > (uint32_t)(3 * tickRate()) && p.health < maxHealth())
+        if (p.alive && (arenaRules() & AR_REGEN) && time() - p.lastDamagedAt > 3.0 && p.health < maxHealth())
             p.health = std::min(maxHealth(), p.health + 10.0f * dt()); // regeneration: 10 hp/s after 3 s untouched
     }
     rulesTick(*this);

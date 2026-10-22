@@ -3,7 +3,8 @@
 #include <cstdint>
 
 // Server tick rate is chosen at runtime: it starts at 1000 Hz and steps down
-// (500, 250, 125) during warmup if the host can't keep up. A snapshot is sent every tick.
+// (500, 250, 125) in warmup or between rounds if the host can't keep up (mid-round only if it can't keep up at all).
+// A snapshot is sent every tick.
 // Movement always simulates in fixed 1 ms steps, so it is identical at every rate.
 constexpr int kTickRates[] = {1000, 500, 250, 125};
 constexpr int kTickRateLevels = 4;

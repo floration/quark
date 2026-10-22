@@ -515,6 +515,30 @@ static void testSpawnTypes(uint16_t port) {
     s.stop();
 }
 
+// GAME-11: the tick rate doesn't change mid-round; a host that falls behind steps down at the next break.
+static void testRateBetweenRounds(uint16_t port) {
+    printf("tick rate changes only between rounds\n");
+    setTimeScale(1.0);
+    g_serverRateCheck = true;
+    struct Restore { ~Restore() { setTimeScale(kTestTimeScale); g_serverRateCheck = false; } } restore;
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    NetClient c[1];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 1, cls)) { s.stop(); return; }
+    CHECK(s.tickRate() == 1000);
+    c[0].overrideReportedLoss(50);           // (what a struggling host looks like: clients losing snapshots)
+    pump(s, cls, 3.0 * 2.5, idle);           // two and a half rate windows, mid-match
+    printf("  mid-match, losing snapshots: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
+    CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 1000);
+    s.phaseEnd_ = s.time();                  // time's up: the match is over
+    pump(s, cls, 0.5, idle);
+    printf("  match over: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
+    CHECK(s.ms_.phase == PHASE_MATCH_END && s.tickRate() == 500);   // stepped down at once, at the break
+    s.stop();
+}
+
 // "quark_tests rules [name]": all of them, or the one named.
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
@@ -532,4 +556,5 @@ static void testGameRules(const std::string& only) {
         {"spawns", [] { testSpawnTypes(TP(29251)); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
+    if (only == "rate") testRateBetweenRounds(TP(29252));   // (timing-sensitive: the suite runs it alone, with "tickrate")
 }

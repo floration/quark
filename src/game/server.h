@@ -138,7 +138,7 @@ struct ServerPlayer {
     uint32_t nextEventId = 1;
     uint32_t ackedEvent = 0;
     std::deque<GameEvent> events; // unacknowledged reliable events
-    uint32_t lastDamagedTick = 0;
+    double lastDamagedAt = -1e9;   // (regeneration waits 3 s after this: seconds, not ticks, so a rate change doesn't move it)
     // Delta snapshots: what we sent this client recently (ring by tick) and the newest one it confirmed.
     static constexpr int kSentRing = 256;
     std::vector<Snapshot> sent;
@@ -207,7 +207,7 @@ public:
     int rateTopLevel_ = 0;      // the highest rate allowed (maxTickRate)
     double rateUpAt_ = 0;       // after stepping down: when to try the next rate up again (backs off each time it fails)
     double rateUpWait_ = 60;
-    double rateRaisedAt_ = -1e9; // a step up that doesn't hold steps straight back down, in any phase
+    bool rateDownPending_ = false; // the host fell behind mid-round: step down at the next break (REVIEW GAME-11)
     int tickRate() const { return kTickRates[rateLevel_]; }
     float dt() const { return 1.0f / tickRate(); }
     double time() const { return timeMs_ * 0.001; } // double: a float runs out of millisecond precision after a few hours of uptime
@@ -389,6 +389,7 @@ private:
     void simulate();
     void drainCmds(int id);
     void checkTickRate();
+    void stepRateDown(const char* why);
     void resetRateWindow();
     void runPlayerCmd(int id, const UserCmd& cmd);
     bool fireWeapon(int id, const UserCmd& cmd);   // true if it hit a player (hitscan weapons)
