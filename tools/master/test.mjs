@@ -6,16 +6,29 @@ import worker, { rateTeams, rankKeyOf, prune, keyEq } from "./worker.js";
 
 const db = new DatabaseSync(":memory:");
 db.exec(readFileSync(new URL("./schema.sql", import.meta.url), "utf8"));
+// D1 is remote: every call takes a while, and calls from different requests land in any order. With `latency.on`
+// each call waits a random 0-3 ms (a real timer, not a microtask) before it runs, so concurrent requests interleave
+// their reads and writes; `latency.most` records how many calls were ever waiting at once (> 1 = they overlapped).
+const latency = { on: false, waiting: 0, most: 0 };
+const wait = async () => {
+  if (!latency.on) return;
+  latency.waiting++;
+  latency.most = Math.max(latency.most, latency.waiting);
+  await new Promise((r) => setTimeout(r, Math.random() * 3));
+  latency.waiting--;
+};
 const stmt = (sql, args = []) => ({
   bind: (...a) => stmt(sql, a),
-  run: async () => ({ meta: { changes: Number(db.prepare(sql).run(...args).changes) } }),
-  first: async () => db.prepare(sql).get(...args) ?? null,
-  all: async () => ({ results: db.prepare(sql).all(...args) }),
+  run: async () => { await wait(); return { meta: { changes: Number(db.prepare(sql).run(...args).changes) } }; },
+  first: async () => { await wait(); return db.prepare(sql).get(...args) ?? null; },
+  all: async () => { await wait(); return { results: db.prepare(sql).all(...args) }; },
+  runNow: () => ({ meta: { changes: Number(db.prepare(sql).run(...args).changes) } }),
 });
-// a D1 batch is one transaction: all or nothing
+// a D1 batch is one transaction: all or nothing (and nothing else runs in between)
 const env = { DB: { prepare: (sql) => stmt(sql), batch: async (list) => {
+  await wait();
   db.exec("BEGIN");
-  try { const out = []; for (const s of list) out.push(await s.run()); db.exec("COMMIT"); return out; }
+  try { const out = list.map((s) => s.runNow()); db.exec("COMMIT"); return out; }
   catch (e) { db.exec("ROLLBACK"); throw e; }
 } } };
 
@@ -287,7 +300,9 @@ check((await call("/list?v=t9")) === "", "hidden servers aren't listed");
   check(ids.every((m) => status(m) === "pending/open"), "rows waiting for a report stay pending until the ticket expires");
   check((await prune(env, Date.now())) === 1 && status("c4c4c4c4c4c4c4c4") === "done/done", "the failed one is rated on the next run");
   for (const m of ids) age(m, 2 * 3600000);
-  await prune(env, Date.now()); await prune(env, Date.now());
+  // the cron counts matches it rated, not rows it looked at: 50 + 10 expired rows voided = 0 rated
+  const runs = [await prune(env, Date.now()), await prune(env, Date.now())];
+  check(runs[0] === 0 && runs[1] === 0, "voiding isn't counted as rating " + runs);
   check(ids.every((m) => status(m) === "void/void"), "expired rows all decided over the runs (50 a run)");
 }
 // the server's next ticket voids its last one only if that has no result: a late dispute still counts
@@ -459,6 +474,28 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   for (let i = 0; i < 12 && mine !== "rate limited"; i++) mine = await call("/queue", { secret: secret(116), mode: "vs", action: "leave" }, nat);
   check(mine === "rate limited", "per-id limit still holds behind a shared address");
   check((await call("/queue", { secret: secret(117), mode: "vs", action: "leave" }, nat)) === "left vs", "a neighbour still gets through");
+  // a few dozen games behind one address polling the public reads get through; a flood from it doesn't
+  const lan = "192.0.2.63";
+  const polls = [];
+  for (let i = 0; i < 200; i++) polls.push((await fetchRaw(i % 2 ? "/queue" : "/filled?since=0", null, lan)).status);
+  check(polls.every((s) => s === 200), "200 reads from one address pass " + polls.filter((s) => s !== 200).length);
+  let flood = 0;
+  for (let i = 0; i < 100 && flood === 0; i++) if ((await fetchRaw("/queue", null, lan)).status === 429) flood = i;
+  check(flood > 0, "but reads from one address are capped too");
+  // the per-address write bucket is finite: 60 different players' writes from one address in a burst, then refused
+  // (the shared-address limit is real, just sized for a LAN party), and that address's reads are unaffected
+  const dorm = "192.0.2.64", w = [];
+  for (let n = 400; n < 470; n++) w.push(await call("/hello", { secret: secret(n) }, dorm));
+  const firstLimited = w.indexOf("rate limited");
+  check(firstLimited >= 55 && firstLimited <= 61 && w.slice(0, 55).every((r) => r.startsWith("id ")), "the shared write bucket holds ~60 players' writes " + firstLimited);
+  check((await fetchRaw("/queue", null, dorm)).status === 200, "reads still work from that address");
+  // the bot's bucket goes with BOT_KEY, not its address: from another address it's the same bucket, and once that's
+  // empty the bot is limited while players at the bot's address still get through
+  let botLimited = 0;
+  for (let i = 0; i < 400 && !botLimited; i++)
+    if ((await call("/queue", { bot: "botkey", discord: hx("u" + (i % 16)), mode: "vs", action: "leave" }, i % 2 ? ip : "192.0.2.65")) === "rate limited") botLimited = i;
+  check(botLimited > 100, "the bot's one bucket, across addresses " + botLimited);
+  check((await call("/hello", { secret: secret(118) }, ip)) === "id " + id(118), "players at the bot's address aren't limited by the bot");
 }
 // pre-1.17 ids move to the key-derived id the first time the secret shows up
 {
@@ -514,14 +551,28 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   check((await post(new URLSearchParams({ secret: "a".repeat(20000) }))).status === 413, "an oversized body is refused");
   check((await (await post(stream("secret=" + secret(150)))).text()) === "id " + id(150), "a chunked body within the limit is read");
 }
-// queue fills are atomic: two joins racing for the last place fill it once
+// queue fills are atomic: two joins racing for the last place fill it once. The D1 calls of the two requests really
+// interleave (random latency on every call), over several rounds so different orders get tried.
 {
   const hx = (t) => Buffer.from(t).toString("hex");
-  await call("/queue", { secret: secret(80), mode: "duel", name: hx("q1") });
-  const both = await Promise.all([call("/queue", { secret: secret(81), mode: "duel" }), call("/queue", { secret: secret(82), mode: "duel" })]);
-  const fills = db.prepare("SELECT COUNT(*) AS c FROM filled WHERE mode = 'duel'").get().c;
-  check(fills === 1 && both.filter((x) => x === "filled duel").length === 1, "one fill " + JSON.stringify(both));
-  check(db.prepare("SELECT COUNT(*) AS c FROM queue WHERE mode = 'duel'").get().c === 1, "the third waits");
+  const fills = () => db.prepare("SELECT COUNT(*) AS c FROM filled WHERE mode = 'duel'").get().c;
+  latency.on = true;
+  latency.most = 0;
+  let bad = 0;
+  for (let round = 0; round < 12; round++) {
+    db.prepare("DELETE FROM queue WHERE mode = 'duel'").run();
+    const before = fills(), a = 300 + round * 3;
+    await call("/queue", { secret: secret(a), mode: "duel", name: hx("q1") });
+    const both = await Promise.all([call("/queue", { secret: secret(a + 1), mode: "duel" }), call("/queue", { secret: secret(a + 2), mode: "duel" })]);
+    const waiting = db.prepare("SELECT COUNT(*) AS c FROM queue WHERE mode = 'duel'").get().c;
+    if (fills() - before !== 1 || both.filter((x) => x === "filled duel").length !== 1 || waiting !== 1) {
+      bad++;
+      console.log("  round", round, JSON.stringify(both), "fills", fills() - before, "waiting", waiting);
+    }
+  }
+  latency.on = false;
+  check(latency.most > 1, "the racing requests' D1 calls overlapped " + latency.most);
+  check(bad === 0, "one fill per race, the third waits (" + bad + " bad rounds)");
 }
 // ratings: a write against a changed rating is refused as a whole (the version guard), then retried
 {
