@@ -46,7 +46,8 @@ unset TOKEN BOTKEY
 
 echo "== venv and requirements"
 sudo -u "$RUNAS" python3 -m venv "$HERE/.venv"
-sudo -u "$RUNAS" "$HERE/.venv/bin/pip" install -q --upgrade pip
+# (no "pip install --upgrade pip": that would fetch an unpinned, unhashed pip from PyPI and run it. The venv's own
+# pip, bundled with Python 3.9+, already handles --require-hashes and the lock's markers and wheel tags.)
 sudo -u "$RUNAS" "$HERE/.venv/bin/pip" install -q --require-hashes -r "$HERE/requirements.txt"
 
 echo "== dry run (reads the live server list, leaderboards and latest release; nothing is posted)"
