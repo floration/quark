@@ -20,6 +20,29 @@ def reply(name, map_, mode, players, maxp, port):
     return b + struct.pack("<BBBH", mode, players, maxp, port)
 
 
+class Safety(unittest.TestCase):
+    """Server and player names go into Discord messages (REVIEW BOT-1, BOT-2)."""
+    def test_safe_text(self):
+        s = qd.safe_text("@everyone [free](https://evil.example) **x** <@123> `y`\nline2 discord.gg/abc")
+        self.assertNotIn("@everyone", s)
+        self.assertNotIn("https://", s)
+        self.assertNotIn("discord.gg", s)
+        self.assertNotIn("\n", s)
+        for md in ("**", "[free]", "<@", "`"):
+            self.assertNotIn(md, s.replace("\\" + md[0], ""))
+        self.assertEqual(qd.safe_text("Im Quarking It"), "Im Quarking It")
+        self.assertEqual(len(qd.safe_text("x" * 500, 64)), 64)
+
+    def test_board_name(self):
+        board = qd.format_board("T", [qd.LeaderRow(100, 3, "a```\n@everyone")])
+        self.assertNotIn("```", board)
+        self.assertEqual(len(board.split("\n")), 3)
+
+    def test_no_default_mentions(self):
+        src = (Path(__file__).resolve().parent / "bot.py").read_text(encoding="utf-8")
+        self.assertIn("allowed_mentions=discord.AllowedMentions.none()", src)
+
+
 class Parsing(unittest.TestCase):
     def test_request(self):
         self.assertEqual(qd.build_info_request(), bytes([0x31, 0x4B, 0x52, 0x51, 4]) + bytes(qd.INFO_REQUEST_BYTES - 5))

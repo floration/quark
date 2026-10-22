@@ -164,12 +164,17 @@ def fmt_race_time(ms: int) -> str:
     return f"{ms // 60000}:{ms // 1000 % 60:02d}.{ms % 1000:03d}"
 
 
+def board_name(s: str) -> str:
+    """A player name inside the leaderboard's code block: it can't close the block or start a new line."""
+    return re.sub(r"[\x00-\x1f\x7f`]", "'", s)
+
+
 def format_board(title: str, rows: list[LeaderRow], race: bool = False, n: int = 10) -> str:
     lines = [title, "-" * max(len(title), 34)]
     if not rows:
         lines.append("  no ranked players yet")
     for i, r in enumerate(rows[:n], 1):
-        name = r.name[:20]
+        name = board_name(r.name)[:20]
         if race:
             lines.append(f"{i:>2}. {name:<20} {fmt_race_time(r.rating):>10}")
         else:
