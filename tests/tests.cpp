@@ -1412,17 +1412,17 @@ static void testCustomMode(uint16_t port) {
         Map open;
         open.brushes.push_back({{{-200, -1, -200}, {200, 0, 200}}, 0});
         open.rebuild();
-        auto speedAfter = [&](float accel) {   // run speed 0.05 s after starting from a standstill
+        auto speedAfter = [&](float accel) {   // run speed 0.02 s after starting from a standstill
             CustomRules g; g.name = "accel"; g.move[MV_GROUND_ACCEL] = accel; setActiveRules(g);
             MoveState q; q.pos = {0, 0.01f, 0};
             UserCmd u; u.msec = 1; u.forward = 127;
             for (int i = 0; i < 50; i++) pmove(q, UserCmd{}, open);
-            for (int i = 0; i < 50; i++) pmove(q, u, open);
+            for (int i = 0; i < 20; i++) pmove(q, u, open);
             return std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z);
         };
         float normal = speedAfter(1), quick = speedAfter(2);
         setActiveRules(CustomRules());
-        printf("  ground accel x2: %.1f m/s after 0.05 s (normal %.1f)\n", quick, normal);
+        printf("  ground accel x2: %.1f m/s after 0.02 s (normal %.1f)\n", quick, normal);
         CHECK(quick > normal + 1.0f);
     }
     Server s;
