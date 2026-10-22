@@ -48,7 +48,7 @@ DEFAULT_CONFIG = {
     "live_category": "🟢 LIVE SERVERS",
     "info_category": "QUARK",
     "updates_channel": "updates",
-    "testing_channel": "testing-updates",   # testing builds (GitHub prereleases, tags v<VERSION>-test.N)
+    "testing_channel": "testing-updates",   # testing builds (GitHub prereleases, tags test-<VERSION>-test.N)
     "leaderboard_channel": "leaderboard",
     "info_channel": "info",
     "queue_channel": "queues",
@@ -164,7 +164,7 @@ _PROD_TAG = re.compile(r"v?\d+\.\d+\.\d+")
 
 def release_kind(rel: dict) -> str | None:
     """"production" for a normal release with a plain v1.2.3 tag, "testing" for a GitHub prerelease
-    (tags like v1.2.3-test.4), None for drafts and anything else. A prerelease is never production, and a
+    (tags like test-1.2.3-test.4), None for drafts and anything else. A prerelease is never production, and a
     non-prerelease with a suffixed tag isn't announced at all (it's neither)."""
     if not rel or rel.get("draft"):
         return None
@@ -447,7 +447,7 @@ def run_bot(cfg: dict):
     @tasks.loop(seconds=cfg["release_poll_seconds"])
     @guarded
     async def testing_loop():
-        """testing builds: GitHub prereleases (v<VERSION>-test.N) go to #testing-updates and ping Testing Updates only"""
+        """testing builds: GitHub prereleases (test-<VERSION>-test.N) go to #testing-updates and ping Testing Updates only"""
         rel = newest_testing(await bot.api.releases())
         if not rel or state.d.get("last_test_tag") == rel["tag_name"]:
             return
@@ -932,7 +932,7 @@ def run_bot(cfg: dict):
     async def pings_cmd(it: discord.Interaction):
         await it.response.send_message(await toggle_role(it.user), ephemeral=True)
 
-    @bot.tree.command(name="changelog", description="Show the changelog of a version (default: latest)")
+    @bot.tree.command(name="changelog", description="Changelog of a version: 1.17.0, a testing build 1.17.0-test.3 (default: latest)")
     async def changelog_cmd(it: discord.Interaction, version: str | None = None):
         await it.response.defer(thinking=True)
         try:

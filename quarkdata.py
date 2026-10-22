@@ -7,7 +7,8 @@ Real endpoints (mirrors the game's C++):
   * UDP PKT_INFO_REQUEST to each ip:port -> PKT_INFO_REPLY               (src/game/protocol.h, server.cpp, netclient.cpp)
   * GET <master>/leaderboard?ladder=L&n=N -> "rating games name" lines   (src/game/ranked.cpp RankService::run)
   * GET <master>/raceboard?map=M&n=N      -> "ms name" lines
-  * GitHub releases: normal release = production (v1.2.3), prerelease = testing build (v1.2.3-test.4)
+  * GitHub releases: normal release = production (tag v1.2.3), prerelease = testing build (tag test-1.2.3-test.4,
+    version 1.2.3-test.4; its changelog is changelogs/1.2.3.md, the base version's: release.yml)
 
 Self-contained: nothing here imports or reads the game's repository. The constants below are COPIES of the game's
 (protocol and mode tables). While the bot lives in the game repo, tests/tests.cpp (cross-language constants) checks
@@ -45,6 +46,22 @@ RANKED_LADDERS = [("vanilla", "RANKED VANILLA"), ("vampire", "RANKED LASER VAMPI
 RACE_MAP = "viaduct"  # TIME TRIAL is the ranked race on Viaduct (game.cpp INFO page)
 # ---- end of copied constants
 VERSION_RE = re.compile(r"\d+\.\d+\.\d+(?:-test\.\d+)?")   # 1.2.3 (production) or 1.2.3-test.4 (testing build)
+
+
+def changelog_lookup(version: str) -> tuple[str, str, str, bool]:
+    """What a /changelog argument names: (version, release tag, changelog file's version, testing).
+    Production: "1.2.3" / "v1.2.3" -> tag v1.2.3, changelogs/1.2.3.md. Testing builds are tagged test-<VERSION>-test.N
+    (release.yml) and described by their base version's file: "1.2.3-test.4" / "test-1.2.3-test.4" ->
+    tag test-1.2.3-test.4, changelogs/1.2.3.md. Raises ValueError for anything else."""
+    v = version.strip()
+    if v.lower().startswith("test-"):
+        v = v[5:]
+    v = v[1:] if v[:1] in ("v", "V") else v
+    if not VERSION_RE.fullmatch(v):
+        raise ValueError("version must look like 1.2.3 (or 1.2.3-test.4 for a testing build)")
+    base, _, suffix = v.partition("-")
+    testing = bool(suffix)
+    return v, (f"test-{v}" if testing else f"v{v}"), base, testing
 
 
 def mode_title(m: int) -> str:
@@ -274,28 +291,35 @@ class QuarkAPI:
             r.raise_for_status()
             return await r.json()
 
+    async def release_by_tag(self, tag: str) -> dict | None:
+        """The GitHub release with this tag, or None when there is none."""
+        async with self.s.get(f"https://api.github.com/repos/{GITHUB_REPO}/releases/tags/{tag}", headers=self._gh_headers(),
+                              timeout=aiohttp.ClientTimeout(total=10)) as r:
+            if r.status == 404:
+                return None
+            r.raise_for_status()
+            return await r.json()
+
     async def changelog(self, version: str | None = None) -> tuple[str, str]:
-        """(version, markdown) from changelogs/<version>.md on GitHub; latest release when version is None."""
+        """(title, markdown): the release notes of a version (latest production release when None), else the
+        changelogs/<VERSION>.md file in the repo. A testing build's title says "(testing)"; its notes are the
+        testing-build line plus its base version's changelog."""
         if not version:
             rel = await self.latest_release()
             version = rel["tag_name"].lstrip("v")
             if rel.get("body"):
                 return version, rel["body"]  # the release body is changelogs/<VERSION>.md
-        version = version.lstrip("v")
-        if not VERSION_RE.fullmatch(version):
-            raise ValueError("version must look like 1.2.3 (or 1.2.3-test.4)")
-        async with self.s.get(f"https://api.github.com/repos/{GITHUB_REPO}/releases/tags/v{version}", headers=self._gh_headers(),
-                              timeout=aiohttp.ClientTimeout(total=10)) as r:
-            if r.status == 200:
-                body = (await r.json()).get("body") or ""
-                if body:
-                    return version, body
-        for ref in (f"v{version}", "HEAD"):  # fall back to the file in the repo
+        v, tag, base, testing = changelog_lookup(version)
+        title = f"{v} (testing)" if testing else v
+        rel = await self.release_by_tag(tag)
+        if rel and rel.get("body"):
+            return title, rel["body"]
+        for ref in (tag, "HEAD"):  # fall back to the file in the repo (a testing build: its base version's)
             try:
-                return version, await self._text(f"{RAW_BASE}/{ref}/changelogs/{version}.md")
+                return title, await self._text(f"{RAW_BASE}/{ref}/changelogs/{base}.md")
             except aiohttp.ClientResponseError:
                 continue
-        raise LookupError(f"no changelog for {version}")
+        raise LookupError(f"no changelog for {v}")
 
     async def game_source(self, local_path: str | None, ref: str = "HEAD") -> str:
         if local_path and os.path.exists(local_path):
