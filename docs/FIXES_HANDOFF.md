@@ -227,6 +227,8 @@ Work happens on the local branch `review-fixes` (made from `2ce3a44` at the user
 
 **Owner decisions pending** (proposals waiting for the owner):
 
+All owner decisions across every batch, with options and recommendations: [OWNER_DECISIONS.md](OWNER_DECISIONS.md). The ones raised while fixing batch 1:
+
 - **BOT-1 (deploy):** remove the Mention Everyone permission from the bot's invite / role and redeploy the bot with this branch's bot.py. Until then the code default (`AllowedMentions.none()`) already blocks the `@everyone` route.
 - **BOT tests:** `python -m unittest test_quarkdata` needs discord.py and aiohttp, which aren't installed on this machine. Run it once wherever the bot is deployed (or let me `pip install -r tools/discordbot/requirements.txt` into a scratch venv here).
 - **NET-3 edit rate limit:** not added. The editor sends up to 1024 edit ops at once for one custom group, so a per-op limit would desync legitimate edits. The server now handles at most 2 edit ops per player per tick (the rest are resent). The real fix for edit cost is MAP-12 (incremental grid, serialize lazily). Proposal: schedule MAP-12 in batch 5.
