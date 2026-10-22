@@ -68,8 +68,14 @@ int main(int argc, char** argv) {
         }
     }
 
-    // started from a launcher install: bring every older launcher (and its shortcuts) up to the one in this package
-    selfupdate::startFromGame(argv[0]);
+    // started from a launcher install: bring every older launcher (and its shortcuts) up to the one in this package.
+    // Not in automated runs (screenshots, benchmarks, scripted editor sessions): they start and quit in seconds and
+    // must not touch the player's launchers. Whatever way main returns, the thread is stopped between steps (never
+    // inside a swap) and joined, waiting at most 2 s (selfupdate::finishFromGame).
+    bool automated = !opts.screenshot.empty() || opts.bench > 0 || !opts.editScript.empty() || opts.textHeavy ||
+                     opts.menuShot || !opts.chatShot.empty() || !opts.consoleShot.empty() || opts.debugPerf;
+    if (!automated) selfupdate::startFromGame(argv[0]);
+    struct LauncherUpdateJoin { ~LauncherUpdateJoin() { selfupdate::finishFromGame(2.0); } } launcherUpdateJoin;
     netInit();
     if (!glfwInit()) { fprintf(stderr, "glfwInit failed\n"); return 1; }
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);

@@ -1,4 +1,6 @@
 #include "selfupdate.h"
+#include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -103,7 +105,7 @@ SwapPaths swapPaths(const fs::path& target) {
     return {target.parent_path() / (target.filename().string() + ".new"), target.parent_path() / (target.filename().string() + ".old")};
 }
 
-bool replaceFile(const fs::path& newFile, const fs::path& target, std::string* err) {
+bool replaceFile(const fs::path& newFile, const fs::path& target, std::string* err, ShutdownGate* gate) {
     std::error_code ec;
     SwapPaths p = swapPaths(target);
     fs::create_directories(target.parent_path(), ec);
@@ -114,6 +116,16 @@ bool replaceFile(const fs::path& newFile, const fs::path& target, std::string* e
         if (err) *err = "cannot write " + p.staged.string();
         fs::remove(p.staged, ec);
         return false;
+    }
+    // the renames: all of them or none, never cut off by the game quitting (finishFromGame)
+    std::unique_lock<std::timed_mutex> lock;
+    if (gate) {
+        lock = std::unique_lock<std::timed_mutex>(gate->mu);
+        if (gate->stop) {
+            fs::remove(p.staged, ec);
+            if (err) *err = "shutting down";
+            return false;
+        }
     }
 #ifdef _WIN32
     fs::remove(p.old, ec); // a leftover from an earlier swap (fails if that copy still runs: then we can't swap now)
@@ -165,7 +177,18 @@ fs::path gameRootFrom(const fs::path& exeDir) {
     return {};
 }
 
-Report updateLaunchersFromGame(const fs::path& gameRoot) {
+namespace {
+// One step that changes something the player runs or clicks: whole, and only while the game isn't shutting down.
+template <class F> bool gated(ShutdownGate* gate, F f) {
+    if (!gate) { f(); return true; }
+    std::lock_guard<std::timed_mutex> l(gate->mu);
+    if (gate->stop) return false;
+    f();
+    return true;
+}
+} // namespace
+
+Report updateLaunchersFromGame(const fs::path& gameRoot, ShutdownGate* gate) {
     Report r;
     std::error_code ec;
     fs::path packaged = gameRoot / exeName();
@@ -181,39 +204,80 @@ Report updateLaunchersFromGame(const fs::path& gameRoot) {
             bool dup = false;
             for (auto& s : seen) dup = dup || sameFile(s, f);
             if (dup || sameFile(f, packaged)) continue;
+            if (gate && gate->stop) { r.notes.push_back("game quit: the rest next start"); return r; }
             seen.push_back(f);
             std::string v = fileVersion(f), err;
             if (!isNewer(pv, v)) continue;
-            if (replaceFile(packaged, f, &err)) { r.replaced++; r.notes.push_back("updated " + f.string() + " (" + (v.empty() ? "old" : v) + " -> " + pv + ")"); }
+            if (replaceFile(packaged, f, &err, gate)) { r.replaced++; r.notes.push_back("updated " + f.string() + " (" + (v.empty() ? "old" : v) + " -> " + pv + ")"); }
             else r.notes.push_back(err);
         }
     fs::path canonical = install::installedLauncher();
     if (!fs::exists(canonical, ec)) {
         std::string err;
-        if (replaceFile(packaged, canonical, &err)) { r.installedFresh = true; r.notes.push_back("installed " + canonical.string()); }
+        if (replaceFile(packaged, canonical, &err, gate)) { r.installedFresh = true; r.notes.push_back("installed " + canonical.string()); }
         else { r.notes.push_back(err); return r; }
     }
-    install::writeIcon();
-    // shortcuts that point at an old launcher name / place go to the installed one; a fresh install gets them made
-    install::repairShortcuts(canonical, r.installedFresh);
-    if ((r.installedFresh || r.replaced) && install::hasPrograms()) {
+    bool fresh = r.installedFresh;
+    bool ok = gated(gate, [] { install::writeIcon(); }) &&
+              // shortcuts that point at an old launcher name / place go to the installed one; a fresh install gets them made
+              gated(gate, [&] { install::repairShortcuts(canonical, fresh); });
+    if (ok && (r.installedFresh || r.replaced) && install::hasPrograms()) {
         std::string ver = readText(gameRoot / "version.txt");
-        install::setPrograms(true, canonical, ver.empty() ? std::string(QUARK_VERSION) : ver);
+        ok = gated(gate, [&] { install::setPrograms(true, canonical, ver.empty() ? std::string(QUARK_VERSION) : ver); });
     }
-    install::registerDataDir();
+    ok = ok && gated(gate, [] { install::registerDataDir(); });
+    if (!ok) r.notes.push_back("game quit: shortcuts next start");
     return r;
 }
+
+namespace {
+// The game's launcher-update thread. Heap-held and never freed while the thread may still run, so a thread left to
+// the process exit never touches a destroyed object.
+struct GameRun {
+    ShutdownGate gate;
+    std::thread th;
+    std::mutex mu;
+    std::condition_variable cv;
+    bool done = false;
+};
+GameRun* g_run = nullptr;
+} // namespace
 
 void startFromGame(const char* argv0) {
     const char* off = getenv("QUARK_NO_LAUNCHER_UPDATE");
     if (off && *off && *off != '0') return;
     fs::path exe = install::selfPath(argv0);
     fs::path root = gameRootFrom(exe.parent_path());
-    if (root.empty()) return; // not a launcher install (build folder, unpacked zip)
-    std::thread([root] {
-        Report r = updateLaunchersFromGame(root);
+    if (root.empty() || g_run) return; // not a launcher install (build folder, unpacked zip)
+    GameRun* run = new GameRun;
+    run->th = std::thread([run, root] {
+        Report r = updateLaunchersFromGame(root, &run->gate);
         for (auto& n : r.notes) fprintf(stderr, "launcher update: %s\n", n.c_str());
-    }).detach();
+        std::lock_guard<std::mutex> l(run->mu);
+        run->done = true;
+        run->cv.notify_all();
+    });
+    g_run = run;
+}
+
+bool finishFromGame(double maxWaitSeconds) {
+    GameRun* run = g_run;
+    if (!run) return true;
+    g_run = nullptr;
+    run->gate.stop = true;
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                                                           std::chrono::duration<double>(maxWaitSeconds));
+    // a step in progress ends (no new one starts after this); then the thread itself, both within the bound
+    if (run->gate.mu.try_lock_until(deadline)) run->gate.mu.unlock();
+    bool ended;
+    {
+        std::unique_lock<std::mutex> l(run->mu);
+        ended = run->cv.wait_until(l, deadline, [run] { return run->done; });
+    }
+    if (!ended) { run->th.detach(); return false; } // `run` stays allocated: the thread may still read it
+    run->th.join();
+    delete run;
+    return true;
 }
 
 } // namespace selfupdate
