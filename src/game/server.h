@@ -87,21 +87,21 @@ struct ServerPlayer {
     float health = 0;
     int weapon = WPN_ROCKET;
     int selectedWeapon = WPN_ROCKET; // last weapon the player picked (slot 1 to start); kept across respawns
-    float knifeBackAt = 0;
+    float knifeBackAt = 0;      // a thrown knife is away until then: no knife (and no throws) before it
     float knifeSwingUntil = -1; // a swing that missed keeps cutting along your aim until then
-    bool fireLocked = false;    // after a knife throw: nothing fires until both buttons are let go      // a thrown knife is away until then: no knife (and no throws) before it
+    bool fireLocked = false;    // after a knife throw: nothing fires until both buttons are let go
     float nextFire = 0;
     float lastFire = -10;
     float fireQueuedUntil = -1; // semi-auto: a click waiting for the weapon to be ready
     int kills = 0, deaths = 0, score = 0;
     float respawnAt = -1;
     int checkpoint = 0;         // race: next checkpoint index
-    uint32_t joinId = 0;
-    float dmgDealt = 0, objTime = 0;
+    uint32_t joinId = 0;        // unique per connection (a new player in a reused slot gets a new one)
+    float dmgDealt = 0, objTime = 0;    // scoreboard: damage to enemies, seconds on the objective (score = dmg / 10 + obj)
     int shotsFired = 0, shotsHit = 0;   // accuracy: shots (hitscan or projectile) that damaged an enemy
     bool hitSinceShot = false;
-    float typingAt = 0, quipAt = 0, locateAt = 0;   // next "typing" relay allowed   // scoreboard: damage to enemies, seconds on the objective (score = dmg / 10 + obj)
-    int model = 0;              // player model (cosmetic, kPlayerModels looks, same hitbox)        // unique per connection (a new player in a reused slot gets a new one)
+    float typingAt = 0, quipAt = 0, locateAt = 0;   // next "typing" relay allowed (and quip / locate pings)
+    int model = 0;              // player model (cosmetic, kPlayerModels looks, same hitbox)
     int soundPack = 0;      // cosmetic: the sound pack others hear this player with
     bool it = false;            // hide and seek / tag: the seeker / tagger (has the knife)
     bool found = false;         // hide and seek: found by the seeker this round (falling off doesn't count)

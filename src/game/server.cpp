@@ -1,7 +1,5 @@
 #include "server.h"
-
-// EV_PLAYERINFO's b byte: model in the low 4 bits, sound pack in the high 4
-static uint8_t looksByte(const ServerPlayer& p) { return (uint8_t)((p.model & 15) | ((p.soundPack & 15) << 4)); }
+#include "../common/rng.h"
 #include "ranked.h"
 #include "../common/sha256.h"
 #include <cstring>
@@ -14,6 +12,9 @@ static uint8_t looksByte(const ServerPlayer& p) { return (uint8_t)((p.model & 15
 #include <cstdarg>
 #include <ctime>
 #include <filesystem>
+
+// EV_PLAYERINFO's b byte: model in the low 4 bits, sound pack in the high 4
+static uint8_t looksByte(const ServerPlayer& p) { return (uint8_t)((p.model & 15) | ((p.soundPack & 15) << 4)); }
 
 namespace {
 constexpr double kTimeout = 10.0;
@@ -58,7 +59,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
         if (c.roundsToWin) cfg_.roundsToWin = c.roundsToWin;
         if (!c.maps.empty() && std::find(c.maps.begin(), c.maps.end(), cfg_.map) == c.maps.end()) cfg_.map = c.maps[0];
     }
-    setActiveRules(cfg_.custom);   // (the weapon table and movement everything in this process uses)
+    setActiveRules(cfg_.custom);   // (for the calling thread; frame() sets them on whichever thread runs the server)
     if (cfg_.ranked) { // ranked = 1v1 on one of the ladder rulesets
         if (!arenaVariantRanked(cfg_.arenaVariant)) cfg_.arenaVariant = 0;
         cfg_.mode = rankedMode(cfg_.arenaVariant);
@@ -126,7 +127,6 @@ void Server::stop() {
     for (int i = 0; i < kMaxPlayers; i++)
         if (players_[i].connected) dropPlayer(i, "server shutting down", true);
     sock_.close();
-    if (cfg_.custom.active()) setActiveRules(CustomRules());
     if (upnp_) { upnp_->stop(); upnp_.reset(); }
     if (master_) { master_->stop(); master_.reset(); }
     running_ = false;
@@ -203,6 +203,7 @@ void Server::checkTickRate() {
 }
 
 double Server::frame() {
+    if (activeRules().name != cfg_.custom.name) setActiveRules(cfg_.custom);   // rules are per thread: this thread simulates by this server's
     uint8_t buf[2048];
     NetAddr from;
     int n;
@@ -525,7 +526,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
         }
         if (targets.empty()) return;
         p.locateAt = time() + kLocatorCooldown;
-        int t = targets[rand() % targets.size()];
+        int t = targets[qrand() % targets.size()];
         char pos[64];
         snprintf(pos, sizeof pos, "%.2f %.2f %.2f", players_[t].move.pos.x, players_[t].move.pos.y, players_[t].move.pos.z);
         GameEvent e; e.type = EV_LOCATE; e.a = (uint8_t)t; e.text = pos;
@@ -535,7 +536,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
     if (cmd == "quip") { // a random voice line, heard from where they stand; one every 1.5 s at most
         if (time() < p.quipAt) return;
         p.quipAt = time() + 1.5f;
-        GameEvent e; e.type = EV_QUIP; e.a = (uint8_t)id; e.b = (uint8_t)(rand() & 255);
+        GameEvent e; e.type = EV_QUIP; e.a = (uint8_t)id; e.b = (uint8_t)(qrand() & 255);
         broadcastEvent(e);
         return;
     }
@@ -862,7 +863,7 @@ void Server::spawnPlayer(int id) {
         // Pick the free spawn farthest from other living players. Free for all and instagib (one hit kills):
         // above all, one nobody can see (a clear line from anyone's eyes), so nobody is shot as they appear.
         const bool unseen = ms_.mode == MODE_FFA || (arenaRules() & AR_INSTAGIB);
-        const SpawnPoint* best = cands[rand() % cands.size()];
+        const SpawnPoint* best = cands[qrand() % cands.size()];
         float bestScore = -1e9f;
         for (auto* sp : cands) {
             float nearest = 1e9f;
@@ -877,7 +878,7 @@ void Server::spawnPlayer(int id) {
                 if (d > 0.1f && map_.raycast(eye, to / d, d) < 0) seenBy++;   // nothing in between
             }
             if (map_.boxSolid(playerBox(sp->pos, false))) continue;
-            float score = nearest + (rand() % 100) * 0.01f - seenBy * 1000.0f;
+            float score = nearest + (qrand() % 100) * 0.01f - seenBy * 1000.0f;
             if (score > bestScore) { bestScore = score; best = sp; }
         }
         pos = best->pos;

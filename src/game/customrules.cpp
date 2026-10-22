@@ -9,10 +9,10 @@
 #include "map.h"
 
 namespace {
-CustomRules g_rules;
-WeaponDef g_weapons[WPN_COUNT];
-MoveTuning g_move;
-bool g_init = false;
+thread_local CustomRules g_rules;   // per thread: a hosted server thread and the client each play by their own copy
+thread_local WeaponDef g_weapons[WPN_COUNT];
+thread_local MoveTuning g_move;
+thread_local bool g_init = false;
 
 void rebuild() {
     for (int w = 0; w < WPN_COUNT; w++) {

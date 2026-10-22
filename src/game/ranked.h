@@ -63,7 +63,7 @@ public:
     bool takeText(const std::string& key, std::string& out);
 private:
     struct Job { double due; bool report; std::string body, ladder; std::vector<std::string> ids; bool board = false; std::string path = "/report";
-                 std::string rawKey; };   // rawKey: a plain request (see request())
+                 std::string rawKey = {}; };   // rawKey: a plain request (see request())
     void run();
     void push(Job j);
     std::thread thread_;
