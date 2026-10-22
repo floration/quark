@@ -167,7 +167,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     while (rateLevel_ < kTickRateLevels - 1 && kTickRates[rateLevel_] > cap) rateLevel_++;
     rateTopLevel_ = rateLevel_;
     rateUpWait_ = 60; rateUpAt_ = 0;
-    rateDownPending_ = false;
+    rateDownPending_ = false; rateRaisedAt_ = -1e9;
     nextTick_ = timeNow();
     resetRateWindow();
     rulesReset(*this);
@@ -209,7 +209,7 @@ void Server::stop() {
     if (!running_) return;
     if (editDirty_ && !tempEdit_) autosave();
     for (int i = 0; i < kMaxPlayers; i++)
-        if (players_[i].connected) dropPlayer(i, "server shutting down", true);
+        if (players_[i].connected) dropPlayer(i, "server shutting down", true, true);
     seedRatings_.reset();
     sock_.close();
     if (reachThread_.joinable()) reachThread_.join();
@@ -233,7 +233,6 @@ void Server::run(std::atomic<bool>& quit) {
         if (master_) {
             std::string st = master_->status();
             if (!st.empty() && st != lastMaster) { log(st); lastMaster = st; }
-            if (master_->hasReplies()) for (auto& r : master_->takeReplies()) handleMasterReply(r.first, r.second);
         }
         idle(wait);
     }
@@ -256,12 +255,14 @@ void Server::resetRateWindow() {
 
 // The tick rate changes only in warmup or between rounds (gamedefs.h; REVIEW GAME-11): if the host can't sustain the
 // current rate cleanly, it steps down a level then (mid-round only if it truly can't keep up: busy over 90%); now and
-// then, at a break, it tries the next rate up.
+// then, at a break, it tries the next rate up. A step up that doesn't hold is undone at once, in any phase (REVIEW
+// 6.1): else a raise made in a break could run late ticks for the whole next round.
 void Server::stepRateDown(const char* why) {
     rateLevel_++;
     rateUpAt_ = timeNow() + rateUpWait_;
     rateUpWait_ = std::min(rateUpWait_ * 2, 900.0);
     rateDownPending_ = false;
+    rateRaisedAt_ = -1e9;   // (undone: the next step down waits for a break again)
     message("server tick rate lowered to " + std::to_string(tickRate()) + " Hz");
     log("tick rate -> " + std::to_string(tickRate()) + " Hz (" + why + ")");
 }
@@ -286,6 +287,7 @@ void Server::checkTickRate() {
     bool clean = !bad && busy < 0.2 && lateFrac < kMaxLateFraction * 0.5 && worstLoss == 0;
     if (rateLevel_ > rateTopLevel_ && clean && now >= rateUpAt_ && between) {
         rateLevel_--;
+        rateRaisedAt_ = now;
         message("server tick rate raised to " + std::to_string(tickRate()) + " Hz");
         log("tick rate -> " + std::to_string(tickRate()) + " Hz (trying the next rate up: busy " + std::to_string((int)(busy * 100)) + "%)");
         resetRateWindow();
@@ -294,7 +296,8 @@ void Server::checkTickRate() {
     if (bad && rateLevel_ < kTickRateLevels - 1) {
         char why[200];
         snprintf(why, sizeof why, "busy %.0f%%, late %.1f%%, send failures %d, worst client loss %d%%", busy * 100, lateFrac * 100, windowSendFail_, worstLoss);
-        if (between || busy > 0.9) stepRateDown(why);   // (mid-round only if it can't keep up at all)
+        bool undo = now - rateRaisedAt_ < 3 * kRateWindow;   // our own recent step up didn't hold: back down now
+        if (between || busy > 0.9 || undo) stepRateDown(why);   // (else mid-round only if it can't keep up at all)
         else if (!rateDownPending_) { rateDownPending_ = true; log(std::string("tick rate: stepping down at the next break (") + why + ")"); }
     }
     resetRateWindow();
@@ -337,11 +340,15 @@ double Server::frame() {
     for (int i = 0; i < kMaxPlayers; i++) {
         ServerPlayer& p = players_[i];
         if (!p.connected || p.isBot) continue;
-        if (p.awayUntil > 0) { if (now >= p.awayUntil) dropPlayer(i, p.awayReason, false, true); } // the grace is over: gone
+        if (p.dropPending) dropPlayer(i, "too many unacknowledged reliable messages (connection too lossy)", true);
+        else if (p.awayUntil > 0) { if (now >= p.awayUntil) dropPlayer(i, p.awayReason, false); } // the grace is over: gone
         else if (now - p.lastRecv > kTimeout) holdPlayer(i, "timed out");
     }
     if (rankedLive() && !rankedTicketSent_ && time() >= rankedSigDeadline_) maybeSendRankedTicket(true);
     if (!rankedMatch_.empty() && ms_.phase == PHASE_WARMUP) rankedMatch_.clear(); // (a match that fell back to warmup: the next one gets its own ticket)
+    // Ranking server replies (tickets, race runs, results): here, not in run(), which dedicated servers don't use
+    // (src/server/main.cpp drives frame() / idle() itself: REVIEW 2.3).
+    if (master_ && master_->hasReplies()) for (auto& r : master_->takeReplies()) handleMasterReply(r.first, r.second);
     checkTickRate();
     checkRestartFlag();
     return nextTick_ - timeNow();
@@ -665,6 +672,9 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
     p.lastRecv = timeNow();
     for (auto& h : p.history) h.tick = 0xFFFFFFFFu;
     autoTeam(id);
+    // A live ranked match takes no one new: they watch it. (Else a leaver who comes back would be counted twice, and a
+    // dodger's new session without a key would leave the match unrated: "has no ranked id".)
+    if (rankedLive()) p.team = TEAM_SPECTATOR;
     sendAccept(sock_, p, id, map_, cfg_.mode);
     sendWelcome(id);
     GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.text = name;
@@ -717,6 +727,7 @@ bool Server::restorePlayer(int id, const NetAddr& from, uint32_t nonce, const st
     if (!rankPub.empty()) p.rankPub = rankPub;
     p.awayUntil = 0;
     p.awayReason.clear();
+    p.dropPending = false;
     // a new session: its own command / event / snapshot sequences start over
     p.sentSeq = 0; p.sent.clear(); p.ackSnapMs = 0;
     p.lastCmdSeq = 0; p.cmdQueue.clear(); p.cmdTokensMs = fresh.cmdTokensMs; p.deepTicks = 0; p.catchUp = fresh.catchUp;
@@ -778,7 +789,7 @@ void Server::autoTeam(int id) {
     p.team = a <= b ? TEAM_A : TEAM_B;
 }
 
-void Server::dropPlayer(int id, const std::string& reason, bool notify, bool left) {
+void Server::dropPlayer(int id, const std::string& reason, bool notify, bool shutdown) {
     ServerPlayer& p = players_[id];
     if (!p.connected) return;
     if (notify && p.awayUntil <= 0) {
@@ -789,8 +800,11 @@ void Server::dropPlayer(int id, const std::string& reason, bool notify, bool lef
         w.str(reason);
         sock_.send(p.addr, out, w.size());
     }
-    // Leaving a live ranked match (gone past the reconnect grace): the first to leave takes the loss.
-    bool rankedLeaver = left && rankedLive() && matchInProgress() && isRankedParticipant(id);
+    // Leaving a live ranked match: the first to leave takes the loss. Any drop but the server stopping counts (the
+    // grace running out, a new session from the same address without the token or key, the unacked-event cap): only
+    // a reconnect within the grace (restorePlayer) keeps the player in it. Each ranked id is counted once.
+    bool rankedLeaver = !shutdown && rankedLive() && matchInProgress() && isRankedParticipant(id);
+    for (auto& l : rankedLeft_) if (rankedLeaver && l.rankId == p.rankId) rankedLeaver = false;
     bool firstLeaver = rankedLeaver && rankedLeft_.empty();
     if (rankedLeaver) rankedLeft_.push_back({id, p.rankId, p.team, p.score, p.kills});
     rulesOnLeave(*this, id);
@@ -820,6 +834,30 @@ void Server::dropPlayer(int id, const std::string& reason, bool notify, bool lef
 bool Server::isRankedParticipant(int id) const {
     const ServerPlayer& p = players_[id];
     return p.connected && !p.isBot && p.team != TEAM_SPECTATOR && !p.rankId.empty();
+}
+
+// (The console completes /kick with names: atoi("Bob") was 0, so "/kick Bob" kicked slot 0, usually the host.)
+int Server::playerFromArg(const std::string& who, std::string* err) const {
+    auto lower = [](std::string s) { for (auto& c : s) c = (char)tolower((unsigned char)c); return s; };
+    if (who.empty()) { *err = "kick whom? a name or an id (status lists them)"; return -1; }
+    if (who.size() <= 2 && who.find_first_not_of("0123456789") == std::string::npos) {
+        int id = atoi(who.c_str());
+        if (id < kMaxPlayers && players_[id].connected) return id;
+    }
+    const std::string w = lower(who);
+    int exactCase = -1, exact = -1, prefix = -1, exacts = 0, prefixes = 0;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (!players_[i].connected) continue;
+        if (players_[i].name == who) exactCase = i;
+        std::string n = lower(players_[i].name);
+        if (n == w) { exact = i; exacts++; }
+        else if (n.compare(0, w.size(), w) == 0) { prefix = i; prefixes++; }
+    }
+    if (exactCase >= 0) return exactCase;
+    if (exacts == 1) return exact;
+    if (exacts == 0 && prefixes == 1) return prefix;
+    *err = exacts + prefixes ? "\"" + who + "\" matches more than one player: use the id (status lists them)" : "no player \"" + who + "\"";
+    return -1;
 }
 
 void Server::handleInput(int id, Reader& r) {
@@ -1082,10 +1120,19 @@ void Server::command(const std::string& line, int fromPlayer) {
         if (fromPlayer >= 0) { GameEvent e; e.type = EV_MESSAGE; e.text = t; sendEvent(fromPlayer, e); }
         else log(t);
     };
+    std::string who;   // kick: the rest of the line (names can have spaces), trimmed
+    if (cmd == "kick") {
+        std::istringstream t(line);
+        std::string c;
+        t >> c;
+        std::getline(t, who);
+        size_t a = who.find_first_not_of(" \t"), b = who.find_last_not_of(" \t\r\n");
+        who = a == std::string::npos ? std::string() : who.substr(a, b - a + 1);
+    }
     if (rankedLive()) {   // a live ranked match can't be changed or dodged, by anyone, until it's over (OWNER 3.4)
         bool blocked = cmd == "map" || cmd == "mode" || cmd == "reload" || cmd == "ranked" || cmd == "restart" || cmd == "editmode" ||
                        cmd == "forcestart" || cmd == "addbot";
-        if (cmd == "kick") { int k = atoi(arg.c_str()); blocked = k >= 0 && k < kMaxPlayers && isRankedParticipant(k); }
+        if (cmd == "kick") { std::string e; int k = playerFromArg(who, &e); blocked = k >= 0 && isRankedParticipant(k); }
         if (blocked) { reply("a ranked match is being played: '" + cmd + "' has to wait until it's over"); return; }
     }
     if (cmd == "editmode" && cfg_.ranked) { reply("no map editing on a ranked server (vote ranked off first)"); return; }
@@ -1153,10 +1200,15 @@ void Server::command(const std::string& line, int fromPlayer) {
         else if (arg == "on" && v >= 0 && arenaVariantRanked(v)) setRanked(true, v);
         else reply("ranked on [vanilla|vampire|instagib] / ranked off");
     } else if (cmd == "addbot") {
+        // addbot [a|b] [skill]: the skill is 0-3 or its name in any case (what the console completes: REVIEW 4.2)
         std::string sk;
         ss >> sk;
+        if (arg != "a" && arg != "b" && sk.empty()) sk = arg;   // (just a skill)
         int team = arg == "b" ? TEAM_B : TEAM_A;
-        int skill = sk.empty() ? cfg_.botSkill : atoi(sk.c_str());
+        int skill = sk.empty() ? cfg_.botSkill : -1;
+        auto lower = [](std::string s) { for (auto& c : s) c = (char)tolower((unsigned char)c); return s; };
+        for (int i = 0; i < BOT_SKILLS && skill < 0; i++) if (sk == std::to_string(i) || lower(sk) == lower(botSkillName(i))) skill = i;
+        if (skill < 0) { reply("addbot [a|b] [0-3 or beginner|intermediate|advanced|expert]"); return; }
         if (addBot(team, std::min(std::max(skill, 0), BOT_SKILLS - 1)) < 0) reply("server is full");
     } else if (cmd == "kickbots") {
         for (int i = 0; i < kMaxPlayers; i++) if (players_[i].connected && players_[i].isBot) removeBot(i);
@@ -1167,8 +1219,10 @@ void Server::command(const std::string& line, int fromPlayer) {
         rulesReset(*this);
         message("match restarted");
     } else if (cmd == "kick") {
-        int id = atoi(arg.c_str());
-        if (id >= 0 && id < kMaxPlayers && players_[id].connected) dropPlayer(id, "kicked", true);
+        std::string err;
+        int id = playerFromArg(who, &err);
+        if (id >= 0) dropPlayer(id, "kicked", true);
+        else reply(err);
     } else if (cmd == "say") {
         std::string rest;
         std::getline(ss, rest);
@@ -1176,7 +1230,7 @@ void Server::command(const std::string& line, int fromPlayer) {
     } else if (cmd == "status") {
         reply(statusText());
     } else {
-        reply("commands: map <name> [mode], mode <name>, reload, editmode on|off, ranked on [ladder]|off, forcestart, restart, kick <id>, say <text>, status, addbot [a|b] [0-3], kickbots");
+        reply("commands: map <name> [mode], mode <name>, reload, editmode on|off, ranked on [ladder]|off, forcestart, restart, kick <name|id>, say <text>, status, addbot [a|b] [0-3|skill], kickbots");
     }
 }
 
@@ -1205,12 +1259,12 @@ void Server::broadcastEvent(const GameEvent& e) {
 
 void Server::sendEvent(int id, const GameEvent& e) {
     ServerPlayer& p = players_[id];
-    if (p.isBot || p.awayUntil > 0) return;   // (away: a reconnect starts a new session, with what it needs)
+    if (p.isBot || p.awayUntil > 0 || p.dropPending) return;   // (away: a reconnect starts a new session, with what it needs)
     if (p.events.size() >= kMaxUnackedEvents) { // hopelessly behind: dropping one would desync it for good
         if (!p.connected) return;
         p.events.clear();
-        dropPlayer(id, "too many unacknowledged reliable messages (connection too lossy)", true);
-        return;
+        p.dropPending = true;   // dropped at the end of this frame (dropPlayer): dropping here, in the middle of whatever
+        return;                 // is sending, could end a ranked match from inside another broadcast or the rules
     }
     GameEvent c = e;
     c.id = p.nextEventId++;

@@ -543,6 +543,40 @@ static void testRateBetweenRounds(uint16_t port) {
     s.stop();
 }
 
+// REVIEW 6.1: a step up (made in a break) that doesn't hold is undone at once, even mid-round; any other step down
+// still waits for the break.
+static void testRateUndoStepUp(uint16_t port) {
+    printf("tick rate: a step up that doesn't hold is undone mid-round\n");
+    setTimeScale(1.0);
+    g_serverRateCheck = true;
+    struct Restore { ~Restore() { setTimeScale(kTestTimeScale); g_serverRateCheck = false; } } restore;
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    NetClient c[1];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 1, cls, false)) { s.stop(); return; }
+    s.rateLevel_ = 1;   // stepped down earlier (500 Hz); the wait before trying 1000 again is over
+    s.rateUpAt_ = 0;
+    for (int k = 0; k < 60 && s.tickRate() != 1000; k++) pump(s, cls, 0.25, idle);   // a clean warmup window: up
+    printf("  warmup: %d Hz\n", s.tickRate());
+    CHECK(s.ms_.phase == PHASE_WARMUP && s.tickRate() == 1000);
+    s.command("forcestart");
+    for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE; i++) { if (s.ms_.phase == PHASE_FREEZE) s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+    CHECK(s.ms_.phase == PHASE_LIVE);
+    c[0].overrideReportedLoss(50);           // the raise doesn't hold
+    for (int k = 0; k < 30 && s.tickRate() != 500; k++) pump(s, cls, 0.25, idle);
+    printf("  live, losing snapshots after the raise: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
+    CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 500);   // undone mid-round, not after it
+    pump(s, cls, 3.0 * 2.5, idle);           // still losing, but that's no longer our own raise: waits for the break
+    printf("  still losing: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
+    CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 500 && s.rateDownPending_);
+    s.phaseEnd_ = s.time();                  // time's up: the match is over
+    pump(s, cls, 0.5, idle);
+    CHECK(s.ms_.phase == PHASE_MATCH_END && s.tickRate() == 250);   // (the pending step down, at the break)
+    s.stop();
+}
+
 // GAME-12: nothing uses the unseeded rand(); each thread's qrand starts from its own random seed (a hosted server's
 // thread differs from the client's, and from the last run's), so modifiers, seeding, the first carrier / "it" vary.
 static void testRandomSeeds() {
@@ -628,5 +662,5 @@ static void testGameRules(const std::string& only) {
         {"scoreboard", [] { testScoreboardValue(); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
-    if (only == "rate") testRateBetweenRounds(TP(29252));   // (timing-sensitive: the suite runs it alone, with "tickrate")
+    if (only == "rate") { testRateBetweenRounds(TP(29252)); testRateUndoStepUp(TP(29254)); }   // (timing-sensitive: the suite runs it alone, with "tickrate")
 }

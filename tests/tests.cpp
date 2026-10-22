@@ -2632,6 +2632,7 @@ static void testRankedLeaver(uint16_t port) {
     CHECK(s.vote_.kind == Server::VOTE_NONE && s.players_[ib].team != TEAM_SPECTATOR);
     s.command("map furnace");
     s.command("kick " + std::to_string(ib));
+    s.command("kick leaver");   // (by name too)
     CHECK(s.config().map == "temple" && s.players_[ib].connected && s.config().ranked);
     // the leaver's connection drops: slot kept, and a reconnect within the grace gets it back
     int scoreB = s.players_[ib].score = 2;
@@ -2669,6 +2670,178 @@ static void testRankedLeaver(uint16_t port) {
     a.disconnect();
     pump(s, onlyA, kReconnectGrace + 0.5, idle);
     CHECK(s.rankedLeft_.size() == 1);
+    s.stop();
+}
+
+// REVIEW 2.1: every way a live ranked player is dropped counts as leaving, not just the grace running out: a new
+// session from their address without the token or key (the dodge), and the unacked-event cap. A reconnect within
+// the grace doesn't count; a leaver who comes back watches (not counted twice).
+static void testRankedLeaverPaths(uint16_t port) {
+    printf("ranked: every drop path counts as leaving\n");
+    char tag[16];
+    snprintf(tag, sizeof tag, "%u", (unsigned)qrand());
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "gantry"; cfg.mode = MODE_FFA; cfg.port = port; cfg.ranked = true; cfg.arenaVariant = 5;   // instagib FFA: goes on after a leaver
+    CHECK(rankedMode(5) == MODE_FFA);
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient c[3];
+    RankKey k[3];
+    std::vector<NetClient*> cls;
+    std::string addr = "127.0.0.1:" + std::to_string(port);
+    for (int i = 0; i < 3; i++) {
+        k[i] = rankKeyFromSecret(sha256Hex("paths" + std::to_string(i) + tag));
+        c[i].setRankKey(k[i]);
+        c[i].connect(addr, "p" + std::to_string(i));
+        cls.push_back(&c[i]);
+    }
+    pump(s, cls, 1.0, idle);
+    int id[3];
+    for (int i = 0; i < 3; i++) { id[i] = c[i].clientId(); CHECK(id[i] >= 0 && s.players_[id[i]].rankId == k[i].id); }
+    s.command("forcestart");
+    for (int i = 0; i < 60 && s.ms_.phase != PHASE_LIVE; i++) pump(s, cls, 0.1, idle);
+    CHECK(s.ms_.phase == PHASE_LIVE && s.rankedLive());
+    if (!s.rankedLive()) { s.stop(); return; }
+    // dropped and back within the grace: restored, not a leaver
+    c[2].disconnect();
+    pump(s, cls, 0.3, idle);
+    CHECK(s.away(id[2]));
+    c[2].connect(addr, "p2");
+    pump(s, cls, 1.0, idle);
+    CHECK(c[2].clientId() == id[2] && !s.away(id[2]) && s.rankedLeft_.empty());
+    // the dodge: a new session from p2's address with a new nonce, no token and no key takes the address over
+    UdpSocket raw;
+    CHECK(raw.open(0));
+    s.players_[id[2]].addr = NetAddr{0x7F000001u, raw.localPort()};   // (p2's connection, now on this socket)
+    NetAddr srv{0x7F000001u, port};
+    auto connectPkt = [&](uint32_t cookie) {
+        uint8_t b[128];
+        Writer w(b, sizeof b);
+        writeHeader(w, PKT_CONNECT); w.u16(kProtocolVersion); w.u32(0x5151); w.u32(cookie); w.str("p2 again");
+        raw.send(srv, b, w.size());
+    };
+    connectPkt(0);
+    uint32_t cookie = 0;
+    for (int t = 0; t < 100 && !cookie; t++) {
+        pump(s, cls, 0.01, idle);
+        uint8_t buf[2048]; NetAddr from; int n;
+        while ((n = raw.recv(from, buf, sizeof buf)) > 0) {
+            Reader r(buf, n);
+            if (r.u32() == kProtocolMagic && r.u8() == PKT_CHALLENGE) { r.u32(); cookie = r.u32(); }
+        }
+    }
+    CHECK(cookie != 0);
+    connectPkt(cookie);
+    pump(s, cls, 0.3, idle);
+    CHECK(!(s.players_[id[2]].connected && s.players_[id[2]].rankId == k[2].id));   // the old session is gone
+    CHECK(s.rankedLeft_.size() == 1 && s.rankedLeft_[0].rankId == k[2].id);         // ... and it counted as leaving
+    CHECK(s.rankedLive());                                                          // (FFA: two still play)
+    // the leaver comes back with the key: watches, isn't counted again
+    c[2].connect(addr, "p2");
+    pump(s, cls, 1.0, idle);
+    int back = c[2].clientId();
+    CHECK(back >= 0 && back != id[2] && s.players_[back].rankId == k[2].id && s.players_[back].team == TEAM_SPECTATOR);
+    CHECK(!s.isRankedParticipant(back) && s.rankedLeft_.size() == 1);
+    // the unacked-event cap: p1 stops acknowledging (its backlog is filled), the next event drops it, a leaver too
+    std::vector<NetClient*> two = {&c[0], &c[2]};
+    GameEvent filler; filler.type = EV_MESSAGE; filler.text = "x";
+    while (s.players_[id[1]].events.size() < 256) s.players_[id[1]].events.push_back(filler);
+    s.message("over the cap");
+    CHECK(s.players_[id[1]].connected);   // (dropped at the end of the frame, not inside the broadcast)
+    std::string ranked;
+    for (int t = 0; t < 20 && ranked.empty(); t++) {
+        pump(s, two, 0.1, idle);
+        for (auto& e : c[0].takeEvents()) if (e.type == EV_RANKED) ranked = e.text;
+    }
+    CHECK(!s.players_[id[1]].connected && s.rankedLeft_.size() == 2 && s.rankedLeft_[1].rankId == k[1].id);
+    CHECK(s.ms_.phase == PHASE_MATCH_END && !s.rankedLive());   // one player left in it: over
+    printf("  result: %s\n", ranked.c_str());
+    CHECK(ranked.find(" left=" + std::to_string(id[2]) + "," + std::to_string(id[1])) != std::string::npos);
+    {   // "match ladder slot:team:place,..." : the three players once each (the returned leaver and the dodger's session aren't in it)
+        std::istringstream rs(ranked);
+        std::string match, ladder, list;
+        rs >> match >> ladder >> list;
+        std::vector<int> slots;
+        std::istringstream ls(list);
+        for (std::string e; std::getline(ls, e, ',');) slots.push_back(atoi(e.c_str()));
+        std::sort(slots.begin(), slots.end());
+        std::vector<int> want = {id[0], id[1], id[2]};
+        std::sort(want.begin(), want.end());
+        CHECK(slots == want);
+    }
+    s.stop();
+}
+
+// REVIEW 4.1: "kick" takes a name (what the console completes) or an id; atoi("Bob") was 0 and kicked the host.
+static void testKickByName(uint16_t port) {
+    printf("kick by name or id\n");
+    {   // resolving: id (a connected slot), exact name in any case, a unique prefix; else none
+        Server s;
+        const char* names[] = {"Host", "Bob", "bobby", "Alice Smith", "7"};
+        for (int i = 0; i < 5; i++) { s.players_[i].connected = true; s.players_[i].name = names[i]; }
+        std::string e;
+        CHECK(s.playerFromArg("1", &e) == 1 && s.playerFromArg("4", &e) == 4);
+        CHECK(s.playerFromArg("Bob", &e) == 1 && s.playerFromArg("BOB", &e) == 1);   // exact beats the prefix of "bobby"
+        CHECK(s.playerFromArg("bobb", &e) == 2 && s.playerFromArg("al", &e) == 3 && s.playerFromArg("alice smith", &e) == 3);
+        CHECK(s.playerFromArg("7", &e) == 4);                                        // slot 7 isn't connected: the name "7"
+        e.clear(); CHECK(s.playerFromArg("b", &e) == -1 && e.find("more than one") != std::string::npos);
+        e.clear(); CHECK(s.playerFromArg("zed", &e) == -1 && e.find("no player") != std::string::npos);
+        e.clear(); CHECK(s.playerFromArg("", &e) == -1 && !e.empty());
+        CHECK(s.playerFromArg("12", &e) == -1 && s.playerFromArg("0x1", &e) == -1);
+        for (auto& p : s.players_) p.connected = false;
+    }
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.balanceBots = false;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient h, b, c;
+    std::string addr = "127.0.0.1:" + std::to_string(port);
+    h.connect(addr, "Host");
+    std::vector<NetClient*> cls = {&h};
+    pump(s, cls, 0.5, idle);
+    b.connect(addr, "Bob"); c.connect(addr, "Carol");
+    cls = {&h, &b, &c};
+    pump(s, cls, 0.8, idle);
+    int ih = h.clientId(), ib = b.clientId(), ic = c.clientId();
+    CHECK(ih == 0 && ib > 0 && ic > 0);
+    s.command("kick Bob ");   // (completion leaves a space after the name)
+    pump(s, cls, 0.2, idle);
+    CHECK(s.players_[ih].connected && !s.players_[ib].connected && s.players_[ic].connected);
+    s.command("kick nobody");
+    s.command("kick " + std::to_string(ic));
+    pump(s, cls, 0.2, idle);
+    CHECK(s.players_[ih].connected && !s.players_[ic].connected);
+    s.stop();
+}
+
+// REVIEW 4.2: addbot [a|b] [skill], the skill as 0-3 or its name (the console completes a / b, then the names);
+// "/addbot EXPERT" added a default-skill bot.
+static void testAddbotArgs(uint16_t port) {
+    printf("addbot team and skill\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_KOTH; cfg.port = port; cfg.balanceBots = false; cfg.botSkill = 1;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    auto added = [&](const std::string& line, int team, int skill) {
+        int before = s.playerCount();
+        s.command(line);
+        int id = -1;
+        for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].isBot) id = i;   // (the newest: highest free slot so far)
+        bool ok = s.playerCount() == before + 1 && id >= 0 && s.players_[id].team == team && s.bots_[id].skill == skill;
+        if (!ok) printf("  '%s': players %d -> %d, team %d, skill %d\n", line.c_str(), before, s.playerCount(), id >= 0 ? s.players_[id].team : -1, id >= 0 ? s.bots_[id].skill : -1);
+        return ok;
+    };
+    CHECK(added("addbot", TEAM_A, 1));
+    CHECK(added("addbot b EXPERT", TEAM_B, 3));
+    CHECK(added("addbot a beginner", TEAM_A, 0));
+    CHECK(added("addbot b 2", TEAM_B, 2));
+    CHECK(added("addbot Advanced", TEAM_A, 2));   // (a skill alone: team a)
+    int n = s.playerCount();
+    s.command("addbot b nonsense");
+    CHECK(s.playerCount() == n);
     s.stop();
 }
 
@@ -2750,6 +2923,61 @@ static void testMasterSignature() {
     CHECK(!signedMasterUrl(body, "", pub, &url));
     std::string sig2;
     CHECK(sign::signData("http://plain.example\n", priv, &sig2) && !signedMasterUrl("http://plain.example\n", sig2, pub, &url)); // https only
+}
+
+// REVIEW 2.3: a dedicated server (src/server/main.cpp: frame() and idle(), never run()) handles ranking server
+// replies: a failed race ticket clears and the racer is told. And replies nobody takes are capped.
+static void testMasterReplies(uint16_t port) {
+    printf("ranking server replies on a dedicated server\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "viaduct"; cfg.mode = MODE_RACE; cfg.port = port;
+    cfg.timeTrial = true; cfg.vsBots = true; cfg.maxPlayers = 1; cfg.botsEnemy = cfg.botsAlly = 0;
+    std::vector<std::string> logs;
+    std::mutex logMu;
+    s.setLog([&](const std::string& l) { std::lock_guard<std::mutex> g(logMu); logs.push_back(l); });
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a;
+    a.setRankKey(rankKeyFromSecret(sha256Hex("replies" + std::to_string(qrand()))));
+    a.connect("127.0.0.1:" + std::to_string(port), "racer");
+    auto dedicated = [&](double secs, const std::function<bool()>& until) {   // main.cpp's loop (and the client's)
+        double end = timeNow() + secs, nextTick = timeNow();
+        while (timeNow() < end && !until()) {
+            double wait = s.frame();
+            a.poll();
+            while (timeNow() >= nextTick) { a.tick(UserCmd()); nextTick += a.tickPeriod(); }
+            s.idle(std::min(wait, 0.002));
+        }
+    };
+    dedicated(1.0, [&] { return a.state() == ConnState::Connected && a.hasSnapshot(); });
+    CHECK(a.state() == ConnState::Connected);
+    s.openRaceTicket();   // (what the race going live does; QUARK_MASTER=off in tests: the request fails at once)
+    CHECK(!s.raceTicket_.empty());
+    std::string told;
+    dedicated(5.0, [&] {
+        for (auto& e : a.takeEvents()) if (e.type == EV_MESSAGE && e.text.find("no race ticket") != std::string::npos) told = e.text;
+        return s.raceTicket_.empty() && !told.empty();
+    });
+    CHECK(s.raceTicket_.empty() && !told.empty());
+    {
+        std::lock_guard<std::mutex> g(logMu);
+        bool logged = false;
+        for (auto& l : logs) logged |= l.find("ranking server (raceticket)") != std::string::npos;
+        CHECK(logged);
+    }
+    s.stop();
+    // nobody taking the replies: the oldest go, at most kMaxReplies are kept
+    MasterAnnouncer m;
+    m.start(0, false);
+    for (int batch = 0; batch < 2; batch++) {
+        for (int i = 0; i < 40; i++) m.post("k" + std::to_string(batch * 40 + i), "/x", "a=1");
+        sleepMs(1000);
+    }
+    auto r = m.takeReplies();
+    m.stop();
+    printf("  %zu replies kept of 80\n", r.size());
+    CHECK(!r.empty() && r.size() <= MasterAnnouncer::kMaxReplies);
+    if (!r.empty() && r.back().first == "k79") CHECK(r.size() == MasterAnnouncer::kMaxReplies && r.front().first == "k16");   // (all done: the newest 64)
 }
 
 // One placement threshold: the game's kPlacementGames is the Worker's PLACEMENT_GAMES.
@@ -3943,10 +4171,11 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "limits") { testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(TP(29990)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(TP(29980)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); testAddbotArgs(TP(29982)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "nav") { testNavGraph(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterSignature(); testPlacementConstant(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterReplies(TP(29629)); testMasterSignature(); testPlacementConstant(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(TP(29600)); testEditSession(TP(29601)); testVotedEdit(TP(29602)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
     if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(29604)); testMapNames(TP(29605)); testDemo(TP(29603)); return g_fail ? 1 : 0; }
@@ -3979,15 +4208,15 @@ int main(int argc, char** argv) {
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
-        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); }},
+        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
-        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterSignature(); testPlacementConstant(); }},
-        {"ranked2", [] { testRankedLeaver(TP(28636)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
+        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testMasterSignature(); testPlacementConstant(); }},
+        {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
         {"rules", [] { testGameRules(""); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
         {"netcode", [] { testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
-        {"tickrate", [] { testTickRateFallback(TP(28710)); testRateBetweenRounds(TP(28711)); }},
+        {"tickrate", [] { testTickRateFallback(TP(28710)); testRateBetweenRounds(TP(28711)); testRateUndoStepUp(TP(28712)); }},
         {"resetmaps", [] { testResetMaps(); }},
         {"userdata", [] { testUserData(); }},
     };

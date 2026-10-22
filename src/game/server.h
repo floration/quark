@@ -89,6 +89,7 @@ struct ServerPlayer {
     uint64_t reconnectToken = 0; // given in PKT_ACCEPT: a reconnect that shows it gets this slot back
     double awayUntil = 0;       // > 0: the connection dropped; slot, team, score and state kept until then (timeNow())
     std::string awayReason;
+    bool dropPending = false;   // over the unacked-event cap: dropped in frame(), not inside whatever was sending (REVIEW 2.1)
     double voteAt = 0;           // no new vote from this player before then (after one of theirs failed)
     float mapTokens = 64;       // PKT_MAP_REQUEST rate limit (token bucket)
     double mapTokensAt = 0;
@@ -216,6 +217,7 @@ public:
     double rateUpAt_ = 0;       // after stepping down: when to try the next rate up again (backs off each time it fails)
     double rateUpWait_ = 60;
     bool rateDownPending_ = false; // the host fell behind mid-round: step down at the next break (REVIEW GAME-11)
+    double rateRaisedAt_ = -1e9;   // the last step up: undone in any phase if it doesn't hold for 3 windows (REVIEW 6.1)
     int tickRate() const { return kTickRates[rateLevel_]; }
     float dt() const { return 1.0f / tickRate(); }
     double time() const { return timeMs_ * 0.001; } // double: a float runs out of millisecond precision after a few hours of uptime
@@ -339,6 +341,9 @@ public:
     struct RankedLeaver { int slot; std::string rankId; int team, score, kills; };
     std::vector<RankedLeaver> rankedLeft_;
     bool isRankedParticipant(int id) const;
+    // The player "kick <who>" means: a connected slot's id (all digits), else an exact name (any case), else the
+    // start of exactly one name. -1 and *err when there's none or several (REVIEW 4.1).
+    int playerFromArg(const std::string& who, std::string* err) const;
     // Tourney seeding: the average of each entrant's three ladder ratings (kUnratedSeed for a ladder without games,
     // or no ranked id), fetched in the background (never on the tick) whenever someone with a ranked id joins a
     // tourney server or one starts; a rating still on its way counts as unrated.
@@ -423,7 +428,10 @@ private:
     void handleConnect(const NetAddr& from, Reader& r);
     void handleInput(int id, Reader& r);
     void handleStringCmd(int id, const std::string& s);
-    void dropPlayer(int id, const std::string& reason, bool notify, bool left = false); // left: past the reconnect grace
+    // Every drop of a live ranked participant counts as leaving the match (the first leaver loses), whatever the path:
+    // the reconnect grace running out, a new session from its address, the unacked-event cap. Only the server
+    // stopping (shutdown) doesn't (REVIEW 2.1).
+    void dropPlayer(int id, const std::string& reason, bool notify, bool shutdown = false);
     void holdPlayer(int id, const std::string& reason);   // connection lost: keep the slot for kReconnectGrace
     bool restorePlayer(int id, const NetAddr& from, uint32_t nonce, const std::string& rankPub);
     void sendWelcome(int id);   // what a (re)joining client needs to know about everyone

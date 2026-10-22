@@ -2347,7 +2347,7 @@ std::vector<std::string> Game::consoleCandidates(const std::vector<std::string>&
         if (c == "/mode") return modes();
         if (c == "/editmode" || c == "/ranked") return onOff;
         if (c == "/kick") return players();
-        if (c == "/addbot") return skills();
+        if (c == "/addbot") return {"a", "b"};   // addbot [a|b] [skill] (the server also takes a skill alone)
         // a setting: its current value
         std::istringstream t(cfg_.toText());
         std::string l;
@@ -2366,6 +2366,7 @@ std::vector<std::string> Game::consoleCandidates(const std::vector<std::string>&
         if (w.size() == 3 && what == "map") return modes();
     }
     if (c == "/ranked" && w.size() == 2 && w[1] == "on") return ladders();
+    if (c == "/addbot" && w.size() == 2 && (w[1] == "a" || w[1] == "b")) return skills();
     return {};
 }
 

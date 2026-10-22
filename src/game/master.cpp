@@ -150,6 +150,7 @@ void MasterAnnouncer::run() {
             std::string out, err;
             bool ok = !base.empty() && httpPostForm(base + p.path, p.form + "&port=" + std::to_string(port_) + "&token=" + token + (ip.empty() ? "" : "&ip=" + ip), out, 8000, &err);
             std::lock_guard<std::mutex> l(mu_);
+            if (replies_.size() >= kMaxReplies) replies_.erase(replies_.begin());   // (nobody taking them: the oldest go)
             replies_.push_back({p.key, ok ? trim(out) : "!" + (base.empty() ? std::string("no ranking server configured") : err)});
             hasReplies_ = true;
         }
