@@ -33,10 +33,13 @@ void Ui::labelCentered(float cx, float y, const std::string& t, const Color& c, 
     r_->text(cx - r_->textWidth(t, ts) * 0.5f, y, ts, t, c);
 }
 
-// Text scale that fits maxW: the normal size, or shrunk only as much as needed.
-float Ui::fit(const std::string& t, float maxW) const {
+// Text scale that fits maxW: the normal size, or shrunk only as much as needed. The renderer never draws below
+// Renderer::kMinTextScale, so text that still doesn't fit at that size is clipped with "..." (t is replaced).
+float Ui::fit(std::string& t, float maxW) const {
     if (t.empty() || r_->textWidth(t, textScale_) <= maxW) return textScale_;
-    return std::max(0.5f, maxW / (r_->textWidth(t, 10.0f) * 0.1f)); // (width at 10: above the renderer's minimum scale)
+    float ts = std::max(Renderer::kMinTextScale, maxW / (r_->textWidth(t, 10.0f) * 0.1f)); // (width at 10: above the minimum)
+    if (r_->textWidth(t, ts) > maxW) t = r_->textClip(t, ts, maxW);
+    return ts;
 }
 
 bool Ui::button(float x, float y, float w, float h, const std::string& label, bool enabled) {
@@ -46,8 +49,9 @@ bool Ui::button(float x, float y, float w, float h, const std::string& label, bo
     r_->rect(x, y, w, h, bg);
     if (hv) r_->rect(x, y + h - 2 * scale_, w, 2 * scale_, accent);
     Color tc = enabled ? Color{1, 1, 1, 1} : Color{0.5f, 0.5f, 0.5f, 1};
-    float ts = fit(label, w - 8 * scale_);
-    r_->text(x + (w - r_->textWidth(label, ts)) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, label, tc);
+    std::string shown = label;
+    float ts = fit(shown, w - 8 * scale_);
+    r_->text(x + (w - r_->textWidth(shown, ts)) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, tc);
     return hv && in_.pressed;
 }
 
@@ -154,9 +158,9 @@ bool Ui::slider(float x, float y, float w, float h, const std::string& label, fl
     } else {
         snprintf(buf, sizeof buf, fmt, v);
         std::string s = prefix + buf;
-        float fs = fit(s, w - 8 * scale_);
+        float fs = fit(s, w - 8 * scale_);   // (may clip s)
         r_->text(x + (w - r_->textWidth(s, fs)) * 0.5f, y + (h - r_->textHeight(fs)) * 0.5f, fs, s, {1, 1, 1, 1});
-        if (overNumber && fs == textScale_) r_->rect(nx, ty + r_->textHeight(textScale_) + 1 * scale_, r_->textWidth(buf, textScale_), 1 * scale_, {1, 1, 1, 0.7f}); // clickable
+        if (overNumber && fs == textScale_ && s == prefix + buf) r_->rect(nx, ty + r_->textHeight(textScale_) + 1 * scale_, r_->textWidth(buf, textScale_), 1 * scale_, {1, 1, 1, 0.7f}); // clickable
     }
     return changed;
 }

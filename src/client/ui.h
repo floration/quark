@@ -48,7 +48,7 @@ public:
 
 private:
     bool hover(float x, float y, float w, float h) const;
-    float fit(const std::string& t, float maxW) const;
+    float fit(std::string& t, float maxW) const;   // scale for t to fit maxW; clips t if it can't
     Renderer* r_ = nullptr;
     UiInput in_;
     float scale_ = 1, textScale_ = 2;
