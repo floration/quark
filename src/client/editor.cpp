@@ -222,6 +222,7 @@ void Game::edScriptStep() {
         printf("edscript: name=%s map=%s title=%s brushes=%zu sel=%d/%d", edName_.c_str(), ed_.name.c_str(), ed_.title.c_str(), ed_.brushes.size(), edSel_.kind, edSel_.idx);
         if (edSelValid()) { AABB b = edBounds(ed_, edSel_); printf(" box=%g %g %g %g %g %g", b.mn.x, b.mn.y, b.mn.z, b.mx.x, b.mx.y, b.mx.z); }
         if (edSelValid() && edSel_.kind == ED_BRUSH) printf(" material=%d", ed_.brushes[edSel_.idx].material);
+        if (edDragAxis_ >= 0) printf(" drag=%d/%d/%d", edDragAxis_, edDragSign_, edDragMove_ ? 1 : 0);   // the handle being dragged: axis / side / move
         printf("\n");
         fflush(stdout);
     } else if (cmd == "quit") quit_ = true;
@@ -967,12 +968,18 @@ void Game::editorFrame(double dt) {
         int best = -1;
         float bestD = 14 * s;
         auto hs = edHandles();
+        std::vector<float> hd(hs.size(), 1e9f);
         for (size_t k = 0; k < hs.size(); k++) {
             float sx, sy;
             if (!r_.project(hs[k].pos, sx, sy)) continue;
-            float dd = std::hypot(sx - uiIn_.mx, sy - uiIn_.my);
-            if (dd < bestD) { bestD = dd; best = (int)k; }
+            hd[k] = std::hypot(sx - uiIn_.mx, sy - uiIn_.my);
+            if (hd[k] < bestD) { bestD = hd[k]; best = (int)k; }
         }
+        // handles that overlap on screen (a near-axis view lines a far face's handle up behind a near one): the
+        // one nearest the camera wins, as it's the one drawn on top
+        if (best >= 0)
+            for (size_t k = 0; k < hs.size(); k++)
+                if (hd[k] < 14 * s && hd[k] <= bestD + 8 * s && length(hs[k].pos - edCam_) < length(hs[best].pos - edCam_)) best = (int)k;
         if (best >= 0 && !edLook_) {
             edDragAxis_ = hs[best].axis;
             edDragSign_ = hs[best].sign;
