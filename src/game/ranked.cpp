@@ -14,12 +14,8 @@
 #include "official_maps.h"
 #include "gamedefs.h"
 #include "../common/version.h"
+#include "../common/hex.h"
 
-static bool isHex(const std::string& s, size_t n) {
-    if (s.size() != n) return false;
-    for (char c : s) if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
-    return true;
-}
 
 bool isOfficialMapName(const std::string& name) {
     for (const OfficialMap* o = kOfficialMaps; o->name; o++) if (name == o->name) return true;
@@ -40,11 +36,11 @@ bool isRankedMap(const Map& m, int ladder) { return ladder >= 0 && ladder < 16 &
 
 std::string legacyRankId(const std::string& secret) { return sha256Hex(secret).substr(0, 32); }
 std::string rankSeedHex(const std::string& secret) { return sha256Hex("quark-rank-ed25519-v1:" + secret); }
-std::string rankIdFromPublic(const std::string& pub) { return isHex(pub, 64) ? sha256Hex(pub).substr(0, 32) : std::string(); }
+std::string rankIdFromPublic(const std::string& pub) { return isLowerHex(pub, 64) ? sha256Hex(pub).substr(0, 32) : std::string(); }
 
 RankKey rankKeyFromSecret(const std::string& secret) {
     RankKey k;
-    if (!isHex(secret, 64) || !sign::publicFromPrivate(rankSeedHex(secret), &k.pub)) return RankKey();
+    if (!isLowerHex(secret, 64) || !sign::publicFromPrivate(rankSeedHex(secret), &k.pub)) return RankKey();
     k.secret = secret;
     k.id = rankIdFromPublic(k.pub);
     return k;
@@ -63,7 +59,7 @@ bool rankSign(const RankKey& key, const std::string& msg, std::string* sigHex) {
     return !key.secret.empty() && sign::signMessage(msg, rankSeedHex(key.secret), sigHex);
 }
 bool rankVerify(const std::string& pub, const std::string& msg, const std::string& sig) {
-    return isHex(pub, 64) && isHex(sig, 128) && sign::verifyMessage(msg, sig, pub);
+    return isLowerHex(pub, 64) && isLowerHex(sig, 128) && sign::verifyMessage(msg, sig, pub);
 }
 
 std::vector<int> seededBracket(const std::vector<int>& bestFirst) {
@@ -86,7 +82,7 @@ RankKey loadOrCreateRankKey(const std::string& path) {
     {
         std::ifstream f(path);
         std::string s;
-        if (f >> s && isHex(s, 64)) secret = s;
+        if (f >> s && isLowerHex(s, 64)) secret = s;
     }
     if (secret.empty()) {
         std::random_device rd;
@@ -156,7 +152,7 @@ bool parseRankedText(const std::string& text, std::string& match, std::string& m
                      std::vector<int>* leftOut = nullptr) {
     std::istringstream in(text);
     std::string list, extra, more;
-    if (!(in >> match >> mode >> list) || !isHex(match, 16)) return false;
+    if (!(in >> match >> mode >> list) || !isLowerHex(match, 16)) return false;
     for (char c : mode) if (!isalnum((unsigned char)c)) return false;
     std::istringstream ls(list);
     std::string part;
@@ -194,7 +190,7 @@ std::string rankedResultIds(const std::string& text, const std::vector<std::stri
     std::string p;
     std::vector<std::string> players;
     for (auto& e : es) {
-        if (e.slot >= (int)ids.size() || !isHex(ids[e.slot], 32)) return "";
+        if (e.slot >= (int)ids.size() || !isLowerHex(ids[e.slot], 32)) return "";
         players.push_back(ids[e.slot]);
         p += (p.empty() ? "" : ",") + ids[e.slot] + ":" + std::to_string(e.team) + ":" + std::to_string(e.place);
     }
@@ -305,7 +301,7 @@ bool raceSplitsPlausible(const std::vector<int>& splits, const std::vector<int>&
 
 std::string buildRaceRunForm(const std::string& ticket, const std::string& map, const std::string& rankId, int ms,
                              const std::vector<int>& splits, const std::string& name) {
-    if (!isHex(ticket, 16) || !isHex(rankId, 32) || splits.empty() || splits.back() != ms || map.empty()) return "";
+    if (!isLowerHex(ticket, 16) || !isLowerHex(rankId, 32) || splits.empty() || splits.back() != ms || map.empty()) return "";
     for (char c : map) if (!isalnum((unsigned char)c) && c != '_') return "";
     std::string sp;
     for (int x : splits) sp += (sp.empty() ? "" : ",") + std::to_string(x);
@@ -455,14 +451,14 @@ void RankService::run() {
                                                                       : (race ? "race time not sent: " : "ranked report failed: ") + err;
         } else {
             std::string ids;
-            for (auto& id : j.ids) if (isHex(id, 32)) ids += (ids.empty() ? "" : ",") + id;
+            for (auto& id : j.ids) if (isLowerHex(id, 32)) ids += (ids.empty() ? "" : ",") + id;
             bool okLadder = !j.ladder.empty();
             for (char c : j.ladder) okLadder &= (bool)isalnum((unsigned char)c);
             if (okLadder && !ids.empty() && httpGetText(base + "/ratings?ladder=" + j.ladder + "&ids=" + ids, out, 5000, &err)) {
                 std::istringstream in(out);
                 std::string id;
                 Rating r;
-                while (in >> id >> r.mu >> r.sigma >> r.games) if (isHex(id, 32)) got[j.ladder + ":" + id] = r;
+                while (in >> id >> r.mu >> r.sigma >> r.games) if (isLowerHex(id, 32)) got[j.ladder + ":" + id] = r;
             }
         }
         l.lock();

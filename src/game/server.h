@@ -9,7 +9,6 @@
 #include <functional>
 #include <map>
 #include <mutex>
-#include <thread>
 #include <string>
 #include <thread>
 #include <vector>
@@ -25,6 +24,13 @@
 // Every game: a player whose connection drops keeps their slot, team, score and state this long (seconds) and gets
 // them back by reconnecting (matched by their proven ranked id, else by the token from PKT_ACCEPT).
 constexpr double kReconnectGrace = 10.0;
+
+// Per-player (and connect) token buckets: each starts full, at its burst.
+constexpr int kMaxQueuedCmds = 12;                          // input commands queued per player at most
+constexpr float kCatchUpMax = (float)kMaxQueuedCmds;        // backlog catch-up allowance (see server.cpp kDeepQueue)
+constexpr float kChatBurst = 5, kChatPerSecond = 1;         // say: a burst of 5, then one a second (REVIEW NET-7)
+constexpr float kMapReqBurst = 64, kMapReqPerSec = 400;     // PKT_MAP_REQUEST chunks (a download asks ~128/s)
+constexpr float kVerifyBurst = 50, kVerifyPerSec = 50;      // connect signature checks (each ~0.1 ms of CPU)
 
 // Tests running on a sped-up clock turn off the warmup tick-rate check (it would see "late" ticks).
 extern bool g_serverRateCheck;
@@ -96,7 +102,7 @@ struct ServerPlayer {
     std::string awayReason;
     bool dropPending = false;   // over the unacked-event cap: dropped in frame(), not inside whatever was sending (REVIEW 2.1)
     double voteAt = 0;           // no new vote from this player before then (after one of theirs failed)
-    float mapTokens = 64;       // PKT_MAP_REQUEST rate limit (token bucket)
+    float mapTokens = kMapReqBurst; // PKT_MAP_REQUEST rate limit (token bucket)
     double mapTokensAt = 0;
     int team = TEAM_A;
     bool alive = false;
@@ -136,14 +142,14 @@ struct ServerPlayer {
     double itFreezeUntil = 0;    // tag: just got tagged, stands still until then
     uint32_t lastCmdSeq = 0;
     uint16_t keys = 0;          // KEY_* from the last command
-    float chatTokens = 5;       // say: a burst of 5, then one a second (REVIEW NET-7)
+    float chatTokens = kChatBurst; // say: a burst, then one a second (REVIEW NET-7)
     double chatAt = 0;
     uint32_t strTick = 0;       // string commands handled this tick (a budget: the rest wait, the client resends them)
     int strCount = 0, edCount = 0;
     std::deque<UserCmd> cmdQueue;
     float cmdTokensMs = 16.0f;
     int deepTicks = 0;          // ticks in a row the command queue has held a backlog (see kDeepQueue)
-    float catchUp = 12;         // extra commands it may run to clear a backlog (kCatchUpMax; refills very slowly)
+    float catchUp = kCatchUpMax; // extra commands it may run to clear a backlog (refills very slowly)
     uint32_t cmdsRun = 0;       // commands simulated (nobody gets more than real time: see the tests)
     uint8_t reportedLoss = 0;   // % of snapshots the client says it missed
     uint32_t lastViewTick = 0;
@@ -240,7 +246,7 @@ public:
     int lastIt_ = -1;
     // tag: who has been eliminated this match ({rank id, name}): someone who leaves and comes back is still out
     std::vector<std::pair<std::string, std::string>> tagOut_;
-    std::vector<float>* tickTimes_ = nullptr;
+    std::vector<float>* tickTimes_ = nullptr;  // benchmarks: every tick's simulate + send time goes here
     Snapshot snapScratch_;                     // reused every send (no per-tick allocations)
     std::vector<PlayerSnap> snapPlayers_;
     std::vector<ProjectileSnap> snapProj_;
@@ -250,9 +256,9 @@ public:
         else if (cfg_.maxPlayers > 16) rate = std::min(rate, 333);
         // round up (500 Hz at a 333 cap -> every 2nd tick, not every tick), but 1000 / 333 = 3.003 stays 3
         return std::max(1, (int)std::ceil((float)tickRate() / std::max(1, rate) - 0.02f));
-    } // benchmarks: every tick's simulate + send time goes here
+    }
     int hideRounds_ = 0;        // hide and seek: rounds so far planned (everyone in play seeks once: grows if someone joins)
-    uint32_t nextJoinId_ = 1;           // hide and seek: the last seeker (everyone takes a turn)
+    uint32_t nextJoinId_ = 1;   // ServerPlayer::joinId of the next connection (a newcomer in a reused slot isn't its old owner)
     float drainAccum_ = 0;
     uint32_t duelUsed_ = 0;      // duel: modifiers already played this match (bit per modifier), never repeated
     // payload/race per-round bookkeeping
@@ -453,7 +459,7 @@ private:
     void holdPlayer(int id, const std::string& reason);   // connection lost: keep the slot for kReconnectGrace
     bool restorePlayer(int id, const NetAddr& from, uint32_t nonce, const std::string& rankPub, const NetAddr& dialled = NetAddr{});
     void sendWelcome(int id);   // what a (re)joining client needs to know about everyone
-    float verifyTokens_ = 50;   // connect signature checks per second (each ~0.1 ms of CPU; a flood waits and retries)
+    float verifyTokens_ = kVerifyBurst; // connect signature checks (kVerifyPerSec; a flood waits and retries)
     double verifyAt_ = 0;
     void simulate();
     void drainCmds(int id);

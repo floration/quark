@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <chrono>
 #include "../common/http.h"
+#include "../common/hex.h"
 #include "../common/sign.h"
 #include "../common/version.h"
 
@@ -132,7 +133,7 @@ void MasterAnnouncer::run() {
                 st = !ok ? "internet list: " + err : listed_ ? "listed on the internet server list" : "registered with the ranking server (not listed)";
                 if (ok && body.rfind("ok ", 0) == 0) {
                     std::string t = trim(body.substr(3));
-                    if (t.size() == 32 && t.find_first_not_of("0123456789abcdef") == std::string::npos) token = t;
+                    if (isLowerHex(t, 32)) token = t;
                 }
             }
             std::lock_guard<std::mutex> l(mu_);

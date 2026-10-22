@@ -25,7 +25,6 @@ public:
     // The ranked key: its id is proven to the server at connect (signing the connect challenge), and the client signs
     // ranked match ids the server asks for (EV_RANKSIGN). No key = no ranked id.
     void setRankKey(const RankKey& k) { rankKey_ = k; }
-    uint64_t reconnectToken() const { return token_; } // from the last PKT_ACCEPT; sent again when reconnecting there
     void disconnect();
     // Receive packets, handle timeouts/retries. Call every frame.
     void poll();

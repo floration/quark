@@ -3160,8 +3160,7 @@ static void testReconnectGrace(uint16_t port) {
     pump(s, cls, 1.0, idle);
     int ib = b.clientId(), teamB = s.players_[ib].team;
     s.players_[ib].kills = 7;
-    uint64_t tok = b.reconnectToken();
-    CHECK(tok != 0 && tok == s.players_[ib].reconnectToken);
+    CHECK(s.players_[ib].reconnectToken != 0);   // (given in PKT_ACCEPT: what the reconnect below shows)
     b.disconnect();
     pump(s, cls, 0.3, idle);
     CHECK(s.away(ib) && s.humanCount() == 2);

@@ -11,10 +11,11 @@
 
 enum PacketType : uint8_t {
     // client -> server
-    PKT_CONNECT = 1,     // u16 version, u32 nonce, u32 cookie (0 = none yet, from PKT_CHALLENGE), str name,
-                         // [u32 token lo, u32 token hi (reconnect, 0 = none), str rank public key hex, str signature hex
-                         //  of rankConnectMessage(cookie, nonce, dialled) (both empty = no ranked id), u32 ip + u16 port: the
-                         //  server address the client dialled (what it signed; the server takes it only if it's its own)]
+    PKT_CONNECT = 1,     // u16 version, u32 nonce, u32 cookie (0 = none yet, from PKT_CHALLENGE), str name; then, once the
+                         // cookie is set (the first CONNECT only asks for it): u32 token lo, u32 token hi (reconnect, 0 =
+                         // none), str rank public key hex, str signature hex of rankConnectMessage(cookie, nonce, dialled)
+                         // (both empty = no ranked id), u32 ip + u16 port: the server address the client dialled (what it
+                         // signed; the server takes it only if it's its own)
     PKT_INPUT,           // u32 nonce, u32 ackTimeMs, u32 ackEvent, u8 lossPct, u8 ncmds, cmds..., u8 nStr [u16 firstSeq, nStr x str]
     PKT_DISCONNECT,      // u32 nonce
     PKT_INFO_REQUEST,    // padded with zeros to kInfoRequestBytes (no reply bigger than the request)

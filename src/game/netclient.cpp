@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cctype>
 #include "master.h"
+#include "../common/hex.h"
 #include <random>
 #include <fstream>
 #include <sstream>
@@ -357,7 +358,7 @@ void NetClient::onSnapshot(Snapshot& s) {
         if (e.type == EV_RANKINFO && e.a < kMaxPlayers) rankIds_[e.a] = e.text;
         if (e.type == EV_RANKSIGN) {   // a ranked match went live (or a time trial started): vouch that we're in it (the server forwards it with the ticket)
             std::string sig;
-            bool hex16 = e.text.size() == 16 && e.text.find_first_not_of("0123456789abcdef") == std::string::npos;
+            bool hex16 = isLowerHex(e.text, 16);
             if (!play_.active && hex16 && rankSign(rankKey_, rankTicketMessage(e.text, server_.toString()), &sig)) sendCommand("ticketsig " + sig);
             continue;
         }

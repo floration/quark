@@ -2,6 +2,7 @@
 #include "../common/rng.h"
 #include "ranked.h"
 #include "../common/sha256.h"
+#include "../common/hex.h"
 #include <climits>
 #include <cstring>
 #include <random>
@@ -20,7 +21,6 @@ static uint8_t looksByte(const ServerPlayer& p) { return (uint8_t)((p.model & 15
 
 namespace {
 constexpr double kTimeout = 10.0;
-constexpr int kMaxQueuedCmds = 12;
 constexpr uint32_t kMaxRewindMs = 500; // lag compensation window (hard ceiling)
 constexpr uint32_t kRewindToleranceMs = 30; // over ping + interpolation (ping smoothing, jitter)
 constexpr float kMaxCmdTokensMs = 40.0f; // burst allowance after network jitter
@@ -31,7 +31,6 @@ constexpr int kMaxStringCmdsPerTick = 8;   // per player (chat, votes, commands)
 // editing over loopback can't outrun a far-away player's acks until that player gets dropped.
 constexpr int kMaxEditOpsPerTick = 16;     // per player (what one input packet carries)
 constexpr double kEditBudgetMs = 0.5;      // per tick, all players: past it, edits wait for the next tick
-constexpr float kChatBurst = 5, kChatPerSecond = 1;
 
 // Backlog: tokens refill at exactly the command rate, so after a stall (the network's or this machine's) the commands
 // that then arrive together, past the token burst, stayed queued for good (+12 ms of input latency at 1000 Hz, +96 ms at 125 Hz). A queue that stays deeper than
@@ -39,7 +38,6 @@ constexpr float kChatBurst = 5, kChatPerSecond = 1;
 // of the tick rate: enough for any number of hitches, too little for a speedhack to gain anything.
 constexpr int kDeepQueue = 2;
 constexpr int kDeepTicks = 32;
-constexpr float kCatchUpMax = (float)kMaxQueuedCmds;
 constexpr float kCatchUpRefill = 0.01f;   // commands per tick
 // Tick-rate test during warmup: each window must stay clean or the rate steps down.
 constexpr double kRateWindow = 3.0;
@@ -52,8 +50,6 @@ bool isLoopback(const NetAddr& a) { return (a.ip >> 24) == 127; }
 constexpr double kProbeTimeout = 3.0;     // no PKT_PROBE_REPLY on the game port by then: not reachable
 constexpr double kProbeRecheck = 300.0;   // re-check every 5 minutes (and on the menu button)
 constexpr double kCookieBucket = 10.0;     // connect cookies are good for 10-20 s
-constexpr float kMapReqPerSec = 400.0f;    // PKT_MAP_REQUEST chunks per second per player (a download asks ~128/s)
-constexpr float kMapReqBurst = 64.0f;
 constexpr size_t kMaxVoteListItems = 8;    // callvote tmaps / tmodes
 constexpr size_t kMaxMapInfo = 1024;       // map facts cached (only maps whose file exists; past this it starts over)
 constexpr size_t kMaxUnackedEvents = 256;
@@ -653,8 +649,9 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
         w.str(why);
         sock_.send(from, out, w.size());
     };
-    // Optional (every client from protocol 29 sends them): the reconnect token it was given here before, and its
-    // ranked id's public key with a signature of this connect challenge (proof that it holds the key: REVIEW NET-12).
+    // After the cookie (every client of this protocol sends them: tokens and keys since 30, the dialled address since
+    // 32): the reconnect token it was given here before, and its ranked id's public key with a signature of this
+    // connect challenge (proof that it holds the key: REVIEW NET-12).
     uint64_t token = 0;
     std::string rpub, rsig;
     NetAddr dialled;   // the address the client dialled: what it signed (REVIEW 2.2)
@@ -668,10 +665,9 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
     int existing = findPlayer(from);
     if (existing >= 0 && players_[existing].nonce == nonce) { sendAccept(sock_, players_[existing], existing, map_, cfg_.mode); return; } // (a resend)
     std::string rankId;
-    auto hexLen = [](const std::string& h, size_t n) { return h.size() == n && h.find_first_not_of("0123456789abcdef") == std::string::npos; };
-    if (hexLen(rpub, 64) && hexLen(rsig, 128)) {   // (anything else: no ranked id, and no signature check spent on it)
+    if (isLowerHex(rpub, 64) && isLowerHex(rsig, 128)) {   // (anything else: no ranked id, and no signature check spent on it)
         double now = timeNow();
-        verifyTokens_ = std::min(50.0f, verifyTokens_ + (float)(now - verifyAt_) * 50.0f);
+        verifyTokens_ = std::min(kVerifyBurst, verifyTokens_ + (float)(now - verifyAt_) * kVerifyPerSec);
         verifyAt_ = now;
         if (verifyTokens_ < 1) return;   // a flood of signed connects: this one waits for the client's resend
         verifyTokens_ -= 1;
@@ -2212,7 +2208,6 @@ void Server::callVote(int caller, int kind, int arg, const std::string& map, int
         return;
     }
     vote_ = Vote();
-    vote_.caller = caller;
     vote_.kind = kind;
     vote_.caller = caller;
     vote_.arg = arg;
