@@ -2,7 +2,7 @@
 GitHub releases/changelogs, and the in-game INFO pages parsed from src/client/game.cpp.
 
 Real endpoints (mirrors the game's C++):
-  * https://floration.github.io/quark/master.txt -> master base URL     (src/game/master.cpp kMasterUrlFile)
+  * MASTER_URL (the game's built-in Worker address, src/game/master.cpp kPinnedMasterUrl) -> master base URL
   * GET <master>/list?v=<VERSION>  -> "ip:port" per line, this version   (master.cpp fetchServerList)
   * UDP PKT_INFO_REQUEST to each ip:port -> PKT_INFO_REPLY               (src/game/protocol.h, server.cpp, netclient.cpp)
   * GET <master>/leaderboard?ladder=L&n=N -> "rating games name" lines   (src/game/ranked.cpp RankService::run)
@@ -25,7 +25,11 @@ from dataclasses import dataclass, field
 
 import aiohttp
 
-MASTER_URL_FILE = "https://floration.github.io/quark/master.txt"
+# The ranking / server-list Worker: a COPY of the game's built-in kPinnedMasterUrl (src/game/master.cpp; quark_tests
+# "cross-language constants" checks it). Pinned like the game, and stricter: the bot sends BOT_KEY there, so it never
+# follows the website's master.txt (the game only follows a release-key-signed one; the bot doesn't verify it). If the
+# owner moves the Worker, the bot's operator sets master_url in config.json (or QUARK_MASTER) to the new address.
+MASTER_URL = "https://quark-master.jamesrandallmcamis.workers.dev"
 GITHUB_REPO = "floration/quark"
 RAW_BASE = f"https://raw.githubusercontent.com/{GITHUB_REPO}"
 SITE_URL = "https://floration.github.io/quark"
@@ -207,13 +211,21 @@ def format_board(title: str, rows: list[LeaderRow], race: bool = False, n: int =
     return "\n".join(lines)
 
 
+def master_base(url: str) -> str:
+    """A configured Worker URL, checked: https only (BOT_KEY and players' data go there), except a local test Worker
+    on http://localhost / 127.0.0.1. Raises ValueError for anything else."""
+    u = str(url).strip().rstrip("/")
+    local = re.fullmatch(r"http://(localhost|127\.0\.0\.1)(:\d+)?", u)
+    if not (local or re.fullmatch(r"https://[A-Za-z0-9.-]+(:\d+)?(/[A-Za-z0-9._~/-]*)?", u)):
+        raise ValueError(f"master_url must be an https:// address, not {u[:80]!r}")
+    return u
+
+
 class QuarkAPI:
     def __init__(self, session: aiohttp.ClientSession, github_token: str | None = None, master_override: str | None = None):
         self.s = session
         self.token = github_token
-        self.master_override = master_override or os.environ.get("QUARK_MASTER")
-        self._master: str | None = None
-        self._master_at = 0.0
+        self._master = master_base(master_override or os.environ.get("QUARK_MASTER") or MASTER_URL)
 
     async def _text(self, url: str, timeout: float = 8, headers: dict | None = None) -> str:
         async with self.s.get(url, timeout=aiohttp.ClientTimeout(total=timeout), headers=headers) as r:
@@ -221,13 +233,7 @@ class QuarkAPI:
             return await r.text()
 
     async def master(self) -> str:
-        if self.master_override:
-            return self.master_override.strip().rstrip("/")
-        if not self._master or time.time() - self._master_at > 3600:  # re-read hourly: the site can move it
-            body = (await self._text(MASTER_URL_FILE)).strip()
-            if not body.startswith("https://") or any(c in body for c in " '\"\\\n"):
-                raise ValueError(f"bad master.txt: {body[:80]!r}")
-            self._master, self._master_at = body.rstrip("/"), time.time()
+        """The Worker's base URL: configured (master_url / QUARK_MASTER) or the built-in MASTER_URL, never fetched."""
         return self._master
 
     async def server_addresses(self, version: str) -> list[str]:
