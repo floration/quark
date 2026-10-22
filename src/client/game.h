@@ -379,6 +379,7 @@ private:
     std::deque<std::string> consoleLog_;
     void consolePrint(const std::string& t);
     std::vector<std::string> consoleWords() const;
+    std::vector<std::string> consoleWords_;   // drawConsole's cache of consoleWords() (cleared: listed again)
     void consoleComplete();
     std::vector<std::string> consoleCandidates(const std::vector<std::string>& words) const;
     void chatSync();                       // caret to the end if chatText_ was replaced

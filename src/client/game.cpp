@@ -529,6 +529,7 @@ void Game::onKey(int key, int action, int mods) {
     if (screen_ == Screen::InGame && key == GLFW_KEY_GRAVE_ACCENT && (!chatting_ || console_)) { // the console: ` opens / closes
         console_ = !console_;
         chatting_ = console_;
+        consoleWords_.clear();   // (setting names are re-listed when it opens)
         chatText_.clear();
         uiIn_.chars.clear();
         captureMouse(!console_ && !paused_);
@@ -2316,6 +2317,7 @@ void Game::runConsole(const std::string& line) {
     audio_.setAnnouncer(cfg_.announcerVoice);
     ui_.accent = rgba(cfg_.colorFriendly);
     for (auto& l : lines()) if (l.rfind(k + "=", 0) == 0) consolePrint("  " + k + " = " + l.substr(k.size() + 1));
+    consoleWords_.clear();   // (a setting can add a key: mode_hud_*, mode_controls_*)
 }
 
 // Every word the console knows: its commands and every setting name.
@@ -2390,7 +2392,10 @@ void Game::drawConsole(float W, float H, float s, float ts) {
     // highlighting: the first word green when it's a known setting / command, red when not, a /command in the
     // accent colour; the value white
     const Color good = {0.45f, 0.95f, 0.55f, 1}, bad = {1.0f, 0.4f, 0.35f, 1}, key = {0.55f, 0.8f, 1.0f, 1}, dim = {0.75f, 0.78f, 0.82f, 1};
-    auto words = consoleWords();
+    // the known words for the highlight: listed once when the console opens / runs a line, not every frame
+    // (consoleWords serialises the whole config)
+    if (consoleWords_.empty()) consoleWords_ = consoleWords();
+    const auto& words = consoleWords_;
     auto known = [&](const std::string& w) { return std::find(words.begin(), words.end(), w) != words.end(); };
     float x = 16 * s;
     r_.textMono(x, y, ts, "> ", kWhite); x += r_.textWidthMono("> ", ts);
