@@ -36,6 +36,23 @@ float snapTo(float v, float g) { return std::round(v / g) * g; }
 Vec3 snapTo(const Vec3& v, float g) { return {snapTo(v.x, g), snapTo(v.y, g), snapTo(v.z, g)}; }
 AABB around(const Vec3& p, const Vec3& half) { return {p - half, p + half}; }
 
+// A map name nothing uses yet (neither your maps folder nor the shipped maps): base itself (if tryBase), else
+// base + suffix, base + suffix + "2", ... with base shortened so every candidate stays within the 40-character limit.
+std::string freeMapName(const std::string& base, const std::string& suffix, bool tryBase) {
+    auto taken = [](const std::string& n) {
+        std::error_code ec;
+        return std::filesystem::exists(std::filesystem::u8path(userMapsDir() + "/" + n + ".qmap"), ec) ||
+               std::filesystem::exists(std::filesystem::u8path(findDataPath("maps/" + n + ".qmap")), ec);
+    };
+    if (tryBase && validMapName(base) && !taken(base)) return base;
+    for (int i = 1; i < 1000; i++) {
+        std::string tail = suffix + (i > 1 ? std::to_string(i) : "");
+        std::string n = typedMapName(base.substr(0, std::max(0, 40 - (int)tail.size())) + tail);
+        if (validMapName(n) && !taken(n)) return n;
+    }
+    return typedMapName(base + "_" + std::to_string((long long)time(nullptr)));
+}
+
 size_t kindCount(const Map& m, int kind) {
     switch (kind) {
         case 0: return m.editableBrushes();   // (an editor ladder's rails and rungs come after these)
@@ -234,8 +251,10 @@ void Game::openEditor(std::string name) {
         ed_.rebuild();
         // a new map keeps the name it was opened with (it used to fall back to "mymap", so saving overwrote that);
         // a file that's there but won't load (an older / over-limit map) isn't overwritten by the blank one
-        if (!validMapName(name)) edName_ = "mymap";
-        else edName_ = err.rfind("map not found", 0) == 0 ? name : typedMapName(name + "_new");
+        // (an empty / invalid name gets a free "mymap", "mymap2"...; a broken file a free "<name>_new", "<name>_new2"...,
+        // shortened so the suffix survives the 40-character limit)
+        if (!validMapName(name)) edName_ = freeMapName("mymap", "", true);
+        else edName_ = err.rfind("map not found", 0) == 0 ? name : freeMapName(name, "_new", false);
     }
     for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == edName_) edLoadIdx_ = (int)i;
     resetEditorView(ed_, edCam_, yaw_, pitch_);
