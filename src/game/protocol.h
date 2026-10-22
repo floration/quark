@@ -122,6 +122,19 @@ struct ModeState {
 };
 enum : uint8_t { MS_DRAIN = 1, MS_OVERTIME = 2, MS_CONTESTED = 4, MS_EDITING = 8, MS_RANKED = 16, MS_TEMP_EDIT = 32, MS_TIMETRIAL = 64 }; // MS_TIMETRIAL: solo ranked race (times go to the race board) // MS_TEMP_EDIT: voted editing, reverts at the next map change // MS_EDITING: map edit session, nobody plays
 
+// The scoreboard's main number for a player, and what it sorts by (REVIEW M6: it sorted by one number and showed
+// another): kills ("gibs") in instagib 1v1 / tourney / ranked FFA; the server's score in free for all (frags: what
+// decides the match), race (wins), hide and seek and tag (their own points); elsewhere damage / 10 + seconds on the
+// objective.
+inline bool scoreboardGibs(const ModeState& ms) {
+    return (arenaVariant(ms.arenaVariant).rules & AR_INSTAGIB) &&
+           (ms.mode == MODE_ARENA || ms.mode == MODE_TOURNEY || ((ms.flags & MS_RANKED) && ms.mode == MODE_FFA));
+}
+inline int scoreboardValue(const PlayerSnap& p, const ModeState& ms) {
+    if (scoreboardGibs(ms)) return p.kills;
+    if (ms.mode == MODE_RACE || isItMode(ms.mode) || ms.mode == MODE_FFA) return p.score;
+    return p.dmg / 10 + p.obj;
+}
 struct Snapshot {
     uint32_t tick = 0;        // server tick counter (one snapshot per tick; gaps = loss)
     uint32_t timeMs = 0;      // server clock in ms

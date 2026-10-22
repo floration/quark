@@ -585,6 +585,25 @@ static void testLifeHealCap(uint16_t port) {
     s.stop();
 }
 
+// M6: the scoreboard shows the number it sorts by; in free for all that's frags (the server's score, which decides
+// the match), not damage / 10 + objective.
+static void testScoreboardValue() {
+    printf("scoreboard: shows what it sorts by\n");
+    PlayerSnap fragger, damager;
+    fragger.score = 5; fragger.kills = 5; fragger.dmg = 300;
+    damager.score = 2; damager.kills = 2; damager.dmg = 900;
+    ModeState ms;
+    ms.mode = MODE_FFA;
+    CHECK(scoreboardValue(fragger, ms) == 5 && scoreboardValue(damager, ms) == 2);   // the winner on top, showing frags
+    ms.mode = MODE_KOTH;
+    damager.obj = 7;
+    CHECK(scoreboardValue(damager, ms) == 97 && scoreboardValue(fragger, ms) == 30);
+    ms.mode = MODE_FFA; ms.flags = MS_RANKED; ms.arenaVariant = 5;   // ranked instagib: gibs
+    CHECK(scoreboardGibs(ms) && scoreboardValue(fragger, ms) == 5);
+    ms.mode = MODE_HIDE; ms.flags = 0; ms.arenaVariant = 0;
+    CHECK(!scoreboardGibs(ms) && scoreboardValue(fragger, ms) == 5);
+}
+
 // "quark_tests rules [name]": all of them, or the one named.
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
@@ -602,6 +621,7 @@ static void testGameRules(const std::string& only) {
         {"spawns", [] { testSpawnTypes(TP(29251)); }},
         {"seeds", [] { testRandomSeeds(); }},
         {"heal", [] { testLifeHealCap(TP(29253)); }},
+        {"scoreboard", [] { testScoreboardValue(); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
     if (only == "rate") testRateBetweenRounds(TP(29252));   // (timing-sensitive: the suite runs it alone, with "tickrate")

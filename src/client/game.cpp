@@ -2940,9 +2940,13 @@ void Game::drawScoreboard() {
     float w = std::min(900 * s, W - 32 * s), x = (W - w) * 0.5f, y = 140 * s;
     const ModeState& ms = net_.mode();
     std::vector<PlayerSnap> ps = net_.latest().players;
-    std::sort(ps.begin(), ps.end(), [](const PlayerSnap& a, const PlayerSnap& b) {
+    bool ranked = ms.flags & MS_RANKED;
+    // instagib (1v1 / tourney ruleset or ranked instagib): every hit kills, so only accuracy and gibs (kills) count
+    const bool gib = scoreboardGibs(ms);
+    auto shown = [&](const PlayerSnap& p) { return scoreboardValue(p, ms); };   // (shown and sorted by: REVIEW M6)
+    std::sort(ps.begin(), ps.end(), [&](const PlayerSnap& a, const PlayerSnap& b) {
         if (a.team() != b.team()) return a.team() < b.team();
-        return a.score > b.score;
+        return shown(a) > shown(b);
     });
     if (ps.size() > 12) { // big servers (up to 32): smaller rows so everyone fits
         ts = std::max(1.0f, std::round(ts * 0.75f));
@@ -2952,15 +2956,9 @@ void Game::drawScoreboard() {
     ui_.panel(x, y, w, (ps.size() + 2) * rowH + 10 * s, 0.8f);
     float cy = y + 10 * s;
     r_.text(x + 12 * s, cy, ts, "PLAYER", kGrey);
-    bool ranked = ms.flags & MS_RANKED;
     std::string ladder = arenaVariant(ms.arenaVariant).name;
     if (ranked) r_.text(x + w * 0.31f, cy, ts, "RATING", kGrey);
     r_.text(x + w * 0.79f, cy, ts, "TOTAL K / D", kGrey);   // lifetime kills / deaths (every game, live)
-    // score: the mode's own points in race / hide and seek / tag; elsewhere damage / 10 + seconds on the objective
-    const bool ownScore = ms.mode == MODE_RACE || isItMode(ms.mode);
-    // instagib (1v1 / tourney ruleset or ranked instagib): every hit kills, so only accuracy and gibs (kills) count
-    const bool gib = (arenaVariant(ms.arenaVariant).rules & AR_INSTAGIB) &&
-                     (ms.mode == MODE_ARENA || ms.mode == MODE_TOURNEY || (ranked && ms.mode == MODE_FFA));
     if (gib) {
         r_.text(x + w * 0.53f, cy, ts, "GIBS", kGrey);
         r_.text(x + w * 0.65f, cy, ts, "ACC", kGrey);
@@ -2992,7 +2990,7 @@ void Game::drawScoreboard() {
             r_.text(x + w * 0.53f, cy, ts, std::to_string(p.kills), kWhite);
             r_.text(x + w * 0.65f, cy, ts, std::to_string(p.acc) + "%", kWhite);
         } else {
-            r_.text(x + w * 0.40f, cy, ts, std::to_string(ownScore ? p.score : p.dmg / 10 + p.obj), kWhite);
+            r_.text(x + w * 0.40f, cy, ts, std::to_string(shown(p)), kWhite);
             r_.text(x + w * 0.48f, cy, ts, std::to_string(p.kills), kWhite);
             r_.text(x + w * 0.53f, cy, ts, std::to_string(p.deaths), kWhite);
             r_.text(x + w * 0.58f, cy, ts, std::to_string(p.dmg), kWhite);
