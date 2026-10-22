@@ -199,6 +199,9 @@ private:
     float bgCeil_ = 0, bgHalfX_ = 0, bgHalfZ_ = 0;
     void loadMenuBackdrop();
     void rescanMaps();          // re-list maps/ so new or edited files show up without restarting
+    // rescanMaps' per-file cache (PERF-11): a map is only loaded again when its file's path, size or mtime changed
+    struct MapInfoCached { long long mtime = 0; uintmax_t size = 0; MapInfo info; };
+    std::map<std::string, MapInfoCached> mapInfoCache_;
     std::string testMap_;       // set while play-testing a map from the editor
     int testMode_ = 0;
 

@@ -362,7 +362,21 @@ void Game::rescanMaps() {
     std::string botName = maps_.empty() ? "" : maps_[botMapIdx_ % maps_.size()];
     maps_ = listMaps();
     mapInfo_.clear();
+    // each map's title / modes / ranked ladders: parsed once per file version (it used to load and parse every map,
+    // collision grid and all, each time a menu, the editor or the in-game picker opened: a visible hitch)
     for (auto& name : maps_) {
+        std::string path = mapFilePath(name);
+        std::error_code ec;
+        std::filesystem::path fp = std::filesystem::u8path(path);
+        uintmax_t size = std::filesystem::file_size(fp, ec);
+        if (ec) size = (uintmax_t)-1;
+        auto mt = std::filesystem::last_write_time(fp, ec);
+        long long mtime = ec ? -1 : (long long)mt.time_since_epoch().count();
+        auto it = mapInfoCache_.find(path);
+        if (it != mapInfoCache_.end() && it->second.size == size && it->second.mtime == mtime && size != (uintmax_t)-1) {
+            mapInfo_.push_back(it->second.info);
+            continue;
+        }
         Map m;
         MapInfo mi;
         if (m.load(name)) {
@@ -371,6 +385,7 @@ void Game::rescanMaps() {
             for (int k = 0; k < MODE_COUNT; k++) if (m.supportsMode(k)) mi.modes |= 1u << k;
             for (int v = 0; v < 16; v++) if (isRankedMap(m, v)) mi.ranked |= (uint16_t)(1u << v);
         }
+        mapInfoCache_[path] = {mtime, size, mi};
         mapInfo_.push_back(mi);
     }
     for (size_t i = 0; i < maps_.size(); i++) {
