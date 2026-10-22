@@ -117,7 +117,7 @@ check((await call("/list?v=t9")) === "", "hidden servers aren't listed");
     sigs: [signTicket(1, match), signTicket(3, match)].join(",") })) === "bad key for " + id(2), "a key must hash to the id");
   check((await S.ticket(match, "vanilla", [1, 2, 3, 4])) === "ticket " + match, "ticket opened");
   check((await S.ticket("abababababababab", "vanilla", [1, 2])) === "too soon", "one ticket a minute per server");
-  check((await call("/report", { secret: secret(1), match, ladder: "vanilla", p })) === "too soon", "no result before the match could have been played");
+  check((await call("/report", { secret: secret(1), match, ladder: "vanilla", p })) === "pending 1/4", "an early report is kept, waiting for the server's result");
   age(match);
   check((await call("/report", { secret: secret(1), match, ladder: "vanilla", p })) === "pending 1/4", "first report pending");
   check((await call("/report", { secret: secret(1), match, ladder: "vanilla", p })) === "pending 1/4", "duplicate report ignored");
@@ -191,6 +191,17 @@ check((await call("/list?v=t9")) === "", "hidden servers aren't listed");
   check((await prune(env, Date.now())) === 1, "the cron rates it after the wait");
   r = await ratings([21, 22]);
   check(r[id(21)].games === 2 && r[id(22)].games === 2, "silent player rated (a non-report doesn't escape the result)");
+  // leaving in the first minute still loses: a result naming a leaver counts before MIN_MATCH_MS (the stayer's
+  // report may get there first); one without a leaver that early is void
+  const S3 = await server();
+  await S3.ticket("cfcfcfcfcfcfcfcf", "vanilla", [21, 22]);
+  check((await call("/report", { secret: secret(21), match: "cfcfcfcfcfcfcfcf", ladder: "vanilla", p })) === "pending 1/2", "the stayer's report, before the server's result");
+  check((await S3.post("/result", { match: "cfcfcfcfcfcfcfcf", p, left: id(22) })) === "done", "an early result with a leaver counts");
+  r = await ratings([21, 22]);
+  check(r[id(22)].games === 3 && r[id(22)].mu < 25, "the early leaver lost");
+  const S4 = await server();
+  await S4.ticket("cacacacacacacaca", "vanilla", [21, 22]);
+  check((await S4.result("cacacacacacacaca", p)) === "void: outside the ticket's window", "an early result without a leaver is void");
 }
 // nothing stays pending: once a ticket expires its match is rated (result in, someone agreed, nobody against) or void;
 // the cron goes oldest first, skips rows it can't decide yet, and one failing match doesn't stop the rest

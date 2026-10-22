@@ -72,8 +72,8 @@ What changed:
 - **Ranked results need a ticket.** When a ranked match goes live, the game server (registered with the list by
   announcing, `&hidden=1` if it isn't public) opens a ticket (`POST /ticket`, with its announce token) naming the
   match id, ladder, map and players. `/report` is accepted only under an open ticket, from its players, once each,
-  between 1 minute and 2 hours after it opened; the server posts its own result (`POST /result`) and the match is
-  rated only when the server and every player agree. Each player's game also checks the host's result against the
+  up to 2 hours after it opened; the server posts its own result (`POST /result`, not before 1 minute unless it
+  names a leaver, so leaving in the first minute still loses) and the match is rated only when the server and every player agree. Each player's game also checks the host's result against the
   score it saw and refuses to report on a mismatch. A server opens at most one match ticket a minute.
 - **Provisional accounts.** A player counts as established after 5 ticketed matches (`accounts.tgames`). Before that
   they're off the leaderboard and crowns, and an established player's rating doesn't move in a match against them,

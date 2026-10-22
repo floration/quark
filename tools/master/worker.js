@@ -34,8 +34,9 @@
 // Ranked (OpenSkill / Weng-Lin Plackett-Luce ratings):
 //   POST /report  form: secret, match, ladder, p=id:team:place,...[, dispute=1]   one player's account of a finished
 //                 match (dispute=1: their game saw a different result than the host's p)
-//                 Accepted only under a ticket from that ticket's players, once each, MIN_MATCH_MS to TICKET_MS after
-//                 it opened. Rated when the server's result and the players' reports agree: every player who didn't
+//                 Accepted only under a ticket from that ticket's players, once each, until TICKET_MS after it opened.
+//                 The server's /result must come MIN_MATCH_MS or more after the ticket opened (sooner only when it
+//                 names a leaver, so leaving in the first minute still loses), else the match is void. Rated when the server's result and the players' reports agree: every player who didn't
 //                 leave reported it, or REPORT_WAIT_MS passed with at least one agreeing and nobody against. A report
 //                 against it makes a dispute (not rated; the owner settles it with /resolve), unless no player agrees
 //                 with the server and two or more contradict it: then it's void. A match still undecided when its
@@ -81,7 +82,7 @@ const RACE_FLOORS = {
   viaduct: [792, 606, 485, 625, 250, 928, 1333, 341, 1818, 979, 1022, 1583],
 };
 const TICKET_MS = 2 * 3600000;       // a match ticket takes reports for this long
-const MIN_MATCH_MS = 60000;          // ...but not before this: no ranked match is over in under a minute
+const MIN_MATCH_MS = 60000;          // no server result before this (no ranked match is over in under a minute) unless someone left
 const TICKET_GAP_MS = 60000;         // a server opens at most one match ticket per this
 const RACE_TICKET_MS = 12 * 3600000; // a time trial session
 const RACE_SLACK_MS = 30000;         // a run can't be longer than its ticket is old (plus request delays)
@@ -489,7 +490,8 @@ async function report(env, form, now) {
   const t = await env.DB.prepare("SELECT kind, ladder, players, created, status FROM tickets WHERE id = ?").bind(match).first();
   if (!t || t.kind !== "match") return "no ticket";
   if (t.ladder !== ladder || t.players !== res.entries.map((e) => e.id).join(",")) return "not the ticket's players";
-  if (now - t.created < MIN_MATCH_MS) return "too soon";
+  // (no "too soon" here: the server's result decides when the match can have ended - MIN_MATCH_MS, sooner only when
+  // someone left - and a report alone rates nothing. The game sends its report once, so an early one is kept.)
   if (t.status === "open" && now - t.created > TICKET_MS) return "expired";
   if (t.status === "void") return "void";   // (before the matches row below: it would only sit there pending)
   // the reporter's display name for the leaderboard (hex-encoded printable ASCII, up to 20 chars)
@@ -520,11 +522,12 @@ async function serverResult(env, form, addr, now) {
   if (!t || t.kind !== "match" || t.server !== addr) return "no ticket";
   if (t.status !== "open") return t.status;
   if (t.players !== res.entries.map((e) => e.id).join(",")) { await voidMatch(env, match); return "void: not the ticket's players"; }
-  if (now - t.created < MIN_MATCH_MS || now - t.created > TICKET_MS) { await voidMatch(env, match); return "void: outside the ticket's window"; }
-  if (t.result) return "already reported";
   const left = String(form.get("left") || "") ? String(form.get("left")).split(",") : [];
   const ids = res.entries.map((e) => e.id);
   if (left.some((id) => !ids.includes(id)) || new Set(left).size !== left.length || left.length >= ids.length) return "bad left";
+  // no ranked match is over in under a minute, unless someone left it: leaving early doesn't escape the loss
+  if ((now - t.created < MIN_MATCH_MS && !left.length) || now - t.created > TICKET_MS) { await voidMatch(env, match); return "void: outside the ticket's window"; }
+  if (t.result) return "already reported";
   const result = t.ladder + "|" + res.text;
   await env.DB.batch([
     env.DB.prepare("UPDATE tickets SET result = ?, leavers = ?, resulted = ? WHERE id = ? AND result IS NULL").bind(result, left.join(","), now, match),
