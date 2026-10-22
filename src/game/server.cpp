@@ -267,7 +267,8 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
 void Server::stop() {
     stopMapInfo();
     if (!running_) return;
-    if (editDirty_ && !tempEdit_) autosave();
+    if (editDirty_ && !tempEdit_) autosave();   // (after any background one)
+    waitAutosave();
     for (int i = 0; i < kMaxPlayers; i++)
         if (players_[i].connected) dropPlayer(i, "server shutting down", true, true);
     sock_.close();
@@ -1604,7 +1605,8 @@ void Server::simulate() {
             if (!p.cmdQueue.empty()) { p.lastCmdSeq = p.cmdQueue.back().seq; p.yaw = p.cmdQueue.back().yaw; p.pitch = p.cmdQueue.back().pitch; }
             p.cmdQueue.clear();
         }
-        if (editDirty_ && !tempEdit_ && time() >= nextAutosave_) autosave();
+        pollAutosave();
+        if (editDirty_ && !tempEdit_ && time() >= nextAutosave_ && !autosaveRunning()) startAutosave();
         tickVote();   // (votes still time out: "play it" passes unless someone said no)
         return;
     }
@@ -2641,24 +2643,86 @@ bool Server::applyEdit(int from, const std::string& op) {
     return true;
 }
 
-bool Server::autosave() {
-    if (!validMapName(cfg_.map)) return false;
-    const std::string& text = map_.sourceText();
-    // Never write a file that wouldn't load again. (Checked here, not per edit: parsing Midtown takes ~100 ms, and
-    // edit sessions autosave at most every 5 s.)
+// What both kinds of save do with the text: check it loads, back up the file as it was before this edit session (the
+// first save: maps/<name>.qmap.bak), write it. (Checked here, not per edit: edit sessions save at most every 5 s.)
+static bool saveEditedMap(const std::string& path, const std::string& text, bool backup, std::string* err) {
     Map check;
-    std::string err;
-    if (!check.parse(text, &err)) { log("autosave skipped, the edited map wouldn't load: " + err); nextAutosave_ = time() + 5; return false; }
-    std::string path = userMapsDir() + "/" + cfg_.map + ".qmap";
-    if (!autosaveBackedUp_) {   // the file as it was before this edit session: maps/<name>.qmap.bak
+    std::string perr;
+    if (!check.parse(text, &perr)) { *err = "autosave skipped, the edited map wouldn't load: " + perr; return false; }
+    if (backup) {
         std::error_code ec;
         std::filesystem::copy_file(path, path + ".bak", std::filesystem::copy_options::overwrite_existing, ec);
-        autosaveBackedUp_ = true;
     }
-    if (!saveMapFile(path, text)) { log("autosave failed: maps/" + cfg_.map + ".qmap"); return false; }
-    editDirty_ = false;
-    nextAutosave_ = time() + 5;
+    if (!saveMapFile(path, text)) { *err = "autosave failed: " + path; return false; }
     return true;
+}
+
+bool Server::autosave() {
+    waitAutosave();
+    pollAutosave();   // (a background save that just finished: its result first)
+    if (!validMapName(cfg_.map)) return false;
+    std::string path = userMapsDir() + "/" + cfg_.map + ".qmap", err;
+    bool backup = !autosaveBackedUp_;
+    autosaveBackedUp_ = true;
+    bool ok = saveEditedMap(path, map_.sourceText(), backup, &err);
+    nextAutosave_ = time() + 5;
+    if (!ok) { log(err); return false; }
+    editDirty_ = false;
+    return true;
+}
+
+void Server::startAutosave() {
+    if (!validMapName(cfg_.map)) return;
+    std::shared_ptr<AutosaveJob> job = autosaveJob_;
+    {
+        std::lock_guard<std::mutex> l(job->mu);
+        if (job->running) return;
+        job->running = true;
+        job->finished = false;
+        job->map = map_;   // (warm: the buffer's vectors are reused)
+        job->crc = map_.crc;
+        job->path = userMapsDir() + "/" + cfg_.map + ".qmap";
+        job->backedUp = !autosaveBackedUp_;
+        job->text.clear(); job->err.clear();
+    }
+    autosaveBackedUp_ = true;
+    nextAutosave_ = time() + 5;
+    std::thread([job] {
+        std::string text, err;
+        bool ok = false;
+        try {
+            text = job->map.serialize();
+            ok = saveEditedMap(job->path, text, job->backedUp, &err);
+        } catch (const std::exception& e) { err = std::string("autosave failed: ") + e.what(); }
+        std::lock_guard<std::mutex> l(job->mu);
+        job->text = std::move(text);
+        job->err = std::move(err);
+        job->ok = ok;
+        job->running = false;
+        job->finished = true;
+        job->cv.notify_all();
+    }).detach();
+}
+
+void Server::pollAutosave() {
+    AutosaveJob& job = *autosaveJob_;
+    std::unique_lock<std::mutex> l(job.mu, std::try_to_lock);
+    if (!l.owns_lock() || !job.finished) return;
+    job.finished = false;
+    if (!job.ok) log(job.err);
+    else if (job.crc == map_.crc) {   // nothing edited since it started: saved, and the text is the map's (downloads use it)
+        editDirty_ = false;
+        map_.source.swap(job.text);
+        map_.sourceStale = false;
+        map_.sourceCrcKnown = false;
+    }   // (else edited meanwhile: still dirty, the next save is in 5 s)
+    job.text.clear(); job.err.clear();
+}
+
+void Server::waitAutosave() {
+    AutosaveJob& job = *autosaveJob_;
+    std::unique_lock<std::mutex> l(job.mu);
+    job.cv.wait(l, [&] { return !job.running; });
 }
 
 // Who placed where in the match that just ended, for ranked: team modes rank the two sides (winner 0,

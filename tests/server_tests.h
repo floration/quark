@@ -577,6 +577,55 @@ static void testVisibilitySpread(uint16_t port) {
     s.stop();
 }
 
+// The edit session's autosave ran on the tick: serializing Midtown (~10 ms) and parse-checking it (~2.5 ms) every
+// 5 s while edited. Now the tick only copies the map; the rest runs in the background, and a save that an edit
+// overtook leaves the session dirty for the next one.
+static void testAutosaveOffTick(uint16_t port) {
+    printf("edit session autosave off the tick\n");
+    Map base;
+    CHECK(base.load("midtown"));
+    char tag[16];
+    snprintf(tag, sizeof tag, "%u", (unsigned)qrand());
+    std::string name = std::string("zz_autosave") + tag, path = userMapsDir() + "/" + name + ".qmap";
+    CHECK(saveMapFile(path, base.serialize()));
+    Server s;
+    ServerConfig cfg;
+    cfg.map = name; cfg.mode = MODE_FFA; cfg.port = port; cfg.editMode = true;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; std::remove(path.c_str()); return; }
+    auto fileText = [&] { std::ifstream f(path, std::ios::binary); std::stringstream ss; ss << f.rdbuf(); return ss.str(); };
+    // the old way, for the record: serialize + check + write on the calling thread
+    CHECK(s.applyEdit(-1, "t Edited 1"));
+    double c0 = threadCpu();
+    CHECK(s.autosave());
+    double syncMs = (threadCpu() - c0) * 1000;
+    // an edit overtakes a background save: still dirty after it
+    CHECK(s.applyEdit(-1, "t Edited 2"));
+    c0 = threadCpu();
+    s.startAutosave();
+    double startMs = (threadCpu() - c0) * 1000;
+    CHECK(s.applyEdit(-1, "t Edited 3"));
+    s.waitAutosave();
+    s.pollAutosave();
+    CHECK(s.editDirty_);
+    // the next one: saved, clean, and the saved text is the map's (a download doesn't serialize it again)
+    c0 = threadCpu();
+    s.startAutosave();
+    double start2Ms = (threadCpu() - c0) * 1000;
+    s.waitAutosave();
+    s.pollAutosave();
+    CHECK(!s.editDirty_ && !s.map_.sourceStale);
+    std::string disk = fileText();
+    CHECK(disk == s.map_.serialize());
+    Map back;
+    CHECK(back.parse(disk) && back.title == "Edited 3");
+    printf("  midtown: a save on the calling thread %.1f ms CPU; starting a background one %.2f / %.2f ms\n", syncMs, startMs, start2Ms);
+    CHECK(startMs < 3.0 && start2Ms < 3.0);
+    s.stop();
+    std::remove(path.c_str());
+    std::remove((path + ".bak").c_str());
+}
+
 static void serverTests() {
     testVersionReject(TP(28800));
     testSeedFetchDedupe();
@@ -592,4 +641,5 @@ static void serverTests() {
         CHECK(r.allocsPerSend == 0);
     }
     testVisibilitySpread(TP(28806));
+    testAutosaveOffTick(TP(28807));
 }

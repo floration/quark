@@ -9,6 +9,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <condition_variable>
 #include <string>
 #include <thread>
 #include <vector>
@@ -401,7 +402,25 @@ public:
     double localIpsAt_ = -1e9;
     void handleMasterReply(const std::string& key, const std::string& reply);
     bool applyEdit(int from, const std::string& op);
+    // Saves the edited map now, on this thread (stop, "editmode saveas / off": they need the answer), after any
+    // background save still running. The periodic autosave runs in the background instead (startAutosave).
     bool autosave();
+    // Edit-session autosave off the tick thread: the tick only copies the map into a buffer kept warm between saves
+    // (~0.03 ms on Midtown); serializing (~10 ms) and the parse check (~2.5 ms) run on a detached thread, and the
+    // tick picks up the result (and the text, for map downloads, if nothing was edited meanwhile).
+    struct AutosaveJob {
+        std::mutex mu;
+        std::condition_variable cv;
+        bool running = false, finished = false, ok = false, backedUp = false;
+        Map map;                // the map as it was when the save started (its vectors keep their capacity)
+        std::string path, text, err;
+        uint32_t crc = 0;
+    };
+    std::shared_ptr<AutosaveJob> autosaveJob_ = std::make_shared<AutosaveJob>();
+    void startAutosave();
+    void pollAutosave();        // a finished background save: its result
+    void waitAutosave();        // until no background save is running
+    bool autosaveRunning() { std::lock_guard<std::mutex> l(autosaveJob_->mu); return autosaveJob_->running; }
     // map edits: this tick's time spent on them, and whether some player is too far behind on reliable events
     uint32_t editTick_ = 0;
     double editSpentMs_ = 0;
