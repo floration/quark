@@ -1580,6 +1580,11 @@ for (x0, z0, x1, z1) in ((-P, -P, P, -P + 0.3), (-P, P - 0.3, P, P), (-P, -P, -P
 m.light(0, 4, 0, 14, 0.5, fixture=False)
 for (x, z) in ((-P - W / 2, 0), (P + W / 2, 0), (0, -P - W / 2), (0, P + W / 2)):
     m.light(x, -0.6, z, 12, 0.9, fixture=False)                                # the moat glows up at the walls
+# the fight stays on the platform: a running jump clears the 4.5 m moat (a dash-jump 13 m), so an invisible wall
+# stands at its far edge, up out of reach (the ring path beyond is scenery)
+E = P + W
+for (x0, z0, x1, z1) in ((-E - 0.6, -E - 0.6, E + 0.6, -E), (-E - 0.6, E, E + 0.6, E + 0.6), (-E - 0.6, -E, -E, E), (E, -E, E + 0.6, E)):
+    m.box(x0, -4, z0, x1, 80, z1, mat="clip")
 # outside the moat only: pillars, lanterns, shrines on the ring path
 R = P + W + 0.5
 for t in (-14, -7, 0, 7, 14):
