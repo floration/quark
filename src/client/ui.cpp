@@ -84,11 +84,14 @@ bool Ui::textField(int id, float x, float y, float w, float h, std::string& valu
 
 float Ui::caretWidth() const { return std::max(1.0f, std::round(textScale_ * 0.6f)); }
 
-// Blinking text caret (a bar the height of the text) at x.
-void Ui::caret(float x, float y) {
+// The one text caret (menus' fields, sliders, chat and the console): a blinking white bar the height of the text,
+// just right of x, with a dark 1 px outline so it reads over the world too. ts <= 0: the UI's text scale.
+void Ui::caret(float x, float y, float ts) {
     if (std::fmod(timeNow(), 1.0) >= 0.5 && !steadyCaret) return;
-    float h = r_->textHeight(textScale_), w = caretWidth();
-    r_->rect(x + scale_, y - h * 0.05f, w, h * 1.05f, {1, 1, 1, 1});
+    if (ts <= 0) ts = textScale_;
+    float h = r_->textHeight(ts), w = std::max(1.0f, std::round(ts * 0.6f)), bx = x + scale_;
+    r_->rect(bx - 1, y - h * 0.05f - 1, w + 2, h * 1.05f + 2, {0, 0, 0, 0.8f});
+    r_->rect(bx, y - h * 0.05f, w, h * 1.05f, {1, 1, 1, 1});
 }
 
 bool Ui::cycle(float x, float y, float w, float h, const std::string& label, int& index, int count,

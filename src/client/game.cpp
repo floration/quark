@@ -2444,10 +2444,7 @@ void Game::chatEdit(size_t maxLen, bool console) {
 
 // The blinking caret: a thin bar after `before` (the text left of it, drawn from x).
 void Game::drawCaret(float x, float y, float ts, bool mono, const std::string& before) {
-    if (std::fmod(time_, 1.0) >= 0.5 && opts_.screenshot.empty()) return; // (screenshots: always shown)
-    float cx = x + (mono ? r_.textWidthMono(before, ts) : r_.textWidth(before, ts)), h = r_.textHeight(ts), w = std::max(1.0f, std::round(ts * 0.6f));
-    r_.rect(cx, y - h * 0.05f, w + 2, h * 1.05f + 2, {0, 0, 0, 0.8f});
-    r_.rect(cx + 1, y - h * 0.05f + 1, w, h * 1.05f, kWhite);
+    ui_.caret(x + (mono ? r_.textWidthMono(before, ts) : r_.textWidth(before, ts)), y, ts);   // (screenshots: steady)
 }
 
 // The chat lines (all recent history while typing) and the SAY: / console input. In game and while editing together.

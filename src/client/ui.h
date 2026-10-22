@@ -19,7 +19,7 @@ public:
     float s() const { return scale_; }           // layout scale (1.0 at 720p)
     float textScale() const { return textScale_; }
     float caretWidth() const;
-    void caret(float x, float y); // blinking text caret at x (text top y), in the current text scale
+    void caret(float x, float y, float ts = 0); // blinking text caret after x (text top y), at text scale ts (0: the UI's)
 
     void panel(float x, float y, float w, float h, float alpha = 0.75f);
     void label(float x, float y, const std::string& t, const Color& c = {1, 1, 1, 1}, float sizeMul = 1.0f);
