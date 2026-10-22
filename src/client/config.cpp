@@ -88,6 +88,7 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "ch_color") chColor = parseColor(v, chColor);
         else if (k == "last_address") lastAddress = v;
         else if (k == "host_name") hostName = v;
+        else if (k == "host_prober") hostProber = v;
         else if (k == "host_map") hostMap = v;
         else if (k == "host_mode") hostMode = iv;
         else if (k == "host_port") hostPort = iv;
@@ -147,7 +148,7 @@ std::string Settings::toText() const {
       << "\ncolor_friendly=" << colorHex(colorFriendly) << "\ncolor_enemy=" << colorHex(colorEnemy)
       << "\nch_style=" << chStyle << "\nch_length=" << chLength << "\nch_thickness=" << chThickness << "\nch_gap=" << chGap
       << "\nch_outline=" << chOutline << "\nch_team_color=" << chTeamColor << "\nch_color=" << colorHex(chColor)
-      << "\nlast_address=" << lastAddress << "\nhost_name=" << hostName << "\nhost_map=" << hostMap
+      << "\nlast_address=" << lastAddress << "\nhost_name=" << hostName << "\nhost_prober=" << hostProber << "\nhost_map=" << hostMap
       << "\nhost_mode=" << hostMode << "\nhost_port=" << hostPort << "\nhost_max=" << hostMaxPlayers
       << "\nhost_upnp=" << hostUpnp << "\nhost_balance_bots=" << hostBalanceBots << "\nhost_log=" << hostLog << "\nhost_duel_size=" << hostDuelSize << "\nhost_public=" << hostPublic << "\nhost_ranked=" << hostRanked << "\nhost_custom=" << hostCustom << "\nhost_variant=" << hostArenaVariant << "\nbot_variant=" << botArenaVariant << "\nbot_skill=" << botSkill
       << "\nbot_enemies=" << botEnemies << "\nbot_allies=" << botAllies << "\nbot_mode=" << botMode << "\n";

@@ -22,6 +22,7 @@ namespace {
 const Color kWhite = {1, 1, 1, 1};
 const Color kGrey = {0.7f, 0.72f, 0.75f, 1};
 const Color kRed = {1, 0.35f, 0.3f, 1};
+const Color kGreenOk = {0.35f, 0.9f, 0.45f, 1};
 
 struct Palette { const char* name; Vec3 friendly, enemy; };
 const Palette kPalettes[] = {
@@ -123,6 +124,7 @@ void Game::startHost(bool vsBots) {
     if (sc.port == 0) sc.port = kDefaultPort;
     sc.maxPlayers = cfg_.hostMaxPlayers;
     sc.upnp = cfg_.hostUpnp;
+    sc.probe = true; sc.prober = cfg_.hostProber;   // tell the host whether friends can actually reach the port
     sc.balanceBots = cfg_.hostBalanceBots;
     sc.logLevel = cfg_.hostLog;
     sc.duelTeamSize = cfg_.hostDuelSize;
@@ -182,6 +184,7 @@ void Game::startHost(bool vsBots) {
             sc.port = (uint16_t)atoi(hostPortStr_.c_str());
             if (sc.port == 0) sc.port = kDefaultPort;
             sc.upnp = cfg_.hostUpnp;
+            sc.probe = true; sc.prober = cfg_.hostProber;
             sc.publicList = cfg_.hostPublic;
             sc.maxPlayers = cfg_.hostMaxPlayers;
         } else {
@@ -2090,10 +2093,16 @@ void Game::drawHud() {
     if (host_ && paused_ && !tallMenu) {
         // under the top panel, clear of the pause menu
         std::string st = "HOSTING ON UDP PORT " + std::to_string(host_->port());
-        ui_.labelCentered(cx, 100 * s, st, kGrey, 0.6f);
-        if (host_->config().upnp && host_->upnpStatus().size()) ui_.labelCentered(cx, 114 * s, upper(host_->upnpStatus()), kGrey, 0.6f);
+        ui_.labelCentered(cx, 84 * s, st, kGrey, 0.6f);
+        if (host_->config().upnp && host_->upnpStatus().size())
+            ui_.labelCentered(cx, 96 * s, upper(host_->upnpStatus()), !host_->upnpDone() ? kGrey : host_->upnpOk() ? kGreenOk : kRed, 0.6f);
         std::string ls = upper(host_->listStatus());
-        if (!ls.empty()) ui_.labelCentered(cx, 128 * s, ls, kGrey, 0.6f);
+        if (!ls.empty()) ui_.labelCentered(cx, 108 * s, ls, kGrey, 0.6f);
+        Server::Reach rc = host_->reachability();
+        if (rc != Server::REACH_OFF) {   // can friends actually get in? (a public server sent a packet to our port)
+            ui_.labelCentered(cx, 121 * s, upper(host_->reachStatus()), rc == Server::REACH_OK ? kGreenOk : rc == Server::REACH_BLOCKED ? kRed : kGrey, 0.6f);
+            if (rc != Server::REACH_CHECKING && ui_.button(cx - 50 * s, 131 * s, 100 * s, 16 * s, "CHECK AGAIN")) host_->recheckReachability();
+        }
     }
 
     showScores_ = isDown(A_SCORES) || ms.phase == PHASE_MATCH_END;
@@ -3381,7 +3390,7 @@ void Game::drawMenu() {
             y += bh + gap;
             ui_.label(lx, y, "FRIENDS JOIN WITH YOUR PUBLIC IP:" + hostPortStr_, kGrey, 0.5f);
             y += 14 * s;
-            ui_.label(lx, y, "IF UPNP FAILS, FORWARD THAT UDP PORT ON YOUR ROUTER", kGrey, 0.5f);
+            ui_.label(lx, y, "IN GAME, ESC SHOWS IF THE PORT IS REACHABLE (GREEN) OR NOT (RED)", kGrey, 0.5f);
             y += 26 * s;
             if (ui_.button(lx, y, lw * 0.5f - 5 * s, bh, "START")) startHost();
             if (ui_.button(lx + lw * 0.5f + 5 * s, y, lw * 0.5f - 5 * s, bh, "BACK")) { cfg_.save(); setScreen(Screen::Main); }

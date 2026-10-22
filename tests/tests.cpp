@@ -2787,6 +2787,61 @@ static void testUserData() {
     CHECK(std::find(ml.begin(), ml.end(), "temple") != ml.end());
 }
 
+// Reachability probe: a host asks a prober (any server) to send one packet to its game port from outside.
+static void testReachProbe(uint16_t port) {
+    printf("reachability probe: reachable, unreachable, prober hardening\n");
+    Server prober;
+    ServerConfig pc; pc.map = "bastion"; pc.port = port;
+    prober.setLog([](const std::string&) {});
+    { std::string e_; if (!prober.start(pc, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    auto run = [&](Server& h, double secs) { double t = timeNow() + secs; while (timeNow() < t) { prober.frame(); h.frame(); sleepMs(1); } };
+    {   // reachable: the reply lands on the host's game socket
+        Server h; ServerConfig hc; hc.map = "bastion"; hc.port = port + 1; hc.probe = true; hc.prober = "127.0.0.1:" + std::to_string(port);
+        h.setLog([](const std::string&) {});
+        CHECK(h.start(hc));
+        CHECK(h.reachability() == Server::REACH_CHECKING);
+        for (int i = 0; i < 400 && h.reachability() != Server::REACH_OK; i++) run(h, 0.02);
+        CHECK(h.reachability() == Server::REACH_OK);
+        CHECK(prober.playerCount() == 0 && h.playerCount() == 0);   // no player state anywhere
+        h.stop();
+    }
+    {   // unreachable: the prober answers a port nobody listens on (as an unforwarded port would swallow it)
+        Server h; ServerConfig hc; hc.map = "bastion"; hc.port = port + 2; hc.probe = true; hc.prober = "127.0.0.1:" + std::to_string(port);
+        hc.probeAskPort = port + 3;
+        h.setLog([](const std::string&) {});
+        CHECK(h.start(hc));
+        for (int i = 0; i < 400 && h.reachability() == Server::REACH_CHECKING; i++) run(h, 0.02);
+        CHECK(h.reachability() == Server::REACH_BLOCKED);
+        CHECK(h.reachStatus().find("forward UDP " + std::to_string(port + 3)) != std::string::npos);
+        h.stop();
+    }
+    {   // prober hardening: replies only to the request's own source IP, never bigger than the request, rate limited
+        UdpSocket target; CHECK(target.open(port + 4));
+        auto req = [&](int len, uint32_t nonce) {
+            std::vector<uint8_t> b(kProbeRequestBytes, 0);
+            Writer w(b.data(), b.size()); writeHeader(w, PKT_PROBE_REQUEST); w.u32(nonce); w.u16((uint16_t)(port + 4));
+            b.resize(len); return b;
+        };
+        auto got = [&](uint32_t want) { uint8_t buf[256]; NetAddr f; int n, hits = 0; prober.frame();
+            for (int k = 0; k < 50; k++) { while ((n = target.recv(f, buf, sizeof buf)) > 0) { CHECK(n <= kProbeRequestBytes);
+                Reader r(buf, n); r.u32(); r.u8(); if (r.u32() == want) hits++; } sleepMs(2); } return hits; };
+        auto spoofed = req(kProbeRequestBytes, 111);   // a request "from" another host: the reply goes there, not to us
+        prober.handlePacket(NetAddr{0x0A0B0C0Du, 5555}, spoofed.data(), (int)spoofed.size());
+        CHECK(got(111) == 0);
+        auto shortReq = req(kProbeRequestBytes - 1, 222);   // unpadded: ignored
+        prober.handlePacket(NetAddr{0x7F000001u, 5555}, shortReq.data(), (int)shortReq.size());
+        CHECK(got(222) == 0);
+        auto ok = req(kProbeRequestBytes, 333);
+        prober.handlePacket(NetAddr{0x7F000001u, 5555}, ok.data(), (int)ok.size());
+        CHECK(got(333) == 1);
+        auto again = req(kProbeRequestBytes, 444);     // same source right away: rate limited
+        prober.handlePacket(NetAddr{0x7F000001u, 5555}, again.data(), (int)again.size());
+        CHECK(got(444) == 0);
+    }
+    CHECK(prober.playerCount() == 0);
+    prober.stop();
+}
+
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
     { // never touch the real per-user folder: a fresh temp one per run, removed at exit by this (not a forked) process
@@ -2877,7 +2932,7 @@ int main(int argc, char** argv) {
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
-        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testHandshake(TP(28592)); }},
+        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testHandshake(TP(28592)); testReachProbe(TP(28593)); }},
         {"edit", [] { testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
         {"ranked", [] { testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); }},
     };
