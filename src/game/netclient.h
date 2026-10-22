@@ -47,6 +47,8 @@ public:
     // Prediction
     const MoveState& predicted() const { return pred_; }
     uint32_t nextSeq() const { return nextSeq_; } // seq the next tick()'s command will get
+    static constexpr uint32_t kCmdRing = 256;      // commands (and predicted states) kept for replay
+    uint32_t lastReplayCount() const { return lastReplay_; } // commands the last reconcile re-ran (0 = prediction matched)
     Vec3 smoothedPos(float alpha) const; // predicted position interpolated between ticks + error smoothing
     bool selfAlive() const;
     int selfHealth() const { return hasSnapshot() ? latest().selfHealth : 0; }
@@ -149,11 +151,13 @@ private:
     bool clockInit_ = false;
     float renderTime_ = 0;        // server time (s) used for interpolating others
 
-    UserCmd cmds_[256];
+    UserCmd cmds_[kCmdRing];
     uint32_t nextSeq_ = 1;
     MoveState pred_, predPrev_;
-    MoveState predicted_[256];        // our predicted state after each command
-    uint32_t predictedSeq_[256] = {};
+    MoveState predicted_[kCmdRing];        // our predicted state after each command
+    uint32_t predictedSeq_[kCmdRing] = {};
+    uint32_t lastReplay_ = 0;
+    void resetPrediction();             // new connection or demo: none of the old commands apply
     uint32_t lossExpected_ = 0, lossReceived_ = 0;
     uint8_t lossPct_ = 0;
     int lossOverride_ = -1;

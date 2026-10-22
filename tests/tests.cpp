@@ -1998,6 +1998,74 @@ static void testSnapshotBounds() {
     CHECK(!parseBracket("1\n1\n1\n1\n1\n1\n1\n1\n1\n@0,0", rounds, round, match) && rounds.empty());
 }
 
+// A scripted server on a UDP socket for hostile-server tests: it answers the client's connect, then sends
+// whatever the test builds. The client has to survive anything a server says.
+struct FakeServer {
+    UdpSocket sock;
+    NetAddr client;
+    uint32_t nonce = 0;
+    bool heard = false;
+    void poll() {   // the client's address and nonce, from its CONNECT
+        uint8_t buf[2048];
+        NetAddr from;
+        int n;
+        while ((n = sock.recv(from, buf, sizeof buf)) > 0) {
+            Reader r(buf, n);
+            if (r.u32() != kProtocolMagic || r.u8() != PKT_CONNECT) continue;
+            r.u16();
+            uint32_t nn = r.u32();
+            if (!r.bad()) { nonce = nn; client = from; heard = true; }
+        }
+    }
+    void accept(const std::string& map, uint32_t crc, int id = 0) {
+        uint8_t out[512];
+        Writer w(out, sizeof out);
+        writeHeader(w, PKT_ACCEPT); w.u32(nonce); w.u8((uint8_t)id); w.str(map); w.u32(crc); w.u8(MODE_FFA);
+        sock.send(client, out, w.size());
+    }
+    void snapshot(Snapshot s) {
+        std::vector<uint8_t> b(4096);
+        Writer w(b.data(), (int)b.size());
+        writeHeader(w, PKT_SNAPSHOT); w.u32(nonce);
+        writeSnapshotClient(w, s); writeSnapshotWorld(w, s, nullptr); writeSnapshotEvents(w, s.events);
+        sock.send(client, b.data(), w.size());
+    }
+    // pump the client (and listen) until done() or about a second of real time
+    template <class F> bool until(NetClient& c, F done) {
+        for (int i = 0; i < 1000 && !done(); i++) { c.poll(); poll(); sleepMs(1); }
+        return done();
+    }
+};
+
+// Prediction replays only what's still in the command ring: a snapshot acking a command far behind (a server or a
+// demo can say anything) cost one loop iteration per sequence number since (REVIEW CLI-5).
+static void testReplayBound(uint16_t port) {
+    printf("prediction replay is bounded by the command ring\n");
+    FakeServer f;
+    CHECK(f.sock.open(port));
+    NetClient c;
+    c.connect("127.0.0.1:" + std::to_string(port), "x");
+    CHECK(f.until(c, [&] { return f.heard; }));
+    Map m;
+    CHECK(m.load("bastion"));
+    f.accept("bastion", m.crc);
+    CHECK(f.until(c, [&] { return c.mapReady(); }));
+    Snapshot s;
+    s.tick = 1; s.timeMs = 1000; s.tickRate = 1000; s.snapRate = 500; s.clientId = 0;
+    PlayerSnap me; me.id = 0; me.flags = PS_ALIVE; s.players.push_back(me);
+    s.self.pos = m.spawns[0].pos;
+    f.snapshot(s);
+    CHECK(f.until(c, [&] { return c.hasSnapshot(); }));
+    for (int i = 0; i < 3000; i++) { UserCmd cmd; cmd.forward = 127; c.tick(cmd); }
+    s.tick = 2; s.timeMs = 1002; s.ackCmdSeq = 1; s.self.pos.y += 5;   // a mismatch: replay from command 2
+    f.snapshot(s);
+    CHECK(f.until(c, [&] { return c.hasSnapshot() && c.latest().tick == 2; }));
+    printf("  replayed %u commands for an ack %u behind\n", c.lastReplayCount(), c.nextSeq() - 1 - s.ackCmdSeq);
+    CHECK(c.lastReplayCount() > 0 && c.lastReplayCount() <= NetClient::kCmdRing);
+    c.disconnect();
+    CHECK(c.nextSeq() == 1);   // a new connection or a demo starts with no old commands
+}
+
 // A demo record's length near 2^32 made `13 + n` wrap to 0 and startPlayback scan forever (REVIEW CLI-4).
 static void testDemoLengthWrap() {
     printf("demo: record lengths can't wrap\n");
@@ -2479,7 +2547,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(29610); testRankedVoteAndRestart(29620); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(29600); testEditSession(29601); testVotedEdit(29602); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
-    if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemoLengthWrap(); testDemo(29603); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(29604); testDemo(29603); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(29960); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(29950); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(29900); return g_fail ? 1 : 0; }
@@ -2508,7 +2576,7 @@ int main(int argc, char** argv) {
         {"modes", [] { testCustomMode(28570); testPoints(28571); testSyringe(28572); testCartChecks(28573); testItModes(28574); }},
         {"race", [] { testTimeTrial(28580); testPayloadPush(28581); testPacketLoss(28582); testCartDash(28583); testSemiAuto(28584); }},
         {"votes", [] { testRejoin(28590); testMapVote(28591); }},
-        {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testMapDownload(28600); testEditSession(28601); testVotedEdit(28602); testDemo(28603); }},
+        {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(28604); testMapDownload(28600); testEditSession(28601); testVotedEdit(28602); testDemo(28603); }},
         {"ranked", [] { testFilledParse(); testRanked(28610); testRankedVoteAndRestart(28620); testInternetList(28625); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
