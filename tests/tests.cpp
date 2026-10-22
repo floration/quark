@@ -3260,7 +3260,7 @@ static void testHelloRetry() {
     {
         RankService rs;
         rs.hello(k);
-        // (the retry comes 10 s of game time later; real time here: a loaded CI box can be slow to start curl)
+        // (the retry comes 10 s later, real time: RankService delays are real seconds; a loaded CI box can be slow to start curl)
         auto end = std::chrono::steady_clock::now() + std::chrono::seconds(90);
         while (std::chrono::steady_clock::now() < end && !rs.helloDone()) sleepMs(20);
         if (!rs.helloDone() || requests != 2) printf("  hello: done %d after %d requests\n", (int)rs.helloDone(), requests.load());

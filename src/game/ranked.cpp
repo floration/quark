@@ -1,5 +1,6 @@
 #include "ranked.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -310,7 +311,13 @@ std::string buildRaceRunForm(const std::string& ticket, const std::string& map, 
            (nh.empty() ? "" : "&name=" + nh);
 }
 
-void RankService::fetchRaceBoard(const std::string& map, double delay) { Job j{timeNow() + delay, false, "", "race:" + map, {}}; j.board = true; push(j); }
+// RankService schedules on real time (the steady clock), not the game clock: its delays (the re-fetches after a
+// report, hello's retry backoff, a delayed race board) are waits on the network and the Worker, and the thread sleeps
+// them on a condition variable, which is real time. On timeNow() a sped-up game clock (the tests run it 4x) made a
+// job due early whenever another job woke the thread, and late otherwise.
+static double rankClock() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+
+void RankService::fetchRaceBoard(const std::string& map, double delay) { Job j{rankClock() + delay, false, "", "race:" + map, {}}; j.board = true; push(j); }
 
 int Rating::display() const { return (int)std::lround(std::max(0.0, mu - 3 * sigma) * 40); }
 
@@ -330,7 +337,7 @@ void RankService::push(Job j) {
 }
 
 void RankService::submit(const std::string& body, const std::string& ladder, const std::vector<std::string>& players) {
-    double now = timeNow();
+    double now = rankClock();
     push({now, true, body, ladder, players});
     for (double d : {4.0, 15.0, 45.0}) push({now + d, false, "", ladder, players}); // others' reports may finish it later
 }
@@ -342,7 +349,7 @@ void RankService::fetch(const std::string& ladder, const std::vector<std::string
     if (ids.empty()) return;
     {
         std::lock_guard<std::mutex> l(mu_);
-        double now = timeNow();
+        double now = rankClock();
         for (auto& j : jobs_) {
             if (j.report || j.board || !j.rawKey.empty() || j.ladder != ladder || j.due > now) continue;
             for (auto& id : ids)
@@ -353,7 +360,7 @@ void RankService::fetch(const std::string& ladder, const std::vector<std::string
     }
     std::vector<std::string> mine;
     for (auto& id : ids) if (mine.size() < kMaxLookupIds && std::find(mine.begin(), mine.end(), id) == mine.end()) mine.push_back(id);
-    push({timeNow(), false, "", ladder, mine});
+    push({rankClock(), false, "", ladder, mine});
 }
 
 size_t RankService::pendingJobs() {
@@ -361,7 +368,7 @@ size_t RankService::pendingJobs() {
     return jobs_.size();
 }
 
-void RankService::fetchLeaderboard(const std::string& ladder) { Job j{timeNow(), false, "", ladder, {}}; j.board = true; push(j); }
+void RankService::fetchLeaderboard(const std::string& ladder) { Job j{rankClock(), false, "", ladder, {}}; j.board = true; push(j); }
 
 bool RankService::leaderboard(const std::string& ladder, std::vector<LeaderRow>& out) {
     std::lock_guard<std::mutex> l(mu_);
@@ -388,7 +395,7 @@ std::vector<std::string> RankService::takeMessages() {
 
 void RankService::request(const std::string& key, const std::string& pathAndQuery, const std::string& body) {
     Job j;
-    j.due = timeNow();
+    j.due = rankClock();
     j.report = false;
     j.rawKey = key;
     j.path = pathAndQuery;
@@ -399,7 +406,7 @@ void RankService::request(const std::string& key, const std::string& pathAndQuer
 void RankService::hello(const RankKey& key) {
     if (key.secret.empty() || key.id.empty()) return;
     Job j;
-    j.due = timeNow();
+    j.due = rankClock();
     j.report = false;
     j.rawKey = "hello";
     j.path = "/hello";
@@ -424,7 +431,7 @@ void RankService::run() {
     while (!quit_) {
         auto next = std::min_element(jobs_.begin(), jobs_.end(), [](const Job& a, const Job& b) { return a.due < b.due; });
         if (next == jobs_.end()) { cv_.wait(l); continue; }
-        double wait = next->due - timeNow();
+        double wait = next->due - rankClock();
         if (wait > 0) { cv_.wait_for(l, std::chrono::milliseconds((int)(wait * 1000) + 1)); continue; }
         Job j = *next;
         jobs_.erase(next);
@@ -436,7 +443,7 @@ void RankService::run() {
             if (!j.expect.empty()) {   // (hello: until it took)
                 while (!out.empty() && (unsigned char)out.back() <= ' ') out.pop_back();
                 if (ok && out == j.expect) helloDone_ = true;
-                else if (!base.empty()) { j.tries++; j.due = timeNow() + helloRetryDelay(j.tries); jobs_.push_back(j); }
+                else if (!base.empty()) { j.tries++; j.due = rankClock() + helloRetryDelay(j.tries); jobs_.push_back(j); }
                 continue;
             }
             texts_[j.rawKey] = ok ? out : "!" + (base.empty() ? std::string("no server configured") : err);

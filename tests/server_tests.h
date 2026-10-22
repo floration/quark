@@ -59,6 +59,7 @@ struct SlowHttp {
     std::vector<std::thread> conns;  // one per connection (answered concurrently)
     std::mutex mu;
     std::vector<std::string> seen;   // the request lines
+    std::vector<std::chrono::steady_clock::time_point> seenAt;   // and when each arrived (real time)
     SlowHttp(int holdMs, std::string body) {
         ls = socket(AF_INET, SOCK_STREAM, 0);
         sockaddr_in a{};
@@ -78,7 +79,7 @@ struct SlowHttp {
                     char buf[4096];
                     while (req.find("\r\n\r\n") == std::string::npos) { ssize_t n = recv(c, buf, sizeof buf, 0); if (n <= 0) break; req.append(buf, (size_t)n); }
                     requests++;
-                    { std::lock_guard<std::mutex> l(mu); seen.push_back(req.substr(0, req.find("\r\n"))); }
+                    { std::lock_guard<std::mutex> l(mu); seen.push_back(req.substr(0, req.find("\r\n"))); seenAt.push_back(std::chrono::steady_clock::now()); }
                     for (int t = 0; t < holdMs / 10 && !quit; t++) sleepMs(10);
                     std::string resp = "HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
                     send(c, resp.data(), resp.size(), 0);
@@ -626,6 +627,39 @@ static void testAutosaveOffTick(uint16_t port) {
     std::remove((path + ".bak").c_str());
 }
 
+// RankService's delays are real seconds (REMAINING 6: they were game time, slept as real time): a race board asked
+// for 2 s from now goes out 2 s later on the wall clock, even with the tests' 4x game clock and another job waking
+// the thread in between (which made it go at once).
+static void testRankDelaysRealTime() {
+    printf("ranked service: delays in real time (game clock x%.0f)\n", kTestTimeScale);
+#ifndef _WIN32
+    SlowHttp http(0, "");
+    CHECK(http.ok());
+    if (!http.ok()) return;
+    setenv("QUARK_MASTER", http.url().c_str(), 1);
+    {
+        RankService rs;
+        auto t0 = std::chrono::steady_clock::now();
+        rs.fetchRaceBoard("viaduct", 2.0);
+        std::this_thread::sleep_for(std::chrono::milliseconds(400));
+        rs.fetch("vanilla", {std::string(32, 'd')});   // wakes the service's thread
+        double boardAt = -1;
+        auto end = t0 + std::chrono::seconds(8);
+        while (std::chrono::steady_clock::now() < end && boardAt < 0) {
+            {
+                std::lock_guard<std::mutex> l(http.mu);
+                for (size_t k = 0; k < http.seen.size(); k++)
+                    if (http.seen[k].find("/raceboard") != std::string::npos) boardAt = std::chrono::duration<double>(http.seenAt[k] - t0).count();
+            }
+            sleepMs(10);
+        }
+        printf("  a board due in 2 s went out after %.2f s\n", boardAt);
+        CHECK(boardAt >= 1.9 && boardAt < 3.5);
+    }
+    setenv("QUARK_MASTER", "off", 1);
+#endif
+}
+
 static void serverTests() {
     testVersionReject(TP(28800));
     testSeedFetchDedupe();
@@ -642,4 +676,5 @@ static void serverTests() {
     }
     testVisibilitySpread(TP(28806));
     testAutosaveOffTick(TP(28807));
+    testRankDelaysRealTime();
 }

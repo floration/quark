@@ -101,7 +101,8 @@ struct Rating {
     int display() const; // conservative skill (mu - 3 sigma) x 40, from 0
 };
 
-// Background HTTP for ranked: reports and rating lookups. All calls are non-blocking.
+// Background HTTP for ranked: reports and rating lookups. All calls are non-blocking. Delays (a race board asked for
+// later, the re-fetches after a report, hello's retries) are in real seconds, whatever the game clock's speed.
 class RankService {
 public:
     ~RankService();
