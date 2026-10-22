@@ -35,6 +35,22 @@ endif()
 
 find_package(Threads REQUIRED)
 
+# Update-package signatures (vendored Monocypher, docs/SIGNING.md): launcher, tests and the quark_sign tool.
+add_library(quark_crypto STATIC
+  src/common/sign.cpp
+  third_party/monocypher/monocypher.c
+  third_party/monocypher/monocypher-ed25519.c
+)
+target_include_directories(quark_crypto PUBLIC src)
+if(WIN32)
+  target_link_libraries(quark_crypto PUBLIC bcrypt)
+endif()
+add_executable(quark_sign tools/sign/main.cpp)
+target_link_libraries(quark_sign quark_crypto)
+if(MINGW)
+  target_link_options(quark_sign PRIVATE -static -static-libgcc -static-libstdc++)
+endif()
+
 # Shared engine/game code (no graphics)
 add_library(quark_core STATIC
   src/common/net.cpp
@@ -102,7 +118,7 @@ if(QUARK_TRACY)
   target_compile_definitions(quark_core PUBLIC QUARK_TRACY TRACY_ENABLE)
   target_link_libraries(quark_core PUBLIC ${CMAKE_DL_LIBS})
 endif()
-target_link_libraries(quark_core PUBLIC Threads::Threads)
+target_link_libraries(quark_core PUBLIC Threads::Threads quark_crypto)
 if(WIN32)
   target_link_libraries(quark_core PUBLIC ws2_32 winmm winhttp)
 endif()

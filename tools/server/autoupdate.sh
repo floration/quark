@@ -26,12 +26,23 @@ LISTED=$(echo "$ASSETS" | grep -o '"name": *"quark-[a-z0-9]*\.qpak"' | sed 's/.*
 for P in linux $NEEDS $LISTED; do
     case "$P" in windows|linux|macos) ;; *) continue ;; esac
     echo "$ASSETS" | grep -q "\"quark-$P.qpak\"" || exit 0
+    echo "$ASSETS" | grep -q "\"quark-$P.qpak.sig\"" || exit 0   # signed in the release job (docs/SIGNING.md)
 done
 echo "$ASSETS" | grep -q '"state": *"open"' && exit 0   # an asset is still uploading
 git checkout -q -- maps 2>/dev/null || true   # a server runs the shipped maps: drop stray local changes so the update applies
 git merge -q --ff-only "origin/$BRANCH"
 cmake -S . -B build-update -DQUARK_BUILD_CLIENT=OFF -DQUARK_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release >/dev/null
-nice cmake --build build-update -j1 >/dev/null
+nice cmake --build build-update -j1 --target quark_server quark_sign >/dev/null
+# Only install a version whose released Linux package is signed by the release key: a release whose assets
+# were swapped or tampered with is refused (and retried next minute, so a fixed release still goes through).
+SIGDIR=$(mktemp -d)
+trap 'rm -rf "$SIGDIR"' EXIT
+curl -sfL -o "$SIGDIR/quark-linux.qpak" "https://github.com/$REPO/releases/download/v$NEWVER/quark-linux.qpak"
+curl -sfL -o "$SIGDIR/quark-linux.qpak.sig" "https://github.com/$REPO/releases/download/v$NEWVER/quark-linux.qpak.sig"
+if ! build-update/quark_sign verify "$SIGDIR/quark-linux.qpak"; then
+    echo "refusing $NEWVER ($TARGET): quark-linux.qpak signature does not verify" >&2
+    exit 1
+fi
 mkdir -p bin
 cp build-update/quark_server bin/quark_server.new
 mv -f bin/quark_server.new bin/quark_server     # atomic: the running server keeps its old copy

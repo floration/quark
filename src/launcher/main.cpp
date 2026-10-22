@@ -21,6 +21,7 @@
 #include "../common/net.h"
 #include "install.h"
 #include "../common/proc.h"
+#include "../common/sign.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -263,7 +264,7 @@ bool launchGame(const fs::path& dir) {
 #endif
 }
 
-struct Release { std::string version, body, url; };
+struct Release { std::string version, body, url, sigUrl; }; // sigUrl: the qpak's Ed25519 signature (docs/SIGNING.md)
 
 struct State {
     std::mutex mu;
@@ -301,7 +302,9 @@ bool fetchReleases(State* st, std::string* err) {
             std::string u = jsonField(seg, "browser_download_url", p2, &a2);
             if (u.empty()) break;
             p2 = a2 + 1;
-            if (u.size() >= want.size() && u.compare(u.size() - want.size(), want.size(), want) == 0) { r.url = u; break; }
+            auto endsWith = [&](const std::string& w) { return u.size() >= w.size() && u.compare(u.size() - w.size(), w.size(), w) == 0; };
+            if (endsWith(want)) r.url = u;
+            else if (endsWith(want + ".sig")) r.sigUrl = u;
         }
         if (!r.url.empty() && isdigit((unsigned char)r.version[0])) list.push_back(r);
     }
@@ -324,6 +327,23 @@ void installRelease(std::shared_ptr<State> st, fs::path dir, Release r) {
         bool ok = httpGet(r.url, out, [&](uint64_t d, uint64_t t) { st->progress = t ? (float)d / t : -1.0f; }, &err);
         if (!ok) {
             setStatus("download failed: " + err);
+            st->busy = false;
+            return;
+        }
+    }
+    // Only install what the release key signed: a tampered or swapped package (or one without a signature,
+    // like releases from before signing) is refused before anything is extracted.
+    setStatus("verifying version " + r.version + "...");
+    st->progress = -1;
+    {
+        std::ostringstream sig;
+        if (r.sigUrl.empty()) err = "the release has no signature file";
+        else if (!httpGet(r.sigUrl, sig, nullptr, &err)) err = "could not download its signature (" + err + ")";
+        else if (!sign::verifyFile(tmp.string(), sig.str(), sign::kReleasePublicKey, &err)) err = "its signature does not verify";
+        else err.clear();
+        if (!err.empty()) {
+            fs::remove(tmp, ec);
+            setStatus("refused version " + r.version + ": " + err + " - the download may have been tampered with");
             st->busy = false;
             return;
         }
