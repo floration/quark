@@ -390,6 +390,7 @@ void Game::loadMenuBackdrop() {
 // input
 
 void Game::onChar(unsigned cp) {
+    if (swallowChar_) { swallowChar_ = false; return; }   // the character of the key press that opened the chat / console
     if (cp < 128) uiIn_.chars += (char)cp;
 }
 
@@ -490,7 +491,8 @@ bool Game::pressInput(int code) {
 
 void Game::onKey(int key, int action, int mods) {
     markInput();
-    if (action == GLFW_RELEASE) return;
+    if (action == GLFW_RELEASE) { if (key == textOpenKey_) textOpenKey_ = -1; return; }
+    if (action == GLFW_REPEAT && key == textOpenKey_) { swallowChar_ = true; return; }   // holding the key that opened the chat
     // Alt+Enter: borderless fullscreen <-> windowed (exclusive fullscreen counts as fullscreen)
     // (key repeats while held are swallowed too: they must not fall through as a plain Enter)
     if ((key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) && (mods & GLFW_MOD_ALT)) {
@@ -533,7 +535,7 @@ void Game::onKey(int key, int action, int mods) {
         }
         if (edOnline_ && action == GLFW_PRESS && !ui_.typing()) {   // ...and the chat key and the vote keys
             const Binds& eb = binds();
-            if (eb.has(A_CHAT, key)) { chatting_ = true; chatText_.clear(); uiIn_.chars.clear(); return; }
+            if (eb.has(A_CHAT, key)) { chatting_ = true; chatText_.clear(); openedTextBy(key); return; }
             if (eb.has(A_VOTEYES, key)) { net_.sendCommand("vote yes"); return; }
             if (eb.has(A_VOTENO, key)) { net_.sendCommand("vote no"); return; }
         }
@@ -546,14 +548,15 @@ void Game::onKey(int key, int action, int mods) {
     if (key == GLFW_KEY_ESCAPE && ui_.typing() && !chatting_) { uiIn_.escape = true; return; } // just stop typing, stay on the screen
     bool typing = chatting_ || ui_.typing();
     if (captureAction_ >= 0 || !typing) {
-        if (pressInput(key)) return;
+        bool wasChatting = chatting_;
+        if (pressInput(key)) { if (!wasChatting && chatting_) openedTextBy(key); return; }
     }
     if (screen_ == Screen::InGame && key == GLFW_KEY_GRAVE_ACCENT && (!chatting_ || console_)) { // the console: ` opens / closes
         console_ = !console_;
         chatting_ = console_;
         consoleWords_.clear();   // (setting names are re-listed when it opens)
         chatText_.clear();
-        uiIn_.chars.clear();
+        openedTextBy(key);
         captureMouse(!console_ && !paused_);
         return;
     }
@@ -983,6 +986,7 @@ void Game::frame(double dt) {
     QZONE("Game::frame");
     struct CpuTime { double t0 = timeNow(); double* out; ~CpuTime() { *out = timeNow() - t0; } } cpuTime{timeNow(), &lastCpu_}; // --bench: CPU part of the frame
     time_ += dt;
+    swallowChar_ = false;   // (a key that opened the chat and typed no character: don't eat a later one)
     if (screen_ == Screen::InGame && (!opts_.chatShot.empty() || !opts_.consoleShot.empty())) {
         bool con = !opts_.consoleShot.empty();
         chatting_ = true; console_ = con;

@@ -400,6 +400,11 @@ private:
     void consoleComplete();
     std::vector<std::string> consoleCandidates(const std::vector<std::string>& words) const;
     void chatSync();                       // caret to the end if chatText_ was replaced
+    // The key press that opened the chat / console (a bind: T, Y, `...) arrives as a character right after the key
+    // event (same event poll) and again on each key repeat: neither may be typed into the line it opened.
+    int textOpenKey_ = -1;                 // the key that opened it, until released (its repeats are swallowed)
+    bool swallowChar_ = false;             // drop the next character (this poll only: cleared each frame)
+    void openedTextBy(int key) { textOpenKey_ = key; swallowChar_ = true; uiIn_.chars.clear(); }
     bool chatCaretKey(int key);            // Left / Right / Home / End / Delete in the chat or console input
     void chatEdit(size_t maxLen, bool console); // typed characters + backspace at the caret
     void drawCaret(float x, float y, float ts, bool mono, const std::string& before);
