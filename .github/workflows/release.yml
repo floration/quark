@@ -21,7 +21,7 @@ jobs:
           T
           cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=mingw.cmake -DCMAKE_BUILD_TYPE=Release -DQUARK_BUILD_TESTS=OFF
           cmake --build build -j
-          mkdir -p pkg && cp build/quark.exe build/quark_server.exe pkg/ && cp -r maps pkg/
+          mkdir -p pkg && cp build/quark.exe build/quark_server.exe pkg/ && cp -r maps mods pkg/
           python3 tools/pack.py pkg quark-windows.qpak
           mkdir -p quark-windows && cp -r pkg/* build/quark_launcher.exe README.md quark-windows/
           zip -r quark-windows.zip quark-windows
@@ -37,7 +37,7 @@ jobs:
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build -j
           ./build/quark_tests
-          mkdir -p pkg && cp build/quark build/quark_server pkg/ && cp -r maps pkg/
+          mkdir -p pkg && cp build/quark build/quark_server pkg/ && cp -r maps mods pkg/
           python3 tools/pack.py pkg quark-linux.qpak
           mkdir -p quark-linux && cp -r pkg/* build/quark_launcher README.md quark-linux/
           tar czf quark-linux.tar.gz quark-linux
@@ -55,7 +55,7 @@ jobs:
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
           cmake --build build -j
           mkdir -p pkg && cp -r build/quark.app build/quark_server pkg/ && cp -r maps pkg/
-          mkdir -p pkg/quark.app/Contents/Resources && cp -r maps pkg/quark.app/Contents/Resources/
+          mkdir -p pkg/quark.app/Contents/Resources && cp -r maps mods pkg/quark.app/Contents/Resources/
           python3 tools/pack.py pkg quark-macos.qpak
           mkdir -p quark-macos && cp -r pkg/* build/quark_launcher README.md quark-macos/
           zip -ry quark-macos.zip quark-macos

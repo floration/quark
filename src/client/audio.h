@@ -65,6 +65,7 @@ private:
     struct Voice { int id, pack; float pos; float step; float gainL, gainR; bool spatial; Vec3 at; float volume; };
     void synthesize();
     void loadRecordedKits();
+    void loadModSounds();     // players' own sounds: <game folder>/mods/sounds/<kit or all>/<SOUND>.wav
     void loadAnnouncer(int set);
     int announcer_ = 0;
     std::atomic<int> pack_{0};
