@@ -8,6 +8,7 @@
 #include "../game/map.h"
 #include "gl.h"
 #include "lightmap.h"
+#include "models.h"
 
 struct DynVertex { float pos[3]; float normal[3]; float color[4]; float edge[4]; float outline[3]; }; // color.a = sun visibility; outline = edge colour (black unless set)
 struct FlatVertex { float pos[3]; float color[4]; };
@@ -39,6 +40,10 @@ public:
     void box(const Vec3& center, const Vec3& half, float yaw, const Vec3& color, float sunVis, bool castShadow = true, bool visible = true);
     void boxPitched(const Vec3& pivot, const Vec3& offset, const Vec3& half, float yaw, float pitch, const Vec3& color, float sunVis);
     void viewBox(const Vec3& offset, const Vec3& half, const Vec3& color); // camera-relative (viewmodel)
+    // an override model (models.h, docs/ASSETS.md) in place of a model's boxes: model space through xf, each vertex's
+    // colour times tint[its slot]; viewMesh: camera-relative like viewBox (offset, then uniform scale)
+    void mesh(const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, bool castShadow = true, bool visible = true);
+    void viewMesh(const ModelMesh& m, const Vec3& offset, float scale, const Vec3* tint);
     void overlayBox(const Vec3& center, const Vec3& half, const Vec3& color); // world space, drawn over everything (editor handles)
     Vec3 viewPoint(const Vec3& offset) const;  // where a camera-relative point (as viewBox takes) is in the world
     void translucentBox(const AABB& b, const Color& c);
@@ -77,6 +82,7 @@ private:
     unsigned compile(const char* vs, const char* fs, std::string* err);
     void addQuad(std::vector<DynVertex>& out, const Vec3* c, const Vec3& n, const Vec3& col, float sv);
     void emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& half, const Vec3& color, float sunVis);
+    void emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, bool translucent);
 public:
     Vec3 outlineColor;   // the edge colour for the boxes drawn while it's set (players' outline setting); black by default
 private:

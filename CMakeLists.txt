@@ -111,9 +111,11 @@ set(QUARK_GEN_MAPS "")
 foreach(n ${QUARK_GEN_MAP_NAMES})
   list(APPEND QUARK_GEN_MAPS ${QUARK_MAPS_DIR}/${n}.qmap)
 endforeach()
+# (the owner's map overrides, assets/overrides/maps/<name>.qmap, replace generated maps: docs/ASSETS.md)
+file(GLOB QUARK_MAP_OVERRIDES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/assets/overrides/maps/*.qmap)
 add_custom_command(OUTPUT ${QUARK_GEN_MAPS}
   COMMAND ${CMAKE_COMMAND} -E env PYTHONHASHSEED=0 ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/make_maps.py --out ${QUARK_MAPS_DIR}
-  DEPENDS ${CMAKE_SOURCE_DIR}/tools/make_maps.py
+  DEPENDS ${CMAKE_SOURCE_DIR}/tools/make_maps.py ${QUARK_MAP_OVERRIDES}
   COMMENT "Generating maps (tools/make_maps.py)" VERBATIM)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/.gitignore)
 file(STRINGS ${CMAKE_SOURCE_DIR}/.gitignore QUARK_HAND_MAP_LINES REGEX "^!/maps/[A-Za-z0-9_-]+\\.qmap")
@@ -132,7 +134,7 @@ endforeach()
 add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/official_maps.stamp
   BYPRODUCTS ${CMAKE_BINARY_DIR}/generated/official_maps.h ${CMAKE_BINARY_DIR}/generated/official_map_data.h
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/embed_maps.py ${CMAKE_BINARY_DIR}/generated ${QUARK_GEN_MAPS} ${QUARK_HAND_MAPS}
-  DEPENDS ${CMAKE_SOURCE_DIR}/tools/embed_maps.py ${QUARK_GEN_MAPS} ${QUARK_HAND_MAPS}
+  DEPENDS ${CMAKE_SOURCE_DIR}/tools/embed_maps.py ${QUARK_GEN_MAPS} ${QUARK_HAND_MAPS} ${QUARK_MAP_OVERRIDES}
   COMMENT "Embedding the shipped maps" VERBATIM)
 add_custom_target(quark_maps DEPENDS ${CMAKE_BINARY_DIR}/generated/official_maps.stamp)
 add_dependencies(quark_core quark_maps)
@@ -180,6 +182,48 @@ if(WIN32)
   target_link_libraries(quark_launcher_core PUBLIC ole32 uuid shell32 advapi32)
 endif()
 
+# ---- assets: models, the owner's overrides, audio (no graphics: the game, the launcher and the tests) ------------
+# The owner's shipped overrides (assets/overrides/, docs/ASSETS.md) are embedded at build time (maps excepted: those go
+# through make_maps.py / embed_maps.py above). No overrides: an empty table, and nothing is ever looked up.
+file(GLOB_RECURSE QUARK_OVERRIDE_FILES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/assets/overrides/*)
+add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/override_data.h
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/embed_overrides.py ${CMAKE_BINARY_DIR}/generated/override_data.h ${CMAKE_SOURCE_DIR}/assets/overrides
+  DEPENDS ${CMAKE_SOURCE_DIR}/tools/embed_overrides.py ${QUARK_OVERRIDE_FILES}
+  COMMENT "Embedding the asset overrides (assets/overrides/)" VERBATIM)
+# third_party/stb (stb_vorbis, stb_image, stb_truetype; nothings/stb a7d4c21) and third_party/dr_libs (dr_flac,
+# dr_mp3; mackron/dr_libs b4264c5): public domain single-file decoders, vendored unmodified, built in src/client/codec_*.c
+add_library(quark_assets STATIC
+  src/client/models.cpp
+  src/client/gltf.cpp
+  src/client/overrides.cpp
+  src/client/decoders.cpp
+  src/client/fontatlas.cpp
+  src/client/codec_vorbis.c
+  src/client/codec_flac_mp3.c
+  src/client/codec_image_font.c
+  ${CMAKE_BINARY_DIR}/generated/override_data.h
+)
+set_source_files_properties(src/client/codec_vorbis.c src/client/codec_flac_mp3.c src/client/codec_image_font.c
+  PROPERTIES COMPILE_OPTIONS "-w")   # third party: not our warnings
+target_include_directories(quark_assets PUBLIC third_party ${CMAKE_BINARY_DIR}/generated)
+target_link_libraries(quark_assets PUBLIC quark_core)
+
+# The recorded announcer lines (20 MB of samples) are generated from assets/voice/ at build time, not committed
+# (tools/import_voice.py, python3 standard library only).
+file(GLOB_RECURSE QUARK_VOICE_WAVS ${CMAKE_SOURCE_DIR}/assets/voice/*.wav)
+add_custom_command(
+  OUTPUT ${CMAKE_BINARY_DIR}/generated/voice_recorded.h
+  COMMAND Python3::Interpreter ${CMAKE_SOURCE_DIR}/tools/import_voice.py ${CMAKE_BINARY_DIR}/generated/voice_recorded.h
+  DEPENDS ${CMAKE_SOURCE_DIR}/tools/import_voice.py ${CMAKE_SOURCE_DIR}/tools/make_voice.py ${QUARK_VOICE_WAVS}
+  COMMENT "Generating voice_recorded.h from assets/voice/"
+  VERBATIM)
+# The mixer and every sound kit / announcer voice (the game; the tests and the asset export render them too)
+add_library(quark_audio STATIC src/client/audio.cpp ${CMAKE_BINARY_DIR}/generated/voice_recorded.h)
+target_link_libraries(quark_audio PUBLIC quark_assets ${CMAKE_DL_LIBS})
+if(APPLE)
+  target_link_libraries(quark_audio PUBLIC "-framework AudioToolbox" "-framework CoreFoundation")
+endif()
+
 if(QUARK_BUILD_CLIENT)
   set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
   set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -188,16 +232,6 @@ if(QUARK_BUILD_CLIENT)
   add_subdirectory(third_party/glfw EXCLUDE_FROM_ALL)
   target_compile_options(glfw PRIVATE -Wno-sign-compare -Wno-missing-field-initializers)   # third party: our -Wextra is for our code
 
-  # The recorded announcer lines (20 MB of samples) are generated from assets/voice/ at build time, not committed
-  # (tools/import_voice.py, python3 standard library only).
-  find_package(Python3 REQUIRED COMPONENTS Interpreter)
-  file(GLOB_RECURSE QUARK_VOICE_WAVS ${CMAKE_SOURCE_DIR}/assets/voice/*.wav)
-  add_custom_command(
-    OUTPUT ${CMAKE_BINARY_DIR}/generated/voice_recorded.h
-    COMMAND Python3::Interpreter ${CMAKE_SOURCE_DIR}/tools/import_voice.py ${CMAKE_BINARY_DIR}/generated/voice_recorded.h
-    DEPENDS ${CMAKE_SOURCE_DIR}/tools/import_voice.py ${CMAKE_SOURCE_DIR}/tools/make_voice.py ${QUARK_VOICE_WAVS}
-    COMMENT "Generating voice_recorded.h from assets/voice/"
-    VERBATIM)
 
   add_executable(quark WIN32 MACOSX_BUNDLE
     src/client/main.cpp
@@ -213,11 +247,9 @@ if(QUARK_BUILD_CLIENT)
     src/client/hudwidgets.cpp
     src/client/profiles.cpp
     src/client/binds.cpp
-    src/client/audio.cpp
-    ${CMAKE_BINARY_DIR}/generated/voice_recorded.h
     ${QUARK_ICON_RC}
   )
-  target_link_libraries(quark quark_core quark_launcher_core glfw ${CMAKE_DL_LIBS})
+  target_link_libraries(quark quark_core quark_launcher_core quark_audio glfw ${CMAKE_DL_LIBS})
   if(WIN32)
     target_link_libraries(quark shell32)
   endif()
@@ -229,7 +261,7 @@ if(QUARK_BUILD_CLIENT)
     src/client/lightmap.cpp
     src/client/ui.cpp
   )
-  target_link_libraries(quark_launcher quark_core quark_launcher_core glfw)
+  target_link_libraries(quark_launcher quark_core quark_launcher_core quark_assets glfw)
   foreach(t quark quark_launcher)
     if(APPLE)
       target_link_libraries(${t} "-framework OpenGL" "-framework AudioToolbox" "-framework CoreFoundation")
@@ -243,8 +275,8 @@ if(QUARK_BUILD_CLIENT)
 endif()
 
 if(QUARK_BUILD_TESTS)
-  add_executable(quark_tests tests/tests.cpp tests/mapreport.cpp tests/launcher_tests.cpp)
-  target_link_libraries(quark_tests quark_core quark_launcher_core)
+  add_executable(quark_tests tests/tests.cpp tests/mapreport.cpp tests/launcher_tests.cpp tests/assets_tests.cpp)
+  target_link_libraries(quark_tests quark_core quark_launcher_core quark_audio)
   target_compile_definitions(quark_tests PRIVATE QUARK_SOURCE_DIR="${CMAKE_SOURCE_DIR}")   # cross-language constant checks read tools/
   target_compile_definitions(quark_tests PRIVATE QUARK_TEST_DATA="${CMAKE_SOURCE_DIR}/tests/data")   # regression inputs
   if(WIN32)

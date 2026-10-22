@@ -4,6 +4,8 @@
 #include "sfx_recorded.h"
 #include "../common/profile.h"
 #include "../game/map.h"   // (findDataPath: the game folder, for mods/)
+#include "overrides.h"     // the owner's sounds (docs/ASSETS.md) and the sound file decoders
+#include <cstdio>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -143,6 +145,7 @@ void Audio::synthesize() {
     for (int p = 1; p < kPacks; p++)
         for (int i = 0; i < SND_VOICE_THREE; i++) { sounds_[p][i] = s[i]; if (p == kPackRetro) voice(sounds_[p][i], p); }
     loadRecordedKits();
+    loadOverrideSounds();
     loadModSounds();
     loadAnnouncer(announcer_);
 }
@@ -177,6 +180,7 @@ void Audio::loadAnnouncer(int set) {
                 v[i] = (x0 + (x1 - x0) * f) * 0.9f;
             }
         }
+    loadOverrideVoice(set, lines, kLines);   // the owner's lines (docs/ASSETS.md); nothing without overrides
     std::lock_guard<std::mutex> l(mu_);
     voices_.erase(std::remove_if(voices_.begin(), voices_.end(), [](const Voice& v) { return v.id >= SND_VOICE_THREE; }), voices_.end());
     for (int p = 0; p < kPacks; p++)
@@ -453,69 +457,94 @@ void Audio::stop() {
 // stereo). Trimmed of leading silence, cut at 3 s, loudness matched to the sound it replaces. Read once at startup.
 static const char* kModSoundNames[] = {"HIT", "KILL", "HURT", "STEP", "JUMP", "LAND", "RIFLE", "ROCKET", "KNIFE", "SNIPER", "LASER",
     "SHOTGUN", "STICKY", "CROSSBOW", "BUBBLE", "SYRINGE", "EXPLOSION", "STICKY_ATTACH", "BOLT_HIT", "DASH", "GRAPPLE_FIRE",
-    "GRAPPLE_HIT", "DEATH", "STREAK", "TYPING", "CHECKPOINT", "FINISH"};
-static_assert(sizeof(kModSoundNames) / sizeof(kModSoundNames[0]) == SND_VOICE_THREE, "one name per sound effect, in SoundId order");
+    "GRAPPLE_HIT", "DEATH", "STREAK", "TYPING", "CHECKPOINT", "FINISH",
+    // the announcer's lines (SND_VOICE_*), as the asset export and the overrides name them
+    "THREE", "TWO", "ONE", "GO", "BOMB_PLANTED", "BOMB_DEFUSED", "HILL_TAKEN", "HILL_LOST", "POINT_TAKEN", "POINT_LOST",
+    "ROUND_WON", "ROUND_LOST", "OVERTIME", "YOU_WIN", "YOU_LOSE", "HIGH_SCORE", "NEW_LEADER", "YOU_DIED", "HEADSHOT",
+    "AIRBORNE", "AIR_ROCKET", "SPREE", "RAMPAGE", "UNSTOPPABLE", "GODLIKE", "ONE_MINUTE", "THIRTY_SECONDS", "TEN_SECONDS",
+    "FIVE_SECONDS", "ROUND_OVER"};
+static_assert(sizeof(kModSoundNames) / sizeof(kModSoundNames[0]) == SND_COUNT, "one name per sound, in SoundId order");
 static const char* kModKitDirs[] = {"default", "heavy_metal", "magical", "retro", "mouth"};
+static_assert(sizeof(kModKitDirs) / sizeof(kModKitDirs[0]) == Audio::kPacks, "one folder per sound kit");
+static const char* kVoiceDirs[kAnnouncerVoices] = {"male", "female", "british", "old_man", "e_girl", "india", "spy"};
 
-static bool readWav(const std::string& path, std::vector<float>& out, int& rate) {
-    FILE* f = fopen(path.c_str(), "rb");
-    if (!f) return false;
-    std::vector<uint8_t> d;
-    uint8_t buf[65536]; size_t n;
-    while ((n = fread(buf, 1, sizeof buf, f)) > 0 && d.size() < (64u << 20)) d.insert(d.end(), buf, buf + n);
-    fclose(f);
-    auto u16 = [&](size_t o) { return (uint32_t)(d[o] | d[o + 1] << 8); };
-    auto u32 = [&](size_t o) { return (uint32_t)(d[o] | d[o + 1] << 8 | d[o + 2] << 16 | (uint32_t)d[o + 3] << 24); };
-    if (d.size() < 12 || memcmp(d.data(), "RIFF", 4) || memcmp(d.data() + 8, "WAVE", 4)) return false;
-    int fmt = 0, ch = 0, bits = 0; size_t data = 0, dataLen = 0;
-    for (size_t o = 12; o + 8 <= d.size();) {
-        uint32_t len = u32(o + 4);
-        if (!memcmp(d.data() + o, "fmt ", 4) && o + 24 <= d.size()) { fmt = (int)u16(o + 8); ch = (int)u16(o + 10); rate = (int)u32(o + 12); bits = (int)u16(o + 22); if (fmt == 0xFFFE && o + 34 <= d.size()) fmt = (int)u16(o + 32); }
-        else if (!memcmp(d.data() + o, "data", 4)) { data = o + 8; dataLen = std::min<size_t>(len, d.size() - data); break; }
-        o += 8 + len + (len & 1);
+const char* Audio::soundName(int id) { return kModSoundNames[id < 0 || id >= SND_COUNT ? 0 : id]; }
+const char* Audio::kitDir(int pack) { return kModKitDirs[pack < 0 || pack >= kPacks ? 0 : pack]; }
+const char* Audio::voiceDir(int v) { return kVoiceDirs[v < 0 || v >= kAnnouncerVoices ? 0 : v]; }
+
+// A clip (mono, any rate) ready to play: leading silence off (it starts the moment it plays), at the mix rate, cut
+// at maxSeconds with a short fade, as loud as `match` (the sound it replaces; peak 0.89 when that's silent).
+static std::vector<float> prepareClip(const std::vector<float>& x, int rate, float maxSeconds, const std::vector<float>& match) {
+    float peak = 1e-6f; for (float v : x) peak = std::max(peak, std::fabs(v));
+    size_t on = 0; while (on < x.size() && std::fabs(x[on]) < peak * 0.03f) on++;
+    size_t n = std::min<size_t>((size_t)((double)(x.size() - on) * R / rate), (size_t)(R * maxSeconds));
+    std::vector<float> v(n);
+    for (size_t i = 0; i < n; i++) {
+        double t = on + (double)i * rate / R; size_t a = (size_t)t; float f = (float)(t - a);
+        float x0 = x[std::min(a, x.size() - 1)], x1 = x[std::min(a + 1, x.size() - 1)];
+        v[i] = x0 + (x1 - x0) * f;
     }
-    if (!data || ch < 1 || ch > 8 || rate < 4000 || rate > 192000 || !((fmt == 1 && (bits == 8 || bits == 16 || bits == 24 || bits == 32)) || (fmt == 3 && bits == 32))) return false;
-    size_t bps = (size_t)bits / 8, frames = dataLen / (bps * ch);
-    out.assign(frames, 0.0f);
-    for (size_t i = 0; i < frames; i++) {
-        float sum = 0;
-        for (int c = 0; c < ch; c++) {
-            const uint8_t* p = d.data() + data + (i * ch + c) * bps;
-            float v = 0;
-            if (fmt == 3) { float x; memcpy(&x, p, 4); v = x; }
-            else if (bits == 8) v = (p[0] - 128) / 128.0f;
-            else if (bits == 16) v = (int16_t)(p[0] | p[1] << 8) / 32768.0f;
-            else if (bits == 24) v = (int32_t)((uint32_t)(p[0] << 8 | p[1] << 16 | p[2] << 24)) / 2147483648.0f;
-            else v = (int32_t)(p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24) / 2147483648.0f;
-            sum += v;
-        }
-        out[i] = sum / ch;
-    }
-    return true;
+    size_t fade = std::min<size_t>(n, R / 100);
+    for (size_t i = 0; i < fade; i++) v[n - 1 - i] *= (float)i / fade;
+    float want = loudness(match), have = loudness(v);
+    if (want > 1e-6f && have > 1e-6f) { float g = want / have; for (auto& s : v) s = std::clamp(s * g, -1.0f, 1.0f); }
+    else { float m = 1e-6f; for (float s : v) m = std::max(m, std::fabs(s)); for (auto& s : v) s *= 0.89f / m; }
+    return v;
 }
 
 void Audio::loadModSounds() {
     std::string root = findDataPath("mods/sounds");
     for (int pass = 0; pass < 2; pass++)   // "all" first, a kit's own folder wins over it
-    for (int kit = 0; kit < kPacks && kit < 5; kit++) {
+    for (int kit = 0; kit < kPacks; kit++) {
         std::string dir = root + "/" + (pass == 0 ? "all" : kModKitDirs[kit]);
         for (int id = 0; id < SND_VOICE_THREE; id++) {
+            FILE* f = fopen((dir + "/" + kModSoundNames[id] + ".wav").c_str(), "rb");
+            if (!f) continue;
+            std::vector<uint8_t> file;
+            uint8_t buf[65536]; size_t n;
+            while ((n = fread(buf, 1, sizeof buf, f)) > 0 && file.size() < (64u << 20)) file.insert(file.end(), buf, buf + n);
+            fclose(f);
             std::vector<float> x; int rate = 0;
-            if (!readWav(dir + "/" + kModSoundNames[id] + ".wav", x, rate) || x.size() < 16) continue;
-            float peak = 1e-6f; for (float v : x) peak = std::max(peak, std::fabs(v));
-            size_t on = 0; while (on < x.size() && std::fabs(x[on]) < peak * 0.03f) on++;   // the sound starts the moment it plays
-            size_t n = std::min<size_t>((x.size() - on) * (size_t)R / rate, (size_t)R * 3);
-            std::vector<float> v(n);
-            for (size_t i = 0; i < n; i++) {
-                double t = on + (double)i * rate / R; size_t a = (size_t)t; float f = (float)(t - a);
-                float x0 = x[std::min(a, x.size() - 1)], x1 = x[std::min(a + 1, x.size() - 1)];
-                v[i] = x0 + (x1 - x0) * f;
+            if (file.size() < 4 || memcmp(file.data(), "RIFF", 4) || !decodeSound(file.data(), file.size(), x, rate) || x.size() < 16) continue;
+            sounds_[kit][id] = prepareClip(x, rate, 3.0f, sounds_[kit][id]);
+        }
+    }
+}
+
+// ---- the owner's overrides (docs/ASSETS.md): sounds/<kit>/<SOUND>.<wav|ogg|flac|mp3> replaces that sound in that
+// kit, voices/<voice>/<LINE>.<ext> that announcer line; each as loud as the sound it replaces. A DEFAULT override
+// also becomes the sound of every kit that had DEFAULT's (and RETRO's chiptune of it). Nothing to do without any.
+static bool overrideClip(const std::string& base, std::vector<float>& x, int& rate) {
+    std::vector<uint8_t> file;
+    std::string matched, err;
+    if (!overrides::find(base, {".wav", ".ogg", ".flac", ".mp3"}, file, &matched)) return false;
+    if (decodeSound(file.data(), file.size(), x, rate, &err) && x.size() >= 16) return true;
+    fprintf(stderr, "override %s: %s\n", matched.c_str(), err.empty() ? "too short" : err.c_str());
+    return false;
+}
+
+void Audio::loadOverrideSounds() {
+    if (!overrides::any()) return;
+    for (int kit = 0; kit < kPacks; kit++)   // (DEFAULT first: the other kits are matched to its loudness)
+        for (int id = 0; id < SND_VOICE_THREE; id++) {
+            std::vector<float> x; int rate = 0;
+            if (!overrideClip(std::string("sounds/") + kModKitDirs[kit] + "/" + kModSoundNames[id], x, rate)) continue;
+            std::vector<float> v = prepareClip(x, rate, 3.0f, sounds_[0][id]);
+            if (kit == 0) {
+                for (int p = 1; p < kPacks; p++)
+                    if (p != kPackRetro && sounds_[p][id] == sounds_[0][id]) sounds_[p][id] = v;   // kits that had DEFAULT's sound
+                sounds_[kPackRetro][id] = v;
+                voice(sounds_[kPackRetro][id], kPackRetro);                                      // RETRO: DEFAULT, chiptuned
             }
-            size_t fade = std::min<size_t>(n, R / 100);
-            for (size_t i = 0; i < fade; i++) v[n - 1 - i] *= (float)i / fade;
-            float want = loudness(sounds_[kit][id]), have = loudness(v);
-            if (want > 1e-6f && have > 1e-6f) { float g = want / have; for (auto& s : v) s = std::clamp(s * g, -1.0f, 1.0f); }
             sounds_[kit][id].swap(v);
         }
+}
+
+void Audio::loadOverrideVoice(int set, std::vector<float>* lines, int count) {
+    if (!overrides::any()) return;
+    for (int k = 0; k < count && SND_VOICE_THREE + k < SND_COUNT; k++) {
+        std::vector<float> x; int rate = 0;
+        if (overrideClip(std::string("voices/") + kVoiceDirs[set] + "/" + kModSoundNames[SND_VOICE_THREE + k], x, rate))
+            lines[k] = prepareClip(x, rate, 5.0f, lines[k]);
     }
 }

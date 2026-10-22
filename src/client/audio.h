@@ -1,6 +1,6 @@
 // Audio: a small low-latency mixer on top of the OS audio API (WinMM on Windows, CoreAudio on
 // macOS, ALSA on Linux loaded at runtime). All sounds are synthesized or decoded at startup (audio.cpp),
-// so there are no sound files.
+// so there are no sound files (but players' mods/sounds/ and the owner's overrides, docs/ASSETS.md).
 #pragma once
 #include <atomic>
 #include <mutex>
@@ -57,6 +57,10 @@ public:
     int pack() const { return pack_; }
     bool ok() const { return running_; }
     const std::vector<float>& samples(int pack, int id) const { return sounds_[pack][id]; } // tests / tools
+    // names as files use them (mods/, the asset export, overrides): "ROCKET" / "GO", "heavy_metal", "old_man"
+    static const char* soundName(int id);
+    static const char* kitDir(int pack);
+    static const char* voiceDir(int voice);
 
     // Mixes `frames` stereo frames into out (interleaved int16). Used by the backends and tests.
     void mix(int16_t* out, int frames);
@@ -66,6 +70,8 @@ private:
     void synthesize();
     void loadRecordedKits();
     void loadModSounds();     // players' own sounds: <game folder>/mods/sounds/<kit or all>/<SOUND>.wav
+    void loadOverrideSounds(); // the owner's: sounds/<kit>/<SOUND>.* overrides (docs/ASSETS.md)
+    void loadOverrideVoice(int set, std::vector<float>* lines, int count); // voices/<voice>/<LINE>.*
     void loadAnnouncer(int set);
     int announcer_ = 0;
     std::atomic<int> pack_{0};

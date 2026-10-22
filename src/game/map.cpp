@@ -279,6 +279,7 @@ std::string mapFilePath(const std::string& requested) {
     if (!validMapName(mapName)) return std::string();
     std::string path = userMapsDir() + "/" + mapName + ".qmap"; // yours (edited / made) first, then the shipped one
     std::error_code ec;
+    if (!fs::exists(path, ec)) path = userDataPath("overrides/maps/" + mapName + ".qmap"); // your override (docs/ASSETS.md)
     if (!fs::exists(path, ec)) path = findDataPath("maps/" + mapName + ".qmap");
     return path;
 }

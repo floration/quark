@@ -16,6 +16,8 @@
 #include <cstring>
 #include "../game/gamemodes.h"
 #include "../common/version.h"
+#include "gltf.h"
+#include "overrides.h"
 
 static std::string fmtRace(int ms);
 static std::string hudCfgPath() { return userDataPath("hud.cfg"); } // scriptable widgets, next to quark.cfg
@@ -51,6 +53,43 @@ const char* weaponName(int w) {
 }
 }
 
+// The owner's asset overrides (docs/ASSETS.md) the game reads itself: glTF models in place of the box models, and the
+// window icon. (Sounds: Audio; the font: Renderer; maps: the build.) Nothing is read when there are none.
+void Game::loadAssetOverrides() {
+    if (!overrides::any()) return;
+    for (int kind = 0; kind < MODEL_KINDS; kind++)
+        for (int i = 0; i < modelCount(kind); i++) {
+            if (!modelExists(kind, i)) continue;
+            std::vector<uint8_t> file;
+            std::string matched, gerr;
+            if (!overrides::find(modelPath(kind, i), {".glb", ".gltf"}, file, &matched)) continue;
+            std::string dir = matched.substr(0, matched.rfind('/') + 1);
+            MeshData mesh;
+            auto resolve = [&](const std::string& uri, std::vector<uint8_t>& out) { return uri.find("..") == std::string::npos && overrides::readRelative(dir + uri, out); };
+            if (!loadGltf(file.data(), file.size(), resolve, mesh, &gerr)) { printf("override %s: %s\n", matched.c_str(), gerr.c_str()); continue; }
+            if (mesh.triangleCount() > kMaxOverrideTriangles) { printf("override %s: %zu triangles (at most %zu)\n", matched.c_str(), mesh.triangleCount(), kMaxOverrideTriangles); continue; }
+            auto m = std::make_unique<ModelMesh>();
+            meshToModel(mesh, *m);
+            modelOv_[kind][i] = std::move(m);
+            printf("override: %s\n", matched.c_str());
+        }
+    std::vector<uint8_t> icon;
+    int w = 0, h = 0;
+    std::vector<uint8_t> rgba;
+    if (overrides::find("images/icon", {".png", ".jpg", ".jpeg"}, icon) && decodeImage(icon.data(), icon.size(), w, h, rgba) && w > 0 && h > 0) {
+        GLFWimage img{w, h, rgba.data()};
+        glfwSetWindowIcon(win_, 1, &img);
+    }
+}
+
+void Game::overrideTints(int kind, const ModelPalette& pal, Vec3* tint) const {
+    const ModelPalette& ref = referencePalette(kind);
+    tint[0] = {1, 1, 1};
+    auto ratio = [](float a, float b) { return b > 1e-3f ? a / b : a; };
+    for (int s = 1; s < TINT_COUNT; s++)
+        tint[s] = {ratio(pal.c[s].x, ref.c[s].x), ratio(pal.c[s].y, ref.c[s].y), ratio(pal.c[s].z, ref.c[s].z)};
+}
+
 bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     win_ = win;
     opts_ = opts;
@@ -59,6 +98,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     glfwGetFramebufferSize(win, &w, &h);
     r_.resize(w, h);
     if (!r_.init(cfg_.shadowRes, err)) return false;
+    loadAssetOverrides();
     rescanMaps();
     rankKey_ = loadOrCreateRankKey(userDataPath("quark.key")); // ranked identity: stays on this computer
     net_.setRankKey(rankKey_);   // (servers check the id against it; the key itself never goes to them)
@@ -1268,47 +1308,24 @@ void Game::drawWorld(float alpha) {
         bool vis = !firstPerson;
         auto at = [&](float h) { return pos + Vec3(0, h * hs * bs, 0); };
         Vec3 fwd = {-std::sin(yaw), 0, -std::cos(yaw)}, rgt = {std::cos(yaw), 0, -std::sin(yaw)};
-        // the player model (cosmetic: every model fits the same hitbox)
-        auto part = [&](const Vec3& c, const Vec3& half, const Vec3& colr, bool shadow = true) { r_.box(c, half * bs, yaw, colr, sv, shadow, vis); };
-        const Vec3 grey = col * 0.6f + Vec3(0.06f, 0.06f, 0.07f), dark = {0.05f, 0.05f, 0.06f};
-        int model = opts_.debugModels && i >= kMaxPlayers - kPlayerModels ? i - (kMaxPlayers - kPlayerModels) : net_.playerModel(i);
-        switch (rankedPlayer() ? 0 : model) { // ranked / time trial: default model for everyone
-            case 1: // HEAVY: wide armoured body, shoulder pads, small helmet
-                part(at(0.45f), Vec3(0.32f, 0.45f * hs, 0.24f), col * 0.45f);
-                part(at(1.15f), Vec3(0.44f, 0.3f * hs, 0.28f), col);
-                for (float sd : {-1.0f, 1.0f}) part(at(1.38f) + rgt * (sd * 0.42f * bs), Vec3(0.14f, 0.1f, 0.22f), grey);
-                part(at(1.6f), Vec3(0.18f, 0.16f, 0.18f), col * 1.1f);
-                if (vis) part(at(1.6f) + fwd * (0.18f * bs), Vec3(0.15f, 0.04f, 0.02f), dark, false);
-                break;
-            case 2: // SCOUT: slim, tall head with a long glowing visor
-                part(at(0.47f), Vec3(0.22f, 0.47f * hs, 0.16f), col * 0.6f);
-                part(at(1.17f), Vec3(0.3f, 0.26f * hs, 0.18f), col);
-                part(at(1.63f), Vec3(0.17f, 0.2f, 0.17f), col * 1.2f);
-                if (vis) part(at(1.66f) + fwd * (0.17f * bs), Vec3(0.17f, 0.035f, 0.02f), col * 1.8f + Vec3(0.3f, 0.3f, 0.3f), false);
-                break;
-            case 3: // ROBOT: grey frame, team-coloured chest, cube head, glowing eye, antenna
-                part(at(0.45f), Vec3(0.26f, 0.45f * hs, 0.2f), grey * 0.8f);
-                part(at(1.15f), Vec3(0.38f, 0.3f * hs, 0.26f), grey);
-                if (vis) part(at(1.18f) + fwd * (0.26f * bs), Vec3(0.26f, 0.18f, 0.02f), col, false);
-                part(at(1.62f), Vec3(0.23f, 0.19f, 0.23f), grey * 1.15f);
-                if (vis) part(at(1.64f) + fwd * (0.23f * bs), Vec3(0.12f, 0.035f, 0.02f), col * 2.0f + Vec3(0.4f, 0.4f, 0.4f), false);
-                part(at(1.9f), Vec3(0.02f, 0.1f, 0.02f), grey, false);
-                part(at(2.0f), Vec3(0.045f, 0.045f, 0.045f), col * 1.8f, false);
-                break;
-            case 4: // KNIGHT: plate armour, team tabard, crested helmet with a visor slit
-                part(at(0.45f), Vec3(0.27f, 0.45f * hs, 0.2f), grey * 0.85f);
-                part(at(1.15f), Vec3(0.4f, 0.3f * hs, 0.25f), grey);
-                if (vis) part(at(1.05f) + fwd * (0.25f * bs), Vec3(0.2f, 0.36f, 0.02f), col, false);
-                part(at(1.6f), Vec3(0.21f, 0.2f, 0.21f), grey * 1.1f);
-                part(at(1.86f), Vec3(0.03f, 0.08f, 0.19f), col * 1.1f, false);
-                if (vis) part(at(1.62f) + fwd * (0.21f * bs), Vec3(0.15f, 0.025f, 0.02f), dark, false);
-                break;
-            default: // STANDARD
-                part(at(0.45f), Vec3(0.28f, 0.45f * hs, 0.2f), col * 0.55f);
-                part(at(1.15f), Vec3(0.38f, 0.28f * hs, 0.24f), col);
-                part(pos + Vec3(0, 1.6f * hs * bs, 0), Vec3(0.2f, 0.18f, 0.2f), col * 1.15f);
-                if (vis) part(at(1.62f) + fwd * (0.2f * bs), Vec3(0.16f, 0.05f, 0.02f), dark, false);
-                break;
+        // the player model (cosmetic: every model fits the same hitbox); ranked / time trial: the default for everyone
+        const int pm = rankedPlayer() ? 0 : opts_.debugModels && i >= kMaxPlayers - kPlayerModels ? i - (kMaxPlayers - kPlayerModels) : net_.playerModel(i);
+        ModelPalette pal;
+        pal.c[TINT_TEAM] = col;
+        if (const ModelMesh* ov = modelOverride(MODEL_PLAYER, pm)) {   // the owner's model (docs/ASSETS.md)
+            Vec3 tint[TINT_COUNT];
+            overrideTints(MODEL_PLAYER, pal, tint);
+            Mat4 sc;
+            sc.m[0] = bs; sc.m[5] = bs * hs; sc.m[10] = bs;
+            r_.mesh(*ov, Mat4::translate(pos) * Mat4::rotY(yaw) * sc, tint, sv, true, vis);
+        } else {
+            playerModelParts(pm, hs, pal, parts_);
+            const float cy = std::cos(yaw), sy = std::sin(yaw);
+            for (const ModelPart& q : parts_) {
+                if (q.visOnly && !vis) continue;
+                Vec3 c = q.c * bs;
+                r_.box(pos + Vec3(cy * c.x + sy * c.z, c.y, -sy * c.x + cy * c.z), q.h * bs, yaw, q.color, sv, q.shadow, vis);
+            }
         }
         if (vis) {
             Vec3 shoulder = at(1.3f) + Vec3(std::cos(yaw), 0, -std::sin(yaw)) * (0.3f * bs);
@@ -1325,12 +1342,22 @@ void Game::drawWorld(float alpha) {
             }
         }
         if (vis && !rankedPlayer()) if (int place = crownOf(i)) { // leaderboard crown on their head (a model; not in ranked)
-            Vec3 gold = place == 1 ? Vec3{1.0f, 0.78f, 0.15f} : Vec3{0.82f, 0.85f, 0.9f};
             Vec3 top = pos + Vec3(0, kPlayerHeight * hs * bs + 0.04f * bs, 0);
-            r_.box(top + Vec3(0, 0.06f, 0) * bs, Vec3(0.17f, 0.06f, 0.17f) * bs, yaw, gold, sv, false);            // band
-            for (int k = 0; k < 4; k++) {                                                                          // four points
-                Vec3 d = (k & 1 ? rgt : fwd) * ((k & 2) ? -0.14f : 0.14f);
-                r_.box(top + d * bs + Vec3(0, 0.17f, 0) * bs, Vec3(0.035f, 0.06f, 0.035f) * bs, yaw, gold, sv, false);
+            ModelPalette cpal;
+            cpal.c[TINT_TEAM] = crownColor(place);
+            if (const ModelMesh* ov = modelOverride(MODEL_CROWN, 0)) {
+                Vec3 tint[TINT_COUNT];
+                overrideTints(MODEL_CROWN, cpal, tint);
+                Mat4 sc;
+                sc.m[0] = sc.m[5] = sc.m[10] = bs;
+                r_.mesh(*ov, Mat4::translate(top) * Mat4::rotY(yaw) * sc, tint, sv, false);
+            } else {
+                crownParts(cpal, parts_);                                   // a band and four points
+                const float cy = std::cos(yaw), sy = std::sin(yaw);
+                for (const ModelPart& q : parts_) {
+                    Vec3 c = q.c * bs;
+                    r_.box(top + Vec3(cy * c.x + sy * c.z, c.y, -sy * c.x + cy * c.z), q.h * bs, yaw, q.color, sv, q.shadow);
+                }
             }
             // the board's letter in the front of the band: raised blocks from a 3x5 pixel font (Q, L, G, I, R)
             const char* letter = crownLetter(i);
@@ -1488,47 +1515,36 @@ void Game::drawWorld(float alpha) {
         Vec3 dir = sp > 0.01f ? pr.vel / sp : Vec3(0, 0, -1);
         float yaw = std::atan2(-dir.x, -dir.z);
         float pitch = std::asin(clampf(dir.y, -1, 1));
-        const Vec3 metalC = {0.22f, 0.23f, 0.26f};
-        if (pr.type == WPN_STICKY) { // a spiked mine: dark shell, team-coloured core, spikes; stuck ones blink their core
+        // the model (models.h, or the owner's override of it), turned the way it flies; trails stay lines
+        float fl = 1, core = 1, wob = 0, my = yaw, mp = pitch;
+        int mt = modelExists(MODEL_PROJECTILE, pr.type) && pr.type != MODEL_PROJ_ORB ? pr.type : MODEL_PROJ_ORB;
+        if (mt == WPN_STICKY) { // a spiked mine: dark shell, team-coloured core, spikes; stuck ones blink their core
             bool resting = sp < 0.01f;
-            float spin = (float)time_ * (resting ? 0 : 6);
-            float k = resting ? 0.6f + 0.4f * (std::fmod((float)time_ * 2.5f, 1.0f) < 0.5f ? 1.0f : 0.0f) : 1.0f;
-            r_.box(pr.pos, {0.11f, 0.11f, 0.11f}, spin, metalC, 1.0f);
-            r_.box(pr.pos, {0.075f, 0.135f, 0.075f}, spin, col * 1.3f * k, 1.0f);
-            r_.box(pr.pos, {0.135f, 0.075f, 0.075f}, spin, metalC * 0.7f, 1.0f);
-            r_.box(pr.pos, {0.075f, 0.075f, 0.135f}, spin, metalC * 0.7f, 1.0f);
-        } else if (pr.type == WPN_ROCKET) { // a rocket: nose cone, body with a team band, four fins and a flickering flame
-            float fl = 0.8f + 0.2f * std::sin((float)time_ * 60 + pr.id);
-            r_.boxPitched(pr.pos, {0, 0, 0.05f}, {0.07f, 0.07f, 0.22f}, yaw, pitch, metalC * 1.6f, 1.0f);
-            r_.boxPitched(pr.pos, {0, 0, -0.22f}, {0.045f, 0.045f, 0.06f}, yaw, pitch, col * 1.2f, 1.0f);
-            r_.boxPitched(pr.pos, {0, 0, 0.0f}, {0.075f, 0.075f, 0.03f}, yaw, pitch, col, 1.0f);
-            r_.boxPitched(pr.pos, {0, 0, 0.24f}, {0.14f, 0.012f, 0.05f}, yaw, pitch, metalC, 1.0f);
-            r_.boxPitched(pr.pos, {0, 0, 0.24f}, {0.012f, 0.14f, 0.05f}, yaw, pitch, metalC, 1.0f);
-            r_.boxPitched(pr.pos, {0, 0, 0.34f}, {0.05f * fl, 0.05f * fl, 0.08f * fl}, yaw, pitch, Vec3(2.0f, 1.3f, 0.5f), 1.0f);
-            r_.line(pr.pos + dir * -0.35f, pr.pos - dir * 3.5f, 0.1f, rgba(col, 0.4f));
-        } else if (pr.type == WPN_SYRINGE) { // thrown syringe: serum barrel, needle first, a team-coloured trail
-            r_.boxPitched(pr.pos, {0, 0, 0}, {0.03f, 0.03f, 0.12f}, yaw, pitch, Vec3(0.8f, 0.85f, 0.9f), 1.0f);
-            r_.boxPitched(pr.pos, {0, 0, 0}, {0.022f, 0.022f, 0.09f}, yaw, pitch, r_.glowColor * 1.5f, 1.0f);
-            r_.boxPitched(pr.pos, {0, 0, -0.17f}, {0.005f, 0.005f, 0.06f}, yaw, pitch, metalC * 2.0f, 1.0f);
-            r_.line(pr.pos, pr.pos - dir * 1.5f, 0.03f, rgba(col, 0.5f));
-        } else if (pr.type == WPN_KNIFE) { // thrown knife: spins end over end
-            r_.boxPitched(pr.pos, {0, 0, 0}, {0.012f, 0.03f, 0.18f}, yaw, (float)time_ * 25.0f, {0.75f, 0.77f, 0.8f}, 1.0f);
-            r_.line(pr.pos, pr.pos - dir * 2.0f, 0.03f, rgba(col, 0.4f));
-        } else if (pr.type == WPN_BUBBLE) { // a wobbling bubble: a bright core in a see-through shell
-            float wob = 0.03f * std::sin((float)time_ * 14 + pr.id);
-            float r = 0.17f + wob;
-            r_.translucentBox({pr.pos - Vec3(r, r - wob, r), pr.pos + Vec3(r, r - wob, r)}, rgba(col, 0.35f));
-            r_.box(pr.pos + Vec3(0.05f, 0.06f, 0), {0.035f, 0.035f, 0.035f}, 0, Vec3(1, 1, 1) * 1.5f, 1.0f);
-        } else if (pr.type == WPN_CROSSBOW) { // a bolt: dark shaft, steel broadhead, team-coloured fletching
-            r_.boxPitched(pr.pos, {0, 0, 0}, {0.02f, 0.02f, 0.33f}, yaw, pitch, {0.12f, 0.09f, 0.06f}, 1.0f);
-            r_.boxPitched(pr.pos, {0, 0, -0.36f}, {0.045f, 0.012f, 0.05f}, yaw, pitch, Vec3(0.8f, 0.82f, 0.86f), 1.0f);
-            r_.boxPitched(pr.pos, {0, 0, 0.28f}, {0.06f, 0.006f, 0.06f}, yaw, pitch, col * 1.2f, 1.0f);
-            r_.boxPitched(pr.pos, {0, 0, 0.28f}, {0.006f, 0.06f, 0.06f}, yaw, pitch, col * 1.2f, 1.0f);
-            r_.line(pr.pos, pr.pos - dir * 4.0f, 0.04f, rgba(col, 0.5f));
+            my = (float)time_ * (resting ? 0 : 6); mp = 0;
+            core = resting ? 0.6f + 0.4f * (std::fmod((float)time_ * 2.5f, 1.0f) < 0.5f ? 1.0f : 0.0f) : 1.0f;
+        } else if (mt == WPN_ROCKET) fl = 0.8f + 0.2f * std::sin((float)time_ * 60 + pr.id);   // a flickering flame
+        else if (mt == WPN_KNIFE) mp = (float)time_ * 25.0f;                                     // spins end over end
+        else if (mt == WPN_BUBBLE) { wob = 0.03f * std::sin((float)time_ * 14 + pr.id); my = mp = 0; }   // wobbles
+        else if (mt == MODEL_PROJ_ORB) my = mp = 0;
+        ModelPalette ppal;
+        ppal.c[TINT_TEAM] = col;
+        ppal.c[TINT_GLOW] = r_.glowColor;
+        if (const ModelMesh* ov = modelOverride(MODEL_PROJECTILE, mt)) {
+            Vec3 tint[TINT_COUNT];
+            overrideTints(MODEL_PROJECTILE, ppal, tint);
+            r_.mesh(*ov, Mat4::translate(pr.pos) * Mat4::rotY(my) * Mat4::rotX(mp), tint, 1.0f);
         } else {
-            r_.box(pr.pos, {0.12f, 0.12f, 0.12f}, 0, col * 1.3f, 1.0f);
-            r_.line(pr.pos, pr.pos - dir * 3.5f, 0.12f, rgba(col, 0.5f));
+            projectileParts(mt, ppal, fl, core, wob, parts_);
+            for (const ModelPart& q : parts_) {
+                if (q.alpha < 1) r_.translucentBox({pr.pos + q.c - q.h, pr.pos + q.c + q.h}, rgba(q.color, q.alpha));
+                else r_.boxPitched(pr.pos, q.c, q.h, my, mp, q.color, 1.0f);
+            }
         }
+        if (mt == WPN_ROCKET) r_.line(pr.pos + dir * -0.35f, pr.pos - dir * 3.5f, 0.1f, rgba(col, 0.4f));
+        else if (mt == WPN_SYRINGE) r_.line(pr.pos, pr.pos - dir * 1.5f, 0.03f, rgba(col, 0.5f));
+        else if (mt == WPN_KNIFE) r_.line(pr.pos, pr.pos - dir * 2.0f, 0.03f, rgba(col, 0.4f));
+        else if (mt == WPN_CROSSBOW) r_.line(pr.pos, pr.pos - dir * 4.0f, 0.04f, rgba(col, 0.5f));
+        else if (mt == MODEL_PROJ_ORB) r_.line(pr.pos, pr.pos - dir * 3.5f, 0.12f, rgba(col, 0.5f));
     }
     // explosions
     for (size_t i = 0; i < explosions_.size();) {
@@ -1648,97 +1664,23 @@ void Game::drawWorld(float alpha) {
         int w = specGun ? (int)players[viewing].snap.weapon : net_.selfWeapon();
         recoil_ = std::max(0.0, recoil_ - 0.016 * 8);
         float kick = (float)recoil_ * 0.06f;
-        // Each weapon is a handful of boxes around `at` (camera space: +x right, +y up, -z forward).
+        // Each weapon is a handful of boxes around `at` (camera space: +x right, +y up, -z forward), models.h.
         // the map's own palette: metal body, base-coloured highlights, its glow colour on emitters / sights
-        auto lin = [](const Vec3& c) { return Vec3(std::pow(c.x, 2.2f), std::pow(c.y, 2.2f), std::pow(c.z, 2.2f)); };
-        const Vec3 mid = lin(r_.metalColor) * 1.6f + Vec3(0.05f, 0.05f, 0.05f), dark = mid * 0.55f, light = lin(r_.baseColor) * 1.1f;
-        const Vec3 acc = vm.custom ? vm.color : cfg_.colorFriendly, glow = r_.glowColor;
+        ModelPalette vpal;
+        vpal.c[TINT_METAL] = viewmodelMetal(r_.metalColor);
+        vpal.c[TINT_BASE] = viewmodelBase(r_.baseColor);
+        vpal.c[TINT_TEAM] = vm.custom ? vm.color : cfg_.colorFriendly;
+        vpal.c[TINT_GLOW] = r_.glowColor;
         // placed from the HUD settings: x / y in 720p units (+y down the screen), depth in mm, scale
         Vec3 at = {0.2f + vm.x * 0.0005f, -0.17f - vm.y * 0.0005f, -0.55f - vm.z * 0.001f + kick};
         const float k = vm.scale;
-        auto part = [&](float x, float y, float z, float hx, float hy, float hz, const Vec3& c) { r_.viewBox(at + Vec3(x, y, z) * k, Vec3(hx, hy, hz) * k, c); };
-        switch (w) {
-            case WPN_RIFLE:      // receiver, long barrel with a front sight, magazine, stock, accent rail
-                part(0, 0, 0, 0.026f, 0.032f, 0.12f, dark);
-                part(0, 0.008f, -0.2f, 0.009f, 0.009f, 0.09f, mid);
-                part(0, 0.022f, -0.27f, 0.004f, 0.012f, 0.006f, mid);
-                part(0, -0.06f, -0.03f, 0.016f, 0.035f, 0.022f, mid);
-                part(0, -0.012f, 0.15f, 0.02f, 0.03f, 0.05f, dark);
-                part(0, 0.038f, -0.01f, 0.01f, 0.005f, 0.09f, acc);
-                break;
-            case WPN_ROCKET:     // fat tube with flared muzzle and exhaust rings, side sight, grip
-                part(0, 0, -0.02f, 0.045f, 0.045f, 0.2f, mid);
-                part(0, 0, -0.23f, 0.055f, 0.055f, 0.02f, dark);
-                part(0, 0, 0.19f, 0.052f, 0.052f, 0.015f, dark);
-                part(0, 0, -0.14f, 0.0475f, 0.0475f, 0.005f, glow);
-                part(0, 0, 0.05f, 0.047f, 0.047f, 0.006f, acc);
-                part(-0.058f, 0.025f, -0.06f, 0.012f, 0.02f, 0.03f, dark);
-                part(0, -0.07f, 0.04f, 0.014f, 0.03f, 0.02f, dark);
-                break;
-            case WPN_KNIFE:      // grip, cross guard, long bright blade, accent pommel
-                part(0, -0.01f, 0.04f, 0.012f, 0.016f, 0.05f, dark);
-                part(0, -0.01f, -0.015f, 0.035f, 0.008f, 0.008f, mid);
-                part(0, -0.006f, -0.11f, 0.004f, 0.018f, 0.09f, light);
-                part(0, 0.006f, -0.2f, 0.003f, 0.008f, 0.012f, light);
-                part(0, -0.01f, 0.095f, 0.014f, 0.014f, 0.008f, acc);
-                break;
-            case WPN_SNIPER:     // long thin barrel with muzzle brake, receiver, scope on rings, bolt, stock
-                part(0, 0, 0, 0.022f, 0.028f, 0.13f, dark);
-                part(0, 0.006f, -0.27f, 0.007f, 0.007f, 0.15f, mid);
-                part(0, 0.006f, -0.43f, 0.012f, 0.01f, 0.018f, dark);
-                part(0, 0.058f, -0.02f, 0.017f, 0.017f, 0.09f, dark);
-                part(0, 0.058f, -0.115f, 0.02f, 0.02f, 0.008f, acc);
-                part(0, 0.058f, -0.124f, 0.012f, 0.012f, 0.002f, glow);
-                part(0, 0.036f, -0.06f, 0.006f, 0.01f, 0.006f, mid); part(0, 0.036f, 0.03f, 0.006f, 0.01f, 0.006f, mid);
-                part(0.03f, 0.01f, 0.05f, 0.012f, 0.006f, 0.006f, light);
-                part(0, -0.015f, 0.17f, 0.018f, 0.035f, 0.06f, dark);
-                break;
-            case WPN_LASER:      // chunky body, coil segments on top, glowing emitter rings at the front
-                part(0, 0, 0, 0.036f, 0.04f, 0.15f, mid);
-                for (int k = 0; k < 4; k++) part(0, 0.046f, -0.09f + k * 0.05f, 0.022f, 0.008f, 0.012f, k % 2 ? dark : glow);
-                part(0, 0, -0.165f, 0.03f, 0.03f, 0.012f, dark);
-                part(0, 0, -0.185f, 0.022f, 0.022f, 0.008f, glow * 1.4f);
-                part(0, -0.07f, 0.03f, 0.014f, 0.03f, 0.02f, dark);
-                break;
-            case WPN_SHOTGUN:    // twin barrels, pump under them, heavy receiver and stock
-                part(-0.012f, 0.012f, -0.17f, 0.011f, 0.011f, 0.13f, mid);
-                part(0.012f, 0.012f, -0.17f, 0.011f, 0.011f, 0.13f, mid);
-                part(0, -0.018f, -0.15f, 0.022f, 0.016f, 0.06f, dark);
-                part(0, 0, 0.02f, 0.03f, 0.035f, 0.08f, dark);
-                part(0, -0.015f, 0.16f, 0.024f, 0.035f, 0.06f, mid);
-                part(0, 0.038f, 0.0f, 0.008f, 0.004f, 0.06f, acc);
-                break;
-            case WPN_STICKY:     // drum magazine, stubby wide barrel, canister on top
-                part(0, 0, -0.06f, 0.03f, 0.03f, 0.13f, mid);
-                part(0, -0.02f, 0.04f, 0.055f, 0.055f, 0.04f, dark);
-                part(0, -0.02f, 0.04f, 0.057f, 0.012f, 0.03f, acc);
-                part(0, 0.045f, -0.02f, 0.014f, 0.014f, 0.05f, dark);
-                part(0, 0.06f, -0.02f, 0.008f, 0.003f, 0.04f, glow);
-                part(0, 0, -0.2f, 0.036f, 0.036f, 0.012f, dark);
-                break;
-            case WPN_BUBBLE:     // a round soap tank on top, a fat body, a flared wand nozzle with a bubble on it
-                part(0, 0, 0, 0.03f, 0.035f, 0.11f, mid);
-                part(0, 0.065f, 0.02f, 0.04f, 0.035f, 0.045f, light);
-                part(0, 0.065f, 0.02f, 0.03f, 0.04f, 0.035f, glow);
-                part(0, 0.004f, -0.15f, 0.014f, 0.014f, 0.05f, dark);
-                part(0, 0.004f, -0.205f, 0.03f, 0.03f, 0.006f, acc);
-                part(0, 0.004f, -0.235f, 0.022f, 0.022f, 0.022f, glow);
-                part(0, -0.06f, 0.03f, 0.014f, 0.035f, 0.02f, dark);
-                break;
-            case WPN_SYRINGE:    // barrel full of glowing serum, plunger and finger grips behind, steel needle in front
-                part(0, 0, 0, 0.022f, 0.022f, 0.09f, light);
-                part(0, 0, -0.01f, 0.016f, 0.016f, 0.07f, glow);
-                part(0, 0, 0.1f, 0.006f, 0.006f, 0.03f, mid); part(0, 0, 0.135f, 0.02f, 0.02f, 0.006f, dark);
-                part(0, 0, 0.085f, 0.045f, 0.008f, 0.006f, acc);
-                part(0, 0, -0.1f, 0.01f, 0.01f, 0.01f, dark); part(0, 0, -0.15f, 0.0025f, 0.0025f, 0.05f, mid);
-                break;
-            case WPN_CROSSBOW:   // stock, bow limbs with a string, a bolt on top
-                part(0, 0, 0.02f, 0.02f, 0.025f, 0.2f, dark);
-                part(0, 0.012f, -0.17f, 0.13f, 0.008f, 0.012f, mid);
-                part(-0.115f, 0.012f, -0.15f, 0.012f, 0.01f, 0.03f, mid); part(0.115f, 0.012f, -0.15f, 0.012f, 0.01f, 0.03f, mid);
-                part(0, 0.014f, -0.08f, 0.12f, 0.002f, 0.002f, light);
-                part(0, 0.032f, -0.12f, 0.004f, 0.004f, 0.11f, acc);
-                break;
+        if (const ModelMesh* ov = modelOverride(MODEL_WEAPON, w)) {   // the owner's model (docs/ASSETS.md)
+            Vec3 tint[TINT_COUNT];
+            overrideTints(MODEL_WEAPON, vpal, tint);
+            r_.viewMesh(*ov, at, k, tint);
+        } else {
+            viewmodelParts(w, vpal, parts_);
+            for (const ModelPart& q : parts_) r_.viewBox(at + q.c * k, q.h * k, q.color);
         }
     }
     r_.brightness = cfg_.brightness;

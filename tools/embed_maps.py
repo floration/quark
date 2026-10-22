@@ -7,7 +7,9 @@ The maps are the ones CMake names (the generator's, plus the hand-made ones .git
 happens to be in maps/: a stray or retired .qmap there must not become an official (ranked) map.
 Line endings are normalized (CR dropped) so a CRLF checkout hashes the same. zz_* maps are test maps: left out.
 Headers are only rewritten when their contents change, so an unchanged map set recompiles nothing; the stamp file
-(always written) is what the build tracks."""
+(always written) is what the build tracks.
+The owner's map overrides win (docs/ASSETS.md): when assets/overrides/maps/<name>.qmap exists, that file is the map
+embedded (make_maps.py writes it to maps/ too, so the two always agree)."""
 import hashlib, os, sys
 
 
@@ -22,12 +24,17 @@ def write_if_changed(path, text):
     os.replace(tmp, path)
 
 
+OVERRIDES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "overrides", "maps")
+
+
 def main():
     out, files = sys.argv[1], sys.argv[2:]
     maps = []
     for p in files:
         name = os.path.splitext(os.path.basename(p))[0]
         if name.startswith("zz_"): continue
+        ov = os.path.join(OVERRIDES, name + ".qmap")
+        if os.path.isfile(ov): p = ov
         with open(p, "rb") as f: data = f.read().replace(b"\r", b"")
         maps.append((name, data))
     maps.sort()

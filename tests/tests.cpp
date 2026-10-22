@@ -1868,6 +1868,8 @@ static void testBotAim(uint16_t& port) {
 // Every ladder on every map gets you to the top: stand at its foot, hold forward (into the wall) and you
 // end up standing on whatever it leads to.
 int mapReport(const char* outPath); // tests/mapreport.cpp (returns how many map scores are below 7)
+int exportAssets(const char* dir);   // tests/assets_tests.cpp: every default asset as files + manifest.json
+int assetTests();                    // tests/assets_tests.cpp (returns the failures)
 
 static void testLadders() {
     printf("ladders: every one climbable\n");
@@ -4644,6 +4646,8 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testRankedRelay(TP(29630)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterReplies(TP(29629)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(TP(29600)); testEditSession(TP(29601)); testVotedEdit(TP(29602)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
+    if (argc >= 2 && std::string(argv[1]) == "exportassets") return exportAssets(argc > 2 ? argv[2] : "assets_export") ? 1 : 0;
+    if (argc >= 2 && std::string(argv[1]) == "assets") { g_fail += assetTests(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(29604)); testMapNames(TP(29605)); testDemo(TP(29603)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(TP(29960)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(TP(29950)); return g_fail ? 1 : 0; }
@@ -4679,6 +4683,7 @@ int main(int argc, char** argv) {
         {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); }},
         {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
         {"rules", [] { testGameRules(""); }},
+        {"assets", [] { g_fail += assetTests(); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
         {"netcode", [] { testInterpRewind(TP(28703)); testUptimeClock(TP(28702)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},

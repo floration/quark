@@ -6,12 +6,20 @@
 #include <cstring>
 #include <fstream>
 #include "font_ui.h"
+#include "fontatlas.h"
+#include "overrides.h"
+#include <memory>
 
 namespace {
 
 // UI font: Work Sans Bold as a signed distance field (font_ui.h, made by tools/make_font_atlas.py).
 // Font units: a line is 8 tall; advances and kerning are proportional.
 inline int glyphIndex(char ch) { unsigned char uc = (unsigned char)ch; return (uc < 32 || uc > 126) ? '?' - 32 : uc - 32; }
+// The metrics in use: font_ui.h's, or an override font's (fonts/WorkSans.*, docs/ASSETS.md), built at startup only
+// when there is one.
+const float* g_uiAdv = kUiAdv;
+const signed char* g_uiKern = kUiKern;
+std::unique_ptr<FontAtlas> g_fontOverride;
 
 const char* kWorldVS = R"(#version 330 core
 layout(location=0) in vec3 aPos;
@@ -381,7 +389,18 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glGenTextures(1, &fontTex_);
     glBindTexture(GL_TEXTURE_2D, fontTex_);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, kUiTexW, kUiTexH, 0, GL_RED, GL_UNSIGNED_BYTE, kUiAtlas);
+    const unsigned char* atlas = kUiAtlas;
+    if (!g_fontOverride) {   // the owner's font (docs/ASSETS.md): rasterised now, only when there is one
+        std::vector<uint8_t> file;
+        std::string matched, ferr;
+        if (overrides::find("fonts/WorkSans", {".ttf", ".otf"}, file, &matched)) {
+            auto fa = std::make_unique<FontAtlas>();
+            if (buildFontAtlas(file.data(), file.size(), {kUiTexW, kUiTexH, kUiCell, kUiTpu, kUiPad, kUiOrigin, kUiSpread}, *fa, &ferr)) g_fontOverride = std::move(fa);
+            else fprintf(stderr, "override %s: %s\n", matched.c_str(), ferr.c_str());
+        }
+    }
+    if (g_fontOverride) { atlas = g_fontOverride->tex.data(); g_uiAdv = g_fontOverride->adv; g_uiKern = g_fontOverride->kern; }
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, kUiTexW, kUiTexH, 0, GL_RED, GL_UNSIGNED_BYTE, atlas);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -595,6 +614,55 @@ void Renderer::boxPitched(const Vec3& pivot, const Vec3& offset, const Vec3& hal
 void Renderer::viewBox(const Vec3& offset, const Vec3& half, const Vec3& color) {
     Mat4 xf = Mat4::translate(camPos_) * Mat4::rotY(camYaw_) * Mat4::rotX(camPitch_) * Mat4::translate(offset);
     emitBox(view_, xf, half, color, 1.0f);
+}
+
+// An override model (models.h): opaque triangles into `out` like a box's faces (lit, shadowed; no outline: the
+// edge attribute sits mid-face), translucent ones into the flat layer. Colours times tint[slot].
+void Renderer::emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, bool translucent) {
+    const float* x = xf.m;
+    out.reserve(out.size() + m.opaque.size());
+    for (const ModelMesh::V& v : m.opaque) {
+        DynVertex d;
+        const float* p = v.pos; const float* n = v.nrm;
+        d.pos[0] = x[0] * p[0] + x[4] * p[1] + x[8] * p[2] + x[12];
+        d.pos[1] = x[1] * p[0] + x[5] * p[1] + x[9] * p[2] + x[13];
+        d.pos[2] = x[2] * p[0] + x[6] * p[1] + x[10] * p[2] + x[14];
+        Vec3 nn = normalize(Vec3(x[0] * n[0] + x[4] * n[1] + x[8] * n[2], x[1] * n[0] + x[5] * n[1] + x[9] * n[2], x[2] * n[0] + x[6] * n[1] + x[10] * n[2]));
+        d.normal[0] = nn.x; d.normal[1] = nn.y; d.normal[2] = nn.z;
+        const Vec3& t = tint[v.slot < TINT_COUNT ? v.slot : 0];
+        d.color[0] = v.col[0] * t.x; d.color[1] = v.col[1] * t.y; d.color[2] = v.col[2] * t.z; d.color[3] = sunVis;
+        d.edge[0] = d.edge[1] = 0.5f; d.edge[2] = d.edge[3] = 1.0f;
+        memcpy(d.outline, &outlineColor.x, 12);
+        out.push_back(d);
+    }
+    if (!translucent) return;
+    for (const ModelMesh::V& v : m.translucent) {
+        FlatVertex f;
+        const float* p = v.pos;
+        f.pos[0] = x[0] * p[0] + x[4] * p[1] + x[8] * p[2] + x[12];
+        f.pos[1] = x[1] * p[0] + x[5] * p[1] + x[9] * p[2] + x[13];
+        f.pos[2] = x[2] * p[0] + x[6] * p[1] + x[10] * p[2] + x[14];
+        const Vec3& t = tint[v.slot < TINT_COUNT ? v.slot : 0];
+        f.color[0] = v.col[0] * t.x; f.color[1] = v.col[1] * t.y; f.color[2] = v.col[2] * t.z; f.color[3] = v.col[3];
+        flat_.push_back(f);
+    }
+}
+
+void Renderer::mesh(const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, bool castShadow, bool visible) {
+    const float* x = xf.m;
+    Vec3 c = {x[0] * m.center.x + x[4] * m.center.y + x[8] * m.center.z + x[12], x[1] * m.center.x + x[5] * m.center.y + x[9] * m.center.z + x[13],
+              x[2] * m.center.x + x[6] * m.center.y + x[10] * m.center.z + x[14]};
+    float sc = std::max({length(Vec3(x[0], x[1], x[2])), length(Vec3(x[4], x[5], x[6])), length(Vec3(x[8], x[9], x[10]))});
+    if (visible && !inView(c, m.radius * sc)) { visible = false; if (!castShadow) return; } // off screen: only its shadow can show
+    if (visible) emitMesh(dyn_, m, xf, tint, sunVis, true);
+    else if (castShadow) emitMesh(dynShadowOnly_, m, xf, tint, sunVis, false);
+}
+
+void Renderer::viewMesh(const ModelMesh& m, const Vec3& offset, float scale, const Vec3* tint) {
+    Mat4 s;
+    s.m[0] = s.m[5] = s.m[10] = scale;
+    Mat4 xf = Mat4::translate(camPos_) * Mat4::rotY(camYaw_) * Mat4::rotX(camPitch_) * Mat4::translate(offset) * s;
+    emitMesh(view_, m, xf, tint, 1.0f, false);
 }
 
 void Renderer::overlayBox(const Vec3& center, const Vec3& half, const Vec3& color) {
@@ -836,7 +904,7 @@ void Renderer::rect(float x, float y, float w, float h, const Color& c) {
     uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, c, 0, 0);
 }
 
-static inline float glyphAdv(int prev, int g) { return kUiAdv[prev] + kUiKern[prev * 95 + g] * (1.0f / 16.0f); }
+static inline float glyphAdv(int prev, int g) { return g_uiAdv[prev] + g_uiKern[prev * 95 + g] * (1.0f / 16.0f); }
 
 void Renderer::text(float x, float y, float s, const std::string& str, const Color& c) {
     if (s <= 0) return;
@@ -871,8 +939,8 @@ void Renderer::textMono(float x, float y, float s, const std::string& str, const
     for (size_t i = 0; i < str.size(); i++) {
         int g = glyphIndex(str[i]);
         if (g == 0) continue;
-        float sx = s * std::min(1.0f, kMonoAdv / kUiAdv[g]); // horizontal scale
-        float cx = x + i * kMonoAdv * s + (kMonoAdv * s - kUiAdv[g] * sx) * 0.5f;
+        float sx = s * std::min(1.0f, kMonoAdv / g_uiAdv[g]); // horizontal scale
+        float cx = x + i * kMonoAdv * s + (kMonoAdv * s - g_uiAdv[g] * sx) * 0.5f;
         float qx = std::round(cx - kUiOrigin * sx) - kUiPad * sx, qy = cy - pad;
         float tx = (g % 16) * kUiCell, ty = (g / 16) * kUiCell;
         uiQuad(ui_, qx, qy, qx + (8.0f + 2 * kUiPad) * sx, qy + 8.0f * s + 2 * pad, tx, ty, tx + kUiCell, ty + kUiCell, c, si, sf);
@@ -885,7 +953,7 @@ float Renderer::textWidth(const std::string& str, float scale) const {
     float w = 0;
     int prev = -1;
     for (char ch : str) { int g = glyphIndex(ch); if (prev >= 0) w += glyphAdv(prev, g); prev = g; }
-    if (prev >= 0) w += kUiAdv[prev];
+    if (prev >= 0) w += g_uiAdv[prev];
     return w * std::max(scale, kMinTextScale);
 }
 
@@ -900,7 +968,7 @@ size_t Renderer::textFit(const std::string& str, float scale, float maxW) const 
     int prev = -1;
     for (size_t i = 0; i < str.size(); i++) {
         int g = glyphIndex(str[i]);
-        float nw = w + (prev >= 0 ? glyphAdv(prev, g) - kUiAdv[prev] : 0) + kUiAdv[g];
+        float nw = w + (prev >= 0 ? glyphAdv(prev, g) - g_uiAdv[prev] : 0) + g_uiAdv[g];
         if (nw * std::max(scale, kMinTextScale) > maxW) return i;
         w = nw; prev = g;
     }

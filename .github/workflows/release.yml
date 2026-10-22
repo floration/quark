@@ -274,6 +274,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 tools/site_changelog.py .
+          # the owner's website pictures (docs/ASSETS.md): assets/overrides/website/<file> replaces site/img/<file>
+          if [ -d assets/overrides/website ]; then find assets/overrides/website -maxdepth 1 -type f \( -name '*.jpg' -o -name '*.png' \) -exec cp {} site/img/ \; ; fi
           cd site
           touch .nojekyll
           git init -q -b gh-pages

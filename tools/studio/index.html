@@ -131,14 +131,14 @@ pre.data { margin: 0; max-height: 360px; overflow: auto; font: 12px/1.5 var(--mo
 // ---------------------------------------------------------------------------------------------------------------
 const KIND_ACCEPT = {
   sound: ".wav,.ogg,.mp3,.flac", model: ".glb,.gltf", map: ".qmap", image: ".png,.jpg,.jpeg",
-  font: ".ttf,.otf,.png", data: ".json",
+  font: ".ttf,.otf", data: ".json",
 };
 const KIND_HINT = {
   sound: "WAV, OGG, MP3 or FLAC. Start the sound right away (no silence first); keep it short.",
   model: "glTF (.glb or .gltf), Y up, metres, same size and origin as the default (spin both to compare). Name a material \"team\" to have it tinted with the team colour.",
   map: "A .qmap file (the map editor saves these). It replaces the generated map of the same name.",
   image: "PNG or JPG, ideally the same size as the default.",
-  font: "TTF / OTF, or for the pixel font a PNG atlas laid out like the default.",
+  font: "TTF or OTF: a static font in the weight to show (the default is Work Sans Bold). The game builds its text atlas from it.",
   data: "JSON in the same shape as the default.",
 };
 const CAT_ORDER = ["Sounds", "Voices", "Models", "Maps", "Images", "Fonts", "Website", "Data"];

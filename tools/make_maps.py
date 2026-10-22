@@ -4,13 +4,16 @@ The maps are a build artifact: CMake runs this (python3, nothing else needed) an
 .gitignore leaves out. Edit this file and rebuild; never hand-edit the .qmap files it writes.
   python3 tools/make_maps.py [--out DIR]   writes every map (default: maps/ next to tools/)
   python3 tools/make_maps.py --list        prints the names of the maps it makes, writes nothing
-Output is byte-for-byte deterministic (seeded generators only; LF line endings on every platform)."""
+Output is byte-for-byte deterministic (seeded generators only; LF line endings on every platform).
+The owner's map overrides win (docs/ASSETS.md): a map with a file at assets/overrides/maps/<name>.qmap is written as
+that file (line endings normalised), never generated over it."""
 import os, random, math, argparse
 _ap = argparse.ArgumentParser(description="generate the shipped maps")
 _ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "maps"))
 _ap.add_argument("--list", action="store_true", help="print the map names instead of writing the maps")
 ARGS = _ap.parse_args()
 OUT = ARGS.out
+OVERRIDES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "overrides", "maps")
 MADE = []
 
 class M:
@@ -619,6 +622,12 @@ class M:
             p = [tuple(round(v * 0.85, 3) for v in p[0])] + list(p[1:])
             s.lines.insert(4, "palette " + " ".join(f"{k} {c[0]:g} {c[1]:g} {c[2]:g}" for k, c in zip(("base", "accent", "metal", "glow", "sky"), p)))
         os.makedirs(OUT, exist_ok=True)
+        ov = os.path.join(OVERRIDES, name + ".qmap")
+        if os.path.isfile(ov):   # the owner's own version of this map replaces the generated one
+            text = open(ov, "rb").read().replace(b"\r", b"")
+            with open(os.path.join(OUT, name + ".qmap"), "wb") as f: f.write(text)
+            print("make_maps: %s.qmap is the override assets/overrides/maps/%s.qmap" % (name, name))
+            return
         with open(os.path.join(OUT, name + ".qmap"), "w", newline="\n") as f: f.write("\n".join(s.lines) + "\n")
 
 

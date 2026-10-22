@@ -2,8 +2,11 @@
 """Draws the quark icon: a Rubik ExtraBold 'Q' split into team (cyan) and enemy (red) colors,
 black outline, on a dark rounded tile. Needs Pillow (pip install pillow).
 Writes assets/quark.ico (16-256 px), assets/quark.png (256 px), src/launcher/icon_data.h (embedded PNG)
-and site/icon.png (website favicon)."""
-import io, os, struct, sys
+and site/icon.png (website favicon).
+The owner's icon wins (docs/ASSETS.md): with assets/overrides/images/icon.<png|jpg|jpeg>, every size is made from
+that picture instead of the drawn Q, and assets/quark.icon-source records its sha256 (quark_tests checks the shipped
+icon was made from the current override: run this again after changing it)."""
+import hashlib, io, os, struct, sys
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageChops
 
 root = sys.argv[1] if len(sys.argv) > 1 else "."
@@ -38,7 +41,21 @@ def draw(S=1024):
     img.paste((0, 0, 0, 255), (0, 0), ImageChops.multiply(seam, mask))
     return img
 
-big = draw()
+override = next((os.path.join(root, "assets/overrides/images/icon" + e) for e in (".png", ".jpg", ".jpeg")
+                 if os.path.isfile(os.path.join(root, "assets/overrides/images/icon" + e))), None)
+marker = os.path.join(root, "assets/quark.icon-source")
+if override:   # the owner's picture, centred on a square transparent canvas
+    src = Image.open(override).convert("RGBA")
+    S = 1024
+    k = S / max(src.size)
+    src = src.resize((max(1, round(src.size[0] * k)), max(1, round(src.size[1] * k))), Image.LANCZOS)
+    big = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    big.paste(src, ((S - src.size[0]) // 2, (S - src.size[1]) // 2))
+    with open(marker, "w") as f:
+        f.write("%s %s\n" % (hashlib.sha256(open(override, "rb").read()).hexdigest(), os.path.relpath(override, root).replace(os.sep, "/")))
+else:
+    big = draw()
+    if os.path.exists(marker): os.remove(marker)
 def png_bytes(size):
     b = io.BytesIO()
     big.resize((size, size), Image.LANCZOS).save(b, "PNG", optimize=True)
