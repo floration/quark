@@ -1959,6 +1959,45 @@ static void testEditSession(uint16_t port) {
 }
 
 // Demos: record a match from one client, play it back into another: the map, players, names and events come back.
+// Ids from a server or a demo index fixed kMaxPlayers arrays on the client (REVIEW CLI-1: a snapshot player id of 33
+// wrote past a 32-entry stack array every frame). The decoder rejects them, and the client survives the review's demo.
+static void testSnapshotBounds() {
+    printf("snapshot decode: ids in range\n");
+    auto decodes = [](Snapshot s) {
+        std::vector<uint8_t> b(64 * 1024);
+        Writer w(b.data(), (int)b.size());
+        writeSnapshotClient(w, s); writeSnapshotWorld(w, s, nullptr); writeSnapshotEvents(w, s.events);
+        Reader r(b.data(), w.size());
+        Snapshot out;
+        return readSnapshotClient(r, out) && readSnapshotWorld(r, out, nullptr) && readSnapshotEvents(r, out);
+    };
+    Snapshot ok;
+    ok.clientId = kMaxPlayers - 1;
+    for (int id : {0, kMaxPlayers - 1}) { PlayerSnap p; p.id = (uint8_t)id; ok.players.push_back(p); }
+    ProjectileSnap pr; pr.id = 1; pr.owner = kMaxPlayers - 1; ok.projectiles.push_back(pr);
+    CHECK(decodes(ok));
+    { Snapshot s = ok; s.players[1].id = 33; CHECK(!decodes(s)); }
+    { Snapshot s = ok; s.players[1].id = 0; CHECK(!decodes(s)); }               // the same id twice
+    { Snapshot s = ok; s.players[0].weapon = WPN_COUNT; CHECK(!decodes(s)); }
+    { Snapshot s = ok; s.projectiles[0].owner = kMaxPlayers; CHECK(!decodes(s)); }
+    { Snapshot s = ok; s.clientId = kMaxPlayers; CHECK(!decodes(s)); }
+    { Snapshot s = ok; s.selfWeapon = WPN_COUNT; CHECK(!decodes(s)); }
+    { Snapshot s = ok; s.ms.mode = MODE_COUNT; CHECK(!decodes(s)); }
+    // the review's demo: a map, then snapshots with player id 33
+    NetClient nc;
+    std::string err;
+    CHECK(nc.startPlayback(std::string(QUARK_TEST_DATA) + "/demo_oob_id33.qdemo", err));
+    for (int k = 0; k < 10 && nc.playback(); k++) { nc.poll(); nc.interpolatedPlayers(); }
+    CHECK(!nc.hasSnapshot());   // every snapshot in it is out of range
+    // tourney bracket text: ids, the round and the match are all used as indices
+    std::vector<std::vector<int>> rounds;
+    int round = 0, match = 0;
+    CHECK(parseBracket("0|1|31|99\n-2|-7\n@-5,999999", rounds, round, match) && rounds.size() == 2);
+    CHECK(rounds[0] == std::vector<int>({0, 1, 31, -2}) && rounds[1] == std::vector<int>({-2, -2}) && round == 0 && match == 2 * kMaxPlayers);
+    CHECK(parseBracket("0|1\n@7,0", rounds, round, match) && round == 1);
+    CHECK(!parseBracket("1\n1\n1\n1\n1\n1\n1\n1\n1\n@0,0", rounds, round, match) && rounds.empty());
+}
+
 static void testDemo(uint16_t port) {
     printf("demo record + playback\n");
     Server s;
@@ -2430,7 +2469,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(29610); testRankedVoteAndRestart(29620); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(29600); testEditSession(29601); testVotedEdit(29602); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
-    if (argc >= 2 && std::string(argv[1]) == "demo") { testDemo(29603); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemo(29603); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(29960); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(29950); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(29900); return g_fail ? 1 : 0; }
@@ -2459,7 +2498,7 @@ int main(int argc, char** argv) {
         {"modes", [] { testCustomMode(28570); testPoints(28571); testSyringe(28572); testCartChecks(28573); testItModes(28574); }},
         {"race", [] { testTimeTrial(28580); testPayloadPush(28581); testPacketLoss(28582); testCartDash(28583); testSemiAuto(28584); }},
         {"votes", [] { testRejoin(28590); testMapVote(28591); }},
-        {"edit", [] { testMapDownload(28600); testEditSession(28601); testVotedEdit(28602); testDemo(28603); }},
+        {"edit", [] { testSnapshotBounds(); testMapDownload(28600); testEditSession(28601); testVotedEdit(28602); testDemo(28603); }},
         {"ranked", [] { testFilledParse(); testRanked(28610); testRankedVoteAndRestart(28620); testInternetList(28625); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine

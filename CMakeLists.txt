@@ -164,6 +164,7 @@ endif()
 if(QUARK_BUILD_TESTS)
   add_executable(quark_tests tests/tests.cpp tests/mapreport.cpp)
   target_link_libraries(quark_tests quark_core)
+  target_compile_definitions(quark_tests PRIVATE QUARK_TEST_DATA="${CMAKE_SOURCE_DIR}/tests/data")   # regression inputs
 endif()
 
 # Copy maps next to the executables so builds run in place.

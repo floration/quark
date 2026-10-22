@@ -125,7 +125,7 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
             std::string mapName = r.str();
             uint32_t crc = r.u32();
             r.u8(); // mode
-            if (r.bad()) return;
+            if (r.bad() || id >= kMaxPlayers) return;
             clientId_ = id;
             if (!mapReady_ || map_.name != mapName || map_.crc != crc) {
                 if (useMap(mapName, crc)) dl_ = Download();
@@ -452,7 +452,7 @@ NetClient::PlayerArray NetClient::interpolatedPlayers() const {
     float ta = a->timeMs * 0.001f, tb = b->timeMs * 0.001f;
     float t = tb > ta ? clampf((renderTime_ - ta) / (tb - ta), 0, 1) : 1.0f;
     for (auto& pb : b->players) {
-        if (pb.hidden) continue; // out of sight: the server didn't send where they are
+        if (pb.hidden || pb.id >= kMaxPlayers) continue; // out of sight: the server didn't send where they are (ids: checked at decode too)
         InterpPlayer& ip = out[pb.id];
         ip.valid = true;
         ip.snap = pb;
@@ -697,7 +697,7 @@ void NetClient::pollPlayback() {
             for (uint32_t i = 0; i < len && !r.bad(); i++) src += (char)r.u8();
             int id = r.u8();
             Map m;
-            if (r.bad() || !m.parse(src)) continue;
+            if (r.bad() || id >= kMaxPlayers || !m.parse(src)) continue;
             m.name = name;
             map_ = std::move(m);
             mapReady_ = true;
