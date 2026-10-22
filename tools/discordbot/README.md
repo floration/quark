@@ -26,15 +26,16 @@ one elsewhere). The protocol and mode constants in `quarkdata.py` are copies of 
 - **Leaderboards**: `GET <master>/leaderboard?ladder=vanilla|vampire|instagib&n=10` (`rating games name`) and
   `GET <master>/raceboard?map=viaduct&n=10` (`ms name`) (`src/game/ranked.cpp`, `tools/master/worker.js`).
 - **Updates**: `https://api.github.com/repos/floration/quark/releases/latest` (production: never a prerelease) and
-  `.../releases?per_page=10` (testing builds = GitHub **prereleases**, tags like `v1.17.0-test.3`); the release body is the changelog.
+  `.../releases?per_page=10` (testing builds = GitHub **prereleases**, tags like `test-1.17.0-test.3`); the release body is the changelog.
 - **Queues / crowns**: `POST|GET /queue`, `GET /filled?since=N`, `GET /crowns` on the master (`tools/master/worker.js`).
 - **Info**: `kInfoTabs` / `kInfoPages` parsed from `src/client/game.cpp` (local checkout if present, else from GitHub's raw file).
 
 ## What it does
 - **#updates**: posts each new **production** release's changelog as embeds and pings **Update Pings**. The last announced
   tag is kept in `state.json` (on a fresh install it announces the current release once). `/changelog [version]` shows
-  any version (`1.17.0` or `1.17.0-test.3`).
-- **#testing-updates**: each new **testing build** (a GitHub prerelease, `v<VERSION>-test.N`) is posted here instead and
+  any version (`1.17.0`, or a testing build `1.17.0-test.3` / `test-1.17.0-test.3`: labelled testing, with the
+  notes of its base version `changelogs/1.17.0.md`).
+- **#testing-updates**: each new **testing build** (a GitHub prerelease, `test-<VERSION>-test.N`) is posted here instead and
   pings **Testing Updates** only. A prerelease is never announced in #updates, and a release whose tag has a suffix but
   isn't marked prerelease is announced nowhere (`release_kind` in `bot.py`, tested).
 - **🟢 LIVE SERVERS** category: a locked voice channel on top named `🟢 13 players live`, then one text channel per

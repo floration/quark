@@ -93,7 +93,7 @@ Older installs passed the token and key on a `sudo env ...` command line (visibl
 | `quarkdata.py` `MODE_NAMES`, `MODE_TITLES` | `gamedefs.h` `modeName` / `modeTitle` | a mode is added or renamed |
 | `bot.py` `QUEUES` | `src/client/community.cpp` `kQueues`, `tools/master/worker.js` `QUEUE_SIZES` | queues change |
 | `quarkdata.py` `RANKED_LADDERS`, `RACE_MAP` | ranked ladders, the time-trial map | ranked changes |
-| GitHub releases / tag format (`v1.2.3`, prerelease `v1.2.3-test.N`) | `.github/workflows/release.yml` | the release process changes |
+| GitHub releases / tag format (`v1.2.3`, prerelease `test-1.2.3-test.N`) | `.github/workflows/release.yml` | the release process changes |
 
 ## The game's cross-language test
 
