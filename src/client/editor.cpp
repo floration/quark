@@ -173,11 +173,44 @@ void resetEditorView(const Map& m, Vec3& cam, float& yaw, float& pitch) {
 }
 }
 
+// --edscript: one step per frame, so the editor's own UI code handles every click / key (headless tests).
+// Positions are in 720p units; a negative x counts from the right edge (the panel).
+void Game::edScriptStep() {
+    std::string st = edScript_.front();
+    edScript_.erase(edScript_.begin());
+    std::istringstream in(st);
+    std::string cmd;
+    in >> cmd;
+    const float s = (float)r_.height() / 720.0f;
+    auto pos = [&] {
+        float x = 0, y = 0;
+        in >> x >> y;
+        uiIn_.mx = x < 0 ? (float)r_.width() + x * s : x * s;
+        uiIn_.my = y * s;
+    };
+    if (cmd == "click") { pos(); uiIn_.pressed = uiIn_.down = true; edScript_.insert(edScript_.begin(), "up"); }
+    else if (cmd == "down") { pos(); uiIn_.pressed = uiIn_.down = true; }
+    else if (cmd == "move") pos();
+    else if (cmd == "up") uiIn_.down = false;
+    else if (cmd == "type") { std::string t; std::getline(in >> std::ws, t); uiIn_.chars += t; }
+    else if (cmd == "enter") uiIn_.enter = true;
+    else if (cmd == "bs") { int n = 0; in >> n; uiIn_.backspace = true; if (n > 1) edScript_.insert(edScript_.begin(), "bs " + std::to_string(n - 1)); }
+    else if (cmd == "sel") { int k = 0, i = 0; in >> k >> i; edSel_ = {k, i}; }
+    else if (cmd == "cam") { in >> edCam_.x >> edCam_.y >> edCam_.z >> yaw_ >> pitch_; yaw_ = deg2rad(yaw_); pitch_ = deg2rad(pitch_); }
+    else if (cmd == "openidx") { int i = 0; in >> i; if (!maps_.empty()) openEditor(maps_[i % maps_.size()]); } // exactly what OPEN does
+    else if (cmd == "print") {
+        printf("edscript: name=%s map=%s title=%s brushes=%zu sel=%d/%d", edName_.c_str(), ed_.name.c_str(), ed_.title.c_str(), ed_.brushes.size(), edSel_.kind, edSel_.idx);
+        if (edSelValid()) { AABB b = edBounds(ed_, edSel_); printf(" box=%g %g %g %g %g %g", b.mn.x, b.mn.y, b.mn.z, b.mx.x, b.mx.y, b.mx.z); }
+        printf("\n");
+        fflush(stdout);
+    } else if (cmd == "quit") quit_ = true;
+}
+
 void Game::edNotify(const std::string& s) { edMsg_ = s; edMsgUntil_ = time_ + 3; }
 
 bool Game::edSelValid() const { return edSel_.valid() && (size_t)edSel_.idx < kindCount(ed_, edSel_.kind); }
 
-void Game::openEditor(const std::string& name) {
+void Game::openEditor(std::string name) {
     rescanMaps();
     ed_ = Map();
     edUndo_.clear();
@@ -195,7 +228,10 @@ void Game::openEditor(const std::string& name) {
         ed_.brushes.push_back({{{-20, -1, -20}, {20, 0, 20}}, 0});
         ed_.spawns.push_back({{0, 0, 0}, 0, SPAWN_ANY});
         ed_.rebuild();
-        edName_ = "mymap";
+        // a new map keeps the name it was opened with (it used to fall back to "mymap", so saving overwrote that);
+        // a file that's there but won't load (an older / over-limit map) isn't overwritten by the blank one
+        if (!isValidMapName(name)) edName_ = "mymap";
+        else edName_ = err.rfind("map not found", 0) == 0 ? name : typedMapName(name + "_new");
     }
     for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == edName_) edLoadIdx_ = (int)i;
     resetEditorView(ed_, edCam_, yaw_, pitch_);
@@ -689,12 +725,14 @@ std::vector<Game::EdHandle> Game::edHandles() const {
             else p[a] = sg > 0 ? b.mx[a] : b.mn[a];
             hs.push_back({p, a, sg, point});
         }
-    if (!point) // boxes, zones, ladders: three move arrows out past the + faces (the face squares resize)
-        for (int a = 0; a < 3; a++) {
-            Vec3 p = c;
-            p[a] = b.mx[a] + std::max(1.0f, (b.mx[a] - b.mn[a]) * 0.25f);
-            hs.push_back({p, a, 1, true});
-        }
+    if (!point) // boxes, zones, ladders: a move arrow out past each of the 6 faces (the face squares resize that side)
+        for (int a = 0; a < 3; a++)
+            for (int sg = -1; sg <= 1; sg += 2) {
+                Vec3 p = c;
+                float out = std::max(1.0f, (b.mx[a] - b.mn[a]) * 0.25f);
+                p[a] = sg > 0 ? b.mx[a] + out : b.mn[a] - out;
+                hs.push_back({p, a, sg, true});
+            }
     return hs;
 }
 
@@ -998,11 +1036,19 @@ void Game::editorFrame(double dt) {
         if (edSel_.kind == ED_LIGHT) { auto& l = ed_.lights[edSel_.idx]; r_.translucentBox(around(l.pos, {l.radius, l.radius, l.radius}), {1, 0.9f, 0.4f, 0.06f}); }
         const Vec3 axisCol[3] = {{1.0f, 0.3f, 0.25f}, {0.35f, 1.0f, 0.35f}, {0.3f, 0.55f, 1.0f}};
         Vec3 bc = b.center();
-        for (auto& hd : edHandles()) { // sized to stay grabbable at any distance
+        // handles: drawn over everything (the overlay pass clears depth after the world), so the ones on the far
+        // faces and inside walls show too; sized to stay grabbable at any distance
+        for (auto& hd : edHandles()) {
             float sz = clampf(length(hd.pos - edCam_) * 0.018f, 0.05f, 1.2f);
-            Vec3 col = axisCol[hd.axis] * (edDragAxis_ == hd.axis && edDragSign_ == hd.sign ? 1.3f : 1.0f);
-            if (hd.move) r_.line(bc, hd.pos, sz * 0.3f, rgba(col));
-            r_.box(hd.pos, {sz, sz, sz}, 0, col, 1.0f, false);
+            bool active = edDragAxis_ == hd.axis && edDragSign_ == hd.sign && edDragMove_ == hd.move;
+            Vec3 col = axisCol[hd.axis] * (active ? 1.3f : 1.0f);
+            if (hd.move) { // the arrow's shaft: from the face it sticks out of
+                Vec3 from = bc, half = {sz * 0.15f, sz * 0.15f, sz * 0.15f};
+                from[hd.axis] = hd.sign > 0 ? b.mx[hd.axis] : b.mn[hd.axis];
+                half[hd.axis] = std::fabs(hd.pos[hd.axis] - from[hd.axis]) * 0.5f;
+                r_.overlayBox((from + hd.pos) * 0.5f, half, col * 0.8f);
+                r_.overlayBox(hd.pos, {sz * 0.8f, sz * 0.8f, sz * 0.8f}, col);
+            } else r_.overlayBox(hd.pos, {sz, sz, sz}, col);
         }
     }
     // the other editors: a camera box each, labeled after the scene is drawn
@@ -1047,7 +1093,7 @@ void Game::editorFrame(double dt) {
         ui_.label(x, y, "EDITING TOGETHER (" + std::to_string(n) + ")", ui_.accent);
         y += 22 * s;
         bool temp = net_.hasSnapshot() && (net_.mode().flags & MS_TEMP_EDIT);
-        ui_.label(x, y, "MAP " + edName_ + (temp ? " - REVERTS WHEN THE MAP CHANGES" : host_ ? " - AUTOSAVED" : " - THE HOST SAVES IT"), kGrey, 0.5f);
+        ui_.label(x, y, "MAP " + net_.map().name + (temp ? " - REVERTS WHEN THE MAP CHANGES" : host_ ? " - AUTOSAVED" : " - THE HOST SAVES IT"), kGrey, 0.5f);
         y += 12 * s;
     } else {
         ui_.label(x, y, std::string("MAP EDITOR") + (edDirty_ ? " *" : ""), ui_.accent);
@@ -1057,10 +1103,11 @@ void Game::editorFrame(double dt) {
     }
     if (!ui_.typing()) edTitle_ = ed_.title;
     {
-        float tx = edOnline_ ? x : x + w2 + gap, tw = edOnline_ ? w : w2;
-        if (!edOnline_) ui_.textField(40, x, y, w2, h, edName_, 24);
+        // the file name, in a session too (SAVE A COPY / the host's SAVE AS use it). Kept a valid file name as you
+        // type: a space becomes _, other characters are dropped (they used to stay, and every save was refused)
+        if (ui_.textField(40, x, y, w2, h, edName_, 24)) edName_ = typedMapName(edName_);
         std::string before = edTitle_;
-        if (ui_.textField(41, tx, y, tw, h, edTitle_, 32) && edTitle_ != before) edDo("t " + edTitle_, "t " + ed_.title, true);
+        if (ui_.textField(41, x + w2 + gap, y, w2, h, edTitle_, 32) && edTitle_ != before) edDo("t " + edTitle_, "t " + ed_.title, true);
     }
     row();
     {
@@ -1077,9 +1124,12 @@ void Game::editorFrame(double dt) {
             if (ui_.button(x, y, w2, h, "PLAY MODE")) net_.sendCommand("editmode off"); // everyone plays it; ESC menu has EDIT MODE
         } else if (ui_.button(x, y, w2, h, "VOTE: PLAY IT")) net_.sendCommand("callvote edit off");
         if (ui_.button(x + w2 + gap, y, w2, h, host_ && !temp ? "END SESSION" : "LEAVE")) { closeEditor(); return; }
+        row();
         if (temp || !host_) {
-            row();
-            if (ui_.button(x, y, w, h, "SAVE A COPY")) edSaveCopy(ed_, edName_);
+            if (ui_.button(x, y, w, h, "SAVE A COPY AS " + edName_)) edSaveCopy(ed_, edName_);
+        } else if (ui_.button(x, y, w, h, "SAVE AS " + edName_)) {
+            if (!isValidMapName(edName_)) edNotify("name: letters, digits, - and _ only");
+            else net_.sendCommand("editmode saveas " + edName_); // your session's file: saved under this name from now on
         }
         row();
     } else {

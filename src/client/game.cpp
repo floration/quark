@@ -64,6 +64,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     if (!opts_.demo.empty()) playDemo(opts_.demo);
     if (opts_.debugLeaderboard) { setScreen(Screen::Leaderboard); raceStatsView_ = opts_.debugRaceStats; }
     if (!opts_.editMap.empty()) { openEditor(opts_.editMap); if (opts_.editSession) edHostSession(); if (opts_.editSel >= 0) edSel_ = {ED_BRUSH, opts_.editSel}; }
+    if (!opts_.editScript.empty()) { std::stringstream ss(opts_.editScript); std::string st; while (std::getline(ss, st, ';')) if (!st.empty()) edScript_.push_back(st); }
     for (size_t i = 0; i < maps_.size(); i++) if (maps_[i] == cfg_.hostMap) hostMapIdx_ = (int)i;
     hostModeIdx_ = clampf((float)cfg_.hostMode, 0, MODE_COUNT - 1);
     cfg_.hostMaxPlayers = std::min(std::max(cfg_.hostMaxPlayers, 2), kMaxPlayers);
@@ -1095,6 +1096,7 @@ void Game::frame(double dt) {
 
     // ---- render ----
     if (screen_ == Screen::Editor) {
+        if (!edScript_.empty()) edScriptStep();
         editorFrame(dt);
     } else if (screen_ == Screen::InGame && net_.hasSnapshot() && r_.worldLoaded()) {
         drawWorld((float)clampf((float)(tickAcc_ / net_.tickPeriod()), 0, 1));

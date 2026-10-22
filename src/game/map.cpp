@@ -182,6 +182,14 @@ bool isValidMapName(const std::string& name) {
     for (char c : name) if (!mapNameChar(c)) return false;
     return true;
 }
+std::string typedMapName(const std::string& typed) {
+    std::string o;
+    for (char c : typed) {
+        if (c == ' ') c = '_';
+        if (mapNameChar(c) && o.size() < 40) o += c;
+    }
+    return o;
+}
 std::string safeMapName(const std::string& name) {
     std::string o = name.substr(0, 40);
     for (char& c : o) if (!mapNameChar(c)) c = '_';

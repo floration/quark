@@ -54,6 +54,7 @@ int main(int argc, char** argv) {
         else if (a == "--menushot") opts.menuShot = true;
         else if (a == "--bench") opts.bench = atof(next().c_str());
         else if (a == "--edsel") opts.editSel = atoi(next().c_str());
+        else if (a == "--edscript") opts.editScript = next();
         else if (a == "--editsession") { opts.editMap = next(); opts.editSession = true; }
         else if (a == "--pitch") opts.spawnPitch = (float)atof(next().c_str());
         else if (a == "-h" || a == "--help") {

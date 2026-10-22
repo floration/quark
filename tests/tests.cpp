@@ -2204,9 +2204,20 @@ static void testEditSession(uint16_t port) {
     a.sendCommand("ed b del 0");
     pump(s, cls, 0.5, idle);
     CHECK(c.map().crc == s.map_.crc && c.map().brushes.size() == nb);
+    // the host names the map in the session (the editor's SAVE AS): saved, and autosaved, under the typed name
+    std::string name2 = name + "_renamed", path2 = userMapsDir() + "/" + name2 + ".qmap";
+    s.command("editmode saveas ../evil");
+    CHECK(s.cfg_.map == name);
+    s.command("editmode saveas " + name2);
+    Map renamed;
+    CHECK(s.cfg_.map == name2 && renamed.load(name2) && renamed.crc == s.map_.crc && renamed.brushes.size() == nb);
+    a.sendCommand("ed t Renamed");
+    pump(s, cls, 0.5, idle);
     s.stop(); // autosaves
-    CHECK(saved.load(name) && saved.brushes.size() == nb);
+    CHECK(renamed.load(name2) && renamed.title == "Renamed" && renamed.brushes.size() == nb);
+    CHECK(saved.load(name) && saved.title == "Edited Arena"); // the old file keeps its last save
     std::remove(path.c_str());
+    std::remove(path2.c_str());
     for (uint32_t crc : {a.map().crc, c.map().crc}) std::remove(downloadedMapPath(name, crc).c_str());
 }
 
@@ -2677,6 +2688,9 @@ static void testHostileInput() {
     { Map m; CHECK(m.parse(base) && m.brushes.size() == 1); } // a sane map still parses after all that
     // map names: a stem, never a path
     CHECK(isValidMapName("temple") && isValidMapName("my-map_2"));
+    // the editor's name field: what you type is what it saves as (a space used to make every save fail)
+    CHECK(typedMapName("My Castle 2") == "My_Castle_2" && isValidMapName(typedMapName("My Castle 2")));
+    CHECK(typedMapName("../x.qmap") == "xqmap" && typedMapName("").empty() && typedMapName(std::string(60, 'a')).size() == 40);
     CHECK(!isValidMapName("") && !isValidMapName("../x") && !isValidMapName("a/b") && !isValidMapName("a\\b") && !isValidMapName("c:x")
           && !isValidMapName("a.b") && !isValidMapName(std::string(41, 'a')) && !isValidMapName(std::string("a\0b", 3)));
     CHECK(safeMapName("../../etc/x") == "______etc_x" && safeMapName("") == "map" && safeMapName("temple") == "temple");

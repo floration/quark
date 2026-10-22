@@ -50,6 +50,7 @@ struct LaunchOptions {
     std::string editMap;        // --editor MAP: open the map editor on that map
     bool editSession = false;   // --editsession MAP: and host it as an edit session
     int editSel = -1;           // --edsel N: select box N (screenshots)
+    std::string editScript;     // --edscript "click x y;type t;..." : drive the editor's UI headless (tests, screenshots)
     bool debugLeaderboard = false; // --leaderboard: open the leaderboard screen
     std::string demo;              // --demo <file>: watch it
     int debugCustom = 0;           // --customshot <tab>: open the custom mode editor on that tab (stored +1; 0 = off)
@@ -220,7 +221,9 @@ private:
     bool edPrompt_ = false;     // "save your copy?" after leaving someone else's edit session
     Map edPromptMap_;
     std::string edPromptName_;
-    void openEditor(const std::string& map);
+    void openEditor(std::string map); // (by value: callers pass maps_[i], and opening rescans maps_)
+    std::vector<std::string> edScript_; // --edscript steps still to run (one per frame)
+    void edScriptStep();
     void enterOnlineEditor();
     void closeEditor();
     void editorFrame(double dt);

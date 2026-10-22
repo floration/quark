@@ -726,6 +726,18 @@ void Server::command(const std::string& line, int fromPlayer) {
     if (cmd == "editmode") { // editmode on|off: switch between editing the map together and playing it
         if (arg == "on") { if (!editing_) setEditing(true); return; }
         if (!editing_) return;
+        if (arg == "saveas") { // editmode saveas NAME: the session's map is saved (and autosaved from now on) under NAME
+            std::string name;
+            ss >> name;
+            if (!isValidMapName(name)) { reply("map name: letters, digits, - and _ only"); return; }
+            std::string old = cfg_.map;
+            cfg_.map = name;
+            map_.name = name;
+            if (!autosave()) { cfg_.map = map_.name = old; reply("could not save maps/" + name + ".qmap"); return; }
+            if (std::find(mapList_.begin(), mapList_.end(), name) == mapList_.end()) { mapList_.push_back(name); std::sort(mapList_.begin(), mapList_.end()); }
+            message("map saved as " + name);
+            return;
+        }
         int mode = map_.supportsMode(cfg_.mode) ? cfg_.mode : -1;
         if (mode < 0 && map_.preferredMode >= 0 && map_.supportsMode(map_.preferredMode)) mode = map_.preferredMode;
         if (mode < 0 && map_.supportsMode(MODE_FFA)) mode = MODE_FFA;

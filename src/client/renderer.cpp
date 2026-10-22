@@ -635,6 +635,10 @@ void Renderer::viewBox(const Vec3& offset, const Vec3& half, const Vec3& color) 
     emitBox(view_, xf, half, color, 1.0f);
 }
 
+void Renderer::overlayBox(const Vec3& center, const Vec3& half, const Vec3& color) {
+    emitBox(view_, Mat4::translate(center), half, color, 1.0f);
+}
+
 Vec3 Renderer::viewPoint(const Vec3& o) const {
     float cp = std::cos(camPitch_), sp = std::sin(camPitch_), cy = std::cos(camYaw_), sy = std::sin(camYaw_);
     Vec3 p = {o.x, cp * o.y - sp * o.z, sp * o.y + cp * o.z};          // rotX(pitch)

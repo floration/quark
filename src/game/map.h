@@ -150,6 +150,7 @@ std::string mapsFolder(); // absolute path of your maps folder (userMapsDir)
 // Maps fetched from servers live apart from your own, keyed by content: <user>/maps/downloads/<name>-<crc>.qmap
 // A map name is a file stem, never a path: [A-Za-z0-9_-]{1,40} (40 = what the editor lets you save).
 bool isValidMapName(const std::string& name);
+std::string typedMapName(const std::string& typed); // what the editor's name field keeps of what you type: a valid map name (space -> _)
 std::string safeMapName(const std::string& name); // for building file names: anything else becomes '_', capped
 std::string downloadedMapPath(const std::string& name, uint32_t crc);
 bool saveMapFile(const std::string& path, const std::string& text);
