@@ -1785,6 +1785,7 @@ static void testMapVote(uint16_t port) {
             a.sendCommand("vote no"); b.sendCommand("vote no");
             pump(s, cls, 0.2, idle);
             s.vote_.kind = Server::VOTE_NONE;
+            s.players_[b.clientId()].voteAt = 0;   // (a failed vote's caller waits before the next: not what this checks)
         }
     }
     s.stop();
@@ -2192,6 +2193,54 @@ static void testInputBacklog(uint16_t port) {
     double ran = (double)(s.players_[id].cmdsRun - c0), ticks = (double)(s.tick_ - t0);
     printf("  speedhack: %.0f commands run in %.0f ticks\n", ran, ticks);
     CHECK(ran <= ticks * 1.05 + 60);
+    s.stop();
+}
+
+// Chat and votes can't flood everyone's reliable events or stall the tick (REVIEW NET-7, NET-6): chat is rate
+// limited and printable only, votes check maps from a cache (no file parsing on the tick), a failed vote's caller
+// waits, and string commands over the per-tick budget are handled later, not lost.
+static void testChatAndVoteLimits(uint16_t port) {
+    printf("chat and vote limits\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a, b;
+    a.connect("127.0.0.1:" + std::to_string(port), "a");
+    b.connect("127.0.0.1:" + std::to_string(port), "b");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 1.0, idle);
+    b.takeEvents();
+    int ia = a.clientId();
+    CHECK(ia >= 0 && ia < kMaxPlayers);
+    if (ia < 0 || ia >= kMaxPlayers) { s.stop(); return; }
+    for (int k = 0; k < 30; k++) a.sendCommand("say spam " + std::to_string(k) + " \x1b[2J\x07");
+    pump(s, cls, 1.0, idle);
+    int chats = 0;
+    bool clean = true;
+    for (auto& e : b.takeEvents()) if (e.type == EV_CHAT) { chats++; for (char c : e.text) clean &= c >= 32 && c < 127; }
+    printf("  30 messages at once: %d went out\n", chats);
+    CHECK(chats >= 5 && chats <= 8 && clean);   // a burst of 5, then one a second
+    // tourney map lists: each map is read at most once, then comes from the cache
+    a.sendCommand("callvote tmaps colosseum,lodestone,colosseum,lodestone");
+    pump(s, cls, 0.3, idle);
+    uint32_t loads = s.mapInfoLoads_;
+    a.sendCommand("callvote tmaps lodestone,colosseum");   // (a vote is already running: refused, after the checks)
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_TMAPS && s.mapInfoLoads_ == loads);
+    // the vote fails: its caller can't call another straight away
+    b.sendCommand("vote no");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE);
+    a.sendCommand("callvote bots off");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE);
+    // more string commands than a tick's budget: all handled, a few a tick
+    uint16_t before = s.players_[ia].lastStringCmd;
+    for (int k = 0; k < 40; k++) a.sendCommand("nothing " + std::to_string(k));
+    pump(s, cls, 0.5, idle);
+    CHECK((uint16_t)(s.players_[ia].lastStringCmd - before) == 40);
     s.stop();
 }
 
@@ -2780,6 +2829,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "edgroups") { testEditorGroups(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(29997); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "allmaps") { testAllMaps(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "chat") { testChatAndVoteLimits(29592); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "limits") { testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(29990); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(29980); return g_fail ? 1 : 0; }
@@ -2816,7 +2866,7 @@ int main(int argc, char** argv) {
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", 28563); testSession(MODE_FFA, "bastion", 28564); testSession(MODE_RACE, "foundry", 28565); }},
         {"modes", [] { testCustomMode(28570); testPoints(28571); testSyringe(28572); testCartChecks(28573); testItModes(28574); }},
         {"race", [] { testTimeTrial(28580); testPayloadPush(28581); testPacketLoss(28582); testCartDash(28583); testSemiAuto(28584); }},
-        {"votes", [] { testRejoin(28590); testMapVote(28591); }},
+        {"votes", [] { testRejoin(28590); testMapVote(28591); testChatAndVoteLimits(28592); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(28604); testMapNames(28605); testMapDownload(28600); testEditSession(28601); testVotedEdit(28602); testDemo(28603); }},
         {"ranked", [] { testFilledParse(); testRanked(28610); testRankedVoteAndRestart(28620); testInternetList(28625); }},
     };

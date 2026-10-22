@@ -18,8 +18,12 @@ constexpr double kTimeout = 10.0;
 constexpr int kMaxQueuedCmds = 12;
 constexpr uint32_t kMaxRewindMs = 500; // lag compensation window
 constexpr float kMaxCmdTokensMs = 40.0f; // burst allowance after network jitter
-// Backlog: tokens refill at exactly the command rate, so after a client hitch the commands it then sends in a burst
-// stayed queued for good (+12 ms of input latency at 1000 Hz, +96 ms at 125 Hz). A queue that stays deeper than
+constexpr int kMaxStringCmdsPerTick = 8;   // per player (chat, votes, commands)
+constexpr int kMaxEditOpsPerTick = 2;      // per player: each re-serializes the map
+constexpr float kChatBurst = 5, kChatPerSecond = 1;
+constexpr float kVoteCooldown = 15;        // after a vote you called fails
+// Backlog: tokens refill at exactly the command rate, so after a stall (the network's or this machine's) the commands
+// that then arrive together, past the token burst, stayed queued for good (+12 ms of input latency at 1000 Hz, +96 ms at 125 Hz). A queue that stays deeper than
 // kDeepQueue for kDeepTicks ticks runs one extra command a tick from a small catch-up allowance, which refills at 1%
 // of the tick rate: enough for any number of hitches, too little for a speedhack to gain anything.
 constexpr int kDeepQueue = 2;
@@ -43,7 +47,62 @@ void Server::log(const std::string& s) {
     else printf("[server] %s\n", s.c_str());
 }
 
+int64_t Server::mapStamp(const std::string& name) {
+    std::error_code ec;
+    std::string path = findDataPath("maps/" + name + ".qmap");
+    auto size = std::filesystem::file_size(path, ec);
+    if (ec) return -1;
+    auto t = std::filesystem::last_write_time(path, ec);
+    if (ec) return -1;
+    return (int64_t)size * 1000003 ^ (int64_t)t.time_since_epoch().count();
+}
+
+Server::MapInfo Server::readMapInfo(const std::string& name, int64_t stamp) {
+    MapInfo mi;
+    mi.stamp = stamp;
+    Map m;
+    if (!validMapName(name) || !m.load(name)) return mi;
+    mi.ok = true;
+    for (int mode = 0; mode < MODE_COUNT; mode++) if (m.supportsMode(mode)) mi.supports |= 1u << mode;
+    if (isOfficialMap(m)) mi.ranked = m.rankedLadders;
+    return mi;
+}
+
+Server::MapInfo Server::mapInfo(const std::string& name) {
+    if (!validMapName(name)) return MapInfo();
+    int64_t stamp = mapStamp(name);
+    {
+        std::lock_guard<std::mutex> lk(mapInfoMu_);
+        auto it = mapInfo_.find(name);
+        if (it != mapInfo_.end() && it->second.stamp == stamp) return it->second;
+    }
+    MapInfo mi = readMapInfo(name, stamp);   // new or changed since: read it now (once)
+    mapInfoLoads_++;
+    std::lock_guard<std::mutex> lk(mapInfoMu_);
+    mapInfo_[name] = mi;
+    return mi;
+}
+
+void Server::stopMapInfo() {
+    mapInfoQuit_ = true;
+    if (mapInfoThread_.joinable()) mapInfoThread_.join();
+    mapInfoQuit_ = false;
+}
+
 bool Server::start(const ServerConfig& cfg, std::string* err) {
+    stopMapInfo();
+    mapInfoThread_ = std::thread([this, names = listMaps()] {   // the map facts votes need, off the tick
+        for (auto& n : names) {
+            if (mapInfoQuit_) return;
+            {
+                std::lock_guard<std::mutex> lk(mapInfoMu_);
+                if (mapInfo_.count(n)) continue;
+            }
+            MapInfo mi = readMapInfo(n, mapStamp(n));
+            std::lock_guard<std::mutex> lk(mapInfoMu_);
+            mapInfo_.emplace(n, mi);
+        }
+    });
     cfg_ = cfg;
     if (cfg_.maxPlayers < 1) cfg_.maxPlayers = 1;
     if (cfg_.maxPlayers > kMaxPlayers) cfg_.maxPlayers = kMaxPlayers;
@@ -114,6 +173,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
 }
 
 void Server::stop() {
+    stopMapInfo();
     if (!running_) return;
     if (editDirty_ && !tempEdit_) autosave();
     for (int i = 0; i < kMaxPlayers; i++)
@@ -453,6 +513,12 @@ void Server::handleInput(int id, Reader& r) {
     for (int k = 0; k < nStr && players_[id].connected; k++) {
         uint16_t seq = (uint16_t)(strSeq + k);
         if (seq != (uint16_t)(p.lastStringCmd + 1)) continue; // already handled (resent until acked)
+        // a budget per tick (map edits cost the most): what's over it stays unacknowledged and the client resends it
+        if (p.strTick != tick_) { p.strTick = tick_; p.strCount = p.edCount = 0; }
+        bool ed = strs[k].compare(0, 3, "ed ") == 0;
+        if (p.strCount >= kMaxStringCmdsPerTick || (ed && p.edCount >= kMaxEditOpsPerTick)) break;
+        p.strCount++;
+        p.edCount += ed;
         p.lastStringCmd = seq;
         handleStringCmd(id, strs[k]);
     }
@@ -497,6 +563,11 @@ void Server::handleStringCmd(int id, const std::string& s) {
     } else if (cmd == "say") {
         if (rest.empty()) return;
         if (rest.size() > 120) rest.resize(120);
+        for (auto& c : rest) if ((unsigned char)c < 32 || (unsigned char)c > 126) c = '?';   // (no control or escape codes in anyone's console or log)
+        p.chatTokens = std::min(kChatBurst, p.chatTokens + (time() - p.chatAt) * kChatPerSecond);
+        p.chatAt = time();
+        if (p.chatTokens < 1) { GameEvent e; e.type = EV_MESSAGE; e.text = "chat: slow down"; sendEvent(id, e); return; }
+        p.chatTokens -= 1;
         GameEvent e; e.type = EV_CHAT; e.a = (uint8_t)id; e.text = rest;
         broadcastEvent(e);
         log(p.name + ": " + rest);
@@ -566,6 +637,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
         GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.text = p.name;
         broadcastEvent(e);
     } else if (cmd == "callvote") {
+        if (time() < p.voteAt) { GameEvent e; e.type = EV_MESSAGE; e.text = "your last vote failed: wait a few seconds"; sendEvent(id, e); return; }
         std::istringstream vs(rest);
         std::string what, arg;
         vs >> what >> arg;
@@ -602,10 +674,9 @@ void Server::handleStringCmd(int id, const std::string& s) {
             bool ok = !arg.empty();
             std::istringstream ls(arg);
             std::string it;
-            while (std::getline(ls, it, ',')) {
-                Map m;
-                if (what == "tmaps" ? (!validMapName(it) || !m.load(it) || !m.supportsMode(MODE_TOURNEY))
-                                    : arenaVariantFromName(it.c_str()) < 0) ok = false;
+            int n = 0;
+            while (std::getline(ls, it, ',') && ok) {
+                if (++n > 32 || (what == "tmaps" ? !(mapInfo(it).supports >> MODE_TOURNEY & 1) : arenaVariantFromName(it.c_str()) < 0)) ok = false;
             }
             if (!ok) { GameEvent e; e.type = EV_MESSAGE; e.text = "can't vote for that list"; sendEvent(id, e); }
             else callVote(id, what == "tmaps" ? VOTE_TMAPS : VOTE_TMODES, 0, arg);
@@ -618,16 +689,16 @@ void Server::handleStringCmd(int id, const std::string& s) {
             if (variant < 0) variant = cfg_.arenaVariant;
             std::string mapName = what == "map" ? arg : cfg_.map;
             int mode = what == "mode" ? modeFromName(arg.c_str()) : m2.empty() ? cfg_.mode : modeFromName(m2.c_str());
-            Map m;
+            MapInfo m = mapInfo(mapName);
             std::string why;   // say exactly what's wrong instead of a generic refusal
             if (mode < 0) why = "unknown mode '" + (what == "mode" ? arg : m2) + "'";
             else if (cfg_.custom.active() && !cfg_.custom.maps.empty() && std::find(cfg_.custom.maps.begin(), cfg_.custom.maps.end(), mapName) == cfg_.custom.maps.end())
                 why = mapName + " isn't in this custom mode's map pool";
             else if (cfg_.custom.active() && mode != cfg_.custom.baseMode) why = "this server plays the custom mode " + cfg_.custom.name;
-            else if (!validMapName(mapName) || !m.load(mapName)) why = "this server doesn't have the map '" + mapName + "' (it may be on an older version)";
+            else if (!m.ok) why = "this server doesn't have the map '" + mapName + "' (it may be on an older version)";
 
             bool ok = why.empty();
-            if (ok && cfg_.ranked && (!arenaVariantRanked(variant) || mode != rankedMode(variant) || !isRankedMap(m, variant))) {
+            if (ok && cfg_.ranked && (!arenaVariantRanked(variant) || mode != rankedMode(variant) || !(m.ranked >> variant & 1))) {
                 GameEvent e; e.type = EV_MESSAGE; e.text = "ranked server: a ranked map for the ladder (vanilla / vampire 1v1, instagib free for all), or vote ranked off"; sendEvent(id, e);
                 return;
             }
@@ -1620,6 +1691,7 @@ void Server::callVote(int caller, int kind, int arg, const std::string& map, int
     }
     vote_ = Vote();
     vote_.kind = kind;
+    vote_.caller = caller;
     vote_.arg = arg;
     vote_.map = map;
     vote_.arg2 = arg2;
@@ -1738,7 +1810,12 @@ void Server::tickVote() {
         updateBalanceBots();
         return;
     }
-    if (fail) { message("vote failed: " + vote_.text); vote_ = Vote(); return; }
+    if (fail) {
+        if (vote_.caller >= 0 && vote_.caller < kMaxPlayers) players_[vote_.caller].voteAt = time() + kVoteCooldown;   // (no vote spam)
+        message("vote failed: " + vote_.text);
+        vote_ = Vote();
+        return;
+    }
     ms_.voteActive = 1;
     ms_.voteYes = (uint8_t)y;
     ms_.voteNo = (uint8_t)n;
@@ -2002,14 +2079,14 @@ void Server::setRanked(bool on, int ladder) {
     }
     if (editing_) setEditing(false);
     std::string mapName = cfg_.map;
-    Map m;
-    if (!(m.load(mapName) && isRankedMap(m, ladder) && m.supportsMode(rankedMode(ladder)))) {
+    auto fits = [&](const MapInfo& mi) { return mi.ok && (mi.ranked >> ladder & 1) && (mi.supports >> rankedMode(ladder) & 1); };
+    if (!fits(mapInfo(mapName))) {
         // the ladder's own map first (built for just that ruleset), else any ranked map that takes it
         mapName.clear();
         for (auto& n : listMaps()) {
-            Map c;
-            if (!c.load(n) || !isRankedMap(c, ladder) || !c.supportsMode(rankedMode(ladder))) continue;
-            bool own = c.rankedLadders == (1u << ladder);
+            MapInfo c = mapInfo(n);
+            if (!fits(c)) continue;
+            bool own = c.ranked == (1u << ladder);
             if (mapName.empty() || own) mapName = n;
             if (own) break;
         }

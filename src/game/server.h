@@ -7,8 +7,10 @@
 #include <memory>
 #include <deque>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 #include "../common/net.h"
 #include "../common/upnp.h"
@@ -105,6 +107,11 @@ struct ServerPlayer {
     float itFreezeUntil = 0;    // tag: just got tagged, stands still until then
     uint32_t lastCmdSeq = 0;
     uint16_t keys = 0;          // KEY_* from the last command
+    float chatTokens = 5;       // say: a burst of 5, then one a second (REVIEW NET-7)
+    float chatAt = 0;
+    float voteAt = 0;           // can't call a vote before this (set when one of theirs fails; REVIEW NET-6)
+    uint32_t strTick = 0;       // string commands handled this tick (a budget: the rest wait, the client resends them)
+    int strCount = 0, edCount = 0;
     std::deque<UserCmd> cmdQueue;
     float cmdTokensMs = 16.0f;
     int deepTicks = 0;          // ticks in a row the command queue has held a backlog (see kDeepQueue)
@@ -149,6 +156,7 @@ class Server {
 public:
     using LogFn = std::function<void(const std::string&)>;
 
+    ~Server() { stopMapInfo(); }
     bool start(const ServerConfig& cfg, std::string* err = nullptr);
     void stop();
     // Blocking loop for a dedicated server or a hosting thread.
@@ -217,7 +225,7 @@ public:
     void updateBalanceBots(bool matchStarting = false);
     // Votes (bots on/off, bot difficulty): majority of human players decides.
     enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL, VOTE_START, VOTE_STARTBOTS, VOTE_MAP, VOTE_TMAPS, VOTE_TMODES, VOTE_RANKED, VOTE_EDIT, VOTE_LETIN };
-    struct Vote { int kind = VOTE_NONE; int arg = 0, arg2 = 0; std::string map; uint32_t yes = 0, no = 0; float endsAt = 0; std::string text; } vote_;
+    struct Vote { int kind = VOTE_NONE; int caller = -1; int arg = 0, arg2 = 0; std::string map; uint32_t yes = 0, no = 0; float endsAt = 0; std::string text; } vote_;
     void callVote(int caller, int kind, int arg, const std::string& map = "", int arg2 = 0);
     // Tourney: single elimination bracket of everyone in the server, one 1v1 at a time.
     struct Tourney {
@@ -256,6 +264,12 @@ public:
     void playMap(int mode);
     float nextAutosave_ = 0;
     void setEditing(bool on);
+    // What votes and ranked need to know about a map file, without parsing it on the tick (REVIEW NET-6): read in
+    // the background when the server starts, re-read only when the file changes (size or time).
+    struct MapInfo { int64_t stamp = 0; bool ok = false; uint32_t supports = 0; uint16_t ranked = 0; };
+    MapInfo mapInfo(const std::string& name);
+    uint32_t mapInfoLoads_ = 0;  // map files actually parsed for it (tests)
+    void stopMapInfo();
     void setRanked(bool on, int ladder);            // ranked on (1v1 on that ladder, official map) / off
     bool rankedBlocks(int id, const std::string& what); // tells the player and returns true if ranked forbids it
     bool balanceBotsUnranked_ = true;                // balance bots setting to go back to when ranked is voted off
@@ -289,6 +303,12 @@ public:
     AABB hitBox(const Vec3& feet, bool crouched) const; // damage hull (scaled by the duel modifier's size)
 
 private:
+    std::map<std::string, MapInfo> mapInfo_;
+    std::mutex mapInfoMu_;
+    std::thread mapInfoThread_;
+    std::atomic<bool> mapInfoQuit_{false};
+    static int64_t mapStamp(const std::string& name);
+    static MapInfo readMapInfo(const std::string& name, int64_t stamp);
     void handlePacket(const NetAddr& from, const uint8_t* data, int len);
     void handleConnect(const NetAddr& from, Reader& r);
     void handleInput(int id, Reader& r);
