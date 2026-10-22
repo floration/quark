@@ -29,6 +29,9 @@ constexpr float kPointRoundTime = 150.0f;  // the attackers' clock at the start
 constexpr float kPointBonus = 90.0f;       // added for every point taken
 constexpr float kCaptureTime = 12.0f;      // one attacker alone; more go faster (up to twice as fast)
 constexpr float kCaptureDecay = 0.05f;     // a point the attackers leave loses this much capture a second
+// OVERTIME (every mode with a site or a cart): when the clock runs out, the round goes on while the side that needs
+// time is on the objective, or touched it in the last kOvertime seconds; it ends kOvertime s after their last touch.
+constexpr float kOvertime = 5.0f;
 
 int roundsToWin(const Server& s) {
     if (s.cfg_.roundsToWin > 0) return s.cfg_.roundsToWin;
@@ -62,6 +65,18 @@ float roundTime(const Server& s) {
 
 int other(int t) { return t == TEAM_A ? TEAM_B : TEAM_A; }
 int defenders(const Server& s) { return other(s.ms_.attackers); }
+
+// The clock has run out (call only then): true while overtime holds the round open (the objective was touched in
+// the last kOvertime seconds), with the overtime countdown in timeLeft. False: time's up for real.
+bool overtime(Server& s) {
+    ModeState& m = s.ms_;
+    double left = s.objTouch_ + kOvertime - s.time();
+    if (left <= 0) { m.flags &= ~MS_OVERTIME; return false; }
+    if (!(m.flags & MS_OVERTIME)) { s.message("overtime!"); s.glog(LOG_SIMPLE, "overtime"); }
+    m.flags |= MS_OVERTIME;
+    m.timeLeft = (float)left;
+    return true;
+}
 
 void setPhase(Server& s, Phase p, float duration) {
     s.ms_.phase = p;
@@ -206,6 +221,7 @@ void startRound(Server& s) {
     m.actionPlayer = 255;
     m.hillOwner = 255;
     s.drainAccum_ = 0;
+    s.objTouch_ = -1e9;   // (m.flags = 0 above ended any overtime)
     if (m.mode == MODE_DUEL) { // a new modifier every life, never one already played this match
         static_assert(DUEL_MOD_COUNT <= 32, "duelUsed_ is a 32-bit mask");
         const uint32_t all = DUEL_MOD_COUNT == 32 ? 0xFFFFFFFFu : (1u << DUEL_MOD_COUNT) - 1;
@@ -614,7 +630,14 @@ void tickBomb(Server& s) {
 
     if (s.aliveCount(def) == 0) { endRound(s, att, "defenders eliminated"); return; }
     if (s.aliveCount(att) == 0 && m.bombState != BOMB_PLANTED) { endRound(s, def, "attackers eliminated"); return; }
-    if (m.bombState != BOMB_PLANTED && s.time() >= s.phaseEnd_) endRound(s, def, "time");
+    if (m.bombState == BOMB_PLANTED) { m.flags &= ~MS_OVERTIME; return; }   // (the fuse is the clock now)
+    for (int i = 0; i < kMaxPlayers; i++) {   // overtime: an attacker on a bomb site
+        const auto& p = s.players_[i];
+        if (!p.connected || !p.alive || p.team != att) continue;
+        for (auto& site : s.map_.bombSites) if (feetIn(s, i, site)) s.objTouch_ = s.time();
+    }
+    if (s.time() < s.phaseEnd_) m.flags &= ~MS_OVERTIME;
+    else if (!overtime(s)) endRound(s, def, "time");
 }
 
 void tickRace(Server& s) {
@@ -701,6 +724,7 @@ void tickPayload(Server& s) {
         if (p.connected && p.alive && length(p.move.pos - cart) < kCartRange && (p.team == att || (p.team == def && na > 0))) p.objTime += s.dt();
     }
     m.flags &= ~MS_CONTESTED;
+    if (na > 0) s.objTouch_ = s.time();   // (overtime: an attacker at the cart, contested or not)
     if (na > 0 && nd == 0) {
         float speed = std::min(kCartSpeed * (1.0f + 0.25f * (na - 1)), kCartSpeed * 2.0f);
         m.payloadDist = std::min(m.payloadDist + speed * s.dt(), m.payloadLen);
@@ -725,7 +749,8 @@ void tickPayload(Server& s) {
         endRound(s, att, "payload delivered");
         return;
     }
-    if (s.time() >= s.phaseEnd_) endRound(s, def, "time", false);
+    if (s.time() < s.phaseEnd_) m.flags &= ~MS_OVERTIME;
+    else if (!overtime(s)) endRound(s, def, "time", false);
 }
 
 // Multi point: the attackers take the map's points one at a time, in order. Only they capture: standing on the
@@ -753,6 +778,7 @@ void tickPoints(Server& s) {
     }
     m.flags &= ~MS_CONTESTED;
     m.hillOwner = 255;
+    if (na > 0) s.objTouch_ = s.time();   // (overtime: an attacker on the point, contested or not)
     if (na > 0 && nd == 0) {
         m.capture += std::min(1.0f + 0.5f * (na - 1), 2.0f) * s.dt() / kCaptureTime;
         m.hillOwner = (uint8_t)att;
@@ -774,10 +800,8 @@ void tickPoints(Server& s) {
         return;
     }
     s.bestProgress_[att] = std::max(s.bestProgress_[att], m.point + m.capture * 0.99f);
-    if (s.time() >= s.phaseEnd_) {
-        if (m.flags & MS_CONTESTED) { m.timeLeft = 0; return; } // overtime: the attack goes on while it's on the point
-        endRound(s, def, "time", false);
-    }
+    if (s.time() < s.phaseEnd_) m.flags &= ~MS_OVERTIME;
+    else if (!overtime(s)) endRound(s, def, "time", false);   // (overtime: the attack goes on while it's on the point)
 }
 
 // Neutral payload: whichever team is alone at the cart pushes it toward the far end of the track
@@ -806,7 +830,13 @@ void tickNeutralPayload(Server& s) {
     }
     if (m.payloadDist >= m.payloadLen - 1e-3f) { enterMatchEnd(s, "TEAM A delivered the payload", TEAM_A); return; }
     if (m.payloadDist <= 1e-3f) { enterMatchEnd(s, "TEAM B delivered the payload", TEAM_B); return; }
-    if (s.time() >= s.phaseEnd_) {
+    {   // overtime: the team that would lose at time-out (the cart on the other side) is at the cart
+        float mid = m.payloadLen * 0.5f;
+        bool even = std::fabs(m.payloadDist - mid) < 0.05f;
+        if ((na > 0 && (even || m.payloadDist < mid)) || (nb > 0 && (even || m.payloadDist > mid))) s.objTouch_ = s.time();
+    }
+    if (s.time() < s.phaseEnd_) m.flags &= ~MS_OVERTIME;
+    else if (!overtime(s)) {
         float mid = m.payloadLen * 0.5f;
         if (std::fabs(m.payloadDist - mid) < 0.05f) enterMatchEnd(s, "draw - the payload is in the middle", -1);
         else {

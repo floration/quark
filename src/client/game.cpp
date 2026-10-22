@@ -1852,7 +1852,8 @@ void Game::drawHud() {
             if (ms.mode == MODE_VS || ms.mode == MODE_DUEL || ms.mode == MODE_ARENA || ms.mode == MODE_TOURNEY) phase = (ms.flags & MS_DRAIN) ? "STALEMATE - HEALTH DRAINING" : "DRAIN IN " + fmtTime(ms.timeLeft);
             else if (ms.mode == MODE_KOTH) phase = "FIRST TO " + std::to_string(ms.target);
             else if (ms.flags & MS_TIMETRIAL) phase = fmtRace((int)std::lround((300.0f - ms.timeLeft) * 1000)).substr(0, 7); // run time so far
-            else phase = fmtTime(ms.timeLeft) + ((ms.flags & MS_OVERTIME) ? " OVERTIME" : "");
+            else if ((ms.flags & MS_OVERTIME) && ms.mode == MODE_FFA) phase = "OVERTIME - NEXT KILL WINS";
+            else if (ms.flags & MS_OVERTIME) phase = "OVERTIME " + fmtTime(ms.timeLeft);   // (ends this long after the objective was last touched)
             break;
         case PHASE_ROUND_END: phase = "ROUND OVER"; break;
         case PHASE_MATCH_END: phase = "MATCH OVER"; break;

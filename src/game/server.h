@@ -237,6 +237,7 @@ public:
     float bestProgress_[2] = {0, 0};
     float completeTime_[2] = {0, 0};
     float kothPoints_[2] = {0, 0};
+    double objTouch_ = -1e9;     // payload / multi point / bomb / neutral payload: when the side that needs time last touched the objective (overtime)
 
     BotBrain bots_[kMaxPlayers];
     NavGraph nav_;

@@ -3325,6 +3325,8 @@ static void testReachProbe(uint16_t port) {
     prober.stop();
 }
 
+#include "rules_tests.h"   // game rule tests (owner answers 5.x, REVIEW batch 2)
+
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
     { // never touch the real per-user folder: a fresh temp one per run, removed at exit by this (not a forked) process
@@ -3395,6 +3397,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "net") { testNetcode(TP(29900)); testInputBacklog(TP(29901)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = TP(29800); testArenaAndTourney(p); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); return g_fail ? 1 : 0; }
     // ---- the whole suite. Most tests wait on real-time network play rather than the CPU, so each runs in its own
     // process, several at once (output kept in order); a few timing-sensitive ones run alone afterwards.
@@ -3419,6 +3422,7 @@ int main(int argc, char** argv) {
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
         {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
+        {"rules", [] { testGameRules(""); }},
         {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
