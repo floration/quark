@@ -209,7 +209,7 @@ void Server::stop() {
     if (!running_) return;
     if (editDirty_ && !tempEdit_) autosave();
     for (int i = 0; i < kMaxPlayers; i++)
-        if (players_[i].connected) dropPlayer(i, "server shutting down", true);
+        if (players_[i].connected) dropPlayer(i, "server shutting down", true, true);
     seedRatings_.reset();
     sock_.close();
     if (reachThread_.joinable()) reachThread_.join();
@@ -337,7 +337,8 @@ double Server::frame() {
     for (int i = 0; i < kMaxPlayers; i++) {
         ServerPlayer& p = players_[i];
         if (!p.connected || p.isBot) continue;
-        if (p.awayUntil > 0) { if (now >= p.awayUntil) dropPlayer(i, p.awayReason, false, true); } // the grace is over: gone
+        if (p.dropPending) dropPlayer(i, "too many unacknowledged reliable messages (connection too lossy)", true);
+        else if (p.awayUntil > 0) { if (now >= p.awayUntil) dropPlayer(i, p.awayReason, false); } // the grace is over: gone
         else if (now - p.lastRecv > kTimeout) holdPlayer(i, "timed out");
     }
     if (rankedLive() && !rankedTicketSent_ && time() >= rankedSigDeadline_) maybeSendRankedTicket(true);
@@ -665,6 +666,9 @@ void Server::handleConnect(const NetAddr& from, Reader& r) {
     p.lastRecv = timeNow();
     for (auto& h : p.history) h.tick = 0xFFFFFFFFu;
     autoTeam(id);
+    // A live ranked match takes no one new: they watch it. (Else a leaver who comes back would be counted twice, and a
+    // dodger's new session without a key would leave the match unrated: "has no ranked id".)
+    if (rankedLive()) p.team = TEAM_SPECTATOR;
     sendAccept(sock_, p, id, map_, cfg_.mode);
     sendWelcome(id);
     GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.text = name;
@@ -717,6 +721,7 @@ bool Server::restorePlayer(int id, const NetAddr& from, uint32_t nonce, const st
     if (!rankPub.empty()) p.rankPub = rankPub;
     p.awayUntil = 0;
     p.awayReason.clear();
+    p.dropPending = false;
     // a new session: its own command / event / snapshot sequences start over
     p.sentSeq = 0; p.sent.clear(); p.ackSnapMs = 0;
     p.lastCmdSeq = 0; p.cmdQueue.clear(); p.cmdTokensMs = fresh.cmdTokensMs; p.deepTicks = 0; p.catchUp = fresh.catchUp;
@@ -775,7 +780,7 @@ void Server::autoTeam(int id) {
     p.team = a <= b ? TEAM_A : TEAM_B;
 }
 
-void Server::dropPlayer(int id, const std::string& reason, bool notify, bool left) {
+void Server::dropPlayer(int id, const std::string& reason, bool notify, bool shutdown) {
     ServerPlayer& p = players_[id];
     if (!p.connected) return;
     if (notify && p.awayUntil <= 0) {
@@ -786,8 +791,11 @@ void Server::dropPlayer(int id, const std::string& reason, bool notify, bool lef
         w.str(reason);
         sock_.send(p.addr, out, w.size());
     }
-    // Leaving a live ranked match (gone past the reconnect grace): the first to leave takes the loss.
-    bool rankedLeaver = left && rankedLive() && matchInProgress() && isRankedParticipant(id);
+    // Leaving a live ranked match: the first to leave takes the loss. Any drop but the server stopping counts (the
+    // grace running out, a new session from the same address without the token or key, the unacked-event cap): only
+    // a reconnect within the grace (restorePlayer) keeps the player in it. Each ranked id is counted once.
+    bool rankedLeaver = !shutdown && rankedLive() && matchInProgress() && isRankedParticipant(id);
+    for (auto& l : rankedLeft_) if (rankedLeaver && l.rankId == p.rankId) rankedLeaver = false;
     bool firstLeaver = rankedLeaver && rankedLeft_.empty();
     if (rankedLeaver) rankedLeft_.push_back({id, p.rankId, p.team, p.score, p.kills});
     rulesOnLeave(*this, id);
@@ -1199,12 +1207,12 @@ void Server::broadcastEvent(const GameEvent& e) {
 
 void Server::sendEvent(int id, const GameEvent& e) {
     ServerPlayer& p = players_[id];
-    if (p.isBot || p.awayUntil > 0) return;   // (away: a reconnect starts a new session, with what it needs)
+    if (p.isBot || p.awayUntil > 0 || p.dropPending) return;   // (away: a reconnect starts a new session, with what it needs)
     if (p.events.size() >= kMaxUnackedEvents) { // hopelessly behind: dropping one would desync it for good
         if (!p.connected) return;
         p.events.clear();
-        dropPlayer(id, "too many unacknowledged reliable messages (connection too lossy)", true);
-        return;
+        p.dropPending = true;   // dropped at the end of this frame (dropPlayer): dropping here, in the middle of whatever
+        return;                 // is sending, could end a ranked match from inside another broadcast or the rules
     }
     GameEvent c = e;
     c.id = p.nextEventId++;

@@ -2571,6 +2571,106 @@ static void testRankedLeaver(uint16_t port) {
     s.stop();
 }
 
+// REVIEW 2.1: every way a live ranked player is dropped counts as leaving, not just the grace running out: a new
+// session from their address without the token or key (the dodge), and the unacked-event cap. A reconnect within
+// the grace doesn't count; a leaver who comes back watches (not counted twice).
+static void testRankedLeaverPaths(uint16_t port) {
+    printf("ranked: every drop path counts as leaving\n");
+    char tag[16];
+    snprintf(tag, sizeof tag, "%u", (unsigned)qrand());
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "gantry"; cfg.mode = MODE_FFA; cfg.port = port; cfg.ranked = true; cfg.arenaVariant = 5;   // instagib FFA: goes on after a leaver
+    CHECK(rankedMode(5) == MODE_FFA);
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient c[3];
+    RankKey k[3];
+    std::vector<NetClient*> cls;
+    std::string addr = "127.0.0.1:" + std::to_string(port);
+    for (int i = 0; i < 3; i++) {
+        k[i] = rankKeyFromSecret(sha256Hex("paths" + std::to_string(i) + tag));
+        c[i].setRankKey(k[i]);
+        c[i].connect(addr, "p" + std::to_string(i));
+        cls.push_back(&c[i]);
+    }
+    pump(s, cls, 1.0, idle);
+    int id[3];
+    for (int i = 0; i < 3; i++) { id[i] = c[i].clientId(); CHECK(id[i] >= 0 && s.players_[id[i]].rankId == k[i].id); }
+    s.command("forcestart");
+    for (int i = 0; i < 60 && s.ms_.phase != PHASE_LIVE; i++) pump(s, cls, 0.1, idle);
+    CHECK(s.ms_.phase == PHASE_LIVE && s.rankedLive());
+    if (!s.rankedLive()) { s.stop(); return; }
+    // dropped and back within the grace: restored, not a leaver
+    c[2].disconnect();
+    pump(s, cls, 0.3, idle);
+    CHECK(s.away(id[2]));
+    c[2].connect(addr, "p2");
+    pump(s, cls, 1.0, idle);
+    CHECK(c[2].clientId() == id[2] && !s.away(id[2]) && s.rankedLeft_.empty());
+    // the dodge: a new session from p2's address with a new nonce, no token and no key takes the address over
+    UdpSocket raw;
+    CHECK(raw.open(0));
+    s.players_[id[2]].addr = NetAddr{0x7F000001u, raw.localPort()};   // (p2's connection, now on this socket)
+    NetAddr srv{0x7F000001u, port};
+    auto connectPkt = [&](uint32_t cookie) {
+        uint8_t b[128];
+        Writer w(b, sizeof b);
+        writeHeader(w, PKT_CONNECT); w.u16(kProtocolVersion); w.u32(0x5151); w.u32(cookie); w.str("p2 again");
+        raw.send(srv, b, w.size());
+    };
+    connectPkt(0);
+    uint32_t cookie = 0;
+    for (int t = 0; t < 100 && !cookie; t++) {
+        pump(s, cls, 0.01, idle);
+        uint8_t buf[2048]; NetAddr from; int n;
+        while ((n = raw.recv(from, buf, sizeof buf)) > 0) {
+            Reader r(buf, n);
+            if (r.u32() == kProtocolMagic && r.u8() == PKT_CHALLENGE) { r.u32(); cookie = r.u32(); }
+        }
+    }
+    CHECK(cookie != 0);
+    connectPkt(cookie);
+    pump(s, cls, 0.3, idle);
+    CHECK(!(s.players_[id[2]].connected && s.players_[id[2]].rankId == k[2].id));   // the old session is gone
+    CHECK(s.rankedLeft_.size() == 1 && s.rankedLeft_[0].rankId == k[2].id);         // ... and it counted as leaving
+    CHECK(s.rankedLive());                                                          // (FFA: two still play)
+    // the leaver comes back with the key: watches, isn't counted again
+    c[2].connect(addr, "p2");
+    pump(s, cls, 1.0, idle);
+    int back = c[2].clientId();
+    CHECK(back >= 0 && back != id[2] && s.players_[back].rankId == k[2].id && s.players_[back].team == TEAM_SPECTATOR);
+    CHECK(!s.isRankedParticipant(back) && s.rankedLeft_.size() == 1);
+    // the unacked-event cap: p1 stops acknowledging (its backlog is filled), the next event drops it, a leaver too
+    std::vector<NetClient*> two = {&c[0], &c[2]};
+    GameEvent filler; filler.type = EV_MESSAGE; filler.text = "x";
+    while (s.players_[id[1]].events.size() < 256) s.players_[id[1]].events.push_back(filler);
+    s.message("over the cap");
+    CHECK(s.players_[id[1]].connected);   // (dropped at the end of the frame, not inside the broadcast)
+    std::string ranked;
+    for (int t = 0; t < 20 && ranked.empty(); t++) {
+        pump(s, two, 0.1, idle);
+        for (auto& e : c[0].takeEvents()) if (e.type == EV_RANKED) ranked = e.text;
+    }
+    CHECK(!s.players_[id[1]].connected && s.rankedLeft_.size() == 2 && s.rankedLeft_[1].rankId == k[1].id);
+    CHECK(s.ms_.phase == PHASE_MATCH_END && !s.rankedLive());   // one player left in it: over
+    printf("  result: %s\n", ranked.c_str());
+    CHECK(ranked.find(" left=" + std::to_string(id[2]) + "," + std::to_string(id[1])) != std::string::npos);
+    {   // "match ladder slot:team:place,..." : the three players once each (the returned leaver and the dodger's session aren't in it)
+        std::istringstream rs(ranked);
+        std::string match, ladder, list;
+        rs >> match >> ladder >> list;
+        std::vector<int> slots;
+        std::istringstream ls(list);
+        for (std::string e; std::getline(ls, e, ',');) slots.push_back(atoi(e.c_str()));
+        std::sort(slots.begin(), slots.end());
+        std::vector<int> want = {id[0], id[1], id[2]};
+        std::sort(want.begin(), want.end());
+        CHECK(slots == want);
+    }
+    s.stop();
+}
+
 // Every game: a dropped player keeps slot, team and score for the grace (found again by the reconnect token), and
 // is gone after it; votes don't count players who are away.
 static void testReconnectGrace(uint16_t port) {
@@ -3845,7 +3945,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "nav") { testNavGraph(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterSignature(); testPlacementConstant(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterSignature(); testPlacementConstant(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(TP(29600)); testEditSession(TP(29601)); testVotedEdit(TP(29602)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
     if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(29604)); testMapNames(TP(29605)); testDemo(TP(29603)); return g_fail ? 1 : 0; }
@@ -3881,7 +3981,7 @@ int main(int argc, char** argv) {
         {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
         {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterSignature(); testPlacementConstant(); }},
-        {"ranked2", [] { testRankedLeaver(TP(28636)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
+        {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
         {"rules", [] { testGameRules(""); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine

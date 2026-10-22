@@ -89,6 +89,7 @@ struct ServerPlayer {
     uint64_t reconnectToken = 0; // given in PKT_ACCEPT: a reconnect that shows it gets this slot back
     double awayUntil = 0;       // > 0: the connection dropped; slot, team, score and state kept until then (timeNow())
     std::string awayReason;
+    bool dropPending = false;   // over the unacked-event cap: dropped in frame(), not inside whatever was sending (REVIEW 2.1)
     double voteAt = 0;           // no new vote from this player before then (after one of theirs failed)
     float mapTokens = 64;       // PKT_MAP_REQUEST rate limit (token bucket)
     double mapTokensAt = 0;
@@ -419,7 +420,10 @@ private:
     void handleConnect(const NetAddr& from, Reader& r);
     void handleInput(int id, Reader& r);
     void handleStringCmd(int id, const std::string& s);
-    void dropPlayer(int id, const std::string& reason, bool notify, bool left = false); // left: past the reconnect grace
+    // Every drop of a live ranked participant counts as leaving the match (the first leaver loses), whatever the path:
+    // the reconnect grace running out, a new session from its address, the unacked-event cap. Only the server
+    // stopping (shutdown) doesn't (REVIEW 2.1).
+    void dropPlayer(int id, const std::string& reason, bool notify, bool shutdown = false);
     void holdPlayer(int id, const std::string& reason);   // connection lost: keep the slot for kReconnectGrace
     bool restorePlayer(int id, const NetAddr& from, uint32_t nonce, const std::string& rankPub);
     void sendWelcome(int id);   // what a (re)joining client needs to know about everyone
