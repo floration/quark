@@ -54,6 +54,7 @@ struct ServerConfig {
     bool editMode = false;      // start as a map edit session (anyone connected can edit; the host autosaves)
     std::string restartFlag;    // if this file appears (an update was installed), restart once no match is being played
     bool timeTrial = false;     // solo ranked race on Viaduct: no bots, checkpoint splits sent to the racer
+    std::string adminPassword;  // dedicated: players become admin with "login <password>" (empty = only the in-process host)
     bool ranked = false;        // matches are rated (OpenSkill) once every player reports the same result; no bots
     CustomRules custom;         // a custom mode (name empty = none): its mode, weapons, movement, map pool, ...
 };
@@ -72,7 +73,11 @@ struct ServerPlayer {
     uint32_t nonce = 0;
     std::string name;
     std::string rankId;         // 32 hex chars from the player's key (ranked), empty if unknown
-    bool admin = false;
+    bool admin = false;         // logged in with the admin password (the in-process host is admin by nonce)
+    float voteAt = 0;           // no new vote from this player before then (after one of theirs failed)
+    float loginAt = 0;          // next admin login attempt allowed
+    float mapTokens = 64;       // PKT_MAP_REQUEST rate limit (token bucket)
+    double mapTokensAt = 0;
     int team = TEAM_A;
     bool alive = false;
     bool finished = false;      // race
@@ -156,6 +161,10 @@ public:
     void command(const std::string& line, int fromPlayer = -1); // console / admin commands
 
     void setLog(LogFn fn) { log_ = std::move(fn); }
+    // The in-process host's client (its session nonce): admin without a password. Thread safe.
+    void setHostNonce(uint32_t n) { hostNonce_ = n; }
+    void handlePacket(const NetAddr& from, const uint8_t* data, int len); // (public: tests feed it spoofed sources)
+    float voteCooldown_ = 5.0f; // seconds a player waits to call another vote after theirs failed (tests set 0)
     uint16_t port() const { return sock_.localPort(); }
     int playerCount() const;
     std::string statusText();
@@ -214,7 +223,7 @@ public:
     void updateBalanceBots(bool matchStarting = false);
     // Votes (bots on/off, bot difficulty): majority of human players decides.
     enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL, VOTE_START, VOTE_STARTBOTS, VOTE_MAP, VOTE_TMAPS, VOTE_TMODES, VOTE_RANKED, VOTE_EDIT, VOTE_LETIN };
-    struct Vote { int kind = VOTE_NONE; int arg = 0, arg2 = 0; std::string map; uint32_t yes = 0, no = 0; float endsAt = 0; std::string text; } vote_;
+    struct Vote { int kind = VOTE_NONE; int caller = -1; int arg = 0, arg2 = 0; std::string map; uint32_t yes = 0, no = 0; float endsAt = 0; std::string text; } vote_;
     void callVote(int caller, int kind, int arg, const std::string& map = "", int arg2 = 0);
     // Tourney: single elimination bracket of everyone in the server, one 1v1 at a time.
     struct Tourney {
@@ -285,7 +294,11 @@ public:
     AABB hitBox(const Vec3& feet, bool crouched) const; // damage hull (scaled by the duel modifier's size)
 
 private:
-    void handlePacket(const NetAddr& from, const uint8_t* data, int len);
+    std::atomic<uint32_t> hostNonce_{0};
+    uint8_t cookieKey_[16] = {};              // secret for the stateless connect challenge
+    std::vector<std::string> mapList_;        // maps on disk (cached at start: votes check names against it)
+    uint32_t challengeCookie(const NetAddr& a, uint32_t nonce, int64_t bucket) const;
+    bool isAdmin(int id) const;
     void handleConnect(const NetAddr& from, Reader& r);
     void handleInput(int id, Reader& r);
     void handleStringCmd(int id, const std::string& s);

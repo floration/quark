@@ -28,6 +28,7 @@ DISCORD_INVITE = "https://discord.gg/RERYWNWSXg"
 PROTOCOL_MAGIC = 0x51524B31   # "QRK1", gamedefs.h kProtocolMagic
 PKT_INFO_REQUEST = 4           # protocol.h: PKT_CONNECT=1, INPUT, DISCONNECT, INFO_REQUEST
 PKT_INFO_REPLY = 67            # protocol.h: PKT_ACCEPT=64, REJECT, SNAPSHOT, INFO_REPLY
+INFO_REQUEST_BYTES = 160       # protocol.h kInfoRequestBytes
 
 # gamedefs.h modeName / modeTitle (index = GameModeId)
 MODE_NAMES = ["vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "1v1", "tourney", "hide", "tag", "points"]
@@ -44,7 +45,8 @@ def mode_title(m: int) -> str:
 
 # ---------------------------------------------------------------- UDP server query
 def build_info_request() -> bytes:
-    return struct.pack("<IB", PROTOCOL_MAGIC, PKT_INFO_REQUEST)
+    # padded to INFO_REQUEST_BYTES (protocol.h kInfoRequestBytes): servers ignore smaller requests
+    return struct.pack("<IB", PROTOCOL_MAGIC, PKT_INFO_REQUEST).ljust(INFO_REQUEST_BYTES, b"\0")
 
 
 @dataclass
@@ -365,6 +367,23 @@ INSTALL_TEXT = f"""**Install / update**
 - If UPnP fails, forward **UDP 27500** (or your port) to the host machine.
 
 **Join**: Join Game -> pick a server from the internet list, or enter `ip:port`."""
+
+
+_URL_RE = re.compile(r"(?i)\b(?:[a-z][a-z0-9+.-]*://|www\.|discord(?:app)?\.(?:gg|com)/)\S*")
+_DOMAIN_RE = re.compile(r"(?i)\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|gg|io|xyz|ru|co|me|app|link|ly|tk|info|biz|site|online|shop|top)\b\S*")
+_MD_RE = re.compile(r"([\\*_~`|>\[\]()#:<-])")
+
+
+def safe_text(text: str, maxlen: int = 64) -> str:
+    """Attacker-controlled text (server names, maps, player names) made inert for a Discord message: control
+    characters and URLs / bare domains removed (no masked phishing links), markdown escaped, mentions broken."""
+    t = "".join(ch for ch in str(text) if ch.isprintable())
+    t = _URL_RE.sub("", t)
+    t = _DOMAIN_RE.sub("", t)
+    t = " ".join(t.split())[:maxlen]
+    t = _MD_RE.sub(r"\\\1", t)
+    t = t.replace("@", "@​")   # @everyone / @here / <@id> never ping
+    return t or "?"
 
 
 def split_message(text: str, limit: int = 1990) -> list[str]:

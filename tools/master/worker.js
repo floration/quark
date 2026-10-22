@@ -1,7 +1,9 @@
 // quark internet server list: a Cloudflare Worker with a D1 database bound as DB.
 // Setup steps: tools/master/README.md.
-//   GET /announce?port=N&v=VERSION[&ip=A.B.C.D]  a server says it's up (every 60 s)
-//   GET /remove?port=N[&ip=A.B.C.D]              a server shuts down
+//   GET /announce?port=N&v=VERSION[&ip=A.B.C.D][&token=T]  a server says it's up (every 60 s); answers "ok <token>"
+//   GET /remove?port=N[&ip=A.B.C.D][&token=T]              a server shuts down
+//   A server may announce / remove only its own source IPv4 address, or, through an IPv6 path (?ip=), an
+//   address it holds the token for (issued by an earlier announce from that IPv4). ?ip= alone is never trusted.
 //   GET /list?v=VERSION                           ip:port per line, servers seen in the last 150 s
 // The game checks every listed server over UDP itself, so a bogus entry just never shows up.
 //
@@ -34,6 +36,29 @@ const PENDING_MS = 3600000;
 const LADDERS = new Set(["vanilla", "vampire", "instagib"]);
 const RACE_MAPS = new Set(["viaduct"]);
 const RACE_MIN_MS = 5000; // nothing finishes faster: below this it's not a real run
+
+// Rate limiting: token buckets kept in memory per isolate (Cloudflare runs a few isolates per region, so the
+// real limit is a small multiple of these; cheap, and enough to stop a single client hammering D1). Keyed by
+// endpoint plus client IP, and endpoint plus player id for the account endpoints.
+const LIMITS = {
+  ip: { burst: 120, perSec: 2 },        // any endpoint, per client IP
+  write: { burst: 20, perSec: 0.2 },    // /report /racetime /lifetime /queue /link, per client IP
+  id: { burst: 10, perSec: 0.1 },       // the same, per player id
+};
+const buckets = new Map();
+function allow(kind, key, now) {
+  const L = LIMITS[kind], k = kind + "|" + key;
+  let b = buckets.get(k);
+  if (!b) { b = { t: L.burst, at: now }; buckets.set(k, b); }
+  b.t = Math.min(L.burst, b.t + ((now - b.at) / 1000) * L.perSec);
+  b.at = now;
+  if (buckets.size > 50000) for (const [key2, v] of buckets) if (now - v.at > 600000) buckets.delete(key2); // forget idle clients
+  if (b.t < 1) return false;
+  b.t -= 1;
+  return true;
+}
+async function idOf(secret) { return /^[0-9a-f]{64}$/.test(secret) ? (await sha256hex(secret)).slice(0, 32) : ""; }
+const randomToken = () => [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
 
 async function saveName(env, me, nameHex, now) {
   if (!/^([0-9a-f]{2}){1,20}$/.test(nameHex)) return;
@@ -88,6 +113,7 @@ async function link(env, form, now) {
 // Lifetime kills / deaths: each game client adds what it got since its last report (at the end of a match, or when
 // it leaves). Capped per report, and at most one report every 20 s per player, so a cheater can't inflate it fast.
 const LIFETIME_MAX_PER_REPORT = 300;
+const LIFETIME_MAX_PER_HOUR = 1200; // kills (and, separately, deaths) one id can add per clock hour
 async function lifetimeReport(env, form, now) {
   const secret = String(form.get("secret") || "");
   if (!/^[0-9a-f]{64}$/.test(secret)) return "bad request";
@@ -95,11 +121,16 @@ async function lifetimeReport(env, form, now) {
   if (!(kills >= 0 && deaths >= 0 && kills <= LIFETIME_MAX_PER_REPORT && deaths <= LIFETIME_MAX_PER_REPORT)) return "bad numbers";
   const me = (await sha256hex(secret)).slice(0, 32);
   await saveName(env, me, String(form.get("name") || ""), now);
-  const row = await env.DB.prepare("SELECT updated FROM lifetime WHERE id = ?").bind(me).first();
+  const row = await env.DB.prepare("SELECT updated, hour_start, hour_kills, hour_deaths FROM lifetime WHERE id = ?").bind(me).first();
   if (row && now - row.updated < 20000) return "too soon";
-  await env.DB.prepare("INSERT INTO lifetime (id, kills, deaths, updated) VALUES (?, ?, ?, ?) " +
-    "ON CONFLICT(id) DO UPDATE SET kills = kills + excluded.kills, deaths = deaths + excluded.deaths, updated = excluded.updated")
-    .bind(me, kills, deaths, now).run();
+  const hour = Math.floor(now / 3600000) * 3600000;
+  const sameHour = row && row.hour_start === hour;
+  const hk = (sameHour ? row.hour_kills : 0) + kills, hd = (sameHour ? row.hour_deaths : 0) + deaths;
+  if (hk > LIFETIME_MAX_PER_HOUR || hd > LIFETIME_MAX_PER_HOUR) return "hourly limit";
+  await env.DB.prepare("INSERT INTO lifetime (id, kills, deaths, updated, hour_start, hour_kills, hour_deaths) VALUES (?, ?, ?, ?, ?, ?, ?) " +
+    "ON CONFLICT(id) DO UPDATE SET kills = kills + excluded.kills, deaths = deaths + excluded.deaths, updated = excluded.updated, " +
+    "hour_start = excluded.hour_start, hour_kills = excluded.hour_kills, hour_deaths = excluded.hour_deaths")
+    .bind(me, kills, deaths, now, hour, hk, hd).run();
   return "ok";
 }
 // GET /lifetime?ids=a,b,c (ranked ids, up to 32): "id kills deaths" lines. GET /lifetime: the top 10 by kills,
@@ -283,25 +314,41 @@ export default {
     const u = new URL(req.url);
     const q = (k) => u.searchParams.get(k) || "";
     const now = Date.now();
-    // The caller's own address; IPv6 hosts pass their IPv4 (the game is IPv4) and only then is ?ip= used.
     const conn = req.headers.get("CF-Connecting-IP") || "";
-    const ip = ipv4(conn) || ipv4(q("ip"));
+    const srcIp = ipv4(conn); // the caller's own IPv4, if it came over IPv4 (can't be spoofed over TCP)
     const text = (body, status = 200) => new Response(body, { status, headers: { "content-type": "text/plain", "access-control-allow-origin": "*" } });
+    if (!allow("ip", conn, now)) return text("rate limited", 429);
+    const WRITES = new Set(["/report", "/racetime", "/lifetime", "/queue", "/link"]);
+    let form = null;
+    if (req.method === "POST" && WRITES.has(u.pathname)) {
+      if (!allow("write", conn, now)) return text("rate limited", 429);
+      form = await req.formData();
+      const pid = await idOf(String(form.get("secret") || ""));
+      if (pid && !allow("id", pid, now)) return text("rate limited", 429);
+    }
 
     if (u.pathname === "/announce" || u.pathname === "/remove") {
+      // Which address: the source IPv4, or ?ip= from an IPv6 path. Allowed only for the source address itself
+      // or with the token an earlier announce from that address was given.
       const port = parseInt(q("port"), 10);
+      const ip = srcIp || ipv4(q("ip"));
       if (!ip || !(port > 0 && port < 65536)) return text("bad request", 400);
-      const addr = ip + ":" + port;
+      const addr = ip + ":" + port, token = q("token");
+      const row = await env.DB.prepare("SELECT token FROM servers WHERE addr = ?").bind(addr).first();
+      const ownSource = srcIp === ip;
+      const tokenOk = !!(row && row.token && /^[0-9a-f]{32}$/.test(token) && row.token === token);
+      if (!ownSource && !tokenOk) return text("forbidden: announce once over IPv4 to get a token", 403);
       if (u.pathname === "/remove") {
         await env.DB.prepare("DELETE FROM servers WHERE addr = ?").bind(addr).run();
         return text("removed");
       }
+      const newToken = tokenOk ? token : randomToken();
       await env.DB.prepare(
-        "INSERT INTO servers (addr, version, seen) VALUES (?, ?, ?) " +
-        "ON CONFLICT(addr) DO UPDATE SET version = excluded.version, seen = excluded.seen"
-      ).bind(addr, q("v").slice(0, 16), now).run();
+        "INSERT INTO servers (addr, version, seen, token) VALUES (?, ?, ?, ?) " +
+        "ON CONFLICT(addr) DO UPDATE SET version = excluded.version, seen = excluded.seen, token = excluded.token"
+      ).bind(addr, q("v").slice(0, 16), now, newToken).run();
       if (Math.random() < 0.02) await env.DB.prepare("DELETE FROM servers WHERE seen < ?").bind(now - 3600000).run();
-      return text("ok");
+      return text("ok " + newToken);
     }
     if (u.pathname === "/list") {
       const { results } = await env.DB.prepare(
@@ -310,7 +357,7 @@ export default {
       return text(results.map((r) => r.addr).join("\n"));
     }
     if (u.pathname === "/report" && req.method === "POST") {
-      return text(await report(env, await req.formData(), now));
+      return text(await report(env, form, now));
     }
     if (u.pathname === "/leaderboard") {
       const ladder = q("ladder");
@@ -324,7 +371,7 @@ export default {
       return text(results.map((r) => `${Math.round(Math.max(0, r.mu - 3 * r.sigma) * 40)} ${r.games} ${r.name}`).join("\n"));
     }
     if (u.pathname === "/racetime" && req.method === "POST") {
-      return text(await raceTime(env, await req.formData(), now));
+      return text(await raceTime(env, form, now));
     }
     if (u.pathname === "/raceboard") {
       if (!RACE_MAPS.has(q("map"))) return text("not a ranked race map", 400);
@@ -335,11 +382,11 @@ export default {
       ).bind(q("map"), n).all();
       return text(results.map((r) => `${r.ms} ${r.name}`).join("\n"));
     }
-    if (u.pathname === "/link" && req.method === "POST") return text(await link(env, await req.formData(), now));
+    if (u.pathname === "/link" && req.method === "POST") return text(await link(env, form, now));
     if (u.pathname === "/crowns") return text(await crowns(env));
-    if (u.pathname === "/lifetime" && req.method === "POST") return text(await lifetimeReport(env, await req.formData(), now));
+    if (u.pathname === "/lifetime" && req.method === "POST") return text(await lifetimeReport(env, form, now));
     if (u.pathname === "/lifetime") return text(await lifetimeGet(env, q("ids")));
-    if (u.pathname === "/queue" && req.method === "POST") return text(await queue(env, await req.formData(), now));
+    if (u.pathname === "/queue" && req.method === "POST") return text(await queue(env, form, now));
     if (u.pathname === "/queue") {
       await env.DB.prepare("DELETE FROM queue WHERE joined < ?").bind(now - QUEUE_STALE_MS).run();
       const { results } = await env.DB.prepare("SELECT mode, COUNT(*) AS n FROM queue GROUP BY mode").all();

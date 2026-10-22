@@ -38,6 +38,7 @@ add_library(quark_core STATIC
   src/common/net.cpp
   src/common/upnp.cpp
   src/common/http.cpp
+  src/common/proc.cpp
   src/game/map.cpp
   src/game/pmove.cpp
   src/game/protocol.cpp

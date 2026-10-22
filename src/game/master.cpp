@@ -81,7 +81,7 @@ void MasterAnnouncer::stop() {
 std::string MasterAnnouncer::status() { std::lock_guard<std::mutex> l(mu_); return status_; }
 
 void MasterAnnouncer::run() {
-    std::string ip, base;
+    std::string ip, base, token; // token: issued by the list on our first announce, proves we own ip:port
     for (;;) {
         if (base.empty()) base = masterUrl();
         if (ip.empty()) ip = publicIpv4();
@@ -89,8 +89,14 @@ void MasterAnnouncer::run() {
         if (base.empty()) st = "internet list: not configured";
         else {
             std::string body, err;
-            std::string url = base + "/announce?port=" + std::to_string(port_) + "&v=" QUARK_VERSION + (ip.empty() ? "" : "&ip=" + ip);
-            st = httpGetText(url, body, 5000, &err) ? "listed on the internet server list" : "internet list: " + err;
+            std::string url = base + "/announce?port=" + std::to_string(port_) + "&v=" QUARK_VERSION + (ip.empty() ? "" : "&ip=" + ip) +
+                              (token.empty() ? "" : "&token=" + token);
+            bool ok = httpGetText(url, body, 5000, &err);
+            st = ok ? "listed on the internet server list" : "internet list: " + err;
+            if (ok && body.rfind("ok ", 0) == 0) {
+                std::string t = trim(body.substr(3));
+                if (t.size() == 32 && t.find_first_not_of("0123456789abcdef") == std::string::npos) token = t;
+            }
         }
         std::unique_lock<std::mutex> l(mu_);
         status_ = st;
@@ -98,6 +104,7 @@ void MasterAnnouncer::run() {
     }
     if (!base.empty()) { // leave the list right away instead of timing out
         std::string body;
-        httpGetText(base + "/remove?port=" + std::to_string(port_) + (ip.empty() ? "" : "&ip=" + ip), body, 2000);
+        httpGetText(base + "/remove?port=" + std::to_string(port_) + (ip.empty() ? "" : "&ip=" + ip) +
+                    (token.empty() ? "" : "&token=" + token), body, 2000);
     }
 }

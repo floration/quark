@@ -11,10 +11,10 @@
 
 enum PacketType : uint8_t {
     // client -> server
-    PKT_CONNECT = 1,     // u16 version, u32 nonce, str name
+    PKT_CONNECT = 1,     // u16 version, u32 nonce, u32 cookie (0 = none yet, from PKT_CHALLENGE), str name
     PKT_INPUT,           // u32 nonce, u32 ackTimeMs, u32 ackEvent, u8 lossPct, u8 ncmds, cmds..., u8 nStr [u16 firstSeq, nStr x str]
     PKT_DISCONNECT,      // u32 nonce
-    PKT_INFO_REQUEST,    // (none)
+    PKT_INFO_REQUEST,    // padded with zeros to kInfoRequestBytes (no reply bigger than the request)
     PKT_MAP_REQUEST,     // u32 nonce, u32 mapCrc, u32 offset: ask for a piece of the server's map file
     // server -> client
     PKT_ACCEPT = 64,     // u32 nonce, u8 clientId, str map, u32 mapCrc, u8 mode
@@ -23,8 +23,11 @@ enum PacketType : uint8_t {
     PKT_INFO_REPLY,      // str serverName, str map, u8 mode, u8 players, u8 maxPlayers, u16 port
     PKT_KICKED,          // u32 nonce, str reason
     PKT_MAP_DATA,        // u32 nonce, u32 mapCrc, u32 totalBytes, u32 offset, u16 n, n bytes
+    PKT_CHALLENGE,       // u32 nonce, u32 cookie: echo the cookie in PKT_CONNECT to prove you own your address
 };
 
+constexpr int kInfoRequestBytes = 160;      // PKT_INFO_REQUEST size; the reply is trimmed to fit (no amplification)
+constexpr int kInfoNameMax = 96, kInfoMapMax = 40; // 5 + 97 + 41 + 5 <= kInfoRequestBytes
 constexpr int kMapChunk = 1200;              // map file bytes per PKT_MAP_DATA
 constexpr uint32_t kMaxMapBytes = 8u << 20;  // refuse to download anything bigger
 

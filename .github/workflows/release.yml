@@ -4,7 +4,7 @@ on:
     branches: ['**']
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read   # build jobs only read; release and pages get write below
 jobs:
   windows:
     runs-on: ubuntu-24.04
@@ -63,6 +63,8 @@ jobs:
   release:
     needs: [windows, linux, macos]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - id: v
@@ -83,6 +85,8 @@ jobs:
   pages:
     needs: release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: publish site/ to the gh-pages branch (served at floration.github.io/quark)

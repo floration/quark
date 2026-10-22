@@ -13,9 +13,21 @@ TARGET=$(git rev-parse "origin/$BRANCH")
 NEWVER=$(git show "origin/$BRANCH:VERSION" | tr -d '[:space:]')
 REPO=$(git remote get-url origin | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##')
 ASSETS=$(curl -sfL "https://api.github.com/repos/$REPO/releases/tags/v$NEWVER" || true)
-for P in windows linux macos; do
+[ -n "$ASSETS" ] || exit 0
+# Which platforms this version ships: the build jobs the release job waits for at that commit (a platform that
+# is switched off, like macOS was, isn't waited for), plus any qpak the release already lists. Every one of
+# them must be uploaded, and the Linux one (what servers and most players run) is always required.
+WF=$(git show "origin/$BRANCH:.github/workflows/release.yml" 2>/dev/null || true)
+NEEDS=""
+for P in $(echo "$WF" | sed -n '/^  release:/,/^  [a-z]*:$/p' | sed -n 's/^ *needs: *\[\(.*\)\].*/\1/p' | tr ',' ' '); do
+    echo "$WF" | sed -n "/^  $P:/,/^  [a-z]*:\$/p" | grep -q '^    if: *false' || NEEDS="$NEEDS $P"
+done
+LISTED=$(echo "$ASSETS" | grep -o '"name": *"quark-[a-z0-9]*\.qpak"' | sed 's/.*"quark-\([a-z0-9]*\)\.qpak"/\1/')
+for P in linux $NEEDS $LISTED; do
+    case "$P" in windows|linux|macos) ;; *) continue ;; esac
     echo "$ASSETS" | grep -q "\"quark-$P.qpak\"" || exit 0
 done
+echo "$ASSETS" | grep -q '"state": *"open"' && exit 0   # an asset is still uploading
 git checkout -q -- maps 2>/dev/null || true   # a server runs the shipped maps: drop stray local changes so the update applies
 git merge -q --ff-only "origin/$BRANCH"
 cmake -S . -B build-update -DQUARK_BUILD_CLIENT=OFF -DQUARK_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release >/dev/null

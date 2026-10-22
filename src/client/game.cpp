@@ -211,6 +211,7 @@ void Game::startHost(bool vsBots) {
     Server* srv = host_.get();
     hostThread_ = std::thread([this, srv] { raiseThreadPriority(); srv->run(hostQuit_); });
     connectTo("127.0.0.1:" + std::to_string(host_->port()));
+    host_->setHostNonce(net_.sessionNonce()); // this client (only) is admin on its own server
 }
 
 void Game::stopHost() {
