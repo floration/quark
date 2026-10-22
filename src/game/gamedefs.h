@@ -29,6 +29,8 @@ inline bool isPayloadMode(int m) { return m == MODE_PAYLOAD || m == MODE_NPAYLOA
 constexpr int kPlayerModels = 5;          // STANDARD, HEAVY, SCOUT, ROBOT, KNIGHT: cosmetic, every one has the same hitbox
 constexpr int kSoundPacks = 5;            // DEFAULT, HEAVY METAL, MAGICAL, RETRO, WOODEN
 inline const char* playerModelName(int m) { static const char* n[] = {"STANDARD", "HEAVY", "SCOUT", "ROBOT", "KNIGHT"}; return n[(m < 0 || m >= kPlayerModels) ? 0 : m]; }
+// Modes where the dead respawn during play (the rest are rounds with one life: VS, bomb, duel, 1v1, tourney, hide and seek).
+inline bool modeRespawns(int m) { return m == MODE_FFA || m == MODE_KOTH || m == MODE_PAYLOAD || m == MODE_NPAYLOAD || m == MODE_POINTS || m == MODE_RACE || m == MODE_TAG; }
 inline bool isItMode(int m) { return m == MODE_HIDE || m == MODE_TAG; } // one player is "it" (seeker / tagger) with the knife
 constexpr float kHideTime = 30.0f;       // hide and seek: hiders' head start while the seeker faces the wall
 constexpr float kHideRoundTime = 300.0f; // hiders win if anyone lasts this long

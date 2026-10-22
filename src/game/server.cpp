@@ -2102,8 +2102,15 @@ uint16_t Server::weaponMask() const {
     if (isItMode(ms_.mode)) return (uint16_t)(1u << WPN_KNIFE); // only "it" can use it; everyone else is unarmed
     uint16_t m = ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY || (cfg_.ranked && ms_.mode == MODE_FFA) ? arenaVariant(ms_.arenaVariant).weapons : duelModDef(duelMod()).weapons;
     uint16_t c = cfg_.custom.active() ? cfg_.custom.weapons : 0;   // a custom mode's weapons (narrowed by a duel life's, if any)
-    if (c && m && (m & c)) return m & c;
-    return c ? c : m;
+    uint16_t r = (c && m && (m & c)) ? m & c : c ? c : m;
+    // The syringe only exists in modes where the dead respawn (owner 5.2): in a round mode it out-heals the stalemate
+    // drain. A custom mode that lists it in its weapons keeps it anyway.
+    const uint16_t syringe = (uint16_t)(1u << WPN_SYRINGE);
+    if (!modeRespawns(ms_.mode) && !(c & syringe)) {
+        if (!r) r = (uint16_t)((1u << WPN_COUNT) - 1);
+        r &= (uint16_t)~syringe;
+    }
+    return r;
 }
 
 AABB Server::hitBox(const Vec3& feet, bool crouched) const {

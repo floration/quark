@@ -111,11 +111,36 @@ static void testOvertime(uint16_t port) {
     }
 }
 
+// 5.2: the syringe only exists in modes where the dead respawn, unless a custom mode lists it.
+static void testSyringeModes() {
+    printf("syringe only in respawn modes\n");
+    for (int mode = 0; mode < MODE_COUNT; mode++) {
+        Server s;
+        s.ms_.mode = (uint8_t)mode;
+        s.cfg_.mode = mode;
+        bool has = s.weaponAllowed(WPN_SYRINGE);
+        bool want = modeRespawns(mode) && !isItMode(mode);   // (tag / hide and seek: the knife only)
+        if (has != want) printf("  %s: syringe %s\n", modeName(mode), has ? "allowed" : "not allowed");
+        CHECK(has == want);
+        if (!isItMode(mode)) CHECK(s.weaponAllowed(WPN_ROCKET) || mode == MODE_ARENA || mode == MODE_TOURNEY);
+    }
+    Server s;   // a duel life with every weapon: still no syringe
+    s.ms_.mode = MODE_DUEL; s.cfg_.mode = MODE_DUEL; s.ms_.duelMod = 4;   // DOUBLE SIZE (all weapons)
+    CHECK(!s.weaponAllowed(WPN_SYRINGE) && s.weaponAllowed(WPN_ROCKET) && s.weaponAllowed(WPN_KNIFE));
+    s.cfg_.custom.name = "medics";   // a custom VS mode that lists it keeps it
+    s.ms_.mode = MODE_VS; s.cfg_.mode = MODE_VS;
+    s.cfg_.custom.weapons = (uint16_t)((1u << WPN_SYRINGE) | (1u << WPN_ROCKET));
+    CHECK(s.weaponAllowed(WPN_SYRINGE) && s.weaponAllowed(WPN_ROCKET) && !s.weaponAllowed(WPN_RIFLE));
+    s.cfg_.custom.weapons = 0;       // ...one that allows "all" doesn't
+    CHECK(!s.weaponAllowed(WPN_SYRINGE) && s.weaponAllowed(WPN_RIFLE));
+}
+
 // "quark_tests rules [name]": all of them, or the one named.
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
     std::vector<R> all = {
         {"overtime", [] { testOvertime(TP(29230)); }},
+        {"syringe", [] { testSyringeModes(); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
 }
