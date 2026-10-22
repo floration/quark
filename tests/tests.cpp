@@ -3277,19 +3277,25 @@ static void testHelloRetry() {
 #endif
 }
 
-// master.txt can move the Worker only with a release-key signature of exactly that file.
+// master.txt can move the Worker only with a release-key signature of "quark-master-v1\n" + exactly that file.
 static void testMasterSignature() {
     printf("signed master.txt\n");
     std::string priv, pub, sig, url;
     CHECK(sign::keygen(&priv, &pub));
     std::string body = "https://quark-master.example.workers.dev/\n";
-    CHECK(sign::signData(body, priv, &sig));
+    CHECK(sign::signData(sign::kMasterSignPrefix + body, priv, &sig));
     CHECK(signedMasterUrl(body, sig, pub, &url) && url == "https://quark-master.example.workers.dev");
+    // domain separation: a signature of the bare file (what `quark_sign sign` makes for packages and manifests) is
+    // not a master.txt signature
+    std::string bare;
+    CHECK(sign::signData(body, priv, &bare) && !signedMasterUrl(body, bare, pub, &url));
+    CHECK(std::string(sign::kMasterSignPrefix) == "quark-master-v1\n");
     CHECK(!signedMasterUrl("https://evil.example.dev\n", sig, pub, &url));                 // another body
     CHECK(!signedMasterUrl(body, sig, sign::kReleasePublicKey, &url));                     // not the release key
     CHECK(!signedMasterUrl(body, "", pub, &url));
     std::string sig2;
-    CHECK(sign::signData("http://plain.example\n", priv, &sig2) && !signedMasterUrl("http://plain.example\n", sig2, pub, &url)); // https only
+    CHECK(sign::signData(sign::kMasterSignPrefix + std::string("http://plain.example\n"), priv, &sig2) &&
+          !signedMasterUrl("http://plain.example\n", sig2, pub, &url)); // https only
 }
 
 // REVIEW 2.3: a dedicated server (src/server/main.cpp: frame() and idle(), never run()) handles ranking server

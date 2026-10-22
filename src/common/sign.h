@@ -17,6 +17,11 @@ bool signFile(const std::string& path, const std::string& privHex, std::string* 
 bool verifyData(const std::string& data, const std::string& sigHex, const std::string& pubHex);
 bool verifyFile(const std::string& path, const std::string& sigHex, const std::string& pubHex, std::string* err);
 
+// master.txt (the website's pointer to the ranking / server-list Worker) is signed with the release key over this
+// prefix + the file's bytes, never the bare file (`quark_sign sign-master`): domain separation, so no signature made
+// for something else (a package, a release manifest) can ever pass as a master.txt signature, and vice versa.
+inline const char* const kMasterSignPrefix = "quark-master-v1\n";
+
 // Plain Ed25519 (RFC 8032, no prehash) over a short message: ranked ids prove their key with it (ranked.h), and the
 // Worker checks the same signatures with WebCrypto's Ed25519.
 bool signMessage(const std::string& msg, const std::string& privHex, std::string* sigHex);

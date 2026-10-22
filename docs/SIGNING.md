@@ -62,12 +62,15 @@ written (outside the repo, never committed) to the session scratchpad file `quar
 ## Moving the ranking / server-list Worker (signed master.txt)
 
 The Worker's URL is built into the game (`kPinnedMasterUrl`, `src/game/master.cpp`). The website's `master.txt`
-can move it only when `master.txt.sig` next to it is a release-key signature of exactly that file:
+can move it only when `master.txt.sig` next to it is a release-key signature of `quark-master-v1\n` followed by
+exactly that file (and the URL is `https://`). The prefix keeps the two kinds of signature apart: a signature made
+for a package or a release manifest (`quark_sign sign`) never passes as a master.txt signature, so use
+`sign-master`, not `sign`:
 
 ```
 echo https://new-worker.example.workers.dev > site/master.txt
-QUARK_SIGNING_KEY=<private key> build/quark_sign sign site/master.txt   # writes site/master.txt.sig
-build/quark_sign verify site/master.txt                                  # checks it against the built-in key
+QUARK_SIGNING_KEY=<private key> build/quark_sign sign-master site/master.txt   # writes site/master.txt.sig
+build/quark_sign verify-master site/master.txt                                  # checks it against the built-in key
 git add site/master.txt site/master.txt.sig
 ```
 

@@ -15,7 +15,8 @@
 // the game, unless the website publishes a master.txt signed with the release key (master.txt.sig): then that one.
 // Empty = no internet list.
 std::string masterUrl();
-// The URL in a master.txt body if sigHex is a valid release-key (pubHex) signature of exactly that body.
+// The URL in a master.txt body if sigHex is a valid release-key (pubHex) signature of sign::kMasterSignPrefix + that
+// exact body, and the URL is https.
 bool signedMasterUrl(const std::string& body, const std::string& sigHex, const std::string& pubHex, std::string* url);
 // ip:port of every public server running this version.
 bool fetchServerList(std::vector<std::string>& out, std::string* err = nullptr);
