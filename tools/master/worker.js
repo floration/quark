@@ -37,7 +37,9 @@
 //                 it opened. Rated when the server's result and the players' reports agree: every player who didn't
 //                 leave reported it, or REPORT_WAIT_MS passed with at least one agreeing and nobody against. A report
 //                 against it makes a dispute (not rated; the owner settles it with /resolve), unless no player agrees
-//                 with the server and two or more contradict it: then it's void. New accounts are provisional (see
+//                 with the server and two or more contradict it: then it's void. A match still undecided when its
+//                 ticket expires (TICKET_MS) is rated if the server's result is in and a player agreed with nobody
+//                 against, else void. New accounts are provisional (see
 //                 PROVISIONAL_GAMES).
 //   POST /resolve form: key (ADMIN_KEY), match, action=rate|void                    the owner settles a dispute
 //   GET  /disputes?key=ADMIN_KEY                                    "match ladder created result" per open dispute
@@ -64,7 +66,8 @@
 // together (that's what the Discord roles and pings need); unlinking (type "unlink" in game) removes the Discord part.
 // The game says so where you link (the settings screen's Discord box).
 // Ladders (each its own ratings): vanilla (all weapons), vampire (laser vampire), instagib. Rows are keyed "ladder:id".
-// Cron (scheduled handler, every 15 minutes): rates matches whose report wait is over and prunes old rows.
+// Cron (scheduled handler, every 15 minutes): rates matches whose report wait is over, decides (rates or voids)
+// matches whose ticket expired undecided, and prunes old rows.
 const FRESH_MS = 150000;
 const MU = 25, SIGMA = 25 / 3, BETA = SIGMA / 2, TAU = MU / 300, EPS = 1e-4;
 const PENDING_MS = 3600000;
@@ -482,6 +485,7 @@ async function report(env, form, now) {
   if (t.ladder !== ladder || t.players !== res.entries.map((e) => e.id).join(",")) return "not the ticket's players";
   if (now - t.created < MIN_MATCH_MS) return "too soon";
   if (t.status === "open" && now - t.created > TICKET_MS) return "expired";
+  if (t.status === "void") return "void";   // (before the matches row below: it would only sit there pending)
   // the reporter's display name for the leaderboard (hex-encoded printable ASCII, up to 20 chars)
   await saveName(env, me, String(form.get("name") || ""), now);
   const result = ladder + "|" + res.text, dispute = String(form.get("dispute") || "") === "1" ? 1 : 0;
@@ -489,7 +493,6 @@ async function report(env, form, now) {
     .bind(match, result, res.entries.length, now).run();
   const m = await env.DB.prepare("SELECT status FROM matches WHERE id = ?").bind(match).first();
   if (m.status !== "pending" && m.status !== "disputed") return m.status;   // (a dispute can still turn void)
-  if (t.status === "void") return "void";
   await env.DB.prepare("INSERT OR IGNORE INTO reports (match, reporter, result, dispute) VALUES (?, ?, ?, ?)").bind(match, me, result, dispute).run();
   return finishMatch(env, match, now);
 }
@@ -525,9 +528,15 @@ async function serverResult(env, form, addr, now) {
 }
 
 // What a ticketed match comes to, from the server's result and the players' reports (see /report at the top).
+// Once the ticket is TICKET_MS old no report or result can come any more, so nothing stays pending: it's rated if
+// the server's result is in, someone agreed and nobody objected, else void (a dispute still waits for the owner).
 export function decideMatch(t, reports, now) {
   const players = t.players.split(","), left = new Set(t.leavers ? t.leavers.split(",") : []);
-  if (!t.result) return { state: "pending", text: reports.length < players.length ? `pending ${reports.length}/${players.length}` : "pending server" };
+  const expired = now - t.created > TICKET_MS;
+  if (!t.result) {
+    if (expired) return { state: "void", text: "void: no result from the server" };
+    return { state: "pending", text: reports.length < players.length ? `pending ${reports.length}/${players.length}` : "pending server" };
+  }
   const byId = new Map(reports.map((r) => [r.reporter, r]));
   const against = reports.filter((r) => r.dispute || (r.result !== null && r.result !== t.result));
   const agree = reports.filter((r) => !r.dispute && (r.result === null || r.result === t.result));
@@ -537,15 +546,17 @@ export function decideMatch(t, reports, now) {
   }
   const missing = players.filter((id) => !left.has(id) && !byId.has(id));
   if (!missing.length) return { state: "rate" };
-  if (agree.length >= 1 && t.resulted && now - t.resulted >= REPORT_WAIT_MS) return { state: "rate" };
+  if (agree.length >= 1 && (expired || (t.resulted && now - t.resulted >= REPORT_WAIT_MS))) return { state: "rate" };
+  if (expired) return { state: "void", text: "void: no player confirmed the server's result" };
   return { state: "pending", text: `pending ${players.length - left.size - missing.length}/${players.length - left.size}` };
 }
 
 async function finishMatch(env, match, now, force = false) {
-  const t = await env.DB.prepare("SELECT ladder, players, result, leavers, resulted, status FROM tickets WHERE id = ?").bind(match).first();
+  const t = await env.DB.prepare("SELECT ladder, players, created, result, leavers, resulted, status FROM tickets WHERE id = ?").bind(match).first();
   const m = await env.DB.prepare("SELECT status FROM matches WHERE id = ?").bind(match).first();
   if (!t || !m) return "pending";
   if (m.status !== "pending" && m.status !== "disputed") return m.status;
+  if (t.status === "void" && m.status === "pending") { await voidMatch(env, match); return "void"; }   // (its ticket went first)
   const { results: reports } = await env.DB.prepare("SELECT reporter, result, dispute FROM reports WHERE match = ?").bind(match).all();
   let d = force ? (t.result ? { state: "rate" } : { state: "pending", text: "pending server" }) : decideMatch(t, reports, now);
   if (m.status === "disputed" && !force && d.state !== "void") return "disputed";   // only the owner settles it, or more dissent voids it
@@ -620,13 +631,25 @@ function ipv4(s) {
   return s.split(".").every((p) => +p <= 255) ? s : null;
 }
 
-// Old rows go (cron, WEB-12), and matches whose report wait is over get rated.
+// Old rows go (cron, WEB-12), and pending matches that can be decided are: rated once their report wait is over (with
+// a report in: without one it would only stay pending), and rated or voided once their ticket has expired (see
+// decideMatch). Oldest first, so the same rows can't fill every run; one failing match doesn't stop the rest.
+// Returns how many it rated.
 export async function prune(env, now) {
   const q = (sql, ...a) => env.DB.prepare(sql).bind(...a);
-  const { results: due } = await q("SELECT t.id AS id FROM tickets t JOIN matches m ON m.id = t.id WHERE m.status = 'pending' AND t.resulted IS NOT NULL AND t.resulted < ? LIMIT 50", now - REPORT_WAIT_MS).all();
-  for (const r of due) await finishMatch(env, r.id, now);
+  const { results: due } = await q(
+    "SELECT t.id AS id FROM tickets t JOIN matches m ON m.id = t.id WHERE m.status = 'pending' AND (t.created < ? OR " +
+    "(t.resulted IS NOT NULL AND t.resulted < ? AND EXISTS (SELECT 1 FROM reports r WHERE r.match = t.id))) " +
+    "ORDER BY COALESCE(t.resulted, t.created) LIMIT 50", now - TICKET_MS, now - REPORT_WAIT_MS).all();
+  let rated = 0;
+  for (const r of due) {
+    try { if ((await finishMatch(env, r.id, now)) === "done") rated++; }
+    catch (e) { console.log("prune: match " + r.id + ": " + String(e && e.message || e)); }
+  }
   await env.DB.batch([
     q("DELETE FROM servers WHERE seen < ?", now - 3600000),
+    // tickets that never got a result: void, and so is the pending match their players' reports made
+    q("UPDATE matches SET status = 'void' WHERE status = 'pending' AND id IN (SELECT id FROM tickets WHERE status = 'open' AND created < ? AND result IS NULL)", now - TICKET_MS),
     q("UPDATE tickets SET status = 'void' WHERE status = 'open' AND created < ? AND result IS NULL", now - TICKET_MS),
     q("DELETE FROM reports WHERE match IN (SELECT id FROM tickets WHERE created < ? AND status != 'open')", now - 30 * 86400000),
     q("DELETE FROM matches WHERE created < ? AND status != 'pending' AND status != 'disputed'", now - 30 * 86400000),
@@ -636,7 +659,7 @@ export async function prune(env, now) {
     q("DELETE FROM link_codes WHERE created < ?", now - LINK_CODE_MS),
     q("DELETE FROM rate_guard"),
   ]);
-  return due.length;
+  return rated;
 }
 
 // Short-lived caching of public reads (WEB-6): the Cache API (per data center) plus Cache-Control for clients.

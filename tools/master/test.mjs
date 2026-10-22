@@ -192,6 +192,66 @@ check((await call("/list?v=t9")) === "", "hidden servers aren't listed");
   r = await ratings([21, 22]);
   check(r[id(21)].games === 2 && r[id(22)].games === 2, "silent player rated (a non-report doesn't escape the result)");
 }
+// nothing stays pending: once a ticket expires its match is rated (result in, someone agreed, nobody against) or void;
+// the cron goes oldest first, skips rows it can't decide yet, and one failing match doesn't stop the rest
+{
+  const status = (m) => [db.prepare("SELECT status FROM matches WHERE id = ?").get(m)?.status, db.prepare("SELECT status FROM tickets WHERE id = ?").get(m)?.status].join("/");
+  const p = `${id(23)}:0:0,${id(24)}:1:1`;
+  // the server's result, but no player ever reports: void once the ticket expires
+  const S1 = await server();
+  await S1.ticket("c1c1c1c1c1c1c1c1", "vanilla", [23, 24]);
+  age("c1c1c1c1c1c1c1c1");
+  await S1.result("c1c1c1c1c1c1c1c1", p);
+  db.prepare("UPDATE tickets SET resulted = resulted - ? WHERE id = ?").run(11 * 60000, "c1c1c1c1c1c1c1c1");
+  check((await prune(env, Date.now())) === 0 && status("c1c1c1c1c1c1c1c1") === "pending/open", "no report yet: waits");
+  // players report, the server never does
+  const S2 = await server();
+  await S2.ticket("c2c2c2c2c2c2c2c2", "vanilla", [23, 24]);
+  age("c2c2c2c2c2c2c2c2");
+  check((await call("/report", { secret: secret(23), match: "c2c2c2c2c2c2c2c2", ladder: "vanilla", p })) === "pending 1/2", "report without the server's result");
+  // the server's result and one agreeing report, the result posted just before the ticket ran out
+  const S3 = await server();
+  await S3.ticket("c3c3c3c3c3c3c3c3", "vanilla", [23, 24]);
+  age("c3c3c3c3c3c3c3c3");
+  await S3.result("c3c3c3c3c3c3c3c3", p);
+  check((await call("/report", { secret: secret(23), match: "c3c3c3c3c3c3c3c3", ladder: "vanilla", p })) === "pending 1/2", "one agreeing report");
+  for (const m of ["c1c1c1c1c1c1c1c1", "c2c2c2c2c2c2c2c2", "c3c3c3c3c3c3c3c3"]) age(m, 2 * 3600000);
+  check((await prune(env, Date.now())) === 1, "expired tickets decided: one rated");
+  check(status("c1c1c1c1c1c1c1c1") === "void/void", "result nobody confirmed: void " + status("c1c1c1c1c1c1c1c1"));
+  check(status("c2c2c2c2c2c2c2c2") === "void/void", "no result from the server: void, match row too " + status("c2c2c2c2c2c2c2c2"));
+  check(status("c3c3c3c3c3c3c3c3") === "done/done", "agreed and unopposed: rated at expiry " + status("c3c3c3c3c3c3c3c3"));
+  check((await ratings([23, 24]))[id(23)].games === 1, "rated once");
+  check((await call("/report", { secret: secret(24), match: "c2c2c2c2c2c2c2c2", ladder: "vanilla", p })) === "void", "a void ticket takes no reports");
+  // 60 rows that can't be decided yet (a result, no report) don't hide a match that can, made after them
+  const t0 = Date.now(), ids = [];
+  for (let k = 0; k < 60; k++) {
+    const m = "f0" + String(k).padStart(14, "0");
+    ids.push(m);
+    db.prepare("INSERT INTO tickets (id, kind, server, ladder, map, players, created, status, result, leavers, resulted) VALUES (?, 'match', 'x:1', 'vanilla', 'temple', ?, ?, 'open', ?, '', ?)")
+      .run(m, [id(23), id(24)].sort().join(","), t0 - 30 * 60000, "vanilla|" + p, t0 - 25 * 60000);
+    db.prepare("INSERT INTO matches (id, result, players, status, created) VALUES (?, ?, 2, 'pending', ?)").run(m, "vanilla|" + p, t0 - 25 * 60000);
+  }
+  const S4 = await server(), S5 = await server();
+  for (const [S, m] of [[S4, "c4c4c4c4c4c4c4c4"], [S5, "c5c5c5c5c5c5c5c5"]]) {
+    await S.ticket(m, "vanilla", [23, 24]);
+    age(m);
+    await S.result(m, p);
+    await call("/report", { secret: secret(23), match: m, ladder: "vanilla", p });
+    db.prepare("UPDATE tickets SET resulted = resulted - ? WHERE id = ?").run(m === "c4c4c4c4c4c4c4c4" ? 12 * 60000 : 11 * 60000, m);
+  }
+  // the older of the two throws: the cron logs it and still rates the other
+  const realPrepare = env.DB.prepare, realLog = console.log;
+  env.DB.prepare = (sql) => { const s = realPrepare(sql); return { ...s, bind: (...a) => { if (a.includes("c4c4c4c4c4c4c4c4") && sql.startsWith("SELECT ladder")) throw new Error("D1 hiccup"); return s.bind(...a); } }; };
+  console.log = () => {};
+  const n = await prune(env, Date.now());
+  env.DB.prepare = realPrepare; console.log = realLog;
+  check(n === 1 && status("c5c5c5c5c5c5c5c5") === "done/done" && status("c4c4c4c4c4c4c4c4") === "pending/open", "undecidable rows skipped, one failure doesn't stop the rest " + n);
+  check(ids.every((m) => status(m) === "pending/open"), "rows waiting for a report stay pending until the ticket expires");
+  check((await prune(env, Date.now())) === 1 && status("c4c4c4c4c4c4c4c4") === "done/done", "the failed one is rated on the next run");
+  for (const m of ids) age(m, 2 * 3600000);
+  await prune(env, Date.now()); await prune(env, Date.now());
+  check(ids.every((m) => status(m) === "void/void"), "expired rows all decided over the runs (50 a run)");
+}
 // ladders are separate: an instagib win doesn't touch vanilla
 {
   const S = await server();

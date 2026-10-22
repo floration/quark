@@ -22,7 +22,7 @@ directly over UDP, so it shows only servers it can reach, with their real ping. 
    branch's push can run CI, so a CI-made signature would vouch for anything. `site/master.txt` (unsigned) is still
    what the website's leaderboard reads.
 7. **Cron.** Worker → **Settings → Triggers → Cron Triggers → Add**: `*/15 * * * *`. It rates matches whose report
-   wait is over and prunes old rows (servers, tickets, matches, reports, queues, filled rows, link codes).
+   wait is over, rates or voids matches whose ticket expired undecided, and prunes old rows (servers, tickets, matches, reports, queues, filled rows, link codes).
 8. **Owner key (disputes).** Worker → **Settings → Variables and Secrets → Add → Secret**: `ADMIN_KEY`, a long random
    string. `GET /disputes?key=…` lists disputed matches; `POST /resolve` (key, match, action=rate|void) settles one.
 
@@ -122,7 +122,8 @@ What changed:
   score) makes the match `disputed`: not rated until the owner settles it (`/disputes`, `/resolve`). Only when no
   player agrees with the server and two or more contradict it is it void. A player who never reports doesn't hold
   the match up: `REPORT_WAIT_MS` (10 min) after the server's result, the cron rates it if someone agreed and nobody
-  objected.
+  objected. Nothing stays pending: when its ticket expires (2 h) a match is rated that way or else void (no result
+  from the server, or nobody confirmed it).
 - **One placement threshold**: `PLACEMENT_GAMES` = 5 (the game's `kPlacementGames`), for the boards and for
   established accounts. No rating decay, no rating-banded queues (owner decision 3.4).
 - **Hardening** (WEB-5 … WEB-12): writes are POST only and refused with an `Origin` header (no web page can make its
