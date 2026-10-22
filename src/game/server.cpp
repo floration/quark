@@ -1916,12 +1916,15 @@ void Server::updateBalanceBots(bool matchStarting) {
     int hA = humanCount(TEAM_A), hB = humanCount(TEAM_B);
     int needA = wanted ? std::max(0, hB - hA) : 0, needB = wanted ? std::max(0, hA - hB) : 0;
     int haveA = 0, haveB = 0;
+    // A round mode's live round keeps a balance bot that's still alive (REVIEW GAME-10: removing a team's last player
+    // alive lost them the round on the spot); it goes once it dies or the round ends.
+    bool roundOn = (ms_.phase == PHASE_FREEZE || ms_.phase == PHASE_LIVE) && !modeRespawns(ms_.mode) && wanted;
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
         if (!p.connected || !p.balanceBot) continue;
         int& have = p.team == TEAM_A ? haveA : haveB;
         int need = p.team == TEAM_A ? needA : needB;
-        if (have >= need) removeBot(i);
+        if (have >= need && !(roundOn && p.alive)) removeBot(i);
         else have++;
     }
     while (haveA < needA && addBot(TEAM_A, cfg_.balanceBotSkill, true) >= 0) haveA++;

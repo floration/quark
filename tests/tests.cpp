@@ -2991,7 +2991,12 @@ static void testBots(uint16_t& port) {
         pump(s, cls, 1.5, idle);
         bots = 0;
         for (auto& p : s.players_) bots += p.connected && p.isBot;
-        CHECK(bots == 0);                                  // second human evens the teams
+        CHECK(bots == 1);                                  // second human evens the teams, but a bot alive in this round stays (GAME-10)...
+        for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].isBot) s.killPlayer(i, -1, 254);
+        pump(s, cls, 1.5, idle);
+        bots = 0;
+        for (auto& p : s.players_) bots += p.connected && p.isBot;
+        CHECK(bots == 0);                                  // ...until it's dead
         b.disconnect();
         cls.pop_back();
         pump(s, cls, 1.5, idle);

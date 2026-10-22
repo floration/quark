@@ -457,6 +457,44 @@ static void testBombDrop(uint16_t port) {
     s.stop();
 }
 
+// GAME-10: a human joining doesn't remove a balance bot that's alive in a live round (that could hand the round
+// to the other side); it goes when it dies or the round ends.
+static void testBalanceBotDefer(uint16_t port) {
+    printf("balance bots: none removed alive mid-round\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_VS; cfg.port = port; cfg.balanceBots = true;
+    NetClient c[1];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 1, cls, false)) { s.stop(); return; }
+    s.updateBalanceBots(true);   // (what a passed start vote does: the bot for the empty side, then the match)
+    s.command("forcestart");
+    int bot = -1;
+    for (int k = 0; k < 200; k++) {   // until a round is live with the bot alive in it (it joins round 1 dead)
+        bot = -1;
+        for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].balanceBot) bot = i;
+        if (bot >= 0 && s.ms_.phase == PHASE_LIVE && s.players_[bot].alive && s.players_[c[0].clientId()].alive) break;
+        if (s.ms_.phase == PHASE_FREEZE || s.ms_.phase == PHASE_ROUND_END) s.phaseEnd_ = s.time();
+        pump(s, cls, 0.05, [&](int) { if (bot >= 0) s.players_[bot].health = 100; s.players_[c[0].clientId()].health = 100; return UserCmd(); });
+    }
+    if (bot < 0 || s.ms_.phase != PHASE_LIVE || !s.players_[bot].alive)
+        printf("  bot %d phase %d round %d bot alive %d human alive %d\n", bot, s.ms_.phase, s.ms_.round, bot >= 0 && s.players_[bot].alive, s.players_[c[0].clientId()].alive);
+    CHECK(bot >= 0 && s.ms_.phase == PHASE_LIVE && s.players_[bot].alive);
+    if (bot < 0) { s.stop(); return; }
+    int round = s.ms_.round;
+    NetClient late;
+    cls.push_back(&late);
+    late.connect("127.0.0.1:" + std::to_string(cfg.port), "late");
+    auto calm = [&](int) { s.players_[bot].health = 100; s.players_[c[0].clientId()].health = 100; s.players_[bot].move.pos = s.map_.spawns[0].pos; return UserCmd(); };
+    pumpServerTime(s, cls, 3.0, calm);   // (balance checks run every second)
+    printf("  a human joined team %d: the bot is %s\n", late.clientId() >= 0 ? s.players_[late.clientId()].team : -1, s.players_[bot].connected ? "still in (alive)" : "gone");
+    CHECK(s.players_[bot].connected && s.players_[bot].balanceBot && s.ms_.round == round && s.ms_.phase == PHASE_LIVE);
+    s.killPlayer(bot, -1, 254);
+    pumpServerTime(s, cls, 1.5, idle);
+    CHECK(!s.players_[bot].connected || !s.players_[bot].balanceBot);   // dead: now it goes
+    s.stop();
+}
+
 // "quark_tests rules [name]": all of them, or the one named.
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
@@ -470,6 +508,7 @@ static void testGameRules(const std::string& only) {
         {"hide", [] { testHideScoring(TP(29247)); }},
         {"tag", [] { testTagEscape(TP(29248)); }},
         {"bomb", [] { testBombDrop(TP(29249)); }},
+        {"botdefer", [] { testBalanceBotDefer(TP(29250)); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
 }
