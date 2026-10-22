@@ -1,0 +1,93 @@
+[
+  {
+    "url": "https://api.github.com/repos/floration/quark/releases/3",
+    "id": 3,
+    "author": {"login": "github-actions[bot]", "id": 41898282, "type": "Bot", "site_admin": false},
+    "tag_name": "test-1.17.0-test.2",
+    "target_commitish": "testing",
+    "name": "quark 1.17.0 test 2",
+    "draft": false,
+    "prerelease": true,
+    "created_at": "2026-10-23T10:00:00Z",
+    "assets": [
+      {"name": "quark-linux.qpak", "size": 100, "browser_download_url": "https://github.com/floration/quark/releases/download/test-1.17.0-test.2/quark-linux.qpak"},
+      {"name": "quark-linux.qpak.sig", "size": 128, "browser_download_url": "https://github.com/floration/quark/releases/download/test-1.17.0-test.2/quark-linux.qpak.sig"},
+      {"name": "quark-windows.qpak", "size": 100, "browser_download_url": "https://github.com/floration/quark/releases/download/test-1.17.0-test.2/quark-windows.qpak"},
+      {"name": "quark-windows.qpak.sig", "size": 128, "browser_download_url": "https://github.com/floration/quark/releases/download/test-1.17.0-test.2/quark-windows.qpak.sig"}
+    ],
+    "tarball_url": null,
+    "body": "## Testing\n- grapple keeps speed — \"tag_name\": \"v9.9.9\" in notes must not confuse the reader\n- emoji 🚀 ok"
+  },
+  {
+    "tag_name": "v1.16.0",
+    "name": "quark 1.16.0",
+    "draft": false,
+    "prerelease": false,
+    "assets": [
+      {"name": "quark-linux.qpak", "browser_download_url": "https://github.com/floration/quark/releases/download/v1.16.0/quark-linux.qpak"},
+      {"name": "quark-linux.qpak.sig", "browser_download_url": "https://github.com/floration/quark/releases/download/v1.16.0/quark-linux.qpak.sig"},
+      {"name": "quark-macos.qpak", "browser_download_url": "https://github.com/floration/quark/releases/download/v1.16.0/quark-macos.qpak"},
+      {"name": "quark-macos.qpak.sig", "browser_download_url": "https://github.com/floration/quark/releases/download/v1.16.0/quark-macos.qpak.sig"},
+      {"name": "quark-windows.qpak", "browser_download_url": "https://github.com/floration/quark/releases/download/v1.16.0/quark-windows.qpak"},
+      {"name": "quark-windows.qpak.sig", "browser_download_url": "https://github.com/floration/quark/releases/download/v1.16.0/quark-windows.qpak.sig"},
+      {"name": "quark-launcher-linux", "browser_download_url": "https://github.com/floration/quark/releases/download/v1.16.0/quark-launcher-linux"}
+    ],
+    "body": "1.16.0 notes"
+  },
+  {
+    "tag_name": "v1.17.0",
+    "name": "draft of 1.17.0",
+    "draft": true,
+    "prerelease": false,
+    "assets": [
+      {"name": "quark-linux.qpak", "browser_download_url": "https://github.com/floration/quark/releases/download/untagged-1/quark-linux.qpak"},
+      {"name": "quark-linux.qpak.sig", "browser_download_url": "https://github.com/floration/quark/releases/download/untagged-1/quark-linux.qpak.sig"}
+    ],
+    "body": "draft"
+  },
+  {
+    "tag_name": "test-1.17.0-test.1",
+    "name": "quark 1.17.0 test 1",
+    "draft": false,
+    "prerelease": true,
+    "assets": [
+      {"name": "quark-linux.qpak", "browser_download_url": "https://github.com/floration/quark/releases/download/test-1.17.0-test.1/quark-linux.qpak"},
+      {"name": "quark-linux.qpak.sig", "browser_download_url": "https://github.com/floration/quark/releases/download/test-1.17.0-test.1/quark-linux.qpak.sig"}
+    ],
+    "body": "test 1"
+  },
+  {
+    "tag_name": "v1.15.1",
+    "name": "quark 1.15.1",
+    "draft": false,
+    "prerelease": false,
+    "assets": [
+      {"name": "quark-linux.qpak", "browser_download_url": "https://github.com/floration/quark/releases/download/v1.15.1/quark-linux.qpak"},
+      {"name": "quark-linux.qpak.sig", "browser_download_url": "https://github.com/floration/quark/releases/download/v1.15.1/quark-linux.qpak.sig"},
+      {"name": "quark-windows.qpak", "browser_download_url": "https://github.com/floration/quark/releases/download/v1.15.1/quark-windows.qpak"},
+      {"name": "quark-windows.qpak.sig", "browser_download_url": "https://github.com/floration/quark/releases/download/v1.15.1/quark-windows.qpak.sig"}
+    ],
+    "body": "1.15.1 notes"
+  },
+  {
+    "tag_name": "v1.9.0",
+    "name": "quark 1.9.0 (before signing)",
+    "draft": false,
+    "prerelease": false,
+    "assets": [
+      {"name": "quark-linux.qpak", "browser_download_url": "https://github.com/floration/quark/releases/download/v1.9.0/quark-linux.qpak"}
+    ],
+    "body": "unsigned"
+  },
+  {
+    "tag_name": "v1.10.0",
+    "name": "quark 1.10.0",
+    "draft": false,
+    "prerelease": false,
+    "assets": [
+      {"name": "quark-linux.qpak", "browser_download_url": "https://github.com/floration/quark/releases/download/v1.10.0/quark-linux.qpak"},
+      {"name": "quark-linux.qpak.sig", "browser_download_url": "https://github.com/floration/quark/releases/download/v1.10.0/quark-linux.qpak.sig"}
+    ],
+    "body": null
+  }
+]

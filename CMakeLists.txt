@@ -130,6 +130,18 @@ endif()
 add_executable(quark_server src/server/main.cpp)
 target_link_libraries(quark_server quark_core)
 
+# Launcher logic without a window: release channels, the launcher self-update / replacement, desktop integration.
+# In the launcher, the game (it updates old launchers, docs/SIGNING.md) and the tests.
+add_library(quark_launcher_core STATIC
+  src/launcher/releases.cpp
+  src/launcher/selfupdate.cpp
+  src/launcher/install.cpp
+)
+target_link_libraries(quark_launcher_core PUBLIC quark_core)
+if(WIN32)
+  target_link_libraries(quark_launcher_core PUBLIC ole32 uuid shell32 advapi32)
+endif()
+
 if(QUARK_BUILD_CLIENT)
   set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
   set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -157,20 +169,19 @@ if(QUARK_BUILD_CLIENT)
     src/client/audio.cpp
     ${QUARK_ICON_RC}
   )
-  target_link_libraries(quark quark_core glfw ${CMAKE_DL_LIBS})
+  target_link_libraries(quark quark_core quark_launcher_core glfw ${CMAKE_DL_LIBS})
   if(WIN32)
     target_link_libraries(quark shell32)
   endif()
   add_executable(quark_launcher WIN32
     src/launcher/main.cpp
-    src/launcher/install.cpp
     ${QUARK_ICON_RC}
     src/client/gl.cpp
     src/client/renderer.cpp
     src/client/lightmap.cpp
     src/client/ui.cpp
   )
-  target_link_libraries(quark_launcher quark_core glfw)
+  target_link_libraries(quark_launcher quark_core quark_launcher_core glfw)
   foreach(t quark quark_launcher)
     if(APPLE)
       target_link_libraries(${t} "-framework OpenGL" "-framework AudioToolbox" "-framework CoreFoundation")
@@ -184,8 +195,8 @@ if(QUARK_BUILD_CLIENT)
 endif()
 
 if(QUARK_BUILD_TESTS)
-  add_executable(quark_tests tests/tests.cpp tests/mapreport.cpp)
-  target_link_libraries(quark_tests quark_core)
+  add_executable(quark_tests tests/tests.cpp tests/mapreport.cpp tests/launcher_tests.cpp)
+  target_link_libraries(quark_tests quark_core quark_launcher_core)
   target_compile_definitions(quark_tests PRIVATE QUARK_SOURCE_DIR="${CMAKE_SOURCE_DIR}")   # cross-language constant checks read tools/
   target_compile_definitions(quark_tests PRIVATE QUARK_TEST_DATA="${CMAKE_SOURCE_DIR}/tests/data")   # regression inputs
 endif()
