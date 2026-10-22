@@ -168,8 +168,81 @@ static void testStopDoesNotBlock(uint16_t port) {
 #endif
 }
 
+// FINAL_REVIEW 2.11: a reconnect matched by its token but proving another ranked key (or none) used to take the slot
+// back with the old ranked id. And a free for all leaver back after the grace was counted twice in the result.
+static void testRestoreKeepsIdentity(uint16_t port) {
+    printf("reconnect token never carries a ranked id the connect didn't prove\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    char tag[16];
+    snprintf(tag, sizeof tag, "%u", (unsigned)qrand());
+    RankKey kb = rankKeyFromSecret(sha256Hex(std::string("restoreB") + tag)), kc = rankKeyFromSecret(sha256Hex(std::string("restoreC") + tag));
+    std::string addr = "127.0.0.1:" + std::to_string(port);
+    NetClient b;
+    b.setRankKey(kb);
+    b.connect(addr, "b");
+    std::vector<NetClient*> cls = {&b};
+    pump(s, cls, 1.0, idle);
+    int ib = b.clientId();
+    CHECK(ib >= 0 && ib < kMaxPlayers && s.players_[ib].rankId == kb.id);
+    if (ib < 0 || ib >= kMaxPlayers) { s.stop(); return; }
+    // same game (same token), another key: a new session, and b's slot keeps b's id and key
+    b.disconnect();
+    pump(s, cls, 0.3, idle);
+    b.setRankKey(kc);
+    b.connect(addr, "b");
+    pump(s, cls, 1.0, idle);
+    int ic = b.clientId();
+    CHECK(b.state() == ConnState::Connected && ic != ib && s.players_[ic].rankId == kc.id);
+    CHECK(s.players_[ib].connected && s.away(ib) && s.players_[ib].rankId == kb.id && s.players_[ib].rankPub == kb.pub);
+    // and no key at all: no ranked id (a new session again)
+    b.disconnect();
+    pump(s, cls, 0.3, idle);
+    b.setRankKey(RankKey());
+    b.connect(addr, "b");
+    pump(s, cls, 1.0, idle);
+    int in = b.clientId();
+    CHECK(b.state() == ConnState::Connected && in != ib && in >= 0 && in < kMaxPlayers && s.players_[in].rankId.empty());
+    CHECK(s.players_[ib].rankId == kb.id);
+    // the right key (token or not) gets the slot back
+    b.disconnect();
+    pump(s, cls, 0.3, idle);
+    b.setRankKey(kb);
+    b.connect(addr, "b");
+    pump(s, cls, 1.0, idle);
+    CHECK(b.clientId() == ib && !s.away(ib) && s.players_[ib].rankId == kb.id);
+    s.stop();
+
+    // the result: a free for all leaver who came back (here: playing again) counts once, as the leaver
+    printf("ranked free for all: a leaver back after the grace counts once\n");
+    Server r;
+    int v = arenaVariantFromName("instagib");
+    CHECK(v >= 0 && arenaVariantRanked(v));
+    if (v < 0) return;
+    r.cfg_.ranked = true; r.cfg_.mode = rankedMode(v); r.ms_.arenaVariant = (uint8_t)v;
+    r.rankedMatch_ = "0123456789abcdef";
+    const char* ids[3] = {"a", "b", "c"};
+    for (int i = 0; i < 3; i++) {
+        auto& p = r.players_[i];
+        p.connected = true; p.team = TEAM_A; p.rankId = std::string(32, ids[i][0]); p.name = ids[i]; p.score = 3 - i;
+    }
+    r.rankedLeft_.push_back({7, std::string(32, 'c'), TEAM_A, 0, 0});   // c left from slot 7, rejoined as slot 2
+    std::string why, text = r.rankedResult(-1, &why);
+    printf("  result: %s\n", text.c_str());
+    int entries = 0;
+    for (char ch : text.substr(0, text.find(" left="))) entries += ch == ':';
+    CHECK(!text.empty() && entries == 2 * 3);                         // a, b and c (once)
+    CHECK(text.find(",2:") == std::string::npos && text.find(" 2:") == std::string::npos && text.find("7:") != std::string::npos);
+    CHECK(text.find(" left=7") != std::string::npos);
+    for (auto& p : r.players_) p.connected = false;
+}
+
 static void serverTests() {
     testVersionReject(TP(28800));
     testSeedFetchDedupe();
     testStopDoesNotBlock(TP(28801));
+    testRestoreKeepsIdentity(TP(28802));
 }

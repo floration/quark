@@ -733,11 +733,14 @@ void Server::handleConnect(const NetAddr& from, Reader& r, int len) {
         else log("connect from " + from.toString() + ": ranked key proof failed (joins without a ranked id)");
     }
     // Back within the reconnect grace (or a new session of the same player taking over its old one): same slot,
-    // team, score and state. Matched by the proven ranked id, else by the token.
+    // team, score and state. Matched by the proven ranked id, else by the token - but a token never carries a ranked
+    // id the connect didn't prove (FINAL_REVIEW 2.11: a token reconnect with another key, or none, kept the slot's
+    // old id): it restores only a slot whose ranked id is the one proven now (both none counts). Anything else is a
+    // new session; the old slot runs out its grace.
     for (int i = 0; i < kMaxPlayers; i++) {
         const ServerPlayer& o = players_[i];
         if (!o.connected || o.isBot) continue;
-        if ((!rankId.empty() && o.rankId == rankId) || (token != 0 && o.reconnectToken == token)) {
+        if ((!rankId.empty() && o.rankId == rankId) || (token != 0 && o.reconnectToken == token && o.rankId == rankId)) {
             if (existing >= 0 && existing != i) dropPlayer(existing, "reconnecting", false);
             restorePlayer(i, from, nonce, rankId.empty() ? std::string() : rpub, dialled);
             return;
@@ -2605,11 +2608,13 @@ std::string Server::rankedResult(int winner, std::string* whyNot) {
     bool teams = modeIsTeamBased(cfg_.mode);
     struct Entry { int slot, team; long long score; };
     std::vector<Entry> es;
+    auto left = [&](const std::string& id) { for (auto& l : rankedLeft_) if (l.rankId == id) return true; return false; };
     for (int i = 0; i < kMaxPlayers; i++) {
         const auto& p = players_[i];
         if (!p.connected || p.team == TEAM_SPECTATOR) continue;
         if (p.isBot) { *whyNot = "bots played"; return ""; }
         if (p.rankId.empty()) { *whyNot = p.name + " has no ranked id"; return ""; }
+        if (left(p.rankId)) continue;   // a leaver back after the grace counts once, as the leaver (FINAL_REVIEW 2.11)
         es.push_back({i, teams ? p.team : i, (long long)p.score * 1000 + p.kills});
     }
     // players who left during the match count too: the first leaver last (their side lost), later ones as they stood
