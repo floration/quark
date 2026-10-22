@@ -367,6 +367,23 @@ INSTALL_TEXT = f"""**Install / update**
 **Join**: Join Game -> pick a server from the internet list, or enter `ip:port`."""
 
 
+_URL_RE = re.compile(r"(?i)\b(?:[a-z][a-z0-9+.-]*://|www\.|discord(?:app)?\.(?:gg|com)/)\S*")
+_DOMAIN_RE = re.compile(r"(?i)\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|gg|io|xyz|ru|co|me|app|link|ly|tk|info|biz|site|online|shop|top)\b\S*")
+_MD_RE = re.compile(r"([\\*_~`|>\[\]()#:<-])")
+
+
+def safe_text(text: str, maxlen: int = 64) -> str:
+    """Attacker-controlled text (server names, maps, player names) made inert for a Discord message: control
+    characters and URLs / bare domains removed (no masked phishing links), markdown escaped, mentions broken."""
+    t = "".join(ch for ch in str(text) if ch.isprintable())
+    t = _URL_RE.sub("", t)
+    t = _DOMAIN_RE.sub("", t)
+    t = " ".join(t.split())[:maxlen]
+    t = _MD_RE.sub(r"\\\1", t)
+    t = t.replace("@", "@​")   # @everyone / @here / <@id> never ping
+    return t or "?"
+
+
 def split_message(text: str, limit: int = 1990) -> list[str]:
     """Split on line boundaries to fit Discord's 2000 char limit (hard-splits overlong lines)."""
     chunks, cur = [], ""
