@@ -422,6 +422,13 @@ private:
         const ModeState& m = net_.latest().ms;
         return m.mode == MODE_DUEL && m.phase != PHASE_WARMUP ? duelModDef(m.duelMod).size : 1.0f;
     }
+    // ranked visuals (no crowns, health bars, typing, custom models or HUD extras) apply to the players only:
+    // spectators of a ranked match see everything
+    bool rankedPlayer() const {
+        if (!fairRules()) return false;
+        const PlayerSnap* me = net_.findPlayer(net_.clientId());
+        return !me || me->team() != TEAM_SPECTATOR;
+    }
     bool fairRules() const { return net_.hasSnapshot() && (net_.mode().flags & (MS_RANKED | MS_TIMETRIAL)); }
     const Binds& binds() const { return modeCtlActive_ ? modeBinds_ : cfg_.binds; }
     std::string activeHudPath() const;

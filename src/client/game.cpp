@@ -1241,7 +1241,7 @@ void Game::drawWorld(float alpha) {
         auto part = [&](const Vec3& c, const Vec3& half, const Vec3& colr, bool shadow = true) { r_.box(c, half * bs, yaw, colr, sv, shadow, vis); };
         const Vec3 grey = col * 0.6f + Vec3(0.06f, 0.06f, 0.07f), dark = {0.05f, 0.05f, 0.06f};
         int model = opts_.debugModels && i >= kMaxPlayers - kPlayerModels ? i - (kMaxPlayers - kPlayerModels) : net_.playerModel(i);
-        switch (fairRules() ? 0 : model) { // ranked / time trial: default model for everyone
+        switch (rankedPlayer() ? 0 : model) { // ranked / time trial: default model for everyone
             case 1: // HEAVY: wide armoured body, shoulder pads, small helmet
                 part(at(0.45f), Vec3(0.32f, 0.45f * hs, 0.24f), col * 0.45f);
                 part(at(1.15f), Vec3(0.44f, 0.3f * hs, 0.28f), col);
@@ -1293,7 +1293,7 @@ void Game::drawWorld(float alpha) {
                 r_.text(sx - r_.textWidth(t, ts) * 0.5f, sy, ts, t, kRed);
             }
         }
-        if (vis && !fairRules()) if (int place = crownOf(i)) { // leaderboard crown on their head (a model; not in ranked)
+        if (vis && !rankedPlayer()) if (int place = crownOf(i)) { // leaderboard crown on their head (a model; not in ranked)
             Vec3 gold = place == 1 ? Vec3{1.0f, 0.78f, 0.15f} : Vec3{0.82f, 0.85f, 0.9f};
             Vec3 top = pos + Vec3(0, kPlayerHeight * hs * bs + 0.04f * bs, 0);
             r_.box(top + Vec3(0, 0.06f, 0) * bs, Vec3(0.17f, 0.06f, 0.17f) * bs, yaw, gold, sv, false);            // band
@@ -1333,7 +1333,7 @@ void Game::drawWorld(float alpha) {
             }
             return true;
         };
-        if (cfg_.healthBars && !fairRules() && !self && i != viewing && wholeBodySeen()) {
+        if (cfg_.healthBars && !rankedPlayer() && !self && i != viewing && wholeBodySeen()) {
             float sx, sy, lx, ly, rx, ry;   // over their head, or at their feet (VISUALS > HEALTH BAR POSITION)
             Vec3 at = cfg_.healthBarsBottom ? pos + Vec3(0, -0.15f, 0) : pos + Vec3(0, 2.0f * bs + 0.35f, 0);
             Vec3 side = Vec3(std::cos(camYaw), 0, -std::sin(camYaw)) * kPlayerHalfWidth;   // (the hitbox's half width, across the view)
@@ -1344,7 +1344,7 @@ void Game::drawWorld(float alpha) {
                 r_.rect(sx - bw * 0.5f, sy, bw * f, bh, p.health > 30 ? rgba(col) : kRed);
             }
         }
-        if (!self && time_ < typingUntil_[i] && !fairRules()) { // typing in chat (not in ranked)
+        if (!self && time_ < typingUntil_[i] && !rankedPlayer()) { // typing in chat (not in ranked)
             float sx, sy;
             if (r_.project(pos + Vec3(0, 2.0f * bs + 0.7f, 0), sx, sy)) {
                 float tts = std::max(1.0f, std::round(ui_.textScale()));
@@ -2050,7 +2050,7 @@ void Game::drawHud() {
     }
     // kill feed (top right), under the verbose info block; hud.cfg widgets. Ranked: the default HUD only.
     float y = 12 * s;
-    if (!fairRules()) {
+    if (!rankedPlayer()) {
         if (cfg_.hudVerbose || cfg_.hudWidgets) computeHudVals();
         if (cfg_.hudVerbose) drawVerboseHud(W, s, y);
         if (cfg_.hudVerbose && !cfg_.hud[Settings::HUD_KEYS].hidden && (net_.selfAlive() || specKeysOf() >= 0)) drawKeyOverlay(W, H, s);
@@ -2066,7 +2066,7 @@ void Game::drawHud() {
             r_.text(24 * s, H * 0.5f, dts, "REC " + fmtTime((float)net_.recordingTime()), kRed);
         }
     }
-    if (!fairRules() && cfg_.hudWidgets && !widgetEdit_) {
+    if (!rankedPlayer() && cfg_.hudWidgets && !widgetEdit_) {
         widgets_.poll(activeHudPath());
         if (!widgets_.empty()) widgets_.draw(r_, hudVals_, W, H, s);
     }
