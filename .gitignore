@@ -15,3 +15,7 @@ huds/
 controls/
 race_times.log
 .claude/worktrees/
+# maps/*.qmap are generated at build time by tools/make_maps.py (CMake). A hand-made map that should ship goes in
+# maps/ too: un-ignore it here with a "!/maps/<name>.qmap" line.
+/maps/*.qmap
+/maps/*.qmap.bak
