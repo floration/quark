@@ -1015,14 +1015,100 @@ static void testCartDash(uint16_t port) {
     s.stop();
 }
 
-// Shot spread is seeded per command, so client tracers match the server. The rifle fires while held.
+// Weapon spread is a fixed pattern (NET-9: it was seeded by the client's command number, and the best numbers landed
+// about twice the pellets). The same blast whatever the command number; what the client's tracers show (spreadAim) is
+// exactly what the server hits; single-shot weapons walk a fixed sequence that restarts when fire is let go.
+static void testFixedSpread(uint16_t port) {
+    printf("fixed spread pattern (NET-9)\n");
+    const WeaponDef& sg = weaponDef(WPN_SHOTGUN);
+    {   // the layout: one pellet dead center, all inside the spread, evenly apart, the old random spread's density
+        std::vector<Vec3> pts;
+        float sum = 0, maxR = 0;
+        for (int k = 0; k < sg.pellets; k++) {
+            float a, r;
+            pelletOffset(k, sg.pellets, sg.spread, a, r);
+            sum += r; maxR = std::max(maxR, r);
+            pts.push_back({r * std::cos(a), r * std::sin(a), 0});
+        }
+        float minGap = 1e9f;
+        for (size_t i = 0; i < pts.size(); i++)
+            for (size_t j = i + 1; j < pts.size(); j++) minGap = std::min(minGap, length(pts[i] - pts[j]));
+        float mean = sum / sg.pellets / sg.spread;
+        printf("  %d pellets: mean radius %.2f of the spread (random: 0.67), widest %.2f, closest pair %.2f\n", sg.pellets, mean, maxR / sg.spread, minGap / sg.spread);
+        CHECK(length(pts[0]) == 0 && maxR <= sg.spread && std::fabs(mean - 2.0f / 3.0f) < 0.05f && minGap > sg.spread * 0.2f);
+        float a0, r0, a1, r1;
+        burstOffset(0, 0.04f, a0, r0);
+        CHECK(r0 == 0);   // a burst's first shot goes where you aim
+        bool distinct = true;
+        for (uint32_t i = 1; i < kBurstPattern; i++) {
+            burstOffset(i, 0.04f, a1, r1);
+            if (r1 <= 0 || r1 > 0.04f) distinct = false;
+            for (uint32_t j = 1; j < i; j++) { burstOffset(j, 0.04f, a0, r0); if (std::fabs(r0 - r1) < 1e-6f && std::fabs(a0 - a1) < 1e-6f) distinct = false; }
+        }
+        CHECK(distinct);
+    }
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = true;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a, b;
+    a.connect("127.0.0.1:" + std::to_string(port), "shooter");
+    b.connect("127.0.0.1:" + std::to_string(port), "target");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 2.5, idle);
+    auto& sa = s.players_[a.clientId()];
+    auto& sb = s.players_[b.clientId()];
+    sa.move.pos = {10, 0, 19}; sb.move.pos = {0, 0, 19};   // 10 m apart in the open courtyard (testWeapons)
+    sa.move.vel = sb.move.vel = {};
+    pump(s, cls, 0.4, [](int) { UserCmd c; c.weapon = WPN_SHOTGUN; return c; });   // (history: they stand there)
+    sa.weapon = WPN_SHOTGUN;
+    Vec3 eye = sa.move.pos + Vec3(0, kEyeHeight, 0);
+    // aimed low (no pellet reaches the head) and further and further to the side: fewer pellets land
+    bool same = true, matches = true;
+    for (float side : {0.0f, 0.4f, 0.8f}) {
+        Vec3 d = normalize(sb.move.pos + Vec3(0, 0.35f, side) - eye);
+        UserCmd c;
+        c.pitch = std::asin(d.y); c.yaw = std::atan2(-d.x, -d.z);
+        c.weapon = WPN_SHOTGUN; c.buttons = BTN_FIRE; c.viewTick = s.timeMs_;
+        Vec3 aim = angleForward(c.yaw, c.pitch);
+        int predicted = 0;   // the client's view: its tracer directions against the target's hitbox
+        for (int k = 0; k < sg.pellets; k++) {
+            Vec3 pd = spreadAim(aim, sg.spread, k, sg.pellets, 0);
+            float bang, wall = s.map_.raycastBullet(eye, pd, sg.range, &bang);
+            float t = rayAABB(eye, safeInv(pd), s.hitBox(sb.move.pos, false), wall >= 0 ? wall : sg.range);
+            if (t >= 0) { predicted++; CHECK((eye + pd * t).y < sb.move.pos.y + 1.4f); }
+        }
+        float first = -1;
+        for (uint32_t seq : {1u, 2u, 3u, 77u, 1000u, 123456u, 0xFFFFFFF0u}) {
+            c.seq = seq;
+            sb.health = 100; sb.move.vel = {};
+            s.fireWeaponForTest(a.clientId(), c);
+            float dealt = 100 - sb.health;
+            if (first < 0) first = dealt;
+            if (dealt != first) same = false;
+        }
+        printf("  aimed %.1f m to the side: %.1f damage for every command number, %d pellets on target in the client's tracers\n", side, first, predicted);
+        if (std::fabs(first - predicted * sg.damage) > 0.01f) matches = false;
+    }
+    CHECK(same);
+    CHECK(matches);
+    // the bubble (one projectile with spread): a held burst counts its shots; letting go starts over at the center
+    uint32_t most = 0;
+    pump(s, cls, 0.3, [](int) { UserCmd c; c.weapon = WPN_BUBBLE; return c; });   // (switched with nothing held)
+    pump(s, cls, 1.2, [&](int i) { UserCmd c; c.weapon = WPN_BUBBLE; if (i == 0) c.buttons = BTN_FIRE; most = std::max(most, sa.burstShot); return c; });
+    pump(s, cls, 0.4, [](int) { UserCmd c; c.weapon = WPN_BUBBLE; return c; });
+    double last = sa.lastFire;
+    pump(s, cls, 0.1, [](int i) { UserCmd c; c.weapon = WPN_BUBBLE; if (i == 0) c.buttons = BTN_FIRE; return c; });
+    printf("  bubble burst: %u shots counted, after letting go: shot %u\n", most + 1, sa.burstShot);
+    CHECK(most >= 3 && sa.lastFire != last && sa.burstShot == 0);
+    s.stop();
+}
+
+// The rifle fires while held.
 static void testSemiAuto(uint16_t port) {
-    printf("seeded spread, rifle auto fire\n");
-    float a1, r1, a2, r2;
-    spreadOffset(42, 0, 0.1f, a1, r1); spreadOffset(42, 0, 0.1f, a2, r2);
-    CHECK(a1 == a2 && r1 == r2 && r1 <= 0.1f);
-    spreadOffset(43, 0, 0.1f, a2, r2);
-    CHECK(a1 != a2);
+    printf("rifle auto fire\n");
     Server s;
     ServerConfig cfg;
     cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
@@ -4186,7 +4272,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = TP(29800); testArenaAndTourney(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "bots") { uint16_t p = TP(28900); testBots(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testFixedSpread(p + 50); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); return g_fail ? 1 : 0; }
     // ---- the whole suite. Most tests wait on real-time network play rather than the CPU, so each runs in its own
     // process, several at once (output kept in order); a few timing-sensitive ones run alone afterwards.
     // "quark_tests serial" runs everything in this process, one after another, as before.
@@ -4196,7 +4282,7 @@ int main(int argc, char** argv) {
         {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotAim(p); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"weapons", [] { testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testTimeToKill(); testWallbang(); }},
+        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testTimeToKill(); testWallbang(); }},
         {"maps", [] {
             testMaps(); testAllMaps(); testStairs(); testLadders();
             printf("map scores\n");   // the map bar: every map scores at least 7 in every category but originality

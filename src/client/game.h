@@ -143,6 +143,9 @@ private:
     std::atomic<bool> hostQuit_{false};
     std::string hostPortStr_;
     int hostMapIdx_ = 0, hostModeIdx_ = 0;
+    uint16_t localPrevButtons_ = 0;   // the last command's buttons (a held burst: the spread sequence, NET-9)
+    uint32_t localBurst_ = 0;          // this shot's place in the held burst (mirrors the server's ServerPlayer::burstShot)
+    int localBurstWeapon_ = -1;
     uint8_t lastCmdWeapon_ = 255;   // the weapon the last command asked for (switching with fire held locks fire)
     // custom modes: the one being edited, its tab, and the rules arriving from a server in pieces
     CustomRules editRules_;

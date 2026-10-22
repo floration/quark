@@ -1479,7 +1479,7 @@ void Server::simulate() {
         if (p.isBot) {
             UserCmd c;
             { QZONE("bot think"); c = botThink(*this, i); }
-            c.seq = tick_; // distinct shot spread per shot
+            c.seq = tick_; // (a command number like a client's; spread doesn't depend on it, NET-9)
             c.msec = (uint8_t)(1000 / tickRate());
             c.viewTick = timeMs_;
             { QZONE("bot cmd"); runPlayerCmd(i, c); }
@@ -1597,6 +1597,9 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
         bool altEff = (cmd.buttons & BTN_ALTFIRE) && !(isThrow(p.weapon, true) && !throwReady);   // (a throw on cooldown isn't one)
         float refire = shotRefire(p.weapon, altEff);
         bool held = (p.prevButtons & (altShot ? BTN_ALTFIRE : BTN_FIRE)) != 0;
+        bool burst = held && time() - p.nextFire < 0.1f && p.weapon == p.burstWeapon;
+        p.burstShot = burst ? p.burstShot + 1 : 0;   // the shot's place in the fixed spread sequence (NET-9)
+        p.burstWeapon = p.weapon;
         p.nextFire = (held && time() - p.nextFire < 0.1f) ? p.nextFire + refire : time() + refire;
         p.lastFire = time();
         bool threw = p.weapon == WPN_KNIFE && (cmd.buttons & BTN_ALTFIRE) && !itMode && !knifeAway && throwReady; // same test as fireWeapon
@@ -1615,14 +1618,6 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
             break;
         }
     }
-}
-
-Vec3 Server::spreadDir(const Vec3& dir, float spread, uint32_t seq, int pellet) {
-    if (spread <= 0) return dir;
-    Vec3 right = normalize(cross(dir, {0, 1, 0})), up = cross(right, dir);
-    float a, r;
-    spreadOffset(seq, pellet, spread, a, r);
-    return normalize(dir + right * (std::cos(a) * r) + up * (std::sin(a) * r));
 }
 
 // One lag-compensated ray: adds dmg to the first player it hits (tested against where players
@@ -1766,7 +1761,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
                 pr.owner = id;
                 pr.pos = eye + aim * 0.3f;
                 float speed = kBubbleStreamSlow + (kBubbleStreamFast - kBubbleStreamSlow) * n / std::max(1, count - 1);
-                pr.vel = spreadDir(aim, 0.09f, cmd.seq, n) * speed * (wd.projSpeed / baseWeaponDef(WPN_BUBBLE).projSpeed);
+                pr.vel = spreadAim(aim, 0.09f, n, count, 0) * speed * (wd.projSpeed / baseWeaponDef(WPN_BUBBLE).projSpeed);
                 pr.dieAt = time() + wd.life;
                 if (++n == count) break;
             }
@@ -1781,7 +1776,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             pr.owner = id;
             if (p.weapon != WPN_SYRINGE) p.shotsFired++;   // accuracy: a hit is counted when it lands
             pr.pos = eye + aim * 0.3f;
-            pr.vel = spreadDir(aim, spread, cmd.seq, 0) * wd.projSpeed;
+            pr.vel = spreadAim(aim, spread, 0, 1, p.burstShot) * wd.projSpeed;
             if (p.weapon == WPN_ROCKET && alt) { pr.vel = pr.vel * kRocketLobSpeed; pr.gravMul = kRocketLobGravity; }
             if (p.weapon == WPN_STICKY) pr.vel += p.move.vel * kProjInherit; // stickies only (1.14.2: rockets fly straight again): launched from a moving player, most of your velocity
             pr.dieAt = time() + wd.life;
@@ -1807,7 +1802,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
     float dmg = wd.damage * (pull ? kLaserPullDamage : 1.0f);
     bool bounce = p.weapon == WPN_SHOTGUN && alt; // ricochet pellets: half damage, off up to 2 walls
     for (int k = 0; k < wd.pellets; k++) {
-        Vec3 d = spreadDir(aim, spread, cmd.seq, k);
+        Vec3 d = spreadAim(aim, spread, k, wd.pellets, p.burstShot);   // the fixed pattern (NET-9)
         if (bounce) bounceShot(id, eye, d, range, vt, dmgPer, dmg * kShotgunBounceDamage);
         else hitscan(id, eye, d, range, vt, dmgPer, dmg, pull ? 0.0f : headDamage(p.weapon), p.weapon == WPN_KNIFE ? kKnifeGrow : 0.0f, p.weapon == WPN_SNIPER);
     }

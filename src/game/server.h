@@ -108,6 +108,8 @@ struct ServerPlayer {
     bool fireLocked = false;    // after a knife throw: nothing fires until both buttons are let go
     double nextFire = 0;
     double lastFire = -10;
+    uint32_t burstShot = 0;     // shots in the current held burst - 1: indexes the fixed spread sequence (burstOffset)
+    int burstWeapon = -1;       // the weapon that burst is with
     double fireQueuedUntil = -1; // semi-auto: a click waiting for the weapon to be ready
     int kills = 0, deaths = 0, score = 0;
     double respawnAt = -1;
@@ -367,6 +369,7 @@ public:
     double editSpentMs_ = 0;
     bool editBacklogged() const;
     void handleStringCmdForTest(int id, const std::string& s) { handleStringCmd(id, s); }
+    bool fireWeaponForTest(int id, const UserCmd& c) { return fireWeapon(id, c); }
     void glog(int level, const char* fmt, ...);   // game log file (no-op below cfg_.logLevel)
     float bodyScale() const { return duelModDef(duelMod()).size; } // duel "double size": hull, hitbox and eye height (MOVE_BIG / MOVE_TINY)
     int duelMod() const { return ms_.mode == MODE_DUEL ? ms_.duelMod : 255; } // 255 in warmup (rulesReset clears it)
@@ -447,7 +450,6 @@ private:
     void tickProjectiles();
     void explode(const Vec3& at, int owner, int weapon, int direct = -1);   // direct: the player a rocket hit itself
     void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t viewMs, float* dmgPerPlayer, float dmg, float headDmg = 0, float grow = 0, bool pierce = false);
-    Vec3 spreadDir(const Vec3& dir, float spread, uint32_t seq, int pellet);
     void sendSnapshots();
     void updateVisibility();
     double nextVisCheck_ = 0;
