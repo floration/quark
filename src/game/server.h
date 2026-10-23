@@ -153,6 +153,9 @@ struct ServerPlayer {
     bool specLocked = false;    // voted to spectate (callvote spec): can't rejoin play until the next map
     uint32_t specVoted = 0;     // players (bit per slot) this one has called a spectate vote on this map: once each
     Vec3 lastGround;            // where the player last stood (a dropped bomb goes here, not into a pit)
+    int hookVictim = -1;        // this player's grapple is latched onto that player (pulling the two together)
+    int hookedBy = -1;          // ...held by that player's grapple (move: MF_PULLED)
+    double hookSince = 0;       // when the latch caught
     bool out = false;           // hide and seek: found this round; tag: eliminated for the match
     double itFreezeUntil = 0;    // tag: just got tagged, stands still until then
     uint32_t lastCmdSeq = 0;
@@ -207,6 +210,8 @@ struct Projectile {
     bool stuck = false; // stickies: attached to a surface
     bool onCart = false; // stuck to the payload cart: rides along at cartOffset from its center
     Vec3 cartOffset;
+    int onPlayer = -1;   // stuck to an enemy it hit: rides along at playerOffset from their feet (stickyOnPlayerPos)
+    Vec3 playerOffset;   // (standing, size 1, on the wire's grid: quantizeAttachOffset)
 };
 
 class Server {
@@ -566,9 +571,21 @@ private:
     void stepRateDown(const char* why);
     void resetRateWindow();
     void runPlayerCmd(int id, const UserCmd& cmd);
+    // The grapple latched onto a player: the candidates a hook fired in this command can catch (where the shooter saw
+    // them), the catch, keeping both anchors on the bodies, and letting go (release, meeting, break free, death...).
+    void grappleTargets(int id, const UserCmd& cmd, HookProbe& probe);
+    void startLatch(int attacker, int victim, bool head);
+    bool latchHolds(int attacker) const;
+    void syncLatch(int attacker);
+    void endLatch(int attacker);
+    void tickLatches();
+    uint64_t rewindViewMs(int id, uint32_t viewTick) const;   // the view time lag compensation tests at (capped)
+    Vec3 rewoundPos(int i, uint64_t viewMs, bool* crouched) const;   // where player i was at that view time
     bool fireWeapon(int id, const UserCmd& cmd);   // true if it hit a player (hitscan weapons)
     void tickProjectiles();
     void stepProjectile(Projectile& pr);   // one fixed 1 ms step (kMoveStep): gravity, move, hit a wall / player
+    void followVictim(Projectile& pr);     // a sticky on a player: onto them as they are now (or let go: they're gone)
+    void releaseStickies(int player);      // that player died / respawns / left: their stickies stay where they were
     int projTargets_ = 0;                  // tickProjectiles: the live players' hitboxes this tick
     uint8_t projTargetId_[kMaxPlayers] = {};
     AABB projTargetBox_[kMaxPlayers];
@@ -599,6 +616,7 @@ private:
 public:
     uint64_t visRays_ = 0;     // lines of sight cast (tests, benchmarks)
     void updateVisibilityForTest() { updateVisibility(); }
+    void explodeForTest(const Vec3& at, int owner, int weapon) { explode(at, owner, weapon); }
 private:
     void openGameLog();
     void logTick();

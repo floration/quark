@@ -150,9 +150,9 @@ Workflows are in `.github/workflows/`:
 
 ## 8. Protocol and compatibility notes
 
-- `kProtocolVersion` (gamedefs.h) is 37 for 1.17.0. Any wire change bumps it, and old and new can't play together.
+- `kProtocolVersion` (gamedefs.h) is 40 for 1.17.0 (37 in its earlier testing builds). Any wire change bumps it, and old and new can't play together.
 - `kOldestDemoProtocol` and the demo converter (`src/game/demo.cpp`, `kRecordFormatSince = 24`) decide which demos play directly and which are converted. A snapshot layout change needs a converter step.
-- Snapshot projectile bits: 1 new, 2 velocity, 4 lob, 8 stuck, 16 out of sight.
+- Snapshot projectile bits: 1 new, 2 velocity, 4 lob, 8 stuck, 16 out of sight, 32 on a player (u8 player, then its offset from their feet: i8 x, u8 y, i8 z; protocol 40).
 - Maps are identified by the sha256 of their content: the ranked allowlist, light caches (`cache/<sha256>.qlm`), downloads (`maps/downloads/<sha256>.qmap`) and edit-session chains.
 - Map format version 2: `version`, `stairs`, `setting` and `handmade` keywords. Unknown optional keys only warn; gameplay keys stay strict.
 

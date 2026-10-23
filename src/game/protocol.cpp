@@ -17,12 +17,18 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
     w.u8(s.clientId);
     // own movement state, exact (prediction replays from it); the grapple / dash parts only while active
     const MoveState& m = s.self;
-    uint8_t opt = ((m.flags & MF_HOOKED) ? 1 : 0) | (m.dashTimer > 0 ? 2 : 0) | (m.dashCooldown > 0 ? 4 : 0) | (m.hookCooldown > 0 ? 8 : 0);
+    uint8_t opt = ((m.flags & MF_HOOKED) ? 1 : 0) | (m.dashTimer > 0 ? 2 : 0) | (m.dashCooldown > 0 ? 4 : 0) | (m.hookCooldown > 0 ? 8 : 0) |
+                  ((m.flags & MF_HOOKED) && m.hookTarget ? 16 : 0) | ((m.flags & MF_PULLED) ? 32 : 0) |
+                  (m.jumpBuffer > 0 || m.jumpGrace > 0 ? 64 : 0) | (m.dashTimer > 0 && m.dashBounces > 0 ? 128 : 0);
     w.vec(m.pos); w.vec(m.vel); w.u8(m.flags); w.u8(m.mods); w.u8(opt);
     if (opt & 1) w.vec(m.hookPoint);
     if (opt & 2) { w.f32(m.dashTimer); w.f32(m.dashDirX); w.f32(m.dashDirZ); w.f32(m.dashExitSpeed); w.f32(m.dashUp); }
     if (opt & 4) w.f32(m.dashCooldown);
     if (opt & 8) w.f32(m.hookCooldown);
+    if (opt & 16) w.u8(m.hookTarget);    // (38: the grapple latched onto a player, and the one it holds)
+    if (opt & 32) w.vec(m.pullPoint);
+    if (opt & 64) { w.f32(m.jumpBuffer); w.f32(m.jumpGrace); }   // (protocol 39; older writers never set these bits)
+    if (opt & 128) w.u8(m.dashBounces);
     w.u8(s.selfHealth); w.u8(s.selfWeapon); w.u8(s.knifeAway); w.u8(s.syringeAway);
     w.u32(s.baseTick);
 }
@@ -43,6 +49,11 @@ bool readSnapshotClient(Reader& r, Snapshot& s, uint16_t proto) {
     if (opt & 2) { m.dashTimer = r.f32(); m.dashDirX = r.f32(); m.dashDirZ = r.f32(); m.dashExitSpeed = r.f32(); m.dashUp = r.f32(); }
     if (opt & 4) m.dashCooldown = r.f32();
     if (opt & 8) m.hookCooldown = r.f32();
+    if (opt & 16) m.hookTarget = r.u8();   // (older demos never set these bits)
+    if (opt & 32) m.pullPoint = r.vec();
+    if (m.hookTarget > kMaxPlayers) m.hookTarget = 0;
+    if (opt & 64) { m.jumpBuffer = r.f32(); m.jumpGrace = r.f32(); }
+    if (opt & 128) m.dashBounces = r.u8();
     s.selfHealth = r.u8(); s.selfWeapon = r.u8(); s.knifeAway = r.u8(); s.syringeAway = proto >= kSnapSyringeSince ? r.u8() : 0;
     s.baseTick = r.u32();
     if (s.clientId >= kMaxPlayers || s.selfWeapon >= WPN_COUNT) return false;   // (ids index fixed arrays on the client)
@@ -165,7 +176,8 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
         if (m & P_HOOK) { w.u8(p.hooked); if (p.hooked) w.vecq(p.hookPoint); }
     }
     // projectiles: id, bits (1 = new: type and owner follow, 2 = velocity follows, 4 = PROJ_LOB, 8 = PROJ_STUCK,
-    // 16 = out of sight: nothing follows), position always (in sight). Velocity only when it changed by more than
+    // 16 = out of sight: nothing follows, 32 = PROJ_ON_PLAYER: u8 player, i8 x, u8 y, i8 z of its attachOffset follow
+    // the position; protocol 38), position always (in sight). Velocity only when it changed by more than
     // 0.5 m/s since what the client has (the client only uses it to extrapolate a few ms); the snapshot we keep as the
     // next base records the velocity the client has. One back in sight is sent as new.
     w.u8((uint8_t)s.projectiles.size());
@@ -174,9 +186,16 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
         const ProjectileSnap* b = bi.projectile(base, p.id);
         if (b && b->hidden) b = nullptr;
         bool vel = !b || length(p.vel - b->vel) > 0.5f;
-        w.u16(p.id); w.u8((b ? 0 : 1) | (vel ? 2 : 0) | (uint8_t)((p.flags & (PROJ_LOB | PROJ_STUCK)) << 2));
+        const bool on = (p.flags & PROJ_ON_PLAYER) != 0;
+        w.u16(p.id); w.u8((b ? 0 : 1) | (vel ? 2 : 0) | (uint8_t)((p.flags & (PROJ_LOB | PROJ_STUCK)) << 2) | (on ? 32 : 0));
         if (!b) { w.u8(p.type); w.u8(p.owner); }
         w.vecq(p.pos);
+        if (on) {   // (quantizeAttachOffset's grid: exact)
+            w.u8(p.onPlayer);
+            w.i8((int8_t)std::lround(clampf(p.attachOffset.x / kPlayerHalfWidth, -1, 1) * 127));
+            w.u8((uint8_t)std::lround(clampf(p.attachOffset.y / kPlayerHeight, 0, 1) * 255));
+            w.i8((int8_t)std::lround(clampf(p.attachOffset.z / kPlayerHalfWidth, -1, 1) * 127));
+        }
         if (vel) w.vecq(p.vel);
         else p.vel = b->vel;
     }
@@ -234,6 +253,13 @@ bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base) {
             p.type = b->type; p.owner = b->owner;
         }
         p.pos = r.vecq();
+        if (bits & 32) {   // stuck to a player (protocol 38: older demos never set it)
+            p.flags |= PROJ_ON_PLAYER;
+            p.onPlayer = r.u8();
+            if (p.onPlayer >= kMaxPlayers) return false;
+            float x = r.i8() / 127.0f, y = r.u8() / 255.0f, z = r.i8() / 127.0f;
+            p.attachOffset = {clampf(x, -1, 1) * kPlayerHalfWidth, y * kPlayerHeight, clampf(z, -1, 1) * kPlayerHalfWidth};
+        }
         if (bits & 2) p.vel = r.vecq();
         else if (b) p.vel = b->vel;
         else return false;

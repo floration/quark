@@ -296,6 +296,279 @@ static void testGrappleNoBrake() {
     }
 }
 
+// The grapple latches onto players (owner: "if the tip of the hook hits a player it sticks to them, 10 damage, 15 if
+// head, then pulls both players together in the middle"). pmove alone: the nearest of the map and the players catches it.
+static UserCmd hookAim(const Vec3& eye, const Vec3& tgt, uint16_t buttons) {
+    Vec3 d = normalize(tgt - eye);
+    UserCmd u; u.msec = 1; u.pitch = std::asin(d.y); u.yaw = std::atan2(-d.x, -d.z); u.buttons = buttons; u.weapon = WPN_RIFLE;
+    return u;
+}
+static void testGrapplePmove() {
+    printf("grapple latches onto players: the hook's ray\n");
+    Map m;
+    std::string err;
+    CHECK(m.parse("box -50 -1 -50 50 0 50\nbox -0.5 0 -20 0.5 6 20\nspawn any 8 0 0\n", &err));   // a floor, a wall across x = 0
+    const Vec3 shooter(8, 0, 0), eye = shooter + Vec3(0, kEyeHeight, 0);
+    struct Case { Vec3 feet; bool aimHead; int hit; bool head; };
+    for (Case cs : {Case{{3, 0, 0}, false, 0, false}, Case{{3, 0, 0}, true, 0, true}, Case{{-3, 0, 0}, false, -1, false}}) {
+        MoveState s; s.pos = shooter;
+        HookProbe hp;
+        hp.box[0] = playerBox(cs.feet, false); hp.id[0] = 5; hp.n = 1;
+        Vec3 tgt = cs.aimHead ? headBox(hp.box[0]).center() : cs.feet + Vec3(0, 1.0f, 0);
+        pmove(s, hookAim(eye, tgt, BTN_GRAPPLE), m, &hp);
+        CHECK(s.flags & MF_HOOKED);   // (the player, or the wall in front of the one behind it)
+        CHECK(hp.hit == cs.hit && hp.head == cs.head);
+        CHECK(s.hookTarget == (cs.hit >= 0 ? 6 : 0));
+        if (cs.hit < 0) CHECK(std::fabs(s.hookPoint.x - 0.5f) < 0.01f);   // caught on the wall: the player behind it is safe
+    }
+    // held by someone's grapple: pulled toward them (momentum kept, half gravity); a fresh dash breaks free
+    MoveState v; v.pos = {3, 0, 10}; v.flags = MF_PULLED; v.pullPoint = {13, 1, 10};
+    UserCmd idleCmd; idleCmd.msec = 1;
+    for (int k = 0; k < 100; k++) pmove(v, idleCmd, m);
+    printf("  pulled for 0.1 s: %.2f m/s toward the puller, %.2f m\n", v.vel.x, v.pos.x - 3);
+    CHECK((v.flags & MF_PULLED) && v.vel.x > 3.0f && v.pos.x > 3.1f && !(v.flags & MF_ONGROUND));
+    UserCmd dash = idleCmd; dash.buttons = BTN_DASH; dash.side = 127;
+    pmove(v, dash, m);
+    CHECK(!(v.flags & MF_PULLED) && v.dashTimer > 0);
+    MoveState w; w.pos = {3, 0, 10}; w.flags = MF_PULLED; w.pullPoint = {13, 1, 10};   // ...or a grab of your own
+    pmove(w, hookAim(w.pos + Vec3(0, kEyeHeight, 0), Vec3(0.5f, 3, 10), BTN_GRAPPLE), m);
+    CHECK((w.flags & MF_HOOKED) && !(w.flags & MF_PULLED));
+}
+
+static void testGrapplePlayers(uint16_t port) {
+    printf("grapple latches onto players: in play\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.autoStart = false; cfg.balanceBots = false;   // (warmup: free play)
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls, false)) { s.stop(); return; }
+    pump(s, cls, 1.0, idle);
+    const int ia = c[0].clientId(), ib = c[1].clientId();
+    auto& sa = s.players_[ia];
+    auto& sb = s.players_[ib];
+    const Vec3 A0(10, 0, 19), B0(-10, 0, 19);
+    bool pin = true;
+    uint16_t btn = 0;
+    Vec3 aimAt = B0 + Vec3(0, 1.0f, 0);
+    float maxErr[2] = {};   // the largest prediction correction being smoothed out (attacker, victim) while latched
+    auto in = [&](int i) {
+        if (pin) { sa.move.pos = A0; sb.move.pos = B0; sa.move.vel = sb.move.vel = {}; }
+        if (sa.hookVictim == ib) maxErr[i] = std::max(maxErr[i], length(c[i].smoothedPos(1.0f) - c[i].predicted().pos));
+        UserCmd u; u.weapon = WPN_RIFLE;
+        if (i != 0) return u;
+        return hookAim(A0 + Vec3(0, kEyeHeight, 0), aimAt, btn);
+    };
+    auto latch = [&]() {   // fire from A0 at aimAt; true once it caught them
+        for (int k = 0; k < 50 && sa.hookVictim != ib; k++) pump(s, cls, 0.01, in);
+        return sa.hookVictim == ib;
+    };
+    auto rearm = [&]() {   // let go, wait out the cooldown, back in place (alive)
+        btn = 0; pin = true;
+        for (int k = 0; k < 80 && !sb.alive; k++) pump(s, cls, 0.1, in);
+        pumpServerTime(s, cls, 1.2, in);
+        sb.health = 100;
+        c[0].takeEvents();
+    };
+    // 1. a body hit: 10 damage, both pulled toward the middle until they meet
+    rearm();
+    btn = BTN_GRAPPLE;
+    CHECK(latch());
+    printf("  body: %.0f damage, attacker hooked %d (target %d), victim pulled %d\n", 100 - sb.health, (sa.move.flags & MF_HOOKED) != 0,
+           sa.move.hookTarget - 1, (sb.move.flags & MF_PULLED) != 0);
+    CHECK(std::fabs(100 - sb.health - kGrappleDamage) < 1e-3f);
+    CHECK((sa.move.flags & MF_HOOKED) && sa.move.hookTarget == ib + 1 && (sb.move.flags & MF_PULLED) && sb.hookedBy == ia);
+    pin = false;
+    const double caught = s.time();
+    Vec3 mid0 = (A0 + B0) * 0.5f;
+    pumpServerTime(s, cls, 0.12, in);
+    Vec3 pa = sa.move.pos, pb = sb.move.pos;
+    printf("  after 0.12 s: attacker %.2f -> %.2f, victim %.2f -> %.2f (middle %.2f)\n", A0.x, pa.x, B0.x, pb.x, (pa.x + pb.x) * 0.5f);
+    CHECK(pa.x < A0.x - 0.1f && pb.x > B0.x + 0.1f && std::fabs((pa.x + pb.x) * 0.5f - mid0.x) < 1.0f);
+    CHECK(sa.hookVictim == ib);
+    for (int k = 0; k < 150 && sa.hookVictim == ib; k++) pump(s, cls, 0.01, in);
+    Vec3 gap = (sa.move.pos + Vec3(0, 1, 0)) - (sb.move.pos + Vec3(0, 1, 0));
+    printf("  let go after %.2f s, %.2f m apart; prediction corrections while latched: attacker %.3f m, victim %.3f m\n",
+           s.time() - caught, length(gap), maxErr[0], maxErr[1]);
+    CHECK(sa.hookVictim < 0 && sb.hookedBy < 0 && !(sb.move.flags & MF_PULLED) && !(sa.move.flags & MF_HOOKED));
+    CHECK(length(gap) < 2.5f && s.time() - caught < kGrappleLatchMax);   // they met (not the time limit)
+    CHECK(sa.move.hookCooldown > 0);
+    CHECK(maxErr[0] < 0.15f && maxErr[1] < 0.15f);
+    pumpServerTime(s, cls, 0.3, [&](int i) { btn = 0; return in(i); });
+    CHECK(length(sa.move.pos - c[0].predicted().pos) < 0.05f && length(sb.move.pos - c[1].predicted().pos) < 0.05f);
+    // 2. through the head: 15 (a headshot hit event); letting go of the button ends it
+    rearm();
+    aimAt = headBox(s.hitBox(B0, false)).center();
+    btn = BTN_GRAPPLE;
+    CHECK(latch());
+    pump(s, cls, 0.1, in);
+    int heads = 0;
+    for (auto& e : c[0].takeEvents()) if (e.type == EV_HIT && e.b == ib && e.text == "h") heads++;
+    printf("  head: %.0f damage, %d headshot hit event(s)\n", 100 - sb.health, heads);
+    CHECK(std::fabs(100 - sb.health - kGrappleHeadDamage) < 1e-3f && heads == 1);
+    btn = 0;
+    pump(s, cls, 0.05, in);
+    CHECK(sa.hookVictim < 0 && !(sb.move.flags & MF_PULLED) && !(sa.move.flags & MF_HOOKED));
+    aimAt = B0 + Vec3(0, 1.0f, 0);
+    // 3. a catch that kills: the kill feed says grapple, nothing is held
+    rearm();
+    sb.health = 8;
+    btn = BTN_GRAPPLE;
+    for (int k = 0; k < 50 && sb.alive; k++) pump(s, cls, 0.01, in);
+    pump(s, cls, 0.1, in);
+    int grappleKills = 0;
+    for (auto& e : c[0].takeEvents()) if (e.type == EV_KILL && e.b == ib && (e.c & KILL_WEAPON) == kDamageGrapple) grappleKills++;
+    CHECK(!sb.alive && grappleKills == 1 && sa.hookVictim < 0 && !(sa.move.flags & MF_HOOKED));
+    // 4. a death while latched lets go (with the cooldown)
+    rearm();
+    btn = BTN_GRAPPLE;
+    CHECK(latch());
+    s.killPlayer(ib, -1, 252);
+    pump(s, cls, 0.05, in);
+    CHECK(sa.hookVictim < 0 && !(sa.move.flags & MF_HOOKED) && sa.move.hookCooldown > 0);
+    // 5. the map comes between them: it lets go
+    rearm();
+    btn = BTN_GRAPPLE;
+    CHECK(latch());
+    Vec3 hidden;
+    bool found = false;
+    for (auto& sp : s.map_.spawns) {
+        Vec3 from = A0 + Vec3(0, 1, 0), to = sp.pos + Vec3(0, 1, 0), d = to - from;
+        if (length(d) < 30 && s.map_.raycast(from, normalize(d), length(d)) >= 0) { hidden = sp.pos; found = true; break; }
+    }
+    CHECK(found);
+    pin = false;
+    sa.move.pos = A0; sb.move.pos = hidden; sa.move.vel = sb.move.vel = {};
+    pump(s, cls, 0.05, in);
+    CHECK(sa.hookVictim < 0 && !(sb.move.flags & MF_PULLED));
+    s.stop();
+}
+
+// Teammates let the hook through (it goes on to the wall); enemies are caught.
+static void testGrappleTeammate(uint16_t port) {
+    printf("grapple latches onto players: teammates let it through\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_VS; cfg.port = port; cfg.autoStart = false; cfg.balanceBots = false;
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls, false)) { s.stop(); return; }
+    pump(s, cls, 1.0, idle);
+    const int ia = c[0].clientId(), ib = c[1].clientId();
+    auto& sa = s.players_[ia];
+    auto& sb = s.players_[ib];
+    const Vec3 A0(10, 0, 19), B0(-10, 0, 19);
+    for (bool sameTeam : {true, false}) {
+        sb.team = sameTeam ? sa.team : (sa.team == TEAM_A ? TEAM_B : TEAM_A);
+        auto in = [&](int i, uint16_t b) {
+            sa.move.pos = A0; sb.move.pos = B0; sa.move.vel = sb.move.vel = {};
+            if (i != 0) return UserCmd();
+            return hookAim(A0 + Vec3(0, kEyeHeight, 0), B0 + Vec3(0, 1.0f, 0), b);
+        };
+        pumpServerTime(s, cls, 1.2, [&](int i) { return in(i, 0); });
+        if (!sb.alive || !sa.alive) { CHECK(sa.alive && sb.alive); continue; }
+        sb.health = 100;
+        pump(s, cls, 0.2, [&](int i) { return in(i, BTN_GRAPPLE); });
+        printf("  %s: latched %d, %.0f damage, hook on the map %d\n", sameTeam ? "teammate" : "enemy", sa.hookVictim == ib, 100 - sb.health,
+               (sa.move.flags & MF_HOOKED) && !sa.move.hookTarget);
+        if (sameTeam) CHECK(sa.hookVictim < 0 && sb.health == 100 && !(sb.move.flags & MF_PULLED));
+        else CHECK(sa.hookVictim == ib && std::fabs(100 - sb.health - kGrappleDamage) < 1e-3f);
+        pump(s, cls, 0.05, [&](int i) { return in(i, 0); });
+    }
+    s.stop();
+}
+
+// Expert bots with a close-range weapon hook their target now and then (and nothing breaks while they're latched).
+static void testGrappleBots(uint16_t port) {
+    printf("grapple latches onto players: bots\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "";   // a map without pits or lava (there the bots only hook when the pull ends on safe ground)
+    for (const char* name : {"downtown", "railyard"}) {
+        Map m;
+        if (m.load(name) && !m.hasVoid && m.lava.empty()) { cfg.map = name; break; }
+    }
+    CHECK(!cfg.map.empty());
+    if (cfg.map.empty()) return;
+    cfg.mode = MODE_FFA; cfg.port = port; cfg.autoStart = false; cfg.balanceBots = false;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    int bot[2] = {s.addBot(TEAM_A, BOT_EXPERT), s.addBot(TEAM_A, BOT_EXPERT)};
+    for (int k : bot) if (k >= 0) s.bots_[k].forceWeapon = WPN_SHOTGUN;
+    std::vector<NetClient*> none;
+    int latches = 0, bad = 0;
+    bool was[2] = {};
+    for (int t = 0; t < 600; t++) {   // 30 s
+        pump(s, none, 0.05, idle);
+        for (int k = 0; k < 2; k++) {
+            if (bot[k] < 0) continue;
+            const ServerPlayer& p = s.players_[bot[k]];
+            bool l = p.hookVictim >= 0;
+            latches += l && !was[k];
+            was[k] = l;
+            if (l && !(p.move.flags & MF_HOOKED)) bad++;
+        }
+    }
+    printf("  2 expert bots with shotguns on %s, 30 s: %d latches\n", cfg.map.c_str(), latches);
+    CHECK(bot[0] >= 0 && bot[1] >= 0 && latches >= 1 && bad == 0);
+    s.stop();
+}
+
+// Lag compensated like hitscan: aimed at where the shooter sees a mover (200 ms of interpolation), it catches.
+static void testGrappleLagComp(uint16_t port) {
+    printf("grapple latches onto players: lag compensated\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = false;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a, b;
+    a.setInterpFixed(kMaxInterpMs * 0.001f);
+    a.connect("127.0.0.1:" + std::to_string(cfg.port), "hooker");
+    b.connect("127.0.0.1:" + std::to_string(cfg.port), "mover");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 2.5, idle);
+    auto& sa = s.players_[a.clientId()];
+    auto& sb = s.players_[b.clientId()];
+    auto moverAt = [](double t) { double ph = std::fmod(t, 1.0); return Vec3(-5, 0, 19 + 2.5f * (float)(ph < 0.5 ? ph * 4 - 1 : 3 - ph * 4)); };
+    const Vec3 shooterPos(10, 0, 19);
+    uint16_t btn = 0;
+    int missedIfNow = 0;   // catches the shooter's aim would have missed at the mover's current position (rewind needed)
+    auto input = [&](int i) {
+        sa.move.pos = shooterPos; sa.move.vel = {};
+        sb.move.pos = moverAt(s.time()); sb.move.vel = {}; sb.health = 100;
+        UserCmd c; c.weapon = WPN_RIFLE;
+        if (i != 0) return c;
+        NetClient::PlayerArray ps = a.interpolatedPlayers();   // where the shooter sees the mover
+        const InterpPlayer& ip = ps[b.clientId()];
+        if (!ip.valid) return c;
+        return hookAim(shooterPos + Vec3(0, kEyeHeight, 0), ip.snap.pos + Vec3(0, 1.0f, 0), btn);
+    };
+    pump(s, cls, 0.6, input);
+    int tries = 0, caught = 0;
+    for (int k = 0; k < 6; k++) {
+        btn = 0;
+        pumpServerTime(s, cls, 1.15, input);
+        btn = BTN_GRAPPLE;
+        tries++;
+        bool got = false;
+        for (int j = 0; j < 15 && !got; j++) {
+            pump(s, cls, 0.01, input);
+            got = sa.hookVictim == b.clientId();
+            if (got) {
+                UserCmd u = input(0);
+                Vec3 eye = shooterPos + Vec3(0, kEyeHeight, 0);
+                if (rayAABB(eye, safeInv(angleForward(u.yaw, u.pitch)), s.hitBox(sb.move.pos, false), 100.0f) < 0) missedIfNow++;
+            }
+        }
+        caught += got;
+    }
+    printf("  interp 200: %d of %d hooks caught a player moving at 10 m/s (%d of them aimed where the mover no longer was)\n", caught, tries, missedIfNow);
+    CHECK(caught >= tries - 1);
+    s.stop();
+}
+
 // 5.5: the head is a head-sized box on top, not the full-width top 20%: shoulders are body shots. The sniper does a
 // flat 50.
 static void testHeadBox(uint16_t port) {
@@ -960,7 +1233,8 @@ static void testGameRules(const std::string& only) {
         {"syringe", [] { testSyringeModes(); }},
         {"throws", [] { testThrowCooldown(TP(29240)); }},
         {"hull", [] { testSizeHull(TP(29242)); }},
-        {"grapple", [] { testGrappleNoBrake(); }},
+        {"grapple", [] { testGrappleNoBrake(); testGrapplePmove(); }},
+        {"grapplep", [] { testGrapplePlayers(TP(29270)); testGrappleTeammate(TP(29271)); testGrappleLagComp(TP(29272)); testGrappleBots(TP(29273)); }},
         {"head", [] { testHeadBox(TP(29246)); }},
         {"hide", [] { testHideScoring(TP(29247)); }},
         {"tag", [] { testTagEscape(TP(29248)); }},

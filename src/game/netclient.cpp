@@ -406,7 +406,7 @@ void NetClient::onSnapshot(Snapshot& s) {
     for (auto& p : s.players) if (p.id == s.clientId) alive = p.flags & PS_ALIVE;
     const MoveState& mine = predicted_[s.ackCmdSeq % kCmdRing];
     bool match = predictedSeq_[s.ackCmdSeq % kCmdRing] == s.ackCmdSeq && length(mine.pos - s.self.pos) < 1e-4f &&
-                 length(mine.vel - s.self.vel) < 1e-3f && mine.flags == s.self.flags;
+                 length(mine.vel - s.self.vel) < 1e-3f && mine.flags == s.self.flags && mine.hookTarget == s.self.hookTarget;
     lastReplay_ = 0;
     if (!alive || !mapReady_) {
         pred_ = predPrev_ = s.self;
@@ -429,6 +429,13 @@ void NetClient::onSnapshot(Snapshot& s) {
         }
         Vec3 err = oldVisual - pred_.pos;
         errorOffset_ = length(err) < 2.0f ? err : Vec3();
+    }
+    // A grapple latched onto a player (or another's holding us): the anchor moves with them, and only the server knows
+    // where they are now. Prediction pulls toward its latest value (the replay above already started from it).
+    if (alive && mapReady_) {
+        if ((s.self.flags & MF_HOOKED) && s.self.hookTarget && (pred_.flags & MF_HOOKED) && pred_.hookTarget == s.self.hookTarget)
+            pred_.hookPoint = s.self.hookPoint;
+        if ((s.self.flags & MF_PULLED) && (pred_.flags & MF_PULLED)) pred_.pullPoint = s.self.pullPoint;
     }
 
     if (rec_) recordSnapshot(s, fresh);
@@ -512,39 +519,74 @@ static float lerpAngle(float a, float b, float t) {
     return a + d * t;
 }
 
-NetClient::PlayerArray NetClient::interpolatedPlayers() const {
-    PlayerArray out{};
-    if (snaps_.empty()) return out;
-    // Find snapshots bracketing renderTime (searching from the newest: it's a few snapshots back).
-    const Snapshot* a = &snaps_.front();
-    const Snapshot* b = &snaps_.back();
-    for (size_t i = snaps_.size() - 1; i > 0; i--) {
-        if (snaps_[i - 1].timeMs * 0.001 <= renderTime_ && snaps_[i].timeMs * 0.001 >= renderTime_) {
-            a = &snaps_[i - 1];
-            b = &snaps_[i];
+// The snapshots bracketing renderTime (searching from the newest: it's a few snapshots back), and how far between.
+static float renderBracket(const std::deque<Snapshot>& snaps, double renderTime, const Snapshot*& a, const Snapshot*& b) {
+    a = &snaps.front();
+    b = &snaps.back();
+    for (size_t i = snaps.size() - 1; i > 0; i--) {
+        if (snaps[i - 1].timeMs * 0.001 <= renderTime && snaps[i].timeMs * 0.001 >= renderTime) {
+            a = &snaps[i - 1];
+            b = &snaps[i];
             break;
         }
     }
-    if (renderTime_ >= snaps_.back().timeMs * 0.001) a = b = &snaps_.back();
+    if (renderTime >= snaps.back().timeMs * 0.001) a = b = &snaps.back();
     double ta = a->timeMs * 0.001, tb = b->timeMs * 0.001;   // (doubles: server uptime in seconds)
-    float t = tb > ta ? clampf((float)((renderTime_ - ta) / (tb - ta)), 0, 1) : 1.0f;
+    return tb > ta ? clampf((float)((renderTime - ta) / (tb - ta)), 0, 1) : 1.0f;
+}
+
+// A player (in sight in the newer snapshot `pb`) at render time: between where `a` and `pb` have them.
+static void lerpPlayer(const Snapshot* a, const PlayerSnap& pb, float t, PlayerSnap* out) {
+    *out = pb;
+    for (auto& pa : a->players) {
+        if (pa.id != pb.id || pa.hidden) continue;
+        // Don't interpolate across respawns/teleports.
+        if ((pa.flags & PS_ALIVE) && (pb.flags & PS_ALIVE) && length(pa.pos - pb.pos) < 5.0f) {
+            out->pos = vlerp(pa.pos, pb.pos, t);
+            out->yaw = lerpAngle(pa.yaw, pb.yaw, t);
+            out->pitch = lerpf(pa.pitch, pb.pitch, t);
+        }
+        break;
+    }
+}
+
+NetClient::PlayerArray NetClient::interpolatedPlayers() const {
+    PlayerArray out{};
+    if (snaps_.empty()) return out;
+    const Snapshot *a, *b;
+    float t = renderBracket(snaps_, renderTime_, a, b);
     for (auto& pb : b->players) {
         if (pb.hidden || pb.id >= kMaxPlayers) continue; // out of sight: the server didn't send where they are (ids: checked at decode too)
         InterpPlayer& ip = out[pb.id];
         ip.valid = true;
-        ip.snap = pb;
-        for (auto& pa : a->players) {
-            if (pa.id != pb.id || pa.hidden) continue;
-            // Don't interpolate across respawns/teleports.
-            if ((pa.flags & PS_ALIVE) && (pb.flags & PS_ALIVE) && length(pa.pos - pb.pos) < 5.0f) {
-                ip.snap.pos = vlerp(pa.pos, pb.pos, t);
-                ip.snap.yaw = lerpAngle(pa.yaw, pb.yaw, t);
-                ip.snap.pitch = lerpf(pa.pitch, pb.pitch, t);
-            }
-            break;
-        }
+        lerpPlayer(a, pb, t, &ip.snap);
     }
     return out;
+}
+
+float NetClient::bodyScale() const {
+    if (!hasSnapshot()) return 1.0f;
+    const ModeState& m = latest().ms;
+    return m.mode == MODE_DUEL && m.phase != PHASE_WARMUP ? duelModDef(m.duelMod).size : 1.0f;
+}
+
+bool NetClient::attachedPos(const ProjectileSnap& p, float alpha, Vec3* out) const {
+    if (snaps_.empty() || !(p.flags & PROJ_ON_PLAYER)) return false;
+    if (p.onPlayer == clientId_ && !play_.active && selfAlive()) {   // on you: where you see yourself
+        *out = stickyOnPlayerPos(smoothedPos(alpha), p.attachOffset, (pred_.flags & MF_CROUCHED) != 0, bodyScale());
+        return true;
+    }
+    const Snapshot *a, *b;
+    float t = renderBracket(snaps_, renderTime_, a, b);
+    for (auto& pb : b->players) {
+        if (pb.id != p.onPlayer) continue;
+        if (pb.hidden || !(pb.flags & PS_ALIVE)) return false;
+        PlayerSnap ps;
+        lerpPlayer(a, pb, t, &ps);
+        *out = stickyOnPlayerPos(ps.pos, p.attachOffset, (ps.flags & PS_CROUCHED) != 0, bodyScale());
+        return true;
+    }
+    return false;
 }
 
 std::vector<ProjectileSnap> NetClient::interpolatedProjectiles() const {
@@ -555,6 +597,9 @@ std::vector<ProjectileSnap> NetClient::interpolatedProjectiles() const {
     float dt = clampf((float)(renderTime_ + interpDelay() - s.timeMs * 0.001), 0, 0.2f);
     for (auto p : s.projectiles) {
         if (p.hidden) continue;
+        // on a player: glued to them as they're drawn (players are interpolated, projectiles extrapolated: the
+        // newest snapshot's spot would run ahead of their model); not in sight: where the server last put it
+        if (p.flags & PROJ_ON_PLAYER) { attachedPos(p, 1.0f, &p.pos); out.push_back(p); continue; }
         if (!(p.flags & PROJ_STUCK)) projectileExtrapolate(p.pos, p.vel, projectileGravity(p.type, (p.flags & PROJ_LOB) ? kRocketLobGravity : 1.0f), dt);
         out.push_back(p);
     }

@@ -47,6 +47,7 @@ std::string fmtTime(float s) {
 }
 
 const char* weaponName(int w) {
+    if (w == kDamageGrapple) return "grapple";
     if (w == 252) return "fell";
     if (w == 253) return "bomb";
     if (w == 254) return "drained";
@@ -1289,6 +1290,12 @@ void Game::frame(double dt) {
             if (still && old.type == WPN_STICKY && length(old.vel) > 0.01f)
                 for (auto& p : projs) if (p.id == old.id && length(p.vel) < 0.01f) audio_.play3D(SND_STICKY_ATTACH, p.pos, 0.8f, 1.0f, net_.playerSoundPack(old.owner));
         }
+        for (auto& p : projs) {   // an enemy sticky just stuck on you: the beep (and "STICKY ON YOU" while it's there)
+            if (!(p.flags & PROJ_ON_PLAYER) || p.onPlayer != net_.clientId()) continue;
+            bool was = false;
+            for (auto& old : lastProjectiles_) was |= old.id == p.id && (old.flags & PROJ_ON_PLAYER) && old.onPlayer == p.onPlayer;
+            if (!was) audio_.play(SND_STICKY_ATTACH, 1.0f, 1.6f);
+        }
         lastProjectiles_ = projs;
 
         int hp = net_.selfHealth();
@@ -1583,14 +1590,21 @@ void Game::drawWorld(float alpha) {
     r_.outlineColor = {0, 0, 0};
     r_.outlineWidth = 1.0f;
     // grapple ropes
+    // (a hook latched onto a player ends on their body as drawn here: their interpolated position, or our own)
+    auto ropeEnd = [&](int target, const Vec3& anchor) {
+        if (target < 0 || target >= kMaxPlayers || !players[target].valid || players[target].snap.hidden || !(players[target].snap.flags & PS_ALIVE)) return anchor;
+        Vec3 at = target == me && alive ? net_.smoothedPos(alpha) : players[target].snap.pos;
+        return at + Vec3(0, 1.0f * bs, 0);
+    };
     if (alive && (net_.predicted().flags & MF_HOOKED)) {
         Vec3 d = angleForward(yaw_, pitch_);
         Vec3 right = normalize(cross(d, {0, 1, 0}));
-        r_.line(eye - Vec3(0, 0.25f, 0) - right * 0.15f, net_.predicted().hookPoint, 0.03f, {0.1f, 0.1f, 0.1f, 1});
+        const MoveState& pm = net_.predicted();
+        r_.line(eye - Vec3(0, 0.25f, 0) - right * 0.15f, ropeEnd((int)pm.hookTarget - 1, pm.hookPoint), 0.03f, {0.1f, 0.1f, 0.1f, 1});
     }
     for (int i = 0; i < kMaxPlayers; i++) {
         if (i == me || !players[i].valid || !players[i].snap.hooked) continue;
-        r_.line(players[i].snap.pos + Vec3(0, 1.2f, 0), players[i].snap.hookPoint, 0.04f, {0.1f, 0.1f, 0.1f, 1});
+        r_.line(players[i].snap.pos + Vec3(0, 1.2f, 0), ropeEnd((int)players[i].snap.hooked - 2, players[i].snap.hookPoint), 0.04f, {0.1f, 0.1f, 0.1f, 1});
     }
 
     // other players' shots: laser beams while firing, a tracer when a sniper fires
@@ -1667,6 +1681,7 @@ void Game::drawWorld(float alpha) {
         projStarts_.swap(keep);
     }
     for (auto pr : lastProjectiles_) {
+        if (pr.flags & PROJ_ON_PLAYER) net_.attachedPos(pr, alpha, &pr.pos);   // (on you: where you are this frame)
         for (auto& st : projStarts_)
             if (st.id == pr.id) { float f = 1.0f - (float)(time_ - st.seen) / 0.2f; if (f > 0) pr.pos = pr.pos + st.offset * f; }
         Vec3 col = teamColor(pr.owner);
@@ -2042,6 +2057,10 @@ void Game::drawHud() {
         r_.rect(cx - R, cy - 0.5f, 2 * R, 1, {0, 0, 0, 0.9f * std::max(cfg_.scopeOpacity, 0.3f)});
         r_.rect(cx - 0.5f, cy - R, 1, 2 * R, {0, 0, 0, 0.9f * std::max(cfg_.scopeOpacity, 0.3f)});
     }
+    if (net_.selfAlive() && (net_.predicted().flags & MF_PULLED)) {   // another player's grapple holds you (dash or grab to break free)
+        float big = std::max(2.0f, std::round(ts * 2));
+        r_.text(cx - r_.textWidth("HOOKED", big) * 0.5f, cy - 60 * s, big, "HOOKED", Color{1, 0.45f, 0.3f, 1});
+    }
     if (float hold = holdFireLeft(); hold > 0) { // the map's holdfire (the dojo): face each other, no shots yet
         float big = std::max(2.0f, std::round(ts * 2));
         std::string t = "HOLD FIRE " + std::to_string((int)std::ceil(hold));
@@ -2340,6 +2359,16 @@ void Game::drawHud() {
                 float k = std::max(1.0f, std::round(ts * 0.9f * e.scale));
                 std::string t = "STICKIES " + std::to_string(out) + "/" + std::to_string(kMaxStickies);
                 r_.text(W - 24 * s - r_.textWidth(t, k) + e.x * s, H - 128 * s * e.scale + e.y * s, k, t, out >= kMaxStickies ? Color{1, 0.6f, 0.2f, 1} : tint(Settings::HUD_WEAPON, kWhite));
+            }
+        }
+        {   // enemy stickies stuck on you: a blinking warning under the crosshair
+            int on = 0;
+            for (auto& pr : lastProjectiles_) on += (pr.flags & PROJ_ON_PLAYER) && pr.onPlayer == net_.clientId();
+            if (on > 0) {
+                float k = std::max(1.0f, std::round(ts * 1.2f));
+                std::string t = on > 1 ? std::to_string(on) + " STICKIES ON YOU" : "STICKY ON YOU";
+                float a = std::fmod((float)time_ * 2.5f, 1.0f) < 0.5f ? 1.0f : 0.55f;
+                r_.text(W * 0.5f - r_.textWidth(t, k) * 0.5f, H * 0.5f - 90 * s, k, t, Color{1, 0.25f, 0.2f, a});   // (above the crosshair: the cooldown bars are under it)
             }
         }
         if (!unarmed && !he(Settings::HUD_SLOTS).hidden) {   // weapon slots in kWeaponSlots order: 1 rocket, 2 rifle, 3 laser, ...
@@ -4119,6 +4148,9 @@ static const char* const kInfoPages[][48] = {
         "F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.",
         "# MOVEMENT",
         "Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping.",
+        "Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump.",
+        "Super dash: look down and dash into the floor while holding jump for even more speed and a low hop.",
+        "Dash into a wall head-on (under 45 degrees) and you bounce off it at full dash speed.",
         "You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb.",
         "# WEAPONS",
         "ROCKET (splash; rocket jump off the floor for 10% damage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).",

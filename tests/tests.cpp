@@ -300,11 +300,211 @@ static void testMovement() {
     CHECK(high > low * 1.5f);
 }
 
+
+// Dash jump (Celeste's super) and super dash (Celeste's hyper), owner: exact speeds, the input buffer, no effect
+// without jump, no bhop bounce on top, and prediction replaying them from the snapshot's movement state.
+static void testDashTech() {
+    printf("dash jump and super dash\n");
+    std::string err;
+    Map open;
+    CHECK(open.parse("box -500 -1 -500 500 0 500\nspawn any 0 0 0\n", &err));
+    auto hs = [](const MoveState& q) { return std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z); };
+    auto step = [&](MoveState& q, UserCmd c) { c.msec = 1; pmove(q, c, open); };
+    auto standing = [&] { MoveState q; q.flags = MF_ONGROUND; for (int i = 0; i < 50; i++) step(q, UserCmd()); return q; };
+    const float g1 = 22.0f * 0.001f;   // one step of gravity (the jump's own step applies it)
+    // flies a state until it lands: horizontal distance and the highest point
+    auto flight = [&](MoveState q, uint16_t buttons, float* peak) {
+        Vec3 p0 = q.pos; float top = q.pos.y;
+        UserCmd c; c.buttons = buttons;
+        for (int i = 0; i < 3000 && !(q.flags & MF_ONGROUND); i++) { step(q, c); top = std::max(top, q.pos.y); }
+        *peak = top - p0.y;
+        return std::sqrt((q.pos.x - p0.x) * (q.pos.x - p0.x) + (q.pos.z - p0.z) * (q.pos.z - p0.z));
+    };
+    { // dash jump from a standstill: jump 30 ms into a dash along the floor
+        MoveState q = standing();
+        UserCmd d; d.buttons = BTN_DASH;   // (yaw 0: along -z)
+        for (int i = 0; i < 30; i++) step(q, d);
+        CHECK(q.dashTimer > 0 && (q.flags & MF_ONGROUND) && std::fabs(hs(q) - 24.0f) < 1e-3f);
+        d.buttons = BTN_DASH | BTN_JUMP;
+        step(q, d);
+        printf("  dash jump: %.3f m/s, %.3f up\n", hs(q), q.vel.y);
+        CHECK(q.dashTimer == 0 && std::fabs(hs(q) - 24.0f) < 1e-4f && std::fabs(q.vel.y - (7.34f - g1)) < 1e-4f);
+        float peak, dist = flight(q, BTN_DASH, &peak);
+        printf("  dash jump: %.1f m across, %.2f m up (a jump: 1.22)\n", dist, peak);
+        CHECK(peak > 1.18f && peak < 1.26f && dist > 15.5f && dist < 16.5f);
+        // the same dash without jump: settles to the exit speed as before, on the floor
+        MoveState n = standing();
+        d.buttons = BTN_DASH;
+        for (int i = 0; i < 200 && (i == 0 || n.dashTimer > 0); i++) step(n, d);
+        CHECK(std::fabs(hs(n) - 11.0f) < 1e-3f && (n.flags & MF_ONGROUND) && n.vel.y == 0);
+    }
+    { // pressing jump a hair before the dash (within the window) still makes a dash jump; the jump's rise is kept
+        for (int gap : {40, 150}) {
+            MoveState q = standing();
+            UserCmd j; j.buttons = BTN_JUMP;
+            step(q, j);   // a tap: one ms of jump
+            for (int i = 1; i < gap; i++) step(q, UserCmd());
+            float vy = q.vel.y;
+            UserCmd d; d.buttons = BTN_DASH;
+            step(q, d);
+            if (gap < 100) {
+                CHECK(q.dashTimer == 0 && std::fabs(hs(q) - 24.0f) < 1e-4f && std::fabs(q.vel.y - (vy - g1)) < 1e-4f);
+                float peak;
+                flight(q, 0, &peak);
+                CHECK(q.pos.y + peak < 1.26f);   // (no higher than a jump)
+            } else {
+                CHECK(q.dashTimer > 0);   // too late: an ordinary air dash
+            }
+        }
+    }
+    { // super dash from a run: dash looking down with jump held, on the floor
+        MoveState q = standing();
+        UserCmd r; r.forward = 127;
+        for (int i = 0; i < 1000; i++) step(q, r);
+        CHECK(std::fabs(hs(q) - 8.0f) < 0.05f);
+        r.pitch = -1.0f; r.buttons = BTN_DASH | BTN_JUMP;
+        step(q, r);
+        printf("  super dash from a run: %.3f m/s, %.3f up\n", hs(q), q.vel.y);
+        CHECK(q.dashTimer == 0 && std::fabs(hs(q) - 30.0f) < 1e-4f && std::fabs(q.vel.y - (3.67f - g1)) < 1e-4f);
+        float peak, dist = flight(q, BTN_DASH, &peak);
+        printf("  super dash: %.1f m across, %.2f m up\n", dist, peak);
+        CHECK(peak > 0.28f && peak < 0.33f && dist > 9.0f && dist < 10.5f);
+    }
+    { // super dash out of a bhop: in the air, dash down into the floor holding jump; it converts as it lands
+        MoveState q = standing();
+        UserCmd r; r.forward = 127;
+        for (int i = 0; i < 1000; i++) step(q, r);
+        r.buttons = BTN_JUMP;
+        for (int i = 0; i < 1000 || q.vel.y > -1.0f; i++) step(q, r);   // bhopping, now on the way down
+        CHECK(!(q.flags & MF_ONGROUND) && q.pos.y > 0.2f);
+        r.pitch = -1.2f; r.buttons = BTN_JUMP | BTN_DASH;
+        int t = 0;
+        for (; t < 120 && (t == 0 || q.dashTimer > 0); t++) step(q, r);
+        printf("  super dash out of a bhop: %.3f m/s, %.3f up after %d ms\n", hs(q), q.vel.y, t);
+        CHECK(t < 120 && std::fabs(hs(q) - 30.0f) < 1e-4f && std::fabs(q.vel.y - (3.67f - g1)) < 1e-4f);
+        float peak;
+        flight(q, BTN_DASH, &peak);
+        CHECK(peak < 0.33f);   // (no bhop bounce off the dash's push into the floor on top)
+        // at speed: the burst is the dash's exit speed (30 + 3 -> 32 cap), the super dash 1.25x that, capped at 36
+        MoveState f = standing();
+        f.vel = {0, 0, -30};
+        UserCmd d; d.pitch = -1.0f; d.buttons = BTN_DASH | BTN_JUMP;
+        step(f, d);
+        CHECK(std::fabs(hs(f) - 36.0f) < 1e-4f);
+        MoveState f2 = standing();
+        f2.vel = {0, 0, -30};
+        d.pitch = 0;
+        step(f2, d);
+        CHECK(std::fabs(hs(f2) - 32.0f) < 1e-4f && std::fabs(f2.vel.y - (7.34f - g1)) < 1e-4f);   // the dash jump keeps 32
+    }
+    { // a down dash into the floor without jump: no boost, no bounce
+        MoveState q; q.pos = {0, 1.0f, 0};
+        UserCmd d; d.pitch = -1.2f; d.buttons = BTN_DASH;
+        for (int i = 0; i < 300; i++) step(q, d);
+        CHECK((q.flags & MF_ONGROUND) && q.vel.y == 0 && hs(q) < 11.01f);
+    }
+    { // the buffer: jump tapped in the air 60 ms before a down dash counts when it lands; 150 ms before doesn't
+        for (int gap : {60, 150}) {
+            MoveState q; q.pos = {0, 1.0f, 0};
+            UserCmd j; j.buttons = BTN_JUMP;
+            step(q, j);
+            for (int i = 1; i < gap; i++) step(q, UserCmd());
+            UserCmd d; d.pitch = -1.2f; d.buttons = BTN_DASH;
+            int t = 0;
+            for (; t < 120 && (t == 0 || q.dashTimer > 0); t++) step(q, d);
+            if (gap < 100) CHECK(t < 120 && std::fabs(hs(q) - 30.0f) < 1e-4f && q.vel.y > 3.0f);
+            else CHECK(t == 120 && hs(q) < 11.01f);
+        }
+    }
+    { // dash wall bounce: a dash 30 deg off a wall's normal reflects at the dash's speed; 50 deg (glancing) slides
+        Map wall;   // a wall across -z, its face 1.5 m ahead
+        CHECK(wall.parse("box -50 -1 -50 50 0 50\nbox -50 0 -3 50 4 -1.5\nspawn any 0 0 0\n", &err));
+        auto dashAt = [&](float deg, bool jumpAfter, MoveState* out) {
+            MoveState q; q.flags = MF_ONGROUND;
+            UserCmd d; d.msec = 1; d.yaw = deg * PI / 180; d.buttons = BTN_DASH;   // (yaw 0 faces -z: the wall's normal)
+            for (int i = 0; i < 20; i++) pmove(q, UserCmd(), wall);
+            int t = 0;
+            for (; t < 120 && (t == 0 || q.dashTimer > 0) && q.dashBounces == 0 && q.pos.z > -1.098f; t++) pmove(q, d, wall);
+            if (jumpAfter && q.dashTimer > 0) { d.buttons |= BTN_JUMP; pmove(q, d, wall); }
+            *out = q;
+            return t;
+        };
+        MoveState q;
+        int t = dashAt(30, false, &q);
+        printf("  wall bounce at 30 deg after %d ms: (%.3f, %.3f) m/s, %d bounce\n", t, q.vel.x, q.vel.z, q.dashBounces);
+        CHECK(q.dashBounces == 1 && q.dashTimer > 0 && std::fabs(q.vel.x - (-12.0f)) < 1e-3f && std::fabs(q.vel.z - 20.7846f) < 1e-3f);
+        UserCmd d; d.msec = 1; d.yaw = 30 * PI / 180; d.buttons = BTN_DASH;
+        while (q.dashTimer > 0) pmove(q, d, wall);
+        CHECK(std::fabs(hs(q) - 24.0f) < 1e-3f && q.vel.z > 0);   // leaves at full dash speed, reflected (not the 11 m/s exit)
+        t = dashAt(50, false, &q);
+        printf("  wall at 50 deg after %d ms: z %.5f (%.3f, %.3f) m/s, %d bounces\n", t, q.pos.z, q.vel.x, q.vel.z, q.dashBounces);
+        CHECK(q.dashBounces == 0 && q.vel.z == 0 && std::fabs(q.vel.x - (-24.0f * std::sin(50 * PI / 180))) < 1e-3f);   // slides along
+        dashAt(30, true, &q);   // bounce, then jump during the rest of the dash on the floor: a dash jump the reflected way
+        CHECK(q.dashTimer == 0 && std::fabs(hs(q) - 24.0f) < 1e-3f && q.vel.z > 0 && q.vel.y > 7.0f);
+        // head-on between two walls 2.4 m apart: two bounces, the third wall stops it (at most 2 per dash)
+        MoveState c; c.flags = MF_ONGROUND;
+        for (int i = 0; i < 20; i++) pmove(c, UserCmd(), wall);
+        d.yaw = 0; d.buttons = BTN_DASH;
+        c.pos.z = 0;
+        Map corridor;
+        CHECK(corridor.parse("box -50 -1 -50 50 0 50\nbox -50 0 -3 50 4 -0.8\nbox -50 0 0.8 50 4 3\nspawn any 0 0 0\n", &err));
+        for (int i = 0; i < 20; i++) pmove(c, UserCmd(), corridor);
+        int maxB = 0; bool stopped = false;
+        for (int i = 0; i < 120; i++) {
+            pmove(c, d, corridor);
+            maxB = std::max(maxB, (int)c.dashBounces);
+            if (c.dashBounces == 2 && c.vel.z == 0 && c.dashTimer > 0) stopped = true;
+        }
+        CHECK(maxB == 2 && stopped);
+    }
+    { // prediction: every state the techs need travels in the snapshot; replaying from any snapshot point is exact
+        Map m;
+        CHECK(m.load("bastion"));
+        std::vector<UserCmd> cmds;
+        for (int t = 0; t < 2500; t++) {
+            int win = t / 8;
+            UserCmd c;
+            c.msec = 1;
+            c.yaw = 0.3f + win * 0.004f;
+            c.pitch = (win / 25) % 3 == 0 ? -0.9f : (win / 25) % 3 == 1 ? 0.0f : 0.3f;
+            c.forward = 127;
+            if ((win % 30) == 4 || ((win / 60) % 2 && win % 7 == 0)) c.buttons |= BTN_JUMP;   // taps, and held stretches
+            if (win % 40 >= 10 && win % 40 < 12) c.buttons |= BTN_DASH;
+            cmds.push_back(c);
+        }
+        std::vector<MoveState> states;
+        MoveState s;
+        s.pos = {-20, 0, 20};
+        for (const UserCmd& c : cmds) { pmove(s, c, m); states.push_back(s); }
+        int bad = 0, buffered = 0;
+        for (size_t k = 0; k + 1 < cmds.size(); k += 7) {
+            Snapshot snap;
+            snap.self = states[k];
+            buffered += states[k].jumpBuffer > 0 || states[k].jumpGrace > 0;
+            uint8_t buf[512];
+            Writer w(buf, sizeof buf);
+            writeSnapshotClient(w, snap);
+            Reader r(buf, w.size());
+            Snapshot back;
+            if (!readSnapshotClient(r, back)) { bad++; continue; }
+            MoveState q = back.self;
+            for (size_t i = k + 1; i < cmds.size(); i++) pmove(q, cmds[i], m);
+            const MoveState& e = states.back();
+            if (!(q.pos.x == e.pos.x && q.pos.y == e.pos.y && q.pos.z == e.pos.z && q.vel.x == e.vel.x && q.vel.y == e.vel.y && q.vel.z == e.vel.z && q.flags == e.flags)) bad++;
+        }
+        int bounced = 0;
+        for (const MoveState& st : states) bounced += st.dashTimer > 0 && st.dashBounces > 0;
+        printf("  replay from %zu snapshot points (%d with a jump buffered; %d ms of bounced dashes): %d differ\n", cmds.size() / 7, buffered, bounced, bad);
+        CHECK(bad == 0 && buffered > 0);
+    }
+}
+
 // The same inputs must give bit-identical movement at 1000, 500, 250 and 125 Hz.
 static void testTickRateIndependence() {
     printf("movement identical at every tick rate (incl. dash, bhop, grapple)\n");
     Map m;
     CHECK(m.load("bastion"));
+    for (int scenario = 0; scenario < 2; scenario++) {   // 1: dash jumps and super dashes (looking down, jump tapped)
     MoveState results[4];
     for (int level = 0; level < kTickRateLevels; level++) {
         int msec = 1000 / kTickRates[level];
@@ -315,11 +515,11 @@ static void testTickRateIndependence() {
             UserCmd c;
             c.msec = (uint8_t)msec;
             c.yaw = 0.3f + win * 0.004f;
-            c.pitch = 0.15f;
+            c.pitch = scenario && (win / 50) % 2 ? -0.8f : 0.15f;
             c.forward = 127;
             c.side = (int8_t)((win / 40) % 2 ? 90 : -90);
-            if (win > 20) c.buttons |= BTN_JUMP;                    // hold space: auto bhop
-            if (win % 150 == 30) c.buttons |= BTN_DASH;            // periodic dash
+            if (win > 20 && (!scenario || win % 9 < 2 || (win / 30) % 4 == 1)) c.buttons |= BTN_JUMP;   // hold space: auto bhop (1: taps too)
+            if (win % (scenario ? 45 : 150) == 30) c.buttons |= BTN_DASH;            // periodic dash
             if (win >= 200 && win < 260) c.buttons |= BTN_GRAPPLE; // grapple for ~0.5 s
             pmove(s, c, m);
         }
@@ -330,6 +530,7 @@ static void testTickRateIndependence() {
         CHECK(results[level].vel.x == results[0].vel.x && results[level].flags == results[0].flags);
     }
     printf("  end position (%.3f, %.3f, %.3f)\n", results[0].pos.x, results[0].pos.y, results[0].pos.z);
+    }
 }
 
 // The maps a test grades: listMaps() without the zz_* test maps other tests write (the forked groups each have their
@@ -2975,6 +3176,205 @@ static void testProjectileTickRates(uint16_t port) {
     s.stop();
 }
 
+// A sticky that hits an enemy sticks to them (owner: "the sticky should stick to players if it hits them"): it rides
+// along on them, the clients draw it on the player as they show them, alt-fire sets it off on them for the full blast.
+// Never on its owner; a teammate isn't stuck to (it drops off them, as before); when the one it's on dies it stays
+// where they were (falls, sticks to the floor). The wire's new projectile bit round-trips.
+static void testStickyOnPlayers(uint16_t port) {
+    printf("stickies stick to enemies\n");
+    {   // the wire: bit 32 + player + offset, full and as a delta; one without it reads as before
+        Snapshot s;
+        s.ms.mode = MODE_FFA;
+        ProjectileSnap p; p.id = 7; p.type = WPN_STICKY; p.owner = 1; p.pos = {1, 2, 3};
+        p.flags = PROJ_STUCK | PROJ_ON_PLAYER; p.onPlayer = 5; p.attachOffset = quantizeAttachOffset({0.31f, 1.27f, -0.4f});
+        ProjectileSnap plain; plain.id = 8; plain.type = WPN_STICKY; plain.owner = 1; plain.pos = {4, 5, 6}; plain.flags = PROJ_STUCK;
+        s.projectiles = {p, plain};
+        std::vector<uint8_t> b(4096);
+        Writer w(b.data(), (int)b.size());
+        Snapshot sent = s;
+        writeSnapshotWorld(w, sent, nullptr);
+        Reader r(b.data(), w.size());
+        Snapshot got;
+        CHECK(readSnapshotWorld(r, got, nullptr) && got.projectiles.size() == 2);
+        if (got.projectiles.size() == 2) {
+            const ProjectileSnap& g = got.projectiles[0];
+            CHECK((g.flags & PROJ_ON_PLAYER) && (g.flags & PROJ_STUCK) && g.onPlayer == 5 && length(g.attachOffset - p.attachOffset) < 1e-5f);
+            CHECK(!(got.projectiles[1].flags & PROJ_ON_PLAYER) && length(got.projectiles[1].pos - plain.pos) < 0.02f);
+            Writer w2(b.data(), (int)b.size());   // a delta against what the client has: the attachment comes again
+            Snapshot again = s;
+            writeSnapshotWorld(w2, again, &got);
+            Reader r2(b.data(), w2.size());
+            Snapshot got2;
+            CHECK(readSnapshotWorld(r2, got2, &got) && got2.projectiles.size() == 2 && (got2.projectiles[0].flags & PROJ_ON_PLAYER) &&
+                  got2.projectiles[0].onPlayer == 5 && length(got2.projectiles[0].attachOffset - p.attachOffset) < 1e-5f);
+        }
+        Snapshot bad = s;   // a player id out of range is refused
+        bad.projectiles[0].onPlayer = kMaxPlayers;
+        Writer w3(b.data(), (int)b.size());
+        writeSnapshotWorld(w3, bad, nullptr);
+        Reader r3(b.data(), w3.size());
+        Snapshot got3;
+        CHECK(!readSnapshotWorld(r3, got3, nullptr));
+        // the offset on the body: crouching squashes it with the hull, size scales it
+        Vec3 o = quantizeAttachOffset({0.2f, 1.5f, 0});
+        CHECK(std::fabs(stickyOnPlayerPos({0, 0, 0}, o, true, 1).y - o.y * kPlayerCrouchHeight / kPlayerHeight) < 1e-5f);
+        CHECK(length(stickyOnPlayerPos({1, 0, 0}, o, false, 2) - (Vec3(1, 0, 0) + o * 2)) < 1e-5f);
+    }
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = false;   // warmup: a match start would clear the projectiles and move everyone
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a, b;
+    a.connect("127.0.0.1:" + std::to_string(port), "shooter");
+    b.connect("127.0.0.1:" + std::to_string(port), "target");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 2.5, idle);
+    const int ia = a.clientId(), ib = b.clientId();
+    auto& sa = s.players_[ia];
+    auto& sb = s.players_[ib];
+    auto place = [&] { sa.move.pos = {10, 0, 19}; sb.move.pos = {2, 0, 19}; sa.move.vel = sb.move.vel = {}; sa.health = sb.health = 100; };
+    place();
+    pump(s, cls, 0.3, idle);
+    auto aim = [&](int i, uint16_t buttons) {
+        UserCmd c;
+        if (i != 0) return c;
+        Vec3 eye = a.predicted().pos + Vec3(0, kEyeHeight, 0), tgt = sb.move.pos + Vec3(0, 1.0f, 0);
+        const WeaponDef& wd = weaponDef(WPN_STICKY);
+        float t = length(tgt - eye) / wd.projSpeed;
+        tgt.y += 0.5f * wd.gravity * t * t;
+        Vec3 d = normalize(tgt - eye);
+        c.pitch = std::asin(d.y); c.yaw = std::atan2(-d.x, -d.z);
+        c.weapon = WPN_STICKY;
+        c.buttons = buttons;
+        return c;
+    };
+    pump(s, cls, 0.3, [&](int i) { return aim(i, 0); });
+    CHECK(sa.weapon == WPN_STICKY);
+    auto findSticky = [&]() -> Projectile* { for (auto& pr : s.projectiles_) if (pr.active && pr.type == WPN_STICKY) return &pr; return nullptr; };
+    pump(s, cls, 0.05, [&](int i) { return aim(i, BTN_FIRE); });
+    for (int k = 0; k < 100 && !(findSticky() && findSticky()->stuck); k++) pump(s, cls, 0.01, idle);
+    Projectile* st = findSticky();
+    CHECK(st && st->stuck && st->onPlayer == ib);
+    if (!st || st->onPlayer != ib) { s.stop(); return; }
+    printf("  hit: on the target at %.2f %.2f %.2f from their feet, %.0f hp\n", st->playerOffset.x, st->playerOffset.y, st->playerOffset.z, sb.health);
+    CHECK(sb.health == 100);   // no damage of its own
+    CHECK(s.hitBox(sb.move.pos, (sb.move.flags & MF_CROUCHED) != 0).contains(st->pos));
+    // it rides along: the target walks off
+    Vec3 from = st->pos;
+    pump(s, cls, 0.5, [&](int i) { UserCmd c; if (i == 1) c.forward = 127; else c.weapon = WPN_STICKY; return c; });
+    Vec3 want = stickyOnPlayerPos(sb.move.pos, st->playerOffset, (sb.move.flags & MF_CROUCHED) != 0, s.bodyScale());
+    printf("  followed %.2f m (target moved), off by %.4f\n", length(st->pos - from), length(st->pos - want));
+    CHECK(length(st->pos - from) > 1.0f && length(st->pos - want) < 1e-4f && st->stuck);
+    // the clients draw it on the player as they show them, still walking
+    pump(s, cls, 0.2, [&](int i) {
+        UserCmd c; if (i == 1) c.forward = 127; else c.weapon = WPN_STICKY;
+        if (i == 1) {   // (each client tick: checked while it moves)
+            for (const ProjectileSnap& p : a.interpolatedProjectiles()) {
+                if (p.id != st->id) continue;
+                auto ip = a.interpolatedPlayers();
+                bool okA = (p.flags & PROJ_ON_PLAYER) && p.onPlayer == ib && length(p.attachOffset - st->playerOffset) < 1e-5f && ip[ib].valid &&
+                           length(p.pos - stickyOnPlayerPos(ip[ib].snap.pos, p.attachOffset, false, 1)) < 1e-4f;
+                if (!okA) { printf("  FAIL %s:%d: owner's view of the sticky\n", __FILE__, __LINE__); g_fail++; }
+            }
+            for (const ProjectileSnap& p : b.interpolatedProjectiles()) {
+                if (p.id != st->id) continue;
+                Vec3 at;
+                bool okB = b.attachedPos(p, 0.5f, &at) && length(at - stickyOnPlayerPos(b.smoothedPos(0.5f), p.attachOffset, false, 1)) < 1e-4f;
+                if (!okB) { printf("  FAIL %s:%d: the victim's view of the sticky\n", __FILE__, __LINE__); g_fail++; }
+            }
+        }
+        return c;
+    });
+    int seenA = 0, seenB = 0;
+    for (const ProjectileSnap& p : a.interpolatedProjectiles()) seenA += p.id == st->id;
+    for (const ProjectileSnap& p : b.interpolatedProjectiles()) seenB += p.id == st->id && p.onPlayer == ib;
+    CHECK(seenA == 1 && seenB == 1);
+    // set off: the full blast, centred on them
+    place();
+    pump(s, cls, 0.1, idle);
+    float hp = sb.health;
+    int d0 = sb.deaths;
+    pump(s, cls, 0.1, [&](int i) { UserCmd c; if (i == 0) { c.weapon = WPN_STICKY; c.buttons = BTN_ALTFIRE; } return c; });
+    float dealt = sb.deaths > d0 ? hp : hp - sb.health;
+    printf("  set off: %.1f damage (full: %.1f)\n", dealt, weaponDef(WPN_STICKY).damage);
+    CHECK(!findSticky() && dealt >= weaponDef(WPN_STICKY).damage - 0.5f);
+    CHECK(sa.health == 100);   // (8 m away: out of its 3.4 m blast)
+    // never on its owner: one dropped onto the owner's head goes through and sticks to the floor
+    place();
+    pump(s, cls, 0.1, idle);
+    auto drop = [&](int owner, Vec3 at, Vec3 vel) -> Projectile& {
+        Projectile& pr = s.projectiles_[0];
+        pr = Projectile();
+        pr.active = true; pr.id = 4000; pr.type = WPN_STICKY; pr.owner = owner;
+        pr.pos = at; pr.vel = vel; pr.dieAt = s.time() + 20; pr.armAt = s.time();
+        return pr;
+    };
+    Projectile& own = drop(ia, sa.move.pos + Vec3(0, 2.2f, 0), {0, -5, 0});
+    pump(s, cls, 0.8, idle);
+    CHECK(own.active && own.stuck && own.onPlayer < 0 && own.pos.y < 0.2f);
+    // a sticky on a player who dies stays where they were: it falls to the floor there and sticks
+    Projectile& onB = drop(ia, sb.move.pos + Vec3(0, 2.2f, 0), {0, -5, 0});
+    pump(s, cls, 0.2, idle);
+    CHECK(onB.active && onB.stuck && onB.onPlayer == ib && onB.pos.y > 1.5f);
+    Vec3 died = sb.move.pos;
+    s.killPlayer(ib, -1, 255);
+    CHECK(onB.active && onB.onPlayer < 0 && !onB.stuck);
+    pump(s, cls, 0.8, idle);
+    printf("  victim died: the sticky lies at %.2f %.2f %.2f (died at %.2f %.2f %.2f)\n", onB.pos.x, onB.pos.y, onB.pos.z, died.x, died.y, died.z);
+    CHECK(onB.active && onB.stuck && onB.onPlayer < 0 && onB.pos.y < 0.2f && length(Vec3(onB.pos.x - died.x, 0, onB.pos.z - died.z)) < 0.5f);
+    for (int k = 0; k < 60 && !sb.alive; k++) pump(s, cls, 0.1, idle);   // respawned elsewhere: it doesn't come along
+    CHECK(sb.alive && onB.active && length(Vec3(onB.pos.x - died.x, 0, onB.pos.z - died.z)) < 0.5f);
+    // chain reaction: a blast near where the player is now sets off the one on them (not where it was last tick)
+    place();
+    pump(s, cls, 0.1, idle);
+    Projectile& chain = drop(ia, sb.move.pos + Vec3(0, 2.2f, 0), {0, -5, 0});
+    pump(s, cls, 0.2, idle);
+    CHECK(chain.onPlayer == ib);
+    sb.move.pos = sb.move.pos + Vec3(0, 0, 3);   // (moved since the projectiles' tick)
+    s.explodeForTest(sb.move.pos + Vec3(3.0f, 1.0f, 0), -1, WPN_ROCKET);
+    CHECK(!chain.active);
+    s.stop();
+
+    // team modes: a teammate isn't stuck to (it drops off them, as it always did); an enemy is
+    Server t;
+    cfg.mode = MODE_KOTH; cfg.port = (uint16_t)(port + 1);
+    { std::string e_; if (!t.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    t.setLog([](const std::string&) {});
+    NetClient c1, c2, c3;
+    c1.connect("127.0.0.1:" + std::to_string(cfg.port), "a");
+    c2.connect("127.0.0.1:" + std::to_string(cfg.port), "mate");
+    c3.connect("127.0.0.1:" + std::to_string(cfg.port), "enemy");
+    std::vector<NetClient*> tc = {&c1, &c2, &c3};
+    pump(t, tc, 1.0, idle);
+    const int mine = t.players_[c1.clientId()].team, theirs = mine == TEAM_A ? TEAM_B : TEAM_A;
+    c2.sendCommand(std::string("team ") + (mine == TEAM_A ? "a" : "b"));
+    c3.sendCommand(std::string("team ") + (theirs == TEAM_A ? "a" : "b"));
+    pump(t, tc, 2.5, idle);
+    auto& p1 = t.players_[c1.clientId()];
+    auto& p2 = t.players_[c2.clientId()];
+    auto& p3 = t.players_[c3.clientId()];
+    CHECK(p1.team == p2.team && p3.team != p1.team && p1.alive && p2.alive && p3.alive);
+    p2.move.pos = {2, 0, 19}; p3.move.pos = {-4, 0, 19}; p2.move.vel = p3.move.vel = {};
+    pump(t, tc, 0.1, idle);
+    auto shoot = [&](int at) -> Projectile& {   // from 1 m to the side of them, chest high, straight in
+        Projectile& pr = t.projectiles_[at];
+        const Vec3 feet = t.players_[at == 0 ? c2.clientId() : c3.clientId()].move.pos;
+        pr = Projectile();
+        pr.active = true; pr.id = (uint16_t)(5000 + at); pr.type = WPN_STICKY; pr.owner = c1.clientId();
+        pr.pos = feet + Vec3(1.2f, 1.0f, 0); pr.vel = {-20, 0, 0}; pr.dieAt = t.time() + 20; pr.armAt = t.time();
+        return pr;
+    };
+    Projectile& onMate = shoot(0);
+    Projectile& onEnemy = shoot(1);
+    pump(t, tc, 0.8, idle);
+    printf("  teammate: %s, %s %.2f m up; enemy: %s\n", onMate.onPlayer < 0 ? "not stuck to" : "STUCK TO", onMate.stuck ? "on the floor" : "falling", onMate.pos.y, onEnemy.onPlayer == c3.clientId() ? "stuck to" : "NOT STUCK TO");
+    CHECK(onMate.active && onMate.onPlayer < 0 && onMate.stuck && onMate.pos.y < 0.2f);
+    CHECK(onEnemy.active && onEnemy.onPlayer == c3.clientId());
+    t.stop();
+}
+
 static void testAltFires(uint16_t port) {
     printf("alt-fires: knife throw, shotgun ricochet, scoped rifle\n");
     for (int kase = 0; kase < 3; kase++) {
@@ -4618,6 +5018,16 @@ static void testDemoUpgrade() {
         }
         CHECK(snaps > 10 && chat && p.playerName(0) == "oldtimer" && p.error() == "demo finished");
     }
+    { // a demo of protocol 37 (before stickies stuck to players: no projectile bit 32) converts and plays as it was
+        std::string cur = rd(d / "old.qdemo");
+        put("p37.qdemo", cur, 37);
+        demo::UpgradeReport r37 = demo::upgradeDir(d.string());
+        CHECK(r37.converted == 1 && r37.failed == 0);
+        CHECK(rd(d / "p37.qdemo").substr(6) == cur.substr(6));   // (the same records: its snapshots read the same way)
+        NetClient p;
+        std::string err;
+        CHECK(p.startPlayback((d / "p37.qdemo").string(), err) && p.mapReady());
+    }
     // a second conversion of the same name keeps both originals
     put("old.qdemo", fixture, -1);
     r = demo::upgradeDir(d.string());
@@ -5776,6 +6186,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "hostile") { testHostileInput(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "userdata") { testUserData(); testResetMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "ladders") { testLadders(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "dashtech") { testDashTech(); testTickRateIndependence(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "stairs") { testStairs(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "points") { setTimeScale(kTestTimeScale); testPoints(TP(29995)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "syringe") { setTimeScale(kTestTimeScale); testSyringe(TP(29996)); return g_fail ? 1 : 0; }
@@ -5826,7 +6237,7 @@ int main(int argc, char** argv) {
         snapBench("harbor", 16, secs, TP(28824), true, 24);
         return 0;
     }
-    if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testFixedSpread(p + 50); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); testProjectileTickRates(p + 40); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testFixedSpread(p + 50); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); testProjectileTickRates(p + 40); testStickyOnPlayers(p + 60); return g_fail ? 1 : 0; }
     // ---- the whole suite. Most tests wait on real-time network play rather than the CPU, so each runs in its own
     // process, several at once (output kept in order); a few timing-sensitive ones run alone afterwards.
     // "quark_tests serial" runs everything in this process, one after another, as before.
@@ -5837,14 +6248,14 @@ int main(int argc, char** argv) {
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testTimeToKill(); testWallbang(); }},
+        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testTimeToKill(); testWallbang(); }},
         {"maps", [] {
             testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders();
             printf("map scores\n");   // the map bar: every map scores at least 7 in every category but originality
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},

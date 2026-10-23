@@ -71,7 +71,7 @@ struct PlayerSnap {
     uint8_t acc = 0;            // accuracy, %   // damage dealt to enemies, whole seconds on the objective
     uint16_t ping = 0;
     uint8_t checkpoint = 0;
-    uint8_t hooked = 0;
+    uint8_t hooked = 0;         // grapple: 0 none, 1 on the map, 2 + id latched onto that player (hookPoint: their body)
     uint16_t keys = 0;          // held keys (KEY_*), for the spectators' key overlay
     Vec3 hookPoint;
     bool hidden = false;    // not visible to this client: only scoreboard fields are valid (no position)
@@ -83,10 +83,23 @@ struct ProjectileSnap {
     uint8_t type = 0;
     uint8_t owner = 0;
     Vec3 pos, vel;
-    uint8_t flags = 0;   // PROJ_LOB, PROJ_STUCK: how the client extrapolates it (the server's 1 ms steps)
+    uint8_t flags = 0;   // PROJ_LOB, PROJ_STUCK: how the client extrapolates it (the server's 1 ms steps); PROJ_ON_PLAYER
+    uint8_t onPlayer = 0;   // PROJ_ON_PLAYER: the player a sticky is stuck to, at attachOffset from their feet
+    Vec3 attachOffset = Vec3();   // (standing, size 1: stickyOnPlayerPos places it on the player as they are)
     bool hidden = false;    // out of this client's sight: only the id is sent (it's still flying: gone isn't an explosion)
 };
-enum : uint8_t { PROJ_LOB = 1, PROJ_STUCK = 2 };
+enum : uint8_t { PROJ_LOB = 1, PROJ_STUCK = 2, PROJ_ON_PLAYER = 4 };
+
+// A sticky stuck to a player: its offset from their feet is kept standing and at size 1, on the wire's grid (x, z:
+// 1/127 of the half width, y: 1/255 of the height), so the server and every client put it on the same spot of the
+// body: crouching squashes it down with the hull, size modifiers (MOVE_BIG / TINY) scale it.
+inline Vec3 quantizeAttachOffset(const Vec3& o) {
+    auto q = [](float v, float range, float steps, float lo) { return std::round(clampf(v / range, lo, 1.0f) * steps) / steps * range; };
+    return {q(o.x, kPlayerHalfWidth, 127, -1), q(o.y, kPlayerHeight, 255, 0), q(o.z, kPlayerHalfWidth, 127, -1)};
+}
+inline Vec3 stickyOnPlayerPos(const Vec3& feet, const Vec3& offset, bool crouched, float scale) {
+    return feet + Vec3(offset.x, offset.y * (crouched ? kPlayerCrouchHeight / kPlayerHeight : 1.0f), offset.z) * scale;
+}
 
 struct GameEvent {
     double sentAt = -1;      // server only (not sent): when this copy last went out, for resend pacing

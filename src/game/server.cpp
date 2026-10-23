@@ -1075,6 +1075,7 @@ void Server::dropPlayer(int id, const std::string& reason, bool notify, bool shu
     vote_.yes &= ~(1u << id); vote_.no &= ~(1u << id);
     std::string name = p.name;
     int team = p.team;
+    releaseStickies(id);
     p.connected = false;
     p.alive = false;
     p.awayUntil = 0;
@@ -1563,6 +1564,7 @@ void Server::message(const std::string& text) {
 
 void Server::spawnPlayer(int id) {
     ServerPlayer& p = players_[id];
+    releaseStickies(id);   // (respawned alive, without dying: they stay where you were)
     std::vector<const SpawnPoint*> cands = spawnPool(map_, rulesSpawnType(*this, id), ms_.point);
 
     Vec3 pos;
@@ -1649,6 +1651,7 @@ void Server::spawnPlayer(int id) {
 void Server::killPlayer(int victim, int killer, int weapon) {
     ServerPlayer& v = players_[victim];
     if (!v.alive) return;
+    releaseStickies(victim);
     v.alive = false;
     v.health = 0;
     v.deaths++;
@@ -1800,6 +1803,7 @@ void Server::simulate() {
             drainCmds(i);
         }
     }
+    tickLatches();   // grapples latched onto players: let go when the rules say so
     // Record positions for lag compensation.
     for (auto& p : players_) {
         if (!p.connected) continue;
@@ -1855,7 +1859,14 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     if (!p.alive) return;
     if (rulesFrozen(*this, id)) p.move.flags |= MF_FROZEN;
     else p.move.flags &= ~MF_FROZEN;
-    pmove(p.move, cmd, map_);
+    {
+        HookProbe probe;   // a grapple that may fire in this command: the enemies it can catch
+        grappleTargets(id, cmd, probe);
+        pmove(p.move, cmd, map_, probe.n ? &probe : nullptr);
+        if (probe.hit >= 0) startLatch(id, probe.id[probe.hit], probe.head);
+        if (p.hookVictim >= 0) syncLatch(id);           // released / met / out of reach: let go; else the anchors follow
+        if (p.hookedBy >= 0) syncLatch(p.hookedBy);     // (broke free with a dash or a grab of our own)
+    }
     if (p.move.flags & MF_ONGROUND) p.lastGround = p.move.pos;
 
     // A thrown knife / syringe is away (disabled) for kThrowAway: it can't be drawn and you hold another weapon. When
@@ -1872,6 +1883,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     if (p.weapon == WPN_STICKY && (cmd.buttons & BTN_ALTFIRE) && !p.fireLocked)
         for (auto& pr : projectiles_)
             if (pr.active && pr.owner == id && pr.type == WPN_STICKY && time() >= pr.armAt) {
+                if (pr.onPlayer >= 0) followVictim(pr);   // (where the one it's on is now: they may have moved this tick)
                 pr.active = false;
                 explode(pr.pos, id, WPN_STICKY);
             }
@@ -1963,6 +1975,140 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
     if (hit < 0) return;
     if (headDmg > 0 && rayHitsHead(eye, dir, hitBb)) { dmg = std::max(dmg, headDmg); headHit_[hit] = true; }   // (the head, not the shoulders)
     dmgPer[hit] += (bang >= 0 && best > bang) ? dmg * kWallbangDamage : dmg;
+}
+
+// ---- the grapple latched onto a player (owner: "if the tip of the hook hits a player it sticks to them, 10 damage, 15
+// if head, then pulls both players together in the middle").
+// Enemies only: teammates (and a player another grapple already holds) let the hook through to the wall behind. Never in
+// race (racers can't touch each other) or while damage is off (round over, freeze). Lag compensated like hitscan.
+
+uint64_t Server::rewindViewMs(int id, uint32_t viewTick) const {
+    const ServerPlayer& p = players_[id];
+    uint64_t vt = fromWireMs(viewTick);
+    if (vt > timeMs_) vt = timeMs_;
+    // (the same cap as fireWeapon's: ping + the client's interpolation + jitter)
+    uint32_t interp = std::max<uint32_t>(2000u / (uint32_t)std::max(1, tickRate() / snapEvery()) + 50u, 100u);
+    interp = std::max<uint32_t>(interp, std::min<uint32_t>(p.interpMs, (uint32_t)kMaxInterpMs));
+    uint32_t cap = std::min<uint32_t>(kMaxRewindMs, (uint32_t)p.ping + interp + kRewindToleranceMs);
+    if (timeMs_ - vt > cap) vt = timeMs_ - cap;
+    return vt;
+}
+
+Vec3 Server::rewoundPos(int i, uint64_t vt, bool* crouched) const {
+    const ServerPlayer& q = players_[i];
+    Vec3 pos = q.move.pos;
+    *crouched = q.move.flags & MF_CROUCHED;
+    for (uint32_t k = 1; k <= (uint32_t)ServerPlayer::kHistory && k <= tick_; k++) {   // (as hitscan: newest at or before vt)
+        const auto& h = q.history[(tick_ - k) % ServerPlayer::kHistory];
+        if (h.tick == ServerPlayer::kNoHistory || h.tick > timeMs_) break;
+        if (h.tick <= vt) { if (h.alive) { pos = h.pos; *crouched = h.crouched; } break; }
+    }
+    return pos;
+}
+
+void Server::grappleTargets(int id, const UserCmd& cmd, HookProbe& probe) {
+    const ServerPlayer& p = players_[id];
+    probe.n = 0;
+    // only when this command can fire the hook (held, not caught yet this press, the cooldown about done)
+    if (!(cmd.buttons & BTN_GRAPPLE) || (p.move.flags & (MF_HOOKHELD | MF_HOOKED | MF_FROZEN)) || (p.move.mods & MOVE_RUN_ONLY)) return;
+    if (!moveTuning().grapple || p.move.hookCooldown > cmd.msec * kMoveStep + 1e-4f) return;
+    if (ms_.mode == MODE_RACE) return;
+    uint64_t vt = 0;
+    bool rewound = false;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const ServerPlayer& q = players_[i];
+        if (i == id || !q.connected || !q.alive || q.team == TEAM_SPECTATOR || (q.move.flags & MF_FROZEN)) continue;
+        if (q.hookedBy >= 0 && q.hookedBy != id) continue;     // someone else's grapple holds them already
+        if (modeIsTeamBased(ms_.mode) && q.team == p.team) continue;   // teammates: the hook goes through
+        if (isItMode(ms_.mode) && q.it == p.it) continue;   // hide and seek / tag: "it" and the others only (pull, no damage)
+        if (!rulesCanDamage(*this, id, i)) continue;
+        if (!rewound) { vt = rewindViewMs(id, cmd.viewTick); rewound = true; }
+        bool crouched;
+        Vec3 pos = rewoundPos(i, vt, &crouched);
+        probe.box[probe.n] = hitBox(pos, crouched);
+        probe.id[probe.n++] = (uint8_t)i;
+    }
+}
+
+void Server::startLatch(int a, int v, bool head) {
+    ServerPlayer& pa = players_[a];
+    ServerPlayer& pv = players_[v];
+    if (pa.hookVictim >= 0 && pa.hookVictim != v) {   // (can't happen: a hook fires only when not hooked)
+        int old = pa.hookVictim;
+        if (players_[old].hookedBy == a) { players_[old].hookedBy = -1; players_[old].move.flags &= ~MF_PULLED; }
+    }
+    pa.hookVictim = v;
+    pa.hookSince = time();
+    pv.hookedBy = a;
+    pv.move.flags = (uint8_t)((pv.move.flags | MF_PULLED) & ~MF_ONGROUND);
+    syncLatch(a);
+    // the catch: 10 damage, 15 through the head (a damage source of its own). Instagib: no kill from a hook, it only
+    // pulls; hide and seek / tag: damagePlayer lets only the knife touch anyone, so it only pulls there too.
+    float dmg = (arenaRules() & AR_INSTAGIB) ? 0.0f : head ? kGrappleHeadDamage : kGrappleDamage;
+    bool hitBefore = pa.hitSinceShot;   // (accuracy counts shots: a hook isn't one)
+    headHit_[v] = head;
+    damagePlayer(v, a, dmg, kDamageGrapple, Vec3());
+    headHit_[v] = false;
+    pa.hitSinceShot = hitBefore;
+    glog(LOG_VERBOSE, "grapple latch attacker=%d victim=%d head=%d", a, v, head ? 1 : 0);
+}
+
+bool Server::latchHolds(int a) const {
+    const ServerPlayer& pa = players_[a];
+    int v = pa.hookVictim;
+    if (v < 0 || v >= kMaxPlayers || v == a || !pa.connected || !pa.alive) return false;
+    const ServerPlayer& pv = players_[v];
+    return pv.connected && pv.alive && pv.hookedBy == a && (pa.move.flags & MF_HOOKED) && pa.move.hookTarget == v + 1 &&
+           (pv.move.flags & MF_PULLED) && !((pa.move.flags | pv.move.flags) & MF_FROZEN);
+}
+
+void Server::syncLatch(int a) {
+    if (a < 0 || a >= kMaxPlayers) return;
+    if (!latchHolds(a)) { endLatch(a); return; }
+    ServerPlayer& pa = players_[a];
+    ServerPlayer& pv = players_[pa.hookVictim];
+    // each is pulled toward the other's body (the same direction as the midpoint; meeting is measured between them)
+    pa.move.hookPoint = pv.move.pos + Vec3(0, 1.0f * moveScale(pv.move.mods), 0);
+    pv.move.pullPoint = pa.move.pos + Vec3(0, 1.0f * moveScale(pa.move.mods), 0);
+}
+
+void Server::endLatch(int a) {
+    if (a < 0 || a >= kMaxPlayers) return;
+    ServerPlayer& pa = players_[a];
+    int v = pa.hookVictim;
+    pa.hookVictim = -1;
+    if (v < 0 || v >= kMaxPlayers) return;
+    ServerPlayer& pv = players_[v];
+    if (pv.hookedBy == a) { pv.hookedBy = -1; pv.move.flags &= ~MF_PULLED; }
+    if ((pa.move.flags & MF_HOOKED) && pa.move.hookTarget == v + 1) {   // let go for them: the usual cooldown follows
+        pa.move.flags &= ~MF_HOOKED;
+        pa.move.hookTarget = 0;
+        pa.move.hookCooldown = kHookCooldown * moveTuning().m[MV_HOOK_COOLDOWN];
+    }
+}
+
+// Once a tick: a latch lets go when the map comes between them, they're out of the grapple's reach, it has held
+// kGrappleLatchMax, or damage is off now (round over); stale halves (a slot reused, a respawn) are cleared.
+void Server::tickLatches() {
+    const float range = kGrappleRange * moveTuning().m[MV_HOOK_RANGE];
+    for (int a = 0; a < kMaxPlayers; a++) {
+        ServerPlayer& pa = players_[a];
+        if (pa.hookVictim < 0) continue;
+        if (!latchHolds(a)) { endLatch(a); continue; }
+        const ServerPlayer& pv = players_[pa.hookVictim];
+        Vec3 from = pa.move.pos + Vec3(0, 1.0f * moveScale(pa.move.mods), 0);
+        Vec3 to = pv.move.pos + Vec3(0, 1.0f * moveScale(pv.move.mods), 0);
+        Vec3 d = to - from;
+        float dist = length(d);
+        bool blocked = dist > 1e-3f && map_.raycast(from, d / dist, dist) >= 0;
+        if (blocked || dist > range || time() - pa.hookSince > kGrappleLatchMax || !rulesCanDamage(*this, a, pa.hookVictim)) endLatch(a);
+    }
+    for (int v = 0; v < kMaxPlayers; v++) {
+        ServerPlayer& pv = players_[v];
+        int a = pv.hookedBy;
+        if (a >= 0 && (a >= kMaxPlayers || players_[a].hookVictim != v)) a = pv.hookedBy = -1;
+        if (a < 0 && (pv.move.flags & MF_PULLED)) pv.move.flags &= ~MF_PULLED;
+    }
 }
 
 // A pellet that ricochets: straight until it hits a player (done) or a wall, then reflects off it, up to
@@ -2148,6 +2294,7 @@ void Server::tickProjectiles() {
             if (map_.dynSolids.empty()) pr.active = false; // cart gone (round over)
             else pr.pos = map_.cartPoint(ms_.mode, ms_.attackers, ms_.payloadDist) + pr.cartOffset;
         }
+        if (pr.stuck && pr.onPlayer >= 0) followVictim(pr);   // (players have moved this tick: snapshots and blasts see it on them)
         for (int k = 0; k < steps && pr.active && !pr.stuck; k++) {
             if (k > 0 && (double)(timeMs_ + (uint64_t)k) * 0.001 >= pr.dieAt) { pr.active = false; break; }   // (the 1 ms steps' own times)
             stepProjectile(pr);
@@ -2191,7 +2338,22 @@ void Server::stepProjectile(Projectile& pr) {
             }
             pr.pos = at;   // (a spent projectile keeps where it landed)
             pr.active = false;
-        } else if (wd.sticky) {               // stick where it landed (on a player: it drops there)
+        } else if (wd.sticky && hitPlayer >= 0 && !(modeIsTeamBased(ms_.mode) && players_[hitPlayer].team == players_[pr.owner].team)) {
+            // an enemy: it sticks to them, just inside their hull where it hit (inside: never in a wall they stand
+            // against), and rides along until it's set off (alt-fire, a blast) or they die / respawn / leave
+            // (releaseStickies). No damage of its own: the blast does it, centred on them.
+            const auto& v = players_[hitPlayer];
+            const bool crouched = (v.move.flags & MF_CROUCHED) != 0;
+            const float scale = bodyScale(), e = 0.02f * scale;
+            Vec3 on = vmax(hitBb.mn + Vec3(e, e, e), vmin(at, hitBb.mx - Vec3(e, e, e)));
+            Vec3 o = (on - v.move.pos) / scale;
+            if (crouched) o.y *= kPlayerHeight / kPlayerCrouchHeight;
+            pr.onPlayer = hitPlayer;
+            pr.playerOffset = quantizeAttachOffset(o);
+            pr.pos = stickyOnPlayerPos(v.move.pos, pr.playerOffset, crouched, scale);
+            pr.vel = {};
+            pr.stuck = true;
+        } else if (wd.sticky) {               // stick where it landed (on a teammate: it drops there)
             pr.pos = hitPlayer < 0 ? at + n * 0.08f : at;
             pr.vel = {};
             pr.stuck = hitPlayer < 0;
@@ -2218,6 +2380,25 @@ void Server::stepProjectile(Projectile& pr) {
             pr.active = false;
             explode(at, pr.owner, pr.type, pr.type == WPN_ROCKET ? hitPlayer : -1);
         }
+    }
+}
+
+void Server::followVictim(Projectile& pr) {
+    const ServerPlayer& v = players_[pr.onPlayer];
+    if (!v.connected || !v.alive || v.team == TEAM_SPECTATOR) {   // (releaseStickies missed it): stays where it last was
+        pr.onPlayer = -1; pr.stuck = false; pr.vel = {};
+        return;
+    }
+    pr.pos = stickyOnPlayerPos(v.move.pos, pr.playerOffset, (v.move.flags & MF_CROUCHED) != 0, bodyScale());
+}
+
+// The stickies on a player who dies, respawns, leaves or goes to spectate stay where that player was: let go there
+// (mid-air: they fall and stick where they land, like a fresh one).
+void Server::releaseStickies(int player) {
+    for (auto& pr : projectiles_) {
+        if (!pr.active || pr.onPlayer != player) continue;
+        followVictim(pr);
+        pr.onPlayer = -1; pr.stuck = false; pr.vel = {};
     }
 }
 
@@ -2253,7 +2434,9 @@ void Server::explode(const Vec3& at, int owner, int weapon, int direct) {
     // Blasts set off any sticky in range, anyone's (yours and the enemy's): chain reactions. Each one is
     // switched off before it goes, so a chain always ends.
     for (auto& pr : projectiles_) {
-        if (!pr.active || pr.type != WPN_STICKY || length(pr.pos - at) > wd.splashRadius) continue;
+        if (!pr.active || pr.type != WPN_STICKY) continue;
+        if (pr.onPlayer >= 0) followVictim(pr);
+        if (length(pr.pos - at) > wd.splashRadius) continue;
         pr.active = false;
         explode(pr.pos, pr.owner, WPN_STICKY);
     }
@@ -2442,7 +2625,7 @@ void Server::sendSnapshots() {
         ps.ping = (uint16_t)p.ping;
         ps.checkpoint = (uint8_t)p.checkpoint;
         ps.keys = p.alive ? p.keys : 0;
-        ps.hooked = p.alive && (p.move.flags & MF_HOOKED);
+        ps.hooked = p.alive && (p.move.flags & MF_HOOKED) ? (uint8_t)(1 + p.move.hookTarget) : 0;   // (2 + id: latched onto that player)
         ps.hookPoint = p.move.hookPoint;
         all.push_back(ps);
     }
@@ -2454,6 +2637,7 @@ void Server::sendSnapshots() {
         if (!pr.active) continue;
         if (allProj.size() >= 48) break;
         allProj.push_back({pr.id, (uint8_t)pr.type, (uint8_t)pr.owner, pr.pos, pr.vel, (uint8_t)((pr.gravMul != 1 ? PROJ_LOB : 0) | (pr.stuck ? PROJ_STUCK : 0))});
+        if (pr.onPlayer >= 0) { allProj.back().flags |= PROJ_ON_PLAYER; allProj.back().onPlayer = (uint8_t)pr.onPlayer; allProj.back().attachOffset = pr.playerOffset; }
         snapProjSlot_.push_back(k);
     }
     // what each client can see (NET-10): sight per player (bit per target, recent enough), then per client the
@@ -2527,14 +2711,21 @@ void Server::sendSnapshots() {
         s.players = all;          // (copies into the slot's own vectors: their capacity is reused)
         // (tag: everyone always knows where the tagger is, owner B8 - never hidden; hide and seek's seeker is, out of sight)
         const bool tag = ms_.mode == MODE_TAG;
+        uint32_t hiddenPlayers = 0;
         for (auto& ps : s.players) {
             ps.hidden = !seesAll && ps.id != i && (ps.flags & PS_ALIVE) && !(vis >> ps.id & 1) && !(tag && (ps.flags & PS_HASBOMB));
             if (!ps.hidden) continue;
+            hiddenPlayers |= 1u << ps.id;
             // out of sight: nothing but the scoreboard (no health, weapon, firing, crouch or the bomb)
             ps.flags &= (uint8_t)~(PS_FIRING | PS_CROUCHED | (isItMode(ms_.mode) ? 0 : PS_HASBOMB));
             ps.health = 0; ps.weapon = 0; ps.keys = 0; ps.hooked = 0; ps.hookPoint = Vec3();
             ps.pos = Vec3(); ps.yaw = ps.pitch = 0;
         }
+        if (!seesAll)   // a grapple latched onto a player out of this client's sight: no rope (its end would give them away)
+            for (auto& ps : s.players) {
+                int t = ps.hooked >= 2 ? ps.hooked - 2 : -1;
+                if (t >= 0 && t < kMaxPlayers && t != i && !(vis >> t & 1) && !(tag && players_[t].it)) { ps.hooked = 0; ps.hookPoint = Vec3(); }
+            }
         if (!seesAll) {   // the bomb: who carries it, who's planting / defusing, only if they're in sight
             auto unseen = [&](int who) { return who >= 0 && who < kMaxPlayers && who != i && players_[who].alive && !(vis >> who & 1); };
             if (s.ms.bombState == BOMB_CARRIED && unseen(s.ms.bombCarrier)) s.ms.bombCarrier = 255;
@@ -2547,6 +2738,8 @@ void Server::sendSnapshots() {
             const int slot = snapProjSlot_[k];
             bool in = seesAll || allProj[k].owner == i;
             for (uint32_t m = persp & ~blind; m && !in; m &= m - 1) in = now - players_[lowestBit(m)].projSeen[slot] <= kProjVisGrace;
+            // a sticky on a player this client can't see would give them away (its owner's too): out of sight with them
+            if (in && (allProj[k].flags & PROJ_ON_PLAYER) && (hiddenPlayers >> allProj[k].onPlayer & 1)) in = false;
             if (in) { s.projectiles.push_back(allProj[k]); projShown_[slot] |= 1u << i; continue; }
             projHidden_[slot] |= 1u << i;
             // one this client has seen goes on as an id only (it's still flying: gone would be an explosion); one it
