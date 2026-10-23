@@ -268,7 +268,7 @@ private:
     struct EdSel { int kind = -1, idx = -1; bool valid() const { return kind >= 0; } };
     Map ed_;
     std::string edName_ = "mymap", edMsg_, edTitle_;
-    double edResetArmed_ = 0, edMsgUntil_ = 0, edLastPush_ = 0, edLeaveArmed_ = 0, edNextCam_ = 0, edTickAcc_ = 0;
+    double edResetArmed_ = 0, edMsgUntil_ = 0, edLastPush_ = -1e9, edLeaveArmed_ = 0, edNextCam_ = 0, edTickAcc_ = 0;
     EdSel edSel_;
     std::vector<EdSel> edMulti_; // shift+click: more selected boxes / groups (for GROUP)
     int edGridIdx_ = 1, edLoadIdx_ = 0, edMat_ = 0; // edMat_: the material new boxes / rooms / stairs get (the last one picked)

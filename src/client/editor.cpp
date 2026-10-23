@@ -340,11 +340,11 @@ void Game::edDo(const std::string& op, const std::string& inverse, bool coalesce
         edChanged();
     }
     if (undoable) {
-        if (!(coalesce && time_ - edLastPush_ < 0.75)) {
+        if (!(coalesce && time_ - edLastPush_ < 0.75)) {   // (no join: -1e9, not 0 - time_ starts near 0 in a session, and the first edit there lost its undo step)
             edUndo_.push_back(inverse);
             if (edUndo_.size() > 500) edUndo_.erase(edUndo_.begin());
         }
-        edLastPush_ = coalesce ? time_ : 0;
+        edLastPush_ = coalesce ? time_ : -1e9;
     }
 }
 
@@ -352,7 +352,7 @@ void Game::edUndoLast() {
     if (edUndo_.empty()) { edNotify("nothing to undo"); return; }
     std::string op = edUndo_.back();
     edUndo_.pop_back();
-    edLastPush_ = 0;
+    edLastPush_ = -1e9;
     edDo(op, "", false, false);
 }
 

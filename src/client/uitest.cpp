@@ -710,10 +710,11 @@ private:
         std::string cfg0 = g_.cfg_.toText(), obs0 = e.kind == UiExp::STATE ? g_.uiObserve(e.what) : "";
         std::string ed0 = g_.screen_ == Game::Screen::Editor ? g_.ed_.serialize() : "";
         size_t undo0 = g_.edUndo_.size();
+        const std::string back0 = g_.edUndo_.empty() ? "" : g_.edUndo_.back();
         std::string fp0 = path0 + "|" + ctx0 + "|" + cfg0 + "|" + ed0 + "|" + obs0;
         cmds_.clear(); urls_.clear(); quitSeen_ = false;
         window_ = true;
-        g_.edLastPush_ = 0;   // (the editor joins changes within 0.75 s into one undo step: each widget here is its own)
+        g_.edLastPush_ = -1e9;   // (the editor joins changes within 0.75 s into one undo step: each widget here is its own)
         std::string why;
         act(w, true, &why, id);
         if (clickMoved_ && !again) {
@@ -816,10 +817,20 @@ private:
                 }
             } else if (e.kind == UiExp::EDIT) {
                 // undo puts the map back (the edit session: through the server, so wait for its echo)
-                if (g_.edUndo_.size() <= undo0 && w.kind != UiWidget::HANDLE) fail(wkey, "changed the map without an undo step");
+                // (a new step: the stack grew, or - full at its 500 - its top is another one)
+                bool stepped = g_.edUndo_.size() > undo0 || (!g_.edUndo_.empty() && g_.edUndo_.back() != back0);
+                if (!stepped && w.kind != UiWidget::HANDLE) fail(wkey, "changed the map without an undo step");
+                if (verbose_) printf("    undo %zu -> %zu, top [%s] -> [%s], title [%s]\n", undo0, g_.edUndo_.size(), back0.c_str(), g_.edUndo_.empty() ? "" : g_.edUndo_.back().c_str(), g_.ed_.title.c_str());
                 g_.ui_.clearFocus();
-                key(GLFW_KEY_Z, GLFW_MOD_CONTROL);
-                if (!waitFor([&] { return g_.ed_.serialize() == ed0; }, 8.0)) fail(wkey, "undo didn't put the map back");
+                // (a text field edits as it's typed in, joined into one step within 0.75 s: a slow frame between the
+                // keys can make two - each undone)
+                int tries = w.kind == UiWidget::TEXT ? 3 : 1;
+                bool back = false;
+                for (int t = 0; t < tries && !back; t++) {
+                    key(GLFW_KEY_Z, GLFW_MOD_CONTROL);
+                    back = waitFor([&] { return g_.ed_.serialize() == ed0; }, t + 1 < tries ? 3.0 : 8.0);
+                }
+                if (!back) fail(wkey, "undo didn't put the map back");
             }
             if (!why.empty()) fail(wkey, why);
             // a widget with a value of its own shows the change
@@ -847,7 +858,7 @@ private:
                 char buf[32];
                 snprintf(buf, sizeof buf, "%.*f", s2.count, target);
                 std::string edBefore = e.kind == UiExp::EDIT ? g_.ed_.serialize() : "";
-                g_.edLastPush_ = 0;
+                g_.edLastPush_ = -1e9;
                 click(s2.nx + s2.nw * 0.5f, s2.y + s2.h * 0.5f);
                 step();
                 for (int k = 0; k < 12; k++) { keyDown(GLFW_KEY_BACKSPACE); step(); keyUp(GLFW_KEY_BACKSPACE); }
@@ -898,7 +909,7 @@ private:
                     UiWidget s4 = cur_[k4];
                     const bool same = std::fabs((float)atof(s4.value.c_str()) - s4.def) < unit * 0.5f;
                     const std::string ed1 = e.kind == UiExp::EDIT ? g_.ed_.serialize() : "";
-                    g_.edLastPush_ = 0;
+                    g_.edLastPush_ = -1e9;
                     rclick(s4.x + s4.w * 0.25f, s4.y + s4.h * 0.5f);
                     step();
                     if (e.kind == UiExp::EDIT && !same) waitFor([&] { return g_.ed_.serialize() != ed1; }, 4.0);
@@ -997,6 +1008,7 @@ private:
 
     void runScenario(const Scenario& sc) {
         sc_ = &sc;
+        holdDemo_ = sc.name == "demo";   // (the demo stays at one moment while it's tested: it would end and leave)
         edView_.set = false;
         printf("uitest: scenario %s\n", sc.name.c_str());
         fflush(stdout);
@@ -1043,6 +1055,7 @@ private:
     // a layout pass: every distinct screen of a scenario again, at this resolution
     void layoutPass(const Scenario& sc) {
         sc_ = &sc;
+        holdDemo_ = sc.name == "demo";   // (the demo stays at one moment while it's tested: it would end and leave)
         edView_.set = false;
         auto it = nodesBy_.find(sc.name);
         if (it == nodesBy_.end()) return;

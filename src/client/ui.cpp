@@ -45,7 +45,7 @@ void Ui::labelCentered(float cx, float y, const std::string& t, const Color& c, 
 float Ui::fit(std::string& t, float maxW, bool* clipped) const {
     if (t.empty() || r_->textWidth(t, textScale_) <= maxW) return textScale_;
     float ts = std::max(Renderer::kMinTextScale, maxW / (r_->textWidth(t, 10.0f) * 0.1f)); // (width at 10: above the minimum)
-    if (r_->textWidth(t, ts) > maxW) {
+    if (r_->textWidth(t, ts) > maxW + 0.01f) {   // (shrunk to exactly fit, rounding can come out a hair over: not cut)
         t = r_->textClip(t, ts, maxW);
         if (clipped) *clipped = true;
     }
@@ -191,7 +191,7 @@ bool Ui::slider(float x, float y, float w, float h, const std::string& label, fl
         ts = textScale_;
         if (r_->textWidth(lab + ": " + num, ts) <= maxW) return;
         ts = std::max(Renderer::kMinTextScale, maxW / (r_->textWidth(lab + ": " + num, 10.0f) * 0.1f));
-        if (r_->textWidth(lab + ": " + num, ts) > maxW) lab = r_->textClip(lab, ts, std::max(0.0f, maxW - r_->textWidth(": " + num, ts)));
+        if (r_->textWidth(lab + ": " + num, ts) > maxW + 0.01f) lab = r_->textClip(lab, ts, std::max(0.0f, maxW - r_->textWidth(": " + num, ts)));
     };
     std::string lab;
     float ls;
