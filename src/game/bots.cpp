@@ -165,12 +165,8 @@ bool NavGraph::findPath(int a, int b, std::vector<int>& out) const {
     out.clear();
     if (a < 0 || b < 0 || a >= (int)nodes.size() || b >= (int)nodes.size()) return false;
     if (a == b) return true;
-    // scratch reused between searches (stamped, so nothing is cleared per search)
-    thread_local std::vector<float> g;
-    thread_local std::vector<int> prev;
-    thread_local std::vector<uint32_t> stamp;
-    thread_local std::vector<std::pair<float, int>> heap;
-    thread_local uint32_t cur = 0;
+    // scratch reused between searches (stamped, so nothing is cleared per search): the graph's own (bots.h)
+    auto& [g, prev, stamp, heap, cur] = scratch_;
     if (g.size() < nodes.size()) { g.resize(nodes.size()); prev.resize(nodes.size()); stamp.assign(nodes.size(), 0); cur = 0; }
     if (++cur == 0) { std::fill(stamp.begin(), stamp.end(), 0); cur = 1; }
     auto cx = [&](int i) { return (nodes[i].x0 + nodes[i].x1) * 0.5f; };

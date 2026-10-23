@@ -2913,6 +2913,26 @@ static void testHostedRulesPerThread(uint16_t port) {
     setActiveRules(CustomRules());
 }
 
+// STOP HOSTING: the hosted server's thread ends after its bots searched routes, and the game goes on. The route
+// search's scratch is the graph's: as thread_locals with destructors (MinGW's emutls frees their storage before the
+// destructors run) the vectors freed garbage pointers at thread exit and the heap corruption closed the game on Windows.
+static void testHostedBotsThreadExit(uint16_t port) {
+    printf("hosted server with bots: its thread ends cleanly (stop hosting)\n");
+    for (int round = 0; round < 2; round++) {
+        Server s;
+        ServerConfig cfg;
+        cfg.autoStart = true; cfg.map = "clockwork"; cfg.mode = MODE_FFA; cfg.port = port;
+        cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botSkill = BOT_EXPERT;
+        s.setLog([](const std::string&) {});
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+        std::atomic<bool> quit{false};
+        std::thread host([&] { s.run(quit); });   // as Game::startHost
+        std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+        quit = true; host.join(); s.stop();       // as Game::stopHost
+        CHECK(s.nav_.scratch_.cur > 0);           // (the bots did search routes on that thread)
+    }
+}
+
 // Constants written out in more than one language: the queue list (community.cpp, the master Worker, the
 // Discord bot) and the UDP info query the bot speaks (quarkdata.py). Parsed from the sources; any mismatch fails.
 // The bot lives on the discord-bot branch: its half runs only with QUARK_BOT_DIR pointing at a checkout of it.
@@ -6723,7 +6743,7 @@ int main(int argc, char** argv) {
     struct T { const char* name; std::function<void()> run; };
     std::vector<T> par = {   // (longest first: they set the wall time)
         {"bots", [] { uint16_t p = TP(28900); testBots(p); }},
-        {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotAim(p); }},
+        {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotAim(p); testHostedBotsThreadExit(TP(29010)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
