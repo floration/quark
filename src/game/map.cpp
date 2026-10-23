@@ -12,6 +12,7 @@
 #include <exception>
 #include <type_traits>
 #include <mutex>
+#include <unordered_map>
 #include <cstdlib>
 #include <cerrno>
 #include <cfloat>
@@ -29,7 +30,8 @@ void setExecutableDir(const char* argv0) {
 
 const std::string& executableDir() { return g_exeDir; }
 
-std::string findDataPath(const std::string& rel) {
+// rel in the install: next to the working directory or the executable (or a macOS bundle's Resources); found = it's there
+static std::string findDataPathUncached(const std::string& rel, bool& found) {
     std::error_code ec;
     const std::string candidates[] = {
         rel,
@@ -38,9 +40,27 @@ std::string findDataPath(const std::string& rel) {
         g_exeDir + "/../../" + rel,
         g_exeDir + "/../Resources/" + rel, // macOS bundle
     };
+    found = true;
     for (auto& c : candidates)
         if (!c.empty() && fs::exists(c, ec)) return c;
+    found = false;
     return rel;
+}
+
+std::string findDataPath(const std::string& rel) {
+    // (PERF-12) up to 5 fs::exists per call, for every map load and listing: where something was found is remembered
+    // (the install doesn't move); what wasn't found is looked for again next time (it may be written meanwhile)
+    static std::mutex mu;
+    static std::unordered_map<std::string, std::string> cache;
+    {
+        std::lock_guard<std::mutex> l(mu);
+        auto it = cache.find(rel);
+        if (it != cache.end()) return it->second;
+    }
+    bool found = false;
+    std::string hit = findDataPathUncached(rel, found);
+    if (found) { std::lock_guard<std::mutex> l(mu); cache.emplace(rel, hit); }
+    return hit;
 }
 
 // ---- per-user data -------------------------------------------------------------------------------------
