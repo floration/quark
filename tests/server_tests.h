@@ -442,7 +442,9 @@ struct SnapBenchResult { double avgUs = 0, p50Us = 0, p99Us = 0, maxUs = 0, allo
 // `humans` fake clients (snapshots go to closed loopback ports) walking around a map's spawns, 1000 Hz ticks with a
 // snapshot every 4th (32 players: 250 a second) for `seconds`, each client acking the one sent 48 ms before. CPU
 // time of each send and of each tick's visibility + send, and heap allocations per send, after the first 2.4 s.
-static SnapBenchResult snapBench(const char* mapName, int humans, double seconds, uint16_t port, bool print = true) {
+// `rockets`: that many projectiles in flight the whole time, circling the players' spawns (each one's line of sight
+// to each client is checked too).
+static SnapBenchResult snapBench(const char* mapName, int humans, double seconds, uint16_t port, bool print = true, int rockets = 0) {
     SnapBenchResult res;
     Server s;
     ServerConfig cfg;
@@ -463,6 +465,12 @@ static SnapBenchResult snapBench(const char* mapName, int humans, double seconds
         home[i] = p.move.pos;
         p.events.clear();
     }
+    rockets = std::min(rockets, kMaxProjectiles);
+    for (int r = 0; r < rockets; r++) {
+        auto& pr = s.projectiles_[r];
+        pr = Projectile();
+        pr.active = true; pr.id = (uint16_t)(5000 + r); pr.type = WPN_ROCKET; pr.owner = r % std::max(1, humans); pr.dieAt = 1e9;
+    }
     std::vector<double> t, ticks;
     long long allocs = 0;
     uint64_t rays0 = 0;
@@ -478,6 +486,13 @@ static SnapBenchResult snapBench(const char* mapName, int humans, double seconds
             p.yaw = a; p.health = 100 - (k / 50) % 50;
             p.ackSnapMs = s.timeMs_ >= 48 ? s.timeMs_ - 48 : 0;
             if (rnd() < 0.002f) p.kills++;
+        }
+        for (int r = 0; r < rockets; r++) {   // circling 8 m around a spawn, 1.5 m up (a different one for each)
+            auto& pr = s.projectiles_[r];
+            float a = (float)(k * 0.02 + r);
+            Vec3 at = home[(r * 7) % std::max(1, humans)] + Vec3(std::cos(a) * 8.0f, 1.5f, std::sin(a) * 8.0f);
+            pr.vel = (at - pr.pos) * 250.0f;
+            pr.pos = at;
         }
         if (k % 20 == 0) s.message("bench: an event with a text longer than the short-string buffer " + std::to_string(k));
         for (int i = 0; i < humans; i++) {   // (each client acks events a few behind, like a real one a round trip later)
@@ -526,6 +541,7 @@ static SnapBenchResult snapBench(const char* mapName, int humans, double seconds
         printf("  SNAPBENCH %s: %d clients: ticks (visibility + send) avg %.1f us  p99.9 %.1f us  worst %.1f us, %.0f rays/s; sends: avg %.1f us  p50 %.1f us"
                "  worst %.1f us, %.2f heap allocations per send\n", mapName, humans, res.tickAvgUs, res.tickP999Us, res.tickMaxUs, res.raysPerSec, res.avgUs,
                res.p50Us, res.maxUs, res.allocsPerSend);
+    if (print && rockets) printf("    (with %d rockets in flight)\n", rockets);
     for (auto& p : s.players_) p.connected = false;
     s.stop();
     return res;

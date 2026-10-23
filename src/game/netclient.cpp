@@ -538,10 +538,17 @@ std::vector<ProjectileSnap> NetClient::interpolatedProjectiles() const {
     const Snapshot& s = snaps_.back();
     float dt = clampf((float)(renderTime_ + interpDelay() - s.timeMs * 0.001), 0, 0.2f);
     for (auto p : s.projectiles) {
+        if (p.hidden) continue;
         p.pos += p.vel * dt;
         out.push_back(p);
     }
     return out;
+}
+
+bool NetClient::projectileHidden(uint16_t id) const {
+    if (snaps_.empty()) return false;
+    for (auto& p : snaps_.back().projectiles) if (p.id == id) return p.hidden;
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -731,7 +738,7 @@ bool NetClient::startPlaybackImpl(const std::string& path, std::string& err) {
     uint32_t magic; uint16_t ver;
     memcpy(&magic, d.data(), 4); memcpy(&ver, d.data() + 4, 2);
     if (magic != kDemoMagic) { err = "not a quark demo"; return false; }
-    if (ver != kProtocolVersion) { err = "demo from another version (protocol " + std::to_string(ver) + ", this is " + std::to_string(kProtocolVersion) + ")"; return false; }
+    if (ver < kOldestDemoProtocol || ver > kProtocolVersion) { err = "demo from another version (protocol " + std::to_string(ver) + ", this is " + std::to_string(kProtocolVersion) + ")"; return false; }
     play_ = Playback();
     play_.data = std::move(d);
     play_.pos = 6;

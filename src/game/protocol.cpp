@@ -147,7 +147,7 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
             if (b->checkpoint != p.checkpoint) m |= P_CHECK;
             if (!p.hidden && (b->hooked != p.hooked || (p.hooked && !samePos(b->hookPoint, p.hookPoint)))) m |= P_HOOK;
         }
-        if (p.hidden) m &= ~(P_POS | P_YAW | P_PITCH | P_HOOK | P_KEYS);
+        if (p.hidden) m &= ~(P_POS | P_YAW | P_PITCH | P_HOOK | P_KEYS | P_HEALTH | P_WEAPON);   // (out of sight: nor health, weapon)
         w.u8(p.id); w.u16(m);
         if (m & P_FLAGS) w.u8(p.flags);
         if (m & P_POS) w.vecq(p.pos);
@@ -164,12 +164,15 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
         if (m & P_CHECK) w.u8(p.checkpoint);
         if (m & P_HOOK) { w.u8(p.hooked); if (p.hooked) w.vecq(p.hookPoint); }
     }
-    // projectiles: id, bits (1 = new: type and owner follow, 2 = velocity follows), position always.
-    // Velocity only when it changed by more than 0.5 m/s since what the client has (the client only uses it
-    // to extrapolate a few ms); the snapshot we keep as the next base records the velocity the client has.
+    // projectiles: id, bits (1 = new: type and owner follow, 2 = velocity follows, 4 = out of sight: nothing follows),
+    // position always (in sight). Velocity only when it changed by more than 0.5 m/s since what the client has (the
+    // client only uses it to extrapolate a few ms); the snapshot we keep as the next base records the velocity the
+    // client has. One back in sight is sent as new.
     w.u8((uint8_t)s.projectiles.size());
     for (auto& p : s.projectiles) {
+        if (p.hidden) { w.u16(p.id); w.u8(4); continue; }
         const ProjectileSnap* b = bi.projectile(base, p.id);
+        if (b && b->hidden) b = nullptr;
         bool vel = !b || length(p.vel - b->vel) > 0.5f;
         w.u16(p.id); w.u8((b ? 0 : 1) | (vel ? 2 : 0));
         if (!b) { w.u8(p.type); w.u8(p.owner); }
@@ -218,13 +221,15 @@ bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base) {
     }
     s.projectiles.resize(r.u8());
     for (auto& p : s.projectiles) {
+        p = ProjectileSnap();
         p.id = r.u16();
         uint8_t bits = r.u8();
+        if (bits & 4) { p.hidden = true; continue; }   // out of sight: still flying, nothing else known
         const ProjectileSnap* b = nullptr;
         if (bits & 1) { p.type = r.u8(); p.owner = r.u8(); if (p.owner >= kMaxPlayers) return false; }
         else {
             b = bi.projectile(base, p.id);
-            if (!b) return false;
+            if (!b || b->hidden) return false;
             p.type = b->type; p.owner = b->owner;
         }
         p.pos = r.vecq();

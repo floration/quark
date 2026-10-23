@@ -42,6 +42,7 @@ struct Settings {
     bool demoFullRate = false;  // demos: every snapshot (up to 1000 Hz) instead of 62.5 Hz
     std::string discordName;    // linked on the master for the Discord bot (roles, queue pings)
     bool crowns = true;         // gold / silver crowns on ranked leaders
+    bool chatOff = false;       // other players' chat hidden (settings "DISABLE CHAT", or the TOGGLE CHAT key)
     int outlineFriendly = 0, outlineEnemy = 0; // player outline presets (kOutlineNames: black, white, team, ...)
     int announcerVoice = 0;     // 0 male, 1 female: recorded lines, the generated voice for any not recorded yet
     int announcer = 2;          // voice lines: 0 off, 1 the round countdown only, 2 also the mode's calls (bomb planted, hill captured...)
