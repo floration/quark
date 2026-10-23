@@ -195,7 +195,7 @@ Workflows are in `.github/workflows/`:
 - `kProtocolVersion` (gamedefs.h) is 41 for 1.17.0 (37 to 40 in its earlier development builds). Any wire change bumps it, and old and new can't play together.
 - `kOldestDemoProtocol` and the demo converter (`src/game/demo.cpp`, `kRecordFormatSince = 24`) decide which demos play directly and which are converted. A snapshot layout change needs a converter step.
 - Snapshot projectile bits: 1 new, 2 velocity, 4 lob, 8 stuck, 16 out of sight, 32 on a player (u8 player, then its offset from their feet: i8 x, u8 y, i8 z; protocol 40).
-- The player's own movement state's opt bits: 1 hooked, 2 dash, 4 dash charges (a u8, sent when not 2; protocol 41, it was the cooldown f32), 8 hook cooldown, 16 hook target, 32 pull point, 64 jump buffer + grace, 128 dash bounces.
+- The player's own movement state's opt bits: 1 hooked, 2 dash, 4 dash charges + cooldown (a u8 + a u16 in ms, sent when the charges aren't 2 or the cooldown runs; protocol 42; 41 had the u8 alone, older the cooldown f32), 8 hook cooldown, 16 hook target, 32 pull point, 64 jump buffer + grace, 128 dash bounces.
 - Name colour rides in EV_PLAYERINFO's i16 `c` (RGB565, 0 = default): no wire change.
 - Maps are identified by the sha256 of their content: the ranked allowlist, light caches (`cache/<sha256>.qlm`), downloads (`maps/downloads/<sha256>.qmap`) and edit-session chains.
 - Map format version 2: `version`, `stairs`, `setting` and `handmade` keywords. Unknown optional keys only warn; gameplay keys stay strict.
@@ -243,8 +243,7 @@ See [REMAINING.md](../REMAINING.md) for the full list. The final state of 1.17.0
 - **Tests before the push** (this machine, Linux): every `quark_tests` group except the bot and map groups passed. That includes the timing-sensitive netcode, tick rate and governor groups, each run on its own. The owner waived the bot and map tests for this release only ("those will be replaced anyway"). Every map was instead hosted headless in FFA and screenshotted: all 21 load and run. Lodestone and Midtown need over a minute on a loaded machine with software GL before their first light bake finishes. The movement agent's last full run, which included bots and maps, passed everything but the timing groups under load.
 - **CI for 1.17.0 builds only, with no CI tests** (owner). The test jobs skip while VERSION is 1.17.0. From 1.17.1 they run one test group per runner on Linux and Windows, and the release waits for them.
 - **Known and kept** (owner to decide later):
-  - A grounded player can dash every 0.12 s, because charges refill on the floor.
-  - One super dash per bunny hop never runs out.
+  - (Was: a grounded player could dash every 0.12 s and chain a super dash on every bunny hop. The owner brought the 1.2 s dash cooldown back on top of the charges, timed from each dash's end, which balances both; protocol 42.)
   - Coming over a ladder top carries you about 5.6 m (five maps got a stop at narrow tops).
   - A standing jump holding W lands at 7.3 m/s (air drift 8; 4.8 would give about 5.3).
 - **The UI test** (`quark --uitest`) clicks every widget on every screen: 2,259 widgets on 109 screens, with an Esc check on each.

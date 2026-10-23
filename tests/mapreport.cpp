@@ -334,10 +334,11 @@ const MoveEnvelope& moveEnvelope() {
             size_t next = 1;
             for (int t = 0; t < 30000 && next < e.speed.size(); t++) {
                 float h = hspeed(s.vel), vyaw = h > 0.1f ? std::atan2(-s.vel.x, -s.vel.z) : 0;
-                // (charges: 2, the ground refills them, a bhop landing one, a dash jump all, a super dash leaves one;
+                // (charges: 2, the ground refills them, a bhop landing one, a dash jump all, a super dash leaves one; and
+                // the 1.2 s cooldown from the end of the last dash;
                 // above 31 m/s a dash slows you: it leaves at your speed + 1, at most 32)
-                bool dash = !dashed && s.dashCharges > 0 && s.dashTimer <= 0 && h < 31.0f;
-                if (superDash) dash = !dashed && s.dashCharges > 0 && s.dashTimer <= 0 && (s.flags & MF_ONGROUND) && h < 35.9f;
+                bool dash = !dashed && s.dashCharges > 0 && s.dashCooldownMs == 0 && s.dashTimer <= 0 && h < 31.0f;
+                if (superDash) dash = !dashed && s.dashCharges > 0 && s.dashCooldownMs == 0 && s.dashTimer <= 0 && (s.flags & MF_ONGROUND) && h < 35.9f;
                 MoveState best;
                 float bestH = -1;
                 bool bestDash = false;

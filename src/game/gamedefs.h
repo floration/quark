@@ -16,9 +16,10 @@ constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr int kMaxInterpMs = 200;      // the longest fixed interpolation delay a client can set (interp_ms; lag compensation covers it)
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 41;   // 41: dash charges replace the dash cooldown (own movement state: opt bit 4 is a u8 charge count, sent when not 2; it was the cooldown f32); 40: a sticky can stick to a player (projectile bit 32: u8 player + its offset from their feet); 39: dash jump / super dash / dash wall bounce (own movement state: the jump buffer, opt bit 64, the dash's wall bounces, opt bit 128); 38: the grapple latches onto players (own state: MF_PULLED, hookTarget, pullPoint, opt bits 16 / 32; PlayerSnap hooked 2 + id); 37: maps named by sha256 (accept, map requests and data carry 32 byte ids; edit events the first 16 of the id they leave); 36: the locator is a weapon (WPN_LOCATOR; hide and seek / tag only), EV_RPS; 35: weapons (syringeAway, projectile lob/stuck flags) + NET-10 (projectiles out of sight sent as an id, hidden players carry no health / weapon); projectile bits: 1 new, 2 velocity, 4 lob, 8 stuck, 16 out of sight; 33: fixed weapon spread pattern (NET-9), clients report a fixed interp delay ("interp"); 32: ranked signatures name the dialled server address (REVIEW 2.2)
+constexpr uint16_t kProtocolVersion = 42;   // 42: the dash cooldown is back on top of the charges (own movement state: opt bit 4 is the u8 charge count + a u16 cooldown in ms, sent when charges != 2 or the cooldown runs); 41: dash charges replace the dash cooldown (own movement state: opt bit 4 is a u8 charge count, sent when not 2; it was the cooldown f32); 40: a sticky can stick to a player (projectile bit 32: u8 player + its offset from their feet); 39: dash jump / super dash / dash wall bounce (own movement state: the jump buffer, opt bit 64, the dash's wall bounces, opt bit 128); 38: the grapple latches onto players (own state: MF_PULLED, hookTarget, pullPoint, opt bits 16 / 32; PlayerSnap hooked 2 + id); 37: maps named by sha256 (accept, map requests and data carry 32 byte ids; edit events the first 16 of the id they leave); 36: the locator is a weapon (WPN_LOCATOR; hide and seek / tag only), EV_RPS; 35: weapons (syringeAway, projectile lob/stuck flags) + NET-10 (projectiles out of sight sent as an id, hidden players carry no health / weapon); projectile bits: 1 new, 2 velocity, 4 lob, 8 stuck, 16 out of sight; 33: fixed weapon spread pattern (NET-9), clients report a fixed interp delay ("interp"); 32: ranked signatures name the dialled server address (REVIEW 2.2)
 constexpr uint16_t kSnapSyringeSince = 35;  // the snapshot header carries syringeAway from this protocol on (older demos are read without it)
 constexpr uint16_t kSnapDashChargesSince = 41;   // own movement state opt bit 4: the dash charges (u8) from here on, the dash cooldown (f32) before
+constexpr uint16_t kSnapDashCooldownSince = 42;  // ...and from here on also the dash cooldown (u16 ms) after the charges
 constexpr uint16_t kOldestDemoProtocol = 33;  // demos recorded at this protocol or later still play (raise it when a wire change can't read older ones)
 // PlayerSnap::keys: what a player is holding (spectators see it on the key overlay)
 enum : uint16_t { KEY_FWD = 1, KEY_BACK = 2, KEY_LEFT = 4, KEY_RIGHT = 8, KEY_JUMP = 16, KEY_CROUCH = 32, KEY_FIRE = 64, KEY_ALT = 128, KEY_DASH = 256, KEY_HOOK = 512 };
@@ -279,7 +280,7 @@ float tunedDamage(int w);            // the active custom mode's damage multipli
 // Every movement constant a custom mode can scale (x the normal value; pmove.cpp / pmove.h hold the normal values)
 enum MoveParam {
     MV_CROUCH_SPEED, MV_GROUND_ACCEL, MV_FRICTION, MV_STOP_SPEED, MV_AIR_ACCEL, MV_AIR_CAP, MV_OVERSTRAFE, MV_AIR_CONTROL,
-    MV_STEP, MV_DASH_SPEED, MV_DASH_TIME, MV_DASH_EXIT_MIN, MV_DASH_KEEP, MV_DASH_EXIT_MAX, MV_DASH_VERTICAL, MV_DASH_CHARGES,
+    MV_STEP, MV_DASH_SPEED, MV_DASH_TIME, MV_DASH_EXIT_MIN, MV_DASH_KEEP, MV_DASH_EXIT_MAX, MV_DASH_VERTICAL, MV_DASH_CHARGES, MV_DASH_COOLDOWN,
     MV_BOUNCE_GAIN, MV_BOUNCE_MAX, MV_HOOK_RANGE, MV_HOOK_ACCEL, MV_HOOK_MAX, MV_HOOK_GRAVITY, MV_HOOK_RELEASE, MV_HOOK_COOLDOWN,
     MV_LADDER_SPEED, MV_LADDER_SIDE, MV_DASH_JUMP_WINDOW, MV_SUPER_DASH_BOOST, MV_SUPER_DASH_JUMP, MV_SUPER_DASH_MAX, MV_DASH_BOUNCE_ANGLE,
     MV_AIR_DRIFT, MV_STRAFE_BOOST, MV_COUNT
@@ -287,7 +288,7 @@ enum MoveParam {
 // (key in the .qmode file, label in the editor)
 inline const char* moveParamKey(int i) {
     static const char* k[MV_COUNT] = {"crouch_speed", "ground_accel", "friction", "stop_speed", "air_accel", "air_cap", "overstrafe", "air_control",
-        "step", "dash_speed", "dash_time", "dash_exit_min", "dash_keep", "dash_exit_max", "dash_vertical", "dash_charges",
+        "step", "dash_speed", "dash_time", "dash_exit_min", "dash_keep", "dash_exit_max", "dash_vertical", "dash_charges", "dash_cooldown",
         "bounce_gain", "bounce_max", "hook_range", "hook_accel", "hook_max", "hook_gravity", "hook_release", "hook_cooldown",
         "ladder_speed", "ladder_side", "dash_jump_window", "super_dash_boost", "super_dash_jump", "super_dash_max", "dash_bounce_angle",
         "air_drift", "strafe_boost"};
@@ -296,7 +297,7 @@ inline const char* moveParamKey(int i) {
 inline const char* moveParamLabel(int i) {
     static const char* k[MV_COUNT] = {"CROUCH SPEED", "GROUND ACCELERATION", "GROUND FRICTION", "STOPPING SPEED", "AIR ACCELERATION", "AIR STRAFE CAP",
         "OVERSTRAFE BRAKE", "AIR CONTROL", "STEP HEIGHT", "DASH SPEED", "DASH LENGTH", "DASH EXIT SPEED (MIN)", "DASH SPEED KEPT",
-        "DASH EXIT SPEED (MAX)", "DASH VERTICAL", "DASH CHARGES", "BHOP BOUNCE", "BHOP BOUNCE (MAX)", "GRAPPLE RANGE", "GRAPPLE PULL",
+        "DASH EXIT SPEED (MAX)", "DASH VERTICAL", "DASH CHARGES", "DASH COOLDOWN", "BHOP BOUNCE", "BHOP BOUNCE (MAX)", "GRAPPLE RANGE", "GRAPPLE PULL",
         "GRAPPLE TOP SPEED", "GRAPPLE GRAVITY", "GRAPPLE RELEASE DISTANCE", "GRAPPLE COOLDOWN", "LADDER CLIMB SPEED", "LADDER SIDE SPEED",
         "DASH JUMP WINDOW", "SUPER DASH BOOST", "SUPER DASH JUMP", "SUPER DASH SPEED (MAX)", "DASH WALL BOUNCE ANGLE",
         "AIR DRIFT (UNDER RUN SPEED)", "STRAFE BOOST (AT SPEED)"};
