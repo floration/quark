@@ -14,6 +14,7 @@ static_assert(kMaxPlayers == 32, "BotBrain::aware is sized for kMaxPlayers");
 
 struct NavJob {
     Map map;
+    MapId id;   // map.id(), taken before the thread starts
     NavGraph result;
     std::atomic<bool> done{false};
 };
@@ -33,7 +34,7 @@ int NavGraph::cellOf(float x, float z) const {
 void NavGraph::build(const Map& m) {
     nodes.clear();
     links.clear();
-    mapCrc = m.crc;
+    mapId = m.id();
     generation++;
     for (const Brush& b : m.brushes) {
         const AABB& a = b.box;
@@ -246,6 +247,7 @@ Vec3 NavGraph::nextWaypoint(const Vec3& from, const Vec3& to) const {
 
 void NavGraph::buildAsync(Map m) {
     auto j = std::make_shared<NavJob>();
+    j->id = m.id();   // (hashed here, once: the thread and ready() only read it)
     j->map = std::move(m);
     job = j;
     std::thread([j] { j->result.build(j->map); j->done.store(true, std::memory_order_release); }).detach();
@@ -254,17 +256,17 @@ void NavGraph::buildAsync(Map m) {
 bool NavGraph::ready(const Map& m) {
     if (job && job->done.load(std::memory_order_acquire)) {
         auto j = std::move(job);
-        if (j->result.mapCrc == m.crc) {
+        if (j->result.mapId == m.id()) {
             uint32_t gen = generation;
             NavGraph& r = j->result;
             nodes = std::move(r.nodes); links = std::move(r.links); ladderLinks = std::move(r.ladderLinks);
             cellStart = std::move(r.cellStart); cellNodes = std::move(r.cellNodes);
-            gx0 = r.gx0; gz0 = r.gz0; gw = r.gw; gh = r.gh; hScale = r.hScale; mapCrc = r.mapCrc;
+            gx0 = r.gx0; gz0 = r.gz0; gw = r.gw; gh = r.gh; hScale = r.hScale; mapId = r.mapId;
             generation = gen + 1;
         }
     }
-    if (mapCrc == m.crc) return true;
-    if (!job || job->map.crc != m.crc) buildAsync(m); // changed under us (map edits): rebuild in the background
+    if (mapId == m.id()) return true;
+    if (!job || job->id != m.id()) buildAsync(m); // changed under us (map edits): rebuild in the background
     return false;
 }
 

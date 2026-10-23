@@ -160,7 +160,7 @@ int exportAssets(const char* dirArg) {
     // maps: the shipped text (the generated map, or its override)
     for (const OfficialMapData* m = kOfficialMapData; m->name; m++) {
         std::string text((const char*)m->data, m->size), name = m->name;
-        std::string title = lineValue(text, "title "), mode = lineValue(text, "for "), setting = lineValue(text, "# setting ");
+        std::string title = lineValue(text, "title "), mode = lineValue(text, "for "), setting = lineValue(text, "setting ");
         for (char& c : title) c = (char)toupper((unsigned char)c);
         std::string desc = mode.empty() ? "every mode" : "built for " + mode;
         if (!setting.empty()) desc += " - " + setting;

@@ -1,5 +1,7 @@
 // Block-based maps: a set of axis-aligned solid boxes plus gameplay markers.
 #pragma once
+#include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 #include "../common/qmath.h"
@@ -30,6 +32,7 @@ constexpr size_t kMaxMapBrushes = 60000;     // generated ones included, on ever
 static_assert(kMaxMapBrushes <= 0xFFFF, "the collision grid's cells index brushes with 16 bits (Map::cellBrushes)");
 constexpr size_t kMaxMapGridRefs = 16u << 20; // brush references in the collision grid (32 MB; one box over the whole range is 4.2M)
 constexpr size_t kMaxMapSpawns = 256, kMaxMapLights = 512, kMaxMapLadders = 256, kMaxMapGroups = 256, kMaxGroupParts = 1024;
+constexpr size_t kMaxMapStairs = 512;
 constexpr size_t kMaxMapSites = 16, kMaxMapCheckpoints = 128, kMaxMapPath = 512, kMaxMapPoints = 16, kMaxMapCartChecks = 64;
 constexpr float kMaxObjectHeight = 64.0f;    // ladders and groups (a ladder's rungs are made every 0.4 m)
 constexpr float kMinLightRadius = 0.5f, kMaxLightRadius = 100.0f, kMaxLightIntensity = 10.0f;   // intensity > 0 (0 lights nothing)
@@ -41,6 +44,20 @@ inline bool validMapLight(float radius, float intensity) {
 // kMaxMapTitle printable ASCII characters and no '#' (the comment mark). false: not a valid title.
 constexpr size_t kMaxMapTitle = 40;
 bool cleanMapTitle(std::string& title);
+// A map's identity (REVIEW MAP-13): the sha256 of its text (CR dropped, so a CRLF copy is the same map), or in an
+// edit session, chained over the edit ops from there (mapEditId), so nobody re-serializes the map to name it. Downloads,
+// the downloaded-map cache, light caches, the bots' nav graph and the ranked allowlist all go by it.
+struct MapId {
+    uint8_t b[32] = {};
+    bool operator==(const MapId& o) const { return memcmp(b, o.b, sizeof b) == 0; }
+    bool operator!=(const MapId& o) const { return !(*this == o); }
+    std::string hex() const;                   // all 64 hex digits (file names, the ranked allowlist)
+    static constexpr size_t kShortBytes = 16;  // an edit event names the map it leaves by its first 16 bytes
+    std::string shortHex() const;              // those, 32 hex digits
+    bool startsWith(const std::string& shortHex) const { return shortHex.size() == 2 * kShortBytes && this->shortHex() == shortHex; }
+};
+MapId mapContentId(const std::string& text);                      // sha256 of the text without its CRs
+MapId mapEditId(const MapId& before, const std::string& op);     // the id after applying op to map `before`
 
 struct SpawnPoint {
     Vec3 pos;
@@ -48,9 +65,28 @@ struct SpawnPoint {
     int team = SPAWN_ANY;
 };
 
+// The .qmap format (REVIEW MAP-10/11, JUDGMENT C7). "version N" heads a file (none: version 1, which kept stairs and
+// the setting in comments; those are still read). A keyword this build doesn't know is skipped with a warning (in
+// Map::warnings), so an older build still loads a newer map; a known keyword with a bad value is an error.
+// 2: "version", "stairs", "setting", "handmade"; a second hill or an unknown spawn team is an error.
+constexpr int kMapFormatVersion = 2;
+
 struct Map {
     std::string name;
     std::string title;
+    int formatVersion = kMapFormatVersion;   // the file's "version" (1 when it has none)
+    std::vector<std::string> warnings;        // what the parse skipped (unknown keywords, modes, ladders): logged
+    // "handmade": made or changed by a person (the editor writes it on every save), not by tools/make_maps.py.
+    // quark_tests grades a hand-made map like any other and reports its numbers, but doesn't fail on them (the owner's
+    // rule, docs/JUDGMENT_CALLS.md). humanMade(): that, or a file the generator didn't write (no header of its).
+    bool handmade = false;
+    bool humanMade() const;
+    std::string setting;       // "setting <words>": the place the map is (a city block, a space station...)
+    // "stairs x0 z0 x1 z1 base top x|z rising solid": a staircase the generator built from boxes (steps from base to top
+    // over the x0..z1 footprint, rising toward +/- axis; solid: blocks down to the ground, else slabs). Only recorded:
+    // nothing is made from it (quark_tests walks every one and checks it cuts no path).
+    struct Stairs { float x0 = 0, z0 = 0, x1 = 0, z1 = 0, base = 0, top = 0, rising = 1; char axis = 'x'; bool solid = true; };
+    std::vector<Stairs> stairs;
     int preferredMode = -1;    // "for <mode>": the mode this map was designed for
     uint16_t rankedLadders = 0; // "ranked vanilla vampire instagib": the ranked ladders (1v1 rulesets) this map is built for
     uint32_t allowedModes = 0; // "modes ffa duel ...": only these (bit per mode); 0 = every mode the map has the pieces for
@@ -93,17 +129,20 @@ struct Map {
     struct Light { Vec3 pos; float radius = 10, intensity = 1; };
     std::vector<Light> lights;        // baked point lights ("light x y z radius [intensity]"): lit rooms under roofs
     AABB bounds;
-    // The map's identity: the CRC of the text it was parsed from, then in an edit session each edit op continues it
-    // (mapEditCrc), so nobody re-serializes the map to name it.
-    uint32_t crc = 0;
+    // The map's identity (MapId): its content's, until an edit session chains it (setEditId). Hashed the first time
+    // it's asked for (never on the parse alone: most parses never need it).
+    const MapId& id() const { return editChained_ ? editId_ : contentId(); }
+    const MapId& contentId() const;          // mapContentId(sourceText()): what a download checks, and ranked
+    void setEditId(const MapId& v) { editId_ = v; editChained_ = true; }
     // The .qmap text (sent to clients that lack the map, saved, hashed for ranked): the parsed text, or after edits
     // serialize()d the first time it's asked for. Read it with sourceText().
     mutable std::string source;
     mutable bool sourceStale = false;
-    mutable uint32_t sourceCrc = 0;          // crc32 of source, once known
-    mutable bool sourceCrcKnown = false;
-    const std::string& sourceText() const { if (sourceStale) { source = serialize(); sourceStale = false; sourceCrcKnown = false; } return source; }
-    uint32_t sourceTextCrc() const;          // crc32 of sourceText() (what a download checks; the same as crc until an edit)
+    mutable bool contentIdKnown_ = false;    // contentId_ is mapContentId(source)
+    mutable MapId contentId_;
+    MapId editId_;
+    bool editChained_ = false;
+    const std::string& sourceText() const { if (sourceStale) { source = serialize(); sourceStale = false; contentIdKnown_ = false; } return source; }
 
     bool load(const std::string& name, std::string* err = nullptr);
     bool onLadder(const AABB& player) const { for (auto& l : ladders) if (player.overlaps(l)) return true; return false; }
@@ -211,14 +250,11 @@ int resetOfficialMaps(const std::string& shippedDir = std::string());
 std::string mapsFolder(); // absolute path of your maps folder (userMapsDir)
 std::string typedMapName(const std::string& typed); // what the editor's name field keeps of what you type: validMapName's characters (space -> _), at most 40
 std::string safeMapName(const std::string& name); // for building file names: anything else becomes '_', capped
-// Maps fetched from servers live apart from your own, keyed by content: <user>/maps/downloads/<name>-<crc>.qmap
-std::string downloadedMapPath(const std::string& name, uint32_t crc);
+// Maps fetched from servers live apart from your own, keyed by content: <user>/maps/downloads/<sha256 hex>.qmap
+std::string downloadedMapPath(const MapId& id);
 bool saveMapFile(const std::string& path, const std::string& text);
 // Writes a file whole or not at all: a temp file next to it, then a rename over it, so a crash or a full disk
 // leaves the old file (settings, profiles, the ranked key, custom modes, maps). privateFile: only this user may
 // read it (POSIX 0600: the ranked key).
 bool writeFileAtomic(const std::string& path, const std::string& data, bool privateFile = false);
-uint32_t crc32(const void* data, size_t len, uint32_t prev = 0); // zlib's CRC-32; prev continues an earlier one
-// A map's identity after applying edit op to the map whose identity was before (both ends of an edit session compute
-// it; see Map::crc).
-inline uint32_t mapEditCrc(uint32_t before, const std::string& op) { return crc32(op.data(), op.size(), before); }
+
