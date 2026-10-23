@@ -444,6 +444,7 @@ private:
     double latentWorst_ = 0.002;       // (the slowest recent frame, input read to finished on the GPU; slowly forgotten)
     double latentWorstAt_ = 0;
     void latentWait();
+    bool rasterBlank(double* at, double* refresh);   // the next vertical blank on the game's monitor (Windows)
     bool ultraPaced() const { return cfg_.lowLatency == 2 || cfg_.presentMode == 3; }   // (fences, learnt CPU / GPU times)
     bool mouseHeld_ = false;           // rawMouse_.hold is on (the cursor clipped to the window's centre)
     double mouseHeldAt_ = 0;
@@ -461,7 +462,9 @@ private:
     PipeSlot pipeQ_[4];
     int pipeNext_ = 0;
     bool pipeGpuStarted_ = false, pipeFrameDone_ = false;
-    double pipeSum_[PM_COUNT + 2] = {}, pipeAvg_[PM_COUNT + 2] = {};   // offsets from the input read (+ GPU start, end)
+    double pipeSum_[PM_COUNT + 3] = {}, pipeAvg_[PM_COUNT + 3] = {};   // offsets from the input read (+ GPU start, end, flip)
+    double pipeBlankAt_ = 0, pipeLastFlip_ = 0;   // (vsync: a vertical blank's start from the scanline; the last frame's flip)
+    bool pipeFlipOk_ = false;                     // (the flips are worked out from the monitor's blanks, not estimated)
     int pipeN_ = 0;
     bool pipeHave_ = false;
     int mouseEventsPoll_ = 0;                  // raw mouse events in this poll (rate: events over the time they span)

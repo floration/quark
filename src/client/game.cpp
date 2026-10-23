@@ -4699,7 +4699,7 @@ void Game::drawPerfMini() {
 
 void Game::pipeAverages() {   // (twice a second, F3 or F4)
     if (pipeN_ > 0) {   // the pipeline graph's averages
-        for (int k = 0; k < PM_COUNT + 2; k++) { pipeAvg_[k] = pipeSum_[k] / pipeN_; pipeSum_[k] = 0; }
+        for (int k = 0; k < PM_COUNT + 3; k++) { pipeAvg_[k] = pipeSum_[k] / pipeN_; pipeSum_[k] = 0; }
         pipeN_ = 0;
         pipeHave_ = true;
     }
@@ -4737,6 +4737,12 @@ void Game::pipeGpuEnd() {     // (...and after its last: the HUD)
 }
 
 void Game::pipeCollect() {    // afterSwap: this frame's marks into its slot; finished slots into the averages
+    // Vsync: when each frame really flips, from the monitor's blanks (one scanline read a frame, while F3 / F4 are on):
+    // the first blank after the GPU finished it and after the frame before it flipped (frames queue, one a blank).
+    const bool vsync = cfg_.presentMode == 1 || cfg_.presentMode == 2;
+    double refresh = 0, blank = 0;
+    pipeFlipOk_ = vsync && rasterBlank(&blank, &refresh);
+    if (pipeFlipOk_) pipeBlankAt_ = blank;
     if (pipeFrameDone_) {
         PipeSlot& sl = pipeQ_[pipeNext_];
         std::copy(pipeNow_, pipeNow_ + PM_COUNT, sl.marks);
@@ -4757,6 +4763,13 @@ void Game::pipeCollect() {    // afterSwap: this frame's marks into its slot; fi
         for (int k = 0; k < PM_COUNT; k++) pipeSum_[k] += sl.marks[k] - poll;
         pipeSum_[PM_COUNT] += t0 * 1e-9 + gpuClockOffset_ - poll;
         pipeSum_[PM_COUNT + 1] += t1 * 1e-9 + gpuClockOffset_ - poll;
+        double flip = std::max(t1 * 1e-9 + gpuClockOffset_, sl.marks[PM_SWAP1]);   // (no vsync: as soon as it's done)
+        if (pipeFlipOk_) {
+            flip = pipeBlankAt_ + std::ceil((flip - pipeBlankAt_) / refresh) * refresh;
+            if (flip < pipeLastFlip_ + refresh * 0.5) flip = pipeLastFlip_ + refresh;   // (queued behind the last one)
+            pipeLastFlip_ = flip;
+        }
+        pipeSum_[PM_COUNT + 2] += flip - poll;
         pipeN_++;
     }
 }
@@ -4807,9 +4820,16 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     // scanout down to the crosshair (the middle of the screen: half a refresh on average)
     double t = std::max(a[PM_COUNT + 1], a[PM_SWAP1]);
     const bool windowed = cfg_.displayMode != 2, vsync = cfg_.presentMode == 1 || cfg_.presentMode == 2;   // (latent sync: flipped in the blank, no wait)
-    if (windowed) { rows.push_back({"COMPOSITOR: NEXT VBLANK (EST)", t, t + refresh * 0.5, cEst}); t += refresh * 0.5; }
-    else if (vsync) { rows.push_back({"VSYNC: NEXT VBLANK (EST)", t, t + refresh * 0.5, cEst}); t += refresh * 0.5; }
-    if (windowed && vsync) { rows.push_back({"COMPOSITED FRAME SHOWN (EST)", t, t + refresh, cEst}); t += refresh; }
+    if (vsync && pipeFlipOk_) {   // measured: the frame held, finished, until the blank it really flips at
+        const double flip = std::max(t, a[PM_COUNT + 2]);
+        rows.push_back({"VSYNC: HELD FOR ITS BLANK", t, flip, cWait});
+        t = flip;
+        if (windowed) { rows.push_back({"COMPOSITED FRAME SHOWN (EST)", t, t + refresh, cEst}); t += refresh; }
+    } else {
+        if (windowed) { rows.push_back({"COMPOSITOR: NEXT VBLANK (EST)", t, t + refresh * 0.5, cEst}); t += refresh * 0.5; }
+        else if (vsync) { rows.push_back({"VSYNC: NEXT VBLANK (EST)", t, t + refresh * 0.5, cEst}); t += refresh * 0.5; }
+        if (windowed && vsync) { rows.push_back({"COMPOSITED FRAME SHOWN (EST)", t, t + refresh, cEst}); t += refresh; }
+    }
     rows.push_back({"SCANOUT TO THE CROSSHAIR (EST)", t, t + refresh * 0.5, cEst});
     t += refresh * 0.5;
     const double total = t - rows.front().t0;   // (from the mouse to the photon)
@@ -4894,14 +4914,18 @@ void Game::applyDisplayMode() {
 // frame and flips it (no vsync) just as the refresh's vertical blank begins, so the tear line falls in the blank, off
 // screen, however long the frame took. The lead adapts by itself: the slowest frame (input read to finished on the GPU)
 // of the last few seconds, plus a margin. The offset moves the flip (+ later) if a driver's flip lands off the blank.
-void Game::latentWait() {
+bool Game::rasterBlank(double* at, double* refresh) {
     GLFWmonitor* mon = glfwGetWindowMonitor(win_);
     if (!mon) mon = glfwGetPrimaryMonitor();
     if (mon != latentMon_) { raster_.open(mon); latentMon_ = mon; }
     const GLFWvidmode* vm = mon ? glfwGetVideoMode(mon) : nullptr;
-    const double refresh = 1.0 / (vm && vm->refreshRate > 0 ? vm->refreshRate : 60);
-    double blank = 0;
-    if (!raster_.nextBlank(refresh, &blank)) return;   // (no scanline from the driver: no vsync)
+    *refresh = 1.0 / (vm && vm->refreshRate > 0 ? vm->refreshRate : 60);
+    return raster_.nextBlank(*refresh, at);
+}
+
+void Game::latentWait() {
+    double blank = 0, refresh = 0;
+    if (!rasterBlank(&blank, &refresh)) return;   // (no scanline from the driver: no vsync)
     const double now = timeNow(), lead = latentWorst_ + 0.0001;   // (input read to finished, the slowest lately, + 100 us)
     double flip = blank + cfg_.latentOffsetUs * 1e-6;
     while (flip - lead < now || flip < latentFlip_ + refresh * 0.5) flip += refresh;   // (one frame a refresh)
@@ -5017,10 +5041,6 @@ void Game::afterSwap() {
     if (!perfOn()) return;
     pipeMark(PM_AFTER);
     pipeCollect();
-    if (!showPerf_) return;   // (F4: the graph's marks only; F3's input to frame latency below)
-    // Input-to-frame latency: GPU timestamp written after this frame's commands, converted to
-    // the CPU clock, minus when the game received the input event from the OS. Read back a few
-    // frames later without stalling.
     double now = timeNow();
     if (now - gpuCalibAt_ > 10.0) {   // (a synchronous GPU query: it can stall the driver, so rarely; the clocks drift by microseconds)
         GLint64 g = 0;
@@ -5028,6 +5048,10 @@ void Game::afterSwap() {
         gpuClockOffset_ = timeNow() - g * 1e-9;
         gpuCalibAt_ = now;
     }
+    if (!showPerf_) return;   // (F4: the graph's marks only (and the clocks above); F3's input to frame latency below)
+    // Input-to-frame latency: GPU timestamp written after this frame's commands, converted to
+    // the CPU clock, minus when the game received the input event from the OS. Read back a few
+    // frames later without stalling.
     if (frameInput_ >= 0) {
         LatQuery& q = latQ_[latNext_];
         if (!q.used) {
