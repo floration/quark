@@ -23,7 +23,7 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
     if (opt & 2) { w.f32(m.dashTimer); w.f32(m.dashDirX); w.f32(m.dashDirZ); w.f32(m.dashExitSpeed); w.f32(m.dashUp); }
     if (opt & 4) w.f32(m.dashCooldown);
     if (opt & 8) w.f32(m.hookCooldown);
-    w.u8(s.selfHealth); w.u8(s.selfWeapon); w.u8(s.knifeAway);
+    w.u8(s.selfHealth); w.u8(s.selfWeapon); w.u8(s.knifeAway); w.u8(s.syringeAway);
     w.u32(s.baseTick);
 }
 
@@ -43,7 +43,7 @@ bool readSnapshotClient(Reader& r, Snapshot& s) {
     if (opt & 2) { m.dashTimer = r.f32(); m.dashDirX = r.f32(); m.dashDirZ = r.f32(); m.dashExitSpeed = r.f32(); m.dashUp = r.f32(); }
     if (opt & 4) m.dashCooldown = r.f32();
     if (opt & 8) m.hookCooldown = r.f32();
-    s.selfHealth = r.u8(); s.selfWeapon = r.u8(); s.knifeAway = r.u8();
+    s.selfHealth = r.u8(); s.selfWeapon = r.u8(); s.knifeAway = r.u8(); s.syringeAway = r.u8();
     s.baseTick = r.u32();
     if (s.clientId >= kMaxPlayers || s.selfWeapon >= WPN_COUNT) return false;   // (ids index fixed arrays on the client)
     return !r.bad();

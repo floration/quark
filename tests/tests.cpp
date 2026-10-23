@@ -1304,8 +1304,8 @@ static void testWallbang() {
     CHECK(m.boxSolid(playerBox({0, 0, 0}, false)));                        // and you can't walk through it
 }
 
-// Syringe: holding fire heals you 1 hp per 0.1 s; a thrown one heals the teammate it hits by 30 and resets their
-// cooldowns; it does nothing to an enemy.
+// Syringe: each use heals you 10 hp, with a 1 s cooldown (owner 1.17); a thrown one heals the teammate it hits by 30
+// and resets their cooldowns; it does nothing to an enemy.
 static void testSyringe(uint16_t port) {
     printf("syringe\n");
     Server s;
@@ -1325,9 +1325,16 @@ static void testSyringe(uint16_t port) {
     CHECK(pa.team == pb.team && pa.alive && pb.alive);
     pump(s, cls, 0.2, [](int) { UserCmd c; c.weapon = WPN_SYRINGE; return c; });   // (out first: switching with fire held doesn't fire)
     pa.health = 50;
-    pump(s, cls, 1.0, [](int i) { UserCmd c; c.weapon = WPN_SYRINGE; if (i == 0) c.buttons = BTN_FIRE; return c; });
-    printf("  held 1 s: %.0f hp (from 50)\n", pa.health);
-    CHECK(pa.health >= 55 && pa.health <= 62);
+    auto heal = [](int i) { UserCmd c; c.weapon = WPN_SYRINGE; if (i == 0) c.buttons = BTN_FIRE; return c; };
+    for (int k = 0; k < 50 && pa.health == 50; k++) pump(s, cls, 0.01, heal);
+    double first = pa.lastFire;
+    printf("  one use: %.0f hp (from 50), next in %.2f s\n", pa.health, pa.nextFire - first);
+    CHECK(pa.health == 60 && std::fabs(pa.nextFire - (first + 1.0)) < 0.002);
+    while (s.time() < first + 0.9) pump(s, cls, 0.01, heal);   // held: nothing more until the 1 s cooldown is over
+    CHECK(pa.health == 60);
+    while (s.time() < first + 1.2) pump(s, cls, 0.01, heal);
+    printf("  held 1.2 s: %.0f hp\n", pa.health);
+    CHECK(pa.health == 70);
     // b throws at a, 5 m in front of it (yaw 0 looks down -z)
     pa.health = 40; pa.move.dashCooldown = 1.5f; pa.nextFire = s.time() + 5;
     Vec3 base = pb.move.pos;
@@ -4684,8 +4691,7 @@ int main(int argc, char** argv) {
         snapBench("harbor", 16, secs, TP(28822));
         return 0;
     }
-    if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testFixedSpread(p + 50); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testFixedSpread(p + 50); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); return g_fail ? 1 : 0; }
     // ---- the whole suite. Most tests wait on real-time network play rather than the CPU, so each runs in its own
     // process, several at once (output kept in order); a few timing-sensitive ones run alone afterwards.
     // "quark_tests serial" runs everything in this process, one after another, as before.

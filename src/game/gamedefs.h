@@ -16,7 +16,7 @@ constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr int kMaxInterpMs = 200;      // the longest fixed interpolation delay a client can set (interp_ms; lag compensation covers it)
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 33;   // 33: fixed weapon spread pattern (NET-9), clients report a fixed interp delay ("interp"); 32: ranked signatures name the dialled server address (REVIEW 2.2); 31: hull scaling + grapple change in shared pmove; 30:  signed ranked ids, reconnect tokens; edit sessions name the map by an edit chain (mapEditCrc), map data carries the text CRC
+constexpr uint16_t kProtocolVersion = 34;   // 34: the snapshot carries syringeAway (a thrown syringe is disabled for a while); 33: fixed weapon spread pattern (NET-9), clients report a fixed interp delay ("interp"); 32: ranked signatures name the dialled server address (REVIEW 2.2); 31: hull scaling + grapple change in shared pmove; 30:  signed ranked ids, reconnect tokens; edit sessions name the map by an edit chain (mapEditCrc), map data carries the text CRC
 // PlayerSnap::keys: what a player is holding (spectators see it on the key overlay)
 enum : uint16_t { KEY_FWD = 1, KEY_BACK = 2, KEY_LEFT = 4, KEY_RIGHT = 8, KEY_JUMP = 16, KEY_CROUCH = 32, KEY_FIRE = 64, KEY_ALT = 128, KEY_DASH = 256, KEY_HOOK = 512 };
 
@@ -219,7 +219,7 @@ inline const WeaponDef& baseWeaponDef(int w) {
         {"STICKY",      0.75f,   29.75f,  0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30}, // 4, 2.25 s
         {"CROSSBOW",    2.0f,    50,      0,    true,  76.5f, 0,     0.0f,  0.0f, 70.0f,  false, 1,  6.0f, false, 3},  // 2, 2.0 s (headshots 60)
         {"BUBBLE",      1.0f/5,  10,      0,    true,  15.6f, 1.8f,  0.04f, -1,     0,    false, 1, -1.5f, false, 4}, // 10 pops, 1.8 s (floats up a little; 5 a second)
-        {"SYRINGE",     0.1f,    1,       0,    false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // heals you 1 hp every 0.1 s (damage = heal)
+        {"SYRINGE",     1.0f,    10,      0,    false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // heals you 10 hp a use, 1 s cooldown (damage = heal; owner 1.17)
     };
     return defs[w < 0 || w >= WPN_COUNT ? 0 : w];
 }
@@ -271,16 +271,16 @@ constexpr float kRocketLobSpeed = 0.7f, kRocketLobGravity = 3.0f; // rocket alt-
 constexpr float kKnifeThrowSpeed = 38.0f, kKnifeThrowGravity = 14.0f, kKnifeThrowLife = 2.0f;
 constexpr float kKnifeGrow = 0.04f;    // a swing hits boxes 10% wider (0.04 m each side of 0.8)
 constexpr float kKnifeSwingTime = 0.12f; // ...and keeps cutting this long after the click if it hasn't hit yet
-constexpr float kKnifeAway = 5.0f; // after a throw the knife is gone this long: you switch to another weapon (no delay on it)
-// Syringe: fire heals you (1 hp per 0.1 s, held); alt-fire throws it: a teammate it hits gets 30 hp at once and
-// every cooldown reset (weapon, dash, grapple). The throw has a 2 s cooldown.
+// Syringe: fire heals you (10 hp a use, its 1 s cooldown); alt-fire throws it: a teammate it hits gets 30 hp at once
+// and every cooldown reset (weapon, dash, grapple, a thrown knife / syringe being away).
 constexpr float kSyringeThrowSpeed = 30.0f, kSyringeThrowGravity = 9.0f, kSyringeThrowLife = 2.0f;
-constexpr float kSyringeHeal = 30.0f, kSyringeThrowRefire = 2.0f;
-// Throws (knife, syringe) share one alt-fire cooldown (owner 5.3): after either, neither can be thrown for that
-// throw's cooldown. A thrown syringe that heals a teammate resets it like their other cooldowns.
-constexpr float kKnifeThrowCooldown = kSyringeThrowRefire;   // (placeholder: the syringe throw's 2 s until the owner sets one)
+constexpr float kSyringeHeal = 30.0f;
+// Throws (owner 1.17): no special or shared throw cooldown. A throw is a normal shot of that weapon: its own cooldown
+// (knife: the 0.75 s swing; syringe: 1 s), during which no weapon can be used, and then the thrown weapon is
+// disabled (away) this long from the throw: you switch to another weapon; it can't be drawn or used until it's back.
+constexpr float kThrowAway = 4.0f;
+constexpr float kKnifeAway = kThrowAway, kSyringeAway = kThrowAway;
 inline bool isThrow(int w, bool alt) { return alt && (w == WPN_KNIFE || w == WPN_SYRINGE); }
-inline float throwCooldown(int w) { return w == WPN_KNIFE ? kKnifeThrowCooldown : kSyringeThrowRefire; }
 constexpr int kShotgunBounces = 2;
 constexpr float kShotgunBounceDamage = 0.5f;
 constexpr float kRifleScopedRefire = 4.0f / 3.0f; // refire multiplier while scoped (25% slower fire rate)
@@ -303,10 +303,9 @@ constexpr float kVampireFadeTime = 60.0f, kVampireMinHeal = 0.5f; // laser vampi
 // The refire for this shot: alt-fire modes change it.
 inline float shotRefire(int w, bool alt) {
     float r = weaponDef(w).refire;
-    if (alt && w == WPN_KNIFE) return r;                    // knife throw: the weapon you switch to waits a knife swing (no throw + instant shot combo, GAME-8)
     if (alt && w == WPN_RIFLE) return r * kRifleScopedRefire;       // scoped rifle
     if (alt && w == WPN_BUBBLE) return kBubbleStreamRefire;         // the bubble stream
-    if (alt && w == WPN_SYRINGE) return kSyringeThrowRefire;        // the syringe throw
+    // (knife / syringe throws: the weapon's own cooldown, for every weapon: no throw + instant shot combo, GAME-8)
     return r;
 }
 // Slot order (number keys, scroll wheel, HUD list): the weapon ids themselves stay as they are.

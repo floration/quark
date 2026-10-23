@@ -153,6 +153,7 @@ struct Snapshot {
     uint8_t selfHealth = 0;
     uint8_t selfWeapon = 0;
     uint8_t knifeAway = 0;    // tenths of a second until your thrown knife is back (0 = have it)
+    uint8_t syringeAway = 0;  // ...your thrown syringe
     ModeState ms;
     std::vector<PlayerSnap> players;
     std::vector<ProjectileSnap> projectiles;

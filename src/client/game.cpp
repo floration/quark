@@ -489,8 +489,7 @@ bool Game::pressInput(int code) {
     }
     // weapons outside this mode's pool (1v1 rulesets, duel modifiers) are skipped
     uint16_t pool = net_.mode().weaponMask;
-    bool knifeAway = net_.hasSnapshot() && net_.latest().knifeAway > 0;
-    auto allowed = [&](int w) { return (!pool || (pool >> w & 1)) && !(w == WPN_KNIFE && knifeAway); }; // a thrown knife is away for a bit
+    auto allowed = [&](int w) { return (!pool || (pool >> w & 1)) && weaponAwayLeft(w) <= 0; }; // a thrown knife / syringe is away for a bit
     for (int k = 0; k < WPN_COUNT; k++) // slot keys 1-9 and 0, in kWeaponSlots order
         if (b.has(slotAction(k), code)) { int w = kWeaponSlots[k]; if (allowed(w)) desiredWeapon_ = w; return true; }
     int cur = weaponSlot(desiredWeapon_ >= 0 ? desiredWeapon_ : net_.selfWeapon());
@@ -922,7 +921,7 @@ void Game::handleEvents() {
             case EV_HEALED:   // a teammate's syringe hit someone
                 if (e.a == net_.clientId()) {
                     notify("HEALED BY " + net_.playerName(e.b) + " - COOLDOWNS RESET", 2); audio_.play(SND_SYRINGE, 0.8f, 1.3f);
-                    localNextFire_ = localThrowReadyAt_ = 0;   // (mirror the server's reset: weapon and throws)
+                    localNextFire_ = localKnifeBack_ = localSyringeBack_ = 0;   // (mirror the server's reset: weapon, thrown knife / syringe)
                 }
                 else if (e.b == net_.clientId()) notify("YOU HEALED " + net_.playerName(e.a), 2);
                 break;
@@ -1070,9 +1069,9 @@ void Game::frame(double dt) {
             UserCmd c = buildCmd();
             // local fire feedback (server is authoritative for damage)
             bool altShot = altFires(net_.selfWeapon()) && (c.buttons & BTN_ALTFIRE) && // knife throw / shotgun bounce (no throws in hide and seek / tag)
-                           !(net_.selfWeapon() == WPN_KNIFE && net_.hasSnapshot() && isItMode(net_.mode().mode)) &&
-                           !(isThrow(net_.selfWeapon(), true) && time_ < localThrowReadyAt_);   // the throws' shared cooldown
-            bool wantFire = ((c.buttons & BTN_FIRE) != 0 || altShot) && holdFireLeft() <= 0;   // (the map's holdfire: no shots yet)
+                           !(net_.hasSnapshot() && isItMode(net_.mode().mode));
+            bool wantFire = ((c.buttons & BTN_FIRE) != 0 || altShot) && holdFireLeft() <= 0 // (the map's holdfire: no shots yet)
+                            && weaponAwayLeft(net_.selfWeapon()) <= 0;                        // (a thrown knife / syringe: disabled)
             if (c.weapon != lastCmdWeapon_ && (c.buttons & (BTN_FIRE | BTN_ALTFIRE))) localFireLocked_ = true; // switched with fire held
             lastCmdWeapon_ = c.weapon;
             if (localFireLocked_) { // mirror the server: after a knife throw or a switch, let go before the next weapon fires
@@ -1093,13 +1092,13 @@ void Game::frame(double dt) {
                 localBurst_ = held && time_ - localNextFire_ < 0.1 && w == localBurstWeapon_ ? localBurst_ + 1 : 0;
                 localBurstWeapon_ = w;
                 localNextFire_ = time_ + shotRefire(w, alt);
-                if (isThrow(w, alt)) localThrowReadyAt_ = time_ + throwCooldown(w);
+                if (isThrow(w, alt)) (w == WPN_KNIFE ? localKnifeBack_ : localSyringeBack_) = time_ + (w == WPN_KNIFE ? kKnifeAway : kSyringeAway);
                 if (w != WPN_LASER || time_ >= nextLaserSound_) { // laser fires every 10 ms: sound at 20 Hz
                     audio_.play(SND_RIFLE + w, w == WPN_LASER ? 0.6f : 0.8f, 0.97f + (qrand() % 7) * 0.01f);
                     nextLaserSound_ = time_ + 0.05;
                 }
                 if (w == WPN_KNIFE && !alt) knifeSlash_[net_.clientId() % kMaxPlayers] = time_;
-                if (w == WPN_KNIFE && alt) localFireLocked_ = true;
+                if (isThrow(w, alt)) localFireLocked_ = true;
                 recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
                 bool showShot = cfg_.ownShots == 1 || (cfg_.ownShots == 0 && !cfg_.hud[Settings::HUD_VIEWMODEL].hidden); // VISUALS > YOUR SHOTS
                 if (w == WPN_LASER) laserUntil_ = showShot ? time_ + 0.07 : 0;
@@ -2003,12 +2002,12 @@ void Game::drawHud() {
             for (int k = WPN_COUNT - 1; k >= 0; k--) {
                 int wi = kWeaponSlots[k];
                 std::string t = std::to_string((k + 1) % 10) + " " + weaponDef(wi).name;
-                int away = wi == WPN_KNIFE && net_.hasSnapshot() ? net_.latest().knifeAway : 0;
-                if (away > 0) t += " " + std::to_string((away + 9) / 10); // thrown: seconds until it's back
+                double awayLeft = weaponAwayLeft(wi);   // a thrown knife / syringe: disabled, greyed with its timer
+                if (awayLeft > 0) t += " " + std::to_string((int)std::ceil(awayLeft - 1e-6)); // (seconds until it's back)
                 float tw = r_.textWidth(t, sts);
                 bx -= tw + 14 * s * e.scale;
-                bool inPool = (!ms.weaponMask || (ms.weaponMask >> wi & 1)) && away == 0;
-                r_.text(bx, H - 74 * s * e.scale + e.y * s, sts, t, wi == net_.selfWeapon() ? tint(Settings::HUD_SLOTS, fc) : inPool ? Color{0.85f, 0.87f, 0.9f, 0.9f} : Color{0.5f, 0.52f, 0.55f, 0.35f});
+                bool inPool = (!ms.weaponMask || (ms.weaponMask >> wi & 1)) && awayLeft <= 0;
+                r_.text(bx, H - 74 * s * e.scale + e.y * s, sts, t, wi == net_.selfWeapon() && awayLeft <= 0 ? tint(Settings::HUD_SLOTS, fc) : inPool ? Color{0.85f, 0.87f, 0.9f, 0.9f} : Color{0.5f, 0.52f, 0.55f, 0.35f});
             }
         }
     } else if (ms.phase != PHASE_ROUND_END && ms.phase != PHASE_MATCH_END) {
@@ -3638,7 +3637,8 @@ static const char* const kInfoPages[][48] = {
         "Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping.",
         "You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb.",
         "# WEAPONS",
-        "ROCKET (splash; rocket jump off the floor for 10% damage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you; alt throws it: +30 hp and reset cooldowns for a teammate).",
+        "ROCKET (splash; rocket jump off the floor for 10% damage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).",
+        "A thrown knife or syringe is gone for 4 s (greyed out in the weapon list, with its timer).",
         "Switching weapons with fire held doesn't fire the new one: let go and press again.",
         "# CONTROL PROFILES",
         "Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).",

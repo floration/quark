@@ -114,8 +114,9 @@ struct ServerPlayer {
     float health = 0;
     int weapon = WPN_ROCKET;
     int selectedWeapon = WPN_ROCKET; // last weapon the player picked (slot 1 to start); kept across respawns
-    double knifeBackAt = 0;      // a thrown knife is away until then: no knife (and no throws) before it
-    double throwReadyAt = 0;     // the shared alt-fire cooldown of the throws (knife, syringe): no throw before it
+    double knifeBackAt = 0;      // a thrown knife is away (disabled) until then: it can't be drawn or used before it
+    double syringeBackAt = 0;    // ...and a thrown syringe
+    double backAt(int w) const { return w == WPN_KNIFE ? knifeBackAt : w == WPN_SYRINGE ? syringeBackAt : 0; }
     double knifeSwingUntil = -1; // a swing that missed keeps cutting along your aim until then
     bool fireLocked = false;    // after a knife throw: nothing fires until both buttons are let go
     double nextFire = 0;

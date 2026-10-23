@@ -291,7 +291,14 @@ private:
     std::deque<Feed> chatLog_;   // the chat history shown while typing (Enter)
     void addChat(const Feed& f) { chatFeed_.push_back(f); chatLog_.push_back(f); while (chatFeed_.size() > 8) chatFeed_.pop_front(); while (chatLog_.size() > 30) chatLog_.pop_front(); }
     std::string centerText_;
-    double centerUntil_ = 0, hitUntil_ = 0, damageUntil_ = 0, recoil_ = 0, localNextFire_ = 0, localThrowReadyAt_ = 0;
+    double centerUntil_ = 0, hitUntil_ = 0, damageUntil_ = 0, recoil_ = 0, localNextFire_ = 0;
+    double localKnifeBack_ = 0, localSyringeBack_ = 0;   // predicted: a thrown knife / syringe is away (disabled) until then
+    // seconds until a thrown knife / syringe is back (0 = have it): the prediction, or the server's word (snapshot)
+    double weaponAwayLeft(int w) const {
+        double local = w == WPN_KNIFE ? localKnifeBack_ : w == WPN_SYRINGE ? localSyringeBack_ : 0;
+        int snap = !net_.hasSnapshot() ? 0 : w == WPN_KNIFE ? net_.latest().knifeAway : w == WPN_SYRINGE ? net_.latest().syringeAway : 0;
+        return std::max(local - time_, snap * 0.1);
+    }
     int lastHealth_ = 0;
     struct Tracer { Vec3 a, b; double until; };
     std::vector<Tracer> tracers_;

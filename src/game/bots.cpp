@@ -698,7 +698,7 @@ UserCmd botThink(Server& s, int id) {
         Vec3 aimAt = perceived + Vec3(0, sp.aimHeight * s.bodyScale(), 0);
         float dist = length(aimAt - eye);
         int w = b.forceWeapon >= 0 ? b.forceWeapon : pickWeapon(s, sp, dist);
-        if (w == WPN_KNIFE && now < me.knifeBackAt && me.weapon != WPN_KNIFE) w = me.weapon; // thrown it: use what we switched to
+        if (now < me.backAt(w) && me.weapon != w) w = me.weapon; // thrown it (knife / syringe): use what we switched to
         const WeaponDef& wd = weaponDef(w);
         bool throwKnife = w == WPN_KNIFE && dist > wd.range + 0.5f && dist < 18.0f && sp.leadMean >= 0.8f && !isItMode(s.ms_.mode); // out of reach: throw it
         if (throwKnife) {
