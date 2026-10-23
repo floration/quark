@@ -406,7 +406,7 @@ void NetClient::onSnapshot(Snapshot& s) {
     for (auto& p : s.players) if (p.id == s.clientId) alive = p.flags & PS_ALIVE;
     const MoveState& mine = predicted_[s.ackCmdSeq % kCmdRing];
     bool match = predictedSeq_[s.ackCmdSeq % kCmdRing] == s.ackCmdSeq && length(mine.pos - s.self.pos) < 1e-4f &&
-                 length(mine.vel - s.self.vel) < 1e-3f && mine.flags == s.self.flags;
+                 length(mine.vel - s.self.vel) < 1e-3f && mine.flags == s.self.flags && mine.hookTarget == s.self.hookTarget;
     lastReplay_ = 0;
     if (!alive || !mapReady_) {
         pred_ = predPrev_ = s.self;
@@ -429,6 +429,13 @@ void NetClient::onSnapshot(Snapshot& s) {
         }
         Vec3 err = oldVisual - pred_.pos;
         errorOffset_ = length(err) < 2.0f ? err : Vec3();
+    }
+    // A grapple latched onto a player (or another's holding us): the anchor moves with them, and only the server knows
+    // where they are now. Prediction pulls toward its latest value (the replay above already started from it).
+    if (alive && mapReady_) {
+        if ((s.self.flags & MF_HOOKED) && s.self.hookTarget && (pred_.flags & MF_HOOKED) && pred_.hookTarget == s.self.hookTarget)
+            pred_.hookPoint = s.self.hookPoint;
+        if ((s.self.flags & MF_PULLED) && (pred_.flags & MF_PULLED)) pred_.pullPoint = s.self.pullPoint;
     }
 
     if (rec_) recordSnapshot(s, fresh);

@@ -86,9 +86,10 @@ static int slideMove(MoveState& s, const Map& map, const Vec3& delta, bool crouc
     return blocked;
 }
 
-static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt) {
+static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt, HookProbe* hp) {
     if (s.flags & MF_FROZEN) {
         s.vel = {0, std::min(s.vel.y, 0.0f), 0};
+        s.flags &= ~MF_PULLED;
     }
     const float scale = moveScale(s.mods);   // size modifiers scale the hull and the eyes
     bool wantCrouch = false; // crouching was removed from the game (BTN_CROUCH is ignored)
@@ -125,6 +126,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     s.hookCooldown = std::max(0.0f, s.hookCooldown - dt);
     bool dashHeld = (cmd.buttons & BTN_DASH) != 0 && !grappleOnly && !(s.mods & MOVE_RUN_ONLY) && mt.dash;
     if (dashHeld && !(s.flags & MF_DASHHELD) && s.dashCooldown <= 0 && !frozen) {
+        s.flags &= ~MF_PULLED;   // a dash breaks free of another player's grapple
         Vec3 d = wishLen > 0 ? wishDir : fwd;
         float h = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
         s.dashDirX = d.x;
@@ -159,10 +161,30 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     if (hookHeld && !(s.flags & MF_HOOKHELD) && !(s.flags & MF_HOOKED) && !frozen && s.hookCooldown <= 0) {
         float eyeH = (crouched ? kCrouchEyeHeight : kEyeHeight) * scale;
         Vec3 eye = s.pos + Vec3(0, eyeH, 0);
-        float t = map.raycast(eye, angleForward(cmd.yaw, cmd.pitch), (kGrappleRange * tune(MV_HOOK_RANGE)));
-        if (t >= 0) {
-            s.hookPoint = eye + angleForward(cmd.yaw, cmd.pitch) * t;
+        const Vec3 dir = angleForward(cmd.yaw, cmd.pitch);
+        const float range = kGrappleRange * tune(MV_HOOK_RANGE);
+        float t = map.raycast(eye, dir, range);
+        int caught = -1;   // a player in front of the wall (or in the open) catches it instead
+        if (hp && hp->n > 0) {
+            float best = t >= 0 ? t : range;
+            Vec3 inv = safeInv(dir);
+            for (int k = 0; k < hp->n && k < HookProbe::kMax; k++) {
+                float tk = rayAABB(eye, inv, hp->box[k], best);
+                if (tk >= 0 && tk < best) { best = tk; caught = k; }
+            }
+        }
+        if (caught >= 0) {
+            hp->hit = caught;
+            hp->head = rayHitsHead(eye, dir, hp->box[caught]);
+            s.hookPoint = hp->box[caught].center();   // (the server moves it with them from here on)
+            s.hookTarget = (uint8_t)(hp->id[caught] + 1);
             s.flags |= MF_HOOKED | MF_HOOKHELD;
+            s.flags &= ~MF_PULLED;   // grabbing with your own grapple breaks free of someone else's
+        } else if (t >= 0) {
+            s.hookPoint = eye + dir * t;
+            s.hookTarget = 0;
+            s.flags |= MF_HOOKED | MF_HOOKHELD;
+            s.flags &= ~MF_PULLED;
         }
     }
     if (!hookHeld || frozen) s.flags &= ~MF_HOOKED;
@@ -184,10 +206,26 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         }
     }
     if (wasHooked && !(s.flags & MF_HOOKED)) s.hookCooldown = (kHookCooldown * tune(MV_HOOK_COOLDOWN));
+    if (!(s.flags & MF_HOOKED)) s.hookTarget = 0;
+    // Held by another player's grapple: pulled toward them like a hook pulls its owner (the same acceleration and
+    // top speed, momentum kept, half gravity). The server moves pullPoint with them and ends it; dashing or grabbing
+    // with your own grapple (above) breaks free.
+    bool pulled = (s.flags & MF_PULLED) != 0;
+    if (pulled && !dashing) {
+        Vec3 to = s.pullPoint - (s.pos + Vec3(0, 1.0f * scale, 0));
+        float dist = length(to);
+        if (dist >= (kHookRelease * tune(MV_HOOK_RELEASE))) {
+            float before = length(s.vel);
+            s.vel += to / dist * ((kHookAccel * tune(MV_HOOK_ACCEL)) * dt);
+            float sp = length(s.vel), cap = std::max(kHookMaxSpeed * tune(MV_HOOK_MAX), before);
+            if (sp > cap) s.vel *= cap / sp;
+            onGround = false;
+        }
+    }
 
     // Ladders: inside a ladder volume, moving climbs (look down to climb down), no input holds you there,
     // a fresh jump kicks you off backwards. No gravity while on it.
-    bool onLadder = !hooked && !dashing && !frozen && map.onLadder(playerBox(s.pos, crouched, scale));
+    bool onLadder = !hooked && !pulled && !dashing && !frozen && map.onLadder(playerBox(s.pos, crouched, scale));
     if (onLadder) {
         bool jumpPress = jumpHeld && !(s.flags & MF_JUMPHELD);
         if (jumpPress) {
@@ -219,7 +257,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
                 float nl = std::sqrt(nx * nx + nz * nz);
                 if (nl > 1e-4f) { s.vel.x = nx / nl * h; s.vel.z = nz / nl * h; }
             }
-            s.vel.y -= kGravity * mt.gravity * dt * (hooked ? (kHookGravityScale * tune(MV_HOOK_GRAVITY)) : 1.0f) * ((s.mods & MOVE_LOW_GRAVITY) ? 0.4f : 1.0f);
+            s.vel.y -= kGravity * mt.gravity * dt * ((hooked || pulled) ? (kHookGravityScale * tune(MV_HOOK_GRAVITY)) : 1.0f) * ((s.mods & MOVE_LOW_GRAVITY) ? 0.4f : 1.0f);
         }
     }
 
@@ -272,8 +310,8 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         if (down > -(kStepHeight * tune(MV_STEP)) + 0.001f) { s.pos.y += down; nowGround = true; s.vel.y = 0; }
     }
 
-    s.flags &= (MF_FROZEN | MF_HOOKED);
-    if (nowGround && !(s.flags & MF_HOOKED)) s.flags |= MF_ONGROUND;
+    s.flags &= (MF_FROZEN | MF_HOOKED | MF_PULLED);
+    if (nowGround && !(s.flags & (MF_HOOKED | MF_PULLED))) s.flags |= MF_ONGROUND;
     if (crouched) s.flags |= MF_CROUCHED;
     if (jumpHeld) s.flags |= MF_JUMPHELD;
     if (dashHeld) s.flags |= MF_DASHHELD;
@@ -281,9 +319,10 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     if (s.pos.y < -100.0f) s.pos.y = -100.0f; // kill plane handled by game logic
 }
 
-void pmove(MoveState& s, const UserCmd& cmd, const Map& map) {
+void pmove(MoveState& s, const UserCmd& cmd, const Map& map, HookProbe* probe) {
+    static_assert(HookProbe::kMax >= kMaxPlayers, "a probe holds every player");
     int n = cmd.msec < 1 ? 1 : (cmd.msec > 8 ? 8 : cmd.msec);
-    for (int i = 0; i < n; i++) pmoveStep(s, cmd, map, kMoveStep);
+    for (int i = 0; i < n; i++) pmoveStep(s, cmd, map, kMoveStep, probe);
 }
 
 float moveParamBase(int i) {

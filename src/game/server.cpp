@@ -1798,6 +1798,7 @@ void Server::simulate() {
             drainCmds(i);
         }
     }
+    tickLatches();   // grapples latched onto players: let go when the rules say so
     // Record positions for lag compensation.
     for (auto& p : players_) {
         if (!p.connected) continue;
@@ -1853,7 +1854,14 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     if (!p.alive) return;
     if (rulesFrozen(*this, id)) p.move.flags |= MF_FROZEN;
     else p.move.flags &= ~MF_FROZEN;
-    pmove(p.move, cmd, map_);
+    {
+        HookProbe probe;   // a grapple that may fire in this command: the enemies it can catch
+        grappleTargets(id, cmd, probe);
+        pmove(p.move, cmd, map_, probe.n ? &probe : nullptr);
+        if (probe.hit >= 0) startLatch(id, probe.id[probe.hit], probe.head);
+        if (p.hookVictim >= 0) syncLatch(id);           // released / met / out of reach: let go; else the anchors follow
+        if (p.hookedBy >= 0) syncLatch(p.hookedBy);     // (broke free with a dash or a grab of our own)
+    }
     if (p.move.flags & MF_ONGROUND) p.lastGround = p.move.pos;
 
     // A thrown knife / syringe is away (disabled) for kThrowAway: it can't be drawn and you hold another weapon. When
@@ -1961,6 +1969,140 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
     if (hit < 0) return;
     if (headDmg > 0 && rayHitsHead(eye, dir, hitBb)) { dmg = std::max(dmg, headDmg); headHit_[hit] = true; }   // (the head, not the shoulders)
     dmgPer[hit] += (bang >= 0 && best > bang) ? dmg * kWallbangDamage : dmg;
+}
+
+// ---- the grapple latched onto a player (owner: "if the tip of the hook hits a player it sticks to them, 10 damage, 15
+// if head, then pulls both players together in the middle").
+// Enemies only: teammates (and a player another grapple already holds) let the hook through to the wall behind. Never in
+// race (racers can't touch each other) or while damage is off (round over, freeze). Lag compensated like hitscan.
+
+uint64_t Server::rewindViewMs(int id, uint32_t viewTick) const {
+    const ServerPlayer& p = players_[id];
+    uint64_t vt = fromWireMs(viewTick);
+    if (vt > timeMs_) vt = timeMs_;
+    // (the same cap as fireWeapon's: ping + the client's interpolation + jitter)
+    uint32_t interp = std::max<uint32_t>(2000u / (uint32_t)std::max(1, tickRate() / snapEvery()) + 50u, 100u);
+    interp = std::max<uint32_t>(interp, std::min<uint32_t>(p.interpMs, (uint32_t)kMaxInterpMs));
+    uint32_t cap = std::min<uint32_t>(kMaxRewindMs, (uint32_t)p.ping + interp + kRewindToleranceMs);
+    if (timeMs_ - vt > cap) vt = timeMs_ - cap;
+    return vt;
+}
+
+Vec3 Server::rewoundPos(int i, uint64_t vt, bool* crouched) const {
+    const ServerPlayer& q = players_[i];
+    Vec3 pos = q.move.pos;
+    *crouched = q.move.flags & MF_CROUCHED;
+    for (uint32_t k = 1; k <= (uint32_t)ServerPlayer::kHistory && k <= tick_; k++) {   // (as hitscan: newest at or before vt)
+        const auto& h = q.history[(tick_ - k) % ServerPlayer::kHistory];
+        if (h.tick == ServerPlayer::kNoHistory || h.tick > timeMs_) break;
+        if (h.tick <= vt) { if (h.alive) { pos = h.pos; *crouched = h.crouched; } break; }
+    }
+    return pos;
+}
+
+void Server::grappleTargets(int id, const UserCmd& cmd, HookProbe& probe) {
+    const ServerPlayer& p = players_[id];
+    probe.n = 0;
+    // only when this command can fire the hook (held, not caught yet this press, the cooldown about done)
+    if (!(cmd.buttons & BTN_GRAPPLE) || (p.move.flags & (MF_HOOKHELD | MF_HOOKED | MF_FROZEN)) || (p.move.mods & MOVE_RUN_ONLY)) return;
+    if (!moveTuning().grapple || p.move.hookCooldown > cmd.msec * kMoveStep + 1e-4f) return;
+    if (ms_.mode == MODE_RACE) return;
+    uint64_t vt = 0;
+    bool rewound = false;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const ServerPlayer& q = players_[i];
+        if (i == id || !q.connected || !q.alive || q.team == TEAM_SPECTATOR || (q.move.flags & MF_FROZEN)) continue;
+        if (q.hookedBy >= 0 && q.hookedBy != id) continue;     // someone else's grapple holds them already
+        if (modeIsTeamBased(ms_.mode) && q.team == p.team) continue;   // teammates: the hook goes through
+        if (isItMode(ms_.mode) && q.it == p.it) continue;   // hide and seek / tag: "it" and the others only (pull, no damage)
+        if (!rulesCanDamage(*this, id, i)) continue;
+        if (!rewound) { vt = rewindViewMs(id, cmd.viewTick); rewound = true; }
+        bool crouched;
+        Vec3 pos = rewoundPos(i, vt, &crouched);
+        probe.box[probe.n] = hitBox(pos, crouched);
+        probe.id[probe.n++] = (uint8_t)i;
+    }
+}
+
+void Server::startLatch(int a, int v, bool head) {
+    ServerPlayer& pa = players_[a];
+    ServerPlayer& pv = players_[v];
+    if (pa.hookVictim >= 0 && pa.hookVictim != v) {   // (can't happen: a hook fires only when not hooked)
+        int old = pa.hookVictim;
+        if (players_[old].hookedBy == a) { players_[old].hookedBy = -1; players_[old].move.flags &= ~MF_PULLED; }
+    }
+    pa.hookVictim = v;
+    pa.hookSince = time();
+    pv.hookedBy = a;
+    pv.move.flags = (uint8_t)((pv.move.flags | MF_PULLED) & ~MF_ONGROUND);
+    syncLatch(a);
+    // the catch: 10 damage, 15 through the head (a damage source of its own). Instagib: no kill from a hook, it only
+    // pulls; hide and seek / tag: damagePlayer lets only the knife touch anyone, so it only pulls there too.
+    float dmg = (arenaRules() & AR_INSTAGIB) ? 0.0f : head ? kGrappleHeadDamage : kGrappleDamage;
+    bool hitBefore = pa.hitSinceShot;   // (accuracy counts shots: a hook isn't one)
+    headHit_[v] = head;
+    damagePlayer(v, a, dmg, kDamageGrapple, Vec3());
+    headHit_[v] = false;
+    pa.hitSinceShot = hitBefore;
+    glog(LOG_VERBOSE, "grapple latch attacker=%d victim=%d head=%d", a, v, head ? 1 : 0);
+}
+
+bool Server::latchHolds(int a) const {
+    const ServerPlayer& pa = players_[a];
+    int v = pa.hookVictim;
+    if (v < 0 || v >= kMaxPlayers || v == a || !pa.connected || !pa.alive) return false;
+    const ServerPlayer& pv = players_[v];
+    return pv.connected && pv.alive && pv.hookedBy == a && (pa.move.flags & MF_HOOKED) && pa.move.hookTarget == v + 1 &&
+           (pv.move.flags & MF_PULLED) && !((pa.move.flags | pv.move.flags) & MF_FROZEN);
+}
+
+void Server::syncLatch(int a) {
+    if (a < 0 || a >= kMaxPlayers) return;
+    if (!latchHolds(a)) { endLatch(a); return; }
+    ServerPlayer& pa = players_[a];
+    ServerPlayer& pv = players_[pa.hookVictim];
+    // each is pulled toward the other's body (the same direction as the midpoint; meeting is measured between them)
+    pa.move.hookPoint = pv.move.pos + Vec3(0, 1.0f * moveScale(pv.move.mods), 0);
+    pv.move.pullPoint = pa.move.pos + Vec3(0, 1.0f * moveScale(pa.move.mods), 0);
+}
+
+void Server::endLatch(int a) {
+    if (a < 0 || a >= kMaxPlayers) return;
+    ServerPlayer& pa = players_[a];
+    int v = pa.hookVictim;
+    pa.hookVictim = -1;
+    if (v < 0 || v >= kMaxPlayers) return;
+    ServerPlayer& pv = players_[v];
+    if (pv.hookedBy == a) { pv.hookedBy = -1; pv.move.flags &= ~MF_PULLED; }
+    if ((pa.move.flags & MF_HOOKED) && pa.move.hookTarget == v + 1) {   // let go for them: the usual cooldown follows
+        pa.move.flags &= ~MF_HOOKED;
+        pa.move.hookTarget = 0;
+        pa.move.hookCooldown = kHookCooldown * moveTuning().m[MV_HOOK_COOLDOWN];
+    }
+}
+
+// Once a tick: a latch lets go when the map comes between them, they're out of the grapple's reach, it has held
+// kGrappleLatchMax, or damage is off now (round over); stale halves (a slot reused, a respawn) are cleared.
+void Server::tickLatches() {
+    const float range = kGrappleRange * moveTuning().m[MV_HOOK_RANGE];
+    for (int a = 0; a < kMaxPlayers; a++) {
+        ServerPlayer& pa = players_[a];
+        if (pa.hookVictim < 0) continue;
+        if (!latchHolds(a)) { endLatch(a); continue; }
+        const ServerPlayer& pv = players_[pa.hookVictim];
+        Vec3 from = pa.move.pos + Vec3(0, 1.0f * moveScale(pa.move.mods), 0);
+        Vec3 to = pv.move.pos + Vec3(0, 1.0f * moveScale(pv.move.mods), 0);
+        Vec3 d = to - from;
+        float dist = length(d);
+        bool blocked = dist > 1e-3f && map_.raycast(from, d / dist, dist) >= 0;
+        if (blocked || dist > range || time() - pa.hookSince > kGrappleLatchMax || !rulesCanDamage(*this, a, pa.hookVictim)) endLatch(a);
+    }
+    for (int v = 0; v < kMaxPlayers; v++) {
+        ServerPlayer& pv = players_[v];
+        int a = pv.hookedBy;
+        if (a >= 0 && (a >= kMaxPlayers || players_[a].hookVictim != v)) a = pv.hookedBy = -1;
+        if (a < 0 && (pv.move.flags & MF_PULLED)) pv.move.flags &= ~MF_PULLED;
+    }
 }
 
 // A pellet that ricochets: straight until it hits a player (done) or a wall, then reflects off it, up to
@@ -2440,7 +2582,7 @@ void Server::sendSnapshots() {
         ps.ping = (uint16_t)p.ping;
         ps.checkpoint = (uint8_t)p.checkpoint;
         ps.keys = p.alive ? p.keys : 0;
-        ps.hooked = p.alive && (p.move.flags & MF_HOOKED);
+        ps.hooked = p.alive && (p.move.flags & MF_HOOKED) ? (uint8_t)(1 + p.move.hookTarget) : 0;   // (2 + id: latched onto that player)
         ps.hookPoint = p.move.hookPoint;
         all.push_back(ps);
     }
@@ -2533,6 +2675,11 @@ void Server::sendSnapshots() {
             ps.health = 0; ps.weapon = 0; ps.keys = 0; ps.hooked = 0; ps.hookPoint = Vec3();
             ps.pos = Vec3(); ps.yaw = ps.pitch = 0;
         }
+        if (!seesAll)   // a grapple latched onto a player out of this client's sight: no rope (its end would give them away)
+            for (auto& ps : s.players) {
+                int t = ps.hooked >= 2 ? ps.hooked - 2 : -1;
+                if (t >= 0 && t < kMaxPlayers && t != i && !(vis >> t & 1) && !(tag && players_[t].it)) { ps.hooked = 0; ps.hookPoint = Vec3(); }
+            }
         if (!seesAll) {   // the bomb: who carries it, who's planting / defusing, only if they're in sight
             auto unseen = [&](int who) { return who >= 0 && who < kMaxPlayers && who != i && players_[who].alive && !(vis >> who & 1); };
             if (s.ms.bombState == BOMB_CARRIED && unseen(s.ms.bombCarrier)) s.ms.bombCarrier = 255;

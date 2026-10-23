@@ -47,6 +47,7 @@ std::string fmtTime(float s) {
 }
 
 const char* weaponName(int w) {
+    if (w == kDamageGrapple) return "grapple";
     if (w == 252) return "fell";
     if (w == 253) return "bomb";
     if (w == 254) return "drained";
@@ -1574,14 +1575,21 @@ void Game::drawWorld(float alpha) {
     r_.outlineColor = {0, 0, 0};
     r_.outlineWidth = 1.0f;
     // grapple ropes
+    // (a hook latched onto a player ends on their body as drawn here: their interpolated position, or our own)
+    auto ropeEnd = [&](int target, const Vec3& anchor) {
+        if (target < 0 || target >= kMaxPlayers || !players[target].valid || players[target].snap.hidden || !(players[target].snap.flags & PS_ALIVE)) return anchor;
+        Vec3 at = target == me && alive ? net_.smoothedPos(alpha) : players[target].snap.pos;
+        return at + Vec3(0, 1.0f * bs, 0);
+    };
     if (alive && (net_.predicted().flags & MF_HOOKED)) {
         Vec3 d = angleForward(yaw_, pitch_);
         Vec3 right = normalize(cross(d, {0, 1, 0}));
-        r_.line(eye - Vec3(0, 0.25f, 0) - right * 0.15f, net_.predicted().hookPoint, 0.03f, {0.1f, 0.1f, 0.1f, 1});
+        const MoveState& pm = net_.predicted();
+        r_.line(eye - Vec3(0, 0.25f, 0) - right * 0.15f, ropeEnd((int)pm.hookTarget - 1, pm.hookPoint), 0.03f, {0.1f, 0.1f, 0.1f, 1});
     }
     for (int i = 0; i < kMaxPlayers; i++) {
         if (i == me || !players[i].valid || !players[i].snap.hooked) continue;
-        r_.line(players[i].snap.pos + Vec3(0, 1.2f, 0), players[i].snap.hookPoint, 0.04f, {0.1f, 0.1f, 0.1f, 1});
+        r_.line(players[i].snap.pos + Vec3(0, 1.2f, 0), ropeEnd((int)players[i].snap.hooked - 2, players[i].snap.hookPoint), 0.04f, {0.1f, 0.1f, 0.1f, 1});
     }
 
     // other players' shots: laser beams while firing, a tracer when a sniper fires
@@ -2034,6 +2042,10 @@ void Game::drawHud() {
         r_.rect(0, cy + R, W, H - cy - R, k);
         r_.rect(cx - R, cy - 0.5f, 2 * R, 1, {0, 0, 0, 0.9f * std::max(cfg_.scopeOpacity, 0.3f)});
         r_.rect(cx - 0.5f, cy - R, 1, 2 * R, {0, 0, 0, 0.9f * std::max(cfg_.scopeOpacity, 0.3f)});
+    }
+    if (net_.selfAlive() && (net_.predicted().flags & MF_PULLED)) {   // another player's grapple holds you (dash or grab to break free)
+        float big = std::max(2.0f, std::round(ts * 2));
+        r_.text(cx - r_.textWidth("HOOKED", big) * 0.5f, cy - 60 * s, big, "HOOKED", Color{1, 0.45f, 0.3f, 1});
     }
     if (float hold = holdFireLeft(); hold > 0) { // the map's holdfire (the dojo): face each other, no shots yet
         float big = std::max(2.0f, std::round(ts * 2));

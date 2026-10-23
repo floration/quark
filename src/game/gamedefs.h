@@ -16,7 +16,7 @@ constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr int kMaxInterpMs = 200;      // the longest fixed interpolation delay a client can set (interp_ms; lag compensation covers it)
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 37;   // 37: maps named by sha256 (accept, map requests and data carry 32 byte ids; edit events the first 16 of the id they leave); 36: the locator is a weapon (WPN_LOCATOR; hide and seek / tag only), EV_RPS; 35: weapons (syringeAway, projectile lob/stuck flags) + NET-10 (projectiles out of sight sent as an id, hidden players carry no health / weapon); projectile bits: 1 new, 2 velocity, 4 lob, 8 stuck, 16 out of sight; 33: fixed weapon spread pattern (NET-9), clients report a fixed interp delay ("interp"); 32: ranked signatures name the dialled server address (REVIEW 2.2)
+constexpr uint16_t kProtocolVersion = 38;   // 38: the grapple latches onto players (own state: MF_PULLED, hookTarget, pullPoint; PlayerSnap hooked 2 + id); 37: maps named by sha256 (accept, map requests and data carry 32 byte ids; edit events the first 16 of the id they leave); 36: the locator is a weapon (WPN_LOCATOR; hide and seek / tag only), EV_RPS; 35: weapons (syringeAway, projectile lob/stuck flags) + NET-10 (projectiles out of sight sent as an id, hidden players carry no health / weapon); projectile bits: 1 new, 2 velocity, 4 lob, 8 stuck, 16 out of sight; 33: fixed weapon spread pattern (NET-9), clients report a fixed interp delay ("interp"); 32: ranked signatures name the dialled server address (REVIEW 2.2)
 constexpr uint16_t kSnapSyringeSince = 35;  // the snapshot header carries syringeAway from this protocol on (older demos are read without it)
 constexpr uint16_t kOldestDemoProtocol = 33;  // demos recorded at this protocol or later still play (raise it when a wire change can't read older ones)
 // PlayerSnap::keys: what a player is holding (spectators see it on the key overlay)
@@ -100,6 +100,11 @@ enum ArenaRule : uint8_t {
     AR_LOW_GRAVITY = 16,   // 40% gravity
 };
 constexpr float kLocatorCooldown = 5.0f, kLocatorShow = 1.0f; // the locator (WPN_LOCATOR, held by the seeker / tagger): fire it to see one random hider / runner this long, every kLocatorCooldown
+// The grapple's hook catching an enemy (owner): it latches on, 10 damage (15 through the head), then pulls both players
+// together; a damage source of its own (not a weapon: no slot, pool or stats row), "grapple" in the kill feed.
+constexpr int kDamageGrapple = 251;   // (252 fell, 253 bomb, 254 drained)
+constexpr float kGrappleDamage = 10.0f, kGrappleHeadDamage = 15.0f;
+constexpr float kGrappleLatchMax = 3.0f;   // a latch lets go after this long at most
 constexpr int KILL_HEADSHOT = 0x100, KILL_AIRBORNE = 0x200, KILL_WEAPON = 0xFF; // EV_KILL c: weapon in the low byte
 #define WB(w) (1u << (w))
 

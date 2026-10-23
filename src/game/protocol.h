@@ -71,7 +71,7 @@ struct PlayerSnap {
     uint8_t acc = 0;            // accuracy, %   // damage dealt to enemies, whole seconds on the objective
     uint16_t ping = 0;
     uint8_t checkpoint = 0;
-    uint8_t hooked = 0;
+    uint8_t hooked = 0;         // grapple: 0 none, 1 on the map, 2 + id latched onto that player (hookPoint: their body)
     uint16_t keys = 0;          // held keys (KEY_*), for the spectators' key overlay
     Vec3 hookPoint;
     bool hidden = false;    // not visible to this client: only scoreboard fields are valid (no position)
