@@ -34,6 +34,7 @@ struct Settings {
     int msaa = 0;               // anti-aliasing: 0 off, 1 smooth edges (FXAA-style pass), 2 / 4 MSAA
     float volume = 0.6f;
     bool hitsounds = true;
+    bool exclusiveAudio = false;   // Windows: the sound device to the game alone (lower latency; other programs silent)
     // VISUALS
     bool fullbright = false;    // flat white world, black outlines, no lighting
     int ownShots = 0;           // your tracers / beam: 0 with the weapon model, 1 always, 2 never

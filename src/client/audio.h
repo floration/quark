@@ -78,6 +78,10 @@ public:
     // (game thread only, as play / play3D, the only readers: the mixer never reads it, so no lock against it)
     void setListener(const Vec3& pos, float yaw) { listener_ = pos; listenerYaw_ = yaw; }
     void setMasterVolume(float v) { master_ = v; }
+    // EXCLUSIVE AUDIO (Windows): the sound device to the game alone, past the system mixer (lower latency; other programs
+    // are silent meanwhile). Reopens the output when it changes; falls back to shared when the device can't.
+    void setExclusive(bool on) { if (exclusive_.exchange(on) != on) reopen_ = true; }
+    bool exclusiveActive() const { return exclusiveActive_; }
     void setAnnouncer(int set) { if (set != announcer_) { if (running_) loadAnnouncer(set); else announcer_ = set; } } // 0 male, 1 female
     // Sound kits: DEFAULT (synthesized), HEAVY METAL, MAGICAL, WOODEN (recorded CC0 clips, sfx_recorded.h), RETRO (DEFAULT, chiptuned).
     // All packs are built at startup, so switching is free and every player can sound different.
@@ -126,6 +130,8 @@ private:
     float listenerYaw_ = 0;
     std::atomic<float> master_{0.8f};
     std::atomic<bool> running_{false}, quit_{false};
+    std::atomic<bool> exclusive_{false}, reopen_{false}, exclusiveActive_{false};
+    float rateScale_ = 1.0f;   // (audio thread: our rate over the device's)
     std::thread thread_;
     void* backend_ = nullptr;
     void* waveEvent_ = nullptr;   // Windows: signalled when the device finishes a buffer

@@ -127,6 +127,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     applyPresentMode();
     for (auto& q : latQ_) glGenQueries(1, &q.q);
     audio_.setAnnouncer(cfg_.announcerVoice);
+    audio_.setExclusive(cfg_.exclusiveAudio);
     if (!audio_.start()) printf("audio: no output device - running without sound\n");
     audio_.setMasterVolume(cfg_.volume);
 
@@ -3793,7 +3794,14 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
         ui_.cycle(x, y, w, h, "MODEL", cfg_.model, kPlayerModels, mn, UiExp::cfg("model"));
         y += h + gap;
         ui_.cycle(x, y, w, h, "SOUNDS", cfg_.soundPack, 5, sn, UiExp::cfg("soundpack"));
+        y += h + gap;
     }
+#ifdef _WIN32
+    // the sound device to the game alone: about 10 ms sooner, and Discord / music go silent while the game runs
+    if (ui_.toggle(x, y, w, h, cfg_.exclusiveAudio && !audio_.exclusiveActive() ? "EXCLUSIVE AUDIO (DEVICE BUSY)" : "EXCLUSIVE AUDIO",
+                   cfg_.exclusiveAudio, UiExp::cfg("exclusive_audio")))
+        audio_.setExclusive(cfg_.exclusiveAudio);
+#endif
 
     // --- right column: display + latency
     y = y0;

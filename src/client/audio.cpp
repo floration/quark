@@ -368,6 +368,7 @@ void Audio::play3D(int id, const Vec3& pos, float volume, float pitch, int pack)
 
 void Audio::mix(int16_t* out, int frames) {
     QZONE("audio mix");
+    const float rateScale = rateScale_;   // (1, or our 48 kHz over an exclusive device's own rate)
     float buf[kPeriod * 2 * 4];
     int n = std::min(frames, (int)(sizeof buf / sizeof buf[0] / 2));
     std::memset(buf, 0, sizeof(float) * n * 2);
@@ -384,7 +385,7 @@ void Audio::mix(int16_t* out, int frames) {
                 float f = v.pos - idx, x = s[idx] + (s[idx + 1] - s[idx]) * f;
                 buf[i * 2] += x * v.gainL;
                 buf[i * 2 + 1] += x * v.gainR;
-                v.pos += v.step;
+                v.pos += v.step * rateScale;
             }
             if ((size_t)v.pos + 1 >= s.size()) { voices_[k] = voices_.back(); voices_.pop_back(); } // finished: swap-and-pop (order doesn't matter)
             else k++;
@@ -426,8 +427,10 @@ void Audio::wasapiThread(std::atomic<int>* started) {
     (void)mmcss;
     HANDLE ev = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     bool reported = false;
-    // One session: open the default output, run until it fails (unplugged, default device changed), then open it again.
+    // One session: open the default output, run until it fails (unplugged, default device changed) or the EXCLUSIVE AUDIO
+    // setting changes, then open it again.
     while (!quit_) {
+        reopen_ = false;
         IMMDeviceEnumerator* en = nullptr;
         IMMDevice* dev = nullptr;
         IAudioClient* ac = nullptr;
@@ -436,10 +439,45 @@ void Audio::wasapiThread(std::atomic<int>* started) {
                   SUCCEEDED(en->GetDefaultAudioEndpoint(eRender, eConsole, &dev)) &&
                   SUCCEEDED(dev->Activate(kIidAudioClient, CLSCTX_ALL, nullptr, (void**)&ac));
         UINT32 frames = 0, target = 0;   // the buffer's size; how much of it we keep queued
-        if (ok) {
+        UINT32 rate = R;
+        bool excl = false;
+        auto pcm16 = [](UINT32 hz) {
             WAVEFORMATEX wf{};
-            wf.wFormatTag = WAVE_FORMAT_PCM; wf.nChannels = 2; wf.nSamplesPerSec = R; wf.wBitsPerSample = 16;
-            wf.nBlockAlign = 4; wf.nAvgBytesPerSec = R * 4;
+            wf.wFormatTag = WAVE_FORMAT_PCM; wf.nChannels = 2; wf.nSamplesPerSec = hz; wf.wBitsPerSample = 16;
+            wf.nBlockAlign = 4; wf.nAvgBytesPerSec = hz * 4;
+            return wf;
+        };
+        if (ok && exclusive_) {
+            // Exclusive (the setting): the game has the device to itself, past Windows' mixer and its 10 ms period, at
+            // the device's shortest period (3 ms on the owner's PC); other programs can't play sound meanwhile. It needs
+            // a format the device takes as it is: 16-bit stereo at our rate or a common one (the mixer converts).
+            REFERENCE_TIME defPer = 0, minPer = 0;
+            ac->GetDevicePeriod(&defPer, &minPer);
+            if (minPer <= 0) minPer = defPer > 0 ? defPer : 30000;
+            for (UINT32 hz : {(UINT32)R, 48000u, 44100u, 96000u, 88200u}) {
+                WAVEFORMATEX wf = pcm16(hz);
+                if (ac->IsFormatSupported(AUDCLNT_SHAREMODE_EXCLUSIVE, &wf, nullptr) != S_OK) continue;
+                HRESULT hr = ac->Initialize(AUDCLNT_SHAREMODE_EXCLUSIVE, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, minPer, minPer, &wf, nullptr);
+                if (hr == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED) {   // (the period, rounded to what the device can do)
+                    UINT32 n = 0;
+                    ac->GetBufferSize(&n);
+                    releaseCom(ac);
+                    minPer = (REFERENCE_TIME)(10000000.0 * n / hz + 0.5);
+                    hr = SUCCEEDED(dev->Activate(kIidAudioClient, CLSCTX_ALL, nullptr, (void**)&ac))
+                             ? ac->Initialize(AUDCLNT_SHAREMODE_EXCLUSIVE, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, minPer, minPer, &wf, nullptr) : E_FAIL;
+                }
+                excl = SUCCEEDED(hr) && SUCCEEDED(ac->SetEventHandle(ev)) && SUCCEEDED(ac->GetBufferSize(&frames)) && frames > 0 &&
+                       SUCCEEDED(ac->GetService(kIidAudioRenderClient, (void**)&rc));
+                if (excl) { rate = hz; target = frames; }
+                break;
+            }
+            if (!excl) {   // (busy, or no such format: shared, on a fresh client)
+                releaseCom(rc); releaseCom(ac);
+                ok = SUCCEEDED(dev->Activate(kIidAudioClient, CLSCTX_ALL, nullptr, (void**)&ac));
+            }
+        }
+        if (ok && !excl) {
+            WAVEFORMATEX wf = pcm16(R);
             REFERENCE_TIME period = 0;   // the engine's period (10 ms usually)
             if (FAILED(ac->GetDevicePeriod(&period, nullptr)) || period <= 0) period = 100000;
             ok = SUCCEEDED(ac->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
@@ -456,6 +494,7 @@ void Audio::wasapiThread(std::atomic<int>* started) {
                 if (ms >= 1 && ms <= 200) target = std::min<UINT32>(frames, (UINT32)(ms * R / 1000));
             }
         }
+        rateScale_ = (float)R / (float)rate;   // (the mixer steps through our 48 kHz sounds at the device's rate)
         auto fill = [&](UINT32 n) {   // n frames of the mix into the device's buffer
             BYTE* p = nullptr;
             if (FAILED(rc->GetBuffer(n, &p))) return false;
@@ -464,17 +503,23 @@ void Audio::wasapiThread(std::atomic<int>* started) {
             return SUCCEEDED(rc->ReleaseBuffer(n, 0));
         };
         if (ok) ok = fill(target) && SUCCEEDED(ac->Start());
-        if (ok && !reported) printf("audio: WASAPI, %.1f ms queued (%.1f ms buffer)\n", target * 1000.0 / R, frames * 1000.0 / R);
+        exclusiveActive_ = ok && excl;
+        if (ok) printf("audio: WASAPI %s, %u Hz, %.1f ms queued (%.1f ms buffer)\n", excl ? "exclusive" : "shared", (unsigned)rate,
+                       target * 1000.0 / rate, frames * 1000.0 / rate);
         if (!reported) { reported = true; started->store(ok ? 1 : -1); if (!ok) { releaseCom(rc); releaseCom(ac); releaseCom(dev); releaseCom(en); break; } }
-        while (ok && !quit_) {
-            WaitForSingleObject(ev, 50);
+        int silent = 0;   // (exclusive: waits with no wake-up from the device; it's gone after a while)
+        while (ok && !quit_ && !reopen_) {
+            if (WaitForSingleObject(ev, 50) != WAIT_OBJECT_0) { if (excl && ++silent > 20) break; if (excl) continue; }
+            silent = 0;
+            if (excl) { if (!fill(frames)) break; continue; }   // (exclusive: the device hands back a whole buffer each time)
             UINT32 pad = 0;
             if (FAILED(ac->GetCurrentPadding(&pad))) break;   // the device went away
             if (pad < target && !fill(target - pad)) break;
         }
         if (ok) ac->Stop();
+        exclusiveActive_ = false;
         releaseCom(rc); releaseCom(ac); releaseCom(dev); releaseCom(en);
-        if (!quit_) Sleep(ok ? 100 : 500);   // (then the default device again)
+        if (!quit_ && !reopen_) Sleep(ok ? 100 : 500);   // (then the default device again)
     }
     if (ev) CloseHandle(ev);
     if (com) CoUninitialize();

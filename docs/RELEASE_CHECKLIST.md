@@ -68,6 +68,7 @@ For each one: change it, check the effect in a game, quit, restart, check it was
 | ☐ | Outline thickness: **world** and **player** separately (0 = off). |
 | ☐ | Crosshair: style, size and colour; the **hit-flash colour** setting, including **off**; the default is unchanged from the last release. |
 | ☐ | Audio: master, effects, announcer, music volumes; the announcer pack. |
+| ☐ | Audio (Windows): sound is clean with EXCLUSIVE AUDIO off (shared, 10 ms) and on (3 ms on the owner's PC; other programs go silent, back when it's turned off); unplugging or switching the output device mid-game moves the sound to the new default. |
 | ☐ | Controls: rebind every action you use. Bind **chat to a letter key** (e.g. Y): pressing it opens chat **without** typing a "y". Bind **Toggle chat**: incoming chat hides / shows with a short message. **Disable chat** in settings stays in sync with the toggle. |
 | ☐ | Interpolation setting (up to 200 ms): shots still hit what you see. |
 | ☐ | HUD editor: drag, add, delete, import / export a layout; the weapon list shows only the weapons the mode has. |
