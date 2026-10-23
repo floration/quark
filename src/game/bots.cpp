@@ -765,7 +765,9 @@ UserCmd botThink(Server& s, int id) {
         if (!b.hookChecked) {
             b.hookChecked = true;
             b.hookUntil = now + 1.6;   // (the 1.6 s of pull the check simulates count from the catch, not from the plan)
-            if (!safeHook(s, me, at)) { b.hookUntil = 0; cmd.buttons &= ~BTN_GRAPPLE; return; }
+            // (latched onto a player: both are pulled to the middle, so that's where the pull ends)
+            Vec3 ends = me.move.hookTarget ? (me.move.pos + Vec3(0, 1.0f, 0) + at) * 0.5f : at;
+            if (!safeHook(s, me, ends)) { b.hookUntil = 0; cmd.buttons &= ~BTN_GRAPPLE; return; }
         }
         // keys along the pull: air control would bend the path off it
         Vec3 along = {at.x - me.move.pos.x, 0, at.z - me.move.pos.z};
@@ -871,6 +873,29 @@ UserCmd botThink(Server& s, int id) {
             if (weaponDef(me.weapon).semiAuto && (me.buttons & BTN_FIRE)) cmd.buttons &= ~BTN_FIRE;
             // switching weapons: let go first (a button held through a switch is locked until it's released)
             if (me.weapon != w || me.fireLocked) cmd.buttons &= ~(BTN_FIRE | BTN_ALTFIRE);
+            // advanced and up, a close-range weapon out: now and then hook the target to drag the fight in (the hook
+            // latches onto an enemy it hits and pulls the two together). Held by holdHook below once it catches.
+            const bool closeWeapon = w == WPN_SHOTGUN || w == WPN_KNIFE || w == WPN_LASER || w == WPN_BUBBLE;
+            const float hookRange = kGrappleRange * moveTuning().m[MV_HOOK_RANGE];
+            const bool onTarget = err < 0.35f / std::max(dist, 1.0f);   // (the hook needs the body under the crosshair)
+            if (now < b.fightHookUntil) {
+                if (me.move.flags & MF_HOOKED) {   // caught: them (held by holdHook below), or the map behind them (let go)
+                    b.fightHookUntil = 0;
+                    if (me.move.hookTarget) { b.hookUntil = now + 1.6; b.hookChecked = false; b.hookAnchor = me.move.hookPoint; }
+                    else b.hookUntil = 0;
+                } else if (onTarget && !(me.move.flags & MF_HOOKHELD)) {
+                    cmd.buttons |= BTN_GRAPPLE;   // (fires once the aim is on them)
+                }
+            } else if (sp.grapple && closeWeapon && moveTuning().grapple && !(me.move.mods & MOVE_RUN_ONLY) && s.ms_.mode != MODE_RACE &&
+                !(me.move.flags & (MF_HOOKED | MF_HOOKHELD)) && me.move.hookCooldown <= 0 && now >= b.nextHookTry &&
+                dist > 7.0f && dist < hookRange * 0.8f) {
+                b.nextHookTry = now + 0.5;
+                // (both are pulled to the middle: that's where the pull ends, and it must be safe ground)
+                if (rnd(b) < (sp.airStrafe > 0.8f ? 0.5f : 0.3f) && safeHook(s, me, (me.move.pos + perceived) * 0.5f + Vec3(0, 1.0f, 0))) {
+                    b.fightHookUntil = now + 0.3;
+                    if (onTarget) cmd.buttons |= BTN_GRAPPLE;
+                }
+            }
         }
         // fight movement: keep a good range for the weapon, dodge
         Vec3 to = perceived - me.move.pos;
@@ -891,6 +916,12 @@ UserCmd botThink(Server& s, int id) {
                 moveDir += b.edgeAway * (b.nearEdge ? 1.5f : 0.7f);
             }
             moveDir += side;
+            // held by the target's grapple and wanting range (no close-range weapon): advanced and up dash out of it
+            if ((me.move.flags & MF_PULLED) && sp.grapple && ideal > 6.0f && me.move.dashCooldown <= 0 && !b.nearEdge && !b.edgeFar &&
+                chance(b, 3.0f, dt)) {
+                Vec3 out = Vec3(-toN.z, 0, toN.x) * (b.strafeDir != 0 ? b.strafeDir : 1.0f);
+                if (groundAlong(s, me.move.pos, out, 10.0f)) { moveDir = out; cmd.buttons |= BTN_DASH; }
+            }
             // (no jumps or dashes within 5 m of a drop: a hit in the air there, a blast or a laser push, is a fall)
             if ((me.move.flags & MF_ONGROUND) && !b.nearEdge && !b.edgeFar) {
                 if (chance(b, sp.jumpRate, dt)) cmd.buttons |= BTN_JUMP;

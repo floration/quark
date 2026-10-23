@@ -65,6 +65,7 @@ struct BotBrain {
     double hookUntil = 0, nextHookTry = 0; // grapple: holding toward hookAnchor until then
     Vec3 hookAnchor;
     bool hookChecked = false;   // the grapple's catch was checked again (safeHook) from where it caught
+    double fightHookUntil = 0;  // fighting: hooking the target (held while the aim is on them) until then
     double nextDecision = 0;    // fight movement choices (jump, dash) are rolled at a fixed game-time rate
     bool nearEdge = false;      // a drop into the void / lava within 3 m (looked for at 20 Hz)
     bool edgeFar = false;       // ...or only within 5 m

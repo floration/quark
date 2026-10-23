@@ -25,8 +25,10 @@ struct MoveState {
     float dashUp = 0;        // vertical part of the dash (from look pitch, small)
     float dashExitSpeed = 0; // horizontal speed to settle to when the burst ends
     float hookCooldown = 0;
-    Vec3 hookPoint;    // grapple anchor while MF_HOOKED
+    Vec3 hookPoint;    // grapple anchor while MF_HOOKED (latched onto a player: their body, moved by the server every tick)
     uint8_t mods = 0;  // MOVE_* rule modifiers (duel)
+    uint8_t hookTarget = 0; // while MF_HOOKED: 0 = the map, 1 + id = latched onto that player
+    Vec3 pullPoint;    // while MF_PULLED: the body of the player whose grapple holds you (set by the server every tick)
 };
 enum : uint8_t {
     MOVE_GRAPPLE_ONLY = 1, // no walking, jumping or dashing: the grapple is the only way to move
@@ -43,6 +45,7 @@ inline uint8_t moveScaleMods(float size) { return size > 1.01f ? MOVE_BIG : size
 enum : uint8_t {
     MF_ONGROUND = 1, MF_CROUCHED = 2, MF_JUMPHELD = 4, MF_FROZEN = 8,
     MF_HOOKHELD = 16, MF_HOOKED = 32, MF_DASHHELD = 64,
+    MF_PULLED = 128,   // another player's grapple holds you: pulled toward pullPoint (a fresh dash or grab breaks free)
 };
 constexpr float kGrappleRange = 45.0f;
 constexpr float kDashCooldown = 1.2f;
@@ -59,5 +62,16 @@ bool rayHitsHead(const Vec3& o, const Vec3& dir, const AABB& hitbox);
 float moveParamBase(int param);           // MV_*
 const char* moveParamUnit(int param);
 float moveBaseGravity(), moveBaseSpeed(), moveBaseJump();
-// Advances movement by cmd.msec milliseconds, in fixed 1 ms steps (tick-rate independent).
-void pmove(MoveState& s, const UserCmd& cmd, const Map& map);
+// The players a grapple fired in this command can latch onto (the server fills it, lag compensated: where the shooter
+// saw them; enemies only). The hook takes the nearest of these or the map along its ray; `hit` says which box caught.
+struct HookProbe {
+    static constexpr int kMax = 32;   // (kMaxPlayers)
+    int n = 0;
+    AABB box[kMax];
+    uint8_t id[kMax] = {};
+    int hit = -1;        // out: index of the box the hook caught (-1: none, or the map)
+    bool head = false;   // out: the ray went through that player's head box
+};
+// Advances movement by cmd.msec milliseconds, in fixed 1 ms steps (tick-rate independent). `probe`: players the
+// grapple can catch (server only; prediction hooks the map and the server's state corrects it).
+void pmove(MoveState& s, const UserCmd& cmd, const Map& map, HookProbe* probe = nullptr);
