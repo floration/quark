@@ -164,6 +164,7 @@ private:
     bool socdPrev_[4] = {}, altPrev_ = false, altToggled_ = false;
     void benchFrame(double dt);
     bool paused_ = false, chatting_ = false, showScores_ = false, settingsInGame_ = false;
+    bool unratedServer_ = false;   // the server said its ranked isn't rated (kUnratedNotice: a testing server)
     std::string chatText_, joinAddr_, error_;
     size_t chatCursor_ = 0;      // caret in chatText_ (chat / console input)
     std::string chatSeen_;       // chatText_ as last edited: any other change (clear, history, completion) puts the caret at the end

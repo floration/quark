@@ -118,7 +118,7 @@ Workflows are in `.github/workflows/`:
 | Piece | Where | How it updates |
 |---|---|---|
 | Ranking server | Cloudflare Worker + D1 database. Address in `site/master.txt`. | By hand. First run the SQL listed in `tools/master/README.md` for the version in the D1 console, then paste `worker.js` and deploy. Cron trigger `*/15 * * * *`. Secrets: `ADMIN_KEY` and `BOT_KEY`. Deploy at the same time as a game release that changes ranked. |
-| Dedicated servers | Linux boxes (the Oracle one), installed with `tools/server/install.sh` | Automatic, to **production** releases only. `autoupdate.sh` checks every minute, verifies the signed manifest, builds that exact commit, and restarts between matches. Logs: `journalctl -t quark-update`; failures at crit priority, optionally sent to `QUARK_ALERT_WEBHOOK`. Behind a different forwarded port or in a container, run with `--own-addr host:port`. |
+| Dedicated servers | Linux boxes (the Oracle one), installed with `tools/server/install.sh`: each runs a **production** server (`quark.service`, your port) and a **testing** server (`quark-testing.service`, the next port, "[TESTING]", ranked never rated; `--no-testing` to leave it out) | Automatic, each to the latest of its channel: production to production releases (every minute), testing to the newest testing prerelease or production release, whichever is newer (every 2 minutes). `autoupdate.sh` verifies the signed manifest, builds that exact commit (one build at a time), and restarts between matches. A load governor (`/var/lib/quark-governor`, `src/game/governor.h`) shares the box: throttles the empty server, then the one not in a ranked match, then the other, to 125 Hz; then closes testing until production is calm. Production never closes. Logs: `journalctl -u quark-update -u quark-testing-update`; failures at crit priority (`journalctl -p crit -t quark-update`, naming the instance), optionally sent to `QUARK_ALERT_WEBHOOK`. Behind a different forwarded port or in a container, run with `--own-addr host:port`. |
 | Discord bot | The bot's Linux box, installed with `install.sh` | By hand. Secrets in `/etc/quark-discord.env`. After 1.17.0 it lives on the `discord-bot` branch. |
 | Website | GitHub Pages (`gh-pages`) | Automatic, on each production release |
 | Asset Studio | https://claude.ai/artifact/JuDQckiZY15XUHz1xbD3pC | Rebuilt and republished after each push (CLAUDE.md "Asset Studio"). Replacements the owner uploads are pulled into `assets/overrides/` before each push. |
@@ -127,7 +127,7 @@ Workflows are in `.github/workflows/`:
 1. Run the 1.17 SQL list before deploying the Worker.
 2. Deploy the Worker together with the release.
 3. Add the cron trigger and `ADMIN_KEY`.
-4. On each dedicated server: `git pull` and run `install.sh` once.
+4. On each dedicated server: `git pull` and run `install.sh` once. It also sets up the testing server on the next UDP port up: forward that port too (or pass `--no-testing`).
 5. Redeploy the bot and rotate its token and `BOT_KEY`.
 6. Ship production before 50 testing prereleases pile up, because launchers 1.16 and older only read the newest 50 releases.
 

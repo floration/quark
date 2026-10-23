@@ -230,6 +230,17 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     rateDownPending_ = false; rateRaisedAt_ = -1e9;
     nextTick_ = timeNow();
     resetRateWindow();
+    windowBad_ = windowSevere_ = false; windowCheckedAt_ = -1e9;
+    if (cfg_.channel != GOV_PROD && cfg_.channel != GOV_TESTING) cfg_.channel = isTestingVersion(QUARK_VERSION) ? GOV_TESTING : GOV_PROD;
+    closed_ = false; govPendingLogged_ = false; govReportAt_ = 0;
+    gov_.reset();
+    if (!cfg_.governorDir.empty()) {   // a production + testing pair on one machine (tools/server/install.sh)
+        std::error_code ec;
+        std::filesystem::create_directories(cfg_.governorDir, ec);
+        gov_ = std::make_unique<Governor>();
+        gov_->start(cfg_.governorDir, cfg_.channel, cfg_.governor, cfg_.governorInterval);
+        log(std::string("load governor: ") + govChannelName(cfg_.channel) + " server, sharing " + cfg_.governorDir);
+    }
     rulesReset(*this);
     running_ = true;
     editing_ = editDirty_ = false;
@@ -281,6 +292,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
 
 void Server::stop() {
     stopMapInfo();
+    if (gov_) { gov_->stop(); gov_.reset(); }
     if (!running_) return;
     if (editDirty_ && !tempEdit_) autosave();   // (after any background one)
     waitAutosave();
@@ -330,6 +342,7 @@ void Server::run(std::atomic<bool>& quit) {
 void Server::idle(double wait) {
     // Sleep in the socket until the next tick (wakes early for packets); the last ~0.3 ms is spun
     // by the caller's loop so 1 ms ticks stay on time.
+    if (closed_) { sock_.waitUs(100000); return; }   // closed by the governor: wake for packets (refused) and its decision
     bool anyHuman = false;
     for (auto& p : players_) anyHuman |= p.connected && !p.isBot;
     if (!anyHuman) { if (wait > 0) sock_.waitUs((int)std::min(wait * 1e6, 5000.0)); return; } // nobody to be on time for: no spinning
@@ -359,7 +372,11 @@ void Server::stepRateDown(const char* why) {
 void Server::checkTickRate() {
     double now = timeNow();
     const bool between = ms_.phase == PHASE_WARMUP || ms_.phase == PHASE_ROUND_END || ms_.phase == PHASE_MATCH_END;
-    if (rateDownPending_ && between && rateLevel_ < kTickRateLevels - 1) { stepRateDown("fell behind during the round"); resetRateWindow(); return; }
+    // Sharing the machine with the other server (governor.h): its cap sets the rate; this server's own step-downs and
+    // step-ups wait until it runs alone again (the governor throttles in the owner's order, not whoever noticed first).
+    const bool governed = gov_ && gov_->active.load(std::memory_order_relaxed);
+    if (governed) { if (applyGovernorCap(between)) return; }
+    else if (rateDownPending_ && between && rateLevel_ < kTickRateLevels - 1) { stepRateDown("fell behind during the round"); resetRateWindow(); return; }
     if (now - rateWindowStart_ < kRateWindow) return;
     if (!g_serverRateCheck) { resetRateWindow(); return; }
     if (editing_ || playerCount() == 0) { resetRateWindow(); return; }
@@ -370,6 +387,8 @@ void Server::checkTickRate() {
     // while the CPU is nearly idle, and the catch-up loop still runs every tick. Step down only when the
     // work itself is heavy (or late ticks come with real load), or packets / clients are being lost.
     bool bad = busy > 0.5 || (lateFrac > kMaxLateFraction && busy > 0.2) || windowSendFail_ > 0 || worstLoss > kMaxClientLossPct;
+    windowBad_ = bad; windowSevere_ = busy > 0.9; windowCheckedAt_ = now;   // (what the governor sees)
+    if (governed) { resetRateWindow(); return; }
     // Below the top rate, now and then try the next one up: a clean, lightly loaded window, and the wait since the
     // last step down is over. If it steps back down, the wait doubles (up to 15 min), so a host that can't hold it
     // isn't bounced up and down. (Between rounds only, like stepping down.)
@@ -392,6 +411,80 @@ void Server::checkTickRate() {
     resetRateWindow();
 }
 
+// The governor's cap for this server (it moves one step at a time). Like the server's own changes (REVIEW GAME-11) it
+// applies at a break; at once when nobody is on the server, or when the governor says the overload is sustained or
+// severe (governor.h forceAfter). A raise never interrupts a round. True if the rate changed.
+bool Server::applyGovernorCap(bool between) {
+    int cap = std::clamp(gov_->cap.load(std::memory_order_relaxed), rateTopLevel_, kTickRateLevels - 1);
+    if (cap == rateLevel_) { govPendingLogged_ = false; return false; }
+    bool lower = cap > rateLevel_;
+    bool empty = humanCount() == 0;
+    if (!(empty || between || (lower && gov_->applyNow.load(std::memory_order_relaxed)))) {
+        if (!govPendingLogged_) { govPendingLogged_ = true; log("tick rate: the governor's " + std::to_string(kTickRates[cap]) + " Hz cap applies at the next break"); }
+        return false;
+    }
+    govPendingLogged_ = false;
+    rateLevel_ = cap;
+    rateDownPending_ = false;
+    rateRaisedAt_ = -1e9;
+    rateUpWait_ = 60; rateUpAt_ = timeNow() + rateUpWait_;   // (running alone again later: no instant self step-up)
+    const char* other = cfg_.channel == GOV_TESTING ? "the production server" : "the testing server";
+    if (!empty) message(std::string("server tick rate ") + (lower ? "lowered" : "raised") + " to " + std::to_string(tickRate()) + " Hz (this machine also runs " + other + ")");
+    log("tick rate -> " + std::to_string(tickRate()) + " Hz (load governor" + (lower ? ")" : ": calm again)"));
+    resetRateWindow();
+    return true;
+}
+
+// A few times a second: our numbers to the governor (a POD copy), its log lines, and closing / reopening (testing).
+void Server::governorFrame(double now) {
+    if (now < govReportAt_) return;
+    govReportAt_ = now + 0.25;
+    GovSide me;
+    me.up = true;
+    me.closed = closed_;
+    me.players = closed_ ? 0 : humanCount();
+    if (rankedLive()) for (int i = 0; i < kMaxPlayers; i++) me.rankedPlayers += isRankedParticipant(i);
+    me.level = rateLevel_;
+    me.top = rateTopLevel_;
+    bool recent = now - windowCheckedAt_ < 2.5 * kRateWindow;   // (an empty server stops checking: its last verdict expires)
+    me.overloaded = recent && windowBad_;
+    me.severe = recent && windowSevere_;
+    gov_->report(me, govLog_);
+    if (!govLog_.empty()) { log(govLog_); glog(LOG_SIMPLE, "%s", govLog_.c_str()); govLog_.clear(); }
+    bool cl = gov_->closed.load(std::memory_order_relaxed);
+    if (cl != closed_) setGovernorClosed(cl);
+}
+
+// Testing only (production is never closed): everyone is told why and dropped, the server leaves the list, refuses
+// connects and stops ticking (idle() sleeps 100 ms at a time: ~0 CPU) until the governor reopens it.
+void Server::setGovernorClosed(bool on) {
+    if (on == closed_ || cfg_.channel != GOV_TESTING) return;
+    if (on) {
+        for (int i = 0; i < kMaxPlayers; i++)
+            if (players_[i].connected && !players_[i].isBot) dropPlayer(i, kGovernorClosedText, true, true);
+        if (master_) {   // off the list now (its /remove runs on a detached thread, as in stop())
+            std::shared_ptr<MasterAnnouncer> ma(std::move(master_));
+            ma->requestStop();
+            runInBackground([ma]() mutable { ma->stop(); ma.reset(); });
+        }
+        rankedMatch_.clear();
+        closed_ = true;
+        log("CLOSED by the load governor: the machine can't carry both servers (production comes first)");
+        glog(LOG_SIMPLE, "closed by the load governor");
+        return;
+    }
+    closed_ = false;
+    rulesReset(*this);
+    rateLevel_ = std::clamp(gov_->cap.load(std::memory_order_relaxed), rateTopLevel_, kTickRateLevels - 1);
+    nextTick_ = timeNow();
+    resetRateWindow();
+    if (cfg_.publicList && !cfg_.lanOnly) { master_ = std::make_unique<MasterAnnouncer>(); master_->start(port()); }
+    log("reopened by the load governor at " + std::to_string(tickRate()) + " Hz");
+    glog(LOG_SIMPLE, "reopened by the load governor");
+}
+
+bool Server::rated() const { return cfg_.channel != GOV_TESTING && !isTestingVersion(QUARK_VERSION); }
+
 double Server::frame() {
     if (activeRules().name != cfg_.custom.name) setActiveRules(cfg_.custom);   // rules are per thread: this thread simulates by this server's
     uint8_t buf[2048];
@@ -401,6 +494,8 @@ double Server::frame() {
     if (probeSock_.isOpen()) tickReachability();
 
     double now = timeNow();
+    if (gov_) governorFrame(now);
+    if (closed_) { nextTick_ = now; checkRestartFlag(); return 0.1; }   // closed by the governor: no ticks
     double period = 1.0 / tickRate();
     if (now - nextTick_ > period * 20) { // fell far behind (debugger, hitch): skip ahead instead of spiralling
         windowLate_ += 20;
@@ -483,7 +578,7 @@ void Server::handlePacket(const NetAddr& from, const uint8_t* data, int len) {
     if (r.u32() != kProtocolMagic) return;
     uint8_t type = r.u8();
     if (type == PKT_INFO_REQUEST) {
-        if (len < kInfoRequestBytes) return; // unpadded: a reply bigger than the request would make us a reflector
+        if (len < kInfoRequestBytes || closed_) return; // (closed by the governor: in nobody's list) // unpadded: a reply bigger than the request would make us a reflector
         uint8_t out[kInfoRequestBytes];
         Writer w(out, sizeof out);
         writeHeader(w, PKT_INFO_REPLY);
@@ -740,6 +835,7 @@ void Server::handleConnect(const NetAddr& from, Reader& r, int len) {
         w.str(why);
         sock_.send(from, out, w.size());
     };
+    if (closed_) { reject(kGovernorClosedText); return; }
     // After the cookie (every client of this protocol sends them: tokens and keys since 30, the dialled address since
     // 32): the reconnect token it was given here before, and its ranked id's public key with a signature of this
     // connect challenge (proof that it holds the key: REVIEW NET-12).
@@ -849,6 +945,11 @@ void Server::sendWelcome(int id) {
         if (!players_[i].rankId.empty()) { GameEvent r; r.type = EV_RANKINFO; r.a = (uint8_t)i; r.text = players_[i].rankId; sendEvent(id, r); }
     }
     if (ms_.flags & MS_RPS) sendEvent(id, rpsEvent_);   // a hide and seek tiebreak in progress: where it's at
+    if (!rated() && (cfg_.ranked || cfg_.timeTrial)) {   // a testing server: said up front (the HUD tags the match too)
+        GameEvent e; e.type = EV_MESSAGE;
+        e.text = std::string(kUnratedNotice) + ": ranked plays as usual here, but no rating or race time counts";
+        sendEvent(id, e);
+    }
 }
 
 // The connection dropped (timed out, or the client said goodbye): the player stays in the game, standing where they
@@ -3062,6 +3163,12 @@ void Server::openRankedTicket() {
     rankedTicketSent_ = false;
     rankedSigDeadline_ = time() + 15.0;
     if (vote_.kind != VOTE_NONE) { message("vote cancelled: the ranked match is live"); vote_ = Vote(); }
+    if (!rated()) {   // a testing server: everything as usual (the lock too), but nothing goes to the ranking server
+        rankedTicketSent_ = true;
+        message(std::string(kUnratedNotice) + ": this match plays like any ranked match but changes nobody's rating");
+        glog(LOG_SIMPLE, "ranked match %s live (testing server: not rated)", rankedMatch_.c_str());
+        return;
+    }
     if (cfg_.lanOnly) { rankedTicketSent_ = true; message("ranked: a LAN-only server can't open match tickets - this match won't be rated"); return; }
     for (int i = 0; i < kMaxPlayers; i++) {
         players_[i].ticketSig.clear();
@@ -3070,7 +3177,7 @@ void Server::openRankedTicket() {
 }
 
 void Server::maybeSendRankedTicket(bool giveUp) {
-    if (!rankedLive() || rankedTicketSent_) return;
+    if (!rankedLive() || rankedTicketSent_ || !rated()) return;
     std::string players, keys, sigs, addrs;
     bool all = true;
     for (int i = 0; i < kMaxPlayers; i++) {
@@ -3097,6 +3204,7 @@ bool Server::timeTrialCounts() const { return cfg_.timeTrial && cfg_.map == "via
 // then sendRaceTicket opens it on the Worker with the racer's key and signature.
 void Server::openRaceTicket() {
     if (!cfg_.timeTrial || cfg_.lanOnly) return;
+    if (!rated()) { message(std::string(kUnratedNotice) + ": time trial runs here don't reach the leaderboard"); return; }
     int racer = -1;
     for (int i = 0; i < kMaxPlayers && racer < 0; i++) if (players_[i].connected && !players_[i].isBot && !players_[i].rankId.empty()) racer = i;
     if (racer < 0 || (players_[racer].rankId == raceTicketFor_ && !raceTicket_.empty()) || !timeTrialCounts()) return;
@@ -3108,6 +3216,7 @@ void Server::openRaceTicket() {
 }
 
 void Server::sendRaceTicket(const std::string& pub, const std::string& sig, const std::string& addr) {
+    if (!rated()) return;
     raceTicketSent_ = true;
     ensureMaster();
     if (master_) master_->post("raceticket", "/ticket", "kind=race&match=" + raceTicket_ + "&map=" + cfg_.map + "&players=" + raceTicketFor_ +
@@ -3116,7 +3225,7 @@ void Server::sendRaceTicket(const std::string& pub, const std::string& sig, cons
 
 void Server::finishRaceRun(int id) {
     ServerPlayer& p = players_[id];
-    if (raceTicket_.empty() || p.rankId != raceTicketFor_ || p.raceSplits.empty() || !master_) return;
+    if (raceTicket_.empty() || p.rankId != raceTicketFor_ || p.raceSplits.empty() || !master_ || !rated()) return;
     if (!raceTicketSent_) {
         GameEvent e; e.type = EV_MESSAGE; e.text = "run not sent to the leaderboard: your game didn't sign the time trial ticket";
         sendEvent(id, e);
@@ -3133,6 +3242,7 @@ void Server::finishRaceRun(int id) {
 }
 
 void Server::postRankedResult(const std::string& eventText) {
+    if (!rated()) return;   // (enterMatchEnd doesn't call it then either)
     std::vector<std::string> ids;
     for (auto& p : players_) ids.push_back(p.rankId);
     std::string match, left, list = rankedResultIds(eventText, ids, &match, nullptr, nullptr, &left);
@@ -3187,7 +3297,8 @@ void Server::handleMasterReply(const std::string& key, const std::string& reply)
 
 std::string Server::listName() const {
     if (cfg_.custom.active()) return "[" + cfg_.custom.name + "] " + cfg_.name;
-    return cfg_.ranked ? std::string("[RANKED ") + arenaVariant(ms_.arenaVariant).title + "] " + cfg_.name : cfg_.name;
+    if (!cfg_.ranked) return cfg_.name;
+    return std::string("[RANKED ") + arenaVariant(ms_.arenaVariant).title + (rated() ? "] " : " - NOT RATED] ") + cfg_.name;
 }
 
 bool Server::rankedBlocks(int id, const std::string& what) {
@@ -3230,6 +3341,7 @@ void Server::setRanked(bool on, int ladder) {
     cfg_.arenaVariant = ladder;
     command("map " + mapName + " " + modeName(rankedMode(ladder)) + " " + arenaVariant(ladder).name);
     message(std::string("ranked on - ") + arenaVariant(ladder).title + " ladder");
+    if (!rated()) message(std::string(kUnratedNotice) + ": matches here are played and tested, but never rated");
 }
 
 bool Server::matchInProgress() const {

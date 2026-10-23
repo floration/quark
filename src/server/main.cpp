@@ -25,6 +25,11 @@ static void usage() {
         "  --upnp           ask the router to forward the port automatically\n"
         "  --restart-flag F when file F appears (an update was installed), restart once no match is being played\n"
         "  --ranked         rated matches (OpenSkill): every player's game reports the result; no bots\n"
+        "  --channel C      prod | testing: the release channel this server runs for (default: testing for a\n"
+        "                   -test. build, else prod). A testing server plays ranked but never rates it.\n"
+        "  --governor-dir D a directory shared with the other server on this machine (a prod + testing pair,\n"
+        "                   tools/server/install.sh): they share the CPU and network, throttling and (testing\n"
+        "                   only) closing in the owner's order when the machine can't carry both\n"
         "  --tickrate N     highest tick rate to try: 1000 (default), 500, 250 or 125.\n"
         "  --snaprate N     snapshots per second to each player (default 500; 1000 = lowest latency,\n"
         "                   250 or less = less CPU and upload bandwidth)\n"
@@ -99,6 +104,12 @@ int main(int argc, char** argv) {
         else if (a == "--nobalance") cfg.balanceBots = false;
         else if (a == "--ranked") cfg.ranked = true;
         else if (a == "--restart-flag") cfg.restartFlag = next();
+        else if (a == "--channel") {
+            std::string c = next();
+            cfg.channel = govChannelFromName(c);
+            if (cfg.channel < 0) { printf("unknown channel %s (prod | testing)\n", c.c_str()); return 1; }
+        }
+        else if (a == "--governor-dir") cfg.governorDir = next();
         else if (a == "-h" || a == "--help") { usage(); return 0; }
         else { printf("unknown option %s\n", a.c_str()); usage(); return 1; }
     }

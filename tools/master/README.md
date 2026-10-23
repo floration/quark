@@ -57,6 +57,13 @@ DELETE FROM race_times WHERE map = 'viaduct' AND id = '<id>';
 ```
 `splits` is the run time in ms at each checkpoint, so a gap that's impossible to cover stands out.
 
+## Testing servers are never rated (1.17)
+Every dedicated-server box also runs a testing server (`tools/server/install.sh`). Its matches are played but never
+rated: the game server doesn't send tickets, results or race runs (`Server::rated`), and the Worker refuses them too.
+`/ticket`, `/result` and `/racerun` from a server whose announced version is a prerelease (`1.17.0-test.42`) answer
+`testing server: ranked not rated` (403), and so does `/report` under a ticket from such a server.
+Deploy: Worker → **Edit code** → replace everything with the new `worker.js` → **Deploy**. No database change.
+
 ## Server tokens, rate limits (security update)
 Database: none of this was live before 1.17, so its SQL is in the one combined list under **Deploy** in
 "Ranked keys, leavers, disputes, hardening (1.17)" below. Run that list, not pieces of it.
