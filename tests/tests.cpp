@@ -5696,6 +5696,7 @@ static void testReachProbe(uint16_t port) {
 
 #include "rules_tests.h"   // game rule tests (owner answers 5.x, REVIEW batch 2)
 #include "server_tests.h"  // server / netcode tests (FINAL_REVIEW 2.8-2.11, 6.4, 6.5, clock, PERF-8 / 9, ENG-2)
+#include "governor_tests.h" // two servers on one machine: the load governor, ranked never rated on testing
 
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
@@ -5840,11 +5841,12 @@ int main(int argc, char** argv) {
         {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
         {"rules", [] { testGameRules(""); }},
         {"assets", [] { g_fail += assetTests(); }},
-        {"server", [] { serverTests(); }},
+        {"server", [] { serverTests(); testGovernorPolicy(); testRankedNotRated(TP(28632)); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
         {"netcode", [] { testInterpRewind(TP(28703)); testUptimeClock(TP(28702)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
         {"tickrate", [] { testTickRateFallback(TP(28710)); testRateBetweenRounds(TP(28711)); testRateUndoStepUp(TP(28712)); }},
+        {"governor", [] { testGovernorPolicy(); testGovernorTwoServers(TP(28714)); testRankedNotRated(TP(28716)); }},
         {"resetmaps", [] { testResetMaps(); }},
         {"userdata", [] { testUserData(); }},
     };

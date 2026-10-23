@@ -284,6 +284,7 @@ void Game::connectTo(const std::string& rawAddr) {
     while (!addr.empty() && (unsigned char)addr[0] <= ' ') addr.erase(0, 1);
     if (!net_.connect(addr, cfg_.name)) { error_ = net_.error(); return; }
     edSession_ = edOnline_ = false;
+    unratedServer_ = false;
     rankBefore_ = rankGamesBefore_ = -1;
     if (!host_) { cfg_.lastAddress = addr; cfg_.save(); }
     setScreen(Screen::Connecting);
@@ -937,6 +938,7 @@ void Game::handleEvents() {
                 if (!cfg_.chatOff) addChat({net_.playerName(e.a) + ": " + e.text, isFriendly(e.a) ? rgba(cfg_.colorFriendly) : rgba(cfg_.colorEnemy), time_ + 10, crownOf(e.a), true});
                 break;
             case EV_MESSAGE:
+                if (e.text.rfind(kUnratedNotice, 0) == 0) unratedServer_ = true;   // (a testing server: the HUD says NOT RATED)
                 addChat({e.text, kGrey, time_ + 8});
                 break;
             case EV_RANKED: {
@@ -2169,11 +2171,13 @@ void Game::drawHud() {
         const Color gold = {1.0f, 0.78f, 0.25f, 1};
         r_.rect(cx - half, 8 * s, half * 2, 3 * s, gold);
         float tts = std::max(1.0f, std::round(ts * 0.5f));
-        float tw = r_.textWidth("RANKED", tts) + 12 * s; // tag on the panel's right edge, clear of the objective line
+        const char* tag = unratedServer_ ? "RANKED - NOT RATED" : "RANKED";
+        float tw = r_.textWidth(tag, tts) + 12 * s; // tag on the panel's right edge, clear of the objective line
         r_.rect(cx + half + 4 * s, 8 * s, tw, r_.textHeight(tts) + 8 * s, gold);
-        r_.text(cx + half + 10 * s, 12 * s, tts, "RANKED", {0.1f, 0.08f, 0.02f, 1});
+        r_.text(cx + half + 10 * s, 12 * s, tts, tag, {0.1f, 0.08f, 0.02f, 1});
         if (ms.phase == PHASE_WARMUP || ms.phase == PHASE_FREEZE)
             ui_.labelCentered(cx, 104 * s, "RANKED: DEFAULT MODEL, HUD, CONTROLS AND 10 MS INTERP FOR FAIRNESS", gold, 0.5f); // under the ruleset line
+        if (unratedServer_) ui_.labelCentered(cx, 118 * s, std::string(kUnratedNotice) + ": RESULTS DON'T COUNT", gold, 0.5f);
     }
     ui_.labelCentered(cx, 16 * s, title, kWhite);
     ui_.labelCentered(cx, phaseY, phase, kGrey);
@@ -3797,7 +3801,9 @@ void Game::drawMenu() {
                 } else if (ui_.button(lx, y, lw, bh, std::string("MODE: ") + modeTitle(hostModeIdx_) + (hostModeIdx_ == MODE_ARENA || hostModeIdx_ == MODE_TOURNEY ? std::string(" - ") + arenaVariant(cfg_.hostArenaVariant).title : "") + "  >")) picker_ = PICK_HOST_MODE;
                 y += bh + gap;
                 if (cfg_.hostRanked) {
-                    ui_.label(lx, y, "RANKED MAPS ONLY - EACH LADDER HAS ITS OWN RATING", kGrey, 0.5f);
+                    if (isTestingVersion(QUARK_VERSION))   // (a testing build hosts ranked unrated: Server::rated)
+                        ui_.label(lx, y, "TESTING BUILD - RANKED NOT RATED (PLAYED, NEVER COUNTED)", {1.0f, 0.78f, 0.25f, 1}, 0.5f);
+                    else ui_.label(lx, y, "RANKED MAPS ONLY - EACH LADDER HAS ITS OWN RATING", kGrey, 0.5f);
                     ui_.label(lx, y + 12 * s, "FAIRNESS: DEFAULT MODEL, HUD, CONTROLS, 10 MS INTERP", kGrey, 0.5f);
                 }
                 else if (!built) ui_.label(lx, y, "NOT BUILT FOR THIS MODE - IT MAY NOT WORK", kRed);

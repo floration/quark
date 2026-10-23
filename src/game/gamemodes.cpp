@@ -102,7 +102,10 @@ void enterMatchEnd(Server& s, const std::string& text, int winner) {
     if (s.cfg_.ranked) {
         std::string why, res = s.rankedResult(winner, &why);
         if (res.empty()) s.message("not rated: " + why);
-        else {
+        else if (!s.rated()) {   // a testing server: no EV_RANKED (players' games would report it), no result posted
+            s.message(std::string(kUnratedNotice) + ": the result isn't sent to the ranking server");
+            s.glog(LOG_SIMPLE, "ranked (not rated: testing server) %s", res.c_str());
+        } else {
             GameEvent r; r.type = EV_RANKED; r.text = res; s.broadcastEvent(r); s.glog(LOG_SIMPLE, "ranked %s", res.c_str());
             // the server's own account goes to the Worker under the ticket; players' reports must agree with it
             s.postRankedResult(res);

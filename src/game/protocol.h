@@ -33,6 +33,9 @@ enum PacketType : uint8_t {
 };
 
 constexpr int kInfoRequestBytes = 160;      // PKT_INFO_REQUEST size; the reply is trimmed to fit (no amplification)
+// A testing server (or testing build) plays ranked but never rates it (Server::rated): every notice about that starts
+// with this (the client's HUD tags the match NOT RATED when it sees it).
+constexpr const char* kUnratedNotice = "TESTING SERVER - RANKED NOT RATED";
 constexpr int kInfoNameMax = 96, kInfoMapMax = 40; // 5 + 97 + 41 + 5 <= kInfoRequestBytes
 constexpr int kRejectHeaderBytes = 5;       // PKT_REJECT before its reason (u32 magic, u8 type)
 constexpr int kProbeRequestBytes = 32;      // PKT_PROBE_REQUEST size (the 9 byte reply is smaller: no amplification)

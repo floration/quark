@@ -1,6 +1,7 @@
 // Authoritative game server. Used by the standalone quark_server executable and by
 // the client when hosting a game (runs on its own thread, client connects via loopback).
 #pragma once
+#include "governor.h"
 #include <cmath>
 #include <atomic>
 #include <cstdio>
@@ -78,6 +79,14 @@ struct ServerConfig {
     std::string restartFlag;    // if this file appears (an update was installed), restart once no match is being played
     bool timeTrial = false;     // solo ranked race on Viaduct: no bots, checkpoint splits sent to the racer
     bool ranked = false;        // matches are rated (OpenSkill) once every player reports the same result; no bots
+    // Release channel this server runs for (GOV_PROD / GOV_TESTING; -1: by the build, testing for a -test. version).
+    // A testing server (or any testing build) plays ranked normally but never sends anything to the ranking server.
+    int channel = -1;
+    // Load governor (governor.h): a directory shared with the other server on this machine (tools/server/install.sh
+    // runs a production and a testing server per box). Empty: none (a single server, in-game hosting).
+    std::string governorDir;
+    GovParams governor;              // (tests shorten its windows)
+    double governorInterval = 1.0;   // seconds between status rounds
     CustomRules custom;         // a custom mode (name empty = none): its mode, weapons, movement, map pool, ...
 };
 enum LogLevel { LOG_OFF = 0, LOG_SIMPLE, LOG_VERBOSE, LOG_EXTREME };
@@ -384,6 +393,21 @@ public:
     bool restartRequested() const { return restartNow_; }
     bool matchInProgress() const;
     bool restartNow_ = false, restartAnnounced_ = false;
+    // Ranked here is rated: not a testing server (--channel testing) and not a testing build (a -test. version).
+    // Otherwise ranked plays normally (queue, lock, everything) but no ticket, result or race run leaves the server.
+    bool rated() const;
+    // Load governor (cfg_.governorDir): its thread decides; the tick thread reports a few times a second and applies
+    // the cap (governorFrame). closed_: a testing server the governor closed (no ticks, connects refused, unlisted).
+    std::unique_ptr<Governor> gov_;
+    bool closed_ = false;
+    double govReportAt_ = 0;
+    bool govPendingLogged_ = false;
+    std::string govLog_;
+    bool windowBad_ = false, windowSevere_ = false;   // the last rate window checked (and when): what the governor sees
+    double windowCheckedAt_ = -1e9;
+    void governorFrame(double now);
+    bool applyGovernorCap(bool between);
+    void setGovernorClosed(bool on);
     double nextFlagCheck_ = 0, restartAt_ = 0;
     void checkRestartFlag();
     std::string rankedResult(int winner, std::string* whyNot); // EV_RANKED text for the match that just ended

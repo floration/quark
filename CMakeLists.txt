@@ -107,6 +107,7 @@ add_library(quark_core STATIC
   src/game/pmove.cpp
   src/game/protocol.cpp
   src/game/server.cpp
+  src/game/governor.cpp
   src/game/gamemodes.cpp
   src/game/netclient.cpp
   src/game/bots.cpp
