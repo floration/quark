@@ -17,13 +17,13 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
     w.u8(s.clientId);
     // own movement state, exact (prediction replays from it); the grapple / dash parts only while active
     const MoveState& m = s.self;
-    uint8_t opt = ((m.flags & MF_HOOKED) ? 1 : 0) | (m.dashTimer > 0 ? 2 : 0) | (m.dashCooldown > 0 ? 4 : 0) | (m.hookCooldown > 0 ? 8 : 0) |
+    uint8_t opt = ((m.flags & MF_HOOKED) ? 1 : 0) | (m.dashTimer > 0 ? 2 : 0) | (m.dashCharges != kDashCharges ? 4 : 0) | (m.hookCooldown > 0 ? 8 : 0) |
                   ((m.flags & MF_HOOKED) && m.hookTarget ? 16 : 0) | ((m.flags & MF_PULLED) ? 32 : 0) |
                   (m.jumpBuffer > 0 || m.jumpGrace > 0 ? 64 : 0) | (m.dashTimer > 0 && m.dashBounces > 0 ? 128 : 0);
     w.vec(m.pos); w.vec(m.vel); w.u8(m.flags); w.u8(m.mods); w.u8(opt);
     if (opt & 1) w.vec(m.hookPoint);
     if (opt & 2) { w.f32(m.dashTimer); w.f32(m.dashDirX); w.f32(m.dashDirZ); w.f32(m.dashExitSpeed); w.f32(m.dashUp); }
-    if (opt & 4) w.f32(m.dashCooldown);
+    if (opt & 4) w.u8(m.dashCharges);   // (41: dash charges, when not the full 2; before, the dash cooldown as an f32)
     if (opt & 8) w.f32(m.hookCooldown);
     if (opt & 16) w.u8(m.hookTarget);    // (38: the grapple latched onto a player, and the one it holds)
     if (opt & 32) w.vec(m.pullPoint);
@@ -47,7 +47,7 @@ bool readSnapshotClient(Reader& r, Snapshot& s, uint16_t proto) {
     uint8_t opt = r.u8();
     if (opt & 1) m.hookPoint = r.vec();
     if (opt & 2) { m.dashTimer = r.f32(); m.dashDirX = r.f32(); m.dashDirZ = r.f32(); m.dashExitSpeed = r.f32(); m.dashUp = r.f32(); }
-    if (opt & 4) m.dashCooldown = r.f32();
+    if (opt & 4) { if (proto >= kSnapDashChargesSince) m.dashCharges = r.u8(); else r.f32(); }   // (older: the dash cooldown, gone)
     if (opt & 8) m.hookCooldown = r.f32();
     if (opt & 16) m.hookTarget = r.u8();   // (older demos never set these bits)
     if (opt & 32) m.pullPoint = r.vec();

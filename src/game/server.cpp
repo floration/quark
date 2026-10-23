@@ -2330,7 +2330,7 @@ void Server::stepProjectile(Projectile& pr) {
                 auto& t = players_[hitPlayer];
                 t.health = std::min(lifeMaxHealth(), t.health + kSyringeHeal * tunedDamage(WPN_SYRINGE));
                 t.nextFire = time();
-                t.move.dashCooldown = 0;
+                t.move.dashCharges = (uint8_t)dashMaxCharges(t.move.mods);
                 t.move.hookCooldown = 0;
                 if (t.knifeBackAt > time()) t.knifeBackAt = time();   // (a thrown knife / syringe is back at once too)
                 if (t.syringeBackAt > time()) t.syringeBackAt = time();
@@ -3148,9 +3148,9 @@ void Server::logTick() {
         const Vec3& o = p.move.pos;
         const Vec3& v = p.move.vel;
         if (extreme)
-            fprintf(glog_, "  p%d pos %.3f %.3f %.3f vel %.3f %.3f %.3f yaw %.4f pitch %.4f hp %.1f wpn %d btn %04x flags %02x dash %.3f hook %.3f\n",
+            fprintf(glog_, "  p%d pos %.3f %.3f %.3f vel %.3f %.3f %.3f yaw %.4f pitch %.4f hp %.1f wpn %d btn %04x flags %02x dash %d hook %.3f\n",
                     i, o.x, o.y, o.z, v.x, v.y, v.z, p.yaw, p.pitch, p.health, p.weapon, p.buttons, p.move.flags,
-                    p.move.dashCooldown, p.move.hookCooldown);
+                    (int)p.move.dashCharges, p.move.hookCooldown);
         else
             fprintf(glog_, "  p%d pos %.2f %.2f %.2f vel %.2f %.2f %.2f yaw %.3f pitch %.3f hp %.0f wpn %d\n",
                     i, o.x, o.y, o.z, v.x, v.y, v.z, p.yaw, p.pitch, p.health, p.weapon);

@@ -14,12 +14,14 @@ struct UserCmd {
     float yaw = 0, pitch = 0;
 };
 
+constexpr int kDashCharges = 2;   // dashes you hold (owner 1.17: charges replace the 1.2 s cooldown; see pmove.cpp)
+
 // Everything prediction needs to replay movement. Sent unquantized for the local player.
 struct MoveState {
     Vec3 pos;      // feet position (bottom center of hull)
     Vec3 vel;
     uint8_t flags = 0; // MF_*
-    float dashCooldown = 0;
+    uint8_t dashCharges = kDashCharges;   // dashes left: the ground refills them all, a bhop landing one
     float dashTimer = 0;     // > 0 while the dash burst is active
     float dashDirX = 0, dashDirZ = 0;
     float dashUp = 0;        // vertical part of the dash (from look pitch, small)
@@ -35,7 +37,7 @@ struct MoveState {
 };
 enum : uint8_t {
     MOVE_GRAPPLE_ONLY = 1, // no walking, jumping or dashing: the grapple is the only way to move
-    MOVE_QUICK_DASH = 2,   // dash recharges 3x faster
+    MOVE_QUICK_DASH = 2,   // one dash charge more (3)
     MOVE_LOW_GRAVITY = 4,  // 40% gravity
     MOVE_RUN_ONLY = 8,     // no dash, no grapple: run and jump (and climb ladders) only
     MOVE_BIG = 16,         // duel "double size" / "giant snipers": the hull (and eyes) x kBigScale
@@ -51,7 +53,6 @@ enum : uint8_t {
     MF_PULLED = 128,   // another player's grapple holds you: pulled toward pullPoint (a fresh dash or grab breaks free)
 };
 constexpr float kGrappleRange = 45.0f;
-constexpr float kDashCooldown = 1.2f;
 constexpr float kHookCooldown = 1.0f;   // after the hook is released
 
 // The hull: kPlayerHalfWidth each side, kPlayerHeight tall (crouched: kPlayerCrouchHeight), times scale (size modifiers).
@@ -65,6 +66,8 @@ bool rayHitsHead(const Vec3& o, const Vec3& dir, const AABB& hitbox);
 float moveParamBase(int param);           // MV_*
 const char* moveParamUnit(int param);
 float moveBaseGravity(), moveBaseSpeed(), moveBaseJump();
+// how many dash charges a full refill gives (kDashCharges x the custom mode's multiplier, at least 1; quick dash +1)
+int dashMaxCharges(uint8_t mods);
 // The players a grapple fired in this command can latch onto (the server fills it, lag compensated: where the shooter
 // saw them; enemies only). The hook takes the nearest of these or the map along its ray; `hit` says which box caught.
 struct HookProbe {

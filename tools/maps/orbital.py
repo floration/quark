@@ -94,10 +94,14 @@ def build():
     m.stairs(-15, -8, -13, -4, 0, "x", 1, mirror=True, base=-1.5)
     # the observation gallery at 8 m along the hull over each window, up a ladder from the corridor deck: the high
     # perch over the hub (and in plain sight of the other gallery)
-    for (a0, b0, a1, b1) in minus((-8, -16, 8, -13.6), [(-7.6, -16, -6.4, -15.1)]): m.box(a0, 7.7, b0, a1, 8.0, b1, mirror=True)
-    m.box(-8, 8.0, -13.7, 8, 8.9, -13.6, accent=True, mirror=True)
-    m.ladder(-7, -15.96, 4.5, 8.0, "n", width=0.8)
-    m.ladder(7, 15.96, 4.5, 8.0, "s", width=0.8)
+    # (1.17: the ladder climbs the gallery's front, a strut under its edge, facing the hull: at 6.75 m/s you come
+    # out over the top with a hop that carries you a few metres, and the hull stops you on the gallery. Up the hull
+    # through a hole in its floor, stepping back off the top threw you over the rail into the hub.)
+    m.box(-8, 7.7, -16, 8, 8.0, -13.6, mirror=True)
+    for (a0, a1) in ((-8, -7.5), (-6.5, 8)): m.box(a0, 8.0, -13.7, a1, 8.9, -13.6, accent=True, mirror=True)   # (open over the ladder)
+    m.box(-7.6, 4.5, -14.0, -6.4, 7.7, -13.6, mat="metal", mirror=True)        # the strut the ladder runs up
+    m.ladder(-7, -13.6, 4.5, 8.0, "n", width=0.8)
+    m.ladder(7, 13.6, 4.5, 8.0, "s", width=0.8)
     m.box(-8, 4.2, -16, -6, 4.5, -10, mirror=True)                                # the deck runs on to the foot of the gallery ladder
     for x in (-4, 0, 4): m.light(x, 7.2, -14.8, 6, 0.6, mirror=True)
     # ---- the outer strips behind the windows: walkways along the hull to flank the hub

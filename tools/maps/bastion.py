@@ -52,6 +52,11 @@ def build():
         notch = (cx - 0.6, min(zf, zf - sz * 0.9), cx + 0.6, max(zf, zf - sz * 0.9))
         for (a0, b0, a1, b1) in minus((cx - 4, cz - 4, cx + 4, cz + 4), [notch]): m.box(a0, 11.7, b0, a1, 12.0, b1)
         m.ladder(cx, zf, WH, 12.0, "s" if sz > 0 else "n", width=0.8)
+        # a tall stone on the outer edge of the wall top over the ladder: at 6.75 m/s you come out over the 1 m wall
+        # top with a hop that would carry you off the castle; this stops you on it (1.17; clear of the climb, so you
+        # stand, not climb on)
+        zo = cz + 5.0 * sz
+        m.box(cx - 0.6, 12.0, min(zo, zo - sz * 0.2), cx + 0.6, 14.6, max(zo, zo - sz * 0.2), accent=True)
     for sx in (-1, 1):                                                         # flank towers halfway along east / west
         tower(sx * (W + 2.5), 0, half=4.0, doors=("n", "s"))
     for sz in (-1, 1):                                                         # gatehouse towers either side of each gate

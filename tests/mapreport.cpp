@@ -28,7 +28,7 @@ namespace {
 // extreme = only the sniper (and a scoped rifle) reaches.
 constexpr float kBandClose = 6.0f, kBandMid = 20.0f;
 float bandLong() { return weaponDef(WPN_LASER).range; }
-constexpr float kRunSpeed = 8.0f;   // pmove kGroundSpeed
+constexpr float kRunSpeed = 9.5f;   // pmove kGroundSpeed (1.17: 8 -> 9.5)
 // Attack / defend timing (owner decision B2): at every bomb site and capture point, the attackers' arrival minus the
 // defenders' (positive: the defenders are there first) must be within this band. Graded at the worst site / point.
 constexpr float kLeadLo = -1.0f, kLeadHi = 1.0f;
@@ -318,7 +318,7 @@ const MoveEnvelope& moveEnvelope() {
         MoveEnvelope e;
         // (past 28 m/s an upward dash gets no higher: its exit speed is capped; 32 and 36 m/s: super dashes)
         e.speed = {kRunSpeed, 12, 16, 20, 24, 28, 32, 36};
-        // speed from a standstill: jump held (auto-bhop), the dash on cooldown while it adds speed, and each
+        // speed from a standstill: jump held (auto-bhop), dashing whenever a charge is there and it adds speed, and each
         // millisecond the strafe / turn that gains the most (greedy: a good player, not a tool-assisted one). Two
         // ways, the better per tier: dashing as soon as it adds speed (a dash jump when it starts on the floor), and
         // super dashes (looking down, dashing on a bhop's landing tick whenever the dash is ready).
@@ -334,8 +334,10 @@ const MoveEnvelope& moveEnvelope() {
             size_t next = 1;
             for (int t = 0; t < 30000 && next < e.speed.size(); t++) {
                 float h = hspeed(s.vel), vyaw = h > 0.1f ? std::atan2(-s.vel.x, -s.vel.z) : 0;
-                bool dash = !dashed && s.dashCooldown <= 0 && s.dashTimer <= 0 && h < 29.0f;   // (above 29 m/s a dash slows you)
-                if (superDash) dash = !dashed && s.dashCooldown <= 0 && s.dashTimer <= 0 && (s.flags & MF_ONGROUND) && h < 35.9f;
+                // (charges: 2, the ground refills them, a bhop landing one, a dash jump all, a super dash leaves one;
+                // above 31 m/s a dash slows you: it leaves at your speed + 1, at most 32)
+                bool dash = !dashed && s.dashCharges > 0 && s.dashTimer <= 0 && h < 31.0f;
+                if (superDash) dash = !dashed && s.dashCharges > 0 && s.dashTimer <= 0 && (s.flags & MF_ONGROUND) && h < 35.9f;
                 MoveState best;
                 float bestH = -1;
                 bool bestDash = false;
@@ -361,15 +363,18 @@ const MoveEnvelope& moveEnvelope() {
             }   // (a tier neither way reaches keeps 1e9: never)
         }
         lap("speed build-up");
-        // take-offs: moving at the tier's speed, jump, then (or not) an upward dash after tau at pitch p. Each arc is
-        // followed until it is kLowest below the take-off; the envelope is the highest any of them is at each distance.
+        // take-offs: moving at the tier's speed, jump, then (or not) an upward dash after tau at pitch p, and with the
+        // charges left (two; a dash jump off the take-off refills them) more dashes the same way: chained (each as the
+        // last ends) or one 0.3 s later. Each arc is followed until it is kLowest below the take-off; the envelope is
+        // the highest any of them is at each distance.
         Map pad;
         pad.parse("box -1 -1 -1 1 0 1\nspawn any 0 0 0\n");
         e.top.assign(e.speed.size(), std::vector<float>(MoveEnvelope::kBins, -1e9f));
         e.apexLevel.assign(e.speed.size(), std::vector<float>(MoveEnvelope::kBins, 1e9f));
         for (size_t k = 0; k < e.speed.size(); k++) {
             for (int ti = 0; ti <= 5; ti++)
-                for (int pi = -2; pi <= 9; pi++) {   // (no dash, a down dash (a super dash off the take-off), or one at 0-90 degrees up, 0-0.4 s after the jump)
+                for (int pi = -2; pi <= 9; pi++)   // (no dash, a down dash (a super dash off the take-off), or one at 0-90 degrees up, 0-0.4 s after the jump)
+                for (int more = 0; more < (pi == -1 ? 1 : 4); more++) {   // dashes after it: none, 1 or 2 chained, one 0.3 s later
                     float tau = ti * 0.08f, pitch = pi == -2 ? -1.2f : pi < 0 ? 0 : pi * 10 * 0.0174533f;
                     MoveState s;
                     s.pos = {0, 0, 0.9f};
@@ -382,7 +387,9 @@ const MoveEnvelope& moveEnvelope() {
                         c.msec = 1;
                         c.forward = 127;
                         c.pitch = pitch;
-                        c.buttons = BTN_JUMP | (pi != -1 && t >= (int)(tau * 1000) && t < (int)(tau * 1000) + 5 ? BTN_DASH : 0);
+                        int t0 = (int)(tau * 1000), n = more == 3 ? 1 : more, gapMs = more == 3 ? 300 : 125;
+                        bool press = pi != -1 && t >= t0 && (t - t0) % gapMs < 5 && (t - t0) / gapMs <= n;
+                        c.buttons = BTN_JUMP | (press ? BTN_DASH : 0);
                         pmove(s, c, pad);
                         apex = std::max(apex, s.pos.y);
                         int b = (int)((0.9f - s.pos.z) / MoveEnvelope::kBin);
@@ -1200,7 +1207,7 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g, cons
             // tourney match plays from the a / b spawns too
             float ab = across(spA, spB), ba = across(spB, spA);
             line = fairLine(modeLabel(mode), ab, ba);
-            if (ab > 0 && ba > 0) { snprintf(buf, sizeof buf, ", %.1f s apart at 8 m/s", std::max(ab, ba) / kRunSpeed); line += buf; }
+            if (ab > 0 && ba > 0) { snprintf(buf, sizeof buf, ", %.1f s apart at 9.5 m/s", std::max(ab, ba) / kRunSpeed); line += buf; }
         }
         if (mode == MODE_FFA || mode == MODE_TOURNEY) {
             float minD = 1e9f; int seenPairs = 0, n = 0;
@@ -1217,7 +1224,7 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g, cons
             float total = 0;
             bool ok = true;
             for (auto& c : m.checkpoints) { float d = navBetween(g, at, c.center()); if (d < 0) ok = false; else total += d; at = c.center(); }
-            snprintf(buf, sizeof buf, "%zu checkpoints, %s %.0f m walked (%.0f s at 8 m/s, %.0f s at 20 m/s)", m.checkpoints.size(), ok ? "route" : "PARTLY UNREACHABLE route", total, total / kRunSpeed, total / 20);
+            snprintf(buf, sizeof buf, "%zu checkpoints, %s %.0f m walked (%.0f s at 9.5 m/s, %.0f s at 20 m/s)", m.checkpoints.size(), ok ? "route" : "PARTLY UNREACHABLE route", total, total / kRunSpeed, total / 20);
             line = buf;
         } else if (mode == MODE_POINTS && !m.points.empty()) {
             line = std::to_string(m.points.size()) + " points;";
@@ -1549,7 +1556,7 @@ int mapReport(const char* outPath) {
              "The tech checks below use these.\n\n| speed | run-up | rise | across, level | across, 3.5 m up | across, 8 m up | after a 20 m grapple pull |\n|---|---|---|---|---|---|---|\n";
         for (int k = 0; k < E.tiers(); k++) {
             char line[256];
-            snprintf(line, sizeof line, "| %.0f m/s | %.0f m | %.1f m | %.1f m | %.1f m | %.1f m | %.0f m/s |\n", E.speed[k], E.runUp[k], E.rise(k), E.reach(k, 0), E.reach(k, 3.5f), E.reach(k, 8), E.pullExit[k][4]);
+            snprintf(line, sizeof line, "| %g m/s | %.0f m | %.1f m | %.1f m | %.1f m | %.1f m | %.0f m/s |\n", E.speed[k], E.runUp[k], E.rise(k), E.reach(k, 0), E.reach(k, 3.5f), E.reach(k, 8), E.pullExit[k][4]);
             o << line;
         }
         o << "\n";
