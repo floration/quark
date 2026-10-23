@@ -3919,12 +3919,15 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
         audio_.setExclusive(cfg_.exclusiveAudio);
     y += h + gap;
 #endif
-    static const int caps[] = {0, 60, 120, 144, 165, 240, 360, 500, 1000};
-    static const std::vector<std::string> capNames = {"UNLIMITED FPS", "60 FPS MAX", "120 FPS MAX", "144 FPS MAX", "165 FPS MAX",
-                                                      "240 FPS MAX", "360 FPS MAX", "500 FPS MAX", "1000 FPS MAX"};
-    int ci = 0;
-    for (int i = 0; i < 9; i++) if (caps[i] == cfg_.maxFps) ci = i;
-    if (ui_.cycle(xr, y, w, h, "MAX FPS", ci, 9, capNames, UiExp::cfg("maxfps"))) cfg_.maxFps = caps[ci];
+    {   // any cap, typed or dragged (0: unlimited); right-click: the screen's refresh rate (G-Sync / FreeSync: a few under)
+        GLFWmonitor* mon = glfwGetWindowMonitor(win_);
+        if (!mon) mon = glfwGetPrimaryMonitor();
+        const GLFWvidmode* vm = mon ? glfwGetVideoMode(mon) : nullptr;
+        float v = (float)cfg_.maxFps;
+        ui_.slider(xr, y, w, h, "MAX FPS", v, 0, 1000, cfg_.maxFps <= 0 ? "UNLIMITED" : "%.0f", UiExp::cfg("maxfps"),
+                   (float)(vm && vm->refreshRate > 0 ? vm->refreshRate : 60));
+        cfg_.maxFps = std::min(std::max(0, (int)std::lround(v)), 100000);
+    }
     y += h + gap;
     // (a row each: "PLAYER SHADOWS: ON" in half a row was cut off at 720p - UI test)
     ui_.toggle(xr, y, w, h, "PLAYER SHADOWS", cfg_.shadows, UiExp::cfg("shadows"));
@@ -4932,6 +4935,9 @@ void Game::latentWait() {
     double blank = 0, refresh = 0;
     if (!rasterBlank(&blank, &refresh)) return;   // (no scanline from the driver: no vsync)
     const double now = timeNow(), lead = latentWorst_ + 0.0001;   // (input read to finished, the slowest lately, + 100 us)
+    // A PC whose frames take most of a refresh can't make every blank: no sync (it tears instead of stuttering, like
+    // adaptive vsync) until the frames are quick enough again
+    if (lead > refresh * 0.9) { latentFlip_ = 0; return; }
     double flip = blank + cfg_.latentOffsetUs * 1e-6;
     while (flip - lead < now || flip < latentFlip_ + refresh * 0.5) flip += refresh;   // (one frame a refresh)
     latentFlip_ = flip;
@@ -4939,7 +4945,7 @@ void Game::latentWait() {
 }
 
 void Game::beforeSwap() {
-    if (cfg_.presentMode != 3 || latentFlip_ <= 0) return;
+    if (cfg_.presentMode != 3 || !raster_.ok()) return;
     // the frame finished on the GPU (how long it took from its input read: the next frames' lead)...
     GLsync f = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
     glClientWaitSync(f, GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
@@ -4948,7 +4954,7 @@ void Game::beforeSwap() {
     if (took > latentWorst_) { latentWorst_ = took; latentWorstAt_ = done; }
     else if (done - latentWorstAt_ > 3.0) latentWorst_ += (took - latentWorst_) * 0.02;   // (3 s without one as slow: ease down)
     // ...then held until its vertical blank (a frame that ran late flips now: its tear line shows, and the lead grows)
-    waitUntil(latentFlip_);
+    if (latentFlip_ > 0) waitUntil(latentFlip_);
 }
 
 void Game::applyPresentMode() {

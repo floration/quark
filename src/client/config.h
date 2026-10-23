@@ -16,7 +16,12 @@ struct Settings {
     float brightness = 1.0f;    // scales the lit scene (0.6 - 1.8)
     int displayMode = 0;        // 0 windowed, 1 borderless fullscreen, 2 exclusive fullscreen (legacy)
     int interpMs = 0;           // other players' interpolation delay: 0 = adaptive, else fixed ms (ranked: always 10)
-    int presentMode = 0;        // 0 immediate (vsync off, tearing), 1 vsync, 2 adaptive vsync (tears only when late),
+#ifdef _WIN32
+    int presentMode = 3;        // (the default: latent sync; a typical PC runs many times the refresh rate)
+#else
+    int presentMode = 0;        // (the default: no vsync; latent sync needs Windows' scanline)
+#endif
+                                // 0 immediate (vsync off, tearing), 1 vsync, 2 adaptive vsync (tears only when late),
                                 // 3 latent sync (Windows: a frame a refresh, flipped as the blank begins; Game::latentWait)
     int latentOffsetUs = 0;     // latent sync: the flip this much later (+) or sooner (-), moving the tear line
     bool gpuMaxClocks = false;  // Windows, NVIDIA: "Prefer maximum performance" in quark's driver profile (gpuprefs.h)
