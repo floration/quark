@@ -51,6 +51,19 @@ constexpr float kRocketLife = 5.0f;
 // 32 players was a ~10 ms tick. A tick casts at most kVisRaysPerSecond / tick rate rays; past that the rest wait for
 // the next tick (they're late, never skipped: the 0.6 s a player stays visible covers it).
 constexpr double kVisInterval = 0.05;
+constexpr double kVisGrace = 0.6;          // a player stays sent this long after the line of sight breaks
+constexpr double kProjVisGrace = 0.3;      // a projectile, this long
+constexpr float kVisNear = 20.0f;          // within earshot: always sent, no rays
+constexpr double kProjRevealTime = 0.05;   // a projectile that died out of sight is shown at the spot this long (its explosion)
+static inline int lowestBit(uint32_t m) {   // (m != 0)
+#if defined(__GNUC__) || defined(__clang__)
+    return __builtin_ctz(m);
+#else
+    int i = 0;
+    while (!(m & 1)) { m >>= 1; i++; }
+    return i;
+#endif
+}
 constexpr int kVisRaysPerSecond = 1000000;   // ~1/3 of a core on Midtown, only when every pair is a hidden one
 constexpr int kVisMinRaysPerTick = 64;
 
@@ -1268,6 +1281,9 @@ void Server::handleStringCmd(int id, const std::string& s) {
         castVote(id, rest == "yes" || rest == "y" || rest == "1");
     } else if (cmd == "interp") {   // the client's fixed interpolation delay in ms (0 = adaptive): the rewind cap covers it
         p.interpMs = (uint16_t)std::min(std::max(std::atoi(rest.c_str()), 0), kMaxInterpMs);
+    } else if (cmd == "spectate") {   // dead: the player this client watches (its view is what it's sent: NET-10)
+        int w = rest.empty() ? -1 : std::atoi(rest.c_str());
+        p.specTarget = w >= 0 && w < kMaxPlayers ? w : -1;
     } else if (cmd == "kill") {
         if (p.alive) killPlayer(id, -1, 255);
     } else if (isAdmin(id)) {
@@ -1543,6 +1559,7 @@ void Server::killPlayer(int victim, int killer, int weapon) {
     v.alive = false;
     v.health = 0;
     v.deaths++;
+    v.specTarget = killer >= 0 && killer < kMaxPlayers && killer != victim ? killer : -1;   // (the client watches the killer first, too)
     if (killer >= 0 && killer != victim) {
         ServerPlayer& k = players_[killer];
         bool teamkill = modeIsTeamBased(cfg_.mode) && k.team == v.team;
@@ -2124,30 +2141,122 @@ void Server::explode(const Vec3& at, int owner, int weapon, int direct) {
     }
 }
 
+// The players whose sight client `id` gets, a bit each (0: everything - a spectator, or nobody plays). Alive: its
+// own. Dead: its own fading view, the player it watches (in team modes only a teammate counts) and, in team modes,
+// every living teammate's (OWNER C12: "what the spectated player would see").
+uint32_t Server::perspectives(int id) const {
+    const ServerPlayer& p = players_[id];
+    if (p.team == TEAM_SPECTATOR || editing_) return 0;
+    uint32_t m = 1u << id;
+    if (p.alive) return m;
+    const bool teams = modeIsTeamBased(ms_.mode);
+    int w = p.specTarget;
+    auto watchable = [&](int w) {
+        return w >= 0 && w < kMaxPlayers && w != id && players_[w].connected && players_[w].alive && players_[w].team != TEAM_SPECTATOR &&
+               (!teams || players_[w].team == p.team);
+    };
+    if (!watchable(w) && !teams)   // watching nobody yet: the first one alive (as the client picks), until it says otherwise
+        for (w = 0; w < kMaxPlayers && !watchable(w); w++) {}
+    if (watchable(w)) m |= 1u << w;
+    if (teams)
+        for (int i = 0; i < kMaxPlayers; i++)
+            if (players_[i].connected && players_[i].alive && players_[i].team == p.team) m |= 1u << i;
+    return m;
+}
+
+// Line of sight from each viewer to each projectile in flight, like the players' (a share of the due pairs each
+// tick, inside the same ray budget): a client is sent a projectile it can see, or one near it, or its own.
+void Server::updateProjectileVisibility(uint32_t need, int viewers, int& budget, float eyeH) {
+    const double now = time();
+    int slots[kMaxProjectiles], n = 0;
+    for (int k = 0; k < kMaxProjectiles; k++) {
+        const Projectile& pr = projectiles_[k];
+        if (!pr.active) continue;
+        if (projVisId_[k] != pr.id) {   // a new projectile in this slot: nobody has seen it yet
+            projVisId_[k] = pr.id;
+            projShown_[k] = 0;
+            for (auto& p : players_) { p.projSeen[k] = -1e9; p.projDue[k] = 0; }
+        }
+        slots[n++] = k;
+    }
+    const int active = viewers * n;
+    if (!active) return;
+    int quota = (int)std::ceil(active / (kVisInterval * tickRate())) + 1;
+    for (int c = 0; c < kMaxPlayers * n && budget > 0 && quota > 0; c++) {
+        uint32_t idx = projVisCursor_++ % (uint32_t)(kMaxPlayers * n);
+        int v = (int)(idx / n), k = slots[idx % n];
+        if (!(need >> v & 1)) { int rest = n - 1 - (int)(idx % n); projVisCursor_ += rest; c += rest; continue; }   // (not a viewer: the rest of its row)
+        auto& pv = players_[v];
+        if (now < pv.projDue[k]) continue;
+        const Projectile& pr = projectiles_[k];
+        pv.projDue[k] = now + kVisInterval;
+        quota--;
+        if (pr.owner == v || length(pr.pos - pv.move.pos) < kVisNear) { pv.projSeen[k] = now; continue; }
+        // from your eye to the projectile, and to where it will be in 0.1 s (a rocket about to come round the corner
+        // is there in time)
+        const Vec3 eye = pv.move.pos + Vec3(0, eyeH, 0);
+        bool seen = false;
+        int rays = 0;
+        for (const Vec3& at : {pr.pos, pr.pos + pr.vel * 0.1f}) {
+            Vec3 to = at - eye;
+            float len = length(to);
+            rays++;
+            if (len < 0.01f || !map_.raycastAny(eye, to / len, len)) { seen = true; break; }
+        }
+        budget -= rays;
+        visRays_ += rays;
+        if (seen) pv.projSeen[k] = now;
+    }
+}
+
 // Line of sight from each human to each enemy, 20 times a second. Players you can't see are sent
-// without a position (wallhacks get nothing); anyone within earshot, teammates, and everyone while you
-// are dead or spectating are always sent. A player stays visible for 0.6 s after line of sight breaks,
-// so peeking around a corner never pops in late. Runs every tick, checking the pairs that are due, within a ray
-// budget (kVisRaysPerSecond: no tick spikes however many players).
+// without a position (wallhacks get nothing); anyone within earshot and teammates are always sent; a dead player
+// gets what the player they watch sees (see perspectives), a spectator everything. A player stays visible for 0.6 s
+// after line of sight breaks, so peeking around a corner never pops in late. Projectiles get the same checks
+// (NET-10). Runs every tick, checking the pairs that are due, within a ray budget (kVisRaysPerSecond: no tick spikes
+// however many players).
 void Server::updateVisibility() {
+    static_assert((kMaxPlayers * kMaxPlayers & (kMaxPlayers * kMaxPlayers - 1)) == 0, "the cursor wraps with uint32");
+    // whose sight is needed: every living human's, and a bot's that a dead human watches (or, in team modes, is a
+    // living teammate of one)
+    uint32_t need = 0, deadHumans = 0, aliveBots = 0;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const auto& p = players_[i];
+        if (!p.connected) continue;
+        if (p.isBot) aliveBots |= p.alive ? 1u << i : 0;
+        else if (p.alive) need |= 1u << i;
+        else if (p.team != TEAM_SPECTATOR) deadHumans |= 1u << i;
+    }
+    if (aliveBots)   // (only bots can be watched without being looked through already)
+        for (uint32_t m = deadHumans; m; m &= m - 1) need |= perspectives(lowestBit(m));
+    int viewers = 0, targets = 0;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const auto& p = players_[i];
+        if (!p.connected || !p.alive) need &= ~(1u << i);
+        targets += p.connected && p.alive;
+        viewers += need >> i & 1;
+    }
+    viewNeeded_ = need;
+    int budget = std::max(kVisMinRaysPerTick, kVisRaysPerSecond / tickRate());
+    const float eyeH = kEyeHeight * bodyScale();
+    updatePlayerVisibility(need, viewers, targets, budget, eyeH);
+    updateProjectileVisibility(need, viewers, budget, eyeH);   // (players first: a tight ray budget goes to them)
+}
+
+void Server::updatePlayerVisibility(uint32_t need, int viewers, int targets, int& budget, float eyeH) {
     const double now = time();
     const int pairs = kMaxPlayers * kMaxPlayers;
-    static_assert((kMaxPlayers * kMaxPlayers & (kMaxPlayers * kMaxPlayers - 1)) == 0, "the cursor wraps with uint32");
-    int viewers = 0, targets = 0;
-    for (auto& p : players_) { targets += p.connected && p.alive; viewers += p.connected && p.alive && !p.isBot; }
     const int active = viewers * std::max(0, targets - 1);
     if (!active) return;
     // this tick's share: every line once per kVisInterval, evenly (a burst of due lines - everyone spawning at once -
     // spreads out over the next interval instead of recurring), and never past the ray budget
     int quota = (int)std::ceil(active / (kVisInterval * tickRate())) + 1;
-    int budget = std::max(kVisMinRaysPerTick, kVisRaysPerSecond / tickRate());
     const bool teams = modeIsTeamBased(ms_.mode);
-    const float eyeH = kEyeHeight * bodyScale();
     for (int n = 0; n < pairs && budget > 0 && quota > 0; n++) {
         uint32_t idx = visCursor_++ % pairs;
         int v = (int)(idx / kMaxPlayers), t = (int)(idx % kMaxPlayers);
         auto& pv = players_[v];
-        if (!pv.connected || pv.isBot || !pv.alive) { visCursor_ += kMaxPlayers - 1 - t; n += kMaxPlayers - 1 - t; continue; }   // (the rest of this viewer's row)
+        if (!(need >> v & 1)) { visCursor_ += kMaxPlayers - 1 - t; n += kMaxPlayers - 1 - t; continue; }   // (the rest of this viewer's row)
         if (now < pv.visDue[t] || t == v) continue;
         auto& pt = players_[t];
         if (!pt.connected || !pt.alive) continue;
@@ -2155,7 +2264,7 @@ void Server::updateVisibility() {
         quota--;
         bool mate = teams && pt.team == pv.team;
         Vec3 d = pt.move.pos - pv.move.pos;
-        if (mate || length(d) < 20.0f) { pv.lastSeen[t] = now; continue; }
+        if (mate || length(d) < kVisNear) { pv.lastSeen[t] = now; continue; }
         // Generous on purpose (a player popping out of view while their shoulder shows is worse than a
         // wallhack seeing a little): rays from both sides of your head to the target's head, chest, knees
         // and both shoulders, where they are and where they'll be in 0.25 s (and where you'll be).
@@ -2221,10 +2330,46 @@ void Server::sendSnapshots() {
     }
     std::vector<ProjectileSnap>& allProj = snapProj_;
     allProj.clear();
-    for (auto& pr : projectiles_) {
+    snapProjSlot_.clear();
+    for (int k = 0; k < kMaxProjectiles; k++) {
+        const Projectile& pr = projectiles_[k];
         if (!pr.active) continue;
         if (allProj.size() >= 48) break;
         allProj.push_back({pr.id, (uint8_t)pr.type, (uint8_t)pr.owner, pr.pos, pr.vel});
+        snapProjSlot_.push_back(k);
+    }
+    // what each client can see (NET-10): sight per player (bit per target, recent enough), then per client the
+    // union over whose eyes it gets (perspectives)
+    const double now = time();
+    const bool teams = modeIsTeamBased(ms_.mode);
+    uint32_t sight[kMaxPlayers] = {}, teamMask[3] = {};
+    uint32_t blind = 0;   // hide and seek freeze: the seeker sees nothing of the hiders
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const auto& p = players_[i];
+        if (!p.connected) continue;
+        if (p.team >= 0 && p.team < 3) teamMask[p.team] |= 1u << i;
+        if (ms_.mode == MODE_HIDE && ms_.phase == PHASE_FREEZE && p.it) { blind |= 1u << i; continue; }
+        for (int t = 0; t < kMaxPlayers; t++) if (now - p.lastSeen[t] <= kVisGrace) sight[i] |= 1u << t;
+    }
+    // projectiles that died since the last send: shown, for a moment, where they went off to the clients that couldn't
+    // see them (their explosion), then gone
+    {
+        int keep = 0;
+        for (int d = 0; d < projDeathCount_; d++) if (projDeaths_[d].until > now) projDeaths_[keep++] = projDeaths_[d];
+        projDeathCount_ = keep;
+        for (int k = 0; k < kMaxProjectiles; k++) {
+            ProjSlotPrev& o = projPrev_[k];
+            const Projectile& pr = projectiles_[k];
+            if (o.active && (!pr.active || pr.id != o.id) && projHidden_[k] && projDeathCount_ < kMaxProjectiles &&
+                (weaponDef(o.type).splashRadius > 0 || o.type == WPN_BUBBLE || o.type == WPN_CROSSBOW)) {   // (what the client shows going off)
+                ProjDeath& d = projDeaths_[projDeathCount_++];
+                d.snap = ProjectileSnap{o.id, o.type, o.owner, o.pos, Vec3()};
+                d.until = now + kProjRevealTime;
+                d.revealTo = projHidden_[k];
+            }
+            o.active = pr.active; o.id = pr.id; o.type = (uint8_t)pr.type; o.owner = (uint8_t)pr.owner; o.pos = pr.pos;
+            projHidden_[k] = 0;
+        }
     }
     uint8_t buf[kMaxPacket], world[kMaxPacket];
     for (int i = 0; i < kMaxPlayers; i++) {
@@ -2255,12 +2400,39 @@ void Server::sendSnapshots() {
         s.selfHealth = (uint8_t)clampf(std::ceil(p.health), 0, 255);
         s.selfWeapon = (uint8_t)p.weapon;
         s.knifeAway = (uint8_t)clampf(std::ceil((p.knifeBackAt - time()) * 10), 0, 255);
-        // this client's view of the players: enemies out of sight are hidden
-        bool seesAll = !p.alive || p.team == TEAM_SPECTATOR;
+        // this client's view: players and projectiles out of its sight are hidden (NET-10)
+        const uint32_t persp = perspectives(i);
+        const bool seesAll = persp == 0;
+        uint32_t vis = persp | (teams && p.team >= 0 && p.team < 3 && p.team != TEAM_SPECTATOR ? teamMask[p.team] : 0);
+        for (uint32_t m = persp & ~blind; m; m &= m - 1) vis |= sight[lowestBit(m)];
         s.players = all;          // (copies into the slot's own vectors: their capacity is reused)
-        s.projectiles = allProj;
-        for (auto& ps : s.players)
-            ps.hidden = !seesAll && ps.id != i && (ps.flags & PS_ALIVE) && time() - p.lastSeen[ps.id] > 0.6f;
+        for (auto& ps : s.players) {
+            ps.hidden = !seesAll && ps.id != i && (ps.flags & PS_ALIVE) && !(vis >> ps.id & 1);
+            if (!ps.hidden) continue;
+            // out of sight: nothing but the scoreboard (no health, weapon, firing, crouch or the bomb)
+            ps.flags &= (uint8_t)~(PS_FIRING | PS_CROUCHED | (isItMode(ms_.mode) ? 0 : PS_HASBOMB));
+            ps.health = 0; ps.weapon = 0; ps.keys = 0; ps.hooked = 0; ps.hookPoint = Vec3();
+            ps.pos = Vec3(); ps.yaw = ps.pitch = 0;
+        }
+        if (!seesAll) {   // the bomb: who carries it, who's planting / defusing, only if they're in sight
+            auto unseen = [&](int who) { return who >= 0 && who < kMaxPlayers && who != i && players_[who].alive && !(vis >> who & 1); };
+            if (s.ms.bombState == BOMB_CARRIED && unseen(s.ms.bombCarrier)) s.ms.bombCarrier = 255;
+            if (s.ms.actionPlayer != 255 && unseen(s.ms.actionPlayer)) { s.ms.actionPlayer = 255; s.ms.actionProgress = 0; }
+        }
+        s.projectiles.clear();
+        if (s.projectiles.capacity() < allProj.size() + projDeathCount_)   // (once per ring slot: no allocations as counts vary)
+            s.projectiles.reserve(std::max<size_t>(48, allProj.size() + projDeathCount_));
+        for (size_t k = 0; k < allProj.size(); k++) {
+            const int slot = snapProjSlot_[k];
+            bool in = seesAll || allProj[k].owner == i;
+            for (uint32_t m = persp & ~blind; m && !in; m &= m - 1) in = now - players_[lowestBit(m)].projSeen[slot] <= kProjVisGrace;
+            if (in) { s.projectiles.push_back(allProj[k]); projShown_[slot] |= 1u << i; continue; }
+            projHidden_[slot] |= 1u << i;
+            // one this client has seen goes on as an id only (it's still flying: gone would be an explosion); one it
+            // never saw isn't sent at all
+            if (projShown_[slot] >> i & 1) { ProjectileSnap h; h.id = allProj[k].id; h.hidden = true; s.projectiles.push_back(h); }
+        }
+        for (int d = 0; d < projDeathCount_; d++) if (projDeaths_[d].revealTo >> i & 1) s.projectiles.push_back(projDeaths_[d].snap);
         s.baseTick = base ? base->tick : 0;
         Writer ww(world, sizeof world);
         writeSnapshotWorld(ww, s, base);

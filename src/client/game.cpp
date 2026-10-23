@@ -912,7 +912,7 @@ void Game::handleEvents() {
                 if (lines.empty() || e.a >= kMaxPlayers) break;
                 int line = lines[e.b % lines.size()];
                 if (e.a == net_.clientId()) audio_.play(line, 0.9f);
-                else if (const PlayerSnap* qp = net_.findPlayer(e.a)) audio_.play3D(line, qp->pos + Vec3(0, 1.6f, 0), 1.0f);
+                else if (const PlayerSnap* qp = net_.findPlayer(e.a); qp && !qp->hidden) audio_.play3D(line, qp->pos + Vec3(0, 1.6f, 0), 1.0f);
                 break;
             }
             case EV_LOCATE: {   // the locator found someone: show them through walls for a second
@@ -924,7 +924,8 @@ void Game::handleEvents() {
             case EV_TYPING:   // someone's typing: soft key clicks from them and "..." over their head
                 if (e.a < kMaxPlayers && !cfg_.chatOff) {   // (chat off: no "..." or clicks either)
                     typingUntil_[e.a] = time_ + 0.8;
-                    if (const PlayerSnap* tp = net_.findPlayer(e.a)) audio_.play3D(SND_TYPING, tp->pos + Vec3(0, 1.5f, 0), 0.6f, 0.9f + (qrand() % 20) * 0.01f);
+                    const PlayerSnap* tp = net_.findPlayer(e.a);
+                    if (tp && !tp->hidden) audio_.play3D(SND_TYPING, tp->pos + Vec3(0, 1.5f, 0), 0.6f, 0.9f + (qrand() % 20) * 0.01f);
                     else audio_.play(SND_TYPING, 0.4f);
                 }
                 break;
@@ -1152,6 +1153,7 @@ void Game::frame(double dt) {
         for (auto& old : lastProjectiles_) {
             bool still = false;
             for (auto& p : projs) still |= p.id == old.id;
+            if (!still && net_.projectileHidden(old.id)) continue;   // out of sight now, still flying: not an explosion (NET-10)
             if (!still && old.type == WPN_BUBBLE) { explosions_.push_back({old.pos, time_, 0.45f, true}); audio_.play3D(SND_BUBBLE, old.pos, 0.7f, 1.7f, net_.playerSoundPack(old.owner)); } // pop
             else if (!still && weaponDef(old.type).splashRadius > 0) { explosions_.push_back({old.pos, time_}); audio_.play3D(SND_EXPLOSION, old.pos, 1.25f, 1.0f, net_.playerSoundPack(old.owner)); }
             else if (!still && old.type == WPN_CROSSBOW) audio_.play3D(SND_BOLT_HIT, old.pos, 0.8f, 1.0f, net_.playerSoundPack(old.owner));
@@ -1282,6 +1284,9 @@ void Game::drawWorld(float alpha) {
             eye = base + Vec3(0, 3.0f, 0);
         }
     }
+    // the server sends a dead player what the one it watches can see (NET-10): tell it who that is
+    if (alive || net_.playback() || net_.state() != ConnState::Connected) specSent_ = -2;
+    else if (specTarget_ != specSent_) { net_.sendCommand("spectate " + std::to_string(specTarget_)); specSent_ = specTarget_; }
     r_.setCamera(eye, camYaw, camPitch, alive ? viewFov() : cfg_.fov);
     audio_.setListener(eye, camYaw);
     updateSounds(players);

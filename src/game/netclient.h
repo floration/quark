@@ -61,7 +61,8 @@ public:
     // Interpolated view of every player at render time.
     using PlayerArray = std::array<InterpPlayer, kMaxPlayers>;
     PlayerArray interpolatedPlayers() const;
-    std::vector<ProjectileSnap> interpolatedProjectiles() const;
+    std::vector<ProjectileSnap> interpolatedProjectiles() const;   // the ones in sight (the server sends others as an id: NET-10)
+    bool projectileHidden(uint16_t id) const;                      // still flying, out of sight
     const PlayerSnap* findPlayer(int id) const;
     std::string playerName(int id) const;
     int playerModel(int id) const { return id >= 0 && id < kMaxPlayers ? models_[id] : 0; }

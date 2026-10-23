@@ -172,6 +172,10 @@ struct ServerPlayer {
     // each line is next checked (0: at once).
     double lastSeen[kMaxPlayers] = {};
     double visDue[kMaxPlayers] = {};
+    // ... and to each projectile slot (Server::projVisId_ says which projectile the slot's times are about)
+    double projSeen[kMaxProjectiles] = {};
+    double projDue[kMaxProjectiles] = {};
+    int specTarget = -1;        // dead: whose view this client watches ("spectate <id>"; the killer at first): what it's sent
     // lag compensation history
     struct Hist { uint64_t tick; Vec3 pos; bool crouched; bool alive; };   // tick: timeMs_ when recorded (kNoHistory: none)
     static constexpr uint64_t kNoHistory = ~0ull;
@@ -524,6 +528,25 @@ private:
     void sendSnapshots();
     void updateVisibility();
     uint32_t visCursor_ = 0;   // the viewer x target pair the next tick's checks start from (round robin)
+    uint32_t projVisCursor_ = 0;   // the same for viewer x projectile pairs
+    // Hidden information (NET-10, JUDGMENT_CALLS C12). Each client is sent what it could see: through its own eyes when
+    // alive; when dead, through the eyes of the player it watches (and in team modes its living teammates'); everything
+    // as a free spectator. Players it can't see go without position, health, weapon, firing or the bomb; projectiles
+    // it can't see aren't sent (its own always are); the hide and seek seeker gets nothing about the hiders in the freeze.
+    uint32_t perspectives(int id) const;   // the players whose sight a client gets (bit per player), 0 = sees everything
+    void updatePlayerVisibility(uint32_t need, int viewers, int targets, int& budget, float eyeH);
+    void updateProjectileVisibility(uint32_t need, int viewers, int& budget, float eyeH);
+    uint32_t viewNeeded_ = 0;              // alive players whose lines of sight are checked (humans, and bots someone watches)
+    uint16_t projVisId_[kMaxProjectiles] = {};   // the projectile each slot's ServerPlayer::projSeen times are about
+    uint32_t projShown_[kMaxProjectiles] = {};   // clients (bit each) that have been sent that projectile in sight
+    uint32_t projHidden_[kMaxProjectiles] = {};  // clients whose last snapshot had it out of sight (or not at all)
+    // A projectile that dies out of a client's sight is shown there for a moment at the spot (then gone): the client
+    // plays its explosion (sound and flash) where it really went off, as before, without having seen its flight.
+    struct ProjSlotPrev { bool active = false; uint16_t id = 0; uint8_t type = 0, owner = 0; Vec3 pos; } projPrev_[kMaxProjectiles];
+    struct ProjDeath { ProjectileSnap snap; double until = 0; uint32_t revealTo = 0; };
+    ProjDeath projDeaths_[kMaxProjectiles];
+    int projDeathCount_ = 0;
+    std::vector<int> snapProjSlot_;        // snapProj_[k]'s projectile slot
 public:
     uint64_t visRays_ = 0;     // lines of sight cast (tests, benchmarks)
     void updateVisibilityForTest() { updateVisibility(); }

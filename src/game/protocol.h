@@ -80,6 +80,7 @@ struct ProjectileSnap {
     uint8_t type = 0;
     uint8_t owner = 0;
     Vec3 pos, vel;
+    bool hidden = false;    // out of this client's sight: only the id is sent (it's still flying: gone isn't an explosion)
 };
 
 struct GameEvent {

@@ -285,6 +285,7 @@ private:
     double wheelAccum_ = 0;         // fractional scroll (trackpads, high-res wheels) until a full notch
     double wheelHeldUntil_[2] = {}; // a scroll step counts as "held" briefly, so hold actions (jump, fire...) work on the wheel
     int specTarget_ = -1;
+    int specSent_ = -2;         // the spectate target last told to the server (-2: none since alive)
 
     // effects + feeds
     struct Feed { std::string text; Color color; double until; int crown = 0; bool player = false; };   // crown: the sender's leaderboard place (chat); player: a player's chat line (hidden while chat is off)

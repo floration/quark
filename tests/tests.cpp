@@ -4278,6 +4278,139 @@ static void testNetcode(uint16_t port) {
     v.stop();
 }
 
+// Hidden information (NET-10, JUDGMENT_CALLS C12): an enemy out of sight reaches the client without health, weapon or
+// firing; a projectile out of sight isn't sent (its owner always gets it), one that leaves sight goes on as an id (not
+// an explosion) and one that goes off out of sight is shown at the spot for a moment (its explosion); a dead player
+// gets what the player it watches sees; the hide and seek seeker gets nothing about the hiders during the freeze.
+static void testHiddenInfo(uint16_t port) {
+    printf("hidden info: no health / weapon / projectiles out of sight, dead see what they watch, seeker blind in the freeze\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    std::string addr = "127.0.0.1:" + std::to_string(port);
+    NetClient a, b, c;
+    a.connect(addr, "a"); b.connect(addr, "b"); c.connect(addr, "c");
+    std::vector<NetClient*> cls = {&a, &b, &c};
+    pump(s, cls, 1.5, idle);
+    const int ia = a.clientId(), ib = b.clientId(), ic = c.clientId();
+    auto& pa = s.players_[ia]; auto& pb = s.players_[ib]; auto& pc = s.players_[ic];
+    const Vec3 behindA(0, 0, -28), behindB(0, 0, 28), openA(-9, 0, -26), openB(-9, 0, 26), far(9, 0, 0);
+    auto snapOf = [](NetClient& n, int id) -> const PlayerSnap* { for (auto& p : n.latest().players) if (p.id == id) return &p; return nullptr; };
+    auto projOf = [](NetClient& n, uint16_t id) -> const ProjectileSnap* { for (auto& p : n.latest().projectiles) if (p.id == id) return &p; return nullptr; };
+    // b: 37 hp, holding the sniper, firing; a counts the snapshots b came in hidden, and any with b's health or weapon
+    int hiddenSnaps = 0, leaks = 0;
+    auto hold = [&](Vec3 at, Vec3 bt, Vec3 ct) {
+        return [&, at, bt, ct](int i) {
+            pa.move.pos = at; pa.move.vel = {}; pb.move.pos = bt; pb.move.vel = {}; pc.move.pos = ct; pc.move.vel = {};
+            pa.respawnAt = pb.respawnAt = pc.respawnAt = s.time() + 100;
+            pb.health = 37; pb.lastFire = s.time();
+            if (const PlayerSnap* q = snapOf(a, ib); q && q->hidden) {
+                hiddenSnaps++;
+                if (q->health || q->weapon || (q->flags & (PS_FIRING | PS_CROUCHED))) leaks++;
+            }
+            UserCmd u;
+            if (cls[i] == &b) u.weapon = WPN_SNIPER;
+            return u;
+        };
+    };
+    pump(s, cls, 0.8, hold(behindA, behindB, far));
+    const PlayerSnap* q = snapOf(a, ib);
+    printf("  b behind walls: %d snapshots hidden, %d with health / weapon / firing\n", hiddenSnaps, leaks);
+    CHECK(q && q->hidden && hiddenSnaps > 20 && leaks == 0);
+    pump(s, cls, 0.5, hold(openA, openB, far));   // in sight: everything (the data is really there to hide)
+    q = snapOf(a, ib);
+    CHECK(q && !q->hidden && q->health == 37 && q->weapon == WPN_SNIPER);
+
+    // projectiles: b's rocket by b, behind the walls from a (stuck in the air: it stays put)
+    auto rocket = [&](int owner, Vec3 at) {
+        for (auto& pr : s.projectiles_) if (!pr.active) {
+            pr = Projectile();
+            pr.active = true; pr.id = s.nextProjId_++; pr.type = WPN_ROCKET; pr.owner = owner; pr.pos = at; pr.stuck = true; pr.dieAt = s.time() + 100;
+            return &pr;
+        }
+        return (Projectile*)nullptr;
+    };
+    Projectile* rb = rocket(ib, behindB + Vec3(0, 2.5f, 0));
+    Projectile* ra = rocket(ia, behindB + Vec3(1, 2.5f, 0));   // a's own, just as far out of a's sight
+    CHECK(rb && ra);
+    if (!rb || !ra) { s.stop(); return; }
+    const uint16_t idb = rb->id, ida = ra->id;
+    pump(s, cls, 0.5, hold(behindA, behindB, far));
+    CHECK(!projOf(a, idb));                                  // never seen: not sent at all
+    CHECK(projOf(b, idb) && !projOf(b, idb)->hidden);        // its owner has it
+    CHECK(projOf(a, ida) && !projOf(a, ida)->hidden);        // a's own: always
+    rb->pos = openB + Vec3(0, 2.5f, 0);                      // in sight
+    pump(s, cls, 0.4, hold(openA, openB, far));
+    CHECK(projOf(a, idb) && !projOf(a, idb)->hidden);
+    rb->pos = behindB + Vec3(0, 2.5f, 0);                    // out of sight again: an id, still flying (no explosion)
+    pump(s, cls, 1.0, hold(behindA, behindB, far));
+    CHECK(projOf(a, idb) && projOf(a, idb)->hidden && a.projectileHidden(idb));
+    bool listed = false;
+    for (auto& p : a.interpolatedProjectiles()) listed |= p.id == idb;
+    CHECK(!listed);
+    // it goes off out of sight: shown at the spot for a moment (the client plays the explosion there), then gone
+    Vec3 boom = rb->pos;
+    rb->active = false;
+    bool revealed = false;
+    pump(s, cls, 0.3, [&](int i) {
+        if (const ProjectileSnap* r = projOf(a, idb); r && !r->hidden && length(r->pos - boom) < 0.1f) revealed = true;
+        return hold(behindA, behindB, far)(i);
+    });
+    CHECK(revealed && !projOf(a, idb));
+    ra->active = false;
+
+    // dead: a (killed by b) gets what b sees - c in the open from b is sent, c behind walls from b isn't
+    s.killPlayer(ia, ib, WPN_RIFLE);
+    CHECK(pa.specTarget == ib);
+    pump(s, cls, 0.8, hold(far, openA, openB));
+    q = snapOf(a, ic);
+    CHECK(q && !q->hidden && q->health > 0);
+    pump(s, cls, 0.8, hold(far, behindA, behindB));
+    q = snapOf(a, ic);
+    CHECK(q && q->hidden && q->health == 0);
+    s.stop();
+
+    // hide and seek: during the freeze the seeker gets nothing of the hiders, even right in front of it
+    Server h;
+    ServerConfig hc;
+    hc.autoStart = false; hc.map = "hamlet"; hc.mode = MODE_HIDE; hc.port = (uint16_t)(port + 1);
+    h.setLog([](const std::string&) {});
+    if (!h.start(hc)) { printf("  FAIL %s:%d: server start\n", __FILE__, __LINE__); g_fail++; return; }
+    NetClient hs[3];
+    std::vector<NetClient*> hcl;
+    for (int i = 0; i < 3; i++) { hs[i].connect("127.0.0.1:" + std::to_string(hc.port), "h" + std::to_string(i)); hcl.push_back(&hs[i]); }
+    pump(h, hcl, 1.5, idle);
+    h.command("forcestart");
+    pump(h, hcl, 0.3, idle);
+    int seeker = -1;
+    for (int i = 0; i < 3; i++) if (h.players_[hs[i].clientId()].it) seeker = i;
+    CHECK(seeker >= 0 && h.ms_.phase == PHASE_FREEZE);
+    if (seeker < 0) { h.stop(); return; }
+    int seen = 0, snaps = 0;
+    auto near = [&](int i) {   // hiders 3 m in front of the seeker
+        Vec3 o = h.players_[hs[seeker].clientId()].move.pos;
+        int k = 0;
+        for (int j = 0; j < 3; j++) if (j != seeker) { auto& hp = h.players_[hs[j].clientId()]; hp.move.pos = o + Vec3(k++ ? 1.5f : -1.5f, 0, -3); hp.move.vel = {}; }
+        for (auto& p : hs[seeker].latest().players)
+            if (p.id != hs[seeker].clientId() && (p.flags & PS_ALIVE)) { snaps++; seen += !p.hidden || p.health || p.weapon; }
+        (void)i;
+        return UserCmd();
+    };
+    pump(h, hcl, 0.8, near);
+    printf("  hide and seek freeze: hiders sent to the seeker %d times of %d\n", seen, snaps);
+    CHECK(h.ms_.phase == PHASE_FREEZE && snaps > 20 && seen == 0);
+    int other = seeker == 0 ? 1 : 0, third = 3 - seeker - other;
+    const PlayerSnap* hq = snapOf(hs[other], hs[third].clientId());
+    CHECK(hq && !hq->hidden);                                // (a hider sees the other hider next to it)
+    h.phaseEnd_ = h.time();                                  // the round goes live: the seeker sees them
+    pump(h, hcl, 0.6, near);
+    hq = snapOf(hs[seeker], hs[other].clientId());
+    CHECK(h.ms_.phase == PHASE_LIVE && hq && !hq->hidden);
+    h.stop();
+}
+
 static void testBots(uint16_t& port) {
     printf("bots: vs-bots fights, balance bots, votes, every mode\n");
     { // FFA vs 3 expert bots: they should find and kill each other / us
@@ -4786,6 +4919,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(TP(29960)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(TP(29950)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "net") { testInterpRewind(TP(29903)); testUptimeClock(TP(29902)); testNetcode(TP(29900)); testInputBacklog(TP(29901)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "hidden") { testHiddenInfo(TP(29906)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = TP(29800); testArenaAndTourney(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "bots") { uint16_t p = TP(28900); testBots(p); return g_fail ? 1 : 0; }
@@ -4795,6 +4929,8 @@ int main(int argc, char** argv) {
         snapBench("midtown", 32, secs, TP(28820));
         snapBench("midtown", 8, secs, TP(28821));
         snapBench("harbor", 16, secs, TP(28822));
+        snapBench("midtown", 32, secs, TP(28823), true, 48);   // (projectiles: each one's visibility to each client)
+        snapBench("harbor", 16, secs, TP(28824), true, 24);
         return 0;
     }
     if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }
@@ -4819,6 +4955,7 @@ int main(int argc, char** argv) {
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); }},
+        {"hidden", [] { testHiddenInfo(TP(28587)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
         {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
