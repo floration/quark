@@ -422,10 +422,8 @@ void Audio::backendThread() {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
     timeBeginPeriod(1);   // (1 ms timer resolution for the wait's timeout)
     HWAVEOUT h = (HWAVEOUT)backend_;
-    // How many 5 ms buffers are queued is how late every sound is: start at 3 (15 ms; it was a fixed 6, 30 ms) and
-    // add one each time the device runs dry (it played everything we had: a gap was heard), up to 8. A machine that
-    // keeps up stays at 15 ms; one that can't settles where it stops crackling after a gap or two.
-    constexpr int kBufs = 8;
+    constexpr int kBufs = 6; // 6 x 5 ms queued: a little slack for the scheduler. (Starting at 3 and growing on underrun was
+                             // tried: the sound broke up on the owner's PC, where Windows mixes in 10 ms periods.)
     static int16_t data[kBufs][kPeriod * 2];
     WAVEHDR hdr[kBufs] = {};
     for (int i = 0; i < kBufs; i++) {
@@ -434,21 +432,14 @@ void Audio::backendThread() {
         waveOutPrepareHeader(h, &hdr[i], sizeof(WAVEHDR));
         hdr[i].dwFlags |= WHDR_DONE;
     }
-    int depth = 3;
-    bool started = false;
-    int next = 0;   // (buffers go out in turn: the device plays them in the order written)
     while (!quit_) {
-        int queued = 0;
-        for (int i = 0; i < kBufs; i++) queued += !(hdr[i].dwFlags & WHDR_DONE);
-        if (started && queued == 0 && depth < kBufs) depth++;   // ran dry
         bool wrote = false;
-        while (queued < depth && (hdr[next].dwFlags & WHDR_DONE)) {
-            mix(data[next], kPeriod);
-            hdr[next].dwFlags &= ~WHDR_DONE;
-            waveOutWrite(h, &hdr[next], sizeof(WAVEHDR));
-            next = (next + 1) % kBufs;
-            queued++;
-            wrote = started = true;
+        for (int i = 0; i < kBufs; i++) {
+            if (!(hdr[i].dwFlags & WHDR_DONE)) continue;
+            mix(data[i], kPeriod);
+            hdr[i].dwFlags &= ~WHDR_DONE;
+            waveOutWrite(h, &hdr[i], sizeof(WAVEHDR));
+            wrote = true;
         }
         if (!wrote) WaitForSingleObject((HANDLE)waveEvent_, 5);
     }
