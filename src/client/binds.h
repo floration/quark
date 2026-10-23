@@ -11,6 +11,7 @@ enum Action {
     A_WEAPON10, // slot 10, key 0 (the syringe)
     A_QUIP,     // say a random line from the voice pack, out loud where you stand (G)
     A_TOGGLECHAT, // hide / show other players' chat (Settings::chatOff); unbound by default
+    A_PERFMINI, // F4: only the F3 graph's mouse to photon number (to see what F3's text and graph cost)
     A_COUNT
 };
 

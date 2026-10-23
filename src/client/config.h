@@ -101,7 +101,8 @@ struct Settings {
     // 2: the binds were written by this version, so a slot that's unbound was unbound by the player and stays that way.
     // Older files (no bind_version) get the migrations in finishLoad (knife / syringe / quip keys, chat T / Y -> Enter),
     // which used to run on every load: unbinding the knife, syringe or quip came back after a restart (UI test).
-    int bindVersion = 2;
+    // 3: F4 shows the mouse to photon number (LATENCY); VOTE START moved from F4 to F5.
+    int bindVersion = 3;
     Settings() { binds.setDefaults(); }
     void load();
     void save() const;

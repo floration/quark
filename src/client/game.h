@@ -420,6 +420,9 @@ private:
 
     // F3 performance overlay: frame-time percentiles (lows matter, averages hide stutter)
     bool showPerf_ = false;
+    bool perfMini_ = false;            // F4: only the mouse to photon number (drawPerfMini)
+    bool perfOn() const { return showPerf_ || perfMini_; }   // (the pipeline graph's measuring runs)
+    std::string perfMiniText_;
     std::vector<float> frameTimes_ = std::vector<float>(2048, 0.0f);
     size_t frameIdx_ = 0, frameCount_ = 0;
     double perfNextUpdate_ = 0;
@@ -456,7 +459,9 @@ private:
     void pipeGpuBegin();
     void pipeGpuEnd();
     void pipeCollect();
-    void drawPipeline(float x, float y, float ts);
+    void drawPipeline(float x, float y, float ts, double* totalOnly = nullptr);
+    void pipeAverages();
+    void drawPerfMini();
     double pendingInput_ = -1, frameInput_ = -1;
     void* fence_[2] = {nullptr, nullptr};
     int fenceIdx_ = 0;

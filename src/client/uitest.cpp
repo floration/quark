@@ -146,6 +146,7 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "browser") return std::to_string(browser_.refreshes());
     if (w == "scores") return b(showScores_);
     if (w == "perf") return b(showPerf_);
+    if (w == "perfmini") return b(perfMini_);
     if (w == "spec") return std::to_string(specTarget_);
     if (w == "consolelog") return std::to_string(consoleLog_.size()) + (consoleLog_.empty() ? "" : consoleLog_.back());
     return "?" + w;
@@ -170,6 +171,7 @@ void Game::uiTestActions() {
         ui_.keyAction("CONSOLE (`)", GLFW_KEY_GRAVE_ACCENT, 0, UiExp::nav("ingame/console"));
         ui_.keyAction("SCORES (HOLD)", 0, 0, UiExp::state("scores", "1"), A_SCORES);
         if (int k = bound(A_PERF)) ui_.keyAction("PERF OVERLAY", k, 0, UiExp::state("perf"));
+        if (int k = bound(A_PERFMINI)) ui_.keyAction("LATENCY NUMBER", k, 0, UiExp::state("perfmini"));
         if (int k = bound(A_VOTEYES)) ui_.keyAction("VOTE YES", k, 0, UiExp::cmd("vote yes"));
         if (int k = bound(A_VOTENO)) ui_.keyAction("VOTE NO", k, 0, UiExp::cmd("vote no"));
         if (int k = bound(A_VOTESTART)) ui_.keyAction("VOTE START", k, 0, UiExp::cmd("callvote start"));
@@ -536,7 +538,7 @@ private:
         g.edPrompt_ = false;
         g.error_.clear();
         g.testHeld_ = 0;
-        g.showPerf_ = false;
+        g.showPerf_ = g.perfMini_ = false;
         g.edGroupMenu_ = g.edExportAsk_ = false;
         g.edSel_ = Game::EdSel();
         g.edMulti_.clear();

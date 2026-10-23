@@ -543,6 +543,7 @@ bool Game::pressInput(int code) {
     }
     const Binds& b = binds();
     if (b.has(A_PERF, code)) { showPerf_ = !showPerf_; return true; }
+    if (b.has(A_PERFMINI, code)) { perfMini_ = !perfMini_; return true; }
     if (b.has(A_SCREENSHOT, code)) {
         static int n = 0;
         r_.screenshot("screenshot_" + std::to_string(n++) + ".png");
@@ -1471,6 +1472,7 @@ void Game::frame(double dt) {
     std::string copied = ui_.takeCopy();
     if (!copied.empty()) glfwSetClipboardString(win_, copied.c_str());
     if (showPerf_) drawPerf();
+    else if (perfMini_) drawPerfMini();
     { QZONE("flush2D"); r_.flush2D(); }
     pipeMark(PM_HUD);
     pipeGpuEnd();
@@ -4627,16 +4629,7 @@ void Game::drawPerf() {
                  t.size() / sum, 1.0 / p99, 1.0 / p999, worst * 1000.0,
                  net_.findPlayer(net_.clientId()) ? net_.findPlayer(net_.clientId())->ping : 0);
         perfText_ = b;
-        if (pipeN_ > 0) {   // the pipeline graph's averages
-            for (int k = 0; k < PM_COUNT + 2; k++) { pipeAvg_[k] = pipeSum_[k] / pipeN_; pipeSum_[k] = 0; }
-            pipeN_ = 0;
-            pipeHave_ = true;
-        }
-        if (mouseBurstTime_ > 0.1) {   // the mouse's rate: the highest standard one it has shown (125 Hz x 2^n, from 10% under)
-            const double hz = mouseBurstEvents_ / mouseBurstTime_;
-            for (double r = 8000; r >= 125; r /= 2) if (hz >= r * 0.9) { mouseHz_ = std::max(mouseHz_, r); break; }
-            mouseBurstEvents_ = mouseBurstTime_ = 0;
-        }
+        pipeAverages();
         perfTick_ = std::string("QUARK V") + QUARK_VERSION;   // (with the numbers, not every frame)
         if (net_.hasSnapshot()) perfTick_ += "  SERVER " + std::to_string(net_.tickRate()) + " HZ  LOSS " + std::to_string(net_.snapshotLoss()) + "%";
     }
@@ -4651,10 +4644,39 @@ void Game::drawPerf() {
     if (screen_ == Screen::InGame) drawPipeline(4, 4 + lh * 3 + 12, std::max(1.0f, ts * 0.85f));
 }
 
+// F4: only the pipeline graph's mouse to photon number, worked out twice a second. The same measuring as F3 runs
+// (marks, two GPU timestamps a frame), but none of F3's text and bars are drawn, so comparing the two shows their cost.
+void Game::drawPerfMini() {
+    if (time_ >= perfNextUpdate_ && frameCount_ > 10) {
+        perfNextUpdate_ = time_ + 0.5;
+        pipeAverages();
+        double total = 0;
+        if (screen_ == Screen::InGame) drawPipeline(0, 0, 1, &total);
+        perfMiniText_ = total > 0 ? "MOUSE TO PHOTON ~" + std::to_string((long long)std::llround(total * 1e6)) + " US" : "MOUSE TO PHOTON: IN GAME ONLY";
+    }
+    if (perfMiniText_.empty()) return;
+    const float ts = std::max(1.0f, std::round(r_.height() / 720.0f * 2.0f));
+    r_.rect(4, 4, r_.textWidth(perfMiniText_, ts) + 8, r_.textHeight(ts) + 8, {0, 0, 0, 0.6f});
+    r_.text(8, 8, ts, perfMiniText_, {1, 1, 0.4f, 1});
+}
+
 // ---- F3 pipeline graph -------------------------------------------------------------------------------------------
 
+void Game::pipeAverages() {   // (twice a second, F3 or F4)
+    if (pipeN_ > 0) {   // the pipeline graph's averages
+        for (int k = 0; k < PM_COUNT + 2; k++) { pipeAvg_[k] = pipeSum_[k] / pipeN_; pipeSum_[k] = 0; }
+        pipeN_ = 0;
+        pipeHave_ = true;
+    }
+    if (mouseBurstTime_ > 0.1) {   // the mouse's rate: the highest standard one it has shown (125 Hz x 2^n, from 10% under)
+        const double hz = mouseBurstEvents_ / mouseBurstTime_;
+        for (double r = 8000; r >= 125; r /= 2) if (hz >= r * 0.9) { mouseHz_ = std::max(mouseHz_, r); break; }
+        mouseBurstEvents_ = mouseBurstTime_ = 0;
+    }
+}
+
 void Game::pipeMark(int m) {
-    if (!showPerf_) { if (m == PM_POLL) mouseEventsPoll_ = 0; return; }
+    if (!perfOn()) { if (m == PM_POLL) mouseEventsPoll_ = 0; return; }
     const double now = timeNow();
     pipeNow_[m] = now;
     if (m == PM_POLL && mouseEventsPoll_ > 0) {   // the mouse's rate: events over the time between the polls that got them
@@ -4666,7 +4688,7 @@ void Game::pipeMark(int m) {
 
 void Game::pipeGpuBegin() {   // (a GPU timestamp before the frame's 3D work)
     PipeSlot& sl = pipeQ_[pipeNext_];
-    if (!showPerf_ || sl.used) return;   // (used: still waiting for an older frame's results: skip this one)
+    if (!perfOn() || sl.used) return;   // (used: still waiting for an older frame's results: skip this one)
     if (!sl.q[0]) glGenQueries(2, sl.q);
     glQueryCounter(sl.q[0], GL_TIMESTAMP);
     pipeGpuStarted_ = true;
@@ -4707,7 +4729,8 @@ void Game::pipeCollect() {    // afterSwap: this frame's marks into its slot; fi
 // The frame's parts as bars on one time line, from the mouse moving to the light leaving the screen at the crosshair:
 // measured on this PC (CPU marks, GPU timestamps) and, for what the game can't see, worked out from the mouse's report
 // rate, the frame rate and the monitor's refresh rate (marked EST). Averages over the last half second.
-void Game::drawPipeline(float x, float y, float ts) {
+// totalOnly: just the mouse to photon time into it, nothing drawn (F4).
+void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     if (!pipeHave_) return;
     const double* a = pipeAvg_;
     double sumDt = 0;
@@ -4753,6 +4776,7 @@ void Game::drawPipeline(float x, float y, float ts) {
     rows.push_back({"SCANOUT TO THE CROSSHAIR (EST)", t, t + refresh * 0.5, cEst});
     t += refresh * 0.5;
     const double total = t - rows.front().t0;   // (from the mouse to the photon)
+    if (totalOnly) { *totalOnly = total; return; }
     double t0 = rows.front().t0;                  // (the graph's left edge: work before the mouse bar too, e.g. pacing)
     for (const Row& r : rows) t0 = std::min(t0, r.t0);
     // the graph: a label and the time on the left, the bar on its own line on the right (a waterfall)
@@ -4919,9 +4943,10 @@ void Game::afterSwap() {
             fenceIdx_ ^= 1;
         }
     }
-    if (!showPerf_) return;
+    if (!perfOn()) return;
     pipeMark(PM_AFTER);
     pipeCollect();
+    if (!showPerf_) return;   // (F4: the graph's marks only; F3's input to frame latency below)
     // Input-to-frame latency: GPU timestamp written after this frame's commands, converted to
     // the CPU clock, minus when the game received the input event from the OS. Read back a few
     // frames later without stalling.

@@ -150,6 +150,14 @@ void Settings::finishLoad() {
         if (binds.code[A_CHAT][0] == 84 && binds.code[A_CHAT][1] == 89) { binds.code[A_CHAT][0] = 257; binds.code[A_CHAT][1] = 335; } // GLFW T, Y -> ENTER, KP_ENTER
         bindVersion = 2;
     }
+    if (bindVersion < 3) {   // F4 became LATENCY (the mouse to photon number): VOTE START, if still on F4, moves to F5
+        for (int& c : binds.code[A_VOTESTART]) if (c == 293) c = 294;   // (GLFW F4 -> F5)
+        bool f4Used = false;
+        for (int a = 0; a < A_COUNT; a++) if (a != A_PERFMINI && binds.has(a, 293)) f4Used = true;
+        binds.code[A_PERFMINI][0] = f4Used ? 0 : 293;
+        binds.code[A_PERFMINI][1] = 0;
+        bindVersion = 3;
+    }
     if (!hbMigrated) { healthBars = true; hbMigrated = true; }   // 1.17 turned health bars on by default: on once for everyone (owner), off again stays off
     if (width < 320) width = 1280;
     if (height < 240) height = 720;
@@ -182,7 +190,7 @@ std::string Settings::toText() const {
         if (!modeHud[m].empty()) f << "mode_hud_" << modeName(m) << "=" << modeHud[m] << "\n";
         if (!modeCtl[m].empty()) f << "mode_controls_" << modeName(m) << "=" << modeCtl[m] << "\n";
     }
-    f << "bind_version=2\n";
+    f << "bind_version=3\n";
     for (int a = 0; a < A_COUNT; a++) f << "bind_" << a << "=" << binds.code[a][0] << "," << binds.code[a][1] << "\n";
     return f.str();
 }
