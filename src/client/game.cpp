@@ -468,6 +468,7 @@ bool Game::pressInput(int code) {
         return true;
     }
     if (screen_ != Screen::InGame || chatting_) return false;
+    if (b.has(A_TOGGLECHAT, code)) { toggleChat(); return true; }
     if (b.has(A_VOTEYES, code)) { net_.sendCommand("vote yes"); return true; }
     if (b.has(A_VOTENO, code)) { net_.sendCommand("vote no"); return true; }
     if (b.has(A_VOTESTART, code)) { net_.sendCommand("callvote start"); return true; }
@@ -743,6 +744,14 @@ UserCmd Game::buildCmd() {
     return c;
 }
 
+void Game::toggleChat() {
+    cfg_.chatOff = !cfg_.chatOff;
+    if (cfg_.chatOff) for (auto& t : typingUntil_) t = 0;
+    cfg_.save();
+    const int* k = binds().code[A_TOGGLECHAT];
+    notify(cfg_.chatOff ? "CHAT OFF - " + inputName(k[0] ? k[0] : k[1]) + " TO SHOW IT AGAIN" : "CHAT ON", 2);
+}
+
 void Game::notify(const std::string& s, float seconds) {
     notices_.push_back({s, kWhite, time_ + seconds});
     while (notices_.size() > 4) notices_.pop_front();
@@ -864,8 +873,8 @@ void Game::handleEvents() {
                 if (e.a == net_.clientId() && e.b != e.a && cfg_.hitsounds) audio_.play(SND_KILL, 0.9f);
                 break;
             }
-            case EV_CHAT:
-                addChat({net_.playerName(e.a) + ": " + e.text, isFriendly(e.a) ? rgba(cfg_.colorFriendly) : rgba(cfg_.colorEnemy), time_ + 10, crownOf(e.a)});
+            case EV_CHAT:   // (chat off: dropped, not just hidden - turning it back on doesn't replay what was missed)
+                if (!cfg_.chatOff) addChat({net_.playerName(e.a) + ": " + e.text, isFriendly(e.a) ? rgba(cfg_.colorFriendly) : rgba(cfg_.colorEnemy), time_ + 10, crownOf(e.a), true});
                 break;
             case EV_MESSAGE:
                 addChat({e.text, kGrey, time_ + 8});
@@ -913,7 +922,7 @@ void Game::handleEvents() {
                 break;
             }
             case EV_TYPING:   // someone's typing: soft key clicks from them and "..." over their head
-                if (e.a < kMaxPlayers) {
+                if (e.a < kMaxPlayers && !cfg_.chatOff) {   // (chat off: no "..." or clicks either)
                     typingUntil_[e.a] = time_ + 0.8;
                     if (const PlayerSnap* tp = net_.findPlayer(e.a)) audio_.play3D(SND_TYPING, tp->pos + Vec3(0, 1.5f, 0), 0.6f, 0.9f + (qrand() % 20) * 0.01f);
                     else audio_.play(SND_TYPING, 0.4f);
@@ -2395,9 +2404,12 @@ void Game::drawChatBox(float W, float H, float s, float ts) {
     while (!chatFeed_.empty() && chatFeed_.front().until < time_ && !chatting_) chatFeed_.pop_front();
     {
     const auto& lines = chatting_ ? chatLog_ : chatFeed_;   // typing: the whole recent history
-    y = H - 110 * s - lines.size() * (r_.textHeight(ts) + 4 * s);
-    if (chatting_ && !lines.empty()) r_.rect(18 * s, y - 4 * s, 520 * s, lines.size() * (r_.textHeight(ts) + 4 * s) + 4 * s, {0, 0, 0, 0.4f});
+    size_t shown = 0;   // chat off: players' lines are hidden (server messages stay)
+    for (auto& c : lines) shown += !(c.player && cfg_.chatOff);
+    y = H - 110 * s - shown * (r_.textHeight(ts) + 4 * s);
+    if (chatting_ && shown) r_.rect(18 * s, y - 4 * s, 520 * s, shown * (r_.textHeight(ts) + 4 * s) + 4 * s, {0, 0, 0, 0.4f});
     for (auto& c : lines) {
+        if (c.player && cfg_.chatOff) continue;
         float cw = c.crown ? r_.textHeight(ts) * 1.2f : 0;
         if (c.crown) drawCrown(24 * s, y + r_.textHeight(ts) * 0.1f, cw, c.crown);
         r_.text(24 * s + (cw ? cw + 4 * s : 0), y, ts, c.text, c.color);
@@ -4270,7 +4282,7 @@ void Game::drawVisualSettings(float x0, float y0, float wTotal) {
     float h = 32 * s, gap = 7 * s;
     float w = std::max(360 * s, wTotal * 0.5f);
     float x = x0 + wTotal * 0.5f - w * 0.5f, y = y0;
-    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 10 * (h + gap) + 48 * s);
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 11 * (h + gap) + 48 * s);
     ui_.toggle(x, y, w, h, "FULLBRIGHT (FLAT WHITE MAP)", cfg_.fullbright); y += h + gap;
     static const std::vector<std::string> own = {"YOUR SHOTS: WITH THE WEAPON MODEL", "YOUR SHOTS: ALWAYS", "YOUR SHOTS: NEVER"};
     ui_.cycle(x, y, w, h, "YOUR SHOTS", cfg_.ownShots, 3, own); y += h + gap;
@@ -4285,6 +4297,8 @@ void Game::drawVisualSettings(float x0, float y0, float wTotal) {
     ui_.slider(x, y, w, h, "SCOPE OVERLAY", cfg_.scopeOpacity, 0, 1, "%.2f"); y += h + gap;
     ui_.toggle(x, y, w, h, "STICKY COUNTER", cfg_.stickyCounter); y += h + gap;
     ui_.toggle(x, y, w, h, "WINNERS CROWN", cfg_.crowns); y += h + gap;
+    if (ui_.toggle(x, y, w, h, "DISABLE CHAT (HIDE PLAYERS' MESSAGES)", cfg_.chatOff) && cfg_.chatOff) for (auto& t : typingUntil_) t = 0;
+    y += h + gap;
     ui_.label(x, y, "YOUR SHOTS: TRACERS AND THE LASER BEAM COME FROM WHERE THE GUN IS (OR WOULD BE)", {0.7f, 0.72f, 0.75f, 1}, 0.5f);
     y += 14 * s;
     ui_.label(x, y, "RANKED: NO HEALTH BARS", {0.7f, 0.72f, 0.75f, 1}, 0.5f);
