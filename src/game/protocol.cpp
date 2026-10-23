@@ -4,7 +4,14 @@
 #include <cstring>
 #include "protocol.h"
 
-static int16_t angQ(float a) { return (int16_t)std::lround(std::remainder(a, 2 * PI) * (32767.0f / PI)); }
+// (= lround(remainder(a, 2 pi) * 32767 / pi), checked for every float: remainder is a itself for |a| <= pi (2 * PI is
+// exactly PI + PI, and at |a| = pi the tie goes to the even quotient 0), its result is within +-pi, so the product is
+// within +-32767 and lround is roundHalfAway as a long; NaN (from a NaN or inf) keeps lround)
+static int16_t angQ(float a) {
+    const float x = (std::fabs(a) <= PI ? a : std::remainder(a, 2 * PI)) * (32767.0f / PI);
+    if (x != x) return (int16_t)std::lround(x);
+    return (int16_t)(long)roundHalfAway(x);
+}
 static float angD(int16_t q) { return q * (PI / 32767.0f); }
 
 void writeSnapshotClient(Writer& w, const Snapshot& s) {
@@ -66,14 +73,14 @@ bool readSnapshotClient(Reader& r, Snapshot& s, uint16_t proto) {
 static void writeMode(Writer& w, const ModeState& m) {
     // timers in tenths of a second (the HUD shows whole seconds): the mode state then changes at most
     // 10 times a second instead of every tick, so most snapshots send it as "unchanged" (1 byte)
-    auto ds = [&](float t) { w.u16((uint16_t)clampf(std::round(t * 10.0f), 0, 65535)); };
+    auto ds = [&](float t) { w.u16((uint16_t)clampf(roundHalfAway(t * 10.0f), 0, 65535)); };
     w.u8(m.mode); w.u8(m.phase); ds(m.timeLeft); w.u8(m.round); w.u8(m.roundsToWin);
     w.i16(m.scoreA); w.i16(m.scoreB); w.u8(m.attackers); w.u8(m.flags);
     w.u8(m.bombState); w.u8(m.bombCarrier); w.vecq(m.bombPos); ds(m.bombTimer);
-    w.u8((uint8_t)clampf(std::round(m.actionProgress * 255.0f), 0, 255)); w.u8(m.actionPlayer);
+    w.u8((uint8_t)clampf(roundHalfAway(m.actionProgress * 255.0f), 0, 255)); w.u8(m.actionPlayer);
     w.u8(m.hillOwner); w.i16(m.target);
     w.f32(m.payloadDist); w.f32(m.payloadLen); // exact: the cart is solid and prediction must match
-    w.u8(m.point); w.u8(m.pointCount); w.u8((uint8_t)clampf(std::round(m.capture * 100.0f), 0, 100));
+    w.u8(m.point); w.u8(m.pointCount); w.u8((uint8_t)clampf(roundHalfAway(m.capture * 100.0f), 0, 100));
     w.u8(m.voteActive); w.u8(m.voteYes); w.u8(m.voteNo); w.u8(m.voteVoters); ds(m.voteTimeLeft); w.u8(m.duelMod); w.u8(m.arenaVariant); w.u16(m.weaponMask);
 }
 static bool readMode(Reader& r, ModeState& m) {
@@ -126,9 +133,9 @@ struct BaseIndex {
 };
 }
 
-static int16_t q16(float v) { return (int16_t)clampf(std::round(v * 64.0f), -32767, 32767); }
-// (equal floats quantize equal: most players and props haven't moved since the base, and each q16 / angQ is a libm
-// call, per player per client per snapshot)
+static int16_t q16(float v) { return (int16_t)clampf(roundHalfAway(v * 64.0f), -32767, 32767); }
+// (equal floats quantize equal: most players and props haven't moved since the base, and each q16 / angQ is a few ns
+// per player per client per snapshot)
 static bool samePos(const Vec3& a, const Vec3& b) {
     return (a.x == b.x && a.y == b.y && a.z == b.z) || (q16(a.x) == q16(b.x) && q16(a.y) == q16(b.y) && q16(a.z) == q16(b.z));
 }
@@ -200,9 +207,9 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
         w.vecq(p.pos);
         if (on) {   // (quantizeAttachOffset's grid: exact)
             w.u8(p.onPlayer);
-            w.i8((int8_t)std::lround(clampf(p.attachOffset.x / kPlayerHalfWidth, -1, 1) * 127));
-            w.u8((uint8_t)std::lround(clampf(p.attachOffset.y / kPlayerHeight, 0, 1) * 255));
-            w.i8((int8_t)std::lround(clampf(p.attachOffset.z / kPlayerHalfWidth, -1, 1) * 127));
+            w.i8((int8_t)(long)roundHalfAway(clampf(p.attachOffset.x / kPlayerHalfWidth, -1, 1) * 127));
+            w.u8((uint8_t)(long)roundHalfAway(clampf(p.attachOffset.y / kPlayerHeight, 0, 1) * 255));
+            w.i8((int8_t)(long)roundHalfAway(clampf(p.attachOffset.z / kPlayerHalfWidth, -1, 1) * 127));
         }
         if (vel) w.vecq(p.vel);
         else p.vel = b->vel;

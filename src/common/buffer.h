@@ -7,6 +7,16 @@
 
 constexpr int kMaxPacket = 1400; // stay under typical MTU
 
+// std::round (half away from zero), bit for bit (checked for every float, -0 and NaN included), without the libm call
+// that was most of a snapshot's encode time: below 2^23 the truncation through an int is exact, x - t (the fraction) is
+// exact, and copysign keeps round's -0 for -0.5 < x <= -0. 2^23 and up (all whole), inf and NaN go to std::round.
+inline float roundHalfAway(float x) {
+    if (!(std::fabs(x) < 8388608.0f)) return std::round(x);
+    float t = (float)(int32_t)x;
+    if (std::fabs(x - t) >= 0.5f) t += x < 0 ? -1.0f : 1.0f;
+    return std::copysign(t, x);
+}
+
 class Writer {
 public:
     Writer(uint8_t* buf, int cap) : buf_(buf), cap_(cap) {}
@@ -18,7 +28,7 @@ public:
     void f32(float f) { uint32_t v; memcpy(&v, &f, 4); u32(v); }
     void vec(const Vec3& v) { f32(v.x); f32(v.y); f32(v.z); }
     // 1/64 m precision, +-512m range.
-    void vecq(const Vec3& v) { for (int i = 0; i < 3; i++) i16((int16_t)clampf(std::round(v[i] * 64.0f), -32767, 32767)); }
+    void vecq(const Vec3& v) { for (int i = 0; i < 3; i++) i16((int16_t)clampf(roundHalfAway(v[i] * 64.0f), -32767, 32767)); }
     void str(const std::string& s) {
         size_t n = s.size() > 255 ? 255 : s.size();
         u8((uint8_t)n);
