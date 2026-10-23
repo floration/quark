@@ -46,6 +46,7 @@ struct ServerConfig {
     bool upnp = false;          // try to open the port on the router automatically
     int maxTickRate = 1000;     // starting (highest) tick rate; lowered automatically if the host can't keep up
     int snapRate = 500;         // snapshots per second to each client (<= tick rate): 1000 = lowest latency, lower = less CPU / bandwidth
+    int tickSpinUs = -1;        // spin this long before each tick (humans on): -1 adaptive (net.h WakeSpin), 0 never
     // Bots
     bool balanceBots = true;    // team modes: an extra bot joins the side with fewer humans (vote can turn off)
     int balanceBotSkill = BOT_INTERMEDIATE;
@@ -651,6 +652,16 @@ private:
     const GameEvent* eventPtrs_[16] = {}; // scratch for snapshot building: the events going out (in the player's queue)
     bool running_ = false;
     double nextTick_ = 0;
+    WakeSpin wakeSpin_;         // idle(): how long before a tick it stops sleeping and spins
+    TailHist lateHist_{25e-6};  // how late ticks start (windows of 1000): status shows the last one's 99th percentile
+    double lateP99_ = -1;       // (-1: no window yet; lateP99Past_: past the histogram's 1.6 ms)
+    bool lateP99Past_ = false;
+    // frame()'s reads and the snapshots' sends, batched where the OS can (UdpSocket::kBatch: Linux)
+    static constexpr int kRecvBatch = UdpSocket::kBatch, kSnapBufs = UdpSocket::kBatch > 1 ? kMaxPlayers : 1;
+    uint8_t recvBuf_[kRecvBatch][2048];
+    InPacket recvPk_[kRecvBatch];
+    uint8_t snapBuf_[kSnapBufs][kMaxPacket];
+    OutPacket snapOut_[kSnapBufs];
     double rateWindowStart_ = 0;
     int windowTicks_ = 0, windowLate_ = 0, windowSendFail_ = 0, windowWorstLoss_ = 0;
     double windowBusy_ = 0;   // seconds spent in simulate + snapshots this window

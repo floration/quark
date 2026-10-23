@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -31,6 +32,9 @@ static void usage() {
         "                   tools/server/install.sh): they share the CPU and network, throttling and (testing\n"
         "                   only) closing in the owner's order when the machine can't carry both\n"
         "  --tickrate N     highest tick rate to try: 1000 (default), 500, 250 or 125.\n"
+        "  --tick-spin auto|N  microseconds to spin before each tick instead of sleeping (default auto: from how\n"
+        "                   late this host wakes, 20-300; 0 = never: the least CPU, ticks up to a wake-up late).\n"
+        "                   The status command shows the spin and how late ticks start.\n"
         "  --snaprate N     snapshots per second to each player (default 500; 1000 = lowest latency,\n"
         "                   250 or less = less CPU and upload bandwidth)\n"
         "                   During warmup it steps down automatically if the host can't keep up.\n"
@@ -77,6 +81,14 @@ int main(int argc, char** argv) {
         else if (a == "--upnp") cfg.upnp = true;
         else if (a == "--tickrate") cfg.maxTickRate = atoi(next().c_str());
         else if (a == "--snaprate") cfg.snapRate = std::max(30, atoi(next().c_str()));
+        else if (a == "--tick-spin") {
+            std::string v = next();
+            char* end = nullptr;
+            long us = strtol(v.c_str(), &end, 10);
+            if (v == "auto") cfg.tickSpinUs = -1;
+            else if (!v.empty() && *end == 0 && us >= 0) cfg.tickSpinUs = (int)std::min(us, 2000L);
+            else { printf("--tick-spin: auto or microseconds (0 or more)\n"); return 1; }
+        }
         else if (a == "--bots") { cfg.vsBots = true; cfg.botsEnemy = atoi(next().c_str()); }
         else if (a == "--allies") cfg.botsAlly = atoi(next().c_str());
         else if (a == "--botskill") cfg.botSkill = cfg.balanceBotSkill = atoi(next().c_str());
@@ -115,7 +127,8 @@ int main(int argc, char** argv) {
     }
     for (auto& l : upgradeMapDir(userMapsDir()).log) printf("maps: %s\n", l.c_str());   // older map formats: converted (originals in maps/old/v<N>/)
     netInit();
-    Server server;
+    auto srv = std::make_unique<Server>();   // (~1 MB: on the heap, not half of the main thread's 2 MB MinGW stack)
+    Server& server = *srv;
     std::string err;
     if (!server.start(cfg, &err)) {
         printf("failed to start: %s\n", err.c_str());

@@ -181,6 +181,9 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
         }
     });
     cfg_ = cfg;
+    wakeSpin_ = WakeSpin();
+    wakeSpin_.setFixed(cfg_.tickSpinUs < 0 ? -1.0 : cfg_.tickSpinUs * 1e-6);
+    lateHist_.clear(); lateP99_ = -1;
     if (cfg_.maxPlayers < 1) cfg_.maxPlayers = 1;
     if (cfg_.maxPlayers > kMaxPlayers) cfg_.maxPlayers = kMaxPlayers;
     if (cfg_.ranked) cfg_.custom = CustomRules();   // ranked plays by the standard rules
@@ -328,7 +331,7 @@ void Server::run(std::atomic<bool>& quit) {
     double statusAt = 0;
     while (!quit && running_) {
         double wait = frame();
-        // (4 times a second: each status() is a lock and a string copy, and this loop spins the last 0.3 ms of a tick)
+        // (4 times a second: each status() is a lock and a string copy)
         if (double now = timeNow(); now >= statusAt) {
             statusAt = now + 0.25;
             if (upnp_ && upnp_->done()) {
@@ -345,14 +348,27 @@ void Server::run(std::atomic<bool>& quit) {
 }
 
 void Server::idle(double wait) {
-    // Sleep in the socket until the next tick (wakes early for packets); the last ~0.3 ms is spun
-    // by the caller's loop so 1 ms ticks stay on time.
     if (closed_) { sock_.waitUs(100000); return; }   // closed by the governor: wake for packets (refused) and its decision
     bool anyHuman = false;
     for (auto& p : players_) anyHuman |= p.connected && !p.isBot;
     if (!anyHuman) { if (wait > 0) sock_.waitUs((int)std::min(wait * 1e6, 5000.0)); return; } // nobody to be on time for: no spinning
-    if (wait > 0.0003) sock_.waitUs((int)std::min((wait - 0.0003) * 1e6, 5000.0));
-    else cpuRelax();   // (spinning: let the other hyper-thread on this core run, often the hosting client's renderer)
+    if (wait <= 0) return;
+    // Somebody to be on time for: sleep on a timer alone until wakeSpin_ before the tick, then spin to it here (not
+    // through frame(): no recv per pass). Packets that come meanwhile wait in the socket: frame() reads them, in
+    // arrival order, before the tick runs, against the same world, timeMs_ and command tokens as if each had woken us,
+    // and nothing a command does is sent before that tick's snapshot: the same game, without a wake per input packet
+    // (8 players at 1000 Hz: ~8 a tick). Only info / connect / map replies wait, up to a tick. (Real time / scale: tests
+    // run the clock faster.)
+    const double scale = timeScale(), spin = wakeSpin_.spin() * scale;
+    const double now = timeNow(), due = std::min(nextTick_, now + wait);   // (a caller may wait less: tests cap it)
+    const double until = std::min(due - spin, now + 0.005 * scale);
+    if (until - now > 20e-6 * scale) {
+        sleepPrecise((until - now) / scale);
+        double woke = timeNow();
+        wakeSpin_.observe((woke - until) / scale);
+        if (woke < due - spin) return;   // (the 5 ms cap, 125 Hz ticks: frame() again, then the rest)
+    }
+    while (timeNow() < due) cpuRelax();   // (lets the other hyper-thread on this core run: often the hosting client's renderer)
 }
 
 void Server::resetRateWindow() {
@@ -493,10 +509,11 @@ bool Server::rated() const { return cfg_.channel != GOV_TESTING && !testingBuild
 
 double Server::frame() {
     if (activeRules().name != cfg_.custom.name) setActiveRules(cfg_.custom);   // rules are per thread: this thread simulates by this server's
-    uint8_t buf[2048];
-    NetAddr from;
-    int n;
-    while ((n = sock_.recv(from, buf, sizeof buf)) > 0) receivePacket(from, buf, n);
+    for (int k = 0; k < kRecvBatch; k++) { recvPk_[k].data = recvBuf_[k]; recvPk_[k].cap = sizeof recvBuf_[k]; }
+    for (int n = kRecvBatch; n == kRecvBatch;) {   // (a short batch: the socket was empty)
+        n = sock_.recvBatch(recvPk_, kRecvBatch);
+        for (int k = 0; k < n; k++) if (recvPk_[k].len > 0) receivePacket(recvPk_[k].from, recvPk_[k].data, recvPk_[k].len);
+    }
 
     double now = timeNow();
     // the reachability check (its timings are 0.5 s and up) 100 times a second, not on every pass of the spin
@@ -515,6 +532,8 @@ double Server::frame() {
                                   // Catching up without a limit let a slow machine spin here forever.
         if (now - nextTick_ > period * 2) windowLate_++;
         windowTicks_++;
+        lateHist_.add((now - nextTick_) / timeScale());
+        if (lateHist_.count() >= 1000) { lateP99_ = lateHist_.upper(990, &lateP99Past_); lateHist_.clear(); }
         double t0 = timeNow();
         QZONE("server tick");
         { QZONE("server simulate"); simulate(); }
@@ -1540,6 +1559,12 @@ void Server::command(const std::string& line, int fromPlayer) {
 std::string Server::statusText() {
     std::string s = "map " + cfg_.map + " mode " + modeName(cfg_.mode) + " players " + std::to_string(playerCount()) + "/" +
                     std::to_string(cfg_.maxPlayers);
+    {   // so a host can judge its tick timing (late: how long after its time a tick starts; 25 us bins)
+        char t[160], late[64] = "measuring";
+        if (lateP99_ >= 0) snprintf(late, sizeof late, "%s %d us (last 1000 ticks)", lateP99Past_ ? "over" : "under", (int)std::lround((lateP99Past_ ? lateP99_ - 25e-6 : lateP99_) * 1e6));
+        snprintf(t, sizeof t, "\ntick %d Hz, spin %d us (%s), late p99 %s", tickRate(), (int)std::lround(wakeSpin_.spin() * 1e6), wakeSpin_.fixed() ? "fixed" : "auto", late);
+        s += t;
+    }
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
         if (!p.connected) continue;
@@ -2760,10 +2785,12 @@ void Server::sendSnapshots() {
             projHidden_[k] = 0;
         }
     }
-    uint8_t buf[kMaxPacket], world[kMaxPacket];
+    uint8_t world[kMaxPacket];
+    int nOut = 0;   // (Linux: queued, all sent in one sendmmsg after the loop; elsewhere each goes as it's built)
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
         if (!p.connected || p.isBot || p.awayUntil > 0) continue;
+        uint8_t* buf = snapBuf_[nOut];
         if ((int)p.sent.size() != ServerPlayer::kSentRing) p.sent.assign(ServerPlayer::kSentRing, Snapshot());
         // delta base: the newest snapshot the client confirmed, if we still remember it. Snapshot times rise with
         // each send, so it's searched from the newest back: a round trip's worth of sends, not the whole ring.
@@ -2871,9 +2898,11 @@ void Server::sendSnapshots() {
         }
         writeSnapshotEvents(w, eventPtrs_, nEvents);
         snapBytes_ += w.size(); snapCount_++;
-        if (!sock_.send(p.addr, buf, w.size())) windowSendFail_++;
+        if (kSnapBufs > 1) { snapOut_[nOut].data = buf; snapOut_[nOut].len = w.size(); snapOut_[nOut].to = p.addr; nOut++; }
+        else if (!sock_.send(p.addr, buf, w.size())) windowSendFail_++;
         p.sentSeq++;   // (the slot keeps what went out as a future delta base)
     }
+    if (nOut) windowSendFail_ += nOut - sock_.sendBatch(snapOut_, nOut);
 }
 
 // ---------------------------------------------------------------------------

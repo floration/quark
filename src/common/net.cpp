@@ -1,4 +1,5 @@
 #include "net.h"
+#include <algorithm>
 #include <chrono>
 #include <thread>
 #include <cstring>
@@ -22,6 +23,10 @@
   #include <fcntl.h>
   #include <ifaddrs.h>
   #include <cerrno>
+  #include <ctime>
+  #ifdef __linux__
+    #include <sys/prctl.h>   // (recvmmsg / sendmmsg: <sys/socket.h> declares them with _GNU_SOURCE, which g++ always defines)
+  #endif
 #endif
 
 std::string NetAddr::toString() const {
@@ -177,6 +182,83 @@ int UdpSocket::recv(NetAddr& from, void* buf, size_t cap) {
     }
 }
 
+int UdpSocket::recvBatch(InPacket* pk, int n) {
+    if (fd_ == kInvalid || n <= 0) return 0;
+#if defined(__linux__)
+    constexpr int kMax = 64;
+    mmsghdr m[kMax];
+    iovec iov[kMax];
+    sockaddr_in a[kMax];
+    n = std::min(n, kMax);
+    for (int i = 0; i < n; i++) {
+        iov[i].iov_base = pk[i].data;
+        iov[i].iov_len = pk[i].cap;
+        m[i] = mmsghdr{};
+        m[i].msg_hdr.msg_name = &a[i];
+        m[i].msg_hdr.msg_namelen = sizeof a[i];
+        m[i].msg_hdr.msg_iov = &iov[i];
+        m[i].msg_hdr.msg_iovlen = 1;
+    }
+    for (;;) {
+        int r = recvmmsg(fd_, m, (unsigned)n, MSG_DONTWAIT, nullptr);
+        if (r < 0) {
+            if (errno == EINTR || errno == ECONNREFUSED) continue;
+            return 0;
+        }
+        for (int i = 0; i < r; i++) {   // (one bigger than cap arrives cut to cap, as recvfrom has it)
+            pk[i].len = (int)m[i].msg_len;
+            pk[i].from.ip = ntohl(a[i].sin_addr.s_addr);
+            pk[i].from.port = ntohs(a[i].sin_port);
+        }
+        return r;
+    }
+#else
+    int k = 0;
+    while (k < n && (pk[k].len = recv(pk[k].from, pk[k].data, pk[k].cap)) > 0) k++;
+    return k;
+#endif
+}
+
+int UdpSocket::sendBatch(const OutPacket* pk, int n) {
+    if (fd_ == kInvalid) return 0;
+    int ok = 0;
+#if defined(__linux__)
+    constexpr int kMax = 64;
+    mmsghdr m[kMax];
+    iovec iov[kMax];
+    sockaddr_in a[kMax];
+    for (int at = 0; at < n;) {
+        int c = std::min(n - at, kMax);
+        for (int i = 0; i < c; i++) {
+            const OutPacket& o = pk[at + i];
+            a[i] = sockaddr_in{};
+            a[i].sin_family = AF_INET;
+            a[i].sin_addr.s_addr = htonl(o.to.ip);
+            a[i].sin_port = htons(o.to.port);
+            iov[i].iov_base = (void*)o.data;
+            iov[i].iov_len = o.len;
+            m[i] = mmsghdr{};
+            m[i].msg_hdr.msg_name = &a[i];
+            m[i].msg_hdr.msg_namelen = sizeof a[i];
+            m[i].msg_hdr.msg_iov = &iov[i];
+            m[i].msg_hdr.msg_iovlen = 1;
+        }
+        // sendmmsg stops at the first datagram that fails: it returns the ones before it, and a call starting at
+        // that one returns -1. Each failure counts once and the rest still go (as send() one at a time).
+        for (int i = 0; i < c;) {
+            int r = sendmmsg(fd_, m + i, (unsigned)(c - i), 0);
+            if (r <= 0) { i++; continue; }
+            for (int k = i; k < i + r; k++) ok += m[k].msg_len == pk[at + k].len;
+            i += r;
+        }
+        at += c;
+    }
+#else
+    for (int i = 0; i < n; i++) ok += send(pk[i].to, pk[i].data, pk[i].len);
+#endif
+    return ok;
+}
+
 bool UdpSocket::waitUs(int us) {
     if (fd_ == kInvalid) return false;
 #ifdef _WIN32
@@ -235,6 +317,8 @@ double timeNow() {
     return g_scaleBaseGame + (realTime() - g_scaleBaseReal) * g_timeScale;
 }
 
+double timeScale() { return g_timeScale; }
+
 void setTimeScale(double scale) {
     double now = timeNow();
     g_scaleBaseReal = realTime();
@@ -272,5 +356,52 @@ void waitUntil(double t) {
 void raiseThreadPriority() {
 #ifdef _WIN32
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+#elif defined(__linux__)
+    prctl(PR_SET_TIMERSLACK, 1UL, 0UL, 0UL, 0UL);   // (this thread: a sleep ends when asked, not up to 50 us later)
 #endif
+}
+
+void sleepPrecise(double seconds) {
+    if (seconds <= 0) return;
+#ifdef _WIN32
+    // (one per thread, never closed, as waitUntil's; a plain one, ~1 ms, on Windows before 10 1803)
+    static thread_local HANDLE timer = [] {
+        HANDLE h = CreateWaitableTimerExW(nullptr, nullptr, 0x2 /*CREATE_WAITABLE_TIMER_HIGH_RESOLUTION*/, TIMER_ALL_ACCESS);
+        return h ? h : CreateWaitableTimerW(nullptr, FALSE, nullptr);
+    }();
+    LARGE_INTEGER due;
+    due.QuadPart = -(LONGLONG)(seconds * 1e7);   // relative, 100 ns units
+    if (timer && due.QuadPart < 0 && SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE)) WaitForSingleObject(timer, (DWORD)(seconds * 1000) + 50);
+    else if (seconds >= 0.001) Sleep((DWORD)(seconds * 1000));
+#else
+    timespec ts;
+    ts.tv_sec = (time_t)seconds;
+    ts.tv_nsec = (long)((seconds - (double)ts.tv_sec) * 1e9);
+    while (nanosleep(&ts, &ts) != 0 && errno == EINTR) {}   // (a signal: the rest of it)
+#endif
+}
+
+double TailHist::upper(int perMille, bool* past) const {
+    int above = count_ - count_ * perMille / 1000, acc = 0, i = kBins - 1;   // (from the top bin down to the percentile's)
+    for (; i > 0; i--) { acc += (int)n_[i]; if (acc >= above && above > 0) break; }
+    if (past) *past = i == kBins - 1 && above > 0;
+    return (i + 1) * bin_;
+}
+
+void WakeSpin::observe(double oversleep) {
+    hist_.add(oversleep);
+    if (hist_.count() < kWindow) return;
+    // A tail a spin can cover: cover it. One past the cap (a shared / capped VM: wake-ups milliseconds late, and spinning
+    // burns the quota so the hypervisor deschedules us later still; Windows' ~1 ms timer grid): spinning the cap would
+    // buy little, so only the common case, p90, up to kNoisyMax.
+    // (Windows keeps the cap: its tail is the timer grid, not a stolen CPU, and the 300 us spin keeps p99 ~700 us late
+    // instead of ~950: latency first, owner's priority; ~8% of a core, still down from ~10% without the packet wakes.)
+    double p99 = hist_.upper(990);
+#ifdef _WIN32
+    double target = std::clamp(p99 + kMargin, kMin, kMax);
+#else
+    double target = p99 + kMargin <= kMax ? std::max(p99 + kMargin, kMin) : std::clamp(hist_.upper(900) + kMargin, kMin, kNoisyMax);
+#endif
+    spin_ = target > spin_ ? target : spin_ + (target - spin_) * 0.25;
+    hist_.clear();
 }
