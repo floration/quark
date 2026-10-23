@@ -362,13 +362,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     // VAOs
     glGenVertexArrays(1, &dynVao_);
     glGenBuffers(1, &dynVbo_);
-    glBindVertexArray(dynVao_);
-    glBindBuffer(GL_ARRAY_BUFFER, dynVbo_);
-    glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)0);
-    glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)12);
-    glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)24);
-    glEnableVertexAttribArray(3); glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)40);
-    glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)56);   // outline rgb + width
+    setupDynVao(dynVao_, dynVbo_);
 
     glGenVertexArrays(1, &flatVao_);
     glGenBuffers(1, &flatVbo_);
@@ -605,7 +599,37 @@ bool Renderer::inView(const Vec3& c, float r) const {
     return true;
 }
 
+void Renderer::setupDynVao(unsigned vao, unsigned vbo) {
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)0);
+    glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)12);
+    glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)24);
+    glEnableVertexAttribArray(3); glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)40);
+    glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)56);   // outline rgb + width
+}
+
+void Renderer::setStaticBoxes(const std::function<void()>& emit) {
+    QZONE("static boxes");
+    staticVerts_.clear();
+    staticItems_.clear();
+    buildingStatic_ = true;
+    emit();
+    buildingStatic_ = false;
+    if (!staticVao_) { glGenVertexArrays(1, &staticVao_); glGenBuffers(1, &staticVbo_); setupDynVao(staticVao_, staticVbo_); }
+    glBindBuffer(GL_ARRAY_BUFFER, staticVbo_);
+    glBufferData(GL_ARRAY_BUFFER, staticVerts_.size() * sizeof(DynVertex), staticVerts_.data(), GL_STATIC_DRAW);
+    staticCount_ = (int)staticVerts_.size();
+    std::vector<DynVertex>().swap(staticVerts_);
+}
+
 void Renderer::box(const Vec3& center, const Vec3& half, float yaw, const Vec3& color, float sunVis, bool castShadow, bool visible) {
+    if (buildingStatic_) {   // into the static batch (setStaticBoxes): every box, culled when drawn
+        int first = (int)staticVerts_.size();
+        emitBox(staticVerts_, Mat4::translate(center) * Mat4::rotY(yaw), half, color, sunVis);
+        staticItems_.push_back({center, length(half), first, (int)staticVerts_.size() - first});
+        return;
+    }
     if (visible && !inView(center, length(half))) { visible = false; if (!castShadow) return; } // off screen: only its shadow can show
     Mat4 xf = Mat4::translate(center) * Mat4::rotY(yaw);
     if (visible) emitBox(dyn_, xf, half, color, sunVis);
@@ -774,8 +798,8 @@ void Renderer::drawScene(bool shadows) {
     }
 
     auto drawDyn = [&](const std::vector<DynVertex>& v, bool receive) {
-        if (v.empty()) return;
-        upload(dynVbo_, dynCap_, v);
+        if (v.empty() && !staticOn_) return;
+        if (!v.empty()) upload(dynVbo_, dynCap_, v);
         glUseProgram(dynProg_);
         setMat(dynProg_, "uViewProj", viewProj_);
         setMat(dynProg_, "uShadowMat", shadowMat);
@@ -792,9 +816,24 @@ void Renderer::drawScene(bool shadows) {
         glUniform1f(U(dynProg_, "uFogDensity"), fog);
         glUniform1f(U(dynProg_, "uBright"), brightness);
         glBindVertexArray(dynVao_);
-        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)v.size());
+        if (!v.empty()) glDrawArrays(GL_TRIANGLES, 0, (GLsizei)v.size());
     };
     { QZONE("dynamic pass"); drawDyn(dyn_, true); }
+    if (staticOn_) {   // the static batch (the editor's map): drawDyn above set the program up; the boxes in view, one multi-draw
+        QZONE("static boxes pass");
+        staticOn_ = false;
+        staticFirst_.clear();
+        staticCnt_.clear();
+        for (const StaticItem& it : staticItems_) {
+            if (!inView(it.c, it.r)) continue;
+            if (!staticFirst_.empty() && staticFirst_.back() + staticCnt_.back() == it.first) staticCnt_.back() += it.count;
+            else { staticFirst_.push_back(it.first); staticCnt_.push_back(it.count); }
+        }
+        if (!staticFirst_.empty()) {
+            glBindVertexArray(staticVao_);
+            glMultiDrawArrays(GL_TRIANGLES, staticFirst_.data(), staticCnt_.data(), (GLsizei)staticFirst_.size());
+        }
+    }
 
     if (!flat_.empty()) {
         upload(flatVbo_, flatCap_, flat_);

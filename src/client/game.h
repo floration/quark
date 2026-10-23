@@ -238,6 +238,8 @@ private:
     float edSpeed_ = 12;
     Vec3 edCam_;
     bool edLook_ = false, edDirty_ = false, edBaked_ = false;
+    bool edMeshDirty_ = true;      // the map's boxes changed: rebuild the renderer's static batch (PERF-12)
+    float edMeshOutline_ = -1;     // the outline width that batch was built with
     int edFullW_ = 1280;   // the window width (the editor's 3D view is narrower: the panel is on the right)
     bool edOnline_ = false;     // in an edit session (connected to a server in edit mode)
     bool edSession_ = false;    // this connection has been an edit session (leaving offers to save a copy)

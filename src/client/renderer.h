@@ -51,6 +51,12 @@ public:
     void overlayBox(const Vec3& center, const Vec3& half, const Vec3& color); // world space, drawn over everything (editor handles)
     Vec3 viewPoint(const Vec3& offset) const;  // where a camera-relative point (as viewBox takes) is in the world
     void translucentBox(const AABB& b, const Color& c);
+    // A static batch of boxes (the editor's unbaked map, PERF-12): box() calls made inside emit go to a buffer that's
+    // uploaded once and drawn every frame useStaticBoxes() is called, culled per box, instead of being streamed again
+    // each frame (~21 MB a frame on Midtown). Rebuild it only when the boxes change.
+    void setStaticBoxes(const std::function<void()>& emit);
+    void useStaticBoxes() { staticOn_ = staticCount_ > 0; }   // draw it this frame
+    void clearStaticBoxes() { staticCount_ = 0; staticItems_.clear(); staticItems_.shrink_to_fit(); }
     void line(const Vec3& a, const Vec3& b, float width, const Color& c);
 
     void drawScene(bool shadows);
@@ -120,6 +126,14 @@ private:
     size_t dynCap_ = 0, flatCap_ = 0, uiCap_ = 0;
 
     std::vector<DynVertex> dyn_, dynShadowOnly_, view_;
+    struct StaticItem { Vec3 c; float r; int first, count; };
+    std::vector<StaticItem> staticItems_;
+    std::vector<DynVertex> staticVerts_;          // (only while setStaticBoxes builds it)
+    std::vector<int> staticFirst_, staticCnt_;
+    unsigned staticVao_ = 0, staticVbo_ = 0;
+    int staticCount_ = 0;
+    bool buildingStatic_ = false, staticOn_ = false;
+    void setupDynVao(unsigned vao, unsigned vbo);
     std::vector<FlatVertex> flat_;
     std::vector<Vertex2D> ui_;
     float casterRect_[4] = {0, 0, 1, 1}; // shadow-map rect covered by dynamic casters (this frame)

@@ -242,6 +242,7 @@ void Game::openEditor(std::string name) {
     edMulti_.clear();
     edGroupMenu_ = edExportAsk_ = false;
     edDirty_ = edBaked_ = edOnline_ = false;
+    edMeshDirty_ = true;
     std::string err;
     if (!name.empty() && ed_.load(name, &err)) {
         edName_ = name;
@@ -280,6 +281,7 @@ void Game::enterOnlineEditor() {
     edMulti_.clear();
     edGroupMenu_ = edExportAsk_ = false;
     edBaked_ = edDirty_ = false;
+    edMeshDirty_ = true;
     if (fromGame) edCam_ = net_.predicted().pos + Vec3(0, kEyeHeight, 0); // keep looking from where you were playing
     else resetEditorView(ed_, edCam_, yaw_, pitch_);
     r_.unloadWorld(ed_.sunDir);
@@ -292,6 +294,8 @@ void Game::enterOnlineEditor() {
 
 void Game::closeEditor() {
     edLook_ = false;
+    r_.clearStaticBoxes();
+    edMeshDirty_ = true;
     if (edOnline_) { leaveGame(); return; }
     rescanMaps();
     setScreen(Screen::Main);
@@ -302,6 +306,7 @@ void Game::closeEditor() {
 // the rest), exactly as the server and the session clients rely on, so there's nothing to rebuild here.
 void Game::edChanged() {
     edDirty_ = true;
+    edMeshDirty_ = true;
     if (edBaked_) { edBaked_ = false; r_.unloadWorld(ed_.sunDir); }
 }
 
@@ -937,6 +942,7 @@ void Game::editorFrame(double dt) {
         if (net_.mapRevision() != edRev_) {
             ed_ = net_.map();
             edRev_ = net_.mapRevision();
+            edMeshDirty_ = true;
             if (edBaked_) { edBaked_ = false; r_.unloadWorld(ed_.sunDir); }
         }
         for (auto& e : net_.takeEvents()) {
@@ -1070,14 +1076,22 @@ void Game::editorFrame(double dt) {
     // ---- 3D view
     const Vec3 matColor[6] = {r_.baseColor, r_.accentColor, {0.22f, 0.22f, 0.24f}, r_.metalColor, r_.glowColor, r_.metalColor * 0.7f};
     r_.worldOutline = cfg_.outlineWorld;   // (the map's boxes, baked or not, take the world outline width)
-    r_.outlineWidth = cfg_.outlineWorld;
-    if (!edBaked_)
-        for (auto& b : ed_.brushes) { // (water, lava and trim, 6-8, past the table: blue, orange, accent; clip below)
-            if (b.material == 9) continue;
-            Vec3 c = b.material < 6 ? matColor[b.material] : b.material == 6 ? Vec3(0.2f, 0.4f, 0.8f) : b.material == 7 ? Vec3(1.0f, 0.4f, 0.1f) : r_.accentColor;
-            r_.box(b.box.center(), (b.box.mx - b.box.mn) * 0.5f, 0, c, 1.0f, false);
+    if (!edBaked_) {   // the map's boxes: one static batch, rebuilt only when they change (it was streamed every frame)
+        if (edMeshDirty_ || edMeshOutline_ != cfg_.outlineWorld) {
+            r_.outlineWidth = cfg_.outlineWorld;
+            r_.setStaticBoxes([&] {
+                for (auto& b : ed_.brushes) { // (water, lava and trim, 6-8, past the table: blue, orange, accent; clip below)
+                    if (b.material == 9) continue;
+                    Vec3 c = b.material < 6 ? matColor[b.material] : b.material == 6 ? Vec3(0.2f, 0.4f, 0.8f) : b.material == 7 ? Vec3(1.0f, 0.4f, 0.1f) : r_.accentColor;
+                    r_.box(b.box.center(), (b.box.mx - b.box.mn) * 0.5f, 0, c, 1.0f, false);
+                }
+            });
+            r_.outlineWidth = 1.0f;
+            edMeshDirty_ = false;
+            edMeshOutline_ = cfg_.outlineWorld;
         }
-    r_.outlineWidth = 1.0f;
+        r_.useStaticBoxes();
+    }
     for (auto& b : ed_.brushes) // clip: invisible in play (the baked world leaves it out too), see-through violet here so it can be found and edited
         if (b.material == 9) r_.translucentBox(b.box, kClipColor);
     for (auto& sp : ed_.spawns) {
@@ -1234,6 +1248,7 @@ void Game::editorFrame(double dt) {
     if (ui_.button(x, y, edOnline_ ? w : w2, h, edBaked_ ? "UNBAKE" : "BAKE LIGHT")) {
         if (edBaked_) { edBaked_ = false; r_.unloadWorld(ed_.sunDir); }
         else { r_.loadWorld(ed_, [&](float p) { drawBakeProgress(edName_, p); }); edBaked_ = true; }
+        edMeshDirty_ = true;   // (the bake sets the map's palette: the boxes' colours)
     }
     if (!edOnline_ && ui_.button(x + w2 + gap, y, w2, h, "EXIT")) {
         if (edDirty_ && time_ > edLeaveArmed_) { edLeaveArmed_ = time_ + 2; edNotify("unsaved changes - click EXIT again to leave"); }
