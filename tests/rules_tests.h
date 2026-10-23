@@ -120,6 +120,50 @@ static void testOvertime(uint16_t port) {
     }
 }
 
+// Bomb: a bomb planted in overtime ends the overtime. The fuse is the clock from then on, and the attackers win when it
+// goes off (owner, checked before 1.17.0).
+static void testBombOvertimePlant(uint16_t port) {
+    printf("bomb planted in overtime\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "depot"; cfg.mode = MODE_BOMB; cfg.port = port; cfg.balanceBots = false;
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); g_fail++; return; }
+    const int attTeam = s.ms_.attackers;
+    int att = rulesTeamPlayer(s, attTeam), def = rulesTeamPlayer(s, attTeam == TEAM_A ? (int)TEAM_B : (int)TEAM_A);
+    if (att < 0 || def < 0) { s.stop(); g_fail++; return; }
+    const AABB& site = s.map_.bombSites[0];
+    Vec3 onSite = {site.center().x, site.mn.y + 0.05f, site.center().z};
+    Vec3 far = s.map_.spawns[0].pos;
+    for (auto& sp : s.map_.spawns) if (length(sp.pos - onSite) > length(far - onSite)) far = sp.pos;
+    bool onIt = true;
+    auto in = [&](int) {
+        auto& a = s.players_[att]; auto& d = s.players_[def];
+        a.move.pos = onIt ? onSite : far; a.move.vel = {};
+        d.move.pos = far; d.move.vel = {};   // (the defender never comes to defuse)
+        a.health = d.health = 100;
+        return UserCmd();
+    };
+    pump(s, cls, 0.1, in);
+    s.phaseEnd_ = s.time();
+    pump(s, cls, 0.5, in);
+    CHECK(s.ms_.phase == PHASE_LIVE && (s.ms_.flags & MS_OVERTIME));
+    // planted during overtime: overtime is over, the clock is the fuse
+    const int scoreBefore = attTeam == TEAM_A ? s.ms_.scoreA : s.ms_.scoreB;
+    s.ms_.bombState = BOMB_PLANTED;
+    s.ms_.bombPos = onSite;
+    s.ms_.bombTimer = 3.0f;
+    onIt = false;
+    pump(s, cls, 0.2, in);
+    printf("  planted in overtime: overtime %d, clock %.2f s (fuse %.2f s)\n", (s.ms_.flags & MS_OVERTIME) != 0, s.ms_.timeLeft, s.ms_.bombTimer);
+    CHECK(s.ms_.phase == PHASE_LIVE && !(s.ms_.flags & MS_OVERTIME) && std::fabs(s.ms_.timeLeft - s.ms_.bombTimer) < 0.05f);
+    pumpServerTime(s, cls, 3.5, in);
+    const int scoreAfter = attTeam == TEAM_A ? s.ms_.scoreA : s.ms_.scoreB;
+    CHECK(s.ms_.phase != PHASE_LIVE && s.ms_.bombState == BOMB_EXPLODED && scoreAfter == scoreBefore + 1);
+    s.stop();
+}
+
 // 5.2: the syringe only exists in modes where the dead respawn, unless a custom mode lists it.
 static void testSyringeModes() {
     printf("syringe only in respawn modes\n");
@@ -1229,7 +1273,7 @@ static void testScoreboardValue() {
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
     std::vector<R> all = {
-        {"overtime", [] { testOvertime(TP(29230)); }},
+        {"overtime", [] { testOvertime(TP(29230)); testBombOvertimePlant(TP(29245)); }},
         {"syringe", [] { testSyringeModes(); }},
         {"throws", [] { testThrowCooldown(TP(29240)); }},
         {"hull", [] { testSizeHull(TP(29242)); }},

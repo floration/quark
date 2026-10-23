@@ -3,8 +3,9 @@
 #   quark-update.timer          the PRODUCTION server (/opt/quark): QUARK_CHANNEL=production (the default) follows
 #                               the latest production release, exactly as before;
 #   quark-testing-update.timer  the TESTING server (/opt/quark-testing): QUARK_CHANNEL=testing follows the newest
-#                               testing prerelease (tag test-X.Y.Z-test.N, signed manifest channel "testing"), or the
-#                               newest production release when that is newer by version. Never older than what runs.
+#                               testing prerelease (tag test-X.Y.Z-test.N, signed manifest channel "testing") while
+#                               it's newer than production by version. When it isn't (production caught up), the
+#                               testing server is stopped instead ($STATE/active, below) until a newer one comes.
 # When there's a newer release it
 #   1. waits until the release is complete: every platform's qpak that release lists has its .sig, and the Linux one
 #      (what most servers and players run) is there;
@@ -112,6 +113,22 @@ case "$WANTCH" in
     *) die "release $TAG: unknown channel" ;;
 esac
 [ "$CHANNEL" = testing ] || [ "$WANTCH" = production ] || die "a production server was offered testing release $TAG"
+# The testing server runs only while there's a testing build newer than production (owner, 1.17.0: "if the testing
+# branch and main branch are on the same update, you dont need to run a testing server"). $STATE/active is the switch:
+# install.sh's quark-testing-active.path starts the server when it appears, and the service's ExecCondition keeps it
+# down when it's gone; removing it also asks the running server to restart (update.pending) once its match ends.
+if [ "$CHANNEL" = testing ]; then
+    if [ "$WANTCH" = production ]; then
+        if [ -e "$STATE/active" ]; then
+            rm -f "$STATE/active"
+            touch "$STATE/update.pending"
+            log "no testing build newer than production $TAG: the testing server stops when its current match ends"
+        fi
+        rm -f "$STATE/update-waiting"
+        exit 0
+    fi
+    [ -e "$STATE/active" ] || { touch "$STATE/active"; log "testing build $TAG is newer than production: the testing server starts"; }
+fi
 CUR=$(cat "$STATE/built-tag" 2>/dev/null || true)
 [ "$TAG" = "$CUR" ] && { rm -f "$STATE/update-waiting"; exit 0; }
 if [ -n "$CUR" ]; then

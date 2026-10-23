@@ -24,7 +24,9 @@ Keep the `maps/` folder next to the executables.
     `tools/server/autoupdate.sh` checks for a new **production** release;
   - **testing** (`quark-testing.service`, the next port up, user `quark-testing`, `/opt/quark-testing`, data in
     `/var/lib/quark-testing`, listed as "<name> [TESTING]"): every 2 minutes it follows the newest **testing**
-    prerelease, or the newest production release when that is newer. Ranked is played there but never rated.
+    prerelease, and it only runs while that is newer than production: when production catches up (same update), the
+    testing server stops after its current match and starts again with the next newer testing build. Ranked is played
+    there but never rated.
     `--no-testing` leaves it out, `--testing-port N` moves it (forward that UDP port too).
 
   Both updaters verify the release's signed manifest (its channel, tag, version and commit) and Linux package, build

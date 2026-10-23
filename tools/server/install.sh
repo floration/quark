@@ -110,7 +110,7 @@ if [ "$TESTING" = 1 ]; then
     TARGS=$(argtool testing "$ARGS" "$TPORT")
 fi
 
-$SUDO systemctl stop quark-update.timer quark-update.service quark-testing-update.timer quark-testing-update.service 2>/dev/null || true   # (no update check mid-install)
+$SUDO systemctl stop quark-update.timer quark-update.service quark-testing-update.timer quark-testing-update.service quark-testing-active.path 2>/dev/null || true   # (no update check mid-install)
 
 # the dedicated users, and the group both servers share the governor directory through
 getent group quark-governor >/dev/null || $SUDO groupadd --system quark-governor
@@ -285,17 +285,30 @@ UNIT
 }
 units quark quark "$PREFIX" "$STATE" production "$ARGS" "" 1min
 [ "$TESTING" = 1 ] && units quark-testing quark-testing "$TPREFIX" "$TSTATE" testing "$TARGS" "Nice=5
-CPUWeight=50" 2min
+CPUWeight=50
+ExecCondition=/bin/test -e $TSTATE/active" 2min
+# the testing server runs only while there's a testing build newer than production (autoupdate.sh makes / removes
+# $TSTATE/active): this starts it when that file appears; its ExecCondition keeps it down while it's missing
+[ "$TESTING" = 1 ] && $SUDO tee /etc/systemd/system/quark-testing-active.path >/dev/null <<UNIT
+[Unit]
+Description=start the quark testing server while there's a testing build newer than production
+[Path]
+PathExists=$TSTATE/active
+Unit=quark-testing.service
+[Install]
+WantedBy=paths.target
+UNIT
 $SUDO systemctl daemon-reload
 $SUDO systemctl enable --now quark.service quark-update.timer
 $SUDO systemctl restart quark.service
 echo "production: running as user quark from $PREFIX on UDP $PORT. status: systemctl status quark | logs: journalctl -u quark -f"
 if [ "$TESTING" = 1 ]; then
-    $SUDO systemctl enable --now quark-testing.service quark-testing-update.timer
+    $SUDO systemctl enable --now quark-testing.service quark-testing-update.timer quark-testing-active.path
     $SUDO systemctl restart quark-testing.service
-    echo "testing: running as user quark-testing from $TPREFIX on UDP $TPORT (forward it too). logs: journalctl -u quark-testing -f"
+    echo "testing: user quark-testing from $TPREFIX on UDP $TPORT (forward it too). It runs only while there's a testing"
+    echo "  build newer than production (checked every 2 min). logs: journalctl -u quark-testing -u quark-testing-update -f"
 elif [ -f "$TUNIT" ]; then
-    $SUDO systemctl disable --now quark-testing.service quark-testing-update.timer 2>/dev/null || true
+    $SUDO systemctl disable --now quark-testing.service quark-testing-update.timer quark-testing-active.path 2>/dev/null || true
     echo "testing: stopped and disabled (--no-testing); its data stays in $TSTATE. Bring it back: install.sh --testing"
 fi
 echo "updates: journalctl -u quark-update -u quark-testing-update (failures: journalctl -p crit -t quark-update; webhook: /etc/quark/update.env)"

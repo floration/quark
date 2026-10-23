@@ -24,7 +24,7 @@ Forward the UDP port, and the next port up for the testing server.
 
 **What the updater does:**
 - **Production server:** every minute, it updates to the newest production release.
-- **Testing server:** every 2 minutes, it updates to the newest testing build, or to the newest production release if that is newer.
+- **Testing server:** every 2 minutes, it updates to the newest testing build. It only runs while that build is newer than production. When production catches up (same update), it stops after its current match and starts again by itself with the next newer testing build (`/var/lib/quark-testing/active`, `quark-testing-active.path`).
 - **Each update:**
   - It checks that the release's manifest is signed with the release key, so a release nobody signed is never installed.
   - It builds that exact commit and restarts the server between matches.

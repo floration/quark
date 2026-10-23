@@ -169,7 +169,7 @@ check((await call("/list?v=t9")) === "", "hidden servers aren't listed");
   r = await ratings([1]);
   check(r[id(1)].games === 1, "still one game");
 }
-// a lone dissent is a dispute (not rated until the owner settles it); every player against the server voids it
+// any dissent makes a dispute: logged (the owner reads /disputes), never rated (owner, 1.17.0: "just logged and unrated")
 {
   env.ADMIN_KEY = "adminkey";
   const S = await server();
@@ -191,19 +191,19 @@ check((await call("/list?v=t9")) === "", "hidden servers aren't listed");
   check((await call("/disputes", { key: "adminkex" })) === "forbidden" && (await call("/disputes", { key: "adminkey0" })) === "forbidden" &&
         (await call("/disputes", {})) === "forbidden", "a wrong key sees nothing");
   check((await fetchRaw("/disputes", { key: "adminkey" }, undefined, { Origin: "https://evil.example" })).status === 403, "no cross-site reads of disputes");
-  check((await call("/resolve", { key: "wrong", match: "bbbbbbbbbbbbbbbb", action: "rate" })) === "forbidden", "only the owner settles");
-  check((await call("/resolve", { key: "adminkey", match: "bbbbbbbbbbbbbbbb", action: "rate" })) === "done", "the owner rates it as the server reported");
+  check((await fetchRaw("/resolve", { key: "adminkey", match: "bbbbbbbbbbbbbbbb", action: "rate" })).status !== 200, "no settling: /resolve is gone");
+  await prune(env, Date.now() + 4 * 3600000);   // (the cron, well past the ticket: it leaves the dispute unrated)
   r = await ratings([5, 6]);
-  check(r[id(5)].games === 1 && r[id(5)].mu > 25 && r[id(6)].mu < 25, "settled dispute rated");
+  check(r[id(5)].games === 0 && r[id(6)].games === 0, "a dispute stays unrated");
   // a lying host: both players report the other result
   const S2 = await server();
   await S2.ticket("bcbcbcbcbcbcbcbc", "vanilla", [5, 6]);
   age("bcbcbcbcbcbcbcbc");
   await S2.result("bcbcbcbcbcbcbcbc", lost);
   await call("/report", { secret: secret(5), match: "bcbcbcbcbcbcbcbc", ladder: "vanilla", p: lost, dispute: "1" });
-  check((await call("/report", { secret: secret(6), match: "bcbcbcbcbcbcbcbc", ladder: "vanilla", p: lost, dispute: "1" })).startsWith("void"), "every player against the server: void");
+  check((await call("/report", { secret: secret(6), match: "bcbcbcbcbcbcbcbc", ladder: "vanilla", p: lost, dispute: "1" })) === "disputed", "every player against the server: disputed (logged)");
   r = await ratings([5, 6]);
-  check(r[id(5)].games === 1 && r[id(6)].games === 1, "void match not rated");
+  check(r[id(5)].games === 0 && r[id(6)].games === 0, "disputed match not rated");
   const S3 = await server();
   await S3.ticket("bdbdbdbdbdbdbdbd", "vanilla", [5, 6]);
   age("bdbdbdbdbdbdbdbd", 3 * 3600000);

@@ -44,14 +44,13 @@
 //                 Accepted only under a ticket from that ticket's players, once each, until TICKET_MS after it opened.
 //                 The server's /result must come MIN_MATCH_MS or more after the ticket opened (sooner only when it
 //                 names a leaver, so leaving in the first minute still loses), else the match is void. Rated when the server's result and the players' reports agree: every player who didn't
-//                 leave reported it, or REPORT_WAIT_MS passed with at least one agreeing and nobody against. A report
-//                 against it makes a dispute (not rated; the owner settles it with /resolve), unless no player agrees
-//                 with the server and two or more contradict it: then it's void. A match still undecided when its
-//                 ticket expires (TICKET_MS) is rated if the server's result is in and a player agreed with nobody
-//                 against, else void. New accounts are provisional (see
+//                 leave reported it, or REPORT_WAIT_MS passed with at least one agreeing and nobody against. Any report
+//                 against it (1.17.0, owner: "just logged and unrated") makes the match
+//                 'disputed': never rated, kept as a log the owner can read with /disputes. A match still undecided
+//                 when its ticket expires (TICKET_MS) is rated if the server's result is in and a player agreed with
+//                 nobody against, else void. New accounts are provisional (see
 //                 PROVISIONAL_GAMES).
-//   POST /resolve  form: key (ADMIN_KEY), match, action=rate|void                   the owner settles a dispute
-//   POST /disputes form: key (ADMIN_KEY)                            "match ladder created result" per open dispute
+//   POST /disputes form: key (ADMIN_KEY)                            "match ladder created result" per disputed match (the log)
 //   GET  /ratings?ladder=L&ids=a,b,c                                 "id mu sigma games" per line (unknown ids: defaults)
 //   GET  /leaderboard?ladder=L[&n=25]                                "rating games name" per line, best first (placed only)
 // Race time trials (single player, Viaduct): runs come from the game server (/racerun above), kept only if they
@@ -118,7 +117,7 @@ const LINK_CODE_MS = 10 * 60000;
 const LIMITS = {
   ip: { burst: 240, perSec: 6 },        // every request except the bot's, per client IP (a few dozen games polling /queue, /filled)
   write: { burst: 60, perSec: 0.5 },    // also, per client IP: POST /hello /report /racetime /lifetime /queue /link /linkcode
-                                        // /resolve /disputes (not /announce /remove: they're per address and token)
+                                        // /disputes (not /announce /remove: they're per address and token)
   id: { burst: 10, perSec: 0.1 },       // the same writes, per player id (when they carry a secret)
   bot: { burst: 200, perSec: 5 },       // instead of ip + write: requests carrying the right BOT_KEY (/queue /linkcode)
   linkfail: { burst: 5, perSec: 1 / 60 }, // /link code attempts per client IP (a right code gives its token back)
@@ -614,7 +613,7 @@ async function serverResult(env, form, addr, now) {
 
 // What a ticketed match comes to, from the server's result and the players' reports (see /report at the top).
 // Once the ticket is TICKET_MS old no report or result can come any more, so nothing stays pending: it's rated if
-// the server's result is in, someone agreed and nobody objected, else void (a dispute still waits for the owner).
+// the server's result is in, someone agreed and nobody objected, else void. A dispute is final: logged, never rated.
 export function decideMatch(t, reports, now) {
   const players = t.players.split(","), left = new Set(t.leavers ? t.leavers.split(",") : []);
   const expired = now - t.created > TICKET_MS;
@@ -625,10 +624,7 @@ export function decideMatch(t, reports, now) {
   const byId = new Map(reports.map((r) => [r.reporter, r]));
   const against = reports.filter((r) => r.dispute || (r.result !== null && r.result !== t.result));
   const agree = reports.filter((r) => !r.dispute && (r.result === null || r.result === t.result));
-  if (against.length) {
-    if (agree.length === 0 && against.length >= 2) return { state: "void", text: "void: the players contradict the server" };
-    return { state: "disputed", text: "disputed" };
-  }
+  if (against.length) return { state: "disputed", text: "disputed" };   // (owner: "just logged and unrated")
   const missing = players.filter((id) => !left.has(id) && !byId.has(id));
   if (!missing.length) return { state: "rate" };
   if (agree.length >= 1 && (expired || (t.resulted && now - t.resulted >= REPORT_WAIT_MS))) return { state: "rate" };
@@ -636,15 +632,15 @@ export function decideMatch(t, reports, now) {
   return { state: "pending", text: `pending ${players.length - left.size - missing.length}/${players.length - left.size}` };
 }
 
-async function finishMatch(env, match, now, force = false) {
+async function finishMatch(env, match, now) {
   const t = await env.DB.prepare("SELECT ladder, players, created, result, leavers, resulted, status FROM tickets WHERE id = ?").bind(match).first();
   const m = await env.DB.prepare("SELECT status FROM matches WHERE id = ?").bind(match).first();
   if (!t || !m) return "pending";
   if (m.status !== "pending" && m.status !== "disputed") return m.status;
   if (t.status === "void" && m.status === "pending") { await voidMatch(env, match); return "void"; }   // (its ticket went first)
   const { results: reports } = await env.DB.prepare("SELECT reporter, result, dispute FROM reports WHERE match = ?").bind(match).all();
-  let d = force ? (t.result ? { state: "rate" } : { state: "pending", text: "pending server" }) : decideMatch(t, reports, now);
-  if (m.status === "disputed" && !force && d.state !== "void") return "disputed";   // only the owner settles it, or more dissent voids it
+  const d = decideMatch(t, reports, now);
+  if (m.status === "disputed") return "disputed";   // final: logged, never rated
   if (d.state === "void") { await voidMatch(env, match); return d.text; }
   if (d.state === "disputed") {
     await env.DB.prepare("UPDATE matches SET status = 'disputed' WHERE id = ? AND status = 'pending'").bind(match).run();
@@ -764,7 +760,7 @@ async function cached(req, u, ctx, make) {
 }
 
 // (/disputes only reads, but it carries ADMIN_KEY: a POST like the writes, the key in the body, no CORS)
-const WRITES = new Set(["/announce", "/remove", "/hello", "/report", "/racetime", "/lifetime", "/queue", "/link", "/linkcode", "/resolve", "/disputes"]);
+const WRITES = new Set(["/announce", "/remove", "/hello", "/report", "/racetime", "/lifetime", "/queue", "/link", "/linkcode", "/disputes"]);
 const SERVER_WRITES = new Set(["/ticket", "/result", "/racerun"]);
 
 export default {
@@ -846,15 +842,6 @@ export default {
     if (u.pathname === "/linkcode") return text(await linkCode(env, form, now));
     if (u.pathname === "/lifetime" && isWrite) return text(await lifetimeReport(env, form, now));
     if (u.pathname === "/queue" && isWrite) return text(await queue(env, form, now));
-    if (u.pathname === "/resolve") {   // the owner settles a dispute: rate it as the server reported it, or void it
-      if (!keyEq(form.get("key"), env.ADMIN_KEY)) return text("forbidden", 403);
-      const match = String(form.get("match") || ""), action = String(form.get("action") || "");
-      const m = await env.DB.prepare("SELECT status FROM matches WHERE id = ?").bind(match).first();
-      if (!m || m.status !== "disputed") return text("not a dispute");
-      if (action === "void") { await voidMatch(env, match); return text("void"); }
-      if (action === "rate") return text(await finishMatch(env, match, now, true));
-      return text("action=rate|void");
-    }
     if (u.pathname === "/disputes") {
       if (!keyEq(form.get("key"), env.ADMIN_KEY)) return text("forbidden", 403);
       const { results } = await env.DB.prepare("SELECT t.id, t.ladder, t.created, t.result, t.leavers FROM tickets t JOIN matches m ON m.id = t.id WHERE m.status = 'disputed' ORDER BY t.created LIMIT 100").all();

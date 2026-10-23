@@ -30,11 +30,11 @@ below are for the versions before that.
    what the website's leaderboard reads.
 7. **Cron.** Worker → **Settings → Triggers → Cron Triggers → Add**: `*/15 * * * *`. It rates matches whose report
    wait is over, rates or voids matches whose ticket expired undecided, and prunes old rows (servers, tickets, matches, reports, queues, filled rows, link codes).
-8. **Owner key (disputes).** Worker → **Settings → Variables and Secrets → Add → Secret**: `ADMIN_KEY`, a long random
-   string. `POST /disputes` (form: key) lists disputed matches; `POST /resolve` (key, match, action=rate|void) settles
-   one. The key only ever goes in the POST body, never in a URL (use letters and digits only, e.g. `openssl rand -hex 32`):
-   `read -rs K` (paste the key; it stays out of your shell history), then `curl -s -d "key=$K" https://<worker>/disputes`
-   and `curl -s -d "key=$K" -d match=<id> -d action=rate https://<worker>/resolve`. (`GET /disputes?key=` is gone.)
+8. **Owner key (the dispute log).** Worker → **Settings → Variables and Secrets → Add → Secret**: `ADMIN_KEY`, a long
+   random string. `POST /disputes` (form: key) lists disputed matches: the log. A disputed match is never rated and
+   needs nothing from you (1.17.0; `/resolve` is gone). The key only ever goes in the POST body, never in a URL (use
+   letters and digits only, e.g. `openssl rand -hex 32`): `read -rs K` (paste the key; it stays out of your shell
+   history), then `curl -s -d "key=$K" https://<worker>/disputes`. (`GET /disputes?key=` is gone.)
 
 The free tier allows 100k requests a day and 100k D1 writes a day. That is about 70 servers announcing around the clock.
 For testing, the `QUARK_MASTER` environment variable overrides the URL.
@@ -128,9 +128,9 @@ What changed:
   must be the ticketing server's announced ip:port, or a private / loopback address on its port (LAN players).
 - **Leaving loses.** The server's `/result` names who left (`left=`, first leaver first). The first leaver takes the
   loss (a 1v1 ends there; the stayer leaving afterwards isn't punished). Leavers aren't waited for.
-- **Disputes, not voids.** A report against the server's result (`dispute=1`, sent by a game that saw a different
-  score) makes the match `disputed`: not rated until the owner settles it (`/disputes`, `/resolve`). Only when no
-  player agrees with the server and two or more contradict it is it void. A player who never reports doesn't hold
+- **Disputes are logged, never rated** (owner, 1.17.0: "just logged and unrated"). Any report against the server's
+  result (`dispute=1`, sent by a game that saw a different score) makes the match `disputed`: it's never rated, and it
+  stays in the log `/disputes` lists. Nobody has to settle it. A player who never reports doesn't hold
   the match up: `REPORT_WAIT_MS` (10 min) after the server's result, the cron rates it if someone agreed and nobody
   objected. Nothing stays pending: when its ticket expires (2 h) a match is rated that way or else void (no result
   from the server, or nobody confirmed it).

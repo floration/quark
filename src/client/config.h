@@ -48,7 +48,7 @@ struct Settings {
     bool chatOff = false;       // other players' chat hidden (settings "DISABLE CHAT", or the TOGGLE CHAT key)
     bool dmgNums = true;        // the numbers over whoever you hit (VISUALS > DAMAGE NUMBERS)
     float dmgNumScale = 1.0f;   // ...and their size (0.5 - 3; 1 = the HUD text size)
-    float damageFlash = 1.0f;   // the screen-edge flash when you're hit (VISUALS > DAMAGE FLASH; 0 = off, 1 = full)
+    float damageFlash = 0.0f;   // the screen-edge flash when you're hit (VISUALS > DAMAGE FLASH; 0 = off, the default (owner), 1 = full)
     // the sniper's / rifle's alt-fire zoom (horizontal degrees; the weapon table's zoomFov by default; client-side only)
     float zoomFovSniper = baseWeaponDef(WPN_SNIPER).zoomFov, zoomFovRifle = baseWeaponDef(WPN_RIFLE).zoomFov;
     Vec3 fullbrightColor = {1, 1, 1};   // FULLBRIGHT's flat colour (white: the classic look)
