@@ -272,15 +272,15 @@ static void testMovement() {
         for (float r : {30.0f, 60.0f, 90.0f, 180.0f, 360.0f, 720.0f}) printf("%.0f deg/s %.1f  ", r, strafeAt(r));
         printf("\n");
         for (float r : {45.0f, 90.0f, 180.0f}) CHECK(strafeAt(r) > run * 1.1f);   // a wide range of turn speeds gains
-        CHECK(strafeAt(720.0f) > run * 0.7f);    // overstrafing (way too fast) loses some speed (the old air control: 5.0 m/s of 8)
+        CHECK(strafeAt(720.0f) > run * 0.65f);   // overstrafing (way too fast) loses some speed (the old air control: 5.0 m/s of 8; 1.17: 6.6 of 9.5)
     }
-    // a dash leaves you faster than you started (it used to settle back down)
-    MoveState d = b; d.dashCooldown = 0; d.flags &= ~MF_DASHHELD;
+    // a dash leaves you faster than you started (it used to settle back down): your speed + 1 (1.17: was + 3)
+    MoveState d = b; d.dashCharges = 2; d.flags &= ~MF_DASHHELD;
     float before = hspeed(d);
     UserCmd dc; dc.msec = 1; dc.yaw = k.yaw; dc.forward = 127; dc.buttons = BTN_DASH;
     for (int i = 0; i < 200; i++) pmove(d, dc, open);
     printf("  dash: %.1f -> %.1f m/s after the burst\n", before, hspeed(d));
-    CHECK(hspeed(d) > before + 2.0f);
+    CHECK(hspeed(d) > before + 0.9f && hspeed(d) < before + 1.1f);
     // landing hard while holding jump bounces higher than a normal jump
     auto peak = [&](float dropFrom) {
         MoveState q; q.pos = {0, dropFrom, 0};
@@ -300,6 +300,241 @@ static void testMovement() {
     CHECK(high > low * 1.5f);
 }
 
+
+// The 1.17 movement numbers (owner): run 9.5 m/s at 16 accel, ladders 6.75 / 4.5, dash keep 1, air control capped
+// at what strafing turns (falls off as 1 / speed above 12.65 m/s), air drift 8 m/s2 under run speed, strafe boost 0.1.
+static void testMovementTuning() {
+    printf("movement tuning (1.17)\n");
+    std::string err;
+    Map open;
+    CHECK(open.parse("box -500 -1 -500 500 0 500\nspawn any 0 0 0\n", &err));
+    auto hs = [](const MoveState& q) { return std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z); };
+    auto step = [&](MoveState& q, UserCmd c, const Map& m) { c.msec = 1; pmove(q, c, m); };
+    auto standing = [&] { MoveState q; q.flags = MF_ONGROUND; for (int i = 0; i < 50; i++) step(q, UserCmd(), open); return q; };
+    { // the run: 9.5 m/s top speed; 90% of it in ~72 ms (dv/dt = 16 x 9.5 - 7 v)
+        MoveState q = standing();
+        UserCmd r; r.forward = 127;
+        int t90 = -1, tTop = -1;
+        for (int t = 1; t <= 1000; t++) {
+            step(q, r, open);
+            if (t90 < 0 && hs(q) >= 0.9f * 9.5f) t90 = t;
+            if (tTop < 0 && hs(q) >= 9.5f - 1e-4f) tTop = t;
+        }
+        printf("  run: %.4f m/s, 90%% in %d ms, top in %d ms\n", hs(q), t90, tTop);
+        CHECK(std::fabs(hs(q) - 9.5f) < 1e-4f && t90 >= 68 && t90 <= 76 && tTop >= 78 && tTop <= 88);
+        // a running jump: 0.667 s in the air at 9.5 m/s, ~6.3 m (it was 5.3 at 8)
+        UserCmd j = r; j.buttons = BTN_JUMP;
+        Vec3 p0 = q.pos;
+        step(q, j, open);
+        for (int i = 0; i < 2000 && !(q.flags & MF_ONGROUND); i++) step(q, r, open);
+        float reach = length(q.pos - p0);
+        printf("  running jump: %.2f m, landing at %.3f m/s\n", reach, hs(q));
+        CHECK(reach > 6.2f && reach < 6.45f && std::fabs(hs(q) - 9.5f) < 1e-3f);
+    }
+    { // ladders: climb at 6.75 m/s, sideways at 4.5
+        Map m;
+        CHECK(m.parse("box -20 -1 -20 20 0 20\nbox -20 0 -3 20 30 -2\nladder -5 0 -2 5 30 -1.5\nspawn any 0 0 0\n", &err));
+        MoveState q; q.pos = {0, 1, -1.6f};
+        UserCmd c; c.forward = 127;   // (yaw 0: into the ladder, -z)
+        for (int i = 0; i < 20; i++) step(q, c, m);
+        printf("  ladder: climb %.3f m/s", q.vel.y);
+        CHECK(std::fabs(q.vel.y - 6.75f) < 1e-4f);
+        c.forward = 0; c.side = 127;
+        step(q, c, m);
+        printf(", sideways %.3f m/s\n", q.vel.x);
+        CHECK(std::fabs(q.vel.x - 4.5f) < 1e-4f && std::fabs(q.vel.y - 6.75f) < 1e-4f);   // (any held key climbs)
+        c.side = 0; c.buttons = BTN_JUMP;   // the kick-off is unchanged: 4 m/s back, 0.7 of a jump up
+        step(q, c, m);
+        CHECK(std::fabs(q.vel.z - 4.0f) < 1e-3f && q.vel.y > 7.34f * 0.7f - 0.05f && q.vel.y <= 7.34f * 0.7f);
+    }
+    { // the dash keeps 1 m/s: the exit is max(11, speed + 1) up to 32; chained from a standstill: 11, 12, 13...
+        MoveState q = standing();
+        UserCmd d; d.buttons = BTN_DASH;
+        std::vector<float> exits;
+        for (int k = 0; k < 4; k++) {
+            q.pos.y = 20; q.flags = 0; q.vel.y = 0; q.dashCharges = 2; q.flags &= ~MF_DASHHELD;   // (in the air: no friction between dashes)
+            step(q, d, open);
+            UserCmd none;
+            while (q.dashTimer > 0) step(q, none, open);
+            exits.push_back(hs(q));
+            step(q, none, open);   // (release the key)
+        }
+        printf("  chained dashes: %.2f %.2f %.2f %.2f m/s\n", exits[0], exits[1], exits[2], exits[3]);
+        for (int k = 0; k < 4; k++) CHECK(std::fabs(exits[k] - (11.0f + k)) < 0.02f);
+        MoveState f; f.pos = {0, 20, 0}; f.vel = {0, 0, -31.5f};
+        step(f, d, open);
+        while (f.dashTimer > 0) step(f, UserCmd(), open);
+        CHECK(std::fabs(hs(f) - 32.0f) < 0.02f);   // (the cap)
+    }
+    { // air control: W-only bends momentum at min(4, 22 x 2.3 / speed) rad/s: 4 at 10 m/s, 3.16 at 16, 1.58 at 32
+        for (float v : {10.0f, 16.0f, 32.0f}) {
+            MoveState q; q.pos = {0, 50, 0}; q.vel = {0, 0, -v};
+            UserCmd c; c.forward = 127; c.yaw = 30 * PI / 180;   // wish 30 deg off: no strafe push (cur > 2.3), no drift (over 9.5)
+            Vec3 w = {-std::sin(c.yaw), 0, -std::cos(c.yaw)};
+            float rate = std::min(4.0f, 22.0f * 2.3f / v), k = rate * 0.001f;
+            Vec3 n = Vec3(0, 0, -1) + (w - Vec3(0, 0, -1)) * k;
+            n = n / length(n) * v;
+            step(q, c, open);
+            float turned = std::atan2(-q.vel.x, -q.vel.z);   // rad in 1 ms
+            printf("  air control at %.0f m/s: %.3f rad/s (%.1f deg/s toward a 30 deg target)\n", v, rate, turned * 1000 * 180 / PI);
+            CHECK(std::fabs(q.vel.x - n.x) < 1e-4f && std::fabs(q.vel.z - n.z) < 1e-4f && std::fabs(hs(q) - v) < 1e-3f);
+        }
+    }
+    { // drift: a standing jump holding W drifts to ~7 m/s by landing (2.3 of strafe push plus 8 m/s2), never past 9.5
+        MoveState q = standing();
+        UserCmd j; j.forward = 127; j.buttons = BTN_JUMP;
+        step(q, j, open);
+        j.buttons = 0;
+        float top = 0;
+        int air = 1;
+        for (; air < 2000 && !(q.flags & MF_ONGROUND); air++) { step(q, j, open); top = std::max(top, hs(q)); }
+        printf("  standing jump + W: %.2f m/s by landing (%d ms in the air)\n", top, air);
+        CHECK(top > 6.8f && top < 7.5f && air > 640 && air < 690);
+        // a long fall holding W: up to run speed and no further
+        MoveState f; f.pos = {0, 30, 0};
+        UserCmd w; w.forward = 127;
+        float most = 0;
+        for (int i = 0; i < 2000 && !(f.flags & MF_ONGROUND); i++) { step(f, w, open); most = std::max(most, hs(f)); }
+        printf("  falling 30 m holding W: %.4f m/s at most\n", most);
+        CHECK(most <= 9.5f + 1e-4f && most > 9.49f);
+        // sideways to your momentum under run speed: it pushes along the wish, the total held to 9.5
+        MoveState g; g.pos = {0, 30, 0}; g.vel = {0, 0, -9.0f};
+        UserCmd sd; sd.side = 127;   // (right: +x)
+        for (int i = 0; i < 400; i++) { step(g, sd, open); CHECK(hs(g) <= 9.5f + 1e-4f); }
+        CHECK(g.vel.x > 3.0f);
+        // over run speed: no drift at all (only the strafe push)
+        MoveState o; o.pos = {0, 30, 0}; o.vel = {0, 0, -9.6f};
+        UserCmd b; b.forward = -127;   // S: straight against momentum
+        step(o, b, open);
+        CHECK(std::fabs(o.vel.z - (-9.6f + 22.0f * 2.3f * 0.001f * 0.35f)) < 1e-4f);   // (the overstrafe-softened push only)
+    }
+    { // strafe boost: a strafe key's push x (1 + 0.1 t), t ramping 12.65 -> 15.81 m/s: 1.0 at 12, 1.043 at 14, 1.1 at 16
+        for (float v : {12.0f, 14.0f, 16.0f}) {
+            MoveState q; q.pos = {0, 50, 0}; q.vel = {0, 0, -v};
+            UserCmd c; c.side = 127;   // (yaw 0: right is +x, square to the momentum)
+            step(q, c, open);
+            float gain = q.vel.x / (22.0f * 2.3f * 0.001f);
+            float cross = 22.0f * 2.3f / 4.0f, want = 1 + 0.1f * std::clamp((v - cross) / (0.25f * cross), 0.0f, 1.0f);
+            printf("  strafe push at %.0f m/s: x%.4f (want %.4f)\n", v, gain, want);
+            CHECK(std::fabs(gain - want) < 1e-3f);
+            // the turn it makes, against W-only air control's (min(4, 50.6 / v) rad/s): equal at 12.65 m/s, ahead above
+            float strafeTurn = q.vel.x / v * 1000, control = std::min(4.0f, 22.0f * 2.3f / v);
+            printf("    turning: strafe %.0f deg/s, W-only air control %.0f deg/s\n", strafeTurn * 180 / PI, control * 180 / PI);
+            if (v > 13.0f) CHECK(strafeTurn > control * 1.03f);
+        }
+    }
+}
+
+// Dash charges (owner 1.17): two; a dash spends one; no dash while one runs (the press is dropped, not kept), the next
+// press after it ends spends the next; the ground refills both, a bhop landing one (max 2); a dash jump leaves both,
+// a super dash exactly one, a wall bounce exactly one; the super dash's own floor contact is no refill; ladders
+// refill nothing; quick dash: a third charge.
+static void testDashCharges() {
+    printf("dash charges\n");
+    std::string err;
+    Map open;
+    CHECK(open.parse("box -500 -1 -500 500 0 500\nspawn any 0 0 0\n", &err));
+    auto step = [&](MoveState& q, UserCmd c, const Map& m) { c.msec = 1; pmove(q, c, m); };
+    auto hs = [](const MoveState& q) { return std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z); };
+    UserCmd none, dash; dash.buttons = BTN_DASH;
+    { // in the air: press, press again mid-burst (dropped), press after it ends (the second), a third (none left)
+        MoveState q; q.pos = {0, 100, 0};
+        CHECK(q.dashCharges == 2 && dashMaxCharges(0) == 2 && dashMaxCharges(MOVE_QUICK_DASH) == 3);
+        step(q, dash, open); step(q, none, open);
+        CHECK(q.dashCharges == 1 && q.dashTimer > 0);
+        for (int i = 0; i < 40; i++) step(q, none, open);
+        float left = q.dashTimer;
+        step(q, dash, open);                     // mid-burst: nothing (the timer runs on, the charge stays)
+        CHECK(q.dashCharges == 1 && q.dashTimer < left && q.dashTimer > 0);
+        while (q.dashTimer > 0) step(q, dash, open);   // (held through the end: still the same press, not a new one)
+        CHECK(q.dashCharges == 1);
+        step(q, none, open); step(q, dash, open);   // a fresh press right after: the second dash
+        printf("  air: %d charge(s) after two dashes (the mid-burst press dropped)\n", (int)q.dashCharges);
+        CHECK(q.dashCharges == 0 && q.dashTimer > 0);
+        while (q.dashTimer > 0) step(q, none, open);
+        step(q, dash, open);                     // none left
+        CHECK(q.dashCharges == 0 && q.dashTimer == 0);
+        // landing without jump: both back
+        for (int i = 0; i < 6000 && !(q.flags & MF_ONGROUND); i++) step(q, none, open);
+        CHECK((q.flags & MF_ONGROUND) && q.dashCharges == 2);
+    }
+    { // a bhop landing (jump held: off the floor again at once) gives one back, up to two; a hard-landing bounce too
+        UserCmd hop; hop.buttons = BTN_JUMP;
+        MoveState q; q.pos = {0, 0.6f, 0}; q.dashCharges = 0;
+        int landings = 0; uint8_t seen[3] = {};
+        for (int i = 0; i < 3000 && landings < 3; i++) {
+            bool was = q.flags & MF_ONGROUND;
+            step(q, hop, open);
+            if (!was && (q.flags & MF_ONGROUND)) seen[landings++] = q.dashCharges;
+        }
+        printf("  bhop landings from 0: %d %d %d\n", seen[0], seen[1], seen[2]);
+        CHECK(landings == 3 && seen[0] == 1 && seen[1] == 2 && seen[2] == 2);
+        MoveState f; f.pos = {0, 20, 0}; f.dashCharges = 0;
+        for (int i = 0; i < 3000 && f.vel.y <= 0; i++) step(f, hop, open);   // falls, bounces off the floor (no ground tick)
+        CHECK(f.vel.y > 7.34f && f.dashCharges == 1);
+    }
+    { // a dash jump leaves both (it's off the floor): from one charge, ground dash + jump
+        MoveState q; q.flags = MF_ONGROUND; q.dashCharges = 1;
+        for (int i = 0; i < 20; i++) step(q, none, open);
+        q.dashCharges = 1;
+        step(q, dash, open);
+        CHECK(q.dashCharges == 0 && q.dashTimer > 0);
+        UserCmd dj; dj.buttons = BTN_DASH | BTN_JUMP;
+        step(q, dj, open);
+        printf("  dash jump: %d charges, %.1f m/s\n", (int)q.dashCharges, hs(q));
+        CHECK(q.dashTimer == 0 && q.dashCharges == 2 && q.vel.y > 7.0f);
+    }
+    { // a super dash leaves exactly one, from two or from one; its floor contact refills nothing on top
+        for (int start : {2, 1}) {
+            MoveState q; q.pos = {0, 1.0f, 0}; q.dashCharges = (uint8_t)start;
+            UserCmd sd; sd.pitch = -1.2f; sd.buttons = BTN_DASH | BTN_JUMP;
+            int t = 0;
+            for (; t < 120 && (t == 0 || q.dashTimer > 0); t++) step(q, sd, open);
+            printf("  super dash from %d: %d charge(s), %.1f m/s\n", start, (int)q.dashCharges, hs(q));
+            CHECK(t < 120 && std::fabs(hs(q) - 30.0f) < 1e-3f && q.dashCharges == 1);
+            UserCmd fly; fly.buttons = BTN_DASH;   // (dash still held: no new press) the hop: nothing until it lands
+            for (int i = 0; i < 2000 && !(q.flags & MF_ONGROUND); i++) { step(q, fly, open); if (!(q.flags & MF_ONGROUND)) CHECK(q.dashCharges == 1); }
+        }
+        // chained super dashes: each needs a charge, and the hop's bhop landing gives one back: never more than that
+        MoveState q; q.pos = {0, 1.0f, 0};
+        int supers = 0, maxSeen = 0;
+        for (int i = 0; i < 4000; i++) {
+            UserCmd c; c.pitch = -1.2f; c.buttons = BTN_JUMP;
+            if (q.dashTimer <= 0 && q.vel.y < 0 && i % 2 == 0) c.buttons |= BTN_DASH;   // (a fresh press every other ms on the way down)
+            float before = hs(q);
+            step(q, c, open);
+            if (hs(q) > before + 5) supers++;
+            maxSeen = std::max(maxSeen, (int)q.dashCharges);
+        }
+        printf("  chained super dashes over 4 s: %d, at most %d charge(s) held\n", supers, maxSeen);
+        CHECK(supers > 3 && maxSeen <= 2);
+    }
+    { // a wall bounce leaves exactly one (twice in a corridor: still one)
+        Map corridor;
+        CHECK(corridor.parse("box -50 -1 -50 50 0 50\nbox -50 0 -3 50 4 -0.8\nbox -50 0 0.8 50 4 3\nspawn any 0 0 0\n", &err));
+        MoveState c; c.flags = MF_ONGROUND;
+        for (int i = 0; i < 20; i++) step(c, none, corridor);
+        c.dashCharges = 1;
+        int b1 = -1, b2 = -1;
+        for (int i = 0; i < 120 && (i == 0 || c.dashTimer > 0); i++) {
+            step(c, dash, corridor);
+            if (c.dashBounces == 1 && b1 < 0) b1 = c.dashCharges;
+            if (c.dashBounces == 2 && b2 < 0) b2 = c.dashCharges;
+        }
+        printf("  wall bounces: %d then %d charge(s)\n", b1, b2);
+        CHECK(b1 == 1 && b2 == 1);
+    }
+    { // a ladder refills nothing; quick dash: three on the floor
+        Map m;
+        CHECK(m.parse("box -20 -1 -20 20 0 20\nbox -20 0 -3 20 30 -2\nladder -5 0 -2 5 30 -1.5\nspawn any 0 0 0\n", &err));
+        MoveState q; q.pos = {0, 3, -1.6f}; q.dashCharges = 0;
+        UserCmd up; up.forward = 127;
+        for (int i = 0; i < 500; i++) { step(q, up, m); CHECK(q.dashCharges == 0); }
+        MoveState g; g.flags = MF_ONGROUND; g.mods = MOVE_QUICK_DASH; g.dashCharges = 0;
+        step(g, none, open);
+        CHECK(g.dashCharges == 3);
+    }
+}
 
 // Dash jump (Celeste's super) and super dash (Celeste's hyper), owner: exact speeds, the input buffer, no effect
 // without jump, no bhop bounce on top, and prediction replaying them from the snapshot's movement state.
@@ -361,7 +596,7 @@ static void testDashTech() {
         MoveState q = standing();
         UserCmd r; r.forward = 127;
         for (int i = 0; i < 1000; i++) step(q, r);
-        CHECK(std::fabs(hs(q) - 8.0f) < 0.05f);
+        CHECK(std::fabs(hs(q) - 9.5f) < 0.05f);
         r.pitch = -1.0f; r.buttons = BTN_DASH | BTN_JUMP;
         step(q, r);
         printf("  super dash from a run: %.3f m/s, %.3f up\n", hs(q), q.vel.y);
@@ -385,7 +620,7 @@ static void testDashTech() {
         float peak;
         flight(q, BTN_DASH, &peak);
         CHECK(peak < 0.33f);   // (no bhop bounce off the dash's push into the floor on top)
-        // at speed: the burst is the dash's exit speed (30 + 3 -> 32 cap), the super dash 1.25x that, capped at 36
+        // at speed: the burst is the dash's exit speed (30 + 1 = 31), the super dash 1.25x that, capped at 36
         MoveState f = standing();
         f.vel = {0, 0, -30};
         UserCmd d; d.pitch = -1.0f; d.buttons = BTN_DASH | BTN_JUMP;
@@ -395,7 +630,7 @@ static void testDashTech() {
         f2.vel = {0, 0, -30};
         d.pitch = 0;
         step(f2, d);
-        CHECK(std::fabs(hs(f2) - 32.0f) < 1e-4f && std::fabs(f2.vel.y - (7.34f - g1)) < 1e-4f);   // the dash jump keeps 32
+        CHECK(std::fabs(hs(f2) - 31.0f) < 1e-4f && std::fabs(f2.vel.y - (7.34f - g1)) < 1e-4f);   // the dash jump keeps 31
     }
     { // a down dash into the floor without jump: no boost, no bounce
         MoveState q; q.pos = {0, 1.0f, 0};
@@ -490,7 +725,7 @@ static void testDashTech() {
             MoveState q = back.self;
             for (size_t i = k + 1; i < cmds.size(); i++) pmove(q, cmds[i], m);
             const MoveState& e = states.back();
-            if (!(q.pos.x == e.pos.x && q.pos.y == e.pos.y && q.pos.z == e.pos.z && q.vel.x == e.vel.x && q.vel.y == e.vel.y && q.vel.z == e.vel.z && q.flags == e.flags)) bad++;
+            if (!(q.pos.x == e.pos.x && q.pos.y == e.pos.y && q.pos.z == e.pos.z && q.vel.x == e.vel.x && q.vel.y == e.vel.y && q.vel.z == e.vel.z && q.flags == e.flags && q.dashCharges == e.dashCharges)) bad++;
         }
         int bounced = 0;
         for (const MoveState& st : states) bounced += st.dashTimer > 0 && st.dashBounces > 0;
@@ -1991,15 +2226,15 @@ static void testSyringe(uint16_t port) {
     printf("  held 1.2 s: %.0f hp\n", pa.health);
     CHECK(pa.health == 70);
     // b throws at a, 5 m in front of it (yaw 0 looks down -z)
-    pa.health = 40; pa.move.dashCooldown = 1.5f; pa.nextFire = s.time() + 5;
+    pa.health = 40; pa.move.dashCharges = 0; pa.nextFire = s.time() + 5;
     Vec3 base = pb.move.pos;
     auto place = [&] { pb.move.pos = base; pb.move.vel = {}; pa.move.pos = base + Vec3(0, 0, -5); pa.move.vel = {}; };
     for (int k = 0; k < 5; k++) { place(); pump(s, cls, 0.02, idle); }
     int tick = 0;
     pump(s, cls, 0.5, [&](int i) { UserCmd c; c.weapon = WPN_SYRINGE; if (i == 1) { c.yaw = 0; c.pitch = -0.05f; if (tick++ < 30) c.buttons = BTN_ALTFIRE; } if (i == 0) place(); return c; });
-    printf("  thrown: %.0f hp (from 40), dash cooldown %.2f\n", pa.health, pa.move.dashCooldown);
+    printf("  thrown: %.0f hp (from 40), dash charges %d\n", pa.health, (int)pa.move.dashCharges);
     CHECK(pa.health >= 69 && pa.health <= 72);
-    CHECK(pa.move.dashCooldown <= 0.01f && pa.nextFire <= s.time());
+    CHECK(pa.move.dashCharges == 2 && pa.nextFire <= s.time());
     s.stop();
 }
 
@@ -4150,6 +4385,38 @@ static void testRankedLeaverPaths(uint16_t port) {
 }
 
 // REVIEW 4.1: "kick" takes a name (what the console completes) or an id; atoi("Bob") was 0 and kicked the host.
+// Name colour (1.17): sent with the model command (RGB565), seen by everyone, by a late joiner and in a demo's player info
+static void testNameColor(uint16_t port) {
+    printf("name colour\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.balanceBots = false;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient h, b;
+    std::string addr = "127.0.0.1:" + std::to_string(port);
+    h.connect(addr, "Host"); b.connect(addr, "Bob");
+    std::vector<NetClient*> cls = {&h, &b};
+    pump(s, cls, 0.8, idle);
+    int ih = h.clientId(), ib = b.clientId();
+    CHECK(ih >= 0 && ib >= 0 && b.playerNameColor(ih) == 0);
+    h.sendCommand("model 0 0 63488");   // pure red
+    b.sendCommand("model 0 0");         // a client before 1.17: no colour, the default
+    pump(s, cls, 0.5, idle);
+    CHECK(b.playerNameColor(ih) == 63488 && h.playerNameColor(ih) == 63488 && h.playerNameColor(ib) == 0);
+    NetClient c;
+    c.connect(addr, "Carol");
+    cls = {&h, &b, &c};
+    pump(s, cls, 0.8, idle);
+    CHECK(c.playerNameColor(ih) == 63488);   // a late joiner is told too
+    h.sendCommand("model 0 0 70000");        // out of range: back to the default
+    pump(s, cls, 0.5, idle);
+    CHECK(b.playerNameColor(ih) == 0 && c.playerNameColor(ih) == 0);
+    for (auto* k : cls) k->disconnect();
+    pump(s, cls, 0.2, idle);
+    s.stop();
+}
+
 static void testKickByName(uint16_t port) {
     printf("kick by name or id\n");
     {   // resolving: id (a connected slot), exact name in any case, a unique prefix; else none
@@ -6186,7 +6453,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "hostile") { testHostileInput(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "userdata") { testUserData(); testResetMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "ladders") { testLadders(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "dashtech") { testDashTech(); testTickRateIndependence(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "dashtech") { testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "stairs") { testStairs(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "points") { setTimeScale(kTestTimeScale); testPoints(TP(29995)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "syringe") { setTimeScale(kTestTimeScale); testSyringe(TP(29996)); return g_fail ? 1 : 0; }
@@ -6255,13 +6522,13 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
-        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); }},
+        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); testNameColor(TP(28599)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testDemoUpgrade(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testBuiltInMapEditSession(TP(28606)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
         {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); }},
         {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
@@ -6276,6 +6543,26 @@ int main(int argc, char** argv) {
         {"resetmaps", [] { testResetMaps(); }},
         {"userdata", [] { testUserData(); }},
     };
+    // CI runs the suite one group per runner (release.yml's test matrix): `groups` lists them, `group NAME` runs exactly
+    // that group (the older shortcuts above share some names but run less)
+    if (argc >= 2 && std::string(argv[1]) == "groups") {
+        for (auto* list : {&par, &alone})
+            for (auto& g : *list) printf("%s\n", g.name);
+        return 0;
+    }
+    if (argc >= 3 && std::string(argv[1]) == "group") {
+        for (auto* list : {&par, &alone})
+            for (auto& g : *list)
+                if (std::string(argv[2]) == g.name) {
+                    double t0 = timeNow();
+                    g.run();
+                    printf("group %s: %.0f s\n", g.name, timeNow() - t0);
+                    printf(g_fail ? "%d FAILURE(S)\n" : "all tests passed\n", g_fail);
+                    return g_fail ? 1 : 0;
+                }
+        printf("no test group '%s' (quark_tests groups lists them)\n", argv[2]);
+        return 1;
+    }
     if (argc >= 2)   // one group by name (e.g. `quark_tests netcode`), on its own
         for (auto* list : {&par, &alone})
             for (auto& g : *list)
@@ -6284,7 +6571,7 @@ int main(int argc, char** argv) {
 #ifndef _WIN32
     if (!serial) {
         unsigned jobs = std::max(2u, std::thread::hardware_concurrency());
-        struct Job { pid_t pid; std::string out; size_t idx; };
+        struct Job { pid_t pid; std::string out; size_t idx; double t0; };
         std::vector<Job> running;
         std::vector<std::string> outputs(par.size());
         std::vector<int> done(par.size(), -1);
@@ -6312,7 +6599,7 @@ int main(int argc, char** argv) {
                 fflush(stdout);
                 std::_Exit(std::min(g_fail, 100));
             }
-            running.push_back({pid, out, i});
+            running.push_back({pid, out, i, timeNow()});
         };
         while (next < par.size() && running.size() < jobs) start(next++);
         while (!running.empty()) {
@@ -6328,6 +6615,9 @@ int main(int argc, char** argv) {
                 std::remove(running[k].out.c_str());
                 { std::error_code ec; std::filesystem::remove_all(groupDir(i), ec); }
                 done[i] = WIFEXITED(st) ? WEXITSTATUS(st) : 1;
+                char took[96];
+                snprintf(took, sizeof took, "  (group %s: %.0f s)\n", par[i].name, timeNow() - running[k].t0);
+                outputs[i] += took;
                 if (!WIFEXITED(st)) outputs[i] += std::string("  FAIL ") + par[i].name + ": crashed\n";
                 running.erase(running.begin() + k);
                 break;

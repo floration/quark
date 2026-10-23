@@ -2,6 +2,7 @@
 #pragma once
 constexpr int kOutlineColors = 8;
 extern const char* const kOutlineNames[kOutlineColors];
+#include <cstdio>
 #include <string>
 #include "../common/qmath.h"
 #include "binds.h"
@@ -22,6 +23,8 @@ struct Settings {
     bool shadows = true;
     int model = 0;              // player model (cosmetic): STANDARD, HEAVY, SCOUT, ROBOT, KNIGHT
     int soundPack = 0;          // DEFAULT, HEAVY METAL, MAGICAL, RETRO, WOODEN
+    int nameColor = -1;         // your name's colour as others see it (0xRRGGBB; -1 = the default)
+    bool hbMigrated = false;    // (1.17: health bars were switched on once for every existing config)
     int socd = 0;               // opposite movement keys held together: 0 cancel out, 1 last pressed wins, 2 first pressed wins
     bool altToggle = false;     // alt-fire (scope) toggles on a tap instead of hold
     bool hudVerbose = false;    // the info block top right (clock, version, fps min, speed, players alive, ...)
@@ -103,5 +106,15 @@ struct Settings {
     void save() const;
     void set(const std::string& key, const std::string& value); // one setting from text (file or console)
     std::string toText() const;                                 // every setting as key=value lines
+    std::string nameColorText() const {                         // name_color's value: RRGGBB, or -1
+        if (nameColor < 0) return "-1";
+        char b[8]; snprintf(b, sizeof b, "%06X", nameColor & 0xFFFFFF); return b;
+    }
+    uint16_t nameColor565() const {                             // as sent to the server (RGB565; 0 = the default)
+        if (nameColor < 0) return 0;
+        int r = (nameColor >> 16) & 255, g = (nameColor >> 8) & 255, b = nameColor & 255;
+        uint16_t c = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+        return c ? c : 0x0821;   // (black isn't "default")
+    }
     void finishLoad();
 };

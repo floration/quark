@@ -920,7 +920,7 @@ UserCmd botThink(Server& s, int id) {
             }
             moveDir += side;
             // held by the target's grapple and wanting range (no close-range weapon): advanced and up dash out of it
-            if ((me.move.flags & MF_PULLED) && sp.grapple && ideal > 6.0f && me.move.dashCooldown <= 0 && !b.nearEdge && !b.edgeFar &&
+            if ((me.move.flags & MF_PULLED) && sp.grapple && ideal > 6.0f && (me.move.dashCharges > 0 && me.move.dashTimer <= 0) && !b.nearEdge && !b.edgeFar &&
                 chance(b, 3.0f, dt)) {
                 Vec3 out = Vec3(-toN.z, 0, toN.x) * (b.strafeDir != 0 ? b.strafeDir : 1.0f);
                 if (groundAlong(s, me.move.pos, out, 10.0f)) { moveDir = out; cmd.buttons |= BTN_DASH; }
@@ -928,7 +928,7 @@ UserCmd botThink(Server& s, int id) {
             // (no jumps or dashes within 5 m of a drop: a hit in the air there, a blast or a laser push, is a fall)
             if ((me.move.flags & MF_ONGROUND) && !b.nearEdge && !b.edgeFar) {
                 if (chance(b, sp.jumpRate, dt)) cmd.buttons |= BTN_JUMP;
-                if (me.move.dashCooldown <= 0 && chance(b, sp.dashRate, dt)) {
+                if ((me.move.dashCharges > 0 && me.move.dashTimer <= 0) && chance(b, sp.dashRate, dt)) {
                     if (dist > 20) moveDir = toN;                                  // close in
                     else moveDir = Vec3(-toN.z, 0, toN.x) * (b.strafeDir != 0 ? b.strafeDir : 1.0f); // dodge sideways
                     if (groundAlong(s, me.move.pos, normalize(moveDir), 10.0f)) cmd.buttons |= BTN_DASH;
@@ -1072,6 +1072,12 @@ UserCmd botThink(Server& s, int id) {
                 if (std::fabs(phi) > 0.05f) b.strafeDir = phi > 0 ? 1.0f : -1.0f;
                 float ang = th * b.strafeDir, c = std::cos(ang), sn = std::sin(ang);
                 wish = {vn.x * c - vn.z * sn, 0, vn.x * sn + vn.z * c};
+            } else if (hs > 12.65f) {
+                // a sharp turn at speed: push square to the momentum, toward the route (a strafe key's push). Above
+                // 12.65 m/s W-only air control turns slower than that (pmove: its rate falls off as 1 / speed, and a
+                // strafe key's push gets the strafe boost), so a bot steering with W alone would swing wide.
+                float sg = phi > 0 ? 1.0f : -1.0f;
+                wish = {-vn.z * sg, 0, vn.x * sg};
             }
         }
         cmd.forward = (int8_t)clampf(dot(wish, fwd) * 127, -127, 127);
@@ -1094,7 +1100,7 @@ UserCmd botThink(Server& s, int id) {
         }
         if (hopping) cmd.buttons |= BTN_JUMP;
         // long straight stretch: dash along it (levels that would), when it lands on something
-        if (!fighting && onGround && sp.runDash > 0 && me.move.dashCooldown <= 0 && !(me.move.mods & MOVE_RUN_ONLY) &&
+        if (!fighting && onGround && sp.runDash > 0 && (me.move.dashCharges > 0 && me.move.dashTimer <= 0) && !(me.move.mods & MOVE_RUN_ONLY) &&
             length(b.waypoint - me.move.pos) > 9.0f && dot(moveDir, fwd) > 0.95f && chance(b, sp.runDash, dt)) {
             if (groundAlong(s, me.move.pos, moveDir, 12.0f)) {
                 cmd.buttons |= BTN_DASH;

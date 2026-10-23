@@ -937,14 +937,23 @@ void Game::handleEvents() {
                                                              : killer + " [" + weaponName(wpn) + "] " + net_.playerName(e.b);
                 onKillFeedback(e.a, e.b, wpn, e.c >= 0 && (e.c & KILL_HEADSHOT), e.c >= 0 && (e.c & KILL_AIRBORNE));
                 Color c = e.a == net_.clientId() ? rgba(cfg_.colorFriendly) : e.b == net_.clientId() ? rgba(cfg_.colorEnemy) : kWhite;
-                killFeed_.push_back({t, c, time_ + 6});
+                Feed f{t, c, time_ + 6};
+                Color nc;
+                if (!killer.empty() && e.a != e.b && nameColorOf(e.a, nc)) f.spans.push_back({0, killer.size(), nc});
+                if (nameColorOf(e.b, nc)) { size_t vn = net_.playerName(e.b).size(); f.spans.push_back({killer.empty() || e.a == e.b ? 0 : t.size() - vn, vn, nc}); }
+                killFeed_.push_back(f);
                 while (killFeed_.size() > 6) killFeed_.pop_front();
                 if (e.b == net_.clientId() && e.a < kMaxPlayers && e.a != e.b) specTarget_ = e.a;
                 if (e.a == net_.clientId() && e.b != e.a && cfg_.hitsounds) audio_.play(SND_KILL, 0.9f);
                 break;
             }
             case EV_CHAT:   // (chat off: dropped, not just hidden - turning it back on doesn't replay what was missed)
-                if (!cfg_.chatOff) addChat({net_.playerName(e.a) + ": " + e.text, isFriendly(e.a) ? rgba(cfg_.colorFriendly) : rgba(cfg_.colorEnemy), time_ + 10, crownOf(e.a), true});
+                if (!cfg_.chatOff) {
+                    Feed f{net_.playerName(e.a) + ": " + e.text, isFriendly(e.a) ? rgba(cfg_.colorFriendly) : rgba(cfg_.colorEnemy), time_ + 10, crownOf(e.a), true};
+                    Color nc;
+                    if (nameColorOf(e.a, nc)) f.spans.push_back({0, net_.playerName(e.a).size(), nc});
+                    addChat(f);
+                }
                 break;
             case EV_MESSAGE:
                 if (e.text.rfind(kUnratedNotice, 0) == 0) unratedServer_ = true;   // (a testing server: the HUD says NOT RATED)
@@ -1138,8 +1147,8 @@ void Game::frame(double dt) {
         if (m != appliedMode_) applyModeRules(m);
     }
     if (net_.state() == ConnState::Connected && net_.hasSnapshot() && time_ >= modelSentAt_ + 1.0 &&
-        ((!fairRules() && net_.playerModel(net_.clientId()) != cfg_.model) || net_.playerSoundPack(net_.clientId()) != cfg_.soundPack)) {
-        net_.sendCommand("model " + std::to_string(cfg_.model) + " " + std::to_string(cfg_.soundPack)); // everyone sees / hears your picks (cosmetic only)
+        ((!fairRules() && net_.playerModel(net_.clientId()) != cfg_.model) || net_.playerSoundPack(net_.clientId()) != cfg_.soundPack || net_.playerNameColor(net_.clientId()) != cfg_.nameColor565())) {
+        net_.sendCommand("model " + std::to_string(cfg_.model) + " " + std::to_string(cfg_.soundPack) + " " + std::to_string(cfg_.nameColor565())); // everyone sees / hears your picks (cosmetic only)
         modelSentAt_ = time_;
     }
     if (audio_.pack() != cfg_.soundPack) audio_.setPack(cfg_.soundPack);
@@ -2331,7 +2340,17 @@ void Game::drawHud() {
             };
             int cw = net_.selfWeapon();
             bar(bcy + 40 * k, "WEAPON", (float)std::max(0.0, (cw == WPN_LOCATOR ? locatorReady_ : localNextFire_) - time_), weaponDef(cw).refire);   // (the locator: its recharge)
-            bar(bcy + 52 * k, "DASH", mv.dashCooldown, kDashCooldown * moveTuning().m[MV_DASH_COOLDOWN]);
+            {   // dash: a pip per charge (lit = there to spend; the ground refills them, a bhop landing one)
+                int n = dashMaxCharges(mv.mods), have = std::min<int>(mv.dashCharges, n);
+                float bw = 90 * k, bh = 5 * k, bx = bcx - bw * 0.5f, y = bcy + 52 * k, gap = 4 * k, pw = (bw - gap * (n - 1)) / n;
+                for (int i = 0; i < n; i++) {
+                    float px = bx + i * (pw + gap);
+                    r_.rect(px - 1, y - 1, pw + 2, bh + 2, {0, 0, 0, 0.8f});
+                    if (i < have) r_.rect(px, y, pw, bh, full);
+                }
+                float lts = std::max(1.0f, std::round(ts * 0.5f * e.scale));
+                r_.text(bx - r_.textWidth("DASH", lts) - 6 * k, y - 2 * k, lts, "DASH", have > 0 ? kWhite : kGrey);
+            }
             bar(bcy + 64 * k, "HOOK", mv.hookCooldown, kHookCooldown * moveTuning().m[MV_HOOK_COOLDOWN]);
         }
         if (!paused_ && !he(Settings::HUD_SPEED).hidden) {   // speed meter: speed is unbounded, so the bar fills on a saturating exponential curve
@@ -2424,7 +2443,7 @@ void Game::drawHud() {
     for (auto& k : killFeed_) {
         float tw = r_.textWidth(k.text, ts);
         r_.rect(W - tw - 20 * s, y - 3 * s, tw + 12 * s, r_.textHeight(ts) + 6 * s, {0, 0, 0, 0.4f});
-        r_.text(W - tw - 14 * s, y, ts, k.text, k.color);
+        drawFeedText(W - tw - 14 * s, y, ts, k);
         y += r_.textHeight(ts) + 8 * s;
     }
     // chat (bottom left)
@@ -2576,7 +2595,7 @@ void Game::computeHudVals() {
     auto set = [&](int i, float v, float mx) { h.v[i] = v; h.max[i] = mx; };
     set(HV_HEALTH, (float)net_.selfHealth(), 100);
     set(HV_SPEED, std::sqrt(mv.vel.x * mv.vel.x + mv.vel.z * mv.vel.z), 40);
-    set(HV_DASH, 100.0f * (1.0f - clampf(mv.dashCooldown / (kDashCooldown * moveTuning().m[MV_DASH_COOLDOWN]), 0, 1)), 100);   // % ready
+    set(HV_DASH, (float)mv.dashCharges, (float)dashMaxCharges(mv.mods));   // dash charges left (1.17: was % of the cooldown)
     set(HV_HOOK, 100.0f * (1.0f - clampf(mv.hookCooldown / (kHookCooldown * moveTuning().m[MV_HOOK_COOLDOWN]), 0, 1)), 100);
     {   // fps over the last second: average and the worst frame
         double sum = 0, worst = 0;
@@ -2786,6 +2805,42 @@ void Game::drawCaret(float x, float y, float ts, bool mono, const std::string& b
 }
 
 // The chat lines (all recent history while typing) and the SAY: / console input. In game and while editing together.
+bool Game::nameColorOf(int id, Color& out) const {
+    uint16_t c = net_.playerNameColor(id);
+    if (!c) return false;
+    Color k{((c >> 11) & 31) / 31.0f, ((c >> 5) & 63) / 63.0f, (c & 31) / 31.0f, 1};
+    // readable on the dark HUD panels: too dark a colour is lifted toward white until it's bright enough
+    float lum = 0.2126f * k.r + 0.7152f * k.g + 0.0722f * k.b;
+    const float kMinLum = 0.35f;
+    if (lum < kMinLum) {
+        float t = (kMinLum - lum) / (1 - lum);
+        k = {k.r + (1 - k.r) * t, k.g + (1 - k.g) * t, k.b + (1 - k.b) * t, 1};
+    }
+    out = k;
+    return true;
+}
+
+// A feed line (kill feed, chat): its colour, with any name spans in their own
+void Game::drawFeedText(float x, float y, float ts, const Feed& f) {
+    if (f.spans.empty()) { r_.text(x, y, ts, f.text, f.color); return; }
+    size_t at = 0;
+    auto run = [&](size_t to, Color c) {
+        if (to <= at) return;
+        std::string part = f.text.substr(at, to - at);
+        r_.text(x, y, ts, part, c);
+        x += r_.textWidth(part, ts);
+        at = to;
+    };
+    std::vector<Span> spans = f.spans;
+    std::sort(spans.begin(), spans.end(), [](const Span& a, const Span& b) { return a.at < b.at; });
+    for (auto& sp : spans) {
+        if (sp.at < at || sp.at + sp.len > f.text.size()) continue;   // (overlapping or out of range: drawn plain)
+        run(sp.at, f.color);
+        run(sp.at + sp.len, sp.color);
+    }
+    run(f.text.size(), f.color);
+}
+
 void Game::drawChatBox(float W, float H, float s, float ts) {
     float y;
     while (!chatFeed_.empty() && chatFeed_.front().until < time_ && !chatting_) chatFeed_.pop_front();
@@ -2799,7 +2854,7 @@ void Game::drawChatBox(float W, float H, float s, float ts) {
         if (c.player && cfg_.chatOff) continue;
         float cw = c.crown ? r_.textHeight(ts) * 1.2f : 0;
         if (c.crown) drawCrown(24 * s, y + r_.textHeight(ts) * 0.1f, cw, c.crown);
-        r_.text(24 * s + (cw ? cw + 4 * s : 0), y, ts, c.text, c.color);
+        drawFeedText(24 * s + (cw ? cw + 4 * s : 0), y, ts, c);
         y += r_.textHeight(ts) + 4 * s;
     }
     }
@@ -3331,6 +3386,7 @@ void Game::drawScoreboard() {
     cy += rowH;
     for (auto& p : ps) {
         Color c = (p.flags & PS_SPECTATOR) ? kGrey : rgba(teamColor(p.id));
+        if (!(p.flags & PS_SPECTATOR)) nameColorOf(p.id, c);   // (a chosen name colour; the table already says the team)
         if (p.id == net_.clientId()) r_.rect(x + 4 * s, cy - 4 * s, w - 8 * s, rowH - 2 * s, {1, 1, 1, 0.06f});
         float cw = 0;
         if (int place = crownOf(p.id)) { cw = r_.textHeight(ts) * 1.2f; drawCrown(x + 12 * s, cy + r_.textHeight(ts) * 0.1f, cw, place, crownLetter(p.id)); cw += 5 * s; }
@@ -3683,6 +3739,27 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
             ui_.slider(xr, y, w, h, "INTERP DELAY (MS)", v, 1, (float)kMaxInterpMs, "%.0f", UiExp::cfg("interp_ms"), (float)kCustomInterpMs);
             cfg_.interpMs = std::min(std::max(1, (int)std::lround(v)), kMaxInterpMs);
         }
+        y += h + gap;
+    }
+    {
+        // your name's colour as everyone sees it (scoreboard, chat, kill feed): DEFAULT, or R / G / B (moving one picks it)
+        bool custom = cfg_.nameColor >= 0;
+        float cwid = w * 0.46f, sw = (w - cwid - 3 * gap) / 3;
+        constexpr int kNameColorOn = 0xFFD040;   // (turned on, and where a right-click on R / G / B goes back to)
+        if (ui_.toggle(xr, y, cwid, h, "NAME COLOR", custom, UiExp::cfg("name_color"))) cfg_.nameColor = custom ? kNameColorOn : -1;
+        int rgb = cfg_.nameColor >= 0 ? cfg_.nameColor : 0xFFFFFF;
+        const char* ch[3] = {"R", "G", "B"};
+        for (int i = 0; i < 3; i++) {
+            int sh = 16 - 8 * i;
+            float v = (float)((rgb >> sh) & 255);
+            if (ui_.slider(xr + cwid + gap + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f", UiExp::cfg("name_color"), (float)((kNameColorOn >> sh) & 255))) {
+                rgb = (rgb & ~(255 << sh)) | ((int)std::lround(clampf(v, 0, 255)) << sh);
+                cfg_.nameColor = rgb;
+            }
+        }
+        if (cfg_.nameColor >= 0)   // (a swatch of the colour as others see it)
+            r_.rect(xr + 4 * s, y + 4 * s, 6 * s, h - 8 * s,
+                    rgba(Vec3(((rgb >> 16) & 255) / 255.0f, ((rgb >> 8) & 255) / 255.0f, (rgb & 255) / 255.0f)));
         y += h + gap;
     }
     const char* help[] = {
@@ -4140,18 +4217,20 @@ static const char* const kInfoPages[][48] = {
     {   // CONTROLS
         "# DEFAULT KEYS (Settings > CONTROLS to change any of them, two keys per action)",
         "W A S D - move.   SPACE - jump (hold it as you land to bounce: bunny hop).",
-        "SHIFT - dash: a burst of speed in the direction you're moving, tilted by where you look.",
+        "SHIFT - dash: a burst of speed in the direction you're moving, tilted by where you look. You hold 2 dashes: landing refills both, a bunny hop one.",
         "Q - grapple: hold to hook what you're aiming at and pull toward it; release to let go.",
         "LEFT MOUSE - fire.   RIGHT MOUSE - alt-fire (scope, knife throw, rocket lob, bubble stream, syringe throw...).",
         "E - use (plant / defuse the bomb).   1-9, 0 - weapons.   MOUSE WHEEL - next / previous weapon.",
         "TAB - scoreboard.   ENTER - chat.   F1 / F2 - vote yes / no.   F4 - vote to start the match.",
         "F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.",
         "# MOVEMENT",
-        "Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping.",
-        "Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump.",
-        "Super dash: look down and dash into the floor while holding jump for even more speed and a low hop.",
-        "Dash into a wall head-on (under 45 degrees) and you bounce off it at full dash speed.",
-        "You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb.",
+        "You run at 9.5 m/s. In the air, holding a direction drifts you up to run speed (a standing jump moves too).",
+        "Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.",
+        "Each dash leaves you 1 m/s faster than you went in (at least 11, at most 32 m/s).",
+        "Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump (it leaves you both dashes).",
+        "Super dash: look down and dash into the floor while holding jump for even more speed and a low hop (it leaves you 1 dash).",
+        "Dash into a wall head-on (under 45 degrees) and you bounce off it at full dash speed (it leaves you 1 dash).",
+        "You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb (6.75 m/s).",
         "# WEAPONS",
         "ROCKET (splash; rocket jump off the floor for 10% damage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).",
         "A thrown knife or syringe is gone for 4 s (greyed out in the weapon list, with its timer).",

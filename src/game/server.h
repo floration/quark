@@ -146,6 +146,7 @@ struct ServerPlayer {
     double locatedAt = -1e9;
     int model = 0;              // player model (cosmetic, kPlayerModels looks, same hitbox)
     int soundPack = 0;      // cosmetic: the sound pack others hear this player with
+    uint16_t nameColor = 0; // cosmetic: the name's colour on scoreboards, chat and the kill feed (RGB565; 0 = the default)
     bool it = false;            // hide and seek / tag: the seeker / tagger (has the knife)
     bool found = false;         // hide and seek: found by the seeker this round (falling off doesn't count)
     bool sought = false;        // hide and seek: has had their turn seeking this match

@@ -34,6 +34,9 @@ def build():
     m.box(-18, 4.0, 7.4, 18, 4.4, 18, mirror=True)
     for x in (-12, 0, 12): m.glow(x - 1.2, 3.85, 12, x + 1.2, 4.0, 13, mirror=True); m.light(x, 3.3, 12.5, 8, 0.7, fixture=False, mirror=True)
     m.ladder(1.6, 0.6, 5.0, 10.0, "w", width=0.8); m.ladder(-1.6, -0.6, 5.0, 10.0, "e", width=0.8)   # up the stack from the deck
+    # a damper housing on the stack's far edge from each ladder: at 6.75 m/s you come over the top with a hop that
+    # would carry you off the 3.2 m top onto the deck; this stops you on it (1.17)
+    m.box(-1.6, 10.0, -0.1, -1.2, 12.8, 1.3, accent=True, mirror=True)
     # a ladder up each inner wall onto the side bay's roof (4.4 m): a roof walk over the spawns
     m.ladder(-10, 6.8, 0, 4.4, "s", width=0.8); m.ladder(10, -6.8, 0, 4.4, "n", width=0.8)
     m.ladder(10, 6.8, 0, 4.4, "s", width=0.8); m.ladder(-10, -6.8, 0, 4.4, "n", width=0.8)   # (two each: the roof walk is a way round)

@@ -10,16 +10,16 @@ The numbers say *what* a map is. The sheets are for the judgement calls: whether
 
 ## The game the numbers are tuned to
 - **Movement** (all intended, the owner's call: decision 5.4):
-  - running speed: 8 m/s;
+  - running speed: 9.5 m/s (1.17; it was 8); in the air, held direction drifts you up to it at 8 m/s²;
   - jump: 7.3 m/s up, clears about 1.2 m; holding jump bunny-hops on the first grounded tick, before friction (auto-bhop);
   - step-up: 0.55 m;
   - air strafing gains speed without a limit;
-  - dash: a 0.12 s burst, then you keep your speed + 3 m/s, at most 32 m/s (the limit is intended); it can be tilted up, which turns speed into height;
+  - dash: a 0.12 s burst, then you keep your speed + 1 m/s (1.17; it was + 3), at least 11, at most 32 m/s (the limit is intended); it can be tilted up, which turns speed into height. Two charges (1.17; they replace the 1.2 s cooldown): landing refills both, a bunny hop one, a dash jump leaves both, a super dash or a wall bounce one;
   - grapple: 45 m reach;
-  - ladders.
+  - ladders: 6.75 m/s up, 4.5 m/s sideways (1.17).
 - **The movement envelope** the tech checks use is not written down here but measured, with the game's own movement code, each time the report runs (so it follows any change to movement). The report's first table lists it:
-  - **speed from a standstill**: a good player holding jump, dashing on cooldown while the dash still adds speed (a dash that starts on the floor is a dash jump: it keeps the burst's 24 m/s), and strafing (each millisecond the strafe that gains the most), or instead super dashing (looking down, a dash on a bhop's landing tick whenever it's ready: 1.25x the burst, up to 36 m/s); per speed the better of the two: the metres of moving it takes to reach 12, 16, 20, 24, 28, 32 and 36 m/s. Circling builds speed too, so the metres count wherever they're run;
-  - **take-offs**: from each of those speeds, a jump and, after 0-0.4 s, a dash tilted 0-90° up, or one looking down, or none (a dash at the take-off itself is a dash jump or a super dash): every arc followed until 40 m below the take-off. The envelope is the highest any arc is at each distance across; a slower take-off is always possible, so each speed's envelope includes the slower ones'. Past 28 m/s an upward dash gets no higher (its exit speed is capped); 32 and 36 m/s only go further across (super dashes reach 36);
+  - **speed from a standstill**: a good player holding jump, dashing whenever a charge is there and the dash still adds speed (a dash that starts on the floor is a dash jump: it keeps the burst's 24 m/s and refills the charges), and strafing (each millisecond the strafe that gains the most), or instead super dashing (looking down, a dash on a bhop's landing tick whenever it's ready: 1.25x the burst, up to 36 m/s); per speed the better of the two: the metres of moving it takes to reach 12, 16, 20, 24, 28, 32 and 36 m/s. Circling builds speed too, so the metres count wherever they're run;
+  - **take-offs**: from each of those speeds, a jump and, after 0-0.4 s, a dash tilted 0-90° up, or one looking down, or none (a dash at the take-off itself is a dash jump or a super dash), then with the charges left more dashes the same way (one or two chained, or one 0.3 s later): every arc followed until 40 m below the take-off. The envelope is the highest any arc is at each distance across; a slower take-off is always possible, so each speed's envelope includes the slower ones'. Past 28 m/s an upward dash gets no higher (its exit speed is capped); 32 and 36 m/s only go further across (super dashes reach 36);
   - **grapple pulls**: the speed a pull leaves you with, from each speed.
 - **Weapon ranges** decide which fights a sightline allows:
 
@@ -84,7 +84,7 @@ Two graphs over the same floor samples:
 - **The run:** links the bots' nav graph allows: along a surface, steps, ordinary jumps (gaps up to 2.6 m, 1.15 m up) and ladders.
 - **The tech path:** all of that, plus leaps and grapple pulls, with your speed as part of where you are:
   - **Speed** is one of the envelope's speeds. Moving along the path builds it as the envelope's run-up says (a path that circles to gain speed pays for the metres it circles). A ladder costs all of it; a grapple pull leaves you at what the pull gives.
-  - **A leap** goes anywhere under the envelope of the speed you have: standing (8 m/s) that is 13.5 m across level, 4.2 m up at most; at 28 m/s, 61 m across or 12.5 m up. The arc must be clear for a player-wide body: three lines (the middle and both shoulders, so a 0.4 m slit doesn't count as a way through) up out of the take-off, across at chest height over the higher end (or over the arc's own apex, when only a fast take-off reaches), and down into the landing. Clip blocks it (players collide with clip). Leaps longer than 24 m are taken between every third sample, a few metres apart, to keep the report quick.
+  - **A leap** goes anywhere under the envelope of the speed you have: running (9.5 m/s, 1.17: a dash jump and two more dashes off it) that is 42 m across level, 8.9 m up at most; at 28 m/s, 58 m across or 13.3 m up. The arc must be clear for a player-wide body: three lines (the middle and both shoulders, so a 0.4 m slit doesn't count as a way through) up out of the take-off, across at chest height over the higher end (or over the arc's own apex, when only a fast take-off reaches), and down into the landing. Clip blocks it (players collide with clip). Leaps longer than 24 m are taken between every third sample, a few metres apart, to keep the report quick.
   - **A grapple pull** reaches any surface hit within 45 m and lands you on the floor next to the anchor; the way there must be open to a player (the hook passes through clip, you don't). A pull leaves you at 24 m/s, or at your own speed if that was faster (28 m/s in, 28 m/s out: the envelope table's last row).
   - Nobody stands inside clip, whatever the nav graph says, so those samples are left out of both graphs.
 
@@ -112,13 +112,13 @@ Each mode the map supports gets the measurement that matters for it:
 
 | mode | measured |
 |---|---|
-| vs / duel / 1v1 | Walking distance from A's spawns to the nearest B spawn, and from B's to A's. **Fairness = shorter ÷ longer.** It doesn't depend on direction, so a symmetric map scores 1.00. Also the time to cross at 8 m/s. |
+| vs / duel / 1v1 | Walking distance from A's spawns to the nearest B spawn, and from B's to A's. **Fairness = shorter ÷ longer.** It doesn't depend on direction, so a symmetric map scores 1.00. Also the time to cross at 9.5 m/s. |
 | king of the hill | Each team's mean walking distance to the hill. Fairness = shorter ÷ longer. |
 | neutral payload | Each team's distance to the cart's starting point (halfway along the track). Fairness = shorter ÷ longer. |
 | payload | Attackers to the cart, defenders to the halfway point, and the track length. One-sided by design (sides swap), so no fairness score. |
 | bomb | Each team's walk to every site, and the attackers' arrival minus the defenders' there (positive: the defenders are there first). The owner's band (decision B2) is **−1 to +1 s at every site**: the game is fast, and a side that takes a site first holds it. (The sides swap spawns with roles, and the band is symmetric, so it holds for both halves.) |
 | ffa / tourney | Spawn count, the closest pair of spawns, and the share of spawn pairs that can see each other. Lower is better: spawns in view of each other mean spawn kills. |
-| race | Walking length of the checkpoint route, as time at running speed (8 m/s) and at a good strafe-jump speed (20 m/s). |
+| race | Walking length of the checkpoint route, as time at running speed (9.5 m/s) and at a good strafe-jump speed (20 m/s). |
 | multi point | For each point: the attackers' and the defenders' walk to it from the spawns that stage uses, and the attackers' arrival minus the defenders'. **−1 to +1 s at every point** (B2). |
 | hide and seek / tag | Hiding spots: the share of floor samples visible from fewer than 5% of the others. |
 | ranked | The share of sightlines under 20 m (rifle / rocket fights) and over 20 m (laser / crossbow / sniper). Vanilla wants a mix, vampire (laser) wants mid range, instagib (sniper) wants long. |

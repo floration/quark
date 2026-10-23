@@ -25,7 +25,8 @@ struct WalkGrid {
     static constexpr float kCol = 0.25f;        // column spacing (with the off-centre spots: any slot the hull fits, 6 cm to spare)
     static constexpr float kStep = 0.55f;       // pmove kStepHeight
     static constexpr float kJump = 1.15f;       // a standing jump clears ~1.22 m (7.34 m/s up, 22 m/s^2)
-    static constexpr float kGap = 2.5f;         // a running jump covers ~5 m flat; 2.5 m leaves room for the rise
+    static constexpr float kGap = 2.5f;         // a running jump covers ~6.3 m flat (1.17); 2.5 m leaves room for the rise
+    static constexpr float kRun = 9.5f;         // pmove kGroundSpeed (1.17: 8 -> 9.5)
     static constexpr float kArc = 1.22f;        // the jump's peak above the take-off
     static constexpr float kHull = kPlayerHeight, kCrouch = kPlayerCrouchHeight, kHalf = kPlayerHalfWidth;
 
@@ -235,7 +236,7 @@ struct WalkGrid {
                 }
             }
         // gaps: from an edge, a jump in any of 32 directions over up to 2.5 m (centre to centre), the standing hull
-        // clear along the jump's arc (7.34 m/s up at 8 m/s across); it lands on any floor it passes over that is
+        // clear along the jump's arc (7.34 m/s up at run speed across: 9.5 m/s); it lands on any floor it passes over that is
         // no higher than the arc (plus a step), or falls to one lower down
         const int kDirs = 32;
         for (size_t a = 0; a < N; a++) {
@@ -249,7 +250,7 @@ struct WalkGrid {
                 int last = -1;
                 bool had[2] = {false, false};   // the column before had a landing: [0] about level or up, [1] lower down
                 for (float sd = kCol; sd <= kGap + 1e-3f; sd += kCol * 0.5f) {
-                    float t = sd / 8.0f, arc = 7.34f * t - 11.0f * t * t;
+                    float t = sd / kRun, arc = 7.34f * t - 11.0f * t * t;
                     float x = pa.x + dx * sd, z = pa.z + dz * sd, lo = pa.y + arc;
                     if (!clearAt(x, z, lo, lo + kHull)) break;   // (the arc runs into something: no further this way)
                     int i = (int)std::floor((x - x0) / kCol), k = (int)std::floor((z - z0) / kCol);

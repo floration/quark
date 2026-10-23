@@ -30,6 +30,7 @@ jobs:
       version: ${{ steps.c.outputs.version }}   # what the build says it is (testing: <VERSION>-test.<N>)
       base: ${{ steps.c.outputs.base }}         # the VERSION file (changelogs/<base>.md)
       tag: ${{ steps.c.outputs.tag }}
+      groups: ${{ steps.g.outputs.groups }}     # quark_tests' groups (JSON): the test matrix, one runner per group
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -75,6 +76,18 @@ jobs:
           fi
           { echo "channel=$CHANNEL"; echo "version=$V$QUARK_VERSION_SUFFIX"; echo "base=$V"; echo "tag=$TAG"; } >> "$GITHUB_OUTPUT"
           echo "### $CHANNEL ${TAG:-(build only)}" >> "$GITHUB_STEP_SUMMARY"
+      - id: g
+        name: the test groups (tests/tests.cpp's par + alone lists; the linux job checks the built binary agrees)
+        run: |
+          python3 - >> "$GITHUB_OUTPUT" <<'PY'
+          import json, re
+          s = open("tests/tests.cpp").read()
+          a = s.index("std::vector<T> par = {")
+          b = s.index("#ifndef _WIN32", a)
+          names = re.findall(r'^\s*\{"([a-z0-9_]+)", \[\]', s[a:b], re.M)
+          assert names, "no test groups found"
+          print("groups=" + json.dumps(names))
+          PY
 
   windows:
     runs-on: ubuntu-24.04
@@ -100,10 +113,16 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: { name: windows-tests, path: "build/quark_tests.exe\nmaps/*.qmap", retention-days: 7 }   # (maps are generated at build time: not in the checkout)
 
-  windows-tests:   # the release's own MinGW build of the tests, run on Windows (REVIEW ENG-1)
-    needs: windows
+  windows-tests:   # the release's own MinGW build of the tests, run on Windows (REVIEW ENG-1), one group per runner
+    needs: [meta, windows]
     runs-on: windows-2022
-    timeout-minutes: 90
+    timeout-minutes: 45
+    if: needs.meta.outputs.base != '1.17.0'   # 1.17.0 alone ships on its local test run (owner); every later version is tested here
+    strategy:
+      fail-fast: false   # (every failing group shows up in one run)
+      matrix:
+        group: ${{ fromJSON(needs.meta.outputs.groups) }}
+    name: windows-tests (${{ matrix.group }})
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -113,10 +132,11 @@ jobs:
       - name: quark_tests (Windows)
         shell: bash
         env:
-          QUARK_SOURCE_DIR: ${{ github.workspace }}   # tools/ and tests/data/ (the exe was built on another machine)
-        run: ./build/quark_tests.exe
+          QUARK_SOURCE_DIR: ${{ github.workspace }}   # tools/, assets/ and tests/data/ (the exe was built on another machine)
+        run: ./build/quark_tests.exe group "${{ matrix.group }}"
 
   linux:
+    needs: meta
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -124,10 +144,16 @@ jobs:
           persist-credentials: false
       # xvfb + mesa (llvmpipe): a display for the UI test (docs/UI_TEST.md), which gates releases with the other tests
       - run: sudo apt-get update && sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev xvfb libgl1-mesa-dri
-      - run: |
+      - env:
+          GROUPS: ${{ needs.meta.outputs.groups }}
+        run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DQUARK_VERSION_SUFFIX="$QUARK_VERSION_SUFFIX"
           cmake --build build -j
-          xvfb-run -a -s "-screen 0 1920x1080x24" ctest --test-dir build --output-on-failure   # quark_tests + uitest
+          # the test matrix (meta's list, read from the source) must be the binary's own groups
+          [ "$(build/quark_tests groups | tr '\n' ' ')" = "$(echo "$GROUPS" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)), end=" ")')" ] \
+            || { echo "::error::meta's test groups ($GROUPS) aren't quark_tests' own: fix the parser in the meta job"; exit 1; }
+          # the click-every-button UI test (quark_tests runs per group in linux-tests)
+          xvfb-run -a -s "-screen 0 1920x1080x24" ctest --test-dir build -R uitest --output-on-failure
           test -f build/uitest-report.json   # (the UI test ran: it isn't skipped here)
           python3 tools/site_changelog.py .   # the website's data builds (checked here, before anything is published)
           python3 tools/site_updates.py . --allow-missing-full   # (work in progress may not have its full changelog yet)
@@ -139,12 +165,37 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: { name: linux, path: "quark-linux.tar.gz\nquark-linux.qpak\nquark-launcher-linux" }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with: { name: linux-tests, path: "build/quark_tests\nmaps/*.qmap", retention-days: 7 }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()   # (what the UI test found, passed or not)
         with: { name: uitest-report, path: build/uitest-report.json, retention-days: 14, if-no-files-found: ignore }
 
+  linux-tests:   # quark_tests, one group per runner (the slowest group sets the time, and the timing tests run alone)
+    needs: [meta, linux]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    if: needs.meta.outputs.base != '1.17.0'   # (as windows-tests)
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ${{ fromJSON(needs.meta.outputs.groups) }}
+    name: linux-tests (${{ matrix.group }})
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { name: linux-tests, path: . }
+      - name: quark_tests
+        env:
+          QUARK_SOURCE_DIR: ${{ github.workspace }}
+        run: |
+          chmod +x build/quark_tests
+          ./build/quark_tests group "${{ matrix.group }}"
+
   sanitizers:   # REVIEW ENG-3: work branches only (never a release, and no release job waits for it)
     needs: meta
-    if: needs.meta.outputs.channel == 'none'
+    if: needs.meta.outputs.channel == 'none' && needs.meta.outputs.base != '1.17.0'   # (1.17.0: no CI tests, owner)
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     steps:
@@ -197,8 +248,9 @@ jobs:
         with: { name: macos, path: "quark-macos.zip\nquark-macos.qpak\nquark-launcher-macos.zip" }
 
   release:   # PRODUCTION: every platform, signed, latest
-    needs: [meta, windows, windows-tests, linux, macos]
-    if: needs.meta.outputs.channel == 'production'
+    needs: [meta, windows, windows-tests, linux, linux-tests, macos]
+    # (!cancelled(): the skipped 1.17.0 tests would otherwise skip this too; every other job it needs must have passed)
+    if: "!cancelled() && needs.meta.outputs.channel == 'production' && needs.meta.result == 'success' && needs.windows.result == 'success' && needs.linux.result == 'success' && needs.macos.result == 'success' && (needs.windows-tests.result == 'success' || (needs.windows-tests.result == 'skipped' && needs.meta.outputs.base == '1.17.0')) && (needs.linux-tests.result == 'success' || (needs.linux-tests.result == 'skipped' && needs.meta.outputs.base == '1.17.0'))"
     runs-on: ubuntu-24.04
     environment: production
     permissions:
@@ -241,8 +293,8 @@ jobs:
             dist/windows/* dist/linux/* dist/macos/* dist/quark-release.txt dist/quark-release.txt.sig dist/SHA256SUMS dist/SHA256SUMS.sig
 
   release-testing:   # TESTING: Windows + Linux, signed prerelease (macOS follows in release-testing-macos)
-    needs: [meta, windows, windows-tests, linux]
-    if: needs.meta.outputs.channel == 'testing'
+    needs: [meta, windows, windows-tests, linux, linux-tests]
+    if: "!cancelled() && needs.meta.outputs.channel == 'testing' && needs.meta.result == 'success' && needs.windows.result == 'success' && needs.linux.result == 'success' && (needs.windows-tests.result == 'success' || (needs.windows-tests.result == 'skipped' && needs.meta.outputs.base == '1.17.0')) && (needs.linux-tests.result == 'success' || (needs.linux-tests.result == 'skipped' && needs.meta.outputs.base == '1.17.0'))"
     runs-on: ubuntu-24.04
     environment: testing
     permissions:

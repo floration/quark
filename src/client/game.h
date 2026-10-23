@@ -157,6 +157,7 @@ private:
     Vec3 teamColor(int playerId) const;
     Vec3 outlineColor(int playerId) const; // the player outline (settings: friendly / enemy presets)
     bool isFriendly(int playerId) const;
+    bool nameColorOf(int playerId, Color& out) const;   // the player's chosen name colour (lifted to stay readable); false: none
     void notify(const std::string& s, float seconds = 4.0f);
     void updateAnnouncer();
     ModeState annPrev_;
@@ -366,8 +367,10 @@ private:
     int specSent_ = -2;         // the spectate target last told to the server (-2: none since alive)
 
     // effects + feeds
-    struct Feed { std::string text; Color color; double until; int crown = 0; bool player = false; };   // crown: the sender's leaderboard place (chat); player: a player's chat line (hidden while chat is off)
+    struct Span { size_t at, len; Color color; };   // part of a feed line in its own colour (a player's chosen name colour)
+    struct Feed { std::string text; Color color; double until; int crown = 0; bool player = false; std::vector<Span> spans; };   // crown: the sender's leaderboard place (chat); player: a player's chat line (hidden while chat is off)
     std::deque<Feed> killFeed_, chatFeed_, notices_;
+    void drawFeedText(float x, float y, float ts, const Feed& f);
     std::deque<Feed> chatLog_;   // the chat history shown while typing (Enter)
     void addChat(const Feed& f) { chatFeed_.push_back(f); chatLog_.push_back(f); while (chatFeed_.size() > 8) chatFeed_.pop_front(); while (chatLog_.size() > 30) chatLog_.pop_front(); }
     std::string centerText_;
