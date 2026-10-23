@@ -380,7 +380,23 @@ void updater(std::shared_ptr<State> st, fs::path dir) {
 }
 } // namespace
 
+#ifdef _WIN32
+// REVIEW SUP-7: the launcher is often started from the Downloads folder, where a planted DLL named like a system one
+// would be loaded. DLLs loaded after this come from System32 only (SetDefaultDllDirectories exists on Windows 8+ and on
+// an updated Windows 7, KB2533623: looked up, not linked, so an older Windows 7 still starts), and never from the
+// current directory.
+static void hardenDllSearch() {
+    using SetDefaultDllDirectoriesFn = BOOL(WINAPI*)(DWORD);
+    if (HMODULE k = GetModuleHandleW(L"kernel32.dll"))
+        if (auto f = (SetDefaultDllDirectoriesFn)(void*)GetProcAddress(k, "SetDefaultDllDirectories")) f(0x00000800 /* LOAD_LIBRARY_SEARCH_SYSTEM32 */);
+    SetDllDirectoryW(L"");
+}
+#endif
+
 int main(int argc, char** argv) {
+#ifdef _WIN32
+    hardenDllSearch();
+#endif
     if (argc > 1 && std::string(argv[1]) == "--uninstall") {
 #ifdef _WIN32
         std::wstring q = L"Remove quark, its shortcuts and game files?\n\nYour settings, ranked identity, demos and maps stay in\n" +

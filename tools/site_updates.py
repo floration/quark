@@ -38,6 +38,7 @@ def inline(text):
 
 
 def md(text, skip_title=True):
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)   # (notes for whoever writes the changelog: never on the page)
     out, para = [], []
     stack = []   # open lists: (indent, "ul" | "ol")
     lines = text.replace("\r\n", "\n").split("\n")

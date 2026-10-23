@@ -136,7 +136,7 @@ Checked and fine: every test function is called from some group; no literal port
 
 ## 6. Game rules, movement, bots
 
-The owner's section-5 answers are all implemented as decided (overtime, syringe only where the dead respawn, shared throw cooldown reset by syringe heals, hull scaling with matching client prediction, no grapple brake, head box + flat 50 sniper, hide-and-seek rotation and scoring, red headshot numbers, 200 seed for unrated). The bots' background navigation build copies the map, so a map change mid-build is safe; per-thread rules have no stale path.
+The owner's section-5 answers are all implemented as decided (overtime, syringe only where the dead respawn, throw rules (since replaced by the owner's B4: a thrown knife / syringe is disabled for 4 s, a teammate's syringe brings it back), hull scaling with matching client prediction, no grapple brake, head box + flat 50 sniper, hide-and-seek rotation and scoring, red headshot numbers, 200 seed for unrated). The bots' background navigation build copies the map, so a map change mid-build is safe; per-thread rules have no stale path.
 
 | # | Sev | Where | Finding | Status |
 |---|---|---|---|---|

@@ -78,7 +78,12 @@ Every Low finding is fixed. What's left:
 | MAP-4, 6, 8, 14 | P1 | Running in D3a (section 0.1): C1, B1, B2, C3. |
 | NET-10 | P2 | Done (C12), except one part of the review: players within 20 m are always sent, with no ray check (`kVisNear`). So a hide-and-seek seeker is still sent hiders behind a wall within 20 m. Decide whether hide and seek gets a smaller radius or none. |
 | COR-5 | P2 | Unicode paths are done for the client, but untested on real Windows (no Wine here). The dedicated server's own `main` still takes ANSI arguments. Check a non-ASCII Windows user folder by hand. |
-| PERF-12 | — | Input stays one packet per tick, by choice (latency first). Batching cut the copies of each command from 4 to 2 and delayed commands. The rest of PERF-12 is done. |
+| PERF-12 | P2 | Input stays one packet per tick, by choice (latency first). Batching cut the copies of each command from 4 to 2 and delayed commands. Still open from PERF-12: the F3 overlay's GPU timestamp read can stall a frame, and the shadow pass uploads its geometry twice. |
+| NET-14 | P3 | Projectile ids are 16-bit and wrap: after 65,536 projectiles an id can repeat while an old one is still on a client's screen (a wrong trail or a missed explosion for a moment). |
+| COR-8 | P3 | The interpolation clamp half of COR-8 (the projectile-gravity half is fixed). |
+| SUP-12 | P3 | The website loads Google Fonts and has no Content-Security-Policy. Self-host the fonts and add a CSP meta tag (with the site remake). |
+| §5.5 | P3 | Feedback gaps: no directional damage flash, and remote players make no sound while in the air. |
+| SUP-7 | Fixed | The launcher now loads DLLs only from System32, never from the folder it was started in (Downloads). |
 | B7 follow-up | P2 | The laser now reaches 24 m, but the map report's long-sightline band still uses 32 m (`kBandLong` in `tests/mapreport.cpp`), as do the Furnace notes in `make_maps.py` and `docs/MAP_STRUCTURES.md`. Changing the band changes scores, so do it with the metric work (C1). |
 
 ## 4. Decisions waiting on you (Owner)
