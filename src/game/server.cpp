@@ -1,4 +1,5 @@
 #include "server.h"
+#include "../common/u8file.h"
 #include "../common/rng.h"
 #include "ranked.h"
 #include "../common/sha256.h"
@@ -2555,7 +2556,7 @@ void Server::openGameLog() {
         strftime(buf, sizeof buf, "/quark-%Y%m%d-%H%M%S.log", localtime(&t));
         path = dir + buf;
     }
-    glog_ = fopen(path.c_str(), "w");
+    glog_ = u8fopen(path, "w");
     if (!glog_) { log("could not open log file " + path); return; }
     // A big buffer keeps 1000 Hz logging to a handful of writes per second, off the tick's critical path.
     setvbuf(glog_, nullptr, _IOFBF, 1 << 20);
@@ -2975,7 +2976,7 @@ void Server::checkRestartFlag() {
     if (restartAt_ > 0) { if (now >= restartAt_) restartNow_ = true; return; }
     if (cfg_.restartFlag.empty() || now < nextFlagCheck_) return;
     nextFlagCheck_ = now + 2;
-    FILE* f = fopen(cfg_.restartFlag.c_str(), "r");
+    FILE* f = u8fopen(cfg_.restartFlag, "r");
     if (!f) return;
     fclose(f);
     if (matchInProgress()) {

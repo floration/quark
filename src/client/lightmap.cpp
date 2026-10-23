@@ -1,4 +1,5 @@
 #include "lightmap.h"
+#include "../common/u8file.h"
 #include <filesystem>
 #include <unordered_map>
 #include <algorithm>
@@ -61,7 +62,7 @@ void basis(const Vec3& n, Vec3& t, Vec3& b) {
 std::string cachePath(const Map& m) { return userDataPath("cache") + "/" + safeMapName(m.name) + ".qlm"; }
 
 bool loadCache(const Map& m, BakedWorld& out) {
-    std::ifstream f(cachePath(m), std::ios::binary);
+    std::ifstream f(utf8Path(cachePath(m)), std::ios::binary);
     if (!f) return false;
     uint32_t hdr[5];
     f.read((char*)hdr, sizeof hdr);
@@ -75,7 +76,7 @@ bool loadCache(const Map& m, BakedWorld& out) {
 void saveCache(const Map& m, const BakedWorld& w) {
     std::error_code ec;
     std::filesystem::create_directories(userDataPath("cache"), ec);
-    std::ofstream f(cachePath(m), std::ios::binary);
+    std::ofstream f(utf8Path(cachePath(m)), std::ios::binary);
     if (!f) return;
     uint32_t hdr[5] = {kCacheMagic, kBakeVersion, m.crc, (uint32_t)w.atlasW, (uint32_t)w.atlasH};
     f.write((const char*)hdr, sizeof hdr);
@@ -83,11 +84,14 @@ void saveCache(const Map& m, const BakedWorld& w) {
 }
 } // namespace
 
+static std::atomic<int> g_maxTex{4096};
+void setLightmapMaxTextureSize(int px) { g_maxTex = std::max(1024, px); }
+
 float sunVisibility(const Map& map, const Vec3& p) {
     return anyHit(map, p, map.sunDir, 500.0f) ? 0.0f : 1.0f;
 }
 
-void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)>& progress) {
+void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)>& progress, const std::atomic<bool>* cancel) {
     out = BakedWorld();
     // 1. Collect visible faces.
     std::vector<Face> faces;
@@ -208,29 +212,43 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
     for (auto& f : faces) if (f.material < 4) area += (f.u1 - f.u0) * (f.v1 - f.v0); // glow / far faces ignore lighting
     float density = 4.0f;
     while (area * density * density > 2048.0f * 2048.0f * 0.55f && density > 0.25f) density *= 0.8f;
-    for (auto& f : faces) {
-        f.wu = std::max(2, (int)std::ceil((f.u1 - f.u0) * density));
-        f.wv = std::max(2, (int)std::ceil((f.v1 - f.v0) * density));
-        f.wu = std::min(f.wu, 1000);
-        f.wv = std::min(f.wv, 1000);
-        if (f.material >= 4 && f.material < 8) f.wu = f.wv = 2;
+    auto sizeFaces = [&] {
+        for (auto& f : faces) {
+            f.wu = std::max(2, (int)std::ceil((f.u1 - f.u0) * density));
+            f.wv = std::max(2, (int)std::ceil((f.v1 - f.v0) * density));
+            f.wu = std::min(f.wu, 1000);
+            f.wv = std::min(f.wv, 1000);
+            if (f.material >= 4 && f.material < 8) f.wu = f.wv = 2;
+        }
+    };
+    sizeFaces();
+    // 3. Shelf-pack, W wide; returns the (power of two) height.
+    auto pack = [&](int W) {
+        std::vector<int> order(faces.size());
+        for (size_t i = 0; i < order.size(); i++) order[i] = (int)i;
+        std::stable_sort(order.begin(), order.end(), [&](int a, int b) { return faces[a].wv > faces[b].wv; });
+        int x = 0, y = 0, rowH = 0;
+        for (int i : order) {
+            Face& f = faces[i];
+            int w = f.wu + 2, h = f.wv + 2;
+            if (x + w > W) { x = 0; y += rowH; rowH = 0; }
+            f.rx = x; f.ry = y;
+            x += w;
+            rowH = std::max(rowH, h);
+        }
+        int H = 1;
+        while (H < y + rowH) H *= 2;
+        return H;
+    };
+    // It must fit the GPU's largest texture (PERF-13: Midtown is 2048x4096 already, and some GPUs stop at 4096): wider
+    // first (up to that size), then fewer texels per metre, rather than an atlas the driver refuses (a black world).
+    const int maxTex = g_maxTex.load();
+    int W = std::min(2048, maxTex), H = pack(W);
+    while (H > maxTex && density > 0.02f) {
+        if (W < maxTex) W *= 2;
+        else { density *= 0.8f; sizeFaces(); W = std::min(2048, maxTex); }
+        H = pack(W);
     }
-    // 3. Shelf-pack.
-    std::vector<int> order(faces.size());
-    for (size_t i = 0; i < order.size(); i++) order[i] = (int)i;
-    std::stable_sort(order.begin(), order.end(), [&](int a, int b) { return faces[a].wv > faces[b].wv; });
-    const int W = 2048;
-    int x = 0, y = 0, rowH = 0;
-    for (int i : order) {
-        Face& f = faces[i];
-        int w = f.wu + 2, h = f.wv + 2;
-        if (x + w > W) { x = 0; y += rowH; rowH = 0; }
-        f.rx = x; f.ry = y;
-        x += w;
-        rowH = std::max(rowH, h);
-    }
-    int H = 1;
-    while (H < y + rowH) H *= 2;
     out.atlasW = W;
     out.atlasH = H;
 
@@ -275,6 +293,7 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
         for (;;) {
             int fi = next++;
             if (fi >= (int)faces.size()) break;
+            if (cancel && cancel->load(std::memory_order_relaxed)) { doneCount++; continue; }   // (stopped: count the rest done)
             const Face& f = faces[fi];
             Vec3 n = faceNormal(f);
             Vec3 t, b;
@@ -351,6 +370,7 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
         }
     }
     for (auto& th : threads) th.join();
+    if (cancel && cancel->load()) { out.cancelled = true; return; }
     saveCache(map, out);
     if (progress) progress(1.0f);
 }

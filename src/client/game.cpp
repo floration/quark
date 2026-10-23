@@ -1,4 +1,5 @@
 #include <fstream>
+#include "../common/u8file.h"
 #include "../common/rng.h"
 #include <filesystem>
 #include <ctime>
@@ -295,6 +296,7 @@ void Game::leaveGame(const std::string& error) {
     }
     bool wasEditing = edOnline_;
     edSession_ = edOnline_ = false;
+    stopBake();
     net_.disconnect();
     stopHost();
     setActiveRules(CustomRules());   // back to the standard rules (a custom server set its own)
@@ -343,26 +345,49 @@ static std::string upper(std::string t) {
     return t;
 }
 
+// The connection's map changed (joined, map vote, the host switched): bake its lighting on a worker thread
+// (PERF-3). Called every frame while in game; the frame loop goes on (network, input events, a loading bar) and
+// the new world replaces the old one only once it's ready. A newer map arriving mid-bake cancels it and restarts.
 void Game::loadMapIfNeeded() {
-    if (!net_.mapReady() || net_.mapGeneration() == loadedMapGen_) return;
-    loadedMapGen_ = net_.mapGeneration();
-    double lastKeepAlive = 0;
-    r_.loadWorld(net_.map(), [&](float p) {
-        // Keep the connection alive and show progress while lighting bakes.
-        if (net_.playback()) { drawBakeProgress(net_.map().name, p); return; }   // (a demo waits for it)
-        net_.poll();
-        if (timeNow() - lastKeepAlive > 0.05) {
-            UserCmd c; c.yaw = yaw_; c.pitch = pitch_;
-            net_.tick(c);
-            lastKeepAlive = timeNow();
+    if (!net_.mapReady()) return;
+    const uint32_t gen = net_.mapGeneration();
+    if (bake_) {
+        if (!bake_->done.load()) { if (bake_->gen != gen) bake_->cancel = true; return; }
+        bake_->th.join();
+        std::unique_ptr<BakeJob> job = std::move(bake_);
+        if (job->gen == gen && !job->out.bw.cancelled) {
+            r_.uploadWorld(job->map, job->out);
+            loadedMapGen_ = gen;
+            setBackdropFrame(job->map);
+            if (net_.playback()) net_.holdPlaybackClock();
+            return;
         }
-        drawBakeProgress(net_.map().name, p);
+    }
+    if (gen == loadedMapGen_) return;
+    bake_ = std::make_unique<BakeJob>();
+    bake_->map = net_.map();
+    bake_->gen = gen;
+    BakeJob* j = bake_.get();
+    j->th = std::thread([j] {
+        Renderer::prepareWorld(j->map, j->out, [j](float p) { j->progress = p; }, &j->cancel);
+        j->done = true;
     });
-    setBackdropFrame(net_.map());
-    if (net_.playback()) net_.holdPlaybackClock();
+}
+
+void Game::stopBake() {
+    if (!bake_) return;
+    bake_->cancel = true;
+    if (bake_->th.joinable()) bake_->th.join();
+    bake_.reset();
 }
 
 void Game::drawBakeProgress(const std::string& name, float p) {
+    drawBakeScreen(name, p);
+    r_.flush2D();
+    glfwSwapBuffers(win_);
+}
+
+void Game::drawBakeScreen(const std::string& name, float p) {
     r_.rect(0, 0, (float)r_.width(), (float)r_.height(), {0.05f, 0.06f, 0.08f, 1});
     float bw = r_.width() * 0.4f, bx = (r_.width() - bw) * 0.5f, by = r_.height() * 0.55f;
     r_.rect(bx, by, bw, 8, {0.2f, 0.2f, 0.25f, 1});
@@ -370,8 +395,6 @@ void Game::drawBakeProgress(const std::string& name, float p) {
     float ts = std::max(2.0f, std::round(r_.height() / 360.0f));
     std::string t = "BAKING LIGHT - " + upper(name);
     r_.text((r_.width() - r_.textWidth(t, ts)) * 0.5f, by - 30 * ts / 2, ts, t, kWhite);
-    r_.flush2D();
-    glfwSwapBuffers(win_);
 }
 
 // The map behind the main menu (lighting is baked once, then cached like any map).
@@ -380,7 +403,21 @@ void Game::rescanMaps() {
     std::string botName = maps_.empty() ? "" : maps_[botMapIdx_ % maps_.size()];
     maps_ = listMaps();
     mapInfo_.clear();
+    // each map's title / modes / ranked ladders: parsed once per file version (it used to load and parse every map,
+    // collision grid and all, each time a menu, the editor or the in-game picker opened: a visible hitch)
     for (auto& name : maps_) {
+        std::string path = mapFilePath(name);
+        std::error_code ec;
+        std::filesystem::path fp = std::filesystem::u8path(path);
+        uintmax_t size = std::filesystem::file_size(fp, ec);
+        if (ec) size = (uintmax_t)-1;
+        auto mt = std::filesystem::last_write_time(fp, ec);
+        long long mtime = ec ? -1 : (long long)mt.time_since_epoch().count();
+        auto it = mapInfoCache_.find(path);
+        if (it != mapInfoCache_.end() && it->second.size == size && it->second.mtime == mtime && size != (uintmax_t)-1) {
+            mapInfo_.push_back(it->second.info);
+            continue;
+        }
         Map m;
         MapInfo mi;
         if (m.load(name)) {
@@ -389,6 +426,7 @@ void Game::rescanMaps() {
             for (int k = 0; k < MODE_COUNT; k++) if (m.supportsMode(k)) mi.modes |= 1u << k;
             for (int v = 0; v < 16; v++) if (isRankedMap(m, v)) mi.ranked |= (uint16_t)(1u << v);
         }
+        mapInfoCache_[path] = {mtime, size, mi};
         mapInfo_.push_back(mi);
     }
     for (size_t i = 0; i < maps_.size(); i++) {
@@ -408,6 +446,7 @@ void Game::loadMenuBackdrop() {
 // input
 
 void Game::onChar(unsigned cp) {
+    if (swallowChar_) { swallowChar_ = false; return; }   // the character of the key press that opened the chat / console
     if (cp < 128) uiIn_.chars += (char)cp;
 }
 
@@ -508,12 +547,16 @@ bool Game::pressInput(int code) {
 
 void Game::onKey(int key, int action, int mods) {
     markInput();
-    if (action == GLFW_RELEASE) return;
+    if (action == GLFW_RELEASE) { if (key == textOpenKey_) textOpenKey_ = -1; return; }
+    if (action == GLFW_REPEAT && key == textOpenKey_) { swallowChar_ = true; return; }   // holding the key that opened the chat
     // Alt+Enter: borderless fullscreen <-> windowed (exclusive fullscreen counts as fullscreen)
-    if ((key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) && (mods & GLFW_MOD_ALT) && action == GLFW_PRESS) {
-        cfg_.displayMode = cfg_.displayMode == 0 ? 1 : 0;
-        applyDisplayMode();
-        cfg_.save();
+    // (key repeats while held are swallowed too: they must not fall through as a plain Enter)
+    if ((key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) && (mods & GLFW_MOD_ALT)) {
+        if (action == GLFW_PRESS) {
+            cfg_.displayMode = cfg_.displayMode == 0 ? 1 : 0;
+            applyDisplayMode();
+            cfg_.save();
+        }
         return;
     }
     if (key == GLFW_KEY_BACKSPACE) uiIn_.backspace = true;
@@ -548,7 +591,7 @@ void Game::onKey(int key, int action, int mods) {
         }
         if (edOnline_ && action == GLFW_PRESS && !ui_.typing()) {   // ...and the chat key and the vote keys
             const Binds& eb = binds();
-            if (eb.has(A_CHAT, key)) { chatting_ = true; chatText_.clear(); uiIn_.chars.clear(); return; }
+            if (eb.has(A_CHAT, key)) { chatting_ = true; chatText_.clear(); openedTextBy(key); return; }
             if (eb.has(A_VOTEYES, key)) { net_.sendCommand("vote yes"); return; }
             if (eb.has(A_VOTENO, key)) { net_.sendCommand("vote no"); return; }
         }
@@ -561,13 +604,15 @@ void Game::onKey(int key, int action, int mods) {
     if (key == GLFW_KEY_ESCAPE && ui_.typing() && !chatting_) { uiIn_.escape = true; return; } // just stop typing, stay on the screen
     bool typing = chatting_ || ui_.typing();
     if (captureAction_ >= 0 || !typing) {
-        if (pressInput(key)) return;
+        bool wasChatting = chatting_;
+        if (pressInput(key)) { if (!wasChatting && chatting_) openedTextBy(key); return; }
     }
     if (screen_ == Screen::InGame && key == GLFW_KEY_GRAVE_ACCENT && (!chatting_ || console_)) { // the console: ` opens / closes
         console_ = !console_;
         chatting_ = console_;
+        consoleWords_.clear();   // (setting names are re-listed when it opens)
         chatText_.clear();
-        uiIn_.chars.clear();
+        openedTextBy(key);
         captureMouse(!console_ && !paused_);
         return;
     }
@@ -997,6 +1042,8 @@ void Game::frame(double dt) {
     QZONE("Game::frame");
     struct CpuTime { double t0 = timeNow(); double* out; ~CpuTime() { *out = timeNow() - t0; } } cpuTime{timeNow(), &lastCpu_}; // --bench: CPU part of the frame
     time_ += dt;
+    swallowChar_ = false;   // (a key that opened the chat and typed no character: don't eat a later one)
+    framePlayersOk_ = false;
     if (screen_ == Screen::InGame && (!opts_.chatShot.empty() || !opts_.consoleShot.empty())) {
         bool con = !opts_.consoleShot.empty();
         chatting_ = true; console_ = con;
@@ -1026,16 +1073,20 @@ void Game::frame(double dt) {
         modelSentAt_ = time_;
     }
     if (audio_.pack() != cfg_.soundPack) audio_.setPack(cfg_.soundPack);
+    // input packets: one every tick (latency first, and each command rides in 4 packets against loss); batching
+    // them per frame saved sendto calls but cut that redundancy to 2 and delayed commands by up to a tick
+    net_.setInputBatch(1);
     net_.setInterpFixed(fairRules() ? 0.010f : cfg_.interpMs > 0 ? cfg_.interpMs * 0.001f : cfg_.interpMs < 0 ? 0.0f : -1.0f);
     frameInput_ = pendingInput_; // the oldest input this frame will show
     pendingInput_ = -1;
-    if (opts_.bench > 0 && screen_ == Screen::InGame) benchFrame(dt);
+    if (opts_.bench > 0 && screen_ == Screen::InGame && !bake_) benchFrame(dt);
     frameTimes_[frameIdx_] = (float)dt;
     frameIdx_ = (frameIdx_ + 1) % frameTimes_.size();
     frameCount_ = std::min(frameCount_ + 1, frameTimes_.size());
+    if (bake_ && net_.playback()) net_.holdPlaybackClock();   // a demo waits for its map's bake
     { QZONE("net poll"); net_.poll(); }
     updateCommunity();
-    if ((screen_ == Screen::InGame || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
+    if (((screen_ == Screen::InGame && !bake_) || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
 
     if (screen_ == Screen::Join) browser_.poll();
     if (screen_ == Screen::Connecting || screen_ == Screen::InGame || (screen_ == Screen::Editor && edOnline_)) {
@@ -1067,6 +1118,12 @@ void Game::frame(double dt) {
         const double period = net_.tickPeriod();
         QZONE("input + prediction ticks");
         while (tickAcc_ >= period) {
+            if (bake_) {   // the world isn't there yet: keep the connection alive, nothing else
+                UserCmd k; k.yaw = yaw_; k.pitch = pitch_;
+                net_.tick(k);
+                tickAcc_ -= period;
+                continue;
+            }
             UserCmd c = buildCmd();
             // local fire feedback (server is authoritative for damage)
             bool altShot = altFires(net_.selfWeapon()) && (c.buttons & BTN_ALTFIRE) && // knife throw / shotgun bounce (no throws in hide and seek / tag)
@@ -1135,6 +1192,8 @@ void Game::frame(double dt) {
             net_.tick(c);
             tickAcc_ -= period;
         }
+        net_.flushInput();   // (PERF-12: one input packet per frame, or per 2 ticks when a frame runs more)
+        framePlayersOk_ = false;   // (the ticks moved the render time on)
         scopeOverlay_ = net_.selfWeapon() == WPN_SNIPER; // crossbow: just a light zoom, normal crosshair
         scoped_ = net_.selfAlive() && !paused_ && !chatting_ && weaponDef(net_.selfWeapon()).scopedSpread >= 0 &&
                   (isDown(A_ALTFIRE) || opts_.debugScope);
@@ -1156,19 +1215,22 @@ void Game::frame(double dt) {
         lastHealth_ = hp;
         if (!net_.selfAlive() && uiIn_.pressed && !paused_) {
             // cycle spectate target
-            auto ps = net_.interpolatedPlayers();
+            const auto& ps = framePlayers();
             for (int k = 1; k <= kMaxPlayers; k++) {
                 int id = (specTarget_ + k + kMaxPlayers) % kMaxPlayers;
                 if (ps[id].valid && (ps[id].snap.flags & PS_ALIVE) && id != net_.clientId()) { specTarget_ = id; break; }
             }
         }
-        captureMouse(!paused_ && !chatting_);
+        captureMouse(!paused_ && !chatting_ && !bake_);
     }
 
     // ---- render ----
     if (screen_ == Screen::Editor) {
         if (!edScript_.empty()) edScriptStep();
         editorFrame(dt);
+    } else if (screen_ == Screen::InGame && bake_) {
+        drawBakeScreen(bake_->map.name, bake_->progress.load());
+        std::this_thread::sleep_for(std::chrono::milliseconds(12));   // (a loading bar needs no more than ~60 fps: the cores go to the bake)
     } else if (screen_ == Screen::InGame && net_.hasSnapshot() && r_.worldLoaded()) {
         drawWorld((float)clampf((float)(tickAcc_ / net_.tickPeriod()), 0, 1));
         drawHud();
@@ -1185,7 +1247,7 @@ void Game::frame(double dt) {
         Vec3 to = look - camPos;
         if (opts_.camSet) r_.setCamera(opts_.camPos, deg2rad(opts_.camYaw), deg2rad(opts_.camPitch), 90);
         else r_.setCamera(camPos, std::atan2(-to.x, -to.z), std::atan2(to.y, std::sqrt(to.x * to.x + to.z * to.z)), 75);
-        if (r_.worldLoaded()) { r_.brightness = cfg_.brightness; r_.drawScene(false); }
+        if (r_.worldLoaded()) { r_.brightness = cfg_.brightness; r_.worldOutline = cfg_.outlineWorld; r_.drawScene(false); }
         else {
             r_.rect(0, 0, (float)r_.width(), (float)r_.height(), {0.05f, 0.06f, 0.08f, 1});
         }
@@ -1240,7 +1302,7 @@ void Game::drawWorld(float alpha) {
     QZONE("drawWorld");
     const Map& map = net_.map();
     const ModeState& ms = net_.mode();
-    auto players = net_.interpolatedPlayers();
+    auto& players = framePlayers();
     int me = net_.clientId();
     bool alive = net_.selfAlive();
     // demo playback: through the recorder's eyes (their recorded view, interpolated like everyone else)
@@ -1304,6 +1366,7 @@ void Game::drawWorld(float alpha) {
         float hs = crouch ? kPlayerCrouchHeight / kPlayerHeight : 1.0f;
         Vec3 col = teamColor(i);
         r_.outlineColor = outlineColor(i);
+        r_.outlineWidth = cfg_.outlinePlayer;
         float sv = sunVisibility(map, pos + Vec3(0, 1.0f * hs * bs, 0));
         bool vis = !firstPerson;
         auto at = [&](float h) { return pos + Vec3(0, h * hs * bs, 0); };
@@ -1423,6 +1486,7 @@ void Game::drawWorld(float alpha) {
     }
 
     r_.outlineColor = {0, 0, 0};
+    r_.outlineWidth = 1.0f;
     // grapple ropes
     if (alive && (net_.predicted().flags & MF_HOOKED)) {
         Vec3 d = angleForward(yaw_, pitch_);
@@ -1685,6 +1749,7 @@ void Game::drawWorld(float alpha) {
     }
     r_.brightness = cfg_.brightness;
     r_.fullbright = cfg_.fullbright;
+    r_.worldOutline = cfg_.outlineWorld;
     r_.drawScene(cfg_.shadows);
 }
 
@@ -1764,7 +1829,7 @@ void Game::drawHud() {
     // crosshair (scoped: the scope's reticle replaces it)
     if (!(scoped_ && scopeOverlay_) && !paused_) drawCrosshair(cx, cy, s, time_ < hitUntil_); // menus open: no crosshair through them
     {   // floating damage numbers above whoever you hit
-        auto ip = net_.interpolatedPlayers();
+        const auto& ip = framePlayers();
         for (size_t i = 0; i < dmgNums_.size();) {
             DmgNum& d = dmgNums_[i];
             float t = (float)(time_ - d.start);
@@ -2255,6 +2320,7 @@ void Game::runConsole(const std::string& line) {
     audio_.setAnnouncer(cfg_.announcerVoice);
     ui_.accent = rgba(cfg_.colorFriendly);
     for (auto& l : lines()) if (l.rfind(k + "=", 0) == 0) consolePrint("  " + k + " = " + l.substr(k.size() + 1));
+    consoleWords_.clear();   // (a setting can add a key: mode_hud_*, mode_controls_*)
 }
 
 // Every word the console knows: its commands and every setting name.
@@ -2329,7 +2395,10 @@ void Game::drawConsole(float W, float H, float s, float ts) {
     // highlighting: the first word green when it's a known setting / command, red when not, a /command in the
     // accent colour; the value white
     const Color good = {0.45f, 0.95f, 0.55f, 1}, bad = {1.0f, 0.4f, 0.35f, 1}, key = {0.55f, 0.8f, 1.0f, 1}, dim = {0.75f, 0.78f, 0.82f, 1};
-    auto words = consoleWords();
+    // the known words for the highlight: listed once when the console opens / runs a line, not every frame
+    // (consoleWords serialises the whole config)
+    if (consoleWords_.empty()) consoleWords_ = consoleWords();
+    const auto& words = consoleWords_;
     auto known = [&](const std::string& w) { return std::find(words.begin(), words.end(), w) != words.end(); };
     float x = 16 * s;
     r_.textMono(x, y, ts, "> ", kWhite); x += r_.textWidthMono("> ", ts);
@@ -2383,10 +2452,7 @@ void Game::chatEdit(size_t maxLen, bool console) {
 
 // The blinking caret: a thin bar after `before` (the text left of it, drawn from x).
 void Game::drawCaret(float x, float y, float ts, bool mono, const std::string& before) {
-    if (std::fmod(time_, 1.0) >= 0.5 && opts_.screenshot.empty()) return; // (screenshots: always shown)
-    float cx = x + (mono ? r_.textWidthMono(before, ts) : r_.textWidth(before, ts)), h = r_.textHeight(ts), w = std::max(1.0f, std::round(ts * 0.6f));
-    r_.rect(cx, y - h * 0.05f, w + 2, h * 1.05f + 2, {0, 0, 0, 0.8f});
-    r_.rect(cx + 1, y - h * 0.05f + 1, w, h * 1.05f, kWhite);
+    ui_.caret(x + (mono ? r_.textWidthMono(before, ts) : r_.textWidth(before, ts)), y, ts);   // (screenshots: steady)
 }
 
 // The chat lines (all recent history while typing) and the SAY: / console input. In game and while editing together.
@@ -2664,7 +2730,7 @@ static std::string fmtRace(int ms) {
 void Game::loadRaceRuns() {
     raceRunsLoaded_ = true;
     raceRuns_.clear();
-    std::ifstream f(raceLogPath());
+    std::ifstream f(utf8Path(raceLogPath()));
     std::string line;
     while (std::getline(f, line)) {
         std::istringstream ls(line);
@@ -2713,7 +2779,7 @@ void Game::onRaceSplit(int cp, int ms) {
     run.map = map; run.ms = ms; run.trial = trial; run.splits = raceSplits_;
     raceSplits_.clear();
     {   // every finished run is kept locally, for the stats page
-        std::ofstream f(raceLogPath(), std::ios::app);
+        std::ofstream f(utf8Path(raceLogPath()), std::ios::app);
         f << run.when << " " << run.map << " " << run.ms << " " << (run.trial ? 1 : 0) << " ";
         for (size_t i = 0; i < run.splits.size(); i++) f << (i ? "," : "") << run.splits[i];
         f << "\n";
@@ -2919,14 +2985,18 @@ void Game::drawScoreboard() {
         r_.text(x + w * 0.72f, cy, ts, "ACC", kGrey);
     }
     r_.text(x + w * 0.92f, cy, ts, "PING", kGrey);
+    const float nextCol = ranked ? 0.31f : gib ? 0.53f : 0.40f;   // where the column right of PLAYER starts
     cy += rowH;
     for (auto& p : ps) {
         Color c = (p.flags & PS_SPECTATOR) ? kGrey : rgba(teamColor(p.id));
-        std::string n = net_.playerName(p.id) + ((p.flags & PS_ALIVE) ? "" : " (DEAD)");
         if (p.id == net_.clientId()) r_.rect(x + 4 * s, cy - 4 * s, w - 8 * s, rowH - 2 * s, {1, 1, 1, 0.06f});
         float cw = 0;
         if (int place = crownOf(p.id)) { cw = r_.textHeight(ts) * 1.2f; drawCrown(x + 12 * s, cy + r_.textHeight(ts) * 0.1f, cw, place, crownLetter(p.id)); cw += 5 * s; }
-        r_.text(x + 12 * s + cw, cy, ts, n, c);
+        {   // the name stops short of the next column (clipped with "..."); " (DEAD)" always shows
+            const char* dead = (p.flags & PS_ALIVE) ? "" : " (DEAD)";
+            float nameW = x + w * nextCol - (x + 12 * s + cw) - 8 * s - r_.textWidth(dead, ts);
+            r_.text(x + 12 * s + cw, cy, ts, r_.textClip(net_.playerName(p.id), ts, std::max(0.0f, nameW)) + dead, c);
+        }
         Rating rt;
         if (ranked && rank_.rating(ladder, net_.rankId(p.id), rt))
             r_.text(x + w * 0.31f, cy, ts, rt.games < kPlacementGames ? std::to_string(rt.display()) + "?" : std::to_string(rt.display()), kWhite); // ? = still placing
@@ -3087,7 +3157,7 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     float w = std::max(320 * s, wTotal * 0.5f);
     float x = x0 + wTotal * 0.5f - w - colGap * 0.5f; // two columns centred on the old area
     float xr = x + w + colGap;
-    float ph = 12 * (h + gap) + 150 * s;
+    float ph = 13 * (h + gap) + 150 * s;
     y0 = std::max(24 * s, std::min(y0, (float)r_.height() - ph + 8 * s)); // panel bottom stays on screen
     ui_.panel(x - 16 * s, y0 - 16 * s, w * 2 + colGap + 32 * s, ph);
 
@@ -3096,7 +3166,12 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     ui_.label(x, y, "NAME");
     // Discord: run /link in the Discord server, type the 6-digit code the bot gives you here ("unlink" to remove it)
     // (linking makes the Discord name public next to your game name and ranked id: crowns and queue fills)
-    ui_.label(x + w * 0.5f + gap * 0.5f, y, cfg_.discordName.empty() ? "DISCORD CODE (/link) - PUBLIC" : ("DISCORD: " + cfg_.discordName + " (PUBLIC)").c_str());
+    {   // (fits its half column: shrunk, then a long linked name clipped, keeping "(PUBLIC)")
+        float lw = w * 0.5f - gap * 0.5f;
+        std::string dl = cfg_.discordName.empty() ? "DISCORD CODE (/link) - PUBLIC"
+            : "DISCORD: " + r_.textClip(cfg_.discordName, Renderer::kMinTextScale, lw - r_.textWidth("DISCORD:  (PUBLIC)", Renderer::kMinTextScale)) + " (PUBLIC)";
+        ui_.labelFit(x + w * 0.5f + gap * 0.5f, y, lw, dl);
+    }
     y += 22 * s;
     ui_.textField(1, x, y, w * 0.5f - gap * 0.5f, h, cfg_.name, 20);
     ui_.textField(43, x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, discordCode_, 8);
@@ -3155,6 +3230,13 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
         ui_.cycle(x, y, w, h, "TEAM OUTLINE", cfg_.outlineFriendly, kOutlineColors, ot);
         y += h + gap;
         ui_.cycle(x, y, w, h, "ENEMY OUTLINE", cfg_.outlineEnemy, kOutlineColors, oe);
+        y += h + gap;
+        // outline widths (pixels): players' models and the map's edges; 0 = none
+        float hw = (w - gap) * 0.5f;
+        ui_.slider(x, y, hw, h, "PLAYER OUTLINE", cfg_.outlinePlayer, 0, 4, "%.1f");
+        ui_.slider(x + hw + gap, y, hw, h, "WORLD OUTLINE", cfg_.outlineWorld, 0, 4, "%.1f");
+        cfg_.outlinePlayer = std::round(clampf(cfg_.outlinePlayer, 0, 6) * 4) / 4;
+        cfg_.outlineWorld = std::round(clampf(cfg_.outlineWorld, 0, 6) * 4) / 4;
         y += h + gap;
     }
     if (ui_.slider(x, y, w * 0.6f, h, "VOLUME", cfg_.volume, 0, 1, "%.2f")) audio_.setMasterVolume(cfg_.volume);
@@ -3326,12 +3408,14 @@ void Game::drawMenu() {
                 float ty = ry + (bhRow - r_.textHeight(ts)) * 0.5f, iw = r_.textWidth(infoU, ts);
                 r_.text(bx + bwRow - iw - 8 * s, ty, ts, infoU, kWhite);
                 std::string name = upper(sv.name);
-                float cw = r_.textWidth("M", ts);
-                int fit = std::max(1, (int)((bwRow - iw - 28 * s) / cw)), extra = (int)name.size() - fit;
+                float avail = std::max(0.0f, bwRow - iw - 28 * s);
+                int extra = 0;   // leading characters to drop before the rest fits (measured: W is wider than M)
+                while (extra < (int)name.size() && r_.textWidth(name.substr(extra), ts) > avail) extra++;
                 if (extra > 0) { // ping-pong: pause 1.5 s at each end, scroll 6 characters a second
                     double cycle = 2 * (extra / 6.0 + 1.5), t = std::fmod(time_, cycle);
                     double pos = t < 1.5 ? 0 : t < 1.5 + extra / 6.0 ? (t - 1.5) * 6 : t < 3 + extra / 6.0 ? extra : extra - (t - 3 - extra / 6.0) * 6;
-                    name = name.substr((size_t)std::clamp((int)pos, 0, extra), (size_t)fit);
+                    name = name.substr((size_t)std::clamp((int)pos, 0, extra));
+                    name.resize(r_.textFit(name, ts, avail));
                 }
                 r_.text(bx + 8 * s, ty, ts, name, kWhite);
                 ry += 34 * s;
@@ -4237,7 +4321,8 @@ void Game::drawBracket() {
 void Game::drawCrosshair(float cx, float cy, float scale, bool hit) {
     float u = std::max(1.0f, std::round(scale));
     float t = std::max(1.0f, std::round(cfg_.chThickness * u)), len = std::round(cfg_.chLength * u), g = std::round(cfg_.chGap * u);
-    Color c = hit ? Color{1, 1, 1, 1} : rgba(cfg_.chTeamColor ? cfg_.colorFriendly : cfg_.chColor);
+    hit = hit && cfg_.chHitFlash;   // (settings: HIT FLASH off, or its colour)
+    Color c = hit ? rgba(cfg_.chHitColor) : rgba(cfg_.chTeamColor ? cfg_.colorFriendly : cfg_.chColor);
     cx = std::round(cx); cy = std::round(cy);
     std::vector<std::array<float, 4>> rs; // x, y, w, h
     int st = cfg_.chStyle;
@@ -4261,7 +4346,7 @@ void Game::drawCrosshair(float cx, float cy, float scale, bool hit) {
     if (cfg_.chOutline)
         for (auto& r : rs) r_.rect(r[0] - 1, r[1] - 1, r[2] + 2, r[3] + 2, {0, 0, 0, c.a * 0.9f});
     for (auto& r : rs) r_.rect(r[0], r[1], r[2], r[3], c);
-    if (hit && st != 1 && st != 2) r_.rect(cx - t, cy - t, 2 * t, 2 * t, {1, 1, 1, 1});
+    if (hit && st != 1 && st != 2) r_.rect(cx - t, cy - t, 2 * t, 2 * t, c);
 }
 
 // VISUALS: what's drawn (world look, shot effects, overlays)
@@ -4358,11 +4443,14 @@ void Game::drawCrosshairSettings(float x0, float y0, float wTotal) {
     float w = std::max(360 * s, wTotal * 0.5f);
     float x = x0 + wTotal * 0.5f - w * 0.5f;
     float y = y0;
-    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 110 * s + 7 * (h + gap) + 6 * gap + 32 * s);
-    // preview on a mid-grey square, like the world behind it
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 110 * s + 9 * (h + gap) + 2 * gap + 32 * s);
+    // preview on a mid-grey square, like the world behind it: as it is, and as a hit flashes it
     float ph = 110 * s;
     r_.rect(x, y, w, ph, {0.42f, 0.43f, 0.45f, 1});
-    drawCrosshair(x + w * 0.5f, y + ph * 0.5f, s, false);
+    drawCrosshair(x + w * 0.3f, y + ph * 0.5f, s, false);
+    drawCrosshair(x + w * 0.7f, y + ph * 0.5f, s, true);
+    ui_.labelCentered(x + w * 0.3f, y + ph - 18 * s, "NORMAL", {0.85f, 0.86f, 0.88f, 1}, 0.5f);
+    ui_.labelCentered(x + w * 0.7f, y + ph - 18 * s, "ON HIT", {0.85f, 0.86f, 0.88f, 1}, 0.5f);
     y += ph + gap;
     static const std::vector<std::string> styles = {"CROSS", "CROSS + DOT", "DOT", "CIRCLE", "T"};
     ui_.cycle(x, y, w, h, "STYLE", cfg_.chStyle, 5, styles);
@@ -4387,11 +4475,24 @@ void Game::drawCrosshairSettings(float x0, float y0, float wTotal) {
             if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f")) cfg_.chColor[i] = std::round(v) / 255.0f;
         }
     }
+    y += h + gap;
+    // HIT FLASH: off, or the colour a hit flashes the crosshair (white by default)
+    ui_.toggle(x, y, w, h, "HIT FLASH", cfg_.chHitFlash);
+    y += h + gap;
+    if (cfg_.chHitFlash) {
+        float sw = (w - 2 * gap) / 3;
+        const char* ch[3] = {"HIT R", "HIT G", "HIT B"};
+        for (int i = 0; i < 3; i++) {
+            float v = cfg_.chHitColor[i] * 255.0f;
+            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f")) cfg_.chHitColor[i] = std::round(v) / 255.0f;
+        }
+    }
     y += h + gap * 3;
     if (ui_.button(x, y, w * 0.5f - gap * 0.5f, h, "RESET")) {
         Settings d;
         cfg_.chStyle = d.chStyle; cfg_.chLength = d.chLength; cfg_.chThickness = d.chThickness; cfg_.chGap = d.chGap;
         cfg_.chOutline = d.chOutline; cfg_.chTeamColor = d.chTeamColor; cfg_.chColor = d.chColor;
+        cfg_.chHitFlash = d.chHitFlash; cfg_.chHitColor = d.chHitColor;
     }
     if (ui_.button(x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "BACK")) { crosshairOpen_ = false; cfg_.save(); }
 }

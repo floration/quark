@@ -19,10 +19,11 @@ public:
     float s() const { return scale_; }           // layout scale (1.0 at 720p)
     float textScale() const { return textScale_; }
     float caretWidth() const;
-    void caret(float x, float y); // blinking text caret at x (text top y), in the current text scale
+    void caret(float x, float y, float ts = 0); // blinking text caret after x (text top y), at text scale ts (0: the UI's)
 
     void panel(float x, float y, float w, float h, float alpha = 0.75f);
     void label(float x, float y, const std::string& t, const Color& c = {1, 1, 1, 1}, float sizeMul = 1.0f);
+    void labelFit(float x, float y, float maxW, std::string t, const Color& c = {1, 1, 1, 1}); // shrunk / clipped to maxW
     void labelCentered(float cx, float y, const std::string& t, const Color& c = {1, 1, 1, 1}, float sizeMul = 1.0f);
     bool button(float x, float y, float w, float h, const std::string& label, bool enabled = true);
     bool textField(int id, float x, float y, float w, float h, std::string& value, size_t maxLen = 32);
@@ -48,7 +49,7 @@ public:
 
 private:
     bool hover(float x, float y, float w, float h) const;
-    float fit(const std::string& t, float maxW) const;
+    float fit(std::string& t, float maxW) const;   // scale for t to fit maxW; clips t if it can't
     Renderer* r_ = nullptr;
     UiInput in_;
     float scale_ = 1, textScale_ = 2;

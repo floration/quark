@@ -1,4 +1,5 @@
 #include "netclient.h"
+#include "../common/u8file.h"
 #include <algorithm>
 #include <cctype>
 #include "master.h"
@@ -285,7 +286,7 @@ bool NetClient::useMap(const std::string& name, uint32_t crc) {
     if (!validMapName(name)) return false; // just a name, never a path
     Map m;
     if (!(m.load(name) && m.crc == crc)) {
-        std::ifstream f(downloadedMapPath(name, crc), std::ios::binary);
+        std::ifstream f(utf8Path(downloadedMapPath(name, crc)), std::ios::binary);
         std::stringstream ss;
         ss << f.rdbuf();
         if (!f || !m.parse(ss.str()) || m.crc != crc) return false;
@@ -437,7 +438,7 @@ void NetClient::tick(UserCmd cmd) {
     predicted_[cmd.seq % kCmdRing] = pred_;
     predictedSeq_[cmd.seq % kCmdRing] = cmd.seq;
     errorOffset_ *= std::exp(-cmd.msec / 60.0f); // fade corrections out over ~60 ms, at any tick rate
-    sendInput();
+    if (++unsentCmds_ >= inputBatch_) sendInput();
 }
 
 void NetClient::sendInput() {
@@ -463,6 +464,7 @@ void NetClient::sendInput() {
     }
     sock_.send(server_, buf, w.size());
     lastSend_ = timeNow();
+    unsentCmds_ = 0;
 }
 
 void NetClient::sendCommand(const std::string& s) {
@@ -546,27 +548,28 @@ std::vector<ProjectileSnap> NetClient::interpolatedProjectiles() const {
 
 // ---------------------------------------------------------------------------
 
-ServerBrowser::~ServerBrowser() { if (fetch_.joinable()) fetch_.join(); }
+ServerBrowser::~ServerBrowser() = default;   // (a fetch still running keeps its own Fetch alive and drops its result)
 
-std::string ServerBrowser::internetStatus() { std::lock_guard<std::mutex> l(mu_); return netStatus_; }
+std::string ServerBrowser::internetStatus() { std::lock_guard<std::mutex> l(fetch_->mu); return fetch_->netStatus; }
 
 void ServerBrowser::refresh() {
     if (!sock_.isOpen()) sock_.open(0, true);
     servers_.clear();
     listed_.clear();
-    if (fetch_.joinable()) fetch_.join();
-    { std::lock_guard<std::mutex> l(mu_); netStatus_ = "SEARCHING THE INTERNET..."; fetched_.clear(); }
-    fetch_ = std::thread([this] {
+    uint64_t gen;
+    { std::lock_guard<std::mutex> l(fetch_->mu); gen = ++fetch_->gen; fetch_->netStatus = "SEARCHING THE INTERNET..."; fetch_->fetched.clear(); }
+    std::thread([f = fetch_, gen] {
         std::vector<std::string> list;
         std::string err;
         bool ok = fetchServerList(list, &err);
         std::string me = ok && !list.empty() ? publicIpv4() : "";
-        std::lock_guard<std::mutex> l(mu_);
-        fetched_ = list;
-        myIp_ = me;
-        netStatus_ = ok ? std::to_string(list.size()) + " INTERNET SERVER(S) LISTED" : "INTERNET LIST: " + err;
-        for (auto& c : netStatus_) c = (char)toupper((unsigned char)c);
-    });
+        std::lock_guard<std::mutex> l(f->mu);
+        if (f->gen != gen) return;   // a newer refresh() is under way: its answer counts
+        f->fetched = list;
+        f->myIp = me;
+        f->netStatus = ok ? std::to_string(list.size()) + " INTERNET SERVER(S) LISTED" : "INTERNET LIST: " + err;
+        for (auto& c : f->netStatus) c = (char)toupper((unsigned char)c);
+    }).detach();
     uint8_t buf[kInfoRequestBytes] = {}; // padded: servers don't answer a request smaller than the reply
     Writer w(buf, sizeof buf);
     writeHeader(w, PKT_INFO_REQUEST);
@@ -592,7 +595,7 @@ void ServerBrowser::poll() {
     if (!sock_.isOpen()) return;
     std::vector<std::string> addrs;
     std::string me;
-    { std::lock_guard<std::mutex> l(mu_); addrs.swap(fetched_); me = myIp_; }
+    { std::lock_guard<std::mutex> l(fetch_->mu); addrs.swap(fetch_->fetched); me = fetch_->myIp; }
     for (auto& a : addrs) {
         NetAddr na;
         if (!NetAddr::parse(a, kDefaultPort, na)) continue;
@@ -651,10 +654,10 @@ static constexpr uint64_t kMaxDemoBytes = 512ull << 20; // (about 9 h of play; p
 bool NetClient::startRecording(const std::string& path, bool fullRate) {
     stopRecording();
     if (!hasSnapshot() || !mapReady_) return false;
-    rec_ = fopen(path.c_str(), "wb");
-    if (!rec_) return false;
+    rec_ = std::make_unique<AsyncFileWriter>();
+    if (!rec_->open(path)) { rec_.reset(); return false; }
     uint32_t magic = kDemoMagic; uint16_t ver = kProtocolVersion;
-    fwrite(&magic, 4, 1, rec_); fwrite(&ver, 2, 1, rec_);
+    rec_->write(&magic, 4); rec_->write(&ver, 2);
     recStart_ = timeNow(); recLast_ = -1; recEvery_ = fullRate ? 0.0 : 0.016; recMapRev_ = 0xFFFFFFFFu; recEventId_ = 0; recHavePrev_ = false;
     // who's who so far (names, models, ranked ids arrived as events before the recording started)
     recEvents_.clear();
@@ -668,8 +671,7 @@ bool NetClient::startRecording(const std::string& path, bool fullRate) {
 }
 
 void NetClient::stopRecording() {
-    if (rec_) fclose(rec_);
-    rec_ = nullptr;
+    rec_.reset();   // (closes it: what was recorded reaches the file first)
 }
 
 double NetClient::recordingTime() const { return rec_ ? timeNow() - recStart_ : 0; }
@@ -680,7 +682,7 @@ void NetClient::recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& 
     if (recLast_ >= 0 && t - recLast_ < recEvery_ && recMapRev_ == mapRevision()) return; // 62.5 Hz, or every snapshot (full rate)
     recLast_ = t;
     auto record = [&](uint8_t type, const uint8_t* p, uint32_t n) {
-        fwrite(&type, 1, 1, rec_); fwrite(&t, 8, 1, rec_); fwrite(&n, 4, 1, rec_); fwrite(p, 1, n, rec_);
+        rec_->write(&type, 1); rec_->write(&t, 8); rec_->write(&n, 4); rec_->write(p, n);
     };
     if (recMapRev_ != mapRevision()) {   // the map (new, or edited): its whole text, so the demo plays anywhere
         recMapRev_ = mapRevision();
@@ -706,7 +708,7 @@ void NetClient::recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& 
     recEvents_.clear();
     recPrev_ = c;
     recHavePrev_ = true;
-    fflush(rec_);
+    rec_->flush();   // (to the writer thread)
 }
 
 bool NetClient::startPlayback(const std::string& path, std::string& err) {
@@ -721,7 +723,7 @@ bool NetClient::startPlayback(const std::string& path, std::string& err) {
 
 bool NetClient::startPlaybackImpl(const std::string& path, std::string& err) {
     disconnect();
-    std::ifstream f(path, std::ios::binary | std::ios::ate);
+    std::ifstream f(utf8Path(path), std::ios::binary | std::ios::ate);
     if (f && (uint64_t)f.tellg() > kMaxDemoBytes) { err = "demo too big"; return false; }
     f.seekg(0);
     std::stringstream ss;

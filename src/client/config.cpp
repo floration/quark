@@ -1,4 +1,5 @@
 #include "config.h"
+#include "../common/u8file.h"
 #include "../game/gamedefs.h"
 #include <cmath>
 #include <cstdio>
@@ -22,7 +23,7 @@ static std::string colorHex(const Vec3& c) {
 }
 
 void Settings::load() {
-    std::ifstream f(cfgPath());
+    std::ifstream f(utf8Path(cfgPath()));
     std::string line;
     while (std::getline(f, line)) {
         size_t eq = line.find('=');
@@ -75,6 +76,8 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "demo_full_rate") demoFullRate = iv != 0;
         else if (k == "outline_friendly") outlineFriendly = iv;
         else if (k == "outline_enemy") outlineEnemy = iv;
+        else if (k == "outline_player_width") outlinePlayer = clampf(fv, 0, 6);
+        else if (k == "outline_world_width") outlineWorld = clampf(fv, 0, 6);
         else if (k == "voice") announcerVoice = iv >= 0 && iv < 7 ? iv : 0;
         else if (k == "announcer") announcer = iv < 0 ? 0 : iv > 2 ? 2 : iv;
         else if (k == "shadowres") shadowRes = std::min(std::max(iv, 256), 8192);   // (a square depth texture: 8192 is 256 MB)
@@ -87,6 +90,8 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "ch_outline") chOutline = iv != 0;
         else if (k == "ch_team_color") chTeamColor = iv != 0;
         else if (k == "ch_color") chColor = parseColor(v, chColor);
+        else if (k == "ch_hit_flash") chHitFlash = iv != 0;
+        else if (k == "ch_hit_color") chHitColor = parseColor(v, chHitColor);
         else if (k == "last_address") lastAddress = v;
         else if (k == "rank_hello") rankHello = v;
         else if (k == "host_name") hostName = v;
@@ -145,10 +150,11 @@ std::string Settings::toText() const {
       << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height
       << "\nshadows=" << shadows << "\nmsaa=" << msaa << "\nmodel=" << model << "\nsoundpack=" << soundPack << "\nsocd=" << socd << "\nalt_toggle=" << altToggle
       << "\nhud_verbose=" << hudVerbose << "\nhud_widgets=" << hudWidgets << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nhitsounds=" << hitsounds << "\nannouncer=" << announcer << "\nvoice=" << announcerVoice << "\nfullbright=" << fullbright << "\nown_shots=" << ownShots << "\nenemy_shots=" << enemyShots << "\nhealth_bars=" << healthBars << "\nhealth_bars_bottom=" << healthBarsBottom
-      << "\nscope_opacity=" << scopeOpacity << "\nsticky_counter=" << stickyCounter << "\ncrowns=" << crowns << "\ndiscord=" << discordName << "\ndemo_full_rate=" << demoFullRate << "\noutline_friendly=" << outlineFriendly << "\noutline_enemy=" << outlineEnemy
+      << "\nscope_opacity=" << scopeOpacity << "\nsticky_counter=" << stickyCounter << "\ncrowns=" << crowns << "\ndiscord=" << discordName << "\ndemo_full_rate=" << demoFullRate << "\noutline_friendly=" << outlineFriendly << "\noutline_enemy=" << outlineEnemy << "\noutline_player_width=" << outlinePlayer << "\noutline_world_width=" << outlineWorld
       << "\ncolor_friendly=" << colorHex(colorFriendly) << "\ncolor_enemy=" << colorHex(colorEnemy)
       << "\nch_style=" << chStyle << "\nch_length=" << chLength << "\nch_thickness=" << chThickness << "\nch_gap=" << chGap
       << "\nch_outline=" << chOutline << "\nch_team_color=" << chTeamColor << "\nch_color=" << colorHex(chColor)
+      << "\nch_hit_flash=" << chHitFlash << "\nch_hit_color=" << colorHex(chHitColor)
       << "\nlast_address=" << lastAddress << "\nrank_hello=" << rankHello << "\nhost_name=" << hostName << "\nhost_prober=" << hostProber << "\nhost_map=" << hostMap
       << "\nhost_mode=" << hostMode << "\nhost_port=" << hostPort << "\nhost_max=" << hostMaxPlayers
       << "\nhost_upnp=" << hostUpnp << "\nhost_balance_bots=" << hostBalanceBots << "\nhost_log=" << hostLog << "\nhost_duel_size=" << hostDuelSize << "\nhost_public=" << hostPublic << "\nhost_ranked=" << hostRanked << "\nhost_custom=" << hostCustom << "\nhost_variant=" << hostArenaVariant << "\nbot_variant=" << botArenaVariant << "\nbot_skill=" << botSkill

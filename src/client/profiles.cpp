@@ -1,4 +1,5 @@
 #include "profiles.h"
+#include "../common/u8file.h"
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -28,7 +29,7 @@ std::vector<std::string> listProfiles(const char* sub) {
 }
 
 std::string readTextFile(const std::string& path) {
-    std::ifstream f(path);
+    std::ifstream f(utf8Path(path));
     std::stringstream ss;
     ss << f.rdbuf();
     return ss.str();

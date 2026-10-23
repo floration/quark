@@ -10,7 +10,12 @@
 
 void openUrl(const std::string& url) {
 #ifdef _WIN32
-    ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    // (wide: a folder under a non-ASCII user name, e.g. the maps or groups folder, is UTF-8 here)
+    int n = MultiByteToWideChar(CP_UTF8, 0, url.c_str(), -1, nullptr, 0);
+    if (n <= 0) return;
+    std::wstring w((size_t)n, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, url.c_str(), -1, &w[0], n);
+    ShellExecuteW(nullptr, L"open", w.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 #elif defined(__APPLE__)
     if (url.empty() || url[0] == '-') return; // never let a "URL" become an option
     procSpawnDetached({"open", url});

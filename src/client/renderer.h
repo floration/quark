@@ -10,12 +10,12 @@
 #include "lightmap.h"
 #include "models.h"
 
-struct DynVertex { float pos[3]; float normal[3]; float color[4]; float edge[4]; float outline[3]; }; // color.a = sun visibility; outline = edge colour (black unless set)
+struct DynVertex { float pos[3]; float normal[3]; float color[4]; float edge[4]; float outline[4]; }; // color.a = sun visibility; outline = edge colour (black unless set) + width (pixels)
 struct FlatVertex { float pos[3]; float color[4]; };
 // 16 bytes: screen pixels, font atlas texel coords (u16 fixed point: (texel + 1) * 32), color (RGBA8), and for text
 // the text scale (integer part + 1/256ths; 0 = plain rect), which sets the distance-field edge and outline width
 // in the shader, so each character is one quad.
-struct Vertex2D { int16_t pos[2]; uint16_t uv[2]; uint8_t color[4]; uint8_t outline, glyph, pad[2]; };
+struct Vertex2D { int16_t pos[2]; uint16_t uv[2]; uint8_t color[4]; uint8_t scaleInt, scaleFrac, pad[2]; };
 
 struct Color { float r, g, b, a; };
 inline Color rgba(const Vec3& c, float a = 1) { return {c.x, c.y, c.z, a}; }
@@ -26,6 +26,15 @@ public:
     void resize(int w, int h) { width_ = w; height_ = h; }
     int width() const { return width_; }
     int height() const { return height_; }
+    // World geometry grouped into spatial chunks (12 m columns) so the world pass only draws what's in
+    // the view frustum: one glMultiDrawArrays over the visible ranges.
+    struct WorldChunk { Vec3 mn, mx; int first, count; };
+    // A map's world, built and lit but not on the GPU yet: prepareWorld needs no GL context (any thread, on its
+    // own copy of the map), uploadWorld puts it on the GPU (the GL thread). loadWorld = both, here and now.
+    struct PreparedWorld { BakedWorld bw; std::vector<WorldChunk> chunks; };
+    static void prepareWorld(const Map& map, PreparedWorld& out, const std::function<void(float)>& progress,
+                             const std::atomic<bool>* cancel = nullptr);
+    void uploadWorld(const Map& map, PreparedWorld& w);
     void loadWorld(const Map& map, const std::function<void(float)>& progress);
     void warmup(const Map& map); // compile every shader / state now, not on the first match frame
     bool worldLoaded() const { return worldVerts_ > 0; }
@@ -47,6 +56,12 @@ public:
     void overlayBox(const Vec3& center, const Vec3& half, const Vec3& color); // world space, drawn over everything (editor handles)
     Vec3 viewPoint(const Vec3& offset) const;  // where a camera-relative point (as viewBox takes) is in the world
     void translucentBox(const AABB& b, const Color& c);
+    // A static batch of boxes (the editor's unbaked map, PERF-12): box() calls made inside emit go to a buffer that's
+    // uploaded once and drawn every frame useStaticBoxes() is called, culled per box, instead of being streamed again
+    // each frame (~21 MB a frame on Midtown). Rebuild it only when the boxes change.
+    void setStaticBoxes(const std::function<void()>& emit);
+    void useStaticBoxes() { staticOn_ = staticCount_ > 0; }   // draw it this frame
+    void clearStaticBoxes() { staticCount_ = 0; staticItems_.clear(); staticItems_.shrink_to_fit(); }
     void line(const Vec3& a, const Vec3& b, float width, const Color& c);
 
     void drawScene(bool shadows);
@@ -77,6 +92,7 @@ public:
     Vec3 glowColor = {1.00f, 0.55f, 0.15f};
     bool fullbright = false;   // VISUALS > FULLBRIGHT: flat white world with black outlines
     float brightness = 1.0f;   // the player's brightness setting (scales the lit scene before tonemapping)
+    float worldOutline = 1.0f; // the baked world's outline width in pixels (settings); 0 = none
 
 private:
     unsigned compile(const char* vs, const char* fs, std::string* err);
@@ -85,6 +101,7 @@ private:
     void emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, bool translucent);
 public:
     Vec3 outlineColor;   // the edge colour for the boxes drawn while it's set (players' outline setting); black by default
+    float outlineWidth = 1.0f;   // ...and the edge width in pixels (players' / the editor's boxes: settings); 0 = none
 private:
 
     int width_ = 1280, height_ = 720;
@@ -93,9 +110,6 @@ private:
     float tanX_ = 1, tanY_ = 1;
     unsigned worldVao_ = 0, worldVbo_ = 0, lightmapTex_ = 0;
     int worldVerts_ = 0;
-    // World geometry grouped into spatial chunks (12 m columns) so the world pass only draws what's in
-    // the view frustum: one glMultiDrawArrays over the visible ranges.
-    struct WorldChunk { Vec3 mn, mx; int first, count; };
     std::vector<WorldChunk> chunks_;
     std::vector<int> drawFirst_, drawCount_;
     void drawWorldChunks();
@@ -118,6 +132,14 @@ private:
     size_t dynCap_ = 0, flatCap_ = 0, uiCap_ = 0;
 
     std::vector<DynVertex> dyn_, dynShadowOnly_, view_;
+    struct StaticItem { Vec3 c; float r; int first, count; };
+    std::vector<StaticItem> staticItems_;
+    std::vector<DynVertex> staticVerts_;          // (only while setStaticBoxes builds it)
+    std::vector<int> staticFirst_, staticCnt_;
+    unsigned staticVao_ = 0, staticVbo_ = 0;
+    int staticCount_ = 0;
+    bool buildingStatic_ = false, staticOn_ = false;
+    void setupDynVao(unsigned vao, unsigned vbo);
     std::vector<FlatVertex> flat_;
     std::vector<Vertex2D> ui_;
     float casterRect_[4] = {0, 0, 1, 1}; // shadow-map rect covered by dynamic casters (this frame)

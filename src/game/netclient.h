@@ -1,12 +1,14 @@
 // Client side of the protocol: connection, input sending, prediction, interpolation.
 // Has no rendering dependencies so tests and bots can use it headless.
 #pragma once
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <array>
 #include <deque>
 #include <string>
 #include <vector>
+#include "../common/asyncwriter.h"
 #include "../common/net.h"
 #include "map.h"
 #include "protocol.h"
@@ -28,8 +30,11 @@ public:
     void disconnect();
     // Receive packets, handle timeouts/retries. Call every frame.
     void poll();
-    // Run one simulation tick with this input (call at tickRate() Hz).
+    // Run one simulation tick with this input (call at tickRate() Hz). The input packet (the last few commands) goes
+    // out every `batch` ticks (setInputBatch; 1 = every tick) and at flushInput().
     void tick(UserCmd cmd);
+    void setInputBatch(int n) { inputBatch_ = n < 1 ? 1 : n; }
+    void flushInput() { if (unsentCmds_ > 0) sendInput(); }   // after a frame's ticks: what's not sent yet
     void sendCommand(const std::string& s); // reliable string command ("say hi", "team b", ...)
     size_t pendingCommands() const { return stringCmds_.size(); }
 
@@ -104,7 +109,7 @@ private:
     void recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& events);
     void pollPlayback();
     bool startPlaybackImpl(const std::string& path, std::string& err);
-    FILE* rec_ = nullptr;
+    std::unique_ptr<AsyncFileWriter> rec_;   // (written on its own thread: no disk I/O in the frame loop)
     double recStart_ = 0, recLast_ = -1, recEvery_ = 0.016;
     uint32_t recMapRev_ = 0xFFFFFFFFu, recEventId_ = 0;
     Snapshot recPrev_;
@@ -121,6 +126,7 @@ private:
     } play_;
     void onSnapshot(Snapshot& s);
     void sendInput();
+    int inputBatch_ = 1, unsentCmds_ = 0;
     bool useMap(const std::string& name, uint32_t crc); // load name (own copy, else a downloaded one) if its CRC matches
     void pumpDownload(double now);
 
@@ -207,10 +213,16 @@ public:
     std::string internetStatus();
 private:
     UdpSocket sock_;
-    std::thread fetch_;
-    std::mutex mu_;
-    std::vector<std::string> fetched_; // addresses from the internet list, waiting to be queried
-    std::string netStatus_, myIp_;
+    // The internet list is fetched on a detached thread that shares only this with the browser: refresh() never
+    // waits for an earlier fetch (it used to join it on the UI thread: a hitch up to the HTTP timeout), and a
+    // fetch that a newer refresh() superseded (gen) drops its result. Nothing to join at exit either.
+    struct Fetch {
+        std::mutex mu;
+        uint64_t gen = 0;
+        std::vector<std::string> fetched;  // addresses from the internet list, waiting to be queried
+        std::string netStatus, myIp;
+    };
+    std::shared_ptr<Fetch> fetch_ = std::make_shared<Fetch>();
     struct Listed { NetAddr addr; double since; int tries; bool mine; };
     std::vector<Listed> listed_;       // internet entries not heard from yet
     std::vector<ServerInfo> servers_;

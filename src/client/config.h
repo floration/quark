@@ -43,6 +43,7 @@ struct Settings {
     std::string discordName;    // linked on the master for the Discord bot (roles, queue pings)
     bool crowns = true;         // gold / silver crowns on ranked leaders
     int outlineFriendly = 0, outlineEnemy = 0; // player outline presets (kOutlineNames: black, white, team, ...)
+    float outlinePlayer = 1.0f, outlineWorld = 1.0f; // outline widths in pixels (players' models / the map's edges); 0 = none
     int announcerVoice = 0;     // 0 male, 1 female: recorded lines, the generated voice for any not recorded yet
     int announcer = 2;          // voice lines: 0 off, 1 the round countdown only, 2 also the mode's calls (bomb planted, hill captured...)
     int shadowRes = 2048;
@@ -72,6 +73,8 @@ struct Settings {
     bool chOutline = true;      // 1 px black outline
     bool chTeamColor = true;    // use your team color, else chColor
     Vec3 chColor = {1, 1, 1};
+    bool chHitFlash = true;     // a hit flashes the crosshair in chHitColor (and a center square on styles without a dot)
+    Vec3 chHitColor = {1, 1, 1};
     // HUD layout: offset (pixels at 720p) from the default spot, size, and an optional color override
     enum { HUD_HEALTH, HUD_WEAPON, HUD_BARS, HUD_SPEED, HUD_SLOTS, HUD_VIEWMODEL, HUD_KEYS, HUD_COUNT }; // (keys: after the model, so saved layouts keep their indices)
     // x / y / scale move and size an element (720p units); hidden removes it. For the weapon model, x / y / depth

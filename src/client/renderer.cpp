@@ -1,4 +1,5 @@
 #include "renderer.h"
+#include "../common/u8file.h"
 #include <unordered_map>
 #include "../common/profile.h"
 #include "../common/net.h"
@@ -38,11 +39,14 @@ void main() {
 
 const char* kShadowFn = R"(
 
-float outline(vec4 e) {
+// 1 at a face's middle, 0 on its edges: the outline. w = its width in pixels (settings; 1 = the default look,
+// smoothstep(1, 2)); 0 = no outline.
+float outline(vec4 e, float w) {
+    if (w <= 0.0) return 1.0;
     vec2 d2 = min(e.xy, e.zw - e.xy);
     float d = min(d2.x, d2.y);
     float px = fwidth(d);
-    return smoothstep(1.0, 2.0, d / max(px, 1e-5));
+    return smoothstep(w, w + 1.0, d / max(px, 1e-5));
 }
 uniform sampler2DShadow uShadow;
 uniform int uShadowOn;
@@ -71,6 +75,7 @@ uniform vec3 uBaseL, uAccentL, uWallbangL, uMetalL, uFloorL;
 uniform float uFogDensity;
 uniform float uBright;   // the brightness setting (exposure, before the filmic curve)
 uniform float uFull;     // fullbright: flat white, black outlines, no light or fog
+uniform float uOutlineW; // the world's outline width (pixels; settings)
 out vec4 fragColor;
 float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 vec3 finish(vec3 c) {
@@ -83,7 +88,7 @@ void main() {
     int mat = int(vMat + 0.5);
     if (uFull > 0.5) {
         float g = mat == 2 ? 0.35 : mat == 5 ? 0.6 : mat == 6 ? 0.5 : mat == 7 ? 0.9 : abs(vN.y) > 0.5 ? 0.8 : 0.95;
-        fragColor = vec4(vec3(g) * (mat >= 4 && mat < 8 ? 1.0 : outline(vEdge)), 1.0);
+        fragColor = vec4(vec3(g) * (mat >= 4 && mat < 8 ? 1.0 : outline(vEdge, uOutlineW)), 1.0);
         return;
     }
     if (mat >= 4 && mat < 8) { // glow trim / far scenery / water / lava: unlit, skip everything below
@@ -107,7 +112,7 @@ void main() {
     if (mat == 0 && vN.y > 0.5) albedo = mix(albedo, uFloorL, 0.55); // floors / tops: darker, cooler than walls
     if (an.y < 0.5) albedo *= mix(0.72, 1.0, smoothstep(0.0, 0.6, fract(vPos.y + 1000.0) + step(1.0, vPos.y)));
     vec3 light = uSkyColor * lm.g + uSunColor * lm.r * shadowAt(vShadow);
-    vec3 c = albedo * light * 0.62 * outline(vEdge);
+    vec3 c = albedo * light * 0.62 * outline(vEdge, uOutlineW);
     fragColor = vec4(finish(c), 1.0);
 })";
 
@@ -183,18 +188,18 @@ layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
 layout(location=2) in vec4 aColor;
 layout(location=3) in vec4 aEdge;
-layout(location=4) in vec3 aOutline;
+layout(location=4) in vec4 aOutline; // rgb: the edge colour, a: its width (pixels)
 uniform mat4 uViewProj;
 uniform mat4 uShadowMat;
-out vec3 vPos; out vec3 vN; out vec4 vColor; out vec4 vShadow; out vec4 vEdge; out vec3 vOutline;
+out vec3 vPos; out vec3 vN; out vec4 vColor; out vec4 vShadow; out vec4 vEdge; out vec3 vOutline; flat out float vOutlineW;
 void main() {
-    vPos = aPos; vN = aNormal; vColor = aColor; vEdge = aEdge; vOutline = aOutline;
+    vPos = aPos; vN = aNormal; vColor = aColor; vEdge = aEdge; vOutline = aOutline.rgb; vOutlineW = aOutline.a;
     vShadow = uShadowMat * vec4(aPos + aNormal * 0.03, 1.0);
     gl_Position = uViewProj * vec4(aPos, 1.0);
 })";
 
 const char* kDynFS = R"(
-in vec3 vPos; in vec3 vN; in vec4 vColor; in vec4 vShadow; in vec4 vEdge; in vec3 vOutline;
+in vec3 vPos; in vec3 vN; in vec4 vColor; in vec4 vShadow; in vec4 vEdge; in vec3 vOutline; flat in float vOutlineW;
 uniform vec3 uSunColor, uSkyColor, uSunDir, uFogColor, uCamPos;
 uniform float uFogDensity;
 uniform int uReceiveShadow;
@@ -204,7 +209,7 @@ void main() {
     float sh = uReceiveShadow != 0 ? shadowAt(vShadow) : 1.0;
     float ndl = max(dot(normalize(vN), uSunDir), 0.0);
     vec3 light = uSkyColor * (0.6 + 0.25 * vN.y) + uSunColor * ndl * vColor.a * sh;
-    vec3 c = mix(vOutline, vColor.rgb * (light * 0.7 + 0.3), outline(vEdge)); // partly emissive so team colors stay readable; edges in the outline colour
+    vec3 c = mix(vOutline, vColor.rgb * (light * 0.7 + 0.3), outline(vEdge, vOutlineW)); // partly emissive so team colors stay readable; edges in the outline colour
     float d = length(vPos - uCamPos);
     c = mix(c, uFogColor, 1.0 - exp(-d * uFogDensity)) * uBright;
     fragColor = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
@@ -346,6 +351,11 @@ unsigned Renderer::compile(const char* vs, const char* fs, std::string* err) {
 }
 
 bool Renderer::init(int shadowRes, std::string* err) {
+    {   // the lightmap atlas is packed to fit the GPU's largest texture (PERF-13)
+        GLint64 maxTex = 0;
+        glGetInteger64v(GL_MAX_TEXTURE_SIZE, &maxTex);
+        if (maxTex > 0) setLightmapMaxTextureSize((int)std::min<GLint64>(maxTex, 1 << 15));
+    }
     std::string worldFS = std::string("#version 330 core\n") + kShadowFn + kWorldFS;
     std::string dynFS = std::string("#version 330 core\n") + kShadowFn + kDynFS;
     worldProg_ = compile(kWorldVS, worldFS.c_str(), err);
@@ -360,13 +370,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     // VAOs
     glGenVertexArrays(1, &dynVao_);
     glGenBuffers(1, &dynVbo_);
-    glBindVertexArray(dynVao_);
-    glBindBuffer(GL_ARRAY_BUFFER, dynVbo_);
-    glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)0);
-    glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)12);
-    glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)24);
-    glEnableVertexAttribArray(3); glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)40);
-    glEnableVertexAttribArray(4); glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)56);
+    setupDynVao(dynVao_, dynVbo_);
 
     glGenVertexArrays(1, &flatVao_);
     glGenBuffers(1, &flatVbo_);
@@ -428,8 +432,16 @@ bool Renderer::init(int shadowRes, std::string* err) {
 }
 
 void Renderer::loadWorld(const Map& map, const std::function<void(float)>& progress) {
-    BakedWorld bw;
-    buildWorld(map, bw, progress);
+    PreparedWorld w;
+    prepareWorld(map, w, progress);
+    uploadWorld(map, w);
+}
+
+void Renderer::prepareWorld(const Map& map, PreparedWorld& w, const std::function<void(float)>& progress, const std::atomic<bool>* cancel) {
+    BakedWorld& bw = w.bw;
+    buildWorld(map, bw, progress, cancel);
+    if (bw.cancelled) return;
+    std::vector<WorldChunk>& chunks_ = w.chunks;
     {   // sort the faces (6 vertices each) into 12 m columns and remember each column's bounds
         QZONE("world chunks");
         const float kChunk = 12.0f;
@@ -460,9 +472,15 @@ void Renderer::loadWorld(const Map& map, const std::function<void(float)>& progr
             c.count += 6;
         }
         bw.verts.swap(sorted);
-        drawFirst_.reserve(chunks_.size());
-        drawCount_.reserve(chunks_.size());
     }
+}
+
+void Renderer::uploadWorld(const Map& map, PreparedWorld& w) {
+    QZONE("world upload");
+    BakedWorld& bw = w.bw;
+    chunks_.swap(w.chunks);
+    drawFirst_.reserve(chunks_.size());
+    drawCount_.reserve(chunks_.size());
     sunDir_ = map.sunDir;
     {   // per-map palette (falls back to the stock greys)
         skyColor = map.hasPalette ? map.palSky : Vec3{0.62f, 0.66f, 0.72f};
@@ -559,6 +577,7 @@ void Renderer::addQuad(std::vector<DynVertex>& out, const Vec3* c, const Vec3& n
         v.color[0] = col.x; v.color[1] = col.y; v.color[2] = col.z; v.color[3] = sv;
         v.edge[0] = eu[i]; v.edge[1] = ev[i]; v.edge[2] = w; v.edge[3] = h;
         memcpy(v.outline, &outlineColor.x, 12);
+        v.outline[3] = outlineWidth;
         out.push_back(v);
     }
 }
@@ -599,7 +618,37 @@ bool Renderer::inView(const Vec3& c, float r) const {
     return true;
 }
 
+void Renderer::setupDynVao(unsigned vao, unsigned vbo) {
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)0);
+    glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)12);
+    glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)24);
+    glEnableVertexAttribArray(3); glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)40);
+    glEnableVertexAttribArray(4); glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(DynVertex), (void*)56);   // outline rgb + width
+}
+
+void Renderer::setStaticBoxes(const std::function<void()>& emit) {
+    QZONE("static boxes");
+    staticVerts_.clear();
+    staticItems_.clear();
+    buildingStatic_ = true;
+    emit();
+    buildingStatic_ = false;
+    if (!staticVao_) { glGenVertexArrays(1, &staticVao_); glGenBuffers(1, &staticVbo_); setupDynVao(staticVao_, staticVbo_); }
+    glBindBuffer(GL_ARRAY_BUFFER, staticVbo_);
+    glBufferData(GL_ARRAY_BUFFER, staticVerts_.size() * sizeof(DynVertex), staticVerts_.data(), GL_STATIC_DRAW);
+    staticCount_ = (int)staticVerts_.size();
+    std::vector<DynVertex>().swap(staticVerts_);
+}
+
 void Renderer::box(const Vec3& center, const Vec3& half, float yaw, const Vec3& color, float sunVis, bool castShadow, bool visible) {
+    if (buildingStatic_) {   // into the static batch (setStaticBoxes): every box, culled when drawn
+        int first = (int)staticVerts_.size();
+        emitBox(staticVerts_, Mat4::translate(center) * Mat4::rotY(yaw), half, color, sunVis);
+        staticItems_.push_back({center, length(half), first, (int)staticVerts_.size() - first});
+        return;
+    }
     if (visible && !inView(center, length(half))) { visible = false; if (!castShadow) return; } // off screen: only its shadow can show
     Mat4 xf = Mat4::translate(center) * Mat4::rotY(yaw);
     if (visible) emitBox(dyn_, xf, half, color, sunVis);
@@ -801,6 +850,7 @@ void Renderer::drawScene(bool shadows) {
         glUniform1f(U(worldProg_, "uFogDensity"), fog);
         glUniform1f(U(worldProg_, "uBright"), brightness);
         glUniform1f(U(worldProg_, "uFull"), fullbright ? 1.0f : 0.0f);
+        glUniform1f(U(worldProg_, "uOutlineW"), worldOutline);
         glBindTexture(GL_TEXTURE_2D, lightmapTex_);
         glBindVertexArray(worldVao_);
         drawWorldChunks();
@@ -816,8 +866,8 @@ void Renderer::drawScene(bool shadows) {
     }
 
     auto drawDyn = [&](const std::vector<DynVertex>& v, bool receive) {
-        if (v.empty()) return;
-        upload(dynVbo_, dynCap_, v);
+        if (v.empty() && !staticOn_) return;
+        if (!v.empty()) upload(dynVbo_, dynCap_, v);
         glUseProgram(dynProg_);
         setMat(dynProg_, "uViewProj", viewProj_);
         setMat(dynProg_, "uShadowMat", shadowMat);
@@ -834,9 +884,24 @@ void Renderer::drawScene(bool shadows) {
         glUniform1f(U(dynProg_, "uFogDensity"), fog);
         glUniform1f(U(dynProg_, "uBright"), brightness);
         glBindVertexArray(dynVao_);
-        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)v.size());
+        if (!v.empty()) glDrawArrays(GL_TRIANGLES, 0, (GLsizei)v.size());
     };
     { QZONE("dynamic pass"); drawDyn(dyn_, true); }
+    if (staticOn_) {   // the static batch (the editor's map): drawDyn above set the program up; the boxes in view, one multi-draw
+        QZONE("static boxes pass");
+        staticOn_ = false;
+        staticFirst_.clear();
+        staticCnt_.clear();
+        for (const StaticItem& it : staticItems_) {
+            if (!inView(it.c, it.r)) continue;
+            if (!staticFirst_.empty() && staticFirst_.back() + staticCnt_.back() == it.first) staticCnt_.back() += it.count;
+            else { staticFirst_.push_back(it.first); staticCnt_.push_back(it.count); }
+        }
+        if (!staticFirst_.empty()) {
+            glBindVertexArray(staticVao_);
+            glMultiDrawArrays(GL_TRIANGLES, staticFirst_.data(), staticCnt_.data(), (GLsizei)staticFirst_.size());
+        }
+    }
 
     if (!flat_.empty()) {
         upload(flatVbo_, flatCap_, flat_);
@@ -886,14 +951,14 @@ static inline int16_t px(float v) { return (int16_t)clampf(std::round(v), -32768
 
 // one quad (2 triangles) into the UI batch
 static void uiQuad(std::vector<Vertex2D>& out, float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1,
-                   const Color& c, uint8_t outline, uint8_t glyph) {
+                   const Color& c, uint8_t scaleInt, uint8_t scaleFrac) {
     Vertex2D q[4];
     const float xs[4] = {x0, x1, x1, x0}, ys[4] = {y0, y0, y1, y1}, us[4] = {u0, u1, u1, u0}, vs[4] = {v0, v0, v1, v1};
     for (int k = 0; k < 4; k++) {
         q[k].pos[0] = px(xs[k]); q[k].pos[1] = px(ys[k]);
         q[k].uv[0] = u16uv(us[k]); q[k].uv[1] = u16uv(vs[k]);
         q[k].color[0] = u8c(c.r); q[k].color[1] = u8c(c.g); q[k].color[2] = u8c(c.b); q[k].color[3] = u8c(c.a);
-        q[k].outline = outline; q[k].glyph = glyph; q[k].pad[0] = q[k].pad[1] = 0;
+        q[k].scaleInt = scaleInt; q[k].scaleFrac = scaleFrac; q[k].pad[0] = q[k].pad[1] = 0;
     }
     const int idx[6] = {0, 1, 2, 0, 2, 3};
     for (int i : idx) out.push_back(q[i]);
@@ -1042,7 +1107,7 @@ bool Renderer::screenshot(const std::string& path) {
     chunk(out, "IHDR", ihdr);
     chunk(out, "IDAT", z);
     chunk(out, "IEND", {});
-    std::ofstream f(path, std::ios::binary);
+    std::ofstream f(utf8Path(path), std::ios::binary);
     f.write((const char*)out.data(), out.size());
     return (bool)f;
 }

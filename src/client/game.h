@@ -6,6 +6,7 @@
 #include <deque>
 #include <memory>
 #include <string>
+#include <chrono>
 #include <thread>
 #include <vector>
 #include "hudwidgets.h"
@@ -91,10 +92,31 @@ private:
     void connectTo(const std::string& addr);
     void leaveGame(const std::string& error = "");
     void loadMapIfNeeded();
+    // PERF-3: a joined map's lighting bakes on a worker thread from a private copy of the map, while frame() keeps
+    // polling the network and window events and draws a loading bar; the world is swapped in (uploaded) when it's done.
+    struct BakeJob {
+        std::thread th;
+        Map map;                           // (the worker's own copy: the connection's map can change meanwhile)
+        Renderer::PreparedWorld out;
+        std::atomic<float> progress{0};
+        std::atomic<bool> done{false}, cancel{false};
+        uint32_t gen = 0;                  // net_.mapGeneration() it was started for
+    };
+    std::unique_ptr<BakeJob> bake_;
+    void stopBake();                       // cancel a running bake and wait for its worker (leaving, shutdown)
+    void drawBakeScreen(const std::string& name, float p);   // the loading bar (no flush / swap)
     void updateInput(double dt);
     UserCmd buildCmd();
     void handleEvents();
     void drawWorld(float alpha);
+    // net_.interpolatedPlayers() for this frame, worked out once (PERF-12: world, HUD, spectating and the editor each
+    // asked for it): valid from the first use after the frame's ticks until the next frame or tick loop
+    NetClient::PlayerArray& framePlayers() {   // (--models adds its lineup to it)
+        if (!framePlayersOk_) { framePlayers_ = net_.interpolatedPlayers(); framePlayersOk_ = true; }
+        return framePlayers_;
+    }
+    NetClient::PlayerArray framePlayers_{};
+    bool framePlayersOk_ = false;
     void drawHud();
     void drawNotices(float y, float ts, float s); // notify() lines, centred from y down (HUD and menus)
     void drawScoreboard();
@@ -191,6 +213,9 @@ private:
     float bgCeil_ = 0, bgHalfX_ = 0, bgHalfZ_ = 0;
     void loadMenuBackdrop();
     void rescanMaps();          // re-list maps/ so new or edited files show up without restarting
+    // rescanMaps' per-file cache (PERF-11): a map is only loaded again when its file's path, size or mtime changed
+    struct MapInfoCached { long long mtime = 0; uintmax_t size = 0; MapInfo info; };
+    std::map<std::string, MapInfoCached> mapInfoCache_;
     std::string testMap_;       // set while play-testing a map from the editor
     int testMode_ = 0;
 
@@ -219,6 +244,8 @@ private:
     float edSpeed_ = 12;
     Vec3 edCam_;
     bool edLook_ = false, edDirty_ = false, edBaked_ = false;
+    bool edMeshDirty_ = true;      // the map's boxes changed: rebuild the renderer's static batch (PERF-12)
+    float edMeshOutline_ = -1;     // the outline width that batch was built with
     int edFullW_ = 1280;   // the window width (the editor's 3D view is narrower: the panel is on the right)
     bool edOnline_ = false;     // in an edit session (connected to a server in edit mode)
     bool edSession_ = false;    // this connection has been an edit session (leaving offers to save a copy)
@@ -262,7 +289,10 @@ private:
     void edImportGroup();               // clipboard first (saved to groups/), else the groups menu
     void edExportGroup();               // the selected group to groups/<new file> + clipboard, then open the folder
     void drawEditorGroupMenu(float x, float y, float w);
-    EdSel edPick(const Vec3& o, const Vec3& dir) const;
+    std::vector<EdSel> edPickAll(const Vec3& o, const Vec3& dir) const;   // everything under the ray, nearest first
+    float edLastClickX_ = -1e9f, edLastClickY_ = -1e9f, edLastClickYaw_ = 0, edLastClickPitch_ = 0;   // (clicking the same spot again cycles)
+    Vec3 edLastClickCam_;
+    int edClipFind_ = -1;   // FIND CLIP: the clip box shown last
     Vec3 edMouseRay() const;
     bool edSave();
     bool edSaveCopy(const Map& m, const std::string& name);
@@ -385,9 +415,15 @@ private:
     std::deque<std::string> consoleLog_;
     void consolePrint(const std::string& t);
     std::vector<std::string> consoleWords() const;
+    std::vector<std::string> consoleWords_;   // drawConsole's cache of consoleWords() (cleared: listed again)
     void consoleComplete();
     std::vector<std::string> consoleCandidates(const std::vector<std::string>& words) const;
     void chatSync();                       // caret to the end if chatText_ was replaced
+    // The key press that opened the chat / console (a bind: T, Y, `...) arrives as a character right after the key
+    // event (same event poll) and again on each key repeat: neither may be typed into the line it opened.
+    int textOpenKey_ = -1;                 // the key that opened it, until released (its repeats are swallowed)
+    bool swallowChar_ = false;             // drop the next character (this poll only: cleared each frame)
+    void openedTextBy(int key) { textOpenKey_ = key; swallowChar_ = true; uiIn_.chars.clear(); }
     bool chatCaretKey(int key);            // Left / Right / Home / End / Delete in the chat or console input
     void chatEdit(size_t maxLen, bool console); // typed characters + backspace at the caret
     void drawCaret(float x, float y, float ts, bool mono, const std::string& before);

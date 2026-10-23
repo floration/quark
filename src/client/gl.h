@@ -89,6 +89,7 @@ typedef struct __GLsync* GLsync;
 #define GL_RGBA8 0x8058
 #define GL_DEPTH24_STENCIL8 0x88F0
 #define GL_MAX_SAMPLES 0x8D57
+#define GL_MAX_TEXTURE_SIZE 0x0D33
 #define GL_MULTISAMPLE 0x809D
 #define GL_NONE 0
 #define GL_UNPACK_ALIGNMENT 0x0CF5
