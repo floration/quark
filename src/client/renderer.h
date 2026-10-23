@@ -41,6 +41,12 @@ public:
     void unloadWorld(const Vec3& sunDir) { worldVerts_ = 0; sunDir_ = sunDir; } // editor: draw only dynamic boxes
 
     void setCamera(const Vec3& eye, float yaw, float pitch, float hfovDeg);
+    // Late latch: a newer aim just before drawScene (the world and players are in world space, so only the view moves).
+    // The view model was already built for the old aim: drawScene carries it over (it never lags the world).
+    void relatch(float yaw, float pitch);
+    // Extra culling margin while the aim may still move before drawing (relatch): a sphere counts as on screen this
+    // many radians (roughly) outside the frustum, so nothing at the edge pops in a frame late on a flick.
+    float cullPad = 0;
     const Vec3& cameraPos() const { return camPos_; }
     float cameraYaw() const { return camYaw_; }
     float cameraPitch() const { return camPitch_; }
@@ -151,6 +157,7 @@ private:
     float casterRect_[4] = {0, 0, 1, 1}; // shadow-map rect covered by dynamic casters (this frame)
 
     Vec3 camPos_, sunDir_ = {0, 1, 0};
-    float camYaw_ = 0, camPitch_ = 0;
+    float camYaw_ = 0, camPitch_ = 0, camFov_ = 90;
+    Mat4 viewFix_;   // (relatch: the old view to the new one, for the view model built for the old)
     Mat4 view_m_, proj_, viewProj_;
 };

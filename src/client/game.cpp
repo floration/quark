@@ -1526,6 +1526,8 @@ void Game::drawWorld(float alpha) {
     bool alive = net_.selfAlive();
     // demo playback: through the recorder's eyes (their recorded view, interpolated like everyone else)
     const bool demoView = net_.playback() && me >= 0 && me < kMaxPlayers && players[me].valid;
+    const bool lateLatch = alive && !demoView && mouseCaptured_;   // (your own view: the aim is re-read before drawing)
+    r_.cullPad = lateLatch ? 0.06f : 0.0f;   // (~3.5 degrees: what a fast flick turns in the time until then)
     if (demoView) { yaw_ = players[me].snap.yaw; pitch_ = players[me].snap.pitch; }
 
     // ULTRA low latency: read the mouse again just before the camera is set (the frame's network, ticks and the work
@@ -2009,6 +2011,11 @@ void Game::drawWorld(float alpha) {
         }
     }
     sceneSettings();
+    // Late latch: the newest mouse motion, read just before the world is drawn (everything above, world, players and
+    // effects, was built in world space: only the view turns). The command this frame sent keeps its aim; the next
+    // carries this. What was projected onto the screen above (name tags, health bars) is off by this sliver of a turn.
+    if (lateLatch) { readMouse(); r_.relatch(yaw_, pitch_); }
+    pipeMark(PM_LATCH);
     pipeMark(PM_SCENE0);
     pipeGpuBegin();
     r_.drawScene(cfg_.shadows);
@@ -4718,10 +4725,11 @@ void Game::drawPipeline(float x, float y, float ts) {
     auto us = [](double sec) { return std::to_string((long long)std::llround(sec * 1e6)); };
     // before the game reads it: the mouse's report (half its interval on average), then the wait for the next poll
     const double queue = frame * 0.5, mouse = 0.5 / mouseRate;
+    const double latch = a[PM_LATCH] > 0 ? a[PM_LATCH] : 0.0;   // (the aim is fixed at the late latch, when there's one)
     char mb[64];
     snprintf(mb, sizeof mb, "MOUSE %s %.0f HZ (AVG)", mouseKnown ? "POLLS AT" : "ASSUMED", mouseRate);
-    rows.push_back({mb, -queue - mouse, -queue, cIn});
-    rows.push_back({"WAITING FOR THE NEXT READ (AVG)", -queue, 0, cWait});
+    rows.push_back({mb, latch - queue - mouse, latch - queue, cIn});
+    rows.push_back({latch > 0 ? "WAITING FOR THE LATE READ (AVG)" : "WAITING FOR THE NEXT READ (AVG)", latch - queue, latch, cWait});
     auto span = [&](const char* name, int m0, int m1, Color c) { if (a[m1] - a[m0] > 0) rows.push_back({name, a[m0], a[m1], c}); };
     if (maxFps() > 0) span("FRAME CAP WAIT", PM_FRAME, PM_CAP, cWait);
     if (cfg_.lowLatency == 1) span("GPU WAIT (LOW LATENCY ON)", PM_CAP, PM_FENCE, cWait);
@@ -4744,7 +4752,9 @@ void Game::drawPipeline(float x, float y, float ts) {
     if (windowed && vsync) { rows.push_back({"COMPOSITED FRAME SHOWN (EST)", t, t + refresh, cEst}); t += refresh; }
     rows.push_back({"SCANOUT TO THE CROSSHAIR (EST)", t, t + refresh * 0.5, cEst});
     t += refresh * 0.5;
-    const double t0 = rows.front().t0, total = t - t0;
+    const double total = t - rows.front().t0;   // (from the mouse to the photon)
+    double t0 = rows.front().t0;                  // (the graph's left edge: work before the mouse bar too, e.g. pacing)
+    for (const Row& r : rows) t0 = std::min(t0, r.t0);
     // the graph: a label and the time on the left, the bar on its own line on the right (a waterfall)
     const float lh = r_.textHeight(ts) + 4, labelW = r_.textWidth("SCANOUT TO THE CROSSHAIR (EST)  000000 US", ts) + 12;
     const float barW = std::max(200.0f, std::min(700.0f * ts, (float)r_.width() - x - labelW - 24));
@@ -4756,7 +4766,7 @@ void Game::drawPipeline(float x, float y, float ts) {
              cfg_.displayMode == 2 ? "FULLSCREEN" : cfg_.displayMode == 1 ? "BORDERLESS" : "WINDOWED", vsync ? "VSYNC" : "NO VSYNC");
     r_.text(x + 6, yy, ts, head, {1, 1, 0.4f, 1});
     yy += lh;
-    const double scale = total > 0 ? barW / total : 0;
+    const double scale = t - t0 > 0 ? barW / (t - t0) : 0;
     for (const Row& r : rows) {
         r_.text(x + 6, yy, ts, r.name, r.c);
         std::string v = us(r.t1 - r.t0) + " US";

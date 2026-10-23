@@ -440,7 +440,7 @@ private:
 public:
     // F3 pipeline graph: when each part of a frame starts and ends (the main loop and frame() mark them), GPU timestamps
     // around the frame's GL work, averaged twice a second and drawn as a waterfall from the mouse to the photons.
-    enum PipeMark { PM_FRAME, PM_CAP, PM_FENCE, PM_NET, PM_POLL, PM_TICKS, PM_SCENE0, PM_SCENE1, PM_HUD, PM_SWAP0, PM_SWAP1, PM_AFTER, PM_COUNT };
+    enum PipeMark { PM_FRAME, PM_CAP, PM_FENCE, PM_NET, PM_POLL, PM_TICKS, PM_SCENE0, PM_SCENE1, PM_HUD, PM_SWAP0, PM_SWAP1, PM_AFTER, PM_LATCH, PM_COUNT };
     void pipeMark(int m);
 private:
     double pipeNow_[PM_COUNT] = {};

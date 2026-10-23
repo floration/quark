@@ -534,8 +534,18 @@ void Renderer::warmup(const Map& map) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
+void Renderer::relatch(float yaw, float pitch) {
+    const Vec3 p = camPos_;
+    const float y0 = camYaw_, p0 = camPitch_;
+    setCamera(p, yaw, pitch, camFov_);
+    // the view model's vertices were placed with translate(p) * rotY(y0) * rotX(p0): undo that, redo it with the new aim
+    viewFix_ = Mat4::translate(p) * Mat4::rotY(yaw) * Mat4::rotX(pitch) * Mat4::rotX(-p0) * Mat4::rotY(-y0) * Mat4::translate(p * -1.0f);
+}
+
 void Renderer::setCamera(const Vec3& eye, float yaw, float pitch, float hfovDeg) {
     camPos_ = eye;
+    camFov_ = hfovDeg;
+    viewFix_ = Mat4();
     camYaw_ = yaw;
     camPitch_ = pitch;
     float aspect = width_ / (float)std::max(1, height_);
@@ -617,6 +627,7 @@ void Renderer::emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& 
 
 // Is a sphere (center, radius) at least partly inside the view frustum?
 bool Renderer::inView(const Vec3& c, float r) const {
+    if (cullPad > 0) r += cullPad * length(c - camPos_);
     for (int i = 0; i < 6; i++) if (frustum_[i][0] * c.x + frustum_[i][1] * c.y + frustum_[i][2] * c.z + frustum_[i][3] < -r * frustum_[i][4]) return false;
     return true;
 }
@@ -903,10 +914,10 @@ void Renderer::drawScene(bool shadows) {
         glDepthMask(GL_TRUE);
     }
 
-    auto drawDyn = [&](size_t first, size_t count, bool receive) {
+    auto drawDyn = [&](size_t first, size_t count, bool receive, const Mat4& vp) {
         if (!count && !staticOn_) return;
         glUseProgram(dynProg_);
-        setMat(dynProg_, "uViewProj", viewProj_);
+        setMat(dynProg_, "uViewProj", vp);
         setMat(dynProg_, "uShadowMat", shadowMat);
         glUniform1i(U(dynProg_, "uShadow"), 1);
         glUniform1i(U(dynProg_, "uShadowOn"), useShadows ? 1 : 0);
@@ -923,7 +934,7 @@ void Renderer::drawScene(bool shadows) {
         glBindVertexArray(dynVao_);
         if (count) glDrawArrays(GL_TRIANGLES, (GLint)first, (GLsizei)count);
     };
-    { QZONE("dynamic pass"); drawDyn(nShadow, nDyn + nNoCast, true); }   // (lit and shadowed; the no-cast ones cast none)
+    { QZONE("dynamic pass"); drawDyn(nShadow, nDyn + nNoCast, true, viewProj_); }   // (lit and shadowed; the no-cast ones cast none)
     if (staticOn_) {   // the static batch (the editor's map): drawDyn above set the program up; the boxes in view, one multi-draw
         QZONE("static boxes pass");
         staticOn_ = false;
@@ -957,7 +968,7 @@ void Renderer::drawScene(bool shadows) {
 
     if (nView) {
         glClear(GL_DEPTH_BUFFER_BIT);
-        drawDyn(nShadow + nDyn + nNoCast, nView, false);
+        drawDyn(nShadow + nDyn + nNoCast, nView, false, viewProj_ * viewFix_);   // (viewFix_: built for the aim before relatch)
     }
     if (msaaActive_ >= 2) { // resolve the multisampled scene into the window; the UI draws on top un-multisampled
         glBindFramebuffer(GL_READ_FRAMEBUFFER, msaaFbo_);
