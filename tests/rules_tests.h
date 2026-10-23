@@ -327,46 +327,68 @@ static void testHeadBox(uint16_t port) {
     s.stop();
 }
 
-// 5.6: hide and seek. Everyone seeks once (rounds = players, not clamp(players, 3, 6) in slot order), and a hider
-// and the seeker split the points by how long the hider stayed hidden (no +2 just for surviving).
+// 5.6 / B8: hide and seek. Everyone seeks once (rounds = players), a hider unfound when the round ends scores 1,
+// the seeker 1 per hider found, a found hider 0, and a fall 0 for the hider and nothing for the seeker.
 static void testHideScoring(uint16_t port) {
-    printf("hide and seek: everyone seeks once, points by time hidden\n");
+    printf("hide and seek: everyone seeks once, 1 per find, 1 for staying hidden\n");
     Server s;
     ServerConfig cfg;
     cfg.map = "hamlet"; cfg.mode = MODE_HIDE; cfg.port = port;
-    NetClient c[2];
+    NetClient c[3];
     std::vector<NetClient*> cls;
-    if (!rulesStart(s, cfg, c, 2, cls, false)) { s.stop(); return; }
+    if (!rulesStart(s, cfg, c, 3, cls, false)) { s.stop(); return; }
     s.command("forcestart");
     pump(s, cls, 0.2, idle);
     auto itNow = [&] { for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].it) return i; return -1; };
-    int first = itNow();
-    CHECK(first >= 0);
-    if (first < 0) { s.stop(); return; }
-    int other = c[0].clientId() == first ? c[1].clientId() : c[0].clientId();
-    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // freeze over
-    CHECK(s.ms_.phase == PHASE_LIVE);
-    s.liveSince_ = s.time() - kHideRoundTime * 0.25;      // found a quarter of the way in: 1 of 4 to the hider, 3 to the seeker
-    s.players_[first].itFreezeUntil = 0;
-    for (int k = 0; k < 8 && s.players_[other].alive; k++) {
-        s.players_[first].move.pos = {0, 0, 6}; s.players_[first].move.vel = {};
-        s.players_[other].move.pos = {0, 0, 5}; s.players_[other].move.vel = {};
-        pump(s, cls, 0.05, [&](int i) { UserCmd u; u.yaw = 0; u.pitch = -0.3f; if (cls[i]->clientId() == first) u.buttons = BTN_FIRE; return u; });
-    }
-    pump(s, cls, 0.1, idle);
-    printf("  round 1: %s found at 1/4 -> seeker %d, hider %d\n", s.players_[other].name.c_str(), s.players_[first].score, s.players_[other].score);
-    CHECK(s.ms_.phase == PHASE_ROUND_END && s.players_[first].score == 3 && s.players_[other].score == 1);
-    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // round 2: the other player seeks
-    CHECK(s.ms_.round == 2 && itNow() == other);
+    auto score = [&](int i) { return s.players_[i].score; };
+    auto stab = [&](int from, int to) {            // stand 1 m apart, the seeker facing the hider
+        for (int k = 0; k < 40 && s.players_[to].alive; k++) {
+            s.players_[from].move.pos = {0, 0, 6}; s.players_[from].move.vel = {};
+            s.players_[to].move.pos = {0, 0, 5}; s.players_[to].move.vel = {};
+            pump(s, cls, 0.05, [&](int i) { UserCmd u; u.yaw = 0; u.pitch = -0.3f; if (cls[i]->clientId() == from) u.buttons = BTN_FIRE; return u; });
+        }
+    };
+    auto goLive = [&] { s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle); CHECK(s.ms_.phase == PHASE_LIVE); };
+    int seekers[3] = {-1, -1, -1};
+    // round 1: the seeker finds one hider, the other falls off the map
+    seekers[0] = itNow();
+    CHECK(seekers[0] >= 0);
+    if (seekers[0] < 0) { s.stop(); return; }
+    int h[2], n = 0;
+    for (auto* cl : cls) if (cl->clientId() != seekers[0]) h[n++] = cl->clientId();
+    goLive();
+    stab(seekers[0], h[0]);
+    CHECK(!s.players_[h[0]].alive && s.players_[h[0]].found);
+    s.players_[h[1]].move.pos.y = s.map_.killY() - 5;   // a fall
+    pump(s, cls, 0.2, idle);
+    printf("  round 1: seeker %d, found %d, fell %d\n", score(seekers[0]), score(h[0]), score(h[1]));
+    CHECK(s.ms_.phase == PHASE_ROUND_END && score(seekers[0]) == 1 && score(h[0]) == 0 && score(h[1]) == 0);
+    // round 2: nobody found, time runs out: both hiders +1, the seeker nothing
     s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
-    CHECK(s.ms_.phase == PHASE_LIVE);
-    s.liveSince_ = s.time() - kHideRoundTime;           // hidden the whole round: all 4
-    s.phaseEnd_ = s.time();
-    pump(s, cls, 0.1, idle);
-    printf("  round 2: hidden to the end -> %d, seeker %d\n", s.players_[first].score, s.players_[other].score);
-    CHECK(s.ms_.phase == PHASE_ROUND_END && s.players_[first].score == 7 && s.players_[other].score == 1);
-    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // two players, two rounds: over (it used to be 3, one seeking twice)
-    CHECK(s.ms_.phase == PHASE_MATCH_END && s.ms_.round == 2);
+    seekers[1] = itNow();
+    CHECK(s.ms_.round == 2 && seekers[1] >= 0 && seekers[1] != seekers[0]);
+    goLive();
+    int before[kMaxPlayers];
+    for (int i = 0; i < kMaxPlayers; i++) before[i] = score(i);
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+    for (auto* cl : cls) {
+        int i = cl->clientId();
+        CHECK(score(i) - before[i] == (i == seekers[1] ? 0 : 1));
+    }
+    CHECK(s.ms_.phase == PHASE_ROUND_END);
+    // round 3: the last player seeks and finds both: +2
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+    seekers[2] = itNow();
+    CHECK(s.ms_.round == 3 && seekers[2] >= 0 && seekers[2] != seekers[0] && seekers[2] != seekers[1]);
+    goLive();
+    for (int i = 0; i < kMaxPlayers; i++) before[i] = score(i);
+    for (auto* cl : cls) if (cl->clientId() != seekers[2]) { s.players_[seekers[2]].itFreezeUntil = 0; stab(seekers[2], cl->clientId()); }
+    pump(s, cls, 0.2, idle);
+    CHECK(s.ms_.phase == PHASE_ROUND_END && score(seekers[2]) - before[seekers[2]] == 2);
+    for (auto* cl : cls) if (cl->clientId() != seekers[2]) CHECK(score(cl->clientId()) == before[cl->clientId()]);
+    printf("  totals: %d %d %d\n", score(seekers[0]), score(seekers[1]), score(seekers[2]));
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // three players, three rounds: over
+    CHECK(s.ms_.phase == PHASE_MATCH_END && s.ms_.round == 3);
     s.stop();
 }
 

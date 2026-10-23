@@ -159,15 +159,10 @@ int bestScorer(const Server& s) {
 int hidersYetToSeek(const Server& s) { int n = 0; for (int i = 0; i < kMaxPlayers; i++) n += inPlay(s, i) && !s.players_[i].sought; return n; }
 int hideRounds(const Server& s) { return s.ms_.round + hidersYetToSeek(s); }
 
-// Hide and seek scoring: each hider and the seeker split kHidePoints by how long the hider stayed hidden (from the
-// round going live): found at a quarter of the round, the hider gets a quarter and the seeker the rest; hidden to the
-// end, the hider gets them all. Falls give the seeker nothing. So nobody scores for just being there, and every
-// player plays the same rounds (one seeking, the rest hiding).
-constexpr int kHidePoints = 4;
-int hiderShare(const Server& s) {
-    double f = std::min(1.0, std::max(0.0, (s.time() - s.liveSince_) / kHideRoundTime));
-    return (int)std::lround(kHidePoints * f);
-}
+// Hide and seek scoring (owner B8): a hider still unfound when the round ends scores 1; the seeker scores 1 for
+// each hider found (rulesOnDeath); a found hider scores nothing, and neither does a fall (nor the seeker for it).
+// Every player plays the same rounds (one seeking, the rest hiding).
+void payUnfound(Server& s) { for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i) && !s.players_[i].it && s.players_[i].alive) s.players_[i].score += 1; }
 
 void tickHide(Server& s) {
     ModeState& m = s.ms_;
@@ -179,8 +174,7 @@ void tickHide(Server& s) {
         else if (s.players_[i].alive) hiding++;
         else found += s.players_[i].found;
     }
-    auto payHidden = [&] { for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i) && !s.players_[i].it && s.players_[i].alive) s.players_[i].score += hiderShare(s); };
-    if (seeker < 0) { payHidden(); endRoundText(s, "the seeker left"); return; }   // (hidden so far: their share so far)
+    if (seeker < 0) { payUnfound(s); endRoundText(s, "the seeker left"); return; }   // (still unfound when the round ends)
     if (hiding == 0) {                            // nobody left hiding (each find was scored as it happened)
         endRoundText(s, found > 0 ? s.players_[seeker].name + " found everyone" : "no hiders left");
         return;
@@ -189,7 +183,7 @@ void tickHide(Server& s) {
         std::string who;
         for (int i = 0; i < kMaxPlayers; i++)
             if (inPlay(s, i) && !s.players_[i].it && s.players_[i].alive) who += (who.empty() ? "" : ", ") + s.players_[i].name;
-        payHidden();   // (the whole round: all kHidePoints)
+        payUnfound(s);
         endRoundText(s, "the hiders win - " + who + " stayed hidden");
     }
 }
@@ -1060,11 +1054,8 @@ void rulesOnDeath(Server& s, int victim, int killer) {
         s.bombDroppedAt_ = s.time();
     }
     if (m.actionPlayer == victim) { m.actionPlayer = 255; m.actionProgress = 0; }
-    if (m.mode == MODE_HIDE && m.phase == PHASE_LIVE && !s.players_[victim].it) {   // a hider is out: split the points by time hidden
-        int share = hiderShare(s);
-        s.players_[victim].score += share;
-        if (killer >= 0 && s.players_[killer].it && s.players_[victim].found) s.players_[killer].score += kHidePoints - share;
-    }
+    if (m.mode == MODE_HIDE && m.phase == PHASE_LIVE && !s.players_[victim].it)   // a hider is out: found scores the seeker 1, a fall nothing
+        if (killer >= 0 && s.players_[killer].it && s.players_[victim].found) s.players_[killer].score += 1;
     if (m.mode == MODE_FFA && m.phase == PHASE_LIVE && (m.flags & MS_OVERTIME) && killer >= 0 && killer != victim)
         finishFFA(s);
 }

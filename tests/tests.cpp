@@ -2313,7 +2313,7 @@ static void testItModes(uint16_t port) {
             s.players_[it].itFreezeUntil = 0;
             stab(it, h2);
             pump(s, cls, 0.2, idle);
-            CHECK(s.ms_.phase == PHASE_ROUND_END && s.players_[it].score >= 3);
+            CHECK(s.ms_.phase == PHASE_ROUND_END && s.players_[it].score == 2);
         } else {
             CHECK(s.players_[h1].it && !s.players_[it].it && s.players_[h1].alive);   // tagged: "it" moved on
             CHECK(rulesFrozen(s, h1));                 // the new "it" waits a moment

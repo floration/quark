@@ -3618,7 +3618,7 @@ static const char* const kInfoPages[][48] = {
         "# EVERYONE FOR THEMSELVES",
         "FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).",
         "RACE - the course's checkpoints in order. It starts as untimed practice; vote start (F4) to race. TIME TRIAL (main menu) is the ranked race on Viaduct.",
-        "HIDE AND SEEK - one seeker with a knife, everyone else hides first. Seekers take turns.",
+        "HIDE AND SEEK - one seeker with a knife, everyone else hides first. Everyone seeks once: 1 point for each hider you find, 1 for staying hidden to the end of a round.",
         "TAG - whoever is the TAGGER when the timer runs out is eliminated. Last one standing wins.",
         "# CUSTOM MODES",
         "Host Game > CUSTOM MODE > NEW: any base mode with your own health, gravity, speed, jump, knockback, weapons (fire rate, damage, projectile speed) and map pool. Players who join get the rules automatically.",
