@@ -3162,8 +3162,7 @@ static void testReconnectGrace(uint16_t port) {
     pump(s, cls, 1.0, idle);
     int ib = b.clientId(), teamB = s.players_[ib].team;
     s.players_[ib].kills = 7;
-    uint64_t tok = b.reconnectToken();
-    CHECK(tok != 0 && tok == s.players_[ib].reconnectToken);
+    CHECK(s.players_[ib].reconnectToken != 0);   // (given in PKT_ACCEPT: what the reconnect below shows)
     b.disconnect();
     pump(s, cls, 0.3, idle);
     CHECK(s.away(ib) && s.humanCount() == 2);
@@ -3263,7 +3262,7 @@ static void testHelloRetry() {
     {
         RankService rs;
         rs.hello(k);
-        // (the retry comes 10 s of game time later; real time here: a loaded CI box can be slow to start curl)
+        // (the retry comes 10 s later, real time: RankService delays are real seconds; a loaded CI box can be slow to start curl)
         auto end = std::chrono::steady_clock::now() + std::chrono::seconds(90);
         while (std::chrono::steady_clock::now() < end && !rs.helloDone()) sleepMs(20);
         if (!rs.helloDone() || requests != 2) printf("  hello: done %d after %d requests\n", (int)rs.helloDone(), requests.load());
@@ -4565,6 +4564,7 @@ static void testReachProbe(uint16_t port) {
 }
 
 #include "rules_tests.h"   // game rule tests (owner answers 5.x, REVIEW batch 2)
+#include "server_tests.h"  // server / netcode tests (FINAL_REVIEW 2.8-2.11, 6.4, 6.5, clock, PERF-8 / 9, ENG-2)
 
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
@@ -4655,6 +4655,14 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = TP(29800); testArenaAndTourney(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "bots") { uint16_t p = TP(28900); testBots(p); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "server") { serverTests(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "snapbench") {   // PERF-8 / PERF-9: snapshot + visibility CPU per send
+        double secs = argc > 2 ? atof(argv[2]) : 8;
+        snapBench("midtown", 32, secs, TP(28820));
+        snapBench("midtown", 8, secs, TP(28821));
+        snapBench("harbor", 16, secs, TP(28822));
+        return 0;
+    }
     if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testFixedSpread(p + 50); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); return g_fail ? 1 : 0; }
     // ---- the whole suite. Most tests wait on real-time network play rather than the CPU, so each runs in its own
@@ -4684,6 +4692,7 @@ int main(int argc, char** argv) {
         {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
         {"rules", [] { testGameRules(""); }},
         {"assets", [] { g_fail += assetTests(); }},
+        {"server", [] { serverTests(); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
         {"netcode", [] { testInterpRewind(TP(28703)); testUptimeClock(TP(28702)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},

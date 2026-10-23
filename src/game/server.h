@@ -9,7 +9,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
-#include <thread>
+#include <condition_variable>
 #include <string>
 #include <thread>
 #include <vector>
@@ -25,6 +25,13 @@
 // Every game: a player whose connection drops keeps their slot, team, score and state this long (seconds) and gets
 // them back by reconnecting (matched by their proven ranked id, else by the token from PKT_ACCEPT).
 constexpr double kReconnectGrace = 10.0;
+
+// Per-player (and connect) token buckets: each starts full, at its burst.
+constexpr int kMaxQueuedCmds = 12;                          // input commands queued per player at most
+constexpr float kCatchUpMax = (float)kMaxQueuedCmds;        // backlog catch-up allowance (see server.cpp kDeepQueue)
+constexpr float kChatBurst = 5, kChatPerSecond = 1;         // say: a burst of 5, then one a second (REVIEW NET-7)
+constexpr float kMapReqBurst = 64, kMapReqPerSec = 400;     // PKT_MAP_REQUEST chunks (a download asks ~128/s)
+constexpr float kVerifyBurst = 50, kVerifyPerSec = 50;      // connect signature checks (each ~0.1 ms of CPU)
 
 // Tests running on a sped-up clock turn off the warmup tick-rate check (it would see "late" ticks).
 extern bool g_serverRateCheck;
@@ -96,7 +103,7 @@ struct ServerPlayer {
     std::string awayReason;
     bool dropPending = false;   // over the unacked-event cap: dropped in frame(), not inside whatever was sending (REVIEW 2.1)
     double voteAt = 0;           // no new vote from this player before then (after one of theirs failed)
-    float mapTokens = 64;       // PKT_MAP_REQUEST rate limit (token bucket)
+    float mapTokens = kMapReqBurst; // PKT_MAP_REQUEST rate limit (token bucket)
     double mapTokensAt = 0;
     int team = TEAM_A;
     bool alive = false;
@@ -136,17 +143,17 @@ struct ServerPlayer {
     double itFreezeUntil = 0;    // tag: just got tagged, stands still until then
     uint32_t lastCmdSeq = 0;
     uint16_t keys = 0;          // KEY_* from the last command
-    float chatTokens = 5;       // say: a burst of 5, then one a second (REVIEW NET-7)
+    float chatTokens = kChatBurst; // say: a burst, then one a second (REVIEW NET-7)
     double chatAt = 0;
     uint32_t strTick = 0;       // string commands handled this tick (a budget: the rest wait, the client resends them)
     int strCount = 0, edCount = 0;
     std::deque<UserCmd> cmdQueue;
     float cmdTokensMs = 16.0f;
     int deepTicks = 0;          // ticks in a row the command queue has held a backlog (see kDeepQueue)
-    float catchUp = 12;         // extra commands it may run to clear a backlog (kCatchUpMax; refills very slowly)
+    float catchUp = kCatchUpMax; // extra commands it may run to clear a backlog (refills very slowly)
     uint32_t cmdsRun = 0;       // commands simulated (nobody gets more than real time: see the tests)
     uint8_t reportedLoss = 0;   // % of snapshots the client says it missed
-    uint32_t lastViewTick = 0;
+    uint64_t lastViewTick = 0;   // the server ms its last command was looking at (unwrapped, see fromWireMs)
     uint16_t interpMs = 0;        // the fixed interpolation delay the client reported ("interp"; 0 = adaptive)
     double lastRecv = 0;
     float ping = 0;
@@ -158,11 +165,14 @@ struct ServerPlayer {
     // Delta snapshots: what we sent this client recently (ring by tick) and the newest one it confirmed.
     static constexpr int kSentRing = 256;
     std::vector<Snapshot> sent;
-    uint32_t ackSnapMs = 0;
-    // Visibility (anti-wallhack + bandwidth): when this client last had a line of sight to each player.
+    uint64_t ackSnapMs = 0;
+    // Visibility (anti-wallhack + bandwidth): when this client last had a line of sight to each player, and when
+    // each line is next checked (0: at once).
     double lastSeen[kMaxPlayers] = {};
+    double visDue[kMaxPlayers] = {};
     // lag compensation history
-    struct Hist { uint32_t tick; Vec3 pos; bool crouched; bool alive; };
+    struct Hist { uint64_t tick; Vec3 pos; bool crouched; bool alive; };   // tick: timeMs_ when recorded (kNoHistory: none)
+    static constexpr uint64_t kNoHistory = ~0ull;
     static constexpr int kHistory = 1024; // >= 1 s at any tick rate
     Hist history[kHistory];
 };
@@ -196,9 +206,15 @@ public:
     void command(const std::string& line, int fromPlayer = -1); // console / admin commands
 
     void setLog(LogFn fn) { log_ = std::move(fn); }
+    // stop() never waits on the network (FINAL_REVIEW 2.10: leaving a hosted game froze the menu up to ~15 s): what
+    // still has HTTP in flight (UPnP removal, the list's /remove, rating lookups) finishes on a detached thread.
+    // A process about to exit can give those a moment: true if all finished within `seconds`.
+    static bool waitBackground(double seconds);
+    static int backgroundJobs();
     // The in-process host's client (its session nonce): the only admin (REVIEW NET-8). Thread safe.
     void setHostNonce(uint32_t n) { hostNonce_ = n; }
     void handlePacket(const NetAddr& from, const uint8_t* data, int len); // (public: tests feed it spoofed sources)
+    void receivePacket(const NetAddr& from, const uint8_t* data, int len); // handlePacket inside an exception boundary (ENG-2)
     float voteCooldown_ = 5.0f; // seconds a player waits to call another vote after theirs failed (tests set 0)
     uint16_t port() const { return sock_.localPort(); }
     int playerCount() const;
@@ -219,7 +235,14 @@ public:
     ServerConfig cfg_;
     Map map_;
     uint32_t tick_ = 0;
-    uint32_t timeMs_ = 0;       // server clock (advances 1000/rate ms per tick)
+    // Server clock: advances 1000/rate ms per tick. 64-bit: it never wraps (32 bits did after 49.7 days of uptime).
+    // On the wire (snapshot time, acks, view ticks) it stays 32 bits; each side unwraps what it gets to the value
+    // nearest its own clock (fromWireMs here, NetClient::onSnapshot there), so the protocol is unchanged.
+    uint64_t timeMs_ = 0;
+    uint64_t fromWireMs(uint32_t w) const {
+        int64_t t = (int64_t)timeMs_ + (int32_t)(w - (uint32_t)timeMs_);
+        return t < 0 ? 0 : (uint64_t)t;
+    }
     int rateLevel_ = 0;         // index into kTickRates
     int rateTopLevel_ = 0;      // the highest rate allowed (maxTickRate)
     double rateUpAt_ = 0;       // after stepping down: when to try the next rate up again (backs off each time it fails)
@@ -240,8 +263,10 @@ public:
     int lastIt_ = -1;
     // tag: who has been eliminated this match ({rank id, name}): someone who leaves and comes back is still out
     std::vector<std::pair<std::string, std::string>> tagOut_;
-    std::vector<float>* tickTimes_ = nullptr;
-    Snapshot snapScratch_;                     // reused every send (no per-tick allocations)
+    std::vector<float>* tickTimes_ = nullptr;  // benchmarks: every tick's simulate + send time goes here
+    // Snapshot building reuses these and each client's delta-base ring (ServerPlayer::sent): the per-client snapshot
+    // is built in the ring slot it's remembered in, so a send copies the shared lists once and allocates nothing
+    // once the ring's vectors have grown (PERF-8).
     std::vector<PlayerSnap> snapPlayers_;
     std::vector<ProjectileSnap> snapProj_;
     int snapEvery() const {
@@ -250,9 +275,9 @@ public:
         else if (cfg_.maxPlayers > 16) rate = std::min(rate, 333);
         // round up (500 Hz at a 333 cap -> every 2nd tick, not every tick), but 1000 / 333 = 3.003 stays 3
         return std::max(1, (int)std::ceil((float)tickRate() / std::max(1, rate) - 0.02f));
-    } // benchmarks: every tick's simulate + send time goes here
+    }
     int hideRounds_ = 0;        // hide and seek: rounds so far planned (everyone in play seeks once: grows if someone joins)
-    uint32_t nextJoinId_ = 1;           // hide and seek: the last seeker (everyone takes a turn)
+    uint32_t nextJoinId_ = 1;   // ServerPlayer::joinId of the next connection (a newcomer in a reused slot isn't its old owner)
     float drainAccum_ = 0;
     uint32_t duelUsed_ = 0;      // duel: modifiers already played this match (bit per modifier), never repeated
     // payload/race per-round bookkeeping
@@ -303,7 +328,7 @@ public:
     bool hitHead_[kMaxPlayers][kMaxPlayers] = {};   // the batched hit is a headshot (EV_HIT text "h": a red number)
     bool hitPending_ = false;
     void flushHit(int attacker, int victim);
-    void bounceShot(int id, Vec3 o, Vec3 dir, float range, uint32_t vt, float* dmgPer, float dmg);
+    void bounceShot(int id, Vec3 o, Vec3 dir, float range, uint64_t vt, float* dmgPer, float dmg);
     // Map edit sessions: everyone flies around and edits the map together; edits go through here so all
     // copies stay identical. The map file is autosaved (it's the host's copy) while dirty.
     bool editing_ = false, editDirty_ = false;
@@ -378,13 +403,32 @@ public:
     double localIpsAt_ = -1e9;
     void handleMasterReply(const std::string& key, const std::string& reply);
     bool applyEdit(int from, const std::string& op);
+    // Saves the edited map now, on this thread (stop, "editmode saveas / off": they need the answer), after any
+    // background save still running. The periodic autosave runs in the background instead (startAutosave).
     bool autosave();
+    // Edit-session autosave off the tick thread: the tick only copies the map into a buffer kept warm between saves
+    // (~0.03 ms on Midtown); serializing (~10 ms) and the parse check (~2.5 ms) run on a detached thread, and the
+    // tick picks up the result (and the text, for map downloads, if nothing was edited meanwhile).
+    struct AutosaveJob {
+        std::mutex mu;
+        std::condition_variable cv;
+        bool running = false, finished = false, ok = false, backedUp = false;
+        Map map;                // the map as it was when the save started (its vectors keep their capacity)
+        std::string path, text, err;
+        uint32_t crc = 0;
+    };
+    std::shared_ptr<AutosaveJob> autosaveJob_ = std::make_shared<AutosaveJob>();
+    void startAutosave();
+    void pollAutosave();        // a finished background save: its result
+    void waitAutosave();        // until no background save is running
+    bool autosaveRunning() { std::lock_guard<std::mutex> l(autosaveJob_->mu); return autosaveJob_->running; }
     // map edits: this tick's time spent on them, and whether some player is too far behind on reliable events
     uint32_t editTick_ = 0;
     double editSpentMs_ = 0;
     bool editBacklogged() const;
     void handleStringCmdForTest(int id, const std::string& s) { handleStringCmd(id, s); }
     bool fireWeaponForTest(int id, const UserCmd& c) { return fireWeapon(id, c); }
+    void sendSnapshotsForTest() { sendSnapshots(); }   // (benchmarks: tests/server_tests.h snapbench)
     void glog(int level, const char* fmt, ...);   // game log file (no-op below cfg_.logLevel)
     float bodyScale() const { return duelModDef(duelMod()).size; } // duel "double size": hull, hitbox and eye height (MOVE_BIG / MOVE_TINY)
     int duelMod() const { return ms_.mode == MODE_DUEL ? ms_.duelMod : 255; } // 255 in warmup (rulesReset clears it)
@@ -413,9 +457,10 @@ private:
     std::atomic<bool> reachAgain_{false};
     std::mutex reachMu_;
     std::string reachDetail_;
-    std::thread reachThread_;                 // picks a prober from the internet list (blocking HTTP)
-    std::atomic<bool> reachPicked_{false};
-    NetAddr reachProber_;
+    // Picking a prober from the internet list (blocking HTTP) runs on a detached thread that writes only this
+    // shared state, so stop() never waits for it (FINAL_REVIEW 2.10).
+    struct ProberPick { std::mutex mu; NetAddr prober; std::atomic<bool> picked{false}; };
+    std::shared_ptr<ProberPick> reachPick_;
     UdpSocket probeSock_;                     // separate ephemeral socket: no NAT mapping toward the prober for the game port
     uint32_t probeNonce_ = 0;
     double probeSentAt_ = 0, probeNextAt_ = 0;
@@ -423,7 +468,7 @@ private:
     double probeStartedAt_ = 0;
     bool upnpWasDone_ = false;
     void tickReachability();
-    void pickProber();
+    void startProberPick();
     void sendProbe(const NetAddr& prober);
     void setReach(Reach r, const std::string& detail);
     // prober side: per source IP rate limit (fixed table, no per-request allocation)
@@ -443,7 +488,7 @@ private:
     std::atomic<bool> mapInfoQuit_{false};
     static int64_t mapStamp(const std::string& name);
     static MapInfo readMapInfo(const std::string& name, int64_t stamp);
-    void handleConnect(const NetAddr& from, Reader& r);
+    void handleConnect(const NetAddr& from, Reader& r, int len);
     void handleInput(int id, Reader& r);
     void handleStringCmd(int id, const std::string& s);
     // Every drop of a live ranked participant counts as leaving the match (the first leaver loses), whatever the path:
@@ -453,7 +498,7 @@ private:
     void holdPlayer(int id, const std::string& reason);   // connection lost: keep the slot for kReconnectGrace
     bool restorePlayer(int id, const NetAddr& from, uint32_t nonce, const std::string& rankPub, const NetAddr& dialled = NetAddr{});
     void sendWelcome(int id);   // what a (re)joining client needs to know about everyone
-    float verifyTokens_ = 50;   // connect signature checks per second (each ~0.1 ms of CPU; a flood waits and retries)
+    float verifyTokens_ = kVerifyBurst; // connect signature checks (kVerifyPerSec; a flood waits and retries)
     double verifyAt_ = 0;
     void simulate();
     void drainCmds(int id);
@@ -464,17 +509,21 @@ private:
     bool fireWeapon(int id, const UserCmd& cmd);   // true if it hit a player (hitscan weapons)
     void tickProjectiles();
     void explode(const Vec3& at, int owner, int weapon, int direct = -1);   // direct: the player a rocket hit itself
-    void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint32_t viewMs, float* dmgPerPlayer, float dmg, float headDmg = 0, float grow = 0, bool pierce = false);
+    void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint64_t viewMs, float* dmgPerPlayer, float dmg, float headDmg = 0, float grow = 0, bool pierce = false);
     void sendSnapshots();
     void updateVisibility();
-    double nextVisCheck_ = 0;
+    uint32_t visCursor_ = 0;   // the viewer x target pair the next tick's checks start from (round robin)
+public:
+    uint64_t visRays_ = 0;     // lines of sight cast (tests, benchmarks)
+    void updateVisibilityForTest() { updateVisibility(); }
+private:
     void openGameLog();
     void logTick();
     int findPlayer(const NetAddr& a) const;
     std::string uniqueName(std::string name, int self) const;
 
     UdpSocket sock_;
-    std::vector<GameEvent> events_; // scratch for snapshot building
+    const GameEvent* eventPtrs_[16] = {}; // scratch for snapshot building: the events going out (in the player's queue)
     bool running_ = false;
     double nextTick_ = 0;
     double rateWindowStart_ = 0;

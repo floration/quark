@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cctype>
 #include "master.h"
+#include "../common/hex.h"
 #include <random>
 #include <fstream>
 #include <sstream>
@@ -81,13 +82,20 @@ void NetClient::disconnect() {
 }
 
 void NetClient::poll() {
-    if (play_.active) { pollPlayback(); return; }
+    if (play_.active) {   // (ENG-2: a demo that makes anything throw ends, with the reason; the game goes on)
+        try { pollPlayback(); }
+        catch (const std::exception& e) { error_ = std::string("demo stopped: ") + e.what(); play_ = Playback(); state_ = ConnState::Disconnected; }
+        return;
+    }
     if (state_ == ConnState::Disconnected) return;
     uint8_t buf[2048];
     NetAddr from;
     int n;
     while ((n = sock_.recv(from, buf, sizeof buf)) > 0)
-        if (from == server_) handlePacket(buf, n);
+        if (from == server_) {
+            try { handlePacket(buf, n); }   // (ENG-2: a packet that makes anything throw is dropped)
+            catch (const std::exception&) {}
+        }
     if (state_ == ConnState::Disconnected) return;
 
     double now = timeNow();
@@ -315,7 +323,10 @@ void NetClient::pumpDownload(double now) {
 }
 
 void NetClient::onSnapshot(Snapshot& s) {
-    if (!snaps_.empty() && s.tick <= snaps_.back().tick) return; // out of order / duplicate
+    // out of order / duplicate (serial arithmetic: the tick counter wraps after 2^32 ticks)
+    if (!snaps_.empty() && (int32_t)(s.tick - snaps_.back().tick) <= 0) return;
+    // the server clock is 32 bits on the wire: unwrap it next to the last one (never jumps back at 2^32 ms)
+    if (!snaps_.empty()) s.timeMs = snaps_.back().timeMs + (int64_t)(int32_t)((uint32_t)s.timeMs - (uint32_t)snaps_.back().timeMs);
     double now = timeNow();
     // Snapshot loss for the server's tick-rate test. Snapshots go out every `every` ticks (snapshot rate is
     // separate from the tick rate), so count the gap in snapshots, not ticks: counting ticks read as exactly
@@ -357,7 +368,7 @@ void NetClient::onSnapshot(Snapshot& s) {
         if (e.type == EV_RANKINFO && e.a < kMaxPlayers) rankIds_[e.a] = e.text;
         if (e.type == EV_RANKSIGN) {   // a ranked match went live (or a time trial started): vouch that we're in it (the server forwards it with the ticket)
             std::string sig;
-            bool hex16 = e.text.size() == 16 && e.text.find_first_not_of("0123456789abcdef") == std::string::npos;
+            bool hex16 = isLowerHex(e.text, 16);
             if (!play_.active && hex16 && rankSign(rankKey_, rankTicketMessage(e.text, server_.toString()), &sig)) sendCommand("ticketsig " + sig);
             continue;
         }
@@ -416,7 +427,7 @@ void NetClient::tick(UserCmd cmd) {
     if (play_.active || state_ != ConnState::Connected || !mapReady_) return;
     cmd.seq = nextSeq_++;
     cmd.msec = (uint8_t)(1000 / tickRate());
-    cmd.viewTick = (uint32_t)std::max(0.0, renderTime_ * 1000.0); // server ms we're looking at
+    cmd.viewTick = (uint32_t)(uint64_t)std::max(0.0, renderTime_ * 1000.0); // server ms we're looking at (its low 32 bits)
     // a fixed interpolation delay goes to the server, whose lag compensation then rewinds that far (FINAL_REVIEW 2.5)
     int interpMs = interpFixed_ >= 0 ? std::min((int)std::lround(interpFixed_ * 1000.0f), kMaxInterpMs) : 0;
     if (interpMs != interpSent_) { interpSent_ = interpMs; sendCommand("interp " + std::to_string(interpMs)); }
@@ -434,7 +445,7 @@ void NetClient::sendInput() {
     Writer w(buf, sizeof buf);
     writeHeader(w, PKT_INPUT);
     w.u32(nonce_);
-    w.u32(hasSnapshot() ? latest().timeMs : 0);
+    w.u32(hasSnapshot() ? (uint32_t)latest().timeMs : 0);
     w.u32(lastEventId_);
     w.u8(lossOverride_ >= 0 ? (uint8_t)lossOverride_ : lossPct_);
     uint32_t first = nextSeq_ > (uint32_t)kCmdsPerPacket ? nextSeq_ - kCmdsPerPacket : 1;
@@ -699,6 +710,16 @@ void NetClient::recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& 
 }
 
 bool NetClient::startPlayback(const std::string& path, std::string& err) {
+    try { return startPlaybackImpl(path, err); }
+    catch (const std::exception& e) {   // (ENG-2: a hostile or broken demo file is an error, never a crash)
+        err = std::string("can't play ") + path + ": " + e.what();
+        play_ = Playback();
+        state_ = ConnState::Disconnected;
+        return false;
+    }
+}
+
+bool NetClient::startPlaybackImpl(const std::string& path, std::string& err) {
     disconnect();
     std::ifstream f(path, std::ios::binary | std::ios::ate);
     if (f && (uint64_t)f.tellg() > kMaxDemoBytes) { err = "demo too big"; return false; }

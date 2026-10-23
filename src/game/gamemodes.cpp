@@ -196,16 +196,18 @@ void tickHide(Server& s) {
 
 bool tagMatchOn(const Server& s) { return s.ms_.mode == MODE_TAG && (s.ms_.phase == PHASE_FREEZE || s.ms_.phase == PHASE_LIVE || s.ms_.phase == PHASE_ROUND_END); }
 
-// Tag: out for the rest of the match, remembered by rank id and name (a reconnect doesn't clear it).
+// Tag: out for the rest of the match, a human remembered by rank id and name (a reconnect doesn't clear it). Bots
+// aren't: none ever comes back, and a new bot reusing an eliminated one's name isn't it (FINAL_REVIEW 6.5).
 void tagOut(Server& s, int id) {
     auto& p = s.players_[id];
     p.out = true;
     p.it = false;
     p.alive = false;
     p.respawnAt = -1;
-    s.tagOut_.push_back({p.rankId, p.name});
+    if (!p.isBot) s.tagOut_.push_back({p.rankId, p.name});
 }
 bool tagWasOut(const Server& s, const ServerPlayer& p) {
+    if (p.isBot) return false;
     for (auto& o : s.tagOut_) if ((!o.first.empty() && o.first == p.rankId) || o.second == p.name) return true;
     return false;
 }
@@ -979,7 +981,7 @@ void rulesTick(Server& s) {
     ModeState& m = s.ms_;
     m.weaponMask = s.weaponMask();
     updateCartSolid(s);
-    if (tagMatchOn(s))
+    if (tagMatchOn(s) && !s.tagOut_.empty())
         for (auto& p : s.players_)   // tag: back after being eliminated (reconnected): still out
             if (p.connected && !p.out && p.team != TEAM_SPECTATOR && tagWasOut(s, p)) { p.out = true; p.it = false; p.alive = false; p.respawnAt = -1; }
     switch (m.phase) {

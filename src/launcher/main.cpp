@@ -139,7 +139,13 @@ bool safeEntryName(const std::string& name) {
 // .qpak: "QPAK1\n", then per file: u32 nameLen, name, u32 mode, u64 size, bytes. Little endian.
 // Everything is extracted into `stage` (a fresh directory); the caller swaps it into place on success,
 // so a failed or interrupted install never leaves a half-updated game.
+static bool extractPakImpl(const std::string& pak, const fs::path& stage, std::string* err);
 bool extractPak(const std::string& pak, const fs::path& stage, std::string* err) {
+    try { return extractPakImpl(pak, stage, err); }
+    catch (const std::exception& e) { *err = std::string("corrupt archive (") + e.what() + ")"; return false; }   // (ENG-2: bad_alloc, a bad path)
+}
+
+static bool extractPakImpl(const std::string& pak, const fs::path& stage, std::string* err) {
     std::error_code ec;
     uint64_t remaining = fs::file_size(pak, ec);
     if (ec || remaining < 6) { *err = "corrupt download"; return false; }

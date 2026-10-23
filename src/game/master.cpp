@@ -1,7 +1,9 @@
 #include "master.h"
+#include <map>
 #include <cstdlib>
 #include <chrono>
 #include "../common/http.h"
+#include "../common/hex.h"
 #include "../common/sign.h"
 #include "../common/version.h"
 
@@ -40,7 +42,12 @@ bool signedMasterUrl(const std::string& body, const std::string& sigHex, const s
     return true;
 }
 
-std::string masterUrl() {
+static std::string masterUrlImpl();
+std::string masterUrl() {   // (ENG-2: anything throwing in the fetch or the check leaves the built-in address)
+    try { return masterUrlImpl(); } catch (const std::exception&) { return kPinnedMasterUrl; }
+}
+
+static std::string masterUrlImpl() {
     static std::mutex mu;
     static std::string cached = kPinnedMasterUrl;
     static bool fetched = false;
@@ -59,7 +66,13 @@ std::string masterUrl() {
     return cached;
 }
 
-bool fetchServerList(std::vector<std::string>& out, std::string* err) {
+static bool fetchServerListImpl(std::vector<std::string>& out, std::string* err);
+bool fetchServerList(std::vector<std::string>& out, std::string* err) {   // (ENG-2: a reply that throws is a failed fetch)
+    try { return fetchServerListImpl(out, err); }
+    catch (const std::exception& e) { out.clear(); if (err) *err = std::string("bad list reply: ") + e.what(); return false; }
+}
+
+static bool fetchServerListImpl(std::vector<std::string>& out, std::string* err) {
     out.clear();
     std::string base = masterUrl();
     if (base.empty()) { if (err) *err = "no internet server list configured"; return false; }
@@ -76,26 +89,42 @@ bool fetchServerList(std::vector<std::string>& out, std::string* err) {
     return true;
 }
 
+static std::string publicIpv4Impl();
 std::string publicIpv4() {
+    try { return publicIpv4Impl(); } catch (const std::exception&) { return ""; }
+}
+
+static std::string publicIpv4Impl() {
     if (const char* e = getenv("QUARK_PUBLIC_IP")) { std::string v = trim(e); return isIpv4(v) ? v : ""; }   // (tests: "off")
     std::string b;
     if (httpGetText(kIpv4Echo, b, 4000) && isIpv4(trim(b))) return trim(b);
     return "";
 }
 
+namespace {
+std::mutex g_genMu;   // the newest announcer per port (see MasterAnnouncer::stop)
+std::map<uint16_t, uint64_t> g_portGen;
+uint64_t g_nextGen = 1;
+}
+
 void MasterAnnouncer::start(uint16_t port, bool listed) {
     stop();
     port_ = port;
+    { std::lock_guard<std::mutex> l(g_genMu); generation_ = g_nextGen++; g_portGen[port] = generation_; }
     listed_ = listed;
     quit_ = false;
     haveToken_ = false;
     thread_ = std::thread([this] { run(); });
 }
 
-void MasterAnnouncer::stop() {
-    if (!thread_.joinable()) return;
+void MasterAnnouncer::requestStop() {
     { std::lock_guard<std::mutex> l(mu_); quit_ = true; }
     cv_.notify_all();
+}
+
+void MasterAnnouncer::stop() {
+    if (!thread_.joinable()) return;
+    requestStop();
     thread_.join();
 }
 
@@ -115,6 +144,14 @@ std::vector<std::pair<std::string, std::string>> MasterAnnouncer::takeReplies() 
 }
 
 void MasterAnnouncer::run() {
+    try { runLoop(); } catch (const std::exception& e) {   // (ENG-2: never takes the server down; it just stops announcing)
+        std::lock_guard<std::mutex> l(mu_);
+        status_ = std::string("internet list: stopped (") + e.what() + ")";
+        haveToken_ = true;   // (queued posts aren't waited for)
+    }
+}
+
+void MasterAnnouncer::runLoop() {
     std::string ip, base, token; // token: issued by the list on our first announce, proves we own ip:port
     auto nextAnnounce = std::chrono::steady_clock::now();
     for (;;) {
@@ -132,7 +169,7 @@ void MasterAnnouncer::run() {
                 st = !ok ? "internet list: " + err : listed_ ? "listed on the internet server list" : "registered with the ranking server (not listed)";
                 if (ok && body.rfind("ok ", 0) == 0) {
                     std::string t = trim(body.substr(3));
-                    if (t.size() == 32 && t.find_first_not_of("0123456789abcdef") == std::string::npos) token = t;
+                    if (isLowerHex(t, 32)) token = t;
                 }
             }
             std::lock_guard<std::mutex> l(mu_);
@@ -158,7 +195,9 @@ void MasterAnnouncer::run() {
         std::unique_lock<std::mutex> l(mu_);
         if (cv_.wait_until(l, nextAnnounce, [this] { return quit_ || (!posts_.empty() && haveToken_); }) && quit_) break;
     }
-    if (!base.empty() && listed_) { // leave the list right away instead of timing out
+    bool newest;   // (Server::stop() lets this finish on a detached thread: the server may be hosting again on this port)
+    { std::lock_guard<std::mutex> l(g_genMu); auto it = g_portGen.find(port_); newest = it != g_portGen.end() && it->second == generation_; }
+    if (!base.empty() && listed_ && newest) { // leave the list right away instead of timing out
         std::string body;
         httpPostForm(base + "/remove", "port=" + std::to_string(port_) + (ip.empty() ? "" : "&ip=" + ip) +
                      (token.empty() ? "" : "&token=" + token), body, 2000);

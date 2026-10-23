@@ -1,5 +1,6 @@
 #include "ranked.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -14,12 +15,8 @@
 #include "official_maps.h"
 #include "gamedefs.h"
 #include "../common/version.h"
+#include "../common/hex.h"
 
-static bool isHex(const std::string& s, size_t n) {
-    if (s.size() != n) return false;
-    for (char c : s) if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
-    return true;
-}
 
 bool isOfficialMapName(const std::string& name) {
     for (const OfficialMap* o = kOfficialMaps; o->name; o++) if (name == o->name) return true;
@@ -40,11 +37,11 @@ bool isRankedMap(const Map& m, int ladder) { return ladder >= 0 && ladder < 16 &
 
 std::string legacyRankId(const std::string& secret) { return sha256Hex(secret).substr(0, 32); }
 std::string rankSeedHex(const std::string& secret) { return sha256Hex("quark-rank-ed25519-v1:" + secret); }
-std::string rankIdFromPublic(const std::string& pub) { return isHex(pub, 64) ? sha256Hex(pub).substr(0, 32) : std::string(); }
+std::string rankIdFromPublic(const std::string& pub) { return isLowerHex(pub, 64) ? sha256Hex(pub).substr(0, 32) : std::string(); }
 
 RankKey rankKeyFromSecret(const std::string& secret) {
     RankKey k;
-    if (!isHex(secret, 64) || !sign::publicFromPrivate(rankSeedHex(secret), &k.pub)) return RankKey();
+    if (!isLowerHex(secret, 64) || !sign::publicFromPrivate(rankSeedHex(secret), &k.pub)) return RankKey();
     k.secret = secret;
     k.id = rankIdFromPublic(k.pub);
     return k;
@@ -63,7 +60,7 @@ bool rankSign(const RankKey& key, const std::string& msg, std::string* sigHex) {
     return !key.secret.empty() && sign::signMessage(msg, rankSeedHex(key.secret), sigHex);
 }
 bool rankVerify(const std::string& pub, const std::string& msg, const std::string& sig) {
-    return isHex(pub, 64) && isHex(sig, 128) && sign::verifyMessage(msg, sig, pub);
+    return isLowerHex(pub, 64) && isLowerHex(sig, 128) && sign::verifyMessage(msg, sig, pub);
 }
 
 std::vector<int> seededBracket(const std::vector<int>& bestFirst) {
@@ -86,7 +83,7 @@ RankKey loadOrCreateRankKey(const std::string& path) {
     {
         std::ifstream f(path);
         std::string s;
-        if (f >> s && isHex(s, 64)) secret = s;
+        if (f >> s && isLowerHex(s, 64)) secret = s;
     }
     if (secret.empty()) {
         std::random_device rd;
@@ -156,7 +153,7 @@ bool parseRankedText(const std::string& text, std::string& match, std::string& m
                      std::vector<int>* leftOut = nullptr) {
     std::istringstream in(text);
     std::string list, extra, more;
-    if (!(in >> match >> mode >> list) || !isHex(match, 16)) return false;
+    if (!(in >> match >> mode >> list) || !isLowerHex(match, 16)) return false;
     for (char c : mode) if (!isalnum((unsigned char)c)) return false;
     std::istringstream ls(list);
     std::string part;
@@ -194,7 +191,7 @@ std::string rankedResultIds(const std::string& text, const std::vector<std::stri
     std::string p;
     std::vector<std::string> players;
     for (auto& e : es) {
-        if (e.slot >= (int)ids.size() || !isHex(ids[e.slot], 32)) return "";
+        if (e.slot >= (int)ids.size() || !isLowerHex(ids[e.slot], 32)) return "";
         players.push_back(ids[e.slot]);
         p += (p.empty() ? "" : ",") + ids[e.slot] + ":" + std::to_string(e.team) + ":" + std::to_string(e.place);
     }
@@ -305,7 +302,7 @@ bool raceSplitsPlausible(const std::vector<int>& splits, const std::vector<int>&
 
 std::string buildRaceRunForm(const std::string& ticket, const std::string& map, const std::string& rankId, int ms,
                              const std::vector<int>& splits, const std::string& name) {
-    if (!isHex(ticket, 16) || !isHex(rankId, 32) || splits.empty() || splits.back() != ms || map.empty()) return "";
+    if (!isLowerHex(ticket, 16) || !isLowerHex(rankId, 32) || splits.empty() || splits.back() != ms || map.empty()) return "";
     for (char c : map) if (!isalnum((unsigned char)c) && c != '_') return "";
     std::string sp;
     for (int x : splits) sp += (sp.empty() ? "" : ",") + std::to_string(x);
@@ -314,7 +311,13 @@ std::string buildRaceRunForm(const std::string& ticket, const std::string& map, 
            (nh.empty() ? "" : "&name=" + nh);
 }
 
-void RankService::fetchRaceBoard(const std::string& map, double delay) { Job j{timeNow() + delay, false, "", "race:" + map, {}}; j.board = true; push(j); }
+// RankService schedules on real time (the steady clock), not the game clock: its delays (the re-fetches after a
+// report, hello's retry backoff, a delayed race board) are waits on the network and the Worker, and the thread sleeps
+// them on a condition variable, which is real time. On timeNow() a sped-up game clock (the tests run it 4x) made a
+// job due early whenever another job woke the thread, and late otherwise.
+static double rankClock() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+
+void RankService::fetchRaceBoard(const std::string& map, double delay) { Job j{rankClock() + delay, false, "", "race:" + map, {}}; j.board = true; push(j); }
 
 int Rating::display() const { return (int)std::lround(std::max(0.0, mu - 3 * sigma) * 40); }
 
@@ -334,14 +337,38 @@ void RankService::push(Job j) {
 }
 
 void RankService::submit(const std::string& body, const std::string& ladder, const std::vector<std::string>& players) {
-    double now = timeNow();
+    double now = rankClock();
     push({now, true, body, ladder, players});
     for (double d : {4.0, 15.0, 45.0}) push({now + d, false, "", ladder, players}); // others' reports may finish it later
 }
 
-void RankService::fetch(const std::string& ladder, const std::vector<std::string>& ids) { if (!ids.empty()) push({timeNow(), false, "", ladder, ids}); }
+// One pending lookup per ladder (FINAL_REVIEW 2.8): new ids join a lookup that's due and not started yet, each id
+// once, so players joining (or a flood of new keys) never queue more than one request per ladder behind the one
+// in flight. (Lookups scheduled for later, after a report, are left alone.)
+void RankService::fetch(const std::string& ladder, const std::vector<std::string>& ids) {
+    if (ids.empty()) return;
+    {
+        std::lock_guard<std::mutex> l(mu_);
+        double now = rankClock();
+        for (auto& j : jobs_) {
+            if (j.report || j.board || !j.rawKey.empty() || j.ladder != ladder || j.due > now) continue;
+            for (auto& id : ids)
+                if (std::find(j.ids.begin(), j.ids.end(), id) == j.ids.end()) j.ids.push_back(id);
+            if (j.ids.size() > kMaxLookupIds) j.ids.erase(j.ids.begin(), j.ids.end() - kMaxLookupIds);   // (the newest stay)
+            return;
+        }
+    }
+    std::vector<std::string> mine;
+    for (auto& id : ids) if (mine.size() < kMaxLookupIds && std::find(mine.begin(), mine.end(), id) == mine.end()) mine.push_back(id);
+    push({rankClock(), false, "", ladder, mine});
+}
 
-void RankService::fetchLeaderboard(const std::string& ladder) { Job j{timeNow(), false, "", ladder, {}}; j.board = true; push(j); }
+size_t RankService::pendingJobs() {
+    std::lock_guard<std::mutex> l(mu_);
+    return jobs_.size();
+}
+
+void RankService::fetchLeaderboard(const std::string& ladder) { Job j{rankClock(), false, "", ladder, {}}; j.board = true; push(j); }
 
 bool RankService::leaderboard(const std::string& ladder, std::vector<LeaderRow>& out) {
     std::lock_guard<std::mutex> l(mu_);
@@ -368,7 +395,7 @@ std::vector<std::string> RankService::takeMessages() {
 
 void RankService::request(const std::string& key, const std::string& pathAndQuery, const std::string& body) {
     Job j;
-    j.due = timeNow();
+    j.due = rankClock();
     j.report = false;
     j.rawKey = key;
     j.path = pathAndQuery;
@@ -379,7 +406,7 @@ void RankService::request(const std::string& key, const std::string& pathAndQuer
 void RankService::hello(const RankKey& key) {
     if (key.secret.empty() || key.id.empty()) return;
     Job j;
-    j.due = timeNow();
+    j.due = rankClock();
     j.report = false;
     j.rawKey = "hello";
     j.path = "/hello";
@@ -404,11 +431,13 @@ void RankService::run() {
     while (!quit_) {
         auto next = std::min_element(jobs_.begin(), jobs_.end(), [](const Job& a, const Job& b) { return a.due < b.due; });
         if (next == jobs_.end()) { cv_.wait(l); continue; }
-        double wait = next->due - timeNow();
+        double wait = next->due - rankClock();
         if (wait > 0) { cv_.wait_for(l, std::chrono::milliseconds((int)(wait * 1000) + 1)); continue; }
         Job j = *next;
         jobs_.erase(next);
         l.unlock();
+        // (ENG-2: a reply that makes anything throw - out of memory on a huge one - loses this job, never the game)
+        try {
         std::string base = masterUrl(), out, err, msg;
         if (!j.rawKey.empty()) {
             bool ok = !base.empty() && (j.body.empty() ? httpGetText(base + j.path, out, 6000, &err) : httpPostForm(base + j.path, j.body, out, 8000, &err));
@@ -416,7 +445,7 @@ void RankService::run() {
             if (!j.expect.empty()) {   // (hello: until it took)
                 while (!out.empty() && (unsigned char)out.back() <= ' ') out.pop_back();
                 if (ok && out == j.expect) helloDone_ = true;
-                else if (!base.empty()) { j.tries++; j.due = timeNow() + helloRetryDelay(j.tries); jobs_.push_back(j); }
+                else if (!base.empty()) { j.tries++; j.due = rankClock() + helloRetryDelay(j.tries); jobs_.push_back(j); }
                 continue;
             }
             texts_[j.rawKey] = ok ? out : "!" + (base.empty() ? std::string("no server configured") : err);
@@ -455,19 +484,24 @@ void RankService::run() {
                                                                       : (race ? "race time not sent: " : "ranked report failed: ") + err;
         } else {
             std::string ids;
-            for (auto& id : j.ids) if (isHex(id, 32)) ids += (ids.empty() ? "" : ",") + id;
+            for (auto& id : j.ids) if (isLowerHex(id, 32)) ids += (ids.empty() ? "" : ",") + id;
             bool okLadder = !j.ladder.empty();
             for (char c : j.ladder) okLadder &= (bool)isalnum((unsigned char)c);
             if (okLadder && !ids.empty() && httpGetText(base + "/ratings?ladder=" + j.ladder + "&ids=" + ids, out, 5000, &err)) {
                 std::istringstream in(out);
                 std::string id;
                 Rating r;
-                while (in >> id >> r.mu >> r.sigma >> r.games) if (isHex(id, 32)) got[j.ladder + ":" + id] = r;
+                while (in >> id >> r.mu >> r.sigma >> r.games) if (isLowerHex(id, 32)) got[j.ladder + ":" + id] = r;
             }
         }
         l.lock();
         if (gotBoard) boards_[j.ladder] = board;
         for (auto& g : got) ratings_[g.first] = g.second;
         if (!msg.empty()) messages_.push_back(msg);
+        } catch (const std::exception& e) {
+            if (!l.owns_lock()) l.lock();
+            if (!j.rawKey.empty() && j.expect.empty()) texts_[j.rawKey] = std::string("!") + e.what();
+            else messages_.push_back(std::string("ranked: bad reply from the ranking server (") + e.what() + ")");
+        }
     }
 }

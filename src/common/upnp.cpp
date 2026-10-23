@@ -1,4 +1,5 @@
 #include "upnp.h"
+#include <map>
 #include "net.h"
 #include <chrono>
 #include <cstring>
@@ -130,19 +131,36 @@ void PortMapper::setStatus(const std::string& s) { std::lock_guard<std::mutex> l
 std::string PortMapper::status() { std::lock_guard<std::mutex> l(mu_); return status_; }
 std::string PortMapper::externalIp() { std::lock_guard<std::mutex> l(mu_); return extIp_; }
 
+namespace {
+// The newest start() per port: Server::stop() lets a PortMapper finish (remove its mapping) on a detached thread, so a
+// new one on the same port may already have mapped it; the old one then leaves the mapping alone.
+std::mutex g_genMu;
+std::map<uint16_t, uint64_t> g_portGen;
+uint64_t g_nextGen = 1;
+}
+
 void PortMapper::start(uint16_t port) {
     stop();
     port_ = port;
+    { std::lock_guard<std::mutex> l(g_genMu); generation_ = g_nextGen++; g_portGen[port] = generation_; }
     done_ = false;
     ok_ = false;
     quit_ = false;
     setStatus("searching for router (UPnP)...");
-    thread_ = std::thread([this] { worker(); });
+    thread_ = std::thread([this] {
+        try { worker(); } catch (const std::exception& e) {   // (ENG-2: a router's reply that throws: no mapping, no crash)
+            setStatus(std::string("UPnP: failed (") + e.what() + ") - forward UDP port " + std::to_string(port_) + " manually");
+            done_ = true;
+        }
+    });
 }
 
 void PortMapper::stop() {
     quit_ = true;
     if (thread_.joinable()) thread_.join();
+    bool newest;
+    { std::lock_guard<std::mutex> l(g_genMu); auto it = g_portGen.find(port_); newest = it != g_portGen.end() && it->second == generation_; }
+    if (mapped_ && !newest) mapped_ = false;   // (a newer mapper owns the forward now)
     if (mapped_) {
         std::string args = "<NewRemoteHost></NewRemoteHost><NewExternalPort>" + std::to_string(port_) +
                            "</NewExternalPort><NewProtocol>UDP</NewProtocol>";

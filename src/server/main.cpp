@@ -140,6 +140,7 @@ int main(int argc, char** argv) {
     }
     bool restart = server.restartRequested();
     server.stop();
+    Server::waitBackground(5.0);   // (the list's /remove: leave it now rather than time out)
     netShutdown();
     if (restart) printf("exiting to restart into the updated version\n");
     return 0;

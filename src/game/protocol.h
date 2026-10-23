@@ -11,10 +11,11 @@
 
 enum PacketType : uint8_t {
     // client -> server
-    PKT_CONNECT = 1,     // u16 version, u32 nonce, u32 cookie (0 = none yet, from PKT_CHALLENGE), str name,
-                         // [u32 token lo, u32 token hi (reconnect, 0 = none), str rank public key hex, str signature hex
-                         //  of rankConnectMessage(cookie, nonce, dialled) (both empty = no ranked id), u32 ip + u16 port: the
-                         //  server address the client dialled (what it signed; the server takes it only if it's its own)]
+    PKT_CONNECT = 1,     // u16 version, u32 nonce, u32 cookie (0 = none yet, from PKT_CHALLENGE), str name; then, once the
+                         // cookie is set (the first CONNECT only asks for it): u32 token lo, u32 token hi (reconnect, 0 =
+                         // none), str rank public key hex, str signature hex of rankConnectMessage(cookie, nonce, dialled)
+                         // (both empty = no ranked id), u32 ip + u16 port: the server address the client dialled (what it
+                         // signed; the server takes it only if it's its own)
     PKT_INPUT,           // u32 nonce, u32 ackTimeMs, u32 ackEvent, u8 lossPct, u8 ncmds, cmds..., u8 nStr [u16 firstSeq, nStr x str]
     PKT_DISCONNECT,      // u32 nonce
     PKT_INFO_REQUEST,    // padded with zeros to kInfoRequestBytes (no reply bigger than the request)
@@ -33,6 +34,7 @@ enum PacketType : uint8_t {
 
 constexpr int kInfoRequestBytes = 160;      // PKT_INFO_REQUEST size; the reply is trimmed to fit (no amplification)
 constexpr int kInfoNameMax = 96, kInfoMapMax = 40; // 5 + 97 + 41 + 5 <= kInfoRequestBytes
+constexpr int kRejectHeaderBytes = 5;       // PKT_REJECT before its reason (u32 magic, u8 type)
 constexpr int kProbeRequestBytes = 32;      // PKT_PROBE_REQUEST size (the 9 byte reply is smaller: no amplification)
 constexpr int kMapChunk = 1200;              // map file bytes per PKT_MAP_DATA
 constexpr uint32_t kMaxMapBytes = 8u << 20;  // refuse to download anything bigger
@@ -140,7 +142,7 @@ inline int scoreboardValue(const PlayerSnap& p, const ModeState& ms) {
 }
 struct Snapshot {
     uint32_t tick = 0;        // server tick counter (one snapshot per tick; gaps = loss)
-    uint32_t timeMs = 0;      // server clock in ms
+    uint64_t timeMs = 0;      // server clock in ms (32 bits on the wire: the receiver unwraps it, see Server::timeMs_)
     uint16_t tickRate = 1000; // current server tick rate (Hz)
     uint16_t snapRate = 1000; // snapshots per second this client gets (interpolation buffers 2 of them)
     uint32_t ackCmdSeq = 0;
@@ -163,6 +165,7 @@ struct Snapshot {
 void writeSnapshotClient(Writer& w, const Snapshot& s);
 void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base); // also records into s what the client will have (delta base)
 void writeSnapshotEvents(Writer& w, const std::vector<GameEvent>& events);
+void writeSnapshotEvents(Writer& w, const GameEvent* const* events, int n);   // (the server: no copies of the texts)
 bool readSnapshotClient(Reader& r, Snapshot& s);              // header: tells which base the world part needs
 bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base);
 bool readSnapshotEvents(Reader& r, Snapshot& s);
