@@ -64,7 +64,11 @@ struct BotBrain {
     double fleeUntil = 0;       // hide and seek / tag: committed to the current escape route until then
     double hookUntil = 0, nextHookTry = 0; // grapple: holding toward hookAnchor until then
     Vec3 hookAnchor;
+    bool hookChecked = false;   // the grapple's catch was checked again (safeHook) from where it caught
     double nextDecision = 0;    // fight movement choices (jump, dash) are rolled at a fixed game-time rate
+    bool nearEdge = false;      // a drop into the void / lava within 3 m (looked for at 20 Hz)
+    bool edgeFar = false;       // ...or only within 5 m
+    Vec3 edgeAway;              // ...and the way away from it (xz, unit)
     // navigation: the route is kept, so reaching a waypoint costs no search
     std::vector<int> path;      // surfaces still to walk across, in order
     int pathPrev = -1;          // the surface the route continues from

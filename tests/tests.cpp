@@ -4389,45 +4389,130 @@ static void serverBench(uint16_t port, int bots, int humans, double seconds, con
     s.stop();
 }
 
-// Bots play every map in the mode it's built for; prints kills / deaths (deaths beyond kills = falls and
-// self-kills) and the objective state, to spot layouts where nothing happens or bots keep falling.
+// A bots-only match on a map: what killed whom. Falls are deaths to the void or lava (pushed = hit in the 2 s
+// before), self = own rockets / stickies, mode = the mode's own kills (bomb, drain). trace: prints the last
+// second of every fall (positions, speed, buttons, grapple) and every self-kill's weapon.
+struct BotMatch { int kills = 0, deaths = 0, falls = 0, pushed = 0, self = 0, modeKills = 0; std::string state; };
+static bool playBots(const std::string& name, int mode, int skill, uint16_t& port, double seconds, bool trace, BotMatch& r) {
+    Server s;
+    ServerConfig cfg;
+    std::string logPath = (std::filesystem::temp_directory_path() / ("quark_playtest_" + std::to_string(getpid()) + ".log")).string();
+    cfg.map = name; cfg.mode = mode; cfg.port = port++; cfg.autoStart = true;
+    cfg.logLevel = LOG_SIMPLE; cfg.logFile = logPath;   // (every death, with its cause)
+    s.setLog([](const std::string&) {});
+    bool started = false;
+    for (int k = 0; k < 20 && !started; k++) { started = s.start(cfg); if (!started) cfg.port = port++; } // (port taken: the next)
+    if (!started) return false;
+    bool duo = mode == MODE_ARENA || mode == MODE_DUEL || mode == MODE_TOURNEY;
+    int n = duo ? 1 : mode == MODE_RACE ? 3 : 4;
+    for (int i = 0; i < n; i++) { s.addBot(TEAM_A, skill); if (mode != MODE_RACE) s.addBot(TEAM_B, skill); }
+    std::vector<NetClient*> none;
+    pump(s, none, 1.0, idle);
+    s.command("forcestart");
+    // where each fall began: the last place the bot stood before it died over the void / in lava
+    Vec3 ground[kMaxPlayers]; bool was[kMaxPlayers] = {};
+    double end = timeNow() + seconds;
+    struct Sample { double t; Vec3 pos, vel; uint16_t buttons; uint8_t flags; bool dash; Vec3 hook; };
+    std::vector<Sample> hist[kMaxPlayers];   // (trace: the last second of each bot, printed for a fall)
+    double nextPos = 0;
+    while (timeNow() < end) {
+        pump(s, none, trace ? 0.01 : 0.02, idle);
+        if (getenv("PT_POS") && s.time() >= nextPos) {   // (where everyone is, every second)
+            nextPos = s.time() + 1.0;
+            printf("    t %.0f:", s.time());
+            for (auto& p : s.players_) if (p.connected) printf("  %.1f %.1f %.1f%s", p.move.pos.x, p.move.pos.y, p.move.pos.z, p.alive ? "" : " dead");
+            printf("\n");
+        }
+        for (int i = 0; i < kMaxPlayers; i++) {
+            auto& p = s.players_[i];
+            if (!p.connected) continue;
+            if (was[i] && !p.alive && (p.move.pos.y < s.map_.killY() || (!s.map_.lava.empty() && s.map_.inLava(playerBox(p.move))))) {
+                bool hit = s.time() - p.lastDamagedAt < 2.0;
+                r.pushed += hit;
+                if (trace) {
+                    printf("    %s fell from %.1f %.1f %.1f%s\n", p.name.c_str(), ground[i].x, ground[i].y, ground[i].z, hit ? " (pushed)" : "");
+                    for (auto& h : hist[i])
+                        printf("      %.2f pos %.1f %.1f %.1f vel %.1f %.1f %.1f%s%s%s%s%s\n", h.t - s.time(), h.pos.x, h.pos.y, h.pos.z, h.vel.x, h.vel.y, h.vel.z,
+                               (h.flags & MF_ONGROUND) ? " ground" : "", (h.buttons & BTN_JUMP) ? " JUMP" : "", (h.buttons & BTN_DASH) ? " DASH" : "",
+                               h.dash ? " dashing" : "", (h.flags & MF_HOOKED) ? " hooked" : (h.buttons & BTN_GRAPPLE) ? " GRAPPLE" : "");
+                    for (int j = (int)hist[i].size() - 1; j >= 0; j--) if (hist[i][j].flags & MF_HOOKED) {   // the last grapple: from where to where
+                        int k = j; while (k > 0 && (hist[i][k - 1].flags & MF_HOOKED)) k--;
+                        printf("      last hook from %.1f %.1f %.1f to %.1f %.1f %.1f, let go at %.1f %.1f %.1f\n", hist[i][k].pos.x, hist[i][k].pos.y, hist[i][k].pos.z,
+                               hist[i][j].hook.x, hist[i][j].hook.y, hist[i][j].hook.z, hist[i][j].pos.x, hist[i][j].pos.y, hist[i][j].pos.z);
+                        break;
+                    }
+                }
+            }
+            was[i] = p.alive;
+            if (p.alive && (p.move.flags & MF_ONGROUND)) ground[i] = p.move.pos;
+            if (trace) {
+                if (!p.alive) { hist[i].clear(); continue; }
+                hist[i].push_back({s.time(), p.move.pos, p.move.vel, p.buttons, (uint8_t)p.move.flags, p.move.dashTimer > 0, p.move.hookPoint});
+                if (hist[i].size() > 300) hist[i].erase(hist[i].begin());
+            }
+        }
+    }
+    for (auto& p : s.players_) if (p.connected) { r.kills += p.kills; r.deaths += p.deaths; }
+    char st[160];
+    int cp = 0; for (auto& p : s.players_) if (p.connected) cp = std::max(cp, (int)p.checkpoint);
+    int out = 0; for (auto& p : s.players_) out += p.connected && p.out;
+    snprintf(st, sizeof st, "score %d-%d  payload %.0f/%.0f  cp %d  round %d  out %d", s.ms_.scoreA, s.ms_.scoreB, s.ms_.payloadDist, s.ms_.payloadLen, cp, s.ms_.round, out);
+    r.state = st;
+    s.stop();
+    std::ifstream lf(logPath);
+    for (std::string line; std::getline(lf, line);) {
+        size_t k = line.find(" kill killer=");
+        if (k == std::string::npos) continue;
+        int killer = atoi(line.c_str() + k + 13);
+        size_t v = line.find(" victim=", k), w = line.rfind(" weapon=");
+        if (v == std::string::npos || w == std::string::npos) continue;
+        int victim = atoi(line.c_str() + v + 8), weapon = atoi(line.c_str() + w + 8);
+        if (weapon == 252) r.falls++;
+        else if (killer == victim) { r.self++; if (trace) printf("    self-kill: %s\n", weapon >= 0 && weapon < WPN_COUNT ? weaponDef(weapon).name : "?"); }
+        else if (killer < 0) r.modeKills++;
+    }
+    lf.close();
+    std::filesystem::remove(logPath);
+    return true;
+}
+
+// Bots play every map in the mode it's built for, at advanced and at expert level (PT_SKILL=advanced|expert for
+// one), and print what killed them (playBots), plus the objective state, to spot layouts where nothing happens or
+// bots keep falling. PT_MAP / PT_MODE pick one map / mode; PT_TRACE prints how each fall happened.
 static void playtestMaps(uint16_t port, double seconds) {
+    std::vector<int> skills = {BOT_ADVANCED, BOT_EXPERT};
+    if (const char* k = getenv("PT_SKILL")) skills = {std::string(k) == "expert" ? BOT_EXPERT : std::string(k) == "intermediate" ? BOT_INTERMEDIATE : BOT_ADVANCED};
+    int totalFalls = 0, totalSelf = 0;
     for (auto& name : listMaps()) {
         if (getenv("PT_MAP") && name != getenv("PT_MAP")) continue;
         Map m;
         if (!m.load(name)) continue;
         int mode = m.preferredMode >= 0 ? m.preferredMode : MODE_FFA;
         if (getenv("PT_MODE")) mode = modeFromName(getenv("PT_MODE"));
-        Server s;
-        ServerConfig cfg;
-        cfg.map = name; cfg.mode = mode; cfg.port = port++; cfg.autoStart = true;
-        s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { printf("  %s: start failed\n", name.c_str()); continue; }
-        bool duo = mode == MODE_ARENA || mode == MODE_DUEL || mode == MODE_TOURNEY;
-        int n = duo ? 1 : mode == MODE_RACE ? 3 : 4;
-        for (int i = 0; i < n; i++) { s.addBot(TEAM_A, BOT_ADVANCED); if (mode != MODE_RACE) s.addBot(TEAM_B, BOT_ADVANCED); }
-        std::vector<NetClient*> none;
-        pump(s, none, 1.0, idle);
-        s.command("forcestart");
-        if (getenv("PT_TRACE")) {   // where do bots die?
-            Vec3 last[kMaxPlayers]; bool was[kMaxPlayers] = {};
-            double end = timeNow() + seconds;
-            while (timeNow() < end) {
-                pump(s, none, 0.05, idle);
-                for (int i = 0; i < kMaxPlayers; i++) {
-                    auto& p = s.players_[i];
-                    if (!p.connected) continue;
-                    if (was[i] && !p.alive) printf("    died at %.1f %.1f %.1f\n", last[i].x, last[i].y, last[i].z);
-                    was[i] = p.alive; if (p.alive) last[i] = p.move.pos;
-                }
-            }
-        } else pump(s, none, seconds, idle);
-        int kills = 0, deaths = 0;
-        for (auto& p : s.players_) if (p.connected) { kills += p.kills; deaths += p.deaths; }
-        if (isItMode(mode)) { int out = 0; for (auto& p : s.players_) out += p.connected && p.out; printf("  round %d phase %d, eliminated %d\n", s.ms_.round, s.ms_.phase, out); }
-        printf("  %-10s %-8s kills %3d  deaths %3d  (falls/self %d)  score %d-%d  payload %.0f/%.0f  cp %d\n", name.c_str(), modeName(mode), kills, deaths,
-               deaths - kills, s.ms_.scoreA, s.ms_.scoreB, s.ms_.payloadDist, s.ms_.payloadLen, [&] { int b = 0; for (auto& p : s.players_) if (p.connected) b = std::max(b, (int)p.checkpoint); return b; }());
-        s.stop();
+        for (int skill : skills) {
+            BotMatch r;
+            if (!playBots(name, mode, skill, port, seconds, getenv("PT_TRACE") != nullptr, r)) { printf("  %s: start failed\n", name.c_str()); continue; }
+            totalFalls += r.falls; totalSelf += r.self;
+            printf("  %-10s %-8s %-8s kills %3d  deaths %3d  falls %2d (pushed %d)  self %2d  mode %d  %s\n", name.c_str(), modeName(mode),
+                   skill == BOT_EXPERT ? "expert" : skill == BOT_ADVANCED ? "advanced" : "other", r.kills, r.deaths, r.falls, r.pushed, r.self, r.modeKills, r.state.c_str());
+            fflush(stdout);
+        }
+    }
+    printf("  total: falls %d, self-kills %d\n", totalFalls, totalSelf);
+}
+
+// Bots keep off the edges (they used to fall a lot here: grapple pulls over the moat, bunny hops and fight jumps
+// off the island, knockback at the rim): a minute and a half of experts on Dojo (a platform in a lava moat) and of
+// expert tag runners on Foundry (lava trenches), with a couple of falls allowed for blasts and laser pushes.
+static void testBotFalls(uint16_t port) {
+    printf("bots keep off the edges\n");
+    const std::pair<const char*, int> cases[] = {{"dojo", MODE_ARENA}, {"foundry", MODE_TAG}};
+    for (auto& [map, mode] : cases) {
+        BotMatch r;
+        bool ok = playBots(map, mode, BOT_EXPERT, port, 90, false, r);
+        CHECK(ok);
+        printf("  %s: %d falls (%d pushed), %d self-kills, %d deaths\n", map, r.falls, r.pushed, r.self, r.deaths);
+        CHECK(r.falls <= 2 && r.self <= 1);
     }
 }
 
@@ -4723,6 +4808,7 @@ int main(int argc, char** argv) {
         }
         return g_fail ? 1 : 0;
     }
+    if (argc >= 2 && std::string(argv[1]) == "falls") { testBotFalls(TP(29060)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testRankedRelay(TP(29630)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterReplies(TP(29629)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(TP(29600)); testEditSession(TP(29601)); testVotedEdit(TP(29602)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
@@ -4742,6 +4828,7 @@ int main(int argc, char** argv) {
     std::vector<T> par = {   // (longest first: they set the wall time)
         {"bots", [] { uint16_t p = TP(28900); testBots(p); }},
         {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotAim(p); }},
+        {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
         {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testTimeToKill(); testWallbang(); }},
