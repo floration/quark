@@ -41,6 +41,11 @@ void fakeLauncher(const fs::path& p, const std::string& version, bool pe = false
     if (!version.empty()) f << "QUARK-LAUNCHER-" << "VERSION:" << version << '\0';
     f << std::string(500, 'y');
 }
+// Signs a (fake) launcher the way the release job does: <file>.sig next to it, the Ed25519ph signature in hex.
+void signLauncher(const fs::path& p, const std::string& priv) {
+    std::string sig, err;
+    if (sign::signFile(p.string(), priv, &sig, &err)) std::ofstream(selfupdate::sigPath(p), std::ios::trunc) << sig << "\n";
+}
 std::vector<std::string> versions(const std::vector<releases::Release>& l) {
     std::vector<std::string> v;
     for (auto& r : l) v.push_back(r.version);
@@ -159,31 +164,38 @@ static void testUnsignedAndPins() {
     releases::Config follow, pinOld = releases::parseConfig("pin=1.16.0\n"), gone = releases::parseConfig("pin=1.2.3\n");
     // following the newest: the newest signed one installs (a newer one than installed only)
     releases::Plan p = releases::startupPlan(prod, follow, "1.16.0", true);
-    LCHECK(p.index == 0 && p.install && !p.confirm && !p.pinned);
+    LCHECK(p.index == 0 && p.install && !p.offer && !p.pinned);
     p = releases::startupPlan(prod, follow, "1.17.0", true);
-    LCHECK(p.index == 0 && !p.install && !p.confirm);
-    // 1.5: an old launcher.cfg pinned to an unsigned version keeps it - installed: nothing to do, the player plays it
+    LCHECK(p.index == 0 && !p.install && !p.offer);
+    // 1.5: an old launcher.cfg pinned to a pre-signing version keeps it - installed: nothing to do, the player plays it
     p = releases::startupPlan(prod, pinOld, "1.16.0", true);
-    LCHECK(p.index == 2 && p.pinned && !p.install && !p.confirm);
-    // ... and if something else is installed it is NOT auto-installed (nor silently moved to 1.17.0): confirm first
+    LCHECK(p.index == 2 && p.pinned && !p.install && !p.offer);
+    // ... a newer version installed: it is NOT installed over it by itself (nor silently moved to 1.17.0); the
+    // player's INSTALL does it (B6: no warning, no extra confirmation)
     p = releases::startupPlan(prod, pinOld, "1.17.0", true);
-    LCHECK(p.index == 2 && p.pinned && !p.install && p.confirm);
+    LCHECK(p.index == 2 && p.pinned && !p.install && p.offer);
+    // ... nothing or an older version installed: it installs like any pinned version
     p = releases::startupPlan(prod, pinOld, "", true);
-    LCHECK(p.index == 2 && !p.install && p.confirm);
+    LCHECK(p.index == 2 && p.install && !p.offer);
+    p = releases::startupPlan(prod, pinOld, "1.15.1", true);
+    LCHECK(p.index == 2 && p.install && !p.offer);
+    // which installs need a verified signature: everything from 1.17.0 on (an unsigned one claiming that is refused)
+    LCHECK(releases::needsSignature(prod[0]) && !releases::needsSignature(prod[1]) && !releases::needsSignature(prod[3]));
+    LCHECK(releases::needsSignature(rel("1.17.0", false)) && releases::needsSignature(rel("1.17.0-test.1", false)));
     // a pinned signed version installs whenever it differs (the player picked it)
     std::vector<Release> mixed = {rel("1.18.0", true), rel("1.17.0", true), rel("1.16.0", false)};
     p = releases::startupPlan(mixed, releases::parseConfig("pin=1.17.0"), "1.18.0", true);
-    LCHECK(p.index == 1 && p.pinned && p.install && !p.confirm);
+    LCHECK(p.index == 1 && p.pinned && p.install && !p.offer);
     // a pin that isn't listed: the newest, but only when the whole list was read
     p = releases::startupPlan(prod, gone, "1.16.0", true);
     LCHECK(p.index == 0 && !p.pinned && p.install);
     p = releases::startupPlan(prod, gone, "1.16.0", false);
-    LCHECK(!p.install && !p.confirm);
+    LCHECK(!p.install && !p.offer);
     // nothing signed at all (an old platform build only): listed, no LATEST, nothing automatic
     std::vector<Release> old = {rel("1.16.0", false), rel("1.15.0", false)};
     LCHECK(releases::latestIndex(old) == -1 && releases::selectIndex(old, follow) == 0);
     p = releases::startupPlan(old, follow, "", true);
-    LCHECK(p.index == 0 && !p.install && !p.confirm);
+    LCHECK(p.index == 0 && !p.install && !p.offer);
     LCHECK(releases::startupPlan({}, follow, "", true).index == -1);
     // LATEST skips an unsigned version newer than every signed one (that one can only be picked by hand)
     std::vector<Release> odd = {rel("1.16.9", false), rel("1.16.5", true)};
@@ -351,7 +363,7 @@ static void testManyPages() {
     LCHECK(test.size() == 370 && test[0].version == "1.18.0-test.370" && test.back().version == "1.18.0-test.1");
     // an old launcher.cfg pinned to 1.16.0 (on page 4) keeps it
     releases::Plan plan = releases::startupPlan(prod, releases::parseConfig("pin=1.16.0\n"), "1.16.0", complete);
-    LCHECK(plan.index == 2 && plan.pinned && !plan.install && !plan.confirm);
+    LCHECK(plan.index == 2 && plan.pinned && !plan.install && !plan.offer);
 
     // exactly 100 on the last full page: one more (empty) page ends it
     std::string even = fakePage(100, 100, {}, true);
@@ -472,6 +484,30 @@ static void testLauncherSwap() {
         fs::create_directories(app / "game");
         std::ofstream(app / "game" / "version.txt") << "1.17.0\n";
         fakeLauncher(app / "game" / "quark_launcher", "1.17.0"); // what the new package carries
+        std::string priv, pub, other, otherPub;
+        LCHECK(sign::keygen(&priv, &pub) && sign::keygen(&other, &otherPub));
+        { // B6: a packaged launcher that isn't signed (or not by the release key, or changed after signing) is never used
+            selfupdate::Report q = selfupdate::updateLaunchersFromGame(app / "game", nullptr, pub);
+            LCHECK(q.replaced == 0 && !q.installedFresh && !fs::exists(app / "quark_launcher"));
+            LCHECK(selfupdate::fileVersion(app / "quark-launcher-linux").empty());
+            signLauncher(app / "game" / "quark_launcher", other);
+            q = selfupdate::updateLaunchersFromGame(app / "game", nullptr, pub);
+            LCHECK(q.replaced == 0 && !q.installedFresh && !fs::exists(app / "quark_launcher"));
+            signLauncher(app / "game" / "quark_launcher", priv);
+            std::string sig, err;
+            LCHECK(selfupdate::launcherSigned(app / "game" / "quark_launcher", &sig, &err, pub) && sig.size() == 128);
+            std::ofstream(app / "game" / "quark_launcher", std::ios::app) << "tampered";
+            LCHECK(!selfupdate::launcherSigned(app / "game" / "quark_launcher", &sig, &err, pub));
+            q = selfupdate::updateLaunchersFromGame(app / "game", nullptr, pub);
+            LCHECK(q.replaced == 0 && !q.installedFresh && !fs::exists(app / "quark_launcher"));
+            // the check is on the copy that goes in place: a source that no longer matches its signature is refused
+            fakeLauncher(t / "unsig" / "quark_launcher", "1.17.1"); // (not the bytes `sig` is for)
+            selfupdate::SigCheck chk{sig, pub};
+            LCHECK(!selfupdate::replaceFile(t / "unsig" / "quark_launcher", t / "unsig" / "target", &err, nullptr, &chk));
+            LCHECK(!fs::exists(t / "unsig" / "target") && !fs::exists(selfupdate::swapPaths(t / "unsig" / "target").staged));
+            fakeLauncher(app / "game" / "quark_launcher", "1.17.0");
+            signLauncher(app / "game" / "quark_launcher", priv);
+        }
         fs::create_directories(home / ".local/share/applications");
         std::ofstream(home / ".local/share/applications/quark.desktop") << "[Desktop Entry]\nExec=\"" << (app / "quark-launcher-linux").string() << "\"\n";
         // a player file an old version kept in the game folder
@@ -479,11 +515,11 @@ static void testLauncherSwap() {
         { // the game quit before the thread got going: nothing touched, all of it next start
             selfupdate::ShutdownGate stopped;
             stopped.stop = true;
-            selfupdate::Report q = selfupdate::updateLaunchersFromGame(app / "game", &stopped);
+            selfupdate::Report q = selfupdate::updateLaunchersFromGame(app / "game", &stopped, pub);
             LCHECK(q.replaced == 0 && !q.installedFresh && selfupdate::fileVersion(app / "quark-launcher-linux").empty());
             LCHECK(!fs::exists(app / "quark_launcher") && !fs::exists(home / "Desktop/quark.desktop"));
         }
-        selfupdate::Report r = selfupdate::updateLaunchersFromGame(app / "game");
+        selfupdate::Report r = selfupdate::updateLaunchersFromGame(app / "game", nullptr, pub);
         LCHECK(r.replaced == 1 && r.installedFresh);
         LCHECK(selfupdate::fileVersion(app / "quark-launcher-linux") == "1.17.0"); // old name: replaced in place
         LCHECK(selfupdate::fileVersion(app / "quark_launcher") == "1.17.0");       // installed under the fixed name
@@ -491,11 +527,12 @@ static void testLauncherSwap() {
         LCHECK(menu.find("Exec=\"" + (app / "quark_launcher").string() + "\"") != std::string::npos);
         LCHECK(fs::exists(home / "Desktop/quark.desktop")); // a fresh install gets its desktop icon
         // second start: nothing left to do
-        r = selfupdate::updateLaunchersFromGame(app / "game");
+        r = selfupdate::updateLaunchersFromGame(app / "game", nullptr, pub);
         LCHECK(r.replaced == 0 && !r.installedFresh);
         // an older package (picked by hand) leaves the newer launcher alone
         fakeLauncher(app / "game" / "quark_launcher", "1.16.5");
-        r = selfupdate::updateLaunchersFromGame(app / "game");
+        signLauncher(app / "game" / "quark_launcher", priv);
+        r = selfupdate::updateLaunchersFromGame(app / "game", nullptr, pub);
         LCHECK(r.replaced == 0 && selfupdate::fileVersion(app / "quark_launcher") == "1.17.0");
         // 0.1.0: launcher and its game folder wherever the tarball was unpacked
         fs::path dl = home / "Downloads/quark-linux";
@@ -504,7 +541,8 @@ static void testLauncherSwap() {
         fs::create_directories(dl / "game");
         std::ofstream(dl / "game" / "version.txt") << "1.17.0\n";
         fakeLauncher(dl / "game" / "quark_launcher", "1.17.0");
-        r = selfupdate::updateLaunchersFromGame(dl / "game");
+        signLauncher(dl / "game" / "quark_launcher", priv);
+        r = selfupdate::updateLaunchersFromGame(dl / "game", nullptr, pub);
         LCHECK(r.replaced == 1 && selfupdate::fileVersion(dl / "quark_launcher") == "1.17.0");
         LCHECK(slurp(dl / "README.md") == "readme");
         // uninstall: shortcuts and install gone, the player's data kept (copied out of the game folder first)

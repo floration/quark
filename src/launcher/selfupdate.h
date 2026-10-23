@@ -10,6 +10,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include "../common/sign.h"
 
 namespace selfupdate {
 
@@ -24,6 +25,17 @@ bool isNewer(const std::string& packaged, const std::string& installed);
 
 // The launcher's file name inside a package and in the install folder.
 const char* exeName(); // quark_launcher.exe / quark_launcher
+
+// Every launcher from 1.17.0 on is signed (owner decision B6): the release job signs the launcher binary and adds the
+// signature to each package next to it (quark_launcher[.exe].sig), and publishes the standalone quark-launcher-*
+// downloads with a .sig of their own. A packaged launcher replaces another one (the launcher's self-update, the game's
+// launcher update) only when that signature verifies against the release key: the file at `launcher` + ".sig".
+std::filesystem::path sigPath(const std::filesystem::path& launcher);
+// Reads that signature. False (err = why) when it's missing or doesn't verify for `launcher` against `pubHex`.
+bool launcherSigned(const std::filesystem::path& launcher, std::string* sigHex, std::string* err,
+                    const std::string& pubHex = sign::kReleasePublicKey);
+// What replaceFile checks on its staged copy before putting it in place (the bytes it installs are the ones verified).
+struct SigCheck { std::string sigHex, pubHex; };
 
 // Every launcher copy in `dir` (not recursive): quark_launcher*, quark-launcher* (the release asset names old
 // launchers installed under, e.g. "quark-launcher-windows (1).exe"), executables only, never *.old / *.new.
@@ -45,8 +57,9 @@ struct ShutdownGate {
 // staged copy into place (the old file is put back if that fails). The .old is removed now or by removeLeftovers.
 // With a `gate`: the copy is staged first (slow, harmless), then the renames run under gate->mu, and not at all once
 // gate->stop is set (the staged copy is removed; false, err "shutting down").
+// With a `check`: the staged copy must verify against it, or nothing is replaced (false, err says so).
 bool replaceFile(const std::filesystem::path& newFile, const std::filesystem::path& target, std::string* err,
-                 ShutdownGate* gate = nullptr);
+                 ShutdownGate* gate = nullptr, const SigCheck* check = nullptr);
 // Deletes the .old / .new a previous swap of `target` left (call at launcher start).
 void removeLeftovers(const std::filesystem::path& target);
 
@@ -58,9 +71,11 @@ std::filesystem::path gameRootFrom(const std::filesystem::path& exeDir);
 struct Report { int replaced = 0; bool installedFresh = false; std::vector<std::string> notes; };
 // The game's side (runs on a background thread at startup): with the launcher packaged in `gameRoot`, replace every
 // older launcher - in the folder above the game (where each launcher keeps its game), the install folder, and the
-// pre-0.12 Windows folder - install it if none is installed, and repoint the desktop / menu shortcuts.
+// pre-0.12 Windows folder - install it if none is installed, and repoint the desktop / menu shortcuts. Only a packaged
+// launcher whose signature verifies against `pubHex` (launcherSigned) is used at all.
 // `gate`: stop early (between steps, never inside one) when the game shuts down.
-Report updateLaunchersFromGame(const std::filesystem::path& gameRoot, ShutdownGate* gate = nullptr);
+Report updateLaunchersFromGame(const std::filesystem::path& gameRoot, ShutdownGate* gate = nullptr,
+                               const std::string& pubHex = sign::kReleasePublicKey);
 // Starts it from the game on a background thread; QUARK_NO_LAUNCHER_UPDATE=1 turns it off. Not for automated runs
 // (--screenshot / --bench / --edscript ...): the caller skips it there.
 void startFromGame(const char* argv0);

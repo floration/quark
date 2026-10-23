@@ -57,6 +57,18 @@ bool sameFile(const fs::path& a, const fs::path& b) {
 }
 } // namespace
 
+fs::path sigPath(const fs::path& launcher) { return launcher.parent_path() / (launcher.filename().string() + ".sig"); }
+
+bool launcherSigned(const fs::path& launcher, std::string* sigHex, std::string* err, const std::string& pubHex) {
+    std::error_code ec;
+    fs::path sp = sigPath(launcher);
+    if (!fs::is_regular_file(sp, ec) || fs::file_size(sp, ec) > 1024) { *err = "the packaged launcher has no signature"; return false; }
+    std::string sig = readText(sp), e;
+    if (!sign::verifyFile(launcher.string(), sig, pubHex, &e)) { *err = "the packaged launcher's signature does not verify"; return false; }
+    if (sigHex) *sigHex = sig;
+    return true;
+}
+
 std::string fileVersion(const fs::path& file) {
     std::ifstream f(file, std::ios::binary);
     unsigned char magic[4] = {};
@@ -105,7 +117,7 @@ SwapPaths swapPaths(const fs::path& target) {
     return {target.parent_path() / (target.filename().string() + ".new"), target.parent_path() / (target.filename().string() + ".old")};
 }
 
-bool replaceFile(const fs::path& newFile, const fs::path& target, std::string* err, ShutdownGate* gate) {
+bool replaceFile(const fs::path& newFile, const fs::path& target, std::string* err, ShutdownGate* gate, const SigCheck* check) {
     std::error_code ec;
     SwapPaths p = swapPaths(target);
     fs::create_directories(target.parent_path(), ec);
@@ -116,6 +128,14 @@ bool replaceFile(const fs::path& newFile, const fs::path& target, std::string* e
         if (err) *err = "cannot write " + p.staged.string();
         fs::remove(p.staged, ec);
         return false;
+    }
+    if (check) { // the copy that goes in place is the one checked (not the source, which could change in between)
+        std::string e;
+        if (!sign::verifyFile(p.staged.string(), check->sigHex, check->pubHex, &e)) {
+            if (err) *err = "the new launcher's signature does not verify";
+            fs::remove(p.staged, ec);
+            return false;
+        }
     }
     // the renames: all of them or none, never cut off by the game quitting (finishFromGame)
     std::unique_lock<std::timed_mutex> lock;
@@ -188,12 +208,17 @@ template <class F> bool gated(ShutdownGate* gate, F f) {
 }
 } // namespace
 
-Report updateLaunchersFromGame(const fs::path& gameRoot, ShutdownGate* gate) {
+Report updateLaunchersFromGame(const fs::path& gameRoot, ShutdownGate* gate, const std::string& pubHex) {
     Report r;
     std::error_code ec;
     fs::path packaged = gameRoot / exeName();
     std::string pv = fileVersion(packaged);
     if (pv.empty()) { r.notes.push_back("no launcher in this package"); return r; }
+    // signed, or no launcher anywhere is touched (B6: every launcher from 1.17.0 on is; a marker means >= 1.17.0)
+    SigCheck check;
+    check.pubHex = pubHex;
+    std::string why;
+    if (!launcherSigned(packaged, &check.sigHex, &why, pubHex)) { r.notes.push_back(why + ": not used"); return r; }
     // Every place any launcher version lived: the folder above its game folder (0.1.0 kept the game next to
     // wherever the launcher was unpacked), the install folder (0.5.0+), the pre-0.12 Windows folder.
     std::vector<fs::path> dirs = {gameRoot.parent_path(), install::appDir()};
@@ -208,13 +233,13 @@ Report updateLaunchersFromGame(const fs::path& gameRoot, ShutdownGate* gate) {
             seen.push_back(f);
             std::string v = fileVersion(f), err;
             if (!isNewer(pv, v)) continue;
-            if (replaceFile(packaged, f, &err, gate)) { r.replaced++; r.notes.push_back("updated " + f.string() + " (" + (v.empty() ? "old" : v) + " -> " + pv + ")"); }
+            if (replaceFile(packaged, f, &err, gate, &check)) { r.replaced++; r.notes.push_back("updated " + f.string() + " (" + (v.empty() ? "old" : v) + " -> " + pv + ")"); }
             else r.notes.push_back(err);
         }
     fs::path canonical = install::installedLauncher();
     if (!fs::exists(canonical, ec)) {
         std::string err;
-        if (replaceFile(packaged, canonical, &err, gate)) { r.installedFresh = true; r.notes.push_back("installed " + canonical.string()); }
+        if (replaceFile(packaged, canonical, &err, gate, &check)) { r.installedFresh = true; r.notes.push_back("installed " + canonical.string()); }
         else { r.notes.push_back(err); return r; }
     }
     bool fresh = r.installedFresh;
