@@ -43,4 +43,4 @@ Keep them short and starting instantly (no silence before the sound): they play 
 | HIT_HEAVY | you hit someone for 25 to 50 damage | < 0.35 s |
 | HIT_BRUTAL | you hit someone for more than 50 damage (the heaviest, loudest) | < 0.5 s |
 
-That's 27 sounds per kit, 135 for all five. (The announcer's voice lines are separate: assets/voice/, tools/import_voice.py.)
+That's 30 sounds per kit, 150 for all five. (The announcer's voice lines are separate: assets/voice/, tools/import_voice.py.)
