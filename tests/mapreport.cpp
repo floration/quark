@@ -32,6 +32,8 @@ struct Rng { uint32_t s = 12345; float f() { s ^= s << 13; s ^= s >> 17; s ^= s 
 
 struct Metrics {
     std::string name, title, preferred;
+    bool human = false;        // a human-made map (isHumanMadeMap): graded and reported, but the bar doesn't fail the run
+    std::vector<std::string> belowBar;   // what it misses the bar by (human-made maps: listed in the report)
     // decor / detail
     int brushes = 0, detail = 0, glow = 0, metal = 0, accent = 0, wallbang = 0, far = 0, lights = 0, materials = 0;
     float detailDensity = 0;   // detail brushes per 100 m^2 of walkable floor
@@ -1114,6 +1116,8 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g) {
 
 } // namespace
 
+bool isHumanMadeMap(const std::string& name, const Map& m);   // tests.cpp
+
 int mapReport(const char* outPath) {
     std::vector<Metrics> all;
     for (const std::string& name : listMaps()) {
@@ -1121,6 +1125,7 @@ int mapReport(const char* outPath) {
         if (std::getenv("MR_ONLY") && name != std::getenv("MR_ONLY")) continue;   // (debugging one map: its scores against itself only)
         Map m;
         if (!m.load(name)) continue;
+        bool human = isHumanMadeMap(name, m);
         const Map solid = m;   // (with clip: leaps can't go through it)
         // clip (invisible, out of reach above the walls) is no part of what anyone sees or plays on
         m.brushes.erase(std::remove_if(m.brushes.begin(), m.brushes.end(), [](const Brush& b) { return b.material == 9; }), m.brushes.end());
@@ -1128,6 +1133,7 @@ int mapReport(const char* outPath) {
         NavGraph g;
         g.build(m);
         Metrics r;
+        r.human = human;
         measure(r, m, solid, g);
         printf("  %-10s %4d brushes, %4zu surfaces, %4.0f m2, %d levels, visible %.0f%%, grapple %.0f%%\n", r.name.c_str(), r.brushes, g.nodes.size(), r.area, r.levels, r.visible * 100, r.grapple * 100);
         all.push_back(std::move(r));
@@ -1200,20 +1206,28 @@ int mapReport(const char* outPath) {
     }
     // ---- the bar every map has to clear: 7 in every category but originality (a map can't help resembling
     // the others), and balance where the map has team modes
+    // Human-made maps (the owner's rule, docs/JUDGMENT_CALLS.md) are held to the same bar and every miss is printed and
+    // listed in the report, but they don't fail the run: only the generated maps' misses count.
     int below = 0;
     for (auto& r : all) {
+        auto miss = [&](const std::string& why) {
+            r.belowBar.push_back(why);
+            if (r.human) fprintf(stderr, "  HUMAN-MADE %s: %s (reported, not failing)\n", r.name.c_str(), why.c_str());
+            else { fprintf(stderr, "  FAIL %s: %s\n", r.name.c_str(), why.c_str()); below++; }
+        };
+        char why[160];
         std::pair<const char*, float> cats[] = {{"decor", r.sDecor}, {"layout", r.sLayout}, {"movement", r.sMovement}, {"creativity", r.sCreativity}, {"balance", r.sBalance}, {"mode fit", r.sMode}};
         // (the owner's call: Dojo is a bare eye-to-eye laser arena, kept simple on purpose - its layout, movement
         // and creativity aren't held to the bar; decor, mode fit and balance still are)
         bool simpleArena = r.name == "dojo";
         for (auto& [k, v] : cats)
             if (simpleArena && (!strcmp(k, "layout") || !strcmp(k, "movement") || !strcmp(k, "creativity"))) continue;
-            else if (v >= 0 && v < 7.0f - 1e-3f) { fprintf(stderr, "  FAIL %s: %s %.1f is below 7\n", r.name.c_str(), k, v); below++; }
-        if (r.sMode < 0) { fprintf(stderr, "  FAIL %s: not built for one mode (\"for <mode>\")\n", r.name.c_str()); below++; }
-        if (r.setting.empty()) { fprintf(stderr, "  FAIL %s: no \"setting\" (what place it is)\n", r.name.c_str()); below++; }
+            else if (v >= 0 && v < 7.0f - 1e-3f) { snprintf(why, sizeof why, "%s %.1f is below 7", k, v); miss(why); }
+        if (r.sMode < 0) miss("not built for one mode (\"for <mode>\")");
+        if (r.setting.empty()) miss("no \"setting\" (what place it is)");
         // nothing outside the playable floor's footprint may be reachable with the full movement envelope (clip, or
         // walls too high to dash up, keep everyone in)
-        if (r.outOfBounds > 0) { fprintf(stderr, "  FAIL %s: %.0f m2 outside the playable floor is reachable (MR_OOB=%s lists it)\n", r.name.c_str(), r.outOfBounds, r.name.c_str()); below++; }
+        if (r.outOfBounds > 0) { snprintf(why, sizeof why, "%.0f m2 outside the playable floor is reachable (MR_OOB=%s lists it)", r.outOfBounds, r.name.c_str()); miss(why); }
     }
     // ---- write the report
     std::ofstream o(outPath);
@@ -1237,9 +1251,24 @@ int mapReport(const char* outPath) {
         char bal[16] = "-", mf[16] = "-";
         if (r.sBalance >= 0) snprintf(bal, sizeof bal, "%.1f", r.sBalance);
         if (r.sMode >= 0) snprintf(mf, sizeof mf, "%.1f", r.sMode);
-        snprintf(b, sizeof b, "| %s | %s | %s | %.1f | %.1f | %.1f | %.1f | %s | %s | %.1f |\n", r.name.c_str(), r.preferred.c_str(), r.setting.empty() ? "-" : r.setting.c_str(),
+        snprintf(b, sizeof b, "| %s%s | %s | %s | %.1f | %.1f | %.1f | %.1f | %s | %s | %.1f |\n", r.name.c_str(), r.human ? " (HUMAN-MADE)" : "", r.preferred.c_str(), r.setting.empty() ? "-" : r.setting.c_str(),
                  r.sDecor, r.sLayout, r.sMovement, r.sCreativity, mf, bal, r.sOriginality);
         o << b;
+    }
+    {   // the human-made maps: same scores, but the bar is for information (they don't fail the run)
+        bool any = false;
+        for (auto& r : all) any |= r.human;
+        if (any) {
+            o << "\n### Human-made maps\n\nMaps marked HUMAN-MADE (a `handmade` line, an owner's override, or not written by tools/make_maps.py) "
+                 "are measured and scored exactly like the generated ones; these are where they miss the bar. They don't fail `quark_tests`.\n\n";
+            for (auto& r : all) {
+                if (!r.human) continue;
+                o << "- **" << r.name << "** (HUMAN-MADE): ";
+                if (r.belowBar.empty()) o << "clears the bar";
+                for (size_t i = 0; i < r.belowBar.size(); i++) o << (i ? "; " : "") << r.belowBar[i];
+                o << "\n";
+            }
+        }
     }
     o << "\n## Decor / detail\n\n| map | brushes | detail | per 100 m² | bare walls | materials | glow | metal | lights | skyline |\n|---|---|---|---|---|---|---|---|---|---|\n";
     for (auto& r : all) {

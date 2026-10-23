@@ -79,6 +79,28 @@ static double testTimeScale() {
 static const double kTestTimeScale = testTimeScale();
 #define CHECK(c) do { if (!(c)) { printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); g_fail++; } } while (0)
 
+// Human-made maps (the owner's rule, docs/JUDGMENT_CALLS.md): the owner will hand-make the maps; those don't have to
+// pass the automated map checks, but they're still checked and their numbers reported, for balancing. A map is
+// human-made when it says so ("handmade", which the editor writes), when tools/make_maps.py didn't write it, or when
+// it's the owner's override of a generated one (assets/overrides/maps). Generated maps keep the strict bar.
+bool isHumanMadeMap(const std::string& name, const Map& m) {   // (mapreport.cpp too)
+    std::error_code ec;
+    return m.humanMade() || (!sourceDir().empty() && std::filesystem::exists(std::filesystem::path(sourceDir()) / "assets" / "overrides" / "maps" / (name + ".qmap"), ec));
+}
+// Put one at the top of a per-map check, after the map loads: whatever that map fails is printed as usual, and when
+// the map is human-made, reported as such and taken off the failure count as the check ends.
+struct HumanMadeGrace {
+    std::string name;
+    bool human;
+    int before;
+    HumanMadeGrace(const std::string& n, const Map& m) : name(n), human(isHumanMadeMap(n, m)), before(g_fail) {}
+    ~HumanMadeGrace() {
+        if (!human || g_fail <= before) return;
+        printf("  %s is HUMAN-MADE: %d check(s) above failed - reported, not failing the run\n", name.c_str(), g_fail - before);
+        g_fail = before;
+    }
+};
+
 // Pump a server and some clients for `seconds` of real time, feeding each client an input.
 template <class F>
 static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F input) {
@@ -334,6 +356,7 @@ static void testMaps() {
     for (auto& name : listMaps()) {
         Map m;
         if (!m.load(name) || !m.rankedLadders) continue;
+        HumanMadeGrace hg(name, m);
         CHECK(isRankedMap(m, 0) || isRankedMap(m, 1) || isRankedMap(m, 5));
         for (int v : {0, 1, 5}) if (m.rankedLadders >> v & 1) CHECK(m.supportsMode(rankedMode(v)));   // (instagib: free for all)
         int k = 0;
@@ -366,6 +389,7 @@ static void testAllMaps() {
         Map m;
         std::string err;
         if (!m.load(name, &err)) { printf("  %s: %s\n", name.c_str(), err.c_str()); g_fail++; continue; }
+        HumanMadeGrace hg(name, m);
         if (m.preferredMode >= 0) CHECK(m.supportsMode(m.preferredMode));
         if (name == "dojo") { CHECK(!m.lava.empty() && m.inLava(playerBox({14, -1.5f, 0}, false)) && !m.inLava(playerBox({0, 0.1f, 0}, false))); }   // lava kills on touch
         for (auto& sp : m.spawns) CHECK(!m.boxSolid(playerBox(sp.pos + Vec3(0, 0.02f, 0), false)));
@@ -472,10 +496,32 @@ static void testMapFormat() {
     for (auto& name : testedMaps()) {   // the generator writes the current format, nothing it has to skip
         Map m;
         if (!m.load(name)) { printf("  %s doesn't load\n", name.c_str()); g_fail++; continue; }
+        HumanMadeGrace hg(name, m);
         if (m.formatVersion != kMapFormatVersion || !m.warnings.empty() || m.setting.empty())
             printf("  %s: format %d, %zu warnings%s%s\n", name.c_str(), m.formatVersion, m.warnings.size(), m.warnings.empty() ? "" : ": ", m.warnings.empty() ? "" : m.warnings[0].c_str());
         CHECK(m.formatVersion == kMapFormatVersion && m.warnings.empty() && !m.setting.empty());
     }
+}
+
+// Human-made maps: what counts as one, and their failed map checks are reported but taken off the count (a generated
+// map's stay). The map report does the same with its scores (mapreport.cpp).
+static void testHumanMadeMaps() {
+    printf("human-made maps: checked and reported, not failing the run\n");
+    Map gen;
+    CHECK(gen.load("temple") && !gen.handmade && !gen.humanMade() && !isHumanMadeMap("temple", gen));
+    Map saved;
+    CHECK(saved.parse(gen.serialize()) && saved.handmade && saved.humanMade());   // what the editor saves is a person's
+    Map plain;
+    CHECK(plain.parse("box -20 -1 -20 20 0 20\nspawn any 0 0 0\n") && !plain.handmade && plain.humanMade());   // not the generator's
+    Map marked;
+    CHECK(marked.parse(gen.source + "handmade\n") && marked.humanMade() && isHumanMadeMap("temple", marked));
+    int before = g_fail;
+    { HumanMadeGrace hg("probe", plain); g_fail += 2; }   // (two checks failed on it)
+    CHECK(g_fail == before);
+    { HumanMadeGrace hg("temple", gen); g_fail++; }
+    bool kept = g_fail == before + 1;
+    g_fail = before;
+    CHECK(kept);
 }
 
 static void testMapLimits() {
@@ -1946,6 +1992,7 @@ static void testLadders() {
     for (auto& name : testedMaps()) {
         Map m;
         if (!m.load(name)) continue;
+        HumanMadeGrace hg(name, m);
         for (auto& l : m.ladders) {
             bool ok = false;
             for (float yaw : {0.0f, PI, PI * 0.5f, -PI * 0.5f}) {
@@ -2191,6 +2238,7 @@ static void testStairs() {
     for (auto& name : testedMaps()) {
         Map m;
         if (!m.load(name)) continue;
+        HumanMadeGrace hg(name, m);
         NavGraph g;
         g.build(m);
         for (const Map::Stairs& st : m.stairs) {
@@ -4721,7 +4769,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(TP(29997)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "allmaps") { testAllMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "chat") { testChatAndVoteLimits(TP(29592)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "limits") { testMapIdentity(); testMapFormat(); testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "limits") { testMapIdentity(); testMapFormat(); testHumanMadeMaps(); testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(TP(29990)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(TP(29980)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); testAddbotArgs(TP(29982)); return g_fail ? 1 : 0; }
@@ -4766,7 +4814,7 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapIdentity(); testMapFormat(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapIdentity(); testMapFormat(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); }},

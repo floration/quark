@@ -64,7 +64,7 @@ struct SpawnPoint {
 // The .qmap format (REVIEW MAP-10/11, JUDGMENT C7). "version N" heads a file (none: version 1, which kept stairs and
 // the setting in comments; those are still read). A keyword this build doesn't know is skipped with a warning (in
 // Map::warnings), so an older build still loads a newer map; a known keyword with a bad value is an error.
-// 2: "version", "stairs", "setting"; a second hill or an unknown spawn team is an error.
+// 2: "version", "stairs", "setting", "handmade"; a second hill or an unknown spawn team is an error.
 constexpr int kMapFormatVersion = 2;
 
 struct Map {
@@ -72,6 +72,11 @@ struct Map {
     std::string title;
     int formatVersion = kMapFormatVersion;   // the file's "version" (1 when it has none)
     std::vector<std::string> warnings;        // what the parse skipped (unknown keywords, modes, ladders): logged
+    // "handmade": made or changed by a person (the editor writes it on every save), not by tools/make_maps.py.
+    // quark_tests grades a hand-made map like any other and reports its numbers, but doesn't fail on them (the owner's
+    // rule, docs/JUDGMENT_CALLS.md). humanMade(): that, or a file the generator didn't write (no header of its).
+    bool handmade = false;
+    bool humanMade() const;
     std::string setting;       // "setting <words>": the place the map is (a city block, a space station...)
     // "stairs x0 z0 x1 z1 base top x|z rising solid": a staircase the generator built from boxes (steps from base to top
     // over the x0..z1 footprint, rising toward +/- axis; solid: blocks down to the ground, else slabs). Only recorded:
