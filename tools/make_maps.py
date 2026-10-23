@@ -7,7 +7,8 @@ The maps are a build artifact: CMake runs this (python3, nothing else needed) an
 Output is byte-for-byte deterministic (seeded generators only; LF line endings on every platform).
 The owner's map overrides win (docs/ASSETS.md): a map with a file at assets/overrides/maps/<name>.qmap is written as
 that file (line endings normalised), never generated over it."""
-import os, random, math, argparse
+import os, random, math, argparse, contextlib
+from collections import Counter
 _ap = argparse.ArgumentParser(description="generate the shipped maps")
 _ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "maps"))
 _ap.add_argument("--list", action="store_true", help="print the map names instead of writing the maps")
@@ -67,6 +68,47 @@ class M:
         (players only: shots, hooks and sight go through)"""
         s.box(x0 - 2, h, z0 - 2, x0, h + up, z1 + 2, mat="clip"); s.box(x1, h, z0 - 2, x1 + 2, h + up, z1 + 2, mat="clip")
         s.box(x0, h, z0 - 2, x1, h + up, z0, mat="clip"); s.box(x0, h, z1, x1, h + up, z1 + 2, mat="clip")
+    # ---- the keep-clear registry (REVIEW MAP-5): volumes nothing solid may stand in (the payload cart's sweep along
+    # its track, a lane's narrow openings, ...). save() checks every placement against it: generated decor (dress,
+    # props, detail, skyline, clutter, cribs, scatter) that lands in one is dropped; anything placed by hand there
+    # stops the build with the line and the volume it's in.
+    def keep_clear_box(s, x0, y0, z0, x1, y1, z1, why, mirror=False):
+        s.__dict__.setdefault("clear_boxes", []).append((min(x0, x1), min(y0, y1), min(z0, z1), max(x0, x1), max(y0, y1), max(z0, z1), why))
+        if mirror: s.keep_clear_box(-x1, y0, -z1, -x0, y1, -z0, why)
+    @contextlib.contextmanager
+    def generated(s):
+        """the lines added inside are generated decor (dropped, not an error, where they'd block a keep-clear volume)"""
+        before = Counter(s.lines)
+        yield
+        s.__dict__.setdefault("auto_lines", Counter()).update(Counter(s.lines) - before)
+    def cart_clear(s):
+        """the payload cart's sweep (its box: 2.4 x 1.8 x 1.5 m, Map::payloadCartBox) along every leg of the track,
+        with 10 cm to spare, into the registry"""
+        path = [tuple(map(float, l.split()[1:4])) for l in s.lines if l.startswith("path ")]
+        for (ax, ay, az), (bx, by, bz) in zip(path, path[1:]):
+            lo, hi = min(ay, by) + 0.02, max(ay, by) + 1.6
+            if abs(bx - ax) >= abs(bz - az): s.keep_clear_box(min(ax, bx) - 1.3, lo, az - 1.0, max(ax, bx) + 1.3, hi, bz + 1.0, "the payload cart's track")
+            else: s.keep_clear_box(ax - 1.0, lo, min(az, bz) - 1.3, bx + 1.0, hi, max(az, bz) + 1.3, "the payload cart's track")
+    def check_clear(s):
+        """every solid (or visible) box against the keep-clear registry: generated ones in a volume go, hand-placed
+        ones are an error"""
+        boxes = getattr(s, "clear_boxes", [])
+        if not boxes: return
+        auto = getattr(s, "auto_lines", Counter())
+        kinds = {"box", "accent", "wallbang", "metal", "glow", "trim", "clip"}
+        out, errors = [], []
+        for l in s.lines:
+            w = l.split()
+            if w and w[0] in kinds and len(w) == 7:
+                b = tuple(map(float, w[1:7]))
+                hit = next((z for z in boxes if b[0] < z[3] - 1e-3 and b[3] > z[0] + 1e-3 and b[1] < z[4] - 1e-3 and b[4] > z[1] + 1e-3
+                            and b[2] < z[5] - 1e-3 and b[5] > z[2] + 1e-3), None)
+                if hit:
+                    if auto[l] > 0: auto[l] -= 1; continue
+                    errors.append(f"  {l}   is in {hit[6]} ({' '.join(f'{v:g}' for v in hit[:6])})")
+            out.append(l)
+        if errors: raise SystemExit(f"make_maps.py: {s.name}: placed in a keep-clear volume (move it, or the volume):\n" + "\n".join(errors))
+        s.lines = out
     def keep_clear(s, x0, z0, x1, z1, y=2.4):
         """a doorway (and the step in front and behind it): nothing placed later may stand in it"""
         s.__dict__.setdefault("clear_zones", []).append((x0, z0, x1, z1, y))
@@ -88,15 +130,16 @@ class M:
         without moving every piece by hand. Boxes, stairs, ladders, spawns and lights; lights reach f as far."""
         boxes = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip", "ladder"}
         g = lambda v: f"{float(v) * f:g}"
-        out = []
-        for l in s.lines:
+        def scaled(l):
             w = l.split()
             if w and w[0] in boxes and len(w) >= 7: w[1], w[3], w[4], w[6] = g(w[1]), g(w[3]), g(w[4]), g(w[6])
             elif w and w[0] == "spawn": w[2], w[4] = g(w[2]), g(w[4])
             elif w and w[0] == "light": w[1], w[3], w[4] = g(w[1]), g(w[3]), g(w[4])
             elif l.startswith("# stairs"): w[2], w[3], w[4], w[5] = g(w[2]), g(w[3]), g(w[4]), g(w[5])
-            out.append(" ".join(w) if w and (w[0] in boxes or w[0] in ("spawn", "light") or l.startswith("# stairs")) else l)
-        s.lines = out
+            return " ".join(w) if w and (w[0] in boxes or w[0] in ("spawn", "light") or l.startswith("# stairs")) else l
+        s.lines = [scaled(l) for l in s.lines]
+        if hasattr(s, "auto_lines"): s.auto_lines = Counter({scaled(l): n for l, n in s.auto_lines.items()})
+        s.clear_boxes = [tuple(v * f if i in (0, 2, 3, 5) else v for i, v in enumerate(z[:6])) + (z[6],) for z in getattr(s, "clear_boxes", [])]
         if hasattr(s, "hx"):
             s.hx, s.hz = s.hx * f, s.hz * f
             sc = lambda r: tuple(v * f for v in r[:4]) + tuple(r[4:])
@@ -138,6 +181,189 @@ class M:
         s.lines.append(f"spawn {team} {x:g} {y:g} {z:g} {yaw:g}")
         if mirror_team: s.lines.append(f"spawn {mirror_team} {-x:g} {y:g} {-z:g} {yaw + 180:g}")
     def raw(s, line): s.lines.append(line)
+    # ---- spawn pools (REVIEW MAP-2): every mode a map offers has a spawn for each player a full default-size server
+    # (8) puts in its pool: free for all, hide, tag and a tourney's warm-up draw from the "any" spawns, race from the
+    # race spawns. save() tops short pools up from open floor (quark_tests spawns checks every pool spawnPlayer uses).
+    POOL = 8
+    def spawn_spots(s, ys, band=0.6):
+        """open standing spots on the floors at heights ys: solid floor under the whole hull, nothing within 0.6 m of
+        it up to 2.4 m (pads stay clean), clear of objectives, stairs, ladders, the cart's track, keep-clear volumes
+        and other spawns, on this side of any clip (an invisible wall) from the nearest spawn already there, and only
+        where players can walk to from the spawns on that floor"""
+        kinds = {"box", "accent", "wallbang", "metal", "glow", "clip"}
+        solid, avoid, spawns, path, clips = [], [], [], [], []
+        for l in s.lines:
+            w = l.split()
+            if not w: continue
+            if w[0] in kinds and len(w) == 7:
+                solid.append(tuple(map(float, w[1:7])))
+                if w[0] == "clip": clips.append(solid[-1])
+            elif w[0] in ("water", "lava", "ladder") and len(w) >= 7: avoid.append(tuple(map(float, w[1:7])))
+            elif w[0] in ("site", "hill", "point", "checkpoint") and len(w) >= 7:
+                b = tuple(map(float, w[1:7])); avoid.append((b[0] - 2, b[1] - 1, b[2] - 2, b[3] + 2, b[4] + 1, b[5] + 2))
+            elif w[0] == "spawn": spawns.append(tuple(map(float, w[2:5])))
+            elif w[0] == "path": path.append((float(w[1]), float(w[3])))
+            elif l.startswith("# stairs "):
+                a = list(map(float, w[2:6])); avoid.append((a[0] - 1.5, -1e9, a[1] - 1.5, a[2] + 1.5, 1e9, a[3] + 1.5))
+        avoid += [z[:6] for z in getattr(s, "clear_boxes", [])]
+        cell = 4.0
+        grid = {}
+        for i, b in enumerate(solid):
+            for gx in range(int(math.floor(b[0] / cell)), int(math.floor(b[3] / cell)) + 1):
+                for gz in range(int(math.floor(b[2] / cell)), int(math.floor(b[5] / cell)) + 1): grid.setdefault((gx, gz), []).append(i)
+        def near(x0, z0, x1, z1):
+            seen = set()
+            for gx in range(int(math.floor(x0 / cell)), int(math.floor(x1 / cell)) + 1):
+                for gz in range(int(math.floor(z0 / cell)), int(math.floor(z1 / cell)) + 1):
+                    for i in grid.get((gx, gz), ()):
+                        if i not in seen: seen.add(i); yield solid[i]
+        def hits(q):
+            return any(b[0] < q[3] and b[3] > q[0] and b[1] < q[4] and b[4] > q[1] and b[2] < q[5] and b[5] > q[2] for b in near(q[0], q[2], q[3], q[5]))
+        def inside(x, y, z):
+            return any(b[0] < x < b[3] and b[1] < y < b[4] and b[2] < z < b[5] for b in near(x, z, x, z))
+        def floor_at(x, z, y):   # (a spawn may stand a little above its floor: Dojo's are 0.1 m up, on the mat)
+            return any(y - 0.15 <= b[4] <= y + 0.01 and b[0] <= x <= b[3] and b[2] <= z <= b[5] for b in near(x, z, x, z))
+        def through_clip(x, y, z):   # the line from here to the nearest spawn crosses an invisible wall
+            if not spawns: return False
+            p = min(spawns, key=lambda q: math.hypot(q[0] - x, q[2] - z))
+            for k in range(1, 41):
+                t = k / 40; qx, qz = x + (p[0] - x) * t, z + (p[2] - z) * t
+                if any(b[0] < qx < b[3] and b[2] < qz < b[5] and b[1] < y + 1 < b[4] for b in clips): return True
+            return False
+        s._inside = inside
+        def seg_d(px, pz, a, b):
+            dx, dz = b[0] - a[0], b[1] - a[1]; L = dx * dx + dz * dz
+            t = 0 if L == 0 else max(0, min(1, ((px - a[0]) * dx + (pz - a[1]) * dz) / L))
+            return math.hypot(px - a[0] - t * dx, pz - a[1] - t * dz)
+        xs = [b[0] for b in solid] + [b[3] for b in solid]; zs = [b[2] for b in solid] + [b[5] for b in solid]
+        hx, hz = (s.hx, s.hz) if hasattr(s, "hx") else (max(map(abs, xs)), max(map(abs, zs)))
+        step = 1.0 if hx * hz < 1500 else 2.0
+        def cell_h(x, z, y):   # the floor a hull stands on here, within `band` of height y (None: no room / no floor)
+            for t in sorted({b[4] for b in near(x, z, x, z) if b[0] <= x <= b[3] and b[2] <= z <= b[5] and y - band <= b[4] <= y + band}, reverse=True):
+                if not hits((x - 0.4, t + 0.01, z - 0.4, x + 0.4, t + 1.8, z + 0.4)): return t
+            return None
+        out = []
+        x0g, z0g = -math.floor(hx) + 1.0, -math.floor(hz) + 1.0
+        nxg, nzg = int((hx - 1 - x0g) / step) + 1, int((hz - 1 - z0g) / step) + 1
+        for y in ys:
+            # flood the floor at about this height from the spawns already on it (walking: steps of 0.55 m, the hull
+            # swept between grid points): only spots players can walk to from them (no sealed rooms, no rooftops)
+            h, todo = {}, []
+            for p in spawns:
+                if abs(p[1] - y) > band: continue
+                i, k = round((p[0] - x0g) / step), round((p[2] - z0g) / step)
+                for (di, dk) in sorted(((a, c) for a in (-1, 0, 1) for c in (-1, 0, 1)), key=lambda q: abs(q[0]) + abs(q[1])):
+                    if (i + di, k + dk) in h: break
+                    t = cell_h(x0g + (i + di) * step, z0g + (k + dk) * step, y) if 0 <= i + di < nxg and 0 <= k + dk < nzg else None
+                    if t is not None: h[(i + di, k + dk)] = t; todo.append((i + di, k + dk)); break
+            while todo:
+                i, k = todo.pop()
+                for (di, dk) in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    c = (i + di, k + dk)
+                    if c in h or not (0 <= c[0] < nxg and 0 <= c[1] < nzg): continue
+                    xa, za, xb, zb = x0g + i * step, z0g + k * step, x0g + c[0] * step, z0g + c[1] * step
+                    t = cell_h(xb, zb, y)
+                    if t is None or abs(t - h[(i, k)]) > 0.55: continue
+                    top = max(t, h[(i, k)])
+                    if hits((min(xa, xb) - 0.4, top + 0.01, min(za, zb) - 0.4, max(xa, xb) + 0.4, top + 1.8, max(za, zb) + 0.4)): continue
+                    h[c] = t; todo.append(c)
+            for (i, k) in sorted(h):
+                x, z = x0g + i * step, z0g + k * step
+                if hasattr(s, "hx") and (abs(x) > s.hx - 2.5 or abs(z) > s.hz - 2.5): continue   # (dress() lines the walls)
+                ok = all(floor_at(x + dx, z + dz, y) for dx in (-0.4, 0, 0.4) for dz in (-0.4, 0, 0.4)) and \
+                     not hits((x - 1.0, y + 0.01, z - 1.0, x + 1.0, y + 2.4, z + 1.0)) and \
+                     not any(a[0] < x + 0.5 and a[3] > x - 0.5 and a[1] < y + 2 and a[4] > y and a[2] < z + 0.5 and a[5] > z - 0.5 for a in avoid) and \
+                     all(math.hypot(x - p[0], z - p[2]) > 2.5 or abs(y - p[1]) > 3 for p in spawns) and \
+                     all(seg_d(x, z, path[n], path[n + 1]) > 3 for n in range(len(path) - 1)) and not through_clip(x, y, z)
+                if ok: out.append((x, y, z))
+        return out
+    def fix_facing(s):
+        """REVIEW MAP-16: a spawn faces into the map, not a wall: with something solid within 2 m ahead at eye height
+        (what the map tests check), it turns to the nearest of 32 directions with 3 m of open floor ahead (the same
+        rule both ways round a point-symmetric map, so mirrored spawns stay mirrored)"""
+        solid = [tuple(map(float, l.split()[1:7])) for l in s.lines if l.split()[:1] and l.split()[0] in ("box", "accent", "wallbang", "metal", "glow") and len(l.split()) == 7]
+        cell, grid = 4.0, {}
+        for i, b in enumerate(solid):
+            for gx in range(int(math.floor(b[0] / cell)), int(math.floor(b[3] / cell)) + 1):
+                for gz in range(int(math.floor(b[2] / cell)), int(math.floor(b[5] / cell)) + 1): grid.setdefault((gx, gz), []).append(i)
+        def inside(x, y, z):
+            return any(solid[i][0] <= x <= solid[i][3] and solid[i][1] <= y <= solid[i][4] and solid[i][2] <= z <= solid[i][5] for i in grid.get((int(math.floor(x / cell)), int(math.floor(z / cell))), ()))
+        def open_ahead(x, y, z, yaw, far, step):
+            dx, dz = -math.sin(math.radians(yaw)), -math.cos(math.radians(yaw))
+            d = step
+            while d <= far:
+                if inside(x + dx * d, y + 1.6, z + dz * d): return False
+                d += step
+            return True
+        out = []
+        for l in s.lines:
+            w = l.split()
+            if w[:1] == ["spawn"] and len(w) >= 6:
+                x, y, z, yaw = float(w[2]), float(w[3]), float(w[4]), float(w[5])
+                if not open_ahead(x, y, z, yaw, 2.05, 0.05):
+                    for k in range(1, 17):
+                        turned = next((yaw + sgn * k * 11.25 for sgn in (1, -1) if open_ahead(x, y, z, yaw + sgn * k * 11.25, 3.0, 0.05)), None)
+                        if turned is not None:
+                            w[5] = f"{(turned + 180) % 360 - 180:g}"; l = " ".join(w); break
+            out.append(l)
+        s.lines = out
+    def face(s, x, y, z):
+        """a yaw toward the middle of the map, turned to where there is room to see (MAP-16: not facing a wall):
+        of 16 directions, the one with the most open floor ahead (up to 8 m at eye height), leaning to the middle"""
+        best, by = -1e9, 0.0
+        cx, cz = -x, -z
+        L = math.hypot(cx, cz) or 1.0
+        for k in range(16):
+            a = k * math.pi / 8; dx, dz = math.cos(a), math.sin(a); d = 0.0
+            while d < 8 and not s._inside(x + dx * (d + 0.5), y + 1.6, z + dz * (d + 0.5)): d += 0.5
+            sc = min(d, 8) + 4 * (dx * cx + dz * cz) / L - (100 if d < 3 else 0)
+            if sc > best: best, by = sc, round(math.degrees(math.atan2(-dx, -dz)))
+        return by
+    def top_up_spawns(s, offered):
+        spawns = [l.split() for l in s.lines if l.startswith("spawn ")]
+        ranked = any(l.startswith("ranked ") for l in s.lines)   # (ranked maps stay point symmetric: spawns in pairs)
+        everything = offered is None
+        if everything or "race" in offered:
+            have = [w for w in spawns if w[1] == "race"]
+            if have and len(have) < s.POOL:
+                y = float(have[0][3]); yaw = float(have[0][5]) if len(have[0]) > 5 else 0.0
+                cx = sum(float(w[2]) for w in have) / len(have); cz = sum(float(w[4]) for w in have) / len(have)
+                pts = [(float(w[2]), float(w[4])) for w in have]
+                # the start line: open spots nearest the race spawns already there, 2 m apart (racers spawn together)
+                # (never nearer the first checkpoint than the start line: the race's split floors are measured from it)
+                cp = next((list(map(float, l.split()[1:7])) for l in s.lines if l.startswith("checkpoint ")), None)
+                gap0 = lambda x, z: math.hypot(max(cp[0] - x, 0, x - cp[3]), max(cp[2] - z, 0, z - cp[5])) if cp else 0
+                line = min(gap0(float(w[2]), float(w[4])) for w in have)
+                spots = sorted((math.hypot(p[0] - cx, p[2] - cz), p[0], p[2]) for p in s.spawn_spots([y]) if math.hypot(p[0] - cx, p[2] - cz) < 12 and gap0(p[0], p[2]) >= line)
+                for (_, x, z) in spots:
+                    if len(pts) >= s.POOL: break
+                    if all(math.hypot(x - a, z - b) >= 2.0 for (a, b) in pts):
+                        s.spawn("race", x, y, z, yaw); pts.append((x, z))
+        if everything or any(m in offered for m in ("ffa", "hide", "tag", "tourney")):
+            have = [tuple(map(float, w[2:5])) for w in spawns if w[1] == "any"]
+            if len(have) < s.POOL:
+                ys = sorted({round(float(w[3]), 3) for w in spawns}) or [0.0]
+                pts = [(p[0], p[1], p[2]) for p in have]
+                others = [tuple(map(float, w[2:5])) for w in spawns]
+                tops = sorted({float(l.split()[5]) for l in s.lines if l.split()[:1] == ["box"] and len(l.split()) == 7})
+                # the floors the spawns stand on; where they haven't the room, the other floors within 2 m of them
+                for floors in (ys, [t for t in tops if t not in ys and any(abs(t - y) <= 2 for y in ys)]):
+                    if len(have) >= s.POOL or not floors: break
+                    every = s.spawn_spots(floors, 0.6 if floors is ys else 2.1)
+                    if floors is not ys:   # (other floors: only near the spawns, never across the map from them)
+                        every = [q for q in every if min(math.hypot(q[0] - p[0], q[2] - p[2]) for p in pts + others) <= 25]
+                    if ranked: every = [p for p in every if any(abs(q[0] + p[0]) < 1e-3 and abs(q[2] + p[2]) < 1e-3 and abs(q[1] - p[1]) < 1e-3 for q in every)]
+                    for gap in (6.0, 3.0, 2.0):   # spread 6 m apart; where there is no room for that (Viaduct's start), closer
+                        spots = [q for q in every if all(math.dist(q, p) > gap for p in pts)]
+                        while len(have) < s.POOL and spots:
+                            # the open spot farthest from the pool (and, to start with, from the other spawns): spread out
+                            ref = pts if pts else others
+                            i = max(range(len(spots)), key=lambda k: (min((math.dist(spots[k], q) for q in ref), default=0), -k))
+                            x, y, z = spots[i]
+                            picked = [(x, y, z)] + ([q for q in spots if abs(q[0] + x) < 1e-3 and abs(q[2] + z) < 1e-3 and abs(q[1] - y) < 1e-3][:1] if ranked and (x, z) != (0, 0) else [])
+                            for (px, py, pz) in picked:
+                                s.spawn("any", px, py, pz, s.face(px, py, pz)); have.append((px, py, pz)); pts.append((px, py, pz))
+                            spots = [q for q in spots if all(math.dist(q, p) > gap for p in picked)]
     def light(s, x, y, z, radius=9.0, intensity=0.8, fixture=True, mirror=False):
         """baked point light (lights rooms under roofs / overhangs) with a small lamp fixture above it"""
         for (lx, lz) in ((x, z), (-x, -z)) if mirror else ((x, z),):
@@ -559,6 +785,8 @@ class M:
     def clutter(s, x0, z0, x1, z1, step, shapes, seed=0, mirror=False, accent=0.3):
         """low solid props on a jittered grid, skipping anywhere within 1.3 m of an existing brush, 3 m of a spawn or
         3 m of the payload track; mirror=True places each one point-symmetrically too (only where both are free)"""
+        with s.generated(): s._clutter(x0, z0, x1, z1, step, shapes, seed, mirror, accent)
+    def _clutter(s, x0, z0, x1, z1, step, shapes, seed, mirror, accent):
         rnd = random.Random(seed); solid = []; spawns = []; path = []
         for ln in s.lines:
             w = ln.split()
@@ -591,6 +819,8 @@ class M:
     def cribs(s, cands, size=3.4, h=2.8, count=4, mirror=False):
         """small walled rooms with one doorway (tool cribs, sheds, closets) at the first `count` candidate
         centres where the floor is free: places to hide and to break a chase"""
+        with s.generated(): return s._cribs(cands, size, h, count, mirror)
+    def _cribs(s, cands, size, h, count, mirror):
         solid = []
         for ln in s.lines:
             w = ln.split()
@@ -615,8 +845,15 @@ class M:
         mode = next((l.split()[1] for l in s.lines if l.startswith("for ")), None)
         s.lines = [l for l in s.lines if not l.startswith("modes ")]
         if mode and name not in EVERY_MODE: s.lines.insert(3, "modes " + " ".join([mode] + getattr(s, "also", []) + ([] if mode == "ffa" else ["ffa"])))
-        if dress: s.props(); s.dress(name); s.detail_pass(); s.skyline_pass(name)
+        s.name = name
+        offered = next((l.split()[1:] for l in s.lines if l.startswith("modes ")), None)   # (None: every mode)
+        s.top_up_spawns(offered)
+        if offered is None or "payload" in offered or "npayload" in offered: s.cart_clear()
+        with s.generated():
+            if dress: s.props(); s.dress(name); s.detail_pass(); s.skyline_pass(name)
         s.clear_doorways()
+        s.check_clear()
+        s.fix_facing()
         p = PALETTES.get(name)
         if p:
             p = [tuple(round(v * 0.85, 3) for v in p[0])] + list(p[1:])
@@ -698,6 +935,7 @@ PALETTES = {
     "midtown":   ((0.60, 0.59, 0.57), (0.52, 0.25, 0.18), (0.30, 0.32, 0.36), (0.55, 0.85, 1.00), (0.62, 0.70, 0.82)),  # concrete, brick, glass blue, dusk sky
     "lodestone": ((0.46, 0.40, 0.34), (0.46, 0.28, 0.14), (0.28, 0.27, 0.28), (0.45, 0.90, 1.00), (0.24, 0.20, 0.17)),  # rock, pit timber, crystal cyan
     "viaduct":   ((0.62, 0.58, 0.52), (0.30, 0.34, 0.40), (0.26, 0.27, 0.30), (1.00, 0.75, 0.30), (0.72, 0.76, 0.84)),  # stone viaduct, amber markers
+    "hightown":  ((0.66, 0.66, 0.68), (0.22, 0.34, 0.50), (0.30, 0.32, 0.36), (0.80, 0.92, 1.00), (0.66, 0.76, 0.90)),  # office concrete, glass blue, cool strip lights (it had none: MAP-18)
 }
 
 
@@ -833,6 +1071,7 @@ for z in range(-14, 15, 7): m.glow(13, 6.38, z - 0.4, 24, 6.5, z + 0.4); m.light
 # the gatehouse at the attackers' entry: a roofed shelter to stack up under before the push
 for (x, z) in ((-8, 26), (8, 26), (-8, 33.5), (8, 33.5)): m.metal(x - 0.3, 0, z - 0.3, x + 0.3, 4.2, z + 0.3)
 m.box(-9, 4.2, 25, 9, 4.6, 34, accent=True); m.glow(-9, 4.05, 25, 9, 4.2, 25.15); m.light(0, 3.6, 29.5, 9, 0.7, fixture=False)
+m.box(-6.4, 0, 24.6, 6.4, 4.05, 25.0, accent=True)                          # its front wall: out round the sides (no sightline to B's spawn)
 # the yard: a corrugated perimeter fence and floodlights on the corner columns
 m.wall_ribs(step=1.0)
 for (x, z) in ((-24, -32), (24, -32), (-24, 32), (24, 32), (-24, 0), (24, 0)):
@@ -931,7 +1170,7 @@ m.container(-23, -40, -17, -37); m.container(17, 37, 23, 40)
 m.container(-23, -40, -17, -37, h=5.2); m.container(17, 37, 23, 40, h=5.2)
 m.wallbang(21.5, 0, 33, 24, 2.4, 33.3); m.wallbang(-23, 0, -33.3, -20, 2.4, -33)
 for (x0, z0, x1, z1, h) in [(4, 30, 8, 34, 1.6), (-8, 30, -4, 34, 1.6), (4, -2, 7, 2, 1.4), (-6, -4, -3, 0, 2.2),
-                           (18, -20, 21, -14, 1.6), (12.5, -25, 15.5, -21, 1.4), (-8, -34, -4, -30, 1.6), (4, -34, 8, -30, 1.6)]:
+                           (18, -20, 21, -14, 1.6), (9.4, -25, 12.4, -21, 1.4), (-8, -34, -4, -30, 1.6), (4, -34, 8, -30, 1.6)]:
     m.box(x0, 0, z0, x1, h, z1)
 # the tunnel over the west leg of the track (doors in both walls half-way)
 m.doorwall(-18.4, 9, -18, 23, 4.6, [(16, 2.4, 2.6)], axis="z"); m.doorwall(-10, 9, -9.6, 23, 4.6, [(16, 2.4, 2.6)], axis="z")
@@ -996,7 +1235,8 @@ for (x, z) in ((-6, 22), (5, 20), (-19, 12), (-8, 2), (6, -6), (19, -22), (-4, -
     m.box(x - 1.3, 0, z - 0.6, x + 1.3, 0.5, z + 0.6, accent=True); m.box(x - 1.3, 0.5, z - 0.6, x + 1.3, 1.0, z + 0.6); m.box(x - 1.0, 1.0, z - 0.5, x + 1.0, 1.4, z + 0.5, accent=True)
 for (x0, x1) in ((-16, -2), (2, 11), (17, 24)):
     m.box(x0, 0, -15.4, x1, 2.8, -14.6); m.box(x0 - 0.1, 2.8, -15.5, x1 + 0.1, 3.0, -14.5, accent=True)
-for x in (-6, -2, 2, 6): m.spawn("a", x, 0, 43, 0); m.spawn("b", x, 0, -44, 180)
+for x in (-6, -2, 2, 6): m.spawn("a", x, 0, 44.2, 0); m.spawn("b", x, 0, -44, 180)
+m.box(-6.6, 0, 41.4, 6.6, 2.6, 41.8, accent=True)                           # a screen: no sightline down the track to B's spawn
 m.spawn("any", -20, 0, 30, 90); m.spawn("any", 20, 0, -30, -90)
 # crates, cable drums and parts stacked around the yard, away from the track (cover for the defenders'
 # fallbacks and the attackers' pushes)
@@ -1036,7 +1276,8 @@ m.ladder(15, -6.5, 0, 3.95, "e", width=0.8); m.ladder(-15, 6.5, 0, 3.95, "w", wi
 m.box(-6, 0, 16, -3, 1.6, 20, mirror=True); m.box(3, 0, 16, 6, 1.6, 20, mirror=True)               # causeway cover
 m.box(-7, 0, 4, -4, 2.2, 7, mirror=True); m.box(4.5, 0, -1, 7, 1.4, 1, mirror=True)
 m.box(-22, 0, -22, -16, 2.5, -16, accent=True, mirror=True); m.stairs(-16, -22, -14.5, -16, 2.5, "x", -1, mirror=True)
-for x in (-6, -2, 2, 6): m.spawn("a", x, 0, 39, 0, "b")
+for x in (-6, -2, 2, 6): m.spawn("a", x, 0, 40.2, 0, "b")
+m.box(-6.6, 0, 37.4, 6.6, 2.6, 37.8, accent=True, mirror=True)               # spawn screens: no sightline down the causeway
 m.spawn("any", -18, 0, 0, 90, "any")
 # lock-keepers' ladders up the gate posts: the gate beams are a narrow walkway 7 m over the water (a sniper perch
 # you can be knocked off)
@@ -1369,7 +1610,7 @@ m.save("foundry")
 # ======================================================================================================
 # TEMPLE: ranked VANILLA 1v1. Halls of columns around a sanctum; reflecting pools either side, a bridge with
 # a pagoda shrine over the altar, a golden idol under it. Point symmetric.
-m = M("Temple", "1v1", sun=(0.35, 1.0, 0.55))
+m = M("Temple", "1v1", sun=(0, 1, 0))   # (ranked: the sun overhead, so both halves are lit alike, MAP-17)
 m.raw("ranked vanilla")
 # (1.13: open on a mountain top, no outer walls: the courts end at the cliff edge; built at the old size, then
 # spread out 1.4x across the ground at the end)
@@ -1536,7 +1777,7 @@ m.save("colosseum")
 # FURNACE: ranked LASER VAMPIRE. Compact (laser range is 32 m), close corners; the furnace in the middle
 # glows through its grates, molten trenches behind the inner walls (bridged in the middle) punish a careless
 # pull from the tractor beam. Point symmetric.
-m = M("Furnace", "1v1", sun=(0.3, 1.0, 0.4))
+m = M("Furnace", "1v1", sun=(0, 1, 0))   # (ranked: the sun overhead, so both halves are lit alike, MAP-17)
 m.raw("ranked vampire")
 m.room(18, 18, 10, pits=[(-9, 9.5, -2, 11, "molten"), (2, 9.5, 9, 11, "molten"), (-9, -11, -2, -9.5, "molten"), (2, -11, 9, -9.5, "molten")], style="hall", skyline="stacks")
 m.box(-3, 0, -3, 3, 4.5, 3, accent=True)
@@ -1574,7 +1815,7 @@ m.save("furnace")
 # in a lava moat, on a mountain top. Both fighters start on it facing each other and bow (no firing for the
 # first 5 s); a careless pull off the edge is a swim in the lava. The ring path outside the moat (jump or hook
 # back) carries all the decoration: pillars, lanterns, shrines. Point symmetric.
-m = M("Dojo", "1v1", sun=(0.4, 1.0, 0.3))
+m = M("Dojo", "1v1", sun=(0, 1, 0))   # (ranked: the sun overhead, so both halves are lit alike, MAP-17)
 m.raw("ranked vampire")
 m.raw("holdfire 5")
 P, W = 12, 4.5                                                                 # platform half size, moat width
@@ -1617,7 +1858,7 @@ m.save("dojo")
 # GANTRY: ranked INSTAGIB. The crane hall: catwalks along both walls, a bridge across the middle over the
 # open loading bay (no floor: fall and you're out), two overhead cranes with their cabs and a hanging
 # container each. Long sightlines on every level, always a way to break line of sight. Point symmetric.
-m = M("Gantry", "ffa", sun=(0.55, 1.0, 0.25))   # (ranked instagib is a free for all)
+m = M("Gantry", "ffa", sun=(0, 1, 0))   # (ranked instagib is a free for all; ranked: the sun overhead, MAP-17)
 m.raw("ranked instagib")
 # (1.13: rebuilt 1.5x longer, 2x wider and 2x taller: 96 x 48 m and 28 m to the roof line; two catwalk tiers,
 # cranes 18 m up, and a container yard in the middle so nobody has a shot from spawn to spawn)
@@ -1711,7 +1952,7 @@ m.save("gantry")
 # ======================================================================================================
 # ANVIL: ranked map for ALL THREE ladders. The anvil itself in the middle (horn at both ends, you stand on
 # it), two giant hammers standing on their heads, four corner towers, window walls and wallbang screens.
-m = M("Anvil", "1v1", sun=(0.4, 1.0, 0.45))
+m = M("Anvil", "1v1", sun=(0, 1, 0))   # (ranked: the sun overhead, so both halves are lit alike, MAP-17)
 m.raw("ranked vanilla vampire instagib")
 m.room(22, 22, 12, pits=[(-21.5, -7, -19, 7, "molten"), (19, -7, 21.5, 7, "molten")], style="hall", skyline="stacks")
 m.box(-3, 0, -2, 3, 1.5, 2); m.box(-2, 1.5, -1.5, 2, 3, 1.5)
@@ -1790,6 +2031,13 @@ def weave(xc, z0, z1, top, dz=3.5, off=1.0, w=0.7, gap=0.0, rise=0.0):
         for j, px in enumerate((xo, xc)):               # cross beams: no straight line along the weave stays clear.
             ph = 4.0 if (k + j) % 2 == 0 else 8.5       # (thin, staggered: hopping the rod tops is harder than the beam)
             m.box(px - 0.18, t - 3, (za + zb) / 2 - 0.18, px + 0.18, t + ph, (za + zb) / 2 + 0.18, mat="metal")
+def slalom(walls, X0, X1, top):
+    """walls across a lane (X0..X1 wide, its floor at top), each leaving a 0.9 m opening at one side. The openings
+    are kept clear: a wall pillar of the dressing beside one left a hull-width slot nobody could get through."""
+    for (z, x0, x1) in walls:
+        m.box(x0, top, z, x1, top + 1.6, z + 0.6, accent=True)
+        o0, o1 = (x1, X1) if x0 <= X0 else (X0, x0)
+        m.keep_clear_box(o0, top, z - 1.0, o1, top + 2.2, z + 1.6, "a slalom opening")
 # ---- leg 1, ground level, north to south
 deck(-6, 66, 6, 78, 0)                                                     # start
 deck(-2, 50, 2, 66, 0)                                                     # bridge on arches
@@ -1797,6 +2045,7 @@ for z in (54, 60): m.box(-2.2, -6, z, 2.2, -1, z + 2, accent=True); m.box(-2.2, 
 pads([(0.8, 47.0, 0.4), (-0.8, 43.9, 0.8), (0.8, 40.8, 1.2), (-0.8, 37.7, 1.5), (0.0, 35.2, 1.5)], 0)   # pads up, zig-zag
 m.raw("checkpoint -1.5 1.5 34.4 1.5 4.5 36")
 deck(-12, 28, 2, 34, 1.5)                                                  # turn west
+for x in (-9, -3): m.spawn("any", x, 1.5, 30.5, 0)                         # free for all: two on the turn (the start has room for six)
 # the covered lane: the roof stops any hooking or jumping over it, and its floor has fallen in in four
 # places (2 m gaps you jump in the dark)
 for (z0, z1) in ((24, 28), (18.5, 22), (13, 16.5), (8, 11), (4, 6)): deck(-12, z0, -8, z1, 1.5, piers=False)
@@ -1812,7 +2061,7 @@ m.metal(-4.2, 4.5, -13.2, -3.8, 12, -12.8); m.box(-5, 12.5, -14, 5, 13, -12, acc
 deck(-2, -22, 12, -16, 4.5)
 m.raw("checkpoint 4 4.5 -22 10 7.5 -16")
 deck(8, -40, 12, -22, 3.0)                                                 # slalom lane: 0.9 m openings
-for (z, x0, x1) in ((-26, 8, 11.1), (-30, 8.9, 12), (-34, 8, 11.1), (-38, 8.9, 12)): m.box(x0, 3.0, z, x1, 4.6, z + 0.6, accent=True)
+slalom(((-26, 8, 11.1), (-30, 8.9, 12), (-34, 8, 11.1), (-38, 8.9, 12)), 8, 12, 3.0)
 pads([(10.8, -42.5, 2.6), (9.2, -45.4, 2.2), (10.8, -48.3, 1.8)], 0)     # pads down
 deck(2, -60, 12, -51, 1.0)
 m.raw("checkpoint 2 1 -60 12 4 -52")
@@ -1825,7 +2074,7 @@ m.raw("checkpoint -6 1 -79 6 5 -72")
 deck(8, -79, 15.5, -73, 1.0)
 m.stairs(12.5, -73, 15.5, -57, 8, "z", 1, base=1.0, solid=False)
 deck(12.5, -57, 15.5, -20, 8)
-for (z, x0, x1) in ((-50, 12.5, 14.6), (-44, 13.4, 15.5), (-38, 12.5, 14.6), (-32, 13.4, 15.5)): m.box(x0, 8, z, x1, 9.6, z + 0.6, accent=True)
+slalom(((-50, 12.5, 14.6), (-44, 13.4, 15.5), (-38, 12.5, 14.6), (-32, 13.4, 15.5)), 12.5, 15.5, 8)
 m.raw("checkpoint 12.5 8 -28 15.5 11 -20")
 m.stairs(12.5, -20, 15.5, -12, 10, "z", 1, base=8, solid=False)
 # the aqueduct gallery: roofed (nothing to hook, nothing to jump over), its floor broken in three places
@@ -1861,7 +2110,7 @@ m.raw("checkpoint -12.5 22 -81 1.5 25 -77")
 # ---- leg 4, the skyway south down the middle, 22 to 31 m
 m.stairs(-1.5, -77, 1.5, -65, 28, "z", 1, base=22, solid=False)
 deck(-1.5, -65, 1.5, -20, 28, piers=False)
-for (z, x0, x1) in ((-55, -1.5, 0.6), (-47, -0.6, 1.5), (-39, -1.5, 0.6), (-31, -0.6, 1.5)): m.box(x0, 28, z, x1, 29.6, z + 0.6, accent=True)
+slalom(((-55, -1.5, 0.6), (-47, -0.6, 1.5), (-39, -1.5, 0.6), (-31, -0.6, 1.5)), -1.5, 1.5, 28)
 m.raw("checkpoint -1.5 28 -28 1.5 31 -20")
 m.stairs(-1.5, -20, 1.5, -12, 30, "z", 1, base=28, solid=False)
 # stepping pads in the sky: 0.9 m landings, 2-2.4 m gaps, zig-zag, rising and falling up to a metre
@@ -1935,7 +2184,8 @@ for (z0, z1) in ((66, 78), (-79, -70)):
     for x in (-5.6, -2, 2, 5.6):
         for z in (z0 + 0.6, z1 - 0.6): m.metal(x - 0.2, y, z - 0.2, x + 0.2, y + 4.6, z + 0.2)
     m.light(-3, y + 4.0, (z0 + z1) / 2, 7, 0.7, fixture=False); m.light(3, y + 4.0, (z0 + z1) / 2, 7, 0.7, fixture=False)
-for x in (-3, 0, 3): m.spawn("race", x, 0, 74, 0)
+for z in (74, 76.5):                                                       # the start grid: eight racers (a full server)
+    for x in (-4.5, -1.5, 1.5, 4.5): m.spawn("race", x, 0, z, 0)
 m.raw("# setting mountain gorge")
 m.save("viaduct")
 
@@ -2135,7 +2385,7 @@ for (x, z) in ((-18, -11.5), (-12, -11.5)): m.light(x, 3.2, z, 6, 0.7, mirror=Tr
 for (x, z) in ((-19, -18), (-14, -21), (-10, -17.5)): m.box(x - 0.8, 0, z - 0.6, x + 0.8, 1.3, z + 0.6, mirror=True)
 m.metal(-22.5, 0, -22.5, -21, 1.4, -20, mirror=True)
 # street furniture: parked cars along the avenues, bus shelters (glass backs: wallbang), lamp posts, traffic lights
-for (x, z, ax) in ((-2.8, -12, "z"), (2.8, -18, "z"), (-10, 3.2, "x"), (-21, -3.0, "x")):
+for (x, z, ax) in ((-2.8, -12, "z"), (2.8, -15, "z"), (-10, 3.2, "x"), (-21, -3.0, "x")):
     if ax == "z": m.box(x - 1.0, 0.3, z - 2.0, x + 1.0, 1.1, z + 2.0, accent=True, mirror=True); m.box(x - 0.85, 1.1, z - 1.0, x + 0.85, 1.6, z + 1.0, mirror=True)
     else: m.box(x - 2.0, 0.3, z - 1.0, x + 2.0, 1.1, z + 1.0, accent=True, mirror=True); m.box(x - 1.0, 1.1, z - 0.85, x + 1.0, 1.6, z + 0.85, mirror=True)
 for (x, z) in ((5.5, -12), (-12, 5.5)):
@@ -2153,7 +2403,8 @@ for y in (3.5, 6.5, 9.5):
 for t in range(-20, 21, 8):
     m.box(t - 2.5, 2.4, -23.9, t + 2.5, 2.9, -23.6, accent=True, mirror=True); m.box(23.6, 2.4, t - 2.5, 23.9, 2.9, t + 2.5, accent=True, mirror=True)
 m.glow(-6, 11, -23.95, 6, 13, -23.85, mirror=True)
-for x in (-3, 0, 3): m.spawn("a", x, 0, 22, 0, "b")
+for x in (-6, -3, 0, 3): m.spawn("a", x, 0, 22, 0, "b")   # (four a side: a full 8-player server, MAP-2)
+m.wallbang(-6.6, 0.2, 19.4, 3.6, 2.5, 19.5, mirror=True); m.box(-6.7, 2.5, 19.1, 3.7, 2.7, 20.3, accent=True, mirror=True)   # bus shelters: no sightline spawn to spawn
 for (x, z, yaw) in ((-22, 10, -90), (10, 22, 0), (-22, -16, -90)): m.spawn("any", x, 0, z, yaw, "any")
 m.raw("# setting city block")
 m.save("downtown")
@@ -2541,6 +2792,7 @@ def spine():
         m.box(-4, y1, za, 4, LH, zb)
         m.box(-4.3, y1, za, 4.3, y1 + 0.5, zb, accent=True)
 spine()
+m.box(-0.3, 0, 13.8, 0.3, 5, 14.45, mat="metal")                            # a pit prop in the tunnel mouth (blocks the spawns' sightline)
 for y in [1.2, 2.6] + list(range(5, LH, 4)): m.box(-4.08, y, -6, 4.08, y + 0.15, LHZ, mat="trim")
 timber_set(-4.25, -6, -4, LHZ, 0, 4.5); timber_set(4, -6, 4.25, LHZ, 0, 4.5)
 # ledges (rock shelves at 12): east and south in the shaft cavern, west, south and spine-side in the grotto
@@ -2603,13 +2855,14 @@ for (x, z) in ((-64, 10), (-60, 10), (-64, 14), (-60, 14), (-52, 10), (-52, 14))
 m.raw("hill %g 0 %g %g 4 %g" % (C_ZONE[0] - 1, C_ZONE[1] - 1, C_ZONE[2] + 1, C_ZONE[3] + 1))
 for z in (D_ZONE, E_ZONE): m.raw("site %g 0 %g %g 3 %g" % (z[0] - 1, z[1] - 1, z[2] + 1, z[3] + 1))
 # the payload: an ore cart from the grotto, through the spine tunnel, to the shaft station (checkpoints at 1/3, 2/3)
-CART = [(-70, 18), (-30, 18), (30, 18), (70, 18)]
+CART = [(-70, 15.5), (-30, 15.5), (30, 15.5), (70, 15.5)]   # (beside the station's landing, z 18..30: not through it)
 for (x, z) in CART: m.raw(f"path {x:g} 0 {z:g}")
 m.raw("cartcheck 0.33"); m.raw("cartcheck 0.66")
 # race: from the surface down the mine to the shaft station's ledge (not a ranked course: Viaduct is that)
 for x in (-4, 0, 4): m.spawn("race", x, SURF, -104, 180)
 for (x0, y, z0, x1, z1) in ((-7, SURF, -71, 7, -57), (-50, 0, -68, -38, -56), (-7, 0, -35, 7, -21), (-58, 0, 30, -44, 44), (18, 0, 57, 32, 71), (50, 12, 102, 80, 110)):
     m.raw(f"checkpoint {x0:g} {y:g} {z0:g} {x1:g} {y + 4:g} {z1:g}")
+m.box(30, SURF, -111, 32, SURF + 3, -100, accent=True)                       # a spoil wall: no sightline between the stage-0 spawns
 for k, (y, pts, yaw) in SP.items():                       # spawns (stage by stage): before the scatter, which avoids them
     for (x, z) in pts: m.spawn(k, x, y, z, yaw)
 # ---- rock ribs across the caverns: they split each cavern into bays (fights at rifle range, not across 100 m)
@@ -2644,6 +2897,8 @@ for lx in range(-100, LHX - 4, 22):
 for (x, z) in ((-62, 46), (-78, 58), (-56, 98), (-24, 76), (22, 75), (14, 60)): m.light(x, 3, z, 10, 0.7, fixture=False)   # crystal glow
 # cover scattered over every floor: crates, ore bins, rubble, timber cribs (none on rails, spawns, points or stairs)
 def scatter(region, y, step, shapes, seed, avoid=()):
+    with m.generated(): _scatter(region, y, step, shapes, seed, avoid)   # (generated decor: kept off keep-clear volumes)
+def _scatter(region, y, step, shapes, seed, avoid=()):
     R = random.Random(seed); solid = [list(a) for a in avoid]
     for ln in m.lines:
         w = ln.split()
@@ -2674,14 +2929,14 @@ def scatter(region, y, step, shapes, seed, avoid=()):
                 solid.append([cx - hw, cz - hd, cx + hw, cz + hd])
             z += step
         x += step
-RAILS = [(-72, 15, 72, 21), (-LHX, -72.5, LHX, -69.5), (23.5, -LHZ, 26.5, 52), (-LHX, -85.5, LHX, -82.5), (23, 22.5, 46, 25.5), (-43, -94, -39, -34)]
+RAILS = [(-72, 13, 72, 21), (-LHX, -72.5, LHX, -69.5), (23.5, -LHZ, 26.5, 52), (-LHX, -85.5, LHX, -82.5), (23, 22.5, 46, 25.5), (-43, -94, -39, -34)]
 SHAPES = [(1.4, 1.4, 1.3, "box"), (2.2, 1.2, 1.5, "box"), (1.8, 1.8, 1.4, "crib"), (2.4, 1.6, 1.3, "bin"), (3.0, 3.0, 1.6, "heap"), (1.2, 2.4, 1.1, "box")]
 scatter((-LHX, -LHZ, LHX, -8), 0, 6, SHAPES, "workings", avoid=RAILS + [PIT, (-14, -40, 14, -16)])
 scatter((PIT[0] + 12, PIT[1] + 12, PIT[2] - 12, PIT[3] - 12), 0, 6, SHAPES, "pitfloor", avoid=RAILS)
 scatter((-LHX, -LHZ, LHX, -8), SURF, 7, SHAPES + [(4, 3, 2.6, "box"), (5, 3, 2.2, "bin")], "surface",
         avoid=RAILS + [(PIT[0] - 1, PIT[1] - 1, PIT[2] + 1, PIT[3] + 1), DECL_E, DECL_W, SHAFT] + LADW + RIMHOLES)
 scatter((4, -6, LHX, LHZ), 0, 6, SHAPES, "station", avoid=RAILS + [(46, 16, 62, 32)])
-scatter((-LHX, -6, -4, LHZ), 0, 6, SHAPES, "grotto", avoid=[LAKE])
+scatter((-LHX, -6, -4, LHZ), 0, 6, SHAPES, "grotto", avoid=RAILS + [LAKE])
 
 # ---- spawns (stage by stage) and the setting
 def trim_to_rock():
@@ -2725,7 +2980,7 @@ def trim_to_rock():
     m.lines = out
 m.raw("# setting mine")
 m.props(); m.dress("lodestone"); m.detail_pass(); m.skyline_pass("lodestone")
-trim_to_rock()
+with m.generated(): trim_to_rock()   # (its cut pieces are generated: kept off keep-clear volumes)
 m.save("lodestone", dress=False)
 # ======================================================================================================
 # MIDTOWN: multi point. A city centre the size of four hamlets: three avenues each way, sixteen blocks of
@@ -2928,11 +3183,11 @@ for (x, z) in ((-90, -74.5), (47, -74.5), (-30, 74.5), (90, 9.5), (-90, 57.5)):
 MSP = {
     "att0": (0, [(-65, -104), (-63, -104), (-65, -100), (-63, -100), (-65, -96), (-63, -96)], 135),   # (the avenue's centre line: clear of parked cars)
     "def0": (0, [(36, -66), (40, -66), (44, -66), (36, -62), (40, -62), (44, -62)], 90),
-    "att1": (0, [(-4, -104), (0, -104), (4, -104), (-4, -98), (0, -98), (4, -98)], 180),
+    "att1": (0, [(-4, -104), (0, -104), (4, -104), (-4, -98), (0, -98), (-6.5, -98)], 180),
     "def1": (0.15, [(16, -36), (20, -36), (24, -36), (16, -32), (20, -32), (24, -32)], 0),
-    "att2": (0, [(63, -50), (65, -50), (63, -46), (65, -46), (63, -42), (65, -42)], 135),
+    "att2": (0, [(61, -50), (65, -50), (63, -54), (65, -46), (63, -42), (65, -42)], 135),
     "def2": (0.2, [(30, 50), (34, 50), (38, 50), (30, 46), (38, 46), (42, 50)], 0),
-    "att3": (0, [(63, 28), (65, 28), (63, 32), (65, 32), (63, 36), (65, 36)], 90),
+    "att3": (0, [(63, 28), (65, 28), (61, 40), (65, 40), (63, 36), (65, 36)], 90),
     "def3": (9, [(-60, -1.5), (-56, -1.5), (-52, -1.5), (-60, 1.5), (-56, 1.5), (-52, 1.5)], -90),
     "att4": (0, [(-20, -1.5), (-16, -1.5), (-12, -1.5), (-20, 1.5), (-16, 1.5), (-12, 1.5)], 180),   # (under the railway)
     "def4": (0.15, [(-46, 44), (-42, 44), (-38, 44), (-28, 44), (-24, 44), (-20, 44)], 0),

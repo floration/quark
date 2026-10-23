@@ -1125,17 +1125,35 @@ bool rulesFrozen(const Server& s, int id) {
 }
 
 int rulesSpawnType(const Server& s, int id) {
-    const int mode = s.ms_.mode;
+    return modeSpawnType(s.map_, s.ms_.mode, s.players_[id].team, s.ms_.attackers, s.tourney_.running);
+}
+
+int modeSpawnType(const Map& m, int mode, int team, int attackers, bool tourneyMatch) {
     // (canSupportMode, not supportsMode: whether the map HAS these spawns, not whether its "modes" line offers the
     // mode. Colosseum is built for tourney and doesn't offer vs, so its a/b spawns were never used: REVIEW MAP-7.)
-    if (mode == MODE_RACE && s.map_.canSupportMode(MODE_RACE)) return SPAWN_RACE;
-    if (mode == MODE_TOURNEY && s.tourney_.running && s.map_.canSupportMode(MODE_VS))
-        return s.players_[id].team == TEAM_B ? SPAWN_B : SPAWN_A; // a match: opposite ends
+    if (mode == MODE_RACE && m.canSupportMode(MODE_RACE)) return SPAWN_RACE;
+    if (mode == MODE_TOURNEY && tourneyMatch && m.canSupportMode(MODE_VS))
+        return team == TEAM_B ? SPAWN_B : SPAWN_A; // a match: opposite ends
     if (!modeIsTeamBased(mode)) return SPAWN_ANY;
     bool staged = false;   // (payload maps may stage their spawns by checkpoint, like multi point)
-    for (auto& sp : s.map_.spawns) staged |= isStagedSpawn(sp.team);
-    if (mode == MODE_PAYLOAD && staged) return stagedSpawn(0, s.players_[id].team != s.ms_.attackers);
-    if (mode == MODE_POINTS && s.map_.canSupportMode(MODE_POINTS)) // staged: the spawns for how far the attack has got
-        return stagedSpawn(0, s.players_[id].team != s.ms_.attackers);
-    return s.players_[id].team == TEAM_B ? SPAWN_B : SPAWN_A;
+    for (auto& sp : m.spawns) staged |= isStagedSpawn(sp.team);
+    if (mode == MODE_PAYLOAD && staged) return stagedSpawn(0, team != attackers);
+    if (mode == MODE_POINTS && m.canSupportMode(MODE_POINTS)) // staged: the spawns for how far the attack has got
+        return stagedSpawn(0, team != attackers);
+    return team == TEAM_B ? SPAWN_B : SPAWN_A;
+}
+
+std::vector<const SpawnPoint*> spawnPool(const Map& m, int want, int pointsTaken) {
+    std::vector<const SpawnPoint*> cands;
+    if (isStagedSpawn(want)) { // multi point: the latest stage reached (points taken) that has spawns for this side
+        bool defending = spawnDefends(want);
+        int stage = -1;
+        for (auto& sp : m.spawns)
+            if (isStagedSpawn(sp.team) && spawnDefends(sp.team) == defending && spawnStage(sp.team) <= pointsTaken) stage = std::max(stage, spawnStage(sp.team));
+        want = stagedSpawn(std::max(stage, 0), defending);
+    }
+    for (auto& sp : m.spawns) if (sp.team == want) cands.push_back(&sp);
+    if (cands.empty()) for (auto& sp : m.spawns) if (sp.team == SPAWN_ANY) cands.push_back(&sp);
+    if (cands.empty()) for (auto& sp : m.spawns) cands.push_back(&sp);
+    return cands;
 }

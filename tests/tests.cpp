@@ -42,6 +42,7 @@
 #include "common/sha256.h"
 #include "common/sign.h"
 #include "game/bots.h"
+#include "walkgrid.h"
 #include "common/proc.h"
 #ifndef _WIN32
 #include <fcntl.h>
@@ -355,14 +356,217 @@ static void testMaps() {
         for (auto& sp : m.spawns) { a += sp.team == SPAWN_A; b += sp.team == SPAWN_B; }
         bool duel = (m.rankedLadders & 3) != 0;   // a ladder played 1v1 (vanilla, vampire): a spawn for each side
         CHECK(a == b && (a >= 1 || !duel));
+        // the rest of the map mirrors too (REVIEW MAP-17: only spawn counts were compared): every spawn has its twin
+        // (A <-> B, the others their own team) facing the mirrored way, every ladder, light and objective its twin,
+        // and the sun is overhead (any other sun lights the two halves differently: baked shadows fall one way)
+        auto same = [](const Vec3& p, const Vec3& q) { return length(p - q) < 0.01f; };
+        auto flip = [](const Vec3& p) { return Vec3(-p.x, p.y, -p.z); };
+        auto boxTwin = [&](const std::vector<AABB>& list, const AABB& x) {
+            AABB mx = mirrored(x);
+            for (auto& o : list) if (same(o.mn, mx.mn) && same(o.mx, mx.mx)) return true;
+            return false;
+        };
+        int odd = 0;
+        for (auto& sp : m.spawns) {
+            int twinTeam = sp.team == SPAWN_A ? SPAWN_B : sp.team == SPAWN_B ? SPAWN_A : sp.team;
+            bool found = false;
+            for (auto& o : m.spawns)
+                if (o.team == twinTeam && same(o.pos, flip(sp.pos)) && std::fabs(std::remainder(o.yaw - sp.yaw - PI, 2 * PI)) < 0.01f) found = true;
+            if (!found) { printf("  %s: spawn %.1f %.1f %.1f (yaw %.0f) has no mirrored twin\n", name.c_str(), sp.pos.x, sp.pos.y, sp.pos.z, sp.yaw * 180 / PI); odd++; }
+        }
+        for (auto& l : m.ladders) if (!boxTwin(m.ladders, l)) { printf("  %s: a ladder at %.1f %.1f has no twin\n", name.c_str(), l.center().x, l.center().z); odd++; }
+        for (auto& l : m.lights) {
+            bool found = false;
+            for (auto& o : m.lights) found |= same(o.pos, flip(l.pos)) && o.radius == l.radius && o.intensity == l.intensity;
+            if (!found) { printf("  %s: a light at %.1f %.1f %.1f has no twin\n", name.c_str(), l.pos.x, l.pos.y, l.pos.z); odd++; }
+        }
+        for (auto* list : {&m.bombSites, &m.points, &m.checkpoints}) for (auto& z : *list) if (!boxTwin(*list, z)) { printf("  %s: an objective has no twin\n", name.c_str()); odd++; }
+        if (m.hasHill && !boxTwin({m.hill}, m.hill)) { printf("  %s: the hill isn't centred\n", name.c_str()); odd++; }
+        if (std::fabs(m.sunDir.x) > 1e-6f || std::fabs(m.sunDir.z) > 1e-6f) { printf("  %s: the sun (%.2f %.2f %.2f) isn't overhead\n", name.c_str(), m.sunDir.x, m.sunDir.y, m.sunDir.z); odd++; }
+        CHECK(odd == 0);
     }
     CHECK(perLadder[0] >= 2 && perLadder[1] >= 2 && perLadder[2] >= 2 && ownMaps >= 3);
 }
 
-// Every map: loads, supports the mode it was built for, no spawn inside a wall, and bots can
-// navigate from every spawn to every objective.
+// The payload cart drives the whole track without going through anything (REVIEW MAP-5: a box on Railyard's track at
+// 102-106 m, a pillar and a dais on Lodestone's at 117.5 m and 127.5 m): its box, every 10 cm along the track, against
+// every brush you can see or bump into (solid, clip, trim; not far scenery, water or lava surfaces).
+static void testCartSweep() {
+    printf("payload cart: the whole track clear of the map\n");
+    for (auto& name : testedMaps()) {
+        Map m;
+        if (!m.load(name) || !(m.supportsMode(MODE_PAYLOAD) || m.supportsMode(MODE_NPAYLOAD))) continue;   // (the maps that offer it)
+        float len = m.payloadLength();
+        int hits = 0;
+        std::vector<char> reported(m.brushes.size(), 0);
+        for (float d = 0; d <= len + 1e-3f; d += 0.1f) {
+            AABB cart = m.payloadCartBox(std::min(d, len));
+            cart.mn = cart.mn + Vec3(0.02f, 0.02f, 0.02f);   // (touching is fine: the cart rides on the floor)
+            cart.mx = cart.mx - Vec3(0.02f, 0.02f, 0.02f);
+            for (size_t i = 0; i < m.brushes.size(); i++) {
+                const Brush& b = m.brushes[i];
+                if (b.material == 5 || b.material == 6 || b.material == 7 || !cart.overlaps(b.box)) continue;
+                hits++;
+                if (reported[i]) continue;
+                reported[i] = 1;
+                printf("  %s: the cart at %.1f m of %.1f goes through material %d %.2f %.2f %.2f .. %.2f %.2f %.2f\n", name.c_str(), d, len, b.material,
+                       b.box.mn.x, b.box.mn.y, b.box.mn.z, b.box.mx.x, b.box.mx.y, b.box.mx.z);
+            }
+        }
+        printf("  %-10s %.1f m of track%s\n", name.c_str(), len, hits ? ": BLOCKED" : ", clear");
+        CHECK(hits == 0);
+    }
+}
+
+// Every mode a map offers has a spawn for every player it can have (REVIEW MAP-2: eight maps had 2 free-for-all
+// spawns, Anvil's ranked 4-player instagib among them, and players spawned inside each other): the pools
+// Server::spawnPlayer really draws from (spawnPool), each at least as big as the players who draw from it in a full
+// default-size server (8: free for all, hide, tag, race, a tourney's warm-up; 4 a side in team modes, 2 in duel,
+// 1 in 1v1 and a tourney match), every stage of a staged map, and no two of a pool's spawns closer than 1.5 m.
+static void testSpawnPools() {
+    printf("spawn pools: a spawn per player in every offered mode, 1.5 m apart\n");
+    const int full = ServerConfig().maxPlayers;
+    for (auto& name : testedMaps()) {
+        Map m;
+        if (!m.load(name)) continue;
+        int maxStage = 0;
+        for (auto& sp : m.spawns) if (isStagedSpawn(sp.team)) maxStage = std::max(maxStage, spawnStage(sp.team));
+        int worst = 1 << 30, pools = 0;
+        std::string worstWhat;
+        for (int mode = 0; mode < MODE_COUNT; mode++) {
+            if (!m.supportsMode(mode)) continue;
+            struct Use { const char* who; int team; bool match; int need; };
+            std::vector<Use> uses;
+            if (mode == MODE_ARENA) uses = {{"a", TEAM_A, false, 1}, {"b", TEAM_B, false, 1}};
+            else if (mode == MODE_DUEL) uses = {{"a", TEAM_A, false, 2}, {"b", TEAM_B, false, 2}};
+            else if (mode == MODE_TOURNEY) uses = {{"warm-up", TEAM_A, false, full}, {"match a", TEAM_A, true, 1}, {"match b", TEAM_B, true, 1}};
+            else if (modeIsTeamBased(mode)) uses = {{"a", TEAM_A, false, full / 2}, {"b", TEAM_B, false, full / 2}};
+            else uses = {{"all", TEAM_A, false, full}};
+            for (auto& u : uses)
+                for (int stage = 0; stage <= maxStage; stage++) {
+                    int want = modeSpawnType(m, mode, u.team, TEAM_A, u.match);
+                    if (!isStagedSpawn(want) && stage > 0) break;
+                    std::vector<const SpawnPoint*> pool = spawnPool(m, want, stage);
+                    float closest = 1e9f;
+                    for (size_t i = 0; i < pool.size(); i++)
+                        for (size_t j = i + 1; j < pool.size(); j++) closest = std::min(closest, length(pool[i]->pos - pool[j]->pos));
+                    pools++;
+                    char what[96];
+                    snprintf(what, sizeof what, "%s %s%s", modeName(mode), u.who, isStagedSpawn(want) ? (" stage " + std::to_string(stage)).c_str() : "");
+                    if ((int)pool.size() - u.need < worst) { worst = (int)pool.size() - u.need; worstWhat = what; }
+                    if ((int)pool.size() < u.need || closest < 1.5f) {
+                        printf("    %s: %s draws from %zu spawns (needs %d), the closest two %.2f m apart\n", name.c_str(), what, pool.size(), u.need, closest);
+                        g_fail++;
+                    }
+                }
+        }
+        printf("  %-10s %3zu spawns, %2d pools, fewest to spare: %d (%s)\n", name.c_str(), m.spawns.size(), pools, worst, worstWhat.c_str());
+    }
+}
+
+// Spawn sanity (REVIEW MAP-16): every spawn faces into the map (2 m clear ahead at eye height: Summit's faced rock
+// 0.5 m away), no two spawns that can be in use together stand closer than 1.5 m (only one side's staged spawns of
+// different stages may share a spot), and in team modes no spawn sees an enemy spawn (eye to eye, at any range: a
+// sniper reaches across any map).
+static void testSpawnSanity() {
+    printf("spawns: facing into the map, apart, out of the enemy's sight\n");
+    for (auto& name : testedMaps()) {
+        Map m;
+        if (!m.load(name)) continue;
+        int bad = 0;
+        for (auto& sp : m.spawns) {
+            Vec3 eye = sp.pos + Vec3(0, kEyeHeight, 0);
+            float t = m.raycast(eye, angleForward(sp.yaw, 0), 2.0f);
+            if (t >= 0) { printf("    %s: spawn %.1f %.1f %.1f faces a wall %.1f m away\n", name.c_str(), sp.pos.x, sp.pos.y, sp.pos.z, t); bad++; }
+        }
+        // (spawns used together: a mode's two teams; the free-for-all pool; the race grid; a staged map's attackers and
+        // defenders, but never one side's stages with each other. Lodestone's race grid may share a pad with a multi
+        // point stage: no mode uses both.)
+        auto group = [](int t) { return t == SPAWN_A || t == SPAWN_B ? 0 : t == SPAWN_ANY ? 1 : t == SPAWN_RACE ? 2 : 3; };
+        for (size_t i = 0; i < m.spawns.size(); i++)
+            for (size_t j = i + 1; j < m.spawns.size(); j++) {
+                auto &p = m.spawns[i], &q = m.spawns[j];
+                bool stagesApart = isStagedSpawn(p.team) && isStagedSpawn(q.team) && spawnDefends(p.team) == spawnDefends(q.team) && spawnStage(p.team) != spawnStage(q.team);
+                float d = length(p.pos - q.pos);
+                if (d < 1.5f && !stagesApart && group(p.team) == group(q.team)) { printf("    %s: spawns %.1f %.1f %.1f and %.1f %.1f %.1f are %.2f m apart\n", name.c_str(), p.pos.x, p.pos.y, p.pos.z, q.pos.x, q.pos.y, q.pos.z, d); bad++; }
+            }
+        // enemy spawns in sight: the two sides' spawns in every offered team mode (each stage's attackers and defenders)
+        std::vector<std::pair<int, int>> sides;   // (spawn type, enemy spawn type)
+        for (int mode = 0; mode < MODE_COUNT; mode++) {
+            if (!m.supportsMode(mode) || !modeIsTeamBased(mode)) continue;
+            int sa = modeSpawnType(m, mode, TEAM_A, TEAM_A, false), sb = modeSpawnType(m, mode, TEAM_B, TEAM_A, false);
+            if (isStagedSpawn(sa)) for (int st = 0; st <= kMaxSpawnStage; st++) sides.push_back({stagedSpawn(st, false), stagedSpawn(st, true)});
+            else sides.push_back({sa, sb});
+        }
+        std::sort(sides.begin(), sides.end());
+        sides.erase(std::unique(sides.begin(), sides.end()), sides.end());
+        if (m.holdFire > 0) sides.clear();   // (a "holdfire" map starts both sides face to face on purpose: Dojo's bow)
+        int pairs = 0, seen = 0;
+        for (auto [ta, tb] : sides)
+            for (auto& p : m.spawns)
+                for (auto& q : m.spawns) {
+                    if (p.team != ta || q.team != tb) continue;
+                    Vec3 a = p.pos + Vec3(0, kEyeHeight, 0), b = q.pos + Vec3(0, kEyeHeight, 0), d = b - a;
+                    float len = length(d);
+                    pairs++;
+                    if (len > 0.1f && !m.raycastAny(a, d / len, len)) {
+                        seen++;
+                        printf("    %s: enemy spawns %.1f %.1f %.1f and %.1f %.1f %.1f see each other (%.0f m)\n", name.c_str(), p.pos.x, p.pos.y, p.pos.z, q.pos.x, q.pos.y, q.pos.z, len);
+                    }
+                }
+        printf("  %-10s %3zu spawns, %d enemy pairs, %d in sight%s\n", name.c_str(), m.spawns.size(), pairs, seen, bad + seen ? ": FAIL" : "");
+        g_fail += bad + seen;
+    }
+}
+
+// The collision-checked walk (WalkGrid, REVIEW MAP-3) on small maps: what a player can and can't get past.
+static void testWalkGrid() {
+    printf("walk grid: sealed rooms, slots, steps, gaps, ladders, crouching, clip, lava\n");
+    const std::string F = "box -20 -1 -20 20 0 20\nspawn any 0 0 0\n";   // a 40 m floor
+    auto reaches = [](const std::string& text, Vec3 a, Vec3 b) {
+        Map m;
+        std::string err;
+        if (!m.parse(text, &err)) { printf("  parse: %s\n", err.c_str()); return -1; }
+        WalkGrid w;
+        w.build(m);
+        w.components();
+        int na = w.nodeAt(a), nb = w.nodeAt(b);
+        if (na < 0 || nb < 0) return -2;   // (nowhere to stand there)
+        return (int)w.reach(na)[w.comp[nb]];
+    };
+    const Vec3 W(-10, 0, 0), E(10, 0, 0);
+    CHECK(reaches(F, W, E) == 1);
+    // a room with no way out (3 m walls: higher than a jump), then the same room with a 1 m doorway
+    const std::string room = "box -13 0 -2.4 -12.6 3 2.4\nbox -7.4 0 -2.4 -7 3 2.4\nbox -12.6 0 -2.4 -7.4 3 -2\n";
+    CHECK(reaches(F + room + "box -12.6 0 2 -7.4 3 2.4\n", W, E) == 0 && reaches(F + room + "box -12.6 0 2 -7.4 3 2.4\n", E, W) == 0);
+    CHECK(reaches(F + room + "box -12.6 0 2 -10.5 3 2.4\nbox -9.5 0 2 -7.4 3 2.4\n", W, E) == 1);
+    // a wall right across with a slot (off the grid's 0.25 m spacing): 0.9 m lets the 0.8 m hull through, 0.7 m doesn't
+    auto slot = [&](float w) { char t[200]; snprintf(t, sizeof t, "box -0.2 0 -20 0.2 4 3.07\nbox -0.2 0 %g 0.2 4 20\n", 3.07 + w); return F + t; };
+    CHECK(reaches(slot(0.9f), W, E) == 1 && reaches(slot(0.7f), W, E) == 0);
+    // steps up: 0.5 m walks, 1.1 m is a jump, 1.4 m is too high; down is always fine
+    auto ledge = [&](float h) { char t[100]; snprintf(t, sizeof t, "box 2 0 -20 20 %g 20\n", h); return F + t; };
+    CHECK(reaches(ledge(0.5f), W, {10, 0.5f, 0}) == 1 && reaches(ledge(1.1f), W, {10, 1.1f, 0}) == 1);
+    CHECK(reaches(ledge(1.4f), W, {10, 1.4f, 0}) == 0 && reaches(ledge(1.4f), {10, 1.4f, 0}, W) == 1);
+    // a gap with nothing under it: 2 m is jumped, 3.6 m isn't
+    auto gap = [](float g) { char t[160]; snprintf(t, sizeof t, "box -20 -1 -20 -1 0 20\nbox %g -1 -20 20 0 20\nspawn any -10 0 0\n", -1 + g); return std::string(t); };
+    CHECK(reaches(gap(2.0f), W, E) == 1 && reaches(gap(3.6f), W, E) == 0);
+    // a 5 m platform: only up its ladder
+    const std::string tower = "box 5 0 -2 9 5 2\n";
+    CHECK(reaches(F + tower, W, {7, 5, 0}) == 0 && reaches(F + tower + "ladder 4.3 0 -0.45 5 6 0.45\n", W, {7, 5, 0}) == 1);
+    // a hole under a wall: 1.4 m high is crawled through, 1 m isn't
+    auto hole = [&](float h) { char t[200]; snprintf(t, sizeof t, "box -0.2 0 -20 0.2 4 -1\nbox -0.2 0 1 0.2 4 20\nbox -0.2 %g -1 0.2 4 1\n", h); return F + t; };
+    CHECK(reaches(hole(1.4f), W, E) == 1 && reaches(hole(1.0f), W, E) == 0);
+    // clip blocks players (an invisible wall in a doorway)
+    CHECK(reaches(slot(1.2f), W, E) == 1 && reaches(slot(1.2f) + "clip -0.2 0 3.07 0.2 4 4.27\n", W, E) == 0);
+    // lava across the floor: 1 m is jumped over, 3 m isn't
+    CHECK(reaches(F + "lava -0.5 0 -20 0.5 0.2 20\n", W, E) == 1 && reaches(F + "lava -1.5 0 -20 1.5 0.2 20\n", W, E) == 0);
+}
+
+// Every map: loads, supports the mode it was built for, no spawn inside a wall, players can get from every spawn to
+// every objective (and the enemy) in every mode it offers, walking the real collision (WalkGrid), and the bots' nav
+// graph links them too.
 static void testAllMaps() {
-    printf("all maps: modes, spawns, bot navigation\n");
+    printf("all maps: modes, spawns, collision-checked routes, bot navigation\n");
     for (auto& name : testedMaps()) {
         Map m;
         std::string err;
@@ -370,6 +574,18 @@ static void testAllMaps() {
         if (m.preferredMode >= 0) CHECK(m.supportsMode(m.preferredMode));
         if (name == "dojo") { CHECK(!m.lava.empty() && m.inLava(playerBox({14, -1.5f, 0}, false)) && !m.inLava(playerBox({0, 0.1f, 0}, false))); }   // lava kills on touch
         for (auto& sp : m.spawns) CHECK(!m.boxSolid(playerBox(sp.pos + Vec3(0, 0.02f, 0), false)));
+        {   // walked with the player's hull against the map's collision: a route that isn't there fails
+            double t0 = timeNow();
+            WalkGrid w;
+            w.build(m);
+            int routes = 0;
+            std::vector<std::string> missing = walkRoutesMissing(m, w, &routes);
+            printf("  %-10s %7zu standing spots, %4d routes walked (%.0f ms)%s\n", name.c_str(), w.nodes.size(), routes, (timeNow() - t0) * 1000,
+                   missing.empty() ? "" : ": MISSING");
+            for (size_t k = 0; k < missing.size() && k < 12; k++) printf("    %s\n", missing[k].c_str());
+            if (missing.size() > 12) printf("    (%zu more)\n", missing.size() - 12);
+            CHECK(missing.empty());
+        }
         NavGraph g;
         g.build(m);
         std::vector<Vec3> goals;
@@ -406,6 +622,69 @@ static void testAllMaps() {
         if (unreachable) printf("  %s: %d spawn->objective routes missing\n", name.c_str(), unreachable);
         CHECK(unreachable == 0);
     }
+}
+
+// A saved map is exactly the map its edits made (FINAL_REVIEW 5.5: saves kept 6 significant digits while edits carry 9,
+// so an edit at x = 1000.125 reloaded as 1000.12), and parsing starts from a fresh map every time (5.6).
+static void testMapSaveExact() {
+    printf("map save: exact numbers, fresh parse, title rule\n");
+    auto same = [](const Map& a, const Map& b) {
+        if (a.brushes.size() != b.brushes.size() || a.spawns.size() != b.spawns.size() || a.lights.size() != b.lights.size() ||
+            a.groups.size() != b.groups.size() || a.ladders.size() != b.ladders.size() || a.payloadPath.size() != b.payloadPath.size()) return false;
+        auto eq = [](const AABB& x, const AABB& y) { return x.mn.x == y.mn.x && x.mn.y == y.mn.y && x.mn.z == y.mn.z && x.mx.x == y.mx.x && x.mx.y == y.mx.y && x.mx.z == y.mx.z; };
+        for (size_t i = 0; i < a.brushes.size(); i++) if (!eq(a.brushes[i].box, b.brushes[i].box) || a.brushes[i].material != b.brushes[i].material) return false;
+        for (size_t i = 0; i < a.spawns.size(); i++) {
+            auto &p = a.spawns[i], &q = b.spawns[i];
+            if (p.pos.x != q.pos.x || p.pos.y != q.pos.y || p.pos.z != q.pos.z || p.yaw != q.yaw || p.team != q.team) return false;
+        }
+        for (size_t i = 0; i < a.lights.size(); i++)
+            if (a.lights[i].pos.x != b.lights[i].pos.x || a.lights[i].pos.z != b.lights[i].pos.z || a.lights[i].radius != b.lights[i].radius || a.lights[i].intensity != b.lights[i].intensity) return false;
+        for (size_t i = 0; i < a.groups.size(); i++) {
+            if (!eq(a.groups[i].box, b.groups[i].box) || a.groups[i].parts.size() != b.groups[i].parts.size()) return false;
+            for (size_t k = 0; k < a.groups[i].parts.size(); k++) if (!eq(a.groups[i].parts[k].box, b.groups[i].parts[k].box)) return false;
+        }
+        for (size_t i = 0; i < a.ladders.size(); i++) if (!eq(a.ladders[i], b.ladders[i])) return false;
+        for (size_t i = 0; i < a.payloadPath.size(); i++) if (a.payloadPath[i].x != b.payloadPath[i].x || a.payloadPath[i].z != b.payloadPath[i].z) return false;
+        return a.title == b.title && a.gridRefs == b.gridRefs;
+    };
+    const std::string base = "title t\nbox -20 -1 -20 20 0 20\ngroup custom 1 0 8 0 8 10 2 10\npart 2 0 0 0 1 0.5 1\nspawn a 0 0 0\nlight 0 5 0 10 1\n";
+    Map m;
+    CHECK(m.parse(base));
+    for (const char* op : {"b ins 1 0 1000.125 0 -3.0000001 1001.0625 2.123456789 -2", "s set 0 0 1.23456789 0 -7.00390625 37.12345",
+                           "s ins 1 1 3 0 3 -123.456787", "l set 0 0.333333343 5.1 0.1 9.87654305 0.123456791", "g part 0 1 0.123456789 0 0.3333333 0.9 0.5 0.987654321",
+                           "p ins 0 1.00000012 0 2.5"})
+        CHECK(applyMapEdit(m, op));
+    Map again;
+    std::string text = m.serialize();
+    CHECK(again.parse(text) && same(m, again) && again.serialize() == text);
+    CHECK(text.find("1000.125 ") != std::string::npos && text.find("1000.12 ") == std::string::npos);
+    // shipped maps: save -> load gives the same map, and short numbers stay short (no 0.100000001)
+    for (auto& name : testedMaps()) {
+        Map a, b;
+        if (!a.load(name)) continue;
+        std::string t = a.serialize();
+        if (!b.parse(t) || !same(a, b) || b.serialize() != t) { printf("  %s: save -> load changed the map\n", name.c_str()); g_fail++; }
+        if (t.find("00000") != std::string::npos) { printf("  %s: saved with float noise\n", name.c_str()); g_fail++; }
+    }
+    // parse starts from a fresh map: nothing of the previous map or of a failed parse is left
+    Map f;
+    f.name = "kept";
+    CHECK(f.parse("title Old\nsun 1 1 0\nvoid -3\nindoor 9\nholdfire 4\npalette base 1 0 0 accent 0 1 0 metal 0 0 1 glow 1 1 0 sky 0 1 1\n"
+                  "for vs\nmodes vs ffa\nranked vanilla\nbox -5 -1 -5 5 0 5\nspawn a 0 0 0\nspawn b 1 0 1\nhill -1 0 -1 1 2 1\n"));
+    CHECK(f.hasVoid && f.indoor && f.holdFire == 4 && f.hasPalette && f.hasHill && f.rankedLadders && f.allowedModes);
+    CHECK(!f.parse("title Bad\nvoid -3\nbox 0 0 0 1 1 x\n"));
+    Map fresh;
+    CHECK(f.title.empty() && !f.hasVoid && f.voidY == 0 && !f.indoor && f.ceilingY == 0 && f.holdFire == 0 && !f.hasPalette && !f.hasHill &&
+          f.rankedLadders == 0 && f.allowedModes == 0 && f.preferredMode == -1 && f.brushes.empty() && f.cells.empty() && f.name == "kept");
+    CHECK(f.sunDir.x == fresh.sunDir.x && f.sunDir.y == fresh.sunDir.y && f.palBase.x == fresh.palBase.x);
+    CHECK(f.parse("box -5 -1 -5 5 0 5\nspawn any 0 0 0\n") && f.title.empty() && !f.hasVoid && f.sunDir.x == fresh.sunDir.x && f.name == "kept");
+    // the title: the same rule for a file and an edit (at most 40 printable characters, no '#'; spaces around dropped)
+    const std::string rest = "\nbox -5 -1 -5 5 0 5\nspawn any 0 0 0\n";
+    CHECK(f.parse("title   My Arena  \r" + rest) && f.title == "My Arena");
+    CHECK(f.parse("title " + std::string(40, 'x') + rest) && !f.parse("title " + std::string(41, 'x') + rest) && !f.parse("title a\tb" + rest));
+    CHECK(f.parse("title x" + rest) && applyMapEdit(f, "t  Edited  ") && f.title == "Edited");
+    CHECK(!applyMapEdit(f, "t " + std::string(41, 'y')) && !applyMapEdit(f, "t a\x01" "b") && f.title == "Edited");
+    CHECK(applyMapEdit(f, "t " + std::string(40, 'z')) && again.parse(f.serialize()) && again.title == f.title);
 }
 
 // One set of limits for every map, however it arrives (REVIEW CLI-3, NET-3, NET-15): files, downloads and demos are
@@ -3512,13 +3791,15 @@ static void testEditSession(uint16_t port) {
             snprintf(op, sizeof op, "ed g part %zu %d %g 0 0 %g 0.5 0.1", groupsBefore, k % 4, (k % 20) * 0.05, (k % 20) * 0.05 + 0.04);
             b.sendCommand(op);
         }
+        // (waits until it's through rather than for a fixed wall-clock window: a loaded machine only makes it slower)
         double t0 = timeNow();
+        uint32_t tick0 = s.timeMs_;
         bool done = false;
-        while (!done && timeNow() - t0 < 3.0) {
+        while (!done && timeNow() - t0 < 60.0) {
             pump(s, cls, 0.02, idle);
             done = s.map_.groups.size() == groupsBefore + 1 && s.map_.groups.back().parts.size() == 200 && b.pendingCommands() == 0;
         }
-        printf("  200-part group: %.0f ms\n", (timeNow() - t0) * 1000);
+        printf("  200-part group: %.0f ms (%llu ms game time)\n", (timeNow() - t0) * 1000, (unsigned long long)(s.timeMs_ - tick0));
         CHECK(done);
         pump(s, cls, 0.3, idle);
         CHECK(a.map().crc == s.map_.crc && b.map().crc == s.map_.crc && c.map().crc == s.map_.crc);
@@ -4509,8 +4790,8 @@ static void testHostileInput() {
         CHECK(one("group custom 1 0 0 0 0 4 4 4\npart +2 0 0 0 1 1 1", m) && m.groups[0].parts[0].material == 2);
         CHECK(!one("group custom 99999999999 0 0 0 0 1 1 1", m) && !one("group custom 1.5 0 0 0 0 1 1 1", m));
         m.title = "kept";
-        CHECK(m.parse("title\n" + base) && m.title == "kept");      // a bare "title" leaves it alone, as getline did
-        CHECK(m.parse("title  Hi there\t\r\n" + base) && m.title == "Hi there\t\r");
+        CHECK(m.parse("title\n" + base) && m.title.empty());       // a bare "title": none (every parse starts from a fresh map)
+        CHECK(m.parse("title  Hi there\t\r\n" + base) && m.title == "Hi there");   // (the spaces around it dropped)
         CHECK(m.parse(base + "box 1 2 3 4 5 6 # a comment\n  \t accent\t1 2 3 4 5 6\r") && m.brushes.size() == 3 && m.brushes[2].material == 1);
         std::string err;
         CHECK(!m.parse(base + "box 1 2 3 4 5 x # why\n", &err) && err == "parse error on line 3: box 1 2 3 4 5 x ");
@@ -4533,20 +4814,57 @@ static void testHostileInput() {
 
 // Test ports: the numbers in main() are offsets into a per-run block (TP), so two test runs on one machine
 // (two checkouts, CI + local) don't fight over 28530 and friends. Picked once before the groups fork.
+// Blocks stay out of the OS's ephemeral range: every client socket (the tests' own, and any other program's) gets a
+// port from that range, so a block inside it could find one of its server ports taken mid-run.
 static int g_portShift = 0;
 static uint16_t TP(int port) { return (uint16_t)(port + g_portShift); }
+static std::vector<int> portBlockShifts(int ephLo, int ephHi) {
+    // the tests use ports 28500 .. ~30100 (+ the shift): blocks of 2000 from 10500 up that are clear of the range
+    std::vector<int> shifts;
+    for (int shift = -18000; shift <= 36000; shift += 2000) {
+        int lo = 28500 + shift, hi = 30500 + shift;
+        if (hi <= 65535 && (hi < ephLo || lo > ephHi)) shifts.push_back(shift);
+    }
+    if (shifts.empty()) shifts.push_back(0);
+    return shifts;
+}
+static void ephemeralPortRange(int& lo, int& hi) {
+    lo = 49152, hi = 65535;   // the IANA range (Windows, macOS)
+#ifdef __linux__
+    std::ifstream f("/proc/sys/net/ipv4/ip_local_port_range");
+    int a = 0, b = 0;
+    if (f >> a >> b && a > 0 && b >= a && b <= 65535) { lo = a; hi = b; }
+#endif
+}
 static void pickPortBlock() {
 #ifdef _WIN32
     unsigned seed = (unsigned)std::chrono::steady_clock::now().time_since_epoch().count();
 #else
     unsigned seed = (unsigned)getpid();
 #endif
-    for (int k = 0; k < 16; k++) {   // blocks of 2000 from 28500 to ~60000; the first whose sample ports are free
-        int shift = (int)((seed + k) % 16) * 2000;
+    int ephLo, ephHi;
+    ephemeralPortRange(ephLo, ephHi);
+    std::vector<int> shifts = portBlockShifts(ephLo, ephHi);
+    for (size_t k = 0; k < shifts.size(); k++) {   // from a per-run start, the first block whose sample ports are free
+        int shift = shifts[(seed + k) % shifts.size()];
         bool ok = true;
         for (int p : {28520, 28700, 28900, 29300, 29600, 29997}) { UdpSocket s; if (!s.open((uint16_t)(p + shift))) { ok = false; break; } }
         if (ok) { g_portShift = shift; return; }
     }
+    g_portShift = shifts[seed % shifts.size()];
+}
+// The blocks never overlap the ephemeral range (Linux's default 32768-60999, the IANA 49152-65535, this machine's).
+static void testPortBlocks() {
+    printf("test port blocks: clear of the ephemeral port range\n");
+    int lo, hi;
+    ephemeralPortRange(lo, hi);
+    for (auto [a, b] : std::vector<std::pair<int, int>>{{32768, 60999}, {49152, 65535}, {lo, hi}}) {
+        std::vector<int> s = portBlockShifts(a, b);
+        CHECK(s.size() >= 2);
+        for (int shift : s) CHECK(28500 + shift >= 1024 && (30500 + shift < a || 28500 + shift > b));
+    }
+    CHECK(30500 + g_portShift < lo || 28500 + g_portShift > hi);
+    printf("  ephemeral %d-%d, block %d-%d\n", lo, hi, 28500 + g_portShift, 30500 + g_portShift);
 }
 
 // Update-package signatures (docs/SIGNING.md): round trip, tampering and wrong keys are rejected.
@@ -4743,9 +5061,12 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "edladder") { testEditorLadder(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edgroups") { testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(TP(29997)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "allmaps") { testAllMaps(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "cartsweep") { testCartSweep(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "spawns") { testSpawnPools(); testSpawnSanity(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "mapsym") { testMaps(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "allmaps") { testWalkGrid(); testAllMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "chat") { testChatAndVoteLimits(TP(29592)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "limits") { testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "limits") { testMapSaveExact(); testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(TP(29990)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(TP(29980)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); testAddbotArgs(TP(29982)); return g_fail ? 1 : 0; }
@@ -4785,12 +5106,12 @@ int main(int argc, char** argv) {
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
         {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testTimeToKill(); testWallbang(); }},
         {"maps", [] {
-            testMaps(); testAllMaps(); testStairs(); testLadders();
+            testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders();
             printf("map scores\n");   // the map bar: every map scores at least 7 in every category but originality
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapSaveExact(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); }},

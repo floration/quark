@@ -1414,18 +1414,7 @@ void Server::message(const std::string& text) {
 
 void Server::spawnPlayer(int id) {
     ServerPlayer& p = players_[id];
-    int want = rulesSpawnType(*this, id);
-    std::vector<const SpawnPoint*> cands;
-    if (isStagedSpawn(want)) { // multi point: the latest stage reached (points taken) that has spawns for this side
-        bool defending = spawnDefends(want);
-        int stage = -1;
-        for (auto& sp : map_.spawns)
-            if (isStagedSpawn(sp.team) && spawnDefends(sp.team) == defending && spawnStage(sp.team) <= ms_.point) stage = std::max(stage, spawnStage(sp.team));
-        want = stagedSpawn(std::max(stage, 0), defending);
-    }
-    for (auto& sp : map_.spawns) if (sp.team == want) cands.push_back(&sp);
-    if (cands.empty()) for (auto& sp : map_.spawns) if (sp.team == SPAWN_ANY) cands.push_back(&sp);
-    if (cands.empty()) for (auto& sp : map_.spawns) cands.push_back(&sp);
+    std::vector<const SpawnPoint*> cands = spawnPool(map_, rulesSpawnType(*this, id), ms_.point);
 
     Vec3 pos;
     float yaw = 0;

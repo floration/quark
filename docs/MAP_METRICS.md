@@ -80,7 +80,7 @@ Two graphs over the same floor samples:
 - **The tech path:** all of that, plus leaps and grapple pulls, with your speed as part of where you are:
   - **Speed** is one of the envelope's speeds. Moving along the path builds it as the envelope's run-up says (a path that circles to gain speed pays for the metres it circles). A ladder costs all of it; a grapple pull leaves you at what the pull gives.
   - **A leap** goes anywhere under the envelope of the speed you have: standing (8 m/s) that is 13.5 m across level, 4.2 m up at most; at 28 m/s, 61 m across or 12.5 m up. The arc must be clear for a player-wide body: three lines (the middle and both shoulders, so a 0.4 m slit doesn't count as a way through) up out of the take-off, across at chest height over the higher end (or over the arc's own apex, when only a fast take-off reaches), and down into the landing. Clip blocks it (players collide with clip). Leaps longer than 24 m are taken between every third sample, a few metres apart, to keep the report quick.
-  - **A grapple pull** reaches any surface hit within 45 m and lands you on the floor next to the anchor; the way there must be open to a player (the hook passes through clip, you don't).
+  - **A grapple pull** reaches any surface hit within 45 m and lands you on the floor next to the anchor; the way there must be open to a player (the hook passes through clip, you don't). A pull leaves you at 24 m/s, or at your own speed if that was faster (28 m/s in, 28 m/s out: the envelope table's last row).
   - Nobody stands inside clip, whatever the nav graph says, so those samples are left out of both graphs.
 
 Both are measured in metres along the samples, so the two compare like for like.
@@ -128,7 +128,9 @@ Each mode the map supports gets the measurement that matters for it:
 | originality score | 8 × distance to the nearest map, capped at 10. "Most similar map" names that neighbour. |
 
 ## Mode fit
-Each map is built for one mode (its `for` line), and is judged on what that mode needs:
+Each map is built for one mode (its `for` line), and is judged on what that mode needs.
+
+**Unreachable scores 0.** First, every route each mode the map offers needs is walked on a collision-checked walk grid (`tests/walkgrid.h`): columns every 0.25 m, the player's real hull against the real collision (clip included), steps of 0.55 m, jumps up 1.15 m, gaps up to 2.5 m along a jump's arc, ladders, crouching, but no dash or grapple. The routes: each team's spawns to every enemy spawn (vs, duel, 1v1), every free-for-all spawn to every other (free for all, hide, tag, a tourney's warm-up), every team spawn to every bomb site and the hill, the whole payload track (within push range, every 4 m), each multi point stage's spawns to every point from theirs on, the race spawns to every checkpoint. One missing route and mode fit is 0 (the report's "routes" line says which); `quark_tests` fails it too.
 
 | mode | what it needs (10 when) |
 |---|---|
@@ -145,7 +147,11 @@ Each map is built for one mode (its `for` line), and is judged on what that mode
 ## The bar
 Every map must score **at least 7 in decor, layout, movement, creativity, mode fit and balance** (balance where it has team modes). It must also declare one mode and a setting, and nothing out of bounds may be reachable.
 
-The tests also climb every ladder and walk up every staircase with the real movement code (`quark_tests ladders`, `quark_tests stairs`). No staircase may cut through another walkable surface, or hang over one with less than a player's height of clearance.
+The tests also climb every ladder and walk up every staircase with the real movement code (`quark_tests ladders`, `quark_tests stairs`). No staircase may cut through another walkable surface, or hang over one with less than a player's height of clearance. And for every map:
+- `quark_tests allmaps`: the routes above, walked (and the bots' nav graph links them too).
+- `quark_tests spawns`: every pool the server draws spawns from, in every offered mode, side and stage, holds a full 8-player server's share (8 for free for all, hide, tag, race and a tourney's warm-up; 4 a side in team modes, 2 in duel, 1 in 1v1), 1.5 m apart. Every spawn faces 2 m of open space at eye height; spawns used together stand 1.5 m apart; in team modes no spawn sees an enemy spawn (except on a `holdfire` map, which starts both sides face to face on purpose).
+- `quark_tests cartsweep`: the payload cart's box, every 10 cm along the track, touches nothing solid, clip or trim.
+- ranked maps (`quark_tests` maps group): every brush, spawn (A with B, yaw turned), ladder, light and objective has its point-symmetric twin, and the sun is overhead.
 
 Debugging: `MR_DEAD=<map>` lists dead ends, `MR_LEVELS=<map>` the floor area per height band, and `MR_PATH=1` every link of the tech paths. `LADDER_TRACE=<map>` (with `LADDER_AT=<x>`) and `STAIRS_TRACE=<map>` trace a climb. `MR_OOB=<map>` lists the out-of-bounds floor it reaches, `MR_ONLY=<map>` measures one map alone (quick, but its originality and rare-feature points are then against itself only) and `MR_TIME=1` times the envelope. Originality is left out: a map can't help resembling the others. `quark_tests` fails if any map is below the bar, and `quark_tests mapreport` prints which.
 
