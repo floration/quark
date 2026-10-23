@@ -14,7 +14,7 @@ The numbers say *what* a map is. The sheets are for the judgement calls: whether
   - jump: 7.3 m/s up, clears about 1.2 m; holding jump bunny-hops on the first grounded tick, before friction (auto-bhop);
   - step-up: 0.55 m;
   - air strafing gains speed without a limit;
-  - dash: a 0.12 s burst, then you keep your speed + 1 m/s (1.17; it was + 3), at least 11, at most 32 m/s (the limit is intended); it can be tilted up, which turns speed into height. Two charges (1.17; they replace the 1.2 s cooldown): landing refills both, a bunny hop one, a dash jump leaves both, a super dash or a wall bounce one;
+  - dash: a 0.12 s burst, then you keep your speed + 1 m/s (1.17; it was + 3), at least 11, at most 32 m/s (the limit is intended); it can be tilted up, which turns speed into height. Two charges (1.17) on top of the 1.2 s cooldown, which counts from the end of the previous dash: landing refills both, a bunny hop one, a dash jump leaves both, a super dash or a wall bounce one;
   - grapple: 45 m reach;
   - ladders: 6.75 m/s up, 4.5 m/s sideways (1.17).
 - **The movement envelope** the tech checks use is not written down here but measured, with the game's own movement code, each time the report runs (so it follows any change to movement). The report's first table lists it:

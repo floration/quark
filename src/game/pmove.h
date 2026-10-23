@@ -14,7 +14,8 @@ struct UserCmd {
     float yaw = 0, pitch = 0;
 };
 
-constexpr int kDashCharges = 2;   // dashes you hold (owner 1.17: charges replace the 1.2 s cooldown; see pmove.cpp)
+constexpr int kDashCharges = 2;   // dashes you hold (owner 1.17)...
+constexpr float kDashCooldown = 1.2f;   // ...and a dash also waits this long after the previous dash ENDS (owner 1.17: charges on top of the cooldown)
 
 // Everything prediction needs to replay movement. Sent unquantized for the local player.
 struct MoveState {
@@ -22,6 +23,7 @@ struct MoveState {
     Vec3 vel;
     uint8_t flags = 0; // MF_*
     uint8_t dashCharges = kDashCharges;   // dashes left: the ground refills them all, a bhop landing one
+    uint16_t dashCooldownMs = 0;   // ms until the next dash may start (counts from the end of the last one; whole ms: exact on the wire)
     float dashTimer = 0;     // > 0 while the dash burst is active
     float dashDirX = 0, dashDirZ = 0;
     float dashUp = 0;        // vertical part of the dash (from look pitch, small)
@@ -68,6 +70,8 @@ const char* moveParamUnit(int param);
 float moveBaseGravity(), moveBaseSpeed(), moveBaseJump();
 // how many dash charges a full refill gives (kDashCharges x the custom mode's multiplier, at least 1; quick dash +1)
 int dashMaxCharges(uint8_t mods);
+// the dash cooldown in ms (kDashCooldown x the custom mode's multiplier)
+int dashCooldownMs();
 // The players a grapple fired in this command can latch onto (the server fills it, lag compensated: where the shooter
 // saw them; enemies only). The hook takes the nearest of these or the map along its ray; `hit` says which box caught.
 struct HookProbe {

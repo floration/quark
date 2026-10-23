@@ -2340,16 +2340,19 @@ void Game::drawHud() {
             };
             int cw = net_.selfWeapon();
             bar(bcy + 40 * k, "WEAPON", (float)std::max(0.0, (cw == WPN_LOCATOR ? locatorReady_ : localNextFire_) - time_), weaponDef(cw).refire);   // (the locator: its recharge)
-            {   // dash: a pip per charge (lit = there to spend; the ground refills them, a bhop landing one)
+            {   // dash: a pip per charge (lit = there to spend; the ground refills them, a bhop landing one); while the
+                // cooldown since the last dash runs, the charged pips fill grey like the old cooldown bar, lit when it's done
                 int n = dashMaxCharges(mv.mods), have = std::min<int>(mv.dashCharges, n);
+                const int cdTotal = dashCooldownMs();
+                const float f = mv.dashCooldownMs > 0 && cdTotal > 0 ? clampf(1.0f - (float)mv.dashCooldownMs / cdTotal, 0, 1) : 1.0f;
                 float bw = 90 * k, bh = 5 * k, bx = bcx - bw * 0.5f, y = bcy + 52 * k, gap = 4 * k, pw = (bw - gap * (n - 1)) / n;
                 for (int i = 0; i < n; i++) {
                     float px = bx + i * (pw + gap);
                     r_.rect(px - 1, y - 1, pw + 2, bh + 2, {0, 0, 0, 0.8f});
-                    if (i < have) r_.rect(px, y, pw, bh, full);
+                    if (i < have) r_.rect(px, y, pw * f, bh, f >= 1 ? full : Color{0.6f, 0.62f, 0.66f, 0.9f});
                 }
                 float lts = std::max(1.0f, std::round(ts * 0.5f * e.scale));
-                r_.text(bx - r_.textWidth("DASH", lts) - 6 * k, y - 2 * k, lts, "DASH", have > 0 ? kWhite : kGrey);
+                r_.text(bx - r_.textWidth("DASH", lts) - 6 * k, y - 2 * k, lts, "DASH", have > 0 && f >= 1 ? kWhite : kGrey);
             }
             bar(bcy + 64 * k, "HOOK", mv.hookCooldown, kHookCooldown * moveTuning().m[MV_HOOK_COOLDOWN]);
         }
@@ -4217,7 +4220,7 @@ static const char* const kInfoPages[][48] = {
     {   // CONTROLS
         "# DEFAULT KEYS (Settings > CONTROLS to change any of them, two keys per action)",
         "W A S D - move.   SPACE - jump (hold it as you land to bounce: bunny hop).",
-        "SHIFT - dash: a burst of speed in the direction you're moving, tilted by where you look. You hold 2 dashes: landing refills both, a bunny hop one.",
+        "SHIFT - dash: a burst of speed in the direction you're moving, tilted by where you look. You hold 2 dashes (landing refills both, a bunny hop one); the next is ready 1.2 s after the last one ends.",
         "Q - grapple: hold to hook what you're aiming at and pull toward it; release to let go.",
         "LEFT MOUSE - fire.   RIGHT MOUSE - alt-fire (scope, knife throw, rocket lob, bubble stream, syringe throw...).",
         "E - use (plant / defuse the bomb).   1-9, 0 - weapons.   MOUSE WHEEL - next / previous weapon.",

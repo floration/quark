@@ -160,14 +160,18 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         if (freshJump) s.jumpGrace = jumpWindow;   // (a dash right after this press is still a ground dash jump)
     }
 
-    // Dash: one burst in the movement direction (or forward), spending a charge (owner 1.17: charges replace the
-    // cooldown). Not while a dash runs (a press then does nothing, and isn't kept); the next press after it ends
-    // spends the next charge. Refills: at the end of this step (the ground all of them, a bhop landing one).
+    // Dash: one burst in the movement direction (or forward), spending a charge, once the cooldown since the last
+    // dash ENDED has run out (owner 1.17: charges on top of the cooldown). Not while a dash runs (a press then does
+    // nothing, and isn't kept). Refills: at the end of this step (the ground all of them, a bhop landing one).
     s.hookCooldown = std::max(0.0f, s.hookCooldown - dt);
+    if (!dashActive) {   // (whole ms: the cooldown counts down only while no dash runs)
+        const int stepMs = std::max(1, (int)std::lround(dt * 1000.0f));
+        s.dashCooldownMs = (uint16_t)std::max(0, (int)s.dashCooldownMs - stepMs);
+    }
     const int maxCharges = dashMaxCharges(s.mods);
     if (s.dashCharges > maxCharges) s.dashCharges = (uint8_t)maxCharges;
     bool dashHeld = (cmd.buttons & BTN_DASH) != 0 && !grappleOnly && !(s.mods & MOVE_RUN_ONLY) && mt.dash;
-    const bool dashStart = dashHeld && !(s.flags & MF_DASHHELD) && s.dashCharges > 0 && !dashActive && !frozen;
+    const bool dashStart = dashHeld && !(s.flags & MF_DASHHELD) && s.dashCharges > 0 && s.dashCooldownMs == 0 && !dashActive && !frozen;
     bool chargesSet = false;   // a dash tech set the charges this step: no ground / bhop refill on top
     if (dashStart) {
         s.flags &= ~MF_PULLED;   // a dash breaks free of another player's grapple
@@ -425,6 +429,9 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         if (down > -(kStepHeight * tune(MV_STEP)) + 0.001f) { s.pos.y += down; nowGround = true; s.vel.y = 0; }
     }
 
+    // the dash cooldown starts when a dash ends (its timer ran out, or a dash jump / super dash ended it), this step
+    if ((dashActive || dashStart) && s.dashTimer <= 0) s.dashCooldownMs = (uint16_t)dashCooldownMs();
+
     s.flags &= (MF_FROZEN | MF_HOOKED | MF_PULLED);
     if (nowGround && !(s.flags & (MF_HOOKED | MF_PULLED))) s.flags |= MF_ONGROUND;
     // Dash charges back (owner 1.17): on the floor at the end of a step, all of them; a bhop landing (jump held: the
@@ -451,19 +458,22 @@ void pmove(MoveState& s, const UserCmd& cmd, const Map& map, HookProbe* probe) {
 
 float moveParamBase(int i) {
     static const float v[MV_COUNT] = {kCrouchSpeed, kGroundAccel, kFriction, kStopSpeed, kAirAccel, kAirSpeedCap, kOverstrafeBrake, kAirControl,
-        kStepHeight, kDashSpeed, kDashTime, kDashExitMin, kDashKeep, kDashExitMax, kDashVertical, (float)kDashCharges,
+        kStepHeight, kDashSpeed, kDashTime, kDashExitMin, kDashKeep, kDashExitMax, kDashVertical, (float)kDashCharges, kDashCooldown,
         kBounceGain, kBounceMax, kGrappleRange, kHookAccel, kHookMaxSpeed, kHookGravityScale, kHookRelease, kHookCooldown,
         kLadderSpeed, kLadderSide, kDashJumpWindow, kSuperDashBoost, kSuperDashJump, kSuperDashMax, kDashBounceAngle,
         kAirDriftAccel, kStrafeBoost};
     return i >= 0 && i < MV_COUNT ? v[i] : 1.0f;
 }
 const char* moveParamUnit(int i) {
-    static const char* u[MV_COUNT] = {"m/s", "", "", "m/s", "", "m/s", "", "", "m", "m/s", "s", "m/s", "m/s", "m/s", "", "s",
+    static const char* u[MV_COUNT] = {"m/s", "", "", "m/s", "", "m/s", "", "", "m", "m/s", "s", "m/s", "m/s", "m/s", "", "", "s",
         "", "m/s", "m", "m/s2", "m/s", "x", "m", "s", "m/s", "m/s", "s", "x", "x", "m/s", "deg", "m/s2", ""};
     return i >= 0 && i < MV_COUNT ? u[i] : "";
 }
 int dashMaxCharges(uint8_t mods) {
     return std::max(1, (int)std::lround(kDashCharges * tune(MV_DASH_CHARGES))) + ((mods & MOVE_QUICK_DASH) ? 1 : 0);
+}
+int dashCooldownMs() {
+    return std::min(60000, std::max(0, (int)std::lround(kDashCooldown * tune(MV_DASH_COOLDOWN) * 1000.0f)));
 }
 float moveBaseGravity() { return kGravity; }
 float moveBaseSpeed() { return kGroundSpeed; }
