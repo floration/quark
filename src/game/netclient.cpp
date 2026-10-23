@@ -489,6 +489,7 @@ void NetClient::sendInput() {
 }
 
 void NetClient::sendCommand(const std::string& s) {
+    if (commandHook && !commandHook(commandHookCtx, s)) return;
     if (stringCmds_.size() < 256) stringCmds_.push_back(s);
 }
 
@@ -619,6 +620,7 @@ ServerBrowser::~ServerBrowser() = default;   // (a fetch still running keeps its
 std::string ServerBrowser::internetStatus() { std::lock_guard<std::mutex> l(fetch_->mu); return fetch_->netStatus; }
 
 void ServerBrowser::refresh() {
+    refreshes_++;
     if (!sock_.isOpen()) sock_.open(0, true);
     servers_.clear();
     listed_.clear();

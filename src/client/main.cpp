@@ -94,6 +94,12 @@ int main(int argc, char** argv) {
         else if (a == "--edscript") opts.editScript = next();
         else if (a == "--editsession") { opts.editMap = next(); opts.editSession = true; }
         else if (a == "--pitch") opts.spawnPitch = (float)atof(next().c_str());
+        else if (a == "--uitest") {   // the UI test (docs/UI_TEST.md): [report.json]
+            opts.uiTest = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-') opts.uiTestReport = next();
+        }
+        else if (a == "--uitest-only") { opts.uiTest = true; opts.uiTestOnly = next(); }   // scenarios a,b,c
+        else if (a == "--uitest-path") { opts.uiTest = true; opts.uiTestPath = next(); }   // screens under this path
         else if (a == "-h" || a == "--help") {
             printf("quark [--connect ip:port] [--host mode --map name] [--data-dir DIR]\n");
             return 0;
@@ -105,7 +111,8 @@ int main(int argc, char** argv) {
     // must not touch the player's launchers. Whatever way main returns, the thread is stopped between steps (never
     // inside a swap) and joined, waiting at most 2 s (selfupdate::finishFromGame).
     bool automated = !opts.screenshot.empty() || opts.bench > 0 || !opts.editScript.empty() || opts.textHeavy ||
-                     opts.menuShot || !opts.chatShot.empty() || !opts.consoleShot.empty() || opts.debugPerf;
+                     opts.menuShot || !opts.chatShot.empty() || !opts.consoleShot.empty() || opts.debugPerf || opts.uiTest;
+    if (opts.uiTest) uiTestPrepare(opts);   // (its own data folder and settings: before anything reads them)
     if (!automated) selfupdate::startFromGame(argv[0]);
     struct LauncherUpdateJoin { ~LauncherUpdateJoin() { selfupdate::finishFromGame(2.0); } } launcherUpdateJoin;
     // demos recorded by an older version: converted to this one in the background (originals in demos/old/<version>/)
@@ -150,6 +157,15 @@ int main(int argc, char** argv) {
     if (!game.init(win, opts, &err)) {
         fprintf(stderr, "init failed: %s\n", err.c_str());
         return 1;
+    }
+    if (opts.uiTest) {   // the UI test drives the frames itself
+        int rc = runUiTest(game, win, opts);
+        game.shutdown();
+        glfwDestroyWindow(win);
+        glfwTerminate();
+        Server::waitBackground(3.0);
+        netShutdown();
+        return rc;
     }
     double last = timeNow();
     double frameStart = timeNow();

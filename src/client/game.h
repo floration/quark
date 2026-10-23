@@ -63,7 +63,16 @@ struct LaunchOptions {
     bool edFocus = false;       // --edfocus: the editor's map title field focused (caret screenshot)
     bool menuShot = false;      // --menushot: screenshot whatever menu is up (main / settings / controls)
     double bench = 0;           // --bench SECONDS: measure frame times in a vs-bots game, print, quit
+    bool uiTest = false;        // --uitest [report.json]: click every widget and check it does what it says (uitest.cpp)
+    std::string uiTestReport;   // where the report goes (default uitest-report.json)
+    std::string uiTestOnly;     // --uitest-only a,b: just these scenarios (development)
+    std::string uiTestPath;     // --uitest-path p: just the screens under p (development)
 };
+
+class UiTest;
+// --uitest: before Game::init (an empty data folder, the network off, the test's settings), then the whole run.
+void uiTestPrepare(LaunchOptions& opts);
+int runUiTest(class Game& game, GLFWwindow* win, const LaunchOptions& opts);
 
 class Game {
 public:
@@ -86,6 +95,22 @@ public:
     void afterSwap();     // low-latency fence waits + F3 input-latency measurement
 
 private:
+    // ---- the UI test (quark --uitest, uitest.cpp). In normal play none of this runs: uiTest_ is null, Ui::probe is
+    // null, testHeld_ is 0, and the widgets' UiExp descriptors are a few pointers each.
+    friend class UiTest;
+    UiTest* uiTest_ = nullptr;
+    uint32_t testHeld_ = 0;                 // actions the UI test holds down (bit per Action), read by isDown
+    int edOpens_ = 0;                       // openEditor() calls (NEW / OPEN reopened the editor)
+    std::string uiScreenPath() const;       // where the UI is: "main", "host/picker:maps", "ingame/pause/settings/hud"...
+    std::string uiContext() const;          // what else tells this screen's widgets apart (the editor's selection)
+    std::string uiObserve(const std::string& what);   // a STATE observable's current value
+    void uiTestActions();                   // this screen's keys / clicks that aren't widgets (the 3D view, hotkeys)
+    void uiTestHandles();                   // the editor selection's handles, while the 3D view's camera is set
+    const char* edPath() const { return edOnline_ ? "editor-online" : "editor"; }
+    const char* edExportAskPath() const { return edOnline_ ? "editor-online/export-ask" : "editor/export-ask"; }
+    const char* edGroupsPath() const { return edOnline_ ? "editor-online/groups" : "editor/groups"; }
+    const char* edKeepPath() const { return edOnline_ ? "editor-online/keep-edits" : "editor/keep-edits"; }
+    bool edGroupTakesEveryBox() const;      // GROUP would leave the map without a box of its own (refused)
     enum class Screen { Main, Join, Host, Settings, Connecting, InGame, VsBots, Editor, Leaderboard, CustomMode, Info, Demos };
     void setScreen(Screen s);
     void startHost(bool vsBots = false);
@@ -244,7 +269,7 @@ private:
     struct EdSel { int kind = -1, idx = -1; bool valid() const { return kind >= 0; } };
     Map ed_;
     std::string edName_ = "mymap", edMsg_, edTitle_;
-    double edResetArmed_ = 0, edMsgUntil_ = 0, edLastPush_ = 0, edLeaveArmed_ = 0, edNextCam_ = 0, edTickAcc_ = 0;
+    double edResetArmed_ = 0, edMsgUntil_ = 0, edLastPush_ = -1e9, edLeaveArmed_ = 0, edNextCam_ = 0, edTickAcc_ = 0;
     EdSel edSel_;
     std::vector<EdSel> edMulti_; // shift+click: more selected boxes / groups (for GROUP)
     int edGridIdx_ = 1, edLoadIdx_ = 0, edMat_ = 0; // edMat_: the material new boxes / rooms / stairs get (the last one picked)
@@ -302,6 +327,8 @@ private:
     void edDuplicate();
     enum { ED_ROT_Y, ED_ROT_X, ED_ROT_Z, ED_MIR_X, ED_MIR_Y, ED_MIR_Z };
     void edTransform(int op);
+    bool edTransformed(int op, Map& tmp, std::vector<EdSel>& sel) const;   // the map with the selection turned (false: nothing to turn)
+    UiExp edTransformExp(int op);   // ROTATE / MIRROR's expectation: the map changes, or (it's symmetric that way) just the notice
     void edAdd(int kind, int variant);
     void edGroupSelection();            // GROUP: the selected boxes / groups become one custom group
     void edUngroup();                   // UNGROUP: the selected group's boxes become plain boxes
@@ -371,6 +398,9 @@ private:
     double laserUntil_ = 0;            // local laser beam visible until
     bool remoteFiring_[kMaxPlayers] = {};
     float viewFov() const;
+    void sceneSettings();   // the renderer's world look from cfg_
+    static const Settings& defaultSettings() { static const Settings d; return d; }   // (sliders' right-click: back to these)
+    float edPanelX_ = 1e9f;   // the editor's side panel starts here (a right-click there is the UI's, not mouse look)
 
     // F3 performance overlay: frame-time percentiles (lows matter, averages hide stutter)
     bool showPerf_ = false;

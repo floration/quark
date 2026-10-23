@@ -596,6 +596,8 @@ int main(int argc, char** argv) {
     st.noSelfUpdate = relaunched || !fs::equivalent(self, install::installedLauncher(), eqEc);
     std::thread worker(updater, stp, dir);
     Ui ui;
+    // (the launcher shares the game's Ui; the game's UI test doesn't cover it: its buttons are tested by the launcher tests)
+    constexpr UiExp kLauncherUi = UiExp::inert();
     UiInput in;
     static UiInput* g_in = &in;
     static double g_scroll = 0; // wheel steps since the last frame (version list)
@@ -734,14 +736,14 @@ int main(int argc, char** argv) {
         if (!notice.title.empty()) {
             float bx = 36 * s, by = 298 * s, bh = 26 * s;
             const char* act = notice.action == Notice::Retry ? "RETRY" : notice.action == Notice::Repair ? "REPAIR" : nullptr;
-            if (act && ui.button(bx, by, 110 * s, bh, act, !st.busy)) {
+            if (act && ui.button(bx, by, 110 * s, bh, act, kLauncherUi, !st.busy)) {
                 st.busy = true;
                 if (worker.joinable()) worker.join();
                 if (notice.action == Notice::Retry) worker = std::thread(installRelease, stp, dir, notice.release);
                 else worker = std::thread(repairInstall, stp, dir, notice.release.version);
             }
-            if (ui.button(bx + 118 * s, by, 130 * s, bh, "OPEN FOLDER")) install::openFolder(dir.parent_path());
-            if (!notice.blocksPlay && ui.button(bx + 256 * s, by, 90 * s, bh, "CLOSE", !st.busy)) {
+            if (ui.button(bx + 118 * s, by, 130 * s, bh, "OPEN FOLDER", kLauncherUi)) install::openFolder(dir.parent_path());
+            if (!notice.blocksPlay && ui.button(bx + 256 * s, by, 90 * s, bh, "CLOSE", kLauncherUi, !st.busy)) {
                 std::lock_guard<std::mutex> l(st.mu);
                 st.notice = Notice();
             }
@@ -751,7 +753,7 @@ int main(int argc, char** argv) {
         {
             float bw = (fw - 56 * s) * 0.5f, bx = 24 * s, by = 344 * s, bh = 40 * s;
             bool armed = timeNow() < uninstallArmed;
-            if (ui.button(bx + bw + 8 * s, by, bw, bh, channel == Channel::Testing ? "CHANNEL: TESTING" : "CHANNEL: PRODUCTION", !st.busy)) {
+            if (ui.button(bx + bw + 8 * s, by, bw, bh, channel == Channel::Testing ? "CHANNEL: TESTING" : "CHANNEL: PRODUCTION", kLauncherUi, !st.busy)) {
                 std::lock_guard<std::mutex> l(st.mu);
                 st.cfg.channel = channel == Channel::Testing ? Channel::Production : Channel::Testing;
                 st.cfg.pin = "latest";
@@ -766,7 +768,7 @@ int main(int argc, char** argv) {
                 else if (li < 0) st.status = "no " + ch + " builds from 1.17 on yet - pick a version to install it";
                 else st.status = ch + " channel - latest " + st.releases[li].version + (st.installed.empty() ? "" : ", installed " + st.installed);
             }
-            if (ui.button(bx, by, bw, bh, armed ? "CLICK TO CONFIRM" : "UNINSTALL", !st.busy)) {
+            if (ui.button(bx, by, bw, bh, armed ? "CLICK TO CONFIRM" : "UNINSTALL", kLauncherUi, !st.busy)) {
                 if (armed) {
                     install::uninstallAll();
                     quit = true;
@@ -778,12 +780,12 @@ int main(int argc, char** argv) {
         if (notice.blocksPlay) autoPlay = false; // (a --play waits for the player: never a start that can't work)
         bool offerInstall = needInstall && !st.busy;
         // installing is always the player's click (or startup's newer-only rule); the installed version stays playable.
-        if (offerInstall && ui.button(fw - (canPlay ? 432 : 224) * s, 414 * s, 200 * s, 48 * s, "INSTALL " + sel.version)) {
+        if (offerInstall && ui.button(fw - (canPlay ? 432 : 224) * s, 414 * s, 200 * s, 48 * s, "INSTALL " + sel.version, kLauncherUi)) {
             st.busy = true;
             if (worker.joinable()) worker.join();
             worker = std::thread(installRelease, stp, dir, sel);
         } else if ((!offerInstall || canPlay) &&
-                   (ui.button(fw - 224 * s, 414 * s, 200 * s, 48 * s, st.busy ? "WORKING..." : "PLAY", canPlay) || (autoPlay && canPlay))) {
+                   (ui.button(fw - 224 * s, 414 * s, 200 * s, 48 * s, st.busy ? "WORKING..." : "PLAY", kLauncherUi, canPlay) || (autoPlay && canPlay))) {
             autoPlay = false;
             // never a start of a game that isn't there: checked (existence and size) before every start
             if (checkGame(&st, dir, false)) {
@@ -800,12 +802,12 @@ int main(int argc, char** argv) {
             }
         }
         // a full check of the installed files (sha256), on demand
-        if (!installed.empty() && ui.button(172 * s, 414 * s, 140 * s, 48 * s, "CHECK FILES", !st.busy)) {
+        if (!installed.empty() && ui.button(172 * s, 414 * s, 140 * s, 48 * s, "CHECK FILES", kLauncherUi, !st.busy)) {
             st.busy = true;
             if (worker.joinable()) worker.join();
             worker = std::thread(checkFilesWorker, stp, dir);
         }
-        if (ui.button(24 * s, 414 * s, 140 * s, 48 * s, "QUIT")) quit = true;
+        if (ui.button(24 * s, 414 * s, 140 * s, 48 * s, "QUIT", kLauncherUi)) quit = true;
         (void)installed;
         glClearColor(0, 0, 0, 1);
         glClear(GL_COLOR_BUFFER_BIT);

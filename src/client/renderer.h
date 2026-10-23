@@ -93,6 +93,7 @@ public:
     Vec3 metalColor = {0.30f, 0.33f, 0.37f};
     Vec3 glowColor = {1.00f, 0.55f, 0.15f};
     bool fullbright = false;   // VISUALS > FULLBRIGHT: flat white world with black outlines
+    Vec3 fullbrightColor = {1, 1, 1};   // ...that colour instead of white (VISUALS > FULLBRIGHT COLOUR)
     float brightness = 1.0f;   // the player's brightness setting (scales the lit scene before tonemapping)
     float worldOutline = 1.0f; // the baked world's outline width in pixels (settings); 0 = none
 

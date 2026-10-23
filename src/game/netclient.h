@@ -36,6 +36,9 @@ public:
     void setInputBatch(int n) { inputBatch_ = n < 1 ? 1 : n; }
     void flushInput() { if (unsentCmds_ > 0) sendInput(); }   // after a frame's ticks: what's not sent yet
     void sendCommand(const std::string& s); // reliable string command ("say hi", "team b", ...)
+    // The client's UI test sees every command (and keeps it from the server when the hook returns false). Null in play.
+    bool (*commandHook)(void* ctx, const std::string& cmd) = nullptr;
+    void* commandHookCtx = nullptr;
     size_t pendingCommands() const { return stringCmds_.size(); }
 
     ConnState state() const { return state_; }
@@ -221,7 +224,9 @@ public:
     void poll();
     const std::vector<ServerInfo>& servers() const { return servers_; }
     std::string internetStatus();
+    int refreshes() const { return refreshes_; }   // (the UI test: REFRESH did refresh)
 private:
+    int refreshes_ = 0;
     UdpSocket sock_;
     // The internet list is fetched on a detached thread that shares only this with the browser: refresh() never
     // waits for an earlier fetch (it used to join it on the UI thread: a hitch up to the HTTP timeout), and a
