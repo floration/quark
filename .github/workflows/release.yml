@@ -76,6 +76,8 @@ jobs:
           fi
           { echo "channel=$CHANNEL"; echo "version=$V$QUARK_VERSION_SUFFIX"; echo "base=$V"; echo "tag=$TAG"; } >> "$GITHUB_OUTPUT"
           echo "### $CHANNEL ${TAG:-(build only)}" >> "$GITHUB_STEP_SUMMARY"
+      - name: no keys, tokens or secrets in the repository (tools/check_secrets.py; the pre-commit hook runs it too)
+        run: python3 -I tools/check_secrets.py
       - id: g
         name: the test groups (tests/tests.cpp's par + alone lists; the linux job checks the built binary agrees)
         run: |
@@ -412,3 +414,21 @@ jobs:
           git add -A
           git commit -qm "site for ${GITHUB_REF_NAME} (${GITHUB_SHA})"
           git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+
+  deploy-worker:   # the ranking server, after a production release (docs/OPERATIONS.md "Cloudflare"). Off until the
+                   # repository variable DEPLOY_WORKER is "true" and the secrets / variables below are set.
+    needs: [meta, release]
+    if: needs.meta.outputs.channel == 'production' && needs.release.result == 'success' && vars.DEPLOY_WORKER == 'true'
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: D1 migrations, then the worker (tools/master/deploy.sh)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          QUARK_D1_ID: ${{ vars.QUARK_D1_ID }}
+          QUARK_WORKER_COMPAT_DATE: ${{ vars.QUARK_WORKER_COMPAT_DATE }}
+        run: sh tools/master/deploy.sh

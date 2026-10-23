@@ -23,6 +23,7 @@
   - `changelogs/full/<VERSION>.md`, the full one (every version from 1.17.0 on): every change, however small, with what changed and WHY (the reason, the numbers, the trade-off), grouped by area. It becomes the website page `updates/<VERSION>/` (made by `tools/site_updates.py` when the site is published). Older versions' pages show their short notes.
   - A production tag fails without either file.
 - Everything published is signed with `QUARK_SIGNING_KEY` (docs/SIGNING.md; owner decision B6): every qpak, the release manifest `quark-release.txt` (names each file's sha256, version and channel), `SHA256SUMS`, the standalone launcher downloads and the website's file list; each platform's qpak also carries its `quark_launcher` with its `.sig`. The launcher hides an unsigned release claiming 1.17.0 or newer; 1.16.x and older install without a warning. Actions are pinned by commit SHA (Dependabot bumps them); keep `persist-credentials: false` and write permissions only on the release / pages jobs.
+- Secrets (docs/OPERATIONS.md): never commit, print or paste a key, token or webhook URL; `tools/check_secrets.py` (the pre-commit hook `tools/githooks`, and CI) must stay clean. Schema changes to the ranking server's D1 go in `tools/master/migrations/` as a new numbered file (deployed by the `deploy-worker` job).
 - The launcher (`src/launcher/`) installs/updates from the release's `quark-<platform>.qpak` (made by `tools/pack.py`); keep those asset names stable.
 
 ## Maps

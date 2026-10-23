@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(**/quark_signing_key.txt)",
+      "Read(**/*.key)",
+      "Read(**/.env)",
+      "Read(**/*.env)",
+      "Read(tools/discordbot/config.json)",
+      "Read(//etc/quark-discord.env)",
+      "Read(//etc/quark/**)"
+    ]
+  }
+}

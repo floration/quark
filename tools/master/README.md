@@ -3,6 +3,13 @@
 Public servers announce themselves here every minute. The Join screen lists them, then checks each one
 directly over UDP, so it shows only servers it can reach, with their real ping. Nothing runs on a VPS.
 
+## Deploying updates (automatic)
+After the setup below, `deploy.sh` deploys this folder: it applies the D1 migrations in `migrations/` that are new,
+then `worker.js`, its `DB` binding and its cron. The release workflow's `deploy-worker` job runs it after each production
+release once switched on (docs/OPERATIONS.md section 3: an API token and three values in GitHub). Every schema change
+from 1.17.1 on is a new numbered file in `migrations/` (and `schema.sql` updated to match); the per-version SQL lists
+below are for the versions before that.
+
 ## Setup (dashboard, about 5 minutes)
 1. **Create the database.** Cloudflare dashboard → **Storage & Databases → D1 SQL Database → Create**.
    Name it `quark`. Open it → **Console**, paste the contents of `schema.sql`, and run it.

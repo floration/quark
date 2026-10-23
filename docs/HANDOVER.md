@@ -40,6 +40,8 @@ The work up to 1.17.0 was done in a claude.ai cloud session. Everything that mat
 - **No GitHub restrictions:** a local session pushes with your own git credentials, so it can push tags and other branches. The cloud session could only push its one branch, which is why the 1.17.0 tag is yours to push.
 - **Parallel agents:** the cloud session ran many agents in parallel worktrees. Locally, a heavy test run competes with the game and your other work for CPU. The timing groups (netcode, tick rate) fail under load (section 3).
 
+**Automatic updates and secrets:** [OPERATIONS.md](OPERATIONS.md) says how to switch on automatic updates for the dedicated servers (already on), the Discord bot (re-run its `install.sh` once) and the Cloudflare Worker (add an API token to GitHub). It also lists every key and secret: where each lives, how to keep it out of git, logs and chats (`git config core.hooksPath tools/githooks` in every clone), and how to replace one that leaked.
+
 **Decided but not yet done** (the owner can pick these up first)
 - **The restructure** (section 9): create `testing`, protect the default branch, add the `v*` tag rule, and move the launcher, site and Discord bot to their own branches.
 - **The owner's 1.17.0 deployment steps** (section 6): the Worker and SQL, the cron and secrets, `install.sh` on each server (which adds the testing server on the next port), and redeploying the bot.
@@ -157,9 +159,9 @@ Workflows are in `.github/workflows/`:
 
 | Piece | Where | How it updates |
 |---|---|---|
-| Ranking server | Cloudflare Worker + D1 database. Address in `site/master.txt`. | By hand. First run the SQL listed in `tools/master/README.md` for the version in the D1 console, then paste `worker.js` and deploy. Cron trigger `*/15 * * * *`. Secrets: `ADMIN_KEY` and `BOT_KEY`. Deploy at the same time as a game release that changes ranked. |
+| Ranking server | Cloudflare Worker + D1 database. Address in `site/master.txt`. | Automatic once switched on ([OPERATIONS.md](OPERATIONS.md) section 3): after each production release, the `deploy-worker` job applies new D1 migrations (`tools/master/migrations/`) and deploys `worker.js`. Until then, by hand: run the SQL listed in `tools/master/README.md` for the version in the D1 console, then paste `worker.js` and deploy. Cron trigger `*/15 * * * *`. Secrets: `ADMIN_KEY` and `BOT_KEY`. |
 | Dedicated servers | Linux boxes (the Oracle one), installed with `tools/server/install.sh`: each runs a **production** server (`quark.service`, your port) and a **testing** server (`quark-testing.service`, the next port, "[TESTING]", ranked never rated; `--no-testing` to leave it out) | Automatic, each to the latest of its channel: production to production releases (every minute), testing to the newest testing prerelease or production release, whichever is newer (every 2 minutes). `autoupdate.sh` verifies the signed manifest, builds that exact commit (one build at a time), and restarts between matches. A load governor (`/var/lib/quark-governor`, `src/game/governor.h`) shares the box: throttles the empty server, then the one not in a ranked match, then the other, to 125 Hz; then closes testing until production is calm. Production never closes. Logs: `journalctl -u quark-update -u quark-testing-update`; failures at crit priority (`journalctl -p crit -t quark-update`, naming the instance), optionally sent to `QUARK_ALERT_WEBHOOK`. Behind a different forwarded port or in a container, run with `--own-addr host:port`. |
-| Discord bot | The bot's Linux box, installed with `install.sh` | By hand. Secrets in `/etc/quark-discord.env`. After 1.17.0 it lives on the `discord-bot` branch. |
+| Discord bot | The bot's Linux box, installed with `install.sh` | Automatic after re-running `install.sh` once ([OPERATIONS.md](OPERATIONS.md) section 2): every 10 minutes it moves to the newest production release's bot, after its tests and a dry run, and rolls back on failure. Secrets in `/etc/quark-discord.env`. After the move to its own branch or repository, it follows that branch instead. |
 | Website | GitHub Pages (`gh-pages`) | Automatic, on each production release |
 | Asset Studio | https://claude.ai/artifact/JuDQckiZY15XUHz1xbD3pC | Rebuilt and republished after each push (CLAUDE.md "Asset Studio"). Replacements the owner uploads are pulled into `assets/overrides/` before each push. |
 
@@ -224,6 +226,7 @@ Workflows are in `.github/workflows/`:
 | [OWNER_DECISIONS.md](OWNER_DECISIONS.md), [OWNER_ANSWERS.md](OWNER_ANSWERS.md), [OWNER_DECISIONS_2.md](OWNER_DECISIONS_2.md), [JUDGMENT_CALLS.md](JUDGMENT_CALLS.md) | Every design decision the owner made for 1.17.0, with their words |
 | [REVIEW.md](REVIEW.md), [FIXES_HANDOFF.md](FIXES_HANDOFF.md) | The second security/quality review and its fix plan |
 | [SIGNING.md](SIGNING.md) | Release signing and key handling |
+| [OPERATIONS.md](OPERATIONS.md) | Automatic updates for the dedicated servers, the Discord bot and the Cloudflare Worker; every secret and how to keep it secret |
 | [ASSETS.md](ASSETS.md) | The asset export, the Asset Studio, overrides |
 | [MAP_STRUCTURES.md](MAP_STRUCTURES.md), [MAP_METRICS.md](MAP_METRICS.md), [MAP_REPORT.md](MAP_REPORT.md) | Why each map is built the way it is, how maps are measured, the latest scores |
 | `tools/master/README.md`, `tools/discordbot/README.md` | Deploying the ranking server and the bot |
