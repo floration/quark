@@ -38,6 +38,11 @@ static void usage() {
         "  --snaprate N     snapshots per second to each player (default 500; 1000 = lowest latency,\n"
         "                   250 or less = less CPU and upload bandwidth)\n"
         "                   During warmup it steps down automatically if the host can't keep up.\n"
+        "  --max-upload-kbps N  this server's upload budget in kilobits/s (default none): past 90%% of it the\n"
+        "                   snapshot rate steps down (500, 333, 250, 125/s), then the tick rate. Without one,\n"
+        "                   most players losing snapshots or their ping rising at once does the same.\n"
+        "                   Ticks that start late enough for players to see (over 2 snapshot intervals) lower\n"
+        "                   the tick rate at the next break. The status command shows both rates and why.\n"
         "  --bots N         play-vs-bots server: N bots (team modes: on team B; humans join team A)\n"
         "  --allies N       team modes with --bots: N bots on the humans' team\n"
         "  --botskill N     0 beginner, 1 intermediate (default), 2 advanced, 3 expert\n"
@@ -81,6 +86,7 @@ int main(int argc, char** argv) {
         else if (a == "--upnp") cfg.upnp = true;
         else if (a == "--tickrate") cfg.maxTickRate = atoi(next().c_str());
         else if (a == "--snaprate") cfg.snapRate = std::max(30, atoi(next().c_str()));
+        else if (a == "--max-upload-kbps") cfg.maxUploadKbps = std::max(0, atoi(next().c_str()));
         else if (a == "--tick-spin") {
             std::string v = next();
             char* end = nullptr;

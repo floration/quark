@@ -41,10 +41,26 @@ constexpr double kEditBudgetMs = 0.5;      // per tick, all players: past it, ed
 constexpr int kDeepQueue = 2;
 constexpr int kDeepTicks = 32;
 constexpr float kCatchUpRefill = 0.01f;   // commands per tick
-// Tick-rate test during warmup: each window must stay clean or the rate steps down.
-constexpr double kRateWindow = 3.0;
-constexpr double kMaxLateFraction = 0.01;  // ticks that ran more than 2 periods late
-constexpr int kMaxClientLossPct = 2;       // snapshot loss any client may report
+// Tick-rate test (Server::rateWindow_, 3 s windows): each window must stay clean or the rate steps down.
+constexpr double kMaxLateFraction = 0.01;  // ticks that ran more than 2 periods late (counted only with real load)
+constexpr int kMaxClientLossPct = 2;       // snapshot loss a client may report
+// Stalls, whatever the load: a tick that starts over 2 snapshot intervals late (and over 3 ms) holds a snapshot back
+// past the client's 2-interval interpolation buffer: a hitch, and its jitter estimate then draws everyone further in
+// the past. 1000 Hz / 500 snapshots: 4 ms, 250 Hz: 8 ms, 125 Hz: 16 ms. Windows' 1 ms timer grid makes healthy ticks up
+// to ~1-1.7 ms late (p99 ~0.7-1 ms): never one. More than 1% of a window's ticks (~1% of the time, 30 ms in 3 s) steps
+// the tick rate down at the next break: a shared / CPU-capped VM waking 1-7 ms late at p99 (the Oracle box) stalls at
+// 1000 Hz, while at 125 Hz an 8 ms period absorbs ms-scale wake-ups (and 8x fewer wake-ups and spins use less quota).
+constexpr double kStallSnaps = 2, kStallMin = 0.003;
+constexpr double kMaxStallFraction = 0.01;
+// Bandwidth short: the upload over 90% of --max-upload-kbps; any send failure (the socket's buffer full: our own
+// uplink); or most players (2 or more, and 2 of 3) at once losing snapshots or with their ping up by over
+// max(25 ms, half) of what it is while uncongested (a queue on our uplink delays everyone alike; one player's bad
+// wifi never moves the server). It lowers the snapshot rate first (kSnapSteps, at once: any phase), then the tick
+// rate (at a break). A step up needs the upload it would bring under 80% of the cap.
+constexpr double kUploadShort = 0.9, kUploadRoom = 0.8;
+constexpr float kPingRiseMs = 25, kPingBaseCreepMs = 1;   // (the uncongested ping follows a lasting change: +1 ms a window)
+constexpr int kSnapSteps[] = {500, 333, 250, 125};       // snapshots per second (125: the floor)
+constexpr int kUdpHeaderBytes = 28;                      // IPv4 + UDP, counted with each datagram
 const float kKnifeRange = weaponDef(WPN_KNIFE).range; // the knife's reach (also what clients draw)
 constexpr float kRocketLife = 5.0f;
 // Visibility (PERF-9): each viewer's line to each player is re-checked every kVisInterval, spread over the ticks in
@@ -230,8 +246,10 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     while (rateLevel_ < kTickRateLevels - 1 && kTickRates[rateLevel_] > cap) rateLevel_++;
     rateTopLevel_ = rateLevel_;
     rateUpWait_ = 60; rateUpAt_ = 0;
-    rateDownPending_ = false; rateRaisedAt_ = -1e9;
+    rateDownPending_ = false; rateRaisedAt_ = -1e9; rateRaisedSnap_ = false;
+    snapCap_ = 0; rateWhy_.clear(); rateHoldUntil_ = 0;
     nextTick_ = timeNow();
+    rateWindowStart_ = nextTick_; upKbps_ = -1;
     resetRateWindow();
     windowBad_ = windowSevere_ = false; windowCheckedAt_ = -1e9;
     if (cfg_.channel != GOV_PROD && cfg_.channel != GOV_TESTING) cfg_.channel = testingBuild() ? GOV_TESTING : GOV_PROD;
@@ -372,9 +390,40 @@ void Server::idle(double wait) {
 }
 
 void Server::resetRateWindow() {
-    rateWindowStart_ = timeNow();
+    double now = timeNow(), secs = (now - rateWindowStart_) / timeScale();
+    if (secs >= 0.5) {   // the window's traffic and stalls (status)
+        upKbps_ = windowUpBytes_ * 8e-3 / secs; downKbps_ = windowDownBytes_ * 8e-3 / secs;
+        upPps_ = windowUpPkts_ / secs; downPps_ = windowDownPkts_ / secs;
+        int t = windowTicks_ + windowSkipped_;
+        stallPct_ = t ? 100.0 * windowStall_ / t : 0;
+    }
+    rateWindowStart_ = now;
     windowTicks_ = windowLate_ = windowSendFail_ = windowWorstLoss_ = 0;
+    windowStall_ = windowStallUp_ = windowSkipped_ = 0;
+    windowUpBytes_ = windowDownBytes_ = 0; windowUpPkts_ = windowDownPkts_ = 0;
     windowBusy_ = 0;
+    for (auto& p : players_) { p.windowLoss = 0; p.windowPingMin = 0; }
+    // what a stall is now, and at the next step up (the tick rate first, then the snapshot rate: checkTickRate)
+    stallAfter_ = stallAfter(tickRate(), snapCap_);
+    stallUpAfter_ = rateLevel_ > rateTopLevel_ ? stallAfter(kTickRates[rateLevel_ - 1], snapCap_) : stallAfter(tickRate(), snapCapUp());
+}
+
+double Server::stallAfter(int hz, int snapCap) const { return std::max(kStallSnaps * snapEveryAt(hz, snapCap) / hz, kStallMin); }
+
+// One snapshot step up from snapCap_: the next of kSnapSteps that sends more often at this tick rate (0: no cap left).
+int Server::snapCapUp() const {
+    if (!snapCap_) return 0;
+    const int hz = tickRate(), now = snapRate(), full = hz / snapEveryAt(hz, 0);
+    for (int k = (int)std::size(kSnapSteps) - 1; k >= 0; k--) {
+        int r = hz / snapEveryAt(hz, kSnapSteps[k]);
+        if (kSnapSteps[k] > snapCap_ && r > now) return r >= full ? 0 : kSnapSteps[k];
+    }
+    return 0;
+}
+
+bool Server::sendTo(const NetAddr& to, const uint8_t* data, size_t len) {
+    windowUpBytes_ += len + kUdpHeaderBytes; windowUpPkts_++;
+    return sock_.send(to, data, len);
 }
 
 // The tick rate changes only in warmup or between rounds (gamedefs.h; REVIEW GAME-11): if the host can't sustain the
@@ -388,7 +437,26 @@ void Server::stepRateDown(const char* why) {
     rateDownPending_ = false;
     rateRaisedAt_ = -1e9;   // (undone: the next step down waits for a break again)
     message("server tick rate lowered to " + std::to_string(tickRate()) + " Hz");
-    log("tick rate -> " + std::to_string(tickRate()) + " Hz (" + why + ")");
+    rateWhy_ = "tick rate -> " + std::to_string(tickRate()) + " Hz (" + why + ")";
+    log(rateWhy_);
+}
+
+// Bandwidth short (kUploadShort...): one snapshot step down, in any phase (the tick rate, and so the game, stays the
+// same; clients follow the rate in each snapshot's header: interpolation, loss counting). Backs off like the tick rate.
+bool Server::stepSnapDown(const char* why) {
+    const int now = snapRate();
+    for (int v : kSnapSteps) {
+        if (v >= now) continue;
+        snapCap_ = v;
+        rateUpAt_ = timeNow() + rateUpWait_;
+        rateUpWait_ = std::min(rateUpWait_ * 2, 900.0);
+        rateRaisedAt_ = -1e9;
+        message("server snapshot rate lowered to " + std::to_string(snapRate()) + "/s");
+        rateWhy_ = "snapshot rate -> " + std::to_string(snapRate()) + "/s (" + why + ")";
+        log(rateWhy_);
+        return true;
+    }
+    return false;   // (at the floor)
 }
 
 void Server::checkTickRate() {
@@ -398,37 +466,87 @@ void Server::checkTickRate() {
     // step-ups wait until it runs alone again (the governor throttles in the owner's order, not whoever noticed first).
     const bool governed = gov_ && gov_->active.load(std::memory_order_relaxed);
     if (governed) { if (applyGovernorCap(between)) return; }
-    else if (rateDownPending_ && between && rateLevel_ < kTickRateLevels - 1) { stepRateDown("fell behind during the round"); resetRateWindow(); return; }
-    if (now - rateWindowStart_ < kRateWindow) return;
+    else if (rateDownPending_ && between && rateLevel_ < kTickRateLevels - 1) { stepRateDown(("fell behind during the round: " + rateDownWhy_).c_str()); resetRateWindow(); return; }
+    if (now - rateWindowStart_ < rateWindow_) return;
     if (!g_serverRateCheck) { resetRateWindow(); return; }
-    if (editing_ || playerCount() == 0) { resetRateWindow(); return; }
+    if (editing_ || playerCount() == 0 || rateWindowStart_ < rateHoldUntil_) { resetRateWindow(); return; }
     int worstLoss = windowWorstLoss_;
     double lateFrac = windowTicks_ ? windowLate_ / (double)windowTicks_ : 0;
     double busy = windowBusy_ / std::max(1e-6, now - rateWindowStart_); // share of the time spent simulating + sending
-    // Late ticks alone don't mean the server can't keep up: on shared / burstable VMs the OS wakes us late
-    // while the CPU is nearly idle, and the catch-up loop still runs every tick. Step down only when the
-    // work itself is heavy (or late ticks come with real load), or packets / clients are being lost.
-    bool bad = busy > 0.5 || (lateFrac > kMaxLateFraction && busy > 0.2) || windowSendFail_ > 0 || worstLoss > kMaxClientLossPct;
+    // Late ticks with light work are the OS waking us late (shared / burstable VMs): they don't mean the CPU is short,
+    // but stalls (kStallSnaps) are what players see, whatever the cause. (Bots alone: nobody to be on time for.)
+    const int ticks = windowTicks_ + windowSkipped_;
+    const bool humans = humanCount() > 0;
+    double stall = humans && ticks ? windowStall_ / (double)ticks : 0, stallUp = humans && ticks ? windowStallUp_ / (double)ticks : 0;
+    // Bandwidth (kUploadShort...)
+    const double secs = std::max(1e-6, (now - rateWindowStart_) / timeScale());
+    const double upKbps = windowUpBytes_ * 8e-3 / secs;
+    const bool overCap = cfg_.maxUploadKbps > 0 && upKbps > kUploadShort * cfg_.maxUploadKbps;
+    int active = 0, lossy = 0, lossySome = 0, pinged = 0, risen = 0;
+    for (auto& p : players_) {
+        if (!p.connected || p.isBot || p.awayUntil > 0 || now - p.lastRecv > 1.0) continue;
+        active++;
+        lossy += p.windowLoss > kMaxClientLossPct;
+        lossySome += p.windowLoss > kMaxClientLossPct / 2;
+        if (p.windowPingMin <= 0) continue;
+        pinged++;
+        if (p.pingBase <= 0) p.pingBase = p.windowPingMin;
+        risen += p.windowPingMin - p.pingBase > std::max(kPingRiseMs, p.pingBase * 0.5f);
+        p.pingBase = std::min(p.windowPingMin, p.pingBase + kPingBaseCreepMs);
+    }
+    auto most = [](int n, int of) { return n >= 2 && n * 3 >= of * 2; };
+    const bool cpuBad = busy > 0.5 || (lateFrac > kMaxLateFraction && busy > 0.2);
+    const bool stallBad = stall > kMaxStallFraction;
+    const bool netBad = windowSendFail_ > 0 || overCap || most(lossy, active) || most(risen, pinged);
+    bool bad = cpuBad || stallBad || netBad;
     windowBad_ = bad; windowSevere_ = busy > 0.9; windowCheckedAt_ = now;   // (what the governor sees)
     if (governed) { resetRateWindow(); return; }
-    // Below the top rate, now and then try the next one up: a clean, lightly loaded window, and the wait since the
-    // last step down is over. If it steps back down, the wait doubles (up to 15 min), so a host that can't hold it
-    // isn't bounced up and down. (Between rounds only, like stepping down.)
-    bool clean = !bad && busy < 0.2 && lateFrac < kMaxLateFraction * 0.5 && worstLoss == 0;
-    if (rateLevel_ > rateTopLevel_ && clean && now >= rateUpAt_ && between) {
-        rateLevel_--;
-        rateRaisedAt_ = now;
-        message("server tick rate raised to " + std::to_string(tickRate()) + " Hz");
-        log("tick rate -> " + std::to_string(tickRate()) + " Hz (trying the next rate up: busy " + std::to_string((int)(busy * 100)) + "%)");
-        resetRateWindow();
-        return;
+    // Below the top rate, now and then try the next one up (the tick rate first, then the snapshot rate): a clean,
+    // lightly loaded window (stalls counted as the next rate would count them), room under the upload cap, and the
+    // wait since the last step down is over. If it steps back down, the wait doubles (up to 15 min), so a host that
+    // can't hold it isn't bounced up and down. (Between rounds only, like stepping the tick rate down.)
+    const bool tickUp = rateLevel_ > rateTopLevel_;
+    const bool snapUp = !tickUp && snapCap_ && snapRate() < tickRate() / snapEveryAt(tickRate(), 0);
+    if ((tickUp || snapUp) && now >= rateUpAt_ && between) {
+        const int upHz = tickUp ? kTickRates[rateLevel_ - 1] : tickRate(), upCap = tickUp ? snapCap_ : snapCapUp();
+        const double more = (double)(upHz / snapEveryAt(upHz, upCap)) / snapRate();   // upload grows with the snapshot rate
+        bool room = cfg_.maxUploadKbps <= 0 || upKbps * more < kUploadRoom * cfg_.maxUploadKbps;
+        bool clean = !bad && busy < 0.2 && lateFrac < kMaxLateFraction * 0.5 && stallUp < kMaxStallFraction * 0.5 && lossySome < 2 && risen < 2;
+        if (clean && room) {
+            char why[96];
+            snprintf(why, sizeof why, "trying the next rate up: busy %d%%, upload %.0f kbps", (int)(busy * 100), upKbps);
+            if (tickUp) {
+                rateLevel_--;
+                message("server tick rate raised to " + std::to_string(tickRate()) + " Hz");
+                rateWhy_ = "tick rate -> " + std::to_string(tickRate()) + " Hz (" + why + ")";
+            } else {
+                snapCap_ = upCap;
+                message("server snapshot rate raised to " + std::to_string(snapRate()) + "/s");
+                rateWhy_ = "snapshot rate -> " + std::to_string(snapRate()) + "/s (" + why + ")";
+            }
+            log(rateWhy_);
+            rateRaisedAt_ = now; rateRaisedSnap_ = snapUp;
+            resetRateWindow();
+            return;
+        }
     }
-    if (bad && rateLevel_ < kTickRateLevels - 1) {
-        char why[200];
-        snprintf(why, sizeof why, "busy %.0f%%, late %.1f%%, send failures %d, worst client loss %d%%", busy * 100, lateFrac * 100, windowSendFail_, worstLoss);
-        bool undo = now - rateRaisedAt_ < 3 * kRateWindow;   // our own recent step up didn't hold: back down now
-        if (between || busy > 0.9 || undo) stepRateDown(why);   // (else mid-round only if it can't keep up at all)
-        else if (!rateDownPending_) { rateDownPending_ = true; log(std::string("tick rate: stepping down at the next break (") + why + ")"); }
+    if (bad) {
+        std::string w;
+        char b[96];
+        auto add = [&](const char* fmt, auto... v) { snprintf(b, sizeof b, fmt, v...); w += (w.empty() ? "" : ", ") + std::string(b); };
+        if (cpuBad) add("busy %.0f%%, late %.1f%%", busy * 100, lateFrac * 100);
+        if (stallBad) add("%.1f%% of ticks over %.1f ms late", stall * 100, stallAfter_ * 1e3);
+        if (windowSendFail_ > 0) add("send failures %d", windowSendFail_);
+        if (overCap) add("upload %.0f of %d kbps", upKbps, cfg_.maxUploadKbps);
+        if (most(lossy, active)) add("%d of %d players losing snapshots (worst %d%%)", lossy, active, worstLoss);
+        if (most(risen, pinged)) add("ping up on %d of %d players", risen, pinged);
+        bool undo = now - rateRaisedAt_ < 3 * rateWindow_;   // our own recent step up didn't hold: back down now
+        // bandwidth alone: fewer snapshots first, at once (the tick rate once they're at the floor)
+        if ((undo && rateRaisedSnap_) || (!undo && !cpuBad && !stallBad)) { if (stepSnapDown(w.c_str())) { resetRateWindow(); return; } }
+        if (rateLevel_ < kTickRateLevels - 1) {
+            if (between || busy > 0.9 || undo) stepRateDown(w.c_str());   // (else mid-round only if it can't keep up at all)
+            else if (!rateDownPending_) { rateDownPending_ = true; rateDownWhy_ = w; log("tick rate: stepping down at the next break (" + w + ")"); }
+        }
     }
     resetRateWindow();
 }
@@ -452,7 +570,8 @@ bool Server::applyGovernorCap(bool between) {
     rateUpWait_ = 60; rateUpAt_ = timeNow() + rateUpWait_;   // (running alone again later: no instant self step-up)
     const char* other = cfg_.channel == GOV_TESTING ? "the production server" : "the testing server";
     if (!empty) message(std::string("server tick rate ") + (lower ? "lowered" : "raised") + " to " + std::to_string(tickRate()) + " Hz (this machine also runs " + other + ")");
-    log("tick rate -> " + std::to_string(tickRate()) + " Hz (load governor" + (lower ? ")" : ": calm again)"));
+    rateWhy_ = "tick rate -> " + std::to_string(tickRate()) + " Hz (load governor" + (lower ? ")" : ": calm again)");
+    log(rateWhy_);
     resetRateWindow();
     return true;
 }
@@ -468,7 +587,7 @@ void Server::governorFrame(double now) {
     if (rankedLive()) for (int i = 0; i < kMaxPlayers; i++) me.rankedPlayers += isRankedParticipant(i);
     me.level = rateLevel_;
     me.top = rateTopLevel_;
-    bool recent = now - windowCheckedAt_ < 2.5 * kRateWindow;   // (an empty server stops checking: its last verdict expires)
+    bool recent = now - windowCheckedAt_ < 2.5 * rateWindow_;   // (an empty server stops checking: its last verdict expires)
     me.overloaded = recent && windowBad_;
     me.severe = recent && windowSevere_;
     gov_->report(me, govLog_);
@@ -512,7 +631,10 @@ double Server::frame() {
     for (int k = 0; k < kRecvBatch; k++) { recvPk_[k].data = recvBuf_[k]; recvPk_[k].cap = sizeof recvBuf_[k]; }
     for (int n = kRecvBatch; n == kRecvBatch;) {   // (a short batch: the socket was empty)
         n = sock_.recvBatch(recvPk_, kRecvBatch);
-        for (int k = 0; k < n; k++) if (recvPk_[k].len > 0) receivePacket(recvPk_[k].from, recvPk_[k].data, recvPk_[k].len);
+        for (int k = 0; k < n; k++) if (recvPk_[k].len > 0) {
+            windowDownBytes_ += recvPk_[k].len + kUdpHeaderBytes; windowDownPkts_++;
+            receivePacket(recvPk_[k].from, recvPk_[k].data, recvPk_[k].len);
+        }
     }
 
     double now = timeNow();
@@ -523,6 +645,8 @@ double Server::frame() {
     double period = 1.0 / tickRate();
     if (now - nextTick_ > period * 20) { // fell far behind (debugger, hitch): skip ahead instead of spiralling
         windowLate_ += 20;
+        int skipped = (int)std::min((now - nextTick_) / period, 1e8);   // (the time stalled, as ticks: kStallSnaps)
+        windowSkipped_ += skipped; windowStall_ += skipped; windowStallUp_ += skipped;
         nextTick_ = now;
     }
     int caught = 0;
@@ -532,7 +656,9 @@ double Server::frame() {
                                   // Catching up without a limit let a slow machine spin here forever.
         if (now - nextTick_ > period * 2) windowLate_++;
         windowTicks_++;
-        lateHist_.add((now - nextTick_) / timeScale());
+        const double late = (now - nextTick_) / timeScale();
+        lateHist_.add(late);
+        windowStall_ += late > stallAfter_; windowStallUp_ += late > stallUpAfter_;
         if (lateHist_.count() >= 1000) { lateP99_ = lateHist_.upper(990, &lateP99Past_); lateHist_.clear(); }
         double t0 = timeNow();
         QZONE("server tick");
@@ -610,7 +736,7 @@ void Server::handlePacket(const NetAddr& from, const uint8_t* data, int len) {
         writeHeader(w, PKT_INFO_REPLY);
         w.str(listName().substr(0, kInfoNameMax)); w.str(cfg_.map.substr(0, kInfoMapMax)); w.u8((uint8_t)cfg_.mode);
         w.u8((uint8_t)playerCount()); w.u8((uint8_t)cfg_.maxPlayers); w.u16(port());
-        sock_.send(from, out, w.size());
+        sendTo(from, out, w.size());
         return;
     }
     if (type == PKT_PROBE_REQUEST) { handleProbeRequest(from, r, len); return; }
@@ -648,7 +774,7 @@ void Server::handlePacket(const NetAddr& from, const uint8_t* data, int len) {
         uint16_t n = (uint16_t)std::min<size_t>(kMapChunk, text.size() - off);
         w.u32(players_[id].nonce); w.bytes(map_.id().b, 32); w.bytes(map_.contentId().b, 32); w.u32((uint32_t)text.size()); w.u32(off); w.u16(n);
         w.bytes((const uint8_t*)text.data() + off, n);
-        sock_.send(from, out, w.size());
+        sendTo(from, out, w.size());
     }
 }
 
@@ -670,7 +796,7 @@ void Server::handleProbeRequest(const NetAddr& from, Reader& r, int len) {
     Writer w(out, sizeof out);
     writeHeader(w, PKT_PROBE_REPLY);
     w.u32(nonce);
-    sock_.send(NetAddr{from.ip, askPort}, out, w.size()); // the source's own IP, never one named in the packet
+    sendTo(NetAddr{from.ip, askPort}, out, w.size()); // the source's own IP, never one named in the packet
 }
 
 void Server::setReach(Reach rv, const std::string& detail) {
@@ -838,7 +964,7 @@ void Server::handleConnect(const NetAddr& from, Reader& r, int len) {
             Writer w(out, sizeof out);
             writeHeader(w, PKT_REJECT);
             w.str(why);
-            sock_.send(from, out, w.size());
+            sendTo(from, out, w.size());
             break;
         }
         return;
@@ -852,7 +978,7 @@ void Server::handleConnect(const NetAddr& from, Reader& r, int len) {
         Writer w(out, sizeof out);
         writeHeader(w, PKT_CHALLENGE);
         w.u32(nonce); w.u32(challengeCookie(from, nonce, bucket));
-        sock_.send(from, out, w.size());
+        sendTo(from, out, w.size());
         return;
     }
     // From here on the sender has proven it receives at `from`.
@@ -861,7 +987,7 @@ void Server::handleConnect(const NetAddr& from, Reader& r, int len) {
         Writer w(out, sizeof out);
         writeHeader(w, PKT_REJECT);
         w.str(why);
-        sock_.send(from, out, w.size());
+        sendTo(from, out, w.size());
     };
     if (closed_) { reject(kGovernorClosedText); return; }
     // After the cookie (every client of this protocol sends them: tokens and keys since 30, the dialled address since
@@ -1018,6 +1144,7 @@ bool Server::restorePlayer(int id, const NetAddr& from, uint32_t nonce, const st
     p.lastStringCmd = 0; p.strTick = 0; p.strCount = p.edCount = 0;
     p.nextEventId = 1; p.ackedEvent = 0; p.events.clear();
     p.reportedLoss = 0; p.lastViewTick = 0; p.ping = 0; p.lastRecv = timeNow();
+    p.windowLoss = 0; p.windowPingMin = 0; p.pingBase = 0;
     p.mapTokens = fresh.mapTokens; p.mapTokensAt = 0;
     p.buttons = p.prevButtons = 0; p.keys = 0;
     sendAccept(sock_, p, id, map_, cfg_.mode);
@@ -1092,7 +1219,7 @@ void Server::dropPlayer(int id, const std::string& reason, bool notify, bool shu
         writeHeader(w, PKT_KICKED);
         w.u32(p.nonce);
         w.str(reason);
-        sock_.send(p.addr, out, w.size());
+        sendTo(p.addr, out, w.size());
     }
     // Leaving a live ranked match: the first to leave takes the loss. Any drop but the server stopping counts (the
     // grace running out, a new session from the same address without the token or key, the unacked-event cap): only
@@ -1179,11 +1306,13 @@ void Server::handleInput(int id, Reader& r) {
 
     p.reportedLoss = loss;
     windowWorstLoss_ = std::max(windowWorstLoss_, (int)loss);
+    p.windowLoss = std::max(p.windowLoss, loss);
     uint64_t ack = ackMs ? fromWireMs(ackMs) : 0;   // (0: no snapshot yet)
     if (ack && ack <= timeMs_ && ack > p.ackSnapMs) p.ackSnapMs = ack; // newest snapshot it has: delta base
     if (ack && ack <= timeMs_ && ack + 10000 > timeMs_) {
         float sample = (float)(timeMs_ - ack);
         p.ping = p.ping == 0 ? sample : p.ping * 0.98f + sample * 0.02f;
+        if (p.windowPingMin <= 0 || p.ping < p.windowPingMin) p.windowPingMin = std::max(p.ping, 0.01f);
     }
     if (ackEvent > p.ackedEvent) p.ackedEvent = ackEvent;
     while (!p.events.empty() && p.events.front().id <= p.ackedEvent) p.events.pop_front();
@@ -1510,6 +1639,7 @@ void Server::command(const std::string& line, int fromPlayer) {
         map_ = m;
         nav_.buildAsync(std::move(m));
         cfg_.map = newMap;
+        rateHoldUntil_ = timeNow() + rateWindow_;   // (the load and every client reloading: no verdict on the rate)
         mapEdited_ = false;
         playMap(newMode);
     } else if (cmd == "addbot" && cfg_.ranked) {
@@ -1564,6 +1694,14 @@ std::string Server::statusText() {
         if (lateP99_ >= 0) snprintf(late, sizeof late, "%s %d us (last 1000 ticks)", lateP99Past_ ? "over" : "under", (int)std::lround((lateP99Past_ ? lateP99_ - 25e-6 : lateP99_) * 1e6));
         snprintf(t, sizeof t, "\ntick %d Hz, spin %d us (%s), late p99 %s", tickRate(), (int)std::lround(wakeSpin_.spin() * 1e6), wakeSpin_.fixed() ? "fixed" : "auto", late);
         s += t;
+        // the rate test's view of the last window (stalls: ticks over stallAfter_ late) and its last change
+        char cap[32] = "";
+        if (cfg_.maxUploadKbps > 0) snprintf(cap, sizeof cap, " of %d", cfg_.maxUploadKbps);
+        snprintf(t, sizeof t, "\nsnapshots %d/s%s, stalls %.1f%% (over %.1f ms late)", snapRate(), snapCap_ && snapRate() < tickRate() / snapEveryAt(tickRate(), 0) ? " (lowered)" : "",
+                 stallPct_, stallAfter_ * 1e3);
+        s += t;
+        if (upKbps_ >= 0) { snprintf(t, sizeof t, ", upload %.0f%s kbps (%.0f packets/s), download %.0f kbps (%.0f/s)", upKbps_, cap, upPps_, downKbps_, downPps_); s += t; }
+        if (!rateWhy_.empty()) s += "\nlast rate change: " + rateWhy_;
     }
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
@@ -2899,10 +3037,14 @@ void Server::sendSnapshots() {
         writeSnapshotEvents(w, eventPtrs_, nEvents);
         snapBytes_ += w.size(); snapCount_++;
         if (kSnapBufs > 1) { snapOut_[nOut].data = buf; snapOut_[nOut].len = w.size(); snapOut_[nOut].to = p.addr; nOut++; }
-        else if (!sock_.send(p.addr, buf, w.size())) windowSendFail_++;
+        else if (!sendTo(p.addr, buf, w.size())) windowSendFail_++;
         p.sentSeq++;   // (the slot keeps what went out as a future delta base)
     }
-    if (nOut) windowSendFail_ += nOut - sock_.sendBatch(snapOut_, nOut);
+    if (nOut) {
+        for (int k = 0; k < nOut; k++) windowUpBytes_ += snapOut_[k].len + kUdpHeaderBytes;
+        windowUpPkts_ += nOut;
+        windowSendFail_ += nOut - sock_.sendBatch(snapOut_, nOut);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3173,6 +3315,7 @@ bool Server::switchMapKeepRules(const std::string& name) {
     map_ = m;
     nav_.buildAsync(std::move(m));
     cfg_.map = name;
+    rateHoldUntil_ = timeNow() + rateWindow_;
     mapEdited_ = false;
     for (auto& pr : projectiles_) pr.active = false;
     clearProps();

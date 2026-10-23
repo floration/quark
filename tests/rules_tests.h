@@ -1228,9 +1228,19 @@ static void testSpawnTypes(uint16_t port) {
     s.stop();
 }
 
-// GAME-11: the tick rate doesn't change mid-round; a host that falls behind steps down at the next break.
+// What a shared / CPU-capped VM does to a server that is otherwise idle: every `every` seconds the OS doesn't run it
+// for `ms` (the pump's input callback sleeps: frame() comes that much late). Busy stays near 0.
+struct Stalls {
+    double every, next = 0;
+    int ms;
+    UserCmd operator()(int) { if (timeNow() >= next) { next = timeNow() + every; sleepMs(ms); } return UserCmd(); }
+};
+
+// GAME-11: the tick rate doesn't change mid-round; a host that falls behind steps down at the next break. Here the
+// host's ticks stall (12 ms every 0.25 s: ~3% of 1000 Hz ticks over 4 ms late) with almost no load, as the Oracle box
+// did: that alone now steps the tick rate down.
 static void testRateBetweenRounds(uint16_t port) {
-    printf("tick rate changes only between rounds\n");
+    printf("tick rate changes only between rounds; stalled ticks with no load step it down\n");
     setTimeScale(1.0);
     g_serverRateCheck = true;
     struct Restore { ~Restore() { setTimeScale(kTestTimeScale); g_serverRateCheck = false; } } restore;
@@ -1241,14 +1251,22 @@ static void testRateBetweenRounds(uint16_t port) {
     std::vector<NetClient*> cls;
     if (!rulesStart(s, cfg, c, 1, cls)) { s.stop(); return; }
     CHECK(s.tickRate() == 1000);
-    c[0].overrideReportedLoss(50);           // (what a struggling host looks like: clients losing snapshots)
-    pump(s, cls, 3.0 * 2.5, idle);           // two and a half rate windows, mid-match
-    printf("  mid-match, losing snapshots: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
-    CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 1000);
+    pump(s, cls, 3.0 * 2.5, Stalls{0.25, 0, 12});   // two and a half rate windows, mid-match
+    printf("  mid-match, stalling (%.1f%% of ticks over %.1f ms late): %d Hz (phase %d)\n", s.stallPct_, s.stallAfter_ * 1e3, s.tickRate(), s.ms_.phase);
+    CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 1000 && s.rateDownPending_);
+    CHECK(s.stallPct_ > 1 && s.snapRate() == 500);   // (late ticks aren't a bandwidth problem: the snapshot rate stays)
     s.phaseEnd_ = s.time();                  // time's up: the match is over
     pump(s, cls, 0.5, idle);
-    printf("  match over: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
+    printf("  match over: %d Hz (phase %d), %s\n", s.tickRate(), s.ms_.phase, s.rateWhy_.c_str());
     CHECK(s.ms_.phase == PHASE_MATCH_END && s.tickRate() == 500);   // stepped down at once, at the break
+    // between rounds the stalls go on stepping it down until a tick period absorbs them (at 125 Hz a stall is 16 ms)
+    for (int k = 0; k < 60 && s.tickRate() > 125; k++) pump(s, cls, 0.25, Stalls{0.25, 0, 12});
+    printf("  still stalling, match end: %d Hz\n", s.tickRate());
+    CHECK(s.tickRate() == 125);
+    s.rateUpAt_ = 0;   // (the wait before trying the next rate up: over)
+    pump(s, cls, 3.0 * 1.5, Stalls{0.25, 0, 12});
+    printf("  at 125 Hz, same stalls: %.1f%% over %.1f ms, %d Hz\n", s.stallPct_, s.stallAfter_ * 1e3, s.tickRate());
+    CHECK(s.tickRate() == 125 && s.stallPct_ < 1);   // clean at 125, but 250 Hz would stall: it stays
     s.stop();
 }
 
@@ -1273,16 +1291,150 @@ static void testRateUndoStepUp(uint16_t port) {
     s.command("forcestart");
     for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE; i++) { if (s.ms_.phase == PHASE_FREEZE) s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
     CHECK(s.ms_.phase == PHASE_LIVE);
-    c[0].overrideReportedLoss(50);           // the raise doesn't hold
-    for (int k = 0; k < 30 && s.tickRate() != 500; k++) pump(s, cls, 0.25, idle);
-    printf("  live, losing snapshots after the raise: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
+    Stalls st{0.25, 0, 12};                  // the raise doesn't hold
+    for (int k = 0; k < 30 && s.tickRate() != 500; k++) pump(s, cls, 0.25, st);
+    printf("  live, stalling after the raise: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
     CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 500);   // undone mid-round, not after it
-    pump(s, cls, 3.0 * 2.5, idle);           // still losing, but that's no longer our own raise: waits for the break
-    printf("  still losing: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
+    pump(s, cls, 3.0 * 2.5, st);             // still stalling, but that's no longer our own raise: waits for the break
+    printf("  still stalling: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
     CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 500 && s.rateDownPending_);
     s.phaseEnd_ = s.time();                  // time's up: the match is over
     pump(s, cls, 0.5, idle);
     CHECK(s.ms_.phase == PHASE_MATCH_END && s.tickRate() == 250);   // (the pending step down, at the break)
+    s.stop();
+}
+
+// A healthy host's jitter is no stall: Windows' 1 ms timer grid wakes a 1000 Hz tick up to a period late (p99 ~0.7-1
+// ms), and now and then later. Here the server runs its own loop (frame, idle: as quark_server does) and every wake
+// comes 0-1 ms late, one in 50 1-3 ms late: 1000 Hz and 500 snapshots/s stay.
+static void testRateJitter(uint16_t port) {
+    printf("tick rate: a healthy host's timer jitter doesn't step it down\n");
+    setTimeScale(1.0);
+    g_serverRateCheck = true;
+    struct Restore { ~Restore() { setTimeScale(kTestTimeScale); g_serverRateCheck = false; } } restore;
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    NetClient c[1];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 1, cls, false)) { s.stop(); return; }
+    uint32_t r = 12345;
+    auto rnd = [&] { r = r * 1664525u + 1013904223u; return (r >> 8) / 16777216.0; };
+    double end = timeNow() + 3.0 * 3.3, next = timeNow();
+    while (timeNow() < end) {
+        s.idle(s.frame());
+        double late = rnd() < 0.02 ? 0.001 + 0.002 * rnd() : 0.001 * rnd();
+        for (double t = timeNow() + late; timeNow() < t;) {}   // (woken that late)
+        c[0].poll();
+        while (timeNow() >= next) { c[0].tick(UserCmd()); next += c[0].tickPeriod(); }
+    }
+    std::string st = s.statusText();
+    printf("  %s\n", st.substr(0, st.find("\n  #")).c_str());
+    CHECK(s.tickRate() == 1000 && s.snapRate() == 500 && s.rateWhy_.empty());
+    CHECK(s.stallPct_ < 0.2);
+    s.stop();
+}
+
+// --max-upload-kbps: past 90% of it the snapshot rate steps down (500 333 250 125/s), at once (any phase), then the
+// tick rate; with the cap gone (and the wait over) it climbs back: the tick rate first, then the snapshot rate.
+static void testUploadCap(uint16_t port) {
+    printf("upload cap: snapshot rate first, then tick rate; back up when it fits\n");
+    setTimeScale(1.0);
+    g_serverRateCheck = true;
+    struct Restore { ~Restore() { setTimeScale(kTestTimeScale); g_serverRateCheck = false; } } restore;
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    NetClient c[1];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 1, cls, false)) { s.stop(); return; }
+    s.rateWindow_ = 1.0;
+    pump(s, cls, 2.2, idle);
+    double full = s.upKbps_;   // one player at 500/s
+    printf("  one player: upload %.0f kbps at %d/s\n", full, s.snapRate());
+    CHECK(full > 50 && s.snapRate() == 500 && s.tickRate() == 1000);
+    // a cap the 333/s rate fits under (with room): one step, the tick rate untouched
+    s.cfg_.maxUploadKbps = (int)(full * 0.85);
+    pump(s, cls, 4.2, idle);
+    printf("  cap %d kbps: %d/s at %d Hz, upload %.0f kbps; %s\n", s.cfg_.maxUploadKbps, s.snapRate(), s.tickRate(), s.upKbps_, s.rateWhy_.c_str());
+    CHECK(s.snapRate() == 333 && s.tickRate() == 1000);
+    CHECK(s.rateWhy_.find("upload") != std::string::npos);
+    // a cap nothing fits under: every snapshot step, then every tick step
+    s.cfg_.maxUploadKbps = 1;
+    std::vector<std::pair<int, int>> steps;
+    std::pair<int, int> was{s.tickRate(), s.snapRate()};
+    for (int k = 0; k < 120 && s.tickRate() > 125; k++) {
+        pump(s, cls, 0.1, idle);
+        std::pair<int, int> is{s.tickRate(), s.snapRate()};
+        if (is != was) steps.push_back(was = is);
+    }
+    for (auto& st : steps) printf("  -> %d Hz, %d/s\n", st.first, st.second);
+    std::vector<std::pair<int, int>> want = {{1000, 250}, {1000, 125}, {500, 125}, {250, 125}, {125, 125}};
+    CHECK(steps == want);
+    CHECK(c[0].snapRate() == 125);
+    // cap gone, the backoff wait over: one step up per clean window, the tick rate first
+    s.cfg_.maxUploadKbps = 0;
+    s.rateUpAt_ = 0;
+    steps.clear();
+    for (int k = 0; k < 150 && !(s.tickRate() == 1000 && s.snapRate() == 500); k++) {
+        pump(s, cls, 0.1, idle);
+        std::pair<int, int> is{s.tickRate(), s.snapRate()};
+        if (is != was) steps.push_back(was = is);
+    }
+    for (auto& st : steps) printf("  <- %d Hz, %d/s\n", st.first, st.second);
+    want = {{250, 125}, {500, 125}, {1000, 125}, {1000, 250}, {1000, 333}, {1000, 500}};
+    CHECK(steps == want);
+    CHECK(s.snapCap_ == 0);
+    pump(s, cls, 0.3, idle);
+    CHECK(c[0].snapRate() == 500 && c[0].tickRate() == 1000);
+    s.stop();
+}
+
+// No cap: congestion on the server's uplink shows in most players at once (losing snapshots, or their ping rising
+// together: the queue delays everyone). One player's bad connection never moves the server; two of three do.
+static void testSharedCongestion(uint16_t port) {
+    printf("congestion: most players at once lower the snapshot rate, one player never\n");
+    setTimeScale(1.0);
+    g_serverRateCheck = true;
+    struct Restore { ~Restore() { setTimeScale(kTestTimeScale); g_serverRateCheck = false; } } restore;
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    NetClient c[3];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 3, cls)) { s.stop(); return; }   // (live: snapshot steps don't wait for a break)
+    s.rateWindow_ = 1.0;
+    // slow: these clients read their socket only every 150 ms (their acks age: each ping, measured by the server, up)
+    auto run = [&](double secs, int slow) {
+        double end = timeNow() + secs, next = timeNow(), read[3] = {};
+        while (timeNow() < end) {
+            s.frame();
+            for (int i = 0; i < 3; i++) if (i >= slow || timeNow() - read[i] >= 0.15) { c[i].poll(); read[i] = timeNow(); }
+            while (timeNow() >= next) { for (auto* cl : cls) cl->tick(UserCmd()); next += c[2].tickPeriod(); }
+            sleepMs(1);
+        }
+    };
+    run(2.2, 0);   // (each player's uncongested ping)
+    c[0].overrideReportedLoss(50);
+    run(3.2, 0);
+    printf("  one player losing snapshots: %d Hz, %d/s\n", s.tickRate(), s.snapRate());
+    CHECK(s.tickRate() == 1000 && s.snapRate() == 500 && !s.rateDownPending_);
+    c[0].overrideReportedLoss(0);
+    run(3.2, 1);
+    printf("  one player's ping up (%.0f ms, was %.0f): %d Hz, %d/s\n", s.players_[c[0].clientId()].ping, s.players_[c[0].clientId()].pingBase, s.tickRate(), s.snapRate());
+    CHECK(s.tickRate() == 1000 && s.snapRate() == 500 && !s.rateDownPending_);
+    c[0].overrideReportedLoss(50); c[1].overrideReportedLoss(50);
+    for (int k = 0; k < 30 && s.snapRate() == 500; k++) run(0.1, 0);
+    printf("  two of three losing snapshots: %d Hz, %d/s (phase %d); %s\n", s.tickRate(), s.snapRate(), s.ms_.phase, s.rateWhy_.c_str());
+    CHECK(s.snapRate() == 333 && s.tickRate() == 1000 && s.ms_.phase == PHASE_LIVE);
+    CHECK(s.rateWhy_.find("2 of 3 players losing") != std::string::npos);
+    c[0].overrideReportedLoss(0); c[1].overrideReportedLoss(0);
+    run(2.2, 0);   // (the window that still had their loss reports)
+    int was = s.snapRate();
+    for (int k = 0; k < 40 && s.snapRate() == was; k++) run(0.1, 2);
+    printf("  two of three with their ping up: %d Hz, %d/s; %s\n", s.tickRate(), s.snapRate(), s.rateWhy_.c_str());
+    CHECK(s.snapRate() < was && s.tickRate() == 1000);
+    CHECK(s.rateWhy_.find("ping up on 2 of 3") != std::string::npos);
     s.stop();
 }
 
@@ -1376,5 +1528,5 @@ static void testGameRules(const std::string& only) {
         {"scoreboard", [] { testScoreboardValue(); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
-    if (only == "rate") { testRateBetweenRounds(TP(29252)); testRateUndoStepUp(TP(29254)); }   // (timing-sensitive: the suite runs it alone, with "tickrate")
+    if (only == "rate") { testRateBetweenRounds(TP(29252)); testRateUndoStepUp(TP(29254)); testRateJitter(TP(29257)); testUploadCap(TP(29258)); testSharedCongestion(TP(29259)); }   // (timing-sensitive: the suite runs it alone, with "tickrate")
 }

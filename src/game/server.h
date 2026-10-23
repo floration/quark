@@ -47,6 +47,7 @@ struct ServerConfig {
     int maxTickRate = 1000;     // starting (highest) tick rate; lowered automatically if the host can't keep up
     int snapRate = 500;         // snapshots per second to each client (<= tick rate): 1000 = lowest latency, lower = less CPU / bandwidth
     int tickSpinUs = -1;        // spin this long before each tick (humans on): -1 adaptive (net.h WakeSpin), 0 never
+    int maxUploadKbps = 0;      // upload cap, kilobits/s (IP + UDP headers counted): past 90% the snapshot rate steps down, then the tick rate; 0 = none
     // Bots
     bool balanceBots = true;    // team modes: an extra bot joins the side with fewer humans (vote can turn off)
     int balanceBotSkill = BOT_INTERMEDIATE;
@@ -172,6 +173,9 @@ struct ServerPlayer {
     float catchUp = kCatchUpMax; // extra commands it may run to clear a backlog (refills very slowly)
     uint32_t cmdsRun = 0;       // commands simulated (nobody gets more than real time: see the tests)
     uint8_t reportedLoss = 0;   // % of snapshots the client says it missed
+    uint8_t windowLoss = 0;     // the rate test: the most it reported this window
+    float windowPingMin = 0;    // ... its lowest ping this window (0: none yet)
+    float pingBase = 0;         // ... and its ping when the server's uplink isn't queueing (0: not known yet)
     uint64_t lastViewTick = 0;   // the server ms its last command was looking at (unwrapped, see fromWireMs)
     uint16_t interpMs = 0;        // the fixed interpolation delay the client reported ("interp"; 0 = adaptive)
     double lastRecv = 0;
@@ -277,7 +281,14 @@ public:
     double rateUpAt_ = 0;       // after stepping down: when to try the next rate up again (backs off each time it fails)
     double rateUpWait_ = 60;
     bool rateDownPending_ = false; // the host fell behind mid-round: step down at the next break (REVIEW GAME-11)
+    std::string rateDownWhy_;      // ... what it saw
     double rateRaisedAt_ = -1e9;   // the last step up: undone in any phase if it doesn't hold for 3 windows (REVIEW 6.1)
+    bool rateRaisedSnap_ = false;  // ... and it raised the snapshot rate, not the tick rate
+    int snapCap_ = 0;              // the rate test's snapshot rate cap (bandwidth short: lowered before the tick rate); 0 = none
+    double rateWindow_ = 3.0;      // seconds per rate test window (tests shorten it)
+    std::string rateWhy_;          // the last automatic rate change and why (status)
+    double stallAfter_ = 1, stallUpAfter_ = 1;   // real seconds late past which a tick is a stall, now / at the next step up
+    double upKbps_ = -1, downKbps_ = 0, upPps_ = 0, downPps_ = 0, stallPct_ = 0;   // the last window's (status; -1: none yet)
     int tickRate() const { return kTickRates[rateLevel_]; }
     float dt() const { return 1.0f / tickRate(); }
     double time() const { return timeMs_ * 0.001; } // double: a float runs out of millisecond precision after a few hours of uptime
@@ -313,12 +324,15 @@ public:
     // once the ring's vectors have grown (PERF-8).
     std::vector<PlayerSnap> snapPlayers_;
     std::vector<ProjectileSnap> snapProj_;
-    int snapEvery() const {
-        int rate = std::min(cfg_.snapRate, tickRate());
+    int snapEvery() const { return snapEveryAt(tickRate(), snapCap_); }
+    int snapRate() const { return tickRate() / snapEvery(); }   // snapshots per second each client gets
+    int snapEveryAt(int hz, int snapCap) const {   // at that tick rate, with that cap
+        int rate = std::min(cfg_.snapRate, hz);
+        if (snapCap > 0) rate = std::min(rate, snapCap);
         if (cfg_.maxPlayers > 24) rate = std::min(rate, 250);       // big servers: upload bandwidth grows with players x rate
         else if (cfg_.maxPlayers > 16) rate = std::min(rate, 333);
         // round up (500 Hz at a 333 cap -> every 2nd tick, not every tick), but 1000 / 333 = 3.003 stays 3
-        return std::max(1, (int)std::ceil((float)tickRate() / std::max(1, rate) - 0.02f));
+        return std::max(1, (int)std::ceil((float)hz / std::max(1, rate) - 0.02f));
     }
     // Hide and seek tiebreak (owner B8; gamemodes.cpp): rock paper scissors among those tied for first, in the match's
     // last round end (ModeState MS_RPS). Every change goes out as an EV_RPS (and to anyone joining: rpsEvent_).
@@ -584,6 +598,10 @@ private:
     void drainCmds(int id);
     void checkTickRate();
     void stepRateDown(const char* why);
+    bool stepSnapDown(const char* why);   // false: already at the floor (kSnapSteps)
+    int snapCapUp() const;                 // the cap one snapshot step up (0: none)
+    double stallAfter(int hz, int snapCap) const;   // real seconds late past which a tick is a stall
+    bool sendTo(const NetAddr& to, const uint8_t* data, size_t len);   // sock_.send, counted for the rate test
     void resetRateWindow();
     void runPlayerCmd(int id, const UserCmd& cmd);
     // The grapple latched onto a player: the candidates a hook fired in this command can catch (where the shooter saw
@@ -664,6 +682,10 @@ private:
     OutPacket snapOut_[kSnapBufs];
     double rateWindowStart_ = 0;
     int windowTicks_ = 0, windowLate_ = 0, windowSendFail_ = 0, windowWorstLoss_ = 0;
+    int windowStall_ = 0, windowStallUp_ = 0, windowSkipped_ = 0;   // ticks that stalled (stallAfter) now / at the next step up; skipped ahead
+    double rateHoldUntil_ = 0;   // a window that starts before this is no verdict (a map was just loaded: one long frame, clients reloading)
+    uint64_t windowUpBytes_ = 0, windowDownBytes_ = 0;   // datagrams + 28 bytes of IPv4 / UDP header each
+    uint32_t windowUpPkts_ = 0, windowDownPkts_ = 0;
     double windowBusy_ = 0;   // seconds spent in simulate + snapshots this window
     LogFn log_;
     std::unique_ptr<PortMapper> upnp_;

@@ -2229,33 +2229,50 @@ static void testSemiAuto(uint16_t port) {
 }
 
 static void testTickRateFallback(uint16_t port) {
-    printf("tick rate starts at 1000 Hz and steps down when the host can't keep up\n");
+    printf("tick rate starts at 1000 Hz; players losing snapshots lower the snapshot rate, then the tick rate\n");
     setTimeScale(1.0);
     g_serverRateCheck = true;
     struct Restore { ~Restore() { setTimeScale(kTestTimeScale); g_serverRateCheck = false; } } restore;
     Server s;
     ServerConfig cfg;
-    cfg.autoStart = true;
+    cfg.autoStart = false;   // (warmup throughout: tick-rate steps go at once)
     cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
     s.setLog([](const std::string&) {});
     { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     CHECK(s.tickRate() == 1000);
-    NetClient a;
+    NetClient a, b;
     a.connect("127.0.0.1:" + std::to_string(port), "solo");
-    std::vector<NetClient*> cls = {&a};
+    b.connect("127.0.0.1:" + std::to_string(port), "duo");
+    std::vector<NetClient*> cls = {&a, &b};
     pump(s, cls, 1.0, idle);
     CHECK(a.tickRate() == s.tickRate());
-    // A healthy loopback client reports no loss and the server stays at 1000 Hz (snapshots go out every
+    // Healthy loopback clients report no loss and the server stays at 1000 Hz (snapshots go out every
     // other tick: counting ticks instead of snapshots once read as exactly 50% loss and dropped the rate).
     pump(s, cls, 3.2 * 1.5, idle);
-    printf("  loopback: reported loss %d%%, tick rate %d, snapshot rate %d\n", a.snapshotLoss(), s.tickRate(), a.snapRate());
+    printf("  loopback: reported loss %d%%, tick rate %d, snapshot rate %d, stalls %.2f%%\n", a.snapshotLoss(), s.tickRate(), a.snapRate(), s.stallPct_);
     CHECK(a.snapshotLoss() <= 2);
-    CHECK(s.tickRate() == 1000);
-    // Simulate a client reporting heavy snapshot loss during warmup.
+    CHECK(s.tickRate() == 1000 && s.snapRate() == 500);
+    // One of them losing snapshots (its own wifi): nothing changes.
     a.overrideReportedLoss(50);
-    pump(s, cls, 3.2 * 4, idle);
+    pump(s, cls, 3.2 * 2, idle);
+    printf("  one player losing snapshots: %d Hz, %d snapshots/s\n", s.tickRate(), s.snapRate());
+    CHECK(s.tickRate() == 1000 && s.snapRate() == 500);
+    // Both (the server's uplink): the snapshot rate steps down first, to its floor, then the tick rate.
+    b.overrideReportedLoss(50);
+    s.rateWindow_ = 1.5;
+    std::vector<std::pair<int, int>> steps;   // (tick rate, snapshot rate) after each change
+    std::pair<int, int> was{s.tickRate(), s.snapRate()};
+    for (int k = 0; k < 160 && s.tickRate() > 125; k++) {
+        pump(s, cls, 0.1, idle);
+        std::pair<int, int> is{s.tickRate(), s.snapRate()};
+        if (is != was) steps.push_back(was = is);
+    }
+    for (auto& st : steps) printf("  -> %d Hz, %d/s\n", st.first, st.second);
+    std::vector<std::pair<int, int>> want = {{1000, 333}, {1000, 250}, {1000, 125}, {500, 125}, {250, 125}, {125, 125}};
+    CHECK(steps == want);
+    pump(s, cls, 0.3, idle);
     CHECK(s.tickRate() == 125); // floor: never below 125 Hz
-    CHECK(a.tickRate() == 125);
+    CHECK(a.tickRate() == 125 && a.snapRate() == 125);
     s.stop();
 }
 
@@ -6837,7 +6854,7 @@ int main(int argc, char** argv) {
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
         {"netcode", [] { testInterpRewind(TP(28703)); testUptimeClock(TP(28702)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
-        {"tickrate", [] { testTickRateFallback(TP(28710)); testRateBetweenRounds(TP(28711)); testRateUndoStepUp(TP(28712)); }},
+        {"tickrate", [] { testTickRateFallback(TP(28710)); testRateBetweenRounds(TP(28711)); testRateUndoStepUp(TP(28712)); testRateJitter(TP(28720)); testUploadCap(TP(28721)); testSharedCongestion(TP(28722)); }},
         {"governor", [] { testGovernorPolicy(); testGovernorTwoServers(TP(28714)); testRankedNotRated(TP(28716)); }},
         {"resetmaps", [] { testResetMaps(); }},
         {"userdata", [] { testUserData(); }},
