@@ -427,7 +427,7 @@ void NetClient::tick(UserCmd cmd) {
     predicted_[cmd.seq % kCmdRing] = pred_;
     predictedSeq_[cmd.seq % kCmdRing] = cmd.seq;
     errorOffset_ *= std::exp(-cmd.msec / 60.0f); // fade corrections out over ~60 ms, at any tick rate
-    sendInput();
+    if (++unsentCmds_ >= inputBatch_) sendInput();
 }
 
 void NetClient::sendInput() {
@@ -453,6 +453,7 @@ void NetClient::sendInput() {
     }
     sock_.send(server_, buf, w.size());
     lastSend_ = timeNow();
+    unsentCmds_ = 0;
 }
 
 void NetClient::sendCommand(const std::string& s) {

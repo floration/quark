@@ -1003,6 +1003,7 @@ void Game::frame(double dt) {
     struct CpuTime { double t0 = timeNow(); double* out; ~CpuTime() { *out = timeNow() - t0; } } cpuTime{timeNow(), &lastCpu_}; // --bench: CPU part of the frame
     time_ += dt;
     swallowChar_ = false;   // (a key that opened the chat and typed no character: don't eat a later one)
+    framePlayersOk_ = false;
     if (screen_ == Screen::InGame && (!opts_.chatShot.empty() || !opts_.consoleShot.empty())) {
         bool con = !opts_.consoleShot.empty();
         chatting_ = true; console_ = con;
@@ -1032,6 +1033,9 @@ void Game::frame(double dt) {
         modelSentAt_ = time_;
     }
     if (audio_.pack() != cfg_.soundPack) audio_.setPack(cfg_.soundPack);
+    // input packets: the frame's ticks are sent together (flushInput after the tick loop), or every 2 ticks when a
+    // frame runs more (each packet carries the last 4 commands: every command still goes out in 2 packets or more)
+    net_.setInputBatch(2);
     net_.setInterpFixed(fairRules() ? 0.010f : cfg_.interpMs > 0 ? cfg_.interpMs * 0.001f : cfg_.interpMs < 0 ? 0.0f : -1.0f);
     frameInput_ = pendingInput_; // the oldest input this frame will show
     pendingInput_ = -1;
@@ -1148,6 +1152,8 @@ void Game::frame(double dt) {
             net_.tick(c);
             tickAcc_ -= period;
         }
+        net_.flushInput();   // (PERF-12: one input packet per frame, or per 2 ticks when a frame runs more)
+        framePlayersOk_ = false;   // (the ticks moved the render time on)
         scopeOverlay_ = net_.selfWeapon() == WPN_SNIPER; // crossbow: just a light zoom, normal crosshair
         scoped_ = net_.selfAlive() && !paused_ && !chatting_ && weaponDef(net_.selfWeapon()).scopedSpread >= 0 &&
                   (isDown(A_ALTFIRE) || opts_.debugScope);
@@ -1169,7 +1175,7 @@ void Game::frame(double dt) {
         lastHealth_ = hp;
         if (!net_.selfAlive() && uiIn_.pressed && !paused_) {
             // cycle spectate target
-            auto ps = net_.interpolatedPlayers();
+            const auto& ps = framePlayers();
             for (int k = 1; k <= kMaxPlayers; k++) {
                 int id = (specTarget_ + k + kMaxPlayers) % kMaxPlayers;
                 if (ps[id].valid && (ps[id].snap.flags & PS_ALIVE) && id != net_.clientId()) { specTarget_ = id; break; }
@@ -1256,7 +1262,7 @@ void Game::drawWorld(float alpha) {
     QZONE("drawWorld");
     const Map& map = net_.map();
     const ModeState& ms = net_.mode();
-    auto players = net_.interpolatedPlayers();
+    auto& players = framePlayers();
     int me = net_.clientId();
     bool alive = net_.selfAlive();
     // demo playback: through the recorder's eyes (their recorded view, interpolated like everyone else)
@@ -1881,7 +1887,7 @@ void Game::drawHud() {
     // crosshair (scoped: the scope's reticle replaces it)
     if (!(scoped_ && scopeOverlay_) && !paused_) drawCrosshair(cx, cy, s, time_ < hitUntil_); // menus open: no crosshair through them
     {   // floating damage numbers above whoever you hit
-        auto ip = net_.interpolatedPlayers();
+        const auto& ip = framePlayers();
         for (size_t i = 0; i < dmgNums_.size();) {
             DmgNum& d = dmgNums_[i];
             float t = (float)(time_ - d.start);

@@ -31,8 +31,11 @@ public:
     void disconnect();
     // Receive packets, handle timeouts/retries. Call every frame.
     void poll();
-    // Run one simulation tick with this input (call at tickRate() Hz).
+    // Run one simulation tick with this input (call at tickRate() Hz). The input packet (the last few commands) goes
+    // out every `batch` ticks (setInputBatch; 1 = every tick) and at flushInput().
     void tick(UserCmd cmd);
+    void setInputBatch(int n) { inputBatch_ = n < 1 ? 1 : n; }
+    void flushInput() { if (unsentCmds_ > 0) sendInput(); }   // after a frame's ticks: what's not sent yet
     void sendCommand(const std::string& s); // reliable string command ("say hi", "team b", ...)
     size_t pendingCommands() const { return stringCmds_.size(); }
 
@@ -123,6 +126,7 @@ private:
     } play_;
     void onSnapshot(Snapshot& s);
     void sendInput();
+    int inputBatch_ = 1, unsentCmds_ = 0;
     bool useMap(const std::string& name, uint32_t crc); // load name (own copy, else a downloaded one) if its CRC matches
     void pumpDownload(double now);
 

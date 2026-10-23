@@ -109,6 +109,14 @@ private:
     UserCmd buildCmd();
     void handleEvents();
     void drawWorld(float alpha);
+    // net_.interpolatedPlayers() for this frame, worked out once (PERF-12: world, HUD, spectating and the editor each
+    // asked for it): valid from the first use after the frame's ticks until the next frame or tick loop
+    NetClient::PlayerArray& framePlayers() {   // (--models adds its lineup to it)
+        if (!framePlayersOk_) { framePlayers_ = net_.interpolatedPlayers(); framePlayersOk_ = true; }
+        return framePlayers_;
+    }
+    NetClient::PlayerArray framePlayers_{};
+    bool framePlayersOk_ = false;
     void drawHud();
     void drawNotices(float y, float ts, float s); // notify() lines, centred from y down (HUD and menus)
     void drawScoreboard();

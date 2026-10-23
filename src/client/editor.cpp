@@ -949,6 +949,8 @@ void Game::editorFrame(double dt) {
             UserCmd c;
             c.yaw = yaw_; c.pitch = pitch_;
             net_.tick(c);
+            net_.flushInput();
+            framePlayersOk_ = false;
         }
         if (time_ >= edNextCam_ && net_.pendingCommands() < 8) {
             char buf[96];
@@ -1127,7 +1129,7 @@ void Game::editorFrame(double dt) {
     // the other editors: a camera box each, labeled after the scene is drawn
     std::vector<std::pair<Vec3, std::string>> others;
     if (edOnline_) {
-        auto ps = net_.interpolatedPlayers();
+        const auto& ps = framePlayers();
         Vec3 col(ui_.accent.r, ui_.accent.g, ui_.accent.b);
         for (int i = 0; i < kMaxPlayers; i++) {
             if (!ps[i].valid || i == net_.clientId()) continue;
@@ -1161,7 +1163,7 @@ void Game::editorFrame(double dt) {
     auto row = [&] { y += h + gap; };
     if (edOnline_) {
         int n = 0;
-        auto ps = net_.interpolatedPlayers();
+        const auto& ps = framePlayers();
         for (auto& p : ps) n += p.valid;
         ui_.label(x, y, "EDITING TOGETHER (" + std::to_string(n) + ")", ui_.accent);
         y += 22 * s;
