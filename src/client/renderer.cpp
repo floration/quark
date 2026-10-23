@@ -384,6 +384,9 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glGenBuffers(1, &uiVbo_);
     glBindVertexArray(uiVao_);
     glBindBuffer(GL_ARRAY_BUFFER, uiVbo_);
+    // room for a text-heavy frame up front (512 KB): the first scoreboard or console mid-match doesn't grow it
+    ui_.reserve(1 << 15);
+    glBufferData(GL_ARRAY_BUFFER, uiCap_ = (size_t)(1 << 15) * sizeof(Vertex2D), nullptr, GL_STREAM_DRAW);
     glEnableVertexAttribArray(0); glVertexAttribPointer(0, 2, GL_SHORT, GL_FALSE, sizeof(Vertex2D), (void*)0);
     glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_UNSIGNED_SHORT, GL_FALSE, sizeof(Vertex2D), (void*)4);
     glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex2D), (void*)8);
@@ -568,19 +571,23 @@ bool Renderer::project(const Vec3& p, float& sx, float& sy) const {
 }
 
 void Renderer::addQuad(std::vector<DynVertex>& out, const Vec3* c, const Vec3& n, const Vec3& col, float sv) {
-    const int idx[6] = {0, 1, 2, 0, 2, 3};
     float w = length(c[1] - c[0]), h = length(c[3] - c[0]);
     const float eu[4] = {0, w, w, 0}, ev[4] = {0, 0, h, h};
-    for (int i : idx) {
-        DynVertex v;
+    const size_t at = out.size();
+    out.resize(at + 6);   // (written in place: six push_backs, each checking capacity, per face of every box)
+    DynVertex* q = out.data() + at;
+    const int corner[4] = {0, 1, 2, 5};   // corners 0 1 2 land in slots 0 1 2, corner 3 in slot 5 (triangles 0 1 2, 0 2 3)
+    for (int i = 0; i < 4; i++) {
+        DynVertex& v = q[corner[i]];
         memcpy(v.pos, &c[i].x, 12);
         memcpy(v.normal, &n.x, 12);
         v.color[0] = col.x; v.color[1] = col.y; v.color[2] = col.z; v.color[3] = sv;
         v.edge[0] = eu[i]; v.edge[1] = ev[i]; v.edge[2] = w; v.edge[3] = h;
         memcpy(v.outline, &outlineColor.x, 12);
         v.outline[3] = outlineWidth;
-        out.push_back(v);
     }
+    q[3] = q[0];
+    q[4] = q[2];
 }
 
 void Renderer::emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& h, const Vec3& color, float sunVis) {
@@ -592,25 +599,20 @@ void Renderer::emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& 
         const float* m = xf.m;
         return normalize(Vec3(m[0] * x + m[4] * y + m[8] * z, m[1] * x + m[5] * y + m[9] * z, m[2] * x + m[6] * y + m[10] * z));
     };
-    Vec3 c[4];
-    // +X
-    c[0] = tp(h.x, -h.y, h.z); c[1] = tp(h.x, -h.y, -h.z); c[2] = tp(h.x, h.y, -h.z); c[3] = tp(h.x, h.y, h.z);
-    addQuad(out, c, tn(1, 0, 0), color, sunVis);
-    // -X
-    c[0] = tp(-h.x, -h.y, -h.z); c[1] = tp(-h.x, -h.y, h.z); c[2] = tp(-h.x, h.y, h.z); c[3] = tp(-h.x, h.y, -h.z);
-    addQuad(out, c, tn(-1, 0, 0), color * 0.92f, sunVis);
-    // +Y
-    c[0] = tp(-h.x, h.y, h.z); c[1] = tp(h.x, h.y, h.z); c[2] = tp(h.x, h.y, -h.z); c[3] = tp(-h.x, h.y, -h.z);
-    addQuad(out, c, tn(0, 1, 0), color, sunVis);
-    // -Y
-    c[0] = tp(-h.x, -h.y, -h.z); c[1] = tp(h.x, -h.y, -h.z); c[2] = tp(h.x, -h.y, h.z); c[3] = tp(-h.x, -h.y, h.z);
-    addQuad(out, c, tn(0, -1, 0), color * 0.8f, sunVis);
-    // +Z
-    c[0] = tp(-h.x, -h.y, h.z); c[1] = tp(h.x, -h.y, h.z); c[2] = tp(h.x, h.y, h.z); c[3] = tp(-h.x, h.y, h.z);
-    addQuad(out, c, tn(0, 0, 1), color * 0.96f, sunVis);
-    // -Z
-    c[0] = tp(h.x, -h.y, -h.z); c[1] = tp(-h.x, -h.y, -h.z); c[2] = tp(-h.x, h.y, -h.z); c[3] = tp(h.x, h.y, -h.z);
-    addQuad(out, c, tn(0, 0, -1), color * 0.96f, sunVis);
+    // the 8 corners once (each face used to transform its own 4: 24) and 3 normals (a face's opposite is the negation)
+    const Vec3 ppp = tp(h.x, h.y, h.z), ppm = tp(h.x, h.y, -h.z), pmp = tp(h.x, -h.y, h.z), pmm = tp(h.x, -h.y, -h.z);
+    const Vec3 mpp = tp(-h.x, h.y, h.z), mpm = tp(-h.x, h.y, -h.z), mmp = tp(-h.x, -h.y, h.z), mmm = tp(-h.x, -h.y, -h.z);
+    const Vec3 nx = tn(1, 0, 0), ny = tn(0, 1, 0), nz = tn(0, 0, 1);
+    auto neg = [](const Vec3& v) { return Vec3(-v.x, -v.y, -v.z); };
+    const Vec3 xPos[4] = {pmp, pmm, ppm, ppp}, xNeg[4] = {mmm, mmp, mpp, mpm};   // (each face's corners in the old order)
+    const Vec3 yPos[4] = {mpp, ppp, ppm, mpm}, yNeg[4] = {mmm, pmm, pmp, mmp};
+    const Vec3 zPos[4] = {mmp, pmp, ppp, mpp}, zNeg[4] = {pmm, mmm, mpm, ppm};
+    addQuad(out, xPos, nx, color, sunVis);
+    addQuad(out, xNeg, neg(nx), color * 0.92f, sunVis);
+    addQuad(out, yPos, ny, color, sunVis);
+    addQuad(out, yNeg, neg(ny), color * 0.8f, sunVis);
+    addQuad(out, zPos, nz, color * 0.96f, sunVis);
+    addQuad(out, zNeg, neg(nz), color * 0.96f, sunVis);
 }
 
 // Is a sphere (center, radius) at least partly inside the view frustum?
@@ -653,7 +655,7 @@ void Renderer::box(const Vec3& center, const Vec3& half, float yaw, const Vec3& 
     if (visible && !inView(center, length(half))) { visible = false; if (!castShadow) return; } // off screen: only its shadow can show
     Mat4 xf = Mat4::translate(center) * Mat4::rotY(yaw);
     if (visible) emitBox(dyn_, xf, half, color, sunVis);
-    else if (castShadow) emitBox(dynShadowOnly_, xf, half, color, sunVis);
+    else if (castShadow && shadowCasters) emitBox(dynShadowOnly_, xf, half, color, sunVis);
 }
 
 void Renderer::boxPitched(const Vec3& pivot, const Vec3& offset, const Vec3& half, float yaw, float pitch, const Vec3& color, float sunVis, bool castShadow) {
@@ -670,7 +672,9 @@ void Renderer::viewBox(const Vec3& offset, const Vec3& half, const Vec3& color) 
 // edge attribute sits mid-face), translucent ones into the flat layer. Colours times tint[slot].
 void Renderer::emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, bool translucent) {
     const float* x = xf.m;
-    out.reserve(out.size() + m.opaque.size());
+    // (grow geometrically: reserving exactly what this mesh needs made every mesh past the high-water mark copy the
+    // whole list again)
+    if (out.size() + m.opaque.size() > out.capacity()) out.reserve(std::max(out.size() + m.opaque.size(), out.capacity() * 2));
     for (const ModelMesh::V& v : m.opaque) {
         DynVertex d;
         const float* p = v.pos; const float* n = v.nrm;
@@ -683,6 +687,7 @@ void Renderer::emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const M
         d.color[0] = v.col[0] * t.x; d.color[1] = v.col[1] * t.y; d.color[2] = v.col[2] * t.z; d.color[3] = sunVis;
         d.edge[0] = d.edge[1] = 0.5f; d.edge[2] = d.edge[3] = 1.0f;
         memcpy(d.outline, &outlineColor.x, 12);
+        d.outline[3] = 0.0f;   // (no edge: was left unset, so the shader read whatever was on the stack as the width)
         out.push_back(d);
     }
     if (!translucent) return;
@@ -705,7 +710,7 @@ void Renderer::mesh(const ModelMesh& m, const Mat4& xf, const Vec3* tint, float 
     float sc = std::max({length(Vec3(x[0], x[1], x[2])), length(Vec3(x[4], x[5], x[6])), length(Vec3(x[8], x[9], x[10]))});
     if (visible && !inView(c, m.radius * sc)) { visible = false; if (!castShadow) return; } // off screen: only its shadow can show
     if (visible) emitMesh(dyn_, m, xf, tint, sunVis, true);
-    else if (castShadow) emitMesh(dynShadowOnly_, m, xf, tint, sunVis, false);
+    else if (castShadow && shadowCasters) emitMesh(dynShadowOnly_, m, xf, tint, sunVis, false);
 }
 
 void Renderer::viewMesh(const ModelMesh& m, const Vec3& offset, float scale, const Vec3* tint) {
@@ -763,6 +768,25 @@ void Renderer::drawScene(bool shadows) {
 #endif
     QPLOT("ui verts", ui_.size());
     bool useShadows = shadows && shadowsOn_;
+    // The frame's dynamic geometry, one upload laid out [shadow only | lit, casting | lit, not casting | view model]:
+    // the shadow pass draws the first two, the dynamic pass the middle two, the view pass the last (it used to copy the
+    // lists together and upload the dynamic ones twice, orphaning the buffer three times a frame).
+    const size_t nShadow = useShadows ? dynShadowOnly_.size() : 0, nDyn = dyn_.size(), nNoCast = dynNoCast_.size(), nView = view_.size();
+    {
+        const size_t total = (nShadow + nDyn + nNoCast + nView) * sizeof(DynVertex);
+        glBindBuffer(GL_ARRAY_BUFFER, dynVbo_);
+#ifdef QUARK_TRACY
+        g_uploadBytes += total; g_uploads++;
+#endif
+        if (total > dynCap_) dynCap_ = total * 2;
+        glBufferData(GL_ARRAY_BUFFER, dynCap_, nullptr, GL_STREAM_DRAW);   // (orphan: no stall on last frame's draws)
+        size_t at = 0;
+        auto put = [&](const std::vector<DynVertex>& v, size_t n) {
+            if (n) glBufferSubData(GL_ARRAY_BUFFER, at, n * sizeof(DynVertex), v.data());
+            at += n * sizeof(DynVertex);
+        };
+        put(dynShadowOnly_, nShadow); put(dyn_, nDyn); put(dynNoCast_, nNoCast); put(view_, nView);
+    }
     // Shadow pass: only dynamic objects (static shadows are baked).
     Mat4 shadowMat;
     if (useShadows) {
@@ -780,32 +804,44 @@ void Renderer::drawScene(bool shadows) {
         shadowMat = Mat4::ortho(cx - R, cx + R, cy - R, cy + R, -cz - 120.0f, -cz + 120.0f) * lv;
 
         QZONE("shadow pass");
-        std::vector<DynVertex>& casters = dynShadowOnly_;
-        casters.insert(casters.end(), dyn_.begin(), dyn_.end());
-        // Where in the shadow map the casters land (plus a 2 texel margin for the filter): every other
-        // pixel of the world and of players skips the 4 shadow taps.
+        // Where in the shadow map the casters land (plus a 2 texel margin for the filter): every other pixel of the
+        // world and of players skips the 4 shadow taps. Per triangle, clipped to the map: one that falls wholly outside
+        // the 64 m box draws nothing (a far player used to stretch the rect over the whole map, and with it the taps).
         float x0 = 1, y0 = 1, x1 = 0, y1 = 0;
         const float* sm = shadowMat.m;
-        for (const DynVertex& v : casters) {
-            float sx = sm[0] * v.pos[0] + sm[4] * v.pos[1] + sm[8] * v.pos[2] + sm[12];
-            float sy = sm[1] * v.pos[0] + sm[5] * v.pos[1] + sm[9] * v.pos[2] + sm[13];
-            sx = sx * 0.5f + 0.5f; sy = sy * 0.5f + 0.5f;
-            x0 = std::min(x0, sx); y0 = std::min(y0, sy); x1 = std::max(x1, sx); y1 = std::max(y1, sy);
-        }
+        auto cover = [&](const std::vector<DynVertex>& vs) {
+            for (size_t i = 0; i + 2 < vs.size(); i += 3) {
+                float tx[3], ty[3];
+                for (int k = 0; k < 3; k++) {
+                    const float* p = vs[i + k].pos;
+                    tx[k] = (sm[0] * p[0] + sm[4] * p[1] + sm[8] * p[2] + sm[12]) * 0.5f + 0.5f;
+                    ty[k] = (sm[1] * p[0] + sm[5] * p[1] + sm[9] * p[2] + sm[13]) * 0.5f + 0.5f;
+                }
+                float ax = std::min({tx[0], tx[1], tx[2]}), bx = std::max({tx[0], tx[1], tx[2]});
+                float ay = std::min({ty[0], ty[1], ty[2]}), by = std::max({ty[0], ty[1], ty[2]});
+                if (bx < 0 || ax > 1 || by < 0 || ay > 1) continue;
+                x0 = std::min(x0, std::max(ax, 0.0f)); x1 = std::max(x1, std::min(bx, 1.0f));
+                y0 = std::min(y0, std::max(ay, 0.0f)); y1 = std::max(y1, std::min(by, 1.0f));
+            }
+        };
+        cover(dynShadowOnly_);
+        cover(dyn_);
         float margin = 2.0f / shadowRes_;
         casterRect_[0] = x0 - margin; casterRect_[1] = y0 - margin; casterRect_[2] = x1 + margin; casterRect_[3] = y1 + margin;
-        upload(dynVbo_, dynCap_, casters);
-        glBindFramebuffer(GL_FRAMEBUFFER, shadowFbo_);
-        glViewport(0, 0, shadowRes_, shadowRes_);
-        glClear(GL_DEPTH_BUFFER_BIT);
-        glEnable(GL_DEPTH_TEST);
-        glDepthFunc(GL_LEQUAL);
-        glDisable(GL_CULL_FACE);
-        glUseProgram(shadowProg_);
-        setMat(shadowProg_, "uViewProj", shadowMat);
-        glBindVertexArray(dynVao_);
-        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)casters.size());
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        // nothing lands in the map: no pass (the empty rect means no pixel reads it, so last frame's depth can stay)
+        if (x0 <= x1 && y0 <= y1) {
+            glBindFramebuffer(GL_FRAMEBUFFER, shadowFbo_);
+            glViewport(0, 0, shadowRes_, shadowRes_);
+            glClear(GL_DEPTH_BUFFER_BIT);
+            glEnable(GL_DEPTH_TEST);
+            glDepthFunc(GL_LEQUAL);
+            glDisable(GL_CULL_FACE);
+            glUseProgram(shadowProg_);
+            setMat(shadowProg_, "uViewProj", shadowMat);
+            glBindVertexArray(dynVao_);
+            glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(nShadow + nDyn));   // (shadow-only, then the lit ones: both cast)
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        }
     }
 
     ensureMsaaTarget();
@@ -867,9 +903,8 @@ void Renderer::drawScene(bool shadows) {
         glDepthMask(GL_TRUE);
     }
 
-    auto drawDyn = [&](const std::vector<DynVertex>& v, bool receive) {
-        if (v.empty() && !staticOn_) return;
-        if (!v.empty()) upload(dynVbo_, dynCap_, v);
+    auto drawDyn = [&](size_t first, size_t count, bool receive) {
+        if (!count && !staticOn_) return;
         glUseProgram(dynProg_);
         setMat(dynProg_, "uViewProj", viewProj_);
         setMat(dynProg_, "uShadowMat", shadowMat);
@@ -886,10 +921,9 @@ void Renderer::drawScene(bool shadows) {
         glUniform1f(U(dynProg_, "uFogDensity"), fog);
         glUniform1f(U(dynProg_, "uBright"), brightness);
         glBindVertexArray(dynVao_);
-        if (!v.empty()) glDrawArrays(GL_TRIANGLES, 0, (GLsizei)v.size());
+        if (count) glDrawArrays(GL_TRIANGLES, (GLint)first, (GLsizei)count);
     };
-    dyn_.insert(dyn_.end(), dynNoCast_.begin(), dynNoCast_.end());   // (after the shadow pass: lit and shadowed, casting none)
-    { QZONE("dynamic pass"); drawDyn(dyn_, true); }
+    { QZONE("dynamic pass"); drawDyn(nShadow, nDyn + nNoCast, true); }   // (lit and shadowed; the no-cast ones cast none)
     if (staticOn_) {   // the static batch (the editor's map): drawDyn above set the program up; the boxes in view, one multi-draw
         QZONE("static boxes pass");
         staticOn_ = false;
@@ -921,9 +955,9 @@ void Renderer::drawScene(bool shadows) {
         glEnable(GL_CULL_FACE);
     }
 
-    if (!view_.empty()) {
+    if (nView) {
         glClear(GL_DEPTH_BUFFER_BIT);
-        drawDyn(view_, false);
+        drawDyn(nShadow + nDyn + nNoCast, nView, false);
     }
     if (msaaActive_ >= 2) { // resolve the multisampled scene into the window; the UI draws on top un-multisampled
         glBindFramebuffer(GL_READ_FRAMEBUFFER, msaaFbo_);
@@ -953,19 +987,24 @@ static inline uint8_t u8c(float v) { return (uint8_t)std::lround(clampf(v, 0, 1)
 static inline uint16_t u16uv(float texel) { return (uint16_t)std::lround(clampf((texel + 1) * 32.0f, 0, 65535)); }
 static inline int16_t px(float v) { return (int16_t)clampf(std::round(v), -32768, 32767); }
 
-// one quad (2 triangles) into the UI batch
+// one quad (2 triangles) into the UI batch. Every glyph of every text is one: each distinct value is converted once
+// (the corners share 2 x, 2 y, 2 u, 2 v and one colour; lround / round are library calls), written in place.
 static void uiQuad(std::vector<Vertex2D>& out, float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1,
                    const Color& c, uint8_t scaleInt, uint8_t scaleFrac) {
-    Vertex2D q[4];
-    const float xs[4] = {x0, x1, x1, x0}, ys[4] = {y0, y0, y1, y1}, us[4] = {u0, u1, u1, u0}, vs[4] = {v0, v0, v1, v1};
-    for (int k = 0; k < 4; k++) {
-        q[k].pos[0] = px(xs[k]); q[k].pos[1] = px(ys[k]);
-        q[k].uv[0] = u16uv(us[k]); q[k].uv[1] = u16uv(vs[k]);
-        q[k].color[0] = u8c(c.r); q[k].color[1] = u8c(c.g); q[k].color[2] = u8c(c.b); q[k].color[3] = u8c(c.a);
-        q[k].scaleInt = scaleInt; q[k].scaleFrac = scaleFrac; q[k].pad[0] = q[k].pad[1] = 0;
-    }
-    const int idx[6] = {0, 1, 2, 0, 2, 3};
-    for (int i : idx) out.push_back(q[i]);
+    const int16_t X0 = px(x0), X1 = px(x1), Y0 = px(y0), Y1 = px(y1);
+    const uint16_t U0 = u16uv(u0), U1 = u16uv(u1), V0 = u16uv(v0), V1 = u16uv(v1);
+    const uint8_t r = u8c(c.r), g = u8c(c.g), b = u8c(c.b), a = u8c(c.a);
+    const size_t n = out.size();
+    out.resize(n + 6);
+    Vertex2D* d = out.data() + n;
+    auto put = [&](Vertex2D& v, int16_t x, int16_t y, uint16_t u, uint16_t w) {
+        v.pos[0] = x; v.pos[1] = y; v.uv[0] = u; v.uv[1] = w;
+        v.color[0] = r; v.color[1] = g; v.color[2] = b; v.color[3] = a;
+        v.scaleInt = scaleInt; v.scaleFrac = scaleFrac; v.pad[0] = v.pad[1] = 0;
+    };
+    // corners 0 (x0,y0) 1 (x1,y0) 2 (x1,y1) 3 (x0,y1), as triangles 0 1 2 and 0 2 3
+    put(d[0], X0, Y0, U0, V0); put(d[1], X1, Y0, U1, V0); put(d[2], X1, Y1, U1, V1);
+    d[3] = d[0]; d[4] = d[2]; put(d[5], X0, Y1, U0, V1);
 }
 
 void Renderer::rect(float x, float y, float w, float h, const Color& c) {

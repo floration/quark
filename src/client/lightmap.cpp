@@ -28,12 +28,59 @@ struct Face {
 
 bool anyHit(const Map& m, const Vec3& o, const Vec3& d, float maxT) { return m.raycastAny(o, d, maxT); }
 
-bool pointSolid(const Map& m, const Vec3& p) {
-    for (const Brush& b : m.brushes)
-        if (p.x > b.box.mn.x && p.x < b.box.mx.x && p.y > b.box.mn.y && p.y < b.box.mx.y && p.z > b.box.mn.z && p.z < b.box.mx.z)
-            return true;
-    return false;
-}
+// "Is this point inside any brush?" (every brush: trim, far scenery, water and clip too, which the map's own collision
+// grid leaves out), asked for up to 81 points per face: tens of millions of times on a big map, and it used to test
+// every brush each time (seconds of every load, a cached one too). An XZ grid over all of them: a point strictly
+// inside a box lies in a cell of the box's span (same floor of the same expression), so the answer is the same.
+struct PointGrid {
+    float x0 = 0, z0 = 0, cs = 4;
+    int w = 1, h = 1;
+    std::vector<uint32_t> start, ids;   // cell c's brushes: ids[start[c], start[c + 1])
+    std::vector<uint32_t> big;          // brushes over a quarter of the grid: tested for every point
+    const Map* m = nullptr;
+    int cx(float x) const { return (int)std::floor((x - x0) / cs); }
+    int cz(float z) const { return (int)std::floor((z - z0) / cs); }
+    explicit PointGrid(const Map& map) : m(&map) {
+        if (map.brushes.empty()) { start.assign(2, 0); return; }
+        float ax = 1e30f, az = 1e30f, bx = -1e30f, bz = -1e30f;
+        for (const Brush& b : map.brushes) { ax = std::min(ax, b.box.mn.x); az = std::min(az, b.box.mn.z); bx = std::max(bx, b.box.mx.x); bz = std::max(bz, b.box.mx.z); }
+        x0 = ax; z0 = az;
+        cs = std::max(4.0f, std::max(bx - ax, bz - az) / 256.0f);   // (at most ~256 x 256 cells)
+        w = std::max(1, cx(bx) + 1); h = std::max(1, cz(bz) + 1);
+        auto span = [&](const Brush& b, int& a0, int& a1, int& b0, int& b1) {
+            a0 = std::max(0, cx(b.box.mn.x)); a1 = std::min(w - 1, cx(b.box.mx.x));
+            b0 = std::max(0, cz(b.box.mn.z)); b1 = std::min(h - 1, cz(b.box.mx.z));
+        };
+        const long long bigCells = (long long)w * h / 4;
+        std::vector<uint32_t> count((size_t)w * h + 1, 0);
+        for (size_t i = 0; i < map.brushes.size(); i++) {
+            int a0, a1, b0, b1; span(map.brushes[i], a0, a1, b0, b1);
+            if (a1 < a0 || b1 < b0) continue;
+            if ((long long)(a1 - a0 + 1) * (b1 - b0 + 1) > std::max(64LL, bigCells)) { big.push_back((uint32_t)i); continue; }
+            for (int z = b0; z <= b1; z++) for (int x = a0; x <= a1; x++) count[(size_t)z * w + x]++;
+        }
+        start.assign((size_t)w * h + 1, 0);
+        for (size_t c = 0; c < (size_t)w * h; c++) start[c + 1] = start[c] + count[c];
+        ids.resize(start.back());
+        std::vector<uint32_t> fill(start.begin(), start.end() - 1);
+        for (size_t i = 0; i < map.brushes.size(); i++) {
+            int a0, a1, b0, b1; span(map.brushes[i], a0, a1, b0, b1);
+            if (a1 < a0 || b1 < b0 || (long long)(a1 - a0 + 1) * (b1 - b0 + 1) > std::max(64LL, bigCells)) continue;
+            for (int z = b0; z <= b1; z++) for (int x = a0; x <= a1; x++) ids[fill[(size_t)z * w + x]++] = (uint32_t)i;
+        }
+    }
+    bool inside(const Brush& b, const Vec3& p) const {
+        return p.x > b.box.mn.x && p.x < b.box.mx.x && p.y > b.box.mn.y && p.y < b.box.mx.y && p.z > b.box.mn.z && p.z < b.box.mx.z;
+    }
+    bool solid(const Vec3& p) const {
+        for (uint32_t i : big) if (inside(m->brushes[i], p)) return true;
+        int x = cx(p.x), z = cz(p.z);
+        if (x < 0 || z < 0 || x >= w || z >= h) return false;   // (outside every brush's box)
+        const size_t c = (size_t)z * w + x;
+        for (uint32_t k = start[c]; k < start[c + 1]; k++) if (inside(m->brushes[ids[k]], p)) return true;
+        return false;
+    }
+};
 
 Vec3 facePoint(const Face& f, float u, float v) {
     Vec3 p;
@@ -107,7 +154,10 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
     out = BakedWorld();
     // 1. Collect visible faces.
     std::vector<Face> faces;
+    const PointGrid solidAt(map);
+    auto stopped = [&] { return cancel && cancel->load(std::memory_order_relaxed); };   // (checked through the prepass too)
     for (const Brush& br : map.brushes) {
+        if (stopped()) { out.cancelled = true; return; }
         if (br.material == 9) continue;   // clip: invisible
         for (int axis = 0; axis < 3; axis++)
             for (int sign = -1; sign <= 1; sign += 2) {
@@ -128,7 +178,7 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
                 for (int k = 0; k < 81 && hidden; k++) {
                     float fu = (k % 9 + 0.5f) / 9.0f, fv = (k / 9 + 0.5f) / 9.0f;
                     Vec3 p = facePoint(f, lerpf(f.u0, f.u1, fu), lerpf(f.v0, f.v1, fv)) + n * 0.01f;
-                    hidden = pointSolid(map, p);
+                    hidden = solidAt.solid(p);
                 }
                 if (!hidden) faces.push_back(f);
             }
@@ -182,6 +232,7 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
         });
     };
     for (size_t i = 0; i < faces.size(); i++) {
+        if ((i & 1023) == 0 && stopped()) { out.cancelled = true; return; }
         const Face& f = faces[i];
         const float e = 0.02f;
         for (int edge = 0; edge < 4; edge++) {
@@ -200,6 +251,7 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
     // Only those faces: lifting every accent/wallbang face opened gaps along all their edges.
     std::vector<uint8_t> needLift(faces.size(), 0);
     for (size_t i = 0; i < faces.size(); i++) {
+        if ((i & 1023) == 0 && stopped()) { out.cancelled = true; return; }
         const Face& f = faces[i];
         if (f.material == 0) continue;
         auto overlaps = [&](uint32_t k) {
@@ -301,10 +353,16 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
     Vec3 st, sb;
     basis(sun, st, sb);
     std::atomic<int> next{0}, doneCount{0};
+    // biggest faces first: handed out in index order, a big floor picked up last ran on one thread while the rest
+    // waited (the result is the same: each texel's samples depend only on its face index and position)
+    std::vector<int> order(faces.size());
+    for (size_t i = 0; i < order.size(); i++) order[i] = (int)i;
+    std::stable_sort(order.begin(), order.end(), [&](int a, int b) { return faces[a].wu * faces[a].wv > faces[b].wu * faces[b].wv; });
     auto worker = [&]() {
         for (;;) {
-            int fi = next++;
-            if (fi >= (int)faces.size()) break;
+            int oi = next++;
+            if (oi >= (int)faces.size()) break;
+            const int fi = order[oi];
             if (cancel && cancel->load(std::memory_order_relaxed)) { doneCount++; continue; }   // (stopped: count the rest done)
             const Face& f = faces[fi];
             Vec3 n = faceNormal(f);
@@ -372,7 +430,8 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
             doneCount++;
         }
     };
-    unsigned nt = std::max(1u, std::thread::hardware_concurrency());
+    // one core left for the game (the loading screen, a hosted server's thread, software GL's own threads)
+    unsigned hc = std::thread::hardware_concurrency(), nt = std::max(1u, hc > 2 ? hc - 1 : hc);
     std::vector<std::thread> threads;
     for (unsigned i = 0; i < nt; i++) threads.emplace_back(worker);
     if (progress) {

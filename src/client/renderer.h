@@ -83,6 +83,8 @@ public:
     void flush2D();
 
     void setShadowsAvailable(bool b) { shadowsOn_ = b; }
+    // this frame's drawScene will run the shadow pass (false: off-screen casters aren't even built). Set before drawing.
+    bool shadowCasters = true;
     void setMsaa(int samples) { msaa_ = samples; }     // 0 = off, 1 = edges (FXAA-style), 2 / 4 / 8 MSAA (clamped to what the driver supports)
     bool screenshot(const std::string& path);
 
