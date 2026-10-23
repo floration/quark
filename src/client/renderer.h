@@ -73,6 +73,9 @@ public:
     void line(const Vec3& a, const Vec3& b, float width, const Color& c);
 
     void drawScene(bool shadows);
+    // The parts of drawScene that don't depend on the aim, done early (before the late latch): the frame's dynamic
+    // geometry uploaded and the shadow pass drawn. drawScene then only draws the view (it does these itself otherwise).
+    void prepareScene(bool shadows);
 
     // 2D (pixels, origin top-left)
     void rect(float x, float y, float w, float h, const Color& c);
@@ -158,6 +161,9 @@ private:
     std::vector<FlatVertex> flat_;
     std::vector<Vertex2D> ui_;
     float casterRect_[4] = {0, 0, 1, 1}; // shadow-map rect covered by dynamic casters (this frame)
+    bool prep_ = false, prepShadows_ = false;   // (prepareScene ran this frame; with the shadow pass)
+    size_t prepN_[4] = {};                      // (its upload: shadow only, lit casting, lit not casting, view model)
+    Mat4 shadowMat_;
 
     Vec3 camPos_, sunDir_ = {0, 1, 0};
     float camYaw_ = 0, camPitch_ = 0, camFov_ = 90;

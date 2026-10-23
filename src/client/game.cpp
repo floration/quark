@@ -2023,6 +2023,10 @@ void Game::drawWorld(float alpha) {
     else if (perfMini_) drawPerfMini();
     r_.prepare2D();
     hudBuilt_ = true;
+    // The dynamic geometry's upload and the shadow pass don't depend on the aim either: before the read too (ULTRA:
+    // flushed, so the GPU draws the shadow map meanwhile). After the read: only the view's own draws.
+    r_.prepareScene(cfg_.shadows);
+    if (cfg_.lowLatency == 2) glFlush();
     // Late latch: the newest mouse motion, read just before the world is drawn (everything above, world, players and
     // effects, was built in world space: only the view turns). The command this frame sent keeps its aim; the next
     // carries this. What was projected onto the screen above (name tags, health bars) is off by this sliver of a turn.
@@ -4770,7 +4774,7 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     span("NETWORK READ", PM_FENCE, PM_NET, cCpu);
     span("READ INPUT", PM_NET, PM_POLL, cCpu);
     span("TICKS + PREDICTION", PM_POLL, PM_TICKS, cCpu);
-    span("CAMERA + WORLD + HUD BUILD", PM_TICKS, PM_SCENE0, cCpu);
+    span("WORLD + HUD + SHADOW MAP BUILD", PM_TICKS, PM_SCENE0, cCpu);
     span("DRAW CALLS", PM_SCENE0, PM_SCENE1, cCpu);
     span("HUD DRAW", PM_SCENE1, PM_HUD, cCpu);
     span("SWAP", PM_SWAP0, PM_SWAP1, cCpu);

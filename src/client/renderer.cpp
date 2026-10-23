@@ -770,15 +770,17 @@ void Renderer::line(const Vec3& a, const Vec3& b, float width, const Color& c) {
     }
 }
 
-void Renderer::drawScene(bool shadows) {
-    QZONE("drawScene");
+void Renderer::prepareScene(bool shadows) {
+    QZONE("prepareScene");
     QPLOT("dyn verts", dyn_.size());
 #ifdef QUARK_TRACY
     g_dynVerts += dyn_.size() + view_.size() + flat_.size();
     g_shadowVerts += dyn_.size() + dynShadowOnly_.size();
 #endif
     QPLOT("ui verts", ui_.size());
-    bool useShadows = shadows && shadowsOn_;
+    const bool useShadows = shadows && shadowsOn_;
+    prep_ = true;
+    prepShadows_ = useShadows;
     // The frame's dynamic geometry, one upload laid out [shadow only | lit, casting | lit, not casting | view model]:
     // the shadow pass draws the first two, the dynamic pass the middle two, the view pass the last (it used to copy the
     // lists together and upload the dynamic ones twice, orphaning the buffer three times a frame).
@@ -798,8 +800,10 @@ void Renderer::drawScene(bool shadows) {
         };
         put(dynShadowOnly_, nShadow); put(dyn_, nDyn); put(dynNoCast_, nNoCast); put(view_, nView);
     }
-    // Shadow pass: only dynamic objects (static shadows are baked).
-    Mat4 shadowMat;
+    // Shadow pass: only dynamic objects (static shadows are baked). (Its focus follows the aim, snapped to texels: the
+    // aim from before a late latch is as good.)
+    Mat4& shadowMat = shadowMat_;
+    shadowMat = Mat4();
     if (useShadows) {
         const float R = 32.0f;
         Vec3 up = std::fabs(sunDir_.y) > 0.99f ? Vec3(0, 0, 1) : Vec3(0, 1, 0);
@@ -854,6 +858,16 @@ void Renderer::drawScene(bool shadows) {
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
         }
     }
+    prepN_[0] = nShadow; prepN_[1] = nDyn; prepN_[2] = nNoCast; prepN_[3] = nView;
+}
+
+void Renderer::drawScene(bool shadows) {
+    QZONE("drawScene");
+    if (!prep_) prepareScene(shadows);
+    prep_ = false;
+    const bool useShadows = prepShadows_;
+    const size_t nShadow = prepN_[0], nDyn = prepN_[1], nNoCast = prepN_[2], nView = prepN_[3];
+    const Mat4& shadowMat = shadowMat_;
 
     ensureMsaaTarget();
     if (msaaActive_) glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
