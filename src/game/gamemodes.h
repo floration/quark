@@ -16,3 +16,4 @@ float rulesRespawnDelay(const Server& s);         // < 0 means no respawn
 bool rulesCanDamage(const Server& s, int attacker, int victim);
 bool rulesFrozen(const Server& s, int id);         // movement locked (freeze time / planting)
 int rulesSpawnType(const Server& s, int id);       // SPAWN_*
+void rulesRpsPick(Server& s, int id, int shape);   // hide and seek tiebreak: a player chose (RpsShape; "rps" command)

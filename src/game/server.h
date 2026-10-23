@@ -277,6 +277,18 @@ public:
         return std::max(1, (int)std::ceil((float)tickRate() / std::max(1, rate) - 0.02f));
     }
     int hideRounds_ = 0;        // hide and seek: rounds so far planned (everyone in play seeks once: grows if someone joins)
+    // Hide and seek tiebreak (owner B8; gamemodes.cpp): rock paper scissors among those tied for first, in the match's
+    // last round end (ModeState MS_RPS). Every change goes out as an EV_RPS (and to anyone joining: rpsEvent_).
+    struct Rps {
+        uint32_t in = 0, out = 0;           // players in the tiebreak / knocked out of it (bit per id)
+        uint8_t pick[kMaxPlayers] = {};     // RpsShape this throw (RPS_NONE: not yet)
+        uint8_t wins[kMaxPlayers] = {};     // best of 3, once two are left
+        bool bestOf3 = false;
+        int stage = RPS_PICK, throwNo = 0, winner = -1;
+        double stageEnd = 0;
+        std::string result;                 // what the last reveal did ("draw - throw again", ...)
+    } rps_;
+    GameEvent rpsEvent_;
     uint32_t nextJoinId_ = 1;   // ServerPlayer::joinId of the next connection (a newcomer in a reused slot isn't its old owner)
     float drainAccum_ = 0;
     uint32_t duelUsed_ = 0;      // duel: modifiers already played this match (bit per modifier), never repeated

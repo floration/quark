@@ -825,6 +825,7 @@ void Server::sendWelcome(int id) {
         sendEvent(id, e);
         if (!players_[i].rankId.empty()) { GameEvent r; r.type = EV_RANKINFO; r.a = (uint8_t)i; r.text = players_[i].rankId; sendEvent(id, r); }
     }
+    if (ms_.flags & MS_RPS) sendEvent(id, rpsEvent_);   // a hide and seek tiebreak in progress: where it's at
 }
 
 // The connection dropped (timed out, or the client said goodbye): the player stays in the game, standing where they
@@ -1065,6 +1066,12 @@ void Server::handleStringCmd(int id, const std::string& s) {
         snprintf(pos, sizeof pos, "%.2f %.2f %.2f", players_[t].move.pos.x, players_[t].move.pos.y, players_[t].move.pos.z);
         GameEvent e; e.type = EV_LOCATE; e.a = (uint8_t)t; e.text = pos;
         sendEvent(id, e);
+        return;
+    }
+    if (cmd == "rps") { // hide and seek tiebreak: "rps rock|paper|scissors" (or r / p / s, 1 / 2 / 3)
+        char c = rest.empty() ? 0 : (char)std::tolower((unsigned char)rest[0]);
+        int shape = c == 'r' || c == '1' ? RPS_ROCK : c == 'p' || c == '2' ? RPS_PAPER : c == 's' || c == '3' ? RPS_SCISSORS : RPS_NONE;
+        rulesRpsPick(*this, id, shape);
         return;
     }
     if (cmd == "quip") { // a random voice line, heard from where they stand; one every 1.5 s at most

@@ -41,6 +41,7 @@ struct LaunchOptions {
     bool debugWidgets = false;
     bool debugHudLayout = false; // --hudlayout: open HUD layout settings in game
     bool debugModels = false;
+    int debugRps = 0;           // --rpsshot: the hide and seek tiebreak panel with made-up players (1 picking, 2 reveal, 3 three-way reveal)
     bool camSet = false;         // --cam: fixed backdrop camera (map analysis shots)
     Vec3 camPos;
     float camYaw = 0, camPitch = 0;
@@ -96,6 +97,9 @@ private:
     void handleEvents();
     void drawWorld(float alpha);
     void drawHud();
+    void drawRps(float W, float H, float s);   // the hide and seek tiebreak (rock paper scissors) panel
+    void drawRpsShape(float x, float y, float size, int shape, Color c);
+    bool rpsPicking() const;                   // we're in the tiebreak and the throw is open
     void drawNotices(float y, float ts, float s); // notify() lines, centred from y down (HUD and menus)
     void drawScoreboard();
     void drawMenu();
@@ -377,6 +381,16 @@ private:
     int streak_[kMaxPlayers] = {};
     double typingUntil_[kMaxPlayers] = {}, nextTypingSend_ = 0;
     double locatorReady_ = 0, locateUntil_ = 0;
+    // hide and seek tiebreak (EV_RPS): the server's latest state, and what we chose this throw
+    struct RpsView {
+        struct P { int id = 0, shape = 0, wins = 0; bool out = false; };
+        int stage = RPS_PICK, throwNo = 0, winner = -1;
+        bool bestOf3 = false;
+        std::vector<P> players;
+        std::string result;
+        double at = -1e9;   // when it arrived
+    } rps_;
+    int rpsMine_ = RPS_NONE;
     double liveSeenAt_ = -1e9;   // when this round went live (here): the map's holdfire counts from it
     float holdFireLeft() const { return net_.hasSnapshot() && net_.mode().phase == PHASE_LIVE && net_.map().holdFire > 0 ? net_.map().holdFire - (float)(time_ - liveSeenAt_) : 0; }   // tag / hide and seek locator
     Vec3 locatePos_;

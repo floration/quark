@@ -487,6 +487,14 @@ bool Game::pressInput(int code) {
         captureMouse(false);
         return true;
     }
+    if (rpsPicking())   // the hide and seek tiebreak: slot keys 1 / 2 / 3 throw rock / paper / scissors
+        for (int k = 0; k < 3; k++)
+            if (b.has(slotAction(k), code)) {
+                rpsMine_ = RPS_ROCK + k;
+                net_.sendCommand(std::string("rps ") + rpsName(rpsMine_));
+                audio_.play(SND_TYPING, 0.9f, 0.8f);
+                return true;
+            }
     // weapons outside this mode's pool (1v1 rulesets, duel modifiers) are skipped
     uint16_t pool = net_.mode().weaponMask;
     bool knifeAway = net_.hasSnapshot() && net_.latest().knifeAway > 0;
@@ -910,6 +918,36 @@ void Game::handleEvents() {
                 std::istringstream ls(e.text);
                 Vec3 p;
                 if (ls >> p.x >> p.y >> p.z) { locatePos_ = p; locateId_ = e.a; locateUntil_ = time_ + kLocatorShow; audio_.play(SND_GRAPPLE_HIT, 0.6f, 1.4f); }
+                break;
+            }
+            case EV_RPS: {   // the hide and seek tiebreak: who's in, who has chosen, the reveal
+                RpsView v;
+                v.stage = e.a; v.throwNo = e.b; v.at = time_;
+                size_t nl = e.text.find('\n');
+                std::istringstream rs(e.text.substr(0, nl));
+                int bo3 = 0;
+                rs >> bo3 >> v.winner;
+                v.bestOf3 = bo3 != 0;
+                std::string tok;
+                while (rs >> tok) {
+                    RpsView::P p;
+                    int out = 0;
+                    if (sscanf(tok.c_str(), "%d:%d:%d:%d", &p.id, &p.shape, &p.wins, &out) == 4 && p.id >= 0 && p.id < kMaxPlayers) { p.out = out != 0; v.players.push_back(p); }
+                }
+                v.result = nl == std::string::npos ? "" : e.text.substr(nl + 1);
+                const int me = net_.clientId();
+                auto mine = [&](const RpsView& r) -> const RpsView::P* { for (auto& p : r.players) if (p.id == me) return &p; return nullptr; };
+                const RpsView::P* was = mine(rps_);
+                const RpsView::P* now = mine(v);
+                if (v.stage == RPS_PICK && (v.throwNo != rps_.throwNo || rps_.stage != RPS_PICK)) {   // a new throw
+                    rpsMine_ = RPS_NONE;
+                    audio_.play(SND_CHECKPOINT, 0.7f, v.throwNo == 1 ? 0.8f : 1.0f);
+                } else if (v.stage == RPS_REVEAL && rps_.stage == RPS_PICK) {   // the reveal: a clack, then how it went for us
+                    audio_.play(SND_BOLT_HIT, 0.9f, 0.9f);
+                    if (now && was && now->out && !was->out) audio_.play(SND_HURT, 0.8f);
+                    else if (now && was && now->wins > was->wins) audio_.play(SND_FINISH, 0.6f, 1.2f);
+                }
+                rps_ = v;
                 break;
             }
             case EV_TYPING:   // someone's typing: soft key clicks from them and "..." over their head
@@ -1691,6 +1729,115 @@ void Game::drawWorld(float alpha) {
 // ---------------------------------------------------------------------------
 // HUD
 
+bool Game::rpsPicking() const {
+    if (!net_.hasSnapshot() || !(net_.mode().flags & MS_RPS) || rps_.stage != RPS_PICK || net_.playback()) return false;
+    for (auto& p : rps_.players) if (p.id == net_.clientId()) return !p.out;
+    return false;
+}
+
+// A shape as a few flat blocks in a size x size square: a rock, a sheet of paper, open scissors.
+void Game::drawRpsShape(float x, float y, float z, int shape, Color c) {
+    Color dark = {c.r * 0.45f, c.g * 0.45f, c.b * 0.45f, c.a};
+    auto R = [&](float a, float b, float w, float h, Color k) { r_.rect(x + a * z, y + b * z, w * z, h * z, k); };
+    switch (shape) {
+        case RPS_ROCK:
+            R(0.22f, 0.18f, 0.56f, 0.66f, c); R(0.12f, 0.32f, 0.76f, 0.42f, c); R(0.16f, 0.24f, 0.68f, 0.56f, c);
+            R(0.3f, 0.3f, 0.12f, 0.08f, dark); R(0.56f, 0.5f, 0.14f, 0.08f, dark); R(0.36f, 0.62f, 0.1f, 0.07f, dark);
+            break;
+        case RPS_PAPER:
+            R(0.2f, 0.1f, 0.6f, 0.8f, c); R(0.62f, 0.1f, 0.18f, 0.18f, dark);
+            for (int k = 0; k < 4; k++) R(0.3f, 0.32f + k * 0.13f, 0.4f, 0.04f, dark);
+            break;
+        case RPS_SCISSORS:
+            for (int k = 0; k <= 10; k++) {   // two blades crossing, then the handle rings
+                float t = k / 10.0f;
+                R(0.18f + t * 0.5f, 0.1f + t * 0.5f, 0.1f, 0.1f, c);
+                R(0.72f - t * 0.5f, 0.1f + t * 0.5f, 0.1f, 0.1f, c);
+            }
+            for (float hx : {0.12f, 0.6f}) {
+                R(hx, 0.66f, 0.28f, 0.06f, c); R(hx, 0.84f, 0.28f, 0.06f, c);
+                R(hx, 0.66f, 0.06f, 0.24f, c); R(hx + 0.22f, 0.66f, 0.06f, 0.24f, c);
+            }
+            break;
+        default:   // chosen but hidden: a card back; not chosen yet: an empty outline
+            if (shape == RPS_PICKED) { R(0.2f, 0.1f, 0.6f, 0.8f, dark); R(0.28f, 0.18f, 0.44f, 0.64f, c); }
+            else { R(0.2f, 0.1f, 0.6f, 0.04f, dark); R(0.2f, 0.86f, 0.6f, 0.04f, dark); R(0.2f, 0.1f, 0.04f, 0.8f, dark); R(0.76f, 0.1f, 0.04f, 0.8f, dark); }
+    }
+}
+
+// The hide and seek tiebreak: everyone tied for first, their throws (hidden until the reveal), best-of-3 wins, who's
+// out; our three choices while the throw is open.
+void Game::drawRps(float W, float H, float s) {
+    const float ts = ui_.textScale(), cx = W * 0.5f;
+    const int me = net_.clientId();
+    const int n = (int)rps_.players.size();
+    const float card = 120 * s, gap = 12 * s;
+    const Color gold = {1, 0.85f, 0.3f, 1};
+    bool in = false;   // (we're still in it)
+    for (auto& p : rps_.players) in |= p.id == me && !p.out;
+    float pw = std::min(W - 32 * s, std::max(560 * s, n * (card + gap) + 40 * s));
+    float ph = (rps_.stage == RPS_PICK ? (in ? 306 : 262) : rps_.winner >= 0 ? 292 : 262) * s;
+    float px = cx - pw * 0.5f, py = H * 0.5f - 120 * s;
+    r_.rect(px, py, pw, ph, {0.03f, 0.035f, 0.05f, 0.92f});
+    r_.rect(px, py, pw, 3 * s, gold);
+    float big = std::max(1.0f, std::round(ts * 1.4f)), mid = std::max(1.0f, std::round(ts * 0.9f)), small = std::max(1.0f, std::round(ts * 0.7f));
+    auto centered = [&](const std::string& t, float y, float k, Color c) { r_.text(cx - r_.textWidth(t, k) * 0.5f, y, k, t, c); };
+    centered("TIEBREAK - ROCK PAPER SCISSORS", py + 12 * s, big, gold);
+    std::string sub = rps_.bestOf3 ? "BEST OF 3 - FIRST TO 2 WINS THE MATCH" : "EVERYONE THROWS - THE LOSING SHAPE IS OUT";
+    sub += "   THROW " + std::to_string(std::max(1, rps_.throwNo));
+    centered(sub, py + 14 * s + r_.textHeight(big) + 6 * s, small, kGrey);
+    // the players, a card each (squeezed together when there are many)
+    float step = n > 1 ? std::min(card + gap, (pw - 20 * s - card) / (n - 1)) : 0;
+    float x0 = cx - (card + step * std::max(0, n - 1)) * 0.5f, y0 = py + 70 * s;
+    const bool reveal = rps_.stage != RPS_PICK;
+    for (int k = 0; k < n; k++) {
+        const auto& p = rps_.players[k];
+        float x = x0 + k * step;
+        bool lost = p.out, won = rps_.winner == p.id;
+        Color frame = won ? kGreenOk : lost ? Color{0.45f, 0.2f, 0.2f, 1} : p.id == me ? rgba(cfg_.colorFriendly) : Color{0.3f, 0.32f, 0.36f, 1};
+        r_.rect(x, y0, card, 150 * s, frame);
+        r_.rect(x + 2 * s, y0 + 2 * s, card - 4 * s, 150 * s - 4 * s, {0.07f, 0.08f, 0.1f, 1});
+        std::string nm = upper(net_.playerName(p.id));
+        if (nm.empty()) nm = "P" + std::to_string(p.id);
+        while (nm.size() > 3 && r_.textWidth(nm, small) > card - 12 * s) nm.pop_back();
+        r_.text(x + (card - r_.textWidth(nm, small)) * 0.5f, y0 + 8 * s, small, nm, p.id == me ? rgba(cfg_.colorFriendly) : kWhite);
+        int shape = p.shape;
+        if (!reveal && p.id == me && rpsMine_ != RPS_NONE) shape = rpsMine_;   // (our own pick, before the reveal)
+        Color sc = lost ? Color{0.5f, 0.3f, 0.3f, 1} : won ? kGreenOk : Color{0.92f, 0.9f, 0.85f, 1};
+        float icon = 64 * s;
+        drawRpsShape(x + (card - icon) * 0.5f, y0 + 30 * s, icon, shape, sc);
+        std::string st = lost ? "OUT" : reveal || (p.id == me && shape != RPS_NONE) ? rpsName(shape) : shape == RPS_NONE ? "CHOOSING..." : "READY";
+        r_.text(x + (card - r_.textWidth(st, small)) * 0.5f, y0 + 100 * s, small, st, lost ? kRed : reveal ? kWhite : shape == RPS_NONE ? kGrey : kGreenOk);
+        if (rps_.bestOf3 && !lost)   // best of 3: a pip per throw won
+            for (int w = 0; w < 2; w++) {
+                float bx = x + card * 0.5f - 15 * s + w * 18 * s;
+                r_.rect(bx, y0 + 126 * s, 12 * s, 12 * s, {0.25f, 0.27f, 0.3f, 1});
+                if (w < p.wins) r_.rect(bx + 2 * s, y0 + 128 * s, 8 * s, 8 * s, gold);
+            }
+    }
+    float y = y0 + 162 * s;
+    if (rps_.stage == RPS_PICK) {
+        float left = opts_.debugRps ? kRpsPickTime : net_.mode().timeLeft;
+        centered((in ? "CHOOSE - " : "THEY'RE CHOOSING - ") + std::to_string((int)std::ceil(left)), y, mid, kWhite);
+        if (in) {   // our three choices, on the weapon slot keys
+            float bw = 150 * s, bx = cx - (3 * bw + 2 * gap) * 0.5f, by = y + r_.textHeight(mid) + 8 * s;
+            for (int k = 0; k < 3; k++) {
+                int shape = RPS_ROCK + k;
+                bool sel = rpsMine_ == shape;
+                float x = bx + k * (bw + gap);
+                r_.rect(x, by, bw, 34 * s, sel ? gold : Color{0.3f, 0.32f, 0.36f, 1});
+                r_.rect(x + 2 * s, by + 2 * s, bw - 4 * s, 30 * s, sel ? Color{0.3f, 0.24f, 0.05f, 1} : Color{0.07f, 0.08f, 0.1f, 1});
+                std::string key = upper(inputName(binds().code[slotAction(k)][0]));
+                std::string t2 = (key.empty() ? "" : "[" + key + "] ") + rpsName(shape);
+                r_.text(x + (bw - r_.textWidth(t2, small)) * 0.5f, by + 17 * s - r_.textHeight(small) * 0.5f, small, t2, sel ? gold : kWhite);
+            }
+        }
+    } else {
+        centered(upper(rps_.result), y, mid, rps_.winner >= 0 ? kGreenOk : kWhite);
+        if (rps_.winner >= 0) centered(upper(net_.playerName(rps_.winner)) + " WINS THE MATCH", y + r_.textHeight(mid) + 8 * s, big, kGreenOk);
+    }
+}
+
 void Game::drawHud() {
     QZONE("drawHud");
     const float W = (float)r_.width(), H = (float)r_.height();
@@ -1761,8 +1908,28 @@ void Game::drawHud() {
             banner(t, it ? kRed : kWhite, 92 * s);
         }
     }
+    if (opts_.debugRps && rps_.at < 0) {   // --rpsshot: made-up players, the tiebreak's panel only
+        rps_.players.clear();
+        int n = opts_.debugRps == 3 ? 4 : 2;
+        static const int shapes[4] = {RPS_ROCK, RPS_SCISSORS, RPS_ROCK, RPS_SCISSORS};
+        for (int i = 0; i < n; i++) {
+            RpsView::P p; p.id = i;
+            p.shape = opts_.debugRps == 1 ? (i == 0 ? RPS_NONE : RPS_PICKED) : shapes[i];
+            p.wins = opts_.debugRps == 2 ? (i == 0 ? 1 : 0) : 0;
+            p.out = opts_.debugRps == 3 && shapes[i] == RPS_SCISSORS;
+            rps_.players.push_back(p);
+        }
+        if (opts_.debugRps == 1) rps_.players[0].id = me;
+        rps_.stage = opts_.debugRps == 1 ? RPS_PICK : RPS_REVEAL;
+        rps_.throwNo = opts_.debugRps == 2 ? 2 : 1;
+        rps_.bestOf3 = opts_.debugRps != 3;
+        rps_.result = opts_.debugRps == 2 ? "p0's ROCK beats SCISSORS - 1-0" : opts_.debugRps == 3 ? "p1, p3 out (SCISSORS) - best of 3 between the last two" : "";
+        rps_.at = time_;
+        rpsMine_ = opts_.debugRps == 1 ? RPS_PAPER : RPS_NONE;
+    }
+    const bool rpsOn = (ms.flags & MS_RPS) || opts_.debugRps;   // (drawn over the rest of the HUD, at the end)
     // crosshair (scoped: the scope's reticle replaces it)
-    if (!(scoped_ && scopeOverlay_) && !paused_) drawCrosshair(cx, cy, s, time_ < hitUntil_); // menus open: no crosshair through them
+    if (!(scoped_ && scopeOverlay_) && !paused_ && !rpsOn) drawCrosshair(cx, cy, s, time_ < hitUntil_); // menus open: no crosshair through them
     {   // floating damage numbers above whoever you hit
         auto ip = net_.interpolatedPlayers();
         for (size_t i = 0; i < dmgNums_.size();) {
@@ -2075,6 +2242,7 @@ void Game::drawHud() {
         }
     }
 
+    if (rpsOn) drawRps(W, H, s);   // the hide and seek tiebreak (under the scoreboard and menus)
     showScores_ = (isDown(A_SCORES) && !chatting_) || opts_.textHeavy || ms.phase == PHASE_MATCH_END;
     // tourney: the bracket between matches / rounds and on TAB, so everyone sees who's still in
     bool showBracket = ms.mode == MODE_TOURNEY && !bracket_.empty() &&
@@ -3618,7 +3786,7 @@ static const char* const kInfoPages[][48] = {
         "# EVERYONE FOR THEMSELVES",
         "FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).",
         "RACE - the course's checkpoints in order. It starts as untimed practice; vote start (F4) to race. TIME TRIAL (main menu) is the ranked race on Viaduct.",
-        "HIDE AND SEEK - one seeker with a knife, everyone else hides first. Everyone seeks once: 1 point for each hider you find, 1 for staying hidden to the end of a round.",
+        "HIDE AND SEEK - one seeker with a knife, everyone else hides first. Everyone seeks once: 1 point for each hider you find, 1 for staying hidden to the end of a round. A tie for first is settled by rock paper scissors (keys 1 / 2 / 3).",
         "TAG - whoever is the TAGGER when the timer runs out is eliminated. Last one standing wins.",
         "# CUSTOM MODES",
         "Host Game > CUSTOM MODE > NEW: any base mode with your own health, gravity, speed, jump, knockback, weapons (fire rate, damage, projectile speed) and map pool. Players who join get the rules automatically.",

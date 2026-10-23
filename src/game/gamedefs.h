@@ -40,6 +40,24 @@ constexpr float kHideTime = 30.0f;       // hide and seek: hiders' head start wh
 constexpr float kHideRoundTime = 300.0f; // hiders win if anyone lasts this long
 constexpr float kTagRoundTime = 60.0f;   // tag: whoever is "it" when this runs out is eliminated
 constexpr float kTagFreeze = 2.0f;       // a newly tagged player stands still this long (no instant tag-back)
+// Hide and seek tiebreak (owner B8): once every round is played, players tied for first throw rock paper scissors.
+// Two: best of 3 (a draw is thrown again). Three or more throw at once: when exactly two shapes show, everyone with
+// the losing one is out; one shape or all three, nobody is (throw again); down to two, best of 3.
+enum RpsShape : uint8_t { RPS_NONE = 0, RPS_ROCK, RPS_PAPER, RPS_SCISSORS, RPS_PICKED };   // RPS_PICKED: chosen, not shown yet
+enum RpsStage : uint8_t { RPS_PICK = 0, RPS_REVEAL, RPS_DONE };
+constexpr float kRpsPickTime = 6.0f;     // to choose (no pick by then: a random one)
+constexpr float kRpsRevealTime = 3.0f;   // the throw shown to everyone before the next
+inline const char* rpsName(int s) { static const char* n[] = {"-", "ROCK", "PAPER", "SCISSORS", "?"}; return n[s >= 0 && s <= RPS_PICKED ? s : 0]; }
+inline bool rpsBeats(int a, int b) { return (a == RPS_ROCK && b == RPS_SCISSORS) || (a == RPS_PAPER && b == RPS_ROCK) || (a == RPS_SCISSORS && b == RPS_PAPER); }
+// The shape that's out when exactly two were thrown; RPS_NONE when nobody is (one shape, or all three).
+inline int rpsLosingShape(const uint8_t* picks, int n) {
+    bool has[4] = {};
+    for (int i = 0; i < n; i++) if (picks[i] >= RPS_ROCK && picks[i] <= RPS_SCISSORS) has[picks[i]] = true;
+    if (has[1] + has[2] + has[3] != 2) return RPS_NONE;
+    for (int a = RPS_ROCK; a <= RPS_SCISSORS; a++)
+        for (int b = RPS_ROCK; b <= RPS_SCISSORS; b++) if (has[a] && has[b] && rpsBeats(a, b)) return b;
+    return RPS_NONE;
+}
 inline const char* modeName(int m) {
     static const char* n[] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "1v1", "tourney", "hide", "tag", "points"};
     return (m >= 0 && m < MODE_COUNT) ? n[m] : "?";
@@ -338,6 +356,8 @@ enum EventType : uint8_t {
     EV_QUIP,         // a says a line from the voice pack (b: which one, the same pick for everyone)
     EV_LOCATE,       // tag / hide and seek locator, to the tagger / seeker only: a = who, text = "x y z" where they are
     EV_RANKSIGN,     // ranked match live / time trial started: text = the match (race ticket) id; the game answers "ticketsig <signature>"
+    EV_RPS,          // hide and seek tiebreak: a = RpsStage, b = throw number, text = "<best of 3> <winner or -1>" then " id:shape:wins:out"
+                     // per player (shape RPS_PICKED until the reveal), then a line with what happened
 };
 
 #define WB(w) (1u << (w))

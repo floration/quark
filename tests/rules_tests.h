@@ -392,6 +392,157 @@ static void testHideScoring(uint16_t port) {
     s.stop();
 }
 
+// B8: hide and seek ends tied for first -> rock paper scissors among the tied, synced to every client. `n` humans
+// (all tied); the server and the clients see the same throws. Returns false if the setup failed.
+static bool rpsSetup(Server& s, ServerConfig cfg, NetClient* c, int n, std::vector<NetClient*>& cls) {
+    cfg.map = "hamlet"; cfg.mode = MODE_HIDE;
+    if (!rulesStart(s, cfg, c, n, cls, false)) return false;
+    s.command("forcestart");
+    pump(s, cls, 0.2, idle);
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // live
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // time's up: round end
+    CHECK(s.ms_.phase == PHASE_ROUND_END);
+    for (auto& p : s.players_) if (p.connected) { p.sought = true; p.score = 3; }   // every round played, all on 3
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+    CHECK(s.ms_.phase == PHASE_ROUND_END && (s.ms_.flags & MS_RPS) && s.rps_.stage == RPS_PICK && s.rps_.throwNo == 1);
+    for (auto* cl : cls) CHECK(cl->mode().flags & MS_RPS);
+    return (s.ms_.flags & MS_RPS) != 0;
+}
+// Every client throws (shape per client, 0 = no pick), then the reveal; returns the reveal each client was sent.
+static std::vector<GameEvent> rpsThrow(Server& s, std::vector<NetClient*>& cls, const std::vector<int>& shapes) {
+    for (auto* cl : cls) cl->takeEvents();
+    for (size_t i = 0; i < cls.size(); i++) if (shapes[i]) cls[i]->sendCommand(std::string("rps ") + rpsName(shapes[i]));
+    pump(s, cls, 0.2, idle);
+    if (s.rps_.stage == RPS_PICK) { s.rps_.stageEnd = s.time(); pump(s, cls, 0.1, idle); }   // (someone didn't pick: the clock runs out)
+    pump(s, cls, 0.1, idle);
+    std::vector<GameEvent> got;
+    for (auto* cl : cls) {
+        GameEvent r; r.type = 255;
+        for (auto& e : cl->takeEvents()) if (e.type == EV_RPS && e.a == RPS_REVEAL) r = e;
+        got.push_back(r);
+    }
+    return got;
+}
+static void rpsNext(Server& s, std::vector<NetClient*>& cls) { s.rps_.stageEnd = s.time(); pump(s, cls, 0.1, idle); }   // (past the reveal)
+static int rpsShapeIn(const GameEvent& e, int id) {   // a player's shape in an EV_RPS text
+    std::istringstream ss(e.text.substr(0, e.text.find('\n')));
+    std::string t; ss >> t >> t;
+    while (ss >> t) { int i, sh, w, o; if (sscanf(t.c_str(), "%d:%d:%d:%d", &i, &sh, &w, &o) == 4 && i == id) return sh; }
+    return -1;
+}
+
+static void testRpsTwo(uint16_t port) {
+    printf("hide and seek tiebreak: two tied, best of 3, a draw is thrown again\n");
+    Server s;
+    ServerConfig cfg; cfg.port = port;
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rpsSetup(s, cfg, c, 2, cls)) { s.stop(); return; }
+    int a = c[0].clientId(), b = c[1].clientId();
+    CHECK(s.rps_.bestOf3 && (s.rps_.in >> a & 1) && (s.rps_.in >> b & 1));
+    auto ev = rpsThrow(s, cls, {RPS_ROCK, RPS_ROCK});   // a draw: nobody scores, throw again
+    CHECK(s.rps_.stage == RPS_REVEAL && s.rps_.wins[a] == 0 && s.rps_.wins[b] == 0 && s.rps_.winner < 0);
+    for (auto& e : ev) CHECK(e.type == EV_RPS && rpsShapeIn(e, a) == RPS_ROCK && rpsShapeIn(e, b) == RPS_ROCK);   // everyone saw the same reveal
+    rpsNext(s, cls);
+    CHECK(s.rps_.stage == RPS_PICK && s.rps_.throwNo == 2);
+    rpsThrow(s, cls, {RPS_PAPER, RPS_ROCK});            // a 1-0
+    CHECK(s.rps_.wins[a] == 1 && s.rps_.wins[b] == 0);
+    rpsNext(s, cls);
+    rpsThrow(s, cls, {RPS_SCISSORS, 0});                // b doesn't pick: a random one
+    CHECK(s.rps_.pick[b] >= RPS_ROCK && s.rps_.pick[b] <= RPS_SCISSORS);
+    int wa = s.rps_.wins[a], wb = s.rps_.wins[b];
+    printf("  throw 3: %s vs %s (random) -> %d-%d\n", rpsName(s.rps_.pick[a]), rpsName(s.rps_.pick[b]), wa, wb);
+    for (int k = 0; k < 6 && s.rps_.winner < 0; k++) { rpsNext(s, cls); rpsThrow(s, cls, {RPS_ROCK, RPS_SCISSORS}); }   // a wins the rest
+    CHECK(s.rps_.winner == a);
+    for (auto* cl : cls) cl->takeEvents();
+    rpsNext(s, cls);
+    CHECK(s.ms_.phase == PHASE_MATCH_END && !(s.ms_.flags & MS_RPS));
+    bool told = false;
+    for (auto& e : c[1].takeEvents()) told |= e.type == EV_ROUND_WIN && e.b == 1 && e.a == a;
+    CHECK(told);   // the tiebreak's winner is the match winner
+    s.stop();
+}
+
+static void testRpsMany(uint16_t port) {
+    printf("hide and seek tiebreak: three or more throw at once, the losing shape is out\n");
+    {   // a clear loser: two shapes, the scissors are out; two left play best of 3
+        Server s;
+        ServerConfig cfg; cfg.port = port;
+        NetClient c[3];
+        std::vector<NetClient*> cls;
+        if (!rpsSetup(s, cfg, c, 3, cls)) { s.stop(); return; }
+        CHECK(!s.rps_.bestOf3);
+        int x = c[2].clientId();
+        rpsThrow(s, cls, {RPS_ROCK, RPS_ROCK, RPS_SCISSORS});
+        CHECK((s.rps_.out >> x & 1) && s.rps_.bestOf3 && s.rps_.winner < 0);
+        rpsNext(s, cls);
+        CHECK(s.rps_.stage == RPS_PICK && s.rps_.throwNo == 2);
+        c[2].sendCommand("rps paper");   // out: no say any more
+        rpsThrow(s, cls, {RPS_PAPER, RPS_ROCK, 0});
+        CHECK(s.rps_.pick[x] == RPS_NONE && s.rps_.wins[c[0].clientId()] == 1);
+        rpsNext(s, cls);
+        rpsThrow(s, cls, {RPS_PAPER, RPS_ROCK, 0});
+        CHECK(s.rps_.winner == c[0].clientId());
+        rpsNext(s, cls);
+        CHECK(s.ms_.phase == PHASE_MATCH_END);
+        s.stop();
+    }
+    {   // nobody clearly loses (all the same, or all three shapes): nobody is out, throw again; one clear winner takes it
+        Server s;
+        ServerConfig cfg; cfg.port = (uint16_t)(port + 1);
+        NetClient c[4];
+        std::vector<NetClient*> cls;
+        if (!rpsSetup(s, cfg, c, 4, cls)) { s.stop(); return; }
+        rpsThrow(s, cls, {RPS_ROCK, RPS_ROCK, RPS_ROCK, RPS_ROCK});
+        CHECK(s.rps_.out == 0 && s.rps_.winner < 0 && s.rps_.result.find("nobody") != std::string::npos);
+        rpsNext(s, cls);
+        CHECK(s.rps_.stage == RPS_PICK && s.rps_.throwNo == 2);
+        rpsThrow(s, cls, {RPS_ROCK, RPS_PAPER, RPS_SCISSORS, RPS_ROCK});
+        CHECK(s.rps_.out == 0 && s.rps_.winner < 0);
+        rpsNext(s, cls);
+        rpsThrow(s, cls, {RPS_SCISSORS, RPS_PAPER, RPS_PAPER, RPS_PAPER});   // one beats everyone: wins it outright
+        CHECK(s.rps_.winner == c[0].clientId());
+        rpsNext(s, cls);
+        CHECK(s.ms_.phase == PHASE_MATCH_END);
+        s.stop();
+    }
+    {   // a bot in the tie throws at random on its own; nobody tied, no tiebreak
+        Server s;
+        ServerConfig cfg; cfg.port = (uint16_t)(port + 2);
+        cfg.map = "hamlet"; cfg.mode = MODE_HIDE;
+        NetClient c[1];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 1, cls, false)) { s.stop(); return; }
+        int bot = s.addBot(TEAM_A, 1);
+        pump(s, cls, 0.2, idle);
+        s.command("forcestart");
+        pump(s, cls, 0.2, idle);
+        s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+        s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+        for (auto& p : s.players_) if (p.connected) { p.sought = true; p.score = 2; }
+        s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+        CHECK((s.ms_.flags & MS_RPS) && bot >= 0 && s.rps_.pick[bot] >= RPS_ROCK && s.rps_.pick[bot] <= RPS_SCISSORS);
+        s.stop();
+        Server t;
+        ServerConfig cfg2; cfg2.port = (uint16_t)(port + 3);
+        cfg2.map = "hamlet"; cfg2.mode = MODE_HIDE;
+        NetClient d[2];
+        std::vector<NetClient*> dls;
+        if (!rulesStart(t, cfg2, d, 2, dls, false)) { t.stop(); return; }
+        t.command("forcestart");
+        pump(t, dls, 0.2, idle);
+        t.phaseEnd_ = t.time(); pump(t, dls, 0.1, idle);
+        t.phaseEnd_ = t.time(); pump(t, dls, 0.1, idle);
+        for (auto& p : t.players_) if (p.connected) { p.sought = true; p.score = 2; }
+        t.players_[d[1].clientId()].score = 1;
+        t.phaseEnd_ = t.time(); pump(t, dls, 0.1, idle);
+        CHECK(t.ms_.phase == PHASE_MATCH_END && !(t.ms_.flags & MS_RPS));
+        t.stop();
+    }
+    uint8_t three[3] = {RPS_ROCK, RPS_PAPER, RPS_SCISSORS}, same[3] = {RPS_PAPER, RPS_PAPER, RPS_PAPER}, two[4] = {RPS_PAPER, RPS_ROCK, RPS_ROCK, RPS_PAPER};
+    CHECK(rpsLosingShape(three, 3) == RPS_NONE && rpsLosingShape(same, 3) == RPS_NONE && rpsLosingShape(two, 4) == RPS_ROCK);
+}
+
 // GAME-1: in tag, "it" going to spectate or leaving is eliminated (the round ends as if time ran out); nobody joins a
 // side mid-match; someone eliminated who reconnects is still out.
 static void testTagEscape(uint16_t port) {
@@ -676,6 +827,7 @@ static void testGameRules(const std::string& only) {
         {"head", [] { testHeadBox(TP(29246)); }},
         {"hide", [] { testHideScoring(TP(29247)); }},
         {"tag", [] { testTagEscape(TP(29248)); }},
+        {"rps", [] { testRpsTwo(TP(29255)); testRpsMany(TP(29256)); }},
         {"bomb", [] { testBombDrop(TP(29249)); }},
         {"botdefer", [] { testBalanceBotDefer(TP(29250)); }},
         {"spawns", [] { testSpawnTypes(TP(29251)); }},
