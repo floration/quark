@@ -7,6 +7,9 @@
 #               Windows + Linux, and the macOS files are added when (if) that build finishes.
 #   PRODUCTION  a pushed tag v<VERSION> (no suffix) on a commit of the protected default branch: a signed release
 #               marked latest, only when Windows, Linux AND macOS all built and passed; then the website.
+#   SITE        a manual run on the default branch with "site" ticked: builds, then publishes only the website for the
+#               production release VERSION names (which must exist and be latest). For a site deploy that failed or
+#               was skipped; it never makes a release.
 # Any other push (or a manual run) builds and tests only.
 name: build-and-release
 on:
@@ -14,6 +17,11 @@ on:
     branches: ['**']
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      site:
+        description: 'Only publish the website again, for the latest production release (run it on the default branch)'
+        type: boolean
+        default: false
 permissions:
   contents: read   # every job only reads; release and pages get write below
 env:
@@ -42,6 +50,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          SITE_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.site || false }}
         run: |
           set -eu
           V=$(head -n1 VERSION | tr -d '[:space:]')
@@ -66,8 +75,13 @@ jobs:
             if [ -n "$LATEST" ] && { [ "$NEWEST" != "$V" ] || [ "${LATEST#v}" = "$V" ]; }; then
               echo "::warning::VERSION $V isn't newer than production $LATEST: testing launchers may see this build as older (bump VERSION)"
             fi
+          elif [ "$SITE_ONLY" = true ]; then
+            [ "$GITHUB_REF" = "refs/heads/$DEFAULT_BRANCH" ] || { echo "::error::a site-only run publishes the default branch's site: run it on $DEFAULT_BRANCH"; exit 1; }
+            LATEST=$(gh release view -R "$GITHUB_REPOSITORY" --json tagName -q .tagName 2>/dev/null || true)
+            [ "$LATEST" = "v$V" ] || { echo "::error::VERSION $V isn't the latest production release ($LATEST): nothing to publish the site for"; exit 1; }
+            TAG="v$V"; CHANNEL=site
           fi
-          if [ "$CHANNEL" != none ]; then
+          if [ "$CHANNEL" = production ] || [ "$CHANNEL" = testing ]; then
             [ -f "changelogs/$V.md" ] || { [ "$CHANNEL" = testing ] || { echo "::error::changelogs/$V.md is missing"; exit 1; }; }
             # the full changelog (what changed and why, in depth: the website's updates/<version> page)
             [ -f "changelogs/full/$V.md" ] || { [ "$CHANNEL" = testing ] || { echo "::error::changelogs/full/$V.md is missing"; exit 1; }; }
@@ -389,7 +403,7 @@ jobs:
 
   release-testing-macos:   # adds the macOS files to the testing prerelease when that build succeeded
     needs: [meta, macos, release-testing]
-    if: needs.meta.outputs.channel == 'testing' && needs.macos.result == 'success' && needs.release-testing.result == 'success'
+    if: "!cancelled() && needs.meta.outputs.channel == 'testing' && needs.macos.result == 'success' && needs.release-testing.result == 'success'"
     runs-on: ubuntu-24.04
     environment: testing
     permissions:
@@ -419,9 +433,10 @@ jobs:
           sh tools/sign/sign_release.sh dist/macos/SHA256SUMS-macos
           gh release upload "$TAG" -R "$GITHUB_REPOSITORY" dist/macos/*
 
-  pages:   # the website follows production only
-    needs: [meta, release]
-    if: needs.meta.outputs.channel == 'production' && needs.release.result == 'success'
+  pages:   # the website follows production only (or a site-only run: SITE above)
+    needs: [meta, linux, release]   # linux: its site-assets export (a site-only run has no release job to wait on it)
+    # !cancelled(): without it, a job skipped further back (1.17.0's CI tests) skips this one too (it did for 1.17.0)
+    if: "!cancelled() && needs.meta.result == 'success' && needs.linux.result == 'success' && ((needs.meta.outputs.channel == 'production' && needs.release.result == 'success') || needs.meta.outputs.channel == 'site')"
     runs-on: ubuntu-24.04
     environment: production
     permissions:
@@ -467,7 +482,7 @@ jobs:
   deploy-worker:   # the ranking server, after a production release (docs/OPERATIONS.md "Cloudflare"). Off until the
                    # repository variable DEPLOY_WORKER is "true" and the secrets / variables below are set.
     needs: [meta, release]
-    if: needs.meta.outputs.channel == 'production' && needs.release.result == 'success' && vars.DEPLOY_WORKER == 'true'
+    if: "!cancelled() && needs.meta.outputs.channel == 'production' && needs.release.result == 'success' && vars.DEPLOY_WORKER == 'true'"
     runs-on: ubuntu-24.04
     environment: production
     steps:
