@@ -94,6 +94,7 @@ public:
 
     // Frame pacing hooks called by the main loop around the buffer swap.
     void beforeInput();   // frame limiter sleep happens before this, so input is sampled as late as possible
+    void preInput();      // after beforeInput, before the input is read: the network (snapshots, reconcile)
     void afterSwap();     // low-latency fence waits + F3 input-latency measurement
 
 private:
@@ -398,6 +399,8 @@ private:
     struct ProjStart { uint16_t id; double seen; Vec3 offset; };
     std::vector<ProjStart> projStarts_, projStartsKeep_;
     std::string feedPart_;   // (drawFeedText)
+    double frameDt_ = 0;     // this frame's dt (frame)
+    bool polledEarly_ = false;   // preInput read the network this frame
     std::vector<std::pair<std::string, bool>> infoRows_;   // (drawInfo: the page wrapped to the panel, for this tab and size)
     int infoRowsTab_ = -1;
     float infoRowsW_ = 0, infoRowsTs_ = 0;

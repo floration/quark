@@ -181,6 +181,7 @@ int main(int argc, char** argv) {
             frameStart = timeNow();
         }
         game.beforeInput();
+        game.preInput();   // (the network: before the mouse is read)
         { QZONE("poll events"); glfwPollEvents(); }
         double now = timeNow();
         double dt = now - last;

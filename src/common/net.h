@@ -64,6 +64,9 @@ double timeNow();
 // Tests only: run the clock faster than real time (simulation is unchanged, just compressed).
 void setTimeScale(double scale);
 void sleepMs(int ms);
+// Windows: hand pending raw mouse messages (WM_INPUT, nothing else) to the window now, so the cursor callback sees the
+// newest motion mid-frame. Elsewhere it does nothing.
+void pumpRawMouse();
 // Returns at timeNow() >= t, on time: sleeps (a high-resolution timer on Windows) until just before, then spins.
 void waitUntil(double t);
 // Gives the calling thread above-normal scheduling priority (server thread inside the client).

@@ -249,6 +249,13 @@ void sleepMs(int ms) { Sleep((DWORD)ms); }
 void sleepMs(int ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); }
 #endif
 
+void pumpRawMouse() {
+#ifdef _WIN32
+    MSG m;
+    while (PeekMessageW(&m, nullptr, WM_INPUT, WM_INPUT, PM_REMOVE)) DispatchMessageW(&m);
+#endif
+}
+
 void waitUntil(double t) {
 #ifdef _WIN32
     // Sleep(1) wakes on the next 1 ms timer tick: 1 to 2 ms, so stopping 1.5 ms early still overshot by up to 0.5 ms

@@ -63,6 +63,9 @@ public:
     static constexpr uint32_t kCmdRing = 1024;     // commands (and predicted states) kept for replay: over 1 s at 1000 Hz
     uint32_t lastReplayCount() const { return lastReplay_; } // commands the last reconcile re-ran (0 = prediction matched)
     Vec3 smoothedPos(float alpha) const; // predicted position interpolated between ticks + error smoothing
+    void updateVisualPos(double tickAcc, float yaw, float pitch); // once a frame after the ticks: smoothedPos is then as of now
+    Vec3 visualPos_;
+    bool visualOk_ = false;
     bool selfAlive() const;
     int selfHealth() const { return hasSnapshot() ? latest().selfHealth : 0; }
     int selfWeapon() const;

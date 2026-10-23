@@ -1227,12 +1227,16 @@ void Game::frame(double dt) {
     net_.setInterpFixed(fairRules() ? 0.010f : cfg_.interpMs > 0 ? cfg_.interpMs * 0.001f : cfg_.interpMs < 0 ? 0.0f : -1.0f);
     frameInput_ = pendingInput_; // the oldest input this frame will show
     pendingInput_ = -1;
+    frameDt_ = dt;
     if (opts_.bench > 0 && screen_ == Screen::InGame && !bake_) benchFrame(dt);
     frameTimes_[frameIdx_] = (float)dt;
     frameIdx_ = (frameIdx_ + 1) % frameTimes_.size();
     frameCount_ = std::min(frameCount_ + 1, frameTimes_.size());
-    if (bake_ && net_.playback()) net_.holdPlaybackClock();   // a demo waits for its map's bake
-    { QZONE("net poll"); net_.poll(); }
+    if (!polledEarly_) {   // (normally done by preInput, before this frame's input was read)
+        if (bake_ && net_.playback()) net_.holdPlaybackClock();   // a demo waits for its map's bake
+        QZONE("net poll"); net_.poll();
+    }
+    polledEarly_ = false;
     updateCommunity();
     if (((screen_ == Screen::InGame && !bake_) || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot) && !opts_.screenshot.empty() && shotAt_ < 0) shotAt_ = time_ + opts_.shotDelay;
 
@@ -1306,9 +1310,12 @@ void Game::frame(double dt) {
                 bool alt = (c.buttons & BTN_ALTFIRE) != 0 && ((w != WPN_KNIFE && w != WPN_SYRINGE) || altShot); // same throw rule as above
                 // the shot's place in a held burst, like the server's (it picks the spread: burstOffset, NET-9)
                 bool held = (localPrevButtons_ & (altShot ? BTN_ALTFIRE : BTN_FIRE)) != 0;
-                localBurst_ = held && time_ - localNextFire_ < 0.1 && w == localBurstWeapon_ ? localBurst_ + 1 : 0;
+                const bool cadence = held && time_ - localNextFire_ < 0.1;   // (held: on the beat, as the server keeps it)
+                localBurst_ = cadence && w == localBurstWeapon_ ? localBurst_ + 1 : 0;
                 localBurstWeapon_ = w;
-                localNextFire_ = time_ + shotRefire(w, alt);
+                // the next shot one refire after this one's slot, not after this frame: re-basing on the frame's time made
+                // every held shot up to a frame late, adding up (a rifle burst's last shot heard ~70 ms after the real one)
+                localNextFire_ = (cadence ? localNextFire_ : time_) + shotRefire(w, alt);
                 if (isThrow(w, alt)) (w == WPN_KNIFE ? localKnifeBack_ : localSyringeBack_) = time_ + (w == WPN_KNIFE ? kKnifeAway : kSyringeAway);
                 if (w != WPN_LASER || time_ >= nextLaserSound_) { // laser fires every 10 ms: sound at 20 Hz
                     audio_.play(SND_RIFLE + w, w == WPN_LASER ? 0.6f : 0.8f, 0.97f + (qrand() % 7) * 0.01f);
@@ -1352,6 +1359,7 @@ void Game::frame(double dt) {
             tickAcc_ -= period;
         }
         net_.flushInput();   // (PERF-12: one input packet per frame, or per 2 ticks when a frame runs more)
+        net_.updateVisualPos(bake_ ? 0.0 : tickAcc_, yaw_, pitch_);   // your own position as of now, for drawing
         framePlayersOk_ = false;   // (the ticks moved the render time on)
         scopeOverlay_ = net_.selfWeapon() == WPN_SNIPER; // crossbow: just a light zoom, normal crosshair
         scoped_ = net_.selfAlive() && !paused_ && !chatting_ && weaponDef(net_.selfWeapon()).scopedSpread >= 0 &&
@@ -1478,6 +1486,13 @@ void Game::drawWorld(float alpha) {
     const bool demoView = net_.playback() && me >= 0 && me < kMaxPlayers && players[me].valid;
     if (demoView) { yaw_ = players[me].snap.yaw; pitch_ = players[me].snap.pitch; }
 
+    // ULTRA low latency: read the mouse again just before the camera is set (the frame's network, ticks and the work
+    // above ran since the input was read). The command already sent this frame keeps the aim it had; the next one
+    // carries this. Raw mouse messages only: keys and clicks wait for the next frame, as before.
+    if (cfg_.lowLatency == 2 && alive && !demoView && mouseCaptured_) {
+        pumpRawMouse();
+        if (pendingInput_ >= 0) { if (frameInput_ < 0) frameInput_ = pendingInput_; pendingInput_ = -1; }   // (F3: shown this frame)
+    }
     // camera: own prediction when alive, else spectate someone
     Vec3 eye;
     float camYaw = yaw_, camPitch = pitch_;
@@ -1928,7 +1943,7 @@ void Game::drawWorld(float alpha) {
     const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
     if ((alive || specGun) && !(scoped_ && scopeOverlay_ && !specGun) && !unarmed && !vm.hidden) {
         int w = specGun ? (int)players[viewing].snap.weapon : net_.selfWeapon();
-        recoil_ = std::max(0.0, recoil_ - 0.016 * 8);
+        recoil_ = std::max(0.0, recoil_ - 8.0 * frameDt_);   // (per second: it was per frame, so the kick lasted 8 ms at 1000 fps)
         float kick = (float)recoil_ * 0.06f;
         // Each weapon is a handful of boxes around `at` (camera space: +x right, +y up, -z forward), models.h.
         // the map's own palette: metal body, base-coloured highlights, its glow colour on emitters / sights
@@ -1953,6 +1968,7 @@ void Game::drawWorld(float alpha) {
     }
     sceneSettings();
     r_.drawScene(cfg_.shadows);
+    if (cfg_.lowLatency == 2) glFlush();   // (ULTRA: the GPU starts the world while the HUD is built; it sits idle otherwise)
 }
 
 // ---------------------------------------------------------------------------
@@ -4628,7 +4644,25 @@ void Game::applyPresentMode() {
         bool tear = glfwExtensionSupported("WGL_EXT_swap_control_tear") || glfwExtensionSupported("GLX_EXT_swap_control_tear");
         interval = tear ? -1 : 1; // adaptive: vsync, but tear instead of waiting when a frame is late
     }
+#ifdef _WIN32
+    // GLFW 3.3 replaces vsync in a window (windowed and borderless) with DwmFlush before each swap: the frame waits for
+    // the compositor's vblank, is handed over only then and shown a vblank later, a refresh behind (and adaptive never
+    // tears). The driver's own swap interval instead: GLFW keeps 0, so it adds no DwmFlush.
+    using SwapIntervalFn = int(__stdcall*)(int);
+    static const auto wglSwapInterval = (SwapIntervalFn)glfwGetProcAddress("wglSwapIntervalEXT");
+    glfwSwapInterval(0);
+    if (wglSwapInterval) { wglSwapInterval(interval); return; }
+#endif
     glfwSwapInterval(interval);
+}
+
+// The network read (snapshots, prediction reconcile and its replays) before this frame's input: none of it reads the
+// mouse, so doing it after the input was read only made that input older by the time it was drawn (a reconcile that
+// replays dozens of commands is a fraction of a millisecond). After beforeInput's GPU wait, so what's drawn is fresh.
+void Game::preInput() {
+    if (bake_ && net_.playback()) net_.holdPlaybackClock();   // a demo waits for its map's bake
+    { QZONE("net poll"); net_.poll(); }
+    polledEarly_ = true;
 }
 
 void Game::beforeInput() {

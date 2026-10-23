@@ -523,7 +523,30 @@ void NetClient::sendCommand(const std::string& s) {
 }
 
 Vec3 NetClient::smoothedPos(float alpha) const {
+    if (visualOk_) return visualPos_;
     return vlerp(predPrev_.pos, pred_.pos, alpha) + errorOffset_;
+}
+
+// Your own position as of now, for drawing only: the last tick's prediction carried over the part of a tick since, in
+// pmove's own 1 ms steps, with the last command (its aim brought up to date). It's what the next tick will work out
+// unless the keys change, so nothing jumps. It used to be drawn between the last two ticks: as it was a whole tick
+// ago (1 ms at 1000 Hz, 8 ms at 125 Hz). The command sent and the server are unchanged.
+void NetClient::updateVisualPos(double tickAcc, float yaw, float pitch) {
+    visualOk_ = false;
+    if (play_.active || !mapReady_ || state_ != ConnState::Connected || nextSeq_ <= 1 || !selfAlive()) return;
+    UserCmd c = cmds_[(nextSeq_ - 1) % kCmdRing];
+    if (c.seq != nextSeq_ - 1) return;
+    const double ms = std::max(0.0, tickAcc * 1000.0);
+    const int whole = std::min(7, (int)ms);
+    const float part = (float)std::min(1.0, ms - whole);
+    c.yaw = yaw; c.pitch = pitch;
+    MoveState s = pred_;
+    if (whole > 0) { c.msec = (uint8_t)whole; pmove(s, c, map_); }
+    MoveState next = s;
+    c.msec = 1;
+    pmove(next, c, map_);
+    visualPos_ = vlerp(s.pos, next.pos, part) + errorOffset_;
+    visualOk_ = true;
 }
 
 bool NetClient::selfAlive() const {
