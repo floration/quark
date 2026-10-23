@@ -525,6 +525,7 @@ void startMatch(Server& s) {
     s.completeTime_[0] = s.completeTime_[1] = 0;
     for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; p.dmgDealt = p.objTime = 0; p.shotsFired = p.shotsHit = 0; p.out = false; p.it = false; }
     s.lastIt_ = -1;
+    s.tagOut_.clear();   // tag knockouts last one match: everyone is back in for the next
     for (auto& p : s.players_) p.sought = false;
     if (m.mode == MODE_TOURNEY) {
         tourneyBegin(s);
@@ -1014,7 +1015,8 @@ void tickNeutralPayload(Server& s) {
 void updateCartSolid(Server& s) {
     s.map_.dynSolids.clear();
     if (!isPayloadMode(s.ms_.mode) || s.map_.payloadPath.size() < 2) return;
-    AABB cart = s.map_.payloadCartBox(s.ms_.payloadDist);
+    // (where the visible cart is: in team B's attack on an unstaged map it runs the track from the other end)
+    AABB cart = s.map_.payloadCartBox(s.map_.cartTrack(s.ms_.mode, s.ms_.attackers, s.ms_.payloadDist));
     s.map_.dynSolids.push_back(cart);
     for (auto& p : s.players_) {
         if (!p.connected || !p.alive) continue;
@@ -1078,6 +1080,7 @@ void rulesReset(Server& s) {
         for (auto& p : s.players_) if (p.connected && m.mode == MODE_TOURNEY) p.team = TEAM_A;
     }
     for (auto& p : s.players_) { p.it = false; p.out = false; p.found = false; } // nothing from the last match carries into warmup
+    s.tagOut_.clear();   // (the last tag match's knockouts, remembered across reconnects, end with it)
     // Joined mid tag match (or were playing it when a map / mode vote passed): placed like a newcomer once the tag
     // match is over, so the next mode's seat limits (1v1, duel) and team balance hold, not all on team A.
     uint32_t waiting = 0;
