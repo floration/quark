@@ -7,16 +7,16 @@
 // Server tick rate is chosen at runtime: it starts at 1000 Hz and steps down
 // (500, 250, 125) in warmup or between rounds if the host can't keep up (mid-round only if it can't keep up at all).
 // A snapshot is sent every tick.
-// Movement always simulates in fixed 1 ms steps, so it is identical at every rate.
+// Movement and projectiles always simulate in fixed 1 ms steps, so they are identical at every rate.
 constexpr int kTickRates[] = {1000, 500, 250, 125};
 constexpr int kTickRateLevels = 4;
-constexpr float kMoveStep = 0.001f;        // movement substep (s)
+constexpr float kMoveStep = 0.001f;        // movement / projectile substep (s)
 constexpr int kMaxPlayers = 32;        // engine limit; servers default to 8 (ServerConfig::maxPlayers)
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr int kMaxInterpMs = 200;      // the longest fixed interpolation delay a client can set (interp_ms; lag compensation covers it)
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 33;   // 33: fixed weapon spread pattern (NET-9), clients report a fixed interp delay ("interp"); 32: ranked signatures name the dialled server address (REVIEW 2.2); 31: hull scaling + grapple change in shared pmove; 30:  signed ranked ids, reconnect tokens; edit sessions name the map by an edit chain (mapEditCrc), map data carries the text CRC
+constexpr uint16_t kProtocolVersion = 34;   // 34: the snapshot carries syringeAway (a thrown syringe is disabled for a while) and projectile flags (lob, stuck: the client draws the 1 ms-step arc); 33: fixed weapon spread pattern (NET-9), clients report a fixed interp delay ("interp"); 32: ranked signatures name the dialled server address (REVIEW 2.2); 31: hull scaling + grapple change in shared pmove; 30:  signed ranked ids, reconnect tokens; edit sessions name the map by an edit chain (mapEditCrc), map data carries the text CRC
 // PlayerSnap::keys: what a player is holding (spectators see it on the key overlay)
 enum : uint16_t { KEY_FWD = 1, KEY_BACK = 2, KEY_LEFT = 4, KEY_RIGHT = 8, KEY_JUMP = 16, KEY_CROUCH = 32, KEY_FIRE = 64, KEY_ALT = 128, KEY_DASH = 256, KEY_HOOK = 512 };
 
@@ -207,19 +207,21 @@ inline Vec3 spreadAim(const Vec3& aim, float spread, int k, int pellets, uint32_
 inline const WeaponDef& baseWeaponDef(int w) {
     static const WeaponDef defs[WPN_COUNT] = {
         // Tuned by the owner (1.6.0: every cooldown 25% shorter except the laser's damage tick; every damage 15% lower
-        // except laser and knife; crossbow 50 / 60 head on a 2 s cooldown; the bubble gun added).
-        // Perfect-aim time to kill from 100 hp in the trailing comment.
+        // except laser and knife; crossbow 50 / 60 head on a 2 s cooldown; the bubble gun added. 1.17: rifle 1 less a
+        // shot (4.95 body, 7.5 head; no spread, no falloff), laser range 32 -> 24 m, sniper a flat 50).
+        // Perfect-aim time to kill from 100 hp in the trailing comment. DPS against the laser's 40: rifle 0.82 body,
+        // 1.24 head; sniper 0.83 (the laser out-damages the rifle inside its 24 m unless you land headshots).
         //  name        refire   dmg    range   proj  speed  splash spread scoped zoom   beam  pel grav  sticky life
-        {"RIFLE",       0.75f*2.0f/9.9f, 5.95f, 300.0f, false, 0, 0, 0.0f, 0.0f, 60.0f, false, 1, 0, false, 0},  // 17 shots, 2.4 s (scoped: 3/4 fire rate)
+        {"RIFLE",       0.75f*2.0f/9.9f, 4.95f, 300.0f, false, 0, 0, 0.0f, 0.0f, 60.0f, false, 1, 0, false, 0},  // 21 shots, 3.0 s body; 14, 2.0 s head (scoped: 3/4 fire rate)
         {"ROCKET",      1.2f,    34,      0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  10.8f, false, 5}, // 3, 2.4 s (gravity 12 -> 10.8: owner, 1.17)
         {"KNIFE",       0.75f,   30,      3.5f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 4, 2.25 s (1.11: 30 every 0.75 s)
-        {"SNIPER",      1.5f,    50,    500.0f, false,  0,    0,     0.0f,  0.0f, 45.0f,  false, 1,  0,    false, 0},  // 2, 1.5 s (owner 1.16: a flat 50, head or body)
-        {"LASER",       0.001f,  0.04f,  32.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},  // every 1 ms, 2500 hits, 2.5 s
+        {"SNIPER",      1.5f,    50,    500.0f, false,  0,    0,     0.0f,  0.0f, 45.0f,  false, 1,  0,    false, 0},  // 2 shots, 1.5 s (owner: a flat 50, head or body)
+        {"LASER",       0.001f,  0.04f,  24.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},  // every 1 ms, 2500 hits, 2.5 s, 24 m
         {"SHOTGUN",     0.75f,   1.7f,   60.0f, false,  0,    0,     0.085f,-1,     0,    false, 20, 0,    false, 0},  // 20 x 1.7 = 34 per blast, 3, 1.5 s
         {"STICKY",      0.75f,   29.75f,  0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30}, // 4, 2.25 s
         {"CROSSBOW",    2.0f,    50,      0,    true,  76.5f, 0,     0.0f,  0.0f, 70.0f,  false, 1,  6.0f, false, 3},  // 2, 2.0 s (headshots 60)
         {"BUBBLE",      1.0f/5,  10,      0,    true,  15.6f, 1.8f,  0.04f, -1,     0,    false, 1, -1.5f, false, 4}, // 10 pops, 1.8 s (floats up a little; 5 a second)
-        {"SYRINGE",     0.1f,    1,       0,    false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // heals you 1 hp every 0.1 s (damage = heal)
+        {"SYRINGE",     1.0f,    10,      0,    false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // heals you 10 hp a use, 1 s cooldown (damage = heal; owner 1.17)
     };
     return defs[w < 0 || w >= WPN_COUNT ? 0 : w];
 }
@@ -228,7 +230,7 @@ inline const WeaponDef& baseWeaponDef(int w) {
 constexpr float kRocketDirectDamage = 50.0f; // a rocket that hits a player itself (not the floor next to them)
 constexpr float kSniperHeadDamage = 50.0f; // hits on the head (headBox(): the top 20%, head-wide): sniper, crossbow bolt,
 constexpr float kCrossbowHeadDamage = 75.0f; // rifle bullet and each shotgun pellet
-constexpr float kRifleHeadDamage = 8.5f;
+constexpr float kRifleHeadDamage = 7.5f;   // (1.17: 8.5 -> 7.5 with the body 5.95 -> 4.95)
 constexpr float kPelletHeadDamage = 2.55f;
 const WeaponDef& weaponDef(int w);   // customrules.cpp
 float tunedDamage(int w);            // the active custom mode's damage multiplier for this weapon (1 = standard)
@@ -271,16 +273,31 @@ constexpr float kRocketLobSpeed = 0.7f, kRocketLobGravity = 3.0f; // rocket alt-
 constexpr float kKnifeThrowSpeed = 38.0f, kKnifeThrowGravity = 14.0f, kKnifeThrowLife = 2.0f;
 constexpr float kKnifeGrow = 0.04f;    // a swing hits boxes 10% wider (0.04 m each side of 0.8)
 constexpr float kKnifeSwingTime = 0.12f; // ...and keeps cutting this long after the click if it hasn't hit yet
-constexpr float kKnifeAway = 5.0f; // after a throw the knife is gone this long: you switch to another weapon (no delay on it)
-// Syringe: fire heals you (1 hp per 0.1 s, held); alt-fire throws it: a teammate it hits gets 30 hp at once and
-// every cooldown reset (weapon, dash, grapple). The throw has a 2 s cooldown.
+// Syringe: fire heals you (10 hp a use, its 1 s cooldown); alt-fire throws it: a teammate it hits gets 30 hp at once
+// and every cooldown reset (weapon, dash, grapple, a thrown knife / syringe being away).
 constexpr float kSyringeThrowSpeed = 30.0f, kSyringeThrowGravity = 9.0f, kSyringeThrowLife = 2.0f;
-constexpr float kSyringeHeal = 30.0f, kSyringeThrowRefire = 2.0f;
-// Throws (knife, syringe) share one alt-fire cooldown (owner 5.3): after either, neither can be thrown for that
-// throw's cooldown. A thrown syringe that heals a teammate resets it like their other cooldowns.
-constexpr float kKnifeThrowCooldown = kSyringeThrowRefire;   // (placeholder: the syringe throw's 2 s until the owner sets one)
+constexpr float kSyringeHeal = 30.0f;
+// Throws (owner 1.17): no special or shared throw cooldown. A throw is a normal shot of that weapon: its own cooldown
+// (knife: the 0.75 s swing; syringe: 1 s), during which no weapon can be used, and then the thrown weapon is
+// disabled (away) this long from the throw: you switch to another weapon; it can't be drawn or used until it's back.
+constexpr float kThrowAway = 4.0f;
+constexpr float kKnifeAway = kThrowAway, kSyringeAway = kThrowAway;
 inline bool isThrow(int w, bool alt) { return alt && (w == WPN_KNIFE || w == WPN_SYRINGE); }
-inline float throwCooldown(int w) { return w == WPN_KNIFE ? kKnifeThrowCooldown : kSyringeThrowRefire; }
+// Projectiles fly in fixed kMoveStep (1 ms) steps, like movement, so an arc is the same at every server tick rate
+// (C8); the client draws them with the same steps. One step: vel.y -= gravity * step, then pos += vel * step.
+inline float projectileGravity(int type, float gravMul) {   // gravMul: a rocket lob's kRocketLobGravity, else 1
+    return type == WPN_KNIFE ? kKnifeThrowGravity : type == WPN_SYRINGE ? kSyringeThrowGravity : weaponDef(type).gravity * gravMul;
+}
+// Where those steps take a projectile in t seconds (walls aren't checked): the whole steps summed in closed form (one
+// pass, whatever t is), then the part of a step left over in a straight line. The client draws projectiles with it.
+inline void projectileExtrapolate(Vec3& pos, Vec3& vel, float gravity, float t) {
+    const int n = t > 0 ? (int)(t / kMoveStep) : 0;
+    const float h = kMoveStep, rest = t - n * kMoveStep;
+    pos += vel * (n * h);
+    pos.y -= gravity * h * h * (0.5f * (float)n * (float)(n + 1));
+    vel.y -= gravity * h * n;
+    if (rest > 0) pos += vel * rest;
+}
 constexpr int kShotgunBounces = 2;
 constexpr float kShotgunBounceDamage = 0.5f;
 constexpr float kRifleScopedRefire = 4.0f / 3.0f; // refire multiplier while scoped (25% slower fire rate)
@@ -303,10 +320,9 @@ constexpr float kVampireFadeTime = 60.0f, kVampireMinHeal = 0.5f; // laser vampi
 // The refire for this shot: alt-fire modes change it.
 inline float shotRefire(int w, bool alt) {
     float r = weaponDef(w).refire;
-    if (alt && w == WPN_KNIFE) return r;                    // knife throw: the weapon you switch to waits a knife swing (no throw + instant shot combo, GAME-8)
     if (alt && w == WPN_RIFLE) return r * kRifleScopedRefire;       // scoped rifle
     if (alt && w == WPN_BUBBLE) return kBubbleStreamRefire;         // the bubble stream
-    if (alt && w == WPN_SYRINGE) return kSyringeThrowRefire;        // the syringe throw
+    // (knife / syringe throws: the weapon's own cooldown, for every weapon: no throw + instant shot combo, GAME-8)
     return r;
 }
 // Slot order (number keys, scroll wheel, HUD list): the weapon ids themselves stay as they are.

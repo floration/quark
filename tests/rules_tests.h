@@ -144,10 +144,11 @@ static void testSyringeModes() {
     CHECK(!s.weaponAllowed(WPN_SYRINGE) && s.weaponAllowed(WPN_RIFLE));
 }
 
-// 5.3: the knife throw and the syringe throw share one alt-fire cooldown; a knife throw makes the weapon you switch
-// to wait a knife swing (no throw + instant crossbow headshot); a teammate's syringe resets the throw cooldown too.
+// Owner 1.17 (B4): no special or shared throw cooldown. A knife throw is the knife's normal swing cooldown, a syringe
+// throw the syringe's 1 s, during which no weapon can be used (no throw + instant crossbow headshot); the thrown
+// weapon is then disabled for 4 s. A teammate's syringe resets all of it.
 static void testThrowCooldown(uint16_t port) {
-    printf("shared throw cooldown\n");
+    printf("throws: the weapon's own cooldown, then disabled for 4 s\n");
     Server s;
     ServerConfig cfg;
     cfg.map = "bastion"; cfg.mode = MODE_KOTH; cfg.port = port; cfg.balanceBots = false;
@@ -167,27 +168,49 @@ static void testThrowCooldown(uint16_t port) {
     ba = BTN_ALTFIRE;
     for (int k = 0; k < 20 && count(WPN_KNIFE, c[0].clientId()) == 0; k++) pump(s, cls, 0.02, in);   // throw the knife
     CHECK(count(WPN_KNIFE, c[0].clientId()) == 1);
-    double t0 = s.time();
-    printf("  after the knife throw: weapon %d ready in %.2f s, throws in %.2f s\n", pa.weapon, pa.nextFire - t0, pa.throwReadyAt - t0);
-    CHECK(pa.weapon != WPN_KNIFE && pa.nextFire >= t0 + weaponDef(WPN_KNIFE).refire - 0.05);   // not instantly
-    CHECK(pa.throwReadyAt >= t0 + kKnifeThrowCooldown - 0.05);
-    ba = 0; wa = WPN_SYRINGE; pump(s, cls, 0.9, in);   // let go, take the syringe, wait out the weapon refire
-    ba = BTN_ALTFIRE; pump(s, cls, 0.5, in);           // throw it: refused (shared cooldown)
-    CHECK(count(WPN_SYRINGE, c[0].clientId()) == 0);
-    ba = 0;
-    // b throws a syringe at a (5 m in front): every cooldown resets, the throws' too
+    double t0 = pa.lastFire;
+    printf("  after the knife throw: weapon %d ready in %.2f s, knife back in %.2f s\n", pa.weapon, pa.nextFire - t0, pa.knifeBackAt - t0);
+    CHECK(pa.weapon != WPN_KNIFE);   // switched away
+    CHECK(std::fabs(pa.nextFire - (t0 + weaponDef(WPN_KNIFE).refire)) < 0.002);   // the knife's swing cooldown, no more
+    CHECK(std::fabs(pa.knifeBackAt - (t0 + 4.0)) < 0.002);                         // the knife: disabled 4 s
+    int other = pa.weapon;
+    ba = 0; wa = other; pump(s, cls, 0.05, in);              // let go, then fire the weapon we got: nothing until the cooldown is over
+    ba = BTN_FIRE;
+    while (s.time() < t0 + weaponDef(WPN_KNIFE).refire - 0.1) pump(s, cls, 0.01, in);
+    CHECK(pa.lastFire == t0);
+    wa = WPN_KNIFE; ba = 0; pump(s, cls, 0.1, in);           // asking for the knife back: refused while it's away
+    CHECK(pa.weapon != WPN_KNIFE && c[0].latest().knifeAway > 0);
+    // the syringe can be thrown as soon as the knife's swing cooldown is over (no shared throw cooldown)
+    while (s.time() < t0 + weaponDef(WPN_KNIFE).refire + 0.05) pump(s, cls, 0.01, in);
+    wa = WPN_SYRINGE; pump(s, cls, 0.1, in);
+    CHECK(pa.weapon == WPN_SYRINGE);
+    ba = BTN_ALTFIRE;
+    for (int k = 0; k < 20 && count(WPN_SYRINGE, c[0].clientId()) == 0; k++) pump(s, cls, 0.02, in);
+    CHECK(count(WPN_SYRINGE, c[0].clientId()) == 1);
+    double t1 = pa.lastFire;
+    printf("  after the syringe throw: weapon %d ready in %.2f s, syringe back in %.2f s\n", pa.weapon, pa.nextFire - t1, pa.syringeBackAt - t1);
+    CHECK(pa.weapon != WPN_SYRINGE && pa.weapon != WPN_KNIFE);
+    CHECK(std::fabs(pa.nextFire - (t1 + 1.0)) < 0.002);        // the syringe's normal cooldown, now 1 s
+    CHECK(std::fabs(pa.syringeBackAt - (t1 + 4.0)) < 0.002);   // the syringe: disabled 4 s
+    CHECK(pa.knifeBackAt > s.time());                          // (the knife is still away)
+    ba = 0; wa = other; pump(s, cls, 0.05, in);
+    ba = BTN_FIRE;
+    while (s.time() < t1 + 0.9) pump(s, cls, 0.01, in);
+    CHECK(pa.lastFire == t1);                                  // no weapon during the syringe's cooldown
+    ba = 0; wa = WPN_SYRINGE; pump(s, cls, 0.1, in);
+    CHECK(pa.weapon != WPN_SYRINGE && c[0].latest().syringeAway > 0);
+    // b throws a syringe at a (5 m in front): every cooldown resets, the thrown weapons are back
     Vec3 base = pb.move.pos;
     auto place = [&] { pb.move.pos = base; pb.move.vel = {}; pa.move.pos = base + Vec3(0, 0, -5); pa.move.vel = {}; };
     pa.health = 40;
     for (int k = 0; k < 5; k++) { place(); pump(s, cls, 0.02, in); }
-    CHECK(pa.throwReadyAt > s.time() + 0.3);
-    pa.throwReadyAt = s.time() + 30;   // (so only the reset can clear it)
+    pa.knifeBackAt = pa.syringeBackAt = pa.nextFire = s.time() + 30;   // (so only the reset can clear them)
     int tick = 0;
     pump(s, cls, 0.5, [&](int i) { place(); UserCmd u = in(i); if (i == 1 && tick++ < 30) u.buttons = BTN_ALTFIRE; return u; });
-    printf("  healed: %.0f hp, throws ready in %.2f s\n", pa.health, pa.throwReadyAt - s.time());
-    CHECK(pa.health > 60 && pa.throwReadyAt <= s.time());
-    CHECK(pb.throwReadyAt > s.time());   // (the thrower's own cooldown runs)
-    ba = BTN_ALTFIRE;
+    printf("  healed: %.0f hp, knife back in %.2f s, syringe in %.2f s\n", pa.health, pa.knifeBackAt - s.time(), pa.syringeBackAt - s.time());
+    CHECK(pa.health > 60 && pa.knifeBackAt <= s.time() && pa.syringeBackAt <= s.time() && pa.nextFire <= s.time());
+    CHECK(pb.syringeBackAt > s.time());   // (the thrower's own syringe is away)
+    wa = WPN_SYRINGE; ba = BTN_ALTFIRE;
     for (int k = 0; k < 20 && count(WPN_SYRINGE, c[0].clientId()) == 0; k++) pump(s, cls, 0.02, [&](int i) { place(); return in(i); });
     CHECK(count(WPN_SYRINGE, c[0].clientId()) == 1);   // a can throw right away
     s.stop();

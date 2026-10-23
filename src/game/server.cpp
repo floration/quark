@@ -1479,7 +1479,7 @@ void Server::spawnPlayer(int id) {
     p.alive = true;
     p.health = kMaxHealth;
     p.weapon = p.selectedWeapon;
-    p.knifeBackAt = 0;
+    p.knifeBackAt = p.syringeBackAt = 0;
     if (!weaponAllowed(p.weapon)) // restricted pool: first allowed weapon, in slot order
         for (int k = 0; k < WPN_COUNT; k++) if (weaponAllowed(kWeaponSlots[k])) { p.weapon = kWeaponSlots[k]; break; }
     const DuelModDef& dm = duelModDef(duelMod()); // duel: this life's modifier (none outside duel)
@@ -1704,12 +1704,14 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     pmove(p.move, cmd, map_);
     if (p.move.flags & MF_ONGROUND) p.lastGround = p.move.pos;
 
-    // the knife can't be drawn while it's away after a throw (unless it's the only weapon this mode allows)
-    auto otherWeapon = [&]() { for (int k = 0; k < WPN_COUNT; k++) { int w = kWeaponSlots[k]; if (w != WPN_KNIFE && weaponAllowed(w)) return w; } return -1; };
-    bool knifeAway = time() < p.knifeBackAt;
+    // A thrown knife / syringe is away (disabled) for kThrowAway: it can't be drawn and you hold another weapon. When
+    // it's the only weapon this mode allows it stays in hand, unusable, until it's back.
+    auto away = [&](int w) { return time() < p.backAt(w); };
+    auto otherWeapon = [&]() { for (int k = 0; k < WPN_COUNT; k++) { int w = kWeaponSlots[k]; if (!away(w) && weaponAllowed(w)) return w; } return -1; };
     int heldWeapon = p.weapon;
-    if (cmd.weapon < WPN_COUNT && weaponAllowed(cmd.weapon) && !(knifeAway && cmd.weapon == WPN_KNIFE && otherWeapon() >= 0)) p.weapon = cmd.weapon;
-    if (knifeAway && p.weapon == WPN_KNIFE && otherWeapon() >= 0) p.weapon = otherWeapon();
+    if (cmd.weapon < WPN_COUNT && weaponAllowed(cmd.weapon) && !(away(cmd.weapon) && otherWeapon() >= 0)) p.weapon = cmd.weapon;
+    if (away(p.weapon) && otherWeapon() >= 0) p.weapon = otherWeapon();
+    bool disabled = away(p.weapon);
     // a weapon switch never fires the new weapon with a button held from before: let go and press again
     if (p.weapon != heldWeapon && (cmd.buttons & (BTN_FIRE | BTN_ALTFIRE))) p.fireLocked = true;
     // Sticky launcher: alt-fire detonates your armed stickies.
@@ -1721,10 +1723,8 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
             }
     // Knife and shotgun: alt-fire is its own shot (throw / bouncing pellets); it takes priority over fire.
     bool itMode = isItMode(ms_.mode);
-    bool throwReady = time() >= p.throwReadyAt;   // (knife / syringe throws share a cooldown)
-    bool altShot = altFires(p.weapon) && (cmd.buttons & BTN_ALTFIRE) && !(p.weapon == WPN_KNIFE && knifeAway) && !itMode // no throwing in hide and seek / tag
-                   && !(isThrow(p.weapon, true) && !throwReady);
-    bool wantFire = ((cmd.buttons & BTN_FIRE) != 0 || altShot) && (!itMode || p.it); // only "it" has a knife
+    bool altShot = altFires(p.weapon) && (cmd.buttons & BTN_ALTFIRE) && !itMode; // no throwing in hide and seek / tag
+    bool wantFire = ((cmd.buttons & BTN_FIRE) != 0 || altShot) && (!itMode || p.it) && !disabled; // only "it" has a knife
     if (p.fireLocked) { // the click that threw the knife doesn't also fire the weapon you switched to
         if (!(cmd.buttons & (BTN_FIRE | BTN_ALTFIRE))) p.fireLocked = false;
         else wantFire = altShot = false;
@@ -1734,7 +1734,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
         wantFire = time() <= p.fireQueuedUntil;
     }
     // A knife swing that missed keeps cutting along your current aim for a moment (one hit at most).
-    if (p.knifeSwingUntil > 0 && (p.weapon != WPN_KNIFE || time() > p.knifeSwingUntil)) p.knifeSwingUntil = -1;
+    if (p.knifeSwingUntil > 0 && (p.weapon != WPN_KNIFE || disabled || time() > p.knifeSwingUntil)) p.knifeSwingUntil = -1;
     if (p.knifeSwingUntil > 0 && !(p.move.flags & MF_FROZEN)) {
         UserCmd sw = cmd; sw.buttons &= ~BTN_ALTFIRE;
         if (fireWeapon(id, sw)) p.knifeSwingUntil = -1;
@@ -1745,26 +1745,22 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
         // Holding fire keeps an exact cadence, catching up shots that fell between commands (the laser
         // fires every 1 ms, so late or batched commands must not drop shots). After a pause, or more
         // than 100 ms behind, the timer restarts from now.
-        bool altEff = (cmd.buttons & BTN_ALTFIRE) && !(isThrow(p.weapon, true) && !throwReady);   // (a throw on cooldown isn't one)
-        float refire = shotRefire(p.weapon, altEff);
+        float refire = shotRefire(p.weapon, (cmd.buttons & BTN_ALTFIRE) != 0);   // (a throw: the weapon's own cooldown)
         bool held = (p.prevButtons & (altShot ? BTN_ALTFIRE : BTN_FIRE)) != 0;
         bool burst = held && time() - p.nextFire < 0.1f && p.weapon == p.burstWeapon;
         p.burstShot = burst ? p.burstShot + 1 : 0;   // the shot's place in the fixed spread sequence (NET-9)
         p.burstWeapon = p.weapon;
         p.nextFire = (held && time() - p.nextFire < 0.1f) ? p.nextFire + refire : time() + refire;
         p.lastFire = time();
-        bool threw = p.weapon == WPN_KNIFE && (cmd.buttons & BTN_ALTFIRE) && !itMode && !knifeAway && throwReady; // same test as fireWeapon
+        bool threw = isThrow(p.weapon, (cmd.buttons & BTN_ALTFIRE) != 0) && !itMode; // same test as fireWeapon
         int firedWeapon = p.weapon;
         bool hit = fireWeapon(id, cmd);
-        if (isThrow(firedWeapon, altEff) && (firedWeapon != WPN_KNIFE || threw)) {
-            p.throwReadyAt = time() + throwCooldown(firedWeapon);
-            throwReady = false;
-        }
         p.knifeSwingUntil = (p.weapon == WPN_KNIFE && !threw && !hit) ? time() + kKnifeSwingTime : -1;
-        if (threw) { // the knife is away: switch to the next weapon
-            p.knifeBackAt = time() + kKnifeAway;
+        if (threw) { // the knife / syringe is away: switch to the next weapon (usable after the throw's cooldown: nextFire above)
+            if (firedWeapon == WPN_KNIFE) p.knifeBackAt = time() + kKnifeAway;
+            else p.syringeBackAt = time() + kSyringeAway;
             p.fireLocked = true;
-            if (otherWeapon() >= 0) p.weapon = otherWeapon();   // (ready after a knife swing's refire: nextFire above)
+            if (otherWeapon() >= 0) p.weapon = otherWeapon();
             p.fireQueuedUntil = -1;
             break;
         }
@@ -1848,10 +1844,10 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
     float spread = scoped ? wd.scopedSpread : wd.spread;
 
     bool alt = (cmd.buttons & BTN_ALTFIRE) != 0;
-    // a throw needs the knife in hand and a mode that allows it (holding alt while clicking fire used to throw
-    // past both checks: endless knives in hide and seek / tag)
-    if (p.weapon == WPN_KNIFE) alt = alt && time() >= p.knifeBackAt && !isItMode(ms_.mode);
-    if (isThrow(p.weapon, alt) && time() < p.throwReadyAt) alt = false;   // the shared throw cooldown (syringe: a dose for yourself instead)
+    // a thrown knife / syringe is disabled until it's back; a throw needs a mode that allows it (holding alt while
+    // clicking fire used to throw past the checks: endless knives in hide and seek / tag)
+    if (time() < p.backAt(p.weapon)) return false;
+    if (isThrow(p.weapon, alt) && isItMode(ms_.mode)) alt = false;
     if (p.weapon == WPN_KNIFE && alt) { // thrown knife: a fast arcing projectile, hits for knife damage
         for (auto& pr : projectiles_) {
             if (pr.active) continue;
@@ -1973,7 +1969,17 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
     return any;
 }
 
+// Projectiles fly in fixed 1 ms steps (kMoveStep, like movement): a tick runs 1000 / rate of them, so an arc lands on
+// the same spot at every tick rate (C8). Players are where this tick left them for all of its steps.
 void Server::tickProjectiles() {
+    const int steps = std::max(1, 1000 / tickRate());
+    projTargets_ = 0;   // the players a projectile can hit, boxed once a tick rather than once a step
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const auto& p = players_[i];
+        if (!p.connected || !p.alive) continue;
+        projTargetId_[projTargets_] = (uint8_t)i;
+        projTargetBox_[projTargets_++] = hitBox(p.move.pos, p.move.flags & MF_CROUCHED);
+    }
     for (auto& pr : projectiles_) {
         if (!pr.active) continue;
         if (time() >= pr.dieAt) { pr.active = false; continue; }
@@ -1981,12 +1987,20 @@ void Server::tickProjectiles() {
             if (map_.dynSolids.empty()) pr.active = false; // cart gone (round over)
             else pr.pos = map_.cartPoint(ms_.mode, ms_.attackers, ms_.payloadDist) + pr.cartOffset;
         }
-        if (pr.stuck) continue;
+        for (int k = 0; k < steps && pr.active && !pr.stuck; k++) {
+            if (k > 0 && (double)(timeMs_ + (uint64_t)k) * 0.001 >= pr.dieAt) { pr.active = false; break; }   // (the 1 ms steps' own times)
+            stepProjectile(pr);
+        }
+    }
+}
+
+void Server::stepProjectile(Projectile& pr) {
+    {
         const WeaponDef& wd = weaponDef(pr.type);
-        pr.vel.y -= (pr.type == WPN_KNIFE ? kKnifeThrowGravity : pr.type == WPN_SYRINGE ? kSyringeThrowGravity : wd.gravity * pr.gravMul) * dt();
-        Vec3 step = pr.vel * dt();
+        pr.vel.y -= projectileGravity(pr.type, pr.gravMul) * kMoveStep;
+        Vec3 step = pr.vel * kMoveStep;
         float len = length(step);
-        if (len < 1e-6f) continue;
+        if (len < 1e-6f) return;
         Vec3 dir = step / len;
         Vec3 n;
         float wall = map_.raycast(pr.pos, dir, len, &n);
@@ -1994,14 +2008,13 @@ void Server::tickProjectiles() {
         int hitPlayer = -1;
         AABB hitBb;
         Vec3 inv = safeInv(dir);
-        for (int i = 0; i < kMaxPlayers; i++) {
-            auto& p = players_[i];
-            if (!p.connected || !p.alive || i == pr.owner) continue;
-            AABB b = hitBox(p.move.pos, p.move.flags & MF_CROUCHED);
-            float t = rayAABB(pr.pos, inv, b, best);
-            if (t >= 0 && t <= best) { best = t; hitPlayer = i; hitBb = b; }
+        for (int k = 0; k < projTargets_; k++) {
+            int i = projTargetId_[k];
+            if (i == pr.owner || !players_[i].alive) continue;   // (killed earlier this tick)
+            float t = rayAABB(pr.pos, inv, projTargetBox_[k], best);
+            if (t >= 0 && t <= best) { best = t; hitPlayer = i; hitBb = projTargetBox_[k]; }
         }
-        if (wall < 0 && hitPlayer < 0) { pr.pos += step; continue; }
+        if (wall < 0 && hitPlayer < 0) { pr.pos += step; return; }
         Vec3 at = pr.pos + dir * std::max(0.0f, best - 0.05f);
         if (pr.type == WPN_SYRINGE) {  // a teammate: 30 hp and every cooldown reset; anyone else: nothing
             auto& o = players_[pr.owner];
@@ -2011,10 +2024,11 @@ void Server::tickProjectiles() {
                 t.nextFire = time();
                 t.move.dashCooldown = 0;
                 t.move.hookCooldown = 0;
-                if (t.knifeBackAt > time()) t.knifeBackAt = time();
-                t.throwReadyAt = time();   // (the throws' shared cooldown too: it used to survive the reset)
+                if (t.knifeBackAt > time()) t.knifeBackAt = time();   // (a thrown knife / syringe is back at once too)
+                if (t.syringeBackAt > time()) t.syringeBackAt = time();
                 GameEvent e; e.type = EV_HEALED; e.a = (uint8_t)hitPlayer; e.b = (uint8_t)pr.owner; broadcastEvent(e);
             }
+            pr.pos = at;   // (a spent projectile keeps where it landed)
             pr.active = false;
         } else if (wd.sticky) {               // stick where it landed (on a player: it drops there)
             pr.pos = hitPlayer < 0 ? at + n * 0.08f : at;
@@ -2036,8 +2050,10 @@ void Server::tickProjectiles() {
                 headHit_[hitPlayer] = false;
                 if (pr.owner >= 0 && shotHit(pr.owner)) players_[pr.owner].shotsHit++;
             }
+            pr.pos = at;
             pr.active = false;
         } else {
+            pr.pos = at;
             pr.active = false;
             explode(at, pr.owner, pr.type, pr.type == WPN_ROCKET ? hitPlayer : -1);
         }
@@ -2182,7 +2198,7 @@ void Server::sendSnapshots() {
     for (auto& pr : projectiles_) {
         if (!pr.active) continue;
         if (allProj.size() >= 48) break;
-        allProj.push_back({pr.id, (uint8_t)pr.type, (uint8_t)pr.owner, pr.pos, pr.vel});
+        allProj.push_back({pr.id, (uint8_t)pr.type, (uint8_t)pr.owner, pr.pos, pr.vel, (uint8_t)((pr.gravMul != 1 ? PROJ_LOB : 0) | (pr.stuck ? PROJ_STUCK : 0))});
     }
     uint8_t buf[kMaxPacket], world[kMaxPacket];
     for (int i = 0; i < kMaxPlayers; i++) {
@@ -2213,6 +2229,7 @@ void Server::sendSnapshots() {
         s.selfHealth = (uint8_t)clampf(std::ceil(p.health), 0, 255);
         s.selfWeapon = (uint8_t)p.weapon;
         s.knifeAway = (uint8_t)clampf(std::ceil((p.knifeBackAt - time()) * 10), 0, 255);
+        s.syringeAway = (uint8_t)clampf(std::ceil((p.syringeBackAt - time()) * 10), 0, 255);
         // this client's view of the players: enemies out of sight are hidden
         bool seesAll = !p.alive || p.team == TEAM_SPECTATOR;
         s.players = all;          // (copies into the slot's own vectors: their capacity is reused)

@@ -23,7 +23,7 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
     if (opt & 2) { w.f32(m.dashTimer); w.f32(m.dashDirX); w.f32(m.dashDirZ); w.f32(m.dashExitSpeed); w.f32(m.dashUp); }
     if (opt & 4) w.f32(m.dashCooldown);
     if (opt & 8) w.f32(m.hookCooldown);
-    w.u8(s.selfHealth); w.u8(s.selfWeapon); w.u8(s.knifeAway);
+    w.u8(s.selfHealth); w.u8(s.selfWeapon); w.u8(s.knifeAway); w.u8(s.syringeAway);
     w.u32(s.baseTick);
 }
 
@@ -43,7 +43,7 @@ bool readSnapshotClient(Reader& r, Snapshot& s) {
     if (opt & 2) { m.dashTimer = r.f32(); m.dashDirX = r.f32(); m.dashDirZ = r.f32(); m.dashExitSpeed = r.f32(); m.dashUp = r.f32(); }
     if (opt & 4) m.dashCooldown = r.f32();
     if (opt & 8) m.hookCooldown = r.f32();
-    s.selfHealth = r.u8(); s.selfWeapon = r.u8(); s.knifeAway = r.u8();
+    s.selfHealth = r.u8(); s.selfWeapon = r.u8(); s.knifeAway = r.u8(); s.syringeAway = r.u8();
     s.baseTick = r.u32();
     if (s.clientId >= kMaxPlayers || s.selfWeapon >= WPN_COUNT) return false;   // (ids index fixed arrays on the client)
     return !r.bad();
@@ -164,14 +164,14 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
         if (m & P_CHECK) w.u8(p.checkpoint);
         if (m & P_HOOK) { w.u8(p.hooked); if (p.hooked) w.vecq(p.hookPoint); }
     }
-    // projectiles: id, bits (1 = new: type and owner follow, 2 = velocity follows), position always.
-    // Velocity only when it changed by more than 0.5 m/s since what the client has (the client only uses it
-    // to extrapolate a few ms); the snapshot we keep as the next base records the velocity the client has.
+    // projectiles: id, bits (1 = new: type and owner follow, 2 = velocity follows, 4 = PROJ_LOB, 8 = PROJ_STUCK),
+    // position always. Velocity only when it changed by more than 0.5 m/s since what the client has (the client only
+    // uses it to extrapolate a few ms); the snapshot we keep as the next base records the velocity the client has.
     w.u8((uint8_t)s.projectiles.size());
     for (auto& p : s.projectiles) {
         const ProjectileSnap* b = bi.projectile(base, p.id);
         bool vel = !b || length(p.vel - b->vel) > 0.5f;
-        w.u16(p.id); w.u8((b ? 0 : 1) | (vel ? 2 : 0));
+        w.u16(p.id); w.u8((b ? 0 : 1) | (vel ? 2 : 0) | (uint8_t)((p.flags & (PROJ_LOB | PROJ_STUCK)) << 2));
         if (!b) { w.u8(p.type); w.u8(p.owner); }
         w.vecq(p.pos);
         if (vel) w.vecq(p.vel);
@@ -220,6 +220,7 @@ bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base) {
     for (auto& p : s.projectiles) {
         p.id = r.u16();
         uint8_t bits = r.u8();
+        p.flags = (uint8_t)((bits >> 2) & (PROJ_LOB | PROJ_STUCK));
         const ProjectileSnap* b = nullptr;
         if (bits & 1) { p.type = r.u8(); p.owner = r.u8(); if (p.owner >= kMaxPlayers) return false; }
         else {

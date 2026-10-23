@@ -537,11 +537,11 @@ NetClient::PlayerArray NetClient::interpolatedPlayers() const {
 std::vector<ProjectileSnap> NetClient::interpolatedProjectiles() const {
     std::vector<ProjectileSnap> out;
     if (snaps_.empty()) return out;
-    // Projectiles fly straight: extrapolate the newest snapshot to "now" (they're visual only).
+    // Extrapolate the newest snapshot to "now" (they're visual only) along the server's arc: its fixed 1 ms steps.
     const Snapshot& s = snaps_.back();
     float dt = clampf((float)(renderTime_ + interpDelay() - s.timeMs * 0.001), 0, 0.2f);
     for (auto p : s.projectiles) {
-        p.pos += p.vel * dt;
+        if (!(p.flags & PROJ_STUCK)) projectileExtrapolate(p.pos, p.vel, projectileGravity(p.type, (p.flags & PROJ_LOB) ? kRocketLobGravity : 1.0f), dt);
         out.push_back(p);
     }
     return out;
