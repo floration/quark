@@ -72,6 +72,9 @@ For each one: change it, check the effect in a game, quit, restart, check it was
 | ☐ | Interpolation setting (up to 200 ms): shots still hit what you see. |
 | ☐ | HUD editor: drag, add, delete, import / export a layout; the weapon list shows only the weapons the mode has. |
 | ☐ | DISCORD CODE: see section 13. |
+| ☐ | **Name colour** (SETTINGS, right column): turn it on and pick a colour; a second player sees your name in it on the scoreboard, in chat and in the kill feed; team name tags stay the team colour; a very dark colour shows lighter. Off again: your name goes back to the default. |
+| ☐ | **Health bars** are on after updating from 1.16 even if you had them off; turning them off now stays off across restarts. |
+| ☐ | Every number slider: click it and **type a value**; **right-click** resets it to its default (check the custom-mode MOVEMENT page too). Damage-number size, damage flash (off / intensity), sniper and rifle zoom FOV, and the fullbright map colour all work. |
 
 ## 5. Weapons and movement
 
@@ -83,7 +86,8 @@ Use HOST GAME → FFA (bots off or beginner) and the changelog's numbers.
 | ☐ | Alt-fires: rifle scope, shotgun bounce, rocket lob, knife throw, bubble stream. |
 | ☐ | Knife throw: the knife is **disabled for 4 s** (greyed with a timer), and nothing can be used for the knife's normal swing cooldown. |
 | ☐ | Syringe: self-use heals **10 HP** with a **1 s** cooldown; a throw heals a teammate, disables the syringe for 4 s, with a 1 s cooldown. It only exists in modes where you respawn. |
-| ☐ | Movement: jump, crouch, bunny-hop, air-strafe, dash, grapple; ground acceleration feels right; ladders and staircases climb smoothly. |
+| ☐ | Movement: jump, crouch, bunny-hop, air-strafe, dash, grapple; run speed 9.5 feels right; ladders (6.75 up) and staircases climb smoothly; a standing jump can be steered; at speed A/D strafing turns better than W alone. |
+| ☐ | **Dash charges**: two dashes, then none until you land (landing refills both, a bunny hop refills one); pressing dash during a dash does nothing; a dash jump keeps both; a super dash and a wall bounce leave one. The HUD shows a pip per charge. |
 | ☐ | Hitmarkers, red headshot numbers, kill feed, damage direction. |
 
 ## 6. Game modes
