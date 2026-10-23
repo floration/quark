@@ -159,6 +159,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
 
 void Game::shutdown() {
     audio_.stop();
+    if (mouseHeld_) rawMouse_.hold(win_, false);   // (let the cursor go)
     rawMouse_.stop();
     leaveGame();
     cfg_.save();
@@ -350,10 +351,18 @@ void Game::setScreen(Screen s) {
 void Game::captureMouse(bool on) {
     if (on == mouseCaptured_) return;
     mouseCaptured_ = on;
-    glfwSetInputMode(win_, GLFW_CURSOR, on ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
-    // (GLFW's raw motion only without the raw input thread: Windows sends a process's raw mouse input to one window,
-    // and GLFW registering its own would take it from the thread)
-    if (!rawMouse_.active() && glfwRawMouseMotionSupported()) glfwSetInputMode(win_, GLFW_RAW_MOUSE_MOTION, on ? GLFW_TRUE : GLFW_FALSE);
+    // With the raw input thread: the cursor hidden and held at the window's centre (rawMouse_.hold), not GLFW's
+    // captured mode, which re-centres it every frame. Without (not Windows): GLFW's captured mode and raw motion
+    // (Windows sends a process's raw mouse input to one window: GLFW registering its own would take it from the thread).
+    if (rawMouse_.active()) {
+        glfwSetInputMode(win_, GLFW_CURSOR, on ? GLFW_CURSOR_HIDDEN : GLFW_CURSOR_NORMAL);
+        rawMouse_.hold(win_, on);
+        mouseHeld_ = on;
+        mouseHeldAt_ = time_;
+    } else {
+        glfwSetInputMode(win_, GLFW_CURSOR, on ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+        if (glfwRawMouseMotionSupported()) glfwSetInputMode(win_, GLFW_RAW_MOUSE_MOTION, on ? GLFW_TRUE : GLFW_FALSE);
+    }
     { double a, b, c; int n; rawMouse_.take(&a, &b, &n, &c); }   // (motion from before: not part of this)
     firstMouse_ = true;
 }
@@ -754,7 +763,12 @@ void Game::readMouse() {
     if (!rawMouse_.active()) return;
     double dx = 0, dy = 0, firstAt = 0;
     int n = 0;
-    if (!rawMouse_.take(&dx, &dy, &n, &firstAt) || !mouseCaptured_) return;   // (not captured: motion is dropped)
+    // The window must have the focus: the thread hears the mouse whatever's in front (alt-tabbed: nothing turns, and
+    // the cursor is let go; back: held again). Re-held twice a second in case the window moved or Windows let it go.
+    const bool focused = glfwGetWindowAttrib(win_, GLFW_FOCUSED) != 0;
+    if (mouseCaptured_ && focused && (!mouseHeld_ || time_ - mouseHeldAt_ > 0.5)) { rawMouse_.hold(win_, true); mouseHeld_ = true; mouseHeldAt_ = time_; }
+    else if (mouseHeld_ && (!mouseCaptured_ || !focused)) { rawMouse_.hold(win_, false); mouseHeld_ = false; }
+    if (!rawMouse_.take(&dx, &dy, &n, &firstAt) || !mouseCaptured_ || !focused) return;   // (motion meanwhile: dropped)
     if (pendingInput_ < 0 || firstAt < pendingInput_) pendingInput_ = firstAt;   // (F3: when it arrived)
     mouseEventsPoll_ += n;   // (F3: the mouse's report rate)
     turn(dx, dy);

@@ -6,6 +6,9 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <GLFW/glfw3.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
 
 struct RawMouseProc {
     static LRESULT CALLBACK proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
@@ -79,9 +82,22 @@ void RawMouse::stop() {
     active_ = false;
 }
 
+void RawMouse::hold(GLFWwindow* w, bool on) {
+    if (!on) { ClipCursor(nullptr); return; }
+    HWND h = glfwGetWin32Window(w);
+    RECT r;
+    if (!h || !GetClientRect(h, &r)) return;
+    POINT c = {(r.left + r.right) / 2, (r.top + r.bottom) / 2};
+    ClientToScreen(h, &c);
+    RECT one = {c.x, c.y, c.x + 1, c.y + 1};
+    SetCursorPos(c.x, c.y);
+    ClipCursor(&one);
+}
+
 #else
 bool RawMouse::start() { return false; }
 void RawMouse::stop() {}
+void RawMouse::hold(GLFWwindow*, bool) {}
 #endif
 
 bool RawMouse::take(double* dx, double* dy, int* reports, double* firstAt) {

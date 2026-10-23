@@ -6,6 +6,8 @@
 #include <atomic>
 #include <thread>
 
+struct GLFWwindow;
+
 class RawMouse {
 public:
     ~RawMouse() { stop(); }
@@ -15,6 +17,10 @@ public:
     // The motion (counts) and number of reports since the last take, and when the first of them arrived (timeNow());
     // false when there were none.
     bool take(double* dx, double* dy, int* reports, double* firstAt);
+    // While the game has the mouse: the (hidden) cursor held still at the window's centre, so Windows sends no cursor
+    // messages at all. GLFW's own captured mode re-centred the cursor after every frame's motion (SetCursorPos) and
+    // handled a legacy mouse-move message: ~50 us a frame on the owner's PC with an 8 kHz mouse. Off: let it go.
+    void hold(GLFWwindow* w, bool on);
 
 private:
     void run();

@@ -432,6 +432,8 @@ private:
     void markInput() { if (pendingInput_ < 0) pendingInput_ = timeNow(); }
     void turn(double dx, double dy);   // mouse counts into yaw_ / pitch_
     RawMouse rawMouse_;                // Windows: raw mouse reports on their own thread (rawmouse.h)
+    bool mouseHeld_ = false;           // rawMouse_.hold is on (the cursor clipped to the window's centre)
+    double mouseHeldAt_ = 0;
 public:
     void readMouse();                  // the main loop, before glfwPollEvents: raw mouse reports in one read (Windows)
 private:
