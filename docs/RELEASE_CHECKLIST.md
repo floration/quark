@@ -42,6 +42,10 @@ Do this on Windows; also on Linux / macOS if you have one.
 | ☐ | The game starts to the main menu without errors; the version in the corner is the testing build's. |
 | ☐ | **F3 overlay** in three busy places: Midtown (multi point, 8+ bots), Hightown (hide and seek), Lodestone (FFA, 8 bots). Note avg / **1% low / 0.1% low**. |
 | ☐ | Compare with the same three on the current production build (same settings, same machine). **Lows must not be worse by more than ~5%.** Performance comes first: a regression is a blocker. |
+| ☐ | **F3's mouse-to-photon graph**: every row has a sensible time; with NO VSYNC, LATENT SYNC and VSYNC the total is stable (no row growing without end). **F4** shows the number alone; F3 and F4 give about the same number. |
+| ☐ | **PRESENT: LATENT SYNC** (Windows, the default for a new config) in exclusive fullscreen: no tear line in play; fps sits at the refresh rate; F3 shows LATENT SYNC rows. On a PC (or a cap) below the refresh rate it tears instead of stuttering. TEAR LINE OFFSET appears with it. Linux / macOS: no LATENT SYNC option, NO VSYNC by default. |
+| ☐ | **MAX FPS** slider: drag, type a number, 0 = UNLIMITED; right-click sets your screen's refresh rate; the cap holds in F3. **GPU MAX CLOCKS** (NVIDIA): turning it on says it applies from the next start (or asks for administrator once). |
+| ☐ | Late mouse read: fast flicks show no lag or wobble on the weapon model, and nothing pops in late at the screen's edges. Alt-tabbed, moving the mouse doesn't turn you; the cursor is free on the desktop and held again when you're back. |
 | ☐ | Loading a big map (Midtown) the first time: the window never says "Not Responding"; joining a remote server's big map doesn't time out. |
 | ☐ | No stutter when bots spawn, when a round restarts, when the scoreboard opens, or when a demo is recording. |
 | ☐ | Alt+Enter switches borderless ↔ windowed (and doesn't also send Enter to chat). |
