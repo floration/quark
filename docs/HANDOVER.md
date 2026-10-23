@@ -88,6 +88,43 @@ These preferences come from the 1.17.0 session. They are not all in CLAUDE.md:
 4. **Automatic Worker deploys** ([OPERATIONS.md](OPERATIONS.md) section 3), whenever convenient.
 
 
+### Notes from the 1.17.0 session (things learned the hard way)
+
+**Releases and CI**
+- **1.17.0 leftovers in `release.yml`:** six conditions read `base != '1.17.0'` or `base == '1.17.0'`. They are dead from 1.17.1 on, because VERSION changes, so the tests run again. Remove them in a quiet change on `testing`, not mixed into a release.
+- **A tag made with the workflow token doesn't start a run.** That's why tags come from the owner (a Codespace or a local clone), and why the site-only run exists.
+- **The release job refuses a release that already exists.** If a production run fails after publishing, use the site-only run for the website. If it failed before publishing, fix it, delete the tag (`git push origin :refs/tags/v<V>`) and tag again.
+- **A job that `needs` a job which can be skipped** must use `if: "!cancelled() && ..."` with explicit `needs.X.result` checks. Without them, GitHub's implicit `success()` skips it whenever anything further back was skipped (this hit the 1.17.0 site deploy).
+- **Expect about 3.5 minutes** for a build-only CI run (all three platforms).
+- **The first testing prerelease will be the first real run of:**
+  - the per-group test matrix, including the Windows test runner. If one netcode timing check fails only on real Windows, give only that check a Windows tolerance (owner, C10);
+  - the testing server's standby on the owner's box. Check `systemctl status quark-testing` once it starts.
+
+**Cloud-session quirks**
+- **The cloud session's permission check blocked, even with the owner's approval in chat:**
+  - pushing a tag;
+  - writing a workflow that makes tags;
+  - at first, editing `release.yml` (flagged as a CI bypass). It went through once the owner explicitly chose that option.
+
+  So ask the owner before touching release machinery, and say exactly what you'll change.
+- **The git proxy answers HTTP 403** for any ref except the session's own branch. Don't retry; report it.
+- **`pkill -f <pattern>` kills your own shell** when the pattern is also in the command line (exit 144). Kill by PID instead.
+- **The GitHub tools can disconnect for a few minutes;** they come back.
+
+**Tests**
+- **`tools/release_check.sh`:**
+  - Xvfb needs a moment before the first map; the script waits for its socket.
+  - Lodestone and Midtown need up to 300 s for their first screenshot under software GL, because of the light bake.
+- **Always run tests with a private `TMPDIR`.** Group logs and data dirs otherwise collide with other runs, and a port held by another run fails `Server::start` silently.
+
+**Small cleanups noticed, not done**
+- **A gcc warning** at `src/client/community.cpp:119`: `addChat({...})` leaves `Feed::spans` out of the initializer. Harmless; add `{}`.
+- **The clang-only unused warnings** are listed in REMAINING.md section 2.
+
+**Assets**
+- **SUPER, HYPER and LOCATOR are synthesized in `audio.cpp`**, like every default sound. The owner may replace them through the Asset Studio, which lists all 33 sounds of each kit.
+
+
 ## 1. What quark is
 
 A fast, minimal FPS on a custom C++17 engine:
