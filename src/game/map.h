@@ -174,6 +174,17 @@ struct Map {
     // Shadow-ray style early out: light, sight and line of fire, so clip (material 9) doesn't block it unless
     // hitClip (movement probes: clip blocks players).
     bool raycastAny(const Vec3& origin, const Vec3& dir, float maxDist, bool hitClip = false) const;
+    // What blocked the last ray that used this hint: a grid slot (cell, and the slot in its brush list) or a moving solid.
+    struct RayHint { uint32_t cell = UINT32_MAX, ref = 0; int32_t dyn = -1; };
+    // raycastAny's answer, exactly, for every ray (PERF: lines of sight, where most rays are blocked, and by the same
+    // brush as the ray before). It first tries what the hint names: a moving solid the ray hits (raycastAny tests them
+    // all), or the brush in a grid slot that is still in that cell's list, isn't skipped (clip), is hit by the same
+    // rayAABB test, and whose cell the same cell walk reaches (a brush can be hit in a cell the walk never visits: the
+    // walk stops at the grid's solid Y slab, and at a corner it steps to one of the two neighbours only, while the box
+    // test alone counts a graze). raycastAny reaching that cell tests that slot unless it hit something first, so it
+    // answers blocked as well. Otherwise the full cast, learning its blocker into the hint. Nothing to invalidate: an
+    // edited brush, a rebuilt grid or a moved cart is only ever checked as it is now.
+    bool raycastAnyHinted(const Vec3& origin, const Vec3& dir, float maxDist, RayHint& hint, bool hitClip = false) const;
     // Hitscan bullets: like raycast, but passes through wallbang brushes; *through is set if it went
     // through at least one before the returned hit (or maxDist); *bangDist = distance to the first one.
     float raycastBullet(const Vec3& origin, const Vec3& dir, float maxDist, float* bangDist) const;

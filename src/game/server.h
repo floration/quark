@@ -645,6 +645,10 @@ private:
     uint32_t perspectives(int id) const;   // the players whose sight a client gets (bit per player), 0 = sees everything
     void updatePlayerVisibility(uint32_t need, int viewers, int targets, int& budget, float eyeH);
     void updateProjectileVisibility(uint32_t need, int viewers, int& budget, float eyeH);
+    // what last blocked each viewer's sight of each player / projectile slot (Map::raycastAnyHinted: same answers,
+    // most hidden rays settled by one box test and a short cell walk)
+    Map::RayHint visHint_[kMaxPlayers * kMaxPlayers];
+    Map::RayHint projVisHint_[kMaxPlayers][kMaxProjectiles];
     uint32_t viewNeeded_ = 0;              // alive players whose lines of sight are checked (humans, and bots someone watches)
     uint16_t projVisId_[kMaxProjectiles] = {};   // the projectile each slot's ServerPlayer::projSeen times are about
     uint32_t projShown_[kMaxProjectiles] = {};   // clients (bit each) that have been sent that projectile in sight

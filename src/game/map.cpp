@@ -1470,19 +1470,43 @@ float Map::raycastBullet(const Vec3& o, const Vec3& dir, float maxDist, float* b
     return best;
 }
 
-bool Map::raycastAny(const Vec3& o, const Vec3& dir, float maxDist, bool hitClip) const {
-    Vec3 inv = safeInv(dir);
+// raycastAny's cast, shared with raycastAnyHinted (one filter, one box test, one walk: the hint's pretest leans on
+// them being the same). Learn: note in *learn where the blocker was found.
+static bool skipsSight(const Brush& br, bool hitClip) { return br.material == 9 && !hitClip; }   // clip: players only (light, sight and shots pass)
+template <bool Learn> static bool castAny(const Map& m, const Vec3& o, const Vec3& dir, const Vec3& inv, float maxDist, bool hitClip, Map::RayHint* learn) {
     bool hit = false;
-    walkCells(*this, o, dir, maxDist, [&](size_t c, float) {
-        for (uint32_t k = cells[c].start, e = cells[c].end; k < e && !hit; k++) {
-            const Brush& br = brushes[cellBrushes[k]];
-            if (br.material == 9 && !hitClip) continue;   // clip: players only (light, sight and shots pass)
+    walkCells(m, o, dir, maxDist, [&](size_t c, float) {
+        for (uint32_t k = m.cells[c].start, e = m.cells[c].end; k < e && !hit; k++) {
+            const Brush& br = m.brushes[m.cellBrushes[k]];
+            if (skipsSight(br, hitClip)) continue;
             hit = rayAABB(o, inv, br.box, maxDist) >= 0;
+            if (Learn && hit) *learn = {(uint32_t)c, k, -1};
         }
         return !hit;
     });
-    for (const AABB& b : dynSolids) hit = hit || rayAABB(o, inv, b, maxDist) >= 0;
+    for (size_t j = 0; j < m.dynSolids.size() && !hit; j++)
+        if (rayAABB(o, inv, m.dynSolids[j], maxDist) >= 0) { hit = true; if (Learn) *learn = {UINT32_MAX, 0, (int32_t)j}; }
     return hit;
+}
+
+bool Map::raycastAny(const Vec3& o, const Vec3& dir, float maxDist, bool hitClip) const {
+    return castAny<false>(*this, o, dir, safeInv(dir), maxDist, hitClip, nullptr);
+}
+
+bool Map::raycastAnyHinted(const Vec3& o, const Vec3& dir, float maxDist, RayHint& hint, bool hitClip) const {
+    Vec3 inv = safeInv(dir);
+    // the hint first (see map.h): each test here is one castAny makes, on the same numbers, so "blocked" here is its answer
+    if (hint.dyn >= 0) {
+        if ((size_t)hint.dyn < dynSolids.size() && rayAABB(o, inv, dynSolids[hint.dyn], maxDist) >= 0) return true;
+    } else if (hint.cell < cells.size() && hint.ref >= cells[hint.cell].start && hint.ref < cells[hint.cell].end) {
+        const Brush& br = brushes[cellBrushes[hint.ref]];
+        if (!skipsSight(br, hitClip) && rayAABB(o, inv, br.box, maxDist) >= 0) {
+            bool reached = false;
+            walkCells(*this, o, dir, maxDist, [&](size_t c, float) { reached = c == hint.cell; return !reached; });
+            if (reached) return true;
+        }
+    }
+    return castAny<true>(*this, o, dir, inv, maxDist, hitClip, &hint);   // (a clear ray keeps its hint: the next may be blocked again)
 }
 
 bool Map::supportsMode(int mode) const {

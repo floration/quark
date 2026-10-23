@@ -2752,7 +2752,7 @@ void Server::updateProjectileVisibility(uint32_t need, int viewers, int& budget,
             Vec3 to = at - eye;
             float len = length(to);
             rays++;
-            if (len < 0.01f || !map_.raycastAny(eye, to / len, len)) { seen = true; break; }
+            if (len < 0.01f || !map_.raycastAnyHinted(eye, to / len, len, projVisHint_[v][k])) { seen = true; break; }
         }
         budget -= rays;
         visRays_ += rays;
@@ -2803,14 +2803,21 @@ void Server::updatePlayerVisibility(uint32_t need, int viewers, int targets, int
     // spreads out over the next interval instead of recurring), and never past the ray budget
     int quota = (int)std::ceil(active / (kVisInterval * tickRate())) + 1;
     const bool teams = modeIsTeamBased(ms_.mode);
+    uint32_t live = 0;   // (the targets: nothing below changes who is connected and alive)
+    for (int i = 0; i < kMaxPlayers; i++) live |= players_[i].connected && players_[i].alive ? 1u << i : 0;
     for (int n = 0; n < pairs && budget > 0 && quota > 0; n++) {
         uint32_t idx = visCursor_++ % pairs;
         int v = (int)(idx / kMaxPlayers), t = (int)(idx % kMaxPlayers);
         auto& pv = players_[v];
         if (!(need >> v & 1)) { visCursor_ += kMaxPlayers - 1 - t; n += kMaxPlayers - 1 - t; continue; }   // (the rest of this viewer's row)
-        if (now < pv.visDue[t] || t == v) continue;
+        // a pair that isn't due (itself, someone dead or gone, or checked less than kVisInterval ago) is passed over
+        // without a ray; the run of them from here to the next due pair in this row is passed over at once, the cursor
+        // and the scan's count moving exactly as one step each would (and stopping where the scan would end)
+        uint32_t due = live & ~(1u << v) & (~0u << t);
+        while (due && now < pv.visDue[lowestBit(due)]) due &= due - 1;
+        int next = due ? lowestBit(due) : kMaxPlayers;
+        if (next != t) { int skip = std::min(next - t, pairs - n); visCursor_ += skip - 1; n += skip - 1; continue; }
         auto& pt = players_[t];
-        if (!pt.connected || !pt.alive) continue;
         pv.visDue[t] = now + kVisInterval;
         quota--;
         bool mate = teams && pt.team == pv.team;
@@ -2830,7 +2837,7 @@ void Server::updatePlayerVisibility(uint32_t need, int viewers, int targets, int
                 Vec3 to = pt.move.pos + off - from;
                 float len = length(to);
                 rays++;
-                if (len < 0.01f || !map_.raycastAny(from, to / len, len)) { seen = true; break; }
+                if (len < 0.01f || !map_.raycastAnyHinted(from, to / len, len, visHint_[idx])) { seen = true; break; }
             }
         budget -= rays;
         visRays_ += rays;
