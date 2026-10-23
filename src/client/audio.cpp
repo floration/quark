@@ -446,9 +446,10 @@ void Audio::wasapiThread(std::atomic<int>* started) {
                                           AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, period, 0, &wf, nullptr)) &&
                  SUCCEEDED(ac->SetEventHandle(ev)) && SUCCEEDED(ac->GetBufferSize(&frames)) && frames > 0 &&
                  SUCCEEDED(ac->GetService(kIidAudioRenderClient, (void**)&rc));
-            // Windows gives a bigger buffer than asked (23 ms on the owner's PC): keeping it full would be that late.
-            // Two periods queued: the engine takes one per wake-up, so there's a whole period of slack if we're late.
-            target = std::min<UINT32>(frames, (UINT32)(2 * period * R / 10000000));
+            // Windows gives a bigger buffer than asked (23 ms on the owner's PC): keeping it full would be that late. One
+            // engine period queued: the engine takes exactly one per wake-up and we refill it straight away (the owner
+            // tried 1-20 ms on 2026-10-23: 10 ms, one period, was clean; anything less got worse).
+            target = std::min<UINT32>(frames, (UINT32)(period * R / 10000000));
             // (testing where a PC starts cutting out: QUARK_AUDIO_MS=<ms queued>, e.g. 10 / 12 / 13 / 15)
             if (const char* e = getenv("QUARK_AUDIO_MS")) {
                 double ms = atof(e);
