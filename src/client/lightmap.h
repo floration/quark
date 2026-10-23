@@ -29,5 +29,8 @@ struct BakedWorld {
 // thread on a private copy of the map (the client bakes a joined map on a worker thread: PERF-3).
 void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)>& progress = nullptr,
                 const std::atomic<bool>* cancel = nullptr);
+// The GPU's largest texture side (GL_MAX_TEXTURE_SIZE, set by the renderer at start): the lightmap atlas is packed to
+// fit it (PERF-13). Until set: 4096, what every GL 3.3 driver we run on offers.
+void setLightmapMaxTextureSize(int px);
 // Sun visibility (0..1) of a point; used for lighting dynamic objects consistently with the bake.
 float sunVisibility(const Map& map, const Vec3& p);

@@ -343,6 +343,11 @@ unsigned Renderer::compile(const char* vs, const char* fs, std::string* err) {
 }
 
 bool Renderer::init(int shadowRes, std::string* err) {
+    {   // the lightmap atlas is packed to fit the GPU's largest texture (PERF-13)
+        GLint64 maxTex = 0;
+        glGetInteger64v(GL_MAX_TEXTURE_SIZE, &maxTex);
+        if (maxTex > 0) setLightmapMaxTextureSize((int)std::min<GLint64>(maxTex, 1 << 15));
+    }
     std::string worldFS = std::string("#version 330 core\n") + kShadowFn + kWorldFS;
     std::string dynFS = std::string("#version 330 core\n") + kShadowFn + kDynFS;
     worldProg_ = compile(kWorldVS, worldFS.c_str(), err);
