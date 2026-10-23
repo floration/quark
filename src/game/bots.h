@@ -78,6 +78,17 @@ struct BotBrain {
     Vec3 waypoint, pathGoal;
     double repathAt = 0, nextSteer = 0;
     bool needPath = true;
+    // botThink's per-tick constants: functions of the tick length and the skill level only (exp, lround), worked out
+    // again whenever either changes (bots.cpp tickConsts: the same expressions, so bit-identical to inline)
+    struct TickConsts {
+        float dt = -1; int rate = -1, skill = -1;   // what they were worked out for
+        float velK = 0;                    // perceived velocity catch-up per tick: 1 - exp(-dt / velTau)
+        float noiseA = 0, noiseKK = 0;     // tracking error: exp(-dt / noiseTau), sqrt(max(0, 1 - a^2))
+        float settle = 0;                  // flick error left after a tick: exp(-dt / settleTau)
+        float pJump = 0, pDash = 0, pRunDash = 0, pPulledDash = 0; // chance thresholds 1 - exp(-rate * dt)
+        int seenTicks = 0, olderTicks = 0; // seenAgo's history offsets (visDelayMs, visDelayMs + 16)
+        int turnSteps = 1; float turnH = 0, turnDv = 0; // the hand's 1 ms steps: count, length, speed change
+    } tc;
 };
 
 struct NavJob;

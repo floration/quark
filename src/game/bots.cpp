@@ -326,10 +326,15 @@ float gauss(BotBrain& b) { // Box-Muller
     float u = std::max(rnd(b), 1e-7f), v = rnd(b);
     return std::sqrt(-2.0f * std::log(u)) * std::cos(2 * PI * v);
 }
-// An event that happens `rate` times a second on average: the chance over this tick (any tick length)
-bool chance(BotBrain& b, float rate, float dt) { return rate > 0 && rnd(b) < 1.0f - std::exp(-rate * dt); }
+// An event that happens `rate` times a second on average: the chance over this tick (any tick length) is
+// p = 1 - exp(-rate * dt) (from tickConsts)
+bool chance(BotBrain& b, float rate, float p) { return rate > 0 && rnd(b) < p; }
 
-float angleDiff(float a, float b) { return std::remainder(a - b, 2 * PI); }
+// std::remainder(x, 2 pi), the angle wrapped into -pi..pi. When |x| <= pi it is x itself (the nearest multiple of
+// 2 pi is 0, and a tie at exactly pi goes to the even one, 0, as well), which is most calls: the library call (~6-20 ns
+// on MinGW) only beyond that. remainder is exact, so this is bit-identical to always calling it.
+float wrapAngle(float x) { return std::fabs(x) <= PI ? x : std::remainder(x, 2 * PI); }
+float angleDiff(float a, float b) { return wrapAngle(a - b); }
 float yawOf(const Vec3& d) { return std::atan2(-d.x, -d.z); }
 
 Vec3 eyeOf(const ServerPlayer& p, float scale = 1.0f) {
@@ -362,8 +367,9 @@ bool canSee(const Server& s, const Vec3& from, const Vec3& to) {
 // Where a player was `ms` before the last recorded tick (lag-compensation history): what the bot's eyes are
 // reporting now. (Counted from the last recorded tick, which is also what a shot fired now is tested against,
 // so the bot's lag behind the target is the same at every tick rate.)
-Vec3 seenAgo(const Server& s, const ServerPlayer& t, float ms) {
-    int ticks = 1 + (int)std::lround(ms * s.tickRate() * 0.001f);
+// `ticks` = seenAgoTicks(ms, the tick rate) (from tickConsts).
+int seenAgoTicks(float ms, int rate) { return 1 + (int)std::lround(ms * rate * 0.001f); }
+Vec3 seenAgo(const Server& s, const ServerPlayer& t, float ms, int ticks) {
     if (ticks >= ServerPlayer::kHistory || (int64_t)s.tick_ < ticks) return t.move.pos;
     const auto& h = t.history[(s.tick_ - ticks) % ServerPlayer::kHistory];
     int64_t want = (int64_t)s.timeMs_ - 1000 / s.tickRate() - (int64_t)ms;
@@ -617,6 +623,29 @@ constexpr int kPathsPerTick = 2;
 thread_local uint32_t g_pathTick = ~0u;   // (per thread: a process can host several servers)
 thread_local int g_pathsThisTick = 0;
 
+// botThink's per-tick constants (exp, sqrt, lround of the tick length and the skill's parameters), worked out once
+// per tick rate and skill instead of on every tick. Exactly the expressions botThink used inline, on the same float
+// values: the results are bit-identical (no -ffast-math, -ffp-contract=off: CMakeLists.txt).
+const BotBrain::TickConsts& tickConsts(BotBrain& b, int skill, const SkillParams& sp, float dt, int rate) {
+    BotBrain::TickConsts& c = b.tc;
+    if (c.dt != dt || c.rate != rate || c.skill != skill) {
+        c.dt = dt; c.rate = rate; c.skill = skill;
+        c.velK = 1.0f - std::exp(-dt / sp.velTau);
+        float a = std::exp(-dt / sp.noiseTau);
+        c.noiseA = a;
+        c.noiseKK = std::sqrt(std::max(0.0f, 1.0f - a * a));
+        c.settle = std::exp(-dt / sp.settleTau);
+        auto p = [dt](float r) { return 1.0f - std::exp(-r * dt); };
+        c.pJump = p(sp.jumpRate); c.pDash = p(sp.dashRate); c.pRunDash = p(sp.runDash); c.pPulledDash = p(3.0f);
+        c.seenTicks = seenAgoTicks(sp.visDelayMs, rate);
+        c.olderTicks = seenAgoTicks(sp.visDelayMs + 16.0f, rate);
+        c.turnSteps = std::max(1, (int)std::lround(dt * 1000.0f));
+        c.turnH = dt / c.turnSteps;
+        c.turnDv = sp.turnAccel * c.turnH;
+    }
+    return c;
+}
+
 } // namespace
 
 const char* botSkillName(int skill) {
@@ -627,7 +656,8 @@ const char* botSkillName(int skill) {
 UserCmd botThink(Server& s, int id) {
     ServerPlayer& me = s.players_[id];
     BotBrain& b = s.bots_[id];
-    const SkillParams& sp = kSkills[b.skill < 0 || b.skill >= BOT_SKILLS ? 1 : b.skill];
+    const int skill = b.skill < 0 || b.skill >= BOT_SKILLS ? 1 : b.skill;
+    const SkillParams& sp = kSkills[skill];
     const double now = s.time(); const float dt = s.dt();
     if (b.script) return b.script(s, id);
     UserCmd cmd;
@@ -650,6 +680,7 @@ UserCmd botThink(Server& s, int id) {
         return cmd;
     }
     Vec3 eye = eyeOf(me, s.bodyScale());
+    const BotBrain::TickConsts& tc = tickConsts(b, skill, sp, dt, s.tickRate());
 
     // --- perception (20 Hz of game time, each bot at its own phase)
     bool damageOn = (s.ms_.phase == PHASE_LIVE || s.ms_.phase == PHASE_WARMUP) && !(s.ms_.mode == MODE_RACE && s.ms_.phase != PHASE_WARMUP);
@@ -792,12 +823,11 @@ UserCmd botThink(Server& s, int id) {
         }
         Vec3 perceived;
         if (ta->visible) {
-            perceived = seenAgo(s, t, sp.visDelayMs);
-            Vec3 older = seenAgo(s, t, sp.visDelayMs + 16.0f);
+            perceived = seenAgo(s, t, sp.visDelayMs, tc.seenTicks);
+            Vec3 older = seenAgo(s, t, sp.visDelayMs + 16.0f, tc.olderTicks);
             Vec3 vObs = (perceived - older) / 0.016f;
             if (length(vObs) < 40.0f) { // (not a respawn / teleport)
-                float k = 1.0f - std::exp(-dt / sp.velTau);
-                b.velEst += (vObs * b.speedJudge - b.velEst) * k;
+                b.velEst += (vObs * b.speedJudge - b.velEst) * tc.velK;
             }
             perceived += b.velEst * (sp.visDelayMs * 0.001f * sp.predict);
         } else { // behind cover: where it should be by now if it kept going
@@ -839,10 +869,10 @@ UserCmd botThink(Server& s, int id) {
         }
         // tracking error: a random process in game time (exact for any tick length)
         float sigma = sp.trackBase + sp.trackPerRad * std::fabs(angSpeed);
-        float a = std::exp(-dt / sp.noiseTau), kk = std::sqrt(std::max(0.0f, 1.0f - a * a));
+        const float a = tc.noiseA, kk = tc.noiseKK;
         b.noiseYaw = b.noiseYaw * a + sigma * kk * gauss(b);
         b.noisePitch = b.noisePitch * a + sigma * 0.6f * kk * gauss(b);
-        float settle = std::exp(-dt / sp.settleTau);
+        const float settle = tc.settle;
         b.flickYaw *= settle; b.flickPitch *= settle;
         wantYaw = tgtYaw + b.noiseYaw + b.flickYaw;
         wantPitch = tgtPitch + b.noisePitch + b.flickPitch;
@@ -919,14 +949,14 @@ UserCmd botThink(Server& s, int id) {
             moveDir += side;
             // held by the target's grapple and wanting range (no close-range weapon): advanced and up dash out of it
             if ((me.move.flags & MF_PULLED) && sp.grapple && ideal > 6.0f && (me.move.dashCharges > 0 && me.move.dashCooldownMs == 0 && me.move.dashTimer <= 0) && !b.nearEdge && !b.edgeFar &&
-                chance(b, 3.0f, dt)) {
+                chance(b, 3.0f, tc.pPulledDash)) {
                 Vec3 out = Vec3(-toN.z, 0, toN.x) * (b.strafeDir != 0 ? b.strafeDir : 1.0f);
                 if (groundAlong(s, me.move.pos, out, 10.0f)) { moveDir = out; cmd.buttons |= BTN_DASH; }
             }
             // (no jumps or dashes within 5 m of a drop: a hit in the air there, a blast or a laser push, is a fall)
             if ((me.move.flags & MF_ONGROUND) && !b.nearEdge && !b.edgeFar) {
-                if (chance(b, sp.jumpRate, dt)) cmd.buttons |= BTN_JUMP;
-                if ((me.move.dashCharges > 0 && me.move.dashCooldownMs == 0 && me.move.dashTimer <= 0) && chance(b, sp.dashRate, dt)) {
+                if (chance(b, sp.jumpRate, tc.pJump)) cmd.buttons |= BTN_JUMP;
+                if ((me.move.dashCharges > 0 && me.move.dashCooldownMs == 0 && me.move.dashTimer <= 0) && chance(b, sp.dashRate, tc.pDash)) {
                     if (dist > 20) moveDir = toN;                                  // close in
                     else moveDir = Vec3(-toN.z, 0, toN.x) * (b.strafeDir != 0 ? b.strafeDir : 1.0f); // dodge sideways
                     if (groundAlong(s, me.move.pos, normalize(moveDir), 10.0f)) cmd.buttons |= BTN_DASH;
@@ -974,7 +1004,7 @@ UserCmd botThink(Server& s, int id) {
         } else {
             if (now >= b.nextGlance) { // (moving: off the route's heading; standing: a new direction to face)
                 float off = (rnd(b) * 2 - 1) * (idle ? 2.6f : 1.6f);
-                b.glanceYaw = idle ? std::remainder(b.aimYaw + off, 2 * PI) : off;
+                b.glanceYaw = idle ? wrapAngle(b.aimYaw + off) : off;
                 b.glanceUntil = now + (idle ? 1.0 + rnd(b) * 1.5 : 0.35 + rnd(b) * 0.4);
                 b.nextGlance = now + 1.5 + rnd(b) * 3.0;
             }
@@ -1030,17 +1060,16 @@ UserCmd botThink(Server& s, int id) {
     // settle; while tracking, the hand also moves with the target. Stepped in 1 ms of game time whatever the
     // tick length, so the hand is the same at every server tick rate.
     auto turn = [&](float& ang, float& vel, float want, float ff, bool wrap) {
-        int steps = std::max(1, (int)std::lround(dt * 1000.0f));
-        const float h = dt / steps;
+        const int steps = tc.turnSteps;
+        const float h = tc.turnH, dv = tc.turnDv;
         for (int k = 0; k < steps; k++) {
             float diff = wrap ? angleDiff(want, ang) : want - ang;
             float brake = std::sqrt(2.0f * sp.turnAccel * std::fabs(diff)) * 0.85f;
             float corr = clampf(diff * gain, -brake, brake);
             float target = clampf(ff + corr, -sp.turnRate, sp.turnRate);
-            float dv = sp.turnAccel * h;
             vel += clampf(target - vel, -dv, dv);
             ang += vel * h;
-            if (wrap) ang = std::remainder(ang, 2 * PI);
+            if (wrap) ang = wrapAngle(ang);
         }
     };
     // The command carries the view as it is at the start of this tick (the hand then moves on through the tick),
@@ -1099,7 +1128,7 @@ UserCmd botThink(Server& s, int id) {
         if (hopping) cmd.buttons |= BTN_JUMP;
         // long straight stretch: dash along it (levels that would), when it lands on something
         if (!fighting && onGround && sp.runDash > 0 && (me.move.dashCharges > 0 && me.move.dashCooldownMs == 0 && me.move.dashTimer <= 0) && !(me.move.mods & MOVE_RUN_ONLY) &&
-            length(b.waypoint - me.move.pos) > 9.0f && dot(moveDir, fwd) > 0.95f && chance(b, sp.runDash, dt)) {
+            length(b.waypoint - me.move.pos) > 9.0f && dot(moveDir, fwd) > 0.95f && chance(b, sp.runDash, tc.pRunDash)) {
             if (groundAlong(s, me.move.pos, moveDir, 12.0f)) {
                 cmd.buttons |= BTN_DASH;
                 // experts with the room make it a dash jump: jump with it and keep the dash's 24 m/s through a
