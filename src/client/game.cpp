@@ -4625,7 +4625,11 @@ void Game::drawPerf() {
             pipeN_ = 0;
             pipeHave_ = true;
         }
-        if (mouseBurstTime_ > 0.1) { mouseHz_ = mouseBurstEvents_ / mouseBurstTime_; mouseBurstEvents_ = mouseBurstTime_ = 0; }
+        if (mouseBurstTime_ > 0.1) {   // the mouse's rate: the highest standard one it has shown (125 Hz x 2^n, from 10% under)
+            const double hz = mouseBurstEvents_ / mouseBurstTime_;
+            for (double r = 8000; r >= 125; r /= 2) if (hz >= r * 0.9) { mouseHz_ = std::max(mouseHz_, r); break; }
+            mouseBurstEvents_ = mouseBurstTime_ = 0;
+        }
         perfTick_ = std::string("QUARK V") + QUARK_VERSION;   // (with the numbers, not every frame)
         if (net_.hasSnapshot()) perfTick_ += "  SERVER " + std::to_string(net_.tickRate()) + " HZ  LOSS " + std::to_string(net_.snapshotLoss()) + "%";
     }
@@ -4715,7 +4719,7 @@ void Game::drawPipeline(float x, float y, float ts) {
     // before the game reads it: the mouse's report (half its interval on average), then the wait for the next poll
     const double queue = frame * 0.5, mouse = 0.5 / mouseRate;
     char mb[64];
-    snprintf(mb, sizeof mb, "MOUSE %s %.0f HZ (AVG)", mouseKnown ? "REPORTS AT" : "ASSUMED", mouseRate);
+    snprintf(mb, sizeof mb, "MOUSE %s %.0f HZ (AVG)", mouseKnown ? "POLLS AT" : "ASSUMED", mouseRate);
     rows.push_back({mb, -queue - mouse, -queue, cIn});
     rows.push_back({"WAITING FOR THE NEXT READ (AVG)", -queue, 0, cWait});
     auto span = [&](const char* name, int m0, int m1, Color c) { if (a[m1] - a[m0] > 0) rows.push_back({name, a[m0], a[m1], c}); };
