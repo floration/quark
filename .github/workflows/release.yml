@@ -117,6 +117,7 @@ jobs:
     needs: [meta, windows]
     runs-on: windows-2022
     timeout-minutes: 45
+    if: needs.meta.outputs.base != '1.17.0'   # 1.17.0 alone ships on its local test run (owner); every later version is tested here
     strategy:
       fail-fast: false   # (every failing group shows up in one run)
       matrix:
@@ -166,6 +167,7 @@ jobs:
     needs: [meta, linux]
     runs-on: ubuntu-22.04
     timeout-minutes: 45
+    if: needs.meta.outputs.base != '1.17.0'   # (as windows-tests)
     strategy:
       fail-fast: false
       matrix:
@@ -186,7 +188,7 @@ jobs:
 
   sanitizers:   # REVIEW ENG-3: work branches only (never a release, and no release job waits for it)
     needs: meta
-    if: needs.meta.outputs.channel == 'none'
+    if: needs.meta.outputs.channel == 'none' && needs.meta.outputs.base != '1.17.0'   # (1.17.0: no CI tests, owner)
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     steps:
@@ -240,7 +242,8 @@ jobs:
 
   release:   # PRODUCTION: every platform, signed, latest
     needs: [meta, windows, windows-tests, linux, linux-tests, macos]
-    if: needs.meta.outputs.channel == 'production'
+    # (!cancelled(): the skipped 1.17.0 tests would otherwise skip this too; every other job it needs must have passed)
+    if: "!cancelled() && needs.meta.outputs.channel == 'production' && needs.meta.result == 'success' && needs.windows.result == 'success' && needs.linux.result == 'success' && needs.macos.result == 'success' && (needs.windows-tests.result == 'success' || (needs.windows-tests.result == 'skipped' && needs.meta.outputs.base == '1.17.0')) && (needs.linux-tests.result == 'success' || (needs.linux-tests.result == 'skipped' && needs.meta.outputs.base == '1.17.0'))"
     runs-on: ubuntu-24.04
     environment: production
     permissions:
@@ -284,7 +287,7 @@ jobs:
 
   release-testing:   # TESTING: Windows + Linux, signed prerelease (macOS follows in release-testing-macos)
     needs: [meta, windows, windows-tests, linux, linux-tests]
-    if: needs.meta.outputs.channel == 'testing'
+    if: "!cancelled() && needs.meta.outputs.channel == 'testing' && needs.meta.result == 'success' && needs.windows.result == 'success' && needs.linux.result == 'success' && (needs.windows-tests.result == 'success' || (needs.windows-tests.result == 'skipped' && needs.meta.outputs.base == '1.17.0')) && (needs.linux-tests.result == 'success' || (needs.linux-tests.result == 'skipped' && needs.meta.outputs.base == '1.17.0'))"
     runs-on: ubuntu-24.04
     environment: testing
     permissions:
