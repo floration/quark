@@ -489,6 +489,8 @@ static void testRulesValues() {
     CHECK(in(r.fireRate[1], 0.1f, 10) && in(r.damage[1], 0, 10) && in(r.projSpeed[1], 0.1f, 5));
     (void)def;
     CHECK(r.fromText("custommode=x\ngravity=99\nweapon=2,0,99,0\n") && r.gravity == 3 && r.damage[2] == 10);   // in range still clamps
+    // a map name with nothing safe in it is dropped, never kept as "" (the host would start on map ""; fuzz_rules)
+    CHECK(r.fromText("custommode=x\nmaps= ,temple,   ,anvil\n") && r.maps == std::vector<std::string>({"temple", "anvil"}));
     CHECK(!r.fromText("custommode=" + std::string(40, ' ') + "x\n"));   // cut to 40 first: all spaces, so no mode
     CustomRules a, b;
     CHECK(a.fromText("custommode=  my mode  \ngravity=2\nweapon=3,2,0.5,1\nmaps=temple,../x\n"));
