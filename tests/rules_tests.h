@@ -617,11 +617,11 @@ static void testGrappleLagComp(uint16_t port) {
     s.stop();
 }
 
-// 5.5: the head is a head-sized box on top, not the full-width top 20%: shoulders are body shots. The sniper does a
-// flat 50.
+// 5.5: the head is a head-sized box on top, not the full-width top 20%: shoulders are body shots. The sniper does 40
+// on the body, 50 on the head (owner 1.18; 1.17 a flat 50).
 static void testHeadBox(uint16_t port) {
     printf("headshots: the head, not the shoulders\n");
-    CHECK(weaponDef(WPN_SNIPER).damage == 50 && headDamage(WPN_SNIPER) == 50);
+    CHECK(weaponDef(WPN_SNIPER).damage == 40 && headDamage(WPN_SNIPER) == 50);
     AABB hb = playerBox(Vec3(0, 0, 0), false);
     AABB h = headBox(hb);
     CHECK(h.mx.y == hb.mx.y && std::fabs(h.mn.y - (hb.mx.y - kPlayerHeight * kHeadFraction)) < 1e-5f);
