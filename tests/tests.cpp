@@ -3448,6 +3448,36 @@ static void testMasterReplies(uint16_t port) {
     if (!r.empty() && r.back().first == "k79") CHECK(r.size() == MasterAnnouncer::kMaxReplies && r.front().first == "k16");   // (all done: the newest 64)
 }
 
+// The live ranked lock (no votes, no map / mode changes, no team switches) holds for exactly the three rated ladders:
+// 1v1 vanilla, 1v1 laser vampire and instagib free for all (JUDGMENT_CALLS C15). Not the time trial, nor any other mode
+// or ruleset, even with a match id open.
+static void testRankedLockLadders() {
+    printf("ranked lock: exactly 1v1 vanilla, 1v1 laser vampire, instagib ffa\n");
+    int locked = 0;
+    for (int v = 0; v < kArenaVariants; v++)
+        for (int mode = 0; mode < MODE_COUNT; mode++) {
+            Server s;
+            s.cfg_.ranked = true;
+            s.cfg_.arenaVariant = v;
+            s.cfg_.mode = mode;
+            s.rankedMatch_ = "0123456789abcdef";
+            s.ms_.phase = PHASE_LIVE;
+            bool ladder = (v == 0 && mode == MODE_ARENA) || (v == 1 && mode == MODE_ARENA) || (v == 5 && mode == MODE_FFA);
+            CHECK(arenaVariantRanked(v) == (v == 0 || v == 1 || v == 5));
+            CHECK(s.rankedLive() == ladder);
+            locked += s.rankedLive();
+            s.ms_.phase = PHASE_WARMUP;
+            CHECK(!s.rankedLive());
+        }
+    CHECK(locked == 3);
+    Server t;   // the Viaduct time trial: best times, no rating, never locked
+    t.cfg_.timeTrial = true; t.cfg_.mode = MODE_RACE; t.cfg_.map = "viaduct";
+    t.rankedMatch_ = "0123456789abcdef"; t.ms_.phase = PHASE_LIVE;
+    CHECK(!t.rankedLive());
+    t.cfg_.ranked = true;
+    CHECK(!t.rankedLive());
+}
+
 // One placement threshold: the game's kPlacementGames is the Worker's PLACEMENT_GAMES.
 static void testPlacementConstant() {
     printf("placement threshold matches the Worker\n");
@@ -4747,7 +4777,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); testTagLateJoin(TP(29455)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "nav") { testNavGraph(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testRankedRelay(TP(29630)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterReplies(TP(29629)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testRankedRelay(TP(29630)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterReplies(TP(29629)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(TP(29600)); testEditSession(TP(29601)); testVotedEdit(TP(29602)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
     if (argc >= 2 && std::string(argv[1]) == "exportassets") return exportAssets(argc > 2 ? argv[2] : "assets_export") ? 1 : 0;
@@ -4792,7 +4822,7 @@ int main(int argc, char** argv) {
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
         {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
-        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); }},
+        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); }},
         {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
         {"rules", [] { testGameRules(""); }},
         {"assets", [] { g_fail += assetTests(); }},

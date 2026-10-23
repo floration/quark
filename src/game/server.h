@@ -375,7 +375,10 @@ public:
     void sendRaceTicket(const std::string& pub, const std::string& sig, const std::string& addr);
     // While a ranked match is live (ticket opened at the first round going live, until the match ends) nothing may
     // change it: no votes, no map / mode / ranked changes, no team switches, no kicking its players (OWNER 3.4).
-    bool rankedLive() const { return cfg_.ranked && !rankedMatch_.empty() && ms_.phase != PHASE_WARMUP && ms_.phase != PHASE_MATCH_END; }
+    // Exactly the three rated ladders are locked (JUDGMENT_CALLS C15): 1v1 vanilla, 1v1 laser vampire and instagib free
+    // for all. The Viaduct time trial (best times only, no rating), tourneys and everything else never are.
+    bool rankedLadderPlayed() const { return cfg_.ranked && arenaVariantRanked(cfg_.arenaVariant) && cfg_.mode == rankedMode(cfg_.arenaVariant) && !cfg_.timeTrial; }
+    bool rankedLive() const { return rankedLadderPlayed() && !rankedMatch_.empty() && ms_.phase != PHASE_WARMUP && ms_.phase != PHASE_MATCH_END; }
     bool rankedTicketSent_ = false;   // the ticket went out (or was given up on): no more signatures needed
     double rankedSigDeadline_ = 0;    // players must sign the match id by then, else the match isn't rated
     void maybeSendRankedTicket(bool giveUp = false);
