@@ -296,6 +296,39 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: { name: macos, path: "quark-macos.zip\nquark-macos.qpak\nquark-launcher-macos.zip" }
 
+  macos-watchdog:   # GitHub often has no macOS runner free: then the macos job waits in the queue for hours and holds the
+    # run (and the next testing push behind it). After 5 min queued, once every other job has finished, this cancels the
+    # run, skipping only the macOS part (the testing prerelease is out by then; production waits for macOS as always), and
+    # macos-retry.yml re-runs the cancelled macOS part (and what needs it) an hour later. Owner's call, 2026-10-23.
+    needs: meta
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      actions: write   # (to cancel this run; nothing else)
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.run_id }}
+          ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -u
+          start=$(date +%s); idle=0
+          while :; do
+            sleep 60
+            jobs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN/attempts/$ATTEMPT/jobs?per_page=100" --jq .jobs) || continue
+            mac=$(echo "$jobs" | jq -r '[.[] | select(.name == "macos")][0].status // "none"')
+            case "$mac" in in_progress|completed|none) echo "macos: $mac"; exit 0;; esac
+            # (jobs that need macos aren't created yet; ask for 3 idle minutes in a row: a job that needs another is
+            # created a few seconds after that one ends)
+            busy=$(echo "$jobs" | jq '[.[] | select(.name != "macos" and .name != "macos-watchdog" and .status != "completed")] | length')
+            if [ "$busy" = 0 ]; then idle=$((idle + 1)); else idle=0; fi
+            if [ $(( $(date +%s) - start )) -ge 300 ] && [ "$idle" -ge 3 ]; then
+              echo "::warning::no macOS runner in 5 min: skipping macOS (cancelling the run); macos-retry.yml re-runs it in about an hour"
+              gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$RUN/cancel"
+              exit 0
+            fi
+          done
+
   release:   # PRODUCTION: every platform, signed, latest
     needs: [meta, windows, windows-tests, linux, linux-tests, linux-uitest, macos]
     # (!cancelled(): the skipped 1.17.0 tests would otherwise skip this too; every other job it needs must have passed)
