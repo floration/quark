@@ -2323,7 +2323,17 @@ void Game::drawHud() {
             };
             int cw = net_.selfWeapon();
             bar(bcy + 40 * k, "WEAPON", (float)std::max(0.0, (cw == WPN_LOCATOR ? locatorReady_ : localNextFire_) - time_), weaponDef(cw).refire);   // (the locator: its recharge)
-            bar(bcy + 52 * k, "DASH", mv.dashCooldown, kDashCooldown * moveTuning().m[MV_DASH_COOLDOWN]);
+            {   // dash: a pip per charge (lit = there to spend; the ground refills them, a bhop landing one)
+                int n = dashMaxCharges(mv.mods), have = std::min<int>(mv.dashCharges, n);
+                float bw = 90 * k, bh = 5 * k, bx = bcx - bw * 0.5f, y = bcy + 52 * k, gap = 4 * k, pw = (bw - gap * (n - 1)) / n;
+                for (int i = 0; i < n; i++) {
+                    float px = bx + i * (pw + gap);
+                    r_.rect(px - 1, y - 1, pw + 2, bh + 2, {0, 0, 0, 0.8f});
+                    if (i < have) r_.rect(px, y, pw, bh, full);
+                }
+                float lts = std::max(1.0f, std::round(ts * 0.5f * e.scale));
+                r_.text(bx - r_.textWidth("DASH", lts) - 6 * k, y - 2 * k, lts, "DASH", have > 0 ? kWhite : kGrey);
+            }
             bar(bcy + 64 * k, "HOOK", mv.hookCooldown, kHookCooldown * moveTuning().m[MV_HOOK_COOLDOWN]);
         }
         if (!paused_ && !he(Settings::HUD_SPEED).hidden) {   // speed meter: speed is unbounded, so the bar fills on a saturating exponential curve
@@ -2559,7 +2569,7 @@ void Game::computeHudVals() {
     auto set = [&](int i, float v, float mx) { h.v[i] = v; h.max[i] = mx; };
     set(HV_HEALTH, (float)net_.selfHealth(), 100);
     set(HV_SPEED, std::sqrt(mv.vel.x * mv.vel.x + mv.vel.z * mv.vel.z), 40);
-    set(HV_DASH, 100.0f * (1.0f - clampf(mv.dashCooldown / (kDashCooldown * moveTuning().m[MV_DASH_COOLDOWN]), 0, 1)), 100);   // % ready
+    set(HV_DASH, (float)mv.dashCharges, (float)dashMaxCharges(mv.mods));   // dash charges left (1.17: was % of the cooldown)
     set(HV_HOOK, 100.0f * (1.0f - clampf(mv.hookCooldown / (kHookCooldown * moveTuning().m[MV_HOOK_COOLDOWN]), 0, 1)), 100);
     {   // fps over the last second: average and the worst frame
         double sum = 0, worst = 0;
@@ -4063,18 +4073,20 @@ static const char* const kInfoPages[][48] = {
     {   // CONTROLS
         "# DEFAULT KEYS (Settings > CONTROLS to change any of them, two keys per action)",
         "W A S D - move.   SPACE - jump (hold it as you land to bounce: bunny hop).",
-        "SHIFT - dash: a burst of speed in the direction you're moving, tilted by where you look.",
+        "SHIFT - dash: a burst of speed in the direction you're moving, tilted by where you look. You hold 2 dashes: landing refills both, a bunny hop one.",
         "Q - grapple: hold to hook what you're aiming at and pull toward it; release to let go.",
         "LEFT MOUSE - fire.   RIGHT MOUSE - alt-fire (scope, knife throw, rocket lob, bubble stream, syringe throw...).",
         "E - use (plant / defuse the bomb).   1-9, 0 - weapons.   MOUSE WHEEL - next / previous weapon.",
         "TAB - scoreboard.   ENTER - chat.   F1 / F2 - vote yes / no.   F4 - vote to start the match.",
         "F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.",
         "# MOVEMENT",
-        "Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping.",
-        "Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump.",
-        "Super dash: look down and dash into the floor while holding jump for even more speed and a low hop.",
-        "Dash into a wall head-on (under 45 degrees) and you bounce off it at full dash speed.",
-        "You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb.",
+        "You run at 9.5 m/s. In the air, holding a direction drifts you up to run speed (a standing jump moves too).",
+        "Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.",
+        "Each dash leaves you 1 m/s faster than you went in (at least 11, at most 32 m/s).",
+        "Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump (it leaves you both dashes).",
+        "Super dash: look down and dash into the floor while holding jump for even more speed and a low hop (it leaves you 1 dash).",
+        "Dash into a wall head-on (under 45 degrees) and you bounce off it at full dash speed (it leaves you 1 dash).",
+        "You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb (6.75 m/s).",
         "# WEAPONS",
         "ROCKET (splash; rocket jump off the floor for 10% damage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).",
         "A thrown knife or syringe is gone for 4 s (greyed out in the weapon list, with its timer).",
