@@ -109,6 +109,7 @@ static int migrateFile(const fs::path& src, const fs::path& dst) {
     fs::create_directories(dst.parent_path(), ec);
     fs::path tmp = dst;
     tmp += ".migrating";
+    fs::remove(tmp, ec);   // (MinGW's copy_file can't overwrite on Windows)
     if (!fs::copy_file(src, tmp, fs::copy_options::overwrite_existing, ec) || readAll(tmp) != readAll(src)) { fs::remove(tmp, ec); return 0; }
     fs::rename(tmp, dst, ec);
     if (ec) { fs::remove(tmp, ec); return 0; }

@@ -3032,6 +3032,7 @@ static bool saveEditedMap(const std::string& path, const std::string& text, bool
     if (!check.parse(text, &perr)) { *err = "autosave skipped, the edited map wouldn't load: " + perr; return false; }
     if (backup) {
         std::error_code ec;
+        std::filesystem::remove(path + ".bak", ec);   // (MinGW's copy_file can't overwrite on Windows: "File exists")
         std::filesystem::copy_file(path, path + ".bak", std::filesystem::copy_options::overwrite_existing, ec);
     }
     if (!saveMapFile(path, text)) { *err = "autosave failed: " + path; return false; }
