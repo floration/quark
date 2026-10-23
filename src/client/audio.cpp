@@ -7,6 +7,7 @@
 #include "../game/map.h"   // (findDataPath: the game folder, for mods/)
 #include "overrides.h"     // the owner's sounds (docs/ASSETS.md) and the sound file decoders
 #include <cstdio>
+#include <cstdlib>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -448,6 +449,11 @@ void Audio::wasapiThread(std::atomic<int>* started) {
             // Windows gives a bigger buffer than asked (23 ms on the owner's PC): keeping it full would be that late.
             // Two periods queued: the engine takes one per wake-up, so there's a whole period of slack if we're late.
             target = std::min<UINT32>(frames, (UINT32)(2 * period * R / 10000000));
+            // (testing where a PC starts cutting out: QUARK_AUDIO_MS=<ms queued>, e.g. 10 / 12 / 13 / 15)
+            if (const char* e = getenv("QUARK_AUDIO_MS")) {
+                double ms = atof(e);
+                if (ms >= 1 && ms <= 200) target = std::min<UINT32>(frames, (UINT32)(ms * R / 1000));
+            }
         }
         auto fill = [&](UINT32 n) {   // n frames of the mix into the device's buffer
             BYTE* p = nullptr;
