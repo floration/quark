@@ -87,6 +87,10 @@ struct Settings {
     int botMode = 5;            // ffa
 
     Binds binds;
+    // 2: the binds were written by this version, so a slot that's unbound was unbound by the player and stays that way.
+    // Older files (no bind_version) get the migrations in finishLoad (knife / syringe / quip keys, chat T / Y -> Enter),
+    // which used to run on every load: unbinding the knife, syringe or quip came back after a restart (UI test).
+    int bindVersion = 2;
     Settings() { binds.setDefaults(); }
     void load();
     void save() const;

@@ -25,6 +25,7 @@ static std::string colorHex(const Vec3& c) {
 void Settings::load() {
     std::ifstream f(utf8Path(cfgPath()));
     std::string line;
+    bindVersion = 0;   // (a file from before bind_version: its binds get the migrations)
     while (std::getline(f, line)) {
         size_t eq = line.find('=');
         if (eq == std::string::npos) continue;
@@ -121,6 +122,7 @@ void Settings::set(const std::string& k, const std::string& v) {
                 hud[i] = e;
             }
         }
+        else if (k == "bind_version") bindVersion = iv;
         else if (k.rfind("bind_", 0) == 0) {
             int a = atoi(k.c_str() + 5), c0 = 0, c1 = 0;
             if (a >= 0 && a < A_COUNT && sscanf(v.c_str(), "%d,%d", &c0, &c1) >= 1) { binds.code[a][0] = c0; binds.code[a][1] = c1; }
@@ -129,12 +131,15 @@ void Settings::set(const std::string& k, const std::string& v) {
 }
 
 void Settings::finishLoad() {
-    // slots 9 and 10 (knife, syringe) came later: unbound in an older config, they get keys 9 and 0
-    if (!binds.code[A_WEAPON9][0] && !binds.code[A_WEAPON9][1]) binds.code[A_WEAPON9][0] = 57;    // (GLFW 9)
-    if (!binds.code[A_WEAPON10][0] && !binds.code[A_WEAPON10][1]) binds.code[A_WEAPON10][0] = 48;   // (GLFW 0)
-    if (!binds.code[A_QUIP][0] && !binds.code[A_QUIP][1]) binds.code[A_QUIP][0] = 71;               // (GLFW G; added 1.12)
-    // old default chat keys (T / Y) move to the new default, Enter; a key someone picked themselves stays
-    if (binds.code[A_CHAT][0] == 84 && binds.code[A_CHAT][1] == 89) { binds.code[A_CHAT][0] = 257; binds.code[A_CHAT][1] = 335; } // GLFW T, Y -> ENTER, KP_ENTER
+    if (bindVersion < 2) {   // binds from an older config (see bindVersion); from now on they're this version's
+        // slots 9 and 10 (knife, syringe) came later: unbound in an older config, they get keys 9 and 0
+        if (!binds.code[A_WEAPON9][0] && !binds.code[A_WEAPON9][1]) binds.code[A_WEAPON9][0] = 57;    // (GLFW 9)
+        if (!binds.code[A_WEAPON10][0] && !binds.code[A_WEAPON10][1]) binds.code[A_WEAPON10][0] = 48;   // (GLFW 0)
+        if (!binds.code[A_QUIP][0] && !binds.code[A_QUIP][1]) binds.code[A_QUIP][0] = 71;               // (GLFW G; added 1.12)
+        // old default chat keys (T / Y) move to the new default, Enter; a key someone picked themselves stays
+        if (binds.code[A_CHAT][0] == 84 && binds.code[A_CHAT][1] == 89) { binds.code[A_CHAT][0] = 257; binds.code[A_CHAT][1] = 335; } // GLFW T, Y -> ENTER, KP_ENTER
+        bindVersion = 2;
+    }
     if (width < 320) width = 1280;
     if (height < 240) height = 720;
 }
@@ -166,6 +171,7 @@ std::string Settings::toText() const {
         if (!modeHud[m].empty()) f << "mode_hud_" << modeName(m) << "=" << modeHud[m] << "\n";
         if (!modeCtl[m].empty()) f << "mode_controls_" << modeName(m) << "=" << modeCtl[m] << "\n";
     }
+    f << "bind_version=2\n";
     for (int a = 0; a < A_COUNT; a++) f << "bind_" << a << "=" << binds.code[a][0] << "," << binds.code[a][1] << "\n";
     return f.str();
 }

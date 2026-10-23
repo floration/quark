@@ -8,7 +8,10 @@
 #include <shellapi.h>
 #endif
 
+void (*g_openUrlHook)(const std::string& url) = nullptr;
+
 void openUrl(const std::string& url) {
+    if (g_openUrlHook) { g_openUrlHook(url); return; }
 #ifdef _WIN32
     // (wide: a folder under a non-ASCII user name, e.g. the maps or groups folder, is UTF-8 here)
     int n = MultiByteToWideChar(CP_UTF8, 0, url.c_str(), -1, nullptr, 0);

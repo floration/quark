@@ -120,11 +120,13 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - run: sudo apt-get update && sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev
+      # xvfb + mesa (llvmpipe): a display for the UI test (docs/UI_TEST.md), which gates releases with the other tests
+      - run: sudo apt-get update && sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev xvfb libgl1-mesa-dri
       - run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DQUARK_VERSION_SUFFIX="$QUARK_VERSION_SUFFIX"
           cmake --build build -j
-          ctest --test-dir build --output-on-failure
+          xvfb-run -a -s "-screen 0 1920x1080x24" ctest --test-dir build --output-on-failure   # quark_tests + uitest
+          test -f build/uitest-report.json   # (the UI test ran: it isn't skipped here)
           python3 tools/site_changelog.py .   # the website's data builds (checked here, before anything is published)
           mkdir -p pkg && cp build/quark build/quark_server build/quark_launcher pkg/ && cp -r maps mods pkg/
           python3 tools/pack.py pkg quark-linux.qpak
@@ -133,6 +135,9 @@ jobs:
           cp build/quark_launcher quark-launcher-linux
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: { name: linux, path: "quark-linux.tar.gz\nquark-linux.qpak\nquark-launcher-linux" }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()   # (what the UI test found, passed or not)
+        with: { name: uitest-report, path: build/uitest-report.json, retention-days: 14, if-no-files-found: ignore }
 
   sanitizers:   # REVIEW ENG-3: work branches only (never a release, and no release job waits for it)
     needs: meta

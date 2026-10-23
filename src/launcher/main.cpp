@@ -456,6 +456,8 @@ int main(int argc, char** argv) {
     st.noSelfUpdate = relaunched || !fs::equivalent(self, install::installedLauncher(), eqEc);
     std::thread worker(updater, stp, dir);
     Ui ui;
+    // (the launcher shares the game's Ui; the game's UI test doesn't cover it: its buttons are tested by the launcher tests)
+    constexpr UiExp kLauncherUi = UiExp::inert();
     UiInput in;
     static UiInput* g_in = &in;
     static double g_scroll = 0; // wheel steps since the last frame (version list)
@@ -603,7 +605,7 @@ int main(int argc, char** argv) {
         {
             float bw = (fw - 56 * s) * 0.5f, bx = 24 * s, by = 344 * s, bh = 40 * s;
             bool armed = timeNow() < uninstallArmed;
-            if (ui.button(bx + bw + 8 * s, by, bw, bh, channel == Channel::Testing ? "CHANNEL: TESTING" : "CHANNEL: PRODUCTION", !st.busy)) {
+            if (ui.button(bx + bw + 8 * s, by, bw, bh, channel == Channel::Testing ? "CHANNEL: TESTING" : "CHANNEL: PRODUCTION", kLauncherUi, !st.busy)) {
                 std::lock_guard<std::mutex> l(st.mu);
                 st.cfg.channel = channel == Channel::Testing ? Channel::Production : Channel::Testing;
                 st.cfg.pin = "latest";
@@ -618,7 +620,7 @@ int main(int argc, char** argv) {
                 else if (li < 0) st.status = "no signed " + ch + " builds yet - older unsigned versions are listed";
                 else st.status = ch + " channel - latest " + st.releases[li].version + (st.installed.empty() ? "" : ", installed " + st.installed);
             }
-            if (ui.button(bx, by, bw, bh, armed ? "CLICK TO CONFIRM" : "UNINSTALL", !st.busy)) {
+            if (ui.button(bx, by, bw, bh, armed ? "CLICK TO CONFIRM" : "UNINSTALL", kLauncherUi, !st.busy)) {
                 if (armed) {
                     install::uninstallAll();
                     quit = true;
@@ -632,7 +634,7 @@ int main(int argc, char** argv) {
         // An unsigned (pre-signing) version takes two clicks: the first shows the warning, the second installs.
         bool armedNow = !sel.isSigned() && unsignedArmed == sel.version && timeNow() < unsignedArmedUntil;
         std::string installLabel = sel.isSigned() ? "INSTALL " + sel.version : armedNow ? "CONFIRM: INSTALL UNSIGNED" : "INSTALL " + sel.version + " (UNSIGNED)";
-        if (offerInstall && ui.button(fw - (canPlay ? 432 : 224) * s, 414 * s, 200 * s, 48 * s, installLabel)) {
+        if (offerInstall && ui.button(fw - (canPlay ? 432 : 224) * s, 414 * s, 200 * s, 48 * s, installLabel, kLauncherUi)) {
             if (!sel.isSigned() && !armedNow) {
                 unsignedArmed = sel.version;
                 unsignedArmedUntil = timeNow() + 10.0;
@@ -645,11 +647,11 @@ int main(int argc, char** argv) {
                 worker = std::thread(installRelease, stp, dir, sel, !sel.isSigned());
             }
         } else if ((!offerInstall || canPlay) &&
-                   (ui.button(fw - 224 * s, 414 * s, 200 * s, 48 * s, st.busy ? "WORKING..." : "PLAY", canPlay) || (autoPlay && canPlay))) {
+                   (ui.button(fw - 224 * s, 414 * s, 200 * s, 48 * s, st.busy ? "WORKING..." : "PLAY", kLauncherUi, canPlay) || (autoPlay && canPlay))) {
             if (launchGame(dir)) quit = true;
             else { std::lock_guard<std::mutex> l(st.mu); st.status = "could not start the game in " + dir.string(); autoPlay = false; }
         }
-        if (ui.button(24 * s, 414 * s, 140 * s, 48 * s, "QUIT")) quit = true;
+        if (ui.button(24 * s, 414 * s, 140 * s, 48 * s, "QUIT", kLauncherUi)) quit = true;
         (void)installed;
         glClearColor(0, 0, 0, 1);
         glClear(GL_COLOR_BUFFER_BIT);

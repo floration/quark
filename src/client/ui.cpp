@@ -10,6 +10,7 @@ void Ui::begin(Renderer* r, const UiInput& in, float scale) {
     scale_ = scale;
     textScale_ = std::max(1.0f, std::round(2.0f * scale));
     sliderCounter_ = 0;
+    where = scope = nullptr;
     if (!in.down) activeSlider_ = -1;
     if (in.pressed) focus_ = -1; // clicking anywhere drops focus unless a field reclaims it
 }
@@ -40,14 +41,58 @@ void Ui::labelCentered(float cx, float y, const std::string& t, const Color& c, 
 
 // Text scale that fits maxW: the normal size, or shrunk only as much as needed. The renderer never draws below
 // Renderer::kMinTextScale, so text that still doesn't fit at that size is clipped with "..." (t is replaced).
-float Ui::fit(std::string& t, float maxW) const {
+float Ui::fit(std::string& t, float maxW, bool* clipped) const {
     if (t.empty() || r_->textWidth(t, textScale_) <= maxW) return textScale_;
     float ts = std::max(Renderer::kMinTextScale, maxW / (r_->textWidth(t, 10.0f) * 0.1f)); // (width at 10: above the minimum)
-    if (r_->textWidth(t, ts) > maxW) t = r_->textClip(t, ts, maxW);
+    if (r_->textWidth(t, ts) > maxW) {
+        t = r_->textClip(t, ts, maxW);
+        if (clipped) *clipped = true;
+    }
     return ts;
 }
 
-bool Ui::button(float x, float y, float w, float h, const std::string& label, bool enabled) {
+// ---- the UI test's record of each widget (only with a probe attached: never in normal play) ----
+void Ui::report(UiWidget::Kind k, float x, float y, float w, float h, const std::string& label, const std::string& value,
+                const UiExp& e, bool enabled, bool clipped) {
+    UiWidget wd;
+    wd.where = where; wd.scope = scope;
+    wd.kind = k; wd.x = x; wd.y = y; wd.w = w; wd.h = h;
+    wd.label = label; wd.value = value; wd.exp = e; wd.enabled = enabled; wd.clipped = clipped;
+    probe->widget(wd);
+}
+
+void Ui::keyAction(const std::string& label, int key, int mods, const UiExp& e, int hold) {
+    if (!probe) return;
+    UiWidget wd;
+    wd.where = where; wd.scope = scope;
+    wd.kind = UiWidget::KEY; wd.key = key; wd.mods = mods; wd.label = label; wd.exp = e; wd.count = hold + 1;
+    probe->widget(wd);
+}
+
+void Ui::handle(float x, float y, float w, float h, float dx, float dy, const std::string& label, const UiExp& e) {
+    if (!probe) return;
+    UiWidget wd;
+    wd.where = where; wd.scope = scope;
+    wd.kind = UiWidget::HANDLE; wd.x = x; wd.y = y; wd.w = w; wd.h = h; wd.dx = dx; wd.dy = dy; wd.label = label; wd.exp = e;
+    probe->widget(wd);
+}
+
+void Ui::view(float x, float y, float w, float h, const std::string& label, const UiExp& e) {
+    if (probe) report(UiWidget::VIEW, x, y, w, h, label, "", e, true, false);
+}
+
+void Ui::custom(float x, float y, float w, float h, const std::string& label, const UiExp& e) {
+    if (probe) report(UiWidget::BUTTON, x, y, w, h, label, "", e, true, false);
+}
+
+bool Ui::button(float x, float y, float w, float h, const std::string& label, const UiExp& e, bool enabled) {
+    bool clipped = false;
+    bool hit = buttonImpl(x, y, w, h, label, enabled, &clipped);
+    if (probe) report(UiWidget::BUTTON, x, y, w, h, label, "", e, enabled, clipped);
+    return hit;
+}
+
+bool Ui::buttonImpl(float x, float y, float w, float h, const std::string& label, bool enabled, bool* clipped) {
     bool hv = enabled && hover(x, y, w, h);
     Color bg = !enabled ? Color{0.12f, 0.12f, 0.14f, 0.8f} : hv ? Color{accent.r * 0.5f, accent.g * 0.5f, accent.b * 0.5f, 0.95f}
                                                              : Color{0.14f, 0.16f, 0.2f, 0.9f};
@@ -55,12 +100,12 @@ bool Ui::button(float x, float y, float w, float h, const std::string& label, bo
     if (hv) r_->rect(x, y + h - 2 * scale_, w, 2 * scale_, accent);
     Color tc = enabled ? Color{1, 1, 1, 1} : Color{0.5f, 0.5f, 0.5f, 1};
     std::string shown = label;
-    float ts = fit(shown, w - 8 * scale_);
+    float ts = fit(shown, w - 8 * scale_, clipped);
     r_->text(x + (w - r_->textWidth(shown, ts)) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, shown, tc);
     return hv && in_.pressed;
 }
 
-bool Ui::textField(int id, float x, float y, float w, float h, std::string& value, size_t maxLen) {
+bool Ui::textField(int id, float x, float y, float w, float h, std::string& value, size_t maxLen, const UiExp& e) {
     if (in_.pressed && hover(x, y, w, h)) focus_ = id;
     bool focused = focus_ == id;
     bool changed = false;
@@ -79,6 +124,13 @@ bool Ui::textField(int id, float x, float y, float w, float h, std::string& valu
     float tx = x + 6 * scale_, ty = y + (h - r_->textHeight(textScale_)) * 0.5f;
     r_->text(tx, ty, textScale_, shown, {1, 1, 1, 1});
     if (focused) caret(tx + r_->textWidth(shown, textScale_), ty);
+    if (probe) {
+        UiWidget wd;
+        wd.where = where; wd.scope = scope;
+        wd.kind = UiWidget::TEXT; wd.x = x; wd.y = y; wd.w = w; wd.h = h; wd.count = (int)maxLen;
+        wd.label = "FIELD " + std::to_string(id); wd.value = value; wd.exp = e;
+        probe->widget(wd);
+    }
     return changed;
 }
 
@@ -95,26 +147,36 @@ void Ui::caret(float x, float y, float ts) {
 }
 
 bool Ui::cycle(float x, float y, float w, float h, const std::string& label, int& index, int count,
-               const std::vector<std::string>& names) {
+               const std::vector<std::string>& names, const UiExp& e) {
     if (count <= 0) return false;
     float bw = h;
     bool changed = false;
-    if (button(x, y, bw, h, "<")) { index = (index + count - 1) % count; changed = true; }
-    if (button(x + w - bw, y, bw, h, ">")) { index = (index + 1) % count; changed = true; }
+    if (buttonImpl(x, y, bw, h, "<", true, nullptr)) { index = (index + count - 1) % count; changed = true; }
+    if (buttonImpl(x + w - bw, y, bw, h, ">", true, nullptr)) { index = (index + 1) % count; changed = true; }
     r_->rect(x + bw, y, w - 2 * bw, h, {0.08f, 0.09f, 0.11f, 0.95f});
-    (void)label; // the value names say what they are (no "LABEL: " prefix, it overflowed)
+    // (the value names say what they are: no "LABEL: " prefix, it overflowed; the label is the widget's id)
     std::string t = index >= 0 && index < (int)names.size() ? names[index] : "?";
-    float ts = fit(t, w - 2 * bw - 8 * scale_);
+    bool clipped = false;
+    float ts = fit(t, w - 2 * bw - 8 * scale_, &clipped);
     r_->text(x + (w - r_->textWidth(t, ts)) * 0.5f, y + (h - r_->textHeight(ts)) * 0.5f, ts, t, {1, 1, 1, 1});
+    if (probe) {
+        UiWidget wd;
+        wd.where = where; wd.scope = scope;
+        wd.kind = UiWidget::CYCLE; wd.x = x; wd.y = y; wd.w = w; wd.h = h; wd.count = count;
+        wd.label = label; wd.value = std::to_string(index); wd.exp = e; wd.clipped = clipped;
+        probe->widget(wd);
+    }
     return changed;
 }
 
-bool Ui::toggle(float x, float y, float w, float h, const std::string& label, bool& v) {
-    if (button(x, y, w, h, label + ": " + (v ? "ON" : "OFF"))) { v = !v; return true; }
-    return false;
+bool Ui::toggle(float x, float y, float w, float h, const std::string& label, bool& v, const UiExp& e) {
+    bool clipped = false, hit = buttonImpl(x, y, w, h, label + ": " + (v ? "ON" : "OFF"), true, &clipped);
+    if (hit) v = !v;
+    if (probe) report(UiWidget::TOGGLE, x, y, w, h, label, v ? "1" : "0", e, true, clipped);
+    return hit;
 }
 
-bool Ui::slider(float x, float y, float w, float h, const std::string& label, float& v, float lo, float hi, const char* fmt) {
+bool Ui::slider(float x, float y, float w, float h, const std::string& label, float& v, float lo, float hi, const char* fmt, const UiExp& e) {
     int id = sliderCounter_++;
     char buf[64];
     snprintf(buf, sizeof buf, fmt, v);
@@ -155,6 +217,7 @@ bool Ui::slider(float x, float y, float w, float h, const std::string& label, fl
     float t = clampf((v - lo) / (hi - lo), 0, 1);
     r_->rect(x, y, w, h, {0.08f, 0.09f, 0.11f, 0.95f});
     r_->rect(x, y, w * t, h, {accent.r * 0.45f, accent.g * 0.45f, accent.b * 0.45f, 0.95f});
+    bool clipped = false;
     if (editing) {
         std::string s = prefix + editText_;
         float cw = caretWidth() + 2 * scale_;
@@ -166,9 +229,20 @@ bool Ui::slider(float x, float y, float w, float h, const std::string& label, fl
     } else {
         snprintf(buf, sizeof buf, fmt, v);
         std::string s = prefix + buf;
-        float fs = fit(s, w - 8 * scale_);   // (may clip s)
+        float fs = fit(s, w - 8 * scale_, &clipped);   // (may clip s)
         r_->text(x + (w - r_->textWidth(s, fs)) * 0.5f, y + (h - r_->textHeight(fs)) * 0.5f, fs, s, {1, 1, 1, 1});
         if (overNumber && fs == textScale_ && s == prefix + buf) r_->rect(nx, ty + r_->textHeight(textScale_) + 1 * scale_, r_->textWidth(buf, textScale_), 1 * scale_, {1, 1, 1, 0.7f}); // clickable
+    }
+    if (probe) {
+        UiWidget wd;
+        wd.where = where; wd.scope = scope;
+        wd.kind = UiWidget::SLIDER; wd.x = x; wd.y = y; wd.w = w; wd.h = h; wd.nx = nx; wd.nw = nw;
+        wd.dx = lo; wd.dy = hi;   // (a slider's range rides in dx / dy)
+        wd.label = label; wd.exp = e; wd.clipped = clipped;
+        char vb[32];
+        snprintf(vb, sizeof vb, "%.6g", v);
+        wd.value = vb;
+        probe->widget(wd);
     }
     return changed;
 }

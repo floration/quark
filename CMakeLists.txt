@@ -273,6 +273,7 @@ if(QUARK_BUILD_CLIENT)
     src/client/hudwidgets.cpp
     src/client/profiles.cpp
     src/client/binds.cpp
+    src/client/uitest.cpp
     ${QUARK_ICON_RC}
   )
   target_link_libraries(quark quark_core quark_launcher_core quark_audio glfw ${CMAKE_DL_LIBS})
@@ -312,6 +313,12 @@ if(QUARK_BUILD_TESTS)
   enable_testing()
   add_test(NAME quark_tests COMMAND quark_tests WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
   set_tests_properties(quark_tests PROPERTIES TIMEOUT 1800)
+  if(QUARK_BUILD_CLIENT AND NOT WIN32 AND NOT APPLE)
+    # The UI test (docs/UI_TEST.md): needs a display (CI: Xvfb); skipped (exit 77) without one.
+    add_test(NAME uitest COMMAND sh ${CMAKE_SOURCE_DIR}/tools/uitest.sh $<TARGET_FILE:quark> ${CMAKE_BINARY_DIR}/uitest-report.json
+             WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+    set_tests_properties(uitest PROPERTIES TIMEOUT 3600 SKIP_RETURN_CODE 77)
+  endif()
 endif()
 
 if(QUARK_FUZZ)   # (see QUARK_FUZZ above)

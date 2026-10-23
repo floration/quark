@@ -228,11 +228,12 @@ void Game::drawQueueMenu(float cx, float y) {
         auto it = queueCounts_.find(q.key);
         int n = it == queueCounts_.end() ? 0 : it->second;
         std::string t = std::string(in ? "> " : "") + q.title + "  " + std::to_string(n) + "/" + std::to_string(q.size) + (in ? " (LEAVE)" : "");
-        if (ui_.button(x + (i % 2) * (cw + gap), y + (i / 2) * (h + gap), cw, h, t)) queueAction(q.key, in ? "leave" : "join");
+        if (ui_.button(x + (i % 2) * (cw + gap), y + (i / 2) * (h + gap), cw, h, t, UiExp::state("queue").withId(q.title))) queueAction(q.key, in ? "leave" : "join");
     }
     y += rows * (h + gap) + gap;
     float tw = (w - 2 * gap) / 3;
-    if (ui_.button(x, y, tw, h, "QUEUE FOR ALL")) for (int i = 0; i < kQueueCount; i++) if (!queued_.count(kQueues[i].key)) queueAction(kQueues[i].key, "join");
-    if (ui_.button(x + tw + gap, y, tw, h, "LEAVE ALL")) queueAction("", "leaveall");
-    if (ui_.button(x + 2 * (tw + gap), y, tw, h, "BACK")) queueMenu_ = false;
+    // (greyed out when there's nothing left to join / leave)
+    if (ui_.button(x, y, tw, h, "QUEUE FOR ALL", UiExp::state("queue"), (int)queued_.size() < kQueueCount)) for (int i = 0; i < kQueueCount; i++) if (!queued_.count(kQueues[i].key)) queueAction(kQueues[i].key, "join");
+    if (ui_.button(x + tw + gap, y, tw, h, "LEAVE ALL", UiExp::state("queue"), !queued_.empty())) queueAction("", "leaveall");
+    if (ui_.button(x + 2 * (tw + gap), y, tw, h, "BACK", UiExp::nav("ingame/pause"))) queueMenu_ = false;
 }

@@ -621,7 +621,9 @@ void Server::tickReachability() {
     if (now < probeNextAt_) return;
     if (upnp_ && !upDone && now - probeStartedAt_ < 10) return;   // give the router a moment to map the port first
     { std::lock_guard<std::mutex> l(reachMu_); reachDetail_ = "asking " + prober.toString(); }
-    if (reach_ == REACH_UNKNOWN) reach_ = REACH_CHECKING;
+    // CHECK AGAIN shows it's checking (from "not reachable" it used to stay as it was until the same answer came back:
+    // the button seemed to do nothing - UI test)
+    if (reach_ == REACH_UNKNOWN || again) reach_ = REACH_CHECKING;
     probeNonce_ = (uint32_t)std::random_device{}() | 1u;
     probeTries_ = 0;
     probeSentAt_ = now;

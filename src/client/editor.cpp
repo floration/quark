@@ -235,6 +235,7 @@ void Game::edNotify(const std::string& s) { edMsg_ = s; edMsgUntil_ = time_ + 3;
 bool Game::edSelValid() const { return edSel_.valid() && (size_t)edSel_.idx < kindCount(ed_, edSel_.kind); }
 
 void Game::openEditor(std::string name) {
+    edOpens_++;
     rescanMaps();
     ed_ = Map();
     edUndo_.clear();
@@ -379,11 +380,11 @@ void Game::edModify(const std::function<void(Map&)>& f, bool coalesce) {
 // Rotate (90 degrees, about Y / X / Z) or mirror (across X / Y / Z) everything selected, about the middle of
 // it all: boxes, groups (a room's or stairs' direction turns with it; a custom group's parts too), ladders,
 // spawns (their facing too), lights, and the other point / box objects. One undo step.
-void Game::edTransform(int op) {
-    if (!edSelValid()) return;
-    std::vector<EdSel> sel = {edSel_};
+bool Game::edTransformed(int op, Map& tmp, std::vector<EdSel>& sel) const {
+    if (!edSelValid()) return false;
+    sel = {edSel_};
     for (auto& m : edMulti_) if (m.kind != edSel_.kind || m.idx != edSel_.idx) sel.push_back(m);
-    Map& m = ed_;
+    const Map& m = ed_;
     auto boxOf = [&](const EdSel& e, AABB& b) -> bool {
         switch (e.kind) {
             case ED_BRUSH: b = m.brushes[e.idx].box; return true;
@@ -398,7 +399,7 @@ void Game::edTransform(int op) {
     };
     AABB all = {{1e9f, 1e9f, 1e9f}, {-1e9f, -1e9f, -1e9f}};
     for (auto& e : sel) { AABB b; if (boxOf(e, b)) { all.mn = vmin(all.mn, b.mn); all.mx = vmax(all.mx, b.mx); } }
-    if (all.mn.x > all.mx.x) { edNotify("can't turn that"); return; }
+    if (all.mn.x > all.mx.x) return false;
     const Vec3 c = (all.mn + all.mx) * 0.5f;
     auto pt = [&](Vec3 p, const Vec3& o) {   // about o
         Vec3 d = p - o;
@@ -413,7 +414,7 @@ void Game::edTransform(int op) {
         return o + d;
     };
     auto box = [&](const AABB& b, const Vec3& o) { Vec3 p = pt(b.mn, o), q = pt(b.mx, o); return AABB{vmin(p, q), vmax(p, q)}; };
-    Map tmp = m;
+    tmp = m;
     for (auto& e : sel) {
         switch (e.kind) {
             case ED_BRUSH: tmp.brushes[e.idx].box = box(m.brushes[e.idx].box, c); break;
@@ -440,20 +441,42 @@ void Game::edTransform(int op) {
             }
         }
     }
-    bool first = true;
+    return true;
+}
+
+UiExp Game::edTransformExp(int op) {
+    if (!ui_.probing()) return UiExp::edit();
+    Map tmp;
+    std::vector<EdSel> sel;
+    // (a lone symmetric box mirrored about its own middle comes out the same: then the notice is all that happens)
+    return edTransformed(op, tmp, sel) && tmp.serialize() != ed_.serialize() ? UiExp::edit() : UiExp::state("ednotice");
+}
+
+void Game::edTransform(int op) {
+    Map tmp;
+    std::vector<EdSel> sel;
+    if (!edSelValid()) return;
+    if (!edTransformed(op, tmp, sel)) { edNotify("can't turn that"); return; }
+    // every object's op in one step, so one undo puts them all back (one edDo per object made an undo step each: the
+    // coalescing only joins repeats of one change, so a multi-selection took an undo per object)
+    const Map& m = ed_;
+    std::vector<std::string> ops, inv;
     for (auto& e : sel) {
         char k = kKindChar[e.kind];
         if (e.kind == ED_GROUP && !tmp.groups[e.idx].parts.empty()) {   // a custom group: rewrite it whole (its parts follow)
             std::string del = "g del " + std::to_string(e.idx) + "\n";
-            edDo(del + insertOps(tmp, k, e.idx), del + insertOps(m, k, e.idx), !first);
-            first = false;
+            ops.push_back(del + insertOps(tmp, k, e.idx));
+            inv.push_back(del + insertOps(m, k, e.idx));
             continue;
         }
         if (e.kind == ED_GROUP || e.kind == ED_BRUSH || e.kind == ED_LADDER || e.kind == ED_CHECK || e.kind == ED_LIGHT || e.kind == ED_PATH || e.kind == ED_SPAWN) {
-            edDo(describeMapObject(tmp, k, "set", e.idx), describeMapObject(m, k, "set", e.idx), !first);
-            first = false;
+            std::string o = describeMapObject(tmp, k, "set", e.idx), u = describeMapObject(m, k, "set", e.idx);
+            if (o != u) { ops.push_back(o); inv.push_back(u); }
         }
     }
+    std::string ops1, undo;
+    for (size_t i = 0; i < ops.size(); i++) { ops1 += (i ? "\n" : "") + ops[i]; undo += (i ? "\n" : "") + inv[inv.size() - 1 - i]; }
+    edDo(ops1, undo);
     static const char* names[] = {"rotated about Y", "rotated about X", "rotated about Z", "mirrored left / right", "mirrored upside down", "mirrored front / back"};
     edNotify(names[op]);
 }
@@ -586,9 +609,16 @@ template <class Sel> static std::vector<Sel> groupable(const Map& m, Sel first, 
     return out;
 }
 
+bool Game::edGroupTakesEveryBox() const {
+    int boxes = 0;
+    for (auto& e : groupable(ed_, edSel_, edMulti_)) boxes += e.kind == ED_BRUSH;
+    return boxes > 0 && boxes >= (int)ed_.editableBrushes();
+}
+
 void Game::edGroupSelection() {
     auto sel = groupable(ed_, edSel_, edMulti_);
     if (sel.size() == 1 && sel[0].kind == ED_GROUP) { edNotify("that's already a group"); return; }
+    if (edGroupTakesEveryBox()) { edNotify("a map keeps at least one box outside groups - add another box first"); return; }
     Map::Group g;
     std::string why;
     if (!groupOf(ed_, sel, g, why)) { edNotify(why); return; }
@@ -703,8 +733,8 @@ void Game::drawEditorGroupMenu(float x, float y, float w) {
         ui_.labelCentered(x + w * 0.5f, y, "NOT A GROUP - MAKE IT A GROUP FIRST?", kWhite, 0.7f);
         y += 24 * s;
         float bw = (w - gap) * 0.5f;
-        if (ui_.button(x, y, bw, h, "YES")) edExportGroup();
-        if (ui_.button(x + bw + gap, y, bw, h, "NO")) edExportAsk_ = false;
+        if (ui_.button(x, y, bw, h, "YES", UiExp::state("groups"))) edExportGroup();
+        if (ui_.button(x + bw + gap, y, bw, h, "NO", UiExp::nav(edPath()))) edExportAsk_ = false;
         return;
     }
     int rows = std::min<int>((int)edGroupFiles_.size(), 12);
@@ -718,15 +748,15 @@ void Game::drawEditorGroupMenu(float x, float y, float w) {
     for (int i = 0; i < rows; i++, y += h + gap) {
         std::string name = std::filesystem::path(edGroupFiles_[i]).stem().string();
         for (auto& c : name) c = (char)toupper((unsigned char)c);
-        if (ui_.button(x, y, w, h, name)) {
+        if (ui_.button(x, y, w, h, name, UiExp::edit().withId("GROUP FILE"))) {
             edGroupMenu_ = false;
             if (!edPlaceGroup(readFile(edGroupFiles_[i]))) edNotify("not a quark group file");
             return;
         }
     }
     float bw = (w - gap) * 0.5f;
-    if (ui_.button(x, y, bw, h, "OPEN FOLDER")) openGroupFolder();
-    if (ui_.button(x + bw + gap, y, bw, h, "CLOSE")) edGroupMenu_ = false;
+    if (ui_.button(x, y, bw, h, "OPEN FOLDER", UiExp::url())) openGroupFolder();
+    if (ui_.button(x + bw + gap, y, bw, h, "CLOSE", UiExp::nav(edPath()))) edGroupMenu_ = false;
 }
 
 // Everything under the ray, nearest first (each object once). A box the camera is inside (a big clip volume,
@@ -906,8 +936,10 @@ void Game::editorKey(int key, int mods) {
             if (kind == ED_LIGHT) { auto& l = m.lights[i]; l.radius = clampf(l.radius + (amount > 0 ? 1.0f : -1.0f), 1, 60); return; }
             AABB* b = kindBox(m, kind, i);
             if (!b) return;
-            if (sign > 0) b->mx[axis] = std::max(b->mn[axis] + g, b->mx[axis] + amount);
-            else b->mn[axis] = std::min(b->mx[axis] - g, b->mn[axis] - amount);
+            // (never thinner than a grid step - or than it is: CTRL+ARROW on a box already thinner than the grid grew it)
+            float minSize = std::min(g, b->mx[axis] - b->mn[axis]);
+            if (sign > 0) b->mx[axis] = std::max(b->mn[axis] + minSize, b->mx[axis] + amount);
+            else b->mn[axis] = std::min(b->mx[axis] - minSize, b->mn[axis] - amount);
         } else {
             Vec3 d;
             d[axis] = sign * g;
@@ -924,11 +956,11 @@ void Game::drawEditorSavePrompt() {
     y += 26 * s;
     ui_.label(x, y, "SAVES TO MAPS/<NAME>.QMAP - YOUR OWN COPY, THE HOST KEEPS THEIRS", kGrey, 0.5f);
     y += 16 * s;
-    ui_.textField(42, x, y, w, h, edPromptName_, 40);
+    ui_.textField(42, x, y, w, h, edPromptName_, 40, UiExp::local().withId("COPY NAME"));
     y += h + 10 * s;
     float bw = (w - 10 * s) * 0.5f;
-    if (ui_.button(x, y, bw, h, "SAVE")) { if (edSaveCopy(edPromptMap_, edPromptName_)) edPrompt_ = false; }
-    if (ui_.button(x + bw + 10 * s, y, bw, h, "DON'T SAVE")) edPrompt_ = false;
+    if (ui_.button(x, y, bw, h, "SAVE", UiExp::nav("main"))) { if (edSaveCopy(edPromptMap_, edPromptName_)) edPrompt_ = false; }
+    if (ui_.button(x + bw + 10 * s, y, bw, h, "DON'T SAVE", UiExp::nav("main"))) edPrompt_ = false;
     y += h + 8 * s;
     if (time_ < edMsgUntil_) ui_.labelCentered(W * 0.5f, y, edMsg_, kGrey, 0.6f);
 }
@@ -987,6 +1019,7 @@ void Game::editorFrame(double dt) {
     edFullW_ = fullW;
     r_.resize((int)panelX, (int)H);
     r_.setCamera(edCam_, yaw_, pitch_, cfg_.fov);
+    if (ui_.probing()) uiTestHandles();   // (the UI test: where the selection's handles are on screen)
     auto closestOnAxis = [&](const Vec3& p0, int axis, const Vec3& d) { // param along the axis nearest the mouse ray
         Vec3 a;
         a[axis] = 1;
@@ -1171,8 +1204,10 @@ void Game::editorFrame(double dt) {
 
     // ---- panel
     ui_.begin(&r_, uiIn_, s);
+    if (ui_.probing()) ui_.where = edPath();   // (the UI test: the panel is the editor's, whatever is open over the view)
     ui_.panel(panelX, 0, panelW, H, 0.85f);
-    float x = panelX + 12 * s, w = panelW - 24 * s, y = 10 * s, h = 26 * s, gap = 5 * s;
+    // (rows of 23 + 4: with a spawn, light or stairs selected, 26 + 5 ran ROTATE / MIRROR off the bottom at 720p - UI test)
+    float x = panelX + 12 * s, w = panelW - 24 * s, y = 10 * s, h = 23 * s, gap = 4 * s;
     float w2 = (w - gap) * 0.5f, w3 = (w - 2 * gap) / 3;
     auto row = [&] { y += h + gap; };
     if (edOnline_) {
@@ -1194,47 +1229,49 @@ void Game::editorFrame(double dt) {
     {
         // the file name, in a session too (SAVE A COPY / the host's SAVE AS use it). Kept a valid file name as you
         // type: a space becomes _, other characters are dropped (they used to stay, and every save was refused)
-        if (ui_.textField(40, x, y, w2, h, edName_, 24)) edName_ = typedMapName(edName_);
+        if (ui_.textField(40, x, y, w2, h, edName_, 24, UiExp::local().withId("FILE NAME"))) edName_ = typedMapName(edName_);
         std::string before = edTitle_;
-        if (ui_.textField(41, x + w2 + gap, y, w2, h, edTitle_, 32) && edTitle_ != before) edDo("t " + edTitle_, "t " + ed_.title, true);
+        if (ui_.textField(41, x + w2 + gap, y, w2, h, edTitle_, 32, UiExp::edit().withId("TITLE")) && edTitle_ != before) edDo("t " + edTitle_, "t " + ed_.title, true);
     }
     row();
     {
         static std::vector<std::string> modeNames;
         if (modeNames.empty()) { modeNames.push_back("ANY"); for (int m = 0; m < MODE_COUNT; m++) modeNames.push_back(modeName(m)); }
         int idx = ed_.preferredMode + 1;
-        if (ui_.cycle(x, y, w, h, "BUILT FOR", idx, MODE_COUNT + 1, modeNames))
+        if (ui_.cycle(x, y, w, h, "BUILT FOR", idx, MODE_COUNT + 1, modeNames, UiExp::edit()))
             edDo("f " + std::to_string(idx - 1), "f " + std::to_string(ed_.preferredMode));
         row();
     }
     if (edOnline_) {
         bool temp = net_.hasSnapshot() && (net_.mode().flags & MS_TEMP_EDIT);
         if (host_) {
-            if (ui_.button(x, y, w2, h, "PLAY MODE")) net_.sendCommand("editmode off"); // everyone plays it; ESC menu has EDIT MODE
-        } else if (ui_.button(x, y, w2, h, "VOTE: PLAY IT")) net_.sendCommand("callvote edit off");
-        if (ui_.button(x + w2 + gap, y, w2, h, host_ && !temp ? "END SESSION" : "LEAVE")) { closeEditor(); return; }
+            if (ui_.button(x, y, w2, h, "PLAY MODE", UiExp::cmd("editmode off"))) net_.sendCommand("editmode off"); // everyone plays it; ESC menu has EDIT MODE
+        } else if (ui_.button(x, y, w2, h, "VOTE: PLAY IT", UiExp::cmd("callvote edit off"))) net_.sendCommand("callvote edit off");
+        // leaving: the host goes back to the editor it started the session from; a guest is asked about keeping a copy
+        if (ui_.button(x + w2 + gap, y, w2, h, host_ && !temp ? "END SESSION" : "LEAVE",
+                       UiExp::nav(host_ ? (testMap_.empty() ? "main" : "editor") : "main*").withId("LEAVE"))) { closeEditor(); return; }
         row();
         if (temp || !host_) {
-            if (ui_.button(x, y, w, h, "SAVE A COPY AS " + edName_)) edSaveCopy(ed_, edName_);
-        } else if (ui_.button(x, y, w, h, "SAVE AS " + edName_)) {
+            if (ui_.button(x, y, w, h, "SAVE A COPY AS " + edName_, UiExp::state("usermaps").withId("SAVE A COPY"))) edSaveCopy(ed_, edName_);
+        } else if (ui_.button(x, y, w, h, "SAVE AS " + edName_, UiExp::cmd("editmode saveas").withId("SAVE AS"))) {
             if (!validMapName(edName_)) edNotify("name: letters, digits, - and _ only (not a device name like con)");
             else net_.sendCommand("editmode saveas " + edName_); // your session's file: saved under this name from now on
         }
         row();
     } else {
-        if (ui_.button(x, y, w3, h, "NEW")) { openEditor(""); return; }
-        if (ui_.button(x + w3 + gap, y, w3, h, "SAVE")) edSave();
-        if (ui_.button(x + 2 * (w3 + gap), y, w3, h, "TEST")) { edTest(); if (screen_ != Screen::Editor) return; }
+        if (ui_.button(x, y, w3, h, "NEW", UiExp::state("edopen"))) { openEditor(""); return; }
+        if (ui_.button(x + w3 + gap, y, w3, h, "SAVE", UiExp::state("usermaps"))) edSave();
+        if (ui_.button(x + 2 * (w3 + gap), y, w3, h, "TEST", UiExp::state("hosting", "1"))) { edTest(); if (screen_ != Screen::Editor) return; }
         row();
         if (!maps_.empty()) {
-            ui_.cycle(x, y, w - w3 - gap, h, "MAP", edLoadIdx_, (int)maps_.size(), maps_);
-            if (ui_.button(x + w - w3, y, w3, h, "OPEN")) { openEditor(maps_[edLoadIdx_ % maps_.size()]); return; }
+            ui_.cycle(x, y, w - w3 - gap, h, "MAP", edLoadIdx_, (int)maps_.size(), maps_, UiExp::local());
+            if (ui_.button(x + w - w3, y, w3, h, "OPEN", UiExp::state("edopen"))) { openEditor(maps_[edLoadIdx_ % maps_.size()]); return; }
             row();
         }
-        if (ui_.button(x, y, w, h, "HOST EDIT SESSION")) { edHostSession(); if (screen_ != Screen::Editor) return; }
+        if (ui_.button(x, y, w, h, "HOST EDIT SESSION", UiExp::state("hosting", "1"))) { edHostSession(); if (screen_ != Screen::Editor) return; }
         row();
-        if (ui_.button(x, y, w2, h, "MAPS FOLDER")) openUrl(mapsFolder());
-        if (ui_.button(x + w2 + gap, y, w2, h, time_ < edResetArmed_ ? "CLICK TO CONFIRM" : "RESET MAPS")) {
+        if (ui_.button(x, y, w2, h, "MAPS FOLDER", UiExp::url())) openUrl(mapsFolder());
+        if (ui_.button(x + w2 + gap, y, w2, h, time_ < edResetArmed_ ? "CLICK TO CONFIRM" : "RESET MAPS", UiExp::state("ednotice").withId("RESET MAPS"))) {
             if (time_ >= edResetArmed_) { edResetArmed_ = time_ + 3; edNotify("puts every built-in map back to its original version and removes retired ones (your own maps are kept) - click again"); }
             else {
                 edResetArmed_ = 0;
@@ -1245,12 +1282,12 @@ void Game::editorFrame(double dt) {
         }
         row();
     }
-    if (ui_.button(x, y, edOnline_ ? w : w2, h, edBaked_ ? "UNBAKE" : "BAKE LIGHT")) {
+    if (ui_.button(x, y, edOnline_ ? w : w2, h, edBaked_ ? "UNBAKE" : "BAKE LIGHT", UiExp::state("edbaked").withId("BAKE LIGHT"))) {
         if (edBaked_) { edBaked_ = false; r_.unloadWorld(ed_.sunDir); }
         else { r_.loadWorld(ed_, [&](float p) { drawBakeProgress(edName_, p); }); edBaked_ = true; }
         edMeshDirty_ = true;   // (the bake sets the map's palette: the boxes' colours)
     }
-    if (!edOnline_ && ui_.button(x + w2 + gap, y, w2, h, "EXIT")) {
+    if (!edOnline_ && ui_.button(x + w2 + gap, y, w2, h, "EXIT", edDirty_ && time_ > edLeaveArmed_ ? UiExp::state("ednotice") : UiExp::nav("main"))) {
         if (edDirty_ && time_ > edLeaveArmed_) { edLeaveArmed_ = time_ + 2; edNotify("unsaved changes - click EXIT again to leave"); }
         else { closeEditor(); return; }
     }
@@ -1261,33 +1298,37 @@ void Game::editorFrame(double dt) {
     static const std::vector<std::string> mats = {"BASE", "ACCENT", "WALLBANG", "METAL", "GLOW", "FAR", "WATER (WADE IN IT)", "LAVA (KILLS)", "TRIM (NOT SOLID)", "CLIP (INVISIBLE WALL)"};
     {   // rooms, stairs and ladders are one object each: stretch it and its pieces follow (UNGROUP to split a room / stairs)
         float w4 = (w - 3 * gap) / 4;
-        if (ui_.button(x, y, w4, h, "BOX")) edAdd(ED_BRUSH, 0);
-        if (ui_.button(x + w4 + gap, y, w4, h, "ROOM")) edAdd(ED_GROUP, Map::GROUP_ROOM);
-        if (ui_.button(x + 2 * (w4 + gap), y, w4, h, "STAIRS")) edAdd(ED_GROUP, Map::GROUP_STAIRS);
-        if (ui_.button(x + 3 * (w4 + gap), y, w4, h, "LADDER")) edAdd(ED_LADDER, 0);
+        if (ui_.button(x, y, w4, h, "BOX", UiExp::edit())) edAdd(ED_BRUSH, 0);
+        if (ui_.button(x + w4 + gap, y, w4, h, "ROOM", UiExp::edit())) edAdd(ED_GROUP, Map::GROUP_ROOM);
+        if (ui_.button(x + 2 * (w4 + gap), y, w4, h, "STAIRS", UiExp::edit())) edAdd(ED_GROUP, Map::GROUP_STAIRS);
+        if (ui_.button(x + 3 * (w4 + gap), y, w4, h, "LADDER", UiExp::edit())) edAdd(ED_LADDER, 0);
         row();
         static const std::vector<std::string> newMats = {"NEW ONES: BASE", "NEW ONES: ACCENT", "NEW ONES: WALLBANG", "NEW ONES: METAL", "NEW ONES: GLOW", "NEW ONES: FAR", "NEW ONES: WATER", "NEW ONES: LAVA", "NEW ONES: TRIM", "NEW ONES: CLIP"};
-        ui_.cycle(x, y, w, h, "MATERIAL", edMat_, kMapMaterials, newMats);
+        ui_.cycle(x, y, w, h, "MATERIAL", edMat_, kMapMaterials, newMats, UiExp::local());
         row();
     }
-    if (ui_.button(x, y, w3, h, "SPAWN")) edAdd(ED_SPAWN, SPAWN_ANY);
-    if (ui_.button(x + w3 + gap, y, w3, h, "LIGHT")) edAdd(ED_LIGHT, 0);
-    if (ui_.button(x + 2 * (w3 + gap), y, w3, h, "PATH PT")) edAdd(ED_PATH, 0);
+    if (ui_.button(x, y, w3, h, "SPAWN", UiExp::edit())) edAdd(ED_SPAWN, SPAWN_ANY);
+    if (ui_.button(x + w3 + gap, y, w3, h, "LIGHT", UiExp::edit())) edAdd(ED_LIGHT, 0);
+    if (ui_.button(x + 2 * (w3 + gap), y, w3, h, "PATH PT", UiExp::edit())) edAdd(ED_PATH, 0);
     row();
-    if (ui_.button(x, y, w3, h, "BOMB SITE")) edAdd(ED_SITE, 0);
-    if (ui_.button(x + w3 + gap, y, w3, h, "HILL")) edAdd(ED_HILL, 0);
-    if (ui_.button(x + 2 * (w3 + gap), y, w3, h, "CHECKPT")) edAdd(ED_CHECK, 0);
+    if (ui_.button(x, y, w3, h, "BOMB SITE", UiExp::edit())) edAdd(ED_SITE, 0);
+    if (ui_.button(x + w3 + gap, y, w3, h, "HILL", UiExp::edit())) edAdd(ED_HILL, 0);
+    if (ui_.button(x + 2 * (w3 + gap), y, w3, h, "CHECKPT", UiExp::edit())) edAdd(ED_CHECK, 0);
     row();
     {
+        // GROUP / EXPORT GROUP work on selected boxes and groups (greyed out with nothing of the kind selected)
+        bool groupSel = edSelValid() && (edSel_.kind == ED_BRUSH || edSel_.kind == ED_GROUP);
         bool oneGroup = edSelValid() && edSel_.kind == ED_GROUP && edMulti_.empty();
-        if (ui_.button(x, y, w3, h, oneGroup ? "UNGROUP" : "GROUP")) { if (oneGroup) edUngroup(); else edGroupSelection(); }
-        if (ui_.button(x + w3 + gap, y, w3, h, "IMPORT GROUP")) edImportGroup();
-        if (ui_.button(x + 2 * (w3 + gap), y, w3, h, "EXPORT GROUP")) edExportGroup();
+        // (grouping every box the map has is refused: a map keeps a box of its own; it says so)
+        bool allBoxes = groupSel && !oneGroup && edGroupTakesEveryBox();
+        if (ui_.button(x, y, w3, h, oneGroup ? "UNGROUP" : "GROUP", (allBoxes ? UiExp::state("ednotice") : UiExp::edit()).withId("GROUP"), groupSel)) { if (oneGroup) edUngroup(); else edGroupSelection(); }
+        if (ui_.button(x + w3 + gap, y, w3, h, "IMPORT GROUP", edGroupMenu_ ? UiExp::nav(edGroupsPath()) : UiExp::state("edimport"))) edImportGroup();
+        if (ui_.button(x + 2 * (w3 + gap), y, w3, h, "EXPORT GROUP", oneGroup || edExportAsk_ ? UiExp::state("groups") : UiExp::nav(edExportAskPath()), groupSel)) edExportGroup();
         row();
     }
     {
         static const std::vector<std::string> grids = {"GRID 0.25 M", "GRID 0.5 M", "GRID 1 M", "GRID 2 M", "GRID 4 M"};
-        ui_.cycle(x, y, w, h, "GRID ([ ])", edGridIdx_, 5, grids);
+        ui_.cycle(x, y, w, h, "GRID ([ ])", edGridIdx_, 5, grids, UiExp::local());
         row();
     }
     {   // which modes this map is offered for: click to allow / disallow (dim = missing pieces, e.g. team spawns)
@@ -1295,7 +1336,7 @@ void Game::editorFrame(double dt) {
         y += 12 * s;
         const uint32_t all = (1u << MODE_COUNT) - 1;
         uint32_t mask = ed_.allowedModes ? ed_.allowedModes : all;
-        float cw = (w - 3 * gap) / 4, ch = 18 * s, cts = std::max(1.0f, std::round(ui_.textScale() * 0.5f));
+        float cw = (w - 3 * gap) / 4, ch = 16 * s, cts = std::max(1.0f, std::round(ui_.textScale() * 0.5f));
         for (int m = 0; m < MODE_COUNT; m++) {
             float cx = x + (m % 4) * (cw + gap), cy = y + (m / 4) * (ch + 3 * s);
             bool on = mask >> m & 1, can = ed_.canSupportMode(m);
@@ -1306,6 +1347,7 @@ void Game::editorFrame(double dt) {
             std::string t = modeName(m);
             for (auto& c : t) c = (char)toupper((unsigned char)c);
             r_.text(cx + (cw - r_.textWidth(t, cts)) * 0.5f, cy + (ch - r_.textHeight(cts)) * 0.5f, cts, t, on && can ? kWhite : kGrey);
+            if (ui_.probing()) ui_.custom(cx, cy, cw, ch, t, (mask ^ (1u << m)) == 0 ? UiExp::state("ednotice") : UiExp::edit());
             if (hv && uiIn_.pressed) {
                 uint32_t nm = mask ^ (1u << m);
                 if (nm == 0) edNotify("a map needs at least one mode");
@@ -1315,9 +1357,11 @@ void Game::editorFrame(double dt) {
         y += ((MODE_COUNT + 3) / 4) * (ch + 3 * s) + gap;
     }
     y += 6 * s;
+    static const char* kScopes[] = {"box", "spawn", "light", "site", "hill", "checkpoint", "path", "ladder", "group"};
     if (edSelValid()) {
         AABB b = edBounds(ed_, edSel_);
         int kind = edSel_.kind, i = edSel_.idx;
+        if (ui_.probing()) ui_.scope = kScopes[kind];   // (the UI test: these act on the selection: once per kind)
         std::string what = kKindNames[kind];
         if (kind == ED_GROUP) what = ed_.groups[i].type == Map::GROUP_ROOM ? "ROOM" : ed_.groups[i].type == Map::GROUP_STAIRS ? "STAIRS" : "GROUP";
         if (!edMulti_.empty()) what += " + " + std::to_string(edMulti_.size()) + " MORE";
@@ -1334,7 +1378,7 @@ void Game::editorFrame(double dt) {
         y += 14 * s;
         if (kind == ED_BRUSH) {
             int m = ed_.brushes[i].material;
-            if (ui_.cycle(x, y, w, h, "MATERIAL (M)", m, kMapMaterials, mats)) { edMat_ = m; edModify([&](Map& mm) { mm.brushes[i].material = m; }, false); }
+            if (ui_.cycle(x, y, w, h, "MATERIAL (M)", m, kMapMaterials, mats, UiExp::edit())) { edMat_ = m; edModify([&](Map& mm) { mm.brushes[i].material = m; }, false); }
             row();
         } else if (kind == ED_GROUP) {
             auto& gr = ed_.groups[i];
@@ -1343,42 +1387,45 @@ void Game::editorFrame(double dt) {
                 y += 14 * s;
             } else {
                 int m = gr.material;
-                if (ui_.cycle(x, y, w, h, "MATERIAL (M)", m, kMapMaterials, mats)) { edMat_ = m; edModify([&](Map& mm) { mm.groups[i].material = m; }, false); }
+                if (ui_.cycle(x, y, w, h, "MATERIAL (M)", m, kMapMaterials, mats, UiExp::edit())) { edMat_ = m; edModify([&](Map& mm) { mm.groups[i].material = m; }, false); }
                 row();
             }
             if (gr.type == Map::GROUP_STAIRS) {
                 static const std::vector<std::string> dirs = {"+X", "-X", "+Z", "-Z"};
                 int d = gr.dir;
-                if (ui_.cycle(x, y, w, h, "RISING TOWARD", d, 4, dirs)) edModify([&](Map& mm) { mm.groups[i].dir = d; }, false);
+                if (ui_.cycle(x, y, w, h, "RISING TOWARD", d, 4, dirs, UiExp::edit())) edModify([&](Map& mm) { mm.groups[i].dir = d; }, false);
                 row();
             }
         } else if (kind == ED_SPAWN) {
             static const std::vector<std::string> teams = {"TEAM A", "TEAM B", "ANY TEAM", "RACE"};
             int t = ed_.spawns[i].team;
-            if (ui_.cycle(x, y, w, h, "TEAM (M)", t, 4, teams)) edModify([&](Map& mm) { mm.spawns[i].team = t; }, false);
+            if (ui_.cycle(x, y, w, h, "TEAM (M)", t, 4, teams, UiExp::edit())) edModify([&](Map& mm) { mm.spawns[i].team = t; }, false);
             row();
             float deg = std::remainder(ed_.spawns[i].yaw * 180.0f / PI, 360.0f);
-            if (ui_.slider(x, y, w, h, "FACING (Q E)", deg, -180, 180, "%.0f"))
+            if (ui_.slider(x, y, w, h, "FACING (Q E)", deg, -180, 180, "%.0f", UiExp::edit()))
                 edModify([&](Map& mm) { mm.spawns[i].yaw = std::round(deg / 15) * 15 * PI / 180.0f; }, true);
             row();
         } else if (kind == ED_LIGHT) {
             float r = ed_.lights[i].radius, in = ed_.lights[i].intensity;
-            if (ui_.slider(x, y, w, h, "RADIUS", r, 1, 60, "%.0f")) edModify([&](Map& mm) { mm.lights[i].radius = std::round(r); }, true);
+            if (ui_.slider(x, y, w, h, "RADIUS", r, 1, 60, "%.0f", UiExp::edit())) edModify([&](Map& mm) { mm.lights[i].radius = std::round(r); }, true);
             row();
-            if (ui_.slider(x, y, w, h, "BRIGHTNESS", in, 0.1f, 4, "%.1f")) edModify([&](Map& mm) { mm.lights[i].intensity = std::round(in * 10) / 10; }, true);
+            if (ui_.slider(x, y, w, h, "BRIGHTNESS", in, 0.1f, 4, "%.1f", UiExp::edit())) edModify([&](Map& mm) { mm.lights[i].intensity = std::round(in * 10) / 10; }, true);
             row();
         }
-        if (ui_.button(x, y, w2, h, "DUPLICATE")) edDuplicate();
-        if (ui_.button(x + w2 + gap, y, w2, h, "DELETE")) edDelete();
+        // (the hill is one per map: no DUPLICATE; the last box / spawn can't go: DELETE says so instead)
+        if (ui_.button(x, y, w2, h, "DUPLICATE", UiExp::edit(), kind != ED_HILL)) edDuplicate();
+        bool lastOne = (kind == ED_BRUSH && ed_.brushes.size() <= 1) || (kind == ED_SPAWN && ed_.spawns.size() <= 1);
+        if (ui_.button(x + w2 + gap, y, w2, h, "DELETE", lastOne ? UiExp::state("ednotice") : UiExp::edit())) edDelete();
         row();
         {   // rotate 90 degrees about each axis, mirror across each plane (everything selected, about its middle)
             float w3 = (w - 2 * gap) / 3;
-            static const char* rot[] = {"ROTATE Y (R)", "ROTATE X (SH+R)", "ROTATE Z (CT+R)"};
-            static const char* mir[] = {"MIRROR X (F)", "MIRROR Z (SH+F)", "MIRROR Y (CT+F)"};
+            // (the Shift / Ctrl shortcuts are in the help lines: "MIRROR Y (CT+F)" didn't fit its button)
+            static const char* rot[] = {"ROTATE Y (R)", "ROTATE X", "ROTATE Z"};
+            static const char* mir[] = {"MIRROR X (F)", "MIRROR Z", "MIRROR Y"};
             static const int rotOp[] = {ED_ROT_Y, ED_ROT_X, ED_ROT_Z}, mirOp[] = {ED_MIR_X, ED_MIR_Z, ED_MIR_Y};
-            for (int k = 0; k < 3; k++) if (ui_.button(x + k * (w3 + gap), y, w3, h, rot[k])) edTransform(rotOp[k]);
+            for (int k = 0; k < 3; k++) if (ui_.button(x + k * (w3 + gap), y, w3, h, rot[k], edTransformExp(rotOp[k]))) edTransform(rotOp[k]);
             row();
-            for (int k = 0; k < 3; k++) if (ui_.button(x + k * (w3 + gap), y, w3, h, mir[k])) edTransform(mirOp[k]);
+            for (int k = 0; k < 3; k++) if (ui_.button(x + k * (w3 + gap), y, w3, h, mir[k], edTransformExp(mirOp[k]))) edTransform(mirOp[k]);
             row();
         }
     } else {
@@ -1388,7 +1435,7 @@ void Game::editorFrame(double dt) {
         // flies the camera back from it, keeping the view direction)
         int nClip = 0;
         for (auto& br : ed_.brushes) nClip += !br.generated && br.material == 9;
-        if (nClip && ui_.button(x, y, w, h, "FIND CLIP BOXES (INVISIBLE WALLS): " + std::to_string(nClip))) {
+        if (nClip && ui_.button(x, y, w, h, "FIND CLIP BOXES (INVISIBLE WALLS): " + std::to_string(nClip), UiExp::state("edsel").withId("FIND CLIP BOXES"))) {
             for (size_t k = 1; k <= ed_.brushes.size(); k++) {
                 int j = (int)((edClipFind_ + k + ed_.brushes.size()) % ed_.brushes.size());
                 if (ed_.brushes[j].generated || ed_.brushes[j].material != 9) continue;
@@ -1402,6 +1449,7 @@ void Game::editorFrame(double dt) {
         }
         y += h + gap;
     }
+    ui_.scope = nullptr;
     // what this map can be played as
     y = std::max(y + 6 * s, H - 150 * s);
     std::string modes;
@@ -1410,11 +1458,12 @@ void Game::editorFrame(double dt) {
     y += 12 * s;
     ui_.label(x, y, modes.empty() ? "NOTHING YET (NEEDS SPAWNS)" : modes, modes.empty() ? kRed : kWhite, 0.5f);
     y += 12 * s;
-    ui_.label(x, y, "(TEAM MODES NEED A + B SPAWNS)", kGrey, 0.5f);
+    bool room = y + 32 * s <= H;   // (a long selection panel leaves room for the two notes or none)
+    if (room) ui_.label(x, y, "(TEAM MODES NEED A + B SPAWNS)", kGrey, 0.5f);
     y += 18 * s;
     char stats[96];
     snprintf(stats, sizeof stats, "%d BOXES  %d SPAWNS  %d LIGHTS", (int)ed_.brushes.size(), (int)ed_.spawns.size(), (int)ed_.lights.size());
-    ui_.label(x, y, stats, kGrey, 0.5f);
+    if (room) ui_.label(x, y, stats, kGrey, 0.5f);
 
     // help, bottom left
     static const char* help[] = {
@@ -1427,6 +1476,7 @@ void Game::editorFrame(double dt) {
     float hy = H - 12 * s - 5 * 13 * s;
     r_.rect(0, hy - 6 * s, panelX, H - hy + 6 * s, {0, 0, 0, 0.45f});
     for (const char* t : help) { ui_.label(10 * s, hy, t, kGrey, 0.5f); hy += 13 * s; }
+    ui_.where = nullptr;
     if (edGroupMenu_ || edExportAsk_) drawEditorGroupMenu(panelX * 0.5f - 200 * s, 70 * s, 400 * s);
     if (time_ < edMsgUntil_) ui_.labelCentered(panelX * 0.5f, 20 * s, edMsg_, kWhite);
     if (edOnline_) {   // editing together: the chat (Enter) and any running vote (F1 / F2)
@@ -1434,4 +1484,5 @@ void Game::editorFrame(double dt) {
         drawChatBox(panelX, H, s, ts);
         if (net_.hasSnapshot() && net_.mode().voteActive) drawVotePanel(panelX * 0.5f, s, ts);
     }
+    if (ui_.probing()) uiTestActions();   // (the UI test: the 3D view, the selection's handles, the keys)
 }
