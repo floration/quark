@@ -2453,7 +2453,7 @@ static void testTimeToKill() {
 // movement, a third player spectates. Also checks the extreme game log.
 static void testDuel(uint16_t port) {
     printf("duel 1v1: a modifier per life, spectators, game log\n");
-    std::string logPath = "quark_test_duel.log";
+    std::string logPath = (std::filesystem::temp_directory_path() / ("quark_test_duel_" + std::to_string(getpid()) + ".log")).string();   // (not in the working folder)
     Server s;
     ServerConfig cfg;
     cfg.autoStart = true;
