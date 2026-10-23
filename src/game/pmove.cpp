@@ -13,8 +13,9 @@ constexpr float kAirAccel = 2.2f;
 constexpr float kAirSpeedCap = 2.3f; // quake-style air strafe cap: a wider window of angles that gain speed (was 2.0)
 constexpr float kOverstrafeBrake = 0.35f; // turning past the window: only this much of the push against your momentum applies
 constexpr float kAirControl = 4.0f;  // how fast held direction bends momentum in the air (rad/s-ish), speed kept; above
-                                     // kAirAccel x 10 x kAirSpeedCap / this (12.65 m/s) it falls off as 1 / speed: there
-                                     // W-only steering turns no faster than strafing does (owner 1.17)
+                                     // kAirControlFrom it falls off as 1 / speed, so A/D strafing turns better (owner 1.17)
+constexpr float kAirControlFrom = 9.5f;   // m/s: where W-only steering starts losing to A/D (owner 1.17: "9.5m/s instead of
+                                          // 12.7 ... by lowering w stafing power not increasing ad strafing"; it was 12.65)
 constexpr float kAirDriftAccel = 8.0f;  // m/s2: below run speed, held direction also pushes you this hard in the air (owner
                                         // 1.17: a standing jump drifts like a run-up one would, never past run speed)
 constexpr float kStrafeBoost = 0.10f;   // a strafe key held: air acceleration x (1 + this), ramping in from 12.65 m/s to
@@ -343,10 +344,10 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             }
             // Air control (CPM style), forward / back only: bend momentum toward where you look without changing
             // speed. Holding a strafe key turns it off, so strafe-and-turn gains speed like in Quake. Its rate is capped
-            // at what strafing turns (air acceleration x strafe cap / speed): above 12.65 m/s W-only bends slower,
-            // as 1 / speed, so A/D strafing (with its boost) is the faster way to turn at speed (owner 1.17).
+            // so that above kAirControlFrom (9.5 m/s) W-only bends slower, as 1 / speed, and A/D strafing is the faster
+            // way to turn at speed (owner 1.17). Only W-only is weakened: the A/D boost still ramps in from `cross`.
             if (wishLen > 0 && cmd.side == 0 && h > 0.5f) {
-                float rate = std::min(airControl, airAccel * airCap / std::max(h, 1e-3f));
+                float rate = std::min(airControl, airControl * kAirControlFrom * mt.speed / std::max(h, 1e-3f));
                 float k = std::min(1.0f, rate * dt);
                 float nx = s.vel.x / h + (wishDir.x - s.vel.x / h) * k, nz = s.vel.z / h + (wishDir.z - s.vel.z / h) * k;
                 float nl = std::sqrt(nx * nx + nz * nz);
@@ -434,14 +435,14 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
 
     s.flags &= (MF_FROZEN | MF_HOOKED | MF_PULLED);
     if (nowGround && !(s.flags & (MF_HOOKED | MF_PULLED))) s.flags |= MF_ONGROUND;
-    // Dash charges back (owner 1.17): on the floor at the end of a step, all of them; a bhop landing (jump held: the
-    // next step leaves the floor again, or this one bounced off it) only one. Not during a dash's own steps (its
-    // push into the floor is no landing: a super dash would refill itself), not on a ladder or off a grapple.
+    // Dash charges back (owner 1.17): on the floor at the end of a step, all of them; while holding jump (a bhop
+    // landing: the next step leaves the floor again, or this one bounced off it) only up to ONE ("when holding space you
+    // should only be able to charge 1 dash"): hopping never builds the second charge back. Not during a dash's own
+    // steps (its push into the floor is no landing: a super dash would refill itself), not on a ladder or off a grapple.
     if (!chargesSet && !dashing && !onLadder) {
         const bool hopping = jumpHeld && !frozen && !grappleOnly;
-        if (bounced) s.dashCharges = (uint8_t)std::min(maxCharges, s.dashCharges + 1);
-        else if (s.flags & MF_ONGROUND)
-            s.dashCharges = hopping && !(before.flags & MF_ONGROUND) ? (uint8_t)std::min(maxCharges, s.dashCharges + 1) : (uint8_t)maxCharges;
+        if (bounced || (hopping && (s.flags & MF_ONGROUND))) s.dashCharges = (uint8_t)std::max<int>(s.dashCharges, std::min(maxCharges, 1));
+        else if (s.flags & MF_ONGROUND) s.dashCharges = (uint8_t)maxCharges;
     }
     if (crouched) s.flags |= MF_CROUCHED;
     if (jumpHeld) s.flags |= MF_JUMPHELD;

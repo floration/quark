@@ -367,12 +367,13 @@ static void testMovementTuning() {
         while (f.dashTimer > 0) step(f, UserCmd(), open);
         CHECK(std::fabs(hs(f) - 32.0f) < 0.02f);   // (the cap)
     }
-    { // air control: W-only bends momentum at min(4, 22 x 2.3 / speed) rad/s: 4 at 10 m/s, 3.16 at 16, 1.58 at 32
+    { // air control: W-only bends momentum at min(4, 4 x 9.5 / speed) rad/s (owner: it loses to A/D from 9.5 m/s):
+      // 3.8 at 10 m/s, 2.38 at 16, 1.19 at 32
         for (float v : {10.0f, 16.0f, 32.0f}) {
             MoveState q; q.pos = {0, 50, 0}; q.vel = {0, 0, -v};
             UserCmd c; c.forward = 127; c.yaw = 30 * PI / 180;   // wish 30 deg off: no strafe push (cur > 2.3), no drift (over 9.5)
             Vec3 w = {-std::sin(c.yaw), 0, -std::cos(c.yaw)};
-            float rate = std::min(4.0f, 22.0f * 2.3f / v), k = rate * 0.001f;
+            float rate = std::min(4.0f, 4.0f * 9.5f / v), k = rate * 0.001f;
             Vec3 n = Vec3(0, 0, -1) + (w - Vec3(0, 0, -1)) * k;
             n = n / length(n) * v;
             step(q, c, open);
@@ -418,16 +419,16 @@ static void testMovementTuning() {
             float cross = 22.0f * 2.3f / 4.0f, want = 1 + 0.1f * std::clamp((v - cross) / (0.25f * cross), 0.0f, 1.0f);
             printf("  strafe push at %.0f m/s: x%.4f (want %.4f)\n", v, gain, want);
             CHECK(std::fabs(gain - want) < 1e-3f);
-            // the turn it makes, against W-only air control's (min(4, 50.6 / v) rad/s): equal at 12.65 m/s, ahead above
-            float strafeTurn = q.vel.x / v * 1000, control = std::min(4.0f, 22.0f * 2.3f / v);
+            // the turn it makes, against W-only air control's (min(4, 38 / v) rad/s): A/D ahead from 9.5 m/s (owner)
+            float strafeTurn = q.vel.x / v * 1000, control = std::min(4.0f, 4.0f * 9.5f / v);
             printf("    turning: strafe %.0f deg/s, W-only air control %.0f deg/s\n", strafeTurn * 180 / PI, control * 180 / PI);
-            if (v > 13.0f) CHECK(strafeTurn > control * 1.03f);
+            CHECK(strafeTurn > control * 1.03f);
         }
     }
 }
 
 // Dash charges (owner 1.17): two; a dash spends one; no dash while one runs (the press is dropped, not kept), the next
-// press after it ends spends the next; the ground refills both, a bhop landing one (max 2); a dash jump leaves both,
+// press after it ends spends the next; the ground refills both, holding jump (a bhop landing) only up to one; a dash jump leaves both,
 // a super dash exactly one, a wall bounce exactly one; the super dash's own floor contact is no refill; ladders
 // refill nothing; quick dash: a third charge.
 static void testDashCharges() {
@@ -483,7 +484,8 @@ static void testDashCharges() {
         printf("  ground dash spam over 4 s: %d dashes, %d ms at least between one's end and the next\n", dashes, minGap);
         CHECK(dashes == 4 && minGap >= 1200 && minGap <= 1201);
     }
-    { // a bhop landing (jump held: off the floor again at once) gives one back, up to two; a hard-landing bounce too
+    { // holding jump (bhop landings, a hard-landing bounce) refills only up to ONE charge (owner): letting go of jump on
+      // the floor gives both back
         UserCmd hop; hop.buttons = BTN_JUMP;
         MoveState q; q.pos = {0, 0.6f, 0}; q.dashCharges = 0;
         int landings = 0; uint8_t seen[3] = {};
@@ -493,10 +495,14 @@ static void testDashCharges() {
             if (!was && (q.flags & MF_ONGROUND)) seen[landings++] = q.dashCharges;
         }
         printf("  bhop landings from 0: %d %d %d\n", seen[0], seen[1], seen[2]);
-        CHECK(landings == 3 && seen[0] == 1 && seen[1] == 2 && seen[2] == 2);
+        CHECK(landings == 3 && seen[0] == 1 && seen[1] == 1 && seen[2] == 1);
         MoveState f; f.pos = {0, 20, 0}; f.dashCharges = 0;
         for (int i = 0; i < 3000 && f.vel.y <= 0; i++) step(f, hop, open);   // falls, bounces off the floor (no ground tick)
         CHECK(f.vel.y > 7.34f && f.dashCharges == 1);
+        for (int i = 0; i < 3000 && !(q.flags & MF_ONGROUND && q.vel.y <= 0); i++) step(q, none, open);   // let go: land
+        step(q, none, open);
+        printf("  let go of jump and land: %d charge(s)\n", q.dashCharges);
+        CHECK(q.dashCharges == 2);
     }
     { // a dash jump leaves both (it's off the floor): from one charge, ground dash + jump
         MoveState q; q.flags = MF_ONGROUND; q.dashCharges = 1;

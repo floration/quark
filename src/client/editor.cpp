@@ -26,7 +26,8 @@ const Color kWhite = {1, 1, 1, 1};
 const Color kGrey = {0.7f, 0.72f, 0.75f, 1};
 const Color kRed = {1, 0.35f, 0.3f, 1};
 const Color kClipColor = {0.75f, 0.35f, 1.0f, 0.22f};   // clip boxes (invisible in play) in the editor
-const float kGrids[] = {0.25f, 0.5f, 1.0f, 2.0f, 4.0f};
+const float kGrids[] = {0.125f, 0.25f, 0.5f, 1.0f, 2.0f, 4.0f};   // (1/8 m up to 4 m: [ and ] step through them)
+const int kGridCount = (int)(sizeof kGrids / sizeof kGrids[0]);
 const char kKindChar[] = "bslzhcpdg"; // ED_* -> edit op kind
 const char* kKindNames[] = {"BOX", "SPAWN", "LIGHT", "BOMB SITE", "HILL", "CHECKPOINT", "PAYLOAD PATH POINT", "LADDER", "GROUP"};
 const char* kMatNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip"};   // (group files)
@@ -981,7 +982,7 @@ void Game::editorKey(int key, int mods) {
     }
     if (ctrl && key == GLFW_KEY_D) { edDuplicate(); return; }
     if (key == GLFW_KEY_LEFT_BRACKET) { edGridIdx_ = std::max(0, edGridIdx_ - 1); return; }
-    if (key == GLFW_KEY_RIGHT_BRACKET) { edGridIdx_ = std::min(4, edGridIdx_ + 1); return; }
+    if (key == GLFW_KEY_RIGHT_BRACKET) { edGridIdx_ = std::min(kGridCount - 1, edGridIdx_ + 1); return; }
     if (!edSelValid()) return;
     if (key == GLFW_KEY_DELETE || key == GLFW_KEY_BACKSPACE) { edDelete(); return; }
     int kind = edSel_.kind, i = edSel_.idx;
@@ -1450,8 +1451,8 @@ void Game::editorFrame(double dt) {
         row();
     }
     {
-        static const std::vector<std::string> grids = {"GRID 0.25 M", "GRID 0.5 M", "GRID 1 M", "GRID 2 M", "GRID 4 M"};
-        ui_.cycle(x, y, w, h, "GRID ([ ])", edGridIdx_, 5, grids, UiExp::local());
+        static const std::vector<std::string> grids = {"GRID 1/8 M", "GRID 1/4 M", "GRID 1/2 M", "GRID 1 M", "GRID 2 M", "GRID 4 M"};
+        ui_.cycle(x, y, w, h, "GRID ([ ])", edGridIdx_, kGridCount, grids, UiExp::local());
         row();
     }
     {   // which modes this map is offered for: click to allow / disallow (dim = missing pieces, e.g. team spawns)

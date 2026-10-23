@@ -272,7 +272,7 @@ private:
     double edResetArmed_ = 0, edMsgUntil_ = 0, edLastPush_ = -1e9, edLeaveArmed_ = 0, edNextCam_ = 0, edTickAcc_ = 0;
     EdSel edSel_;
     std::vector<EdSel> edMulti_; // shift+click: more selected boxes / groups (for GROUP)
-    int edGridIdx_ = 1, edLoadIdx_ = 0, edMat_ = 0; // edMat_: the material new boxes / rooms / stairs get (the last one picked)
+    int edGridIdx_ = 2, edLoadIdx_ = 0, edMat_ = 0; // edMat_: the material new boxes / rooms / stairs get (the last one picked)
     bool edGroupMenu_ = false, edExportAsk_ = false; // IMPORT GROUP's list of saved groups; EXPORT's "make it a group first?"
     std::vector<std::string> edGroupFiles_;
     float edSpeed_ = 12;
@@ -357,7 +357,7 @@ private:
     double localFireQueued_ = -1;
     double nextLaserSound_ = 0;
     double knifeSlash_[kMaxPlayers] = {}; // when each player last swung the knife (slash trail)
-    void drawKnifeSlash(const Vec3& eye, float yaw, float pitch, float t, const Vec3& color);
+    void drawKnifeSlash(const Vec3& eye, float yaw, float pitch, float t, const Vec3& color, Vec3 from);   // from: the knife (zero: a spot by the eye)
     // a player's weapon as others see it (hide and seek / tag: the seeker's / tagger's knife or locator): an arm from
     // the shoulder, the weapon's own model in the hand, aimed where they look
     void drawHeldWeapon(int player, int weapon, const Vec3& shoulder, float yaw, float pitch, float bodyScale, const Vec3& accent, float sunVis);
@@ -429,6 +429,7 @@ private:
     Audio audio_;
     void updateSounds(const NetClient::PlayerArray& players);
     MoveState prevMove_;
+    double prevSoundAt_ = 0;   // (updateSounds: when it last ran, for the frame time)
     bool prevAlive_ = false;
     float stepDist_ = 0;
     struct RemoteAudio { Vec3 pos; bool valid = false; float stepDist = 0; bool hooked = false; double nextLaser = 0, nextShot = 0, nextHurt = 0; int health = 0; };

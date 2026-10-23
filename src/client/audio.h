@@ -27,6 +27,8 @@ enum SoundId {
     // the hitsound's heavier tiers (SND_HIT is the lightest; hitSoundFor() picks one by the hit's damage). Added after
     // the rest so the recorded kits' ids (sfx_recorded.h) and everyone's HIT overrides keep their meaning.
     SND_HIT_MED, SND_HIT_HEAVY, SND_HIT_BRUTAL,
+    // movement tech and the locator (owner, 1.17.0): a super (dash jump), a hyper (super dash), the locator's ping
+    SND_SUPER, SND_HYPER, SND_LOCATOR,
     // the announcer (recorded lines from voice_data.h, in its order; the same in every sound pack)
     SND_VOICE_THREE, SND_VOICE_TWO, SND_VOICE_ONE, SND_VOICE_GO, SND_VOICE_BOMB_PLANTED, SND_VOICE_BOMB_DEFUSED,
     SND_VOICE_HILL_TAKEN, SND_VOICE_HILL_LOST, SND_VOICE_POINT_TAKEN, SND_VOICE_POINT_LOST, SND_VOICE_ROUND_WON,

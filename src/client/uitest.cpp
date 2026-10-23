@@ -220,7 +220,7 @@ void Game::uiTestActions() {
             Vec3 f = angleForward(yaw_, 0);
             int fa = std::fabs(f.x) > std::fabs(f.z) ? 0 : 2;
             AABB b = edBounds(ed_, edSel_);
-            bool thin = b.mx[fa] - b.mn[fa] <= 0.25f * (1 << edGridIdx_) + 1e-4f;
+            bool thin = b.mx[fa] - b.mn[fa] <= 0.125f * (1 << edGridIdx_) + 1e-4f;
             ui_.keyAction("CTRL+ARROW (SHRINK)", GLFW_KEY_UP, GLFW_MOD_CONTROL, thin ? UiExp::inert() : UiExp::edit());
         }
         bool last = (kind == ED_BRUSH && ed_.brushes.size() <= 1) || (kind == ED_SPAWN && ed_.spawns.size() <= 1);
@@ -232,7 +232,7 @@ void Game::uiTestActions() {
     }
     ui_.keyAction("CTRL+Z (UNDO)", GLFW_KEY_Z, GLFW_MOD_CONTROL, edUndo_.empty() ? UiExp::state("ednotice") : UiExp::state("edmap"));
     if (!edOnline_) ui_.keyAction("CTRL+S (SAVE)", GLFW_KEY_S, GLFW_MOD_CONTROL, UiExp::state("usermaps"));
-    ui_.keyAction("] (BIGGER GRID)", GLFW_KEY_RIGHT_BRACKET, 0, edGridIdx_ < 4 ? UiExp::state("edgrid") : UiExp::inert());
+    ui_.keyAction("] (BIGGER GRID)", GLFW_KEY_RIGHT_BRACKET, 0, edGridIdx_ < 5 ? UiExp::state("edgrid") : UiExp::inert());
     ui_.keyAction("[ (SMALLER GRID)", GLFW_KEY_LEFT_BRACKET, 0, edGridIdx_ > 0 ? UiExp::state("edgrid") : UiExp::inert());
     ui_.where = nullptr;
 }

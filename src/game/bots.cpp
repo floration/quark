@@ -1072,9 +1072,9 @@ UserCmd botThink(Server& s, int id) {
                 if (std::fabs(phi) > 0.05f) b.strafeDir = phi > 0 ? 1.0f : -1.0f;
                 float ang = th * b.strafeDir, c = std::cos(ang), sn = std::sin(ang);
                 wish = {vn.x * c - vn.z * sn, 0, vn.x * sn + vn.z * c};
-            } else if (hs > 12.65f) {
+            } else if (hs > 9.5f) {
                 // a sharp turn at speed: push square to the momentum, toward the route (a strafe key's push). Above
-                // 12.65 m/s W-only air control turns slower than that (pmove: its rate falls off as 1 / speed, and a
+                // 9.5 m/s W-only air control turns slower than that (pmove: its rate falls off as 1 / speed, and a
                 // strafe key's push gets the strafe boost), so a bot steering with W alone would swing wide.
                 float sg = phi > 0 ? 1.0f : -1.0f;
                 wish = {-vn.z * sg, 0, vn.x * sg};

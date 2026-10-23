@@ -1216,7 +1216,7 @@ void Game::frame(double dt) {
             if (net_.selfWeapon() == WPN_LOCATOR) {   // the locator: a ping every kLocatorCooldown (the server answers with EV_LOCATE)
                 if (wantFire && !localFireLocked_ && net_.selfAlive() && net_.mode().phase == PHASE_LIVE && time_ >= locatorReady_) {
                     locatorReady_ = time_ + kLocatorCooldown;
-                    audio_.play(SND_GRAPPLE_FIRE, 0.7f, 1.6f);
+                    audio_.play(SND_LOCATOR, 0.8f);
                 }
                 wantFire = false;
             }
@@ -1668,7 +1668,9 @@ void Game::drawWorld(float alpha) {
         bool selfView = i == me && alive;
         const PlayerSnap& p = players[i].snap;
         Vec3 e = selfView ? eye : p.pos + Vec3(0, kEyeHeight, 0);
-        drawKnifeSlash(e, selfView ? yaw_ : p.yaw, selfView ? pitch_ : p.pitch, t, teamColor(i));
+        // (yours comes out of the knife you hold, like any weapon's shot; others' from their knife hand)
+        drawKnifeSlash(e, selfView ? yaw_ : p.yaw, selfView ? pitch_ : p.pitch, t, teamColor(i),
+                       selfView ? muzzlePoint(WPN_KNIFE, eye) : Vec3());
     }
 
     // projectiles (yours: from your weapon model's muzzle, blending onto the real path over 0.2 s)
@@ -4821,16 +4823,17 @@ void Game::drawPicker(float cx, float y) {
     } else if (ui_.button(cx - 100 * s, y, 200 * s, bh, "BACK", UiExp::nav(back))) picker_ = PICK_NONE;
 }
 
-void Game::drawKnifeSlash(const Vec3& eye, float yaw, float pitch, float t, const Vec3& color) {
+void Game::drawKnifeSlash(const Vec3& eye, float yaw, float pitch, float t, const Vec3& color, Vec3 from) {
     const float reach = weaponDef(WPN_KNIFE).range;
     Vec3 fwd = angleForward(yaw, pitch);
     Vec3 right = normalize(cross(fwd, {0, 1, 0})), up = cross(right, fwd);
     float fade = 1.0f - t;
-    // the hit check (a ray to `reach`), drawn as a blade-width beam from the arm out to the tip
-    Vec3 arm = eye + right * 0.06f - up * 0.1f + fwd * 0.05f, tip = eye + fwd * reach; // from you all the way out
-    r_.line(arm, tip, 0.05f, rgba(color * 1.3f, 0.25f * fade));
-    r_.line(arm, tip, 0.015f, rgba({1, 1, 1}, 0.7f * fade));
-    r_.box(tip, {0.05f, 0.05f, 0.05f}, yaw, color * 1.5f, 1.0f, false);
+    // the hit check (a ray to `reach`), drawn as a blade-width beam from the knife out to the tip (no marker at the
+    // end: the owner)
+    if (length(from) == 0) from = eye + right * 0.06f - up * 0.1f + fwd * 0.05f;   // (someone else's: their knife hand)
+    Vec3 tip = eye + fwd * reach;
+    r_.line(from, tip, 0.05f, rgba(color * 1.3f, 0.25f * fade));
+    r_.line(from, tip, 0.015f, rgba({1, 1, 1}, 0.7f * fade));
 }
 
 void Game::drawHeldWeapon(int i, int w, const Vec3& shoulder, float yaw, float pitch, float bs, const Vec3& accent, float sv) {
@@ -5140,6 +5143,8 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
     const int me = net_.clientId();
     bool alive = net_.selfAlive();
     const MoveState& m = net_.predicted();
+    const double frameDt = time_ - prevSoundAt_;
+    prevSoundAt_ = time_;
     if (alive && prevAlive_) {
         bool was = prevMove_.flags & MF_ONGROUND, now = m.flags & MF_ONGROUND;
         Vec3 d = m.pos - prevMove_.pos;
@@ -5151,6 +5156,10 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
         if (was && !now && m.vel.y > 3) audio_.play(SND_JUMP, 0.5f);
         if (!was && now && prevMove_.vel.y < -6) audio_.play(SND_LAND, clampf(-prevMove_.vel.y / 20.0f, 0.3f, 1.0f));
         if (m.dashTimer > 0 && prevMove_.dashTimer <= 0) audio_.play(SND_DASH, 0.8f);
+        // a dash cut short by a jump: a super (dash jump), or a hyper (super dash: the dash was aimed down into the
+        // floor). (A dash running out on its own has under a frame left; an upward dash ending isn't a jump.)
+        if (prevMove_.dashTimer > (float)frameDt + 0.01f && m.dashTimer <= 0 && m.vel.y > 1.0f && !(m.flags & MF_ONGROUND))
+            audio_.play(prevMove_.dashUp < 0 && m.dashCharges == 1 ? SND_HYPER : SND_SUPER, 0.9f);   // (a hyper leaves one charge, a super all)
         if ((m.flags & MF_HOOKED) && !(prevMove_.flags & MF_HOOKED)) {
             audio_.play(SND_GRAPPLE_FIRE, 0.7f);
             audio_.play3D(SND_GRAPPLE_HIT, m.hookPoint, 0.9f);

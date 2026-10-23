@@ -19,7 +19,7 @@ python3 tools/studio/build.py build/assets_export     # -> build/studio/ (+ mani
 
 | Category | Files | Path (= the override path) |
 |---|---|---|
-| Sounds | 30 sounds x 5 kits = 150 WAV (48 kHz mono) | `sounds/<kit>/<SOUND>.wav`, kit = `default` `heavy_metal` `magical` `retro` `mouth` |
+| Sounds | 33 sounds x 5 kits = 165 WAV (48 kHz mono) | `sounds/<kit>/<SOUND>.wav`, kit = `default` `heavy_metal` `magical` `retro` `mouth` |
 | Voices | 30 announcer lines x 7 voices = 210 WAV | `voices/<voice>/<LINE>.wav`, voice = `male` `female` `british` `old_man` `e_girl` `india` `spy` |
 | Models | 5 players, 10 weapon viewmodels, 7 projectiles, the crown = 23 glTF | `models/player/<NAME>.gltf`, `models/weapon/<NAME>.gltf`, `models/projectile/<NAME>.gltf`, `models/crown/CROWN.gltf` |
 | Maps | every shipped map (.qmap) | `maps/<name>.qmap` |

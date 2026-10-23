@@ -176,6 +176,14 @@ void Audio::synthesize() {
     s[SND_FINISH] = make(0.8f);
     for (int k = 0; k < 3; k++) { float f = 1047.0f * std::pow(1.26f, (float)k); addTone(s[SND_FINISH], f, 0.45f, 0.002f, k == 2 ? 0.3f : 0.1f, k * 0.09f); addTone(s[SND_FINISH], 2 * f, 0.12f, 0.002f, 0.08f, k * 0.09f); }
     addRoom(s[SND_FINISH], 0.3f, 0.9f); finish(s[SND_FINISH], 0.3f);
+    // movement tech: a super (dash jump) is a bright rising whoosh with a rising tone; a hyper (super dash) the same
+    // lower and heavier, with an impact under it; the locator a sonar ping with its echo
+    s[SND_SUPER] = make(0.4f); addBand(s[SND_SUPER], 500, 1400, 1, 0.01f, 0.16f, 51, 5200); addThump(s[SND_SUPER], 560, 1120, 0.12f, 0.55f, 0.002f, 0.13f);
+    addTone(s[SND_SUPER], 1680, 0.18f, 0.002f, 0.08f, 0.07f); addRoom(s[SND_SUPER], 0.18f, 0.6f); finish(s[SND_SUPER], 0.3f);
+    s[SND_HYPER] = make(0.5f); addThump(s[SND_HYPER], 150, 55, 0.08f, 1, 0.002f, 0.12f); addBand(s[SND_HYPER], 300, 900, 1, 0.01f, 0.22f, 52, 6000);
+    addThump(s[SND_HYPER], 380, 1150, 0.18f, 0.6f, 0.003f, 0.2f); addRoom(s[SND_HYPER], 0.22f, 0.8f); finish(s[SND_HYPER], 0.36f);
+    s[SND_LOCATOR] = make(0.9f); addTone(s[SND_LOCATOR], 1480, 0.8f, 0.002f, 0.25f); addTone(s[SND_LOCATOR], 2960, 0.12f, 0.002f, 0.1f);
+    addTone(s[SND_LOCATOR], 1480, 0.35f, 0.002f, 0.25f, 0.24f); addRoom(s[SND_LOCATOR], 0.35f, 1.0f); finish(s[SND_LOCATOR], 0.24f);
     // the kits: RETRO re-voices these (chiptune), HEAVY METAL / MAGICAL / WOODEN are recorded (sfx_recorded.h);
     // anything a kit lacks is the DEFAULT sound
     for (int p = 1; p < kPacks; p++)
@@ -539,6 +547,7 @@ void Audio::stop() {
 static const char* kModSoundNames[] = {"HIT", "KILL", "HURT", "STEP", "JUMP", "LAND", "RIFLE", "ROCKET", "KNIFE", "SNIPER", "LASER",
     "SHOTGUN", "STICKY", "CROSSBOW", "BUBBLE", "SYRINGE", "EXPLOSION", "STICKY_ATTACH", "BOLT_HIT", "DASH", "GRAPPLE_FIRE",
     "GRAPPLE_HIT", "DEATH", "STREAK", "TYPING", "CHECKPOINT", "FINISH", "HIT_MED", "HIT_HEAVY", "HIT_BRUTAL",
+    "SUPER", "HYPER", "LOCATOR",
     // the announcer's lines (SND_VOICE_*), as the asset export and the overrides name them
     "THREE", "TWO", "ONE", "GO", "BOMB_PLANTED", "BOMB_DEFUSED", "HILL_TAKEN", "HILL_LOST", "POINT_TAKEN", "POINT_LOST",
     "ROUND_WON", "ROUND_LOST", "OVERTIME", "YOU_WIN", "YOU_LOSE", "HIGH_SCORE", "NEW_LEADER", "YOU_DIED", "HEADSHOT",
