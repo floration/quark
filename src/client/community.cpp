@@ -1,5 +1,5 @@
 // Community features backed by the master Worker (tools/master/worker.js), shared with the Discord bot
-// (tools/discordbot): linking your Discord name, queues you can join from inside the game (the bot pings
+// (the discord-bot branch): linking your Discord name, queues you can join from inside the game (the bot pings
 // Discord users, the game tells you), and crowns for the ranked leaders (gold #1, silver #2-10).
 #include "game.h"
 #include <algorithm>

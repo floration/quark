@@ -15,6 +15,16 @@ The build needs `python3` (standard library only): it generates the recorded ann
 Executables: `quark` (game), `quark_server` (dedicated server), `quark_tests` (headless tests).
 Keep the `maps/` folder next to the executables.
 
+### Branches: the launcher, the website and the Discord bot
+New work goes to `testing` (each push is a signed testing build); the default branch takes only PRs from it. Three
+parts live on branches of their own (docs/HANDOVER.md section 4):
+- `launcher`: the launcher that releases ship. Release builds compile `quark_launcher` from that branch
+  (`tools/launcher_build.sh`), so it only changes when that branch does; raise its `VERSION` with a launcher change,
+  or installed launchers won't take it. The game's own launcher-upgrade code stays in `src/launcher/`.
+- `site`: the website. To work on it, or run the site tools (`tools/site_*.py`) locally, check it out into `site/`:
+  `git fetch origin site && git worktree add site site`. Production releases publish it from that branch.
+- `discord-bot`: the bot (setup and updates: docs/OPERATIONS.md section 2).
+
 ## Multiplayer
 - **Host in the game:** Host Game -> pick map/mode/port -> Start. "Auto port forward (UPnP)" asks your router to open the UDP port.
 - **Dedicated server:** `quark_server --mode bomb --map arena --port 27500 --upnp` (type `help`-style commands into its console: `map`, `mode`, `forcestart`, `kick`, `status`, `quit`).

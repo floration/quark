@@ -120,11 +120,14 @@ jobs:
             -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres -DCMAKE_BUILD_TYPE=Release \
             -DQUARK_VERSION_SUFFIX="$QUARK_VERSION_SUFFIX"
           cmake --build build -j
-          mkdir -p pkg && cp build/quark.exe build/quark_server.exe build/quark_launcher.exe pkg/ && cp -r maps mods pkg/
+          sh tools/launcher_build.sh -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc-posix -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++-posix \
+            -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres -DCMAKE_BUILD_TYPE=Release
+          mkdir -p pkg && cp build/quark.exe build/quark_server.exe build-launcher/quark_launcher.exe pkg/ && cp -r maps mods pkg/
           python3 tools/pack.py pkg quark-windows.qpak
           mkdir -p quark-windows && cp -r pkg/* README.md quark-windows/
           zip -qr quark-windows.zip quark-windows
-          cp build/quark_launcher.exe quark-launcher-windows.exe
+          cp build-launcher/quark_launcher.exe quark-launcher-windows.exe
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: { name: windows, path: "quark-windows.zip\nquark-windows.qpak\nquark-launcher-windows.exe" }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -160,6 +163,8 @@ jobs:
         with:
           persist-credentials: false
       - run: sudo apt-get update && sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false, ref: site, path: site }   # the website's source: the site branch (HANDOVER section 4)
       - env:
           GROUPS: ${{ needs.meta.outputs.groups }}
         run: |
@@ -174,11 +179,12 @@ jobs:
           build/quark_tests exportassets build/assets_export > /dev/null
           python3 tools/studio/build.py build/assets_export
           python3 tools/site_assets.py --studio build/studio --out site-assets
-          mkdir -p pkg && cp build/quark build/quark_server build/quark_launcher pkg/ && cp -r maps mods pkg/
+          sh tools/launcher_build.sh -DCMAKE_BUILD_TYPE=Release
+          mkdir -p pkg && cp build/quark build/quark_server build-launcher/quark_launcher pkg/ && cp -r maps mods pkg/
           python3 tools/pack.py pkg quark-linux.qpak
           mkdir -p quark-linux && cp -r pkg/* README.md quark-linux/
           tar czf quark-linux.tar.gz quark-linux
-          cp build/quark_launcher quark-launcher-linux
+          cp build-launcher/quark_launcher quark-launcher-linux
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: { name: linux, path: "quark-linux.tar.gz\nquark-linux.qpak\nquark-launcher-linux" }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -273,12 +279,13 @@ jobs:
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15 \
             -DQUARK_VERSION_SUFFIX="$QUARK_VERSION_SUFFIX"
           cmake --build build -j
-          mkdir -p pkg && cp -r build/quark.app build/quark_server build/quark_launcher pkg/ && cp -r maps pkg/
+          sh tools/launcher_build.sh -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
+          mkdir -p pkg && cp -r build/quark.app build/quark_server build-launcher/quark_launcher pkg/ && cp -r maps pkg/
           mkdir -p pkg/quark.app/Contents/Resources && cp -r maps mods pkg/quark.app/Contents/Resources/
           python3 tools/pack.py pkg quark-macos.qpak
           mkdir -p quark-macos && cp -r pkg/* README.md quark-macos/
           zip -qry quark-macos.zip quark-macos
-          zip -j quark-launcher-macos.zip build/quark_launcher
+          zip -j quark-launcher-macos.zip build-launcher/quark_launcher
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: { name: macos, path: "quark-macos.zip\nquark-macos.qpak\nquark-launcher-macos.zip" }
 
@@ -446,6 +453,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false, ref: site, path: site }   # the website's source: the site branch (HANDOVER section 4)
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with: { name: site-assets, path: site/assets/data/production }   # (the linux job's export of this release)
       - name: publish site/ to the gh-pages branch (served at floration.github.io/quark), signed
@@ -453,6 +462,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           QUARK_SIGNING_KEY: ${{ secrets.QUARK_SIGNING_KEY }}
         run: |
+          rm -rf site/.git   # (the site branch's checkout: not published, and gh-pages is a fresh one-commit branch below)
           python3 tools/site_changelog.py .
           python3 tools/site_updates.py .   # updates/ and updates/<version>/ (every version from 1.17.0 has its full changelog)
           # the owner's website pictures (docs/ASSETS.md): assets/overrides/website/<file> replaces site/img/<file>

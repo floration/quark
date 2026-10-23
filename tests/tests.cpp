@@ -2915,10 +2915,18 @@ static void testHostedRulesPerThread(uint16_t port) {
 
 // Constants written out in more than one language: the queue list (community.cpp, the master Worker, the
 // Discord bot) and the UDP info query the bot speaks (quarkdata.py). Parsed from the sources; any mismatch fails.
+// The bot lives on the discord-bot branch: its half runs only with QUARK_BOT_DIR pointing at a checkout of it.
+static std::string readFile(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    std::stringstream ss; ss << f.rdbuf(); return ss.str();
+}
 static std::string readSource(const char* rel) {
     if (sourceDir().empty()) return "";
-    std::ifstream f(sourceDir() + "/" + rel, std::ios::binary);
-    std::stringstream ss; ss << f.rdbuf(); return ss.str();
+    return readFile(sourceDir() + "/" + rel);
+}
+static std::string readBotSource(const char* rel) {
+    const char* dir = getenv("QUARK_BOT_DIR");
+    return dir && *dir ? readFile(std::string(dir) + "/" + rel) : "";
 }
 static std::string blockAfter(const std::string& s, const std::string& start, const std::string& end) {
     size_t a = s.find(start); if (a == std::string::npos) return "";
@@ -2927,8 +2935,10 @@ static std::string blockAfter(const std::string& s, const std::string& start, co
 static void testCrossLanguageConstants(uint16_t port) {
     printf("cross-language constants\n");
     std::string cpp = readSource("src/client/community.cpp"), js = readSource("tools/master/worker.js"),
-                bot = readSource("tools/discordbot/bot.py"), qd = readSource("tools/discordbot/quarkdata.py");
-    if (cpp.empty() || js.empty() || bot.empty() || qd.empty()) { printf("  (sources not found: skipped)\n"); return; }
+                bot = readBotSource("bot.py"), qd = readBotSource("quarkdata.py");
+    if (cpp.empty() || js.empty()) { printf("  (sources not found: skipped)\n"); return; }
+    bool withBot = !bot.empty() && !qd.empty();
+    if (!withBot) printf("  (the bot's half skipped: set QUARK_BOT_DIR to a checkout of the discord-bot branch)\n");
     // queues: key -> (title, size)
     std::map<std::string, std::pair<std::string, int>> qc, qb; std::map<std::string, int> qj;
     std::smatch m;
@@ -2937,15 +2947,17 @@ static void testCrossLanguageConstants(uint16_t port) {
         qc[(*it)[1]] = {(*it)[2], std::stoi((*it)[3])};
     b = blockAfter(js, "const QUEUE_SIZES = {", "};");
     static const std::regex rx7847("\"?([\\w-]+)\"?: (\\d+)"); for (std::sregex_iterator it(b.begin(), b.end(), rx7847), e; it != e; ++it) qj[(*it)[1]] = std::stoi((*it)[2]);
+    CHECK(qc.size() >= 10);
+    CHECK(qj.size() == qc.size());
+    for (auto& [k, v] : qc)
+        if (!qj.count(k) || qj[k] != v.second) { printf("  queue %s differs between community.cpp and worker.js\n", k.c_str()); g_fail++; }
+    if (!withBot) return;
     b = blockAfter(bot, "QUEUES: dict", "\n}");
     static const std::regex rx61002("\"([\\w-]+)\": \\(\"([^\"]*)\", (\\d+)\\)"); for (std::sregex_iterator it(b.begin(), b.end(), rx61002), e; it != e; ++it)
         qb[(*it)[1]] = {(*it)[2], std::stoi((*it)[3])};
-    CHECK(qc.size() >= 10);
-    CHECK(qj.size() == qc.size() && qb.size() == qc.size());
-    for (auto& [k, v] : qc) {
-        bool ok = qj.count(k) && qj[k] == v.second && qb.count(k) && qb[k] == v;
-        if (!ok) { printf("  queue %s differs between community.cpp, worker.js and bot.py\n", k.c_str()); g_fail++; }
-    }
+    CHECK(qb.size() == qc.size());
+    for (auto& [k, v] : qc)
+        if (!qb.count(k) || qb[k] != v) { printf("  queue %s differs between community.cpp and bot.py\n", k.c_str()); g_fail++; }
     // quarkdata.py: the pinned Worker address (the bot never follows master.txt: it sends BOT_KEY there)
     {
         std::string mc = readSource("src/game/master.cpp"), a, b;
