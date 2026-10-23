@@ -69,7 +69,8 @@ public:
     // Interpolated view of every player at render time.
     using PlayerArray = std::array<InterpPlayer, kMaxPlayers>;
     PlayerArray interpolatedPlayers() const;
-    std::vector<ProjectileSnap> interpolatedProjectiles() const;   // the ones in sight (the server sends others as an id: NET-10)
+    void interpolatedProjectiles(std::vector<ProjectileSnap>& out) const;   // the ones in sight (the server sends others as an id: NET-10)
+    std::vector<ProjectileSnap> interpolatedProjectiles() const { std::vector<ProjectileSnap> v; interpolatedProjectiles(v); return v; }
     // A sticky on a player (PROJ_ON_PLAYER): on that player as this client draws them (interpolated; yourself, alive
     // and not a demo: predicted, `alpha` between ticks as smoothedPos). False: they aren't drawn (out of sight).
     bool attachedPos(const ProjectileSnap& p, float alpha, Vec3* out) const;
@@ -87,6 +88,7 @@ public:
 
     // Reliable events received since last call.
     std::vector<GameEvent> takeEvents() { std::vector<GameEvent> e; e.swap(events_); return e; }
+    void takeEvents(std::vector<GameEvent>& out) { out.clear(); out.swap(events_); }   // (the two vectors trade their memory: no allocations)
     double renderTime() const { return renderTime_; }
     uint32_t serverTick() const { return hasSnapshot() ? latest().tick : 0; }
     int tickRate() const { return hasSnapshot() ? latest().tickRate : 1000; }
@@ -124,7 +126,8 @@ private:
     std::unique_ptr<AsyncFileWriter> rec_;   // (written on its own thread: no disk I/O in the frame loop)
     double recStart_ = 0, recLast_ = -1, recEvery_ = 0.016;
     uint32_t recMapRev_ = 0xFFFFFFFFu, recEventId_ = 0;
-    Snapshot recPrev_;
+    Snapshot recPrev_, recCur_;
+    std::vector<uint8_t> recBuf_;
     bool recHavePrev_ = false;
     std::vector<GameEvent> recEvents_;
     struct Playback {
@@ -138,6 +141,11 @@ private:
         uint16_t proto = kProtocolVersion;   // the demo's (older snapshot headers read the way they were written)
     } play_;
     void onSnapshot(Snapshot& s);
+    void updateClock(double offset);         // the clock offset and jitter, from one snapshot's server time - now
+    void reconcile(const Snapshot& s);       // prediction against a snapshot's own state for its acked command
+    void afterSnapshots();                   // after a poll's snapshots: both, from the newest
+    double pendingOffset_ = 0;
+    bool havePendingOffset_ = false, reconcilePending_ = false;
     void sendInput();
     int inputBatch_ = 1, unsentCmds_ = 0;
     bool useMap(const std::string& name, const MapId& id); // load name (own copy, else a downloaded one) if it's that map
@@ -174,6 +182,7 @@ private:
     std::deque<Snapshot> snaps_;
     static constexpr int kLateSamples = 512;
     float lateness_[kLateSamples] = {};
+    float latenessScratch_[kLateSamples] = {};   // (updateClock's percentile: no allocation)
     uint32_t latenessN_ = 0;
     float jitterTarget_ = 0.009f, jitter_ = 0.009f; // start like the old fixed margin until measured
     double lastJitterUpdate_ = 0;

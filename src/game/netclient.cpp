@@ -31,6 +31,7 @@ void NetClient::resetPrediction() {
     pred_ = predPrev_ = MoveState();
     errorOffset_ = {};
     lastReplay_ = 0;
+    havePendingOffset_ = reconcilePending_ = false;
 }
 
 bool NetClient::connect(const std::string& address, const std::string& name) {
@@ -100,6 +101,7 @@ void NetClient::poll() {
             try { handlePacket(buf, n); }   // (ENG-2: a packet that makes anything throw is dropped)
             catch (const std::exception&) {}
         }
+    afterSnapshots();
     if (state_ == ConnState::Disconnected) return;
 
     double now = timeNow();
@@ -356,22 +358,12 @@ void NetClient::onSnapshot(Snapshot& s) {
             lossExpected_ = lossReceived_ = 0;
         }
     }
-    double serverTime = s.timeMs * 0.001;
-    double offset = serverTime - now;
-    // Arrival jitter: how much later than the best-case arrival this snapshot came. The interpolation
-    // delay is sized from the 99th percentile of that instead of a fixed worst-case margin.
-    if (clockInit_) {
-        lateness_[latenessN_++ % kLateSamples] = (float)std::max(0.0, clockOffset_ - offset);
-        if (latenessN_ % 64 == 0) {
-            int n = (int)std::min<uint32_t>(latenessN_, kLateSamples);
-            std::vector<float> v(lateness_, lateness_ + n);
-            std::nth_element(v.begin(), v.begin() + n * 99 / 100, v.end());
-            jitterTarget_ = v[n * 99 / 100];
-        }
-    }
-    if (!clockInit_ || std::fabs(offset - clockOffset_) > 0.5) { clockOffset_ = offset; clockInit_ = true; }
-    // Track the most recent arrival tightly but let jitter average out.
-    else clockOffset_ = offset > clockOffset_ ? clockOffset_ * 0.9 + offset * 0.1 : clockOffset_ * 0.99 + offset * 0.01;
+    // The clock and the jitter estimate follow the newest snapshot of each poll (updateClock): every snapshot read in
+    // one poll is stamped with the same "now", so the older ones of a batch looked up to a frame late, and the
+    // interpolation delay (sized from the 99th percentile of lateness) grew by about a frame time - remote players
+    // drawn that much further in the past (~7 ms at 144 fps, ~16 ms at 60). Real network jitter is still measured.
+    pendingOffset_ = s.timeMs * 0.001 - now;
+    havePendingOffset_ = true;
 
     // Reliable events (in order, skip already seen).
     std::vector<GameEvent> fresh;
@@ -390,7 +382,7 @@ void NetClient::onSnapshot(Snapshot& s) {
         }
         if (e.type == EV_EDIT) { applyEditEvent(e.text); continue; }
         if (e.type == EV_PROP) { applyPropEvent(e); continue; }
-        events_.push_back(e);
+        events_.push_back(std::move(e));   // (s.events is cleared next)
     }
     s.events.clear();
     if (propPlayers_) {   // (the server says when one goes; this catches a death or a leave it said before we had it)
@@ -404,6 +396,40 @@ void NetClient::onSnapshot(Snapshot& s) {
         stringAcked_++;
     }
 
+    reconcilePending_ = true;   // (once a poll, against its newest snapshot: reconcile)
+
+    if (rec_) recordSnapshot(s, fresh);
+    snaps_.push_back(std::move(s));
+    // keep enough history to decode deltas based on any snapshot we acked within the last round trip
+    while (snaps_.size() > 512) snaps_.pop_front();
+}
+
+void NetClient::updateClock(double offset) {
+    // Arrival jitter: how much later than the best-case arrival this snapshot came. The interpolation
+    // delay is sized from the 99th percentile of that instead of a fixed worst-case margin.
+    if (clockInit_) {
+        lateness_[latenessN_++ % kLateSamples] = (float)std::max(0.0, clockOffset_ - offset);
+        if (latenessN_ % 64 == 0) {
+            int n = (int)std::min<uint32_t>(latenessN_, kLateSamples);
+            float* v = latenessScratch_;
+            std::copy(lateness_, lateness_ + n, v);
+            std::nth_element(v, v + n * 99 / 100, v + n);
+            jitterTarget_ = v[n * 99 / 100];
+        }
+    }
+    if (!clockInit_ || std::fabs(offset - clockOffset_) > 0.5) { clockOffset_ = offset; clockInit_ = true; }
+    // Track the most recent arrival tightly but let jitter average out.
+    else clockOffset_ = offset > clockOffset_ ? clockOffset_ * 0.9 + offset * 0.1 : clockOffset_ * 0.99 + offset * 0.01;
+}
+
+// After a poll's snapshots: the clock from the newest, and one prediction reconcile against it (a frame that reads
+// several used to replay the unacknowledged commands for each of them: after a hitch, dozens of replays in a frame).
+void NetClient::afterSnapshots() {
+    if (havePendingOffset_) { havePendingOffset_ = false; updateClock(pendingOffset_); }
+    if (reconcilePending_) { reconcilePending_ = false; if (!snaps_.empty()) reconcile(snaps_.back()); }
+}
+
+void NetClient::reconcile(const Snapshot& s) {
     // The payload cart is solid: mirror the server's collision box so prediction agrees.
     map_.dynSolids.clear();
     if (mapReady_ && isPayloadMode(s.ms.mode) && map_.payloadPath.size() >= 2) map_.dynSolids.push_back(map_.payloadCartBox(s.ms.payloadDist));
@@ -446,10 +472,6 @@ void NetClient::onSnapshot(Snapshot& s) {
         if ((s.self.flags & MF_PULLED) && (pred_.flags & MF_PULLED)) pred_.pullPoint = s.self.pullPoint;
     }
 
-    if (rec_) recordSnapshot(s, fresh);
-    snaps_.push_back(std::move(s));
-    // keep enough history to decode deltas based on any snapshot we acked within the last round trip
-    while (snaps_.size() > 512) snaps_.pop_front();
 }
 
 void NetClient::tick(UserCmd cmd) {
@@ -623,9 +645,9 @@ bool NetClient::attachedPos(const ProjectileSnap& p, float alpha, Vec3* out) con
     return false;
 }
 
-std::vector<ProjectileSnap> NetClient::interpolatedProjectiles() const {
-    std::vector<ProjectileSnap> out;
-    if (snaps_.empty()) return out;
+void NetClient::interpolatedProjectiles(std::vector<ProjectileSnap>& out) const {
+    out.clear();
+    if (snaps_.empty()) return;
     // Extrapolate the newest snapshot to "now" (they're visual only) along the server's arc: its fixed 1 ms steps.
     const Snapshot& s = snaps_.back();
     float dt = clampf((float)(renderTime_ + interpDelay() - s.timeMs * 0.001), 0, 0.2f);
@@ -637,7 +659,6 @@ std::vector<ProjectileSnap> NetClient::interpolatedProjectiles() const {
         if (!(p.flags & PROJ_STUCK)) projectileExtrapolate(p.pos, p.vel, projectileGravity(p.type, (p.flags & PROJ_LOB) ? kRocketLobGravity : 1.0f), dt);
         out.push_back(p);
     }
-    return out;
 }
 
 bool NetClient::projectileHidden(uint16_t id) const {
@@ -777,7 +798,7 @@ void NetClient::stopRecording() {
 double NetClient::recordingTime() const { return rec_ ? timeNow() - recStart_ : 0; }
 
 void NetClient::recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& events) {
-    for (auto e : events) recEvents_.push_back(e);
+    for (const auto& e : events) recEvents_.push_back(e);
     double t = timeNow() - recStart_;
     if (recLast_ >= 0 && t - recLast_ < recEvery_ && recMapRev_ == mapRevision()) return; // 62.5 Hz, or every snapshot (full rate)
     recLast_ = t;
@@ -790,23 +811,26 @@ void NetClient::recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& 
         std::vector<uint8_t> buf(src.size() + map_.name.size() + 64);
         Writer w(buf.data(), buf.size());
         w.str(map_.name.substr(0, 255)); w.u32((uint32_t)src.size());
-        for (char c : src) w.u8((uint8_t)c);
+        w.bytes((const uint8_t*)src.data(), (int)src.size());
         w.u8((uint8_t)clientId_);
         record(1, buf.data(), (uint32_t)w.size());
         recHavePrev_ = false;   // a full snapshot after a map change
     }
-    Snapshot c = s;
+    // (recCur_ and recBuf_ keep their memory: no allocations per recorded snapshot)
+    Snapshot& c = recCur_;
+    c = s;
     c.baseTick = recHavePrev_ ? recPrev_.tick : 0;
     for (auto& e : recEvents_) e.id = ++recEventId_;   // numbered from 1 in the demo's own order
-    std::vector<uint8_t> buf(64 * 1024);
-    Writer w(buf.data(), buf.size());
+    if (recBuf_.size() < 64 * 1024) recBuf_.resize(64 * 1024);
+    std::vector<uint8_t>& buf = recBuf_;
+    Writer w(buf.data(), (int)buf.size());
     writeSnapshotClient(w, c);
     writeSnapshotWorld(w, c, recHavePrev_ ? &recPrev_ : nullptr);
     writeSnapshotEvents(w, recEvents_);
     if (w.overflowed()) return;   // (too big: skip this one, the next will be against the same base)
     record(2, buf.data(), (uint32_t)w.size());
     recEvents_.clear();
-    recPrev_ = c;
+    std::swap(recPrev_, recCur_);
     recHavePrev_ = true;
     rec_->flush();   // (to the writer thread)
 }
@@ -889,6 +913,7 @@ void NetClient::pollPlayback() {
             play_.havePrev = false;
             snaps_.clear();
             clockInit_ = false;   // (the next snapshot sets the clock: map changes can jump the server clock)
+            havePendingOffset_ = reconcilePending_ = false;   // (nor a snapshot from before it)
         } else if (type == 2) {
             Snapshot s;
             if (!readSnapshotClient(r, s, play_.proto)) continue;
@@ -900,6 +925,7 @@ void NetClient::pollPlayback() {
             onSnapshot(s);
         }
     }
+    afterSnapshots();
     if (clockInit_) {
         renderTime_ = timeNow() + clockOffset_ - interpDelay();
     }
