@@ -397,6 +397,7 @@ void Game::loadMapIfNeeded() {
     if (!raceRunsLoaded_ && !net_.map().checkpoints.empty()) loadRaceRuns();
     bake_ = std::make_unique<BakeJob>();
     bake_->map = net_.map();
+    bake_->map.dynSolids.clear();   // (the payload cart's box where it was at join time: no shadow of it in the cached light)
     bake_->gen = gen;
     BakeJob* j = bake_.get();
     j->th = std::thread([j] {
