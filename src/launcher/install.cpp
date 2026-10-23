@@ -13,6 +13,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shlobj.h>
+#include <shellapi.h>
 #include <objbase.h>
 #include <shobjidl.h>
 #else
@@ -301,6 +302,16 @@ bool relaunch(const fs::path& exe, const std::vector<std::string>& args) {
 #endif
 }
 
+bool openFolder(const fs::path& folder) {
+#ifdef _WIN32
+    return (INT_PTR)ShellExecuteW(nullptr, L"open", folder.wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL) > 32;
+#elif defined(__APPLE__)
+    return procSpawnDetached({"open", folder.string()});
+#else
+    return procSpawnDetached({"xdg-open", folder.string()});
+#endif
+}
+
 void cleanupDownloaded(const fs::path& original) {
     // the original process exits right after starting us: retry for a few seconds
     for (int i = 0; i < 50; i++) {
@@ -326,11 +337,11 @@ fs::path installSelf(const char* argv0) {
         if (l != dst && !fs::equivalent(l, self, ec)) fs::remove(l, ec);
     // an older download never replaces a newer installed launcher (that one is used instead)
     if (fs::exists(dst, ec) && releases::versionCmp(selfupdate::fileVersion(dst), selfupdate::ownVersion()) > 0) return dst;
-    std::error_code cec;
-    fs::copy_file(self, dst, fs::copy_options::overwrite_existing, cec);
-#ifndef _WIN32
-    if (!cec) fs::permissions(dst, fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec, fs::perm_options::add, ec);
-#endif
+    // staged next to it and renamed into place (selfupdate::replaceFile): MinGW's copy_file can't overwrite an existing
+    // file on Windows (it takes any two files of a drive for the same one: no inode numbers), so a plain copy over an
+    // older installed launcher silently did nothing
+    std::string err;
+    selfupdate::replaceFile(self, dst, &err);
     return dst; // may be the previous copy if this one couldn't be written (in use)
 }
 

@@ -55,13 +55,15 @@ bool read(std::istream& in, uint64_t remaining, const FileSink& file, std::strin
     return true;
 }
 
-static bool extractImpl(const fs::path& pak, const fs::path& stage, std::string* err, std::map<std::string, std::string>* hashes);
-bool extract(const fs::path& pak, const fs::path& stage, std::string* err, std::map<std::string, std::string>* hashes) {
-    try { return extractImpl(pak, stage, err, hashes); }
+using Hashes = std::map<std::string, std::string>;
+using Sizes = std::map<std::string, uint64_t>;
+static bool extractImpl(const fs::path& pak, const fs::path& stage, std::string* err, Hashes* hashes, Sizes* sizes);
+bool extract(const fs::path& pak, const fs::path& stage, std::string* err, Hashes* hashes, Sizes* sizes) {
+    try { return extractImpl(pak, stage, err, hashes, sizes); }
     catch (const std::exception& e) { *err = std::string("corrupt archive (") + e.what() + ")"; return false; }   // (ENG-2: bad_alloc, a bad path)
 }
 
-static bool extractImpl(const fs::path& pak, const fs::path& stage, std::string* err, std::map<std::string, std::string>* hashes) {
+static bool extractImpl(const fs::path& pak, const fs::path& stage, std::string* err, Hashes* hashes, Sizes* sizes) {
     std::error_code ec;
     uint64_t size = fs::file_size(pak, ec);
     if (ec) { *err = "corrupt download"; return false; }
@@ -72,15 +74,16 @@ static bool extractImpl(const fs::path& pak, const fs::path& stage, std::string*
         std::error_code ec2;
         fs::create_directories(out.parent_path(), ec2);
         std::ofstream o(out, std::ios::binary | std::ios::trunc);
-        if (!o) { *e = "cannot write " + out.string(); return false; }
+        if (!o) { *e = "cannot write " + out.u8string(); return false; }
         o.write(data, (std::streamsize)n);
         o.close();
-        if (!o) { *e = "cannot write " + out.string() + " (disk full?)"; return false; }
+        if (!o) { *e = "cannot write " + out.u8string() + " (disk full?)"; return false; }
         if (hashes) {
             Sha256 h;
             h.update(data, n);
             (*hashes)[name] = h.hex();
         }
+        if (sizes) (*sizes)[name] = n;
 #ifndef _WIN32
         chmod(out.string().c_str(), mode & 0777);
 #endif

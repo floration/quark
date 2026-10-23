@@ -632,6 +632,139 @@ static void testGameFiles() {
     fs::remove_all(t, ec);
 }
 
+// An antivirus quarantining a game file (owner report: quark.exe of two builds vanished on one player's PC): a file
+// missing or changed in the stage stops the install with the installed version untouched; the installed game's exe
+// missing or changed is detected before a start; installing the same version again (REPAIR) puts it back; the
+// player's files survive all of it.
+static void testInstallChecks() {
+    using gamefiles::Problem;
+    // the list's current format: sizes too (paths with spaces); format 1 (tools/pack.py) still reads, without sizes
+    {
+        gamefiles::List l = {{"quark", std::string(64, 'a')}, {"maps/my map.qmap", std::string(64, 'b')}}, back;
+        gamefiles::Sizes sz = {{"quark", 16651899}, {"maps/my map.qmap", 0}}, szBack;
+        std::string text = gamefiles::format(l, &sz);
+        LCHECK(text.rfind("quark installed files 2\n", 0) == 0);
+        LCHECK(gamefiles::parse(text, &back, &szBack) && back == l && szBack == sz);
+        LCHECK(gamefiles::parse(gamefiles::format(l), &back, &szBack) && back == l && szBack.empty());
+        LCHECK(gamefiles::parse("quark installed files 2\n" + std::string(64, 'c') + " 12x y\n" + std::string(64, 'd') + " 5 z w\n", &back, &szBack) &&
+               back.size() == 1 && back["z w"] == std::string(64, 'd') && szBack["z w"] == 5);
+    }
+    fs::path t = fs::temp_directory_path() / ("quark_installcheck_test_" + std::to_string((long)getpid()));
+    std::error_code ec;
+    fs::remove_all(t, ec);
+    fs::create_directories(t);
+    auto put = [](const fs::path& p, const std::string& s) { fs::create_directories(p.parent_path()); std::ofstream(p, std::ios::binary | std::ios::trunc) << s; };
+    const std::string exe = gamefiles::kGameExe;
+    fs::path dir = t / "quark" / "game", stage = gamefiles::stagePath(dir), pak1 = t / "v1.qpak", pak2 = t / "v2.qpak";
+    put(pak1, "QPAK1\n" + pakEntry(exe, "game v1", 0755) + pakEntry("quark_server", "server v1", 0755) +
+              pakEntry("maps/a.qmap", "map a v1") + pakEntry("quark.cfg", "packaged cfg") +
+              pakEntry(gamefiles::kListName, "quark installed files 1\n")); // (a package's own list: replaced)
+    put(pak2, "QPAK1\n" + pakEntry(exe, "game v2, a bit bigger", 0755) + pakEntry("quark_server", "server v2", 0755) +
+              pakEntry("maps/a.qmap", "map a v2") + pakEntry("maps/b.qmap", "map b v2") + pakEntry("quark.cfg", "packaged cfg 2"));
+    std::string err;
+    gamefiles::InstallReport rep;
+    LCHECK(gamefiles::installPackage(pak1, dir, &err, &rep) && rep.stageIssues.empty());
+    LCHECK(slurp(dir / exe) == "game v1" && !fs::exists(stage));
+    {
+        gamefiles::List l;
+        gamefiles::Sizes sz;
+        LCHECK(gamefiles::readList(dir, &l, &sz) && l.size() == 4 && sz[exe] == 7 && l[exe] == sha256Hex("game v1"));
+        gamefiles::Health h = gamefiles::checkInstall(dir, exe, true);
+        LCHECK(h.hasList && h.checked == 4 && h.issues.empty() && !h.exeBad);
+    }
+    // the player's things in the game folder (an old version kept them there)
+    put(dir / "quark.cfg", "sens 3");
+    put(dir / "quark.key", "secret");
+    put(dir / "demos/mine.qdemo", "my demo");
+    put(dir / "maps/mymap.qmap", "my map");
+    put(dir / "version.txt", "1.0.0\n");
+    auto playerFilesIntact = [&]() {
+        return slurp(dir / "quark.cfg") == "sens 3" && slurp(dir / "quark.key") == "secret" && slurp(dir / "demos/mine.qdemo") == "my demo" &&
+               slurp(dir / "maps/mymap.qmap") == "my map";
+    };
+    auto stillV1 = [&]() {
+        return slurp(dir / exe) == "game v1" && slurp(dir / "quark_server") == "server v1" && slurp(dir / "maps/a.qmap") == "map a v1" &&
+               !fs::exists(dir / "maps/b.qmap") && slurp(dir / "version.txt") == "1.0.0\n" && !fs::exists(stage) &&
+               !fs::exists(t / "quark" / "game.old") && gamefiles::checkInstall(dir, exe, true).issues.empty();
+    };
+
+    // 1. an antivirus deletes the new exe as it is written: no swap, the installed version keeps working
+    LCHECK(!gamefiles::installPackage(pak2, dir, &err, &rep, [&](const fs::path& st) { fs::remove(st / exe); }));
+    LCHECK(rep.stageIssues.size() == 1 && rep.stageIssues[0].path == exe && rep.stageIssues[0].problem == Problem::Missing);
+    LCHECK(err.find(fs::u8path(exe).filename().u8string() + " was removed right after it was written") == 0);
+    LCHECK(stillV1() && playerFilesIntact());
+    // 2. a file of the stage changed (a "cleaned" exe of the same size; a truncated map): no swap either
+    LCHECK(!gamefiles::installPackage(pak2, dir, &err, &rep, [&](const fs::path& st) {
+        put(st / exe, "game v2, a bit BIGGER");
+        put(st / "maps/b.qmap", "map");
+    }));
+    LCHECK(rep.stageIssues.size() == 2 && rep.stageIssues[0].problem == Problem::Changed && rep.stageIssues[1].problem == Problem::Changed);
+    LCHECK(err.find("(and 1 more)") != std::string::npos);
+    LCHECK(stillV1() && playerFilesIntact());
+    // a file that can't be written at all (refused on write; here: a file in the way of its folder): named, no swap
+    put(t / "v3.qpak", "QPAK1\n" + pakEntry(exe, "game v3", 0755) + pakEntry("mods", "a file") + pakEntry("mods/a.wav", "x"));
+    LCHECK(!gamefiles::installPackage(t / "v3.qpak", dir, &err, &rep));
+    LCHECK(rep.stageIssues.size() == 1 && rep.stageIssues[0].path == "mods/a.wav" && rep.stageIssues[0].problem == Problem::Blocked);
+    LCHECK(err.rfind("a.wav could not be written", 0) == 0);
+    LCHECK(stillV1() && playerFilesIntact());
+    // 3. the update goes through: new files, the player's kept (their quark.cfg over the packaged one)
+    LCHECK(gamefiles::installPackage(pak2, dir, &err, &rep) && rep.stageIssues.empty());
+    LCHECK(slurp(dir / exe) == "game v2, a bit bigger" && slurp(dir / "maps/b.qmap") == "map b v2" && playerFilesIntact());
+    LCHECK(gamefiles::checkInstall(dir, exe, true).issues.empty());
+
+    // 4. the installed exe vanishes later: found before a start (cheaply), named, with the antivirus advice
+    fs::remove(dir / exe);
+    {
+        gamefiles::Health h = gamefiles::checkInstall(dir, exe, false);
+        LCHECK(h.exeBad && h.exe.path == exe && h.exe.problem == Problem::Missing && h.issues.size() == 1 && h.issues[0].path == exe);
+        LCHECK(gamefiles::describe(h.exe) == fs::u8path(exe).filename().u8string() + " is missing");
+        std::string help = gamefiles::antivirusHelp("quark.exe", dir.parent_path());
+        LCHECK(help.find("false positive") != std::string::npos && help.find("quark.exe") != std::string::npos &&
+               help.find(dir.parent_path().u8string()) != std::string::npos);
+    }
+    // ...or is replaced: a different size is found cheaply, the same size by the full check
+    put(dir / exe, "tampered");
+    LCHECK(gamefiles::checkInstall(dir, exe, false).exeBad && gamefiles::checkInstall(dir, exe, false).exe.problem == Problem::Changed);
+    put(dir / exe, "game v2, a bit BIGGER");
+    LCHECK(!gamefiles::checkInstall(dir, exe, false).exeBad && gamefiles::checkInstall(dir, exe, true).exeBad);
+    // other game files: reported, the exe fine
+    fs::remove(dir / "maps/b.qmap");
+    {
+        gamefiles::Health h = gamefiles::checkInstall(dir, exe, false);
+        LCHECK(!h.exeBad && h.issues.size() == 1 && h.issues[0].path == "maps/b.qmap");
+    }
+    // REPAIR: the same version installed again puts everything back, the player's files untouched
+    fs::remove(dir / exe);
+    LCHECK(gamefiles::installPackage(pak2, dir, &err, &rep));
+    LCHECK(slurp(dir / exe) == "game v2, a bit bigger" && slurp(dir / "maps/b.qmap") == "map b v2" && playerFilesIntact());
+    LCHECK(gamefiles::checkInstall(dir, exe, true).issues.empty());
+
+    // 5. an install without a list (from before 1.17.0): only the exe is known, and it must be there
+    fs::remove(dir / gamefiles::kListName);
+    LCHECK(!gamefiles::checkInstall(dir, exe, true).hasList && gamefiles::checkInstall(dir, exe, true).issues.empty());
+    fs::remove(dir / exe);
+    LCHECK(gamefiles::checkInstall(dir, exe, false).exeBad);
+    LCHECK(gamefiles::installPackage(pak2, dir, &err, &rep) && slurp(dir / exe) == "game v2, a bit bigger" && playerFilesIntact());
+
+    // 6. a swap cut off between its renames (the game folder is game.old): put back at the next start, and an install
+    // never deletes it
+    fs::rename(dir, t / "quark" / "game.old");
+    LCHECK(gamefiles::recoverSwap(dir) && slurp(dir / exe) == "game v2, a bit bigger" && !fs::exists(t / "quark" / "game.old"));
+    LCHECK(!gamefiles::recoverSwap(dir));
+    fs::rename(dir, t / "quark" / "game.old");
+    LCHECK(gamefiles::installPackage(pak1, dir, &err, &rep) && slurp(dir / exe) == "game v1" && playerFilesIntact());
+
+    // 7. a player file that can't be carried over stops the swap before anything changes (a file in the stage where
+    // the player has a folder of the same name stands in for a locked file)
+    put(dir / "huds/mine.txt", "my hud");
+    fs::create_directories(stage);
+    put(stage / exe, "game v3");
+    put(stage / "huds", "a file");
+    LCHECK(!gamefiles::swapInstall(stage, dir, &err) && err.find("huds/mine.txt") != std::string::npos);
+    LCHECK(slurp(dir / exe) == "game v1" && slurp(dir / "huds/mine.txt") == "my hud" && playerFilesIntact());
+    fs::remove_all(t, ec);
+}
+
 int launcherTests() {
     g_lfail = 0;
     printf("launcher\n");
@@ -643,5 +776,6 @@ int launcherTests() {
     testManyPages();
     testLauncherSwap();
     testGameFiles();
+    testInstallChecks();
     return g_lfail;
 }
