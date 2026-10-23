@@ -32,6 +32,7 @@ constexpr size_t kMaxMapBrushes = 60000;     // generated ones included, on ever
 static_assert(kMaxMapBrushes <= 0xFFFF, "the collision grid's cells index brushes with 16 bits (Map::cellBrushes)");
 constexpr size_t kMaxMapGridRefs = 16u << 20; // brush references in the collision grid (32 MB; one box over the whole range is 4.2M)
 constexpr size_t kMaxMapSpawns = 256, kMaxMapLights = 512, kMaxMapLadders = 256, kMaxMapGroups = 256, kMaxGroupParts = 1024;
+constexpr size_t kMaxMapStairs = 512;
 constexpr size_t kMaxMapSites = 16, kMaxMapCheckpoints = 128, kMaxMapPath = 512, kMaxMapPoints = 16, kMaxMapCartChecks = 64;
 constexpr float kMaxObjectHeight = 64.0f;    // ladders and groups (a ladder's rungs are made every 0.4 m)
 constexpr float kMinLightRadius = 0.5f, kMaxLightRadius = 100.0f, kMaxLightIntensity = 10.0f;   // intensity > 0 (0 lights nothing)
@@ -60,9 +61,23 @@ struct SpawnPoint {
     int team = SPAWN_ANY;
 };
 
+// The .qmap format (REVIEW MAP-10/11, JUDGMENT C7). "version N" heads a file (none: version 1, which kept stairs and
+// the setting in comments; those are still read). A keyword this build doesn't know is skipped with a warning (in
+// Map::warnings), so an older build still loads a newer map; a known keyword with a bad value is an error.
+// 2: "version", "stairs", "setting"; a second hill or an unknown spawn team is an error.
+constexpr int kMapFormatVersion = 2;
+
 struct Map {
     std::string name;
     std::string title;
+    int formatVersion = kMapFormatVersion;   // the file's "version" (1 when it has none)
+    std::vector<std::string> warnings;        // what the parse skipped (unknown keywords, modes, ladders): logged
+    std::string setting;       // "setting <words>": the place the map is (a city block, a space station...)
+    // "stairs x0 z0 x1 z1 base top x|z rising solid": a staircase the generator built from boxes (steps from base to top
+    // over the x0..z1 footprint, rising toward +/- axis; solid: blocks down to the ground, else slabs). Only recorded:
+    // nothing is made from it (quark_tests walks every one and checks it cuts no path).
+    struct Stairs { float x0 = 0, z0 = 0, x1 = 0, z1 = 0, base = 0, top = 0, rising = 1; char axis = 'x'; bool solid = true; };
+    std::vector<Stairs> stairs;
     int preferredMode = -1;    // "for <mode>": the mode this map was designed for
     uint16_t rankedLadders = 0; // "ranked vanilla vampire instagib": the ranked ladders (1v1 rulesets) this map is built for
     uint32_t allowedModes = 0; // "modes ffa duel ...": only these (bit per mode); 0 = every mode the map has the pieces for

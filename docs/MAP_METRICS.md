@@ -121,7 +121,7 @@ Each mode the map supports gets the measurement that matters for it:
 ## Creativity and originality
 | metric | how it's measured |
 |---|---|
-| setting | Each map declares the place it is (`# setting city block`, `# setting space station`...). A setting no other map has is worth 1.5. |
+| setting | Each map declares the place it is (`setting city block`, `setting space station`...). A setting no other map has is worth 1.5. |
 | features | Present or not: ladders, lethal drops, water / lava, wallbangs, a moving cart, 5+ floor levels, 12 m+ of height, indoor and outdoor (15–85% of the floor roofed), fully indoor (over 85%), irregular outline (the footprint fills under 80% of its bounding box), lit interiors (12+ lights), lots of hiding spots (over 15%). |
 | creativity score | 0.75 per feature, plus 0.5 for each feature at most a quarter of the maps have (up to 2), plus 1.5 for a setting of its own. A map can't reach 7 on a checklist alone. |
 | originality | Each map is turned into 9 numbers: levels, height range, loops per area, visible pairs, cover, grapple anchors, speed lanes, short-range share, detail density. These are normalised across all maps. Distance to the nearest other map is the root mean square of the differences, reduced by up to half when the top-down footprints match. **Footprint** = a 24×24 grid of floor heights, compared in all 4 rotations. |

@@ -433,6 +433,51 @@ static void testMapIdentity() {
     CHECK(downloadedMapPath(m.id()).find(m.id().hex() + ".qmap") != std::string::npos);
 }
 
+// The .qmap format (REVIEW MAP-10/11, JUDGMENT C7): a "version" header, real "stairs" / "setting" keywords that the
+// editor keeps, version 1's comment forms still read, unknown optional parts warned about and skipped, bad gameplay
+// parts errors. Every shipped map is the current version and parses without a warning.
+static void testMapFormat() {
+    printf("map format: version, stairs and setting keywords, unknown keys warn\n");
+    const std::string base = "box -20 -1 -20 20 0 20\nspawn any 0 0 0\n";
+    {   // version 1 (no header): the comment forms are read
+        Map m;
+        CHECK(m.parse("# stairs 0 0 4 2 0 2 x 1 1\n# setting old town\n" + base) && m.formatVersion == 1 && m.warnings.empty());
+        CHECK(m.stairs.size() == 1 && m.stairs[0].x1 == 4 && m.stairs[0].axis == 'x' && m.stairs[0].solid && m.setting == "old town");
+        CHECK(m.parse("version 2\n# stairs 0 0 4 2 0 2 x 1 1\n# setting old town\n" + base) && m.stairs.empty() && m.setting.empty());   // (just comments now)
+    }
+    {   // version 2: keywords, kept by the editor's save
+        Map m;
+        CHECK(m.parse("version 2\nsetting  a city block \nstairs -3 1 0 5 0.5 3 z -1 0\n" + base) && m.formatVersion == 2 && m.warnings.empty());
+        CHECK(m.setting == "a city block" && m.stairs.size() == 1 && m.stairs[0].axis == 'z' && m.stairs[0].rising == -1 && !m.stairs[0].solid && m.stairs[0].base == 0.5f);
+        Map again;
+        std::string text = m.serialize();
+        CHECK(text.find("version " + std::to_string(kMapFormatVersion) + "\n") != std::string::npos);
+        CHECK(again.parse(text) && again.setting == m.setting && again.stairs.size() == 1 && again.stairs[0].x0 == -3 && again.stairs[0].top == 3 &&
+              again.stairs[0].axis == 'z' && again.stairs[0].rising == -1 && !again.stairs[0].solid && again.warnings.empty());
+        CHECK(!m.parse("version 2\nstairs 0 0 4 2 0 2 y 1 1\n" + base) && !m.parse("version 2\nstairs 0 0 4 2 0 2 x 1\n" + base) &&
+              !m.parse("version 0\n" + base) && !m.parse("version 2\nsetting\n" + base));
+    }
+    {   // unknown optional parts: warned about and skipped (an older build still loads a newer map)
+        Map m;
+        CHECK(m.parse("version 9\nfog 0.1 0.2 0.3\n" + base + "modes ffa teleball\nranked vanilla chess\nfor teleball\npalette base 1 1 1 rim 1 0 0\n"));
+        CHECK(m.formatVersion == 9 && m.warnings.size() == 6 && m.allowedModes == 1u << MODE_FFA && m.rankedLadders == 1 && m.preferredMode == -1);
+        CHECK(m.parse(base + "weather rain\n") && m.warnings.size() == 1 && m.warnings[0].find("weather") != std::string::npos);
+    }
+    {   // gameplay parts stay strict
+        Map m;
+        CHECK(!m.parse(base + "spawn c 1 0 1\n"));                                        // (an unknown team used to become "any")
+        CHECK(!m.parse(base + "hill 0 0 0 4 3 4\nhill 8 0 8 12 3 12\n"));                // (the second used to replace the first)
+        CHECK(!m.parse(base + "group pyramid 0 0 0 0 0 4 4 4\n") && !m.parse(base + "box 0 0 0 1 1\n"));
+    }
+    for (auto& name : testedMaps()) {   // the generator writes the current format, nothing it has to skip
+        Map m;
+        if (!m.load(name)) { printf("  %s doesn't load\n", name.c_str()); g_fail++; continue; }
+        if (m.formatVersion != kMapFormatVersion || !m.warnings.empty() || m.setting.empty())
+            printf("  %s: format %d, %zu warnings%s%s\n", name.c_str(), m.formatVersion, m.warnings.size(), m.warnings.empty() ? "" : ": ", m.warnings.empty() ? "" : m.warnings[0].c_str());
+        CHECK(m.formatVersion == kMapFormatVersion && m.warnings.empty() && !m.setting.empty());
+    }
+}
+
 static void testMapLimits() {
     printf("map limits: hostile maps and edits are refused\n");
     for (const char* f : {"map_hugegrid.qmap", "map_floatmax.qmap"}) {   // the review's repro files
@@ -2136,7 +2181,7 @@ static void testCustomMode(uint16_t port) {
     testHostedRulesPerThread((uint16_t)(port + 100));
 }
 
-// Every staircase (recorded by tools/make_maps.py as "# stairs x0 z0 x1 z1 base top axis rising solid"):
+// Every staircase (recorded by tools/make_maps.py as "stairs x0 z0 x1 z1 base top axis rising solid", Map::stairs):
 // walked from the bottom to the top by the real movement code, and checked against the paths around it:
 // no walkable surface may pass through a solid flight, or run underneath an open one with less than a
 // player's height of clearance.
@@ -2148,15 +2193,11 @@ static void testStairs() {
         if (!m.load(name)) continue;
         NavGraph g;
         g.build(m);
-        std::istringstream src(m.source);
-        std::string line;
-        while (std::getline(src, line)) {
-            if (line.rfind("# stairs ", 0) != 0) continue;
-            std::istringstream ls(line.substr(9));
-            float x0, z0, x1, z1, base, top, rising; std::string axis; int solid;
-            if (!(ls >> x0 >> z0 >> x1 >> z1 >> base >> top >> axis >> rising >> solid)) continue;
+        for (const Map::Stairs& st : m.stairs) {
+            float x0 = st.x0, z0 = st.z0, x1 = st.x1, z1 = st.z1, base = st.base, top = st.top, rising = st.rising;
+            bool solid = st.solid;
             flights++;
-            bool ax = axis == "x";
+            bool ax = st.axis == 'x';
             // walk it: from in front of the low end, or from either side of the lowest step, run at the top
             // of the flight (the real movement code, 8 ms ticks)
             float lo = ax ? (rising > 0 ? x0 : x1) : (rising > 0 ? z0 : z1), hi = ax ? (rising > 0 ? x1 : x0) : (rising > 0 ? z1 : z0);
@@ -4680,7 +4721,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(TP(29997)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "allmaps") { testAllMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "chat") { testChatAndVoteLimits(TP(29592)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "limits") { testMapIdentity(); testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "limits") { testMapIdentity(); testMapFormat(); testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(TP(29990)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(TP(29980)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); testAddbotArgs(TP(29982)); return g_fail ? 1 : 0; }
@@ -4725,7 +4766,7 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapIdentity(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapIdentity(); testMapFormat(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); }},

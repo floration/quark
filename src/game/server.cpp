@@ -190,6 +190,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     mapList_ = listMaps();
     std::string e;
     if (!map_.load(cfg_.map, &e)) { if (err) *err = e; return false; }
+    for (auto& w : map_.warnings) log(cfg_.map + ": " + w);   // (parts of a newer map format it skipped)
     nav_.buildAsync(map_);   // bot navigation, built off the tick thread
     if (cfg_.editMode && !map_.supportsMode(cfg_.mode)) // an edit session runs whatever the map can't play yet
         cfg_.mode = map_.supportsMode(MODE_FFA) ? MODE_FFA : cfg_.mode;
@@ -1311,6 +1312,7 @@ void Server::command(const std::string& line, int fromPlayer) {
         Map m;
         std::string err;
         if (!m.load(newMap, &err)) { reply(err); return; }
+        for (auto& w : m.warnings) log(newMap + ": " + w);
         if (!m.supportsMode(newMode)) reply("warning: " + newMap + " isn't built for " + modeTitle(newMode) + " - it may not work");
         if (cfg_.ranked && (!arenaVariantRanked(cfg_.arenaVariant) || newMode != rankedMode(cfg_.arenaVariant) || !isRankedMap(m, cfg_.arenaVariant))) {
             reply("ranked: vanilla or laser vampire 1v1, or instagib free for all, on that ladder's ranked maps");

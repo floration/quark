@@ -71,7 +71,7 @@ struct Metrics {
     // scores 0-10
     float sDecor = 0, sLayout = 0, sMovement = 0, sCreativity = 0, sBalance = 0, sOriginality = 0, sMode = -1;
     std::string modeFit;       // how the mode-fit score was reached
-    std::string setting;       // "# setting <words>" in the map: what place it is (a setting no other map has scores)
+    std::string setting;       // "setting <words>" in the map: what place it is (a setting no other map has scores)
     std::vector<std::string> features;
 };
 
@@ -1087,8 +1087,7 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g) {
         }
         if (fit >= 0) { r.sMode = clamp10(fit); r.modeFit = buf; }
     }
-    {   std::istringstream src(m.source); std::string l;
-        while (std::getline(src, l)) if (l.rfind("# setting ", 0) == 0) r.setting = l.substr(10); }
+    r.setting = m.setting;
     if (m.rankedLadders) {
         // the weapons each ranked ladder is about, and where they work
         float near = r.band[0] + r.band[1], longr = r.band[2] + r.band[3];
@@ -1211,7 +1210,7 @@ int mapReport(const char* outPath) {
             if (simpleArena && (!strcmp(k, "layout") || !strcmp(k, "movement") || !strcmp(k, "creativity"))) continue;
             else if (v >= 0 && v < 7.0f - 1e-3f) { fprintf(stderr, "  FAIL %s: %s %.1f is below 7\n", r.name.c_str(), k, v); below++; }
         if (r.sMode < 0) { fprintf(stderr, "  FAIL %s: not built for one mode (\"for <mode>\")\n", r.name.c_str()); below++; }
-        if (r.setting.empty()) { fprintf(stderr, "  FAIL %s: no \"# setting\" (what place it is)\n", r.name.c_str()); below++; }
+        if (r.setting.empty()) { fprintf(stderr, "  FAIL %s: no \"setting\" (what place it is)\n", r.name.c_str()); below++; }
         // nothing outside the playable floor's footprint may be reachable with the full movement envelope (clip, or
         // walls too high to dash up, keep everyone in)
         if (r.outOfBounds > 0) { fprintf(stderr, "  FAIL %s: %.0f m2 outside the playable floor is reachable (MR_OOB=%s lists it)\n", r.name.c_str(), r.outOfBounds, r.name.c_str()); below++; }

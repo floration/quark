@@ -421,6 +421,8 @@ bool Map::parse(const std::string& text, std::string* err) {
 
 bool Map::parseText(const std::string& text, std::string* err) {
     brushes.clear(); spawns.clear(); bombSites.clear(); checkpoints.clear(); ladders.clear(); ladderAuto.clear(); groups.clear(); payloadPath.clear(); lights.clear(); points.clear(); cartChecks.clear();
+    stairs.clear(); setting.clear(); warnings.clear();
+    formatVersion = 1;   // (a file without a "version" line)
     hasHill = false;
     hasWallbang = false;
     hasPalette = false;
@@ -445,11 +447,37 @@ bool Map::parseText(const std::string& text, std::string* err) {
         if (!lineEnd) lineEnd = textEnd;
         next = lineEnd < textEnd ? lineEnd + 1 : textEnd;
         lineNo++;
-        if (const char* h = (const char*)memchr(lineStart, '#', (size_t)(lineEnd - lineStart))) lineEnd = h;
+        const char* h = (const char*)memchr(lineStart, '#', (size_t)(lineEnd - lineStart));
+        // version 1 kept the generator's staircases and the map's setting in comments ("# stairs ...", "# setting ..."):
+        // a version 1 file still has them read, as the keywords that replaced them
+        if (h && formatVersion < 2 && h == lineStart && (lineEnd - h > 9 && (!memcmp(h, "# stairs ", 9) || (lineEnd - h > 10 && !memcmp(h, "# setting ", 10)))))
+            h = nullptr, lineStart += 2;
+        if (h) lineEnd = h;
         LineIn ls(lineStart, lineEnd);
         if (!(ls >> kw)) continue;
         bool ok = true;
-        if (kw == "title") {
+        if (kw == "version") {   // "version N": the format the file is written in (none: 1). Newer ones still load:
+            int v = 0;           // what this build doesn't know is skipped with a warning (below)
+            ok = (bool)(ls >> v) && v >= 1;
+            if (ok) formatVersion = v;
+            if (ok && v > kMapFormatVersion)
+                warnings.push_back("map format " + std::to_string(v) + " is newer than this build's (" + std::to_string(kMapFormatVersion) + "): parts it doesn't know are skipped");
+        } else if (kw == "setting") {    // "setting <words>": the place the map is (the map report scores it)
+            ok = ls.rest(setting);
+            while (!setting.empty() && (setting[0] == ' ' || setting[0] == '\t')) setting.erase(0, 1);
+            while (!setting.empty() && LineIn::space(setting.back())) setting.pop_back();
+            ok = ok && !setting.empty() && setting.size() <= 80;
+        } else if (kw == "stairs") {     // "stairs x0 z0 x1 z1 base top x|z rising solid": a staircase built of boxes
+            Stairs st;                   // (tools/make_maps.py records each; quark_tests walks every one)
+            std::string axis;
+            int solid = 0;
+            ok = (bool)(ls >> st.x0 >> st.z0 >> st.x1 >> st.z1 >> st.base >> st.top >> axis >> st.rising >> solid) &&
+                 okCoord(st.x0) && okCoord(st.z0) && okCoord(st.x1) && okCoord(st.z1) && okCoord(st.base) && okCoord(st.top) &&
+                 std::isfinite(st.rising) && (axis == "x" || axis == "z") && (solid == 0 || solid == 1) && stairs.size() < kMaxMapStairs;
+            st.axis = axis == "x" ? 'x' : 'z';
+            st.solid = solid == 1;
+            if (ok) stairs.push_back(st);
+        } else if (kw == "title") {
             ls.rest(title);
             while (!title.empty() && title[0] == ' ') title.erase(0, 1);
         } else if (kw == "box" || kw == "accent" || kw == "wallbang" || kw == "metal" || kw == "glow" || kw == "far" || kw == "water" || kw == "lava" || kw == "trim" || kw == "clip") {
@@ -475,6 +503,7 @@ bool Map::parseText(const std::string& text, std::string* err) {
             s.team = team == "a" ? SPAWN_A : team == "b" ? SPAWN_B : team == "race" ? SPAWN_RACE : SPAWN_ANY;
             if ((team.rfind("att", 0) == 0 || team.rfind("def", 0) == 0) && team.size() == 4 && team[3] >= '0' && team[3] <= '0' + kMaxSpawnStage)
                 s.team = stagedSpawn(team[3] - '0', team[0] == 'd');
+            else if (team != "a" && team != "b" && team != "any" && team != "race") ok = false;   // (it used to become "any")
             if (ok) spawns.push_back(s);
         } else if (kw == "site") {
             AABB b; ok = readBox(ls, b) && bombSites.size() < kMaxMapSites; if (ok) bombSites.push_back(b);
@@ -484,13 +513,14 @@ bool Map::parseText(const std::string& text, std::string* err) {
         } else if (kw == "point") {
             AABB b; ok = readBox(ls, b) && points.size() < kMaxMapPoints; if (ok) points.push_back(b);
         } else if (kw == "hill") {
+            if (hasHill) { if (err) *err = "line " + std::to_string(lineNo) + ": a second hill (a map has one)"; return false; }
             ok = readBox(ls, hill); hasHill = ok;
         } else if (kw == "ladder") {
             AABB b; ok = readBox(ls, b) && b.mx.y - b.mn.y <= kMaxObjectHeight && ladders.size() < kMaxMapLadders;
             std::string flag;
             if (ok) { ladders.push_back(b); ladderAuto.push_back(ls >> flag && flag == "auto"); }
         } else if (kw == "group") {
-            std::string t; Group g;
+            std::string t; Group g;   // (a group of a type this build doesn't know would lose its boxes: an error, not skipped)
             ok = (bool)(ls >> t >> g.material >> g.dir) && readBox(ls, g.box) && validMapMaterial(g.material) && g.dir >= 0 && g.dir < 4 && g.box.mx.y - g.box.mn.y <= kMaxObjectHeight && groups.size() < kMaxMapGroups;
             g.type = t == "room" ? GROUP_ROOM : t == "stairs" ? GROUP_STAIRS : GROUP_CUSTOM;
             ok = ok && (t == "room" || t == "stairs" || t == "custom");
@@ -502,16 +532,25 @@ bool Map::parseText(const std::string& text, std::string* err) {
             AABB b; ok = readBox(ls, b) && checkpoints.size() < kMaxMapCheckpoints; if (ok) checkpoints.push_back(b);
         } else if (kw == "path") {
             Vec3 p; ok = (bool)(ls >> p.x >> p.y >> p.z) && okCoord(p.x) && okCoord(p.y) && okCoord(p.z) && payloadPath.size() < kMaxMapPath; if (ok) payloadPath.push_back(p);
-        } else if (kw == "for") {
+        } else if (kw == "for") {   // a mode this build doesn't have (a newer map): built for none in particular, warned
             std::string mode;
             ok = (bool)(ls >> mode);
             if (ok) preferredMode = modeFromName(mode.c_str());
-        } else if (kw == "ranked") {
+            if (ok && preferredMode < 0) warnings.push_back("line " + std::to_string(lineNo) + ": built for '" + mode + "', a mode this build doesn't have");
+        } else if (kw == "ranked") {   // (names this build doesn't know are skipped: never ranked here)
             std::string ln;
-            while (ls >> ln) { int v = arenaVariantFromName(ln.c_str()); if (v >= 0) rankedLadders |= (uint16_t)(1u << v); else ok = false; }
-        } else if (kw == "modes") {
+            while (ls >> ln) {
+                int v = arenaVariantFromName(ln.c_str());
+                if (v >= 0) rankedLadders |= (uint16_t)(1u << v);
+                else warnings.push_back("line " + std::to_string(lineNo) + ": ranked '" + ln + "' isn't a ladder this build has (skipped)");
+            }
+        } else if (kw == "modes") {    // (a future mode in the list is skipped, so older builds can still join the map)
             std::string mn;
-            while (ls >> mn) { int m = modeFromName(mn.c_str()); if (m >= 0) allowedModes |= 1u << m; else ok = false; }
+            while (ls >> mn) {
+                int m = modeFromName(mn.c_str());
+                if (m >= 0) allowedModes |= 1u << m;
+                else warnings.push_back("line " + std::to_string(lineNo) + ": mode '" + mn + "' isn't one this build has (skipped)");
+            }
         } else if (kw == "light") {
             Light l;
             ok = (bool)(ls >> l.pos.x >> l.pos.y >> l.pos.z >> l.radius) && okCoord(l.pos.x) && okCoord(l.pos.y) && okCoord(l.pos.z);
@@ -529,13 +568,15 @@ bool Map::parseText(const std::string& text, std::string* err) {
             while (ok && ls >> k) {
                 ok = (bool)(ls >> c.x >> c.y >> c.z) && std::isfinite(c.x) && std::isfinite(c.y) && std::isfinite(c.z);
                 if (k == "base") palBase = c; else if (k == "accent") palAccent = c; else if (k == "metal") palMetal = c;
-                else if (k == "glow") palGlow = c; else if (k == "sky") palSky = c; else ok = false;
+                else if (k == "glow") palGlow = c; else if (k == "sky") palSky = c;
+                else if (ok) warnings.push_back("line " + std::to_string(lineNo) + ": palette colour '" + k + "' unknown (skipped)");
             }
             hasPalette = ok;
         } else if (kw == "sun") {
             Vec3 d; ok = (bool)(ls >> d.x >> d.y >> d.z) && okCoord(d.x) && okCoord(d.y) && okCoord(d.z) && length(d) > 1e-6f; if (ok) sunDir = normalize(d);
-        } else {
-            ok = false;
+        } else {   // a keyword this build doesn't know (a newer format's): skipped with a warning. The ones above are
+                   // checked strictly: a bad box, spawn, zone or path is an error, never guessed at
+            warnings.push_back("line " + std::to_string(lineNo) + ": unknown '" + kw + "' skipped");
         }
         if (!ok) {
             if (err) *err = "parse error on line " + std::to_string(lineNo) + ": " + std::string(lineStart, lineEnd);
@@ -587,13 +628,14 @@ bool Map::validate(std::string* err) const {
 }
 
 std::string Map::serialize() const {
-    std::string o = "# made with the quark map editor\n";
+    std::string o = "# made with the quark map editor\nversion " + std::to_string(kMapFormatVersion) + "\n";
     char b[256];
     auto box = [&](const char* kw, const AABB& a) {
         snprintf(b, sizeof b, "%s %g %g %g %g %g %g\n", kw, a.mn.x, a.mn.y, a.mn.z, a.mx.x, a.mx.y, a.mx.z);
         o += b;
     };
     if (!title.empty()) o += "title " + title + "\n";
+    if (!setting.empty()) o += "setting " + setting + "\n";
     if (preferredMode >= 0) o += std::string("for ") + modeName(preferredMode) + "\n";
     if (rankedLadders) {
         o += "ranked";
@@ -637,6 +679,10 @@ std::string Map::serialize() const {
         snprintf(b, sizeof b, "group %s %d %d %g %g %g %g %g %g\n", groupTypes[g.type], g.material, g.dir, g.box.mn.x, g.box.mn.y, g.box.mn.z, g.box.mx.x, g.box.mx.y, g.box.mx.z);
         o += b;
         for (auto& p : g.parts) { snprintf(b, sizeof b, "part %d %.6g %.6g %.6g %.6g %.6g %.6g\n", p.material, p.box.mn.x, p.box.mn.y, p.box.mn.z, p.box.mx.x, p.box.mx.y, p.box.mx.z); o += b; }
+    }
+    for (auto& st : stairs) {   // (kept as they were: the editor doesn't move them with the boxes)
+        snprintf(b, sizeof b, "stairs %g %g %g %g %g %g %c %g %d\n", st.x0, st.z0, st.x1, st.z1, st.base, st.top, st.axis, st.rising, st.solid ? 1 : 0);
+        o += b;
     }
     for (auto& a : checkpoints) box("checkpoint", a);
     for (auto& p : payloadPath) { snprintf(b, sizeof b, "path %g %g %g\n", p.x, p.y, p.z); o += b; }
