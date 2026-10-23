@@ -137,6 +137,8 @@ Each mode the map supports gets the measurement that matters for it:
 ## Mode fit
 Each map is built for one mode (its `for` line), and is judged on what that mode needs.
 
+**A map built for every mode** (no `modes` line: Lodestone, owner decision B1) is graded in **every** mode it offers too: the report lists each mode's fit under it. The bar holds its attack / defend timing (every bomb site and capture point) and its balance (every objective of every mode) in all of them, as for any map; its mode-fit score is its built-for mode's, and any other mode under 7 is printed as a `NOTE` and marked "below 7" in the report (a duel or team-vs fit can't reach 7 on a 79,000 m² map: those modes want 300–3,000 m²).
+
 **Unreachable scores 0.** First, every route each mode the map offers needs is walked on a collision-checked walk grid (`tests/walkgrid.h`): columns every 0.25 m, the player's real hull against the real collision (clip included), steps of 0.55 m, jumps up 1.15 m, gaps up to 2.5 m along a jump's arc, ladders, crouching, but no dash or grapple. The routes: each team's spawns to every enemy spawn (vs, duel, 1v1), every free-for-all spawn to every other (free for all, hide, tag, a tourney's warm-up), every team spawn to every bomb site and the hill, the whole payload track (within push range, every 4 m), each multi point stage's spawns to every point from theirs on, the race spawns to every checkpoint. One missing route and mode fit is 0 (the report's "routes" line says which); `quark_tests` fails it too.
 
 | mode | what it needs (10 when) |

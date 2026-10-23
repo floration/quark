@@ -228,6 +228,8 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 - **Lamp posts round the yard walls and along the quay edge, the freighter's deck and mast-head lights.** Dusk light: the yard was lit only under its roofs.
 
 ## Lodestone: multi point (and every other mode). Setting: a mine.
+The owner kept every mode on it (decision B1), so it's graded in every mode it offers (mode fit, `docs/MAP_REPORT.md`): multi point 8.6, bomb 8.6, king of the hill 8.4, payload 8.6, neutral payload 8.2, free for all 8.0, hide 8.2, tag 7.2, race 10.0. Team vs, duel, 1v1 and a tourney match score 4.0: those modes want a compact map (300–3,000 m²) and the mine is 79,000 m², so no spawn placement gets them to 7.
+
 **Why it suits multi point:**
 - An attack in five stages down the mine (A pithead, B pit floor, C workings, D crystal grotto, E mother lode). Each point is 25–90 m on from the last: every capture is a push, not a hop.
 - Every stage has its own spawns for both sides, and both reach the stage's point in the same second (attackers' arrival minus defenders': A +0.3, B +0.7, C 0.0, D −0.3, E −0.5 s; the owner's band is −1..+1 s, decision B2): whoever takes a point first holds it, so the race to it is even. As a point falls, both sides' spawns move on and the fight moves down the mine.
@@ -268,8 +270,9 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 - **Team spawns in the two caverns, mirrored either side of the spine.** The portals into the workings are symmetric, so neither side is closer to the middle. A pit prop in the spine tunnel's mouth keeps the two spawn rows out of each other's sight, and a spoil wall on the surface does the same for the stage-0 spawns.
 - **The hill on the loading bay (C)**, as far from either cavern.
 - **Bomb sites on the loading bay (C) and in the pillar hall under the pithead**: the two places in the workings both caverns reach in the same second (+0.7 and −0.6 s). They used to be at D and E, each in one team's cavern: one side got there 10 s first (REVIEW MAP-6).
-- **An ore-cart track** from the grotto, through the spine tunnel, to the shaft station, with checkpoints at 1/3 and 2/3.
-- **A race course** from the surface down the mine to the shaft station's ledge (an unranked course: Viaduct is the ranked one).
+- **An ore-cart track** from the grotto, through the spine tunnel, to the shaft station, with checkpoints at 1/3 and 2/3. Stacks of sleepers, crates and cribs stand both sides of it, a step off the cart's sweep: something to push behind and to hold the cart from (cover on 21% of the floor beside it; it ran through bare cavern, 5%).
+- **A race course** from the surface down the mine to the shaft station's cage landing (an unranked course: Viaduct is the ranked one). It used to end on the station's ledge at 12 m: 179 m round by the stairs, 66 m for a player who leaps and hooks up (a 2.7× shortcut). No leg can be cut by more than 1.06× now.
+- **Twelve free-for-all spawns** over every part of the mine (surface, workings, both caverns, the ledges): only 5% of their pairs can see each other.
 
 ## Midtown: multi point. Setting: a city centre.
 **Why it suits multi point:**

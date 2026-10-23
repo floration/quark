@@ -32,8 +32,8 @@ Measured with the game's movement code: the speed a good player builds with auto
 | gantry | ffa | crane hall | 8.6 | 7.6 | 9.1 | 7.5 | 7.6 | - | 3.8 |
 | hamlet | hide | valley village | 7.2 | 7.3 | 8.3 | 8.0 | 8.6 | - | 3.2 |
 | harbor | ffa | harbour | 7.5 | 7.5 | 8.4 | 7.5 | 7.4 | - | 2.6 |
-| hightown | hide | skyscraper over a city | 8.1 | 7.6 | 8.5 | 8.0 | 9.1 | - | 7.5 |
-| lodestone | points | mine | 7.1 | 6.2 | 7.7 | 8.0 | 8.6 | 8.7 | 1.7 |
+| hightown | hide | skyscraper over a city | 8.1 | 7.6 | 8.5 | 8.0 | 9.1 | - | 7.4 |
+| lodestone | points | mine | 7.1 | 6.2 | 9.4 | 8.0 | 8.6 | 8.7 | 1.7 |
 | midtown | points | city centre | 7.0 | 5.8 | 8.0 | 8.0 | 8.7 | 10.0 | 1.7 |
 | orbital | vs | space station | 8.9 | 8.4 | 8.3 | 7.2 | 9.8 | 10.0 | 3.0 |
 | railyard | payload | rail yard | 8.0 | 7.3 | 8.3 | 7.5 | 9.6 | - | 2.6 |
@@ -59,7 +59,7 @@ Measured with the game's movement code: the speed a good player builds with auto
 | hamlet | 1787 | 1432 | 8.4 | 22% | 8 | 219 | 150 | 44 | 80 |
 | harbor | 664 | 451 | 9.8 | 23% | 8 | 158 | 79 | 41 | 54 |
 | hightown | 1185 | 980 | 10.3 | 11% | 7 | 85 | 84 | 56 | 89 |
-| lodestone | 8749 | 5655 | 7.1 | 17% | 7 | 1209 | 418 | 99 | 144 |
+| lodestone | 8820 | 5680 | 7.1 | 17% | 7 | 1233 | 418 | 99 | 144 |
 | midtown | 9169 | 7472 | 8.0 | 24% | 8 | 777 | 1263 | 200 | 122 |
 | orbital | 741 | 499 | 15.7 | 9% | 7 | 127 | 78 | 26 | 110 |
 | railyard | 925 | 658 | 12.0 | 16% | 7 | 151 | 103 | 32 | 60 |
@@ -87,7 +87,7 @@ Range bands follow the weapon table: long is out to the laser's reach (24 m).
 | hamlet | 17007 | 9 | 13.3 m | 33.0 | 1 | 12% | 5% | 27% | 8% | 60% | 44% |
 | harbor | 4606 | 5 | 8.4 m | 15.0 | 0 | 31% | 7% | 39% | 10% | 44% | 39% |
 | hightown | 9550 | 16 | 23.9 m | 22.0 | 0 | 12% | 7% | 45% | 14% | 34% | 34% |
-| lodestone | 79408 | 12 | 17.2 m | 128.5 | 0 | 8% | 1% | 12% | 4% | 83% | 34% |
+| lodestone | 79508 | 12 | 17.2 m | 129.0 | 0 | 7% | 1% | 13% | 5% | 80% | 34% |
 | midtown | 93568 | 10 | 14.4 m | 144.2 | 0 | 7% | 1% | 12% | 3% | 84% | 29% |
 | orbital | 3186 | 6 | 10.4 m | 12.0 | 0 | 26% | 12% | 54% | 11% | 23% | 48% |
 | railyard | 5500 | 5 | 12.2 m | 12.0 | 0 | 28% | 7% | 40% | 11% | 42% | 44% |
@@ -113,7 +113,7 @@ Range bands follow the weapon table: long is out to the laser's reach (24 m).
 | hamlet | 2.0 | 1.3 | 2.4 | 1.9 | -0.3 |
 | harbor | 1.2 | 2.0 | 2.1 | 2.1 | -0.0 |
 | hightown | 2.0 | 1.5 | 1.9 | 2.2 | -0.0 |
-| lodestone | 2.0 | 1.1 | 1.9 | 1.2 | -0.0 |
+| lodestone | 2.0 | 1.1 | 1.9 | 1.3 | -0.0 |
 | midtown | 2.0 | 1.0 | 1.6 | 1.1 | -0.0 |
 | orbital | 1.5 | 2.0 | 2.6 | 2.3 | -0.0 |
 | railyard | 1.2 | 1.5 | 2.4 | 2.2 | -0.0 |
@@ -141,7 +141,7 @@ Sub-scores 0-10 (the movement score is their mean); the measurement behind each 
 | hamlet | 10.0 (93%) | 10.0 (60 m) | 10.0 (67%, 9) | 9.3 (83%) | 6.3 (1%) | 4.5 |
 | harbor | 10.0 (94%) | 10.0 (51 m) | 8.0 (70%, 5) | 8.6 (78%) | 8.8 (6%) | 4.7 |
 | hightown | 10.0 (83%) | 9.8 (39 m) | 9.0 (62%, 16) | 2.1 (19%) | 10.0 (18%) | 10.0 |
-| lodestone | 10.0 (96%) | 10.0 (60 m) | 10.0 (43%, 12) | 10.0 (98%) | 6.2 (0%) | 0.0 |
+| lodestone | 10.0 (96%) | 10.0 (60 m) | 10.0 (42%, 12) | 10.0 (98%) | 6.2 (0%) | 10.0 |
 | midtown | 10.0 (94%) | 10.0 (60 m) | 10.0 (62%, 10) | 8.2 (73%) | 6.0 (0%) | 4.1 |
 | orbital | 10.0 (99%) | 8.2 (33 m) | 9.3 (63%, 6) | 7.6 (68%) | 10.0 (15%) | 4.3 |
 | railyard | 10.0 (89%) | 10.0 (59 m) | 9.5 (69%, 5) | 10.0 (92%) | 6.0 (0%) | 4.2 |
@@ -165,7 +165,7 @@ Tech payoff:
 - **hamlet**: movement tech shortens main trips by 1.01x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 1416 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 206371 of 259178 leaps need a run-up
 - **harbor**: movement tech shortens main trips by 1.02x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 892 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 192457 of 271142 leaps need a run-up
 - **hightown**: movement tech shortens main trips by 1.18x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 256 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 175817 of 300596 leaps need a run-up
-- **lodestone**: race: shortcut 0.0 (worst leg 6 at 2.71x; 10 at <= 1.25x, 0 at >= 2.5x), challenge 4.0 on the tech path (4.0 jumps per 100 m, 0% narrow, 0% grappled) - legs: 1: 37 m run / 36 m with tech (1.01x), 2 jumps, 0 m narrow, 0 m grappled; 2: 49 m run / 42 m with tech (1.15x), 2 jumps, 0 m narrow, 0 m grappled; 3: 57 m run / 54 m with tech (1.06x), 3 jumps, 0 m narrow, 0 m grappled; 4: 77 m run / 77 m with tech (1.00x), 1 jumps, 0 m narrow, 0 m grappled; 5: 78 m run / 78 m with tech (1.00x), 2 jumps, 0 m narrow, 0 m grappled; 6: 179 m run / 66 m with tech (2.71x), 4 jumps, 0 m narrow, 0 m grappled; with every move a good player also reaches 32976 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 82870 of 93522 leaps need a run-up
+- **lodestone**: race: shortcut 10.0 (worst leg 2 at 1.20x; 10 at <= 1.25x, 0 at >= 2.5x), challenge 3.2 on the tech path (2.4 jumps per 100 m, 0% narrow, 0% grappled) - legs: 1: 36 m run / 36 m with tech (1.00x), 2 jumps, 0 m narrow, 0 m grappled; 2: 51 m run / 43 m with tech (1.20x), 1 jumps, 0 m narrow, 0 m grappled; 3: 54 m run / 52 m with tech (1.03x), 2 jumps, 0 m narrow, 0 m grappled; 4: 77 m run / 77 m with tech (1.00x), 0 jumps, 0 m narrow, 0 m grappled; 5: 80 m run / 79 m with tech (1.02x), 2 jumps, 0 m narrow, 0 m grappled; 6: 44 m run / 44 m with tech (1.00x), 1 jumps, 0 m narrow, 0 m grappled; with every move a good player also reaches 32940 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 83341 of 94055 leaps need a run-up
 - **midtown**: movement tech shortens main trips by 1.00x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 3520 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 57350 of 66989 leaps need a run-up
 - **orbital**: movement tech shortens main trips by 1.01x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 240 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 115993 of 188216 leaps need a run-up
 - **railyard**: movement tech shortens main trips by 1.00x on average (10 for 1.15-1.8x: it pays off without trivialising the map); with every move a good player also reaches 1408 m2 the run doesn't (roofs, wall tops), 0 m2 of it outside the playable footprint; 292521 of 406297 leaps need a run-up
@@ -175,7 +175,7 @@ Tech payoff:
 
 ### Mode fit
 
-Each map is built for one mode; this is how well it does what that mode needs.
+Each map is built for one mode; this is how well it does what that mode needs. A map built for every mode is also graded in each of the others (listed under it; the bar holds their timing and balance, the score is its built-for mode's).
 
 - **anvil**: 1v1: fairness 1.00, 2899 m2 floor (300-2000 ideal), spawns 5.2 s apart (2.5-7 s ideal), 3.4 loops per 1000 m2 (3 ideal)
 - **bastion**: vs: fairness 1.00, 7735 m2 floor (700-3000 ideal), spawns 7.1 s apart (4-9 s ideal), 3.8 loops per 1000 m2 (3 ideal)
@@ -192,6 +192,18 @@ Each map is built for one mode; this is how well it does what that mode needs.
 - **harbor**: ffa: 10 spawns (12+ ideal), 16% of spawn pairs in sight (0 ideal, 30% scores nothing), 3.3 loops per 1000 m2
 - **hightown**: hide: 15% hiding spots (15% ideal), 2.3 loops per 1000 m2 (3 ideal)
 - **lodestone**: points: 5 points (3-6 ideal), worst spacing 1.00 (25-90 m), attackers' arrival minus defenders' +0.3/+0.7/+0.0/-0.3/-0.5 s (-1..+1 ideal, worst 1.00), worst cover 0.32 (35% ideal), fewest ways onto a point 8 (3+)
+  - vs 4.0 (below 7): vs: fairness 0.96, 79508 m2 floor (700-3000 ideal), spawns 16.1 s apart (4-9 s ideal), 1.6 loops per 1000 m2 (3 ideal)
+  - bomb 8.6: bomb: worst site 1, attackers' arrival minus defenders' +0.7 s (-1..+1 ideal), 2 sites, 1.6 loops per 1000 m2
+  - race 10.0: race: the race movement check (shortcut on the tech path, see movement)
+  - koth 8.4: koth: fairness 0.94, 8 ways onto the hill (4+ ideal), 20% of the hill has cover (35% ideal)
+  - payload 8.6: payload: track 140 m (70-160 ideal), 21% of the floor beside it has cover (35% ideal), fairness 1.00
+  - ffa 8.0: ffa: 12 spawns (12+ ideal), 5% of spawn pairs in sight (0 ideal, 30% scores nothing), 1.6 loops per 1000 m2
+  - npayload 8.2: npayload: track 140 m (70-160 ideal), 21% of the floor beside it has cover (35% ideal), fairness 0.87
+  - duel 4.0 (below 7): duel: fairness 0.96, 79508 m2 floor (300-2000 ideal), spawns 16.1 s apart (2.5-7 s ideal), 1.6 loops per 1000 m2 (3 ideal)
+  - 1v1 4.0 (below 7): 1v1: fairness 0.96, 79508 m2 floor (300-2000 ideal), spawns 16.1 s apart (2.5-7 s ideal), 1.6 loops per 1000 m2 (3 ideal)
+  - tourney 4.0 (below 7): tourney: fairness 0.96, 79508 m2 floor (300-2000 ideal), spawns 16.1 s apart (2.5-7 s ideal), 1.6 loops per 1000 m2 (3 ideal)
+  - hide 8.2: hide: 42% hiding spots (15% ideal), 1.6 loops per 1000 m2 (3 ideal)
+  - tag 7.2: tag: 42% hiding spots (15% ideal), 1.6 loops per 1000 m2 (3 ideal)
 - **midtown**: points: 5 points (3-6 ideal), worst spacing 1.00 (25-90 m), attackers' arrival minus defenders' -0.2/+0.5/+0.0/+0.7/+0.1 s (-1..+1 ideal, worst 1.00), worst cover 0.37 (35% ideal), fewest ways onto a point 4 (3+)
 - **orbital**: vs: fairness 1.00, 3186 m2 floor (700-3000 ideal), spawns 5.4 s apart (4-9 s ideal), 3.8 loops per 1000 m2 (3 ideal)
 - **railyard**: payload: track 136 m (70-160 ideal), 31% of the floor beside it has cover (35% ideal), fairness 1.00
@@ -333,7 +345,7 @@ Features: ladders, lethal drops, water / lava, wallbangs, 5+ floor levels, indoo
 - 1v1: 1v1: A 39 m, B 39 m (fairness 1.00), 4.9 s apart at 8 m/s
 - ranked: ranked: 64% of sightlines in rifle/rocket range (< 20 m), 36% in laser/crossbow/sniper range (> 20 m)
 - routes: all 72 spawn-to-objective routes walkable (the player's hull against the map's collision)
-- most similar map: anvil (distance 0.34)
+- most similar map: anvil (distance 0.35)
 
 ### gantry
 
@@ -365,7 +377,7 @@ Features: ladders, lethal drops, water / lava, wallbangs, 5+ floor levels, indoo
 
 - ffa: 12 spawns, closest pair 1 m, 19% of spawn pairs see each other
 - routes: all 100 spawn-to-objective routes walkable (the player's hull against the map's collision)
-- most similar map: canal (distance 0.32)
+- most similar map: railyard (distance 0.32)
 
 ### hightown
 
@@ -377,7 +389,7 @@ Features: lethal drops, water / lava, 5+ floor levels, 12 m+ of height, indoor a
 - hide: 15% of floor is a hiding spot (seen from < 5% of the map)
 - tag: 15% of floor is a hiding spot (seen from < 5% of the map)
 - routes: all 144 spawn-to-objective routes walkable (the player's hull against the map's collision)
-- most similar map: lodestone (distance 0.93)
+- most similar map: lodestone (distance 0.92)
 
 ### lodestone
 
@@ -387,19 +399,19 @@ Features: ladders, water / lava, moving cart, 5+ floor levels, 12 m+ of height, 
 
 - vs: vs: A 129 m, B 123 m (fairness 0.96), 16.1 s apart at 8 m/s
 - bomb: site 1: attackers (A) 82 m, defenders (B) 77 m, defenders first by 0.7 s; site 2: attackers (A) 93 m, defenders (B) 97 m, attackers first by 0.6 s (-1..+1 s at every site)
-- race: 6 checkpoints, route 580 m walked (73 s at 8 m/s, 29 s at 20 m/s)
+- race: 6 checkpoints, route 525 m walked (66 s at 8 m/s, 26 s at 20 m/s)
 - koth: to the hill: A 82 m, B 77 m (fairness 0.94)
 - payload: attackers (A) 22 m to the cart, defenders (B) 82 m to the halfway point (track 140 m)
-- ffa: 88 spawns, closest pair 0 m, 12% of spawn pairs see each other
+- ffa: 92 spawns, closest pair 0 m, 12% of spawn pairs see each other
 - npayload: to the cart: A 71 m, B 82 m (fairness 0.87)
 - duel: duel: A 129 m, B 123 m (fairness 0.96), 16.1 s apart at 8 m/s
 - 1v1: 1v1: A 129 m, B 123 m (fairness 0.96), 16.1 s apart at 8 m/s
-- tourney: tourney: A 129 m, B 123 m (fairness 0.96), 16.1 s apart at 8 m/s; 88 spawns, closest pair 0 m, 12% of spawn pairs see each other
-- hide: 38% of floor is a hiding spot (seen from < 5% of the map)
-- tag: 38% of floor is a hiding spot (seen from < 5% of the map)
+- tourney: tourney: A 129 m, B 123 m (fairness 0.96), 16.1 s apart at 8 m/s; 92 spawns, closest pair 0 m, 12% of spawn pairs see each other
+- hide: 42% of floor is a hiding spot (seen from < 5% of the map)
+- tag: 42% of floor is a hiding spot (seen from < 5% of the map)
 - points: 5 points; A: attackers 79 m, defenders 76 m, defenders first by 0.3 s; B: attackers 69 m, defenders 63 m, defenders first by 0.7 s; C: attackers 62 m, defenders 62 m, defenders first by 0.0 s; D: attackers 72 m, defenders 74 m, attackers first by 0.3 s; E: attackers 63 m, defenders 67 m, attackers first by 0.5 s; (-1..+1 s at every point)
-- routes: all 5584 spawn-to-objective routes walkable (the player's hull against the map's collision)
-- most similar map: midtown (distance 0.21)
+- routes: all 5664 spawn-to-objective routes walkable (the player's hull against the map's collision)
+- most similar map: midtown (distance 0.22)
 
 ### midtown
 
@@ -410,7 +422,7 @@ Features: ladders, water / lava, wallbangs, 5+ floor levels, 12 m+ of height, in
 - ffa: 68 spawns, closest pair 2 m, 19% of spawn pairs see each other
 - points: 5 points; A: attackers 64 m, defenders 66 m, attackers first by 0.2 s; B: attackers 75 m, defenders 71 m, defenders first by 0.5 s; C: attackers 62 m, defenders 62 m, defenders first by 0.0 s; D: attackers 50 m, defenders 45 m, defenders first by 0.7 s; E: attackers 61 m, defenders 60 m, defenders first by 0.1 s; (-1..+1 s at every point)
 - routes: all 244 spawn-to-objective routes walkable (the player's hull against the map's collision)
-- most similar map: lodestone (distance 0.21)
+- most similar map: lodestone (distance 0.22)
 
 ### orbital
 

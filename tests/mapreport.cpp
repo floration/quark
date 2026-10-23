@@ -79,6 +79,8 @@ struct Metrics {
     float fairness = -1;       // 0-1: the worst objective's fairness / timing band (team maps), -1: no team modes
     std::string worstFair;     // which objective that is
     std::vector<std::pair<std::string, float>> leads;   // every attack / defend arrival: attackers' minus defenders' (s)
+    struct ModeFit { std::string mode; float fit; std::string why; };
+    std::vector<ModeFit> modeFits;   // a map built for every mode: its fit in each of the others
     float hideSpots = 0;       // share of points seen by < 5% of others
     // originality
     std::vector<float> occ;    // 24x24 top-down footprint (max floor height, normalised)
@@ -1225,7 +1227,9 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g, cons
         if (!line.empty()) r.modes.push_back({modeLabel(mode), line});
     }
     r.leads = leads;
-    // ---- mode fit: the mode the map is built for ("for <mode>"), judged on what that mode needs
+    // ---- mode fit: the mode the map is built for ("for <mode>"), judged on what that mode needs. A map built for
+    // every mode (Lodestone: no "modes" line) is graded in every mode it offers too (B1): each one's fit is listed,
+    // and the bar holds its timing (B2) and balance in all of them; the mode-fit score is its built-for mode's
     float loopsPerK = r.loops / std::max(1.0f, r.area / 1000);
     auto fitFor = [&](int pm, std::string& why) -> float {
         float fit = -1;
@@ -1331,6 +1335,13 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g, cons
         float f = fitFor(m.preferredMode, why);
         if (f >= 0) { r.sMode = f; r.modeFit = why; }
     }
+    if (m.allowedModes == 0)   // built for every mode: its fit in each
+        for (int mode = 0; mode < MODE_COUNT; mode++) {
+            if (!m.supportsMode(mode) || mode == m.preferredMode) continue;
+            std::string why;
+            float f = fitFor(mode, why);
+            if (f >= 0) r.modeFits.push_back({modeLabel(mode), f, why});
+        }
     r.setting = m.setting;
     if (m.rankedLadders) {
         // the weapons each ranked ladder is about, and where they work
@@ -1508,6 +1519,8 @@ int mapReport(const char* outPath) {
                 else snprintf(why, sizeof why, "%s: attackers' arrival minus the defenders' is %+.2f s (the band is %+.0f..%+.0f s)", what.c_str(), l, kLeadLo, kLeadHi);
                 miss(why);
             }
+        for (auto& f : r.modeFits)   // (a map built for every mode: the others are graded and listed, B1)
+            if (f.fit < 7.0f - 1e-3f) fprintf(stderr, "  NOTE %s: %s mode fit %.1f (it isn't built for %s: reported, not failing)\n", r.name.c_str(), f.mode.c_str(), f.fit, f.mode.c_str());
         if (r.sMode < 0) miss("not built for one mode (\"for <mode>\")");
         if (r.setting.empty()) miss("no \"setting\" (what place it is)");
         // nothing outside the playable floor's footprint may be reachable with the full movement envelope (clip, or
@@ -1582,9 +1595,10 @@ int mapReport(const char* outPath) {
     }
     o << "\nTech payoff:\n\n";
     for (auto& r : all) o << "- **" << r.name << "**: " << r.techLine << "\n";
-    o << "\n### Mode fit\n\nEach map is built for one mode; this is how well it does what that mode needs.\n\n";
+    o << "\n### Mode fit\n\nEach map is built for one mode; this is how well it does what that mode needs. A map built for every mode is also graded in each of the others (listed under it; the bar holds their timing and balance, the score is its built-for mode's).\n\n";
     for (auto& r : all) {
         o << "- **" << r.name << "**: " << (r.modeFit.empty() ? std::string("no mode it is built for") : r.modeFit) << "\n";
+        for (auto& f : r.modeFits) { snprintf(b, sizeof b, "  - %s %.1f%s: %s\n", f.mode.c_str(), f.fit, f.fit < 7.0f - 1e-3f ? " (below 7)" : "", f.why.c_str()); o << b; }
     }
     o << "\n### Balance\n\nPer team, for every objective of every team mode the map offers; the worst objective is the score (10 x its fairness). "
          "Attack / defend objectives score by the timing band: the attackers' arrival minus the defenders' (positive: defenders there first) within "

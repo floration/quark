@@ -319,6 +319,11 @@ def build():
     # team spawns in the two caverns, mirrored either side of the spine (the portals into the workings are symmetric)
     for (x, z) in ((-64, 10), (-60, 10), (-64, 14), (-60, 14), (-52, 10), (-52, 14)):
         m.spawn("a", x, 0, z, 0); m.spawn("b", -x, 0, z, 0)
+    # free for all: twelve spawns spread over every part of the mine (a free for all wants 12+, and it had the 8 the
+    # generator tops a pool up to)
+    for (x, y, z) in ((-61, 12, 109), (109, 0, -109), (-109, SURF, -105), (109, 12, 67), (-1, 0, -17), (-109, 12, 7),
+                      (13, SURF, -109), (89, 0, -21), (-80, 0, 40), (60, 0, 90), (60, SURF, -60), (-64, 0, -20)):
+        m.spawn("any", x, y, z, 0)
     # king of the hill on the workings' loading bay (C): as far from either cavern. The bomb sites are the two places
     # in the workings both caverns reach in the same second (B2: within -1..+1 s): the loading bay, and the pillar
     # hall under the pithead (D and E sat in one cavern each: one side was there 10 s before the other, REVIEW MAP-6)
@@ -328,9 +333,11 @@ def build():
     CART = [(-70, 15.5), (-30, 15.5), (30, 15.5), (70, 15.5)]   # (beside the station's landing, z 18..30: not through it)
     for (x, z) in CART: m.raw(f"path {x:g} 0 {z:g}")
     m.raw("cartcheck 0.33"); m.raw("cartcheck 0.66")
-    # race: from the surface down the mine to the shaft station's ledge (not a ranked course: Viaduct is that)
+    # race: from the surface down the mine to the shaft station's cage landing (not a ranked course: Viaduct is that).
+    # The last leg used to end on the station's ledge at 12 m: 179 m round by the stairs, 66 m for a good player who
+    # leaps and hooks up to it (a 2.7x shortcut); it ends on the landing now
     for x in (-4, 0, 4): m.spawn("race", x, SURF, -104, 180)
-    for (x0, y, z0, x1, z1) in ((-7, SURF, -71, 7, -57), (-50, 0, -68, -38, -56), (-7, 0, -35, 7, -21), (-58, 0, 30, -44, 44), (18, 0, 57, 32, 71), (50, 12, 102, 80, 110)):
+    for (x0, y, z0, x1, z1) in ((-7, SURF, -71, 7, -57), (-50, 0, -68, -38, -56), (-7, 0, -35, 7, -21), (-58, 0, 30, -44, 44), (18, 0, 57, 32, 71), (48, 0, 18, 60, 30)):
         m.raw(f"checkpoint {x0:g} {y:g} {z0:g} {x1:g} {y + 4:g} {z1:g}")
     m.box(30, SURF, -111, 32, SURF + 3, -100, accent=True)                       # a spoil wall: no sightline between the stage-0 spawns
     for k, (y, pts, yaw) in SP.items():                       # spawns (stage by stage): before the scatter, which avoids them
@@ -342,6 +349,22 @@ def build():
         m.box(x0, 0, z0, x1, 7, z1)
         m.box(x0 - 0.1, 7, z0 - 0.1, x1 + 0.1, 7.4, z1 + 0.1, accent=True)
         for y in (1.2, 2.6, 5.0): m.box(x0 - 0.06, y, z0 - 0.06, x1 + 0.06, y + 0.15, z1 + 0.06, mat="trim")
+    # stacks of sleepers, crates and cribs both sides of the ore-cart line (payload: something to push behind and to
+    # hold the cart from; the line ran through bare cavern, cover on 5% of the floor beside it), clear of its sweep
+    def trackside_free(x0, z0, x1, z1):   # nothing standing within 0.6 m (rails and sleepers flush with the floor aside), no spawn within 2 m
+        for ln in m.lines:
+            w = ln.split()
+            if len(w) == 7 and w[0] in ("box", "accent", "metal", "glow", "wallbang", "ladder"):
+                b = list(map(float, w[1:]))
+                if b[1] < 1.6 and b[4] > 0.25 and b[0] < x1 + 0.6 and b[3] > x0 - 0.6 and b[2] < z1 + 0.6 and b[5] > z0 - 0.6: return False
+            elif w and w[0] == "spawn" and abs(float(w[3])) < 1 and x0 - 2 < float(w[2]) < x1 + 2 and z0 - 2 < float(w[4]) < z1 + 2: return False
+        return True
+    with m.generated():
+        for k, x in enumerate(range(-66, 67, 5)):
+            if abs(x) < 9: continue                                                  # (the spine tunnel's mouths)
+            for (z0, z1) in ((12.3, 13.3), (17.7, 18.7)):                            # (a step off the cart's sweep, 14.5..16.5)
+                if z0 > 15 and 44 < x < 64: continue                                 # (the station's landing)
+                if trackside_free(x - 1.2, z0, x + 1.2, z1): m.box(x - 1.2, 0, z0, x + 1.2, 1.3 if k % 2 else 1.5, z1, accent=(k % 3 == 0))
     # crystal veins in the cavern walls (the mine follows them)
     RV = random.Random("lodestone-veins")
     for i in range(260):
