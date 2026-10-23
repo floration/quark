@@ -133,7 +133,7 @@ whatever a branch put in `master.txt`. The pages job only has to publish `site/`
   `QUARK-LAUNCHER-VERSION:<VERSION>` marker in the binary (launchers without it count as older). Installing an
   older package (picked by hand, signed or not) never downgrades the launcher: only a newer marker replaces it.
 - **Old files on update** (owner decision C13, `src/launcher/gamefiles.h`): the launcher writes
-  `installed-files.txt` into the game folder at every install (each file the package put there, with its sha256), and
+  `installed-files.txt` into the game folder at every install (each file the package put there, with its sha256 and size), and
   every package from 1.17.0 on carries the same list (`tools/pack.py`), so installs made by an older launcher have it
   too. An update deletes only *retired game files*: listed, unchanged since (same sha256), not in the new package, and
   not a player file (`*.cfg`, `*.key`, demos, screenshots, logs, light caches, downloaded maps, the player's folders).
@@ -168,6 +168,33 @@ version, with no warning and no extra confirmation (owner decision B6), so any v
   INSTALL instead of replacing it.
 - Old packages may carry no launcher (or an older, unsigned one, which never replaces the current launcher) and
   speak older network protocols, so online play may need servers of the same version.
+
+## Antivirus false positives (Windows)
+
+The Ed25519 signature above proves a package came from the release key; Windows doesn't know about it. To Windows the
+exes are unsigned, and an antivirus (Windows Defender's machine-learning detections, names like `Wacatac` or
+`Trojan:Win32/...!ml`) now and then flags one particular build of an unsigned exe on some PCs and quarantines it,
+which deletes it from the game folder (1.15.1 and 1.16.0's `quark.exe` on one player's PC: every other build, and those
+builds on everyone else's PCs, were fine).
+
+- **What the launcher does about it (1.17.0 on).** Every file of a new version is read back and checked against the
+  package before the swap: one an antivirus took, changed or blocked stops the update with the installed version
+  untouched, and the player sees which file, why that most likely happened (with the Windows Security steps to
+  restore it and to add an exclusion for the quark folder) and RETRY. Before every start the installed files are
+  checked (existence and size; CHECK FILES: sha256): a missing or changed `quark.exe` is never started, the player
+  gets the same explanation, OPEN FOLDER and REPAIR (that version downloaded, checked and swapped in again).
+- **Clearing a flagged build.** Submit the flagged exe (or the release's `quark-windows.zip`) as a false positive at
+  https://www.microsoft.com/wdsi/filesubmission ("Software developer", the detection name from the player's Protection
+  history). Microsoft usually clears it within a day or two and the next definition update stops the detections for
+  everyone; a player can then restore the file from Protection history or press REPAIR.
+- **Making it rarer.** Every exe carries a version resource (product quark, company floration, the version) and an
+  application manifest (src/win/, CMakeLists.txt `quark_win_resources`), and exes are never packed or compressed (UPX
+  and the like are a strong malware signal): anonymous, packed binaries are what the heuristics flag most.
+- **What really prevents it: Authenticode.** Signing `quark.exe`, `quark_server.exe` and `quark_launcher.exe` with a
+  code-signing certificate (an OV/EV certificate, or Azure Trusted Signing) gives the files a publisher reputation;
+  Defender and SmartScreen then treat new builds from that publisher as known. Not done by the owner's choice (the
+  package signature above covers the launcher's own checks); it would be one `signtool`/`osslsigncode` step in the
+  Windows job before `tools/pack.py`.
 
 ## Notes
 
