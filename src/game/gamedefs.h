@@ -348,7 +348,16 @@ inline int bubbleStreamCount(float nearestEnemy) {
     f = f < 0 ? 0 : f > 1 ? 1 : f;
     return kBubbleStreamMin + (int)(f * (kBubbleStreamMax - kBubbleStreamMin) + 0.5f);
 }
-constexpr float kProjInherit = 0.9f;    // rockets / stickies keep 90% of the shooter's velocity (all of it: a rocket fired down while moving lands under you and can't boost you on)
+constexpr float kProjInherit = 0.9f;    // stickies keep 90% of the shooter's forward / back and vertical velocity (not sideways: owner 1.17)
+// What a sticky inherits from its shooter's velocity: kProjInherit of the part along where they aim (horizontally:
+// forward / back) and of the vertical part; never the sideways part (owner, 1.17: strafing threw stickies off to the
+// side, which made them hard to aim). Aiming straight up / down: only the vertical part.
+inline Vec3 stickyInherit(const Vec3& shooterVel, const Vec3& aim) {
+    float fl = std::sqrt(aim.x * aim.x + aim.z * aim.z);
+    Vec3 v = {0, shooterVel.y, 0};
+    if (fl > 1e-4f) { float fx = aim.x / fl, fz = aim.z / fl, along = shooterVel.x * fx + shooterVel.z * fz; v.x = fx * along; v.z = fz * along; }
+    return v * kProjInherit;
+}
 constexpr float kCrossbowKnock = 16.0f; // a bolt hit shoves hard (m/s along the bolt)
 constexpr float kBubbleKnock = 0.35f; // a pop shoves you a third as hard as a rocket blast of the same strength
 constexpr float kVampireFadeTime = 60.0f, kVampireMinHeal = 0.5f; // laser vampire: healing fades 100% -> 50% over the first minute of a round
