@@ -48,7 +48,7 @@ journalctl -u quark-update -u quark-testing-update -n 50
 
 The bot's code lives on the **`discord-bot` branch** (its files at the top level), not in the game's branches. Its
 `install.sh` installs `quark-discord-update.timer`. Every 10 minutes it runs `autoupdate.sh`, which:
-1. finds what to follow: with `QUARK_BOT_FOLLOW=branch:discord-bot` (below), the head of that branch;
+1. finds what to follow: the head of the `discord-bot` branch (its default, `QUARK_BOT_FOLLOW=branch:discord-bot`);
 2. if the bot's files are different there, checks it out (never going backwards) and reinstalls the hash-pinned requirements if they changed;
 3. runs the bot's offline tests and a dry run, which reads live data, posts nothing and gets no secrets;
 4. restarts the bot.
@@ -67,9 +67,6 @@ Then:
 ```
 cd ~/quark-discord-bot && sudo ./install.sh   # Enter at each prompt keeps the saved token / server id / BOT_KEY;
                                               # it points both services at this folder and restarts the bot
-sudo systemctl edit quark-discord-update.service   # add the two lines below, save
-    [Service]
-    Environment=QUARK_BOT_FOLLOW=branch:discord-bot
 journalctl -u quark-discord -f                # "ready as ..."
 ```
 Optional: `QUARK_REPO=/home/<user>/quark` in `/etc/quark-discord.env` lets the bot read the INFO pages (`game.cpp`)
