@@ -316,13 +316,17 @@ const MoveEnvelope& moveEnvelope() {
         auto t0 = std::chrono::steady_clock::now();
         auto lap = [&](const char* what) { if (std::getenv("MR_TIME")) fprintf(stderr, "envelope: %s by %.0f ms\n", what, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count()); };
         MoveEnvelope e;
-        e.speed = {kRunSpeed, 12, 16, 20, 24, 28};   // (past 28 m/s an upward dash gets no higher: its exit speed is capped)
+        // (past 28 m/s an upward dash gets no higher: its exit speed is capped; 32 and 36 m/s: super dashes)
+        e.speed = {kRunSpeed, 12, 16, 20, 24, 28, 32, 36};
         // speed from a standstill: jump held (auto-bhop), the dash on cooldown while it adds speed, and each
-        // millisecond the strafe / turn that gains the most (greedy: a good player, not a tool-assisted one)
+        // millisecond the strafe / turn that gains the most (greedy: a good player, not a tool-assisted one). Two
+        // ways, the better per tier: dashing as soon as it adds speed (a dash jump when it starts on the floor), and
+        // super dashes (looking down, dashing on a bhop's landing tick whenever the dash is ready).
         Map flat;
         flat.parse("box -600 -1 -600 600 0 600\nspawn any 0 0 0\n");
-        e.runUp.assign(e.speed.size(), 0);
-        {
+        e.runUp.assign(e.speed.size(), 1e9f);
+        e.runUp[0] = 0;
+        for (int superDash = 0; superDash < 2; superDash++) {
             MoveState s;
             s.flags = MF_ONGROUND;
             float dist = 0;
@@ -331,6 +335,7 @@ const MoveEnvelope& moveEnvelope() {
             for (int t = 0; t < 30000 && next < e.speed.size(); t++) {
                 float h = hspeed(s.vel), vyaw = h > 0.1f ? std::atan2(-s.vel.x, -s.vel.z) : 0;
                 bool dash = !dashed && s.dashCooldown <= 0 && s.dashTimer <= 0 && h < 29.0f;   // (above 29 m/s a dash slows you)
+                if (superDash) dash = !dashed && s.dashCooldown <= 0 && s.dashTimer <= 0 && (s.flags & MF_ONGROUND) && h < 35.9f;
                 MoveState best;
                 float bestH = -1;
                 bool bestDash = false;
@@ -339,6 +344,7 @@ const MoveEnvelope& moveEnvelope() {
                         UserCmd c;
                         c.msec = 1;
                         c.buttons = BTN_JUMP | (dash ? BTN_DASH : 0);
+                        c.pitch = superDash ? -1.2f : 0.0f;
                         if (side) c.side = 127; else c.forward = 127;
                         c.yaw = vyaw + a * 0.0174533f + (side ? 1.5707963f : 0.0f);
                         MoveState q = s;
@@ -348,9 +354,11 @@ const MoveEnvelope& moveEnvelope() {
                 dashed = bestDash;
                 dist += std::sqrt((best.pos.x - s.pos.x) * (best.pos.x - s.pos.x) + (best.pos.z - s.pos.z) * (best.pos.z - s.pos.z));
                 s = best;
-                if (s.dashTimer <= 0 && hspeed(s.vel) >= e.speed[next]) { e.runUp[next++] = dist; e.buildTime = (t + 1) / 1000.0f; }
-            }
-            for (; next < e.speed.size(); next++) e.runUp[next] = 1e9f;   // (never: the tier can't be reached)
+                if (s.dashTimer <= 0 && hspeed(s.vel) >= e.speed[next]) {
+                    if (dist < e.runUp[next]) e.runUp[next] = dist;
+                    if (++next == e.speed.size()) e.buildTime = e.buildTime > 0 ? std::min(e.buildTime, (t + 1) / 1000.0f) : (t + 1) / 1000.0f;
+                }
+            }   // (a tier neither way reaches keeps 1e9: never)
         }
         lap("speed build-up");
         // take-offs: moving at the tier's speed, jump, then (or not) an upward dash after tau at pitch p. Each arc is
@@ -361,8 +369,8 @@ const MoveEnvelope& moveEnvelope() {
         e.apexLevel.assign(e.speed.size(), std::vector<float>(MoveEnvelope::kBins, 1e9f));
         for (size_t k = 0; k < e.speed.size(); k++) {
             for (int ti = 0; ti <= 5; ti++)
-                for (int pi = -1; pi <= 9; pi++) {   // (no dash, or one at 0-90 degrees up, 0-0.4 s after the jump)
-                    float tau = ti * 0.08f, pitch = pi < 0 ? 0 : pi * 10 * 0.0174533f;
+                for (int pi = -2; pi <= 9; pi++) {   // (no dash, a down dash (a super dash off the take-off), or one at 0-90 degrees up, 0-0.4 s after the jump)
+                    float tau = ti * 0.08f, pitch = pi == -2 ? -1.2f : pi < 0 ? 0 : pi * 10 * 0.0174533f;
                     MoveState s;
                     s.pos = {0, 0, 0.9f};
                     s.vel = {0, 0, -e.speed[k]};
@@ -374,7 +382,7 @@ const MoveEnvelope& moveEnvelope() {
                         c.msec = 1;
                         c.forward = 127;
                         c.pitch = pitch;
-                        c.buttons = BTN_JUMP | (pi >= 0 && t >= (int)(tau * 1000) && t < (int)(tau * 1000) + 5 ? BTN_DASH : 0);
+                        c.buttons = BTN_JUMP | (pi != -1 && t >= (int)(tau * 1000) && t < (int)(tau * 1000) + 5 ? BTN_DASH : 0);
                         pmove(s, c, pad);
                         apex = std::max(apex, s.pos.y);
                         int b = (int)((0.9f - s.pos.z) / MoveEnvelope::kBin);

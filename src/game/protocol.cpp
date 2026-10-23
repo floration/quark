@@ -18,7 +18,8 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
     // own movement state, exact (prediction replays from it); the grapple / dash parts only while active
     const MoveState& m = s.self;
     uint8_t opt = ((m.flags & MF_HOOKED) ? 1 : 0) | (m.dashTimer > 0 ? 2 : 0) | (m.dashCooldown > 0 ? 4 : 0) | (m.hookCooldown > 0 ? 8 : 0) |
-                  ((m.flags & MF_HOOKED) && m.hookTarget ? 16 : 0) | ((m.flags & MF_PULLED) ? 32 : 0);
+                  ((m.flags & MF_HOOKED) && m.hookTarget ? 16 : 0) | ((m.flags & MF_PULLED) ? 32 : 0) |
+                  (m.jumpBuffer > 0 || m.jumpGrace > 0 ? 64 : 0) | (m.dashTimer > 0 && m.dashBounces > 0 ? 128 : 0);
     w.vec(m.pos); w.vec(m.vel); w.u8(m.flags); w.u8(m.mods); w.u8(opt);
     if (opt & 1) w.vec(m.hookPoint);
     if (opt & 2) { w.f32(m.dashTimer); w.f32(m.dashDirX); w.f32(m.dashDirZ); w.f32(m.dashExitSpeed); w.f32(m.dashUp); }
@@ -26,6 +27,8 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
     if (opt & 8) w.f32(m.hookCooldown);
     if (opt & 16) w.u8(m.hookTarget);    // (38: the grapple latched onto a player, and the one it holds)
     if (opt & 32) w.vec(m.pullPoint);
+    if (opt & 64) { w.f32(m.jumpBuffer); w.f32(m.jumpGrace); }   // (protocol 39; older writers never set these bits)
+    if (opt & 128) w.u8(m.dashBounces);
     w.u8(s.selfHealth); w.u8(s.selfWeapon); w.u8(s.knifeAway); w.u8(s.syringeAway);
     w.u32(s.baseTick);
 }
@@ -49,6 +52,8 @@ bool readSnapshotClient(Reader& r, Snapshot& s, uint16_t proto) {
     if (opt & 16) m.hookTarget = r.u8();   // (older demos never set these bits)
     if (opt & 32) m.pullPoint = r.vec();
     if (m.hookTarget > kMaxPlayers) m.hookTarget = 0;
+    if (opt & 64) { m.jumpBuffer = r.f32(); m.jumpGrace = r.f32(); }
+    if (opt & 128) m.dashBounces = r.u8();
     s.selfHealth = r.u8(); s.selfWeapon = r.u8(); s.knifeAway = r.u8(); s.syringeAway = proto >= kSnapSyringeSince ? r.u8() : 0;
     s.baseTick = r.u32();
     if (s.clientId >= kMaxPlayers || s.selfWeapon >= WPN_COUNT) return false;   // (ids index fixed arrays on the client)
