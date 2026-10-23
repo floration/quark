@@ -201,6 +201,7 @@ private:
     bool livePickVote_ = false;
     void openLivePicker(int kind, bool vote);
     bool voteMenu_ = false;
+    bool specPick_ = false;     // the vote menu's player list: who to move to spectator (callvote spec)
     void drawVoteMenu(float cx, float y);
     int picker_ = PICK_NONE;    // full list of maps / modes open over the host or vs-bots menu
     void drawPicker(float cx, float y);
@@ -315,9 +316,10 @@ private:
     double wheelAccum_ = 0;         // fractional scroll (trackpads, high-res wheels) until a full notch
     double wheelHeldUntil_[2] = {}; // a scroll step counts as "held" briefly, so hold actions (jump, fire...) work on the wheel
     int specTarget_ = -1;
+    int specSent_ = -2;         // the spectate target last told to the server (-2: none since alive)
 
     // effects + feeds
-    struct Feed { std::string text; Color color; double until; int crown = 0; };   // crown: the sender's leaderboard place (chat)
+    struct Feed { std::string text; Color color; double until; int crown = 0; bool player = false; };   // crown: the sender's leaderboard place (chat); player: a player's chat line (hidden while chat is off)
     std::deque<Feed> killFeed_, chatFeed_, notices_;
     std::deque<Feed> chatLog_;   // the chat history shown while typing (Enter)
     void addChat(const Feed& f) { chatFeed_.push_back(f); chatLog_.push_back(f); while (chatFeed_.size() > 8) chatFeed_.pop_front(); while (chatLog_.size() > 30) chatLog_.pop_front(); }
@@ -393,6 +395,7 @@ private:
     const char* crownLetter(int playerId) const;  // the board of that best place: Q vanilla, LG laser vampire, I instagib, R race
     int specKeysOf() const;
     void drawChatBox(float W, float H, float s, float ts);
+    void toggleChat();                     // TOGGLE CHAT key: other players' chat off / on (the DISABLE CHAT setting), with a notice
     void drawVotePanel(float cx, float s, float ts);
     void drawCrown(float x, float y, float w, int place, const char* letter = "");
     struct Crown { int place; const char* letter; };

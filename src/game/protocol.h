@@ -81,6 +81,7 @@ struct ProjectileSnap {
     uint8_t owner = 0;
     Vec3 pos, vel;
     uint8_t flags = 0;   // PROJ_LOB, PROJ_STUCK: how the client extrapolates it (the server's 1 ms steps)
+    bool hidden = false;    // out of this client's sight: only the id is sent (it's still flying: gone isn't an explosion)
 };
 enum : uint8_t { PROJ_LOB = 1, PROJ_STUCK = 2 };
 
@@ -169,7 +170,7 @@ void writeSnapshotClient(Writer& w, const Snapshot& s);
 void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base); // also records into s what the client will have (delta base)
 void writeSnapshotEvents(Writer& w, const std::vector<GameEvent>& events);
 void writeSnapshotEvents(Writer& w, const GameEvent* const* events, int n);   // (the server: no copies of the texts)
-bool readSnapshotClient(Reader& r, Snapshot& s);              // header: tells which base the world part needs
+bool readSnapshotClient(Reader& r, Snapshot& s, uint16_t proto = kProtocolVersion);   // header: tells which base the world part needs (`proto`: a demo's, for older headers)
 bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base);
 bool readSnapshotEvents(Reader& r, Snapshot& s);
 // EV_BRACKET text (one "|"-separated row of entrants per round, then "@round,match") -> the tourney bracket.

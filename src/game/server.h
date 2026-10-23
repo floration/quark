@@ -139,6 +139,8 @@ struct ServerPlayer {
     bool found = false;         // hide and seek: found by the seeker this round (falling off doesn't count)
     bool sought = false;        // hide and seek: has had their turn seeking this match
     bool waitingToPlay = false; // joined during a tag match: spectates it, joins team A when it's over
+    bool specLocked = false;    // voted to spectate (callvote spec): can't rejoin play until the next map
+    uint32_t specVoted = 0;     // players (bit per slot) this one has called a spectate vote on this map: once each
     Vec3 lastGround;            // where the player last stood (a dropped bomb goes here, not into a pit)
     bool out = false;           // hide and seek: found this round; tag: eliminated for the match
     double itFreezeUntil = 0;    // tag: just got tagged, stands still until then
@@ -171,6 +173,10 @@ struct ServerPlayer {
     // each line is next checked (0: at once).
     double lastSeen[kMaxPlayers] = {};
     double visDue[kMaxPlayers] = {};
+    // ... and to each projectile slot (Server::projVisId_ says which projectile the slot's times are about)
+    double projSeen[kMaxProjectiles] = {};
+    double projDue[kMaxProjectiles] = {};
+    int specTarget = -1;        // dead: whose view this client watches ("spectate <id>"; the killer at first): what it's sent
     // lag compensation history
     struct Hist { uint64_t tick; Vec3 pos; bool crouched; bool alive; };   // tick: timeMs_ when recorded (kNoHistory: none)
     static constexpr uint64_t kNoHistory = ~0ull;
@@ -268,6 +274,9 @@ public:
     int lastIt_ = -1;
     // tag: who has been eliminated this match ({rank id, name}): someone who leaves and comes back is still out
     std::vector<std::pair<std::string, std::string>> tagOut_;
+    // voted to spectate this map ({rank id, name}): leaving and coming back doesn't get them back into play
+    std::vector<std::pair<std::string, std::string>> specOut_;
+    void moveToSpectator(int id);   // out of play (as "team spec" does: tag counts it as elimination)
     std::vector<float>* tickTimes_ = nullptr;  // benchmarks: every tick's simulate + send time goes here
     // Snapshot building reuses these and each client's delta-base ring (ServerPlayer::sent): the per-client snapshot
     // is built in the ring slot it's remembered in, so a send copies the shared lists once and allocates nothing
@@ -300,7 +309,10 @@ public:
     int humanCount(int team = -1) const;
     void updateBalanceBots(bool matchStarting = false);
     // Votes (bots on/off, bot difficulty): majority of human players decides.
-    enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL, VOTE_START, VOTE_STARTBOTS, VOTE_MAP, VOTE_TMAPS, VOTE_TMODES, VOTE_RANKED, VOTE_EDIT, VOTE_LETIN };
+    // VOTE_SPEC: move a player (arg; arg2 = their joinId) to spectator until the next map. Never a kick: kicking stays
+    // with the dedicated server's console and the host (isAdmin), and isn't votable (OWNER_DECISIONS_2 B10).
+    enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL, VOTE_START, VOTE_STARTBOTS, VOTE_MAP, VOTE_TMAPS, VOTE_TMODES, VOTE_RANKED, VOTE_EDIT, VOTE_LETIN, VOTE_SPEC };
+    static constexpr int kSpecVoteMinPlayers = 3;   // connected human players a spectate vote needs (so never in a 1v1)
     struct Vote { int kind = VOTE_NONE; int caller = -1; int arg = 0, arg2 = 0; std::string map; uint32_t yes = 0, no = 0; double endsAt = 0; std::string text; } vote_;
     void callVote(int caller, int kind, int arg, const std::string& map = "", int arg2 = 0);
     // Tourney: single elimination bracket of everyone in the server, one 1v1 at a time.
@@ -372,7 +384,10 @@ public:
     void sendRaceTicket(const std::string& pub, const std::string& sig, const std::string& addr);
     // While a ranked match is live (ticket opened at the first round going live, until the match ends) nothing may
     // change it: no votes, no map / mode / ranked changes, no team switches, no kicking its players (OWNER 3.4).
-    bool rankedLive() const { return cfg_.ranked && !rankedMatch_.empty() && ms_.phase != PHASE_WARMUP && ms_.phase != PHASE_MATCH_END; }
+    // Exactly the three rated ladders are locked (JUDGMENT_CALLS C15): 1v1 vanilla, 1v1 laser vampire and instagib free
+    // for all. The Viaduct time trial (best times only, no rating), tourneys and everything else never are.
+    bool rankedLadderPlayed() const { return cfg_.ranked && arenaVariantRanked(cfg_.arenaVariant) && cfg_.mode == rankedMode(cfg_.arenaVariant) && !cfg_.timeTrial; }
+    bool rankedLive() const { return rankedLadderPlayed() && !rankedMatch_.empty() && ms_.phase != PHASE_WARMUP && ms_.phase != PHASE_MATCH_END; }
     bool rankedTicketSent_ = false;   // the ticket went out (or was given up on): no more signatures needed
     double rankedSigDeadline_ = 0;    // players must sign the match id by then, else the match isn't rated
     void maybeSendRankedTicket(bool giveUp = false);
@@ -524,6 +539,25 @@ private:
     void sendSnapshots();
     void updateVisibility();
     uint32_t visCursor_ = 0;   // the viewer x target pair the next tick's checks start from (round robin)
+    uint32_t projVisCursor_ = 0;   // the same for viewer x projectile pairs
+    // Hidden information (NET-10, JUDGMENT_CALLS C12). Each client is sent what it could see: through its own eyes when
+    // alive; when dead, through the eyes of the player it watches (and in team modes its living teammates'); everything
+    // as a free spectator. Players it can't see go without position, health, weapon, firing or the bomb; projectiles
+    // it can't see aren't sent (its own always are); the hide and seek seeker gets nothing about the hiders in the freeze.
+    uint32_t perspectives(int id) const;   // the players whose sight a client gets (bit per player), 0 = sees everything
+    void updatePlayerVisibility(uint32_t need, int viewers, int targets, int& budget, float eyeH);
+    void updateProjectileVisibility(uint32_t need, int viewers, int& budget, float eyeH);
+    uint32_t viewNeeded_ = 0;              // alive players whose lines of sight are checked (humans, and bots someone watches)
+    uint16_t projVisId_[kMaxProjectiles] = {};   // the projectile each slot's ServerPlayer::projSeen times are about
+    uint32_t projShown_[kMaxProjectiles] = {};   // clients (bit each) that have been sent that projectile in sight
+    uint32_t projHidden_[kMaxProjectiles] = {};  // clients whose last snapshot had it out of sight (or not at all)
+    // A projectile that dies out of a client's sight is shown there for a moment at the spot (then gone): the client
+    // plays its explosion (sound and flash) where it really went off, as before, without having seen its flight.
+    struct ProjSlotPrev { bool active = false; uint16_t id = 0; uint8_t type = 0, owner = 0; Vec3 pos; } projPrev_[kMaxProjectiles];
+    struct ProjDeath { ProjectileSnap snap; double until = 0; uint32_t revealTo = 0; };
+    ProjDeath projDeaths_[kMaxProjectiles];
+    int projDeathCount_ = 0;
+    std::vector<int> snapProjSlot_;        // snapProj_[k]'s projectile slot
 public:
     uint64_t visRays_ = 0;     // lines of sight cast (tests, benchmarks)
     void updateVisibilityForTest() { updateVisibility(); }

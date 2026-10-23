@@ -308,7 +308,7 @@ void Game::leaveGame(const std::string& error) {
     // in-game menus start closed next time (a dropped connection mid-menu left them open)
     if (widgetEdit_) widgets_.save(activeHudPath());
     if (settingsInGame_) cfg_.save();
-    settingsInGame_ = voteMenu_ = queueMenu_ = controlsOpen_ = crosshairOpen_ = hudOpen_ = visualsOpen_ = widgetEdit_ = hudDrop_ = false;
+    settingsInGame_ = voteMenu_ = specPick_ = queueMenu_ = controlsOpen_ = crosshairOpen_ = hudOpen_ = visualsOpen_ = widgetEdit_ = hudDrop_ = false;
     picker_ = PICK_NONE;
     filePick_ = 0;
     captureAction_ = -1;
@@ -508,6 +508,7 @@ bool Game::pressInput(int code) {
         return true;
     }
     if (screen_ != Screen::InGame || chatting_) return false;
+    if (b.has(A_TOGGLECHAT, code)) { toggleChat(); return true; }
     if (b.has(A_VOTEYES, code)) { net_.sendCommand("vote yes"); return true; }
     if (b.has(A_VOTENO, code)) { net_.sendCommand("vote no"); return true; }
     if (b.has(A_VOTESTART, code)) { net_.sendCommand("callvote start"); return true; }
@@ -654,7 +655,7 @@ void Game::onKey(int key, int action, int mods) {
             if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
             if (controlsOpen_ || crosshairOpen_ || hudOpen_ || visualsOpen_) { controlsOpen_ = crosshairOpen_ = hudOpen_ = visualsOpen_ = false; captureAction_ = -1; cfg_.save(); return; }
             if (settingsInGame_) { settingsInGame_ = false; cfg_.save(); return; }
-            if (voteMenu_ || queueMenu_ || picker_ != PICK_NONE) { voteMenu_ = queueMenu_ = false; picker_ = PICK_NONE; return; }
+            if (voteMenu_ || queueMenu_ || picker_ != PICK_NONE) { voteMenu_ = queueMenu_ = specPick_ = false; picker_ = PICK_NONE; return; }
             paused_ = !paused_;
             captureMouse(!paused_);
             return;
@@ -788,6 +789,14 @@ UserCmd Game::buildCmd() {
     return c;
 }
 
+void Game::toggleChat() {
+    cfg_.chatOff = !cfg_.chatOff;
+    if (cfg_.chatOff) for (auto& t : typingUntil_) t = 0;
+    cfg_.save();
+    const int* k = binds().code[A_TOGGLECHAT];
+    notify(cfg_.chatOff ? "CHAT OFF - " + inputName(k[0] ? k[0] : k[1]) + " TO SHOW IT AGAIN" : "CHAT ON", 2);
+}
+
 void Game::notify(const std::string& s, float seconds) {
     notices_.push_back({s, kWhite, time_ + seconds});
     while (notices_.size() > 4) notices_.pop_front();
@@ -909,8 +918,8 @@ void Game::handleEvents() {
                 if (e.a == net_.clientId() && e.b != e.a && cfg_.hitsounds) audio_.play(SND_KILL, 0.9f);
                 break;
             }
-            case EV_CHAT:
-                addChat({net_.playerName(e.a) + ": " + e.text, isFriendly(e.a) ? rgba(cfg_.colorFriendly) : rgba(cfg_.colorEnemy), time_ + 10, crownOf(e.a)});
+            case EV_CHAT:   // (chat off: dropped, not just hidden - turning it back on doesn't replay what was missed)
+                if (!cfg_.chatOff) addChat({net_.playerName(e.a) + ": " + e.text, isFriendly(e.a) ? rgba(cfg_.colorFriendly) : rgba(cfg_.colorEnemy), time_ + 10, crownOf(e.a), true});
                 break;
             case EV_MESSAGE:
                 addChat({e.text, kGrey, time_ + 8});
@@ -948,7 +957,7 @@ void Game::handleEvents() {
                 if (lines.empty() || e.a >= kMaxPlayers) break;
                 int line = lines[e.b % lines.size()];
                 if (e.a == net_.clientId()) audio_.play(line, 0.9f);
-                else if (const PlayerSnap* qp = net_.findPlayer(e.a)) audio_.play3D(line, qp->pos + Vec3(0, 1.6f, 0), 1.0f);
+                else if (const PlayerSnap* qp = net_.findPlayer(e.a); qp && !qp->hidden) audio_.play3D(line, qp->pos + Vec3(0, 1.6f, 0), 1.0f);
                 break;
             }
             case EV_LOCATE: {   // the locator found someone: show them through walls for a second
@@ -958,9 +967,10 @@ void Game::handleEvents() {
                 break;
             }
             case EV_TYPING:   // someone's typing: soft key clicks from them and "..." over their head
-                if (e.a < kMaxPlayers) {
+                if (e.a < kMaxPlayers && !cfg_.chatOff) {   // (chat off: no "..." or clicks either)
                     typingUntil_[e.a] = time_ + 0.8;
-                    if (const PlayerSnap* tp = net_.findPlayer(e.a)) audio_.play3D(SND_TYPING, tp->pos + Vec3(0, 1.5f, 0), 0.6f, 0.9f + (qrand() % 20) * 0.01f);
+                    const PlayerSnap* tp = net_.findPlayer(e.a);
+                    if (tp && !tp->hidden) audio_.play3D(SND_TYPING, tp->pos + Vec3(0, 1.5f, 0), 0.6f, 0.9f + (qrand() % 20) * 0.01f);
                     else audio_.play(SND_TYPING, 0.4f);
                 }
                 break;
@@ -1202,6 +1212,7 @@ void Game::frame(double dt) {
         for (auto& old : lastProjectiles_) {
             bool still = false;
             for (auto& p : projs) still |= p.id == old.id;
+            if (!still && net_.projectileHidden(old.id)) continue;   // out of sight now, still flying: not an explosion (NET-10)
             if (!still && old.type == WPN_BUBBLE) { explosions_.push_back({old.pos, time_, 0.45f, true}); audio_.play3D(SND_BUBBLE, old.pos, 0.7f, 1.7f, net_.playerSoundPack(old.owner)); } // pop
             else if (!still && weaponDef(old.type).splashRadius > 0) { explosions_.push_back({old.pos, time_}); audio_.play3D(SND_EXPLOSION, old.pos, 1.25f, 1.0f, net_.playerSoundPack(old.owner)); }
             else if (!still && old.type == WPN_CROSSBOW) audio_.play3D(SND_BOLT_HIT, old.pos, 0.8f, 1.0f, net_.playerSoundPack(old.owner));
@@ -1335,6 +1346,9 @@ void Game::drawWorld(float alpha) {
             eye = base + Vec3(0, 3.0f, 0);
         }
     }
+    // the server sends a dead player what the one it watches can see (NET-10): tell it who that is
+    if (alive || net_.playback() || net_.state() != ConnState::Connected) specSent_ = -2;
+    else if (specTarget_ != specSent_) { net_.sendCommand("spectate " + std::to_string(specTarget_)); specSent_ = specTarget_; }
     r_.setCamera(eye, camYaw, camPitch, alive ? viewFov() : cfg_.fov);
     audio_.setListener(eye, camYaw);
     updateSounds(players);
@@ -2356,7 +2370,7 @@ std::vector<std::string> Game::consoleCandidates(const std::vector<std::string>&
         if (c == "list") { auto o = consoleWords(); o.erase(o.begin(), o.begin() + 3); return o; }
         if (c == "/team") return {"a", "b", "spec"};
         if (c == "/vote") return {"yes", "no"};
-        if (c == "/callvote") return {"edit", "ranked", "bots", "botskill", "start", "tmaps", "tmodes", "map", "mode"};
+        if (c == "/callvote") return {"edit", "ranked", "bots", "botskill", "start", "tmaps", "tmodes", "map", "mode", "spec"};
         if (c == "/map") return maps_;
         if (c == "/mode") return modes();
         if (c == "/editmode" || c == "/ranked") return onOff;
@@ -2375,6 +2389,7 @@ std::vector<std::string> Game::consoleCandidates(const std::vector<std::string>&
             if (what == "botskill") return skills();
             if (what == "map" || what == "tmaps") return maps_;
             if (what == "mode" || what == "tmodes") return modes();
+            if (what == "spec") return players();   // callvote spec <player>: to spectator until the next map
         }
         if (w.size() == 3 && what == "ranked" && w[2] == "on") return ladders();
         if (w.size() == 3 && what == "map") return modes();
@@ -2468,9 +2483,12 @@ void Game::drawChatBox(float W, float H, float s, float ts) {
     while (!chatFeed_.empty() && chatFeed_.front().until < time_ && !chatting_) chatFeed_.pop_front();
     {
     const auto& lines = chatting_ ? chatLog_ : chatFeed_;   // typing: the whole recent history
-    y = H - 110 * s - lines.size() * (r_.textHeight(ts) + 4 * s);
-    if (chatting_ && !lines.empty()) r_.rect(18 * s, y - 4 * s, 520 * s, lines.size() * (r_.textHeight(ts) + 4 * s) + 4 * s, {0, 0, 0, 0.4f});
+    size_t shown = 0;   // chat off: players' lines are hidden (server messages stay)
+    for (auto& c : lines) shown += !(c.player && cfg_.chatOff);
+    y = H - 110 * s - shown * (r_.textHeight(ts) + 4 * s);
+    if (chatting_ && shown) r_.rect(18 * s, y - 4 * s, 520 * s, shown * (r_.textHeight(ts) + 4 * s) + 4 * s, {0, 0, 0, 0.4f});
     for (auto& c : lines) {
+        if (c.player && cfg_.chatOff) continue;
         float cw = c.crown ? r_.textHeight(ts) * 1.2f : 0;
         if (c.crown) drawCrown(24 * s, y + r_.textHeight(ts) * 0.1f, cw, c.crown);
         r_.text(24 * s + (cw ? cw + 4 * s : 0), y, ts, c.text, c.color);
@@ -3044,7 +3062,34 @@ void Game::drawVoteMenu(float cx, float y) {
     float w = 300 * s, h = 36 * s, gap = 8 * s, x = cx - w * 0.5f, hw = (w - gap) * 0.5f;
     const ModeState& ms = net_.mode();
     bool warmup = ms.phase == PHASE_WARMUP, ranked = ms.flags & MS_RANKED, tourney = ms.mode == MODE_TOURNEY && !ranked;
-    int rows = 3 + (warmup ? 1 : 0) + (warmup && tourney ? 1 : 0) + (ranked ? 0 : 4);
+    // move a player to spectator (until the next map): anyone in play but you, with 3+ players connected (never a 1v1)
+    std::vector<int> specable;
+    int humans = 0;
+    if (net_.hasSnapshot())
+        for (auto& p : net_.latest().players) {
+            bool bot = net_.playerName(p.id).rfind("BOT ", 0) == 0;
+            humans += !bot;
+            if (!bot && p.id != net_.clientId() && p.team() != TEAM_SPECTATOR) specable.push_back(p.id);
+        }
+    bool canSpec = !ranked && humans >= 3 && !specable.empty();
+    if (specPick_ && canSpec) {
+        const int n = (int)specable.size(), cols = (n + 9) / 10, rowsN = (n + cols - 1) / cols;   // (up to 10 a column: a full server fits)
+        const float tw = cols * w + (cols - 1) * gap, tx = cx - tw * 0.5f;
+        ui_.panel(tx - 16 * s, y - 16 * s, tw + 32 * s, (rowsN + 1) * (h + gap) + 40 * s);
+        ui_.labelCentered(cx, y, "VOTE: MOVE TO SPECTATOR (UNTIL THE NEXT MAP)");
+        y += 30 * s;
+        for (int k = 0; k < n; k++) {
+            if (ui_.button(tx + (k / rowsN) * (w + gap), y + (k % rowsN) * (h + gap), w, h, upper(net_.playerName(specable[k])))) {
+                net_.sendCommand("callvote spec " + std::to_string(specable[k]));   // (by id: names can be alike)
+                specPick_ = voteMenu_ = paused_ = false;
+            }
+        }
+        y += rowsN * (h + gap);
+        if (ui_.button(x, y, w, h, "BACK")) specPick_ = false;
+        return;
+    }
+    specPick_ = false;
+    int rows = 3 + (warmup ? 1 : 0) + (warmup && tourney ? 1 : 0) + (ranked ? 0 : 4) + (canSpec ? 1 : 0);
     ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, rows * (h + gap) + 40 * s);
     ui_.labelCentered(cx, y, "CALL A VOTE");
     y += 30 * s;
@@ -3067,6 +3112,10 @@ void Game::drawVoteMenu(float cx, float y) {
     if (!ranked) { // edit the map together; on a normal server the changes last until the map changes
         voteBtn(x, w, "EDIT THE MAP TOGETHER", "edit on");
         y += h + gap;
+        if (canSpec) {
+            if (ui_.button(x, y, w, h, "MOVE A PLAYER TO SPECTATOR")) specPick_ = true;
+            y += h + gap;
+        }
         voteBtn(x, hw, "BOTS ON", "bots on");
         voteBtn(x + hw + gap, hw, "BOTS OFF", "bots off");
         y += h + gap;
@@ -4373,7 +4422,7 @@ void Game::drawVisualSettings(float x0, float y0, float wTotal) {
     float h = 32 * s, gap = 7 * s;
     float w = std::max(360 * s, wTotal * 0.5f);
     float x = x0 + wTotal * 0.5f - w * 0.5f, y = y0;
-    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 10 * (h + gap) + 48 * s);
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 11 * (h + gap) + 48 * s);
     ui_.toggle(x, y, w, h, "FULLBRIGHT (FLAT WHITE MAP)", cfg_.fullbright); y += h + gap;
     static const std::vector<std::string> own = {"YOUR SHOTS: WITH THE WEAPON MODEL", "YOUR SHOTS: ALWAYS", "YOUR SHOTS: NEVER"};
     ui_.cycle(x, y, w, h, "YOUR SHOTS", cfg_.ownShots, 3, own); y += h + gap;
@@ -4388,6 +4437,8 @@ void Game::drawVisualSettings(float x0, float y0, float wTotal) {
     ui_.slider(x, y, w, h, "SCOPE OVERLAY", cfg_.scopeOpacity, 0, 1, "%.2f"); y += h + gap;
     ui_.toggle(x, y, w, h, "STICKY COUNTER", cfg_.stickyCounter); y += h + gap;
     ui_.toggle(x, y, w, h, "WINNERS CROWN", cfg_.crowns); y += h + gap;
+    if (ui_.toggle(x, y, w, h, "DISABLE CHAT (HIDE PLAYERS' MESSAGES)", cfg_.chatOff) && cfg_.chatOff) for (auto& t : typingUntil_) t = 0;
+    y += h + gap;
     ui_.label(x, y, "YOUR SHOTS: TRACERS AND THE LASER BEAM COME FROM WHERE THE GUN IS (OR WOULD BE)", {0.7f, 0.72f, 0.75f, 1}, 0.5f);
     y += 14 * s;
     ui_.label(x, y, "RANKED: NO HEALTH BARS", {0.7f, 0.72f, 0.75f, 1}, 0.5f);

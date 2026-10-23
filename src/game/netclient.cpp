@@ -541,10 +541,17 @@ std::vector<ProjectileSnap> NetClient::interpolatedProjectiles() const {
     const Snapshot& s = snaps_.back();
     float dt = clampf((float)(renderTime_ + interpDelay() - s.timeMs * 0.001), 0, 0.2f);
     for (auto p : s.projectiles) {
+        if (p.hidden) continue;
         if (!(p.flags & PROJ_STUCK)) projectileExtrapolate(p.pos, p.vel, projectileGravity(p.type, (p.flags & PROJ_LOB) ? kRocketLobGravity : 1.0f), dt);
         out.push_back(p);
     }
     return out;
+}
+
+bool NetClient::projectileHidden(uint16_t id) const {
+    if (snaps_.empty()) return false;
+    for (auto& p : snaps_.back().projectiles) if (p.id == id) return p.hidden;
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -732,12 +739,13 @@ bool NetClient::startPlaybackImpl(const std::string& path, std::string& err) {
     uint32_t magic; uint16_t ver;
     memcpy(&magic, d.data(), 4); memcpy(&ver, d.data() + 4, 2);
     if (magic != kDemoMagic) { err = "not a quark demo"; return false; }
-    if (ver != kProtocolVersion) {   // (older ones are converted at startup, demo::startUpgrade; this one couldn't be)
+    if (ver < kOldestDemoProtocol || ver > kProtocolVersion) {   // (older ones are converted at startup, demo::startUpgrade; this one couldn't be)
         err = "recorded with " + demo::recordedWith(ver) + (ver > kProtocolVersion ? " (newer than this one)" : ", which this version can't play");
         return false;
     }
     play_ = Playback();
     play_.data = std::move(d);
+    play_.proto = ver;
     play_.pos = 6;
     for (size_t p = 6; p + 13 <= play_.data.size();) { // its length: the last record's time
         uint32_t n; memcpy(&play_.length, play_.data.data() + p + 1, 8); memcpy(&n, play_.data.data() + p + 9, 4);
@@ -787,7 +795,7 @@ void NetClient::pollPlayback() {
             clockInit_ = false;   // (the next snapshot sets the clock: map changes can jump the server clock)
         } else if (type == 2) {
             Snapshot s;
-            if (!readSnapshotClient(r, s)) continue;
+            if (!readSnapshotClient(r, s, play_.proto)) continue;
             if (!readSnapshotWorld(r, s, s.baseTick && play_.havePrev ? &play_.prev : nullptr)) continue;
             if (!readSnapshotEvents(r, s)) continue;
             play_.prev = s;

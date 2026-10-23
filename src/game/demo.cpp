@@ -129,18 +129,23 @@ bool convert(const std::string& in, std::string* out, std::string* err) {
         memcpy(&ver, in.data() + 4, 2);
         if (magic != kMagic) { *err = "not a demo"; return false; }
         if (!convertible(ver)) { *err = "no converter from protocol " + std::to_string(ver); return false; }
-        // (protocols kRecordFormatSince..now share the record format: each record is read the way playback reads it)
+        // (protocols kRecordFormatSince..now share the record format: each record is read the way playback reads it;
+        // a snapshot's client header is written again in today's layout, the world and event parts are kept as they are)
         bool haveMap = false, havePrev = false;
         int snaps = 0;
         Snapshot prev;
+        std::string res = in.substr(0, 6);
+        res.reserve(in.size() + in.size() / 16);
         size_t pos = 6;
         while (pos + 13 <= in.size()) {
             uint8_t type = (uint8_t)in[pos];
             uint32_t n;
             memcpy(&n, in.data() + pos + 9, 4);
             if (n > in.size() - pos - 13) break; // (truncated: playback stops there too)
-            Reader r((const uint8_t*)in.data() + pos + 13, (int)n);
+            const char* rec = in.data() + pos;
+            Reader r((const uint8_t*)rec + 13, (int)n);
             pos += 13 + (size_t)n;
+            auto keep = [&] { res.append(rec, 13 + (size_t)n); };
             if (type == 1) {
                 std::string name = r.str();
                 uint32_t len = r.u32();
@@ -154,21 +159,34 @@ bool convert(const std::string& in, std::string* out, std::string* err) {
                 if (!ok && !haveMap) { *err = "its map doesn't load in this version" + (perr.empty() ? std::string() : " (" + perr + ")"); return false; }
                 haveMap = haveMap || ok;
                 havePrev = false;
+                keep();
             } else if (type == 2) {
                 Snapshot s;
-                if (!readSnapshotClient(r, s)) continue;
+                if (!readSnapshotClient(r, s, ver)) continue;
+                size_t header = n - (size_t)r.remaining();
                 if (!readSnapshotWorld(r, s, s.baseTick && havePrev ? &prev : nullptr)) continue;
                 if (!readSnapshotEvents(r, s)) continue;
                 prev = s;
                 havePrev = true;
                 snaps++;
+                uint8_t hb[256];
+                Writer w(hb, sizeof hb);
+                writeSnapshotClient(w, s);
+                if (w.overflowed()) { *err = "a snapshot doesn't fit"; return false; }
+                uint32_t n2 = (uint32_t)(w.size() + (n - header));
+                res.append(rec, 9);
+                res.append((const char*)&n2, 4);
+                res.append((const char*)hb, (size_t)w.size());
+                res.append(rec + 13 + header, n - header);
+            } else {
+                keep();
             }
         }
         if (!haveMap) { *err = "it has no map"; return false; }
         if (!snaps) { *err = "none of its snapshots read in this version"; return false; }
-        *out = in;
         uint16_t now = kProtocolVersion;
-        memcpy(&(*out)[4], &now, 2);
+        memcpy(&res[4], &now, 2);
+        *out = std::move(res);
         return true;
     } catch (const std::exception& e) { // (a hostile or broken file is an error, never a crash)
         *err = std::string("unreadable (") + e.what() + ")";

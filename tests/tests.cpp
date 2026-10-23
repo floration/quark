@@ -1143,6 +1143,7 @@ static void testCartChecks(uint16_t port) {
     pump(s, cls, 0.4, idle);
     s.command("forcestart");
     pump(s, cls, 3.2, idle);
+    for (int k = 0; k < 30 && s.ms_.phase != PHASE_LIVE; k++) pump(s, cls, 0.1, idle);   // (a loaded machine: the countdown's last ticks)
     CHECK(s.ms_.phase == PHASE_LIVE && s.ms_.pointCount == 2);
     int att = -1;
     for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].team == s.ms_.attackers) att = i;
@@ -2598,6 +2599,7 @@ static void testItModes(uint16_t port) {
         if (mode == MODE_HIDE) {
             CHECK(!s.players_[h1].alive);              // found with one stab
             s.players_[it].itFreezeUntil = 0;
+            pump(s, cls, std::max(0.0, (double)(s.players_[it].nextFire - s.time())), idle);   // (the knife's refire after the first find)
             stab(it, h2);
             pump(s, cls, 0.2, idle);
             CHECK(s.ms_.phase == PHASE_ROUND_END && s.players_[it].score >= 3);
@@ -2973,6 +2975,89 @@ static void testHandshake(uint16_t port) {
     bool sawChat = false;
     for (auto& e : a.takeEvents()) if (e.type == EV_CHAT) { sawChat = true; CHECK(e.text == "hi?[2Jthere"); }
     CHECK(sawChat);
+    s.stop();
+}
+
+// The spectate vote (OWNER_DECISIONS_2 B10): "callvote spec <player>" moves a player to spectator, by the usual vote
+// rules; it needs 3+ players, the player it's about has no vote, they can't rejoin play until the next map (not by
+// leaving and coming back either), and each caller gets one vote per player per map. Kicking stays admin-only: a
+// player's "kick" does nothing and there's no kick vote.
+static void testSpecVote(uint16_t port) {
+    printf("spectate vote: 3+ players, target has no vote, out until the next map; kick never votable\n");
+    Server s;
+    s.voteCooldown_ = 0;   // (a failed vote's cooldown isn't what this checks)
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.balanceBots = false;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    std::string addr = "127.0.0.1:" + std::to_string(port);
+    NetClient a, b, c;
+    a.connect(addr, "anna"); b.connect(addr, "bert");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 0.8, idle);
+    a.sendCommand("callvote spec bert");   // two players: not available (a 1v1 never has it)
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE);
+    c.connect(addr, "carl");
+    cls = {&a, &b, &c};
+    pump(s, cls, 0.8, idle);
+    int ia = a.clientId(), ib = b.clientId(), ic = c.clientId();
+    int bot = s.addBot(TEAM_A, BOT_BEGINNER);
+    CHECK(bot >= 0);
+    a.sendCommand("callvote spec anna");                         // not yourself
+    a.sendCommand("callvote spec " + std::to_string(bot));       // not a bot
+    a.sendCommand("callvote spec nobody");
+    a.sendCommand("kick carl");                                  // a player can't kick...
+    a.sendCommand("callvote kick carl");                         // ...or vote to
+    pump(s, cls, 0.4, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE && s.players_[ic].connected);
+    a.sendCommand("callvote spec carl");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_SPEC && s.vote_.arg == ic);
+    c.sendCommand("vote no");                                    // carl has no say
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_SPEC && !(s.vote_.no >> ic & 1) && s.ms_.voteVoters == 2);
+    b.sendCommand("vote yes");
+    pump(s, cls, 0.4, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE);
+    CHECK(s.players_[ic].team == TEAM_SPECTATOR && s.players_[ic].specLocked && !s.players_[ic].alive);
+    c.sendCommand("team a");                                     // can't rejoin play this map
+    pump(s, cls, 0.5, idle);
+    CHECK(s.players_[ic].team == TEAM_SPECTATOR && !s.players_[ic].alive);
+    // leaving and coming back as a new connection: still spectating
+    c.disconnect();
+    cls = {&a, &b};
+    pump(s, cls, 0.2, idle);
+    s.players_[ic].awayUntil = timeNow() - 1;   // (the reconnect grace is over)
+    pump(s, cls, 0.2, idle);
+    CHECK(!s.players_[ic].connected);
+    NetClient c2;
+    c2.connect(addr, "carl");
+    cls = {&a, &b, &c2};
+    pump(s, cls, 0.8, idle);
+    int ic2 = c2.clientId();
+    CHECK(s.players_[ic2].connected && s.players_[ic2].team == TEAM_SPECTATOR && s.players_[ic2].specLocked);
+    // one spectate vote per caller per player per map: anna's on bert fails (carl says no), and she can't call it again
+    a.sendCommand("callvote spec bert");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_SPEC && s.vote_.arg == ib);
+    c2.sendCommand("vote no");
+    pump(s, cls, 0.4, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE && s.players_[ib].team != TEAM_SPECTATOR);
+    a.sendCommand("callvote spec bert");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE);
+    // the next map: carl plays again, and anna may call the vote on bert again
+    s.command("map bastion ffa");
+    pump(s, cls, 0.5, idle);
+    CHECK(!s.players_[ic2].specLocked);
+    c2.sendCommand("team a");
+    pump(s, cls, 0.5, idle);
+    CHECK(s.players_[ic2].team == TEAM_A);
+    a.sendCommand("callvote spec bert");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_SPEC && s.vote_.arg == ib);
+    CHECK(s.players_[ia].connected && s.players_[ib].connected);
     s.stop();
 }
 
@@ -3728,6 +3813,36 @@ static void testMasterReplies(uint16_t port) {
     if (!r.empty() && r.back().first == "k79") CHECK(r.size() == MasterAnnouncer::kMaxReplies && r.front().first == "k16");   // (all done: the newest 64)
 }
 
+// The live ranked lock (no votes, no map / mode changes, no team switches) holds for exactly the three rated ladders:
+// 1v1 vanilla, 1v1 laser vampire and instagib free for all (JUDGMENT_CALLS C15). Not the time trial, nor any other mode
+// or ruleset, even with a match id open.
+static void testRankedLockLadders() {
+    printf("ranked lock: exactly 1v1 vanilla, 1v1 laser vampire, instagib ffa\n");
+    int locked = 0;
+    for (int v = 0; v < kArenaVariants; v++)
+        for (int mode = 0; mode < MODE_COUNT; mode++) {
+            Server s;
+            s.cfg_.ranked = true;
+            s.cfg_.arenaVariant = v;
+            s.cfg_.mode = mode;
+            s.rankedMatch_ = "0123456789abcdef";
+            s.ms_.phase = PHASE_LIVE;
+            bool ladder = (v == 0 && mode == MODE_ARENA) || (v == 1 && mode == MODE_ARENA) || (v == 5 && mode == MODE_FFA);
+            CHECK(arenaVariantRanked(v) == (v == 0 || v == 1 || v == 5));
+            CHECK(s.rankedLive() == ladder);
+            locked += s.rankedLive();
+            s.ms_.phase = PHASE_WARMUP;
+            CHECK(!s.rankedLive());
+        }
+    CHECK(locked == 3);
+    Server t;   // the Viaduct time trial: best times, no rating, never locked
+    t.cfg_.timeTrial = true; t.cfg_.mode = MODE_RACE; t.cfg_.map = "viaduct";
+    t.rankedMatch_ = "0123456789abcdef"; t.ms_.phase = PHASE_LIVE;
+    CHECK(!t.rankedLive());
+    t.cfg_.ranked = true;
+    CHECK(!t.rankedLive());
+}
+
 // One placement threshold: the game's kPlacementGames is the Worker's PLACEMENT_GAMES.
 static void testPlacementConstant() {
     printf("placement threshold matches the Worker\n");
@@ -4262,7 +4377,7 @@ static void testDemoUpgrade() {
     CHECK(r.converted == 1 && r.newer == 1 && r.failed == 2);
     CHECK(demo::readProtocol((d / "old.qdemo").string(), &proto) && proto == kProtocolVersion);
     CHECK(rd(d / "old" / "1.13-1.16" / "old.qdemo") == fixture);                         // the original, kept
-    CHECK(rd(d / "old.qdemo").substr(6) == fixture.substr(6));                           // same records, restamped
+    CHECK(rd(d / "old.qdemo").size() > fixture.size());                                  // snapshot headers rewritten (+ syringeAway)
     CHECK(demo::readProtocol((d / "broken.qdemo").string(), &proto) && proto == 27);     // left as it was
     CHECK(demo::readProtocol((d / "future.qdemo").string(), &proto) && proto == kProtocolVersion + 1);
     CHECK(rd(d / "current.qdemo").substr(6) == fixture.substr(6) && !fs::exists(d / "old" / "1.13-1.16" / "current.qdemo"));
@@ -4613,6 +4728,139 @@ static void testNetcode(uint16_t port) {
     printf("  behind walls: %s, in the open: %s\n", hid ? "hidden" : "SENT", open ? "sent" : "HIDDEN");
     CHECK(hid && open);
     v.stop();
+}
+
+// Hidden information (NET-10, JUDGMENT_CALLS C12): an enemy out of sight reaches the client without health, weapon or
+// firing; a projectile out of sight isn't sent (its owner always gets it), one that leaves sight goes on as an id (not
+// an explosion) and one that goes off out of sight is shown at the spot for a moment (its explosion); a dead player
+// gets what the player it watches sees; the hide and seek seeker gets nothing about the hiders during the freeze.
+static void testHiddenInfo(uint16_t port) {
+    printf("hidden info: no health / weapon / projectiles out of sight, dead see what they watch, seeker blind in the freeze\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    std::string addr = "127.0.0.1:" + std::to_string(port);
+    NetClient a, b, c;
+    a.connect(addr, "a"); b.connect(addr, "b"); c.connect(addr, "c");
+    std::vector<NetClient*> cls = {&a, &b, &c};
+    pump(s, cls, 1.5, idle);
+    const int ia = a.clientId(), ib = b.clientId(), ic = c.clientId();
+    auto& pa = s.players_[ia]; auto& pb = s.players_[ib]; auto& pc = s.players_[ic];
+    const Vec3 behindA(0, 0, -28), behindB(0, 0, 28), openA(-9, 0, -26), openB(-9, 0, 26), far(9, 0, 0);
+    auto snapOf = [](NetClient& n, int id) -> const PlayerSnap* { for (auto& p : n.latest().players) if (p.id == id) return &p; return nullptr; };
+    auto projOf = [](NetClient& n, uint16_t id) -> const ProjectileSnap* { for (auto& p : n.latest().projectiles) if (p.id == id) return &p; return nullptr; };
+    // b: 37 hp, holding the sniper, firing; a counts the snapshots b came in hidden, and any with b's health or weapon
+    int hiddenSnaps = 0, leaks = 0;
+    auto hold = [&](Vec3 at, Vec3 bt, Vec3 ct) {
+        return [&, at, bt, ct](int i) {
+            pa.move.pos = at; pa.move.vel = {}; pb.move.pos = bt; pb.move.vel = {}; pc.move.pos = ct; pc.move.vel = {};
+            pa.respawnAt = pb.respawnAt = pc.respawnAt = s.time() + 100;
+            pb.health = 37; pb.lastFire = s.time();
+            if (const PlayerSnap* q = snapOf(a, ib); q && q->hidden) {
+                hiddenSnaps++;
+                if (q->health || q->weapon || (q->flags & (PS_FIRING | PS_CROUCHED))) leaks++;
+            }
+            UserCmd u;
+            if (cls[i] == &b) u.weapon = WPN_SNIPER;
+            return u;
+        };
+    };
+    pump(s, cls, 0.8, hold(behindA, behindB, far));
+    const PlayerSnap* q = snapOf(a, ib);
+    printf("  b behind walls: %d snapshots hidden, %d with health / weapon / firing\n", hiddenSnaps, leaks);
+    CHECK(q && q->hidden && hiddenSnaps > 20 && leaks == 0);
+    pump(s, cls, 0.5, hold(openA, openB, far));   // in sight: everything (the data is really there to hide)
+    q = snapOf(a, ib);
+    CHECK(q && !q->hidden && q->health == 37 && q->weapon == WPN_SNIPER);
+
+    // projectiles: b's rocket by b, behind the walls from a (stuck in the air: it stays put)
+    auto rocket = [&](int owner, Vec3 at) {
+        for (auto& pr : s.projectiles_) if (!pr.active) {
+            pr = Projectile();
+            pr.active = true; pr.id = s.nextProjId_++; pr.type = WPN_ROCKET; pr.owner = owner; pr.pos = at; pr.stuck = true; pr.dieAt = s.time() + 100;
+            return &pr;
+        }
+        return (Projectile*)nullptr;
+    };
+    Projectile* rb = rocket(ib, behindB + Vec3(0, 2.5f, 0));
+    Projectile* ra = rocket(ia, behindB + Vec3(1, 2.5f, 0));   // a's own, just as far out of a's sight
+    CHECK(rb && ra);
+    if (!rb || !ra) { s.stop(); return; }
+    const uint16_t idb = rb->id, ida = ra->id;
+    pump(s, cls, 0.5, hold(behindA, behindB, far));
+    CHECK(!projOf(a, idb));                                  // never seen: not sent at all
+    CHECK(projOf(b, idb) && !projOf(b, idb)->hidden);        // its owner has it
+    CHECK(projOf(a, ida) && !projOf(a, ida)->hidden);        // a's own: always
+    rb->pos = openB + Vec3(0, 2.5f, 0);                      // in sight
+    pump(s, cls, 0.4, hold(openA, openB, far));
+    CHECK(projOf(a, idb) && !projOf(a, idb)->hidden);
+    rb->pos = behindB + Vec3(0, 2.5f, 0);                    // out of sight again: an id, still flying (no explosion)
+    pump(s, cls, 1.0, hold(behindA, behindB, far));
+    CHECK(projOf(a, idb) && projOf(a, idb)->hidden && a.projectileHidden(idb));
+    bool listed = false;
+    for (auto& p : a.interpolatedProjectiles()) listed |= p.id == idb;
+    CHECK(!listed);
+    // it goes off out of sight: shown at the spot for a moment (the client plays the explosion there), then gone
+    Vec3 boom = rb->pos;
+    rb->active = false;
+    bool revealed = false;
+    pump(s, cls, 0.3, [&](int i) {
+        if (const ProjectileSnap* r = projOf(a, idb); r && !r->hidden && length(r->pos - boom) < 0.1f) revealed = true;
+        return hold(behindA, behindB, far)(i);
+    });
+    CHECK(revealed && !projOf(a, idb));
+    ra->active = false;
+
+    // dead: a (killed by b) gets what b sees - c in the open from b is sent, c behind walls from b isn't
+    s.killPlayer(ia, ib, WPN_RIFLE);
+    CHECK(pa.specTarget == ib);
+    pump(s, cls, 0.8, hold(far, openA, openB));
+    q = snapOf(a, ic);
+    CHECK(q && !q->hidden && q->health > 0);
+    pump(s, cls, 0.8, hold(far, behindA, behindB));
+    q = snapOf(a, ic);
+    CHECK(q && q->hidden && q->health == 0);
+    s.stop();
+
+    // hide and seek: during the freeze the seeker gets nothing of the hiders, even right in front of it
+    Server h;
+    ServerConfig hc;
+    hc.autoStart = false; hc.map = "hamlet"; hc.mode = MODE_HIDE; hc.port = (uint16_t)(port + 1);
+    h.setLog([](const std::string&) {});
+    if (!h.start(hc)) { printf("  FAIL %s:%d: server start\n", __FILE__, __LINE__); g_fail++; return; }
+    NetClient hs[3];
+    std::vector<NetClient*> hcl;
+    for (int i = 0; i < 3; i++) { hs[i].connect("127.0.0.1:" + std::to_string(hc.port), "h" + std::to_string(i)); hcl.push_back(&hs[i]); }
+    pump(h, hcl, 1.5, idle);
+    h.command("forcestart");
+    pump(h, hcl, 0.3, idle);
+    int seeker = -1;
+    for (int i = 0; i < 3; i++) if (h.players_[hs[i].clientId()].it) seeker = i;
+    CHECK(seeker >= 0 && h.ms_.phase == PHASE_FREEZE);
+    if (seeker < 0) { h.stop(); return; }
+    int seen = 0, snaps = 0;
+    auto near = [&](int i) {   // hiders 3 m in front of the seeker
+        Vec3 o = h.players_[hs[seeker].clientId()].move.pos;
+        int k = 0;
+        for (int j = 0; j < 3; j++) if (j != seeker) { auto& hp = h.players_[hs[j].clientId()]; hp.move.pos = o + Vec3(k++ ? 1.5f : -1.5f, 0, -3); hp.move.vel = {}; }
+        for (auto& p : hs[seeker].latest().players)
+            if (p.id != hs[seeker].clientId() && (p.flags & PS_ALIVE)) { snaps++; seen += !p.hidden || p.health || p.weapon; }
+        (void)i;
+        return UserCmd();
+    };
+    pump(h, hcl, 0.8, near);
+    printf("  hide and seek freeze: hiders sent to the seeker %d times of %d\n", seen, snaps);
+    CHECK(h.ms_.phase == PHASE_FREEZE && snaps > 20 && seen == 0);
+    int other = seeker == 0 ? 1 : 0, third = 3 - seeker - other;
+    const PlayerSnap* hq = snapOf(hs[other], hs[third].clientId());
+    CHECK(hq && !hq->hidden);                                // (a hider sees the other hider next to it)
+    h.phaseEnd_ = h.time();                                  // the round goes live: the seeker sees them
+    pump(h, hcl, 0.6, near);
+    hq = snapOf(hs[seeker], hs[other].clientId());
+    CHECK(h.ms_.phase == PHASE_LIVE && hq && !hq->hidden);
+    h.stop();
 }
 
 static void testBots(uint16_t& port) {
@@ -5151,11 +5399,11 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "limits") { testMapSaveExact(); testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(TP(29990)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(TP(29980)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); testAddbotArgs(TP(29982)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); testAddbotArgs(TP(29982)); testSpecVote(TP(29983)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); testTagLateJoin(TP(29455)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "nav") { testNavGraph(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testRankedRelay(TP(29630)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterReplies(TP(29629)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testRankedRelay(TP(29630)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterReplies(TP(29629)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(TP(29600)); testEditSession(TP(29601)); testVotedEdit(TP(29602)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
     if (argc >= 2 && std::string(argv[1]) == "exportassets") return exportAssets(argc > 2 ? argv[2] : "assets_export") ? 1 : 0;
@@ -5164,6 +5412,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(TP(29960)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(TP(29950)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "net") { testInterpRewind(TP(29903)); testUptimeClock(TP(29902)); testNetcode(TP(29900)); testInputBacklog(TP(29901)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "hidden") { testHiddenInfo(TP(29906)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = TP(29800); testArenaAndTourney(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "bots") { uint16_t p = TP(28900); testBots(p); return g_fail ? 1 : 0; }
@@ -5173,6 +5422,8 @@ int main(int argc, char** argv) {
         snapBench("midtown", 32, secs, TP(28820));
         snapBench("midtown", 8, secs, TP(28821));
         snapBench("harbor", 16, secs, TP(28822));
+        snapBench("midtown", 32, secs, TP(28823), true, 48);   // (projectiles: each one's visibility to each client)
+        snapBench("harbor", 16, secs, TP(28824), true, 24);
         return 0;
     }
     if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testFixedSpread(p + 50); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); testProjectileTickRates(p + 40); return g_fail ? 1 : 0; }
@@ -5196,10 +5447,11 @@ int main(int argc, char** argv) {
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); }},
+        {"hidden", [] { testHiddenInfo(TP(28587)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
-        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); }},
+        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testDemoUpgrade(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
-        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); }},
+        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); }},
         {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
         {"rules", [] { testGameRules(""); }},
         {"assets", [] { g_fail += assetTests(); }},
@@ -5211,6 +5463,10 @@ int main(int argc, char** argv) {
         {"resetmaps", [] { testResetMaps(); }},
         {"userdata", [] { testUserData(); }},
     };
+    if (argc >= 2)   // one group by name (e.g. `quark_tests netcode`), on its own
+        for (auto* list : {&par, &alone})
+            for (auto& g : *list)
+                if (std::string(argv[1]) == g.name) { g.run(); printf(g_fail ? "%d FAILURE(S)\n" : "all tests passed\n", g_fail); return g_fail ? 1 : 0; }
     [[maybe_unused]] bool serial = argc >= 2 && std::string(argv[1]) == "serial";   // (Windows: always serial)
 #ifndef _WIN32
     if (!serial) {

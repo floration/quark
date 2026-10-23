@@ -27,7 +27,7 @@ void writeSnapshotClient(Writer& w, const Snapshot& s) {
     w.u32(s.baseTick);
 }
 
-bool readSnapshotClient(Reader& r, Snapshot& s) {
+bool readSnapshotClient(Reader& r, Snapshot& s, uint16_t proto) {
     s.tick = r.u32();
     s.timeMs = r.u32();
     s.tickRate = r.u16();
@@ -43,7 +43,7 @@ bool readSnapshotClient(Reader& r, Snapshot& s) {
     if (opt & 2) { m.dashTimer = r.f32(); m.dashDirX = r.f32(); m.dashDirZ = r.f32(); m.dashExitSpeed = r.f32(); m.dashUp = r.f32(); }
     if (opt & 4) m.dashCooldown = r.f32();
     if (opt & 8) m.hookCooldown = r.f32();
-    s.selfHealth = r.u8(); s.selfWeapon = r.u8(); s.knifeAway = r.u8(); s.syringeAway = r.u8();
+    s.selfHealth = r.u8(); s.selfWeapon = r.u8(); s.knifeAway = r.u8(); s.syringeAway = proto >= kSnapSyringeSince ? r.u8() : 0;
     s.baseTick = r.u32();
     if (s.clientId >= kMaxPlayers || s.selfWeapon >= WPN_COUNT) return false;   // (ids index fixed arrays on the client)
     return !r.bad();
@@ -147,7 +147,7 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
             if (b->checkpoint != p.checkpoint) m |= P_CHECK;
             if (!p.hidden && (b->hooked != p.hooked || (p.hooked && !samePos(b->hookPoint, p.hookPoint)))) m |= P_HOOK;
         }
-        if (p.hidden) m &= ~(P_POS | P_YAW | P_PITCH | P_HOOK | P_KEYS);
+        if (p.hidden) m &= ~(P_POS | P_YAW | P_PITCH | P_HOOK | P_KEYS | P_HEALTH | P_WEAPON);   // (out of sight: nor health, weapon)
         w.u8(p.id); w.u16(m);
         if (m & P_FLAGS) w.u8(p.flags);
         if (m & P_POS) w.vecq(p.pos);
@@ -164,12 +164,15 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
         if (m & P_CHECK) w.u8(p.checkpoint);
         if (m & P_HOOK) { w.u8(p.hooked); if (p.hooked) w.vecq(p.hookPoint); }
     }
-    // projectiles: id, bits (1 = new: type and owner follow, 2 = velocity follows, 4 = PROJ_LOB, 8 = PROJ_STUCK),
-    // position always. Velocity only when it changed by more than 0.5 m/s since what the client has (the client only
-    // uses it to extrapolate a few ms); the snapshot we keep as the next base records the velocity the client has.
+    // projectiles: id, bits (1 = new: type and owner follow, 2 = velocity follows, 4 = PROJ_LOB, 8 = PROJ_STUCK,
+    // 16 = out of sight: nothing follows), position always (in sight). Velocity only when it changed by more than
+    // 0.5 m/s since what the client has (the client only uses it to extrapolate a few ms); the snapshot we keep as the
+    // next base records the velocity the client has. One back in sight is sent as new.
     w.u8((uint8_t)s.projectiles.size());
     for (auto& p : s.projectiles) {
+        if (p.hidden) { w.u16(p.id); w.u8(16); continue; }   // (16: out of sight)
         const ProjectileSnap* b = bi.projectile(base, p.id);
+        if (b && b->hidden) b = nullptr;
         bool vel = !b || length(p.vel - b->vel) > 0.5f;
         w.u16(p.id); w.u8((b ? 0 : 1) | (vel ? 2 : 0) | (uint8_t)((p.flags & (PROJ_LOB | PROJ_STUCK)) << 2));
         if (!b) { w.u8(p.type); w.u8(p.owner); }
@@ -218,14 +221,16 @@ bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base) {
     }
     s.projectiles.resize(r.u8());
     for (auto& p : s.projectiles) {
+        p = ProjectileSnap();
         p.id = r.u16();
         uint8_t bits = r.u8();
+        if (bits & 16) { p.hidden = true; continue; }   // out of sight: still flying, nothing else known
         p.flags = (uint8_t)((bits >> 2) & (PROJ_LOB | PROJ_STUCK));
         const ProjectileSnap* b = nullptr;
         if (bits & 1) { p.type = r.u8(); p.owner = r.u8(); if (p.owner >= kMaxPlayers) return false; }
         else {
             b = bi.projectile(base, p.id);
-            if (!b) return false;
+            if (!b || b->hidden) return false;
             p.type = b->type; p.owner = b->owner;
         }
         p.pos = r.vecq();
