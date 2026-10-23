@@ -95,47 +95,66 @@ def md(text, skip_title=True):
     return "\n".join(out)
 
 
+# The pages share the site's stylesheet (site/style.css: header, footer, the .prose long-form typography); this is
+# what only the update pages need on top of it.
 STYLE = """
-:root { --bg: #15161a; --box: #1d1f24; --line: #34373e; --text: #dcdcd6; --dim: #8b8e94; --cyan: #3fd8ff; --red: #ff4c3f; --yellow: #ffd23f; }
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 "IBM Plex Mono", ui-monospace, monospace; }
-a { color: var(--cyan); }
-a:hover { background: var(--cyan); color: var(--bg); text-decoration: none; }
-.wrap { max-width: 860px; margin: 0 auto; padding: 0 16px 40px; }
-header { padding: 34px 0 6px; }
-h1 { font: 48px/1 Silkscreen, monospace; color: var(--cyan); margin: 0; letter-spacing: 2px; text-shadow: 4px 4px 0 #0c5d70; }
-h1 a, h1 a:hover { color: inherit; background: none; text-decoration: none; }
-nav { margin: 14px 0 22px; font-size: 14px; }
-nav a { margin-right: 14px; }
-h2 { font: 22px Silkscreen, monospace; color: var(--yellow); margin: 36px 0 8px; }
-h2 a { color: var(--yellow); text-decoration: none; }
-h3, h4, h5, h6 { color: var(--yellow); font-weight: 600; margin: 18px 0 4px; }
-p { margin: 8px 0; }
-.dim { color: var(--dim); }
-ul, ol { margin: 6px 0; padding-left: 22px; }
-li { margin: 3px 0; }
-li::marker { color: var(--red); }
-table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 8px 0; }
-th { text-align: left; color: var(--dim); font-weight: 400; border-bottom: 2px solid var(--line); padding: 4px 8px; }
-td { border-bottom: 1px dotted var(--line); padding: 4px 8px; vertical-align: top; }
-.scroll { overflow-x: auto; }
-code { background: var(--box); padding: 0 4px; overflow-wrap: anywhere; }
-.entry { border-bottom: 1px dotted var(--line); padding-bottom: 10px; }
-.entry .body { color: #c3c3bd; font-size: 14px; }
-.full { color: var(--dim); font-size: 13px; }
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; font-weight: 600; text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--text); border-color: var(--cyan); }
+.entry { padding: 34px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 32px; }
+.entry:first-child { padding-top: 0; }
+.entry > h2 { margin: 0; font-size: 26px; font-weight: 800; }
+.entry > h2 a { color: var(--text); text-decoration: none; }
+.entry > h2 a:hover { color: var(--cyan); }
+.entry .latest { display: table; margin-top: 10px; }
+.page .note { max-width: 760px; margin: 0 0 24px; }
+.entry .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.entry .prose h4 { font-size: 16px; }
+.full { margin: 6px 0 0; font-weight: 700; }
+.full a { text-decoration: none; }
+.full a:hover { text-decoration: underline; }
+.crumbs { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.crumbs a { text-decoration: none; }
+.pager { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-weight: 700; }
+.pager a { text-decoration: none; }
+@media (max-width: 760px) { .entry { grid-template-columns: minmax(0, 1fr); } }
 """
 
+FONTS = ("<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n"
+         "<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n"
+         "<link href=\"https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap\" rel=\"stylesheet\">\n"
+         "<link href=\"https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap\" rel=\"stylesheet\">\n")
 
-def page(title, body, depth):
+
+def page(title, body, depth, head="", lede=""):
+    """A page in the site's design: the same header, nav and footer as site/index.html (relative links, so they work
+    at /updates/ and /updates/<V>/). `head` and `lede` are the title block (already HTML); `body` the content."""
     up = "../" * depth
+    nav = "".join("<li><a href=\"%s\"%s>%s</a></li>" % (href, ' aria-current="page"' if label == "Updates" else "", label) for label, href in (
+        ("Modes", up + "#modes"), ("Maps", up + "#maps"), ("Weapons", up + "#weapons"), ("Leaderboard", up + "leaderboard/"),
+        ("Updates", up + "updates/"), ("Testing", up + "testing/"), ("Discord", "https://discord.gg/RERYWNWSXg"),
+        ("GitHub", "https://github.com/floration/quark")))
     return ("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
             "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
-            "<title>%s</title>\n<link rel=\"icon\" type=\"image/png\" href=\"%sicon.png\">\n"
-            "<link href=\"https://fonts.googleapis.com/css2?family=Silkscreen&family=IBM+Plex+Mono:wght@400;600&display=swap\" rel=\"stylesheet\">\n"
-            "<style>%s</style>\n</head>\n<body><div class=\"wrap\">\n"
-            "<header><h1><a href=\"%s\">quark</a></h1></header>\n"
-            "<nav><a href=\"%s\">home</a><a href=\"%supdates/\">all updates</a></nav>\n%s\n</div></body>\n</html>\n"
-            % (html.escape(title), up, STYLE, up, up, up, body))
+            "<title>%s</title>\n<meta name=\"theme-color\" content=\"#0c0f14\">\n"
+            "<link rel=\"icon\" type=\"image/png\" href=\"%sicon.png\">\n%s"
+            "<link rel=\"stylesheet\" href=\"%sstyle.css\">\n<style>%s</style>\n</head>\n<body>\n"
+            "<a class=\"skip\" href=\"#main\">Skip to content</a>\n"
+            "<header class=\"top\"><div class=\"wrap\">\n"
+            "<a class=\"logo\" href=\"%s\" aria-label=\"quark home\"><img src=\"%sicon.png\" alt=\"\" width=\"32\" height=\"32\"><span>quark</span></a>\n"
+            "<nav aria-label=\"Main\"><ul class=\"nav\">%s</ul></nav>\n"
+            "<a class=\"btn btn-primary btn-sm cta\" href=\"%s#download\">Download</a>\n</div></header>\n"
+            "<main id=\"main\">\n<div class=\"page-head\"><div class=\"wrap\">\n%s%s</div></div>\n"
+            "<div class=\"page\"><div class=\"wrap\">\n%s\n</div></div>\n</main>\n"
+            "<footer class=\"foot\"><div class=\"wrap\">\n"
+            "<div><p>Free and open source. No ads, no tracking, no cookies.</p>"
+            "<p class=\"small\">UI font: Work Sans. Logo: Rubik. Both SIL Open Font License 1.1.</p></div>\n"
+            "<ul aria-label=\"Links\"><li><a href=\"%s\">Home</a></li><li><a href=\"%sleaderboard/\">Leaderboard</a></li>"
+            "<li><a href=\"%supdates/\">Updates</a></li><li><a href=\"%stesting/\">Testing</a></li>"
+            "<li><a href=\"https://github.com/floration/quark/releases\">Releases</a></li>"
+            "<li><a href=\"https://discord.gg/RERYWNWSXg\">Discord</a></li><li><a href=\"https://github.com/floration/quark\">GitHub</a></li></ul>\n"
+            "</div></footer>\n</body>\n</html>\n"
+            % (html.escape(title), up, FONTS, up, STYLE, up or "./", up, nav, up or "./", head, lede, body, up or "./", up, up, up))
 
 
 def main():
@@ -148,7 +167,7 @@ def main():
     if os.path.isdir(OUT): shutil.rmtree(OUT)
     os.makedirs(OUT)
     entries = []
-    for v in versions:
+    for i, v in enumerate(versions):
         vs = "%d.%d.%d" % v
         short = open(os.path.join(CHANGELOGS, vs + ".md"), encoding="utf-8").read()
         full_path = os.path.join(CHANGELOGS, "full", vs + ".md")
@@ -157,16 +176,30 @@ def main():
         full = open(full_path, encoding="utf-8").read() if has_full else short
         d = os.path.join(OUT, vs)
         os.makedirs(d)
-        note = "" if has_full else "<p class=\"dim\">The full notes for this version are its short notes: that was all that was written then.</p>\n"
+        note = "" if has_full else "<p class=\"note\">The full notes for this version are its short notes: that was all that was written then.</p>\n"
+        newer = "%d.%d.%d" % versions[i - 1] if i > 0 else None
+        older = "%d.%d.%d" % versions[i + 1] if i + 1 < len(versions) else None
+        pager = "<nav class=\"pager\" aria-label=\"Other versions\"><span>%s</span><span>%s</span></nav>" % (
+            "<a href=\"../%s/\">&larr; %s</a>" % (older, older) if older else "",
+            "<a href=\"../%s/\">%s &rarr;</a>" % (newer, newer) if newer else "<a href=\"../\">All updates &rarr;</a>")
         with open(os.path.join(d, "index.html"), "w", encoding="utf-8") as f:
             f.write(page("quark %s: everything that changed" % vs,
-                         "<h2>v%s</h2>\n%s%s" % (html.escape(vs), note, md(full)), 2))
-        entries.append("<div class=\"entry\"><h2><a href=\"%s/\">v%s</a></h2>\n<div class=\"body\">%s</div>\n"
-                       "<p class=\"full\"><a href=\"%s/\">everything that changed in %s, and why &rarr;</a></p></div>"
-                       % (vs, vs, md(short), vs, vs))
+                         "%s<div class=\"prose\">\n%s\n</div>\n%s" % (note, md(full), pager), 2,
+                         head="<p class=\"crumbs\"><a href=\"../\">&larr; All updates</a></p>\n<p class=\"eyebrow\">%s</p>\n<h1>quark %s</h1>\n"
+                              % ("Latest update" if i == 0 else "Update", html.escape(vs)),
+                         lede="<p class=\"lede\">Everything that changed in this version, and why.</p>\n"))
+        entries.append("<article class=\"entry\" id=\"v%s\"><h2><a href=\"%s/\">%s</a>%s</h2>\n<div><div class=\"prose\">%s</div>\n"
+                       "<p class=\"full\"><a href=\"%s/\">Everything that changed in %s, and why &rarr;</a></p></div></article>"
+                       % (vs, vs, vs, "<span class=\"badge cyan latest\">Latest</span>" if i == 0 else "", md(short), vs, vs))
+    majors = []   # quick links: the newest release of each minor version line, newest first (x.y)
+    for v in versions:
+        if not majors or majors[-1][0] != v[:2]: majors.append((v[:2], "%d.%d.%d" % v))
+    toc = "<ul class=\"toc\" aria-label=\"Jump to a version\">%s</ul>\n" % "".join(
+        "<li><a href=\"#v%s\">%d.%d</a></li>" % (vs, mv[0], mv[1]) for mv, vs in majors)
     with open(os.path.join(OUT, "index.html"), "w", encoding="utf-8") as f:
-        f.write(page("quark: every update",
-                     "<p class=\"dim\">Every version, newest first. Each one's page has the full changelog.</p>\n" + "\n".join(entries), 1))
+        f.write(page("quark: every update", "\n".join(entries), 1,
+                     head="<p class=\"eyebrow\">%d versions</p>\n<h1>Every update</h1>\n" % len(versions),
+                     lede="<p class=\"lede\">Every version of quark, newest first. Each one has a page with its full changelog.</p>\n" + toc))
     print("site/updates: %d versions" % len(versions))
     if missing and ALLOW_MISSING_FULL:
         print("warning: changelogs/full/<version>.md is missing for: " + ", ".join(missing))
