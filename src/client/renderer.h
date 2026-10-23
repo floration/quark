@@ -49,7 +49,7 @@ public:
 
     // Dynamic geometry (cleared every frame)
     void box(const Vec3& center, const Vec3& half, float yaw, const Vec3& color, float sunVis, bool castShadow = true, bool visible = true);
-    void boxPitched(const Vec3& pivot, const Vec3& offset, const Vec3& half, float yaw, float pitch, const Vec3& color, float sunVis);
+    void boxPitched(const Vec3& pivot, const Vec3& offset, const Vec3& half, float yaw, float pitch, const Vec3& color, float sunVis, bool castShadow = true);
     void viewBox(const Vec3& offset, const Vec3& half, const Vec3& color); // camera-relative (viewmodel)
     // an override model (models.h, docs/ASSETS.md) in place of a model's boxes: model space through xf, each vertex's
     // colour times tint[its slot]; viewMesh: camera-relative like viewBox (offset, then uniform scale)
@@ -135,6 +135,7 @@ private:
     size_t dynCap_ = 0, flatCap_ = 0, uiCap_ = 0;
 
     std::vector<DynVertex> dyn_, dynShadowOnly_, view_;
+    std::vector<DynVertex> dynNoCast_;   // drawn with dyn_, but no shadow (and not in the shadow pass's caster rect)
     struct StaticItem { Vec3 c; float r; int first, count; };
     std::vector<StaticItem> staticItems_;
     std::vector<DynVertex> staticVerts_;          // (only while setStaticBoxes builds it)

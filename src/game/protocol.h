@@ -101,6 +101,27 @@ inline Vec3 stickyOnPlayerPos(const Vec3& feet, const Vec3& offset, bool crouche
     return feet + Vec3(offset.x, offset.y * (crouched ? kPlayerCrouchHeight / kPlayerHeight : 1.0f), offset.z) * scale;
 }
 
+// A thrown knife, crossbow bolt or thrown syringe that has landed (EV_PROP; cosmetic only, no gameplay): stuck in the
+// world where it hit until the match is over, or in the player it hit (an offset from their feet, standing and size 1,
+// on quantizeAttachOffset's grid: drawn like a sticky on them) until that player dies, respawns or leaves. One small
+// reliable event per prop; each client keeps the newest kMaxStuckProps and draws them (nothing rides in the snapshots).
+// The event: a = the weapon (PROP_CLEAR: a clear, b = that player's props or PROP_WORLD = all), b = the player it's in
+// or PROP_WORLD, c = the thrower; text, binary: the world spot (3 x f32, 12 bytes) or the offset (i8 x, u8 y, i8 z),
+// then the way it flew (i16 yaw, i16 pitch).
+constexpr int kMaxStuckProps = 256;
+constexpr uint8_t PROP_WORLD = 255, PROP_CLEAR = 255;
+struct StuckProp {
+    uint8_t type = 0, owner = 0;
+    uint8_t player = PROP_WORLD;   // the player it's in, or PROP_WORLD
+    Vec3 pos;                      // world position, or the offset from that player's feet
+    Vec3 dir = Vec3(0, 0, -1);     // the way it flew (unit)
+};
+inline bool leavesProp(int weapon) { return weapon == WPN_KNIFE || weapon == WPN_CROSSBOW || weapon == WPN_SYRINGE; }
+struct GameEvent;
+GameEvent propEvent(const StuckProp& p);
+GameEvent propClearEvent(int player);                    // PROP_WORLD: every prop
+bool readPropEvent(const GameEvent& e, StuckProp* p);    // false: malformed, or a clear
+
 struct GameEvent {
     double sentAt = -1;      // server only (not sent): when this copy last went out, for resend pacing
     uint32_t id = 0;

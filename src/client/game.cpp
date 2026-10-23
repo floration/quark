@@ -811,6 +811,8 @@ UserCmd Game::buildCmd() {
     if (opts_.debugWeapon >= 1 && opts_.debugWeapon <= WPN_COUNT) c.weapon = (uint8_t)(opts_.debugWeapon - 1);
     if (opts_.debugScope) c.buttons |= BTN_ALTFIRE;
     if (opts_.debugFire) c.buttons |= BTN_FIRE;
+    if (opts_.debugPulse && (std::fmod(time_, 0.6) < 0.3 || (shotAt_ > 0 && time_ > shotAt_ - 0.4))) c.buttons &= (uint16_t)~(BTN_FIRE | BTN_ALTFIRE);
+    if (opts_.debugPulse && shotAt_ > 0 && time_ > shotAt_ - 0.4) c.side = 127;   // (then a step aside: a bolt seen end on is a dot)
     return c;
 }
 
@@ -1110,6 +1112,48 @@ void Game::handleEvents() {
                     if (opts_.spawnYaw > -999) { yaw_ = deg2rad(opts_.spawnYaw); pitch_ = deg2rad(opts_.spawnPitch); }
                 }
                 break;
+        }
+    }
+}
+
+// Knives, bolts and syringes stuck where they landed (NetClient::stuckProps, cosmetic): the flying projectile's model,
+// still, along the way it flew, centred on the spot it hit (half of it in the wall / body). Off screen or far away:
+// skipped. One in a player rides on them as a sticky does, and isn't drawn while they're out of sight.
+void Game::drawStuckProps(const Vec3& eye, float alpha) {
+    QZONE("drawStuckProps");
+    const auto& props = net_.stuckProps();
+    if (props.empty()) return;
+    constexpr float kFar2 = 50.0f * 50.0f, kNear2 = 10.0f * 10.0f;   // (half a metre long: a few pixels at 50 m)
+    const int me = net_.clientId();
+    const bool hideOwn = net_.selfAlive() && !net_.playback();   // (in you: not drawn in your face)
+    for (const StuckProp& sp : props) {
+        Vec3 pos = sp.pos;
+        if (sp.player != PROP_WORLD) {
+            if (hideOwn && sp.player == me) continue;
+            ProjectileSnap on;
+            on.flags = PROJ_ON_PLAYER; on.onPlayer = sp.player; on.attachOffset = sp.pos;
+            if (!net_.attachedPos(on, alpha, &pos)) continue;
+        }
+        const Vec3 d = pos - eye;
+        const float d2 = d.x * d.x + d.y * d.y + d.z * d.z;
+        if (d2 > kFar2 || !r_.inView(pos, 0.6f)) continue;
+        const bool far = d2 > kNear2;
+        const int mt = modelExists(MODEL_PROJECTILE, sp.type) ? sp.type : MODEL_PROJ_ORB;
+        const float yaw = std::atan2(-sp.dir.x, -sp.dir.z), pitch = std::asin(clampf(sp.dir.y, -1, 1));
+        ModelPalette ppal;
+        ppal.c[TINT_TEAM] = teamColor(sp.owner);
+        ppal.c[TINT_GLOW] = r_.glowColor;
+        if (const ModelMesh* ov = modelOverride(MODEL_PROJECTILE, mt)) {
+            Vec3 tint[TINT_COUNT];
+            overrideTints(MODEL_PROJECTILE, ppal, tint);
+            r_.mesh(*ov, Mat4::translate(pos) * Mat4::rotY(yaw) * Mat4::rotX(pitch), tint, 1.0f);
+            continue;
+        }
+        projectileParts(mt, ppal, 1, 1, 0, parts_);
+        for (const ModelPart& q : parts_) {   // (opaque parts only: a stuck one has no glow; far off: its main part only)
+            if (q.alpha < 1) continue;
+            r_.boxPitched(pos, q.c, q.h, yaw, pitch, q.color, 1.0f, false);   // (no shadow: see boxPitched)
+            if (far) break;
         }
     }
 }
@@ -1731,6 +1775,7 @@ void Game::drawWorld(float alpha) {
         else if (mt == WPN_CROSSBOW) r_.line(pr.pos, pr.pos - dir * 4.0f, 0.04f, rgba(col, 0.5f));
         else if (mt == MODEL_PROJ_ORB) r_.line(pr.pos, pr.pos - dir * 3.5f, 0.12f, rgba(col, 0.5f));
     }
+    drawStuckProps(eye, alpha);
     // explosions
     for (size_t i = 0; i < explosions_.size();) {
         float t = (float)(time_ - explosions_[i].start) / 0.35f;

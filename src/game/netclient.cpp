@@ -55,6 +55,7 @@ bool NetClient::connect(const std::string& address, const std::string& name) {
     lossPct_ = 0;
     lastEventId_ = 0;
     events_.clear();
+    props_.clear(); propPlayers_ = 0;
     stringCmds_.clear();
     stringSeq_ = stringAcked_ = 0;
     interpSent_ = 0;
@@ -388,9 +389,15 @@ void NetClient::onSnapshot(Snapshot& s) {
             continue;
         }
         if (e.type == EV_EDIT) { applyEditEvent(e.text); continue; }
+        if (e.type == EV_PROP) { applyPropEvent(e); continue; }
         events_.push_back(e);
     }
     s.events.clear();
+    if (propPlayers_) {   // (the server says when one goes; this catches a death or a leave it said before we had it)
+        uint32_t alive = 0;
+        for (auto& p : s.players) if ((p.flags & PS_ALIVE) && p.id < kMaxPlayers) alive |= 1u << p.id;
+        if (propPlayers_ & ~alive) dropProps(propPlayers_ & ~alive);
+    }
     // String command acks
     while (!stringCmds_.empty() && (int16_t)(s.ackStringCmd - (uint16_t)(stringAcked_ + 1)) >= 0) {
         stringCmds_.pop_front();
@@ -571,6 +578,32 @@ float NetClient::bodyScale() const {
     return m.mode == MODE_DUEL && m.phase != PHASE_WARMUP ? duelModDef(m.duelMod).size : 1.0f;
 }
 
+void NetClient::applyPropEvent(const GameEvent& e) {
+    if (e.a == PROP_CLEAR) {
+        if (e.b == PROP_WORLD) { props_.clear(); propPlayers_ = 0; }
+        else if (e.b < kMaxPlayers) dropProps(1u << e.b);
+        return;
+    }
+    StuckProp p;
+    if (!readPropEvent(e, &p)) return;
+    if (props_.capacity() < (size_t)kMaxStuckProps) props_.reserve(kMaxStuckProps);   // (once: no allocations after)
+    if ((int)props_.size() >= kMaxStuckProps) props_.erase(props_.begin());   // the oldest goes
+    props_.push_back(p);
+    if (p.player != PROP_WORLD) propPlayers_ |= 1u << p.player;
+}
+
+void NetClient::dropProps(uint32_t players) {
+    uint32_t left = 0;
+    size_t keep = 0;
+    for (auto& p : props_) {
+        if (p.player != PROP_WORLD && (players >> p.player & 1)) continue;
+        if (p.player != PROP_WORLD) left |= 1u << p.player;
+        props_[keep++] = p;
+    }
+    props_.resize(keep);
+    propPlayers_ = left;
+}
+
 bool NetClient::attachedPos(const ProjectileSnap& p, float alpha, Vec3* out) const {
     if (snaps_.empty() || !(p.flags & PROJ_ON_PLAYER)) return false;
     if (p.onPlayer == clientId_ && !play_.active && selfAlive()) {   // on you: where you see yourself
@@ -733,6 +766,7 @@ bool NetClient::startRecording(const std::string& path, bool fullRate) {
         recEvents_.push_back(e);
         if (!rankIds_[i].empty()) { GameEvent r; r.type = EV_RANKINFO; r.a = (uint8_t)i; r.text = rankIds_[i]; recEvents_.push_back(r); }
     }
+    for (auto& p : props_) recEvents_.push_back(propEvent(p));   // (and what's stuck where so far)
     return true;
 }
 
@@ -815,6 +849,7 @@ bool NetClient::startPlaybackImpl(const std::string& path, std::string& err) {
     play_.active = true;
     play_.wall = timeNow();
     snaps_.clear(); events_.clear(); lastEventId_ = 0; clockInit_ = false; mapReady_ = false;
+    props_.clear(); propPlayers_ = 0;
     for (auto& n : names_) n.clear();
     for (auto& c : nameColors_) c = 0;
     state_ = ConnState::Connected;

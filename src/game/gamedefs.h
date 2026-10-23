@@ -415,6 +415,7 @@ enum EventType : uint8_t {
     EV_RANKSIGN,     // ranked match live / time trial started: text = the match (race ticket) id; the game answers "ticketsig <signature>"
     EV_RPS,          // hide and seek tiebreak: a = RpsStage, b = throw number, text = "<best of 3> <winner or -1>" then " id:shape:wins:out"
                      // per player (shape RPS_PICKED until the reveal), then a line with what happened
+    EV_PROP,         // a thrown knife / bolt / thrown syringe stuck where it landed, or a clear (cosmetic): StuckProp, protocol.h
 };
 
 #define WB(w) (1u << (w))

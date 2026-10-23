@@ -75,6 +75,9 @@ public:
     bool attachedPos(const ProjectileSnap& p, float alpha, Vec3* out) const;
     float bodyScale() const;   // duel "double size" lives (Server::bodyScale)
     bool projectileHidden(uint16_t id) const;                      // still flying, out of sight
+    // Knives / bolts / syringes stuck in the world or in players (EV_PROP, cosmetic), oldest first: the newest
+    // kMaxStuckProps. One in a player (player != PROP_WORLD) goes when that player dies, respawns or leaves.
+    const std::vector<StuckProp>& stuckProps() const { return props_; }
     const PlayerSnap* findPlayer(int id) const;
     std::string playerName(int id) const;
     int playerModel(int id) const { return id >= 0 && id < kMaxPlayers ? models_[id] : 0; }
@@ -195,6 +198,10 @@ private:
     Vec3 errorOffset_;
     uint32_t lastEventId_ = 0;
     std::vector<GameEvent> events_;
+    std::vector<StuckProp> props_;
+    uint32_t propPlayers_ = 0;   // players with a prop in them
+    void applyPropEvent(const GameEvent& e);
+    void dropProps(uint32_t players);   // every prop in these players
     std::vector<std::string> names_ = std::vector<std::string>(kMaxPlayers);
     uint8_t models_[kMaxPlayers] = {}, packs_[kMaxPlayers] = {};
     uint16_t nameColors_[kMaxPlayers] = {};

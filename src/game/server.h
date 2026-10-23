@@ -294,6 +294,18 @@ public:
     // voted to spectate this map ({rank id, name}): leaving and coming back doesn't get them back into play
     std::vector<std::pair<std::string, std::string>> specOut_;
     void moveToSpectator(int id);   // out of play (as "team spec" does: tag counts it as elimination)
+    // Stuck knives / bolts / syringes (StuckProp, EV_PROP; cosmetic): the world ones go to everyone as they land (the
+    // newest kPropReplay are replayed to whoever joins later); one in a player goes to each client once that player is
+    // in its sight (NET-10: a hit out of sight isn't told), and a clear follows when the player dies / respawns / leaves.
+    static constexpr int kPropReplay = 48, kMaxBodyProps = 64;
+    StuckProp worldProps_[kMaxStuckProps];   // a ring: the newest at worldPropNext_ - 1
+    int worldPropNext_ = 0, worldPropCount_ = 0;
+    struct BodyProp { StuckProp prop; uint32_t sentTo = 0; };
+    std::vector<BodyProp> bodyProps_;
+    bool propsSent_ = false;   // a prop went out since the last clear
+    void leaveProp(const Projectile& pr, int hitPlayer, const Vec3& at, const Vec3& dir, const AABB& hitBb);
+    void clearProps();          // the match is over / restarts, or a new map: every prop goes
+    void releaseBodyProps(int player);
     std::vector<float>* tickTimes_ = nullptr;  // benchmarks: every tick's simulate + send time goes here
     // Snapshot building reuses these and each client's delta-base ring (ServerPlayer::sent): the per-client snapshot
     // is built in the ring slot it's remembered in, so a send copies the shared lists once and allocates nothing

@@ -317,3 +317,45 @@ bool readSnapshotEvents(Reader& r, Snapshot& s) {
     }
     return !r.bad();
 }
+
+GameEvent propEvent(const StuckProp& p) {
+    GameEvent e;
+    e.type = EV_PROP;
+    e.a = p.type; e.b = p.player; e.c = p.owner;
+    uint8_t buf[16];
+    Writer w(buf, sizeof buf);
+    if (p.player == PROP_WORLD) w.vec(p.pos);
+    else {   // (the grid quantizeAttachOffset rounds to)
+        const Vec3 o = quantizeAttachOffset(p.pos);
+        w.i8((int8_t)std::lround(o.x / kPlayerHalfWidth * 127)); w.u8((uint8_t)std::lround(o.y / kPlayerHeight * 255));
+        w.i8((int8_t)std::lround(o.z / kPlayerHalfWidth * 127));
+    }
+    w.i16(angQ(std::atan2(p.dir.x, p.dir.z))); w.i16(angQ(std::asin(clampf(p.dir.y, -1, 1))));
+    e.text.assign((const char*)buf, (size_t)w.size());
+    return e;
+}
+
+GameEvent propClearEvent(int player) {
+    GameEvent e;
+    e.type = EV_PROP;
+    e.a = PROP_CLEAR; e.b = (uint8_t)player;
+    return e;
+}
+
+bool readPropEvent(const GameEvent& e, StuckProp* p) {
+    if (e.type != EV_PROP || e.a == PROP_CLEAR || !leavesProp(e.a)) return false;
+    const bool world = e.b == PROP_WORLD;
+    if ((!world && e.b >= kMaxPlayers) || e.text.size() != (world ? 16u : 7u)) return false;
+    Reader r((const uint8_t*)e.text.data(), (int)e.text.size());
+    p->type = e.a; p->player = e.b; p->owner = (uint8_t)e.c;
+    if (world) {
+        p->pos = r.vec();
+        if (!(std::fabs(p->pos.x) < 1e5f && std::fabs(p->pos.y) < 1e5f && std::fabs(p->pos.z) < 1e5f)) return false;
+    } else {
+        float x = r.i8() / 127.0f, y = r.u8() / 255.0f, z = r.i8() / 127.0f;
+        p->pos = quantizeAttachOffset({x * kPlayerHalfWidth, y * kPlayerHeight, z * kPlayerHalfWidth});
+    }
+    const float yaw = angD(r.i16()), pitch = angD(r.i16());
+    p->dir = {std::sin(yaw) * std::cos(pitch), std::sin(pitch), std::cos(yaw) * std::cos(pitch)};
+    return !r.bad();
+}

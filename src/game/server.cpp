@@ -947,6 +947,10 @@ void Server::sendWelcome(int id) {
         if (!players_[i].rankId.empty()) { GameEvent r; r.type = EV_RANKINFO; r.a = (uint8_t)i; r.text = players_[i].rankId; sendEvent(id, r); }
     }
     if (ms_.flags & MS_RPS) sendEvent(id, rpsEvent_);   // a hide and seek tiebreak in progress: where it's at
+    // what's stuck in the walls this match (the newest few); what's stuck in players follows as they come into sight
+    for (int k = std::min(worldPropCount_, kPropReplay); k > 0; k--)
+        sendEvent(id, propEvent(worldProps_[(worldPropNext_ - k + kMaxStuckProps) % kMaxStuckProps]));
+    for (auto& bp : bodyProps_) bp.sentTo &= ~(1u << id);
     if (!rated() && (cfg_.ranked || cfg_.timeTrial)) {   // a testing server: said up front (the HUD tags the match too)
         GameEvent e; e.type = EV_MESSAGE;
         e.text = std::string(kUnratedNotice) + ": ranked plays as usual here, but no rating or race time counts";
@@ -2341,6 +2345,7 @@ void Server::stepProjectile(Projectile& pr) {
             }
             pr.pos = at;   // (a spent projectile keeps where it landed)
             pr.active = false;
+            leaveProp(pr, hitPlayer, at, dir, hitBb);
         } else if (wd.sticky && hitPlayer >= 0 && !(modeIsTeamBased(ms_.mode) && players_[hitPlayer].team == players_[pr.owner].team)) {
             // an enemy: it sticks to them, just inside their hull where it hit (inside: never in a wall they stand
             // against), and rides along until it's set off (alt-fire, a blast) or they die / respawn / leave
@@ -2378,6 +2383,7 @@ void Server::stepProjectile(Projectile& pr) {
             }
             pr.pos = at;
             pr.active = false;
+            leaveProp(pr, hitPlayer, at, dir, hitBb);   // (after the damage: a kill takes no prop along)
         } else {
             pr.pos = at;
             pr.active = false;
@@ -2403,6 +2409,54 @@ void Server::releaseStickies(int player) {
         followVictim(pr);
         pr.onPlayer = -1; pr.stuck = false; pr.vel = {};
     }
+    releaseBodyProps(player);
+}
+
+// A thrown knife / bolt / thrown syringe ended (cosmetic; changes nothing in play): stuck in the world where it hit,
+// or in the player it hit, just inside their hull (as a sticky on a player). The knife still comes back on its timer.
+void Server::leaveProp(const Projectile& pr, int hitPlayer, const Vec3& at, const Vec3& dir, const AABB& hitBb) {
+    if (!leavesProp(pr.type) || editing_) return;
+    StuckProp sp;
+    sp.type = (uint8_t)pr.type; sp.owner = (uint8_t)pr.owner; sp.dir = dir;
+    if (hitPlayer < 0) {
+        sp.pos = at;
+        worldProps_[worldPropNext_] = sp;
+        worldPropNext_ = (worldPropNext_ + 1) % kMaxStuckProps;
+        worldPropCount_ = std::min(worldPropCount_ + 1, kMaxStuckProps);
+        broadcastEvent(propEvent(sp));
+        propsSent_ = true;
+        return;
+    }
+    const ServerPlayer& v = players_[hitPlayer];
+    if (!v.connected || !v.alive) return;   // (killed by it: nothing to carry it)
+    const bool crouched = (v.move.flags & MF_CROUCHED) != 0;
+    const float scale = bodyScale(), e = 0.02f * scale;
+    Vec3 o = (vmax(hitBb.mn + Vec3(e, e, e), vmin(at + dir * 0.05f, hitBb.mx - Vec3(e, e, e))) - v.move.pos) / scale;
+    if (crouched) o.y *= kPlayerHeight / kPlayerCrouchHeight;
+    sp.player = (uint8_t)hitPlayer;
+    sp.pos = quantizeAttachOffset(o);
+    if ((int)bodyProps_.size() >= kMaxBodyProps) bodyProps_.erase(bodyProps_.begin());   // (clients that got it keep it)
+    bodyProps_.push_back({sp, 0});   // sent with the next snapshots, to whoever sees that player (sendSnapshots)
+}
+
+void Server::releaseBodyProps(int player) {
+    uint32_t told = 0;
+    size_t keep = 0;
+    for (size_t k = 0; k < bodyProps_.size(); k++) {
+        if (bodyProps_[k].prop.player == player) { told |= bodyProps_[k].sentTo; continue; }
+        bodyProps_[keep++] = bodyProps_[k];
+    }
+    bodyProps_.resize(keep);
+    if (!told) return;
+    const GameEvent e = propClearEvent(player);
+    for (int i = 0; i < kMaxPlayers; i++) if (told >> i & 1 && players_[i].connected) sendEvent(i, e);
+}
+
+void Server::clearProps() {
+    worldPropNext_ = worldPropCount_ = 0;
+    bodyProps_.clear();
+    if (propsSent_) broadcastEvent(propClearEvent(PROP_WORLD));
+    propsSent_ = false;
 }
 
 void Server::explode(const Vec3& at, int owner, int weapon, int direct) {
@@ -2734,6 +2788,13 @@ void Server::sendSnapshots() {
             if (s.ms.bombState == BOMB_CARRIED && unseen(s.ms.bombCarrier)) s.ms.bombCarrier = 255;
             if (s.ms.actionPlayer != 255 && unseen(s.ms.actionPlayer)) { s.ms.actionPlayer = 255; s.ms.actionProgress = 0; }
         }
+        // knives / bolts / syringes stuck in a player: told once that player is in this client's sight (NET-10)
+        for (auto& bp : bodyProps_) {
+            if ((bp.sentTo >> i & 1) || (bp.prop.player != i && (hiddenPlayers >> bp.prop.player & 1))) continue;
+            bp.sentTo |= 1u << i;
+            sendEvent(i, propEvent(bp.prop));
+            propsSent_ = true;
+        }
         s.projectiles.clear();
         if (s.projectiles.capacity() < allProj.size() + projDeathCount_)   // (once per ring slot: no allocations as counts vary)
             s.projectiles.reserve(std::max<size_t>(48, allProj.size() + projDeathCount_));
@@ -3054,6 +3115,7 @@ bool Server::switchMapKeepRules(const std::string& name) {
     cfg_.map = name;
     mapEdited_ = false;
     for (auto& pr : projectiles_) pr.active = false;
+    clearProps();
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
         if (!p.connected) continue;
@@ -3171,6 +3233,7 @@ void Server::playMap(int mode) {
     specOut_.clear();   // a new map: whoever was voted to spectate may play again, and every spectate vote can be called again
     for (auto& p : players_) { p.specLocked = false; p.specVoted = 0; }
     for (auto& pr : projectiles_) pr.active = false;
+    clearProps();
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];
         if (!p.connected) continue;
@@ -3193,6 +3256,7 @@ void Server::setEditing(bool on) {
     autosaveBackedUp_ = false;
     for (int i = kMaxPlayers - 1; i >= 0; i--) if (players_[i].connected && players_[i].isBot) removeBot(i);
     for (auto& pr : projectiles_) pr.active = false;
+    clearProps();
     for (auto& p : players_) { p.alive = false; p.respawnAt = -1; p.cmdQueue.clear(); }
     vote_ = Vote();
     tourney_ = Tourney();

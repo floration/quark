@@ -3453,6 +3453,116 @@ static void testProjectileTickRates(uint16_t port) {
     s.stop();
 }
 
+// Stuck knives / bolts / syringes (owner, 1.17.0: "projectiles that miss a player should stay stuck in the wall until
+// the game is over, and projectiles that hit a player should stay stuck in them until they die"). Cosmetic: one EV_PROP
+// each, kept by the clients (NetClient::stuckProps), never in the snapshots. A thrown knife's prop outlives the
+// projectile (and the knife still comes back on its timer); a bolt in a player rides on them until they die; a match
+// restart clears everything; the newest kMaxStuckProps are kept; a late joiner gets the newest few.
+static void testStuckProps(uint16_t port) {
+    printf("stuck knives / bolts / syringes (props)\n");
+    {   // the event round-trips (world: exact; in a player: the attach grid; the direction to ~1e-4)
+        StuckProp w; w.type = WPN_KNIFE; w.owner = 3; w.pos = {12.5f, 0.05f, -7.25f}; w.dir = normalize(Vec3(0.3f, -0.8f, 0.5f));
+        StuckProp g;
+        CHECK(readPropEvent(propEvent(w), &g) && g.type == WPN_KNIFE && g.owner == 3 && g.player == PROP_WORLD &&
+              length(g.pos - w.pos) < 1e-6f && length(g.dir - w.dir) < 1e-3f);
+        StuckProp b = w; b.type = WPN_CROSSBOW; b.player = 7; b.pos = {0.21f, 1.33f, -0.1f};
+        const GameEvent be = propEvent(b);
+        CHECK(be.text.size() == 7 && readPropEvent(be, &g) && g.player == 7 && length(g.pos - quantizeAttachOffset(b.pos)) < 1e-5f);
+        GameEvent bad = be; bad.a = WPN_ROCKET;
+        CHECK(!readPropEvent(bad, &g));
+        bad = be; bad.text.pop_back();
+        CHECK(!readPropEvent(bad, &g));
+        CHECK(!readPropEvent(propClearEvent(PROP_WORLD), &g));
+    }
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = false;   // warmup (a match start clears them)
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a, b;
+    a.connect("127.0.0.1:" + std::to_string(port), "thrower");
+    b.connect("127.0.0.1:" + std::to_string(port), "target");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 2.5, idle);
+    const int ia = a.clientId(), ib = b.clientId();
+    auto& sa = s.players_[ia];
+    auto& sb = s.players_[ib];
+    auto place = [&] { sa.move.pos = {10, 0, 19}; sb.move.pos = {4, 0, 19}; sa.move.vel = sb.move.vel = {}; sa.health = sb.health = 100; };
+    place();
+    // a knife thrown at the floor: the projectile goes, its prop stays (everyone's), the knife still comes back
+    auto knife = [&](uint16_t buttons) { return [&, buttons](int i) { UserCmd c; if (i == 0) { c.weapon = WPN_KNIFE; c.pitch = -1.3f; c.yaw = 1.57f; c.buttons = buttons; } return c; }; };
+    pump(s, cls, 0.4, knife(0));
+    CHECK(sa.weapon == WPN_KNIFE);
+    pump(s, cls, 0.02, knife(BTN_ALTFIRE));
+    pump(s, cls, 0.6, knife(0));
+    bool flying = false;
+    for (auto& pr : s.projectiles_) flying |= pr.active && pr.type == WPN_KNIFE;
+    CHECK(!flying && sa.knifeBackAt > s.time());
+    auto worldProps = [](const NetClient& c, int type) { int n = 0; for (auto& p : c.stuckProps()) n += p.player == PROP_WORLD && p.type == type; return n; };
+    CHECK(worldProps(a, WPN_KNIFE) == 1 && worldProps(b, WPN_KNIFE) == 1);
+    if (!a.stuckProps().empty()) {
+        const StuckProp& k = a.stuckProps().back();
+        printf("  knife: stuck at %.2f %.2f %.2f, flying %.2f %.2f %.2f; projectile gone\n", k.pos.x, k.pos.y, k.pos.z, k.dir.x, k.dir.y, k.dir.z);
+        CHECK(k.pos.y < 0.3f && length(Vec3(k.pos.x - 10, 0, k.pos.z - 19)) < 2.0f && k.dir.y < -0.5f && k.owner == ia);
+    }
+    pump(s, cls, 1.0, idle);
+    CHECK(worldProps(a, WPN_KNIFE) == 1);   // (still there)
+    // a bolt into the target: stuck in them, riding along as they walk, gone when they die (the knife stays)
+    place();
+    pump(s, cls, 0.2, idle);
+    sb.health = 1000;   // (it mustn't kill: a kill takes no prop)
+    {
+        Projectile& pr = s.projectiles_[0];
+        pr = Projectile();
+        pr.active = true; pr.id = 4100; pr.type = WPN_CROSSBOW; pr.owner = ia;
+        pr.pos = sb.move.pos + Vec3(1.5f, 1.2f, 0); pr.vel = {-weaponDef(WPN_CROSSBOW).projSpeed, 0, 0}; pr.dieAt = s.time() + 5;
+    }
+    pump(s, cls, 0.3, idle);
+    CHECK(!s.projectiles_[0].active && sb.health < 1000 && sb.alive);
+    auto inB = [&](const NetClient& c) -> const StuckProp* { for (auto& p : c.stuckProps()) if (p.player == ib && p.type == WPN_CROSSBOW) return &p; return nullptr; };
+    CHECK(inB(a) && inB(b));
+    if (const StuckProp* p = inB(a)) {
+        printf("  bolt: in the target at %.2f %.2f %.2f from their feet\n", p->pos.x, p->pos.y, p->pos.z);
+        CHECK(p->pos.x > 0.1f && p->pos.y > 0.9f && p->pos.y < 1.5f && p->dir.x < -0.9f);
+    }
+    pump(s, cls, 0.5, [&](int i) { UserCmd c; if (i == 1) c.forward = 127; return c; });   // the target walks off
+    {
+        const StuckProp* p = inB(a);
+        ProjectileSnap on; on.flags = PROJ_ON_PLAYER; on.onPlayer = (uint8_t)ib;
+        Vec3 at;
+        if (p) on.attachOffset = p->pos;
+        auto ip = a.interpolatedPlayers();
+        CHECK(p && a.attachedPos(on, 0.5f, &at) && ip[ib].valid && length(at - stickyOnPlayerPos(ip[ib].snap.pos, p->pos, false, 1)) < 1e-4f &&
+              length(Vec3(ip[ib].snap.pos.x - 4, 0, ip[ib].snap.pos.z - 19)) > 1.0f);
+    }
+    s.killPlayer(ib, ia, WPN_CROSSBOW);
+    pump(s, cls, 0.3, idle);
+    CHECK(!inB(a) && !inB(b) && worldProps(a, WPN_KNIFE) == 1 && worldProps(b, WPN_KNIFE) == 1);
+    // the cap: the newest kMaxStuckProps (in bursts: a client is dropped past kMaxUnackedEvents unacknowledged)
+    for (int k = 0; k < 300; k++) {
+        Projectile pr; pr.type = WPN_SYRINGE; pr.owner = ia;
+        s.leaveProp(pr, -1, Vec3(1000 + k, 0, 0) * 0.01f, Vec3(0, -1, 0), AABB());
+        if (k % 50 == 49) pump(s, cls, 0.15, idle);
+    }
+    pump(s, cls, 0.3, idle);
+    const auto& ap = a.stuckProps();
+    printf("  cap: %d props kept of 301, oldest at x %.2f\n", (int)ap.size(), ap.empty() ? 0.0f : ap.front().pos.x);
+    CHECK((int)ap.size() == kMaxStuckProps && (int)b.stuckProps().size() == kMaxStuckProps && worldProps(a, WPN_KNIFE) == 0 &&
+          std::fabs(ap.front().pos.x - (1000 + 300 - kMaxStuckProps) * 0.01f) < 1e-4f && a.state() == ConnState::Connected && b.state() == ConnState::Connected);
+    // a late joiner gets the newest few
+    NetClient c;
+    c.connect("127.0.0.1:" + std::to_string(port), "late");
+    cls.push_back(&c);
+    pump(s, cls, 1.5, idle);
+    CHECK((int)c.stuckProps().size() == Server::kPropReplay && std::fabs(c.stuckProps().back().pos.x - 12.99f) < 1e-4f);
+    // a match restart clears them all, for everyone
+    s.command("restart");
+    pump(s, cls, 0.3, idle);
+    CHECK(a.stuckProps().empty() && b.stuckProps().empty() && c.stuckProps().empty());
+    s.stop();
+}
+
 // A sticky that hits an enemy sticks to them (owner: "the sticky should stick to players if it hits them"): it rides
 // along on them, the clients draw it on the player as they show them, alt-fire sets it off on them for the full blast.
 // Never on its owner; a teammate isn't stuck to (it drops off them, as before); when the one it's on dies it stays
@@ -6593,7 +6703,7 @@ int main(int argc, char** argv) {
         snapBench("harbor", 16, secs, TP(28824), true, 24);
         return 0;
     }
-    if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testFixedSpread(p + 50); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); testProjectileTickRates(p + 40); testStickyOnPlayers(p + 60); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testFixedSpread(p + 50); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); testProjectileTickRates(p + 40); testStickyOnPlayers(p + 60); testStuckProps(p + 70); return g_fail ? 1 : 0; }
     // ---- the whole suite. Most tests wait on real-time network play rather than the CPU, so each runs in its own
     // process, several at once (output kept in order); a few timing-sensitive ones run alone afterwards.
     // "quark_tests serial" runs everything in this process, one after another, as before.
@@ -6604,7 +6714,7 @@ int main(int argc, char** argv) {
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testTimeToKill(); testWallbang(); }},
+        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); }},
         {"maps", [] {
             testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders();
             printf("map scores\n");   // the map bar: every map scores at least 7 in every category but originality
