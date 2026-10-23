@@ -26,8 +26,8 @@ struct Release {
     // release went out, comes with its own quark-release-macos.txt): names this release and every package's sha256.
     std::string manifestUrl, manifestSigUrl;
     bool prerelease = false, draft = false;
-    // Every release from 1.17 on is signed. The ones before signing (<= 1.16.x) have no .sig: listed (marked
-    // UNSIGNED) so any version stays playable, but never installed on their own, only after the player confirms.
+    // Every release from 1.17 on is signed (owner decision B6). The ones before signing (<= 1.16.x) have no .sig:
+    // listed and installable like any other version (no warning), but never the automatic target (LATEST).
     bool isSigned() const { return !sigUrl.empty(); }
 };
 
@@ -65,6 +65,8 @@ bool fetchAll(const PageGetter& getPage, const std::string& platform, std::vecto
 // this platform. Signed ones, and unsigned ones from before signing (older than kFirstSigned: an unsigned release
 // claiming a later version can't be genuine, so it's never offered); for a version listed twice the signed one wins.
 extern const char* const kFirstSigned; // "1.17.0-0": below every 1.17.0 build, above every 1.16.x
+// Whether installing `r` needs its signature and signed manifest to verify: every version from kFirstSigned on.
+bool needsSignature(const Release& r);
 std::vector<Release> forChannel(const std::vector<Release>& all, Channel c);
 // The row "LATEST" stands for: the newest signed release (an unsigned one is never the automatic target). -1: none.
 int latestIndex(const std::vector<Release>& list);
@@ -93,12 +95,14 @@ int selectIndex(const std::vector<Release>& list, const Config& c);
 struct Plan {
     int index = -1;       // the selected row (-1: the list is empty)
     bool pinned = false;  // the row is the pinned version
-    bool install = false; // install it now (signed, and the rules above say so)
-    bool confirm = false; // it needs installing but is unsigned: only after the player picks INSTALL and confirms
+    bool install = false; // install it now (the rules above say so)
+    bool offer = false;   // the pinned version isn't installed, but only the player's INSTALL installs it
 };
 // A pinned version that's listed stays pinned, signed or not (an old launcher.cfg pinned to a pre-signing version
-// keeps it: never silently moved to the newest). A pin that isn't listed counts as following the newest, unless the
-// list is incomplete (`complete` false: it may just be on a page that failed), then nothing is installed.
+// keeps it: never silently moved to the newest). A pinned version from before signing installs on its own only when
+// nothing or an older version is installed: it never replaces a newer one by itself (the player presses INSTALL).
+// A pin that isn't listed counts as following the newest, unless the list is incomplete (`complete` false: it may
+// just be on a page that failed), then nothing is installed.
 Plan startupPlan(const std::vector<Release>& list, const Config& c, const std::string& installed, bool complete);
 
 } // namespace releases

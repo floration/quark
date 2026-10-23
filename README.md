@@ -25,6 +25,14 @@ Keep the `maps/` folder next to the executables.
   server restarts once no match is being played. A failed or stuck update logs at critical priority
   (`journalctl -p crit -t quark-update`) and can post to a Discord webhook (`QUARK_ALERT_WEBHOOK` in
   `/etc/quark/update.env`). Older installs: `git pull`, then run `install.sh` again (options and data carry over).
+- **`--own-addr host:port` (ranked behind a forwarded port or in a container):** a player's ranked id is signed for
+  the address their game dialled, and a server only takes signatures for an address it knows is its own (its port on
+  its own interfaces, its public IP, what UPnP reports). If players reach it somewhere it can't see itself (a router
+  forwarding a *different* external port to it, a container or VM with its own network), start it with
+  `quark_server --own-addr <that host:port>` (repeat it for more than one), or those players join without a ranked
+  id. The server log says when this happens and which address to use (`ranked key proof is for <addr>, not this
+  server ... --own-addr <addr>`), and so does the host screen of a game hosted from the menu. For the systemd
+  install, pass it to `tools/server/install.sh` like any other `quark_server` option.
 - **Join:** Join Game -> enter `ip:port`, or pick a LAN game.
 - If UPnP fails, forward **UDP 27500** (or your chosen port) on your router to the host machine.
 

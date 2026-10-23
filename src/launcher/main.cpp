@@ -1,6 +1,7 @@
 // quark launcher: lists every release of the chosen channel (production / testing), installs the newest (or the
 // version the player picked) after checking its signature, keeps itself current, shows the changelog, starts the game.
-// Releases from before signing (<= 1.16.x) are listed as UNSIGNED and install only after the player confirms.
+// Every release from 1.17.0 on is signed and verified (packages, manifests, the launcher itself); releases from before
+// signing (<= 1.16.x) stay listed and install like any other version the player picks (owner decision B6).
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include "../common/version.h"
@@ -21,6 +22,7 @@
 #include "../client/renderer.h"
 #include "../client/ui.h"
 #include "../common/net.h"
+#include "gamefiles.h"
 #include "install.h"
 #include "qpak.h"
 #include "releases.h"
@@ -128,40 +130,8 @@ bool httpGet(const std::string& url, std::ostream& out, const Progress& prog, st
 }
 #endif
 
-// Package reading and extraction: qpak.cpp (shared with the fuzzer, tests/fuzz).
-
-// Swaps a fully extracted `stage` into `dir`: files of the old install the package doesn't carry (the
-// player's quark.cfg, demos, screenshots...) are copied into the stage first, quark.cfg always wins
-// over a packaged one. Then dir -> dir.old, stage -> dir. On failure the old install is put back.
-bool swapInstall(const fs::path& stage, const fs::path& dir, std::string* err) {
-    std::error_code ec;
-    fs::path old = dir.parent_path() / (dir.filename().u8string() + ".old");
-    fs::remove_all(old, ec);
-    if (fs::exists(dir, ec)) {
-        for (auto it = fs::recursive_directory_iterator(dir, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
-            std::error_code e2;
-            fs::path rel = fs::relative(it->path(), dir, e2);
-            if (e2) continue;
-            fs::path dst = stage / rel;
-            if (it->is_directory(e2)) continue;
-            if (fs::exists(dst, e2) && rel.filename() != "quark.cfg") continue;
-            fs::create_directories(dst.parent_path(), e2);
-            fs::copy_file(it->path(), dst, fs::copy_options::overwrite_existing, e2);
-        }
-        ec.clear();
-        fs::rename(dir, old, ec);
-        if (ec) { *err = "cannot replace " + dir.string() + " (is the game running?)"; return false; }
-    }
-    fs::rename(stage, dir, ec);
-    if (ec) {
-        std::error_code e2;
-        fs::rename(old, dir, e2);
-        *err = "cannot move the new version into place";
-        return false;
-    }
-    fs::remove_all(old, ec);
-    return true;
-}
+// Package reading and extraction: qpak.cpp (shared with the fuzzer, tests/fuzz). Swapping it in, deleting only
+// retired game files (owner decision C13): gamefiles.cpp.
 
 std::string readFile(const fs::path& p) {
     std::ifstream f(p, std::ios::binary);
@@ -197,13 +167,13 @@ struct State {
     std::mutex mu;
     std::string status = "checking for updates...";
     std::vector<Release> all;          // every release fetched (both channels)
-    std::vector<Release> releases;     // the channel's installable ones, newest first (unsigned ones included)
+    std::vector<Release> releases;     // the channel's installable ones, newest first (<= 1.16.x ones included)
     releases::Config cfg;              // channel + pinned version (launcher.cfg)
     std::string installed;
     int selected = 0;                  // index into releases; latest = releases::latestIndex
     bool fetched = false;
     bool complete = false;             // every page of the release list was read
-    bool awaitingConfirm = false;      // the pinned version is unsigned and not installed: the player has to confirm
+    bool awaitingInstall = false;      // the pinned version isn't installed and only the player's INSTALL installs it
     std::atomic<float> progress{-1};
     std::atomic<bool> busy{true}, ready{false};
     std::atomic<bool> relaunch{false}; // a newer launcher was swapped in: restart into it when idle
@@ -252,9 +222,16 @@ void checkSelfUpdate(State* st, const fs::path& dir) {
     fs::path packaged = dir / selfupdate::exeName(), target = install::installedLauncher();
     std::string pv = selfupdate::fileVersion(packaged);
     if (!selfupdate::isNewer(pv, selfupdate::ownVersion())) return;
-    if (!selfupdate::isNewer(pv, selfupdate::fileVersion(target))) { st->relaunch = true; return; } // already swapped (by the game)
     std::string err;
-    if (selfupdate::replaceFile(packaged, target, &err) && selfupdate::fileVersion(target) == pv) st->relaunch = true;
+    selfupdate::SigCheck check; // only a launcher the release key signed replaces this one (B6)
+    check.pubHex = sign::kReleasePublicKey;
+    if (!selfupdate::launcherSigned(packaged, &check.sigHex, &err)) {
+        std::lock_guard<std::mutex> l(st->mu);
+        st->status += " (launcher update skipped: " + err + ")";
+        return;
+    }
+    if (!selfupdate::isNewer(pv, selfupdate::fileVersion(target))) { st->relaunch = true; return; } // already swapped (by the game)
+    if (selfupdate::replaceFile(packaged, target, &err, nullptr, &check) && selfupdate::fileVersion(target) == pv) st->relaunch = true;
     else { std::lock_guard<std::mutex> l(st->mu); st->status += " (launcher update failed: " + err + ")"; }
 }
 
@@ -273,9 +250,10 @@ std::string checkReleaseManifest(const Release& r, const fs::path& package) {
     return releases::verifyManifest(text.str(), sig.str(), sign::kReleasePublicKey, r, sha);
 }
 
-// `allowUnsigned`: the player picked a release from before signing and confirmed the warning. Only then is a
-// package without a .sig installed; a signed one is always verified.
-void installRelease(std::shared_ptr<State> st, fs::path dir, Release r, bool allowUnsigned) {
+// A signed release is always verified (its .sig and its signed manifest). A release from before signing (<= 1.16.x,
+// no .sig) installs as it comes from the GitHub release over HTTPS; one claiming 1.17.0 or later without a .sig is
+// never listed (releases::forChannel) and refused here too.
+void installRelease(std::shared_ptr<State> st, fs::path dir, Release r) {
     auto setStatus = [&](const std::string& s) { std::lock_guard<std::mutex> l(st->mu); st->status = s; };
     std::string err;
     setStatus("downloading version " + r.version + "...");
@@ -294,14 +272,14 @@ void installRelease(std::shared_ptr<State> st, fs::path dir, Release r, bool all
         }
     }
     // Only install what the release key signed: a tampered or swapped package is refused before anything is
-    // extracted. A release from before signing (no .sig) only when the player confirmed installing it unsigned.
+    // extracted. A release from before signing (<= 1.16.x) has nothing to check.
     setStatus("verifying version " + r.version + "...");
     st->progress = -1;
-    if (r.sigUrl.empty() && allowUnsigned) {
-        setStatus("installing UNSIGNED version " + r.version + " (from before signed updates, not verified)...");
+    if (!releases::needsSignature(r)) {
+        // (from before signing: installed as published)
     } else {
         std::ostringstream sig;
-        if (r.sigUrl.empty()) err = "it is unsigned (from before signed updates) - pick it and confirm to install it anyway";
+        if (r.sigUrl.empty()) err = "it is not signed";
         else if (!httpGet(r.sigUrl, sig, nullptr, &err)) err = "could not download its signature (" + err + ")";
         else if (!sign::verifyFile(tmp.string(), sig.str(), sign::kReleasePublicKey, &err)) err = "its signature does not verify";
         else err = checkReleaseManifest(r, tmp);
@@ -317,10 +295,21 @@ void installRelease(std::shared_ptr<State> st, fs::path dir, Release r, bool all
     fs::path stage = dir.parent_path() / (dir.filename().u8string() + ".new");
     fs::remove_all(stage, ec);
     fs::create_directories(stage, ec);
-    if (!qpak::extract(tmp, stage, &err) || !swapInstall(stage, dir, &err)) {
+    std::map<std::string, std::string> hashes;
+    gamefiles::SwapReport swapped;
+    bool extracted = qpak::extract(tmp, stage, &err, &hashes);
+    if (extracted) { // what this package put in the game folder: the next update deletes only what it retires
+        hashes.erase(gamefiles::kListName);
+        std::ofstream list(stage / gamefiles::kListName, std::ios::binary | std::ios::trunc);
+        list << gamefiles::format(hashes);
+        list.close();
+        if (!list) { extracted = false; err = "cannot write " + (stage / gamefiles::kListName).string(); }
+    }
+    if (!extracted || !gamefiles::swapInstall(stage, dir, &err, &swapped)) {
         fs::remove_all(stage, ec);
         setStatus("install failed: " + err);
     } else {
+        for (auto& f : swapped.retired) fprintf(stderr, "update: removed retired game file %s\n", f.c_str());
         std::ofstream(dir / "version.txt") << r.version << "\n";
         install::setPrograms(true, install::appDir() / fs::path(
 #ifdef _WIN32
@@ -332,9 +321,9 @@ void installRelease(std::shared_ptr<State> st, fs::path dir, Release r, bool all
         {
             std::lock_guard<std::mutex> l(st->mu);
             st->installed = r.version;
-            st->status = "installed version " + r.version + (r.isSigned() ? "" : " (unsigned)");
+            st->status = "installed version " + r.version;
             st->ready = true;
-            st->awaitingConfirm = false;
+            st->awaitingInstall = false;
         }
         checkSelfUpdate(st.get(), dir);
     }
@@ -370,23 +359,22 @@ void updater(std::shared_ptr<State> st, fs::path dir) {
         st->selected = plan.index;
         target = st->releases[plan.index];
         std::string ch = releases::channelName(st->cfg.channel);
-        std::string tag = target.isSigned() ? "" : ", unsigned";
-        if (plan.confirm) {
-            st->awaitingConfirm = true;
-            st->status = "pinned version " + target.version + " is UNSIGNED (from before signed updates) - press INSTALL to confirm";
+        if (plan.offer) {
+            st->awaitingInstall = true;
+            st->status = "pinned version " + target.version + " (installed: " + installed + ") - press INSTALL to switch to it";
         } else if (installed == target.version) {
-            st->status = plan.pinned ? "version " + installed + " (pinned" + tag + ")" : "up to date - " + ch + " " + installed;
+            st->status = plan.pinned ? "version " + installed + " (pinned)" : "up to date - " + ch + " " + installed;
         } else if (plan.install) {
             doInstall = true;
         } else if (st->cfg.pinned() && !plan.pinned && !st->complete) {
             st->status = "pinned version " + st->cfg.pin + " not found (release list incomplete) - installed: " + (installed.empty() ? "none" : installed);
         } else if (!target.isSigned()) {
-            st->status = std::string("no signed ") + kPlatform + " builds in the " + ch + " channel yet - older unsigned versions are listed";
+            st->status = std::string("no ") + kPlatform + " builds from 1.17 on in the " + ch + " channel yet - pick a version to install it";
         } else {
             st->status = "installed " + installed + " is newer than the latest " + ch + " release " + target.version + " - pick a version to change";
         }
     }
-    if (doInstall) { installRelease(std::move(st), dir, target, false); return; }
+    if (doInstall) { installRelease(std::move(st), dir, target); return; }
     checkSelfUpdate(st.get(), dir);
     st->busy = false;
 }
@@ -466,9 +454,6 @@ int main(int argc, char** argv) {
     });
     bool quit = false;
     double uninstallArmed = 0;
-    std::string unsignedArmed;      // an unsigned version whose INSTALL was clicked once: the next click installs it
-    double unsignedArmedUntil = 0;
-    const Color kWarn = {1.0f, 0.62f, 0.2f, 1};
     bool autoPlay = false;
     for (int i = 1; i < argc; i++) autoPlay = autoPlay || std::string(argv[i]) == "--play";
     while (!glfwWindowShouldClose(win) && !quit) {
@@ -494,7 +479,6 @@ int main(int argc, char** argv) {
         }
         std::string status, latest, log, installed;
         std::vector<std::string> versionNames, versions;
-        std::vector<bool> unsignedRow;
         int latestRow = -1;
         Release sel;
         Channel channel;
@@ -503,11 +487,10 @@ int main(int argc, char** argv) {
             channel = st.cfg.channel;
             status = st.status;
             installed = st.installed;
-            if (st.awaitingConfirm) autoPlay = false; // the pinned version waits for the player: don't start the old one
+            if (st.awaitingInstall) autoPlay = false; // the pinned version waits for the player: don't start another one
             latestRow = releases::latestIndex(st.releases);
             for (size_t i = 0; i < st.releases.size(); i++) {
                 versions.push_back(st.releases[i].version);
-                unsignedRow.push_back(!st.releases[i].isSigned());
                 versionNames.push_back((int)i == latestRow ? "LATEST (" + st.releases[i].version + ")" : st.releases[i].version);
             }
             if (!st.releases.empty()) {
@@ -546,15 +529,11 @@ int main(int argc, char** argv) {
                 const std::string& ver = versions[i];
                 if (!installed.empty() && ver == installed) label += "  *";
                 ui.label(listX + 10 * s, ry + 4 * s, label, cur ? Color{1, 1, 1, 1} : Color{0.8f, 0.82f, 0.85f, 1}, 0.85f);
-                if (unsignedRow[i]) { // from before signed updates: marked, installed only after a confirmation
-                    float ts = std::max(1.0f, std::round(ui.textScale() * 0.6f));
-                    r.text(listX + listW - 18 * s - r.textWidth("UNSIGNED", ts), ry + 6 * s, ts, "UNSIGNED", kWarn);
-                }
                 if (hov && in.pressed) {
                     std::lock_guard<std::mutex> l(st.mu);
                     st.selected = i;
                     st.cfg.pin = i == latestRow ? std::string("latest") : versions[i];
-                    st.awaitingConfirm = false;
+                    st.awaitingInstall = false;
                     saveCfg(st.cfg);
                 }
             }
@@ -587,11 +566,6 @@ int main(int argc, char** argv) {
             r.text(36 * s, y, ts, line, c);
             y += 10 * ts;
         };
-        if (!sel.version.empty() && !sel.isSigned()) { // the warning stays on the page for as long as it's selected
-            wrapped("UNSIGNED: from before signed updates; only install if you trust it.", kWarn);
-            wrapped("Its package can't be verified. Old versions may lack the current launcher and use older protocols.", kWarn);
-            y += 4 * ts;
-        }
         std::istringstream ls(log);
         std::string line;
         while (std::getline(ls, line) && y < 322 * s) {
@@ -607,7 +581,7 @@ int main(int argc, char** argv) {
                 std::lock_guard<std::mutex> l(st.mu);
                 st.cfg.channel = channel == Channel::Testing ? Channel::Production : Channel::Testing;
                 st.cfg.pin = "latest";
-                st.awaitingConfirm = false;
+                st.awaitingInstall = false;
                 saveCfg(st.cfg);
                 applyChannel(&st);
                 listScroll = 0;
@@ -615,7 +589,7 @@ int main(int argc, char** argv) {
                 int li = releases::latestIndex(st.releases);
                 if (!st.fetched) st.status = ch + " channel - offline";
                 else if (st.releases.empty()) st.status = "no " + ch + " builds published yet";
-                else if (li < 0) st.status = "no signed " + ch + " builds yet - older unsigned versions are listed";
+                else if (li < 0) st.status = "no " + ch + " builds from 1.17 on yet - pick a version to install it";
                 else st.status = ch + " channel - latest " + st.releases[li].version + (st.installed.empty() ? "" : ", installed " + st.installed);
             }
             if (ui.button(bx, by, bw, bh, armed ? "CLICK TO CONFIRM" : "UNINSTALL", !st.busy)) {
@@ -629,21 +603,10 @@ int main(int argc, char** argv) {
         bool canPlay = st.ready && !st.busy;
         bool offerInstall = needInstall && !st.busy;
         // installing is always the player's click (or startup's newer-only rule); the installed version stays playable.
-        // An unsigned (pre-signing) version takes two clicks: the first shows the warning, the second installs.
-        bool armedNow = !sel.isSigned() && unsignedArmed == sel.version && timeNow() < unsignedArmedUntil;
-        std::string installLabel = sel.isSigned() ? "INSTALL " + sel.version : armedNow ? "CONFIRM: INSTALL UNSIGNED" : "INSTALL " + sel.version + " (UNSIGNED)";
-        if (offerInstall && ui.button(fw - (canPlay ? 432 : 224) * s, 414 * s, 200 * s, 48 * s, installLabel)) {
-            if (!sel.isSigned() && !armedNow) {
-                unsignedArmed = sel.version;
-                unsignedArmedUntil = timeNow() + 10.0;
-                std::lock_guard<std::mutex> l(st.mu);
-                st.status = "UNSIGNED " + sel.version + ": from before signed updates; only install if you trust it - click again to confirm";
-            } else {
-                unsignedArmed.clear();
-                st.busy = true;
-                if (worker.joinable()) worker.join();
-                worker = std::thread(installRelease, stp, dir, sel, !sel.isSigned());
-            }
+        if (offerInstall && ui.button(fw - (canPlay ? 432 : 224) * s, 414 * s, 200 * s, 48 * s, "INSTALL " + sel.version)) {
+            st.busy = true;
+            if (worker.joinable()) worker.join();
+            worker = std::thread(installRelease, stp, dir, sel);
         } else if ((!offerInstall || canPlay) &&
                    (ui.button(fw - 224 * s, 414 * s, 200 * s, 48 * s, st.busy ? "WORKING..." : "PLAY", canPlay) || (autoPlay && canPlay))) {
             if (launchGame(dir)) quit = true;

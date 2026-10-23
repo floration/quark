@@ -230,6 +230,10 @@ public:
     bool upnpDone() { return upnp_ && upnp_->done(); }
     bool upnpOk() { return upnp_ && upnp_->ok(); }
     std::string listStatus() { return master_ ? master_->status() : std::string(); }
+    // The address a ranked player's signature last named that this server couldn't confirm as its own (REVIEW 2.2;
+    // empty: none). If players do reach the server there (a router forwarding another port, a container), starting
+    // it with --own-addr <that address> lets their ranked ids work. Thread safe (the host's menu shows it).
+    std::string ownAddrHint() { std::lock_guard<std::mutex> l(reachMu_); return ownAddrHint_; }
 
     // ---- state used by the game mode rules (gamemodes.cpp) ----
     ServerConfig cfg_;
@@ -457,6 +461,7 @@ private:
     std::atomic<bool> reachAgain_{false};
     std::mutex reachMu_;
     std::string reachDetail_;
+    std::string ownAddrHint_;   // (under reachMu_)
     // Picking a prober from the internet list (blocking HTTP) runs on a detached thread that writes only this
     // shared state, so stop() never waits for it (FINAL_REVIEW 2.10).
     struct ProberPick { std::mutex mu; NetAddr prober; std::atomic<bool> picked{false}; };

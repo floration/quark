@@ -2,6 +2,7 @@
 #include "../common/u8file.h"
 #include <algorithm>
 #include <cctype>
+#include "demo.h"
 #include "master.h"
 #include "../common/hex.h"
 #include <random>
@@ -645,11 +646,9 @@ void ServerBrowser::poll() {
 }
 
 // ---- demos ----
-// File: "QDEM", u16 protocol, then records: u8 type, f64 seconds since the start, u32 length, payload.
-//   type 1 (map): name, source text, client id. Written first and whenever the map changes (or is edited).
-//   type 2 (snapshot): client header + world (delta against the previous recorded snapshot) + events.
-static constexpr uint32_t kDemoMagic = 0x4D454451; // "QDEM"
-static constexpr uint64_t kMaxDemoBytes = 512ull << 20; // (about 9 h of play; playback reads the whole file)
+// The file format, and converting demos of older versions: demo.h.
+static constexpr uint32_t kDemoMagic = demo::kMagic;
+static constexpr uint64_t kMaxDemoBytes = demo::kMaxBytes;
 
 bool NetClient::startRecording(const std::string& path, bool fullRate) {
     stopRecording();
@@ -733,7 +732,10 @@ bool NetClient::startPlaybackImpl(const std::string& path, std::string& err) {
     uint32_t magic; uint16_t ver;
     memcpy(&magic, d.data(), 4); memcpy(&ver, d.data() + 4, 2);
     if (magic != kDemoMagic) { err = "not a quark demo"; return false; }
-    if (ver != kProtocolVersion) { err = "demo from another version (protocol " + std::to_string(ver) + ", this is " + std::to_string(kProtocolVersion) + ")"; return false; }
+    if (ver != kProtocolVersion) {   // (older ones are converted at startup, demo::startUpgrade; this one couldn't be)
+        err = "recorded with " + demo::recordedWith(ver) + (ver > kProtocolVersion ? " (newer than this one)" : ", which this version can't play");
+        return false;
+    }
     play_ = Playback();
     play_.data = std::move(d);
     play_.pos = 6;

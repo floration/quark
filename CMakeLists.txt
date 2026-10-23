@@ -113,6 +113,7 @@ add_library(quark_core STATIC
   src/game/master.cpp
   src/game/ranked.cpp
   src/game/customrules.cpp
+  src/game/demo.cpp
   ${CMAKE_BINARY_DIR}/generated/version.cpp
 )
 target_include_directories(quark_core PUBLIC src ${CMAKE_BINARY_DIR}/generated)
@@ -202,6 +203,7 @@ add_library(quark_launcher_core STATIC
   src/launcher/releases.cpp
   src/launcher/selfupdate.cpp
   src/launcher/install.cpp
+  src/launcher/gamefiles.cpp
 )
 target_link_libraries(quark_launcher_core PUBLIC quark_core)
 if(WIN32)

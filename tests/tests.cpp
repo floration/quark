@@ -20,6 +20,7 @@
 #include <random>
 #include <cstdlib>
 #include "common/profile.h"
+#include "game/demo.h"
 #include "../src/client/complete.h"
 #include <filesystem>
 #include <sstream>
@@ -2968,7 +2969,8 @@ static void testRankedRelay(uint16_t port) {
             bool logged = false;
             for (auto& l : logs) logged |= l.find("is for " + relayAddr + ", not this server") != std::string::npos;
             CHECK(logged);
-        } else CHECK(s.players_[id].rankId == kv.id && s.players_[id].dialled.toString() == relayAddr);
+            CHECK(s.ownAddrHint() == relayAddr);   // (C9: the host screen shows it, with --own-addr)
+        } else CHECK(s.players_[id].rankId == kv.id && s.players_[id].dialled.toString() == relayAddr && s.ownAddrHint().empty());
         // which addresses count as this server's
         const NetAddr lo{0x7F000001u, port}, outside{0xC6336401u, 5000};   // (198.51.100.1)
         CHECK(s.ownAddress(lo, NetAddr{0x7F000001u, 5000}));                       // loopback, from this machine
@@ -3851,6 +3853,91 @@ static void testDemoLengthWrap() {
     CHECK(std::chrono::steady_clock::now() - t0 < std::chrono::seconds(2));
 }
 
+// C13: demos recorded by an older version are converted at the first start of a new one (originals kept under
+// demos/old/<version>/); what can't be converted stays as it is, logged, and says which version recorded it.
+// demo_proto27.qdemo is a protocol 27 (game 1.13-1.16) demo: if a protocol change makes it unreadable, demo.h's
+// kRecordFormatSince has to move and convert() needs a step for the older records.
+static void testDemoUpgrade() {
+    printf("demos of older versions: converted, originals kept\n");
+    namespace fs = std::filesystem;
+    auto rd = [](const fs::path& p) { std::ifstream f(p, std::ios::binary); std::stringstream ss; ss << f.rdbuf(); return ss.str(); };
+    std::string fixture = rd(testDataDir() + "/demo_proto27.qdemo");
+    CHECK(fixture.size() > 100);
+    fs::path d = fs::temp_directory_path() / ("quark_demos_" + std::to_string(getpid()));
+    std::error_code ec;
+    fs::remove_all(d, ec);
+    fs::create_directories(d);
+    auto put = [&](const std::string& name, std::string data, int proto) {
+        if (proto >= 0) { uint16_t v = (uint16_t)proto; memcpy(&data[4], &v, 2); }
+        std::ofstream(d / name, std::ios::binary) << data;
+    };
+    put("old.qdemo", fixture, -1);
+    put("current.qdemo", fixture, kProtocolVersion);
+    put("future.qdemo", fixture, kProtocolVersion + 1);
+    put("ancient.qdemo", fixture, 20);   // (from before demos: no converter)
+    { // a protocol 27 demo whose map record names no valid map: can't be converted
+        std::string bad = fixture.substr(0, 6);
+        std::vector<uint8_t> b(256);
+        Writer w(b.data(), (int)b.size());
+        w.str("../escape"); w.u32(3); w.u8('x'); w.u8('y'); w.u8('z'); w.u8(0);
+        uint8_t type = 1; double t = 0; uint32_t n = (uint32_t)w.size();
+        bad.append((const char*)&type, 1); bad.append((const char*)&t, 8); bad.append((const char*)&n, 4); bad.append((const char*)b.data(), n);
+        put("broken.qdemo", bad, -1);
+    }
+    std::ofstream(d / "notes.txt") << "not a demo";
+    uint16_t proto = 0;
+    CHECK(demo::readProtocol((d / "old.qdemo").string(), &proto) && proto == 27);
+    CHECK(demo::versionForProtocol(27) == "1.13-1.16" && demo::versionForProtocol(24) == "1.11.0");
+    CHECK(demo::convertible(24) && demo::convertible(27) && !demo::convertible(23) && !demo::convertible(kProtocolVersion));
+    { // before conversion this version can't play it, and says who recorded it
+        NetClient nc;
+        std::string err;
+        CHECK(!nc.startPlayback((d / "old.qdemo").string(), err) && err.find("recorded with version 1.13-1.16") != std::string::npos);
+    }
+    demo::UpgradeReport r = demo::upgradeDir(d.string());
+    for (auto& l : r.log) printf("  %s\n", l.c_str());
+    CHECK(r.converted == 1 && r.newer == 1 && r.failed == 2);
+    CHECK(demo::readProtocol((d / "old.qdemo").string(), &proto) && proto == kProtocolVersion);
+    CHECK(rd(d / "old" / "1.13-1.16" / "old.qdemo") == fixture);                         // the original, kept
+    CHECK(rd(d / "old.qdemo").substr(6) == fixture.substr(6));                           // same records, restamped
+    CHECK(demo::readProtocol((d / "broken.qdemo").string(), &proto) && proto == 27);     // left as it was
+    CHECK(demo::readProtocol((d / "future.qdemo").string(), &proto) && proto == kProtocolVersion + 1);
+    CHECK(rd(d / "current.qdemo").substr(6) == fixture.substr(6) && !fs::exists(d / "old" / "1.13-1.16" / "current.qdemo"));
+    std::string log = rd(d / "old" / "convert.log");
+    CHECK(log.find("old.qdemo: converted") != std::string::npos && log.find("broken.qdemo") != std::string::npos);
+    CHECK(rd(d / "notes.txt") == "not a demo");
+    // the next start: nothing again (failures aren't retried, converted ones are current)
+    demo::UpgradeReport again = demo::upgradeDir(d.string());
+    CHECK(again.converted == 0 && again.failed == 0 && again.newer == 0 && again.log.empty());
+    { // the converted demo plays: map, names, chat and movement as recorded
+        NetClient p;
+        std::string err;
+        CHECK(p.startPlayback((d / "old.qdemo").string(), err) && p.mapReady() && p.map().name == "oldbox");
+        int snaps = 0;
+        bool chat = false;
+        double end = timeNow() + 5;
+        while (p.playback() && timeNow() < end) {
+            p.poll();
+            if (p.hasSnapshot()) snaps++;
+            for (auto& e : p.takeEvents()) chat |= e.type == EV_CHAT && e.text == "hello from 1.16";
+            sleepMs(5);
+        }
+        CHECK(snaps > 10 && chat && p.playerName(0) == "oldtimer" && p.error() == "demo finished");
+    }
+    // a second conversion of the same name keeps both originals
+    put("old.qdemo", fixture, -1);
+    r = demo::upgradeDir(d.string());
+    CHECK(r.converted == 1 && rd(d / "old" / "1.13-1.16" / "old-1.qdemo") == fixture);
+    // versions this game ran with name later protocols (versions.txt)
+    fs::path vf = d / "versions.txt";
+    demo::noteVersion(vf.string(), "9.8.0", 200);
+    demo::noteVersion(vf.string(), "9.8.1", 200);
+    demo::noteVersion(vf.string(), "9.8.1", 200);
+    CHECK(demo::versionForProtocol(200) == "9.8.0-9.8.1" && demo::versionForProtocol(201) == "protocol 201");
+    CHECK(rd(vf) == "200 9.8.0\n200 9.8.1\n");
+    fs::remove_all(d, ec);
+}
+
 static void testDemo(uint16_t port) {
     printf("demo record + playback\n");
     Server s;
@@ -4635,6 +4722,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (argc >= 2 && std::string(argv[1]) == "signing") { testSigning(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "demos") { testDemoUpgrade(); testDemoLengthWrap(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "launcher") { g_fail += launcherTests(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "racefloors") { // the RACE_FLOORS table for tools/master/worker.js
         Map m;
@@ -4708,7 +4796,7 @@ int main(int argc, char** argv) {
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
         {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); }},
-        {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
+        {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testDemoUpgrade(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
         {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); }},
         {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
         {"rules", [] { testGameRules(""); }},

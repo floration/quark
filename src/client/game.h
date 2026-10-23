@@ -186,6 +186,7 @@ private:
     void startRecording();
     bool playDemo(const std::string& path);
     std::vector<std::string> demoFiles_;
+    std::vector<std::string> demoNotes_;   // per demo: "" (plays), or which version recorded it / converting
     double demoListAt_ = -1;
     int infoTab_ = 0;
     float infoScroll_ = 0;
