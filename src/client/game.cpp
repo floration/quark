@@ -4443,7 +4443,7 @@ static const char* const kInfoPages[][48] = {
         "Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.",
         "Each dash leaves you 1 m/s faster than you went in (at least 11, at most 32 m/s).",
         "Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump (it leaves you both dashes).",
-        "Super dash: look down and dash into the floor while holding jump for even more speed and a low hop (it leaves you 1 dash).",
+        "Super dash: look down and dash into the floor while holding jump for even more speed and a hop that gets higher the further down you look (it leaves you 1 dash).",
         "Dash into a wall head-on (under 45 degrees) and you bounce off it at full dash speed (it leaves you 1 dash).",
         "You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb (6.75 m/s).",
         "# WEAPONS",
