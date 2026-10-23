@@ -55,6 +55,8 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "shadows") shadows = iv != 0;
         else if (k == "model") model = (iv >= 0 && iv < kPlayerModels) ? iv : 0;
         else if (k == "soundpack") soundPack = (iv >= 0 && iv < 5) ? iv : 0;
+        else if (k == "name_color") { char* e = nullptr; long c = strtol(v.c_str(), &e, 16); nameColor = !v.empty() && v != "-1" && e && !*e && c >= 0 && c <= 0xFFFFFF ? (int)c : -1; }
+        else if (k == "health_bars_117") hbMigrated = iv != 0;
         else if (k == "socd") socd = (iv >= 0 && iv <= 2) ? iv : 0;
         else if (k == "alt_toggle") altToggle = iv != 0;
         else if (k == "hud_verbose") hudVerbose = iv != 0;
@@ -136,6 +138,7 @@ void Settings::finishLoad() {
     if (!binds.code[A_QUIP][0] && !binds.code[A_QUIP][1]) binds.code[A_QUIP][0] = 71;               // (GLFW G; added 1.12)
     // old default chat keys (T / Y) move to the new default, Enter; a key someone picked themselves stays
     if (binds.code[A_CHAT][0] == 84 && binds.code[A_CHAT][1] == 89) { binds.code[A_CHAT][0] = 257; binds.code[A_CHAT][1] = 335; } // GLFW T, Y -> ENTER, KP_ENTER
+    if (!hbMigrated) { healthBars = true; hbMigrated = true; }   // 1.17 turned health bars on by default: on once for everyone (owner), off again stays off
     if (width < 320) width = 1280;
     if (height < 240) height = 720;
 }
@@ -149,7 +152,7 @@ std::string Settings::toText() const {
     f << "name=" << name << "\nsensitivity=" << sensitivity << "\ndpi=" << dpi << "\nfov=" << fov << "\nbrightness=" << brightness << "\ndisplay_mode=" << displayMode
       << "\npresent_mode=" << presentMode << "\nlow_latency=" << lowLatency << "\ninterp_ms=" << interpMs
       << "\nmaxfps=" << maxFps << "\nwidth=" << width << "\nheight=" << height
-      << "\nshadows=" << shadows << "\nmsaa=" << msaa << "\nmodel=" << model << "\nsoundpack=" << soundPack << "\nsocd=" << socd << "\nalt_toggle=" << altToggle
+      << "\nshadows=" << shadows << "\nmsaa=" << msaa << "\nmodel=" << model << "\nsoundpack=" << soundPack << "\nname_color=" << nameColorText() << "\nhealth_bars_117=1" << "\nsocd=" << socd << "\nalt_toggle=" << altToggle
       << "\nhud_verbose=" << hudVerbose << "\nhud_widgets=" << hudWidgets << "\nshadowres=" << shadowRes << "\nvolume=" << volume << "\nhitsounds=" << hitsounds << "\nannouncer=" << announcer << "\nvoice=" << announcerVoice << "\nfullbright=" << fullbright << "\nown_shots=" << ownShots << "\nenemy_shots=" << enemyShots << "\nhealth_bars=" << healthBars << "\nhealth_bars_bottom=" << healthBarsBottom
       << "\nscope_opacity=" << scopeOpacity << "\nsticky_counter=" << stickyCounter << "\ncrowns=" << crowns << "\nchat_off=" << chatOff << "\ndiscord=" << discordName << "\ndemo_full_rate=" << demoFullRate << "\noutline_friendly=" << outlineFriendly << "\noutline_enemy=" << outlineEnemy << "\noutline_player_width=" << outlinePlayer << "\noutline_world_width=" << outlineWorld
       << "\ncolor_friendly=" << colorHex(colorFriendly) << "\ncolor_enemy=" << colorHex(colorEnemy)

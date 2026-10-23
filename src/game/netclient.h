@@ -76,6 +76,7 @@ public:
     std::string playerName(int id) const;
     int playerModel(int id) const { return id >= 0 && id < kMaxPlayers ? models_[id] : 0; }
     int playerSoundPack(int id) const { return id >= 0 && id < kMaxPlayers ? packs_[id] : 0; }
+    uint16_t playerNameColor(int id) const { return id >= 0 && id < kMaxPlayers ? nameColors_[id] : 0; }   // RGB565, 0 = default
     const std::string& rankId(int id) const { static const std::string none; return id >= 0 && id < kMaxPlayers ? rankIds_[id] : none; }
 
     // Reliable events received since last call.
@@ -193,6 +194,7 @@ private:
     std::vector<GameEvent> events_;
     std::vector<std::string> names_ = std::vector<std::string>(kMaxPlayers);
     uint8_t models_[kMaxPlayers] = {}, packs_[kMaxPlayers] = {};
+    uint16_t nameColors_[kMaxPlayers] = {};
     float interpFixed_ = -1;
     int interpSent_ = 0;          // the fixed delay (ms) last reported to the server ("interp"; 0 = adaptive)
     std::vector<std::string> rankIds_ = std::vector<std::string>(kMaxPlayers);

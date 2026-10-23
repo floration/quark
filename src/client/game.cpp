@@ -1130,8 +1130,8 @@ void Game::frame(double dt) {
         if (m != appliedMode_) applyModeRules(m);
     }
     if (net_.state() == ConnState::Connected && net_.hasSnapshot() && time_ >= modelSentAt_ + 1.0 &&
-        ((!fairRules() && net_.playerModel(net_.clientId()) != cfg_.model) || net_.playerSoundPack(net_.clientId()) != cfg_.soundPack)) {
-        net_.sendCommand("model " + std::to_string(cfg_.model) + " " + std::to_string(cfg_.soundPack)); // everyone sees / hears your picks (cosmetic only)
+        ((!fairRules() && net_.playerModel(net_.clientId()) != cfg_.model) || net_.playerSoundPack(net_.clientId()) != cfg_.soundPack || net_.playerNameColor(net_.clientId()) != cfg_.nameColor565())) {
+        net_.sendCommand("model " + std::to_string(cfg_.model) + " " + std::to_string(cfg_.soundPack) + " " + std::to_string(cfg_.nameColor565())); // everyone sees / hears your picks (cosmetic only)
         modelSentAt_ = time_;
     }
     if (audio_.pack() != cfg_.soundPack) audio_.setPack(cfg_.soundPack);

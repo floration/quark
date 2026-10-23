@@ -61,6 +61,7 @@ bool NetClient::connect(const std::string& address, const std::string& name) {
     mapReady_ = false;
     dl_ = Download();
     for (auto& n : names_) n.clear();
+    for (auto& c : nameColors_) c = 0;
     for (auto& n : rankIds_) n.clear();
     poll();
     return true;
@@ -378,7 +379,7 @@ void NetClient::onSnapshot(Snapshot& s) {
         lastEventId_ = e.id;
         if (rec_) fresh.push_back(e);
         if (e.type == EV_PLAYERINFO && e.a < kMaxPlayers) { names_[e.a] = e.text; int m = e.b & 15, sp = e.b >> 4;
-            models_[e.a] = m < kPlayerModels ? m : 0; packs_[e.a] = sp < kSoundPacks ? sp : 0; }
+            models_[e.a] = m < kPlayerModels ? m : 0; packs_[e.a] = sp < kSoundPacks ? sp : 0; nameColors_[e.a] = (uint16_t)e.c; }
         if (e.type == EV_RANKINFO && e.a < kMaxPlayers) rankIds_[e.a] = e.text;
         if (e.type == EV_RANKSIGN) {   // a ranked match went live (or a time trial started): vouch that we're in it (the server forwards it with the ticket)
             std::string sig;
@@ -726,7 +727,7 @@ bool NetClient::startRecording(const std::string& path, bool fullRate) {
     recEvents_.clear();
     for (int i = 0; i < kMaxPlayers; i++) {
         if (names_[i].empty()) continue;
-        GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)i; e.b = (uint8_t)(models_[i] | packs_[i] << 4); e.text = names_[i];
+        GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)i; e.b = (uint8_t)(models_[i] | packs_[i] << 4); e.c = (int16_t)nameColors_[i]; e.text = names_[i];
         recEvents_.push_back(e);
         if (!rankIds_[i].empty()) { GameEvent r; r.type = EV_RANKINFO; r.a = (uint8_t)i; r.text = rankIds_[i]; recEvents_.push_back(r); }
     }
@@ -813,6 +814,7 @@ bool NetClient::startPlaybackImpl(const std::string& path, std::string& err) {
     play_.wall = timeNow();
     snaps_.clear(); events_.clear(); lastEventId_ = 0; clockInit_ = false; mapReady_ = false;
     for (auto& n : names_) n.clear();
+    for (auto& c : nameColors_) c = 0;
     state_ = ConnState::Connected;
     addrStr_ = "demo";
     error_.clear();
