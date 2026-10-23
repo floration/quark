@@ -18,7 +18,7 @@
 - Before production, the owner tests the testing build by hand with `docs/RELEASE_CHECKLIST.md` (game, settings, modes, maps, editor, servers, ranked, Worker/D1, Discord bot, website). Never open the production PR or suggest tagging until the owner says that build passed it; keep the checklist current when features change.
 - To ship production (owner): merge the `testing` → default-branch PR, then `git tag v<VERSION> <merge commit> && git push origin v<VERSION>`.
 - Every update: bump `VERSION` (semver; started at 0.1.0) and add `changelogs/<VERSION>.md` describing what changed. The release notes, the website and the launcher all show that file (a production tag without it fails).
-- Every qpak and the release manifest `quark-release.txt` are signed with `QUARK_SIGNING_KEY` (docs/SIGNING.md); each platform's qpak also carries its `quark_launcher`. Actions are pinned by commit SHA (Dependabot bumps them); keep `persist-credentials: false` and write permissions only on the release / pages jobs.
+- Everything published is signed with `QUARK_SIGNING_KEY` (docs/SIGNING.md; owner decision B6): every qpak, the release manifest `quark-release.txt` (names each file's sha256, version and channel), `SHA256SUMS`, the standalone launcher downloads and the website's file list; each platform's qpak also carries its `quark_launcher` with its `.sig`. The launcher hides an unsigned release claiming 1.17.0 or newer; 1.16.x and older install without a warning. Actions are pinned by commit SHA (Dependabot bumps them); keep `persist-credentials: false` and write permissions only on the release / pages jobs.
 - The launcher (`src/launcher/`) installs/updates from the release's `quark-<platform>.qpak` (made by `tools/pack.py`); keep those asset names stable.
 
 ## Maps
