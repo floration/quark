@@ -110,6 +110,8 @@ int main(int argc, char** argv) {
     struct LauncherUpdateJoin { ~LauncherUpdateJoin() { selfupdate::finishFromGame(2.0); } } launcherUpdateJoin;
     // demos recorded by an older version: converted to this one in the background (originals in demos/old/<version>/)
     if (!automated) demo::startUpgrade(userDataPath("demos"), userDataPath("versions.txt"));
+    if (!automated)   // your maps written in an older map format: converted (originals in maps/old/v<N>/)
+        for (auto& l : upgradeMapDir(userMapsDir()).log) fprintf(stderr, "maps: %s\n", l.c_str());
     struct DemoUpgradeJoin { ~DemoUpgradeJoin() { demo::finishUpgrade(5.0); } } demoUpgradeJoin;
     netInit();
     if (!glfwInit()) { fprintf(stderr, "glfwInit failed\n"); return 1; }

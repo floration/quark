@@ -149,7 +149,8 @@ struct Map {
     // Never throws: a bad map is an error. Every field is reset first (only name is kept), so nothing of an earlier
     // map or of a failed parse is left behind.
     bool parse(const std::string& text, std::string* err = nullptr);
-    bool parseText(const std::string& text, std::string* err);          // (parse's body)
+    bool parseText(const std::string& text, std::string* err);          // (parse's body: upgrades an older format, then parseCurrent)
+    bool parseCurrent(const std::string& text, std::string* err);       // (the current format)
     bool validate(std::string* err = nullptr) const;   // the limits above (counts, finite, in range)
     // Back to .qmap text (what the editor saves). Every number is written with as many digits as it needs to parse
     // back to the same float (spawn yaws to the same radians), so a saved map is exactly the map its edits made.
@@ -257,4 +258,16 @@ bool saveMapFile(const std::string& path, const std::string& text);
 // leaves the old file (settings, profiles, the ranked key, custom modes, maps). privateFile: only this user may
 // read it (POSIX 0600: the ranked key).
 bool writeFileAtomic(const std::string& path, const std::string& data, bool privateFile = false);
+
+// Map format converters (owner rule: every change to the map format ships a converter step, in every future version
+// too). kMapUpgrades[k - 1] turns a version k file into version k + 1; upgradeMapText runs every step from the file's
+// version up to kMapFormatVersion and then writes the "version" line. Map::parse runs it first, so the parser itself only
+// ever reads the current format (and a newer file is parsed as it is, skipping what this build doesn't know).
+int mapTextVersion(const std::string& text);                     // the file's "version" (1 when it has none, 0 a bad one)
+bool upgradeMapText(const std::string& in, std::string* out);    // false: nothing to do (current or newer); out untouched
+struct MapUpgradeReport { int converted = 0, failed = 0; std::vector<std::string> log; };
+// Every .qmap directly in `dir` written in an older format (a player's own maps): converted in place, the original
+// kept as dir/old/v<N>/<name> and a line in dir/old/convert.log. One that doesn't convert (or doesn't parse after) is
+// left as it was, logged, and not tried again. Cheap once done: a current file is told by its first few lines.
+MapUpgradeReport upgradeMapDir(const std::string& dir);
 

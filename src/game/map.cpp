@@ -19,6 +19,8 @@
 #include <cfloat>
 #include <climits>
 #include <algorithm>
+#include <set>
+#include <vector>
 
 namespace fs = std::filesystem;
 static std::string g_exeDir;
@@ -260,6 +262,142 @@ bool writeFileAtomic(const std::string& path, const std::string& data, bool priv
     return true;
 }
 
+// ---- map format converters ----
+// A line's first word, comments dropped ("" for a blank or comment-only line).
+static std::string firstWord(const std::string& line, size_t* rest = nullptr) {
+    size_t e = line.find('#');
+    if (e == std::string::npos) e = line.size();
+    size_t a = line.find_first_not_of(" \t\r", 0);
+    if (a == std::string::npos || a >= e) return "";
+    size_t b = line.find_first_of(" \t\r", a);
+    if (b == std::string::npos || b > e) b = e;
+    if (rest) *rest = b;
+    return line.substr(a, b - a);
+}
+
+static std::vector<std::string> splitLines(const std::string& text) {
+    std::vector<std::string> v;
+    size_t p = 0;
+    while (p < text.size()) {
+        size_t e = text.find('\n', p);
+        if (e == std::string::npos) e = text.size();
+        v.push_back(text.substr(p, e - p));
+        p = e + 1;
+    }
+    return v;
+}
+
+// 1 -> 2: the generator's staircases and the map's setting were comments ("# stairs ...", "# setting ..."); they are
+// keywords now.
+static void upgradeMap1to2(std::vector<std::string>& lines) {
+    for (std::string& l : lines)
+        if (l.rfind("# stairs ", 0) == 0 || l.rfind("# setting ", 0) == 0) l.erase(0, 2);
+}
+
+// Step k turns version k into k + 1. Changing the map format means: raise kMapFormatVersion and add its step here
+// (with a test that converts a file of the old version); the static_assert below holds the two together.
+using MapUpgradeStep = void (*)(std::vector<std::string>& lines);
+static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2};
+static_assert(sizeof kMapUpgrades / sizeof kMapUpgrades[0] == kMapFormatVersion - 1,
+              "a map format change needs its converter step in kMapUpgrades (owner rule)");
+
+int mapTextVersion(const std::string& text) {
+    size_t p = 0;
+    while (p < text.size()) {
+        size_t e = text.find('\n', p);
+        if (e == std::string::npos) e = text.size();
+        const char* l = text.data() + p;
+        while (l < text.data() + e && (*l == ' ' || *l == '\t')) l++;
+        if (text.data() + e - l > 8 && !memcmp(l, "version", 7) && (l[7] == ' ' || l[7] == '\t')) {
+            long v = strtol(l + 8, nullptr, 10);
+            return v >= 1 && v <= 1000000 ? (int)v : 0;   // (0: a bad version line, left for the parser to refuse)
+        }
+        p = e + 1;
+    }
+    return 1;
+}
+
+bool upgradeMapText(const std::string& in, std::string* out) {
+    int v = mapTextVersion(in);
+    if (v < 1 || v >= kMapFormatVersion) return false;
+    std::vector<std::string> lines = splitLines(in);
+    for (int k = v; k < kMapFormatVersion; k++) kMapUpgrades[k - 1](lines);
+    // the version line: replaced where it is, or put after the comments the file starts with
+    std::string vl = "version " + std::to_string(kMapFormatVersion);
+    bool placed = false;
+    for (std::string& l : lines) if (firstWord(l) == "version") { l = vl; placed = true; break; }
+    if (!placed) {
+        size_t at = 0;
+        while (at < lines.size() && firstWord(lines[at]).empty() && lines[at].find('#') != std::string::npos) at++;
+        lines.insert(lines.begin() + (std::ptrdiff_t)at, vl);
+    }
+    std::string o;
+    o.reserve(in.size() + 16);
+    for (size_t i = 0; i < lines.size(); i++) { o += lines[i]; if (i + 1 < lines.size() || (!in.empty() && in.back() == '\n')) o += '\n'; }
+    *out = std::move(o);
+    return true;
+}
+
+MapUpgradeReport upgradeMapDir(const std::string& dirIn) {
+    MapUpgradeReport rep;
+    fs::path dir = utf8Path(dirIn);
+    std::error_code ec;
+    if (!fs::is_directory(dir, ec)) return rep;
+    std::set<std::string> failedBefore;   // "name size" of maps that didn't convert: not read again every start
+    {
+        std::ifstream f(dir / "old" / "failed.txt");
+        std::string line;
+        while (std::getline(f, line)) failedBefore.insert(line);
+    }
+    auto note = [&](const std::string& line) {
+        rep.log.push_back(line);
+        fs::create_directories(dir / "old", ec);
+        std::ofstream(dir / "old" / "convert.log", std::ios::app) << line << "\n";
+    };
+    for (auto& e : fs::directory_iterator(dir, ec)) {
+        if (!e.is_regular_file(ec) || e.path().extension() != ".qmap") continue;
+        std::string name = e.path().filename().u8string();
+        uint64_t size = e.file_size(ec);
+        if (ec || size > (64u << 20)) { ec.clear(); continue; }   // (no map is that big: not ours to touch)
+        std::string key = name + " " + std::to_string(size);
+        if (failedBefore.count(key)) continue;
+        std::ifstream f(e.path(), std::ios::binary);
+        char head[4096];
+        f.read(head, sizeof head);
+        std::string text(head, (size_t)f.gcount());
+        if (mapTextVersion(text) >= kMapFormatVersion) continue;   // (its version line is in the first lines: current)
+        std::stringstream ss;
+        ss << f.rdbuf();
+        text += ss.str();
+        f.close();
+        int was = mapTextVersion(text);
+        std::string out, perr;
+        Map m;
+        if (!upgradeMapText(text, &out)) continue;
+        if (!m.parse(out, &perr)) {
+            rep.failed++;
+            note(name + ": format " + std::to_string(was) + ", kept as it is: doesn't load after converting (" + perr + ")");
+            std::ofstream(dir / "old" / "failed.txt", std::ios::app) << key << "\n";
+            continue;
+        }
+        // the original into old/v<N>/ first (a copy: the map stays in place whatever happens), then the converted text
+        fs::path backDir = dir / "old" / ("v" + std::to_string(was));
+        fs::create_directories(backDir, ec);
+        fs::path back = backDir / e.path().filename();
+        for (int n = 1; fs::exists(back, ec); n++) back = backDir / (e.path().stem().u8string() + "-" + std::to_string(n) + ".qmap");
+        fs::copy_file(e.path(), back, ec);
+        if (ec || !writeFileAtomic(e.path().u8string(), out)) {
+            rep.failed++;
+            note(name + ": format " + std::to_string(was) + ", kept as it is: can't write (disk full?)");
+            ec.clear();
+            continue;
+        }
+        rep.converted++;
+        note(name + ": converted from map format " + std::to_string(was) + " to " + std::to_string(kMapFormatVersion) + ", original in old/v" + std::to_string(was) + "/");
+    }
+    return rep;
+}
+
 std::string MapId::hex() const {
     static const char* d = "0123456789abcdef";
     std::string o(2 * sizeof b, '0');
@@ -442,6 +580,15 @@ bool Map::parse(const std::string& text, std::string* err) {
 }
 
 bool Map::parseText(const std::string& text, std::string* err) {
+    std::string up;
+    if (!upgradeMapText(text, &up)) return parseCurrent(text, err);
+    int was = mapTextVersion(text);
+    if (!parseCurrent(up, err)) return false;
+    formatVersion = was;   // (what the file was written in; source is the converted text)
+    return true;
+}
+
+bool Map::parseCurrent(const std::string& text, std::string* err) {
     {   // every field back to a fresh map's (title, sun, palette, void, ceiling, hold fire, ...), but its name
         std::string keepName = std::move(name);
         *this = Map();
@@ -464,10 +611,6 @@ bool Map::parseText(const std::string& text, std::string* err) {
         next = lineEnd < textEnd ? lineEnd + 1 : textEnd;
         lineNo++;
         const char* h = (const char*)memchr(lineStart, '#', (size_t)(lineEnd - lineStart));
-        // version 1 kept the generator's staircases and the map's setting in comments ("# stairs ...", "# setting ..."):
-        // a version 1 file still has them read, as the keywords that replaced them
-        if (h && formatVersion < 2 && h == lineStart && (lineEnd - h > 9 && (!memcmp(h, "# stairs ", 9) || (lineEnd - h > 10 && !memcmp(h, "# setting ", 10)))))
-            h = nullptr, lineStart += 2;
         if (h) lineEnd = h;
         LineIn ls(lineStart, lineEnd);
         if (!(ls >> kw)) continue;
