@@ -390,7 +390,9 @@ private:
             glfwPollEvents();
             for (auto& f : pending_) f();
             pending_.clear();
-            if (holdDemo_ && g_.net_.playback()) g_.net_.holdPlaybackClock();   // (the demo stays where it is while tested)
+            // (the demo stays where it is while tested, once it has reached its first snapshot: held from the start, it
+            // only crept on by the moments between this and the frame's network read, and at CI's ~60 fps it never got there)
+            if (holdDemo_ && g_.net_.playback() && g_.net_.hasSnapshot()) g_.net_.holdPlaybackClock();
             double now = timeNow(), dt = std::min(0.1, std::max(0.0005, now - last_));
             last_ = now;
             g_.frame(dt);
