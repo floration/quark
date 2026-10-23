@@ -57,6 +57,11 @@ An override's colour in a slot is multiplied by (the current colour / the colour
 in the exported colours looks like the default. Vertex colours (COLOR_0) times the material's baseColorFactor give the
 colour; textures are ignored. A material with alphaMode BLEND is drawn see-through (like the bubble's shell).
 
+The website shows the same export: https://floration.github.io/quark/assets/ (every model and map in 3D) and
+`/sounds/` (every sound and voice line), each with a PRODUCTION / TESTING switch and a "make your own" mode (a box
+builder that exports .glb, a synth that saves .wav). `python3 tools/site_assets.py` fills `site/assets/data/production/`
+from a local build; CI publishes production with the site and testing with each testing build (release.yml).
+
 ## Overrides
 
 A file at `<overrides>/<export path>` replaces that asset. Two places, the user's winning:

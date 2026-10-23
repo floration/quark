@@ -133,6 +133,28 @@ const Q = (() => {
     return a ? `<li><a href="${esc(a.url)}">${esc(label)}</a></li>` : "";
   }).join("");
 
+  // the assets and sounds pages: each channel's export of the game's assets (assets/data/<channel>/manifest.json and
+  // every file it names; tools/site_assets.py locally, the release workflow on the live site)
+  const CHANNELS = [["production", "Production"], ["testing", "Testing"]];
+  const channelOf = () => { try { return new URLSearchParams(location.search).get("channel") === "testing" ? "testing" : "production"; } catch (e) { return "production"; } };
+  function assetData(ch) {
+    const base = ROOT + "assets/data/" + ch + "/";
+    return fetch(base + "manifest.json", {cache: "no-cache"}).then(r => { if (!r.ok) throw new Error("none"); return r.json(); })
+      .then(m => { if (!m || !Array.isArray(m.items)) throw new Error("none"); return {version: String(m.version || ""), items: m.items, base, channel: ch}; });
+  }
+  // a PRODUCTION / TESTING switch in `el`; onChange(channel) runs on a click (the URL keeps the choice: ?channel=testing)
+  function channelSwitch(el, current, onChange) {
+    el.innerHTML = CHANNELS.map(([k, l]) => `<button type="button" data-ch="${k}" aria-pressed="${k === current}">${l}</button>`).join("");
+    el.querySelectorAll("button").forEach(b => b.onclick = () => {
+      el.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+      try { const u = new URL(location.href); if (b.dataset.ch === "testing") u.searchParams.set("channel", "testing"); else u.searchParams.delete("channel"); history.replaceState(null, "", u); } catch (e) { /* fine */ }
+      onChange(b.dataset.ch);
+    });
+  }
+  const noData = ch => state(ch === "testing" ? "No testing build published yet." : "No production assets published yet.",
+    ch === "testing" ? " The testing channel's assets appear here after the next push to the testing branch."
+      : " They appear with the next production release. Building locally? Run <code>python3 tools/site_assets.py</code>.");
+
   return {ROOT, REPO, esc, inline, md, fmtTime, fmtDate, master, getText, LADDERS, parseLadder, parseRace, state, releases,
-          isTesting, isProduction, platforms, PNAME, assetLinks};
+          isTesting, isProduction, platforms, PNAME, assetLinks, CHANNELS, channelOf, assetData, channelSwitch, noData};
 })();

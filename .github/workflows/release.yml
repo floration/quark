@@ -1,6 +1,7 @@
 # Builds and tests every push. Publishes only from two places (docs: CLAUDE.md "Releases"):
 #   TESTING     a push to the `testing` branch: a signed GitHub *prerelease* tagged test-<VERSION>-test.<run number>,
-#               built as version <VERSION>-test.<run number> (never "latest"; the website isn't redeployed). The tag
+#               built as version <VERSION>-test.<run number> (never "latest"; of the website only the testing
+#               channel's asset data, assets/data/testing/, is replaced). The tag
 #               must not start with v<digit> or a digit: launchers 0.12-1.16 install the highest such tag even when
 #               it's a prerelease. macOS is optional: the prerelease goes out with
 #               Windows + Linux, and the macOS files are added when (if) that build finishes.
@@ -155,6 +156,10 @@ jobs:
             || { echo "::error::meta's test groups ($GROUPS) aren't quark_tests' own: fix the parser in the meta job"; exit 1; }
           python3 tools/site_changelog.py .   # the website's data builds (checked here, before anything is published)
           python3 tools/site_updates.py . --allow-missing-full   # (work in progress may not have its full changelog yet)
+          # the website's assets/ and sounds/ pages: this build's models, maps, sounds and voices (docs/ASSETS.md)
+          build/quark_tests exportassets build/assets_export > /dev/null
+          python3 tools/studio/build.py build/assets_export
+          python3 tools/site_assets.py --studio build/studio --out site-assets
           mkdir -p pkg && cp build/quark build/quark_server build/quark_launcher pkg/ && cp -r maps mods pkg/
           python3 tools/pack.py pkg quark-linux.qpak
           mkdir -p quark-linux && cp -r pkg/* README.md quark-linux/
@@ -164,6 +169,8 @@ jobs:
         with: { name: linux, path: "quark-linux.tar.gz\nquark-linux.qpak\nquark-launcher-linux" }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: { name: linux-tests, path: "build/quark_tests\nmaps/*.qmap", retention-days: 7 }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with: { name: site-assets, path: site-assets, retention-days: 7 }   # (the pages / release-testing jobs publish it)
 
   linux-tests:   # quark_tests, one group per runner (the slowest group sets the time, and the timing tests run alone)
     needs: [meta, linux]
@@ -277,7 +284,9 @@ jobs:
         with: { path: dist }
       - name: all three platforms are here (no macOS, no release)
         run: |
-          rm -rf dist/windows-tests
+          # (not release files: the test jobs' binaries + maps (folders: `sha256sum */*` below fails on them), the UI
+          # test's report, and the website's assets, which the pages job publishes)
+          rm -rf dist/windows-tests dist/linux-tests dist/uitest-report dist/site-assets
           for p in windows linux macos; do test -f "dist/$p/quark-$p.qpak" || { echo "::error::no $p build"; exit 1; }; done
       - name: sign the launchers, release manifest, sign every published file (Ed25519, docs/SIGNING.md)
         env:
@@ -313,6 +322,7 @@ jobs:
     environment: testing
     permissions:
       contents: write
+    concurrency: { group: gh-pages, cancel-in-progress: false }   # (it and pages both rewrite gh-pages: one at a time)
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -325,7 +335,7 @@ jobs:
           TAG: ${{ needs.meta.outputs.tag }}
           VER: ${{ needs.meta.outputs.version }}
         run: |
-          rm -rf dist/windows-tests dist/macos
+          rm -rf dist/windows-tests dist/linux-tests dist/uitest-report dist/macos dist/site-assets   # (as the production job; site-assets: last step)
           # (as in the production job: launcher signatures into the packages first, then the manifest, then every file)
           sh tools/sign/sign_release.sh --launchers dist/*/quark-*.qpak
           sh tools/sign/release_manifest.sh testing "$TAG" "$VER" "$GITHUB_SHA" dist/*/quark-*.qpak dist/*/quark-launcher-* \
@@ -348,6 +358,34 @@ jobs:
           gh release create "$TAG" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false \
             --title "quark $VER (testing)" --notes-file notes.md \
             dist/windows/* dist/linux/* dist/quark-release.txt dist/quark-release.txt.sig dist/SHA256SUMS dist/SHA256SUMS.sig
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { name: site-assets, path: site-assets }
+      - name: the website's TESTING assets (assets/data/testing/ on gh-pages; everything else as production left it), signed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUARK_SIGNING_KEY: ${{ secrets.QUARK_SIGNING_KEY }}
+          VER: ${{ needs.meta.outputs.version }}
+        run: |
+          URL="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          rc=0; git ls-remote --exit-code --heads "$URL" gh-pages > /dev/null || rc=$?
+          if [ "$rc" = 2 ]; then echo "::notice::no gh-pages yet (the first production release publishes the site): testing assets not published"; exit 0; fi
+          [ "$rc" = 0 ] || { echo "::error::can't read the gh-pages branch"; exit 1; }
+          rm -rf site
+          git clone -q --depth 1 -b gh-pages "$URL" site
+          rm -rf site/.git site/assets/data/testing site/SHA256SUMS site/SHA256SUMS.sig
+          mkdir -p site/assets/data
+          cp -r site-assets site/assets/data/testing
+          # B6, as the pages job: a signed SHA256SUMS of every file the site serves (now with these assets)
+          (cd site && find . -type f ! -name SHA256SUMS ! -name SHA256SUMS.sig ! -name .nojekyll | sed 's#^\./##' | LC_ALL=C sort | xargs -d '\n' sha256sum -- > SHA256SUMS)
+          sh tools/sign/sign_release.sh site/SHA256SUMS
+          cd site
+          touch .nojekyll
+          git init -q -b gh-pages   # (one commit, as the pages job leaves it: the branch doesn't grow with every testing build)
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -qm "testing assets for ${VER} (${GITHUB_SHA})"
+          git push -qf "$URL" gh-pages
 
   release-testing-macos:   # adds the macOS files to the testing prerelease when that build succeeded
     needs: [meta, macos, release-testing]
@@ -388,10 +426,13 @@ jobs:
     environment: production
     permissions:
       contents: write
+    concurrency: { group: gh-pages, cancel-in-progress: false }   # (as release-testing)
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { name: site-assets, path: site/assets/data/production }   # (the linux job's export of this release)
       - name: publish site/ to the gh-pages branch (served at floration.github.io/quark), signed
         env:
           GH_TOKEN: ${{ github.token }}
@@ -401,6 +442,14 @@ jobs:
           python3 tools/site_updates.py .   # updates/ and updates/<version>/ (every version from 1.17.0 has its full changelog)
           # the owner's website pictures (docs/ASSETS.md): assets/overrides/website/<file> replaces site/img/<file>
           if [ -d assets/overrides/website ]; then find assets/overrides/website -maxdepth 1 -type f \( -name '*.jpg' -o -name '*.png' \) -exec cp {} site/img/ \; ; fi
+          # the TESTING channel's assets stay as the last testing build published them (release-testing writes them)
+          URL="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          rc=0; git ls-remote --exit-code --heads "$URL" gh-pages > /dev/null || rc=$?
+          if [ "$rc" = 0 ]; then
+            git clone -q --depth 1 -b gh-pages "$URL" "$RUNNER_TEMP/gh-pages"
+            if [ -d "$RUNNER_TEMP/gh-pages/assets/data/testing" ]; then mkdir -p site/assets/data && cp -r "$RUNNER_TEMP/gh-pages/assets/data/testing" site/assets/data/testing; fi
+            rm -rf "$RUNNER_TEMP/gh-pages"
+          elif [ "$rc" != 2 ]; then echo "::error::can't read the gh-pages branch"; exit 1; fi
           # B6: what the site serves is signed too: SHA256SUMS of every file, signed with the release key (the
           # downloads it links are release assets, each with its own .sig). master.txt keeps its own signature,
           # made by the owner (sign-master, docs/SIGNING.md), which is the only one the game reads.
@@ -413,7 +462,7 @@ jobs:
           git config user.email "github-actions@users.noreply.github.com"
           git add -A
           git commit -qm "site for ${GITHUB_REF_NAME} (${GITHUB_SHA})"
-          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+          git push -qf "$URL" gh-pages
 
   deploy-worker:   # the ranking server, after a production release (docs/OPERATIONS.md "Cloudflare"). Off until the
                    # repository variable DEPLOY_WORKER is "true" and the secrets / variables below are set.

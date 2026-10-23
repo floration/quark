@@ -3,6 +3,7 @@ build*/
 site/changelog.json
 site/weapons.json
 site/updates/
+site/assets/data/
 build-tracy/
 maps/downloads/
 *.key
