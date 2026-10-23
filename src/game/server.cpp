@@ -802,6 +802,9 @@ void Server::handleConnect(const NetAddr& from, Reader& r, int len) {
     // A live ranked match takes no one new: they watch it. (Else a leaver who comes back would be counted twice, and a
     // dodger's new session without a key would leave the match unrated: "has no ranked id".)
     if (rankedLive()) p.team = TEAM_SPECTATOR;
+    for (auto& o : specOut_)   // voted to spectate this map, left and came back: still watching until the next map
+        if ((!o.first.empty() && o.first == rankId) || o.second == name) { p.specLocked = true; p.team = TEAM_SPECTATOR; p.waitingToPlay = false; }
+    for (auto& o : players_) o.specVoted &= ~(1u << id);   // (a newcomer in this slot: nobody has voted on them yet)
     sendAccept(sock_, p, id, map_, cfg_.mode);
     sendWelcome(id);
     GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.text = name;
@@ -890,8 +893,18 @@ void Server::sendRules(int id) {
     }
 }
 
+void Server::moveToSpectator(int id) {
+    ServerPlayer& p = players_[id];
+    rulesOnSpectate(*this, id);   // (tag: that's elimination)
+    if (p.alive) killPlayer(id, -1, 255);
+    p.letIn = false;              // (sitting out gives the slot back)
+    p.waitingToPlay = false;
+    p.team = TEAM_SPECTATOR;
+}
+
 void Server::autoTeam(int id) {
     ServerPlayer& p = players_[id];
+    if (p.specLocked) { p.team = TEAM_SPECTATOR; return; }   // voted to spectate: until the next map
     if (cfg_.mode == MODE_TOURNEY) { p.team = tourney_.running ? TEAM_SPECTATOR : TEAM_A; return; } // joins the next tourney
     if (rulesTeamLocked(*this)) { p.team = TEAM_SPECTATOR; p.waitingToPlay = true; return; }   // tag: watches this match, plays the next
     if (!modeIsTeamBased(cfg_.mode) || (cfg_.vsBots && !p.isBot)) { p.team = TEAM_A; return; }
@@ -1108,6 +1121,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
     } else if (cmd == "team") {
         int t = rest == "a" ? TEAM_A : rest == "b" ? TEAM_B : rest == "spec" ? TEAM_SPECTATOR : -1;
         if (t < 0 || t == p.team) return;
+        if (p.specLocked && t != TEAM_SPECTATOR) { GameEvent e; e.type = EV_MESSAGE; e.text = "you were voted to spectate - you can play again on the next map"; sendEvent(id, e); return; }
         if (rankedLive()) { GameEvent e; e.type = EV_MESSAGE; e.text = "a ranked match is being played - teams stay as they are until it's over"; sendEvent(id, e); return; }
         if (tourney_.running && t != TEAM_SPECTATOR) { // the bracket decides who plays
             GameEvent e; e.type = EV_MESSAGE; e.text = "a tourney is running - you can join the next one"; sendEvent(id, e);
@@ -1117,7 +1131,6 @@ void Server::handleStringCmd(int id, const std::string& s) {
             GameEvent e; e.type = EV_MESSAGE; e.text = "a tag match is being played - you can join the next one"; sendEvent(id, e);
             return;
         }
-        if (t == TEAM_SPECTATOR) rulesOnSpectate(*this, id);   // (tag: that's elimination)
         if (!modeIsTeamBased(cfg_.mode) && t == TEAM_B) t = TEAM_A;
         if ((cfg_.mode == MODE_DUEL || cfg_.mode == MODE_ARENA) && t != TEAM_SPECTATOR && !p.letIn) {
             int n[2] = {0, 0};
@@ -1137,9 +1150,8 @@ void Server::handleStringCmd(int id, const std::string& s) {
                 }
             }
         }
-        if (p.alive) killPlayer(id, -1, 255);
-        if (t == TEAM_SPECTATOR) p.letIn = false;   // (sitting out gives the slot back)
-        p.team = t;
+        if (t == TEAM_SPECTATOR) moveToSpectator(id);
+        else { if (p.alive) killPlayer(id, -1, 255); p.team = t; }
         message(p.name + (t == TEAM_SPECTATOR ? " is spectating" : !modeIsTeamBased(cfg_.mode) ? " joined the game" : t == TEAM_A ? " joined team A" : " joined team B"));
         if (t != TEAM_SPECTATOR && rulesRespawnDelay(*this) >= 0) p.respawnAt = time() + 1.0f;
     } else if (cmd == "name") {
@@ -1191,6 +1203,27 @@ void Server::handleStringCmd(int id, const std::string& s) {
                 if (k >= 0) callVote(id, VOTE_BOTSKILL, k);
             }
         } }
+        else if (what == "spec") { // callvote spec <name|id>: move a player to spectator until the next map
+            std::string who = rest.substr(std::min(rest.size(), rest.find("spec") + 4));   // (names can have spaces)
+            size_t a = who.find_first_not_of(" \t"), b = who.find_last_not_of(" \t\r\n");
+            who = a == std::string::npos ? std::string() : who.substr(a, b - a + 1);
+            auto refuse = [&](const std::string& t) { GameEvent e; e.type = EV_MESSAGE; e.text = t; sendEvent(id, e); };
+            int humans = 0;
+            for (auto& o : players_) humans += o.connected && !o.isBot;
+            std::string err;
+            int target = who.empty() ? -1 : playerFromArg(who, &err);
+            if (who.empty()) refuse("callvote spec <name or id> (status lists them)");
+            else if (humans < kSpecVoteMinPlayers) refuse("a spectate vote needs at least " + std::to_string(kSpecVoteMinPlayers) + " players");
+            else if (target < 0) refuse(err);
+            else if (target == id) refuse("to watch, join the spectators yourself (team spec)");
+            else if (players_[target].isBot) refuse("that's a bot - vote bots off instead");
+            else if (players_[target].team == TEAM_SPECTATOR) refuse(players_[target].name + " is already spectating");
+            else if (p.specVoted >> target & 1) refuse("you already called a vote on " + players_[target].name + " this map");
+            else {
+                callVote(id, VOTE_SPEC, target, "", (int)players_[target].joinId);
+                if (vote_.kind == VOTE_SPEC && vote_.caller == id && vote_.arg == target) p.specVoted |= 1u << target;   // (once per map, pass or fail)
+            }
+        }
         else if (what == "start") {
             if (ms_.phase != PHASE_WARMUP) { GameEvent e; e.type = EV_MESSAGE; e.text = "the match has already started"; sendEvent(id, e); }
             else callVote(id, VOTE_START, 0);
@@ -1630,6 +1663,8 @@ void Server::simulate() {
                 if (hitAccum_[a][v] > 0) hitPending_ = true;
             }
     }
+    for (auto& p : players_)   // voted to spectate: whatever put them back on a team (a tourney ending...), they watch
+        if (p.specLocked && p.connected && p.team != TEAM_SPECTATOR) { p.team = TEAM_SPECTATOR; p.alive = false; p.respawnAt = -1; p.waitingToPlay = false; }
     for (int i = 0; i < kMaxPlayers; i++) {
         ServerPlayer& p = players_[i];
         if (!p.connected) continue;
@@ -2355,6 +2390,7 @@ void Server::callVote(int caller, int kind, int arg, const std::string& map, int
                : kind == VOTE_TMODES      ? "TOURNEY RULESETS: " + map
                : kind == VOTE_EDIT        ? std::string(arg ? "EDIT THE MAP TOGETHER (CHANGES LAST UNTIL THE MAP CHANGES)" : "STOP EDITING AND PLAY THE MAP")
                : kind == VOTE_LETIN       ? "LET " + players_[arg].name + " IN (TEAMS GO UNEVEN)"
+               : kind == VOTE_SPEC        ? "MOVE " + players_[arg].name + " TO SPECTATOR (UNTIL THE NEXT MAP)"
                : kind == VOTE_RANKED      ? (arg < 0 ? std::string("RANKED OFF") : std::string("RANKED ON - ") + arenaVariant(arg).title + " 1V1")
                                           : std::string("FILL THE UNEVEN TEAMS WITH BOTS?");
     GameEvent e; e.type = EV_VOTE; e.a = (uint8_t)(caller < 0 ? 255 : caller); e.text = vote_.text;
@@ -2365,6 +2401,7 @@ void Server::callVote(int caller, int kind, int arg, const std::string& map, int
 
 void Server::castVote(int id, bool yes) {
     if (vote_.kind == VOTE_NONE || players_[id].isBot) return;
+    if (vote_.kind == VOTE_SPEC && id == vote_.arg) return;   // the player a spectate vote is about has no say in it
     uint32_t bit = 1u << id;
     vote_.yes &= ~bit;
     vote_.no &= ~bit;
@@ -2378,6 +2415,7 @@ void Server::tickVote() {
     int humans = 0, y = 0, n = 0;
     for (int i = 0; i < kMaxPlayers; i++) {
         if (!players_[i].connected || players_[i].isBot || players_[i].awayUntil > 0) continue;   // (away: can't vote)
+        if (vote_.kind == VOTE_SPEC && i == vote_.arg) continue;   // (nor does the player a spectate vote is about)
         humans++;
         y += (vote_.yes >> i) & 1;
         n += (vote_.no >> i) & 1;
@@ -2434,6 +2472,20 @@ void Server::tickVote() {
                 q.team = a <= b ? TEAM_A : TEAM_B;
                 message(q.name + (q.team == TEAM_A ? " joined team A" : " joined team B"));
                 if (rulesRespawnDelay(*this) >= 0) q.respawnAt = time() + 1.0f;
+            }
+            return;
+        }
+        if (vote_.kind == VOTE_SPEC) {
+            int who = vote_.arg;
+            uint32_t join = (uint32_t)vote_.arg2;
+            message("vote passed: " + vote_.text);
+            vote_ = Vote();
+            auto& q = players_[who];
+            if (q.connected && q.joinId == join) {   // (still them: not someone new in their slot)
+                moveToSpectator(who);
+                q.specLocked = true;
+                specOut_.push_back({q.rankId, q.name});
+                message(q.name + " was moved to spectator until the next map");
             }
             return;
         }
@@ -2604,6 +2656,8 @@ void Server::logTick() {
 // Start playing map_ (already loaded or edited) in `mode`: everyone respawns, clients get the map again.
 void Server::playMap(int mode) {
     cfg_.mode = mode;
+    specOut_.clear();   // a new map: whoever was voted to spectate may play again, and every spectate vote can be called again
+    for (auto& p : players_) { p.specLocked = false; p.specVoted = 0; }
     for (auto& pr : projectiles_) pr.active = false;
     for (int i = 0; i < kMaxPlayers; i++) {
         auto& p = players_[i];

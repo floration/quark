@@ -138,6 +138,8 @@ struct ServerPlayer {
     bool found = false;         // hide and seek: found by the seeker this round (falling off doesn't count)
     bool sought = false;        // hide and seek: has had their turn seeking this match
     bool waitingToPlay = false; // joined during a tag match: spectates it, joins team A when it's over
+    bool specLocked = false;    // voted to spectate (callvote spec): can't rejoin play until the next map
+    uint32_t specVoted = 0;     // players (bit per slot) this one has called a spectate vote on this map: once each
     Vec3 lastGround;            // where the player last stood (a dropped bomb goes here, not into a pit)
     bool out = false;           // hide and seek: found this round; tag: eliminated for the match
     double itFreezeUntil = 0;    // tag: just got tagged, stands still until then
@@ -263,6 +265,9 @@ public:
     int lastIt_ = -1;
     // tag: who has been eliminated this match ({rank id, name}): someone who leaves and comes back is still out
     std::vector<std::pair<std::string, std::string>> tagOut_;
+    // voted to spectate this map ({rank id, name}): leaving and coming back doesn't get them back into play
+    std::vector<std::pair<std::string, std::string>> specOut_;
+    void moveToSpectator(int id);   // out of play (as "team spec" does: tag counts it as elimination)
     std::vector<float>* tickTimes_ = nullptr;  // benchmarks: every tick's simulate + send time goes here
     // Snapshot building reuses these and each client's delta-base ring (ServerPlayer::sent): the per-client snapshot
     // is built in the ring slot it's remembered in, so a send copies the shared lists once and allocates nothing
@@ -295,7 +300,10 @@ public:
     int humanCount(int team = -1) const;
     void updateBalanceBots(bool matchStarting = false);
     // Votes (bots on/off, bot difficulty): majority of human players decides.
-    enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL, VOTE_START, VOTE_STARTBOTS, VOTE_MAP, VOTE_TMAPS, VOTE_TMODES, VOTE_RANKED, VOTE_EDIT, VOTE_LETIN };
+    // VOTE_SPEC: move a player (arg; arg2 = their joinId) to spectator until the next map. Never a kick: kicking stays
+    // with the dedicated server's console and the host (isAdmin), and isn't votable (OWNER_DECISIONS_2 B10).
+    enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL, VOTE_START, VOTE_STARTBOTS, VOTE_MAP, VOTE_TMAPS, VOTE_TMODES, VOTE_RANKED, VOTE_EDIT, VOTE_LETIN, VOTE_SPEC };
+    static constexpr int kSpecVoteMinPlayers = 3;   // connected human players a spectate vote needs (so never in a 1v1)
     struct Vote { int kind = VOTE_NONE; int caller = -1; int arg = 0, arg2 = 0; std::string map; uint32_t yes = 0, no = 0; double endsAt = 0; std::string text; } vote_;
     void callVote(int caller, int kind, int arg, const std::string& map = "", int arg2 = 0);
     // Tourney: single elimination bracket of everyone in the server, one 1v1 at a time.

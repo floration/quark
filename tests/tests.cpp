@@ -2614,6 +2614,89 @@ static void testHandshake(uint16_t port) {
     s.stop();
 }
 
+// The spectate vote (OWNER_DECISIONS_2 B10): "callvote spec <player>" moves a player to spectator, by the usual vote
+// rules; it needs 3+ players, the player it's about has no vote, they can't rejoin play until the next map (not by
+// leaving and coming back either), and each caller gets one vote per player per map. Kicking stays admin-only: a
+// player's "kick" does nothing and there's no kick vote.
+static void testSpecVote(uint16_t port) {
+    printf("spectate vote: 3+ players, target has no vote, out until the next map; kick never votable\n");
+    Server s;
+    s.voteCooldown_ = 0;   // (a failed vote's cooldown isn't what this checks)
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.balanceBots = false;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    std::string addr = "127.0.0.1:" + std::to_string(port);
+    NetClient a, b, c;
+    a.connect(addr, "anna"); b.connect(addr, "bert");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 0.8, idle);
+    a.sendCommand("callvote spec bert");   // two players: not available (a 1v1 never has it)
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE);
+    c.connect(addr, "carl");
+    cls = {&a, &b, &c};
+    pump(s, cls, 0.8, idle);
+    int ia = a.clientId(), ib = b.clientId(), ic = c.clientId();
+    int bot = s.addBot(TEAM_A, BOT_BEGINNER);
+    CHECK(bot >= 0);
+    a.sendCommand("callvote spec anna");                         // not yourself
+    a.sendCommand("callvote spec " + std::to_string(bot));       // not a bot
+    a.sendCommand("callvote spec nobody");
+    a.sendCommand("kick carl");                                  // a player can't kick...
+    a.sendCommand("callvote kick carl");                         // ...or vote to
+    pump(s, cls, 0.4, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE && s.players_[ic].connected);
+    a.sendCommand("callvote spec carl");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_SPEC && s.vote_.arg == ic);
+    c.sendCommand("vote no");                                    // carl has no say
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_SPEC && !(s.vote_.no >> ic & 1) && s.ms_.voteVoters == 2);
+    b.sendCommand("vote yes");
+    pump(s, cls, 0.4, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE);
+    CHECK(s.players_[ic].team == TEAM_SPECTATOR && s.players_[ic].specLocked && !s.players_[ic].alive);
+    c.sendCommand("team a");                                     // can't rejoin play this map
+    pump(s, cls, 0.5, idle);
+    CHECK(s.players_[ic].team == TEAM_SPECTATOR && !s.players_[ic].alive);
+    // leaving and coming back as a new connection: still spectating
+    c.disconnect();
+    cls = {&a, &b};
+    pump(s, cls, 0.2, idle);
+    s.players_[ic].awayUntil = timeNow() - 1;   // (the reconnect grace is over)
+    pump(s, cls, 0.2, idle);
+    CHECK(!s.players_[ic].connected);
+    NetClient c2;
+    c2.connect(addr, "carl");
+    cls = {&a, &b, &c2};
+    pump(s, cls, 0.8, idle);
+    int ic2 = c2.clientId();
+    CHECK(s.players_[ic2].connected && s.players_[ic2].team == TEAM_SPECTATOR && s.players_[ic2].specLocked);
+    // one spectate vote per caller per player per map: anna's on bert fails (carl says no), and she can't call it again
+    a.sendCommand("callvote spec bert");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_SPEC && s.vote_.arg == ib);
+    c2.sendCommand("vote no");
+    pump(s, cls, 0.4, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE && s.players_[ib].team != TEAM_SPECTATOR);
+    a.sendCommand("callvote spec bert");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE);
+    // the next map: carl plays again, and anna may call the vote on bert again
+    s.command("map bastion ffa");
+    pump(s, cls, 0.5, idle);
+    CHECK(!s.players_[ic2].specLocked);
+    c2.sendCommand("team a");
+    pump(s, cls, 0.5, idle);
+    CHECK(s.players_[ic2].team == TEAM_A);
+    a.sendCommand("callvote spec bert");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_SPEC && s.vote_.arg == ib);
+    CHECK(s.players_[ia].connected && s.players_[ib].connected);
+    s.stop();
+}
+
 // A server running a map the client doesn't have (or has a different copy of): the client downloads it,
 // keeps it under maps/downloads, and the editor's save format round-trips every map.
 static void testMapDownload(uint16_t port) {
@@ -4660,7 +4743,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "limits") { testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(TP(29990)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(TP(29980)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); testAddbotArgs(TP(29982)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); testAddbotArgs(TP(29982)); testSpecVote(TP(29983)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); testTagLateJoin(TP(29455)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "nav") { testNavGraph(); return g_fail ? 1 : 0; }
@@ -4707,7 +4790,7 @@ int main(int argc, char** argv) {
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
-        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); }},
+        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
         {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); }},
         {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},

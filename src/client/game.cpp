@@ -305,7 +305,7 @@ void Game::leaveGame(const std::string& error) {
     // in-game menus start closed next time (a dropped connection mid-menu left them open)
     if (widgetEdit_) widgets_.save(activeHudPath());
     if (settingsInGame_) cfg_.save();
-    settingsInGame_ = voteMenu_ = queueMenu_ = controlsOpen_ = crosshairOpen_ = hudOpen_ = visualsOpen_ = widgetEdit_ = hudDrop_ = false;
+    settingsInGame_ = voteMenu_ = specPick_ = queueMenu_ = controlsOpen_ = crosshairOpen_ = hudOpen_ = visualsOpen_ = widgetEdit_ = hudDrop_ = false;
     picker_ = PICK_NONE;
     filePick_ = 0;
     captureAction_ = -1;
@@ -610,7 +610,7 @@ void Game::onKey(int key, int action, int mods) {
             if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
             if (controlsOpen_ || crosshairOpen_ || hudOpen_ || visualsOpen_) { controlsOpen_ = crosshairOpen_ = hudOpen_ = visualsOpen_ = false; captureAction_ = -1; cfg_.save(); return; }
             if (settingsInGame_) { settingsInGame_ = false; cfg_.save(); return; }
-            if (voteMenu_ || queueMenu_ || picker_ != PICK_NONE) { voteMenu_ = queueMenu_ = false; picker_ = PICK_NONE; return; }
+            if (voteMenu_ || queueMenu_ || picker_ != PICK_NONE) { voteMenu_ = queueMenu_ = specPick_ = false; picker_ = PICK_NONE; return; }
             paused_ = !paused_;
             captureMouse(!paused_);
             return;
@@ -2292,7 +2292,7 @@ std::vector<std::string> Game::consoleCandidates(const std::vector<std::string>&
         if (c == "list") { auto o = consoleWords(); o.erase(o.begin(), o.begin() + 3); return o; }
         if (c == "/team") return {"a", "b", "spec"};
         if (c == "/vote") return {"yes", "no"};
-        if (c == "/callvote") return {"edit", "ranked", "bots", "botskill", "start", "tmaps", "tmodes", "map", "mode"};
+        if (c == "/callvote") return {"edit", "ranked", "bots", "botskill", "start", "tmaps", "tmodes", "map", "mode", "spec"};
         if (c == "/map") return maps_;
         if (c == "/mode") return modes();
         if (c == "/editmode" || c == "/ranked") return onOff;
@@ -2311,6 +2311,7 @@ std::vector<std::string> Game::consoleCandidates(const std::vector<std::string>&
             if (what == "botskill") return skills();
             if (what == "map" || what == "tmaps") return maps_;
             if (what == "mode" || what == "tmodes") return modes();
+            if (what == "spec") return players();   // callvote spec <player>: to spectator until the next map
         }
         if (w.size() == 3 && what == "ranked" && w[2] == "on") return ladders();
         if (w.size() == 3 && what == "map") return modes();
@@ -2979,7 +2980,34 @@ void Game::drawVoteMenu(float cx, float y) {
     float w = 300 * s, h = 36 * s, gap = 8 * s, x = cx - w * 0.5f, hw = (w - gap) * 0.5f;
     const ModeState& ms = net_.mode();
     bool warmup = ms.phase == PHASE_WARMUP, ranked = ms.flags & MS_RANKED, tourney = ms.mode == MODE_TOURNEY && !ranked;
-    int rows = 3 + (warmup ? 1 : 0) + (warmup && tourney ? 1 : 0) + (ranked ? 0 : 4);
+    // move a player to spectator (until the next map): anyone in play but you, with 3+ players connected (never a 1v1)
+    std::vector<int> specable;
+    int humans = 0;
+    if (net_.hasSnapshot())
+        for (auto& p : net_.latest().players) {
+            bool bot = net_.playerName(p.id).rfind("BOT ", 0) == 0;
+            humans += !bot;
+            if (!bot && p.id != net_.clientId() && p.team() != TEAM_SPECTATOR) specable.push_back(p.id);
+        }
+    bool canSpec = !ranked && humans >= 3 && !specable.empty();
+    if (specPick_ && canSpec) {
+        const int n = (int)specable.size(), cols = (n + 9) / 10, rowsN = (n + cols - 1) / cols;   // (up to 10 a column: a full server fits)
+        const float tw = cols * w + (cols - 1) * gap, tx = cx - tw * 0.5f;
+        ui_.panel(tx - 16 * s, y - 16 * s, tw + 32 * s, (rowsN + 1) * (h + gap) + 40 * s);
+        ui_.labelCentered(cx, y, "VOTE: MOVE TO SPECTATOR (UNTIL THE NEXT MAP)");
+        y += 30 * s;
+        for (int k = 0; k < n; k++) {
+            if (ui_.button(tx + (k / rowsN) * (w + gap), y + (k % rowsN) * (h + gap), w, h, upper(net_.playerName(specable[k])))) {
+                net_.sendCommand("callvote spec " + std::to_string(specable[k]));   // (by id: names can be alike)
+                specPick_ = voteMenu_ = paused_ = false;
+            }
+        }
+        y += rowsN * (h + gap);
+        if (ui_.button(x, y, w, h, "BACK")) specPick_ = false;
+        return;
+    }
+    specPick_ = false;
+    int rows = 3 + (warmup ? 1 : 0) + (warmup && tourney ? 1 : 0) + (ranked ? 0 : 4) + (canSpec ? 1 : 0);
     ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, rows * (h + gap) + 40 * s);
     ui_.labelCentered(cx, y, "CALL A VOTE");
     y += 30 * s;
@@ -3002,6 +3030,10 @@ void Game::drawVoteMenu(float cx, float y) {
     if (!ranked) { // edit the map together; on a normal server the changes last until the map changes
         voteBtn(x, w, "EDIT THE MAP TOGETHER", "edit on");
         y += h + gap;
+        if (canSpec) {
+            if (ui_.button(x, y, w, h, "MOVE A PLAYER TO SPECTATOR")) specPick_ = true;
+            y += h + gap;
+        }
         voteBtn(x, hw, "BOTS ON", "bots on");
         voteBtn(x + hw + gap, hw, "BOTS OFF", "bots off");
         y += h + gap;

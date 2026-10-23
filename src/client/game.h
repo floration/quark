@@ -178,6 +178,7 @@ private:
     bool livePickVote_ = false;
     void openLivePicker(int kind, bool vote);
     bool voteMenu_ = false;
+    bool specPick_ = false;     // the vote menu's player list: who to move to spectator (callvote spec)
     void drawVoteMenu(float cx, float y);
     int picker_ = PICK_NONE;    // full list of maps / modes open over the host or vs-bots menu
     void drawPicker(float cx, float y);
