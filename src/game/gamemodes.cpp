@@ -80,6 +80,9 @@ bool overtime(Server& s) {
 }
 
 void setPhase(Server& s, Phase p, float duration) {
+    const int old = s.ms_.phase;
+    // the match is over, or a new one starts (out of warmup or the end screen): stuck knives / bolts / syringes go
+    if (p != old && (p == PHASE_WARMUP || p == PHASE_MATCH_END || old == PHASE_WARMUP || old == PHASE_MATCH_END)) s.clearProps();
     s.ms_.phase = p;
     s.phaseEnd_ = duration > 0 ? s.time() + duration : 0;
     if (p == PHASE_LIVE) {
@@ -511,6 +514,7 @@ void tourneyBegin(Server& s) {
 }
 
 void startMatch(Server& s) {
+    s.clearProps();   // (a new match, whatever phase it starts from)
     ModeState& m = s.ms_;
     m.round = 0;
     m.scoreA = m.scoreB = 0;
@@ -1059,6 +1063,7 @@ void tickFFA(Server& s) {
 bool modeIsTeamBased(int mode) { return mode != MODE_FFA && mode != MODE_RACE && mode != MODE_TOURNEY && !isItMode(mode); }
 
 void rulesReset(Server& s) {
+    s.clearProps();   // (setPhase below can't tell: the mode state is reset to warmup first)
     ModeState& m = s.ms_;
     m = ModeState();
     m.mode = (uint8_t)s.cfg_.mode;

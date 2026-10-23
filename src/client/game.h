@@ -32,6 +32,8 @@ struct LaunchOptions {
     float spawnPitch = 0;       // --pitch deg
     int debugWeapon = -1;       // --weapon N (1-5), for screenshots
     bool debugScope = false, debugFire = false; // --scope, --fire
+    bool debugPulse = false;    // --pulse: --fire / --scope let go every other 0.3 s (a switch or a throw needs a release), and
+                                // a step right before the --screenshot (what was fired is seen from the side)
     bool debugPerf = false;     // --perf: F3 overlay on, with a synthetic input event every frame
     bool textHeavy = false;     // --textheavy: scoreboard + F3 + chat lines always on, to measure text cost (with --bench)
     bool debugCrosshair = false;
@@ -135,6 +137,7 @@ private:
     UserCmd buildCmd();
     void handleEvents();
     void drawWorld(float alpha);
+    void drawStuckProps(const Vec3& eye, float alpha);   // knives / bolts / syringes stuck in walls and players (EV_PROP)
     // net_.interpolatedPlayers() for this frame, worked out once (PERF-12: world, HUD, spectating and the editor each
     // asked for it): valid from the first use after the frame's ticks until the next frame or tick loop
     NetClient::PlayerArray& framePlayers() {   // (--models adds its lineup to it)

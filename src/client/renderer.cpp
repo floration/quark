@@ -656,9 +656,9 @@ void Renderer::box(const Vec3& center, const Vec3& half, float yaw, const Vec3& 
     else if (castShadow) emitBox(dynShadowOnly_, xf, half, color, sunVis);
 }
 
-void Renderer::boxPitched(const Vec3& pivot, const Vec3& offset, const Vec3& half, float yaw, float pitch, const Vec3& color, float sunVis) {
+void Renderer::boxPitched(const Vec3& pivot, const Vec3& offset, const Vec3& half, float yaw, float pitch, const Vec3& color, float sunVis, bool castShadow) {
     Mat4 xf = Mat4::translate(pivot) * Mat4::rotY(yaw) * Mat4::rotX(pitch) * Mat4::translate(offset);
-    emitBox(dyn_, xf, half, color, sunVis);
+    emitBox(castShadow ? dyn_ : dynNoCast_, xf, half, color, sunVis);   // (no shadow: small things scattered over the map, stuck props, would spread the shadow pass's caster rect over all of it)
 }
 
 void Renderer::viewBox(const Vec3& offset, const Vec3& half, const Vec3& color) {
@@ -888,6 +888,7 @@ void Renderer::drawScene(bool shadows) {
         glBindVertexArray(dynVao_);
         if (!v.empty()) glDrawArrays(GL_TRIANGLES, 0, (GLsizei)v.size());
     };
+    dyn_.insert(dyn_.end(), dynNoCast_.begin(), dynNoCast_.end());   // (after the shadow pass: lit and shadowed, casting none)
     { QZONE("dynamic pass"); drawDyn(dyn_, true); }
     if (staticOn_) {   // the static batch (the editor's map): drawDyn above set the program up; the boxes in view, one multi-draw
         QZONE("static boxes pass");
@@ -943,6 +944,7 @@ void Renderer::drawScene(bool shadows) {
     }
     dyn_.clear();
     dynShadowOnly_.clear();
+    dynNoCast_.clear();
     view_.clear();
     flat_.clear();
 }
