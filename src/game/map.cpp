@@ -322,18 +322,15 @@ bool upgradeMapText(const std::string& in, std::string* out) {
     if (v < 1 || v >= kMapFormatVersion) return false;
     std::vector<std::string> lines = splitLines(in);
     for (int k = v; k < kMapFormatVersion; k++) kMapUpgrades[k - 1](lines);
-    // the version line: replaced where it is, or put after the comments the file starts with
+    // the version line: replaced where it is, or added as the last line (so every line keeps its number: a parse error
+    // in a converted map names the line of the file)
     std::string vl = "version " + std::to_string(kMapFormatVersion);
     bool placed = false;
     for (std::string& l : lines) if (firstWord(l) == "version") { l = vl; placed = true; break; }
-    if (!placed) {
-        size_t at = 0;
-        while (at < lines.size() && firstWord(lines[at]).empty() && lines[at].find('#') != std::string::npos) at++;
-        lines.insert(lines.begin() + (std::ptrdiff_t)at, vl);
-    }
     std::string o;
     o.reserve(in.size() + 16);
     for (size_t i = 0; i < lines.size(); i++) { o += lines[i]; if (i + 1 < lines.size() || (!in.empty() && in.back() == '\n')) o += '\n'; }
+    if (!placed) { if (!o.empty() && o.back() != '\n') o += '\n'; o += vl + "\n"; }
     *out = std::move(o);
     return true;
 }
@@ -362,13 +359,20 @@ MapUpgradeReport upgradeMapDir(const std::string& dirIn) {
         std::string key = name + " " + std::to_string(size);
         if (failedBefore.count(key)) continue;
         std::ifstream f(e.path(), std::ios::binary);
-        char head[4096];
-        f.read(head, sizeof head);
-        std::string text(head, (size_t)f.gcount());
-        if (mapTextVersion(text) >= kMapFormatVersion) continue;   // (its version line is in the first lines: current)
+        char part[4096];   // the version line is near the top (saved / generated maps) or the last line (converted ones)
+        f.read(part, sizeof part);
+        if (mapTextVersion(std::string(part, (size_t)f.gcount())) >= kMapFormatVersion) continue;
+        if (size > sizeof part) {
+            f.clear();
+            f.seekg((std::streamoff)(size - sizeof part));
+            f.read(part, sizeof part);
+            if (mapTextVersion(std::string(part, (size_t)f.gcount())) >= kMapFormatVersion) continue;
+        }
+        f.clear();
+        f.seekg(0);
         std::stringstream ss;
         ss << f.rdbuf();
-        text += ss.str();
+        std::string text = ss.str();
         f.close();
         int was = mapTextVersion(text);
         std::string out, perr;

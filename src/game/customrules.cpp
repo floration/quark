@@ -1,4 +1,3 @@
-#include <cmath>
 #include "../common/u8file.h"
 #include "customrules.h"
 #include <algorithm>

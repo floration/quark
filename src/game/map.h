@@ -268,6 +268,6 @@ bool upgradeMapText(const std::string& in, std::string* out);    // false: nothi
 struct MapUpgradeReport { int converted = 0, failed = 0; std::vector<std::string> log; };
 // Every .qmap directly in `dir` written in an older format (a player's own maps): converted in place, the original
 // kept as dir/old/v<N>/<name> and a line in dir/old/convert.log. One that doesn't convert (or doesn't parse after) is
-// left as it was, logged, and not tried again. Cheap once done: a current file is told by its first few lines.
+// left as it was, logged, and not tried again. Cheap once done: a current file is told by its first or last 4 KB.
 MapUpgradeReport upgradeMapDir(const std::string& dir);
 

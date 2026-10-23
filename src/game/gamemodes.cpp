@@ -156,9 +156,8 @@ int bestScorer(const Server& s) {
 }
 
 // Hide and seek: one round per player in play, each seeking once (was clamp(players, 3, 6) in slot order: with 7+
-// players some never sought, with 2 someone sought twice).
+// players some never sought, with 2 someone sought twice). The match ends once nobody in play is left to seek.
 int hidersYetToSeek(const Server& s) { int n = 0; for (int i = 0; i < kMaxPlayers; i++) n += inPlay(s, i) && !s.players_[i].sought; return n; }
-int hideRounds(const Server& s) { return s.ms_.round + hidersYetToSeek(s); }
 
 // Hide and seek scoring (owner B8): a hider still unfound when the round ends scores 1; the seeker scores 1 for
 // each hider found (rulesOnDeath); a found hider scores nothing, and neither does a fall (nor the seeker for it).
@@ -519,9 +518,7 @@ void startMatch(Server& s) {
     s.completeTime_[0] = s.completeTime_[1] = 0;
     for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; p.dmgDealt = p.objTime = 0; p.shotsFired = p.shotsHit = 0; p.out = false; p.it = false; }
     s.lastIt_ = -1;
-    s.tagOut_.clear();
     for (auto& p : s.players_) p.sought = false;
-    s.hideRounds_ = hideRounds(s);
     if (m.mode == MODE_TOURNEY) {
         tourneyBegin(s);
         s.message("tourney started - " + std::to_string(s.tourney_.rounds[0].size()) + " slot bracket");
@@ -1073,7 +1070,6 @@ void rulesReset(Server& s) {
         for (auto& p : s.players_) if (p.connected && m.mode == MODE_TOURNEY) p.team = TEAM_A;
     }
     for (auto& p : s.players_) { p.it = false; p.out = false; p.found = false; } // nothing from the last match carries into warmup
-    s.tagOut_.clear();
     // Joined mid tag match (or were playing it when a map / mode vote passed): placed like a newcomer once the tag
     // match is over, so the next mode's seat limits (1v1, duel) and team balance hold, not all on team A.
     uint32_t waiting = 0;
@@ -1213,16 +1209,7 @@ void rulesEndMatch(Server& s, const std::string& text, int winner) {
 float rulesRespawnDelay(const Server& s) {
     if (s.ms_.phase == PHASE_WARMUP) return 1.5f;
     if (s.ms_.phase == PHASE_MATCH_END) return -1.0f;
-    switch (s.ms_.mode) {
-        case MODE_RACE: return 1.0f;
-        case MODE_KOTH: return 4.0f;
-        case MODE_POINTS: return 5.0f;
-        case MODE_PAYLOAD:
-        case MODE_NPAYLOAD: return 5.0f;
-        case MODE_FFA: return 2.0f;
-        case MODE_TAG: return 2.0f;   // fell off something: back in (eliminations don't respawn)
-        default: return -1.0f; // VS, BOMB, hide and seek: no respawn
-    }
+    return modeRespawnDelay(s.ms_.mode);
 }
 
 bool rulesCanDamage(const Server& s, int attacker, int victim) {
