@@ -2975,6 +2975,205 @@ static void testProjectileTickRates(uint16_t port) {
     s.stop();
 }
 
+// A sticky that hits an enemy sticks to them (owner: "the sticky should stick to players if it hits them"): it rides
+// along on them, the clients draw it on the player as they show them, alt-fire sets it off on them for the full blast.
+// Never on its owner; a teammate isn't stuck to (it drops off them, as before); when the one it's on dies it stays
+// where they were (falls, sticks to the floor). The wire's new projectile bit round-trips.
+static void testStickyOnPlayers(uint16_t port) {
+    printf("stickies stick to enemies\n");
+    {   // the wire: bit 32 + player + offset, full and as a delta; one without it reads as before
+        Snapshot s;
+        s.ms.mode = MODE_FFA;
+        ProjectileSnap p; p.id = 7; p.type = WPN_STICKY; p.owner = 1; p.pos = {1, 2, 3};
+        p.flags = PROJ_STUCK | PROJ_ON_PLAYER; p.onPlayer = 5; p.attachOffset = quantizeAttachOffset({0.31f, 1.27f, -0.4f});
+        ProjectileSnap plain; plain.id = 8; plain.type = WPN_STICKY; plain.owner = 1; plain.pos = {4, 5, 6}; plain.flags = PROJ_STUCK;
+        s.projectiles = {p, plain};
+        std::vector<uint8_t> b(4096);
+        Writer w(b.data(), (int)b.size());
+        Snapshot sent = s;
+        writeSnapshotWorld(w, sent, nullptr);
+        Reader r(b.data(), w.size());
+        Snapshot got;
+        CHECK(readSnapshotWorld(r, got, nullptr) && got.projectiles.size() == 2);
+        if (got.projectiles.size() == 2) {
+            const ProjectileSnap& g = got.projectiles[0];
+            CHECK((g.flags & PROJ_ON_PLAYER) && (g.flags & PROJ_STUCK) && g.onPlayer == 5 && length(g.attachOffset - p.attachOffset) < 1e-5f);
+            CHECK(!(got.projectiles[1].flags & PROJ_ON_PLAYER) && length(got.projectiles[1].pos - plain.pos) < 0.02f);
+            Writer w2(b.data(), (int)b.size());   // a delta against what the client has: the attachment comes again
+            Snapshot again = s;
+            writeSnapshotWorld(w2, again, &got);
+            Reader r2(b.data(), w2.size());
+            Snapshot got2;
+            CHECK(readSnapshotWorld(r2, got2, &got) && got2.projectiles.size() == 2 && (got2.projectiles[0].flags & PROJ_ON_PLAYER) &&
+                  got2.projectiles[0].onPlayer == 5 && length(got2.projectiles[0].attachOffset - p.attachOffset) < 1e-5f);
+        }
+        Snapshot bad = s;   // a player id out of range is refused
+        bad.projectiles[0].onPlayer = kMaxPlayers;
+        Writer w3(b.data(), (int)b.size());
+        writeSnapshotWorld(w3, bad, nullptr);
+        Reader r3(b.data(), w3.size());
+        Snapshot got3;
+        CHECK(!readSnapshotWorld(r3, got3, nullptr));
+        // the offset on the body: crouching squashes it with the hull, size scales it
+        Vec3 o = quantizeAttachOffset({0.2f, 1.5f, 0});
+        CHECK(std::fabs(stickyOnPlayerPos({0, 0, 0}, o, true, 1).y - o.y * kPlayerCrouchHeight / kPlayerHeight) < 1e-5f);
+        CHECK(length(stickyOnPlayerPos({1, 0, 0}, o, false, 2) - (Vec3(1, 0, 0) + o * 2)) < 1e-5f);
+    }
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = false;   // warmup: a match start would clear the projectiles and move everyone
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a, b;
+    a.connect("127.0.0.1:" + std::to_string(port), "shooter");
+    b.connect("127.0.0.1:" + std::to_string(port), "target");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 2.5, idle);
+    const int ia = a.clientId(), ib = b.clientId();
+    auto& sa = s.players_[ia];
+    auto& sb = s.players_[ib];
+    auto place = [&] { sa.move.pos = {10, 0, 19}; sb.move.pos = {2, 0, 19}; sa.move.vel = sb.move.vel = {}; sa.health = sb.health = 100; };
+    place();
+    pump(s, cls, 0.3, idle);
+    auto aim = [&](int i, uint16_t buttons) {
+        UserCmd c;
+        if (i != 0) return c;
+        Vec3 eye = a.predicted().pos + Vec3(0, kEyeHeight, 0), tgt = sb.move.pos + Vec3(0, 1.0f, 0);
+        const WeaponDef& wd = weaponDef(WPN_STICKY);
+        float t = length(tgt - eye) / wd.projSpeed;
+        tgt.y += 0.5f * wd.gravity * t * t;
+        Vec3 d = normalize(tgt - eye);
+        c.pitch = std::asin(d.y); c.yaw = std::atan2(-d.x, -d.z);
+        c.weapon = WPN_STICKY;
+        c.buttons = buttons;
+        return c;
+    };
+    pump(s, cls, 0.3, [&](int i) { return aim(i, 0); });
+    CHECK(sa.weapon == WPN_STICKY);
+    auto findSticky = [&]() -> Projectile* { for (auto& pr : s.projectiles_) if (pr.active && pr.type == WPN_STICKY) return &pr; return nullptr; };
+    pump(s, cls, 0.05, [&](int i) { return aim(i, BTN_FIRE); });
+    for (int k = 0; k < 100 && !(findSticky() && findSticky()->stuck); k++) pump(s, cls, 0.01, idle);
+    Projectile* st = findSticky();
+    CHECK(st && st->stuck && st->onPlayer == ib);
+    if (!st || st->onPlayer != ib) { s.stop(); return; }
+    printf("  hit: on the target at %.2f %.2f %.2f from their feet, %.0f hp\n", st->playerOffset.x, st->playerOffset.y, st->playerOffset.z, sb.health);
+    CHECK(sb.health == 100);   // no damage of its own
+    CHECK(s.hitBox(sb.move.pos, (sb.move.flags & MF_CROUCHED) != 0).contains(st->pos));
+    // it rides along: the target walks off
+    Vec3 from = st->pos;
+    pump(s, cls, 0.5, [&](int i) { UserCmd c; if (i == 1) c.forward = 127; else c.weapon = WPN_STICKY; return c; });
+    Vec3 want = stickyOnPlayerPos(sb.move.pos, st->playerOffset, (sb.move.flags & MF_CROUCHED) != 0, s.bodyScale());
+    printf("  followed %.2f m (target moved), off by %.4f\n", length(st->pos - from), length(st->pos - want));
+    CHECK(length(st->pos - from) > 1.0f && length(st->pos - want) < 1e-4f && st->stuck);
+    // the clients draw it on the player as they show them, still walking
+    pump(s, cls, 0.2, [&](int i) {
+        UserCmd c; if (i == 1) c.forward = 127; else c.weapon = WPN_STICKY;
+        if (i == 1) {   // (each client tick: checked while it moves)
+            for (const ProjectileSnap& p : a.interpolatedProjectiles()) {
+                if (p.id != st->id) continue;
+                auto ip = a.interpolatedPlayers();
+                bool okA = (p.flags & PROJ_ON_PLAYER) && p.onPlayer == ib && length(p.attachOffset - st->playerOffset) < 1e-5f && ip[ib].valid &&
+                           length(p.pos - stickyOnPlayerPos(ip[ib].snap.pos, p.attachOffset, false, 1)) < 1e-4f;
+                if (!okA) { printf("  FAIL %s:%d: owner's view of the sticky\n", __FILE__, __LINE__); g_fail++; }
+            }
+            for (const ProjectileSnap& p : b.interpolatedProjectiles()) {
+                if (p.id != st->id) continue;
+                Vec3 at;
+                bool okB = b.attachedPos(p, 0.5f, &at) && length(at - stickyOnPlayerPos(b.smoothedPos(0.5f), p.attachOffset, false, 1)) < 1e-4f;
+                if (!okB) { printf("  FAIL %s:%d: the victim's view of the sticky\n", __FILE__, __LINE__); g_fail++; }
+            }
+        }
+        return c;
+    });
+    int seenA = 0, seenB = 0;
+    for (const ProjectileSnap& p : a.interpolatedProjectiles()) seenA += p.id == st->id;
+    for (const ProjectileSnap& p : b.interpolatedProjectiles()) seenB += p.id == st->id && p.onPlayer == ib;
+    CHECK(seenA == 1 && seenB == 1);
+    // set off: the full blast, centred on them
+    place();
+    pump(s, cls, 0.1, idle);
+    float hp = sb.health;
+    int d0 = sb.deaths;
+    pump(s, cls, 0.1, [&](int i) { UserCmd c; if (i == 0) { c.weapon = WPN_STICKY; c.buttons = BTN_ALTFIRE; } return c; });
+    float dealt = sb.deaths > d0 ? hp : hp - sb.health;
+    printf("  set off: %.1f damage (full: %.1f)\n", dealt, weaponDef(WPN_STICKY).damage);
+    CHECK(!findSticky() && dealt >= weaponDef(WPN_STICKY).damage - 0.5f);
+    CHECK(sa.health == 100);   // (8 m away: out of its 3.4 m blast)
+    // never on its owner: one dropped onto the owner's head goes through and sticks to the floor
+    place();
+    pump(s, cls, 0.1, idle);
+    auto drop = [&](int owner, Vec3 at, Vec3 vel) -> Projectile& {
+        Projectile& pr = s.projectiles_[0];
+        pr = Projectile();
+        pr.active = true; pr.id = 4000; pr.type = WPN_STICKY; pr.owner = owner;
+        pr.pos = at; pr.vel = vel; pr.dieAt = s.time() + 20; pr.armAt = s.time();
+        return pr;
+    };
+    Projectile& own = drop(ia, sa.move.pos + Vec3(0, 2.2f, 0), {0, -5, 0});
+    pump(s, cls, 0.8, idle);
+    CHECK(own.active && own.stuck && own.onPlayer < 0 && own.pos.y < 0.2f);
+    // a sticky on a player who dies stays where they were: it falls to the floor there and sticks
+    Projectile& onB = drop(ia, sb.move.pos + Vec3(0, 2.2f, 0), {0, -5, 0});
+    pump(s, cls, 0.2, idle);
+    CHECK(onB.active && onB.stuck && onB.onPlayer == ib && onB.pos.y > 1.5f);
+    Vec3 died = sb.move.pos;
+    s.killPlayer(ib, -1, 255);
+    CHECK(onB.active && onB.onPlayer < 0 && !onB.stuck);
+    pump(s, cls, 0.8, idle);
+    printf("  victim died: the sticky lies at %.2f %.2f %.2f (died at %.2f %.2f %.2f)\n", onB.pos.x, onB.pos.y, onB.pos.z, died.x, died.y, died.z);
+    CHECK(onB.active && onB.stuck && onB.onPlayer < 0 && onB.pos.y < 0.2f && length(Vec3(onB.pos.x - died.x, 0, onB.pos.z - died.z)) < 0.5f);
+    for (int k = 0; k < 60 && !sb.alive; k++) pump(s, cls, 0.1, idle);   // respawned elsewhere: it doesn't come along
+    CHECK(sb.alive && onB.active && length(Vec3(onB.pos.x - died.x, 0, onB.pos.z - died.z)) < 0.5f);
+    // chain reaction: a blast near where the player is now sets off the one on them (not where it was last tick)
+    place();
+    pump(s, cls, 0.1, idle);
+    Projectile& chain = drop(ia, sb.move.pos + Vec3(0, 2.2f, 0), {0, -5, 0});
+    pump(s, cls, 0.2, idle);
+    CHECK(chain.onPlayer == ib);
+    sb.move.pos = sb.move.pos + Vec3(0, 0, 3);   // (moved since the projectiles' tick)
+    s.explodeForTest(sb.move.pos + Vec3(3.0f, 1.0f, 0), -1, WPN_ROCKET);
+    CHECK(!chain.active);
+    s.stop();
+
+    // team modes: a teammate isn't stuck to (it drops off them, as it always did); an enemy is
+    Server t;
+    cfg.mode = MODE_KOTH; cfg.port = (uint16_t)(port + 1);
+    { std::string e_; if (!t.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    t.setLog([](const std::string&) {});
+    NetClient c1, c2, c3;
+    c1.connect("127.0.0.1:" + std::to_string(cfg.port), "a");
+    c2.connect("127.0.0.1:" + std::to_string(cfg.port), "mate");
+    c3.connect("127.0.0.1:" + std::to_string(cfg.port), "enemy");
+    std::vector<NetClient*> tc = {&c1, &c2, &c3};
+    pump(t, tc, 1.0, idle);
+    const int mine = t.players_[c1.clientId()].team, theirs = mine == TEAM_A ? TEAM_B : TEAM_A;
+    c2.sendCommand(std::string("team ") + (mine == TEAM_A ? "a" : "b"));
+    c3.sendCommand(std::string("team ") + (theirs == TEAM_A ? "a" : "b"));
+    pump(t, tc, 2.5, idle);
+    auto& p1 = t.players_[c1.clientId()];
+    auto& p2 = t.players_[c2.clientId()];
+    auto& p3 = t.players_[c3.clientId()];
+    CHECK(p1.team == p2.team && p3.team != p1.team && p1.alive && p2.alive && p3.alive);
+    p2.move.pos = {2, 0, 19}; p3.move.pos = {-4, 0, 19}; p2.move.vel = p3.move.vel = {};
+    pump(t, tc, 0.1, idle);
+    auto shoot = [&](int at) -> Projectile& {   // from 1 m to the side of them, chest high, straight in
+        Projectile& pr = t.projectiles_[at];
+        const Vec3 feet = t.players_[at == 0 ? c2.clientId() : c3.clientId()].move.pos;
+        pr = Projectile();
+        pr.active = true; pr.id = (uint16_t)(5000 + at); pr.type = WPN_STICKY; pr.owner = c1.clientId();
+        pr.pos = feet + Vec3(1.2f, 1.0f, 0); pr.vel = {-20, 0, 0}; pr.dieAt = t.time() + 20; pr.armAt = t.time();
+        return pr;
+    };
+    Projectile& onMate = shoot(0);
+    Projectile& onEnemy = shoot(1);
+    pump(t, tc, 0.8, idle);
+    printf("  teammate: %s, %s %.2f m up; enemy: %s\n", onMate.onPlayer < 0 ? "not stuck to" : "STUCK TO", onMate.stuck ? "on the floor" : "falling", onMate.pos.y, onEnemy.onPlayer == c3.clientId() ? "stuck to" : "NOT STUCK TO");
+    CHECK(onMate.active && onMate.onPlayer < 0 && onMate.stuck && onMate.pos.y < 0.2f);
+    CHECK(onEnemy.active && onEnemy.onPlayer == c3.clientId());
+    t.stop();
+}
+
 static void testAltFires(uint16_t port) {
     printf("alt-fires: knife throw, shotgun ricochet, scoped rifle\n");
     for (int kase = 0; kase < 3; kase++) {
@@ -4618,6 +4817,16 @@ static void testDemoUpgrade() {
         }
         CHECK(snaps > 10 && chat && p.playerName(0) == "oldtimer" && p.error() == "demo finished");
     }
+    { // a demo of protocol 37 (before stickies stuck to players: no projectile bit 32) converts and plays as it was
+        std::string cur = rd(d / "old.qdemo");
+        put("p37.qdemo", cur, 37);
+        demo::UpgradeReport r37 = demo::upgradeDir(d.string());
+        CHECK(r37.converted == 1 && r37.failed == 0);
+        CHECK(rd(d / "p37.qdemo").substr(6) == cur.substr(6));   // (the same records: its snapshots read the same way)
+        NetClient p;
+        std::string err;
+        CHECK(p.startPlayback((d / "p37.qdemo").string(), err) && p.mapReady());
+    }
     // a second conversion of the same name keeps both originals
     put("old.qdemo", fixture, -1);
     r = demo::upgradeDir(d.string());
@@ -5826,7 +6035,7 @@ int main(int argc, char** argv) {
         snapBench("harbor", 16, secs, TP(28824), true, 24);
         return 0;
     }
-    if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testFixedSpread(p + 50); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); testProjectileTickRates(p + 40); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testFixedSpread(p + 50); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); testProjectileTickRates(p + 40); testStickyOnPlayers(p + 60); return g_fail ? 1 : 0; }
     // ---- the whole suite. Most tests wait on real-time network play rather than the CPU, so each runs in its own
     // process, several at once (output kept in order); a few timing-sensitive ones run alone afterwards.
     // "quark_tests serial" runs everything in this process, one after another, as before.
@@ -5837,7 +6046,7 @@ int main(int argc, char** argv) {
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testTimeToKill(); testWallbang(); }},
+        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testTimeToKill(); testWallbang(); }},
         {"maps", [] {
             testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders();
             printf("map scores\n");   // the map bar: every map scores at least 7 in every category but originality

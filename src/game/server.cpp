@@ -1073,6 +1073,7 @@ void Server::dropPlayer(int id, const std::string& reason, bool notify, bool shu
     vote_.yes &= ~(1u << id); vote_.no &= ~(1u << id);
     std::string name = p.name;
     int team = p.team;
+    releaseStickies(id);
     p.connected = false;
     p.alive = false;
     p.awayUntil = 0;
@@ -1561,6 +1562,7 @@ void Server::message(const std::string& text) {
 
 void Server::spawnPlayer(int id) {
     ServerPlayer& p = players_[id];
+    releaseStickies(id);   // (respawned alive, without dying: they stay where you were)
     std::vector<const SpawnPoint*> cands = spawnPool(map_, rulesSpawnType(*this, id), ms_.point);
 
     Vec3 pos;
@@ -1647,6 +1649,7 @@ void Server::spawnPlayer(int id) {
 void Server::killPlayer(int victim, int killer, int weapon) {
     ServerPlayer& v = players_[victim];
     if (!v.alive) return;
+    releaseStickies(victim);
     v.alive = false;
     v.health = 0;
     v.deaths++;
@@ -1870,6 +1873,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     if (p.weapon == WPN_STICKY && (cmd.buttons & BTN_ALTFIRE) && !p.fireLocked)
         for (auto& pr : projectiles_)
             if (pr.active && pr.owner == id && pr.type == WPN_STICKY && time() >= pr.armAt) {
+                if (pr.onPlayer >= 0) followVictim(pr);   // (where the one it's on is now: they may have moved this tick)
                 pr.active = false;
                 explode(pr.pos, id, WPN_STICKY);
             }
@@ -2146,6 +2150,7 @@ void Server::tickProjectiles() {
             if (map_.dynSolids.empty()) pr.active = false; // cart gone (round over)
             else pr.pos = map_.cartPoint(ms_.mode, ms_.attackers, ms_.payloadDist) + pr.cartOffset;
         }
+        if (pr.stuck && pr.onPlayer >= 0) followVictim(pr);   // (players have moved this tick: snapshots and blasts see it on them)
         for (int k = 0; k < steps && pr.active && !pr.stuck; k++) {
             if (k > 0 && (double)(timeMs_ + (uint64_t)k) * 0.001 >= pr.dieAt) { pr.active = false; break; }   // (the 1 ms steps' own times)
             stepProjectile(pr);
@@ -2189,7 +2194,22 @@ void Server::stepProjectile(Projectile& pr) {
             }
             pr.pos = at;   // (a spent projectile keeps where it landed)
             pr.active = false;
-        } else if (wd.sticky) {               // stick where it landed (on a player: it drops there)
+        } else if (wd.sticky && hitPlayer >= 0 && !(modeIsTeamBased(ms_.mode) && players_[hitPlayer].team == players_[pr.owner].team)) {
+            // an enemy: it sticks to them, just inside their hull where it hit (inside: never in a wall they stand
+            // against), and rides along until it's set off (alt-fire, a blast) or they die / respawn / leave
+            // (releaseStickies). No damage of its own: the blast does it, centred on them.
+            const auto& v = players_[hitPlayer];
+            const bool crouched = (v.move.flags & MF_CROUCHED) != 0;
+            const float scale = bodyScale(), e = 0.02f * scale;
+            Vec3 on = vmax(hitBb.mn + Vec3(e, e, e), vmin(at, hitBb.mx - Vec3(e, e, e)));
+            Vec3 o = (on - v.move.pos) / scale;
+            if (crouched) o.y *= kPlayerHeight / kPlayerCrouchHeight;
+            pr.onPlayer = hitPlayer;
+            pr.playerOffset = quantizeAttachOffset(o);
+            pr.pos = stickyOnPlayerPos(v.move.pos, pr.playerOffset, crouched, scale);
+            pr.vel = {};
+            pr.stuck = true;
+        } else if (wd.sticky) {               // stick where it landed (on a teammate: it drops there)
             pr.pos = hitPlayer < 0 ? at + n * 0.08f : at;
             pr.vel = {};
             pr.stuck = hitPlayer < 0;
@@ -2216,6 +2236,25 @@ void Server::stepProjectile(Projectile& pr) {
             pr.active = false;
             explode(at, pr.owner, pr.type, pr.type == WPN_ROCKET ? hitPlayer : -1);
         }
+    }
+}
+
+void Server::followVictim(Projectile& pr) {
+    const ServerPlayer& v = players_[pr.onPlayer];
+    if (!v.connected || !v.alive || v.team == TEAM_SPECTATOR) {   // (releaseStickies missed it): stays where it last was
+        pr.onPlayer = -1; pr.stuck = false; pr.vel = {};
+        return;
+    }
+    pr.pos = stickyOnPlayerPos(v.move.pos, pr.playerOffset, (v.move.flags & MF_CROUCHED) != 0, bodyScale());
+}
+
+// The stickies on a player who dies, respawns, leaves or goes to spectate stay where that player was: let go there
+// (mid-air: they fall and stick where they land, like a fresh one).
+void Server::releaseStickies(int player) {
+    for (auto& pr : projectiles_) {
+        if (!pr.active || pr.onPlayer != player) continue;
+        followVictim(pr);
+        pr.onPlayer = -1; pr.stuck = false; pr.vel = {};
     }
 }
 
@@ -2251,7 +2290,9 @@ void Server::explode(const Vec3& at, int owner, int weapon, int direct) {
     // Blasts set off any sticky in range, anyone's (yours and the enemy's): chain reactions. Each one is
     // switched off before it goes, so a chain always ends.
     for (auto& pr : projectiles_) {
-        if (!pr.active || pr.type != WPN_STICKY || length(pr.pos - at) > wd.splashRadius) continue;
+        if (!pr.active || pr.type != WPN_STICKY) continue;
+        if (pr.onPlayer >= 0) followVictim(pr);
+        if (length(pr.pos - at) > wd.splashRadius) continue;
         pr.active = false;
         explode(pr.pos, pr.owner, WPN_STICKY);
     }
@@ -2452,6 +2493,7 @@ void Server::sendSnapshots() {
         if (!pr.active) continue;
         if (allProj.size() >= 48) break;
         allProj.push_back({pr.id, (uint8_t)pr.type, (uint8_t)pr.owner, pr.pos, pr.vel, (uint8_t)((pr.gravMul != 1 ? PROJ_LOB : 0) | (pr.stuck ? PROJ_STUCK : 0))});
+        if (pr.onPlayer >= 0) { allProj.back().flags |= PROJ_ON_PLAYER; allProj.back().onPlayer = (uint8_t)pr.onPlayer; allProj.back().attachOffset = pr.playerOffset; }
         snapProjSlot_.push_back(k);
     }
     // what each client can see (NET-10): sight per player (bit per target, recent enough), then per client the
@@ -2525,9 +2567,11 @@ void Server::sendSnapshots() {
         s.players = all;          // (copies into the slot's own vectors: their capacity is reused)
         // (tag: everyone always knows where the tagger is, owner B8 - never hidden; hide and seek's seeker is, out of sight)
         const bool tag = ms_.mode == MODE_TAG;
+        uint32_t hiddenPlayers = 0;
         for (auto& ps : s.players) {
             ps.hidden = !seesAll && ps.id != i && (ps.flags & PS_ALIVE) && !(vis >> ps.id & 1) && !(tag && (ps.flags & PS_HASBOMB));
             if (!ps.hidden) continue;
+            hiddenPlayers |= 1u << ps.id;
             // out of sight: nothing but the scoreboard (no health, weapon, firing, crouch or the bomb)
             ps.flags &= (uint8_t)~(PS_FIRING | PS_CROUCHED | (isItMode(ms_.mode) ? 0 : PS_HASBOMB));
             ps.health = 0; ps.weapon = 0; ps.keys = 0; ps.hooked = 0; ps.hookPoint = Vec3();
@@ -2545,6 +2589,8 @@ void Server::sendSnapshots() {
             const int slot = snapProjSlot_[k];
             bool in = seesAll || allProj[k].owner == i;
             for (uint32_t m = persp & ~blind; m && !in; m &= m - 1) in = now - players_[lowestBit(m)].projSeen[slot] <= kProjVisGrace;
+            // a sticky on a player this client can't see would give them away (its owner's too): out of sight with them
+            if (in && (allProj[k].flags & PROJ_ON_PLAYER) && (hiddenPlayers >> allProj[k].onPlayer & 1)) in = false;
             if (in) { s.projectiles.push_back(allProj[k]); projShown_[slot] |= 1u << i; continue; }
             projHidden_[slot] |= 1u << i;
             // one this client has seen goes on as an id only (it's still flying: gone would be an explosion); one it

@@ -67,6 +67,10 @@ public:
     using PlayerArray = std::array<InterpPlayer, kMaxPlayers>;
     PlayerArray interpolatedPlayers() const;
     std::vector<ProjectileSnap> interpolatedProjectiles() const;   // the ones in sight (the server sends others as an id: NET-10)
+    // A sticky on a player (PROJ_ON_PLAYER): on that player as this client draws them (interpolated; yourself, alive
+    // and not a demo: predicted, `alpha` between ticks as smoothedPos). False: they aren't drawn (out of sight).
+    bool attachedPos(const ProjectileSnap& p, float alpha, Vec3* out) const;
+    float bodyScale() const;   // duel "double size" lives (Server::bodyScale)
     bool projectileHidden(uint16_t id) const;                      // still flying, out of sight
     const PlayerSnap* findPlayer(int id) const;
     std::string playerName(int id) const;
