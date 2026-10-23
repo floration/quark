@@ -745,9 +745,12 @@ void Server::handleConnect(const NetAddr& from, Reader& r, int len) {
         verifyAt_ = now;
         if (verifyTokens_ < 1) return;   // a flood of signed connects: this one waits for the client's resend
         verifyTokens_ -= 1;
-        if (!ownAddress(dialled, from))   // signed for another server: relayed through the one the player joined
+        if (!ownAddress(dialled, from)) {   // signed for another server: relayed through the one the player joined
             log("connect from " + from.toString() + ": ranked key proof is for " + dialled.toString() + ", not this server (joins without a ranked id; " +
                 "if players reach it there, start the server with --own-addr " + dialled.toString() + ")");
+            std::lock_guard<std::mutex> l(reachMu_);
+            ownAddrHint_ = dialled.toString();
+        }
         else if (rankVerify(rpub, rankConnectMessage(cookie, nonce, dialled.toString()), rsig)) rankId = rankIdFromPublic(rpub);
         else log("connect from " + from.toString() + ": ranked key proof failed (joins without a ranked id)");
     }

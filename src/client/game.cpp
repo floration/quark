@@ -2074,6 +2074,13 @@ void Game::drawHud() {
             ui_.labelCentered(cx, 121 * s, upper(host_->reachStatus()), rc == Server::REACH_OK ? kGreenOk : rc == Server::REACH_BLOCKED ? kRed : kGrey, 0.6f);
             if (rc != Server::REACH_CHECKING && ui_.button(cx - 50 * s, 131 * s, 100 * s, 16 * s, "CHECK AGAIN")) host_->recheckReachability();
         }
+        // C9: a ranked player dialled an address this server can't see as its own (a forwarded port, a container)
+        std::string own = host_->ownAddrHint();
+        if (!own.empty()) {
+            float oy = rc != Server::REACH_OFF ? 152 * s : 121 * s;
+            ui_.labelCentered(cx, oy, "A PLAYER JOINED VIA " + own + ", WHICH THIS PC CAN'T CONFIRM IS ITSELF: NO RANKED ID", kRed, 0.55f);
+            ui_.labelCentered(cx, oy + 11 * s, "IF THAT ADDRESS REACHES YOU, HOST A DEDICATED SERVER WITH --own-addr " + own, kGrey, 0.55f);
+        }
     }
 
     showScores_ = (isDown(A_SCORES) && !chatting_) || opts_.textHeavy || ms.phase == PHASE_MATCH_END;
@@ -3661,6 +3668,7 @@ static const char* const kInfoPages[][48] = {
         "# HOST A GAME (main menu > HOST GAME)",
         "Pick the mode and map, a server name and the max players. The game picks the map built for the mode; any other map works with a warning.",
         "The server listens on UDP port 27500 (change it under UDP PORT). Quark asks your router to forward it automatically (UPnP); if friends can't connect, forward that UDP port on your router by hand.",
+        "RANKED BEHIND A FORWARDED PORT OR IN A CONTAINER: ranked ids are signed for the address players dial. If they reach the server at an address it can't see itself (the router forwards another port to it, or it runs in a container), the host screen says so; start a dedicated server with --own-addr host:port (that address) so their ranked ids work.",
         "PUBLIC lists the server on the internet server list (off: friends join with your IP, shown on the host screen). Games on your network show up for everyone on it.",
         "BALANCE BOTS evens out uneven teams with bots. MODE > RANKED runs rated 1v1 on the ranked maps (no bots). SERVER LOG keeps a log of the match.",
         "CUSTOM MODE: pick one of your saved custom modes (or NEW / EDIT to build one).",

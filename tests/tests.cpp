@@ -2969,7 +2969,8 @@ static void testRankedRelay(uint16_t port) {
             bool logged = false;
             for (auto& l : logs) logged |= l.find("is for " + relayAddr + ", not this server") != std::string::npos;
             CHECK(logged);
-        } else CHECK(s.players_[id].rankId == kv.id && s.players_[id].dialled.toString() == relayAddr);
+            CHECK(s.ownAddrHint() == relayAddr);   // (C9: the host screen shows it, with --own-addr)
+        } else CHECK(s.players_[id].rankId == kv.id && s.players_[id].dialled.toString() == relayAddr && s.ownAddrHint().empty());
         // which addresses count as this server's
         const NetAddr lo{0x7F000001u, port}, outside{0xC6336401u, 5000};   // (198.51.100.1)
         CHECK(s.ownAddress(lo, NetAddr{0x7F000001u, 5000}));                       // loopback, from this machine
