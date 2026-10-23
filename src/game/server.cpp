@@ -2224,8 +2224,10 @@ void Server::sendSnapshots() {
         bool seesAll = !p.alive || p.team == TEAM_SPECTATOR;
         s.players = all;          // (copies into the slot's own vectors: their capacity is reused)
         s.projectiles = allProj;
+        // (tag: everyone always knows where the tagger is, owner B8 - never hidden; hide and seek's seeker is, out of sight)
+        const bool tagger = ms_.mode == MODE_TAG;
         for (auto& ps : s.players)
-            ps.hidden = !seesAll && ps.id != i && (ps.flags & PS_ALIVE) && time() - p.lastSeen[ps.id] > 0.6f;
+            ps.hidden = !seesAll && ps.id != i && (ps.flags & PS_ALIVE) && time() - p.lastSeen[ps.id] > 0.6f && !(tagger && (ps.flags & PS_HASBOMB));
         s.baseTick = base ? base->tick : 0;
         Writer ww(world, sizeof world);
         writeSnapshotWorld(ww, s, base);

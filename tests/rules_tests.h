@@ -622,6 +622,41 @@ static void testLocator(uint16_t port) {
     }
 }
 
+// B8: tag runners always know where the tagger is (the server never hides the tagger from them, even behind walls);
+// hide and seek hiders are never shown the seeker: out of sight, the seeker is hidden like anyone else.
+static void testItAwareness(uint16_t port) {
+    printf("tag: the tagger is always sent; hide and seek: the seeker isn't, out of sight\n");
+    for (int mode : {MODE_TAG, MODE_HIDE}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "bastion"; cfg.mode = mode; cfg.port = port++;   // (the centre walls block one end from the other)
+        NetClient c[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); return; }
+        int it = s.players_[c[0].clientId()].it ? c[0].clientId() : c[1].clientId();
+        NetClient& runner = s.players_[c[0].clientId()].it ? c[1] : c[0];
+        NetClient& itc = s.players_[c[0].clientId()].it ? c[0] : c[1];
+        int other = runner.clientId();
+        for (int k = 0; k < 8; k++) {
+            s.players_[it].move.pos = {0, 0, 28}; s.players_[it].move.vel = {};
+            s.players_[other].move.pos = {0, 0, -28}; s.players_[other].move.vel = {};
+            s.players_[it].itFreezeUntil = s.time() + 10;   // (stays put)
+            pump(s, cls, 0.1, idle);
+        }
+        auto hiddenTo = [&](NetClient& cl, int id) { for (auto& p : cl.latest().players) if (p.id == id) return p.hidden; return false; };
+        bool itHidden = hiddenTo(runner, it), runnerHidden = hiddenTo(itc, other);
+        printf("  %s: \"it\" %s to the %s, they're %s to \"it\"\n", modeName(mode), itHidden ? "hidden" : "sent", mode == MODE_TAG ? "runner" : "hider", runnerHidden ? "hidden" : "sent");
+        CHECK(runnerHidden);                               // (behind the walls: the usual)
+        CHECK(itHidden == (mode == MODE_HIDE));            // tag: always sent; hide and seek: hidden
+        if (mode == MODE_TAG) {
+            bool seen = false;
+            for (auto& p : runner.latest().players) if (p.id == it) seen = length(p.pos - s.players_[it].move.pos) < 1.0f;
+            CHECK(seen);                                   // (where the tagger really is)
+        }
+        s.stop();
+    }
+}
+
 // GAME-1: in tag, "it" going to spectate or leaving is eliminated (the round ends as if time ran out); nobody joins a
 // side mid-match; someone eliminated who reconnects is still out.
 static void testTagEscape(uint16_t port) {
@@ -908,6 +943,7 @@ static void testGameRules(const std::string& only) {
         {"tag", [] { testTagEscape(TP(29248)); }},
         {"rps", [] { testRpsTwo(TP(29255)); testRpsMany(TP(29256)); }},
         {"locator", [] { testLocator(TP(29260)); }},
+        {"aware", [] { testItAwareness(TP(29263)); }},
         {"bomb", [] { testBombDrop(TP(29249)); }},
         {"botdefer", [] { testBalanceBotDefer(TP(29250)); }},
         {"spawns", [] { testSpawnTypes(TP(29251)); }},

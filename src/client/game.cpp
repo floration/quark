@@ -1391,12 +1391,15 @@ void Game::drawWorld(float alpha) {
             if ((p.flags & PS_HASBOMB) && !isItMode(net_.mode().mode))
                 r_.box(at(1.15f) + fwd * -0.32f, {0.2f, 0.22f, 0.1f}, yaw, {0.1f, 0.1f, 0.1f}, sv);
         }
-        if (!self && (p.flags & PS_HASBOMB) && isItMode(net_.mode().mode)) { // hide and seek / tag: mark who's "it"
+        // hide and seek: the seeker is marked only where you can see them (hiders are never shown where the seeker is,
+        // owner B8); tag: the HUD marks the tagger everywhere, through walls (drawTaggerMarker)
+        if (!self && (p.flags & PS_HASBOMB) && net_.mode().mode == MODE_HIDE) {
             float sx, sy;
-            if (r_.project(pos + Vec3(0, 2.3f, 0), sx, sy)) {
+            Vec3 head = pos + Vec3(0, 1.7f * bs, 0), cam = r_.cameraPos(), d = head - cam;
+            float dist = length(d);
+            if (dist > 0.01f && !map.raycastAny(cam, d / dist, dist - 0.3f) && r_.project(pos + Vec3(0, 2.3f, 0), sx, sy)) {
                 float ts = std::max(1.0f, std::round(ui_.textScale()));
-                const char* t = net_.mode().mode == MODE_TAG ? "TAGGER" : "SEEKER";
-                r_.text(sx - r_.textWidth(t, ts) * 0.5f, sy, ts, t, kRed);
+                r_.text(sx - r_.textWidth("SEEKER", ts) * 0.5f, sy, ts, "SEEKER", kRed);
             }
         }
         if (vis && !rankedPlayer()) if (int place = crownOf(i)) { // leaderboard crown on their head (a model; not in ranked)
@@ -1751,6 +1754,54 @@ void Game::drawWorld(float alpha) {
 // ---------------------------------------------------------------------------
 // HUD
 
+// Tag (owner B8): every runner always knows where the tagger is - a marker over them through walls with the distance,
+// or an arrow at the screen edge pointing their way. (The server always sends the tagger's position in tag.)
+void Game::drawTaggerMarker(float W, float H, float s) {
+    const int me = net_.clientId();
+    auto ip = net_.interpolatedPlayers();
+    int it = -1;
+    for (int i = 0; i < kMaxPlayers; i++)
+        if (i != me && ip[i].valid && (ip[i].snap.flags & PS_ALIVE) && (ip[i].snap.flags & PS_HASBOMB)) it = i;
+    if (it < 0) return;
+    const Vec3 at = ip[it].snap.pos + Vec3(0, 2.25f * bodyScale(), 0), cam = r_.cameraPos();
+    const Vec3 d = at - cam;
+    const float dist = length(d);
+    const float ts = ui_.textScale(), small = std::max(1.0f, std::round(ts * 0.9f));
+    const Color red = {1, 0.25f, 0.2f, 1};
+    const float m = 28 * s;   // (kept this far inside the screen edge)
+    float sx, sy;
+    bool on = r_.project(at, sx, sy) && sx > m && sx < W - m && sy > m && sy < H - m;
+    std::string label = "TAGGER " + std::to_string((int)std::lround(dist)) + "M";
+    if (on) {   // a downward wedge over their head, their name and distance above it
+        float k = 14 * s;
+        for (int r = 0; r < 5; r++) r_.rect(sx - k * (1 - r / 5.0f), sy - k + r * k / 5, 2 * k * (1 - r / 5.0f), k / 5 + 1, red);
+        r_.text(sx - r_.textWidth(label, small) * 0.5f, sy - k - r_.textHeight(small) - 4 * s, small, label, red);
+        return;
+    }
+    // off screen (or behind): an arrow at the edge, in their direction as seen from here
+    const float yaw = r_.cameraYaw(), pitch = r_.cameraPitch();
+    Vec3 fwd = angleForward(yaw, pitch), right = normalize(cross(fwd, {0, 1, 0})), up = cross(right, fwd);
+    float x = dot(d, right), y = -dot(d, up);
+    if (dot(d, fwd) < 0 && std::fabs(x) < 1e-3f) x = 1e-3f;   // (straight behind: off to a side)
+    if (dot(d, fwd) < 0) y = std::max(y, 0.0f);                // (behind: along the bottom half)
+    float len = std::sqrt(x * x + y * y);
+    if (len < 1e-4f) return;
+    x /= len; y /= len;
+    float t = std::min((W * 0.5f - m) / std::max(1e-4f, std::fabs(x)), (H * 0.5f - m) / std::max(1e-4f, std::fabs(y)));
+    float ex = W * 0.5f + x * t, ey = H * 0.5f + y * t;
+    for (float side : {-0.65f, 0.65f})   // a chevron pointing their way: two arms of squares back from the tip
+        for (int k = 0; k < 7; k++) {
+            float c = std::cos(side), sn = std::sin(side), ax = -(x * c - y * sn), ay = -(x * sn + y * c);
+            float px = ex + ax * k * 3 * s, py = ey + ay * k * 3 * s;
+            r_.rect(px - 2.5f * s, py - 2.5f * s, 5 * s, 5 * s, red);
+        }
+    const float lw = r_.textWidth(label, small), lh = r_.textHeight(small);   // (the label just inside the arrow)
+    float lx = ex - x * (26 * s + lw * 0.5f) - lw * 0.5f, ly = ey - y * (26 * s + lh * 0.5f) - lh * 0.5f;
+    lx = clampf(lx, 4 * s, W - r_.textWidth(label, small) - 4 * s);
+    ly = clampf(ly, 4 * s, H - r_.textHeight(small) - 4 * s);
+    r_.text(lx, ly, small, label, red);
+}
+
 bool Game::rpsPicking() const {
     if (!net_.hasSnapshot() || !(net_.mode().flags & MS_RPS) || rps_.stage != RPS_PICK || net_.playback()) return false;
     for (auto& p : rps_.players) if (p.id == net_.clientId()) return !p.out;
@@ -1896,6 +1947,8 @@ void Game::drawHud() {
         std::string t = "HOLD FIRE " + std::to_string((int)std::ceil(hold));
         r_.text(cx - r_.textWidth(t, big) * 0.5f, cy - 90 * s, big, t, Color{1, 0.85f, 0.3f, 1});
     }
+    if (ms.mode == MODE_TAG && (ms.phase == PHASE_FREEZE || ms.phase == PHASE_LIVE) && !(mep && (mep->flags & PS_HASBOMB)))
+        drawTaggerMarker(W, H, s);   // tag: runners (and whoever watches) always see where the tagger is
     if (isItMode(ms.mode) && ms.phase == PHASE_LIVE && mep && (mep->flags & PS_HASBOMB)) { // the locator
         float sx, sy;
         if (time_ < locateUntil_ && r_.project(locatePos_ + Vec3(0, 1.0f, 0), sx, sy)) { // through walls: a box around them

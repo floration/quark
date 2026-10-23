@@ -100,6 +100,7 @@ private:
     void drawRps(float W, float H, float s);   // the hide and seek tiebreak (rock paper scissors) panel
     void drawRpsShape(float x, float y, float size, int shape, Color c);
     bool rpsPicking() const;                   // we're in the tiebreak and the throw is open
+    void drawTaggerMarker(float W, float H, float s);   // tag: where the tagger is, through walls (at the screen edge when off it)
     void drawNotices(float y, float ts, float s); // notify() lines, centred from y down (HUD and menus)
     void drawScoreboard();
     void drawMenu();
