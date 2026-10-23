@@ -355,6 +355,34 @@ static void testMaps() {
         for (auto& sp : m.spawns) { a += sp.team == SPAWN_A; b += sp.team == SPAWN_B; }
         bool duel = (m.rankedLadders & 3) != 0;   // a ladder played 1v1 (vanilla, vampire): a spawn for each side
         CHECK(a == b && (a >= 1 || !duel));
+        // the rest of the map mirrors too (REVIEW MAP-17: only spawn counts were compared): every spawn has its twin
+        // (A <-> B, the others their own team) facing the mirrored way, every ladder, light and objective its twin,
+        // and the sun is overhead (any other sun lights the two halves differently: baked shadows fall one way)
+        auto same = [](const Vec3& p, const Vec3& q) { return length(p - q) < 0.01f; };
+        auto flip = [](const Vec3& p) { return Vec3(-p.x, p.y, -p.z); };
+        auto boxTwin = [&](const std::vector<AABB>& list, const AABB& x) {
+            AABB mx = mirrored(x);
+            for (auto& o : list) if (same(o.mn, mx.mn) && same(o.mx, mx.mx)) return true;
+            return false;
+        };
+        int odd = 0;
+        for (auto& sp : m.spawns) {
+            int twinTeam = sp.team == SPAWN_A ? SPAWN_B : sp.team == SPAWN_B ? SPAWN_A : sp.team;
+            bool found = false;
+            for (auto& o : m.spawns)
+                if (o.team == twinTeam && same(o.pos, flip(sp.pos)) && std::fabs(std::remainder(o.yaw - sp.yaw - PI, 2 * PI)) < 0.01f) found = true;
+            if (!found) { printf("  %s: spawn %.1f %.1f %.1f (yaw %.0f) has no mirrored twin\n", name.c_str(), sp.pos.x, sp.pos.y, sp.pos.z, sp.yaw * 180 / PI); odd++; }
+        }
+        for (auto& l : m.ladders) if (!boxTwin(m.ladders, l)) { printf("  %s: a ladder at %.1f %.1f has no twin\n", name.c_str(), l.center().x, l.center().z); odd++; }
+        for (auto& l : m.lights) {
+            bool found = false;
+            for (auto& o : m.lights) found |= same(o.pos, flip(l.pos)) && o.radius == l.radius && o.intensity == l.intensity;
+            if (!found) { printf("  %s: a light at %.1f %.1f %.1f has no twin\n", name.c_str(), l.pos.x, l.pos.y, l.pos.z); odd++; }
+        }
+        for (auto* list : {&m.bombSites, &m.points, &m.checkpoints}) for (auto& z : *list) if (!boxTwin(*list, z)) { printf("  %s: an objective has no twin\n", name.c_str()); odd++; }
+        if (m.hasHill && !boxTwin({m.hill}, m.hill)) { printf("  %s: the hill isn't centred\n", name.c_str()); odd++; }
+        if (std::fabs(m.sunDir.x) > 1e-6f || std::fabs(m.sunDir.z) > 1e-6f) { printf("  %s: the sun (%.2f %.2f %.2f) isn't overhead\n", name.c_str(), m.sunDir.x, m.sunDir.y, m.sunDir.z); odd++; }
+        CHECK(odd == 0);
     }
     CHECK(perLadder[0] >= 2 && perLadder[1] >= 2 && perLadder[2] >= 2 && ownMaps >= 3);
 }
@@ -432,6 +460,61 @@ static void testSpawnPools() {
                 }
         }
         printf("  %-10s %3zu spawns, %2d pools, fewest to spare: %d (%s)\n", name.c_str(), m.spawns.size(), pools, worst, worstWhat.c_str());
+    }
+}
+
+// Spawn sanity (REVIEW MAP-16): every spawn faces into the map (2 m clear ahead at eye height: Summit's faced rock
+// 0.5 m away), no two spawns that can be in use together stand closer than 1.5 m (only one side's staged spawns of
+// different stages may share a spot), and in team modes no spawn sees an enemy spawn (eye to eye, at any range: a
+// sniper reaches across any map).
+static void testSpawnSanity() {
+    printf("spawns: facing into the map, apart, out of the enemy's sight\n");
+    for (auto& name : testedMaps()) {
+        Map m;
+        if (!m.load(name)) continue;
+        int bad = 0;
+        for (auto& sp : m.spawns) {
+            Vec3 eye = sp.pos + Vec3(0, kEyeHeight, 0);
+            float t = m.raycast(eye, angleForward(sp.yaw, 0), 2.0f);
+            if (t >= 0) { printf("    %s: spawn %.1f %.1f %.1f faces a wall %.1f m away\n", name.c_str(), sp.pos.x, sp.pos.y, sp.pos.z, t); bad++; }
+        }
+        // (spawns used together: a mode's two teams; the free-for-all pool; the race grid; a staged map's attackers and
+        // defenders, but never one side's stages with each other. Lodestone's race grid may share a pad with a multi
+        // point stage: no mode uses both.)
+        auto group = [](int t) { return t == SPAWN_A || t == SPAWN_B ? 0 : t == SPAWN_ANY ? 1 : t == SPAWN_RACE ? 2 : 3; };
+        for (size_t i = 0; i < m.spawns.size(); i++)
+            for (size_t j = i + 1; j < m.spawns.size(); j++) {
+                auto &p = m.spawns[i], &q = m.spawns[j];
+                bool stagesApart = isStagedSpawn(p.team) && isStagedSpawn(q.team) && spawnDefends(p.team) == spawnDefends(q.team) && spawnStage(p.team) != spawnStage(q.team);
+                float d = length(p.pos - q.pos);
+                if (d < 1.5f && !stagesApart && group(p.team) == group(q.team)) { printf("    %s: spawns %.1f %.1f %.1f and %.1f %.1f %.1f are %.2f m apart\n", name.c_str(), p.pos.x, p.pos.y, p.pos.z, q.pos.x, q.pos.y, q.pos.z, d); bad++; }
+            }
+        // enemy spawns in sight: the two sides' spawns in every offered team mode (each stage's attackers and defenders)
+        std::vector<std::pair<int, int>> sides;   // (spawn type, enemy spawn type)
+        for (int mode = 0; mode < MODE_COUNT; mode++) {
+            if (!m.supportsMode(mode) || !modeIsTeamBased(mode)) continue;
+            int sa = modeSpawnType(m, mode, TEAM_A, TEAM_A, false), sb = modeSpawnType(m, mode, TEAM_B, TEAM_A, false);
+            if (isStagedSpawn(sa)) for (int st = 0; st <= kMaxSpawnStage; st++) sides.push_back({stagedSpawn(st, false), stagedSpawn(st, true)});
+            else sides.push_back({sa, sb});
+        }
+        std::sort(sides.begin(), sides.end());
+        sides.erase(std::unique(sides.begin(), sides.end()), sides.end());
+        if (m.holdFire > 0) sides.clear();   // (a "holdfire" map starts both sides face to face on purpose: Dojo's bow)
+        int pairs = 0, seen = 0;
+        for (auto [ta, tb] : sides)
+            for (auto& p : m.spawns)
+                for (auto& q : m.spawns) {
+                    if (p.team != ta || q.team != tb) continue;
+                    Vec3 a = p.pos + Vec3(0, kEyeHeight, 0), b = q.pos + Vec3(0, kEyeHeight, 0), d = b - a;
+                    float len = length(d);
+                    pairs++;
+                    if (len > 0.1f && !m.raycastAny(a, d / len, len)) {
+                        seen++;
+                        printf("    %s: enemy spawns %.1f %.1f %.1f and %.1f %.1f %.1f see each other (%.0f m)\n", name.c_str(), p.pos.x, p.pos.y, p.pos.z, q.pos.x, q.pos.y, q.pos.z, len);
+                    }
+                }
+        printf("  %-10s %3zu spawns, %d enemy pairs, %d in sight%s\n", name.c_str(), m.spawns.size(), pairs, seen, bad + seen ? ": FAIL" : "");
+        g_fail += bad + seen;
     }
 }
 
@@ -4868,7 +4951,8 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "edgroups") { testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(TP(29997)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "cartsweep") { testCartSweep(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "spawns") { testSpawnPools(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "spawns") { testSpawnPools(); testSpawnSanity(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "mapsym") { testMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "allmaps") { testWalkGrid(); testAllMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "chat") { testChatAndVoteLimits(TP(29592)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "limits") { testMapSaveExact(); testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
@@ -4901,7 +4985,7 @@ int main(int argc, char** argv) {
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
         {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testTimeToKill(); testWallbang(); }},
         {"maps", [] {
-            testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testStairs(); testLadders();
+            testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders();
             printf("map scores\n");   // the map bar: every map scores at least 7 in every category but originality
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;

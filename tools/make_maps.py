@@ -274,6 +274,36 @@ class M:
                      all(seg_d(x, z, path[n], path[n + 1]) > 3 for n in range(len(path) - 1)) and not through_clip(x, y, z)
                 if ok: out.append((x, y, z))
         return out
+    def fix_facing(s):
+        """REVIEW MAP-16: a spawn faces into the map, not a wall: with something solid within 2 m ahead at eye height
+        (what the map tests check), it turns to the nearest of 32 directions with 3 m of open floor ahead (the same
+        rule both ways round a point-symmetric map, so mirrored spawns stay mirrored)"""
+        solid = [tuple(map(float, l.split()[1:7])) for l in s.lines if l.split()[:1] and l.split()[0] in ("box", "accent", "wallbang", "metal", "glow") and len(l.split()) == 7]
+        cell, grid = 4.0, {}
+        for i, b in enumerate(solid):
+            for gx in range(int(math.floor(b[0] / cell)), int(math.floor(b[3] / cell)) + 1):
+                for gz in range(int(math.floor(b[2] / cell)), int(math.floor(b[5] / cell)) + 1): grid.setdefault((gx, gz), []).append(i)
+        def inside(x, y, z):
+            return any(solid[i][0] <= x <= solid[i][3] and solid[i][1] <= y <= solid[i][4] and solid[i][2] <= z <= solid[i][5] for i in grid.get((int(math.floor(x / cell)), int(math.floor(z / cell))), ()))
+        def open_ahead(x, y, z, yaw, far, step):
+            dx, dz = -math.sin(math.radians(yaw)), -math.cos(math.radians(yaw))
+            d = step
+            while d <= far:
+                if inside(x + dx * d, y + 1.6, z + dz * d): return False
+                d += step
+            return True
+        out = []
+        for l in s.lines:
+            w = l.split()
+            if w[:1] == ["spawn"] and len(w) >= 6:
+                x, y, z, yaw = float(w[2]), float(w[3]), float(w[4]), float(w[5])
+                if not open_ahead(x, y, z, yaw, 2.05, 0.05):
+                    for k in range(1, 17):
+                        turned = next((yaw + sgn * k * 11.25 for sgn in (1, -1) if open_ahead(x, y, z, yaw + sgn * k * 11.25, 3.0, 0.05)), None)
+                        if turned is not None:
+                            w[5] = f"{(turned + 180) % 360 - 180:g}"; l = " ".join(w); break
+            out.append(l)
+        s.lines = out
     def face(s, x, y, z):
         """a yaw toward the middle of the map, turned to where there is room to see (MAP-16: not facing a wall):
         of 16 directions, the one with the most open floor ahead (up to 8 m at eye height), leaning to the middle"""
@@ -820,6 +850,7 @@ class M:
             if dress: s.props(); s.dress(name); s.detail_pass(); s.skyline_pass(name)
         s.clear_doorways()
         s.check_clear()
+        s.fix_facing()
         p = PALETTES.get(name)
         if p:
             p = [tuple(round(v * 0.85, 3) for v in p[0])] + list(p[1:])
@@ -1030,6 +1061,7 @@ for z in range(-14, 15, 7): m.glow(13, 6.38, z - 0.4, 24, 6.5, z + 0.4); m.light
 # the gatehouse at the attackers' entry: a roofed shelter to stack up under before the push
 for (x, z) in ((-8, 26), (8, 26), (-8, 33.5), (8, 33.5)): m.metal(x - 0.3, 0, z - 0.3, x + 0.3, 4.2, z + 0.3)
 m.box(-9, 4.2, 25, 9, 4.6, 34, accent=True); m.glow(-9, 4.05, 25, 9, 4.2, 25.15); m.light(0, 3.6, 29.5, 9, 0.7, fixture=False)
+m.box(-6.4, 0, 24.6, 6.4, 4.05, 25.0, accent=True)                          # its front wall: out round the sides (no sightline to B's spawn)
 # the yard: a corrugated perimeter fence and floodlights on the corner columns
 m.wall_ribs(step=1.0)
 for (x, z) in ((-24, -32), (24, -32), (-24, 32), (24, 32), (-24, 0), (24, 0)):
@@ -1193,7 +1225,8 @@ for (x, z) in ((-6, 22), (5, 20), (-19, 12), (-8, 2), (6, -6), (19, -22), (-4, -
     m.box(x - 1.3, 0, z - 0.6, x + 1.3, 0.5, z + 0.6, accent=True); m.box(x - 1.3, 0.5, z - 0.6, x + 1.3, 1.0, z + 0.6); m.box(x - 1.0, 1.0, z - 0.5, x + 1.0, 1.4, z + 0.5, accent=True)
 for (x0, x1) in ((-16, -2), (2, 11), (17, 24)):
     m.box(x0, 0, -15.4, x1, 2.8, -14.6); m.box(x0 - 0.1, 2.8, -15.5, x1 + 0.1, 3.0, -14.5, accent=True)
-for x in (-6, -2, 2, 6): m.spawn("a", x, 0, 43, 0); m.spawn("b", x, 0, -44, 180)
+for x in (-6, -2, 2, 6): m.spawn("a", x, 0, 44.2, 0); m.spawn("b", x, 0, -44, 180)
+m.box(-6.6, 0, 41.4, 6.6, 2.6, 41.8, accent=True)                           # a screen: no sightline down the track to B's spawn
 m.spawn("any", -20, 0, 30, 90); m.spawn("any", 20, 0, -30, -90)
 # crates, cable drums and parts stacked around the yard, away from the track (cover for the defenders'
 # fallbacks and the attackers' pushes)
@@ -1233,7 +1266,8 @@ m.ladder(15, -6.5, 0, 3.95, "e", width=0.8); m.ladder(-15, 6.5, 0, 3.95, "w", wi
 m.box(-6, 0, 16, -3, 1.6, 20, mirror=True); m.box(3, 0, 16, 6, 1.6, 20, mirror=True)               # causeway cover
 m.box(-7, 0, 4, -4, 2.2, 7, mirror=True); m.box(4.5, 0, -1, 7, 1.4, 1, mirror=True)
 m.box(-22, 0, -22, -16, 2.5, -16, accent=True, mirror=True); m.stairs(-16, -22, -14.5, -16, 2.5, "x", -1, mirror=True)
-for x in (-6, -2, 2, 6): m.spawn("a", x, 0, 39, 0, "b")
+for x in (-6, -2, 2, 6): m.spawn("a", x, 0, 40.2, 0, "b")
+m.box(-6.6, 0, 37.4, 6.6, 2.6, 37.8, accent=True, mirror=True)               # spawn screens: no sightline down the causeway
 m.spawn("any", -18, 0, 0, 90, "any")
 # lock-keepers' ladders up the gate posts: the gate beams are a narrow walkway 7 m over the water (a sniper perch
 # you can be knocked off)
@@ -1566,7 +1600,7 @@ m.save("foundry")
 # ======================================================================================================
 # TEMPLE: ranked VANILLA 1v1. Halls of columns around a sanctum; reflecting pools either side, a bridge with
 # a pagoda shrine over the altar, a golden idol under it. Point symmetric.
-m = M("Temple", "1v1", sun=(0.35, 1.0, 0.55))
+m = M("Temple", "1v1", sun=(0, 1, 0))   # (ranked: the sun overhead, so both halves are lit alike, MAP-17)
 m.raw("ranked vanilla")
 # (1.13: open on a mountain top, no outer walls: the courts end at the cliff edge; built at the old size, then
 # spread out 1.4x across the ground at the end)
@@ -1733,7 +1767,7 @@ m.save("colosseum")
 # FURNACE: ranked LASER VAMPIRE. Compact (laser range is 32 m), close corners; the furnace in the middle
 # glows through its grates, molten trenches behind the inner walls (bridged in the middle) punish a careless
 # pull from the tractor beam. Point symmetric.
-m = M("Furnace", "1v1", sun=(0.3, 1.0, 0.4))
+m = M("Furnace", "1v1", sun=(0, 1, 0))   # (ranked: the sun overhead, so both halves are lit alike, MAP-17)
 m.raw("ranked vampire")
 m.room(18, 18, 10, pits=[(-9, 9.5, -2, 11, "molten"), (2, 9.5, 9, 11, "molten"), (-9, -11, -2, -9.5, "molten"), (2, -11, 9, -9.5, "molten")], style="hall", skyline="stacks")
 m.box(-3, 0, -3, 3, 4.5, 3, accent=True)
@@ -1771,7 +1805,7 @@ m.save("furnace")
 # in a lava moat, on a mountain top. Both fighters start on it facing each other and bow (no firing for the
 # first 5 s); a careless pull off the edge is a swim in the lava. The ring path outside the moat (jump or hook
 # back) carries all the decoration: pillars, lanterns, shrines. Point symmetric.
-m = M("Dojo", "1v1", sun=(0.4, 1.0, 0.3))
+m = M("Dojo", "1v1", sun=(0, 1, 0))   # (ranked: the sun overhead, so both halves are lit alike, MAP-17)
 m.raw("ranked vampire")
 m.raw("holdfire 5")
 P, W = 12, 4.5                                                                 # platform half size, moat width
@@ -1814,7 +1848,7 @@ m.save("dojo")
 # GANTRY: ranked INSTAGIB. The crane hall: catwalks along both walls, a bridge across the middle over the
 # open loading bay (no floor: fall and you're out), two overhead cranes with their cabs and a hanging
 # container each. Long sightlines on every level, always a way to break line of sight. Point symmetric.
-m = M("Gantry", "ffa", sun=(0.55, 1.0, 0.25))   # (ranked instagib is a free for all)
+m = M("Gantry", "ffa", sun=(0, 1, 0))   # (ranked instagib is a free for all; ranked: the sun overhead, MAP-17)
 m.raw("ranked instagib")
 # (1.13: rebuilt 1.5x longer, 2x wider and 2x taller: 96 x 48 m and 28 m to the roof line; two catwalk tiers,
 # cranes 18 m up, and a container yard in the middle so nobody has a shot from spawn to spawn)
@@ -1908,7 +1942,7 @@ m.save("gantry")
 # ======================================================================================================
 # ANVIL: ranked map for ALL THREE ladders. The anvil itself in the middle (horn at both ends, you stand on
 # it), two giant hammers standing on their heads, four corner towers, window walls and wallbang screens.
-m = M("Anvil", "1v1", sun=(0.4, 1.0, 0.45))
+m = M("Anvil", "1v1", sun=(0, 1, 0))   # (ranked: the sun overhead, so both halves are lit alike, MAP-17)
 m.raw("ranked vanilla vampire instagib")
 m.room(22, 22, 12, pits=[(-21.5, -7, -19, 7, "molten"), (19, -7, 21.5, 7, "molten")], style="hall", skyline="stacks")
 m.box(-3, 0, -2, 3, 1.5, 2); m.box(-2, 1.5, -1.5, 2, 3, 1.5)
@@ -2341,7 +2375,7 @@ for (x, z) in ((-18, -11.5), (-12, -11.5)): m.light(x, 3.2, z, 6, 0.7, mirror=Tr
 for (x, z) in ((-19, -18), (-14, -21), (-10, -17.5)): m.box(x - 0.8, 0, z - 0.6, x + 0.8, 1.3, z + 0.6, mirror=True)
 m.metal(-22.5, 0, -22.5, -21, 1.4, -20, mirror=True)
 # street furniture: parked cars along the avenues, bus shelters (glass backs: wallbang), lamp posts, traffic lights
-for (x, z, ax) in ((-2.8, -12, "z"), (2.8, -18, "z"), (-10, 3.2, "x"), (-21, -3.0, "x")):
+for (x, z, ax) in ((-2.8, -12, "z"), (2.8, -15, "z"), (-10, 3.2, "x"), (-21, -3.0, "x")):
     if ax == "z": m.box(x - 1.0, 0.3, z - 2.0, x + 1.0, 1.1, z + 2.0, accent=True, mirror=True); m.box(x - 0.85, 1.1, z - 1.0, x + 0.85, 1.6, z + 1.0, mirror=True)
     else: m.box(x - 2.0, 0.3, z - 1.0, x + 2.0, 1.1, z + 1.0, accent=True, mirror=True); m.box(x - 1.0, 1.1, z - 0.85, x + 1.0, 1.6, z + 0.85, mirror=True)
 for (x, z) in ((5.5, -12), (-12, 5.5)):
@@ -2360,6 +2394,7 @@ for t in range(-20, 21, 8):
     m.box(t - 2.5, 2.4, -23.9, t + 2.5, 2.9, -23.6, accent=True, mirror=True); m.box(23.6, 2.4, t - 2.5, 23.9, 2.9, t + 2.5, accent=True, mirror=True)
 m.glow(-6, 11, -23.95, 6, 13, -23.85, mirror=True)
 for x in (-6, -3, 0, 3): m.spawn("a", x, 0, 22, 0, "b")   # (four a side: a full 8-player server, MAP-2)
+m.wallbang(-6.6, 0.2, 19.4, 3.6, 2.5, 19.5, mirror=True); m.box(-6.7, 2.5, 19.1, 3.7, 2.7, 20.3, accent=True, mirror=True)   # bus shelters: no sightline spawn to spawn
 for (x, z, yaw) in ((-22, 10, -90), (10, 22, 0), (-22, -16, -90)): m.spawn("any", x, 0, z, yaw, "any")
 m.raw("# setting city block")
 m.save("downtown")
@@ -2747,6 +2782,7 @@ def spine():
         m.box(-4, y1, za, 4, LH, zb)
         m.box(-4.3, y1, za, 4.3, y1 + 0.5, zb, accent=True)
 spine()
+m.box(-0.3, 0, 13.8, 0.3, 5, 14.45, mat="metal")                            # a pit prop in the tunnel mouth (blocks the spawns' sightline)
 for y in [1.2, 2.6] + list(range(5, LH, 4)): m.box(-4.08, y, -6, 4.08, y + 0.15, LHZ, mat="trim")
 timber_set(-4.25, -6, -4, LHZ, 0, 4.5); timber_set(4, -6, 4.25, LHZ, 0, 4.5)
 # ledges (rock shelves at 12): east and south in the shaft cavern, west, south and spine-side in the grotto
@@ -2816,6 +2852,7 @@ m.raw("cartcheck 0.33"); m.raw("cartcheck 0.66")
 for x in (-4, 0, 4): m.spawn("race", x, SURF, -104, 180)
 for (x0, y, z0, x1, z1) in ((-7, SURF, -71, 7, -57), (-50, 0, -68, -38, -56), (-7, 0, -35, 7, -21), (-58, 0, 30, -44, 44), (18, 0, 57, 32, 71), (50, 12, 102, 80, 110)):
     m.raw(f"checkpoint {x0:g} {y:g} {z0:g} {x1:g} {y + 4:g} {z1:g}")
+m.box(30, SURF, -111, 32, SURF + 3, -100, accent=True)                       # a spoil wall: no sightline between the stage-0 spawns
 for k, (y, pts, yaw) in SP.items():                       # spawns (stage by stage): before the scatter, which avoids them
     for (x, z) in pts: m.spawn(k, x, y, z, yaw)
 # ---- rock ribs across the caverns: they split each cavern into bays (fights at rifle range, not across 100 m)
@@ -2933,7 +2970,7 @@ def trim_to_rock():
     m.lines = out
 m.raw("# setting mine")
 m.props(); m.dress("lodestone"); m.detail_pass(); m.skyline_pass("lodestone")
-trim_to_rock()
+with m.generated(): trim_to_rock()   # (its cut pieces are generated: kept off keep-clear volumes)
 m.save("lodestone", dress=False)
 # ======================================================================================================
 # MIDTOWN: multi point. A city centre the size of four hamlets: three avenues each way, sixteen blocks of
@@ -3136,11 +3173,11 @@ for (x, z) in ((-90, -74.5), (47, -74.5), (-30, 74.5), (90, 9.5), (-90, 57.5)):
 MSP = {
     "att0": (0, [(-65, -104), (-63, -104), (-65, -100), (-63, -100), (-65, -96), (-63, -96)], 135),   # (the avenue's centre line: clear of parked cars)
     "def0": (0, [(36, -66), (40, -66), (44, -66), (36, -62), (40, -62), (44, -62)], 90),
-    "att1": (0, [(-4, -104), (0, -104), (4, -104), (-4, -98), (0, -98), (4, -98)], 180),
+    "att1": (0, [(-4, -104), (0, -104), (4, -104), (-4, -98), (0, -98), (-6.5, -98)], 180),
     "def1": (0.15, [(16, -36), (20, -36), (24, -36), (16, -32), (20, -32), (24, -32)], 0),
-    "att2": (0, [(63, -50), (65, -50), (63, -46), (65, -46), (63, -42), (65, -42)], 135),
+    "att2": (0, [(61, -50), (65, -50), (63, -54), (65, -46), (63, -42), (65, -42)], 135),
     "def2": (0.2, [(30, 50), (34, 50), (38, 50), (30, 46), (38, 46), (42, 50)], 0),
-    "att3": (0, [(63, 28), (65, 28), (63, 32), (65, 32), (63, 36), (65, 36)], 90),
+    "att3": (0, [(63, 28), (65, 28), (61, 40), (65, 40), (63, 36), (65, 36)], 90),
     "def3": (9, [(-60, -1.5), (-56, -1.5), (-52, -1.5), (-60, 1.5), (-56, 1.5), (-52, 1.5)], -90),
     "att4": (0, [(-20, -1.5), (-16, -1.5), (-12, -1.5), (-20, 1.5), (-16, 1.5), (-12, 1.5)], 180),   # (under the railway)
     "def4": (0.15, [(-46, 44), (-42, 44), (-38, 44), (-28, 44), (-24, 44), (-20, 44)], 0),
