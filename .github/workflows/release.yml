@@ -112,7 +112,14 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - run: sudo apt-get update && sudo apt-get install -y mingw-w64
+      - name: MinGW (x86-64, posix threads; apt retries a stalled mirror download instead of hanging)
+        timeout-minutes: 15
+        run: |
+          # (2026-10-23: downloads from the runner's default Azure mirror stalled for good; use Ubuntu's own)
+          sudo sed -i 's#azure\.archive\.ubuntu\.com#archive.ubuntu.com#g' /etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+          APT="-o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=5"
+          sudo apt-get $APT update
+          sudo apt-get $APT install -y --no-install-recommends g++-mingw-w64-x86-64-posix gcc-mingw-w64-x86-64-posix binutils-mingw-w64-x86-64
       - name: cross-compile (MinGW, static, Windows 7+)
         run: |
           cmake -S . -B build -DCMAKE_SYSTEM_NAME=Windows \
