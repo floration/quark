@@ -75,7 +75,8 @@ public:
     void play(int id, float volume = 1.0f, float pitch = 1.0f, int pack = -1);
     void play3D(int id, const Vec3& pos, float volume = 1.0f, float pitch = 1.0f, int pack = -1);
     bool hasSound(int id) const { return id >= 0 && id < SND_COUNT && !samples(0, id).empty(); }
-    void setListener(const Vec3& pos, float yaw) { std::lock_guard<std::mutex> l(mu_); listener_ = pos; listenerYaw_ = yaw; }
+    // (game thread only, as play / play3D, the only readers: the mixer never reads it, so no lock against it)
+    void setListener(const Vec3& pos, float yaw) { listener_ = pos; listenerYaw_ = yaw; }
     void setMasterVolume(float v) { master_ = v; }
     void setAnnouncer(int set) { if (set != announcer_) { if (running_) loadAnnouncer(set); else announcer_ = set; } } // 0 male, 1 female
     // Sound kits: DEFAULT (synthesized), HEAVY METAL, MAGICAL, WOODEN (recorded CC0 clips, sfx_recorded.h), RETRO (DEFAULT, chiptuned).

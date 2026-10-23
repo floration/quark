@@ -175,8 +175,7 @@ int main(int argc, char** argv) {
         if (game.maxFps() > 0) {
             double period = 1.0 / game.maxFps();
             double target = frameStart + period;
-            while (timeNow() < target - 0.0015) sleepMs(1);
-            while (timeNow() < target) {}
+            waitUntil(target);
             frameStart = std::max(target, timeNow() - period); // keep the cadence (no slow drift below the cap), but don't try to catch up after a hitch
         } else {
             frameStart = timeNow();

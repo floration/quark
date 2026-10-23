@@ -159,6 +159,7 @@ void Game::shutdown() {
     audio_.stop();
     leaveGame();
     cfg_.save();
+    if (raceWriter_.t.joinable()) raceWriter_.t.join();   // (the last finished run's line)
 }
 
 // ---------------------------------------------------------------------------
@@ -377,6 +378,8 @@ void Game::loadMapIfNeeded() {
         }
     }
     if (gen == loadedMapGen_) return;
+    // a race map: your past runs now, behind the loading screen (it used to be read on the first checkpoint, mid-run)
+    if (!raceRunsLoaded_ && !net_.map().checkpoints.empty()) loadRaceRuns();
     bake_ = std::make_unique<BakeJob>();
     bake_->map = net_.map();
     bake_->gen = gen;
@@ -477,10 +480,20 @@ int Game::bestRankedMap(int ladder) const {
 // The map built for this mode if there is one, else the first map that supports it.
 int Game::bestMapFor(int mode) const {
     int fallback = -1;
+    // from rescanMaps' map info (the same files' modes and preferred mode): this used to load and parse maps, collision
+    // grid and all, until it found one, on the frame you picked a mode (in a match too)
+    const bool info = mapInfo_.size() == maps_.size();
     for (size_t i = 0; i < maps_.size(); i++) {
-        Map m;
-        if (!m.load(maps_[i]) || !m.supportsMode(mode)) continue;
-        if (m.preferredMode == mode || (mode == MODE_TAG && m.preferredMode == MODE_HIDE)) return (int)i; // tag plays on the hide and seek map
+        int preferred;
+        if (info) {
+            if (mode < 0 || mode >= MODE_COUNT || !(mapInfo_[i].modes >> mode & 1)) continue;
+            preferred = mapInfo_[i].preferredMode;
+        } else {
+            Map m;
+            if (!m.load(maps_[i]) || !m.supportsMode(mode)) continue;
+            preferred = m.preferredMode;
+        }
+        if (preferred == mode || (mode == MODE_TAG && preferred == MODE_HIDE)) return (int)i; // tag plays on the hide and seek map
         if (fallback < 0) fallback = (int)i;
     }
     return fallback < 0 ? 0 : fallback;
@@ -930,7 +943,8 @@ void Game::onKillFeedback(int killer, int victim, int weapon, bool head, bool ai
 }
 
 void Game::handleEvents() {
-    for (auto& e : net_.takeEvents()) {
+    net_.takeEvents(evScratch_);
+    for (auto& e : evScratch_) {
         switch (e.type) {
             case EV_KILL: {
                 const int wpn = e.c >= 0 ? (e.c & KILL_WEAPON) : e.c;
@@ -1126,13 +1140,20 @@ void Game::drawStuckProps(const Vec3& eye, float alpha) {
     constexpr float kFar2 = 50.0f * 50.0f, kNear2 = 10.0f * 10.0f;   // (half a metre long: a few pixels at 50 m)
     const int me = net_.clientId();
     const bool hideOwn = net_.selfAlive() && !net_.playback();   // (in you: not drawn in your face)
+    // One in a player rides on them as drawn this frame: framePlayers() is net_.attachedPos's interpolation, done
+    // once (your own, the one case attachedPos treats apart, is never drawn: hideOwn). Team colours: once per owner.
+    const auto& players = framePlayers();
+    const float bs = net_.bodyScale();
+    Vec3 ownerCol[kMaxPlayers];
+    uint32_t haveCol = 0;
     for (const StuckProp& sp : props) {
         Vec3 pos = sp.pos;
         if (sp.player != PROP_WORLD) {
             if (hideOwn && sp.player == me) continue;
-            ProjectileSnap on;
-            on.flags = PROJ_ON_PLAYER; on.onPlayer = sp.player; on.attachOffset = sp.pos;
-            if (!net_.attachedPos(on, alpha, &pos)) continue;
+            if (sp.player >= kMaxPlayers) continue;
+            const InterpPlayer& ip = players[sp.player];
+            if (!ip.valid || !(ip.snap.flags & PS_ALIVE)) continue;   // (out of sight, or dead)
+            pos = stickyOnPlayerPos(ip.snap.pos, sp.pos, (ip.snap.flags & PS_CROUCHED) != 0, bs);
         }
         const Vec3 d = pos - eye;
         const float d2 = d.x * d.x + d.y * d.y + d.z * d.z;
@@ -1141,7 +1162,10 @@ void Game::drawStuckProps(const Vec3& eye, float alpha) {
         const int mt = modelExists(MODEL_PROJECTILE, sp.type) ? sp.type : MODEL_PROJ_ORB;
         const float yaw = std::atan2(-sp.dir.x, -sp.dir.z), pitch = std::asin(clampf(sp.dir.y, -1, 1));
         ModelPalette ppal;
-        ppal.c[TINT_TEAM] = teamColor(sp.owner);
+        if (sp.owner < kMaxPlayers) {
+            if (!(haveCol >> sp.owner & 1)) { ownerCol[sp.owner] = teamColor(sp.owner); haveCol |= 1u << sp.owner; }
+            ppal.c[TINT_TEAM] = ownerCol[sp.owner];
+        } else ppal.c[TINT_TEAM] = teamColor(sp.owner);
         ppal.c[TINT_GLOW] = r_.glowColor;
         if (const ModelMesh* ov = modelOverride(MODEL_PROJECTILE, mt)) {
             Vec3 tint[TINT_COUNT];
@@ -1332,7 +1356,8 @@ void Game::frame(double dt) {
         scoped_ = net_.selfAlive() && !paused_ && !chatting_ && weaponDef(net_.selfWeapon()).scopedSpread >= 0 &&
                   (isDown(A_ALTFIRE) || opts_.debugScope);
         // explosions: projectiles that vanished
-        auto projs = net_.interpolatedProjectiles();
+        net_.interpolatedProjectiles(projScratch_);   // (projScratch_ and lastProjectiles_ trade memory: no allocations)
+        const auto& projs = projScratch_;
         for (auto& old : lastProjectiles_) {
             bool still = false;
             for (auto& p : projs) still |= p.id == old.id;
@@ -1349,7 +1374,7 @@ void Game::frame(double dt) {
             for (auto& old : lastProjectiles_) was |= old.id == p.id && (old.flags & PROJ_ON_PLAYER) && old.onPlayer == p.onPlayer;
             if (!was) audio_.play(SND_STICKY_ATTACH, 1.0f, 1.6f);
         }
-        lastProjectiles_ = projs;
+        lastProjectiles_.swap(projScratch_);
 
         int hp = net_.selfHealth();
         if (hp < lastHealth_ && net_.selfAlive()) { damageUntil_ = time_ + 0.25; audio_.play(SND_HURT, 0.7f); }
@@ -1371,7 +1396,7 @@ void Game::frame(double dt) {
         editorFrame(dt);
     } else if (screen_ == Screen::InGame && bake_) {
         drawBakeScreen(bake_->map.name, bake_->progress.load());
-        std::this_thread::sleep_for(std::chrono::milliseconds(12));   // (a loading bar needs no more than ~60 fps: the cores go to the bake)
+        sleepMs(30);   // (a loading bar needs ~30 fps: the cores go to the bake; under software GL every frame costs them)
     } else if (screen_ == Screen::InGame && net_.hasSnapshot() && r_.worldLoaded()) {
         drawWorld((float)clampf((float)(tickAcc_ / net_.tickPeriod()), 0, 1));
         drawHud();
@@ -1442,6 +1467,7 @@ Vec3 Game::muzzlePoint(int weapon, const Vec3& eye) const {
 
 void Game::drawWorld(float alpha) {
     QZONE("drawWorld");
+    r_.shadowCasters = cfg_.shadows;   // (shadows off: nothing off screen is built just to be thrown away)
     const Map& map = net_.map();
     const ModeState& ms = net_.mode();
     auto& players = framePlayers();
@@ -1503,6 +1529,7 @@ void Game::drawWorld(float alpha) {
     }
     // players (duel "double size" rounds draw everyone at twice the size, matching the server hitboxes)
     const float bs = bodyScale();
+    const bool ranked = rankedPlayer();
     for (int i = 0; i < kMaxPlayers; i++) {
         if (!players[i].valid) continue;
         const PlayerSnap& p = players[i].snap;
@@ -1517,15 +1544,20 @@ void Game::drawWorld(float alpha) {
         Vec3 col = teamColor(i);
         r_.outlineColor = outlineColor(i);
         r_.outlineWidth = cfg_.outlinePlayer;
-        float sv = sunVisibility(map, pos + Vec3(0, 1.0f * hs * bs, 0));
         bool vis = !firstPerson;
         auto at = [&](float h) { return pos + Vec3(0, h * hs * bs, 0); };
         Vec3 fwd = {-std::sin(yaw), 0, -std::cos(yaw)}, rgt = {std::cos(yaw), 0, -std::sin(yaw)};
         // the player model (cosmetic: every model fits the same hitbox); ranked / time trial: the default for everyone
-        const int pm = rankedPlayer() ? 0 : opts_.debugModels && i >= kMaxPlayers - kPlayerModels ? i - (kMaxPlayers - kPlayerModels) : net_.playerModel(i);
+        const int pm = ranked ? 0 : opts_.debugModels && i >= kMaxPlayers - kPlayerModels ? i - (kMaxPlayers - kPlayerModels) : net_.playerModel(i);
+        const ModelMesh* ov = modelOverride(MODEL_PLAYER, pm);
+        // sunlight on them: only coloured geometry uses it (the shadow pass doesn't), so not for yourself in first
+        // person, nor for a box model out of view (its boxes and what it holds, all within 2.5 m: shadow pass only).
+        // A long ray each (to the map's top): it was the costliest thing per player here.
+        float sv = 1.0f;
+        if (vis && (ov || r_.inView(at(1.0f), 2.5f * bs))) sv = sunVisibility(map, pos + Vec3(0, 1.0f * hs * bs, 0));
         ModelPalette pal;
         pal.c[TINT_TEAM] = col;
-        if (const ModelMesh* ov = modelOverride(MODEL_PLAYER, pm)) {   // the owner's model (docs/ASSETS.md)
+        if (ov) {   // the owner's model (docs/ASSETS.md)
             Vec3 tint[TINT_COUNT];
             overrideTints(MODEL_PLAYER, pal, tint);
             Mat4 sc;
@@ -1559,7 +1591,7 @@ void Game::drawWorld(float alpha) {
                 r_.text(sx - r_.textWidth("SEEKER", ts) * 0.5f, sy, ts, "SEEKER", kRed);
             }
         }
-        if (vis && !rankedPlayer()) if (int place = crownOf(i)) { // leaderboard crown on their head (a model; not in ranked)
+        if (vis && !ranked) if (int place = crownOf(i)) { // leaderboard crown on their head (a model; not in ranked)
             Vec3 top = pos + Vec3(0, kPlayerHeight * hs * bs + 0.04f * bs, 0);
             ModelPalette cpal;
             cpal.c[TINT_TEAM] = crownColor(place);
@@ -1609,18 +1641,19 @@ void Game::drawWorld(float alpha) {
             }
             return true;
         };
-        if (cfg_.healthBars && !rankedPlayer() && !self && i != viewing && wholeBodySeen()) {
+        if (cfg_.healthBars && !ranked && !self && i != viewing) {
             float sx, sy, lx, ly, rx, ry;   // over their head, or at their feet (VISUALS > HEALTH BAR POSITION)
             Vec3 at = cfg_.healthBarsBottom ? pos + Vec3(0, -0.15f, 0) : pos + Vec3(0, 2.0f * bs + 0.35f, 0);
             Vec3 side = Vec3(std::cos(camYaw), 0, -std::sin(camYaw)) * (kPlayerHalfWidth * bs);   // (the hitbox's half width, across the view)
-            if (r_.project(at, sx, sy) && r_.project(at - side, lx, ly) && r_.project(at + side, rx, ry)) {
+            // (on screen first: the 9 sight rays only for a bar that would be drawn)
+            if (r_.project(at, sx, sy) && r_.project(at - side, lx, ly) && r_.project(at + side, rx, ry) && wholeBodySeen()) {
                 float bw = std::max(4.0f, std::fabs(rx - lx)), bh = std::max(2.0f, std::min(5 * ui_.s(), bw * 0.15f));
                 float f = clampf(p.health / 100.0f, 0, 1);
                 r_.rect(sx - bw * 0.5f - 1, sy - 1, bw + 2, bh + 2, {0, 0, 0, 0.7f});
                 r_.rect(sx - bw * 0.5f, sy, bw * f, bh, p.health > 30 ? rgba(col) : kRed);
             }
         }
-        if (!self && time_ < typingUntil_[i] && !rankedPlayer()) { // typing in chat (not in ranked)
+        if (!self && time_ < typingUntil_[i] && !ranked) { // typing in chat (not in ranked)
             float sx, sy;
             if (r_.project(pos + Vec3(0, 2.0f * bs + 0.7f, 0), sx, sy)) {
                 float tts = std::max(1.0f, std::round(ui_.textScale()));
@@ -1719,7 +1752,8 @@ void Game::drawWorld(float alpha) {
 
     // projectiles (yours: from your weapon model's muzzle, blending onto the real path over 0.2 s)
     {
-        std::vector<ProjStart> keep;
+        std::vector<ProjStart>& keep = projStartsKeep_;   // (the two trade memory each frame)
+        keep.clear();
         for (auto& pr : lastProjectiles_) {
             if (pr.owner != me) continue;
             ProjStart st{pr.id, time_, {}};
@@ -1736,7 +1770,8 @@ void Game::drawWorld(float alpha) {
         projStarts_.swap(keep);
     }
     for (auto pr : lastProjectiles_) {
-        if (pr.flags & PROJ_ON_PLAYER) net_.attachedPos(pr, alpha, &pr.pos);   // (on you: where you are this frame)
+        // (on you: where you are this frame; on anyone else, interpolatedProjectiles already put it on them)
+        if ((pr.flags & PROJ_ON_PLAYER) && pr.onPlayer == me) net_.attachedPos(pr, alpha, &pr.pos);
         for (auto& st : projStarts_)
             if (st.id == pr.id) { float f = 1.0f - (float)(time_ - st.seen) / 0.2f; if (f > 0) pr.pos = pr.pos + st.offset * f; }
         Vec3 col = teamColor(pr.owner);
@@ -1926,7 +1961,7 @@ void Game::drawWorld(float alpha) {
 // or an arrow at the screen edge pointing their way. (The server always sends the tagger's position in tag.)
 void Game::drawTaggerMarker(float W, float H, float s) {
     const int me = net_.clientId();
-    auto ip = net_.interpolatedPlayers();
+    const auto& ip = framePlayers();   // (drawWorld's, this frame's: not a second interpolation)
     int it = -1;
     for (int i = 0; i < kMaxPlayers; i++)
         if (i != me && ip[i].valid && (ip[i].snap.flags & PS_ALIVE) && (ip[i].snap.flags & PS_HASBOMB)) it = i;
@@ -2422,7 +2457,7 @@ void Game::drawHud() {
         }
         if (cfg_.stickyCounter && !unarmed) {   // stickies out (the 7th removes the oldest)
             int out = 0;
-            for (auto& pr : net_.interpolatedProjectiles()) out += pr.type == WPN_STICKY && pr.owner == net_.clientId();
+            for (auto& pr : lastProjectiles_) out += pr.type == WPN_STICKY && pr.owner == net_.clientId();   // (this frame's)
             if (out > 0 || net_.selfWeapon() == WPN_STICKY) {
                 auto e = he(Settings::HUD_WEAPON);
                 float k = std::max(1.0f, std::round(ts * 0.9f * e.scale));
@@ -2469,8 +2504,13 @@ void Game::drawHud() {
     }
     // kill feed (top right), under the verbose info block; hud.cfg widgets. Ranked: the default HUD only.
     float y = 12 * s;
-    if (!rankedPlayer()) {
-        if (cfg_.hudVerbose || cfg_.hudWidgets) computeHudVals();
+    const bool hudRanked = rankedPlayer();
+    // hud.cfg widgets: the file is looked at once a second (pollDue first: no path string built on the other frames),
+    // and the values they show are only worked out when there are widgets (or the verbose HUD) to show them
+    const bool wantWidgets = !hudRanked && cfg_.hudWidgets && !widgetEdit_;
+    if (wantWidgets && widgets_.pollDue()) widgets_.poll(activeHudPath());
+    if (!hudRanked) {
+        if (cfg_.hudVerbose || (wantWidgets && !widgets_.empty())) computeHudVals();
         if (cfg_.hudVerbose) drawVerboseHud(W, s, y);
         if (cfg_.hudVerbose && !cfg_.hud[Settings::HUD_KEYS].hidden && (net_.selfAlive() || specKeysOf() >= 0)) drawKeyOverlay(W, H, s);
     }
@@ -2485,10 +2525,7 @@ void Game::drawHud() {
             r_.text(24 * s, H * 0.5f, dts, "REC " + fmtTime((float)net_.recordingTime()), kRed);
         }
     }
-    if (!rankedPlayer() && cfg_.hudWidgets && !widgetEdit_) {
-        widgets_.poll(activeHudPath());
-        if (!widgets_.empty()) widgets_.draw(r_, hudVals_, W, H, s);
-    }
+    if (wantWidgets && !widgets_.empty()) widgets_.draw(r_, hudVals_, W, H, s);
     while (!killFeed_.empty() && killFeed_.front().until < time_) killFeed_.pop_front();
     for (auto& k : killFeed_) {
         float tw = r_.textWidth(k.text, ts);
@@ -2578,8 +2615,11 @@ void Game::applyModeRules(int mode) {
     appliedMode_ = mode;
     if (mode >= MODE_COUNT) mode = -1;
     std::string hud = mode >= 0 ? cfg_.modeHud[mode] : "", ctl = mode >= 0 ? cfg_.modeCtl[mode] : "";
-    modeHudPath_ = hud.empty() ? "" : profileDir("huds") + "/" + hud;
-    widgets_ = HudWidgets{}; // forces a reload from the new path
+    std::string hudPath = hud.empty() ? "" : profileDir("huds") + "/" + hud;
+    if (hudPath != modeHudPath_) {   // (the same file: keep it; edits are still picked up within a second)
+        modeHudPath_ = hudPath;
+        widgets_ = HudWidgets{}; // forces a reload from the new path
+    }
     modeCtlActive_ = false;
     if (!ctl.empty()) {
         modeBinds_ = cfg_.binds; modeSocd_ = cfg_.socd; modeAlt_ = cfg_.altToggle;
@@ -2650,9 +2690,10 @@ void Game::computeHudVals() {
     {   // fps over the last second: average and the worst frame
         double sum = 0, worst = 0;
         int n = 0;
-        size_t N = frameTimes_.size();
+        size_t N = frameTimes_.size(), at = frameIdx_;
         for (size_t k = 1; k <= frameCount_ && sum < 1.0; k++) {
-            float dt = frameTimes_[(frameIdx_ + N - k) % N];
+            at = (at ? at : N) - 1;   // (frameIdx_ - k around the ring, without a division per frame)
+            float dt = frameTimes_[at];
             sum += dt; worst = std::max<double>(worst, dt); n++;
         }
         set(HV_FPS, sum > 0 ? (float)std::lround(n / sum) : 0, 500);
@@ -2874,16 +2915,19 @@ bool Game::nameColorOf(int id, Color& out) const {
 void Game::drawFeedText(float x, float y, float ts, const Feed& f) {
     if (f.spans.empty()) { r_.text(x, y, ts, f.text, f.color); return; }
     size_t at = 0;
+    std::string& part = feedPart_;   // (reused: no allocation per piece)
     auto run = [&](size_t to, Color c) {
         if (to <= at) return;
-        std::string part = f.text.substr(at, to - at);
+        part.assign(f.text, at, to - at);
         r_.text(x, y, ts, part, c);
         x += r_.textWidth(part, ts);
         at = to;
     };
-    std::vector<Span> spans = f.spans;
-    std::sort(spans.begin(), spans.end(), [](const Span& a, const Span& b) { return a.at < b.at; });
-    for (auto& sp : spans) {
+    auto byAt = [](const Span& a, const Span& b) { return a.at < b.at; };
+    const std::vector<Span>* spans = &f.spans;   // (made in order: sorted only when they aren't)
+    std::vector<Span> sorted;
+    if (!std::is_sorted(f.spans.begin(), f.spans.end(), byAt)) { sorted = f.spans; std::sort(sorted.begin(), sorted.end(), byAt); spans = &sorted; }
+    for (auto& sp : *spans) {
         if (sp.at < at || sp.at + sp.len > f.text.size()) continue;   // (overlapping or out of range: drawn plain)
         run(sp.at, f.color);
         run(sp.at + sp.len, sp.color);
@@ -3175,6 +3219,7 @@ static std::string fmtRace(int ms) {
 
 // race_times.log: one finished run per line, "unix-time map ms trial(0/1) split,split,..."
 void Game::loadRaceRuns() {
+    if (raceWriter_.t.joinable()) raceWriter_.t.join();   // (a run still being written: the file as it will be)
     raceRunsLoaded_ = true;
     raceRuns_.clear();
     std::ifstream f(utf8Path(raceLogPath()));
@@ -3225,11 +3270,14 @@ void Game::onRaceSplit(int cp, int ms) {
     run.when = (long long)::time(nullptr);
     run.map = map; run.ms = ms; run.trial = trial; run.splits = raceSplits_;
     raceSplits_.clear();
-    {   // every finished run is kept locally, for the stats page
-        std::ofstream f(utf8Path(raceLogPath()), std::ios::app);
+    {   // every finished run is kept locally, for the stats page (written off the frame: opening and closing a file
+        // can take milliseconds on Windows, on the frame you cross the line; the next run starts at once)
+        std::ostringstream f;
         f << run.when << " " << run.map << " " << run.ms << " " << (run.trial ? 1 : 0) << " ";
         for (size_t i = 0; i < run.splits.size(); i++) f << (i ? "," : "") << run.splits[i];
         f << "\n";
+        if (raceWriter_.t.joinable()) raceWriter_.t.join();   // (one at a time, in order)
+        raceWriter_.t = std::thread([path = raceLogPath(), line = f.str()] { std::ofstream(utf8Path(path), std::ios::app) << line; });
     }
     bool pb = !best || ms < best->ms;
     raceRuns_.push_back(run);
@@ -4436,8 +4484,12 @@ void Game::drawInfo(float cx, float y) {
     float top = y, bottom = H - 70 * s;
     ui_.panel(x - 12 * s, top - 8 * s, w + 24 * s, bottom - top + 16 * s, 0.85f);
     float ts = std::max(1.0f, std::round(ui_.textScale() * 0.62f)), lh = r_.textHeight(ts) + 5 * s;
-    // wrap every line to the panel, then draw the part that's scrolled into view
-    std::vector<std::pair<std::string, bool>> rows;
+    // wrap every line to the panel (once per page and size: it measured the page word by word every frame), then draw
+    // the part that's scrolled into view
+    std::vector<std::pair<std::string, bool>>& rows = infoRows_;
+    if (infoRowsTab_ != infoTab_ || infoRowsW_ != w || infoRowsTs_ != ts) {
+    infoRowsTab_ = infoTab_; infoRowsW_ = w; infoRowsTs_ = ts;
+    rows.clear();
     for (const char* line : kInfoPages[infoTab_]) {
         if (!line) break;
         bool head = line[0] == '#';
@@ -4449,6 +4501,7 @@ void Game::drawInfo(float cx, float y) {
             rows.push_back({rest.substr(0, cut), head});
             rest = cut < rest.size() ? rest.substr(cut + 1) : "";
         }
+    }
     }
     float total = rows.size() * lh, view = bottom - top;
     infoScroll_ = clampf(infoScroll_, 0, std::max(0.0f, total - view));
@@ -4466,13 +4519,15 @@ void Game::drawPerf() {
         latNextUpdate_ = time_ + 1.0;
         if (latSamples_.empty()) latText_ = "INPUT->FRAME: MOVE THE MOUSE";
         else {
-            std::sort(latSamples_.begin(), latSamples_.end());
+            // (no full sort: this runs on one frame a second, and that frame is in the 0.1% low it measures)
             double sum = 0;
             for (float v : latSamples_) sum += v;
+            float mn = *std::min_element(latSamples_.begin(), latSamples_.end());
+            size_t k = std::min(latSamples_.size() - 1, (size_t)(latSamples_.size() * 0.99));
+            std::nth_element(latSamples_.begin(), latSamples_.begin() + k, latSamples_.end());
             auto r = [](double ms) { return std::round(ms * 10.0) / 10.0; }; // 100 us steps
             char b[160];
-            snprintf(b, sizeof b, "INPUT->FRAME AVG %.1fMS  MIN %.1fMS  99%% %.1fMS", r(sum / latSamples_.size()), r(latSamples_.front()),
-                     r(latSamples_[std::min(latSamples_.size() - 1, (size_t)(latSamples_.size() * 0.99))]));
+            snprintf(b, sizeof b, "INPUT->FRAME AVG %.1fMS  MIN %.1fMS  99%% %.1fMS", r(sum / latSamples_.size()), r(mn), r(latSamples_[k]));
             latText_ = b;
         }
         latSamples_.clear();
@@ -4485,16 +4540,22 @@ void Game::drawPerf() {
         t.assign(frameTimes_.begin(), frameTimes_.begin() + frameCount_);
         double sum = 0;
         for (float f : t) sum += f;
-        auto pct = [&](double p) { size_t k = std::min(t.size() - 1, (size_t)(t.size() * p)); std::nth_element(t.begin(), t.begin() + k, t.end()); return t[k]; };
+        // the 99th, then the 99.9th within what's above it, then the worst within what's above that
+        size_t k1 = std::min(t.size() - 1, (size_t)(t.size() * 0.99)), k2 = std::min(t.size() - 1, (size_t)(t.size() * 0.999));
+        std::nth_element(t.begin(), t.begin() + k1, t.end());
+        float p99 = t[k1];
+        std::nth_element(t.begin() + k1, t.begin() + k2, t.end());
+        float p999 = t[k2], worst = *std::max_element(t.begin() + k2, t.end());
         char b[200];
         snprintf(b, sizeof b, "AVG %.0f  1%% LOW %.0f  0.1%% LOW %.0f  WORST %.1fMS  PING %d",
-                 t.size() / sum, 1.0 / pct(0.99), 1.0 / pct(0.999), *std::max_element(t.begin(), t.end()) * 1000.0,
+                 t.size() / sum, 1.0 / p99, 1.0 / p999, worst * 1000.0,
                  net_.findPlayer(net_.clientId()) ? net_.findPlayer(net_.clientId())->ping : 0);
         perfText_ = b;
+        perfTick_ = std::string("QUARK V") + QUARK_VERSION;   // (with the numbers, not every frame)
+        if (net_.hasSnapshot()) perfTick_ += "  SERVER " + std::to_string(net_.tickRate()) + " HZ  LOSS " + std::to_string(net_.snapshotLoss()) + "%";
     }
     float ts = std::max(1.0f, std::round(r_.height() / 720.0f * 2.0f));
-    std::string tick = std::string("QUARK V") + QUARK_VERSION;
-    if (net_.hasSnapshot()) tick += "  SERVER " + std::to_string(net_.tickRate()) + " HZ  LOSS " + std::to_string(net_.snapshotLoss()) + "%";
+    const std::string& tick = perfTick_;
     float lh = r_.textHeight(ts) + 6;
     float w = std::max(std::max(r_.textWidth(perfText_, ts), r_.textWidth(latText_, ts)), r_.textWidth(tick, ts));
     r_.rect(4, 4, w + 8, lh * 3 + 4, {0, 0, 0, 0.6f});
@@ -4597,7 +4658,7 @@ void Game::afterSwap() {
     // the CPU clock, minus when the game received the input event from the OS. Read back a few
     // frames later without stalling.
     double now = timeNow();
-    if (now - gpuCalibAt_ > 1.0) {
+    if (now - gpuCalibAt_ > 10.0) {   // (a synchronous GPU query: it can stall the driver, so rarely; the clocks drift by microseconds)
         GLint64 g = 0;
         glGetInteger64v(GL_TIMESTAMP, &g);
         gpuClockOffset_ = timeNow() - g * 1e-9;
@@ -4936,7 +4997,8 @@ void Game::drawBracket() {
             bool current = r == bracketRound_ && i / 2 == bracketMatch_ && net_.mode().phase != PHASE_MATCH_END;
             if (current) r_.rect(x - 2 * s, y - 2 * s, colW + 4 * s, boxH + 4 * s, fc);
             r_.rect(x, y, colW, boxH, won || (r == nr - 1 && id >= 0) ? Color{fc.r * 0.35f, fc.g * 0.35f, fc.b * 0.35f, 1} : Color{0.1f, 0.11f, 0.14f, 1});
-            std::string t = id >= 0 ? bracketNames_[id] : id == -1 ? "BYE" : "";
+            static const std::string kBye = "BYE", kNone;
+            const std::string& t = id >= 0 ? bracketNames_[id] : id == -1 ? kBye : kNone;   // (no copy per slot per frame)
             Color tc = lost ? Color{0.45f, 0.45f, 0.5f, 1} : id == -1 ? Color{0.4f, 0.4f, 0.45f, 1} : Color{1, 1, 1, 1};
             r_.text(x + 8 * s, y + (boxH - r_.textHeight(ts)) * 0.5f, ts, t, tc);
             if (lost) r_.rect(x + 6 * s, y + boxH * 0.5f, std::min(colW - 12 * s, r_.textWidth(t, ts) + 4 * s), 1.5f * s, {0.6f, 0.3f, 0.3f, 1});
@@ -4951,7 +5013,12 @@ void Game::drawCrosshair(float cx, float cy, float scale, bool hit) {
     hit = hit && cfg_.chHitFlash;   // (settings: HIT FLASH off, or its colour)
     Color c = hit ? rgba(cfg_.chHitColor) : rgba(cfg_.chTeamColor ? cfg_.colorFriendly : cfg_.chColor);
     cx = std::round(cx); cy = std::round(cy);
-    std::vector<std::array<float, 4>> rs; // x, y, w, h
+    struct Rects {   // x, y, w, h: at most 25 (the ring), on the stack (this runs every frame)
+        std::array<float, 4> r[25]; int n = 0;
+        void push_back(const std::array<float, 4>& v) { r[n++] = v; }
+        const std::array<float, 4>* begin() const { return r; }
+        const std::array<float, 4>* end() const { return r + n; }
+    } rs;
     int st = cfg_.chStyle;
     if (st == 0 || st == 1 || st == 4) {
         if (len > 0) {
@@ -4964,10 +5031,12 @@ void Game::drawCrosshair(float cx, float cy, float scale, bool hit) {
     if (st == 1 || st == 2) rs.push_back({cx - t * 0.5f, cy - t * 0.5f, t, t});
     if (st == 3) { // ring of small blocks
         float R = g + len * 0.5f + t;
-        for (int i = 0; i < 24; i++) {
-            float a = i * 2 * PI / 24;
-            rs.push_back({cx + std::cos(a) * R - t * 0.5f, cy + std::sin(a) * R - t * 0.5f, t, t});
-        }
+        static const auto ring = [] {   // (the 24 directions, worked out once)
+            std::array<std::array<float, 2>, 24> d{};
+            for (int i = 0; i < 24; i++) { float a = i * 2 * PI / 24; d[i] = {std::cos(a), std::sin(a)}; }
+            return d;
+        }();
+        for (int i = 0; i < 24; i++) rs.push_back({cx + ring[i][0] * R - t * 0.5f, cy + ring[i][1] * R - t * 0.5f, t, t});
         rs.push_back({cx - t * 0.5f, cy - t * 0.5f, t, t});
     }
     if (cfg_.chOutline)

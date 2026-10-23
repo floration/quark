@@ -129,6 +129,7 @@ static void buildHitTiers(std::vector<float>* s) {
 }
 
 void Audio::synthesize() {
+    voices_.reserve(kMaxVoices);   // (never grows under the mixing lock)
     auto& s = sounds_[0];
     // feedback: soft rounded ticks
     buildHitTiers(s);
@@ -340,22 +341,24 @@ void Audio::voiceGains(Voice& v) {
     v.gainR = g * std::sqrt(0.5f * (1 + pan * 0.8f));
 }
 
+// (the gains are worked out before taking the lock the mixing thread holds while it mixes: the game thread waits
+// only for the push, and an inaudible sound never takes it)
 void Audio::play(int id, float volume, float pitch, int pack) {
     if (!running_ || id < 0 || id >= SND_COUNT) return;
-    std::lock_guard<std::mutex> l(mu_);
-    if ((int)voices_.size() >= kMaxVoices) voices_.erase(voices_.begin());
     Voice v{id, (pack < 0 || pack >= kPacks) ? pack_.load() : pack, 0, pitch, 0, 0, false, {}, volume};
     voiceGains(v);
+    std::lock_guard<std::mutex> l(mu_);
+    if ((int)voices_.size() >= kMaxVoices) voices_.erase(voices_.begin());
     voices_.push_back(v);
 }
 
 void Audio::play3D(int id, const Vec3& pos, float volume, float pitch, int pack) {
     if (!running_ || id < 0 || id >= SND_COUNT) return;
-    std::lock_guard<std::mutex> l(mu_);
-    if ((int)voices_.size() >= kMaxVoices) voices_.erase(voices_.begin());
     Voice v{id, (pack < 0 || pack >= kPacks) ? pack_.load() : pack, 0, pitch, 0, 0, true, pos, volume};
     voiceGains(v);
     if (v.gainL + v.gainR < 0.002f) return; // inaudible
+    std::lock_guard<std::mutex> l(mu_);
+    if ((int)voices_.size() >= kMaxVoices) voices_.erase(voices_.begin());
     voices_.push_back(v);
 }
 
@@ -419,7 +422,10 @@ void Audio::backendThread() {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
     timeBeginPeriod(1);   // (1 ms timer resolution for the wait's timeout)
     HWAVEOUT h = (HWAVEOUT)backend_;
-    constexpr int kBufs = 6; // 6 x 5 ms queued: a little slack for the scheduler
+    // How many 5 ms buffers are queued is how late every sound is: start at 3 (15 ms; it was a fixed 6, 30 ms) and
+    // add one each time the device runs dry (it played everything we had: a gap was heard), up to 8. A machine that
+    // keeps up stays at 15 ms; one that can't settles where it stops crackling after a gap or two.
+    constexpr int kBufs = 8;
     static int16_t data[kBufs][kPeriod * 2];
     WAVEHDR hdr[kBufs] = {};
     for (int i = 0; i < kBufs; i++) {
@@ -428,14 +434,21 @@ void Audio::backendThread() {
         waveOutPrepareHeader(h, &hdr[i], sizeof(WAVEHDR));
         hdr[i].dwFlags |= WHDR_DONE;
     }
+    int depth = 3;
+    bool started = false;
+    int next = 0;   // (buffers go out in turn: the device plays them in the order written)
     while (!quit_) {
+        int queued = 0;
+        for (int i = 0; i < kBufs; i++) queued += !(hdr[i].dwFlags & WHDR_DONE);
+        if (started && queued == 0 && depth < kBufs) depth++;   // ran dry
         bool wrote = false;
-        for (int i = 0; i < kBufs; i++) {
-            if (!(hdr[i].dwFlags & WHDR_DONE)) continue;
-            mix(data[i], kPeriod);
-            hdr[i].dwFlags &= ~WHDR_DONE;
-            waveOutWrite(h, &hdr[i], sizeof(WAVEHDR));
-            wrote = true;
+        while (queued < depth && (hdr[next].dwFlags & WHDR_DONE)) {
+            mix(data[next], kPeriod);
+            hdr[next].dwFlags &= ~WHDR_DONE;
+            waveOutWrite(h, &hdr[next], sizeof(WAVEHDR));
+            next = (next + 1) % kBufs;
+            queued++;
+            wrote = started = true;
         }
         if (!wrote) WaitForSingleObject((HANDLE)waveEvent_, 5);
     }

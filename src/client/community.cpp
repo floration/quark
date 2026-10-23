@@ -161,15 +161,24 @@ void Game::updateLifetime() {
     lifePhase_ = phase;
     std::string out;
     rank_.takeText("lifetime", out);
-    if (me && phase != PHASE_MATCH_END) {
-        std::string ids; bool unknown = false;
-        for (int i = 0; i < kMaxPlayers; i++) {
+    // (the list of ids is only built when it's going to be sent: a new match, or someone unknown at most every 10 s;
+    // building it every frame was a dozen allocations and a quadratic search)
+    if (me && phase != PHASE_MATCH_END && (newMatch || time_ >= nextLifeFetch_)) {
+        bool unknown = false;
+        for (int i = 0; i < kMaxPlayers && !newMatch && !unknown; i++) {
             const std::string& id = i == net_.clientId() ? rankKey_.id : net_.rankId(i);
-            if (id.size() != 32 || ids.find(id) != std::string::npos) continue;
-            ids += (ids.empty() ? "" : ",") + id;
-            unknown |= !lifetime_.count(id);
+            unknown = id.size() == 32 && !lifetime_.count(id);
         }
-        if (!ids.empty() && (newMatch || (unknown && time_ >= nextLifeFetch_))) { nextLifeFetch_ = time_ + 10; lifeAsked_ = ids; rank_.request("lifetimes", "/lifetime?ids=" + ids); }
+        if (newMatch || unknown) {
+            std::string ids;
+            for (int i = 0; i < kMaxPlayers; i++) {
+                const std::string& id = i == net_.clientId() ? rankKey_.id : net_.rankId(i);
+                if (id.size() != 32 || ids.find(id) != std::string::npos) continue;
+                if (!ids.empty()) ids += ',';
+                ids += id;
+            }
+            if (!ids.empty()) { nextLifeFetch_ = time_ + 10; lifeAsked_ = ids; rank_.request("lifetimes", "/lifetime?ids=" + ids); }
+        }
     }
     if (rank_.takeText("lifetimes", out) && (out.empty() || out[0] != '!')) {
         std::istringstream in(out);

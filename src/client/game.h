@@ -392,9 +392,18 @@ private:
     struct Explosion { Vec3 at; double start; float size = 1; bool bubble = false; };
     std::vector<Explosion> explosions_;
     std::vector<ProjectileSnap> lastProjectiles_;
+    std::vector<ProjectileSnap> projScratch_;   // (frame: this frame's projectiles, built here then swapped in)
+    std::vector<GameEvent> evScratch_;          // (handleEvents)
     // your own projectiles start drawn at your weapon model's muzzle and blend onto their real path
     struct ProjStart { uint16_t id; double seen; Vec3 offset; };
-    std::vector<ProjStart> projStarts_;
+    std::vector<ProjStart> projStarts_, projStartsKeep_;
+    std::string feedPart_;   // (drawFeedText)
+    std::vector<std::pair<std::string, bool>> infoRows_;   // (drawInfo: the page wrapped to the panel, for this tab and size)
+    int infoRowsTab_ = -1;
+    float infoRowsW_ = 0, infoRowsTs_ = 0;
+    std::string perfTick_;   // (drawPerf: the version / server line, made with the numbers)
+    struct JoiningThread { std::thread t; ~JoiningThread() { if (t.joinable()) t.join(); } };
+    JoiningThread raceWriter_;  // (onRaceSplit: appends a finished run to race_times.log; joined however the game ends)
     Vec3 muzzlePoint(int weapon, const Vec3& eye) const;   // world point of the weapon model's barrel tip (HUD layout)
     double shotAt_ = -1;
     bool scoped_ = false;

@@ -47,8 +47,11 @@ static Color parseRgba(const std::string& s, Color def) {
     return {c[0], c[1], c[2], c[3]};
 }
 
+static double pollClock() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+bool HudWidgets::pollDue() const { return pollClock() - lastPoll_ >= 1.0; }
+
 void HudWidgets::poll(const std::string& path) {
-    double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    double now = pollClock();
     if (now - lastPoll_ < 1.0) return;
     lastPoll_ = now;
     struct stat st;
