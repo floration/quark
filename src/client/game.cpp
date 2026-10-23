@@ -929,14 +929,23 @@ void Game::handleEvents() {
                                                              : killer + " [" + weaponName(wpn) + "] " + net_.playerName(e.b);
                 onKillFeedback(e.a, e.b, wpn, e.c >= 0 && (e.c & KILL_HEADSHOT), e.c >= 0 && (e.c & KILL_AIRBORNE));
                 Color c = e.a == net_.clientId() ? rgba(cfg_.colorFriendly) : e.b == net_.clientId() ? rgba(cfg_.colorEnemy) : kWhite;
-                killFeed_.push_back({t, c, time_ + 6});
+                Feed f{t, c, time_ + 6};
+                Color nc;
+                if (!killer.empty() && e.a != e.b && nameColorOf(e.a, nc)) f.spans.push_back({0, killer.size(), nc});
+                if (nameColorOf(e.b, nc)) { size_t vn = net_.playerName(e.b).size(); f.spans.push_back({killer.empty() || e.a == e.b ? 0 : t.size() - vn, vn, nc}); }
+                killFeed_.push_back(f);
                 while (killFeed_.size() > 6) killFeed_.pop_front();
                 if (e.b == net_.clientId() && e.a < kMaxPlayers && e.a != e.b) specTarget_ = e.a;
                 if (e.a == net_.clientId() && e.b != e.a && cfg_.hitsounds) audio_.play(SND_KILL, 0.9f);
                 break;
             }
             case EV_CHAT:   // (chat off: dropped, not just hidden - turning it back on doesn't replay what was missed)
-                if (!cfg_.chatOff) addChat({net_.playerName(e.a) + ": " + e.text, isFriendly(e.a) ? rgba(cfg_.colorFriendly) : rgba(cfg_.colorEnemy), time_ + 10, crownOf(e.a), true});
+                if (!cfg_.chatOff) {
+                    Feed f{net_.playerName(e.a) + ": " + e.text, isFriendly(e.a) ? rgba(cfg_.colorFriendly) : rgba(cfg_.colorEnemy), time_ + 10, crownOf(e.a), true};
+                    Color nc;
+                    if (nameColorOf(e.a, nc)) f.spans.push_back({0, net_.playerName(e.a).size(), nc});
+                    addChat(f);
+                }
                 break;
             case EV_MESSAGE:
                 if (e.text.rfind(kUnratedNotice, 0) == 0) unratedServer_ = true;   // (a testing server: the HUD says NOT RATED)
@@ -2426,7 +2435,7 @@ void Game::drawHud() {
     for (auto& k : killFeed_) {
         float tw = r_.textWidth(k.text, ts);
         r_.rect(W - tw - 20 * s, y - 3 * s, tw + 12 * s, r_.textHeight(ts) + 6 * s, {0, 0, 0, 0.4f});
-        r_.text(W - tw - 14 * s, y, ts, k.text, k.color);
+        drawFeedText(W - tw - 14 * s, y, ts, k);
         y += r_.textHeight(ts) + 8 * s;
     }
     // chat (bottom left)
@@ -2779,6 +2788,42 @@ void Game::drawCaret(float x, float y, float ts, bool mono, const std::string& b
 }
 
 // The chat lines (all recent history while typing) and the SAY: / console input. In game and while editing together.
+bool Game::nameColorOf(int id, Color& out) const {
+    uint16_t c = net_.playerNameColor(id);
+    if (!c) return false;
+    Color k{((c >> 11) & 31) / 31.0f, ((c >> 5) & 63) / 63.0f, (c & 31) / 31.0f, 1};
+    // readable on the dark HUD panels: too dark a colour is lifted toward white until it's bright enough
+    float lum = 0.2126f * k.r + 0.7152f * k.g + 0.0722f * k.b;
+    const float kMinLum = 0.35f;
+    if (lum < kMinLum) {
+        float t = (kMinLum - lum) / (1 - lum);
+        k = {k.r + (1 - k.r) * t, k.g + (1 - k.g) * t, k.b + (1 - k.b) * t, 1};
+    }
+    out = k;
+    return true;
+}
+
+// A feed line (kill feed, chat): its colour, with any name spans in their own
+void Game::drawFeedText(float x, float y, float ts, const Feed& f) {
+    if (f.spans.empty()) { r_.text(x, y, ts, f.text, f.color); return; }
+    size_t at = 0;
+    auto run = [&](size_t to, Color c) {
+        if (to <= at) return;
+        std::string part = f.text.substr(at, to - at);
+        r_.text(x, y, ts, part, c);
+        x += r_.textWidth(part, ts);
+        at = to;
+    };
+    std::vector<Span> spans = f.spans;
+    std::sort(spans.begin(), spans.end(), [](const Span& a, const Span& b) { return a.at < b.at; });
+    for (auto& sp : spans) {
+        if (sp.at < at || sp.at + sp.len > f.text.size()) continue;   // (overlapping or out of range: drawn plain)
+        run(sp.at, f.color);
+        run(sp.at + sp.len, sp.color);
+    }
+    run(f.text.size(), f.color);
+}
+
 void Game::drawChatBox(float W, float H, float s, float ts) {
     float y;
     while (!chatFeed_.empty() && chatFeed_.front().until < time_ && !chatting_) chatFeed_.pop_front();
@@ -2792,7 +2837,7 @@ void Game::drawChatBox(float W, float H, float s, float ts) {
         if (c.player && cfg_.chatOff) continue;
         float cw = c.crown ? r_.textHeight(ts) * 1.2f : 0;
         if (c.crown) drawCrown(24 * s, y + r_.textHeight(ts) * 0.1f, cw, c.crown);
-        r_.text(24 * s + (cw ? cw + 4 * s : 0), y, ts, c.text, c.color);
+        drawFeedText(24 * s + (cw ? cw + 4 * s : 0), y, ts, c);
         y += r_.textHeight(ts) + 4 * s;
     }
     }
@@ -3315,6 +3360,7 @@ void Game::drawScoreboard() {
     cy += rowH;
     for (auto& p : ps) {
         Color c = (p.flags & PS_SPECTATOR) ? kGrey : rgba(teamColor(p.id));
+        if (!(p.flags & PS_SPECTATOR)) nameColorOf(p.id, c);   // (a chosen name colour; the table already says the team)
         if (p.id == net_.clientId()) r_.rect(x + 4 * s, cy - 4 * s, w - 8 * s, rowH - 2 * s, {1, 1, 1, 0.06f});
         float cw = 0;
         if (int place = crownOf(p.id)) { cw = r_.textHeight(ts) * 1.2f; drawCrown(x + 12 * s, cy + r_.textHeight(ts) * 0.1f, cw, place, crownLetter(p.id)); cw += 5 * s; }
@@ -3654,6 +3700,26 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
             ui_.slider(xr, y, w, h, "INTERP DELAY (MS)", v, 1, (float)kMaxInterpMs, "%.0f");
             cfg_.interpMs = std::max(1, (int)std::lround(v));
         }
+        y += h + gap;
+    }
+    {
+        // your name's colour as everyone sees it (scoreboard, chat, kill feed): DEFAULT, or R / G / B (moving one picks it)
+        bool custom = cfg_.nameColor >= 0;
+        float cwid = w * 0.46f, sw = (w - cwid - 3 * gap) / 3;
+        if (ui_.toggle(xr, y, cwid, h, "NAME COLOR", custom)) cfg_.nameColor = custom ? 0xFFD040 : -1;
+        int rgb = cfg_.nameColor >= 0 ? cfg_.nameColor : 0xFFFFFF;
+        const char* ch[3] = {"R", "G", "B"};
+        for (int i = 0; i < 3; i++) {
+            int sh = 16 - 8 * i;
+            float v = (float)((rgb >> sh) & 255);
+            if (ui_.slider(xr + cwid + gap + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f")) {
+                rgb = (rgb & ~(255 << sh)) | ((int)std::lround(clampf(v, 0, 255)) << sh);
+                cfg_.nameColor = rgb;
+            }
+        }
+        if (cfg_.nameColor >= 0)   // (a swatch of the colour as others see it)
+            r_.rect(xr + 4 * s, y + 4 * s, 6 * s, h - 8 * s,
+                    rgba(Vec3(((rgb >> 16) & 255) / 255.0f, ((rgb >> 8) & 255) / 255.0f, (rgb & 255) / 255.0f)));
         y += h + gap;
     }
     const char* help[] = {

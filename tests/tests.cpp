@@ -4385,6 +4385,38 @@ static void testRankedLeaverPaths(uint16_t port) {
 }
 
 // REVIEW 4.1: "kick" takes a name (what the console completes) or an id; atoi("Bob") was 0 and kicked the host.
+// Name colour (1.17): sent with the model command (RGB565), seen by everyone, by a late joiner and in a demo's player info
+static void testNameColor(uint16_t port) {
+    printf("name colour\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.balanceBots = false;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient h, b;
+    std::string addr = "127.0.0.1:" + std::to_string(port);
+    h.connect(addr, "Host"); b.connect(addr, "Bob");
+    std::vector<NetClient*> cls = {&h, &b};
+    pump(s, cls, 0.8, idle);
+    int ih = h.clientId(), ib = b.clientId();
+    CHECK(ih >= 0 && ib >= 0 && b.playerNameColor(ih) == 0);
+    h.sendCommand("model 0 0 63488");   // pure red
+    b.sendCommand("model 0 0");         // a client before 1.17: no colour, the default
+    pump(s, cls, 0.5, idle);
+    CHECK(b.playerNameColor(ih) == 63488 && h.playerNameColor(ih) == 63488 && h.playerNameColor(ib) == 0);
+    NetClient c;
+    c.connect(addr, "Carol");
+    cls = {&h, &b, &c};
+    pump(s, cls, 0.8, idle);
+    CHECK(c.playerNameColor(ih) == 63488);   // a late joiner is told too
+    h.sendCommand("model 0 0 70000");        // out of range: back to the default
+    pump(s, cls, 0.5, idle);
+    CHECK(b.playerNameColor(ih) == 0 && c.playerNameColor(ih) == 0);
+    for (auto* k : cls) k->disconnect();
+    pump(s, cls, 0.2, idle);
+    s.stop();
+}
+
 static void testKickByName(uint16_t port) {
     printf("kick by name or id\n");
     {   // resolving: id (a connected slot), exact name in any case, a unique prefix; else none
@@ -6496,7 +6528,7 @@ int main(int argc, char** argv) {
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
-        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); }},
+        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); testNameColor(TP(28599)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testDemoUpgrade(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testBuiltInMapEditSession(TP(28606)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
         {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); }},
         {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
