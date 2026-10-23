@@ -171,6 +171,7 @@ int main(int argc, char** argv) {
     double last = timeNow();
     double frameStart = timeNow();
     while (!glfwWindowShouldClose(win) && !game.quitRequested()) {
+        game.pipeMark(Game::PM_FRAME);   // (F3's pipeline graph: the frame's parts)
         // Frame cap: wait *before* reading input, so the frame shows the freshest input possible.
         if (game.maxFps() > 0) {
             double period = 1.0 / game.maxFps();
@@ -180,14 +181,20 @@ int main(int argc, char** argv) {
         } else {
             frameStart = timeNow();
         }
+        game.pipeMark(Game::PM_CAP);
         game.beforeInput();
+        game.pipeMark(Game::PM_FENCE);
         game.preInput();   // (the network: before the mouse is read)
+        game.pipeMark(Game::PM_NET);
         { QZONE("poll events"); glfwPollEvents(); }
+        game.pipeMark(Game::PM_POLL);
         double now = timeNow();
         double dt = now - last;
         last = now;
         game.frame(dt);
+        game.pipeMark(Game::PM_SWAP0);
         { QZONE("swap"); glfwSwapBuffers(win); }
+        game.pipeMark(Game::PM_SWAP1);
         { QZONE("after swap (low latency wait)"); game.afterSwap(); }
         QFRAME();
     }

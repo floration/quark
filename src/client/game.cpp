@@ -736,6 +736,7 @@ void Game::onMouseButton(int button, int action) {
 void Game::onCursor(double x, double y) {
     markInput();
     if (mouseCaptured_) {
+        mouseEventsPoll_++;   // (F3: the mouse's report rate)
         if (firstMouse_) { lastMx_ = x; lastMy_ = y; firstMouse_ = false; return; }
         double dx = x - lastMx_, dy = y - lastMy_;
         lastMx_ = x; lastMy_ = y;
@@ -1360,6 +1361,7 @@ void Game::frame(double dt) {
         }
         net_.flushInput();   // (PERF-12: one input packet per frame, or per 2 ticks when a frame runs more)
         net_.updateVisualPos(bake_ ? 0.0 : tickAcc_, yaw_, pitch_);   // your own position as of now, for drawing
+        pipeMark(PM_TICKS);
         framePlayersOk_ = false;   // (the ticks moved the render time on)
         scopeOverlay_ = net_.selfWeapon() == WPN_SNIPER; // crossbow: just a light zoom, normal crosshair
         scoped_ = net_.selfAlive() && !paused_ && !chatting_ && weaponDef(net_.selfWeapon()).scopedSpread >= 0 &&
@@ -1432,6 +1434,8 @@ void Game::frame(double dt) {
     if (!copied.empty()) glfwSetClipboardString(win_, copied.c_str());
     if (showPerf_) drawPerf();
     { QZONE("flush2D"); r_.flush2D(); }
+    pipeMark(PM_HUD);
+    pipeGpuEnd();
 
     if (shotAt_ > 0 && time_ >= shotAt_ && (screen_ == Screen::InGame || screen_ == Screen::Editor || screen_ == Screen::Leaderboard || opts_.debugPicker || !opts_.backdrop.empty() || opts_.menuShot)) {
         r_.screenshot(opts_.screenshot);
@@ -1967,8 +1971,11 @@ void Game::drawWorld(float alpha) {
         }
     }
     sceneSettings();
+    pipeMark(PM_SCENE0);
+    pipeGpuBegin();
     r_.drawScene(cfg_.shadows);
-    if (cfg_.lowLatency == 2) glFlush();   // (ULTRA: the GPU starts the world while the HUD is built; it sits idle otherwise)
+    if (cfg_.lowLatency == 2) glFlush();
+    pipeMark(PM_SCENE1);   // (ULTRA: the GPU starts the world while the HUD is built; it sits idle otherwise)
 }
 
 // ---------------------------------------------------------------------------
@@ -4575,6 +4582,12 @@ void Game::drawPerf() {
                  t.size() / sum, 1.0 / p99, 1.0 / p999, worst * 1000.0,
                  net_.findPlayer(net_.clientId()) ? net_.findPlayer(net_.clientId())->ping : 0);
         perfText_ = b;
+        if (pipeN_ > 0) {   // the pipeline graph's averages
+            for (int k = 0; k < PM_COUNT + 2; k++) { pipeAvg_[k] = pipeSum_[k] / pipeN_; pipeSum_[k] = 0; }
+            pipeN_ = 0;
+            pipeHave_ = true;
+        }
+        if (mouseBurstTime_ > 0.1) { mouseHz_ = mouseBurstEvents_ / mouseBurstTime_; mouseBurstEvents_ = mouseBurstTime_ = 0; }
         perfTick_ = std::string("QUARK V") + QUARK_VERSION;   // (with the numbers, not every frame)
         if (net_.hasSnapshot()) perfTick_ += "  SERVER " + std::to_string(net_.tickRate()) + " HZ  LOSS " + std::to_string(net_.snapshotLoss()) + "%";
     }
@@ -4586,7 +4599,132 @@ void Game::drawPerf() {
     r_.text(8, 8, ts, perfText_, {1, 1, 0.4f, 1});
     r_.text(8, 8 + lh, ts, latText_, {1, 1, 0.4f, 1});
     r_.text(8, 8 + lh * 2, ts, tick, {1, 1, 0.4f, 1});
+    if (screen_ == Screen::InGame) drawPipeline(4, 4 + lh * 3 + 12, std::max(1.0f, ts * 0.85f));
 }
+
+// ---- F3 pipeline graph -------------------------------------------------------------------------------------------
+
+void Game::pipeMark(int m) {
+    if (!showPerf_) { if (m == PM_POLL) mouseEventsPoll_ = 0; return; }
+    const double now = timeNow();
+    pipeNow_[m] = now;
+    if (m == PM_POLL && mouseEventsPoll_ > 0) {   // the mouse's rate: events over the time between the polls that got them
+        if (mouseLastEventPoll_ >= 0 && now - mouseLastEventPoll_ < 0.05) { mouseBurstEvents_ += mouseEventsPoll_; mouseBurstTime_ += now - mouseLastEventPoll_; }
+        mouseLastEventPoll_ = now;
+        mouseEventsPoll_ = 0;
+    }
+}
+
+void Game::pipeGpuBegin() {   // (a GPU timestamp before the frame's 3D work)
+    PipeSlot& sl = pipeQ_[pipeNext_];
+    if (!showPerf_ || sl.used) return;   // (used: still waiting for an older frame's results: skip this one)
+    if (!sl.q[0]) glGenQueries(2, sl.q);
+    glQueryCounter(sl.q[0], GL_TIMESTAMP);
+    pipeGpuStarted_ = true;
+}
+
+void Game::pipeGpuEnd() {     // (...and after its last: the HUD)
+    if (!pipeGpuStarted_) return;
+    glQueryCounter(pipeQ_[pipeNext_].q[1], GL_TIMESTAMP);
+    pipeGpuStarted_ = false;
+    pipeFrameDone_ = true;
+}
+
+void Game::pipeCollect() {    // afterSwap: this frame's marks into its slot; finished slots into the averages
+    if (pipeFrameDone_) {
+        PipeSlot& sl = pipeQ_[pipeNext_];
+        std::copy(pipeNow_, pipeNow_ + PM_COUNT, sl.marks);
+        sl.used = true;
+        pipeNext_ = (pipeNext_ + 1) % 4;
+        pipeFrameDone_ = false;
+    }
+    for (PipeSlot& sl : pipeQ_) {
+        if (!sl.used) continue;
+        GLint avail = 0;
+        glGetQueryObjectiv(sl.q[1], GL_QUERY_RESULT_AVAILABLE, &avail);
+        if (!avail) continue;
+        GLuint64 t0 = 0, t1 = 0;
+        glGetQueryObjectui64v(sl.q[0], GL_QUERY_RESULT, &t0);
+        glGetQueryObjectui64v(sl.q[1], GL_QUERY_RESULT, &t1);
+        sl.used = false;
+        const double poll = sl.marks[PM_POLL];
+        for (int k = 0; k < PM_COUNT; k++) pipeSum_[k] += sl.marks[k] - poll;
+        pipeSum_[PM_COUNT] += t0 * 1e-9 + gpuClockOffset_ - poll;
+        pipeSum_[PM_COUNT + 1] += t1 * 1e-9 + gpuClockOffset_ - poll;
+        pipeN_++;
+    }
+}
+
+// The frame's parts as bars on one time line, from the mouse moving to the light leaving the screen at the crosshair:
+// measured on this PC (CPU marks, GPU timestamps) and, for what the game can't see, worked out from the mouse's report
+// rate, the frame rate and the monitor's refresh rate (marked EST). Averages over the last half second.
+void Game::drawPipeline(float x, float y, float ts) {
+    if (!pipeHave_) return;
+    const double* a = pipeAvg_;
+    double sumDt = 0;
+    for (size_t k = 0; k < frameCount_; k++) sumDt += frameTimes_[k];
+    const double frame = frameCount_ ? sumDt / frameCount_ : 0.0;
+    GLFWmonitor* mon = glfwGetWindowMonitor(win_);
+    if (!mon) mon = glfwGetPrimaryMonitor();
+    const GLFWvidmode* vm = mon ? glfwGetVideoMode(mon) : nullptr;
+    const double hz = vm && vm->refreshRate > 0 ? vm->refreshRate : 60.0, refresh = 1.0 / hz;
+    const bool mouseKnown = mouseHz_ > 50;
+    const double mouseRate = mouseKnown ? mouseHz_ : 1000.0;
+    struct Row { std::string name; double t0, t1; Color c; };
+    std::vector<Row> rows;
+    const Color cIn = {0.55f, 0.75f, 1.0f, 1}, cWait = {0.6f, 0.6f, 0.68f, 1}, cCpu = {1.0f, 0.85f, 0.35f, 1}, cGpu = {0.45f, 0.95f, 0.5f, 1}, cEst = {0.85f, 0.6f, 1.0f, 1};
+    auto us = [](double sec) { return std::to_string((long long)std::llround(sec * 1e6)); };
+    // before the game reads it: the mouse's report (half its interval on average), then the wait for the next poll
+    const double queue = frame * 0.5, mouse = 0.5 / mouseRate;
+    char mb[64];
+    snprintf(mb, sizeof mb, "MOUSE %s %.0f HZ (AVG)", mouseKnown ? "REPORTS AT" : "ASSUMED", mouseRate);
+    rows.push_back({mb, -queue - mouse, -queue, cIn});
+    rows.push_back({"WAITING FOR THE NEXT READ (AVG)", -queue, 0, cWait});
+    auto span = [&](const char* name, int m0, int m1, Color c) { if (a[m1] - a[m0] > 0) rows.push_back({name, a[m0], a[m1], c}); };
+    if (maxFps() > 0) span("FRAME CAP WAIT", PM_FRAME, PM_CAP, cWait);
+    if (cfg_.lowLatency == 1) span("GPU WAIT (LOW LATENCY ON)", PM_CAP, PM_FENCE, cWait);
+    span("NETWORK READ", PM_FENCE, PM_NET, cCpu);
+    span("READ INPUT", PM_NET, PM_POLL, cCpu);
+    span("TICKS + PREDICTION", PM_POLL, PM_TICKS, cCpu);
+    span("CAMERA + WORLD BUILD", PM_TICKS, PM_SCENE0, cCpu);
+    span("DRAW CALLS", PM_SCENE0, PM_SCENE1, cCpu);
+    span("HUD + TEXT", PM_SCENE1, PM_HUD, cCpu);
+    span("SWAP", PM_SWAP0, PM_SWAP1, cCpu);
+    if (cfg_.lowLatency == 2) span("GPU WAIT (ULTRA)", PM_SWAP1, PM_AFTER, cWait);
+    rows.push_back({"GPU", a[PM_COUNT], a[PM_COUNT + 1], cGpu});
+    // after the GPU: how the frame reaches the screen (EST): the compositor in a window, vsync's vblank, then the
+    // scanout down to the crosshair (the middle of the screen: half a refresh on average)
+    double t = std::max(a[PM_COUNT + 1], a[PM_SWAP1]);
+    const bool windowed = cfg_.displayMode != 2, vsync = cfg_.presentMode != 0;
+    if (windowed) { rows.push_back({"COMPOSITOR: NEXT VBLANK (EST)", t, t + refresh * 0.5, cEst}); t += refresh * 0.5; }
+    else if (vsync) { rows.push_back({"VSYNC: NEXT VBLANK (EST)", t, t + refresh * 0.5, cEst}); t += refresh * 0.5; }
+    if (windowed && vsync) { rows.push_back({"COMPOSITED FRAME SHOWN (EST)", t, t + refresh, cEst}); t += refresh; }
+    rows.push_back({"SCANOUT TO THE CROSSHAIR (EST)", t, t + refresh * 0.5, cEst});
+    t += refresh * 0.5;
+    const double t0 = rows.front().t0, total = t - t0;
+    // the graph: a label and the time on the left, the bar on its own line on the right (a waterfall)
+    const float lh = r_.textHeight(ts) + 4, labelW = r_.textWidth("SCANOUT TO THE CROSSHAIR (EST)  000000 US", ts) + 12;
+    const float barW = std::max(200.0f, std::min(700.0f * ts, (float)r_.width() - x - labelW - 24));
+    const float h = (rows.size() + 2) * lh + 8;
+    r_.rect(x, y, labelW + barW + 16, h, {0, 0, 0, 0.6f});
+    float yy = y + 4;
+    char head[160];
+    snprintf(head, sizeof head, "MOUSE TO PHOTON ~%s US  (%.0f HZ DISPLAY, %s, %s)", us(total).c_str(), hz,
+             cfg_.displayMode == 2 ? "FULLSCREEN" : cfg_.displayMode == 1 ? "BORDERLESS" : "WINDOWED", vsync ? "VSYNC" : "NO VSYNC");
+    r_.text(x + 6, yy, ts, head, {1, 1, 0.4f, 1});
+    yy += lh;
+    const double scale = total > 0 ? barW / total : 0;
+    for (const Row& r : rows) {
+        r_.text(x + 6, yy, ts, r.name, r.c);
+        std::string v = us(r.t1 - r.t0) + " US";
+        r_.text(x + labelW - 6 - r_.textWidth(v, ts), yy, ts, v, r.c);
+        float bx = x + labelW + (float)((r.t0 - t0) * scale), bw = std::max(2.0f, (float)((r.t1 - r.t0) * scale));
+        r_.rect(bx, yy + lh * 0.3f, bw, std::max(2.0f, lh * 0.35f), r.c);
+        yy += lh;
+    }
+    r_.text(x + 6, yy, ts, "ONE TIME LINE; EST = WORKED OUT, NOT MEASURED; MONITOR PROCESSING NOT INCLUDED", {0.7f, 0.7f, 0.75f, 1});
+}
+
 
 // the world's look from the settings (the game, the menu's background, the editor: all the same world shader)
 void Game::sceneSettings() {
@@ -4696,6 +4834,8 @@ void Game::afterSwap() {
         }
     }
     if (!showPerf_) return;
+    pipeMark(PM_AFTER);
+    pipeCollect();
     // Input-to-frame latency: GPU timestamp written after this frame's commands, converted to
     // the CPU clock, minus when the game received the input event from the OS. Read back a few
     // frames later without stalling.

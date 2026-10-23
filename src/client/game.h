@@ -429,6 +429,26 @@ private:
     void applyDisplayMode();
     void applyPresentMode();
     void markInput() { if (pendingInput_ < 0) pendingInput_ = timeNow(); }
+public:
+    // F3 pipeline graph: when each part of a frame starts and ends (the main loop and frame() mark them), GPU timestamps
+    // around the frame's GL work, averaged twice a second and drawn as a waterfall from the mouse to the photons.
+    enum PipeMark { PM_FRAME, PM_CAP, PM_FENCE, PM_NET, PM_POLL, PM_TICKS, PM_SCENE0, PM_SCENE1, PM_HUD, PM_SWAP0, PM_SWAP1, PM_AFTER, PM_COUNT };
+    void pipeMark(int m);
+private:
+    double pipeNow_[PM_COUNT] = {};
+    struct PipeSlot { unsigned q[2] = {0, 0}; double marks[PM_COUNT] = {}; bool used = false; };
+    PipeSlot pipeQ_[4];
+    int pipeNext_ = 0;
+    bool pipeGpuStarted_ = false, pipeFrameDone_ = false;
+    double pipeSum_[PM_COUNT + 2] = {}, pipeAvg_[PM_COUNT + 2] = {};   // offsets from the input read (+ GPU start, end)
+    int pipeN_ = 0;
+    bool pipeHave_ = false;
+    int mouseEventsPoll_ = 0;                  // raw mouse events in this poll (rate: events over the time they span)
+    double mouseLastEventPoll_ = -1, mouseBurstEvents_ = 0, mouseBurstTime_ = 0, mouseHz_ = 0;
+    void pipeGpuBegin();
+    void pipeGpuEnd();
+    void pipeCollect();
+    void drawPipeline(float x, float y, float ts);
     double pendingInput_ = -1, frameInput_ = -1;
     void* fence_[2] = {nullptr, nullptr};
     int fenceIdx_ = 0;
