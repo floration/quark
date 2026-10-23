@@ -389,6 +389,52 @@ static void testCartSweep() {
     }
 }
 
+// Every mode a map offers has a spawn for every player it can have (REVIEW MAP-2: eight maps had 2 free-for-all
+// spawns, Anvil's ranked 4-player instagib among them, and players spawned inside each other): the pools
+// Server::spawnPlayer really draws from (spawnPool), each at least as big as the players who draw from it in a full
+// default-size server (8: free for all, hide, tag, race, a tourney's warm-up; 4 a side in team modes, 2 in duel,
+// 1 in 1v1 and a tourney match), every stage of a staged map, and no two of a pool's spawns closer than 1.5 m.
+static void testSpawnPools() {
+    printf("spawn pools: a spawn per player in every offered mode, 1.5 m apart\n");
+    const int full = ServerConfig().maxPlayers;
+    for (auto& name : testedMaps()) {
+        Map m;
+        if (!m.load(name)) continue;
+        int maxStage = 0;
+        for (auto& sp : m.spawns) if (isStagedSpawn(sp.team)) maxStage = std::max(maxStage, spawnStage(sp.team));
+        int worst = 1 << 30, pools = 0;
+        std::string worstWhat;
+        for (int mode = 0; mode < MODE_COUNT; mode++) {
+            if (!m.supportsMode(mode)) continue;
+            struct Use { const char* who; int team; bool match; int need; };
+            std::vector<Use> uses;
+            if (mode == MODE_ARENA) uses = {{"a", TEAM_A, false, 1}, {"b", TEAM_B, false, 1}};
+            else if (mode == MODE_DUEL) uses = {{"a", TEAM_A, false, 2}, {"b", TEAM_B, false, 2}};
+            else if (mode == MODE_TOURNEY) uses = {{"warm-up", TEAM_A, false, full}, {"match a", TEAM_A, true, 1}, {"match b", TEAM_B, true, 1}};
+            else if (modeIsTeamBased(mode)) uses = {{"a", TEAM_A, false, full / 2}, {"b", TEAM_B, false, full / 2}};
+            else uses = {{"all", TEAM_A, false, full}};
+            for (auto& u : uses)
+                for (int stage = 0; stage <= maxStage; stage++) {
+                    int want = modeSpawnType(m, mode, u.team, TEAM_A, u.match);
+                    if (!isStagedSpawn(want) && stage > 0) break;
+                    std::vector<const SpawnPoint*> pool = spawnPool(m, want, stage);
+                    float closest = 1e9f;
+                    for (size_t i = 0; i < pool.size(); i++)
+                        for (size_t j = i + 1; j < pool.size(); j++) closest = std::min(closest, length(pool[i]->pos - pool[j]->pos));
+                    pools++;
+                    char what[96];
+                    snprintf(what, sizeof what, "%s %s%s", modeName(mode), u.who, isStagedSpawn(want) ? (" stage " + std::to_string(stage)).c_str() : "");
+                    if ((int)pool.size() - u.need < worst) { worst = (int)pool.size() - u.need; worstWhat = what; }
+                    if ((int)pool.size() < u.need || closest < 1.5f) {
+                        printf("    %s: %s draws from %zu spawns (needs %d), the closest two %.2f m apart\n", name.c_str(), what, pool.size(), u.need, closest);
+                        g_fail++;
+                    }
+                }
+        }
+        printf("  %-10s %3zu spawns, %2d pools, fewest to spare: %d (%s)\n", name.c_str(), m.spawns.size(), pools, worst, worstWhat.c_str());
+    }
+}
+
 // The collision-checked walk (WalkGrid, REVIEW MAP-3) on small maps: what a player can and can't get past.
 static void testWalkGrid() {
     printf("walk grid: sealed rooms, slots, steps, gaps, ladders, crouching, clip, lava\n");
@@ -4822,6 +4868,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "edgroups") { testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(TP(29997)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "cartsweep") { testCartSweep(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "spawns") { testSpawnPools(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "allmaps") { testWalkGrid(); testAllMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "chat") { testChatAndVoteLimits(TP(29592)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "limits") { testMapSaveExact(); testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
@@ -4854,7 +4901,7 @@ int main(int argc, char** argv) {
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
         {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testTimeToKill(); testWallbang(); }},
         {"maps", [] {
-            testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testStairs(); testLadders();
+            testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testStairs(); testLadders();
             printf("map scores\n");   // the map bar: every map scores at least 7 in every category but originality
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;

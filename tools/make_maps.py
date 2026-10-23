@@ -178,6 +178,159 @@ class M:
         s.lines.append(f"spawn {team} {x:g} {y:g} {z:g} {yaw:g}")
         if mirror_team: s.lines.append(f"spawn {mirror_team} {-x:g} {y:g} {-z:g} {yaw + 180:g}")
     def raw(s, line): s.lines.append(line)
+    # ---- spawn pools (REVIEW MAP-2): every mode a map offers has a spawn for each player a full default-size server
+    # (8) puts in its pool: free for all, hide, tag and a tourney's warm-up draw from the "any" spawns, race from the
+    # race spawns. save() tops short pools up from open floor (quark_tests spawns checks every pool spawnPlayer uses).
+    POOL = 8
+    def spawn_spots(s, ys, band=0.6):
+        """open standing spots on the floors at heights ys: solid floor under the whole hull, nothing within 0.6 m of
+        it up to 2.4 m (pads stay clean), clear of objectives, stairs, ladders, the cart's track, keep-clear volumes
+        and other spawns, on this side of any clip (an invisible wall) from the nearest spawn already there, and only
+        where players can walk to from the spawns on that floor"""
+        kinds = {"box", "accent", "wallbang", "metal", "glow", "clip"}
+        solid, avoid, spawns, path, clips = [], [], [], [], []
+        for l in s.lines:
+            w = l.split()
+            if not w: continue
+            if w[0] in kinds and len(w) == 7:
+                solid.append(tuple(map(float, w[1:7])))
+                if w[0] == "clip": clips.append(solid[-1])
+            elif w[0] in ("water", "lava", "ladder") and len(w) >= 7: avoid.append(tuple(map(float, w[1:7])))
+            elif w[0] in ("site", "hill", "point", "checkpoint") and len(w) >= 7:
+                b = tuple(map(float, w[1:7])); avoid.append((b[0] - 2, b[1] - 1, b[2] - 2, b[3] + 2, b[4] + 1, b[5] + 2))
+            elif w[0] == "spawn": spawns.append(tuple(map(float, w[2:5])))
+            elif w[0] == "path": path.append((float(w[1]), float(w[3])))
+            elif l.startswith("# stairs "):
+                a = list(map(float, w[2:6])); avoid.append((a[0] - 1.5, -1e9, a[1] - 1.5, a[2] + 1.5, 1e9, a[3] + 1.5))
+        avoid += [z[:6] for z in getattr(s, "clear_boxes", [])]
+        cell = 4.0
+        grid = {}
+        for i, b in enumerate(solid):
+            for gx in range(int(math.floor(b[0] / cell)), int(math.floor(b[3] / cell)) + 1):
+                for gz in range(int(math.floor(b[2] / cell)), int(math.floor(b[5] / cell)) + 1): grid.setdefault((gx, gz), []).append(i)
+        def near(x0, z0, x1, z1):
+            seen = set()
+            for gx in range(int(math.floor(x0 / cell)), int(math.floor(x1 / cell)) + 1):
+                for gz in range(int(math.floor(z0 / cell)), int(math.floor(z1 / cell)) + 1):
+                    for i in grid.get((gx, gz), ()):
+                        if i not in seen: seen.add(i); yield solid[i]
+        def hits(q):
+            return any(b[0] < q[3] and b[3] > q[0] and b[1] < q[4] and b[4] > q[1] and b[2] < q[5] and b[5] > q[2] for b in near(q[0], q[2], q[3], q[5]))
+        def inside(x, y, z):
+            return any(b[0] < x < b[3] and b[1] < y < b[4] and b[2] < z < b[5] for b in near(x, z, x, z))
+        def floor_at(x, z, y):   # (a spawn may stand a little above its floor: Dojo's are 0.1 m up, on the mat)
+            return any(y - 0.15 <= b[4] <= y + 0.01 and b[0] <= x <= b[3] and b[2] <= z <= b[5] for b in near(x, z, x, z))
+        def through_clip(x, y, z):   # the line from here to the nearest spawn crosses an invisible wall
+            if not spawns: return False
+            p = min(spawns, key=lambda q: math.hypot(q[0] - x, q[2] - z))
+            for k in range(1, 41):
+                t = k / 40; qx, qz = x + (p[0] - x) * t, z + (p[2] - z) * t
+                if any(b[0] < qx < b[3] and b[2] < qz < b[5] and b[1] < y + 1 < b[4] for b in clips): return True
+            return False
+        s._inside = inside
+        def seg_d(px, pz, a, b):
+            dx, dz = b[0] - a[0], b[1] - a[1]; L = dx * dx + dz * dz
+            t = 0 if L == 0 else max(0, min(1, ((px - a[0]) * dx + (pz - a[1]) * dz) / L))
+            return math.hypot(px - a[0] - t * dx, pz - a[1] - t * dz)
+        xs = [b[0] for b in solid] + [b[3] for b in solid]; zs = [b[2] for b in solid] + [b[5] for b in solid]
+        hx, hz = (s.hx, s.hz) if hasattr(s, "hx") else (max(map(abs, xs)), max(map(abs, zs)))
+        step = 1.0 if hx * hz < 1500 else 2.0
+        def cell_h(x, z, y):   # the floor a hull stands on here, within `band` of height y (None: no room / no floor)
+            for t in sorted({b[4] for b in near(x, z, x, z) if b[0] <= x <= b[3] and b[2] <= z <= b[5] and y - band <= b[4] <= y + band}, reverse=True):
+                if not hits((x - 0.4, t + 0.01, z - 0.4, x + 0.4, t + 1.8, z + 0.4)): return t
+            return None
+        out = []
+        x0g, z0g = -math.floor(hx) + 1.0, -math.floor(hz) + 1.0
+        nxg, nzg = int((hx - 1 - x0g) / step) + 1, int((hz - 1 - z0g) / step) + 1
+        for y in ys:
+            # flood the floor at about this height from the spawns already on it (walking: steps of 0.55 m, the hull
+            # swept between grid points): only spots players can walk to from them (no sealed rooms, no rooftops)
+            h, todo = {}, []
+            for p in spawns:
+                if abs(p[1] - y) > band: continue
+                i, k = round((p[0] - x0g) / step), round((p[2] - z0g) / step)
+                for (di, dk) in sorted(((a, c) for a in (-1, 0, 1) for c in (-1, 0, 1)), key=lambda q: abs(q[0]) + abs(q[1])):
+                    if (i + di, k + dk) in h: break
+                    t = cell_h(x0g + (i + di) * step, z0g + (k + dk) * step, y) if 0 <= i + di < nxg and 0 <= k + dk < nzg else None
+                    if t is not None: h[(i + di, k + dk)] = t; todo.append((i + di, k + dk)); break
+            while todo:
+                i, k = todo.pop()
+                for (di, dk) in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    c = (i + di, k + dk)
+                    if c in h or not (0 <= c[0] < nxg and 0 <= c[1] < nzg): continue
+                    xa, za, xb, zb = x0g + i * step, z0g + k * step, x0g + c[0] * step, z0g + c[1] * step
+                    t = cell_h(xb, zb, y)
+                    if t is None or abs(t - h[(i, k)]) > 0.55: continue
+                    top = max(t, h[(i, k)])
+                    if hits((min(xa, xb) - 0.4, top + 0.01, min(za, zb) - 0.4, max(xa, xb) + 0.4, top + 1.8, max(za, zb) + 0.4)): continue
+                    h[c] = t; todo.append(c)
+            for (i, k) in sorted(h):
+                x, z = x0g + i * step, z0g + k * step
+                if hasattr(s, "hx") and (abs(x) > s.hx - 2.5 or abs(z) > s.hz - 2.5): continue   # (dress() lines the walls)
+                ok = all(floor_at(x + dx, z + dz, y) for dx in (-0.4, 0, 0.4) for dz in (-0.4, 0, 0.4)) and \
+                     not hits((x - 1.0, y + 0.01, z - 1.0, x + 1.0, y + 2.4, z + 1.0)) and \
+                     not any(a[0] < x + 0.5 and a[3] > x - 0.5 and a[1] < y + 2 and a[4] > y and a[2] < z + 0.5 and a[5] > z - 0.5 for a in avoid) and \
+                     all(math.hypot(x - p[0], z - p[2]) > 2.5 or abs(y - p[1]) > 3 for p in spawns) and \
+                     all(seg_d(x, z, path[n], path[n + 1]) > 3 for n in range(len(path) - 1)) and not through_clip(x, y, z)
+                if ok: out.append((x, y, z))
+        return out
+    def face(s, x, y, z):
+        """a yaw toward the middle of the map, turned to where there is room to see (MAP-16: not facing a wall):
+        of 16 directions, the one with the most open floor ahead (up to 8 m at eye height), leaning to the middle"""
+        best, by = -1e9, 0.0
+        cx, cz = -x, -z
+        L = math.hypot(cx, cz) or 1.0
+        for k in range(16):
+            a = k * math.pi / 8; dx, dz = math.cos(a), math.sin(a); d = 0.0
+            while d < 8 and not s._inside(x + dx * (d + 0.5), y + 1.6, z + dz * (d + 0.5)): d += 0.5
+            sc = min(d, 8) + 4 * (dx * cx + dz * cz) / L - (100 if d < 3 else 0)
+            if sc > best: best, by = sc, round(math.degrees(math.atan2(-dx, -dz)))
+        return by
+    def top_up_spawns(s, offered):
+        spawns = [l.split() for l in s.lines if l.startswith("spawn ")]
+        ranked = any(l.startswith("ranked ") for l in s.lines)   # (ranked maps stay point symmetric: spawns in pairs)
+        everything = offered is None
+        if everything or "race" in offered:
+            have = [w for w in spawns if w[1] == "race"]
+            if have and len(have) < s.POOL:
+                y = float(have[0][3]); yaw = float(have[0][5]) if len(have[0]) > 5 else 0.0
+                cx = sum(float(w[2]) for w in have) / len(have); cz = sum(float(w[4]) for w in have) / len(have)
+                pts = [(float(w[2]), float(w[4])) for w in have]
+                # the start line: open spots nearest the race spawns already there, 2 m apart (racers spawn together)
+                # (never nearer the first checkpoint than the start line: the race's split floors are measured from it)
+                cp = next((list(map(float, l.split()[1:7])) for l in s.lines if l.startswith("checkpoint ")), None)
+                gap0 = lambda x, z: math.hypot(max(cp[0] - x, 0, x - cp[3]), max(cp[2] - z, 0, z - cp[5])) if cp else 0
+                line = min(gap0(float(w[2]), float(w[4])) for w in have)
+                spots = sorted((math.hypot(p[0] - cx, p[2] - cz), p[0], p[2]) for p in s.spawn_spots([y]) if math.hypot(p[0] - cx, p[2] - cz) < 12 and gap0(p[0], p[2]) >= line)
+                for (_, x, z) in spots:
+                    if len(pts) >= s.POOL: break
+                    if all(math.hypot(x - a, z - b) >= 2.0 for (a, b) in pts):
+                        s.spawn("race", x, y, z, yaw); pts.append((x, z))
+        if everything or any(m in offered for m in ("ffa", "hide", "tag", "tourney")):
+            have = [tuple(map(float, w[2:5])) for w in spawns if w[1] == "any"]
+            if len(have) < s.POOL:
+                ys = sorted({round(float(w[3]), 3) for w in spawns}) or [0.0]
+                pts = [(p[0], p[1], p[2]) for p in have]
+                others = [tuple(map(float, w[2:5])) for w in spawns]
+                tops = sorted({float(l.split()[5]) for l in s.lines if l.split()[:1] == ["box"] and len(l.split()) == 7})
+                # the floors the spawns stand on; where they haven't the room, the other floors within 2 m of them
+                for floors in (ys, [t for t in tops if t not in ys and any(abs(t - y) <= 2 for y in ys)]):
+                    if len(have) >= s.POOL or not floors: break
+                    every = s.spawn_spots(floors, 0.6 if floors is ys else 2.1)
+                    if floors is not ys:   # (other floors: only near the spawns, never across the map from them)
+                        every = [q for q in every if min(math.hypot(q[0] - p[0], q[2] - p[2]) for p in pts + others) <= 25]
+                    if ranked: every = [p for p in every if any(abs(q[0] + p[0]) < 1e-3 and abs(q[2] + p[2]) < 1e-3 and abs(q[1] - p[1]) < 1e-3 for q in every)]
+                    for gap in (6.0, 3.0, 2.0):   # spread 6 m apart; where there is no room for that (Viaduct's start), closer
+                        spots = [q for q in every if all(math.dist(q, p) > gap for p in pts)]
+                        while len(have) < s.POOL and spots:
+                            # the open spot farthest from the pool (and, to start with, from the other spawns): spread out
+                            ref = pts if pts else others
+                            i = max(range(len(spots)), key=lambda k: (min((math.dist(spots[k], q) for q in ref), default=0), -k))
+                            x, y, z = spots[i]
+                            picked = [(x, y, z)] + ([q for q in spots if abs(q[0] + x) < 1e-3 and abs(q[2] + z) < 1e-3 and abs(q[1] - y) < 1e-3][:1] if ranked and (x, z) != (0, 0) else [])
+                            for (px, py, pz) in picked:
+                                s.spawn("any", px, py, pz, s.face(px, py, pz)); have.append((px, py, pz)); pts.append((px, py, pz))
+                            spots = [q for q in spots if all(math.dist(q, p) > gap for p in picked)]
     def light(s, x, y, z, radius=9.0, intensity=0.8, fixture=True, mirror=False):
         """baked point light (lights rooms under roofs / overhangs) with a small lamp fixture above it"""
         for (lx, lz) in ((x, z), (-x, -z)) if mirror else ((x, z),):
@@ -661,6 +814,7 @@ class M:
         if mode and name not in EVERY_MODE: s.lines.insert(3, "modes " + " ".join([mode] + getattr(s, "also", []) + ([] if mode == "ffa" else ["ffa"])))
         s.name = name
         offered = next((l.split()[1:] for l in s.lines if l.startswith("modes ")), None)   # (None: every mode)
+        s.top_up_spawns(offered)
         if offered is None or "payload" in offered or "npayload" in offered: s.cart_clear()
         with s.generated():
             if dress: s.props(); s.dress(name); s.detail_pass(); s.skyline_pass(name)
@@ -1847,6 +2001,7 @@ for z in (54, 60): m.box(-2.2, -6, z, 2.2, -1, z + 2, accent=True); m.box(-2.2, 
 pads([(0.8, 47.0, 0.4), (-0.8, 43.9, 0.8), (0.8, 40.8, 1.2), (-0.8, 37.7, 1.5), (0.0, 35.2, 1.5)], 0)   # pads up, zig-zag
 m.raw("checkpoint -1.5 1.5 34.4 1.5 4.5 36")
 deck(-12, 28, 2, 34, 1.5)                                                  # turn west
+for x in (-9, -3): m.spawn("any", x, 1.5, 30.5, 0)                         # free for all: two on the turn (the start has room for six)
 # the covered lane: the roof stops any hooking or jumping over it, and its floor has fallen in in four
 # places (2 m gaps you jump in the dark)
 for (z0, z1) in ((24, 28), (18.5, 22), (13, 16.5), (8, 11), (4, 6)): deck(-12, z0, -8, z1, 1.5, piers=False)
@@ -1985,7 +2140,8 @@ for (z0, z1) in ((66, 78), (-79, -70)):
     for x in (-5.6, -2, 2, 5.6):
         for z in (z0 + 0.6, z1 - 0.6): m.metal(x - 0.2, y, z - 0.2, x + 0.2, y + 4.6, z + 0.2)
     m.light(-3, y + 4.0, (z0 + z1) / 2, 7, 0.7, fixture=False); m.light(3, y + 4.0, (z0 + z1) / 2, 7, 0.7, fixture=False)
-for x in (-3, 0, 3): m.spawn("race", x, 0, 74, 0)
+for z in (74, 76.5):                                                       # the start grid: eight racers (a full server)
+    for x in (-4.5, -1.5, 1.5, 4.5): m.spawn("race", x, 0, z, 0)
 m.raw("# setting mountain gorge")
 m.save("viaduct")
 
@@ -2203,7 +2359,7 @@ for y in (3.5, 6.5, 9.5):
 for t in range(-20, 21, 8):
     m.box(t - 2.5, 2.4, -23.9, t + 2.5, 2.9, -23.6, accent=True, mirror=True); m.box(23.6, 2.4, t - 2.5, 23.9, 2.9, t + 2.5, accent=True, mirror=True)
 m.glow(-6, 11, -23.95, 6, 13, -23.85, mirror=True)
-for x in (-3, 0, 3): m.spawn("a", x, 0, 22, 0, "b")
+for x in (-6, -3, 0, 3): m.spawn("a", x, 0, 22, 0, "b")   # (four a side: a full 8-player server, MAP-2)
 for (x, z, yaw) in ((-22, 10, -90), (10, 22, 0), (-22, -16, -90)): m.spawn("any", x, 0, z, yaw, "any")
 m.raw("# setting city block")
 m.save("downtown")

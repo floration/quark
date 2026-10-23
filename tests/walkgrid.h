@@ -17,6 +17,7 @@
 #include <string>
 #include <vector>
 #include "game/gamedefs.h"
+#include "game/gamemodes.h"
 #include "game/map.h"
 #include "game/pmove.h"
 
@@ -382,7 +383,7 @@ struct WalkGrid {
 
 // The spawn groups a mode plays from on this map: the spawns that must reach each other and the objectives.
 struct WalkSpawnSets {
-    std::vector<int> a, b, any, race, ffa;          // ffa: the free-for-all pool (any spawns, else every spawn)
+    std::vector<int> a, b, any, race, ffa;          // ffa: the free-for-all pool (spawnPool: any spawns, else every spawn)
     std::vector<std::vector<int>> stage[2];         // staged spawns per stage: [0] attackers, [1] defenders
     explicit WalkSpawnSets(const Map& m) {
         for (int i = 0; i < (int)m.spawns.size(); i++) {
@@ -395,8 +396,7 @@ struct WalkSpawnSets {
                 v[spawnStage(t)].push_back(i);
             }
         }
-        ffa = any;
-        if (ffa.empty()) for (int i = 0; i < (int)m.spawns.size(); i++) ffa.push_back(i);
+        for (const SpawnPoint* sp : spawnPool(m, SPAWN_ANY, 0)) ffa.push_back((int)(sp - m.spawns.data()));   // (spawnPlayer's own pool)
     }
 };
 

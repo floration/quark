@@ -284,8 +284,10 @@ std::vector<int> raceSplitFloorsMs(const Map& m) {
         return std::sqrt(d2);
     };
     const AABB& c0 = m.checkpoints[0];
-    float first = 1e30f;
-    for (auto& sp : m.spawns) first = std::min(first, gap(sp.pos, sp.pos, c0.mn, c0.mx));
+    float first = 1e30f;   // from the race spawns (a map's free-for-all spawns may stand further along the course)
+    bool race = false;
+    for (auto& sp : m.spawns) race |= sp.team == SPAWN_RACE;
+    for (auto& sp : m.spawns) if (sp.team == SPAWN_RACE || !race) first = std::min(first, gap(sp.pos, sp.pos, c0.mn, c0.mx));
     out.push_back((int)(first / kRaceSpeedCeiling * 1000.0f));
     for (size_t i = 1; i < m.checkpoints.size(); i++) {
         const AABB &a = m.checkpoints[i - 1], &b = m.checkpoints[i];
