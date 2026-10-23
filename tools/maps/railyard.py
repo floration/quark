@@ -65,6 +65,9 @@ def build():
     for (a0, a1) in ((18.75, 20.4), (21.6, 23.25)): m.glow(a0, 10.4, -5.25, a1, 10.55, -0.75)   # (gap over the ladder); m.metal(20.8, 12.25, -3.2, 21.2, 13.4, -2.8)
     m.metal(20.3, 0, -5.2, 21.7, 9, -4.6)                                      # the down-pipe the ladder runs up
     m.ladder(21, -5.2, 0, 12.25, "s", width=0.9)
+    # the filler pipe on the tank, in line with the ladder: at 6.75 m/s you come over the top with a hop that would
+    # carry you over the 4.8 m tank; this stops you on it (1.17)
+    m.metal(20.7, 12.25, -3.3, 21.3, 15.2, -2.7)
     # freight wagons on two sidings: cover in the open middle of the yard (off the cart's track)
     def wagon(x0, z0, x1, z1):
         m.box(x0, 0.6, z0, x1, 3.0, z1, accent=True); m.metal(x0 - 0.05, 3.0, z0, x1 + 0.05, 3.2, z1)

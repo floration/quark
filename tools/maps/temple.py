@@ -82,6 +82,10 @@ def build():
         m.box(x - 2.1, 7.05, z - 2.1, x + 2.1, 7.2, z + 0.1, mat="trim", mirror=True)
         m.stairs(x + 2, z - 2, x + 6.5, z + 2, 2.2, "x", -1, mirror=True)                       # up to the broken floor
         m.ladder(x, z, 2.3, 7.2, "n", width=0.8)                                                # ...and up the standing half
+        # a jagged piece of the back wall still standing on it, behind the ladder: at 6.75 m/s you come over the
+        # top with a hop that would carry you off the 2 m top; this stops you on it (1.17)
+        m.box(x - 1.0, 7.2, z - 2, x + 1.0, 10.2, z - 1.6, mirror=True)
+        m.box(x - 1.0, 10.2, z - 2, x + 0.2, 10.8, z - 1.6, mirror=True)
         m.ladder(-x, -z, 2.3, 7.2, "s", width=0.8)
         m.light(x, 3.0, z, 7, 0.6, fixture=False, mirror=True)
     # more to fight around in the open courts: broken column drums and fallen lintels, waist and head high

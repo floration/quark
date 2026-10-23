@@ -62,7 +62,8 @@ def build():
                 for (q0, q1) in ((xs[0], dx - 0.8), (dx + 0.8, xs[1])): m.box(q0, y, wz0, q1, top, wz1)
                 m.box(dx - 0.8, y + 2.4, wz0, dx + 0.8, top, wz1)
         # lights: a grid of ceiling panels
-        for (lx, lz) in ((-16, 0), (16, 0), (0, -16), (0, 16), (-16, -16), (16, 16), (16, -16), (-16, 16), (-8, -8), (8, 8)):
+        # ((+-12, 0): beside the stairwells, not hanging in them at head height over the flights)
+        for (lx, lz) in ((-12, 0), (12, 0), (0, -16), (0, 16), (-16, -16), (16, 16), (16, -16), (-16, 16), (-8, -8), (8, 8)):
             m.light(lx, top - 0.5, lz, 10, 0.9)
     # spawns: hiders anywhere in the building, every floor and the roof (the furniture keeps clear of them)
     HT_SPAWNS = ((-10, 0, 0, 90), (15, 0, 6, -90), (0, 4.5, -15, 0), (-8, 4.5, 15, 180), (15, 9, -6, -90), (-15, 9, 6, 90),
