@@ -374,9 +374,11 @@ const MoveEnvelope& moveEnvelope() {
         e.apexLevel.assign(e.speed.size(), std::vector<float>(MoveEnvelope::kBins, 1e9f));
         for (size_t k = 0; k < e.speed.size(); k++) {
             for (int ti = 0; ti <= 5; ti++)
-                for (int pi = -2; pi <= 9; pi++)   // (no dash, a down dash (a super dash off the take-off), or one at 0-90 degrees up, 0-0.4 s after the jump)
+                for (int pi = -2; pi <= 9; pi++)   // (no dash, a down dash (a super dash off the take-off; aimed as far down as the
+                                                   // mouse goes, 88.8 deg: its hop is highest there, a full jump), or one at
+                                                   // 0-90 degrees up, 0-0.4 s after the jump)
                 for (int more = 0; more < (pi == -1 ? 1 : 4); more++) {   // dashes after it: none, 1 or 2 chained, one 0.3 s later
-                    float tau = ti * 0.08f, pitch = pi == -2 ? -1.2f : pi < 0 ? 0 : pi * 10 * 0.0174533f;
+                    float tau = ti * 0.08f, pitch = pi == -2 ? -1.55f : pi < 0 ? 0 : pi * 10 * 0.0174533f;
                     MoveState s;
                     s.pos = {0, 0, 0.9f};
                     s.vel = {0, 0, -e.speed[k]};

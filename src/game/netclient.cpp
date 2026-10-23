@@ -430,9 +430,11 @@ void NetClient::afterSnapshots() {
 }
 
 void NetClient::reconcile(const Snapshot& s) {
-    // The payload cart is solid: mirror the server's collision box so prediction agrees.
+    // The payload cart is solid: mirror the server's collision box so prediction agrees (at the cart's place on
+    // the track, which runs from the other end when team B attacks an unstaged map: Map::cartTrack, as the server).
     map_.dynSolids.clear();
-    if (mapReady_ && isPayloadMode(s.ms.mode) && map_.payloadPath.size() >= 2) map_.dynSolids.push_back(map_.payloadCartBox(s.ms.payloadDist));
+    if (mapReady_ && isPayloadMode(s.ms.mode) && map_.payloadPath.size() >= 2)
+        map_.dynSolids.push_back(map_.payloadCartBox(map_.cartTrack(s.ms.mode, s.ms.attackers, s.ms.payloadDist)));
 
     // Prediction reconcile. If the server's state for the acknowledged command matches what we
     // predicted for it, our prediction is already right: skip the replay (the common case).

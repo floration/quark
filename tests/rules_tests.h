@@ -617,11 +617,11 @@ static void testGrappleLagComp(uint16_t port) {
     s.stop();
 }
 
-// 5.5: the head is a head-sized box on top, not the full-width top 20%: shoulders are body shots. The sniper does a
-// flat 50.
+// 5.5: the head is a head-sized box on top, not the full-width top 20%: shoulders are body shots. The sniper does 40
+// on the body, 50 on the head (owner 1.18; 1.17 a flat 50).
 static void testHeadBox(uint16_t port) {
     printf("headshots: the head, not the shoulders\n");
-    CHECK(weaponDef(WPN_SNIPER).damage == 50 && headDamage(WPN_SNIPER) == 50);
+    CHECK(weaponDef(WPN_SNIPER).damage == 40 && headDamage(WPN_SNIPER) == 50);
     AABB hb = playerBox(Vec3(0, 0, 0), false);
     AABB h = headBox(hb);
     CHECK(h.mx.y == hb.mx.y && std::fabs(h.mn.y - (hb.mx.y - kPlayerHeight * kHeadFraction)) < 1e-5f);
@@ -1060,6 +1060,84 @@ static void testTagEscape(uint16_t port) {
     s.stop();
 }
 
+// Tag knockouts last one match (Server::tagOut_ was only ever appended to: in the next tag match on the same server
+// everyone knocked out before was out again at once). A match played to the end, then a new one: all in; a knockout,
+// then a forcestart mid-match (startMatch without the warmup in between): all in again.
+static void testTagNextMatch(uint16_t port) {
+    printf("tag: knockouts don't carry into the next match\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "hamlet"; cfg.mode = MODE_TAG; cfg.port = port;
+    NetClient c[3];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 3, cls)) { s.stop(); return; }
+    auto outs = [&] { int n = 0; for (int i = 0; i < 3; i++) if (s.players_[c[i].clientId()].out) n++; return n; };
+    auto playing = [&] { int n = 0; for (int i = 0; i < 3; i++) { auto& p = s.players_[c[i].clientId()]; if (p.alive && !p.out && p.team != TEAM_SPECTATOR) n++; } return n; };
+    auto toLive = [&] { for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE && s.ms_.phase != PHASE_MATCH_END; i++) { if (s.ms_.phase == PHASE_FREEZE || s.ms_.phase == PHASE_ROUND_END) s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); } };
+    // play it out: time runs out on "it" twice, two out, one wins
+    for (int k = 0; k < 2 && s.ms_.phase == PHASE_LIVE; k++) { s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle); toLive(); }
+    printf("  first match: phase %d, %d out\n", s.ms_.phase, outs());
+    CHECK(s.ms_.phase == PHASE_MATCH_END && outs() == 2);
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // match over: back to warmup
+    CHECK(s.ms_.phase == PHASE_WARMUP && s.tagOut_.empty());
+    s.command("forcestart");
+    toLive();
+    pump(s, cls, 0.2, idle);
+    printf("  second match: phase %d, %d out, %d in play\n", s.ms_.phase, outs(), playing());
+    CHECK(s.ms_.phase == PHASE_LIVE && outs() == 0 && playing() == 3);
+    // one knocked out, then a forcestart mid-match: a new match, everyone in
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+    CHECK(outs() == 1 && !s.tagOut_.empty());
+    s.command("forcestart");
+    toLive();
+    pump(s, cls, 0.2, idle);
+    printf("  forcestart mid-match: phase %d, %d out\n", s.ms_.phase, outs());
+    CHECK(s.ms_.phase == PHASE_LIVE && outs() == 0 && playing() == 3);
+    s.stop();
+}
+
+// The payload cart's collision box is where the visible cart is in both halves. On a map without staged spawns
+// (railyard) team B's attack runs the track from the other end (Map::cartTrack); the box used the raw distance, so
+// in even rounds it sat at the far end of the track and the cart itself had none, on the server and in the client's
+// prediction alike.
+static void testCartBoxPlace(uint16_t port) {
+    printf("payload: the cart's collision box follows the visible cart\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "railyard"; cfg.mode = MODE_PAYLOAD; cfg.port = port; cfg.balanceBots = false;
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); return; }
+    bool staged = false;
+    for (auto& sp : s.map_.spawns) if (isStagedSpawn(sp.team)) staged = true;
+    CHECK(!staged);   // (the case: an unstaged map, where team B's cart runs the other way)
+    auto checkBox = [&](const char* what) {
+        s.ms_.payloadDist = s.ms_.payloadLen * 0.25f;   // (a quarter along: the two ends of the track are far apart)
+        auto away = [&](int) { s.payloadIdleSince_ = s.time(); for (int i = 0; i < 2; i++) s.players_[c[i].clientId()].move.pos = s.map_.spawns[0].pos + Vec3(0, 0.5f, 0); return UserCmd(); };
+        pump(s, cls, 0.3, away);
+        Vec3 cart = s.map_.cartPoint(s.ms_.mode, s.ms_.attackers, s.ms_.payloadDist);
+        CHECK(s.map_.dynSolids.size() == 1 && c[0].map().dynSolids.size() == 1);
+        if (s.map_.dynSolids.size() != 1 || c[0].map().dynSolids.size() != 1) return;
+        Vec3 sv = s.map_.dynSolids[0].center(), cl = c[0].map().dynSolids[0].center();
+        float off = length(Vec3(sv.x - cart.x, 0, sv.z - cart.z)), clOff = length(cl - sv);
+        printf("  %s (attackers %s): box %.2f m from the cart, the client's %.2f m from the server's\n", what, s.ms_.attackers == TEAM_A ? "A" : "B", off, clOff);
+        CHECK(off < 0.05f && clOff < 0.3f);
+        float t = s.map_.raycast(cart + Vec3(0, 6, 0), {0, -1, 0}, 12);   // shots stop on the visible cart
+        CHECK(t > 0 && t < 6);
+    };
+    CHECK(s.ms_.attackers == TEAM_A);
+    checkBox("round 1");
+    // team A delivers it; on to round 2, team B attacking
+    s.ms_.payloadDist = s.ms_.payloadLen;
+    pump(s, cls, 0.1, idle);
+    for (int i = 0; i < 100 && !(s.ms_.phase == PHASE_LIVE && s.ms_.round == 2); i++) { if (s.ms_.phase != PHASE_LIVE) s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+    CHECK(s.ms_.phase == PHASE_LIVE && s.ms_.round == 2 && s.ms_.attackers == TEAM_B);
+    if (s.ms_.attackers != TEAM_B) { s.stop(); return; }
+    CHECK(length(s.map_.cartPoint(s.ms_.mode, TEAM_B, s.ms_.payloadLen * 0.25f) - s.map_.payloadPoint(s.ms_.payloadLen * 0.25f)) > 5);
+    checkBox("round 2");
+    s.stop();
+}
+
 // GAME-5: a bomb carrier killed in mid-air drops the bomb on the floor below, not in the air; a bomb nobody picks up
 // goes back to an attacker.
 static void testBombDrop(uint16_t port) {
@@ -1285,11 +1363,12 @@ static void testGameRules(const std::string& only) {
         {"grapplep", [] { testGrapplePlayers(TP(29270)); testGrappleTeammate(TP(29271)); testGrappleLagComp(TP(29272)); testGrappleBots(TP(29273)); }},
         {"head", [] { testHeadBox(TP(29246)); }},
         {"hide", [] { testHideScoring(TP(29247)); }},
-        {"tag", [] { testTagEscape(TP(29248)); }},
+        {"tag", [] { testTagEscape(TP(29248)); testTagNextMatch(TP(29274)); }},
         {"rps", [] { testRpsTwo(TP(29255)); testRpsMany(TP(29256)); }},
         {"locator", [] { testLocator(TP(29260)); }},
         {"aware", [] { testItAwareness(TP(29263)); }},
         {"bomb", [] { testBombDrop(TP(29249)); }},
+        {"cartbox", [] { testCartBoxPlace(TP(29275)); }},
         {"botdefer", [] { testBalanceBotDefer(TP(29250)); }},
         {"spawns", [] { testSpawnTypes(TP(29251)); }},
         {"seeds", [] { testRandomSeeds(); }},

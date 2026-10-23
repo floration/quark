@@ -114,7 +114,7 @@ private:
     unsigned compile(const char* vs, const char* fs, std::string* err);
     void addQuad(std::vector<DynVertex>& out, const Vec3* c, const Vec3& n, const Vec3& col, float sv);
     void emitBox(std::vector<DynVertex>& out, const Mat4& xf, const Vec3& half, const Vec3& color, float sunVis);
-    void emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, bool translucent);
+    void emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, std::vector<FlatVertex>* flatOut);
 public:
     Vec3 outlineColor;   // the edge colour for the boxes drawn while it's set (players' outline setting); black by default
     float outlineWidth = 1.0f;   // ...and the edge width in pixels (players' / the editor's boxes: settings); 0 = none
@@ -159,6 +159,7 @@ private:
     bool buildingStatic_ = false, staticOn_ = false;
     void setupDynVao(unsigned vao, unsigned vbo);
     std::vector<FlatVertex> flat_;
+    std::vector<FlatVertex> viewFlat_;   // the view model's translucent parts (drawn in its pass; empty for most models)
     std::vector<Vertex2D> ui_;
     float casterRect_[4] = {0, 0, 1, 1}; // shadow-map rect covered by dynamic casters (this frame)
     bool prep_ = false, prepShadows_ = false;   // (prepareScene ran this frame; with the shadow pass)

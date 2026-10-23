@@ -397,6 +397,7 @@ void Game::loadMapIfNeeded() {
     if (!raceRunsLoaded_ && !net_.map().checkpoints.empty()) loadRaceRuns();
     bake_ = std::make_unique<BakeJob>();
     bake_->map = net_.map();
+    bake_->map.dynSolids.clear();   // (the payload cart's box where it was at join time: no shadow of it in the cached light)
     bake_->gen = gen;
     BakeJob* j = bake_.get();
     j->th = std::thread([j] {
@@ -2510,7 +2511,7 @@ void Game::drawHud() {
             {   // dash: a pip per charge (lit = there to spend; the ground refills them, a bhop landing one); while the
                 // cooldown since the last dash runs, the charged pips fill grey like the old cooldown bar, lit when it's done
                 int n = dashMaxCharges(mv.mods), have = std::min<int>(mv.dashCharges, n);
-                const int cdTotal = dashCooldownMs();
+                const int cdTotal = dashCooldownMs(mv.mods);
                 const float f = mv.dashCooldownMs > 0 && cdTotal > 0 ? clampf(1.0f - (float)mv.dashCooldownMs / cdTotal, 0, 1) : 1.0f;
                 float bw = 90 * k, bh = 5 * k, bx = bcx - bw * 0.5f, y = bcy + 52 * k, gap = 4 * k, pw = (bw - gap * (n - 1)) / n;
                 for (int i = 0; i < n; i++) {
@@ -4442,7 +4443,7 @@ static const char* const kInfoPages[][48] = {
         "Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping. Above ~13 m/s A / D turns you faster than W alone.",
         "Each dash leaves you 1 m/s faster than you went in (at least 11, at most 32 m/s).",
         "Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump (it leaves you both dashes).",
-        "Super dash: look down and dash into the floor while holding jump for even more speed and a low hop (it leaves you 1 dash).",
+        "Super dash: look down and dash into the floor while holding jump for even more speed and a hop that gets higher the further down you look (it leaves you 1 dash).",
         "Dash into a wall head-on (under 45 degrees) and you bounce off it at full dash speed (it leaves you 1 dash).",
         "You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb (6.75 m/s).",
         "# WEAPONS",

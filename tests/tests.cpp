@@ -303,7 +303,9 @@ static void testMovement() {
 
 
 // The 1.17 movement numbers (owner): run 9.5 m/s at 16 accel, ladders 6.75 / 4.5, dash keep 1, air control capped
-// at what strafing turns (falls off as 1 / speed above 12.65 m/s), air drift 8 m/s2 under run speed, strafe boost 0.1.
+// at what strafing turns (falls off as 1 / speed above 9.5 m/s), air drift 8 m/s2 under run speed, strafe boost 0.1.
+// 1.18 (owner): W-only air control x 0.9; a strafe key held: the air strafe cap x 1.1 (2.53) and air acceleration
+// x 1.15 (the boost ramp still from 12.65 m/s).
 static void testMovementTuning() {
     printf("movement tuning (1.17)\n");
     std::string err;
@@ -367,13 +369,13 @@ static void testMovementTuning() {
         while (f.dashTimer > 0) step(f, UserCmd(), open);
         CHECK(std::fabs(hs(f) - 32.0f) < 0.02f);   // (the cap)
     }
-    { // air control: W-only bends momentum at min(4, 4 x 9.5 / speed) rad/s (owner: it loses to A/D from 9.5 m/s):
-      // 3.8 at 10 m/s, 2.38 at 16, 1.19 at 32
+    { // air control: W-only bends momentum at 0.9 x min(4, 4 x 9.5 / speed) rad/s (owner: it loses to A/D from 9.5 m/s;
+      // 1.18: 10% slower): 3.42 at 10 m/s, 2.14 at 16, 1.07 at 32
         for (float v : {10.0f, 16.0f, 32.0f}) {
             MoveState q; q.pos = {0, 50, 0}; q.vel = {0, 0, -v};
             UserCmd c; c.forward = 127; c.yaw = 30 * PI / 180;   // wish 30 deg off: no strafe push (cur > 2.3), no drift (over 9.5)
             Vec3 w = {-std::sin(c.yaw), 0, -std::cos(c.yaw)};
-            float rate = std::min(4.0f, 4.0f * 9.5f / v), k = rate * 0.001f;
+            float rate = 0.9f * std::min(4.0f, 4.0f * 9.5f / v), k = rate * 0.001f;
             Vec3 n = Vec3(0, 0, -1) + (w - Vec3(0, 0, -1)) * k;
             n = n / length(n) * v;
             step(q, c, open);
@@ -410,27 +412,38 @@ static void testMovementTuning() {
         step(o, b, open);
         CHECK(std::fabs(o.vel.z - (-9.6f + 22.0f * 2.3f * 0.001f * 0.35f)) < 1e-4f);   // (the overstrafe-softened push only)
     }
-    { // strafe boost: a strafe key's push x (1 + 0.1 t), t ramping 12.65 -> 15.81 m/s: 1.0 at 12, 1.043 at 14, 1.1 at 16
+    { // strafe boost: a strafe key's push x 1.15 x 1.1 (1.18: the acceleration and the 2.53 cap) x (1 + 0.1 t), t ramping
+      // 12.65 -> 15.81 m/s (from the 2.3 cap and the unscaled air control): 1.265 at 12, 1.319 at 14, 1.392 at 16
         for (float v : {12.0f, 14.0f, 16.0f}) {
             MoveState q; q.pos = {0, 50, 0}; q.vel = {0, 0, -v};
             UserCmd c; c.side = 127;   // (yaw 0: right is +x, square to the momentum)
             step(q, c, open);
             float gain = q.vel.x / (22.0f * 2.3f * 0.001f);
-            float cross = 22.0f * 2.3f / 4.0f, want = 1 + 0.1f * std::clamp((v - cross) / (0.25f * cross), 0.0f, 1.0f);
+            float cross = 22.0f * 2.3f / 4.0f, want = 1.15f * 1.1f * (1 + 0.1f * std::clamp((v - cross) / (0.25f * cross), 0.0f, 1.0f));
             printf("  strafe push at %.0f m/s: x%.4f (want %.4f)\n", v, gain, want);
             CHECK(std::fabs(gain - want) < 1e-3f);
-            // the turn it makes, against W-only air control's (min(4, 38 / v) rad/s): A/D ahead from 9.5 m/s (owner)
-            float strafeTurn = q.vel.x / v * 1000, control = std::min(4.0f, 4.0f * 9.5f / v);
+            // the turn it makes, against W-only air control's (0.9 x min(4, 38 / v) rad/s): A/D ahead from 9.5 m/s (owner)
+            float strafeTurn = q.vel.x / v * 1000, control = 0.9f * std::min(4.0f, 4.0f * 9.5f / v);
             printf("    turning: strafe %.0f deg/s, W-only air control %.0f deg/s\n", strafeTurn * 180 / PI, control * 180 / PI);
             CHECK(strafeTurn > control * 1.03f);
         }
+        // W-only (no strafe key) keeps the 2.3 cap and the plain acceleration: W square to the momentum pushes 22 x 2.3
+        // x 1 ms (A/D's would be 10% more), then air control bends the result toward W at 0.9 x 38 / speed
+        MoveState q; q.pos = {0, 50, 0}; q.vel = {0, 0, -12.0f};
+        UserCmd c; c.forward = 127; c.yaw = -PI / 2;   // (W facing +x, square to the momentum)
+        step(q, c, open);
+        const float p = 22.0f * 2.3f * 0.001f, h1 = std::sqrt(p * p + 144.0f), k = 0.9f * std::min(4.0f, 38.0f / h1) * 0.001f;
+        Vec3 n = Vec3(p / h1, 0, -12.0f / h1) + (Vec3(1, 0, 0) - Vec3(p / h1, 0, -12.0f / h1)) * k;
+        n = n / length(n) * h1;
+        printf("  W-only square to 12 m/s: %.5f, %.5f (want %.5f, %.5f)\n", q.vel.x, q.vel.z, n.x, n.z);
+        CHECK(std::fabs(q.vel.x - n.x) < 1e-4f && std::fabs(q.vel.z - n.z) < 1e-4f);
     }
 }
 
 // Dash charges (owner 1.17): two; a dash spends one; no dash while one runs (the press is dropped, not kept), the next
 // press after it ends spends the next; the ground refills both, holding jump (a bhop landing) only up to one; a dash jump leaves both,
 // a super dash exactly one, a wall bounce exactly one; the super dash's own floor contact is no refill; ladders
-// refill nothing; quick dash: a third charge.
+// refill nothing; quick dash (1.18): the usual two charges, the cooldown a third as long (0.4 s).
 static void testDashCharges() {
     printf("dash charges\n");
     std::string err;
@@ -442,7 +455,8 @@ static void testDashCharges() {
     { // in the air: press, press again mid-burst (dropped), press right after it ends (the cooldown: nothing), press
       // exactly 1.2 s after it ENDED (the second), a third after another 1.2 s (none left)
         MoveState q; q.pos = {0, 200, 0};
-        CHECK(q.dashCharges == 2 && dashMaxCharges(0) == 2 && dashMaxCharges(MOVE_QUICK_DASH) == 3 && dashCooldownMs() == 1200);
+        CHECK(q.dashCharges == 2 && dashMaxCharges(0) == 2 && dashMaxCharges(MOVE_QUICK_DASH) == 2 && dashCooldownMs() == 1200 &&
+              dashCooldownMs(MOVE_QUICK_DASH) == 400);
         step(q, dash, open); step(q, none, open);
         CHECK(q.dashCharges == 1 && q.dashTimer > 0 && q.dashCooldownMs == 0);   // (no cooldown while the dash runs)
         for (int i = 0; i < 40; i++) step(q, none, open);
@@ -563,7 +577,7 @@ static void testDashCharges() {
         printf("  wall bounces: %d then %d charge(s)\n", b1, b2);
         CHECK(b1 == 1 && b2 == 1);
     }
-    { // a ladder refills nothing; quick dash: three on the floor
+    { // a ladder refills nothing; quick dash: two on the floor, dashes 0.4 s from one's end to the next
         Map m;
         CHECK(m.parse("box -20 -1 -20 20 0 20\nbox -20 0 -3 20 30 -2\nladder -5 0 -2 5 30 -1.5\nspawn any 0 0 0\n", &err));
         MoveState q; q.pos = {0, 3, -1.6f}; q.dashCharges = 0;
@@ -571,7 +585,24 @@ static void testDashCharges() {
         for (int i = 0; i < 500; i++) { step(q, up, m); CHECK(q.dashCharges == 0); }
         MoveState g; g.flags = MF_ONGROUND; g.mods = MOVE_QUICK_DASH; g.dashCharges = 0;
         step(g, none, open);
-        CHECK(g.dashCharges == 3);
+        CHECK(g.dashCharges == 2);
+        for (int i = 0; i < 20; i++) step(g, none, open);
+        int dashes = 0, lastEnd = -100000, minGap = 1 << 30;
+        bool was = false;
+        for (int t = 0; t < 4000; t++) {
+            step(g, t % 2 ? dash : none, open);   // (a fresh press every other ms)
+            bool on = g.dashTimer > 0;
+            if (on && !was) { dashes++; minGap = std::min(minGap, t - lastEnd); }
+            if (!on && was) { lastEnd = t; CHECK(g.dashCooldownMs == 400); }
+            was = on;
+        }
+        printf("  quick dash ground spam over 4 s: %d dashes, %d ms at least between one's end and the next\n", dashes, minGap);
+        CHECK(dashes == 8 && minGap >= 400 && minGap <= 401);
+        // in the air: the two charges, 0.4 s apart, then none until the floor
+        MoveState a; a.pos = {0, 200, 0}; a.mods = MOVE_QUICK_DASH;
+        int airDashes = 0; was = false;
+        for (int t = 0; t < 2000; t++) { step(a, t % 2 ? dash : none, open); bool on = a.dashTimer > 0; if (on && !was) airDashes++; was = on; }
+        CHECK(airDashes == 2 && a.dashCharges == 0);
     }
 }
 
@@ -586,6 +617,9 @@ static void testDashTech() {
     auto step = [&](MoveState& q, UserCmd c) { c.msec = 1; pmove(q, c, open); };
     auto standing = [&] { MoveState q; q.flags = MF_ONGROUND; for (int i = 0; i < 50; i++) step(q, UserCmd()); return q; };
     const float g1 = 22.0f * 0.001f;   // one step of gravity (the jump's own step applies it)
+    // a super dash's hop speed at a look pitch: half the jump speed (3.67) at the 14.5 deg threshold (sine 0.25) up
+    // to the full 7.34 straight down, linear in the sine
+    auto superHop = [](float pitch) { float t = std::clamp((std::sin(-pitch) - 0.25f) / 0.75f, 0.0f, 1.0f); return 7.34f * (0.5f + 0.5f * t); };
     // flies a state until it lands: horizontal distance and the highest point
     auto flight = [&](MoveState q, uint16_t buttons, float* peak) {
         Vec3 p0 = q.pos; float top = q.pos.y;
@@ -641,10 +675,42 @@ static void testDashTech() {
         r.pitch = -1.0f; r.buttons = BTN_DASH | BTN_JUMP;
         step(q, r);
         printf("  super dash from a run: %.3f m/s, %.3f up\n", hs(q), q.vel.y);
-        CHECK(q.dashTimer == 0 && std::fabs(hs(q) - 30.0f) < 1e-4f && std::fabs(q.vel.y - (3.67f - g1)) < 1e-4f);
-        float peak, dist = flight(q, BTN_DASH, &peak);
-        printf("  super dash: %.1f m across, %.2f m up\n", dist, peak);
-        CHECK(peak > 0.28f && peak < 0.33f && dist > 9.0f && dist < 10.5f);
+        const float vy = superHop(-1.0f);   // (57.3 deg down: 0.89 of a jump)
+        CHECK(q.dashTimer == 0 && std::fabs(hs(q) - 30.0f) < 1e-4f && std::fabs(q.vel.y - (vy - g1)) < 1e-4f);
+        float peak, dist = flight(q, BTN_DASH, &peak), air = 2 * vy / 22.0f;
+        printf("  super dash: %.1f m across, %.2f m up (%.2f expected)\n", dist, peak, vy * vy / 44.0f);
+        CHECK(std::fabs(peak - vy * vy / 44.0f) < 0.03f && std::fabs(dist - 30.0f * air) < 0.6f);
+    }
+    { // the hop grows with how far down the dash is aimed (owner 1.18: "the lower you look the higher you should
+      // bounce"): half a jump just past the 14.5 deg threshold (the old hop), a full jump straight down
+        auto superAt = [&](float pitch, float* peak) {
+            MoveState q = standing();
+            UserCmd d; d.pitch = pitch; d.buttons = BTN_DASH | BTN_JUMP;
+            step(q, d);
+            CHECK(q.dashTimer == 0 && q.dashCharges == 1 && std::fabs(hs(q) - 30.0f) < 1e-4f);   // (a super dash)
+            flight(q, BTN_DASH, peak);
+            return q.vel.y;   // (landed: the hop's peak is in *peak)
+        };
+        const float threshold = -std::asin(0.25f) - 1e-4f;   // just past 14.48 deg down
+        float pT, p20, p45, p90, p155;
+        superAt(threshold, &pT);
+        superAt(-20 * 0.0174533f, &p20);
+        superAt(-45 * 0.0174533f, &p45);
+        superAt(-1.5707963f, &p90);
+        superAt(-1.55f, &p155);   // (the mouse's limit, 88.8 deg)
+        printf("  super dash hop: %.3f m at the threshold, %.3f at 20 deg, %.3f at 45, %.3f at 88.8, %.3f straight down\n", pT, p20, p45, p155, p90);
+        CHECK(std::fabs(superHop(threshold) - 3.67f) < 1e-3f);   // the old hop at the threshold: half the jump speed
+        CHECK(std::fabs(superHop(-1.5707963f) - 7.34f) < 1e-4f); // a full jump straight down
+        CHECK(pT > 0.28f && pT < 0.33f);                          // (0.31 m, as before)
+        CHECK(p90 > 1.18f && p90 < 1.26f && p155 > 1.18f);        // (1.22 m: a standing jump)
+        CHECK(p90 > p20 + 0.5f && p20 > pT && p45 > p20 && p90 > p45);
+        { MoveState q = standing(); UserCmd d; d.pitch = -1.5707963f; d.buttons = BTN_DASH | BTN_JUMP; step(q, d);
+          CHECK(std::fabs(q.vel.y - (7.34f - g1)) < 1e-4f); }   // (exactly: the step's own gravity off a full jump)
+        { MoveState q = standing(); UserCmd d; d.pitch = threshold; d.buttons = BTN_DASH | BTN_JUMP; step(q, d);
+          CHECK(std::fabs(q.vel.y - (3.67f - g1)) < 1e-3f); }
+        // shallower than the threshold: a dash jump (a full jump at the burst speed), not a super dash
+        { MoveState q = standing(); UserCmd d; d.pitch = -10 * 0.0174533f; d.buttons = BTN_DASH | BTN_JUMP; step(q, d);
+          CHECK(q.dashCharges == 2 && std::fabs(hs(q) - 24.0f) < 1e-4f && std::fabs(q.vel.y - (7.34f - g1)) < 1e-4f); }
     }
     { // super dash out of a bhop: in the air, dash down into the floor holding jump; it converts as it lands
         MoveState q = standing();
@@ -657,10 +723,11 @@ static void testDashTech() {
         int t = 0;
         for (; t < 120 && (t == 0 || q.dashTimer > 0); t++) step(q, r);
         printf("  super dash out of a bhop: %.3f m/s, %.3f up after %d ms\n", hs(q), q.vel.y, t);
-        CHECK(t < 120 && std::fabs(hs(q) - 30.0f) < 1e-4f && std::fabs(q.vel.y - (3.67f - g1)) < 1e-4f);
+        const float vy = superHop(-1.2f);   // (68.8 deg down: 0.95 of a jump)
+        CHECK(t < 120 && std::fabs(hs(q) - 30.0f) < 1e-4f && std::fabs(q.vel.y - (vy - g1)) < 1e-4f);
         float peak;
         flight(q, BTN_DASH, &peak);
-        CHECK(peak < 0.33f);   // (no bhop bounce off the dash's push into the floor on top)
+        CHECK(peak < vy * vy / 44.0f + 0.02f);   // (no bhop bounce off the dash's push into the floor on top)
         // at speed: the burst is the dash's exit speed (30 + 1 = 31), the super dash 1.25x that, capped at 36
         MoveState f = standing();
         f.vel = {0, 0, -30};
@@ -1964,7 +2031,7 @@ static void testWeapons(uint16_t port) {
         double elapsed = timeNow() - t0;
         if (w == WPN_ROCKET || w == WPN_CROSSBOW || w == WPN_STICKY) pump(s, cls, 1.0, idle); // let it fly
         float dealt = (sb.deaths > deaths0) ? 100.0f : hp0 - sb.health;
-        if (w == WPN_SNIPER) { // one scoped shot: a flat 50, body or head
+        if (w == WPN_SNIPER) { // one scoped shot: 40 body, 50 head (owner 1.18)
             printf("  sniper %s: %.0f damage\n", head ? "head" : "body", dealt);
             CHECK(std::fabs(dealt - (head ? kSniperHeadDamage : weaponDef(WPN_SNIPER).damage)) < 0.5f);
         }

@@ -3,6 +3,7 @@
 // so there are no sound files (but players' mods/sounds/ and the owner's overrides, docs/ASSETS.md).
 #pragma once
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -90,6 +91,7 @@ public:
     void setPack(int pack) { pack_ = (pack < 0 || pack >= kPacks) ? 0 : pack; }
     int pack() const { return pack_; }
     bool ok() const { return running_; }
+    int voicesPlaying(int id) { std::lock_guard<std::mutex> l(mu_); int n = 0; for (auto& v : voices_) n += v.id == id; return n; } // tests
     const std::vector<float>& samples(int pack, int id) const { // tests / tools (the game thread: announcerLines_' only writer)
         static const std::vector<float> none;
         if (id < SND_VOICE_THREE) return sounds_[pack][id];
@@ -106,7 +108,9 @@ public:
     void mix(int16_t* out, int frames);
 
 private:
-    struct Voice { int id, pack; float pos; float step; float gainL, gainR; bool spatial; Vec3 at; float volume; };
+    struct Voice { int id, pack; float pos; float step; float gainL, gainR; bool spatial; Vec3 at; float volume; uint32_t seq = 0; };
+    void addVoice(Voice& v);   // (under mu_) full: the oldest sound effect makes room (an announcer line only if all are)
+    uint32_t voiceSeq_ = 0;    // (under mu_) start order: the mixer's swap-and-pop doesn't keep voices_ in it
     void synthesize();
     void loadRecordedKits();
     void loadModSounds();     // players' own sounds: <game folder>/mods/sounds/<kit or all>/<SOUND>.wav

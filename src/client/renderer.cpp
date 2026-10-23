@@ -680,8 +680,8 @@ void Renderer::viewBox(const Vec3& offset, const Vec3& half, const Vec3& color) 
 }
 
 // An override model (models.h): opaque triangles into `out` like a box's faces (lit, shadowed; no outline: the
-// edge attribute sits mid-face), translucent ones into the flat layer. Colours times tint[slot].
-void Renderer::emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, bool translucent) {
+// edge attribute sits mid-face), translucent ones into `flatOut` (a flat layer; none: left out). Colours times tint[slot].
+void Renderer::emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const Mat4& xf, const Vec3* tint, float sunVis, std::vector<FlatVertex>* flatOut) {
     const float* x = xf.m;
     // (grow geometrically: reserving exactly what this mesh needs made every mesh past the high-water mark copy the
     // whole list again)
@@ -701,7 +701,7 @@ void Renderer::emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const M
         d.outline[3] = 0.0f;   // (no edge: was left unset, so the shader read whatever was on the stack as the width)
         out.push_back(d);
     }
-    if (!translucent) return;
+    if (!flatOut) return;
     for (const ModelMesh::V& v : m.translucent) {
         FlatVertex f;
         const float* p = v.pos;
@@ -710,7 +710,7 @@ void Renderer::emitMesh(std::vector<DynVertex>& out, const ModelMesh& m, const M
         f.pos[2] = x[2] * p[0] + x[6] * p[1] + x[10] * p[2] + x[14];
         const Vec3& t = tint[v.slot < TINT_COUNT ? v.slot : 0];
         f.color[0] = v.col[0] * t.x; f.color[1] = v.col[1] * t.y; f.color[2] = v.col[2] * t.z; f.color[3] = v.col[3];
-        flat_.push_back(f);
+        flatOut->push_back(f);
     }
 }
 
@@ -720,15 +720,15 @@ void Renderer::mesh(const ModelMesh& m, const Mat4& xf, const Vec3* tint, float 
               x[2] * m.center.x + x[6] * m.center.y + x[10] * m.center.z + x[14]};
     float sc = std::max({length(Vec3(x[0], x[1], x[2])), length(Vec3(x[4], x[5], x[6])), length(Vec3(x[8], x[9], x[10]))});
     if (visible && !inView(c, m.radius * sc)) { visible = false; if (!castShadow) return; } // off screen: only its shadow can show
-    if (visible) emitMesh(dyn_, m, xf, tint, sunVis, true);
-    else if (castShadow && shadowCasters) emitMesh(dynShadowOnly_, m, xf, tint, sunVis, false);
+    if (visible) emitMesh(dyn_, m, xf, tint, sunVis, &flat_);
+    else if (castShadow && shadowCasters) emitMesh(dynShadowOnly_, m, xf, tint, sunVis, nullptr);
 }
 
 void Renderer::viewMesh(const ModelMesh& m, const Vec3& offset, float scale, const Vec3* tint) {
     Mat4 s;
     s.m[0] = s.m[5] = s.m[10] = scale;
     Mat4 xf = Mat4::translate(camPos_) * Mat4::rotY(camYaw_) * Mat4::rotX(camPitch_) * Mat4::translate(offset) * s;
-    emitMesh(view_, m, xf, tint, 1.0f, false);
+    emitMesh(view_, m, xf, tint, 1.0f, &viewFlat_);   // (translucent parts: drawn over the view model, in its pass)
 }
 
 void Renderer::overlayBox(const Vec3& center, const Vec3& half, const Vec3& color) {
@@ -965,24 +965,30 @@ void Renderer::drawScene(bool shadows) {
         }
     }
 
-    if (!flat_.empty()) {
-        upload(flatVbo_, flatCap_, flat_);
+    // Translucent geometry (blended, no depth writes): the world's, then in the view pass the view model's own
+    // translucent parts (an override model's glass, glow), which share the one upload, after the world's.
+    const size_t nFlat = flat_.size(), nViewFlat = viewFlat_.size();
+    if (nViewFlat) flat_.insert(flat_.end(), viewFlat_.begin(), viewFlat_.end());   // (nothing to do for a model without any)
+    if (!flat_.empty()) upload(flatVbo_, flatCap_, flat_);
+    auto drawFlat = [&](size_t first, size_t count, const Mat4& vp) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDepthMask(GL_FALSE);
         glDisable(GL_CULL_FACE);
         glUseProgram(flatProg_);
-        setMat(flatProg_, "uViewProj", viewProj_);
+        setMat(flatProg_, "uViewProj", vp);
         glBindVertexArray(flatVao_);
-        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)flat_.size());
+        glDrawArrays(GL_TRIANGLES, (GLint)first, (GLsizei)count);
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
         glEnable(GL_CULL_FACE);
-    }
+    };
+    if (nFlat) drawFlat(0, nFlat, viewProj_);
 
-    if (nView) {
+    if (nView || nViewFlat) {
         glClear(GL_DEPTH_BUFFER_BIT);
         drawDyn(nShadow + nDyn + nNoCast, nView, false, viewProj_ * viewFix_);   // (viewFix_: built for the aim before relatch)
+        if (nViewFlat) drawFlat(nFlat, nViewFlat, viewProj_ * viewFix_);   // (after its opaque parts: hidden behind them, blended over the rest)
     }
     if (msaaActive_ >= 2) { // resolve the multisampled scene into the window; the UI draws on top un-multisampled
         glBindFramebuffer(GL_READ_FRAMEBUFFER, msaaFbo_);
@@ -1006,6 +1012,7 @@ void Renderer::drawScene(bool shadows) {
     dynNoCast_.clear();
     view_.clear();
     flat_.clear();
+    viewFlat_.clear();
 }
 
 static inline uint8_t u8c(float v) { return (uint8_t)std::lround(clampf(v, 0, 1) * 255.0f); }

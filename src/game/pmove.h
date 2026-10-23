@@ -39,7 +39,7 @@ struct MoveState {
 };
 enum : uint8_t {
     MOVE_GRAPPLE_ONLY = 1, // no walking, jumping or dashing: the grapple is the only way to move
-    MOVE_QUICK_DASH = 2,   // one dash charge more (3)
+    MOVE_QUICK_DASH = 2,   // the dash cooldown a third as long (1.2 -> 0.4 s; 1.17: a third charge instead)
     MOVE_LOW_GRAVITY = 4,  // 40% gravity
     MOVE_RUN_ONLY = 8,     // no dash, no grapple: run and jump (and climb ladders) only
     MOVE_BIG = 16,         // duel "double size" / "giant snipers": the hull (and eyes) x kBigScale
@@ -68,10 +68,11 @@ bool rayHitsHead(const Vec3& o, const Vec3& dir, const AABB& hitbox);
 float moveParamBase(int param);           // MV_*
 const char* moveParamUnit(int param);
 float moveBaseGravity(), moveBaseSpeed(), moveBaseJump();
-// how many dash charges a full refill gives (kDashCharges x the custom mode's multiplier, at least 1; quick dash +1)
+// how many dash charges a full refill gives (kDashCharges x the custom mode's multiplier, at least 1; quick dash
+// gives none extra since 1.18, `mods` is kept for callers)
 int dashMaxCharges(uint8_t mods);
-// the dash cooldown in ms (kDashCooldown x the custom mode's multiplier)
-int dashCooldownMs();
+// the dash cooldown in ms (kDashCooldown x the custom mode's multiplier; MOVE_QUICK_DASH in `mods`: a third of that)
+int dashCooldownMs(uint8_t mods = 0);
 // The players a grapple fired in this command can latch onto (the server fills it, lag compensated: where the shooter
 // saw them; enemies only). The hook takes the nearest of these or the map along its ray; `hit` says which box caught.
 struct HookProbe {

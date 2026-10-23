@@ -98,7 +98,7 @@ enum ArenaRule : uint8_t {
     AR_VAMPIRE = 1,        // damage you deal heals you
     AR_INSTAGIB = 2,       // any hit kills
     AR_NO_SELF_DAMAGE = 4, // your own splash only pushes you
-    AR_QUICK_DASH = 8,     // a third dash charge
+    AR_QUICK_DASH = 8,     // the dash cooldown a third as long (0.4 s; MOVE_QUICK_DASH)
     AR_LOW_GRAVITY = 16,   // 40% gravity
 };
 constexpr float kLocatorCooldown = 5.0f, kLocatorShow = 1.0f; // the locator (WPN_LOCATOR, held by the seeker / tagger): fire it to see one random hider / runner this long, every kLocatorCooldown
@@ -127,7 +127,7 @@ inline const ArenaVariant& arenaVariant(int v) {
         {"hitscan", "HITSCAN", "RIFLE, SNIPER, LASER, SHOTGUN AND KNIFE", WB(0) | WB(3) | WB(4) | WB(5) | WB(2), 0},
         {"instagib", "INSTAGIB", "SNIPERS - ANY HIT KILLS", WB(3), AR_INSTAGIB},
         {"boomers", "BOOMERS", "ROCKETS AND STICKIES - NO SELF DAMAGE", WB(1) | WB(6), AR_NO_SELF_DAMAGE},
-        {"blades", "BLADES", "KNIVES ONLY - A THIRD DASH CHARGE", WB(2), AR_QUICK_DASH},
+        {"blades", "BLADES", "KNIVES ONLY - DASH COOLDOWN 0.4 S", WB(2), AR_QUICK_DASH},
         {"moon", "MOON SHOTGUN", "SHOTGUNS IN LOW GRAVITY", WB(5), AR_LOW_GRAVITY},
     };
     return vs[v < 0 || v >= kArenaVariants ? 0 : v];
@@ -249,14 +249,16 @@ inline const WeaponDef& baseWeaponDef(int w) {
     static const WeaponDef defs[WPN_COUNT] = {
         // Tuned by the owner (1.6.0: every cooldown 25% shorter except the laser's damage tick; every damage 15% lower
         // except laser and knife; crossbow 50 / 60 head on a 2 s cooldown; the bubble gun added. 1.17: rifle 1 less a
-        // shot (4.95 body, 7.5 head; no spread, no falloff), laser range 32 -> 24 m, sniper a flat 50).
+        // shot (4.95 body, 7.5 head; no spread, no falloff), laser range 32 -> 24 m, sniper a flat 50; 1.18: the
+        // sniper 40 body, 50 head, kSniperHeadDamage).
         // Perfect-aim time to kill from 100 hp in the trailing comment. DPS against the laser's 40: rifle 0.82 body,
-        // 1.24 head; sniper 0.83 (the laser out-damages the rifle inside its 24 m unless you land headshots).
+        // 1.24 head; sniper 0.67 body, 0.83 head (the laser out-damages the rifle inside its 24 m unless you land
+        // headshots).
         //  name        refire   dmg    range   proj  speed  splash spread scoped zoom   beam  pel grav  sticky life
         {"RIFLE",       0.75f*2.0f/9.9f, 4.95f, 300.0f, false, 0, 0, 0.0f, 0.0f, 60.0f, false, 1, 0, false, 0},  // 21 shots, 3.0 s body; 14, 2.0 s head (scoped: 3/4 fire rate)
         {"ROCKET",      1.2f,    34,      0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  0.0f,  false, 5}, // 3, 2.4 s (flies straight: owner, 1.17; the lob drops, kRocketLobGravity)
         {"KNIFE",       0.75f,   30,      3.5f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 4, 2.25 s (1.11: 30 every 0.75 s)
-        {"SNIPER",      1.5f,    50,    500.0f, false,  0,    0,     0.0f,  0.0f, 45.0f,  false, 1,  0,    false, 0},  // 2 shots, 1.5 s (owner: a flat 50, head or body)
+        {"SNIPER",      1.5f,    40,    500.0f, false,  0,    0,     0.0f,  0.0f, 45.0f,  false, 1,  0,    false, 0},  // 3 shots, 3.0 s body; 2, 1.5 s head (owner 1.18: 40 body, 50 head; 1.17 a flat 50)
         {"LASER",       0.001f,  0.04f,  24.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},  // every 1 ms, 2500 hits, 2.5 s, 24 m
         {"SHOTGUN",     0.75f,   1.7f,   60.0f, false,  0,    0,     0.085f,-1,     0,    false, 20, 0,    false, 0},  // 20 x 1.7 = 34 per blast, 3, 1.5 s
         {"STICKY",      0.75f,   29.75f,  0,    true,  22.0f, 3.4f,  0.0f,  -1,     0,    false, 1,  15.0f, true, 30}, // 4, 2.25 s
@@ -270,7 +272,7 @@ inline const WeaponDef& baseWeaponDef(int w) {
 // Alt-fires: knife throw (a projectile that hits for knife damage), shotgun bouncing pellets (ricochet off
 // walls, half damage), rifle scope (zooms like the sniper, 10% slower fire rate).
 constexpr float kRocketDirectDamage = 50.0f; // a rocket that hits a player itself (not the floor next to them)
-constexpr float kSniperHeadDamage = 50.0f; // hits on the head (headBox(): the top 20%, head-wide): sniper, crossbow bolt,
+constexpr float kSniperHeadDamage = 50.0f; // hits on the head (headBox(): the top 20%, head-wide; sniper 50 of a 40 body): sniper, crossbow bolt,
 constexpr float kCrossbowHeadDamage = 75.0f; // rifle bullet and each shotgun pellet
 constexpr float kRifleHeadDamage = 7.5f;   // (1.17: 8.5 -> 7.5 with the body 5.95 -> 4.95)
 constexpr float kPelletHeadDamage = 2.55f;

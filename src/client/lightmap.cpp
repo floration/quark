@@ -12,7 +12,7 @@
 
 namespace {
 constexpr uint32_t kCacheMagic = 0x324D4C51; // "QLM2": named by the map's sha256 (QLM1: by its name, with its CRC)
-constexpr uint32_t kBakeVersion = 11;   // 11: sun and bounce rays pass clip // 10: point lights 10% brighter // 6: point lights
+constexpr uint32_t kBakeVersion = 12;   // 12: no payload cart shadow (bakes took its box from the join) // 11: sun and bounce rays pass clip // 10: point lights 10% brighter // 6: point lights
 constexpr int kSkySamples = 48;
 constexpr int kSunSamples = 6;
 constexpr float kAlbedo = 0.65f;

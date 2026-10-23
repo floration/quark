@@ -25,7 +25,7 @@ The work up to 1.17.0 was done in one long claude.ai cloud session. **1.17.0 shi
   - **The Discord bot:** re-installed with the auto-updater, with new keys in `/etc/quark-discord.env`.
 - **Not switched on yet:** automatic Worker deploys (the `deploy-worker` job). It needs an API token and three values in GitHub ([OPERATIONS.md](OPERATIONS.md) section 3). Until then, the Worker is updated by hand for each version that changes it.
 - **Unmerged work:** none.
-- **Waiting on the owner:** should the quick-dash modifier (duel, blades) get a shorter dash cooldown back? Right now it gives a third charge with the normal 1.2 s cooldown.
+- **Quick dash (answered, 1.18.2):** the owner chose a shorter cooldown: 2 charges and a 0.4 s cooldown, no third charge.
 
 ### Setting up the project
 
@@ -331,7 +331,7 @@ See [REMAINING.md](../REMAINING.md) for the full list, and section 0 "First thin
   - The 1.2 s dash cooldown is back on top of the 2 charges, timed from each dash's end (protocol 42). That balances what charges alone allowed: a dash every 0.12 s on the ground, and a super dash on every bunny hop.
   - Kept as they are: the ~5.6 m hop over a ladder top (five maps got a stop at narrow tops) and the standing jump landing at 7.3 m/s (air drift 8).
   - Disputed ranked matches are logged and never rated; the testing server runs only while testing is ahead of production; the damage flash is off by default.
-  - Open: should the quick-dash modifier (duel, blades) get a shorter cooldown again? It keeps a third charge with the normal 1.2 s.
+  - Quick dash: answered in 1.18.2, a 0.4 s cooldown and 2 charges instead of a third charge.
 - **The UI test** (`quark --uitest`) clicks every widget on every screen: 2,259 widgets on 109 screens, with an Esc check on each.
 - **Map scores:** see MAP_REPORT.md (regenerated with the 1.17 movement; every map at least 7).
 

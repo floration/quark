@@ -11,12 +11,20 @@ constexpr float kGroundSpeed = 9.5f;   // (owner 1.17: 8 -> 9.5; VQ3 / CPMA 10.3
 constexpr float kCrouchSpeed = 4.0f;
 constexpr float kGroundAccel = 16.0f;  // (owner 1.17: 16.8 -> 16 with the faster run: still at full speed in ~80 ms)
 constexpr float kAirAccel = 2.2f;
-constexpr float kAirSpeedCap = 2.3f; // quake-style air strafe cap: a wider window of angles that gain speed (was 2.0)
+constexpr float kAirSpeedCap = 2.3f; // quake-style air strafe cap: a wider window of angles that gain speed (was 2.0); W-only
+                                     // strafing uses this, a strafe key held x kStrafeCapAD
+constexpr float kStrafeCapAD = 1.1f; // a strafe key held (A / D): the cap x this, 2.3 -> 2.53 (owner 1.18: "increase ad strafing
+                                     // limit by 10%"; `cross` below still comes from the 2.3)
+constexpr float kStrafeAccelAD = 1.15f; // a strafe key held: air acceleration x this at every speed, on top of the kStrafeBoost
+                                        // ramp (owner 1.18: "increase rate of speed increase from ad strafing by 15%")
 constexpr float kOverstrafeBrake = 0.35f; // turning past the window: only this much of the push against your momentum applies
 constexpr float kAirControl = 4.0f;  // how fast held direction bends momentum in the air (rad/s-ish), speed kept; above
                                      // kAirControlFrom it falls off as 1 / speed, so A/D strafing turns better (owner 1.17)
 constexpr float kAirControlFrom = 9.5f;   // m/s: where W-only steering starts losing to A/D (owner 1.17: "9.5m/s instead of
                                           // 12.7 ... by lowering w stafing power not increasing ad strafing"; it was 12.65)
+constexpr float kAirControlW = 0.9f;      // W-only air control's turn rate x this at every speed: 3.6 rad/s under 9.5 m/s,
+                                          // 0.9 x 38 / speed above (owner 1.18: "reduce w strafing by 10%"; `cross` below
+                                          // still comes from the unscaled 4)
 constexpr float kAirDriftAccel = 8.0f;  // m/s2: below run speed, held direction also pushes you this hard in the air (owner
                                         // 1.17: a standing jump drifts like a run-up one would, never past run speed)
 constexpr float kStrafeBoost = 0.10f;   // a strafe key held: air acceleration x (1 + this), ramping in from 12.65 m/s to
@@ -26,21 +34,30 @@ constexpr float kStopSpeed = 2.0f;
 constexpr float kStepHeight = 0.55f;
 constexpr float kDashSpeed = 24.0f;     // burst speed
 constexpr float kDashTime = 0.12f;      // burst length; then speed settles back
+constexpr float kQuickDashCooldown = 1.0f / 3.0f;   // quick dash (MOVE_QUICK_DASH): the dash cooldown x this, 1.2 -> 0.4 s
+                                                    // (x a custom mode's own multiplier), the usual 2 charges (owner 1.18:
+                                                    // "quick dash should reduce dash cooldown"; 1.17 gave a third charge)
 constexpr float kDashExitMin = 11.0f;   // speed you leave a dash with at least
 constexpr float kDashKeep = 1.0f;       // ...and your old speed plus this, so dashes build momentum (owner 1.17: was 3)
 constexpr float kDashExitMax = 32.0f;   // (1.12: above the grapple's 24, so a dash out of a fast strafe still adds speed)
 constexpr float kDashVertical = 0.6375f;  // looking straight up / down makes the dash this vertical (sine)
 // Dash jump and super dash (owner, after Celeste's super and hyper): jump during a dash on the floor and the dash
 // ends there and then, leaving with its full burst speed plus a jump; dash down into the floor holding jump for more
-// speed and a lower hop. Both take the rest of the dash; normal air movement (gravity, strafing) applies from there.
+// speed and a hop that is higher the further down you look. Both take the rest of the dash; normal air movement
+// (gravity, strafing) applies from there.
 constexpr float kDashJumpWindow = 0.1f;  // input buffer (Celeste ~0.08 s): a jump pressed this long before a dash meets
                                          // the floor still counts, and a dash this soon after jumping off the floor
                                          // (pressing jump a hair before dash) is still a ground dash jump
 constexpr float kSuperDashDown = 0.25f;  // a dash at least this far down (share of kDashVertical: looking >= 14.5 deg
                                          // below level) that meets the floor is a super dash; shallower is a dash jump
 constexpr float kSuperDashBoost = 1.25f; // super dash: the burst speed x this (Celeste's hyper vs super: 325 / 260)...
-constexpr float kSuperDashJump = 0.5f;   // ...with a jump at this share of the jump speed (Celeste: half; a 0.31 m hop
-                                         // that skims the floor, bhop on from its landing)
+constexpr float kSuperDashJump = 0.5f;   // ...with a jump at this share of the jump speed at the kSuperDashDown threshold
+                                         // (Celeste: half; a 0.31 m hop that skims the floor, bhop on from its landing)...
+constexpr float kSuperDashJumpMax = 1.0f; // ...rising linearly with how far down the dash was aimed (the sine of the look
+                                          // pitch, 0.25 -> 1) to this share looking straight down: a full 1.22 m jump
+                                          // (owner 1.18: "the lower you look the higher you should bounce"). Hops (jump
+                                          // 7.34, gravity 22): 14.5 deg 0.31 m, 20 deg 0.39 m, 30 deg 0.54 m, 45 deg
+                                          // 0.79 m, 60 deg 1.02 m, 90 deg 1.22 m (the mouse stops at 88.8 deg: 1.22 m)
 constexpr float kSuperDashMax = 36.0f;   // its cap: above the dash's 32, so a super dash at top dash speed still boosts
 // Dash wall bounce (owner): a dash into a wall at under this angle from the wall's normal (fairly head-on)
 // bounces off it, reflected, at the dash's full speed; a more glancing hit slides along it as before.
@@ -74,8 +91,9 @@ bool rayHitsHead(const Vec3& o, const Vec3& dir, const AABB& hitbox) {
 
 // Air strafing: Quake acceleration, except that the part of the push that would brake you (wish direction turned
 // past 90 degrees from your momentum: overstrafing) is softened, so a sloppy turn costs a little, not a lot.
-// A strafe key held (side != 0) at speed pushes harder: kStrafeBoost, ramping in from `cross` (where air control
-// starts falling off) to 1.25x it, so above that A/D strafing turns faster than W-only air control (owner 1.17).
+// A strafe key held (side != 0) pushes harder: x kStrafeAccelAD at every speed (owner 1.18), and at speed the
+// kStrafeBoost on top, ramping in from `cross` (where air control starts falling off) to 1.25x it, so above that
+// A/D strafing turns faster than W-only air control (owner 1.17). (The caller already raised the A/D wish cap.)
 static void airAccelerate(const MoveTuning& mt, Vec3& vel, const Vec3& wishDir, float wishSpeed, float accel, float dt, int side, float cross) {
     float cur = dot(vel, wishDir);
     float add = wishSpeed - cur;
@@ -83,7 +101,7 @@ static void airAccelerate(const MoveTuning& mt, Vec3& vel, const Vec3& wishDir, 
     float h = std::sqrt(vel.x * vel.x + vel.z * vel.z);
     if (side != 0) {
         float t = std::clamp((h - cross) / (0.25f * cross), 0.0f, 1.0f);
-        accel *= 1.0f + (kStrafeBoost * mt.m[MV_STRAFE_BOOST]) * t;
+        accel *= kStrafeAccelAD * (1.0f + (kStrafeBoost * mt.m[MV_STRAFE_BOOST]) * t);
     }
     Vec3 push = wishDir * std::min(accel * wishSpeed * dt, add);
     if (h > 1e-3f) {
@@ -119,11 +137,12 @@ static int slideMove(MoveState& s, const Map& map, const Vec3& delta, bool crouc
 // The parts of a step that only depend on the command (the same for each of its up to 8 steps).
 struct CmdCtx { const MoveTuning& mt; Vec3 fwd, right; };
 
-static int maxChargesFor(const MoveTuning& mt, uint8_t mods) {
-    return std::max(1, (int)std::lround(kDashCharges * mt.m[MV_DASH_CHARGES])) + ((mods & MOVE_QUICK_DASH) ? 1 : 0);
+static int maxChargesFor(const MoveTuning& mt, uint8_t) {
+    return std::max(1, (int)std::lround(kDashCharges * mt.m[MV_DASH_CHARGES]));   // (quick dash: no extra charge since 1.18)
 }
-static int cooldownMsFor(const MoveTuning& mt) {
-    return std::min(60000, std::max(0, (int)std::lround(kDashCooldown * mt.m[MV_DASH_COOLDOWN] * 1000.0f)));
+static int cooldownMsFor(const MoveTuning& mt, uint8_t mods) {
+    const float quick = (mods & MOVE_QUICK_DASH) ? kQuickDashCooldown : 1.0f;
+    return std::min(60000, std::max(0, (int)std::lround(kDashCooldown * mt.m[MV_DASH_COOLDOWN] * quick * 1000.0f)));
 }
 
 static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt, HookProbe* hp, const CmdCtx& cx) {
@@ -202,7 +221,8 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         // and the dash ends at once, leaving with its full burst speed along its direction plus a normal jump; also a
         // dash started just after jumping off the floor (jump pressed a hair first: the jump's rise is kept as it is).
         // Super dash (Celeste's hyper): the same off a dash aimed down (kSuperDashDown) into the floor, or meeting it
-        // during the dash: faster than the burst, and a lower hop. The jump replaces the bhop: no landing bounce
+        // during the dash: faster than the burst, and a hop from half a jump (aimed just past the threshold) up to a
+        // full one (aimed straight down). The jump replaces the bhop: no landing bounce
         // (the ground check doesn't bounce off a dash) and no bhop jump on top.
         const float burst = std::max((kDashSpeed * mt.m[MV_DASH_SPEED]), s.dashExitSpeed);
         const bool down = s.dashUp <= -kSuperDashDown * (kDashVertical * mt.m[MV_DASH_VERTICAL]);
@@ -214,7 +234,13 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             s.dashCharges = (uint8_t)maxCharges;
             if (grounded && down) {
                 sp = std::max(burst, std::min(kSuperDashMax * mt.m[MV_SUPER_DASH_MAX], burst * (kSuperDashBoost * mt.m[MV_SUPER_DASH_BOOST])));
-                vy = jumpSpeed * (kSuperDashJump * mt.m[MV_SUPER_DASH_JUMP]);
+                // the hop: higher the further down the dash was aimed (its share of a straight-down dash, the sine of
+                // the pitch: kSuperDashDown -> kSuperDashJump, straight down -> kSuperDashJumpMax); a custom mode's
+                // super dash jump multiplier scales both ends
+                const float vmax = kDashVertical * mt.m[MV_DASH_VERTICAL];
+                const float downShare = vmax > 1e-6f ? -s.dashUp / vmax : kSuperDashDown;   // (no vertical dash: the low end)
+                const float t = std::clamp((downShare - kSuperDashDown) / (1.0f - kSuperDashDown), 0.0f, 1.0f);
+                vy = jumpSpeed * ((kSuperDashJump + (kSuperDashJumpMax - kSuperDashJump) * t) * mt.m[MV_SUPER_DASH_JUMP]);
                 s.dashCharges = 1;
             }
             chargesSet = true;
@@ -338,8 +364,11 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         if (!dashing && !onLadder) {
             const float airAccel = (kAirAccel * mt.m[MV_AIR_ACCEL]) * 10.0f, airCap = kAirSpeedCap * mt.m[MV_AIR_CAP];
             const float airControl = kAirControl * mt.m[MV_AIR_CONTROL];
-            const float cross = airAccel * airCap / airControl;   // 22 x 2.3 / 4 = 12.65 m/s: strafing turns as fast as air control
-            airAccelerate(mt, s.vel, wishDir, std::min(wishSpeed, airCap), airAccel, dt, cmd.side, cross);
+            // 22 x 2.3 / 4 = 12.65 m/s: where the A/D boost ramp starts (the base cap and the unscaled air control, so
+            // the 1.18 A/D cap and the slower W-only turn leave it where it was)
+            const float cross = airAccel * airCap / airControl;
+            const float strafeCap = cmd.side != 0 ? airCap * kStrafeCapAD : airCap;   // A/D: 2.53, W-only: 2.3
+            airAccelerate(mt, s.vel, wishDir, std::min(wishSpeed, strafeCap), airAccel, dt, cmd.side, cross);
             // Drift: below run speed, held direction pushes you along it (kAirDriftAccel) up to run speed and never
             // past it, so a standing jump moves about like the run-up one would (owner 1.17; it was 2.3 m/s at most).
             const float runSpeed = kGroundSpeed * mt.speed;
@@ -356,8 +385,9 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             // speed. Holding a strafe key turns it off, so strafe-and-turn gains speed like in Quake. Its rate is capped
             // so that above kAirControlFrom (9.5 m/s) W-only bends slower, as 1 / speed, and A/D strafing is the faster
             // way to turn at speed (owner 1.17). Only W-only is weakened: the A/D boost still ramps in from `cross`.
+            // 1.18 (owner): the whole rate x kAirControlW (0.9), at every speed.
             if (wishLen > 0 && cmd.side == 0 && h > 0.5f) {
-                float rate = std::min(airControl, airControl * kAirControlFrom * mt.speed / std::max(h, 1e-3f));
+                float rate = kAirControlW * std::min(airControl, airControl * kAirControlFrom * mt.speed / std::max(h, 1e-3f));
                 float k = std::min(1.0f, rate * dt);
                 float nx = s.vel.x / h + (wishDir.x - s.vel.x / h) * k, nz = s.vel.z / h + (wishDir.z - s.vel.z / h) * k;
                 float nl = std::sqrt(nx * nx + nz * nz);
@@ -442,7 +472,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     }
 
     // the dash cooldown starts when a dash ends (its timer ran out, or a dash jump / super dash ended it), this step
-    if ((dashActive || dashStart) && s.dashTimer <= 0) s.dashCooldownMs = (uint16_t)cooldownMsFor(mt);
+    if ((dashActive || dashStart) && s.dashTimer <= 0) s.dashCooldownMs = (uint16_t)cooldownMsFor(mt, s.mods);
 
     s.flags &= (MF_FROZEN | MF_HOOKED | MF_PULLED);
     if (nowGround && !(s.flags & (MF_HOOKED | MF_PULLED))) s.flags |= MF_ONGROUND;
@@ -484,7 +514,7 @@ const char* moveParamUnit(int i) {
     return i >= 0 && i < MV_COUNT ? u[i] : "";
 }
 int dashMaxCharges(uint8_t mods) { return maxChargesFor(moveTuning(), mods); }
-int dashCooldownMs() { return cooldownMsFor(moveTuning()); }
+int dashCooldownMs(uint8_t mods) { return cooldownMsFor(moveTuning(), mods); }
 float moveBaseGravity() { return kGravity; }
 float moveBaseSpeed() { return kGroundSpeed; }
 float moveBaseJump() { return kJumpSpeed; }
