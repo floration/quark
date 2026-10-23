@@ -284,7 +284,9 @@ jobs:
         with: { path: dist }
       - name: all three platforms are here (no macOS, no release)
         run: |
-          rm -rf dist/windows-tests dist/site-assets   # (site-assets: the website's, the pages job publishes it)
+          # (not release files: the test jobs' binaries + maps (folders: `sha256sum */*` below fails on them), the UI
+          # test's report, and the website's assets, which the pages job publishes)
+          rm -rf dist/windows-tests dist/linux-tests dist/uitest-report dist/site-assets
           for p in windows linux macos; do test -f "dist/$p/quark-$p.qpak" || { echo "::error::no $p build"; exit 1; }; done
       - name: sign the launchers, release manifest, sign every published file (Ed25519, docs/SIGNING.md)
         env:
@@ -333,7 +335,7 @@ jobs:
           TAG: ${{ needs.meta.outputs.tag }}
           VER: ${{ needs.meta.outputs.version }}
         run: |
-          rm -rf dist/windows-tests dist/macos dist/site-assets   # (site-assets: the website's, last step)
+          rm -rf dist/windows-tests dist/linux-tests dist/uitest-report dist/macos dist/site-assets   # (as the production job; site-assets: last step)
           # (as in the production job: launcher signatures into the packages first, then the manifest, then every file)
           sh tools/sign/sign_release.sh --launchers dist/*/quark-*.qpak
           sh tools/sign/release_manifest.sh testing "$TAG" "$VER" "$GITHUB_SHA" dist/*/quark-*.qpak dist/*/quark-launcher-* \
