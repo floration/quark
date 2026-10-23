@@ -43,15 +43,21 @@ constexpr float kDashExitMax = 32.0f;   // (1.12: above the grapple's 24, so a d
 constexpr float kDashVertical = 0.6375f;  // looking straight up / down makes the dash this vertical (sine)
 // Dash jump and super dash (owner, after Celeste's super and hyper): jump during a dash on the floor and the dash
 // ends there and then, leaving with its full burst speed plus a jump; dash down into the floor holding jump for more
-// speed and a lower hop. Both take the rest of the dash; normal air movement (gravity, strafing) applies from there.
+// speed and a hop that is higher the further down you look. Both take the rest of the dash; normal air movement
+// (gravity, strafing) applies from there.
 constexpr float kDashJumpWindow = 0.1f;  // input buffer (Celeste ~0.08 s): a jump pressed this long before a dash meets
                                          // the floor still counts, and a dash this soon after jumping off the floor
                                          // (pressing jump a hair before dash) is still a ground dash jump
 constexpr float kSuperDashDown = 0.25f;  // a dash at least this far down (share of kDashVertical: looking >= 14.5 deg
                                          // below level) that meets the floor is a super dash; shallower is a dash jump
 constexpr float kSuperDashBoost = 1.25f; // super dash: the burst speed x this (Celeste's hyper vs super: 325 / 260)...
-constexpr float kSuperDashJump = 0.5f;   // ...with a jump at this share of the jump speed (Celeste: half; a 0.31 m hop
-                                         // that skims the floor, bhop on from its landing)
+constexpr float kSuperDashJump = 0.5f;   // ...with a jump at this share of the jump speed at the kSuperDashDown threshold
+                                         // (Celeste: half; a 0.31 m hop that skims the floor, bhop on from its landing)...
+constexpr float kSuperDashJumpMax = 1.0f; // ...rising linearly with how far down the dash was aimed (the sine of the look
+                                          // pitch, 0.25 -> 1) to this share looking straight down: a full 1.22 m jump
+                                          // (owner 1.18: "the lower you look the higher you should bounce"). Hops (jump
+                                          // 7.34, gravity 22): 14.5 deg 0.31 m, 20 deg 0.39 m, 30 deg 0.54 m, 45 deg
+                                          // 0.79 m, 60 deg 1.02 m, 90 deg 1.22 m (the mouse stops at 88.8 deg: 1.22 m)
 constexpr float kSuperDashMax = 36.0f;   // its cap: above the dash's 32, so a super dash at top dash speed still boosts
 // Dash wall bounce (owner): a dash into a wall at under this angle from the wall's normal (fairly head-on)
 // bounces off it, reflected, at the dash's full speed; a more glancing hit slides along it as before.
@@ -215,7 +221,8 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         // and the dash ends at once, leaving with its full burst speed along its direction plus a normal jump; also a
         // dash started just after jumping off the floor (jump pressed a hair first: the jump's rise is kept as it is).
         // Super dash (Celeste's hyper): the same off a dash aimed down (kSuperDashDown) into the floor, or meeting it
-        // during the dash: faster than the burst, and a lower hop. The jump replaces the bhop: no landing bounce
+        // during the dash: faster than the burst, and a hop from half a jump (aimed just past the threshold) up to a
+        // full one (aimed straight down). The jump replaces the bhop: no landing bounce
         // (the ground check doesn't bounce off a dash) and no bhop jump on top.
         const float burst = std::max((kDashSpeed * mt.m[MV_DASH_SPEED]), s.dashExitSpeed);
         const bool down = s.dashUp <= -kSuperDashDown * (kDashVertical * mt.m[MV_DASH_VERTICAL]);
@@ -227,7 +234,13 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             s.dashCharges = (uint8_t)maxCharges;
             if (grounded && down) {
                 sp = std::max(burst, std::min(kSuperDashMax * mt.m[MV_SUPER_DASH_MAX], burst * (kSuperDashBoost * mt.m[MV_SUPER_DASH_BOOST])));
-                vy = jumpSpeed * (kSuperDashJump * mt.m[MV_SUPER_DASH_JUMP]);
+                // the hop: higher the further down the dash was aimed (its share of a straight-down dash, the sine of
+                // the pitch: kSuperDashDown -> kSuperDashJump, straight down -> kSuperDashJumpMax); a custom mode's
+                // super dash jump multiplier scales both ends
+                const float vmax = kDashVertical * mt.m[MV_DASH_VERTICAL];
+                const float downShare = vmax > 1e-6f ? -s.dashUp / vmax : kSuperDashDown;   // (no vertical dash: the low end)
+                const float t = std::clamp((downShare - kSuperDashDown) / (1.0f - kSuperDashDown), 0.0f, 1.0f);
+                vy = jumpSpeed * ((kSuperDashJump + (kSuperDashJumpMax - kSuperDashJump) * t) * mt.m[MV_SUPER_DASH_JUMP]);
                 s.dashCharges = 1;
             }
             chargesSet = true;
