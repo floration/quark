@@ -89,6 +89,7 @@ Use HOST GAME → FFA (bots off or beginner) and the changelog's numbers.
 | ☐ | Movement: jump, crouch, bunny-hop, air-strafe, dash, grapple; run speed 9.5 feels right; ladders (6.75 up) and staircases climb smoothly; a standing jump can be steered; at speed A/D strafing turns better than W alone. |
 | ☐ | **Dash charges + cooldown**: two dashes, then none until you land (landing refills both, a bunny hop refills one); each dash also waits 1.2 s from the END of the previous one (two in a row don't work, on the floor either); pressing dash during a dash does nothing; a dash jump keeps both; a super dash and a wall bounce leave one. The HUD shows a pip per charge; while the cooldown runs the pips fill grey and light up when it's done. Custom mode MOVEMENT page: DASH COOLDOWN slider (type a value, right-click resets). |
 | ☐ | Hitmarkers, red headshot numbers, kill feed, damage direction. |
+| ☐ | Thrown knives, crossbow bolts and thrown syringes stay stuck where they land: in walls until the match ends (gone after a restart or match end), in a player until that player dies. With lots of them about, F3's 1% and 0.1% lows don't drop. Super and hyper play their own sounds; the locator pings. |
 
 ## 6. Game modes
 
