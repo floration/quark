@@ -45,7 +45,7 @@ The work up to 1.17.0 was done in a claude.ai cloud session. Everything that mat
 **Decided but not yet done** (the owner can pick these up first)
 - **The restructure** (section 9): create `testing`, protect the default branch, add the `v*` tag rule, and move the launcher, site and Discord bot to their own branches.
 - **The owner's 1.17.0 deployment steps** (section 6): the Worker and SQL, the cron and secrets, `install.sh` on each server (which adds the testing server on the next port), and redeploying the bot.
-- **Movement items flagged for a decision** (section 12): ground dash spam, the endless super-dash chain, the ladder-top hop, and the standing-jump drift (8 vs 4.8).
+- **Movement:** the owner confirmed the ladder-top hop and the standing-jump drift (8) before release, and brought the 1.2 s dash cooldown back on top of the charges, which balances ground dash spam and the super-dash chain.
 - **Bot and map tests were waived for 1.17.0 only.** They count again from the next version, in CI and locally.
 
 
@@ -192,7 +192,7 @@ Workflows are in `.github/workflows/`:
 
 ## 8. Protocol and compatibility notes
 
-- `kProtocolVersion` (gamedefs.h) is 41 for 1.17.0 (37 to 40 in its earlier development builds). Any wire change bumps it, and old and new can't play together.
+- `kProtocolVersion` (gamedefs.h) is 42 for 1.17.0 (37 to 41 in its earlier development builds). Any wire change bumps it, and old and new can't play together.
 - `kOldestDemoProtocol` and the demo converter (`src/game/demo.cpp`, `kRecordFormatSince = 24`) decide which demos play directly and which are converted. A snapshot layout change needs a converter step.
 - Snapshot projectile bits: 1 new, 2 velocity, 4 lob, 8 stuck, 16 out of sight, 32 on a player (u8 player, then its offset from their feet: i8 x, u8 y, i8 z; protocol 40).
 - The player's own movement state's opt bits: 1 hooked, 2 dash, 4 dash charges + cooldown (a u8 + a u16 in ms, sent when the charges aren't 2 or the cooldown runs; protocol 42; 41 had the u8 alone, older the cooldown f32), 8 hook cooldown, 16 hook target, 32 pull point, 64 jump buffer + grace, 128 dash bounces.
@@ -242,10 +242,11 @@ See [REMAINING.md](../REMAINING.md) for the full list. The final state of 1.17.0
 
 - **Tests before the push** (this machine, Linux): every `quark_tests` group except the bot and map groups passed. That includes the timing-sensitive netcode, tick rate and governor groups, each run on its own. The owner waived the bot and map tests for this release only ("those will be replaced anyway"). Every map was instead hosted headless in FFA and screenshotted: all 21 load and run. Lodestone and Midtown need over a minute on a loaded machine with software GL before their first light bake finishes. The movement agent's last full run, which included bots and maps, passed everything but the timing groups under load.
 - **CI for 1.17.0 builds only, with no CI tests** (owner). The test jobs skip while VERSION is 1.17.0. From 1.17.1 they run one test group per runner on Linux and Windows, and the release waits for them.
-- **Known and kept** (owner to decide later):
-  - (Was: a grounded player could dash every 0.12 s and chain a super dash on every bunny hop. The owner brought the 1.2 s dash cooldown back on top of the charges, timed from each dash's end, which balances both; protocol 42.)
-  - Coming over a ladder top carries you about 5.6 m (five maps got a stop at narrow tops).
-  - A standing jump holding W lands at 7.3 m/s (air drift 8; 4.8 would give about 5.3).
+- **Decided in the owner's pre-release interview:**
+  - The 1.2 s dash cooldown is back on top of the 2 charges, timed from each dash's end (protocol 42). That balances what charges alone allowed: a dash every 0.12 s on the ground, and a super dash on every bunny hop.
+  - Kept as they are: the ~5.6 m hop over a ladder top (five maps got a stop at narrow tops) and the standing jump landing at 7.3 m/s (air drift 8).
+  - Disputed ranked matches are logged and never rated; the testing server runs only while testing is ahead of production; the damage flash is off by default.
+  - Open: should the quick-dash modifier (duel, blades) get a shorter cooldown again? It keeps a third charge with the normal 1.2 s.
 - **The UI test** (`quark --uitest`) clicks every widget on every screen: 2,259 widgets on 109 screens, with an Esc check on each.
 - **Map scores:** see MAP_REPORT.md (regenerated with the 1.17 movement; every map at least 7).
 
