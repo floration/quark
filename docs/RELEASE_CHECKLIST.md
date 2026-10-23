@@ -16,7 +16,7 @@ Do this for **every** update, after it has been pushed to the `testing` branch a
 | ☐ | GitHub → Actions: the run for the `testing` push is green: Linux tests, Windows tests, macOS build, sanitizers. |
 | ☐ | GitHub → Releases: the prerelease `test-<VERSION>-test.<N>` exists. It is marked **Pre-release**, not "Latest". |
 | ☐ | Its assets: `quark-windows.qpak`, `quark-linux.qpak` (and `quark-macos.qpak` once the macOS build finished), each with a `.sig`; `quark-release.txt` + `.sig`; `SHA256SUMS` + `.sig`. |
-| ☐ | `VERSION` is bumped and `changelogs/<VERSION>.md` exists and describes everything in the update (the website, launcher and release notes all show this file; a production tag without it fails). |
+| ☐ | `VERSION` is bumped. `changelogs/<VERSION>.md` (the short notes) and `changelogs/full/<VERSION>.md` (every change, and why) both exist; a production tag without either fails. |
 | ☐ | Discord #testing-updates announced the build (and #updates did **not**). |
 | ☐ | Claude's notes for this update list nothing still open (ask: "anything unfinished or untested in this build?"). |
 
@@ -198,7 +198,9 @@ The site is only redeployed by a production release, so check the source now and
 | ✓ | Check |
 |---|---|
 | ☐ | Open `site/index.html` from this build in a browser: the version, changelog, weapon table and download section are right and nothing is broken (also on a phone-width window). |
+| ☐ | `changelogs/full/<VERSION>.md` exists and explains every change and why. Run `python3 tools/site_updates.py .` and open `site/updates/index.html` and `site/updates/<VERSION>/index.html`: the list shows every version, and the version page shows the full changelog. |
 | ☐ | **After** production: https://floration.github.io/quark shows the new version and changelog; each download link works, and its `.sig` and `SHA256SUMS` are there. |
+| ☐ | **After** production: https://floration.github.io/quark/updates/ lists the new version, and https://floration.github.io/quark/updates/<VERSION>/ shows its full changelog. The Discord #updates post links to that page. |
 
 ## 16. Sign-off and going to production
 
