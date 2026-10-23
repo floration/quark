@@ -4,6 +4,7 @@
 #include <regex>
 #include <cstring>
 #include <algorithm>
+#include <csignal>
 #include <queue>
 #include <thread>
 #include "../src/common/rng.h"
@@ -199,9 +200,9 @@ static void testProcPipes() {
     printf("  %d threads x %d concurrent children: %d of %d finished and echoed their input\n", kThreads, kRounds, ok.load(), kThreads * kRounds);
     CHECK(finished == kThreads && ok == kThreads * kRounds);
     // SIGPIPE: still ignored after the calls (it used to be swapped back and forth around every write)
-    struct sigaction sa {};
-    sigaction(SIGPIPE, nullptr, &sa);
-    CHECK(sa.sa_handler == SIG_IGN);
+    // (signal(), not sigaction(): Apple's clang parses `sigaction(...)` next to a `struct sigaction` as the struct.
+    // Setting SIG_IGN again is what it must already be.)
+    CHECK(signal(SIGPIPE, SIG_IGN) == SIG_IGN);
     // a child whose reader is gone: the write fails instead of killing us, and a missing program is -1
     CHECK(procRun({"sh", "-c", "exit 3"}, std::string(200000, 'y'), [](const char*, size_t) { return true; }) == 3);
     CHECK(procRun({"quark-no-such-program-xyz"}, "", [](const char*, size_t) { return true; }) == -1);
