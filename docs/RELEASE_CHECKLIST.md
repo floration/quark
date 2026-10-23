@@ -146,15 +146,18 @@ Host each mode on **its own map** with bots (and a second human if you can). For
 
 ## 11. Dedicated servers
 
-Production servers only auto-update to **production** releases, so a testing build must be tried by hand first.
+Every server box runs two servers (`tools/server/install.sh`): **production** (updates to production releases only)
+and **testing** (the next port up, "<name> [TESTING]", updates itself to each testing prerelease within a few minutes).
+So the testing build is already live on every box: check it there.
 
 | ✓ | Check |
 |---|---|
-| ☐ | On the server machine (or any Linux box), build or unpack the testing build and run it on a **spare port** next to the live one, e.g. `quark_server --port 27600 --mode ffa --map harbor --public --name "quark test"`. |
-| ☐ | It appears in the in-game internet list and in Discord's live servers; you can join it; console commands work (`map`, `mode`, `forcestart`, `kick`, `status`, `quit`). |
-| ☐ | A ranked match on it (section 12) is accepted by the ranking server; if the server is behind a forwarded port or in a container, `--own-addr host:port` is set and the log shows no "ranked key proof is for ..." warning. |
-| ☐ | Leave it running ~30 minutes with bots: no crash, no growing memory (`top`), tick rate steady (`status`). |
-| ☐ | **After** production is tagged: each live server picks up the update by itself within a few minutes once no match is running (`journalctl -t quark-update`, `systemctl status quark`), and `journalctl -p crit -t quark-update` is empty. |
+| ☐ | Within ~10 minutes of the prerelease, each box's testing server runs it: `journalctl -u quark-testing-update` says `built test-<VERSION>-test.<N>`, `systemctl status quark-testing` is active, and `journalctl -p crit -t quark-update` has nothing new (an alert there names the instance that failed). |
+| ☐ | The testing server appears in the in-game internet list of a testing-build game (and in Discord's live servers) as "... [TESTING]"; you can join it; console commands work (`map`, `mode`, `forcestart`, `kick`, `status`, `quit`, typed in a `quark_server` you run by hand: the service has no console). |
+| ☐ | A ranked match on it plays normally (queue, lock, result) and says **TESTING SERVER - RANKED NOT RATED** (on joining, at the start, at the end, and on the HUD tag); the leaderboard doesn't change. To test that ranking itself still works, play a ranked match on the **production** server after the release (section 12). If the box is behind a forwarded port or in a container, `--own-addr host:port` is set and neither log shows a "ranked key proof is for ..." warning. |
+| ☐ | Load governor: `cat /var/lib/quark-governor/*.status` shows both servers, fresh (`t` within a second or two). With players on both and bots added (`addbot` x10 on each in a hand-run console, or a busy evening), `journalctl -u quark -u quark-testing \| grep governor` shows any throttling in the right order (the empty server first, then the one not in a ranked match), and production never below what it needs. |
+| ☐ | Leave the testing server running ~30 minutes with bots: no crash, no growing memory (`top`), tick rate steady (`status`). |
+| ☐ | **After** production is tagged: each box's production server picks up the update by itself within a few minutes once no match is running (`journalctl -u quark-update`, `systemctl status quark`), its testing server moves to it too if it's newer than the last testing build, and `journalctl -p crit -t quark-update` is empty. |
 
 ## 12. Ranked
 
