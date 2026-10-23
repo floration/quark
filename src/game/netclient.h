@@ -129,7 +129,7 @@ private:
     void onSnapshot(Snapshot& s);
     void sendInput();
     int inputBatch_ = 1, unsentCmds_ = 0;
-    bool useMap(const std::string& name, uint32_t crc); // load name (own copy, else a downloaded one) if its CRC matches
+    bool useMap(const std::string& name, const MapId& id); // load name (own copy, else a downloaded one) if it's that map
     void pumpDownload(double now);
 
     UdpSocket sock_;
@@ -148,11 +148,13 @@ private:
     bool mapReady_ = false;
     uint32_t mapGen_ = 0, editRev_ = 0;
     void applyEditEvent(const std::string& text);
-    void startDownload(const std::string& name, uint32_t crc);
+    void startDownload(const std::string& name, const MapId* id);   // id null: the server's map as it is now
     struct Download {
         bool active = false;
         std::string name, data;
-        uint32_t crc = 0, textCrc = 0, total = 0, got = 0;   // crc: the map's id; textCrc: of the text being sent
+        MapId id, textId;            // id: the map's (idKnown: once named); textId: sha256 of the text being sent
+        bool idKnown = false;
+        uint32_t total = 0, got = 0;
         std::vector<double> asked;   // per chunk: when last requested (0 = never)
         std::vector<bool> have;
         std::vector<std::string> edits; // edit events that arrived meanwhile: replayed on top if they're newer

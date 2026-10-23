@@ -268,9 +268,20 @@ private:
     float edDragT0_ = 0;
     Map edDragBase_;
     std::string edDragLast_;
-    bool edPrompt_ = false;     // "save your copy?" after leaving someone else's edit session
-    Map edPromptMap_;
-    std::string edPromptName_;
+    // The save question (OWNER_DECISIONS_2 B3): "keep your edits as a new map?" when you save or leave a built-in map
+    // you edited (its file is never written: yes saves your edits under a new name in your maps folder, no drops
+    // them), and "save your copy?" after leaving someone else's edit session. Nothing is ever saved without asking.
+    bool edPrompt_ = false;
+    Map edPromptMap_;           // what yes saves
+    std::string edPromptName_;  // under this name (a new one when the map is built in)
+    enum { ED_THEN_NONE, ED_THEN_SAVE, ED_THEN_LEAVE, ED_THEN_TEST, ED_THEN_HOST, ED_THEN_OPEN };
+    int edPromptThen_ = ED_THEN_NONE;   // what the editor does after the answer (NONE: asked after a session)
+    std::string edPromptOpen_;          // ED_THEN_OPEN: the map to open next ("" = a new one)
+    bool edPromptOfficial_ = false;     // the edits are to a built-in map
+    bool edOfficial() const { return isOfficialMapName(edName_) || isOfficialMapName(ed_.name); }   // editing a built-in map
+    void edAskKeep(int then, const std::string& open = std::string());
+    void edPromptAnswer(int answer);    // 1 yes, 0 no, -1 cancel
+    std::string edFreshName(const std::string& base) const;   // a name for your copy that's free and not a built-in map's
     void openEditor(std::string map); // (by value: callers pass maps_[i], and opening rescans maps_)
     std::vector<std::string> edScript_; // --edscript steps still to run (one per frame)
     void edScriptStep();
@@ -301,7 +312,7 @@ private:
     Vec3 edLastClickCam_;
     int edClipFind_ = -1;   // FIND CLIP: the clip box shown last
     Vec3 edMouseRay() const;
-    bool edSave();
+    bool edSave(int then = ED_THEN_SAVE);   // false: not saved (or the question is up: `then` follows the answer)
     bool edSaveCopy(const Map& m, const std::string& name);
     void edTest();
     void edHostSession();

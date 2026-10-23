@@ -204,6 +204,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     mapList_ = listMaps();
     std::string e;
     if (!map_.load(cfg_.map, &e)) { if (err) *err = e; return false; }
+    for (auto& w : map_.warnings) log(cfg_.map + ": " + w);   // (parts of a newer map format it skipped)
     nav_.buildAsync(map_);   // bot navigation, built off the tick thread
     if (cfg_.editMode && !map_.supportsMode(cfg_.mode)) // an edit session runs whatever the map can't play yet
         cfg_.mode = map_.supportsMode(MODE_FFA) ? MODE_FFA : cfg_.mode;
@@ -508,8 +509,10 @@ void Server::handlePacket(const NetAddr& from, const uint8_t* data, int len) {
     if (type == PKT_INPUT) handleInput(id, r);
     else if (type == PKT_DISCONNECT) holdPlayer(id, "disconnected");   // (a crash or a mis-click: 10 s to come back)
     else if (type == PKT_MAP_REQUEST) { // client lacks this map (or has a different copy): send it a piece
-        uint32_t crc = r.u32(), off = r.u32();
-        (void)crc; // always serve the current map: in an edit session it may have changed since the client asked
+        MapId asked;
+        for (auto& c : asked.b) c = r.u8();
+        uint32_t off = r.u32();
+        (void)asked; // always serve the current map: in an edit session it may have changed since the client asked
         const std::string& text = map_.sourceText();   // (after edits: serialized here, once per change)
         if (r.bad() || off >= text.size()) return;
         ServerPlayer& mp = players_[id];   // rate limit (token bucket)
@@ -522,7 +525,7 @@ void Server::handlePacket(const NetAddr& from, const uint8_t* data, int len) {
         Writer w(out, sizeof out);
         writeHeader(w, PKT_MAP_DATA);
         uint16_t n = (uint16_t)std::min<size_t>(kMapChunk, text.size() - off);
-        w.u32(players_[id].nonce); w.u32(map_.crc); w.u32(map_.sourceTextCrc()); w.u32((uint32_t)text.size()); w.u32(off); w.u16(n);
+        w.u32(players_[id].nonce); w.bytes(map_.id().b, 32); w.bytes(map_.contentId().b, 32); w.u32((uint32_t)text.size()); w.u32(off); w.u16(n);
         w.bytes((const uint8_t*)text.data() + off, n);
         sock_.send(from, out, w.size());
     }
@@ -654,7 +657,7 @@ static void sendAccept(UdpSocket& sock, const ServerPlayer& p, int id, const Map
     uint8_t out[512];
     Writer w(out, sizeof out);
     writeHeader(w, PKT_ACCEPT);
-    w.u32(p.nonce); w.u8((uint8_t)id); w.str(map.name); w.u32(map.crc); w.u8((uint8_t)mode);
+    w.u32(p.nonce); w.u8((uint8_t)id); w.str(map.name); w.bytes(map.id().b, 32); w.u8((uint8_t)mode);
     w.u32((uint32_t)p.reconnectToken); w.u32((uint32_t)(p.reconnectToken >> 32));
     sock.send(p.addr, out, w.size());
 }
@@ -1317,10 +1320,12 @@ void Server::command(const std::string& line, int fromPlayer) {
             std::string name;
             ss >> name;
             if (!validMapName(name)) { reply("map name: letters, digits, - and _ only (not a device name like con)"); return; }
+            if (isOfficialMapName(name)) { reply(name + " is a built-in map: pick a new name"); return; }   // (B3: never saved over)
             std::string old = cfg_.map;
             cfg_.map = name;
             map_.name = name;
             if (!autosave()) { cfg_.map = map_.name = old; reply("could not save maps/" + name + ".qmap"); return; }
+            if (cfg_.editMode) tempEdit_ = false;   // your own map now: autosaved from here on
             if (std::find(mapList_.begin(), mapList_.end(), name) == mapList_.end()) { mapList_.push_back(name); std::sort(mapList_.begin(), mapList_.end()); }
             message("map saved as " + name);
             return;
@@ -1353,6 +1358,7 @@ void Server::command(const std::string& line, int fromPlayer) {
         Map m;
         std::string err;
         if (!m.load(newMap, &err)) { reply(err); return; }
+        for (auto& w : m.warnings) log(newMap + ": " + w);
         if (!m.supportsMode(newMode)) reply("warning: " + newMap + " isn't built for " + modeTitle(newMode) + " - it may not work");
         if (cfg_.ranked && (!arenaVariantRanked(cfg_.arenaVariant) || newMode != rankedMode(cfg_.arenaVariant) || !isRankedMap(m, cfg_.arenaVariant))) {
             reply("ranked: vanilla or laser vampire 1v1, or instagib free for all, on that ladder's ranked maps");
@@ -2882,7 +2888,9 @@ void Server::playMap(int mode) {
 void Server::setEditing(bool on) {
     editing_ = on;
     if (!on) { if (tempEdit_) editDirty_ = false; return; }
-    tempEdit_ = !cfg_.editMode; // voted on a normal server: edits live until the map changes, never saved
+    // voted on a normal server: edits live until the map changes, never saved. A built-in map is never saved either
+    // (B3: your edits to it are kept only as a new map, when you say so - the editor asks, or "editmode saveas")
+    tempEdit_ = !cfg_.editMode || isOfficialMapName(cfg_.map);
     autosaveBackedUp_ = false;
     for (int i = kMaxPlayers - 1; i >= 0; i--) if (players_[i].connected && players_[i].isBot) removeBot(i);
     for (auto& pr : projectiles_) pr.active = false;
@@ -2890,26 +2898,26 @@ void Server::setEditing(bool on) {
     vote_ = Vote();
     tourney_ = Tourney();
     nextAutosave_ = time() + 5;
-    message(tempEdit_ ? "map editing - everyone can build; changes last until the map changes" : "map editing - everyone can build; the host saves");
+    message(!tempEdit_ ? "map editing - everyone can build; the host saves"
+            : cfg_.editMode ? "map editing - " + cfg_.map + " is a built-in map: changes last until the map changes (save a copy to keep them)"
+            : "map editing - everyone can build; changes last until the map changes");
     glog(LOG_SIMPLE, "edit mode on %s", cfg_.map.c_str());
 }
 
 bool Server::applyEdit(int from, const std::string& op) {
     if (op.size() > 220) return false;
-    uint32_t before = map_.crc;
+    MapId before = map_.id();
     try {   // (applyMapEdit checks the result against the same limits a map file gets, and leaves map_ as it was if it fails)
         if (!applyMapEdit(map_, op)) return false;   // (in place: the text is only made again when it's sent or saved)
     } catch (const std::exception& e) {   // (out of memory: refuse the edit, keep the server)
         log(std::string("edit refused: ") + e.what());
         return false;
     }
-    map_.crc = mapEditCrc(before, op);
+    map_.setEditId(mapEditId(before, op));
     mapEdited_ = true;
     if (!editDirty_) nextAutosave_ = time() + 5;
     editDirty_ = true;
-    char head[24];
-    snprintf(head, sizeof head, "%08x %08x ", before, map_.crc);
-    GameEvent e; e.type = EV_EDIT; e.text = head + op;
+    GameEvent e; e.type = EV_EDIT; e.text = map_.id().shortHex() + " " + op;   // (the id it leaves: 33 + 220 fits a 255 byte event)
     broadcastEvent(e);
     glog(LOG_VERBOSE, "edit %d %s", from, op.c_str());
     return true;
@@ -2952,7 +2960,7 @@ void Server::startAutosave() {
         job->running = true;
         job->finished = false;
         job->map = map_;   // (warm: the buffer's vectors are reused)
-        job->crc = map_.crc;
+        job->id = map_.id();
         job->path = userMapsDir() + "/" + cfg_.map + ".qmap";
         job->backedUp = !autosaveBackedUp_;
         job->text.clear(); job->err.clear();
@@ -2982,11 +2990,11 @@ void Server::pollAutosave() {
     if (!l.owns_lock() || !job.finished) return;
     job.finished = false;
     if (!job.ok) log(job.err);
-    else if (job.crc == map_.crc) {   // nothing edited since it started: saved, and the text is the map's (downloads use it)
+    else if (job.id == map_.id()) {   // nothing edited since it started: saved, and the text is the map's (downloads use it)
         editDirty_ = false;
         map_.source.swap(job.text);
         map_.sourceStale = false;
-        map_.sourceCrcKnown = false;
+        map_.contentIdKnown_ = false;
     }   // (else edited meanwhile: still dirty, the next save is in 5 s)
     job.text.clear(); job.err.clear();
 }

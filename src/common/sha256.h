@@ -54,13 +54,20 @@ struct Sha256 {
         memcpy(buf, p, n);
         used = n;
     }
-    std::string hex() { // finishes the hash (call once)
+    void finish() { // pads and hashes the length: h[] is the digest (call once)
         uint64_t bits = total * 8;
         uint8_t pad = 0x80, zero = 0, len[8];
         update(&pad, 1);
         while (used != 56) update(&zero, 1);
         for (int i = 0; i < 8; i++) len[i] = (uint8_t)(bits >> ((7 - i) * 8));
         update(len, 8);
+    }
+    void digest(uint8_t out[32]) { // finishes the hash (call once): the 32 bytes
+        finish();
+        for (int i = 0; i < 32; i++) out[i] = (uint8_t)(h[i / 4] >> (24 - 8 * (i % 4)));
+    }
+    std::string hex() { // finishes the hash (call once)
+        finish();
         char out[65];
         for (int i = 0; i < 8; i++) snprintf(out + i * 8, 9, "%08x", h[i]);
         return std::string(out, 64);

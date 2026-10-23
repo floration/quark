@@ -450,7 +450,7 @@ public:
         bool running = false, finished = false, ok = false, backedUp = false;
         Map map;                // the map as it was when the save started (its vectors keep their capacity)
         std::string path, text, err;
-        uint32_t crc = 0;
+        MapId id;   // the map it saves (still the map's: nothing edited since)
     };
     std::shared_ptr<AutosaveJob> autosaveJob_ = std::make_shared<AutosaveJob>();
     void startAutosave();

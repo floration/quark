@@ -290,10 +290,19 @@ void Game::connectTo(const std::string& rawAddr) {
 }
 
 void Game::leaveGame(const std::string& error) {
-    if (edSession_ && !host_ && net_.mapReady()) { // someone else's edit session: offer to keep a copy
-        edPrompt_ = true;
-        edPromptMap_ = net_.map();
-        edPromptName_ = edPromptMap_.name;
+    if (edSession_ && net_.mapReady()) {
+        // leaving an edit session: offer to keep a copy (never saved without asking, B3). Someone else's session: always
+        // (unless it's a built-in map nobody changed). Your own: when it's a built-in map you changed, which the server
+        // never saves (a session on your own map is autosaved as it goes).
+        const Map& m = net_.map();
+        bool official = isOfficialMapName(m.name), changed = !official || !isOfficialMap(m);
+        if (changed && (!host_ || official)) {
+            edPrompt_ = true;
+            edPromptMap_ = m;
+            edPromptOfficial_ = official;
+            edPromptThen_ = ED_THEN_NONE;
+            edPromptName_ = official ? edFreshName(m.name) : m.name;
+        }
     }
     bool wasEditing = edOnline_;
     edSession_ = edOnline_ = false;

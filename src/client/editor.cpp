@@ -225,7 +225,8 @@ void Game::edScriptStep() {
         if (edSelValid()) { AABB b = edBounds(ed_, edSel_); printf(" box=%g %g %g %g %g %g", b.mn.x, b.mn.y, b.mn.z, b.mx.x, b.mx.y, b.mx.z); }
         if (edSelValid() && edSel_.kind == ED_BRUSH) printf(" material=%d", ed_.brushes[edSel_.idx].material);
         if (edDragAxis_ >= 0) printf(" drag=%d/%d/%d", edDragAxis_, edDragSign_, edDragMove_ ? 1 : 0);   // the handle being dragged: axis / side / move
-        printf("\n");
+        if (edPrompt_) printf(" prompt=%s", edPromptName_.c_str());   // (the save question is up, offering this name)
+        printf(" dirty=%d\n", edDirty_ ? 1 : 0);
         fflush(stdout);
     } else if (cmd == "quit") quit_ = true;
 }
@@ -253,6 +254,7 @@ void Game::openEditor(std::string name) {
         ed_.brushes.push_back({{{-20, -1, -20}, {20, 0, 20}}, 0});
         ed_.spawns.push_back({{0, 0, 0}, 0, SPAWN_ANY});
         ed_.rebuild();
+        ed_.sourceStale = true;   // (its text, and so its id and light cache, are made from what's here)
         // a new map keeps the name it was opened with (it used to fall back to "mymap", so saving overwrote that);
         // a file that's there but won't load (an older / over-limit map) isn't overwritten by the blank one
         // (an empty / invalid name gets a free "mymap", "mymap2"...; a broken file a free "<name>_new", "<name>_new2"...,
@@ -805,6 +807,9 @@ Vec3 Game::edMouseRay() const {
 
 bool Game::edSaveCopy(const Map& m, const std::string& name) {
     if (!validMapName(name)) { edNotify("name: letters, digits, - and _ only (not a device name like con)"); return false; }
+    // a built-in map's name is never written to (your copy would hide the real map from you): edits to one are kept
+    // under a new name, when you say so (B3)
+    if (isOfficialMapName(name)) { edNotify(name + " is a built-in map - pick a new name for yours"); return false; }
     std::string text = m.serialize();
     Map check;
     std::string err;
@@ -815,14 +820,84 @@ bool Game::edSaveCopy(const Map& m, const std::string& name) {
     return true;
 }
 
-bool Game::edSave() {
+bool Game::edSave(int then) {
+    if (isOfficialMapName(edName_)) {   // a built-in map: its file stays as it is; your edits, if any, go to a new map
+        if (edDirty_) { edAskKeep(then); return false; }
+        if (then == ED_THEN_SAVE) edNotify(edName_ + " is a built-in map - nothing changed to save");
+        return then != ED_THEN_SAVE;   // (test / host it as it is)
+    }
     if (!edSaveCopy(ed_, edName_)) return false;
     edDirty_ = false;
     return true;
 }
 
+// B3: you edited a built-in map and are saving or leaving it: ask whether to keep the edits as a new map of your own
+void Game::edAskKeep(int then, const std::string& open) {
+    edPrompt_ = true;
+    edPromptThen_ = then;
+    edPromptOpen_ = open;
+    edPromptOfficial_ = true;
+    edPromptMap_ = ed_;
+    edPromptName_ = validMapName(edName_) && !isOfficialMapName(edName_) ? edName_ : edFreshName(isOfficialMapName(edName_) ? edName_ : ed_.name);
+    edLook_ = false;
+    captureMouse(false);
+    ui_.clearFocus();
+}
+
+std::string Game::edFreshName(const std::string& base) const {
+    std::string stem = typedMapName(base);
+    if (stem.empty()) stem = "mymap";
+    if (stem.size() > 32) stem.resize(32);
+    std::error_code ec;
+    for (int k = 1; k < 1000; k++) {
+        std::string n = stem + "_edit" + (k > 1 ? std::to_string(k) : std::string());
+        if (validMapName(n) && !isOfficialMapName(n) && !std::filesystem::exists(userMapsDir() + "/" + n + ".qmap", ec)) return n;
+    }
+    return stem + "_edit";
+}
+
+void Game::edPromptAnswer(int answer) {
+    const int then = edPromptThen_;
+    const std::string open = edPromptOpen_;
+    const bool inEditor = screen_ == Screen::Editor;
+    if (answer < 0) { edPrompt_ = false; return; }   // cancel: back to editing, nothing saved or dropped
+    std::string saved;
+    if (answer > 0) {
+        const std::string name = typedMapName(edPromptName_);
+        if (then == ED_THEN_SAVE && edOnline_ && host_) {   // your own session: it carries on as the new map (autosaved)
+            if (!validMapName(name) || isOfficialMapName(name)) { edNotify("pick a new name for your copy"); return; }
+            net_.sendCommand("editmode saveas " + name);
+            edName_ = name;
+            edPrompt_ = false;
+            return;
+        }
+        if (!edSaveCopy(edPromptMap_, name)) return;   // (the question stays up, with the reason)
+        saved = name;
+        edPrompt_ = false;
+        if (inEditor && !edOnline_) { edName_ = ed_.name = name; edDirty_ = false; }
+    } else {
+        edPrompt_ = false;
+        if (inEditor && !edOnline_ && (then == ED_THEN_SAVE || then == ED_THEN_TEST || then == ED_THEN_HOST)) {
+            Vec3 cam = edCam_;   // no: the edits are dropped, the built-in map is back as it is (where you were looking)
+            float yaw = yaw_, pitch = pitch_;
+            openEditor(isOfficialMapName(edName_) ? edName_ : ed_.name);
+            edCam_ = cam; yaw_ = yaw; pitch_ = pitch;
+            edNotify("edits dropped");
+        }
+    }
+    if (!inEditor) return;   // (after a session, on the main menu: saved or not, that's all)
+    switch (then) {
+        case ED_THEN_LEAVE: closeEditor(); break;
+        case ED_THEN_TEST: edTest(); break;
+        case ED_THEN_HOST: edHostSession(); break;
+        case ED_THEN_OPEN: openEditor(open); break;
+        case ED_THEN_NONE: if (!saved.empty() && !edOnline_) openEditor(saved); break;   // (back from your session: your new map)
+        default: break;
+    }
+}
+
 void Game::edTest() {
-    if (!edSave()) return;
+    if (!edSave(ED_THEN_TEST)) return;
     int mode = -1;
     if (ed_.preferredMode >= 0 && ed_.supportsMode(ed_.preferredMode)) mode = ed_.preferredMode;
     else if (ed_.supportsMode(MODE_FFA)) mode = MODE_FFA;
@@ -837,7 +912,7 @@ void Game::edTest() {
 
 // Host this map as an edit session others can join (Join screen / your address), using your host settings.
 void Game::edHostSession() {
-    if (!edSave()) return;
+    if (!edSave(ED_THEN_HOST)) return;
     testMap_ = edName_;
     testMode_ = MODE_FFA;
     testEdit_ = true;
@@ -848,10 +923,16 @@ void Game::edHostSession() {
 void Game::editorKey(int key, int mods) {
     bool ctrl = (mods & GLFW_MOD_CONTROL) || (mods & GLFW_MOD_SUPER), shift = mods & GLFW_MOD_SHIFT;
     const float g = kGrids[edGridIdx_];
+    if (edPrompt_) {   // the save question is up: it takes the keys (ESC: cancel, or "no" when there's nothing to go back to)
+        if (key == GLFW_KEY_ESCAPE) edPromptAnswer(edPromptThen_ == ED_THEN_NONE ? 0 : -1);
+        else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) edPromptAnswer(1);
+        return;
+    }
     if (key == GLFW_KEY_ESCAPE) {
         if (edLook_) { edLook_ = false; captureMouse(false); return; }
         if (edGroupMenu_ || edExportAsk_) { edGroupMenu_ = edExportAsk_ = false; return; }
         if (edSel_.valid()) { edSel_ = EdSel(); edMulti_.clear(); return; }
+        if (!edOnline_ && edDirty_ && edOfficial()) { edAskKeep(ED_THEN_LEAVE); return; }   // (B3)
         if (!edOnline_ && edDirty_ && time_ > edLeaveArmed_) { edLeaveArmed_ = time_ + 2; edNotify("unsaved changes - press ESC again to leave"); return; }
         if (edOnline_ && time_ > edLeaveArmed_) { edLeaveArmed_ = time_ + 2; edNotify("press ESC again to leave the session"); return; }
         closeEditor();
@@ -863,6 +944,7 @@ void Game::editorKey(int key, int mods) {
     if (ctrl && key == GLFW_KEY_S) {
         if (!edOnline_) edSave();
         else if (host_ && !(net_.hasSnapshot() && (net_.mode().flags & MS_TEMP_EDIT))) edNotify("your map is autosaved");
+        else if (edOfficial()) edAskKeep(ED_THEN_SAVE);   // a built-in map's session: your copy gets a name of its own
         else edSaveCopy(ed_, edName_);
         return;
     }
@@ -918,19 +1000,34 @@ void Game::editorKey(int key, int mods) {
 
 void Game::drawEditorSavePrompt() {
     const float W = (float)r_.width(), H = (float)r_.height(), s = H / 720.0f;
-    float w = 460 * s, h = 34 * s, x = W * 0.5f - w * 0.5f, y = H * 0.35f;
-    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 190 * s, 0.92f);
-    ui_.labelCentered(W * 0.5f, y, "SAVE YOUR COPY OF " + edPromptMap_.title + "?", kWhite);
-    y += 26 * s;
-    ui_.label(x, y, "SAVES TO MAPS/<NAME>.QMAP - YOUR OWN COPY, THE HOST KEEPS THEIRS", kGrey, 0.5f);
+    const bool inEditor = screen_ == Screen::Editor;
+    float w = 500 * s, h = 34 * s, x = (inEditor ? W - 320 * s : W) * 0.5f - w * 0.5f, y = H * 0.35f, cx = x + w * 0.5f;
+    std::string title = edPromptMap_.title.empty() ? edPromptMap_.name : edPromptMap_.title;
+    for (auto& c : title) c = (char)toupper((unsigned char)c);
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 206 * s, 0.94f);
+    if (edPromptOfficial_) {
+        ui_.labelCentered(cx, y, "KEEP YOUR EDITS AS A NEW MAP?", kWhite);
+        y += 26 * s;
+        ui_.label(x, y, title + " IS A BUILT-IN MAP: IT STAYS AS IT IS. YES SAVES YOUR EDITS AS YOUR", kGrey, 0.5f);
+        y += 12 * s;
+        ui_.label(x, y, "OWN MAP, IN YOUR MAPS FOLDER UNDER THIS NAME. NO DROPS THEM.", kGrey, 0.5f);
+    } else {
+        ui_.labelCentered(cx, y, "SAVE YOUR COPY OF " + title + "?", kWhite);
+        y += 26 * s;
+        ui_.label(x, y, "SAVES TO MAPS/<NAME>.QMAP - YOUR OWN COPY, THE HOST KEEPS THEIRS", kGrey, 0.5f);
+        y += 12 * s;
+    }
     y += 16 * s;
-    ui_.textField(42, x, y, w, h, edPromptName_, 40);
+    if (ui_.textField(42, x, y, w, h, edPromptName_, 40)) edPromptName_ = typedMapName(edPromptName_);
     y += h + 10 * s;
-    float bw = (w - 10 * s) * 0.5f;
-    if (ui_.button(x, y, bw, h, "SAVE")) { if (edSaveCopy(edPromptMap_, edPromptName_)) edPrompt_ = false; }
-    if (ui_.button(x + bw + 10 * s, y, bw, h, "DON'T SAVE")) edPrompt_ = false;
+    const bool cancel = inEditor && edPromptThen_ != ED_THEN_NONE;   // (something to go back to)
+    const int nb = cancel ? 3 : 2;
+    float bw = (w - (nb - 1) * 10 * s) / nb;
+    if (ui_.button(x, y, bw, h, edPromptOfficial_ ? "YES, SAVE AS NEW MAP" : "SAVE")) edPromptAnswer(1);
+    else if (ui_.button(x + bw + 10 * s, y, bw, h, edPromptOfficial_ && !edOnline_ ? "NO, DROP MY EDITS" : "DON'T SAVE")) edPromptAnswer(0);
+    else if (cancel && ui_.button(x + 2 * (bw + 10 * s), y, bw, h, "CANCEL")) edPromptAnswer(-1);
     y += h + 8 * s;
-    if (time_ < edMsgUntil_) ui_.labelCentered(W * 0.5f, y, edMsg_, kGrey, 0.6f);
+    if (time_ < edMsgUntil_) ui_.labelCentered(cx, y, edMsg_, kGrey, 0.6f);
 }
 
 void Game::editorFrame(double dt) {
@@ -965,6 +1062,10 @@ void Game::editorFrame(double dt) {
             edNextCam_ = time_ + 0.15;
         }
     }
+    // the save question, when it's up, is the only thing the mouse and typing reach (drawn last, over everything)
+    const bool modal = edPrompt_;
+    UiInput realIn = uiIn_;
+    if (modal) { uiIn_.pressed = uiIn_.down = false; uiIn_.chars.clear(); uiIn_.backspace = uiIn_.enter = uiIn_.tab = false; }
     // ---- fly camera (right mouse held to look; WASD, Space up, C down, Shift fast, wheel = speed)
     if (!ui_.typing()) {
         Vec3 f = angleForward(yaw_, pitch_), right = normalize(cross(angleForward(yaw_, 0), {0, 1, 0}));
@@ -995,7 +1096,7 @@ void Game::editorFrame(double dt) {
         return den < 1e-4f ? 0.0f : (bb * dot(d, w) - dot(a, w)) / den;
     };
     // ---- click: grab a handle of the selection, else select what's under the mouse
-    if (uiIn_.pressed && uiIn_.mx < panelX && !edGroupMenu_ && !edExportAsk_) {
+    if (uiIn_.pressed && uiIn_.mx < panelX && !edGroupMenu_ && !edExportAsk_ && !edPrompt_) {
         ui_.clearFocus();
         bool shiftHeld = glfwGetKey(win_, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
         // the spot the last selecting click was on, same view: this click steps along the ray (below), even where
@@ -1215,20 +1316,25 @@ void Game::editorFrame(double dt) {
         if (ui_.button(x + w2 + gap, y, w2, h, host_ && !temp ? "END SESSION" : "LEAVE")) { closeEditor(); return; }
         row();
         if (temp || !host_) {
-            if (ui_.button(x, y, w, h, "SAVE A COPY AS " + edName_)) edSaveCopy(ed_, edName_);
+            if (ui_.button(x, y, w, h, "SAVE A COPY AS " + edName_)) { if (edOfficial()) edAskKeep(ED_THEN_SAVE); else edSaveCopy(ed_, edName_); }
         } else if (ui_.button(x, y, w, h, "SAVE AS " + edName_)) {
             if (!validMapName(edName_)) edNotify("name: letters, digits, - and _ only (not a device name like con)");
+            else if (isOfficialMapName(edName_)) edNotify(edName_ + " is a built-in map - pick a new name for yours");
             else net_.sendCommand("editmode saveas " + edName_); // your session's file: saved under this name from now on
         }
         row();
     } else {
-        if (ui_.button(x, y, w3, h, "NEW")) { openEditor(""); return; }
+        if (ui_.button(x, y, w3, h, "NEW")) { if (edDirty_ && edOfficial()) edAskKeep(ED_THEN_OPEN, ""); else { openEditor(""); return; } }
         if (ui_.button(x + w3 + gap, y, w3, h, "SAVE")) edSave();
         if (ui_.button(x + 2 * (w3 + gap), y, w3, h, "TEST")) { edTest(); if (screen_ != Screen::Editor) return; }
         row();
         if (!maps_.empty()) {
             ui_.cycle(x, y, w - w3 - gap, h, "MAP", edLoadIdx_, (int)maps_.size(), maps_);
-            if (ui_.button(x + w - w3, y, w3, h, "OPEN")) { openEditor(maps_[edLoadIdx_ % maps_.size()]); return; }
+            if (ui_.button(x + w - w3, y, w3, h, "OPEN")) {
+                std::string next = maps_[edLoadIdx_ % maps_.size()];
+                if (edDirty_ && edOfficial()) edAskKeep(ED_THEN_OPEN, next);
+                else { openEditor(next); return; }
+            }
             row();
         }
         if (ui_.button(x, y, w, h, "HOST EDIT SESSION")) { edHostSession(); if (screen_ != Screen::Editor) return; }
@@ -1251,7 +1357,8 @@ void Game::editorFrame(double dt) {
         edMeshDirty_ = true;   // (the bake sets the map's palette: the boxes' colours)
     }
     if (!edOnline_ && ui_.button(x + w2 + gap, y, w2, h, "EXIT")) {
-        if (edDirty_ && time_ > edLeaveArmed_) { edLeaveArmed_ = time_ + 2; edNotify("unsaved changes - click EXIT again to leave"); }
+        if (edDirty_ && edOfficial()) edAskKeep(ED_THEN_LEAVE);   // (B3)
+        else if (edDirty_ && time_ > edLeaveArmed_) { edLeaveArmed_ = time_ + 2; edNotify("unsaved changes - click EXIT again to leave"); }
         else { closeEditor(); return; }
     }
     row();
@@ -1433,5 +1540,10 @@ void Game::editorFrame(double dt) {
         float ts = std::max(2.0f, std::round(H / 360.0f));
         drawChatBox(panelX, H, s, ts);
         if (net_.hasSnapshot() && net_.mode().voteActive) drawVotePanel(panelX * 0.5f, s, ts);
+    }
+    if (modal) {
+        uiIn_ = realIn;
+        ui_.begin(&r_, uiIn_, s);
+        if (edPrompt_) drawEditorSavePrompt();
     }
 }

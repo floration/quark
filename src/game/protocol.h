@@ -19,15 +19,15 @@ enum PacketType : uint8_t {
     PKT_INPUT,           // u32 nonce, u32 ackTimeMs, u32 ackEvent, u8 lossPct, u8 ncmds, cmds..., u8 nStr [u16 firstSeq, nStr x str]
     PKT_DISCONNECT,      // u32 nonce
     PKT_INFO_REQUEST,    // padded with zeros to kInfoRequestBytes (no reply bigger than the request)
-    PKT_MAP_REQUEST,     // u32 nonce, u32 mapCrc, u32 offset: ask for a piece of the server's map file
+    PKT_MAP_REQUEST,     // u32 nonce, 32 bytes map id (MapId), u32 offset: ask for a piece of the server's map file
     PKT_PROBE_REQUEST,   // u32 nonce, u16 port, padded to kProbeRequestBytes: "is <my ip>:<port> reachable?" (any server answers)
     // server -> client
-    PKT_ACCEPT = 64,     // u32 nonce, u8 clientId, str map, u32 mapCrc, u8 mode, u32 token lo, u32 token hi (reconnect token)
+    PKT_ACCEPT = 64,     // u32 nonce, u8 clientId, str map, 32 bytes map id (MapId: sha256), u8 mode, u32 token lo, u32 token hi (reconnect token)
     PKT_REJECT,          // str reason
     PKT_SNAPSHOT,        // u32 nonce, see Snapshot
     PKT_INFO_REPLY,      // str serverName, str map, u8 mode, u8 players, u8 maxPlayers, u16 port
     PKT_KICKED,          // u32 nonce, str reason
-    PKT_MAP_DATA,        // u32 nonce, u32 mapCrc (its id: edits chain it), u32 textCrc (crc32 of the text sent), u32 totalBytes, u32 offset, u16 n, n bytes
+    PKT_MAP_DATA,        // u32 nonce, 32 bytes map id (edits chain it), 32 bytes the text's sha256 (mapContentId), u32 totalBytes, u32 offset, u16 n, n bytes
     PKT_CHALLENGE,       // u32 nonce, u32 cookie: echo the cookie in PKT_CONNECT to prove you own your address
     PKT_PROBE_REPLY,     // u32 nonce: sent by a prober to the requester's own IP at the port it asked about
 };
