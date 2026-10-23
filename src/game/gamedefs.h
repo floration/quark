@@ -247,7 +247,7 @@ inline const WeaponDef& baseWeaponDef(int w) {
         // 1.24 head; sniper 0.83 (the laser out-damages the rifle inside its 24 m unless you land headshots).
         //  name        refire   dmg    range   proj  speed  splash spread scoped zoom   beam  pel grav  sticky life
         {"RIFLE",       0.75f*2.0f/9.9f, 4.95f, 300.0f, false, 0, 0, 0.0f, 0.0f, 60.0f, false, 1, 0, false, 0},  // 21 shots, 3.0 s body; 14, 2.0 s head (scoped: 3/4 fire rate)
-        {"ROCKET",      1.2f,    34,      0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  10.8f, false, 5}, // 3, 2.4 s (gravity 12 -> 10.8: owner, 1.17)
+        {"ROCKET",      1.2f,    34,      0,    true,  48.0f, 3.6f,  0.0f,  -1,     0,    false, 1,  0.0f,  false, 5}, // 3, 2.4 s (flies straight: owner, 1.17; the lob drops, kRocketLobGravity)
         {"KNIFE",       0.75f,   30,      3.5f, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // 4, 2.25 s (1.11: 30 every 0.75 s)
         {"SNIPER",      1.5f,    50,    500.0f, false,  0,    0,     0.0f,  0.0f, 45.0f,  false, 1,  0,    false, 0},  // 2 shots, 1.5 s (owner: a flat 50, head or body)
         {"LASER",       0.001f,  0.04f,  24.0f, false,  0,    0,     0.0f,  -1,     0,    true,  1,  0,    false, 0},  // every 1 ms, 2500 hits, 2.5 s, 24 m
@@ -304,7 +304,7 @@ inline float headDamage(int w) {
 }
 constexpr float kHeadFraction = 0.2f;       // the head: the top 20% of the hitbox...
 constexpr float kHeadWidthFraction = 0.45f; // ...and 45% of its width, centred (0.36 m of 0.8): the shoulders beside it are body
-constexpr float kRocketLobSpeed = 0.7f, kRocketLobGravity = 3.0f; // rocket alt-fire: a lob at 70% speed with 3x gravity
+constexpr float kRocketLobSpeed = 0.7f, kRocketLobGravity = 13.5f; // rocket alt-fire: a lob at 70% speed that drops at 13.5 m/s2 (owner 1.17: the old primary's 10.8 + 25%; was 3x 10.8); the primary flies straight
 constexpr float kKnifeThrowSpeed = 38.0f, kKnifeThrowGravity = 14.0f, kKnifeThrowLife = 2.0f;
 constexpr float kKnifeGrow = 0.04f;    // a swing hits boxes 10% wider (0.04 m each side of 0.8)
 constexpr float kKnifeSwingTime = 0.12f; // ...and keeps cutting this long after the click if it hasn't hit yet
@@ -320,7 +320,8 @@ constexpr float kKnifeAway = kThrowAway, kSyringeAway = kThrowAway;
 inline bool isThrow(int w, bool alt) { return alt && (w == WPN_KNIFE || w == WPN_SYRINGE); }
 // Projectiles fly in fixed kMoveStep (1 ms) steps, like movement, so an arc is the same at every server tick rate
 // (C8); the client draws them with the same steps. One step: vel.y -= gravity * step, then pos += vel * step.
-inline float projectileGravity(int type, float gravMul) {   // gravMul: a rocket lob's kRocketLobGravity, else 1
+inline float projectileGravity(int type, float gravMul) {   // gravMul: kRocketLobGravity for a rocket lob (its own drop), else 1
+    if (type == WPN_ROCKET && gravMul != 1) return kRocketLobGravity;   // (the primary flies straight: no gravity to scale)
     return type == WPN_KNIFE ? kKnifeThrowGravity : type == WPN_SYRINGE ? kSyringeThrowGravity : weaponDef(type).gravity * gravMul;
 }
 // Where those steps take a projectile in t seconds (walls aren't checked): the whole steps summed in closed form (one
@@ -348,7 +349,16 @@ inline int bubbleStreamCount(float nearestEnemy) {
     f = f < 0 ? 0 : f > 1 ? 1 : f;
     return kBubbleStreamMin + (int)(f * (kBubbleStreamMax - kBubbleStreamMin) + 0.5f);
 }
-constexpr float kProjInherit = 0.9f;    // rockets / stickies keep 90% of the shooter's velocity (all of it: a rocket fired down while moving lands under you and can't boost you on)
+constexpr float kProjInherit = 0.9f;    // stickies keep 90% of the shooter's forward / back and vertical velocity (not sideways: owner 1.17)
+// What a sticky inherits from its shooter's velocity: kProjInherit of the part along where they aim (horizontally:
+// forward / back) and of the vertical part; never the sideways part (owner, 1.17: strafing threw stickies off to the
+// side, which made them hard to aim). Aiming straight up / down: only the vertical part.
+inline Vec3 stickyInherit(const Vec3& shooterVel, const Vec3& aim) {
+    float fl = std::sqrt(aim.x * aim.x + aim.z * aim.z);
+    Vec3 v = {0, shooterVel.y, 0};
+    if (fl > 1e-4f) { float fx = aim.x / fl, fz = aim.z / fl, along = shooterVel.x * fx + shooterVel.z * fz; v.x = fx * along; v.z = fz * along; }
+    return v * kProjInherit;
+}
 constexpr float kCrossbowKnock = 16.0f; // a bolt hit shoves hard (m/s along the bolt)
 constexpr float kBubbleKnock = 0.35f; // a pop shoves you a third as hard as a rocket blast of the same strength
 constexpr float kVampireFadeTime = 60.0f, kVampireMinHeal = 0.5f; // laser vampire: healing fades 100% -> 50% over the first minute of a round

@@ -2086,7 +2086,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             pr.pos = eye + aim * 0.3f;
             pr.vel = spreadAim(aim, spread, 0, 1, p.burstShot) * wd.projSpeed;
             if (p.weapon == WPN_ROCKET && alt) { pr.vel = pr.vel * kRocketLobSpeed; pr.gravMul = kRocketLobGravity; }
-            if (p.weapon == WPN_STICKY) pr.vel += p.move.vel * kProjInherit; // stickies only (1.14.2: rockets fly straight again): launched from a moving player, most of your velocity
+            if (p.weapon == WPN_STICKY) pr.vel += stickyInherit(p.move.vel, aim);   // (stickies only: rockets fly straight)
             pr.dieAt = time() + wd.life;
             pr.armAt = time() + kStickyArmTime;
             return false;

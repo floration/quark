@@ -19,7 +19,7 @@ python3 tools/studio/build.py build/assets_export     # -> build/studio/ (+ mani
 
 | Category | Files | Path (= the override path) |
 |---|---|---|
-| Sounds | 27 sounds x 5 kits = 135 WAV (48 kHz mono) | `sounds/<kit>/<SOUND>.wav`, kit = `default` `heavy_metal` `magical` `retro` `mouth` |
+| Sounds | 30 sounds x 5 kits = 150 WAV (48 kHz mono) | `sounds/<kit>/<SOUND>.wav`, kit = `default` `heavy_metal` `magical` `retro` `mouth` |
 | Voices | 30 announcer lines x 7 voices = 210 WAV | `voices/<voice>/<LINE>.wav`, voice = `male` `female` `british` `old_man` `e_girl` `india` `spy` |
 | Models | 5 players, 10 weapon viewmodels, 7 projectiles, the crown = 23 glTF | `models/player/<NAME>.gltf`, `models/weapon/<NAME>.gltf`, `models/projectile/<NAME>.gltf`, `models/crown/CROWN.gltf` |
 | Maps | every shipped map (.qmap) | `maps/<name>.qmap` |
@@ -28,7 +28,8 @@ python3 tools/studio/build.py build/assets_export     # -> build/studio/ (+ mani
 | Website | the site's pictures | `website/<file>` (from `site/img/`) |
 
 Sound names are the SND_* names (`HIT`, `ROCKET`, `GRAPPLE_FIRE` ... `assets/sfx/custom/README.md` says when each
-plays); voice lines are `THREE` `TWO` `ONE` `GO` `BOMB_PLANTED` ... `ROUND_OVER` (src/client/audio.cpp). A line a
+plays; the hitsound is four: `HIT` under 10 damage, `HIT_MED` 10 to 24, `HIT_HEAVY` 25 to 50, `HIT_BRUTAL` over 50, each
+replaced at the loudness of its tier, as heard, so the four stay in order); voice lines are `THREE` `TWO` `ONE` `GO` `BOMB_PLANTED` ... `ROUND_OVER` (src/client/audio.cpp). A line a
 voice has no recording of is exported as a tenth of a second of silence (it is silent in the game), so it can still be
 added. The export is what the game uses now: the built-in assets with the shipped overrides applied, never this
 computer's own overrides folder.

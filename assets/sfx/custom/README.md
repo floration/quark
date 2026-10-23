@@ -12,7 +12,7 @@ Keep them short and starting instantly (no silence before the sound): they play 
 
 | File name | When it plays | Length guide |
 |---|---|---|
-| HIT | you hit someone (the hitsound) | very short, < 0.2 s |
+| HIT | you hit someone for under 10 damage (the light hitsound) | very short, < 0.2 s |
 | KILL | you killed someone | < 0.6 s |
 | HURT | you took damage | < 0.3 s |
 | STEP | a footstep (yours and others', in 3D) | very short, < 0.15 s |
@@ -39,5 +39,8 @@ Keep them short and starting instantly (no silence before the sound): they play 
 | TYPING | someone typing in chat (one key click) | very short, < 0.06 s |
 | CHECKPOINT | race: you passed a checkpoint | < 0.35 s |
 | FINISH | race: you crossed the finish | < 0.8 s |
+| HIT_MED | you hit someone for 10 to 24 damage (heavier and louder than HIT) | short, < 0.25 s |
+| HIT_HEAVY | you hit someone for 25 to 50 damage | < 0.35 s |
+| HIT_BRUTAL | you hit someone for more than 50 damage (the heaviest, loudest) | < 0.5 s |
 
 That's 27 sounds per kit, 135 for all five. (The announcer's voice lines are separate: assets/voice/, tools/import_voice.py.)

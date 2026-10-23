@@ -62,7 +62,7 @@ float rms(const std::vector<float>& x) { double e = 0; for (float v : x) e += (d
 
 // When each sound plays (assets/sfx/custom/README.md), for the studio's descriptions
 const char* soundWhen(int id) {
-    static const char* d[SND_VOICE_THREE] = {"you hit someone (the hitsound) - very short, < 0.2 s", "you killed someone - < 0.6 s",
+    static const char* d[SND_VOICE_THREE] = {"you hit someone for under 10 damage (the light hitsound) - very short, < 0.2 s", "you killed someone - < 0.6 s",
         "you took damage - < 0.3 s", "a footstep (yours and others', in 3D) - very short, < 0.15 s", "a jump - < 0.2 s",
         "landing from a fall - < 0.3 s", "rifle shot - < 0.3 s (automatic: many per second)", "rocket launcher fired - < 0.7 s",
         "knife swing / throw - < 0.35 s", "sniper shot - < 1 s", "laser (lightning gun), repeats while firing - very short, < 0.1 s",
@@ -70,8 +70,11 @@ const char* soundWhen(int id) {
         "syringe used / thrown - < 0.4 s", "a rocket / sticky explodes (3D) - < 1 s", "a sticky bomb sticks to something - < 0.2 s",
         "a crossbow bolt hits - < 0.3 s", "dash - < 0.4 s", "grappling hook fired - < 0.3 s", "grappling hook catches - < 0.3 s",
         "you died - < 0.7 s", "someone else's killstreak - < 0.6 s", "someone typing in chat (one key click) - very short, < 0.06 s",
-        "race: you passed a checkpoint - < 0.35 s", "race: you crossed the finish - < 0.8 s"};
-    return id >= 0 && id < SND_VOICE_THREE ? d[id] : "";
+        "race: you passed a checkpoint - < 0.35 s", "race: you crossed the finish - < 0.8 s",
+        "you hit someone for 10 to 24 damage (the medium hitsound: heavier and louder than HIT) - short, < 0.25 s",
+        "you hit someone for 25 to 50 damage (the heavy hitsound) - < 0.35 s",
+        "you hit someone for more than 50 damage (the brutal hitsound: the heaviest, loudest) - < 0.5 s"};
+    return id >= 0 && id < SND_VOICE_THREE && d[id] ? d[id] : "";
 }
 const char* kitTitle(int pack) { static const char* n[] = {"DEFAULT", "HEAVY METAL", "MAGICAL", "RETRO", "MOUTH"}; return n[pack]; }
 std::string lineText(int id) { std::string s = Audio::soundName(id); for (char& c : s) c = c == '_' ? ' ' : (char)tolower((unsigned char)c); return s; }
@@ -330,6 +333,58 @@ static void testFontAtlas() {
     ACHECK(!buildFontAtlas((const uint8_t*)"not a font at all", 17, L, a, &err));
 }
 
+// The hitsound's tiers: picked by the hit's damage at exact boundaries; one per moment (the heaviest); in every kit
+// four distinct sounds, each louder (heard loudness, kHitTierGain) and heavier than the last, none clipping
+static float lowShare(const std::vector<float>& x) {   // the share of the energy below ~200 Hz
+    const double a = 1.0 - std::exp(-2.0 * 3.14159265 * 200.0 / Audio::kRate);
+    double l = 0, el = 0, et = 0;
+    for (float v : x) { l += (v - l) * a; el += l * l; et += (double)v * v; }
+    return et > 0 ? (float)(el / et) : 0.0f;
+}
+static float peakOf(const std::vector<float>& x) { float m = 0; for (float v : x) m = std::max(m, std::fabs(v)); return m; }
+static void testHitTiers() {
+    ACHECK(hitSoundFor(0.0f) == SND_HIT && hitSoundFor(0.04f) == SND_HIT && hitSoundFor(9.99f) == SND_HIT);
+    ACHECK(hitSoundFor(10.0f) == SND_HIT_MED && hitSoundFor(24.99f) == SND_HIT_MED);
+    ACHECK(hitSoundFor(25.0f) == SND_HIT_HEAVY && hitSoundFor(50.0f) == SND_HIT_HEAVY);
+    ACHECK(hitSoundFor(50.01f) == SND_HIT_BRUTAL && hitSoundFor(300.0f) == SND_HIT_BRUTAL);
+    // as the client gets them: EV_HIT's damage in hundredths of a point
+    ACHECK(hitSoundFor(999 / 100.0f) == SND_HIT && hitSoundFor(1000 / 100.0f) == SND_HIT_MED && hitSoundFor(2499 / 100.0f) == SND_HIT_MED);
+    ACHECK(hitSoundFor(2500 / 100.0f) == SND_HIT_HEAVY && hitSoundFor(5000 / 100.0f) == SND_HIT_HEAVY && hitSoundFor(5001 / 100.0f) == SND_HIT_BRUTAL);
+    ACHECK(hitTier(SND_HIT) == 0 && hitTier(SND_HIT_BRUTAL) == 3 && hitTier(SND_KILL) == -1 && hitTier(SND_FINISH) == -1);
+    // the gate: batched laser ticks (every 50 ms) all play; hits landing together make one sound, a heavier one gets through
+    HitSoundGate g;
+    ACHECK(g.pass(1.0, SND_HIT) && g.pass(1.05, SND_HIT) && g.pass(1.10, SND_HIT));
+    ACHECK(!g.pass(1.11, SND_HIT) && g.pass(1.12, SND_HIT_HEAVY) && !g.pass(1.13, SND_HIT_MED) && !g.pass(1.14, SND_HIT_HEAVY));
+    ACHECK(g.pass(1.15, SND_HIT_BRUTAL) && g.pass(1.20, SND_HIT));
+    Audio a;
+    a.startOffline();
+    const int tiers[4] = {SND_HIT, SND_HIT_MED, SND_HIT_HEAVY, SND_HIT_BRUTAL};
+    const float ref = Audio::heardLoudness(a.samples(0, SND_HIT)) / kHitTierGain[0];
+    for (int pack = 0; pack < Audio::kPacks; pack++) {
+        for (int t = 0; t < 4; t++) {
+            const auto& x = a.samples(pack, tiers[t]);
+            ACHECK(x.size() > 1000 && x.size() < (size_t)Audio::kRate);
+            ACHECK(peakOf(x) <= 0.95f);   // headroom: never clipping, even the brutal one
+            float l = Audio::heardLoudness(x);
+            if (pack != Audio::kPackRetro) ACHECK(std::fabs(l / ref - kHitTierGain[t]) < 0.03f);   // the ladder, in every kit
+            if (pack != 0) ACHECK(x != a.samples(0, tiers[t]));   // each kit its own (RETRO: DEFAULT's, chiptuned)
+            for (int u = 0; u < t; u++) {
+                const auto& y = a.samples(pack, tiers[u]);
+                ACHECK(x != y);
+                ACHECK(l > Audio::heardLoudness(y) * 1.05f);   // louder than every lighter tier
+            }
+            if (pack == 0 && t > 0) {   // DEFAULT: each heavier (more low end) and longer than the last
+                ACHECK(lowShare(x) > lowShare(a.samples(0, tiers[t - 1])) + 0.05f);
+                ACHECK(x.size() > a.samples(0, tiers[t - 1]).size());
+            }
+        }
+        ACHECK(lowShare(a.samples(pack, SND_HIT_BRUTAL)) > lowShare(a.samples(pack, SND_HIT)));   // the brutal one heavier, every kit
+    }
+    ACHECK(std::string(Audio::soundName(SND_HIT)) == "HIT" && std::string(Audio::soundName(SND_HIT_MED)) == "HIT_MED" &&
+           std::string(Audio::soundName(SND_HIT_HEAVY)) == "HIT_HEAVY" && std::string(Audio::soundName(SND_HIT_BRUTAL)) == "HIT_BRUTAL");
+    a.stop();
+}
+
 // Overrides from the per-user folder: found by path (any case, any accepted extension), and the audio uses them
 static void testOverrides() {
     fs::path root = fs::u8path(userDataPath("overrides"));
@@ -342,6 +397,10 @@ static void testOverrides() {
     for (size_t i = 0; i < tone.size(); i++) tone[i] = 0.8f * std::sin(i * 0.2f) * (1.0f - (float)i / tone.size());
     ACHECK(spit(root / "sounds/default/hit.wav", wavFile(tone, 48000)));
     ACHECK(spit(root / "voices/male/GO.ogg", slurp(fs::path(QUARK_TEST_DATA) / "tone.ogg")));
+    // a hitsound tier: MOUTH's brutal hit, a low 0.3 s tone over a DC offset (a rumble it must not clip on)
+    std::vector<float> thud(14400);
+    for (size_t i = 0; i < thud.size(); i++) thud[i] = 0.3f + 0.6f * std::sin(i * 0.012f) * (1.0f - (float)i / thud.size()) + 0.05f * std::sin(i * 0.4f);
+    ACHECK(spit(root / "sounds/mouth/HIT_BRUTAL.wav", wavFile(thud, 48000)));
     ACHECK(spit(root / "models/player/HEAVY.gltf", "this is not glTF"));
     overrides::useUserFolder(true);   // (re-read the folder)
     ACHECK(overrides::any());
@@ -360,6 +419,12 @@ static void testOverrides() {
     ACHECK(mine.samples(Audio::kPackRetro, SND_HIT) != plain.samples(Audio::kPackRetro, SND_HIT));   // RETRO: the new DEFAULT, chiptuned
     ACHECK(mine.samples(Audio::kPackMetal, SND_HIT) == plain.samples(Audio::kPackMetal, SND_HIT));   // a kit's own sound stays
     ACHECK(mine.samples(0, SND_KILL) == plain.samples(0, SND_KILL));   // the rest untouched
+    const auto& b1 = mine.samples(Audio::kPackWooden, SND_HIT_BRUTAL);   // (pack 4: MOUTH)
+    ACHECK(b1 != plain.samples(Audio::kPackWooden, SND_HIT_BRUTAL) && b1.size() >= 14000 && b1.size() <= 14400);
+    ACHECK(peakOf(b1) <= 0.95f);   // levelled as heard, its rumble cut, never clipping
+    ACHECK(std::fabs(Audio::heardLoudness(b1) / Audio::heardLoudness(plain.samples(0, SND_HIT_BRUTAL)) - 1.0f) < 0.05f);
+    ACHECK(mine.samples(Audio::kPackWooden, SND_HIT_HEAVY) == plain.samples(Audio::kPackWooden, SND_HIT_HEAVY));
+    ACHECK(mine.samples(0, SND_HIT_BRUTAL) == plain.samples(0, SND_HIT_BRUTAL));
     ACHECK(mine.samples(0, SND_VOICE_GO) != plain.samples(0, SND_VOICE_GO));
     ACHECK(mine.samples(0, SND_VOICE_ONE) == plain.samples(0, SND_VOICE_ONE));
     fs::remove_all(root, ec);
@@ -413,6 +478,7 @@ int assetTests() {
     testGltfLoader();
     testDecoders();
     testFontAtlas();
+    testHitTiers();
     testOverrides();
     testIconSource();
     testExport();

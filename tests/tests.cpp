@@ -4399,10 +4399,10 @@ static void testChatAndVoteLimits(uint16_t port) {
     printf("  30 messages at once: %d went out\n", chats);
     CHECK(chats >= 5 && chats <= 8 && clean);   // a burst of 5, then one a second
     // tourney map lists: each map is read at most once, then comes from the cache
-    a.sendCommand("callvote tmaps colosseum,lodestone,colosseum,lodestone");
+    a.sendCommand("callvote tmaps colosseum,colosseum,colosseum");   // (the one map offered for tourney)
     pump(s, cls, 0.3, idle);
     uint32_t loads = s.mapInfoLoads_;
-    a.sendCommand("callvote tmaps lodestone,colosseum");   // (a vote is already running: refused, after the checks)
+    a.sendCommand("callvote tmaps colosseum,colosseum");   // (a vote is already running: refused, after the checks)
     pump(s, cls, 0.3, idle);
     CHECK(s.vote_.kind == Server::VOTE_TMAPS && s.mapInfoLoads_ == loads);
     // made-up map names (callvote map <random>) aren't cached: the cache stays the size of the maps folder
@@ -4998,6 +4998,18 @@ static void testNetcode(uint16_t port) {
 // firing; a projectile out of sight isn't sent (its owner always gets it), one that leaves sight goes on as an id (not
 // an explosion) and one that goes off out of sight is shown at the spot for a moment (its explosion); a dead player
 // gets what the player it watches sees; the hide and seek seeker gets nothing about the hiders during the freeze.
+// Stickies inherit the shooter's forward / back and vertical velocity, never the sideways part (owner, 1.17).
+static void testStickyInherit() {
+    printf("sticky: inherits forward and vertical speed, not sideways\n");
+    auto near = [](Vec3 a, Vec3 b) { return length(a - b) < 1e-4f; };
+    Vec3 aim = normalize(Vec3(0, 0.2f, -1));                               // looking along -z, a little up
+    CHECK(near(stickyInherit({8, 0, 0}, aim), {0, 0, 0}));                 // pure strafe: nothing
+    CHECK(near(stickyInherit({0, 0, -10}, aim), {0, 0, -9}));              // running forward: 90%
+    CHECK(near(stickyInherit({0, 0, 10}, aim), {0, 0, 9}));                // backpedalling too
+    CHECK(near(stickyInherit({6, 5, -8}, aim), {0, 4.5f, -7.2f}));         // strafe-jumping: the sideways 6 dropped
+    CHECK(near(stickyInherit({6, -3, -8}, {0, -1, 0}), {0, -2.7f, 0}));    // aiming straight down: vertical only
+}
+
 static void testHiddenInfo(uint16_t port) {
     printf("hidden info: no health / weapon / projectiles out of sight, dead see what they watch, seeker blind in the freeze\n");
     Server s;
@@ -5836,7 +5848,7 @@ int main(int argc, char** argv) {
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
-        {"hidden", [] { testHiddenInfo(TP(28587)); }},
+        {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
         {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testDemoUpgrade(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testBuiltInMapEditSession(TP(28606)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
@@ -5884,6 +5896,7 @@ int main(int argc, char** argv) {
                 std::filesystem::create_directories(data, ec);   // (the parent made the root already: set it, then make it)
                 setUserDataDir(data);
                 qsrand(1234);
+                g_fail = 0;   // (this group's own: the parent's count of groups already done isn't this one's)
                 par[i].run();
                 fflush(stdout);
                 std::_Exit(std::min(g_fail, 100));

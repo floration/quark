@@ -11,7 +11,7 @@ The game trims silence at the start, cuts it at 3 seconds and matches its loudne
 Updates never touch your files here.
 
 SOUND names:
-  HIT            you hit someone (hitsound)
+  HIT            you hit someone for under 10 damage (the light hitsound)
   KILL           you killed someone
   HURT           you took damage
   STEP           a footstep
@@ -38,3 +38,6 @@ SOUND names:
   TYPING         someone typing in chat (one key click)
   CHECKPOINT     race: you passed a checkpoint
   FINISH         race: you crossed the finish
+  HIT_MED        you hit someone for 10 to 24 damage (heavier, louder)
+  HIT_HEAVY      you hit someone for 25 to 50 damage
+  HIT_BRUTAL     you hit someone for more than 50 damage (the heaviest, loudest)

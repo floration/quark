@@ -24,6 +24,9 @@ enum SoundId {
     SND_DASH, SND_GRAPPLE_FIRE, SND_GRAPPLE_HIT,
     SND_DEATH, SND_STREAK, SND_TYPING,   // your death thud, someone else's killstreak sting, someone typing (a key click)
     SND_CHECKPOINT, SND_FINISH,          // race: you passed a checkpoint (a ding), you crossed the finish (a rising chime)
+    // the hitsound's heavier tiers (SND_HIT is the lightest; hitSoundFor() picks one by the hit's damage). Added after
+    // the rest so the recorded kits' ids (sfx_recorded.h) and everyone's HIT overrides keep their meaning.
+    SND_HIT_MED, SND_HIT_HEAVY, SND_HIT_BRUTAL,
     // the announcer (recorded lines from voice_data.h, in its order; the same in every sound pack)
     SND_VOICE_THREE, SND_VOICE_TWO, SND_VOICE_ONE, SND_VOICE_GO, SND_VOICE_BOMB_PLANTED, SND_VOICE_BOMB_DEFUSED,
     SND_VOICE_HILL_TAKEN, SND_VOICE_HILL_LOST, SND_VOICE_POINT_TAKEN, SND_VOICE_POINT_LOST, SND_VOICE_ROUND_WON,
@@ -32,6 +35,29 @@ enum SoundId {
     SND_VOICE_SPREE, SND_VOICE_RAMPAGE, SND_VOICE_UNSTOPPABLE, SND_VOICE_GODLIKE,
     SND_VOICE_ONE_MINUTE, SND_VOICE_THIRTY_SECONDS, SND_VOICE_TEN_SECONDS, SND_VOICE_FIVE_SECONDS, SND_VOICE_ROUND_OVER,
     SND_COUNT
+};
+
+// The hitsound for one hit you dealt (an EV_HIT: that hit's damage in points, a batch of laser ticks or a whole
+// shotgun blast is one hit): four tiers, each heavier and louder. < 10 light, 10 to < 25 medium, 25 to 50 heavy
+// (a sniper's 50 is heavy), > 50 brutal (51+: a crossbow headshot, a direct rocket plus splash).
+inline int hitSoundFor(float dmg) {
+    return dmg < 10.0f ? SND_HIT : dmg < 25.0f ? SND_HIT_MED : dmg <= 50.0f ? SND_HIT_HEAVY : SND_HIT_BRUTAL;
+}
+inline int hitTier(int id) { return id == SND_HIT ? 0 : id >= SND_HIT_MED && id <= SND_HIT_BRUTAL ? id - SND_HIT_MED + 1 : -1; }
+// each tier's loudness, x today's single hitsound (1.0 = the level it had before the tiers)
+constexpr float kHitTierGain[4] = {0.7f, 0.85f, 1.0f, 1.15f};
+// Several hits in one moment (a blast hitting two players, two victims' batched laser ticks) make one hitsound, not
+// a stack of them: within kWindow seconds of the last, only a heavier tier plays.
+struct HitSoundGate {
+    static constexpr double kWindow = 0.04;
+    double at = -1e9;
+    int tier = -1;
+    bool pass(double now, int id) {
+        int t = hitTier(id);
+        if (now - at < kWindow && t <= tier) return false;
+        at = now; tier = t;
+        return true;
+    }
 };
 
 class Audio {
@@ -66,6 +92,8 @@ public:
     static const char* soundName(int id);
     static const char* kitDir(int pack);
     static const char* voiceDir(int voice);
+    // loudness as heard (low end weighted down, like the ear): the hitsound tiers are levelled with it
+    static float heardLoudness(const std::vector<float>& v);
 
     // Mixes `frames` stereo frames into out (interleaved int16). Used by the backends and tests.
     void mix(int16_t* out, int frames);

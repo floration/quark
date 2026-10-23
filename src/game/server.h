@@ -203,7 +203,7 @@ struct Projectile {
     Vec3 pos, vel;
     double dieAt = 0;
     double armAt = 0;    // stickies can't be detonated before this
-    float gravMul = 1;  // rocket lob (alt-fire) falls faster
+    float gravMul = 1;  // a rocket lob (alt-fire): kRocketLobGravity (it drops; the primary flies straight)
     bool stuck = false; // stickies: attached to a surface
     bool onCart = false; // stuck to the payload cart: rides along at cartOffset from its center
     Vec3 cartOffset;

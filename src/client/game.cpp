@@ -1077,7 +1077,8 @@ void Game::handleEvents() {
                     float dmg = e.c / 100.0f; // hundredths of a point
                     bool head = e.text == "h"; // a headshot: its own red number
                     hitUntil_ = time_ + 0.15;
-                    if (cfg_.hitsounds) audio_.play(SND_HIT, 0.9f, 1.25f - std::min(dmg, 50.0f) / 100.0f); // bigger hits sound deeper
+                    // four tiers by this hit's damage, each heavier and louder (hitSoundFor); hits landing together make one
+                    if (cfg_.hitsounds) { int snd = hitSoundFor(dmg); if (hitGate_.pass(time_, snd)) audio_.play(snd, 0.9f); }
                     // hits on the same target in quick succession add up into one number
                     bool merged = false;
                     for (auto& d : dmgNums_)
