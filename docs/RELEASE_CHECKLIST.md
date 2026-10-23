@@ -59,7 +59,7 @@ The automated UI test clicks every button (`quark --uitest`, part of the test su
 | ☐ | Main menu: JOIN GAME, HOST GAME, RANKED, MAP EDITOR, SETTINGS, INFO, DEMOS, QUIT each open the right screen, and Esc / BACK returns. |
 | ☐ | INFO: every tab reads correctly and matches this version (weapons, modes, controls). |
 | ☐ | Text fits everywhere: nothing overlaps or runs off a button at your normal resolution and at 1280×720. |
-| ☐ | Pause menu in a game: SETTINGS, record / stop demo, EDIT THE MAP TOGETHER (not in ranked), DISCONNECT / STOP HOSTING, QUIT. |
+| ☐ | Pause menu in a game: SETTINGS, record / stop demo, EDIT THE MAP TOGETHER (not in ranked), DISCONNECT / STOP HOSTING (host with bots, play 30 s, STOP HOSTING: back to the main menu, the game must not close), QUIT. |
 | ☐ | Console (`~`): monospaced; Tab completes commands and their arguments; it does not open the scoreboard. |
 
 ## 4. Settings

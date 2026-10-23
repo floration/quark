@@ -111,6 +111,19 @@ struct NavGraph {
     std::vector<int> cellNodes;
     float hScale = 0;          // A* heuristic: straight-line distance times this never overestimates a route
     int cellOf(float x, float z) const;
+
+    // findPath's scratch, reused between searches. The graph's, not thread_local: only its server's thread searches
+    // it, and it's freed with the server. (A thread_local with a destructor runs it after MinGW's emutls has freed
+    // its storage: when the hosted server's thread ended, STOP HOSTING, the vectors freed garbage pointers and the
+    // heap corruption closed the game on Windows. No TLS lookups per search either.)
+    struct PathScratch {
+        std::vector<float> g;
+        std::vector<int> prev;
+        std::vector<uint32_t> stamp;
+        std::vector<std::pair<float, int>> heap;
+        uint32_t cur = 0;
+    };
+    mutable PathScratch scratch_;
 };
 
 // Produces this tick's input for bot `id`.
