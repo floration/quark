@@ -422,9 +422,10 @@ void Audio::backendThread() {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
     timeBeginPeriod(1);   // (1 ms timer resolution for the wait's timeout)
     HWAVEOUT h = (HWAVEOUT)backend_;
-    constexpr int kBufs = 6; // 6 x 5 ms queued: a little slack for the scheduler. (Starting at 3 and growing on underrun was
-                             // tried: the sound broke up on the owner's PC, where Windows mixes in 10 ms periods.)
-    static int16_t data[kBufs][kPeriod * 2];
+    // The queue: 2 x 10 ms (20 ms before a sound is heard; it was 6 x 5 ms, 30 ms). Windows mixes in 10 ms periods, so
+    // buffers shorter than that break the sound up (3 x 5 ms, growing on underrun, was tried and did, on the owner's PC).
+    constexpr int kBufs = 2, kFrames = kPeriod * 2;
+    static int16_t data[kBufs][kFrames * 2];
     WAVEHDR hdr[kBufs] = {};
     for (int i = 0; i < kBufs; i++) {
         hdr[i].lpData = (LPSTR)data[i];
@@ -436,7 +437,7 @@ void Audio::backendThread() {
         bool wrote = false;
         for (int i = 0; i < kBufs; i++) {
             if (!(hdr[i].dwFlags & WHDR_DONE)) continue;
-            mix(data[i], kPeriod);
+            mix(data[i], kFrames);
             hdr[i].dwFlags &= ~WHDR_DONE;
             waveOutWrite(h, &hdr[i], sizeof(WAVEHDR));
             wrote = true;
