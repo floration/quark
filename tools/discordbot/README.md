@@ -18,7 +18,10 @@ checkout it uses the local `src/client/game.cpp` and `VERSION` to save a downloa
 one elsewhere). The protocol and mode constants in `quarkdata.py` are copies of the game's (marked there).
 
 ## Where the data comes from (same as the game)
-- **Server list**: base URL read from `https://floration.github.io/quark/master.txt` (re-read hourly), then
+- **Server list**: the Worker's address is pinned: `master_url` in `config.json` (or `QUARK_MASTER`), else the game's
+  built-in address (`MASTER_URL` in `quarkdata.py`, a copy of `kPinnedMasterUrl`). The bot never reads the website's
+  `master.txt`: it sends BOT_KEY to that address, and only the game checks master.txt's signature. If the Worker
+  moves, set `master_url` (https only). Then
   `GET <master>/list?v=<version>` gives `ip:port` lines of servers on that version (`src/game/master.cpp`).
   Each server is then asked directly over UDP: `u32 0x51524B31 "QRK1", u8 4` zero-padded to 160 bytes (PKT_INFO_REQUEST; servers ignore shorter requests), reply type 67
   with name, map, mode, players, max players, port (`src/game/protocol.h`, `server.cpp`, `netclient.cpp`).
@@ -26,15 +29,16 @@ one elsewhere). The protocol and mode constants in `quarkdata.py` are copies of 
 - **Leaderboards**: `GET <master>/leaderboard?ladder=vanilla|vampire|instagib&n=10` (`rating games name`) and
   `GET <master>/raceboard?map=viaduct&n=10` (`ms name`) (`src/game/ranked.cpp`, `tools/master/worker.js`).
 - **Updates**: `https://api.github.com/repos/floration/quark/releases/latest` (production: never a prerelease) and
-  `.../releases?per_page=10` (testing builds = GitHub **prereleases**, tags like `v1.17.0-test.3`); the release body is the changelog.
+  `.../releases?per_page=10` (testing builds = GitHub **prereleases**, tags like `test-1.17.0-test.3`); the release body is the changelog.
 - **Queues / crowns**: `POST|GET /queue`, `GET /filled?since=N`, `GET /crowns` on the master (`tools/master/worker.js`).
 - **Info**: `kInfoTabs` / `kInfoPages` parsed from `src/client/game.cpp` (local checkout if present, else from GitHub's raw file).
 
 ## What it does
 - **#updates**: posts each new **production** release's changelog as embeds and pings **Update Pings**. The last announced
   tag is kept in `state.json` (on a fresh install it announces the current release once). `/changelog [version]` shows
-  any version (`1.17.0` or `1.17.0-test.3`).
-- **#testing-updates**: each new **testing build** (a GitHub prerelease, `v<VERSION>-test.N`) is posted here instead and
+  any version (`1.17.0`, or a testing build `1.17.0-test.3` / `test-1.17.0-test.3`: labelled testing, with the
+  notes of its base version `changelogs/1.17.0.md`).
+- **#testing-updates**: each new **testing build** (a GitHub prerelease, `test-<VERSION>-test.N`) is posted here instead and
   pings **Testing Updates** only. A prerelease is never announced in #updates, and a release whose tag has a suffix but
   isn't marked prerelease is announced nowhere (`release_kind` in `bot.py`, tested).
 - **🟢 LIVE SERVERS** category: a locked voice channel on top named `🟢 13 players live`, then one text channel per
@@ -117,7 +121,7 @@ export BOT_KEY=...                      # same as the Worker's BOT_KEY secret
 python bot.py --dry-run                 # see what it would post, no Discord
 python bot.py
 ```
-Optional env: `GITHUB_TOKEN` (higher GitHub API limits), `QUARK_MASTER` (other master URL), `QUARKBOT_CONFIG` (config path).
+Optional env: `GITHUB_TOKEN` (higher GitHub API limits), `QUARK_MASTER` (the Worker's URL, https; default the game's built-in one), `QUARKBOT_CONFIG` (config path).
 All config keys and defaults are in `DEFAULT_CONFIG` in `bot.py` (poll intervals, rename spacing, ping count...).
 The bot needs outbound UDP to reach game servers (same as the game's Join screen).
 

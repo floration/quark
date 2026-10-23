@@ -1,0 +1,31 @@
+title Anvil
+for 1v1
+modes 1v1 ffa
+ranked vanilla vampire instagib
+holdfire 5
+palette base 0.527 0.527 0.561 accent 0.3 0.22 0.4 metal 0.26 0.26 0.3 glow 0.75 0.4 1 sky 0.64 0.64 0.74
+sun 0.4 1 0.45
+far -58.8417 -2 -52.902 -45.1583 17.0965 -41.7789
+indoor 12
+void -2.5
+box -20 -1 -20 20 0 20
+box -20 0 -20 -19 6 20
+spawn any 0 0 0
+spawn a 5 0 5
+spawn b -5 0 -5
+accent -5 3 -2.5 5 4 2.5
+cartcheck 0.33
+checkpoint 25 0 -8 29 4 -4
+clip -24 12 -24 -22 92 24
+glow -2.1 4 -2.7 -1.9 4.2 -2.5
+hill -5 0 -5 5 3 5
+ladder -0.45 0 16.15 0.45 4.5 16.85
+lava -21.5 -1.4 -7 -19 -1.2 7
+light 0 2.4 -2.2 6 0.6
+metal -1.5 0 5 1.5 1.6 7
+path 9 0 26
+point -8 14 -72 8 18 -56
+site -24 0 -28 -16 3 -20
+trim -24.04 11.7 -24.04 -21.96 11.88 24.04
+wallbang -1.5 0 9.5 1.5 2.6 9.9
+water -10 -1.4 -10 -1.5 -1.2 -5

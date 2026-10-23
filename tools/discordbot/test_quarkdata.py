@@ -166,7 +166,7 @@ class MasterQueues(unittest.TestCase):
 
 
 class Releases(unittest.TestCase):
-    """Testing builds are GitHub prereleases (v1.2.3-test.4); they must never be announced as production."""
+    """Testing builds are GitHub prereleases (test-1.2.3-test.4); they must never be announced as production."""
     def test_kind(self):
         k = bot.release_kind
         self.assertEqual(k({"tag_name": "v1.17.0"}), "production")
@@ -188,10 +188,74 @@ class Releases(unittest.TestCase):
         self.assertTrue(qd.VERSION_RE.fullmatch("1.17.0") and qd.VERSION_RE.fullmatch("1.17.0-test.12"))
         self.assertFalse(qd.VERSION_RE.fullmatch("1.17.0-beta") or qd.VERSION_RE.fullmatch("../x"))
 
+    def test_changelog_lookup(self):
+        L = qd.changelog_lookup
+        self.assertEqual(L("1.17.0"), ("1.17.0", "v1.17.0", "1.17.0", False))
+        self.assertEqual(L("v1.17.0"), ("1.17.0", "v1.17.0", "1.17.0", False))
+        # testing builds: tag test-<VERSION>-test.N (release.yml), notes in the base version's changelog
+        self.assertEqual(L("1.17.1-test.4"), ("1.17.1-test.4", "test-1.17.1-test.4", "1.17.1", True))
+        self.assertEqual(L("test-1.17.1-test.4"), ("1.17.1-test.4", "test-1.17.1-test.4", "1.17.1", True))
+        self.assertEqual(L(" v1.17.1-test.4 "), ("1.17.1-test.4", "test-1.17.1-test.4", "1.17.1", True))
+        for bad in ("1.17", "test-", "1.17.0-beta", "../x", "1.17.0/../../y", "vv1.17.0"):
+            with self.assertRaises(ValueError):
+                L(bad)
+
+    def test_changelog_testing(self):
+        class Fake(qd.QuarkAPI):
+            def __init__(self, releases, files):
+                super().__init__(None)
+                self.releases_, self.files, self.asked = releases, files, []
+
+            async def release_by_tag(self, tag):
+                self.asked.append(tag)
+                return self.releases_.get(tag)
+
+            async def _text(self, url, timeout=8, headers=None):
+                self.asked.append(url)
+                if url in self.files:
+                    return self.files[url]
+                raise qd.aiohttp.ClientResponseError(None, (), status=404)
+
+        raw = qd.RAW_BASE
+        api = Fake({"test-1.17.1-test.4": {"body": "**Testing build** 1.17.1-test.4"}}, {})
+        self.assertEqual(asyncio.run(api.changelog("1.17.1-test.4")), ("1.17.1-test.4 (testing)", "**Testing build** 1.17.1-test.4"))
+        # no release body: the base version's file, at the testing tag first
+        api = Fake({}, {f"{raw}/HEAD/changelogs/1.17.1.md": "notes"})
+        self.assertEqual(asyncio.run(api.changelog("test-1.17.1-test.5")), ("1.17.1-test.5 (testing)", "notes"))
+        self.assertEqual(api.asked, ["test-1.17.1-test.5", f"{raw}/test-1.17.1-test.5/changelogs/1.17.1.md",
+                                     f"{raw}/HEAD/changelogs/1.17.1.md"])
+        api = Fake({"v1.17.0": {"body": "prod"}}, {})
+        self.assertEqual(asyncio.run(api.changelog("v1.17.0")), ("1.17.0", "prod"))
+        with self.assertRaises(LookupError):
+            asyncio.run(Fake({}, {}).changelog("1.2.3"))
+
     def test_config(self):
         cfg = bot.DEFAULT_CONFIG
         self.assertNotEqual(cfg["testing_channel"], cfg["updates_channel"])
         self.assertNotEqual(cfg["testing_role"], cfg["update_role"])
+
+
+class PinnedMaster(unittest.TestCase):
+    """The bot sends BOT_KEY to the Worker: it uses the configured or built-in address, never master.txt."""
+    def test_default_and_override(self):
+        old = os.environ.pop("QUARK_MASTER", None)
+        try:
+            self.assertEqual(asyncio.run(qd.QuarkAPI(None).master()), qd.MASTER_URL)
+            self.assertEqual(asyncio.run(qd.QuarkAPI(None, None, "https://w.example.dev/").master()), "https://w.example.dev")
+            os.environ["QUARK_MASTER"] = "http://127.0.0.1:8787"
+            self.assertEqual(asyncio.run(qd.QuarkAPI(None).master()), "http://127.0.0.1:8787")
+        finally:
+            os.environ.pop("QUARK_MASTER", None)
+            if old is not None:
+                os.environ["QUARK_MASTER"] = old
+        for bad in ("http://w.example.dev", "ftp://x", "https://a b", "https://x/'y", "javascript:alert(1)", ""):
+            with self.assertRaises(ValueError):
+                qd.QuarkAPI(None, None, bad or " ")
+
+    def test_never_fetches_master_txt(self):
+        src = (HERE / "quarkdata.py").read_text(encoding="utf-8") + (HERE / "bot.py").read_text(encoding="utf-8")
+        self.assertNotIn("floration.github.io/quark/master.txt", src)
+        self.assertTrue(qd.MASTER_URL.startswith("https://"))
 
 
 class LiveListing(unittest.TestCase):

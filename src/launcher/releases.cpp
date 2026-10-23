@@ -1,4 +1,5 @@
 #include "releases.h"
+#include "../common/sign.h"
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -201,7 +202,7 @@ bool parse(const std::string& json, const std::string& platform, std::vector<Rel
     Json root;
     Parser p{json};
     if (!p.value(&root) || root.type != Json::Arr) return false;
-    std::string want = "/quark-" + platform + ".qpak";
+    std::string want = "/quark-" + platform + ".qpak", own = "/quark-release-" + platform + ".txt";
     for (const Json& r : root.items) {
         if (r.type != Json::Obj) continue;
         Release rel;
@@ -211,18 +212,82 @@ bool parse(const std::string& json, const std::string& platform, std::vector<Rel
         rel.body = r.str("body");
         rel.prerelease = r.flag("prerelease");
         rel.draft = r.flag("draft");
+        rel.asset = want.substr(1);
+        std::string shared, sharedSig, ownTxt, ownSig;
         if (const Json* assets = r.get("assets"))
             for (const Json& a : assets->items) {
                 std::string u = a.str("browser_download_url");
                 if (endsWith(u, want)) rel.url = u;
                 else if (endsWith(u, want + ".sig")) rel.sigUrl = u;
+                else if (endsWith(u, "/quark-release.txt")) shared = u;
+                else if (endsWith(u, "/quark-release.txt.sig")) sharedSig = u;
+                else if (endsWith(u, own)) ownTxt = u;
+                else if (endsWith(u, own + ".sig")) ownSig = u;
             }
+        if (!ownTxt.empty() && !ownSig.empty()) { rel.manifestUrl = ownTxt; rel.manifestSigUrl = ownSig; }
+        else if (!shared.empty() && !sharedSig.empty()) { rel.manifestUrl = shared; rel.manifestSigUrl = sharedSig; }
         out->push_back(rel);
     }
     return true;
 }
 
 const char* const kFirstSigned = "1.17.0-0";
+
+bool parseManifest(const std::string& text, Manifest* m) {
+    *m = Manifest();
+    bool first = true;
+    size_t i = 0;
+    while (i < text.size()) {
+        size_t j = text.find('\n', i);
+        if (j == std::string::npos) j = text.size();
+        std::string line = text.substr(i, j - i);
+        i = j + 1;
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+        if (first) {
+            if (line != "quark release") return false;
+            first = false;
+            continue;
+        }
+        size_t sp = line.find(' ');
+        if (sp == std::string::npos) continue;
+        std::string key = line.substr(0, sp), val = line.substr(sp + 1);
+        if (key == "channel") m->channel = val;
+        else if (key == "tag") m->tag = val;
+        else if (key == "version") m->version = val;
+        else if (key == "commit") m->commit = val;
+        else if (key == "sha256") {
+            size_t sp2 = val.find(' ');
+            if (sp2 == std::string::npos) continue;
+            std::string hex = val.substr(sp2 + 1);
+            for (char& ch : hex) ch = (char)tolower((unsigned char)ch);
+            m->sha256.emplace_back(val.substr(0, sp2), hex);
+        }
+    }
+    return !first;
+}
+
+std::string checkManifest(const Manifest& m, const Release& r, const std::string& packageSha256) {
+    const char* channel = r.prerelease ? "testing" : "production";
+    if (m.tag != r.tag) return "its signed manifest is for " + (m.tag.empty() ? std::string("no tag") : m.tag) + ", not " + r.tag;
+    if (m.version != r.version) return "its signed manifest is for version " + m.version + ", not " + r.version;
+    if (m.channel != channel) return "its signed manifest is for the " + m.channel + " channel, not " + channel;
+    std::string want;
+    for (char ch : packageSha256) want += (char)tolower((unsigned char)ch);
+    for (auto& p : m.sha256)
+        if (p.first == r.asset) {
+            if (want.size() != 64 || p.second != want) return "the package is not the one its signed manifest names";
+            return "";
+        }
+    return "its signed manifest doesn't name " + (r.asset.empty() ? std::string("this package") : r.asset);
+}
+
+std::string verifyManifest(const std::string& text, const std::string& sigHex, const std::string& pubHex, const Release& r,
+                           const std::string& packageSha256) {
+    if (!sign::verifyData(text, sigHex, pubHex)) return "its release manifest's signature does not verify";
+    Manifest m;
+    if (!parseManifest(text, &m)) return "its release manifest is unreadable";
+    return checkManifest(m, r, packageSha256);
+}
 
 bool fetchAll(const PageGetter& getPage, const std::string& platform, std::vector<Release>* out, bool* complete, std::string* err) {
     std::vector<Release> all;

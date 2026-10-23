@@ -115,7 +115,8 @@ bool CustomRules::fromText(const std::string& text) {
             maps.clear();
             std::istringstream ms(v);
             std::string m;
-            while (std::getline(ms, m, ',')) if (!m.empty() && maps.size() < 32) maps.push_back(safeName(m));
+            // (a name with nothing safe in it is dropped, not kept as "": found by tests/fuzz/fuzz_rules)
+            while (std::getline(ms, m, ',')) if (maps.size() < 32 && !(m = safeName(m)).empty()) maps.push_back(m);
         }
     }
     if (name.empty()) any = false;

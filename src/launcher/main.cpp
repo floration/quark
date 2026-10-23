@@ -22,9 +22,11 @@
 #include "../client/ui.h"
 #include "../common/net.h"
 #include "install.h"
+#include "qpak.h"
 #include "releases.h"
 #include "selfupdate.h"
 #include "../common/proc.h"
+#include "../common/sha256.h"
 #include "../common/sign.h"
 
 #ifdef _WIN32
@@ -126,60 +128,7 @@ bool httpGet(const std::string& url, std::ostream& out, const Progress& prog, st
 }
 #endif
 
-// A qpak entry name is safe when it is a plain relative path inside the install: no root name
-// (C:, \\server), no root directory (/ or \), no "..", nothing empty.
-bool safeEntryName(const std::string& name) {
-    if (name.empty() || name.find('\0') != std::string::npos || name.find(':') != std::string::npos) return false;
-    if (name[0] == '/' || name[0] == '\\') return false;
-    if (name.find("..") != std::string::npos) return false; // also catches ..\ on Windows
-    fs::path p = fs::u8path(name);
-    return p.is_relative() && !p.has_root_name() && !p.has_root_directory();
-}
-
-// .qpak: "QPAK1\n", then per file: u32 nameLen, name, u32 mode, u64 size, bytes. Little endian.
-// Everything is extracted into `stage` (a fresh directory); the caller swaps it into place on success,
-// so a failed or interrupted install never leaves a half-updated game.
-static bool extractPakImpl(const std::string& pak, const fs::path& stage, std::string* err);
-bool extractPak(const std::string& pak, const fs::path& stage, std::string* err) {
-    try { return extractPakImpl(pak, stage, err); }
-    catch (const std::exception& e) { *err = std::string("corrupt archive (") + e.what() + ")"; return false; }   // (ENG-2: bad_alloc, a bad path)
-}
-
-static bool extractPakImpl(const std::string& pak, const fs::path& stage, std::string* err) {
-    std::error_code ec;
-    uint64_t remaining = fs::file_size(pak, ec);
-    if (ec || remaining < 6) { *err = "corrupt download"; return false; }
-    std::ifstream f(pak, std::ios::binary);
-    char magic[6];
-    f.read(magic, 6);
-    if (!f || memcmp(magic, "QPAK1\n", 6) != 0) { *err = "corrupt download"; return false; }
-    remaining -= 6;
-    auto rd = [&](void* p, size_t n) { f.read((char*)p, n); if (f) remaining -= n; return (bool)f; };
-    std::vector<char> buf;
-    for (;;) {
-        uint32_t nl, mode;
-        uint64_t size;
-        if (!rd(&nl, 4)) break;
-        if (nl == 0 || nl > 4096) { *err = "corrupt archive"; return false; }
-        std::string name(nl, 0);
-        if (!rd(&name[0], nl) || !rd(&mode, 4) || !rd(&size, 8)) { *err = "corrupt archive"; return false; }
-        if (!safeEntryName(name)) { *err = "unsafe path in archive"; return false; }
-        if (size > remaining) { *err = "truncated archive"; return false; } // never trust size for the allocation
-        fs::path out = stage / fs::u8path(name);
-        fs::create_directories(out.parent_path(), ec);
-        buf.resize((size_t)size);
-        if (size && !rd(buf.data(), (size_t)size)) { *err = "truncated archive"; return false; }
-        std::ofstream o(out, std::ios::binary | std::ios::trunc);
-        if (!o) { *err = "cannot write " + out.string(); return false; }
-        o.write(buf.data(), (std::streamsize)size);
-        o.close();
-        if (!o) { *err = "cannot write " + out.string() + " (disk full?)"; return false; }
-#ifndef _WIN32
-        chmod(out.string().c_str(), mode & 0777);
-#endif
-    }
-    return true;
-}
+// Package reading and extraction: qpak.cpp (shared with the fuzzer, tests/fuzz).
 
 // Swaps a fully extracted `stage` into `dir`: files of the old install the package doesn't carry (the
 // player's quark.cfg, demos, screenshots...) are copied into the stage first, quark.cfg always wins
@@ -309,6 +258,21 @@ void checkSelfUpdate(State* st, const fs::path& dir) {
     else { std::lock_guard<std::mutex> l(st->mu); st->status += " (launcher update failed: " + err + ")"; }
 }
 
+// The package's .sig only proves the release key signed it, not which release it is: the signed manifest
+// (quark-release.txt) must name this release's tag, version and channel and this package's sha256, or a validly
+// signed package (an old or testing build) could be passed off as another release. Empty: fine; else why not.
+std::string checkReleaseManifest(const Release& r, const fs::path& package) {
+    if (r.manifestUrl.empty()) return "it has no signed release manifest";
+    std::ostringstream text, sig;
+    std::string err;
+    if (!httpGet(r.manifestUrl, text, nullptr, &err) || !httpGet(r.manifestSigUrl, sig, nullptr, &err))
+        return "could not download its release manifest (" + err + ")";
+    std::ifstream in(package, std::ios::binary);
+    std::string sha = in ? sha256StreamHex(in) : "";
+    if (sha.empty()) return "could not read the download";
+    return releases::verifyManifest(text.str(), sig.str(), sign::kReleasePublicKey, r, sha);
+}
+
 // `allowUnsigned`: the player picked a release from before signing and confirmed the warning. Only then is a
 // package without a .sig installed; a signed one is always verified.
 void installRelease(std::shared_ptr<State> st, fs::path dir, Release r, bool allowUnsigned) {
@@ -340,7 +304,7 @@ void installRelease(std::shared_ptr<State> st, fs::path dir, Release r, bool all
         if (r.sigUrl.empty()) err = "it is unsigned (from before signed updates) - pick it and confirm to install it anyway";
         else if (!httpGet(r.sigUrl, sig, nullptr, &err)) err = "could not download its signature (" + err + ")";
         else if (!sign::verifyFile(tmp.string(), sig.str(), sign::kReleasePublicKey, &err)) err = "its signature does not verify";
-        else err.clear();
+        else err = checkReleaseManifest(r, tmp);
         if (!err.empty()) {
             fs::remove(tmp, ec);
             setStatus("refused version " + r.version + ": " + err + " - the download may have been tampered with");
@@ -353,7 +317,7 @@ void installRelease(std::shared_ptr<State> st, fs::path dir, Release r, bool all
     fs::path stage = dir.parent_path() / (dir.filename().u8string() + ".new");
     fs::remove_all(stage, ec);
     fs::create_directories(stage, ec);
-    if (!extractPak(tmp.string(), stage, &err) || !swapInstall(stage, dir, &err)) {
+    if (!qpak::extract(tmp, stage, &err) || !swapInstall(stage, dir, &err)) {
         fs::remove_all(stage, ec);
         setStatus("install failed: " + err);
     } else {

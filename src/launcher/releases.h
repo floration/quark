@@ -21,11 +21,34 @@ std::string versionFromTag(const std::string& tag);
 struct Release {
     std::string tag, version, name, body;
     std::string url, sigUrl;   // this platform's quark-<platform>.qpak and its Ed25519 .sig (docs/SIGNING.md)
+    std::string asset;         // that package's name, "quark-<platform>.qpak"
+    // The release's signed manifest (quark-release.txt + .sig; a testing build's macOS package, added after the
+    // release went out, comes with its own quark-release-macos.txt): names this release and every package's sha256.
+    std::string manifestUrl, manifestSigUrl;
     bool prerelease = false, draft = false;
     // Every release from 1.17 on is signed. The ones before signing (<= 1.16.x) have no .sig: listed (marked
     // UNSIGNED) so any version stays playable, but never installed on their own, only after the player confirms.
     bool isSigned() const { return !sigUrl.empty(); }
 };
+
+// The signed release manifest (release.yml writes it, sign_release.sh signs it with the release key):
+//   quark release / channel <production|testing> / tag <tag> / version <version> / commit <sha> /
+//   sha256 <package name> <hex>   (one line per package)
+// The package's own .sig only says the release key signed *some* package; the manifest ties it to this release:
+// checked before installing, so a validly signed package can't be passed off as another version or channel.
+struct Manifest {
+    std::string channel, tag, version, commit;
+    std::vector<std::pair<std::string, std::string>> sha256; // package name -> lowercase hex
+};
+// False if the text isn't a manifest (no "quark release" first line).
+bool parseManifest(const std::string& text, Manifest* m);
+// Whether a signed manifest vouches for installing package `packageSha256` (hex) as release `r`: right tag, version,
+// channel (a prerelease = testing) and that package's hash. Empty: it does; else the reason it doesn't.
+std::string checkManifest(const Manifest& m, const Release& r, const std::string& packageSha256);
+// The whole check: `sigHex` is a release-key (`pubHex`) signature of `text`, which is a manifest that vouches for
+// the package as above. Empty: install it; else why not.
+std::string verifyManifest(const std::string& text, const std::string& sigHex, const std::string& pubHex, const Release& r,
+                           const std::string& packageSha256);
 
 // Every release in a GitHub "list releases" response (a JSON array). `platform` = windows / linux / macos.
 // Returns false (and nothing) if the text isn't a JSON array.

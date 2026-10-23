@@ -9,8 +9,9 @@
 
 namespace {
 // The Worker's address is built in (REVIEW WEB-11: whoever answers there receives every player's ranked secret).
-// It can move only through a master.txt on the website that is signed with the release key (master.txt.sig, made in
-// CI by quark_sign like the update packages): an unsigned or wrongly signed file is ignored.
+// It can move only through a master.txt on the website that is signed with the release key (master.txt.sig, made by
+// the owner with `quark_sign sign-master`, over sign::kMasterSignPrefix + the file): an unsigned or wrongly signed
+// file is ignored, and so is an http:// one.
 const char* kPinnedMasterUrl = "https://quark-master.jamesrandallmcamis.workers.dev";
 const char* kMasterUrlFile = "https://floration.github.io/quark/master.txt";
 const char* kIpv4Echo = "https://api.ipify.org"; // IPv4-only: hosts on IPv6 still announce their v4 address
@@ -33,7 +34,7 @@ bool isIpv4(const std::string& s) {
 }
 
 bool signedMasterUrl(const std::string& body, const std::string& sigHex, const std::string& pubHex, std::string* url) {
-    if (!sign::verifyData(body, sigHex, pubHex)) return false;
+    if (!sign::verifyData(sign::kMasterSignPrefix + body, sigHex, pubHex)) return false;
     std::string u = trim(body);
     if (u.rfind("https://", 0) != 0 || u.size() > 200 || u.find_first_of(" '\"\\\n\r\t") != std::string::npos) return false;
     while (!u.empty() && u.back() == '/') u.pop_back();

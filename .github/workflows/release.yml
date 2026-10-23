@@ -134,6 +134,38 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: { name: linux, path: "quark-linux.tar.gz\nquark-linux.qpak\nquark-launcher-linux" }
 
+  sanitizers:   # REVIEW ENG-3: work branches only (never a release, and no release job waits for it)
+    needs: meta
+    if: needs.meta.outputs.channel == 'none'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update && sudo apt-get install -y clang-18 libclang-rt-18-dev
+      - name: build with AddressSanitizer + UndefinedBehaviorSanitizer and the libFuzzer harnesses (clang)
+        run: |
+          CC=clang-18 CXX=clang++-18 cmake -S . -B build -DQUARK_FUZZ=ON -DQUARK_BUILD_CLIENT=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build build -j
+      - name: quark_tests under the sanitizers (any report fails it)
+        env:
+          QUARK_TEST_TIMESCALE: "1"   # real time: sanitized code can't keep the network tests' 4x clock
+          UBSAN_OPTIONS: print_stacktrace=1
+        run: ./build/quark_tests
+      - name: "fuzzers: every saved input (tests/data/fuzz), then 30 s of new ones each"
+        working-directory: build   # (fuzz_server loads maps/ from here)
+        env:
+          UBSAN_OPTIONS: print_stacktrace=1
+        run: |
+          for f in packet map rules qpak server; do
+            mkdir -p "corpus-$f" && cp ../tests/data/fuzz/$f/* "corpus-$f/"
+            ./fuzz_$f -max_total_time=30 -timeout=10 -rss_limit_mb=4096 -artifact_prefix="crash-$f-" "corpus-$f"
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with: { name: fuzz-crashes, path: "build/crash-*", retention-days: 7, if-no-files-found: ignore }
+
   macos:
     needs: meta
     runs-on: macos-latest
@@ -179,8 +211,9 @@ jobs:
           TAG: ${{ needs.meta.outputs.tag }}
           VER: ${{ needs.meta.outputs.version }}
         run: |
-          # what servers check before updating (tools/server/autoupdate.sh): this tag is this commit, signed
-          printf 'quark release\nchannel production\ntag %s\nversion %s\ncommit %s\n' "$TAG" "$VER" "$GITHUB_SHA" > dist/quark-release.txt
+          # what servers check before updating (tools/server/autoupdate.sh): this tag is this commit, signed; and the
+          # launcher before installing: this release, this channel, these packages (sha256)
+          sh tools/sign/release_manifest.sh production "$TAG" "$VER" "$GITHUB_SHA" dist/*/quark-*.qpak > dist/quark-release.txt
           sh tools/sign/sign_release.sh dist/*/quark-*.qpak dist/quark-release.txt
           (cd dist && sha256sum -- */* quark-release.txt quark-release.txt.sig | sed 's#  [a-z]*/#  #' > SHA256SUMS)
       - name: publish (marked latest; fails if it already exists)
@@ -213,7 +246,7 @@ jobs:
           VER: ${{ needs.meta.outputs.version }}
         run: |
           rm -rf dist/windows-tests dist/macos
-          printf 'quark release\nchannel testing\ntag %s\nversion %s\ncommit %s\n' "$TAG" "$VER" "$GITHUB_SHA" > dist/quark-release.txt
+          sh tools/sign/release_manifest.sh testing "$TAG" "$VER" "$GITHUB_SHA" dist/*/quark-*.qpak > dist/quark-release.txt
           sh tools/sign/sign_release.sh dist/*/quark-*.qpak dist/quark-release.txt
           (cd dist && sha256sum -- */* quark-release.txt quark-release.txt.sig | sed 's#  [a-z]*/#  #' > SHA256SUMS)
       - name: publish the prerelease (never latest)
@@ -253,8 +286,11 @@ jobs:
           QUARK_SIGNING_KEY: ${{ secrets.QUARK_SIGNING_KEY }}
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.meta.outputs.tag }}
+          VER: ${{ needs.meta.outputs.version }}
         run: |
-          sh tools/sign/sign_release.sh dist/macos/quark-macos.qpak
+          # quark-release.txt went out without this package: its own signed manifest (the launcher prefers it)
+          sh tools/sign/release_manifest.sh testing "$TAG" "$VER" "$GITHUB_SHA" dist/macos/quark-macos.qpak > dist/macos/quark-release-macos.txt
+          sh tools/sign/sign_release.sh dist/macos/quark-macos.qpak dist/macos/quark-release-macos.txt
           (cd dist/macos && sha256sum -- * > SHA256SUMS-macos)
           gh release upload "$TAG" -R "$GITHUB_REPOSITORY" dist/macos/*
 

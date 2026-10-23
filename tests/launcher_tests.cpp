@@ -8,8 +8,11 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include "../src/common/sha256.h"
+#include "../src/common/sign.h"
 #include "../src/common/version.h"
 #include "../src/launcher/install.h"
+#include "../src/launcher/qpak.h"
 #include "../src/launcher/releases.h"
 #include "../src/launcher/selfupdate.h"
 #ifndef _WIN32
@@ -95,6 +98,10 @@ static void testChannels() {
     auto test = releases::forChannel(all, releases::Channel::Testing);
     LCHECK(!test.empty() && test[0].url == "https://github.com/floration/quark/releases/download/test-1.17.0-test.2/quark-linux.qpak");
     LCHECK(!test.empty() && test[0].sigUrl == test[0].url + ".sig");
+    LCHECK(!test.empty() && test[0].asset == "quark-linux.qpak");
+    LCHECK(!test.empty() && test[0].manifestUrl == "https://github.com/floration/quark/releases/download/test-1.17.0-test.2/quark-release.txt" &&
+           test[0].manifestSigUrl == test[0].manifestUrl + ".sig");
+    LCHECK(test.size() == 2 && test[1].manifestUrl.empty());   // no manifest: a signed package alone is refused
     // escapes decoded; quoted JSON inside the notes doesn't split the release
     LCHECK(!test.empty() && test[0].body.find("\"tag_name\": \"v9.9.9\"") != std::string::npos);
     LCHECK(!test.empty() && test[0].body.find("\xe2\x80\x94") != std::string::npos);      // —
@@ -105,6 +112,9 @@ static void testChannels() {
     using V2 = std::vector<std::string>;
     LCHECK((versions(releases::forChannel(win, releases::Channel::Production)) == V2{"1.16.0", "1.15.1", "1.15.0"}));
     LCHECK((versions(releases::forChannel(mac, releases::Channel::Production)) == V2{"1.16.0"}));
+    // a platform's own manifest (macOS testing packages are added after the release) wins over the shared one
+    LCHECK(mac.size() == 8 && mac[0].manifestUrl == "https://github.com/floration/quark/releases/download/test-1.17.0-test.2/quark-release-macos.txt");
+    LCHECK(win.size() == 8 && win[0].manifestUrl == "https://github.com/floration/quark/releases/download/test-1.17.0-test.2/quark-release.txt");
     LCHECK(releases::forChannel(mac, releases::Channel::Testing).empty());
     std::vector<releases::Release> none;
     LCHECK(!releases::parse("{\"message\": \"API rate limit exceeded\"}", "linux", &none) && none.empty());
@@ -190,6 +200,110 @@ static void testUnsignedAndPins() {
     LCHECK((versions(releases::forChannel(forged, releases::Channel::Production)) == V{"1.16.9"}));
     // the old rule still holds: an older package never replaces a newer launcher
     LCHECK(!selfupdate::isNewer("", "1.17.0") && !selfupdate::isNewer("1.16.0", "1.17.0"));
+}
+
+// Review 1.6: a package's .sig only proves the release key signed it; the release's signed manifest must name this
+// release (tag, version, channel) and this package's sha256, so a signed package can't pass as another release.
+static void testManifest() {
+    LCHECK(sha256Hex("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    LCHECK(sha256Hex("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    std::string big(200000, 'q');
+    for (size_t i = 0; i < big.size(); i++) big[i] = (char)(i * 7 + i / 300);
+    std::istringstream bigIn(big);
+    Sha256 parts;   // fed in odd pieces = one shot
+    for (size_t i = 0; i < big.size(); i += 1 + i % 97) parts.update(big.data() + i, std::min(big.size() - i, (size_t)(1 + i % 97)));
+    std::string one = sha256Hex(big);
+    LCHECK(sha256StreamHex(bigIn) == one && parts.hex() == one);
+
+    std::string priv, pub, otherPriv, otherPub;
+    LCHECK(sign::keygen(&priv, &pub) && sign::keygen(&otherPriv, &otherPub));
+    std::string pkg = "QPAK1\nthe 1.17.0-test.2 linux package", pkgSha = sha256Hex(pkg), winSha = sha256Hex("windows");
+    auto manifest = [&](const std::string& channel, const std::string& tag, const std::string& ver, const std::string& sha) {
+        return "quark release\nchannel " + channel + "\ntag " + tag + "\nversion " + ver + "\ncommit " + std::string(40, 'a') +
+               "\nsha256 quark-windows.qpak " + winSha + "\nsha256 quark-linux.qpak " + sha + "\n";
+    };
+    releases::Release r;
+    r.tag = "test-1.17.0-test.2"; r.version = "1.17.0-test.2"; r.prerelease = true; r.asset = "quark-linux.qpak";
+    std::string good = manifest("testing", r.tag, r.version, pkgSha), sig;
+    LCHECK(sign::signData(good, priv, &sig));
+    releases::Manifest m;
+    LCHECK(releases::parseManifest(good, &m) && m.channel == "testing" && m.tag == r.tag && m.sha256.size() == 2 &&
+           m.sha256[1].first == "quark-linux.qpak" && m.sha256[1].second == pkgSha);
+    LCHECK(releases::verifyManifest(good, sig + "\n", pub, r, pkgSha).empty());
+    LCHECK(!releases::verifyManifest(good, sig, otherPub, r, pkgSha).empty());                 // not the release key
+    LCHECK(!releases::verifyManifest(good + "sha256 x y\n", sig, pub, r, pkgSha).empty());    // edited after signing
+    LCHECK(!releases::verifyManifest(good, sig, pub, r, winSha).empty());                      // another (signed) package
+    LCHECK(!releases::verifyManifest(good, sig, pub, r, "").empty());
+    // the same signed manifest + package offered as another release / channel / platform
+    releases::Release asProd = r;
+    asProd.tag = "v1.17.0"; asProd.version = "1.17.0"; asProd.prerelease = false;
+    LCHECK(!releases::verifyManifest(good, sig, pub, asProd, pkgSha).empty());
+    releases::Release relabelled = r;
+    relabelled.prerelease = false;   // a testing build listed as production under its own tag
+    LCHECK(!releases::verifyManifest(good, sig, pub, relabelled, pkgSha).empty());
+    releases::Release otherVer = r;
+    otherVer.version = "1.17.0-test.3";
+    LCHECK(!releases::verifyManifest(good, sig, pub, otherVer, pkgSha).empty());
+    releases::Release mac = r;
+    mac.asset = "quark-macos.qpak";
+    LCHECK(!releases::verifyManifest(good, sig, pub, mac, pkgSha).empty());                   // not named in it
+    // checkManifest alone: each field matters; uppercase hex and CRLF are fine
+    std::string crlf = "quark release\r\nchannel testing\r\ntag " + r.tag + "\r\nversion " + r.version + "\r\nsha256 quark-linux.qpak ";
+    for (char ch : pkgSha) crlf += (char)toupper((unsigned char)ch);
+    LCHECK(releases::parseManifest(crlf + "\r\n", &m) && releases::checkManifest(m, r, pkgSha).empty());
+    LCHECK(releases::parseManifest(manifest("production", r.tag, r.version, pkgSha), &m) && !releases::checkManifest(m, r, pkgSha).empty());
+    LCHECK(releases::parseManifest(manifest("testing", "test-1.17.0-test.1", r.version, pkgSha), &m) && !releases::checkManifest(m, r, pkgSha).empty());
+    LCHECK(!releases::parseManifest("channel testing\n", &m) && !releases::parseManifest("", &m));
+}
+
+// .qpak reading (tools/pack.py's format): files come out as packed; unsafe names, lying sizes, truncation and
+// trailing junk are refused before anything is handed on.
+static std::string pakEntry(const std::string& name, const std::string& data, uint32_t mode = 0644, int64_t claim = -1) {
+    std::string e;
+    auto put = [&](uint64_t v, int n) { for (int i = 0; i < n; i++) e += (char)(v >> (8 * i)); };
+    put(name.size(), 4);
+    e += name;
+    put(mode, 4);
+    put(claim < 0 ? data.size() : (uint64_t)claim, 8);
+    return e + data;
+}
+static void testQpak() {
+    auto readAll = [](const std::string& pak, std::vector<std::pair<std::string, std::string>>* files, std::string* err) {
+        std::istringstream in(pak);
+        return qpak::read(in, pak.size(), [&](const std::string& n, uint32_t, const char* d, size_t len, std::string*) {
+            files->emplace_back(n, std::string(d, len));
+            return true;
+        }, err);
+    };
+    std::vector<std::pair<std::string, std::string>> got;
+    std::string err, good = "QPAK1\n" + pakEntry("quark", "ELF") + pakEntry("maps/temple.qmap", "map text") + pakEntry("empty", "");
+    LCHECK(readAll(good, &got, &err) && got.size() == 3 && got[1].first == "maps/temple.qmap" && got[1].second == "map text" && got[2].second.empty());
+    LCHECK(readAll("QPAK1\n", &(got = {}), &err) && got.empty());   // an empty package
+    for (const std::string& bad : {std::string("QPAK2\n"), std::string("QPAK1"), "QPAK1\n" + pakEntry("../evil", "x"),
+                                   "QPAK1\n" + pakEntry("/etc/passwd", "x"), "QPAK1\n" + pakEntry("a/../../b", "x"),
+                                   "QPAK1\n" + pakEntry("C:/x", "x"), "QPAK1\n" + pakEntry("\\server\\x", "x"),
+                                   "QPAK1\n" + pakEntry(std::string("a\0b", 3), "x"), "QPAK1\n" + pakEntry("", "x"),
+                                   "QPAK1\n" + pakEntry("big", "xy", 0644, 1ull << 40),     // claims a terabyte
+                                   "QPAK1\n" + pakEntry("short", "xy", 0644, 3),            // one byte missing
+                                   good + "\x01\x00"})                                   // trailing junk
+        LCHECK(!readAll(bad, &(got = {}), &err));   // (entries before a bad one may come out: the stage is thrown away)
+    // found by fuzz_qpak: "." (and "a/.", "a//b", "dir/") passed although it names the stage folder, not a file
+    LCHECK(!qpak::safeEntryName(".") && !qpak::safeEntryName("a/.") && !qpak::safeEntryName("a/./b") && !qpak::safeEntryName("a//b") &&
+           !qpak::safeEntryName("dir/") && qpak::safeEntryName("a/b.c") && qpak::safeEntryName(".hidden"));
+    LCHECK(!qpak::safeEntryName("..") && !qpak::safeEntryName("a\\..\\b") && qpak::safeEntryName("quark.app/Contents/MacOS/quark"));
+    // extract: into a fresh stage folder, modes kept (POSIX)
+    fs::path t = fs::temp_directory_path() / ("quark_qpak_test_" + std::to_string(rand()));
+    fs::create_directories(t);
+    std::ofstream(t / "p.qpak", std::ios::binary) << "QPAK1\n" + pakEntry("bin/run", "#!/bin/sh\n", 0755) + pakEntry("data.txt", "hi");
+    LCHECK(qpak::extract(t / "p.qpak", t / "stage", &err) && slurp(t / "stage" / "data.txt") == "hi" && slurp(t / "stage" / "bin" / "run") == "#!/bin/sh\n");
+#ifndef _WIN32
+    struct stat st;
+    LCHECK(stat((t / "stage" / "bin" / "run").c_str(), &st) == 0 && (st.st_mode & 0777) == 0755);
+#endif
+    std::ofstream(t / "q.qpak", std::ios::binary) << "QPAK1\n" + pakEntry("../outside", "x");
+    LCHECK(!qpak::extract(t / "q.qpak", t / "stage2", &err) && !fs::exists(t / "outside") && err == "unsafe path in archive");
+    std::error_code ec;
+    fs::remove_all(t, ec);
 }
 
 // A GitHub releases page: `tests` signed prereleases numbered from `firstTest` down, then production releases `prod`
@@ -411,6 +525,8 @@ int launcherTests() {
     testVersions();
     testChannels();
     testUnsignedAndPins();
+    testManifest();
+    testQpak();
     testManyPages();
     testLauncherSwap();
     return g_lfail;

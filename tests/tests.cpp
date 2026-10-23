@@ -489,6 +489,8 @@ static void testRulesValues() {
     CHECK(in(r.fireRate[1], 0.1f, 10) && in(r.damage[1], 0, 10) && in(r.projSpeed[1], 0.1f, 5));
     (void)def;
     CHECK(r.fromText("custommode=x\ngravity=99\nweapon=2,0,99,0\n") && r.gravity == 3 && r.damage[2] == 10);   // in range still clamps
+    // a map name with nothing safe in it is dropped, never kept as "" (the host would start on map ""; fuzz_rules)
+    CHECK(r.fromText("custommode=x\nmaps= ,temple,   ,anvil\n") && r.maps == std::vector<std::string>({"temple", "anvil"}));
     CHECK(!r.fromText("custommode=" + std::string(40, ' ') + "x\n"));   // cut to 40 first: all spaces, so no mode
     CustomRules a, b;
     CHECK(a.fromText("custommode=  my mode  \ngravity=2\nweapon=3,2,0.5,1\nmaps=temple,../x\n"));
@@ -2003,6 +2005,15 @@ static void testCrossLanguageConstants(uint16_t port) {
         bool ok = qj.count(k) && qj[k] == v.second && qb.count(k) && qb[k] == v;
         if (!ok) { printf("  queue %s differs between community.cpp, worker.js and bot.py\n", k.c_str()); g_fail++; }
     }
+    // quarkdata.py: the pinned Worker address (the bot never follows master.txt: it sends BOT_KEY there)
+    {
+        std::string mc = readSource("src/game/master.cpp"), a, b;
+        std::smatch mm;
+        static const std::regex rxPin("kPinnedMasterUrl = \"([^\"]+)\""), rxPy("\nMASTER_URL = \"([^\"]+)\"");
+        if (std::regex_search(mc, mm, rxPin)) a = mm[1];
+        if (std::regex_search(qd, mm, rxPy)) b = mm[1];
+        CHECK(!a.empty() && a == b);
+    }
     // quarkdata.py: protocol constants and mode names/titles
     auto pyInt = [&](const char* name) {
         std::regex r(std::string("\\n") + name + " = (0x[0-9A-Fa-f]+|\\d+)");
@@ -3278,19 +3289,25 @@ static void testHelloRetry() {
 #endif
 }
 
-// master.txt can move the Worker only with a release-key signature of exactly that file.
+// master.txt can move the Worker only with a release-key signature of "quark-master-v1\n" + exactly that file.
 static void testMasterSignature() {
     printf("signed master.txt\n");
     std::string priv, pub, sig, url;
     CHECK(sign::keygen(&priv, &pub));
     std::string body = "https://quark-master.example.workers.dev/\n";
-    CHECK(sign::signData(body, priv, &sig));
+    CHECK(sign::signData(sign::kMasterSignPrefix + body, priv, &sig));
     CHECK(signedMasterUrl(body, sig, pub, &url) && url == "https://quark-master.example.workers.dev");
+    // domain separation: a signature of the bare file (what `quark_sign sign` makes for packages and manifests) is
+    // not a master.txt signature
+    std::string bare;
+    CHECK(sign::signData(body, priv, &bare) && !signedMasterUrl(body, bare, pub, &url));
+    CHECK(std::string(sign::kMasterSignPrefix) == "quark-master-v1\n");
     CHECK(!signedMasterUrl("https://evil.example.dev\n", sig, pub, &url));                 // another body
     CHECK(!signedMasterUrl(body, sig, sign::kReleasePublicKey, &url));                     // not the release key
     CHECK(!signedMasterUrl(body, "", pub, &url));
     std::string sig2;
-    CHECK(sign::signData("http://plain.example\n", priv, &sig2) && !signedMasterUrl("http://plain.example\n", sig2, pub, &url)); // https only
+    CHECK(sign::signData(sign::kMasterSignPrefix + std::string("http://plain.example\n"), priv, &sig2) &&
+          !signedMasterUrl("http://plain.example\n", sig2, pub, &url)); // https only
 }
 
 // REVIEW 2.3: a dedicated server (src/server/main.cpp: frame() and idle(), never run()) handles ranking server
@@ -3639,7 +3656,11 @@ static void testInputBacklog(uint16_t port) {
         sleepMs(1);
     }
     printf("  queued after the stall %zu, later at least %zu (%.2f on average)\n", after, lowest, samples ? sum / samples : 0.0);
+#ifdef QUARK_SANITIZED   // (the CI sanitizers job: several times slower, so how fast the queue drains isn't telling)
+    if (!(after > 2 && lowest <= 1)) printf("  (sanitized build: drain timing not checked)\n");
+#else
     CHECK(after > 2 && lowest <= 1);
+#endif
     // twice real time: the server runs about real time's worth (plus its token burst and the catch-up allowance)
     uint32_t t0 = s.tick_, c0 = s.players_[id].cmdsRun;
     double end = timeNow() + 1.0;
