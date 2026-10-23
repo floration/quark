@@ -2511,7 +2511,7 @@ void Game::drawHud() {
             {   // dash: a pip per charge (lit = there to spend; the ground refills them, a bhop landing one); while the
                 // cooldown since the last dash runs, the charged pips fill grey like the old cooldown bar, lit when it's done
                 int n = dashMaxCharges(mv.mods), have = std::min<int>(mv.dashCharges, n);
-                const int cdTotal = dashCooldownMs();
+                const int cdTotal = dashCooldownMs(mv.mods);
                 const float f = mv.dashCooldownMs > 0 && cdTotal > 0 ? clampf(1.0f - (float)mv.dashCooldownMs / cdTotal, 0, 1) : 1.0f;
                 float bw = 90 * k, bh = 5 * k, bx = bcx - bw * 0.5f, y = bcy + 52 * k, gap = 4 * k, pw = (bw - gap * (n - 1)) / n;
                 for (int i = 0; i < n; i++) {
