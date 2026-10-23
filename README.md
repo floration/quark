@@ -14,6 +14,7 @@ Windows: MinGW-w64 (gcc; what releases are built with; MSVC isn't supported). ma
 The build needs `python3` (standard library only): it generates the recorded announcer lines from `assets/voice/`.
 Executables: `quark` (game), `quark_server` (dedicated server), `quark_tests` (headless tests).
 Keep the `maps/` folder next to the executables.
+On Windows, `tools\build_windows.ps1` installs the tools, builds, and keeps each build in its own folder; `tools\fetch_ci_build.ps1` downloads a CI build ([docs/LOCAL_BUILD.md](docs/LOCAL_BUILD.md)).
 
 ### Branches: the launcher, the website and the Discord bot
 New work goes to `testing` (each push is a signed testing build); the default branch takes only PRs from it. Three

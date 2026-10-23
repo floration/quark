@@ -54,6 +54,7 @@ The work up to 1.17.0 was done in one long claude.ai cloud session. **1.17.0 shi
    - **Windows:** MinGW-w64 (gcc), cmake and python3. MSVC isn't supported.
    - **macOS:** the Xcode command line tools, cmake and python3.
 3. Build: `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j`. The maps are generated during the build.
+   On Windows, `tools\build_windows.ps1 -Setup` does steps 1-3 and stores each build on the machine ([LOCAL_BUILD.md](LOCAL_BUILD.md)).
 4. A local session pushes with the owner's own git credentials, so it can push `testing` and tags directly.
 5. A heavy test run competes with the game and other work for CPU, and the timing groups (netcode, tick rate) fail under load (section 3).
 
