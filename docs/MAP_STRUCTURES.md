@@ -95,7 +95,8 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 - **Arched inner walls.** Break the sand into arcs.
 - **The gladiator statue.** Centre cover and a grapple anchor (the spear).
 - **Beast pits.** Lethal holes in the sand.
-- **Arcade roof ring with ladders.** An upper ring all the way round.
+- **Arcade roof ring with a ladder up every arched wall.** An upper ring all the way round, and with six ways up (two on the north and south walls, one on the east and west) it's a way round, not a perch: up one ladder, along the roof, down another.
+- **Piers down the middle of the covered ring.** The ambulatory under the arcade roof was a bare 6 m corridor; the piers split it into two aisles and give it cover.
 - **The emperor's box on each side, at 6.5 m up a ladder from the arcade roof.** The best seat in the house and the high point.
 - **Chariot wreckage and weapon racks in the sand.** Cover between the arches.
 
@@ -114,7 +115,8 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 - **The gatehouse.** Where the attackers stack before the push. Its front is walled (you leave round the sides): from the attackers' spawn you could see the defenders' 60 m away.
 - **The barge basin, with a moored barge to cross on.** A lethal corner by the attackers' gate.
 - **The yard crane, up a ladder to its cab at 9.6 m.** The defenders' overwatch over both sites, exposed to everything.
-- **Pallet stacks and drums.** Cover on the way to the sites.
+- **Pallet stacks and drums.** Cover on the way to the sites and in the defenders' yard.
+- **The warehouse roof, up a ladder at each end.** Overwatch over the west lane, and a way over the warehouse rather than a perch with one way down.
 - **The fence and floodlights.** Why the yard is a yard.
 
 ## Downtown: king of the hill. Setting: a city block.
@@ -146,19 +148,19 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 - **The casting pit and ladle.** The lethal middle.
 - **Conveyors and presses.** Low cover in lanes.
 - **Tanks.** Corner cover.
-- **The catwalk ring and bridges.** The upper loop. Its stairs now stand clear of the offices.
+- **The catwalk ring and bridges.** The upper loop. Its stairs now stand clear of the offices, and ladders go up the end of each spur and up each end catwalk: more ways onto the ring, so a chase can go up one way and come down another.
 - **Offices and tool cribs.** Rooms to duck into.
 
 ## Furnace: ranked 1v1 (laser vampire). Setting: a blast furnace.
 **Why it suits laser vampire:**
-- Compact. Laser range is 32 m and most sightlines are under it.
+- Compact. Laser range is 24 m (since 1.17) and most sightlines are under it.
 - The furnace in the middle blocks the straight line between spawns, so you have to come round it.
 - The molten trenches punish a careless pull.
 
 **Structures:**
 - **The furnace and its charging deck.** The centrepiece, reached by the stokers' ladders. A ladder up the stack goes to 10 m, the top perch.
 - **Molten trenches.** Lethal edges.
-- **Inner walls with doors.** Lanes at laser range. A ladder up each wall gives a roof walk over the side bays.
+- **Inner walls with doors.** Lanes at laser range. Two ladders up each wall give a roof walk over the side bays: up one, along the roof, down the other.
 - **Roofed side bays.** The indoor half, where each player starts.
 - **Side blocks with stairs, coal heaps, pillars and the wallbang screen.** Cover and a low second level.
 
@@ -181,18 +183,18 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 
 ## Hamlet: hide and seek. Setting: a valley village.
 **Why it suits hide and seek:**
-- 15% of the floor is a hiding spot (seen from under 5% of the map).
+- 21% of the floor is a hiding spot (seen from under 5% of the map). The dry-stone field walls are head high (1.9 m): crouch behind one and nobody across the field sees you.
 - Every building has a way in, flat roofs have ladders, and the church tower, barn loft, windmill hill and water tower give hiding spots at every height.
 - The seeker has to search, not just look.
 
 **Structures:**
 - **Houses (doors, flat roofs with ladders), the two-storey house, and the barn and hayloft.** Indoor and rooftop hiding.
-- **The church and bell tower, windmill hill, water tower and lookout.** High hiding spots and landmarks.
-- **Pond, creek and footbridges.** Landmarks.
+- **The church and bell tower, windmill hill, water tower and lookout.** High hiding spots and landmarks. The water tower has a ladder on each side.
+- **Pond, creek and footbridges.** Landmarks. Steps lead up out of the creek bed at both ends (it's 1.3 m deep: more than you can jump, so it used to be a trap).
 - **The gully behind the windmill hill.** Lethal: don't hide there.
 - **Orchard, hedges, haystacks and carts.** Crouch spots.
 - **Sheds and woodpiles.** Wallbang hiding spots the seeker can shoot through.
-- **Field walls and log piles.** Break up the open valley.
+- **Field walls and log piles.** Break up the open valley; the walls are head high.
 - **Street lamps.** Light, and they show who's coming.
 
 ## Hightown: hide and seek (tag too). Setting: a skyscraper over a city.
@@ -223,6 +225,7 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 - **Warehouse, transit shed, and the customs office with stairs along its north wall.** Indoor fights and a mid level. The stairs are clear of the doors and the quay steps.
 - **The quay canopy and quay clutter.** Break the 60 m quay into stretches.
 - **The dock crane.** Landmark and grapple anchor.
+- **Lamp posts round the yard walls and along the quay edge, the freighter's deck and mast-head lights.** Dusk light: the yard was lit only under its roofs.
 
 ## Lodestone: multi point (and every other mode). Setting: a mine.
 **Why it suits multi point:**
@@ -259,6 +262,7 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 - **Ledges at 12 m round both caverns, with stairs and ladders.** High ground over D and E, and the defenders' last spawns.
 - **Rock ribs across the cavern floors, stalagmites and stalactites.** They split each cavern into bays, so fights happen at rifle range rather than across 100 m.
 - **Lamp posts, crystal veins in the walls, fissures with daylight.** Light, and something to steer by.
+- **Crates, ore bins, rubble and timber cribs on every floor.** Cover everywhere (4.5 m apart since 1.17, 6 m before: the bays were bare).
 
 *Every other mode (Lodestone is the map built for all of them):*
 - **Team spawns in the two caverns, mirrored either side of the spine.** The portals into the workings are symmetric, so neither side is closer to the middle. A pit prop in the spine tunnel's mouth keeps the two spawn rows out of each other's sight, and a spoil wall on the surface does the same for the stage-0 spawns.
@@ -317,7 +321,7 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 - **The engine house and terminus shed.** Indoor ends. A screen in front of the attackers' spawn row in the engine house: the track was an 87 m sightline from it to the defenders' spawn.
 - **The locomotive.** Landmark and cover.
 - **The water tower with a ladder.** A lookout.
-- **Wagons, brick yard walls, sleeper stacks, crates and cable drums.** Split the yard and cover the track.
+- **Wagons, brick yard walls, sleeper stacks, crates and cable drums.** Split the yard and cover the track (denser since 1.17: cover was on 38% of the floor).
 
 ## Summit: king of the hill. Setting: a mountain peak.
 **Why it suits king of the hill:**
@@ -348,9 +352,9 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 - **The bridge with its pagoda shrine.** The middle's upper level.
 - **Reflecting pools.** A lower floor either side.
 - **Roofed end halls.** Indoor spawns.
-- **The roof walk (ladder up the arched wall, its top flush with the roof).** The upper level.
-- **The pagoda on each roof, with a ladder to its lookout at 11 m.** The high ground, exposed. Its roof is open over the ladder.
-- **Wallbang screens, offering stones and toppled column drums.** Cover in the courts.
+- **The roof walk (two ladders up each arched wall, its top flush with the roof).** The upper level, and a way round: up one ladder, down the other.
+- **The pagoda on each roof, with a ladder to its lookout at 11 m.** The high ground, exposed. Its roof is open over the ladder. A balcony round it at 8 m, off the ladder, is a mid perch.
+- **Wallbang screens, offering stones and toppled column drums.** Cover in the courts (more of them since 1.17).
 
 ## Viaduct: race. Setting: a mountain gorge.
 **Why it suits race:**
@@ -362,7 +366,7 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 **Structures:**
 
 *Leg 1 (ground level):*
-- **Start pavilion and bridge on arches.** The start.
+- **Start pavilion and bridge on arches.** The start. Crowd barriers along the start grid's open sides (and along the turn west) are the line the racers are held behind, and cover for the free-for-all fights there.
 - **Zig-zag pads up.** 0.9 m landings, rising.
 - **The covered lane.** A tunnel through a rock spur that rises to 35 m, so you can't run along its top. The floor has fallen in four times.
 - **The climb.** Up to the beam.

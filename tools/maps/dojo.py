@@ -9,6 +9,9 @@ def build():
     m = M("Dojo", "1v1", sun=(0, 1, 0))   # (ranked: the sun overhead, so both halves are lit alike, MAP-17)
     m.raw("ranked vampire")
     m.raw("holdfire 5")
+    # (the owner's call: a bare eye-to-eye laser arena, simple on purpose. The map report reads this line and doesn't
+    # hold its layout, movement or creativity to the bar; decor, mode fit and balance still are. No exemption by name.)
+    m.raw("# exempt layout movement creativity : the owner's bare eye-to-eye arena, simple on purpose")
     P, W = 12, 4.5                                                                 # platform half size, moat width
     moat = [(-P - W, -P - W, P + W, -P, "molten"), (-P - W, P, P + W, P + W, "molten"),
             (-P - W, -P, -P, P, "molten"), (P, -P, P + W, P, "molten")]

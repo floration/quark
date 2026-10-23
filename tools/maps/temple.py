@@ -48,11 +48,14 @@ def build():
     # pagoda on the roof with a ladder to its lookout 11 m up: the high ground, exposed on every side, one per end
     m.box(-22, 5.0, 13.8, 22, 5.6, 14.2, accent=True, mirror=True)
     m.ladder(-5, 13.8, 0, 5.6, "s", width=0.8); m.ladder(5, -13.8, 0, 5.6, "n", width=0.8)
+    m.ladder(5, 13.8, 0, 5.6, "s", width=0.8); m.ladder(-5, -13.8, 0, 5.6, "n", width=0.8)   # (two each: up one, down the other)
     m.box(-1.7, 5.6, 22.3, 1.7, 11.1, 25.7, accent=True, mirror=True)                              # the pagoda's body
     for (y, r) in ((7.4, 2.4), (9.2, 2.1)): m.box(-r, y, 24 - r, r, y + 0.25, 24 + r, mat="trim", mirror=True)   # eaves
     for (a0, b0, a1, b1) in minus((-1.9, 22.1, 1.9, 25.9), [(-0.6, 22.1, 0.6, 22.3)]): m.box(a0, 11.1, b0, a1, 11.4, b1, mirror=True)
     m.ladder(0, 22.3, 5.6, 11.4, "s", width=0.8)
     m.ladder(0, -22.3, 5.6, 11.4, "n", width=0.8)
+    # a balcony round each pagoda at 8 m, off the ladder up it: a mid perch between the roof walk and the lookout
+    for (a0, b0, a1, b1) in minus((-3.2, 20.8, 3.2, 27.2), [(-1.7, 22.3, 1.7, 25.7), (-0.7, 20.8, 0.7, 22.3)]): m.box(a0, 8.0, b0, a1, 8.25, b1, accent=True, mirror=True)   # (open over the ladder)
     for (x, z) in ((-1.8, 22.2), (1.6, 22.2), (-1.8, 25.6), (1.6, 25.6)): m.box(x, 11.4, z, x + 0.2, 14.0, z + 0.2, mat="metal", mirror=True)
     for (a0, b0, a1, b1) in minus((-2.3, 21.7, 2.3, 26.3), [(-0.7, 21.7, 0.7, 22.4)]): m.box(a0, 14.0, b0, a1, 14.3, b1, accent=True, mirror=True)   # (open over the ladder)
     m.glow(-0.3, 14.3, 23.7, 0.3, 15.0, 24.3, mirror=True)
@@ -82,7 +85,7 @@ def build():
         m.ladder(-x, -z, 2.3, 7.2, "s", width=0.8)
         m.light(x, 3.0, z, 7, 0.6, fixture=False, mirror=True)
     # more to fight around in the open courts: broken column drums and fallen lintels, waist and head high
-    m.clutter(-20, -28, 20, 28, 10, [(1.2, 1.2, 1.4), (3.0, 0.8, 1.0), (0.8, 3.0, 1.0), (1.6, 1.6, 2.2)], seed=11, mirror=True, accent=0.4)
+    m.clutter(-20, -28, 20, 28, 7, [(1.2, 1.2, 1.4), (3.0, 0.8, 1.3), (0.8, 3.0, 1.3), (1.6, 1.6, 2.2)], seed=11, mirror=True, accent=0.4)   # (denser: the courts had cover on 19% of the floor)
     # ruins of the old outer cloister: broken wall runs, chest to head high, with fallen blocks at their feet (cover
     # and something to strafe around, without closing the courts in again)
     for (x0, z0, x1, z1, h) in ((-19, -25.6, -14, -25, 2.6), (-20.6, -20, -20, -15, 1.8), (13, -21, 13.6, -16.5, 2.2),

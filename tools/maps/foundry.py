@@ -91,6 +91,8 @@ def build():
     m.stairs(-31.6, -2, -28.6, 10, 6.0, "z", 1, mirror=True)                 # (clear of the corner offices)
     m.stairs(6, -23.6, 18, -21.0, 6.0, "x", 1, mirror=True)
     m.catwalk(-9, -23.6, -7, -10, 6.0, rails="x", mirror=True)                 # a spur out over the floor
+    m.ladder(-8, -9.88, 0, 6.0, "n", width=0.8); m.ladder(8, 9.88, 0, 6.0, "s", width=0.8)       # (up its end from the floor)
+    m.ladder(-31.48, -14, 0, 6.0, "w", width=0.8); m.ladder(31.48, 14, 0, 6.0, "e", width=0.8)  # (and up the end catwalks: more ways onto the ring)
     # raised offices in two corners (the old corner platforms), with windows over the floor
     m.box(-34, 0, 14, -22, 3.0, 26, mirror=True); m.stairs(-22, 14, -19, 20, 3.0, "x", -1, mirror=True)
     m.windowwall(-34, 13.6, -24, 14.0, 6.0, 1.0, 2.6, every=3.0, width=1.8, wallbang=True, mirror=True, base=3.0)
@@ -108,6 +110,6 @@ def build():
     m.raw("checkpoint -1.5 0 7 1.5 4 10"); m.raw("checkpoint -3 0 18 3 4 22")
     for x in (-4, 0, 4): m.spawn("race", x, 0, -17, 45)
     # tool cribs along the walls: little rooms with one door (somewhere to duck out of a chase, and to hide)
-    m.cribs([(-29, -6, "e"), (-29, 6, "e"), (-16, -21, "n"), (16, -21, "n"), (-6, -21, "n"), (6, 21, "s"), (-20, 10, "s"), (24, 6, "w"), (-24, -12, "e")], mirror=True, count=3)
+    m.cribs([(-29, -6, "e"), (-29, 6, "e"), (-16, -21, "n"), (16, -21, "n"), (-6, -21, "n"), (6, 21, "s"), (-20, 10, "s"), (24, 6, "w"), (-24, -12, "e")], mirror=True, count=7)   # (1.17: 7 a side, was 3: a tag map wants somewhere to hide)
     m.raw("setting factory floor")
     m.save("foundry")

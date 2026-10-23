@@ -191,6 +191,11 @@ def build():
         for x in (-5.6, -2, 2, 5.6):
             for z in (z0 + 0.6, z1 - 0.6): m.metal(x - 0.2, y, z - 0.2, x + 0.2, y + 4.6, z + 0.2)
         m.light(-3, y + 4.0, (z0 + z1) / 2, 7, 0.7, fixture=False); m.light(3, y + 4.0, (z0 + z1) / 2, 7, 0.7, fixture=False)
+    # crowd barriers along the open sides of the start grid and the turn west (cover for the free-for-all fights there,
+    # and the line the racers are held behind)
+    for (x0, x1, z0, z1, y) in ((-6, -5.75, 66, 78, 0), (5.75, 6, 66, 78, 0), (-12, -2.5, 33.75, 34, 1.5)):   # (and along the turn deck, clear of the pads)
+        m.box(x0, y, z0, x1, y + 1.25, z1, accent=True)
+        for z in range(int(z0) + 1, int(z1), 3): m.metal(x0 - 0.05, y, z - 0.1, x1 + 0.05, y + 1.3, z + 0.1)
     for z in (74, 76.5):                                                       # the start grid: eight racers (a full server)
         for x in (-4.5, -1.5, 1.5, 4.5): m.spawn("race", x, 0, z, 0)
     m.raw("setting mountain gorge")

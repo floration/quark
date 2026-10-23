@@ -85,7 +85,7 @@ def build():
     m.spawn("any", -20, 0, 30, 90); m.spawn("any", 20, 0, -30, -90)
     # crates, cable drums and parts stacked around the yard, away from the track (cover for the defenders'
     # fallbacks and the attackers' pushes)
-    m.clutter(-30, -60, 30, 60, 6, [(1.4, 1.4, 1.4), (2.6, 1.2, 1.2), (1.2, 2.6, 1.2), (1.6, 1.6, 2.2)], seed=7)
+    m.clutter(-30, -60, 30, 60, 5, [(1.4, 1.4, 1.4), (2.6, 1.2, 1.2), (1.2, 2.6, 1.2), (1.6, 1.6, 2.2)], seed=7)   # (denser in 1.17: cover on 38% of the floor was thin)
     m.raw("setting rail yard")
     m.raw("cartcheck 0.33"); m.raw("cartcheck 0.66")   # checkpoints a third and two thirds along: time, and no rolling back past them
     m.save("railyard")

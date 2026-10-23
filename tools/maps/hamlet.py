@@ -96,12 +96,13 @@ def build():
     # water tower (north-west) with a ladder to the walkable tank top
     for (x, z) in ((-50, -50), (-44, -50), (-50, -44), (-44, -44)): m.metal(x - 0.3, 0, z - 0.3, x + 0.3, 8, z + 0.3)
     m.box(-51, 8, -51, -43, 11, -43, accent=True); m.box(-51.3, 11, -51.3, -42.7, 11.3, -43)
-    m.ladder(-47, -42.88, 0, 11.3, "n")
+    m.ladder(-47, -42.88, 0, 11.3, "n"); m.ladder(-47, -51.42, 0, 11.3, "s")   # (a ladder each side: the tank top is no dead end)
     m.metal(-51, 3.8, -50.1, -43, 4.1, -49.9); m.metal(-51, 3.8, -44.1, -43, 4.1, -43.9)
     # pond (south-west) with reeds and a jetty
     for (x, z) in ((-44, 28), (-32, 40), (-45, 39), (-31, 27)): m.metal(x - 0.06, -1, z - 0.06, x + 0.06, 0.8, z + 0.06)
     m.box(-38, -1.0, 34, -36, 0, 42)
-    # creek (west) with two footbridges
+    # creek (west) with two footbridges, and steps up out of its bed at both ends (you can't jump 1.3 m: it was a trap)
+    m.stairs(-23, -6, -20, -2, 0, "x", 1, base=-1.3); m.stairs(-55, -6, -52, -2, 0, "z", -1, base=-1.3)
     for x in (-48, -30): m.box(x - 1.2, -0.25, -6.2, x + 1.2, 0, -1.8, accent=True); m.box(x - 1.3, 0, -6.2, x - 1.2, 0.9, -1.8, accent=True); m.box(x + 1.2, 0, -6.2, x + 1.3, 0.9, -1.8, accent=True)
     # orchard (south-east of the green), hedges, haystacks, carts, fences
     for (x, z) in ((36, 4), (42, 8), (48, 4), (36, 14), (48, 14), (42, -2), (50, -18)): m.tree(x, z, 0.9)
@@ -133,7 +134,9 @@ def build():
         m.metal(x - 0.08, 0, z - 0.08, x + 0.08, 3.4, z + 0.08); m.box(x - 0.25, 3.4, z - 0.25, x + 0.25, 3.7, z + 0.25, accent=True)
         m.light(x, 3.2, z, 9, 0.7, fixture=False)
     # dry-stone field walls and log piles on every open patch of ground (placed only where nothing stands within 1.3 m
-    # and away from spawns): the valley floor was a lot of open grass with nowhere to break line of sight
-    m.clutter(-54, -54, 54, 54, 5, [(3.0, 0.6, 1.2), (0.6, 3.0, 1.2), (1.4, 1.4, 1.8), (2.0, 1.2, 1.5)], seed=11)
+    # and away from spawns): the valley floor was a lot of open grass with nowhere to break line of sight. The walls are
+    # head high (1.9 m): crouch behind one and nobody across the field sees you (a hide map wants 15% of its floor
+    # hidden; with waist-high walls it had 13%)
+    m.clutter(-54, -54, 54, 54, 5, [(3.0, 0.6, 1.9), (0.6, 3.0, 1.9), (1.4, 1.4, 1.8), (2.0, 1.2, 1.5)], seed=11)
     m.raw("setting valley village")
     m.save("hamlet")

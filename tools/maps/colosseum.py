@@ -47,8 +47,16 @@ def build():
         for c in (-10, 0, 10):
             m.glow(c - 0.5, 3.85, side * 18 - 0.4, c + 0.5, 4.0, side * 18 + 0.4); m.glow(side * 18 - 0.4, 3.85, c - 0.5, side * 18 + 0.4, 4.0, c + 0.5)
             m.light(c, 3.2, side * 18, 7, 0.5, fixture=False); m.light(side * 18, 3.2, c, 7, 0.5, fixture=False)
-    # ladders from the sand up the arched walls onto the arcade roof (point symmetric)
+    # ladders from the sand up the arched walls onto the arcade roof (point symmetric): one on every wall, so the roof
+    # ring is a way round, not a perch with one way up
     m.ladder(5, -14.75, 0, 4.3, "n"); m.ladder(-5, 14.75, 0, 4.3, "s")
+    m.ladder(-5, -14.75, 0, 4.3, "n"); m.ladder(5, 14.75, 0, 4.3, "s")
+    m.ladder(14.75, -5, 0, 4.3, "e"); m.ladder(-14.75, 5, 0, 4.3, "w")
+    # the ambulatory's piers: a row down the middle of the covered ring holds the roof up and splits it into two
+    # aisles (cover in the ring, which was a bare 6 m corridor)
+    for c in (-12, 0, 12):   # (clear of the spawns in the ring)
+        for (x, z) in ((c, -18.1), (c, 18.1), (-18.1, c), (18.1, c)): m.box(x - 0.45, 0, z - 0.45, x + 0.45, 4.0, z + 0.45, accent=True)
+    for (x, z) in ((-18.1, -18.1), (18.1, -18.1), (-18.1, 18.1), (18.1, 18.1)): m.box(x - 0.6, 0, z - 0.6, x + 0.6, 4.0, z + 0.6, accent=True)
     # the emperor's box on the east and west stands: a platform at 6.5 m under a canopy, up a ladder from the arcade
     # roof - the best seat in the house, and the highest point of the arena
     m.box(21.5, 2.7, -3, 22, 6.2, 3, accent=True, mirror=True)

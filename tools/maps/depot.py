@@ -48,7 +48,7 @@ def build():
     m.spawn("a", 0, 0, 31, 0)
     m.spawn("any", -20, 0, 16, 90); m.spawn("any", 8, 0, 16, -90)
     # a ladder up the warehouse's south wall: its roof is an overwatch perch above the west lane (and exposed)
-    m.ladder(-11, 10.4, 0, 5.35, "n")
+    m.ladder(-11, 10.4, 0, 5.35, "n"); m.ladder(-11, -8.4, 0, 5.35, "s")   # (one up each end: the roof is a way over, not a dead end)
     # the loading canopy over the east dock and the trench: the east lane fights under a roof, lit from above
     for z in (-15, -5, 5, 15):
         m.metal(11.4, 0, z - 0.25, 11.9, 6.5, z + 0.25); m.metal(25.4, 1.2, z - 0.25, 25.9, 6.5, z + 0.25)
@@ -73,6 +73,6 @@ def build():
     m.ladder(22, -31.5, 0, 9.6, "n", width=0.8)
     m.metal(16, 9.6, -32.3, 24.5, 10.0, -31.7); m.light(22, 8.6, -32, 8, 0.7, fixture=False)
     # pallet stacks and drums around the yard (cover on the way to the sites; never on a spawn or a lane's stairs)
-    m.clutter(-24, -20, 24, 26, 6, [(1.4, 1.4, 1.3), (2.2, 1.2, 1.1), (1.2, 2.2, 1.1), (1.0, 1.0, 1.6)], seed=17)
+    m.clutter(-24, -34, 24, 26, 5, [(1.4, 1.4, 1.3), (2.2, 1.2, 1.1), (1.2, 2.2, 1.1), (1.0, 1.0, 1.6)], seed=17)   # (the defenders' yard too)
     m.raw("setting freight depot")
     m.save("depot")

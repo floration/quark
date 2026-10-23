@@ -64,5 +64,14 @@ def build():
     m.container(14, 0, 19, 3); m.box(19.5, 0, 0.5, 21.5, 1.4, 2.5)
     # a ladder up the lighthouse to its gallery: the classic harbour perch, exposed from every side
     m.ladder(26.5, 24.5, 1.2, 8.4, "s", width=0.9)
+    # dusk lighting: lamp posts round the yard walls and along the quay edge, the freighter's deck lights and its mast
+    # head (the yard was lit only under its roofs: 24 lights over 4600 m2)
+    for (x, z) in ((-29.2, -8), (-29.2, 6), (29.2, -6), (29.2, 8), (-8, -29.2), (-2, 11), (6, -16), (-14, -12)):
+        m.metal(x - 0.1, 0, z - 0.1, x + 0.1, 5.2, z + 0.1); m.glow(x - 0.3, 5.2, z - 0.3, x + 0.3, 5.45, z + 0.3); m.light(x, 4.8, z, 10, 0.6, fixture=False)
+    for x in (-16, 6, 18):
+        m.metal(x - 0.1, 1.2, 20.9, x + 0.1, 5.4, 21.1); m.glow(x - 0.3, 5.4, 20.7, x + 0.3, 5.6, 21.3); m.light(x, 5.0, 20.5, 9, 0.6, fixture=False)
+    for x in (-23, -6): m.glow(x - 0.2, 1.6, 22.5, x + 0.2, 1.9, 22.7); m.light(x, 2.2, 24, 7, 0.6, fixture=False)   # deck lights on the freighter
+    m.light(-8, 9.0, 24.5, 10, 0.6, fixture=False)                             # its mast head
+    m.light(-23, 3.6, -23, 8, 0.7); m.light(21, 4.2, -14, 8, 0.6, fixture=False); m.light(12, 3.0, -21, 7, 0.6, fixture=False)   # the warehouse, the container rows
     m.raw("setting harbour")
     m.save("harbor")

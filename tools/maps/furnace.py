@@ -1,4 +1,4 @@
-"""FURNACE: ranked LASER VAMPIRE. Compact (laser range is 32 m), close corners; the furnace in the middle
+"""FURNACE: ranked LASER VAMPIRE. Compact (laser range is 24 m), close corners; the furnace in the middle
 glows through its grates, molten trenches behind the inner walls (bridged in the middle) punish a careless
 pull from the tractor beam. Point symmetric."""
 from .prefabs import *
@@ -36,5 +36,6 @@ def build():
     m.ladder(1.6, 0.6, 5.0, 10.0, "w", width=0.8); m.ladder(-1.6, -0.6, 5.0, 10.0, "e", width=0.8)   # up the stack from the deck
     # a ladder up each inner wall onto the side bay's roof (4.4 m): a roof walk over the spawns
     m.ladder(-10, 6.8, 0, 4.4, "s", width=0.8); m.ladder(10, -6.8, 0, 4.4, "n", width=0.8)
+    m.ladder(10, 6.8, 0, 4.4, "s", width=0.8); m.ladder(-10, -6.8, 0, 4.4, "n", width=0.8)   # (two each: the roof walk is a way round)
     m.raw("setting blast furnace")
     m.save("furnace")
