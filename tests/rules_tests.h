@@ -350,47 +350,334 @@ static void testHeadBox(uint16_t port) {
     s.stop();
 }
 
-// 5.6: hide and seek. Everyone seeks once (rounds = players, not clamp(players, 3, 6) in slot order), and a hider
-// and the seeker split the points by how long the hider stayed hidden (no +2 just for surviving).
+// 5.6 / B8: hide and seek. Everyone seeks once (rounds = players), a hider unfound when the round ends scores 1,
+// the seeker 1 per hider found, a found hider 0, and a fall 0 for the hider and nothing for the seeker.
 static void testHideScoring(uint16_t port) {
-    printf("hide and seek: everyone seeks once, points by time hidden\n");
+    printf("hide and seek: everyone seeks once, 1 per find, 1 for staying hidden\n");
     Server s;
     ServerConfig cfg;
     cfg.map = "hamlet"; cfg.mode = MODE_HIDE; cfg.port = port;
-    NetClient c[2];
+    NetClient c[3];
     std::vector<NetClient*> cls;
-    if (!rulesStart(s, cfg, c, 2, cls, false)) { s.stop(); return; }
+    if (!rulesStart(s, cfg, c, 3, cls, false)) { s.stop(); return; }
     s.command("forcestart");
     pump(s, cls, 0.2, idle);
     auto itNow = [&] { for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].it) return i; return -1; };
-    int first = itNow();
-    CHECK(first >= 0);
-    if (first < 0) { s.stop(); return; }
-    int other = c[0].clientId() == first ? c[1].clientId() : c[0].clientId();
-    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // freeze over
-    CHECK(s.ms_.phase == PHASE_LIVE);
-    s.liveSince_ = s.time() - kHideRoundTime * 0.25;      // found a quarter of the way in: 1 of 4 to the hider, 3 to the seeker
-    s.players_[first].itFreezeUntil = 0;
-    for (int k = 0; k < 8 && s.players_[other].alive; k++) {
-        s.players_[first].move.pos = {0, 0, 6}; s.players_[first].move.vel = {};
-        s.players_[other].move.pos = {0, 0, 5}; s.players_[other].move.vel = {};
-        pump(s, cls, 0.05, [&](int i) { UserCmd u; u.yaw = 0; u.pitch = -0.3f; if (cls[i]->clientId() == first) u.buttons = BTN_FIRE; return u; });
-    }
-    pump(s, cls, 0.1, idle);
-    printf("  round 1: %s found at 1/4 -> seeker %d, hider %d\n", s.players_[other].name.c_str(), s.players_[first].score, s.players_[other].score);
-    CHECK(s.ms_.phase == PHASE_ROUND_END && s.players_[first].score == 3 && s.players_[other].score == 1);
-    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // round 2: the other player seeks
-    CHECK(s.ms_.round == 2 && itNow() == other);
+    auto score = [&](int i) { return s.players_[i].score; };
+    auto stab = [&](int from, int to) {            // stand 1 m apart, the seeker facing the hider
+        for (int k = 0; k < 40 && s.players_[to].alive; k++) {
+            s.players_[from].move.pos = {0, 0, 6}; s.players_[from].move.vel = {};
+            s.players_[to].move.pos = {0, 0, 5}; s.players_[to].move.vel = {};
+            pump(s, cls, 0.05, [&](int i) { UserCmd u; u.yaw = 0; u.pitch = -0.3f; if (cls[i]->clientId() == from) u.buttons = BTN_FIRE; return u; });
+        }
+    };
+    auto goLive = [&] { s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle); CHECK(s.ms_.phase == PHASE_LIVE); };
+    int seekers[3] = {-1, -1, -1};
+    // round 1: the seeker finds one hider, the other falls off the map
+    seekers[0] = itNow();
+    CHECK(seekers[0] >= 0);
+    if (seekers[0] < 0) { s.stop(); return; }
+    int h[2], n = 0;
+    for (auto* cl : cls) if (cl->clientId() != seekers[0]) h[n++] = cl->clientId();
+    goLive();
+    stab(seekers[0], h[0]);
+    CHECK(!s.players_[h[0]].alive && s.players_[h[0]].found);
+    s.players_[h[1]].move.pos.y = s.map_.killY() - 5;   // a fall
+    pump(s, cls, 0.2, idle);
+    printf("  round 1: seeker %d, found %d, fell %d\n", score(seekers[0]), score(h[0]), score(h[1]));
+    CHECK(s.ms_.phase == PHASE_ROUND_END && score(seekers[0]) == 1 && score(h[0]) == 0 && score(h[1]) == 0);
+    // round 2: nobody found, time runs out: both hiders +1, the seeker nothing
     s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
-    CHECK(s.ms_.phase == PHASE_LIVE);
-    s.liveSince_ = s.time() - kHideRoundTime;           // hidden the whole round: all 4
-    s.phaseEnd_ = s.time();
-    pump(s, cls, 0.1, idle);
-    printf("  round 2: hidden to the end -> %d, seeker %d\n", s.players_[first].score, s.players_[other].score);
-    CHECK(s.ms_.phase == PHASE_ROUND_END && s.players_[first].score == 7 && s.players_[other].score == 1);
-    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // two players, two rounds: over (it used to be 3, one seeking twice)
-    CHECK(s.ms_.phase == PHASE_MATCH_END && s.ms_.round == 2);
+    seekers[1] = itNow();
+    CHECK(s.ms_.round == 2 && seekers[1] >= 0 && seekers[1] != seekers[0]);
+    goLive();
+    int before[kMaxPlayers];
+    for (int i = 0; i < kMaxPlayers; i++) before[i] = score(i);
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+    for (auto* cl : cls) {
+        int i = cl->clientId();
+        CHECK(score(i) - before[i] == (i == seekers[1] ? 0 : 1));
+    }
+    CHECK(s.ms_.phase == PHASE_ROUND_END);
+    // round 3: the last player seeks and finds both: +2
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+    seekers[2] = itNow();
+    CHECK(s.ms_.round == 3 && seekers[2] >= 0 && seekers[2] != seekers[0] && seekers[2] != seekers[1]);
+    goLive();
+    for (int i = 0; i < kMaxPlayers; i++) before[i] = score(i);
+    for (auto* cl : cls) if (cl->clientId() != seekers[2]) { s.players_[seekers[2]].itFreezeUntil = 0; stab(seekers[2], cl->clientId()); }
+    pump(s, cls, 0.2, idle);
+    CHECK(s.ms_.phase == PHASE_ROUND_END && score(seekers[2]) - before[seekers[2]] == 2);
+    for (auto* cl : cls) if (cl->clientId() != seekers[2]) CHECK(score(cl->clientId()) == before[cl->clientId()]);
+    printf("  totals: %d %d %d\n", score(seekers[0]), score(seekers[1]), score(seekers[2]));
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // three players, three rounds: over
+    CHECK(s.ms_.phase == PHASE_MATCH_END && s.ms_.round == 3);
     s.stop();
+}
+
+// B8: hide and seek ends tied for first -> rock paper scissors among the tied, synced to every client. `n` humans
+// (all tied); the server and the clients see the same throws. Returns false if the setup failed.
+static bool rpsSetup(Server& s, ServerConfig cfg, NetClient* c, int n, std::vector<NetClient*>& cls) {
+    cfg.map = "hamlet"; cfg.mode = MODE_HIDE;
+    if (!rulesStart(s, cfg, c, n, cls, false)) return false;
+    s.command("forcestart");
+    pump(s, cls, 0.2, idle);
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // live
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);   // time's up: round end
+    CHECK(s.ms_.phase == PHASE_ROUND_END);
+    for (auto& p : s.players_) if (p.connected) { p.sought = true; p.score = 3; }   // every round played, all on 3
+    s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+    CHECK(s.ms_.phase == PHASE_ROUND_END && (s.ms_.flags & MS_RPS) && s.rps_.stage == RPS_PICK && s.rps_.throwNo == 1);
+    for (auto* cl : cls) CHECK(cl->mode().flags & MS_RPS);
+    return (s.ms_.flags & MS_RPS) != 0;
+}
+// Every client throws (shape per client, 0 = no pick), then the reveal; returns the reveal each client was sent.
+static std::vector<GameEvent> rpsThrow(Server& s, std::vector<NetClient*>& cls, const std::vector<int>& shapes) {
+    for (auto* cl : cls) cl->takeEvents();
+    for (size_t i = 0; i < cls.size(); i++) if (shapes[i]) cls[i]->sendCommand(std::string("rps ") + rpsName(shapes[i]));
+    pump(s, cls, 0.2, idle);
+    if (s.rps_.stage == RPS_PICK) { s.rps_.stageEnd = s.time(); pump(s, cls, 0.1, idle); }   // (someone didn't pick: the clock runs out)
+    pump(s, cls, 0.1, idle);
+    std::vector<GameEvent> got;
+    for (auto* cl : cls) {
+        GameEvent r; r.type = 255;
+        for (auto& e : cl->takeEvents()) if (e.type == EV_RPS && e.a == RPS_REVEAL) r = e;
+        got.push_back(r);
+    }
+    return got;
+}
+static void rpsNext(Server& s, std::vector<NetClient*>& cls) { s.rps_.stageEnd = s.time(); pump(s, cls, 0.1, idle); }   // (past the reveal)
+static int rpsShapeIn(const GameEvent& e, int id) {   // a player's shape in an EV_RPS text
+    std::istringstream ss(e.text.substr(0, e.text.find('\n')));
+    std::string t; ss >> t >> t;
+    while (ss >> t) { int i, sh, w, o; if (sscanf(t.c_str(), "%d:%d:%d:%d", &i, &sh, &w, &o) == 4 && i == id) return sh; }
+    return -1;
+}
+
+static void testRpsTwo(uint16_t port) {
+    printf("hide and seek tiebreak: two tied, best of 3, a draw is thrown again\n");
+    Server s;
+    ServerConfig cfg; cfg.port = port;
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rpsSetup(s, cfg, c, 2, cls)) { s.stop(); return; }
+    int a = c[0].clientId(), b = c[1].clientId();
+    CHECK(s.rps_.bestOf3 && (s.rps_.in >> a & 1) && (s.rps_.in >> b & 1));
+    auto ev = rpsThrow(s, cls, {RPS_ROCK, RPS_ROCK});   // a draw: nobody scores, throw again
+    CHECK(s.rps_.stage == RPS_REVEAL && s.rps_.wins[a] == 0 && s.rps_.wins[b] == 0 && s.rps_.winner < 0);
+    for (auto& e : ev) CHECK(e.type == EV_RPS && rpsShapeIn(e, a) == RPS_ROCK && rpsShapeIn(e, b) == RPS_ROCK);   // everyone saw the same reveal
+    rpsNext(s, cls);
+    CHECK(s.rps_.stage == RPS_PICK && s.rps_.throwNo == 2);
+    rpsThrow(s, cls, {RPS_PAPER, RPS_ROCK});            // a 1-0
+    CHECK(s.rps_.wins[a] == 1 && s.rps_.wins[b] == 0);
+    rpsNext(s, cls);
+    rpsThrow(s, cls, {RPS_SCISSORS, 0});                // b doesn't pick: a random one
+    CHECK(s.rps_.pick[b] >= RPS_ROCK && s.rps_.pick[b] <= RPS_SCISSORS);
+    int wa = s.rps_.wins[a], wb = s.rps_.wins[b];
+    printf("  throw 3: %s vs %s (random) -> %d-%d\n", rpsName(s.rps_.pick[a]), rpsName(s.rps_.pick[b]), wa, wb);
+    for (int k = 0; k < 6 && s.rps_.winner < 0; k++) { rpsNext(s, cls); rpsThrow(s, cls, {RPS_ROCK, RPS_SCISSORS}); }   // a wins the rest
+    CHECK(s.rps_.winner == a);
+    for (auto* cl : cls) cl->takeEvents();
+    rpsNext(s, cls);
+    CHECK(s.ms_.phase == PHASE_MATCH_END && !(s.ms_.flags & MS_RPS));
+    bool told = false;
+    for (auto& e : c[1].takeEvents()) told |= e.type == EV_ROUND_WIN && e.b == 1 && e.a == a;
+    CHECK(told);   // the tiebreak's winner is the match winner
+    s.stop();
+}
+
+static void testRpsMany(uint16_t port) {
+    printf("hide and seek tiebreak: three or more throw at once, the losing shape is out\n");
+    {   // a clear loser: two shapes, the scissors are out; two left play best of 3
+        Server s;
+        ServerConfig cfg; cfg.port = port;
+        NetClient c[3];
+        std::vector<NetClient*> cls;
+        if (!rpsSetup(s, cfg, c, 3, cls)) { s.stop(); return; }
+        CHECK(!s.rps_.bestOf3);
+        int x = c[2].clientId();
+        rpsThrow(s, cls, {RPS_ROCK, RPS_ROCK, RPS_SCISSORS});
+        CHECK((s.rps_.out >> x & 1) && s.rps_.bestOf3 && s.rps_.winner < 0);
+        rpsNext(s, cls);
+        CHECK(s.rps_.stage == RPS_PICK && s.rps_.throwNo == 2);
+        c[2].sendCommand("rps paper");   // out: no say any more
+        rpsThrow(s, cls, {RPS_PAPER, RPS_ROCK, 0});
+        CHECK(s.rps_.pick[x] == RPS_NONE && s.rps_.wins[c[0].clientId()] == 1);
+        rpsNext(s, cls);
+        rpsThrow(s, cls, {RPS_PAPER, RPS_ROCK, 0});
+        CHECK(s.rps_.winner == c[0].clientId());
+        rpsNext(s, cls);
+        CHECK(s.ms_.phase == PHASE_MATCH_END);
+        s.stop();
+    }
+    {   // nobody clearly loses (all the same, or all three shapes): nobody is out, throw again; one clear winner takes it
+        Server s;
+        ServerConfig cfg; cfg.port = (uint16_t)(port + 1);
+        NetClient c[4];
+        std::vector<NetClient*> cls;
+        if (!rpsSetup(s, cfg, c, 4, cls)) { s.stop(); return; }
+        rpsThrow(s, cls, {RPS_ROCK, RPS_ROCK, RPS_ROCK, RPS_ROCK});
+        CHECK(s.rps_.out == 0 && s.rps_.winner < 0 && s.rps_.result.find("nobody") != std::string::npos);
+        rpsNext(s, cls);
+        CHECK(s.rps_.stage == RPS_PICK && s.rps_.throwNo == 2);
+        rpsThrow(s, cls, {RPS_ROCK, RPS_PAPER, RPS_SCISSORS, RPS_ROCK});
+        CHECK(s.rps_.out == 0 && s.rps_.winner < 0);
+        rpsNext(s, cls);
+        rpsThrow(s, cls, {RPS_SCISSORS, RPS_PAPER, RPS_PAPER, RPS_PAPER});   // one beats everyone: wins it outright
+        CHECK(s.rps_.winner == c[0].clientId());
+        rpsNext(s, cls);
+        CHECK(s.ms_.phase == PHASE_MATCH_END);
+        s.stop();
+    }
+    {   // a bot in the tie throws at random on its own; nobody tied, no tiebreak
+        Server s;
+        ServerConfig cfg; cfg.port = (uint16_t)(port + 2);
+        cfg.map = "hamlet"; cfg.mode = MODE_HIDE;
+        NetClient c[1];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 1, cls, false)) { s.stop(); return; }
+        int bot = s.addBot(TEAM_A, 1);
+        pump(s, cls, 0.2, idle);
+        s.command("forcestart");
+        pump(s, cls, 0.2, idle);
+        s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+        s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+        for (auto& p : s.players_) if (p.connected) { p.sought = true; p.score = 2; }
+        s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+        CHECK((s.ms_.flags & MS_RPS) && bot >= 0 && s.rps_.pick[bot] >= RPS_ROCK && s.rps_.pick[bot] <= RPS_SCISSORS);
+        s.stop();
+        Server t;
+        ServerConfig cfg2; cfg2.port = (uint16_t)(port + 3);
+        cfg2.map = "hamlet"; cfg2.mode = MODE_HIDE;
+        NetClient d[2];
+        std::vector<NetClient*> dls;
+        if (!rulesStart(t, cfg2, d, 2, dls, false)) { t.stop(); return; }
+        t.command("forcestart");
+        pump(t, dls, 0.2, idle);
+        t.phaseEnd_ = t.time(); pump(t, dls, 0.1, idle);
+        t.phaseEnd_ = t.time(); pump(t, dls, 0.1, idle);
+        for (auto& p : t.players_) if (p.connected) { p.sought = true; p.score = 2; }
+        t.players_[d[1].clientId()].score = 1;
+        t.phaseEnd_ = t.time(); pump(t, dls, 0.1, idle);
+        CHECK(t.ms_.phase == PHASE_MATCH_END && !(t.ms_.flags & MS_RPS));
+        t.stop();
+    }
+    uint8_t three[3] = {RPS_ROCK, RPS_PAPER, RPS_SCISSORS}, same[3] = {RPS_PAPER, RPS_PAPER, RPS_PAPER}, two[4] = {RPS_PAPER, RPS_ROCK, RPS_ROCK, RPS_PAPER};
+    CHECK(rpsLosingShape(three, 3) == RPS_NONE && rpsLosingShape(same, 3) == RPS_NONE && rpsLosingShape(two, 4) == RPS_ROCK);
+}
+
+// B8: the locator is a weapon held only by the seeker (hide and seek) and the tagger (tag), and nowhere else: firing
+// it shows "it" one random hider / runner, then it recharges for kLocatorCooldown. The old "locate" command is gone.
+static void testLocator(uint16_t port) {
+    printf("locator: a weapon, only the seeker's / tagger's, only in hide and seek and tag\n");
+    {   // every mode's pool (custom modes and 1v1 rulesets that would allow "everything" too)
+        Server s;
+        for (int m = 0; m < MODE_COUNT; m++) {
+            s.ms_.mode = (uint8_t)m;
+            CHECK(s.weaponAllowed(WPN_LOCATOR) == isItMode(m));
+            if (isItMode(m)) CHECK(s.weaponAllowed(WPN_KNIFE) && !s.weaponAllowed(WPN_ROCKET));
+        }
+        s.ms_.mode = MODE_FFA;
+        s.cfg_.custom.name = "everything"; s.cfg_.custom.baseMode = MODE_FFA;
+        s.cfg_.custom.weapons = (uint16_t)((1u << WPN_COUNT) - 1);
+        CHECK(!s.weaponAllowed(WPN_LOCATOR) && s.weaponAllowed(WPN_ROCKET));
+        s.cfg_.custom = CustomRules();
+        s.ms_.mode = MODE_ARENA; s.ms_.arenaVariant = 0;
+        CHECK(!s.weaponAllowed(WPN_LOCATOR));
+    }
+    for (int mode : {MODE_HIDE, MODE_TAG}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "hamlet"; cfg.mode = mode; cfg.port = port++;
+        NetClient c[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); return; }
+        int it = -1;
+        for (auto* cl : cls) if (s.players_[cl->clientId()].it) it = cl->clientId();
+        CHECK(it >= 0);
+        if (it < 0) { s.stop(); return; }
+        int other = c[0].clientId() == it ? c[1].clientId() : c[0].clientId();
+        s.players_[it].itFreezeUntil = 0;
+        CHECK(s.players_[it].weapon == WPN_KNIFE);   // ("it" starts with the knife out)
+        auto locates = [&](NetClient& cl) { int n = 0; for (auto& e : cl.takeEvents()) n += e.type == EV_LOCATE; return n; };
+        for (auto* cl : cls) cl->takeEvents();
+        for (auto* cl : cls) cl->sendCommand("locate");   // the old use-key command does nothing now
+        pump(s, cls, 0.2, idle);
+        for (auto* cl : cls) CHECK(locates(*cl) == 0);
+        bool fire = false;
+        auto hold = [&](int i) { UserCmd u; u.weapon = WPN_LOCATOR; if (fire) u.buttons = BTN_FIRE; (void)i; return u; };
+        pump(s, cls, 0.2, hold);                           // everyone takes out the locator (the hider can hold it, not use it)
+        CHECK(s.players_[it].weapon == WPN_LOCATOR);
+        fire = true;
+        pump(s, cls, 0.3, hold);                           // fire held: one ping (5 s cooldown)
+        NetClient& itc = c[0].clientId() == it ? c[0] : c[1];
+        NetClient& oc = c[0].clientId() == it ? c[1] : c[0];
+        std::vector<GameEvent> got = itc.takeEvents();
+        int n = 0, who = -1;
+        for (auto& e : got) if (e.type == EV_LOCATE) { n++; who = e.a; }
+        CHECK(n == 1 && who == other);
+        CHECK(locates(oc) == 0);                           // (only to "it"; the hider's locator does nothing)
+        CHECK(s.players_[it].locateAt > s.time() + kLocatorCooldown - 1.0);
+        fire = false; pump(s, cls, 0.1, hold);
+        s.players_[it].locateAt = s.time();                // recharged: fires again
+        fire = true; pump(s, cls, 0.2, hold);
+        CHECK(locates(itc) == 1);
+        // no damage from it, and the knife is back with a key press
+        CHECK(s.players_[other].alive && s.players_[other].health >= kMaxHealth);
+        pump(s, cls, 0.1, [&](int) { UserCmd u; u.weapon = WPN_KNIFE; return u; });
+        CHECK(s.players_[it].weapon == WPN_KNIFE);
+        s.stop();
+    }
+    {   // anywhere else it can't be taken out
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port++;
+        NetClient c[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); return; }
+        pump(s, cls, 0.3, [](int) { UserCmd u; u.weapon = WPN_LOCATOR; u.buttons = BTN_FIRE; return u; });
+        for (auto* cl : cls) {
+            CHECK(s.players_[cl->clientId()].weapon != WPN_LOCATOR);
+            CHECK(!(cl->mode().weaponMask >> WPN_LOCATOR & 1));
+            for (auto& e : cl->takeEvents()) CHECK(e.type != EV_LOCATE);
+        }
+        s.stop();
+    }
+}
+
+// B8: tag runners always know where the tagger is (the server never hides the tagger from them, even behind walls);
+// hide and seek hiders are never shown the seeker: out of sight, the seeker is hidden like anyone else.
+static void testItAwareness(uint16_t port) {
+    printf("tag: the tagger is always sent; hide and seek: the seeker isn't, out of sight\n");
+    for (int mode : {MODE_TAG, MODE_HIDE}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "bastion"; cfg.mode = mode; cfg.port = port++;   // (the centre walls block one end from the other)
+        NetClient c[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); return; }
+        int it = s.players_[c[0].clientId()].it ? c[0].clientId() : c[1].clientId();
+        NetClient& runner = s.players_[c[0].clientId()].it ? c[1] : c[0];
+        NetClient& itc = s.players_[c[0].clientId()].it ? c[0] : c[1];
+        int other = runner.clientId();
+        for (int k = 0; k < 8; k++) {
+            s.players_[it].move.pos = {0, 0, 28}; s.players_[it].move.vel = {};
+            s.players_[other].move.pos = {0, 0, -28}; s.players_[other].move.vel = {};
+            s.players_[it].itFreezeUntil = s.time() + 10;   // (stays put)
+            pump(s, cls, 0.1, idle);
+        }
+        auto hiddenTo = [&](NetClient& cl, int id) { for (auto& p : cl.latest().players) if (p.id == id) return p.hidden; return false; };
+        bool itHidden = hiddenTo(runner, it), runnerHidden = hiddenTo(itc, other);
+        printf("  %s: \"it\" %s to the %s, they're %s to \"it\"\n", modeName(mode), itHidden ? "hidden" : "sent", mode == MODE_TAG ? "runner" : "hider", runnerHidden ? "hidden" : "sent");
+        CHECK(runnerHidden);                               // (behind the walls: the usual)
+        CHECK(itHidden == (mode == MODE_HIDE));            // tag: always sent; hide and seek: hidden
+        if (mode == MODE_TAG) {
+            bool seen = false;
+            for (auto& p : runner.latest().players) if (p.id == it) seen = length(p.pos - s.players_[it].move.pos) < 1.0f;
+            CHECK(seen);                                   // (where the tagger really is)
+        }
+        s.stop();
+    }
 }
 
 // GAME-1: in tag, "it" going to spectate or leaving is eliminated (the round ends as if time ran out); nobody joins a
@@ -677,6 +964,9 @@ static void testGameRules(const std::string& only) {
         {"head", [] { testHeadBox(TP(29246)); }},
         {"hide", [] { testHideScoring(TP(29247)); }},
         {"tag", [] { testTagEscape(TP(29248)); }},
+        {"rps", [] { testRpsTwo(TP(29255)); testRpsMany(TP(29256)); }},
+        {"locator", [] { testLocator(TP(29260)); }},
+        {"aware", [] { testItAwareness(TP(29263)); }},
         {"bomb", [] { testBombDrop(TP(29249)); }},
         {"botdefer", [] { testBalanceBotDefer(TP(29250)); }},
         {"spawns", [] { testSpawnTypes(TP(29251)); }},

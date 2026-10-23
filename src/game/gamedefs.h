@@ -16,7 +16,7 @@ constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr int kMaxInterpMs = 200;      // the longest fixed interpolation delay a client can set (interp_ms; lag compensation covers it)
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 35;   // 35: 34 (weapons: syringeAway, projectile lob/stuck flags) + 34 (NET-10: projectiles out of sight sent as an id, hidden players carry no health / weapon) merged; projectile bits: 1 new, 2 velocity, 4 lob, 8 stuck, 16 out of sight
+constexpr uint16_t kProtocolVersion = 36;   // 36: 35 + the locator is a weapon (WPN_LOCATOR; hide and seek / tag only), EV_RPS; 35: weapons (syringeAway, projectile lob/stuck flags) + NET-10 (projectiles out of sight sent as an id, hidden players carry no health / weapon); projectile bits: 1 new, 2 velocity, 4 lob, 8 stuck, 16 out of sight; 33: fixed weapon spread pattern (NET-9), clients report a fixed interp delay ("interp"); 32: ranked signatures name the dialled server address (REVIEW 2.2)
 constexpr uint16_t kSnapSyringeSince = 35;  // the snapshot header carries syringeAway from this protocol on (older demos are read without it)
 constexpr uint16_t kOldestDemoProtocol = 33;  // demos recorded at this protocol or later still play (raise it when a wire change can't read older ones)
 // PlayerSnap::keys: what a player is holding (spectators see it on the key overlay)
@@ -42,6 +42,24 @@ constexpr float kHideTime = 30.0f;       // hide and seek: hiders' head start wh
 constexpr float kHideRoundTime = 300.0f; // hiders win if anyone lasts this long
 constexpr float kTagRoundTime = 60.0f;   // tag: whoever is "it" when this runs out is eliminated
 constexpr float kTagFreeze = 2.0f;       // a newly tagged player stands still this long (no instant tag-back)
+// Hide and seek tiebreak (owner B8): once every round is played, players tied for first throw rock paper scissors.
+// Two: best of 3 (a draw is thrown again). Three or more throw at once: when exactly two shapes show, everyone with
+// the losing one is out; one shape or all three, nobody is (throw again); down to two, best of 3.
+enum RpsShape : uint8_t { RPS_NONE = 0, RPS_ROCK, RPS_PAPER, RPS_SCISSORS, RPS_PICKED };   // RPS_PICKED: chosen, not shown yet
+enum RpsStage : uint8_t { RPS_PICK = 0, RPS_REVEAL, RPS_DONE };
+constexpr float kRpsPickTime = 6.0f;     // to choose (no pick by then: a random one)
+constexpr float kRpsRevealTime = 3.0f;   // the throw shown to everyone before the next
+inline const char* rpsName(int s) { static const char* n[] = {"-", "ROCK", "PAPER", "SCISSORS", "?"}; return n[s >= 0 && s <= RPS_PICKED ? s : 0]; }
+inline bool rpsBeats(int a, int b) { return (a == RPS_ROCK && b == RPS_SCISSORS) || (a == RPS_PAPER && b == RPS_ROCK) || (a == RPS_SCISSORS && b == RPS_PAPER); }
+// The shape that's out when exactly two were thrown; RPS_NONE when nobody is (one shape, or all three).
+inline int rpsLosingShape(const uint8_t* picks, int n) {
+    bool has[4] = {};
+    for (int i = 0; i < n; i++) if (picks[i] >= RPS_ROCK && picks[i] <= RPS_SCISSORS) has[picks[i]] = true;
+    if (has[1] + has[2] + has[3] != 2) return RPS_NONE;
+    for (int a = RPS_ROCK; a <= RPS_SCISSORS; a++)
+        for (int b = RPS_ROCK; b <= RPS_SCISSORS; b++) if (has[a] && has[b] && rpsBeats(a, b)) return b;
+    return RPS_NONE;
+}
 inline const char* modeName(int m) {
     static const char* n[] = {"vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "1v1", "tourney", "hide", "tag", "points"};
     return (m >= 0 && m < MODE_COUNT) ? n[m] : "?";
@@ -68,7 +86,7 @@ enum ArenaRule : uint8_t {
     AR_QUICK_DASH = 8,     // dash recharges 3x faster
     AR_LOW_GRAVITY = 16,   // 40% gravity
 };
-constexpr float kLocatorCooldown = 5.0f, kLocatorShow = 1.0f; // tag / hide and seek: the tagger / seeker sees one target this long
+constexpr float kLocatorCooldown = 5.0f, kLocatorShow = 1.0f; // the locator (WPN_LOCATOR, held by the seeker / tagger): fire it to see one random hider / runner this long, every kLocatorCooldown
 constexpr int KILL_HEADSHOT = 0x100, KILL_AIRBORNE = 0x200, KILL_WEAPON = 0xFF; // EV_KILL c: weapon in the low byte
 #define WB(w) (1u << (w))
 
@@ -133,7 +151,7 @@ enum : uint16_t {
 
 // Weapon set. Rifle and knife are placeholders. No single shot does more than 50 (of 100 health).
 enum WeaponId : uint8_t {
-    WPN_RIFLE = 0, WPN_ROCKET, WPN_KNIFE, WPN_SNIPER, WPN_LASER, WPN_SHOTGUN, WPN_STICKY, WPN_CROSSBOW, WPN_BUBBLE, WPN_SYRINGE, WPN_COUNT
+    WPN_RIFLE = 0, WPN_ROCKET, WPN_KNIFE, WPN_SNIPER, WPN_LASER, WPN_SHOTGUN, WPN_STICKY, WPN_CROSSBOW, WPN_BUBBLE, WPN_SYRINGE, WPN_LOCATOR, WPN_COUNT
 };
 constexpr uint8_t kNoWeaponChange = 255;
 struct WeaponDef {
@@ -224,6 +242,7 @@ inline const WeaponDef& baseWeaponDef(int w) {
         {"CROSSBOW",    2.0f,    50,      0,    true,  76.5f, 0,     0.0f,  0.0f, 70.0f,  false, 1,  6.0f, false, 3},  // 2, 2.0 s (headshots 60)
         {"BUBBLE",      1.0f/5,  10,      0,    true,  15.6f, 1.8f,  0.04f, -1,     0,    false, 1, -1.5f, false, 4}, // 10 pops, 1.8 s (floats up a little; 5 a second)
         {"SYRINGE",     1.0f,    10,      0,    false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // heals you 10 hp a use, 1 s cooldown (damage = heal; owner 1.17)
+        {"LOCATOR",     kLocatorCooldown, 0, 0, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // no damage: shows a hider / runner (hide and seek / tag only)
     };
     return defs[w < 0 || w >= WPN_COUNT ? 0 : w];
 }
@@ -328,7 +347,10 @@ inline float shotRefire(int w, bool alt) {
     return r;
 }
 // Slot order (number keys, scroll wheel, HUD list): the weapon ids themselves stay as they are.
-constexpr int kWeaponSlots[WPN_COUNT] = {WPN_ROCKET, WPN_RIFLE, WPN_LASER, WPN_SHOTGUN, WPN_SNIPER, WPN_STICKY, WPN_CROSSBOW, WPN_BUBBLE, WPN_KNIFE, WPN_SYRINGE};
+constexpr int kWeaponSlots[WPN_COUNT] = {WPN_ROCKET, WPN_RIFLE, WPN_LASER, WPN_SHOTGUN, WPN_SNIPER, WPN_STICKY, WPN_CROSSBOW, WPN_BUBBLE, WPN_KNIFE, WPN_SYRINGE, WPN_LOCATOR};
+// The locator exists only in hide and seek and tag (owner B8): the seeker / tagger holds it with the knife.
+inline bool weaponInMode(int w, int mode) { return w != WPN_LOCATOR || isItMode(mode); }
+inline int weaponSlotKey(int slot) { return slot >= 9 ? 0 : slot + 1; }   // number key of a slot (the syringe and the locator share 0: never in one mode)
 inline int weaponSlot(int w) { for (int i = 0; i < WPN_COUNT; i++) if (kWeaponSlots[i] == w) return i; return 0; }
 inline bool altFires(int w) { return w == WPN_KNIFE || w == WPN_SHOTGUN || w == WPN_ROCKET || w == WPN_BUBBLE || w == WPN_SYRINGE; } // knife (throw), shotgun (bounce), rocket (lob): alt-fire is a shot of its own
 constexpr int kMaxStickies = 6;       // per player; firing a 7th removes the oldest
@@ -354,8 +376,10 @@ enum EventType : uint8_t {
     EV_RACE_SPLIT,   // race: a = player, b = checkpoint reached (1-based; the last one is the finish), text = ms since the start
     EV_TYPING,       // a is typing in chat (others hear key clicks and see "..." over them)
     EV_QUIP,         // a says a line from the voice pack (b: which one, the same pick for everyone)
-    EV_LOCATE,       // tag / hide and seek locator, to the tagger / seeker only: a = who, text = "x y z" where they are
+    EV_LOCATE,       // the locator fired (WPN_LOCATOR), to the tagger / seeker only: a = who, text = "x y z" where they are
     EV_RANKSIGN,     // ranked match live / time trial started: text = the match (race ticket) id; the game answers "ticketsig <signature>"
+    EV_RPS,          // hide and seek tiebreak: a = RpsStage, b = throw number, text = "<best of 3> <winner or -1>" then " id:shape:wins:out"
+                     // per player (shape RPS_PICKED until the reveal), then a line with what happened
 };
 
 #define WB(w) (1u << (w))

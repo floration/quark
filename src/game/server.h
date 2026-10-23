@@ -132,7 +132,9 @@ struct ServerPlayer {
     float dmgDealt = 0, objTime = 0;    // scoreboard: damage to enemies, seconds on the objective (score = dmg / 10 + obj)
     int shotsFired = 0, shotsHit = 0;   // accuracy: shots (hitscan or projectile) that damaged an enemy
     bool hitSinceShot = false;
-    double typingAt = 0, quipAt = 0, locateAt = 0;   // next "typing" relay allowed (and quip / locate pings)
+    double typingAt = 0, quipAt = 0, locateAt = 0;   // next "typing" relay allowed (and quip pings, the locator ready)
+    Vec3 locatedPos;            // the locator's last find (bots head there)
+    double locatedAt = -1e9;
     int model = 0;              // player model (cosmetic, kPlayerModels looks, same hitbox)
     int soundPack = 0;      // cosmetic: the sound pack others hear this player with
     bool it = false;            // hide and seek / tag: the seeker / tagger (has the knife)
@@ -291,6 +293,18 @@ public:
         return std::max(1, (int)std::ceil((float)tickRate() / std::max(1, rate) - 0.02f));
     }
     int hideRounds_ = 0;        // hide and seek: rounds so far planned (everyone in play seeks once: grows if someone joins)
+    // Hide and seek tiebreak (owner B8; gamemodes.cpp): rock paper scissors among those tied for first, in the match's
+    // last round end (ModeState MS_RPS). Every change goes out as an EV_RPS (and to anyone joining: rpsEvent_).
+    struct Rps {
+        uint32_t in = 0, out = 0;           // players in the tiebreak / knocked out of it (bit per id)
+        uint8_t pick[kMaxPlayers] = {};     // RpsShape this throw (RPS_NONE: not yet)
+        uint8_t wins[kMaxPlayers] = {};     // best of 3, once two are left
+        bool bestOf3 = false;
+        int stage = RPS_PICK, throwNo = 0, winner = -1;
+        double stageEnd = 0;
+        std::string result;                 // what the last reveal did ("draw - throw again", ...)
+    } rps_;
+    GameEvent rpsEvent_;
     uint32_t nextJoinId_ = 1;   // ServerPlayer::joinId of the next connection (a newcomer in a reused slot isn't its old owner)
     float drainAccum_ = 0;
     uint32_t duelUsed_ = 0;      // duel: modifiers already played this match (bit per modifier), never repeated
@@ -335,6 +349,7 @@ public:
     void spawnPlayer(int id);
     void autoTeam(int id);      // a newcomer's team (or spectator): mode, seat limits, balance
     void killPlayer(int victim, int killer, int weapon);
+    void useLocator(int id);    // hide and seek / tag: "it" fired the locator (WPN_LOCATOR)
     void damagePlayer(int victim, int attacker, float dmg, int weapon, const Vec3& knock);
     int aliveCount(int team) const;
     int teamCount(int team) const;

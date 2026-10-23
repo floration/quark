@@ -26,3 +26,4 @@ int modeSpawnType(const Map& m, int mode, int team, int attackers, bool tourneyM
 // (pointsTaken: points / cart checkpoints taken) that has spawns for that side; an empty pool falls back to the
 // `any` spawns, then to every spawn. The map tests check every offered mode's pools with this (REVIEW MAP-2).
 std::vector<const SpawnPoint*> spawnPool(const Map& m, int want, int pointsTaken);
+void rulesRpsPick(Server& s, int id, int shape);   // hide and seek tiebreak: a player chose (RpsShape; "rps" command)

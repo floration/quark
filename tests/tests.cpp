@@ -1829,7 +1829,7 @@ static void testIncrementalEdits() {
 static void testTimeToKill() {
     printf("time to kill with perfect aim (1-4.5 s), no shot over 50\n");
     for (int w = 0; w < WPN_COUNT; w++) {
-        if (w == WPN_SYRINGE) continue;    // (it heals)
+        if (w == WPN_SYRINGE || w == WPN_LOCATOR) continue;    // (it heals / does no damage)
         const WeaponDef& d = weaponDef(w);
         float perShot = d.damage * d.pellets;
         int shots = (int)std::ceil(kMaxHealth / perShot - 1e-4f);
@@ -2602,7 +2602,7 @@ static void testItModes(uint16_t port) {
             pump(s, cls, std::max(0.0, (double)(s.players_[it].nextFire - s.time())), idle);   // (the knife's refire after the first find)
             stab(it, h2);
             pump(s, cls, 0.2, idle);
-            CHECK(s.ms_.phase == PHASE_ROUND_END && s.players_[it].score >= 3);
+            CHECK(s.ms_.phase == PHASE_ROUND_END && s.players_[it].score == 2);
         } else {
             CHECK(s.players_[h1].it && !s.players_[it].it && s.players_[h1].alive);   // tagged: "it" moved on
             CHECK(rulesFrozen(s, h1));                 // the new "it" waits a moment

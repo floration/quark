@@ -128,7 +128,7 @@ struct ModeState {
     uint8_t arenaVariant = 0; // 1v1: ArenaVariant index
     uint16_t weaponMask = 0;  // weapons allowed right now (bit per weapon); 0 = all
 };
-enum : uint8_t { MS_DRAIN = 1, MS_OVERTIME = 2, MS_CONTESTED = 4, MS_EDITING = 8, MS_RANKED = 16, MS_TEMP_EDIT = 32, MS_TIMETRIAL = 64 }; // MS_TIMETRIAL: solo ranked race (times go to the race board) // MS_TEMP_EDIT: voted editing, reverts at the next map change // MS_EDITING: map edit session, nobody plays
+enum : uint8_t { MS_DRAIN = 1, MS_OVERTIME = 2, MS_CONTESTED = 4, MS_EDITING = 8, MS_RANKED = 16, MS_TEMP_EDIT = 32, MS_TIMETRIAL = 64, MS_RPS = 128 }; // MS_RPS: the hide and seek tiebreak is on (timeLeft: its clock; EV_RPS has the rest) // MS_TIMETRIAL: solo ranked race (times go to the race board) // MS_TEMP_EDIT: voted editing, reverts at the next map change // MS_EDITING: map edit session, nobody plays
 
 // The scoreboard's main number for a player, and what it sorts by (REVIEW M6: it sorted by one number and showed
 // another): kills ("gibs") in instagib 1v1 / tourney / ranked FFA; the server's score in free for all (frags: what

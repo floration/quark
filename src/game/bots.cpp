@@ -476,7 +476,8 @@ Vec3 objective(Server& s, int id, BotBrain& b, const SkillParams& sp) {
             if (s.nav_.nodes.empty()) break;
             auto randomNode = [&]() { const auto& n = s.nav_.nodes[(size_t)(rnd(b) * s.nav_.nodes.size()) % s.nav_.nodes.size()];
                                       return Vec3((n.x0 + n.x1) * 0.5f, n.y, (n.z0 + n.z1) * 0.5f); };
-            if (me.it) { // seek: wander everywhere, toward anything heard (targets are chased by the fight code once seen)
+            if (me.it) { // seek: wander everywhere, toward anything heard or the locator's last find (targets are chased by the fight code once seen)
+                if (now - me.locatedAt < 0.1) { b.goal = me.locatedPos; b.goalUntil = now + 6.0; }
                 for (int i = 0; i < kMaxPlayers; i++)
                     if (isEnemy(s, id, i) && now - b.aware[i].heardAt < 1.0 && now - b.aware[i].seenAt > 1.0) { b.goal = b.aware[i].heardPos; b.goalUntil = now + 4.0; }
                 if (now > b.goalUntil || length(b.goal - me.move.pos) < 2.0f) { b.goal = randomNode(); b.goalUntil = now + 12.0; }
@@ -545,7 +546,7 @@ int pickWeapon(const Server& s, const SkillParams& sp, float dist) {
     if (!sp.weapons && s.weaponAllowed(WPN_RIFLE)) return WPN_RIFLE;
     bool lead = sp.leadMean >= 0.8f;
     const int* order = dist < 7 ? close : dist < 18 ? (lead ? mid : midNoLead) : dist < 35 ? (lead ? far : farNoLead) : (lead ? vfar : farNoLead);
-    for (int k = 0; k < WPN_COUNT; k++) if (s.weaponAllowed(order[k])) return order[k];
+    for (size_t k = 0; k < sizeof close / sizeof close[0]; k++) if (s.weaponAllowed(order[k])) return order[k];   // (every list has every weapon but the locator)
     return WPN_RIFLE;
 }
 
@@ -798,6 +799,12 @@ UserCmd botThink(Server& s, int id) {
         uint16_t extra = 0;
         objectiveMove(moveDir, extra, nullptr);
         cmd.buttons |= extra;
+        if (isItMode(ms.mode) && me.it && ms.phase == PHASE_LIVE) {   // seeking / tagging, nobody in sight: the locator when it's ready
+            if (now >= me.locateAt) {
+                if (me.weapon != WPN_LOCATOR) cmd.weapon = WPN_LOCATOR;
+                else if (!me.fireLocked && !(me.buttons & BTN_FIRE)) cmd.buttons |= BTN_FIRE;
+            } else if (me.weapon != WPN_KNIFE) cmd.weapon = WPN_KNIFE;
+        }
         gain = 10.0f;
         bool idle = length(moveDir) < 1e-3f;
         if (!idle) wantYaw = yawOf(normalize(moveDir));

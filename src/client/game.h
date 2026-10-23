@@ -42,6 +42,7 @@ struct LaunchOptions {
     bool debugWidgets = false;
     bool debugHudLayout = false; // --hudlayout: open HUD layout settings in game
     bool debugModels = false;
+    int debugRps = 0;           // --rpsshot: the hide and seek tiebreak panel with made-up players (1 picking, 2 reveal, 3 three-way reveal)
     bool camSet = false;         // --cam: fixed backdrop camera (map analysis shots)
     Vec3 camPos;
     float camYaw = 0, camPitch = 0;
@@ -118,6 +119,10 @@ private:
     NetClient::PlayerArray framePlayers_{};
     bool framePlayersOk_ = false;
     void drawHud();
+    void drawRps(float W, float H, float s);   // the hide and seek tiebreak (rock paper scissors) panel
+    void drawRpsShape(float x, float y, float size, int shape, Color c);
+    bool rpsPicking() const;                   // we're in the tiebreak and the throw is open
+    void drawTaggerMarker(float W, float H, float s);   // tag: where the tagger is, through walls (at the screen edge when off it)
     void drawNotices(float y, float ts, float s); // notify() lines, centred from y down (HUD and menus)
     void drawScoreboard();
     void drawMenu();
@@ -313,6 +318,9 @@ private:
     double nextLaserSound_ = 0;
     double knifeSlash_[kMaxPlayers] = {}; // when each player last swung the knife (slash trail)
     void drawKnifeSlash(const Vec3& eye, float yaw, float pitch, float t, const Vec3& color);
+    // a player's weapon as others see it (hide and seek / tag: the seeker's / tagger's knife or locator): an arm from
+    // the shoulder, the weapon's own model in the hand, aimed where they look
+    void drawHeldWeapon(int player, int weapon, const Vec3& shoulder, float yaw, float pitch, float bodyScale, const Vec3& accent, float sunVis);
     double wheelAccum_ = 0;         // fractional scroll (trackpads, high-res wheels) until a full notch
     double wheelHeldUntil_[2] = {}; // a scroll step counts as "held" briefly, so hold actions (jump, fire...) work on the wheel
     int specTarget_ = -1;
@@ -418,6 +426,16 @@ private:
     int streak_[kMaxPlayers] = {};
     double typingUntil_[kMaxPlayers] = {}, nextTypingSend_ = 0;
     double locatorReady_ = 0, locateUntil_ = 0;
+    // hide and seek tiebreak (EV_RPS): the server's latest state, and what we chose this throw
+    struct RpsView {
+        struct P { int id = 0, shape = 0, wins = 0; bool out = false; };
+        int stage = RPS_PICK, throwNo = 0, winner = -1;
+        bool bestOf3 = false;
+        std::vector<P> players;
+        std::string result;
+        double at = -1e9;   // when it arrived
+    } rps_;
+    int rpsMine_ = RPS_NONE;
     double liveSeenAt_ = -1e9;   // when this round went live (here): the map's holdfire counts from it
     float holdFireLeft() const { return net_.hasSnapshot() && net_.mode().phase == PHASE_LIVE && net_.map().holdFire > 0 ? net_.map().holdFire - (float)(time_ - liveSeenAt_) : 0; }   // tag / hide and seek locator
     Vec3 locatePos_;
