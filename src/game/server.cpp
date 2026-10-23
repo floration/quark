@@ -2118,7 +2118,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
     bool any = false;
     for (int i = 0; i < kMaxPlayers; i++) {
         if (dmgPer[i] <= 0) continue;
-        Vec3 knock = aim * (wd.pellets > 1 ? 0.15f * dmgPer[i] / wd.damage : 1.0f);
+        Vec3 knock = aim * (wd.pellets > 1 ? kShotgunKnock * dmgPer[i] / wd.damage : 1.0f);
         if (wd.beam) knock = aim * (kLaserPush * wd.refire * (pull ? -kLaserPullScale : 1.0f)); // same push per second at any fire rate
         damagePlayer(i, id, dmgPer[i], p.weapon, knock);
         any = true;

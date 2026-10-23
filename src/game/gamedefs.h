@@ -188,6 +188,7 @@ struct WeaponDef {
 constexpr float kFireBuffer = 0.15f;
 constexpr float kWallbangDamage = 0.5f; // hitscan through a wallbang wall
 constexpr float kLaserPush = 20.0f;        // laser knockback (m/s per second of beam on target)
+constexpr float kShotgunKnock = 0.30f;     // shotgun knockback per pellet's worth of damage (m/s; a full blast: 20 x 0.30 = 6 m/s; owner 1.17: doubled from 0.15)
 constexpr float kLaserPullScale = 1.82f;   // alt-fire pulls this much harder than the normal beam pushes
 constexpr float kLaserPullDamage = 0.75f;  // ...for 75% damage
 
