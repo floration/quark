@@ -311,6 +311,7 @@ if(QUARK_BUILD_CLIENT)
     src/client/main.cpp
     src/client/game.cpp
     src/client/rawmouse.cpp
+    src/client/gpuprefs.cpp
     src/client/community.cpp
     src/client/editor.cpp
     src/client/openurl.cpp

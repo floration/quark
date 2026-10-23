@@ -2026,7 +2026,7 @@ void Game::drawWorld(float alpha) {
     // The dynamic geometry's upload and the shadow pass don't depend on the aim either: before the read too (ULTRA:
     // flushed, so the GPU draws the shadow map meanwhile). After the read: only the view's own draws.
     r_.prepareScene(cfg_.shadows);
-    if (cfg_.lowLatency == 2) glFlush();
+    if (ultraPaced()) glFlush();
     // Late latch: the newest mouse motion, read just before the world is drawn (everything above, world, players and
     // effects, was built in world space: only the view turns). The command this frame sent keeps its aim; the next
     // carries this. What was projected onto the screen above (name tags, health bars) is off by this sliver of a turn.
@@ -2035,7 +2035,7 @@ void Game::drawWorld(float alpha) {
     pipeMark(PM_SCENE0);
     pipeGpuBegin();
     r_.drawScene(cfg_.shadows);
-    if (cfg_.lowLatency == 2) glFlush();
+    if (ultraPaced()) glFlush();
     pipeMark(PM_SCENE1);   // (ULTRA: the GPU starts the world while the HUD is built; it sits idle otherwise)
 }
 
@@ -3880,24 +3880,45 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
         ui_.cycle(x, y, w, h, "SOUNDS", cfg_.soundPack, 5, sn, UiExp::cfg("soundpack"));
         y += h + gap;
     }
-#ifdef _WIN32
-    // the sound device to the game alone: about 10 ms sooner, and Discord / music go silent while the game runs
-    if (ui_.toggle(x, y, w, h, cfg_.exclusiveAudio && !audio_.exclusiveActive() ? "EXCLUSIVE AUDIO (DEVICE BUSY)" : "EXCLUSIVE AUDIO",
-                   cfg_.exclusiveAudio, UiExp::cfg("exclusive_audio")))
-        audio_.setExclusive(cfg_.exclusiveAudio);
-#endif
 
     // --- right column: display + latency
     y = y0;
     static const std::vector<std::string> dispNames = {"WINDOWED", "BORDERLESS FULLSCREEN", "EXCLUSIVE FULLSCREEN"};
     if (ui_.cycle(xr, y, w, h, "DISPLAY", cfg_.displayMode, 3, dispNames, UiExp::cfg("display_mode"))) applyDisplayMode();
     y += h + gap;
+#ifdef _WIN32
+    static const std::vector<std::string> presNames = {"NO VSYNC", "VSYNC", "ADAPTIVE VSYNC", "LATENT SYNC"};
+    const int nPres = 4;
+#else
     static const std::vector<std::string> presNames = {"NO VSYNC", "VSYNC", "ADAPTIVE VSYNC"};
-    if (ui_.cycle(xr, y, w, h, "PRESENT", cfg_.presentMode, 3, presNames, UiExp::cfg("present_mode"))) applyPresentMode();
+    const int nPres = 3;
+#endif
+    if (ui_.cycle(xr, y, w, h, "PRESENT", cfg_.presentMode, nPres, presNames, UiExp::cfg("present_mode"))) applyPresentMode();
     y += h + gap;
+    if (cfg_.presentMode == 3) {   // latent sync: where the tear line goes (0: the top of the blank)
+        float v = (float)cfg_.latentOffsetUs;
+        ui_.slider(xr, y, w, h, "TEAR LINE OFFSET (US)", v, -2000, 2000, "%.0f", UiExp::cfg("latent_offset_us"), 0);
+        cfg_.latentOffsetUs = (int)std::lround(clampf(v, -4000, 4000));
+        y += h + gap;
+    }
     static const std::vector<std::string> llNames = {"LOW LATENCY OFF", "LOW LATENCY ON", "LOW LATENCY ULTRA"};
     ui_.cycle(xr, y, w, h, "LOW LATENCY", cfg_.lowLatency, 3, llNames, UiExp::cfg("low_latency"));
     y += h + gap;
+#ifdef _WIN32
+    // NVIDIA: "Prefer maximum performance" in quark's driver profile (the driver reads it at the next start)
+    // (beside it, the latency half of SOUNDS, which ran off the left column's bottom: the sound device to the game
+    // alone, about 10 ms sooner, and Discord / music go silent while the game runs)
+    const float hw2 = (w - gap) * 0.5f;
+    if (ui_.toggle(xr, y, hw2, h, "GPU MAX CLOCKS", cfg_.gpuMaxClocks, UiExp::cfg("gpu_max_clocks"))) {
+        std::string msg = "GPU MAX CLOCKS: NOT CHANGED IN THE UI TEST";
+        if (!uiTest_ && !nvMaxClocks(cfg_.gpuMaxClocks, &msg)) cfg_.gpuMaxClocks = false;
+        notify(msg);
+    }
+    if (ui_.toggle(xr + hw2 + gap, y, hw2, h, cfg_.exclusiveAudio && !audio_.exclusiveActive() ? "EXCLUSIVE AUDIO (BUSY)" : "EXCLUSIVE AUDIO",
+                   cfg_.exclusiveAudio, UiExp::cfg("exclusive_audio")))
+        audio_.setExclusive(cfg_.exclusiveAudio);
+    y += h + gap;
+#endif
     static const int caps[] = {0, 60, 120, 144, 165, 240, 360, 500, 1000};
     static const std::vector<std::string> capNames = {"UNLIMITED FPS", "60 FPS MAX", "120 FPS MAX", "144 FPS MAX", "165 FPS MAX",
                                                       "240 FPS MAX", "360 FPS MAX", "500 FPS MAX", "1000 FPS MAX"};
@@ -4770,7 +4791,8 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     auto span = [&](const char* name, int m0, int m1, Color c) { if (a[m1] - a[m0] > 0) rows.push_back({name, a[m0], a[m1], c}); };
     if (maxFps() > 0) span("FRAME CAP WAIT", PM_FRAME, PM_CAP, cWait);
     if (cfg_.lowLatency == 1) span("GPU WAIT (LOW LATENCY ON)", PM_CAP, PM_FENCE, cWait);
-    if (cfg_.lowLatency == 2) span("PACING WAIT (ULTRA)", PM_CAP, PM_FENCE, cWait);
+    if (cfg_.presentMode == 3) span("LATENT SYNC: WAIT FOR THE RASTER", PM_CAP, PM_FENCE, cWait);
+    else if (cfg_.lowLatency == 2) span("PACING WAIT (ULTRA)", PM_CAP, PM_FENCE, cWait);
     span("NETWORK READ", PM_FENCE, PM_NET, cCpu);
     span("READ INPUT", PM_NET, PM_POLL, cCpu);
     span("TICKS + PREDICTION", PM_POLL, PM_TICKS, cCpu);
@@ -4778,12 +4800,12 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     span("DRAW CALLS", PM_SCENE0, PM_SCENE1, cCpu);
     span("HUD DRAW", PM_SCENE1, PM_HUD, cCpu);
     span("SWAP", PM_SWAP0, PM_SWAP1, cCpu);
-    if (cfg_.lowLatency == 2) span("GPU WAIT (ULTRA)", PM_SWAP1, PM_AFTER, cWait);
+    if (ultraPaced()) span("GPU WAIT (ULTRA)", PM_SWAP1, PM_AFTER, cWait);
     rows.push_back({"GPU", a[PM_COUNT], a[PM_COUNT + 1], cGpu});
     // after the GPU: how the frame reaches the screen (EST): the compositor in a window, vsync's vblank, then the
     // scanout down to the crosshair (the middle of the screen: half a refresh on average)
     double t = std::max(a[PM_COUNT + 1], a[PM_SWAP1]);
-    const bool windowed = cfg_.displayMode != 2, vsync = cfg_.presentMode != 0;
+    const bool windowed = cfg_.displayMode != 2, vsync = cfg_.presentMode == 1 || cfg_.presentMode == 2;   // (latent sync: flipped in the blank, no wait)
     if (windowed) { rows.push_back({"COMPOSITOR: NEXT VBLANK (EST)", t, t + refresh * 0.5, cEst}); t += refresh * 0.5; }
     else if (vsync) { rows.push_back({"VSYNC: NEXT VBLANK (EST)", t, t + refresh * 0.5, cEst}); t += refresh * 0.5; }
     if (windowed && vsync) { rows.push_back({"COMPOSITED FRAME SHOWN (EST)", t, t + refresh, cEst}); t += refresh; }
@@ -4801,7 +4823,7 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     float yy = y + 4;
     char head[160];
     snprintf(head, sizeof head, "MOUSE TO PHOTON ~%s US  (%.0f HZ DISPLAY, %s, %s)", us(total).c_str(), hz,
-             cfg_.displayMode == 2 ? "FULLSCREEN" : cfg_.displayMode == 1 ? "BORDERLESS" : "WINDOWED", vsync ? "VSYNC" : "NO VSYNC");
+             cfg_.displayMode == 2 ? "FULLSCREEN" : cfg_.displayMode == 1 ? "BORDERLESS" : "WINDOWED", cfg_.presentMode == 3 ? "LATENT SYNC" : vsync ? "VSYNC" : "NO VSYNC");
     r_.text(x + 6, yy, ts, head, {1, 1, 0.4f, 1});
     yy += lh;
     const double scale = t - t0 > 0 ? barW / (t - t0) : 0;
@@ -4866,6 +4888,24 @@ void Game::applyDisplayMode() {
     if (fw > 0 && fh > 0) r_.resize(fw, fh);
 }
 
+// Latent Sync (PRESENT: LATENT SYNC, like Special K's): one frame a refresh, started so it's handed over (flipped, no
+// vsync) just as the refresh's vertical blank begins: its tear line falls in the blank, off screen, and its input is
+// read as late as it can be (the frame's learnt CPU and GPU times before that). The offset moves the flip (+ later).
+void Game::latentWait() {
+    GLFWmonitor* mon = glfwGetWindowMonitor(win_);
+    if (!mon) mon = glfwGetPrimaryMonitor();
+    if (mon != latentMon_) { raster_.open(mon); latentMon_ = mon; }
+    const GLFWvidmode* vm = mon ? glfwGetVideoMode(mon) : nullptr;
+    const double refresh = 1.0 / (vm && vm->refreshRate > 0 ? vm->refreshRate : 60);
+    double blank = 0;
+    if (!raster_.nextBlank(refresh, &blank)) return;   // (no scanline from the driver: no vsync)
+    const double now = timeNow(), lead = ultraCpu_ + ultraGpu_ + 0.0002;   // (input read to flip, and a margin)
+    double flip = blank + cfg_.latentOffsetUs * 1e-6;
+    while (flip - lead < now || flip < latentFlip_ + refresh * 0.5) flip += refresh;   // (one frame a refresh)
+    latentFlip_ = flip;
+    waitUntil(flip - lead);
+}
+
 void Game::applyPresentMode() {
     int interval = 0;
     if (cfg_.presentMode == 1) interval = 1;
@@ -4911,7 +4951,8 @@ void Game::beforeInput() {
     // the GPU as the GPU finishes the last one, so the input is as fresh as with nothing queued, without the GPU idling
     // through every CPU frame (ultra used to wait for the GPU after each swap: CPU and GPU took turns, costing fps).
     // The GPU's time per frame (swap to its fence) and the CPU's (input read to swap) are learnt as it runs.
-    if (cfg_.lowLatency == 2 && ultraFence_) {
+    if (cfg_.presentMode == 3) latentWait();
+    if (ultraPaced() && ultraFence_) {
         constexpr double kMargin = 0.00015;   // (start a little early: a late start is a GPU bubble, an early one 150 us)
         const double target = ultraSwapAt_ + ultraGpu_ - ultraCpu_ - kMargin;
         bool waited = false;
@@ -4935,7 +4976,7 @@ void Game::beforeInput() {
 void Game::afterSwap() {
     // Low latency fences: "on" keeps at most one frame queued (beforeInput waits on the one before); "ultra" fences
     // each frame and beforeInput starts the next one just in time for it.
-    if (cfg_.lowLatency == 2) {   // ultra (beforeInput paces it): never more than this frame on the GPU
+    if (ultraPaced()) {   // ultra (beforeInput paces it): never more than this frame on the GPU
         if (ultraFence_) {   // the last one isn't done yet (started too early): wait for it, and learn its real time
             glClientWaitSync((GLsync)ultraFence_, GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
             glDeleteSync((GLsync)ultraFence_);

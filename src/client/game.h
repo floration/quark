@@ -15,6 +15,7 @@
 #include "../game/ranked.h"
 #include "audio.h"
 #include "rawmouse.h"
+#include "gpuprefs.h"
 #include "binds.h"
 #include "config.h"
 #include "renderer.h"
@@ -436,6 +437,11 @@ private:
     void markInput() { if (pendingInput_ < 0) pendingInput_ = timeNow(); }
     void turn(double dx, double dy);   // mouse counts into yaw_ / pitch_
     RawMouse rawMouse_;                // Windows: raw mouse reports on their own thread (rawmouse.h)
+    RasterClock raster_;               // latent sync: the monitor's scanline (gpuprefs.h)
+    GLFWmonitor* latentMon_ = nullptr; // (the monitor raster_ was opened on)
+    double latentFlip_ = 0;            // (the last frame's planned flip)
+    void latentWait();
+    bool ultraPaced() const { return cfg_.lowLatency == 2 || cfg_.presentMode == 3; }   // (fences, learnt CPU / GPU times)
     bool mouseHeld_ = false;           // rawMouse_.hold is on (the cursor clipped to the window's centre)
     double mouseHeldAt_ = 0;
 public:
