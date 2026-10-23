@@ -1111,6 +1111,10 @@ void Game::frame(double dt) {
                            !(net_.selfWeapon() == WPN_KNIFE && net_.hasSnapshot() && isItMode(net_.mode().mode)) &&
                            !(isThrow(net_.selfWeapon(), true) && time_ < localThrowReadyAt_);   // the throws' shared cooldown
             bool wantFire = ((c.buttons & BTN_FIRE) != 0 || altShot) && holdFireLeft() <= 0;   // (the map's holdfire: no shots yet)
+            if (net_.hasSnapshot() && isItMode(net_.mode().mode)) {   // hide and seek / tag: only "it" has the knife (no swing, no slash for the rest)
+                const PlayerSnap* mp = net_.findPlayer(net_.clientId());
+                if (!mp || !(mp->flags & PS_HASBOMB)) wantFire = false;
+            }
             if (c.weapon != lastCmdWeapon_ && (c.buttons & (BTN_FIRE | BTN_ALTFIRE))) localFireLocked_ = true; // switched with fire held
             lastCmdWeapon_ = c.weapon;
             if (localFireLocked_) { // mirror the server: after a knife throw or a switch, let go before the next weapon fires
@@ -1325,6 +1329,11 @@ void Game::drawWorld(float alpha) {
             ip.snap.flags = PS_ALIVE | (k % 2 ? PS_TEAM_B : 0);
             ip.snap.pos = net_.smoothedPos(alpha) + f * 5.0f + rt * ((k - 2) * 1.5f);
             ip.snap.yaw = yaw_ + 3.14159265f;
+            if (isItMode(net_.mode().mode)) {   // hide and seek / tag: each as "it", holding the knife (or --weapon)
+                ip.snap.flags |= PS_HASBOMB;
+                ip.snap.yaw -= 1.0f;   // (turned aside: the weapon side-on)
+                ip.snap.weapon = (uint8_t)(opts_.debugWeapon >= 1 && opts_.debugWeapon <= WPN_COUNT ? opts_.debugWeapon - 1 : WPN_KNIFE);
+            }
         }
     }
     // players (duel "double size" rounds draw everyone at twice the size, matching the server hitboxes)
@@ -1365,7 +1374,9 @@ void Game::drawWorld(float alpha) {
                 r_.box(pos + Vec3(cy * c.x + sy * c.z, c.y, -sy * c.x + cy * c.z), q.h * bs, yaw, q.color, sv, q.shadow, vis);
             }
         }
-        if (vis) {
+        if (vis && isItMode(net_.mode().mode)) {   // hide and seek / tag: only "it" holds anything - their weapon's own model
+            if (p.flags & PS_HASBOMB) drawHeldWeapon(i, p.weapon, at(1.3f) + rgt * (0.3f * bs), yaw, pitch, bs, col, sv);
+        } else if (vis) {
             Vec3 shoulder = at(1.3f) + Vec3(std::cos(yaw), 0, -std::sin(yaw)) * (0.3f * bs);
             r_.boxPitched(shoulder, Vec3(0, 0, -0.35f) * bs, Vec3(0.06f, 0.07f, 0.35f) * bs, yaw, pitch, {0.12f, 0.12f, 0.14f}, sv);
             if ((p.flags & PS_HASBOMB) && !isItMode(net_.mode().mode))
@@ -4360,6 +4371,30 @@ void Game::drawKnifeSlash(const Vec3& eye, float yaw, float pitch, float t, cons
     r_.line(arm, tip, 0.05f, rgba(color * 1.3f, 0.25f * fade));
     r_.line(arm, tip, 0.015f, rgba({1, 1, 1}, 0.7f * fade));
     r_.box(tip, {0.05f, 0.05f, 0.05f}, yaw, color * 1.5f, 1.0f, false);
+}
+
+void Game::drawHeldWeapon(int i, int w, const Vec3& shoulder, float yaw, float pitch, float bs, const Vec3& accent, float sv) {
+    if (w < 0 || w >= WPN_COUNT) w = WPN_KNIFE;
+    float sw = (float)(time_ - knifeSlash_[i]) / 0.18f;   // a knife swing: the hand chops down and back up
+    if (w == WPN_KNIFE && knifeSlash_[i] > 0 && sw < 1) pitch -= 0.7f * std::sin(sw * 3.14159f);
+    r_.boxPitched(shoulder, Vec3(0, 0, -0.22f) * bs, Vec3(0.055f, 0.06f, 0.22f) * bs, yaw, pitch, {0.12f, 0.12f, 0.14f}, sv);   // the arm
+    const Vec3 hand = Vec3(0, 0.02f, -0.5f) * bs;
+    const float k = 2.0f * bs;   // the viewmodel's boxes at world size (a held weapon reads at a distance)
+    ModelPalette pal;
+    pal.c[TINT_METAL] = viewmodelMetal(r_.metalColor);
+    pal.c[TINT_BASE] = {0.85f, 0.88f, 0.92f};   // bright steel (a blade has to read from across a room, on any map)
+    pal.c[TINT_TEAM] = accent;
+    pal.c[TINT_GLOW] = r_.glowColor;
+    if (const ModelMesh* ov = modelOverride(MODEL_WEAPON, w)) {   // the owner's model (docs/ASSETS.md)
+        Vec3 tint[TINT_COUNT];
+        overrideTints(MODEL_WEAPON, pal, tint);
+        Mat4 sc;
+        sc.m[0] = sc.m[5] = sc.m[10] = k;
+        r_.mesh(*ov, Mat4::translate(shoulder) * Mat4::rotY(yaw) * Mat4::rotX(pitch) * Mat4::translate(hand) * sc, tint, sv, true);
+        return;
+    }
+    viewmodelParts(w, pal, parts_);
+    for (const ModelPart& q : parts_) r_.boxPitched(shoulder, hand + q.c * k, q.h * k, yaw, pitch, q.color, sv);
 }
 
 void Game::drawBracket() {
