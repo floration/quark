@@ -186,6 +186,7 @@ int main(int argc, char** argv) {
         game.pipeMark(Game::PM_FENCE);
         game.preInput();   // (the network: before the mouse is read)
         game.pipeMark(Game::PM_NET);
+        game.readMouse();   // (raw mouse reports in one read; GLFW's poll gets the rest)
         { QZONE("poll events"); glfwPollEvents(); }
         game.pipeMark(Game::PM_POLL);
         double now = timeNow();

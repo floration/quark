@@ -733,6 +733,29 @@ void Game::onMouseButton(int button, int action) {
     }
 }
 
+// Mouse motion (counts) into the view.
+void Game::turn(double dx, double dy) {
+    float k = deg2rad(cfg_.sensitivity) * 0.01f * 2.2f;
+    if (scoped_) k *= std::tan(deg2rad(viewFov()) * 0.5f) / std::tan(deg2rad(cfg_.fov) * 0.5f); // same feel when zoomed
+    yaw_ -= (float)dx * k;
+    pitch_ = clampf(pitch_ - (float)dy * k, -1.55f, 1.55f);
+    yaw_ = std::remainder(yaw_, 2 * PI);
+}
+
+// Raw mouse reports read straight from Windows, all of them in one go (readRawMouse), before GLFW's event poll: with
+// a fast mouse that poll handled each report as its own message (83 us a frame at 8 kHz on the owner's PC). Reports
+// that arrive after this still come through GLFW (onCursor), so nothing is counted twice or lost.
+void Game::readMouse() {
+    if (!mouseCaptured_) return;
+    double dx = 0, dy = 0;
+    const int n = readRawMouse(&dx, &dy);
+    if (n <= 0) return;
+    markInput();
+    mouseEventsPoll_ += n;   // (F3: the mouse's report rate)
+    if (firstMouse_) { glfwGetCursorPos(win_, &lastMx_, &lastMy_); firstMouse_ = false; }   // (onCursor's reference: GLFW's own position)
+    turn(dx, dy);
+}
+
 void Game::onCursor(double x, double y) {
     markInput();
     if (mouseCaptured_) {
@@ -740,11 +763,7 @@ void Game::onCursor(double x, double y) {
         if (firstMouse_) { lastMx_ = x; lastMy_ = y; firstMouse_ = false; return; }
         double dx = x - lastMx_, dy = y - lastMy_;
         lastMx_ = x; lastMy_ = y;
-        float k = deg2rad(cfg_.sensitivity) * 0.01f * 2.2f;
-        if (scoped_) k *= std::tan(deg2rad(viewFov()) * 0.5f) / std::tan(deg2rad(cfg_.fov) * 0.5f); // same feel when zoomed
-        yaw_ -= (float)dx * k;
-        pitch_ = clampf(pitch_ - (float)dy * k, -1.55f, 1.55f);
-        yaw_ = std::remainder(yaw_, 2 * PI);
+        turn(dx, dy);
     } else {
         // UI coordinates are framebuffer pixels (handles HiDPI).
         int ww, wh, fw, fh;
@@ -1494,7 +1513,7 @@ void Game::drawWorld(float alpha) {
     // above ran since the input was read). The command already sent this frame keeps the aim it had; the next one
     // carries this. Raw mouse messages only: keys and clicks wait for the next frame, as before.
     if (cfg_.lowLatency == 2 && alive && !demoView && mouseCaptured_) {
-        pumpRawMouse();
+        readMouse();
         if (pendingInput_ >= 0) { if (frameInput_ < 0) frameInput_ = pendingInput_; pendingInput_ = -1; }   // (F3: shown this frame)
     }
     // camera: own prediction when alive, else spectate someone
@@ -4683,6 +4702,7 @@ void Game::drawPipeline(float x, float y, float ts) {
     auto span = [&](const char* name, int m0, int m1, Color c) { if (a[m1] - a[m0] > 0) rows.push_back({name, a[m0], a[m1], c}); };
     if (maxFps() > 0) span("FRAME CAP WAIT", PM_FRAME, PM_CAP, cWait);
     if (cfg_.lowLatency == 1) span("GPU WAIT (LOW LATENCY ON)", PM_CAP, PM_FENCE, cWait);
+    if (cfg_.lowLatency == 2) span("PACING WAIT (ULTRA)", PM_CAP, PM_FENCE, cWait);
     span("NETWORK READ", PM_FENCE, PM_NET, cCpu);
     span("READ INPUT", PM_NET, PM_POLL, cCpu);
     span("TICKS + PREDICTION", PM_POLL, PM_TICKS, cCpu);
@@ -4816,17 +4836,50 @@ void Game::beforeInput() {
             fence_[older] = nullptr;
         }
     }
+    // Low latency "ultra", paced like NVIDIA Reflex: start the frame (read input) just early enough that it's handed to
+    // the GPU as the GPU finishes the last one, so the input is as fresh as with nothing queued, without the GPU idling
+    // through every CPU frame (ultra used to wait for the GPU after each swap: CPU and GPU took turns, costing fps).
+    // The GPU's time per frame (swap to its fence) and the CPU's (input read to swap) are learnt as it runs.
+    if (cfg_.lowLatency == 2 && ultraFence_) {
+        constexpr double kMargin = 0.00015;   // (start a little early: a late start is a GPU bubble, an early one 150 us)
+        const double target = ultraSwapAt_ + ultraGpu_ - ultraCpu_ - kMargin;
+        bool waited = false;
+        for (;;) {
+            const GLenum st = glClientWaitSync((GLsync)ultraFence_, waited ? 0 : GL_SYNC_FLUSH_COMMANDS_BIT, 0);
+            const double now = timeNow();
+            if (st == GL_ALREADY_SIGNALED || st == GL_CONDITION_SATISFIED || st == GL_WAIT_FAILED) {
+                if (waited) ultraGpu_ += (now - ultraSwapAt_ - ultraGpu_) * 0.1;   // (seen finishing: a measurement)
+                glDeleteSync((GLsync)ultraFence_);
+                ultraFence_ = nullptr;
+                break;
+            }
+            if (now >= target) break;   // still on the GPU: start now, it'll be done about when this frame is handed over
+            waited = true;
+            waitUntil(std::min(target, now + 0.0001));
+        }
+    }
+    ultraReadAt_ = timeNow();
 }
 
 void Game::afterSwap() {
-    // Low latency "ultra": wait until this frame is fully rendered before starting the next
-    // one (nothing queued), then the next frame samples input at the last possible moment.
-    if (cfg_.lowLatency >= 1) {
+    // Low latency fences: "on" keeps at most one frame queued (beforeInput waits on the one before); "ultra" fences
+    // each frame and beforeInput starts the next one just in time for it.
+    if (cfg_.lowLatency == 2) {   // ultra (beforeInput paces it): never more than this frame on the GPU
+        if (ultraFence_) {   // the last one isn't done yet (started too early): wait for it, and learn its real time
+            glClientWaitSync((GLsync)ultraFence_, GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
+            glDeleteSync((GLsync)ultraFence_);
+            ultraFence_ = nullptr;
+            ultraGpu_ += (timeNow() - ultraSwapAt_ - ultraGpu_) * 0.1;
+        }
+        const double now = timeNow();
+        ultraCpu_ += (now - ultraReadAt_ - ultraCpu_) * 0.1;
+        ultraFence_ = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        glFlush();
+        ultraSwapAt_ = now;
+    } else if (ultraFence_) { glDeleteSync((GLsync)ultraFence_); ultraFence_ = nullptr; }   // (left ultra)
+    if (cfg_.lowLatency == 1) {
         GLsync f = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-        if (cfg_.lowLatency == 2) {
-            glClientWaitSync(f, GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
-            glDeleteSync(f);
-        } else {
+        {
             glFlush();
             if (fence_[fenceIdx_]) glDeleteSync((GLsync)fence_[fenceIdx_]);
             fence_[fenceIdx_] = f;

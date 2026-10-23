@@ -429,6 +429,10 @@ private:
     void applyDisplayMode();
     void applyPresentMode();
     void markInput() { if (pendingInput_ < 0) pendingInput_ = timeNow(); }
+    void turn(double dx, double dy);   // mouse counts into yaw_ / pitch_
+public:
+    void readMouse();                  // the main loop, before glfwPollEvents: raw mouse reports in one read (Windows)
+private:
 public:
     // F3 pipeline graph: when each part of a frame starts and ends (the main loop and frame() mark them), GPU timestamps
     // around the frame's GL work, averaged twice a second and drawn as a waterfall from the mouse to the photons.
@@ -452,6 +456,9 @@ private:
     double pendingInput_ = -1, frameInput_ = -1;
     void* fence_[2] = {nullptr, nullptr};
     int fenceIdx_ = 0;
+    void* ultraFence_ = nullptr;               // ULTRA: the last frame's fence (beforeInput paces the next frame by it)
+    double ultraSwapAt_ = 0, ultraReadAt_ = 0;
+    double ultraGpu_ = 0.0005, ultraCpu_ = 0.0003;   // learnt: swap to GPU done, input read to swap (seconds)
     struct LatQuery { unsigned q; double input; bool used; };
     LatQuery latQ_[16] = {};
     int latNext_ = 0;
