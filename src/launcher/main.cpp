@@ -22,6 +22,7 @@
 #include "../client/renderer.h"
 #include "../client/ui.h"
 #include "../common/net.h"
+#include "gamefiles.h"
 #include "install.h"
 #include "qpak.h"
 #include "releases.h"
@@ -129,40 +130,8 @@ bool httpGet(const std::string& url, std::ostream& out, const Progress& prog, st
 }
 #endif
 
-// Package reading and extraction: qpak.cpp (shared with the fuzzer, tests/fuzz).
-
-// Swaps a fully extracted `stage` into `dir`: files of the old install the package doesn't carry (the
-// player's quark.cfg, demos, screenshots...) are copied into the stage first, quark.cfg always wins
-// over a packaged one. Then dir -> dir.old, stage -> dir. On failure the old install is put back.
-bool swapInstall(const fs::path& stage, const fs::path& dir, std::string* err) {
-    std::error_code ec;
-    fs::path old = dir.parent_path() / (dir.filename().u8string() + ".old");
-    fs::remove_all(old, ec);
-    if (fs::exists(dir, ec)) {
-        for (auto it = fs::recursive_directory_iterator(dir, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
-            std::error_code e2;
-            fs::path rel = fs::relative(it->path(), dir, e2);
-            if (e2) continue;
-            fs::path dst = stage / rel;
-            if (it->is_directory(e2)) continue;
-            if (fs::exists(dst, e2) && rel.filename() != "quark.cfg") continue;
-            fs::create_directories(dst.parent_path(), e2);
-            fs::copy_file(it->path(), dst, fs::copy_options::overwrite_existing, e2);
-        }
-        ec.clear();
-        fs::rename(dir, old, ec);
-        if (ec) { *err = "cannot replace " + dir.string() + " (is the game running?)"; return false; }
-    }
-    fs::rename(stage, dir, ec);
-    if (ec) {
-        std::error_code e2;
-        fs::rename(old, dir, e2);
-        *err = "cannot move the new version into place";
-        return false;
-    }
-    fs::remove_all(old, ec);
-    return true;
-}
+// Package reading and extraction: qpak.cpp (shared with the fuzzer, tests/fuzz). Swapping it in, deleting only
+// retired game files (owner decision C13): gamefiles.cpp.
 
 std::string readFile(const fs::path& p) {
     std::ifstream f(p, std::ios::binary);
@@ -326,10 +295,21 @@ void installRelease(std::shared_ptr<State> st, fs::path dir, Release r) {
     fs::path stage = dir.parent_path() / (dir.filename().u8string() + ".new");
     fs::remove_all(stage, ec);
     fs::create_directories(stage, ec);
-    if (!qpak::extract(tmp, stage, &err) || !swapInstall(stage, dir, &err)) {
+    std::map<std::string, std::string> hashes;
+    gamefiles::SwapReport swapped;
+    bool extracted = qpak::extract(tmp, stage, &err, &hashes);
+    if (extracted) { // what this package put in the game folder: the next update deletes only what it retires
+        hashes.erase(gamefiles::kListName);
+        std::ofstream list(stage / gamefiles::kListName, std::ios::binary | std::ios::trunc);
+        list << gamefiles::format(hashes);
+        list.close();
+        if (!list) { extracted = false; err = "cannot write " + (stage / gamefiles::kListName).string(); }
+    }
+    if (!extracted || !gamefiles::swapInstall(stage, dir, &err, &swapped)) {
         fs::remove_all(stage, ec);
         setStatus("install failed: " + err);
     } else {
+        for (auto& f : swapped.retired) fprintf(stderr, "update: removed retired game file %s\n", f.c_str());
         std::ofstream(dir / "version.txt") << r.version << "\n";
         install::setPrograms(true, install::appDir() / fs::path(
 #ifdef _WIN32

@@ -2,6 +2,7 @@
 #include <cstring>
 #include <fstream>
 #include <vector>
+#include "../common/sha256.h"
 #ifndef _WIN32
 #include <sys/stat.h>
 #endif
@@ -54,13 +55,13 @@ bool read(std::istream& in, uint64_t remaining, const FileSink& file, std::strin
     return true;
 }
 
-static bool extractImpl(const fs::path& pak, const fs::path& stage, std::string* err);
-bool extract(const fs::path& pak, const fs::path& stage, std::string* err) {
-    try { return extractImpl(pak, stage, err); }
+static bool extractImpl(const fs::path& pak, const fs::path& stage, std::string* err, std::map<std::string, std::string>* hashes);
+bool extract(const fs::path& pak, const fs::path& stage, std::string* err, std::map<std::string, std::string>* hashes) {
+    try { return extractImpl(pak, stage, err, hashes); }
     catch (const std::exception& e) { *err = std::string("corrupt archive (") + e.what() + ")"; return false; }   // (ENG-2: bad_alloc, a bad path)
 }
 
-static bool extractImpl(const fs::path& pak, const fs::path& stage, std::string* err) {
+static bool extractImpl(const fs::path& pak, const fs::path& stage, std::string* err, std::map<std::string, std::string>* hashes) {
     std::error_code ec;
     uint64_t size = fs::file_size(pak, ec);
     if (ec) { *err = "corrupt download"; return false; }
@@ -75,6 +76,11 @@ static bool extractImpl(const fs::path& pak, const fs::path& stage, std::string*
         o.write(data, (std::streamsize)n);
         o.close();
         if (!o) { *e = "cannot write " + out.string() + " (disk full?)"; return false; }
+        if (hashes) {
+            Sha256 h;
+            h.update(data, n);
+            (*hashes)[name] = h.hex();
+        }
 #ifndef _WIN32
         chmod(out.string().c_str(), mode & 0777);
 #endif

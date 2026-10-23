@@ -9,6 +9,7 @@
 #include "../game/server.h"
 #include "gl.h"
 #include "../launcher/selfupdate.h"
+#include "../game/demo.h"
 
 static Game* g_game = nullptr;
 
@@ -77,6 +78,9 @@ int main(int argc, char** argv) {
                      opts.menuShot || !opts.chatShot.empty() || !opts.consoleShot.empty() || opts.debugPerf;
     if (!automated) selfupdate::startFromGame(argv[0]);
     struct LauncherUpdateJoin { ~LauncherUpdateJoin() { selfupdate::finishFromGame(2.0); } } launcherUpdateJoin;
+    // demos recorded by an older version: converted to this one in the background (originals in demos/old/<version>/)
+    if (!automated) demo::startUpgrade(userDataPath("demos"), userDataPath("versions.txt"));
+    struct DemoUpgradeJoin { ~DemoUpgradeJoin() { demo::finishUpgrade(5.0); } } demoUpgradeJoin;
     netInit();
     if (!glfwInit()) { fprintf(stderr, "glfwInit failed\n"); return 1; }
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);

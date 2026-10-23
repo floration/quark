@@ -132,6 +132,19 @@ whatever a branch put in `master.txt`. The pages job only has to publish `site/`
   players on any earlier launcher get the new one through a normal game update. The version is read from a
   `QUARK-LAUNCHER-VERSION:<VERSION>` marker in the binary (launchers without it count as older). Installing an
   older package (picked by hand, signed or not) never downgrades the launcher: only a newer marker replaces it.
+- **Old files on update** (owner decision C13, `src/launcher/gamefiles.h`): the launcher writes
+  `installed-files.txt` into the game folder at every install (each file the package put there, with its sha256), and
+  every package from 1.17.0 on carries the same list (`tools/pack.py`), so installs made by an older launcher have it
+  too. An update deletes only *retired game files*: listed, unchanged since (same sha256), not in the new package, and
+  not a player file (`*.cfg`, `*.key`, demos, screenshots, logs, light caches, downloaded maps, the player's folders).
+  Everything else of the old install is carried over. An install with no list (a package from before 1.17.0 installed
+  by an older launcher) keeps every file: nothing is known to be retired.
+- **Demos on update** (`src/game/demo.h`): at the first start after an update the game converts the demos an older
+  version recorded (on a background thread), keeping each original under `demos/old/<version>/`. Every protocol
+  since the first demos (24, 1.11.0) records the same way, so they convert by checking every record and restamping;
+  one that doesn't convert (a newer or unknown version, a map this version can't load) stays as it is, is logged in
+  `demos/old/convert.log`, and the demo list shows "recorded with version X". The game notes in `versions.txt` (user
+  data) which version ran which protocol, so later versions can name the version that recorded an old demo.
 - The game's launcher update runs on a background thread that the game stops and joins when it quits: no new
   step (a launcher swap's rename pair, the shortcuts, the programs entry) starts after quitting began, the one
   running finishes, and the game waits at most 2 s for the thread. Automated runs (`--screenshot`, `--bench`,

@@ -1,6 +1,8 @@
 // Launcher logic: release channels from a GitHub releases fixture, version order, the "newer launcher" decision,
 // the self-swap, and the game replacing old launchers wherever they were installed (with their shortcuts).
+#include <algorithm>
 #include <cstdio>
+#include <map>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -11,6 +13,7 @@
 #include "../src/common/sha256.h"
 #include "../src/common/sign.h"
 #include "../src/common/version.h"
+#include "../src/launcher/gamefiles.h"
 #include "../src/launcher/install.h"
 #include "../src/launcher/qpak.h"
 #include "../src/launcher/releases.h"
@@ -557,6 +560,78 @@ static void testLauncherSwap() {
     fs::remove_all(t, ec);
 }
 
+// C13: an update deletes only retired game files: ones the installed package's list names, unchanged since, and not
+// a player file. Configs, demos, screenshots, your maps, changed files and anything unlisted stay.
+static void testGameFiles() {
+    using gamefiles::List;
+    List l = {{"quark", std::string(64, 'a')}, {"maps/my map.qmap", std::string(64, 'b')}};
+    List back;
+    LCHECK(gamefiles::parse(gamefiles::format(l), &back) && back == l);
+    LCHECK(!gamefiles::parse("something else\n", &back) && back.empty());
+    LCHECK(gamefiles::parse("quark installed files 1\r\nnot-a-hash x\n" + std::string(64, 'C') + " y\n", &back) &&
+           back.size() == 1 && back["y"] == std::string(64, 'c'));
+    for (const char* p : {"quark.cfg", "hud.cfg", "quark.key", "demos/a.qdemo", "DEMOS/x", "screenshots/s.png", "maps/downloads/x.qmap",
+                          "logs/game.log", "maps/temple.qlm", "groups/g.txt", "custom_modes/m.txt", "huds/h.txt", "controls/c.txt", "x.qdemo"})
+        LCHECK(gamefiles::isPlayerFile(p));
+    for (const char* p : {"quark", "quark.exe", "maps/temple.qmap", "mods/sounds/a.wav", "quark_launcher", "config/readme.txt"})
+        LCHECK(!gamefiles::isPlayerFile(p));
+
+    fs::path t = fs::temp_directory_path() / ("quark_gamefiles_test_" + std::to_string((long)getpid()));
+    std::error_code ec;
+    fs::remove_all(t, ec);
+    auto put = [](const fs::path& p, const std::string& s) { fs::create_directories(p.parent_path()); std::ofstream(p, std::ios::binary | std::ios::trunc) << s; };
+    // the installed version: its package's files (listed), then what the player added and changed
+    fs::path dir = t / "game", stage = t / "game.new";
+    List old;
+    auto official = [&](const std::string& rel, const std::string& s) { put(dir / rel, s); old[rel] = sha256Hex(s); };
+    official("quark", "old game");
+    official("maps/temple.qmap", "temple v1");
+    official("maps/crucible.qmap", "retired map");                // the new version doesn't ship it: deleted
+    official("mods/sounds/old.wav", "retired sound");             // likewise
+    official("maps/edited.qmap", "shipped");                      // retired, but the player changed it: kept
+    put(dir / "maps/edited.qmap", "my changes");
+    official("quark.cfg", "packaged cfg");                        // listed, but a config: never deleted
+    put(dir / "quark.cfg", "sens 3");
+    official("demos/shipped.qdemo", "a demo");                    // listed, but a demo: never deleted
+    put(dir / "demos/mine.qdemo", "my demo");
+    put(dir / "screenshots/shot.png", "png");
+    put(dir / "maps/mymap.qmap", "my map");                       // not in the list: kept
+    put(dir / "notes.txt", "player notes");
+    put(dir / gamefiles::kListName, gamefiles::format(old));
+    // the new package
+    put(stage / "quark", "new game");
+    put(stage / "maps/temple.qmap", "temple v2");
+    put(stage / "quark.cfg", "new packaged cfg");
+    put(stage / gamefiles::kListName, "quark installed files 1\n");
+    std::string err;
+    gamefiles::SwapReport rep;
+    LCHECK(gamefiles::swapInstall(stage, dir, &err, &rep));
+    std::sort(rep.retired.begin(), rep.retired.end());
+    LCHECK((rep.retired == std::vector<std::string>{"maps/crucible.qmap", "mods/sounds/old.wav"}));
+    LCHECK(slurp(dir / "quark") == "new game" && slurp(dir / "maps/temple.qmap") == "temple v2");
+    LCHECK(!fs::exists(dir / "maps/crucible.qmap") && !fs::exists(dir / "mods/sounds/old.wav"));
+    LCHECK(slurp(dir / "maps/edited.qmap") == "my changes" && slurp(dir / "quark.cfg") == "sens 3");
+    LCHECK(slurp(dir / "demos/shipped.qdemo") == "a demo" && slurp(dir / "demos/mine.qdemo") == "my demo");
+    LCHECK(slurp(dir / "screenshots/shot.png") == "png" && slurp(dir / "maps/mymap.qmap") == "my map" && slurp(dir / "notes.txt") == "player notes");
+    LCHECK(slurp(dir / gamefiles::kListName) == "quark installed files 1\n"); // the new list, not the old one
+    LCHECK(!fs::exists(stage) && !fs::exists(t / "game.old"));
+    // an install without a list (a package from before 1.17.0): nothing is known to be retired, everything stays
+    fs::remove(dir / gamefiles::kListName);
+    put(dir / "maps/leftover.qmap", "from 1.12");
+    put(stage / "quark", "newer game");
+    LCHECK(gamefiles::swapInstall(stage, dir, &err, &rep));
+    LCHECK(slurp(dir / "quark") == "newer game" && slurp(dir / "maps/leftover.qmap") == "from 1.12" && slurp(dir / "maps/temple.qmap") == "temple v2");
+    // the launcher's list: every extracted file's sha256, by entry name (tools/pack.py adds the same list to packages)
+    {
+        std::string pak = "QPAK1\n" + pakEntry("quark", "bin", 0755) + pakEntry("maps/a.qmap", "map a");
+        put(t / "p.qpak", pak);
+        std::map<std::string, std::string> h;
+        LCHECK(qpak::extract(t / "p.qpak", t / "x", &err, &h));
+        LCHECK(h.size() == 2 && h["quark"] == sha256Hex("bin") && h["maps/a.qmap"] == sha256Hex("map a"));
+    }
+    fs::remove_all(t, ec);
+}
+
 int launcherTests() {
     g_lfail = 0;
     printf("launcher\n");
@@ -567,5 +642,6 @@ int launcherTests() {
     testQpak();
     testManyPages();
     testLauncherSwap();
+    testGameFiles();
     return g_lfail;
 }

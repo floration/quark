@@ -14,6 +14,7 @@
 #include <GLFW/glfw3.h>
 #include <cstdio>
 #include <cstring>
+#include "../game/demo.h"
 #include "../game/gamemodes.h"
 #include "../common/version.h"
 #include "gltf.h"
@@ -3725,12 +3726,20 @@ void Game::drawDemos(float cx, float y) {
     if (time_ >= demoListAt_) { // rescan now and then (a demo you just recorded shows up)
         demoListAt_ = time_ + 2;
         demoFiles_.clear();
+        demoNotes_.clear();
         std::error_code ec;
         std::vector<std::pair<std::filesystem::file_time_type, std::string>> fs;
         for (auto& e : std::filesystem::directory_iterator(demoDir(), ec))
             if (e.path().extension() == ".qdemo") fs.push_back({e.last_write_time(ec), e.path().string()});
         std::sort(fs.begin(), fs.end(), [](auto& a, auto& b) { return a.first > b.first; });
-        for (auto& f : fs) demoFiles_.push_back(f.second);
+        for (auto& f : fs) {
+            demoFiles_.push_back(f.second);
+            uint16_t proto = kProtocolVersion;   // (6 bytes per file every 2 s, only while this page is open)
+            std::string note;
+            if (demo::readProtocol(f.second, &proto) && proto != kProtocolVersion)
+                note = demo::upgradeRunning() && demo::convertible(proto) ? "CONVERTING..." : "RECORDED WITH " + upper(demo::recordedWith(proto));
+            demoNotes_.push_back(note);
+        }
     }
     // as many rows as fit above the rate row and BACK; the wheel scrolls the rest
     int fitRows = std::max(3, (int)(((float)r_.height() - y - 4 * (h + gap) - 60 * s) / (h + gap)));
@@ -3748,6 +3757,7 @@ void Game::drawDemos(float cx, float y) {
         int i = demoScroll_ + k;
         std::string name = std::filesystem::path(demoFiles_[i]).stem().string();
         for (auto& c : name) c = c == '_' ? ' ' : (char)toupper((unsigned char)c);
+        if (i < (int)demoNotes_.size() && !demoNotes_[i].empty()) name += " (" + demoNotes_[i] + ")";
         if (ui_.button(x, y, w, h, name)) { playDemo(demoFiles_[i]); return; }
     }
     if (nd > rows) {
