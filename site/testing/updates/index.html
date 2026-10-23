@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark testing builds</title>
+<meta name="description" content="Every quark testing build, newest first, with its notes and downloads.">
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../style.css">
+<style>
+.build .prose { font-size: 15.5px; margin-top: 10px; }
+.build .prose h3 { font-size: 18px; margin: 22px 0 8px; }
+.build .prose h4 { font-size: 16px; margin: 18px 0 6px; }
+.build .meta { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.build details summary { cursor: pointer; font-weight: 700; color: var(--cyan); margin-top: 6px; }
+.build details[open] summary { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="../../" aria-label="quark home"><img src="../../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+    <nav aria-label="Main">
+      <ul class="nav">
+        <li><a href="../../#modes">Modes</a></li>
+        <li><a href="../../#maps">Maps</a></li>
+        <li><a href="../../#weapons">Weapons</a></li>
+        <li><a href="../../leaderboard/">Leaderboard</a></li>
+        <li><a href="../../updates/">Updates</a></li>
+        <li><a href="../" aria-current="page">Testing</a></li>
+        <li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li>
+        <li><a href="https://github.com/floration/quark">GitHub</a></li>
+      </ul>
+    </nav>
+    <a class="btn btn-primary btn-sm cta" href="../../#download">Download</a>
+  </div>
+</header>
+
+<main id="main">
+<div class="page-head">
+  <div class="wrap">
+    <p class="crumbs" style="margin:0 0 14px;font-weight:600"><a href="../" style="text-decoration:none">&larr; Testing channel</a></p>
+    <p class="eyebrow">Testing builds</p>
+    <h1>Every testing build</h1>
+    <p class="lede">Newest first, live from GitHub, with each build's notes and downloads. Production releases are on the <a href="../../updates/">updates page</a>.</p>
+  </div>
+</div>
+
+<div class="page">
+  <div class="wrap">
+    <div id="list" class="builds" aria-live="polite"><p class="muted">Loading testing builds from GitHub...</p></div>
+    <noscript><div class="state"><div><b>This list needs JavaScript.</b> Every testing build is also on <a href="https://github.com/floration/quark/releases">GitHub releases</a> (marked Pre-release).</div></div></noscript>
+    <div class="center"><button class="btn btn-ghost" id="more" hidden>Show more builds</button></div>
+  </div>
+</div>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div>
+      <p>Free and open source. No ads, no tracking, no cookies.</p>
+      <p class="small">Build information comes from the public GitHub API.</p>
+    </div>
+    <ul aria-label="Links">
+      <li><a href="../../">Home</a></li>
+      <li><a href="../../leaderboard/">Leaderboard</a></li>
+      <li><a href="../../updates/">Updates</a></li>
+      <li><a href="../">Testing</a></li>
+      <li><a href="https://github.com/floration/quark/releases">Releases</a></li>
+      <li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li>
+      <li><a href="https://github.com/floration/quark">GitHub</a></li>
+    </ul>
+  </div>
+</footer>
+
+<script src="../../common.js"></script>
+<script>
+"use strict";
+const list = document.getElementById("list"), more = document.getElementById("more");
+const PAGE = 10;
+let builds = [], shown = 0;
+const ver = r => r.tag.replace(/^test-/, "");
+function card(r, i) {
+  const plats = Q.platforms(r).map(p => Q.PNAME[p]).join(", ");
+  const links = Q.assetLinks(r);
+  const notes = Q.md(r.body, 3);
+  // the newest three open; older ones fold their notes away
+  const body = notes ? (i < 3 ? `<div class="prose">${notes}</div>` : `<details><summary>Show the notes</summary><div class="prose">${notes}</div></details>`) : '<p class="muted">No notes for this build.</p>';
+  return `<article class="build" id="${Q.esc(r.tag)}"><header><h2 class="t">${Q.esc(ver(r))}${i === 0 ? ' <span class="badge cyan">Newest</span>' : ""}</h2>` +
+    `<div class="meta"><time datetime="${Q.esc(r.date)}">${Q.esc(Q.fmtDate(r.date))}</time><span class="muted small">${Q.esc(plats || "files still uploading")}</span></div></header>` +
+    body + (links ? `<ul class="assets">${links}</ul>` : "") +
+    `<p class="small muted" style="margin:12px 0 0"><a href="${Q.esc(r.url)}">Release page</a> (signatures and checksums)</p></article>`;
+}
+function showMore() {
+  list.insertAdjacentHTML("beforeend", builds.slice(shown, shown + PAGE).map((r, k) => card(r, shown + k)).join(""));
+  shown = Math.min(builds.length, shown + PAGE);
+  more.hidden = shown >= builds.length;
+}
+more.addEventListener("click", showMore);
+Q.releases().then(rs => {
+  builds = rs.filter(Q.isTesting).sort((a, b) => b.date.localeCompare(a.date));
+  if (!builds.length) {
+    list.innerHTML = Q.state("No testing builds yet.", ' The first one is published with the next change on the testing branch. Until then, see the <a href="../../updates/">production updates</a>.');
+    return;
+  }
+  list.innerHTML = "";
+  // a link to one build (#test-...) shows enough builds to include it, then scrolls to it
+  const want = decodeURIComponent(location.hash.slice(1));
+  const at = builds.findIndex(r => r.tag === want);
+  do showMore(); while (at >= shown);
+  if (at >= 0) { const el = document.getElementById(want); if (el) el.scrollIntoView(); }
+}).catch(e => {
+  list.innerHTML = Q.state(e.message === "rate" ? "GitHub is limiting requests right now." : "Testing builds are unavailable right now.",
+    ' Try again in a few minutes, or see them on <a href="https://github.com/floration/quark/releases">GitHub releases</a> (marked Pre-release).');
+});
+</script>
+</body>
+</html>

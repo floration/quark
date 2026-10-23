@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark testing channel</title>
+<meta name="description" content="Play the next version of quark before it ships: signed testing builds, testing servers, and how to report bugs.">
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+<style>
+.newest { margin-top: 16px; }
+.cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 40px; margin-top: 48px; }
+.cols h2 { margin-top: 0; }
+.cols > div { min-width: 0; }
+.checklist { margin: 0; padding-left: 20px; color: var(--muted); }
+.checklist li { margin: 6px 0; }
+.checklist b { color: var(--text); }
+@media (max-width: 860px) { .cols { grid-template-columns: minmax(0, 1fr); } .cols > div + div h2 { margin-top: 28px; } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="../" aria-label="quark home"><img src="../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+    <nav aria-label="Main">
+      <ul class="nav">
+        <li><a href="../#modes">Modes</a></li>
+        <li><a href="../#maps">Maps</a></li>
+        <li><a href="../#weapons">Weapons</a></li>
+        <li><a href="../leaderboard/">Leaderboard</a></li>
+        <li><a href="../updates/">Updates</a></li>
+        <li><a href="./" aria-current="page">Testing</a></li>
+        <li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li>
+        <li><a href="https://github.com/floration/quark">GitHub</a></li>
+      </ul>
+    </nav>
+    <a class="btn btn-primary btn-sm cta" href="../#download">Download</a>
+  </div>
+</header>
+
+<main id="main">
+<div class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">Testing channel</p>
+    <h1>Play the next version first</h1>
+    <p class="lede">Testing builds are made from the <code>testing</code> branch every time something changes, well before it reaches a production release. They're signed like every release. Expect bugs: finding them is the point.</p>
+  </div>
+</div>
+
+<div class="page">
+  <div class="wrap">
+    <h2 id="now">Right now</h2>
+    <div id="stats" aria-live="polite"><p class="muted">Loading the latest builds from GitHub...</p></div>
+    <noscript><div class="state"><div><b>Live build stats need JavaScript.</b> See every testing build on <a href="https://github.com/floration/quark/releases">GitHub releases</a> (the ones marked Pre-release).</div></div></noscript>
+
+    <h2>Join the testing channel</h2>
+    <ol class="steps">
+      <li><b>Install the launcher</b> for your system from the <a href="../#download">download section</a>, if you don't have it yet.</li>
+      <li><b>Switch the channel.</b> In the launcher, click <b>CHANNEL: PRODUCTION</b>. It changes to <b>CHANNEL: TESTING</b> and the list shows testing builds.</li>
+      <li><b>Install the newest testing build</b> from the list and play. The launcher checks its signature first, like any update.</li>
+      <li><b>Going back</b> is the same button: click <b>CHANNEL: TESTING</b> to return to <b>PRODUCTION</b>, then install the latest production version. Your settings, binds, demos and maps live in your user folder and are kept either way.</li>
+    </ol>
+
+    <h2>Testing servers</h2>
+    <p class="muted" style="max-width:760px">Every dedicated server box also runs a second server named <b style="color:var(--text)">[TESTING]</b>. It follows the newest testing build, so testers can play together as soon as a build is out.</p>
+    <p class="note warn" style="max-width:760px"><b>Ranked on testing servers is never rated.</b> You can play ranked matches there to try things out, but the scores don't count: no rating changes and no leaderboard places.</p>
+
+    <div class="cols">
+      <div>
+        <h2>What to test</h2>
+        <p class="muted">Whatever changed in the newest build. Its notes list every change; try each one, and play normally too: the bugs nobody expected are the ones that matter.</p>
+        <p id="whatlink"><a class="btn btn-ghost" href="updates/">Every testing build's notes</a></p>
+      </div>
+      <div>
+        <h2>Report a bug</h2>
+        <p class="muted">Post in <b style="color:var(--text)">#testing-updates</b> on <a href="https://discord.gg/RERYWNWSXg">Discord</a> or open a <a href="https://github.com/floration/quark/issues">GitHub issue</a>. Please include:</p>
+        <ul class="checklist">
+          <li><b>The build number</b> from the bottom-left corner of the main menu (for example <code>1.18.0-test.42</code>).</li>
+          <li><b>Your system</b>: Windows, Linux or macOS, and its version.</li>
+          <li><b>Steps</b> to make it happen again, and what you expected instead.</li>
+          <li><b>A demo or a screenshot</b> if you can (F12 takes a screenshot; demos are under DEMOS in the main menu).</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div>
+      <p>Free and open source. No ads, no tracking, no cookies.</p>
+      <p class="small">Build information comes from the public GitHub API.</p>
+    </div>
+    <ul aria-label="Links">
+      <li><a href="../">Home</a></li>
+      <li><a href="../leaderboard/">Leaderboard</a></li>
+      <li><a href="../updates/">Updates</a></li>
+      <li><a href="./">Testing</a></li>
+      <li><a href="https://github.com/floration/quark/releases">Releases</a></li>
+      <li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li>
+      <li><a href="https://github.com/floration/quark">GitHub</a></li>
+    </ul>
+  </div>
+</footer>
+
+<script src="../common.js"></script>
+<script>
+"use strict";
+const box = document.getElementById("stats");
+Q.releases().then(rs => {
+  const tests = rs.filter(Q.isTesting).sort((a, b) => b.date.localeCompare(a.date));
+  const prods = rs.filter(Q.isProduction).sort((a, b) => b.date.localeCompare(a.date));
+  const prod = prods[0], newest = tests[0];
+  const since = prod ? tests.filter(t => t.date > prod.date).length : tests.length;
+  const ver = r => r.tag.replace(/^test-/, "");
+  const plats = r => { const p = Q.platforms(r); return p.length ? p.map(x => Q.PNAME[x]).join(", ") : "no downloads yet"; };
+  const fact = (dt, dd, small) => `<div><dt>${dt}</dt><dd>${dd}${small ? `<small>${small}</small>` : ""}</dd></div>`;
+  let html = '<dl class="facts">' +
+    fact("Newest testing build", newest ? Q.esc(ver(newest)) : "None yet", newest ? `${Q.esc(Q.fmtDate(newest.date))} · ${Q.esc(plats(newest))}` : "The first one appears with the next change.") +
+    fact("Testing builds", tests.length, "published so far") +
+    fact("Since production", since, prod ? `testing builds after ${Q.esc(prod.tag)}` : "testing builds") +
+    fact("Production version", prod ? Q.esc(prod.tag.slice(1)) : "&ndash;", prod ? `released ${Q.esc(Q.fmtDate(prod.date))}` : "") +
+    "</dl>";
+  if (newest) {
+    const links = Q.assetLinks(newest);
+    html += `<div class="card newest"><h3 style="font-size:20px">Download ${Q.esc(ver(newest))}</h3>` +
+      (links ? `<ul class="assets">${links}</ul>` : '<p class="muted">Its files are still being uploaded.</p>') +
+      `<p class="muted small" style="margin:12px 0 0">Signatures and checksums are on <a href="${Q.esc(newest.url)}">its release page</a>. The launcher's TESTING channel installs it for you.</p></div>`;
+    document.getElementById("whatlink").innerHTML =
+      `<a class="btn btn-primary" href="updates/#${encodeURIComponent(newest.tag)}">What's new in ${Q.esc(ver(newest))}</a> <a class="btn btn-ghost" href="updates/">Every testing build</a>`;
+  }
+  box.innerHTML = html;
+}).catch(e => {
+  box.innerHTML = Q.state(e.message === "rate" ? "GitHub is limiting requests right now." : "Build information is unavailable right now.",
+    ' Every testing build is listed on <a href="https://github.com/floration/quark/releases">GitHub releases</a> (marked Pre-release).');
+});
+</script>
+</body>
+</html>
