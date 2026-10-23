@@ -9,6 +9,7 @@
 struct UiInput {
     float mx = 0, my = 0;
     bool down = false, pressed = false;
+    bool rpressed = false;      // right button pressed this frame (over a slider: back to its default)
     std::string chars;
     bool backspace = false, enter = false, tab = false, escape = false;
     bool copy = false;          // Ctrl/Cmd+C this frame
@@ -63,6 +64,7 @@ struct UiWidget {
     Kind kind = BUTTON;
     float x = 0, y = 0, w = 0, h = 0;
     float nx = 0, nw = 0;       // slider: where its number is (click it to type a value)
+    float def = 0;              // slider: its default (right-click)
     float dx = 0, dy = 0;       // handle: a screen direction to drag it in
     int count = 0;              // cycle: how many values; text field: its max length; KEY: 1 + the action to hold; slider: decimals shown
     int key = 0, mods = 0;      // KEY: the key that does it (GLFW code)
@@ -95,7 +97,8 @@ public:
     bool cycle(float x, float y, float w, float h, const std::string& label, int& index, int count,
                const std::vector<std::string>& names, const UiExp& e);
     bool toggle(float x, float y, float w, float h, const std::string& label, bool& v, const UiExp& e);
-    bool slider(float x, float y, float w, float h, const std::string& label, float& v, float lo, float hi, const char* fmt, const UiExp& e);
+    // def: the value a right-click puts back (the setting's default; saved like any change)
+    bool slider(float x, float y, float w, float h, const std::string& label, float& v, float lo, float hi, const char* fmt, const UiExp& e, float def);
     // The last slider's change was a typed value (not a drag): callers that snap a dragged value to steps keep a typed
     // one as it is.
     bool typed() const { return typed_; }

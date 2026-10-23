@@ -440,6 +440,11 @@ private:
     void moveTo(float x, float y) { pending_.push_back([=] { g_.onCursor(x, y); }); }
     void press(float x, float y) { pending_.push_back([=] { g_.onCursor(x, y); g_.onMouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS); }); }
     void release() { pending_.push_back([=] { g_.onMouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE); }); }
+    void rclick(float x, float y) {
+        pending_.push_back([=] { g_.onCursor(x, y); g_.onMouseButton(GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS); });
+        step();
+        pending_.push_back([=] { g_.onMouseButton(GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE); });
+    }
     void click(float x, float y) {
         press(x, y);
         step();
@@ -851,39 +856,62 @@ private:
                 step();
                 if (e.kind == UiExp::EDIT) waitFor([&] { return g_.ed_.serialize() != edBefore; }, 4.0);   // (an edit session: the server's echo)
                 if (e.kind != UiExp::EDIT) step(2);   // (any snapping the next frames would do)
-                int k2 = find(id);
-                auto kept = [&](int k) { return std::fabs((float)atof(cur_[k].value.c_str()) - target) < unit * 0.5f; };
-                if (k2 < 0) fail(wkey, "gone after typing a value into it");
-                else if (!kept(k2)) fail(wkey, std::string("typed ") + buf + ", it shows " + cur_[k2].value + " (a typed value must be kept as typed)");
-                else if (e.kind == UiExp::CFG && path() == path0) {
-                    // saved as typed: quark.cfg read back (as at the next start) shows the same number
-                    pendingCfg_.push_back({e.what ? e.what : "", wkey});
-                    std::istringstream in(g_.cfg_.toText());
-                    Settings t;
-                    std::string l;
-                    while (std::getline(in, l)) { size_t eq = l.find('='); if (eq != std::string::npos) t.set(l.substr(0, eq), l.substr(eq + 1)); }
-                    t.finishLoad();
-                    Settings keep = g_.cfg_;
-                    g_.cfg_ = t;
-                    step(2);
-                    int k3 = find(id);
-                    if (k3 >= 0 && !kept(k3)) fail(wkey, std::string("typed ") + buf + ", but quark.cfg reads back as " + cur_[k3].value);
-                    g_.cfg_ = keep;
-                    step();
-                } else if (e.kind == UiExp::STATE && e.what && std::string(e.what) == "custom" && path() == path0) {
-                    // a custom mode's: the .qmode file read back shows the same number
-                    CustomRules keep = g_.editRules_;
-                    g_.editRules_.fromText(keep.toText());
-                    step(2);
-                    int k3 = find(id);
-                    if (k3 >= 0 && !kept(k3)) fail(wkey, std::string("typed ") + buf + ", but the custom mode file reads back as " + cur_[k3].value);
-                    g_.editRules_ = keep;
-                    step();
-                }
+                // it shows `want` (to its decimals), and so does quark.cfg / the custom mode file read back (as at the next start)
+                auto shows = [&](float want, const std::string& did) {
+                    auto is = [&](int k) { return std::fabs((float)atof(cur_[k].value.c_str()) - want) < unit * 0.5f; };
+                    int k2 = find(id);
+                    if (k2 < 0) { fail(wkey, "gone after it was " + did); return; }
+                    if (!is(k2)) { fail(wkey, did + ", it shows " + cur_[k2].value); return; }
+                    if (e.kind == UiExp::CFG && path() == path0) {
+                        pendingCfg_.push_back({e.what ? e.what : "", wkey});   // (and on disk once the screen's left)
+                        std::istringstream in(g_.cfg_.toText());
+                        Settings t;
+                        std::string l;
+                        while (std::getline(in, l)) { size_t eq = l.find('='); if (eq != std::string::npos) t.set(l.substr(0, eq), l.substr(eq + 1)); }
+                        t.finishLoad();
+                        Settings keep = g_.cfg_;
+                        g_.cfg_ = t;
+                        step(2);
+                        int k3 = find(id);
+                        if (k3 >= 0 && !is(k3)) fail(wkey, did + ", but quark.cfg reads back as " + cur_[k3].value);
+                        g_.cfg_ = keep;
+                        step();
+                    } else if (e.kind == UiExp::STATE && e.what && std::string(e.what) == "custom" && path() == path0) {
+                        CustomRules keep = g_.editRules_;
+                        g_.editRules_.fromText(keep.toText());
+                        step(2);
+                        int k3 = find(id);
+                        if (k3 >= 0 && !is(k3)) fail(wkey, did + ", but the custom mode file reads back as " + cur_[k3].value);
+                        g_.editRules_ = keep;
+                        step();
+                    }
+                };
+                shows(target, std::string("typed ") + buf + " (a typed value must be kept as typed)");
                 typedChecks_++;
                 if (e.kind == UiExp::EDIT && g_.ed_.serialize() != edBefore) {   // (and that's undone too)
                     key(GLFW_KEY_Z, GLFW_MOD_CONTROL);
                     if (!waitFor([&] { return g_.ed_.serialize() == edBefore; }, 8.0)) fail(wkey, "undo didn't put back the typed value");
+                }
+                // a right-click puts its default back (and saves it); it doesn't start typing
+                int k4 = find(id);
+                if (k4 >= 0 && path() == path0) {
+                    UiWidget s4 = cur_[k4];
+                    const bool same = std::fabs((float)atof(s4.value.c_str()) - s4.def) < unit * 0.5f;
+                    const std::string ed1 = e.kind == UiExp::EDIT ? g_.ed_.serialize() : "";
+                    g_.edLastPush_ = 0;
+                    rclick(s4.x + s4.w * 0.25f, s4.y + s4.h * 0.5f);
+                    step();
+                    if (e.kind == UiExp::EDIT && !same) waitFor([&] { return g_.ed_.serialize() != ed1; }, 4.0);
+                    if (e.kind != UiExp::EDIT) step(2);
+                    char db[32];
+                    snprintf(db, sizeof db, "%.*f", s4.count, s4.def);
+                    if (g_.ui_.typing()) fail(wkey, "a right-click started typing into it");
+                    shows(s4.def, std::string("right-clicked (default ") + db + ")");
+                    resetChecks_++;
+                    if (e.kind == UiExp::EDIT && g_.ed_.serialize() != ed1) {
+                        key(GLFW_KEY_Z, GLFW_MOD_CONTROL);
+                        if (!waitFor([&] { return g_.ed_.serialize() == ed1; }, 8.0)) fail(wkey, "undo didn't put back the value a right-click reset");
+                    }
                 }
             } else fail(wkey, "gone after dragging it (so a typed value couldn't be checked)");
         } else if (w.kind == UiWidget::SLIDER && w.enabled) fail(wkey, "dragging it left the screen (so a typed value couldn't be checked)");
@@ -893,6 +921,7 @@ private:
     }
 
     int typedChecks_ = 0;   // sliders a value was typed into (and kept)
+    int resetChecks_ = 0;   // sliders right-clicked back to their default
 
     // the state an activation led to (a new screen, a selection...), before the test undid it
     std::string postPath_, postCtx_, postIdent_;
@@ -1246,7 +1275,7 @@ private:
         std::ofstream f(utf8Path(out));
         f << "{\n  \"result\": " << jsonStr(ok ? "pass" : "fail") << ",\n  \"seconds\": " << (int)seconds << ",\n  \"frames\": " << frames_
           << ",\n  \"widgets\": " << widgets << ",\n  \"screens\": " << screens.size() << ",\n  \"passed\": " << passed << ",\n  \"failed\": " << failed
-          << ",\n  \"untested\": " << untested << ",\n  \"esc_checks\": " << escChecks_ << ",\n  \"typed_slider_checks\": " << typedChecks_ << ",\n  \"per_screen\": {\n";
+          << ",\n  \"untested\": " << untested << ",\n  \"esc_checks\": " << escChecks_ << ",\n  \"typed_slider_checks\": " << typedChecks_ << ",\n  \"slider_reset_checks\": " << resetChecks_ << ",\n  \"per_screen\": {\n";
         size_t n = 0;
         for (auto& [p, c] : perScreen)
             f << "    " << jsonStr(p) << ": {\"widgets\": " << c[0] << ", \"pass\": " << c[1] << ", \"fail\": " << c[2] << "}" << (++n < perScreen.size() ? ",\n" : "\n");
@@ -1280,8 +1309,8 @@ private:
         f.close();
         // the summary
         printf("\n==== UI TEST: %s ====\n", ok ? "PASS" : "FAIL");
-        printf("%d widgets on %zu screens (%zu scenarios), %d passed, %d failed, %d never tested; %d Esc checks; %d sliders typed into; %zu layout issues; %.0f s, %ld frames\n",
-               widgets, screens.size(), nodesBy_.size(), passed, failed, untested, escChecks_, typedChecks_, layout_.size(), seconds, frames_);
+        printf("%d widgets on %zu screens (%zu scenarios), %d passed, %d failed, %d never tested; %d Esc checks; %d sliders typed into, %d right-clicked back to default; %zu layout issues; %.0f s, %ld frames\n",
+               widgets, screens.size(), nodesBy_.size(), passed, failed, untested, escChecks_, typedChecks_, resetChecks_, layout_.size(), seconds, frames_);
         printf("per screen (widgets / pass / fail):\n");
         for (auto& [p, c] : perScreen) printf("  %-42s %4d %4d %4d\n", p.c_str(), c[0], c[1], c[2]);
         for (auto* r : bad) {

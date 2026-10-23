@@ -21,6 +21,7 @@
 #include <sstream>
 
 namespace {
+constexpr float kNewLightRadius = 10, kNewLightIntensity = 1;   // a new light (and where RADIUS / BRIGHTNESS go back to on a right-click)
 const Color kWhite = {1, 1, 1, 1};
 const Color kGrey = {0.7f, 0.72f, 0.75f, 1};
 const Color kRed = {1, 0.35f, 0.3f, 1};
@@ -567,7 +568,7 @@ void Game::edAdd(int kind, int variant) {
             break;
         }
         case ED_SPAWN: tmp.spawns.push_back({at, std::round(yaw_ / (PI / 4)) * (PI / 4), variant}); break;
-        case ED_LIGHT: tmp.lights.push_back({at + Vec3(0, 2, 0), 10, 1}); break;
+        case ED_LIGHT: tmp.lights.push_back({at + Vec3(0, 2, 0), kNewLightRadius, kNewLightIntensity}); break;
         case ED_SITE: tmp.bombSites.push_back({at - Vec3(3, 0, 3), at + Vec3(3, 3, 3)}); break;
         case ED_HILL: tmp.hasHill = true; tmp.hill = {at - Vec3(4, 0, 4), at + Vec3(4, 3, 4)}; break;
         case ED_CHECK: tmp.checkpoints.push_back({at - Vec3(2, 0, 2), at + Vec3(2, 4, 2)}); break;
@@ -1105,7 +1106,7 @@ void Game::editorFrame(double dt) {
     // the save question, when it's up, is the only thing the mouse and typing reach (drawn last, over everything)
     const bool modal = edPrompt_;
     UiInput realIn = uiIn_;
-    if (modal) { uiIn_.pressed = uiIn_.down = false; uiIn_.chars.clear(); uiIn_.backspace = uiIn_.enter = uiIn_.tab = false; }
+    if (modal) { uiIn_.pressed = uiIn_.rpressed = uiIn_.down = false; uiIn_.chars.clear(); uiIn_.backspace = uiIn_.enter = uiIn_.tab = false; }
     // ---- fly camera (right mouse held to look; WASD, Space up, C down, Shift fast, wheel = speed)
     if (!ui_.typing()) {
         Vec3 f = angleForward(yaw_, pitch_), right = normalize(cross(angleForward(yaw_, 0), {0, 1, 0}));
@@ -1126,6 +1127,7 @@ void Game::editorFrame(double dt) {
     // the middle of what you see)
     const int fullW = r_.width();
     edFullW_ = fullW;
+    edPanelX_ = panelX;
     r_.resize((int)panelX, (int)H);
     r_.setCamera(edCam_, yaw_, pitch_, cfg_.fov);
     if (ui_.probing()) uiTestHandles();   // (the UI test: where the selection's handles are on screen)
@@ -1523,15 +1525,15 @@ void Game::editorFrame(double dt) {
             if (ui_.cycle(x, y, w, h, "TEAM (M)", t, 4, teams, UiExp::edit())) edModify([&](Map& mm) { mm.spawns[i].team = t; }, false);
             row();
             float deg = std::remainder(ed_.spawns[i].yaw * 180.0f / PI, 360.0f);
-            if (ui_.slider(x, y, w, h, "FACING (Q E)", deg, -180, 180, "%.0f", UiExp::edit()))
+            if (ui_.slider(x, y, w, h, "FACING (Q E)", deg, -180, 180, "%.0f", UiExp::edit(), 0))
                 edModify([&](Map& mm) { mm.spawns[i].yaw = (ui_.typed() ? std::round(deg) : std::round(deg / 15) * 15) * PI / 180.0f; }, true);   // (dragged: 15 degree steps; typed: any degree)
             row();
         } else if (kind == ED_LIGHT) {
             float r = ed_.lights[i].radius, in = ed_.lights[i].intensity;
             // (typed: within what a map file allows - validMapLight)
-            if (ui_.slider(x, y, w, h, "RADIUS", r, 1, 60, "%.0f", UiExp::edit())) edModify([&](Map& mm) { mm.lights[i].radius = clampf(std::round(r), 1, 100); }, true);
+            if (ui_.slider(x, y, w, h, "RADIUS", r, 1, 60, "%.0f", UiExp::edit(), kNewLightRadius)) edModify([&](Map& mm) { mm.lights[i].radius = clampf(std::round(r), 1, 100); }, true);
             row();
-            if (ui_.slider(x, y, w, h, "BRIGHTNESS", in, 0.1f, 4, "%.1f", UiExp::edit())) edModify([&](Map& mm) { mm.lights[i].intensity = clampf(std::round(in * 10) / 10, 0.1f, 10); }, true);
+            if (ui_.slider(x, y, w, h, "BRIGHTNESS", in, 0.1f, 4, "%.1f", UiExp::edit(), kNewLightIntensity)) edModify([&](Map& mm) { mm.lights[i].intensity = clampf(std::round(in * 10) / 10, 0.1f, 10); }, true);
             row();
         }
         // (the hill is one per map: no DUPLICATE; the last box / spawn can't go: DELETE says so instead)

@@ -640,6 +640,7 @@ UserCmd botThink(Server& s, int id) {
         b.goalMapId = s.map_.id();
         if (navOk) b.goalNavGen = s.nav_.generation;
         b.goalUntil = 0; b.fleeUntil = 0;
+        b.goal = me.move.pos;   // (not the old spot, nor a fresh brain's 0,0,0 - a spot on the last map's graph - while a lead is chased instead)
     }
     if (!me.alive) {
         b.target = -1;

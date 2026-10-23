@@ -334,7 +334,7 @@ void Game::leaveGame(const std::string& error) {
 
 void Game::setScreen(Screen s) {
     screen_ = s;
-    uiIn_.pressed = false; // the click that changed screens doesn't also press whatever is under it on the new one
+    uiIn_.pressed = uiIn_.rpressed = false; // the click that changed screens doesn't also press whatever is under it on the new one
     ui_.clearFocus();
     captureMouse(s == Screen::InGame && !paused_ && !chatting_);
     if (s == Screen::Join) { browser_.refresh(); joinScroll_ = 0; }
@@ -703,10 +703,14 @@ void Game::onMouseButton(int button, int action) {
         if (action == GLFW_PRESS) { uiIn_.pressed = captureAction_ < 0; uiIn_.down = true; }
         else if (action == GLFW_RELEASE) uiIn_.down = false;
     }
-    if (screen_ == Screen::Editor) { // right button held: mouse look + fly
-        if (button == GLFW_MOUSE_BUTTON_RIGHT) { edLook_ = action == GLFW_PRESS; captureMouse(edLook_); }
+    if (screen_ == Screen::Editor) { // right button held: mouse look + fly (over the side panel: the UI's, a slider's reset)
+        if (button == GLFW_MOUSE_BUTTON_RIGHT) {
+            if (action == GLFW_PRESS && uiIn_.mx >= edPanelX_ && !edLook_) { uiIn_.rpressed = true; return; }
+            edLook_ = action == GLFW_PRESS; captureMouse(edLook_);
+        }
         return;
     }
+    if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS && (screen_ != Screen::InGame || paused_) && captureAction_ < 0) { uiIn_.rpressed = true; return; }
     if (action == GLFW_PRESS) {
         // in menus the left button belongs to the UI (except when rebinding)
         bool uiClick = button == GLFW_MOUSE_BUTTON_LEFT && (screen_ != Screen::InGame || paused_) && captureAction_ < 0;
@@ -1340,7 +1344,7 @@ void Game::frame(double dt) {
         printf("screenshot written to %s\n", opts_.screenshot.c_str());
         quit_ = true;
     }
-    uiIn_.pressed = false;
+    uiIn_.pressed = uiIn_.rpressed = false;
     uiIn_.chars.clear();
     uiIn_.backspace = uiIn_.enter = uiIn_.tab = uiIn_.escape = uiIn_.copy = false;
 }
@@ -2993,29 +2997,31 @@ void Game::drawWidgetEditor() {
     ui_.cycle(px, y, pw, h, "ICON", w.icon, 8, icn, UiExp::state("widgets"));
     y += h + gap;
     // (a typed number may go past a slider's end; kept within what's sane)
-    ui_.slider(px, y, hw, h, "SIZE", w.size, 0.25f, 4, "%.2f", UiExp::state("widgets")); w.size = clampf(w.size, 0.1f, 8);
-    ui_.slider(px + hw + gap, y, hw, h, "MAX (0=AUTO)", w.max, 0, 1000, "%.0f", UiExp::state("widgets")); w.max = std::max(0.0f, std::round(w.max));
+    static const HudWidget dw;   // (right-click on a slider: a new widget's value)
+    ui_.slider(px, y, hw, h, "SIZE", w.size, 0.25f, 4, "%.2f", UiExp::state("widgets"), dw.size); w.size = clampf(w.size, 0.1f, 8);
+    ui_.slider(px + hw + gap, y, hw, h, "MAX (0=AUTO)", w.max, 0, 1000, "%.0f", UiExp::state("widgets"), dw.max); w.max = std::max(0.0f, std::round(w.max));
     y += h + gap;
-    ui_.slider(px, y, hw, h, "BAR W", w.w, 10, 600, "%.0f", UiExp::state("widgets")); w.w = clampf(std::round(w.w), 1, 2000);
-    ui_.slider(px + hw + gap, y, hw, h, "BAR H", w.h, 2, 60, "%.0f", UiExp::state("widgets")); w.h = clampf(std::round(w.h), 1, 400);
+    ui_.slider(px, y, hw, h, "BAR W", w.w, 10, 600, "%.0f", UiExp::state("widgets"), dw.w); w.w = clampf(std::round(w.w), 1, 2000);
+    ui_.slider(px + hw + gap, y, hw, h, "BAR H", w.h, 2, 60, "%.0f", UiExp::state("widgets"), dw.h); w.h = clampf(std::round(w.h), 1, 400);
     y += h + gap;
-    auto rgba4 = [&](const char* name, Color& c) {
+    auto rgba4 = [&](const char* name, Color& c, const Color& def) {
         ui_.label(px, y + 4 * s, name, kWhite, 0.5f);
         r_.rect(px + pw - 40 * s, y, 40 * s, h, c);
         y += h + gap;
         float sw = (pw - 3 * gap) / 4;
         float* ch[4] = {&c.r, &c.g, &c.b, &c.a};
+        const float dv[4] = {def.r, def.g, def.b, def.a};
         const char* nm[4] = {"R", "G", "B", "A"};
         for (int i = 0; i < 4; i++) {
             float v = *ch[i] * 255;
-            if (ui_.slider(px + i * (sw + gap), y, sw, h, nm[i], v, 0, 255, "%.0f", UiExp::state("widgets"))) *ch[i] = clampf(std::round(v), 0, 255) / 255;
+            if (ui_.slider(px + i * (sw + gap), y, sw, h, nm[i], v, 0, 255, "%.0f", UiExp::state("widgets"), std::round(dv[i] * 255))) *ch[i] = clampf(std::round(v), 0, 255) / 255;
         }
         y += h + gap;
     };
-    rgba4("COLOUR (FULL)", w.color);
+    rgba4("COLOUR (FULL)", w.color, dw.color);
     ui_.toggle(px, y, pw, h, "GRADE FROM LOW COLOUR", w.grade, UiExp::state("widgets"));
     y += h + gap;
-    if (w.grade || w.style == HudWidget::GRADBAR) rgba4("LOW COLOUR (EMPTY)", w.low);
+    if (w.grade || w.style == HudWidget::GRADBAR) rgba4("LOW COLOUR (EMPTY)", w.low, dw.low);
     ui_.label(px, y + 4 * s, "LABEL", kWhite, 0.5f);
     ui_.textField(40, px + 60 * s, y, pw - 60 * s, h, w.label, 24, UiExp::state("widgets").withId("LABEL"));
     std::string lab; // no '#' (comment) or '_' (saved spaces) in labels
@@ -3515,13 +3521,14 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     ui_.textField(43, x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, discordCode_, 8, UiExp::local().withId("DISCORD CODE"));
     y += h + gap;
     {   // sensitivity, or the same thing as cm per 360 at your mouse DPI (drag either)
-        ui_.slider(x, y, w, h, "SENSITIVITY", cfg_.sensitivity, 0.1f, 10.0f, "%.2f", UiExp::cfg("sensitivity"));
+        ui_.slider(x, y, w, h, "SENSITIVITY", cfg_.sensitivity, 0.1f, 10.0f, "%.2f", UiExp::cfg("sensitivity"), defaultSettings().sensitivity);
         cfg_.sensitivity = clampf(cfg_.sensitivity, 0.01f, 50.0f);   // (typed: quark.cfg's range)
         y += h + gap;
         float cw = w * 0.6f, dw = w - cw - gap;
         // counts per 360 = 360 / (sens * 0.022); cm = counts / dpi * 2.54
-        float cm = 360.0f / (cfg_.sensitivity * 0.022f) / cfg_.dpi * 2.54f;
-        if (ui_.slider(x, y, cw, h, "CM/360", cm, 5, 120, "%.1f", UiExp::cfg("sensitivity")))
+        auto cmOf = [&](float sens) { return 360.0f / (sens * 0.022f) / cfg_.dpi * 2.54f; };
+        float cm = cmOf(cfg_.sensitivity);
+        if (ui_.slider(x, y, cw, h, "CM/360", cm, 5, 120, "%.1f", UiExp::cfg("sensitivity"), cmOf(defaultSettings().sensitivity)))
             cfg_.sensitivity = clampf(360.0f / (cm / 2.54f * cfg_.dpi) / 0.022f, 0.01f, 50.0f);
         static std::string dpiText;   // click and type any DPI
         if (!ui_.typing()) dpiText = std::to_string(cfg_.dpi);
@@ -3533,10 +3540,10 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
         ui_.label(x + cw + gap + dw - r_.textWidth("DPI", ui_.textScale()) - 6 * s, y + (h - r_.textHeight(ui_.textScale())) * 0.5f, "DPI", {0.6f, 0.62f, 0.66f, 1});
     }
     y += h + gap;
-    ui_.slider(x, y, w, h, "FOV", cfg_.fov, 70, 130, "%.0f", UiExp::cfg("fov"));
+    ui_.slider(x, y, w, h, "FOV", cfg_.fov, 70, 130, "%.0f", UiExp::cfg("fov"), defaultSettings().fov);
     cfg_.fov = clampf(cfg_.fov, 60, 140);   // (typed: quark.cfg's range)
     y += h + gap;
-    auto colorRow = [&](const char* label, Vec3& c, const char* key) {
+    auto colorRow = [&](const char* label, Vec3& c, const char* key, const Vec3& def) {
         ui_.label(x, y + 4 * s, label);
         r_.rect(x + w - 60 * s, y, 60 * s, 22 * s, rgba(c));
         y += 26 * s;
@@ -3544,12 +3551,12 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
         const char* ch[3] = {"R", "G", "B"};
         for (int i = 0; i < 3; i++) {
             float v = c[i] * 255.0f;
-            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f", UiExp::cfg(key))) c[i] = clampf(std::round(v), 0, 255) / 255.0f;
+            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f", UiExp::cfg(key), std::round(def[i] * 255))) c[i] = clampf(std::round(v), 0, 255) / 255.0f;
         }
         y += h + gap;
     };
-    colorRow("TEAM COLOR", cfg_.colorFriendly, "color_friendly");
-    colorRow("ENEMY COLOR", cfg_.colorEnemy, "color_enemy");
+    colorRow("TEAM COLOR", cfg_.colorFriendly, "color_friendly", defaultSettings().colorFriendly);
+    colorRow("ENEMY COLOR", cfg_.colorEnemy, "color_enemy", defaultSettings().colorEnemy);
     std::vector<std::string> pn;
     int pi = -1;
     for (int i = 0; i < kPaletteCount; i++) {
@@ -3575,15 +3582,15 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
         // outline widths (pixels): players' models and the map's edges; 0 = none
         float hw = (w - gap) * 0.5f;
         // (dragged: quarter pixels; typed: as typed, up to 6)
-        if (ui_.slider(x, y, hw, h, "PLAYER OUTLINE", cfg_.outlinePlayer, 0, 4, "%.2f", UiExp::cfg("outline_player_width")) && !ui_.typed())
+        if (ui_.slider(x, y, hw, h, "PLAYER OUTLINE", cfg_.outlinePlayer, 0, 4, "%.2f", UiExp::cfg("outline_player_width"), defaultSettings().outlinePlayer) && !ui_.typed())
             cfg_.outlinePlayer = std::round(cfg_.outlinePlayer * 4) / 4;
-        if (ui_.slider(x + hw + gap, y, hw, h, "WORLD OUTLINE", cfg_.outlineWorld, 0, 4, "%.2f", UiExp::cfg("outline_world_width")) && !ui_.typed())
+        if (ui_.slider(x + hw + gap, y, hw, h, "WORLD OUTLINE", cfg_.outlineWorld, 0, 4, "%.2f", UiExp::cfg("outline_world_width"), defaultSettings().outlineWorld) && !ui_.typed())
             cfg_.outlineWorld = std::round(cfg_.outlineWorld * 4) / 4;
         cfg_.outlinePlayer = clampf(cfg_.outlinePlayer, 0, 6);
         cfg_.outlineWorld = clampf(cfg_.outlineWorld, 0, 6);
         y += h + gap;
     }
-    if (ui_.slider(x, y, w * 0.6f, h, "VOLUME", cfg_.volume, 0, 1, "%.2f", UiExp::cfg("volume"))) audio_.setMasterVolume(cfg_.volume = clampf(cfg_.volume, 0, 1));
+    if (ui_.slider(x, y, w * 0.6f, h, "VOLUME", cfg_.volume, 0, 1, "%.2f", UiExp::cfg("volume"), defaultSettings().volume)) audio_.setMasterVolume(cfg_.volume = clampf(cfg_.volume, 0, 1));
     ui_.toggle(x + w * 0.6f + gap, y, w * 0.4f - gap, h, "HITSOUND", cfg_.hitsounds, UiExp::cfg("hitsounds"));
     y += h + gap;
     {
@@ -3626,7 +3633,7 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     // (a row each: "PLAYER SHADOWS: ON" in half a row was cut off at 720p - UI test)
     ui_.toggle(xr, y, w, h, "PLAYER SHADOWS", cfg_.shadows, UiExp::cfg("shadows"));
     y += h + gap;
-    ui_.slider(xr, y, w, h, "BRIGHTNESS", cfg_.brightness, 0.6f, 1.8f, "%.2f", UiExp::cfg("brightness"));
+    ui_.slider(xr, y, w, h, "BRIGHTNESS", cfg_.brightness, 0.6f, 1.8f, "%.2f", UiExp::cfg("brightness"), defaultSettings().brightness);
     cfg_.brightness = clampf(cfg_.brightness, 0.6f, 1.8f);   // (typed: quark.cfg's range)
     y += h + gap;
     static const int aaModes[] = {0, 1, 2, 4};
@@ -3639,11 +3646,12 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
         // default (adaptive), disabled (no delay: newest snapshot), or a custom delay set on a slider
         static const std::vector<std::string> imn = {"INTERP: DEFAULT (ADAPTIVE)", "INTERP: CUSTOM", "INTERP: DISABLED"};
         int ii = cfg_.interpMs == 0 ? 0 : cfg_.interpMs < 0 ? 2 : 1;
-        if (ui_.cycle(xr, y, w, h, "INTERP", ii, 3, imn, UiExp::cfg("interp_ms"))) cfg_.interpMs = ii == 0 ? 0 : ii == 2 ? -1 : 10;
+        constexpr int kCustomInterpMs = 10;   // (CUSTOM starts here; right-click on its slider: back to it)
+        if (ui_.cycle(xr, y, w, h, "INTERP", ii, 3, imn, UiExp::cfg("interp_ms"))) cfg_.interpMs = ii == 0 ? 0 : ii == 2 ? -1 : kCustomInterpMs;
         if (cfg_.interpMs > 0) {
             y += h + gap;
             float v = (float)cfg_.interpMs;
-            ui_.slider(xr, y, w, h, "INTERP DELAY (MS)", v, 1, (float)kMaxInterpMs, "%.0f", UiExp::cfg("interp_ms"));
+            ui_.slider(xr, y, w, h, "INTERP DELAY (MS)", v, 1, (float)kMaxInterpMs, "%.0f", UiExp::cfg("interp_ms"), (float)kCustomInterpMs);
             cfg_.interpMs = std::min(std::max(1, (int)std::lround(v)), kMaxInterpMs);
         }
         y += h + gap;
@@ -3856,7 +3864,7 @@ void Game::drawMenu() {
             y += 22 * s;
             ui_.textField(4, lx, y, lw * 0.4f, bh, hostPortStr_, 5, UiExp::local().withId("UDP PORT"));
             float mp = (float)cfg_.hostMaxPlayers;
-            if (ui_.slider(lx + lw * 0.45f, y, lw * 0.55f, bh, "MAX PLAYERS", mp, 2, (float)kMaxPlayers, "%.0f", UiExp::cfg("host_max")))
+            if (ui_.slider(lx + lw * 0.45f, y, lw * 0.55f, bh, "MAX PLAYERS", mp, 2, (float)kMaxPlayers, "%.0f", UiExp::cfg("host_max"), (float)defaultSettings().hostMaxPlayers))
                 cfg_.hostMaxPlayers = std::min(std::max((int)std::round(mp), 2), kMaxPlayers);
             y += bh + gap;
             ui_.toggle(lx, y, lw, bh, "AUTO PORT FORWARD (UPNP)", cfg_.hostUpnp, UiExp::cfg("host_upnp"));
@@ -3902,9 +3910,9 @@ void Game::drawMenu() {
             y += bh + gap;
             bool teams = modeIsTeamBased(cfg_.botMode);
             float ne = (float)cfg_.botEnemies, na = (float)cfg_.botAllies;
-            if (ui_.slider(lx, y, lw, bh, teams ? "ENEMY BOTS" : "BOTS", ne, 1, 7, "%.0f", UiExp::cfg("bot_enemies"))) cfg_.botEnemies = std::min(std::max((int)std::round(ne), 1), 7);
+            if (ui_.slider(lx, y, lw, bh, teams ? "ENEMY BOTS" : "BOTS", ne, 1, 7, "%.0f", UiExp::cfg("bot_enemies"), (float)defaultSettings().botEnemies)) cfg_.botEnemies = std::min(std::max((int)std::round(ne), 1), 7);
             y += bh + gap;
-            if (teams && ui_.slider(lx, y, lw, bh, "TEAMMATE BOTS", na, 0, 3, "%.0f", UiExp::cfg("bot_allies"))) cfg_.botAllies = std::min(std::max((int)std::round(na), 0), 3);
+            if (teams && ui_.slider(lx, y, lw, bh, "TEAMMATE BOTS", na, 0, 3, "%.0f", UiExp::cfg("bot_allies"), (float)defaultSettings().botAllies)) cfg_.botAllies = std::min(std::max((int)std::round(na), 0), 3);
             y += bh + gap * 2;
             if (ui_.button(lx, y, lw * 0.5f - 5 * s, bh, "START", UiExp::state("hosting", "1"))) startHost(true);
             if (ui_.button(lx + lw * 0.5f + 5 * s, y, lw * 0.5f - 5 * s, bh, "BACK", UiExp::nav("main"))) { cfg_.save(); setScreen(Screen::Main); }
@@ -3961,11 +3969,12 @@ void Game::drawCustomModeEditor(float cx, float y) {
         float hp = (float)r.health;
         const UiExp ce = UiExp::state("custom");
         // (a typed value is kept as typed, within the custom mode file's ranges - CustomRules::fromText)
-        ui_.slider(x, y, hw, bh, "HEALTH", hp, 1, 500, "%.0f", ce); r.health = std::min(std::max((int)std::lround(hp), 1), 1000);
-        ui_.slider(x + hw + gap, y, hw, bh, stdTo("GRAVITY", moveBaseGravity(), r.gravity, "m/s2"), r.gravity, 0.1f, 3, "%.2fx", ce.withId("GRAVITY")); y += bh + gap;
-        ui_.slider(x, y, hw, bh, stdTo("RUN SPEED", moveBaseSpeed(), r.moveSpeed, "m/s"), r.moveSpeed, 0.25f, 3, "%.2fx", ce.withId("RUN SPEED"));
-        ui_.slider(x + hw + gap, y, hw, bh, stdTo("JUMP", moveBaseJump(), r.jump, "m/s"), r.jump, 0.25f, 3, "%.2fx", ce.withId("JUMP")); y += bh + gap;
-        ui_.slider(x, y, hw, bh, "KNOCKBACK", r.knockback, 0, 5, "%.2fx", ce); y += bh + gap;
+        static const CustomRules kStd;   // (right-click on a slider: the standard value)
+        ui_.slider(x, y, hw, bh, "HEALTH", hp, 1, 500, "%.0f", ce, (float)kStd.health); r.health = std::min(std::max((int)std::lround(hp), 1), 1000);
+        ui_.slider(x + hw + gap, y, hw, bh, stdTo("GRAVITY", moveBaseGravity(), r.gravity, "m/s2"), r.gravity, 0.1f, 3, "%.2fx", ce.withId("GRAVITY"), kStd.gravity); y += bh + gap;
+        ui_.slider(x, y, hw, bh, stdTo("RUN SPEED", moveBaseSpeed(), r.moveSpeed, "m/s"), r.moveSpeed, 0.25f, 3, "%.2fx", ce.withId("RUN SPEED"), kStd.moveSpeed);
+        ui_.slider(x + hw + gap, y, hw, bh, stdTo("JUMP", moveBaseJump(), r.jump, "m/s"), r.jump, 0.25f, 3, "%.2fx", ce.withId("JUMP"), kStd.jump); y += bh + gap;
+        ui_.slider(x, y, hw, bh, "KNOCKBACK", r.knockback, 0, 5, "%.2fx", ce, kStd.knockback); y += bh + gap;
         r.gravity = clampf(r.gravity, 0.1f, 3); r.moveSpeed = clampf(r.moveSpeed, 0.25f, 3); r.jump = clampf(r.jump, 0.25f, 3); r.knockback = clampf(r.knockback, 0, 5);
         ui_.toggle(x, y, hw, bh, "DASH", r.dash, ce);
         ui_.toggle(x + hw + gap, y, hw, bh, "GRAPPLE", r.grapple, ce); y += bh + gap;
@@ -3975,9 +3984,9 @@ void Game::drawCustomModeEditor(float cx, float y) {
         ui_.toggle(x + hw + gap, y, hw, bh, "REGEN", r.regen, ce); y += bh + gap;
         float tl = (float)r.timeLimit, sl = (float)r.scoreLimit, rw = (float)r.roundsToWin;
         // (dragged: half minutes; typed: any whole second)
-        if (ui_.slider(x, y, hw, bh, "TIME (S, 0=DEFAULT)", tl, 0, 3600, "%.0f", ce)) r.timeLimit = std::min(std::max((int)std::lround(ui_.typed() ? tl : std::round(tl / 30) * 30), 0), 3600);
-        ui_.slider(x + hw + gap, y, hw, bh, "SCORE (0=DEFAULT)", sl, 0, 200, "%.0f", ce); r.scoreLimit = std::min(std::max((int)std::lround(sl), 0), 10000); y += bh + gap;
-        ui_.slider(x, y, hw, bh, "ROUNDS (0=DEFAULT)", rw, 0, 15, "%.0f", ce); r.roundsToWin = std::min(std::max((int)std::lround(rw), 0), 50); y += bh + gap;
+        if (ui_.slider(x, y, hw, bh, "TIME (S, 0=DEFAULT)", tl, 0, 3600, "%.0f", ce, (float)kStd.timeLimit)) r.timeLimit = std::min(std::max((int)std::lround(ui_.typed() ? tl : std::round(tl / 30) * 30), 0), 3600);
+        ui_.slider(x + hw + gap, y, hw, bh, "SCORE (0=DEFAULT)", sl, 0, 200, "%.0f", ce, (float)kStd.scoreLimit); r.scoreLimit = std::min(std::max((int)std::lround(sl), 0), 10000); y += bh + gap;
+        ui_.slider(x, y, hw, bh, "ROUNDS (0=DEFAULT)", rw, 0, 15, "%.0f", ce, (float)kStd.roundsToWin); r.roundsToWin = std::min(std::max((int)std::lround(rw), 0), 50); y += bh + gap;
     } else if (customTab_ == 3) {   // every movement constant, x its normal value (gravity / speed / jump are on GENERAL)
         ui_.label(x, y, "EVERY MOVEMENT SETTING: STANDARD -> THIS MODE (THE SLIDER IS THE MULTIPLIER, 1.00X = STANDARD)", kGrey, 0.5f);
         y += 16 * s;
@@ -3995,7 +4004,7 @@ void Game::drawCustomModeEditor(float cx, float y) {
         for (int k = 0; k < MV_COUNT; k++) {
             float cx2 = gx + (k % cols) * (cw + gap), cy2 = y + (k / cols) * (rh + gap);
             if (ui_.slider(cx2, cy2, cw, rh, stdTo(moveParamLabel(k), moveParamBase(k), r.move[k], moveParamUnit(k)), r.move[k], 0.1f, 5, "%.2fx",
-                           UiExp::state("custom").withId(moveParamLabel(k))))   // (dragged: 0.05 steps; typed: as typed)
+                           UiExp::state("custom").withId(moveParamLabel(k)), CustomRules().move[k]))   // (dragged: 0.05 steps; typed / reset: as is)
                 r.move[k] = clampf(ui_.typed() ? r.move[k] : std::round(r.move[k] * 20) / 20, 0.1f, 5);
         }
         y += rows * (rh + gap);
@@ -4003,6 +4012,7 @@ void Game::drawCustomModeEditor(float cx, float y) {
         if (ui_.button(x, y, w, bh, "RESET MOVEMENT TO STANDARD", UiExp::state("custom"), !standard)) for (float& v : r.move) v = 1;
         y += bh + gap;
     } else if (customTab_ == 1) {
+        static const CustomRules kStdW;   // (right-click on a slider: the standard value)
         float sw = (gw - 130 * s - 3 * gap) / 3;
         for (int i = 0; i < WPN_COUNT; i++) {
             int wp = kWeaponSlots[i];
@@ -4017,10 +4027,10 @@ void Game::drawCustomModeEditor(float cx, float y) {
             }
             float fx = gx + 130 * s;
             const WeaponDef& bd = baseWeaponDef(wp);   // standard -> this mode
-            ui_.slider(fx, y, sw, bh, stdTo("SHOTS/S", bd.refire > 0 ? 1.0f / bd.refire : 0, r.fireRate[wp]), r.fireRate[wp], 0.25f, 4, "%.2fx", UiExp::state("custom").withId("SHOTS/S"));
-            ui_.slider(fx + sw + gap, y, sw, bh, stdTo("DMG", bd.damage, r.damage[wp]), r.damage[wp], 0.1f, 5, "%.2fx", UiExp::state("custom").withId("DMG"));
+            ui_.slider(fx, y, sw, bh, stdTo("SHOTS/S", bd.refire > 0 ? 1.0f / bd.refire : 0, r.fireRate[wp]), r.fireRate[wp], 0.25f, 4, "%.2fx", UiExp::state("custom").withId("SHOTS/S"), kStdW.fireRate[wp]);
+            ui_.slider(fx + sw + gap, y, sw, bh, stdTo("DMG", bd.damage, r.damage[wp]), r.damage[wp], 0.1f, 5, "%.2fx", UiExp::state("custom").withId("DMG"), kStdW.damage[wp]);
             ui_.slider(fx + 2 * (sw + gap), y, sw, bh, (bd.projSpeed > 0 ? stdTo("SPEED", bd.projSpeed, r.projSpeed[wp], "m/s") : std::string("SPEED: HITSCAN")), r.projSpeed[wp], 0.25f, 4, "%.2fx",
-                       UiExp::state("custom").withId("SPEED"));
+                       UiExp::state("custom").withId("SPEED"), kStdW.projSpeed[wp]);
             r.fireRate[wp] = clampf(r.fireRate[wp], 0.1f, 10); r.damage[wp] = clampf(r.damage[wp], 0, 10); r.projSpeed[wp] = clampf(r.projSpeed[wp], 0.1f, 5);
             y += bh + gap;
         }
@@ -4819,11 +4829,11 @@ void Game::drawVisualSettings(float x0, float y0, float wTotal) {
         Vec3& c = cfg_.fullbrightColor;
         for (int i = 0; i < 3; i++) {
             float v = c[i] * 255.0f;
-            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f", UiExp::cfg("fullbright_color"))) c[i] = clampf(std::round(v), 0, 255) / 255.0f;
+            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f", UiExp::cfg("fullbright_color"), std::round(defaultSettings().fullbrightColor[i] * 255))) c[i] = clampf(std::round(v), 0, 255) / 255.0f;
         }
         r_.rect(x + 3 * (sw + gap), y, sww, h, rgba(c));
-        bool white = c.x == 1 && c.y == 1 && c.z == 1;
-        if (ui_.button(x + w - rw, y, rw, h, "RESET", UiExp::cfg("fullbright_color").withId("RESET MAP COLOR"), !white)) c = {1, 1, 1};
+        bool white = c.x == defaultSettings().fullbrightColor.x && c.y == defaultSettings().fullbrightColor.y && c.z == defaultSettings().fullbrightColor.z;
+        if (ui_.button(x + w - rw, y, rw, h, "RESET", UiExp::cfg("fullbright_color").withId("RESET MAP COLOR"), !white)) c = defaultSettings().fullbrightColor;
         y += h + gap;
     }
     static const std::vector<std::string> own = {"YOUR SHOTS: WITH THE WEAPON MODEL", "YOUR SHOTS: ALWAYS", "YOUR SHOTS: NEVER"};
@@ -4836,14 +4846,14 @@ void Game::drawVisualSettings(float x0, float y0, float wTotal) {
         if (ui_.cycle(x, y, w, h, "HEALTH BAR POSITION", hi, 2, hbp, UiExp::cfg("health_bars_bottom"))) cfg_.healthBarsBottom = hi == 1;
         y += h + gap;
     }
-    ui_.slider(x, y, w, h, "SCOPE OVERLAY", cfg_.scopeOpacity, 0, 1, "%.2f", UiExp::cfg("scope_opacity")); y += h + gap;
+    ui_.slider(x, y, w, h, "SCOPE OVERLAY", cfg_.scopeOpacity, 0, 1, "%.2f", UiExp::cfg("scope_opacity"), defaultSettings().scopeOpacity); y += h + gap;
     cfg_.scopeOpacity = clampf(cfg_.scopeOpacity, 0, 1);
     {   // the sniper's and rifle's alt-fire zoom (degrees, as FOV; the standard zoom in the label). Client-side only.
         float hw = (w - gap) * 0.5f;
         static const std::string sl = "SNIPER ZOOM FOV (STD " + std::to_string((int)baseWeaponDef(WPN_SNIPER).zoomFov) + ")",
                                  rl = "RIFLE ZOOM FOV (STD " + std::to_string((int)baseWeaponDef(WPN_RIFLE).zoomFov) + ")";
-        ui_.slider(x, y, hw, h, sl, cfg_.zoomFovSniper, 10, 90, "%.0f", UiExp::cfg("zoom_fov_sniper"));
-        ui_.slider(x + hw + gap, y, hw, h, rl, cfg_.zoomFovRifle, 10, 90, "%.0f", UiExp::cfg("zoom_fov_rifle"));
+        ui_.slider(x, y, hw, h, sl, cfg_.zoomFovSniper, 10, 90, "%.0f", UiExp::cfg("zoom_fov_sniper"), defaultSettings().zoomFovSniper);
+        ui_.slider(x + hw + gap, y, hw, h, rl, cfg_.zoomFovRifle, 10, 90, "%.0f", UiExp::cfg("zoom_fov_rifle"), defaultSettings().zoomFovRifle);
         cfg_.zoomFovSniper = clampf(cfg_.zoomFovSniper, 10, 140);   // (typed: quark.cfg's range; used up to the normal FOV)
         cfg_.zoomFovRifle = clampf(cfg_.zoomFovRifle, 10, 140);
         y += h + gap;
@@ -4855,7 +4865,7 @@ void Game::drawVisualSettings(float x0, float y0, float wTotal) {
     {   // damage numbers: on / off, and their size, with a sample of the number at that size
         float tw = w * 0.42f, sw = w - tw - gap;
         ui_.toggle(x, y, tw, h, "DAMAGE NUMBERS", cfg_.dmgNums, UiExp::cfg("dmg_nums"));
-        if (ui_.slider(x + tw + gap, y, sw - 56 * s, h, "SIZE", cfg_.dmgNumScale, 0.5f, 3.0f, "%.2f", UiExp::cfg("dmg_num_scale")) && !ui_.typed())
+        if (ui_.slider(x + tw + gap, y, sw - 56 * s, h, "SIZE", cfg_.dmgNumScale, 0.5f, 3.0f, "%.2f", UiExp::cfg("dmg_num_scale"), defaultSettings().dmgNumScale) && !ui_.typed())
             cfg_.dmgNumScale = std::round(cfg_.dmgNumScale * 20) / 20;   // (dragged: 0.05 steps; typed: as typed)
         cfg_.dmgNumScale = clampf(cfg_.dmgNumScale, 0.5f, 3.0f);
         float k = std::max(1.0f, std::round(ui_.textScale() * cfg_.dmgNumScale));
@@ -4864,7 +4874,7 @@ void Game::drawVisualSettings(float x0, float y0, float wTotal) {
         y += h + gap;
     }
     // the flash round the screen's edges when you're hit (0 = off)
-    ui_.slider(x, y, w, h, "DAMAGE FLASH (SCREEN EDGES WHEN HIT, 0 = OFF)", cfg_.damageFlash, 0, 1, "%.2f", UiExp::cfg("damage_flash"));
+    ui_.slider(x, y, w, h, "DAMAGE FLASH (SCREEN EDGES WHEN HIT, 0 = OFF)", cfg_.damageFlash, 0, 1, "%.2f", UiExp::cfg("damage_flash"), defaultSettings().damageFlash);
     cfg_.damageFlash = clampf(cfg_.damageFlash, 0, 1);
     y += h + gap;
     ui_.label(x, y, "YOUR SHOTS: TRACERS AND THE LASER BEAM COME FROM WHERE THE GUN IS (OR WOULD BE)", {0.7f, 0.72f, 0.75f, 1}, 0.5f);
@@ -4906,13 +4916,14 @@ void Game::drawHudSettings(float x0, float y0, float wTotal) {
     ui_.toggle(x, y, w, h, "SHOW", shown, he); e.hidden = !shown;
     y += h + gap;
     // (typed numbers: within quark.cfg's ranges)
-    ui_.slider(x, y, w, h, "X OFFSET", e.x, -640, 640, "%.0f", he); e.x = clampf(std::round(e.x), -1280, 1280);
+    const auto& de = defaultSettings().hud[hudSel_];   // (right-click on a slider: the element's default)
+    ui_.slider(x, y, w, h, "X OFFSET", e.x, -640, 640, "%.0f", he, de.x); e.x = clampf(std::round(e.x), -1280, 1280);
     y += h + gap;
-    ui_.slider(x, y, w, h, "Y OFFSET", e.y, -360, 360, "%.0f", he); e.y = clampf(std::round(e.y), -720, 720);
+    ui_.slider(x, y, w, h, "Y OFFSET", e.y, -360, 360, "%.0f", he, de.y); e.y = clampf(std::round(e.y), -720, 720);
     y += h + gap;
-    ui_.slider(x, y, w, h, "SIZE", e.scale, 0.5f, 3, "%.2f", he); e.scale = clampf(e.scale, 0.5f, 3);
+    ui_.slider(x, y, w, h, "SIZE", e.scale, 0.5f, 3, "%.2f", he, de.scale); e.scale = clampf(e.scale, 0.5f, 3);
     y += h + gap;
-    if (hudSel_ == Settings::HUD_VIEWMODEL) { ui_.slider(x, y, w, h, "DEPTH", e.z, -300, 300, "%.0f", he); e.z = clampf(std::round(e.z), -300, 300); }
+    if (hudSel_ == Settings::HUD_VIEWMODEL) { ui_.slider(x, y, w, h, "DEPTH", e.z, -300, 300, "%.0f", he, de.z); e.z = clampf(std::round(e.z), -300, 300); }
     y += h + gap;
     ui_.toggle(x, y, w, h, hudSel_ == Settings::HUD_VIEWMODEL ? "CUSTOM ACCENT COLOR" : "CUSTOM COLOR", e.custom, he);
     y += h + gap;
@@ -4921,7 +4932,7 @@ void Game::drawHudSettings(float x0, float y0, float wTotal) {
         const char* ch[3] = {"R", "G", "B"};
         for (int i = 0; i < 3; i++) {
             float v = e.color[i] * 255.0f;
-            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f", he)) e.color[i] = clampf(std::round(v), 0, 255) / 255.0f;
+            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f", he, std::round(de.color[i] * 255))) e.color[i] = clampf(std::round(v), 0, 255) / 255.0f;
         }
     }
     y += h + gap * 3;
@@ -4962,13 +4973,13 @@ void Game::drawCrosshairSettings(float x0, float y0, float wTotal) {
     static const std::vector<std::string> styles = {"CROSS", "CROSS + DOT", "DOT", "CIRCLE", "T"};
     ui_.cycle(x, y, w, h, "STYLE", cfg_.chStyle, 5, styles, UiExp::cfg("ch_style"));
     y += h + gap;
-    ui_.slider(x, y, w, h, "LENGTH", cfg_.chLength, 0, 30, "%.0f", UiExp::cfg("ch_length"));
+    ui_.slider(x, y, w, h, "LENGTH", cfg_.chLength, 0, 30, "%.0f", UiExp::cfg("ch_length"), defaultSettings().chLength);
     cfg_.chLength = clampf(std::round(cfg_.chLength), 0, 30);
     y += h + gap;
-    ui_.slider(x, y, w, h, "THICKNESS", cfg_.chThickness, 1, 8, "%.0f", UiExp::cfg("ch_thickness"));
+    ui_.slider(x, y, w, h, "THICKNESS", cfg_.chThickness, 1, 8, "%.0f", UiExp::cfg("ch_thickness"), defaultSettings().chThickness);
     cfg_.chThickness = clampf(std::round(cfg_.chThickness), 1, 8);
     y += h + gap;
-    ui_.slider(x, y, w, h, "GAP", cfg_.chGap, 0, 20, "%.0f", UiExp::cfg("ch_gap"));
+    ui_.slider(x, y, w, h, "GAP", cfg_.chGap, 0, 20, "%.0f", UiExp::cfg("ch_gap"), defaultSettings().chGap);
     cfg_.chGap = clampf(std::round(cfg_.chGap), 0, 20);
     y += h + gap;
     ui_.toggle(x, y, w * 0.5f - gap * 0.5f, h, "OUTLINE", cfg_.chOutline, UiExp::cfg("ch_outline"));
@@ -4979,7 +4990,7 @@ void Game::drawCrosshairSettings(float x0, float y0, float wTotal) {
         const char* ch[3] = {"R", "G", "B"};
         for (int i = 0; i < 3; i++) {
             float v = cfg_.chColor[i] * 255.0f;
-            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f", UiExp::cfg("ch_color"))) cfg_.chColor[i] = clampf(std::round(v), 0, 255) / 255.0f;
+            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f", UiExp::cfg("ch_color"), std::round(defaultSettings().chColor[i] * 255))) cfg_.chColor[i] = clampf(std::round(v), 0, 255) / 255.0f;
         }
     }
     y += h + gap;
@@ -4991,7 +5002,7 @@ void Game::drawCrosshairSettings(float x0, float y0, float wTotal) {
         const char* ch[3] = {"HIT R", "HIT G", "HIT B"};
         for (int i = 0; i < 3; i++) {
             float v = cfg_.chHitColor[i] * 255.0f;
-            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f", UiExp::cfg("ch_hit_color"))) cfg_.chHitColor[i] = clampf(std::round(v), 0, 255) / 255.0f;
+            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f", UiExp::cfg("ch_hit_color"), std::round(defaultSettings().chHitColor[i] * 255))) cfg_.chHitColor[i] = clampf(std::round(v), 0, 255) / 255.0f;
         }
     }
     y += h + gap * 3;

@@ -52,7 +52,8 @@ While the test runs, the `Ui` reports every widget it draws each frame (rect, la
    (to its decimals), still a couple of frames later; a `cfg` slider's value must come back the same from quark.cfg
    read back as at the next start, and a custom mode's (`state("custom")`) from the `.qmode` text read back.
    Callers that snap a dragged value (0.05 steps, quarter pixels, 15 degrees, 30 s) snap only when
-   `!ui_.typed()`; typed values are only clamped to the range the file allows.
+   `!ui_.typed()`; typed values are only clamped to the range the file allows. Then the slider is **right-clicked**:
+   it must show its default (`Ui::slider`'s last argument), read back the same way, and not start typing.
 4. **Esc from every screen** must go back to a screen on the way to it.
 5. **Layout**, at 1280x720 while exploring, then every screen again at 1920x1080 and 1024x768 (4:3): no widget off
    screen, no two widgets overlapping, no label clipped (`Ui::fit` shrinking a label is fine; cutting it off isn't).
@@ -108,7 +109,9 @@ if (ui_.button(x, y, w, h, "LOCATOR", UiExp::nav("ingame/pause/locator"))) ...  
 - A **new situation** (a mode whose menus differ, a new kind of session): add a scenario in `UiTest::scenarios()`
   (`only` limits it to some widgets when the rest of its screens are another scenario's).
 - A **new slider**: `Ui::slider` already takes typed numbers. Snap a dragged value only when `!ui_.typed()`, and
-  clamp to the range its file (quark.cfg, .qmode, the map) reads back, not to the drag range.
+  clamp to the range its file (quark.cfg, .qmode, the map) reads back, not to the drag range. Its last argument is
+  its default (what a right-click puts back): take it from `Game::defaultSettings()`, a default `CustomRules` or the
+  constant the thing is created with, never a second copy of the number.
 - A **modal** (a prompt over a panel): set `ui_.muted = true` while drawing what's under it, so only the prompt's
   widgets are reported.
 - A command that must really reach the server during the test (rare: the edit session's `ed` ops do) goes in

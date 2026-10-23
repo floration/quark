@@ -396,6 +396,8 @@ private:
     bool remoteFiring_[kMaxPlayers] = {};
     float viewFov() const;
     void sceneSettings();   // the renderer's world look from cfg_
+    static const Settings& defaultSettings() { static const Settings d; return d; }   // (sliders' right-click: back to these)
+    float edPanelX_ = 1e9f;   // the editor's side panel starts here (a right-click there is the UI's, not mouse look)
 
     // F3 performance overlay: frame-time percentiles (lows matter, averages hide stutter)
     bool showPerf_ = false;

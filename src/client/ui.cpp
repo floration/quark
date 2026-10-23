@@ -177,7 +177,7 @@ bool Ui::toggle(float x, float y, float w, float h, const std::string& label, bo
     return hit;
 }
 
-bool Ui::slider(float x, float y, float w, float h, const std::string& label, float& v, float lo, float hi, const char* fmt, const UiExp& e) {
+bool Ui::slider(float x, float y, float w, float h, const std::string& label, float& v, float lo, float hi, const char* fmt, const UiExp& e, float def) {
     int id = sliderCounter_++;
     typed_ = false;
     char buf[64];
@@ -212,7 +212,11 @@ bool Ui::slider(float x, float y, float w, float h, const std::string& label, fl
         editSlider_ = -1;
         if (focus_ == kSliderFocus + id) focus_ = -1;
     };
-    if (editing) {
+    if (in_.rpressed && hover(x, y, w, h)) {   // right-click: back to the default (and no typing, no drag)
+        if (editing) { editSlider_ = -1; if (focus_ == kSliderFocus + id) focus_ = -1; editing = false; }
+        if (activeSlider_ == id) activeSlider_ = -1;
+        if (v != def) { v = def; changed = true; typed_ = true; }   // (typed_: exactly that, not snapped to a drag step)
+    } else if (editing) {
         for (char c : in_.chars) if (((c >= '0' && c <= '9') || c == '.' || c == '-') && editText_.size() < 12) editText_ += c;
         if (in_.backspace && !editText_.empty()) editText_.pop_back();
         if (in_.escape) { editSlider_ = -1; focus_ = -1; editing = false; }
@@ -255,12 +259,21 @@ bool Ui::slider(float x, float y, float w, float h, const std::string& label, fl
         float bx = sx + r_->textWidth(lab + ": ", ls), bw = r_->textWidth(buf, ls);
         r_->rect(bx - 3 * scale_, y + 3 * scale_, bw + 6 * scale_, h - 6 * scale_, {1, 1, 1, overNumber ? 0.14f : 0.05f});
         if (overNumber) r_->rect(bx, sy + r_->textHeight(ls) + 1 * scale_, bw, 1 * scale_, {1, 1, 1, 0.7f});
+        // under the mouse, away from its default: a small hint above it (a dark tag, the smallest text)
+        if (hover(x, y, w, h) && v != def && !in_.down) {
+            const std::string hint = "RIGHT-CLICK: RESET";
+            float hs = Renderer::kMinTextScale, hw2 = r_->textWidth(hint, hs) + 8 * scale_, hh = r_->textHeight(hs) + 4 * scale_;
+            float hx = std::min(x + w - hw2, std::max(x, in_.mx - hw2 * 0.5f)), hy = y - hh - 2 * scale_;
+            r_->rect(hx, hy, hw2, hh, {0, 0, 0, 0.75f});
+            r_->text(hx + 4 * scale_, hy + 2 * scale_, hs, hint, {0.85f, 0.87f, 0.9f, 1});
+        }
     }
     if (probe && !muted) {
         UiWidget wd;
         wd.where = where; wd.scope = scope;
         wd.kind = UiWidget::SLIDER; wd.x = x; wd.y = y; wd.w = w; wd.h = h; wd.nx = nx; wd.nw = nw;
         wd.dx = lo; wd.dy = hi;   // (a slider's range rides in dx / dy, its shown decimals in count)
+        wd.def = def;
         const char* dot = strchr(fmt, '.');
         wd.count = dot ? atoi(dot + 1) : 0;
         wd.label = label; wd.exp = e; wd.clipped = clipped;
