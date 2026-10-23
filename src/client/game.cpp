@@ -1448,8 +1448,7 @@ void Game::frame(double dt) {
         drawBakeScreen(bake_->map.name, bake_->progress.load());
         sleepMs(30);   // (a loading bar needs ~30 fps: the cores go to the bake; under software GL every frame costs them)
     } else if (screen_ == Screen::InGame && net_.hasSnapshot() && r_.worldLoaded()) {
-        drawWorld((float)clampf((float)(tickAcc_ / net_.tickPeriod()), 0, 1));
-        drawHud();
+        drawWorld((float)clampf((float)(tickAcc_ / net_.tickPeriod()), 0, 1));   // (and the HUD, before its late read)
     } else {
         // slow orbit around the backdrop map, looking slightly down at its center
         float ang = opts_.backdropAngle >= 0 ? deg2rad(opts_.backdropAngle) : (float)time_ * 0.04f;
@@ -1471,8 +1470,11 @@ void Game::frame(double dt) {
     if (opts_.backdrop.empty() || screen_ == Screen::InGame) drawMenu();
     std::string copied = ui_.takeCopy();
     if (!copied.empty()) glfwSetClipboardString(win_, copied.c_str());
-    if (showPerf_) drawPerf();
-    else if (perfMini_) drawPerfMini();
+    if (!hudBuilt_) {
+        if (showPerf_) drawPerf();
+        else if (perfMini_) drawPerfMini();
+    }
+    hudBuilt_ = false;
     { QZONE("flush2D"); r_.flush2D(); }
     pipeMark(PM_HUD);
     pipeGpuEnd();
@@ -2013,6 +2015,14 @@ void Game::drawWorld(float alpha) {
         }
     }
     sceneSettings();
+    // The HUD, F3 / F4 and their upload, before the late read: off the mouse to photon path (it used to sit between the
+    // read and the swap, ~87 us at 4000 fps). What it places in the 3D view (damage numbers, the locator box) uses the
+    // aim from before the read, a sliver of a turn behind, like the name tags above (owner: the UI may lag the aim).
+    drawHud();
+    if (showPerf_) drawPerf();
+    else if (perfMini_) drawPerfMini();
+    r_.prepare2D();
+    hudBuilt_ = true;
     // Late latch: the newest mouse motion, read just before the world is drawn (everything above, world, players and
     // effects, was built in world space: only the view turns). The command this frame sent keeps its aim; the next
     // carries this. What was projected onto the screen above (name tags, health bars) is off by this sliver of a turn.
@@ -4760,9 +4770,9 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     span("NETWORK READ", PM_FENCE, PM_NET, cCpu);
     span("READ INPUT", PM_NET, PM_POLL, cCpu);
     span("TICKS + PREDICTION", PM_POLL, PM_TICKS, cCpu);
-    span("CAMERA + WORLD BUILD", PM_TICKS, PM_SCENE0, cCpu);
+    span("CAMERA + WORLD + HUD BUILD", PM_TICKS, PM_SCENE0, cCpu);
     span("DRAW CALLS", PM_SCENE0, PM_SCENE1, cCpu);
-    span("HUD + TEXT", PM_SCENE1, PM_HUD, cCpu);
+    span("HUD DRAW", PM_SCENE1, PM_HUD, cCpu);
     span("SWAP", PM_SWAP0, PM_SWAP1, cCpu);
     if (cfg_.lowLatency == 2) span("GPU WAIT (ULTRA)", PM_SWAP1, PM_AFTER, cWait);
     rows.push_back({"GPU", a[PM_COUNT], a[PM_COUNT + 1], cGpu});

@@ -420,6 +420,7 @@ private:
 
     // F3 performance overlay: frame-time percentiles (lows matter, averages hide stutter)
     bool showPerf_ = false;
+    bool hudBuilt_ = false;            // drawWorld built the HUD (and F3 / F4) before its late read this frame
     bool perfMini_ = false;            // F4: only the mouse to photon number (drawPerfMini)
     bool perfOn() const { return showPerf_ || perfMini_; }   // (the pipeline graph's measuring runs)
     std::string perfMiniText_;

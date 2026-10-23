@@ -1094,8 +1094,13 @@ size_t Renderer::textFit(const std::string& str, float scale, float maxW) const 
     return str.size();
 }
 
+void Renderer::prepare2D() {
+    upload(uiVbo_, uiCap_, ui_);
+    uiUploaded_ = ui_.size();
+}
+
 void Renderer::flush2D() {
-    if (ui_.empty()) return;
+    if (ui_.empty()) { uiUploaded_ = 0; return; }
     QPLOT("ui verts", ui_.size());
 #ifdef QUARK_TRACY
     static size_t uiTotal = 0; uiTotal += ui_.size();
@@ -1105,7 +1110,8 @@ void Renderer::flush2D() {
     glDisable(GL_CULL_FACE);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    upload(uiVbo_, uiCap_, ui_);
+    if (uiUploaded_ != ui_.size()) upload(uiVbo_, uiCap_, ui_);   // (prepare2D did it, unless more was added since)
+    uiUploaded_ = 0;
     glUseProgram(uiProg_);
     glUniform2f(U(uiProg_, "uScreen"), (float)width_, (float)height_);
     glUniform1i(U(uiProg_, "uFont"), 0);

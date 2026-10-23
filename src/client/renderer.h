@@ -87,6 +87,8 @@ public:
     static constexpr float kMinTextScale = 1.3f;
     float textHeight(float scale) const { return 8.0f * (scale < kMinTextScale ? kMinTextScale : scale); }
     void flush2D();
+    // The 2D batch so far uploaded now (the HUD before the late latch): flush2D then only draws it, unless more was added.
+    void prepare2D();
 
     void setShadowsAvailable(bool b) { shadowsOn_ = b; }
     // this frame's drawScene will run the shadow pass (false: off-screen casters aren't even built). Set before drawing.
@@ -141,6 +143,7 @@ private:
     bool shadowsOn_ = true;
     unsigned fontTex_ = 0;
     size_t dynCap_ = 0, flatCap_ = 0, uiCap_ = 0;
+    size_t uiUploaded_ = 0;   // (prepare2D: this many 2D vertices are in uiVbo_ already; 0: none)
 
     std::vector<DynVertex> dyn_, dynShadowOnly_, view_;
     std::vector<DynVertex> dynNoCast_;   // drawn with dyn_, but no shadow (and not in the shadow pass's caster rect)
