@@ -155,17 +155,20 @@ def build():
     # ---- the workings under the slab: rock pillars left standing on a 16 m grid (room-and-pillar mining)
     A_ZONE = (-7, -71, 7, -57)
     C_ZONE = (-7, -35, 7, -21)
-    SP = {   # spawn pads per stage: (team, stage, y, [(x, z)], yaw)
-        "att0": (14, [(84, -104), (90, -104), (96, -104), (84, -98), (90, -98), (96, -98)], 90),
-        "def0": (14, [(-60, -108), (-54, -108), (-48, -108), (-42, -108), (-36, -108), (-30, -108)], 135),
+    # spawn pads per stage: (y, [(x, z)], yaw). Each stage's two sides walk the same distance to its point, within a
+    # second at a run (owner decision B2: the attackers' arrival minus the defenders' is -1..+1 s at every point,
+    # measured by the map report on the bots' nav graph)
+    SP = {
+        "att0": (14, [(50, -110), (55, -110), (60, -110), (50, -105), (55, -105), (60, -105)], 90),     # (the surface, east of the pithead)
+        "def0": (14, [(-45, -110), (-40, -110), (-35, -110), (-45, -105), (-40, -105), (-35, -105)], -90),   # (the surface, west of it)
         "att1": (14, [(-8, -104), (-2, -104), (4, -104), (-8, -98), (-2, -98), (4, -98)], 180),
-        "def1": (0, [(-82, -70), (-79, -70), (-82, -66), (-79, -66), (-82, -62), (-79, -62)], -90),
-        "att2": (0, [(-82, -90), (-78, -90), (-74, -90), (-82, -86), (-78, -86), (-74, -86)], -90),
-        "def2": (0, [(36, -18), (42, -18), (48, -18), (36, -13), (42, -13), (48, -13)], 90),
-        "att3": (0, [(-12, -58), (-6, -58), (0, -58), (6, -58), (-12, -52), (6, -52)], 180),
+        "def1": (0, [(-102, -72.5), (-100.5, -72.5), (-99, -72.5), (-102, -69.5), (-100.5, -69.5), (-99, -69.5)], -90),   # (the west adit, behind the pit wall)
+        "att2": (0, [(-44, -76), (-42, -76), (-40, -76), (-44, -78), (-42, -78), (-40, -78)], 180),    # (the pit floor, by B, off the rails)
+        "def2": (0, [(54, -26), (58, -26), (62, -26), (54, -29), (58, -29), (62, -29)], 90),             # (the workings east of C)
+        "att3": (0, [(-30, -30), (-25, -30), (-20, -30), (-30, -25), (-25, -25), (-20, -25)], 180),    # (the workings by C)
         "def3": (12, [(-108, 30), (-102, 30), (-108, 38), (-102, 38), (-108, 46), (-102, 46)], -90),
-        "att4": (0, [(-66, 8), (-60, 8), (-54, 8), (-66, 13), (-60, 13), (-54, 13)], 180),
-        "def4": (12, [(50, 106), (56, 106), (62, 106), (68, 106), (74, 106), (80, 106)], 0),
+        "att4": (0, [(-30, 36), (-24, 36), (-18, 36), (-30, 42), (-24, 42), (-18, 42)], 90),             # (the grotto, east of D)
+        "def4": (12, [(50, 101), (55, 101), (60, 101), (50, 106), (55, 106), (60, 106)], 0),             # (the shaft station's ledge)
     }
     keep = [PIT, DECL_E, DECL_W] + [(r[0] - 2, r[1] - 2, r[2] + 2, r[3] + 2) for r in RIMHOLES] + [(6, -70, 18, -58), A_ZONE, C_ZONE, (-28, -76, -16, -66), (-96, -76, -84, -66), (-46, -50, -36, -36)]
     keep += [(x0 - 2, -10, x1 + 2, -4) for (x0, x1) in ((-80, -70), (-30, -20), (20, 30), (70, 80))]   # in front of the portals
@@ -316,9 +319,11 @@ def build():
     # team spawns in the two caverns, mirrored either side of the spine (the portals into the workings are symmetric)
     for (x, z) in ((-64, 10), (-60, 10), (-64, 14), (-60, 14), (-52, 10), (-52, 14)):
         m.spawn("a", x, 0, z, 0); m.spawn("b", -x, 0, z, 0)
-    # king of the hill on the workings' loading bay (C): as far from either cavern; bomb sites at D and E
+    # king of the hill on the workings' loading bay (C): as far from either cavern. The bomb sites are the two places
+    # in the workings both caverns reach in the same second (B2: within -1..+1 s): the loading bay, and the pillar
+    # hall under the pithead (D and E sat in one cavern each: one side was there 10 s before the other, REVIEW MAP-6)
     m.raw("hill %g 0 %g %g 4 %g" % (C_ZONE[0] - 1, C_ZONE[1] - 1, C_ZONE[2] + 1, C_ZONE[3] + 1))
-    for z in (D_ZONE, E_ZONE): m.raw("site %g 0 %g %g 3 %g" % (z[0] - 1, z[1] - 1, z[2] + 1, z[3] + 1))
+    for z in (C_ZONE, (-14, -62, -2, -50)): m.raw("site %g 0 %g %g 3 %g" % (z[0] - 1, z[1] - 1, z[2] + 1, z[3] + 1))
     # the payload: an ore cart from the grotto, through the spine tunnel, to the shaft station (checkpoints at 1/3, 2/3)
     CART = [(-70, 15.5), (-30, 15.5), (30, 15.5), (70, 15.5)]   # (beside the station's landing, z 18..30: not through it)
     for (x, z) in CART: m.raw(f"path {x:g} 0 {z:g}")

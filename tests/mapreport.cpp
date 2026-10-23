@@ -27,6 +27,9 @@ namespace {
 // long = laser (32 m max) / crossbow, extreme = only the sniper (and a scoped rifle) reaches.
 constexpr float kBandClose = 6.0f, kBandMid = 20.0f, kBandLong = 32.0f;
 constexpr float kRunSpeed = 8.0f;   // pmove kGroundSpeed
+// Attack / defend timing (owner decision B2): at every bomb site and capture point, the attackers' arrival minus the
+// defenders' (positive: the defenders are there first) must be within this band. Graded at the worst site / point.
+constexpr float kLeadLo = -1.0f, kLeadHi = 1.0f;
 constexpr float kJumpReach = 1.2f;     // a standing jump clears ~1.2 m (pmove: 7.34 m/s up, 22 m/s^2 gravity)
 constexpr float kEye = 1.6f;
 
@@ -67,6 +70,7 @@ struct Metrics {
     // modes
     std::vector<std::pair<std::string, std::string>> modes; // mode -> measured line
     float fairness = -1;       // 0-1, min/max of team distances (team maps)
+    std::vector<std::pair<std::string, float>> leads;   // every attack / defend arrival: attackers' minus defenders' (s, NaN: unreachable)
     float hideSpots = 0;       // share of points seen by < 5% of others
     // originality
     std::vector<float> occ;    // 24x24 top-down footprint (max floor height, normalised)
@@ -844,7 +848,8 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g) {
         if (!m.spawns.empty()) {
             const auto& d = tech.from(tech.nearest(m.spawns[0].pos));
             float x0 = 1e9f, z0 = 1e9f, x1 = -1e9f, z1 = -1e9f;
-            for (size_t i = 0; i < tech.p.size(); i++) if (techPlayable[i]) { x0 = std::min(x0, tech.p[i].x); x1 = std::max(x1, tech.p[i].x); z0 = std::min(z0, tech.p[i].z); z1 = std::max(z1, tech.p[i].z); }
+            // (the playable floor itself, every surface of it: not the sparse samples, whose edge moves with the sampling)
+            for (size_t i = 0; i < g.nodes.size(); i++) if (playable[i]) { auto& n = g.nodes[i]; x0 = std::min(x0, n.x0); x1 = std::max(x1, n.x1); z0 = std::min(z0, n.z0); z1 = std::max(z1, n.z1); }
             int extra = 0, out = 0;
             for (size_t i = 0; i < tech.p.size(); i++) {
                 if (d[i] > 1e29f || techPlayable[i]) continue;
@@ -861,6 +866,29 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g) {
             r.techLine += tb;
         }
     }
+    // cover on an area (a capture point): every 1 m of playable floor inside it, the share with >= 4 of 16 directions
+    // blocked within 3 m at chest height (the sightline samples are far too sparse for a 14 m point on the biggest
+    // maps: graded at the worst point, one with no sample in it would read as no cover at all)
+    auto coverIn = [&](const AABB& z) {
+        int hc = 0, hn = 0;
+        for (size_t i = 0; i < g.nodes.size(); i++) {
+            auto& n = g.nodes[i];
+            if (!playable[i] || n.y < z.mn.y - 0.5f || n.y > z.mx.y || n.x1 < z.mn.x || n.x0 > z.mx.x || n.z1 < z.mn.z || n.z0 > z.mx.z) continue;
+            for (float x = std::max(n.x0, z.mn.x) + 0.5f; x < std::min(n.x1, z.mx.x); x += 1)
+                for (float zz = std::max(n.z0, z.mn.z) + 0.5f; zz < std::min(n.z1, z.mx.z); zz += 1) {
+                    Vec3 p = {x, n.y, zz};
+                    if (m.boxSolid(playerBox(p + Vec3(0, 0.02f, 0), false))) continue;
+                    Vec3 chest = p + Vec3(0, 1.0f, 0);
+                    int blocked = 0;
+                    for (int k = 0; k < 16; k++) {
+                        float a = k * 6.2831853f / 16, tt = m.raycast(chest, {std::sin(a), 0, std::cos(a)}, 3.0f);
+                        blocked += tt >= 0 && tt < 3.0f;
+                    }
+                    hn++; hc += blocked >= 4;
+                }
+        }
+        return hn ? (float)hc / hn : 0.0f;
+    };
     // ---- modes: what each mode cares about, measured on this map
     std::vector<Vec3> spA, spB;
     for (auto& sp : m.spawns) { if (sp.team == SPAWN_A) spA.push_back(sp.pos); if (sp.team == SPAWN_B) spB.push_back(sp.pos); }
@@ -885,7 +913,7 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g) {
             if (d < bd) { bd = d; mid = q; }
         }
     }
-    char buf[256];
+    char buf[512];
     std::vector<float> fair;
     auto boxDist = [&](const std::vector<Vec3>& sps, const AABB& box) {
         float sum = 0; int n = 0;
@@ -909,18 +937,58 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g) {
         if (getenv("MR_POINTS")) for (auto& p : sps) printf("    point %zu %s spawn %.0f %.0f %.0f: %.0f m (node %d)\n", i, defending ? "def" : "att", p.x, p.y, p.z, navToBox(g, p, m.points[i]), nearestNode(g, p));
         return boxDist(sps, m.points[i]);
     };
+    if (std::getenv("MR_FROM") && r.name == std::getenv("MR_FROM")) {
+        // debugging objective placement: each nav surface's mean walk from team A's and team B's spawns, as
+        // "FROM <surface centre x y z> <x0 x1 z0 z1> <A m> <B m>" lines on stdout
+        std::vector<std::vector<float>> da, db;
+        for (auto& p : spA) { auto d = navDist(g, nearestNode(g, p)); auto& n = g.nodes[nearestNode(g, p)]; float o = length(Vec3((n.x0 + n.x1) * 0.5f, n.y, (n.z0 + n.z1) * 0.5f) - p); for (auto& v : d) v += o; da.push_back(d); }
+        for (auto& p : spB) { auto d = navDist(g, nearestNode(g, p)); auto& n = g.nodes[nearestNode(g, p)]; float o = length(Vec3((n.x0 + n.x1) * 0.5f, n.y, (n.z0 + n.z1) * 0.5f) - p); for (auto& v : d) v += o; db.push_back(d); }
+        for (size_t i = 0; i < g.nodes.size(); i++) {
+            float a = 0, b = 0;
+            for (auto& d : da) a += d[i] / da.size();
+            for (auto& d : db) b += d[i] / db.size();
+            auto& n = g.nodes[i];
+            if (a < 1e8f && b < 1e8f) printf("FROM %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.1f %.1f\n", (n.x0 + n.x1) * 0.5f, n.y, (n.z0 + n.z1) * 0.5f, n.x0, n.x1, n.z0, n.z1, a, b);
+        }
+    }
+    if (std::getenv("MR_FIELD") && r.name == std::getenv("MR_FIELD")) {
+        // debugging spawn placement: for every objective, each nav surface's walk to it (from the surface's centre),
+        // as "FIELD <objective> <surface centre x y z> <x0 x1 z0 z1> <walk m>" lines on stdout
+        std::vector<std::pair<std::string, AABB>> objs;
+        for (size_t k = 0; k < m.points.size(); k++) objs.push_back({std::string("point") + char('A' + k), m.points[k]});
+        for (size_t k = 0; k < m.bombSites.size(); k++) objs.push_back({"site" + std::to_string(k + 1), m.bombSites[k]});
+        if (m.hasHill) objs.push_back({"hill", m.hill});
+        auto centre = [&](size_t i) { auto& n = g.nodes[i]; return Vec3((n.x0 + n.x1) * 0.5f, n.y, (n.z0 + n.z1) * 0.5f); };
+        for (size_t i = 0; i < g.nodes.size(); i++) {
+            auto d = navDist(g, (int)i);   // (navToBox's walk from a spot on surface i, less the spot's way to its centre)
+            for (auto& [what, box] : objs) {
+                float best = -1;
+                for (size_t j = 0; j < g.nodes.size(); j++) {
+                    auto& n = g.nodes[j];
+                    if (d[j] > 1e29f || n.x1 < box.mn.x || n.x0 > box.mx.x || n.z1 < box.mn.z || n.z0 > box.mx.z || n.y < box.mn.y - 0.5f || n.y > box.mx.y) continue;
+                    Vec3 in = {std::clamp((box.mn.x + box.mx.x) * 0.5f, n.x0, n.x1), n.y, std::clamp((box.mn.z + box.mx.z) * 0.5f, n.z0, n.z1)};
+                    float tt = d[j] + length(in - centre(j));
+                    if (best < 0 || tt < best) best = tt;
+                }
+                auto& n = g.nodes[i];
+                Vec3 c = centre(i);
+                printf("FIELD %s %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.1f\n", what.c_str(), c.x, c.y, c.z, n.x0, n.x1, n.z0, n.z1, best);
+            }
+        }
+    }
     for (int mode = 0; mode < MODE_COUNT; mode++) {
         if (!m.supportsMode(mode)) continue;
         std::string line;
-        if (mode == MODE_BOMB && teams) {
-            float att = 1e9f, def = 1e9f;
-            for (auto& site : m.bombSites) {
-                float da = boxDist(spA, site), db = boxDist(spB, site);
-                if (da > 0) att = std::min(att, da);
-                if (db >= 0) def = std::min(def, db);
+        if (mode == MODE_BOMB && teams) {   // per site: A attacks (the sides swap spawns with roles: the band is symmetric)
+            for (size_t k = 0; k < m.bombSites.size(); k++) {
+                float da = boxDist(spA, m.bombSites[k]), db = boxDist(spB, m.bombSites[k]);
+                float l = da < 0 || db < 0 ? NAN : (da - db) / kRunSpeed;
+                snprintf(buf, sizeof buf, "bomb site %zu", k + 1);
+                r.leads.push_back({buf, l});
+                snprintf(buf, sizeof buf, "%ssite %zu: attackers (A) %.0f m, defenders (B) %.0f m, attackers' arrival minus defenders' %+.1f s", k ? "; " : "", k + 1, da, db, l);
+                line += buf;
             }
-            snprintf(buf, sizeof buf, "nearest site: attackers (A) %.0f m, defenders (B) %.0f m - defenders should arrive first", att, def);
-            line = buf;
+            line += " (-1..+1 s at every site)";
         } else if (mode == MODE_KOTH && m.hasHill && teams) line = fairLine("to the hill", boxDist(spA, m.hill), boxDist(spB, m.hill));
         else if (mode == MODE_NPAYLOAD && m.payloadPath.size() >= 2 && teams)
             line = teamLine("to the cart", m.payloadPoint(m.payloadLength() * 0.5f));
@@ -965,10 +1033,13 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g) {
             std::string t = std::to_string(m.points.size()) + " points;";
             for (size_t i = 0; i < m.points.size(); i++) {
                 float a = pointDist(i, false), d = pointDist(i, true);
-                snprintf(buf, sizeof buf, " %c: attackers %.0f m, defenders %.0f m;", char('A' + i), a, d);
+                float l = a < 0 || d < 0 ? NAN : (a - d) / kRunSpeed;
+                snprintf(buf, sizeof buf, "point %c", char('A' + i));
+                r.leads.push_back({buf, l});
+                snprintf(buf, sizeof buf, " %c: attackers %.0f m, defenders %.0f m, attackers' arrival minus defenders' %+.1f s;", char('A' + i), a, d, l);
                 t += buf;
             }
-            line = t;
+            line = t + " (-1..+1 s at every point)";
         } else if (mode == MODE_HIDE || mode == MODE_TAG) {
             snprintf(buf, sizeof buf, "%.0f%% of floor is a hiding spot (seen from < 5%% of the map)", r.hideSpots * 100);
             line = buf;
@@ -1003,12 +1074,16 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g) {
             snprintf(buf, sizeof buf, "%s: fairness %.2f, %.0f m2 floor (%s), spawns %.1f s apart (%s), %.0f loops per 1000 m2",
                      modeLabel(pm), f, r.area, duel ? "300-2000 ideal" : "700-3000 ideal", t, duel ? "2.5-7 s ideal" : "4-9 s ideal", loopsPerK);
         } else if (pm == MODE_BOMB && teams && !m.bombSites.empty()) {
-            // defenders reach a site 3-10 s before the attackers; two sites; the attackers have ways round (loops)
-            float att = 1e9f, def = 1e9f;
-            for (auto& site : m.bombSites) { float da = boxDist(spA, site), db = boxDist(spB, site); if (da > 0) att = std::min(att, da); if (db >= 0) def = std::min(def, db); }
-            float lead = (att - def) / 8;
-            fit = 4 * band(lead, 3, 10, 4) + 3 * std::min(m.bombSites.size() / 2.0f, 1.0f) + 3 * std::min(loopsPerK / 20, 1.0f);
-            snprintf(buf, sizeof buf, "bomb: defenders arrive %.1f s first (3-10 s ideal), %zu sites, %.0f loops per 1000 m2", lead, m.bombSites.size(), loopsPerK);
+            // both sides reach every site within a second of each other (B2: whoever takes a site first holds it), graded
+            // at the worst site; two sites; the attackers have ways round (loops)
+            float worst = 1, wl = 0; size_t ws = 0;
+            for (size_t k = 0; k < m.bombSites.size(); k++) {
+                float da = boxDist(spA, m.bombSites[k]), db = boxDist(spB, m.bombSites[k]);
+                float l = (da - db) / kRunSpeed, s = da < 0 || db < 0 ? 0.0f : band(l, kLeadLo, kLeadHi, 4);
+                if (k == 0 || s < worst) { worst = s; wl = l; ws = k; }
+            }
+            fit = 4 * worst + 3 * std::min(m.bombSites.size() / 2.0f, 1.0f) + 3 * std::min(loopsPerK / 20, 1.0f);
+            snprintf(buf, sizeof buf, "bomb: worst site %zu, attackers' arrival minus defenders' %+.1f s (-1..+1 ideal), %zu sites, %.0f loops per 1000 m2", ws + 1, wl, m.bombSites.size(), loopsPerK);
         } else if (pm == MODE_KOTH && m.hasHill && teams) {
             // equal walks to the hill, several ways onto it, and cover on it to hold it with
             float da = boxDist(spA, m.hill), db = boxDist(spB, m.hill);
@@ -1054,35 +1129,30 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g) {
             fit = r.mTech;
             snprintf(buf, sizeof buf, "race: the race movement check (shortcut and challenge on the tech path, see movement)");
         } else if (pm == MODE_POINTS && m.points.size() >= 2) {
-            // an attack in stages: 3-6 points; 25-90 m of walking from one to the next (a push, not a hop); the
-            // defenders' spawns reach each point 2-10 s before the attackers' (set up, then hold); 3+ ways onto every
-            // point (it can be flanked) and cover on it (35%) so a team can hold or take it
+            // an attack in stages: 3-6 points; 25-90 m of walking from one to the next (a push, not a hop); both
+            // sides' stage spawns reach each point within a second of each other (B2: whoever is there first holds
+            // it); 3+ ways onto every point (it can be flanked) and cover on it (35%) so a team can hold or take it.
+            // Every part is graded at its WORST point (B2), not the average.
             size_t n = m.points.size();
-            float count = band((float)n, 3, 6, 2), spacing = 0, lead = 0, cover = 0, ways = 0;
+            float count = band((float)n, 3, 6, 2), spacing = 1, lead = 1, cover = 1, ways = 1;
             int minWays = 1 << 30;
             std::string leads;
             for (size_t i = 0; i < n; i++) {
                 const AABB& z = m.points[i];
-                if (i > 0) spacing += band(navToBox(g, {m.points[i - 1].center().x, m.points[i - 1].mn.y, m.points[i - 1].center().z}, z), 25, 90, 30);
-                float la = (pointDist(i, false) - pointDist(i, true)) / 8;
-                lead += band(la, 2, 10, 4);
-                snprintf(buf, sizeof buf, "%s%.1f", i ? "/" : "", la); leads += buf;
+                if (i > 0) spacing = std::min(spacing, band(navToBox(g, {m.points[i - 1].center().x, m.points[i - 1].mn.y, m.points[i - 1].center().z}, z), 25, 90, 30));
+                float pa = pointDist(i, false), pd = pointDist(i, true), la = (pa - pd) / kRunSpeed;
+                lead = std::min(lead, pa < 0 || pd < 0 ? 0.0f : band(la, kLeadLo, kLeadHi, 4));
+                snprintf(buf, sizeof buf, "%s%+.1f", i ? "/" : "", la); leads += buf;
                 auto in = [&](const NavGraph::Node& nd) { float cx = (nd.x0 + nd.x1) / 2, cz = (nd.z0 + nd.z1) / 2; return cx > z.mn.x && cx < z.mx.x && cz > z.mn.z && cz < z.mx.z && nd.y >= z.mn.y - 0.5f && nd.y <= z.mx.y; };
                 int w = 0;
                 for (size_t k = 0; k < g.nodes.size(); k++) if (!in(g.nodes[k])) for (auto& l : g.links[k]) w += in(g.nodes[l.first]);
                 minWays = std::min(minWays, w);
-                ways += std::min(w / 3.0f, 1.0f);
-                int hc = 0, hn = 0;
-                for (size_t k = 0; k < pts.size() && k < coveredAt.size(); k++) {
-                    const Vec3& q = pts[k].p;
-                    if (q.x > z.mn.x && q.x < z.mx.x && q.z > z.mn.z && q.z < z.mx.z && q.y >= z.mn.y - 0.5f && q.y <= z.mx.y) { hn++; hc += coveredAt[k]; }
-                }
-                cover += std::min((hn ? (float)hc / hn : 0) / 0.35f, 1.0f);
+                ways = std::min(ways, std::min(w / 3.0f, 1.0f));
+                cover = std::min(cover, std::min(coverIn(z) / 0.35f, 1.0f));
             }
-            spacing /= (n - 1); lead /= n; cover /= n; ways /= n;
             fit = 1.5f * count + 2 * spacing + 3 * lead + 2 * cover + 1.5f * ways;
-            snprintf(buf, sizeof buf, "points: %zu points (3-6 ideal), spacing %.2f (25-90 m), defenders first by %s s (2-10 ideal), cover %.2f (35%% ideal), fewest ways onto a point %d (3+)",
-                     n, spacing, leads.c_str(), cover, minWays);
+            snprintf(buf, sizeof buf, "points: %zu points (3-6 ideal), worst spacing %.2f (25-90 m), attackers' arrival minus defenders' %s s (-1..+1 ideal, worst %.2f), worst cover %.2f (35%% ideal), fewest ways onto a point %d (3+)",
+                     n, spacing, leads.c_str(), lead, cover, minWays);
         } else if (pm == MODE_HIDE || pm == MODE_TAG) {
             // hiding needs spots seen from almost nowhere; tag needs loops to run round (and hiding spots matter less)
             bool tag = pm == MODE_TAG;
@@ -1236,6 +1306,13 @@ int mapReport(const char* outPath) {
         for (auto& [k, v] : cats)
             if (simpleArena && (!strcmp(k, "layout") || !strcmp(k, "movement") || !strcmp(k, "creativity"))) continue;
             else if (v >= 0 && v < 7.0f - 1e-3f) { snprintf(why, sizeof why, "%s %.1f is below 7", k, v); miss(why); }
+        // the attack / defend timing band (B2) at every bomb site and capture point of every mode the map offers
+        for (auto& [what, l] : r.leads)
+            if (std::isnan(l) || l < kLeadLo || l > kLeadHi) {
+                if (std::isnan(l)) snprintf(why, sizeof why, "%s: a side can't walk to it", what.c_str());
+                else snprintf(why, sizeof why, "%s: attackers' arrival minus the defenders' is %+.2f s (the band is %+.0f..%+.0f s)", what.c_str(), l, kLeadLo, kLeadHi);
+                miss(why);
+            }
         if (r.sMode < 0) miss("not built for one mode (\"for <mode>\")");
         if (r.setting.empty()) miss("no \"setting\" (what place it is)");
         // nothing outside the playable floor's footprint may be reachable with the full movement envelope (clip, or
@@ -1310,6 +1387,19 @@ int mapReport(const char* outPath) {
     for (auto& r : all) o << "- **" << r.name << "**: " << r.techLine << "\n";
     o << "\n### Mode fit\n\nEach map is built for one mode; this is how well it does what that mode needs.\n\n";
     for (auto& r : all) o << "- **" << r.name << "**: " << (r.modeFit.empty() ? std::string("no mode it is built for") : r.modeFit) << "\n";
+    o << "\n### Attack / defend timing\n\nAt every bomb site and capture point: the attackers' arrival minus the defenders' (s, at 8 m/s on the "
+         "bots' nav graph; positive: the defenders are there first). Every one must be within " << kLeadLo << ".." << "+" << kLeadHi << " s.\n\n| map | timing (s) |\n|---|---|\n";
+    for (auto& r : all) {
+        if (r.leads.empty()) continue;
+        std::string ls;
+        for (auto& [what, l] : r.leads) {
+            char x[96];
+            if (std::isnan(l)) snprintf(x, sizeof x, "%s%s unreachable", ls.empty() ? "" : ", ", what.c_str());
+            else snprintf(x, sizeof x, "%s%s %+.1f", ls.empty() ? "" : ", ", what.c_str(), l);
+            ls += x;
+        }
+        o << "| " << r.name << " | " << ls << " |\n";
+    }
     o << "\n## Per map: shots and modes\n\n";
     std::string shots = std::filesystem::path(outPath).parent_path().string();   // (shot sheets live next to the report)
     shots = (shots.empty() ? std::string(".") : shots) + "/map_shots/";

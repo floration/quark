@@ -198,17 +198,19 @@ def build():
         m.wallbang(x - 2.8, 0.15, z + 0.8 if z > 0 else z - 1, x + 2.8, 2.4, z + 1 if z > 0 else z - 0.8)   # (glass: shoot through it)
 
     # ---- spawns per stage, then cover scattered on the streets and in the yards
+    # (each stage's two sides walk the same distance to its point, within a second at a run: owner decision B2, the
+    # attackers' arrival minus the defenders' is -1..+1 s at every point, measured by the map report)
     MSP = {
-        "att0": (0, [(-65, -104), (-63, -104), (-65, -100), (-63, -100), (-65, -96), (-63, -96)], 135),   # (the avenue's centre line: clear of parked cars)
-        "def0": (0, [(36, -66), (40, -66), (44, -66), (36, -62), (40, -62), (44, -62)], 90),
-        "att1": (0, [(-4, -104), (0, -104), (4, -104), (-4, -98), (0, -98), (-6.5, -98)], 180),
-        "def1": (0.15, [(16, -36), (20, -36), (24, -36), (16, -32), (20, -32), (24, -32)], 0),
-        "att2": (0, [(61, -50), (65, -50), (63, -54), (65, -46), (63, -42), (65, -42)], 135),
-        "def2": (0.2, [(30, 50), (34, 50), (38, 50), (30, 46), (38, 46), (42, 50)], 0),
-        "att3": (0, [(63, 28), (65, 28), (61, 40), (65, 40), (63, 36), (65, 36)], 90),
-        "def3": (9, [(-60, -1.5), (-56, -1.5), (-52, -1.5), (-60, 1.5), (-56, 1.5), (-52, 1.5)], -90),
-        "att4": (0, [(-20, -1.5), (-16, -1.5), (-12, -1.5), (-20, 1.5), (-16, 1.5), (-12, 1.5)], 180),   # (under the railway)
-        "def4": (0.15, [(-46, 44), (-42, 44), (-38, 44), (-28, 44), (-24, 44), (-20, 44)], 0),
+        "att0": (0, [(-62.5, -96), (-61, -96), (-62.5, -93), (-61, -93), (-62.5, -90), (-61, -90)], 180),   # (west of the avenue's median: clear of the parked cars)
+        "def0": (0, [(54, -66), (56, -66), (58, -66), (54, -62), (56, -62), (58, -62)], 90),             # (up the avenue east of A)
+        "att1": (0, [(18, -61.5), (20, -61.5), (22, -61.5), (18, -63), (20, -63), (22, -63)], 0),          # (on the avenue in front of B's office, behind a parked car)
+        "def1": (0.15, [(12, -8), (14, -8), (16, -8), (12, -10), (14, -10), (16, -10)], 0),               # (behind it, by the railway)
+        "att2": (0.15, [(30, -22), (32, -22), (34, -22), (30, -19), (32, -19), (34, -19)], 180),          # (between the offices north of the park)
+        "def2": (0.15, [(-24, 28), (-22, 28), (-20, 28), (-24, 25), (-22, 25), (-20, 25)], -90),         # (city hall's plaza)
+        "att3": (0, [(-6, 7.5), (-6, 9), (-4.5, 7.5), (-4.5, 9), (-3, 7.5), (-3, 9)], 90),                     # (the crossroads, by the station stairs)
+        "def3": (9, [(-78, -1.5), (-76.5, -1.5), (-75, -1.5), (-78, 1.5), (-76.5, 1.5), (-75, 1.5)], -90),   # (down the line on the deck, past the stopped train)
+        "att4": (0, [(2, 10), (4, 10), (6, 10), (2, 13), (4, 13), (6, 13)], 90),                          # (the crossroads by the park)
+        "def4": (0, [(-70, 58), (-68, 58), (-66, 58), (-70, 61), (-68, 61), (-66, 61)], -90),             # (the west avenue behind city hall)
     }
     for k in "ABCDE": m.raw(m.points[k])
     for k, (y, pts, yaw) in MSP.items():

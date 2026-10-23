@@ -1,19 +1,25 @@
-"""DEPOT: bomb. Attackers (A) come from the south, defenders hold the two sites in the north. Three very
-different lanes: the west runs through a roofed warehouse full of racks, the middle crosses an open yard
-around the freight truck (climb the crates onto its roof), the east drops into a sunken loading trench
-under a raised dock."""
+"""DEPOT: bomb. Attackers (A) come in at the south gate, defenders (B) from the north yard, and the two sites lie
+between them, halfway down each flank: the west site among the racks inside the warehouse, the east site on the
+raised dock between the containers. Both sides reach either site within a second of each other (owner decision
+B2: whoever takes a site first holds it, so the race to it is even). Three very different lanes: the west runs
+through the roofed warehouse, the middle crosses an open yard around the freight truck (climb the crates onto its
+roof), the east drops into a sunken loading trench beside the dock."""
 from .prefabs import *
 
 
 def build():
     m = M("Depot", "bomb")
     m.room(26, 34, 9, pits=[(12, 24, 26, 30, "water")], sunken=[(12, -21, 18, 21, 2.5, "metal")], style="yard", skyline="city")
-    m.box(-22, -0.05, -30, -14, 0, -22, accent=True); m.raw("site -22 0 -30 -14 3 -22")
-    m.box(14, -0.05, -30, 22, 0, -22, accent=True); m.raw("site 14 0 -30 22 3 -22")
+    # the sites, halfway down: west among the warehouse racks, east on the dock between the containers (each the
+    # same walk from both gates: the warehouse has a door at each end, the dock a stair at each end)
+    m.box(-22, -0.05, -4, -14, 0, 4, accent=True); m.raw("site -22 0 -4 -14 3 4")
+    m.box(19, 1.2, -2, 25, 1.25, 6, mat="metal"); m.raw("site 19 1.2 -2 25 4.2 6")
+    # the defenders' yard in the north: crate stacks, the wall down the middle and the perch they stack up on
     for (x, z) in ((-20, -24), (-16, -28), (16, -24), (20, -28)): m.box(x - 1, 0, z - 1, x + 1, 1.4, z + 1)
     m.box(-24, 0, -20, -18, 2, -19)
-    m.box(-1, 0, -26, 1, 4, -18, accent=True)                               # wall splitting the sites
+    m.box(-1, 0, -22, 1, 4, -16, accent=True)                               # wall down the middle of the yard
     m.box(-4, 0, -33, 4, 2, -29); m.stairs(-4, -29, 4, -26, 2, "z", -1)       # defender perch
+    m.box(-9.5, 0, -24.4, 9.5, 4.05, -24.0, accent=True)                     # the yard's screen wall: out round the sides (no sightline to A's spawn)
     # west: the warehouse (doors north and south, a side door to the yard, racks inside)
     m.building(-24, -8, -9, 10, 5.0, [("n", -16.5, 3.2), ("s", -16.5, 3.2), ("e", 1, 2.6), ("w", -3, 2.6)], windows=True)
     for z in (-3.5, 4):
@@ -32,13 +38,14 @@ def build():
     m.box(-5, 0, 10, -2, 1.4, 12); m.box(3, 0, 12, 6, 1.4, 14)                 # yard cover
     # east: raised dock beside the sunken trench, steps down into it at both ends
     m.box(18, 0, -16, 26, 1.2, 16, accent=True)
-    m.stairs(18, 16, 21, 19, 1.2, "z", -1)
-    m.container(20, -12, 25, -6); m.container(20, 4, 25, 10); m.container(20, 4, 25, 10, h=5.2)
+    m.stairs(18, 16, 21, 19, 1.2, "z", -1); m.stairs(18, -19, 21, -16, 1.2, "z", 1)   # (a stair up at each end)
+    m.container(20, -10, 25, -4); m.container(20, 6, 25, 12); m.container(20, 6, 25, 12, h=5.2)   # (the east site between them)
     m.stairs(12, 18, 18, 21, 0, "z", 1, base=-2.5); m.stairs(12, -21, 18, -18, 0, "z", -1, base=-2.5)
     m.box(14, -2.5, -4, 16, -1.1, 0)                                           # cover down in the trench
     m.metal(11.6, 0, -14, 12, 1.0, 14); m.metal(18, 1.2, -14, 18.4, 2.2, 14)   # trench railings
-    for x in (-6, -2, 2, 6): m.spawn("a", x, 0, 31, 0); m.spawn("b", x, 0, -24, 180)
-    m.spawn("a", 0, 0, 28, 0); m.spawn("b", 0, 2, -31, 180)
+    for x in (-6, -2, 2, 6): m.spawn("a", x, 0, 28.5, 0)
+    for (x, z) in ((-16, -31), (-14, -31), (14, -31), (16, -31), (-15, -33), (15, -33)): m.spawn("b", x, 0, z, 180)   # (the yard's far corners)
+    m.spawn("a", 0, 0, 31, 0)
     m.spawn("any", -20, 0, 16, 90); m.spawn("any", 8, 0, 16, -90)
     # a ladder up the warehouse's south wall: its roof is an overwatch perch above the west lane (and exposed)
     m.ladder(-11, 10.4, 0, 5.35, "n")
@@ -50,7 +57,7 @@ def build():
     # the gatehouse at the attackers' entry: a roofed shelter to stack up under before the push
     for (x, z) in ((-8, 26), (8, 26), (-8, 33.5), (8, 33.5)): m.metal(x - 0.3, 0, z - 0.3, x + 0.3, 4.2, z + 0.3)
     m.box(-9, 4.2, 25, 9, 4.6, 34, accent=True); m.glow(-9, 4.05, 25, 9, 4.2, 25.15); m.light(0, 3.6, 29.5, 9, 0.7, fixture=False)
-    m.box(-6.4, 0, 24.6, 6.4, 4.05, 25.0, accent=True)                          # its front wall: out round the sides (no sightline to B's spawn)
+    m.box(-8.4, 0, 24.6, 8.4, 4.05, 25.0, accent=True)                          # its front wall: out round the sides (no sightline to B's spawn)
     # the yard: a corrugated perimeter fence and floodlights on the corner columns
     m.wall_ribs(step=1.0)
     for (x, z) in ((-24, -32), (24, -32), (-24, 32), (24, 32), (-24, 0), (24, 0)):

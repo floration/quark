@@ -101,16 +101,17 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 
 ## Depot: bomb. Setting: a freight depot.
 **Why it suits bomb:**
-- Defenders reach a site 7.2 s before the attackers, enough to set up but not to camp the attackers' exit.
-- Two sites, split by a wall so they can't be held from one spot.
+- Both sides reach either site in the same second (attackers' arrival minus defenders': west −0.4 s, east +0.1 s; the owner's band is −1..+1 s, decision B2). The game is fast: a side that takes a site first holds it, so the race to it has to be even. Attackers come in at the south gate, defenders from the north yard, and the sites lie between them, halfway down each flank.
+- Two sites, 40 m apart across the yard, so they can't be held from one spot.
 - Three different lanes: the indoor warehouse, the open yard, and the sunken trench.
 
 **Structures:**
-- **The wall between the sites, and the defender perch.** The defenders' setup.
-- **The warehouse with racks, and a ladder to its roof.** The indoor lane, with an exposed overwatch on top.
+- **The west site, among the racks in the warehouse.** A door at each end (one for each side), racks for cover on the site, a ladder to the roof outside.
+- **The east site, on the raised dock between two containers.** A stair up at each end of the dock (one for each side); the containers are its cover.
+- **The defenders' yard in the north: crate stacks, the wall down its middle, the perch and the screen wall.** Where the defence starts (the spawns in the yard's far corners, the screen wall keeping them out of the attackers' sight).
 - **The freight truck, with crates up onto it.** Cover and high ground in the open yard.
-- **The raised dock, the sunken trench and the loading canopy.** The low lane, fought under a roof.
-- **The gatehouse.** Where the attackers stack before the push. Its front is walled (you leave round the sides): from the attackers' spawn you could see the defenders' 55 m away.
+- **The sunken trench and the loading canopy.** The low lane beside the dock, fought under a roof.
+- **The gatehouse.** Where the attackers stack before the push. Its front is walled (you leave round the sides): from the attackers' spawn you could see the defenders' 60 m away.
 - **The barge basin, with a moored barge to cross on.** A lethal corner by the attackers' gate.
 - **The yard crane, up a ladder to its cab at 9.6 m.** The defenders' overwatch over both sites, exposed to everything.
 - **Pallet stacks and drums.** Cover on the way to the sites.
@@ -226,7 +227,7 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 ## Lodestone: multi point (and every other mode). Setting: a mine.
 **Why it suits multi point:**
 - An attack in five stages down the mine (A pithead, B pit floor, C workings, D crystal grotto, E mother lode). Each point is 25–90 m on from the last: every capture is a push, not a hop.
-- Every stage has its own spawns for both sides. The defenders' spawns reach each point 2–10 s before the attackers', so the defence can set up. As a point falls, both sides' spawns move on and the fight moves down the mine.
+- Every stage has its own spawns for both sides, and both reach the stage's point in the same second (attackers' arrival minus defenders': A +0.3, B +0.7, C 0.0, D −0.3, E −0.5 s; the owner's band is −1..+1 s, decision B2): whoever takes a point first holds it, so the race to it is even. As a point falls, both sides' spawns move on and the fight moves down the mine.
 - Each point is a raised dais with 7+ ways onto it and a ring of crates and ore bins on it, so it can be flanked and has to be held.
 - Two storeys over the whole north half (surface over workings), and caverns with ledges at 12 m in the south. Every point can be reached from above and below.
 
@@ -260,15 +261,16 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 - **Lamp posts, crystal veins in the walls, fissures with daylight.** Light, and something to steer by.
 
 *Every other mode (Lodestone is the map built for all of them):*
-- **Team spawns in the two caverns, mirrored either side of the spine.** The portals into the workings are symmetric, so neither side is closer to the middle. (Not true of the bomb sites at D and E: each is far nearer one team. Lodestone is graded for multi point only; its other modes await a decision, REVIEW MAP-6.) A pit prop in the spine tunnel's mouth keeps the two spawn rows out of each other's sight, and a spoil wall on the surface does the same for the stage-0 spawns.
-- **The hill on the loading bay (C)**, as far from either cavern; **bomb sites at D and E**.
+- **Team spawns in the two caverns, mirrored either side of the spine.** The portals into the workings are symmetric, so neither side is closer to the middle. A pit prop in the spine tunnel's mouth keeps the two spawn rows out of each other's sight, and a spoil wall on the surface does the same for the stage-0 spawns.
+- **The hill on the loading bay (C)**, as far from either cavern.
+- **Bomb sites on the loading bay (C) and in the pillar hall under the pithead**: the two places in the workings both caverns reach in the same second (+0.7 and −0.6 s). They used to be at D and E, each in one team's cavern: one side got there 10 s first (REVIEW MAP-6).
 - **An ore-cart track** from the grotto, through the spine tunnel, to the shaft station, with checkpoints at 1/3 and 2/3.
 - **A race course** from the surface down the mine to the shaft station's ledge (an unranked course: Viaduct is the ranked one).
 
 ## Midtown: multi point. Setting: a city centre.
 **Why it suits multi point:**
 - An attack across the city in five stages: A the north intersection, B an office roof, C the park, D the elevated railway's west station, E the city hall plaza. Each point is 25–90 m on from the last.
-- Staged spawns for both sides; the defenders reach each point first (3–13 s).
+- Staged spawns for both sides, and both reach each stage's point in the same second (attackers' arrival minus defenders': A −0.2, B +0.5, C 0.0, D +0.7, E +0.1 s; the owner's band is −1..+1 s, decision B2). The defenders used to be there first by 3–13 s, and a defence that takes a point first holds it. Attackers spawn behind the point they just took (north of B's office, between the offices north of the park, at the crossroads by the station stairs and by the park); defenders behind the next one (east up the avenue from A, south of B's office by the railway, on city hall's plaza, down the line on the railway deck, on the west avenue behind city hall).
 - Three levels to fight on: the streets, the offices' first floors, and the roofs (with the railway deck at 9 m in between). B is on a roof and D on the railway, so the attack has to climb.
 
 **Structures:**
