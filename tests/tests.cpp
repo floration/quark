@@ -1861,6 +1861,7 @@ static void testBotAim(uint16_t& port) {
         for (int r = 0; r < 3; r++) CHECK(std::fabs(dps[r][k] - mean[k]) <= std::max(1.5f, 0.3f * mean[k])); // the tick rate doesn't matter (beyond sampling noise)
     CHECK(mean[0] > 1);                          // beginners still land some hits
     CHECK(mean[BOT_SKILLS - 1] < perfect * 0.6f); // experts are strong, but a human can beat them
+    CHECK(mean[BOT_SKILLS - 1] > perfect * 0.35f); // ...and strong: about 18 dps on a strafer (17 at 1.17, about 45%)
 }
 
 // Alt-fires: thrown knife hits at range, shotgun ricochets hit someone behind you (off the wall in front),
@@ -4187,36 +4188,65 @@ static void testNetcode(uint16_t port) {
     v.stop();
 }
 
+// FFA on Clockwork: 3 expert bots and a player standing still, 40 s of game time. Seeded: the match is forced to
+// start over once the bots' navigation is ready, with every bot's dice and the spawn picks seeded, and the "player"
+// is in-process (a scripted bot), so no network timing gets in. A seed plays out much the same match every time
+// (8-9 kills for seed 0 in 1.17; what's left to chance is the warmup before the restart, which bots and players
+// carry a little of into it: cooldowns, the lag-compensation history).
+struct FfaRun { int kills = 0, playerDeaths = 0, hooks = 0, phase = 0; };
+static FfaRun ffaVsExperts(uint16_t port, uint32_t seed) {
+    FfaRun r;
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = true;
+    cfg.map = "clockwork"; cfg.mode = MODE_FFA; cfg.port = port;   // (a compact map: bastion is a big team map now)
+    cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botSkill = BOT_EXPERT; cfg.timeLimit = 60;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return r; } }
+    CHECK(s.playerCount() == 3);
+    int me = s.addBot(TEAM_A, BOT_BEGINNER);
+    auto stand = [](Server&, int) { UserCmd c; c.weapon = kNoWeaponChange; return c; };
+    std::vector<NetClient*> none;
+    pump(s, none, 1.0, idle);
+    for (int k = 0; k < 100 && !s.nav_.ready(s.map_); k++) pump(s, none, 0.05, idle);
+    CHECK(me >= 0 && s.nav_.ready(s.map_));
+    if (me < 0) { s.stop(); return r; }
+    qsrand(seed);   // (spawn picks)
+    for (int i = 0; i < kMaxPlayers; i++)
+        if (s.players_[i].connected && s.players_[i].isBot) {
+            int skill = s.bots_[i].skill;
+            s.bots_[i] = BotBrain();
+            s.bots_[i].skill = skill;
+            s.bots_[i].rng = (seed * 2654435761u) ^ (uint32_t)(i * 40503u + 1u);
+        }
+    s.bots_[me].script = stand;
+    for (auto& pr : s.projectiles_) pr.active = false;   // (nothing from the warmup still flying)
+    s.command("forcestart");
+    bool was[kMaxPlayers] = {};
+    double end = s.time() + 40.0;
+    while (s.time() < end) { // counting grapple grabs as we go (every 20 ms: a grab let go of at once counts too)
+        pump(s, none, 0.02, idle);
+        for (int k = 0; k < kMaxPlayers; k++) {
+            bool h = s.players_[k].connected && s.players_[k].isBot && k != me && (s.players_[k].move.flags & MF_HOOKED);
+            r.hooks += h && !was[k];
+            was[k] = h;
+        }
+    }
+    for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && i != me) r.kills += s.players_[i].kills;
+    r.playerDeaths = s.players_[me].deaths;
+    r.phase = s.ms_.phase;
+    s.stop();
+    return r;
+}
+
 static void testBots(uint16_t& port) {
     printf("bots: vs-bots fights, balance bots, votes, every mode\n");
-    { // FFA vs 3 expert bots: they should find and kill each other / us
-        Server s;
-        ServerConfig cfg;
-        cfg.autoStart = true;
-        cfg.map = "clockwork"; cfg.mode = MODE_FFA; cfg.port = port++;   // (a compact map: bastion is a big team map now)
-        cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botSkill = BOT_EXPERT; cfg.timeLimit = 60;
-        s.setLog([](const std::string&) {});
-        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
-        CHECK(s.playerCount() == 3);
-        NetClient a;
-        a.connect("127.0.0.1:" + std::to_string(cfg.port), "human");
-        std::vector<NetClient*> cls = {&a};
-        int hooks = 0;
-        bool was[kMaxPlayers] = {};
-        for (int i = 0; i < 400; i++) { // 40 s, counting grapple grabs as we go
-            pump(s, cls, 0.1, idle);
-            for (int k = 0; k < kMaxPlayers; k++) {
-                bool h = s.players_[k].connected && s.players_[k].isBot && (s.players_[k].move.flags & MF_HOOKED);
-                hooks += h && !was[k];
-                was[k] = h;
-            }
-        }
-        int kills = 0;
-        for (auto& p : s.players_) if (p.connected) kills += p.kills;
-        printf("  ffa vs 3 expert bots: %d kills, %d grapples in 40 s (phase %d)\n", kills, hooks, s.ms_.phase);
-        CHECK(kills >= 2);
-        CHECK(hooks >= 1); // bots use the grapple
-        s.stop();
+    { // FFA vs 3 expert bots: they should find and kill each other / us (seeded: about the same match every run)
+        FfaRun r = ffaVsExperts(port++, 0x5EED0001u);
+        printf("  ffa vs 3 expert bots: %d kills (%d of the player standing still), %d grapples in 40 s (phase %d)\n", r.kills, r.playerDeaths, r.hooks, r.phase);
+        CHECK(r.kills >= 4);         // (7 to 11 over seeds, 1.17)
+        CHECK(r.playerDeaths >= 1);  // nobody stands in the open for long
+        CHECK(r.hooks >= 1);         // bots use the grapple
     }
     { // pregame (no bots) -> vote start -> vote balance bots -> bots join; then votes
         Server s;
@@ -4685,6 +4715,14 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); testTagLateJoin(TP(29455)); testBotGoalsAfterMapChange(TP(29456)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "nav") { testNavGraph(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "ffaexperts") {   // the seeded FFA vs experts, over many seeds
+        int n = argc > 2 ? atoi(argv[2]) : 10;
+        for (int k = 0; k < n; k++) {
+            FfaRun r = ffaVsExperts(TP(29070 + k % 10), 0x5EED0001u + k);
+            printf("  seed %d: %d kills (%d of the player standing still), %d grapples\n", k, r.kills, r.playerDeaths, r.hooks);
+        }
+        return g_fail ? 1 : 0;
+    }
     if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testRankedRelay(TP(29630)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterReplies(TP(29629)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(TP(29600)); testEditSession(TP(29601)); testVotedEdit(TP(29602)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
