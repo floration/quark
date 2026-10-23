@@ -22,3 +22,4 @@ race_times.log
 /maps/*.qmap
 /maps/*.qmap.bak
 /maps/*.tmp
+__pycache__/
