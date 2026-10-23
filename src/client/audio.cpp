@@ -15,6 +15,9 @@
   #define WIN32_LEAN_AND_MEAN
   #include <windows.h>
   #include <mmsystem.h>
+  #include <objbase.h>
+  #include <mmdeviceapi.h>
+  #include <audioclient.h>
 #elif defined(__APPLE__)
   #include <AudioToolbox/AudioToolbox.h>
 #else
@@ -398,8 +401,91 @@ void Audio::mix(int16_t* out, int frames) {
 // --- backends ------------------------------------------------------------------
 
 #if defined(_WIN32)
+// Output through WASAPI (shared mode, woken by the audio engine each period): about 20 ms from a sound to the speaker,
+// where WinMM needed a 30 ms queue on top of its own buffering (shorter WinMM queues broke up on the owner's PC). Our
+// 48 kHz 16-bit stereo is converted by Windows to the device's format. WinMM stays as the fallback (no WASAPI device).
+namespace {
+const GUID kClsidDeviceEnumerator = {0xBCDE0395, 0xE52F, 0x467C, {0x8E, 0x3D, 0xC4, 0x57, 0x92, 0x91, 0x69, 0x2E}};
+const GUID kIidDeviceEnumerator = {0xA95664D2, 0x9614, 0x4F35, {0xA7, 0x46, 0xDE, 0x8D, 0xB6, 0x36, 0x17, 0xE6}};
+const GUID kIidAudioClient = {0x1CB9AD4C, 0xDBFA, 0x4C32, {0xB1, 0x78, 0xC2, 0xF5, 0x68, 0xA7, 0x03, 0xB2}};
+const GUID kIidAudioRenderClient = {0xF294ACFC, 0x3146, 0x4483, {0xA7, 0xBF, 0xAD, 0xDC, 0xA7, 0xC2, 0x60, 0xE2}};
+template <class T> void releaseCom(T*& p) { if (p) { p->Release(); p = nullptr; } }
+}
+
+void Audio::wasapiThread(std::atomic<int>* started) {
+    const bool com = SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+    // (the multimedia scheduler's "Pro Audio" class, when it's there: steadier wake-ups than a priority alone)
+    HANDLE mmcss = nullptr;
+    if (HMODULE avrt = LoadLibraryW(L"avrt.dll")) {
+        using SetChar = HANDLE(WINAPI*)(LPCWSTR, LPDWORD);
+        DWORD idx = 0;
+        if (auto f = (SetChar)(void*)GetProcAddress(avrt, "AvSetMmThreadCharacteristicsW")) mmcss = f(L"Pro Audio", &idx);
+    }
+    (void)mmcss;
+    HANDLE ev = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    bool reported = false;
+    // One session: open the default output, run until it fails (unplugged, default device changed), then open it again.
+    while (!quit_) {
+        IMMDeviceEnumerator* en = nullptr;
+        IMMDevice* dev = nullptr;
+        IAudioClient* ac = nullptr;
+        IAudioRenderClient* rc = nullptr;
+        bool ok = ev && SUCCEEDED(CoCreateInstance(kClsidDeviceEnumerator, nullptr, CLSCTX_ALL, kIidDeviceEnumerator, (void**)&en)) &&
+                  SUCCEEDED(en->GetDefaultAudioEndpoint(eRender, eConsole, &dev)) &&
+                  SUCCEEDED(dev->Activate(kIidAudioClient, CLSCTX_ALL, nullptr, (void**)&ac));
+        UINT32 frames = 0, target = 0;   // the buffer's size; how much of it we keep queued
+        if (ok) {
+            WAVEFORMATEX wf{};
+            wf.wFormatTag = WAVE_FORMAT_PCM; wf.nChannels = 2; wf.nSamplesPerSec = R; wf.wBitsPerSample = 16;
+            wf.nBlockAlign = 4; wf.nAvgBytesPerSec = R * 4;
+            REFERENCE_TIME period = 0;   // the engine's period (10 ms usually)
+            if (FAILED(ac->GetDevicePeriod(&period, nullptr)) || period <= 0) period = 100000;
+            ok = SUCCEEDED(ac->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
+                                          AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, period, 0, &wf, nullptr)) &&
+                 SUCCEEDED(ac->SetEventHandle(ev)) && SUCCEEDED(ac->GetBufferSize(&frames)) && frames > 0 &&
+                 SUCCEEDED(ac->GetService(kIidAudioRenderClient, (void**)&rc));
+            // Windows gives a bigger buffer than asked (23 ms on the owner's PC): keeping it full would be that late.
+            // Two periods queued: the engine takes one per wake-up, so there's a whole period of slack if we're late.
+            target = std::min<UINT32>(frames, (UINT32)(2 * period * R / 10000000));
+        }
+        auto fill = [&](UINT32 n) {   // n frames of the mix into the device's buffer
+            BYTE* p = nullptr;
+            if (FAILED(rc->GetBuffer(n, &p))) return false;
+            int16_t* o = (int16_t*)p;
+            for (UINT32 left = n; left > 0;) { int k = (int)std::min<UINT32>(left, kPeriod * 4); mix(o, k); o += k * 2; left -= k; }
+            return SUCCEEDED(rc->ReleaseBuffer(n, 0));
+        };
+        if (ok) ok = fill(target) && SUCCEEDED(ac->Start());
+        if (ok && !reported) printf("audio: WASAPI, %.1f ms queued (%.1f ms buffer)\n", target * 1000.0 / R, frames * 1000.0 / R);
+        if (!reported) { reported = true; started->store(ok ? 1 : -1); if (!ok) { releaseCom(rc); releaseCom(ac); releaseCom(dev); releaseCom(en); break; } }
+        while (ok && !quit_) {
+            WaitForSingleObject(ev, 50);
+            UINT32 pad = 0;
+            if (FAILED(ac->GetCurrentPadding(&pad))) break;   // the device went away
+            if (pad < target && !fill(target - pad)) break;
+        }
+        if (ok) ac->Stop();
+        releaseCom(rc); releaseCom(ac); releaseCom(dev); releaseCom(en);
+        if (!quit_) Sleep(ok ? 100 : 500);   // (then the default device again)
+    }
+    if (ev) CloseHandle(ev);
+    if (com) CoUninitialize();
+}
+
 bool Audio::start() {
     synthesize();
+    running_ = true;
+    quit_ = false;
+    {   // WASAPI first
+        std::atomic<int> started{0};
+        thread_ = std::thread([this, &started] { wasapiThread(&started); });
+        while (started.load() == 0) Sleep(1);
+        if (started.load() == 1) return true;
+        thread_.join();
+    }
+    running_ = false;
+    printf("audio: no WASAPI output, using WinMM\n");
     WAVEFORMATEX wf{};
     wf.wFormatTag = WAVE_FORMAT_PCM;
     wf.nChannels = 2;

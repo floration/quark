@@ -291,6 +291,9 @@ add_custom_command(
 # The mixer and every sound kit / announcer voice (the game; the tests and the asset export render them too)
 add_library(quark_audio STATIC src/client/audio.cpp ${CMAKE_BINARY_DIR}/generated/voice_recorded.h)
 target_link_libraries(quark_audio PUBLIC quark_assets ${CMAKE_DL_LIBS})
+if(WIN32)
+  target_link_libraries(quark_audio PUBLIC ole32 winmm)   # WASAPI output (COM), WinMM fallback
+endif()
 if(APPLE)
   target_link_libraries(quark_audio PUBLIC "-framework AudioToolbox" "-framework CoreFoundation")
 endif()

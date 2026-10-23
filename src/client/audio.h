@@ -117,6 +117,7 @@ private:
     std::atomic<int> pack_{0};
     void voiceGains(Voice& v);
     void backendThread();
+    void wasapiThread(std::atomic<int>* started);   // Windows: WASAPI output; started: 1 running, -1 unavailable (WinMM then)
 
     std::vector<float> sounds_[kPacks][SND_COUNT];   // (announcer ids stay empty: announcerLines_)
     std::vector<Voice> voices_;
