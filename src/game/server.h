@@ -1,6 +1,7 @@
 // Authoritative game server. Used by the standalone quark_server executable and by
 // the client when hosting a game (runs on its own thread, client connects via loopback).
 #pragma once
+#include "governor.h"
 #include <cmath>
 #include <atomic>
 #include <cstdio>
@@ -78,6 +79,14 @@ struct ServerConfig {
     std::string restartFlag;    // if this file appears (an update was installed), restart once no match is being played
     bool timeTrial = false;     // solo ranked race on Viaduct: no bots, checkpoint splits sent to the racer
     bool ranked = false;        // matches are rated (OpenSkill) once every player reports the same result; no bots
+    // Release channel this server runs for (GOV_PROD / GOV_TESTING; -1: by the build, testing for a -test. version).
+    // A testing server (or any testing build) plays ranked normally but never sends anything to the ranking server.
+    int channel = -1;
+    // Load governor (governor.h): a directory shared with the other server on this machine (tools/server/install.sh
+    // runs a production and a testing server per box). Empty: none (a single server, in-game hosting).
+    std::string governorDir;
+    GovParams governor;              // (tests shorten its windows)
+    double governorInterval = 1.0;   // seconds between status rounds
     CustomRules custom;         // a custom mode (name empty = none): its mode, weapons, movement, map pool, ...
 };
 enum LogLevel { LOG_OFF = 0, LOG_SIMPLE, LOG_VERBOSE, LOG_EXTREME };
@@ -114,8 +123,9 @@ struct ServerPlayer {
     float health = 0;
     int weapon = WPN_ROCKET;
     int selectedWeapon = WPN_ROCKET; // last weapon the player picked (slot 1 to start); kept across respawns
-    double knifeBackAt = 0;      // a thrown knife is away until then: no knife (and no throws) before it
-    double throwReadyAt = 0;     // the shared alt-fire cooldown of the throws (knife, syringe): no throw before it
+    double knifeBackAt = 0;      // a thrown knife is away (disabled) until then: it can't be drawn or used before it
+    double syringeBackAt = 0;    // ...and a thrown syringe
+    double backAt(int w) const { return w == WPN_KNIFE ? knifeBackAt : w == WPN_SYRINGE ? syringeBackAt : 0; }
     double knifeSwingUntil = -1; // a swing that missed keeps cutting along your aim until then
     bool fireLocked = false;    // after a knife throw: nothing fires until both buttons are let go
     double nextFire = 0;
@@ -131,13 +141,17 @@ struct ServerPlayer {
     float dmgDealt = 0, objTime = 0;    // scoreboard: damage to enemies, seconds on the objective (score = dmg / 10 + obj)
     int shotsFired = 0, shotsHit = 0;   // accuracy: shots (hitscan or projectile) that damaged an enemy
     bool hitSinceShot = false;
-    double typingAt = 0, quipAt = 0, locateAt = 0;   // next "typing" relay allowed (and quip / locate pings)
+    double typingAt = 0, quipAt = 0, locateAt = 0;   // next "typing" relay allowed (and quip pings, the locator ready)
+    Vec3 locatedPos;            // the locator's last find (bots head there)
+    double locatedAt = -1e9;
     int model = 0;              // player model (cosmetic, kPlayerModels looks, same hitbox)
     int soundPack = 0;      // cosmetic: the sound pack others hear this player with
     bool it = false;            // hide and seek / tag: the seeker / tagger (has the knife)
     bool found = false;         // hide and seek: found by the seeker this round (falling off doesn't count)
     bool sought = false;        // hide and seek: has had their turn seeking this match
     bool waitingToPlay = false; // joined during a tag match: spectates it, joins team A when it's over
+    bool specLocked = false;    // voted to spectate (callvote spec): can't rejoin play until the next map
+    uint32_t specVoted = 0;     // players (bit per slot) this one has called a spectate vote on this map: once each
     Vec3 lastGround;            // where the player last stood (a dropped bomb goes here, not into a pit)
     bool out = false;           // hide and seek: found this round; tag: eliminated for the match
     double itFreezeUntil = 0;    // tag: just got tagged, stands still until then
@@ -170,6 +184,10 @@ struct ServerPlayer {
     // each line is next checked (0: at once).
     double lastSeen[kMaxPlayers] = {};
     double visDue[kMaxPlayers] = {};
+    // ... and to each projectile slot (Server::projVisId_ says which projectile the slot's times are about)
+    double projSeen[kMaxProjectiles] = {};
+    double projDue[kMaxProjectiles] = {};
+    int specTarget = -1;        // dead: whose view this client watches ("spectate <id>"; the killer at first): what it's sent
     // lag compensation history
     struct Hist { uint64_t tick; Vec3 pos; bool crouched; bool alive; };   // tick: timeMs_ when recorded (kNoHistory: none)
     static constexpr uint64_t kNoHistory = ~0ull;
@@ -230,6 +248,10 @@ public:
     bool upnpDone() { return upnp_ && upnp_->done(); }
     bool upnpOk() { return upnp_ && upnp_->ok(); }
     std::string listStatus() { return master_ ? master_->status() : std::string(); }
+    // The address a ranked player's signature last named that this server couldn't confirm as its own (REVIEW 2.2;
+    // empty: none). If players do reach the server there (a router forwarding another port, a container), starting
+    // it with --own-addr <that address> lets their ranked ids work. Thread safe (the host's menu shows it).
+    std::string ownAddrHint() { std::lock_guard<std::mutex> l(reachMu_); return ownAddrHint_; }
 
     // ---- state used by the game mode rules (gamemodes.cpp) ----
     ServerConfig cfg_;
@@ -263,6 +285,9 @@ public:
     int lastIt_ = -1;
     // tag: who has been eliminated this match ({rank id, name}): someone who leaves and comes back is still out
     std::vector<std::pair<std::string, std::string>> tagOut_;
+    // voted to spectate this map ({rank id, name}): leaving and coming back doesn't get them back into play
+    std::vector<std::pair<std::string, std::string>> specOut_;
+    void moveToSpectator(int id);   // out of play (as "team spec" does: tag counts it as elimination)
     std::vector<float>* tickTimes_ = nullptr;  // benchmarks: every tick's simulate + send time goes here
     // Snapshot building reuses these and each client's delta-base ring (ServerPlayer::sent): the per-client snapshot
     // is built in the ring slot it's remembered in, so a send copies the shared lists once and allocates nothing
@@ -276,7 +301,18 @@ public:
         // round up (500 Hz at a 333 cap -> every 2nd tick, not every tick), but 1000 / 333 = 3.003 stays 3
         return std::max(1, (int)std::ceil((float)tickRate() / std::max(1, rate) - 0.02f));
     }
-    int hideRounds_ = 0;        // hide and seek: rounds so far planned (everyone in play seeks once: grows if someone joins)
+    // Hide and seek tiebreak (owner B8; gamemodes.cpp): rock paper scissors among those tied for first, in the match's
+    // last round end (ModeState MS_RPS). Every change goes out as an EV_RPS (and to anyone joining: rpsEvent_).
+    struct Rps {
+        uint32_t in = 0, out = 0;           // players in the tiebreak / knocked out of it (bit per id)
+        uint8_t pick[kMaxPlayers] = {};     // RpsShape this throw (RPS_NONE: not yet)
+        uint8_t wins[kMaxPlayers] = {};     // best of 3, once two are left
+        bool bestOf3 = false;
+        int stage = RPS_PICK, throwNo = 0, winner = -1;
+        double stageEnd = 0;
+        std::string result;                 // what the last reveal did ("draw - throw again", ...)
+    } rps_;
+    GameEvent rpsEvent_;
     uint32_t nextJoinId_ = 1;   // ServerPlayer::joinId of the next connection (a newcomer in a reused slot isn't its old owner)
     float drainAccum_ = 0;
     uint32_t duelUsed_ = 0;      // duel: modifiers already played this match (bit per modifier), never repeated
@@ -295,7 +331,10 @@ public:
     int humanCount(int team = -1) const;
     void updateBalanceBots(bool matchStarting = false);
     // Votes (bots on/off, bot difficulty): majority of human players decides.
-    enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL, VOTE_START, VOTE_STARTBOTS, VOTE_MAP, VOTE_TMAPS, VOTE_TMODES, VOTE_RANKED, VOTE_EDIT, VOTE_LETIN };
+    // VOTE_SPEC: move a player (arg; arg2 = their joinId) to spectator until the next map. Never a kick: kicking stays
+    // with the dedicated server's console and the host (isAdmin), and isn't votable (OWNER_DECISIONS_2 B10).
+    enum VoteKind { VOTE_NONE = 0, VOTE_BOTS, VOTE_BOTSKILL, VOTE_START, VOTE_STARTBOTS, VOTE_MAP, VOTE_TMAPS, VOTE_TMODES, VOTE_RANKED, VOTE_EDIT, VOTE_LETIN, VOTE_SPEC };
+    static constexpr int kSpecVoteMinPlayers = 3;   // connected human players a spectate vote needs (so never in a 1v1)
     struct Vote { int kind = VOTE_NONE; int caller = -1; int arg = 0, arg2 = 0; std::string map; uint32_t yes = 0, no = 0; double endsAt = 0; std::string text; } vote_;
     void callVote(int caller, int kind, int arg, const std::string& map = "", int arg2 = 0);
     // Tourney: single elimination bracket of everyone in the server, one 1v1 at a time.
@@ -318,6 +357,7 @@ public:
     void spawnPlayer(int id);
     void autoTeam(int id);      // a newcomer's team (or spectator): mode, seat limits, balance
     void killPlayer(int victim, int killer, int weapon);
+    void useLocator(int id);    // hide and seek / tag: "it" fired the locator (WPN_LOCATOR)
     void damagePlayer(int victim, int attacker, float dmg, int weapon, const Vec3& knock);
     int aliveCount(int team) const;
     int teamCount(int team) const;
@@ -353,6 +393,21 @@ public:
     bool restartRequested() const { return restartNow_; }
     bool matchInProgress() const;
     bool restartNow_ = false, restartAnnounced_ = false;
+    // Ranked here is rated: not a testing server (--channel testing) and not a testing build (a -test. version).
+    // Otherwise ranked plays normally (queue, lock, everything) but no ticket, result or race run leaves the server.
+    bool rated() const;
+    // Load governor (cfg_.governorDir): its thread decides; the tick thread reports a few times a second and applies
+    // the cap (governorFrame). closed_: a testing server the governor closed (no ticks, connects refused, unlisted).
+    std::unique_ptr<Governor> gov_;
+    bool closed_ = false;
+    double govReportAt_ = 0;
+    bool govPendingLogged_ = false;
+    std::string govLog_;
+    bool windowBad_ = false, windowSevere_ = false;   // the last rate window checked (and when): what the governor sees
+    double windowCheckedAt_ = -1e9;
+    void governorFrame(double now);
+    bool applyGovernorCap(bool between);
+    void setGovernorClosed(bool on);
     double nextFlagCheck_ = 0, restartAt_ = 0;
     void checkRestartFlag();
     std::string rankedResult(int winner, std::string* whyNot); // EV_RANKED text for the match that just ended
@@ -367,7 +422,10 @@ public:
     void sendRaceTicket(const std::string& pub, const std::string& sig, const std::string& addr);
     // While a ranked match is live (ticket opened at the first round going live, until the match ends) nothing may
     // change it: no votes, no map / mode / ranked changes, no team switches, no kicking its players (OWNER 3.4).
-    bool rankedLive() const { return cfg_.ranked && !rankedMatch_.empty() && ms_.phase != PHASE_WARMUP && ms_.phase != PHASE_MATCH_END; }
+    // Exactly the three rated ladders are locked (JUDGMENT_CALLS C15): 1v1 vanilla, 1v1 laser vampire and instagib free
+    // for all. The Viaduct time trial (best times only, no rating), tourneys and everything else never are.
+    bool rankedLadderPlayed() const { return cfg_.ranked && arenaVariantRanked(cfg_.arenaVariant) && cfg_.mode == rankedMode(cfg_.arenaVariant) && !cfg_.timeTrial; }
+    bool rankedLive() const { return rankedLadderPlayed() && !rankedMatch_.empty() && ms_.phase != PHASE_WARMUP && ms_.phase != PHASE_MATCH_END; }
     bool rankedTicketSent_ = false;   // the ticket went out (or was given up on): no more signatures needed
     double rankedSigDeadline_ = 0;    // players must sign the match id by then, else the match isn't rated
     void maybeSendRankedTicket(bool giveUp = false);
@@ -415,7 +473,7 @@ public:
         bool running = false, finished = false, ok = false, backedUp = false;
         Map map;                // the map as it was when the save started (its vectors keep their capacity)
         std::string path, text, err;
-        uint32_t crc = 0;
+        MapId id;   // the map it saves (still the map's: nothing edited since)
     };
     std::shared_ptr<AutosaveJob> autosaveJob_ = std::make_shared<AutosaveJob>();
     void startAutosave();
@@ -428,6 +486,7 @@ public:
     bool editBacklogged() const;
     void handleStringCmdForTest(int id, const std::string& s) { handleStringCmd(id, s); }
     bool fireWeaponForTest(int id, const UserCmd& c) { return fireWeapon(id, c); }
+    void tickProjectilesForTest() { tickProjectiles(); }
     void sendSnapshotsForTest() { sendSnapshots(); }   // (benchmarks: tests/server_tests.h snapbench)
     void glog(int level, const char* fmt, ...);   // game log file (no-op below cfg_.logLevel)
     float bodyScale() const { return duelModDef(duelMod()).size; } // duel "double size": hull, hitbox and eye height (MOVE_BIG / MOVE_TINY)
@@ -457,6 +516,7 @@ private:
     std::atomic<bool> reachAgain_{false};
     std::mutex reachMu_;
     std::string reachDetail_;
+    std::string ownAddrHint_;   // (under reachMu_)
     // Picking a prober from the internet list (blocking HTTP) runs on a detached thread that writes only this
     // shared state, so stop() never waits for it (FINAL_REVIEW 2.10).
     struct ProberPick { std::mutex mu; NetAddr prober; std::atomic<bool> picked{false}; };
@@ -508,11 +568,34 @@ private:
     void runPlayerCmd(int id, const UserCmd& cmd);
     bool fireWeapon(int id, const UserCmd& cmd);   // true if it hit a player (hitscan weapons)
     void tickProjectiles();
+    void stepProjectile(Projectile& pr);   // one fixed 1 ms step (kMoveStep): gravity, move, hit a wall / player
+    int projTargets_ = 0;                  // tickProjectiles: the live players' hitboxes this tick
+    uint8_t projTargetId_[kMaxPlayers] = {};
+    AABB projTargetBox_[kMaxPlayers];
     void explode(const Vec3& at, int owner, int weapon, int direct = -1);   // direct: the player a rocket hit itself
     void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint64_t viewMs, float* dmgPerPlayer, float dmg, float headDmg = 0, float grow = 0, bool pierce = false);
     void sendSnapshots();
     void updateVisibility();
     uint32_t visCursor_ = 0;   // the viewer x target pair the next tick's checks start from (round robin)
+    uint32_t projVisCursor_ = 0;   // the same for viewer x projectile pairs
+    // Hidden information (NET-10, JUDGMENT_CALLS C12). Each client is sent what it could see: through its own eyes when
+    // alive; when dead, through the eyes of the player it watches (and in team modes its living teammates'); everything
+    // as a free spectator. Players it can't see go without position, health, weapon, firing or the bomb; projectiles
+    // it can't see aren't sent (its own always are); the hide and seek seeker gets nothing about the hiders in the freeze.
+    uint32_t perspectives(int id) const;   // the players whose sight a client gets (bit per player), 0 = sees everything
+    void updatePlayerVisibility(uint32_t need, int viewers, int targets, int& budget, float eyeH);
+    void updateProjectileVisibility(uint32_t need, int viewers, int& budget, float eyeH);
+    uint32_t viewNeeded_ = 0;              // alive players whose lines of sight are checked (humans, and bots someone watches)
+    uint16_t projVisId_[kMaxProjectiles] = {};   // the projectile each slot's ServerPlayer::projSeen times are about
+    uint32_t projShown_[kMaxProjectiles] = {};   // clients (bit each) that have been sent that projectile in sight
+    uint32_t projHidden_[kMaxProjectiles] = {};  // clients whose last snapshot had it out of sight (or not at all)
+    // A projectile that dies out of a client's sight is shown there for a moment at the spot (then gone): the client
+    // plays its explosion (sound and flash) where it really went off, as before, without having seen its flight.
+    struct ProjSlotPrev { bool active = false; uint16_t id = 0; uint8_t type = 0, owner = 0; Vec3 pos; } projPrev_[kMaxProjectiles];
+    struct ProjDeath { ProjectileSnap snap; double until = 0; uint32_t revealTo = 0; };
+    ProjDeath projDeaths_[kMaxProjectiles];
+    int projDeathCount_ = 0;
+    std::vector<int> snapProjSlot_;        // snapProj_[k]'s projectile slot
 public:
     uint64_t visRays_ = 0;     // lines of sight cast (tests, benchmarks)
     void updateVisibilityForTest() { updateVisibility(); }

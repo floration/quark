@@ -2,6 +2,7 @@ build*/
 *.qlm
 site/changelog.json
 site/weapons.json
+site/updates/
 build-tracy/
 maps/downloads/
 *.key
@@ -21,3 +22,4 @@ race_times.log
 /maps/*.qmap
 /maps/*.qmap.bak
 /maps/*.tmp
+__pycache__/

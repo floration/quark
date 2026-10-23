@@ -3,261 +3,424 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>quark</title>
-<meta name="description" content="quark - a small, fast arena shooter i made. rockets, grapples, 1000 hz servers, free.">
+<title>quark: a fast arena FPS</title>
+<meta name="description" content="quark is a free, open-source arena shooter in the Quake and Diabotical family: grapple, dash, rocket jump and bunny hop on 1000 Hz servers. Windows, Linux and macOS.">
+<meta name="theme-color" content="#0c0f14">
+<meta property="og:title" content="quark: a fast arena FPS">
+<meta property="og:description" content="Grapple, dash, rocket jump and bunny hop on 1000 Hz servers. Free and open source.">
+<meta property="og:image" content="img/hero.jpg">
 <link rel="icon" type="image/png" href="icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Silkscreen&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
-<style>
-:root { --bg: #15161a; --box: #1d1f24; --line: #34373e; --text: #dcdcd6; --dim: #8b8e94; --cyan: #3fd8ff; --red: #ff4c3f; --yellow: #ffd23f; }
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 "IBM Plex Mono", ui-monospace, monospace; }
-a { color: var(--cyan); }
-a:hover { background: var(--cyan); color: var(--bg); text-decoration: none; }
-.wrap { max-width: 860px; margin: 0 auto; padding: 0 16px 40px; }
-header { padding: 34px 0 6px; }
-h1 { font: 64px/1 Silkscreen, monospace; color: var(--cyan); margin: 0; letter-spacing: 2px; text-shadow: 4px 4px 0 #0c5d70; }
-.tag { color: var(--dim); margin: 6px 0 0; }
-#ver { color: var(--yellow); }
-nav { margin: 14px 0 22px; font-size: 14px; }
-nav a { margin-right: 14px; }
-h2 { font: 22px Silkscreen, monospace; color: var(--yellow); margin: 44px 0 8px; }
-h2::before { content: "> "; color: var(--dim); }
-p { margin: 8px 0; }
-.dim { color: var(--dim); }
-.shot { display: block; width: 100%; height: auto; border: 2px solid var(--line); image-rendering: auto; }
-.cap { color: var(--dim); font-size: 13px; margin: 4px 0 0; }
-.dlbox { border: 2px dashed var(--cyan); padding: 14px 16px; margin: 18px 0; }
-.big { display: inline-block; font: 18px Silkscreen, monospace; background: var(--cyan); color: var(--bg); padding: 8px 14px; text-decoration: none; }
-.big:hover { background: var(--yellow); color: var(--bg); }
-#platforms { font-size: 13px; color: var(--dim); margin-top: 10px; }
-ul { margin: 6px 0; padding-left: 20px; }
-li { margin: 3px 0; }
-li::marker { color: var(--red); }
-.maps { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
-.maps figure { margin: 0; }
-.maps img { width: 100%; height: auto; display: block; border: 2px solid var(--line); }
-.maps figcaption { font-size: 13px; color: var(--dim); }
-.maps figcaption b { color: var(--text); }
-table { border-collapse: collapse; width: 100%; font-size: 14px; }
-th { text-align: left; color: var(--dim); font-weight: 400; border-bottom: 2px solid var(--line); padding: 4px 8px; }
-td { border-bottom: 1px dotted var(--line); padding: 4px 8px; }
-caption { text-align: left; color: var(--yellow); padding-bottom: 4px; }
-.scroll { overflow-x: auto; }
-.meter { display: inline-block; height: 8px; background: var(--red); }
-.tagw { color: var(--dim); }
-#boards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 18px; }
-pre { background: var(--box); border-left: 3px solid var(--cyan); padding: 10px 12px; overflow-x: auto; font-size: 13px; }
-code { background: var(--box); padding: 0 4px; }
-.note { background: var(--box); border-left: 3px solid var(--yellow); padding: 8px 12px; }
-details { border-bottom: 1px dotted var(--line); padding: 6px 0; }
-summary { cursor: pointer; display: flex; gap: 12px; }
-summary .v { color: var(--cyan); flex: none; }
-summary .t { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-details .body { color: #c3c3bd; font-size: 14px; padding: 4px 0 4px 4px; }
-details h4 { margin: 10px 0 2px; color: var(--yellow); font-weight: 600; }
-.more { margin-top: 12px; background: none; border: 2px solid var(--line); color: var(--text); padding: 6px 12px; cursor: pointer; font: inherit; }
-.more:hover { border-color: var(--cyan); }
-footer { margin-top: 50px; padding-top: 14px; border-top: 2px dashed var(--line); color: var(--dim); font-size: 13px; }
-@media (max-width: 560px) { h1 { font-size: 46px; } nav a { display: inline-block; margin-bottom: 4px; } }
-</style>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="preload" as="image" href="img/hero.jpg" fetchpriority="high">
 </head>
 <body>
-<div class="wrap">
+<a class="skip" href="#main">Skip to content</a>
 
-<header>
-  <h1>quark</h1>
-  <p class="tag">a little arena shooter i've been making. <span id="ver"></span></p>
-  <nav>
-    <a href="#download">download</a>
-    <a href="#maps">maps</a>
-    <a href="#weapons">guns</a>
-    <a href="#ranks">leaderboard</a>
-    <a href="#log">changes</a>
-    <a href="https://discord.gg/RERYWNWSXg">discord</a>
-  </nav>
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="./" aria-label="quark home"><img src="icon.png" alt="" width="32" height="32"><span>quark</span></a>
+    <nav aria-label="Main">
+      <ul class="nav">
+        <li><a href="#modes">Modes</a></li>
+        <li><a href="#maps">Maps</a></li>
+        <li><a href="#weapons">Weapons</a></li>
+        <li><a href="leaderboard/">Leaderboard</a></li>
+        <li><a href="updates/">Updates</a></li>
+        <li><a href="testing/">Testing</a></li>
+        <li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li>
+        <li><a href="https://github.com/floration/quark">GitHub</a></li>
+      </ul>
+    </nav>
+    <a class="btn btn-primary btn-sm cta" href="#download">Download</a>
+  </div>
 </header>
 
-<img class="shot" src="img/temple.jpg" alt="temple, one of the 1v1 maps" width="960" height="540">
-<p class="cap">temple. it's the one we play the most</p>
+<main id="main">
 
-<p>it's a fast movement shooter in the quake / diabotical family. you get a grappling hook, a dash, rocket jumps and bunny hops, and a pile of weapons that all feel a bit unfair in their own way. i wrote it from scratch in c++ because i wanted it to feel <i>instant</i>: the server runs at 1000 hz and the game cares more about frame time spikes than average fps.</p>
-<p>it's free and open source, and you can host your own server from the menu.</p>
+<section class="hero" aria-labelledby="hero-title">
+  <img src="img/hero.jpg" alt="In-game on Gantry: a rocket leaves the launcher toward an opponent across the crane hall, with the health bar, cooldown bars and weapon list on screen" width="1920" height="1080" fetchpriority="high">
+  <div class="wrap">
+    <p class="eyebrow">Free arena FPS for Windows, Linux and macOS</p>
+    <h1 id="hero-title">Move fast.<br><em>Aim faster.</em></h1>
+    <p class="sub">quark is an arena shooter in the Quake and Diabotical family. Grapple, dash, rocket jump and bunny hop through 21 maps, on servers that run at 1000 Hz.</p>
+    <div class="actions">
+      <a class="btn btn-primary btn-lg" id="dl" href="https://github.com/floration/quark/releases/latest">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 20h16"/></svg>
+        <span id="dl-label">Download</span>
+      </a>
+      <a class="btn btn-ghost btn-lg" href="https://discord.gg/RERYWNWSXg">Join the Discord</a>
+    </div>
+    <p class="meta"><span id="ver-line">Free and open source.</span> <a href="#download" id="other-link">Other platforms</a></p>
+  </div>
+</section>
 
-<div class="dlbox" id="download">
-  <a class="big" id="dl" href="https://github.com/floration/quark/releases/latest">download</a>
-  <div id="platforms"></div>
-  <p class="dim" style="margin:10px 0 0">the launcher keeps the game updated. windows might complain because i don't pay for code signing, just hit "run anyway".</p>
+<div class="wrap">
+  <div class="stats" aria-label="quark in numbers">
+    <div><b>1000 Hz</b><span>server tick rate</span></div>
+    <div><b>13</b><span>game modes</span></div>
+    <div><b>21</b><span>maps, each built for a mode</span></div>
+    <div><b>3 + 1</b><span>ranked ladders and a time trial</span></div>
+  </div>
 </div>
 
-<h2>what's in it</h2>
-<ul>
-  <li><b>12 modes</b>: ffa, team vs, duel (30 dumb modifiers, a new one every life), 1v1 rulesets, tourney brackets, bomb, payload, neutral payload, king of the hill, race, hide and seek, and tag</li>
-  <li><b>ranked 1v1</b> on three ladders (vanilla, laser vampire, instagib)</li>
-  <li><b>viaduct time trials</b>: solo runs for the race leaderboard. it shows splits so you can see exactly where you lost time</li>
-  <li><b>a map editor</b> inside the game, and you can edit maps together with friends over the network</li>
-  <li><b>bots</b> from "beginner" to "why is it doing that"</li>
-  <li>a <b>hud editor</b> where you drag widgets around and pick what they show, plus snap tap / null binds, player models and sound packs</li>
-</ul>
-<p class="note">ranked and time trials always use the default model, hud, controls and 10 ms interp. nobody gets a weird edge.</p>
+<section class="section" id="features" aria-labelledby="features-title">
+  <div class="wrap">
+    <p class="eyebrow">Why quark</p>
+    <h2 id="features-title">Built to feel instant</h2>
+    <p class="lede">A custom C++ engine with one goal: no hitches between your hand and the screen. Everything else is there to make the fights better.</p>
+    <div class="tiles">
+      <article class="tile">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 18c3-8 9-12 16-13M14 5h6v6"/><circle cx="5" cy="18" r="2"/></svg></div>
+        <h3>Movement is the skill</h3>
+        <p>A grappling hook, a dash, rocket jumps, strafe jumps and bunny hops. The fastest player decides where the fight happens.</p>
+      </article>
+      <article class="tile">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></div>
+        <h3>1000 Hz servers</h3>
+        <p>Servers start at 1000 ticks a second and only step down if the host can't keep up. The game is tuned for its worst frames, not its average.</p>
+      </article>
+      <article class="tile">
+        <div class="ico r"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM17 6h3a3 3 0 0 1-3 4M7 6H4a3 3 0 0 0 3 4"/></svg></div>
+        <h3>Fair ranked play</h3>
+        <p>Three ladders: 1v1 Vanilla, 1v1 Laser Vampire and FFA Instagib. Everyone plays with the same model, HUD, controls and 10 ms interpolation.</p>
+      </article>
+      <article class="tile">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 7V3M9 12h.01M15 12h.01M9 16h6"/></svg></div>
+        <h3>Bots that play like people</h3>
+        <p>Four levels, from Beginner to Expert. They only see what you could see, react like humans, and the best ones bunny hop, dash and grapple.</p>
+      </article>
+      <article class="tile">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6"/></svg></div>
+        <h3>Build maps together</h3>
+        <p>The map editor is part of the game. Invite friends and edit the same map at the same time, then play it straight away.</p>
+      </article>
+      <article class="tile">
+        <div class="ico r"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 14h4M7 10h2M15 10h2v4h-2z"/></svg></div>
+        <h3>Make it yours</h3>
+        <p>A HUD editor with custom widgets, crosshairs, player models, sound packs and snap tap. Record demos and watch them back.</p>
+      </article>
+    </div>
+    <div class="show">
+      <figure>
+        <img src="img/hud.jpg" alt="The HUD layout menu over a match: show, offset, size and colour settings for the health display" width="960" height="540" loading="lazy">
+        <figcaption><b>HUD layout.</b> Move, resize, recolour or hide every part of the HUD, then build your own widgets in the widget editor.</figcaption>
+      </figure>
+      <figure>
+        <img src="img/models.jpg" alt="Five player models lined up in Foundry: standard, heavy, scout, robot and knight" width="960" height="540" loading="lazy">
+        <figcaption><b>Player models.</b> Standard, heavy, scout, robot and knight. Same hitbox, different look.</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
 
-<img class="shot" src="img/hud.jpg" alt="the hud widget editor" width="960" height="540" loading="lazy" style="margin-top:16px">
-<p class="cap">the hud editor. yes you can put your health bar in the middle of the screen if you want</p>
+<section class="section alt" id="modes" aria-labelledby="modes-title">
+  <div class="wrap">
+    <p class="eyebrow">13 modes</p>
+    <h2 id="modes-title">Pick your fight</h2>
+    <p class="lede">Team objectives, duels and free-for-alls. Every map is built for one mode, and you can make custom modes with your own rules.</p>
+    <div class="modes">
+      <div>
+        <h3>Team modes</h3>
+        <ul class="mode-list">
+          <li class="mode"><b>VS <small>Bastion, Orbital</small></b><p>One life each per round. Last team standing wins. First to 5.</p></li>
+          <li class="mode"><b>Bomb <small>Depot</small></b><p>Attackers plant the bomb at a site, defenders defuse it or run out the clock.</p></li>
+          <li class="mode"><b>King of the hill <small>Summit, Downtown</small></b><p>Hold the hill with no enemy on it for a point a second. First to 100.</p></li>
+          <li class="mode"><b>Payload <small>Railyard</small></b><p>Push the cart along its track while the other team tries to stop it.</p></li>
+          <li class="mode"><b>Neutral payload <small>Canal</small></b><p>Both teams fight over one cart and push it toward the other end.</p></li>
+          <li class="mode"><b>Multi point <small>Midtown, Lodestone</small></b><p>Attackers take the points in order. Each capture adds time and moves both spawns forward.</p></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Duels</h3>
+        <ul class="mode-list">
+          <li class="mode"><b>1v1 <small>Temple, Furnace, Dojo, Anvil</small></b><p>Rounds on one ruleset: Vanilla, Laser Vampire, Instagib and more. First to 5.</p></li>
+          <li class="mode"><b>Duel <small>Clockwork</small></b><p>Every life brings a random modifier: low gravity, giants, rockets only.</p></li>
+          <li class="mode"><b>Tourney <small>Colosseum</small></b><p>A single-elimination bracket of 1v1s, seeded by rating.</p></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Everyone for themselves</h3>
+        <ul class="mode-list">
+          <li class="mode"><b>Free for all <small>Harbor, Gantry</small></b><p>Most kills when time runs out wins. A tie goes to sudden death.</p></li>
+          <li class="mode"><b>Race <small>Viaduct</small></b><p>Hit the checkpoints in order. Viaduct is also the ranked time trial.</p></li>
+          <li class="mode"><b>Hide and seek <small>Hamlet, Hightown</small></b><p>One seeker with a knife. Everyone seeks once; ties go to rock paper scissors.</p></li>
+          <li class="mode"><b>Tag <small>Foundry</small></b><p>Whoever is the tagger when the timer runs out is out. Last one standing wins.</p></li>
+        </ul>
+      </div>
+    </div>
+    <p class="note"><b>Ranked:</b> 1v1 Vanilla, 1v1 Laser Vampire and FFA Instagib each have their own ladder, and the Viaduct time trial has its own board with splits. Ranked games always use the default model, HUD, controls and 10 ms interpolation.</p>
+  </div>
+</section>
 
-<img class="shot" src="img/models.jpg" alt="the five player models" width="960" height="540" loading="lazy" style="margin-top:16px">
-<p class="cap">player models: standard, heavy, scout, robot, knight. same hitbox, purely for drip</p>
+<section class="section" id="maps" aria-labelledby="maps-title">
+  <div class="wrap">
+    <div class="head-row">
+      <div>
+        <p class="eyebrow">21 maps</p>
+        <h2 id="maps-title">Every map has a job</h2>
+        <p class="lede">Each one is built for a single mode and every structure is there for a reason. Lodestone is the exception: a mine big enough for nine modes.</p>
+      </div>
+      <a class="more-link" href="https://github.com/floration/quark/blob/main/docs/MAP_STRUCTURES.md">Why each map works &rarr;</a>
+    </div>
+    <ul class="maps">
+      <li><figure class="map"><img src="img/temple.jpg" alt="Temple from above: wooden beams over a pale stone hall with two blue pools" width="960" height="540" loading="lazy"><figcaption><span class="name">Temple <span class="badge cyan">Ranked</span></span><span class="what">1v1 Vanilla · a pagoda temple</span></figcaption></figure></li>
+      <li><figure class="map"><img src="img/furnace.jpg" alt="Furnace from above" width="960" height="540" loading="lazy"><figcaption><span class="name">Furnace <span class="badge cyan">Ranked</span></span><span class="what">1v1 Laser Vampire · a blast furnace</span></figcaption></figure></li>
+      <li><figure class="map"><img src="img/dojo.jpg" alt="Dojo from above: a red tatami floor ringed by pillars" width="960" height="540" loading="lazy"><figcaption><span class="name">Dojo <span class="badge cyan">Ranked</span></span><span class="what">1v1 Laser Vampire · face off, no firing for 5 s</span></figcaption></figure></li>
+      <li><figure class="map"><img src="img/gantry.jpg" alt="Gantry from above: yellow crane beams over a grey hall" width="960" height="540" loading="lazy"><figcaption><span class="name">Gantry <span class="badge cyan">Ranked</span></span><span class="what">FFA Instagib · a crane hall</span></figcaption></figure></li>
+      <li><figure class="map"><img src="img/anvil.jpg" alt="Anvil from above" width="960" height="540" loading="lazy"><figcaption><span class="name">Anvil <span class="badge cyan">Ranked</span></span><span class="what">All three ladders · a smithy</span></figcaption></figure></li>
+      <li><figure class="map"><img src="img/clockwork.jpg" alt="Inside Clockwork: a giant clock face glows behind gears and platforms" width="960" height="540" loading="lazy"><figcaption><span class="name">Clockwork</span><span class="what">Duel · inside a giant clock</span></figcaption></figure></li>
+      <li><figure class="map"><img src="img/depot.jpg" alt="Depot from above" width="960" height="540" loading="lazy"><figcaption><span class="name">Depot</span><span class="what">Bomb · a freight depot</span></figcaption></figure></li>
+      <li><figure class="map"><img src="img/summit.jpg" alt="Summit from above" width="960" height="540" loading="lazy"><figcaption><span class="name">Summit</span><span class="what">King of the hill · a mountain peak</span></figcaption></figure></li>
+      <li><figure class="map"><img src="img/downtown.jpg" alt="Downtown from above" width="960" height="540" loading="lazy"><figcaption><span class="name">Downtown</span><span class="what">King of the hill · a city block</span></figcaption></figure></li>
+      <li><figure class="map"><img src="img/railyard.jpg" alt="Railyard from above" width="960" height="540" loading="lazy"><figcaption><span class="name">Railyard</span><span class="what">Payload · a rail yard</span></figcaption></figure></li>
+      <li><figure class="map"><img src="img/canal.jpg" alt="Canal from above" width="960" height="540" loading="lazy"><figcaption><span class="name">Canal</span><span class="what">Neutral payload · a canal town</span></figcaption></figure></li>
+      <li><figure class="map"><img src="img/midtown.jpg" alt="Midtown from above: red-roofed city blocks crossed by an elevated railway" width="960" height="540" loading="lazy"><figcaption><span class="name">Midtown</span><span class="what">Multi point · a city centre</span></figcaption></figure></li>
+      <li><figure class="map"><img src="img/lodestone.jpg" alt="Lodestone: terraced pits and crates inside a mine" width="960" height="540" loading="lazy"><figcaption><span class="name">Lodestone <span class="badge">9 modes</span></span><span class="what">Multi point · a mine</span></figcaption></figure></li>
+      <li><figure class="map"><img src="img/harbor.jpg" alt="Harbor from above" width="960" height="540" loading="lazy"><figcaption><span class="name">Harbor</span><span class="what">Free for all · a harbour</span></figcaption></figure></li>
+      <li><figure class="map"><img src="img/bastion.jpg" alt="Bastion from above" width="960" height="540" loading="lazy"><figcaption><span class="name">Bastion</span><span class="what">VS · a castle</span></figcaption></figure></li>
+      <li><figure class="map"><img src="img/orbital.jpg" alt="Inside Orbital: the cargo hall seen from the upper deck, lit by cyan strip lights" width="960" height="540" loading="lazy"><figcaption><span class="name">Orbital</span><span class="what">VS · a space station</span></figcaption></figure></li>
+      <li><figure class="map"><img src="img/colosseum.jpg" alt="Colosseum from above" width="960" height="540" loading="lazy"><figcaption><span class="name">Colosseum</span><span class="what">Tourney · a Roman arena</span></figcaption></figure></li>
+      <li><figure class="map"><img src="img/foundry.jpg" alt="Foundry from above" width="960" height="540" loading="lazy"><figcaption><span class="name">Foundry</span><span class="what">Tag · a factory floor</span></figcaption></figure></li>
+      <li><figure class="map"><img src="img/hamlet.jpg" alt="Hamlet from above" width="960" height="540" loading="lazy"><figcaption><span class="name">Hamlet</span><span class="what">Hide and seek · a valley village</span></figcaption></figure></li>
+      <li><figure class="map"><img src="img/hightown.jpg" alt="Hightown: an office tower with a rooftop pool, above a hazy city" width="960" height="540" loading="lazy"><figcaption><span class="name">Hightown</span><span class="what">Hide and seek · a skyscraper over a city</span></figcaption></figure></li>
+      <li><figure class="map"><img src="img/viaduct.jpg" alt="Viaduct from above: beams, pillars and narrow walkways running down a gorge" width="960" height="540" loading="lazy"><figcaption><span class="name">Viaduct <span class="badge cyan">Time trial</span></span><span class="what">Race · a mountain gorge</span></figcaption></figure></li>
+    </ul>
+  </div>
+</section>
 
-<h2 id="maps">maps</h2>
-<p class="dim">17 of them, generated from a python script. each one is built for one mode (the why is in <a href="https://github.com/floration/quark/blob/main/docs/MAP_STRUCTURES.md">the map notes</a>).</p>
-<div class="maps">
-  <figure><img src="img/temple.jpg" alt="temple" loading="lazy" width="960" height="540"><figcaption><b>temple</b> - ranked vanilla, climb the pagodas</figcaption></figure>
-  <figure><img src="img/furnace.jpg" alt="furnace" loading="lazy" width="960" height="540"><figcaption><b>furnace</b> - ranked laser vampire</figcaption></figure>
-  <figure><img src="img/gantry.jpg" alt="gantry" loading="lazy" width="960" height="540"><figcaption><b>gantry</b> - ranked instagib (my favourite)</figcaption></figure>
-  <figure><img src="img/anvil.jpg" alt="anvil" loading="lazy" width="960" height="540"><figcaption><b>anvil</b> - all three ladders</figcaption></figure>
-  <figure><img src="img/clockwork.jpg" alt="clockwork" loading="lazy" width="960" height="540"><figcaption><b>clockwork</b> - duel inside a giant clock, mind the gears</figcaption></figure>
-  <figure><img src="img/depot.jpg" alt="depot" loading="lazy" width="960" height="540"><figcaption><b>depot</b> - bomb</figcaption></figure>
-  <figure><img src="img/downtown.jpg" alt="downtown" loading="lazy" width="960" height="540"><figcaption><b>downtown</b> - king of the hill in a city plaza</figcaption></figure>
-  <figure><img src="img/summit.jpg" alt="summit" loading="lazy" width="960" height="540"><figcaption><b>summit</b> - king of the hill on a mountain</figcaption></figure>
-  <figure><img src="img/railyard.jpg" alt="railyard" loading="lazy" width="960" height="540"><figcaption><b>railyard</b> - payload</figcaption></figure>
-  <figure><img src="img/canal.jpg" alt="canal" loading="lazy" width="960" height="540"><figcaption><b>canal</b> - neutral payload</figcaption></figure>
-  <figure><img src="img/harbor.jpg" alt="harbor" loading="lazy" width="960" height="540"><figcaption><b>harbor</b> - ffa</figcaption></figure>
-  <figure><img src="img/bastion.jpg" alt="bastion" loading="lazy" width="960" height="540"><figcaption><b>bastion</b> - team vs in a castle</figcaption></figure>
-  <figure><img src="img/orbital.jpg" alt="orbital" loading="lazy" width="960" height="540"><figcaption><b>orbital</b> - team vs on a space station, don't fall out the window</figcaption></figure>
-  <figure><img src="img/colosseum.jpg" alt="colosseum" loading="lazy" width="960" height="540"><figcaption><b>colosseum</b> - tourney</figcaption></figure>
-  <figure><img src="img/foundry.jpg" alt="foundry" loading="lazy" width="960" height="540"><figcaption><b>foundry</b> - tag in a factory</figcaption></figure>
-  <figure><img src="img/hamlet.jpg" alt="hamlet" loading="lazy" width="960" height="540"><figcaption><b>hamlet</b> - hide and seek, climb the church</figcaption></figure>
-  <figure><img src="img/viaduct.jpg" alt="viaduct" loading="lazy" width="960" height="540"><figcaption><b>viaduct</b> - race, two loops, every gap counts</figcaption></figure>
-</div>
+<section class="section alt" id="weapons" aria-labelledby="weapons-title">
+  <div class="wrap">
+    <p class="eyebrow">Weapons</p>
+    <h2 id="weapons-title">Nine ways to win</h2>
+    <p class="lede">Every weapon has an alt-fire. These numbers come straight from the game's code, fastest kill first.</p>
+    <div class="weapons scroll">
+      <table id="wtable">
+        <caption class="sr">Weapon stats: damage, fire rate, hits to kill and time to kill from full health</caption>
+        <thead><tr><th scope="col">Weapon</th><th scope="col" class="num">Damage</th><th scope="col" class="num">Shot every</th><th scope="col" class="num">Hits<span class="long"> to kill</span></th><th scope="col">Time<span class="long"> to kill</span></th><th scope="col">Type</th></tr></thead>
+        <tbody><tr><td colspan="6" class="muted">Loading weapon stats...</td></tr></tbody>
+      </table>
+    </div>
+    <p class="muted small" style="margin-top:12px">Time to kill is from 100 health with every hit landing on the body. Headshots, splash and modifiers change it.</p>
+  </div>
+</section>
 
-<h2 id="weapons">guns</h2>
-<p class="dim">straight from the game's own numbers, fastest kill first. <span id="wcount">8</span> of them, each with an alt-fire.</p>
-<div class="scroll"><table id="wtable"><tr><td>loading...</td></tr></table></div>
+<section class="section" id="leaderboard" aria-labelledby="lb-title">
+  <div class="wrap">
+    <div class="head-row">
+      <div>
+        <p class="eyebrow">Live</p>
+        <h2 id="lb-title">Leaderboard</h2>
+        <p class="lede">The top ten on each ladder, straight from the ranking server.</p>
+      </div>
+      <a class="more-link" href="leaderboard/">Full leaderboard &rarr;</a>
+    </div>
+    <div id="boards" aria-live="polite"><p class="muted">Loading the leaderboard...</p></div>
+  </div>
+</section>
 
-<h2 id="ranks">leaderboard</h2>
-<p class="dim">ranked 1v1 shows up after 3 rated games. the time trial board takes your best viaduct run.</p>
-<div id="boards">loading...</div>
+<section class="section alt" id="updates" aria-labelledby="up-title">
+  <div class="wrap">
+    <div class="head-row">
+      <div>
+        <p class="eyebrow">What's new</p>
+        <h2 id="up-title">Latest update</h2>
+      </div>
+      <a class="more-link" href="updates/">All updates &rarr;</a>
+    </div>
+    <div class="update" id="latest">
+      <div class="card"><p class="muted">Loading the latest update... <a href="updates/">See every update</a>.</p></div>
+    </div>
+  </div>
+</section>
 
-<h2 id="host">run a server</h2>
-<p>hosting from the game menu is the easy way. for a 24/7 one on a linux box (a free cloud vm is plenty):</p>
-<pre>sh tools/server/install.sh --public --name "my server"
-# ranked:  --ranked --variant vanilla --map temple</pre>
-<p class="dim">it starts on boot, restarts if it crashes, and updates itself when nobody's mid-match.</p>
+<section class="section" id="download" aria-labelledby="dl-title">
+  <div class="wrap">
+    <p class="eyebrow">Download</p>
+    <h2 id="dl-title">Get quark</h2>
+    <p class="lede">The launcher installs the game and keeps it up to date. Prefer to manage it yourself? Grab the game on its own.</p>
+    <div class="dl">
+      <div class="plat" data-os="windows">
+        <h3>Windows <span class="badge cyan mine-tag" hidden>Your system</span></h3>
+        <p>Windows 7, 10 and 11.</p>
+        <a class="btn btn-primary" href="https://github.com/floration/quark/releases/latest/download/quark-launcher-windows.exe">Launcher</a>
+        <a class="btn btn-ghost" href="https://github.com/floration/quark/releases/latest/download/quark-windows.zip">Game only (.zip)</a>
+      </div>
+      <div class="plat" data-os="linux">
+        <h3>Linux <span class="badge cyan mine-tag" hidden>Your system</span></h3>
+        <p>x86-64 with X11.</p>
+        <a class="btn btn-primary" href="https://github.com/floration/quark/releases/latest/download/quark-launcher-linux">Launcher</a>
+        <a class="btn btn-ghost" href="https://github.com/floration/quark/releases/latest/download/quark-linux.tar.gz">Game only (.tar.gz)</a>
+      </div>
+      <div class="plat" data-os="macos">
+        <h3>macOS <span class="badge cyan mine-tag" hidden>Your system</span></h3>
+        <p>The launcher and the game come as .zip files.</p>
+        <a class="btn btn-primary" href="https://github.com/floration/quark/releases/latest/download/quark-launcher-macos.zip">Launcher</a>
+        <a class="btn btn-ghost" href="https://github.com/floration/quark/releases/latest/download/quark-macos.zip">Game only (.zip)</a>
+      </div>
+    </div>
+    <div class="fine">
+      <p><b>Windows may warn you.</b> quark isn't signed with a paid code-signing certificate, so SmartScreen can say it's unrecognised. Click <i>More info</i>, then <i>Run anyway</i>.</p>
+      <p><b>Every file is signed.</b> Each download has a <code>.sig</code> next to it, made with the release key, and so does this site's file list (<a href="SHA256SUMS">SHA256SUMS</a>). The launcher checks every update and itself. To check a file by hand: <code>quark_sign verify &lt;file&gt;</code> (<a href="https://github.com/floration/quark/blob/main/docs/SIGNING.md">how</a>).</p>
+    </div>
+    <p class="muted small" style="margin-top:18px">All releases, with notes and signatures: <a href="https://github.com/floration/quark/releases">GitHub releases</a>. Want new builds first? Try the <a href="testing/">testing channel</a>.</p>
+  </div>
+</section>
 
-<h2 id="log">changes</h2>
-<div id="logbox">loading...</div>
-<button class="more" id="morebtn" style="display:none">older stuff</button>
+<section class="section alt" id="community" aria-labelledby="com-title">
+  <div class="wrap split">
+    <div>
+      <p class="eyebrow">Community</p>
+      <h2 id="com-title">Play with people</h2>
+      <p class="lede">Find a match, report a bug or suggest a change on Discord. The code is all on GitHub, free and open source.</p>
+      <div class="actions">
+        <a class="btn btn-primary" href="https://discord.gg/RERYWNWSXg">Join the Discord</a>
+        <a class="btn btn-ghost" href="https://github.com/floration/quark">Source on GitHub</a>
+      </div>
+      <p class="muted" style="margin-top:22px">Made by one developer, with a lot of help from playtesters.</p>
+    </div>
+    <div id="host">
+      <p class="eyebrow">Run a server</p>
+      <h2 style="font-size:28px">Host your own</h2>
+      <p class="muted">Hosting from the game's menu is the easy way. For an always-on server on a Linux box (a small cloud VM is plenty):</p>
+      <pre><code>sh tools/server/install.sh --public --name "my server"</code></pre>
+      <p class="muted">It starts on boot, restarts if it crashes and updates itself between matches. Details are in the <a href="https://github.com/floration/quark#multiplayer">README</a>.</p>
+    </div>
+  </div>
+</section>
 
-<footer>
-  made by one person and a lot of playtesting ·
-  <a href="https://github.com/floration/quark">source</a> ·
-  <a href="https://github.com/floration/quark/releases">releases</a> ·
-  <a href="https://discord.gg/RERYWNWSXg">discord</a><br>
-  in-game text: <a href="https://github.com/weiweihuanghuang/Work-Sans">Work Sans</a> (SIL Open Font License 1.1)
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div>
+      <p><a class="logo" href="./"><img src="icon.png" alt="" width="24" height="24" loading="lazy"><span style="font-size:20px">quark</span></a></p>
+      <p>Free and open source. No ads, no tracking, no cookies.</p>
+      <p class="small">UI font: <a href="https://github.com/weiweihuanghuang/Work-Sans">Work Sans</a>. Logo: <a href="https://github.com/googlefonts/rubik">Rubik</a>. Both SIL Open Font License 1.1.</p>
+    </div>
+    <ul aria-label="Links">
+      <li><a href="leaderboard/">Leaderboard</a></li>
+      <li><a href="updates/">Updates</a></li>
+      <li><a href="testing/">Testing</a></li>
+      <li><a href="https://github.com/floration/quark/releases">Releases</a></li>
+      <li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li>
+      <li><a href="https://github.com/floration/quark">GitHub</a></li>
+    </ul>
+  </div>
 </footer>
-</div>
 
+<script src="common.js"></script>
 <script>
-const REPO = "floration/quark";
-const DL = n => `https://github.com/${REPO}/releases/latest/download/${n}`;
-const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
-const ua = navigator.userAgent;
-const os = /Win/.test(ua) ? "windows" : /Mac/.test(ua) ? "macos" : "linux";
+"use strict";
+// download: the launcher for the visitor's system (without JS the button opens the latest release)
+const DL = n => `https://github.com/${Q.REPO}/releases/latest/download/${n}`;
 const L = {
   windows: { file: "quark-launcher-windows.exe", name: "Windows", game: "quark-windows.zip" },
-  macos:   { file: "quark-launcher-macos.zip",  name: "Mac",     game: "quark-macos.zip" },
+  macos:   { file: "quark-launcher-macos.zip",  name: "macOS",   game: "quark-macos.zip" },
   linux:   { file: "quark-launcher-linux",      name: "Linux",   game: "quark-linux.tar.gz" },
 };
-const dl = document.getElementById("dl");
-dl.href = DL(L[os].file);
-dl.textContent = "download for " + L[os].name.toLowerCase();
-document.getElementById("platforms").innerHTML =
-  "other: " + Object.keys(L).filter(k => k !== os).map(k => `<a href="${DL(L[k].file)}">${L[k].name.toLowerCase()}</a>`).join(" / ") +
-  " · game only, no launcher: " + Object.keys(L).map(k => `<a href="${DL(L[k].game)}">${L[k].name.toLowerCase()}</a>`).join(" / ");
-
-// changelogs are short markdown: headings, lists, tables, **bold**, `code`
-const inline = s => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
-function md(text) {
-  let html = "", list = false;
-  const lines = (text || "").split(/\r?\n/);
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (/^\|.*\|$/.test(line)) {
-      if (list) { html += "</ul>"; list = false; }
-      const rows = [];
-      while (i < lines.length && /^\|.*\|$/.test(lines[i].trim())) rows.push(lines[i++].trim());
-      i--;
-      const cells = r => r.slice(1, -1).split("|").map(c => c.trim());
-      html += "<table><tr>" + cells(rows[0]).map(c => `<th>${inline(c)}</th>`).join("") + "</tr>";
-      for (const r of rows.slice(1)) if (!/^\|[\s:|-]+\|$/.test(r)) html += "<tr>" + cells(r).map(c => `<td>${inline(c)}</td>`).join("") + "</tr>";
-      html += "</table>";
-      continue;
-    }
-    if (/^[-*] /.test(line)) { if (!list) { html += "<ul>"; list = true; } html += "<li>" + inline(line.slice(2)) + "</li>"; continue; }
-    if (list) { html += "</ul>"; list = false; }
-    if (/^# /.test(line)) continue;
-    if (/^#+ /.test(line)) html += "<h4>" + inline(line.replace(/^#+ /, "")) + "</h4>";
-    else if (line) html += "<p>" + inline(line) + "</p>";
+(() => {
+  const ua = navigator.userAgent;
+  const mobile = /Android|iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const label = document.getElementById("dl-label"), dl = document.getElementById("dl");
+  if (mobile) {   // the game is for computers: show every platform instead of guessing
+    dl.href = "#download";
+    label.textContent = "Get it for your computer";
+    return;
   }
-  return html + (list ? "</ul>" : "");
-}
+  const os = /Win/.test(ua) ? "windows" : /Mac/.test(ua) ? "macos" : "linux";
+  dl.href = DL(L[os].file);
+  label.textContent = "Download for " + L[os].name;
+  const card = document.querySelector(`.plat[data-os="${os}"]`);
+  if (card) { card.classList.add("mine"); card.querySelector(".mine-tag").hidden = false; }
+})();
+
+// latest version and its notes (changelog.json is made from changelogs/ by tools/site_changelog.py)
 const teaser = notes => {
   for (const l of (notes || "").split(/\r?\n/)) {
     const t = l.trim();
-    if (t && !t.startsWith("# ") && !t.startsWith("|")) return t.replace(/^#+ |^[-*] /g, "").replace(/\*\*|`/g, "");
+    if (t && !t.startsWith("#") && !t.startsWith("|") && !/^[-*] /.test(t)) return t;
+  }
+  return "";
+};
+const firstLine = notes => {
+  for (const l of (notes || "").split(/\r?\n/)) {
+    const t = l.trim();
+    if (t && !t.startsWith("#") && !t.startsWith("|") && !t.startsWith("(")) return t.replace(/^[-*] /, "").replace(/\*\*|`/g, "");
   }
   return "";
 };
 fetch("changelog.json").then(r => r.json()).then(log => {
-  if (log.length) document.getElementById("ver").textContent = "v" + log[0].version;
-  const box = document.getElementById("logbox"), more = document.getElementById("morebtn");
-  const render = n => {
-    box.innerHTML = log.slice(0, n).map((e, i) =>
-      `<details${i === 0 ? " open" : ""}><summary><span class="v">v${esc(e.version)}</span><span class="t">${esc(teaser(e.notes))}</span></summary><div class="body">${md(e.notes)}</div></details>`).join("");
-    more.style.display = n < log.length ? "" : "none";
-  };
-  render(8);
-  more.onclick = () => render(log.length);
-}).catch(() => { document.getElementById("logbox").textContent = "couldn't load the changelog :("; });
+  if (!log.length) throw new Error("empty");
+  const v = log[0].version, ve = Q.esc(v);
+  document.getElementById("ver-line").textContent = `Version ${v}. Free and open source.`;
+  // sections of the latest notes: "## Heading" and how many changes are listed under it
+  const sections = [];
+  for (const l of log[0].notes.split(/\r?\n/)) {
+    const h = l.match(/^##\s+(.*)$/);
+    if (h) sections.push({t: h[1].replace(/\*\*|`/g, ""), n: 0});
+    else if (sections.length && /^[-*] /.test(l)) sections[sections.length - 1].n++;
+  }
+  const chips = sections.map(s => `<li><b>${Q.esc(s.t)}</b>${s.n ? " · " + s.n : ""}</li>`).join("");
+  const older = log.slice(1, 6).map(e => `<li><a href="updates/${Q.esc(e.version)}/"><b>${Q.esc(e.version)}</b><span>${Q.esc(firstLine(e.notes))}</span></a></li>`).join("");
+  document.getElementById("latest").innerHTML =
+    `<div class="card"><p class="eyebrow">Version ${ve}</p><h3>quark ${ve}</h3>` +
+    `<p class="intro">${Q.inline(teaser(log[0].notes))}</p>` +
+    (chips ? `<ul class="chips" aria-label="What changed">${chips}</ul>` : "") +
+    `<div class="actions"><a class="btn btn-primary" href="updates/${ve}/">Read what changed in ${ve}</a><a class="btn btn-ghost" href="updates/">All updates</a></div></div>` +
+    `<div class="card"><h3 style="font-size:18px">Earlier updates</h3><ul class="older">${older}</ul><p style="margin:14px 0 0"><a class="more-link" href="updates/">Every update &rarr;</a></p></div>`;
+}).catch(() => {
+  document.getElementById("latest").innerHTML = Q.state("The latest update couldn't be loaded.", ` <a href="updates/">See every update</a>.`);
+});
 
-// leaderboard: the ranking server's address is published next to this page (master.txt)
-fetch("master.txt").then(r => r.text()).then(t => {
-  const base = t.trim().replace(/\/+$/, "");
-  const ladders = [["vanilla", "vanilla"], ["vampire", "laser vampire"], ["instagib", "instagib"]];
-  return Promise.all(ladders.map(([k]) => fetch(`${base}/leaderboard?ladder=${k}&n=10`).then(r => r.ok ? r.text() : "").catch(() => ""))).then(res => {
-    const boards = ladders.map(([k, title], i) => {
-      const rows = res[i].split("\n").map(l => l.match(/^(\d+) (\d+) (.+)$/)).filter(Boolean);
-      const body = rows.length ? rows.map((m, n) => `<tr><td>${n + 1}</td><td>${esc(m[3])}</td><td style="text-align:right">${m[1]}</td></tr>`).join("")
-                               : `<tr><td colspan="3" style="color:var(--dim)">nobody yet</td></tr>`;
-      return `<div><table><caption>${title}</caption>${body}</table></div>`;
-    });
-    document.getElementById("boards").innerHTML = boards.join("");
-    // time trials: "ms name" per line, fastest first
-    const fmt = ms => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}.${String(ms % 1000).padStart(3, "0")}`;
-    fetch(`${base}/raceboard?map=viaduct&n=10`).then(r => r.ok ? r.text() : "").catch(() => "").then(t => {
-      const rows = t.split("\n").map(l => l.match(/^(\d+) (.+)$/)).filter(Boolean);
-      const body = rows.length ? rows.map((m, n) => `<tr><td>${n + 1}</td><td>${esc(m[2])}</td><td style="text-align:right">${fmt(+m[1])}</td></tr>`).join("")
-                               : `<tr><td colspan="3" style="color:var(--dim)">no times yet</td></tr>`;
-      document.getElementById("boards").insertAdjacentHTML("beforeend", `<div><table><caption>viaduct time trial</caption>${body}</table></div>`);
-    });
-  });
-}).catch(() => { document.getElementById("boards").textContent = "couldn't reach the ranking server :("; });
-
-// weapon spec sheet from the game's own numbers (site/weapons.json is generated from gamedefs.h)
+// weapon stats from the game's own numbers (weapons.json is made from src/game/gamedefs.h)
 fetch("weapons.json").then(r => r.json()).then(ws => {
   ws = ws.slice().sort((a, b) => a.ttk - b.ttk);
-  document.getElementById("wcount").textContent = ws.length;
-  const rate = w => w.refire < 0.01 ? `${Math.round(1 / w.refire)}/s` : `${+w.refire.toFixed(3)} s`;
-  const dmg = w => w.pellets > 1 ? `${w.damage} x ${w.pellets}` : w.beam ? `${w.damage}/ms` : `${w.damage}`;
   const maxT = Math.max(...ws.map(w => w.ttk));
-  let html = "<tr><th>gun</th><th>damage</th><th>fire rate</th><th>hits</th><th>ttk</th><th></th><th>notes</th></tr>";
-  for (const w of ws) {
-    const notes = [w.splash && "splash", w.beam && "beam", w.scope && "scope"].filter(Boolean).join(" / ");
-    html += `<tr><td><b>${esc(w.name)}</b></td><td>${dmg(w)}</td><td>${rate(w)}</td><td>${w.shots}</td><td>${w.ttk.toFixed(2)} s</td>` +
-            `<td><span class="meter" style="width:${Math.max(8, Math.round(w.ttk / maxT * 120))}px"></span></td><td class="tagw">${notes}</td></tr>`;
-  }
-  document.getElementById("wtable").innerHTML = html;
-}).catch(() => { document.getElementById("wtable").innerHTML = "<tr><td>couldn't load the numbers :(</td></tr>"; });
+  const title = n => n.charAt(0) + n.slice(1).toLowerCase();
+  const rate = w => w.beam ? "Continuous" : `${+w.refire.toFixed(2)} s`;
+  const dmg = w => w.beam ? `${Math.round(w.damage * 1000)}/s` : w.pellets > 1 ? `${w.damage} &times; ${w.pellets}` : `${w.damage}`;
+  const hits = w => w.beam ? "&ndash;" : w.shots;
+  const rows = ws.map(w => {
+    const tags = [w.beam ? "Beam" : w.projectile ? "Projectile" : "Hitscan", w.splash && "splash", w.scope && "scope"].filter(Boolean).join(", ");
+    const pct = Math.max(4, Math.round(w.ttk / maxT * 100));
+    return `<tr><th scope="row">${Q.esc(title(w.name))}</th>` +
+      `<td class="num">${dmg(w)}</td><td class="num">${rate(w)}</td><td class="num">${hits(w)}</td>` +
+      `<td><div class="ttk"><span>${w.ttk.toFixed(2)} s</span><span class="bar" aria-hidden="true"><i style="width:${pct}%"></i></span></div></td>` +
+      `<td class="tags">${tags}</td></tr>`;
+  }).join("");
+  document.querySelector("#wtable tbody").innerHTML = rows;
+  document.getElementById("weapons-title").textContent = ws.length === 9 ? "Nine ways to win" : `${ws.length} ways to win`;
+}).catch(() => {
+  document.querySelector("#wtable tbody").innerHTML = '<tr><td colspan="6" class="muted">The weapon stats couldn\'t be loaded.</td></tr>';
+});
+
+// leaderboard preview: the top 10 of each ladder and the Viaduct time trial
+(() => {
+  const box = document.getElementById("boards");
+  const board = (title, sub, rows) => `<div class="board"><h3>${title} <small>${sub}</small></h3><table><caption class="sr">${title}</caption>${rows}</table></div>`;
+  const get = (url, parse) => Q.getText(url).then(parse, () => null);   // (one board failing doesn't hide the others)
+  const none = text => `<tr><td colspan="3" class="empty">${text}</td></tr>`;
+  Q.master().then(base => Promise.all([
+    ...Q.LADDERS.map(l => get(`${base}/leaderboard?ladder=${l.key}&n=10`, Q.parseLadder)),
+    get(`${base}/raceboard?map=viaduct&n=10`, Q.parseRace),
+  ])).then(res => {
+    if (res.every(r => r === null)) throw new Error("ranking server down");
+    const ladders = Q.LADDERS.map((l, i) => board(l.title, "rating", res[i] === null ? none("Unavailable right now.") : res[i].length
+      ? res[i].map((p, n) => `<tr><td>${n + 1}</td><td class="who">${Q.esc(p.name)}</td><td class="num">${p.rating}</td></tr>`).join("")
+      : none("Nobody has placed yet.")));
+    const race = res[3];
+    ladders.push(board("Viaduct", "time trial", race === null ? none("Unavailable right now.") : race.length
+      ? race.map((p, n) => `<tr><td>${n + 1}</td><td class="who">${Q.esc(p.name)}</td><td class="num">${Q.fmtTime(p.ms)}</td></tr>`).join("")
+      : none("No times yet.")));
+    box.innerHTML = `<div class="boards">${ladders.join("")}</div>`;
+  }).catch(() => {
+    box.innerHTML = Q.state("Leaderboard unavailable right now.", ` The ranking server didn't answer. Rankings are safe; try again in a minute, or open the <a href="leaderboard/">full leaderboard</a>.`);
+  });
+})();
 </script>
 </body>
 </html>

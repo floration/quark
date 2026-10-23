@@ -15,6 +15,7 @@
 #include <GLFW/glfw3.h>
 #include <cstdio>
 #include <cstring>
+#include "../game/demo.h"
 #include "../game/gamemodes.h"
 #include "../common/version.h"
 #include "gltf.h"
@@ -284,16 +285,26 @@ void Game::connectTo(const std::string& rawAddr) {
     while (!addr.empty() && (unsigned char)addr[0] <= ' ') addr.erase(0, 1);
     if (!net_.connect(addr, cfg_.name)) { error_ = net_.error(); return; }
     edSession_ = edOnline_ = false;
+    unratedServer_ = false;
     rankBefore_ = rankGamesBefore_ = -1;
     if (!host_) { cfg_.lastAddress = addr; cfg_.save(); }
     setScreen(Screen::Connecting);
 }
 
 void Game::leaveGame(const std::string& error) {
-    if (edSession_ && !host_ && net_.mapReady()) { // someone else's edit session: offer to keep a copy
-        edPrompt_ = true;
-        edPromptMap_ = net_.map();
-        edPromptName_ = edPromptMap_.name;
+    if (edSession_ && net_.mapReady()) {
+        // leaving an edit session: offer to keep a copy (never saved without asking, B3). Someone else's session: always
+        // (unless it's a built-in map nobody changed). Your own: when it's a built-in map you changed, which the server
+        // never saves (a session on your own map is autosaved as it goes).
+        const Map& m = net_.map();
+        bool official = isOfficialMapName(m.name), changed = !official || !isOfficialMap(m);
+        if (changed && (!host_ || official)) {
+            edPrompt_ = true;
+            edPromptMap_ = m;
+            edPromptOfficial_ = official;
+            edPromptThen_ = ED_THEN_NONE;
+            edPromptName_ = official ? edFreshName(m.name) : m.name;
+        }
     }
     bool wasEditing = edOnline_;
     edSession_ = edOnline_ = false;
@@ -308,7 +319,7 @@ void Game::leaveGame(const std::string& error) {
     // in-game menus start closed next time (a dropped connection mid-menu left them open)
     if (widgetEdit_) widgets_.save(activeHudPath());
     if (settingsInGame_) cfg_.save();
-    settingsInGame_ = voteMenu_ = queueMenu_ = controlsOpen_ = crosshairOpen_ = hudOpen_ = visualsOpen_ = widgetEdit_ = hudDrop_ = false;
+    settingsInGame_ = voteMenu_ = specPick_ = queueMenu_ = controlsOpen_ = crosshairOpen_ = hudOpen_ = visualsOpen_ = widgetEdit_ = hudDrop_ = false;
     picker_ = PICK_NONE;
     filePick_ = 0;
     captureAction_ = -1;
@@ -510,17 +521,11 @@ bool Game::pressInput(int code) {
         return true;
     }
     if (screen_ != Screen::InGame || chatting_) return false;
+    if (b.has(A_TOGGLECHAT, code)) { toggleChat(); return true; }
     if (b.has(A_VOTEYES, code)) { net_.sendCommand("vote yes"); return true; }
     if (b.has(A_VOTENO, code)) { net_.sendCommand("vote no"); return true; }
     if (b.has(A_VOTESTART, code)) { net_.sendCommand("callvote start"); return true; }
     if (b.has(A_QUIP, code) && !paused_) { net_.sendCommand("quip"); return true; }
-    if (b.has(A_USE, code) && !paused_ && net_.hasSnapshot() && isItMode(net_.mode().mode)) { // the locator (tagger / seeker)
-        const PlayerSnap* mp = net_.findPlayer(net_.clientId());
-        if (mp && (mp->flags & PS_HASBOMB)) {
-            if (time_ >= locatorReady_) { net_.sendCommand("locate"); locatorReady_ = time_ + kLocatorCooldown; }
-            return true;
-        }
-    }
     if (paused_) return false;
     if (b.has(A_CHAT, code)) {
         chatting_ = true;
@@ -529,12 +534,24 @@ bool Game::pressInput(int code) {
         captureMouse(false);
         return true;
     }
+    if (rpsPicking())   // the hide and seek tiebreak: slot keys 1 / 2 / 3 throw rock / paper / scissors
+        for (int k = 0; k < 3; k++)
+            if (b.has(slotAction(k), code)) {
+                rpsMine_ = RPS_ROCK + k;
+                net_.sendCommand(std::string("rps ") + rpsName(rpsMine_));
+                audio_.play(SND_TYPING, 0.9f, 0.8f);
+                return true;
+            }
     // weapons outside this mode's pool (1v1 rulesets, duel modifiers) are skipped
     uint16_t pool = net_.mode().weaponMask;
-    bool knifeAway = net_.hasSnapshot() && net_.latest().knifeAway > 0;
-    auto allowed = [&](int w) { return (!pool || (pool >> w & 1)) && !(w == WPN_KNIFE && knifeAway); }; // a thrown knife is away for a bit
-    for (int k = 0; k < WPN_COUNT; k++) // slot keys 1-9 and 0, in kWeaponSlots order
-        if (b.has(slotAction(k), code)) { int w = kWeaponSlots[k]; if (allowed(w)) desiredWeapon_ = w; return true; }
+    const int mode = net_.mode().mode;
+    const PlayerSnap* self = net_.findPlayer(net_.clientId());
+    bool emptyHanded = isItMode(mode) && !(self && (self->flags & PS_HASBOMB));   // hide and seek / tag: only "it" holds anything
+    auto allowed = [&](int w) { return (!pool || (pool >> w & 1)) && weaponInMode(w, mode) && !emptyHanded && weaponAwayLeft(w) <= 0; }; // a thrown knife / syringe is away for a bit
+    bool slotKey = false;
+    for (int k = 0; k < WPN_COUNT; k++) // slot keys 1-9 and 0, in kWeaponSlots order (0: the syringe, or the locator)
+        if (b.has(slotAction(k), code)) { slotKey = true; int w = kWeaponSlots[k]; if (allowed(w)) { desiredWeapon_ = w; return true; } }
+    if (slotKey) return true;
     int cur = weaponSlot(desiredWeapon_ >= 0 ? desiredWeapon_ : net_.selfWeapon());
     for (int dir : {1, -1}) {
         if (!b.has(dir > 0 ? A_NEXTWEAPON : A_PREVWEAPON, code)) continue;
@@ -657,7 +674,7 @@ void Game::onKey(int key, int action, int mods) {
             if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
             if (controlsOpen_ || crosshairOpen_ || hudOpen_ || visualsOpen_) { controlsOpen_ = crosshairOpen_ = hudOpen_ = visualsOpen_ = false; captureAction_ = -1; cfg_.save(); return; }
             if (settingsInGame_) { settingsInGame_ = false; cfg_.save(); return; }
-            if (voteMenu_ || queueMenu_ || picker_ != PICK_NONE) { voteMenu_ = queueMenu_ = false; picker_ = PICK_NONE; return; }
+            if (voteMenu_ || queueMenu_ || picker_ != PICK_NONE) { voteMenu_ = queueMenu_ = specPick_ = false; picker_ = PICK_NONE; return; }
             paused_ = !paused_;
             captureMouse(!paused_);
             return;
@@ -792,6 +809,14 @@ UserCmd Game::buildCmd() {
     return c;
 }
 
+void Game::toggleChat() {
+    cfg_.chatOff = !cfg_.chatOff;
+    if (cfg_.chatOff) for (auto& t : typingUntil_) t = 0;
+    cfg_.save();
+    const int* k = binds().code[A_TOGGLECHAT];
+    notify(cfg_.chatOff ? "CHAT OFF - " + inputName(k[0] ? k[0] : k[1]) + " TO SHOW IT AGAIN" : "CHAT ON", 2);
+}
+
 void Game::notify(const std::string& s, float seconds) {
     notices_.push_back({s, kWhite, time_ + seconds});
     while (notices_.size() > 4) notices_.pop_front();
@@ -913,10 +938,11 @@ void Game::handleEvents() {
                 if (e.a == net_.clientId() && e.b != e.a && cfg_.hitsounds) audio_.play(SND_KILL, 0.9f);
                 break;
             }
-            case EV_CHAT:
-                addChat({net_.playerName(e.a) + ": " + e.text, isFriendly(e.a) ? rgba(cfg_.colorFriendly) : rgba(cfg_.colorEnemy), time_ + 10, crownOf(e.a)});
+            case EV_CHAT:   // (chat off: dropped, not just hidden - turning it back on doesn't replay what was missed)
+                if (!cfg_.chatOff) addChat({net_.playerName(e.a) + ": " + e.text, isFriendly(e.a) ? rgba(cfg_.colorFriendly) : rgba(cfg_.colorEnemy), time_ + 10, crownOf(e.a), true});
                 break;
             case EV_MESSAGE:
+                if (e.text.rfind(kUnratedNotice, 0) == 0) unratedServer_ = true;   // (a testing server: the HUD says NOT RATED)
                 addChat({e.text, kGrey, time_ + 8});
                 break;
             case EV_RANKED: {
@@ -952,26 +978,60 @@ void Game::handleEvents() {
                 if (lines.empty() || e.a >= kMaxPlayers) break;
                 int line = lines[e.b % lines.size()];
                 if (e.a == net_.clientId()) audio_.play(line, 0.9f);
-                else if (const PlayerSnap* qp = net_.findPlayer(e.a)) audio_.play3D(line, qp->pos + Vec3(0, 1.6f, 0), 1.0f);
+                else if (const PlayerSnap* qp = net_.findPlayer(e.a); qp && !qp->hidden) audio_.play3D(line, qp->pos + Vec3(0, 1.6f, 0), 1.0f);
                 break;
             }
             case EV_LOCATE: {   // the locator found someone: show them through walls for a second
                 std::istringstream ls(e.text);
                 Vec3 p;
-                if (ls >> p.x >> p.y >> p.z) { locatePos_ = p; locateId_ = e.a; locateUntil_ = time_ + kLocatorShow; audio_.play(SND_GRAPPLE_HIT, 0.6f, 1.4f); }
+                if (ls >> p.x >> p.y >> p.z) {
+                    locatePos_ = p; locateId_ = e.a; locateUntil_ = time_ + kLocatorShow; audio_.play(SND_GRAPPLE_HIT, 0.6f, 1.4f);
+                    locatorReady_ = std::max(locatorReady_, time_ + kLocatorCooldown - 0.1);   // (the server's clock for it, less the trip here)
+                }
+                break;
+            }
+            case EV_RPS: {   // the hide and seek tiebreak: who's in, who has chosen, the reveal
+                RpsView v;
+                v.stage = e.a; v.throwNo = e.b; v.at = time_;
+                size_t nl = e.text.find('\n');
+                std::istringstream rs(e.text.substr(0, nl));
+                int bo3 = 0;
+                rs >> bo3 >> v.winner;
+                v.bestOf3 = bo3 != 0;
+                std::string tok;
+                while (rs >> tok) {
+                    RpsView::P p;
+                    int out = 0;
+                    if (sscanf(tok.c_str(), "%d:%d:%d:%d", &p.id, &p.shape, &p.wins, &out) == 4 && p.id >= 0 && p.id < kMaxPlayers) { p.out = out != 0; v.players.push_back(p); }
+                }
+                v.result = nl == std::string::npos ? "" : e.text.substr(nl + 1);
+                const int me = net_.clientId();
+                auto mine = [&](const RpsView& r) -> const RpsView::P* { for (auto& p : r.players) if (p.id == me) return &p; return nullptr; };
+                const RpsView::P* was = mine(rps_);
+                const RpsView::P* now = mine(v);
+                if (v.stage == RPS_PICK && (v.throwNo != rps_.throwNo || rps_.stage != RPS_PICK)) {   // a new throw
+                    rpsMine_ = RPS_NONE;
+                    audio_.play(SND_CHECKPOINT, 0.7f, v.throwNo == 1 ? 0.8f : 1.0f);
+                } else if (v.stage == RPS_REVEAL && rps_.stage == RPS_PICK) {   // the reveal: a clack, then how it went for us
+                    audio_.play(SND_BOLT_HIT, 0.9f, 0.9f);
+                    if (now && was && now->out && !was->out) audio_.play(SND_HURT, 0.8f);
+                    else if (now && was && now->wins > was->wins) audio_.play(SND_FINISH, 0.6f, 1.2f);
+                }
+                rps_ = v;
                 break;
             }
             case EV_TYPING:   // someone's typing: soft key clicks from them and "..." over their head
-                if (e.a < kMaxPlayers) {
+                if (e.a < kMaxPlayers && !cfg_.chatOff) {   // (chat off: no "..." or clicks either)
                     typingUntil_[e.a] = time_ + 0.8;
-                    if (const PlayerSnap* tp = net_.findPlayer(e.a)) audio_.play3D(SND_TYPING, tp->pos + Vec3(0, 1.5f, 0), 0.6f, 0.9f + (qrand() % 20) * 0.01f);
+                    const PlayerSnap* tp = net_.findPlayer(e.a);
+                    if (tp && !tp->hidden) audio_.play3D(SND_TYPING, tp->pos + Vec3(0, 1.5f, 0), 0.6f, 0.9f + (qrand() % 20) * 0.01f);
                     else audio_.play(SND_TYPING, 0.4f);
                 }
                 break;
             case EV_HEALED:   // a teammate's syringe hit someone
                 if (e.a == net_.clientId()) {
                     notify("HEALED BY " + net_.playerName(e.b) + " - COOLDOWNS RESET", 2); audio_.play(SND_SYRINGE, 0.8f, 1.3f);
-                    localNextFire_ = localThrowReadyAt_ = 0;   // (mirror the server's reset: weapon and throws)
+                    localNextFire_ = localKnifeBack_ = localSyringeBack_ = 0;   // (mirror the server's reset: weapon, thrown knife / syringe)
                 }
                 else if (e.b == net_.clientId()) notify("YOU HEALED " + net_.playerName(e.a), 2);
                 break;
@@ -1131,9 +1191,20 @@ void Game::frame(double dt) {
             UserCmd c = buildCmd();
             // local fire feedback (server is authoritative for damage)
             bool altShot = altFires(net_.selfWeapon()) && (c.buttons & BTN_ALTFIRE) && // knife throw / shotgun bounce (no throws in hide and seek / tag)
-                           !(net_.selfWeapon() == WPN_KNIFE && net_.hasSnapshot() && isItMode(net_.mode().mode)) &&
-                           !(isThrow(net_.selfWeapon(), true) && time_ < localThrowReadyAt_);   // the throws' shared cooldown
-            bool wantFire = ((c.buttons & BTN_FIRE) != 0 || altShot) && holdFireLeft() <= 0;   // (the map's holdfire: no shots yet)
+                           !(net_.selfWeapon() == WPN_KNIFE && net_.hasSnapshot() && isItMode(net_.mode().mode));
+            bool wantFire = ((c.buttons & BTN_FIRE) != 0 || altShot) && holdFireLeft() <= 0 // (the map's holdfire: no shots yet)
+                            && weaponAwayLeft(net_.selfWeapon()) <= 0;                        // (a thrown knife / syringe: disabled)
+            if (net_.hasSnapshot() && isItMode(net_.mode().mode)) {   // hide and seek / tag: only "it" has the knife (no swing, no slash for the rest)
+                const PlayerSnap* mp = net_.findPlayer(net_.clientId());
+                if (!mp || !(mp->flags & PS_HASBOMB)) wantFire = false;
+            }
+            if (net_.selfWeapon() == WPN_LOCATOR) {   // the locator: a ping every kLocatorCooldown (the server answers with EV_LOCATE)
+                if (wantFire && !localFireLocked_ && net_.selfAlive() && net_.mode().phase == PHASE_LIVE && time_ >= locatorReady_) {
+                    locatorReady_ = time_ + kLocatorCooldown;
+                    audio_.play(SND_GRAPPLE_FIRE, 0.7f, 1.6f);
+                }
+                wantFire = false;
+            }
             if (c.weapon != lastCmdWeapon_ && (c.buttons & (BTN_FIRE | BTN_ALTFIRE))) localFireLocked_ = true; // switched with fire held
             lastCmdWeapon_ = c.weapon;
             if (localFireLocked_) { // mirror the server: after a knife throw or a switch, let go before the next weapon fires
@@ -1154,13 +1225,13 @@ void Game::frame(double dt) {
                 localBurst_ = held && time_ - localNextFire_ < 0.1 && w == localBurstWeapon_ ? localBurst_ + 1 : 0;
                 localBurstWeapon_ = w;
                 localNextFire_ = time_ + shotRefire(w, alt);
-                if (isThrow(w, alt)) localThrowReadyAt_ = time_ + throwCooldown(w);
+                if (isThrow(w, alt)) (w == WPN_KNIFE ? localKnifeBack_ : localSyringeBack_) = time_ + (w == WPN_KNIFE ? kKnifeAway : kSyringeAway);
                 if (w != WPN_LASER || time_ >= nextLaserSound_) { // laser fires every 10 ms: sound at 20 Hz
                     audio_.play(SND_RIFLE + w, w == WPN_LASER ? 0.6f : 0.8f, 0.97f + (qrand() % 7) * 0.01f);
                     nextLaserSound_ = time_ + 0.05;
                 }
                 if (w == WPN_KNIFE && !alt) knifeSlash_[net_.clientId() % kMaxPlayers] = time_;
-                if (w == WPN_KNIFE && alt) localFireLocked_ = true;
+                if (isThrow(w, alt)) localFireLocked_ = true;
                 recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
                 bool showShot = cfg_.ownShots == 1 || (cfg_.ownShots == 0 && !cfg_.hud[Settings::HUD_VIEWMODEL].hidden); // VISUALS > YOUR SHOTS
                 if (w == WPN_LASER) laserUntil_ = showShot ? time_ + 0.07 : 0;
@@ -1206,6 +1277,7 @@ void Game::frame(double dt) {
         for (auto& old : lastProjectiles_) {
             bool still = false;
             for (auto& p : projs) still |= p.id == old.id;
+            if (!still && net_.projectileHidden(old.id)) continue;   // out of sight now, still flying: not an explosion (NET-10)
             if (!still && old.type == WPN_BUBBLE) { explosions_.push_back({old.pos, time_, 0.45f, true}); audio_.play3D(SND_BUBBLE, old.pos, 0.7f, 1.7f, net_.playerSoundPack(old.owner)); } // pop
             else if (!still && weaponDef(old.type).splashRadius > 0) { explosions_.push_back({old.pos, time_}); audio_.play3D(SND_EXPLOSION, old.pos, 1.25f, 1.0f, net_.playerSoundPack(old.owner)); }
             else if (!still && old.type == WPN_CROSSBOW) audio_.play3D(SND_BOLT_HIT, old.pos, 0.8f, 1.0f, net_.playerSoundPack(old.owner));
@@ -1251,7 +1323,7 @@ void Game::frame(double dt) {
         Vec3 to = look - camPos;
         if (opts_.camSet) r_.setCamera(opts_.camPos, deg2rad(opts_.camYaw), deg2rad(opts_.camPitch), 90);
         else r_.setCamera(camPos, std::atan2(-to.x, -to.z), std::atan2(to.y, std::sqrt(to.x * to.x + to.z * to.z)), 75);
-        if (r_.worldLoaded()) { r_.brightness = cfg_.brightness; r_.worldOutline = cfg_.outlineWorld; r_.drawScene(false); }
+        if (r_.worldLoaded()) { sceneSettings(); r_.drawScene(false); }
         else {
             r_.rect(0, 0, (float)r_.width(), (float)r_.height(), {0.05f, 0.06f, 0.08f, 1});
         }
@@ -1288,6 +1360,7 @@ static const Vec3 kMuzzle[WPN_COUNT] = {
     {0, 0.032f, -0.23f},    // crossbow
     {0, 0.004f, -0.257f},   // bubble
     {0, 0, -0.2f},          // syringe
+    {0, 0, -0.125f},        // locator (its emitter)
 };
 
 // Where your shots come out: the muzzle of the weapon model wherever the HUD settings put it (x / y / depth /
@@ -1339,6 +1412,9 @@ void Game::drawWorld(float alpha) {
             eye = base + Vec3(0, 3.0f, 0);
         }
     }
+    // the server sends a dead player what the one it watches can see (NET-10): tell it who that is
+    if (alive || net_.playback() || net_.state() != ConnState::Connected) specSent_ = -2;
+    else if (specTarget_ != specSent_) { net_.sendCommand("spectate " + std::to_string(specTarget_)); specSent_ = specTarget_; }
     r_.setCamera(eye, camYaw, camPitch, alive ? viewFov() : cfg_.fov);
     audio_.setListener(eye, camYaw);
     updateSounds(players);
@@ -1353,6 +1429,11 @@ void Game::drawWorld(float alpha) {
             ip.snap.flags = PS_ALIVE | (k % 2 ? PS_TEAM_B : 0);
             ip.snap.pos = net_.smoothedPos(alpha) + f * 5.0f + rt * ((k - 2) * 1.5f);
             ip.snap.yaw = yaw_ + 3.14159265f;
+            if (isItMode(net_.mode().mode)) {   // hide and seek / tag: each as "it", holding the knife (or --weapon)
+                ip.snap.flags |= PS_HASBOMB;
+                ip.snap.yaw -= 1.0f;   // (turned aside: the weapon side-on)
+                ip.snap.weapon = (uint8_t)(opts_.debugWeapon >= 1 && opts_.debugWeapon <= WPN_COUNT ? opts_.debugWeapon - 1 : WPN_KNIFE);
+            }
         }
     }
     // players (duel "double size" rounds draw everyone at twice the size, matching the server hitboxes)
@@ -1394,18 +1475,23 @@ void Game::drawWorld(float alpha) {
                 r_.box(pos + Vec3(cy * c.x + sy * c.z, c.y, -sy * c.x + cy * c.z), q.h * bs, yaw, q.color, sv, q.shadow, vis);
             }
         }
-        if (vis) {
+        if (vis && isItMode(net_.mode().mode)) {   // hide and seek / tag: only "it" holds anything - their weapon's own model
+            if (p.flags & PS_HASBOMB) drawHeldWeapon(i, p.weapon, at(1.3f) + rgt * (0.3f * bs), yaw, pitch, bs, col, sv);
+        } else if (vis) {
             Vec3 shoulder = at(1.3f) + Vec3(std::cos(yaw), 0, -std::sin(yaw)) * (0.3f * bs);
             r_.boxPitched(shoulder, Vec3(0, 0, -0.35f) * bs, Vec3(0.06f, 0.07f, 0.35f) * bs, yaw, pitch, {0.12f, 0.12f, 0.14f}, sv);
             if ((p.flags & PS_HASBOMB) && !isItMode(net_.mode().mode))
                 r_.box(at(1.15f) + fwd * -0.32f, {0.2f, 0.22f, 0.1f}, yaw, {0.1f, 0.1f, 0.1f}, sv);
         }
-        if (!self && (p.flags & PS_HASBOMB) && isItMode(net_.mode().mode)) { // hide and seek / tag: mark who's "it"
+        // hide and seek: the seeker is marked only where you can see them (hiders are never shown where the seeker is,
+        // owner B8); tag: the HUD marks the tagger everywhere, through walls (drawTaggerMarker)
+        if (!self && (p.flags & PS_HASBOMB) && net_.mode().mode == MODE_HIDE) {
             float sx, sy;
-            if (r_.project(pos + Vec3(0, 2.3f, 0), sx, sy)) {
+            Vec3 head = pos + Vec3(0, 1.7f * bs, 0), cam = r_.cameraPos(), d = head - cam;
+            float dist = length(d);
+            if (dist > 0.01f && !map.raycastAny(cam, d / dist, dist - 0.3f) && r_.project(pos + Vec3(0, 2.3f, 0), sx, sy)) {
                 float ts = std::max(1.0f, std::round(ui_.textScale()));
-                const char* t = net_.mode().mode == MODE_TAG ? "TAGGER" : "SEEKER";
-                r_.text(sx - r_.textWidth(t, ts) * 0.5f, sy, ts, t, kRed);
+                r_.text(sx - r_.textWidth("SEEKER", ts) * 0.5f, sy, ts, "SEEKER", kRed);
             }
         }
         if (vis && !rankedPlayer()) if (int place = crownOf(i)) { // leaderboard crown on their head (a model; not in ranked)
@@ -1726,7 +1812,7 @@ void Game::drawWorld(float alpha) {
     // (spectating: the gun of whoever we're watching)
     const bool specGun = !alive && viewing != me && viewing >= 0 && players[viewing].valid;
     const PlayerSnap* holder = specGun ? &players[viewing].snap : mep;
-    bool unarmed = isItMode(net_.mode().mode) && !(holder && (holder->flags & PS_HASBOMB));
+    bool unarmed = isItMode(net_.mode().mode) && !(holder && (holder->flags & PS_HASBOMB)) && !(opts_.debugWeapon > 0 && !specGun);   // (--weapon: shown anyway, for screenshots)
     const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
     if ((alive || specGun) && !(scoped_ && scopeOverlay_ && !specGun) && !unarmed && !vm.hidden) {
         int w = specGun ? (int)players[viewing].snap.weapon : net_.selfWeapon();
@@ -1748,17 +1834,174 @@ void Game::drawWorld(float alpha) {
             r_.viewMesh(*ov, at, k, tint);
         } else {
             viewmodelParts(w, vpal, parts_);
-            for (const ModelPart& q : parts_) r_.viewBox(at + q.c * k, q.h * k, q.color);
+            // the locator's screen: dim while it recharges, pulsing when it's ready
+            float glow = w != WPN_LOCATOR || specGun ? 1.0f : time_ >= locatorReady_ ? 0.85f + 0.35f * (float)std::sin(time_ * 6.0) : 0.3f;
+            for (const ModelPart& q : parts_) r_.viewBox(at + q.c * k, q.h * k, q.slot == TINT_GLOW ? q.color * glow : q.color);
         }
     }
-    r_.brightness = cfg_.brightness;
-    r_.fullbright = cfg_.fullbright;
-    r_.worldOutline = cfg_.outlineWorld;
+    sceneSettings();
     r_.drawScene(cfg_.shadows);
 }
 
 // ---------------------------------------------------------------------------
 // HUD
+
+// Tag (owner B8): every runner always knows where the tagger is - a marker over them through walls with the distance,
+// or an arrow at the screen edge pointing their way. (The server always sends the tagger's position in tag.)
+void Game::drawTaggerMarker(float W, float H, float s) {
+    const int me = net_.clientId();
+    auto ip = net_.interpolatedPlayers();
+    int it = -1;
+    for (int i = 0; i < kMaxPlayers; i++)
+        if (i != me && ip[i].valid && (ip[i].snap.flags & PS_ALIVE) && (ip[i].snap.flags & PS_HASBOMB)) it = i;
+    if (it < 0) return;
+    const Vec3 at = ip[it].snap.pos + Vec3(0, 2.25f * bodyScale(), 0), cam = r_.cameraPos();
+    const Vec3 d = at - cam;
+    const float dist = length(d);
+    const float ts = ui_.textScale(), small = std::max(1.0f, std::round(ts * 0.9f));
+    const Color red = {1, 0.25f, 0.2f, 1};
+    const float m = 28 * s;   // (kept this far inside the screen edge)
+    float sx, sy;
+    bool on = r_.project(at, sx, sy) && sx > m && sx < W - m && sy > m && sy < H - m;
+    std::string label = "TAGGER " + std::to_string((int)std::lround(dist)) + "M";
+    if (on) {   // a downward wedge over their head, their name and distance above it
+        float k = 14 * s;
+        for (int r = 0; r < 5; r++) r_.rect(sx - k * (1 - r / 5.0f), sy - k + r * k / 5, 2 * k * (1 - r / 5.0f), k / 5 + 1, red);
+        r_.text(sx - r_.textWidth(label, small) * 0.5f, sy - k - r_.textHeight(small) - 4 * s, small, label, red);
+        return;
+    }
+    // off screen (or behind): an arrow at the edge, in their direction as seen from here
+    const float yaw = r_.cameraYaw(), pitch = r_.cameraPitch();
+    Vec3 fwd = angleForward(yaw, pitch), right = normalize(cross(fwd, {0, 1, 0})), up = cross(right, fwd);
+    float x = dot(d, right), y = -dot(d, up);
+    if (dot(d, fwd) < 0 && std::fabs(x) < 1e-3f) x = 1e-3f;   // (straight behind: off to a side)
+    if (dot(d, fwd) < 0) y = std::max(y, 0.0f);                // (behind: along the bottom half)
+    float len = std::sqrt(x * x + y * y);
+    if (len < 1e-4f) return;
+    x /= len; y /= len;
+    float t = std::min((W * 0.5f - m) / std::max(1e-4f, std::fabs(x)), (H * 0.5f - m) / std::max(1e-4f, std::fabs(y)));
+    float ex = W * 0.5f + x * t, ey = H * 0.5f + y * t;
+    for (float side : {-0.65f, 0.65f})   // a chevron pointing their way: two arms of squares back from the tip
+        for (int k = 0; k < 7; k++) {
+            float c = std::cos(side), sn = std::sin(side), ax = -(x * c - y * sn), ay = -(x * sn + y * c);
+            float px = ex + ax * k * 3 * s, py = ey + ay * k * 3 * s;
+            r_.rect(px - 2.5f * s, py - 2.5f * s, 5 * s, 5 * s, red);
+        }
+    const float lw = r_.textWidth(label, small), lh = r_.textHeight(small);   // (the label just inside the arrow)
+    float lx = ex - x * (26 * s + lw * 0.5f) - lw * 0.5f, ly = ey - y * (26 * s + lh * 0.5f) - lh * 0.5f;
+    lx = clampf(lx, 4 * s, W - r_.textWidth(label, small) - 4 * s);
+    ly = clampf(ly, 4 * s, H - r_.textHeight(small) - 4 * s);
+    r_.text(lx, ly, small, label, red);
+}
+
+bool Game::rpsPicking() const {
+    if (!net_.hasSnapshot() || !(net_.mode().flags & MS_RPS) || rps_.stage != RPS_PICK || net_.playback()) return false;
+    for (auto& p : rps_.players) if (p.id == net_.clientId()) return !p.out;
+    return false;
+}
+
+// A shape as a few flat blocks in a size x size square: a rock, a sheet of paper, open scissors.
+void Game::drawRpsShape(float x, float y, float z, int shape, Color c) {
+    Color dark = {c.r * 0.45f, c.g * 0.45f, c.b * 0.45f, c.a};
+    auto R = [&](float a, float b, float w, float h, Color k) { r_.rect(x + a * z, y + b * z, w * z, h * z, k); };
+    switch (shape) {
+        case RPS_ROCK:
+            R(0.22f, 0.18f, 0.56f, 0.66f, c); R(0.12f, 0.32f, 0.76f, 0.42f, c); R(0.16f, 0.24f, 0.68f, 0.56f, c);
+            R(0.3f, 0.3f, 0.12f, 0.08f, dark); R(0.56f, 0.5f, 0.14f, 0.08f, dark); R(0.36f, 0.62f, 0.1f, 0.07f, dark);
+            break;
+        case RPS_PAPER:
+            R(0.2f, 0.1f, 0.6f, 0.8f, c); R(0.62f, 0.1f, 0.18f, 0.18f, dark);
+            for (int k = 0; k < 4; k++) R(0.3f, 0.32f + k * 0.13f, 0.4f, 0.04f, dark);
+            break;
+        case RPS_SCISSORS:
+            for (int k = 0; k <= 10; k++) {   // two blades crossing, then the handle rings
+                float t = k / 10.0f;
+                R(0.18f + t * 0.5f, 0.1f + t * 0.5f, 0.1f, 0.1f, c);
+                R(0.72f - t * 0.5f, 0.1f + t * 0.5f, 0.1f, 0.1f, c);
+            }
+            for (float hx : {0.12f, 0.6f}) {
+                R(hx, 0.66f, 0.28f, 0.06f, c); R(hx, 0.84f, 0.28f, 0.06f, c);
+                R(hx, 0.66f, 0.06f, 0.24f, c); R(hx + 0.22f, 0.66f, 0.06f, 0.24f, c);
+            }
+            break;
+        default:   // chosen but hidden: a card back; not chosen yet: an empty outline
+            if (shape == RPS_PICKED) { R(0.2f, 0.1f, 0.6f, 0.8f, dark); R(0.28f, 0.18f, 0.44f, 0.64f, c); }
+            else { R(0.2f, 0.1f, 0.6f, 0.04f, dark); R(0.2f, 0.86f, 0.6f, 0.04f, dark); R(0.2f, 0.1f, 0.04f, 0.8f, dark); R(0.76f, 0.1f, 0.04f, 0.8f, dark); }
+    }
+}
+
+// The hide and seek tiebreak: everyone tied for first, their throws (hidden until the reveal), best-of-3 wins, who's
+// out; our three choices while the throw is open.
+void Game::drawRps(float W, float H, float s) {
+    const float ts = ui_.textScale(), cx = W * 0.5f;
+    const int me = net_.clientId();
+    const int n = (int)rps_.players.size();
+    const float card = 120 * s, gap = 12 * s;
+    const Color gold = {1, 0.85f, 0.3f, 1};
+    bool in = false;   // (we're still in it)
+    for (auto& p : rps_.players) in |= p.id == me && !p.out;
+    float pw = std::min(W - 32 * s, std::max(560 * s, n * (card + gap) + 40 * s));
+    float ph = (rps_.stage == RPS_PICK ? (in ? 306 : 262) : rps_.winner >= 0 ? 292 : 262) * s;
+    float px = cx - pw * 0.5f, py = H * 0.5f - 120 * s;
+    r_.rect(px, py, pw, ph, {0.03f, 0.035f, 0.05f, 0.92f});
+    r_.rect(px, py, pw, 3 * s, gold);
+    float big = std::max(1.0f, std::round(ts * 1.4f)), mid = std::max(1.0f, std::round(ts * 0.9f)), small = std::max(1.0f, std::round(ts * 0.7f));
+    auto centered = [&](const std::string& t, float y, float k, Color c) { r_.text(cx - r_.textWidth(t, k) * 0.5f, y, k, t, c); };
+    centered("TIEBREAK - ROCK PAPER SCISSORS", py + 12 * s, big, gold);
+    std::string sub = rps_.bestOf3 ? "BEST OF 3 - FIRST TO 2 WINS THE MATCH" : "EVERYONE THROWS - THE LOSING SHAPE IS OUT";
+    sub += "   THROW " + std::to_string(std::max(1, rps_.throwNo));
+    centered(sub, py + 14 * s + r_.textHeight(big) + 6 * s, small, kGrey);
+    // the players, a card each (squeezed together when there are many)
+    float step = n > 1 ? std::min(card + gap, (pw - 20 * s - card) / (n - 1)) : 0;
+    float x0 = cx - (card + step * std::max(0, n - 1)) * 0.5f, y0 = py + 70 * s;
+    const bool reveal = rps_.stage != RPS_PICK;
+    for (int k = 0; k < n; k++) {
+        const auto& p = rps_.players[k];
+        float x = x0 + k * step;
+        bool lost = p.out, won = rps_.winner == p.id;
+        Color frame = won ? kGreenOk : lost ? Color{0.45f, 0.2f, 0.2f, 1} : p.id == me ? rgba(cfg_.colorFriendly) : Color{0.3f, 0.32f, 0.36f, 1};
+        r_.rect(x, y0, card, 150 * s, frame);
+        r_.rect(x + 2 * s, y0 + 2 * s, card - 4 * s, 150 * s - 4 * s, {0.07f, 0.08f, 0.1f, 1});
+        std::string nm = upper(net_.playerName(p.id));
+        if (nm.empty()) nm = "P" + std::to_string(p.id);
+        while (nm.size() > 3 && r_.textWidth(nm, small) > card - 12 * s) nm.pop_back();
+        r_.text(x + (card - r_.textWidth(nm, small)) * 0.5f, y0 + 8 * s, small, nm, p.id == me ? rgba(cfg_.colorFriendly) : kWhite);
+        int shape = p.shape;
+        if (!reveal && p.id == me && rpsMine_ != RPS_NONE) shape = rpsMine_;   // (our own pick, before the reveal)
+        Color sc = lost ? Color{0.5f, 0.3f, 0.3f, 1} : won ? kGreenOk : Color{0.92f, 0.9f, 0.85f, 1};
+        float icon = 64 * s;
+        drawRpsShape(x + (card - icon) * 0.5f, y0 + 30 * s, icon, shape, sc);
+        std::string st = lost ? "OUT" : reveal || (p.id == me && shape != RPS_NONE) ? rpsName(shape) : shape == RPS_NONE ? "CHOOSING..." : "READY";
+        r_.text(x + (card - r_.textWidth(st, small)) * 0.5f, y0 + 100 * s, small, st, lost ? kRed : reveal ? kWhite : shape == RPS_NONE ? kGrey : kGreenOk);
+        if (rps_.bestOf3 && !lost)   // best of 3: a pip per throw won
+            for (int w = 0; w < 2; w++) {
+                float bx = x + card * 0.5f - 15 * s + w * 18 * s;
+                r_.rect(bx, y0 + 126 * s, 12 * s, 12 * s, {0.25f, 0.27f, 0.3f, 1});
+                if (w < p.wins) r_.rect(bx + 2 * s, y0 + 128 * s, 8 * s, 8 * s, gold);
+            }
+    }
+    float y = y0 + 162 * s;
+    if (rps_.stage == RPS_PICK) {
+        float left = opts_.debugRps ? kRpsPickTime : net_.mode().timeLeft;
+        centered((in ? "CHOOSE - " : "THEY'RE CHOOSING - ") + std::to_string((int)std::ceil(left)), y, mid, kWhite);
+        if (in) {   // our three choices, on the weapon slot keys
+            float bw = 150 * s, bx = cx - (3 * bw + 2 * gap) * 0.5f, by = y + r_.textHeight(mid) + 8 * s;
+            for (int k = 0; k < 3; k++) {
+                int shape = RPS_ROCK + k;
+                bool sel = rpsMine_ == shape;
+                float x = bx + k * (bw + gap);
+                r_.rect(x, by, bw, 34 * s, sel ? gold : Color{0.3f, 0.32f, 0.36f, 1});
+                r_.rect(x + 2 * s, by + 2 * s, bw - 4 * s, 30 * s, sel ? Color{0.3f, 0.24f, 0.05f, 1} : Color{0.07f, 0.08f, 0.1f, 1});
+                std::string key = upper(inputName(binds().code[slotAction(k)][0]));
+                std::string t2 = (key.empty() ? "" : "[" + key + "] ") + rpsName(shape);
+                r_.text(x + (bw - r_.textWidth(t2, small)) * 0.5f, by + 17 * s - r_.textHeight(small) * 0.5f, small, t2, sel ? gold : kWhite);
+            }
+        }
+    } else {
+        centered(upper(rps_.result), y, mid, rps_.winner >= 0 ? kGreenOk : kWhite);
+        if (rps_.winner >= 0) centered(upper(net_.playerName(rps_.winner)) + " WINS THE MATCH", y + r_.textHeight(mid) + 8 * s, big, kGreenOk);
+    }
+}
 
 void Game::drawHud() {
     QZONE("drawHud");
@@ -1774,7 +2017,10 @@ void Game::drawHud() {
     bool teamMode = modeIsTeamBased(ms.mode);
 
     float cx = W * 0.5f, cy = H * 0.5f;
-    if (scoped_ && scopeOverlay_) {
+    // the sniper scope's mask and reticle; SCOPE OVERLAY at 0 turns them off and the normal crosshair stays (as the
+    // rifle's and crossbow's zoom do)
+    const bool scopeShown = scoped_ && scopeOverlay_ && cfg_.scopeOpacity > 0.001f;
+    if (scopeShown) {
         // circular scope mask built from horizontal strips (one batch, no texture)
         float R = H * 0.46f;
         const Color k = {0, 0, 0, cfg_.scopeOpacity}; // VISUALS > SCOPE OVERLAY
@@ -1796,6 +2042,8 @@ void Game::drawHud() {
         std::string t = "HOLD FIRE " + std::to_string((int)std::ceil(hold));
         r_.text(cx - r_.textWidth(t, big) * 0.5f, cy - 90 * s, big, t, Color{1, 0.85f, 0.3f, 1});
     }
+    if (ms.mode == MODE_TAG && (ms.phase == PHASE_FREEZE || ms.phase == PHASE_LIVE) && !(mep && (mep->flags & PS_HASBOMB)))
+        drawTaggerMarker(W, H, s);   // tag: runners (and whoever watches) always see where the tagger is
     if (isItMode(ms.mode) && ms.phase == PHASE_LIVE && mep && (mep->flags & PS_HASBOMB)) { // the locator
         float sx, sy;
         if (time_ < locateUntil_ && r_.project(locatePos_ + Vec3(0, 1.0f, 0), sx, sy)) { // through walls: a box around them
@@ -1806,8 +2054,8 @@ void Game::drawHud() {
             std::string n = net_.playerName(locateId_);
             r_.text(sx - r_.textWidth(n, ts) * 0.5f, sy - bh - r_.textHeight(ts) - 4 * s, ts, n, c);
         }
-        std::string key = inputName(binds().code[A_USE][0]);
-        std::string t = time_ >= locatorReady_ ? "LOCATOR READY - " + key : "LOCATOR " + std::to_string((int)std::ceil(locatorReady_ - time_)) + "s";
+        std::string key = upper(inputName(binds().code[net_.selfWeapon() == WPN_LOCATOR ? A_FIRE : slotAction(weaponSlot(WPN_LOCATOR))][0]));
+        std::string t = time_ >= locatorReady_ ? "LOCATOR READY" + (key.empty() ? std::string() : " - " + key) : "LOCATOR " + std::to_string((int)std::ceil(locatorReady_ - time_)) + "s";
         float lts = std::max(1.0f, std::round(ts * 0.9f));
         r_.text(cx - r_.textWidth(t, lts) * 0.5f, H - 140 * s, lts, t, time_ >= locatorReady_ ? Color{1, 0.85f, 0.2f, 1} : kGrey);
     }
@@ -1830,9 +2078,30 @@ void Game::drawHud() {
             banner(t, it ? kRed : kWhite, 92 * s);
         }
     }
-    // crosshair (scoped: the scope's reticle replaces it)
-    if (!(scoped_ && scopeOverlay_) && !paused_) drawCrosshair(cx, cy, s, time_ < hitUntil_); // menus open: no crosshair through them
-    {   // floating damage numbers above whoever you hit
+    if (opts_.debugRps && rps_.at < 0) {   // --rpsshot: made-up players, the tiebreak's panel only
+        rps_.players.clear();
+        int n = opts_.debugRps == 3 ? 4 : 2;
+        static const int shapes[4] = {RPS_ROCK, RPS_SCISSORS, RPS_ROCK, RPS_SCISSORS};
+        for (int i = 0; i < n; i++) {
+            RpsView::P p; p.id = i;
+            p.shape = opts_.debugRps == 1 ? (i == 0 ? RPS_NONE : RPS_PICKED) : shapes[i];
+            p.wins = opts_.debugRps == 2 ? (i == 0 ? 1 : 0) : 0;
+            p.out = opts_.debugRps == 3 && shapes[i] == RPS_SCISSORS;
+            rps_.players.push_back(p);
+        }
+        if (opts_.debugRps == 1) rps_.players[0].id = me;
+        rps_.stage = opts_.debugRps == 1 ? RPS_PICK : RPS_REVEAL;
+        rps_.throwNo = opts_.debugRps == 2 ? 2 : 1;
+        rps_.bestOf3 = opts_.debugRps != 3;
+        rps_.result = opts_.debugRps == 2 ? "p0's ROCK beats SCISSORS - 1-0" : opts_.debugRps == 3 ? "p1, p3 out (SCISSORS) - best of 3 between the last two" : "";
+        rps_.at = time_;
+        rpsMine_ = opts_.debugRps == 1 ? RPS_PAPER : RPS_NONE;
+    }
+    const bool rpsOn = (ms.flags & MS_RPS) || opts_.debugRps;   // (drawn over the rest of the HUD, at the end)
+    // crosshair (scoped with the overlay on: the scope's reticle replaces it)
+    if (!scopeShown && !paused_ && !rpsOn) drawCrosshair(cx, cy, s, time_ < hitUntil_); // menus open: no crosshair through them
+    if (!cfg_.dmgNums) dmgNums_.clear();   // (VISUALS > DAMAGE NUMBERS off)
+    if (!dmgNums_.empty()) {   // floating damage numbers above whoever you hit
         const auto& ip = framePlayers();
         for (size_t i = 0; i < dmgNums_.size();) {
             DmgNum& d = dmgNums_[i];
@@ -1842,7 +2111,8 @@ void Game::drawHud() {
             float sx, sy;
             if (r_.project(d.pos + Vec3(0, 2.0f + t * 0.8f, 0), sx, sy)) {
                 std::string n = std::to_string((int)std::lround(d.amount));
-                float k = std::max(1.0f, std::round(ts * (d.amount >= 40 ? 1.5f : 1.0f)));
+                // (VISUALS > SIZE: whole text steps, never below the renderer's smallest)
+                float k = std::max(1.0f, std::round(ts * (d.amount >= 40 ? 1.5f : 1.0f) * cfg_.dmgNumScale));
                 Color c = d.head ? Color{1, 0.18f, 0.15f, 1 - t / 0.9f}   // headshots red (owner 5.6), big hits gold, the rest white
                         : d.amount >= 40 ? Color{1, 0.85f, 0.2f, 1 - t / 0.9f} : Color{1, 1, 1, 1 - t / 0.9f};
                 r_.text(sx - r_.textWidth(n, k) * 0.5f, sy, k, n, c);
@@ -1850,8 +2120,8 @@ void Game::drawHud() {
             i++;
         }
     }
-    if (time_ < damageUntil_) {
-        float a = (float)(damageUntil_ - time_) / 0.25f * 0.35f;
+    if (time_ < damageUntil_ && cfg_.damageFlash > 0) {   // (VISUALS > DAMAGE FLASH: its strength, 0 = off)
+        float a = (float)(damageUntil_ - time_) / 0.25f * 0.35f * cfg_.damageFlash;
         float b = 30 * s;
         r_.rect(0, 0, W, b, {ec.r, ec.g, ec.b, a}); r_.rect(0, H - b, W, b, {ec.r, ec.g, ec.b, a});
         r_.rect(0, 0, b, H, {ec.r, ec.g, ec.b, a}); r_.rect(W - b, 0, b, H, {ec.r, ec.g, ec.b, a});
@@ -1908,11 +2178,13 @@ void Game::drawHud() {
         const Color gold = {1.0f, 0.78f, 0.25f, 1};
         r_.rect(cx - half, 8 * s, half * 2, 3 * s, gold);
         float tts = std::max(1.0f, std::round(ts * 0.5f));
-        float tw = r_.textWidth("RANKED", tts) + 12 * s; // tag on the panel's right edge, clear of the objective line
+        const char* tag = unratedServer_ ? "RANKED - NOT RATED" : "RANKED";
+        float tw = r_.textWidth(tag, tts) + 12 * s; // tag on the panel's right edge, clear of the objective line
         r_.rect(cx + half + 4 * s, 8 * s, tw, r_.textHeight(tts) + 8 * s, gold);
-        r_.text(cx + half + 10 * s, 12 * s, tts, "RANKED", {0.1f, 0.08f, 0.02f, 1});
+        r_.text(cx + half + 10 * s, 12 * s, tts, tag, {0.1f, 0.08f, 0.02f, 1});
         if (ms.phase == PHASE_WARMUP || ms.phase == PHASE_FREEZE)
             ui_.labelCentered(cx, 104 * s, "RANKED: DEFAULT MODEL, HUD, CONTROLS AND 10 MS INTERP FOR FAIRNESS", gold, 0.5f); // under the ruleset line
+        if (unratedServer_) ui_.labelCentered(cx, 118 * s, std::string(kUnratedNotice) + ": RESULTS DON'T COUNT", gold, 0.5f);
     }
     ui_.labelCentered(cx, 16 * s, title, kWhite);
     ui_.labelCentered(cx, phaseY, phase, kGrey);
@@ -2034,7 +2306,7 @@ void Game::drawHud() {
                 r_.text(bx - r_.textWidth(label, lts) - 6 * k, y - 2 * k, lts, label, f >= 1 ? kWhite : kGrey);
             };
             int cw = net_.selfWeapon();
-            bar(bcy + 40 * k, "WEAPON", (float)std::max(0.0, localNextFire_ - time_), weaponDef(cw).refire);
+            bar(bcy + 40 * k, "WEAPON", (float)std::max(0.0, (cw == WPN_LOCATOR ? locatorReady_ : localNextFire_) - time_), weaponDef(cw).refire);   // (the locator: its recharge)
             bar(bcy + 52 * k, "DASH", mv.dashCooldown, kDashCooldown * moveTuning().m[MV_DASH_COOLDOWN]);
             bar(bcy + 64 * k, "HOOK", mv.hookCooldown, kHookCooldown * moveTuning().m[MV_HOOK_COOLDOWN]);
         }
@@ -2071,13 +2343,15 @@ void Game::drawHud() {
             float sts = std::max(1.0f, std::round(ts * 0.75f * e.scale));
             for (int k = WPN_COUNT - 1; k >= 0; k--) {
                 int wi = kWeaponSlots[k];
-                std::string t = std::to_string((k + 1) % 10) + " " + weaponDef(wi).name;
-                int away = wi == WPN_KNIFE && net_.hasSnapshot() ? net_.latest().knifeAway : 0;
-                if (away > 0) t += " " + std::to_string((away + 9) / 10); // thrown: seconds until it's back
+                bool has = !ms.weaponMask || (ms.weaponMask >> wi & 1);
+                if (!weaponInMode(wi, ms.mode) || (isItMode(ms.mode) && !has)) continue;   // (hide and seek / tag: just the knife and the locator)
+                std::string t = std::to_string(weaponSlotKey(k)) + " " + weaponDef(wi).name;
+                double awayLeft = weaponAwayLeft(wi);   // a thrown knife / syringe: disabled, greyed with its timer
+                if (awayLeft > 0) t += " " + std::to_string((int)std::ceil(awayLeft - 1e-6)); // (seconds until it's back)
                 float tw = r_.textWidth(t, sts);
                 bx -= tw + 14 * s * e.scale;
-                bool inPool = (!ms.weaponMask || (ms.weaponMask >> wi & 1)) && away == 0;
-                r_.text(bx, H - 74 * s * e.scale + e.y * s, sts, t, wi == net_.selfWeapon() ? tint(Settings::HUD_SLOTS, fc) : inPool ? Color{0.85f, 0.87f, 0.9f, 0.9f} : Color{0.5f, 0.52f, 0.55f, 0.35f});
+                bool inPool = (!ms.weaponMask || (ms.weaponMask >> wi & 1)) && awayLeft <= 0;
+                r_.text(bx, H - 74 * s * e.scale + e.y * s, sts, t, wi == net_.selfWeapon() && awayLeft <= 0 ? tint(Settings::HUD_SLOTS, fc) : inPool ? Color{0.85f, 0.87f, 0.9f, 0.9f} : Color{0.5f, 0.52f, 0.55f, 0.35f});
             }
         }
     } else if (ms.phase != PHASE_ROUND_END && ms.phase != PHASE_MATCH_END) {
@@ -2142,8 +2416,16 @@ void Game::drawHud() {
             ui_.labelCentered(cx, 121 * s, upper(host_->reachStatus()), rc == Server::REACH_OK ? kGreenOk : rc == Server::REACH_BLOCKED ? kRed : kGrey, 0.6f);
             if (rc != Server::REACH_CHECKING && ui_.button(cx - 50 * s, 131 * s, 100 * s, 16 * s, "CHECK AGAIN", UiExp::state("reach"))) host_->recheckReachability();
         }
+        // C9: a ranked player dialled an address this server can't see as its own (a forwarded port, a container)
+        std::string own = host_->ownAddrHint();
+        if (!own.empty()) {
+            float oy = rc != Server::REACH_OFF ? 152 * s : 121 * s;
+            ui_.labelCentered(cx, oy, "A PLAYER JOINED VIA " + own + ", WHICH THIS PC CAN'T CONFIRM IS ITSELF: NO RANKED ID", kRed, 0.55f);
+            ui_.labelCentered(cx, oy + 11 * s, "IF THAT ADDRESS REACHES YOU, HOST A DEDICATED SERVER WITH --own-addr " + own, kGrey, 0.55f);
+        }
     }
 
+    if (rpsOn) drawRps(W, H, s);   // the hide and seek tiebreak (under the scoreboard and menus)
     showScores_ = (isDown(A_SCORES) && !chatting_) || opts_.textHeavy || ms.phase == PHASE_MATCH_END;
     // tourney: the bracket between matches / rounds and on TAB, so everyone sees who's still in
     bool showBracket = ms.mode == MODE_TOURNEY && !bracket_.empty() &&
@@ -2362,7 +2644,7 @@ std::vector<std::string> Game::consoleCandidates(const std::vector<std::string>&
         if (c == "list") { auto o = consoleWords(); o.erase(o.begin(), o.begin() + 3); return o; }
         if (c == "/team") return {"a", "b", "spec"};
         if (c == "/vote") return {"yes", "no"};
-        if (c == "/callvote") return {"edit", "ranked", "bots", "botskill", "start", "tmaps", "tmodes", "map", "mode"};
+        if (c == "/callvote") return {"edit", "ranked", "bots", "botskill", "start", "tmaps", "tmodes", "map", "mode", "spec"};
         if (c == "/map") return maps_;
         if (c == "/mode") return modes();
         if (c == "/editmode" || c == "/ranked") return onOff;
@@ -2381,6 +2663,7 @@ std::vector<std::string> Game::consoleCandidates(const std::vector<std::string>&
             if (what == "botskill") return skills();
             if (what == "map" || what == "tmaps") return maps_;
             if (what == "mode" || what == "tmodes") return modes();
+            if (what == "spec") return players();   // callvote spec <player>: to spectator until the next map
         }
         if (w.size() == 3 && what == "ranked" && w[2] == "on") return ladders();
         if (w.size() == 3 && what == "map") return modes();
@@ -2474,9 +2757,12 @@ void Game::drawChatBox(float W, float H, float s, float ts) {
     while (!chatFeed_.empty() && chatFeed_.front().until < time_ && !chatting_) chatFeed_.pop_front();
     {
     const auto& lines = chatting_ ? chatLog_ : chatFeed_;   // typing: the whole recent history
-    y = H - 110 * s - lines.size() * (r_.textHeight(ts) + 4 * s);
-    if (chatting_ && !lines.empty()) r_.rect(18 * s, y - 4 * s, 520 * s, lines.size() * (r_.textHeight(ts) + 4 * s) + 4 * s, {0, 0, 0, 0.4f});
+    size_t shown = 0;   // chat off: players' lines are hidden (server messages stay)
+    for (auto& c : lines) shown += !(c.player && cfg_.chatOff);
+    y = H - 110 * s - shown * (r_.textHeight(ts) + 4 * s);
+    if (chatting_ && shown) r_.rect(18 * s, y - 4 * s, 520 * s, shown * (r_.textHeight(ts) + 4 * s) + 4 * s, {0, 0, 0, 0.4f});
     for (auto& c : lines) {
+        if (c.player && cfg_.chatOff) continue;
         float cw = c.crown ? r_.textHeight(ts) * 1.2f : 0;
         if (c.crown) drawCrown(24 * s, y + r_.textHeight(ts) * 0.1f, cw, c.crown);
         r_.text(24 * s + (cw ? cw + 4 * s : 0), y, ts, c.text, c.color);
@@ -2705,11 +2991,12 @@ void Game::drawWidgetEditor() {
     static const std::vector<std::string> icn = {"ICON: HEART", "ICON: BOLT", "ICON: HOOK", "ICON: SKULL", "ICON: STAR", "ICON: SHIELD", "ICON: CLOCK", "ICON: EYE"};
     ui_.cycle(px, y, pw, h, "ICON", w.icon, 8, icn, UiExp::state("widgets"));
     y += h + gap;
-    ui_.slider(px, y, hw, h, "SIZE", w.size, 0.25f, 4, "%.2f", UiExp::state("widgets"));
-    ui_.slider(px + hw + gap, y, hw, h, "MAX (0=AUTO)", w.max, 0, 1000, "%.0f", UiExp::state("widgets")); w.max = std::round(w.max);
+    // (a typed number may go past a slider's end; kept within what's sane)
+    ui_.slider(px, y, hw, h, "SIZE", w.size, 0.25f, 4, "%.2f", UiExp::state("widgets")); w.size = clampf(w.size, 0.1f, 8);
+    ui_.slider(px + hw + gap, y, hw, h, "MAX (0=AUTO)", w.max, 0, 1000, "%.0f", UiExp::state("widgets")); w.max = std::max(0.0f, std::round(w.max));
     y += h + gap;
-    ui_.slider(px, y, hw, h, "BAR W", w.w, 10, 600, "%.0f", UiExp::state("widgets")); w.w = std::round(w.w);
-    ui_.slider(px + hw + gap, y, hw, h, "BAR H", w.h, 2, 60, "%.0f", UiExp::state("widgets")); w.h = std::round(w.h);
+    ui_.slider(px, y, hw, h, "BAR W", w.w, 10, 600, "%.0f", UiExp::state("widgets")); w.w = clampf(std::round(w.w), 1, 2000);
+    ui_.slider(px + hw + gap, y, hw, h, "BAR H", w.h, 2, 60, "%.0f", UiExp::state("widgets")); w.h = clampf(std::round(w.h), 1, 400);
     y += h + gap;
     auto rgba4 = [&](const char* name, Color& c) {
         ui_.label(px, y + 4 * s, name, kWhite, 0.5f);
@@ -2720,7 +3007,7 @@ void Game::drawWidgetEditor() {
         const char* nm[4] = {"R", "G", "B", "A"};
         for (int i = 0; i < 4; i++) {
             float v = *ch[i] * 255;
-            if (ui_.slider(px + i * (sw + gap), y, sw, h, nm[i], v, 0, 255, "%.0f", UiExp::state("widgets"))) *ch[i] = std::round(v) / 255;
+            if (ui_.slider(px + i * (sw + gap), y, sw, h, nm[i], v, 0, 255, "%.0f", UiExp::state("widgets"))) *ch[i] = clampf(std::round(v), 0, 255) / 255;
         }
         y += h + gap;
     };
@@ -3056,7 +3343,34 @@ void Game::drawVoteMenu(float cx, float y) {
     float w = 300 * s, h = 36 * s, gap = 8 * s, x = cx - w * 0.5f, hw = (w - gap) * 0.5f;
     const ModeState& ms = net_.mode();
     bool warmup = ms.phase == PHASE_WARMUP, ranked = ms.flags & MS_RANKED, tourney = ms.mode == MODE_TOURNEY && !ranked;
-    int rows = 3 + (warmup ? 1 : 0) + (warmup && tourney ? 1 : 0) + (ranked ? 0 : 4);
+    // move a player to spectator (until the next map): anyone in play but you, with 3+ players connected (never a 1v1)
+    std::vector<int> specable;
+    int humans = 0;
+    if (net_.hasSnapshot())
+        for (auto& p : net_.latest().players) {
+            bool bot = net_.playerName(p.id).rfind("BOT ", 0) == 0;
+            humans += !bot;
+            if (!bot && p.id != net_.clientId() && p.team() != TEAM_SPECTATOR) specable.push_back(p.id);
+        }
+    bool canSpec = !ranked && humans >= 3 && !specable.empty();
+    if (specPick_ && canSpec) {
+        const int n = (int)specable.size(), cols = (n + 9) / 10, rowsN = (n + cols - 1) / cols;   // (up to 10 a column: a full server fits)
+        const float tw = cols * w + (cols - 1) * gap, tx = cx - tw * 0.5f;
+        ui_.panel(tx - 16 * s, y - 16 * s, tw + 32 * s, (rowsN + 1) * (h + gap) + 40 * s);
+        ui_.labelCentered(cx, y, "VOTE: MOVE TO SPECTATOR (UNTIL THE NEXT MAP)");
+        y += 30 * s;
+        for (int k = 0; k < n; k++) {
+            if (ui_.button(tx + (k / rowsN) * (w + gap), y + (k % rowsN) * (h + gap), w, h, upper(net_.playerName(specable[k])), UiExp::cmd("callvote spec").withId("PLAYER"))) {
+                net_.sendCommand("callvote spec " + std::to_string(specable[k]));   // (by id: names can be alike)
+                specPick_ = voteMenu_ = paused_ = false;
+            }
+        }
+        y += rowsN * (h + gap);
+        if (ui_.button(x, y, w, h, "BACK", UiExp::nav("ingame/pause/vote"))) specPick_ = false;
+        return;
+    }
+    specPick_ = false;
+    int rows = 3 + (warmup ? 1 : 0) + (warmup && tourney ? 1 : 0) + (ranked ? 0 : 4) + (canSpec ? 1 : 0);
     ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, rows * (h + gap) + 40 * s);
     ui_.labelCentered(cx, y, "CALL A VOTE");
     y += 30 * s;
@@ -3079,6 +3393,10 @@ void Game::drawVoteMenu(float cx, float y) {
     if (!ranked) { // edit the map together; on a normal server the changes last until the map changes
         voteBtn(x, w, "EDIT THE MAP TOGETHER", "callvote edit on");
         y += h + gap;
+        if (canSpec) {
+            if (ui_.button(x, y, w, h, "MOVE A PLAYER TO SPECTATOR", UiExp::nav("ingame/pause/vote/spec"))) specPick_ = true;
+            y += h + gap;
+        }
         voteBtn(x, hw, "BOTS ON", "callvote bots on");
         voteBtn(x + hw + gap, hw, "BOTS OFF", "callvote bots off");
         y += h + gap;
@@ -3197,6 +3515,7 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     y += h + gap;
     {   // sensitivity, or the same thing as cm per 360 at your mouse DPI (drag either)
         ui_.slider(x, y, w, h, "SENSITIVITY", cfg_.sensitivity, 0.1f, 10.0f, "%.2f", UiExp::cfg("sensitivity"));
+        cfg_.sensitivity = clampf(cfg_.sensitivity, 0.01f, 50.0f);   // (typed: quark.cfg's range)
         y += h + gap;
         float cw = w * 0.6f, dw = w - cw - gap;
         // counts per 360 = 360 / (sens * 0.022); cm = counts / dpi * 2.54
@@ -3214,6 +3533,7 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     }
     y += h + gap;
     ui_.slider(x, y, w, h, "FOV", cfg_.fov, 70, 130, "%.0f", UiExp::cfg("fov"));
+    cfg_.fov = clampf(cfg_.fov, 60, 140);   // (typed: quark.cfg's range)
     y += h + gap;
     auto colorRow = [&](const char* label, Vec3& c, const char* key) {
         ui_.label(x, y + 4 * s, label);
@@ -3223,7 +3543,7 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
         const char* ch[3] = {"R", "G", "B"};
         for (int i = 0; i < 3; i++) {
             float v = c[i] * 255.0f;
-            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f", UiExp::cfg(key))) c[i] = std::round(v) / 255.0f;
+            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f", UiExp::cfg(key))) c[i] = clampf(std::round(v), 0, 255) / 255.0f;
         }
         y += h + gap;
     };
@@ -3253,13 +3573,16 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
         y += h + gap;
         // outline widths (pixels): players' models and the map's edges; 0 = none
         float hw = (w - gap) * 0.5f;
-        ui_.slider(x, y, hw, h, "PLAYER OUTLINE", cfg_.outlinePlayer, 0, 4, "%.1f", UiExp::cfg("outline_player_width"));
-        ui_.slider(x + hw + gap, y, hw, h, "WORLD OUTLINE", cfg_.outlineWorld, 0, 4, "%.1f", UiExp::cfg("outline_world_width"));
-        cfg_.outlinePlayer = std::round(clampf(cfg_.outlinePlayer, 0, 6) * 4) / 4;
-        cfg_.outlineWorld = std::round(clampf(cfg_.outlineWorld, 0, 6) * 4) / 4;
+        // (dragged: quarter pixels; typed: as typed, up to 6)
+        if (ui_.slider(x, y, hw, h, "PLAYER OUTLINE", cfg_.outlinePlayer, 0, 4, "%.2f", UiExp::cfg("outline_player_width")) && !ui_.typed())
+            cfg_.outlinePlayer = std::round(cfg_.outlinePlayer * 4) / 4;
+        if (ui_.slider(x + hw + gap, y, hw, h, "WORLD OUTLINE", cfg_.outlineWorld, 0, 4, "%.2f", UiExp::cfg("outline_world_width")) && !ui_.typed())
+            cfg_.outlineWorld = std::round(cfg_.outlineWorld * 4) / 4;
+        cfg_.outlinePlayer = clampf(cfg_.outlinePlayer, 0, 6);
+        cfg_.outlineWorld = clampf(cfg_.outlineWorld, 0, 6);
         y += h + gap;
     }
-    if (ui_.slider(x, y, w * 0.6f, h, "VOLUME", cfg_.volume, 0, 1, "%.2f", UiExp::cfg("volume"))) audio_.setMasterVolume(cfg_.volume);
+    if (ui_.slider(x, y, w * 0.6f, h, "VOLUME", cfg_.volume, 0, 1, "%.2f", UiExp::cfg("volume"))) audio_.setMasterVolume(cfg_.volume = clampf(cfg_.volume, 0, 1));
     ui_.toggle(x + w * 0.6f + gap, y, w * 0.4f - gap, h, "HITSOUND", cfg_.hitsounds, UiExp::cfg("hitsounds"));
     y += h + gap;
     {
@@ -3303,6 +3626,7 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     ui_.toggle(xr, y, w, h, "PLAYER SHADOWS", cfg_.shadows, UiExp::cfg("shadows"));
     y += h + gap;
     ui_.slider(xr, y, w, h, "BRIGHTNESS", cfg_.brightness, 0.6f, 1.8f, "%.2f", UiExp::cfg("brightness"));
+    cfg_.brightness = clampf(cfg_.brightness, 0.6f, 1.8f);   // (typed: quark.cfg's range)
     y += h + gap;
     static const int aaModes[] = {0, 1, 2, 4};
     static const std::vector<std::string> aaNames = {"ANTI-ALIASING OFF", "SMOOTH EDGES (CHEAP)", "MSAA 2X", "MSAA 4X"};
@@ -3319,7 +3643,7 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
             y += h + gap;
             float v = (float)cfg_.interpMs;
             ui_.slider(xr, y, w, h, "INTERP DELAY (MS)", v, 1, (float)kMaxInterpMs, "%.0f", UiExp::cfg("interp_ms"));
-            cfg_.interpMs = std::max(1, (int)std::lround(v));
+            cfg_.interpMs = std::min(std::max(1, (int)std::lround(v)), kMaxInterpMs);
         }
         y += h + gap;
     }
@@ -3517,7 +3841,9 @@ void Game::drawMenu() {
                                       UiExp::nav("host/picker:modes").withId("MODE"))) picker_ = PICK_HOST_MODE;
                 y += bh + gap;
                 if (cfg_.hostRanked) {
-                    ui_.label(lx, y, "RANKED MAPS ONLY - EACH LADDER HAS ITS OWN RATING", kGrey, 0.5f);
+                    if (isTestingVersion(QUARK_VERSION))   // (a testing build hosts ranked unrated: Server::rated)
+                        ui_.label(lx, y, "TESTING BUILD - RANKED NOT RATED (PLAYED, NEVER COUNTED)", {1.0f, 0.78f, 0.25f, 1}, 0.5f);
+                    else ui_.label(lx, y, "RANKED MAPS ONLY - EACH LADDER HAS ITS OWN RATING", kGrey, 0.5f);
                     ui_.label(lx, y + 12 * s, "FAIRNESS: DEFAULT MODEL, HUD, CONTROLS, 10 MS INTERP", kGrey, 0.5f);
                 }
                 else if (!built) ui_.label(lx, y, "NOT BUILT FOR THIS MODE - IT MAY NOT WORK", kRed);
@@ -3530,7 +3856,7 @@ void Game::drawMenu() {
             ui_.textField(4, lx, y, lw * 0.4f, bh, hostPortStr_, 5, UiExp::local().withId("UDP PORT"));
             float mp = (float)cfg_.hostMaxPlayers;
             if (ui_.slider(lx + lw * 0.45f, y, lw * 0.55f, bh, "MAX PLAYERS", mp, 2, (float)kMaxPlayers, "%.0f", UiExp::cfg("host_max")))
-                cfg_.hostMaxPlayers = (int)std::round(mp);
+                cfg_.hostMaxPlayers = std::min(std::max((int)std::round(mp), 2), kMaxPlayers);
             y += bh + gap;
             ui_.toggle(lx, y, lw, bh, "AUTO PORT FORWARD (UPNP)", cfg_.hostUpnp, UiExp::cfg("host_upnp"));
             y += bh + gap;
@@ -3575,9 +3901,9 @@ void Game::drawMenu() {
             y += bh + gap;
             bool teams = modeIsTeamBased(cfg_.botMode);
             float ne = (float)cfg_.botEnemies, na = (float)cfg_.botAllies;
-            if (ui_.slider(lx, y, lw, bh, teams ? "ENEMY BOTS" : "BOTS", ne, 1, 7, "%.0f", UiExp::cfg("bot_enemies"))) cfg_.botEnemies = (int)std::round(ne);
+            if (ui_.slider(lx, y, lw, bh, teams ? "ENEMY BOTS" : "BOTS", ne, 1, 7, "%.0f", UiExp::cfg("bot_enemies"))) cfg_.botEnemies = std::min(std::max((int)std::round(ne), 1), 7);
             y += bh + gap;
-            if (teams && ui_.slider(lx, y, lw, bh, "TEAMMATE BOTS", na, 0, 3, "%.0f", UiExp::cfg("bot_allies"))) cfg_.botAllies = (int)std::round(na);
+            if (teams && ui_.slider(lx, y, lw, bh, "TEAMMATE BOTS", na, 0, 3, "%.0f", UiExp::cfg("bot_allies"))) cfg_.botAllies = std::min(std::max((int)std::round(na), 0), 3);
             y += bh + gap * 2;
             if (ui_.button(lx, y, lw * 0.5f - 5 * s, bh, "START", UiExp::state("hosting", "1"))) startHost(true);
             if (ui_.button(lx + lw * 0.5f + 5 * s, y, lw * 0.5f - 5 * s, bh, "BACK", UiExp::nav("main"))) { cfg_.save(); setScreen(Screen::Main); }
@@ -3633,11 +3959,13 @@ void Game::drawCustomModeEditor(float cx, float y) {
         y += bh + gap;
         float hp = (float)r.health;
         const UiExp ce = UiExp::state("custom");
-        ui_.slider(x, y, hw, bh, "HEALTH", hp, 1, 500, "%.0f", ce); r.health = (int)std::lround(hp);
+        // (a typed value is kept as typed, within the custom mode file's ranges - CustomRules::fromText)
+        ui_.slider(x, y, hw, bh, "HEALTH", hp, 1, 500, "%.0f", ce); r.health = std::min(std::max((int)std::lround(hp), 1), 1000);
         ui_.slider(x + hw + gap, y, hw, bh, stdTo("GRAVITY", moveBaseGravity(), r.gravity, "m/s2"), r.gravity, 0.1f, 3, "%.2fx", ce.withId("GRAVITY")); y += bh + gap;
         ui_.slider(x, y, hw, bh, stdTo("RUN SPEED", moveBaseSpeed(), r.moveSpeed, "m/s"), r.moveSpeed, 0.25f, 3, "%.2fx", ce.withId("RUN SPEED"));
         ui_.slider(x + hw + gap, y, hw, bh, stdTo("JUMP", moveBaseJump(), r.jump, "m/s"), r.jump, 0.25f, 3, "%.2fx", ce.withId("JUMP")); y += bh + gap;
         ui_.slider(x, y, hw, bh, "KNOCKBACK", r.knockback, 0, 5, "%.2fx", ce); y += bh + gap;
+        r.gravity = clampf(r.gravity, 0.1f, 3); r.moveSpeed = clampf(r.moveSpeed, 0.25f, 3); r.jump = clampf(r.jump, 0.25f, 3); r.knockback = clampf(r.knockback, 0, 5);
         ui_.toggle(x, y, hw, bh, "DASH", r.dash, ce);
         ui_.toggle(x + hw + gap, y, hw, bh, "GRAPPLE", r.grapple, ce); y += bh + gap;
         ui_.toggle(x, y, hw, bh, "SELF DAMAGE", r.selfDamage, ce);
@@ -3645,9 +3973,10 @@ void Game::drawCustomModeEditor(float cx, float y) {
         ui_.toggle(x, y, hw, bh, "VAMPIRE", r.vampire, ce);
         ui_.toggle(x + hw + gap, y, hw, bh, "REGEN", r.regen, ce); y += bh + gap;
         float tl = (float)r.timeLimit, sl = (float)r.scoreLimit, rw = (float)r.roundsToWin;
-        ui_.slider(x, y, hw, bh, "TIME (S, 0=DEFAULT)", tl, 0, 3600, "%.0f", ce); r.timeLimit = (int)std::lround(tl / 30) * 30;
-        ui_.slider(x + hw + gap, y, hw, bh, "SCORE (0=DEFAULT)", sl, 0, 200, "%.0f", ce); r.scoreLimit = (int)std::lround(sl); y += bh + gap;
-        ui_.slider(x, y, hw, bh, "ROUNDS (0=DEFAULT)", rw, 0, 15, "%.0f", ce); r.roundsToWin = (int)std::lround(rw); y += bh + gap;
+        // (dragged: half minutes; typed: any whole second)
+        if (ui_.slider(x, y, hw, bh, "TIME (S, 0=DEFAULT)", tl, 0, 3600, "%.0f", ce)) r.timeLimit = std::min(std::max((int)std::lround(ui_.typed() ? tl : std::round(tl / 30) * 30), 0), 3600);
+        ui_.slider(x + hw + gap, y, hw, bh, "SCORE (0=DEFAULT)", sl, 0, 200, "%.0f", ce); r.scoreLimit = std::min(std::max((int)std::lround(sl), 0), 10000); y += bh + gap;
+        ui_.slider(x, y, hw, bh, "ROUNDS (0=DEFAULT)", rw, 0, 15, "%.0f", ce); r.roundsToWin = std::min(std::max((int)std::lround(rw), 0), 50); y += bh + gap;
     } else if (customTab_ == 3) {   // every movement constant, x its normal value (gravity / speed / jump are on GENERAL)
         ui_.label(x, y, "EVERY MOVEMENT SETTING: STANDARD -> THIS MODE (THE SLIDER IS THE MULTIPLIER, 1.00X = STANDARD)", kGrey, 0.5f);
         y += 16 * s;
@@ -3665,7 +3994,8 @@ void Game::drawCustomModeEditor(float cx, float y) {
         for (int k = 0; k < MV_COUNT; k++) {
             float cx2 = gx + (k % cols) * (cw + gap), cy2 = y + (k / cols) * (rh + gap);
             if (ui_.slider(cx2, cy2, cw, rh, stdTo(moveParamLabel(k), moveParamBase(k), r.move[k], moveParamUnit(k)), r.move[k], 0.1f, 5, "%.2fx",
-                           UiExp::state("custom").withId(moveParamLabel(k)))) r.move[k] = std::round(r.move[k] * 20) / 20;
+                           UiExp::state("custom").withId(moveParamLabel(k))))   // (dragged: 0.05 steps; typed: as typed)
+                r.move[k] = clampf(ui_.typed() ? r.move[k] : std::round(r.move[k] * 20) / 20, 0.1f, 5);
         }
         y += rows * (rh + gap);
         bool standard = std::all_of(std::begin(r.move), std::end(r.move), [](float v) { return v == 1; });
@@ -3675,6 +4005,7 @@ void Game::drawCustomModeEditor(float cx, float y) {
         float sw = (gw - 130 * s - 3 * gap) / 3;
         for (int i = 0; i < WPN_COUNT; i++) {
             int wp = kWeaponSlots[i];
+            if (wp == WPN_LOCATOR) continue;   // (hide and seek / tag only, always "it"'s: not a pick)
             bool on = r.weapons == 0 || (r.weapons >> wp & 1);
             bool onlyOne = r.weapons == (1u << wp);   // (the last one on stays on)
             if (ui_.toggle(gx, y, 124 * s, bh, upper(baseWeaponDef(wp).name), on, onlyOne ? UiExp::inert() : UiExp::state("custom"))) {
@@ -3689,27 +4020,34 @@ void Game::drawCustomModeEditor(float cx, float y) {
             ui_.slider(fx + sw + gap, y, sw, bh, stdTo("DMG", bd.damage, r.damage[wp]), r.damage[wp], 0.1f, 5, "%.2fx", UiExp::state("custom").withId("DMG"));
             ui_.slider(fx + 2 * (sw + gap), y, sw, bh, (bd.projSpeed > 0 ? stdTo("SPEED", bd.projSpeed, r.projSpeed[wp], "m/s") : std::string("SPEED: HITSCAN")), r.projSpeed[wp], 0.25f, 4, "%.2fx",
                        UiExp::state("custom").withId("SPEED"));
+            r.fireRate[wp] = clampf(r.fireRate[wp], 0.1f, 10); r.damage[wp] = clampf(r.damage[wp], 0, 10); r.projSpeed[wp] = clampf(r.projSpeed[wp], 0.1f, 5);
             y += bh + gap;
         }
     } else {
         ui_.label(x, y, "MAP POOL (ROTATES EACH MATCH; NONE = HOST'S MAP)", Color{0.7f, 0.7f, 0.7f, 1}, 0.8f);
         y += 24 * s;
         int n = 0;
-        for (size_t i = 0; i < maps_.size() && i < mapInfo_.size(); i++) n += mapInfo_[i].modes >> r.baseMode & 1;
-        // as many columns as fit above SAVE / BACK (more maps: more, narrower columns, never off the bottom)
-        int cols = Ui::fitColumns(n, r_.height() - y - 80 * s, bh + gap, 2);
+        float widest = 0;
+        for (size_t i = 0; i < maps_.size() && i < mapInfo_.size(); i++)
+            if (mapInfo_[i].modes >> r.baseMode & 1) { n++; widest = std::max(widest, r_.textWidth(upper(maps_[i]) + ": OFF", Renderer::kMinTextScale)); }
+        // as many columns as fit above SAVE / BACK, but never so narrow a name is cut off (with many of your own maps:
+        // lower rows instead, never off the bottom)
+        const float avail = r_.height() - y - 80 * s;
+        int maxCols = std::max(2, std::min(6, (int)((w + gap) / (widest + 8 * s + gap))));
+        int cols = Ui::fitColumns(n, avail, bh + gap, 2, maxCols), rows = std::max(1, (n + cols - 1) / cols);
+        const float rh = std::max(18 * s, std::min(bh, avail / rows - gap));
         float cw = (w - (cols - 1) * gap) / cols;
         int k = 0;
         for (size_t i = 0; i < maps_.size() && i < mapInfo_.size(); i++) {
             if (!(mapInfo_[i].modes >> r.baseMode & 1)) continue;
             auto it = std::find(r.maps.begin(), r.maps.end(), maps_[i]);
             bool on = it != r.maps.end();
-            if (ui_.toggle(x + (k % cols) * (cw + gap), y + (k / cols) * (bh + gap), cw, bh, upper(maps_[i]), on, UiExp::state("custom"))) {
+            if (ui_.toggle(x + (k % cols) * (cw + gap), y + (k / cols) * (rh + gap), cw, rh, upper(maps_[i]), on, UiExp::state("custom"))) {
                 if (on) r.maps.push_back(maps_[i]); else r.maps.erase(it);
             }
             k++;
         }
-        y += ((n + cols - 1) / cols) * (bh + gap) - gap;
+        y += rows * (rh + gap) - gap;
         // drop maps that no longer support the mode
         r.maps.erase(std::remove_if(r.maps.begin(), r.maps.end(), [&](const std::string& n) {
             for (size_t i = 0; i < maps_.size() && i < mapInfo_.size(); i++) if (maps_[i] == n) return !(mapInfo_[i].modes >> r.baseMode & 1);
@@ -3751,8 +4089,9 @@ static const char* const kInfoPages[][48] = {
         "# EVERYONE FOR THEMSELVES",
         "FREE FOR ALL - most kills when time runs out wins (a tie goes to overtime: next kill wins).",
         "RACE - the course's checkpoints in order. It starts as untimed practice; vote start (F4) to race. TIME TRIAL (main menu) is the ranked race on Viaduct.",
-        "HIDE AND SEEK - one seeker with a knife, everyone else hides first. Seekers take turns.",
+        "HIDE AND SEEK - one seeker with a knife, everyone else hides first. Everyone seeks once: 1 point for each hider you find, 1 for staying hidden to the end of a round. A tie for first is settled by rock paper scissors (keys 1 / 2 / 3).",
         "TAG - whoever is the TAGGER when the timer runs out is eliminated. Last one standing wins.",
+        "LOCATOR (hide and seek and tag: the seeker's / tagger's second weapon, key 0) - fire it to see one random hider / runner through walls for a second; it recharges in 5 s.",
         "# CUSTOM MODES",
         "Host Game > CUSTOM MODE > NEW: any base mode with your own health, gravity, speed, jump, knockback, weapons (fire rate, damage, projectile speed) and map pool. Players who join get the rules automatically.",
         "# MAPS AND MODES",
@@ -3771,7 +4110,8 @@ static const char* const kInfoPages[][48] = {
         "Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping.",
         "You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb.",
         "# WEAPONS",
-        "ROCKET (splash; rocket jump off the floor for 10% damage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you; alt throws it: +30 hp and reset cooldowns for a teammate).",
+        "ROCKET (splash; rocket jump off the floor for 10% damage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).",
+        "A thrown knife or syringe is gone for 4 s (greyed out in the weapon list, with its timer).",
         "Switching weapons with fire held doesn't fire the new one: let go and press again.",
         "# CONTROL PROFILES",
         "Settings > CONTROLS can export your binds and import someone else's (copy / paste the text).",
@@ -3793,6 +4133,7 @@ static const char* const kInfoPages[][48] = {
         "# HOST A GAME (main menu > HOST GAME)",
         "Pick the mode and map, a server name and the max players. The game picks the map built for the mode; any other map works with a warning.",
         "The server listens on UDP port 27500 (change it under UDP PORT). Quark asks your router to forward it automatically (UPnP); if friends can't connect, forward that UDP port on your router by hand.",
+        "RANKED BEHIND A FORWARDED PORT OR IN A CONTAINER: ranked ids are signed for the address players dial. If they reach the server at an address it can't see itself (the router forwards another port to it, or it runs in a container), the host screen says so; start a dedicated server with --own-addr host:port (that address) so their ranked ids work.",
         "PUBLIC lists the server on the internet server list (off: friends join with your IP, shown on the host screen). Games on your network show up for everyone on it.",
         "BALANCE BOTS evens out uneven teams with bots. MODE > RANKED runs rated 1v1 on the ranked maps (no bots). SERVER LOG keeps a log of the match.",
         "CUSTOM MODE: pick one of your saved custom modes (or NEW / EDIT to build one).",
@@ -3858,12 +4199,20 @@ void Game::drawDemos(float cx, float y) {
     if (time_ >= demoListAt_) { // rescan now and then (a demo you just recorded shows up)
         demoListAt_ = time_ + 2;
         demoFiles_.clear();
+        demoNotes_.clear();
         std::error_code ec;
         std::vector<std::pair<std::filesystem::file_time_type, std::string>> fs;
         for (auto& e : std::filesystem::directory_iterator(demoDir(), ec))
             if (e.path().extension() == ".qdemo") fs.push_back({e.last_write_time(ec), e.path().string()});
         std::sort(fs.begin(), fs.end(), [](auto& a, auto& b) { return a.first > b.first; });
-        for (auto& f : fs) demoFiles_.push_back(f.second);
+        for (auto& f : fs) {
+            demoFiles_.push_back(f.second);
+            uint16_t proto = kProtocolVersion;   // (6 bytes per file every 2 s, only while this page is open)
+            std::string note;
+            if (demo::readProtocol(f.second, &proto) && proto != kProtocolVersion)
+                note = demo::upgradeRunning() && demo::convertible(proto) ? "CONVERTING..." : "RECORDED WITH " + upper(demo::recordedWith(proto));
+            demoNotes_.push_back(note);
+        }
     }
     // as many rows as fit above the rate row and BACK; the wheel scrolls the rest
     int fitRows = std::max(3, (int)(((float)r_.height() - y - 4 * (h + gap) - 60 * s) / (h + gap)));
@@ -3881,6 +4230,7 @@ void Game::drawDemos(float cx, float y) {
         int i = demoScroll_ + k;
         std::string name = std::filesystem::path(demoFiles_[i]).stem().string();
         for (auto& c : name) c = c == '_' ? ' ' : (char)toupper((unsigned char)c);
+        if (i < (int)demoNotes_.size() && !demoNotes_[i].empty()) name += " (" + demoNotes_[i] + ")";
         if (ui_.button(x, y, w, h, name, UiExp::state("demo", "1").withId("DEMO"))) { playDemo(demoFiles_[i]); return; }
     }
     if (nd > rows) {
@@ -3981,8 +4331,20 @@ void Game::drawPerf() {
     r_.text(8, 8 + lh * 2, ts, tick, {1, 1, 0.4f, 1});
 }
 
+// the world's look from the settings (the game, the menu's background, the editor: all the same world shader)
+void Game::sceneSettings() {
+    r_.brightness = cfg_.brightness;
+    r_.fullbright = cfg_.fullbright;
+    r_.fullbrightColor = cfg_.fullbrightColor;
+    r_.worldOutline = cfg_.outlineWorld;
+}
+
 float Game::viewFov() const {
-    return scoped_ ? weaponDef(net_.selfWeapon()).zoomFov : cfg_.fov;
+    if (!scoped_) return cfg_.fov;
+    // the sniper's and rifle's zoom: VISUALS > ZOOM FOV (never wider than the normal fov); the rest: their own
+    int w = net_.selfWeapon();
+    if (w == WPN_SNIPER || w == WPN_RIFLE) return std::min(w == WPN_SNIPER ? cfg_.zoomFovSniper : cfg_.zoomFovRifle, cfg_.fov);
+    return weaponDef(w).zoomFov;
 }
 
 // ---------------------------------------------------------------------------
@@ -4346,6 +4708,30 @@ void Game::drawKnifeSlash(const Vec3& eye, float yaw, float pitch, float t, cons
     r_.box(tip, {0.05f, 0.05f, 0.05f}, yaw, color * 1.5f, 1.0f, false);
 }
 
+void Game::drawHeldWeapon(int i, int w, const Vec3& shoulder, float yaw, float pitch, float bs, const Vec3& accent, float sv) {
+    if (w < 0 || w >= WPN_COUNT) w = WPN_KNIFE;
+    float sw = (float)(time_ - knifeSlash_[i]) / 0.18f;   // a knife swing: the hand chops down and back up
+    if (w == WPN_KNIFE && knifeSlash_[i] > 0 && sw < 1) pitch -= 0.7f * std::sin(sw * 3.14159f);
+    r_.boxPitched(shoulder, Vec3(0, 0, -0.22f) * bs, Vec3(0.055f, 0.06f, 0.22f) * bs, yaw, pitch, {0.12f, 0.12f, 0.14f}, sv);   // the arm
+    const Vec3 hand = Vec3(0, 0.02f, -0.5f) * bs;
+    const float k = 2.0f * bs;   // the viewmodel's boxes at world size (a held weapon reads at a distance)
+    ModelPalette pal;
+    pal.c[TINT_METAL] = viewmodelMetal(r_.metalColor);
+    pal.c[TINT_BASE] = {0.85f, 0.88f, 0.92f};   // bright steel (a blade has to read from across a room, on any map)
+    pal.c[TINT_TEAM] = accent;
+    pal.c[TINT_GLOW] = r_.glowColor;
+    if (const ModelMesh* ov = modelOverride(MODEL_WEAPON, w)) {   // the owner's model (docs/ASSETS.md)
+        Vec3 tint[TINT_COUNT];
+        overrideTints(MODEL_WEAPON, pal, tint);
+        Mat4 sc;
+        sc.m[0] = sc.m[5] = sc.m[10] = k;
+        r_.mesh(*ov, Mat4::translate(shoulder) * Mat4::rotY(yaw) * Mat4::rotX(pitch) * Mat4::translate(hand) * sc, tint, sv, true);
+        return;
+    }
+    viewmodelParts(w, pal, parts_);
+    for (const ModelPart& q : parts_) r_.boxPitched(shoulder, hand + q.c * k, q.h * k, yaw, pitch, q.color, sv);
+}
+
 void Game::drawBracket() {
     float s = ui_.s(), W = (float)r_.width(), H = (float)r_.height();
     int nr = (int)bracket_.size();
@@ -4422,9 +4808,23 @@ void Game::drawVisualSettings(float x0, float y0, float wTotal) {
     float s = ui_.s();
     float h = 32 * s, gap = 7 * s;
     float w = std::max(360 * s, wTotal * 0.5f);
-    float x = x0 + wTotal * 0.5f - w * 0.5f, y = y0;
-    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, 10 * (h + gap) + 48 * s);
-    ui_.toggle(x, y, w, h, "FULLBRIGHT (FLAT WHITE MAP)", cfg_.fullbright, UiExp::cfg("fullbright")); y += h + gap;
+    const float ph = (cfg_.fullbright ? 16 : 15) * (h + gap) + 48 * s;
+    float x = x0 + wTotal * 0.5f - w * 0.5f, y = std::max(24 * s, std::min(y0, (float)r_.height() - ph + 8 * s));   // (bottom on screen)
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, ph);
+    ui_.toggle(x, y, w, h, "FULLBRIGHT (FLAT MAP, NO LIGHTING)", cfg_.fullbright, UiExp::cfg("fullbright")); y += h + gap;
+    if (cfg_.fullbright) {   // its colour: R G B (like the team colours), a swatch, RESET to white
+        float rw = 74 * s, sww = 40 * s, sw = (w - rw - sww - 4 * gap) / 3;
+        const char* ch[3] = {"MAP R", "MAP G", "MAP B"};
+        Vec3& c = cfg_.fullbrightColor;
+        for (int i = 0; i < 3; i++) {
+            float v = c[i] * 255.0f;
+            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f", UiExp::cfg("fullbright_color"))) c[i] = clampf(std::round(v), 0, 255) / 255.0f;
+        }
+        r_.rect(x + 3 * (sw + gap), y, sww, h, rgba(c));
+        bool white = c.x == 1 && c.y == 1 && c.z == 1;
+        if (ui_.button(x + w - rw, y, rw, h, "RESET", UiExp::cfg("fullbright_color").withId("RESET MAP COLOR"), !white)) c = {1, 1, 1};
+        y += h + gap;
+    }
     static const std::vector<std::string> own = {"YOUR SHOTS: WITH THE WEAPON MODEL", "YOUR SHOTS: ALWAYS", "YOUR SHOTS: NEVER"};
     ui_.cycle(x, y, w, h, "YOUR SHOTS", cfg_.ownShots, 3, own, UiExp::cfg("own_shots")); y += h + gap;
     ui_.toggle(x, y, w, h, "OTHER PLAYERS' TRACERS / BEAMS", cfg_.enemyShots, UiExp::cfg("enemy_shots")); y += h + gap;
@@ -4436,8 +4836,36 @@ void Game::drawVisualSettings(float x0, float y0, float wTotal) {
         y += h + gap;
     }
     ui_.slider(x, y, w, h, "SCOPE OVERLAY", cfg_.scopeOpacity, 0, 1, "%.2f", UiExp::cfg("scope_opacity")); y += h + gap;
+    cfg_.scopeOpacity = clampf(cfg_.scopeOpacity, 0, 1);
+    {   // the sniper's and rifle's alt-fire zoom (degrees, as FOV; the standard zoom in the label). Client-side only.
+        float hw = (w - gap) * 0.5f;
+        static const std::string sl = "SNIPER ZOOM FOV (STD " + std::to_string((int)baseWeaponDef(WPN_SNIPER).zoomFov) + ")",
+                                 rl = "RIFLE ZOOM FOV (STD " + std::to_string((int)baseWeaponDef(WPN_RIFLE).zoomFov) + ")";
+        ui_.slider(x, y, hw, h, sl, cfg_.zoomFovSniper, 10, 90, "%.0f", UiExp::cfg("zoom_fov_sniper"));
+        ui_.slider(x + hw + gap, y, hw, h, rl, cfg_.zoomFovRifle, 10, 90, "%.0f", UiExp::cfg("zoom_fov_rifle"));
+        cfg_.zoomFovSniper = clampf(cfg_.zoomFovSniper, 10, 140);   // (typed: quark.cfg's range; used up to the normal FOV)
+        cfg_.zoomFovRifle = clampf(cfg_.zoomFovRifle, 10, 140);
+        y += h + gap;
+    }
     ui_.toggle(x, y, w, h, "STICKY COUNTER", cfg_.stickyCounter, UiExp::cfg("sticky_counter")); y += h + gap;
     ui_.toggle(x, y, w, h, "WINNERS CROWN", cfg_.crowns, UiExp::cfg("crowns")); y += h + gap;
+    if (ui_.toggle(x, y, w, h, "DISABLE CHAT (HIDE PLAYERS' MESSAGES)", cfg_.chatOff, UiExp::cfg("chat_off")) && cfg_.chatOff) for (auto& t : typingUntil_) t = 0;
+    y += h + gap;
+    {   // damage numbers: on / off, and their size, with a sample of the number at that size
+        float tw = w * 0.42f, sw = w - tw - gap;
+        ui_.toggle(x, y, tw, h, "DAMAGE NUMBERS", cfg_.dmgNums, UiExp::cfg("dmg_nums"));
+        if (ui_.slider(x + tw + gap, y, sw - 56 * s, h, "SIZE", cfg_.dmgNumScale, 0.5f, 3.0f, "%.2f", UiExp::cfg("dmg_num_scale")) && !ui_.typed())
+            cfg_.dmgNumScale = std::round(cfg_.dmgNumScale * 20) / 20;   // (dragged: 0.05 steps; typed: as typed)
+        cfg_.dmgNumScale = clampf(cfg_.dmgNumScale, 0.5f, 3.0f);
+        float k = std::max(1.0f, std::round(ui_.textScale() * cfg_.dmgNumScale));
+        r_.rect(x + w - 50 * s, y, 50 * s, h, {0.42f, 0.43f, 0.45f, 1});
+        if (cfg_.dmgNums) r_.text(x + w - 25 * s - r_.textWidth("42", k) * 0.5f, y + (h - r_.textHeight(k)) * 0.5f, k, "42", kWhite);
+        y += h + gap;
+    }
+    // the flash round the screen's edges when you're hit (0 = off)
+    ui_.slider(x, y, w, h, "DAMAGE FLASH (SCREEN EDGES WHEN HIT, 0 = OFF)", cfg_.damageFlash, 0, 1, "%.2f", UiExp::cfg("damage_flash"));
+    cfg_.damageFlash = clampf(cfg_.damageFlash, 0, 1);
+    y += h + gap;
     ui_.label(x, y, "YOUR SHOTS: TRACERS AND THE LASER BEAM COME FROM WHERE THE GUN IS (OR WOULD BE)", {0.7f, 0.72f, 0.75f, 1}, 0.5f);
     y += 14 * s;
     ui_.label(x, y, "RANKED: NO HEALTH BARS", {0.7f, 0.72f, 0.75f, 1}, 0.5f);
@@ -4476,13 +4904,14 @@ void Game::drawHudSettings(float x0, float y0, float wTotal) {
     const UiExp he = UiExp::cfg("hud_*");
     ui_.toggle(x, y, w, h, "SHOW", shown, he); e.hidden = !shown;
     y += h + gap;
-    ui_.slider(x, y, w, h, "X OFFSET", e.x, -640, 640, "%.0f", he); e.x = std::round(e.x);
+    // (typed numbers: within quark.cfg's ranges)
+    ui_.slider(x, y, w, h, "X OFFSET", e.x, -640, 640, "%.0f", he); e.x = clampf(std::round(e.x), -1280, 1280);
     y += h + gap;
-    ui_.slider(x, y, w, h, "Y OFFSET", e.y, -360, 360, "%.0f", he); e.y = std::round(e.y);
+    ui_.slider(x, y, w, h, "Y OFFSET", e.y, -360, 360, "%.0f", he); e.y = clampf(std::round(e.y), -720, 720);
     y += h + gap;
-    ui_.slider(x, y, w, h, "SIZE", e.scale, 0.5f, 3, "%.2f", he);
+    ui_.slider(x, y, w, h, "SIZE", e.scale, 0.5f, 3, "%.2f", he); e.scale = clampf(e.scale, 0.5f, 3);
     y += h + gap;
-    if (hudSel_ == Settings::HUD_VIEWMODEL) { ui_.slider(x, y, w, h, "DEPTH", e.z, -300, 300, "%.0f", he); e.z = std::round(e.z); }
+    if (hudSel_ == Settings::HUD_VIEWMODEL) { ui_.slider(x, y, w, h, "DEPTH", e.z, -300, 300, "%.0f", he); e.z = clampf(std::round(e.z), -300, 300); }
     y += h + gap;
     ui_.toggle(x, y, w, h, hudSel_ == Settings::HUD_VIEWMODEL ? "CUSTOM ACCENT COLOR" : "CUSTOM COLOR", e.custom, he);
     y += h + gap;
@@ -4491,7 +4920,7 @@ void Game::drawHudSettings(float x0, float y0, float wTotal) {
         const char* ch[3] = {"R", "G", "B"};
         for (int i = 0; i < 3; i++) {
             float v = e.color[i] * 255.0f;
-            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f", he)) e.color[i] = std::round(v) / 255.0f;
+            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f", he)) e.color[i] = clampf(std::round(v), 0, 255) / 255.0f;
         }
     }
     y += h + gap * 3;
@@ -4533,13 +4962,13 @@ void Game::drawCrosshairSettings(float x0, float y0, float wTotal) {
     ui_.cycle(x, y, w, h, "STYLE", cfg_.chStyle, 5, styles, UiExp::cfg("ch_style"));
     y += h + gap;
     ui_.slider(x, y, w, h, "LENGTH", cfg_.chLength, 0, 30, "%.0f", UiExp::cfg("ch_length"));
-    cfg_.chLength = std::round(cfg_.chLength);
+    cfg_.chLength = clampf(std::round(cfg_.chLength), 0, 30);
     y += h + gap;
     ui_.slider(x, y, w, h, "THICKNESS", cfg_.chThickness, 1, 8, "%.0f", UiExp::cfg("ch_thickness"));
-    cfg_.chThickness = std::round(cfg_.chThickness);
+    cfg_.chThickness = clampf(std::round(cfg_.chThickness), 1, 8);
     y += h + gap;
     ui_.slider(x, y, w, h, "GAP", cfg_.chGap, 0, 20, "%.0f", UiExp::cfg("ch_gap"));
-    cfg_.chGap = std::round(cfg_.chGap);
+    cfg_.chGap = clampf(std::round(cfg_.chGap), 0, 20);
     y += h + gap;
     ui_.toggle(x, y, w * 0.5f - gap * 0.5f, h, "OUTLINE", cfg_.chOutline, UiExp::cfg("ch_outline"));
     ui_.toggle(x + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "TEAM COLOR", cfg_.chTeamColor, UiExp::cfg("ch_team_color"));
@@ -4549,7 +4978,7 @@ void Game::drawCrosshairSettings(float x0, float y0, float wTotal) {
         const char* ch[3] = {"R", "G", "B"};
         for (int i = 0; i < 3; i++) {
             float v = cfg_.chColor[i] * 255.0f;
-            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f", UiExp::cfg("ch_color"))) cfg_.chColor[i] = std::round(v) / 255.0f;
+            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f", UiExp::cfg("ch_color"))) cfg_.chColor[i] = clampf(std::round(v), 0, 255) / 255.0f;
         }
     }
     y += h + gap;
@@ -4561,7 +4990,7 @@ void Game::drawCrosshairSettings(float x0, float y0, float wTotal) {
         const char* ch[3] = {"HIT R", "HIT G", "HIT B"};
         for (int i = 0; i < 3; i++) {
             float v = cfg_.chHitColor[i] * 255.0f;
-            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f", UiExp::cfg("ch_hit_color"))) cfg_.chHitColor[i] = std::round(v) / 255.0f;
+            if (ui_.slider(x + i * (sw + gap), y, sw, h, ch[i], v, 0, 255, "%.0f", UiExp::cfg("ch_hit_color"))) cfg_.chHitColor[i] = clampf(std::round(v), 0, 255) / 255.0f;
         }
     }
     y += h + gap * 3;
@@ -4625,7 +5054,7 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
             if (firing && p.weapon == WPN_LASER && time_ >= ra.nextLaser) {
                 audio_.play3D(SND_LASER, p.pos + Vec3(0, 1.5f, 0), 0.7f, 1.0f, sp);
                 ra.nextLaser = time_ + 0.05;
-            } else if (firing && !remoteFiring_[i] && p.weapon != WPN_LASER && time_ >= ra.nextShot) {
+            } else if (firing && !remoteFiring_[i] && p.weapon != WPN_LASER && p.weapon < WPN_LOCATOR && time_ >= ra.nextShot) {
                 ra.nextShot = time_ + weaponDef(p.weapon).refire * 0.6f; // (a flag flicker between snapshots isn't a second shot)
                 audio_.play3D(SND_RIFLE + p.weapon, p.pos + Vec3(0, 1.5f, 0), 1.0f, 0.97f + (qrand() % 7) * 0.01f, sp);
             }

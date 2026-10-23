@@ -1,6 +1,8 @@
 // Launcher logic: release channels from a GitHub releases fixture, version order, the "newer launcher" decision,
 // the self-swap, and the game replacing old launchers wherever they were installed (with their shortcuts).
+#include <algorithm>
 #include <cstdio>
+#include <map>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -11,6 +13,7 @@
 #include "../src/common/sha256.h"
 #include "../src/common/sign.h"
 #include "../src/common/version.h"
+#include "../src/launcher/gamefiles.h"
 #include "../src/launcher/install.h"
 #include "../src/launcher/qpak.h"
 #include "../src/launcher/releases.h"
@@ -40,6 +43,11 @@ void fakeLauncher(const fs::path& p, const std::string& version, bool pe = false
     f << std::string("QUARK-LAUNCHER-VERSION:", 23) << '\0' << "junk"; // the reader's own prefix literal: not a version
     if (!version.empty()) f << "QUARK-LAUNCHER-" << "VERSION:" << version << '\0';
     f << std::string(500, 'y');
+}
+// Signs a (fake) launcher the way the release job does: <file>.sig next to it, the Ed25519ph signature in hex.
+void signLauncher(const fs::path& p, const std::string& priv) {
+    std::string sig, err;
+    if (sign::signFile(p.string(), priv, &sig, &err)) std::ofstream(selfupdate::sigPath(p), std::ios::trunc) << sig << "\n";
 }
 std::vector<std::string> versions(const std::vector<releases::Release>& l) {
     std::vector<std::string> v;
@@ -159,31 +167,38 @@ static void testUnsignedAndPins() {
     releases::Config follow, pinOld = releases::parseConfig("pin=1.16.0\n"), gone = releases::parseConfig("pin=1.2.3\n");
     // following the newest: the newest signed one installs (a newer one than installed only)
     releases::Plan p = releases::startupPlan(prod, follow, "1.16.0", true);
-    LCHECK(p.index == 0 && p.install && !p.confirm && !p.pinned);
+    LCHECK(p.index == 0 && p.install && !p.offer && !p.pinned);
     p = releases::startupPlan(prod, follow, "1.17.0", true);
-    LCHECK(p.index == 0 && !p.install && !p.confirm);
-    // 1.5: an old launcher.cfg pinned to an unsigned version keeps it - installed: nothing to do, the player plays it
+    LCHECK(p.index == 0 && !p.install && !p.offer);
+    // 1.5: an old launcher.cfg pinned to a pre-signing version keeps it - installed: nothing to do, the player plays it
     p = releases::startupPlan(prod, pinOld, "1.16.0", true);
-    LCHECK(p.index == 2 && p.pinned && !p.install && !p.confirm);
-    // ... and if something else is installed it is NOT auto-installed (nor silently moved to 1.17.0): confirm first
+    LCHECK(p.index == 2 && p.pinned && !p.install && !p.offer);
+    // ... a newer version installed: it is NOT installed over it by itself (nor silently moved to 1.17.0); the
+    // player's INSTALL does it (B6: no warning, no extra confirmation)
     p = releases::startupPlan(prod, pinOld, "1.17.0", true);
-    LCHECK(p.index == 2 && p.pinned && !p.install && p.confirm);
+    LCHECK(p.index == 2 && p.pinned && !p.install && p.offer);
+    // ... nothing or an older version installed: it installs like any pinned version
     p = releases::startupPlan(prod, pinOld, "", true);
-    LCHECK(p.index == 2 && !p.install && p.confirm);
+    LCHECK(p.index == 2 && p.install && !p.offer);
+    p = releases::startupPlan(prod, pinOld, "1.15.1", true);
+    LCHECK(p.index == 2 && p.install && !p.offer);
+    // which installs need a verified signature: everything from 1.17.0 on (an unsigned one claiming that is refused)
+    LCHECK(releases::needsSignature(prod[0]) && !releases::needsSignature(prod[1]) && !releases::needsSignature(prod[3]));
+    LCHECK(releases::needsSignature(rel("1.17.0", false)) && releases::needsSignature(rel("1.17.0-test.1", false)));
     // a pinned signed version installs whenever it differs (the player picked it)
     std::vector<Release> mixed = {rel("1.18.0", true), rel("1.17.0", true), rel("1.16.0", false)};
     p = releases::startupPlan(mixed, releases::parseConfig("pin=1.17.0"), "1.18.0", true);
-    LCHECK(p.index == 1 && p.pinned && p.install && !p.confirm);
+    LCHECK(p.index == 1 && p.pinned && p.install && !p.offer);
     // a pin that isn't listed: the newest, but only when the whole list was read
     p = releases::startupPlan(prod, gone, "1.16.0", true);
     LCHECK(p.index == 0 && !p.pinned && p.install);
     p = releases::startupPlan(prod, gone, "1.16.0", false);
-    LCHECK(!p.install && !p.confirm);
+    LCHECK(!p.install && !p.offer);
     // nothing signed at all (an old platform build only): listed, no LATEST, nothing automatic
     std::vector<Release> old = {rel("1.16.0", false), rel("1.15.0", false)};
     LCHECK(releases::latestIndex(old) == -1 && releases::selectIndex(old, follow) == 0);
     p = releases::startupPlan(old, follow, "", true);
-    LCHECK(p.index == 0 && !p.install && !p.confirm);
+    LCHECK(p.index == 0 && !p.install && !p.offer);
     LCHECK(releases::startupPlan({}, follow, "", true).index == -1);
     // LATEST skips an unsigned version newer than every signed one (that one can only be picked by hand)
     std::vector<Release> odd = {rel("1.16.9", false), rel("1.16.5", true)};
@@ -351,7 +366,7 @@ static void testManyPages() {
     LCHECK(test.size() == 370 && test[0].version == "1.18.0-test.370" && test.back().version == "1.18.0-test.1");
     // an old launcher.cfg pinned to 1.16.0 (on page 4) keeps it
     releases::Plan plan = releases::startupPlan(prod, releases::parseConfig("pin=1.16.0\n"), "1.16.0", complete);
-    LCHECK(plan.index == 2 && plan.pinned && !plan.install && !plan.confirm);
+    LCHECK(plan.index == 2 && plan.pinned && !plan.install && !plan.offer);
 
     // exactly 100 on the last full page: one more (empty) page ends it
     std::string even = fakePage(100, 100, {}, true);
@@ -472,6 +487,30 @@ static void testLauncherSwap() {
         fs::create_directories(app / "game");
         std::ofstream(app / "game" / "version.txt") << "1.17.0\n";
         fakeLauncher(app / "game" / "quark_launcher", "1.17.0"); // what the new package carries
+        std::string priv, pub, other, otherPub;
+        LCHECK(sign::keygen(&priv, &pub) && sign::keygen(&other, &otherPub));
+        { // B6: a packaged launcher that isn't signed (or not by the release key, or changed after signing) is never used
+            selfupdate::Report q = selfupdate::updateLaunchersFromGame(app / "game", nullptr, pub);
+            LCHECK(q.replaced == 0 && !q.installedFresh && !fs::exists(app / "quark_launcher"));
+            LCHECK(selfupdate::fileVersion(app / "quark-launcher-linux").empty());
+            signLauncher(app / "game" / "quark_launcher", other);
+            q = selfupdate::updateLaunchersFromGame(app / "game", nullptr, pub);
+            LCHECK(q.replaced == 0 && !q.installedFresh && !fs::exists(app / "quark_launcher"));
+            signLauncher(app / "game" / "quark_launcher", priv);
+            std::string sig, err;
+            LCHECK(selfupdate::launcherSigned(app / "game" / "quark_launcher", &sig, &err, pub) && sig.size() == 128);
+            std::ofstream(app / "game" / "quark_launcher", std::ios::app) << "tampered";
+            LCHECK(!selfupdate::launcherSigned(app / "game" / "quark_launcher", &sig, &err, pub));
+            q = selfupdate::updateLaunchersFromGame(app / "game", nullptr, pub);
+            LCHECK(q.replaced == 0 && !q.installedFresh && !fs::exists(app / "quark_launcher"));
+            // the check is on the copy that goes in place: a source that no longer matches its signature is refused
+            fakeLauncher(t / "unsig" / "quark_launcher", "1.17.1"); // (not the bytes `sig` is for)
+            selfupdate::SigCheck chk{sig, pub};
+            LCHECK(!selfupdate::replaceFile(t / "unsig" / "quark_launcher", t / "unsig" / "target", &err, nullptr, &chk));
+            LCHECK(!fs::exists(t / "unsig" / "target") && !fs::exists(selfupdate::swapPaths(t / "unsig" / "target").staged));
+            fakeLauncher(app / "game" / "quark_launcher", "1.17.0");
+            signLauncher(app / "game" / "quark_launcher", priv);
+        }
         fs::create_directories(home / ".local/share/applications");
         std::ofstream(home / ".local/share/applications/quark.desktop") << "[Desktop Entry]\nExec=\"" << (app / "quark-launcher-linux").string() << "\"\n";
         // a player file an old version kept in the game folder
@@ -479,11 +518,11 @@ static void testLauncherSwap() {
         { // the game quit before the thread got going: nothing touched, all of it next start
             selfupdate::ShutdownGate stopped;
             stopped.stop = true;
-            selfupdate::Report q = selfupdate::updateLaunchersFromGame(app / "game", &stopped);
+            selfupdate::Report q = selfupdate::updateLaunchersFromGame(app / "game", &stopped, pub);
             LCHECK(q.replaced == 0 && !q.installedFresh && selfupdate::fileVersion(app / "quark-launcher-linux").empty());
             LCHECK(!fs::exists(app / "quark_launcher") && !fs::exists(home / "Desktop/quark.desktop"));
         }
-        selfupdate::Report r = selfupdate::updateLaunchersFromGame(app / "game");
+        selfupdate::Report r = selfupdate::updateLaunchersFromGame(app / "game", nullptr, pub);
         LCHECK(r.replaced == 1 && r.installedFresh);
         LCHECK(selfupdate::fileVersion(app / "quark-launcher-linux") == "1.17.0"); // old name: replaced in place
         LCHECK(selfupdate::fileVersion(app / "quark_launcher") == "1.17.0");       // installed under the fixed name
@@ -491,11 +530,12 @@ static void testLauncherSwap() {
         LCHECK(menu.find("Exec=\"" + (app / "quark_launcher").string() + "\"") != std::string::npos);
         LCHECK(fs::exists(home / "Desktop/quark.desktop")); // a fresh install gets its desktop icon
         // second start: nothing left to do
-        r = selfupdate::updateLaunchersFromGame(app / "game");
+        r = selfupdate::updateLaunchersFromGame(app / "game", nullptr, pub);
         LCHECK(r.replaced == 0 && !r.installedFresh);
         // an older package (picked by hand) leaves the newer launcher alone
         fakeLauncher(app / "game" / "quark_launcher", "1.16.5");
-        r = selfupdate::updateLaunchersFromGame(app / "game");
+        signLauncher(app / "game" / "quark_launcher", priv);
+        r = selfupdate::updateLaunchersFromGame(app / "game", nullptr, pub);
         LCHECK(r.replaced == 0 && selfupdate::fileVersion(app / "quark_launcher") == "1.17.0");
         // 0.1.0: launcher and its game folder wherever the tarball was unpacked
         fs::path dl = home / "Downloads/quark-linux";
@@ -504,7 +544,8 @@ static void testLauncherSwap() {
         fs::create_directories(dl / "game");
         std::ofstream(dl / "game" / "version.txt") << "1.17.0\n";
         fakeLauncher(dl / "game" / "quark_launcher", "1.17.0");
-        r = selfupdate::updateLaunchersFromGame(dl / "game");
+        signLauncher(dl / "game" / "quark_launcher", priv);
+        r = selfupdate::updateLaunchersFromGame(dl / "game", nullptr, pub);
         LCHECK(r.replaced == 1 && selfupdate::fileVersion(dl / "quark_launcher") == "1.17.0");
         LCHECK(slurp(dl / "README.md") == "readme");
         // uninstall: shortcuts and install gone, the player's data kept (copied out of the game folder first)
@@ -519,6 +560,211 @@ static void testLauncherSwap() {
     fs::remove_all(t, ec);
 }
 
+// C13: an update deletes only retired game files: ones the installed package's list names, unchanged since, and not
+// a player file. Configs, demos, screenshots, your maps, changed files and anything unlisted stay.
+static void testGameFiles() {
+    using gamefiles::List;
+    List l = {{"quark", std::string(64, 'a')}, {"maps/my map.qmap", std::string(64, 'b')}};
+    List back;
+    LCHECK(gamefiles::parse(gamefiles::format(l), &back) && back == l);
+    LCHECK(!gamefiles::parse("something else\n", &back) && back.empty());
+    LCHECK(gamefiles::parse("quark installed files 1\r\nnot-a-hash x\n" + std::string(64, 'C') + " y\n", &back) &&
+           back.size() == 1 && back["y"] == std::string(64, 'c'));
+    for (const char* p : {"quark.cfg", "hud.cfg", "quark.key", "demos/a.qdemo", "DEMOS/x", "screenshots/s.png", "maps/downloads/x.qmap",
+                          "logs/game.log", "maps/temple.qlm", "groups/g.txt", "custom_modes/m.txt", "huds/h.txt", "controls/c.txt", "x.qdemo"})
+        LCHECK(gamefiles::isPlayerFile(p));
+    for (const char* p : {"quark", "quark.exe", "maps/temple.qmap", "mods/sounds/a.wav", "quark_launcher", "config/readme.txt"})
+        LCHECK(!gamefiles::isPlayerFile(p));
+
+    fs::path t = fs::temp_directory_path() / ("quark_gamefiles_test_" + std::to_string((long)getpid()));
+    std::error_code ec;
+    fs::remove_all(t, ec);
+    auto put = [](const fs::path& p, const std::string& s) { fs::create_directories(p.parent_path()); std::ofstream(p, std::ios::binary | std::ios::trunc) << s; };
+    // the installed version: its package's files (listed), then what the player added and changed
+    fs::path dir = t / "game", stage = t / "game.new";
+    List old;
+    auto official = [&](const std::string& rel, const std::string& s) { put(dir / rel, s); old[rel] = sha256Hex(s); };
+    official("quark", "old game");
+    official("maps/temple.qmap", "temple v1");
+    official("maps/crucible.qmap", "retired map");                // the new version doesn't ship it: deleted
+    official("mods/sounds/old.wav", "retired sound");             // likewise
+    official("maps/edited.qmap", "shipped");                      // retired, but the player changed it: kept
+    put(dir / "maps/edited.qmap", "my changes");
+    official("quark.cfg", "packaged cfg");                        // listed, but a config: never deleted
+    put(dir / "quark.cfg", "sens 3");
+    official("demos/shipped.qdemo", "a demo");                    // listed, but a demo: never deleted
+    put(dir / "demos/mine.qdemo", "my demo");
+    put(dir / "screenshots/shot.png", "png");
+    put(dir / "maps/mymap.qmap", "my map");                       // not in the list: kept
+    put(dir / "notes.txt", "player notes");
+    put(dir / gamefiles::kListName, gamefiles::format(old));
+    // the new package
+    put(stage / "quark", "new game");
+    put(stage / "maps/temple.qmap", "temple v2");
+    put(stage / "quark.cfg", "new packaged cfg");
+    put(stage / gamefiles::kListName, "quark installed files 1\n");
+    std::string err;
+    gamefiles::SwapReport rep;
+    LCHECK(gamefiles::swapInstall(stage, dir, &err, &rep));
+    std::sort(rep.retired.begin(), rep.retired.end());
+    LCHECK((rep.retired == std::vector<std::string>{"maps/crucible.qmap", "mods/sounds/old.wav"}));
+    LCHECK(slurp(dir / "quark") == "new game" && slurp(dir / "maps/temple.qmap") == "temple v2");
+    LCHECK(!fs::exists(dir / "maps/crucible.qmap") && !fs::exists(dir / "mods/sounds/old.wav"));
+    LCHECK(slurp(dir / "maps/edited.qmap") == "my changes" && slurp(dir / "quark.cfg") == "sens 3");
+    LCHECK(slurp(dir / "demos/shipped.qdemo") == "a demo" && slurp(dir / "demos/mine.qdemo") == "my demo");
+    LCHECK(slurp(dir / "screenshots/shot.png") == "png" && slurp(dir / "maps/mymap.qmap") == "my map" && slurp(dir / "notes.txt") == "player notes");
+    LCHECK(slurp(dir / gamefiles::kListName) == "quark installed files 1\n"); // the new list, not the old one
+    LCHECK(!fs::exists(stage) && !fs::exists(t / "game.old"));
+    // an install without a list (a package from before 1.17.0): nothing is known to be retired, everything stays
+    fs::remove(dir / gamefiles::kListName);
+    put(dir / "maps/leftover.qmap", "from 1.12");
+    put(stage / "quark", "newer game");
+    LCHECK(gamefiles::swapInstall(stage, dir, &err, &rep));
+    LCHECK(slurp(dir / "quark") == "newer game" && slurp(dir / "maps/leftover.qmap") == "from 1.12" && slurp(dir / "maps/temple.qmap") == "temple v2");
+    // the launcher's list: every extracted file's sha256, by entry name (tools/pack.py adds the same list to packages)
+    {
+        std::string pak = "QPAK1\n" + pakEntry("quark", "bin", 0755) + pakEntry("maps/a.qmap", "map a");
+        put(t / "p.qpak", pak);
+        std::map<std::string, std::string> h;
+        LCHECK(qpak::extract(t / "p.qpak", t / "x", &err, &h));
+        LCHECK(h.size() == 2 && h["quark"] == sha256Hex("bin") && h["maps/a.qmap"] == sha256Hex("map a"));
+    }
+    fs::remove_all(t, ec);
+}
+
+// An antivirus quarantining a game file (owner report: quark.exe of two builds vanished on one player's PC): a file
+// missing or changed in the stage stops the install with the installed version untouched; the installed game's exe
+// missing or changed is detected before a start; installing the same version again (REPAIR) puts it back; the
+// player's files survive all of it.
+static void testInstallChecks() {
+    using gamefiles::Problem;
+    // the list's current format: sizes too (paths with spaces); format 1 (tools/pack.py) still reads, without sizes
+    {
+        gamefiles::List l = {{"quark", std::string(64, 'a')}, {"maps/my map.qmap", std::string(64, 'b')}}, back;
+        gamefiles::Sizes sz = {{"quark", 16651899}, {"maps/my map.qmap", 0}}, szBack;
+        std::string text = gamefiles::format(l, &sz);
+        LCHECK(text.rfind("quark installed files 2\n", 0) == 0);
+        LCHECK(gamefiles::parse(text, &back, &szBack) && back == l && szBack == sz);
+        LCHECK(gamefiles::parse(gamefiles::format(l), &back, &szBack) && back == l && szBack.empty());
+        LCHECK(gamefiles::parse("quark installed files 2\n" + std::string(64, 'c') + " 12x y\n" + std::string(64, 'd') + " 5 z w\n", &back, &szBack) &&
+               back.size() == 1 && back["z w"] == std::string(64, 'd') && szBack["z w"] == 5);
+    }
+    fs::path t = fs::temp_directory_path() / ("quark_installcheck_test_" + std::to_string((long)getpid()));
+    std::error_code ec;
+    fs::remove_all(t, ec);
+    fs::create_directories(t);
+    auto put = [](const fs::path& p, const std::string& s) { fs::create_directories(p.parent_path()); std::ofstream(p, std::ios::binary | std::ios::trunc) << s; };
+    const std::string exe = gamefiles::kGameExe;
+    fs::path dir = t / "quark" / "game", stage = gamefiles::stagePath(dir), pak1 = t / "v1.qpak", pak2 = t / "v2.qpak";
+    put(pak1, "QPAK1\n" + pakEntry(exe, "game v1", 0755) + pakEntry("quark_server", "server v1", 0755) +
+              pakEntry("maps/a.qmap", "map a v1") + pakEntry("quark.cfg", "packaged cfg") +
+              pakEntry(gamefiles::kListName, "quark installed files 1\n")); // (a package's own list: replaced)
+    put(pak2, "QPAK1\n" + pakEntry(exe, "game v2, a bit bigger", 0755) + pakEntry("quark_server", "server v2", 0755) +
+              pakEntry("maps/a.qmap", "map a v2") + pakEntry("maps/b.qmap", "map b v2") + pakEntry("quark.cfg", "packaged cfg 2"));
+    std::string err;
+    gamefiles::InstallReport rep;
+    LCHECK(gamefiles::installPackage(pak1, dir, &err, &rep) && rep.stageIssues.empty());
+    LCHECK(slurp(dir / exe) == "game v1" && !fs::exists(stage));
+    {
+        gamefiles::List l;
+        gamefiles::Sizes sz;
+        LCHECK(gamefiles::readList(dir, &l, &sz) && l.size() == 4 && sz[exe] == 7 && l[exe] == sha256Hex("game v1"));
+        gamefiles::Health h = gamefiles::checkInstall(dir, exe, true);
+        LCHECK(h.hasList && h.checked == 4 && h.issues.empty() && !h.exeBad);
+    }
+    // the player's things in the game folder (an old version kept them there)
+    put(dir / "quark.cfg", "sens 3");
+    put(dir / "quark.key", "secret");
+    put(dir / "demos/mine.qdemo", "my demo");
+    put(dir / "maps/mymap.qmap", "my map");
+    put(dir / "version.txt", "1.0.0\n");
+    auto playerFilesIntact = [&]() {
+        return slurp(dir / "quark.cfg") == "sens 3" && slurp(dir / "quark.key") == "secret" && slurp(dir / "demos/mine.qdemo") == "my demo" &&
+               slurp(dir / "maps/mymap.qmap") == "my map";
+    };
+    auto stillV1 = [&]() {
+        return slurp(dir / exe) == "game v1" && slurp(dir / "quark_server") == "server v1" && slurp(dir / "maps/a.qmap") == "map a v1" &&
+               !fs::exists(dir / "maps/b.qmap") && slurp(dir / "version.txt") == "1.0.0\n" && !fs::exists(stage) &&
+               !fs::exists(t / "quark" / "game.old") && gamefiles::checkInstall(dir, exe, true).issues.empty();
+    };
+
+    // 1. an antivirus deletes the new exe as it is written: no swap, the installed version keeps working
+    LCHECK(!gamefiles::installPackage(pak2, dir, &err, &rep, [&](const fs::path& st) { fs::remove(st / exe); }));
+    LCHECK(rep.stageIssues.size() == 1 && rep.stageIssues[0].path == exe && rep.stageIssues[0].problem == Problem::Missing);
+    LCHECK(err.find(fs::u8path(exe).filename().u8string() + " was removed right after it was written") == 0);
+    LCHECK(stillV1() && playerFilesIntact());
+    // 2. a file of the stage changed (a "cleaned" exe of the same size; a truncated map): no swap either
+    LCHECK(!gamefiles::installPackage(pak2, dir, &err, &rep, [&](const fs::path& st) {
+        put(st / exe, "game v2, a bit BIGGER");
+        put(st / "maps/b.qmap", "map");
+    }));
+    LCHECK(rep.stageIssues.size() == 2 && rep.stageIssues[0].problem == Problem::Changed && rep.stageIssues[1].problem == Problem::Changed);
+    LCHECK(err.find("(and 1 more)") != std::string::npos);
+    LCHECK(stillV1() && playerFilesIntact());
+    // a file that can't be written at all (refused on write; here: a file in the way of its folder): named, no swap
+    put(t / "v3.qpak", "QPAK1\n" + pakEntry(exe, "game v3", 0755) + pakEntry("mods", "a file") + pakEntry("mods/a.wav", "x"));
+    LCHECK(!gamefiles::installPackage(t / "v3.qpak", dir, &err, &rep));
+    LCHECK(rep.stageIssues.size() == 1 && rep.stageIssues[0].path == "mods/a.wav" && rep.stageIssues[0].problem == Problem::Blocked);
+    LCHECK(err.rfind("a.wav could not be written", 0) == 0);
+    LCHECK(stillV1() && playerFilesIntact());
+    // 3. the update goes through: new files, the player's kept (their quark.cfg over the packaged one)
+    LCHECK(gamefiles::installPackage(pak2, dir, &err, &rep) && rep.stageIssues.empty());
+    LCHECK(slurp(dir / exe) == "game v2, a bit bigger" && slurp(dir / "maps/b.qmap") == "map b v2" && playerFilesIntact());
+    LCHECK(gamefiles::checkInstall(dir, exe, true).issues.empty());
+
+    // 4. the installed exe vanishes later: found before a start (cheaply), named, with the antivirus advice
+    fs::remove(dir / exe);
+    {
+        gamefiles::Health h = gamefiles::checkInstall(dir, exe, false);
+        LCHECK(h.exeBad && h.exe.path == exe && h.exe.problem == Problem::Missing && h.issues.size() == 1 && h.issues[0].path == exe);
+        LCHECK(gamefiles::describe(h.exe) == fs::u8path(exe).filename().u8string() + " is missing");
+        std::string help = gamefiles::antivirusHelp("quark.exe", dir.parent_path());
+        LCHECK(help.find("false positive") != std::string::npos && help.find("quark.exe") != std::string::npos &&
+               help.find(dir.parent_path().u8string()) != std::string::npos);
+    }
+    // ...or is replaced: a different size is found cheaply, the same size by the full check
+    put(dir / exe, "tampered");
+    LCHECK(gamefiles::checkInstall(dir, exe, false).exeBad && gamefiles::checkInstall(dir, exe, false).exe.problem == Problem::Changed);
+    put(dir / exe, "game v2, a bit BIGGER");
+    LCHECK(!gamefiles::checkInstall(dir, exe, false).exeBad && gamefiles::checkInstall(dir, exe, true).exeBad);
+    // other game files: reported, the exe fine
+    fs::remove(dir / "maps/b.qmap");
+    {
+        gamefiles::Health h = gamefiles::checkInstall(dir, exe, false);
+        LCHECK(!h.exeBad && h.issues.size() == 1 && h.issues[0].path == "maps/b.qmap");
+    }
+    // REPAIR: the same version installed again puts everything back, the player's files untouched
+    fs::remove(dir / exe);
+    LCHECK(gamefiles::installPackage(pak2, dir, &err, &rep));
+    LCHECK(slurp(dir / exe) == "game v2, a bit bigger" && slurp(dir / "maps/b.qmap") == "map b v2" && playerFilesIntact());
+    LCHECK(gamefiles::checkInstall(dir, exe, true).issues.empty());
+
+    // 5. an install without a list (from before 1.17.0): only the exe is known, and it must be there
+    fs::remove(dir / gamefiles::kListName);
+    LCHECK(!gamefiles::checkInstall(dir, exe, true).hasList && gamefiles::checkInstall(dir, exe, true).issues.empty());
+    fs::remove(dir / exe);
+    LCHECK(gamefiles::checkInstall(dir, exe, false).exeBad);
+    LCHECK(gamefiles::installPackage(pak2, dir, &err, &rep) && slurp(dir / exe) == "game v2, a bit bigger" && playerFilesIntact());
+
+    // 6. a swap cut off between its renames (the game folder is game.old): put back at the next start, and an install
+    // never deletes it
+    fs::rename(dir, t / "quark" / "game.old");
+    LCHECK(gamefiles::recoverSwap(dir) && slurp(dir / exe) == "game v2, a bit bigger" && !fs::exists(t / "quark" / "game.old"));
+    LCHECK(!gamefiles::recoverSwap(dir));
+    fs::rename(dir, t / "quark" / "game.old");
+    LCHECK(gamefiles::installPackage(pak1, dir, &err, &rep) && slurp(dir / exe) == "game v1" && playerFilesIntact());
+
+    // 7. a player file that can't be carried over stops the swap before anything changes (a file in the stage where
+    // the player has a folder of the same name stands in for a locked file)
+    put(dir / "huds/mine.txt", "my hud");
+    fs::create_directories(stage);
+    put(stage / exe, "game v3");
+    put(stage / "huds", "a file");
+    LCHECK(!gamefiles::swapInstall(stage, dir, &err) && err.find("huds/mine.txt") != std::string::npos);
+    LCHECK(slurp(dir / exe) == "game v1" && slurp(dir / "huds/mine.txt") == "my hud" && playerFilesIntact());
+    fs::remove_all(t, ec);
+}
+
 int launcherTests() {
     g_lfail = 0;
     printf("launcher\n");
@@ -529,5 +775,7 @@ int launcherTests() {
     testQpak();
     testManyPages();
     testLauncherSwap();
+    testGameFiles();
+    testInstallChecks();
     return g_lfail;
 }

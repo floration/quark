@@ -41,7 +41,7 @@ const char* modelKindName(int kind) {
     return kind >= 0 && kind < MODEL_KINDS ? n[kind] : "model";
 }
 const char* modelName(int kind, int i) {
-    static const char* w[WPN_COUNT] = {"RIFLE", "ROCKET", "KNIFE", "SNIPER", "LASER", "SHOTGUN", "STICKY", "CROSSBOW", "BUBBLE", "SYRINGE"};
+    static const char* w[WPN_COUNT] = {"RIFLE", "ROCKET", "KNIFE", "SNIPER", "LASER", "SHOTGUN", "STICKY", "CROSSBOW", "BUBBLE", "SYRINGE", "LOCATOR"};
     switch (kind) {
         case MODEL_PLAYER: return playerModelName(i);
         case MODEL_WEAPON: return w[i < 0 || i >= WPN_COUNT ? 0 : i];
@@ -206,6 +206,18 @@ void viewmodelParts(int w, const ModelPalette& pal, ModelParts& out) {
             part(0, 0, 0.1f, 0.006f, 0.006f, 0.03f, mid, M); part(0, 0, 0.135f, 0.02f, 0.02f, 0.006f, dark, M);
             part(0, 0, 0.085f, 0.045f, 0.008f, 0.006f, acc, A);
             part(0, 0, -0.1f, 0.01f, 0.01f, 0.01f, dark, M); part(0, 0, -0.15f, 0.0025f, 0.0025f, 0.05f, mid, M);
+            break;
+        case WPN_LOCATOR:    // a handheld tracker: pistol grip, a slab body with a glowing radar screen on top, an emitter
+                             // in front, a whip antenna with an accent tip (hide and seek / tag: the seeker's / tagger's)
+            part(0, -0.055f, 0.045f, 0.015f, 0.04f, 0.02f, dark, M);
+            part(0, -0.004f, -0.015f, 0.042f, 0.02f, 0.085f, mid, M);
+            part(0, 0.018f, 0.004f, 0.036f, 0.004f, 0.058f, dark, M);
+            part(0, 0.022f, 0.004f, 0.03f, 0.002f, 0.05f, glow * 0.55f, G);
+            part(0, 0.0245f, -0.012f, 0.0025f, 0.001f, 0.026f, glow * 1.4f, G); part(0, 0.0245f, 0.004f, 0.022f, 0.001f, 0.0025f, glow * 1.4f, G);
+            part(0.012f, 0.025f, -0.02f, 0.005f, 0.0015f, 0.005f, acc, A);
+            part(0, -0.004f, -0.106f, 0.03f, 0.016f, 0.008f, dark, M); part(0, -0.004f, -0.116f, 0.018f, 0.009f, 0.003f, glow * 1.3f, G);
+            part(0.032f, 0.05f, -0.07f, 0.0035f, 0.05f, 0.0035f, mid, M); part(0.032f, 0.104f, -0.07f, 0.007f, 0.007f, 0.007f, acc, A);
+            part(-0.043f, -0.004f, -0.015f, 0.002f, 0.007f, 0.06f, acc, A);
             break;
         case WPN_CROSSBOW:   // stock, bow limbs with a string, a bolt on top
             part(0, 0, 0.02f, 0.02f, 0.025f, 0.2f, dark, M);

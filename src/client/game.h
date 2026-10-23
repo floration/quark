@@ -42,6 +42,7 @@ struct LaunchOptions {
     bool debugWidgets = false;
     bool debugHudLayout = false; // --hudlayout: open HUD layout settings in game
     bool debugModels = false;
+    int debugRps = 0;           // --rpsshot: the hide and seek tiebreak panel with made-up players (1 picking, 2 reveal, 3 three-way reveal)
     bool camSet = false;         // --cam: fixed backdrop camera (map analysis shots)
     Vec3 camPos;
     float camYaw = 0, camPitch = 0;
@@ -108,6 +109,7 @@ private:
     const char* edPath() const { return edOnline_ ? "editor-online" : "editor"; }
     const char* edExportAskPath() const { return edOnline_ ? "editor-online/export-ask" : "editor/export-ask"; }
     const char* edGroupsPath() const { return edOnline_ ? "editor-online/groups" : "editor/groups"; }
+    const char* edKeepPath() const { return edOnline_ ? "editor-online/keep-edits" : "editor/keep-edits"; }
     bool edGroupTakesEveryBox() const;      // GROUP would leave the map without a box of its own (refused)
     enum class Screen { Main, Join, Host, Settings, Connecting, InGame, VsBots, Editor, Leaderboard, CustomMode, Info, Demos };
     void setScreen(Screen s);
@@ -142,6 +144,10 @@ private:
     NetClient::PlayerArray framePlayers_{};
     bool framePlayersOk_ = false;
     void drawHud();
+    void drawRps(float W, float H, float s);   // the hide and seek tiebreak (rock paper scissors) panel
+    void drawRpsShape(float x, float y, float size, int shape, Color c);
+    bool rpsPicking() const;                   // we're in the tiebreak and the throw is open
+    void drawTaggerMarker(float W, float H, float s);   // tag: where the tagger is, through walls (at the screen edge when off it)
     void drawNotices(float y, float ts, float s); // notify() lines, centred from y down (HUD and menus)
     void drawScoreboard();
     void drawMenu();
@@ -183,6 +189,7 @@ private:
     bool socdPrev_[4] = {}, altPrev_ = false, altToggled_ = false;
     void benchFrame(double dt);
     bool paused_ = false, chatting_ = false, showScores_ = false, settingsInGame_ = false;
+    bool unratedServer_ = false;   // the server said its ranked isn't rated (kUnratedNotice: a testing server)
     std::string chatText_, joinAddr_, error_;
     size_t chatCursor_ = 0;      // caret in chatText_ (chat / console input)
     std::string chatSeen_;       // chatText_ as last edited: any other change (clear, history, completion) puts the caret at the end
@@ -210,6 +217,7 @@ private:
     void startRecording();
     bool playDemo(const std::string& path);
     std::vector<std::string> demoFiles_;
+    std::vector<std::string> demoNotes_;   // per demo: "" (plays), or which version recorded it / converting
     double demoListAt_ = -1;
     int infoTab_ = 0;
     float infoScroll_ = 0;
@@ -224,6 +232,7 @@ private:
     bool livePickVote_ = false;
     void openLivePicker(int kind, bool vote);
     bool voteMenu_ = false;
+    bool specPick_ = false;     // the vote menu's player list: who to move to spectator (callvote spec)
     void drawVoteMenu(float cx, float y);
     int picker_ = PICK_NONE;    // full list of maps / modes open over the host or vs-bots menu
     void drawPicker(float cx, float y);
@@ -285,9 +294,20 @@ private:
     float edDragT0_ = 0;
     Map edDragBase_;
     std::string edDragLast_;
-    bool edPrompt_ = false;     // "save your copy?" after leaving someone else's edit session
-    Map edPromptMap_;
-    std::string edPromptName_;
+    // The save question (OWNER_DECISIONS_2 B3): "keep your edits as a new map?" when you save or leave a built-in map
+    // you edited (its file is never written: yes saves your edits under a new name in your maps folder, no drops
+    // them), and "save your copy?" after leaving someone else's edit session. Nothing is ever saved without asking.
+    bool edPrompt_ = false;
+    Map edPromptMap_;           // what yes saves
+    std::string edPromptName_;  // under this name (a new one when the map is built in)
+    enum { ED_THEN_NONE, ED_THEN_SAVE, ED_THEN_LEAVE, ED_THEN_TEST, ED_THEN_HOST, ED_THEN_OPEN };
+    int edPromptThen_ = ED_THEN_NONE;   // what the editor does after the answer (NONE: asked after a session)
+    std::string edPromptOpen_;          // ED_THEN_OPEN: the map to open next ("" = a new one)
+    bool edPromptOfficial_ = false;     // the edits are to a built-in map
+    bool edOfficial() const { return isOfficialMapName(edName_) || isOfficialMapName(ed_.name); }   // editing a built-in map
+    void edAskKeep(int then, const std::string& open = std::string());
+    void edPromptAnswer(int answer);    // 1 yes, 0 no, -1 cancel
+    std::string edFreshName(const std::string& base) const;   // a name for your copy that's free and not a built-in map's
     void openEditor(std::string map); // (by value: callers pass maps_[i], and opening rescans maps_)
     std::vector<std::string> edScript_; // --edscript steps still to run (one per frame)
     void edScriptStep();
@@ -320,7 +340,7 @@ private:
     Vec3 edLastClickCam_;
     int edClipFind_ = -1;   // FIND CLIP: the clip box shown last
     Vec3 edMouseRay() const;
-    bool edSave();
+    bool edSave(int then = ED_THEN_SAVE);   // false: not saved (or the question is up: `then` follows the answer)
     bool edSaveCopy(const Map& m, const std::string& name);
     void edTest();
     void edHostSession();
@@ -337,17 +357,28 @@ private:
     double nextLaserSound_ = 0;
     double knifeSlash_[kMaxPlayers] = {}; // when each player last swung the knife (slash trail)
     void drawKnifeSlash(const Vec3& eye, float yaw, float pitch, float t, const Vec3& color);
+    // a player's weapon as others see it (hide and seek / tag: the seeker's / tagger's knife or locator): an arm from
+    // the shoulder, the weapon's own model in the hand, aimed where they look
+    void drawHeldWeapon(int player, int weapon, const Vec3& shoulder, float yaw, float pitch, float bodyScale, const Vec3& accent, float sunVis);
     double wheelAccum_ = 0;         // fractional scroll (trackpads, high-res wheels) until a full notch
     double wheelHeldUntil_[2] = {}; // a scroll step counts as "held" briefly, so hold actions (jump, fire...) work on the wheel
     int specTarget_ = -1;
+    int specSent_ = -2;         // the spectate target last told to the server (-2: none since alive)
 
     // effects + feeds
-    struct Feed { std::string text; Color color; double until; int crown = 0; };   // crown: the sender's leaderboard place (chat)
+    struct Feed { std::string text; Color color; double until; int crown = 0; bool player = false; };   // crown: the sender's leaderboard place (chat); player: a player's chat line (hidden while chat is off)
     std::deque<Feed> killFeed_, chatFeed_, notices_;
     std::deque<Feed> chatLog_;   // the chat history shown while typing (Enter)
     void addChat(const Feed& f) { chatFeed_.push_back(f); chatLog_.push_back(f); while (chatFeed_.size() > 8) chatFeed_.pop_front(); while (chatLog_.size() > 30) chatLog_.pop_front(); }
     std::string centerText_;
-    double centerUntil_ = 0, hitUntil_ = 0, damageUntil_ = 0, recoil_ = 0, localNextFire_ = 0, localThrowReadyAt_ = 0;
+    double centerUntil_ = 0, hitUntil_ = 0, damageUntil_ = 0, recoil_ = 0, localNextFire_ = 0;
+    double localKnifeBack_ = 0, localSyringeBack_ = 0;   // predicted: a thrown knife / syringe is away (disabled) until then
+    // seconds until a thrown knife / syringe is back (0 = have it): the prediction, or the server's word (snapshot)
+    double weaponAwayLeft(int w) const {
+        double local = w == WPN_KNIFE ? localKnifeBack_ : w == WPN_SYRINGE ? localSyringeBack_ : 0;
+        int snap = !net_.hasSnapshot() ? 0 : w == WPN_KNIFE ? net_.latest().knifeAway : w == WPN_SYRINGE ? net_.latest().syringeAway : 0;
+        return std::max(local - time_, snap * 0.1);
+    }
     int lastHealth_ = 0;
     struct Tracer { Vec3 a, b; double until; };
     std::vector<Tracer> tracers_;
@@ -363,6 +394,7 @@ private:
     double laserUntil_ = 0;            // local laser beam visible until
     bool remoteFiring_[kMaxPlayers] = {};
     float viewFov() const;
+    void sceneSettings();   // the renderer's world look from cfg_
 
     // F3 performance overlay: frame-time percentiles (lows matter, averages hide stutter)
     bool showPerf_ = false;
@@ -411,6 +443,7 @@ private:
     const char* crownLetter(int playerId) const;  // the board of that best place: Q vanilla, LG laser vampire, I instagib, R race
     int specKeysOf() const;
     void drawChatBox(float W, float H, float s, float ts);
+    void toggleChat();                     // TOGGLE CHAT key: other players' chat off / on (the DISABLE CHAT setting), with a notice
     void drawVotePanel(float cx, float s, float ts);
     void drawCrown(float x, float y, float w, int place, const char* letter = "");
     struct Crown { int place; const char* letter; };
@@ -433,6 +466,16 @@ private:
     int streak_[kMaxPlayers] = {};
     double typingUntil_[kMaxPlayers] = {}, nextTypingSend_ = 0;
     double locatorReady_ = 0, locateUntil_ = 0;
+    // hide and seek tiebreak (EV_RPS): the server's latest state, and what we chose this throw
+    struct RpsView {
+        struct P { int id = 0, shape = 0, wins = 0; bool out = false; };
+        int stage = RPS_PICK, throwNo = 0, winner = -1;
+        bool bestOf3 = false;
+        std::vector<P> players;
+        std::string result;
+        double at = -1e9;   // when it arrived
+    } rps_;
+    int rpsMine_ = RPS_NONE;
     double liveSeenAt_ = -1e9;   // when this round went live (here): the map's holdfire counts from it
     float holdFireLeft() const { return net_.hasSnapshot() && net_.mode().phase == PHASE_LIVE && net_.map().holdFire > 0 ? net_.map().holdFire - (float)(time_ - liveSeenAt_) : 0; }   // tag / hide and seek locator
     Vec3 locatePos_;

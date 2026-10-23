@@ -19,20 +19,23 @@ enum PacketType : uint8_t {
     PKT_INPUT,           // u32 nonce, u32 ackTimeMs, u32 ackEvent, u8 lossPct, u8 ncmds, cmds..., u8 nStr [u16 firstSeq, nStr x str]
     PKT_DISCONNECT,      // u32 nonce
     PKT_INFO_REQUEST,    // padded with zeros to kInfoRequestBytes (no reply bigger than the request)
-    PKT_MAP_REQUEST,     // u32 nonce, u32 mapCrc, u32 offset: ask for a piece of the server's map file
+    PKT_MAP_REQUEST,     // u32 nonce, 32 bytes map id (MapId), u32 offset: ask for a piece of the server's map file
     PKT_PROBE_REQUEST,   // u32 nonce, u16 port, padded to kProbeRequestBytes: "is <my ip>:<port> reachable?" (any server answers)
     // server -> client
-    PKT_ACCEPT = 64,     // u32 nonce, u8 clientId, str map, u32 mapCrc, u8 mode, u32 token lo, u32 token hi (reconnect token)
+    PKT_ACCEPT = 64,     // u32 nonce, u8 clientId, str map, 32 bytes map id (MapId: sha256), u8 mode, u32 token lo, u32 token hi (reconnect token)
     PKT_REJECT,          // str reason
     PKT_SNAPSHOT,        // u32 nonce, see Snapshot
     PKT_INFO_REPLY,      // str serverName, str map, u8 mode, u8 players, u8 maxPlayers, u16 port
     PKT_KICKED,          // u32 nonce, str reason
-    PKT_MAP_DATA,        // u32 nonce, u32 mapCrc (its id: edits chain it), u32 textCrc (crc32 of the text sent), u32 totalBytes, u32 offset, u16 n, n bytes
+    PKT_MAP_DATA,        // u32 nonce, 32 bytes map id (edits chain it), 32 bytes the text's sha256 (mapContentId), u32 totalBytes, u32 offset, u16 n, n bytes
     PKT_CHALLENGE,       // u32 nonce, u32 cookie: echo the cookie in PKT_CONNECT to prove you own your address
     PKT_PROBE_REPLY,     // u32 nonce: sent by a prober to the requester's own IP at the port it asked about
 };
 
 constexpr int kInfoRequestBytes = 160;      // PKT_INFO_REQUEST size; the reply is trimmed to fit (no amplification)
+// A testing server (or testing build) plays ranked but never rates it (Server::rated): every notice about that starts
+// with this (the client's HUD tags the match NOT RATED when it sees it).
+constexpr const char* kUnratedNotice = "TESTING SERVER - RANKED NOT RATED";
 constexpr int kInfoNameMax = 96, kInfoMapMax = 40; // 5 + 97 + 41 + 5 <= kInfoRequestBytes
 constexpr int kRejectHeaderBytes = 5;       // PKT_REJECT before its reason (u32 magic, u8 type)
 constexpr int kProbeRequestBytes = 32;      // PKT_PROBE_REQUEST size (the 9 byte reply is smaller: no amplification)
@@ -80,7 +83,10 @@ struct ProjectileSnap {
     uint8_t type = 0;
     uint8_t owner = 0;
     Vec3 pos, vel;
+    uint8_t flags = 0;   // PROJ_LOB, PROJ_STUCK: how the client extrapolates it (the server's 1 ms steps)
+    bool hidden = false;    // out of this client's sight: only the id is sent (it's still flying: gone isn't an explosion)
 };
+enum : uint8_t { PROJ_LOB = 1, PROJ_STUCK = 2 };
 
 struct GameEvent {
     double sentAt = -1;      // server only (not sent): when this copy last went out, for resend pacing
@@ -125,7 +131,7 @@ struct ModeState {
     uint8_t arenaVariant = 0; // 1v1: ArenaVariant index
     uint16_t weaponMask = 0;  // weapons allowed right now (bit per weapon); 0 = all
 };
-enum : uint8_t { MS_DRAIN = 1, MS_OVERTIME = 2, MS_CONTESTED = 4, MS_EDITING = 8, MS_RANKED = 16, MS_TEMP_EDIT = 32, MS_TIMETRIAL = 64 }; // MS_TIMETRIAL: solo ranked race (times go to the race board) // MS_TEMP_EDIT: voted editing, reverts at the next map change // MS_EDITING: map edit session, nobody plays
+enum : uint8_t { MS_DRAIN = 1, MS_OVERTIME = 2, MS_CONTESTED = 4, MS_EDITING = 8, MS_RANKED = 16, MS_TEMP_EDIT = 32, MS_TIMETRIAL = 64, MS_RPS = 128 }; // MS_RPS: the hide and seek tiebreak is on (timeLeft: its clock; EV_RPS has the rest) // MS_TIMETRIAL: solo ranked race (times go to the race board) // MS_TEMP_EDIT: voted editing, reverts at the next map change // MS_EDITING: map edit session, nobody plays
 
 // The scoreboard's main number for a player, and what it sorts by (REVIEW M6: it sorted by one number and showed
 // another): kills ("gibs") in instagib 1v1 / tourney / ranked FFA; the server's score in free for all (frags: what
@@ -153,6 +159,7 @@ struct Snapshot {
     uint8_t selfHealth = 0;
     uint8_t selfWeapon = 0;
     uint8_t knifeAway = 0;    // tenths of a second until your thrown knife is back (0 = have it)
+    uint8_t syringeAway = 0;  // ...your thrown syringe
     ModeState ms;
     std::vector<PlayerSnap> players;
     std::vector<ProjectileSnap> projectiles;
@@ -166,7 +173,7 @@ void writeSnapshotClient(Writer& w, const Snapshot& s);
 void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base); // also records into s what the client will have (delta base)
 void writeSnapshotEvents(Writer& w, const std::vector<GameEvent>& events);
 void writeSnapshotEvents(Writer& w, const GameEvent* const* events, int n);   // (the server: no copies of the texts)
-bool readSnapshotClient(Reader& r, Snapshot& s);              // header: tells which base the world part needs
+bool readSnapshotClient(Reader& r, Snapshot& s, uint16_t proto = kProtocolVersion);   // header: tells which base the world part needs (`proto`: a demo's, for older headers)
 bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base);
 bool readSnapshotEvents(Reader& r, Snapshot& s);
 // EV_BRACKET text (one "|"-separated row of entrants per round, then "@round,match") -> the tourney bracket.

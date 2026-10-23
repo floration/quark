@@ -2,8 +2,6 @@ cmake_minimum_required(VERSION 3.16)
 project(quark CXX C)
 if(WIN32)
   enable_language(RC)
-  file(WRITE ${CMAKE_BINARY_DIR}/quark_icon.rc "GLFW_ICON ICON \"${CMAKE_SOURCE_DIR}/assets/quark.ico\"\n")
-  set(QUARK_ICON_RC ${CMAKE_BINARY_DIR}/quark_icon.rc)
 endif()
 
 if(MSVC)
@@ -26,6 +24,44 @@ file(WRITE ${CMAKE_BINARY_DIR}/generated/version.cpp.tmp
   "const char kQuarkVersion[] = \"${QUARK_VERSION}\";\n"
   "const char kQuarkLauncherMarker[] = \"QUARK-LAUNCHER-VERSION:${QUARK_VERSION}\";\n")
 configure_file(${CMAKE_BINARY_DIR}/generated/version.cpp.tmp ${CMAKE_BINARY_DIR}/generated/version.cpp COPYONLY)
+
+# Windows resources for every shipped exe (src/win/app.rc.in, app.manifest.in): the icon, a VERSIONINFO (product quark,
+# company floration, a description, the version incl. a -test.N suffix: FILEVERSION x.y.z.N, flagged prerelease) and an
+# application manifest (asInvoker, Windows 7-11, per-monitor DPI for the windowed ones, as GLFW sets at runtime).
+# Anonymous exes without them are what antivirus heuristics flag most (docs/SIGNING.md). Exes are never packed.
+if(WIN32)
+  string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)" _qv "${QUARK_VERSION}")
+  set(QV_MAJOR ${CMAKE_MATCH_1})
+  set(QV_MINOR ${CMAKE_MATCH_2})
+  set(QV_PATCH ${CMAKE_MATCH_3})
+  set(QV_BUILD 0)
+  set(QV_FLAGS 0x0L)
+  if(QUARK_VERSION MATCHES "-")
+    set(QV_FLAGS 0x2L)   # VS_FF_PRERELEASE
+    if(QUARK_VERSION MATCHES "-test\\.([0-9]+)$")
+      set(QV_BUILD ${CMAKE_MATCH_1})
+      if(QV_BUILD GREATER 65535)
+        set(QV_BUILD 65535)
+      endif()
+    endif()
+  endif()
+  function(quark_win_resources target file desc windowed)
+    set(QUARK_RES_NAME ${target})
+    set(QUARK_RES_FILE ${file})
+    set(QUARK_RES_DESC "${desc}")
+    set(QUARK_RES_ICON ${CMAKE_SOURCE_DIR}/assets/quark.ico)
+    set(QUARK_RES_MANIFEST ${CMAKE_BINARY_DIR}/generated/${target}.manifest)
+    set(QUARK_RES_DPI "")
+    if(windowed)
+      set(QUARK_RES_DPI "  <application xmlns=\"urn:schemas-microsoft-com:asm.v3\">\n    <windowsSettings>\n      <dpiAware xmlns=\"http://schemas.microsoft.com/SMI/2005/WindowsSettings\">true/pm</dpiAware>\n      <dpiAwareness xmlns=\"http://schemas.microsoft.com/SMI/2016/WindowsSettings\">PerMonitorV2, PerMonitor</dpiAwareness>\n    </windowsSettings>\n  </application>\n")
+    endif()
+    configure_file(${CMAKE_SOURCE_DIR}/src/win/app.manifest.in ${QUARK_RES_MANIFEST} @ONLY)
+    configure_file(${CMAKE_SOURCE_DIR}/src/win/app.rc.in ${CMAKE_BINARY_DIR}/generated/${target}.rc @ONLY)
+    target_sources(${target} PRIVATE ${CMAKE_BINARY_DIR}/generated/${target}.rc)
+    set_source_files_properties(${CMAKE_BINARY_DIR}/generated/${target}.rc PROPERTIES
+      OBJECT_DEPENDS "${QUARK_RES_MANIFEST};${QUARK_RES_ICON}")
+  endfunction()
+endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -107,17 +143,20 @@ add_library(quark_core STATIC
   src/game/pmove.cpp
   src/game/protocol.cpp
   src/game/server.cpp
+  src/game/governor.cpp
   src/game/gamemodes.cpp
   src/game/netclient.cpp
   src/game/bots.cpp
   src/game/master.cpp
   src/game/ranked.cpp
   src/game/customrules.cpp
+  src/game/demo.cpp
   ${CMAKE_BINARY_DIR}/generated/version.cpp
 )
 target_include_directories(quark_core PUBLIC src ${CMAKE_BINARY_DIR}/generated)
 # ---- maps (a build artifact) ---------------------------------------------------------------------------
 # tools/make_maps.py generates the shipped maps at build time (python3, nothing else) into maps/, which .gitignore
+# (the generator: tools/maps/prefabs.py, the shared builder, and tools/maps/<name>.py, one module per map)
 # leaves out: the generator is the only source. maps/ is where the game looks (next to the source tree when run from
 # it, copied next to the executables below) and what release packaging copies. A hand-made map ships (embedded and
 # copied) only when .gitignore un-ignores it with a "!/maps/<name>.qmap" line, i.e. it's tracked: any other *.qmap
@@ -138,9 +177,11 @@ foreach(n ${QUARK_GEN_MAP_NAMES})
 endforeach()
 # (the owner's map overrides, assets/overrides/maps/<name>.qmap, replace generated maps: docs/ASSETS.md)
 file(GLOB QUARK_MAP_OVERRIDES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/assets/overrides/maps/*.qmap)
+# (any change to the generator, the shared builder or one map's module, regenerates; a new module re-globs)
+file(GLOB QUARK_MAP_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/maps/*.py)
 add_custom_command(OUTPUT ${QUARK_GEN_MAPS}
   COMMAND ${CMAKE_COMMAND} -E env PYTHONHASHSEED=0 ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/make_maps.py --out ${QUARK_MAPS_DIR}
-  DEPENDS ${CMAKE_SOURCE_DIR}/tools/make_maps.py ${QUARK_MAP_OVERRIDES}
+  DEPENDS ${CMAKE_SOURCE_DIR}/tools/make_maps.py ${QUARK_MAP_SOURCES} ${QUARK_MAP_OVERRIDES}
   COMMENT "Generating maps (tools/make_maps.py)" VERBATIM)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/.gitignore)
 file(STRINGS ${CMAKE_SOURCE_DIR}/.gitignore QUARK_HAND_MAP_LINES REGEX "^!/maps/[A-Za-z0-9_-]+\\.qmap")
@@ -194,6 +235,9 @@ endif()
 
 add_executable(quark_server src/server/main.cpp)
 target_link_libraries(quark_server quark_core)
+if(WIN32)
+  quark_win_resources(quark_server quark_server.exe "quark dedicated server" OFF)
+endif()
 
 # Launcher logic without a window: release channels, the launcher self-update / replacement, desktop integration.
 # In the launcher, the game (it updates old launchers, docs/SIGNING.md) and the tests.
@@ -202,6 +246,7 @@ add_library(quark_launcher_core STATIC
   src/launcher/releases.cpp
   src/launcher/selfupdate.cpp
   src/launcher/install.cpp
+  src/launcher/gamefiles.cpp
 )
 target_link_libraries(quark_launcher_core PUBLIC quark_core)
 if(WIN32)
@@ -274,7 +319,6 @@ if(QUARK_BUILD_CLIENT)
     src/client/profiles.cpp
     src/client/binds.cpp
     src/client/uitest.cpp
-    ${QUARK_ICON_RC}
   )
   target_link_libraries(quark quark_core quark_launcher_core quark_audio glfw ${CMAKE_DL_LIBS})
   if(WIN32)
@@ -282,7 +326,6 @@ if(QUARK_BUILD_CLIENT)
   endif()
   add_executable(quark_launcher WIN32
     src/launcher/main.cpp
-    ${QUARK_ICON_RC}
     src/client/gl.cpp
     src/client/renderer.cpp
     src/client/lightmap.cpp
@@ -298,6 +341,8 @@ if(QUARK_BUILD_CLIENT)
   endforeach()
   if(WIN32)
     target_link_libraries(quark_launcher winhttp ole32 uuid shell32 advapi32)
+    quark_win_resources(quark quark.exe "quark" ON)
+    quark_win_resources(quark_launcher quark_launcher.exe "quark launcher" ON)
   endif()
 endif()
 

@@ -67,6 +67,8 @@ jobs:
           fi
           if [ "$CHANNEL" != none ]; then
             [ -f "changelogs/$V.md" ] || { [ "$CHANNEL" = testing ] || { echo "::error::changelogs/$V.md is missing"; exit 1; }; }
+            # the full changelog (what changed and why, in depth: the website's updates/<version> page)
+            [ -f "changelogs/full/$V.md" ] || { [ "$CHANNEL" = testing ] || { echo "::error::changelogs/full/$V.md is missing"; exit 1; }; }
             if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
               echo "::error::release $TAG already exists: bump VERSION (releases are never replaced)"; exit 1
             fi
@@ -128,6 +130,7 @@ jobs:
           xvfb-run -a -s "-screen 0 1920x1080x24" ctest --test-dir build --output-on-failure   # quark_tests + uitest
           test -f build/uitest-report.json   # (the UI test ran: it isn't skipped here)
           python3 tools/site_changelog.py .   # the website's data builds (checked here, before anything is published)
+          python3 tools/site_updates.py . --allow-missing-full   # (work in progress may not have its full changelog yet)
           mkdir -p pkg && cp build/quark build/quark_server build/quark_launcher pkg/ && cp -r maps mods pkg/
           python3 tools/pack.py pkg quark-linux.qpak
           mkdir -p quark-linux && cp -r pkg/* README.md quark-linux/
@@ -210,17 +213,23 @@ jobs:
         run: |
           rm -rf dist/windows-tests
           for p in windows linux macos; do test -f "dist/$p/quark-$p.qpak" || { echo "::error::no $p build"; exit 1; }; done
-      - name: release manifest + sign (Ed25519, docs/SIGNING.md)
+      - name: sign the launchers, release manifest, sign every published file (Ed25519, docs/SIGNING.md)
         env:
           QUARK_SIGNING_KEY: ${{ secrets.QUARK_SIGNING_KEY }}
           TAG: ${{ needs.meta.outputs.tag }}
           VER: ${{ needs.meta.outputs.version }}
         run: |
-          # what servers check before updating (tools/server/autoupdate.sh): this tag is this commit, signed; and the
-          # launcher before installing: this release, this channel, these packages (sha256)
-          sh tools/sign/release_manifest.sh production "$TAG" "$VER" "$GITHUB_SHA" dist/*/quark-*.qpak > dist/quark-release.txt
-          sh tools/sign/sign_release.sh dist/*/quark-*.qpak dist/quark-release.txt
+          # B6: everything published from 1.17.0 on is signed. First the launcher inside each package (its .sig goes
+          # into the package: the game and the launcher's self-update only use a signed launcher), which changes the
+          # packages, so before their hashes are taken. Then the manifest: what servers check before updating
+          # (tools/server/autoupdate.sh: this tag is this commit) and the launcher before installing (this release,
+          # this channel, these packages' sha256); it names every other download too. Then every file gets a .sig.
+          sh tools/sign/sign_release.sh --launchers dist/*/quark-*.qpak
+          sh tools/sign/release_manifest.sh production "$TAG" "$VER" "$GITHUB_SHA" dist/*/quark-*.qpak dist/*/quark-launcher-* \
+            dist/*/quark-*.zip dist/*/quark-*.tar.gz > dist/quark-release.txt
+          sh tools/sign/sign_release.sh dist/*/quark-* dist/quark-release.txt
           (cd dist && sha256sum -- */* quark-release.txt quark-release.txt.sig | sed 's#  [a-z]*/#  #' > SHA256SUMS)
+          sh tools/sign/sign_release.sh dist/SHA256SUMS
       - name: publish (marked latest; fails if it already exists)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -229,7 +238,7 @@ jobs:
         run: |
           gh release create "$TAG" -R "$GITHUB_REPOSITORY" --verify-tag --latest \
             --title "quark $VER" --notes-file "changelogs/$VER.md" \
-            dist/windows/* dist/linux/* dist/macos/* dist/quark-release.txt dist/quark-release.txt.sig dist/SHA256SUMS
+            dist/windows/* dist/linux/* dist/macos/* dist/quark-release.txt dist/quark-release.txt.sig dist/SHA256SUMS dist/SHA256SUMS.sig
 
   release-testing:   # TESTING: Windows + Linux, signed prerelease (macOS follows in release-testing-macos)
     needs: [meta, windows, windows-tests, linux]
@@ -244,16 +253,20 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with: { path: dist }
-      - name: release manifest + sign
+      - name: sign the launchers, release manifest, sign every published file
         env:
           QUARK_SIGNING_KEY: ${{ secrets.QUARK_SIGNING_KEY }}
           TAG: ${{ needs.meta.outputs.tag }}
           VER: ${{ needs.meta.outputs.version }}
         run: |
           rm -rf dist/windows-tests dist/macos
-          sh tools/sign/release_manifest.sh testing "$TAG" "$VER" "$GITHUB_SHA" dist/*/quark-*.qpak > dist/quark-release.txt
-          sh tools/sign/sign_release.sh dist/*/quark-*.qpak dist/quark-release.txt
+          # (as in the production job: launcher signatures into the packages first, then the manifest, then every file)
+          sh tools/sign/sign_release.sh --launchers dist/*/quark-*.qpak
+          sh tools/sign/release_manifest.sh testing "$TAG" "$VER" "$GITHUB_SHA" dist/*/quark-*.qpak dist/*/quark-launcher-* \
+            dist/*/quark-*.zip dist/*/quark-*.tar.gz > dist/quark-release.txt
+          sh tools/sign/sign_release.sh dist/*/quark-* dist/quark-release.txt
           (cd dist && sha256sum -- */* quark-release.txt quark-release.txt.sig | sed 's#  [a-z]*/#  #' > SHA256SUMS)
+          sh tools/sign/sign_release.sh dist/SHA256SUMS
       - name: publish the prerelease (never latest)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -268,7 +281,7 @@ jobs:
           } > notes.md
           gh release create "$TAG" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false \
             --title "quark $VER (testing)" --notes-file notes.md \
-            dist/windows/* dist/linux/* dist/quark-release.txt dist/quark-release.txt.sig dist/SHA256SUMS
+            dist/windows/* dist/linux/* dist/quark-release.txt dist/quark-release.txt.sig dist/SHA256SUMS dist/SHA256SUMS.sig
 
   release-testing-macos:   # adds the macOS files to the testing prerelease when that build succeeded
     needs: [meta, macos, release-testing]
@@ -294,9 +307,12 @@ jobs:
           VER: ${{ needs.meta.outputs.version }}
         run: |
           # quark-release.txt went out without this package: its own signed manifest (the launcher prefers it)
-          sh tools/sign/release_manifest.sh testing "$TAG" "$VER" "$GITHUB_SHA" dist/macos/quark-macos.qpak > dist/macos/quark-release-macos.txt
-          sh tools/sign/sign_release.sh dist/macos/quark-macos.qpak dist/macos/quark-release-macos.txt
+          sh tools/sign/sign_release.sh --launchers dist/macos/quark-macos.qpak
+          sh tools/sign/release_manifest.sh testing "$TAG" "$VER" "$GITHUB_SHA" dist/macos/quark-macos.qpak dist/macos/quark-launcher-macos.zip \
+            dist/macos/quark-macos.zip > dist/macos/quark-release-macos.txt
+          sh tools/sign/sign_release.sh dist/macos/quark-*   # (the packages, the launcher, the zip and the manifest)
           (cd dist/macos && sha256sum -- * > SHA256SUMS-macos)
+          sh tools/sign/sign_release.sh dist/macos/SHA256SUMS-macos
           gh release upload "$TAG" -R "$GITHUB_REPOSITORY" dist/macos/*
 
   pages:   # the website follows production only
@@ -310,13 +326,20 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - name: publish site/ to the gh-pages branch (served at floration.github.io/quark)
+      - name: publish site/ to the gh-pages branch (served at floration.github.io/quark), signed
         env:
           GH_TOKEN: ${{ github.token }}
+          QUARK_SIGNING_KEY: ${{ secrets.QUARK_SIGNING_KEY }}
         run: |
           python3 tools/site_changelog.py .
+          python3 tools/site_updates.py .   # updates/ and updates/<version>/ (every version from 1.17.0 has its full changelog)
           # the owner's website pictures (docs/ASSETS.md): assets/overrides/website/<file> replaces site/img/<file>
           if [ -d assets/overrides/website ]; then find assets/overrides/website -maxdepth 1 -type f \( -name '*.jpg' -o -name '*.png' \) -exec cp {} site/img/ \; ; fi
+          # B6: what the site serves is signed too: SHA256SUMS of every file, signed with the release key (the
+          # downloads it links are release assets, each with its own .sig). master.txt keeps its own signature,
+          # made by the owner (sign-master, docs/SIGNING.md), which is the only one the game reads.
+          (cd site && find . -type f ! -name SHA256SUMS ! -name SHA256SUMS.sig | sed 's#^\./##' | LC_ALL=C sort | xargs -d '\n' sha256sum -- > SHA256SUMS)
+          sh tools/sign/sign_release.sh site/SHA256SUMS
           cd site
           touch .nojekyll
           git init -q -b gh-pages

@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <vector>
 #endif
+#include "../game/demo.h"
 
 static Game* g_game = nullptr;
 
@@ -73,6 +74,7 @@ int main(int argc, char** argv) {
         else if (a == "--crosshair") { opts.debugSettings = true; opts.debugCrosshair = true; }
         else if (a == "--hudlayout") { opts.debugSettings = true; opts.debugHudLayout = true; }
         else if (a == "--models") opts.debugModels = true;
+        else if (a == "--rpsshot") opts.debugRps = atoi(next().c_str());   // the tiebreak panel (screenshots)
         else if (a == "--timetrial") opts.timeTrial = true;
         else if (a == "--racestats") { opts.debugLeaderboard = true; opts.debugRaceStats = true; }
         else if (a == "--widgets") { opts.debugSettings = true; opts.debugWidgets = true; }
@@ -113,6 +115,11 @@ int main(int argc, char** argv) {
     if (opts.uiTest) uiTestPrepare(opts);   // (its own data folder and settings: before anything reads them)
     if (!automated) selfupdate::startFromGame(argv[0]);
     struct LauncherUpdateJoin { ~LauncherUpdateJoin() { selfupdate::finishFromGame(2.0); } } launcherUpdateJoin;
+    // demos recorded by an older version: converted to this one in the background (originals in demos/old/<version>/)
+    if (!automated) demo::startUpgrade(userDataPath("demos"), userDataPath("versions.txt"));
+    if (!automated)   // your maps written in an older map format: converted (originals in maps/old/v<N>/)
+        for (auto& l : upgradeMapDir(userMapsDir()).log) fprintf(stderr, "maps: %s\n", l.c_str());
+    struct DemoUpgradeJoin { ~DemoUpgradeJoin() { demo::finishUpgrade(5.0); } } demoUpgradeJoin;
     netInit();
     if (!glfwInit()) { fprintf(stderr, "glfwInit failed\n"); return 1; }
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);

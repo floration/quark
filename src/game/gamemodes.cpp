@@ -90,6 +90,7 @@ void setPhase(Server& s, Phase p, float duration) {
 }
 
 void enterMatchEnd(Server& s, const std::string& text, int winner) {
+    s.ms_.flags &= ~MS_RPS;   // (a hide and seek tiebreak is over too)
     GameEvent e;
     e.type = EV_ROUND_WIN;
     e.a = (uint8_t)(winner < 0 ? 255 : winner);
@@ -101,7 +102,10 @@ void enterMatchEnd(Server& s, const std::string& text, int winner) {
     if (s.cfg_.ranked) {
         std::string why, res = s.rankedResult(winner, &why);
         if (res.empty()) s.message("not rated: " + why);
-        else {
+        else if (!s.rated()) {   // a testing server: no EV_RANKED (players' games would report it), no result posted
+            s.message(std::string(kUnratedNotice) + ": the result isn't sent to the ranking server");
+            s.glog(LOG_SIMPLE, "ranked (not rated: testing server) %s", res.c_str());
+        } else {
             GameEvent r; r.type = EV_RANKED; r.text = res; s.broadcastEvent(r); s.glog(LOG_SIMPLE, "ranked %s", res.c_str());
             // the server's own account goes to the Worker under the ticket; players' reports must agree with it
             s.postRankedResult(res);
@@ -155,19 +159,13 @@ int bestScorer(const Server& s) {
 }
 
 // Hide and seek: one round per player in play, each seeking once (was clamp(players, 3, 6) in slot order: with 7+
-// players some never sought, with 2 someone sought twice).
+// players some never sought, with 2 someone sought twice). The match ends once nobody in play is left to seek.
 int hidersYetToSeek(const Server& s) { int n = 0; for (int i = 0; i < kMaxPlayers; i++) n += inPlay(s, i) && !s.players_[i].sought; return n; }
-int hideRounds(const Server& s) { return s.ms_.round + hidersYetToSeek(s); }
 
-// Hide and seek scoring: each hider and the seeker split kHidePoints by how long the hider stayed hidden (from the
-// round going live): found at a quarter of the round, the hider gets a quarter and the seeker the rest; hidden to the
-// end, the hider gets them all. Falls give the seeker nothing. So nobody scores for just being there, and every
-// player plays the same rounds (one seeking, the rest hiding).
-constexpr int kHidePoints = 4;
-int hiderShare(const Server& s) {
-    double f = std::min(1.0, std::max(0.0, (s.time() - s.liveSince_) / kHideRoundTime));
-    return (int)std::lround(kHidePoints * f);
-}
+// Hide and seek scoring (owner B8): a hider still unfound when the round ends scores 1; the seeker scores 1 for
+// each hider found (rulesOnDeath); a found hider scores nothing, and neither does a fall (nor the seeker for it).
+// Every player plays the same rounds (one seeking, the rest hiding).
+void payUnfound(Server& s) { for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i) && !s.players_[i].it && s.players_[i].alive) s.players_[i].score += 1; }
 
 void tickHide(Server& s) {
     ModeState& m = s.ms_;
@@ -179,8 +177,7 @@ void tickHide(Server& s) {
         else if (s.players_[i].alive) hiding++;
         else found += s.players_[i].found;
     }
-    auto payHidden = [&] { for (int i = 0; i < kMaxPlayers; i++) if (inPlay(s, i) && !s.players_[i].it && s.players_[i].alive) s.players_[i].score += hiderShare(s); };
-    if (seeker < 0) { payHidden(); endRoundText(s, "the seeker left"); return; }   // (hidden so far: their share so far)
+    if (seeker < 0) { payUnfound(s); endRoundText(s, "the seeker left"); return; }   // (still unfound when the round ends)
     if (hiding == 0) {                            // nobody left hiding (each find was scored as it happened)
         endRoundText(s, found > 0 ? s.players_[seeker].name + " found everyone" : "no hiders left");
         return;
@@ -189,9 +186,132 @@ void tickHide(Server& s) {
         std::string who;
         for (int i = 0; i < kMaxPlayers; i++)
             if (inPlay(s, i) && !s.players_[i].it && s.players_[i].alive) who += (who.empty() ? "" : ", ") + s.players_[i].name;
-        payHidden();   // (the whole round: all kHidePoints)
+        payUnfound(s);
         endRoundText(s, "the hiders win - " + who + " stayed hidden");
     }
+}
+
+// ---- hide and seek tiebreak: rock paper scissors (owner B8) ----
+bool rpsActive(const Server& s, int i) { return (s.rps_.in >> i & 1) && !(s.rps_.out >> i & 1); }
+int rpsLeft(const Server& s) { int n = 0; for (int i = 0; i < kMaxPlayers; i++) n += rpsActive(s, i); return n; }
+
+// Everyone sees the same state; picks stay hidden (RPS_PICKED) until the reveal.
+void rpsBroadcast(Server& s) {
+    const auto& r = s.rps_;
+    GameEvent e;
+    e.type = EV_RPS;
+    e.a = (uint8_t)r.stage;
+    e.b = (uint8_t)std::min(255, r.throwNo);
+    e.text = std::to_string(r.bestOf3 ? 1 : 0) + " " + std::to_string(r.winner);
+    for (int i = 0; i < kMaxPlayers; i++) {
+        if (!(r.in >> i & 1)) continue;
+        int shape = r.pick[i];
+        if (r.stage == RPS_PICK && shape != RPS_NONE) shape = RPS_PICKED;
+        e.text += " " + std::to_string(i) + ":" + std::to_string(shape) + ":" + std::to_string(r.wins[i]) + ":" + std::to_string((r.out >> i & 1) ? 1 : 0);
+    }
+    e.text += "\n" + r.result;
+    s.rpsEvent_ = e;
+    s.broadcastEvent(e);
+}
+
+void rpsNewThrow(Server& s) {
+    auto& r = s.rps_;
+    r.stage = RPS_PICK;
+    r.throwNo++;
+    r.stageEnd = s.time() + kRpsPickTime;
+    s.phaseEnd_ = r.stageEnd;
+    for (auto& p : r.pick) p = RPS_NONE;
+    for (int i = 0; i < kMaxPlayers; i++)   // bots throw at random
+        if (rpsActive(s, i) && s.players_[i].isBot) r.pick[i] = (uint8_t)(RPS_ROCK + qrand() % 3);
+    rpsBroadcast(s);
+}
+
+// After the last round: true (and the tiebreak is on) when two or more players share the top score.
+bool rpsStartIfTied(Server& s) {
+    int best = bestScorer(s);
+    if (best < 0) return false;
+    uint32_t tied = 0;
+    int n = 0;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const auto& p = s.players_[i];
+        if (p.connected && p.team != TEAM_SPECTATOR && p.score == s.players_[best].score) { tied |= 1u << i; n++; }
+    }
+    if (n < 2) return false;
+    s.rps_ = Server::Rps();
+    s.rps_.in = tied;
+    s.rps_.bestOf3 = n == 2;
+    s.ms_.flags |= MS_RPS;
+    std::string who;
+    for (int i = 0; i < kMaxPlayers; i++) if (tied >> i & 1) who += (who.empty() ? "" : ", ") + s.players_[i].name;
+    s.message("tied for first: " + who + " - rock paper scissors decides it");
+    s.glog(LOG_SIMPLE, "rps tiebreak: %s", who.c_str());
+    rpsNewThrow(s);
+    return true;
+}
+
+void rpsReveal(Server& s) {
+    auto& r = s.rps_;
+    for (int i = 0; i < kMaxPlayers; i++)   // no pick in time: a random one
+        if (rpsActive(s, i) && r.pick[i] == RPS_NONE) r.pick[i] = (uint8_t)(RPS_ROCK + qrand() % 3);
+    std::vector<int> ids;
+    for (int i = 0; i < kMaxPlayers; i++) if (rpsActive(s, i)) ids.push_back(i);
+    if (ids.size() == 2 && r.bestOf3) {
+        int a = ids[0], b = ids[1];
+        if (r.pick[a] == r.pick[b]) r.result = std::string("draw (") + rpsName(r.pick[a]) + ") - throw again";
+        else {
+            int w = rpsBeats(r.pick[a], r.pick[b]) ? a : b, l = w == a ? b : a;
+            r.wins[w]++;
+            r.result = s.players_[w].name + "'s " + rpsName(r.pick[w]) + " beats " + rpsName(r.pick[l]) + " - " +
+                       std::to_string(r.wins[w]) + "-" + std::to_string(r.wins[l]);
+            if (r.wins[w] >= 2) r.winner = w;
+        }
+    } else {
+        uint8_t picks[kMaxPlayers];
+        for (size_t k = 0; k < ids.size(); k++) picks[k] = r.pick[ids[k]];
+        int lose = rpsLosingShape(picks, (int)ids.size());
+        if (lose == RPS_NONE) r.result = "nobody is out - throw again";
+        else {
+            std::string outs;
+            for (int i : ids) if (r.pick[i] == lose) { r.out |= 1u << i; outs += (outs.empty() ? "" : ", ") + s.players_[i].name; }
+            r.result = outs + " out (" + rpsName(lose) + ")";
+            int left = rpsLeft(s);
+            if (left == 1) for (int i : ids) if (rpsActive(s, i)) r.winner = i;
+            if (left == 2) { r.bestOf3 = true; r.result += " - best of 3 between the last two"; }
+        }
+    }
+    r.stage = RPS_REVEAL;
+    r.stageEnd = s.time() + kRpsRevealTime;
+    s.phaseEnd_ = r.stageEnd;
+    s.message("rock paper scissors: " + r.result);
+    rpsBroadcast(s);
+}
+
+void tickRps(Server& s) {
+    auto& r = s.rps_;
+    ModeState& m = s.ms_;
+    for (int i = 0; i < kMaxPlayers; i++)   // left, or went to spectate: out of it
+        if (rpsActive(s, i) && (!s.players_[i].connected || s.players_[i].team == TEAM_SPECTATOR)) r.out |= 1u << i;
+    if (r.winner < 0 && rpsLeft(s) <= 1) {
+        for (int i = 0; i < kMaxPlayers; i++) if (rpsActive(s, i)) r.winner = i;
+        if (r.winner < 0) { m.flags &= ~MS_RPS; enterMatchEnd(s, "match over", -1); return; }
+        r.stageEnd = s.time();   // (the last one left wins now)
+    }
+    if (r.winner < 0 && rpsLeft(s) == 2 && !r.bestOf3) { r.bestOf3 = true; for (auto& w : r.wins) w = 0; }
+    m.timeLeft = (float)std::max(0.0, r.stageEnd - s.time());
+    if (r.stage == RPS_PICK) {
+        bool all = true;
+        for (int i = 0; i < kMaxPlayers; i++) if (rpsActive(s, i) && r.pick[i] == RPS_NONE) all = false;
+        if (s.time() < r.stageEnd && !all) return;
+        if (r.winner < 0) { rpsReveal(s); return; }
+    } else if (s.time() < r.stageEnd) return;
+    if (r.winner >= 0) {   // decided: the tiebreak's winner takes the match
+        r.stage = RPS_DONE;
+        rpsBroadcast(s);
+        m.flags &= ~MS_RPS;
+        enterMatchEnd(s, s.players_[r.winner].name + " wins the match (rock paper scissors tiebreak)", r.winner);
+        return;
+    }
+    rpsNewThrow(s);
 }
 
 bool tagMatchOn(const Server& s) { return s.ms_.mode == MODE_TAG && (s.ms_.phase == PHASE_FREEZE || s.ms_.phase == PHASE_LIVE || s.ms_.phase == PHASE_ROUND_END); }
@@ -401,9 +521,7 @@ void startMatch(Server& s) {
     s.completeTime_[0] = s.completeTime_[1] = 0;
     for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; p.dmgDealt = p.objTime = 0; p.shotsFired = p.shotsHit = 0; p.out = false; p.it = false; }
     s.lastIt_ = -1;
-    s.tagOut_.clear();
     for (auto& p : s.players_) p.sought = false;
-    s.hideRounds_ = hideRounds(s);
     if (m.mode == MODE_TOURNEY) {
         tourneyBegin(s);
         s.message("tourney started - " + std::to_string(s.tourney_.rounds[0].size()) + " slot bracket");
@@ -501,6 +619,7 @@ bool checkMatchOver(Server& s) {
             return false;
         case MODE_HIDE:
             if (hidersYetToSeek(s) > 0 && playersInPlay(s) > 1) return false;   // (everyone has had a turn seeking)
+            if (rpsStartIfTied(s)) return true;   // tied for first: rock paper scissors decides (tickRps ends the match)
             { int w = bestScorer(s); enterMatchEnd(s, w >= 0 ? s.players_[w].name + " wins the match" : "match over", w); }
             return true;
         case MODE_TAG:
@@ -954,7 +1073,6 @@ void rulesReset(Server& s) {
         for (auto& p : s.players_) if (p.connected && m.mode == MODE_TOURNEY) p.team = TEAM_A;
     }
     for (auto& p : s.players_) { p.it = false; p.out = false; p.found = false; } // nothing from the last match carries into warmup
-    s.tagOut_.clear();
     // Joined mid tag match (or were playing it when a map / mode vote passed): placed like a newcomer once the tag
     // match is over, so the next mode's seat limits (1v1, duel) and team balance hold, not all on team A.
     uint32_t waiting = 0;
@@ -1024,6 +1142,7 @@ void rulesTick(Server& s) {
             }
             break;
         case PHASE_ROUND_END:
+            if (m.flags & MS_RPS) { tickRps(s); break; }   // hide and seek: the tiebreak after the last round
             m.timeLeft = (float)std::max(0.0, s.phaseEnd_ - s.time());
             if (s.time() >= s.phaseEnd_ && !checkMatchOver(s)) startRound(s);
             break;
@@ -1060,11 +1179,8 @@ void rulesOnDeath(Server& s, int victim, int killer) {
         s.bombDroppedAt_ = s.time();
     }
     if (m.actionPlayer == victim) { m.actionPlayer = 255; m.actionProgress = 0; }
-    if (m.mode == MODE_HIDE && m.phase == PHASE_LIVE && !s.players_[victim].it) {   // a hider is out: split the points by time hidden
-        int share = hiderShare(s);
-        s.players_[victim].score += share;
-        if (killer >= 0 && s.players_[killer].it && s.players_[victim].found) s.players_[killer].score += kHidePoints - share;
-    }
+    if (m.mode == MODE_HIDE && m.phase == PHASE_LIVE && !s.players_[victim].it)   // a hider is out: found scores the seeker 1, a fall nothing
+        if (killer >= 0 && s.players_[killer].it && s.players_[victim].found) s.players_[killer].score += 1;
     if (m.mode == MODE_FFA && m.phase == PHASE_LIVE && (m.flags & MS_OVERTIME) && killer >= 0 && killer != victim)
         finishFFA(s);
 }
@@ -1096,16 +1212,7 @@ void rulesEndMatch(Server& s, const std::string& text, int winner) {
 float rulesRespawnDelay(const Server& s) {
     if (s.ms_.phase == PHASE_WARMUP) return 1.5f;
     if (s.ms_.phase == PHASE_MATCH_END) return -1.0f;
-    switch (s.ms_.mode) {
-        case MODE_RACE: return 1.0f;
-        case MODE_KOTH: return 4.0f;
-        case MODE_POINTS: return 5.0f;
-        case MODE_PAYLOAD:
-        case MODE_NPAYLOAD: return 5.0f;
-        case MODE_FFA: return 2.0f;
-        case MODE_TAG: return 2.0f;   // fell off something: back in (eliminations don't respawn)
-        default: return -1.0f; // VS, BOMB, hide and seek: no respawn
-    }
+    return modeRespawnDelay(s.ms_.mode);
 }
 
 bool rulesCanDamage(const Server& s, int attacker, int victim) {
@@ -1125,17 +1232,44 @@ bool rulesFrozen(const Server& s, int id) {
 }
 
 int rulesSpawnType(const Server& s, int id) {
-    const int mode = s.ms_.mode;
+    return modeSpawnType(s.map_, s.ms_.mode, s.players_[id].team, s.ms_.attackers, s.tourney_.running);
+}
+
+int modeSpawnType(const Map& m, int mode, int team, int attackers, bool tourneyMatch) {
     // (canSupportMode, not supportsMode: whether the map HAS these spawns, not whether its "modes" line offers the
     // mode. Colosseum is built for tourney and doesn't offer vs, so its a/b spawns were never used: REVIEW MAP-7.)
-    if (mode == MODE_RACE && s.map_.canSupportMode(MODE_RACE)) return SPAWN_RACE;
-    if (mode == MODE_TOURNEY && s.tourney_.running && s.map_.canSupportMode(MODE_VS))
-        return s.players_[id].team == TEAM_B ? SPAWN_B : SPAWN_A; // a match: opposite ends
+    if (mode == MODE_RACE && m.canSupportMode(MODE_RACE)) return SPAWN_RACE;
+    if (mode == MODE_TOURNEY && tourneyMatch && m.canSupportMode(MODE_VS))
+        return team == TEAM_B ? SPAWN_B : SPAWN_A; // a match: opposite ends
     if (!modeIsTeamBased(mode)) return SPAWN_ANY;
     bool staged = false;   // (payload maps may stage their spawns by checkpoint, like multi point)
-    for (auto& sp : s.map_.spawns) staged |= isStagedSpawn(sp.team);
-    if (mode == MODE_PAYLOAD && staged) return stagedSpawn(0, s.players_[id].team != s.ms_.attackers);
-    if (mode == MODE_POINTS && s.map_.canSupportMode(MODE_POINTS)) // staged: the spawns for how far the attack has got
-        return stagedSpawn(0, s.players_[id].team != s.ms_.attackers);
-    return s.players_[id].team == TEAM_B ? SPAWN_B : SPAWN_A;
+    for (auto& sp : m.spawns) staged |= isStagedSpawn(sp.team);
+    if (mode == MODE_PAYLOAD && staged) return stagedSpawn(0, team != attackers);
+    if (mode == MODE_POINTS && m.canSupportMode(MODE_POINTS)) // staged: the spawns for how far the attack has got
+        return stagedSpawn(0, team != attackers);
+    return team == TEAM_B ? SPAWN_B : SPAWN_A;
+}
+
+std::vector<const SpawnPoint*> spawnPool(const Map& m, int want, int pointsTaken) {
+    std::vector<const SpawnPoint*> cands;
+    if (isStagedSpawn(want)) { // multi point: the latest stage reached (points taken) that has spawns for this side
+        bool defending = spawnDefends(want);
+        int stage = -1;
+        for (auto& sp : m.spawns)
+            if (isStagedSpawn(sp.team) && spawnDefends(sp.team) == defending && spawnStage(sp.team) <= pointsTaken) stage = std::max(stage, spawnStage(sp.team));
+        want = stagedSpawn(std::max(stage, 0), defending);
+    }
+    for (auto& sp : m.spawns) if (sp.team == want) cands.push_back(&sp);
+    if (cands.empty()) for (auto& sp : m.spawns) if (sp.team == SPAWN_ANY) cands.push_back(&sp);
+    if (cands.empty()) for (auto& sp : m.spawns) cands.push_back(&sp);
+    return cands;
+}
+
+void rulesRpsPick(Server& s, int id, int shape) {
+    auto& r = s.rps_;
+    if (!(s.ms_.flags & MS_RPS) || s.ms_.phase != PHASE_ROUND_END || r.stage != RPS_PICK || r.winner >= 0) return;
+    if (id < 0 || id >= kMaxPlayers || !rpsActive(s, id) || shape < RPS_ROCK || shape > RPS_SCISSORS) return;
+    bool first = r.pick[id] == RPS_NONE;
+    r.pick[id] = (uint8_t)shape;   // (a change of mind is fine until the reveal)
+    if (first) rpsBroadcast(s);    // (everyone sees who has chosen, not what)
 }

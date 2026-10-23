@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quark leaderboard</title>
+<meta name="description" content="Live quark rankings: 1v1 Vanilla, 1v1 Laser Vampire, FFA Instagib and the Viaduct time trial.">
+<meta name="theme-color" content="#0c0f14">
+<link rel="icon" type="image/png" href="../icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@800&text=quark&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+<style>
+.queue { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.queue li { background: var(--bg-2); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; font-size: 14.5px; color: var(--muted); }
+.queue li b { color: var(--text); }
+.queue li.live { border-color: rgba(64, 217, 255, 0.5); }
+.queue li.live::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); margin-right: 8px; vertical-align: 1px; }
+.board-wrap { max-width: 860px; }
+.panel table td:nth-child(2) { overflow-wrap: anywhere; font-weight: 600; }
+.panel tr.top td:first-child { color: var(--cyan); font-weight: 800; }
+.how { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.how div { background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; }
+.how h3 { font-size: 17px; margin-bottom: 6px; }
+.how p { color: var(--muted); font-size: 15px; margin: 0; }
+@media (max-width: 860px) { .how { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="../" aria-label="quark home"><img src="../icon.png" alt="" width="32" height="32"><span>quark</span></a>
+    <nav aria-label="Main">
+      <ul class="nav">
+        <li><a href="../#modes">Modes</a></li>
+        <li><a href="../#maps">Maps</a></li>
+        <li><a href="../#weapons">Weapons</a></li>
+        <li><a href="./" aria-current="page">Leaderboard</a></li>
+        <li><a href="../updates/">Updates</a></li>
+        <li><a href="../testing/">Testing</a></li>
+        <li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li>
+        <li><a href="https://github.com/floration/quark">GitHub</a></li>
+      </ul>
+    </nav>
+    <a class="btn btn-primary btn-sm cta" href="../#download">Download</a>
+  </div>
+</header>
+
+<main id="main">
+<div class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">Live rankings</p>
+    <h1>Leaderboard</h1>
+    <p class="lede">The top 100 on each ranked ladder and the fastest Viaduct runs, straight from the ranking server.</p>
+  </div>
+</div>
+
+<div class="page">
+  <div class="wrap">
+    <h2 id="queue-title">In the queue now</h2>
+    <div id="queue" aria-live="polite"><p class="muted">Checking the queues...</p></div>
+
+    <h2 id="boards-title">Rankings</h2>
+    <div class="board-wrap">
+      <div class="tabs" role="tablist" aria-labelledby="boards-title" id="tabs">
+        <button role="tab" id="tab-vanilla" aria-controls="panel" aria-selected="true" data-k="vanilla">1v1 Vanilla</button>
+        <button role="tab" id="tab-vampire" aria-controls="panel" aria-selected="false" tabindex="-1" data-k="vampire">1v1 Laser Vampire</button>
+        <button role="tab" id="tab-instagib" aria-controls="panel" aria-selected="false" tabindex="-1" data-k="instagib">FFA Instagib</button>
+        <button role="tab" id="tab-viaduct" aria-controls="panel" aria-selected="false" tabindex="-1" data-k="viaduct">Viaduct time trial</button>
+      </div>
+      <div id="panel" role="tabpanel" aria-labelledby="tab-vanilla" tabindex="0" aria-live="polite">
+        <noscript><div class="state"><div><b>The leaderboard needs JavaScript.</b> It's loaded live from the ranking server.</div></div></noscript>
+        <p class="muted">Loading the leaderboard...</p>
+      </div>
+    </div>
+
+    <h2>How ranking works</h2>
+    <div class="how">
+      <div>
+        <h3>Placement first</h3>
+        <p>You appear on a ladder after 5 rated matches. Until then your account is provisional, and your results only count toward other players once you've placed.</p>
+      </div>
+      <div>
+        <h3>A cautious rating</h3>
+        <p>Your rating is a careful estimate of your skill: it climbs as you win and as the system grows sure of you. Each ladder is rated on its own.</p>
+      </div>
+      <div>
+        <h3>Only real matches count</h3>
+        <p>A match is rated only if the server opened it with the ranking server and both sides report the same result. Matches on testing servers never count.</p>
+      </div>
+      <div>
+        <h3>Same game for everyone</h3>
+        <p>Ranked games use the default model, HUD, controls and 10 ms interpolation. Leaving a live ranked match first loses it.</p>
+      </div>
+      <div>
+        <h3>Viaduct time trial</h3>
+        <p>Start a time trial from the main menu. The server that saw your run reports it, and your best time is the one on the board.</p>
+      </div>
+      <div>
+        <h3>Find a match</h3>
+        <p>Queue from the game's main menu or from the <a href="https://discord.gg/RERYWNWSXg">Discord</a> panel. The counts above show who's waiting.</p>
+      </div>
+    </div>
+  </div>
+</div>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div>
+      <p>Free and open source. No ads, no tracking, no cookies.</p>
+      <p class="small">Names are chosen by players. Rankings refresh about once a minute.</p>
+    </div>
+    <ul aria-label="Links">
+      <li><a href="../">Home</a></li>
+      <li><a href="./">Leaderboard</a></li>
+      <li><a href="../updates/">Updates</a></li>
+      <li><a href="../testing/">Testing</a></li>
+      <li><a href="https://github.com/floration/quark/releases">Releases</a></li>
+      <li><a href="https://discord.gg/RERYWNWSXg">Discord</a></li>
+      <li><a href="https://github.com/floration/quark">GitHub</a></li>
+    </ul>
+  </div>
+</footer>
+
+<script src="../common.js"></script>
+<script>
+"use strict";
+// the queue names the game and the Discord bot use (Game::kQueues in src/client/community.cpp)
+const QUEUES = {"ranked-vanilla": "Ranked 1v1 Vanilla", "ranked-vampire": "Ranked 1v1 Laser Vampire", "ranked-instagib": "Ranked FFA Instagib",
+  vs: "VS", bomb: "Bomb", koth: "King of the hill", payload: "Payload", npayload: "Neutral payload", points: "Multi point", duel: "Duel",
+  "1v1": "1v1", tourney: "Tourney", ffa: "Free for all", race: "Race", hide: "Hide and seek", tag: "Tag"};
+const tabs = [...document.querySelectorAll('#tabs [role="tab"]')];
+const panel = document.getElementById("panel");
+const data = {};   // key -> rows, or null while loading, or false if it failed
+let current = "vanilla", failed = false;
+
+function render() {
+  panel.setAttribute("aria-labelledby", "tab-" + current);
+  if (failed) {
+    panel.innerHTML = Q.state("Leaderboard unavailable right now.", " The ranking server didn't answer. Rankings are safe; try again in a minute.");
+    return;
+  }
+  const rows = data[current];
+  if (rows === false) { panel.innerHTML = Q.state("This board is unavailable right now.", " The ranking server couldn't load it. Try again in a minute."); return; }
+  if (!rows) { panel.innerHTML = '<p class="muted">Loading the leaderboard...</p>'; return; }
+  const race = current === "viaduct";
+  const head = race ? '<tr><th scope="col">#</th><th scope="col">Player</th><th scope="col" class="num">Time</th></tr>'
+                    : '<tr><th scope="col">#</th><th scope="col">Player</th><th scope="col" class="num">Rating</th><th scope="col" class="num">Games</th></tr>';
+  const title = tabs.find(t => t.dataset.k === current).textContent;
+  const body = rows.length ? rows.map((p, i) => `<tr${i < 3 ? ' class="top"' : ""}><td>${i + 1}</td><td>${Q.esc(p.name)}</td>` +
+      (race ? `<td class="num">${Q.fmtTime(p.ms)}</td>` : `<td class="num">${p.rating}</td><td class="num">${p.games}</td>`) + "</tr>").join("")
+    : `<tr><td colspan="${race ? 3 : 4}" class="empty">${race ? "No times yet. Be the first." : "Nobody has placed on this ladder yet."}</td></tr>`;
+  panel.innerHTML = `<div class="panel"><div class="scroll"><table><caption class="sr">${Q.esc(title)}</caption><thead>${head}</thead><tbody>${body}</tbody></table></div></div>`;
+}
+function select(k, focus) {
+  current = k;
+  for (const t of tabs) {
+    const on = t.dataset.k === k;
+    t.setAttribute("aria-selected", on); t.tabIndex = on ? 0 : -1;
+    if (on && focus) t.focus();
+  }
+  try { history.replaceState(null, "", "#" + k); } catch (e) { /* file:// */ }
+  render();
+}
+tabs.forEach((t, i) => {
+  t.addEventListener("click", () => select(t.dataset.k));
+  t.addEventListener("keydown", e => {   // arrow keys move between tabs
+    const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    if (e.key === "Home" || e.key === "End") { e.preventDefault(); select(tabs[e.key === "Home" ? 0 : tabs.length - 1].dataset.k, true); }
+    else if (d) { e.preventDefault(); select(tabs[(i + d + tabs.length) % tabs.length].dataset.k, true); }
+  });
+});
+const start = location.hash.slice(1);
+select(tabs.some(t => t.dataset.k === start) ? start : "vanilla");
+
+Q.master().then(base => {
+  // one board failing shows on its own tab; only all four failing is "the ranking server is down"
+  const one = (k, url, parse) => Q.getText(url).then(parse, () => false).then(v => { data[k] = v; if (k === current) render(); return v; });
+  // queues: "mode waiting size" per queue that has anyone in it
+  Q.getText(`${base}/queue`).then(t => {
+    const qs = t.split("\n").map(l => l.match(/^(\S+) (\d+) (\d+)$/)).filter(Boolean);
+    document.getElementById("queue").innerHTML = qs.length
+      ? `<ul class="queue">${qs.map(m => `<li class="live"><b>${Q.esc(QUEUES[m[1]] || m[1])}</b> · ${+m[2]} of ${+m[3]} waiting</li>`).join("")}</ul>`
+      : '<p class="muted">Nobody is queued right now. Join a queue from the main menu and others will see you here.</p>';
+  }).catch(() => {
+    document.getElementById("queue").innerHTML = '<p class="muted">Queue counts are unavailable right now.</p>';
+  });
+  return Promise.all([
+    ...Q.LADDERS.map(l => one(l.key, `${base}/leaderboard?ladder=${l.key}&n=100`, Q.parseLadder)),
+    one("viaduct", `${base}/raceboard?map=viaduct&n=100`, Q.parseRace),
+  ]).then(res => { if (res.every(v => v === false)) throw new Error("ranking server down"); });
+}).catch(() => {
+  failed = true;
+  render();
+  const q = document.getElementById("queue");
+  if (/Checking/.test(q.textContent)) q.innerHTML = '<p class="muted">Queue counts are unavailable right now.</p>';
+});
+</script>
+</body>
+</html>

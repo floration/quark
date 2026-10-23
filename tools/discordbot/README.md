@@ -34,7 +34,7 @@ one elsewhere). The protocol and mode constants in `quarkdata.py` are copies of 
 - **Info**: `kInfoTabs` / `kInfoPages` parsed from `src/client/game.cpp` (local checkout if present, else from GitHub's raw file).
 
 ## What it does
-- **#updates**: posts each new **production** release's changelog as embeds and pings **Update Pings**. The last announced
+- **#updates**: posts each new **production** release's changelog as embeds (ending with a link to the website's full changelog page, `updates/<version>/`) and pings **Update Pings**. The last announced
   tag is kept in `state.json` (on a fresh install it announces the current release once). `/changelog [version]` shows
   any version (`1.17.0`, or a testing build `1.17.0-test.3` / `test-1.17.0-test.3`: labelled testing, with the
   notes of its base version `changelogs/1.17.0.md`).

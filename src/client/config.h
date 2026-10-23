@@ -35,13 +35,20 @@ struct Settings {
     bool fullbright = false;    // flat white world, black outlines, no lighting
     int ownShots = 0;           // your tracers / beam: 0 with the weapon model, 1 always, 2 never
     bool enemyShots = true;     // other players' tracers and beams
-    bool healthBars = false;    // health bars over other players (not in ranked)
+    bool healthBars = true;     // health bars over other players (not in ranked; on by default, owner 1.17)
     bool healthBarsBottom = false;  // ... at their feet instead of over the head
-    float scopeOpacity = 1.0f;  // the sniper scope's black surround (0 = none, just the zoom)
+    float scopeOpacity = 1.0f;  // the sniper scope's black surround and reticle (0 = off: just the zoom, with the normal crosshair)
     bool stickyCounter = true;  // "STICKIES 3/6" while you hold the sticky launcher or have any out
     bool demoFullRate = false;  // demos: every snapshot (up to 1000 Hz) instead of 62.5 Hz
     std::string discordName;    // linked on the master for the Discord bot (roles, queue pings)
     bool crowns = true;         // gold / silver crowns on ranked leaders
+    bool chatOff = false;       // other players' chat hidden (settings "DISABLE CHAT", or the TOGGLE CHAT key)
+    bool dmgNums = true;        // the numbers over whoever you hit (VISUALS > DAMAGE NUMBERS)
+    float dmgNumScale = 1.0f;   // ...and their size (0.5 - 3; 1 = the HUD text size)
+    float damageFlash = 1.0f;   // the screen-edge flash when you're hit (VISUALS > DAMAGE FLASH; 0 = off, 1 = full)
+    // the sniper's / rifle's alt-fire zoom (horizontal degrees; the weapon table's zoomFov by default; client-side only)
+    float zoomFovSniper = baseWeaponDef(WPN_SNIPER).zoomFov, zoomFovRifle = baseWeaponDef(WPN_RIFLE).zoomFov;
+    Vec3 fullbrightColor = {1, 1, 1};   // FULLBRIGHT's flat colour (white: the classic look)
     int outlineFriendly = 0, outlineEnemy = 0; // player outline presets (kOutlineNames: black, white, team, ...)
     float outlinePlayer = 1.0f, outlineWorld = 1.0f; // outline widths in pixels (players' models / the map's edges); 0 = none
     int announcerVoice = 0;     // 0 male, 1 female: recorded lines, the generated voice for any not recorded yet

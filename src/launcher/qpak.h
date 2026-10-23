@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <functional>
 #include <istream>
+#include <map>
 #include <string>
 
 namespace qpak {
@@ -21,6 +22,9 @@ bool read(std::istream& in, uint64_t size, const FileSink& file, std::string* er
 
 // Extracts `pak` into `stage` (a fresh directory); the caller swaps it into place on success, so a failed or
 // interrupted install never leaves a half-updated game.
-bool extract(const std::filesystem::path& pak, const std::filesystem::path& stage, std::string* err);
+// `hashes` (optional): every extracted file's sha256 (lowercase hex) by its entry name, `sizes` (optional) its size:
+// for the installed-files list and the check of the stage before it is swapped in (src/launcher/gamefiles.h).
+bool extract(const std::filesystem::path& pak, const std::filesystem::path& stage, std::string* err,
+             std::map<std::string, std::string>* hashes = nullptr, std::map<std::string, uint64_t>* sizes = nullptr);
 
 } // namespace qpak

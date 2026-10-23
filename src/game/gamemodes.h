@@ -1,7 +1,10 @@
 // Game mode rules: VS, BOMB, RACE, KOTH, PAYLOAD, FFA.
 #pragma once
 #include <string>
+#include <vector>
 class Server;
+struct Map;
+struct SpawnPoint;
 
 bool modeIsTeamBased(int mode);
 void rulesReset(Server& s);                       // back to warmup
@@ -16,3 +19,11 @@ float rulesRespawnDelay(const Server& s);         // < 0 means no respawn
 bool rulesCanDamage(const Server& s, int attacker, int victim);
 bool rulesFrozen(const Server& s, int id);         // movement locked (freeze time / planting)
 int rulesSpawnType(const Server& s, int id);       // SPAWN_*
+// The spawn type (SPAWN_*) a player of `team` (TEAM_*) draws from in `mode` on map m; attackers: the attacking team
+// (payload, multi point); tourneyMatch: a tourney match is being played. (rulesSpawnType for a server's player.)
+int modeSpawnType(const Map& m, int mode, int team, int attackers, bool tourneyMatch);
+// The spawns Server::spawnPlayer picks from for spawn type `want`: a staged type uses the latest stage reached
+// (pointsTaken: points / cart checkpoints taken) that has spawns for that side; an empty pool falls back to the
+// `any` spawns, then to every spawn. The map tests check every offered mode's pools with this (REVIEW MAP-2).
+std::vector<const SpawnPoint*> spawnPool(const Map& m, int want, int pointsTaken);
+void rulesRpsPick(Server& s, int id, int shape);   // hide and seek tiebreak: a player chose (RpsShape; "rps" command)

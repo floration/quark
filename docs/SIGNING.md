@@ -1,5 +1,20 @@
 # Signed update packages
 
+From 1.17.0 on **everything published is signed** with the release key (owner decision B6): every release asset
+(production and testing), the launcher itself, and the website. Releases up to 1.16.x came before signing (see the
+end of this page).
+
+| What | Signature | Checked by |
+|---|---|---|
+| `quark-<platform>.qpak` (update package) | `quark-<platform>.qpak.sig` | the launcher before installing; server autoupdate |
+| `quark-release.txt` (signed manifest, below) | `quark-release.txt.sig` | the launcher; server autoupdate |
+| the launcher inside each package | `quark_launcher[.exe].sig` inside the package, next to it | the launcher's self-update and the game's launcher update: a packaged launcher is only ever put in use when it verifies |
+| `quark-launcher-windows.exe`, `quark-launcher-linux`, `quark-launcher-macos.zip` (the website's downloads) | `<file>.sig` | the player (`quark_sign verify <file>`); also named in the signed manifest |
+| `quark-<platform>.zip` / `.tar.gz` (game only, no launcher) | `<file>.sig` | the player; also named in the signed manifest |
+| `SHA256SUMS` (every asset and signature of the release) | `SHA256SUMS.sig` | the player |
+| the website (`index.html`, `changelog.json`, `weapons.json`, images...) | `SHA256SUMS` of every site file + `SHA256SUMS.sig`, made by the pages job | the player |
+| `site/master.txt` | `master.txt.sig` over a prefix, made by the owner (below) | the game |
+
 Every release's `quark-<platform>.qpak` is signed in CI and published with a `quark-<platform>.qpak.sig` next to it.
 The launcher downloads both and refuses to install a package whose signature doesn't verify against the public key
 built into it (`kReleasePublicKey` in `src/common/sign.cpp`), or that the release's signed manifest (below) doesn't
@@ -37,9 +52,13 @@ package, so the manifest must also verify and name this release's tag, version a
 and the downloaded package's sha256, or the install is refused (a validly signed old or testing package can't be
 passed off as another release or channel). A testing build's macOS package is added after the prerelease went out, so
 it comes with its own signed `quark-release-macos.txt`, which the launcher prefers over `quark-release.txt` when
-present. Releases from before signing (<= 1.16) have neither and stay installable only after the player confirms.
+present. Releases from before signing (<= 1.16) have neither and stay installable (see the end of this page).
 
-Signing runs in the `release` / `release-testing` jobs of `.github/workflows/release.yml` (tools/sign/sign_release.sh),
+Signing runs in the `release` / `release-testing` / `release-testing-macos` jobs of `.github/workflows/release.yml`
+(tools/sign/sign_release.sh), in this order: the launcher inside each package is signed and its `.sig` is added to the
+package (`sign_release.sh --launchers`, tools/sign/qpak_launcher_sig.py: it changes the package, so it comes first),
+then the manifest is made (naming every download), then every published file gets its `.sig`, then `SHA256SUMS` is
+made and signed. The `pages` job signs the website's `SHA256SUMS` the same way. All of it runs
 inside the GitHub environments `production` and `testing`. The secret can be a repository secret, or (better) an
 environment secret on those two environments with a deployment rule (production: tags `v*`; testing: branch
 `testing`), so no other branch's workflow can read it.
@@ -103,13 +122,29 @@ whatever a branch put in `master.txt`. The pages job only has to publish `site/`
 - The launcher's CHANNEL button switches the version list (remembered in `launcher.cfg`). On its own it only ever
   installs a *newer* version than the installed one; an older one only when the player picks it. LATEST is always
   the newest *signed* release.
-- Every qpak carries the launcher (`quark_launcher[.exe]` next to the game). A launcher that installs a package
+- Every qpak carries the launcher (`quark_launcher[.exe]` next to the game) and, from 1.17.0 on, its signature
+  (`quark_launcher[.exe].sig`, added by the release job). Neither the launcher nor the game ever puts a packaged
+  launcher in use unless that signature verifies against the release key (the copy that goes in place is the one
+  checked). A launcher that installs a package
   with a newer launcher swaps itself (POSIX: rename over; Windows: running exe -> `.old`, new one in, `.old` deleted
   next start) and restarts once. The game, at startup, replaces every older launcher it finds (the folder above
   its game folder, the install folder, `%LOCALAPPDATA%\quark` from before 0.12) and repoints the shortcuts, so
   players on any earlier launcher get the new one through a normal game update. The version is read from a
   `QUARK-LAUNCHER-VERSION:<VERSION>` marker in the binary (launchers without it count as older). Installing an
   older package (picked by hand, signed or not) never downgrades the launcher: only a newer marker replaces it.
+- **Old files on update** (owner decision C13, `src/launcher/gamefiles.h`): the launcher writes
+  `installed-files.txt` into the game folder at every install (each file the package put there, with its sha256 and size), and
+  every package from 1.17.0 on carries the same list (`tools/pack.py`), so installs made by an older launcher have it
+  too. An update deletes only *retired game files*: listed, unchanged since (same sha256), not in the new package, and
+  not a player file (`*.cfg`, `*.key`, demos, screenshots, logs, light caches, downloaded maps, the player's folders).
+  Everything else of the old install is carried over. An install with no list (a package from before 1.17.0 installed
+  by an older launcher) keeps every file: nothing is known to be retired.
+- **Demos on update** (`src/game/demo.h`): at the first start after an update the game converts the demos an older
+  version recorded (on a background thread), keeping each original under `demos/old/<version>/`. Every protocol
+  since the first demos (24, 1.11.0) records the same way, so they convert by checking every record and restamping;
+  one that doesn't convert (a newer or unknown version, a map this version can't load) stays as it is, is logged in
+  `demos/old/convert.log`, and the demo list shows "recorded with version X". The game notes in `versions.txt` (user
+  data) which version ran which protocol, so later versions can name the version that recorded an old demo.
 - The game's launcher update runs on a background thread that the game stops and joins when it quits: no new
   step (a launcher swap's rename pair, the shortcuts, the programs entry) starts after quitting began, the one
   running finishes, and the game waits at most 2 s for the thread. Automated runs (`--screenshot`, `--bench`,
@@ -117,23 +152,49 @@ whatever a branch put in `master.txt`. The pages job only has to publish `site/`
 
 ## Rolling back to a version from before signing
 
-Releases published before signing (every release up to 1.16.x) have no `.sig`. They are still listed, marked
-**UNSIGNED**, so any version stays playable if a player chooses it:
+Releases published before signing (every release up to 1.16.x) have no `.sig`. They are listed like any other
+version, with no warning and no extra confirmation (owner decision B6), so any version stays playable:
 
 - Only versions below 1.17.0 can be unsigned. A release without a `.sig` that claims 1.17.0 or later (including
-  1.17.0 test builds) can't be genuine and is not listed at all.
-- They are **never installed automatically**: LATEST only ever means the newest signed release, and startup never
-  installs an unsigned package on its own.
-- A player installs one only by picking it in the version list, pressing `INSTALL <version> (UNSIGNED)`, reading
-  the warning ("UNSIGNED: from before signed updates; only install if you trust it") and clicking again to confirm
-  within 10 s. The package is then installed without a signature check (it comes from the GitHub release over
-  HTTPS, nothing more is verified). Signed releases are always verified; a signed package that fails its check is
-  refused as before.
-- An old `launcher.cfg` pinned to an unsigned version keeps its pin (it is no longer treated as "latest", so the
-  launcher doesn't silently move that player to the newest). If that version is installed, it just plays; if not,
-  the launcher shows the confirmation instead of installing anything.
-- Old packages may carry no launcher (or an older one, which never replaces the current launcher) and speak older
-  network protocols, so online play may need servers of the same version.
+  1.17.0 test builds) can't be genuine: it is not listed at all, and the launcher refuses to install it.
+- They are **never installed over a newer version automatically**: LATEST only ever means the newest signed
+  release, so following the newest never lands on one.
+- A player installs one by picking it in the version list and pressing `INSTALL <version>`. The package is then
+  installed as it comes from the GitHub release over HTTPS (there is nothing to verify). Signed releases are always
+  verified; a signed package that fails its check is refused as before.
+- An old `launcher.cfg` pinned to such a version keeps its pin (it is no longer treated as "latest", so the launcher
+  doesn't silently move that player to the newest). If that version is installed, it just plays; if nothing or an
+  older version is installed, it is installed; if a newer version is installed, the launcher waits for the player's
+  INSTALL instead of replacing it.
+- Old packages may carry no launcher (or an older, unsigned one, which never replaces the current launcher) and
+  speak older network protocols, so online play may need servers of the same version.
+
+## Antivirus false positives (Windows)
+
+The Ed25519 signature above proves a package came from the release key; Windows doesn't know about it. To Windows the
+exes are unsigned, and an antivirus (Windows Defender's machine-learning detections, names like `Wacatac` or
+`Trojan:Win32/...!ml`) now and then flags one particular build of an unsigned exe on some PCs and quarantines it,
+which deletes it from the game folder (1.15.1 and 1.16.0's `quark.exe` on one player's PC: every other build, and those
+builds on everyone else's PCs, were fine).
+
+- **What the launcher does about it (1.17.0 on).** Every file of a new version is read back and checked against the
+  package before the swap: one an antivirus took, changed or blocked stops the update with the installed version
+  untouched, and the player sees which file, why that most likely happened (with the Windows Security steps to
+  restore it and to add an exclusion for the quark folder) and RETRY. Before every start the installed files are
+  checked (existence and size; CHECK FILES: sha256): a missing or changed `quark.exe` is never started, the player
+  gets the same explanation, OPEN FOLDER and REPAIR (that version downloaded, checked and swapped in again).
+- **Clearing a flagged build.** Submit the flagged exe (or the release's `quark-windows.zip`) as a false positive at
+  https://www.microsoft.com/wdsi/filesubmission ("Software developer", the detection name from the player's Protection
+  history). Microsoft usually clears it within a day or two and the next definition update stops the detections for
+  everyone; a player can then restore the file from Protection history or press REPAIR.
+- **Making it rarer.** Every exe carries a version resource (product quark, company floration, the version) and an
+  application manifest (src/win/, CMakeLists.txt `quark_win_resources`), and exes are never packed or compressed (UPX
+  and the like are a strong malware signal): anonymous, packed binaries are what the heuristics flag most.
+- **What really prevents it: Authenticode.** Signing `quark.exe`, `quark_server.exe` and `quark_launcher.exe` with a
+  code-signing certificate (an OV/EV certificate, or Azure Trusted Signing) gives the files a publisher reputation;
+  Defender and SmartScreen then treat new builds from that publisher as known. Not done by the owner's choice (the
+  package signature above covers the launcher's own checks); it would be one `signtool`/`osslsigncode` step in the
+  Windows job before `tools/pack.py`.
 
 ## Notes
 

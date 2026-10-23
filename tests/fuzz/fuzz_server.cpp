@@ -74,7 +74,7 @@ bool connectPlayer() {
     Reader a(body.data(), (int)body.size());
     if (a.u32() != g_nonce) return false;
     g_id = a.u8();
-    a.str(); a.u32(); a.u8();   // map, map crc, mode
+    a.str(); for (int k = 0; k < 32; k++) a.u8(); a.u8();   // map, map id (sha256), mode
     g_token[0] = a.u32(); g_token[1] = a.u32();
     return !a.bad();
 }

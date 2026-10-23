@@ -64,7 +64,7 @@ struct UiWidget {
     float x = 0, y = 0, w = 0, h = 0;
     float nx = 0, nw = 0;       // slider: where its number is (click it to type a value)
     float dx = 0, dy = 0;       // handle: a screen direction to drag it in
-    int count = 0;              // cycle: how many values; text field: its max length; KEY: 1 + the action to hold
+    int count = 0;              // cycle: how many values; text field: its max length; KEY: 1 + the action to hold; slider: decimals shown
     int key = 0, mods = 0;      // KEY: the key that does it (GLFW code)
     bool enabled = true, clipped = false;
     std::string label, value;   // value: the widget's own state (toggle / cycle index / slider / text)
@@ -96,6 +96,9 @@ public:
                const std::vector<std::string>& names, const UiExp& e);
     bool toggle(float x, float y, float w, float h, const std::string& label, bool& v, const UiExp& e);
     bool slider(float x, float y, float w, float h, const std::string& label, float& v, float lo, float hi, const char* fmt, const UiExp& e);
+    // The last slider's change was a typed value (not a drag): callers that snap a dragged value to steps keep a typed
+    // one as it is.
+    bool typed() const { return typed_; }
     // Interactive things that aren't drawn as widgets, for the UI test: a key that does something on this screen, a
     // draggable handle (editor gizmo, HUD widget), a clickable 3D view. Only call while probing() (no cost otherwise).
     bool probing() const { return probe != nullptr; }
@@ -112,6 +115,7 @@ public:
     // too (the editor's panel under its menus); `scope` - what they act on (the editor's selection kind). Cleared by begin().
     const char* where = nullptr;
     const char* scope = nullptr;
+    bool muted = false;   // drawn under a modal question that takes every click: not reported (cleared by begin())
     // A list of n items in a box `w` wide with `availH` of height left: as many columns as it takes to fit (at least
     // `minCols`), so long lists grow sideways instead of running off the bottom. Returns the column count.
     static int fitColumns(int n, float availH, float rowH, int minCols = 1, int maxCols = 6) {
@@ -137,6 +141,7 @@ private:
     int focus_ = -1;
     int activeSlider_ = -1, sliderCounter_ = 0;
     int editSlider_ = -1;       // slider whose number is being typed in (focus_ = kSliderFocus + id)
+    bool typed_ = false;        // (typed())
     std::string editText_;
     static constexpr int kSliderFocus = 100000;
     double blink_ = 0;

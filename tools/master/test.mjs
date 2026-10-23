@@ -2,7 +2,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
 import { createHash, createPrivateKey, createPublicKey, sign as edSign } from "node:crypto";
-import worker, { rateTeams, rankKeyOf, prune, keyEq } from "./worker.js";
+import worker, { rateTeams, rankKeyOf, prune, keyEq, isTestingVersion } from "./worker.js";
 
 const db = new DatabaseSync(":memory:");
 db.exec(readFileSync(new URL("./schema.sql", import.meta.url), "utf8"));
@@ -92,9 +92,9 @@ const ratings = async (ns, ladder = "vanilla") => Object.fromEntries((await call
 
 // Game servers: announce (hidden) for a token, then open tickets / post results and race runs with it.
 let srvN = 0;
-const server = async () => {
+const server = async (v = "t9") => {
   const ip = "198.18.0." + (++srvN), port = 27600 + srvN;
-  const tok = (await call("/announce", { port: String(port), v: "t9", hidden: "1" }, ip)).split(" ")[1];
+  const tok = (await call("/announce", { port: String(port), v, hidden: "1" }, ip)).split(" ")[1];
   const S = { ip, addr: ip + ":" + port, f: { port: String(port), token: tok } };
   S.post = (path, form) => call(path, { ...S.f, ...form }, S.ip);
   // every player signs the match id in the game; the server forwards keys and signatures with the ticket
@@ -605,6 +605,26 @@ check((await call("/report", { secret: secret(1), match: "dddddddddddddddd", lad
   db.prepare("UPDATE lifetime SET updated = 0, hour_kills = 1100 WHERE id = ?").run(id(7));
   check((await call("/lifetime", { secret: secret(7), kills: "200", deaths: "0" })) === "hourly limit", "lifetime hourly cap");
   check((await call("/lifetime")).startsWith(`15 6 ${id(7)} `), "lifetime top");
+}
+// Testing servers (a prerelease version: the testing server every box runs next to production) are never rated
+{
+  check(isTestingVersion("1.17.0-test.42") && isTestingVersion("~1.17.0-test.4") && !isTestingVersion("1.17.0") && !isTestingVersion("~1.17.0"), "testing versions");
+  const nr = "testing server: ranked not rated";
+  const T = await server("1.17.0-test.42");
+  check((await T.ticket("7a7a7a7a7a7a7a7a", "vanilla", [41, 42])) === nr, "a testing server can't open a match ticket");
+  check((await T.race("7b7b7b7b7b7b7b7b", 43)) === nr, "nor a race ticket");
+  check((await T.result("7a7a7a7a7a7a7a7a", `${id(41)}:0:0,${id(42)}:1:1`)) === nr, "nor post a result");
+  check((await T.post("/racerun", { ticket: "7b7b7b7b7b7b7b7b", map: "viaduct", id: id(43), ms: "60000", splits: "60000" })) === nr, "nor a race run");
+  check(db.prepare("SELECT COUNT(*) AS n FROM tickets WHERE server = ?").get(T.addr).n === 0, "no ticket from a testing server");
+  // a server that ticketed as production, then announces a testing build (an older ticket): nothing under it counts
+  const P = await server("1.17.0");
+  check((await P.ticket("7c7c7c7c7c7c7c7c", "vanilla", [44, 45])) === "ticket 7c7c7c7c7c7c7c7c", "a production server tickets as before");
+  check((await call("/announce", { port: P.f.port, v: "1.17.1-test.3", hidden: "1", token: P.f.token }, P.ip)).startsWith("ok "), "re-announced as a testing build");
+  age("7c7c7c7c7c7c7c7c");
+  const p = `${id(44)}:0:0,${id(45)}:1:1`;
+  check((await call("/report", { secret: secret(44), match: "7c7c7c7c7c7c7c7c", ladder: "vanilla", p })) === nr, "reports under a testing server's ticket are refused");
+  check((await P.result("7c7c7c7c7c7c7c7c", p)) === nr, "and its result");
+  check(!db.prepare("SELECT 1 FROM matches WHERE id = ?").get("7c7c7c7c7c7c7c7c"), "nothing pending for it");
 }
 console.log(fails ? fails + " FAILURE(S)" : "worker tests passed");
 process.exit(fails ? 1 : 0);

@@ -24,13 +24,11 @@ bool isOfficialMapName(const std::string& name) {
     return false;
 }
 
+// By content alone (REVIEW MAP-13): the map's sha256 (CRs dropped, as embed_maps.py hashes them) is one of the shipped
+// maps', whatever it's called. An edited map is its text as it is now. (Hashed once per text: cheap to ask every frame.)
 bool isOfficialMap(const Map& m) {
-    const std::string& src = m.sourceText();   // (an edited map: its text as it is now)
-    std::string text;
-    text.reserve(src.size());
-    for (char c : src) if (c != '\r') text += c;
-    std::string h = sha256Hex(text);
-    for (const OfficialMap* o = kOfficialMaps; o->name; o++) if (m.name == o->name && h == o->sha256) return true;
+    std::string h = m.contentId().hex();
+    for (const OfficialMap* o = kOfficialMaps; o->name; o++) if (h == o->sha256) return true;
     return false;
 }
 
@@ -282,8 +280,10 @@ std::vector<int> raceSplitFloorsMs(const Map& m) {
         return std::sqrt(d2);
     };
     const AABB& c0 = m.checkpoints[0];
-    float first = 1e30f;
-    for (auto& sp : m.spawns) first = std::min(first, gap(sp.pos, sp.pos, c0.mn, c0.mx));
+    float first = 1e30f;   // from the race spawns (a map's free-for-all spawns may stand further along the course)
+    bool race = false;
+    for (auto& sp : m.spawns) race |= sp.team == SPAWN_RACE;
+    for (auto& sp : m.spawns) if (sp.team == SPAWN_RACE || !race) first = std::min(first, gap(sp.pos, sp.pos, c0.mn, c0.mx));
     out.push_back((int)(first / kRaceSpeedCeiling * 1000.0f));
     for (size_t i = 1; i < m.checkpoints.size(); i++) {
         const AABB &a = m.checkpoints[i - 1], &b = m.checkpoints[i];

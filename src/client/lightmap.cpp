@@ -11,7 +11,7 @@
 #include <thread>
 
 namespace {
-constexpr uint32_t kCacheMagic = 0x314D4C51; // "QLM1"
+constexpr uint32_t kCacheMagic = 0x324D4C51; // "QLM2": named by the map's sha256 (QLM1: by its name, with its CRC)
 constexpr uint32_t kBakeVersion = 11;   // 11: sun and bounce rays pass clip // 10: point lights 10% brighter // 6: point lights
 constexpr int kSkySamples = 48;
 constexpr int kSunSamples = 6;
@@ -59,14 +59,18 @@ void basis(const Vec3& n, Vec3& t, Vec3& b) {
     b = cross(n, t);
 }
 
-std::string cachePath(const Map& m) { return userDataPath("cache") + "/" + safeMapName(m.name) + ".qlm"; }
+// Light caches are keyed by the map's content (cache/<sha256>.qlm): the same map under any name shares one, an
+// edited map never picks up the bake of the version before, and there's nothing to invalidate.
+std::string cachePath(const Map& m) { return userDataPath("cache") + "/" + m.contentId().hex() + ".qlm"; }
+constexpr size_t kMaxCaches = 32;   // bakes kept (an editor's BAKE LIGHT after each change makes a new one): oldest go
+uint32_t idWord(const Map& m) { const uint8_t* b = m.contentId().b; return (uint32_t)b[0] | (uint32_t)b[1] << 8 | (uint32_t)b[2] << 16 | (uint32_t)b[3] << 24; }
 
 bool loadCache(const Map& m, BakedWorld& out) {
     std::ifstream f(utf8Path(cachePath(m)), std::ios::binary);
     if (!f) return false;
     uint32_t hdr[5];
     f.read((char*)hdr, sizeof hdr);
-    if (!f || hdr[0] != kCacheMagic || hdr[1] != kBakeVersion || hdr[2] != m.crc ||
+    if (!f || hdr[0] != kCacheMagic || hdr[1] != kBakeVersion || hdr[2] != idWord(m) ||
         (int)hdr[3] != out.atlasW || (int)hdr[4] != out.atlasH) return false;
     out.texels.resize((size_t)out.atlasW * out.atlasH * 2);
     f.read((char*)out.texels.data(), out.texels.size());
@@ -76,11 +80,19 @@ bool loadCache(const Map& m, BakedWorld& out) {
 void saveCache(const Map& m, const BakedWorld& w) {
     std::error_code ec;
     std::filesystem::create_directories(userDataPath("cache"), ec);
-    std::ofstream f(utf8Path(cachePath(m)), std::ios::binary);
-    if (!f) return;
-    uint32_t hdr[5] = {kCacheMagic, kBakeVersion, m.crc, (uint32_t)w.atlasW, (uint32_t)w.atlasH};
-    f.write((const char*)hdr, sizeof hdr);
-    f.write((const char*)w.texels.data(), w.texels.size());
+    {
+        std::ofstream f(utf8Path(cachePath(m)), std::ios::binary);
+        if (!f) return;
+        uint32_t hdr[5] = {kCacheMagic, kBakeVersion, idWord(m), (uint32_t)w.atlasW, (uint32_t)w.atlasH};
+        f.write((const char*)hdr, sizeof hdr);
+        f.write((const char*)w.texels.data(), w.texels.size());
+    }
+    std::vector<std::pair<std::filesystem::file_time_type, std::filesystem::path>> all;
+    for (auto& e : std::filesystem::directory_iterator(userDataPath("cache"), ec))
+        if (e.path().extension() == ".qlm") all.push_back({e.last_write_time(ec), e.path()});
+    if (all.size() <= kMaxCaches) return;
+    std::sort(all.begin(), all.end(), [](auto& a, auto& b) { return a.first > b.first; });
+    for (size_t i = kMaxCaches; i < all.size(); i++) std::filesystem::remove(all[i].second, ec);
 }
 } // namespace
 

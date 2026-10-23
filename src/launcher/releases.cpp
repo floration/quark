@@ -233,6 +233,8 @@ bool parse(const std::string& json, const std::string& platform, std::vector<Rel
 
 const char* const kFirstSigned = "1.17.0-0";
 
+bool needsSignature(const Release& r) { return r.isSigned() || versionCmp(r.version, kFirstSigned) >= 0; }
+
 bool parseManifest(const std::string& text, Manifest* m) {
     *m = Manifest();
     bool first = true;
@@ -400,8 +402,10 @@ Plan startupPlan(const std::vector<Release>& list, const Config& c, const std::s
     p.pinned = c.pinned() && list[p.index].version == c.pin;
     if (c.pinned() && !p.pinned && !complete) return p; // the pin may be on a page we couldn't read: change nothing
     const Release& r = list[p.index];
-    if (!r.isSigned()) { // only ever the player's pin (LATEST is always signed)
-        p.confirm = p.pinned && r.version != installed;
+    if (!r.isSigned()) { // from before signing: only ever the player's pin (LATEST is always signed)
+        if (!p.pinned || r.version == installed) return p;
+        p.install = installed.empty() || versionCmp(r.version, installed) > 0; // never over a newer version by itself
+        p.offer = !p.install;
         return p;
     }
     p.install = shouldAutoInstall(r.version, installed, p.pinned);

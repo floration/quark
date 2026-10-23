@@ -35,7 +35,7 @@ const char* actionName(int a) {
     static const char* n[A_COUNT] = {
         "FORWARD", "BACK", "LEFT", "RIGHT", "JUMP", "CROUCH", "FIRE", "ALT FIRE", "USE", "DASH", "GRAPPLE",
         "ROCKET", "RIFLE", "LASER", "SHOTGUN", "SNIPER", "STICKY", "CROSSBOW", "BUBBLE", // weapon slots 1-8
-        "NEXT WEAP", "PREV WEAP", "SCOREBOARD", "CHAT", "VOTE YES", "VOTE NO", "PERF STATS", "SCREENSHOT", "VOTE START", "KNIFE", "SYRINGE", "QUIP",
+        "NEXT WEAP", "PREV WEAP", "SCOREBOARD", "CHAT", "VOTE YES", "VOTE NO", "PERF STATS", "SCREENSHOT", "VOTE START", "KNIFE", "SYRINGE", "QUIP", "TOGGLE CHAT",
     };
     return a >= 0 && a < A_COUNT ? n[a] : "?";
 }

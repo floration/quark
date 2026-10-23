@@ -29,8 +29,7 @@ While the test runs, the `Ui` reports every widget it draws each frame (rect, la
    hasn't tested yet in that scenario, and every new state that leads to (a screen, a selection, a toggle showing more
    controls) is explored later by replaying the clicks that led there.
 2. **Activates** each widget the way a player would: a button / toggle is clicked, a cycle's `>` is clicked (then `<`
-   must go back), a slider is clicked at a point and then a number typed into it, a text field gets typed into and
-   Enter, a keybind slot is clicked and given a key, a hotkey is pressed, a 3D-view handle is dragged.
+   must go back), a slider is dragged and then a number typed into it, a text field gets typed into and Enter, a keybind slot is clicked and given a key, a hotkey is pressed, a 3D-view handle is dragged.
 3. **Checks the expectation** (and that a toggle / cycle / slider / text field's own value changed):
 
 | UiExp | checked |
@@ -48,6 +47,12 @@ While the test runs, the `Ui` reports every widget it draws each frame (rect, la
    Modifiers: `.withId("MAP")` gives a stable id when the label shows data (a name, a number); `.typing("fov 111")`
    is what's typed into a text field (default `7`); `.optional()` for data rows that may be gone (server list rows);
    `.clipOk()` when a label is meant to be cut off.
+   **Every slider takes a typed number**: after the drag, its number is clicked and a value typed that's off any
+   grid a drag snaps to (37% along, in the slider's own decimals, ending in 7). The slider must show exactly that
+   (to its decimals), still a couple of frames later; a `cfg` slider's value must come back the same from quark.cfg
+   read back as at the next start, and a custom mode's (`state("custom")`) from the `.qmode` text read back.
+   Callers that snap a dragged value (0.05 steps, quarter pixels, 15 degrees, 30 s) snap only when
+   `!ui_.typed()`; typed values are only clamped to the range the file allows.
 4. **Esc from every screen** must go back to a screen on the way to it.
 5. **Layout**, at 1280x720 while exploring, then every screen again at 1920x1080 and 1024x768 (4:3): no widget off
    screen, no two widgets overlapping, no label clipped (`Ui::fit` shrinking a label is fine; cutting it off isn't).
@@ -70,6 +75,9 @@ click-to-watch-next, the editor's 3D view (click to select), the selection's dra
 | `demo` | watching a demo | RESUME / STOP DEMO / SETTINGS / QUIT |
 | `edit-host` | hosting an edit session from the editor | PLAY MODE, END SESSION, SAVE AS, every editor tool through the server |
 | `edit-guest` | someone else's edit session | VOTE: PLAY IT, SAVE A COPY, LEAVE and the "save your copy?" prompt |
+| `hide-seeker` | hosting hide and seek, seeking | the locator's slot key (0) |
+| `hide-rps` | hosting hide and seek, at the tiebreak | rock / paper / scissors (slot keys 1 / 2 / 3) |
+| `editor-builtin` | the offline editor, a built-in map with edits | the "keep your edits as a new map?" prompt from each way out (save, leave, test, host, open); only that prompt's buttons |
 | `menus` | the main menu, offline | everything else: join, host (custom modes: every tab), vs bots, settings (every page), leaderboard, info, demos, the offline map editor (every tool, material, selection kind, handle) |
 
 The same widget is tested once per scenario and screen (`<scenario> :: <screen> [<what it acts on>] > <id>`); the
@@ -97,7 +105,12 @@ if (ui_.button(x, y, w, h, "LOCATOR", UiExp::nav("ingame/pause/locator"))) ...  
   `ui_.keyAction` / `ui_.view` / `ui_.handle` (only called while the test runs).
 - A **button that can't do anything right now** should be greyed out (`enabled = false`): the test checks greyed-out
   widgets change nothing. If it stays enabled, declare `UiExp::inert()` for that state.
-- A **new situation** (a mode whose menus differ, a new kind of session): add a scenario in `UiTest::scenarios()`.
+- A **new situation** (a mode whose menus differ, a new kind of session): add a scenario in `UiTest::scenarios()`
+  (`only` limits it to some widgets when the rest of its screens are another scenario's).
+- A **new slider**: `Ui::slider` already takes typed numbers. Snap a dragged value only when `!ui_.typed()`, and
+  clamp to the range its file (quark.cfg, .qmode, the map) reads back, not to the drag range.
+- A **modal** (a prompt over a panel): set `ui_.muted = true` while drawing what's under it, so only the prompt's
+  widgets are reported.
 - A command that must really reach the server during the test (rare: the edit session's `ed` ops do) goes in
   `UiTest::cmdHook`'s pass list.
 

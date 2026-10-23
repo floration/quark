@@ -75,6 +75,7 @@ uniform vec3 uBaseL, uAccentL, uWallbangL, uMetalL, uFloorL;
 uniform float uFogDensity;
 uniform float uBright;   // the brightness setting (exposure, before the filmic curve)
 uniform float uFull;     // fullbright: flat white, black outlines, no light or fog
+uniform vec3 uFullColor; // ...and the flat colour (white by default)
 uniform float uOutlineW; // the world's outline width (pixels; settings)
 out vec4 fragColor;
 float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -88,7 +89,7 @@ void main() {
     int mat = int(vMat + 0.5);
     if (uFull > 0.5) {
         float g = mat == 2 ? 0.35 : mat == 5 ? 0.6 : mat == 6 ? 0.5 : mat == 7 ? 0.9 : abs(vN.y) > 0.5 ? 0.8 : 0.95;
-        fragColor = vec4(vec3(g) * (mat >= 4 && mat < 8 ? 1.0 : outline(vEdge, uOutlineW)), 1.0);
+        fragColor = vec4(uFullColor * g * (mat >= 4 && mat < 8 ? 1.0 : outline(vEdge, uOutlineW)), 1.0);
         return;
     }
     if (mat >= 4 && mat < 8) { // glow trim / far scenery / water / lava: unlit, skip everything below
@@ -850,6 +851,7 @@ void Renderer::drawScene(bool shadows) {
         glUniform1f(U(worldProg_, "uFogDensity"), fog);
         glUniform1f(U(worldProg_, "uBright"), brightness);
         glUniform1f(U(worldProg_, "uFull"), fullbright ? 1.0f : 0.0f);
+        setVec3(worldProg_, "uFullColor", fullbrightColor);
         glUniform1f(U(worldProg_, "uOutlineW"), worldOutline);
         glBindTexture(GL_TEXTURE_2D, lightmapTex_);
         glBindVertexArray(worldVao_);

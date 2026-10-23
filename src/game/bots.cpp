@@ -14,6 +14,7 @@ static_assert(kMaxPlayers == 32, "BotBrain::aware is sized for kMaxPlayers");
 
 struct NavJob {
     Map map;
+    MapId id;   // map.id(), taken before the thread starts
     NavGraph result;
     std::atomic<bool> done{false};
 };
@@ -33,7 +34,7 @@ int NavGraph::cellOf(float x, float z) const {
 void NavGraph::build(const Map& m) {
     nodes.clear();
     links.clear();
-    mapCrc = m.crc;
+    mapId = m.id();
     generation++;
     for (const Brush& b : m.brushes) {
         const AABB& a = b.box;
@@ -236,16 +237,9 @@ Vec3 NavGraph::steer(const Vec3& from, int prevNode, const std::vector<int>& pat
     return to;
 }
 
-Vec3 NavGraph::nextWaypoint(const Vec3& from, const Vec3& to) const {
-    int a = nodeAt(from), b = nodeAt(to + Vec3(0, 0.5f, 0));
-    if (a < 0 || b < 0 || a == b) return to;
-    thread_local std::vector<int> path;
-    if (!findPath(a, b, path)) return to;
-    return steer(from, a, path, to);
-}
-
 void NavGraph::buildAsync(Map m) {
     auto j = std::make_shared<NavJob>();
+    j->id = m.id();   // (hashed here, once: the thread and ready() only read it)
     j->map = std::move(m);
     job = j;
     std::thread([j] { j->result.build(j->map); j->done.store(true, std::memory_order_release); }).detach();
@@ -254,17 +248,17 @@ void NavGraph::buildAsync(Map m) {
 bool NavGraph::ready(const Map& m) {
     if (job && job->done.load(std::memory_order_acquire)) {
         auto j = std::move(job);
-        if (j->result.mapCrc == m.crc) {
+        if (j->result.mapId == m.id()) {
             uint32_t gen = generation;
             NavGraph& r = j->result;
             nodes = std::move(r.nodes); links = std::move(r.links); ladderLinks = std::move(r.ladderLinks);
             cellStart = std::move(r.cellStart); cellNodes = std::move(r.cellNodes);
-            gx0 = r.gx0; gz0 = r.gz0; gw = r.gw; gh = r.gh; hScale = r.hScale; mapCrc = r.mapCrc;
+            gx0 = r.gx0; gz0 = r.gz0; gw = r.gw; gh = r.gh; hScale = r.hScale; mapId = r.mapId;
             generation = gen + 1;
         }
     }
-    if (mapCrc == m.crc) return true;
-    if (!job || job->map.crc != m.crc) buildAsync(m); // changed under us (map edits): rebuild in the background
+    if (mapId == m.id()) return true;
+    if (!job || job->id != m.id()) buildAsync(m); // changed under us (map edits): rebuild in the background
     return false;
 }
 
@@ -389,6 +383,75 @@ bool groundAlong(const Server& s, const Vec3& from, const Vec3& dir, float len) 
     return !s.map_.raycastAny(from + Vec3(0, 0.6f, 0), dir, len, true); // (and nothing in the way)
 }
 
+// Dropping straight down from p lands on something to stand on: not the void below the map, not lava.
+bool safeDrop(const Server& s, const Vec3& p) {
+    float depth = std::max(p.y - s.map_.killY(), 0.1f);
+    float t = s.map_.raycast(p, {0, -1, 0}, depth);
+    if (t < 0) return false;
+    if (s.map_.lava.empty()) return true;
+    Vec3 h = p - Vec3(0, t, 0);
+    return !s.map_.inLava({h + Vec3(-0.3f, 0.0f, -0.3f), h + Vec3(0.3f, 0.6f, 0.3f)});
+}
+
+// A grapple pull from where the bot is, with the speed it has, toward `anchor`: momentum is kept and the pull only
+// bends it, so the path curves (a sideways run swings wide). Simulated roughly (the pull, its top speed, half
+// gravity, sliding along walls; 50 ms steps) up to where the bot lets go, then on in the direction it's flying for
+// the skid. Fine on maps without pits; elsewhere every point must be over ground that's safe to drop onto. Checked
+// when a hook is planned and again when it catches (the bot has moved by then, and the catch may be off the aim).
+bool safeHook(const Server& s, const ServerPlayer& me, const Vec3& anchor) {
+    if (!s.map_.hasVoid && s.map_.lava.empty()) return true;
+    const auto& mt = moveTuning().m;
+    const float accel = 38.0f * mt[MV_HOOK_ACCEL], top = 24.0f * mt[MV_HOOK_MAX], fall = 22.0f * 0.5f * mt[MV_HOOK_GRAVITY]; // (pmove.cpp)
+    Vec3 p = me.move.pos, v = me.move.vel;
+    const bool level = anchor.y < p.y + 1.0f;
+    // a long pull strays metres off any line (one across a whole map: into whatever pit is near it)
+    if ((anchor.x - p.x) * (anchor.x - p.x) + (anchor.z - p.z) * (anchor.z - p.z) > 22.0f * 22.0f) return false;
+    {   // the anchor's near side must be ground too: a hook in the side of a pit drags you into it
+        Vec3 back = {p.x - anchor.x, 0, p.z - anchor.z};
+        float bl = length(back);
+        if (bl > 0.1f && !safeDrop(s, anchor + back * (0.6f / bl) + Vec3(0, 0.4f, 0))) return false;
+    }
+    const float floorY = std::min(p.y, anchor.y) - 0.3f;   // (the ground under the pull holds it up)
+    const float dt = 0.05f;
+    for (int k = 0; k < 32; k++) {   // (1.6 s: as long as a bot holds on)
+        Vec3 to = anchor - (p + Vec3(0, 1.0f, 0));
+        float dist = length(to);
+        float hsNow = std::sqrt(v.x * v.x + v.z * v.z);   // (where botThink lets go: a level pull sooner when fast)
+        if (dist < 1.2f || length(anchor - p) < (level ? std::max(3.0f, hsNow * 0.3f) : 3.0f)) break;
+        float before = length(v);
+        v += to / dist * (accel * dt);
+        float sp = length(v), cap = std::max(top, before);
+        if (sp > cap) v = v * (cap / sp);
+        v.y -= fall * dt;
+        Vec3 hv = {v.x, 0, v.z};
+        float hl = length(hv) * dt;
+        Vec3 n;
+        if (hl > 1e-3f && s.map_.raycast(p + Vec3(0, 0.6f, 0), hv / (hl / dt), hl + 0.4f, &n) >= 0 && n.y == 0) {
+            float into = dot(v, n);   // a wall in the way: slide along it (that's where the pull takes you then)
+            if (into < 0) v = v - n * into;
+        }
+        p += v * dt;
+        p.y = std::max(p.y, floorY);
+        // (and a metre either side: the real pull strays from this by about that, more on long pulls)
+        Vec3 off = hl > 1e-3f ? Vec3(-hv.z, 0, hv.x) * (1.0f / (hl / dt)) : Vec3();
+        if (!safeDrop(s, p + Vec3(0, 0.3f, 0)) || (k > 2 && (!safeDrop(s, p + off + Vec3(0, 0.3f, 0)) || !safeDrop(s, p - off + Vec3(0, 0.3f, 0))))) return false;
+    }
+    // let go here: it flies and skids on, give or take 17 degrees, unless a wall stops it first
+    Vec3 d = {v.x, 0, v.z};
+    float hs = length(d);
+    if (hs < 1.0f) return true;
+    d = d / hs;
+    Vec3 side = {-d.z, 0, d.x};
+    float reach = std::min(12.0f, 2.0f + hs * 0.45f);   // (in the air a moment, then a skid: ~0.45 s worth)
+    float wall = s.map_.raycast(p + Vec3(0, 0.5f, 0), d, reach);
+    float over = wall >= 0 ? wall : reach;
+    for (float k = 1.0f; k <= over; k += 1.0f) {
+        Vec3 q = p + d * k + Vec3(0, 0.3f, 0);
+        if (!safeDrop(s, q) || !safeDrop(s, q + side * (0.3f * k)) || !safeDrop(s, q - side * (0.3f * k))) return false;
+    }
+    return true;
+}
+
 // ---- perception: look (view cone + line of sight) and listen, at 20 Hz of game time
 constexpr double kLookEvery = 0.05;
 void perceive(Server& s, int id, BotBrain& b, const SkillParams& sp, const Vec3& eye, double now) {
@@ -473,10 +536,12 @@ Vec3 objective(Server& s, int id, BotBrain& b, const SkillParams& sp) {
         }
         case MODE_HIDE:
         case MODE_TAG: {
-            if (s.nav_.nodes.empty()) break;
+            // (the graph is still the previous map's while this one's builds: roam between spawns until it's ready)
+            if (s.nav_.nodes.empty() || s.nav_.mapId != map.id()) break;
             auto randomNode = [&]() { const auto& n = s.nav_.nodes[(size_t)(rnd(b) * s.nav_.nodes.size()) % s.nav_.nodes.size()];
                                       return Vec3((n.x0 + n.x1) * 0.5f, n.y, (n.z0 + n.z1) * 0.5f); };
-            if (me.it) { // seek: wander everywhere, toward anything heard (targets are chased by the fight code once seen)
+            if (me.it) { // seek: wander everywhere, toward anything heard or the locator's last find (targets are chased by the fight code once seen)
+                if (now - me.locatedAt < 0.1) { b.goal = me.locatedPos; b.goalUntil = now + 6.0; }
                 for (int i = 0; i < kMaxPlayers; i++)
                     if (isEnemy(s, id, i) && now - b.aware[i].heardAt < 1.0 && now - b.aware[i].seenAt > 1.0) { b.goal = b.aware[i].heardPos; b.goalUntil = now + 4.0; }
                 if (now > b.goalUntil || length(b.goal - me.move.pos) < 2.0f) { b.goal = randomNode(); b.goalUntil = now + 12.0; }
@@ -545,7 +610,7 @@ int pickWeapon(const Server& s, const SkillParams& sp, float dist) {
     if (!sp.weapons && s.weaponAllowed(WPN_RIFLE)) return WPN_RIFLE;
     bool lead = sp.leadMean >= 0.8f;
     const int* order = dist < 7 ? close : dist < 18 ? (lead ? mid : midNoLead) : dist < 35 ? (lead ? far : farNoLead) : (lead ? vfar : farNoLead);
-    for (int k = 0; k < WPN_COUNT; k++) if (s.weaponAllowed(order[k])) return order[k];
+    for (size_t k = 0; k < sizeof close / sizeof close[0]; k++) if (s.weaponAllowed(order[k])) return order[k];   // (every list has every weapon but the locator)
     return WPN_RIFLE;
 }
 
@@ -570,6 +635,12 @@ UserCmd botThink(Server& s, int id) {
     UserCmd cmd;
     cmd.weapon = kNoWeaponChange;
     bool navOk = s.nav_.ready(s.map_);
+    // a goal from the previous map, or picked before this map's graph was ready, is picked again
+    if (b.goalMapId != s.map_.id() || (navOk && b.goalNavGen != s.nav_.generation)) {
+        b.goalMapId = s.map_.id();
+        if (navOk) b.goalNavGen = s.nav_.generation;
+        b.goalUntil = 0; b.fleeUntil = 0;
+    }
     if (!me.alive) {
         b.target = -1;
         b.engagedAt = -1;
@@ -586,6 +657,21 @@ UserCmd botThink(Server& s, int id) {
     if (now >= b.nextLook) {
         b.nextLook = std::max(b.nextLook + kLookEvery, now + kLookEvery * 0.5);
         { QZONE("bot perceive"); perceive(s, id, b, sp, eye, now); }
+        // Edges: the void or lava within a stumble, a knockback or a hop (maps that have them). Eight directions at
+        // 1.5 and 3 m (near: no jumping about), and 5 m (a fight drifts away from it: a laser or a blast pushes you
+        // that far); the nearer one weighs more in which way is away.
+        b.nearEdge = b.edgeFar = false;
+        if (s.map_.hasVoid || !s.map_.lava.empty()) {
+            Vec3 away;
+            for (int k = 0; k < 8; k++) {
+                Vec3 dir = {std::cos(k * PI / 4), 0, std::sin(k * PI / 4)};
+                if (!safeDrop(s, me.move.pos + dir * 1.5f + Vec3(0, 0.5f, 0))) { away = away - dir * 2.0f; b.nearEdge = true; }
+                else if (!safeDrop(s, me.move.pos + dir * 3.0f + Vec3(0, 0.5f, 0))) { away = away - dir; b.nearEdge = true; }
+                else if (!safeDrop(s, me.move.pos + dir * 5.0f + Vec3(0, 0.5f, 0))) { away = away - dir * 0.5f; b.edgeFar = true; }
+            }
+            float l = length(away);
+            b.edgeAway = l > 1e-3f ? away / l : Vec3();
+        }
         // target: someone in view (nearest to the crosshair and closest, the current one preferred), else the
         // last one seen while it's still remembered (hunted)
         int best = -1;
@@ -652,14 +738,15 @@ UserCmd botThink(Server& s, int id) {
         dirOut = d > 0.6f ? to / d : Vec3();
         if (d > 0.6f && now < b.unstickUntil && b.target < 0) dirOut += Vec3(-dirOut.z, 0, dirOut.x) * b.strafeDir; // unsticking
         const ModeState& m = s.ms_;
+        const AABB hull = playerBox(me.move);   // (the server's own zone test: size modifiers and crouching included)
         if (m.mode == MODE_BOMB) {
             bool inSite = false;
-            for (auto& site : s.map_.bombSites) inSite |= playerBox(me.move.pos, false).overlaps(site);
+            for (auto& site : s.map_.bombSites) inSite |= hull.overlaps(site);
             if (m.bombState == BOMB_CARRIED && m.bombCarrier == id && inSite) { buttons |= BTN_USE; dirOut = {}; }
             if (m.bombState == BOMB_PLANTED && me.team != m.attackers && length(m.bombPos - me.move.pos) < 1.5f) { buttons |= BTN_USE; dirOut = {}; }
         }
-        if (m.mode == MODE_KOTH && s.map_.hasHill && playerBox(me.move.pos, false).overlaps(s.map_.hill)) dirOut = dirOut * 0.3f;
-        if (m.mode == MODE_POINTS && m.point < s.map_.points.size() && playerBox(me.move.pos, false).overlaps(s.map_.points[m.point])) dirOut = dirOut * 0.3f;
+        if (m.mode == MODE_KOTH && s.map_.hasHill && hull.overlaps(s.map_.hill)) dirOut = dirOut * 0.3f;
+        if (m.mode == MODE_POINTS && m.point < s.map_.points.size() && hull.overlaps(s.map_.points[m.point])) dirOut = dirOut * 0.3f;
     };
     const ModeState& ms = s.ms_;
     bool urgent = ms.mode == MODE_BOMB && ((ms.bombState == BOMB_CARRIED && ms.bombCarrier == id) ||
@@ -669,6 +756,25 @@ UserCmd botThink(Server& s, int id) {
     float ffYaw = 0;             // feed-forward turn speed (tracking a target crossing the view)
     float gain = 20.0f;          // correction gain (aim: the level's; just looking around: relaxed)
     Vec3 moveDir;                // world-space desired movement (xz)
+    // Hooked on a grapple (fighting or not: letting go mid-pull flings you off at full speed wherever you are).
+    auto holdHook = [&] {
+        const Vec3& at = me.move.hookPoint;
+        cmd.buttons |= BTN_GRAPPLE;
+        // caught: the pull checked again from here, as we move now (it was planned before the aim got there, and
+        // the catch may not be quite where it was aimed); not safe: let go at once, while still slow
+        if (!b.hookChecked) {
+            b.hookChecked = true;
+            b.hookUntil = now + 1.6;   // (the 1.6 s of pull the check simulates count from the catch, not from the plan)
+            if (!safeHook(s, me, at)) { b.hookUntil = 0; cmd.buttons &= ~BTN_GRAPPLE; return; }
+        }
+        // keys along the pull: air control would bend the path off it
+        Vec3 along = {at.x - me.move.pos.x, 0, at.z - me.move.pos.z};
+        if (length(along) > 0.5f) moveDir = normalize(along);
+        // arrived: let go (a level pull at speed sooner, on maps with pits: the momentum carries on past it)
+        float hsNow = std::sqrt(me.move.vel.x * me.move.vel.x + me.move.vel.z * me.move.vel.z);
+        float letGo = (s.map_.hasVoid || !s.map_.lava.empty()) && at.y < me.move.pos.y + 1.0f ? std::max(3.0f, hsNow * 0.3f) : 3.0f;
+        if (length(at - me.move.pos) < letGo) { b.hookUntil = 0; cmd.buttons &= ~BTN_GRAPPLE; }
+    };
     bool fighting = false;
     const BotAwareness* ta = b.target >= 0 ? &b.aware[b.target] : nullptr;
     bool reacted = ta && ta->visible && now >= ta->reactedAt;
@@ -698,7 +804,7 @@ UserCmd botThink(Server& s, int id) {
         Vec3 aimAt = perceived + Vec3(0, sp.aimHeight * s.bodyScale(), 0);
         float dist = length(aimAt - eye);
         int w = b.forceWeapon >= 0 ? b.forceWeapon : pickWeapon(s, sp, dist);
-        if (w == WPN_KNIFE && now < me.knifeBackAt && me.weapon != WPN_KNIFE) w = me.weapon; // thrown it: use what we switched to
+        if (now < me.backAt(w) && me.weapon != w) w = me.weapon; // thrown it (knife / syringe): use what we switched to
         const WeaponDef& wd = weaponDef(w);
         bool throwKnife = w == WPN_KNIFE && dist > wd.range + 0.5f && dist < 18.0f && sp.leadMean >= 0.8f && !isItMode(s.ms_.mode); // out of reach: throw it
         if (throwKnife) {
@@ -746,12 +852,17 @@ UserCmd botThink(Server& s, int id) {
             float err = std::fabs(angleDiff(b.aimYaw, tgtYaw)) + std::fabs(b.aimPitch - tgtPitch);
             bool ready = err < sp.fireCone + 0.35f / std::max(dist, 1.0f);
             bool knifeOut = w == WPN_KNIFE && !throwKnife && dist > wd.range + 0.3f; // closing in to stab: don't swing at air
-            if (ready && !knifeOut) cmd.buttons |= throwKnife ? BTN_ALTFIRE : BTN_FIRE;
+            // a blast weapon with a wall (or the floor) right in front: the splash would be ours (a self-kill)
+            const WeaponDef& held = weaponDef(me.weapon);
+            auto ownBlast = [&] { return held.splashRadius > 0 && !held.sticky && !(s.arenaRules() & AR_NO_SELF_DAMAGE) &&
+                                         s.map_.raycast(eye, angleForward(b.aimYaw, b.aimPitch), held.splashRadius * 0.8f) >= 0; };
+            if (ready && !knifeOut && !ownBlast()) cmd.buttons |= throwKnife ? BTN_ALTFIRE : BTN_FIRE;
             if (w == WPN_SNIPER) cmd.buttons |= BTN_ALTFIRE;
             if (w == WPN_RIFLE && dist > 30.0f && sp.leadMean >= 0.8f) cmd.buttons |= BTN_ALTFIRE; // scope in for long shots
             if (me.weapon == WPN_STICKY) { // set off our stickies when the target (as seen) is in the blast
                 for (const auto& pr : s.projectiles_)
-                    if (pr.active && pr.owner == id && pr.type == WPN_STICKY && length(pr.pos - (perceived + Vec3(0, 0.9f, 0))) < weaponDef(WPN_STICKY).splashRadius * 0.7f) {
+                    if (pr.active && pr.owner == id && pr.type == WPN_STICKY && length(pr.pos - (perceived + Vec3(0, 0.9f, 0))) < weaponDef(WPN_STICKY).splashRadius * 0.7f &&
+                        length(pr.pos - (me.move.pos + Vec3(0, 0.9f, 0))) > weaponDef(WPN_STICKY).splashRadius) {   // (and we're clear of it)
                         cmd.buttons |= BTN_ALTFIRE;
                         break;
                     }
@@ -774,8 +885,14 @@ UserCmd botThink(Server& s, int id) {
                 b.strafeDir = rnd(b) < sp.strafe ? (rnd(b) < 0.5f ? -1.0f : 1.0f) : 0.0f;
                 b.strafeSwitchAt = now + (0.15 + rnd(b) * 2.0 / sp.jukeRate);
             }
-            moveDir += Vec3(-toN.z, 0, toN.x) * b.strafeDir;
-            if (me.move.flags & MF_ONGROUND) {
+            Vec3 side = Vec3(-toN.z, 0, toN.x) * b.strafeDir;
+            if (b.nearEdge || b.edgeFar) { // fighting by a drop: dodge along it or away, never toward it, and step back from it
+                if (dot(side, b.edgeAway) < -0.2f) { b.strafeDir = -b.strafeDir; side = side * -1.0f; }
+                moveDir += b.edgeAway * (b.nearEdge ? 1.5f : 0.7f);
+            }
+            moveDir += side;
+            // (no jumps or dashes within 5 m of a drop: a hit in the air there, a blast or a laser push, is a fall)
+            if ((me.move.flags & MF_ONGROUND) && !b.nearEdge && !b.edgeFar) {
                 if (chance(b, sp.jumpRate, dt)) cmd.buttons |= BTN_JUMP;
                 if (me.move.dashCooldown <= 0 && chance(b, sp.dashRate, dt)) {
                     if (dist > 20) moveDir = toN;                                  // close in
@@ -792,12 +909,19 @@ UserCmd botThink(Server& s, int id) {
             objectiveMove(moveDir, extra, nullptr);
             if (extra & BTN_USE) cmd.buttons = (uint16_t)((cmd.buttons & ~BTN_FIRE) | BTN_USE);
         }
+        if ((me.move.flags & MF_HOOKED) && now < b.hookUntil) holdHook();
     } else {
         if (b.target < 0 || !ta->visible) b.engagedAt = -1;
         b.flickYaw = b.flickPitch = 0;
         uint16_t extra = 0;
         objectiveMove(moveDir, extra, nullptr);
         cmd.buttons |= extra;
+        if (isItMode(ms.mode) && me.it && ms.phase == PHASE_LIVE) {   // seeking / tagging, nobody in sight: the locator when it's ready
+            if (now >= me.locateAt) {
+                if (me.weapon != WPN_LOCATOR) cmd.weapon = WPN_LOCATOR;
+                else if (!me.fireLocked && !(me.buttons & BTN_FIRE)) cmd.buttons |= BTN_FIRE;
+            } else if (me.weapon != WPN_KNIFE) cmd.weapon = WPN_KNIFE;
+        }
         gain = 10.0f;
         bool idle = length(moveDir) < 1e-3f;
         if (!idle) wantYaw = yawOf(normalize(moveDir));
@@ -834,13 +958,24 @@ UserCmd botThink(Server& s, int id) {
                 wantPitch = std::asin(clampf(d.y, -1, 1));
                 gain = 25.0f;
                 // (the hook needs the aim on the anchor before it's fired)
-                if (std::fabs(angleDiff(b.aimYaw, wantYaw)) + std::fabs(b.aimPitch - wantPitch) < 0.08f || (me.move.flags & MF_HOOKED)) cmd.buttons |= BTN_GRAPPLE;
-                if ((me.move.flags & MF_HOOKED) && length(b.hookAnchor - me.move.pos) < 3.0f) b.hookUntil = 0; // arrived: let go
+                if (me.move.flags & MF_HOOKED) holdHook();
+                else if (std::fabs(angleDiff(b.aimYaw, wantYaw)) + std::fabs(b.aimPitch - wantPitch) < 0.08f) cmd.buttons |= BTN_GRAPPLE;
             } else if (me.move.hookCooldown <= 0 && now >= b.nextHookTry) {
                 b.nextHookTry = now + (grappleOnly ? 0.2 : sp.airStrafe > 0.8f ? 0.25 : 0.5); // (expert: hooks around all the time)
                 // the next waypoint if it's a ledge up, else the end of the route if it's a long open stretch
                 bool expertish = sp.airStrafe > 0.8f;
-                for (const Vec3& cand : {b.waypoint, b.pathGoal}) {
+                // (and, on maps with pits, a few surfaces further along the route: the line to the route's end often
+                // crosses a pit where one to a point along the route doesn't)
+                Vec3 cands[5] = {b.waypoint, b.pathGoal};
+                int nc = 2;
+                if (s.map_.hasVoid || !s.map_.lava.empty())
+                    for (int k : {5, 3, 1})
+                        if ((size_t)k < b.path.size() && b.path[k] < (int)s.nav_.nodes.size()) {
+                            const auto& n = s.nav_.nodes[b.path[k]];
+                            cands[nc++] = {(n.x0 + n.x1) * 0.5f, n.y, (n.z0 + n.z1) * 0.5f};
+                        }
+                for (int ci = 0; ci < nc; ci++) {
+                    const Vec3& cand = cands[ci];
                     Vec3 off = cand - me.move.pos;
                     float rise = off.y, hd = std::sqrt(off.x * off.x + off.z * off.z);
                     bool want = grappleOnly ? hd > 2.0f : (rise > (expertish ? 1.2f : 2.0f) && hd < 30.0f) || (hd > (expertish ? 8.0f : 14.0f) && rise > -3.0f);
@@ -848,9 +983,10 @@ UserCmd botThink(Server& s, int id) {
                     Vec3 tgt = cand - Vec3(0, 0.1f, 0); // just into the walkable surface, so the hook catches on it
                     Vec3 d = normalize(tgt - eye);
                     float t = s.map_.raycast(eye, d, kGrappleRange * moveTuning().m[MV_HOOK_RANGE]);
-                    if (t >= 0 && length(eye + d * t - tgt) < 3.0f) {
+                    if (t >= 0 && length(eye + d * t - tgt) < 3.0f && safeHook(s, me, eye + d * t)) {
                         b.hookAnchor = eye + d * t;
                         b.hookUntil = now + 1.6;
+                        b.hookChecked = false;
                         break;
                     }
                 }
@@ -889,7 +1025,8 @@ UserCmd botThink(Server& s, int id) {
         moveDir = moveDir / ml;
         Vec3 wish = moveDir;
         bool onGround = (me.move.flags & MF_ONGROUND) != 0;
-        bool hopping = !fighting && sp.bhop && s.ms_.mode != MODE_RACE && length(b.waypoint - me.move.pos) > 3.0f;
+        bool hopping = !fighting && sp.bhop && s.ms_.mode != MODE_RACE && length(b.waypoint - me.move.pos) > 3.0f &&
+                       !(me.move.flags & MF_HOOKED);   // (hooked: no air-strafing off the pull)
         // air-strafe: push at the angle to the current velocity that gains speed, curving toward the route
         Vec3 hv = {me.move.vel.x, 0, me.move.vel.z};
         float hs = length(hv);
@@ -910,14 +1047,16 @@ UserCmd botThink(Server& s, int id) {
         // (movement probes: clip blocks players, so it counts here)
         if (s.map_.raycastAny(knee, moveDir, 1.2f, true)) cmd.buttons |= BTN_JUMP;
         Vec3 ahead = me.move.pos + moveDir * 0.7f + Vec3(0, 0.2f, 0);
-        if (onGround && !s.map_.raycastAny(ahead, {0, -1, 0}, 1.5f, true)) {
-            // a drop ahead: on maps with pits, only go if there's ground below before the void, or a
+        const bool pits = s.map_.hasVoid || !s.map_.lava.empty();
+        // (lava can lie on a floor: a step into it is a drop too)
+        if (onGround && (!s.map_.raycastAny(ahead, {0, -1, 0}, 1.5f, true) || (!s.map_.lava.empty() && !safeDrop(s, ahead)))) {
+            // a drop ahead: on maps with pits or lava, only go if there's safe ground below, or a safe
             // landing within jumping distance; otherwise stop at the edge (the stuck check re-plans)
-            float depth = ahead.y - s.map_.killY();
-            bool safe = !s.map_.hasVoid || s.map_.raycastAny(ahead, {0, -1, 0}, std::max(depth, 0.1f), true);
-            bool landing = s.map_.raycastAny(me.move.pos + moveDir * 2.6f + Vec3(0, 0.6f, 0), {0, -1, 0}, 2.0f, true);
+            Vec3 far = me.move.pos + moveDir * 2.6f + Vec3(0, 0.6f, 0);
+            bool safe = !pits || safeDrop(s, ahead);
+            bool landing = s.map_.raycastAny(far, {0, -1, 0}, 2.0f, true) && (!pits || safeDrop(s, far));
             if (safe || landing) cmd.buttons |= BTN_JUMP;
-            else { cmd.forward = 0; cmd.side = 0; }
+            else { cmd.forward = 0; cmd.side = 0; hopping = false; }   // (and no bunny hop off it)
         }
         if (hopping) cmd.buttons |= BTN_JUMP;
         // long straight stretch: dash along it (levels that would), when it lands on something
@@ -925,16 +1064,36 @@ UserCmd botThink(Server& s, int id) {
             length(b.waypoint - me.move.pos) > 9.0f && dot(moveDir, fwd) > 0.95f && chance(b, sp.runDash, dt)) {
             if (groundAlong(s, me.move.pos, moveDir, 12.0f)) cmd.buttons |= BTN_DASH;
         }
-        // maps with pits: look ahead along where we're actually going (momentum included, on the ground or
-        // mid-hop); if there's no ground before the void there and nothing to land on, brake hard
-        if (s.map_.hasVoid) {
-            Vec3 probe = me.move.pos + hv * 0.35f + moveDir * 0.6f + Vec3(0, 0.3f, 0);
-            float depth = std::max(probe.y - s.map_.killY(), 0.1f);
-            bool ground = s.map_.raycastAny(probe, {0, -1, 0}, depth, true);
-            Vec3 far = me.move.pos + hv * 0.35f + moveDir * 2.6f + Vec3(0, 0.6f, 0);
-            bool landing = onGround && s.map_.raycastAny(far, {0, -1, 0}, 2.0f, true);
+    }
+    // Maps with pits or lava: look ahead along where we're actually going (momentum included: on the ground, mid-hop,
+    // or just let go of a grapple, steering or not). If there's no safe ground there and nothing safe to land on,
+    // brake hard and stay on the ground (friction stops you, a hop at speed carries you on). Fast (a dash, a
+    // grapple's pull) looks further ahead: about what it takes to stop.
+    if (s.map_.hasVoid || !s.map_.lava.empty()) {
+        Vec3 hv = {me.move.vel.x, 0, me.move.vel.z};
+        float hs = length(hv);
+        if (ml > 1e-3f || hs > 1.0f) {
+            bool onGround = (me.move.flags & MF_ONGROUND) != 0;
+            Vec3 ahead = me.move.pos + hv * (hs > 10.0f ? 0.6f : 0.35f);
+            bool ground = safeDrop(s, ahead + moveDir * 0.6f + Vec3(0, 0.3f, 0));
+            if (hs > 10.0f) // (fast: the whole way there, a probe every ~1.5 m, so a pit on the way isn't skipped over)
+                for (int k = 1, n = std::min(6, (int)(hs * 0.6f / 1.5f)); k < n && ground; k++)
+                    ground = safeDrop(s, me.move.pos + hv * (0.6f * k / n) + Vec3(0, 0.3f, 0));
+            Vec3 far = me.move.pos + moveDir * 2.6f + Vec3(0, 0.6f, 0);   // (a gap a jump from here clears)
+            // (a gap jump: at a run, heading where we're going; flung along by a grapple or a dash isn't one)
+            bool landing = onGround && ml > 1e-3f && hs < 10.0f && dot(hv, moveDir) >= 0.5f * hs &&
+                           s.map_.raycastAny(far, {0, -1, 0}, 2.0f, true) && safeDrop(s, far);
+            if (!onGround && !ground) { // mid-jump over a gap: fine if the arc comes down on safe ground (braking now drops us in)
+                float vy = me.move.vel.y, g = 22.0f;   // (kGravity)
+                float tl = (vy + std::sqrt(std::max(0.0f, vy * vy + 2 * g * 0.5f))) / g;   // back down to about this height
+                Vec3 at = me.move.pos + hv * tl + Vec3(0, 0.6f, 0);
+                landing = s.map_.raycastAny(at, {0, -1, 0}, 2.0f, true) && safeDrop(s, at) &&
+                          (hs < 6.0f || safeDrop(s, at + hv * (std::min(hs * 0.2f, 5.0f) / hs)));   // (and the skid after it)
+                cmd.buttons &= ~BTN_JUMP;   // (either way: no hop on landing, toward a drop)
+                if (landing) { cmd.forward = 0; cmd.side = 0; }   // (and no air-strafing on toward it)
+            }
             if (!ground && !landing) {
-                Vec3 back = hs > 0.5f ? normalize(hv) * -1.0f : moveDir * -1.0f;
+                Vec3 back = hs > 0.5f ? hv / hs * -1.0f : moveDir * -1.0f;
                 cmd.forward = (int8_t)clampf(dot(back, fwd) * 127, -127, 127);
                 cmd.side = (int8_t)clampf(dot(back, right) * 127, -127, 127);
                 cmd.buttons &= ~(BTN_JUMP | BTN_DASH);
@@ -946,8 +1105,9 @@ UserCmd botThink(Server& s, int id) {
     // unstick: if we've barely moved for a while, hop and sidestep; when just roaming, pick somewhere else
     if (now >= b.stuckCheckAt) {
         if (ml > 1e-3f && length(me.move.pos - b.lastPos) < 0.5f && b.target < 0) {
-            cmd.buttons |= BTN_JUMP;
             b.strafeDir = rnd(b) < 0.5f ? -1.0f : 1.0f;
+            if (!b.nearEdge) cmd.buttons |= BTN_JUMP;
+            else if (dot(Vec3(-moveDir.z, 0, moveDir.x) * b.strafeDir, b.edgeAway) < 0) b.strafeDir = -b.strafeDir; // by a drop: no hop, sidestep away from it
             b.unstickUntil = now + 0.8;
             b.goalUntil = 0;
             b.needPath = true;

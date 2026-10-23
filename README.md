@@ -18,13 +18,35 @@ Keep the `maps/` folder next to the executables.
 ## Multiplayer
 - **Host in the game:** Host Game -> pick map/mode/port -> Start. "Auto port forward (UPnP)" asks your router to open the UDP port.
 - **Dedicated server:** `quark_server --mode bomb --map arena --port 27500 --upnp` (type `help`-style commands into its console: `map`, `mode`, `forcestart`, `kick`, `status`, `quit`).
-- **Always-on Linux server (systemd):** from a checkout, `tools/server/install.sh --public --name "my server"` (plus any
-  `quark_server` options). It runs the server as a dedicated `quark` user from `/opt/quark` with systemd sandboxing,
-  keeps data in `/var/lib/quark`, and every minute `tools/server/autoupdate.sh` checks for a new **production**
-  release: it verifies the release's signed manifest and Linux package, builds exactly the signed commit, and the
-  server restarts once no match is being played. A failed or stuck update logs at critical priority
-  (`journalctl -p crit -t quark-update`) and can post to a Discord webhook (`QUARK_ALERT_WEBHOOK` in
-  `/etc/quark/update.env`). Older installs: `git pull`, then run `install.sh` again (options and data carry over).
+- **Always-on Linux servers (systemd):** from a checkout, `tools/server/install.sh --public --name "my server"` (plus
+  any `quark_server` options). Each box runs **two** servers, each always on the latest build of its channel:
+  - **production** (`quark.service`, your port, user `quark`, `/opt/quark`, data in `/var/lib/quark`): every minute
+    `tools/server/autoupdate.sh` checks for a new **production** release;
+  - **testing** (`quark-testing.service`, the next port up, user `quark-testing`, `/opt/quark-testing`, data in
+    `/var/lib/quark-testing`, listed as "<name> [TESTING]"): every 2 minutes it follows the newest **testing**
+    prerelease, or the newest production release when that is newer. Ranked is played there but never rated.
+    `--no-testing` leaves it out, `--testing-port N` moves it (forward that UDP port too).
+
+  Both updaters verify the release's signed manifest (its channel, tag, version and commit) and Linux package, build
+  exactly the signed commit (one build at a time), and the server restarts once no match is being played. A failed or
+  stuck update logs at critical priority naming the instance (`journalctl -p crit -t quark-update`) and can post to a
+  Discord webhook (`QUARK_ALERT_WEBHOOK` in `/etc/quark/update.env`; an optional `GITHUB_TOKEN` there raises GitHub's
+  rate limit). Both servers run sandboxed, testing at a lower CPU priority.
+  **Load governor:** the two share the box through `/var/lib/quark-governor` (`--governor-dir`; `src/game/governor.h`).
+  When it can't carry both (a server falls behind its ticks, or its players lose snapshots), the empty server is
+  throttled first, a tick-rate step at a time down to 125 Hz, then the one not playing a ranked match, then the other;
+  if both are at 125 Hz and production is still overloaded for 30 s, the testing server closes (its players are told
+  why; it leaves the list) until production has been calm for 5 minutes. Production never closes. Rates climb back one
+  step a minute once calm. Older installs: `git pull`, then run `install.sh` again (options and data carry over; the
+  existing server becomes the production one).
+- **`--own-addr host:port` (ranked behind a forwarded port or in a container):** a player's ranked id is signed for
+  the address their game dialled, and a server only takes signatures for an address it knows is its own (its port on
+  its own interfaces, its public IP, what UPnP reports). If players reach it somewhere it can't see itself (a router
+  forwarding a *different* external port to it, a container or VM with its own network), start it with
+  `quark_server --own-addr <that host:port>` (repeat it for more than one), or those players join without a ranked
+  id. The server log says when this happens and which address to use (`ranked key proof is for <addr>, not this
+  server ... --own-addr <addr>`), and so does the host screen of a game hosted from the menu. For the systemd
+  install, pass it to `tools/server/install.sh` like any other `quark_server` option.
 - **Join:** Join Game -> enter `ip:port`, or pick a LAN game.
 - If UPnP fails, forward **UDP 27500** (or your chosen port) on your router to the host machine.
 

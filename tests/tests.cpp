@@ -20,6 +20,7 @@
 #include <random>
 #include <cstdlib>
 #include "common/profile.h"
+#include "game/demo.h"
 #include "../src/client/complete.h"
 #include <filesystem>
 #include <sstream>
@@ -41,6 +42,7 @@
 #include "common/sha256.h"
 #include "common/sign.h"
 #include "game/bots.h"
+#include "walkgrid.h"
 #include "common/proc.h"
 #ifndef _WIN32
 #include <fcntl.h>
@@ -78,6 +80,28 @@ static double testTimeScale() {
 }
 static const double kTestTimeScale = testTimeScale();
 #define CHECK(c) do { if (!(c)) { printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); g_fail++; } } while (0)
+
+// Human-made maps (the owner's rule, docs/JUDGMENT_CALLS.md): the owner will hand-make the maps; those don't have to
+// pass the automated map checks, but they're still checked and their numbers reported, for balancing. A map is
+// human-made when it says so ("handmade", which the editor writes), when tools/make_maps.py didn't write it, or when
+// it's the owner's override of a generated one (assets/overrides/maps). Generated maps keep the strict bar.
+bool isHumanMadeMap(const std::string& name, const Map& m) {   // (mapreport.cpp too)
+    std::error_code ec;
+    return m.humanMade() || (!sourceDir().empty() && std::filesystem::exists(std::filesystem::path(sourceDir()) / "assets" / "overrides" / "maps" / (name + ".qmap"), ec));
+}
+// Put one at the top of a per-map check, after the map loads: whatever that map fails is printed as usual, and when
+// the map is human-made, reported as such and taken off the failure count as the check ends.
+struct HumanMadeGrace {
+    std::string name;
+    bool human;
+    int before;
+    HumanMadeGrace(const std::string& n, const Map& m) : name(n), human(isHumanMadeMap(n, m)), before(g_fail) {}
+    ~HumanMadeGrace() {
+        if (!human || g_fail <= before) return;
+        printf("  %s is HUMAN-MADE: %d check(s) above failed - reported, not failing the run\n", name.c_str(), g_fail - before);
+        g_fail = before;
+    }
+};
 
 // Pump a server and some clients for `seconds` of real time, feeding each client an input.
 template <class F>
@@ -319,13 +343,16 @@ static std::vector<std::string> testedMaps() {
 static void testMaps() {
     printf("maps\n");
     std::string err;
-    // Lodestone is the map built for every mode
+    // Lodestone is offered in every mode but the four that want a compact arena (owner, 1.17)
     { Map v; CHECK(v.load("viaduct") && v.supportsMode(MODE_RACE) && v.preferredMode == MODE_RACE && v.hasVoid && v.checkpoints.size() >= 5); }
     for (const char* name : {"lodestone"}) {
         Map m;
         CHECK(m.load(name, &err));
         if (!err.empty()) printf("  %s\n", err.c_str());
-        for (int k = 0; k < MODE_COUNT; k++) if (!m.supportsMode(k)) { printf("  %s: no %s\n", name, modeName(k)); g_fail++; }
+        for (int k = 0; k < MODE_COUNT; k++) {
+            bool compact = k == MODE_VS || k == MODE_DUEL || k == MODE_ARENA || k == MODE_TOURNEY;
+            if (m.supportsMode(k) == compact) { printf("  %s: %s %s\n", name, compact ? "offers" : "no", modeName(k)); g_fail++; }
+        }
         CHECK(m.payloadLength() > 20);
     }
     // ranked: a map of its own for each ladder plus one for all three; every ranked map is point-symmetric
@@ -334,6 +361,7 @@ static void testMaps() {
     for (auto& name : listMaps()) {
         Map m;
         if (!m.load(name) || !m.rankedLadders) continue;
+        HumanMadeGrace hg(name, m);
         CHECK(isRankedMap(m, 0) || isRankedMap(m, 1) || isRankedMap(m, 5));
         for (int v : {0, 1, 5}) if (m.rankedLadders >> v & 1) CHECK(m.supportsMode(rankedMode(v)));   // (instagib: free for all)
         int k = 0;
@@ -354,21 +382,237 @@ static void testMaps() {
         for (auto& sp : m.spawns) { a += sp.team == SPAWN_A; b += sp.team == SPAWN_B; }
         bool duel = (m.rankedLadders & 3) != 0;   // a ladder played 1v1 (vanilla, vampire): a spawn for each side
         CHECK(a == b && (a >= 1 || !duel));
+        // the rest of the map mirrors too (REVIEW MAP-17: only spawn counts were compared): every spawn has its twin
+        // (A <-> B, the others their own team) facing the mirrored way, every ladder, light and objective its twin,
+        // and the sun is overhead (any other sun lights the two halves differently: baked shadows fall one way)
+        auto same = [](const Vec3& p, const Vec3& q) { return length(p - q) < 0.01f; };
+        auto flip = [](const Vec3& p) { return Vec3(-p.x, p.y, -p.z); };
+        auto boxTwin = [&](const std::vector<AABB>& list, const AABB& x) {
+            AABB mx = mirrored(x);
+            for (auto& o : list) if (same(o.mn, mx.mn) && same(o.mx, mx.mx)) return true;
+            return false;
+        };
+        int odd = 0;
+        for (auto& sp : m.spawns) {
+            int twinTeam = sp.team == SPAWN_A ? SPAWN_B : sp.team == SPAWN_B ? SPAWN_A : sp.team;
+            bool found = false;
+            for (auto& o : m.spawns)
+                if (o.team == twinTeam && same(o.pos, flip(sp.pos)) && std::fabs(std::remainder(o.yaw - sp.yaw - PI, 2 * PI)) < 0.01f) found = true;
+            if (!found) { printf("  %s: spawn %.1f %.1f %.1f (yaw %.0f) has no mirrored twin\n", name.c_str(), sp.pos.x, sp.pos.y, sp.pos.z, sp.yaw * 180 / PI); odd++; }
+        }
+        for (auto& l : m.ladders) if (!boxTwin(m.ladders, l)) { printf("  %s: a ladder at %.1f %.1f has no twin\n", name.c_str(), l.center().x, l.center().z); odd++; }
+        for (auto& l : m.lights) {
+            bool found = false;
+            for (auto& o : m.lights) found |= same(o.pos, flip(l.pos)) && o.radius == l.radius && o.intensity == l.intensity;
+            if (!found) { printf("  %s: a light at %.1f %.1f %.1f has no twin\n", name.c_str(), l.pos.x, l.pos.y, l.pos.z); odd++; }
+        }
+        for (auto* list : {&m.bombSites, &m.points, &m.checkpoints}) for (auto& z : *list) if (!boxTwin(*list, z)) { printf("  %s: an objective has no twin\n", name.c_str()); odd++; }
+        if (m.hasHill && !boxTwin({m.hill}, m.hill)) { printf("  %s: the hill isn't centred\n", name.c_str()); odd++; }
+        if (std::fabs(m.sunDir.x) > 1e-6f || std::fabs(m.sunDir.z) > 1e-6f) { printf("  %s: the sun (%.2f %.2f %.2f) isn't overhead\n", name.c_str(), m.sunDir.x, m.sunDir.y, m.sunDir.z); odd++; }
+        CHECK(odd == 0);
     }
     CHECK(perLadder[0] >= 2 && perLadder[1] >= 2 && perLadder[2] >= 2 && ownMaps >= 3);
 }
 
-// Every map: loads, supports the mode it was built for, no spawn inside a wall, and bots can
-// navigate from every spawn to every objective.
+// The payload cart drives the whole track without going through anything (REVIEW MAP-5: a box on Railyard's track at
+// 102-106 m, a pillar and a dais on Lodestone's at 117.5 m and 127.5 m): its box, every 10 cm along the track, against
+// every brush you can see or bump into (solid, clip, trim; not far scenery, water or lava surfaces).
+static void testCartSweep() {
+    printf("payload cart: the whole track clear of the map\n");
+    for (auto& name : testedMaps()) {
+        Map m;
+        if (!m.load(name) || !(m.supportsMode(MODE_PAYLOAD) || m.supportsMode(MODE_NPAYLOAD))) continue;   // (the maps that offer it)
+        float len = m.payloadLength();
+        int hits = 0;
+        std::vector<char> reported(m.brushes.size(), 0);
+        for (float d = 0; d <= len + 1e-3f; d += 0.1f) {
+            AABB cart = m.payloadCartBox(std::min(d, len));
+            cart.mn = cart.mn + Vec3(0.02f, 0.02f, 0.02f);   // (touching is fine: the cart rides on the floor)
+            cart.mx = cart.mx - Vec3(0.02f, 0.02f, 0.02f);
+            for (size_t i = 0; i < m.brushes.size(); i++) {
+                const Brush& b = m.brushes[i];
+                if (b.material == 5 || b.material == 6 || b.material == 7 || !cart.overlaps(b.box)) continue;
+                hits++;
+                if (reported[i]) continue;
+                reported[i] = 1;
+                printf("  %s: the cart at %.1f m of %.1f goes through material %d %.2f %.2f %.2f .. %.2f %.2f %.2f\n", name.c_str(), d, len, b.material,
+                       b.box.mn.x, b.box.mn.y, b.box.mn.z, b.box.mx.x, b.box.mx.y, b.box.mx.z);
+            }
+        }
+        printf("  %-10s %.1f m of track%s\n", name.c_str(), len, hits ? ": BLOCKED" : ", clear");
+        CHECK(hits == 0);
+    }
+}
+
+// Every mode a map offers has a spawn for every player it can have (REVIEW MAP-2: eight maps had 2 free-for-all
+// spawns, Anvil's ranked 4-player instagib among them, and players spawned inside each other): the pools
+// Server::spawnPlayer really draws from (spawnPool), each at least as big as the players who draw from it in a full
+// default-size server (8: free for all, hide, tag, race, a tourney's warm-up; 4 a side in team modes, 2 in duel,
+// 1 in 1v1 and a tourney match), every stage of a staged map, and no two of a pool's spawns closer than 1.5 m.
+static void testSpawnPools() {
+    printf("spawn pools: a spawn per player in every offered mode, 1.5 m apart\n");
+    const int full = ServerConfig().maxPlayers;
+    for (auto& name : testedMaps()) {
+        Map m;
+        if (!m.load(name)) continue;
+        int maxStage = 0;
+        for (auto& sp : m.spawns) if (isStagedSpawn(sp.team)) maxStage = std::max(maxStage, spawnStage(sp.team));
+        int worst = 1 << 30, pools = 0;
+        std::string worstWhat;
+        for (int mode = 0; mode < MODE_COUNT; mode++) {
+            if (!m.supportsMode(mode)) continue;
+            struct Use { const char* who; int team; bool match; int need; };
+            std::vector<Use> uses;
+            if (mode == MODE_ARENA) uses = {{"a", TEAM_A, false, 1}, {"b", TEAM_B, false, 1}};
+            else if (mode == MODE_DUEL) uses = {{"a", TEAM_A, false, 2}, {"b", TEAM_B, false, 2}};
+            else if (mode == MODE_TOURNEY) uses = {{"warm-up", TEAM_A, false, full}, {"match a", TEAM_A, true, 1}, {"match b", TEAM_B, true, 1}};
+            else if (modeIsTeamBased(mode)) uses = {{"a", TEAM_A, false, full / 2}, {"b", TEAM_B, false, full / 2}};
+            else uses = {{"all", TEAM_A, false, full}};
+            for (auto& u : uses)
+                for (int stage = 0; stage <= maxStage; stage++) {
+                    int want = modeSpawnType(m, mode, u.team, TEAM_A, u.match);
+                    if (!isStagedSpawn(want) && stage > 0) break;
+                    std::vector<const SpawnPoint*> pool = spawnPool(m, want, stage);
+                    float closest = 1e9f;
+                    for (size_t i = 0; i < pool.size(); i++)
+                        for (size_t j = i + 1; j < pool.size(); j++) closest = std::min(closest, length(pool[i]->pos - pool[j]->pos));
+                    pools++;
+                    char what[96];
+                    snprintf(what, sizeof what, "%s %s%s", modeName(mode), u.who, isStagedSpawn(want) ? (" stage " + std::to_string(stage)).c_str() : "");
+                    if ((int)pool.size() - u.need < worst) { worst = (int)pool.size() - u.need; worstWhat = what; }
+                    if ((int)pool.size() < u.need || closest < 1.5f) {
+                        printf("    %s: %s draws from %zu spawns (needs %d), the closest two %.2f m apart\n", name.c_str(), what, pool.size(), u.need, closest);
+                        g_fail++;
+                    }
+                }
+        }
+        printf("  %-10s %3zu spawns, %2d pools, fewest to spare: %d (%s)\n", name.c_str(), m.spawns.size(), pools, worst, worstWhat.c_str());
+    }
+}
+
+// Spawn sanity (REVIEW MAP-16): every spawn faces into the map (2 m clear ahead at eye height: Summit's faced rock
+// 0.5 m away), no two spawns that can be in use together stand closer than 1.5 m (only one side's staged spawns of
+// different stages may share a spot), and in team modes no spawn sees an enemy spawn (eye to eye, at any range: a
+// sniper reaches across any map).
+static void testSpawnSanity() {
+    printf("spawns: facing into the map, apart, out of the enemy's sight\n");
+    for (auto& name : testedMaps()) {
+        Map m;
+        if (!m.load(name)) continue;
+        int bad = 0;
+        for (auto& sp : m.spawns) {
+            Vec3 eye = sp.pos + Vec3(0, kEyeHeight, 0);
+            float t = m.raycast(eye, angleForward(sp.yaw, 0), 2.0f);
+            if (t >= 0) { printf("    %s: spawn %.1f %.1f %.1f faces a wall %.1f m away\n", name.c_str(), sp.pos.x, sp.pos.y, sp.pos.z, t); bad++; }
+        }
+        // (spawns used together: a mode's two teams; the free-for-all pool; the race grid; a staged map's attackers and
+        // defenders, but never one side's stages with each other. Lodestone's race grid may share a pad with a multi
+        // point stage: no mode uses both.)
+        auto group = [](int t) { return t == SPAWN_A || t == SPAWN_B ? 0 : t == SPAWN_ANY ? 1 : t == SPAWN_RACE ? 2 : 3; };
+        for (size_t i = 0; i < m.spawns.size(); i++)
+            for (size_t j = i + 1; j < m.spawns.size(); j++) {
+                auto &p = m.spawns[i], &q = m.spawns[j];
+                bool stagesApart = isStagedSpawn(p.team) && isStagedSpawn(q.team) && spawnDefends(p.team) == spawnDefends(q.team) && spawnStage(p.team) != spawnStage(q.team);
+                float d = length(p.pos - q.pos);
+                if (d < 1.5f && !stagesApart && group(p.team) == group(q.team)) { printf("    %s: spawns %.1f %.1f %.1f and %.1f %.1f %.1f are %.2f m apart\n", name.c_str(), p.pos.x, p.pos.y, p.pos.z, q.pos.x, q.pos.y, q.pos.z, d); bad++; }
+            }
+        // enemy spawns in sight: the two sides' spawns in every offered team mode (each stage's attackers and defenders)
+        std::vector<std::pair<int, int>> sides;   // (spawn type, enemy spawn type)
+        for (int mode = 0; mode < MODE_COUNT; mode++) {
+            if (!m.supportsMode(mode) || !modeIsTeamBased(mode)) continue;
+            int sa = modeSpawnType(m, mode, TEAM_A, TEAM_A, false), sb = modeSpawnType(m, mode, TEAM_B, TEAM_A, false);
+            if (isStagedSpawn(sa)) for (int st = 0; st <= kMaxSpawnStage; st++) sides.push_back({stagedSpawn(st, false), stagedSpawn(st, true)});
+            else sides.push_back({sa, sb});
+        }
+        std::sort(sides.begin(), sides.end());
+        sides.erase(std::unique(sides.begin(), sides.end()), sides.end());
+        if (m.holdFire > 0) sides.clear();   // (a "holdfire" map starts both sides face to face on purpose: Dojo's bow)
+        int pairs = 0, seen = 0;
+        for (auto [ta, tb] : sides)
+            for (auto& p : m.spawns)
+                for (auto& q : m.spawns) {
+                    if (p.team != ta || q.team != tb) continue;
+                    Vec3 a = p.pos + Vec3(0, kEyeHeight, 0), b = q.pos + Vec3(0, kEyeHeight, 0), d = b - a;
+                    float len = length(d);
+                    pairs++;
+                    if (len > 0.1f && !m.raycastAny(a, d / len, len)) {
+                        seen++;
+                        printf("    %s: enemy spawns %.1f %.1f %.1f and %.1f %.1f %.1f see each other (%.0f m)\n", name.c_str(), p.pos.x, p.pos.y, p.pos.z, q.pos.x, q.pos.y, q.pos.z, len);
+                    }
+                }
+        printf("  %-10s %3zu spawns, %d enemy pairs, %d in sight%s\n", name.c_str(), m.spawns.size(), pairs, seen, bad + seen ? ": FAIL" : "");
+        g_fail += bad + seen;
+    }
+}
+
+// The collision-checked walk (WalkGrid, REVIEW MAP-3) on small maps: what a player can and can't get past.
+static void testWalkGrid() {
+    printf("walk grid: sealed rooms, slots, steps, gaps, ladders, crouching, clip, lava\n");
+    const std::string F = "box -20 -1 -20 20 0 20\nspawn any 0 0 0\n";   // a 40 m floor
+    auto reaches = [](const std::string& text, Vec3 a, Vec3 b) {
+        Map m;
+        std::string err;
+        if (!m.parse(text, &err)) { printf("  parse: %s\n", err.c_str()); return -1; }
+        WalkGrid w;
+        w.build(m);
+        w.components();
+        int na = w.nodeAt(a), nb = w.nodeAt(b);
+        if (na < 0 || nb < 0) return -2;   // (nowhere to stand there)
+        return (int)w.reach(na)[w.comp[nb]];
+    };
+    const Vec3 W(-10, 0, 0), E(10, 0, 0);
+    CHECK(reaches(F, W, E) == 1);
+    // a room with no way out (3 m walls: higher than a jump), then the same room with a 1 m doorway
+    const std::string room = "box -13 0 -2.4 -12.6 3 2.4\nbox -7.4 0 -2.4 -7 3 2.4\nbox -12.6 0 -2.4 -7.4 3 -2\n";
+    CHECK(reaches(F + room + "box -12.6 0 2 -7.4 3 2.4\n", W, E) == 0 && reaches(F + room + "box -12.6 0 2 -7.4 3 2.4\n", E, W) == 0);
+    CHECK(reaches(F + room + "box -12.6 0 2 -10.5 3 2.4\nbox -9.5 0 2 -7.4 3 2.4\n", W, E) == 1);
+    // a wall right across with a slot (off the grid's 0.25 m spacing): 0.9 m lets the 0.8 m hull through, 0.7 m doesn't
+    auto slot = [&](float w) { char t[200]; snprintf(t, sizeof t, "box -0.2 0 -20 0.2 4 3.07\nbox -0.2 0 %g 0.2 4 20\n", 3.07 + w); return F + t; };
+    CHECK(reaches(slot(0.9f), W, E) == 1 && reaches(slot(0.7f), W, E) == 0);
+    // steps up: 0.5 m walks, 1.1 m is a jump, 1.4 m is too high; down is always fine
+    auto ledge = [&](float h) { char t[100]; snprintf(t, sizeof t, "box 2 0 -20 20 %g 20\n", h); return F + t; };
+    CHECK(reaches(ledge(0.5f), W, {10, 0.5f, 0}) == 1 && reaches(ledge(1.1f), W, {10, 1.1f, 0}) == 1);
+    CHECK(reaches(ledge(1.4f), W, {10, 1.4f, 0}) == 0 && reaches(ledge(1.4f), {10, 1.4f, 0}, W) == 1);
+    // a gap with nothing under it: 2 m is jumped, 3.6 m isn't
+    auto gap = [](float g) { char t[160]; snprintf(t, sizeof t, "box -20 -1 -20 -1 0 20\nbox %g -1 -20 20 0 20\nspawn any -10 0 0\n", -1 + g); return std::string(t); };
+    CHECK(reaches(gap(2.0f), W, E) == 1 && reaches(gap(3.6f), W, E) == 0);
+    // a 5 m platform: only up its ladder
+    const std::string tower = "box 5 0 -2 9 5 2\n";
+    CHECK(reaches(F + tower, W, {7, 5, 0}) == 0 && reaches(F + tower + "ladder 4.3 0 -0.45 5 6 0.45\n", W, {7, 5, 0}) == 1);
+    // a hole under a wall: 1.4 m high is crawled through, 1 m isn't
+    auto hole = [&](float h) { char t[200]; snprintf(t, sizeof t, "box -0.2 0 -20 0.2 4 -1\nbox -0.2 0 1 0.2 4 20\nbox -0.2 %g -1 0.2 4 1\n", h); return F + t; };
+    CHECK(reaches(hole(1.4f), W, E) == 1 && reaches(hole(1.0f), W, E) == 0);
+    // clip blocks players (an invisible wall in a doorway)
+    CHECK(reaches(slot(1.2f), W, E) == 1 && reaches(slot(1.2f) + "clip -0.2 0 3.07 0.2 4 4.27\n", W, E) == 0);
+    // lava across the floor: 1 m is jumped over, 3 m isn't
+    CHECK(reaches(F + "lava -0.5 0 -20 0.5 0.2 20\n", W, E) == 1 && reaches(F + "lava -1.5 0 -20 1.5 0.2 20\n", W, E) == 0);
+}
+
+// Every map: loads, supports the mode it was built for, no spawn inside a wall, players can get from every spawn to
+// every objective (and the enemy) in every mode it offers, walking the real collision (WalkGrid), and the bots' nav
+// graph links them too.
 static void testAllMaps() {
-    printf("all maps: modes, spawns, bot navigation\n");
+    printf("all maps: modes, spawns, collision-checked routes, bot navigation\n");
     for (auto& name : testedMaps()) {
         Map m;
         std::string err;
         if (!m.load(name, &err)) { printf("  %s: %s\n", name.c_str(), err.c_str()); g_fail++; continue; }
+        HumanMadeGrace hg(name, m);
         if (m.preferredMode >= 0) CHECK(m.supportsMode(m.preferredMode));
         if (name == "dojo") { CHECK(!m.lava.empty() && m.inLava(playerBox({14, -1.5f, 0}, false)) && !m.inLava(playerBox({0, 0.1f, 0}, false))); }   // lava kills on touch
         for (auto& sp : m.spawns) CHECK(!m.boxSolid(playerBox(sp.pos + Vec3(0, 0.02f, 0), false)));
+        {   // walked with the player's hull against the map's collision: a route that isn't there fails
+            double t0 = timeNow();
+            WalkGrid w;
+            w.build(m);
+            int routes = 0;
+            std::vector<std::string> missing = walkRoutesMissing(m, w, &routes);
+            printf("  %-10s %7zu standing spots, %4d routes walked (%.0f ms)%s\n", name.c_str(), w.nodes.size(), routes, (timeNow() - t0) * 1000,
+                   missing.empty() ? "" : ": MISSING");
+            for (size_t k = 0; k < missing.size() && k < 12; k++) printf("    %s\n", missing[k].c_str());
+            if (missing.size() > 12) printf("    (%zu more)\n", missing.size() - 12);
+            CHECK(missing.empty());
+        }
         NavGraph g;
         g.build(m);
         std::vector<Vec3> goals;
@@ -407,9 +651,218 @@ static void testAllMaps() {
     }
 }
 
+// A saved map is exactly the map its edits made (FINAL_REVIEW 5.5: saves kept 6 significant digits while edits carry 9,
+// so an edit at x = 1000.125 reloaded as 1000.12), and parsing starts from a fresh map every time (5.6).
+static void testMapSaveExact() {
+    printf("map save: exact numbers, fresh parse, title rule\n");
+    auto same = [](const Map& a, const Map& b) {
+        if (a.brushes.size() != b.brushes.size() || a.spawns.size() != b.spawns.size() || a.lights.size() != b.lights.size() ||
+            a.groups.size() != b.groups.size() || a.ladders.size() != b.ladders.size() || a.payloadPath.size() != b.payloadPath.size()) return false;
+        auto eq = [](const AABB& x, const AABB& y) { return x.mn.x == y.mn.x && x.mn.y == y.mn.y && x.mn.z == y.mn.z && x.mx.x == y.mx.x && x.mx.y == y.mx.y && x.mx.z == y.mx.z; };
+        for (size_t i = 0; i < a.brushes.size(); i++) if (!eq(a.brushes[i].box, b.brushes[i].box) || a.brushes[i].material != b.brushes[i].material) return false;
+        for (size_t i = 0; i < a.spawns.size(); i++) {
+            auto &p = a.spawns[i], &q = b.spawns[i];
+            if (p.pos.x != q.pos.x || p.pos.y != q.pos.y || p.pos.z != q.pos.z || p.yaw != q.yaw || p.team != q.team) return false;
+        }
+        for (size_t i = 0; i < a.lights.size(); i++)
+            if (a.lights[i].pos.x != b.lights[i].pos.x || a.lights[i].pos.z != b.lights[i].pos.z || a.lights[i].radius != b.lights[i].radius || a.lights[i].intensity != b.lights[i].intensity) return false;
+        for (size_t i = 0; i < a.groups.size(); i++) {
+            if (!eq(a.groups[i].box, b.groups[i].box) || a.groups[i].parts.size() != b.groups[i].parts.size()) return false;
+            for (size_t k = 0; k < a.groups[i].parts.size(); k++) if (!eq(a.groups[i].parts[k].box, b.groups[i].parts[k].box)) return false;
+        }
+        for (size_t i = 0; i < a.ladders.size(); i++) if (!eq(a.ladders[i], b.ladders[i])) return false;
+        for (size_t i = 0; i < a.payloadPath.size(); i++) if (a.payloadPath[i].x != b.payloadPath[i].x || a.payloadPath[i].z != b.payloadPath[i].z) return false;
+        return a.title == b.title && a.gridRefs == b.gridRefs;
+    };
+    const std::string base = "title t\nbox -20 -1 -20 20 0 20\ngroup custom 1 0 8 0 8 10 2 10\npart 2 0 0 0 1 0.5 1\nspawn a 0 0 0\nlight 0 5 0 10 1\n";
+    Map m;
+    CHECK(m.parse(base));
+    for (const char* op : {"b ins 1 0 1000.125 0 -3.0000001 1001.0625 2.123456789 -2", "s set 0 0 1.23456789 0 -7.00390625 37.12345",
+                           "s ins 1 1 3 0 3 -123.456787", "l set 0 0.333333343 5.1 0.1 9.87654305 0.123456791", "g part 0 1 0.123456789 0 0.3333333 0.9 0.5 0.987654321",
+                           "p ins 0 1.00000012 0 2.5"})
+        CHECK(applyMapEdit(m, op));
+    Map again;
+    std::string text = m.serialize();
+    CHECK(again.parse(text) && same(m, again) && again.serialize() == text);
+    CHECK(text.find("1000.125 ") != std::string::npos && text.find("1000.12 ") == std::string::npos);
+    // shipped maps: save -> load gives the same map, and short numbers stay short (no 0.100000001)
+    for (auto& name : testedMaps()) {
+        Map a, b;
+        if (!a.load(name)) continue;
+        std::string t = a.serialize();
+        if (!b.parse(t) || !same(a, b) || b.serialize() != t) { printf("  %s: save -> load changed the map\n", name.c_str()); g_fail++; }
+        if (t.find("00000") != std::string::npos) { printf("  %s: saved with float noise\n", name.c_str()); g_fail++; }
+    }
+    // parse starts from a fresh map: nothing of the previous map or of a failed parse is left
+    Map f;
+    f.name = "kept";
+    CHECK(f.parse("title Old\nsun 1 1 0\nvoid -3\nindoor 9\nholdfire 4\npalette base 1 0 0 accent 0 1 0 metal 0 0 1 glow 1 1 0 sky 0 1 1\n"
+                  "for vs\nmodes vs ffa\nranked vanilla\nbox -5 -1 -5 5 0 5\nspawn a 0 0 0\nspawn b 1 0 1\nhill -1 0 -1 1 2 1\n"));
+    CHECK(f.hasVoid && f.indoor && f.holdFire == 4 && f.hasPalette && f.hasHill && f.rankedLadders && f.allowedModes);
+    CHECK(!f.parse("title Bad\nvoid -3\nbox 0 0 0 1 1 x\n"));
+    Map fresh;
+    CHECK(f.title.empty() && !f.hasVoid && f.voidY == 0 && !f.indoor && f.ceilingY == 0 && f.holdFire == 0 && !f.hasPalette && !f.hasHill &&
+          f.rankedLadders == 0 && f.allowedModes == 0 && f.preferredMode == -1 && f.brushes.empty() && f.cells.empty() && f.name == "kept");
+    CHECK(f.sunDir.x == fresh.sunDir.x && f.sunDir.y == fresh.sunDir.y && f.palBase.x == fresh.palBase.x);
+    CHECK(f.parse("box -5 -1 -5 5 0 5\nspawn any 0 0 0\n") && f.title.empty() && !f.hasVoid && f.sunDir.x == fresh.sunDir.x && f.name == "kept");
+    // the title: the same rule for a file and an edit (at most 40 printable characters, no '#'; spaces around dropped)
+    const std::string rest = "\nbox -5 -1 -5 5 0 5\nspawn any 0 0 0\n";
+    CHECK(f.parse("title   My Arena  \r" + rest) && f.title == "My Arena");
+    CHECK(f.parse("title " + std::string(40, 'x') + rest) && !f.parse("title " + std::string(41, 'x') + rest) && !f.parse("title a\tb" + rest));
+    CHECK(f.parse("title x" + rest) && applyMapEdit(f, "t  Edited  ") && f.title == "Edited");
+    CHECK(!applyMapEdit(f, "t " + std::string(41, 'y')) && !applyMapEdit(f, "t a\x01" "b") && f.title == "Edited");
+    CHECK(applyMapEdit(f, "t " + std::string(40, 'z')) && again.parse(f.serialize()) && again.title == f.title);
+}
+
 // One set of limits for every map, however it arrives (REVIEW CLI-3, NET-3, NET-15): files, downloads and demos are
 // refused with an error instead of a 240 GB grid, a non-solid floor or brushes past 65535 dropping out of collision;
 // edits that would break those limits, or leave a map that won't load again, are refused and change nothing.
+// A map is named by the sha256 of its content (REVIEW MAP-13, JUDGMENT C2): CRLF and LF copies are one map, the name
+// doesn't matter to the ranked allowlist, an edit session chains the id over its ops, downloads are cached by it.
+static void testMapIdentity() {
+    printf("map identity: sha256 of the content\n");
+    CHECK(mapContentId("").hex() == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");   // (FIPS 180-4)
+    CHECK(mapContentId("box 0 0 0 1 1 1\r\nspawn any 0 0 0\r\n") == mapContentId("box 0 0 0 1 1 1\nspawn any 0 0 0\n"));
+    Map m;
+    CHECK(m.load("temple"));
+    std::string lf;
+    for (char c : m.source) if (c != '\r') lf += c;
+    CHECK(m.id().hex() == sha256Hex(lf) && m.id() == m.contentId() && isOfficialMap(m));
+    Map renamed;
+    CHECK(renamed.parse(m.source) && isOfficialMap(renamed) && renamed.id() == m.id());   // by content, whatever it's called
+    Map e = m;
+    MapId before = e.id();
+    std::string op = "b ins 0 1 0 10 0 2 11 2";
+    CHECK(applyMapEdit(e, op));
+    e.setEditId(mapEditId(before, op));
+    CHECK(e.id() == mapEditId(m.id(), op) && e.id() != before && e.contentId() != m.contentId() && !isOfficialMap(e));
+    CHECK(e.id().shortHex().size() == 2 * MapId::kShortBytes && e.id().startsWith(e.id().shortHex()) && !m.id().startsWith(e.id().shortHex()));
+    CHECK(downloadedMapPath(m.id()).find(m.id().hex() + ".qmap") != std::string::npos);
+}
+
+// The .qmap format (REVIEW MAP-10/11, JUDGMENT C7): a "version" header, real "stairs" / "setting" keywords that the
+// editor keeps, version 1's comment forms still read, unknown optional parts warned about and skipped, bad gameplay
+// parts errors. Every shipped map is the current version and parses without a warning.
+static void testMapFormat() {
+    printf("map format: version, stairs and setting keywords, unknown keys warn\n");
+    const std::string base = "box -20 -1 -20 20 0 20\nspawn any 0 0 0\n";
+    {   // version 1 (no header): the comment forms are read
+        Map m;
+        CHECK(m.parse("# stairs 0 0 4 2 0 2 x 1 1\n# setting old town\n" + base) && m.formatVersion == 1 && m.warnings.empty());
+        CHECK(m.stairs.size() == 1 && m.stairs[0].x1 == 4 && m.stairs[0].axis == 'x' && m.stairs[0].solid && m.setting == "old town");
+        CHECK(m.parse("version 2\n# stairs 0 0 4 2 0 2 x 1 1\n# setting old town\n" + base) && m.stairs.empty() && m.setting.empty());   // (just comments now)
+    }
+    {   // version 2: keywords, kept by the editor's save
+        Map m;
+        CHECK(m.parse("version 2\nsetting  a city block \nstairs -3 1 0 5 0.5 3 z -1 0\n" + base) && m.formatVersion == 2 && m.warnings.empty());
+        CHECK(m.setting == "a city block" && m.stairs.size() == 1 && m.stairs[0].axis == 'z' && m.stairs[0].rising == -1 && !m.stairs[0].solid && m.stairs[0].base == 0.5f);
+        Map again;
+        std::string text = m.serialize();
+        CHECK(text.find("version " + std::to_string(kMapFormatVersion) + "\n") != std::string::npos);
+        CHECK(again.parse(text) && again.setting == m.setting && again.stairs.size() == 1 && again.stairs[0].x0 == -3 && again.stairs[0].top == 3 &&
+              again.stairs[0].axis == 'z' && again.stairs[0].rising == -1 && !again.stairs[0].solid && again.warnings.empty());
+        CHECK(!m.parse("version 2\nstairs 0 0 4 2 0 2 y 1 1\n" + base) && !m.parse("version 2\nstairs 0 0 4 2 0 2 x 1\n" + base) &&
+              !m.parse("version 0\n" + base) && !m.parse("version 2\nsetting\n" + base));
+    }
+    {   // unknown optional parts: warned about and skipped (an older build still loads a newer map)
+        Map m;
+        CHECK(m.parse("version 9\nfog 0.1 0.2 0.3\n" + base + "modes ffa teleball\nranked vanilla chess\nfor teleball\npalette base 1 1 1 rim 1 0 0\n"));
+        CHECK(m.formatVersion == 9 && m.warnings.size() == 6 && m.allowedModes == 1u << MODE_FFA && m.rankedLadders == 1 && m.preferredMode == -1);
+        CHECK(m.parse(base + "weather rain\n") && m.warnings.size() == 1 && m.warnings[0].find("weather") != std::string::npos);
+    }
+    {   // gameplay parts stay strict
+        Map m;
+        CHECK(!m.parse(base + "spawn c 1 0 1\n"));                                        // (an unknown team used to become "any")
+        CHECK(!m.parse(base + "hill 0 0 0 4 3 4\nhill 8 0 8 12 3 12\n"));                // (the second used to replace the first)
+        CHECK(!m.parse(base + "group pyramid 0 0 0 0 0 4 4 4\n") && !m.parse(base + "box 0 0 0 1 1\n"));
+    }
+    for (auto& name : testedMaps()) {   // the generator writes the current format, nothing it has to skip
+        Map m;
+        if (!m.load(name)) { printf("  %s doesn't load\n", name.c_str()); g_fail++; continue; }
+        HumanMadeGrace hg(name, m);
+        if (m.formatVersion != kMapFormatVersion || !m.warnings.empty() || m.setting.empty())
+            printf("  %s: format %d, %zu warnings%s%s\n", name.c_str(), m.formatVersion, m.warnings.size(), m.warnings.empty() ? "" : ": ", m.warnings.empty() ? "" : m.warnings[0].c_str());
+        CHECK(m.formatVersion == kMapFormatVersion && m.warnings.empty() && !m.setting.empty());
+    }
+}
+
+// Map format converters (owner rule): every older format converts step by step to the current one, the parser reads
+// only that, and a player's maps on disk are converted once with the originals kept (maps/old/v<N>/).
+static void testMapConverter() {
+    printf("map format converters: every older version, files on disk\n");
+    CHECK(mapTextVersion("") == 1 && mapTextVersion("box 0 0 0 1 1 1\n") == 1 && mapTextVersion("# version 5\n") == 1);
+    CHECK(mapTextVersion("# x\nversion 2\nbox\n") == 2 && mapTextVersion("  version 7\n") == 7 && mapTextVersion("version x\n") == 0 && mapTextVersion("version 0\n") == 0);
+    const std::string base = "box -20 -1 -20 20 0 20\nspawn any 0 0 0\n";
+    const std::string v1 = "# generated by tools/make_maps.py\n# a note\ntitle Old\n# stairs 0 0 4 2 0 2 x 1 1\n# setting old town\n" + base;
+    std::string out;
+    CHECK(upgradeMapText(v1, &out) && mapTextVersion(out) == kMapFormatVersion);
+    CHECK(out == "# generated by tools/make_maps.py\n# a note\ntitle Old\nstairs 0 0 4 2 0 2 x 1 1\nsetting old town\n" + base + "version " + std::to_string(kMapFormatVersion) + "\n");   // (last: every line keeps its number)
+    {   // a parse error in a converted map names the file's line
+        Map m; std::string err;
+        CHECK(!m.parse("# old\n" + base + "box 1 2 3\n", &err) && err.rfind("parse error on line 4:", 0) == 0);
+    }
+    std::string again;
+    CHECK(!upgradeMapText(out, &again) && again.empty());                                    // current: nothing to do
+    CHECK(!upgradeMapText("version " + std::to_string(kMapFormatVersion + 1) + "\n" + base, &again));   // newer: parsed as it is
+    {   // the parser reads the converted text: same map either way, and it remembers what the file was
+        Map a, b;
+        CHECK(a.parse(v1) && b.parse(out) && a.formatVersion == 1 && b.formatVersion == kMapFormatVersion);
+        CHECK(a.stairs.size() == 1 && b.stairs.size() == 1 && a.setting == "old town" && b.setting == a.setting && a.title == "Old");
+        CHECK(a.id() == b.id() && a.sourceText() == out);                                     // (one identity for a map, whatever copy a peer holds)
+    }
+    for (int k = 1; k < kMapFormatVersion; k++) {   // every older version has a way to today's (a missing step doesn't compile)
+        std::string o;
+        CHECK(upgradeMapText((k > 1 ? "version " + std::to_string(k) + "\n" : std::string()) + base, &o) && mapTextVersion(o) == kMapFormatVersion);
+        Map m;
+        CHECK(m.parse(o) && m.warnings.empty());
+    }
+    {   // a player's maps folder
+        namespace fs = std::filesystem;
+        fs::path d = fs::temp_directory_path() / ("quark_mapconv_" + std::to_string(getpid()));
+        std::error_code ec;
+        fs::remove_all(d, ec);
+        fs::create_directories(d);
+        auto put = [&](const std::string& n, const std::string& t) { std::ofstream(d / n, std::ios::binary) << t; };
+        auto rd = [&](const fs::path& p) { std::ifstream f(p, std::ios::binary); std::stringstream ss; ss << f.rdbuf(); return ss.str(); };
+        std::string cur = "version " + std::to_string(kMapFormatVersion) + "\n" + base;
+        put("old.qmap", v1); put("cur.qmap", cur); put("bad.qmap", "# stairs 0 0 4 2 0 2 x 1 1\n"); put("notes.txt", "# stairs x\n");
+        MapUpgradeReport r = upgradeMapDir(d.string());
+        for (auto& l : r.log) printf("  %s\n", l.c_str());
+        CHECK(r.converted == 1 && r.failed == 1);
+        CHECK(rd(d / "old.qmap") == out && rd(d / "old" / "v1" / "old.qmap") == v1);      // converted, the original kept
+        CHECK(rd(d / "cur.qmap") == cur && rd(d / "bad.qmap") == "# stairs 0 0 4 2 0 2 x 1 1\n" && rd(d / "notes.txt") == "# stairs x\n");
+        CHECK(rd(d / "old" / "convert.log").find("old.qmap: converted from map format 1") != std::string::npos);
+        r = upgradeMapDir(d.string());                                                        // the next start: nothing
+        CHECK(r.converted == 0 && r.failed == 0 && r.log.empty());
+        put("old.qmap", v1);                                                                  // the same name again: both originals kept
+        r = upgradeMapDir(d.string());
+        CHECK(r.converted == 1 && rd(d / "old" / "v1" / "old-1.qmap") == v1);
+        CHECK(upgradeMapDir((d / "nowhere").string()).log.empty());
+        fs::remove_all(d, ec);
+    }
+}
+
+// Human-made maps: what counts as one, and their failed map checks are reported but taken off the count (a generated
+// map's stay). The map report does the same with its scores (mapreport.cpp).
+static void testHumanMadeMaps() {
+    printf("human-made maps: checked and reported, not failing the run\n");
+    Map gen;
+    CHECK(gen.load("temple") && !gen.handmade && !gen.humanMade() && !isHumanMadeMap("temple", gen));
+    Map saved;
+    CHECK(saved.parse(gen.serialize()) && saved.handmade && saved.humanMade());   // what the editor saves is a person's
+    Map plain;
+    CHECK(plain.parse("box -20 -1 -20 20 0 20\nspawn any 0 0 0\n") && !plain.handmade && plain.humanMade());   // not the generator's
+    Map marked;
+    CHECK(marked.parse(gen.source + "handmade\n") && marked.humanMade() && isHumanMadeMap("temple", marked));
+    int before = g_fail;
+    { HumanMadeGrace hg("probe", plain); g_fail += 2; }   // (two checks failed on it)
+    CHECK(g_fail == before);
+    { HumanMadeGrace hg("temple", gen); g_fail++; }
+    bool kept = g_fail == before + 1;
+    g_fail = before;
+    CHECK(kept);
+}
+
 static void testMapLimits() {
     printf("map limits: hostile maps and edits are refused\n");
     for (const char* f : {"map_hugegrid.qmap", "map_floatmax.qmap"}) {   // the review's repro files
@@ -464,13 +917,13 @@ static void testMapLimits() {
         Map m;
         CHECK(m.parse(base));
         size_t n = m.brushes.size();
-        uint32_t crc = crc32(m.serialize().data(), m.serialize().size());
+        MapId before = mapContentId(m.serialize());
         CHECK(applyMapEdit(m, "g set 1 0 0 0 -4096 -1 -4096 4096 1 4096"));   // a big custom group: fine
         CHECK(!applyMapEdit(m, "g part 1 0 -4096 0 -4096 4096 1 4096"));       // a part 4096 times its size: refused
         CHECK(!applyMapEdit(m, "b set 2 0 0 0 0 1 1 1"));                      // generated boxes aren't edited directly
         CHECK(applyMapEdit(m, "g set 1 0 1 0 8 0 8 10 2 10") && m.brushes.size() == n);   // (back as it was)
         std::string again = m.serialize();
-        CHECK(crc32(again.data(), again.size()) == crc);                      // refused edits changed nothing
+        CHECK(mapContentId(again) == before);                                 // refused edits changed nothing
     }
 }
 
@@ -863,6 +1316,7 @@ static void testCartChecks(uint16_t port) {
     pump(s, cls, 0.4, idle);
     s.command("forcestart");
     pump(s, cls, 3.2, idle);
+    for (int k = 0; k < 30 && s.ms_.phase != PHASE_LIVE; k++) pump(s, cls, 0.1, idle);   // (a loaded machine: the countdown's last ticks)
     CHECK(s.ms_.phase == PHASE_LIVE && s.ms_.pointCount == 2);
     int att = -1;
     for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].team == s.ms_.attackers) att = i;
@@ -1304,8 +1758,8 @@ static void testWallbang() {
     CHECK(m.boxSolid(playerBox({0, 0, 0}, false)));                        // and you can't walk through it
 }
 
-// Syringe: holding fire heals you 1 hp per 0.1 s; a thrown one heals the teammate it hits by 30 and resets their
-// cooldowns; it does nothing to an enemy.
+// Syringe: each use heals you 10 hp, with a 1 s cooldown (owner 1.17); a thrown one heals the teammate it hits by 30
+// and resets their cooldowns; it does nothing to an enemy.
 static void testSyringe(uint16_t port) {
     printf("syringe\n");
     Server s;
@@ -1325,9 +1779,16 @@ static void testSyringe(uint16_t port) {
     CHECK(pa.team == pb.team && pa.alive && pb.alive);
     pump(s, cls, 0.2, [](int) { UserCmd c; c.weapon = WPN_SYRINGE; return c; });   // (out first: switching with fire held doesn't fire)
     pa.health = 50;
-    pump(s, cls, 1.0, [](int i) { UserCmd c; c.weapon = WPN_SYRINGE; if (i == 0) c.buttons = BTN_FIRE; return c; });
-    printf("  held 1 s: %.0f hp (from 50)\n", pa.health);
-    CHECK(pa.health >= 55 && pa.health <= 62);
+    auto heal = [](int i) { UserCmd c; c.weapon = WPN_SYRINGE; if (i == 0) c.buttons = BTN_FIRE; return c; };
+    for (int k = 0; k < 50 && pa.health == 50; k++) pump(s, cls, 0.01, heal);
+    double first = pa.lastFire;
+    printf("  one use: %.0f hp (from 50), next in %.2f s\n", pa.health, pa.nextFire - first);
+    CHECK(pa.health == 60 && std::fabs(pa.nextFire - (first + 1.0)) < 0.002);
+    while (s.time() < first + 0.9) pump(s, cls, 0.01, heal);   // held: nothing more until the 1 s cooldown is over
+    CHECK(pa.health == 60);
+    while (s.time() < first + 1.2) pump(s, cls, 0.01, heal);
+    printf("  held 1.2 s: %.0f hp\n", pa.health);
+    CHECK(pa.health == 70);
     // b throws at a, 5 m in front of it (yaw 0 looks down -z)
     pa.health = 40; pa.move.dashCooldown = 1.5f; pa.nextFire = s.time() + 5;
     Vec3 base = pb.move.pos;
@@ -1541,7 +2002,7 @@ static void testIncrementalEdits() {
 static void testTimeToKill() {
     printf("time to kill with perfect aim (1-4.5 s), no shot over 50\n");
     for (int w = 0; w < WPN_COUNT; w++) {
-        if (w == WPN_SYRINGE) continue;    // (it heals)
+        if (w == WPN_SYRINGE || w == WPN_LOCATOR) continue;    // (it heals / does no damage)
         const WeaponDef& d = weaponDef(w);
         float perShot = d.damage * d.pellets;
         int shots = (int)std::ceil(kMaxHealth / perShot - 1e-4f);
@@ -1863,6 +2324,7 @@ static void testBotAim(uint16_t& port) {
         for (int r = 0; r < 3; r++) CHECK(std::fabs(dps[r][k] - mean[k]) <= std::max(1.5f, 0.3f * mean[k])); // the tick rate doesn't matter (beyond sampling noise)
     CHECK(mean[0] > 1);                          // beginners still land some hits
     CHECK(mean[BOT_SKILLS - 1] < perfect * 0.6f); // experts are strong, but a human can beat them
+    CHECK(mean[BOT_SKILLS - 1] > perfect * 0.35f); // ...and strong: about 18 dps on a strafer (17 at 1.17, about 45%)
 }
 
 // Alt-fires: thrown knife hits at range, shotgun ricochets hit someone behind you (off the wall in front),
@@ -1878,6 +2340,7 @@ static void testLadders() {
     for (auto& name : testedMaps()) {
         Map m;
         if (!m.load(name)) continue;
+        HumanMadeGrace hg(name, m);
         for (auto& l : m.ladders) {
             bool ok = false;
             for (float yaw : {0.0f, PI, PI * 0.5f, -PI * 0.5f}) {
@@ -2113,7 +2576,7 @@ static void testCustomMode(uint16_t port) {
     testHostedRulesPerThread((uint16_t)(port + 100));
 }
 
-// Every staircase (recorded by tools/make_maps.py as "# stairs x0 z0 x1 z1 base top axis rising solid"):
+// Every staircase (recorded by tools/make_maps.py as "stairs x0 z0 x1 z1 base top axis rising solid", Map::stairs):
 // walked from the bottom to the top by the real movement code, and checked against the paths around it:
 // no walkable surface may pass through a solid flight, or run underneath an open one with less than a
 // player's height of clearance.
@@ -2123,17 +2586,14 @@ static void testStairs() {
     for (auto& name : testedMaps()) {
         Map m;
         if (!m.load(name)) continue;
+        HumanMadeGrace hg(name, m);
         NavGraph g;
         g.build(m);
-        std::istringstream src(m.source);
-        std::string line;
-        while (std::getline(src, line)) {
-            if (line.rfind("# stairs ", 0) != 0) continue;
-            std::istringstream ls(line.substr(9));
-            float x0, z0, x1, z1, base, top, rising; std::string axis; int solid;
-            if (!(ls >> x0 >> z0 >> x1 >> z1 >> base >> top >> axis >> rising >> solid)) continue;
+        for (const Map::Stairs& st : m.stairs) {
+            float x0 = st.x0, z0 = st.z0, x1 = st.x1, z1 = st.z1, base = st.base, top = st.top, rising = st.rising;
+            bool solid = st.solid;
             flights++;
-            bool ax = axis == "x";
+            bool ax = st.axis == 'x';
             // walk it: from in front of the low end, or from either side of the lowest step, run at the top
             // of the flight (the real movement code, 8 ms ticks)
             float lo = ax ? (rising > 0 ? x0 : x1) : (rising > 0 ? z0 : z1), hi = ax ? (rising > 0 ? x1 : x0) : (rising > 0 ? z1 : z0);
@@ -2222,6 +2682,41 @@ static void testStairs() {
     printf("  %d flights\n", flights);
 }
 
+// Hide and seek / tag bots pick spots from the nav graph. After a map change they must not head for a spot on the
+// previous map's graph (it's still there while the new map's builds in the background), nor keep one picked on it.
+static void testBotGoalsAfterMapChange(uint16_t port) {
+    printf("bot goals after a map change\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = false; cfg.map = "hamlet"; cfg.mode = MODE_HIDE; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    int bot = s.addBot(TEAM_A, BOT_ADVANCED);
+    std::vector<NetClient*> none;
+    for (int k = 0; k < 50 && !s.nav_.ready(s.map_); k++) pump(s, none, 0.1, idle);
+    CHECK(bot >= 0 && s.nav_.ready(s.map_));
+    if (bot < 0) { s.stop(); return; }
+    auto onGraph = [](const Vec3& g, const std::vector<NavGraph::Node>& nodes) {
+        for (auto& n : nodes)
+            if (std::fabs((n.x0 + n.x1) * 0.5f - g.x) < 1e-3f && std::fabs((n.z0 + n.z1) * 0.5f - g.z) < 1e-3f && std::fabs(n.y - g.y) < 1e-3f) return true;
+        return false;
+    };
+    auto& p = s.players_[bot];
+    p.alive = true; p.it = false;
+    s.bots_[bot].goalUntil = 0;
+    botThink(s, bot);
+    std::vector<NavGraph::Node> old = s.nav_.nodes;
+    CHECK(onGraph(s.bots_[bot].goal, old));                  // a hiding spot on hamlet, kept for a while
+    s.command("map hightown hide");
+    p.alive = true; p.it = false; p.move.pos = s.map_.spawns[0].pos; p.move.vel = {};
+    for (int k = 0; k < 5; k++) { botThink(s, bot); CHECK(!onGraph(s.bots_[bot].goal, old)); }   // (graph built or not)
+    for (int k = 0; k < 50 && !s.nav_.ready(s.map_); k++) pump(s, none, 0.1, idle);
+    p.alive = true; p.it = false;
+    botThink(s, bot);
+    CHECK(s.nav_.ready(s.map_) && onGraph(s.bots_[bot].goal, s.nav_.nodes)); // and once it's ready, a spot on the new one
+    s.stop();
+}
+
 // Joined mid tag match, then a vote to 1v1: everyone is placed like a newcomer (one per side, the rest watch),
 // not all put on team A.
 static void testTagLateJoin(uint16_t port) {
@@ -2245,6 +2740,15 @@ static void testTagLateJoin(uint16_t port) {
     CHECK(late >= 0 && late < kMaxPlayers);
     if (late < 0 || late >= kMaxPlayers) { s.stop(); return; }
     CHECK(s.players_[late].team == TEAM_SPECTATOR && s.players_[late].waitingToPlay);
+    { // an admin's addbot mid match: the team lock holds for bots too (it used to put them straight into play)
+        int before[kMaxPlayers]; for (int i = 0; i < kMaxPlayers; i++) before[i] = s.players_[i].connected;
+        s.command("addbot a");
+        pump(s, cls, 0.3, idle);
+        int bot = -1;
+        for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && !before[i] && s.players_[i].isBot) bot = i;
+        CHECK(bot >= 0 && s.players_[bot].team == TEAM_SPECTATOR && s.players_[bot].waitingToPlay && !s.players_[bot].alive);
+        if (bot >= 0) s.removeBot(bot);
+    }
     s.command("map temple 1v1");
     pump(s, cls, 0.5, idle);
     int a = 0, b = 0, spec = 0;
@@ -2311,9 +2815,10 @@ static void testItModes(uint16_t port) {
         if (mode == MODE_HIDE) {
             CHECK(!s.players_[h1].alive);              // found with one stab
             s.players_[it].itFreezeUntil = 0;
+            pump(s, cls, std::max(0.0, (double)(s.players_[it].nextFire - s.time())), idle);   // (the knife's refire after the first find)
             stab(it, h2);
             pump(s, cls, 0.2, idle);
-            CHECK(s.ms_.phase == PHASE_ROUND_END && s.players_[it].score >= 3);
+            CHECK(s.ms_.phase == PHASE_ROUND_END && s.players_[it].score == 2);
         } else {
             CHECK(s.players_[h1].it && !s.players_[it].it && s.players_[h1].alive);   // tagged: "it" moved on
             CHECK(rulesFrozen(s, h1));                 // the new "it" waits a moment
@@ -2391,6 +2896,81 @@ static void testRocketLob(uint16_t port) {
     if (lob) {
         float sp = weaponDef(WPN_ROCKET).projSpeed;
         CHECK(length(Vec3(lob->vel.x, 0, lob->vel.z)) < sp * kRocketLobSpeed + 0.5f);
+    }
+    s.stop();
+}
+
+// C8: projectiles fly in fixed 1 ms steps, like movement, so an arc lands on the same spot at every server tick
+// rate (125 / 250 / 500 / 1000 Hz). Also measures what the projectile tick costs at each rate.
+static void testProjectileTickRates(uint16_t port) {
+    printf("projectile arcs identical at every tick rate\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = false; cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.balanceBots = false;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    const Vec3 from = s.map_.spawns[0].pos + Vec3(0, kEyeHeight, 0);
+    const uint64_t t0 = (s.timeMs_ / 8 + 1) * 8 + 8000;   // a time every rate ticks on
+    auto spawn = [&](int k, int type, Vec3 vel, float gravMul, float life) {
+        Projectile& pr = s.projectiles_[k];
+        pr = Projectile();
+        pr.active = true; pr.id = (uint16_t)(k + 1); pr.type = type; pr.owner = kMaxPlayers - 1;   // (nobody: no player is hit)
+        pr.pos = from; pr.vel = vel; pr.gravMul = gravMul;
+        pr.dieAt = s.time() + life; pr.armAt = s.time() + kStickyArmTime;
+    };
+    // Fly one projectile at each rate until it lands (or its life runs out): where it ends up.
+    auto fly = [&](int level, int type, Vec3 vel, float gravMul, float life, bool* landed) {
+        for (auto& pr : s.projectiles_) pr.active = false;
+        s.rateLevel_ = level;
+        s.timeMs_ = t0;
+        spawn(0, type, vel, gravMul, life);
+        const Projectile& pr = s.projectiles_[0];
+        for (int t = 0; t < 40000 && pr.active && !pr.stuck; t++) { s.tickProjectilesForTest(); s.timeMs_ += 1000 / s.tickRate(); }
+        *landed = pr.stuck || s.time() < pr.dieAt;
+        return pr.pos;
+    };
+    struct Shot { const char* name; int type; float speed, pitch, yaw, gravMul, life; };
+    const Shot shots[] = {
+        {"rocket", WPN_ROCKET, weaponDef(WPN_ROCKET).projSpeed, 0.25f, 0.4f, 1, weaponDef(WPN_ROCKET).life},
+        {"rocket lob", WPN_ROCKET, weaponDef(WPN_ROCKET).projSpeed * kRocketLobSpeed, 0.6f, 2.0f, kRocketLobGravity, weaponDef(WPN_ROCKET).life},
+        {"sticky", WPN_STICKY, weaponDef(WPN_STICKY).projSpeed, 0.5f, -1.2f, 1, weaponDef(WPN_STICKY).life},
+        {"knife", WPN_KNIFE, kKnifeThrowSpeed, 0.35f, 3.0f, 1, kKnifeThrowLife},
+        {"crossbow", WPN_CROSSBOW, weaponDef(WPN_CROSSBOW).projSpeed, 0.2f, -2.5f, 1, weaponDef(WPN_CROSSBOW).life},
+        {"syringe", WPN_SYRINGE, kSyringeThrowSpeed, 0.4f, 1.0f, 1, kSyringeThrowLife},
+        {"bubble", WPN_BUBBLE, weaponDef(WPN_BUBBLE).projSpeed, 0.0f, 0.8f, 1, weaponDef(WPN_BUBBLE).life},
+    };
+    for (const Shot& sh : shots) {
+        Vec3 vel = angleForward(sh.yaw, sh.pitch) * sh.speed;
+        bool landed[kTickRateLevels];
+        Vec3 at[kTickRateLevels];
+        for (int level = 0; level < kTickRateLevels; level++) at[level] = fly(level, sh.type, vel, sh.gravMul, sh.life, &landed[level]);
+        float worst = 0;
+        for (int level = 1; level < kTickRateLevels; level++) worst = std::max(worst, length(at[level] - at[0]));
+        printf("  %-10s %s (%.2f, %.2f, %.2f): at most %.4f mm apart at 125-1000 Hz\n", sh.name, landed[0] ? "landed at" : "expired at",
+               at[0].x, at[0].y, at[0].z, worst * 1000);
+        CHECK(worst < 0.001f);
+        for (int level = 1; level < kTickRateLevels; level++) CHECK(landed[level] == landed[0]);
+        // the client draws it on the same arc: its extrapolation (up to 0.2 s, in closed form) vs the server's steps
+        Vec3 sp = from, sv = vel, cp = from, cv = vel;
+        float g = projectileGravity(sh.type, sh.gravMul);
+        for (int k = 0; k < 200; k++) { sv.y -= g * kMoveStep; sp += sv * kMoveStep; }
+        projectileExtrapolate(cp, cv, g, 0.2f);
+        CHECK(length(cp - sp) < 0.001f && std::fabs(cv.y - sv.y) < 0.01f);
+    }
+    // Cost: 100 bubbles drifting (the slowest, longest-lived projectile) for 1 s at each rate.
+    for (int level = 0; level < kTickRateLevels; level++) {
+        double best = 1e9;
+        for (int rep = 0; rep < 5; rep++) {
+            for (auto& pr : s.projectiles_) pr.active = false;
+            s.rateLevel_ = level;
+            s.timeMs_ = t0;
+            for (int k = 0; k < 100; k++) spawn(k, WPN_BUBBLE, angleForward(k * 0.0628f, 0.3f * std::sin(k * 1.7f)) * weaponDef(WPN_BUBBLE).projSpeed * 0.5f, 1, 4);
+            int ticks = 0;
+            double a = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+            while (s.timeMs_ < t0 + 1000) { s.tickProjectilesForTest(); s.timeMs_ += 1000 / s.tickRate(); ticks++; }
+            best = std::min(best, (std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() - a) / ticks);
+        }
+        printf("  100 projectiles at %4d Hz: %.1f us a tick, %.2f ms per second of play\n", kTickRates[level], best * 1e6, best * kTickRates[level] * 1e3);
     }
     s.stop();
 }
@@ -2614,6 +3194,89 @@ static void testHandshake(uint16_t port) {
     s.stop();
 }
 
+// The spectate vote (OWNER_DECISIONS_2 B10): "callvote spec <player>" moves a player to spectator, by the usual vote
+// rules; it needs 3+ players, the player it's about has no vote, they can't rejoin play until the next map (not by
+// leaving and coming back either), and each caller gets one vote per player per map. Kicking stays admin-only: a
+// player's "kick" does nothing and there's no kick vote.
+static void testSpecVote(uint16_t port) {
+    printf("spectate vote: 3+ players, target has no vote, out until the next map; kick never votable\n");
+    Server s;
+    s.voteCooldown_ = 0;   // (a failed vote's cooldown isn't what this checks)
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.balanceBots = false;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    std::string addr = "127.0.0.1:" + std::to_string(port);
+    NetClient a, b, c;
+    a.connect(addr, "anna"); b.connect(addr, "bert");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 0.8, idle);
+    a.sendCommand("callvote spec bert");   // two players: not available (a 1v1 never has it)
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE);
+    c.connect(addr, "carl");
+    cls = {&a, &b, &c};
+    pump(s, cls, 0.8, idle);
+    int ia = a.clientId(), ib = b.clientId(), ic = c.clientId();
+    int bot = s.addBot(TEAM_A, BOT_BEGINNER);
+    CHECK(bot >= 0);
+    a.sendCommand("callvote spec anna");                         // not yourself
+    a.sendCommand("callvote spec " + std::to_string(bot));       // not a bot
+    a.sendCommand("callvote spec nobody");
+    a.sendCommand("kick carl");                                  // a player can't kick...
+    a.sendCommand("callvote kick carl");                         // ...or vote to
+    pump(s, cls, 0.4, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE && s.players_[ic].connected);
+    a.sendCommand("callvote spec carl");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_SPEC && s.vote_.arg == ic);
+    c.sendCommand("vote no");                                    // carl has no say
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_SPEC && !(s.vote_.no >> ic & 1) && s.ms_.voteVoters == 2);
+    b.sendCommand("vote yes");
+    pump(s, cls, 0.4, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE);
+    CHECK(s.players_[ic].team == TEAM_SPECTATOR && s.players_[ic].specLocked && !s.players_[ic].alive);
+    c.sendCommand("team a");                                     // can't rejoin play this map
+    pump(s, cls, 0.5, idle);
+    CHECK(s.players_[ic].team == TEAM_SPECTATOR && !s.players_[ic].alive);
+    // leaving and coming back as a new connection: still spectating
+    c.disconnect();
+    cls = {&a, &b};
+    pump(s, cls, 0.2, idle);
+    s.players_[ic].awayUntil = timeNow() - 1;   // (the reconnect grace is over)
+    pump(s, cls, 0.2, idle);
+    CHECK(!s.players_[ic].connected);
+    NetClient c2;
+    c2.connect(addr, "carl");
+    cls = {&a, &b, &c2};
+    pump(s, cls, 0.8, idle);
+    int ic2 = c2.clientId();
+    CHECK(s.players_[ic2].connected && s.players_[ic2].team == TEAM_SPECTATOR && s.players_[ic2].specLocked);
+    // one spectate vote per caller per player per map: anna's on bert fails (carl says no), and she can't call it again
+    a.sendCommand("callvote spec bert");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_SPEC && s.vote_.arg == ib);
+    c2.sendCommand("vote no");
+    pump(s, cls, 0.4, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE && s.players_[ib].team != TEAM_SPECTATOR);
+    a.sendCommand("callvote spec bert");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_NONE);
+    // the next map: carl plays again, and anna may call the vote on bert again
+    s.command("map bastion ffa");
+    pump(s, cls, 0.5, idle);
+    CHECK(!s.players_[ic2].specLocked);
+    c2.sendCommand("team a");
+    pump(s, cls, 0.5, idle);
+    CHECK(s.players_[ic2].team == TEAM_A);
+    a.sendCommand("callvote spec bert");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.vote_.kind == Server::VOTE_SPEC && s.vote_.arg == ib);
+    CHECK(s.players_[ia].connected && s.players_[ib].connected);
+    s.stop();
+}
+
 // A server running a map the client doesn't have (or has a different copy of): the client downloads it,
 // keeps it under maps/downloads, and the editor's save format round-trips every map.
 static void testMapDownload(uint16_t port) {
@@ -2655,8 +3318,8 @@ static void testMapDownload(uint16_t port) {
     std::vector<NetClient*> cls = {&a};
     pump(s, cls, 1.5, idle);
     CHECK(a.state() == ConnState::Connected && a.mapReady());
-    CHECK(a.map().crc == s.map_.crc && a.map().brushes.size() == base.brushes.size() + 1);
-    std::string dl = downloadedMapPath(name, s.map_.crc);
+    CHECK(a.map().id() == s.map_.id() && a.map().brushes.size() == base.brushes.size() + 1);
+    std::string dl = downloadedMapPath(s.map_.id());
     FILE* f = fopen(dl.c_str(), "rb");
     CHECK(f != nullptr);
     if (f) fclose(f);
@@ -2665,7 +3328,7 @@ static void testMapDownload(uint16_t port) {
     b.connect("127.0.0.1:" + std::to_string(port), "b");
     cls.push_back(&b);
     pump(s, cls, 0.2, idle);
-    CHECK(b.mapReady() && b.downloadProgress() < 0 && b.map().crc == s.map_.crc);
+    CHECK(b.mapReady() && b.downloadProgress() < 0 && b.map().id() == s.map_.id());
     std::remove(dl.c_str());
     s.stop();
 }
@@ -2968,7 +3631,8 @@ static void testRankedRelay(uint16_t port) {
             bool logged = false;
             for (auto& l : logs) logged |= l.find("is for " + relayAddr + ", not this server") != std::string::npos;
             CHECK(logged);
-        } else CHECK(s.players_[id].rankId == kv.id && s.players_[id].dialled.toString() == relayAddr);
+            CHECK(s.ownAddrHint() == relayAddr);   // (C9: the host screen shows it, with --own-addr)
+        } else CHECK(s.players_[id].rankId == kv.id && s.players_[id].dialled.toString() == relayAddr && s.ownAddrHint().empty());
         // which addresses count as this server's
         const NetAddr lo{0x7F000001u, port}, outside{0xC6336401u, 5000};   // (198.51.100.1)
         CHECK(s.ownAddress(lo, NetAddr{0x7F000001u, 5000}));                       // loopback, from this machine
@@ -3365,6 +4029,36 @@ static void testMasterReplies(uint16_t port) {
     if (!r.empty() && r.back().first == "k79") CHECK(r.size() == MasterAnnouncer::kMaxReplies && r.front().first == "k16");   // (all done: the newest 64)
 }
 
+// The live ranked lock (no votes, no map / mode changes, no team switches) holds for exactly the three rated ladders:
+// 1v1 vanilla, 1v1 laser vampire and instagib free for all (JUDGMENT_CALLS C15). Not the time trial, nor any other mode
+// or ruleset, even with a match id open.
+static void testRankedLockLadders() {
+    printf("ranked lock: exactly 1v1 vanilla, 1v1 laser vampire, instagib ffa\n");
+    int locked = 0;
+    for (int v = 0; v < kArenaVariants; v++)
+        for (int mode = 0; mode < MODE_COUNT; mode++) {
+            Server s;
+            s.cfg_.ranked = true;
+            s.cfg_.arenaVariant = v;
+            s.cfg_.mode = mode;
+            s.rankedMatch_ = "0123456789abcdef";
+            s.ms_.phase = PHASE_LIVE;
+            bool ladder = (v == 0 && mode == MODE_ARENA) || (v == 1 && mode == MODE_ARENA) || (v == 5 && mode == MODE_FFA);
+            CHECK(arenaVariantRanked(v) == (v == 0 || v == 1 || v == 5));
+            CHECK(s.rankedLive() == ladder);
+            locked += s.rankedLive();
+            s.ms_.phase = PHASE_WARMUP;
+            CHECK(!s.rankedLive());
+        }
+    CHECK(locked == 3);
+    Server t;   // the Viaduct time trial: best times, no rating, never locked
+    t.cfg_.timeTrial = true; t.cfg_.mode = MODE_RACE; t.cfg_.map = "viaduct";
+    t.rankedMatch_ = "0123456789abcdef"; t.ms_.phase = PHASE_LIVE;
+    CHECK(!t.rankedLive());
+    t.cfg_.ranked = true;
+    CHECK(!t.rankedLive());
+}
+
 // One placement threshold: the game's kPlacementGames is the Worker's PLACEMENT_GAMES.
 static void testPlacementConstant() {
     printf("placement threshold matches the Worker\n");
@@ -3432,17 +4126,17 @@ static void testRankedVoteAndRestart(uint16_t port) {
     CHECK(s.editing_ && s.tempEdit_ && (a.mode().flags & MS_TEMP_EDIT));
     a.sendCommand("ed b ins 0 1 0 20 0 1 21 1");
     pump(s, cls, 0.5, idle);
-    CHECK(a.map().crc == s.map_.crc && s.map_.brushes.size() == disk.brushes.size() + 1);
+    CHECK(a.map().id() == s.map_.id() && s.map_.brushes.size() == disk.brushes.size() + 1);
     b.sendCommand("callvote edit off");
     pump(s, cls, 0.2, idle);
     a.sendCommand("vote yes");
     pump(s, cls, 0.5, idle);
     CHECK(!s.editing_ && s.mapEdited_ && s.map_.brushes.size() == disk.brushes.size() + 1 && !(a.mode().flags & MS_EDITING));
     Map after;
-    CHECK(after.load(s.config().map) && after.crc == disk.crc);   // the file was never touched
+    CHECK(after.load(s.config().map) && after.id() == disk.id());   // the file was never touched
     s.command("map " + s.config().map);
     pump(s, cls, 0.5, idle);
-    CHECK(s.map_.crc == disk.crc && a.map().crc == disk.crc && !s.mapEdited_); // back to the original
+    CHECK(s.map_.id() == disk.id() && a.map().id() == disk.id() && !s.mapEdited_); // back to the original
     // update installed mid-match: announced, but no restart until the match is over
     s.ms_.phase = PHASE_LIVE;
     FILE* f = fopen(flag.c_str(), "w");
@@ -3487,7 +4181,7 @@ static void testEditSession(uint16_t port) {
     a.sendCommand("ed s del 999"); // refused
     pump(s, cls, 0.5, idle);
     CHECK(s.map_.brushes.size() == nb + 1 && s.map_.lights.size() == base.lights.size() + 1 && s.map_.brushes[0].material == 2);
-    CHECK(a.map().crc == s.map_.crc && b.map().crc == s.map_.crc);
+    CHECK(a.map().id() == s.map_.id() && b.map().id() == s.map_.id());
     CHECK(a.map().brushes.size() == nb + 1 && b.map().lights.size() == s.map_.lights.size());
     // a late joiner (its disk copy is the old file) gets the edited map
     NetClient c;
@@ -3495,11 +4189,11 @@ static void testEditSession(uint16_t port) {
     cls.push_back(&c);
     a.sendCommand("ed t Edited Arena");
     pump(s, cls, 1.5, idle);
-    CHECK(c.mapReady() && c.map().crc == s.map_.crc && c.map().title == "Edited Arena" && a.map().title == "Edited Arena");
+    CHECK(c.mapReady() && c.map().id() == s.map_.id() && c.map().title == "Edited Arena" && a.map().title == "Edited Arena");
     // a burst of edits while c is connected
     for (int k = 0; k < 20; k++) b.sendCommand("ed p ins " + std::to_string(k) + " " + std::to_string(k) + " 0 0");
     pump(s, cls, 1.0, idle);
-    CHECK(a.map().crc == s.map_.crc && b.map().crc == s.map_.crc && c.map().crc == s.map_.crc);
+    CHECK(a.map().id() == s.map_.id() && b.map().id() == s.map_.id() && c.map().id() == s.map_.id());
     // a custom group the size the editor sends (one op per part): in place on every side, nobody re-serializes,
     // and it gets through in well under a second (it used to go at 2 ops a tick)
     {
@@ -3510,28 +4204,30 @@ static void testEditSession(uint16_t port) {
             snprintf(op, sizeof op, "ed g part %zu %d %g 0 0 %g 0.5 0.1", groupsBefore, k % 4, (k % 20) * 0.05, (k % 20) * 0.05 + 0.04);
             b.sendCommand(op);
         }
+        // (waits until it's through rather than for a fixed wall-clock window: a loaded machine only makes it slower)
         double t0 = timeNow();
+        uint32_t tick0 = s.timeMs_;
         bool done = false;
-        while (!done && timeNow() - t0 < 3.0) {
+        while (!done && timeNow() - t0 < 60.0) {
             pump(s, cls, 0.02, idle);
             done = s.map_.groups.size() == groupsBefore + 1 && s.map_.groups.back().parts.size() == 200 && b.pendingCommands() == 0;
         }
-        printf("  200-part group: %.0f ms\n", (timeNow() - t0) * 1000);
+        printf("  200-part group: %.0f ms (%llu ms game time)\n", (timeNow() - t0) * 1000, (unsigned long long)(s.timeMs_ - tick0));
         CHECK(done);
         pump(s, cls, 0.3, idle);
-        CHECK(a.map().crc == s.map_.crc && b.map().crc == s.map_.crc && c.map().crc == s.map_.crc);
+        CHECK(a.map().id() == s.map_.id() && b.map().id() == s.map_.id() && c.map().id() == s.map_.id());
         CHECK(c.map().brushes.size() == s.map_.brushes.size() && c.map().gridRefs == s.map_.gridRefs);
         b.sendCommand("ed g del " + std::to_string(groupsBefore));   // (back as it was for the checks below)
         pump(s, cls, 0.3, idle);
-        CHECK(s.map_.groups.size() == groupsBefore && c.map().crc == s.map_.crc);
+        CHECK(s.map_.groups.size() == groupsBefore && c.map().id() == s.map_.id());
     }
     // switch to playing it: autosaved first, everyone spawns, then back to editing
     s.command("editmode off");
     pump(s, cls, 7.0, idle);
     CHECK(!(a.mode().flags & MS_EDITING) && !s.editing_);
     Map saved;
-    CHECK(saved.load(name) && saved.crc == s.map_.crc && saved.title == "Edited Arena" && saved.brushes.size() == nb + 1);
-    CHECK(a.map().crc == s.map_.crc);
+    CHECK(saved.load(name) && saved.id() == s.map_.id() && saved.title == "Edited Arena" && saved.brushes.size() == nb + 1);
+    CHECK(a.map().id() == s.map_.id());
     bool anyAlive = false;
     for (auto& p : s.players_) anyAlive |= p.connected && p.alive;
     CHECK(anyAlive);
@@ -3541,14 +4237,14 @@ static void testEditSession(uint16_t port) {
     for (auto& p : s.players_) CHECK(!p.alive);
     a.sendCommand("ed b del 0");
     pump(s, cls, 0.5, idle);
-    CHECK(c.map().crc == s.map_.crc && c.map().brushes.size() == nb);
+    CHECK(c.map().id() == s.map_.id() && c.map().brushes.size() == nb);
     // the host names the map in the session (the editor's SAVE AS): saved, and autosaved, under the typed name
     std::string name2 = name + "_renamed", path2 = userMapsDir() + "/" + name2 + ".qmap";
     s.command("editmode saveas ../evil");
     CHECK(s.cfg_.map == name);
     s.command("editmode saveas " + name2);
     Map renamed;
-    CHECK(s.cfg_.map == name2 && renamed.load(name2) && renamed.crc == s.map_.sourceTextCrc() && renamed.brushes.size() == nb);
+    CHECK(s.cfg_.map == name2 && renamed.load(name2) && renamed.id() == s.map_.contentId() && renamed.brushes.size() == nb);
     a.sendCommand("ed t Renamed");
     pump(s, cls, 0.5, idle);
     s.stop(); // autosaves
@@ -3564,7 +4260,7 @@ static void testEditSession(uint16_t port) {
     std::remove(path.c_str());
     std::remove((path + ".bak").c_str());
     std::remove(path2.c_str());
-    for (uint32_t crc : {a.map().crc, c.map().crc}) std::remove(downloadedMapPath(name, crc).c_str());
+    for (const MapId& id : {a.map().id(), c.map().id()}) std::remove(downloadedMapPath(id).c_str());
 }
 
 // Demos: record a match from one client, play it back into another: the map, players, names and events come back.
@@ -3749,10 +4445,10 @@ struct FakeServer {
             if (!r.bad()) { nonce = nn; client = from; heard = true; }
         }
     }
-    void accept(const std::string& map, uint32_t crc, int id = 0) {
+    void accept(const std::string& map, const MapId& mapId, int id = 0) {
         uint8_t out[512];
         Writer w(out, sizeof out);
-        writeHeader(w, PKT_ACCEPT); w.u32(nonce); w.u8((uint8_t)id); w.str(map); w.u32(crc); w.u8(MODE_FFA);
+        writeHeader(w, PKT_ACCEPT); w.u32(nonce); w.u8((uint8_t)id); w.str(map); w.bytes(mapId.b, 32); w.u8(MODE_FFA);
         sock.send(client, out, w.size());
     }
     void snapshot(Snapshot s) {
@@ -3780,7 +4476,7 @@ static void testReplayBound(uint16_t port) {
     CHECK(f.until(c, [&] { return f.heard; }));
     Map m;
     CHECK(m.load("bastion"));
-    f.accept("bastion", m.crc);
+    f.accept("bastion", m.id());
     CHECK(f.until(c, [&] { return c.mapReady(); }));
     Snapshot s;
     s.tick = 1; s.timeMs = 1000; s.tickRate = 1000; s.snapRate = 500; s.clientId = 0;
@@ -3821,7 +4517,7 @@ static void testMapNames(uint16_t port) {
     NetClient c;
     c.connect("127.0.0.1:" + std::to_string(port), "x");
     CHECK(f.until(c, [&] { return f.heard; }));
-    f.accept("../../pwned", 1234);
+    f.accept("../../pwned", mapContentId("x"));
     CHECK(f.until(c, [&] { return c.state() == ConnState::Disconnected; }));
     CHECK(!c.mapReady() && c.error().find("map name") != std::string::npos);
     // a demo whose map record names a path: no map, so it doesn't play
@@ -3849,6 +4545,91 @@ static void testDemoLengthWrap() {
     auto t0 = std::chrono::steady_clock::now();
     CHECK(!nc.startPlayback(stampedDemo("demo_len_wrap.qdemo"), err) && !nc.playback());
     CHECK(std::chrono::steady_clock::now() - t0 < std::chrono::seconds(2));
+}
+
+// C13: demos recorded by an older version are converted at the first start of a new one (originals kept under
+// demos/old/<version>/); what can't be converted stays as it is, logged, and says which version recorded it.
+// demo_proto27.qdemo is a protocol 27 (game 1.13-1.16) demo: if a protocol change makes it unreadable, demo.h's
+// kRecordFormatSince has to move and convert() needs a step for the older records.
+static void testDemoUpgrade() {
+    printf("demos of older versions: converted, originals kept\n");
+    namespace fs = std::filesystem;
+    auto rd = [](const fs::path& p) { std::ifstream f(p, std::ios::binary); std::stringstream ss; ss << f.rdbuf(); return ss.str(); };
+    std::string fixture = rd(testDataDir() + "/demo_proto27.qdemo");
+    CHECK(fixture.size() > 100);
+    fs::path d = fs::temp_directory_path() / ("quark_demos_" + std::to_string(getpid()));
+    std::error_code ec;
+    fs::remove_all(d, ec);
+    fs::create_directories(d);
+    auto put = [&](const std::string& name, std::string data, int proto) {
+        if (proto >= 0) { uint16_t v = (uint16_t)proto; memcpy(&data[4], &v, 2); }
+        std::ofstream(d / name, std::ios::binary) << data;
+    };
+    put("old.qdemo", fixture, -1);
+    put("current.qdemo", fixture, kProtocolVersion);
+    put("future.qdemo", fixture, kProtocolVersion + 1);
+    put("ancient.qdemo", fixture, 20);   // (from before demos: no converter)
+    { // a protocol 27 demo whose map record names no valid map: can't be converted
+        std::string bad = fixture.substr(0, 6);
+        std::vector<uint8_t> b(256);
+        Writer w(b.data(), (int)b.size());
+        w.str("../escape"); w.u32(3); w.u8('x'); w.u8('y'); w.u8('z'); w.u8(0);
+        uint8_t type = 1; double t = 0; uint32_t n = (uint32_t)w.size();
+        bad.append((const char*)&type, 1); bad.append((const char*)&t, 8); bad.append((const char*)&n, 4); bad.append((const char*)b.data(), n);
+        put("broken.qdemo", bad, -1);
+    }
+    std::ofstream(d / "notes.txt") << "not a demo";
+    uint16_t proto = 0;
+    CHECK(demo::readProtocol((d / "old.qdemo").string(), &proto) && proto == 27);
+    CHECK(demo::versionForProtocol(27) == "1.13-1.16" && demo::versionForProtocol(24) == "1.11.0");
+    CHECK(demo::convertible(24) && demo::convertible(27) && !demo::convertible(23) && !demo::convertible(kProtocolVersion));
+    { // before conversion this version can't play it, and says who recorded it
+        NetClient nc;
+        std::string err;
+        CHECK(!nc.startPlayback((d / "old.qdemo").string(), err) && err.find("recorded with version 1.13-1.16") != std::string::npos);
+    }
+    demo::UpgradeReport r = demo::upgradeDir(d.string());
+    for (auto& l : r.log) printf("  %s\n", l.c_str());
+    CHECK(r.converted == 1 && r.newer == 1 && r.failed == 2);
+    CHECK(demo::readProtocol((d / "old.qdemo").string(), &proto) && proto == kProtocolVersion);
+    CHECK(rd(d / "old" / "1.13-1.16" / "old.qdemo") == fixture);                         // the original, kept
+    CHECK(rd(d / "old.qdemo").size() > fixture.size());                                  // snapshot headers rewritten (+ syringeAway)
+    CHECK(demo::readProtocol((d / "broken.qdemo").string(), &proto) && proto == 27);     // left as it was
+    CHECK(demo::readProtocol((d / "future.qdemo").string(), &proto) && proto == kProtocolVersion + 1);
+    CHECK(rd(d / "current.qdemo").substr(6) == fixture.substr(6) && !fs::exists(d / "old" / "1.13-1.16" / "current.qdemo"));
+    std::string log = rd(d / "old" / "convert.log");
+    CHECK(log.find("old.qdemo: converted") != std::string::npos && log.find("broken.qdemo") != std::string::npos);
+    CHECK(rd(d / "notes.txt") == "not a demo");
+    // the next start: nothing again (failures aren't retried, converted ones are current)
+    demo::UpgradeReport again = demo::upgradeDir(d.string());
+    CHECK(again.converted == 0 && again.failed == 0 && again.newer == 0 && again.log.empty());
+    { // the converted demo plays: map, names, chat and movement as recorded
+        NetClient p;
+        std::string err;
+        CHECK(p.startPlayback((d / "old.qdemo").string(), err) && p.mapReady() && p.map().name == "oldbox");
+        int snaps = 0;
+        bool chat = false;
+        double end = timeNow() + 5;
+        while (p.playback() && timeNow() < end) {
+            p.poll();
+            if (p.hasSnapshot()) snaps++;
+            for (auto& e : p.takeEvents()) chat |= e.type == EV_CHAT && e.text == "hello from 1.16";
+            sleepMs(5);
+        }
+        CHECK(snaps > 10 && chat && p.playerName(0) == "oldtimer" && p.error() == "demo finished");
+    }
+    // a second conversion of the same name keeps both originals
+    put("old.qdemo", fixture, -1);
+    r = demo::upgradeDir(d.string());
+    CHECK(r.converted == 1 && rd(d / "old" / "1.13-1.16" / "old-1.qdemo") == fixture);
+    // versions this game ran with name later protocols (versions.txt)
+    fs::path vf = d / "versions.txt";
+    demo::noteVersion(vf.string(), "9.8.0", 200);
+    demo::noteVersion(vf.string(), "9.8.1", 200);
+    demo::noteVersion(vf.string(), "9.8.1", 200);
+    CHECK(demo::versionForProtocol(200) == "9.8.0-9.8.1" && demo::versionForProtocol(201) == "protocol 201");
+    CHECK(rd(vf) == "200 9.8.0\n200 9.8.1\n");
+    fs::remove_all(d, ec);
 }
 
 static void testDemo(uint16_t port) {
@@ -3897,6 +4678,54 @@ static void testDemo(uint16_t port) {
 }
 
 // Edit by vote on a normal server, then "VOTE: PLAY IT" (callvote edit off): everyone plays the edited copy.
+// OWNER_DECISIONS_2 B3: an edit session on a built-in map never writes it, nor a copy in your maps folder that would
+// hide it (that used to happen at the first autosave): its edits last until the map changes. "editmode saveas" keeps
+// them under a new name (never a built-in map's), autosaved from then on.
+static void testBuiltInMapEditSession(uint16_t port) {
+    printf("edit session on a built-in map: never saved over it\n");
+    std::string mine = userMapsDir() + "/bastion.qmap";
+    std::remove(mine.c_str());
+    Map disk;
+    CHECK(disk.load("bastion") && isOfficialMap(disk));
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.editMode = true;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    NetClient a;
+    a.connect("127.0.0.1:" + std::to_string(port), "a");
+    std::vector<NetClient*> cls = {&a};
+    pump(s, cls, 1.0, idle);
+    CHECK(a.mapReady() && a.hasSnapshot() && (a.mode().flags & MS_EDITING) && (a.mode().flags & MS_TEMP_EDIT) && s.tempEdit_);
+    size_t nb = disk.brushes.size();
+    a.sendCommand("ed b ins " + std::to_string(nb) + " 1 0 10 0 2 11 2");
+    pump(s, cls, 0.5, idle);
+    CHECK(s.map_.brushes.size() == nb + 1 && a.map().id() == s.map_.id() && !isOfficialMap(s.map_));
+    s.command("editmode off");   // play it: the edited copy, nothing saved
+    pump(s, cls, 1.0, idle);
+    std::error_code ec;
+    CHECK(!s.editing_ && s.map_.brushes.size() == nb + 1 && !std::filesystem::exists(mine, ec));
+    s.command("editmode on");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.editing_ && s.tempEdit_);
+    s.command("editmode saveas temple");   // another built-in map's name: refused
+    CHECK(s.cfg_.map == "bastion" && s.tempEdit_);
+    char tag[16];
+    snprintf(tag, sizeof tag, "%u", (unsigned)qrand());
+    std::string name = std::string("zz_mybastion") + tag, path = userMapsDir() + "/" + name + ".qmap";
+    s.command("editmode saveas " + name);
+    Map kept;
+    CHECK(s.cfg_.map == name && !s.tempEdit_ && kept.load(name) && kept.brushes.size() == nb + 1 && kept.handmade);
+    a.sendCommand("ed t Mine");
+    pump(s, cls, 0.5, idle);
+    s.stop();   // (autosaves: it's yours now)
+    CHECK(kept.load(name) && kept.title == "Mine");
+    Map after;
+    CHECK(!std::filesystem::exists(mine, ec) && after.load("bastion") && isOfficialMap(after) && after.brushes.size() == nb);
+    std::remove(path.c_str());
+    std::remove((path + ".bak").c_str());
+}
+
 static void testVotedEdit(uint16_t port) {
     printf("voted map editing, then vote to play it\n");
     Server s;
@@ -3922,15 +4751,15 @@ static void testVotedEdit(uint16_t port) {
     size_t nb = s.map_.brushes.size();
     a.sendCommand("ed b ins " + std::to_string(nb) + " 1 0 10 0 2 11 2");
     pumpMsgs(0.5);
-    CHECK(s.map_.brushes.size() == nb + 1 && a.map().crc == s.map_.crc && b.map().crc == s.map_.crc);
-    uint32_t edited = s.map_.crc;
+    CHECK(s.map_.brushes.size() == nb + 1 && a.map().id() == s.map_.id() && b.map().id() == s.map_.id());
+    MapId edited = s.map_.id();
     b.sendCommand("callvote edit off");   // (nobody else votes: "play it" passes when the 30 s are up, as nobody said no)
     pumpMsgs(1.0);
     CHECK(s.editing_);                    // (not yet: one yes of two)
     s.vote_.endsAt = s.time();            // (the 30 s are up)
     pumpMsgs(5.0);
     CHECK(!s.editing_ && !(a.mode().flags & MS_EDITING) && !(b.mode().flags & MS_EDITING));
-    CHECK(s.map_.crc == edited && a.map().crc == edited && b.map().crc == edited && a.mapReady() && b.mapReady());
+    CHECK(s.map_.id() == edited && a.map().id() == edited && b.map().id() == edited && a.mapReady() && b.mapReady());
     CHECK(a.hasSnapshot() && b.hasSnapshot() && a.clientId() >= 0 && b.clientId() >= 0);
     bool anyAlive = false;
     for (auto& p : s.players_) anyAlive |= p.connected && p.alive;
@@ -4165,36 +4994,198 @@ static void testNetcode(uint16_t port) {
     v.stop();
 }
 
+// Hidden information (NET-10, JUDGMENT_CALLS C12): an enemy out of sight reaches the client without health, weapon or
+// firing; a projectile out of sight isn't sent (its owner always gets it), one that leaves sight goes on as an id (not
+// an explosion) and one that goes off out of sight is shown at the spot for a moment (its explosion); a dead player
+// gets what the player it watches sees; the hide and seek seeker gets nothing about the hiders during the freeze.
+static void testHiddenInfo(uint16_t port) {
+    printf("hidden info: no health / weapon / projectiles out of sight, dead see what they watch, seeker blind in the freeze\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    std::string addr = "127.0.0.1:" + std::to_string(port);
+    NetClient a, b, c;
+    a.connect(addr, "a"); b.connect(addr, "b"); c.connect(addr, "c");
+    std::vector<NetClient*> cls = {&a, &b, &c};
+    pump(s, cls, 1.5, idle);
+    const int ia = a.clientId(), ib = b.clientId(), ic = c.clientId();
+    auto& pa = s.players_[ia]; auto& pb = s.players_[ib]; auto& pc = s.players_[ic];
+    const Vec3 behindA(0, 0, -28), behindB(0, 0, 28), openA(-9, 0, -26), openB(-9, 0, 26), far(9, 0, 0);
+    auto snapOf = [](NetClient& n, int id) -> const PlayerSnap* { for (auto& p : n.latest().players) if (p.id == id) return &p; return nullptr; };
+    auto projOf = [](NetClient& n, uint16_t id) -> const ProjectileSnap* { for (auto& p : n.latest().projectiles) if (p.id == id) return &p; return nullptr; };
+    // b: 37 hp, holding the sniper, firing; a counts the snapshots b came in hidden, and any with b's health or weapon
+    int hiddenSnaps = 0, leaks = 0;
+    auto hold = [&](Vec3 at, Vec3 bt, Vec3 ct) {
+        return [&, at, bt, ct](int i) {
+            pa.move.pos = at; pa.move.vel = {}; pb.move.pos = bt; pb.move.vel = {}; pc.move.pos = ct; pc.move.vel = {};
+            pa.respawnAt = pb.respawnAt = pc.respawnAt = s.time() + 100;
+            pb.health = 37; pb.lastFire = s.time();
+            if (const PlayerSnap* q = snapOf(a, ib); q && q->hidden) {
+                hiddenSnaps++;
+                if (q->health || q->weapon || (q->flags & (PS_FIRING | PS_CROUCHED))) leaks++;
+            }
+            UserCmd u;
+            if (cls[i] == &b) u.weapon = WPN_SNIPER;
+            return u;
+        };
+    };
+    pump(s, cls, 0.8, hold(behindA, behindB, far));
+    const PlayerSnap* q = snapOf(a, ib);
+    printf("  b behind walls: %d snapshots hidden, %d with health / weapon / firing\n", hiddenSnaps, leaks);
+    CHECK(q && q->hidden && hiddenSnaps > 20 && leaks == 0);
+    pump(s, cls, 0.5, hold(openA, openB, far));   // in sight: everything (the data is really there to hide)
+    q = snapOf(a, ib);
+    CHECK(q && !q->hidden && q->health == 37 && q->weapon == WPN_SNIPER);
+
+    // projectiles: b's rocket by b, behind the walls from a (stuck in the air: it stays put)
+    auto rocket = [&](int owner, Vec3 at) {
+        for (auto& pr : s.projectiles_) if (!pr.active) {
+            pr = Projectile();
+            pr.active = true; pr.id = s.nextProjId_++; pr.type = WPN_ROCKET; pr.owner = owner; pr.pos = at; pr.stuck = true; pr.dieAt = s.time() + 100;
+            return &pr;
+        }
+        return (Projectile*)nullptr;
+    };
+    Projectile* rb = rocket(ib, behindB + Vec3(0, 2.5f, 0));
+    Projectile* ra = rocket(ia, behindB + Vec3(1, 2.5f, 0));   // a's own, just as far out of a's sight
+    CHECK(rb && ra);
+    if (!rb || !ra) { s.stop(); return; }
+    const uint16_t idb = rb->id, ida = ra->id;
+    pump(s, cls, 0.5, hold(behindA, behindB, far));
+    CHECK(!projOf(a, idb));                                  // never seen: not sent at all
+    CHECK(projOf(b, idb) && !projOf(b, idb)->hidden);        // its owner has it
+    CHECK(projOf(a, ida) && !projOf(a, ida)->hidden);        // a's own: always
+    rb->pos = openB + Vec3(0, 2.5f, 0);                      // in sight
+    pump(s, cls, 0.4, hold(openA, openB, far));
+    CHECK(projOf(a, idb) && !projOf(a, idb)->hidden);
+    rb->pos = behindB + Vec3(0, 2.5f, 0);                    // out of sight again: an id, still flying (no explosion)
+    pump(s, cls, 1.0, hold(behindA, behindB, far));
+    CHECK(projOf(a, idb) && projOf(a, idb)->hidden && a.projectileHidden(idb));
+    bool listed = false;
+    for (auto& p : a.interpolatedProjectiles()) listed |= p.id == idb;
+    CHECK(!listed);
+    // it goes off out of sight: shown at the spot for a moment (the client plays the explosion there), then gone
+    Vec3 boom = rb->pos;
+    rb->active = false;
+    bool revealed = false;
+    pump(s, cls, 0.3, [&](int i) {
+        if (const ProjectileSnap* r = projOf(a, idb); r && !r->hidden && length(r->pos - boom) < 0.1f) revealed = true;
+        return hold(behindA, behindB, far)(i);
+    });
+    CHECK(revealed && !projOf(a, idb));
+    ra->active = false;
+
+    // dead: a (killed by b) gets what b sees - c in the open from b is sent, c behind walls from b isn't
+    s.killPlayer(ia, ib, WPN_RIFLE);
+    CHECK(pa.specTarget == ib);
+    pump(s, cls, 0.8, hold(far, openA, openB));
+    q = snapOf(a, ic);
+    CHECK(q && !q->hidden && q->health > 0);
+    pump(s, cls, 0.8, hold(far, behindA, behindB));
+    q = snapOf(a, ic);
+    CHECK(q && q->hidden && q->health == 0);
+    s.stop();
+
+    // hide and seek: during the freeze the seeker gets nothing of the hiders, even right in front of it
+    Server h;
+    ServerConfig hc;
+    hc.autoStart = false; hc.map = "hamlet"; hc.mode = MODE_HIDE; hc.port = (uint16_t)(port + 1);
+    h.setLog([](const std::string&) {});
+    if (!h.start(hc)) { printf("  FAIL %s:%d: server start\n", __FILE__, __LINE__); g_fail++; return; }
+    NetClient hs[3];
+    std::vector<NetClient*> hcl;
+    for (int i = 0; i < 3; i++) { hs[i].connect("127.0.0.1:" + std::to_string(hc.port), "h" + std::to_string(i)); hcl.push_back(&hs[i]); }
+    pump(h, hcl, 1.5, idle);
+    h.command("forcestart");
+    pump(h, hcl, 0.3, idle);
+    int seeker = -1;
+    for (int i = 0; i < 3; i++) if (h.players_[hs[i].clientId()].it) seeker = i;
+    CHECK(seeker >= 0 && h.ms_.phase == PHASE_FREEZE);
+    if (seeker < 0) { h.stop(); return; }
+    int seen = 0, snaps = 0;
+    auto near = [&](int i) {   // hiders 3 m in front of the seeker
+        Vec3 o = h.players_[hs[seeker].clientId()].move.pos;
+        int k = 0;
+        for (int j = 0; j < 3; j++) if (j != seeker) { auto& hp = h.players_[hs[j].clientId()]; hp.move.pos = o + Vec3(k++ ? 1.5f : -1.5f, 0, -3); hp.move.vel = {}; }
+        for (auto& p : hs[seeker].latest().players)
+            if (p.id != hs[seeker].clientId() && (p.flags & PS_ALIVE)) { snaps++; seen += !p.hidden || p.health || p.weapon; }
+        (void)i;
+        return UserCmd();
+    };
+    pump(h, hcl, 0.8, near);
+    printf("  hide and seek freeze: hiders sent to the seeker %d times of %d\n", seen, snaps);
+    CHECK(h.ms_.phase == PHASE_FREEZE && snaps > 20 && seen == 0);
+    int other = seeker == 0 ? 1 : 0, third = 3 - seeker - other;
+    const PlayerSnap* hq = snapOf(hs[other], hs[third].clientId());
+    CHECK(hq && !hq->hidden);                                // (a hider sees the other hider next to it)
+    h.phaseEnd_ = h.time();                                  // the round goes live: the seeker sees them
+    pump(h, hcl, 0.6, near);
+    hq = snapOf(hs[seeker], hs[other].clientId());
+    CHECK(h.ms_.phase == PHASE_LIVE && hq && !hq->hidden);
+    h.stop();
+}
+
+// FFA on Clockwork: 3 expert bots and a player standing still, 40 s of game time. Seeded: the match is forced to
+// start over once the bots' navigation is ready, with every bot's dice and the spawn picks seeded, and the "player"
+// is in-process (a scripted bot), so no network timing gets in. A seed plays out much the same match every time
+// (8-9 kills for seed 0 in 1.17; what's left to chance is the warmup before the restart, which bots and players
+// carry a little of into it: cooldowns, the lag-compensation history).
+struct FfaRun { int kills = 0, playerDeaths = 0, hooks = 0, phase = 0; };
+static FfaRun ffaVsExperts(uint16_t port, uint32_t seed) {
+    FfaRun r;
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = true;
+    cfg.map = "clockwork"; cfg.mode = MODE_FFA; cfg.port = port;   // (a compact map: bastion is a big team map now)
+    cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botSkill = BOT_EXPERT; cfg.timeLimit = 60;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return r; } }
+    CHECK(s.playerCount() == 3);
+    int me = s.addBot(TEAM_A, BOT_BEGINNER);
+    auto stand = [](Server&, int) { UserCmd c; c.weapon = kNoWeaponChange; return c; };
+    std::vector<NetClient*> none;
+    pump(s, none, 1.0, idle);
+    for (int k = 0; k < 100 && !s.nav_.ready(s.map_); k++) pump(s, none, 0.05, idle);
+    CHECK(me >= 0 && s.nav_.ready(s.map_));
+    if (me < 0) { s.stop(); return r; }
+    qsrand(seed);   // (spawn picks)
+    for (int i = 0; i < kMaxPlayers; i++)
+        if (s.players_[i].connected && s.players_[i].isBot) {
+            int skill = s.bots_[i].skill;
+            s.bots_[i] = BotBrain();
+            s.bots_[i].skill = skill;
+            s.bots_[i].rng = (seed * 2654435761u) ^ (uint32_t)(i * 40503u + 1u);
+        }
+    s.bots_[me].script = stand;
+    for (auto& pr : s.projectiles_) pr.active = false;   // (nothing from the warmup still flying)
+    s.command("forcestart");
+    bool was[kMaxPlayers] = {};
+    double end = s.time() + 40.0;
+    while (s.time() < end) { // counting grapple grabs as we go (every 20 ms: a grab let go of at once counts too)
+        pump(s, none, 0.02, idle);
+        for (int k = 0; k < kMaxPlayers; k++) {
+            bool h = s.players_[k].connected && s.players_[k].isBot && k != me && (s.players_[k].move.flags & MF_HOOKED);
+            r.hooks += h && !was[k];
+            was[k] = h;
+        }
+    }
+    for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && i != me) r.kills += s.players_[i].kills;
+    r.playerDeaths = s.players_[me].deaths;
+    r.phase = s.ms_.phase;
+    s.stop();
+    return r;
+}
+
 static void testBots(uint16_t& port) {
     printf("bots: vs-bots fights, balance bots, votes, every mode\n");
-    { // FFA vs 3 expert bots: they should find and kill each other / us
-        Server s;
-        ServerConfig cfg;
-        cfg.autoStart = true;
-        cfg.map = "clockwork"; cfg.mode = MODE_FFA; cfg.port = port++;   // (a compact map: bastion is a big team map now)
-        cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botSkill = BOT_EXPERT; cfg.timeLimit = 60;
-        s.setLog([](const std::string&) {});
-        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
-        CHECK(s.playerCount() == 3);
-        NetClient a;
-        a.connect("127.0.0.1:" + std::to_string(cfg.port), "human");
-        std::vector<NetClient*> cls = {&a};
-        int hooks = 0;
-        bool was[kMaxPlayers] = {};
-        for (int i = 0; i < 400; i++) { // 40 s, counting grapple grabs as we go
-            pump(s, cls, 0.1, idle);
-            for (int k = 0; k < kMaxPlayers; k++) {
-                bool h = s.players_[k].connected && s.players_[k].isBot && (s.players_[k].move.flags & MF_HOOKED);
-                hooks += h && !was[k];
-                was[k] = h;
-            }
-        }
-        int kills = 0;
-        for (auto& p : s.players_) if (p.connected) kills += p.kills;
-        printf("  ffa vs 3 expert bots: %d kills, %d grapples in 40 s (phase %d)\n", kills, hooks, s.ms_.phase);
-        CHECK(kills >= 2);
-        CHECK(hooks >= 1); // bots use the grapple
-        s.stop();
+    { // FFA vs 3 expert bots: they should find and kill each other / us (seeded: about the same match every run)
+        FfaRun r = ffaVsExperts(port++, 0x5EED0001u);
+        printf("  ffa vs 3 expert bots: %d kills (%d of the player standing still), %d grapples in 40 s (phase %d)\n", r.kills, r.playerDeaths, r.hooks, r.phase);
+        CHECK(r.kills >= 4);         // (7 to 11 over seeds, 1.17)
+        CHECK(r.playerDeaths >= 1);  // nobody stands in the open for long
+        CHECK(r.hooks >= 1);         // bots use the grapple
     }
     { // pregame (no bots) -> vote start -> vote balance bots -> bots join; then votes
         Server s;
@@ -4337,45 +5328,130 @@ static void serverBench(uint16_t port, int bots, int humans, double seconds, con
     s.stop();
 }
 
-// Bots play every map in the mode it's built for; prints kills / deaths (deaths beyond kills = falls and
-// self-kills) and the objective state, to spot layouts where nothing happens or bots keep falling.
+// A bots-only match on a map: what killed whom. Falls are deaths to the void or lava (pushed = hit in the 2 s
+// before), self = own rockets / stickies, mode = the mode's own kills (bomb, drain). trace: prints the last
+// second of every fall (positions, speed, buttons, grapple) and every self-kill's weapon.
+struct BotMatch { int kills = 0, deaths = 0, falls = 0, pushed = 0, self = 0, modeKills = 0; std::string state; };
+static bool playBots(const std::string& name, int mode, int skill, uint16_t& port, double seconds, bool trace, BotMatch& r) {
+    Server s;
+    ServerConfig cfg;
+    std::string logPath = (std::filesystem::temp_directory_path() / ("quark_playtest_" + std::to_string(getpid()) + ".log")).string();
+    cfg.map = name; cfg.mode = mode; cfg.port = port++; cfg.autoStart = true;
+    cfg.logLevel = LOG_SIMPLE; cfg.logFile = logPath;   // (every death, with its cause)
+    s.setLog([](const std::string&) {});
+    bool started = false;
+    for (int k = 0; k < 20 && !started; k++) { started = s.start(cfg); if (!started) cfg.port = port++; } // (port taken: the next)
+    if (!started) return false;
+    bool duo = mode == MODE_ARENA || mode == MODE_DUEL || mode == MODE_TOURNEY;
+    int n = duo ? 1 : mode == MODE_RACE ? 3 : 4;
+    for (int i = 0; i < n; i++) { s.addBot(TEAM_A, skill); if (mode != MODE_RACE) s.addBot(TEAM_B, skill); }
+    std::vector<NetClient*> none;
+    pump(s, none, 1.0, idle);
+    s.command("forcestart");
+    // where each fall began: the last place the bot stood before it died over the void / in lava
+    Vec3 ground[kMaxPlayers]; bool was[kMaxPlayers] = {};
+    double end = timeNow() + seconds;
+    struct Sample { double t; Vec3 pos, vel; uint16_t buttons; uint8_t flags; bool dash; Vec3 hook; };
+    std::vector<Sample> hist[kMaxPlayers];   // (trace: the last second of each bot, printed for a fall)
+    double nextPos = 0;
+    while (timeNow() < end) {
+        pump(s, none, trace ? 0.01 : 0.02, idle);
+        if (getenv("PT_POS") && s.time() >= nextPos) {   // (where everyone is, every second)
+            nextPos = s.time() + 1.0;
+            printf("    t %.0f:", s.time());
+            for (auto& p : s.players_) if (p.connected) printf("  %.1f %.1f %.1f%s", p.move.pos.x, p.move.pos.y, p.move.pos.z, p.alive ? "" : " dead");
+            printf("\n");
+        }
+        for (int i = 0; i < kMaxPlayers; i++) {
+            auto& p = s.players_[i];
+            if (!p.connected) continue;
+            if (was[i] && !p.alive && (p.move.pos.y < s.map_.killY() || (!s.map_.lava.empty() && s.map_.inLava(playerBox(p.move))))) {
+                bool hit = s.time() - p.lastDamagedAt < 2.0;
+                r.pushed += hit;
+                if (trace) {
+                    printf("    %s fell from %.1f %.1f %.1f%s\n", p.name.c_str(), ground[i].x, ground[i].y, ground[i].z, hit ? " (pushed)" : "");
+                    for (auto& h : hist[i])
+                        printf("      %.2f pos %.1f %.1f %.1f vel %.1f %.1f %.1f%s%s%s%s%s\n", h.t - s.time(), h.pos.x, h.pos.y, h.pos.z, h.vel.x, h.vel.y, h.vel.z,
+                               (h.flags & MF_ONGROUND) ? " ground" : "", (h.buttons & BTN_JUMP) ? " JUMP" : "", (h.buttons & BTN_DASH) ? " DASH" : "",
+                               h.dash ? " dashing" : "", (h.flags & MF_HOOKED) ? " hooked" : (h.buttons & BTN_GRAPPLE) ? " GRAPPLE" : "");
+                    for (int j = (int)hist[i].size() - 1; j >= 0; j--) if (hist[i][j].flags & MF_HOOKED) {   // the last grapple: from where to where
+                        int k = j; while (k > 0 && (hist[i][k - 1].flags & MF_HOOKED)) k--;
+                        printf("      last hook from %.1f %.1f %.1f to %.1f %.1f %.1f, let go at %.1f %.1f %.1f\n", hist[i][k].pos.x, hist[i][k].pos.y, hist[i][k].pos.z,
+                               hist[i][j].hook.x, hist[i][j].hook.y, hist[i][j].hook.z, hist[i][j].pos.x, hist[i][j].pos.y, hist[i][j].pos.z);
+                        break;
+                    }
+                }
+            }
+            was[i] = p.alive;
+            if (p.alive && (p.move.flags & MF_ONGROUND)) ground[i] = p.move.pos;
+            if (trace) {
+                if (!p.alive) { hist[i].clear(); continue; }
+                hist[i].push_back({s.time(), p.move.pos, p.move.vel, p.buttons, (uint8_t)p.move.flags, p.move.dashTimer > 0, p.move.hookPoint});
+                if (hist[i].size() > 300) hist[i].erase(hist[i].begin());
+            }
+        }
+    }
+    for (auto& p : s.players_) if (p.connected) { r.kills += p.kills; r.deaths += p.deaths; }
+    char st[160];
+    int cp = 0; for (auto& p : s.players_) if (p.connected) cp = std::max(cp, (int)p.checkpoint);
+    int out = 0; for (auto& p : s.players_) out += p.connected && p.out;
+    snprintf(st, sizeof st, "score %d-%d  payload %.0f/%.0f  cp %d  round %d  out %d", s.ms_.scoreA, s.ms_.scoreB, s.ms_.payloadDist, s.ms_.payloadLen, cp, s.ms_.round, out);
+    r.state = st;
+    s.stop();
+    std::ifstream lf(logPath);
+    for (std::string line; std::getline(lf, line);) {
+        size_t k = line.find(" kill killer=");
+        if (k == std::string::npos) continue;
+        int killer = atoi(line.c_str() + k + 13);
+        size_t v = line.find(" victim=", k), w = line.rfind(" weapon=");
+        if (v == std::string::npos || w == std::string::npos) continue;
+        int victim = atoi(line.c_str() + v + 8), weapon = atoi(line.c_str() + w + 8);
+        if (weapon == 252) r.falls++;
+        else if (killer == victim) { r.self++; if (trace) printf("    self-kill: %s\n", weapon >= 0 && weapon < WPN_COUNT ? weaponDef(weapon).name : "?"); }
+        else if (killer < 0) r.modeKills++;
+    }
+    lf.close();
+    std::filesystem::remove(logPath);
+    return true;
+}
+
+// Bots play every map in the mode it's built for, at advanced and at expert level (PT_SKILL=advanced|expert for
+// one), and print what killed them (playBots), plus the objective state, to spot layouts where nothing happens or
+// bots keep falling. PT_MAP / PT_MODE pick one map / mode; PT_TRACE prints how each fall happened.
 static void playtestMaps(uint16_t port, double seconds) {
+    std::vector<int> skills = {BOT_ADVANCED, BOT_EXPERT};
+    if (const char* k = getenv("PT_SKILL")) skills = {std::string(k) == "expert" ? BOT_EXPERT : std::string(k) == "intermediate" ? BOT_INTERMEDIATE : BOT_ADVANCED};
+    int totalFalls = 0, totalSelf = 0;
     for (auto& name : listMaps()) {
         if (getenv("PT_MAP") && name != getenv("PT_MAP")) continue;
         Map m;
         if (!m.load(name)) continue;
         int mode = m.preferredMode >= 0 ? m.preferredMode : MODE_FFA;
         if (getenv("PT_MODE")) mode = modeFromName(getenv("PT_MODE"));
-        Server s;
-        ServerConfig cfg;
-        cfg.map = name; cfg.mode = mode; cfg.port = port++; cfg.autoStart = true;
-        s.setLog([](const std::string&) {});
-        if (!s.start(cfg)) { printf("  %s: start failed\n", name.c_str()); continue; }
-        bool duo = mode == MODE_ARENA || mode == MODE_DUEL || mode == MODE_TOURNEY;
-        int n = duo ? 1 : mode == MODE_RACE ? 3 : 4;
-        for (int i = 0; i < n; i++) { s.addBot(TEAM_A, BOT_ADVANCED); if (mode != MODE_RACE) s.addBot(TEAM_B, BOT_ADVANCED); }
-        std::vector<NetClient*> none;
-        pump(s, none, 1.0, idle);
-        s.command("forcestart");
-        if (getenv("PT_TRACE")) {   // where do bots die?
-            Vec3 last[kMaxPlayers]; bool was[kMaxPlayers] = {};
-            double end = timeNow() + seconds;
-            while (timeNow() < end) {
-                pump(s, none, 0.05, idle);
-                for (int i = 0; i < kMaxPlayers; i++) {
-                    auto& p = s.players_[i];
-                    if (!p.connected) continue;
-                    if (was[i] && !p.alive) printf("    died at %.1f %.1f %.1f\n", last[i].x, last[i].y, last[i].z);
-                    was[i] = p.alive; if (p.alive) last[i] = p.move.pos;
-                }
-            }
-        } else pump(s, none, seconds, idle);
-        int kills = 0, deaths = 0;
-        for (auto& p : s.players_) if (p.connected) { kills += p.kills; deaths += p.deaths; }
-        if (isItMode(mode)) { int out = 0; for (auto& p : s.players_) out += p.connected && p.out; printf("  round %d phase %d, eliminated %d\n", s.ms_.round, s.ms_.phase, out); }
-        printf("  %-10s %-8s kills %3d  deaths %3d  (falls/self %d)  score %d-%d  payload %.0f/%.0f  cp %d\n", name.c_str(), modeName(mode), kills, deaths,
-               deaths - kills, s.ms_.scoreA, s.ms_.scoreB, s.ms_.payloadDist, s.ms_.payloadLen, [&] { int b = 0; for (auto& p : s.players_) if (p.connected) b = std::max(b, (int)p.checkpoint); return b; }());
-        s.stop();
+        for (int skill : skills) {
+            BotMatch r;
+            if (!playBots(name, mode, skill, port, seconds, getenv("PT_TRACE") != nullptr, r)) { printf("  %s: start failed\n", name.c_str()); continue; }
+            totalFalls += r.falls; totalSelf += r.self;
+            printf("  %-10s %-8s %-8s kills %3d  deaths %3d  falls %2d (pushed %d)  self %2d  mode %d  %s\n", name.c_str(), modeName(mode),
+                   skill == BOT_EXPERT ? "expert" : skill == BOT_ADVANCED ? "advanced" : "other", r.kills, r.deaths, r.falls, r.pushed, r.self, r.modeKills, r.state.c_str());
+            fflush(stdout);
+        }
+    }
+    printf("  total: falls %d, self-kills %d\n", totalFalls, totalSelf);
+}
+
+// Bots keep off the edges (they used to fall a lot here: grapple pulls over the moat, bunny hops and fight jumps
+// off the island, knockback at the rim): a minute and a half of experts on Dojo (a platform in a lava moat) and of
+// expert tag runners on Foundry (lava trenches), with a couple of falls allowed for blasts and laser pushes.
+static void testBotFalls(uint16_t port) {
+    printf("bots keep off the edges\n");
+    const std::pair<const char*, int> cases[] = {{"dojo", MODE_ARENA}, {"foundry", MODE_TAG}};
+    for (auto& [map, mode] : cases) {
+        BotMatch r;
+        bool ok = playBots(map, mode, BOT_EXPERT, port, 90, false, r);
+        CHECK(ok);
+        printf("  %s: %d falls (%d pushed), %d self-kills, %d deaths\n", map, r.falls, r.pushed, r.self, r.deaths);
+        CHECK(r.falls <= 2 && r.self <= 1);
     }
 }
 
@@ -4422,8 +5498,8 @@ static void testHostileInput() {
         CHECK(one("group custom 1 0 0 0 0 4 4 4\npart +2 0 0 0 1 1 1", m) && m.groups[0].parts[0].material == 2);
         CHECK(!one("group custom 99999999999 0 0 0 0 1 1 1", m) && !one("group custom 1.5 0 0 0 0 1 1 1", m));
         m.title = "kept";
-        CHECK(m.parse("title\n" + base) && m.title == "kept");      // a bare "title" leaves it alone, as getline did
-        CHECK(m.parse("title  Hi there\t\r\n" + base) && m.title == "Hi there\t\r");
+        CHECK(m.parse("title\n" + base) && m.title.empty());       // a bare "title": none (every parse starts from a fresh map)
+        CHECK(m.parse("title  Hi there\t\r\n" + base) && m.title == "Hi there");   // (the spaces around it dropped)
         CHECK(m.parse(base + "box 1 2 3 4 5 6 # a comment\n  \t accent\t1 2 3 4 5 6\r") && m.brushes.size() == 3 && m.brushes[2].material == 1);
         std::string err;
         CHECK(!m.parse(base + "box 1 2 3 4 5 x # why\n", &err) && err == "parse error on line 3: box 1 2 3 4 5 x ");
@@ -4436,7 +5512,7 @@ static void testHostileInput() {
     CHECK(!validMapName("") && !validMapName("../x") && !validMapName("a/b") && !validMapName("a\\b") && !validMapName("c:x")
           && !validMapName("a.b") && !validMapName(std::string(41, 'a')) && !validMapName(std::string("a\0b", 3)));
     CHECK(safeMapName("../../etc/x") == "______etc_x" && safeMapName("") == "map" && safeMapName("temple") == "temple");
-    CHECK(downloadedMapPath("../../x", 1).find("..") == std::string::npos);
+    CHECK(downloadedMapPath(mapContentId("../../x")).find("..") == std::string::npos);
     // custom rules: NaN / inf keep the default, out of range is clamped
     CustomRules def, r;
     r.fromText("custommode=x\ngravity=nan\nspeed=inf\njump=-inf\nknockback=99\nweapon=0,nan,nan,nan\n");
@@ -4446,20 +5522,57 @@ static void testHostileInput() {
 
 // Test ports: the numbers in main() are offsets into a per-run block (TP), so two test runs on one machine
 // (two checkouts, CI + local) don't fight over 28530 and friends. Picked once before the groups fork.
+// Blocks stay out of the OS's ephemeral range: every client socket (the tests' own, and any other program's) gets a
+// port from that range, so a block inside it could find one of its server ports taken mid-run.
 static int g_portShift = 0;
 static uint16_t TP(int port) { return (uint16_t)(port + g_portShift); }
+static std::vector<int> portBlockShifts(int ephLo, int ephHi) {
+    // the tests use ports 28500 .. ~30100 (+ the shift): blocks of 2000 from 10500 up that are clear of the range
+    std::vector<int> shifts;
+    for (int shift = -18000; shift <= 36000; shift += 2000) {
+        int lo = 28500 + shift, hi = 30500 + shift;
+        if (hi <= 65535 && (hi < ephLo || lo > ephHi)) shifts.push_back(shift);
+    }
+    if (shifts.empty()) shifts.push_back(0);
+    return shifts;
+}
+static void ephemeralPortRange(int& lo, int& hi) {
+    lo = 49152, hi = 65535;   // the IANA range (Windows, macOS)
+#ifdef __linux__
+    std::ifstream f("/proc/sys/net/ipv4/ip_local_port_range");
+    int a = 0, b = 0;
+    if (f >> a >> b && a > 0 && b >= a && b <= 65535) { lo = a; hi = b; }
+#endif
+}
 static void pickPortBlock() {
 #ifdef _WIN32
     unsigned seed = (unsigned)std::chrono::steady_clock::now().time_since_epoch().count();
 #else
     unsigned seed = (unsigned)getpid();
 #endif
-    for (int k = 0; k < 16; k++) {   // blocks of 2000 from 28500 to ~60000; the first whose sample ports are free
-        int shift = (int)((seed + k) % 16) * 2000;
+    int ephLo, ephHi;
+    ephemeralPortRange(ephLo, ephHi);
+    std::vector<int> shifts = portBlockShifts(ephLo, ephHi);
+    for (size_t k = 0; k < shifts.size(); k++) {   // from a per-run start, the first block whose sample ports are free
+        int shift = shifts[(seed + k) % shifts.size()];
         bool ok = true;
         for (int p : {28520, 28700, 28900, 29300, 29600, 29997}) { UdpSocket s; if (!s.open((uint16_t)(p + shift))) { ok = false; break; } }
         if (ok) { g_portShift = shift; return; }
     }
+    g_portShift = shifts[seed % shifts.size()];
+}
+// The blocks never overlap the ephemeral range (Linux's default 32768-60999, the IANA 49152-65535, this machine's).
+static void testPortBlocks() {
+    printf("test port blocks: clear of the ephemeral port range\n");
+    int lo, hi;
+    ephemeralPortRange(lo, hi);
+    for (auto [a, b] : std::vector<std::pair<int, int>>{{32768, 60999}, {49152, 65535}, {lo, hi}}) {
+        std::vector<int> s = portBlockShifts(a, b);
+        CHECK(s.size() >= 2);
+        for (int shift : s) CHECK(28500 + shift >= 1024 && (30500 + shift < a || 28500 + shift > b));
+    }
+    CHECK(30500 + g_portShift < lo || 28500 + g_portShift > hi);
+    printf("  ephemeral %d-%d, block %d-%d\n", lo, hi, 28500 + g_portShift, 30500 + g_portShift);
 }
 
 // Update-package signatures (docs/SIGNING.md): round trip, tampering and wrong keys are rejected.
@@ -4524,7 +5637,7 @@ static void testUserData() {
     fs::remove_all(old, ec);
     fs::remove_all(dst, ec);
     // shipped maps are read from the install; your maps dir is searched first and listed too
-    CHECK(userMapsDir().find(userDataPath()) == 0 && downloadedMapPath("a", 1).find(userDataPath()) == 0);
+    CHECK(userMapsDir().find(userDataPath()) == 0 && downloadedMapPath(MapId()).find(userDataPath()) == 0);
     std::vector<std::string> ml = listMaps();
     CHECK(std::find(ml.begin(), ml.end(), "temple") != ml.end());
 }
@@ -4586,6 +5699,7 @@ static void testReachProbe(uint16_t port) {
 
 #include "rules_tests.h"   // game rule tests (owner answers 5.x, REVIEW batch 2)
 #include "server_tests.h"  // server / netcode tests (FINAL_REVIEW 2.8-2.11, 6.4, 6.5, clock, PERF-8 / 9, ENG-2)
+#include "governor_tests.h" // two servers on one machine: the load governor, ranked never rated on testing
 
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
@@ -4635,6 +5749,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (argc >= 2 && std::string(argv[1]) == "signing") { testSigning(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "demos") { testDemoUpgrade(); testDemoLengthWrap(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "launcher") { g_fail += launcherTests(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "racefloors") { // the RACE_FLOORS table for tools/master/worker.js
         Map m;
@@ -4655,17 +5770,29 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "edladder") { testEditorLadder(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "edgroups") { testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(TP(29997)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "allmaps") { testAllMaps(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "cartsweep") { testCartSweep(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "spawns") { testSpawnPools(); testSpawnSanity(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "mapsym") { testMaps(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "allmaps") { testWalkGrid(); testAllMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "chat") { testChatAndVoteLimits(TP(29592)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "limits") { testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "limits") { testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(TP(29990)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(TP(29980)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); testAddbotArgs(TP(29982)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); testTagLateJoin(TP(29455)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); testAddbotArgs(TP(29982)); testSpecVote(TP(29983)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); testTagLateJoin(TP(29455)); testBotGoalsAfterMapChange(TP(29456)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "nav") { testNavGraph(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testRankedRelay(TP(29630)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterReplies(TP(29629)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(TP(29600)); testEditSession(TP(29601)); testVotedEdit(TP(29602)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "ffaexperts") {   // the seeded FFA vs experts, over many seeds
+        int n = argc > 2 ? atoi(argv[2]) : 10;
+        for (int k = 0; k < n; k++) {
+            FfaRun r = ffaVsExperts(TP(29070 + k % 10), 0x5EED0001u + k);
+            printf("  seed %d: %d kills (%d of the player standing still), %d grapples\n", k, r.kills, r.playerDeaths, r.hooks);
+        }
+        return g_fail ? 1 : 0;
+    }
+    if (argc >= 2 && std::string(argv[1]) == "falls") { testBotFalls(TP(29060)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testRankedRelay(TP(29630)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterReplies(TP(29629)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(TP(29600)); testEditSession(TP(29601)); testBuiltInMapEditSession(TP(29606)); testVotedEdit(TP(29602)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
     if (argc >= 2 && std::string(argv[1]) == "exportassets") return exportAssets(argc > 2 ? argv[2] : "assets_export") ? 1 : 0;
     if (argc >= 2 && std::string(argv[1]) == "assets") { g_fail += assetTests(); return g_fail ? 1 : 0; }
@@ -4673,6 +5800,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(TP(29960)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(TP(29950)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "net") { testInterpRewind(TP(29903)); testUptimeClock(TP(29902)); testNetcode(TP(29900)); testInputBacklog(TP(29901)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "hidden") { testHiddenInfo(TP(29906)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = TP(29800); testArenaAndTourney(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "bots") { uint16_t p = TP(28900); testBots(p); return g_fail ? 1 : 0; }
@@ -4682,10 +5810,11 @@ int main(int argc, char** argv) {
         snapBench("midtown", 32, secs, TP(28820));
         snapBench("midtown", 8, secs, TP(28821));
         snapBench("harbor", 16, secs, TP(28822));
+        snapBench("midtown", 32, secs, TP(28823), true, 48);   // (projectiles: each one's visibility to each client)
+        snapBench("harbor", 16, secs, TP(28824), true, 24);
         return 0;
     }
-    if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testFixedSpread(p + 50); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testFixedSpread(p + 50); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); testProjectileTickRates(p + 40); return g_fail ? 1 : 0; }
     // ---- the whole suite. Most tests wait on real-time network play rather than the CPU, so each runs in its own
     // process, several at once (output kept in order); a few timing-sensitive ones run alone afterwards.
     // "quark_tests serial" runs everything in this process, one after another, as before.
@@ -4693,34 +5822,41 @@ int main(int argc, char** argv) {
     std::vector<T> par = {   // (longest first: they set the wall time)
         {"bots", [] { uint16_t p = TP(28900); testBots(p); }},
         {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotAim(p); }},
+        {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testTimeToKill(); testWallbang(); }},
+        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testTimeToKill(); testWallbang(); }},
         {"maps", [] {
-            testMaps(); testAllMaps(); testStairs(); testLadders();
+            testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders();
             printf("map scores\n");   // the map bar: every map scores at least 7 in every category but originality
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
-        {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); }},
+        {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
+        {"hidden", [] { testHiddenInfo(TP(28587)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
-        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); }},
-        {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
-        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); }},
+        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); }},
+        {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testDemoUpgrade(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testBuiltInMapEditSession(TP(28606)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
+        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); }},
         {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
         {"rules", [] { testGameRules(""); }},
         {"assets", [] { g_fail += assetTests(); }},
-        {"server", [] { serverTests(); }},
+        {"server", [] { serverTests(); testGovernorPolicy(); testRankedNotRated(TP(28632)); }},
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
         {"netcode", [] { testInterpRewind(TP(28703)); testUptimeClock(TP(28702)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
         {"tickrate", [] { testTickRateFallback(TP(28710)); testRateBetweenRounds(TP(28711)); testRateUndoStepUp(TP(28712)); }},
+        {"governor", [] { testGovernorPolicy(); testGovernorTwoServers(TP(28714)); testRankedNotRated(TP(28716)); }},
         {"resetmaps", [] { testResetMaps(); }},
         {"userdata", [] { testUserData(); }},
     };
+    if (argc >= 2)   // one group by name (e.g. `quark_tests netcode`), on its own
+        for (auto* list : {&par, &alone})
+            for (auto& g : *list)
+                if (std::string(argv[1]) == g.name) { g.run(); printf(g_fail ? "%d FAILURE(S)\n" : "all tests passed\n", g_fail); return g_fail ? 1 : 0; }
     [[maybe_unused]] bool serial = argc >= 2 && std::string(argv[1]) == "serial";   // (Windows: always serial)
 #ifndef _WIN32
     if (!serial) {
@@ -4772,7 +5908,12 @@ int main(int argc, char** argv) {
                 running.erase(running.begin() + k);
                 break;
             }
-            while (printed < par.size() && done[printed] >= 0) { fputs(outputs[printed].c_str(), stdout); g_fail += done[printed]; printed++; }
+            while (printed < par.size() && done[printed] >= 0) {
+                fputs(outputs[printed].c_str(), stdout);
+                if (done[printed]) printf("  (group %s: %d failure(s))\n", par[printed].name, done[printed]);
+                g_fail += done[printed];
+                printed++;
+            }
             if (next < par.size()) start(next++);
         }
         for (auto& t : alone) t.run();

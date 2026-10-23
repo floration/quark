@@ -4,6 +4,8 @@
 #  1. OPEN on a map in the list (openEditor(maps_[i]) used to read a string freed by its own rescan: crash),
 #     with mymap present, missing, from an older version, or over the parse limits
 #  2. a typed name is what the map saves as (spaces become _)
+#  3. a built-in map you edited is never saved over (B3): saving or leaving asks; yes keeps the edits as a new map
+#     (temple_edit), no drops them, and nothing named like the built-in map appears in your maps folder
 set -e
 QUARK=${QUARK:-build/quark}
 DIR=$(mktemp -d)
@@ -29,4 +31,16 @@ rm "$DIR/maps/mymap.qmap"
 out=$(run "wait;click -250 55;bs 12;type My Castle;enter;click -160 115;print;quit")
 [ -f "$DIR/maps/My_Castle.qmap" ] || fail "typed name not used: $out"
 echo "ok: saved as the typed name"
+rm -f "$DIR"/maps/*.qmap
+out=$(run "wait;sel 0 5;key 77 0;key 83 2;print;key 257 0;print;quit")   # M: material, Ctrl+S: save, Enter: yes
+echo "$out" | grep -q "prompt=temple_edit" || fail "no question on saving an edited built-in map: $out"
+[ -f "$DIR/maps/temple_edit.qmap" ] && [ ! -f "$DIR/maps/temple.qmap" ] || fail "yes didn't keep the edits as temple_edit: $out"
+grep -q "^handmade" "$DIR/maps/temple_edit.qmap" || fail "the saved copy isn't marked handmade"
+echo "ok: edits to a built-in map kept as a new map"
+rm -f "$DIR"/maps/*.qmap
+out=$(run "wait;sel 0 5;key 77 0;key 256 0;key 256 0;print;key 256 0;print;quit")   # ESC: deselect, ESC: leave (asks), ESC: cancel
+echo "$out" | grep -q "prompt=temple_edit" || fail "no question on leaving an edited built-in map: $out"
+echo "$out" | tail -1 | grep -q "prompt=" && fail "ESC didn't cancel the question: $out"
+ls "$DIR"/maps/*.qmap >/dev/null 2>&1 && fail "something was saved without asking: $(ls "$DIR/maps")"
+echo "ok: leaving an edited built-in map asks, saves nothing by itself"
 rm -rf "$DIR"

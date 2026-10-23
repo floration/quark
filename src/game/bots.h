@@ -55,6 +55,7 @@ struct BotBrain {
     // movement
     Vec3 goal;
     double goalUntil = 0;
+    MapId goalMapId; uint32_t goalNavGen = 0; // the map / nav graph the goal was picked on (another one: picked again)
     Vec3 lastPos;
     double stuckCheckAt = 0;
     float strafeDir = 1;
@@ -63,7 +64,11 @@ struct BotBrain {
     double fleeUntil = 0;       // hide and seek / tag: committed to the current escape route until then
     double hookUntil = 0, nextHookTry = 0; // grapple: holding toward hookAnchor until then
     Vec3 hookAnchor;
+    bool hookChecked = false;   // the grapple's catch was checked again (safeHook) from where it caught
     double nextDecision = 0;    // fight movement choices (jump, dash) are rolled at a fixed game-time rate
+    bool nearEdge = false;      // a drop into the void / lava within 3 m (looked for at 20 Hz)
+    bool edgeFar = false;       // ...or only within 5 m
+    Vec3 edgeAway;              // ...and the way away from it (xz, unit)
     // navigation: the route is kept, so reaching a waypoint costs no search
     std::vector<int> path;      // surfaces still to walk across, in order
     int pathPrev = -1;          // the surface the route continues from
@@ -83,12 +88,10 @@ struct NavGraph {
     std::vector<Node> nodes;
     std::vector<std::vector<std::pair<int, float>>> links; // (node, cost)
     std::vector<std::pair<std::pair<int, int>, Vec3>> ladderLinks; // (from node, to node) climbed at this point
-    uint32_t mapCrc = 0;
+    MapId mapId;               // the map it was built for
     uint32_t generation = 0;   // bumped by every build (bots drop routes from an older graph)
     void build(const Map& m);  // O(N log N)-ish: a grid finds the neighbours (same graph as checking every pair)
     int nodeAt(const Vec3& p) const;                       // surface the point stands on (or -1)
-    // Next point to walk toward on the way from `from` to `to`.
-    Vec3 nextWaypoint(const Vec3& from, const Vec3& to) const;
     // A* from surface a to b: the surfaces after a, up to and including b. Reuses its buffers (no allocations
     // once warm). False if there's no route.
     bool findPath(int a, int b, std::vector<int>& out) const;

@@ -64,7 +64,7 @@ std::string Game::uiScreenPath() const {
     static const char* info[] = {"modes", "controls", "hud", "hosting", "editor", "maps"};
     static const char* custom[] = {"general", "weapons", "maps", "movement"};
     switch (screen_) {
-        case Screen::Main: return edPrompt_ ? "main/save-copy" : "main";
+        case Screen::Main: return edPrompt_ ? "main/save-copy" : "main";   // (after someone else's session: keep a copy?)
         case Screen::Join: return "join";
         case Screen::Host: return "host" + pick;
         case Screen::VsBots: return "vsbots" + pick;
@@ -74,7 +74,7 @@ std::string Game::uiScreenPath() const {
         case Screen::Demos: return "demos";
         case Screen::CustomMode: return std::string("custom/") + custom[std::min(std::max(customTab_, 0), 3)];
         case Screen::Connecting: return "connecting";
-        case Screen::Editor: return std::string(edPath()) + (edGroupMenu_ ? "/groups" : edExportAsk_ ? "/export-ask" : "") + (chatting_ ? "/chat" : "");
+        case Screen::Editor: return std::string(edPath()) + (edPrompt_ ? "/keep-edits" : edGroupMenu_ ? "/groups" : edExportAsk_ ? "/export-ask" : "") + (chatting_ ? "/chat" : "");
         case Screen::InGame: {
             std::string p = "ingame";
             if (bake_) return p + "/loading";
@@ -82,7 +82,7 @@ std::string Game::uiScreenPath() const {
                 p += "/pause";
                 if (settingsInGame_) p += "/settings" + settingsSub();
                 else if (picker_ != PICK_NONE) p += pick;
-                else if (voteMenu_) p += "/vote";
+                else if (voteMenu_) p += specPick_ ? "/vote/spec" : "/vote";
                 else if (queueMenu_) p += "/queue";
             }
             if (chatting_) p += console_ ? "/console" : "/chat";
@@ -93,6 +93,7 @@ std::string Game::uiScreenPath() const {
 }
 
 std::string Game::uiContext() const {
+    if (screen_ == Screen::Editor && edPrompt_) return std::string("keep:") + std::to_string(edPromptThen_);
     if (screen_ != Screen::Editor || !edSelValid()) return "";
     static const char* kinds[] = {"box", "spawn", "light", "site", "hill", "checkpoint", "path", "ladder", "group"};
     std::string k = kinds[edSel_.kind];
@@ -119,6 +120,8 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "hosting") return b(host_ != nullptr);
     if (w == "recording") return b(net_.recording());
     if (w == "demo") return b(net_.playback());
+    if (w == "weapon") return std::to_string(desiredWeapon_ >= 0 ? desiredWeapon_ : net_.selfWeapon());
+    if (w == "rps") return std::to_string(rpsMine_);
     if (w == "reach") return host_ ? std::to_string((int)host_->reachability()) + " " + host_->reachStatus() : "";
     if (w == "widgets") return widgets_.toText() + "|" + std::to_string(widgetSel_) + "|" + std::to_string(filePick_) + "|" + widgetMsg_ + "@" + std::to_string(widgetMsgUntil_);
     if (w == "ctlimport") return cfg_.toText() + "|" + std::to_string(filePick_) + "|" + widgetMsg_ + "@" + std::to_string(widgetMsgUntil_);
@@ -171,6 +174,18 @@ void Game::uiTestActions() {
         if (int k = bound(A_VOTENO)) ui_.keyAction("VOTE NO", k, 0, UiExp::cmd("vote no"));
         if (int k = bound(A_VOTESTART)) ui_.keyAction("VOTE START", k, 0, UiExp::cmd("callvote start"));
         if (int k = bound(A_QUIP)) ui_.keyAction("QUIP", k, 0, UiExp::cmd("quip"));
+        if (int k = bound(A_TOGGLECHAT)) ui_.keyAction("TOGGLE CHAT", k, 0, UiExp::cfg("chat_off"));
+        if (rpsPicking()) {   // the hide and seek tiebreak: slot keys 1 / 2 / 3 throw
+            static const char* cmds[3] = {"rps ROCK", "rps PAPER", "rps SCISSORS"};
+            static const char* names[3] = {"ROCK (SLOT 1)", "PAPER (SLOT 2)", "SCISSORS (SLOT 3)"};
+            for (int k = 0; k < 3; k++) if (int key = bound(slotAction(k))) ui_.keyAction(names[k], key, 0, UiExp::cmd(cmds[k]));
+        } else {   // the seeker / tagger's locator: its slot key (0)
+            const PlayerSnap* me = net_.findPlayer(net_.clientId());
+            int slot = weaponSlot(WPN_LOCATOR);
+            static const std::string kLocatorWeapon = std::to_string(WPN_LOCATOR);
+            if (isItMode(net_.mode().mode) && me && (me->flags & PS_HASBOMB) && net_.selfWeapon() != WPN_LOCATOR && desiredWeapon_ != WPN_LOCATOR)
+                if (int key = bound(slotAction(slot))) ui_.keyAction("LOCATOR (SLOT KEY)", key, 0, UiExp::state("weapon", kLocatorWeapon.c_str()).withId("LOCATOR"));
+        }
         if (!net_.selfAlive()) {   // dead / spectating: a click watches the next player
             const auto& ps = framePlayers();
             int alive = 0;
@@ -223,7 +238,7 @@ void Game::uiTestActions() {
 }
 
 void Game::uiTestHandles() {
-    if (!edSelValid() || edGroupMenu_ || edExportAsk_ || chatting_ || edLook_) return;
+    if (!edSelValid() || edGroupMenu_ || edExportAsk_ || chatting_ || edLook_ || edPrompt_) return;
     const float s = r_.height() / 720.0f, vw = (float)r_.width(), vh = (float)r_.height();
     static const char* kScopes[] = {"box", "spawn", "light", "site", "hill", "checkpoint", "path", "ladder", "group"};
     ui_.where = edPath();
@@ -313,6 +328,8 @@ private:
         std::vector<std::string> explore, skip;   // path prefixes explored here (and, within them, not)
         std::function<bool()> setup;              // from anywhere: get to the root (false: couldn't)
         std::function<bool()> healthy;            // still the situation it's about (else: set up again)
+        // (optional) only these widgets belong to this scenario (the rest are another's): the screen path, the widget
+        std::function<bool(const std::string&, const UiWidget&)> only = nullptr;
     };
     struct Step { std::string id; };
     struct Node {
@@ -456,6 +473,7 @@ private:
     }
     void seeAll() {
         for (size_t i = 0; i < cur_.size(); i++) {
+            if (sc_->only && !sc_->only(path(), cur_[i])) continue;
             std::string k = keyOf((int)i);
             auto it = recs_.find(k);
             if (it != recs_.end()) continue;
@@ -524,6 +542,11 @@ private:
         g.editOrigName_.clear();
         g.demoScroll_ = g.joinScroll_ = 0;
         g.queued_.clear();
+        g.rpsMine_ = RPS_NONE;
+        g.desiredWeapon_ = -1;
+        // (the seeker back on the knife: the locator's slot key is offered again)
+        if (g.screen_ == Game::Screen::InGame && isItMode(g.net_.mode().mode) && g.net_.selfWeapon() == WPN_LOCATOR) g.desiredWeapon_ = WPN_KNIFE;
+        g.specPick_ = false;
         if (g.screen_ == Game::Screen::Editor && edView_.set) {
             g.edCam_ = edView_.cam; g.yaw_ = edView_.yaw; g.pitch_ = edView_.pitch;
             g.edGridIdx_ = edView_.grid; g.edMat_ = edView_.mat; g.edSpeed_ = edView_.speed; g.edLook_ = false;
@@ -587,7 +610,7 @@ private:
         for (auto& a : nodes_[ni].alts) ways.push_back(&a);
         lastReplay_.clear();
         for (auto* way : ways) {
-            if (!toRoot()) return false;
+            if (!toRoot()) { lastReplay_ += " [couldn't set the scenario up again]"; return false; }
             bool ok = true;
             for (auto& st : *way) if (!replay(st)) { ok = false; lastReplay_ += " [" + st.id + " not there]"; break; }
             step(2);
@@ -802,14 +825,22 @@ private:
         }
         if (w.kind == UiWidget::KEY && w.count > 0) { g_.testHeld_ = 0; step(); }
         if (verbose_) printf("  %s %s -> %s%s\n", rec.ok ? "ok  " : "FAIL", wkey.c_str(), path().c_str(), rec.ok ? "" : (" : " + rec.fails.back()).c_str());
-        // a slider: typing a number into it works too
+        // a slider: a number typed into it is kept exactly (off any grid a drag snaps to), and saved as typed
         if (w.kind == UiWidget::SLIDER && w.enabled && path() == path0) {
             int j = find(id);
             if (j >= 0) {
                 UiWidget s2 = cur_[j];
-                float lo = s2.dx, hi = s2.dy, target = lo + (hi - lo) * 0.62f;
+                const float lo = s2.dx, hi = s2.dy, unit = std::pow(10.0f, (float)-s2.count);
+                // 37% of the way along, in the slider's own decimals, ending in a 7 (no 0.05 / quarter / 15 degree /
+                // 30 s step lands there); a short whole-number range: any whole number in it
+                long n = std::lround((lo + (hi - lo) * 0.37f) / unit);
+                n = n - n % 10 + 7;
+                if (n * unit > hi) n -= 10;
+                if (n * unit < lo) n = std::lround((lo + (hi - lo) * 0.37f) / unit);
+                if (std::fabs(n * unit - (float)atof(s2.value.c_str())) < unit * 0.5f) n += n * unit + unit <= hi ? 1 : -1;   // (not what it shows now)
+                const float target = n * unit;
                 char buf[32];
-                snprintf(buf, sizeof buf, "%g", std::round(target * 100) / 100);
+                snprintf(buf, sizeof buf, "%.*f", s2.count, target);
                 std::string edBefore = e.kind == UiExp::EDIT ? g_.ed_.serialize() : "";
                 g_.edLastPush_ = 0;
                 click(s2.nx + s2.nw * 0.5f, s2.y + s2.h * 0.5f);
@@ -819,20 +850,49 @@ private:
                 key(GLFW_KEY_ENTER);
                 step();
                 if (e.kind == UiExp::EDIT) waitFor([&] { return g_.ed_.serialize() != edBefore; }, 4.0);   // (an edit session: the server's echo)
+                if (e.kind != UiExp::EDIT) step(2);   // (any snapping the next frames would do)
                 int k2 = find(id);
+                auto kept = [&](int k) { return std::fabs((float)atof(cur_[k].value.c_str()) - target) < unit * 0.5f; };
                 if (k2 < 0) fail(wkey, "gone after typing a value into it");
-                else if (cur_[k2].value == s2.value && std::fabs((float)atof(s2.value.c_str()) - target) > (hi - lo) * 0.02f)
-                    fail(wkey, std::string("typing ") + buf + " into it changed nothing");
+                else if (!kept(k2)) fail(wkey, std::string("typed ") + buf + ", it shows " + cur_[k2].value + " (a typed value must be kept as typed)");
+                else if (e.kind == UiExp::CFG && path() == path0) {
+                    // saved as typed: quark.cfg read back (as at the next start) shows the same number
+                    pendingCfg_.push_back({e.what ? e.what : "", wkey});
+                    std::istringstream in(g_.cfg_.toText());
+                    Settings t;
+                    std::string l;
+                    while (std::getline(in, l)) { size_t eq = l.find('='); if (eq != std::string::npos) t.set(l.substr(0, eq), l.substr(eq + 1)); }
+                    t.finishLoad();
+                    Settings keep = g_.cfg_;
+                    g_.cfg_ = t;
+                    step(2);
+                    int k3 = find(id);
+                    if (k3 >= 0 && !kept(k3)) fail(wkey, std::string("typed ") + buf + ", but quark.cfg reads back as " + cur_[k3].value);
+                    g_.cfg_ = keep;
+                    step();
+                } else if (e.kind == UiExp::STATE && e.what && std::string(e.what) == "custom" && path() == path0) {
+                    // a custom mode's: the .qmode file read back shows the same number
+                    CustomRules keep = g_.editRules_;
+                    g_.editRules_.fromText(keep.toText());
+                    step(2);
+                    int k3 = find(id);
+                    if (k3 >= 0 && !kept(k3)) fail(wkey, std::string("typed ") + buf + ", but the custom mode file reads back as " + cur_[k3].value);
+                    g_.editRules_ = keep;
+                    step();
+                }
+                typedChecks_++;
                 if (e.kind == UiExp::EDIT && g_.ed_.serialize() != edBefore) {   // (and that's undone too)
                     key(GLFW_KEY_Z, GLFW_MOD_CONTROL);
                     if (!waitFor([&] { return g_.ed_.serialize() == edBefore; }, 8.0)) fail(wkey, "undo didn't put back the typed value");
                 }
-            }
-        }
+            } else fail(wkey, "gone after dragging it (so a typed value couldn't be checked)");
+        } else if (w.kind == UiWidget::SLIDER && w.enabled) fail(wkey, "dragging it left the screen (so a typed value couldn't be checked)");
         window_ = false;
         step();
         if (transitional_) step();
     }
+
+    int typedChecks_ = 0;   // sliders a value was typed into (and kept)
 
     // the state an activation led to (a new screen, a selection...), before the test undid it
     std::string postPath_, postCtx_, postIdent_;
@@ -866,6 +926,7 @@ private:
             if (!explorable(path())) break;
             int pick = -1;
             for (size_t i = 0; i < cur_.size(); i++) {
+                if (sc_->only && !sc_->only(path(), cur_[i])) continue;
                 std::string k = keyOf((int)i);
                 auto it = recs_.find(k);
                 if ((it != recs_.end() && it->second.activated) || tried.count(k)) continue;
@@ -897,7 +958,7 @@ private:
             // anything else changed (a toggle that shows more controls, a selection...): back to the node as recorded, so
             // what's found next is reached the way it's recorded
             if (path() != node.path || ctx() != node.ctx || !sc_->healthy() || !explorable(path()) || ident() != node.ident) {
-                if (!toNode(ni)) { notes_.push_back(sc_->name + " :: lost " + node.path + " after " + id); break; }
+                if (!toNode(ni)) { notes_.push_back(sc_->name + " :: lost " + node.path + " after " + id + ":" + lastReplay_); break; }
             }
         }
         if (node.parent >= 0 && node.path != nodes_[node.parent].path) escCheck(ni);
@@ -1001,17 +1062,17 @@ private:
         }
         return true;
     }
-    bool ownServer(bool edit, bool spectate) {
+    bool ownServer(bool edit, bool spectate, int mode = MODE_FFA, const char* map = nullptr) {
         leaveAll();
         hardReset();
         ServerConfig sc;
         sc.name = edit ? "uitest edit" : "uitest";
-        sc.map = edit ? "harbor" : "temple";   // (the guest may save a copy: not of the ranked map the host scenarios use)
-        sc.mode = MODE_FFA;
+        sc.map = map ? map : edit ? "harbor" : "temple";   // (the guest may save a copy: not of the ranked map the host scenarios use)
+        sc.mode = mode;
         sc.port = 0;
         sc.lanOnly = true;
         sc.vsBots = !edit;
-        sc.botsEnemy = edit ? 0 : 3;
+        sc.botsEnemy = edit ? 0 : mode == MODE_HIDE ? 2 : 3;
         sc.editMode = edit;
         srv_ = std::make_unique<Server>();
         srv_->setLog([](const std::string&) {});
@@ -1032,6 +1093,40 @@ private:
             if (!waitFor([&] { const PlayerSnap* me = g_.net_.findPlayer(g_.net_.clientId()); return me && me->team() == TEAM_SPECTATOR; }, 10)) return false;
         }
         return true;
+    }
+    // our own server's game, changed between its ticks: its thread stopped, ticked here, then started again
+    void pauseServer() { srvQuit_ = true; if (srvThread_.joinable()) srvThread_.join(); }
+    void resumeServer() { srvQuit_ = false; Server* s = srv_.get(); srvThread_ = std::thread([this, s] { s->run(srvQuit_); }); }
+    void pumpServer(double seconds) { double until = timeNow() + seconds; while (timeNow() < until) { srv_->frame(); sleepMs(1); } }
+    // hide and seek with us seeking (the seeker holds the knife and the locator, slot key 0)
+    bool hideSeeker() {
+        if (!ownServer(false, false, MODE_HIDE, "hamlet")) return false;
+        pauseServer();
+        Server& s = *srv_;
+        s.command("forcestart");
+        pumpServer(0.3);
+        // seekers take turns in slot order, a round each: rounds are ended until it's our turn
+        const int me = g_.net_.clientId();
+        for (int k = 0; k < 24 && me >= 0 && me < kMaxPlayers && !s.players_[me].it; k++) { s.phaseEnd_ = s.time(); pumpServer(0.1); }
+        resumeServer();
+        return waitFor([&] { return iAmIt(); }, 15);
+    }
+    bool iAmIt() const { const PlayerSnap* me = g_.net_.findPlayer(g_.net_.clientId()); return me && (me->flags & PS_HASBOMB) && isItMode(g_.net_.mode().mode); }
+    // the hide and seek tiebreak (rock paper scissors among those tied for first), held at its throw
+    bool hideRps() {
+        if (!ownServer(false, false, MODE_HIDE, "hamlet")) return false;
+        pauseServer();
+        Server& s = *srv_;
+        s.command("forcestart");
+        pumpServer(0.2);
+        s.phaseEnd_ = s.time(); pumpServer(0.1);   // live
+        s.phaseEnd_ = s.time(); pumpServer(0.1);   // time's up: the round's over
+        for (auto& p : s.players_) if (p.connected) { p.sought = true; p.score = 3; }   // every turn played, all tied
+        s.phaseEnd_ = s.time(); pumpServer(0.2);   // the last round over: tied, so the tiebreak
+        bool ok = (s.ms_.flags & MS_RPS) && s.rps_.stage == RPS_PICK;
+        if (ok) s.rps_.stageEnd = s.phaseEnd_ = s.time() + 100000;   // (the throw stays open while it's tested)
+        resumeServer();
+        return ok && waitFor([&] { return g_.rpsPicking() && inGame(); }, 15);
     }
     void stopServer() {
         if (!srv_) return;
@@ -1077,6 +1172,27 @@ private:
                          return waitFor([&] { return inGame(); }, 60);
                      },
                      [=] { return g_.screen_ == Game::Screen::InGame && g_.net_.playback(); }});
+        // hide and seek: the seeker's locator (slot key 0), and the tiebreak's rock / paper / scissors keys
+        v.push_back({"hide-seeker", "ingame", inGameAll, {"ingame/"}, [=] { return hideSeeker(); },
+                     [=] { return g_.screen_ == Game::Screen::InGame && srv_ && g_.net_.hasSnapshot() && iAmIt(); }});
+        v.push_back({"hide-rps", "ingame", inGameAll, {"ingame/"}, [=] { return hideRps(); },
+                     [=] { return g_.screen_ == Game::Screen::InGame && srv_ && g_.net_.hasSnapshot() && g_.rpsPicking(); }});
+        // a built-in map with edits: leaving / saving / testing it asks "keep your edits as a new map?" (each way)
+        Scenario builtin{"editor-builtin", "editor", {"editor"}, {"editor-online"},
+                     [=] {
+                         leaveAll();
+                         g_.openEditor("temple");
+                         step(2);
+                         g_.edDo("t Temple (my edits)", "t " + g_.ed_.title);
+                         step(2);
+                         saveEdView();
+                         return g_.screen_ == Game::Screen::Editor && g_.edDirty_ && g_.edOfficial();
+                     },
+                     [=] { return g_.screen_ == Game::Screen::Editor && !g_.edOnline_ && (g_.edPrompt_ || (g_.edDirty_ && g_.edOfficial())); }};
+        builtin.only = [](const std::string& p, const UiWidget& w) {   // (the rest of the editor is the menus scenario's)
+            return p != "editor" || (w.exp.kind == UiExp::NAV && w.exp.what && std::string(w.exp.what).find("keep-edits") != std::string::npos);
+        };
+        v.push_back(builtin);
         v.push_back({"edit-host", "editor-online", {"editor-online"}, {},
                      [=] {
                          leaveAll();
@@ -1088,7 +1204,15 @@ private:
                          return ok;
                      },
                      [=] { return g_.screen_ == Game::Screen::Editor && g_.edOnline_ && g_.host_ && g_.net_.state() == ConnState::Connected; }});
-        v.push_back({"edit-guest", "editor-online", {"editor-online", "main/save-copy"}, {}, [=] { return ownServer(true, false); },
+        v.push_back({"edit-guest", "editor-online", {"editor-online", "main/save-copy"}, {},
+                     [=] {   // (the built-in map, changed: leaving always asks "save your copy?" - unchanged, it doesn't)
+                         if (!ownServer(true, false)) return false;
+                         const std::string t0 = g_.ed_.title, t1 = "Harbor (uitest copy)";
+                         g_.edDo("t " + t1, "t " + t0, false, false);
+                         bool ok = waitFor([&] { return g_.ed_.title == t1 && g_.net_.map().title == t1; }, 10);
+                         step(2);
+                         return ok;
+                     },
                      [=] { return (g_.screen_ == Game::Screen::Editor && g_.edOnline_ && srv_ && g_.net_.state() == ConnState::Connected) || g_.edPrompt_; }});
         // the menus (and the offline editor) last: the editor's RESET MAPS drops the light caches the games use
         v.push_back({"menus", "main", {"main", "join", "host", "vsbots", "settings", "leaderboard", "info", "demos", "custom", "connecting", "editor"}, {"editor-online"},
@@ -1122,7 +1246,7 @@ private:
         std::ofstream f(utf8Path(out));
         f << "{\n  \"result\": " << jsonStr(ok ? "pass" : "fail") << ",\n  \"seconds\": " << (int)seconds << ",\n  \"frames\": " << frames_
           << ",\n  \"widgets\": " << widgets << ",\n  \"screens\": " << screens.size() << ",\n  \"passed\": " << passed << ",\n  \"failed\": " << failed
-          << ",\n  \"untested\": " << untested << ",\n  \"esc_checks\": " << escChecks_ << ",\n  \"per_screen\": {\n";
+          << ",\n  \"untested\": " << untested << ",\n  \"esc_checks\": " << escChecks_ << ",\n  \"typed_slider_checks\": " << typedChecks_ << ",\n  \"per_screen\": {\n";
         size_t n = 0;
         for (auto& [p, c] : perScreen)
             f << "    " << jsonStr(p) << ": {\"widgets\": " << c[0] << ", \"pass\": " << c[1] << ", \"fail\": " << c[2] << "}" << (++n < perScreen.size() ? ",\n" : "\n");
@@ -1156,8 +1280,8 @@ private:
         f.close();
         // the summary
         printf("\n==== UI TEST: %s ====\n", ok ? "PASS" : "FAIL");
-        printf("%d widgets on %zu screens (%zu scenarios), %d passed, %d failed, %d never tested; %d Esc checks; %zu layout issues; %.0f s, %ld frames\n",
-               widgets, screens.size(), nodesBy_.size(), passed, failed, untested, escChecks_, layout_.size(), seconds, frames_);
+        printf("%d widgets on %zu screens (%zu scenarios), %d passed, %d failed, %d never tested; %d Esc checks; %d sliders typed into; %zu layout issues; %.0f s, %ld frames\n",
+               widgets, screens.size(), nodesBy_.size(), passed, failed, untested, escChecks_, typedChecks_, layout_.size(), seconds, frames_);
         printf("per screen (widgets / pass / fail):\n");
         for (auto& [p, c] : perScreen) printf("  %-42s %4d %4d %4d\n", p.c_str(), c[0], c[1], c[2]);
         for (auto* r : bad) {
@@ -1243,6 +1367,7 @@ void uiTestPrepare(LaunchOptions& o) {
     s.hostUpnp = false;
     s.hostPublic = false;
     s.width = 1280; s.height = 720;
+    s.binds.code[A_TOGGLECHAT][0] = GLFW_KEY_F6;   // (unbound by default: bound here so the key is tested too)
     s.save();
     printf("uitest: data in %s\n", dir.u8string().c_str());
     (void)o;

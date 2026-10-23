@@ -2,6 +2,7 @@
 #include "../common/u8file.h"
 #include "map.h"
 #include "gamedefs.h"
+#include "../common/sha256.h"
 #include <cctype>
 #include <cstdio>
 #include <cstring>
@@ -18,6 +19,8 @@
 #include <cfloat>
 #include <climits>
 #include <algorithm>
+#include <set>
+#include <vector>
 
 namespace fs = std::filesystem;
 static std::string g_exeDir;
@@ -106,6 +109,7 @@ static int migrateFile(const fs::path& src, const fs::path& dst) {
     fs::create_directories(dst.parent_path(), ec);
     fs::path tmp = dst;
     tmp += ".migrating";
+    fs::remove(tmp, ec);   // (MinGW's copy_file can't overwrite on Windows)
     if (!fs::copy_file(src, tmp, fs::copy_options::overwrite_existing, ec) || readAll(tmp) != readAll(src)) { fs::remove(tmp, ec); return 0; }
     fs::rename(tmp, dst, ec);
     if (ec) { fs::remove(tmp, ec); return 0; }
@@ -168,7 +172,7 @@ int resetOfficialMaps(const std::string& shippedDir) {
     int n = 0;
     for (const OfficialMapData* m = kOfficialMapData; m->name; m++) {
         fs::remove(mine + "/" + m->name + ".qmap", ec); // your edited copy shadows the shipped one: reset drops it
-        fs::remove(cache + "/" + m->name + ".qlm", ec);
+        fs::remove(cache + "/" + m->name + ".qlm", ec);   // (a light cache named after the map: older versions'; now they go by content)
         std::string path = dir + "/" + m->name + ".qmap";
         if (noCR(readAll(path)) != noCR(std::string((const char*)m->data, m->size))) { // install may be read-only: write only if needed
             std::ofstream f(utf8Path(path), std::ios::binary | std::ios::trunc);
@@ -235,11 +239,7 @@ std::string safeMapName(const std::string& name) {
     return o.empty() ? "map" : o;
 }
 
-std::string downloadedMapPath(const std::string& name, uint32_t crc) {
-    char hex[16];
-    snprintf(hex, sizeof hex, "%08x", crc);
-    return userMapsDir() + "/downloads/" + safeMapName(name) + "-" + hex + ".qmap";
-}
+std::string downloadedMapPath(const MapId& id) { return userMapsDir() + "/downloads/" + id.hex() + ".qmap"; }
 
 bool saveMapFile(const std::string& path, const std::string& text) {
     std::error_code ec;
@@ -263,31 +263,176 @@ bool writeFileAtomic(const std::string& path, const std::string& data, bool priv
     return true;
 }
 
-// CRC-32 (zlib's), eight bytes a step ("slicing by 8": about 5x the byte-at-a-time loop; every map load hashes the
-// whole text). prev continues an earlier CRC, as zlib's crc32(prev, ...) does.
-uint32_t crc32(const void* data, size_t len, uint32_t prev) {
-    struct Tables {
-        uint32_t t[8][256];
-        Tables() {
-            for (uint32_t i = 0; i < 256; i++) {
-                uint32_t c = i;
-                for (int k = 0; k < 8; k++) c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
-                t[0][i] = c;
-            }
-            for (int s = 1; s < 8; s++)
-                for (uint32_t i = 0; i < 256; i++) t[s][i] = (t[s - 1][i] >> 8) ^ t[0][t[s - 1][i] & 255];
-        }
-    };
-    static const Tables tables;   // (built once, thread-safe)
-    const auto& t = tables.t;
-    uint32_t c = prev ^ 0xFFFFFFFFu;
-    const uint8_t* p = (const uint8_t*)data;
-    for (; len >= 8; len -= 8, p += 8) {   // (byte loads: no alignment or endianness assumptions)
-        uint32_t a = c ^ ((uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24);
-        c = t[7][a & 255] ^ t[6][(a >> 8) & 255] ^ t[5][(a >> 16) & 255] ^ t[4][a >> 24] ^ t[3][p[4]] ^ t[2][p[5]] ^ t[1][p[6]] ^ t[0][p[7]];
+// ---- map format converters ----
+// A line's first word, comments dropped ("" for a blank or comment-only line).
+static std::string firstWord(const std::string& line, size_t* rest = nullptr) {
+    size_t e = line.find('#');
+    if (e == std::string::npos) e = line.size();
+    size_t a = line.find_first_not_of(" \t\r", 0);
+    if (a == std::string::npos || a >= e) return "";
+    size_t b = line.find_first_of(" \t\r", a);
+    if (b == std::string::npos || b > e) b = e;
+    if (rest) *rest = b;
+    return line.substr(a, b - a);
+}
+
+static std::vector<std::string> splitLines(const std::string& text) {
+    std::vector<std::string> v;
+    size_t p = 0;
+    while (p < text.size()) {
+        size_t e = text.find('\n', p);
+        if (e == std::string::npos) e = text.size();
+        v.push_back(text.substr(p, e - p));
+        p = e + 1;
     }
-    for (; len; len--) c = t[0][(c ^ *p++) & 255] ^ (c >> 8);
-    return c ^ 0xFFFFFFFFu;
+    return v;
+}
+
+// 1 -> 2: the generator's staircases and the map's setting were comments ("# stairs ...", "# setting ..."); they are
+// keywords now.
+static void upgradeMap1to2(std::vector<std::string>& lines) {
+    for (std::string& l : lines)
+        if (l.rfind("# stairs ", 0) == 0 || l.rfind("# setting ", 0) == 0) l.erase(0, 2);
+}
+
+// Step k turns version k into k + 1. Changing the map format means: raise kMapFormatVersion and add its step here
+// (with a test that converts a file of the old version); the static_assert below holds the two together.
+using MapUpgradeStep = void (*)(std::vector<std::string>& lines);
+static const MapUpgradeStep kMapUpgrades[] = {upgradeMap1to2};
+static_assert(sizeof kMapUpgrades / sizeof kMapUpgrades[0] == kMapFormatVersion - 1,
+              "a map format change needs its converter step in kMapUpgrades (owner rule)");
+
+int mapTextVersion(const std::string& text) {
+    size_t p = 0;
+    while (p < text.size()) {
+        size_t e = text.find('\n', p);
+        if (e == std::string::npos) e = text.size();
+        const char* l = text.data() + p;
+        while (l < text.data() + e && (*l == ' ' || *l == '\t')) l++;
+        if (text.data() + e - l > 8 && !memcmp(l, "version", 7) && (l[7] == ' ' || l[7] == '\t')) {
+            long v = strtol(l + 8, nullptr, 10);
+            return v >= 1 && v <= 1000000 ? (int)v : 0;   // (0: a bad version line, left for the parser to refuse)
+        }
+        p = e + 1;
+    }
+    return 1;
+}
+
+bool upgradeMapText(const std::string& in, std::string* out) {
+    int v = mapTextVersion(in);
+    if (v < 1 || v >= kMapFormatVersion) return false;
+    std::vector<std::string> lines = splitLines(in);
+    for (int k = v; k < kMapFormatVersion; k++) kMapUpgrades[k - 1](lines);
+    // the version line: replaced where it is, or added as the last line (so every line keeps its number: a parse error
+    // in a converted map names the line of the file)
+    std::string vl = "version " + std::to_string(kMapFormatVersion);
+    bool placed = false;
+    for (std::string& l : lines) if (firstWord(l) == "version") { l = vl; placed = true; break; }
+    std::string o;
+    o.reserve(in.size() + 16);
+    for (size_t i = 0; i < lines.size(); i++) { o += lines[i]; if (i + 1 < lines.size() || (!in.empty() && in.back() == '\n')) o += '\n'; }
+    if (!placed) { if (!o.empty() && o.back() != '\n') o += '\n'; o += vl + "\n"; }
+    *out = std::move(o);
+    return true;
+}
+
+MapUpgradeReport upgradeMapDir(const std::string& dirIn) {
+    MapUpgradeReport rep;
+    fs::path dir = utf8Path(dirIn);
+    std::error_code ec;
+    if (!fs::is_directory(dir, ec)) return rep;
+    std::set<std::string> failedBefore;   // "name size" of maps that didn't convert: not read again every start
+    {
+        std::ifstream f(dir / "old" / "failed.txt");
+        std::string line;
+        while (std::getline(f, line)) failedBefore.insert(line);
+    }
+    auto note = [&](const std::string& line) {
+        rep.log.push_back(line);
+        fs::create_directories(dir / "old", ec);
+        std::ofstream(dir / "old" / "convert.log", std::ios::app) << line << "\n";
+    };
+    for (auto& e : fs::directory_iterator(dir, ec)) {
+        if (!e.is_regular_file(ec) || e.path().extension() != ".qmap") continue;
+        std::string name = e.path().filename().u8string();
+        uint64_t size = e.file_size(ec);
+        if (ec || size > (64u << 20)) { ec.clear(); continue; }   // (no map is that big: not ours to touch)
+        std::string key = name + " " + std::to_string(size);
+        if (failedBefore.count(key)) continue;
+        std::ifstream f(e.path(), std::ios::binary);
+        char part[4096];   // the version line is near the top (saved / generated maps) or the last line (converted ones)
+        f.read(part, sizeof part);
+        if (mapTextVersion(std::string(part, (size_t)f.gcount())) >= kMapFormatVersion) continue;
+        if (size > sizeof part) {
+            f.clear();
+            f.seekg((std::streamoff)(size - sizeof part));
+            f.read(part, sizeof part);
+            if (mapTextVersion(std::string(part, (size_t)f.gcount())) >= kMapFormatVersion) continue;
+        }
+        f.clear();
+        f.seekg(0);
+        std::stringstream ss;
+        ss << f.rdbuf();
+        std::string text = ss.str();
+        f.close();
+        int was = mapTextVersion(text);
+        std::string out, perr;
+        Map m;
+        if (!upgradeMapText(text, &out)) continue;
+        if (!m.parse(out, &perr)) {
+            rep.failed++;
+            note(name + ": format " + std::to_string(was) + ", kept as it is: doesn't load after converting (" + perr + ")");
+            std::ofstream(dir / "old" / "failed.txt", std::ios::app) << key << "\n";
+            continue;
+        }
+        // the original into old/v<N>/ first (a copy: the map stays in place whatever happens), then the converted text
+        fs::path backDir = dir / "old" / ("v" + std::to_string(was));
+        fs::create_directories(backDir, ec);
+        fs::path back = backDir / e.path().filename();
+        for (int n = 1; fs::exists(back, ec); n++) back = backDir / (e.path().stem().u8string() + "-" + std::to_string(n) + ".qmap");
+        fs::copy_file(e.path(), back, ec);
+        if (ec || !writeFileAtomic(e.path().u8string(), out)) {
+            rep.failed++;
+            note(name + ": format " + std::to_string(was) + ", kept as it is: can't write (disk full?)");
+            ec.clear();
+            continue;
+        }
+        rep.converted++;
+        note(name + ": converted from map format " + std::to_string(was) + " to " + std::to_string(kMapFormatVersion) + ", original in old/v" + std::to_string(was) + "/");
+    }
+    return rep;
+}
+
+std::string MapId::hex() const {
+    static const char* d = "0123456789abcdef";
+    std::string o(2 * sizeof b, '0');
+    for (size_t i = 0; i < sizeof b; i++) { o[2 * i] = d[b[i] >> 4]; o[2 * i + 1] = d[b[i] & 15]; }
+    return o;
+}
+std::string MapId::shortHex() const { return hex().substr(0, 2 * kShortBytes); }
+
+MapId mapContentId(const std::string& text) {
+    Sha256 h;
+    const char* p = text.data();
+    const char* e = p + text.size();
+    while (p < e) {   // (the runs between CRs: a CRLF file is the same map as its LF copy)
+        const char* cr = (const char*)memchr(p, '\r', (size_t)(e - p));
+        const char* q = cr ? cr : e;
+        h.update(p, (size_t)(q - p));
+        p = cr ? q + 1 : e;
+    }
+    MapId id;
+    h.digest(id.b);
+    return id;
+}
+
+MapId mapEditId(const MapId& before, const std::string& op) {
+    Sha256 h;
+    h.update(before.b, sizeof before.b);
+    h.update(op.data(), op.size());
+    MapId id;
+    h.digest(id.b);
+    return id;
 }
 
 // renamed maps: old configs / votes for these still work
@@ -433,27 +578,32 @@ bool Map::parse(const std::string& text, std::string* err) {
     } catch (const std::exception& e) { // a hostile map must fail cleanly, never take the game down
         if (err) *err = std::string("map rejected: ") + e.what();
     }
-    brushes.clear(); spawns.clear(); groups.clear(); ladders.clear(); ladderAuto.clear(); lights.clear();
-    cells.clear(); cellBrushes.clear(); gridRefs = 0; gridW = gridH = 0;
+    std::string keepName = std::move(name);   // nothing of the bad text is left behind
+    *this = Map();
+    name = std::move(keepName);
     return false;
 }
 
 bool Map::parseText(const std::string& text, std::string* err) {
-    brushes.clear(); spawns.clear(); bombSites.clear(); checkpoints.clear(); ladders.clear(); ladderAuto.clear(); groups.clear(); payloadPath.clear(); lights.clear(); points.clear(); cartChecks.clear();
-    hasHill = false;
-    hasWallbang = false;
-    hasPalette = false;
-    hasVoid = false;
-    holdFire = 0;
-    indoor = false;
-    preferredMode = -1;
-    allowedModes = 0;
-    rankedLadders = 0;
-    crc = crc32(text.data(), text.size());
+    std::string up;
+    if (!upgradeMapText(text, &up)) return parseCurrent(text, err);
+    int was = mapTextVersion(text);
+    if (!parseCurrent(up, err)) return false;
+    formatVersion = was;   // (what the file was written in; source is the converted text)
+    return true;
+}
+
+bool Map::parseCurrent(const std::string& text, std::string* err) {
+    {   // every field back to a fresh map's (title, sun, palette, void, ceiling, hold fire, ...), but its name
+        std::string keepName = std::move(name);
+        *this = Map();
+        name = std::move(keepName);
+    }
+    formatVersion = 1;   // (a file without a "version" line)
     source = text;
     sourceStale = false;
-    sourceCrc = crc;
-    sourceCrcKnown = true;
+    contentIdKnown_ = false;   // (hashed when it's asked for)
+    editChained_ = false;
     int lineNo = 0;
     bounds = {{1e9f, 1e9f, 1e9f}, {-1e9f, -1e9f, -1e9f}};
     const char* next = text.data();
@@ -465,13 +615,37 @@ bool Map::parseText(const std::string& text, std::string* err) {
         if (!lineEnd) lineEnd = textEnd;
         next = lineEnd < textEnd ? lineEnd + 1 : textEnd;
         lineNo++;
-        if (const char* h = (const char*)memchr(lineStart, '#', (size_t)(lineEnd - lineStart))) lineEnd = h;
+        const char* h = (const char*)memchr(lineStart, '#', (size_t)(lineEnd - lineStart));
+        if (h) lineEnd = h;
         LineIn ls(lineStart, lineEnd);
         if (!(ls >> kw)) continue;
         bool ok = true;
-        if (kw == "title") {
+        if (kw == "version") {   // "version N": the format the file is written in (none: 1). Newer ones still load:
+            int v = 0;           // what this build doesn't know is skipped with a warning (below)
+            ok = (bool)(ls >> v) && v >= 1;
+            if (ok) formatVersion = v;
+            if (ok && v > kMapFormatVersion)
+                warnings.push_back("map format " + std::to_string(v) + " is newer than this build's (" + std::to_string(kMapFormatVersion) + "): parts it doesn't know are skipped");
+        } else if (kw == "handmade") {   // made (or changed) by a person, not tools/make_maps.py: graded, never failed
+            handmade = true;
+        } else if (kw == "setting") {    // "setting <words>": the place the map is (the map report scores it)
+            ok = ls.rest(setting);
+            while (!setting.empty() && (setting[0] == ' ' || setting[0] == '\t')) setting.erase(0, 1);
+            while (!setting.empty() && LineIn::space(setting.back())) setting.pop_back();
+            ok = ok && !setting.empty() && setting.size() <= 80;
+        } else if (kw == "stairs") {     // "stairs x0 z0 x1 z1 base top x|z rising solid": a staircase built of boxes
+            Stairs st;                   // (tools/make_maps.py records each; quark_tests walks every one)
+            std::string axis;
+            int solid = 0;
+            ok = (bool)(ls >> st.x0 >> st.z0 >> st.x1 >> st.z1 >> st.base >> st.top >> axis >> st.rising >> solid) &&
+                 okCoord(st.x0) && okCoord(st.z0) && okCoord(st.x1) && okCoord(st.z1) && okCoord(st.base) && okCoord(st.top) &&
+                 std::isfinite(st.rising) && (axis == "x" || axis == "z") && (solid == 0 || solid == 1) && stairs.size() < kMaxMapStairs;
+            st.axis = axis == "x" ? 'x' : 'z';
+            st.solid = solid == 1;
+            if (ok) stairs.push_back(st);
+        } else if (kw == "title") {
             ls.rest(title);
-            while (!title.empty() && title[0] == ' ') title.erase(0, 1);
+            ok = cleanMapTitle(title);   // (the same rule as the editor's title edit)
         } else if (kw == "box" || kw == "accent" || kw == "wallbang" || kw == "metal" || kw == "glow" || kw == "far" || kw == "water" || kw == "lava" || kw == "trim" || kw == "clip") {
             Brush b;
             ok = readBox(ls, b.box);
@@ -495,6 +669,7 @@ bool Map::parseText(const std::string& text, std::string* err) {
             s.team = team == "a" ? SPAWN_A : team == "b" ? SPAWN_B : team == "race" ? SPAWN_RACE : SPAWN_ANY;
             if ((team.rfind("att", 0) == 0 || team.rfind("def", 0) == 0) && team.size() == 4 && team[3] >= '0' && team[3] <= '0' + kMaxSpawnStage)
                 s.team = stagedSpawn(team[3] - '0', team[0] == 'd');
+            else if (team != "a" && team != "b" && team != "any" && team != "race") ok = false;   // (it used to become "any")
             if (ok) spawns.push_back(s);
         } else if (kw == "site") {
             AABB b; ok = readBox(ls, b) && bombSites.size() < kMaxMapSites; if (ok) bombSites.push_back(b);
@@ -504,13 +679,14 @@ bool Map::parseText(const std::string& text, std::string* err) {
         } else if (kw == "point") {
             AABB b; ok = readBox(ls, b) && points.size() < kMaxMapPoints; if (ok) points.push_back(b);
         } else if (kw == "hill") {
+            if (hasHill) { if (err) *err = "line " + std::to_string(lineNo) + ": a second hill (a map has one)"; return false; }
             ok = readBox(ls, hill); hasHill = ok;
         } else if (kw == "ladder") {
             AABB b; ok = readBox(ls, b) && b.mx.y - b.mn.y <= kMaxObjectHeight && ladders.size() < kMaxMapLadders;
             std::string flag;
             if (ok) { ladders.push_back(b); ladderAuto.push_back(ls >> flag && flag == "auto"); }
         } else if (kw == "group") {
-            std::string t; Group g;
+            std::string t; Group g;   // (a group of a type this build doesn't know would lose its boxes: an error, not skipped)
             ok = (bool)(ls >> t >> g.material >> g.dir) && readBox(ls, g.box) && validMapMaterial(g.material) && g.dir >= 0 && g.dir < 4 && g.box.mx.y - g.box.mn.y <= kMaxObjectHeight && groups.size() < kMaxMapGroups;
             g.type = t == "room" ? GROUP_ROOM : t == "stairs" ? GROUP_STAIRS : GROUP_CUSTOM;
             ok = ok && (t == "room" || t == "stairs" || t == "custom");
@@ -522,16 +698,25 @@ bool Map::parseText(const std::string& text, std::string* err) {
             AABB b; ok = readBox(ls, b) && checkpoints.size() < kMaxMapCheckpoints; if (ok) checkpoints.push_back(b);
         } else if (kw == "path") {
             Vec3 p; ok = (bool)(ls >> p.x >> p.y >> p.z) && okCoord(p.x) && okCoord(p.y) && okCoord(p.z) && payloadPath.size() < kMaxMapPath; if (ok) payloadPath.push_back(p);
-        } else if (kw == "for") {
+        } else if (kw == "for") {   // a mode this build doesn't have (a newer map): built for none in particular, warned
             std::string mode;
             ok = (bool)(ls >> mode);
             if (ok) preferredMode = modeFromName(mode.c_str());
-        } else if (kw == "ranked") {
+            if (ok && preferredMode < 0) warnings.push_back("line " + std::to_string(lineNo) + ": built for '" + mode + "', a mode this build doesn't have");
+        } else if (kw == "ranked") {   // (names this build doesn't know are skipped: never ranked here)
             std::string ln;
-            while (ls >> ln) { int v = arenaVariantFromName(ln.c_str()); if (v >= 0) rankedLadders |= (uint16_t)(1u << v); else ok = false; }
-        } else if (kw == "modes") {
+            while (ls >> ln) {
+                int v = arenaVariantFromName(ln.c_str());
+                if (v >= 0) rankedLadders |= (uint16_t)(1u << v);
+                else warnings.push_back("line " + std::to_string(lineNo) + ": ranked '" + ln + "' isn't a ladder this build has (skipped)");
+            }
+        } else if (kw == "modes") {    // (a future mode in the list is skipped, so older builds can still join the map)
             std::string mn;
-            while (ls >> mn) { int m = modeFromName(mn.c_str()); if (m >= 0) allowedModes |= 1u << m; else ok = false; }
+            while (ls >> mn) {
+                int m = modeFromName(mn.c_str());
+                if (m >= 0) allowedModes |= 1u << m;
+                else warnings.push_back("line " + std::to_string(lineNo) + ": mode '" + mn + "' isn't one this build has (skipped)");
+            }
         } else if (kw == "light") {
             Light l;
             ok = (bool)(ls >> l.pos.x >> l.pos.y >> l.pos.z >> l.radius) && okCoord(l.pos.x) && okCoord(l.pos.y) && okCoord(l.pos.z);
@@ -549,13 +734,16 @@ bool Map::parseText(const std::string& text, std::string* err) {
             while (ok && ls >> k) {
                 ok = (bool)(ls >> c.x >> c.y >> c.z) && std::isfinite(c.x) && std::isfinite(c.y) && std::isfinite(c.z);
                 if (k == "base") palBase = c; else if (k == "accent") palAccent = c; else if (k == "metal") palMetal = c;
-                else if (k == "glow") palGlow = c; else if (k == "sky") palSky = c; else ok = false;
+                else if (k == "glow") palGlow = c; else if (k == "sky") palSky = c;
+                else if (ok) warnings.push_back("line " + std::to_string(lineNo) + ": palette colour '" + k + "' unknown (skipped)");
             }
             hasPalette = ok;
         } else if (kw == "sun") {
-            Vec3 d; ok = (bool)(ls >> d.x >> d.y >> d.z) && okCoord(d.x) && okCoord(d.y) && okCoord(d.z) && length(d) > 1e-6f; if (ok) sunDir = normalize(d);
-        } else {
-            ok = false;
+            Vec3 d; ok = (bool)(ls >> d.x >> d.y >> d.z) && okCoord(d.x) && okCoord(d.y) && okCoord(d.z) && length(d) > 1e-6f;
+            if (ok) sunDir = std::fabs(length(d) - 1.0f) < 1e-6f ? d : normalize(d);   // (a saved, unit sun stays bit-exact)
+        } else {   // a keyword this build doesn't know (a newer format's): skipped with a warning. The ones above are
+                   // checked strictly: a bad box, spawn, zone or path is an error, never guessed at
+            warnings.push_back("line " + std::to_string(lineNo) + ": unknown '" + kw + "' skipped");
         }
         if (!ok) {
             if (err) *err = "parse error on line " + std::to_string(lineNo) + ": " + std::string(lineStart, lineEnd);
@@ -574,10 +762,15 @@ bool Map::parseText(const std::string& text, std::string* err) {
     return true;
 }
 
-uint32_t Map::sourceTextCrc() const {
+bool Map::humanMade() const {
+    static const char kGenerated[] = "# generated by tools/make_maps.py";   // (make_maps.py's first line)
+    return handmade || sourceText().compare(0, sizeof kGenerated - 1, kGenerated) != 0;
+}
+
+const MapId& Map::contentId() const {
     const std::string& t = sourceText();
-    if (!sourceCrcKnown) { sourceCrc = crc32(t.data(), t.size()); sourceCrcKnown = true; }
-    return sourceCrc;
+    if (!contentIdKnown_) { contentId_ = mapContentId(t); contentIdKnown_ = true; }
+    return contentId_;
 }
 
 bool Map::validate(std::string* err) const {
@@ -606,14 +799,57 @@ bool Map::validate(std::string* err) const {
     return true;
 }
 
+bool cleanMapTitle(std::string& t) {
+    auto space = [](char c) { return c == ' ' || c == '\t' || c == '\r'; };
+    size_t a = 0, e = t.size();
+    while (a < e && space(t[a])) a++;
+    while (e > a && space(t[e - 1])) e--;
+    t = t.substr(a, e - a);
+    if (t.size() > kMaxMapTitle) return false;
+    for (char c : t) if ((unsigned char)c < 32 || (unsigned char)c > 126 || c == '#') return false;
+    return true;
+}
+
+// v with the fewest digits (6 to 9 significant) that parse back to exactly v: "12.5", not "12.5000000", but an edit's
+// 1000.125 stays 1000.125 (6 digits saved it as 1000.12, and a client that downloaded the saved map collided
+// differently from one that applied the edit: FINAL_REVIEW 5.5). Map::parse reads numbers exactly as strtof does.
+static const char* exactNum(char* out, size_t n, float v) {
+    for (int digits = 6; digits < 9; digits++) {
+        snprintf(out, n, "%.*g", digits, v);
+        if (strtof(out, nullptr) == v) return out;
+    }
+    snprintf(out, n, "%.9g", v);   // (9 significant digits always round-trip a float)
+    return out;
+}
+// A spawn's yaw in degrees, with the digits deg2rad needs to give back exactly these radians (when some do).
+static const char* exactYawDeg(char* out, size_t n, float yaw) {
+    float deg = yaw * (180.0f / PI);
+    for (int digits = 6; digits <= 9; digits++) {
+        snprintf(out, n, "%.*g", digits, deg);
+        if (deg2rad(strtof(out, nullptr)) == yaw) return out;
+    }
+    for (float d : {std::nextafter(deg, -1e9f), std::nextafter(deg, 1e9f)}) {   // (radians -> degrees rounded off by one)
+        snprintf(out, n, "%.9g", d);
+        if (deg2rad(strtof(out, nullptr)) == yaw) return out;
+    }
+    snprintf(out, n, "%.9g", deg);
+    return out;
+}
+
 std::string Map::serialize() const {
-    std::string o = "# made with the quark map editor\n";
-    char b[256];
+    std::string o = "# made with the quark map editor\nversion " + std::to_string(kMapFormatVersion) + "\nhandmade\n";
+    char b[320];
+    char nb[8][24];
     auto box = [&](const char* kw, const AABB& a) {
-        snprintf(b, sizeof b, "%s %g %g %g %g %g %g\n", kw, a.mn.x, a.mn.y, a.mn.z, a.mx.x, a.mx.y, a.mx.z);
+        snprintf(b, sizeof b, "%s %s %s %s %s %s %s\n", kw, exactNum(nb[0], 24, a.mn.x), exactNum(nb[1], 24, a.mn.y), exactNum(nb[2], 24, a.mn.z),
+                 exactNum(nb[3], 24, a.mx.x), exactNum(nb[4], 24, a.mx.y), exactNum(nb[5], 24, a.mx.z));
         o += b;
     };
+    auto nums = [&](int count, const float* v) {   // " v0 v1 ..." (count <= 6)
+        for (int i = 0; i < count; i++) { o += ' '; o += exactNum(nb[i], 24, v[i]); }
+    };
     if (!title.empty()) o += "title " + title + "\n";
+    if (!setting.empty()) o += "setting " + setting + "\n";
     if (preferredMode >= 0) o += std::string("for ") + modeName(preferredMode) + "\n";
     if (rankedLadders) {
         o += "ranked";
@@ -625,13 +861,12 @@ std::string Map::serialize() const {
         for (int m = 0; m < MODE_COUNT; m++) if (allowedModes >> m & 1) o += std::string(" ") + modeName(m);
         o += "\n";
     }
-    snprintf(b, sizeof b, "sun %g %g %g\n\n", sunDir.x, sunDir.y, sunDir.z);
-    o += b;
-    if (hasVoid) { snprintf(b, sizeof b, "void %g\n", voidY); o += b; }
-    if (indoor) { snprintf(b, sizeof b, "indoor %g\n", ceilingY); o += b; }
-    if (holdFire > 0) { snprintf(b, sizeof b, "holdfire %g\n", holdFire); o += b; }
+    { float v[3] = {sunDir.x, sunDir.y, sunDir.z}; o += "sun"; nums(3, v); o += "\n\n"; }
+    if (hasVoid) { o += "void"; nums(1, &voidY); o += "\n"; }
+    if (indoor) { o += "indoor"; nums(1, &ceilingY); o += "\n"; }
+    if (holdFire > 0) { o += "holdfire"; nums(1, &holdFire); o += "\n"; }
     if (hasPalette) {
-        auto c = [&](const char* k, Vec3 v) { snprintf(b, sizeof b, " %s %g %g %g", k, v.x, v.y, v.z); o += b; };
+        auto c = [&](const char* k, Vec3 v) { float f[3] = {v.x, v.y, v.z}; o += ' '; o += k; nums(3, f); };
         o += "palette"; c("base", palBase); c("accent", palAccent); c("metal", palMetal); c("glow", palGlow); c("sky", palSky); o += "\n\n";
     }
     static const char* matNames[] = {"box", "accent", "wallbang", "metal", "glow", "far", "water", "lava", "trim", "clip"};
@@ -640,27 +875,36 @@ std::string Map::serialize() const {
     static const char* teams[] = {"a", "b", "any", "race"};
     for (auto& sp : spawns) {
         std::string tn = isStagedSpawn(sp.team) ? std::string(spawnDefends(sp.team) ? "def" : "att") + char('0' + spawnStage(sp.team)) : teams[sp.team & 3];
-        snprintf(b, sizeof b, "spawn %s %g %g %g %g\n", tn.c_str(), sp.pos.x, sp.pos.y, sp.pos.z, std::round(sp.yaw * 180.0f / PI));
-        o += b;
+        float p[3] = {sp.pos.x, sp.pos.y, sp.pos.z};
+        o += "spawn " + tn;
+        nums(3, p);
+        o += ' ';
+        o += exactYawDeg(nb[3], 24, sp.yaw);
+        o += '\n';
     }
     for (auto& a : bombSites) box("site", a);
     if (hasHill) box("hill", hill);
     for (auto& a : points) box("point", a);
-    for (float f : cartChecks) { snprintf(b, sizeof b, "cartcheck %g\n", f); o += b; }
+    for (float f : cartChecks) { o += "cartcheck"; nums(1, &f); o += "\n"; }
     for (size_t k = 0; k < ladders.size(); k++) {
-        snprintf(b, sizeof b, "ladder %g %g %g %g %g %g%s\n", ladders[k].mn.x, ladders[k].mn.y, ladders[k].mn.z, ladders[k].mx.x, ladders[k].mx.y, ladders[k].mx.z,
-                 k < ladderAuto.size() && ladderAuto[k] ? " auto" : "");
-        o += b;
+        box("ladder", ladders[k]);
+        if (k < ladderAuto.size() && ladderAuto[k]) { o.pop_back(); o += " auto\n"; }
     }
     static const char* groupTypes[] = {"custom", "room", "stairs"};
     for (auto& g : groups) {
-        snprintf(b, sizeof b, "group %s %d %d %g %g %g %g %g %g\n", groupTypes[g.type], g.material, g.dir, g.box.mn.x, g.box.mn.y, g.box.mn.z, g.box.mx.x, g.box.mx.y, g.box.mx.z);
+        char kw[48];
+        snprintf(kw, sizeof kw, "group %s %d %d", groupTypes[g.type], g.material, g.dir);
+        box(kw, g.box);
+        for (auto& p : g.parts) { snprintf(kw, sizeof kw, "part %d", p.material); box(kw, p.box); }
+    }
+    for (auto& st : stairs) {   // (kept as they were: the editor doesn't move them with the boxes)
+        snprintf(b, sizeof b, "stairs %s %s %s %s %s %s %c %s %d\n", exactNum(nb[0], 24, st.x0), exactNum(nb[1], 24, st.z0), exactNum(nb[2], 24, st.x1),
+                 exactNum(nb[3], 24, st.z1), exactNum(nb[4], 24, st.base), exactNum(nb[5], 24, st.top), st.axis, exactNum(nb[6], 24, st.rising), st.solid ? 1 : 0);
         o += b;
-        for (auto& p : g.parts) { snprintf(b, sizeof b, "part %d %.6g %.6g %.6g %.6g %.6g %.6g\n", p.material, p.box.mn.x, p.box.mn.y, p.box.mn.z, p.box.mx.x, p.box.mx.y, p.box.mx.z); o += b; }
     }
     for (auto& a : checkpoints) box("checkpoint", a);
-    for (auto& p : payloadPath) { snprintf(b, sizeof b, "path %g %g %g\n", p.x, p.y, p.z); o += b; }
-    for (auto& l : lights) { snprintf(b, sizeof b, "light %g %g %g %g %g\n", l.pos.x, l.pos.y, l.pos.z, l.radius, l.intensity); o += b; }
+    for (auto& p : payloadPath) { float v[3] = {p.x, p.y, p.z}; o += "path"; nums(3, v); o += "\n"; }
+    for (auto& l : lights) { float v[5] = {l.pos.x, l.pos.y, l.pos.z, l.radius, l.intensity}; o += "light"; nums(5, v); o += "\n"; }
     return o;
 }
 
@@ -695,9 +939,7 @@ bool applyMapEdit(Map& m, const std::string& op) {
     if (kind == "t") {
         std::string title;
         std::getline(in, title);
-        while (!title.empty() && title[0] == ' ') title.erase(0, 1);
-        if (title.size() > 40) return false;
-        for (char c : title) if ((unsigned char)c < 32 || (unsigned char)c > 126 || c == '#') return false;
+        if (!cleanMapTitle(title)) return false;
         m.title = title;
         m.sourceStale = true;
         return true;

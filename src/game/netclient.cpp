@@ -2,6 +2,7 @@
 #include "../common/u8file.h"
 #include <algorithm>
 #include <cctype>
+#include "demo.h"
 #include "master.h"
 #include "../common/hex.h"
 #include <random>
@@ -150,7 +151,8 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
             if (nonce != nonce_) return;
             int id = r.u8();
             std::string mapName = r.str();
-            uint32_t crc = r.u32();
+            MapId mapId;
+            for (auto& c : mapId.b) c = r.u8();
             r.u8(); // mode
             if (r.bad() || id >= kMaxPlayers) return;
             uint32_t lo = r.u32(), hi = r.u32();
@@ -161,42 +163,47 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
                 return;
             }
             clientId_ = id;
-            if (!mapReady_ || map_.name != mapName || map_.crc != crc) {
-                if (useMap(mapName, crc)) dl_ = Download();
-                else if (!dl_.active || dl_.crc != crc) startDownload(mapName, crc); // not on disk (or ours differs): fetch the server's
+            if (!mapReady_ || map_.name != mapName || map_.id() != mapId) {
+                if (useMap(mapName, mapId)) dl_ = Download();
+                else if (!dl_.active || !dl_.idKnown || dl_.id != mapId) startDownload(mapName, &mapId); // not on disk (or ours differs): fetch the server's
             }
             state_ = ConnState::Connected;
             break;
         }
         case PKT_MAP_DATA: {
             if (r.u32() != nonce_ || !dl_.active) return;
-            uint32_t crc = r.u32(), textCrc = r.u32(), total = r.u32(), off = r.u32();   // (crc: the map's id; textCrc: of this text)
+            MapId id, textId;   // (id: the map's; textId: this text's sha256)
+            for (auto& c : id.b) c = r.u8();
+            for (auto& c : textId.b) c = r.u8();
+            uint32_t total = r.u32(), off = r.u32();
             int n = r.u16();
-            if (!r.bad() && crc != dl_.crc) startDownload(dl_.name, crc); // the map changed meanwhile (edit session): restart on the new one
-            if (r.bad() || crc != dl_.crc || total == 0 || total > kMaxMapBytes || n <= 0 || n > r.remaining()) return;
+            if (!r.bad() && !dl_.idKnown) { dl_.id = id; dl_.idKnown = true; }   // (asked for "whatever it is now")
+            if (!r.bad() && id != dl_.id) startDownload(dl_.name, &id); // the map changed meanwhile (edit session): restart on the new one
+            if (r.bad() || id != dl_.id || total == 0 || total > kMaxMapBytes || n <= 0 || n > r.remaining()) return;
             if (!dl_.total) {
                 dl_.total = total;
-                dl_.textCrc = textCrc;
+                dl_.textId = textId;
                 dl_.data.assign(total, '\0');
                 size_t chunks = (total + kMapChunk - 1) / kMapChunk;
                 dl_.asked.assign(chunks, 0.0); dl_.have.assign(chunks, false);
             }
             size_t k = off / kMapChunk;
-            if (total != dl_.total || textCrc != dl_.textCrc || off % kMapChunk || k >= dl_.have.size() || off + n > total || dl_.have[k]) return;
+            if (total != dl_.total || textId != dl_.textId || off % kMapChunk || k >= dl_.have.size() || off + n > total || dl_.have[k]) return;
             for (int i = 0; i < n; i++) dl_.data[off + i] = (char)r.u8();
             dl_.have[k] = true;
             dl_.got += n;
             if (dl_.got >= dl_.total) {
                 Map m;
                 std::string err;
-                if (crc32(dl_.data.data(), dl_.data.size()) != dl_.textCrc || !m.parse(dl_.data, &err)) {
+                if (mapContentId(dl_.data) != dl_.textId || !m.parse(dl_.data, &err)) {
                     error_ = "downloaded map '" + dl_.name + "' is broken" + (err.empty() ? "" : ": " + err);
                     disconnect();
                     return;
                 }
                 m.name = dl_.name;
-                m.crc = dl_.crc;   // its id (an edited map's comes from the edit chain, not its text)
-                if (dl_.crc == dl_.textCrc) saveMapFile(downloadedMapPath(dl_.name, dl_.crc), dl_.data); // reused next time; failing just means re-downloading
+                m.contentId_ = dl_.textId; m.contentIdKnown_ = true;   // (just checked)
+                if (dl_.id != dl_.textId) m.setEditId(dl_.id);   // an edited map's id comes from the edit chain, not its text
+                else saveMapFile(downloadedMapPath(dl_.id), dl_.data); // reused next time; failing just means re-downloading
                 map_ = std::move(m);
                 mapReady_ = true;
                 mapGen_++;
@@ -204,18 +211,20 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
                 later.swap(dl_.edits);
                 dl_ = Download();
                 // edits made while downloading: older ones are already in the file; apply the ones that build on it
-                unsigned last = map_.crc;
+                std::string last;
                 for (auto& t : later) {
-                    unsigned b = 0, a = 0;
-                    int n = 0;
-                    if (sscanf(t.c_str(), "%x %x %n", &b, &a, &n) < 2 || n <= 0) continue;
-                    last = a;
-                    if (b == map_.crc && applyMapEdit(map_, t.substr(n))) {
-                        map_.crc = mapEditCrc(b, t.substr(n));
+                    size_t sp = t.find(' ');
+                    if (sp == std::string::npos) continue;
+                    last = t.substr(0, sp);
+                    std::string op = t.substr(sp + 1);
+                    if (map_.id().startsWith(last)) continue;   // already in the file
+                    MapId next = mapEditId(map_.id(), op);
+                    if (next.startsWith(last) && applyMapEdit(map_, op)) {
+                        map_.setEditId(next);
                         editRev_++;
                     }
                 }
-                if (last != map_.crc) startDownload(map_.name, last);
+                if (!last.empty() && !map_.id().startsWith(last)) startDownload(map_.name, nullptr);
             }
             break;
         }
@@ -260,36 +269,40 @@ void NetClient::handlePacket(const uint8_t* data, int len) {
     }
 }
 
-void NetClient::startDownload(const std::string& name, uint32_t crc) {
+void NetClient::startDownload(const std::string& name, const MapId* id) {
     dl_ = Download();
-    dl_.active = true; dl_.name = name; dl_.crc = crc;
+    dl_.active = true; dl_.name = name;
+    if (id) { dl_.id = *id; dl_.idKnown = true; }
 }
 
 // Edit session: apply the server's edit if we hold the map it was made on; if we already have the result
 // (it came with a download) skip it; anything else means we drifted, so fetch the server's current map.
+// The event names the map the edit leaves (the first bytes of its id): we hold the one it was made on when our id, chained
+// over the op, gives that.
 void NetClient::applyEditEvent(const std::string& text) {
-    unsigned before = 0, after = 0;
-    int n = 0;
-    if (sscanf(text.c_str(), "%x %x %n", &before, &after, &n) < 2 || n <= 0) return;
+    size_t sp = text.find(' ');
+    if (sp != 2 * MapId::kShortBytes) return;
     if (dl_.active) { if (dl_.edits.size() < 4096) dl_.edits.push_back(text); return; } // replayed when the download is done
     if (!mapReady_) return;
-    if (map_.crc == after) return;
-    if (map_.crc == before && applyMapEdit(map_, text.substr(n))) {   // (in place, no re-serializing: MAP-12)
-        map_.crc = mapEditCrc(before, text.substr(n));
+    std::string after = text.substr(0, sp), op = text.substr(sp + 1);
+    if (map_.id().startsWith(after)) return;
+    MapId next = mapEditId(map_.id(), op);
+    if (next.startsWith(after) && applyMapEdit(map_, op)) {   // (in place, no re-serializing: MAP-12)
+        map_.setEditId(next);
         editRev_++;
-        if (map_.crc == after) return;
+        return;
     }
-    startDownload(map_.name, after);
+    startDownload(map_.name, nullptr);   // (we only know the start of its id: whatever the server's map is now)
 }
 
-bool NetClient::useMap(const std::string& name, uint32_t crc) {
+bool NetClient::useMap(const std::string& name, const MapId& id) {
     if (!validMapName(name)) return false; // just a name, never a path
     Map m;
-    if (!(m.load(name) && m.crc == crc)) {
-        std::ifstream f(utf8Path(downloadedMapPath(name, crc)), std::ios::binary);
+    if (!(m.load(name) && m.id() == id)) {
+        std::ifstream f(utf8Path(downloadedMapPath(id)), std::ios::binary);
         std::stringstream ss;
         ss << f.rdbuf();
-        if (!f || !m.parse(ss.str()) || m.crc != crc) return false;
+        if (!f || !m.parse(ss.str()) || m.id() != id) return false;
         m.name = name;
     }
     map_ = std::move(m);
@@ -302,10 +315,10 @@ bool NetClient::useMap(const std::string& name, uint32_t crc) {
 // Before the first reply we don't know the size, so just ask for the start.
 void NetClient::pumpDownload(double now) {
     auto ask = [&](uint32_t off) {
-        uint8_t out[32];
+        uint8_t out[64];
         Writer w(out, sizeof out);
         writeHeader(w, PKT_MAP_REQUEST);
-        w.u32(nonce_); w.u32(dl_.crc); w.u32(off);
+        w.u32(nonce_); w.bytes(dl_.id.b, 32); w.u32(off);
         sock_.send(server_, out, w.size());
     };
     if (!dl_.total) {
@@ -537,14 +550,21 @@ NetClient::PlayerArray NetClient::interpolatedPlayers() const {
 std::vector<ProjectileSnap> NetClient::interpolatedProjectiles() const {
     std::vector<ProjectileSnap> out;
     if (snaps_.empty()) return out;
-    // Projectiles fly straight: extrapolate the newest snapshot to "now" (they're visual only).
+    // Extrapolate the newest snapshot to "now" (they're visual only) along the server's arc: its fixed 1 ms steps.
     const Snapshot& s = snaps_.back();
     float dt = clampf((float)(renderTime_ + interpDelay() - s.timeMs * 0.001), 0, 0.2f);
     for (auto p : s.projectiles) {
-        p.pos += p.vel * dt;
+        if (p.hidden) continue;
+        if (!(p.flags & PROJ_STUCK)) projectileExtrapolate(p.pos, p.vel, projectileGravity(p.type, (p.flags & PROJ_LOB) ? kRocketLobGravity : 1.0f), dt);
         out.push_back(p);
     }
     return out;
+}
+
+bool NetClient::projectileHidden(uint16_t id) const {
+    if (snaps_.empty()) return false;
+    for (auto& p : snaps_.back().projectiles) if (p.id == id) return p.hidden;
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -647,11 +667,9 @@ void ServerBrowser::poll() {
 }
 
 // ---- demos ----
-// File: "QDEM", u16 protocol, then records: u8 type, f64 seconds since the start, u32 length, payload.
-//   type 1 (map): name, source text, client id. Written first and whenever the map changes (or is edited).
-//   type 2 (snapshot): client header + world (delta against the previous recorded snapshot) + events.
-static constexpr uint32_t kDemoMagic = 0x4D454451; // "QDEM"
-static constexpr uint64_t kMaxDemoBytes = 512ull << 20; // (about 9 h of play; playback reads the whole file)
+// The file format, and converting demos of older versions: demo.h.
+static constexpr uint32_t kDemoMagic = demo::kMagic;
+static constexpr uint64_t kMaxDemoBytes = demo::kMaxBytes;
 
 bool NetClient::startRecording(const std::string& path, bool fullRate) {
     stopRecording();
@@ -735,9 +753,13 @@ bool NetClient::startPlaybackImpl(const std::string& path, std::string& err) {
     uint32_t magic; uint16_t ver;
     memcpy(&magic, d.data(), 4); memcpy(&ver, d.data() + 4, 2);
     if (magic != kDemoMagic) { err = "not a quark demo"; return false; }
-    if (ver != kProtocolVersion) { err = "demo from another version (protocol " + std::to_string(ver) + ", this is " + std::to_string(kProtocolVersion) + ")"; return false; }
+    if (ver < kOldestDemoProtocol || ver > kProtocolVersion) {   // (older ones are converted at startup, demo::startUpgrade; this one couldn't be)
+        err = "recorded with " + demo::recordedWith(ver) + (ver > kProtocolVersion ? " (newer than this one)" : ", which this version can't play");
+        return false;
+    }
     play_ = Playback();
     play_.data = std::move(d);
+    play_.proto = ver;
     play_.pos = 6;
     for (size_t p = 6; p + 13 <= play_.data.size();) { // its length: the last record's time
         uint32_t n; memcpy(&play_.length, play_.data.data() + p + 1, 8); memcpy(&n, play_.data.data() + p + 9, 4);
@@ -787,7 +809,7 @@ void NetClient::pollPlayback() {
             clockInit_ = false;   // (the next snapshot sets the clock: map changes can jump the server clock)
         } else if (type == 2) {
             Snapshot s;
-            if (!readSnapshotClient(r, s)) continue;
+            if (!readSnapshotClient(r, s, play_.proto)) continue;
             if (!readSnapshotWorld(r, s, s.baseTick && play_.havePrev ? &play_.prev : nullptr)) continue;
             if (!readSnapshotEvents(r, s)) continue;
             play_.prev = s;

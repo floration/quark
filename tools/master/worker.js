@@ -34,6 +34,10 @@
 //                 left: players who left during it (first leaver first; their game can't report)
 //   POST /racerun form: ticket, map, id, ms, splits, name (hex), v   a finished run the server saw, under a race ticket
 //                 (the name is saved only with a run that's kept)
+//   A server whose announced version is a testing build (a prerelease version, e.g. 1.17.0-test.42: the testing
+//   server every box runs next to production, tools/server/install.sh) gets none of these: "testing server: ranked
+//   not rated" (403). Players' /report under a ticket from such a server is refused the same way. Its matches are
+//   played and tested, never rated (the game server doesn't send them either: Server::rated).
 // Ranked (OpenSkill / Weng-Lin Plackett-Luce ratings):
 //   POST /report  form: secret, match, ladder, p=id:team:place,...[, dispute=1]   one player's account of a finished
 //                 match (dispute=1: their game saw a different result than the host's p)
@@ -239,15 +243,20 @@ async function saveName(env, me, nameHex, now) {
       .bind(me, name.trim().slice(0, 20) || "player", now).run();
 }
 
+// A version that isn't a production release: any prerelease suffix ("1.17.0-test.42"; "~" marks a hidden server).
+// Testing servers play ranked but are never rated (above, /ticket ... /racerun).
+export function isTestingVersion(v) { return String(v || "").includes("-"); }
+
 // The server that ran a match / time trial: its ip:port must have announced recently with this token.
+// Returns { addr, version } (the version it announced), or null.
 async function serverAuth(env, form, srcIp, now) {
   const port = parseInt(String(form.get("port") || ""), 10), token = String(form.get("token") || "");
   const ip = srcIp || ipv4(String(form.get("ip") || ""));
   if (!ip || !(port > 0 && port < 65536) || !/^[0-9a-f]{32}$/.test(token)) return null;
   const addr = ip + ":" + port;
-  const row = await env.DB.prepare("SELECT token, seen FROM servers WHERE addr = ?").bind(addr).first();
+  const row = await env.DB.prepare("SELECT token, seen, version FROM servers WHERE addr = ?").bind(addr).first();
   if (!row || !keyEq(token, row.token) || now - row.seen > FRESH_MS) return null;
-  return addr;
+  return { addr, version: String(row.version || "") };
 }
 
 // Is `dialled` (the ip:port a player's game signed) the server at `server` (its announced ip:port)? Exactly, or a LAN /
@@ -551,8 +560,11 @@ async function report(env, form, now) {
   if (!res) return "bad result";
   const me = await playerOf(env, secret, now);
   if (!res.entries.some((e) => e.id === me)) return "not in this match";
-  const t = await env.DB.prepare("SELECT kind, ladder, players, created, status FROM tickets WHERE id = ?").bind(match).first();
+  const t = await env.DB.prepare("SELECT kind, server, ladder, players, created, status FROM tickets WHERE id = ?").bind(match).first();
   if (!t || t.kind !== "match") return "no ticket";
+  // (a ticket a testing server opened before this check existed: its matches aren't rated either)
+  const srv = await env.DB.prepare("SELECT version FROM servers WHERE addr = ?").bind(t.server).first();
+  if (srv && isTestingVersion(srv.version)) return "testing server: ranked not rated";
   if (t.ladder !== ladder || t.players !== res.entries.map((e) => e.id).join(",")) return "not the ticket's players";
   // (no "too soon" here: the server's result decides when the match can have ended - MIN_MATCH_MS, sooner only when
   // someone left - and a report alone rates nothing. The game sends its report once, so an early one is kept.)
@@ -785,9 +797,11 @@ export default {
       if (pid && !allow("id", pid, now)) return text("rate limited", 429);
     }
     if (SERVER_WRITES.has(u.pathname)) {
-      const addr = await serverAuth(env, form, srcIp, now);
-      if (!addr) return text("forbidden: announce first, and send the token", 403);
+      const auth = await serverAuth(env, form, srcIp, now);
+      if (!auth) return text("forbidden: announce first, and send the token", 403);
+      const addr = auth.addr;
       if (!allow("server", addr, now)) return text("rate limited", 429);
+      if (isTestingVersion(auth.version)) return text("testing server: ranked not rated", 403);
       if (u.pathname === "/ticket") return text(await openTicket(env, form, addr, now));
       if (u.pathname === "/result") return text(await serverResult(env, form, addr, now));
       return text(await raceRun(env, form, addr, now));

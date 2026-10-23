@@ -19,6 +19,8 @@ bool runningFromOutside(const char* argv0);
 bool relaunchInstalled(const std::filesystem::path& installed, const std::filesystem::path& original);
 // Starts `exe` with `args` (detached). Used to restart into a just-swapped launcher.
 bool relaunch(const std::filesystem::path& exe, const std::vector<std::string>& args);
+// Opens `folder` in the file manager (Explorer, Finder, xdg-open).
+bool openFolder(const std::filesystem::path& folder);
 // Called by the installed launcher: deletes the downloaded copy once that process has exited.
 void cleanupDownloaded(const std::filesystem::path& original);
 std::filesystem::path selfPath(const char* argv0);
