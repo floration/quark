@@ -422,9 +422,9 @@ void Audio::backendThread() {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
     timeBeginPeriod(1);   // (1 ms timer resolution for the wait's timeout)
     HWAVEOUT h = (HWAVEOUT)backend_;
-    // The queue: 1 x 10 ms (owner's trial; one buffer leaves the device empty while the next is mixed). 2 x 10 ms (20 ms) works on the owner's PC; 3 x 5 ms growing to
+    // The queue: 2 x 7.5 ms (15 ms; owner's trial). 2 x 10 ms (20 ms) works on the owner's PC; 3 x 5 ms growing to
     // 8 x 5 ms on underrun broke the sound up. It was 6 x 5 ms (30 ms).
-    constexpr int kBufs = 1, kFrames = kPeriod * 2;
+    constexpr int kBufs = 2, kFrames = kPeriod * 3 / 2;
     static int16_t data[kBufs][kFrames * 2];
     WAVEHDR hdr[kBufs] = {};
     for (int i = 0; i < kBufs; i++) {
