@@ -851,9 +851,11 @@ class M:
         for k in range(tiers):
             f = 1 - k / tiers
             s.box(x - r * f, y + h * k / tiers, z - r * f * 0.8, x + r * f, y + h * (k + 1) / tiers, z + r * f * 0.8)
-    def scatter(s, region, y, step, shapes, seed, avoid=()):
-        with s.generated(): s._scatter(region, y, step, shapes, seed, avoid)   # (generated decor: kept off keep-clear volumes)
-    def _scatter(s, region, y, step, shapes, seed, avoid=()):
+    def scatter(s, region, y, step, shapes, seed, avoid=(), clear=1.4):
+        """cover on a jittered grid over region at floor height y: shapes (w, d, h, kind) picked at random, each kept
+        `clear` m off anything standing there (and spawns, stairs, ladders, points)"""
+        with s.generated(): s._scatter(region, y, step, shapes, seed, avoid, clear)   # (generated decor: kept off keep-clear volumes)
+    def _scatter(s, region, y, step, shapes, seed, avoid=(), clear=1.4):
         R = random.Random(seed); solid = [list(a) for a in avoid]
         for ln in s.lines:
             w = ln.split()
@@ -871,7 +873,7 @@ class M:
                 cx, cz = x + R.uniform(-step * 0.3, step * 0.3), z + R.uniform(-step * 0.3, step * 0.3)
                 (w, d, h, kind) = R.choice(shapes); hw, hd = w / 2, d / 2
                 if x0 + 1 < cx - hw and cx + hw < x1 - 1 and z0 + 1 < cz - hd and cz + hd < z1 - 1 and \
-                   all(not (b[0] - 1.4 < cx + hw and b[2] + 1.4 > cx - hw and b[1] - 1.4 < cz + hd and b[3] + 1.4 > cz - hd) for b in solid):
+                   all(not (b[0] - clear < cx + hw and b[2] + clear > cx - hw and b[1] - clear < cz + hd and b[3] + clear > cz - hd) for b in solid):
                     if kind == "heap": s.heap(cx, cz, hw, h, y=y, tiers=2)
                     elif kind == "crib":
                         for k in range(int(h / 0.35)): s.box(cx - hw, y + k * 0.35, cz - hd + (0.15 if k % 2 else 0), cx + hw, y + k * 0.35 + 0.35, cz + hd - (0.15 if k % 2 else 0), accent=(k % 2 == 0))

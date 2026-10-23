@@ -215,8 +215,21 @@ def build():
     for k in "ABCDE": m.raw(m.points[k])
     for k, (y, pts, yaw) in MSP.items():
         for (x, z) in pts: m.spawn(k, x, y, z, yaw)
-    CITY = [(1.6, 1.2, 1.2, "box"), (2.4, 1.2, 1.1, "bin"), (4.4, 1.9, 1.6, "box"), (1.2, 1.2, 1.0, "box"), (3.0, 1.0, 1.2, "box")]
-    LANES = [(-MHX, c - 1, MHX, c + 1) for c in AVES] + [(c - 1, -MHZ, c + 1, MHZ) for c in AVES]
-    m.scatter((-MHX, -MHZ, MHX, MHZ), 0, 4, CITY, "midtown", avoid=LANES + [(-MHX, -6.5, MHX, 6.5)] + [(o[0] - 1.5, o[1] - 1.5, o[2] + 1.5, o[3] + 1.5) for o in OFFICES] + [PARK, (-56, 36, -8, 56)])
+    # street furniture, skips, vans and crates on the streets and in the yards: 3 m apart and 0.9 m off everything else,
+    # down the avenues' middles too (only the lane under the railway is kept clear)
+    # (since 1.17: 4 m and 1.4 m left cover on 30% of the floor, the streets 18%, the roofs 11%)
+    CITY = [(1.6, 1.2, 1.2, "box"), (2.4, 1.2, 1.1, "bin"), (4.4, 1.9, 1.6, "box"), (1.2, 1.2, 1.0, "box"), (3.0, 1.0, 1.2, "box"),
+            (1.0, 1.0, 2.3, "box"), (2.0, 1.2, 2.0, "box"), (3.0, 1.6, 1.4, "bin"), (4.4, 1.9, 2.2, "box")]
+    m.scatter((-MHX, -MHZ, MHX, MHZ), 0, 3, CITY, "midtown", avoid=[(-MHX, -2, MHX, 2)] + [(o[0] - 1.5, o[1] - 1.5, o[2] + 1.5, o[3] + 1.5) for o in OFFICES] + [PARK, (-56, 36, -8, 56)], clear=0.9)
+    # ...and on the blocks' pavements and yards round the offices (the scatter above stands on the road: a block's
+    # pavement is a kerb 0.15 m up, so nothing was ever placed on one)
+    for (bx0, bx1) in BLOCKS:
+        for (bz0, bz1) in BLOCKS:
+            if (bx0, bz0, bx1, bz1) == PARK: continue
+            m.scatter((bx0, bz0, bx1, bz1), 0.15, 3, CITY, "block %g %g" % (bx0, bz0), avoid=[(o[0] - 1.0, o[1] - 1.0, o[2] + 1.0, o[3] + 1.0) for o in OFFICES] + [(-56, 36, -8, 56)], clear=0.9)
+    # plant on every office roof: air handlers, vents, ducts, lift housings (the roofs were open decks with a billboard
+    # and a tank on them: a roof fight had nothing to hold)
+    ROOF = [(1.6, 1.2, 1.3, "box"), (1.2, 1.2, 1.4, "bin"), (3.0, 0.9, 1.1, "box"), (2.2, 1.6, 2.2, "box"), (2.6, 2.0, 2.6, "box")]
+    for (x0, z0, x1, z1) in OFFICES: m.scatter((x0 + 0.4, z0 + 0.4, x1 - 0.4, z1 - 0.4), 12.35, 2.5, ROOF, "roof %g %g" % (x0, z0), clear=0.8)
     m.raw("setting city centre")
     m.save("midtown")

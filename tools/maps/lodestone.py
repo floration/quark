@@ -389,15 +389,19 @@ def build():
             lamp(lx + 0.8, lz, 6.0, drop=0.5, radius=16, intensity=0.9)
     for (x, z) in ((-62, 46), (-78, 58), (-56, 98), (-24, 76), (22, 75), (14, 60)): m.light(x, 3, z, 10, 0.7, fixture=False)   # crystal glow
     # cover scattered over every floor: crates, ore bins, rubble, timber cribs (none on rails, spawns, points or stairs);
-    # 4.5 m apart (5 on the surface) since 1.17, was 6 (7): the bays were bare (cover on 28% of the floor)
+    # 3.5 m apart (4 on the surface) and 0.9 m off everything else since 1.17, was 6 (7) and 1.4: the bays were bare
+    # (cover on 28% of the floor)
     RAILS = [(-72, 13, 72, 21), (-LHX, -72.5, LHX, -69.5), (23.5, -LHZ, 26.5, 52), (-LHX, -85.5, LHX, -82.5), (23, 22.5, 46, 25.5), (-43, -94, -39, -34)]
     SHAPES = [(1.4, 1.4, 1.3, "box"), (2.2, 1.2, 1.5, "box"), (1.8, 1.8, 1.4, "crib"), (2.4, 1.6, 1.3, "bin"), (3.0, 3.0, 1.6, "heap"), (1.2, 2.4, 1.1, "box")]
-    m.scatter((-LHX, -LHZ, LHX, -8), 0, 4.5, SHAPES, "workings", avoid=RAILS + [PIT, (-14, -40, 14, -16)])
-    m.scatter((PIT[0] + 12, PIT[1] + 12, PIT[2] - 12, PIT[3] - 12), 0, 4.5, SHAPES, "pitfloor", avoid=RAILS)
-    m.scatter((-LHX, -LHZ, LHX, -8), SURF, 5, SHAPES + [(4, 3, 2.6, "box"), (5, 3, 2.2, "bin")], "surface",
-            avoid=RAILS + [(PIT[0] - 1, PIT[1] - 1, PIT[2] + 1, PIT[3] + 1), DECL_E, DECL_W, SHAFT] + LADW + RIMHOLES)
-    m.scatter((4, -6, LHX, LHZ), 0, 4.5, SHAPES, "station", avoid=RAILS + [(46, 16, 62, 32)])
-    m.scatter((-LHX, -6, -4, LHZ), 0, 4.5, SHAPES, "grotto", avoid=RAILS + [LAKE])
+    BIG = [(4.5, 4.5, 2.4, "box"), (5.0, 2.4, 2.2, "bin")]   # (rock falls and ore wagons on the cavern floors: things to go round)
+    m.scatter((-LHX, -LHZ, LHX, -8), 0, 3.5, SHAPES, "workings", avoid=RAILS + [PIT, (-14, -40, 14, -16)], clear=0.9)
+    m.scatter((PIT[0] + 12, PIT[1] + 12, PIT[2] - 12, PIT[3] - 12), 0, 3.5, SHAPES, "pitfloor", avoid=RAILS, clear=0.9)
+    m.scatter((-LHX, -LHZ, LHX, -8), SURF, 4, SHAPES + [(4, 3, 2.6, "box"), (5, 3, 2.2, "bin")], "surface",
+            avoid=RAILS + [(PIT[0] - 1, PIT[1] - 1, PIT[2] + 1, PIT[3] + 1), DECL_E, DECL_W, SHAFT] + LADW + RIMHOLES, clear=0.9)
+    m.scatter((4, -6, LHX, LHZ), 0, 3.5, SHAPES + BIG, "station", avoid=RAILS + [(46, 16, 62, 32)], clear=0.9)
+    m.scatter((-LHX, -6, -4, LHZ), 0, 3.5, SHAPES + BIG, "grotto", avoid=RAILS + [LAKE], clear=0.9)
+    # ...and on the 12 m ledges round the caverns (bare rock shelves: cover on 10% of them)
+    for k, r in enumerate(LEDGES): m.scatter(r, 12, 4.5, SHAPES, "ledge %d" % k, clear=0.9)
 
     # ---- spawns (stage by stage) and the setting
     def trim_to_rock():

@@ -228,7 +228,7 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 - **Lamp posts round the yard walls and along the quay edge, the freighter's deck and mast-head lights.** Dusk light: the yard was lit only under its roofs.
 
 ## Lodestone: multi point (and every other mode). Setting: a mine.
-The owner kept every mode on it (decision B1), so it's graded in every mode it offers (mode fit, `docs/MAP_REPORT.md`): multi point 8.6, bomb 8.6, king of the hill 8.4, payload 8.6, neutral payload 8.2, free for all 8.0, hide 8.2, tag 7.2, race 10.0. Team vs, duel, 1v1 and a tourney match score 4.0: those modes want a compact map (300–3,000 m²) and the mine is 79,000 m², so no spawn placement gets them to 7.
+The owner kept every mode on it (decision B1), so it's graded in every mode it offers (mode fit, `docs/MAP_REPORT.md`): multi point 8.6, bomb 9.5, king of the hill 8.4, payload 9.2, neutral payload 8.8, free for all 9.1, hide 9.3, tag 8.9, race 10.0. Team vs, duel, 1v1 and a tourney match score 4.5: those modes want a compact map (300–3,000 m²) and the mine is 83,000 m², so no spawn placement gets them to 7.
 
 **Why it suits multi point:**
 - An attack in five stages down the mine (A pithead, B pit floor, C workings, D crystal grotto, E mother lode). Each point is 25–90 m on from the last: every capture is a push, not a hop.
@@ -264,15 +264,15 @@ The owner kept every mode on it (decision B1), so it's graded in every mode it o
 - **Ledges at 12 m round both caverns, with stairs and ladders.** High ground over D and E, and the defenders' last spawns.
 - **Rock ribs across the cavern floors, stalagmites and stalactites.** They split each cavern into bays, so fights happen at rifle range rather than across 100 m.
 - **Lamp posts, crystal veins in the walls, fissures with daylight.** Light, and something to steer by.
-- **Crates, ore bins, rubble and timber cribs on every floor.** Cover everywhere (4.5 m apart since 1.17, 6 m before: the bays were bare).
+- **Crates, ore bins, rubble, timber cribs, rock falls and ore wagons on every floor and ledge.** Cover everywhere, and things to go round in the open bays (3.5 m apart since 1.17, and on the 12 m ledges too; 6 m before, and cover was on 28% of the floor: it's on 47% now).
 
 *Every other mode (Lodestone is the map built for all of them):*
 - **Team spawns in the two caverns, mirrored either side of the spine.** The portals into the workings are symmetric, so neither side is closer to the middle. A pit prop in the spine tunnel's mouth keeps the two spawn rows out of each other's sight, and a spoil wall on the surface does the same for the stage-0 spawns.
 - **The hill on the loading bay (C)**, as far from either cavern.
 - **Bomb sites on the loading bay (C) and in the pillar hall under the pithead**: the two places in the workings both caverns reach in the same second (+0.7 and −0.6 s). They used to be at D and E, each in one team's cavern: one side got there 10 s first (REVIEW MAP-6).
-- **An ore-cart track** from the grotto, through the spine tunnel, to the shaft station, with checkpoints at 1/3 and 2/3. Stacks of sleepers, crates and cribs stand both sides of it, a step off the cart's sweep: something to push behind and to hold the cart from (cover on 21% of the floor beside it; it ran through bare cavern, 5%).
+- **An ore-cart track** from the grotto, through the spine tunnel, to the shaft station, with checkpoints at 1/3 and 2/3. Stacks of sleepers, crates and cribs stand both sides of it, a step off the cart's sweep: something to push behind and to hold the cart from (cover on 27% of the floor beside it; it ran through bare cavern, 5%).
 - **A race course** from the surface down the mine to the shaft station's cage landing (an unranked course: Viaduct is the ranked one). It used to end on the station's ledge at 12 m: 179 m round by the stairs, 66 m for a player who leaps and hooks up (a 2.7× shortcut). No leg can be cut by more than 1.06× now.
-- **Twelve free-for-all spawns** over every part of the mine (surface, workings, both caverns, the ledges): only 5% of their pairs can see each other.
+- **Twelve free-for-all spawns** over every part of the mine (surface, workings, both caverns, the ledges): only 3% of their pairs can see each other.
 
 ## Midtown: multi point. Setting: a city centre.
 **Why it suits multi point:**
@@ -285,6 +285,7 @@ The owner kept every mode on it (decision B1), so it's graded in every mode it o
 - **Two-storey offices.** Doors on all four sides, stairs to the first floor and on to the flat roof, a fire-escape ladder outside. Desks with cubicle screens inside (cover). Billboards, water tanks and air handlers on the roofs break the roof-to-roof lines.
 - **The elevated railway.** A deck at 9 m down the middle avenue on columns, two stations with stairs, stopped trains as cover on the deck.
 - **Traffic.** Parked cars and buses in the lanes, trees down the medians and at the block corners, street lamps, traffic lights, bus shelters with glass backs (wallbangs). These are the street cover, and they break the long lines down the avenues.
+- **Street furniture, skips, vans and crates** every few metres on the roads (down the avenues' middles too; only the lane under the railway is kept clear) and on every block's pavements and yards round the offices, and **plant on every office roof** (air handlers, vents, ducts, lift housings). Since 1.17: cover was on 30% of the floor (the streets 18%, the roofs 11%), it's on 45% now, and the vans and skips are things to go round.
 - **The park (C).** Lawns, hedges, trees, benches, a fountain and a pond (fall in and you drown).
 - **City hall (E).** A colonnade and a clock tower over the plaza that holds the last point.
 

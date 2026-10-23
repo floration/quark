@@ -906,6 +906,7 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g, cons
         coverSum += blocked / 16.0f;
         covered += blocked >= 4;
         coveredAt.push_back(blocked >= 4);
+        if (std::getenv("MR_COVER") && r.name == std::getenv("MR_COVER")) printf("COVER %.1f %.2f %.1f %d %.0f\n", pt.p.x, pt.p.y, pt.p.z, blocked, longest);
         lanes.push_back(longest);
         float up = m.raycast(eye, {0, 1, 0}, 30.0f);
         head += up < 0 || up > 6.0f;
