@@ -119,6 +119,7 @@ add_library(quark_core STATIC
 target_include_directories(quark_core PUBLIC src ${CMAKE_BINARY_DIR}/generated)
 # ---- maps (a build artifact) ---------------------------------------------------------------------------
 # tools/make_maps.py generates the shipped maps at build time (python3, nothing else) into maps/, which .gitignore
+# (the generator: tools/maps/prefabs.py, the shared builder, and tools/maps/<name>.py, one module per map)
 # leaves out: the generator is the only source. maps/ is where the game looks (next to the source tree when run from
 # it, copied next to the executables below) and what release packaging copies. A hand-made map ships (embedded and
 # copied) only when .gitignore un-ignores it with a "!/maps/<name>.qmap" line, i.e. it's tracked: any other *.qmap
@@ -139,9 +140,11 @@ foreach(n ${QUARK_GEN_MAP_NAMES})
 endforeach()
 # (the owner's map overrides, assets/overrides/maps/<name>.qmap, replace generated maps: docs/ASSETS.md)
 file(GLOB QUARK_MAP_OVERRIDES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/assets/overrides/maps/*.qmap)
+# (any change to the generator, the shared builder or one map's module, regenerates; a new module re-globs)
+file(GLOB QUARK_MAP_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/maps/*.py)
 add_custom_command(OUTPUT ${QUARK_GEN_MAPS}
   COMMAND ${CMAKE_COMMAND} -E env PYTHONHASHSEED=0 ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/make_maps.py --out ${QUARK_MAPS_DIR}
-  DEPENDS ${CMAKE_SOURCE_DIR}/tools/make_maps.py ${QUARK_MAP_OVERRIDES}
+  DEPENDS ${CMAKE_SOURCE_DIR}/tools/make_maps.py ${QUARK_MAP_SOURCES} ${QUARK_MAP_OVERRIDES}
   COMMENT "Generating maps (tools/make_maps.py)" VERBATIM)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/.gitignore)
 file(STRINGS ${CMAKE_SOURCE_DIR}/.gitignore QUARK_HAND_MAP_LINES REGEX "^!/maps/[A-Za-z0-9_-]+\\.qmap")

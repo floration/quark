@@ -1,6 +1,6 @@
 # How maps are measured
 
-`build/quark_tests mapreport` measures every map in `maps/` and writes [MAP_REPORT.md](MAP_REPORT.md). Run it after you change `tools/make_maps.py` and rebuild (the build regenerates `maps/`).
+`build/quark_tests mapreport` measures every map in `maps/` and writes [MAP_REPORT.md](MAP_REPORT.md). Run it after you change a map's generator (`tools/maps/<name>.py`, or the shared `tools/maps/prefabs.py`) and rebuild (the build regenerates `maps/`; `python3 tools/make_maps.py --map <name>` makes one map alone).
 
 `sh tools/map_shots.sh` then takes 16 screenshots of each map and saves them as one 4×4 sheet in `docs/map_shots/<map>.jpg`:
 - **8 orbit shots**, from above, every 45°.

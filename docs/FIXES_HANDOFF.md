@@ -23,7 +23,7 @@ These come from CLAUDE.md and from what the review learned.
    - Body: what was wrong, what changed, and how it's tested.
 5. **Weapon and movement numbers are the owner's.** Don't change values in `src/game/gamedefs.h` or the movement constants in `src/game/pmove.cpp` (CLAUDE.md). Fixing *logic* bugs there is fine; changing *tuning* is not.
 6. **Maps:**
-   - Never hand-edit `maps/*.qmap`; edit `tools/make_maps.py` and re-run it.
+   - Never hand-edit `maps/*.qmap`; edit the map's generator (`tools/maps/<name>.py`, run by `tools/make_maps.py`) and re-run it.
    - **Never loosen a metric to make a map pass** (CLAUDE.md). If a corrected metric fails a map, fix the map, or stop and report to the user.
 7. **Version constants:**
    - Wire format changes → bump `kProtocolVersion` ([gamedefs.h:15](../src/game/gamedefs.h#L15)).
