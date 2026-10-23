@@ -132,7 +132,8 @@ def page(title, body, depth, head="", lede=""):
     at /updates/ and /updates/<V>/). `head` and `lede` are the title block (already HTML); `body` the content."""
     up = "../" * depth
     nav = "".join("<li><a href=\"%s\"%s>%s</a></li>" % (href, ' aria-current="page"' if label == "Updates" else "", label) for label, href in (
-        ("Modes", up + "#modes"), ("Maps", up + "#maps"), ("Weapons", up + "#weapons"), ("Leaderboard", up + "leaderboard/"),
+        ("Modes", up + "#modes"), ("Maps", up + "#maps"), ("Weapons", up + "#weapons"), ("Assets", up + "assets/"), ("Sounds", up + "sounds/"),
+        ("Leaderboard", up + "leaderboard/"),
         ("Updates", up + "updates/"), ("Testing", up + "testing/"), ("Discord", "https://discord.gg/RERYWNWSXg"),
         ("GitHub", "https://github.com/floration/quark")))
     return ("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
@@ -150,12 +151,13 @@ def page(title, body, depth, head="", lede=""):
             "<footer class=\"foot\"><div class=\"wrap\">\n"
             "<div><p>Free and open source. No ads, no tracking, no cookies.</p>"
             "<p class=\"small\">UI font: Work Sans. Logo: Rubik. Both SIL Open Font License 1.1.</p></div>\n"
-            "<ul aria-label=\"Links\"><li><a href=\"%s\">Home</a></li><li><a href=\"%sleaderboard/\">Leaderboard</a></li>"
+            "<ul aria-label=\"Links\"><li><a href=\"%s\">Home</a></li><li><a href=\"%sassets/\">Assets</a></li>"
+            "<li><a href=\"%ssounds/\">Sounds</a></li><li><a href=\"%sleaderboard/\">Leaderboard</a></li>"
             "<li><a href=\"%supdates/\">Updates</a></li><li><a href=\"%stesting/\">Testing</a></li>"
             "<li><a href=\"https://github.com/floration/quark/releases\">Releases</a></li>"
             "<li><a href=\"https://discord.gg/RERYWNWSXg\">Discord</a></li><li><a href=\"https://github.com/floration/quark\">GitHub</a></li></ul>\n"
             "</div></footer>\n</body>\n</html>\n"
-            % (html.escape(title), up, FONTS, up, STYLE, up or "./", up, nav, up or "./", head, lede, body, up or "./", up, up, up))
+            % (html.escape(title), up, FONTS, up, STYLE, up or "./", up, nav, up or "./", head, lede, body, up or "./", up, up, up, up, up))
 
 
 def main():
