@@ -345,6 +345,7 @@ private:
     void addChat(const Feed& f) { chatFeed_.push_back(f); chatLog_.push_back(f); while (chatFeed_.size() > 8) chatFeed_.pop_front(); while (chatLog_.size() > 30) chatLog_.pop_front(); }
     std::string centerText_;
     double centerUntil_ = 0, hitUntil_ = 0, damageUntil_ = 0, recoil_ = 0, localNextFire_ = 0;
+    HitSoundGate hitGate_;   // the hitsound: one per moment, the heaviest (audio.h)
     double localKnifeBack_ = 0, localSyringeBack_ = 0;   // predicted: a thrown knife / syringe is away (disabled) until then
     // seconds until a thrown knife / syringe is back (0 = have it): the prediction, or the server's word (snapshot)
     double weaponAwayLeft(int w) const {

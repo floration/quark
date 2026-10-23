@@ -34,11 +34,15 @@ struct Noise { uint32_t s = 0x12345678; float operator()() { s = s * 1664525u + 
 std::vector<float> make(float seconds) { return std::vector<float>((size_t)(seconds * R), 0.0f); }
 float env(float t, float attack, float decay) { return (t < attack ? std::sin(0.5f * PI * t / attack) : 1.0f) * std::exp(-t / decay); }
 float onePole(float cutoffHz) { return 1.0f - std::exp(-2.0f * PI * cutoffHz / R); }
+// where a layer has died away (its envelope under e^-18, below 16-bit silence): the synthesis stops there (startup time)
+size_t layerEnd(const std::vector<float>& b, float start, float attack, float decay) {
+    return std::min(b.size(), (size_t)((start + attack + 18.0f * decay) * R) + 1);
+}
 
 // sine whose pitch falls exponentially from f0 to f1 (kicks, thumps, booms)
 void addThump(std::vector<float>& b, float f0, float f1, float pitchTime, float amp, float attack, float decay, float start = 0) {
     float ph = 0;
-    for (size_t i = (size_t)(start * R); i < b.size(); i++) {
+    for (size_t i = (size_t)(start * R), e = layerEnd(b, start, attack, decay); i < e; i++) {
         float t = i / (float)R - start;
         float f = f1 + (f0 - f1) * std::exp(-t / pitchTime);
         ph += 2 * PI * f / R;
@@ -49,17 +53,17 @@ void addThump(std::vector<float>& b, float f0, float f1, float pitchTime, float 
 void addBand(std::vector<float>& b, float lo, float hi, float amp, float attack, float decay, uint32_t seed, float hiEnd = -1, float start = 0) {
     Noise n; n.s ^= seed * 2654435761u;
     float a = 0, c = 0;
-    for (size_t i = (size_t)(start * R); i < b.size(); i++) {
+    const float kLo = onePole(lo), kHi = onePole(hi);   // (the same every sample: worked out once)
+    for (size_t i = (size_t)(start * R), e = layerEnd(b, start, attack, decay); i < e; i++) {
         float t = i / (float)R - start;
-        float h = hiEnd > 0 ? hi + (hiEnd - hi) * std::min(1.0f, t / (b.size() / (float)R)) : hi;
         float x = n();
-        a += (x - a) * onePole(h);
-        c += (x - c) * onePole(lo);
+        a += (x - a) * (hiEnd > 0 ? onePole(hi + (hiEnd - hi) * std::min(1.0f, t / (b.size() / (float)R))) : kHi);
+        c += (x - c) * kLo;
         b[i] += (a - c) * amp * env(t, attack, decay);
     }
 }
 void addTone(std::vector<float>& b, float f, float amp, float attack, float decay, float start = 0) {
-    for (size_t i = (size_t)(start * R); i < b.size(); i++) {
+    for (size_t i = (size_t)(start * R), e = layerEnd(b, start, attack, decay); i < e; i++) {
         float t = i / (float)R - start;
         b[i] += std::sin(2 * PI * f * t) * amp * env(t, attack, decay);
     }
@@ -72,10 +76,10 @@ void addRoom(std::vector<float>& b, float mix, float size = 1.0f) {
         int D = (int)(d * size);
         std::vector<float> line(D, 0.0f);
         float lp = 0;
-        for (size_t i = 0; i < b.size(); i++) {
-            float y = line[i % D];
+        for (size_t i = 0, k = 0; i < b.size(); i++, k = k + 1 == (size_t)D ? 0 : k + 1) {   // (k = i % D, without a divide)
+            float y = line[k];
             lp += (y - lp) * 0.35f;
-            line[i % D] = b[i] + lp * 0.72f;
+            line[k] = b[i] + lp * 0.72f;
             wet[i] += y * 0.25f;
         }
     }
@@ -92,11 +96,42 @@ void finish(std::vector<float>& b, float peak) {
 } // namespace
 
 static void voice(std::vector<float>& b, int pack);
+static float loudness(const std::vector<float>& v);
+
+// soft saturation (crunch): the clip at peak 1, through tanh with this drive, back to peak 1
+static void drive(std::vector<float>& b, float d) {
+    const float k = 1.0f / std::tanh(d);
+    for (float& v : b) v = std::tanh(v * d) * k;
+}
+// the hitsound's four tiers (hitSoundFor: < 10, < 25, <= 50, > 50 damage), each heavier and louder: light is the old
+// single tick as it sounded on small hits; then a deeper knock with a low thump under it, a heavy crunch, and a
+// brutal double crack with a sub drop and a room tail. Levelled by heard loudness to kHitTierGain x the old tick's.
+static void buildHitTiers(std::vector<float>* s) {
+    std::vector<float> old = make(0.09f);   // (the single hitsound before the tiers: the level they're set against)
+    addThump(old, 1500, 1100, 0.01f, 1, 0.0015f, 0.022f); addTone(old, 2600, 0.15f, 0.001f, 0.01f); finish(old, 0.32f);
+    const float ref = Audio::heardLoudness(old);
+    auto& l = s[SND_HIT];
+    l = make(0.08f); addThump(l, 1800, 1320, 0.0083f, 1, 0.0013f, 0.018f); addTone(l, 3120, 0.15f, 0.001f, 0.0083f); finish(l, 1);
+    auto& m = s[SND_HIT_MED];
+    m = make(0.13f); addThump(m, 1250, 820, 0.012f, 1, 0.001f, 0.028f); addThump(m, 260, 140, 0.02f, 0.55f, 0.002f, 0.035f);
+    addBand(m, 1800, 6000, 0.35f, 0.0005f, 0.008f, 31); finish(m, 1); drive(m, 1.6f); finish(m, 1);
+    auto& h = s[SND_HIT_HEAVY];
+    h = make(0.22f); addThump(h, 900, 480, 0.015f, 1, 0.001f, 0.04f); addThump(h, 170, 65, 0.03f, 0.9f, 0.002f, 0.07f);
+    addBand(h, 700, 5000, 0.7f, 0.0005f, 0.02f, 32, 2000); finish(h, 1); drive(h, 2.6f); addRoom(h, 0.15f, 0.6f); finish(h, 1);
+    auto& b = s[SND_HIT_BRUTAL];
+    b = make(0.4f); addThump(b, 650, 300, 0.02f, 1, 0.001f, 0.055f); addThump(b, 120, 42, 0.05f, 1.2f, 0.002f, 0.12f);
+    addBand(b, 400, 7000, 0.9f, 0.0005f, 0.03f, 33, 1500); addBand(b, 800, 5000, 0.6f, 0.0005f, 0.02f, 34, -1, 0.025f);
+    finish(b, 1); drive(b, 4.0f); addRoom(b, 0.25f, 0.9f); finish(b, 1);
+    for (int id : {(int)SND_HIT, (int)SND_HIT_MED, (int)SND_HIT_HEAVY, (int)SND_HIT_BRUTAL}) {
+        float g = kHitTierGain[hitTier(id)] * ref / std::max(1e-6f, Audio::heardLoudness(s[id]));
+        for (float& v : s[id]) v *= g;
+    }
+}
 
 void Audio::synthesize() {
     auto& s = sounds_[0];
     // feedback: soft rounded ticks
-    s[SND_HIT] = make(0.09f);  addThump(s[SND_HIT], 1500, 1100, 0.01f, 1, 0.0015f, 0.022f); addTone(s[SND_HIT], 2600, 0.15f, 0.001f, 0.01f); finish(s[SND_HIT], 0.32f);
+    buildHitTiers(s);
     s[SND_KILL] = make(0.3f);  addThump(s[SND_KILL], 1300, 1000, 0.01f, 1, 0.0015f, 0.03f); addThump(s[SND_KILL], 1900, 1500, 0.01f, 0.9f, 0.0015f, 0.05f, 0.075f);
     addRoom(s[SND_KILL], 0.25f, 0.6f); finish(s[SND_KILL], 0.36f);
     s[SND_HURT] = make(0.22f); addThump(s[SND_HURT], 140, 60, 0.04f, 1, 0.003f, 0.06f); addBand(s[SND_HURT], 80, 900, 0.5f, 0.002f, 0.04f, 1); finish(s[SND_HURT], 0.35f);
@@ -202,6 +237,45 @@ static float loudness(const std::vector<float>& v) {
     return (float)std::sqrt(best / w);
 }
 
+// loudness as heard: two high-pass poles at 250 Hz first (the ear hears a low thump far quieter than a tick of the
+// same energy), so a heavy hit with a big low end isn't measured louder than it sounds
+float Audio::heardLoudness(const std::vector<float>& v) {   // (one pass, nothing allocated: loudness() of the filtered clip)
+    constexpr size_t w = R / 50;
+    float sq[w] = {};
+    const float a = onePole(250.0f);
+    float l1 = 0, l2 = 0;
+    double best = 0, e = 0;
+    for (size_t i = 0, k = 0; i < v.size(); i++, k = k + 1 == w ? 0 : k + 1) {
+        l1 += (v[i] - l1) * a; float x = v[i] - l1; l2 += (x - l2) * a; x -= l2;
+        float x2 = x * x;
+        e += x2 - sq[k]; sq[k] = x2;
+        best = std::max(best, e);
+    }
+    return (float)std::sqrt(best / w);
+}
+
+// a recording's rumble below hearing (a mic bump, a DC offset) cut: it adds no loudness you hear but eats headroom,
+// and levelling such a clip by heard loudness would push it into clipping (the hitsound's tiers, recorded or replaced)
+static void cutRumble(std::vector<float>& v) {
+    const float a = onePole(25.0f);
+    float l1 = 0, l2 = 0;
+    for (float& s : v) { l1 += (s - l1) * a; float x = s - l1; l2 += (x - l2) * a; s = x - l2; }
+}
+// a recorded or replaced hitsound tier as loud as `match` (DEFAULT's, by heard loudness: every kit keeps the ladder);
+// a clip whose low end would then clip is soft-limited instead (a little more crunch, never a hard clip)
+static void levelHit(std::vector<float>& v, const std::vector<float>& match) {
+    cutRumble(v);
+    const float want = Audio::heardLoudness(match);
+    for (int pass = 0; pass < 4; pass++) {
+        float have = Audio::heardLoudness(v), peak = 1e-6f;
+        if (want < 1e-6f || have < 1e-6f) return;
+        for (float& s : v) { s *= want / have; peak = std::max(peak, std::fabs(s)); }
+        if (peak <= 0.95f) return;
+        if (pass == 3) { for (float& s : v) s *= 0.95f / peak; return; }   // (as close as it gets)
+        for (float& s : v) s = 0.95f * std::tanh(s / 0.95f);
+    }
+}
+
 // RETRO: the DEFAULT sounds a little higher, crushed to 4-bit levels held for 4 samples (~12 kHz): chiptune.
 static void voice(std::vector<float>& b, int pack) {
     if (pack != Audio::kPackRetro || b.empty()) return;
@@ -235,8 +309,11 @@ void Audio::loadRecordedKits() {
             v[i] = x0 + (x1 - x0) * f;
         }
         if (c.kit == kPackMagical) { v.resize(v.size() + R / 10, 0.0f); addRoom(v, 0.3f, 1.3f); finish(v, 1.0f); }  // a shimmering hall
-        float want = c.kit == 0 ? 0.0f : loudness(sounds_[0][c.id]), have = loudness(v);
-        if (want > 1e-6f && have > 1e-6f) { float g = want / have; for (auto& x : v) x = std::clamp(x * g, -1.0f, 1.0f); }
+        if (c.kit != 0 && hitTier(c.id) >= 0) levelHit(v, sounds_[0][c.id]);   // (the hitsound's tiers: heard loudness)
+        else {
+            float want = c.kit == 0 ? 0.0f : loudness(sounds_[0][c.id]), have = loudness(v);
+            if (want > 1e-6f && have > 1e-6f) { float g = want / have; for (auto& x : v) x = std::clamp(x * g, -1.0f, 1.0f); }
+        }
         if (c.kit == 0) for (int p = 1; p < kPacks; p++) if (sounds_[p][c.id] == sounds_[0][c.id]) sounds_[p][c.id] = v;   // (kits without their own take the new DEFAULT)
         sounds_[c.kit][c.id].swap(v);
     }
@@ -461,7 +538,7 @@ void Audio::stop() {
 // stereo). Trimmed of leading silence, cut at 3 s, loudness matched to the sound it replaces. Read once at startup.
 static const char* kModSoundNames[] = {"HIT", "KILL", "HURT", "STEP", "JUMP", "LAND", "RIFLE", "ROCKET", "KNIFE", "SNIPER", "LASER",
     "SHOTGUN", "STICKY", "CROSSBOW", "BUBBLE", "SYRINGE", "EXPLOSION", "STICKY_ATTACH", "BOLT_HIT", "DASH", "GRAPPLE_FIRE",
-    "GRAPPLE_HIT", "DEATH", "STREAK", "TYPING", "CHECKPOINT", "FINISH",
+    "GRAPPLE_HIT", "DEATH", "STREAK", "TYPING", "CHECKPOINT", "FINISH", "HIT_MED", "HIT_HEAVY", "HIT_BRUTAL",
     // the announcer's lines (SND_VOICE_*), as the asset export and the overrides name them
     "THREE", "TWO", "ONE", "GO", "BOMB_PLANTED", "BOMB_DEFUSED", "HILL_TAKEN", "HILL_LOST", "POINT_TAKEN", "POINT_LOST",
     "ROUND_WON", "ROUND_LOST", "OVERTIME", "YOU_WIN", "YOU_LOSE", "HIGH_SCORE", "NEW_LEADER", "YOU_DIED", "HEADSHOT",
@@ -477,8 +554,9 @@ const char* Audio::kitDir(int pack) { return kModKitDirs[pack < 0 || pack >= kPa
 const char* Audio::voiceDir(int v) { return kVoiceDirs[v < 0 || v >= kAnnouncerVoices ? 0 : v]; }
 
 // A clip (mono, any rate) ready to play: leading silence off (it starts the moment it plays), at the mix rate, cut
-// at maxSeconds with a short fade, as loud as `match` (the sound it replaces; peak 0.89 when that's silent).
-static std::vector<float> prepareClip(const std::vector<float>& x, int rate, float maxSeconds, const std::vector<float>& match) {
+// at maxSeconds with a short fade, as loud as `match` (the sound it replaces; peak 0.89 when that's silent; heard
+// loudness for the hitsound's tiers, so a replacement keeps its place on the ladder).
+static std::vector<float> prepareClip(const std::vector<float>& x, int rate, float maxSeconds, const std::vector<float>& match, bool heard = false) {
     float peak = 1e-6f; for (float v : x) peak = std::max(peak, std::fabs(v));
     size_t on = 0; while (on < x.size() && std::fabs(x[on]) < peak * 0.03f) on++;
     size_t n = std::min<size_t>((size_t)((double)(x.size() - on) * R / rate), (size_t)(R * maxSeconds));
@@ -490,6 +568,7 @@ static std::vector<float> prepareClip(const std::vector<float>& x, int rate, flo
     }
     size_t fade = std::min<size_t>(n, R / 100);
     for (size_t i = 0; i < fade; i++) v[n - 1 - i] *= (float)i / fade;
+    if (heard && Audio::heardLoudness(match) > 1e-6f) { levelHit(v, match); return v; }
     float want = loudness(match), have = loudness(v);
     if (want > 1e-6f && have > 1e-6f) { float g = want / have; for (auto& s : v) s = std::clamp(s * g, -1.0f, 1.0f); }
     else { float m = 1e-6f; for (float s : v) m = std::max(m, std::fabs(s)); for (auto& s : v) s *= 0.89f / m; }
@@ -510,7 +589,7 @@ void Audio::loadModSounds() {
             fclose(f);
             std::vector<float> x; int rate = 0;
             if (file.size() < 4 || memcmp(file.data(), "RIFF", 4) || !decodeSound(file.data(), file.size(), x, rate) || x.size() < 16) continue;
-            sounds_[kit][id] = prepareClip(x, rate, 3.0f, sounds_[kit][id]);
+            sounds_[kit][id] = prepareClip(x, rate, 3.0f, sounds_[kit][id], hitTier(id) >= 0);
         }
     }
 }
@@ -533,7 +612,7 @@ void Audio::loadOverrideSounds() {
         for (int id = 0; id < SND_VOICE_THREE; id++) {
             std::vector<float> x; int rate = 0;
             if (!overrideClip(std::string("sounds/") + kModKitDirs[kit] + "/" + kModSoundNames[id], x, rate)) continue;
-            std::vector<float> v = prepareClip(x, rate, 3.0f, sounds_[0][id]);
+            std::vector<float> v = prepareClip(x, rate, 3.0f, sounds_[0][id], hitTier(id) >= 0);
             if (kit == 0) {
                 for (int p = 1; p < kPacks; p++)
                     if (p != kPackRetro && sounds_[p][id] == sounds_[0][id]) sounds_[p][id] = v;   // kits that had DEFAULT's sound
