@@ -417,6 +417,8 @@ def run_bot(cfg: dict):
         ch = await ensure_text(cfg[channel_key], await ensure_category(cfg["info_category"]))
         role = await ensure_role(cfg[role_key])
         body = rel.get("body") or "(no changelog)"
+        if channel_key == "updates_channel":   # a production release: link the website's full changelog
+            body = qd.with_full_link(body, tag)
         chunks = qd.split_message(body, 4000)  # embed descriptions allow 4096
         for i, chunk in enumerate(chunks):
             e = discord.Embed(description=chunk, color=color)
@@ -940,7 +942,7 @@ def run_bot(cfg: dict):
         except Exception as e:
             await it.followup.send(f"Couldn't get that changelog ({type(e).__name__}).")
             return
-        chunks = qd.split_message(text, 4000)
+        chunks = qd.split_message(qd.with_full_link(text, v.split(" ")[0]), 4000)
         for k, c in enumerate(chunks[:5]):  # cap: 5 embeds of a very long changelog
             await it.followup.send(embed=discord.Embed(title=f"Quark {v}" if k == 0 else None, description=c, color=0x3BA55D))
 

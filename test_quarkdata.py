@@ -188,6 +188,15 @@ class Releases(unittest.TestCase):
         self.assertTrue(qd.VERSION_RE.fullmatch("1.17.0") and qd.VERSION_RE.fullmatch("1.17.0-test.12"))
         self.assertFalse(qd.VERSION_RE.fullmatch("1.17.0-beta") or qd.VERSION_RE.fullmatch("../x"))
 
+    def test_full_changelog_link(self):   # production versions link the website's full changelog page; testing builds don't
+        self.assertEqual(qd.full_changelog_url("1.17.0"), "https://floration.github.io/quark/updates/1.17.0/")
+        self.assertEqual(qd.full_changelog_url("v1.17.0"), "https://floration.github.io/quark/updates/1.17.0/")
+        self.assertIsNone(qd.full_changelog_url("1.17.0-test.3"))
+        self.assertIsNone(qd.full_changelog_url("test-1.17.0-test.3"))
+        self.assertIsNone(qd.full_changelog_url("nonsense"))
+        self.assertTrue(qd.with_full_link("# 1.17.0\n- a\n", "v1.17.0").endswith("(https://floration.github.io/quark/updates/1.17.0/)"))
+        self.assertEqual(qd.with_full_link("x", "1.17.0-test.3"), "x")
+
     def test_changelog_lookup(self):
         L = qd.changelog_lookup
         self.assertEqual(L("1.17.0"), ("1.17.0", "v1.17.0", "1.17.0", False))

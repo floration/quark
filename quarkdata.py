@@ -68,6 +68,23 @@ def changelog_lookup(version: str) -> tuple[str, str, str, bool]:
     return v, (f"test-{v}" if testing else f"v{v}"), base, testing
 
 
+def full_changelog_url(version: str) -> str | None:
+    """The website page with everything that changed in a production version, and why (site/updates/<V>/, made by
+    tools/site_updates.py when a production release publishes the site). None for a testing build: its page only
+    exists once its version is released."""
+    try:
+        v, _, base, testing = changelog_lookup(version)
+    except ValueError:
+        return None
+    return None if testing else f"{SITE_URL}/updates/{base}/"
+
+
+def with_full_link(body: str, version: str) -> str:
+    """The release notes plus a link to the full changelog page (production versions only)."""
+    url = full_changelog_url(version)
+    return body if not url else body.rstrip() + f"\n\n[Everything that changed in {version}, and why]({url})"
+
+
 def mode_title(m: int) -> str:
     return MODE_TITLES[m] if 0 <= m < len(MODE_TITLES) else "?"
 
