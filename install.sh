@@ -5,7 +5,8 @@
 # by the user the bot runs as; systemd reads it with EnvironmentFile=, so the secrets never appear on a command line
 # or in the unit file), makes a Python venv here with hash-checked requirements, and runs the bot under systemd: it
 # starts at boot and restarts if it crashes.
-# Re-run it after pulling updates (it keeps the saved settings unless you type new ones).
+# It also installs an auto-updater (autoupdate.sh, every 10 min) that follows production releases.
+# Re-run it after pulling updates by hand (it keeps the saved settings unless you type new ones).
 set -euo pipefail
 cd "$(dirname "$0")"
 HERE="$(pwd)"
@@ -75,8 +76,33 @@ ProtectSystem=full
 [Install]
 WantedBy=multi-user.target
 UNIT
+# auto-update (autoupdate.sh, docs/OPERATIONS.md): every 10 minutes, to the newest production release's bot.
+# Run as root (it restarts the service); git and pip run as $RUNAS. Off: sudo systemctl disable --now quark-discord-update.timer
+cat > /etc/systemd/system/quark-discord-update.service <<UNIT
+[Unit]
+Description=quark discord bot: update to the latest production release
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=QUARK_BOT_USER=$RUNAS
+ExecStart=/bin/sh $HERE/autoupdate.sh
+TimeoutStartSec=20min
+UNIT
+cat > /etc/systemd/system/quark-discord-update.timer <<UNIT
+[Unit]
+Description=check for quark discord bot updates
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=10min
+
+[Install]
+WantedBy=timers.target
+UNIT
 systemctl daemon-reload
-systemctl enable --now quark-discord
+systemctl enable --now quark-discord quark-discord-update.timer
 systemctl restart quark-discord
 sleep 3
 systemctl --no-pager --lines=15 status quark-discord || true
@@ -84,3 +110,4 @@ echo
 echo "If this replaced an older install that passed the token on the command line: reset the bot token"
 echo "(Discord developer portal -> Bot -> Reset Token) and BOT_KEY (Cloudflare worker secret), then re-run this."
 echo "done. live log: journalctl -u quark-discord -f    restart: sudo systemctl restart quark-discord"
+echo "auto-update: every 10 min to the newest production release (journalctl -u quark-discord-update)"
