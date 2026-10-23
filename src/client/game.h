@@ -463,7 +463,7 @@ private:
     int pipeNext_ = 0;
     bool pipeGpuStarted_ = false, pipeFrameDone_ = false;
     double pipeSum_[PM_COUNT + 3] = {}, pipeAvg_[PM_COUNT + 3] = {};   // offsets from the input read (+ GPU start, end, flip)
-    double pipeBlankAt_ = 0, pipeLastFlip_ = 0;   // (vsync: a vertical blank's start from the scanline; the last frame's flip)
+    double pipeBlankAt_ = 0, pipeLastFlip_ = 0, pipePrevFrame_ = 0, pipeFrameDt_ = 0;   // (+ the frame time, smoothed)   // (vsync: a vertical blank's start from the scanline; the last frame's flip)
     bool pipeFlipOk_ = false;                     // (the flips are worked out from the monitor's blanks, not estimated)
     int pipeN_ = 0;
     bool pipeHave_ = false;

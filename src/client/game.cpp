@@ -4764,10 +4764,15 @@ void Game::pipeCollect() {    // afterSwap: this frame's marks into its slot; fi
         pipeSum_[PM_COUNT] += t0 * 1e-9 + gpuClockOffset_ - poll;
         pipeSum_[PM_COUNT + 1] += t1 * 1e-9 + gpuClockOffset_ - poll;
         double flip = std::max(t1 * 1e-9 + gpuClockOffset_, sl.marks[PM_SWAP1]);   // (no vsync: as soon as it's done)
+        if (pipePrevFrame_ > 0) pipeFrameDt_ += (sl.marks[PM_FRAME] - pipePrevFrame_ - pipeFrameDt_) * 0.1;
+        pipePrevFrame_ = sl.marks[PM_FRAME];
         if (pipeFlipOk_) {
-            flip = pipeBlankAt_ + std::ceil((flip - pipeBlankAt_) / refresh) * refresh;
-            if (flip < pipeLastFlip_ + refresh * 0.5) flip = pipeLastFlip_ + refresh;   // (queued behind the last one)
-            pipeLastFlip_ = flip;
+            double f = pipeBlankAt_ + std::ceil((flip - pipeBlankAt_) / refresh) * refresh;   // (its first blank)
+            // The driver holds every frame, one a blank, only when the game runs at the refresh rate (the swap waits
+            // for room in the queue). Faster, the driver keeps the newest and drops the rest (fast sync): no queue.
+            // (Queued, at most two blanks behind: drivers queue up to 3 frames.)
+            if (pipeFrameDt_ > refresh * 0.95 && f < pipeLastFlip_ + refresh * 0.5) f = std::min(pipeLastFlip_ + refresh, f + 2 * refresh);
+            pipeLastFlip_ = flip = f;
         }
         pipeSum_[PM_COUNT + 2] += flip - poll;
         pipeN_++;
