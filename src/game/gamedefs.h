@@ -260,7 +260,7 @@ inline const WeaponDef& baseWeaponDef(int w) {
     return defs[w < 0 || w >= WPN_COUNT ? 0 : w];
 }
 // Alt-fires: knife throw (a projectile that hits for knife damage), shotgun bouncing pellets (ricochet off
-// walls, half damage), rifle scope (zooms like the sniper, 25% slower fire rate).
+// walls, half damage), rifle scope (zooms like the sniper, 10% slower fire rate).
 constexpr float kRocketDirectDamage = 50.0f; // a rocket that hits a player itself (not the floor next to them)
 constexpr float kSniperHeadDamage = 50.0f; // hits on the head (headBox(): the top 20%, head-wide): sniper, crossbow bolt,
 constexpr float kCrossbowHeadDamage = 75.0f; // rifle bullet and each shotgun pellet
@@ -334,7 +334,7 @@ inline void projectileExtrapolate(Vec3& pos, Vec3& vel, float gravity, float t) 
 }
 constexpr int kShotgunBounces = 2;
 constexpr float kShotgunBounceDamage = 0.5f;
-constexpr float kRifleScopedRefire = 4.0f / 3.0f; // refire multiplier while scoped (25% slower fire rate)
+constexpr float kRifleScopedRefire = 1.0f / 0.9f; // refire multiplier while scoped (10% slower fire rate; owner 1.17, was 25%)
 // Bubble gun alt-fire: a stream of bubbles all at once, each at its own speed, then a long reload.
 // The stream: 5 bubbles with the nearest enemy within 5 m, up to 15 from 30 m away (so it can't one-shot up close),
 // spread evenly from slow to fast.

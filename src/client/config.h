@@ -35,9 +35,9 @@ struct Settings {
     bool fullbright = false;    // flat white world, black outlines, no lighting
     int ownShots = 0;           // your tracers / beam: 0 with the weapon model, 1 always, 2 never
     bool enemyShots = true;     // other players' tracers and beams
-    bool healthBars = false;    // health bars over other players (not in ranked)
+    bool healthBars = true;     // health bars over other players (not in ranked; on by default, owner 1.17)
     bool healthBarsBottom = false;  // ... at their feet instead of over the head
-    float scopeOpacity = 1.0f;  // the sniper scope's black surround (0 = none, just the zoom)
+    float scopeOpacity = 1.0f;  // the sniper scope's black surround and reticle (0 = off: just the zoom, with the normal crosshair)
     bool stickyCounter = true;  // "STICKIES 3/6" while you hold the sticky launcher or have any out
     bool demoFullRate = false;  // demos: every snapshot (up to 1000 Hz) instead of 62.5 Hz
     std::string discordName;    // linked on the master for the Discord bot (roles, queue pings)

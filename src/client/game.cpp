@@ -2015,7 +2015,10 @@ void Game::drawHud() {
     bool teamMode = modeIsTeamBased(ms.mode);
 
     float cx = W * 0.5f, cy = H * 0.5f;
-    if (scoped_ && scopeOverlay_) {
+    // the sniper scope's mask and reticle; SCOPE OVERLAY at 0 turns them off and the normal crosshair stays (as the
+    // rifle's and crossbow's zoom do)
+    const bool scopeShown = scoped_ && scopeOverlay_ && cfg_.scopeOpacity > 0.001f;
+    if (scopeShown) {
         // circular scope mask built from horizontal strips (one batch, no texture)
         float R = H * 0.46f;
         const Color k = {0, 0, 0, cfg_.scopeOpacity}; // VISUALS > SCOPE OVERLAY
@@ -2093,8 +2096,8 @@ void Game::drawHud() {
         rpsMine_ = opts_.debugRps == 1 ? RPS_PAPER : RPS_NONE;
     }
     const bool rpsOn = (ms.flags & MS_RPS) || opts_.debugRps;   // (drawn over the rest of the HUD, at the end)
-    // crosshair (scoped: the scope's reticle replaces it)
-    if (!(scoped_ && scopeOverlay_) && !paused_ && !rpsOn) drawCrosshair(cx, cy, s, time_ < hitUntil_); // menus open: no crosshair through them
+    // crosshair (scoped with the overlay on: the scope's reticle replaces it)
+    if (!scopeShown && !paused_ && !rpsOn) drawCrosshair(cx, cy, s, time_ < hitUntil_); // menus open: no crosshair through them
     {   // floating damage numbers above whoever you hit
         const auto& ip = framePlayers();
         for (size_t i = 0; i < dmgNums_.size();) {
