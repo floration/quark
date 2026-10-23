@@ -11,11 +11,13 @@ ranked leaderboards and an info channel generated from the game's own INFO scree
 | `config.example.json` | copy to `config.json` |
 | `requirements.in` / `requirements.txt` | direct deps / the hash-pinned lock (`pip install --require-hashes -r requirements.txt`) |
 | `install.sh` | one-command install as a systemd service on a Linux server |
-| `MOVING.md` | moving the bot to its own private repository |
+| `autoupdate.sh` | the auto-updater `install.sh` sets up: follows this branch (`discord-bot`) |
+| `MOVING.md` | the move out of the game's `tools/discordbot/` (done), and keeping the copied constants in sync |
 
-The folder is self-contained: it imports nothing from the game and reads no game files (when it sits inside a game
-checkout it uses the local `src/client/game.cpp` and `VERSION` to save a download; `QUARK_REPO=<checkout>` points at
-one elsewhere). The protocol and mode constants in `quarkdata.py` are copies of the game's (marked there).
+This is the `discord-bot` branch of `floration/quark`, split out of the game's `tools/discordbot/` (history kept).
+It is self-contained: it imports nothing from the game and reads no game files (with `QUARK_REPO=<game checkout>` it
+uses that checkout's `src/client/game.cpp` and `VERSION` to save a download). Paths like `src/...` and `tools/master/`
+below are in the game's branches. The protocol and mode constants in `quarkdata.py` are copies of the game's (marked there).
 
 ## Where the data comes from (same as the game)
 - **Server list**: the Worker's address is pinned: `master_url` in `config.json` (or `QUARK_MASTER`), else the game's
@@ -112,7 +114,7 @@ as "not available yet" (panel shows a note, no roles touched) and keeps running 
 
 ## Configure and run
 ```
-cd tools/discordbot
+git clone -b discord-bot https://github.com/floration/quark quark-discord-bot && cd quark-discord-bot
 python -m pip install --require-hashes -r requirements.txt
 cp config.example.json config.json      # set guild_id; optional names/overrides
 export DISCORD_TOKEN=...                # never put it in git
@@ -140,9 +142,9 @@ After=network-online.target
 Wants=network-online.target
 [Service]
 User=quark
-WorkingDirectory=/home/quark/quark/tools/discordbot
+WorkingDirectory=/home/quark/quark-discord-bot
 EnvironmentFile=/etc/quark-discord.env
-ExecStart=/home/quark/quark/tools/discordbot/.venv/bin/python bot.py
+ExecStart=/home/quark/quark-discord-bot/.venv/bin/python bot.py
 Restart=always
 RestartSec=10
 NoNewPrivileges=true
@@ -165,6 +167,6 @@ file's `Environment=` lines, then `sudo systemctl daemon-reload && sudo systemct
 (or `pip-compile --generate-hashes requirements.in` on the oldest Python you deploy to).
 
 ## Tests
-`python -m unittest test_quarkdata` (add `QUARK_SERVER_BIN=../../build/quark_server` to also query a real local server over UDP).
+`python -m unittest test_quarkdata` (add `QUARK_SERVER_BIN=<game checkout>/build/quark_server` to also query a real local server over UDP).
 Two tests compare with the game's own files (INFO pages in `game.cpp`, queue sizes in `worker.js`); they run when a game
-checkout is found (this folder inside one, or `QUARK_REPO=<checkout>`) and are skipped otherwise.
+checkout is given (`QUARK_REPO=<checkout>`) and are skipped otherwise.
