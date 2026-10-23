@@ -331,9 +331,12 @@ constexpr float kKnifeAway = kThrowAway, kSyringeAway = kThrowAway;
 inline bool isThrow(int w, bool alt) { return alt && (w == WPN_KNIFE || w == WPN_SYRINGE); }
 // Projectiles fly in fixed kMoveStep (1 ms) steps, like movement, so an arc is the same at every server tick rate
 // (C8); the client draws them with the same steps. One step: vel.y -= gravity * step, then pos += vel * step.
-inline float projectileGravity(int type, float gravMul) {   // gravMul: kRocketLobGravity for a rocket lob (its own drop), else 1
+inline float projectileGravity(int type, float gravMul, const WeaponDef& wd) {   // wd: weaponDef(type) (stepProjectile has it)
     if (type == WPN_ROCKET && gravMul != 1) return kRocketLobGravity;   // (the primary flies straight: no gravity to scale)
-    return type == WPN_KNIFE ? kKnifeThrowGravity : type == WPN_SYRINGE ? kSyringeThrowGravity : weaponDef(type).gravity * gravMul;
+    return type == WPN_KNIFE ? kKnifeThrowGravity : type == WPN_SYRINGE ? kSyringeThrowGravity : wd.gravity * gravMul;
+}
+inline float projectileGravity(int type, float gravMul) {   // gravMul: kRocketLobGravity for a rocket lob (its own drop), else 1
+    return projectileGravity(type, gravMul, weaponDef(type));
 }
 // Where those steps take a projectile in t seconds (walls aren't checked): the whole steps summed in closed form (one
 // pass, whatever t is), then the part of a step left over in a straight line. The client draws projectiles with it.

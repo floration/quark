@@ -325,15 +325,20 @@ void Server::stop() {
 
 void Server::run(std::atomic<bool>& quit) {
     std::string lastUpnp, lastMaster;
+    double statusAt = 0;
     while (!quit && running_) {
         double wait = frame();
-        if (upnp_ && upnp_->done()) {
-            std::string st = upnp_->status();
-            if (st != lastUpnp) { log(st); lastUpnp = st; }
-        }
-        if (master_) {
-            std::string st = master_->status();
-            if (!st.empty() && st != lastMaster) { log(st); lastMaster = st; }
+        // (4 times a second: each status() is a lock and a string copy, and this loop spins the last 0.3 ms of a tick)
+        if (double now = timeNow(); now >= statusAt) {
+            statusAt = now + 0.25;
+            if (upnp_ && upnp_->done()) {
+                std::string st = upnp_->status();
+                if (st != lastUpnp) { log(st); lastUpnp = st; }
+            }
+            if (master_) {
+                std::string st = master_->status();
+                if (!st.empty() && st != lastMaster) { log(st); lastMaster = st; }
+            }
         }
         idle(wait);
     }
@@ -347,6 +352,7 @@ void Server::idle(double wait) {
     for (auto& p : players_) anyHuman |= p.connected && !p.isBot;
     if (!anyHuman) { if (wait > 0) sock_.waitUs((int)std::min(wait * 1e6, 5000.0)); return; } // nobody to be on time for: no spinning
     if (wait > 0.0003) sock_.waitUs((int)std::min((wait - 0.0003) * 1e6, 5000.0));
+    else cpuRelax();   // (spinning: let the other hyper-thread on this core run, often the hosting client's renderer)
 }
 
 void Server::resetRateWindow() {
@@ -491,9 +497,10 @@ double Server::frame() {
     NetAddr from;
     int n;
     while ((n = sock_.recv(from, buf, sizeof buf)) > 0) receivePacket(from, buf, n);
-    if (probeSock_.isOpen()) tickReachability();
 
     double now = timeNow();
+    // the reachability check (its timings are 0.5 s and up) 100 times a second, not on every pass of the spin
+    if (probeSock_.isOpen() && now >= reachTickAt_) { reachTickAt_ = now + 0.01; tickReachability(); }
     if (gov_) governorFrame(now);
     if (closed_) { nextTick_ = now; checkRestartFlag(); return 0.1; }   // closed by the governor: no ticks
     double period = 1.0 / tickRate();
@@ -1142,7 +1149,13 @@ void Server::handleInput(int id, Reader& r) {
     if (nStr > 16) return;
     uint16_t strSeq = 0;
     std::string strs[16];
-    if (nStr) { strSeq = r.u16(); for (int k = 0; k < nStr; k++) strs[k] = r.str(); }
+    if (nStr) {   // (the ones already handled are only skipped: they're resent until acked, up to 16 a packet)
+        strSeq = r.u16();
+        for (int k = 0; k < nStr; k++) {
+            if ((int16_t)(uint16_t)(strSeq + k - p.lastStringCmd) > 0) strs[k] = r.str();
+            else r.skipStr();
+        }
+    }
     if (r.bad()) return;
 
     p.reportedLoss = loss;
@@ -1588,24 +1601,55 @@ void Server::spawnPlayer(int id) {
         const SpawnPoint* best = cands[qrand() % cands.size()];
         float bestScore = -1e9f;
         bool bestCrouched = false;
-        for (auto* sp : cands) {
+        // Score = nearest + a random hundredth - 1000 per player who can see it - 1e6 if only a crouch fits there; the
+        // highest wins, the first of equals. The sight rays (spawns x players, thousands on a big map in a 32-player
+        // free for all, on one tick) are the cost, and a score only falls as they find watchers: so score every spawn
+        // as if unseen first (with the same qrand() calls in the same order), then ray only the spawns that could
+        // still win, best first, each until it can't. Same pick as testing every pair.
+        using Cand = SpawnCand;
+        cands_.clear();
+        int nEyes = 0;
+        Vec3 eyes[kMaxPlayers];
+        for (int i = 0; i < kMaxPlayers; i++)
+            if (i != id && players_[i].connected && players_[i].alive) eyes[nEyes++] = players_[i].move.pos + Vec3(0, kEyeHeight * bodyScale(), 0);
+        for (size_t c = 0; c < cands.size(); c++) {
+            const SpawnPoint* sp = cands[c];
             float nearest = 1e9f;
-            int seenBy = 0;
-            Vec3 chest = sp->pos + Vec3(0, 1.2f, 0);
             for (int i = 0; i < kMaxPlayers; i++) {
                 if (i == id || !players_[i].connected || !players_[i].alive) continue;
                 nearest = std::min(nearest, length(players_[i].move.pos - sp->pos));
-                if (!unseen) continue;
-                Vec3 eye = players_[i].move.pos + Vec3(0, kEyeHeight * bodyScale(), 0), to = chest - eye;
-                float d = length(to);
-                if (d > 0.1f && map_.raycast(eye, to / d, d) < 0) seenBy++;   // nothing in between
             }
             // a giant needs a giant's room: standing, else crouched (it stands up once there's room), always behind
             // any spawn where it can stand
             bool low = map_.boxSolid(playerBox(sp->pos, false, scale));
             if (low && map_.boxSolid(playerBox(sp->pos, true, scale))) continue;
-            float score = nearest + (qrand() % 100) * 0.01f - seenBy * 1000.0f - (low ? 1e6f : 0.0f);
-            if (score > bestScore) { bestScore = score; best = sp; bestCrouched = low; }
+            float base = nearest + (qrand() % 100) * 0.01f;
+            cands_.push_back({sp, base - 0 * 1000.0f - (low ? 1e6f : 0.0f), (int)c, low, base});
+        }
+        int bestIdx = -1;
+        auto beats = [&](float score, int idx) { return score > bestScore || (score == bestScore && bestIdx >= 0 && idx < bestIdx); };
+        auto take = [&](const Cand& c, float score) { bestScore = score; best = c.sp; bestCrouched = c.low; bestIdx = c.idx; };
+        if (!unseen) {
+            for (const Cand& c : cands_) if (c.upper > bestScore) take(c, c.upper);   // (in order: the first of equals)
+        } else {
+            std::stable_sort(cands_.begin(), cands_.end(), [](const Cand& a, const Cand& b) { return a.upper > b.upper; });
+            for (const Cand& c : cands_) {
+                if (!beats(c.upper, c.idx)) break;   // (sorted: no later spawn can win either)
+                Vec3 chest = c.sp->pos + Vec3(0, 1.2f, 0);
+                int seenBy = 0;
+                float score = c.upper;
+                bool out = false;
+                for (int e = 0; e < nEyes && !out; e++) {
+                    Vec3 to = chest - eyes[e];
+                    float d = length(to);
+                    if (d > 0.1f && !map_.raycastAny(eyes[e], to / d, d)) {   // nothing in between
+                        seenBy++;
+                        score = c.base - seenBy * 1000.0f - (c.low ? 1e6f : 0.0f);
+                        out = !beats(score, c.idx);
+                    }
+                }
+                if (!out) take(c, score);
+            }
         }
         pos = best->pos;
         yaw = best->yaw;
@@ -1957,15 +2001,7 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
     Vec3 inv = safeInv(dir);
     for (int i = 0; i < kMaxPlayers; i++) {
         if (i == id || !players_[i].connected || !players_[i].alive) continue;
-        Vec3 pos = players_[i].move.pos;
-        bool crouched = players_[i].move.flags & MF_CROUCHED;
-        // newest recorded state at or before the shooter's view time
-        for (uint32_t k = 1; k <= (uint32_t)ServerPlayer::kHistory && k <= tick_; k++) {
-            const auto& h = players_[i].history[(tick_ - k) % ServerPlayer::kHistory];
-            if (h.tick == ServerPlayer::kNoHistory || h.tick > timeMs_) break;
-            if (h.tick <= vt) { if (h.alive) { pos = h.pos; crouched = h.crouched; } break; }
-        }
-        AABB bb = hitBox(pos, crouched);
+        AABB bb = rewoundHitBox(i, vt);   // newest recorded state at or before the shooter's view time
         bb.mn.x -= grow; bb.mn.z -= grow; bb.mx.x += grow; bb.mx.z += grow;
         if (pierce) { // sniper collateral: every player along the line up to the wall is hit
             float t = rayAABB(eye, inv, bb, best);
@@ -2106,7 +2142,7 @@ void Server::tickLatches() {
         Vec3 to = pv.move.pos + Vec3(0, 1.0f * moveScale(pv.move.mods), 0);
         Vec3 d = to - from;
         float dist = length(d);
-        bool blocked = dist > 1e-3f && map_.raycast(from, d / dist, dist) >= 0;
+        bool blocked = dist > 1e-3f && map_.raycastAny(from, d / dist, dist);   // (any wall: no need for the nearest)
         if (blocked || dist > range || time() - pa.hookSince > kGrappleLatchMax || !rulesCanDamage(*this, a, pa.hookVictim)) endLatch(a);
     }
     for (int v = 0; v < kMaxPlayers; v++) {
@@ -2128,14 +2164,7 @@ void Server::bounceShot(int id, Vec3 o, Vec3 dir, float range, uint64_t vt, floa
         Vec3 inv = safeInv(dir);
         for (int i = 0; i < kMaxPlayers; i++) {
             if (i == id || !players_[i].connected || !players_[i].alive) continue; // your own ricochets never hit you
-            Vec3 pos = players_[i].move.pos;
-            bool crouched = players_[i].move.flags & MF_CROUCHED;
-            for (uint32_t k = 1; k <= (uint32_t)ServerPlayer::kHistory && k <= tick_; k++) {
-                const auto& h = players_[i].history[(tick_ - k) % ServerPlayer::kHistory];
-                if (h.tick == ServerPlayer::kNoHistory || h.tick > timeMs_) break;
-                if (h.tick <= vt) { if (h.alive) { pos = h.pos; crouched = h.crouched; } break; }
-            }
-            float t = rayAABB(o, inv, hitBox(pos, crouched), best);
+            float t = rayAABB(o, inv, rewoundHitBox(i, vt), best);
             if (t >= 0 && t < best) { best = t; hit = i; }
         }
         if (hit >= 0) { dmgPer[hit] += dmg; return; }
@@ -2257,6 +2286,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
         uint32_t cap = std::min<uint32_t>(kMaxRewindMs, (uint32_t)p.ping + interp + kRewindToleranceMs);
         if (timeMs_ - vt > cap) vt = timeMs_ - cap;   // (64-bit: never wraps)
     }
+    rwHave_ = 0;   // (this shot's rewound hit boxes: built as the pellets need them)
     float range = p.weapon == WPN_KNIFE ? kKnifeRange : wd.range;
     // Pellets add up per target so one shotgun blast is one hit (one damage event) per player.
     float dmgPer[kMaxPlayers] = {};
@@ -2311,7 +2341,7 @@ void Server::tickProjectiles() {
 void Server::stepProjectile(Projectile& pr) {
     {
         const WeaponDef& wd = weaponDef(pr.type);
-        pr.vel.y -= projectileGravity(pr.type, pr.gravMul) * kMoveStep;
+        pr.vel.y -= projectileGravity(pr.type, pr.gravMul, wd) * kMoveStep;
         Vec3 step = pr.vel * kMoveStep;
         float len = length(step);
         if (len < 1e-6f) return;
@@ -2829,13 +2859,14 @@ void Server::sendSnapshots() {
         // An event goes out at once, then again only after a round trip without an ack (not every snapshot).
         int nEvents = 0;
         float resend = std::max(0.03f, p.ping * 0.001f + 0.01f);
+        const double now = time();
         for (auto& e : p.events) {
-            if (e.sentAt >= 0 && time() - e.sentAt < resend) continue;
+            if (nEvents >= 16 || room < 10) break;   // (full: no event is under 10 bytes)
+            if (e.sentAt >= 0 && now - e.sentAt < resend) continue;
             int sz = 10 + (int)e.text.size();
-            if (nEvents >= 16) break;
             if (sz > room) continue; // a big one waits for a roomier snapshot; smaller ones behind it still go
             room -= sz;
-            e.sentAt = time();
+            e.sentAt = now;
             eventPtrs_[nEvents++] = &e;
         }
         writeSnapshotEvents(w, eventPtrs_, nEvents);

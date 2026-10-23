@@ -1215,8 +1215,10 @@ bool Map::buildGrid() {
         if (total > kMaxMapGridRefs) { cells.assign(1, GridCell()); cellBrushes.clear(); gridRefs = 0; gridW = gridH = 1; return false; }
     }
     cells.assign(ncells, GridCell());
+    gridYLo = 1e30f; gridYHi = -1e30f;
     for (auto& br : brushes) {
         if (!gridSolid(br)) continue;
+        gridYLo = std::min(gridYLo, br.box.mn.y); gridYHi = std::max(gridYHi, br.box.mx.y);
         GridSpan sp = gridSpan(br.box, gridX0, gridZ0, gridW, gridH);
         for (int z = sp.z0; z <= sp.z1; z++)
             for (int x = sp.x0; x <= sp.x1; x++) cells[(size_t)z * gridW + x].end++;   // (end holds the count for now)
@@ -1324,6 +1326,7 @@ bool Map::changeBrush(int op, size_t i, const Brush& b) {
         if (op == 1) for (size_t k = 0; k < n; k++) d[k] = (uint16_t)(d[k] + (d[k] >= ix));
         else for (size_t k = 0; k < n; k++) d[k] = (uint16_t)(d[k] - (d[k] > ix));
     }
+    if (newSolid) { gridYLo = std::min(gridYLo, b.box.mn.y); gridYHi = std::max(gridYHi, b.box.mx.y); }
     if (newSolid)   // into its cells, keeping each cell in brush order
         for (int z = sn.z0; z <= sn.z1; z++)
             for (int x = sn.x0; x <= sn.x1; x++) {
@@ -1395,6 +1398,11 @@ template <class V> static void walkCells(const Map& m, const Vec3& o, const Vec3
         t0 = std::max(t0, a); t1 = std::min(t1, b);
         if (t0 > t1) return;
     }
+    // ...and stop where it leaves the grid's solid Y slab for good (half a metre past it, so rounding never loses a
+    // hit on its top or bottom face): no brush can be hit beyond, and an escaping ray stops after a cell or two.
+    if (std::fabs(d.y) < 1e-9f) { if (o.y < m.gridYLo - 0.5f || o.y > m.gridYHi + 0.5f) return; }
+    else t1 = std::min(t1, ((d.y > 0 ? m.gridYHi + 0.5f : m.gridYLo - 0.5f) - o.y) / d.y);
+    if (t0 > t1) return;
     float px = o.x + d.x * t0, pz = o.z + d.z * t0;
     int cx = std::min(m.gridW - 1, std::max(0, (int)((px - m.gridX0) / Map::kCell)));
     int cz = std::min(m.gridH - 1, std::max(0, (int)((pz - m.gridZ0) / Map::kCell)));

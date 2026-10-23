@@ -386,9 +386,9 @@ bool groundAlong(const Server& s, const Vec3& from, const Vec3& dir, float len) 
 // Dropping straight down from p lands on something to stand on: not the void below the map, not lava.
 bool safeDrop(const Server& s, const Vec3& p) {
     float depth = std::max(p.y - s.map_.killY(), 0.1f);
+    if (s.map_.lava.empty()) return s.map_.raycastAny(p, {0, -1, 0}, depth);   // (no lava: any floor will do, not the nearest)
     float t = s.map_.raycast(p, {0, -1, 0}, depth);
     if (t < 0) return false;
-    if (s.map_.lava.empty()) return true;
     Vec3 h = p - Vec3(0, t, 0);
     return !s.map_.inLava({h + Vec3(-0.3f, 0.0f, -0.3f), h + Vec3(0.3f, 0.6f, 0.3f)});
 }
@@ -607,10 +607,12 @@ int pickWeapon(const Server& s, const SkillParams& sp, float dist) {
     static const int far[]   = {WPN_CROSSBOW, WPN_RIFLE, WPN_SNIPER, WPN_LASER, WPN_ROCKET, WPN_STICKY, WPN_SHOTGUN, WPN_BUBBLE, WPN_KNIFE, WPN_SYRINGE};
     static const int farNoLead[] = {WPN_RIFLE, WPN_SNIPER, WPN_LASER, WPN_CROSSBOW, WPN_ROCKET, WPN_STICKY, WPN_SHOTGUN, WPN_BUBBLE, WPN_KNIFE, WPN_SYRINGE};
     static const int vfar[]  = {WPN_SNIPER, WPN_CROSSBOW, WPN_RIFLE, WPN_ROCKET, WPN_STICKY, WPN_LASER, WPN_SHOTGUN, WPN_BUBBLE, WPN_KNIFE, WPN_SYRINGE};
-    if (!sp.weapons && s.weaponAllowed(WPN_RIFLE)) return WPN_RIFLE;
+    const uint16_t mask = s.weaponMask();   // (once: weaponAllowed works it out on every call)
+    auto allowed = [mask](int w) { return !mask || (mask >> w & 1); };
+    if (!sp.weapons && allowed(WPN_RIFLE)) return WPN_RIFLE;
     bool lead = sp.leadMean >= 0.8f;
     const int* order = dist < 7 ? close : dist < 18 ? (lead ? mid : midNoLead) : dist < 35 ? (lead ? far : farNoLead) : (lead ? vfar : farNoLead);
-    for (size_t k = 0; k < sizeof close / sizeof close[0]; k++) if (s.weaponAllowed(order[k])) return order[k];   // (every list has every weapon but the locator)
+    for (size_t k = 0; k < sizeof close / sizeof close[0]; k++) if (allowed(order[k])) return order[k];   // (every list has every weapon but the locator)
     return WPN_RIFLE;
 }
 
@@ -1094,8 +1096,8 @@ UserCmd botThink(Server& s, int id) {
             // landing within jumping distance; otherwise stop at the edge (the stuck check re-plans)
             Vec3 far = me.move.pos + moveDir * 2.6f + Vec3(0, 0.6f, 0);
             bool safe = !pits || safeDrop(s, ahead);
-            bool landing = s.map_.raycastAny(far, {0, -1, 0}, 2.0f, true) && (!pits || safeDrop(s, far));
-            if (safe || landing) cmd.buttons |= BTN_JUMP;
+            // (a landing within jumping distance: only looked for when there's no safe ground below)
+            if (safe || (s.map_.raycastAny(far, {0, -1, 0}, 2.0f, true) && (!pits || safeDrop(s, far)))) cmd.buttons |= BTN_JUMP;
             else { cmd.forward = 0; cmd.side = 0; hopping = false; }   // (and no bunny hop off it)
         }
         if (hopping) cmd.buttons |= BTN_JUMP;
@@ -1127,7 +1129,8 @@ UserCmd botThink(Server& s, int id) {
                     ground = safeDrop(s, me.move.pos + hv * (0.6f * k / n) + Vec3(0, 0.3f, 0));
             Vec3 far = me.move.pos + moveDir * 2.6f + Vec3(0, 0.6f, 0);   // (a gap a jump from here clears)
             // (a gap jump: at a run, heading where we're going; flung along by a grapple or a dash isn't one)
-            bool landing = onGround && ml > 1e-3f && hs < 10.0f && dot(hv, moveDir) >= 0.5f * hs &&
+            // (only needed with no safe ground ahead)
+            bool landing = !ground && onGround && ml > 1e-3f && hs < 10.0f && dot(hv, moveDir) >= 0.5f * hs &&
                            s.map_.raycastAny(far, {0, -1, 0}, 2.0f, true) && safeDrop(s, far);
             if (!onGround && !ground) { // mid-jump over a gap: fine if the arc comes down on safe ground (braking now drops us in)
                 float vy = me.move.vel.y, g = 22.0f;   // (kGravity)

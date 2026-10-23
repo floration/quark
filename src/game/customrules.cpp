@@ -10,28 +10,34 @@
 #include "map.h"
 
 namespace {
-thread_local CustomRules g_rules;   // per thread: a hosted server thread and the client each play by their own copy
-thread_local WeaponDef g_weapons[WPN_COUNT];
-thread_local MoveTuning g_move;
-thread_local bool g_init = false;
+// Per thread: a hosted server thread and the client each play by their own copy. One trivially initialised
+// thread_local pointer, so each accessor is a single TLS lookup: MinGW compiles thread_local as emutls (a call per
+// access, plus one per init guard), and moveTuning()/weaponDef() run in every 1 ms movement and projectile step.
+struct Tuned { CustomRules rules; WeaponDef weapons[WPN_COUNT]; MoveTuning move; };
+thread_local Tuned* g_t = nullptr;
 
-void rebuild() {
+void rebuild(Tuned& t) {
     for (int w = 0; w < WPN_COUNT; w++) {
         WeaponDef d = baseWeaponDef(w);
-        if (g_rules.active()) {
-            d.refire /= std::max(0.05f, g_rules.fireRate[w]);
-            d.damage *= g_rules.damage[w];
-            d.projSpeed *= g_rules.projSpeed[w];
+        if (t.rules.active()) {
+            d.refire /= std::max(0.05f, t.rules.fireRate[w]);
+            d.damage *= t.rules.damage[w];
+            d.projSpeed *= t.rules.projSpeed[w];
         }
-        g_weapons[w] = d;
+        t.weapons[w] = d;
     }
-    g_move = MoveTuning();
-    if (g_rules.active()) {
-        g_move.gravity = g_rules.gravity; g_move.speed = g_rules.moveSpeed; g_move.jump = g_rules.jump;
-        g_move.dash = g_rules.dash; g_move.grapple = g_rules.grapple;
-        for (int k = 0; k < MV_COUNT; k++) g_move.m[k] = g_rules.move[k];
+    t.move = MoveTuning();
+    if (t.rules.active()) {
+        t.move.gravity = t.rules.gravity; t.move.speed = t.rules.moveSpeed; t.move.jump = t.rules.jump;
+        t.move.dash = t.rules.dash; t.move.grapple = t.rules.grapple;
+        for (int k = 0; k < MV_COUNT; k++) t.move.m[k] = t.rules.move[k];
     }
-    g_init = true;
+}
+
+Tuned& tuned() {
+    Tuned* t = g_t;
+    if (__builtin_expect(t == nullptr, 0)) { static thread_local Tuned st; rebuild(st); g_t = t = &st; }
+    return *t;
 }
 
 std::string safeName(const std::string& n) {
@@ -48,14 +54,11 @@ CustomRules::CustomRules() {
     for (int w = 0; w < WPN_COUNT; w++) fireRate[w] = damage[w] = projSpeed[w] = 1;
 }
 
-const WeaponDef& weaponDef(int w) {
-    if (!g_init) rebuild();
-    return g_weapons[w < 0 || w >= WPN_COUNT ? 0 : w];
-}
-float tunedDamage(int w) { return g_rules.active() && w >= 0 && w < WPN_COUNT ? g_rules.damage[w] : 1.0f; }
-const MoveTuning& moveTuning() { if (!g_init) rebuild(); return g_move; }
-const CustomRules& activeRules() { return g_rules; }
-void setActiveRules(const CustomRules& r) { g_rules = r; rebuild(); }
+const WeaponDef& weaponDef(int w) { return tuned().weapons[w < 0 || w >= WPN_COUNT ? 0 : w]; }
+float tunedDamage(int w) { const Tuned& t = tuned(); return t.rules.active() && w >= 0 && w < WPN_COUNT ? t.rules.damage[w] : 1.0f; }
+const MoveTuning& moveTuning() { return tuned().move; }
+const CustomRules& activeRules() { return tuned().rules; }
+void setActiveRules(const CustomRules& r) { Tuned& t = tuned(); t.rules = r; rebuild(t); }
 
 std::string CustomRules::toText() const {
     std::ostringstream o;

@@ -76,6 +76,14 @@ bool netInit() {
 #ifdef _WIN32
     WSADATA d;
     timeBeginPeriod(1); // 1 ms sleep/timer precision (default is 15.6 ms)
+    // Windows 11 stops honouring timeBeginPeriod for a process whose window is minimised or covered (and may run it on
+    // efficiency cores): a hosted server would tick in ~15 ms bursts. Opt out of both (Windows 8+; older ones ignore it).
+    {
+        struct PowerThrottling { ULONG Version, ControlMask, StateMask; } pt{1, 0x1 | 0x4, 0};   // EXECUTION_SPEED | IGNORE_TIMER_RESOLUTION, both off
+        using SetInfo = BOOL(WINAPI*)(HANDLE, int, LPVOID, DWORD);
+        if (HMODULE k = GetModuleHandleW(L"kernel32.dll"))
+            if (auto f = (SetInfo)(void*)GetProcAddress(k, "SetProcessInformation")) f(GetCurrentProcess(), 4 /*ProcessPowerThrottling*/, &pt, sizeof pt);
+    }
     return WSAStartup(MAKEWORD(2, 2), &d) == 0;
 #else
     return true;
@@ -129,6 +137,10 @@ void UdpSocket::close() {
     if (fd_ == kInvalid) return;
 #ifdef _WIN32
     closesocket(fd_);
+    if (readEvent_) WSACloseEvent((WSAEVENT)readEvent_);
+    if (timer_) CloseHandle((HANDLE)timer_);
+    readEvent_ = timer_ = nullptr;
+    waitSetup_ = false;
 #else
     ::close(fd_);
 #endif
@@ -167,6 +179,26 @@ int UdpSocket::recv(NetAddr& from, void* buf, size_t cap) {
 
 bool UdpSocket::waitUs(int us) {
     if (fd_ == kInvalid) return false;
+#ifdef _WIN32
+    if (!waitSetup_) {   // (once: a socket that can't have them keeps using select)
+        waitSetup_ = true;
+        timer_ = CreateWaitableTimerExW(nullptr, nullptr, 0x2 /*CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, Windows 10 1803+*/, TIMER_ALL_ACCESS);
+        WSAEVENT ev = timer_ ? WSACreateEvent() : WSA_INVALID_EVENT;
+        if (ev != WSA_INVALID_EVENT && WSAEventSelect(fd_, ev, FD_READ) == 0) readEvent_ = ev;
+        else { if (ev != WSA_INVALID_EVENT) WSACloseEvent(ev); if (timer_) CloseHandle((HANDLE)timer_); timer_ = nullptr; }
+    }
+    if (readEvent_) {
+        // The event stays set from a packet the caller has already drained: that wakes this wait at once (one spare
+        // loop), then it's reset here; recv re-arms FD_READ, so a packet arriving after that sets it again.
+        LARGE_INTEGER due;
+        due.QuadPart = -(LONGLONG)us * 10;   // relative, 100 ns units
+        if (us <= 0 || !SetWaitableTimer((HANDLE)timer_, &due, 0, nullptr, nullptr, FALSE)) return false;
+        HANDLE h[2] = {(HANDLE)readEvent_, (HANDLE)timer_};
+        DWORD r = WaitForMultipleObjects(2, h, FALSE, (DWORD)(us / 1000 + 50));
+        if (r == WAIT_OBJECT_0) { WSAResetEvent((WSAEVENT)readEvent_); return true; }
+        return false;
+    }
+#endif
     fd_set set;
     FD_ZERO(&set);
     FD_SET(fd_, &set);
@@ -216,6 +248,26 @@ void sleepMs(int ms) { Sleep((DWORD)ms); }
 #else
 void sleepMs(int ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); }
 #endif
+
+void waitUntil(double t) {
+#ifdef _WIN32
+    // Sleep(1) wakes on the next 1 ms timer tick: 1 to 2 ms, so stopping 1.5 ms early still overshot by up to 0.5 ms
+    // now and then (a frame cap's own late frames, in the 1% lows). A high-resolution waitable timer (Windows 10 1803+)
+    // wakes within a fraction of a millisecond; the last 0.3 ms is spun. Older Windows: Sleep(1) with a 2.1 ms margin.
+    static thread_local HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr, 0x2 /*CREATE_WAITABLE_TIMER_HIGH_RESOLUTION*/, TIMER_ALL_ACCESS);
+    double left = t - timeNow() - 0.0003;
+    if (timer && left > 0) {
+        LARGE_INTEGER due;
+        due.QuadPart = -(LONGLONG)(left * 1e7);   // relative, 100 ns units
+        if (SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE)) WaitForSingleObject(timer, (DWORD)(left * 1000) + 50);
+    } else {
+        while (timeNow() < t - 0.0021) Sleep(1);
+    }
+#else
+    while (timeNow() < t - 0.0015) sleepMs(1);
+#endif
+    while (timeNow() < t) cpuRelax();
+}
 
 void raiseThreadPriority() {
 #ifdef _WIN32

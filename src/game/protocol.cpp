@@ -127,7 +127,12 @@ struct BaseIndex {
 }
 
 static int16_t q16(float v) { return (int16_t)clampf(std::round(v * 64.0f), -32767, 32767); }
-static bool samePos(const Vec3& a, const Vec3& b) { return q16(a.x) == q16(b.x) && q16(a.y) == q16(b.y) && q16(a.z) == q16(b.z); }
+// (equal floats quantize equal: most players and props haven't moved since the base, and each q16 / angQ is a libm
+// call, per player per client per snapshot)
+static bool samePos(const Vec3& a, const Vec3& b) {
+    return (a.x == b.x && a.y == b.y && a.z == b.z) || (q16(a.x) == q16(b.x) && q16(a.y) == q16(b.y) && q16(a.z) == q16(b.z));
+}
+static bool sameAng(float a, float b) { return a == b || angQ(a) == angQ(b); }
 
 void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
     // mode state: 0 = same as base, 1 = full copy follows
@@ -148,8 +153,8 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
         else {
             if (b->flags != p.flags) m |= P_FLAGS;
             if (!p.hidden && !samePos(b->pos, p.pos)) m |= P_POS;
-            if (!p.hidden && angQ(b->yaw) != angQ(p.yaw)) m |= P_YAW;
-            if (!p.hidden && angQ(b->pitch) != angQ(p.pitch)) m |= P_PITCH;
+            if (!p.hidden && !sameAng(b->yaw, p.yaw)) m |= P_YAW;
+            if (!p.hidden && !sameAng(b->pitch, p.pitch)) m |= P_PITCH;
             if (b->health != p.health) m |= P_HEALTH;
             if (b->weapon != p.weapon) m |= P_WEAPON;
             if (b->kills != p.kills) m |= P_KILLS;

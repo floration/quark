@@ -192,6 +192,9 @@ struct Map {
     std::vector<GridCell> cells;       // gridW*gridH
     std::vector<uint16_t> cellBrushes;
     size_t gridRefs = 0;               // brush references in use (spare room not counted)
+    // Lowest bottom / highest top of the brushes in the grid (empty: lo > hi). Rays stop walking cells once they have
+    // left this slab (walkCells): a sun or sky ray otherwise walks every column to the grid's edge. Edits only widen it.
+    float gridYLo = 1e30f, gridYHi = -1e30f;
     bool buildGrid();                  // false: more grid references than kMaxMapGridRefs
     static bool gridSolid(const Brush& b) { return b.material < 5 || b.material == 9; } // in the grid: far scenery, water, lava aren't
     template <class F> void forBox(const AABB& b, F f) const; // calls f(brush) for brushes in overlapped cells (may repeat)

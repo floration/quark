@@ -50,6 +50,13 @@ private:
     static constexpr Handle kInvalid = -1;
 #endif
     Handle fd_ = kInvalid;
+#ifdef _WIN32
+    // waitUs on Windows: a high-resolution waitable timer plus the socket's FD_READ event (select only wakes on the
+    // 1 ms system timer tick, so a 0.6 ms wait could take up to ~1.7 ms and start 1000 Hz ticks late)
+    void* readEvent_ = nullptr;
+    void* timer_ = nullptr;
+    bool waitSetup_ = false;
+#endif
 };
 
 // Monotonic time in seconds since first call.
@@ -57,5 +64,15 @@ double timeNow();
 // Tests only: run the clock faster than real time (simulation is unchanged, just compressed).
 void setTimeScale(double scale);
 void sleepMs(int ms);
+// Returns at timeNow() >= t, on time: sleeps (a high-resolution timer on Windows) until just before, then spins.
+void waitUntil(double t);
 // Gives the calling thread above-normal scheduling priority (server thread inside the client).
 void raiseThreadPriority();
+// A pause instruction for spin-waits (lets the other hyper-thread on the core run).
+inline void cpuRelax() {
+#if defined(__i386__) || defined(__x86_64__)
+    __builtin_ia32_pause();
+#elif defined(__aarch64__) || defined(__arm__)
+    __asm__ __volatile__("yield");
+#endif
+}

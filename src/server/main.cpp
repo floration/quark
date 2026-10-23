@@ -127,20 +127,24 @@ int main(int argc, char** argv) {
     std::atomic<bool> quit{false};
     std::mutex mu;
     std::deque<std::string> lines;
+    std::atomic<bool> haveLines{false};   // console lines waiting
     std::thread input([&] {
         std::string line;
         while (std::getline(std::cin, line)) {
             std::lock_guard<std::mutex> l(mu);
             lines.push_back(line);
+            haveLines = true;
             if (line == "quit" || line == "exit") break;
         }
     });
     input.detach();
 
+    raiseThreadPriority();   // (as a hosted server's thread: wakes on time on a busy machine)
     while (!quit && !server.restartRequested()) {
         double wait = server.frame();
-        {
+        if (haveLines.load(std::memory_order_acquire)) {   // (no lock on every pass of the tick spin)
             std::lock_guard<std::mutex> l(mu);
+            haveLines = false;
             while (!lines.empty()) {
                 std::string line = lines.front();
                 lines.pop_front();

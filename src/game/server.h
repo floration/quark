@@ -542,6 +542,7 @@ private:
     UdpSocket probeSock_;                     // separate ephemeral socket: no NAT mapping toward the prober for the game port
     uint32_t probeNonce_ = 0;
     double probeSentAt_ = 0, probeNextAt_ = 0;
+    double reachTickAt_ = 0;   // next tickReachability (frame runs it every 10 ms)
     int probeTries_ = 0;
     double probeStartedAt_ = 0;
     bool upnpWasDone_ = false;
@@ -594,6 +595,16 @@ private:
     void tickLatches();
     uint64_t rewindViewMs(int id, uint32_t viewTick) const;   // the view time lag compensation tests at (capped)
     Vec3 rewoundPos(int i, uint64_t viewMs, bool* crouched) const;   // where player i was at that view time
+    // fireWeapon's lag-compensated hit boxes, rewound once per shot (rwHave_ cleared at each shot): a shotgun blast's
+    // pellets and ricochets all test the same rewound players, and each rewind walks up to kMaxRewindMs of history
+    struct SpawnCand { const SpawnPoint* sp; float upper; int idx; bool low; float base; };
+    std::vector<SpawnCand> cands_;   // spawnPlayer's scratch
+    AABB rwBox_[kMaxPlayers];
+    uint32_t rwHave_ = 0;
+    const AABB& rewoundHitBox(int i, uint64_t viewMs) {
+        if (!(rwHave_ >> i & 1)) { bool c; Vec3 pos = rewoundPos(i, viewMs, &c); rwBox_[i] = hitBox(pos, c); rwHave_ |= 1u << i; }
+        return rwBox_[i];
+    }
     bool fireWeapon(int id, const UserCmd& cmd);   // true if it hit a player (hitscan weapons)
     void tickProjectiles();
     void stepProjectile(Projectile& pr);   // one fixed 1 ms step (kMoveStep): gravity, move, hit a wall / player
