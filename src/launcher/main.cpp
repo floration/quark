@@ -142,26 +142,87 @@ std::string readFile(const fs::path& p) {
     return s;
 }
 
-bool launchGame(const fs::path& dir) {
+// Starts the game: 0, or why not (Windows: the CreateProcess error, e.g. 225 ERROR_VIRUS_INFECTED when the antivirus
+// refuses to run it; elsewhere -1). Wide paths on Windows: a user name outside the ANSI code page still works.
+const int kErrVirusInfected = 225, kErrVirusDeleted = 226;
+int launchGame(const fs::path& dir) {
 #ifdef _WIN32
-    std::string exe = (dir / kGameExe).string();
-    std::string cmd = "\"" + exe + "\"";
-    STARTUPINFOA si{};
+    fs::path exe = dir / kGameExe;
+    std::wstring cmd = L"\"" + exe.wstring() + L"\"";
+    STARTUPINFOW si{};
     si.cb = sizeof si;
     PROCESS_INFORMATION pi{};
-    if (!CreateProcessA(exe.c_str(), &cmd[0], nullptr, nullptr, FALSE, 0, nullptr, dir.string().c_str(), &si, &pi)) return false;
+    if (!CreateProcessW(exe.wstring().c_str(), &cmd[0], nullptr, nullptr, FALSE, 0, nullptr, dir.wstring().c_str(), &si, &pi))
+        return (int)GetLastError();
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
-    return true;
+    return 0;
 #elif defined(__APPLE__)
-    return procSpawnDetached({"open", (dir / kGameExe).string()});
+    return procSpawnDetached({"open", (dir / kGameExe).string()}) ? 0 : -1;
 #else
-    return procSpawnDetached({"./" + std::string(kGameExe)}, dir.string());
+    return procSpawnDetached({"./" + std::string(kGameExe)}, dir.string()) ? 0 : -1;
 #endif
 }
 
 using releases::Release;
 using releases::Channel;
+
+// A problem the player has to act on, shown in place of the changelog with its buttons: a game file an antivirus took
+// (or blocked) during an install (RETRY) or from the installed game (REPAIR). Never acted on without a click.
+struct Notice {
+    enum Action { None, Retry, Repair };
+    std::string title, body;  // body: paragraphs separated by '\n'
+    Action action = None;
+    Release release;          // what RETRY installs; REPAIR: the version to install again (release.version)
+    bool blocksPlay = false;  // the installed game can't start (its executable is missing / changed / blocked)
+};
+
+std::string upper(std::string s) {
+    for (char& c : s) c = (char)toupper((unsigned char)c);
+    return s;
+}
+std::string fileName(const std::string& rel) { return fs::u8path(rel).filename().u8string(); }
+
+// The installed game's executable is missing, changed or blocked: why that most likely happened, how to get it back
+// and keep it, and REPAIR.
+Notice exeNotice(const gamefiles::Issue& exe, const std::string& version, const fs::path& dir) {
+    Notice n;
+    std::string file = fileName(exe.path), v = version.empty() ? std::string() : " of version " + version;
+    switch (exe.problem) {
+    case gamefiles::Problem::Missing:
+        n.title = upper(file) + " IS MISSING";
+        n.body = "The game can't start: " + file + v + " is gone from the game folder.";
+        break;
+    case gamefiles::Problem::Changed:
+        n.title = upper(file) + " WAS CHANGED";
+        n.body = "The game can't start: " + file + v + " isn't the file that was installed (something changed or replaced it).";
+        break;
+    default:
+        n.title = upper(file) + " IS BLOCKED";
+        n.body = "The game can't start: " + file + v + " can't be opened (Windows refuses to run a file its antivirus flagged).";
+        break;
+    }
+    n.body += "\n" + gamefiles::antivirusHelp(file, dir.parent_path());
+    n.body += "\nOr press REPAIR to download" + (version.empty() ? std::string(" the game") : " version " + version) +
+              " again, check it and put it back (your settings and files stay).";
+    n.action = Notice::Repair;
+    n.release.version = version;
+    n.blocksPlay = true;
+    return n;
+}
+
+// An install stopped because a file of the new version vanished (or changed, or was blocked) in the stage.
+Notice stageNotice(const std::string& what, const Release& r, const std::string& installed, const fs::path& dir,
+                   const std::string& file) {
+    Notice n;
+    n.title = "VERSION " + upper(r.version) + " WAS NOT INSTALLED";
+    n.body = "The update stopped: " + what + ". " +
+             (installed.empty() ? std::string("Nothing was installed.") : "Nothing was changed: version " + installed + " is still installed and playable.");
+    n.body += "\n" + gamefiles::antivirusHelp(file, dir.parent_path()) + "\nThen press RETRY.";
+    n.action = Notice::Retry;
+    n.release = r;
+    return n;
+}
 
 struct State {
     std::mutex mu;
@@ -178,7 +239,43 @@ struct State {
     std::atomic<bool> busy{true}, ready{false};
     std::atomic<bool> relaunch{false}; // a newer launcher was swapped in: restart into it when idle
     bool noSelfUpdate = false;         // this process is that restart: never swap again (no loops)
+    Notice notice;                     // a file problem to show (title empty: none)
 };
+
+// Checks the installed game (existence and size; full: sha256 too) and shows what's wrong. The executable missing,
+// changed or blocked: a notice that blocks PLAY until REPAIR (or the player restoring it). Other game files: a notice
+// with REPAIR after a full check, a hint in the status line otherwise. True when the game can start.
+bool checkGame(State* st, const fs::path& dir, bool full) {
+    gamefiles::Health h = gamefiles::checkInstall(dir, gamefiles::kGameExe, full);
+    std::lock_guard<std::mutex> l(st->mu);
+    if (h.exeBad) {
+        st->notice = exeNotice(h.exe, st->installed, dir);
+        st->status = gamefiles::describe(h.exe) + " - see below";
+        return false;
+    }
+    if (st->notice.action == Notice::Repair) st->notice = Notice(); // (it's back)
+    if (h.issues.empty()) {
+        if (full) st->status = "checked " + std::to_string(h.checked) + " game files of version " + st->installed + ": all fine";
+        return true;
+    }
+    std::string first = gamefiles::describe(h.issues[0]);
+    if (!full) {
+        st->status += " - " + std::to_string(h.issues.size()) + " game file(s) missing or changed (" + first + "): CHECK FILES";
+        return true;
+    }
+    Notice n;
+    n.title = std::to_string(h.issues.size()) + " GAME FILE(S) MISSING OR CHANGED";
+    for (size_t i = 0; i < h.issues.size() && i < 6; i++) n.body += (i ? ", " : "") + gamefiles::describe(h.issues[i]);
+    if (h.issues.size() > 6) n.body += ", and " + std::to_string(h.issues.size() - 6) + " more";
+    n.body += ".\nThe game can still start, but may miss maps or sounds. If you didn't change them yourself, an antivirus "
+              "may have removed them.\nPress REPAIR to download version " + st->installed + " again and put them back "
+              "(your settings and files stay).";
+    n.action = Notice::Repair;
+    n.release.version = st->installed;
+    st->notice = n;
+    st->status = "checked " + std::to_string(h.checked) + " game files: " + first;
+    return true;
+}
 
 fs::path launcherCfg() { return install::appDir() / "launcher.cfg"; }
 void saveCfg(const releases::Config& c) { std::ofstream(launcherCfg(), std::ios::trunc) << releases::formatConfig(c); }
@@ -292,24 +389,17 @@ void installRelease(std::shared_ptr<State> st, fs::path dir, Release r) {
     }
     setStatus("installing version " + r.version + "...");
     st->progress = -1;
-    fs::path stage = dir.parent_path() / (dir.filename().u8string() + ".new");
-    fs::remove_all(stage, ec);
-    fs::create_directories(stage, ec);
-    std::map<std::string, std::string> hashes;
-    gamefiles::SwapReport swapped;
-    bool extracted = qpak::extract(tmp, stage, &err, &hashes);
-    if (extracted) { // what this package put in the game folder: the next update deletes only what it retires
-        hashes.erase(gamefiles::kListName);
-        std::ofstream list(stage / gamefiles::kListName, std::ios::binary | std::ios::trunc);
-        list << gamefiles::format(hashes);
-        list.close();
-        if (!list) { extracted = false; err = "cannot write " + (stage / gamefiles::kListName).string(); }
-    }
-    if (!extracted || !gamefiles::swapInstall(stage, dir, &err, &swapped)) {
-        fs::remove_all(stage, ec);
-        setStatus("install failed: " + err);
+    // extracted into a stage, every file checked against the package (an antivirus taking one stops it here, with
+    // the installed version untouched), then swapped in; the list it writes is what the next update may retire
+    gamefiles::InstallReport rep;
+    if (!gamefiles::installPackage(tmp, dir, &err, &rep)) {
+        std::lock_guard<std::mutex> l(st->mu);
+        if (!rep.stageIssues.empty()) {
+            st->notice = stageNotice(err, r, st->installed, dir, fileName(rep.stageIssues[0].path));
+            st->status = "version " + r.version + " was not installed: " + err;
+        } else st->status = "install failed: " + err;
     } else {
-        for (auto& f : swapped.retired) fprintf(stderr, "update: removed retired game file %s\n", f.c_str());
+        for (auto& f : rep.swap.retired) fprintf(stderr, "update: removed retired game file %s\n", f.c_str());
         std::ofstream(dir / "version.txt") << r.version << "\n";
         install::setPrograms(true, install::appDir() / fs::path(
 #ifdef _WIN32
@@ -324,16 +414,58 @@ void installRelease(std::shared_ptr<State> st, fs::path dir, Release r) {
             st->status = "installed version " + r.version;
             st->ready = true;
             st->awaitingInstall = false;
+            st->notice = Notice();
         }
+        checkGame(st.get(), dir, false); // still there right after the swap?
         checkSelfUpdate(st.get(), dir);
     }
     fs::remove(tmp, ec);
     st->busy = false;
 }
 
+// REPAIR: the installed version again, from the release list (fetched now if startup couldn't).
+void repairInstall(std::shared_ptr<State> st, fs::path dir, std::string version) {
+    std::string err;
+    bool fetched;
+    {
+        std::lock_guard<std::mutex> l(st->mu);
+        fetched = st->fetched;
+        st->status = "looking up version " + version + "...";
+    }
+    if (!fetched && !fetchReleases(st.get(), &err)) {
+        std::lock_guard<std::mutex> l(st->mu);
+        if (!st->fetched) { // (fetchReleases fails on an empty channel too, with the list read)
+            st->status = "REPAIR needs the internet: " + err;
+            st->busy = false;
+            return;
+        }
+    }
+    Release found;
+    {
+        std::lock_guard<std::mutex> l(st->mu);
+        for (const Release& r : st->all)
+            if (r.version == version) { found = r; break; }
+        if (found.version.empty()) {
+            st->status = "cannot repair: version " + (version.empty() ? std::string("(unknown)") : version) +
+                         " isn't published for " + kPlatform + " - pick a version and press INSTALL";
+            st->busy = false;
+            return;
+        }
+    }
+    installRelease(std::move(st), dir, found);
+}
+
+// CHECK FILES: every installed game file's sha256.
+void checkFilesWorker(std::shared_ptr<State> st, fs::path dir) {
+    { std::lock_guard<std::mutex> l(st->mu); st->status = "checking game files..."; }
+    checkGame(st.get(), dir, true);
+    st->busy = false;
+}
+
 // Startup: get the channel's list, then install what the config asks for (the newest, or the pinned version), but
 // never an older version than the installed one unless the player picked it.
 void updater(std::shared_ptr<State> st, fs::path dir) {
+    gamefiles::recoverSwap(dir); // (an update cut off between its two renames)
     std::string installed = readFile(dir / "version.txt");
     {
         std::lock_guard<std::mutex> l(st->mu);
@@ -347,7 +479,10 @@ void updater(std::shared_ptr<State> st, fs::path dir) {
             if (!st->fetched) st->status = installed.empty() ? "offline - " + err : "offline - playing installed version " + installed;
             else st->status = installed.empty() ? err : err + " - installed: " + installed;
         }
-        if (!installed.empty()) checkSelfUpdate(st.get(), dir);
+        if (!installed.empty()) {
+            checkGame(st.get(), dir, false);
+            checkSelfUpdate(st.get(), dir);
+        }
         st->busy = false;
         return;
     }
@@ -375,6 +510,7 @@ void updater(std::shared_ptr<State> st, fs::path dir) {
         }
     }
     if (doInstall) { installRelease(std::move(st), dir, target); return; }
+    if (!installed.empty()) checkGame(st.get(), dir, false);
     checkSelfUpdate(st.get(), dir);
     st->busy = false;
 }
@@ -498,11 +634,13 @@ int main(int argc, char** argv) {
         int latestRow = -1;
         Release sel;
         Channel channel;
+        Notice notice;
         {
             std::lock_guard<std::mutex> l(st.mu);
             channel = st.cfg.channel;
             status = st.status;
             installed = st.installed;
+            notice = st.notice;
             if (st.awaitingInstall) autoPlay = false; // the pinned version waits for the player: don't start another one
             latestRow = releases::latestIndex(st.releases);
             for (size_t i = 0; i < st.releases.size(); i++) {
@@ -550,6 +688,7 @@ int main(int argc, char** argv) {
                     st.selected = i;
                     st.cfg.pin = i == latestRow ? std::string("latest") : versions[i];
                     st.awaitingInstall = false;
+                    if (st.notice.action == Notice::Retry) st.notice = Notice(); // (another version picked)
                     saveCfg(st.cfg);
                 }
             }
@@ -561,16 +700,19 @@ int main(int argc, char** argv) {
             }
             g_scroll = 0;
         }
-        // changelog
-        ui.panel(24 * s, 110 * s, fw - 48 * s - listW - 8 * s, 222 * s, 0.6f);
-        float y = 120 * s;
-        ui.label(36 * s, y, latest.empty() ? "CHANGELOG" : "VERSION " + latest + (latest == installed ? " (INSTALLED)" : ""), ui.accent);
+        // changelog (or a file problem to act on: what happened, what to do, its buttons)
+        float panelW = fw - 48 * s - listW - 8 * s;
+        ui.panel(24 * s, 110 * s, panelW, 222 * s, 0.6f);
+        float y = 120 * s, yMax = notice.title.empty() ? 322 * s : 290 * s;
+        const Color warn = {1.0f, 0.62f, 0.3f, 1};
+        if (!notice.title.empty()) ui.label(36 * s, y, notice.title, warn);
+        else ui.label(36 * s, y, latest.empty() ? "CHANGELOG" : "VERSION " + latest + (latest == installed ? " (INSTALLED)" : ""), ui.accent);
         y += 22 * s;
         float ts = std::max(1.0f, std::round(ui.textScale() * 0.75f));
         float maxW = fw - 80 * s - listW - 8 * s;
         // one paragraph, wrapped by width (the UI font is proportional): break at the last space that fits
         auto wrapped = [&](std::string line, const Color& c) {
-            while (r.textWidth(line, ts) > maxW && y < 322 * s) {
+            while (r.textWidth(line, ts) > maxW && y < yMax) {
                 size_t cut = std::max<size_t>(1, r.textFit(line, ts, maxW));
                 size_t sp = line.rfind(' ', cut);
                 if (sp != std::string::npos && sp > 0) cut = sp;
@@ -582,11 +724,27 @@ int main(int argc, char** argv) {
             r.text(36 * s, y, ts, line, c);
             y += 10 * ts;
         };
-        std::istringstream ls(log);
+        std::istringstream ls(notice.title.empty() ? log : notice.body);
         std::string line;
-        while (std::getline(ls, line) && y < 322 * s) {
+        while (std::getline(ls, line) && y < yMax) {
             while (!line.empty() && (line[0] == '#' || line[0] == ' ')) line.erase(0, 1);
             wrapped(line, {0.85f, 0.85f, 0.88f, 1});
+            if (!notice.title.empty()) y += 3 * s; // (paragraphs)
+        }
+        if (!notice.title.empty()) {
+            float bx = 36 * s, by = 298 * s, bh = 26 * s;
+            const char* act = notice.action == Notice::Retry ? "RETRY" : notice.action == Notice::Repair ? "REPAIR" : nullptr;
+            if (act && ui.button(bx, by, 110 * s, bh, act, !st.busy)) {
+                st.busy = true;
+                if (worker.joinable()) worker.join();
+                if (notice.action == Notice::Retry) worker = std::thread(installRelease, stp, dir, notice.release);
+                else worker = std::thread(repairInstall, stp, dir, notice.release.version);
+            }
+            if (ui.button(bx + 118 * s, by, 130 * s, bh, "OPEN FOLDER")) install::openFolder(dir.parent_path());
+            if (!notice.blocksPlay && ui.button(bx + 256 * s, by, 90 * s, bh, "CLOSE", !st.busy)) {
+                std::lock_guard<std::mutex> l(st.mu);
+                st.notice = Notice();
+            }
         }
         // the desktop icon and start menu entry are made automatically (at startup). Here: the release channel
         // (switches the version list; installing from it is the player's click) and UNINSTALL (never the player's data)
@@ -616,7 +774,8 @@ int main(int argc, char** argv) {
             }
         }
         bool needInstall = !sel.version.empty() && sel.version != installed;
-        bool canPlay = st.ready && !st.busy;
+        bool canPlay = st.ready && !st.busy && !notice.blocksPlay;
+        if (notice.blocksPlay) autoPlay = false; // (a --play waits for the player: never a start that can't work)
         bool offerInstall = needInstall && !st.busy;
         // installing is always the player's click (or startup's newer-only rule); the installed version stays playable.
         if (offerInstall && ui.button(fw - (canPlay ? 432 : 224) * s, 414 * s, 200 * s, 48 * s, "INSTALL " + sel.version)) {
@@ -625,8 +784,26 @@ int main(int argc, char** argv) {
             worker = std::thread(installRelease, stp, dir, sel);
         } else if ((!offerInstall || canPlay) &&
                    (ui.button(fw - 224 * s, 414 * s, 200 * s, 48 * s, st.busy ? "WORKING..." : "PLAY", canPlay) || (autoPlay && canPlay))) {
-            if (launchGame(dir)) quit = true;
-            else { std::lock_guard<std::mutex> l(st.mu); st.status = "could not start the game in " + dir.string(); autoPlay = false; }
+            autoPlay = false;
+            // never a start of a game that isn't there: checked (existence and size) before every start
+            if (checkGame(&st, dir, false)) {
+                int e = launchGame(dir);
+                if (e == 0) quit = true;
+                else if (e == kErrVirusInfected || e == kErrVirusDeleted) {
+                    std::lock_guard<std::mutex> l(st.mu);
+                    st.notice = exeNotice({gamefiles::kGameExe, gamefiles::Problem::Blocked}, st.installed, dir);
+                    st.status = "Windows refused to start " + fileName(gamefiles::kGameExe) + " (error " + std::to_string(e) + ")";
+                } else if (checkGame(&st, dir, false)) { // (gone in between: the notice says so)
+                    std::lock_guard<std::mutex> l(st.mu);
+                    st.status = "could not start the game in " + dir.u8string() + " (error " + std::to_string(e) + ")";
+                }
+            }
+        }
+        // a full check of the installed files (sha256), on demand
+        if (!installed.empty() && ui.button(172 * s, 414 * s, 140 * s, 48 * s, "CHECK FILES", !st.busy)) {
+            st.busy = true;
+            if (worker.joinable()) worker.join();
+            worker = std::thread(checkFilesWorker, stp, dir);
         }
         if (ui.button(24 * s, 414 * s, 140 * s, 48 * s, "QUIT")) quit = true;
         (void)installed;
