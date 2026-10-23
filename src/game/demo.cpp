@@ -79,7 +79,7 @@ void noteVersion(const std::string& file, const std::string& version, uint16_t p
         if (std::find(list.begin(), list.end(), version) != list.end()) return;
         list.push_back(version);
     }
-    std::ofstream(fs::u8path(file), std::ios::app) << protocol << " " << version << "\n";
+    std::ofstream(fs::u8path(file), std::ios::app | std::ios::binary) << protocol << " " << version << "\n";   // (binary: the same file on every OS; Windows wrote \r\n)
 }
 
 std::string versionForProtocol(uint16_t protocol) {
