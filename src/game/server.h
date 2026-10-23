@@ -202,6 +202,10 @@ struct ServerPlayer {
     static constexpr uint64_t kNoHistory = ~0ull;
     static constexpr int kHistory = 1024; // >= 1 s at any tick rate
     Hist history[kHistory];
+    // The newest histRun entries (the records at ticks histTick, histTick - 1, ...) were written by consecutive ticks'
+    // records with rising times, histMs the newest: rewoundPos binary-searches them instead of walking (the same entry)
+    uint32_t histRun = 0, histTick = 0;
+    uint64_t histMs = 0;
 };
 
 struct Projectile {
@@ -400,6 +404,7 @@ public:
     double hitFlushAt_[kMaxPlayers][kMaxPlayers] = {};
     bool hitHead_[kMaxPlayers][kMaxPlayers] = {};   // the batched hit is a headshot (EV_HIT text "h": a red number)
     bool hitPending_ = false;
+    uint32_t hitMask_[kMaxPlayers] = {};   // per attacker: the victims whose hitAccum_ may be waiting (a superset)
     void flushHit(int attacker, int victim);
     void bounceShot(int id, Vec3 o, Vec3 dir, float range, uint64_t vt, float* dmgPer, float dmg);
     // Map edit sessions: everyone flies around and edits the map together; edits go through here so all

@@ -861,7 +861,9 @@ void Server::tickReachability() {
     { std::lock_guard<std::mutex> l(reachPick_->mu); prober = reachPick_->prober; }
     bool again = reachAgain_.exchange(false);
     if (prober.ip == 0) {
-        setReach(REACH_UNKNOWN, "no public quark server to test with (set QUARK_PROBER=host:port)");
+        // (100 times a second: only when it changes - no string built, no lock taken. This thread is the only writer.)
+        static const char kNoProber[] = "no public quark server to test with (set QUARK_PROBER=host:port)";
+        if (reach_ != REACH_UNKNOWN || reachDetail_ != kNoProber) setReach(REACH_UNKNOWN, kNoProber);
         if (again) { // look again
             reach_ = REACH_CHECKING;
             { std::lock_guard<std::mutex> l(reachMu_); reachDetail_ = "finding a server to test with"; }
@@ -1945,6 +1947,7 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
         } else {
             hitAccum_[attacker][victim] += dmg;
             hitPending_ = true;
+            hitMask_[attacker] |= 1u << victim;
             if (time() >= hitFlushAt_[attacker][victim]) flushHit(attacker, victim);
         }
         // Vampire laser: damage dealt heals the attacker (up to full health).
@@ -1984,11 +1987,12 @@ void Server::simulate() {
     }
     if (hitPending_) { // batched hit feedback waiting to go out (skip the 32x32 scan when there's none)
         hitPending_ = false;
-        for (int a = 0; a < kMaxPlayers; a++)
-            for (int v = 0; v < kMaxPlayers; v++) {
-                if (hitAccum_[a][v] <= 0) continue;
-                if (time() >= hitFlushAt_[a][v]) flushHit(a, v);
+        for (int a = 0; a < kMaxPlayers; a++)   // (only the pairs that took a batched hit since: hitMask_, in the same order)
+            for (uint32_t m = hitMask_[a]; m; m &= m - 1) {
+                const int v = lowestBit(m);
+                if (hitAccum_[a][v] > 0 && time() >= hitFlushAt_[a][v]) flushHit(a, v);
                 if (hitAccum_[a][v] > 0) hitPending_ = true;
+                else hitMask_[a] &= ~(1u << v);
             }
     }
     for (auto& p : players_)   // voted to spectate: whatever put them back on a team (a tourney ending...), they watch
@@ -2025,6 +2029,10 @@ void Server::simulate() {
         h.pos = p.move.pos;
         h.crouched = p.move.flags & MF_CROUCHED;
         h.alive = p.alive;
+        // (a run of records: one per tick, each later than the one before; a gap, a repeat or time going back starts over)
+        p.histRun = p.histRun > 0 && p.histTick == tick_ - 1 && p.histMs < timeMs_ ? std::min<uint32_t>(p.histRun + 1, ServerPlayer::kHistory) : 1;
+        p.histTick = tick_;
+        p.histMs = timeMs_;
     }
     { QZONE("projectiles"); tickProjectiles(); }
     tickVote();
@@ -2203,7 +2211,23 @@ Vec3 Server::rewoundPos(int i, uint64_t vt, bool* crouched) const {
     const ServerPlayer& q = players_[i];
     Vec3 pos = q.move.pos;
     *crouched = q.move.flags & MF_CROUCHED;
-    for (uint32_t k = 1; k <= (uint32_t)ServerPlayer::kHistory && k <= tick_; k++) {   // (as hitscan: newest at or before vt)
+    uint32_t k = 1;
+    // The newest records are one run (each tick's, times rising, none after now): their times fall with k, so the first
+    // one at or before vt is found by a galloping search (k = 1, a bot's or a 0 ms shot: one look); the walk below goes
+    // on past the run (where it would have got to anyway).
+    if (q.histRun > 0 && q.histTick == tick_ - 1 && q.histMs <= timeMs_ && q.history[q.histTick % ServerPlayer::kHistory].tick == q.histMs) {
+        const uint32_t n = std::min(q.histRun, tick_);   // (k <= tick_: as the walk)
+        auto at = [&](uint32_t j) { return q.history[(tick_ - j) % ServerPlayer::kHistory].tick; };
+        uint32_t lo = 1, hi = 1;   // every k < lo is after vt; hi is n + 1 or at or before vt
+        while (hi <= n && at(hi) > vt) { lo = hi + 1; hi *= 2; }
+        hi = std::min(hi, n + 1);
+        while (lo < hi) {   // the first k in [lo, hi) at or before vt, else hi
+            uint32_t mid = lo + (hi - lo) / 2;
+            if (at(mid) <= vt) hi = mid; else lo = mid + 1;
+        }
+        k = lo;
+    }
+    for (; k <= (uint32_t)ServerPlayer::kHistory && k <= tick_; k++) {   // (as hitscan: newest at or before vt)
         const auto& h = q.history[(tick_ - k) % ServerPlayer::kHistory];
         if (h.tick == ServerPlayer::kNoHistory || h.tick > timeMs_) break;
         if (h.tick <= vt) { if (h.alive) { pos = h.pos; *crouched = h.crouched; } break; }
