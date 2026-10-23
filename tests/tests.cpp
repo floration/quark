@@ -5884,6 +5884,7 @@ int main(int argc, char** argv) {
                 std::filesystem::create_directories(data, ec);   // (the parent made the root already: set it, then make it)
                 setUserDataDir(data);
                 qsrand(1234);
+                g_fail = 0;   // (this group's own: the parent's count of groups already done isn't this one's)
                 par[i].run();
                 fflush(stdout);
                 std::_Exit(std::min(g_fail, 100));
