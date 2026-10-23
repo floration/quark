@@ -368,7 +368,7 @@ private:
 
     // effects + feeds
     struct Span { size_t at, len; Color color; };   // part of a feed line in its own colour (a player's chosen name colour)
-    struct Feed { std::string text; Color color; double until; int crown = 0; bool player = false; std::vector<Span> spans; };   // crown: the sender's leaderboard place (chat); player: a player's chat line (hidden while chat is off)
+    struct Feed { std::string text; Color color; double until; int crown = 0; bool player = false; std::vector<Span> spans{}; };   // crown: the sender's leaderboard place (chat); player: a player's chat line (hidden while chat is off)
     std::deque<Feed> killFeed_, chatFeed_, notices_;
     void drawFeedText(float x, float y, float ts, const Feed& f);
     std::deque<Feed> chatLog_;   // the chat history shown while typing (Enter)
