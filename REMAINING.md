@@ -6,7 +6,7 @@ Everything known to be unfinished, as of the 1.17.0 release (2026-10-23). It dra
 - the owner's decisions, [docs/OWNER_DECISIONS_2.md](docs/OWNER_DECISIONS_2.md) (B1-B10) and [docs/JUDGMENT_CALLS.md](docs/JUDGMENT_CALLS.md) (C1-C16);
 - notes left by this session's work.
 
-**Fixed and merged:** every Blocker, High, Medium and Low finding from the final review, and every cleanup group except 1.7 and 1.9. From the second review: NET-9, NET-10, PERF-3, PERF-8, PERF-9, PERF-11, PERF-12, PERF-13, MAP-2, MAP-3, MAP-5, MAP-10, MAP-11, MAP-13, MAP-16, MAP-17, MAP-18, ENG-2, ENG-3, COR-4 and COR-5. The owner's decisions B3 (in-game part), B4, B6-B10, C2, C7-C9, C12, C13 and C15 are in. What's left from the release is in section 0.
+**Fixed and merged:** every Blocker, High, Medium and Low finding from the final review, and every cleanup group except 1.7 (1.9 resolved by creating `testing`). From the second review: NET-9, NET-10, PERF-3, PERF-8, PERF-9, PERF-11, PERF-12, PERF-13, MAP-2, MAP-3, MAP-5, MAP-10, MAP-11, MAP-13, MAP-16, MAP-17, MAP-18, ENG-2, ENG-3, COR-4 and COR-5. The owner's decisions B3 (in-game part), B4, B6-B10, C2, C7-C9, C12, C13 and C15 are in. What's left from the release is in section 0.
 
 Each item has a priority:
 - **P1** — do soon, on the `testing` branch.
@@ -38,19 +38,13 @@ Still open from it:
 | Dev map editor (B3) | A separate developer build only you get, never in public releases: numeric position / rotation / scale, adjustable grid snapping, per-mode spawns, routes and staged spawns, a live timing and grade readout (−1..+1 s at the worst point). It uploads maps to a `map-tests` branch; each release lists which maps, and which version of each, it takes from there (a manifest the generator and build read). The in-game editor stays for everyone. |
 | GameMode refactor (C4) | Replace the ~90 `mode == X` branches with one GameMode interface per mode, on `testing`. |
 | LTO (C5) | Left off. Measure on a real machine (not shared software rendering) before turning it on. |
-| Repository restructure | The table below. |
 
-**Repository restructure:**
+**Repository restructure:** done on 2026-10-23 (docs/HANDOVER.md section 4): `testing`, the protected default branch, the `v*` tag rule, and the `launcher`, `site` and `discord-bot` branches. Left:
 
 | What | Notes |
 |---|---|
-| `testing` branch | All new work goes there. Each push becomes a signed prerelease (`test-<version>-test.N`), and Dependabot targets it (FINAL_REVIEW 1.9). |
-| Protect the default branch (**Owner**, GitHub settings) | Require a PR, the `main-guard / from-testing` check and the build checks. No force pushes or deletions. |
-| Tag rule for `v*` (**Owner**, GitHub settings) | Only you can create, move or delete production tags. |
+| Move the bot on its box to the `discord-bot` branch (**Owner**) | Before 1.17.1 reaches production: docs/OPERATIONS.md section 2. |
 | Environments `production` and `testing` (**Owner**, optional) | The workflow already uses them. Add deployment rules (production: tags `v*`; testing: branch `testing`), and optionally move `QUARK_SIGNING_KEY` into both. |
-| Discord bot → `discord-bot` branch | `git subtree split` (steps in `tools/discordbot/MOVING.md`), then remove `tools/discordbot/` from the game branches. The cross-language test then needs splitting: the bot half runs only when `QUARK_BOT_DIR` points at a bot checkout. The branch is public, like the whole repo; the secrets stay on your server. |
-| Launcher → `launcher` branch | Release builds check out that branch to build and package `quark_launcher`. The game keeps its small launcher-upgrade code. |
-| Website → `site` branch | Production releases build the site from that branch plus the game's changelogs and weapon tables, then publish to `gh-pages`. |
 
 ## 2. Remaining final-review findings
 
@@ -59,7 +53,6 @@ Every Low finding is fixed. What's left:
 | # | P | What |
 |---|---|---|
 | 1.7 | P3 | `docs/SIGNING.md` "One-time setup" still points at a private key file in a session scratchpad (deleted; the secret is set). |
-| 1.9 | P3 | Dependabot targets the `testing` branch, which doesn't exist until the restructure. |
 | 3.9 | P3 | The Worker's read cache (`caches.default`) does nothing on `*.workers.dev`; it needs a custom domain. Documented in worker.js. **Owner**, optional. |
 
 **Cleanup:**

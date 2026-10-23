@@ -86,11 +86,12 @@ exactly that file (and the URL is `https://`). The prefix keeps the two kinds of
 for a package or a release manifest (`quark_sign sign`) never passes as a master.txt signature, so use
 `sign-master`, not `sign`:
 
+With the `site` branch checked out in `site/` (README "Branches"):
 ```
 echo https://new-worker.example.workers.dev > site/master.txt
 QUARK_SIGNING_KEY=<private key> build/quark_sign sign-master site/master.txt   # writes site/master.txt.sig
 build/quark_sign verify-master site/master.txt                                  # checks it against the built-in key
-git add site/master.txt site/master.txt.sig
+git -C site add master.txt master.txt.sig && git -C site commit -m "master.txt: move the Worker" && git -C site push
 ```
 
 The Discord bot doesn't read master.txt (it sends BOT_KEY to the Worker, so it only uses an address its operator

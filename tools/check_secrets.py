@@ -28,7 +28,7 @@ PATTERNS = [
 PLACEHOLDER = re.compile(r"\.\.\.|example|xxxx|your[-_]", re.I)
 # files that must never be tracked at all, whatever is in them
 BAD_FILES = re.compile(r"(^|/)(quark_signing_key\.txt|quark\.key|[^/]*\.pem|\.env|[^/]*\.env|config\.json|state\.json)$")
-ALLOWED_FILES = re.compile(r"(^|/)(config\.example\.json|tools/discordbot/config\.example\.json)$")
+ALLOWED_FILES = re.compile(r"(^|/)config\.example\.json$")
 SKIP = re.compile(r"\.(png|jpg|jpeg|gif|webp|ico|ogg|wav|mp3|flac|ttf|otf|glb|qpak|zip|gz)$|^third_party/|^assets/")
 
 

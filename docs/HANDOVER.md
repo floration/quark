@@ -18,7 +18,7 @@ The work up to 1.17.0 was done in one long claude.ai cloud session. **1.17.0 shi
 ### Where things stand
 
 - **Released:** v1.17.0, the latest production release, tagged on `b64ce4b` (CI run 120): signed Windows, Linux and macOS builds. The website (floration.github.io/quark, with `updates/1.17.0/`) was published by a site-only run from `77643ca` (run 122). The tag's own website job had been skipped: section 12.
-- **Branch:** all work is on `claude/compassionate-ritchie-07ah6i`. It is the repository's **default branch** for now, and production tags go on it. There is no `testing` branch yet; creating it is the first step of the restructure (sections 4 and 9).
+- **Branches (restructure, 2026-10-23):** new work goes to `testing`, created from the default branch `claude/compassionate-ritchie-07ah6i` at `e7dad3c`. The default branch is protected (ruleset: PRs only, merge commits only, the `from-testing` check, no force pushes or deletions) and `v*` tags are restricted to the owner. The launcher, the website and the Discord bot have their own branches (`launcher`, `site`, `discord-bot`; section 4).
 - **Deployed by the owner, and checked from here afterwards:**
   - **The ranking server:** the 1.17 SQL ran on D1, the 1.17.0 `worker.js` is live (`/announce` answers "POST only", `GET /disputes` is refused), and the cron and `ADMIN_KEY` are set.
   - **The game server** `129.151.8.15:27500`: on 1.17.0, listed by the Worker, auto-updating. Its testing server on the next port waits until a testing build is newer than production.
@@ -77,12 +77,10 @@ These preferences come from the 1.17.0 session. They are not all in CLAUDE.md:
 
 ### First things to do
 
-1. **The restructure** (sections 4 and 9):
-   - create `testing` from the default branch;
-   - protect the default branch, and add the `v*` tag rule (GitHub settings, owner);
-   - move the launcher, the site and the Discord bot to their own branches.
+1. **The restructure** (sections 4 and 9): done on 2026-10-23, except one step on the bot's box: move the bot to
+   its branch before 1.17.1 ships to production ([OPERATIONS.md](OPERATIONS.md) section 2).
 
-   Optional: rename the default branch from `claude/compassionate-ritchie-07ah6i` to `main` in GitHub settings. Check `tools/server/autoupdate.sh`, `tools/discordbot/autoupdate.sh` and `release.yml` first: they look the default branch up rather than naming it, but test one update after the rename.
+   Optional: rename the default branch from `claude/compassionate-ritchie-07ah6i` to `main` in GitHub settings. Check `tools/server/autoupdate.sh`, the bot's `autoupdate.sh` and `release.yml` first: they look the default branch up rather than naming it, but test one update after the rename.
 2. **The quick-dash question** above.
 3. **Performance check on real hardware** (REMAINING.md 0.3): the F3 1% and 0.1% lows against 1.16 on Midtown, Hightown and Lodestone. Include the cost of drawing stuck knives, bolts and syringes: 0.1 ms in the draw function, and 3–5 fps lost under software GL in the worst case.
 4. **Automatic Worker deploys** ([OPERATIONS.md](OPERATIONS.md) section 3), whenever convenient.
@@ -162,9 +160,9 @@ A fast, minimal FPS on a custom C++17 engine:
 | `tools/pack.py`, `tools/sign/` | Release packaging (`quark-<platform>.qpak`) and Ed25519 signing |
 | `tools/master/` | The ranking server: `worker.js`, `schema.sql`, `test.mjs`, README with the deployment steps and the SQL to run per version |
 | `tools/server/` | Dedicated server install (`install.sh`), auto-update (`autoupdate.sh`), alerts |
-| `tools/discordbot/` | The Discord bot (`bot.py`, `quarkdata.py`, `install.sh`, README) |
 | `tools/studio/` | The Asset Studio page source and its file builder |
-| `site/` | The website (deployed by production releases) |
+| `tools/launcher_build.sh` | Builds the shipped launcher from the `launcher` branch (release jobs) |
+| `site/` (not in `testing`) | The website: the `site` branch, checked out there as a worktree (README) |
 | `assets/` | Fonts, sounds, voice, icons; `assets/overrides/` holds the owner's replacement assets |
 | `changelogs/<VERSION>.md` | One per release, shown by the website, the launcher, the release notes and the bot |
 | `docs/` | See section 10 |
@@ -197,17 +195,17 @@ build/quark_tests mapreport       # writes docs/MAP_REPORT.md
 
 ## 4. Branches and releases
 
-**Today** (1.17.0 shipped) there is no `testing` branch: all work is on `claude/compassionate-ritchie-07ah6i`, the default branch, and pushes there build only. Until the restructure is done, a testing prerelease needs a push to a branch named `testing`, and production needs a `v<VERSION>` tag on the default branch. A cloud session can push only its own `claude/...` branch, so its work reaches `testing` by a pull request the owner merges (section 0).
+A cloud session can push only its own `claude/...` branch, so its work reaches `testing` by a pull request the owner merges (section 0).
 
-**Branches** (the restructure the owner asked for, done right after 1.17.0 ships):
+**Branches** (the restructure the owner asked for, done on 2026-10-23):
 
 | Branch | What it is |
 |---|---|
 | `testing` | Where all new work lands. Every push publishes a signed prerelease `test-<VERSION>-test.<N>`. Dependabot targets it. |
 | Default branch (protected) | Updated only by a PR from `testing`. Production releases come only from a `v<VERSION>` tag on it. |
-| `launcher` | The launcher's code. It should almost never change; release builds check it out to package `quark_launcher`. |
-| `site` | The website source. Production releases build the site from it, plus the changelogs and weapon tables, into `gh-pages`. |
-| `discord-bot` | The bot (moved out with `git subtree split`; steps in `tools/discordbot/MOVING.md`). Its secrets live only on the bot's server. |
+| `launcher` | The launcher that ships: a full copy of the tree, branched at 1.17.0. It should almost never change. Every platform job builds `quark_launcher` from it (`tools/launcher_build.sh`, without the testing suffix) and packages that one, so a release only changes the launcher when this branch does. A launcher change goes here (by PR) **with a higher `VERSION`**, or installed launchers won't take it (`selfupdate::isNewer`). `src/launcher/` stays in `testing` too: the game links its launcher-upgrade code, and the tests cover it. Keep the two compatible (release manifest, signatures, qpak format). |
+| `site` | The website source (its files at the top level). The linux job and the pages job check it out into `site/`; production releases build the site from it, plus the changelogs and weapon tables, into `gh-pages`. A change here goes live with the next production release or a site-only run. `master.txt` and its signature are committed here. |
+| `discord-bot` | The bot (its files at the top level, split out with `git subtree split`). The bot's box follows this branch's head ([OPERATIONS.md](OPERATIONS.md) section 2). Its secrets live only on the bot's server. |
 | `gh-pages` | The published website. Written by CI only. |
 | `map-tests` | Later: maps uploaded by the owner's dev map editor (section 9). |
 
@@ -306,7 +304,7 @@ Workflows are in `.github/workflows/`:
 | [OPERATIONS.md](OPERATIONS.md) | Automatic updates for the dedicated servers, the Discord bot and the Cloudflare Worker; every secret and how to keep it secret |
 | [ASSETS.md](ASSETS.md) | The asset export, the Asset Studio, overrides |
 | [MAP_STRUCTURES.md](MAP_STRUCTURES.md), [MAP_METRICS.md](MAP_METRICS.md), [MAP_REPORT.md](MAP_REPORT.md) | Why each map is built the way it is, how maps are measured, the latest scores |
-| `tools/master/README.md`, `tools/discordbot/README.md` | Deploying the ranking server and the bot |
+| `tools/master/README.md`, the `discord-bot` branch's README | Deploying the ranking server and the bot |
 | [AUDIT.md](AUDIT.md), [RELEASE_PLAN.md](RELEASE_PLAN.md) | History from the road to 1.0.0 |
 
 ## 11. Open items at handover

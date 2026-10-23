@@ -25,7 +25,7 @@ below are for the versions before that.
    answers there receives every player's ranked secret, REVIEW WEB-11). To move it without a new build, put the new
    base URL as the only line of `site/master.txt` and sign that file with the release key
    (`QUARK_SIGNING_KEY=<key> build/quark_sign sign site/master.txt`, which writes `site/master.txt.sig`), then commit
-   both. Games ignore a `master.txt` without a valid signature. Sign it on your own machine, never in CI: every
+   both to the `site` branch (checked out in `site/`, README "Branches"). Games ignore a `master.txt` without a valid signature. Sign it on your own machine, never in CI: every
    branch's push can run CI, so a CI-made signature would vouch for anything. `site/master.txt` (unsigned) is still
    what the website's leaderboard reads.
 7. **Cron.** Worker → **Settings → Triggers → Cron Triggers → Add**: `*/15 * * * *`. It rates matches whose report

@@ -196,7 +196,7 @@ Only needed when the update changes `tools/master/` (worker.js, schema.sql) or t
 | ☐ | `/servers`, `/leaderboard`, `/queues`, `/queue`, `/leave` all answer; the #queues panel buttons work. |
 | ☐ | `/link`: the code it gives you, typed in the game (SETTINGS → DISCORD CODE), links your account; verified #1 / top 10 players get their roles within 5 minutes. |
 | ☐ | Live server channels appear for busy servers (at most 5) and go away when a server stops. |
-| ☐ | If the bot's code changed in this update: redeploy it (`tools/discordbot/install.sh`, secrets in `/etc/quark-discord.env`) and `journalctl -u quark-discord` shows it running without errors. |
+| ☐ | If the bot's code changed (the `discord-bot` branch): it updates itself from that branch within 10 minutes (docs/OPERATIONS.md section 2), and `journalctl -u quark-discord` shows it running without errors. |
 | ☐ | **After** production: #updates gets the release post with the Update Pings ping. |
 
 ## 15. Website
@@ -205,7 +205,7 @@ The site is only redeployed by a production release (a testing build only replac
 
 | ✓ | Check |
 |---|---|
-| ☐ | Open `site/index.html` from this build in a browser: the version, changelog, weapon table and download section are right and nothing is broken (also on a phone-width window). |
+| ☐ | With the `site` branch checked out in `site/` (README "Website"), open `site/index.html` in a browser: the version, changelog, weapon table and download section are right and nothing is broken (also on a phone-width window). |
 | ☐ | `changelogs/full/<VERSION>.md` exists and explains every change and why. Run `python3 tools/site_updates.py .` and open `site/updates/index.html` and `site/updates/<VERSION>/index.html`: the list shows every version, and the version page shows the full changelog. |
 | ☐ | Assets and Sounds pages: run `python3 tools/site_assets.py`, serve `site/` (`python3 -m http.server -d site`) and open `/assets/` and `/sounds/`: each tab's models and maps spin, zoom and pan with the team colour switch; sounds and voices play with waveforms; the box builder downloads a .glb and the synth a .wav; TESTING says "No testing build published yet" when there's none. **After** this testing build: the live `/assets/?channel=testing` shows it, and `SHA256SUMS` still verifies. |
 | ☐ | **After** production: https://floration.github.io/quark shows the new version and changelog; each download link works, and its `.sig` and `SHA256SUMS` are there. |
