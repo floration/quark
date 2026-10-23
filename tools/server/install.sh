@@ -1,17 +1,38 @@
 #!/bin/sh
-# Sets up (or upgrades) a dedicated server on Linux with systemd. Run it from a checkout, as a user with sudo:
+# Sets up (or upgrades) the dedicated servers on a Linux box with systemd: one PRODUCTION server and one TESTING
+# server, each always running the latest release of its channel. Run it from a checkout, as a user with sudo:
 #   tools/server/install.sh --ranked --variant vanilla --map temple --public --name "my server"
-# Everything after install.sh is passed to quark_server (run it again to change the options; with none, the options
-# of the installed service are kept, or --public on a first install).
+# Every argument but install.sh's own (below) is passed to quark_server (run it again to change them; with none, the
+# options of the installed production service are kept, or --public on a first install). The testing server gets the
+# same options, on its own port, with " [TESTING]" added to its name.
+#   --no-testing        no testing server (an existing one is stopped and disabled; its data is kept)
+#   --testing           a testing server again (the default; remembered in /etc/quark/install.conf)
+#   --testing-port N    the testing server's UDP port (default: the production port + 1; kept across re-installs)
 #
 # What it sets up:
-#   user `quark` (system user, no login shell)  runs both the server and the updater
-#   /opt/quark       a clone of this checkout, owned by quark: the code, build-update/ and bin/quark_server
-#   /var/lib/quark   state: data/ (logs, edited maps, custom modes), built-tag, update.pending
-#   quark.service          the server, hardened: it can't write /opt/quark (so not the code the updater runs)
-#   quark-update.timer     every minute: tools/server/autoupdate.sh (production releases only, signed; see there)
-#   quark-update-alert.service  runs when an update fails or is stuck: a critical log line, and a post to
-#                          QUARK_ALERT_WEBHOOK (Discord webhook URL) if /etc/quark/update.env sets it
+#   production (exactly as before; an existing install keeps its options and data and becomes this instance):
+#     user `quark`                  runs the production server and its updater (system user, no login shell)
+#     /opt/quark                    a clone of this checkout, owned by quark: the code, build-update/, bin/quark_server
+#     /var/lib/quark                state: data/ (logs, edited maps, custom modes), built-tag, update.pending
+#     quark.service                 the server (--channel prod), hardened: it can't write /opt/quark
+#     quark-update.timer            every minute: tools/server/autoupdate.sh, latest PRODUCTION release (signed)
+#     quark-update-alert.service    an update failed / stalled: a critical log line naming "production", and a post
+#                                   to QUARK_ALERT_WEBHOOK (Discord webhook URL) if /etc/quark/update.env sets it
+#   testing (unless --no-testing):
+#     user `quark-testing`          runs the testing server and its updater: testing code never runs as `quark`
+#     /opt/quark-testing            its own clone and build
+#     /var/lib/quark-testing        its own state and data
+#     quark-testing.service         the server (--channel testing: ranked is played but never rated), at a lower CPU
+#                                   priority than production (Nice=5, CPUWeight=50)
+#     quark-testing-update.timer    every 2 minutes: the newest TESTING prerelease (or production release, if newer)
+#     quark-testing-update-alert.service   as above, naming "testing"
+#   both:
+#     group `quark-governor`, /var/lib/quark-governor (sticky, group-writable): each server writes its status there
+#       once a second and reads the other's (--governor-dir; src/game/governor.h): when the box can't carry both,
+#       the empty server is throttled first, then the one not playing a ranked match, then the other, down to 125 Hz;
+#       then the testing server closes until production is calm again. Production never closes.
+#       The updaters share GitHub's release list there (one request a minute for both) and a build lock (never two
+#       compiles at once).
 #
 # Upgrading an older install (the server ran as your user, from your checkout, built from a branch): update your
 # checkout (git pull) and run this again. It stops the old units, copies the old server data over (originals kept),
@@ -21,28 +42,87 @@ cd "$(dirname "$0")/../.."
 FROM=$(pwd)
 PREFIX=${QUARK_PREFIX:-/opt/quark}
 STATE=${QUARK_STATE:-/var/lib/quark}
+TPREFIX=${QUARK_TESTING_PREFIX:-/opt/quark-testing}
+TSTATE=${QUARK_TESTING_STATE:-/var/lib/quark-testing}
+GOV=${QUARK_GOVERNOR_DIR:-/var/lib/quark-governor}
+CONF=/etc/quark/install.conf
 SUDO=""; [ "$(id -u)" = 0 ] || SUDO=sudo
-asquark() { if [ "$(id -u)" = 0 ]; then runuser -u quark -- "$@"; else sudo -u quark "$@"; fi; }
+asuser() { u=$1; shift; if [ "$(id -u)" = 0 ]; then runuser -u "$u" -- "$@"; else sudo -u "$u" "$@"; fi; }
 for c in git cmake c++ curl python3 systemctl; do
     command -v "$c" >/dev/null || { echo "install.sh: $c is missing (e.g. sudo apt install git cmake g++ curl python3)"; exit 1; }
 done
 
-# server options: these arguments, else the installed service's, else --public
-ARGS=""
-for a in "$@"; do ARGS="${ARGS:+$ARGS }\"$(printf '%s' "$a" | sed 's/["\\]/\\&/g')\""; done   # quoted for systemd (names with spaces)
+# install.sh's own options; everything else goes to quark_server (quoted for systemd: names with spaces; % doubled)
+TESTING=""; TPORT=""; ARGS=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --no-testing) TESTING=0 ;;
+        --testing) TESTING=1 ;;
+        --testing-port) [ $# -ge 2 ] || { echo "install.sh: --testing-port needs a port"; exit 1; }; TPORT=$2; shift ;;
+        *) ARGS="${ARGS:+$ARGS }\"$(printf '%s' "$1" | sed 's/["\\]/\\&/g; s/%/%%/g')\"" ;;
+    esac
+    shift
+done
+conf() { sed -n "s/^$1=\([0-9]*\)$/\1/p" "$CONF" 2>/dev/null | tail -n1; }
+[ -n "$TESTING" ] || TESTING=$(conf TESTING)
+[ -n "$TESTING" ] || TESTING=1
+# server options: these arguments, else the installed production service's, else --public
 OLDUNIT=/etc/systemd/system/quark.service
+TUNIT=/etc/systemd/system/quark-testing.service
 if [ -z "$ARGS" ] && [ -f "$OLDUNIT" ]; then
-    ARGS=$(sed -n 's#^ExecStart=[^ ]*quark_server --restart-flag [^ ]*\( --data-dir [^ ]*\)\{0,1\}##p' "$OLDUNIT")
+    ARGS=$(sed -n 's#^ExecStart=[^ ]*quark_server --restart-flag [^ ]*\( --data-dir [^ ]*\)\{0,1\}\( --channel [^ ]*\)\{0,1\}\( --governor-dir [^ ]*\)\{0,1\}##p' "$OLDUNIT")
 fi
 [ -n "$ARGS" ] || ARGS="--public"
-
-$SUDO systemctl stop quark-update.timer quark-update.service 2>/dev/null || true   # (no update check mid-install)
-
-# the dedicated user
-if ! id quark >/dev/null 2>&1; then
-    $SUDO useradd --system --home-dir "$STATE" --create-home --shell /usr/sbin/nologin --user-group quark
+# What the testing server runs: the same options on its own port, its name marked [TESTING].
+argtool() {
+    python3 -I - "$@" <<'PY'
+import shlex, sys
+def words(s):   # ExecStart words as written above ("..." with \" \\ and %% escapes)
+    return [w.replace("%%", "%") for w in shlex.split(s)]
+def q(w):
+    return '"' + w.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%") + '"'
+args = words(sys.argv[2])
+if sys.argv[1] == "port":
+    port = "27500"
+    for i, a in enumerate(args):
+        if a == "--port" and i + 1 < len(args): port = args[i + 1]
+    print(port)
+else:
+    out, i, named = [], 0, False
+    while i < len(args):
+        a = args[i]
+        if a in ("--port", "--channel", "--governor-dir", "--restart-flag", "--data-dir"): i += 2; continue
+        if a == "--name" and i + 1 < len(args):
+            n = args[i + 1]
+            out += ["--name", n if n.endswith(" [TESTING]") else n + " [TESTING]"]; named = True; i += 2; continue
+        out.append(a); i += 1
+    if not named: out += ["--name", "quark server [TESTING]"]
+    print(" ".join(q(w) for w in ["--port", sys.argv[3]] + out))
+PY
+}
+PORT=$(argtool port "$ARGS")
+if [ "$TESTING" = 1 ]; then
+    [ -n "$TPORT" ] || TPORT=$(conf TESTING_PORT)
+    [ -n "$TPORT" ] || { [ -f "$TUNIT" ] && TPORT=$(sed -n 's#^ExecStart=.*quark_server .*"--port" "\([0-9]*\)".*#\1#p' "$TUNIT"); } || true
+    [ -n "$TPORT" ] || TPORT=$((PORT + 1))
+    case "$TPORT" in ''|*[!0-9]*) echo "install.sh: bad testing port '$TPORT'"; exit 1 ;; esac
+    [ "$TPORT" != "$PORT" ] || { echo "install.sh: the testing server needs its own port (production is on $PORT)"; exit 1; }
+    TARGS=$(argtool testing "$ARGS" "$TPORT")
 fi
+
+$SUDO systemctl stop quark-update.timer quark-update.service quark-testing-update.timer quark-testing-update.service 2>/dev/null || true   # (no update check mid-install)
+
+# the dedicated users, and the group both servers share the governor directory through
+getent group quark-governor >/dev/null || $SUDO groupadd --system quark-governor
+mkuser() {
+    id "$1" >/dev/null 2>&1 || $SUDO useradd --system --home-dir "$2" --create-home --shell /usr/sbin/nologin --user-group "$1"
+    id -nG "$1" | tr ' ' '\n' | grep -qx quark-governor || $SUDO usermod -a -G quark-governor "$1"
+}
+mkuser quark "$STATE"
 $SUDO mkdir -p "$STATE/data"
+# (sticky: neither can replace or delete the other's files; setgid: files are the group's, so each can read the other's)
+$SUDO install -d -m 3770 -o root -g quark-governor "$GOV"
+[ -f "$GOV/build.lock" ] || $SUDO install -m 0660 -o root -g quark-governor /dev/null "$GOV/build.lock"
 
 # an old install (User=<you>, WorkingDirectory=<your checkout>): stop it and bring its data along (cp -n: no overwrite)
 if [ -f "$OLDUNIT" ] && ! grep -q '^User=quark$' "$OLDUNIT"; then
@@ -64,31 +144,53 @@ URL=$(git remote get-url origin)
 BUNDLE=$(mktemp -d)
 git bundle create -q "$BUNDLE/quark.bundle" HEAD
 chmod -R a+rX "$BUNDLE"
-[ -d "$PREFIX/.git" ] || $SUDO git -c init.defaultBranch=main init -q "$PREFIX"
-$SUDO git -C "$PREFIX" -c safe.directory='*' fetch -q "$BUNDLE/quark.bundle" HEAD
-$SUDO git -C "$PREFIX" -c safe.directory='*' -c advice.detachedHead=false checkout -q --force --detach FETCH_HEAD
-$SUDO git -C "$PREFIX" -c safe.directory='*' remote remove origin 2>/dev/null || true
-$SUDO git -C "$PREFIX" -c safe.directory='*' remote add origin "$URL"
-rm -rf "$BUNDLE"
-$SUDO chown -R quark:quark "$PREFIX" "$STATE"
+clone() {   # clone DIR OWNER
+    [ -d "$1/.git" ] || $SUDO git -c init.defaultBranch=main init -q "$1"
+    $SUDO git -C "$1" -c safe.directory='*' fetch -q "$BUNDLE/quark.bundle" HEAD
+    $SUDO git -C "$1" -c safe.directory='*' -c advice.detachedHead=false checkout -q --force --detach FETCH_HEAD
+    $SUDO git -C "$1" -c safe.directory='*' remote remove origin 2>/dev/null || true
+    $SUDO git -C "$1" -c safe.directory='*' remote add origin "$URL"
+    $SUDO chown -R "$2:$2" "$1"
+}
+clone "$PREFIX" quark
+$SUDO chown -R quark:quark "$STATE"
 $SUDO chmod 750 "$STATE"
 
 # build what's checked out now (the server can start right away), then let the updater move it to the latest release
 TAG=$(git -C "$FROM" describe --exact-match --tags --match 'v[0-9]*.[0-9]*.[0-9]*' HEAD 2>/dev/null || true)
-asquark sh -c "cd '$PREFIX' && cmake -S . -B build-update -DQUARK_BUILD_CLIENT=OFF -DQUARK_BUILD_TESTS=OFF \
-    -DCMAKE_BUILD_TYPE=Release >/dev/null && nice cmake --build build-update -j\$(nproc) --target quark_server quark_sign >/dev/null \
+asuser quark sh -c "cd '$PREFIX' && cmake -S . -B build-update -DQUARK_BUILD_CLIENT=OFF -DQUARK_BUILD_TESTS=OFF \
+    -DCMAKE_BUILD_TYPE=Release -DQUARK_VERSION_SUFFIX= >/dev/null && nice cmake --build build-update -j\$(nproc) --target quark_server quark_sign >/dev/null \
     && mkdir -p bin && cp build-update/quark_server bin/quark_server.new && mv -f bin/quark_server.new bin/quark_server" \
-    || { echo "build failed (any old install is still running)"; exit 1; }
+    || { echo "build failed (any old install is still running)"; rm -rf "$BUNDLE"; exit 1; }
 [ -n "${OLDINSTALL:-}" ] && { $SUDO systemctl disable --now quark-update.timer quark.service 2>/dev/null || true; }
-if [ -n "$TAG" ]; then echo "$TAG" | asquark tee "$STATE/built-tag" >/dev/null; else $SUDO rm -f "$STATE/built-tag"; fi
-asquark env QUARK_STATE="$STATE" HOME="$STATE" sh "$PREFIX/tools/server/autoupdate.sh" || echo "(the update check failed: see above; the server starts on the build from this checkout)"
+if [ -n "$TAG" ]; then echo "$TAG" | asuser quark tee "$STATE/built-tag" >/dev/null; else $SUDO rm -f "$STATE/built-tag"; fi
+asuser quark env QUARK_STATE="$STATE" HOME="$STATE" QUARK_CHANNEL=production QUARK_RELEASE_CACHE="$GOV" QUARK_BUILD_LOCK="$GOV/build.lock" \
+    sh "$PREFIX/tools/server/autoupdate.sh" || echo "(the update check failed: see above; the server starts on the build from this checkout)"
 $SUDO rm -f "$STATE/update.pending"
 
-# alert settings (kept across re-installs)
+# the testing instance: its own user, clone and state; it starts on this checkout's build (copied from production's,
+# same commit) and its updater moves it to the newest testing build within a couple of minutes
+if [ "$TESTING" = 1 ]; then
+    mkuser quark-testing "$TSTATE"
+    $SUDO mkdir -p "$TSTATE/data"
+    clone "$TPREFIX" quark-testing
+    $SUDO install -d -o quark-testing -g quark-testing "$TPREFIX/bin"
+    $SUDO install -m 755 -o quark-testing -g quark-testing "$PREFIX/bin/quark_server" "$TPREFIX/bin/quark_server"
+    $SUDO chown -R quark-testing:quark-testing "$TSTATE"
+    $SUDO chmod 750 "$TSTATE"
+    if [ -n "$TAG" ]; then echo "$TAG" | asuser quark-testing tee "$TSTATE/built-tag" >/dev/null; else $SUDO rm -f "$TSTATE/built-tag"; fi
+    $SUDO rm -f "$TSTATE/update.pending"
+fi
+rm -rf "$BUNDLE"
+
+# alert settings and install choices (kept across re-installs)
 $SUDO mkdir -p /etc/quark
-[ -f /etc/quark/update.env ] || printf '# QUARK_ALERT_WEBHOOK=https://discord.com/api/webhooks/...   (posted to when an update fails or stalls)\n' \
+[ -f /etc/quark/update.env ] || printf '%s\n' \
+    '# QUARK_ALERT_WEBHOOK=https://discord.com/api/webhooks/...   (posted to when an update fails or stalls)' \
+    '# GITHUB_TOKEN=...   (optional, read-only: raises GitHub'"'"'s 60 requests an hour per address for the update checks)' \
     | $SUDO tee /etc/quark/update.env >/dev/null
 $SUDO chmod 640 /etc/quark/update.env
+printf 'TESTING=%s\nTESTING_PORT=%s\n' "$TESTING" "${TPORT:-}" | $SUDO tee "$CONF" >/dev/null
 
 HARDEN="NoNewPrivileges=yes
 ProtectSystem=strict
@@ -111,68 +213,90 @@ AmbientCapabilities=
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
 UMask=0027"
 
-$SUDO tee /etc/systemd/system/quark.service >/dev/null <<UNIT
+# One instance's units: units NAME USER PREFIX STATE CHANNEL(production|testing) "SERVER ARGS" EXTRA_SERVICE_LINES TIMER_SECS
+units() {
+    name=$1 user=$2 prefix=$3 state=$4 ch=$5 sargs=$6 extra=$7 every=$8
+    short=prod; [ "$ch" = testing ] && short=testing
+    gov=""; [ "$TESTING" = 1 ] && gov=" --governor-dir $GOV"
+    $SUDO tee "/etc/systemd/system/$name.service" >/dev/null <<UNIT
 [Unit]
-Description=quark server
+Description=quark $ch server
 After=network-online.target
 Wants=network-online.target
 [Service]
-User=quark
-Group=quark
-WorkingDirectory=$STATE
-Environment=QUARK_DATA_DIR=$STATE/data
-ExecStart=$PREFIX/bin/quark_server --restart-flag $STATE/update.pending --data-dir $STATE/data $ARGS
+User=$user
+Group=$user
+SupplementaryGroups=quark-governor
+WorkingDirectory=$state
+Environment=QUARK_DATA_DIR=$state/data
+ExecStart=$prefix/bin/quark_server --restart-flag $state/update.pending --data-dir $state/data --channel $short$gov $sargs
 Restart=always
 RestartSec=2
+$extra
 $HARDEN
 MemoryDenyWriteExecute=yes
-ReadWritePaths=$STATE
-ReadOnlyPaths=$PREFIX
+ReadWritePaths=$state $GOV
+ReadOnlyPaths=$prefix
 [Install]
 WantedBy=multi-user.target
 UNIT
-$SUDO tee /etc/systemd/system/quark-update.service >/dev/null <<UNIT
+    $SUDO tee "/etc/systemd/system/$name-update.service" >/dev/null <<UNIT
 [Unit]
-Description=quark update check (production releases)
+Description=quark update check ($ch server)
 After=network-online.target
 Wants=network-online.target
-OnFailure=quark-update-alert.service
+OnFailure=$name-update-alert.service
 [Service]
 Type=oneshot
-User=quark
-Group=quark
-Environment=QUARK_STATE=$STATE HOME=$STATE
-ExecStart=/bin/sh $PREFIX/tools/server/autoupdate.sh
+User=$user
+Group=$user
+SupplementaryGroups=quark-governor
+EnvironmentFile=-/etc/quark/update.env
+Environment=QUARK_STATE=$state HOME=$state QUARK_CHANNEL=$ch QUARK_RELEASE_CACHE=$GOV QUARK_BUILD_LOCK=$GOV/build.lock
+ExecStart=/bin/sh $prefix/tools/server/autoupdate.sh
 Nice=10
-TimeoutStartSec=2h
+TimeoutStartSec=4h
 $HARDEN
-ReadWritePaths=$PREFIX $STATE
+ReadWritePaths=$prefix $state $GOV
 UNIT
-$SUDO tee /etc/systemd/system/quark-update.timer >/dev/null <<UNIT
+    $SUDO tee "/etc/systemd/system/$name-update.timer" >/dev/null <<UNIT
 [Unit]
-Description=check for quark updates every minute
+Description=check for quark updates ($ch server)
 [Timer]
 OnBootSec=1min
-OnUnitInactiveSec=1min
+OnUnitInactiveSec=$every
 [Install]
 WantedBy=timers.target
 UNIT
-$SUDO tee /etc/systemd/system/quark-update-alert.service >/dev/null <<UNIT
+    $SUDO tee "/etc/systemd/system/$name-update-alert.service" >/dev/null <<UNIT
 [Unit]
-Description=quark update failed or stalled: alert
+Description=quark update ($ch server) failed or stalled: alert
 [Service]
 Type=oneshot
-User=quark
-Group=quark
+User=$user
+Group=$user
 SupplementaryGroups=systemd-journal
 EnvironmentFile=-/etc/quark/update.env
-Environment=QUARK_STATE=$STATE
-ExecStart=/bin/sh $PREFIX/tools/server/update-alert.sh
+Environment=QUARK_STATE=$state QUARK_INSTANCE=$ch QUARK_UPDATE_UNIT=$name-update
+ExecStart=/bin/sh $prefix/tools/server/update-alert.sh
 $HARDEN
-ReadWritePaths=$STATE
+ReadWritePaths=$state
 UNIT
+}
+units quark quark "$PREFIX" "$STATE" production "$ARGS" "" 1min
+[ "$TESTING" = 1 ] && units quark-testing quark-testing "$TPREFIX" "$TSTATE" testing "$TARGS" "Nice=5
+CPUWeight=50" 2min
 $SUDO systemctl daemon-reload
 $SUDO systemctl enable --now quark.service quark-update.timer
 $SUDO systemctl restart quark.service
-echo "running as user quark from $PREFIX. status: systemctl status quark | logs: journalctl -u quark -f"
-echo "updates: journalctl -u quark-update (failures also: journalctl -p crit -t quark-update; webhook: /etc/quark/update.env)"
+echo "production: running as user quark from $PREFIX on UDP $PORT. status: systemctl status quark | logs: journalctl -u quark -f"
+if [ "$TESTING" = 1 ]; then
+    $SUDO systemctl enable --now quark-testing.service quark-testing-update.timer
+    $SUDO systemctl restart quark-testing.service
+    echo "testing: running as user quark-testing from $TPREFIX on UDP $TPORT (forward it too). logs: journalctl -u quark-testing -f"
+elif [ -f "$TUNIT" ]; then
+    $SUDO systemctl disable --now quark-testing.service quark-testing-update.timer 2>/dev/null || true
+    echo "testing: stopped and disabled (--no-testing); its data stays in $TSTATE. Bring it back: install.sh --testing"
+fi
+echo "updates: journalctl -u quark-update -u quark-testing-update (failures: journalctl -p crit -t quark-update; webhook: /etc/quark/update.env)"
+echo "load governor: cat $GOV/*.status; its decisions are logged by both servers (journalctl -u quark -u quark-testing | grep governor)"

@@ -1,30 +1,51 @@
 #!/bin/sh
-# Dedicated-server auto-update, run every minute by quark-update.timer as the `quark` user (install.sh sets it up).
-# It follows PRODUCTION releases only: the latest non-prerelease GitHub release. When there's a newer one it
+# Dedicated-server auto-update, run every minute or two by a systemd timer (install.sh sets one up per instance):
+#   quark-update.timer          the PRODUCTION server (/opt/quark): QUARK_CHANNEL=production (the default) follows
+#                               the latest production release, exactly as before;
+#   quark-testing-update.timer  the TESTING server (/opt/quark-testing): QUARK_CHANNEL=testing follows the newest
+#                               testing prerelease (tag test-X.Y.Z-test.N, signed manifest channel "testing"), or the
+#                               newest production release when that is newer by version. Never older than what runs.
+# When there's a newer release it
 #   1. waits until the release is complete: every platform's qpak that release lists has its .sig, and the Linux one
 #      (what most servers and players run) is there;
 #   2. checks the release's signed manifest (quark-release.txt + .sig, signed in CI with the release key) with the
-#      quark_sign this server already trusts, and that its tag is this release and its commit is what the git tag
-#      points at; also checks the signed Linux package, like the launcher does (docs/SIGNING.md);
-#   3. checks out exactly that commit, builds quark_server next to the running one, swaps the binary in and drops
+#      quark_sign this server already trusts: its channel is the release's (production for vX.Y.Z, testing for
+#      test-*), its tag is this release, its version is the tag's and its commit is what the git tag points at; also
+#      checks the signed Linux package, like the launcher does (docs/SIGNING.md);
+#   3. checks out exactly that commit, builds quark_server as that version (a testing build gets its -test.N suffix,
+#      checked against the commit's VERSION file) next to the running one, swaps the binary in and drops
 #      update.pending: the server restarts itself as soon as no match is being played (telling players first).
 # Never moves to an older version. Nothing happens when up to date.
 #
+# Both instances' updaters share one copy of GitHub's release list (QUARK_RELEASE_CACHE, the governor directory:
+# unauthenticated GitHub allows 60 requests an hour per address, and two updaters each asking every minute would run
+# out). An optional GITHUB_TOKEN in /etc/quark/update.env raises that limit. Builds take QUARK_BUILD_LOCK (flock), so
+# the two never compile at once (a 1 GB machine would run out of memory).
+#
 # Exit status: 0 = up to date / updated / waiting a little for a release to finish uploading / GitHub unreachable.
 # Nonzero = the update is stuck (bad signature, build failure, a release incomplete for over an hour, ...): every
-# such line starts with "quark-update: ERROR", and systemd runs quark-update-alert.service (OnFailure), which logs at
-# critical priority and posts to QUARK_ALERT_WEBHOOK (a Discord webhook URL) if /etc/quark/update.env sets one.
+# such line starts with "quark-update: ERROR", and systemd runs that instance's alert service (OnFailure), which logs at
+# critical priority naming the instance and posts to QUARK_ALERT_WEBHOOK (a Discord webhook URL) if
+# /etc/quark/update.env sets one.
 #
-# Layout (install.sh): code + build in the checkout this script is in (default /opt/quark), state in $QUARK_STATE
-# (default /var/lib/quark). Run it by hand with:  sudo -u quark sh /opt/quark/tools/server/autoupdate.sh
+# Layout (install.sh): code + build in the checkout this script is in (/opt/quark, /opt/quark-testing), state in
+# $QUARK_STATE (/var/lib/quark, /var/lib/quark-testing). Run it by hand with
+#   sudo -u quark sh /opt/quark/tools/server/autoupdate.sh
+#   sudo -u quark-testing env QUARK_STATE=/var/lib/quark-testing QUARK_CHANNEL=testing sh /opt/quark-testing/tools/server/autoupdate.sh
+# (Everything is inside main(), parsed before it runs: the checkout below replaces this very file.)
 set -eu
+main() {
 cd "$(dirname "$0")/../.."
 SRC=$(pwd)
 STATE=${QUARK_STATE:-/var/lib/quark}
+CHANNEL=${QUARK_CHANNEL:-production}
 STALL_SECS=${QUARK_STALL_SECS:-3600}
-API=${QUARK_RELEASE_API:-}   # (tests only: another release JSON URL, e.g. file://...)
+API=${QUARK_RELEASE_API:-}       # (tests only: another release-list JSON URL, e.g. file://...)
+CACHE=${QUARK_RELEASE_CACHE:-}   # (shared with the other instance's updater; empty: none)
+LOCK=${QUARK_BUILD_LOCK:-}
 log() { echo "quark-update: $*"; }
 die() { echo "quark-update: ERROR: $*" >&2; exit 1; }
+case "$CHANNEL" in production|testing) ;; *) die "QUARK_CHANNEL must be production or testing, not '$CHANNEL'" ;; esac
 command -v python3 >/dev/null || die "python3 is needed (to read GitHub's JSON)"
 # Run by an install from before 1.17 (its unit sets no QUARK_STATE): that unit's old script already built this
 # release; this one needs the new layout, so it waits for the operator instead of failing every minute.
@@ -33,6 +54,8 @@ if [ -z "${QUARK_STATE:-}" ] && [ ! -w /var/lib/quark ]; then
     exit 0
 fi
 mkdir -p "$STATE"
+PICK="python3 -I $SRC/tools/server/pick_release.py"
+locked() { if [ -n "$LOCK" ] && command -v flock >/dev/null; then flock -w 10800 "$LOCK" "$@"; else "$@"; fi; }
 
 REPO=$(git remote get-url origin | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##')
 TMP=$(mktemp -d)
@@ -47,29 +70,56 @@ waiting() {
     log "waiting for $TAG: $*"
     exit 0
 }
+gh() {   # gh URL OUT: a GitHub API GET (false if unreachable / rate-limited)
+    curl -sfL --max-time 30 -H "Accept: application/vnd.github+json" ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} "$1" -o "$2"
+}
 
-# --- 1. the latest production release ---------------------------------------------------------------------------
-if ! curl -sfL --max-time 30 -H "Accept: application/vnd.github+json" \
-        "${API:-https://api.github.com/repos/$REPO/releases/latest}" -o "$TMP/release.json"; then
-    log "GitHub unreachable (or rate-limited); trying again next minute"
-    exit 0
+# --- 1. the release this instance should run ---------------------------------------------------------------------
+# GitHub's release list (newest first): one fetch serves both instances for 70 s (each writes its own copy into the
+# shared cache; the freshest is used). It's only a pointer: everything installed is checked against signatures below.
+fresh=""
+if [ -z "$API" ] && [ -n "$CACHE" ] && [ -d "$CACHE" ]; then
+    now=$(date +%s)
+    for f in "$CACHE"/releases.*.json; do
+        [ -f "$f" ] || continue
+        age=$((now - $(stat -c %Y "$f" 2>/dev/null || echo 0)))
+        if [ "$age" -ge 0 ] && [ "$age" -lt 70 ] && cp "$f" "$TMP/releases.json" 2>/dev/null; then fresh=1; break; fi
+    done
 fi
-python3 - "$TMP/release.json" > "$TMP/release.txt" <<'PY'
-import json, sys
-r = json.load(open(sys.argv[1]))
-print("tag", r.get("tag_name", ""))
-print("prerelease", int(bool(r.get("prerelease")) or bool(r.get("draft"))))
-for a in r.get("assets", []):
-    print("asset", a.get("name", ""), a.get("state", ""), a.get("browser_download_url", ""))
-PY
+if [ -z "$fresh" ]; then
+    if ! gh "${API:-https://api.github.com/repos/$REPO/releases?per_page=100}" "$TMP/releases.json"; then
+        log "GitHub unreachable (or rate-limited); trying again next minute"
+        exit 0
+    fi
+    if [ -z "$API" ] && [ -n "$CACHE" ] && [ -d "$CACHE" ] && [ -w "$CACHE" ]; then
+        me=$(id -un)
+        { cp "$TMP/releases.json" "$CACHE/releases.$me.json.tmp" && mv -f "$CACHE/releases.$me.json.tmp" "$CACHE/releases.$me.json"; } 2>/dev/null || true
+    fi
+fi
+$PICK pick "$CHANNEL" "$TMP/releases.json" > "$TMP/release.txt" || die "can't read GitHub's release list"
+if ! grep -q '^channel production' "$TMP/release.txt" && [ -z "$API" ]; then
+    # (no production release on the first page: more testing builds than that since the last one) GitHub's latest
+    gh "https://api.github.com/repos/$REPO/releases/latest" "$TMP/latest.json" || { log "GitHub unreachable (or rate-limited); trying again next minute"; exit 0; }
+    $PICK pick "$CHANNEL" "$TMP/releases.json" "$TMP/latest.json" > "$TMP/release.txt" || die "can't read GitHub's latest release"
+fi
 TAG=$(sed -n 's/^tag //p' "$TMP/release.txt")
-echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || die "latest release tag '$TAG' isn't a production tag (vX.Y.Z)"
-[ "$(sed -n 's/^prerelease //p' "$TMP/release.txt")" = 0 ] || die "GitHub's latest release $TAG is a prerelease/draft"
+[ -n "$TAG" ] || { log "no $CHANNEL release on GitHub yet"; exit 0; }
+NEWVER=$(sed -n 's/^version //p' "$TMP/release.txt")
+WANTCH=$(sed -n 's/^channel //p' "$TMP/release.txt")
+case "$WANTCH" in
+    production) echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || die "release tag '$TAG' isn't a production tag (vX.Y.Z)" ;;
+    testing) echo "$TAG" | grep -Eq '^test-[0-9]+\.[0-9]+\.[0-9]+-test\.[0-9]+$' || die "release tag '$TAG' isn't a testing tag (test-X.Y.Z-test.N)" ;;
+    *) die "release $TAG: unknown channel" ;;
+esac
+[ "$CHANNEL" = testing ] || [ "$WANTCH" = production ] || die "a production server was offered testing release $TAG"
 CUR=$(cat "$STATE/built-tag" 2>/dev/null || true)
 [ "$TAG" = "$CUR" ] && { rm -f "$STATE/update-waiting"; exit 0; }
-NEWVER=${TAG#v}
-if [ -n "$CUR" ] && [ "$(printf '%s\n%s\n' "${CUR#v}" "$NEWVER" | sort -V | tail -n1)" != "$NEWVER" ]; then
-    die "latest release $TAG is older than the installed $CUR: refusing to downgrade"
+if [ -n "$CUR" ]; then
+    CURVER=$($PICK version "$CUR")
+    if [ -n "$CURVER" ] && [ "$($PICK cmp "$NEWVER" "$CURVER")" != 1 ]; then
+        [ "$($PICK cmp "$NEWVER" "$CURVER")" = 0 ] && { rm -f "$STATE/update-waiting"; exit 0; }
+        die "latest $CHANNEL release $TAG is older than the installed $CUR: refusing to downgrade"
+    fi
 fi
 
 # --- 2. complete? (platforms come from the release itself, not a hard-coded list) ---------------------------------
@@ -90,7 +140,7 @@ SIGN="$SRC/build-update/quark_sign"
 if [ ! -x "$SIGN" ]; then   # first run (install.sh): the checkout the operator installed from is the trust anchor
     cmake -S . -B build-update -DQUARK_BUILD_CLIENT=OFF -DQUARK_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release >/dev/null \
         || die "cmake failed"
-    nice cmake --build build-update -j1 --target quark_sign >/dev/null || die "building quark_sign failed"
+    locked nice cmake --build build-update -j1 --target quark_sign >/dev/null || die "building quark_sign failed"
 fi
 cp "$SIGN" "$TMP/quark_sign"   # (the build below replaces it)
 for a in quark-release.txt quark-release.txt.sig quark-linux.qpak quark-linux.qpak.sig; do
@@ -99,25 +149,44 @@ done
 "$TMP/quark_sign" verify "$TMP/quark-release.txt" >/dev/null || die "$TAG: quark-release.txt signature does not verify"
 "$TMP/quark_sign" verify "$TMP/quark-linux.qpak" >/dev/null || die "$TAG: quark-linux.qpak signature does not verify"
 field() { sed -n "s/^$1 //p" "$TMP/quark-release.txt"; }
-[ "$(field channel)" = production ] || die "$TAG: signed manifest isn't for production ($(field channel))"
+[ "$(field channel)" = "$WANTCH" ] || die "$TAG: signed manifest isn't for $WANTCH ($(field channel))"
 [ "$(field tag)" = "$TAG" ] || die "$TAG: signed manifest is for tag $(field tag)"
+[ "$(field version)" = "$NEWVER" ] || die "$TAG: signed manifest is for version $(field version)"
 COMMIT=$(field commit)
 echo "$COMMIT" | grep -Eq '^[0-9a-f]{40}$' || die "$TAG: signed manifest has no commit"
 
-# --- 4. that exact commit ----------------------------------------------------------------------------------------
-git fetch -q --force origin "+refs/tags/$TAG:refs/tags/$TAG" || waiting "git fetch of $TAG failed"
-[ "$(git rev-parse "$TAG^{commit}")" = "$COMMIT" ] || die "$TAG: the git tag isn't the signed commit $COMMIT"
+# --- 4. that exact commit, built as that version -----------------------------------------------------------------
+if [ "$WANTCH" = production ]; then
+    git fetch -q --force origin "+refs/tags/$TAG:refs/tags/$TAG" || waiting "git fetch of $TAG failed"
+    [ "$(git rev-parse "$TAG^{commit}")" = "$COMMIT" ] || die "$TAG: the git tag isn't the signed commit $COMMIT"
+else   # (testing prereleases are tagged by CI on the testing branch's commit; the signed manifest names it)
+    git fetch -q --force origin "+refs/tags/$TAG:refs/tags/$TAG" 2>/dev/null || git fetch -q origin "$COMMIT" || waiting "git fetch of $TAG failed"
+    if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+        [ "$(git rev-parse "$TAG^{commit}")" = "$COMMIT" ] || die "$TAG: the git tag isn't the signed commit $COMMIT"
+    fi
+fi
 # A server runs the shipped code: local edits in the checkout are dropped (data lives in $STATE, never here).
 git -c advice.detachedHead=false checkout -q --force --detach "$COMMIT" || die "checkout of $COMMIT failed"
 [ "$(git rev-parse HEAD)" = "$COMMIT" ] || die "checkout didn't land on $COMMIT"
+BASE=$(head -n1 VERSION | tr -d '[:space:]')
+SUFFIX=${NEWVER#"$BASE"}
+case "$WANTCH:$SUFFIX" in
+    production:) ;;
+    testing:-test.[0-9]*) echo "$SUFFIX" | grep -Eq '^-test\.[0-9]+$' || die "$TAG: version $NEWVER isn't $BASE-test.N" ;;
+    *) die "$TAG: version $NEWVER doesn't match the commit's VERSION $BASE" ;;
+esac
 
-cmake -S . -B build-update -DQUARK_BUILD_CLIENT=OFF -DQUARK_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release >/dev/null \
-    || die "$TAG: cmake failed"
-nice cmake --build build-update -j1 --target quark_server quark_sign >/dev/null || die "$TAG: build failed"
+# (QUARK_VERSION_SUFFIX always given: the build dir's cache would otherwise keep the last one)
+cmake -S . -B build-update -DQUARK_BUILD_CLIENT=OFF -DQUARK_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release \
+    -DQUARK_VERSION_SUFFIX="$SUFFIX" >/dev/null || die "$TAG: cmake failed"
+locked nice cmake --build build-update -j1 --target quark_server quark_sign >/dev/null || die "$TAG: build failed"
 mkdir -p bin
 cp build-update/quark_server bin/quark_server.new
 mv -f bin/quark_server.new bin/quark_server     # atomic: the running server keeps its old copy
 echo "$TAG" > "$STATE/built-tag"
 rm -f "$STATE/update-waiting"
 touch "$STATE/update.pending"
-log "built $TAG ($COMMIT); the server restarts when the current match ends"
+log "built $TAG ($NEWVER, $COMMIT) for the $CHANNEL server; it restarts when the current match ends"
+}
+main "$@"
+exit
