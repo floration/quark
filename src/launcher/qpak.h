@@ -10,7 +10,7 @@
 namespace qpak {
 
 // A qpak entry name is safe when it is a plain relative path inside the install: no root name (C:, \\server), no
-// root directory (/ or \), no "..", no ':' or NUL, nothing empty.
+// root directory (/ or \), no "..", no "." or empty part (it must name a file), no ':' or NUL.
 bool safeEntryName(const std::string& name);
 
 // Reads a whole package from `in` (`size` bytes long): every entry is checked (name safe, size within what's left,

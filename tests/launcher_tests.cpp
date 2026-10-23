@@ -287,6 +287,9 @@ static void testQpak() {
                                    "QPAK1\n" + pakEntry("short", "xy", 0644, 3),            // one byte missing
                                    good + "\x01\x00"})                                   // trailing junk
         LCHECK(!readAll(bad, &(got = {}), &err));   // (entries before a bad one may come out: the stage is thrown away)
+    // found by fuzz_qpak: "." (and "a/.", "a//b", "dir/") passed although it names the stage folder, not a file
+    LCHECK(!qpak::safeEntryName(".") && !qpak::safeEntryName("a/.") && !qpak::safeEntryName("a/./b") && !qpak::safeEntryName("a//b") &&
+           !qpak::safeEntryName("dir/") && qpak::safeEntryName("a/b.c") && qpak::safeEntryName(".hidden"));
     LCHECK(!qpak::safeEntryName("..") && !qpak::safeEntryName("a\\..\\b") && qpak::safeEntryName("quark.app/Contents/MacOS/quark"));
     // extract: into a fresh stage folder, modes kept (POSIX)
     fs::path t = fs::temp_directory_path() / ("quark_qpak_test_" + std::to_string(rand()));

@@ -14,6 +14,14 @@ bool safeEntryName(const std::string& name) {
     if (name.empty() || name.find('\0') != std::string::npos || name.find(':') != std::string::npos) return false;
     if (name[0] == '/' || name[0] == '\\') return false;
     if (name.find("..") != std::string::npos) return false; // also catches ..\ on Windows
+    // every part names something: no "." (a name "." or "a/." is the folder itself, not a file), no empty part
+    // ("a//b", a trailing "/"): what pack.py writes, and nothing that resolves to the stage folder itself
+    for (size_t i = 0; i <= name.size();) {
+        size_t j = name.find_first_of("/\\", i);
+        if (j == std::string::npos) j = name.size();
+        if (j == i || name.compare(i, j - i, ".") == 0) return false;
+        i = j + 1;
+    }
     fs::path p = fs::u8path(name);
     return p.is_relative() && !p.has_root_name() && !p.has_root_directory();
 }
