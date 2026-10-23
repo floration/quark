@@ -634,6 +634,7 @@ UserCmd botThink(Server& s, int id) {
     if (b.script) return b.script(s, id);
     UserCmd cmd;
     cmd.weapon = kNoWeaponChange;
+    bool dashJump = false;   // this tick's dash is meant as a dash jump (experts on long straight routes)
     bool navOk = s.nav_.ready(s.map_);
     // a goal from the previous map, or picked before this map's graph was ready, is picked again
     if (b.goalMapId != s.map_.id() || (navOk && b.goalNavGen != s.nav_.generation)) {
@@ -1062,7 +1063,13 @@ UserCmd botThink(Server& s, int id) {
         // long straight stretch: dash along it (levels that would), when it lands on something
         if (!fighting && onGround && sp.runDash > 0 && me.move.dashCooldown <= 0 && !(me.move.mods & MOVE_RUN_ONLY) &&
             length(b.waypoint - me.move.pos) > 9.0f && dot(moveDir, fwd) > 0.95f && chance(b, sp.runDash, dt)) {
-            if (groundAlong(s, me.move.pos, moveDir, 12.0f)) cmd.buttons |= BTN_DASH;
+            if (groundAlong(s, me.move.pos, moveDir, 12.0f)) {
+                cmd.buttons |= BTN_DASH;
+                // experts with the room make it a dash jump: jump with it and keep the dash's 24 m/s through a
+                // jump's ~16 m flight (ground all the way, and the waypoint further than that)
+                dashJump = b.skill == BOT_EXPERT && hopping && length(b.waypoint - me.move.pos) > 20.0f &&
+                           groundAlong(s, me.move.pos, moveDir, 20.0f);
+            }
         }
     }
     // Maps with pits or lava: look ahead along where we're actually going (momentum included: on the ground, mid-hop,
@@ -1115,5 +1122,8 @@ UserCmd botThink(Server& s, int id) {
         b.lastPos = me.move.pos;
         b.stuckCheckAt = now + 1.5;
     }
+    // jump with our own dash on the floor (a hop's landing, a fight jump) turns it into a dash jump: a 16 m flight
+    // at dash speed, past what the dash checked for ground. Only when meant.
+    if (!dashJump && ((cmd.buttons & BTN_DASH) || me.move.dashTimer > 0)) cmd.buttons &= ~BTN_JUMP;
     return cmd;
 }

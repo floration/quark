@@ -3934,9 +3934,9 @@ void Game::drawCustomModeEditor(float cx, float y) {
     } else if (customTab_ == 3) {   // every movement constant, x its normal value (gravity / speed / jump are on GENERAL)
         ui_.label(x, y, "EVERY MOVEMENT SETTING: STANDARD -> THIS MODE (THE SLIDER IS THE MULTIPLIER, 1.00X = STANDARD)", kGrey, 0.5f);
         y += 16 * s;
-        // as many columns as fit above RESET / SAVE / BACK (720p and smaller: three)
+        // as many columns as fit above RESET / SAVE / BACK (720p and smaller: four)
         const float rh = bh, avail = r_.height() - y - 2 * (bh + gap) - 60 * s;
-        int cols = Ui::fitColumns(MV_COUNT, avail, rh + gap, 2, 3), rows = (MV_COUNT + cols - 1) / cols;
+        int cols = Ui::fitColumns(MV_COUNT, avail, rh + gap, 2, 4), rows = (MV_COUNT + cols - 1) / cols;
         float cw = (w - (cols - 1) * gap) / cols;
         for (int k = 0; k < MV_COUNT; k++) {
             float cx2 = x + (k % cols) * (cw + gap), cy2 = y + (k / cols) * (rh + gap);
@@ -4042,6 +4042,9 @@ static const char* const kInfoPages[][48] = {
         "F3 - performance overlay (average, 1% and 0.1% low FPS, input latency).   F12 - screenshot.   ESC - menu, votes, settings.",
         "# MOVEMENT",
         "Strafe-jumping builds speed: hold a strafe key, turn the mouse with it, and keep jumping.",
+        "Dash jump: jump while dashing along the floor to keep the dash's full speed through the jump.",
+        "Super dash: look down and dash into the floor while holding jump for even more speed and a low hop.",
+        "Dash into a wall head-on (under 45 degrees) and you bounce off it at full dash speed.",
         "You step up anything 0.55 m high, including stairs mid-jump. Ladders: walk into them, look up or down to climb.",
         "# WEAPONS",
         "ROCKET (splash; rocket jump off the floor for 10% damage), RIFLE (automatic; scoped on alt), LASER (a beam; alt pulls), SHOTGUN (alt: ricochet), SNIPER (scope on alt), STICKY (alt detonates), CROSSBOW (headshots), BUBBLE (alt: a stream of bubbles), KNIFE (alt: throw it), SYRINGE (fire heals you 10 hp, once a second; alt throws it: +30 hp and reset cooldowns for a teammate).",
