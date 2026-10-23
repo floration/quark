@@ -543,6 +543,85 @@ static void testRpsMany(uint16_t port) {
     CHECK(rpsLosingShape(three, 3) == RPS_NONE && rpsLosingShape(same, 3) == RPS_NONE && rpsLosingShape(two, 4) == RPS_ROCK);
 }
 
+// B8: the locator is a weapon held only by the seeker (hide and seek) and the tagger (tag), and nowhere else: firing
+// it shows "it" one random hider / runner, then it recharges for kLocatorCooldown. The old "locate" command is gone.
+static void testLocator(uint16_t port) {
+    printf("locator: a weapon, only the seeker's / tagger's, only in hide and seek and tag\n");
+    {   // every mode's pool (custom modes and 1v1 rulesets that would allow "everything" too)
+        Server s;
+        for (int m = 0; m < MODE_COUNT; m++) {
+            s.ms_.mode = (uint8_t)m;
+            CHECK(s.weaponAllowed(WPN_LOCATOR) == isItMode(m));
+            if (isItMode(m)) CHECK(s.weaponAllowed(WPN_KNIFE) && !s.weaponAllowed(WPN_ROCKET));
+        }
+        s.ms_.mode = MODE_FFA;
+        s.cfg_.custom.name = "everything"; s.cfg_.custom.baseMode = MODE_FFA;
+        s.cfg_.custom.weapons = (uint16_t)((1u << WPN_COUNT) - 1);
+        CHECK(!s.weaponAllowed(WPN_LOCATOR) && s.weaponAllowed(WPN_ROCKET));
+        s.cfg_.custom = CustomRules();
+        s.ms_.mode = MODE_ARENA; s.ms_.arenaVariant = 0;
+        CHECK(!s.weaponAllowed(WPN_LOCATOR));
+    }
+    for (int mode : {MODE_HIDE, MODE_TAG}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "hamlet"; cfg.mode = mode; cfg.port = port++;
+        NetClient c[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); return; }
+        int it = -1;
+        for (auto* cl : cls) if (s.players_[cl->clientId()].it) it = cl->clientId();
+        CHECK(it >= 0);
+        if (it < 0) { s.stop(); return; }
+        int other = c[0].clientId() == it ? c[1].clientId() : c[0].clientId();
+        s.players_[it].itFreezeUntil = 0;
+        CHECK(s.players_[it].weapon == WPN_KNIFE);   // ("it" starts with the knife out)
+        auto locates = [&](NetClient& cl) { int n = 0; for (auto& e : cl.takeEvents()) n += e.type == EV_LOCATE; return n; };
+        for (auto* cl : cls) cl->takeEvents();
+        for (auto* cl : cls) cl->sendCommand("locate");   // the old use-key command does nothing now
+        pump(s, cls, 0.2, idle);
+        for (auto* cl : cls) CHECK(locates(*cl) == 0);
+        bool fire = false;
+        auto hold = [&](int i) { UserCmd u; u.weapon = WPN_LOCATOR; if (fire) u.buttons = BTN_FIRE; (void)i; return u; };
+        pump(s, cls, 0.2, hold);                           // everyone takes out the locator (the hider can hold it, not use it)
+        CHECK(s.players_[it].weapon == WPN_LOCATOR);
+        fire = true;
+        pump(s, cls, 0.3, hold);                           // fire held: one ping (5 s cooldown)
+        NetClient& itc = c[0].clientId() == it ? c[0] : c[1];
+        NetClient& oc = c[0].clientId() == it ? c[1] : c[0];
+        std::vector<GameEvent> got = itc.takeEvents();
+        int n = 0, who = -1;
+        for (auto& e : got) if (e.type == EV_LOCATE) { n++; who = e.a; }
+        CHECK(n == 1 && who == other);
+        CHECK(locates(oc) == 0);                           // (only to "it"; the hider's locator does nothing)
+        CHECK(s.players_[it].locateAt > s.time() + kLocatorCooldown - 1.0);
+        fire = false; pump(s, cls, 0.1, hold);
+        s.players_[it].locateAt = s.time();                // recharged: fires again
+        fire = true; pump(s, cls, 0.2, hold);
+        CHECK(locates(itc) == 1);
+        // no damage from it, and the knife is back with a key press
+        CHECK(s.players_[other].alive && s.players_[other].health >= kMaxHealth);
+        pump(s, cls, 0.1, [&](int) { UserCmd u; u.weapon = WPN_KNIFE; return u; });
+        CHECK(s.players_[it].weapon == WPN_KNIFE);
+        s.stop();
+    }
+    {   // anywhere else it can't be taken out
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port++;
+        NetClient c[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); return; }
+        pump(s, cls, 0.3, [](int) { UserCmd u; u.weapon = WPN_LOCATOR; u.buttons = BTN_FIRE; return u; });
+        for (auto* cl : cls) {
+            CHECK(s.players_[cl->clientId()].weapon != WPN_LOCATOR);
+            CHECK(!(cl->mode().weaponMask >> WPN_LOCATOR & 1));
+            for (auto& e : cl->takeEvents()) CHECK(e.type != EV_LOCATE);
+        }
+        s.stop();
+    }
+}
+
 // GAME-1: in tag, "it" going to spectate or leaving is eliminated (the round ends as if time ran out); nobody joins a
 // side mid-match; someone eliminated who reconnects is still out.
 static void testTagEscape(uint16_t port) {
@@ -828,6 +907,7 @@ static void testGameRules(const std::string& only) {
         {"hide", [] { testHideScoring(TP(29247)); }},
         {"tag", [] { testTagEscape(TP(29248)); }},
         {"rps", [] { testRpsTwo(TP(29255)); testRpsMany(TP(29256)); }},
+        {"locator", [] { testLocator(TP(29260)); }},
         {"bomb", [] { testBombDrop(TP(29249)); }},
         {"botdefer", [] { testBalanceBotDefer(TP(29250)); }},
         {"spawns", [] { testSpawnTypes(TP(29251)); }},

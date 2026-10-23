@@ -230,7 +230,7 @@ static void testModelExport() {
             meshToModel(b, mm);
             ACHECK(mm.opaque.size() + mm.translucent.size() == b.triangleCount() * 3 && mm.radius > 0);
         }
-    ACHECK(models == 5 + 10 + 7 + 1);
+    ACHECK(models == 5 + 11 + 7 + 1);   // (weapons: 11 with the locator)
     // the default parts are what drawWorld draws: a known box, the standard model's chest, team coloured
     ModelPalette pal;
     pal.c[TINT_TEAM] = {0.2f, 0.4f, 0.8f};
@@ -401,7 +401,7 @@ static void testExport() {
     for (const OfficialMapData* m = kOfficialMapData; m->name; m++) official++;
     ACHECK(sounds == (size_t)Audio::kPacks * SND_VOICE_THREE);
     ACHECK(voices == (size_t)kAnnouncerVoices * (SND_COUNT - SND_VOICE_THREE));
-    ACHECK(models == 23 && maps == official && missing == 0);
+    ACHECK(models == 24 && maps == official && missing == 0);
     ACHECK(man.find("\"fonts/WorkSans.") != std::string::npos && man.find("\"images/icon.") != std::string::npos);
     std::error_code ec;
     fs::remove_all(dir, ec);

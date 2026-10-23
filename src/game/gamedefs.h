@@ -16,7 +16,7 @@ constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr int kMaxInterpMs = 200;      // the longest fixed interpolation delay a client can set (interp_ms; lag compensation covers it)
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 33;   // 33: fixed weapon spread pattern (NET-9), clients report a fixed interp delay ("interp"); 32: ranked signatures name the dialled server address (REVIEW 2.2); 31: hull scaling + grapple change in shared pmove; 30:  signed ranked ids, reconnect tokens; edit sessions name the map by an edit chain (mapEditCrc), map data carries the text CRC
+constexpr uint16_t kProtocolVersion = 34;   // 34: the locator is a weapon (WPN_LOCATOR; hide and seek / tag only), EV_RPS; 33: fixed weapon spread pattern (NET-9), clients report a fixed interp delay ("interp"); 32: ranked signatures name the dialled server address (REVIEW 2.2); 31: hull scaling + grapple change in shared pmove; 30:  signed ranked ids, reconnect tokens; edit sessions name the map by an edit chain (mapEditCrc), map data carries the text CRC
 // PlayerSnap::keys: what a player is holding (spectators see it on the key overlay)
 enum : uint16_t { KEY_FWD = 1, KEY_BACK = 2, KEY_LEFT = 4, KEY_RIGHT = 8, KEY_JUMP = 16, KEY_CROUCH = 32, KEY_FIRE = 64, KEY_ALT = 128, KEY_DASH = 256, KEY_HOOK = 512 };
 
@@ -84,7 +84,7 @@ enum ArenaRule : uint8_t {
     AR_QUICK_DASH = 8,     // dash recharges 3x faster
     AR_LOW_GRAVITY = 16,   // 40% gravity
 };
-constexpr float kLocatorCooldown = 5.0f, kLocatorShow = 1.0f; // tag / hide and seek: the tagger / seeker sees one target this long
+constexpr float kLocatorCooldown = 5.0f, kLocatorShow = 1.0f; // the locator (WPN_LOCATOR, held by the seeker / tagger): fire it to see one random hider / runner this long, every kLocatorCooldown
 constexpr int KILL_HEADSHOT = 0x100, KILL_AIRBORNE = 0x200, KILL_WEAPON = 0xFF; // EV_KILL c: weapon in the low byte
 #define WB(w) (1u << (w))
 
@@ -149,7 +149,7 @@ enum : uint16_t {
 
 // Weapon set. Rifle and knife are placeholders. No single shot does more than 50 (of 100 health).
 enum WeaponId : uint8_t {
-    WPN_RIFLE = 0, WPN_ROCKET, WPN_KNIFE, WPN_SNIPER, WPN_LASER, WPN_SHOTGUN, WPN_STICKY, WPN_CROSSBOW, WPN_BUBBLE, WPN_SYRINGE, WPN_COUNT
+    WPN_RIFLE = 0, WPN_ROCKET, WPN_KNIFE, WPN_SNIPER, WPN_LASER, WPN_SHOTGUN, WPN_STICKY, WPN_CROSSBOW, WPN_BUBBLE, WPN_SYRINGE, WPN_LOCATOR, WPN_COUNT
 };
 constexpr uint8_t kNoWeaponChange = 255;
 struct WeaponDef {
@@ -238,6 +238,7 @@ inline const WeaponDef& baseWeaponDef(int w) {
         {"CROSSBOW",    2.0f,    50,      0,    true,  76.5f, 0,     0.0f,  0.0f, 70.0f,  false, 1,  6.0f, false, 3},  // 2, 2.0 s (headshots 60)
         {"BUBBLE",      1.0f/5,  10,      0,    true,  15.6f, 1.8f,  0.04f, -1,     0,    false, 1, -1.5f, false, 4}, // 10 pops, 1.8 s (floats up a little; 5 a second)
         {"SYRINGE",     0.1f,    1,       0,    false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // heals you 1 hp every 0.1 s (damage = heal)
+        {"LOCATOR",     kLocatorCooldown, 0, 0, false,  0,    0,     0.0f,  -1,     0,    false, 1,  0,    false, 0},  // no damage: shows a hider / runner (hide and seek / tag only)
     };
     return defs[w < 0 || w >= WPN_COUNT ? 0 : w];
 }
@@ -328,7 +329,10 @@ inline float shotRefire(int w, bool alt) {
     return r;
 }
 // Slot order (number keys, scroll wheel, HUD list): the weapon ids themselves stay as they are.
-constexpr int kWeaponSlots[WPN_COUNT] = {WPN_ROCKET, WPN_RIFLE, WPN_LASER, WPN_SHOTGUN, WPN_SNIPER, WPN_STICKY, WPN_CROSSBOW, WPN_BUBBLE, WPN_KNIFE, WPN_SYRINGE};
+constexpr int kWeaponSlots[WPN_COUNT] = {WPN_ROCKET, WPN_RIFLE, WPN_LASER, WPN_SHOTGUN, WPN_SNIPER, WPN_STICKY, WPN_CROSSBOW, WPN_BUBBLE, WPN_KNIFE, WPN_SYRINGE, WPN_LOCATOR};
+// The locator exists only in hide and seek and tag (owner B8): the seeker / tagger holds it with the knife.
+inline bool weaponInMode(int w, int mode) { return w != WPN_LOCATOR || isItMode(mode); }
+inline int weaponSlotKey(int slot) { return slot >= 9 ? 0 : slot + 1; }   // number key of a slot (the syringe and the locator share 0: never in one mode)
 inline int weaponSlot(int w) { for (int i = 0; i < WPN_COUNT; i++) if (kWeaponSlots[i] == w) return i; return 0; }
 inline bool altFires(int w) { return w == WPN_KNIFE || w == WPN_SHOTGUN || w == WPN_ROCKET || w == WPN_BUBBLE || w == WPN_SYRINGE; } // knife (throw), shotgun (bounce), rocket (lob): alt-fire is a shot of its own
 constexpr int kMaxStickies = 6;       // per player; firing a 7th removes the oldest
@@ -354,7 +358,7 @@ enum EventType : uint8_t {
     EV_RACE_SPLIT,   // race: a = player, b = checkpoint reached (1-based; the last one is the finish), text = ms since the start
     EV_TYPING,       // a is typing in chat (others hear key clicks and see "..." over them)
     EV_QUIP,         // a says a line from the voice pack (b: which one, the same pick for everyone)
-    EV_LOCATE,       // tag / hide and seek locator, to the tagger / seeker only: a = who, text = "x y z" where they are
+    EV_LOCATE,       // the locator fired (WPN_LOCATOR), to the tagger / seeker only: a = who, text = "x y z" where they are
     EV_RANKSIGN,     // ranked match live / time trial started: text = the match (race ticket) id; the game answers "ticketsig <signature>"
     EV_RPS,          // hide and seek tiebreak: a = RpsStage, b = throw number, text = "<best of 3> <winner or -1>" then " id:shape:wins:out"
                      // per player (shape RPS_PICKED until the reveal), then a line with what happened

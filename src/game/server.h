@@ -131,7 +131,9 @@ struct ServerPlayer {
     float dmgDealt = 0, objTime = 0;    // scoreboard: damage to enemies, seconds on the objective (score = dmg / 10 + obj)
     int shotsFired = 0, shotsHit = 0;   // accuracy: shots (hitscan or projectile) that damaged an enemy
     bool hitSinceShot = false;
-    double typingAt = 0, quipAt = 0, locateAt = 0;   // next "typing" relay allowed (and quip / locate pings)
+    double typingAt = 0, quipAt = 0, locateAt = 0;   // next "typing" relay allowed (and quip pings, the locator ready)
+    Vec3 locatedPos;            // the locator's last find (bots head there)
+    double locatedAt = -1e9;
     int model = 0;              // player model (cosmetic, kPlayerModels looks, same hitbox)
     int soundPack = 0;      // cosmetic: the sound pack others hear this player with
     bool it = false;            // hide and seek / tag: the seeker / tagger (has the knife)
@@ -330,6 +332,7 @@ public:
     void spawnPlayer(int id);
     void autoTeam(int id);      // a newcomer's team (or spectator): mode, seat limits, balance
     void killPlayer(int victim, int killer, int weapon);
+    void useLocator(int id);    // hide and seek / tag: "it" fired the locator (WPN_LOCATOR)
     void damagePlayer(int victim, int attacker, float dmg, int weapon, const Vec3& knock);
     int aliveCount(int team) const;
     int teamCount(int team) const;

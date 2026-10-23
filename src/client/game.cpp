@@ -472,13 +472,6 @@ bool Game::pressInput(int code) {
     if (b.has(A_VOTENO, code)) { net_.sendCommand("vote no"); return true; }
     if (b.has(A_VOTESTART, code)) { net_.sendCommand("callvote start"); return true; }
     if (b.has(A_QUIP, code) && !paused_) { net_.sendCommand("quip"); return true; }
-    if (b.has(A_USE, code) && !paused_ && net_.hasSnapshot() && isItMode(net_.mode().mode)) { // the locator (tagger / seeker)
-        const PlayerSnap* mp = net_.findPlayer(net_.clientId());
-        if (mp && (mp->flags & PS_HASBOMB)) {
-            if (time_ >= locatorReady_) { net_.sendCommand("locate"); locatorReady_ = time_ + kLocatorCooldown; }
-            return true;
-        }
-    }
     if (paused_) return false;
     if (b.has(A_CHAT, code)) {
         chatting_ = true;
@@ -498,9 +491,14 @@ bool Game::pressInput(int code) {
     // weapons outside this mode's pool (1v1 rulesets, duel modifiers) are skipped
     uint16_t pool = net_.mode().weaponMask;
     bool knifeAway = net_.hasSnapshot() && net_.latest().knifeAway > 0;
-    auto allowed = [&](int w) { return (!pool || (pool >> w & 1)) && !(w == WPN_KNIFE && knifeAway); }; // a thrown knife is away for a bit
-    for (int k = 0; k < WPN_COUNT; k++) // slot keys 1-9 and 0, in kWeaponSlots order
-        if (b.has(slotAction(k), code)) { int w = kWeaponSlots[k]; if (allowed(w)) desiredWeapon_ = w; return true; }
+    const int mode = net_.mode().mode;
+    const PlayerSnap* self = net_.findPlayer(net_.clientId());
+    bool emptyHanded = isItMode(mode) && !(self && (self->flags & PS_HASBOMB));   // hide and seek / tag: only "it" holds anything
+    auto allowed = [&](int w) { return (!pool || (pool >> w & 1)) && weaponInMode(w, mode) && !emptyHanded && !(w == WPN_KNIFE && knifeAway); }; // a thrown knife is away for a bit
+    bool slotKey = false;
+    for (int k = 0; k < WPN_COUNT; k++) // slot keys 1-9 and 0, in kWeaponSlots order (0: the syringe, or the locator)
+        if (b.has(slotAction(k), code)) { slotKey = true; int w = kWeaponSlots[k]; if (allowed(w)) { desiredWeapon_ = w; return true; } }
+    if (slotKey) return true;
     int cur = weaponSlot(desiredWeapon_ >= 0 ? desiredWeapon_ : net_.selfWeapon());
     for (int dir : {1, -1}) {
         if (!b.has(dir > 0 ? A_NEXTWEAPON : A_PREVWEAPON, code)) continue;
@@ -917,7 +915,10 @@ void Game::handleEvents() {
             case EV_LOCATE: {   // the locator found someone: show them through walls for a second
                 std::istringstream ls(e.text);
                 Vec3 p;
-                if (ls >> p.x >> p.y >> p.z) { locatePos_ = p; locateId_ = e.a; locateUntil_ = time_ + kLocatorShow; audio_.play(SND_GRAPPLE_HIT, 0.6f, 1.4f); }
+                if (ls >> p.x >> p.y >> p.z) {
+                    locatePos_ = p; locateId_ = e.a; locateUntil_ = time_ + kLocatorShow; audio_.play(SND_GRAPPLE_HIT, 0.6f, 1.4f);
+                    locatorReady_ = std::max(locatorReady_, time_ + kLocatorCooldown - 0.1);   // (the server's clock for it, less the trip here)
+                }
                 break;
             }
             case EV_RPS: {   // the hide and seek tiebreak: who's in, who has chosen, the reveal
@@ -1115,6 +1116,13 @@ void Game::frame(double dt) {
                 const PlayerSnap* mp = net_.findPlayer(net_.clientId());
                 if (!mp || !(mp->flags & PS_HASBOMB)) wantFire = false;
             }
+            if (net_.selfWeapon() == WPN_LOCATOR) {   // the locator: a ping every kLocatorCooldown (the server answers with EV_LOCATE)
+                if (wantFire && !localFireLocked_ && net_.selfAlive() && net_.mode().phase == PHASE_LIVE && time_ >= locatorReady_) {
+                    locatorReady_ = time_ + kLocatorCooldown;
+                    audio_.play(SND_GRAPPLE_FIRE, 0.7f, 1.6f);
+                }
+                wantFire = false;
+            }
             if (c.weapon != lastCmdWeapon_ && (c.buttons & (BTN_FIRE | BTN_ALTFIRE))) localFireLocked_ = true; // switched with fire held
             lastCmdWeapon_ = c.weapon;
             if (localFireLocked_) { // mirror the server: after a knife throw or a switch, let go before the next weapon fires
@@ -1264,6 +1272,7 @@ static const Vec3 kMuzzle[WPN_COUNT] = {
     {0, 0.032f, -0.23f},    // crossbow
     {0, 0.004f, -0.257f},   // bubble
     {0, 0, -0.2f},          // syringe
+    {0, 0, -0.125f},        // locator (its emitter)
 };
 
 // Where your shots come out: the muzzle of the weapon model wherever the HUD settings put it (x / y / depth /
@@ -1707,7 +1716,7 @@ void Game::drawWorld(float alpha) {
     // (spectating: the gun of whoever we're watching)
     const bool specGun = !alive && viewing != me && viewing >= 0 && players[viewing].valid;
     const PlayerSnap* holder = specGun ? &players[viewing].snap : mep;
-    bool unarmed = isItMode(net_.mode().mode) && !(holder && (holder->flags & PS_HASBOMB));
+    bool unarmed = isItMode(net_.mode().mode) && !(holder && (holder->flags & PS_HASBOMB)) && !(opts_.debugWeapon > 0 && !specGun);   // (--weapon: shown anyway, for screenshots)
     const auto& vm = cfg_.hud[Settings::HUD_VIEWMODEL];
     if ((alive || specGun) && !(scoped_ && scopeOverlay_ && !specGun) && !unarmed && !vm.hidden) {
         int w = specGun ? (int)players[viewing].snap.weapon : net_.selfWeapon();
@@ -1729,7 +1738,9 @@ void Game::drawWorld(float alpha) {
             r_.viewMesh(*ov, at, k, tint);
         } else {
             viewmodelParts(w, vpal, parts_);
-            for (const ModelPart& q : parts_) r_.viewBox(at + q.c * k, q.h * k, q.color);
+            // the locator's screen: dim while it recharges, pulsing when it's ready
+            float glow = w != WPN_LOCATOR || specGun ? 1.0f : time_ >= locatorReady_ ? 0.85f + 0.35f * (float)std::sin(time_ * 6.0) : 0.3f;
+            for (const ModelPart& q : parts_) r_.viewBox(at + q.c * k, q.h * k, q.slot == TINT_GLOW ? q.color * glow : q.color);
         }
     }
     r_.brightness = cfg_.brightness;
@@ -1895,8 +1906,8 @@ void Game::drawHud() {
             std::string n = net_.playerName(locateId_);
             r_.text(sx - r_.textWidth(n, ts) * 0.5f, sy - bh - r_.textHeight(ts) - 4 * s, ts, n, c);
         }
-        std::string key = inputName(binds().code[A_USE][0]);
-        std::string t = time_ >= locatorReady_ ? "LOCATOR READY - " + key : "LOCATOR " + std::to_string((int)std::ceil(locatorReady_ - time_)) + "s";
+        std::string key = upper(inputName(binds().code[net_.selfWeapon() == WPN_LOCATOR ? A_FIRE : slotAction(weaponSlot(WPN_LOCATOR))][0]));
+        std::string t = time_ >= locatorReady_ ? "LOCATOR READY" + (key.empty() ? std::string() : " - " + key) : "LOCATOR " + std::to_string((int)std::ceil(locatorReady_ - time_)) + "s";
         float lts = std::max(1.0f, std::round(ts * 0.9f));
         r_.text(cx - r_.textWidth(t, lts) * 0.5f, H - 140 * s, lts, t, time_ >= locatorReady_ ? Color{1, 0.85f, 0.2f, 1} : kGrey);
     }
@@ -2143,7 +2154,7 @@ void Game::drawHud() {
                 r_.text(bx - r_.textWidth(label, lts) - 6 * k, y - 2 * k, lts, label, f >= 1 ? kWhite : kGrey);
             };
             int cw = net_.selfWeapon();
-            bar(bcy + 40 * k, "WEAPON", (float)std::max(0.0, localNextFire_ - time_), weaponDef(cw).refire);
+            bar(bcy + 40 * k, "WEAPON", (float)std::max(0.0, (cw == WPN_LOCATOR ? locatorReady_ : localNextFire_) - time_), weaponDef(cw).refire);   // (the locator: its recharge)
             bar(bcy + 52 * k, "DASH", mv.dashCooldown, kDashCooldown * moveTuning().m[MV_DASH_COOLDOWN]);
             bar(bcy + 64 * k, "HOOK", mv.hookCooldown, kHookCooldown * moveTuning().m[MV_HOOK_COOLDOWN]);
         }
@@ -2180,7 +2191,9 @@ void Game::drawHud() {
             float sts = std::max(1.0f, std::round(ts * 0.75f * e.scale));
             for (int k = WPN_COUNT - 1; k >= 0; k--) {
                 int wi = kWeaponSlots[k];
-                std::string t = std::to_string((k + 1) % 10) + " " + weaponDef(wi).name;
+                bool has = !ms.weaponMask || (ms.weaponMask >> wi & 1);
+                if (!weaponInMode(wi, ms.mode) || (isItMode(ms.mode) && !has)) continue;   // (hide and seek / tag: just the knife and the locator)
+                std::string t = std::to_string(weaponSlotKey(k)) + " " + weaponDef(wi).name;
                 int away = wi == WPN_KNIFE && net_.hasSnapshot() ? net_.latest().knifeAway : 0;
                 if (away > 0) t += " " + std::to_string((away + 9) / 10); // thrown: seconds until it's back
                 float tw = r_.textWidth(t, sts);
@@ -3724,6 +3737,7 @@ void Game::drawCustomModeEditor(float cx, float y) {
         float sw = (w - 130 * s - 3 * gap) / 3;
         for (int i = 0; i < WPN_COUNT; i++) {
             int wp = kWeaponSlots[i];
+            if (wp == WPN_LOCATOR) continue;   // (hide and seek / tag only, always "it"'s: not a pick)
             bool on = r.weapons == 0 || (r.weapons >> wp & 1);
             if (ui_.toggle(x, y, 124 * s, bh, upper(baseWeaponDef(wp).name), on)) {
                 uint16_t all = (uint16_t)((1u << WPN_COUNT) - 1), m = r.weapons ? r.weapons : all;
@@ -3799,6 +3813,7 @@ static const char* const kInfoPages[][48] = {
         "RACE - the course's checkpoints in order. It starts as untimed practice; vote start (F4) to race. TIME TRIAL (main menu) is the ranked race on Viaduct.",
         "HIDE AND SEEK - one seeker with a knife, everyone else hides first. Everyone seeks once: 1 point for each hider you find, 1 for staying hidden to the end of a round. A tie for first is settled by rock paper scissors (keys 1 / 2 / 3).",
         "TAG - whoever is the TAGGER when the timer runs out is eliminated. Last one standing wins.",
+        "LOCATOR (hide and seek and tag: the seeker's / tagger's second weapon, key 0) - fire it to see one random hider / runner through walls for a second; it recharges in 5 s.",
         "# CUSTOM MODES",
         "Host Game > CUSTOM MODE > NEW: any base mode with your own health, gravity, speed, jump, knockback, weapons (fire rate, damage, projectile speed) and map pool. Players who join get the rules automatically.",
         "# MAPS AND MODES",
@@ -4646,7 +4661,7 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
             if (firing && p.weapon == WPN_LASER && time_ >= ra.nextLaser) {
                 audio_.play3D(SND_LASER, p.pos + Vec3(0, 1.5f, 0), 0.7f, 1.0f, sp);
                 ra.nextLaser = time_ + 0.05;
-            } else if (firing && !remoteFiring_[i] && p.weapon != WPN_LASER && time_ >= ra.nextShot) {
+            } else if (firing && !remoteFiring_[i] && p.weapon != WPN_LASER && p.weapon < WPN_LOCATOR && time_ >= ra.nextShot) {
                 ra.nextShot = time_ + weaponDef(p.weapon).refire * 0.6f; // (a flag flicker between snapshots isn't a second shot)
                 audio_.play3D(SND_RIFLE + p.weapon, p.pos + Vec3(0, 1.5f, 0), 1.0f, 0.97f + (qrand() % 7) * 0.01f, sp);
             }

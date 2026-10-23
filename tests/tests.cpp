@@ -1541,7 +1541,7 @@ static void testIncrementalEdits() {
 static void testTimeToKill() {
     printf("time to kill with perfect aim (1-4.5 s), no shot over 50\n");
     for (int w = 0; w < WPN_COUNT; w++) {
-        if (w == WPN_SYRINGE) continue;    // (it heals)
+        if (w == WPN_SYRINGE || w == WPN_LOCATOR) continue;    // (it heals / does no damage)
         const WeaponDef& d = weaponDef(w);
         float perShot = d.damage * d.pellets;
         int shots = (int)std::ceil(kMaxHealth / perShot - 1e-4f);

@@ -1052,22 +1052,6 @@ void Server::handleStringCmd(int id, const std::string& s) {
     std::string rest;
     std::getline(ss, rest);
     while (!rest.empty() && rest[0] == ' ') rest.erase(0, 1);
-    if (cmd == "locate") { // the tagger / seeker's locator: where a random runner / hider is, every 5 s
-        if (!isItMode(ms_.mode) || ms_.phase != PHASE_LIVE || !p.it || !p.alive || time() < p.locateAt) return;
-        std::vector<int> targets;
-        for (int i = 0; i < kMaxPlayers; i++) {
-            const auto& o = players_[i];
-            if (i != id && o.connected && o.alive && !o.it && o.team != TEAM_SPECTATOR && !(ms_.mode == MODE_TAG && o.out)) targets.push_back(i);
-        }
-        if (targets.empty()) return;
-        p.locateAt = time() + kLocatorCooldown;
-        int t = targets[qrand() % targets.size()];
-        char pos[64];
-        snprintf(pos, sizeof pos, "%.2f %.2f %.2f", players_[t].move.pos.x, players_[t].move.pos.y, players_[t].move.pos.z);
-        GameEvent e; e.type = EV_LOCATE; e.a = (uint8_t)t; e.text = pos;
-        sendEvent(id, e);
-        return;
-    }
     if (cmd == "rps") { // hide and seek tiebreak: "rps rock|paper|scissors" (or r / p / s, 1 / 2 / 3)
         char c = rest.empty() ? 0 : (char)std::tolower((unsigned char)rest[0]);
         int shape = c == 'r' || c == '1' ? RPS_ROCK : c == 'p' || c == '2' ? RPS_PAPER : c == 's' || c == '3' ? RPS_SCISSORS : RPS_NONE;
@@ -1492,7 +1476,7 @@ void Server::spawnPlayer(int id) {
     p.pitch = 0;
     p.alive = true;
     p.health = kMaxHealth;
-    p.weapon = p.selectedWeapon;
+    p.weapon = isItMode(ms_.mode) ? WPN_KNIFE : p.selectedWeapon;   // (hide and seek / tag: "it" starts with the knife out)
     p.knifeBackAt = 0;
     if (!weaponAllowed(p.weapon)) // restricted pool: first allowed weapon, in slot order
         for (int k = 0; k < WPN_COUNT; k++) if (weaponAllowed(kWeaponSlots[k])) { p.weapon = kWeaponSlots[k]; break; }
@@ -1555,6 +1539,8 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
         if (ms_.mode == MODE_TAG) {
             a.it = false;
             v.it = true;
+            v.weapon = WPN_KNIFE;   // (the new tagger has the knife out; the old one holds nothing now)
+            v.locateAt = 0;
             v.itFreezeUntil = time() + kTagFreeze;
             a.score++;
             message(v.name + " is it");
@@ -1733,6 +1719,13 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
                 pr.active = false;
                 explode(pr.pos, id, WPN_STICKY);
             }
+    // The locator (hide and seek / tag, "it" only): fire shows one random hider / runner, every kLocatorCooldown.
+    if (p.weapon == WPN_LOCATOR) {
+        if ((cmd.buttons & BTN_FIRE) && !p.fireLocked && !(p.move.flags & MF_FROZEN)) useLocator(id);
+        if (p.fireLocked && !(cmd.buttons & (BTN_FIRE | BTN_ALTFIRE))) p.fireLocked = false;
+        p.knifeSwingUntil = -1;
+        return;
+    }
     // Knife and shotgun: alt-fire is its own shot (throw / bouncing pellets); it takes priority over fire.
     bool itMode = isItMode(ms_.mode);
     bool throwReady = time() >= p.throwReadyAt;   // (knife / syringe throws share a cooldown)
@@ -2531,8 +2524,29 @@ bool Server::switchMapKeepRules(const std::string& name) {
     return true;
 }
 
+// The tagger / seeker's locator fired: one random hider / runner's position, to them only (EV_LOCATE).
+void Server::useLocator(int id) {
+    ServerPlayer& p = players_[id];
+    if (!isItMode(ms_.mode) || ms_.phase != PHASE_LIVE || !p.it || !p.alive || time() < p.locateAt) return;
+    std::vector<int> targets;
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const auto& o = players_[i];
+        if (i != id && o.connected && o.alive && !o.it && o.team != TEAM_SPECTATOR && !(ms_.mode == MODE_TAG && o.out)) targets.push_back(i);
+    }
+    if (targets.empty()) return;
+    p.locateAt = time() + kLocatorCooldown;
+    int t = targets[qrand() % targets.size()];
+    p.locatedPos = players_[t].move.pos;   // (bots go there)
+    p.locatedAt = time();
+    char pos[64];
+    snprintf(pos, sizeof pos, "%.2f %.2f %.2f", p.locatedPos.x, p.locatedPos.y, p.locatedPos.z);
+    GameEvent e; e.type = EV_LOCATE; e.a = (uint8_t)t; e.text = pos;
+    sendEvent(id, e);
+}
+
 uint16_t Server::weaponMask() const {
-    if (isItMode(ms_.mode)) return (uint16_t)(1u << WPN_KNIFE); // only "it" can use it; everyone else is unarmed
+    // hide and seek / tag: "it" has the knife and the locator; everyone else is unarmed (only "it" can fire)
+    if (isItMode(ms_.mode)) return (uint16_t)((1u << WPN_KNIFE) | (1u << WPN_LOCATOR));
     uint16_t m = ms_.mode == MODE_ARENA || ms_.mode == MODE_TOURNEY || (cfg_.ranked && ms_.mode == MODE_FFA) ? arenaVariant(ms_.arenaVariant).weapons : duelModDef(duelMod()).weapons;
     uint16_t c = cfg_.custom.active() ? cfg_.custom.weapons : 0;   // a custom mode's weapons (narrowed by a duel life's, if any)
     uint16_t r = (c && m && (m & c)) ? m & c : c ? c : m;
@@ -2543,6 +2557,8 @@ uint16_t Server::weaponMask() const {
         if (!r) r = (uint16_t)((1u << WPN_COUNT) - 1);
         r &= (uint16_t)~syringe;
     }
+    if (!r) r = (uint16_t)((1u << WPN_COUNT) - 1);   // the locator exists only in hide and seek and tag (owner B8)
+    r &= (uint16_t)~(1u << WPN_LOCATOR);
     return r;
 }
 
