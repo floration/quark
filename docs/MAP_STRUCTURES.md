@@ -228,7 +228,7 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 - **Lamp posts round the yard walls and along the quay edge, the freighter's deck and mast-head lights.** Dusk light: the yard was lit only under its roofs.
 
 ## Lodestone: multi point (and every other mode). Setting: a mine.
-The owner kept every mode on it (decision B1), so it's graded in every mode it offers (mode fit, `docs/MAP_REPORT.md`): multi point 8.6, bomb 9.5, king of the hill 8.4, payload 9.2, neutral payload 8.8, free for all 9.1, hide 9.3, tag 8.9, race 10.0. Team vs, duel, 1v1 and a tourney match score 4.5: those modes want a compact map (300–3,000 m²) and the mine is 83,000 m², so no spawn placement gets them to 7.
+It's offered in every mode but four and graded in each one it offers (decision B1; mode fit, `docs/MAP_REPORT.md`): multi point 8.6, bomb 9.5, king of the hill 8.4, payload 9.2, neutral payload 8.8, free for all 9.1, hide 9.3, tag 8.9, race 10.0. Team vs, duel, 1v1 and tourney aren't offered (the owner's call): those modes want a compact map (300–3,000 m²) and the mine is about 83,000 m², so they scored 4.5 and no spawn placement could get them to 7. They can still be started here, with the menus' "may not work" warning.
 
 **Why it suits multi point:**
 - An attack in five stages down the mine (A pithead, B pit floor, C workings, D crystal grotto, E mother lode). Each point is 25–90 m on from the last: every capture is a push, not a hop.

@@ -191,17 +191,15 @@ Each map is built for one mode; this is how well it does what that mode needs. A
 - **hamlet**: hide: 21% hiding spots (15% ideal), 1.9 loops per 1000 m2 (3 ideal)
 - **harbor**: ffa: 10 spawns (12+ ideal), 16% of spawn pairs in sight (0 ideal, 30% scores nothing), 3.3 loops per 1000 m2
 - **hightown**: hide: 15% hiding spots (15% ideal), 2.3 loops per 1000 m2 (3 ideal)
+  - ffa 8.1: ffa: 12 spawns (12+ ideal), 9% of spawn pairs in sight (0 ideal, 30% scores nothing), 2.3 loops per 1000 m2
+  - tag 8.6: tag: 15% hiding spots (15% ideal), 2.3 loops per 1000 m2 (3 ideal)
 - **lodestone**: points: 5 points (3-6 ideal), worst spacing 1.00 (25-90 m), attackers' arrival minus defenders' +0.3/+0.7/+0.0/-0.3/-0.5 s (-1..+1 ideal, worst 1.00), worst cover 0.32 (35% ideal), fewest ways onto a point 8 (3+)
-  - vs 4.5 (below 7): vs: fairness 0.96, 83182 m2 floor (700-3000 ideal), spawns 16.1 s apart (4-9 s ideal), 2.5 loops per 1000 m2 (3 ideal)
   - bomb 9.5: bomb: worst site 1, attackers' arrival minus defenders' +0.7 s (-1..+1 ideal), 2 sites, 2.5 loops per 1000 m2
   - race 10.0: race: the race movement check (shortcut on the tech path, see movement)
   - koth 8.4: koth: fairness 0.94, 8 ways onto the hill (4+ ideal), 20% of the hill has cover (35% ideal)
   - payload 9.2: payload: track 140 m (70-160 ideal), 27% of the floor beside it has cover (35% ideal), fairness 1.00
   - ffa 9.1: ffa: 12 spawns (12+ ideal), 3% of spawn pairs in sight (0 ideal, 30% scores nothing), 2.5 loops per 1000 m2
   - npayload 8.8: npayload: track 140 m (70-160 ideal), 27% of the floor beside it has cover (35% ideal), fairness 0.87
-  - duel 4.5 (below 7): duel: fairness 0.96, 83182 m2 floor (300-2000 ideal), spawns 16.1 s apart (2.5-7 s ideal), 2.5 loops per 1000 m2 (3 ideal)
-  - 1v1 4.5 (below 7): 1v1: fairness 0.96, 83182 m2 floor (300-2000 ideal), spawns 16.1 s apart (2.5-7 s ideal), 2.5 loops per 1000 m2 (3 ideal)
-  - tourney 4.5 (below 7): tourney: fairness 0.96, 83182 m2 floor (300-2000 ideal), spawns 16.1 s apart (2.5-7 s ideal), 2.5 loops per 1000 m2 (3 ideal)
   - hide 9.3: hide: 45% hiding spots (15% ideal), 2.5 loops per 1000 m2 (3 ideal)
   - tag 8.9: tag: 45% hiding spots (15% ideal), 2.5 loops per 1000 m2 (3 ideal)
 - **midtown**: points: 5 points (3-6 ideal), worst spacing 1.00 (25-90 m), attackers' arrival minus defenders' -0.2/+0.5/+0.0/+0.7/+0.1 s (-1..+1 ideal, worst 1.00), worst cover 0.37 (35% ideal), fewest ways onto a point 4 (3+)
@@ -397,20 +395,16 @@ Features: lethal drops, water / lava, 5+ floor levels, 12 m+ of height, indoor a
 
 Features: ladders, water / lava, moving cart, 5+ floor levels, 12 m+ of height, indoor and outdoor, lit interiors, lots of hiding spots
 
-- vs: vs: A 129 m, B 123 m (fairness 0.96), 16.1 s apart at 8 m/s
 - bomb: site 1: attackers (A) 82 m, defenders (B) 77 m, defenders first by 0.7 s; site 2: attackers (A) 93 m, defenders (B) 97 m, attackers first by 0.6 s (-1..+1 s at every site)
 - race: 6 checkpoints, route 525 m walked (66 s at 8 m/s, 26 s at 20 m/s)
 - koth: to the hill: A 82 m, B 77 m (fairness 0.94)
 - payload: attackers (A) 22 m to the cart, defenders (B) 82 m to the halfway point (track 140 m)
 - ffa: 92 spawns, closest pair 0 m, 12% of spawn pairs see each other
 - npayload: to the cart: A 71 m, B 82 m (fairness 0.87)
-- duel: duel: A 129 m, B 123 m (fairness 0.96), 16.1 s apart at 8 m/s
-- 1v1: 1v1: A 129 m, B 123 m (fairness 0.96), 16.1 s apart at 8 m/s
-- tourney: tourney: A 129 m, B 123 m (fairness 0.96), 16.1 s apart at 8 m/s; 92 spawns, closest pair 0 m, 12% of spawn pairs see each other
 - hide: 45% of floor is a hiding spot (seen from < 5% of the map)
 - tag: 45% of floor is a hiding spot (seen from < 5% of the map)
 - points: 5 points; A: attackers 79 m, defenders 76 m, defenders first by 0.3 s; B: attackers 69 m, defenders 63 m, defenders first by 0.7 s; C: attackers 62 m, defenders 62 m, defenders first by 0.0 s; D: attackers 72 m, defenders 74 m, attackers first by 0.3 s; E: attackers 63 m, defenders 67 m, attackers first by 0.5 s; (-1..+1 s at every point)
-- routes: all 5664 spawn-to-objective routes walkable (the player's hull against the map's collision)
+- routes: all 5592 spawn-to-objective routes walkable (the player's hull against the map's collision)
 - most similar map: midtown (distance 0.20)
 
 ### midtown

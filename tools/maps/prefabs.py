@@ -888,11 +888,11 @@ class M:
             x += step
     def save(s, name, dress=True):
         MADE.append(name)
-        # each map plays the mode it's built for, and free for all; Lodestone alone is built for every mode.
+        # each map plays the mode it's built for (plus any it lists in `also`), and free for all. Lodestone lists most modes.
         # (any map can still be started in any mode: the menus warn that it may not work)
         mode = next((l.split()[1] for l in s.lines if l.startswith("for ")), None)
         s.lines = [l for l in s.lines if not l.startswith("modes ")]
-        if mode and name not in EVERY_MODE: s.lines.insert(4, "modes " + " ".join([mode] + getattr(s, "also", []) + ([] if mode == "ffa" else ["ffa"])))
+        if mode: s.lines.insert(4, "modes " + " ".join([mode] + getattr(s, "also", []) + ([] if mode == "ffa" else ["ffa"])))
         s.name = name
         offered = next((l.split()[1:] for l in s.lines if l.startswith("modes ")), None)   # (None: every mode)
         s.top_up_spawns(offered)
@@ -927,8 +927,6 @@ def tiles(rects, size):
         for (a, b) in zip(xs, xs[1:]):
             for (c, d) in zip(zs, zs[1:]): out.append((a, c, b, d))
     return out
-
-EVERY_MODE = {"lodestone"}
 
 def minus(rect, holes):
     """rect minus the holes, as a list of rects (grid split, merged along x then across identical rows:

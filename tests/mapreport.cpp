@@ -1229,7 +1229,7 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g, cons
     }
     r.leads = leads;
     // ---- mode fit: the mode the map is built for ("for <mode>"), judged on what that mode needs. A map built for
-    // every mode (Lodestone: no "modes" line) is graded in every mode it offers too (B1): each one's fit is listed,
+    // several modes (Lodestone) is graded in every mode it offers too (B1): each one's fit is listed,
     // and the bar holds its timing (B2) and balance in all of them; the mode-fit score is its built-for mode's
     float loopsPerK = r.loops / std::max(1.0f, r.area / 1000);
     auto fitFor = [&](int pm, std::string& why) -> float {
@@ -1336,7 +1336,9 @@ void measure(Metrics& r, const Map& m, const Map& solid, const NavGraph& g, cons
         float f = fitFor(m.preferredMode, why);
         if (f >= 0) { r.sMode = f; r.modeFit = why; }
     }
-    if (m.allowedModes == 0)   // built for every mode: its fit in each
+    int offered = 0;
+    for (int mode = 0; mode < MODE_COUNT; mode++) offered += m.supportsMode(mode);
+    if (offered > 2)   // a map offered for more than its own mode and free for all (Lodestone): its fit in each
         for (int mode = 0; mode < MODE_COUNT; mode++) {
             if (!m.supportsMode(mode) || mode == m.preferredMode) continue;
             std::string why;

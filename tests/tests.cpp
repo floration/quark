@@ -343,13 +343,16 @@ static std::vector<std::string> testedMaps() {
 static void testMaps() {
     printf("maps\n");
     std::string err;
-    // Lodestone is the map built for every mode
+    // Lodestone is offered in every mode but the four that want a compact arena (owner, 1.17)
     { Map v; CHECK(v.load("viaduct") && v.supportsMode(MODE_RACE) && v.preferredMode == MODE_RACE && v.hasVoid && v.checkpoints.size() >= 5); }
     for (const char* name : {"lodestone"}) {
         Map m;
         CHECK(m.load(name, &err));
         if (!err.empty()) printf("  %s\n", err.c_str());
-        for (int k = 0; k < MODE_COUNT; k++) if (!m.supportsMode(k)) { printf("  %s: no %s\n", name, modeName(k)); g_fail++; }
+        for (int k = 0; k < MODE_COUNT; k++) {
+            bool compact = k == MODE_VS || k == MODE_DUEL || k == MODE_ARENA || k == MODE_TOURNEY;
+            if (m.supportsMode(k) == compact) { printf("  %s: %s %s\n", name, compact ? "offers" : "no", modeName(k)); g_fail++; }
+        }
         CHECK(m.payloadLength() > 20);
     }
     // ranked: a map of its own for each ladder plus one for all three; every ranked map is point-symmetric
