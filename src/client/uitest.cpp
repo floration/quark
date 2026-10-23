@@ -1211,9 +1211,13 @@ private:
         v.push_back({"demo", "ingame", inGameAll, noSettings,
                      [=] {
                          leaveAll();
-                         if (demoPath_.empty() && !recordDemo()) return false;
-                         if (!g_.playDemo(demoPath_)) return false;
-                         return waitFor([&] { return inGame(); }, 60);
+                         // (each step says why it failed: CI's Linux run once couldn't set this up, with nothing to go on)
+                         if (demoPath_.empty() && !recordDemo()) { printf("uitest: demo: no demo was recorded\n"); return false; }
+                         if (!g_.playDemo(demoPath_)) { printf("uitest: demo: %s wouldn't play\n", demoPath_.c_str()); return false; }
+                         if (waitFor([&] { return inGame(); }, 60)) return true;
+                         printf("uitest: demo: not in game after 60 s (screen %d, playback %d, snapshot %d, world %d, bake %d)\n", (int)g_.screen_,
+                                (int)g_.net_.playback(), (int)g_.net_.hasSnapshot(), (int)g_.r_.worldLoaded(), g_.bake_ ? 1 : 0);
+                         return false;
                      },
                      [=] { return g_.screen_ == Game::Screen::InGame && g_.net_.playback(); }});
         // hide and seek: the seeker's locator (slot key 0), and the tiebreak's rock / paper / scissors keys

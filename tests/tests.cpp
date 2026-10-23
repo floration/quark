@@ -6603,6 +6603,7 @@ static void testReachProbe(uint16_t port) {
 
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
+    pinTestingBuildForTests(0);   // (production behaviour, whatever version CI built this as: governor.h)
     { // never touch the real per-user folder: a fresh temp one per run, removed at exit by this (not a forked) process
         static std::string dir = (std::filesystem::temp_directory_path() / ("quark_tests_data_" + std::to_string((long)getpid()))).string();
         static long owner = (long)getpid();

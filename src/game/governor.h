@@ -46,6 +46,11 @@ const char* govChannelName(int ch);   // "prod" / "testing"
 int govChannelFromName(const std::string& s);   // -1 if neither
 // A version that isn't a production release: any semver prerelease suffix ("1.17.0-test.42", CI's testing builds).
 bool isTestingVersion(const char* version);
+// This build is a testing one (isTestingVersion(QUARK_VERSION)): it never rates ranked and its servers default to the
+// testing channel. quark_tests pins it (0: production): CI builds the tests as a -test. version on the testing branch,
+// and the tests check the production behaviour, plus the testing one where they pin it to 1.
+bool testingBuild();
+void pinTestingBuildForTests(int testing);   // -1: by the version again
 
 struct GovParams {           // seconds (wall clock: the decision survives a restart of production)
     double stepGap = 6;      // between two throttle steps while overloaded: two rate windows, so the last step's effect is measured

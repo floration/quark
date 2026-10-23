@@ -4170,7 +4170,7 @@ void Game::drawMenu() {
                                       UiExp::nav("host/picker:modes").withId("MODE"))) picker_ = PICK_HOST_MODE;
                 y += bh + gap;
                 if (cfg_.hostRanked) {
-                    if (isTestingVersion(QUARK_VERSION))   // (a testing build hosts ranked unrated: Server::rated)
+                    if (testingBuild())   // (a testing build hosts ranked unrated: Server::rated)
                         ui_.label(lx, y, "TESTING BUILD - RANKED NOT RATED (PLAYED, NEVER COUNTED)", {1.0f, 0.78f, 0.25f, 1}, 0.5f);
                     else ui_.label(lx, y, "RANKED MAPS ONLY - EACH LADDER HAS ITS OWN RATING", kGrey, 0.5f);
                     ui_.label(lx, y + 12 * s, "FAIRNESS: DEFAULT MODEL, HUD, CONTROLS, 10 MS INTERP", kGrey, 0.5f);

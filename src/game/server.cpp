@@ -231,7 +231,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     nextTick_ = timeNow();
     resetRateWindow();
     windowBad_ = windowSevere_ = false; windowCheckedAt_ = -1e9;
-    if (cfg_.channel != GOV_PROD && cfg_.channel != GOV_TESTING) cfg_.channel = isTestingVersion(QUARK_VERSION) ? GOV_TESTING : GOV_PROD;
+    if (cfg_.channel != GOV_PROD && cfg_.channel != GOV_TESTING) cfg_.channel = testingBuild() ? GOV_TESTING : GOV_PROD;
     closed_ = false; govPendingLogged_ = false; govReportAt_ = 0;
     gov_.reset();
     if (!cfg_.governorDir.empty()) {   // a production + testing pair on one machine (tools/server/install.sh)
@@ -489,7 +489,7 @@ void Server::setGovernorClosed(bool on) {
     glog(LOG_SIMPLE, "reopened by the load governor");
 }
 
-bool Server::rated() const { return cfg_.channel != GOV_TESTING && !isTestingVersion(QUARK_VERSION); }
+bool Server::rated() const { return cfg_.channel != GOV_TESTING && !testingBuild(); }
 
 double Server::frame() {
     if (activeRules().name != cfg_.custom.name) setActiveRules(cfg_.custom);   // rules are per thread: this thread simulates by this server's

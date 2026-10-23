@@ -542,7 +542,11 @@ static void testGrappleBots(uint16_t port) {
     std::vector<NetClient*> none;
     int latches = 0, bad = 0;
     bool was[2] = {};
-    for (int t = 0; t < 600; t++) {   // 30 s
+    // Until the first latch and 5 s on (nothing breaks while latched), at most 90 s: about one latch in 30 s, so a
+    // fixed 30 s sometimes saw none (CI, and a busy PC; the build before 1.18.0 too)
+    double firstAt = -1;
+    for (int t = 0; t < 1800 && (firstAt < 0 || t * 0.05 < firstAt + 5); t++) {
+        if (latches && firstAt < 0) firstAt = t * 0.05;
         pump(s, none, 0.05, idle);
         for (int k = 0; k < 2; k++) {
             if (bot[k] < 0) continue;
@@ -553,7 +557,7 @@ static void testGrappleBots(uint16_t port) {
             if (l && !(p.move.flags & MF_HOOKED)) bad++;
         }
     }
-    printf("  2 expert bots with shotguns on %s, 30 s: %d latches\n", cfg.map.c_str(), latches);
+    printf("  2 expert bots with shotguns on %s: %d latch(es), the first after %.1f s\n", cfg.map.c_str(), latches, firstAt);
     CHECK(bot[0] >= 0 && bot[1] >= 0 && latches >= 1 && bad == 0);
     s.stop();
 }

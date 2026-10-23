@@ -304,6 +304,12 @@ static void testGovernorTwoServers(uint16_t port) {
 // that the server never tries.)
 static void testRankedNotRated(uint16_t port) {
     printf("ranked on a testing server: played, never rated\n");
+    {   // a testing build (a -test. version) never rates, whatever channel it's given (the tests run pinned to production)
+        pinTestingBuildForTests(1);
+        { Server t; CHECK(testingBuild() && !t.rated()); }
+        pinTestingBuildForTests(0);
+        { Server t; CHECK(!testingBuild() && t.rated()); }
+    }
     for (int ch : {GOV_PROD, GOV_TESTING}) {
         Server s;
         ServerConfig cfg;
