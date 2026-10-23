@@ -1276,10 +1276,12 @@ void Server::command(const std::string& line, int fromPlayer) {
             std::string name;
             ss >> name;
             if (!validMapName(name)) { reply("map name: letters, digits, - and _ only (not a device name like con)"); return; }
+            if (isOfficialMapName(name)) { reply(name + " is a built-in map: pick a new name"); return; }   // (B3: never saved over)
             std::string old = cfg_.map;
             cfg_.map = name;
             map_.name = name;
             if (!autosave()) { cfg_.map = map_.name = old; reply("could not save maps/" + name + ".qmap"); return; }
+            if (cfg_.editMode) tempEdit_ = false;   // your own map now: autosaved from here on
             if (std::find(mapList_.begin(), mapList_.end(), name) == mapList_.end()) { mapList_.push_back(name); std::sort(mapList_.begin(), mapList_.end()); }
             message("map saved as " + name);
             return;
@@ -2625,7 +2627,9 @@ void Server::playMap(int mode) {
 void Server::setEditing(bool on) {
     editing_ = on;
     if (!on) { if (tempEdit_) editDirty_ = false; return; }
-    tempEdit_ = !cfg_.editMode; // voted on a normal server: edits live until the map changes, never saved
+    // voted on a normal server: edits live until the map changes, never saved. A built-in map is never saved either
+    // (B3: your edits to it are kept only as a new map, when you say so - the editor asks, or "editmode saveas")
+    tempEdit_ = !cfg_.editMode || isOfficialMapName(cfg_.map);
     autosaveBackedUp_ = false;
     for (int i = kMaxPlayers - 1; i >= 0; i--) if (players_[i].connected && players_[i].isBot) removeBot(i);
     for (auto& pr : projectiles_) pr.active = false;
@@ -2633,7 +2637,9 @@ void Server::setEditing(bool on) {
     vote_ = Vote();
     tourney_ = Tourney();
     nextAutosave_ = time() + 5;
-    message(tempEdit_ ? "map editing - everyone can build; changes last until the map changes" : "map editing - everyone can build; the host saves");
+    message(!tempEdit_ ? "map editing - everyone can build; the host saves"
+            : cfg_.editMode ? "map editing - " + cfg_.map + " is a built-in map: changes last until the map changes (save a copy to keep them)"
+            : "map editing - everyone can build; changes last until the map changes");
     glog(LOG_SIMPLE, "edit mode on %s", cfg_.map.c_str());
 }
 

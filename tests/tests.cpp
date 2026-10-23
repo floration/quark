@@ -4009,6 +4009,54 @@ static void testDemo(uint16_t port) {
 }
 
 // Edit by vote on a normal server, then "VOTE: PLAY IT" (callvote edit off): everyone plays the edited copy.
+// OWNER_DECISIONS_2 B3: an edit session on a built-in map never writes it, nor a copy in your maps folder that would
+// hide it (that used to happen at the first autosave): its edits last until the map changes. "editmode saveas" keeps
+// them under a new name (never a built-in map's), autosaved from then on.
+static void testBuiltInMapEditSession(uint16_t port) {
+    printf("edit session on a built-in map: never saved over it\n");
+    std::string mine = userMapsDir() + "/bastion.qmap";
+    std::remove(mine.c_str());
+    Map disk;
+    CHECK(disk.load("bastion") && isOfficialMap(disk));
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.editMode = true;
+    s.setLog([](const std::string&) {});
+    if (!s.start(cfg)) { g_fail++; return; }
+    NetClient a;
+    a.connect("127.0.0.1:" + std::to_string(port), "a");
+    std::vector<NetClient*> cls = {&a};
+    pump(s, cls, 1.0, idle);
+    CHECK(a.mapReady() && a.hasSnapshot() && (a.mode().flags & MS_EDITING) && (a.mode().flags & MS_TEMP_EDIT) && s.tempEdit_);
+    size_t nb = disk.brushes.size();
+    a.sendCommand("ed b ins " + std::to_string(nb) + " 1 0 10 0 2 11 2");
+    pump(s, cls, 0.5, idle);
+    CHECK(s.map_.brushes.size() == nb + 1 && a.map().id() == s.map_.id() && !isOfficialMap(s.map_));
+    s.command("editmode off");   // play it: the edited copy, nothing saved
+    pump(s, cls, 1.0, idle);
+    std::error_code ec;
+    CHECK(!s.editing_ && s.map_.brushes.size() == nb + 1 && !std::filesystem::exists(mine, ec));
+    s.command("editmode on");
+    pump(s, cls, 0.3, idle);
+    CHECK(s.editing_ && s.tempEdit_);
+    s.command("editmode saveas temple");   // another built-in map's name: refused
+    CHECK(s.cfg_.map == "bastion" && s.tempEdit_);
+    char tag[16];
+    snprintf(tag, sizeof tag, "%u", (unsigned)qrand());
+    std::string name = std::string("zz_mybastion") + tag, path = userMapsDir() + "/" + name + ".qmap";
+    s.command("editmode saveas " + name);
+    Map kept;
+    CHECK(s.cfg_.map == name && !s.tempEdit_ && kept.load(name) && kept.brushes.size() == nb + 1 && kept.handmade);
+    a.sendCommand("ed t Mine");
+    pump(s, cls, 0.5, idle);
+    s.stop();   // (autosaves: it's yours now)
+    CHECK(kept.load(name) && kept.title == "Mine");
+    Map after;
+    CHECK(!std::filesystem::exists(mine, ec) && after.load("bastion") && isOfficialMap(after) && after.brushes.size() == nb);
+    std::remove(path.c_str());
+    std::remove((path + ".bak").c_str());
+}
+
 static void testVotedEdit(uint16_t port) {
     printf("voted map editing, then vote to play it\n");
     Server s;
@@ -4777,7 +4825,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "nav") { testNavGraph(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testRankedRelay(TP(29630)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterReplies(TP(29629)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(TP(29600)); testEditSession(TP(29601)); testVotedEdit(TP(29602)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(TP(29600)); testEditSession(TP(29601)); testBuiltInMapEditSession(TP(29606)); testVotedEdit(TP(29602)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
     if (argc >= 2 && std::string(argv[1]) == "exportassets") return exportAssets(argc > 2 ? argv[2] : "assets_export") ? 1 : 0;
     if (argc >= 2 && std::string(argv[1]) == "assets") { g_fail += assetTests(); return g_fail ? 1 : 0; }
@@ -4820,7 +4868,7 @@ int main(int argc, char** argv) {
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
         {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); }},
-        {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
+        {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testBuiltInMapEditSession(TP(28606)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
         {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); }},
         {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
         {"rules", [] { testGameRules(""); }},
