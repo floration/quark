@@ -12,6 +12,7 @@
 #include "../src/common/sign.h"
 #include "../src/common/version.h"
 #include "../src/launcher/install.h"
+#include "../src/launcher/qpak.h"
 #include "../src/launcher/releases.h"
 #include "../src/launcher/selfupdate.h"
 #ifndef _WIN32
@@ -255,6 +256,53 @@ static void testManifest() {
     LCHECK(!releases::parseManifest("channel testing\n", &m) && !releases::parseManifest("", &m));
 }
 
+// .qpak reading (tools/pack.py's format): files come out as packed; unsafe names, lying sizes, truncation and
+// trailing junk are refused before anything is handed on.
+static std::string pakEntry(const std::string& name, const std::string& data, uint32_t mode = 0644, int64_t claim = -1) {
+    std::string e;
+    auto put = [&](uint64_t v, int n) { for (int i = 0; i < n; i++) e += (char)(v >> (8 * i)); };
+    put(name.size(), 4);
+    e += name;
+    put(mode, 4);
+    put(claim < 0 ? data.size() : (uint64_t)claim, 8);
+    return e + data;
+}
+static void testQpak() {
+    auto readAll = [](const std::string& pak, std::vector<std::pair<std::string, std::string>>* files, std::string* err) {
+        std::istringstream in(pak);
+        return qpak::read(in, pak.size(), [&](const std::string& n, uint32_t, const char* d, size_t len, std::string*) {
+            files->emplace_back(n, std::string(d, len));
+            return true;
+        }, err);
+    };
+    std::vector<std::pair<std::string, std::string>> got;
+    std::string err, good = "QPAK1\n" + pakEntry("quark", "ELF") + pakEntry("maps/temple.qmap", "map text") + pakEntry("empty", "");
+    LCHECK(readAll(good, &got, &err) && got.size() == 3 && got[1].first == "maps/temple.qmap" && got[1].second == "map text" && got[2].second.empty());
+    LCHECK(readAll("QPAK1\n", &(got = {}), &err) && got.empty());   // an empty package
+    for (const std::string& bad : {std::string("QPAK2\n"), std::string("QPAK1"), "QPAK1\n" + pakEntry("../evil", "x"),
+                                   "QPAK1\n" + pakEntry("/etc/passwd", "x"), "QPAK1\n" + pakEntry("a/../../b", "x"),
+                                   "QPAK1\n" + pakEntry("C:/x", "x"), "QPAK1\n" + pakEntry("\\server\\x", "x"),
+                                   "QPAK1\n" + pakEntry(std::string("a\0b", 3), "x"), "QPAK1\n" + pakEntry("", "x"),
+                                   "QPAK1\n" + pakEntry("big", "xy", 0644, 1ull << 40),     // claims a terabyte
+                                   "QPAK1\n" + pakEntry("short", "xy", 0644, 3),            // one byte missing
+                                   good + "\x01\x00"})                                   // trailing junk
+        LCHECK(!readAll(bad, &(got = {}), &err));   // (entries before a bad one may come out: the stage is thrown away)
+    LCHECK(!qpak::safeEntryName("..") && !qpak::safeEntryName("a\\..\\b") && qpak::safeEntryName("quark.app/Contents/MacOS/quark"));
+    // extract: into a fresh stage folder, modes kept (POSIX)
+    fs::path t = fs::temp_directory_path() / ("quark_qpak_test_" + std::to_string(rand()));
+    fs::create_directories(t);
+    std::ofstream(t / "p.qpak", std::ios::binary) << "QPAK1\n" + pakEntry("bin/run", "#!/bin/sh\n", 0755) + pakEntry("data.txt", "hi");
+    LCHECK(qpak::extract(t / "p.qpak", t / "stage", &err) && slurp(t / "stage" / "data.txt") == "hi" && slurp(t / "stage" / "bin" / "run") == "#!/bin/sh\n");
+#ifndef _WIN32
+    struct stat st;
+    LCHECK(stat((t / "stage" / "bin" / "run").c_str(), &st) == 0 && (st.st_mode & 0777) == 0755);
+#endif
+    std::ofstream(t / "q.qpak", std::ios::binary) << "QPAK1\n" + pakEntry("../outside", "x");
+    LCHECK(!qpak::extract(t / "q.qpak", t / "stage2", &err) && !fs::exists(t / "outside") && err == "unsafe path in archive");
+    std::error_code ec;
+    fs::remove_all(t, ec);
+}
+
 // A GitHub releases page: `tests` signed prereleases numbered from `firstTest` down, then production releases `prod`
 // (signed or not).
 static std::string fakePage(int firstTest, int tests, const std::vector<std::string>& prod, bool signedProd) {
@@ -475,6 +523,7 @@ int launcherTests() {
     testChannels();
     testUnsignedAndPins();
     testManifest();
+    testQpak();
     testManyPages();
     testLauncherSwap();
     return g_lfail;

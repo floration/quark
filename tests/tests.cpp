@@ -3653,7 +3653,11 @@ static void testInputBacklog(uint16_t port) {
         sleepMs(1);
     }
     printf("  queued after the stall %zu, later at least %zu (%.2f on average)\n", after, lowest, samples ? sum / samples : 0.0);
+#ifdef QUARK_SANITIZED   // (the CI sanitizers job: several times slower, so how fast the queue drains isn't telling)
+    if (!(after > 2 && lowest <= 1)) printf("  (sanitized build: drain timing not checked)\n");
+#else
     CHECK(after > 2 && lowest <= 1);
+#endif
     // twice real time: the server runs about real time's worth (plus its token burst and the catch-up allowance)
     uint32_t t0 = s.tick_, c0 = s.players_[id].cmdsRun;
     double end = timeNow() + 1.0;

@@ -22,6 +22,7 @@
 #include "../client/ui.h"
 #include "../common/net.h"
 #include "install.h"
+#include "qpak.h"
 #include "releases.h"
 #include "selfupdate.h"
 #include "../common/proc.h"
@@ -127,54 +128,7 @@ bool httpGet(const std::string& url, std::ostream& out, const Progress& prog, st
 }
 #endif
 
-// A qpak entry name is safe when it is a plain relative path inside the install: no root name
-// (C:, \\server), no root directory (/ or \), no "..", nothing empty.
-bool safeEntryName(const std::string& name) {
-    if (name.empty() || name.find('\0') != std::string::npos || name.find(':') != std::string::npos) return false;
-    if (name[0] == '/' || name[0] == '\\') return false;
-    if (name.find("..") != std::string::npos) return false; // also catches ..\ on Windows
-    fs::path p = fs::u8path(name);
-    return p.is_relative() && !p.has_root_name() && !p.has_root_directory();
-}
-
-// .qpak: "QPAK1\n", then per file: u32 nameLen, name, u32 mode, u64 size, bytes. Little endian.
-// Everything is extracted into `stage` (a fresh directory); the caller swaps it into place on success,
-// so a failed or interrupted install never leaves a half-updated game.
-bool extractPak(const std::string& pak, const fs::path& stage, std::string* err) {
-    std::error_code ec;
-    uint64_t remaining = fs::file_size(pak, ec);
-    if (ec || remaining < 6) { *err = "corrupt download"; return false; }
-    std::ifstream f(pak, std::ios::binary);
-    char magic[6];
-    f.read(magic, 6);
-    if (!f || memcmp(magic, "QPAK1\n", 6) != 0) { *err = "corrupt download"; return false; }
-    remaining -= 6;
-    auto rd = [&](void* p, size_t n) { f.read((char*)p, n); if (f) remaining -= n; return (bool)f; };
-    std::vector<char> buf;
-    for (;;) {
-        uint32_t nl, mode;
-        uint64_t size;
-        if (!rd(&nl, 4)) break;
-        if (nl == 0 || nl > 4096) { *err = "corrupt archive"; return false; }
-        std::string name(nl, 0);
-        if (!rd(&name[0], nl) || !rd(&mode, 4) || !rd(&size, 8)) { *err = "corrupt archive"; return false; }
-        if (!safeEntryName(name)) { *err = "unsafe path in archive"; return false; }
-        if (size > remaining) { *err = "truncated archive"; return false; } // never trust size for the allocation
-        fs::path out = stage / fs::u8path(name);
-        fs::create_directories(out.parent_path(), ec);
-        buf.resize((size_t)size);
-        if (size && !rd(buf.data(), (size_t)size)) { *err = "truncated archive"; return false; }
-        std::ofstream o(out, std::ios::binary | std::ios::trunc);
-        if (!o) { *err = "cannot write " + out.string(); return false; }
-        o.write(buf.data(), (std::streamsize)size);
-        o.close();
-        if (!o) { *err = "cannot write " + out.string() + " (disk full?)"; return false; }
-#ifndef _WIN32
-        chmod(out.string().c_str(), mode & 0777);
-#endif
-    }
-    return true;
-}
+// Package reading and extraction: qpak.cpp (shared with the fuzzer, tests/fuzz).
 
 // Swaps a fully extracted `stage` into `dir`: files of the old install the package doesn't carry (the
 // player's quark.cfg, demos, screenshots...) are copied into the stage first, quark.cfg always wins
@@ -363,7 +317,7 @@ void installRelease(std::shared_ptr<State> st, fs::path dir, Release r, bool all
     fs::path stage = dir.parent_path() / (dir.filename().u8string() + ".new");
     fs::remove_all(stage, ec);
     fs::create_directories(stage, ec);
-    if (!extractPak(tmp.string(), stage, &err) || !swapInstall(stage, dir, &err)) {
+    if (!qpak::extract(tmp, stage, &err) || !swapInstall(stage, dir, &err)) {
         fs::remove_all(stage, ec);
         setStatus("install failed: " + err);
     } else {

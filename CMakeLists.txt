@@ -37,6 +37,19 @@ endif()
 option(QUARK_BUILD_CLIENT "Build the game client (needs OpenGL)" ON)
 option(QUARK_BUILD_TESTS "Build headless tests" ON)
 option(QUARK_LTO "Link-time optimization" OFF)
+# Robustness builds (REVIEW ENG-3), never for releases:
+#   QUARK_SANITIZE: everything built with AddressSanitizer + UndefinedBehaviorSanitizer (the CI "sanitizers" job runs
+#                   quark_tests like that); any report is fatal.
+#   QUARK_FUZZ:     libFuzzer harnesses (tests/fuzz/fuzz_*.cpp) for what reads untrusted bytes: packets (client
+#                   decode, and a live server's packets and string commands), Map::parse, CustomRules::fromText, the
+#                   launcher's .qpak reader. clang only (Ubuntu: clang + libclang-rt-18-dev); implies QUARK_SANITIZE.
+#                     CC=clang CXX=clang++ cmake -S . -B build-fuzz -DQUARK_FUZZ=ON -DQUARK_BUILD_CLIENT=OFF \
+#                       -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build-fuzz -j
+#                     cd build-fuzz && mkdir -p corpus && cp ../tests/data/fuzz/map/* corpus/ && ./fuzz_map corpus
+#                   (fuzz_server needs to run in the build folder: it loads maps/bastion.qmap). Seeds: tests/data/fuzz/
+#                   <harness>/; put a crash input there after fixing it, so the CI replay keeps checking it.
+option(QUARK_SANITIZE "Build with AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
+option(QUARK_FUZZ "Build the libFuzzer harnesses (clang; implies QUARK_SANITIZE)" OFF)
 if(QUARK_LTO)
   include(CheckIPOSupported)
   check_ipo_supported(RESULT QUARK_IPO_OK OUTPUT QUARK_IPO_ERR LANGUAGES C CXX)
@@ -52,6 +65,18 @@ endif()
 add_compile_options(-Wall -Wextra -Wno-unused-parameter -fno-fast-math -ffp-contract=off "$<$<CONFIG:Release>:-O2>")
 if(WIN32)
   add_compile_definitions(_WIN32_WINNT=0x0601 NOMINMAX)   # Windows 7; no min / max macros from windows.h
+endif()
+if(QUARK_FUZZ)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(FATAL_ERROR "QUARK_FUZZ needs clang (libFuzzer): CC=clang CXX=clang++ cmake ... -DQUARK_FUZZ=ON")
+  endif()
+  set(QUARK_SANITIZE ON)
+  add_compile_options(-fsanitize=fuzzer-no-link)   # coverage for the fuzzers in every library they link
+endif()
+if(QUARK_SANITIZE)
+  add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -g)
+  add_link_options(-fsanitize=address,undefined)
+  add_compile_definitions(QUARK_SANITIZED=1)   # (quark_tests skips a pure timing check: sanitized code is slower)
 endif()
 
 find_package(Threads REQUIRED)
@@ -171,6 +196,7 @@ target_link_libraries(quark_server quark_core)
 # Launcher logic without a window: release channels, the launcher self-update / replacement, desktop integration.
 # In the launcher, the game (it updates old launchers, docs/SIGNING.md) and the tests.
 add_library(quark_launcher_core STATIC
+  src/launcher/qpak.cpp
   src/launcher/releases.cpp
   src/launcher/selfupdate.cpp
   src/launcher/install.cpp
@@ -254,6 +280,14 @@ if(QUARK_BUILD_TESTS)
   enable_testing()
   add_test(NAME quark_tests COMMAND quark_tests WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
   set_tests_properties(quark_tests PROPERTIES TIMEOUT 1800)
+endif()
+
+if(QUARK_FUZZ)   # (see QUARK_FUZZ above)
+  foreach(f packet map rules qpak server)
+    add_executable(fuzz_${f} tests/fuzz/fuzz_${f}.cpp)
+    target_link_libraries(fuzz_${f} quark_core quark_launcher_core)
+    target_link_options(fuzz_${f} PRIVATE -fsanitize=fuzzer)
+  endforeach()
 endif()
 
 # Copy the shipped maps (generated + hand-made, as embedded above) next to the executables so builds run in place;
