@@ -1,5 +1,7 @@
 # Working on quark
 
+New session or project: read `docs/HANDOVER.md` section 0 first (where things stand, cloud vs local setup, how the owner likes to work, what to do first).
+
 - Commit each change locally when it's done and tested, but do NOT push until the owner says to push (they batch fixes so fewer releases go out). When told to push, push all the local commits together.
 - Before committing: build (`cmake --build build -j`) and run `build/quark_tests` (headless multiplayer tests must pass).
 - Client changes can be checked headless: `Xvfb :99 &` then `DISPLAY=:99 build/quark --host ffa --map bastion --screenshot out.png`.

@@ -1,6 +1,6 @@
 # Handover: quark after 1.17.0
 
-This document is for whoever continues quark after 1.17.0. That is the owner, working in a local Claude Code project, or a fresh session. It covers:
+This document is for whoever continues quark after 1.17.0. That is the owner, working in a new Claude Code project (in the cloud or local), or any fresh session. It covers:
 - how the project is laid out;
 - how it is built, tested and released;
 - what runs where;
@@ -11,42 +11,81 @@ Read [CLAUDE.md](../CLAUDE.md) first: it holds the standing rules, and any sessi
 
 ---
 
-## 0. Starting the local session (from the cloud one)
+## 0. Starting the next project (read this first)
 
-The work up to 1.17.0 was done in a claude.ai cloud session. Everything that matters is pushed to GitHub. The cloud container (its worktrees, agent branches, scratch files and scheduled reminders) is thrown away, so nothing below depends on it.
+The work up to 1.17.0 was done in one long claude.ai cloud session. **1.17.0 shipped on 2026-10-23.** Everything that matters is pushed to GitHub. The cloud container (its worktrees, agent branches, scratch files and test packages) is thrown away, so nothing below depends on it.
 
-**Where things stand**
-- **Branch:** all work is on `claude/compassionate-ritchie-07ah6i`, which is the repository's **default branch** for now. There is no `testing` branch yet; creating it is the first item of the restructure (section 9).
-- **The 1.17.0 commit:** `7552461` is the last commit with game code. It builds on Windows, Linux and macOS in CI (run 111). The later commits add only this section, `tools/release_check.sh` and a steadier sticky test; the game is the same.
-- **The release:** 1.17.0 is published only when the owner pushes the tag. Tag the newest commit of the branch, so this document ships with it:
-  ```
-  git fetch origin && git tag v1.17.0 origin/claude/compassionate-ritchie-07ah6i && git push origin v1.17.0
-  ```
-  CI then signs the files, publishes the release as latest (about 7 minutes) and deploys the website. If a job fails, fix the code, push, and tag again. The tag must be deleted first (`git push origin :refs/tags/v1.17.0`) and the failed release must not exist.
-- **Unmerged work:** none. The only local branch with commits not on the default branch was an abandoned font experiment, which isn't needed.
+### Where things stand
 
-**Setting up the local project**
-1. Clone: `git clone https://github.com/floration/quark && cd quark`. Opening Claude Code in that folder loads CLAUDE.md.
+- **Released:** v1.17.0, the latest production release, tagged on `b64ce4b` (CI run 120): signed Windows, Linux and macOS builds. The website (floration.github.io/quark, with `updates/1.17.0/`) was published by a site-only run from `77643ca` (run 122). The tag's own website job had been skipped: section 12.
+- **Branch:** all work is on `claude/compassionate-ritchie-07ah6i`. It is the repository's **default branch** for now, and production tags go on it. There is no `testing` branch yet; creating it is the first step of the restructure (sections 4 and 9).
+- **Deployed by the owner, and checked from here afterwards:**
+  - **The ranking server:** the 1.17 SQL ran on D1, the 1.17.0 `worker.js` is live (`/announce` answers "POST only", `GET /disputes` is refused), and the cron and `ADMIN_KEY` are set.
+  - **The game server** `129.151.8.15:27500`: on 1.17.0, listed by the Worker, auto-updating. Its testing server on the next port waits until a testing build is newer than production.
+  - **The Discord bot:** re-installed with the auto-updater, with new keys in `/etc/quark-discord.env`.
+- **Not switched on yet:** automatic Worker deploys (the `deploy-worker` job). It needs an API token and three values in GitHub ([OPERATIONS.md](OPERATIONS.md) section 3). Until then, the Worker is updated by hand for each version that changes it.
+- **Unmerged work:** none.
+- **Waiting on the owner:** should the quick-dash modifier (duel, blades) get a shorter dash cooldown back? Right now it gives a third charge with the normal 1.2 s cooldown.
+
+### Setting up the project
+
+**A Claude Code project in the cloud** (claude.ai/code), which is how the owner works today, with nothing installed locally:
+1. Create the project or environment on the repository `floration/quark`. Every session in the repository loads [CLAUDE.md](../CLAUDE.md) automatically, and CLAUDE.md points here.
+2. Give the environment a setup script, so each session can build, test, take screenshots and make test packages:
+   ```
+   sudo apt-get update && sudo apt-get install -y cmake g++ python3 zip xvfb \
+     libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev mingw-w64
+   ```
+   Node 22 or newer is needed for the Worker's tests (`node tools/master/test.mjs`). Cloud images usually have it already.
+3. **What a cloud session cannot do:**
+   - It can push only to its own `claude/...` branch: no tags, no other branches. So a cloud session's work reaches `testing` through a pull request from its branch, which the owner merges. It opens that PR only once the owner says to push.
+   - **Production tags are the owner's.** With no local clone, use a GitHub Codespace (repository → **Code** → **Codespaces** → create one, then use its terminal):
+     ```
+     git fetch origin && git tag v<VERSION> origin/<default branch> && git push origin v<VERSION>
+     ```
+     Delete the Codespace afterwards.
+   - **If a release's website deploy fails or is skipped:** Actions → **build-and-release** → **Run workflow** on the default branch, with **site** ticked. It publishes only the website, for the latest release.
+4. **Test packages before a tag:** `tools/make_test_packages.sh` builds unsigned Windows and Linux packages of the working tree into `build/test-packages/`. The session sends them to the owner, who tries them before tagging.
+
+**A local Claude Code project** (later, on the owner's machine):
+1. Clone: `git clone https://github.com/floration/quark && cd quark`, then `git config core.hooksPath tools/githooks` (the secrets check runs before every commit). Opening Claude Code in that folder loads CLAUDE.md.
 2. Install the build prerequisites (README "Build"):
-   - **Linux:** the X11/GL dev packages, cmake, a C++17 compiler, python3.
+   - **Linux:** the packages in the setup script above.
    - **Windows:** MinGW-w64 (gcc), cmake and python3. MSVC isn't supported.
    - **macOS:** the Xcode command line tools, cmake and python3.
 3. Build: `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j`. The maps are generated during the build.
-4. Run the game normally: `build/quark` (Windows: `build\quark.exe`). It keeps its settings, maps and demos in its user data folder, separate from the repo.
-5. Before every push, run `tools/release_check.sh` (section 3) on Linux or macOS, or under WSL / Git Bash on Windows. It runs each test group, then hosts and screenshots every map; the map step needs Xvfb on Linux.
+4. A local session pushes with the owner's own git credentials, so it can push `testing` and tags directly.
+5. A heavy test run competes with the game and other work for CPU, and the timing groups (netcode, tick rate) fail under load (section 3).
 
-**What a local session may not have**
-- **The Asset Studio steps in CLAUDE.md** use claude.ai's artifact tools: reading the page's `replacements` collection and republishing the page. A local Claude Code session may not have them. If it doesn't, do those steps from a claude.ai session, or download uploads from the page by hand into `assets/overrides/<target>`.
-- **No GitHub restrictions:** a local session pushes with your own git credentials, so it can push tags and other branches. The cloud session could only push its one branch, which is why the 1.17.0 tag is yours to push.
-- **Parallel agents:** the cloud session ran many agents in parallel worktrees. Locally, a heavy test run competes with the game and your other work for CPU. The timing groups (netcode, tick rate) fail under load (section 3).
+**Either way:**
+- Before every push, run `tools/release_check.sh` (section 3) and get exit 0. From 1.17.1 on, the bot and map groups count again.
+- **The Asset Studio steps in CLAUDE.md** need claude.ai's artifact tools: reading the page's `replacements` collection, then rebuilding and republishing the page. Cloud sessions have them; a local session may not. Without them, do those steps from a cloud session, or download uploads from the page by hand into `assets/overrides/<target>`.
+- **Republishing the studio page:** the page host serves `.gltf` and `.qmap` files only with an explicit type (`application/json` and `text/plain`), and one publish takes at most 255 files. Compare the new `manifest.json` with the published one and send only what changed.
 
-**Automatic updates and secrets:** [OPERATIONS.md](OPERATIONS.md) says how to switch on automatic updates for the dedicated servers (already on), the Discord bot (re-run its `install.sh` once) and the Cloudflare Worker (add an API token to GitHub). It also lists every key and secret: where each lives, how to keep it out of git, logs and chats (`git config core.hooksPath tools/githooks` in every clone), and how to replace one that leaked.
+### How the owner works
 
-**Decided but not yet done** (the owner can pick these up first)
-- **The restructure** (section 9): create `testing`, protect the default branch, add the `v*` tag rule, and move the launcher, site and Discord bot to their own branches.
-- **The owner's 1.17.0 deployment steps** (section 6): the Worker and SQL, the cron and secrets, `install.sh` on each server (which adds the testing server on the next port), and redeploying the bot.
-- **Movement:** the owner confirmed the ladder-top hop and the standing-jump drift (8) before release, and brought the 1.2 s dash cooldown back on top of the charges, which balances ground dash spam and the super-dash chain.
-- **Bot and map tests were waived for 1.17.0 only.** They count again from the next version, in CI and locally.
+These preferences come from the 1.17.0 session. They are not all in CLAUDE.md:
+- **Commit locally, push only when told** (CLAUDE.md). "Push" covers every local commit at once.
+- **During long work:**
+  - give a status report about every 10 minutes;
+  - end each status report with an ETA for each part and a time until push;
+  - give every estimate as one exact number, never a range;
+  - when a task finishes, say so in one line, plus whether it is ahead of, on or behind schedule.
+- **Short answers.** When the owner asks for a command, give the command first.
+- **Test packages before tagging.** The owner tries the build by hand first ("build is perfect lets go").
+- **Bot and map tests were waived for 1.17.0 only.** They count again from 1.17.1, in CI and locally.
+
+### First things to do
+
+1. **The restructure** (sections 4 and 9):
+   - create `testing` from the default branch;
+   - protect the default branch, and add the `v*` tag rule (GitHub settings, owner);
+   - move the launcher, the site and the Discord bot to their own branches.
+
+   Optional: rename the default branch from `claude/compassionate-ritchie-07ah6i` to `main` in GitHub settings. Check `tools/server/autoupdate.sh`, `tools/discordbot/autoupdate.sh` and `release.yml` first: they look the default branch up rather than naming it, but test one update after the rename.
+2. **The quick-dash question** above.
+3. **Performance check on real hardware** (REMAINING.md 0.3): the F3 1% and 0.1% lows against 1.16 on Midtown, Hightown and Lodestone. Include the cost of drawing stuck knives, bolts and syringes: 0.1 ms in the draw function, and 3–5 fps lost under software GL in the worst case.
+4. **Automatic Worker deploys** ([OPERATIONS.md](OPERATIONS.md) section 3), whenever convenient.
 
 
 ## 1. What quark is
@@ -115,11 +154,13 @@ build/quark_tests mapreport       # writes docs/MAP_REPORT.md
 
 **Before every push:** `tools/release_check.sh` runs every test group (4 at a time, then the timing-sensitive ones alone) and hosts every map headless in FFA with a screenshot. It exits 0 when everything passed. `--skip "bots maps"` leaves groups out, as for 1.17.0 only. CI runs the same groups one runner each, plus the UI test, from 1.17.1 on.
 
+**Test packages for the owner:** `tools/make_test_packages.sh [out_dir]` builds unsigned Windows (MinGW cross-compile) and Linux packages of the working tree, `quark-<VERSION>-windows-test.zip` and `quark-<VERSION>-linux-test.tar.gz`, into `build/test-packages/`. The owner tries them before tagging.
+
 **Timing-sensitive tests:** the netcode, tick-rate and interpolation-delay groups fail on a loaded machine. Run the full suite on an idle machine with a private `TMPDIR` before calling a failure real. If one netcode timing check fails on the real Windows runner, the owner's decision (C10) is to give only that check a Windows-specific tolerance and keep the job blocking.
 
 ## 4. Branches and releases
 
-**Today** (at 1.17.0) there is no `testing` branch: all work is on `claude/compassionate-ritchie-07ah6i`, the default branch, and pushes there build only. Until the restructure is done, a testing prerelease needs a push to a branch named `testing`, and production needs a `v<VERSION>` tag on the default branch.
+**Today** (1.17.0 shipped) there is no `testing` branch: all work is on `claude/compassionate-ritchie-07ah6i`, the default branch, and pushes there build only. Until the restructure is done, a testing prerelease needs a push to a branch named `testing`, and production needs a `v<VERSION>` tag on the default branch. A cloud session can push only its own `claude/...` branch, so its work reaches `testing` by a pull request the owner merges (section 0).
 
 **Branches** (the restructure the owner asked for, done right after 1.17.0 ships):
 
@@ -165,13 +206,12 @@ Workflows are in `.github/workflows/`:
 | Website | GitHub Pages (`gh-pages`) | Automatic, on each production release |
 | Asset Studio | https://claude.ai/artifact/JuDQckiZY15XUHz1xbD3pC | Rebuilt and republished after each push (CLAUDE.md "Asset Studio"). Replacements the owner uploads are pulled into `assets/overrides/` before each push. |
 
-**Owner steps for 1.17.0 specifically** (REMAINING.md section 0):
-1. Run the 1.17 SQL list before deploying the Worker.
-2. Deploy the Worker together with the release.
-3. Add the cron trigger and `ADMIN_KEY`.
-4. On each dedicated server: `git pull` and run `install.sh` once. It also sets up the testing server on the next UDP port up: forward that port too (or pass `--no-testing`).
-5. Redeploy the bot and rotate its token and `BOT_KEY`.
-6. Ship production before 50 testing prereleases pile up, because launchers 1.16 and older only read the newest 50 releases.
+**The owner's 1.17.0 deployment steps are all done** (2026-10-23): the 1.17 SQL and the Worker, the cron and `ADMIN_KEY`, `install.sh` on the server box (game server and bot), and new bot keys. Production 1.17.0 shipped before 50 testing prereleases piled up, so launchers 1.16 and older found it.
+
+**Where the keys are, for changing them by hand:**
+- the bot: `sudo nano /etc/quark-discord.env` (`DISCORD_TOKEN`, `GUILD_ID`, `BOT_KEY`), then `sudo systemctl restart quark-discord`. A new `BOT_KEY` goes in the Worker's secrets too.
+- the Worker: Cloudflare → the Worker → Settings → Variables and Secrets (`ADMIN_KEY`, `BOT_KEY`).
+- the server box: `/etc/quark/update.env` (`QUARK_ALERT_WEBHOOK`, `GITHUB_TOKEN`).
 
 ## 7. Rules the owner has set (all in CLAUDE.md)
 
@@ -234,11 +274,20 @@ Workflows are in `.github/workflows/`:
 
 ## 11. Open items at handover
 
-See [REMAINING.md](../REMAINING.md) for the full list. The final state of 1.17.0 (tests, maps, what's known and kept) is in section 12 below.
+See [REMAINING.md](../REMAINING.md) for the full list, and section 0 "First things to do". The final state of 1.17.0 (tests, maps, what's known and kept) is in section 12 below.
 
-## 12. State at 1.17.0
+## 12. State at 1.17.0 (shipped)
 
-**Pushed on 2026-10-23 for release as 1.17.0 (production)**, by the owner's call: no hand checklist and no further look-over ("push 1.17.0 once everything is finished"). The release itself goes out when the owner pushes the `v1.17.0` tag (section 0). CI at the pushed commit: Windows, Linux and macOS all build. The first push failed on macOS, because Apple's clang rejected a `sigaction` call in the tests; the fix is `7552461`.
+**Released on 2026-10-23 as 1.17.0 (production).** The owner pushed tag `v1.17.0` on `b64ce4b` after trying unsigned test packages of that commit ("build is perfect lets go"). There was no hand checklist and no further look-over, by the owner's call ("push 1.17.0 once everything is finished"). Release run 120 built Windows, Linux and macOS, signed everything and published the release as latest.
+- **The website job was skipped in that run.** `pages` and `deploy-worker` had no status function, so GitHub's implicit `success()` saw the skipped CI test jobs further back and skipped them too. `77643ca` fixed it with `!cancelled()` and explicit results, as the release job already had. It also added the site-only manual run, which published the site (run 122).
+- **The owner's play-test before the tag** added these to 1.17.0 (all in both changelogs):
+  - the knife slash comes out of the knife model, with no box at its end;
+  - holding jump refills only one dash charge (landing without jump held refills both);
+  - the editor grid goes down to 1/8 m;
+  - SUPER, HYPER and LOCATOR sounds (33 per kit);
+  - A/D strafing beats W-only air control from 9.5 m/s, done by weakening W, not by boosting A/D;
+  - knives, bolts and syringes stay stuck: in the world until the match ends, in a player until they die. Each is one reliable event, kept by the client (cap 256) and drawn without shadows.
+- **The first push failed on macOS**, because Apple's clang rejected a `sigaction` call in the tests; the fix is `7552461`.
 
 - **Tests before the push** (this machine, Linux): every `quark_tests` group except the bot and map groups passed. That includes the timing-sensitive netcode, tick rate and governor groups, each run on its own. The owner waived the bot and map tests for this release only ("those will be replaced anyway"). Every map was instead hosted headless in FFA and screenshotted: all 21 load and run. Lodestone and Midtown need over a minute on a loaded machine with software GL before their first light bake finishes. The movement agent's last full run, which included bots and maps, passed everything but the timing groups under load.
 - **CI for 1.17.0 builds only, with no CI tests** (owner). The test jobs skip while VERSION is 1.17.0. From 1.17.1 they run one test group per runner on Linux and Windows, and the release waits for them.
