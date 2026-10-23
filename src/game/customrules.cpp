@@ -36,7 +36,9 @@ void rebuild(Tuned& t) {
 
 Tuned& tuned() {
     Tuned* t = g_t;
-    if (__builtin_expect(t == nullptr, 0)) { static thread_local Tuned st; rebuild(st); g_t = t = &st; }
+    // (on the heap, never freed: a thread_local object with a destructor crashed at thread exit under MinGW, its
+    // emutls block freed before the destructor ran, a heap corruption (UI test); a few KB per thread that plays)
+    if (__builtin_expect(t == nullptr, 0)) { t = new Tuned(); rebuild(*t); g_t = t; }
     return *t;
 }
 
