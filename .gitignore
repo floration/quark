@@ -2,6 +2,7 @@ build*/
 *.qlm
 site/changelog.json
 site/weapons.json
+site/updates/
 build-tracy/
 maps/downloads/
 *.key

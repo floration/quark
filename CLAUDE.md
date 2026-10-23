@@ -17,7 +17,10 @@
   - Any other branch: build + test only. Keep the workflow passing.
 - Before production, the owner tests the testing build by hand with `docs/RELEASE_CHECKLIST.md` (game, settings, modes, maps, editor, servers, ranked, Worker/D1, Discord bot, website). Never open the production PR or suggest tagging until the owner says that build passed it; keep the checklist current when features change.
 - To ship production (owner): merge the `testing` → default-branch PR, then `git tag v<VERSION> <merge commit> && git push origin v<VERSION>`.
-- Every update: bump `VERSION` (semver; started at 0.1.0) and add `changelogs/<VERSION>.md` describing what changed. The release notes, the website and the launcher all show that file (a production tag without it fails).
+- Every update: bump `VERSION` (semver; started at 0.1.0) and add TWO changelogs:
+  - `changelogs/<VERSION>.md`, the short one: what players and server owners notice. The release notes, the launcher, the Discord bot and the website's home page and `updates/` list show it.
+  - `changelogs/full/<VERSION>.md`, the full one (every version from 1.17.0 on): every change, however small, with what changed and WHY (the reason, the numbers, the trade-off), grouped by area. It becomes the website page `updates/<VERSION>/` (made by `tools/site_updates.py` when the site is published). Older versions' pages show their short notes.
+  - A production tag fails without either file.
 - Everything published is signed with `QUARK_SIGNING_KEY` (docs/SIGNING.md; owner decision B6): every qpak, the release manifest `quark-release.txt` (names each file's sha256, version and channel), `SHA256SUMS`, the standalone launcher downloads and the website's file list; each platform's qpak also carries its `quark_launcher` with its `.sig`. The launcher hides an unsigned release claiming 1.17.0 or newer; 1.16.x and older install without a warning. Actions are pinned by commit SHA (Dependabot bumps them); keep `persist-credentials: false` and write permissions only on the release / pages jobs.
 - The launcher (`src/launcher/`) installs/updates from the release's `quark-<platform>.qpak` (made by `tools/pack.py`); keep those asset names stable.
 

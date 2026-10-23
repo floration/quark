@@ -67,6 +67,8 @@ jobs:
           fi
           if [ "$CHANNEL" != none ]; then
             [ -f "changelogs/$V.md" ] || { [ "$CHANNEL" = testing ] || { echo "::error::changelogs/$V.md is missing"; exit 1; }; }
+            # the full changelog (what changed and why, in depth: the website's updates/<version> page)
+            [ -f "changelogs/full/$V.md" ] || { [ "$CHANNEL" = testing ] || { echo "::error::changelogs/full/$V.md is missing"; exit 1; }; }
             if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
               echo "::error::release $TAG already exists: bump VERSION (releases are never replaced)"; exit 1
             fi
@@ -126,6 +128,7 @@ jobs:
           cmake --build build -j
           ctest --test-dir build --output-on-failure
           python3 tools/site_changelog.py .   # the website's data builds (checked here, before anything is published)
+          python3 tools/site_updates.py . --allow-missing-full   # (work in progress may not have its full changelog yet)
           mkdir -p pkg && cp build/quark build/quark_server build/quark_launcher pkg/ && cp -r maps mods pkg/
           python3 tools/pack.py pkg quark-linux.qpak
           mkdir -p quark-linux && cp -r pkg/* README.md quark-linux/
@@ -324,6 +327,7 @@ jobs:
           QUARK_SIGNING_KEY: ${{ secrets.QUARK_SIGNING_KEY }}
         run: |
           python3 tools/site_changelog.py .
+          python3 tools/site_updates.py .   # updates/ and updates/<version>/ (every version from 1.17.0 has its full changelog)
           # the owner's website pictures (docs/ASSETS.md): assets/overrides/website/<file> replaces site/img/<file>
           if [ -d assets/overrides/website ]; then find assets/overrides/website -maxdepth 1 -type f \( -name '*.jpg' -o -name '*.png' \) -exec cp {} site/img/ \; ; fi
           # B6: what the site serves is signed too: SHA256SUMS of every file, signed with the release key (the

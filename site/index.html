@@ -75,6 +75,7 @@ footer { margin-top: 50px; padding-top: 14px; border-top: 2px dashed var(--line)
     <a href="#weapons">guns</a>
     <a href="#ranks">leaderboard</a>
     <a href="#log">changes</a>
+    <a href="updates/">all updates</a>
     <a href="https://discord.gg/RERYWNWSXg">discord</a>
   </nav>
 </header>
@@ -148,6 +149,7 @@ footer { margin-top: 50px; padding-top: 14px; border-top: 2px dashed var(--line)
 <h2 id="log">changes</h2>
 <div id="logbox">loading...</div>
 <button class="more" id="morebtn" style="display:none">older stuff</button>
+<p class="dim"><a href="updates/">every update</a>, each with a page of everything that changed and why</p>
 
 <footer>
   made by one person and a lot of playtesting ·
@@ -214,7 +216,7 @@ fetch("changelog.json").then(r => r.json()).then(log => {
   const box = document.getElementById("logbox"), more = document.getElementById("morebtn");
   const render = n => {
     box.innerHTML = log.slice(0, n).map((e, i) =>
-      `<details${i === 0 ? " open" : ""}><summary><span class="v">v${esc(e.version)}</span><span class="t">${esc(teaser(e.notes))}</span></summary><div class="body">${md(e.notes)}</div></details>`).join("");
+      `<details${i === 0 ? " open" : ""}><summary><span class="v">v${esc(e.version)}</span><span class="t">${esc(teaser(e.notes))}</span></summary><div class="body">${md(e.notes)}<p><a href="updates/${esc(e.version)}/">everything that changed in ${esc(e.version)}, and why</a></p></div></details>`).join("");
     more.style.display = n < log.length ? "" : "none";
   };
   render(8);
