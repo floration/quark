@@ -11,6 +11,42 @@ Read [CLAUDE.md](../CLAUDE.md) first: it holds the standing rules, and any sessi
 
 ---
 
+## 0. Starting the local session (from the cloud one)
+
+The work up to 1.17.0 was done in a claude.ai cloud session. Everything that matters is pushed to GitHub. The cloud container (its worktrees, agent branches, scratch files and scheduled reminders) is thrown away, so nothing below depends on it.
+
+**Where things stand**
+- **Branch:** all work is on `claude/compassionate-ritchie-07ah6i`, which is the repository's **default branch** for now. There is no `testing` branch yet; creating it is the first item of the restructure (section 9).
+- **The 1.17.0 commit:** `7552461` is the last commit with game code. It builds on Windows, Linux and macOS in CI (run 111). The later commits add only this section, `tools/release_check.sh` and a steadier sticky test; the game is the same.
+- **The release:** 1.17.0 is published only when the owner pushes the tag. Tag the newest commit of the branch, so this document ships with it:
+  ```
+  git fetch origin && git tag v1.17.0 origin/claude/compassionate-ritchie-07ah6i && git push origin v1.17.0
+  ```
+  CI then signs the files, publishes the release as latest (about 7 minutes) and deploys the website. If a job fails, fix the code, push, and tag again. The tag must be deleted first (`git push origin :refs/tags/v1.17.0`) and the failed release must not exist.
+- **Unmerged work:** none. The only local branch with commits not on the default branch was an abandoned font experiment, which isn't needed.
+
+**Setting up the local project**
+1. Clone: `git clone https://github.com/floration/quark && cd quark`. Opening Claude Code in that folder loads CLAUDE.md.
+2. Install the build prerequisites (README "Build"):
+   - **Linux:** the X11/GL dev packages, cmake, a C++17 compiler, python3.
+   - **Windows:** MinGW-w64 (gcc), cmake and python3. MSVC isn't supported.
+   - **macOS:** the Xcode command line tools, cmake and python3.
+3. Build: `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j`. The maps are generated during the build.
+4. Run the game normally: `build/quark` (Windows: `build\quark.exe`). It keeps its settings, maps and demos in its user data folder, separate from the repo.
+5. Before every push, run `tools/release_check.sh` (section 3) on Linux or macOS, or under WSL / Git Bash on Windows. It runs each test group, then hosts and screenshots every map; the map step needs Xvfb on Linux.
+
+**What a local session may not have**
+- **The Asset Studio steps in CLAUDE.md** use claude.ai's artifact tools: reading the page's `replacements` collection and republishing the page. A local Claude Code session may not have them. If it doesn't, do those steps from a claude.ai session, or download uploads from the page by hand into `assets/overrides/<target>`.
+- **No GitHub restrictions:** a local session pushes with your own git credentials, so it can push tags and other branches. The cloud session could only push its one branch, which is why the 1.17.0 tag is yours to push.
+- **Parallel agents:** the cloud session ran many agents in parallel worktrees. Locally, a heavy test run competes with the game and your other work for CPU. The timing groups (netcode, tick rate) fail under load (section 3).
+
+**Decided but not yet done** (the owner can pick these up first)
+- **The restructure** (section 9): create `testing`, protect the default branch, add the `v*` tag rule, and move the launcher, site and Discord bot to their own branches.
+- **The owner's 1.17.0 deployment steps** (section 6): the Worker and SQL, the cron and secrets, `install.sh` on each server (which adds the testing server on the next port), and redeploying the bot.
+- **Movement items flagged for a decision** (section 12): ground dash spam, the endless super-dash chain, the ladder-top hop, and the standing-jump drift (8 vs 4.8).
+- **Bot and map tests were waived for 1.17.0 only.** They count again from the next version, in CI and locally.
+
+
 ## 1. What quark is
 
 A fast, minimal FPS on a custom C++17 engine:
@@ -75,9 +111,13 @@ build/quark_tests mapreport       # writes docs/MAP_REPORT.md
   ```
 - The UI test: `build/quark --uitest <report.json>`. It clicks every button on every screen and checks what each one does.
 
+**Before every push:** `tools/release_check.sh` runs every test group (4 at a time, then the timing-sensitive ones alone) and hosts every map headless in FFA with a screenshot. It exits 0 when everything passed. `--skip "bots maps"` leaves groups out, as for 1.17.0 only. CI runs the same groups one runner each, plus the UI test, from 1.17.1 on.
+
 **Timing-sensitive tests:** the netcode, tick-rate and interpolation-delay groups fail on a loaded machine. Run the full suite on an idle machine with a private `TMPDIR` before calling a failure real. If one netcode timing check fails on the real Windows runner, the owner's decision (C10) is to give only that check a Windows-specific tolerance and keep the job blocking.
 
 ## 4. Branches and releases
+
+**Today** (at 1.17.0) there is no `testing` branch: all work is on `claude/compassionate-ritchie-07ah6i`, the default branch, and pushes there build only. Until the restructure is done, a testing prerelease needs a push to a branch named `testing`, and production needs a `v<VERSION>` tag on the default branch.
 
 **Branches** (the restructure the owner asked for, done right after 1.17.0 ships):
 
@@ -191,11 +231,11 @@ Workflows are in `.github/workflows/`:
 
 ## 11. Open items at handover
 
-See [REMAINING.md](../REMAINING.md) for the full list. The final state of 1.17.0 (tests, performance, maps) is recorded in section 12 below once the final check is done.
+See [REMAINING.md](../REMAINING.md) for the full list. The final state of 1.17.0 (tests, maps, what's known and kept) is in section 12 below.
 
 ## 12. State at 1.17.0
 
-**Released as 1.17.0 (production) on 2026-10-23**, by the owner's call: pushed and tagged without the hand checklist or another look-over ("push 1.17.0 once everything is finished").
+**Pushed on 2026-10-23 for release as 1.17.0 (production)**, by the owner's call: no hand checklist and no further look-over ("push 1.17.0 once everything is finished"). The release itself goes out when the owner pushes the `v1.17.0` tag (section 0). CI at the pushed commit: Windows, Linux and macOS all build. The first push failed on macOS, because Apple's clang rejected a `sigaction` call in the tests; the fix is `7552461`.
 
 - **Tests before the push** (this machine, Linux): every `quark_tests` group except the bot and map groups passed. That includes the timing-sensitive netcode, tick rate and governor groups, each run on its own. The owner waived the bot and map tests for this release only ("those will be replaced anyway"). Every map was instead hosted headless in FFA and screenshotted: all 21 load and run. Lodestone and Midtown need over a minute on a loaded machine with software GL before their first light bake finishes. The movement agent's last full run, which included bots and maps, passed everything but the timing groups under load.
 - **CI for 1.17.0 builds only, with no CI tests** (owner). The test jobs skip while VERSION is 1.17.0. From 1.17.1 they run one test group per runner on Linux and Windows, and the release waits for them.

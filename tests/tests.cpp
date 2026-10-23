@@ -3552,7 +3552,7 @@ static void testStickyOnPlayers(uint16_t port) {
     CHECK(own.active && own.stuck && own.onPlayer < 0 && own.pos.y < 0.2f);
     // a sticky on a player who dies stays where they were: it falls to the floor there and sticks
     Projectile& onB = drop(ia, sb.move.pos + Vec3(0, 2.2f, 0), {0, -5, 0});
-    pump(s, cls, 0.2, idle);
+    for (int k = 0; k < 20 && !onB.stuck; k++) pump(s, cls, 0.05, idle);   // (until it lands: a loaded machine runs fewer ticks)
     CHECK(onB.active && onB.stuck && onB.onPlayer == ib && onB.pos.y > 1.5f);
     Vec3 died = sb.move.pos;
     s.killPlayer(ib, -1, 255);
