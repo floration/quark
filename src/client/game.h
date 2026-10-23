@@ -14,6 +14,7 @@
 #include "../game/server.h"
 #include "../game/ranked.h"
 #include "audio.h"
+#include "rawmouse.h"
 #include "binds.h"
 #include "config.h"
 #include "renderer.h"
@@ -430,6 +431,7 @@ private:
     void applyPresentMode();
     void markInput() { if (pendingInput_ < 0) pendingInput_ = timeNow(); }
     void turn(double dx, double dy);   // mouse counts into yaw_ / pitch_
+    RawMouse rawMouse_;                // Windows: raw mouse reports on their own thread (rawmouse.h)
 public:
     void readMouse();                  // the main loop, before glfwPollEvents: raw mouse reports in one read (Windows)
 private:

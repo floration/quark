@@ -64,10 +64,6 @@ double timeNow();
 // Tests only: run the clock faster than real time (simulation is unchanged, just compressed).
 void setTimeScale(double scale);
 void sleepMs(int ms);
-// Windows: every pending raw mouse report in one read (GetRawInputBuffer), summed into dx / dy; their WM_INPUT messages
-// are taken off the queue (exactly as many, oldest first). Returns the reports read; 0 elsewhere. A fast mouse (8 kHz)
-// sends ~7 reports a frame, and each went through its own message, window procedure and two GetRawInputData calls.
-int readRawMouse(double* dx, double* dy);
 // Returns at timeNow() >= t, on time: sleeps (a high-resolution timer on Windows) until just before, then spins.
 void waitUntil(double t);
 // Gives the calling thread above-normal scheduling priority (server thread inside the client).

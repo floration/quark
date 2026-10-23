@@ -249,36 +249,6 @@ void sleepMs(int ms) { Sleep((DWORD)ms); }
 void sleepMs(int ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); }
 #endif
 
-int readRawMouse(double* dx, double* dy) {
-#ifdef _WIN32
-    alignas(8) static thread_local BYTE buf[16384];
-    static thread_local LONG lastAbsX = 0, lastAbsY = 0;
-    static thread_local bool haveAbs = false;
-    int total = 0;
-    for (int pass = 0; pass < 8; pass++) {
-        UINT size = sizeof buf;
-        UINT count = GetRawInputBuffer((PRAWINPUT)buf, &size, sizeof(RAWINPUTHEADER));
-        if (count == 0 || count == (UINT)-1) break;
-        PRAWINPUT ri = (PRAWINPUT)buf;
-        for (UINT i = 0; i < count; i++, ri = (PRAWINPUT)(((ULONG_PTR)ri + ri->header.dwSize + 7) & ~(ULONG_PTR)7)) {   // (blocks are 8-byte aligned)
-            if (ri->header.dwType != RIM_TYPEMOUSE) continue;
-            const RAWMOUSE& m = ri->data.mouse;
-            if (m.usFlags & MOUSE_MOVE_ABSOLUTE) {   // (remote desktop, tablets: positions, as GLFW handles them)
-                if (haveAbs) { *dx += m.lLastX - lastAbsX; *dy += m.lLastY - lastAbsY; }
-                lastAbsX = m.lLastX; lastAbsY = m.lLastY; haveAbs = true;
-            } else { *dx += m.lLastX; *dy += m.lLastY; }
-        }
-        MSG msg;   // (their messages: one per report, in the same order)
-        for (UINT i = 0; i < count && PeekMessageW(&msg, nullptr, WM_INPUT, WM_INPUT, PM_REMOVE); i++) {}
-        total += (int)count;
-    }
-    return total;
-#else
-    (void)dx; (void)dy;
-    return 0;
-#endif
-}
-
 void waitUntil(double t) {
 #ifdef _WIN32
     // Sleep(1) wakes on the next 1 ms timer tick: 1 to 2 ms, so stopping 1.5 ms early still overshot by up to 0.5 ms

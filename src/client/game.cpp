@@ -128,6 +128,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     for (auto& q : latQ_) glGenQueries(1, &q.q);
     audio_.setAnnouncer(cfg_.announcerVoice);
     audio_.setExclusive(cfg_.exclusiveAudio);
+    if (!opts_.uiTest) rawMouse_.start();   // (the UI test drives the mouse through GLFW)
     if (!audio_.start()) printf("audio: no output device - running without sound\n");
     audio_.setMasterVolume(cfg_.volume);
 
@@ -158,6 +159,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
 
 void Game::shutdown() {
     audio_.stop();
+    rawMouse_.stop();
     leaveGame();
     cfg_.save();
     if (raceWriter_.t.joinable()) raceWriter_.t.join();   // (the last finished run's line)
@@ -349,7 +351,10 @@ void Game::captureMouse(bool on) {
     if (on == mouseCaptured_) return;
     mouseCaptured_ = on;
     glfwSetInputMode(win_, GLFW_CURSOR, on ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
-    if (glfwRawMouseMotionSupported()) glfwSetInputMode(win_, GLFW_RAW_MOUSE_MOTION, on ? GLFW_TRUE : GLFW_FALSE);
+    // (GLFW's raw motion only without the raw input thread: Windows sends a process's raw mouse input to one window,
+    // and GLFW registering its own would take it from the thread)
+    if (!rawMouse_.active() && glfwRawMouseMotionSupported()) glfwSetInputMode(win_, GLFW_RAW_MOUSE_MOTION, on ? GLFW_TRUE : GLFW_FALSE);
+    { double a, b, c; int n; rawMouse_.take(&a, &b, &n, &c); }   // (motion from before: not part of this)
     firstMouse_ = true;
 }
 
@@ -742,27 +747,27 @@ void Game::turn(double dx, double dy) {
     yaw_ = std::remainder(yaw_, 2 * PI);
 }
 
-// Raw mouse reports read straight from Windows, all of them in one go (readRawMouse), before GLFW's event poll: with
-// a fast mouse that poll handled each report as its own message (83 us a frame at 8 kHz on the owner's PC). Reports
-// that arrive after this still come through GLFW (onCursor), so nothing is counted twice or lost.
+// The mouse's motion since the last frame, from the raw input thread (rawmouse.h): with a fast mouse GLFW's event
+// poll handled every report as its own message (60-80 us a frame at 8 kHz on the owner's PC). Called before that poll
+// and again just before the camera in ULTRA. Without the thread (not Windows), GLFW's raw motion comes via onCursor.
 void Game::readMouse() {
-    if (!mouseCaptured_) return;
-    double dx = 0, dy = 0;
-    const int n = readRawMouse(&dx, &dy);
-    if (n <= 0) return;
-    markInput();
+    if (!rawMouse_.active()) return;
+    double dx = 0, dy = 0, firstAt = 0;
+    int n = 0;
+    if (!rawMouse_.take(&dx, &dy, &n, &firstAt) || !mouseCaptured_) return;   // (not captured: motion is dropped)
+    if (pendingInput_ < 0 || firstAt < pendingInput_) pendingInput_ = firstAt;   // (F3: when it arrived)
     mouseEventsPoll_ += n;   // (F3: the mouse's report rate)
-    if (firstMouse_) { glfwGetCursorPos(win_, &lastMx_, &lastMy_); firstMouse_ = false; }   // (onCursor's reference: GLFW's own position)
     turn(dx, dy);
 }
 
 void Game::onCursor(double x, double y) {
     markInput();
     if (mouseCaptured_) {
-        mouseEventsPoll_++;   // (F3: the mouse's report rate)
+        if (!rawMouse_.active()) mouseEventsPoll_++;   // (F3: the mouse's report rate)
         if (firstMouse_) { lastMx_ = x; lastMy_ = y; firstMouse_ = false; return; }
         double dx = x - lastMx_, dy = y - lastMy_;
         lastMx_ = x; lastMy_ = y;
+        if (rawMouse_.active()) return;   // (the raw input thread has the motion: this is GLFW's cursor, not raw)
         turn(dx, dy);
     } else {
         // UI coordinates are framebuffer pixels (handles HiDPI).
