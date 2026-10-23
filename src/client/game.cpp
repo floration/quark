@@ -4799,6 +4799,7 @@ void Game::drawPipeline(float x, float y, float ts, double* totalOnly) {
     span("WORLD + HUD + SHADOW MAP BUILD", PM_TICKS, PM_SCENE0, cCpu);
     span("DRAW CALLS", PM_SCENE0, PM_SCENE1, cCpu);
     span("HUD DRAW", PM_SCENE1, PM_HUD, cCpu);
+    if (cfg_.presentMode == 3) span("LATENT SYNC: HOLD FOR THE BLANK", PM_HUD, PM_SWAP0, cWait);
     span("SWAP", PM_SWAP0, PM_SWAP1, cCpu);
     if (ultraPaced()) span("GPU WAIT (ULTRA)", PM_SWAP1, PM_AFTER, cWait);
     rows.push_back({"GPU", a[PM_COUNT], a[PM_COUNT + 1], cGpu});
@@ -4888,9 +4889,11 @@ void Game::applyDisplayMode() {
     if (fw > 0 && fh > 0) r_.resize(fw, fh);
 }
 
-// Latent Sync (PRESENT: LATENT SYNC, like Special K's): one frame a refresh, started so it's handed over (flipped, no
-// vsync) just as the refresh's vertical blank begins: its tear line falls in the blank, off screen, and its input is
-// read as late as it can be (the frame's learnt CPU and GPU times before that). The offset moves the flip (+ later).
+// Latent Sync (PRESENT: LATENT SYNC, like Special K's): one frame a refresh. It's started late enough that its input is
+// fresh but early enough that even the slowest recent frame is finished in time; beforeSwap then holds the finished
+// frame and flips it (no vsync) just as the refresh's vertical blank begins, so the tear line falls in the blank, off
+// screen, however long the frame took. The lead adapts by itself: the slowest frame (input read to finished on the GPU)
+// of the last few seconds, plus a margin. The offset moves the flip (+ later) if a driver's flip lands off the blank.
 void Game::latentWait() {
     GLFWmonitor* mon = glfwGetWindowMonitor(win_);
     if (!mon) mon = glfwGetPrimaryMonitor();
@@ -4899,11 +4902,24 @@ void Game::latentWait() {
     const double refresh = 1.0 / (vm && vm->refreshRate > 0 ? vm->refreshRate : 60);
     double blank = 0;
     if (!raster_.nextBlank(refresh, &blank)) return;   // (no scanline from the driver: no vsync)
-    const double now = timeNow(), lead = ultraCpu_ + ultraGpu_ + 0.0002;   // (input read to flip, and a margin)
+    const double now = timeNow(), lead = latentWorst_ + 0.0001;   // (input read to finished, the slowest lately, + 100 us)
     double flip = blank + cfg_.latentOffsetUs * 1e-6;
     while (flip - lead < now || flip < latentFlip_ + refresh * 0.5) flip += refresh;   // (one frame a refresh)
     latentFlip_ = flip;
     waitUntil(flip - lead);
+}
+
+void Game::beforeSwap() {
+    if (cfg_.presentMode != 3 || latentFlip_ <= 0) return;
+    // the frame finished on the GPU (how long it took from its input read: the next frames' lead)...
+    GLsync f = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    glClientWaitSync(f, GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
+    glDeleteSync(f);
+    const double done = timeNow(), took = done - ultraReadAt_;
+    if (took > latentWorst_) { latentWorst_ = took; latentWorstAt_ = done; }
+    else if (done - latentWorstAt_ > 3.0) latentWorst_ += (took - latentWorst_) * 0.02;   // (3 s without one as slow: ease down)
+    // ...then held until its vertical blank (a frame that ran late flips now: its tear line shows, and the lead grows)
+    waitUntil(latentFlip_);
 }
 
 void Game::applyPresentMode() {

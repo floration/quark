@@ -97,6 +97,7 @@ public:
     // Frame pacing hooks called by the main loop around the buffer swap.
     void beforeInput();   // frame limiter sleep happens before this, so input is sampled as late as possible
     void preInput();      // after beforeInput, before the input is read: the network (snapshots, reconcile)
+    void beforeSwap();    // latent sync: wait for the GPU to finish the frame, then for the vertical blank
     void afterSwap();     // low-latency fence waits + F3 input-latency measurement
 
 private:
@@ -439,7 +440,9 @@ private:
     RawMouse rawMouse_;                // Windows: raw mouse reports on their own thread (rawmouse.h)
     RasterClock raster_;               // latent sync: the monitor's scanline (gpuprefs.h)
     GLFWmonitor* latentMon_ = nullptr; // (the monitor raster_ was opened on)
-    double latentFlip_ = 0;            // (the last frame's planned flip)
+    double latentFlip_ = 0;            // (this frame's planned flip: the vertical blank it's for)
+    double latentWorst_ = 0.002;       // (the slowest recent frame, input read to finished on the GPU; slowly forgotten)
+    double latentWorstAt_ = 0;
     void latentWait();
     bool ultraPaced() const { return cfg_.lowLatency == 2 || cfg_.presentMode == 3; }   // (fences, learnt CPU / GPU times)
     bool mouseHeld_ = false;           // rawMouse_.hold is on (the cursor clipped to the window's centre)

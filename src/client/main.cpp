@@ -193,6 +193,7 @@ int main(int argc, char** argv) {
         double dt = now - last;
         last = now;
         game.frame(dt);
+        game.beforeSwap();   // (latent sync: the finished frame held until the vertical blank)
         game.pipeMark(Game::PM_SWAP0);
         { QZONE("swap"); glfwSwapBuffers(win); }
         game.pipeMark(Game::PM_SWAP1);
