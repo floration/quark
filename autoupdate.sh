@@ -2,23 +2,22 @@
 # Discord bot auto-update (docs/OPERATIONS.md), run every 10 minutes by quark-discord-update.timer (install.sh sets it
 # up, as root: it restarts the bot's service). The git and pip work runs as the bot's own user ($QUARK_BOT_USER).
 #
-# It follows PRODUCTION releases only: the newest tag v<x.y.z> that is on the repository's default branch (a tag is
-# only made there when the owner ships a release, CLAUDE.md). When the bot's folder differs at that tag it
-#   1. checks the tag out (never an older commit than the one running: a tag already in HEAD's history is a no-op);
+# It follows the head of the discord-bot branch (QUARK_BOT_FOLLOW, default branch:discord-bot; push there only what
+# should run). QUARK_BOT_FOLLOW=tag follows the newest production tag v<x.y.z> on the default branch instead, which
+# only made sense while the bot lived in the game's tools/discordbot/. When the bot's files differ there it
+#   1. checks it out (never an older commit than the one running: a target already in HEAD's history is a no-op);
 #   2. reinstalls the hash-pinned requirements if requirements.txt changed;
 #   3. runs the offline tests (test_quarkdata) and a dry run (reads live data, posts nothing, gets no secrets);
 #   4. restarts the bot. If 2 or 3 fails it goes back to the commit it was on and exits 1 (journal; the bot keeps
 #      running the old code).
-# After the bot moves to its own repository (MOVING.md), that repository has no release tags: set
-# QUARK_BOT_FOLLOW=branch:main in the unit to follow its main branch instead.
 #
-# By hand: sudo sh tools/discordbot/autoupdate.sh       logs: journalctl -u quark-discord-update
+# By hand: sudo sh autoupdate.sh       logs: journalctl -u quark-discord-update
 set -eu
 main() {
 cd "$(dirname "$0")"
 HERE=$(pwd)
 USER_=${QUARK_BOT_USER:-$(stat -c %U "$HERE")}
-FOLLOW=${QUARK_BOT_FOLLOW:-tag}
+FOLLOW=${QUARK_BOT_FOLLOW:-branch:discord-bot}
 as() { if [ "$(id -un)" = "$USER_" ]; then "$@"; else runuser -u "$USER_" -- "$@"; fi; }
 log() { echo "quark-discord-update: $*"; }
 die() { echo "quark-discord-update: ERROR: $*" >&2; exit 1; }
