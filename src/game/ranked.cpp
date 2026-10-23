@@ -23,13 +23,11 @@ bool isOfficialMapName(const std::string& name) {
     return false;
 }
 
+// By content alone (REVIEW MAP-13): the map's sha256 (CRs dropped, as embed_maps.py hashes them) is one of the shipped
+// maps', whatever it's called. An edited map is its text as it is now. (Hashed once per text: cheap to ask every frame.)
 bool isOfficialMap(const Map& m) {
-    const std::string& src = m.sourceText();   // (an edited map: its text as it is now)
-    std::string text;
-    text.reserve(src.size());
-    for (char c : src) if (c != '\r') text += c;
-    std::string h = sha256Hex(text);
-    for (const OfficialMap* o = kOfficialMaps; o->name; o++) if (m.name == o->name && h == o->sha256) return true;
+    std::string h = m.contentId().hex();
+    for (const OfficialMap* o = kOfficialMaps; o->name; o++) if (h == o->sha256) return true;
     return false;
 }
 

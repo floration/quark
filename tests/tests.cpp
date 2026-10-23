@@ -410,6 +410,29 @@ static void testAllMaps() {
 // One set of limits for every map, however it arrives (REVIEW CLI-3, NET-3, NET-15): files, downloads and demos are
 // refused with an error instead of a 240 GB grid, a non-solid floor or brushes past 65535 dropping out of collision;
 // edits that would break those limits, or leave a map that won't load again, are refused and change nothing.
+// A map is named by the sha256 of its content (REVIEW MAP-13, JUDGMENT C2): CRLF and LF copies are one map, the name
+// doesn't matter to the ranked allowlist, an edit session chains the id over its ops, downloads are cached by it.
+static void testMapIdentity() {
+    printf("map identity: sha256 of the content\n");
+    CHECK(mapContentId("").hex() == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");   // (FIPS 180-4)
+    CHECK(mapContentId("box 0 0 0 1 1 1\r\nspawn any 0 0 0\r\n") == mapContentId("box 0 0 0 1 1 1\nspawn any 0 0 0\n"));
+    Map m;
+    CHECK(m.load("temple"));
+    std::string lf;
+    for (char c : m.source) if (c != '\r') lf += c;
+    CHECK(m.id().hex() == sha256Hex(lf) && m.id() == m.contentId() && isOfficialMap(m));
+    Map renamed;
+    CHECK(renamed.parse(m.source) && isOfficialMap(renamed) && renamed.id() == m.id());   // by content, whatever it's called
+    Map e = m;
+    MapId before = e.id();
+    std::string op = "b ins 0 1 0 10 0 2 11 2";
+    CHECK(applyMapEdit(e, op));
+    e.setEditId(mapEditId(before, op));
+    CHECK(e.id() == mapEditId(m.id(), op) && e.id() != before && e.contentId() != m.contentId() && !isOfficialMap(e));
+    CHECK(e.id().shortHex().size() == 2 * MapId::kShortBytes && e.id().startsWith(e.id().shortHex()) && !m.id().startsWith(e.id().shortHex()));
+    CHECK(downloadedMapPath(m.id()).find(m.id().hex() + ".qmap") != std::string::npos);
+}
+
 static void testMapLimits() {
     printf("map limits: hostile maps and edits are refused\n");
     for (const char* f : {"map_hugegrid.qmap", "map_floatmax.qmap"}) {   // the review's repro files
@@ -464,13 +487,13 @@ static void testMapLimits() {
         Map m;
         CHECK(m.parse(base));
         size_t n = m.brushes.size();
-        uint32_t crc = crc32(m.serialize().data(), m.serialize().size());
+        MapId before = mapContentId(m.serialize());
         CHECK(applyMapEdit(m, "g set 1 0 0 0 -4096 -1 -4096 4096 1 4096"));   // a big custom group: fine
         CHECK(!applyMapEdit(m, "g part 1 0 -4096 0 -4096 4096 1 4096"));       // a part 4096 times its size: refused
         CHECK(!applyMapEdit(m, "b set 2 0 0 0 0 1 1 1"));                      // generated boxes aren't edited directly
         CHECK(applyMapEdit(m, "g set 1 0 1 0 8 0 8 10 2 10") && m.brushes.size() == n);   // (back as it was)
         std::string again = m.serialize();
-        CHECK(crc32(again.data(), again.size()) == crc);                      // refused edits changed nothing
+        CHECK(mapContentId(again) == before);                                 // refused edits changed nothing
     }
 }
 
@@ -2655,8 +2678,8 @@ static void testMapDownload(uint16_t port) {
     std::vector<NetClient*> cls = {&a};
     pump(s, cls, 1.5, idle);
     CHECK(a.state() == ConnState::Connected && a.mapReady());
-    CHECK(a.map().crc == s.map_.crc && a.map().brushes.size() == base.brushes.size() + 1);
-    std::string dl = downloadedMapPath(name, s.map_.crc);
+    CHECK(a.map().id() == s.map_.id() && a.map().brushes.size() == base.brushes.size() + 1);
+    std::string dl = downloadedMapPath(s.map_.id());
     FILE* f = fopen(dl.c_str(), "rb");
     CHECK(f != nullptr);
     if (f) fclose(f);
@@ -2665,7 +2688,7 @@ static void testMapDownload(uint16_t port) {
     b.connect("127.0.0.1:" + std::to_string(port), "b");
     cls.push_back(&b);
     pump(s, cls, 0.2, idle);
-    CHECK(b.mapReady() && b.downloadProgress() < 0 && b.map().crc == s.map_.crc);
+    CHECK(b.mapReady() && b.downloadProgress() < 0 && b.map().id() == s.map_.id());
     std::remove(dl.c_str());
     s.stop();
 }
@@ -3432,17 +3455,17 @@ static void testRankedVoteAndRestart(uint16_t port) {
     CHECK(s.editing_ && s.tempEdit_ && (a.mode().flags & MS_TEMP_EDIT));
     a.sendCommand("ed b ins 0 1 0 20 0 1 21 1");
     pump(s, cls, 0.5, idle);
-    CHECK(a.map().crc == s.map_.crc && s.map_.brushes.size() == disk.brushes.size() + 1);
+    CHECK(a.map().id() == s.map_.id() && s.map_.brushes.size() == disk.brushes.size() + 1);
     b.sendCommand("callvote edit off");
     pump(s, cls, 0.2, idle);
     a.sendCommand("vote yes");
     pump(s, cls, 0.5, idle);
     CHECK(!s.editing_ && s.mapEdited_ && s.map_.brushes.size() == disk.brushes.size() + 1 && !(a.mode().flags & MS_EDITING));
     Map after;
-    CHECK(after.load(s.config().map) && after.crc == disk.crc);   // the file was never touched
+    CHECK(after.load(s.config().map) && after.id() == disk.id());   // the file was never touched
     s.command("map " + s.config().map);
     pump(s, cls, 0.5, idle);
-    CHECK(s.map_.crc == disk.crc && a.map().crc == disk.crc && !s.mapEdited_); // back to the original
+    CHECK(s.map_.id() == disk.id() && a.map().id() == disk.id() && !s.mapEdited_); // back to the original
     // update installed mid-match: announced, but no restart until the match is over
     s.ms_.phase = PHASE_LIVE;
     FILE* f = fopen(flag.c_str(), "w");
@@ -3487,7 +3510,7 @@ static void testEditSession(uint16_t port) {
     a.sendCommand("ed s del 999"); // refused
     pump(s, cls, 0.5, idle);
     CHECK(s.map_.brushes.size() == nb + 1 && s.map_.lights.size() == base.lights.size() + 1 && s.map_.brushes[0].material == 2);
-    CHECK(a.map().crc == s.map_.crc && b.map().crc == s.map_.crc);
+    CHECK(a.map().id() == s.map_.id() && b.map().id() == s.map_.id());
     CHECK(a.map().brushes.size() == nb + 1 && b.map().lights.size() == s.map_.lights.size());
     // a late joiner (its disk copy is the old file) gets the edited map
     NetClient c;
@@ -3495,11 +3518,11 @@ static void testEditSession(uint16_t port) {
     cls.push_back(&c);
     a.sendCommand("ed t Edited Arena");
     pump(s, cls, 1.5, idle);
-    CHECK(c.mapReady() && c.map().crc == s.map_.crc && c.map().title == "Edited Arena" && a.map().title == "Edited Arena");
+    CHECK(c.mapReady() && c.map().id() == s.map_.id() && c.map().title == "Edited Arena" && a.map().title == "Edited Arena");
     // a burst of edits while c is connected
     for (int k = 0; k < 20; k++) b.sendCommand("ed p ins " + std::to_string(k) + " " + std::to_string(k) + " 0 0");
     pump(s, cls, 1.0, idle);
-    CHECK(a.map().crc == s.map_.crc && b.map().crc == s.map_.crc && c.map().crc == s.map_.crc);
+    CHECK(a.map().id() == s.map_.id() && b.map().id() == s.map_.id() && c.map().id() == s.map_.id());
     // a custom group the size the editor sends (one op per part): in place on every side, nobody re-serializes,
     // and it gets through in well under a second (it used to go at 2 ops a tick)
     {
@@ -3519,19 +3542,19 @@ static void testEditSession(uint16_t port) {
         printf("  200-part group: %.0f ms\n", (timeNow() - t0) * 1000);
         CHECK(done);
         pump(s, cls, 0.3, idle);
-        CHECK(a.map().crc == s.map_.crc && b.map().crc == s.map_.crc && c.map().crc == s.map_.crc);
+        CHECK(a.map().id() == s.map_.id() && b.map().id() == s.map_.id() && c.map().id() == s.map_.id());
         CHECK(c.map().brushes.size() == s.map_.brushes.size() && c.map().gridRefs == s.map_.gridRefs);
         b.sendCommand("ed g del " + std::to_string(groupsBefore));   // (back as it was for the checks below)
         pump(s, cls, 0.3, idle);
-        CHECK(s.map_.groups.size() == groupsBefore && c.map().crc == s.map_.crc);
+        CHECK(s.map_.groups.size() == groupsBefore && c.map().id() == s.map_.id());
     }
     // switch to playing it: autosaved first, everyone spawns, then back to editing
     s.command("editmode off");
     pump(s, cls, 7.0, idle);
     CHECK(!(a.mode().flags & MS_EDITING) && !s.editing_);
     Map saved;
-    CHECK(saved.load(name) && saved.crc == s.map_.crc && saved.title == "Edited Arena" && saved.brushes.size() == nb + 1);
-    CHECK(a.map().crc == s.map_.crc);
+    CHECK(saved.load(name) && saved.id() == s.map_.id() && saved.title == "Edited Arena" && saved.brushes.size() == nb + 1);
+    CHECK(a.map().id() == s.map_.id());
     bool anyAlive = false;
     for (auto& p : s.players_) anyAlive |= p.connected && p.alive;
     CHECK(anyAlive);
@@ -3541,14 +3564,14 @@ static void testEditSession(uint16_t port) {
     for (auto& p : s.players_) CHECK(!p.alive);
     a.sendCommand("ed b del 0");
     pump(s, cls, 0.5, idle);
-    CHECK(c.map().crc == s.map_.crc && c.map().brushes.size() == nb);
+    CHECK(c.map().id() == s.map_.id() && c.map().brushes.size() == nb);
     // the host names the map in the session (the editor's SAVE AS): saved, and autosaved, under the typed name
     std::string name2 = name + "_renamed", path2 = userMapsDir() + "/" + name2 + ".qmap";
     s.command("editmode saveas ../evil");
     CHECK(s.cfg_.map == name);
     s.command("editmode saveas " + name2);
     Map renamed;
-    CHECK(s.cfg_.map == name2 && renamed.load(name2) && renamed.crc == s.map_.sourceTextCrc() && renamed.brushes.size() == nb);
+    CHECK(s.cfg_.map == name2 && renamed.load(name2) && renamed.id() == s.map_.contentId() && renamed.brushes.size() == nb);
     a.sendCommand("ed t Renamed");
     pump(s, cls, 0.5, idle);
     s.stop(); // autosaves
@@ -3564,7 +3587,7 @@ static void testEditSession(uint16_t port) {
     std::remove(path.c_str());
     std::remove((path + ".bak").c_str());
     std::remove(path2.c_str());
-    for (uint32_t crc : {a.map().crc, c.map().crc}) std::remove(downloadedMapPath(name, crc).c_str());
+    for (const MapId& id : {a.map().id(), c.map().id()}) std::remove(downloadedMapPath(id).c_str());
 }
 
 // Demos: record a match from one client, play it back into another: the map, players, names and events come back.
@@ -3749,10 +3772,10 @@ struct FakeServer {
             if (!r.bad()) { nonce = nn; client = from; heard = true; }
         }
     }
-    void accept(const std::string& map, uint32_t crc, int id = 0) {
+    void accept(const std::string& map, const MapId& mapId, int id = 0) {
         uint8_t out[512];
         Writer w(out, sizeof out);
-        writeHeader(w, PKT_ACCEPT); w.u32(nonce); w.u8((uint8_t)id); w.str(map); w.u32(crc); w.u8(MODE_FFA);
+        writeHeader(w, PKT_ACCEPT); w.u32(nonce); w.u8((uint8_t)id); w.str(map); w.bytes(mapId.b, 32); w.u8(MODE_FFA);
         sock.send(client, out, w.size());
     }
     void snapshot(Snapshot s) {
@@ -3780,7 +3803,7 @@ static void testReplayBound(uint16_t port) {
     CHECK(f.until(c, [&] { return f.heard; }));
     Map m;
     CHECK(m.load("bastion"));
-    f.accept("bastion", m.crc);
+    f.accept("bastion", m.id());
     CHECK(f.until(c, [&] { return c.mapReady(); }));
     Snapshot s;
     s.tick = 1; s.timeMs = 1000; s.tickRate = 1000; s.snapRate = 500; s.clientId = 0;
@@ -3821,7 +3844,7 @@ static void testMapNames(uint16_t port) {
     NetClient c;
     c.connect("127.0.0.1:" + std::to_string(port), "x");
     CHECK(f.until(c, [&] { return f.heard; }));
-    f.accept("../../pwned", 1234);
+    f.accept("../../pwned", mapContentId("x"));
     CHECK(f.until(c, [&] { return c.state() == ConnState::Disconnected; }));
     CHECK(!c.mapReady() && c.error().find("map name") != std::string::npos);
     // a demo whose map record names a path: no map, so it doesn't play
@@ -3922,15 +3945,15 @@ static void testVotedEdit(uint16_t port) {
     size_t nb = s.map_.brushes.size();
     a.sendCommand("ed b ins " + std::to_string(nb) + " 1 0 10 0 2 11 2");
     pumpMsgs(0.5);
-    CHECK(s.map_.brushes.size() == nb + 1 && a.map().crc == s.map_.crc && b.map().crc == s.map_.crc);
-    uint32_t edited = s.map_.crc;
+    CHECK(s.map_.brushes.size() == nb + 1 && a.map().id() == s.map_.id() && b.map().id() == s.map_.id());
+    MapId edited = s.map_.id();
     b.sendCommand("callvote edit off");   // (nobody else votes: "play it" passes when the 30 s are up, as nobody said no)
     pumpMsgs(1.0);
     CHECK(s.editing_);                    // (not yet: one yes of two)
     s.vote_.endsAt = s.time();            // (the 30 s are up)
     pumpMsgs(5.0);
     CHECK(!s.editing_ && !(a.mode().flags & MS_EDITING) && !(b.mode().flags & MS_EDITING));
-    CHECK(s.map_.crc == edited && a.map().crc == edited && b.map().crc == edited && a.mapReady() && b.mapReady());
+    CHECK(s.map_.id() == edited && a.map().id() == edited && b.map().id() == edited && a.mapReady() && b.mapReady());
     CHECK(a.hasSnapshot() && b.hasSnapshot() && a.clientId() >= 0 && b.clientId() >= 0);
     bool anyAlive = false;
     for (auto& p : s.players_) anyAlive |= p.connected && p.alive;
@@ -4436,7 +4459,7 @@ static void testHostileInput() {
     CHECK(!validMapName("") && !validMapName("../x") && !validMapName("a/b") && !validMapName("a\\b") && !validMapName("c:x")
           && !validMapName("a.b") && !validMapName(std::string(41, 'a')) && !validMapName(std::string("a\0b", 3)));
     CHECK(safeMapName("../../etc/x") == "______etc_x" && safeMapName("") == "map" && safeMapName("temple") == "temple");
-    CHECK(downloadedMapPath("../../x", 1).find("..") == std::string::npos);
+    CHECK(downloadedMapPath(mapContentId("../../x")).find("..") == std::string::npos);
     // custom rules: NaN / inf keep the default, out of range is clamped
     CustomRules def, r;
     r.fromText("custommode=x\ngravity=nan\nspeed=inf\njump=-inf\nknockback=99\nweapon=0,nan,nan,nan\n");
@@ -4524,7 +4547,7 @@ static void testUserData() {
     fs::remove_all(old, ec);
     fs::remove_all(dst, ec);
     // shipped maps are read from the install; your maps dir is searched first and listed too
-    CHECK(userMapsDir().find(userDataPath()) == 0 && downloadedMapPath("a", 1).find(userDataPath()) == 0);
+    CHECK(userMapsDir().find(userDataPath()) == 0 && downloadedMapPath(MapId()).find(userDataPath()) == 0);
     std::vector<std::string> ml = listMaps();
     CHECK(std::find(ml.begin(), ml.end(), "temple") != ml.end());
 }
@@ -4657,7 +4680,7 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(TP(29997)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "allmaps") { testAllMaps(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "chat") { testChatAndVoteLimits(TP(29592)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "limits") { testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "limits") { testMapIdentity(); testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(TP(29990)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(TP(29980)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); testAddbotArgs(TP(29982)); return g_fail ? 1 : 0; }
@@ -4702,7 +4725,7 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testTickRateIndependence(); testMapIdentity(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); }},

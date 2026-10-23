@@ -1,6 +1,7 @@
 #include "official_map_data.h"
 #include "map.h"
 #include "gamedefs.h"
+#include "../common/sha256.h"
 #include <cctype>
 #include <cstdio>
 #include <cstring>
@@ -147,7 +148,7 @@ int resetOfficialMaps(const std::string& shippedDir) {
     int n = 0;
     for (const OfficialMapData* m = kOfficialMapData; m->name; m++) {
         fs::remove(mine + "/" + m->name + ".qmap", ec); // your edited copy shadows the shipped one: reset drops it
-        fs::remove(cache + "/" + m->name + ".qlm", ec);
+        fs::remove(cache + "/" + m->name + ".qlm", ec);   // (a light cache named after the map: older versions'; now they go by content)
         std::string path = dir + "/" + m->name + ".qmap";
         if (noCR(readAll(path)) != noCR(std::string((const char*)m->data, m->size))) { // install may be read-only: write only if needed
             std::ofstream f(path, std::ios::binary | std::ios::trunc);
@@ -214,11 +215,7 @@ std::string safeMapName(const std::string& name) {
     return o.empty() ? "map" : o;
 }
 
-std::string downloadedMapPath(const std::string& name, uint32_t crc) {
-    char hex[16];
-    snprintf(hex, sizeof hex, "%08x", crc);
-    return userMapsDir() + "/downloads/" + safeMapName(name) + "-" + hex + ".qmap";
-}
+std::string downloadedMapPath(const MapId& id) { return userMapsDir() + "/downloads/" + id.hex() + ".qmap"; }
 
 bool saveMapFile(const std::string& path, const std::string& text) {
     std::error_code ec;
@@ -242,31 +239,36 @@ bool writeFileAtomic(const std::string& path, const std::string& data, bool priv
     return true;
 }
 
-// CRC-32 (zlib's), eight bytes a step ("slicing by 8": about 5x the byte-at-a-time loop; every map load hashes the
-// whole text). prev continues an earlier CRC, as zlib's crc32(prev, ...) does.
-uint32_t crc32(const void* data, size_t len, uint32_t prev) {
-    struct Tables {
-        uint32_t t[8][256];
-        Tables() {
-            for (uint32_t i = 0; i < 256; i++) {
-                uint32_t c = i;
-                for (int k = 0; k < 8; k++) c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
-                t[0][i] = c;
-            }
-            for (int s = 1; s < 8; s++)
-                for (uint32_t i = 0; i < 256; i++) t[s][i] = (t[s - 1][i] >> 8) ^ t[0][t[s - 1][i] & 255];
-        }
-    };
-    static const Tables tables;   // (built once, thread-safe)
-    const auto& t = tables.t;
-    uint32_t c = prev ^ 0xFFFFFFFFu;
-    const uint8_t* p = (const uint8_t*)data;
-    for (; len >= 8; len -= 8, p += 8) {   // (byte loads: no alignment or endianness assumptions)
-        uint32_t a = c ^ ((uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24);
-        c = t[7][a & 255] ^ t[6][(a >> 8) & 255] ^ t[5][(a >> 16) & 255] ^ t[4][a >> 24] ^ t[3][p[4]] ^ t[2][p[5]] ^ t[1][p[6]] ^ t[0][p[7]];
+std::string MapId::hex() const {
+    static const char* d = "0123456789abcdef";
+    std::string o(2 * sizeof b, '0');
+    for (size_t i = 0; i < sizeof b; i++) { o[2 * i] = d[b[i] >> 4]; o[2 * i + 1] = d[b[i] & 15]; }
+    return o;
+}
+std::string MapId::shortHex() const { return hex().substr(0, 2 * kShortBytes); }
+
+MapId mapContentId(const std::string& text) {
+    Sha256 h;
+    const char* p = text.data();
+    const char* e = p + text.size();
+    while (p < e) {   // (the runs between CRs: a CRLF file is the same map as its LF copy)
+        const char* cr = (const char*)memchr(p, '\r', (size_t)(e - p));
+        const char* q = cr ? cr : e;
+        h.update(p, (size_t)(q - p));
+        p = cr ? q + 1 : e;
     }
-    for (; len; len--) c = t[0][(c ^ *p++) & 255] ^ (c >> 8);
-    return c ^ 0xFFFFFFFFu;
+    MapId id;
+    h.digest(id.b);
+    return id;
+}
+
+MapId mapEditId(const MapId& before, const std::string& op) {
+    Sha256 h;
+    h.update(before.b, sizeof before.b);
+    h.update(op.data(), op.size());
+    MapId id;
+    h.digest(id.b);
+    return id;
 }
 
 // renamed maps: old configs / votes for these still work
@@ -428,11 +430,10 @@ bool Map::parseText(const std::string& text, std::string* err) {
     preferredMode = -1;
     allowedModes = 0;
     rankedLadders = 0;
-    crc = crc32(text.data(), text.size());
     source = text;
     sourceStale = false;
-    sourceCrc = crc;
-    sourceCrcKnown = true;
+    contentIdKnown_ = false;   // (hashed when it's asked for)
+    editChained_ = false;
     int lineNo = 0;
     bounds = {{1e9f, 1e9f, 1e9f}, {-1e9f, -1e9f, -1e9f}};
     const char* next = text.data();
@@ -553,10 +554,10 @@ bool Map::parseText(const std::string& text, std::string* err) {
     return true;
 }
 
-uint32_t Map::sourceTextCrc() const {
+const MapId& Map::contentId() const {
     const std::string& t = sourceText();
-    if (!sourceCrcKnown) { sourceCrc = crc32(t.data(), t.size()); sourceCrcKnown = true; }
-    return sourceCrc;
+    if (!contentIdKnown_) { contentId_ = mapContentId(t); contentIdKnown_ = true; }
+    return contentId_;
 }
 
 bool Map::validate(std::string* err) const {

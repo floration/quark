@@ -83,7 +83,7 @@ struct NavGraph {
     std::vector<Node> nodes;
     std::vector<std::vector<std::pair<int, float>>> links; // (node, cost)
     std::vector<std::pair<std::pair<int, int>, Vec3>> ladderLinks; // (from node, to node) climbed at this point
-    uint32_t mapCrc = 0;
+    MapId mapId;               // the map it was built for
     uint32_t generation = 0;   // bumped by every build (bots drop routes from an older graph)
     void build(const Map& m);  // O(N log N)-ish: a grid finds the neighbours (same graph as checking every pair)
     int nodeAt(const Vec3& p) const;                       // surface the point stands on (or -1)

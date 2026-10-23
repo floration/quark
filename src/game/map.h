@@ -1,5 +1,7 @@
 // Block-based maps: a set of axis-aligned solid boxes plus gameplay markers.
 #pragma once
+#include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 #include "../common/qmath.h"
@@ -36,6 +38,21 @@ constexpr float kMinLightRadius = 0.5f, kMaxLightRadius = 100.0f, kMaxLightInten
 inline bool validMapLight(float radius, float intensity) {
     return radius >= kMinLightRadius && radius <= kMaxLightRadius && intensity > 0 && intensity <= kMaxLightIntensity;   // (NaN fails)
 }
+
+// A map's identity (REVIEW MAP-13): the sha256 of its text (CR dropped, so a CRLF copy is the same map), or in an
+// edit session, chained over the edit ops from there (mapEditId), so nobody re-serializes the map to name it. Downloads,
+// the downloaded-map cache, light caches, the bots' nav graph and the ranked allowlist all go by it.
+struct MapId {
+    uint8_t b[32] = {};
+    bool operator==(const MapId& o) const { return memcmp(b, o.b, sizeof b) == 0; }
+    bool operator!=(const MapId& o) const { return !(*this == o); }
+    std::string hex() const;                   // all 64 hex digits (file names, the ranked allowlist)
+    static constexpr size_t kShortBytes = 16;  // an edit event names the map it leaves by its first 16 bytes
+    std::string shortHex() const;              // those, 32 hex digits
+    bool startsWith(const std::string& shortHex) const { return shortHex.size() == 2 * kShortBytes && this->shortHex() == shortHex; }
+};
+MapId mapContentId(const std::string& text);                      // sha256 of the text without its CRs
+MapId mapEditId(const MapId& before, const std::string& op);     // the id after applying op to map `before`
 
 struct SpawnPoint {
     Vec3 pos;
@@ -88,17 +105,20 @@ struct Map {
     struct Light { Vec3 pos; float radius = 10, intensity = 1; };
     std::vector<Light> lights;        // baked point lights ("light x y z radius [intensity]"): lit rooms under roofs
     AABB bounds;
-    // The map's identity: the CRC of the text it was parsed from, then in an edit session each edit op continues it
-    // (mapEditCrc), so nobody re-serializes the map to name it.
-    uint32_t crc = 0;
+    // The map's identity (MapId): its content's, until an edit session chains it (setEditId). Hashed the first time
+    // it's asked for (never on the parse alone: most parses never need it).
+    const MapId& id() const { return editChained_ ? editId_ : contentId(); }
+    const MapId& contentId() const;          // mapContentId(sourceText()): what a download checks, and ranked
+    void setEditId(const MapId& v) { editId_ = v; editChained_ = true; }
     // The .qmap text (sent to clients that lack the map, saved, hashed for ranked): the parsed text, or after edits
     // serialize()d the first time it's asked for. Read it with sourceText().
     mutable std::string source;
     mutable bool sourceStale = false;
-    mutable uint32_t sourceCrc = 0;          // crc32 of source, once known
-    mutable bool sourceCrcKnown = false;
-    const std::string& sourceText() const { if (sourceStale) { source = serialize(); sourceStale = false; sourceCrcKnown = false; } return source; }
-    uint32_t sourceTextCrc() const;          // crc32 of sourceText() (what a download checks; the same as crc until an edit)
+    mutable bool contentIdKnown_ = false;    // contentId_ is mapContentId(source)
+    mutable MapId contentId_;
+    MapId editId_;
+    bool editChained_ = false;
+    const std::string& sourceText() const { if (sourceStale) { source = serialize(); sourceStale = false; contentIdKnown_ = false; } return source; }
 
     bool load(const std::string& name, std::string* err = nullptr);
     bool onLadder(const AABB& player) const { for (auto& l : ladders) if (player.overlaps(l)) return true; return false; }
@@ -202,14 +222,11 @@ int resetOfficialMaps(const std::string& shippedDir = std::string());
 std::string mapsFolder(); // absolute path of your maps folder (userMapsDir)
 std::string typedMapName(const std::string& typed); // what the editor's name field keeps of what you type: validMapName's characters (space -> _), at most 40
 std::string safeMapName(const std::string& name); // for building file names: anything else becomes '_', capped
-// Maps fetched from servers live apart from your own, keyed by content: <user>/maps/downloads/<name>-<crc>.qmap
-std::string downloadedMapPath(const std::string& name, uint32_t crc);
+// Maps fetched from servers live apart from your own, keyed by content: <user>/maps/downloads/<sha256 hex>.qmap
+std::string downloadedMapPath(const MapId& id);
 bool saveMapFile(const std::string& path, const std::string& text);
 // Writes a file whole or not at all: a temp file next to it, then a rename over it, so a crash or a full disk
 // leaves the old file (settings, profiles, the ranked key, custom modes, maps). privateFile: only this user may
 // read it (POSIX 0600: the ranked key).
 bool writeFileAtomic(const std::string& path, const std::string& data, bool privateFile = false);
-uint32_t crc32(const void* data, size_t len, uint32_t prev = 0); // zlib's CRC-32; prev continues an earlier one
-// A map's identity after applying edit op to the map whose identity was before (both ends of an edit session compute
-// it; see Map::crc).
-inline uint32_t mapEditCrc(uint32_t before, const std::string& op) { return crc32(op.data(), op.size(), before); }
+

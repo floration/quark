@@ -232,6 +232,7 @@ void Game::openEditor(std::string name) {
         ed_.brushes.push_back({{{-20, -1, -20}, {20, 0, 20}}, 0});
         ed_.spawns.push_back({{0, 0, 0}, 0, SPAWN_ANY});
         ed_.rebuild();
+        ed_.sourceStale = true;   // (its text, and so its id and light cache, are made from what's here)
         // a new map keeps the name it was opened with (it used to fall back to "mymap", so saving overwrote that);
         // a file that's there but won't load (an older / over-limit map) isn't overwritten by the blank one
         if (!validMapName(name)) edName_ = "mymap";
