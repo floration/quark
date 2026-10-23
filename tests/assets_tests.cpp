@@ -484,6 +484,39 @@ static void testExport() {
     fs::remove_all(dir, ec);
 }
 
+// 64 sounds at once: the one dropped for a new one is the oldest sound effect, never an announcer line that just
+// started. It used to drop voices_.front(), but the mixer's swap-and-pop moves the newest voice into a finished one's
+// slot: a short sound ending put the line just played at the front, and the next sound cut it.
+static void testVoiceSteal() {
+    printf("audio: a full mixer drops the oldest effect, not a fresh announcer line\n");
+    Audio a;
+    a.startOffline();
+    a.setAnnouncer(1);   // (loads the lines: the default voice isn't loaded until the game picks it)
+    int line = -1, shortFx = -1, longFx = -1;
+    for (int id = SND_VOICE_THREE; id < SND_COUNT; id++) if (a.samples(0, id).size() > (size_t)Audio::kRate / 2) { line = id; break; }
+    for (int id = 0; id < SND_VOICE_THREE; id++) {
+        size_t n = a.samples(0, id).size();
+        if (n < 100) continue;
+        if (n < (size_t)Audio::kRate / 5 && (shortFx < 0 || n < a.samples(0, shortFx).size())) shortFx = id;
+        if (n > (size_t)Audio::kRate / 2 && (longFx < 0 || n > a.samples(0, longFx).size())) longFx = id;
+    }
+    ACHECK(line >= 0 && shortFx >= 0 && longFx >= 0);
+    if (line < 0 || shortFx < 0 || longFx < 0) { a.stop(); return; }
+    const int kVoices = 64;
+    a.play(shortFx, 1.0f);                                   // slot 0: ends first
+    for (int i = 0; i < kVoices - 2; i++) a.play(longFx, 1.0f);
+    a.play(line, 1.0f);                                      // the newest: the last slot
+    std::vector<int16_t> out(4096);
+    for (size_t done = 0; done < a.samples(0, shortFx).size() + 2048; done += 512) a.mix(out.data(), 512);   // the short one ends
+    ACHECK(a.voicesPlaying(shortFx) == 0 && a.voicesPlaying(line) == 1);
+    a.play(longFx, 1.0f);                                    // full again...
+    a.play(longFx, 1.0f);                                    // ...and one more: an effect makes room
+    a.play(longFx, 1.0f);
+    printf("  after a burst: line playing %d, effects %d\n", a.voicesPlaying(line), a.voicesPlaying(longFx));
+    ACHECK(a.voicesPlaying(line) == 1 && a.voicesPlaying(longFx) == kVoices - 1);
+    a.stop();
+}
+
 int assetTests() {
     g_afail = 0;
     testModelExport();
@@ -491,6 +524,7 @@ int assetTests() {
     testDecoders();
     testFontAtlas();
     testHitTiers();
+    testVoiceSteal();
     testOverrides();
     testIconSource();
     testExport();

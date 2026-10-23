@@ -352,8 +352,7 @@ void Audio::play(int id, float volume, float pitch, int pack) {
     Voice v{id, (pack < 0 || pack >= kPacks) ? pack_.load() : pack, 0, pitch, 0, 0, false, {}, volume};
     voiceGains(v);
     std::lock_guard<std::mutex> l(mu_);
-    if ((int)voices_.size() >= kMaxVoices) voices_.erase(voices_.begin());
-    voices_.push_back(v);
+    addVoice(v);
 }
 
 void Audio::play3D(int id, const Vec3& pos, float volume, float pitch, int pack) {
@@ -362,8 +361,23 @@ void Audio::play3D(int id, const Vec3& pos, float volume, float pitch, int pack)
     voiceGains(v);
     if (v.gainL + v.gainR < 0.002f) return; // inaudible
     std::lock_guard<std::mutex> l(mu_);
-    if ((int)voices_.size() >= kMaxVoices) voices_.erase(voices_.begin());
-    voices_.push_back(v);
+    addVoice(v);
+}
+
+// With every voice busy the oldest goes, a sound effect before any announcer line (64 at once is a big fight: a burst
+// of shots must not cut a call-out that just started). It used to drop voices_.front(), taking that for the oldest,
+// but mix()'s swap-and-pop moves the newest voice into a finished one's slot, so the front could be a line started
+// a moment ago. One pass over 64 voices, only when full; the new voice takes the slot (no shifting the rest down).
+void Audio::addVoice(Voice& v) {
+    v.seq = ++voiceSeq_;
+    if ((int)voices_.size() < kMaxVoices) { voices_.push_back(v); return; }
+    size_t drop = 0;
+    bool dropFx = voices_[0].id < SND_VOICE_THREE;
+    for (size_t k = 1; k < voices_.size(); k++) {
+        const bool fx = voices_[k].id < SND_VOICE_THREE;
+        if ((fx && !dropFx) || (fx == dropFx && (int32_t)(voices_[k].seq - voices_[drop].seq) < 0)) { drop = k; dropFx = fx; }   // (wrap-safe)
+    }
+    voices_[drop] = v;
 }
 
 void Audio::mix(int16_t* out, int frames) {
