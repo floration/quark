@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -23,6 +24,17 @@
 namespace fs = std::filesystem;
 
 static int g_afail = 0;
+
+// The source tree and tests/data: where this was built, or QUARK_SOURCE_DIR in the environment (CI runs the
+// cross-built Windows tests on a Windows runner, where the build machine's paths don't exist)
+static fs::path srcDir() {
+    const char* e = getenv("QUARK_SOURCE_DIR");
+    return e && *e ? fs::path(e) : fs::path(QUARK_SOURCE_DIR);
+}
+static fs::path testData() {
+    const char* e = getenv("QUARK_SOURCE_DIR");
+    return e && *e ? fs::path(e) / "tests/data" : fs::path(QUARK_TEST_DATA);
+}
 #define ACHECK(c) do { if (!(c)) { printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); g_afail++; } } while (0)
 
 namespace {
@@ -172,7 +184,7 @@ int exportAssets(const char* dirArg) {
     // the UI font, the icon, the website's pictures (the shipped override where there is one)
     std::vector<uint8_t> ov;
     std::string matched;
-    const fs::path src = QUARK_SOURCE_DIR;
+    const fs::path src = srcDir();
     if (overrides::find("fonts/WorkSans", {".ttf", ".otf"}, ov, &matched))
         add({"font/worksans", "Fonts", "font", "WORK SANS", "fonts/WorkSans" + matched.substr(matched.rfind('.')),
              "the game's text (menus, HUD, launcher), drawn bold", ""}, std::string(ov.begin(), ov.end()));
@@ -286,7 +298,7 @@ static void testGltfLoader() {
 }
 
 static void testDecoders() {
-    const fs::path data = QUARK_TEST_DATA;
+    const fs::path data = testData();
     for (const char* f : {"tone.ogg", "tone.flac", "tone.mp3"}) {
         std::string b = slurp(data / f);
         std::vector<float> x;
@@ -305,14 +317,14 @@ static void testDecoders() {
     ACHECK(decodeSound((const uint8_t*)w.data(), w.size(), back, rate) && rate == 48000 && back.size() == tone.size());
     ACHECK(std::fabs(back[100] - tone[100]) < 1e-3f);
     ACHECK(!decodeSound((const uint8_t*)"RIFF0000WAVE", 12, back, rate));
-    std::string png = slurp(fs::path(QUARK_SOURCE_DIR) / "assets/quark.png");
+    std::string png = slurp(srcDir() / "assets/quark.png");
     int iw = 0, ih = 0;
     std::vector<uint8_t> rgba;
     ACHECK(decodeImage((const uint8_t*)png.data(), png.size(), iw, ih, rgba) && iw == 256 && ih == 256 && rgba.size() == 256u * 256 * 4);
 }
 
 static void testFontAtlas() {
-    std::string ttf = slurp(fs::path(QUARK_SOURCE_DIR) / "assets/fonts/WorkSans.ttf");
+    std::string ttf = slurp(srcDir() / "assets/fonts/WorkSans.ttf");
     const FontAtlasLayout L = {1056, 462, 66, 6.0f, 1.5f, 0.5f, 9.0f};   // font_ui.h
     FontAtlas a;
     std::string err;
@@ -396,7 +408,7 @@ static void testOverrides() {
     std::vector<float> tone(9600);
     for (size_t i = 0; i < tone.size(); i++) tone[i] = 0.8f * std::sin(i * 0.2f) * (1.0f - (float)i / tone.size());
     ACHECK(spit(root / "sounds/default/hit.wav", wavFile(tone, 48000)));
-    ACHECK(spit(root / "voices/male/GO.ogg", slurp(fs::path(QUARK_TEST_DATA) / "tone.ogg")));
+    ACHECK(spit(root / "voices/male/GO.ogg", slurp(testData() / "tone.ogg")));
     // a hitsound tier: MOUTH's brutal hit, a low 0.3 s tone over a DC offset (a rumble it must not clip on)
     std::vector<float> thud(14400);
     for (size_t i = 0; i < thud.size(); i++) thud[i] = 0.3f + 0.6f * std::sin(i * 0.012f) * (1.0f - (float)i / thud.size()) + 0.05f * std::sin(i * 0.4f);
@@ -433,7 +445,7 @@ static void testOverrides() {
 
 // The shipped icon follows the icon override (tools/make_icon.py draws it from the override and records which)
 static void testIconSource() {
-    const fs::path src = QUARK_SOURCE_DIR;
+    const fs::path src = srcDir();
     std::error_code ec;
     for (const char* ext : {".png", ".jpg", ".jpeg"}) {
         fs::path ov = src / (std::string("assets/overrides/images/icon") + ext);

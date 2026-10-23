@@ -6276,6 +6276,26 @@ int main(int argc, char** argv) {
         {"resetmaps", [] { testResetMaps(); }},
         {"userdata", [] { testUserData(); }},
     };
+    // CI runs the suite one group per runner (release.yml's test matrix): `groups` lists them, `group NAME` runs exactly
+    // that group (the older shortcuts above share some names but run less)
+    if (argc >= 2 && std::string(argv[1]) == "groups") {
+        for (auto* list : {&par, &alone})
+            for (auto& g : *list) printf("%s\n", g.name);
+        return 0;
+    }
+    if (argc >= 3 && std::string(argv[1]) == "group") {
+        for (auto* list : {&par, &alone})
+            for (auto& g : *list)
+                if (std::string(argv[2]) == g.name) {
+                    double t0 = timeNow();
+                    g.run();
+                    printf("group %s: %.0f s\n", g.name, timeNow() - t0);
+                    printf(g_fail ? "%d FAILURE(S)\n" : "all tests passed\n", g_fail);
+                    return g_fail ? 1 : 0;
+                }
+        printf("no test group '%s' (quark_tests groups lists them)\n", argv[2]);
+        return 1;
+    }
     if (argc >= 2)   // one group by name (e.g. `quark_tests netcode`), on its own
         for (auto* list : {&par, &alone})
             for (auto& g : *list)
@@ -6284,7 +6304,7 @@ int main(int argc, char** argv) {
 #ifndef _WIN32
     if (!serial) {
         unsigned jobs = std::max(2u, std::thread::hardware_concurrency());
-        struct Job { pid_t pid; std::string out; size_t idx; };
+        struct Job { pid_t pid; std::string out; size_t idx; double t0; };
         std::vector<Job> running;
         std::vector<std::string> outputs(par.size());
         std::vector<int> done(par.size(), -1);
@@ -6312,7 +6332,7 @@ int main(int argc, char** argv) {
                 fflush(stdout);
                 std::_Exit(std::min(g_fail, 100));
             }
-            running.push_back({pid, out, i});
+            running.push_back({pid, out, i, timeNow()});
         };
         while (next < par.size() && running.size() < jobs) start(next++);
         while (!running.empty()) {
@@ -6328,6 +6348,9 @@ int main(int argc, char** argv) {
                 std::remove(running[k].out.c_str());
                 { std::error_code ec; std::filesystem::remove_all(groupDir(i), ec); }
                 done[i] = WIFEXITED(st) ? WEXITSTATUS(st) : 1;
+                char took[96];
+                snprintf(took, sizeof took, "  (group %s: %.0f s)\n", par[i].name, timeNow() - running[k].t0);
+                outputs[i] += took;
                 if (!WIFEXITED(st)) outputs[i] += std::string("  FAIL ") + par[i].name + ": crashed\n";
                 running.erase(running.begin() + k);
                 break;
