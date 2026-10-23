@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <map>
 #include <queue>
@@ -1282,8 +1283,13 @@ int mapReport(const char* outPath) {
     o << "\n### Mode fit\n\nEach map is built for one mode; this is how well it does what that mode needs.\n\n";
     for (auto& r : all) o << "- **" << r.name << "**: " << (r.modeFit.empty() ? std::string("no mode it is built for") : r.modeFit) << "\n";
     o << "\n## Per map: shots and modes\n\n";
+    std::string shots = std::filesystem::path(outPath).parent_path().string();   // (shot sheets live next to the report)
+    shots = (shots.empty() ? std::string(".") : shots) + "/map_shots/";
     for (auto& r : all) {
-        o << "### " << r.name << "\n\n![" << r.name << ": 8 orbits and 8 eye-level views](map_shots/" << r.name << ".jpg)\n\n";
+        std::error_code ec;
+        if (std::filesystem::exists(shots + r.name + ".jpg", ec))   // (a map without a sheet yet gets no broken link)
+            o << "### " << r.name << "\n\n![" << r.name << ": 8 orbits and 8 eye-level views](map_shots/" << r.name << ".jpg)\n\n";
+        else o << "### " << r.name << "\n\n(No shot sheet yet: `sh tools/map_shots.sh " << r.name << "` makes it.)\n\n";
         if (!r.features.empty()) { o << "Features: "; for (size_t i = 0; i < r.features.size(); i++) o << (i ? ", " : "") << r.features[i]; o << "\n\n"; }
         for (auto& [mode, line] : r.modes) o << "- " << mode << ": " << line << "\n";
         snprintf(b, sizeof b, "- most similar map: %s (distance %.2f)\n\n", r.closest.c_str(), r.originality);
