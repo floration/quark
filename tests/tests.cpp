@@ -4399,10 +4399,10 @@ static void testChatAndVoteLimits(uint16_t port) {
     printf("  30 messages at once: %d went out\n", chats);
     CHECK(chats >= 5 && chats <= 8 && clean);   // a burst of 5, then one a second
     // tourney map lists: each map is read at most once, then comes from the cache
-    a.sendCommand("callvote tmaps colosseum,lodestone,colosseum,lodestone");
+    a.sendCommand("callvote tmaps colosseum,colosseum,colosseum");   // (the one map offered for tourney)
     pump(s, cls, 0.3, idle);
     uint32_t loads = s.mapInfoLoads_;
-    a.sendCommand("callvote tmaps lodestone,colosseum");   // (a vote is already running: refused, after the checks)
+    a.sendCommand("callvote tmaps colosseum,colosseum");   // (a vote is already running: refused, after the checks)
     pump(s, cls, 0.3, idle);
     CHECK(s.vote_.kind == Server::VOTE_TMAPS && s.mapInfoLoads_ == loads);
     // made-up map names (callvote map <random>) aren't cached: the cache stays the size of the maps folder
