@@ -429,6 +429,7 @@ public:
     bool editBacklogged() const;
     void handleStringCmdForTest(int id, const std::string& s) { handleStringCmd(id, s); }
     bool fireWeaponForTest(int id, const UserCmd& c) { return fireWeapon(id, c); }
+    void tickProjectilesForTest() { tickProjectiles(); }
     void sendSnapshotsForTest() { sendSnapshots(); }   // (benchmarks: tests/server_tests.h snapbench)
     void glog(int level, const char* fmt, ...);   // game log file (no-op below cfg_.logLevel)
     float bodyScale() const { return duelModDef(duelMod()).size; } // duel "double size": hull, hitbox and eye height (MOVE_BIG / MOVE_TINY)
@@ -509,6 +510,10 @@ private:
     void runPlayerCmd(int id, const UserCmd& cmd);
     bool fireWeapon(int id, const UserCmd& cmd);   // true if it hit a player (hitscan weapons)
     void tickProjectiles();
+    void stepProjectile(Projectile& pr);   // one fixed 1 ms step (kMoveStep): gravity, move, hit a wall / player
+    int projTargets_ = 0;                  // tickProjectiles: the live players' hitboxes this tick
+    uint8_t projTargetId_[kMaxPlayers] = {};
+    AABB projTargetBox_[kMaxPlayers];
     void explode(const Vec3& at, int owner, int weapon, int direct = -1);   // direct: the player a rocket hit itself
     void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint64_t viewMs, float* dmgPerPlayer, float dmg, float headDmg = 0, float grow = 0, bool pierce = false);
     void sendSnapshots();

@@ -1976,7 +1976,17 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
     return any;
 }
 
+// Projectiles fly in fixed 1 ms steps (kMoveStep, like movement): a tick runs 1000 / rate of them, so an arc lands on
+// the same spot at every tick rate (C8). Players are where this tick left them for all of its steps.
 void Server::tickProjectiles() {
+    const int steps = std::max(1, 1000 / tickRate());
+    projTargets_ = 0;   // the players a projectile can hit, boxed once a tick rather than once a step
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const auto& p = players_[i];
+        if (!p.connected || !p.alive) continue;
+        projTargetId_[projTargets_] = (uint8_t)i;
+        projTargetBox_[projTargets_++] = hitBox(p.move.pos, p.move.flags & MF_CROUCHED);
+    }
     for (auto& pr : projectiles_) {
         if (!pr.active) continue;
         if (time() >= pr.dieAt) { pr.active = false; continue; }
@@ -1984,12 +1994,20 @@ void Server::tickProjectiles() {
             if (map_.dynSolids.empty()) pr.active = false; // cart gone (round over)
             else pr.pos = map_.cartPoint(ms_.mode, ms_.attackers, ms_.payloadDist) + pr.cartOffset;
         }
-        if (pr.stuck) continue;
+        for (int k = 0; k < steps && pr.active && !pr.stuck; k++) {
+            if (k > 0 && (double)(timeMs_ + (uint64_t)k) * 0.001 >= pr.dieAt) { pr.active = false; break; }   // (the 1 ms steps' own times)
+            stepProjectile(pr);
+        }
+    }
+}
+
+void Server::stepProjectile(Projectile& pr) {
+    {
         const WeaponDef& wd = weaponDef(pr.type);
-        pr.vel.y -= (pr.type == WPN_KNIFE ? kKnifeThrowGravity : pr.type == WPN_SYRINGE ? kSyringeThrowGravity : wd.gravity * pr.gravMul) * dt();
-        Vec3 step = pr.vel * dt();
+        pr.vel.y -= projectileGravity(pr.type, pr.gravMul) * kMoveStep;
+        Vec3 step = pr.vel * kMoveStep;
         float len = length(step);
-        if (len < 1e-6f) continue;
+        if (len < 1e-6f) return;
         Vec3 dir = step / len;
         Vec3 n;
         float wall = map_.raycast(pr.pos, dir, len, &n);
@@ -1997,14 +2015,13 @@ void Server::tickProjectiles() {
         int hitPlayer = -1;
         AABB hitBb;
         Vec3 inv = safeInv(dir);
-        for (int i = 0; i < kMaxPlayers; i++) {
-            auto& p = players_[i];
-            if (!p.connected || !p.alive || i == pr.owner) continue;
-            AABB b = hitBox(p.move.pos, p.move.flags & MF_CROUCHED);
-            float t = rayAABB(pr.pos, inv, b, best);
-            if (t >= 0 && t <= best) { best = t; hitPlayer = i; hitBb = b; }
+        for (int k = 0; k < projTargets_; k++) {
+            int i = projTargetId_[k];
+            if (i == pr.owner || !players_[i].alive) continue;   // (killed earlier this tick)
+            float t = rayAABB(pr.pos, inv, projTargetBox_[k], best);
+            if (t >= 0 && t <= best) { best = t; hitPlayer = i; hitBb = projTargetBox_[k]; }
         }
-        if (wall < 0 && hitPlayer < 0) { pr.pos += step; continue; }
+        if (wall < 0 && hitPlayer < 0) { pr.pos += step; return; }
         Vec3 at = pr.pos + dir * std::max(0.0f, best - 0.05f);
         if (pr.type == WPN_SYRINGE) {  // a teammate: 30 hp and every cooldown reset; anyone else: nothing
             auto& o = players_[pr.owner];
@@ -2018,6 +2035,7 @@ void Server::tickProjectiles() {
                 if (t.syringeBackAt > time()) t.syringeBackAt = time();
                 GameEvent e; e.type = EV_HEALED; e.a = (uint8_t)hitPlayer; e.b = (uint8_t)pr.owner; broadcastEvent(e);
             }
+            pr.pos = at;   // (a spent projectile keeps where it landed)
             pr.active = false;
         } else if (wd.sticky) {               // stick where it landed (on a player: it drops there)
             pr.pos = hitPlayer < 0 ? at + n * 0.08f : at;
@@ -2039,8 +2057,10 @@ void Server::tickProjectiles() {
                 headHit_[hitPlayer] = false;
                 if (pr.owner >= 0 && shotHit(pr.owner)) players_[pr.owner].shotsHit++;
             }
+            pr.pos = at;
             pr.active = false;
         } else {
+            pr.pos = at;
             pr.active = false;
             explode(at, pr.owner, pr.type, pr.type == WPN_ROCKET ? hitPlayer : -1);
         }
@@ -2185,7 +2205,7 @@ void Server::sendSnapshots() {
     for (auto& pr : projectiles_) {
         if (!pr.active) continue;
         if (allProj.size() >= 48) break;
-        allProj.push_back({pr.id, (uint8_t)pr.type, (uint8_t)pr.owner, pr.pos, pr.vel});
+        allProj.push_back({pr.id, (uint8_t)pr.type, (uint8_t)pr.owner, pr.pos, pr.vel, (uint8_t)((pr.gravMul != 1 ? PROJ_LOB : 0) | (pr.stuck ? PROJ_STUCK : 0))});
     }
     uint8_t buf[kMaxPacket], world[kMaxPacket];
     for (int i = 0; i < kMaxPlayers; i++) {

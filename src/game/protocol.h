@@ -80,7 +80,9 @@ struct ProjectileSnap {
     uint8_t type = 0;
     uint8_t owner = 0;
     Vec3 pos, vel;
+    uint8_t flags = 0;   // PROJ_LOB, PROJ_STUCK: how the client extrapolates it (the server's 1 ms steps)
 };
+enum : uint8_t { PROJ_LOB = 1, PROJ_STUCK = 2 };
 
 struct GameEvent {
     double sentAt = -1;      // server only (not sent): when this copy last went out, for resend pacing

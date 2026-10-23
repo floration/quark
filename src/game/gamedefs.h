@@ -7,16 +7,16 @@
 // Server tick rate is chosen at runtime: it starts at 1000 Hz and steps down
 // (500, 250, 125) in warmup or between rounds if the host can't keep up (mid-round only if it can't keep up at all).
 // A snapshot is sent every tick.
-// Movement always simulates in fixed 1 ms steps, so it is identical at every rate.
+// Movement and projectiles always simulate in fixed 1 ms steps, so they are identical at every rate.
 constexpr int kTickRates[] = {1000, 500, 250, 125};
 constexpr int kTickRateLevels = 4;
-constexpr float kMoveStep = 0.001f;        // movement substep (s)
+constexpr float kMoveStep = 0.001f;        // movement / projectile substep (s)
 constexpr int kMaxPlayers = 32;        // engine limit; servers default to 8 (ServerConfig::maxPlayers)
 constexpr int kMaxProjectiles = 128;
 constexpr uint16_t kDefaultPort = 27500;
 constexpr int kMaxInterpMs = 200;      // the longest fixed interpolation delay a client can set (interp_ms; lag compensation covers it)
 constexpr uint32_t kProtocolMagic = 0x51524B31; // "QRK1"
-constexpr uint16_t kProtocolVersion = 34;   // 34: the snapshot carries syringeAway (a thrown syringe is disabled for a while); 33: fixed weapon spread pattern (NET-9), clients report a fixed interp delay ("interp"); 32: ranked signatures name the dialled server address (REVIEW 2.2); 31: hull scaling + grapple change in shared pmove; 30:  signed ranked ids, reconnect tokens; edit sessions name the map by an edit chain (mapEditCrc), map data carries the text CRC
+constexpr uint16_t kProtocolVersion = 34;   // 34: the snapshot carries syringeAway (a thrown syringe is disabled for a while) and projectile flags (lob, stuck: the client draws the 1 ms-step arc); 33: fixed weapon spread pattern (NET-9), clients report a fixed interp delay ("interp"); 32: ranked signatures name the dialled server address (REVIEW 2.2); 31: hull scaling + grapple change in shared pmove; 30:  signed ranked ids, reconnect tokens; edit sessions name the map by an edit chain (mapEditCrc), map data carries the text CRC
 // PlayerSnap::keys: what a player is holding (spectators see it on the key overlay)
 enum : uint16_t { KEY_FWD = 1, KEY_BACK = 2, KEY_LEFT = 4, KEY_RIGHT = 8, KEY_JUMP = 16, KEY_CROUCH = 32, KEY_FIRE = 64, KEY_ALT = 128, KEY_DASH = 256, KEY_HOOK = 512 };
 
@@ -283,6 +283,21 @@ constexpr float kSyringeHeal = 30.0f;
 constexpr float kThrowAway = 4.0f;
 constexpr float kKnifeAway = kThrowAway, kSyringeAway = kThrowAway;
 inline bool isThrow(int w, bool alt) { return alt && (w == WPN_KNIFE || w == WPN_SYRINGE); }
+// Projectiles fly in fixed kMoveStep (1 ms) steps, like movement, so an arc is the same at every server tick rate
+// (C8); the client draws them with the same steps. One step: vel.y -= gravity * step, then pos += vel * step.
+inline float projectileGravity(int type, float gravMul) {   // gravMul: a rocket lob's kRocketLobGravity, else 1
+    return type == WPN_KNIFE ? kKnifeThrowGravity : type == WPN_SYRINGE ? kSyringeThrowGravity : weaponDef(type).gravity * gravMul;
+}
+// Where those steps take a projectile in t seconds (walls aren't checked): the whole steps summed in closed form (one
+// pass, whatever t is), then the part of a step left over in a straight line. The client draws projectiles with it.
+inline void projectileExtrapolate(Vec3& pos, Vec3& vel, float gravity, float t) {
+    const int n = t > 0 ? (int)(t / kMoveStep) : 0;
+    const float h = kMoveStep, rest = t - n * kMoveStep;
+    pos += vel * (n * h);
+    pos.y -= gravity * h * h * (0.5f * (float)n * (float)(n + 1));
+    vel.y -= gravity * h * n;
+    if (rest > 0) pos += vel * rest;
+}
 constexpr int kShotgunBounces = 2;
 constexpr float kShotgunBounceDamage = 0.5f;
 constexpr float kRifleScopedRefire = 4.0f / 3.0f; // refire multiplier while scoped (25% slower fire rate)

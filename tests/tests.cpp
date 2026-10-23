@@ -2402,6 +2402,81 @@ static void testRocketLob(uint16_t port) {
     s.stop();
 }
 
+// C8: projectiles fly in fixed 1 ms steps, like movement, so an arc lands on the same spot at every server tick
+// rate (125 / 250 / 500 / 1000 Hz). Also measures what the projectile tick costs at each rate.
+static void testProjectileTickRates(uint16_t port) {
+    printf("projectile arcs identical at every tick rate\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.autoStart = false; cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.balanceBots = false;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    const Vec3 from = s.map_.spawns[0].pos + Vec3(0, kEyeHeight, 0);
+    const uint64_t t0 = (s.timeMs_ / 8 + 1) * 8 + 8000;   // a time every rate ticks on
+    auto spawn = [&](int k, int type, Vec3 vel, float gravMul, float life) {
+        Projectile& pr = s.projectiles_[k];
+        pr = Projectile();
+        pr.active = true; pr.id = (uint16_t)(k + 1); pr.type = type; pr.owner = kMaxPlayers - 1;   // (nobody: no player is hit)
+        pr.pos = from; pr.vel = vel; pr.gravMul = gravMul;
+        pr.dieAt = s.time() + life; pr.armAt = s.time() + kStickyArmTime;
+    };
+    // Fly one projectile at each rate until it lands (or its life runs out): where it ends up.
+    auto fly = [&](int level, int type, Vec3 vel, float gravMul, float life, bool* landed) {
+        for (auto& pr : s.projectiles_) pr.active = false;
+        s.rateLevel_ = level;
+        s.timeMs_ = t0;
+        spawn(0, type, vel, gravMul, life);
+        const Projectile& pr = s.projectiles_[0];
+        for (int t = 0; t < 40000 && pr.active && !pr.stuck; t++) { s.tickProjectilesForTest(); s.timeMs_ += 1000 / s.tickRate(); }
+        *landed = pr.stuck || s.time() < pr.dieAt;
+        return pr.pos;
+    };
+    struct Shot { const char* name; int type; float speed, pitch, yaw, gravMul, life; };
+    const Shot shots[] = {
+        {"rocket", WPN_ROCKET, weaponDef(WPN_ROCKET).projSpeed, 0.25f, 0.4f, 1, weaponDef(WPN_ROCKET).life},
+        {"rocket lob", WPN_ROCKET, weaponDef(WPN_ROCKET).projSpeed * kRocketLobSpeed, 0.6f, 2.0f, kRocketLobGravity, weaponDef(WPN_ROCKET).life},
+        {"sticky", WPN_STICKY, weaponDef(WPN_STICKY).projSpeed, 0.5f, -1.2f, 1, weaponDef(WPN_STICKY).life},
+        {"knife", WPN_KNIFE, kKnifeThrowSpeed, 0.35f, 3.0f, 1, kKnifeThrowLife},
+        {"crossbow", WPN_CROSSBOW, weaponDef(WPN_CROSSBOW).projSpeed, 0.2f, -2.5f, 1, weaponDef(WPN_CROSSBOW).life},
+        {"syringe", WPN_SYRINGE, kSyringeThrowSpeed, 0.4f, 1.0f, 1, kSyringeThrowLife},
+        {"bubble", WPN_BUBBLE, weaponDef(WPN_BUBBLE).projSpeed, 0.0f, 0.8f, 1, weaponDef(WPN_BUBBLE).life},
+    };
+    for (const Shot& sh : shots) {
+        Vec3 vel = angleForward(sh.yaw, sh.pitch) * sh.speed;
+        bool landed[kTickRateLevels];
+        Vec3 at[kTickRateLevels];
+        for (int level = 0; level < kTickRateLevels; level++) at[level] = fly(level, sh.type, vel, sh.gravMul, sh.life, &landed[level]);
+        float worst = 0;
+        for (int level = 1; level < kTickRateLevels; level++) worst = std::max(worst, length(at[level] - at[0]));
+        printf("  %-10s %s (%.2f, %.2f, %.2f): at most %.4f mm apart at 125-1000 Hz\n", sh.name, landed[0] ? "landed at" : "expired at",
+               at[0].x, at[0].y, at[0].z, worst * 1000);
+        CHECK(worst < 0.001f);
+        for (int level = 1; level < kTickRateLevels; level++) CHECK(landed[level] == landed[0]);
+        // the client draws it on the same arc: its extrapolation (up to 0.2 s, in closed form) vs the server's steps
+        Vec3 sp = from, sv = vel, cp = from, cv = vel;
+        float g = projectileGravity(sh.type, sh.gravMul);
+        for (int k = 0; k < 200; k++) { sv.y -= g * kMoveStep; sp += sv * kMoveStep; }
+        projectileExtrapolate(cp, cv, g, 0.2f);
+        CHECK(length(cp - sp) < 0.001f && std::fabs(cv.y - sv.y) < 0.01f);
+    }
+    // Cost: 100 bubbles drifting (the slowest, longest-lived projectile) for 1 s at each rate.
+    for (int level = 0; level < kTickRateLevels; level++) {
+        double best = 1e9;
+        for (int rep = 0; rep < 5; rep++) {
+            for (auto& pr : s.projectiles_) pr.active = false;
+            s.rateLevel_ = level;
+            s.timeMs_ = t0;
+            for (int k = 0; k < 100; k++) spawn(k, WPN_BUBBLE, angleForward(k * 0.0628f, 0.3f * std::sin(k * 1.7f)) * weaponDef(WPN_BUBBLE).projSpeed * 0.5f, 1, 4);
+            int ticks = 0;
+            double a = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+            while (s.timeMs_ < t0 + 1000) { s.tickProjectilesForTest(); s.timeMs_ += 1000 / s.tickRate(); ticks++; }
+            best = std::min(best, (std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() - a) / ticks);
+        }
+        printf("  100 projectiles at %4d Hz: %.1f us a tick, %.2f ms per second of play\n", kTickRates[level], best * 1e6, best * kTickRates[level] * 1e3);
+    }
+    s.stop();
+}
+
 static void testAltFires(uint16_t port) {
     printf("alt-fires: knife throw, shotgun ricochet, scoped rifle\n");
     for (int kase = 0; kase < 3; kase++) {
@@ -4691,7 +4766,7 @@ int main(int argc, char** argv) {
         snapBench("harbor", 16, secs, TP(28822));
         return 0;
     }
-    if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testFixedSpread(p + 50); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testFixedSpread(p + 50); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); testProjectileTickRates(p + 40); return g_fail ? 1 : 0; }
     // ---- the whole suite. Most tests wait on real-time network play rather than the CPU, so each runs in its own
     // process, several at once (output kept in order); a few timing-sensitive ones run alone afterwards.
     // "quark_tests serial" runs everything in this process, one after another, as before.
@@ -4701,7 +4776,7 @@ int main(int argc, char** argv) {
         {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotAim(p); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testTimeToKill(); testWallbang(); }},
+        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testTimeToKill(); testWallbang(); }},
         {"maps", [] {
             testMaps(); testAllMaps(); testStairs(); testLadders();
             printf("map scores\n");   // the map bar: every map scores at least 7 in every category but originality
