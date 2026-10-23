@@ -176,7 +176,8 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
         if (m & P_HOOK) { w.u8(p.hooked); if (p.hooked) w.vecq(p.hookPoint); }
     }
     // projectiles: id, bits (1 = new: type and owner follow, 2 = velocity follows, 4 = PROJ_LOB, 8 = PROJ_STUCK,
-    // 16 = out of sight: nothing follows), position always (in sight). Velocity only when it changed by more than
+    // 16 = out of sight: nothing follows, 32 = PROJ_ON_PLAYER: u8 player, i8 x, u8 y, i8 z of its attachOffset follow
+    // the position; protocol 38), position always (in sight). Velocity only when it changed by more than
     // 0.5 m/s since what the client has (the client only uses it to extrapolate a few ms); the snapshot we keep as the
     // next base records the velocity the client has. One back in sight is sent as new.
     w.u8((uint8_t)s.projectiles.size());
@@ -185,9 +186,16 @@ void writeSnapshotWorld(Writer& w, Snapshot& s, const Snapshot* base) {
         const ProjectileSnap* b = bi.projectile(base, p.id);
         if (b && b->hidden) b = nullptr;
         bool vel = !b || length(p.vel - b->vel) > 0.5f;
-        w.u16(p.id); w.u8((b ? 0 : 1) | (vel ? 2 : 0) | (uint8_t)((p.flags & (PROJ_LOB | PROJ_STUCK)) << 2));
+        const bool on = (p.flags & PROJ_ON_PLAYER) != 0;
+        w.u16(p.id); w.u8((b ? 0 : 1) | (vel ? 2 : 0) | (uint8_t)((p.flags & (PROJ_LOB | PROJ_STUCK)) << 2) | (on ? 32 : 0));
         if (!b) { w.u8(p.type); w.u8(p.owner); }
         w.vecq(p.pos);
+        if (on) {   // (quantizeAttachOffset's grid: exact)
+            w.u8(p.onPlayer);
+            w.i8((int8_t)std::lround(clampf(p.attachOffset.x / kPlayerHalfWidth, -1, 1) * 127));
+            w.u8((uint8_t)std::lround(clampf(p.attachOffset.y / kPlayerHeight, 0, 1) * 255));
+            w.i8((int8_t)std::lround(clampf(p.attachOffset.z / kPlayerHalfWidth, -1, 1) * 127));
+        }
         if (vel) w.vecq(p.vel);
         else p.vel = b->vel;
     }
@@ -245,6 +253,13 @@ bool readSnapshotWorld(Reader& r, Snapshot& s, const Snapshot* base) {
             p.type = b->type; p.owner = b->owner;
         }
         p.pos = r.vecq();
+        if (bits & 32) {   // stuck to a player (protocol 38: older demos never set it)
+            p.flags |= PROJ_ON_PLAYER;
+            p.onPlayer = r.u8();
+            if (p.onPlayer >= kMaxPlayers) return false;
+            float x = r.i8() / 127.0f, y = r.u8() / 255.0f, z = r.i8() / 127.0f;
+            p.attachOffset = {clampf(x, -1, 1) * kPlayerHalfWidth, y * kPlayerHeight, clampf(z, -1, 1) * kPlayerHalfWidth};
+        }
         if (bits & 2) p.vel = r.vecq();
         else if (b) p.vel = b->vel;
         else return false;

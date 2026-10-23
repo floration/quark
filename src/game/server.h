@@ -210,6 +210,8 @@ struct Projectile {
     bool stuck = false; // stickies: attached to a surface
     bool onCart = false; // stuck to the payload cart: rides along at cartOffset from its center
     Vec3 cartOffset;
+    int onPlayer = -1;   // stuck to an enemy it hit: rides along at playerOffset from their feet (stickyOnPlayerPos)
+    Vec3 playerOffset;   // (standing, size 1, on the wire's grid: quantizeAttachOffset)
 };
 
 class Server {
@@ -582,6 +584,8 @@ private:
     bool fireWeapon(int id, const UserCmd& cmd);   // true if it hit a player (hitscan weapons)
     void tickProjectiles();
     void stepProjectile(Projectile& pr);   // one fixed 1 ms step (kMoveStep): gravity, move, hit a wall / player
+    void followVictim(Projectile& pr);     // a sticky on a player: onto them as they are now (or let go: they're gone)
+    void releaseStickies(int player);      // that player died / respawns / left: their stickies stay where they were
     int projTargets_ = 0;                  // tickProjectiles: the live players' hitboxes this tick
     uint8_t projTargetId_[kMaxPlayers] = {};
     AABB projTargetBox_[kMaxPlayers];
@@ -612,6 +616,7 @@ private:
 public:
     uint64_t visRays_ = 0;     // lines of sight cast (tests, benchmarks)
     void updateVisibilityForTest() { updateVisibility(); }
+    void explodeForTest(const Vec3& at, int owner, int weapon) { explode(at, owner, weapon); }
 private:
     void openGameLog();
     void logTick();

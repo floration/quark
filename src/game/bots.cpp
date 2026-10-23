@@ -862,9 +862,10 @@ UserCmd botThink(Server& s, int id) {
             if (ready && !knifeOut && !ownBlast()) cmd.buttons |= throwKnife ? BTN_ALTFIRE : BTN_FIRE;
             if (w == WPN_SNIPER) cmd.buttons |= BTN_ALTFIRE;
             if (w == WPN_RIFLE && dist > 30.0f && sp.leadMean >= 0.8f) cmd.buttons |= BTN_ALTFIRE; // scope in for long shots
-            if (me.weapon == WPN_STICKY) { // set off our stickies when the target (as seen) is in the blast
+            if (me.weapon == WPN_STICKY) { // set off our stickies when the target (as seen) is in the blast, or one is stuck on an enemy
                 for (const auto& pr : s.projectiles_)
-                    if (pr.active && pr.owner == id && pr.type == WPN_STICKY && length(pr.pos - (perceived + Vec3(0, 0.9f, 0))) < weaponDef(WPN_STICKY).splashRadius * 0.7f &&
+                    if (pr.active && pr.owner == id && pr.type == WPN_STICKY &&
+                        (length(pr.pos - (perceived + Vec3(0, 0.9f, 0))) < weaponDef(WPN_STICKY).splashRadius * 0.7f || (pr.onPlayer >= 0 && isEnemy(s, id, pr.onPlayer))) &&
                         length(pr.pos - (me.move.pos + Vec3(0, 0.9f, 0))) > weaponDef(WPN_STICKY).splashRadius) {   // (and we're clear of it)
                         cmd.buttons |= BTN_ALTFIRE;
                         break;

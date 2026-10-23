@@ -1282,6 +1282,12 @@ void Game::frame(double dt) {
             if (still && old.type == WPN_STICKY && length(old.vel) > 0.01f)
                 for (auto& p : projs) if (p.id == old.id && length(p.vel) < 0.01f) audio_.play3D(SND_STICKY_ATTACH, p.pos, 0.8f, 1.0f, net_.playerSoundPack(old.owner));
         }
+        for (auto& p : projs) {   // an enemy sticky just stuck on you: the beep (and "STICKY ON YOU" while it's there)
+            if (!(p.flags & PROJ_ON_PLAYER) || p.onPlayer != net_.clientId()) continue;
+            bool was = false;
+            for (auto& old : lastProjectiles_) was |= old.id == p.id && (old.flags & PROJ_ON_PLAYER) && old.onPlayer == p.onPlayer;
+            if (!was) audio_.play(SND_STICKY_ATTACH, 1.0f, 1.6f);
+        }
         lastProjectiles_ = projs;
 
         int hp = net_.selfHealth();
@@ -1667,6 +1673,7 @@ void Game::drawWorld(float alpha) {
         projStarts_.swap(keep);
     }
     for (auto pr : lastProjectiles_) {
+        if (pr.flags & PROJ_ON_PLAYER) net_.attachedPos(pr, alpha, &pr.pos);   // (on you: where you are this frame)
         for (auto& st : projStarts_)
             if (st.id == pr.id) { float f = 1.0f - (float)(time_ - st.seen) / 0.2f; if (f > 0) pr.pos = pr.pos + st.offset * f; }
         Vec3 col = teamColor(pr.owner);
@@ -2344,6 +2351,16 @@ void Game::drawHud() {
                 float k = std::max(1.0f, std::round(ts * 0.9f * e.scale));
                 std::string t = "STICKIES " + std::to_string(out) + "/" + std::to_string(kMaxStickies);
                 r_.text(W - 24 * s - r_.textWidth(t, k) + e.x * s, H - 128 * s * e.scale + e.y * s, k, t, out >= kMaxStickies ? Color{1, 0.6f, 0.2f, 1} : tint(Settings::HUD_WEAPON, kWhite));
+            }
+        }
+        {   // enemy stickies stuck on you: a blinking warning under the crosshair
+            int on = 0;
+            for (auto& pr : lastProjectiles_) on += (pr.flags & PROJ_ON_PLAYER) && pr.onPlayer == net_.clientId();
+            if (on > 0) {
+                float k = std::max(1.0f, std::round(ts * 1.2f));
+                std::string t = on > 1 ? std::to_string(on) + " STICKIES ON YOU" : "STICKY ON YOU";
+                float a = std::fmod((float)time_ * 2.5f, 1.0f) < 0.5f ? 1.0f : 0.55f;
+                r_.text(W * 0.5f - r_.textWidth(t, k) * 0.5f, H * 0.5f - 90 * s, k, t, Color{1, 0.25f, 0.2f, a});   // (above the crosshair: the cooldown bars are under it)
             }
         }
         if (!unarmed && !he(Settings::HUD_SLOTS).hidden) {   // weapon slots in kWeaponSlots order: 1 rocket, 2 rifle, 3 laser, ...
