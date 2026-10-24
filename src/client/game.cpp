@@ -1042,6 +1042,14 @@ void Game::handleEvents() {
                     }
                 }
                 if (e.a == net_.clientId() && e.b != e.a && cfg_.hitsounds) audio_.play(SND_KILL, 0.9f);
+                if (e.a == net_.clientId() && e.b != e.a) killMarkUntil_ = time_ + 0.45;   // X6: a kill looks unlike a hit
+                if (e.b != net_.clientId() && e.b < kMaxPlayers) {   // X6: where they fell (in sight only), a thud and a red burst
+                    const PlayerSnap* v = net_.findPlayer(e.b);
+                    if (v && !v->hidden) {
+                        audio_.play3D(SND_DEATH, v->pos + Vec3(0, 1, 0), 0.8f, 1.0f, net_.playerSoundPack(e.b));
+                        explosions_.push_back({v->pos + Vec3(0, 1, 0), time_, 0.35f, false, true});
+                    }
+                }
                 break;
             }
             case EV_CHAT:   // (chat off: dropped, not just hidden - turning it back on doesn't replay what was missed)
@@ -1985,7 +1993,8 @@ void Game::drawWorld(float alpha) {
         if (t >= 1) { explosions_.erase(explosions_.begin() + i); continue; }
         float r = (0.5f + t * 3.0f) * explosions_[i].size;
         Vec3 c = explosions_[i].at;
-        Color ec = explosions_[i].bubble ? rgba(r_.glowColor, 0.5f * (1 - t)) : Color{1.0f, 0.85f, 0.5f, 0.55f * (1 - t)};
+        Color ec = explosions_[i].bubble ? rgba(r_.glowColor, 0.5f * (1 - t)) : explosions_[i].kill ? Color{0.85f, 0.08f, 0.06f, 0.6f * (1 - t)}
+                                                                       : Color{1.0f, 0.85f, 0.5f, 0.55f * (1 - t)};
         r_.translucentBox({c - Vec3(r, r, r), c + Vec3(r, r, r)}, ec);
         i++;
     }
@@ -2415,6 +2424,7 @@ void Game::drawHud() {
     const bool rpsOn = (ms.flags & MS_RPS) || opts_.debugRps;   // (drawn over the rest of the HUD, at the end)
     // crosshair (scoped with the overlay on: the scope's reticle replaces it)
     if (!scopeShown && !paused_ && !rpsOn) drawCrosshair(cx, cy, s, time_ < hitUntil_); // menus open: no crosshair through them
+    if (!paused_ && !rpsOn) drawKillMark(cx, cy, s);
     if (!cfg_.dmgNums) dmgNums_.clear();   // (VISUALS > DAMAGE NUMBERS off)
     if (!dmgNums_.empty()) {   // floating damage numbers above whoever you hit
         const auto& ip = framePlayers();
@@ -6313,6 +6323,22 @@ void Game::drawCrosshair(float cx, float cy, float scale, bool hit) {
         for (auto& r : rs) r_.rect(r[0] - 1, r[1] - 1, r[2] + 2, r[3] + 2, {0, 0, 0, c.a * 0.9f});
     for (auto& r : rs) r_.rect(r[0], r[1], r[2], r[3], c);
     if (hit && st != 1 && st != 2) r_.rect(cx - t, cy - t, 2 * t, 2 * t, c);
+}
+
+// X6: your kill: a red X round the crosshair, bigger than the hit flash, fading (squares along the diagonals). Drawn
+// scoped too.
+void Game::drawKillMark(float cx, float cy, float scale) {
+    if (time_ >= killMarkUntil_) return;
+    float u = std::max(1.0f, std::round(scale));
+    float len = std::round(cfg_.chLength * u), g = std::round(cfg_.chGap * u);
+    cx = std::round(cx); cy = std::round(cy);
+    {
+        const float a = (float)std::min(1.0, (killMarkUntil_ - time_) / 0.2);
+        const float d = std::max(2.0f, std::round(2 * u)), r0 = g + 3 * u, r1 = g + len + 10 * u;
+        for (float r = r0; r <= r1; r += d * 0.75f)
+            for (int sx = -1; sx <= 1; sx += 2)
+                for (int sy = -1; sy <= 1; sy += 2) r_.rect(cx + sx * r * 0.7071f - d * 0.5f, cy + sy * r * 0.7071f - d * 0.5f, d, d, {1.0f, 0.12f, 0.1f, a});
+    }
 }
 
 // VISUALS: what's drawn (world look, shot effects, overlays)

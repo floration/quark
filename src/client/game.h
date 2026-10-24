@@ -451,6 +451,7 @@ private:
     std::deque<Feed> chatLog_;   // the chat history shown while typing (Enter)
     void addChat(const Feed& f) { chatFeed_.push_back(f); chatLog_.push_back(f); while (chatFeed_.size() > 8) chatFeed_.pop_front(); while (chatLog_.size() > 30) chatLog_.pop_front(); }
     std::string centerText_;
+    double killMarkUntil_ = 0;   // your kill: a bigger red X on the crosshair until then (X6)
     double centerUntil_ = 0, hitUntil_ = 0, damageUntil_ = 0, recoil_ = 0, localNextFire_ = 0;
     HitSoundGate hitGate_;   // the hitsound: one per moment, the heaviest (audio.h)
     double localKnifeBack_ = 0, localSyringeBack_ = 0;   // predicted: a thrown knife / syringe is away (disabled) until then
@@ -463,7 +464,7 @@ private:
     int lastHealth_ = 0;
     struct Tracer { Vec3 a, b; double until; };
     std::vector<Tracer> tracers_;
-    struct Explosion { Vec3 at; double start; float size = 1; bool bubble = false; };
+    struct Explosion { Vec3 at; double start; float size = 1; bool bubble = false; bool kill = false; };   // kill: a red burst where someone died (X6)
     std::vector<Explosion> explosions_;
     std::vector<ProjectileSnap> lastProjectiles_;
     std::vector<ProjectileSnap> projScratch_;   // (frame: this frame's projectiles, built here then swapped in)
@@ -673,6 +674,7 @@ private:
     void drawControls(const SetLayout& L);
     void drawHudSettings(const SetLayout& L);
     void drawCrosshairSettings(const SetLayout& L);
+    void drawKillMark(float cx, float cy, float scale);
     void drawCrosshair(float cx, float cy, float scale, bool hit);
     // FONT (settings/fonts, from PLAYER): the built-in UI fonts, then the player's mods/fonts files (uifonts.h). The
     // list is looked up when the page opens and on REFRESH; a font's atlas is built once when it's picked.
