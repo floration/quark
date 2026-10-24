@@ -213,9 +213,9 @@ def import_lines(phys):
 
 
 def is_logic_line(line):
-    """A `logic` line starts the gamemode editor's section (to the end of the file): never touched here."""
-    s = line.strip()
-    return s == "logic" or s.startswith("logic=") or s.startswith("logic ") or s.startswith("logic:")
+    """A `logic` line starts the gamemode editor's section (to the end of the file): never touched here. Exactly the
+    game's isModeLogicLine (customrules.cpp): "logic" at column 0, then the end of the line, a space, a tab or a CR."""
+    return line[:5] == "logic" and (len(line) == 5 or line[5] in " \t\r")
 
 
 def fmt_num(v):
@@ -336,23 +336,47 @@ def read_mode_file(name):
     with open(p, "rb") as f: return f.read().decode("utf-8", "replace")
 
 
+def scan_float(v):
+    """C's sscanf("%f"): the longest number at the start (after spaces), else 0 (what fromText reads)."""
+    m = re.match(r"\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?|[+-]?(?:inf(?:inity)?|nan))", v, re.I)
+    if not m: return 0.0
+    try: return float(m.group(1))
+    except ValueError: return 0.0
+
+
+def scan_int(v):
+    """C's atoi."""
+    m = re.match(r"\s*([+-]?\d+)", v)
+    return int(m.group(1)) if m else 0
+
+
 def mode_info(path):
+    """The Open list's line for a custom mode: its name, mode, a logic section, and how many movement settings it really
+    changes (as fromText reads it: the last line of a key counts, unknown keys and values back at the standard don't)."""
     info = {"custommode": "", "mode": "", "logic": False, "moved": 0}
+    vals = {}
     try:
-        with open(path, encoding="utf-8", errors="replace") as f:
+        with open(path, encoding="utf-8", errors="replace", newline="") as f:
             for line in f:
+                line = line.rstrip("\n")
                 if is_logic_line(line): info["logic"] = True; break
-                k, _, v = line.strip().partition("=")
+                k, eq, v = line.rstrip("\r").partition("=")
+                if not eq: continue
                 if k == "custommode": info["custommode"] = v
                 elif k == "mode": info["mode"] = v
-                elif k.startswith("move_") or k.startswith("expr."): info["moved"] += 1
-                elif k in ("gravity", "speed", "jump"):
-                    try:
-                        if float(v) != 1: info["moved"] += 1
-                    except ValueError: pass
-                elif k in BOOL_KEYS and v.strip() == "0": info["moved"] += 1
+                elif k in TOP_KEYS or (k.startswith("move_") and k[5:] in MV_KEYS) or (k.startswith("expr.") and k[5:] in EXPR_KEYS): vals[k] = v
     except OSError:
         pass
+    changed = set()
+    for k, v in vals.items():
+        if k in BOOL_KEYS:
+            if scan_int(v) == 0: changed.add(k)
+        elif k.startswith("expr."):
+            if v.strip(" \t"): changed.add(k[5:])
+        else:
+            f = scan_float(v)
+            if f == f and f not in (float("inf"), float("-inf")) and f != 1: changed.add(k[5:] if k.startswith("move_") else k)
+    info["moved"] = len(changed)
     return info
 
 
@@ -366,6 +390,15 @@ def source_path(name):
     for c in cands:
         if os.path.isfile(c): return c
     return None
+
+
+def source_label(path):
+    """How the Movement code header names a source file: src/game/pmove.cpp in a checkout, source/pmove.cpp in an
+    installed copy (next to serve.py), else the full path (another clone of the Quark folder)."""
+    for base, need in ((ROOT, os.path.isfile(os.path.join(ROOT, "CMakeLists.txt"))), (HERE, True)):
+        if need and os.path.normcase(path).startswith(os.path.normcase(base) + os.sep):
+            return os.path.relpath(path, base).replace(os.sep, "/")
+    return path.encode("latin-1", "replace").decode("latin-1")   # (an HTTP header: latin-1 only)
 
 
 # ---------------------------------------------------------------- maps
@@ -617,7 +650,7 @@ class Handler(BaseHTTPRequestHandler):
                 path = source_path(q.get("file", ""))
                 if not path: return self._err(404, "no such source file")
                 with open(path, encoding="utf-8", errors="replace") as f:
-                    return self._send(200, f.read(), MIME[".txt"], extra={"X-Source-Path": os.path.relpath(path, ROOT) if path.startswith(ROOT) else path})
+                    return self._send(200, f.read(), MIME[".txt"], extra={"X-Source-Path": source_label(path)})
             if p.startswith("/references/"): return self._static(p[len("/references/"):], CFG.refs)
             if p == "/api/ping": return self._send(200, {"ok": True, "tool": "physics-editor"}, extra={"Access-Control-Allow-Origin": "*"})
             if p == "/api/maps": return self._send(200, {"maps": list_maps(), "defaultDir": CFG.default_maps_dir()})
