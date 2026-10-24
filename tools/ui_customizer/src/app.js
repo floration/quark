@@ -99,7 +99,7 @@
   const touch = (p) => { if (p) touched.add(p); };
   const forgetPages = () => { pageJson = new WeakMap(); };
   function docSnap() {
-    touch(page());
+    touch(curPage());
     const out = S.doc.pages.map((p) => {
       const c = pageJson.get(p);
       if (c !== undefined && !touched.has(p)) return c;

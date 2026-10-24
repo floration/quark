@@ -200,6 +200,22 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
   await page.locator('#dlgOk').click();
   assert.strictEqual(await ev(() => QApp.S.doc.pages.length), nBefore, 'Delete page (confirmed in the page)');
 
+  // ---- undo across pages (snapshots restringify only the pages an edit touched) ----
+  {
+    const r = await ev(() => {
+      const [A, B] = QApp.S.doc.pages.filter((p) => p.elements.length > 1).slice(0, 2);
+      const get = () => [A.elements[0].x, B.elements[0].x, B.elements.length, A.elements.length].join();
+      const out = [get()];
+      QApp.selectPage(A.uid); QApp.commit(() => { A.elements[0].x += 5; }); out.push(get());
+      QApp.selectPage(B.uid); QApp.commit(() => { B.elements[0].x += 7; }); out.push(get());
+      QApp.selectPage(A.uid); QApp.S.sel = new Set([A.elements[1].uid]); QApp.moveSelToPage(B.uid); out.push(get());
+      const live = () => { const a = QApp.S.doc.pages.find((p) => p.uid === A.uid), b = QApp.S.doc.pages.find((p) => p.uid === B.uid); return [a.elements[0].x, b.elements[0].x, b.elements.length, a.elements.length].join(); };
+      QApp.undo(); out.push(live()); QApp.undo(); out.push(live()); QApp.undo(); out.push(live());
+      return out;
+    });
+    assert.deepStrictEqual([r[4], r[5], r[6]], [r[2], r[1], r[0]], 'undo across pages and a move between pages: ' + r.join(' | '));
+  }
+
   // ---- origins in the page list, preview at other resolutions (read only), spec layout tables ----
   const nOrg = await page.locator('#pageList .pg .org').count();
   assert.strictEqual(nOrg, nBefore, 'every page shows who made it');
