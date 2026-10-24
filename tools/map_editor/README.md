@@ -34,6 +34,12 @@ with New is `human`; a default (generated) map you edited stays `ai` ("edited fr
 
 Saving writes the map through the helper (`Map::serialize`, so it is a `handmade` map exactly as the in-game editor
 writes it) and its sidecar `<map>.mapedit.json` next to it (custom tests, bot starts, decoration rules, the camera).
+A map saved without edits to it (or with every edit undone) is written as its file's own text, byte for byte (a copy of
+a default map is that map, its sha256 too); sidecar-only changes don't count as edits. `-0` coordinates (downtown,
+foundry, gantry, summit) stay `-0` through the page, serve.py and the helper (`api.js` `toJson`).
+
+`?embed=1` on the page's URL (e.g. `http://127.0.0.1:8770/?embed=1`, a tab inside another app's window) hides the
+page's brand / title line; the toolbar and every panel stay, and the parameter is kept when a map opens.
 **Open in game** starts `quark --editor <name>`, **Play test** starts `quark --host <mode> --map <name>` (the exe path
 is set in Settings, e.g. `C:\Users\user\Desktop\Quark\testing\quark.exe`).
 

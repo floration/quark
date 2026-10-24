@@ -387,6 +387,8 @@ class Handler(BaseHTTPRequestHandler):
         if not st.maptool: return self.err(503, "quark_maptool not found")
         try: req = json.loads(data or b"{}")
         except ValueError: return self.err(400, "bad JSON")
+        if not isinstance(req, dict): return self.err(400, "the request is a JSON object")
+        if not data.strip(): data = b"{}"
         run = secrets.token_hex(8)
         try:
             proc = subprocess.Popen([st.maptool, "bots", "--stream"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -397,7 +399,9 @@ class Handler(BaseHTTPRequestHandler):
         deadline = time.time() + TIMEOUTS["bots"] * 4
         killer = threading.Timer(TIMEOUTS["bots"] * 4, proc.kill); killer.daemon = True; killer.start()
         try:
-            proc.stdin.write(json.dumps(req, separators=(",", ":")).encode() + b"\n"); proc.stdin.flush()
+            # the body as the page sent it (re-encoding it would turn a -0 into 0), on one line: a raw CR or LF in
+            # JSON can only be whitespace between tokens, so blanking them keeps the same JSON
+            proc.stdin.write(data.replace(b"\r", b" ").replace(b"\n", b" ") + b"\n"); proc.stdin.flush()
             self.send_response(200)
             self.send_header("Content-Type", "application/x-ndjson")
             self.send_header("Cache-Control", "no-store")
@@ -453,6 +457,9 @@ def no_window():
 
 
 def main():
+    for f in (sys.stdout, sys.stderr):   # (a console or log that can't show a folder's name, e.g. C:\Users\Дмитрий: no crash)
+        try: f.reconfigure(errors="replace")
+        except (AttributeError, ValueError): pass
     args, a = {}, sys.argv[1:]
     i = 0
     while i < len(a):

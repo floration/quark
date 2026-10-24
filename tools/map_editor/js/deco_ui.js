@@ -41,7 +41,9 @@ function el(tag, attrs, ...kids) {
     for (const c of kids.flat()) if (c != null && c !== false) e.append(c.nodeType ? c : String(c));
     return e;
 }
-const clone = (o) => JSON.parse(JSON.stringify(o));
+// a deep copy of JSON data that keeps -0 (JSON.stringify writes it as 0, which would change a map's text on save)
+const NEG0 = '\u0001-0\u0001';
+const clone = (o) => o === undefined ? undefined : JSON.parse(JSON.stringify(o, (k, v) => (v === 0 && Object.is(v, -0) ? NEG0 : v)), (k, v) => (v === NEG0 ? -0 : v));
 const opt = (v, label, cur) => el('option', { value: String(v), selected: String(v) === String(cur) }, label);
 const fmt = (n) => (Math.round(n * 100) / 100).toString();
 

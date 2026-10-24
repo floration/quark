@@ -35,7 +35,9 @@ function sameBox(a, b, tol = 2e-4) {
     return true;
 }
 const keyOf = (b) => b.mat + '|' + b.min.map(r4).join(',') + '|' + b.max.map(r4).join(',');
-const clone = (o) => JSON.parse(JSON.stringify(o));
+// a deep copy of JSON data that keeps -0 (JSON.stringify writes it as 0, which would change a map's text on save)
+const NEG0 = '\u0001-0\u0001';
+const clone = (o) => o === undefined ? undefined : JSON.parse(JSON.stringify(o, (k, v) => (v === 0 && Object.is(v, -0) ? NEG0 : v)), (k, v) => (v === NEG0 ? -0 : v));
 function bboxOf(list) {
     const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
     for (const b of list) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], b.min[k]); hi[k] = Math.max(hi[k], b.max[k]); }

@@ -3,6 +3,9 @@
 The map editor's native helper: every map-format, physics and bot answer the editor page needs. It is built from
 the game's own code (`quark_core`: `src/game` map, pmove, bots, server) and `tests/walkgrid.h`. It is built with the
 tests (`QUARK_BUILD_TESTS`, the default), takes no options, and builds on Linux and Windows (MinGW).
+On Windows its arguments, the request's `file` paths and its temp files are UTF-8 through the wide APIs (a folder like
+`C:\Users\Zoë\Desktop\Quark\map-editor` works), stdin and stdout are binary (answers and NDJSON lines end in `\n`),
+and a control line may end in `\r\n`.
 
 ```
 quark_maptool <command> [--stream] [request.json]
@@ -50,8 +53,9 @@ The map JSON (or `{map: ...}`) returns `{text, valid, parseError? | warnings}`. 
 map. `valid` says whether the game's parser reads `text` back. Parsing a map and serializing it again gives the
 same text as `Map::serialize`, byte for byte, on all 21 maps.
 
-JS and Python JSON both turn `-0` into `0`. After a trip through the page, a `-0` coordinate is written as `0`:
-the geometry is the same, but the text (and a ranked map's sha256) changes.
+`-0` is read and written as `-0` (the JSON reader takes `-0` as the number; floats are written with their sign).
+JS's `JSON.stringify` and Python's `json` turn `-0` into `0`, so the page sends its requests through `toJson`
+(js/api.js), which writes `-0`, and serve.py passes request bodies on as they came.
 
 ### check
 

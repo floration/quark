@@ -21,6 +21,7 @@ class App extends Emitter {
     try { await api.init(); } catch (e) { banner("The editor's server isn't answering: start it with run.cmd / run.sh (" + e.message + ")", true, 0); throw e; }
     const info = api.info;
     $("#gameVersion").textContent = info.version ? "v" + info.version : "";
+    if (EMBED) $("#top").append($("#gameVersion"));   // (the version stays in sight without the brand line)
     if (!info.maptool) banner("quark_maptool wasn't found next to serve.py: maps open and save with the page's own reader, checks, metrics and bots are off. Build it and rebuild the editor.", true, 0);
     for (const n of info.deco || []) {   // the decoration part (js/deco*.js), before the editor starts
       try { await import("./" + n); } catch (e) { console.error("decoration script " + n + " failed:", e); }
@@ -184,10 +185,10 @@ class App extends Emitter {
         this.origin = L && L.provenance ? { origin: L.provenance.origin, note: L.provenance.note || "" } : { origin: map.handmade ? "human" : "ai", note: "" };
       }
       this.roNoted = false;
-      this.doc.open(map, name, src, side);
+      this.doc.open(map, name, src, side, text);
       if (side.camera && side.camera.pos) { Object.assign(this.view.cam, { yaw: side.camera.yaw, pitch: side.camera.pitch }); this.view.cam.pos.fromArray(side.camera.pos); this.view.redraw(); }
       else this.view.frameMap();
-      history.replaceState(null, "", "?src=" + src + "&map=" + encodeURIComponent(name));
+      history.replaceState(null, "", pageUrl({ src, map: name }));
       this.emit("opened");
     } catch (e) { banner("Couldn't open " + name + ": " + e.message, true, 0); console.error(e); }
   }
@@ -198,13 +199,14 @@ class App extends Emitter {
     this.origin = { origin: "human", note: "made in the map editor" };
     this.doc.open(map, "", "new", {});
     this.view.frameMap();
-    history.replaceState(null, "", "?");
+    history.replaceState(null, "", pageUrl({}));
     this.emit("opened");
   }
   mapForSave() {
     const m = structuredClone(this.doc.map);
     for (const k of ["generated", "materials", "player", "warnings", "fallback", "modesSupported", "modesPossible", "payloadLength", "bounds", "ms", "killY", "humanMade"]) delete m[k];
-    m.handmade = true;
+    // a map changed here is human-made; an unedited one keeps its own line, so it saves byte for byte as its file
+    m.handmade = !!this.doc.map.handmade || this.doc.mapEdited;
     return m;
   }
   sidecarForSave() {
@@ -221,15 +223,21 @@ class App extends Emitter {
   }
   async writeAs(name) {
     const d = this.doc;
-    const ans = await api.tool("serialize", this.mapForSave());
-    if (ans.error) throw new Error(ans.error);
-    const r = await api.writeMap(name, ans.text, this.provenance());
+    // unedited (or edited and undone): the file's own text, so a copy of a map is that map byte for byte (Map::serialize
+    // orders and spaces some lines differently from make_maps.py and keeps no comments); edited: Map::serialize
+    let text = !d.mapEdited && typeof d.fileText === "string" ? d.fileText : null;
+    if (text === null) {
+      const ans = await api.tool("serialize", this.mapForSave());
+      if (ans.error) throw new Error(ans.error);
+      text = ans.text;
+    }
+    const r = await api.writeMap(name, text, this.provenance());
     await api.writeSidecar(name, this.sidecarForSave());
     d.markSaved(name, "mine");
     if (d.map.title === undefined) d.map.title = "";
     await this.panels.loadList();
     this.mapLabel();
-    history.replaceState(null, "", "?src=mine&map=" + encodeURIComponent(name));
+    history.replaceState(null, "", pageUrl({ src: "mine", map: name }));
     banner("Saved " + r.path, false, 4000);
     this.emit("save", name);
   }
@@ -316,12 +324,33 @@ class App extends Emitter {
     if (!window.MapDeco || typeof window.MapDeco.mountPanel !== "function") return;
     $('#rtabs button[data-rtab="deco"]').hidden = false;
     const d = this.doc, self = this;
+    // A setMap and a sidecar.set in the same task (the panel's apply / remove: save() then setMap, or setMap then
+    // save()) are one undo step: the sidecar entry's old value rides on the map's step, so one undo restores both.
+    let tick = null;   // {step, before: {key: old value}}, cleared after this task
+    const thisTick = () => { if (!tick) { tick = { step: null, before: {} }; queueMicrotask(() => { tick = null; }); } return tick; };
+    const ride = (step, k, before) => { const key = "sc." + k; if (!step.keys.includes(key)) { step.keys = [...step.keys, key]; step.before[key] = before; } };
+    const top = () => d.undoStack[d.undoStack.length - 1];
     const hookApi = {
-      getMap: () => { const m = structuredClone(d.map); return m; },
-      setMap: (newMap, label) => d.replaceMap(newMap, label),
+      getMap: () => structuredClone(d.map),
+      setMap: (newMap, label) => {
+        const t = thisTick();
+        d.replaceMap(newMap, label);
+        t.step = top();
+        for (const [k, b] of Object.entries(t.before)) ride(t.step, k, b);
+        t.before = {};
+      },
       getSelection: () => ({ brushes: d.selOf("brush"), groups: d.selOf("group") }),
       select: (sel) => d.select([...(sel.brushes || []).map(i => ({ k: "brush", i })), ...(sel.groups || []).map(i => ({ k: "group", i }))]),
-      sidecar: { get: (k) => structuredClone(d.sidecar[k]), set: (k, v) => { d.sidecar[k] = structuredClone(v); d.seq++; d.emit("dirty"); } },
+      sidecar: {
+        get: (k) => structuredClone(d.sidecar[k]),
+        set: (k, v) => {
+          const t = thisTick(), before = structuredClone(d.sidecar[k]);
+          d.sidecar[k] = structuredClone(v);
+          if (t.step && t.step === top()) { ride(t.step, k, before); return; }   // (already unsaved by the map step)
+          if (!(k in t.before)) t.before[k] = before;   // a setMap later in this task takes it into its step
+          d.seq++; d.emit("dirty");
+        },
+      },
       redraw: () => self.view.redraw(),
       on: (ev, fn) => ev === "map" ? d.on("map", (keys, live) => { if (!live) fn(keys); }) : ev === "selection" ? d.on("selection", fn) : ev === "save" ? self.on("save", fn) : self.on(ev, fn),
       scene: this.view.scene, layer: this.view.layers.deco, THREE,
@@ -330,6 +359,17 @@ class App extends Emitter {
     };
     try { window.MapDeco.mountPanel($("#decoMount"), hookApi); } catch (e) { console.error("MapDeco.mountPanel failed:", e); }
   }
+}
+
+// ?embed=1: the page runs as a tab inside another app's window (the project manager's shell), which has its own
+// title bar: the page's brand / title line goes and the toolbar stays. Kept in the URL when a map opens.
+const EMBED = new URLSearchParams(location.search).get("embed") === "1";
+if (EMBED) document.documentElement.classList.add("embed");
+function pageUrl(params) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) q.set(k, v);
+  if (EMBED) q.set("embed", "1");
+  return "?" + q.toString();
 }
 
 const app = new App();

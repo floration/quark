@@ -4,6 +4,7 @@
 #include <cmath>
 #include <fstream>
 #include <sstream>
+#include "common/u8file.h"
 #include "maptool.h"
 #include "game/gamedefs.h"
 #include "game/gamemodes.h"
@@ -240,7 +241,7 @@ bool mapFromJson(const Json& j, Map& m, std::string& err) {
 }
 
 static bool readFile(const std::string& path, std::string& out) {
-    std::ifstream f(path, std::ios::binary);
+    std::ifstream f(utf8Path(path), std::ios::binary);   // (a UTF-8 path: the wide API on Windows)
     if (!f) return false;
     std::ostringstream ss;
     ss << f.rdbuf();

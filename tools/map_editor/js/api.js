@@ -2,10 +2,19 @@
 // serialize fall back to fallback_parse.js so a map can still be viewed and simple edits saved.
 import { parseQmap, serializeQmap } from "./fallback_parse.js";
 
+// JSON.stringify writes -0 as 0, which would change a map's text on save (downtown, foundry, gantry and summit
+// have -0 coordinates). This writes -0 as the number -0, which quark_maptool's JSON reader reads back as -0.
+const NEG0 = "\u0001-0\u0001";
+const NEG0_JSON = JSON.stringify(NEG0);
+export function toJson(v) {
+  const s = JSON.stringify(v, (k, x) => (x === 0 && Object.is(x, -0) ? NEG0 : x));
+  return s === undefined || !s.includes(NEG0_JSON) ? s : s.split(NEG0_JSON).join("-0");
+}
+
 async function req(method, path, body, type) {
   const opt = { method, headers: {} };
   if (body !== undefined) {
-    opt.body = typeof body === "string" ? body : JSON.stringify(body);
+    opt.body = typeof body === "string" ? body : toJson(body);
     opt.headers["Content-Type"] = type || (typeof body === "string" ? "text/plain; charset=utf-8" : "application/json");
   }
   const r = await fetch(path, opt);
@@ -52,7 +61,7 @@ export const api = {
     const ac = new AbortController();
     self.abort = () => ac.abort();
     self.done = (async () => {
-      const r = await fetch("/api/stream/bots", { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" }, signal: ac.signal });
+      const r = await fetch("/api/stream/bots", { method: "POST", body: toJson(body), headers: { "Content-Type": "application/json" }, signal: ac.signal });
       if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || r.statusText); }
       const rd = r.body.getReader(), dec = new TextDecoder();
       let buf = "";

@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include "common/net.h"
+#include "common/u8file.h"
 #include "common/rng.h"
 #include "game/bots.h"
 #include "game/gamedefs.h"
@@ -48,14 +49,14 @@ bool BotSim::start(const BotSimConfig& cfg, std::string* err) {
     fs::path dir = fs::temp_directory_path(ec) / ("quark_maptool_" + std::to_string((long long)(maptoolNow() * 1000)) + "_" + std::to_string(serial++));
     fs::create_directories(dir / "maps", ec);
     if (ec) { if (err) *err = "can't make a temp folder: " + ec.message(); return false; }
-    dataDir_ = dir.string();
+    dataDir_ = dir.u8string();   // (UTF-8 like every path the game keeps: %TEMP% under a non-ASCII user name)
     setUserDataDir(dataDir_);
     mapName_ = cfg.mapName;
     if (!cfg.mapText.empty()) {
         mapName_ = "zz_maptool";
-        if (!saveMapFile((dir / "maps" / "zz_maptool.qmap").string(), cfg.mapText)) { if (err) *err = "can't write the map"; return false; }
+        if (!saveMapFile((dir / "maps" / "zz_maptool.qmap").u8string(), cfg.mapText)) { if (err) *err = "can't write the map"; return false; }
     }
-    logPath_ = (dir / "game.log").string();
+    logPath_ = (dir / "game.log").u8string();
     logPos_ = 0;
     g_serverRateCheck = false;   // (no real-time clock to keep up with: never step the rate down)
     qsrand(cfg.seed);            // this thread's generator: spawn picks, bots' rngs
@@ -104,7 +105,7 @@ void BotSim::stop() {
     server_->stop();
     server_.reset();
     std::error_code ec;
-    if (!dataDir_.empty()) std::filesystem::remove_all(dataDir_, ec);
+    if (!dataDir_.empty()) std::filesystem::remove_all(utf8Path(dataDir_), ec);
     dataDir_.clear();
 }
 
@@ -195,7 +196,7 @@ void BotSim::watch() {
 
 void BotSim::readLog() {
     fflush(nullptr);   // (the server's game log is a FILE*: what it wrote so far)
-    FILE* f = fopen(logPath_.c_str(), "rb");
+    FILE* f = u8fopen(logPath_, "rb");
     if (!f) return;
     if (fseek(f, logPos_, SEEK_SET) != 0) { fclose(f); return; }
     char line[1024];
@@ -205,6 +206,7 @@ void BotSim::readLog() {
         if (n == 0 || line[n - 1] != '\n') break;   // (a line still being written: next time)
         logPos_ += (long)n;
         line[n - 1] = 0;
+        if (n >= 2 && line[n - 2] == '\r') line[n - 2] = 0;   // (Windows: the server writes its log in text mode)
         unsigned long long sec = 0; unsigned ms = 0; int off = 0;
         if (sscanf(line, "%llu.%u %n", &sec, &ms, &off) < 2) continue;
         const char* msg = line + off;

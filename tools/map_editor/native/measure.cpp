@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <queue>
+#include "common/u8file.h"
 #include "analysis.h"
 #include "maptool.h"
 #include "measure_impl.h"
@@ -23,16 +24,16 @@ MoveEnvelope cachedMoveEnvelope() {
     std::string path;
     std::error_code ec;
     if (!g_maptoolExe.empty() && !std::getenv("QUARK_MAPTOOL_NO_CACHE")) {
-        auto size = std::filesystem::file_size(g_maptoolExe, ec);
-        auto mt = std::filesystem::last_write_time(g_maptoolExe, ec);
+        auto size = std::filesystem::file_size(utf8Path(g_maptoolExe), ec);
+        auto mt = std::filesystem::last_write_time(utf8Path(g_maptoolExe), ec);
         if (!ec) {
             auto dir = std::filesystem::temp_directory_path(ec);
-            if (!ec) path = (dir / ("quark_maptool_envelope_" + std::to_string(size) + "_" + std::to_string((long long)mt.time_since_epoch().count()) + ".bin")).string();
+            if (!ec) path = (dir / ("quark_maptool_envelope_" + std::to_string(size) + "_" + std::to_string((long long)mt.time_since_epoch().count()) + ".bin")).u8string();
         }
     }
     const uint32_t kMagic = 0x51454E56u;   // "QENV"
     if (!path.empty()) {
-        if (FILE* f = fopen(path.c_str(), "rb")) {
+        if (FILE* f = u8fopen(path, "rb")) {
             MoveEnvelope e;
             uint32_t magic = 0, tiers = 0;
             bool ok = fread(&magic, 4, 1, f) == 1 && magic == kMagic && fread(&tiers, 4, 1, f) == 1 && tiers > 0 && tiers < 64 &&
@@ -47,14 +48,14 @@ MoveEnvelope cachedMoveEnvelope() {
     MoveEnvelope e = computeMoveEnvelope();
     if (!path.empty()) {
         std::string tmp = path + ".tmp" + std::to_string((long long)maptoolNow());
-        if (FILE* f = fopen(tmp.c_str(), "wb")) {
+        if (FILE* f = u8fopen(tmp, "wb")) {
             uint32_t tiers = (uint32_t)e.speed.size();
             fwrite(&kMagic, 4, 1, f); fwrite(&tiers, 4, 1, f); fwrite(&e.buildTime, 4, 1, f);
             envWrite(f, e.speed); envWrite(f, e.runUp);
             for (uint32_t k = 0; k < tiers; k++) { envWrite(f, e.top[k]); envWrite(f, e.apexLevel[k]); envWrite(f, e.pullExit[k]); }
             bool ok = fclose(f) == 0;
-            if (ok) std::filesystem::rename(tmp, path, ec); else ec = std::make_error_code(std::errc::io_error);
-            if (ec) std::filesystem::remove(tmp, ec);
+            if (ok) std::filesystem::rename(utf8Path(tmp), utf8Path(path), ec); else ec = std::make_error_code(std::errc::io_error);
+            if (ec) std::filesystem::remove(utf8Path(tmp), ec);
         }
     }
     return e;

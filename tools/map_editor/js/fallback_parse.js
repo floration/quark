@@ -126,6 +126,7 @@ export function groupBoxes(g, out) {
 const f32 = new Float32Array(1);
 function num(v) {
   f32[0] = v; const x = f32[0];
+  if (x === 0) return Object.is(x, -0) ? "-0" : "0";   // (Map::serialize writes -0 as -0)
   for (let d = 6; d <= 9; d++) { const s = (+x.toPrecision(d)).toString(); f32[0] = +s; if (f32[0] === x) return s; }
   return x.toString();
 }

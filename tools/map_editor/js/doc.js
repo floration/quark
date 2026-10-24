@@ -20,6 +20,7 @@ export const KINDS = {   // selection kind -> map key, and what it is (box: {min
   botstart: { key: "sc.botStarts", shape: "pos", label: "bot start" },
 };
 
+const touchesMap = (step) => step.keys.some(k => !k.startsWith("sc."));
 const clone = (v) => v === undefined ? undefined : structuredClone(v);
 
 export class Doc extends Emitter {
@@ -32,11 +33,12 @@ export class Doc extends Emitter {
   get readOnly() { return this.src === "default"; }
   get dirty() { return this.seq !== this.savedAt; }
 
-  open(map, name, src, sidecar) {
-    this.map = map; this.name = name; this.src = src; this.sidecar = sidecar || {};
+  // fileText: the file's own text (a map saved unedited is written back as that text, byte for byte)
+  open(map, name, src, sidecar, fileText = null) {
+    this.map = map; this.name = name; this.src = src; this.sidecar = sidecar || {}; this.fileText = fileText;
     for (const k of ["figures", "botStarts"]) if (!Array.isArray(this.sidecar[k])) this.sidecar[k] = [];
     this.map.generated = generateParts(this.map);
-    this.sel = []; this.undoStack = []; this.redoStack = []; this.seq = 0; this.savedAt = 0;
+    this.sel = []; this.undoStack = []; this.redoStack = []; this.seq = 0; this.savedAt = 0; this.lostEdits = false;
     this.emit("open"); this.emit("map", null); this.emit("selection"); this.emit("dirty");
   }
   markSaved(name, src) { if (name) this.name = name; if (src) this.src = src; this.savedAt = this.seq; this.emit("dirty"); }
@@ -66,8 +68,11 @@ export class Doc extends Emitter {
       cancel: () => { for (const k of keys) this.put(k, clone(before[k])); this.changed(keys); },
     };
   }
+  // the map itself (not only its sidecar) differs from the file it was opened from
+  get mapEdited() { return this.lostEdits || this.undoStack.some(touchesMap); }
   push(step) {
-    this.undoStack.push(step); if (this.undoStack.length > this.maxUndo) this.undoStack.shift();
+    this.undoStack.push(step);
+    if (this.undoStack.length > this.maxUndo && touchesMap(this.undoStack.shift())) this.lostEdits = true;
     this.redoStack = []; this.seq++; step.seq = this.seq; this.emit("dirty");
   }
   swap(from, to) {

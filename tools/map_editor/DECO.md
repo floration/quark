@@ -125,9 +125,11 @@ boxes that would be taken out red (an InstancedMesh of translucent boxes plus th
 A page that would rather draw it can provide `api.setPreview({add: [boxes], remove: [boxes]} | null)`: when it exists,
 the panel calls it instead and draws nothing. Without either, it calls `api.redraw({preview: {add, remove}})`.
 
-Undo: `setMap` is one step for the map; the sidecar change is not part of the page's undo. After an undo the rules'
-records may name boxes that are no longer there: Remove / Regenerate report them as `missing` and carry on, so the
-next Regenerate puts things right.
+Undo: `setMap` is one step, and a `sidecar.set` in the same task (the panel's apply / remove / delete rule, either
+order) rides on it: one undo restores the map and the `deco` entry together, one redo puts both back. A `sidecar.set`
+with no `setMap` in its task (a parameter, a rule added) marks the map unsaved and is not an undo step. Should the
+records still name boxes that are no longer there (moved or deleted by hand), Remove / Regenerate report them as
+`missing` and carry on, so the next Regenerate puts things right.
 
 ## Tests
 

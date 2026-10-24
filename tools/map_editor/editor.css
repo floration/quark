@@ -37,6 +37,7 @@ code { font: 11px var(--mono); background: var(--panel2); padding: 0 3px; border
 .sep { width: 1px; height: 18px; background: var(--line2); margin: 0 4px; }
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
+html.embed #top .brand { display: none; }   /* ?embed=1: the shell's tab has the title (boot.js) */
 #top { display: flex; align-items: center; gap: 12px; padding: 6px 10px; background: var(--panel); border-bottom: 1px solid var(--line); flex: none; flex-wrap: wrap; }
 .brand { font-size: 13px; letter-spacing: .08em; color: var(--text-dim); white-space: nowrap; }
 .brand b { color: var(--text); letter-spacing: .14em; }
