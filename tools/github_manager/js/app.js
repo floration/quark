@@ -10,6 +10,7 @@ import { history } from './history.js';
 import { editor } from './editor.js';
 import { tests } from './tests.js';
 import { loadNotes, initNotes, openCount, captureFocus, restoreFocus } from './notes.js';
+import { loadEditorData, initGhEdit, waitingChanges } from './ghedit.js';
 import { renderDetail, ITEM_KEYS } from './detail.js';
 import { openLog, closeLog, isLogOpen } from './logview.js';
 import './tip.js';
@@ -135,8 +136,9 @@ function renderTabCounts() {
   set('pulls', String((s.pulls || []).filter((p) => p.state === 'open').length));
   const running = idx.running.length;
   set('runs', running ? `${running} running` : '', running ? 'run' : '');
-  const open = openCount();
-  set('editor', open ? String(open) : '');
+  const open = openCount(), waiting = waitingChanges().length;
+  // queued GitHub changes outrank the note count: they wait for q's Apply
+  set('editor', waiting ? `${waiting} to apply` : open ? String(open) : '', waiting ? 'warn' : '');
 }
 function renderOffline() {
   el.view.className = 'view';
@@ -182,9 +184,9 @@ function onState() {
 // ---- polling: every 15 s while the page is visible, every 60 s while hidden ----
 async function poll() {
   clearTimeout(pollTimer);
-  const [ok, notesChanged] = await Promise.all([loadState(), loadNotes()]);
+  const [ok, notesChanged, editorChanged] = await Promise.all([loadState(), loadNotes(), loadEditorData()]);
   if (ok) {
-    if (!onState() && notesChanged) { redraw(); renderTabCounts(); }
+    if (!onState() && (notesChanged || editorChanged)) { redraw(); renderTabCounts(); }
   } else {
     renderStatus(); renderBanner();
     if (!store.state) renderOffline();
@@ -266,6 +268,11 @@ export { ctx };
 
 // a note was added / changed / deleted (or a form opened): redraw, and fetch the history the change was logged in
 initNotes({
+  onChange() { if (!store.state) return; redraw(); renderTabCounts(); if (store.historyLoaded) ensureHistory(true); },
+  toast,
+});
+// the same for the GitHub editor (structure, rules, pending changes)
+initGhEdit({
   onChange() { if (!store.state) return; redraw(); renderTabCounts(); if (store.historyLoaded) ensureHistory(true); },
   toast,
 });

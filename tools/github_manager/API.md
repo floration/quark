@@ -67,9 +67,13 @@ The local log (`history.jsonl`, append-only, never trimmed): one event per line,
  "type": "run.started" | "run.completed" | "run.failed" | "pr.opened" | "pr.merged" | "pr.closed" | "pr.updated"
          | "branch.created" | "branch.moved" | "branch.deleted" | "tag.created" | "release.published"
          | "local.commit" | "local.moved" | "local.dirty" | "poll.error" | "baseline"
-         | "note.added" | "note.edited" | "note.done" | "note.deleted",
+         | "note.added" | "note.edited" | "note.done" | "note.deleted"
+         | "structure.changed" | "rules.changed"
+         | "github.branch.created" | "github.branch.deleted" | "github.branch.renamed"
+         | "github.ruleset.created" | "github.ruleset.updated" | "github.ruleset.deleted" | "github.apply.failed",
  "ref": {"run": 123} | {"pr": 8} | {"branch": "..."} | {"tag": "..."} | {"local": "working-repo"} | {}
-        | {"note": "n0123456789ab", <its target: "branch" | "pr" | "run" | "commit" | "version" | "local": key>},
+        | {"note": "n0123456789ab", <its target: "branch" | "pr" | "run" | "commit" | "version" | "local": key>}
+        | {"ruleset": 25800001} | {"branch": "...", "ruleset": ...},
  "text": "build-and-release on testing failed (windows-tests)", "data": {...}}
 ```
 - `id` is deterministic (type + object + version), so a restart never appends the same event twice.
@@ -92,6 +96,14 @@ The local log (`history.jsonl`, append-only, never trimmed): one event per line,
   the text changed), `changed` and `rev` (edited / done), `from` (the old target, when moved). `note.done`: the status
   went to done (reopening is a `note.edited`). `note.deleted` is the tombstone: data.note is the whole note. Ids:
   `note.added:<id>`, `note.edited:<id>:<rev>`, `note.done:<id>:<rev>`, `note.deleted:<id>`.
+- `structure.changed` / `rules.changed` (the GitHub editor, below): a local change of the branch roles / descriptions
+  or the agent rules. ref `{"branch": name}` when one branch changed, else `{}`. data: `rev` and what changed (the
+  changed branch entries, `null` = removed; for rules `added`, `edited`, `removed` ids, the new `rules` and the
+  `removedRules`). Ids `structure.changed:<rev>:<digest>`, `rules.changed:<rev>:<digest>`.
+- `github.*`: a pending change applied on GitHub (`github.branch.created` / `deleted` / `renamed`,
+  `github.ruleset.created` / `updated` / `deleted`, id `<type>:<change id>`), or a call GitHub refused
+  (`github.apply.failed`, id `github.apply.failed:<change id>:<at>`). data: change, type, params, before, after, call
+  (method, path, body) and result (or error).
 
 ## GET /api/run?id=<id>
 
@@ -118,12 +130,12 @@ GET (and POST /api/refresh) on `/api/*` answer with `Access-Control-Allow-Origin
 `http://127.0.0.1:<port>` or `http://localhost:<port>` for a port 8765-8768 (the dashboard, docs manager, this tool,
 project manager) or 8775 (the tests editor), and nothing for any other origin (`file://` pages send `Origin: null`,
 which is not allowed). `OPTIONS` preflights get Allow-Methods `GET, POST, PUT, DELETE, OPTIONS` for those origins.
-Requests whose Host header is not 127.0.0.1 / localhost get 403 (DNS rebinding). Note writes are stricter (below).
+Requests whose Host header is not 127.0.0.1 / localhost get 403 (DNS rebinding). Writes (notes and the GitHub editor) are stricter (below).
 
 ## Notes (the Editor tab)
 
-q's notes, kept by the server in `editor/notes.json`. The only thing the page can change; nothing goes to GitHub or
-a working copy.
+q's notes, kept by the server in `editor/notes.json` (and copied to the Claude Documents as `10-github-notes.md`,
+see the GitHub editor below). Nothing goes to GitHub or a working copy.
 ```
 note = {"id": "n0123456789ab", "target": {"kind": "general" | "branch" | "pr" | "run" | "commit" | "version" | "local",
                                            "key": "" | "testing" | "8" | "123" | "<sha>" | "1.18.6" | "working-repo"},
@@ -150,6 +162,149 @@ note = {"id": "n0123456789ab", "target": {"kind": "general" | "branch" | "pr" | 
 - Each change rewrites `editor/notes.json` (temp file + replace; the previous version is kept as `notes.json.bak`)
   and `editor/notes.md`, and appends a `note.*` event to the history. A failed write answers 500 and changes nothing.
 
+## The GitHub editor: structure, rules & limits, pending changes
+
+The rest of the Editor tab. Two kinds of data:
+
+- **Local** (`editor/structure.json`, `editor/rules.json`): branch roles and descriptions, and the agent rules (what
+  every Claude follows). Saved at once; the agent rules and the notes are also written to the Claude Documents
+  (below). Nothing goes to GitHub.
+- **GitHub** (branch create / rename / delete, branch rulesets): never sent when queued. A change goes into
+  `editor/pending.json` with a preview read from GitHub, and is sent only by `POST /api/pending/<id>/apply` (the
+  page's Apply button), with q's own `gh` login.
+
+**The production lock** (only q pushes to production; it can't be turned off, edited or bypassed from the page or
+the API). The server refuses, with 422 and `"locked": true`, when queueing, previewing again and once more right
+before the call to GitHub:
+- any ruleset create / update / delete when the ruleset (before or after the change) targets the default branch
+  (read from `repos/<repo>` every time, never cached), `~DEFAULT_BRANCH`, `~ALL`, or a pattern that could match it
+  (matched conservatively: `*`, `**`, `?` and `[...]` all widen the match; exclude patterns are ignored); any
+  ruleset whose target is not `branch` (tag and push rulesets: `v*` tags); and the rulesets named `production rule`
+  and `tagging rule`;
+- deleting or renaming the default branch, `testing`, `launcher`, `site`, `discord-bot` or `gh-pages` (and renaming
+  a branch to one of those names);
+- any tag change (creating or moving `v*` tags is never offered; a `tag.*` type is refused as locked).
+The agent rule `only-q-production` can't be edited, unlocked or removed (422 locked).
+
+### GET /api/structure
+```
+{"branches": {"<name>": {"role": "work" | "infra" | "other" | null, "description": "markdown", "updatedAt": "..."}},
+ "rev": 4, "updatedAt": "...", "loadError": null,
+ "roles": ["production", "testing", "infra", "work", "other"], "settableRoles": ["work", "infra", "other"],
+ "protectedBranches": ["testing", "launcher", "site", "discord-bot", "gh-pages"], "defaultBranch": "...",
+ "staleDays": 7, "staleRule": "limit-stale-days"}
+```
+The state's branches (/api/state) carry what this sets: `role` (production / testing from the repository, else q's
+role or the one the name gives), `roleSet` (q set it), `description`, `kind` (the Branches tab's kind: `claude` for
+work) and `stale`: a work / other branch, not protected, with no commit in `staleDays` days (the limit rule
+`limit-stale-days`) that is merged into testing (nothing ahead) or behind it.
+
+`PUT /api/structure` `{"branches": {"<name>": {"role", "description"} | null}, "rev"?}` merges those entries (null
+removes one; at most 100 per call, 2000 in all; description at most 2000 bytes). The role of testing and the default
+branch can't be set. With `rev`, a structure changed since answers 409. -> 200 with the GET body.
+
+### GET /api/rules
+```
+{"rules": [rule...], "rev": 7, "updatedAt": "...", "loadError": null,
+ "kinds": ["push", "merge", "version", "ci", "limit", "other"], "scopes": ["all", "branch", "tool"],
+ "hardRule": "only-q-production", "defaultBranch": "...", "limits": {"rules": 200, "titleBytes": 200, "textBytes": 4000},
+ "docsSync": {"enabled": true, "state": "idle" | "waiting" | "syncing" | "ok" | "failed" | "off", "offReason": null,
+              "repo": "floration/quark-claude-docs", "branch": "main", "files": [...], "dueAt": null,
+              "lastOk": "...", "lastCommit": "<sha>", "lastAttempt": "...", "lastError": null}}
+rule = {"id": "limit-open-prs-per-thread", "title": "...", "text": "markdown",
+        "scope": {"type": "all" | "branch" | "tool", "match": "" | "<branch pattern>" | "<tool>"},
+        "kind": "push" | "merge" | "version" | "ci" | "limit" | "other",
+        "value": 1 | null, "unit": "PRs" | "", "locked": false, "updatedAt": "..."}
+```
+Seeded on the first start with the rules as they stand (the production rule first, then pushing / merging /
+versions / CI rules and three limits: `limit-open-prs-per-thread`, `limit-stale-days`, `limit-ci-job-minutes`).
+A limit has a numeric `value` (0-100000); other kinds have `value: null`. `locked` on other rules is q's mark
+("agents never change it or work around it"); the page asks before changing one.
+
+`PUT /api/rules` `{"rules": [rule...], "rev"?}` replaces the whole list (`updatedAt` is ignored and set by the
+server; ids `[a-z0-9-]`, unique; at most 200 rules, title 200 and text 4000 bytes, body at most 256 KB). The
+production rule must stay exactly as it is (422 locked otherwise). With `rev`, rules changed since answer 409.
+-> 200 with the GET body; a `rules.changed` event.
+
+### GET /api/pending
+```
+{"changes": [change...], "waiting": 3, "protectedBranches": [...], "defaultBranch": "...", "loadError": null}
+change = {"id": "c0123456789ab",
+          "type": "branch.create" | "branch.delete" | "branch.rename"
+                  | "ruleset.create" | "ruleset.update" | "ruleset.delete",
+          "params": {"name", "from"} | {"name"} | {"name", "newName"} | {"form"} | {"id", "form"} | {"id"},
+          "status": "pending" | "applying" | "applied" | "failed" | "stale" | "refused",
+          "summary": "Delete branch claude/x (at bc674fb)", "ref": {"branch": "..."} | {"ruleset": id},
+          "before": {...} | null, "after": {...} | null,    // a ruleset's JSON, or the branch {name, sha, ...}
+          "beforeText": "...", "afterText": "...",           // one sentence each
+          "diff": ["--- before", "+++ after", "@@ ...", " ...", "+...", "-..."],   // rulesets: unified JSON diff
+          "warnings": ["1 commit on claude/x is not in testing: ..."],          // unmerged commits, open PRs
+          "basis": {...},             // what GitHub said at preview time; apply compares it again
+          "call": {"method": "DELETE", "path": "repos/o/r/git/refs/heads/x", "body": null | {...}},
+          "command": "gh api -i --method DELETE -H ... repos/o/r/git/refs/heads/x",
+          "previewHash": "16 hex", "createdAt": "...", "previewedAt": "...",
+          "result": null | {"ok": true, "at": "...", "httpStatus": 201, "sha" | "rulesetId" | "url" | "name": ...}
+                         | {"ok": false, "at": "...", "error": "HTTP 422: ...", "httpStatus": 422, "locked"?: true}}
+```
+- `POST /api/pending` `{"type", "params"}` reads GitHub, checks the lock, builds the preview -> 201 `{"change"}`.
+  Branch names are validated strictly (`refs/heads/` and `origin/` are dropped); `from` is a branch or a 7-40 hex
+  sha (default `testing`). A ruleset `form` = `{name, enforcement: active|disabled, include: [1-20 patterns],
+  exclude: [<=20], blockForcePush, blockDeletion, linearHistory, requirePr, approvals: 0-10, requiredChecks: [<=50
+  names], strictChecks, adminBypass}`; rule types and bypass actors the form doesn't show are kept from the ruleset
+  as it is. 409: the same change is already waiting, 100 are waiting, or the preview found a problem (the branch is
+  gone, the name is taken, ...). 422: the lock. 502: GitHub could not be read.
+- `DELETE /api/pending/<id>` (no fields) -> `{"discarded": id}`: nothing is sent to GitHub. Applied changes stay in
+  the list (the last 30) until discarded ("Clear").
+- `POST /api/pending/<id>/preview` (no fields) reads GitHub again and rebuilds the preview; the status goes back to
+  pending -> `{"change"}`.
+- `POST /api/pending/<id>/apply` `{"previewHash"?}`: with the hash the page showed, a change previewed again since
+  answers 409 untouched. The server then reads the default branch and the target again, checks the lock again,
+  rebuilds the call from `params` (never from the file) and compares it and the basis with the preview: a
+  difference -> status `stale`, 409, error "changed on GitHub since preview, review again: <what changed>". Then
+  `gh api -i --method <M> -H Accept -H X-GitHub-Api-Version <path> --input -` (the body on stdin). -> 200 applied,
+  409 stale, 422 refused (`"locked": true`), 502 failed (GitHub's status and message, e.g. `HTTP 422: Repository
+  rule violations found; Cannot delete this branch`); each `{"change", "error"?, "locked"?}`. Applied: a `github.*`
+  event, the next poll runs at once and the rulesets are read again.
+- `POST /api/pending/apply-all` (no fields) applies every `pending` change in order, stopping at the first one that
+  isn't applied -> `{"results": [change...], "stoppedAt": id | null, "applied": n}`.
+
+### GET /api/github/rulesets[?fresh=1]
+
+The repository's rulesets, read from GitHub (with ETags) at most once a minute unless `fresh=1`:
+```
+{"rulesets": [{"id", "name", "target": "branch" | "tag" | "push", "enforcement", "sourceType", "createdAt",
+               "updatedAt", "url", "ruleset": {normalized JSON}, "summary": ["blocks deletion", ...],
+               "applies": "testing, claude/*", "locked": true, "lockReasons": ["..."],
+               "form": null | {the form above}, "otherRules": ["update", ...], "currentUserCanBypass": "..."}],
+ "defaultBranch": "...", "checks": ["meta", "linux", ...],   // job names of the recent runs + checks already required
+ "fetchedAt": "...", "error": null | "text", "lockedNames": ["production rule", "tagging rule"],
+ "protectedBranches": [...]}
+```
+A locked ruleset has `form: null` and says why (it targets the default branch, it is a tag ruleset, its name is
+locked, it belongs to the organization).
+
+### Writes
+
+Every editor write (`PUT /api/structure`, `PUT /api/rules`, `POST /api/pending`, `DELETE /api/pending/<id>`,
+`POST /api/pending/<id>/preview|apply`, `POST /api/pending/apply-all`) has the same checks as the note writes: the
+Origin (or Referer) is this page or the Supervisor Board's 8768 (403), `Content-Type: application/json` (415), valid
+JSON (400), at most 64 KB (256 KB for the structure and the rules; 413), only the fields above (400). Errors are
+`{"error": "text"}` plus `"locked": true` for the lock and `"change"` when there is one. A file that can't be
+written answers 500 and changes nothing.
+
+### The Claude Documents copy
+
+When the agent rules or the notes change, the server writes three files into its own clone of the private repo
+floration/quark-claude-docs (branch main, folder `claude-docs/`, cloned with `gh repo clone` and pushed with gh's
+credential helper): `09-github-rules.md` (the rules as markdown, with the header "Generated by the GitHub Manager;
+edit there, not here"), `github-rules.json` (`{"generatedBy", "note", "repo", "defaultBranch", "rev", "updatedAt", "rules": [...]}`) and
+`10-github-notes.md`. 10 s after the last change (a burst is one commit), and 30 s after a start when the files
+differ from what was last pushed: fetch, reset the clone to origin/main, write, commit "GitHub Manager:
+rules/notes updated", push; a rejected push is retried once after `git pull --rebase`. Nothing else in that repo is
+touched. A failure shows in `docsSync` (above), in the page and in `poll.warnings`, and is retried on the next
+change; it never stops the server. Off with `GHM_DOCS_SYNC=off`, `"claudeDocs": false`, or a repo other than
+floration/quark without `claudeDocsRepo`.
+
 
 ## GET /api/log?run=<id>&job=<id>
 
@@ -168,6 +323,9 @@ waits for a poll already running. Read-only toward GitHub and the repositories.
 - `cache/github.json`: the same object as /api/state minus `local`, rewritten every poll (the Claude Documents manager reads it).
 - `editor/notes.json` (`{"version": 1, "notes": [note...]}`), `editor/notes.json.bak` (the version before the last
   change), `editor/notes.md` (the same notes as markdown, grouped by target, for other tools and agents).
+- `editor/structure.json`, `editor/rules.json`, `editor/pending.json` (each with a `.bak` of the version before the
+  last change), `editor/docs-sync.json` (what was last pushed to the Claude Documents: digest, lastOk, lastCommit).
+- `claude-docs/`: the clone of floration/quark-claude-docs the Claude Documents copy is written in (never served).
 - `history.jsonl`: the event log. `state-prev.json`: last state, for diffing. `logs/<run>/<job>.txt`: job logs.
 - `mirror.git`: its own bare mirror of the repo (`git init --bare` with origin's branches as `refs/heads/*` and tags as
   `refs/tags/*`, `git fetch --prune` each poll; not `clone --mirror`, whose `+refs/*:refs/*` prune would delete the
@@ -182,7 +340,9 @@ waits for a poll already running. Read-only toward GitHub and the repositories.
 
 `#tab=overview|branches|local|pulls|runs|history|editor|tests`, `#pr=N`, `#branch=<name>`, `#run=<id>`,
 `#commit=<sha>`, `#version=<X.Y.Z>`, `#local=<name>`; the Editor: `#tab=editor&note=<id>` (shows and highlights that
-note), `&kind=general|branch|pr|run|commit|version|local`, `&status=open|done|all`, `&q=<text>`.
+note), `&kind=general|branch|pr|run|commit|version|local`, `&status=open|done|all`, `&q=<text>`; its sections
+`#tab=editor&sec=notes|structure|rules|pending` (Rules: `&rkind=all|push|merge|version|ci|limit|other`, `&q=`). The
+Branches tab's `&kind=` also takes `stale`.
 
 The Tests tab embeds the tests editor, `http://127.0.0.1:8775/?embed=1` (made only when the tab opens; when 8775
 doesn't answer within 1.5 s it says so). Each job of a run (the run's drawer) and each failed job on a run row links to

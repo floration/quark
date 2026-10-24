@@ -5,7 +5,7 @@ import {
   localChip, runBadge, badge, aheadBehind, RUNNING, ms, elapsed, short,
 } from './util.js';
 import { runRow, prState, checksBadge, eventRow, eventsFor, runOutcome, jobsOf, testsLink } from './parts.js';
-import { notesBlock } from './notes.js';
+import { notesBlock, md } from './notes.js';
 import { localCard } from './local.js';
 
 export const ITEM_KEYS = ['run', 'pr', 'branch', 'commit', 'version', 'local'];
@@ -90,6 +90,8 @@ function branchDetail(name) {
       <dt>vs testing</dt><dd>${b.kind === 'testing' ? html`<span class="muted">this is testing</span>` : aheadBehind(b.ahead, b.behind)}</dd>
       <dt>Last CI</dt><dd>${b.lastRun ? html`${runBadge(b.lastRun)} <a href="#run=${b.lastRun.id}">${runOutcome(b.lastRun)}</a>` : html`<span class="muted">no runs</span>`}</dd>
       ${locals.length ? html`<dt>On this PC</dt><dd>${locals.map((l) => localChip(l.name))}</dd>` : ''}
+      <dt>Role</dt><dd>${b.role || b.kind}${b.roleSet ? ' (set by you)' : ''}${b.stale ? html` <span class="tag t-warn">stale</span>` : ''} · <a href="#tab=editor&sec=structure">Structure</a></dd>
+      ${b.description ? html`<dt>About</dt><dd class="md">${md(b.description)}</dd>` : ''}
     </dl>` : ''}
     ${notesBlock('branch', name)}
     ${pulls.length ? html`<h3>Pull requests</h3><ul class="rows compact">${pulls.map((p) => html`<li class="row" data-action="row" data-href="#pr=${p.number}" tabindex="0"><div class="r-main">${prState(p)} ${prChip(p.number, p.title)} <a class="r-title" href="#pr=${p.number}">${p.title}</a></div><div class="r-meta">${p.state === 'open' ? checksBadge(p) : ''} <span class="muted">into ${p.base} · ${relOnly(p.updatedAt)}</span></div></li>`)}</ul>` : ''}

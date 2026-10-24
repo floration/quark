@@ -6,12 +6,13 @@ import { noteBadge } from './notes.js';
 import { filterState, search, select, segmented, bind } from './filters.js';
 
 let fs;
-const KINDS = [['all', 'All'], ['claude', 'Work (claude/*)'], ['main', 'Testing + production'], ['infra', 'Infra'], ['other', 'Other']];
+const KINDS = [['all', 'All'], ['claude', 'Work (claude/*)'], ['main', 'Testing + production'], ['infra', 'Infra'], ['other', 'Other'], ['stale', 'Stale']];
 const KIND_LABEL = { production: 'production', testing: 'testing', claude: 'work', infra: 'infra', other: 'other' };
 
 function want(b, st) {
   if (st.kind === 'main' && !(b.kind === 'production' || b.kind === 'testing')) return false;
-  if (!['all', 'main'].includes(st.kind) && b.kind !== st.kind) return false;
+  if (st.kind === 'stale' && !b.stale) return false;
+  if (!['all', 'main', 'stale'].includes(st.kind) && b.kind !== st.kind) return false;
   const s = runState(b.lastRun);
   if (st.ci === 'failing' && !['failure', 'timed_out', 'startup_failure'].includes(s)) return false;
   if (st.ci === 'running' && !(s === 'running' || s === 'queued')) return false;
@@ -47,7 +48,7 @@ export const branches = {
     const row = (b) => {
       const p = b.pr != null ? store.idx.pulls.get(String(b.pr)) : null;
       return html`<tr class="k-${b.kind}" data-action="row" data-href="#branch=${enc(b.name)}" tabindex="0">
-        <td class="b-name"><span class="lane-tag k-${b.kind}">${KIND_LABEL[b.kind] || b.kind}</span> <a href="#branch=${enc(b.name)}" class="bn">${b.name}</a>${ghLink(b.url, 'Open the branch on GitHub')}${noteBadge('branch', b.name, `#branch=${enc(b.name)}`)}<span class="b-sub muted small" title="${b.subject}">${commitChip(b.sha)} ${b.subject}</span></td>
+        <td class="b-name"><span class="lane-tag k-${b.kind}" title="${b.roleSet ? 'Role set in the Editor (Structure)' : 'Role by its name'}">${KIND_LABEL[b.kind] || b.kind}</span> <a href="#branch=${enc(b.name)}" class="bn" title="${b.description || b.name}">${b.name}</a>${ghLink(b.url, 'Open the branch on GitHub')}${b.stale ? html` <a class="tag t-warn" href="#tab=editor&sec=structure" title="Stale: no recent commit, merged into or behind testing (see Editor, Structure)">stale</a>` : ''}${noteBadge('branch', b.name, `#branch=${enc(b.name)}`)}<span class="b-sub muted small" title="${b.subject}">${commitChip(b.sha)} ${b.subject}</span></td>
         <td class="b-head"><span class="subj" title="${b.subject}">${b.subject}</span><span class="muted small">${commitChip(b.sha)} ${b.author}</span></td>
         <td class="b-age nowrap">${relOnly(b.date)}</td>
         <td class="b-ab"><span class="ab-text">${b.kind === 'testing' ? html`<span class="muted">the reference</span>` : aheadBehind(b.ahead, b.behind).replace(' of testing', '')}</span>${b.kind === 'testing' ? '' : abBar(b.ahead, b.behind, max)}</td>
@@ -57,7 +58,7 @@ export const branches = {
       </tr>`;
     };
     document.getElementById('br-list').innerHTML = String(html`<section class="card flush">
-      <p class="hint pad">${plural(list.length, 'branch', 'branches')}${list.length !== all.length ? ` of ${all.length}` : ''}. Ahead / behind count commits against <b>testing</b>. Click a row for its runs, PR and history.</p>
+      <p class="hint pad">${plural(list.length, 'branch', 'branches')}${list.length !== all.length ? ` of ${all.length}` : ''}. Ahead / behind count commits against <b>testing</b>. The kind comes from the name, or from the role set in <a href="#tab=editor&sec=structure">Editor → Structure</a>. Click a row for its runs, PR and history.</p>
       ${list.length ? html`<div class="tablewrap"><table class="t branches"><thead><tr><th>Branch</th><th>Head commit</th><th>Age</th><th>vs testing</th><th>PR</th><th>Last CI</th><th></th></tr></thead>
       <tbody>${list.map(row)}</tbody></table></div>` : html`<p class="empty pad">No branches match.</p>`}
     </section>`);

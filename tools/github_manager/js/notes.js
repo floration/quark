@@ -260,15 +260,21 @@ export function notesBlock(kind, key) {
 }
 
 // ---- focus: a redraw replaces the forms; put the caret back where it was ----
+// (also the GitHub editor's forms: <form data-gform> with [data-gf] fields)
 export function captureFocus() {
   const a = document.activeElement;
-  const f = a && a.closest && a.closest('[data-nform]');
-  if (!f || !a.dataset.nf) return null;
-  return { fk: f.dataset.nform, nf: a.dataset.nf, s: a.selectionStart, e: a.selectionEnd, top: a.scrollTop };
+  const f = a && a.closest && a.closest('[data-nform],[data-gform]');
+  if (!f) return null;
+  const g = f.dataset.gform != null, fld = g ? a.dataset.gf : a.dataset.nf;
+  if (!fld || (g && a.dataset.v != null)) return null;
+  let s = null, e = null;
+  try { s = a.selectionStart; e = a.selectionEnd; } catch { /* a number input has no selection */ }
+  return { g, fk: g ? f.dataset.gform : f.dataset.nform, nf: fld, s, e, top: a.scrollTop };
 }
 export function restoreFocus(c) {
   if (!c) return;
-  const f = document.querySelector(`[data-nform="${CSS.escape(c.fk)}"] [data-nf="${c.nf}"]`);
+  const f = c.g ? document.querySelector(`[data-gform="${CSS.escape(c.fk)}"] [data-gf="${CSS.escape(c.nf)}"]`)
+    : document.querySelector(`[data-nform="${CSS.escape(c.fk)}"] [data-nf="${c.nf}"]`);
   if (!f || f === document.activeElement) return;
   f.focus({ preventScroll: true });
   try { if (c.s != null) f.setSelectionRange(c.s, c.e); } catch { /* not a text field */ }

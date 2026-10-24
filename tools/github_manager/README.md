@@ -3,19 +3,51 @@
 A local page that shows where floration/quark stands: production (the latest `vX.Y.Z` tag) and testing (the `testing`
 branch, its VERSION and prerelease, the commits since production), every branch with its PR and last run, the pull
 requests with their checks, the workflow runs with their jobs, failed steps and logs, the owner's local copies
-compared with testing and production, and a history of everything that happened. It is read-only toward GitHub and
-the repositories: it never pushes, never changes a branch and never writes into a working copy. It keeps its own
-history and logs, which GitHub expires.
+compared with testing and production, and a history of everything that happened. It never pushes to the game repo
+and never writes into a working copy; the only GitHub changes it makes are the branch and ruleset changes q queues
+in the Editor and applies there by pressing Apply (below), and the only repo it pushes to is the Claude Documents
+(its copy of the rules and notes). It keeps its own history and logs, which GitHub expires.
 
 Two more tabs:
 
-- **Editor**: q's notes (the first part of the GitHub editor; Structure and Rules are listed as coming next). A note is
+- **Editor**, the GitHub editor, in four sections (left list, `#tab=editor&sec=...`):
+  - **Notes** (below).
+  - **Structure**: the branches grouped by role (production, testing, infra, work `claude/*`, other, stale: no
+    commit in N days, the `limit-stale-days` rule, and merged into or behind testing). Per branch q sets a role and a
+    description (local, `editor/structure.json`); they set the Branches tab's kind and show in the branch's details.
+    Create a branch (from testing, another branch or a sha), rename or delete one (not the default branch, testing,
+    launcher, site, discord-bot or gh-pages; a delete warns about commits not in testing and open PRs): these are
+    GitHub changes, queued in Pending changes.
+  - **Rules & limits**, two kinds, labelled: *Enforced by GitHub*, the repository's branch rulesets (block force
+    push, block deletion, require a PR, required status checks picked from the recent runs' job names, linear
+    history), edited with a form and queued; and *Followed by every Claude*, the agent rules (push / merge / version
+    / CI / limit / other, scoped to all, a branch pattern or a tool), with the limits' values editable inline, saved
+    locally (`editor/rules.json`) at once.
+  - **Pending changes**: each queued GitHub change with its before -> after (a sentence for a branch, the JSON diff
+    for a ruleset), warnings, the exact `gh api` call, and Apply / Preview again / Discard (plus Apply all). Nothing
+    is sent to GitHub before Apply. Right before the call the server reads GitHub again, re-checks the production
+    lock and refuses a change whose preview is out of date ("changed on GitHub since preview, review again"). The
+    result (or GitHub's exact error) stays on the card and goes into the History tab (`github.*` events).
+
+  **The production lock**: only q pushes to production, and the editor can't change that. It refuses any change to
+  a ruleset that targets the default branch (read from GitHub each time) or v* tags (every non-branch ruleset), the
+  rulesets "production rule" and "tagging rule" (shown locked, with why), deleting or renaming the default branch,
+  testing, launcher, site, discord-bot and gh-pages, and any tag change; the agent rule "Only q pushes to
+  production" can't be edited or removed. Checked in the page, when queueing, and again on the server right before
+  each call.
+
+  The agent rules and the notes are also written to the Claude Documents (the private repo
+  floration/quark-claude-docs) as `09-github-rules.md`, `github-rules.json` and `10-github-notes.md`, 10 s after the
+  last change, by the server's own clone (`claude-docs/`) with q's gh login; a failure shows in the page and in the
+  poll warnings and is retried on the next change.
+
+  Notes: a note is
   plain text with a little markdown (paragraphs, lists, `` `code` ``, **bold**, links; everything else is shown as
   typed) about a branch, PR, run, commit, version or local copy, or a general one; it can be pinned, marked done,
   edited and deleted (after a confirm; the deleted note stays in the history). Notes show where their target shows: a
   count on branch / PR / run rows and local-copy cards, all of them with "add note" in that item's details, and the
   pinned ones in a Notes card on the Overview. Every change is a `note.*` event in the History tab. Notes stay on this
-  PC; nothing is sent to GitHub.
+  PC (and in the Claude Documents copy); nothing is sent to GitHub.
 - **Tests**: the separate tests editor (http://127.0.0.1:8775/) embedded, or a line saying it isn't running. A run's
   jobs link to it (`#ci/<workflow file>/<job>?run=<id>`).
 
@@ -45,7 +77,7 @@ Output folder default: `%USERPROFILE%\Desktop\Quark\github-manager`. Nothing ope
   `QUARK_SHELL=1`). `--no-start` only copies (the Quark Project app uses it, then starts and restarts the server
   itself). It never asks anything and is safe to re-run: only files that differ are copied (stale page files are
   removed), and the data already in the folder (`github-manager.json`, `cache\`, `history.jsonl`, `logs\`,
-  `mirror.git`, `editor\`, `server.log`) is never touched. It never stops a running server: when files changed, it
+  `mirror.git`, `editor\`, `claude-docs\`, `server.log`) is never touched. It never stops a running server: when files changed, it
   prints "restart needed" (the running one keeps its old code until it is restarted). What it did goes to
   `install.log`. `--help` prints the options; an unknown option prints a message and exits with code 2 (1: the copy
   failed).
@@ -75,6 +107,9 @@ Written with the defaults on the first start:
   10 minutes and on Refresh.
 - `originUrl` (optional): where the mirror fetches from (default `https://github.com/<repo>.git`; the repo is public, so
   no sign-in is needed for git).
+- `claudeDocs` (optional, default true): `false` turns the Claude Documents copy off (also `GHM_DOCS_SYNC=off` in the
+  environment). `claudeDocsRepo` / `claudeDocsBranch` (default `floration/quark-claude-docs` / `main`): where it goes;
+  with a `repo` other than floration/quark the copy is off unless `claudeDocsRepo` is set.
 
 ## How it polls (light on purpose: the PC also plays the game)
 
@@ -114,6 +149,9 @@ first start's backfill is still downloading). Refresh on the page polls at once 
 - `editor/notes.md`: the same notes as readable markdown, grouped by target (general, then branches, PRs, runs,
   commits, versions, local copies; pinned and open first), rewritten with notes.json, for other tools and agents to
   read. Don't edit it: the next change overwrites it.
+- `editor/structure.json`, `editor/rules.json` (seeded with today's rules on the first start), `editor/pending.json`
+  (each with a `.bak`), `editor/docs-sync.json` (what was last pushed to the Claude Documents), and `claude-docs/`
+  (the clone of the Claude Documents repo it writes into; nothing else in that repo is touched).
 - `logs/<run>/<job>.txt`, `mirror.git/`, `state-prev.json`, `github-manager.json`, `server.log` (+ `.1`-`.3`),
   `install.log`.
 
@@ -122,15 +160,23 @@ Delete `state-prev.json` and `history.jsonl` to start the history again; delete 
 ## API
 
 `GET /api/state?runs=`, `/api/summary`, `/api/run?id=`, `/api/history?since=&limit=`, `/api/log?run=&job=`,
-`/api/notes`, `POST /api/refresh`, and the note writes `POST /api/notes`, `PUT` / `DELETE /api/notes/<id>`; see
+`/api/notes`, `/api/structure`, `/api/rules`, `/api/pending`, `/api/github/rulesets[?fresh=1]`, `POST /api/refresh`,
+the note writes `POST /api/notes`, `PUT` / `DELETE /api/notes/<id>`, and the editor writes `PUT /api/structure`,
+`PUT /api/rules`, `POST /api/pending`, `DELETE /api/pending/<id>`, `POST /api/pending/<id>/preview`,
+`POST /api/pending/<id>/apply`, `POST /api/pending/apply-all`; see
 `API.md` (the contract with the page). The JSON answers carry ETags (304 when nothing changed) and are gzipped when
 the browser asks, each version built once. `/api/*` sends CORS headers for the other local tools on 127.0.0.1 /
-localhost ports 8765-8768 and the tests editor's 8775. Note writes are accepted only from this page's own origin (or
-the Supervisor Board's, which embeds it), as JSON, with known fields and sizes (API.md).
+localhost ports 8765-8768 and the tests editor's 8775. Writes (notes and the editor) are accepted only from this
+page's own origin (or the Supervisor Board's, which embeds it), as JSON, with known fields and sizes (API.md).
 
 ## Source
 
-`server.py` (server, poller, mirror, history, notes), `test_server.py` (`python3 tools/github_manager/test_server.py`:
-the parsers, the history diff, the notes store and its HTTP checks, and an offline end-to-end poll against a local
-repository with canned gh answers), `test/fixture_server.py` (the page on fixtures, with in-memory notes),
+`server.py` (server, poller, mirror, history, notes, the GitHub editor and the Claude Documents copy), `test_server.py`
+(`python3 tools/github_manager/test_server.py`: the parsers, the history diff, the notes store and its HTTP checks, the
+production lock (every refused case), previews and diffs, apply / stale / refused / failed against an in-memory GitHub
+(`test/fake_github.py`), the stale check, rules -> markdown, the Claude Documents copy against a local bare repo with
+a fake gh, the editor endpoints' protections, and an offline end-to-end poll against a local repository with canned
+gh answers; `GHM_LIVE=1 ... LiveRulesets` reads the real repo's rulesets, read-only), `test/fixture_server.py` (the
+page on fixtures, with in-memory notes, structure, rules and pending changes and a fake apply; `--no-editor`,
+`--docs-error`),
 `install.py` / `install.cmd`, `github-manager.cmd`; the page: `index.html`, the CSS and `js/`.

@@ -112,18 +112,24 @@ const TYPE_ICON = {
   'branch.created': '+', 'branch.moved': '→', 'branch.deleted': '−', 'tag.created': '⌖', 'release.published': '★',
   'local.commit': '●', 'local.moved': '→', 'local.dirty': '✎', 'poll.error': '!', baseline: '◎',
   'note.added': '✎', 'note.edited': '✎', 'note.done': '✓', 'note.deleted': '−',
+  'github.branch.created': '+', 'github.branch.deleted': '−', 'github.branch.renamed': '→',
+  'github.ruleset.created': '+', 'github.ruleset.updated': '✎', 'github.ruleset.deleted': '−', 'github.apply.failed': '✕',
+  'rules.changed': '§', 'structure.changed': '≡',
 };
 export const TYPE_GROUPS = [
   { key: 'run', label: 'CI runs' }, { key: 'pr', label: 'Pull requests' }, { key: 'branch', label: 'Branches' },
   { key: 'release', label: 'Tags & releases', types: ['tag', 'release'] }, { key: 'local', label: 'Local copies' }, { key: 'note', label: 'Notes' },
+  { key: 'editor', label: 'Editor & GitHub changes', types: ['github', 'rules', 'structure'] },
   { key: 'poll', label: 'Server', types: ['poll', 'baseline'] },
 ];
 export const groupOf = (type) => {
   const p = (type || '').split('.')[0];
-  return p === 'tag' ? 'release' : p === 'baseline' ? 'poll' : p;
+  return p === 'tag' ? 'release' : p === 'baseline' ? 'poll' : ['github', 'rules', 'structure'].includes(p) ? 'editor' : p;
 };
 function evClass(e) {
-  if (e.type === 'run.failed' || e.type === 'poll.error') return 'bad';
+  if (e.type === 'run.failed' || e.type === 'poll.error' || e.type === 'github.apply.failed') return 'bad';
+  if (e.type.startsWith('github.')) return 'merged';
+  if (e.type === 'rules.changed' || e.type === 'structure.changed') return 'note';
   if (e.type === 'run.completed') return /cancel|skip/.test(e.text) ? 'off' : 'good';
   if (e.type === 'pr.merged' || e.type === 'release.published') return 'merged';
   if (e.type === 'run.started') return 'run';
@@ -139,6 +145,7 @@ export function refChip(ref, type) {
     const t = target.commit ? commitChip(target.commit) : target.version ? versionChip(target.version) : refChip(target);
     return html`${t}${type !== 'note.deleted' ? html` <span class="chip c-note"><a href="#tab=editor&note=${enc(note)}" title="Open the note in the Editor">note</a></span>` : ''}`;
   }
+  if (ref.ruleset != null) return html`<span class="chip c-ruleset"><a href="#tab=editor&sec=rules" title="Ruleset ${ref.ruleset}">ruleset ${ref.ruleset}</a>${ghLink(`https://github.com/${store.state.repo}/rules/${enc(ref.ruleset)}`)}</span>`;
   if (ref.run != null) { const r = store.idx.runs.get(String(ref.run)); return r ? runChip(r) : html`<span class="chip c-run"><a href="#run=${ref.run}">run ${ref.run}</a></span>`; }
   if (ref.pr != null) return prChip(ref.pr);
   if (ref.branch) return branchChip(ref.branch);

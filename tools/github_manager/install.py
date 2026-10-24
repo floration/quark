@@ -2,7 +2,7 @@
 """Copies the GitHub manager (server, launcher, page files) into its output folder, so it runs from there and not
 from a working copy whose branch may change, then starts it there with no window (or, if it is already running,
 opens the page). Data already in the folder (github-manager.json, cache\\, history.jsonl, logs\\, mirror.git,
-editor\\, server.log) is never touched. Non-interactive and safe to re-run: only files that differ are copied. A running
+editor\\, claude-docs\\, server.log) is never touched. Non-interactive and safe to re-run: only files that differ are copied. A running
 server is never stopped: when files changed it keeps its old code, and this prints "restart needed".
 
     python install.py [--dest <folder>] [--no-start]    (default %USERPROFILE%\\Desktop\\Quark\\github-manager)
@@ -25,7 +25,7 @@ import webbrowser
 HERE = os.path.dirname(os.path.abspath(__file__))
 SKIP = {"test", "__pycache__", "install.py", "install.cmd", "test_server.py"}
 DATA = {"github-manager.json", "cache", "logs", "mirror.git", "history.jsonl", "state-prev.json", "server.log",
-        "install.log", "editor"}
+        "install.log", "editor", "claude-docs"}
 WIN = os.name == "nt"
 PORT = 8767
 

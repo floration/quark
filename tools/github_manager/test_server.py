@@ -16,12 +16,16 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
 
+os.environ["GHM_DOCS_SYNC"] = "off"  # no Manager made here ever pushes to the real Claude Documents
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "test"))
 import server as S  # noqa: E402
+from fake_github import MemoryGitHub, testing_guard, sha_of, PRODUCTION_RULE, TAGGING_RULE  # noqa: E402
 
 AT0 = "2026-10-24T10:00:00Z"
 AT1 = "2026-10-24T10:01:00Z"
@@ -883,9 +887,9 @@ class FakeGh(S.Proc):
         self.etag_seq = 0
         self.raw_handler = None
 
-    def run(self, args, cwd=None, timeout=90, binary=False):
+    def run(self, args, cwd=None, timeout=90, binary=False, input=None):
         if args[0] != "gh":
-            return S.Proc.run(self, args, cwd=cwd, timeout=timeout, binary=binary)
+            return S.Proc.run(self, args, cwd=cwd, timeout=timeout, binary=binary, input=input)
         path = args[-1]
         self.calls.append(path)
         key = path.split("?")[0]
@@ -1173,6 +1177,814 @@ class EndToEnd(unittest.TestCase):
         finally:
             srv.shutdown()
             srv.server_close()
+
+
+# ---- the editor, part 2: the production lock, previews, pending changes, rules, structure, the docs sync ----------
+
+DEFAULT = "claude/compassionate-ritchie-07ah6i"
+REPO = "floration/quark"
+
+
+def memory_github():
+    gh = MemoryGitHub(REPO, DEFAULT)
+    gh.rulesets[25800001] = testing_guard()
+    for b in (DEFAULT, "testing", "launcher", "site", "discord-bot", "claude/a", "claude/b"):
+        gh.branches[b] = sha_of(b)
+    return gh
+
+
+def guard_form(**kw):
+    f = S.ruleset_form(S.ruleset_norm(testing_guard()))
+    f.update(kw)
+    return f
+
+
+class HardLock(unittest.TestCase):
+    """Every case the production lock refuses, straight and through the pending queue (nothing is queued or sent)."""
+
+    def setUp(self):
+        self.gh = memory_github()
+        self.events = []
+        self.p = S.Pending(None, self.gh, REPO, self.events.extend)
+
+    def refused(self, typ, params, contains):
+        with self.assertRaises(S.LockError) as cm:
+            self.p.queue({"type": typ, "params": params})
+        self.assertEqual(cm.exception.code, 422)
+        self.assertTrue(cm.exception.locked)
+        self.assertIn(contains, str(cm.exception))
+        self.assertEqual(self.p.obj()["changes"], [])
+        self.assertEqual(self.gh.writes, [])
+
+    def test_branches(self):
+        for name in (DEFAULT, "testing", "launcher", "site", "discord-bot", "gh-pages"):
+            self.refused("branch.delete", {"name": name}, "can't be deleted")
+            self.refused("branch.rename", {"name": name, "newName": "x"}, "can't be renamed")
+            self.refused("branch.rename", {"name": "claude/a", "newName": name}, "no branch can be renamed to it")
+            self.refused("branch.create", {"name": name, "from": "claude/a"}, "can't be created")
+        self.refused("branch.delete", {"name": "refs/heads/testing"}, "testing is a protected branch")
+        self.refused("branch.delete", {"name": "origin/" + DEFAULT}, "default (production) branch")
+
+    def test_tags(self):
+        for typ in ("tag.create", "tag.move", "tag.delete"):
+            self.refused(typ, {"name": "v1.18.7", "sha": "ab" * 20}, "only q creates or moves v* tags")
+            self.refused(typ, {"name": "refs/tags/v2.0.0"}, "only q creates or moves v* tags")
+        self.refused("tag.create", {"name": "test-1.18.7-test.3"}, "tags are not changed")
+
+    def test_rulesets_targeting_production(self):
+        for inc in (["~DEFAULT_BRANCH"], ["~ALL"], ["claude/*"], ["refs/heads/" + DEFAULT], ["claude/compassionate*"],
+                    ["**"], ["*"], ["claude/compassionate-ritchie-07ah6?"], ["claude/[c]ompassionate-ritchie-07ah6i"],
+                    ["testing", "claude/**"]):
+            self.refused("ruleset.create", {"form": guard_form(name="n", include=inc)}, "the ruleset as it would be")
+            self.refused("ruleset.update", {"id": 25800001, "form": guard_form(include=inc)}, "matches the default"
+                         if inc[-1] not in ("~DEFAULT_BRANCH", "~ALL") else "targets")
+        # excluding the default branch does not make a wide pattern acceptable
+        self.refused("ruleset.create", {"form": guard_form(name="n", include=["~ALL"], exclude=["~DEFAULT_BRANCH"])},
+                     "every branch")
+        # the locked rulesets themselves: production (default branch), tagging (v* tags), by name too
+        self.refused("ruleset.update", {"id": 25727099, "form": guard_form()}, "the ruleset as it is on GitHub")
+        self.refused("ruleset.delete", {"id": 25727099}, "targets the default branch")
+        self.refused("ruleset.delete", {"id": 25727168}, "targets v* tags")
+        self.refused("ruleset.update", {"id": 25727168, "form": guard_form()}, "only q creates or moves")
+        self.gh.rulesets[25727099]["conditions"]["ref_name"]["include"] = ["refs/heads/elsewhere"]
+        self.refused("ruleset.delete", {"id": 25727099}, "'production rule' ruleset guards production")
+        self.refused("ruleset.create", {"form": guard_form(name="Tagging Rule")}, "guards production")
+
+    def test_function_directly(self):
+        lock = lambda *a, **k: self.assertRaises(S.LockError, S.hard_lock, *a, **k)
+        lock("branch.delete", {"name": "claude/a"}, None)   # the default branch is unknown: refuse everything
+        lock("ruleset.create", {}, DEFAULT, after={"target": "push", "conditions": {}})
+        lock("ruleset.create", {}, DEFAULT, after={"target": "tag", "conditions": {"ref_name": {"include": ["v*"]}}})
+        lock("repo.delete", {}, DEFAULT)
+        lock("branch.update", {"name": "claude/a"}, DEFAULT)
+        S.hard_lock("branch.delete", {"name": "claude/a"}, DEFAULT)
+        S.hard_lock("ruleset.create", {}, DEFAULT, after=S.ruleset_from_form(guard_form(include=["claude/project-*"])))
+        self.assertTrue(S.pattern_hits_branch("refs/heads/claude/*", "claude/x/y"))   # wider than GitHub: on purpose
+        self.assertFalse(S.pattern_hits_branch("refs/heads/testing", DEFAULT))
+
+    def test_apply_rechecks_the_lock_with_the_default_branch_read_then(self):
+        ch = self.p.queue({"type": "branch.delete", "params": {"name": "claude/b"}})
+        self.gh.default = "claude/b"   # q made claude/b the default branch after the preview
+        out = self.p.apply(ch["id"], {"previewHash": ch["previewHash"]})
+        self.assertEqual(out["status"], "refused")
+        self.assertTrue(out["result"]["locked"])
+        self.assertIn("default (production) branch", out["result"]["error"])
+        self.assertEqual(self.gh.writes, [])
+        # a ruleset that became locked on GitHub since the preview is refused too
+        self.gh.default = DEFAULT
+        ch = self.p.queue({"type": "ruleset.update", "params": {"id": 25800001, "form": guard_form(requirePr=True)}})
+        self.gh.rulesets[25800001]["conditions"]["ref_name"]["include"].append("~DEFAULT_BRANCH")
+        out = self.p.apply(ch["id"])
+        self.assertEqual(out["status"], "refused")
+        self.assertEqual(self.gh.writes, [])
+        # a change file edited by hand to send another call: the call is rebuilt from the parameters and refused
+        ch = self.p.queue({"type": "branch.delete", "params": {"name": "claude/a"}})
+        self.p.changes[ch["id"]]["params"] = {"name": "testing"}
+        out = self.p.apply(ch["id"])
+        self.assertEqual(out["status"], "refused")
+        self.assertEqual(self.gh.writes, [])
+
+
+class Previews(unittest.TestCase):
+    def setUp(self):
+        self.gh = memory_github()
+        self.events = []
+        self.p = S.Pending(None, self.gh, REPO, self.events.extend, now=lambda: "2026-10-24T12:00:00Z")
+
+    def test_branch_previews(self):
+        ch = self.p.queue({"type": "branch.create", "params": {"name": "claude/new", "from": "testing"}})
+        t = sha_of("testing")
+        self.assertEqual(ch["summary"], "Create branch claude/new from testing (%s)" % t[:7])
+        self.assertEqual(ch["call"], {"method": "POST", "path": "repos/%s/git/refs" % REPO,
+                                      "body": {"ref": "refs/heads/claude/new", "sha": t}})
+        self.assertEqual(ch["command"], 'gh api -i --method POST -H "Accept: application/vnd.github+json" '
+                                        '-H "X-GitHub-Api-Version: 2022-11-28" repos/%s/git/refs --input -' % REPO)
+        self.assertEqual(ch["basis"], {"defaultBranch": DEFAULT, "exists": False, "fromSha": t})
+        self.assertEqual((ch["beforeText"], ch["status"]), ("No branch claude/new on GitHub.", "pending"))
+        ch = self.p.queue({"type": "branch.create", "params": {"name": "claude/from-sha", "from": t[:10].upper()}})
+        self.assertEqual(ch["call"]["body"]["sha"], t)
+        self.gh.ahead[sha_of("claude/a")] = 3
+        self.gh.pulls.append({"number": 12, "head": "claude/a"})
+        ch = self.p.queue({"type": "branch.delete", "params": {"name": "claude/a"}})
+        self.assertIn("3 commits not in testing; open PR #12", ch["beforeText"])
+        self.assertEqual(len(ch["warnings"]), 2)
+        self.assertIn("deleting the branch closes it", ch["warnings"][1])
+        self.assertEqual(ch["call"], {"method": "DELETE", "path": "repos/%s/git/refs/heads/claude/a" % REPO,
+                                      "body": None})
+        ch = self.p.queue({"type": "branch.rename", "params": {"name": "claude/b", "newName": "claude/b2"}})
+        self.assertEqual(ch["call"]["body"], {"new_name": "claude/b2"})
+        for bad, code, text in (({"name": "claude/a", "from": "testing"}, 409, "already exists"),
+                                ({"name": "claude/c", "from": "nope"}, 409, "no branch nope"),
+                                ({"name": "claude/c", "from": "abcdef1234"}, 409, "no commit"),
+                                ({"name": "bad name", "from": "testing"}, 400, "not a valid branch name"),
+                                ({"name": "x/../y", "from": "testing"}, 400, "not a valid branch name"),
+                                ({"name": "claude/c", "x": 1}, 400, "unknown field")):
+            with self.assertRaises(S.EditError) as cm:
+                self.p.queue({"type": "branch.create", "params": bad})
+            self.assertEqual(cm.exception.code, code, bad)
+            self.assertIn(text, str(cm.exception))
+        with self.assertRaises(S.EditError) as cm:
+            self.p.queue({"type": "branch.create", "params": {"name": "claude/new", "from": "testing"}})
+        self.assertIn("already queued", str(cm.exception))
+
+    def test_ruleset_previews(self):
+        form = guard_form(requirePr=True, approvals=1, requiredChecks=["meta", "linux"], strictChecks=True,
+                          linearHistory=True)
+        ch = self.p.queue({"type": "ruleset.update", "params": {"id": 25800001, "form": form}})
+        self.assertEqual(ch["call"]["method"], "PUT")
+        self.assertEqual(ch["call"]["path"], "repos/%s/rulesets/25800001" % REPO)
+        self.assertEqual(ch["before"], S.ruleset_norm(testing_guard()))
+        self.assertEqual(ch["after"], ch["call"]["body"])
+        self.assertTrue(ch["diff"][0].startswith("@@"))
+        added = [l for l in ch["diff"] if l.startswith("+")]
+        self.assertTrue(any('"type": "pull_request"' in l for l in added))
+        self.assertTrue(any('"context": "meta"' in l for l in added))
+        self.assertTrue(any('"type": "required_linear_history"' in l for l in added))
+        self.assertFalse([l for l in ch["diff"] if l.startswith("-")])
+        self.assertIn("requires a PR (1 approval)", ch["afterText"])
+        self.assertIn("requires checks: meta, linux (up to date)", ch["afterText"])
+        # nothing to change; a name that is taken; a form with an unknown field
+        for body, text in (({"type": "ruleset.update", "params": {"id": 25800001, "form": guard_form()}},
+                            "nothing would change"),
+                           ({"type": "ruleset.create", "params": {"form": guard_form()}}, "already exists"),
+                           ({"type": "ruleset.create", "params": {"form": dict(guard_form(name="n"), target="tag")}},
+                            "unknown field"),
+                           ({"type": "ruleset.create", "params": {"form": guard_form(name="n", blockForcePush=False,
+                                                                                     blockDeletion=False)}},
+                            "at least one rule"),
+                           ({"type": "ruleset.create", "params": {"form": guard_form(name="n",
+                                                                                     enforcement="evaluate")}},
+                            "active or disabled"),
+                           ({"type": "ruleset.update", "params": {"id": 99, "form": guard_form()}}, "no ruleset 99")):
+            with self.assertRaises(S.EditError) as cm:
+                self.p.queue(body)
+            self.assertIn(text, str(cm.exception))
+        ch = self.p.queue({"type": "ruleset.create", "params": {"form": guard_form(name="work branches",
+                                                                                   include=["claude/project-*"])}})
+        self.assertEqual(ch["before"], None)
+        self.assertTrue(all(l.startswith(("+", "@@")) for l in ch["diff"]))
+        self.assertEqual(ch["after"]["conditions"]["ref_name"]["include"], ["refs/heads/claude/project-*"])
+        ch = self.p.queue({"type": "ruleset.delete", "params": {"id": 25800001}})
+        self.assertEqual(ch["after"], None)
+        self.assertTrue(all(l.startswith(("-", "@@")) for l in ch["diff"]))
+        self.assertEqual(ch["summary"], "Delete ruleset 'testing guard' (testing)")
+
+    def test_form_keeps_what_it_does_not_show(self):
+        rs = testing_guard()
+        rs["rules"].append({"type": "required_signatures"})
+        rs["bypass_actors"] = [{"actor_id": 7, "actor_type": "Team", "bypass_mode": "pull_request"}]
+        n = S.ruleset_norm(rs)
+        f = S.ruleset_form(n)
+        self.assertEqual(S.ruleset_from_form(f, n), n)   # a round trip changes nothing
+        after = S.ruleset_from_form(dict(f, adminBypass=True, requirePr=True), n)
+        self.assertIn({"type": "required_signatures"}, after["rules"])
+        self.assertEqual(len(after["bypass_actors"]), 2)
+        self.assertIn(S.ADMIN_BYPASS, after["bypass_actors"])
+        # GitHub hides bypass_actors from non-admins: then the PUT leaves them alone
+        rs.pop("bypass_actors")
+        self.assertNotIn("bypass_actors", S.ruleset_from_form(f, S.ruleset_norm(rs)))
+        self.assertEqual(S.json_diff(n, n), [])
+
+    def test_gh_write_error_is_exact(self):
+        body = json.dumps({"message": "Validation Failed", "errors": ["Invalid rule 'pull_request'",
+                                                                      {"resource": "Ruleset", "code": "invalid"}]})
+        self.assertEqual(S.gh_write_error(422, body, "gh: Validation Failed (HTTP 422)"),
+                         "HTTP 422: Validation Failed; Invalid rule 'pull_request'; code=invalid, resource=Ruleset")
+        self.assertEqual(S.gh_write_error(None, "", "error connecting to api.github.com\nmore"),
+                         "HTTP ?: error connecting to api.github.com")
+
+
+class ApplyAndStale(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="ghm-pending-")
+        self.gh = memory_github()
+        self.events = []
+        self.applied = []
+        self.p = S.Pending(self.dir, self.gh, REPO, self.events.extend, on_applied=self.applied.append)
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_apply_ok_events_and_file(self):
+        ch = self.p.queue({"type": "branch.create", "params": {"name": "claude/new", "from": "claude/a"}})
+        out = self.p.apply(ch["id"], {"previewHash": ch["previewHash"]})
+        self.assertEqual(out["status"], "applied")
+        self.assertTrue(out["result"]["ok"])
+        self.assertEqual(self.gh.branches["claude/new"], sha_of("claude/a"))
+        self.assertEqual(self.gh.writes, [("POST", "repos/%s/git/refs" % REPO,
+                                           {"ref": "refs/heads/claude/new", "sha": sha_of("claude/a")})])
+        self.assertEqual(types(self.events), ["github.branch.created"])
+        self.assertEqual(self.events[0]["ref"], {"branch": "claude/new"})
+        self.assertTrue(self.events[0]["text"].startswith("Created branch claude/new from claude/a"))
+        self.assertEqual(len(self.applied), 1)
+        with self.assertRaises(S.EditError) as cm:
+            self.p.apply(ch["id"])
+        self.assertIn("applied already", str(cm.exception))
+        # the file: reloaded with the result, applied ones kept until discarded
+        p2 = S.Pending(self.dir, self.gh, REPO)
+        self.assertEqual(p2.get(ch["id"])["status"], "applied")
+        self.assertEqual(p2.discard(ch["id"]), ch["id"])
+        self.assertEqual(S.Pending(self.dir, self.gh, REPO).obj()["changes"], [])
+        # rulesets: create, update, delete
+        ch = self.p.queue({"type": "ruleset.create", "params": {"form": guard_form(name="work", include=["claude/b"])}})
+        out = self.p.apply(ch["id"])
+        rid = out["result"]["rulesetId"]
+        self.assertEqual(self.gh.rulesets[rid]["name"], "work")
+        ch = self.p.queue({"type": "ruleset.update", "params": {"id": rid, "form": guard_form(
+            name="work", include=["claude/b"], linearHistory=True)}})
+        self.assertEqual(self.p.apply(ch["id"])["status"], "applied")
+        ch = self.p.queue({"type": "ruleset.delete", "params": {"id": rid}})
+        self.assertEqual(self.p.apply(ch["id"])["status"], "applied")
+        self.assertNotIn(rid, self.gh.rulesets)
+        self.assertEqual(types(self.events), ["github.branch.created", "github.ruleset.created",
+                                              "github.ruleset.updated", "github.ruleset.deleted"])
+        self.assertEqual(self.events[1]["ref"], {"ruleset": rid})
+
+    def test_stale_before_apply(self):
+        ch = self.p.queue({"type": "branch.delete", "params": {"name": "claude/a"}})
+        self.gh.branches["claude/a"] = sha_of("someone pushed")
+        out = self.p.apply(ch["id"], {"previewHash": ch["previewHash"]})
+        self.assertEqual(out["status"], "stale")
+        self.assertIn(S.STALE_MSG, out["result"]["error"])
+        self.assertIn("the branch moved from", out["result"]["error"])
+        self.assertEqual(self.gh.writes, [])
+        self.assertIn("claude/a", self.gh.branches)
+        # a PR opened since the preview is a change too
+        self.gh.pulls.append({"number": 20, "head": "claude/a"})
+        out = self.p.repreview(ch["id"])
+        self.assertEqual(out["status"], "pending")
+        self.assertNotEqual(out["previewHash"], ch["previewHash"])
+        # the page still shows the first preview: its hash no longer matches
+        with self.assertRaises(S.EditError) as cm:
+            self.p.apply(ch["id"], {"previewHash": ch["previewHash"]})
+        self.assertEqual(cm.exception.code, 409)
+        self.assertIn("previewed again", str(cm.exception))
+        self.gh.pulls.append({"number": 21, "head": "claude/a"})
+        out = self.p.apply(ch["id"], {"previewHash": out["previewHash"]})
+        self.assertEqual(out["status"], "stale")
+        self.assertIn("open PRs are now #20, #21 (were #20)", out["result"]["error"])
+        # a ruleset changed on GitHub since the preview
+        ch = self.p.queue({"type": "ruleset.update", "params": {"id": 25800001, "form": guard_form(linearHistory=True)}})
+        self.gh.rulesets[25800001]["rules"].append({"type": "required_signatures"})
+        out = self.p.apply(ch["id"])
+        self.assertEqual(out["status"], "stale")
+        self.assertIn("the ruleset was changed on GitHub", out["result"]["error"])
+        # created elsewhere in between
+        ch = self.p.queue({"type": "branch.create", "params": {"name": "claude/c", "from": "testing"}})
+        self.gh.branches["claude/c"] = sha_of("x")
+        self.assertIn("the branch exists now", self.p.apply(ch["id"])["result"]["error"])
+        # the default branch moved
+        ch = self.p.queue({"type": "ruleset.create", "params": {"form": guard_form(name="w", include=["claude/b"])}})
+        self.gh.default = "testing"
+        self.assertIn("the default branch is now testing", self.p.apply(ch["id"])["result"]["error"])
+        self.assertEqual(self.gh.writes, [])
+        self.assertEqual(self.events, [])
+
+    def test_apply_errors_and_apply_all(self):
+        a = self.p.queue({"type": "branch.delete", "params": {"name": "claude/a"}})
+        b = self.p.queue({"type": "branch.delete", "params": {"name": "claude/b"}})
+        c = self.p.queue({"type": "branch.create", "params": {"name": "claude/c", "from": "testing"}})
+        self.gh.fail_next = (422, "Validation Failed", ["Reference update failed"])
+        res = self.p.apply_all()
+        self.assertEqual((res["applied"], res["stoppedAt"]), (0, a["id"]))
+        failed = self.p.get(a["id"])
+        self.assertEqual(failed["status"], "failed")
+        self.assertEqual(failed["result"]["error"], "HTTP 422: Validation Failed; Reference update failed")
+        self.assertEqual(failed["result"]["httpStatus"], 422)
+        self.assertEqual(types(self.events), ["github.apply.failed"])
+        self.assertIn("Reference update failed", self.events[0]["text"])
+        self.assertEqual(self.p.get(b["id"])["status"], "pending")
+        # apply-all takes the pending ones; the failed one is applied (again) on its own
+        res = self.p.apply_all({})
+        self.assertEqual((res["applied"], res["stoppedAt"]), (2, None))
+        self.assertEqual(self.p.apply(a["id"])["status"], "applied")
+        self.assertEqual(sorted(self.gh.branches), sorted([DEFAULT, "testing", "launcher", "site", "discord-bot",
+                                                           "claude/c"]))
+        with self.assertRaises(S.EditError):
+            self.p.apply_all({"x": 1})
+        with self.assertRaises(S.EditError):
+            self.p.apply(c["id"], {"confirm": True})
+        # gh missing / GitHub unreachable while reading: failed, with the reason, and nothing sent
+        d = self.p.queue({"type": "branch.delete", "params": {"name": "claude/c"}})
+        self.gh.default = None
+        out = self.p.apply(d["id"])
+        self.assertEqual(out["status"], "failed")
+        self.assertIn("default", out["result"]["error"])
+
+    def test_interrupted_apply_is_failed_on_load(self):
+        ch = self.p.queue({"type": "branch.delete", "params": {"name": "claude/a"}})
+        self.p.changes[ch["id"]]["status"] = "applying"
+        self.p._save()
+        c = S.Pending(self.dir, self.gh, REPO).get(ch["id"])
+        self.assertEqual(c["status"], "failed")
+        self.assertIn("server stopped", c["result"]["error"])
+
+
+class RulesStore(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="ghm-rules-")
+        self.events = []
+        self.t = iter("2026-10-24T10:%02d:00Z" % i for i in range(60))
+        self.r = S.Rules(self.dir, self.events.extend, now=lambda: next(self.t))
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def rules(self):
+        return [dict(x) for x in self.r.obj()["rules"]]
+
+    def test_seed_and_limits(self):
+        ids = [x["id"] for x in self.rules()]
+        self.assertEqual(ids[0], S.HARD_RULE_ID)
+        for want in ("claude-pushes-non-production", "testing-version-bump", "sanitizers-final-only", "ci-scope",
+                     "sync-pc-copies", "never-launch-quark-exe", "macos-skip-retry", "limit-open-prs-per-thread",
+                     S.STALE_RULE_ID, "limit-ci-job-minutes"):
+            self.assertIn(want, ids)
+        self.assertTrue(self.rules()[0]["locked"])
+        self.assertEqual(self.r.limit(S.STALE_RULE_ID, 99), 7)
+        self.assertTrue(os.path.exists(os.path.join(self.dir, "rules.json")))
+        self.assertEqual(S.Rules(self.dir).obj()["rules"], self.r.obj()["rules"])  # loaded, not seeded again
+
+    def test_edit_add_remove_and_events(self):
+        rs = self.rules()
+        for x in rs:
+            if x["id"] == S.STALE_RULE_ID:
+                x["value"] = 14
+        rs = [x for x in rs if x["id"] != "ci-scope"]
+        rs.append({"title": "No force pushes to testing", "text": "Never force-push testing.", "kind": "push",
+                   "scope": {"type": "branch", "match": "testing"}})
+        out = self.r.replace({"rules": rs, "rev": 1})
+        self.assertEqual(out["rev"], 2)
+        self.assertEqual(self.r.limit(S.STALE_RULE_ID, 0), 14)
+        new = [x for x in out["rules"] if x["title"] == "No force pushes to testing"][0]
+        self.assertEqual(new["id"], "no-force-pushes-to-testing")
+        self.assertEqual(new["value"], None)
+        self.assertEqual(types(self.events), ["rules.changed"])
+        e = self.events[0]
+        self.assertEqual((e["data"]["added"], e["data"]["edited"], e["data"]["removed"]),
+                         (["no-force-pushes-to-testing"], [S.STALE_RULE_ID], ["ci-scope"]))
+        self.assertIn("removed CI runs meta, builds and sanitizers", e["text"])
+        self.assertIn("ci-scope", e["data"]["removedRules"])
+        # the same list again: no write, no event; an old rev: 409
+        self.r.replace({"rules": out["rules"]})
+        self.assertEqual(len(self.events), 1)
+        with self.assertRaises(S.EditError) as cm:
+            self.r.replace({"rules": out["rules"], "rev": 1})
+        self.assertEqual(cm.exception.code, 409)
+        self.assertTrue(os.path.exists(os.path.join(self.dir, "rules.json.bak")))
+        self.assertEqual(S.Rules(self.dir).limit(S.STALE_RULE_ID, 0), 14)
+
+    def test_the_production_rule_is_locked(self):
+        rs = self.rules()
+        for change in ({"text": "Anyone may push to production."}, {"locked": False}, {"kind": "other"},
+                       {"scope": {"type": "branch", "match": "testing"}}, {"title": "x"}):
+            changed = [dict(x, **change) if x["id"] == S.HARD_RULE_ID else x for x in rs]
+            with self.assertRaises(S.LockError):
+                self.r.replace({"rules": changed})
+        with self.assertRaises(S.LockError):
+            self.r.replace({"rules": rs[1:]})
+        self.assertEqual(self.events, [])
+        # moving it is fine, other rules can be locked / unlocked by q
+        rs2 = rs[1:] + rs[:1]
+        rs2[0]["locked"] = True
+        self.r.replace({"rules": rs2})
+        rules = self.r.obj()["rules"]
+        self.assertEqual(rules[-1]["id"], S.HARD_RULE_ID)
+        self.assertTrue(rules[0]["locked"])
+        # and a stored file can't weaken it: the text always comes from the code
+        d = S.read_json(os.path.join(self.dir, "rules.json"))
+        for x in d["rules"]:
+            if x["id"] == S.HARD_RULE_ID:
+                x["text"], x["locked"] = "weakened", False
+        write(os.path.join(self.dir, "rules.json"), json.dumps(d))
+        r = S.Rules(self.dir).obj()["rules"]
+        self.assertEqual(r[0]["text"], S.HARD_RULE["text"])
+        self.assertTrue(r[0]["locked"])
+
+    def test_validation(self):
+        base = self.rules()
+        for bad, text in (({"title": "t", "text": "x", "kind": "limit"}, "needs a value"),
+                          ({"title": "t", "text": "x", "kind": "ci", "value": 3}, "only a limit"),
+                          ({"title": "t", "text": "x", "kind": "nope"}, "kind must be"),
+                          ({"title": "", "text": "x"}, "title can't be empty"),
+                          ({"title": "t", "text": "x", "scope": {"type": "branch"}}, "scope.match can't be empty"),
+                          ({"title": "t", "text": "x", "scope": {"type": "everywhere"}}, "scope.type"),
+                          ({"title": "t", "text": "x", "id": "Bad Id"}, "a rule id"),
+                          ({"title": "t", "text": "x", "x": 1}, "unknown field"),
+                          ({"title": "t", "text": "x" * (S.RULE_TEXT_MAX + 1)}, "text is over"),
+                          ({"title": "t\x07", "text": "x"}, "control character"),
+                          ({"title": "t", "text": "x", "kind": "limit", "value": True}, "needs a value")):
+            with self.assertRaises(S.EditError) as cm:
+                self.r.replace({"rules": base + [bad]})
+            self.assertEqual(cm.exception.code, 400, bad)
+            self.assertIn(text, str(cm.exception))
+        for bad in ({"rules": base, "x": 1}, {"rules": "no"}, [], {"rules": base + [base[1]]}):
+            with self.assertRaises(S.EditError):
+                self.r.replace(bad)
+        self.assertEqual(self.events, [])
+
+    def test_markdown_and_export(self):
+        md = self.r.markdown(REPO, DEFAULT)
+        self.assertTrue(md.startswith("# GitHub rules\n\n> " + S.DOCS_GENERATED))
+        self.assertIn("The default branch (production) is `%s`." % DEFAULT, md)
+        self.assertIn("- **Only q pushes to production** (locked; everywhere; `only-q-production`)", md)
+        self.assertIn("- **Stale branch age**: **7 days** (branch `claude/*`; `limit-stale-days`)", md)
+        self.assertIn("- **Never launch quark.exe on q's PC** (tool `quark.exe`; `never-launch-quark-exe`)", md)
+        heads = [l for l in md.splitlines() if l.startswith("## ")]
+        self.assertEqual(heads, ["## Pushing", "## Merging", "## Versions and changelogs", "## CI", "## Limits",
+                                 "## Other"])
+        self.assertEqual(md, self.r.markdown(REPO, DEFAULT))   # the same rules give the same file
+        rs = self.rules()
+        rs[1]["text"] = "line one\nline two"
+        self.r.replace({"rules": rs})
+        md = self.r.markdown(REPO, DEFAULT)
+        self.assertIn("  line one\n  line two\n", md)
+        ex = self.r.export(REPO, DEFAULT)
+        self.assertEqual((ex["repo"], ex["defaultBranch"], ex["rev"], ex["note"]), (REPO, DEFAULT, 2, S.DOCS_GENERATED))
+        self.assertEqual(ex["rules"], self.r.obj()["rules"])
+
+
+class StructureStore(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="ghm-structure-")
+        self.events = []
+        self.s = S.Structure(self.dir, self.events.extend)
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_update_and_roles(self):
+        out = self.s.update({"branches": {"claude/macos-skip": {"role": "infra", "description": "macOS skip test"},
+                                          "testing": {"role": None, "description": "Every Claude merges here."}},
+                             "rev": 0}, DEFAULT)
+        self.assertEqual(out["rev"], 1)
+        self.assertEqual(out["branches"]["claude/macos-skip"]["role"], "infra")
+        self.assertEqual(types(self.events), ["structure.changed"])
+        self.assertIn("claude/macos-skip: role infra, description set", self.events[0]["text"])
+        for bad, text in (({"branches": {"testing": {"role": "work"}}}, "comes from the repository"),
+                          ({"branches": {DEFAULT: {"role": "other"}}}, "comes from the repository"),
+                          ({"branches": {"x": {"role": "production"}}}, "role must be"),
+                          ({"branches": {"x": {"role": None, "owner": "q"}}}, "unknown field"),
+                          ({"branches": {"bad name": {"role": None}}}, "not a valid branch name"),
+                          ({"branches": {"x": {"description": "d" * 2001}}}, "description is over"),
+                          ({"branches": {}}, "send"), ({"x": 1}, "unknown field")):
+            with self.assertRaises(S.EditError) as cm:
+                self.s.update(bad, DEFAULT)
+            self.assertIn(text, str(cm.exception))
+        with self.assertRaises(S.EditError) as cm:
+            self.s.update({"branches": {"x": {"role": "work"}}, "rev": 0}, DEFAULT)
+        self.assertEqual(cm.exception.code, 409)
+        self.s.update({"branches": {"testing": {"role": None, "description": "Every Claude merges here."}}}, DEFAULT)
+        self.assertEqual(len(self.events), 1)   # nothing changed: no event
+        self.s.update({"branches": {"claude/macos-skip": None}}, DEFAULT)
+        self.assertNotIn("claude/macos-skip", S.Structure(self.dir).obj()["branches"])
+        self.assertIn("testing", S.Structure(self.dir).obj()["branches"])
+
+    def test_branch_roles_and_stale(self):
+        now = S.parse_time("2026-10-24T12:00:00Z")
+        old, new = "2026-10-10T12:00:00Z", "2026-10-23T12:00:00Z"
+        b = lambda name, date, ahead, behind: {"name": name, "date": date, "ahead": ahead, "behind": behind}
+        branches = [b(DEFAULT, old, 0, 40), b("testing", old, 0, 0), b("launcher", old, 0, 9),
+                    b("claude/old-merged", old, 0, 0), b("claude/old-behind", old, 2, 5), b("claude/old-ahead", old, 3, 0),
+                    b("claude/new", new, 0, 5), b("dependabot/x", old, 1, 2), b("claude/unknown", old, None, None)]
+        self.s.update({"branches": {"claude/old-behind": {"role": "infra"}, "dependabot/x": {"description": "bot"}}})
+        S.branch_roles(branches, self.s, 7, DEFAULT, now)
+        got = dict((x["name"], (x["role"], x["kind"], x["roleSet"], x["stale"])) for x in branches)
+        self.assertEqual(got, {DEFAULT: ("production", "production", False, False),
+                               "testing": ("testing", "testing", False, False),
+                               "launcher": ("infra", "infra", False, False),
+                               "claude/old-merged": ("work", "claude", False, True),
+                               "claude/old-behind": ("infra", "infra", True, False),
+                               "claude/old-ahead": ("work", "claude", False, False),
+                               "claude/new": ("work", "claude", False, False),
+                               "dependabot/x": ("other", "other", False, True),
+                               "claude/unknown": ("work", "claude", False, False)})
+        self.assertEqual(branches[7]["description"], "bot")
+        S.branch_roles(branches, self.s, 30, DEFAULT, now)
+        self.assertFalse(any(x["stale"] for x in branches))
+
+
+def bare_docs_repo(root):
+    """A local bare repo standing in for floration/quark-claude-docs: main with a README."""
+    bare = os.path.join(root, "quark-claude-docs.git")
+    git("init", "-q", "--bare", "-b", "main", bare)
+    seed = os.path.join(root, "seed")
+    git("clone", "-q", bare, seed)
+    write(os.path.join(seed, "README.md"), "# Claude Documents\n")
+    git("add", "README.md", cwd=seed)
+    git("commit", "-qm", "first", cwd=seed)
+    git("push", "-q", "origin", "HEAD:main", cwd=seed)
+    return bare, seed
+
+
+class DocsProc(S.Proc):
+    """git for real; `gh repo clone <repo> <dir> -- <git flags>` clones the local bare repo instead of GitHub; any other
+    gh call fails the test."""
+
+    def __init__(self, bare):
+        S.Proc.__init__(self)
+        self.bare = bare
+        self.gh_calls = []
+        self.env["GIT_CONFIG_GLOBAL"] = os.devnull   # no identity from the machine: the fallback one is used
+        self.env["GIT_CONFIG_NOSYSTEM"] = "1"
+
+    def run(self, args, cwd=None, timeout=90, binary=False, input=None):
+        if args[0] == "gh":
+            self.gh_calls.append(args)
+            assert args[1:3] == ["repo", "clone"] and args[5] == "--", args
+            return S.Proc.run(self, ["git", "clone"] + args[6:] + [self.bare, args[4]], cwd=cwd, timeout=timeout)
+        return S.Proc.run(self, args, cwd=cwd, timeout=timeout, binary=binary, input=input)
+
+
+class DocsSyncTest(unittest.TestCase):
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="ghm-docs-")
+        self.bare, self.seed = bare_docs_repo(self.root)
+        self.files = {"09-github-rules.md": "# GitHub rules\n\none\n", "github-rules.json": "{}\n",
+                      "10-github-notes.md": "# GitHub notes\n"}
+        self.proc = DocsProc(self.bare)
+        self.state = os.path.join(self.root, "data", "editor", "docs-sync.json")
+        self.d = S.DocsSync(os.path.join(self.root, "data", "claude-docs"), self.state, self.proc,
+                            lambda: dict(self.files), repo=S.DOCS_REPO, debounce=0.3)
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def log(self):
+        return git("--git-dir", self.bare, "log", "--format=%s", "main").splitlines()
+
+    def show(self, name):
+        return git("--git-dir", self.bare, "show", "main:" + name)
+
+    def wait(self, pred, sec=20):
+        t = time.time() + sec
+        while time.time() < t:
+            if pred():
+                return True
+            time.sleep(0.05)
+        return False
+
+    def test_clone_commit_push_and_no_change(self):
+        st = self.d.sync_now()
+        self.assertEqual((st["state"], st["lastError"]), ("ok", None))
+        self.assertEqual(self.proc.gh_calls[0][:5], ["gh", "repo", "clone", S.DOCS_REPO,
+                                                     os.path.join(self.root, "data", "claude-docs")])
+        self.assertIn("credential.helper=!gh auth git-credential", self.proc.gh_calls[0])
+        self.assertEqual(self.log(), [S.DOCS_COMMIT_MSG, "first"])
+        self.assertEqual(self.show("09-github-rules.md"), "# GitHub rules\n\none")
+        self.assertEqual(self.show("README.md"), "# Claude Documents")   # other files are left alone
+        self.assertEqual(st["lastCommit"], git("--git-dir", self.bare, "rev-parse", "main"))
+        self.assertEqual(S.read_json(self.state)["digest"], S._digest(self.files))
+        # nothing changed: no commit; at a restart, nothing to do
+        self.d.sync_now()
+        self.assertEqual(len(self.log()), 2)
+        d2 = S.DocsSync(self.d.folder, self.state, self.proc, lambda: dict(self.files), debounce=0.3)
+        self.assertFalse(d2.schedule_if_changed(0))
+        self.files["10-github-notes.md"] = "# GitHub notes\n\nnew\n"
+        self.assertTrue(d2.schedule_if_changed(0))
+        self.assertTrue(self.wait(lambda: len(self.log()) == 3 and d2.status()["state"] == "ok"))
+        self.assertEqual(len(self.proc.gh_calls), 1)   # cloned once
+
+    def test_rejected_push_is_retried_after_pull_rebase(self):
+        self.d.sync_now()
+        # someone else pushes in between (after our fetch): simulate by pushing from the seed clone, then making
+        # the tool's fetch see the old state: push right after our reset
+        real = self.proc.run
+        pushed = []
+
+        def racing(args, **kw):
+            if args[:3] == ["git", "-C", self.d.folder] and "commit" in args and not pushed:
+                pushed.append(1)
+                git("pull", "-q", "origin", "main", cwd=self.seed)
+                write(os.path.join(self.seed, "05-other.md"), "someone else\n")
+                git("add", "05-other.md", cwd=self.seed)
+                git("commit", "-qm", "other change", cwd=self.seed)
+                git("push", "-q", "origin", "HEAD:main", cwd=self.seed)
+            return real(args, **kw)
+        self.proc.run = racing
+        self.files["09-github-rules.md"] = "# GitHub rules\n\ntwo\n"
+        st = self.d.sync_now()
+        self.assertEqual(st["state"], "ok", st["lastError"])
+        self.assertEqual(self.log(), [S.DOCS_COMMIT_MSG, "other change", S.DOCS_COMMIT_MSG, "first"])
+        self.assertEqual(self.show("05-other.md"), "someone else")
+        self.assertEqual(self.show("09-github-rules.md"), "# GitHub rules\n\ntwo")
+
+    def test_debounce_one_commit_for_a_burst(self):
+        self.d.sync_now()
+        for i in range(5):
+            self.files["09-github-rules.md"] = "# GitHub rules\n\nedit %d\n" % i
+            self.d.schedule()
+            self.assertEqual(self.d.status()["state"], "waiting")
+            time.sleep(0.05)
+        self.assertTrue(self.wait(lambda: self.d.status()["state"] == "ok"))
+        self.assertEqual(self.log(), [S.DOCS_COMMIT_MSG, S.DOCS_COMMIT_MSG, "first"])
+        self.assertEqual(self.show("09-github-rules.md"), "# GitHub rules\n\nedit 4")
+
+    def test_failures_are_reported_never_raised(self):
+        shutil.rmtree(self.bare)
+        st = self.d.sync_now()
+        self.assertEqual(st["state"], "failed")
+        self.assertIn("gh repo clone", st["lastError"])
+        self.assertTrue(self.d.warnings()[0].startswith("Claude Documents sync failed"))
+        os.makedirs(self.d.folder)
+        write(os.path.join(self.d.folder, "x.txt"), "not a clone")
+        self.assertIn("is not a git clone", self.d.sync_now()["lastError"])
+        off = S.DocsSync(self.d.folder, None, self.proc, dict, enabled=False, off_reason="off (test)")
+        off.schedule()
+        self.assertEqual((off.status()["state"], off.sync_now()["state"], off.warnings()), ("off", "off", []))
+
+    def test_wanted(self):
+        env = os.environ.pop("GHM_DOCS_SYNC")
+        try:
+            self.assertEqual(S.docs_sync_wanted({"repo": REPO}), (True, None))
+            self.assertFalse(S.docs_sync_wanted({"repo": "o/r"})[0])
+            self.assertTrue(S.docs_sync_wanted({"repo": "o/r", "claudeDocsRepo": "o/docs"})[0])
+            self.assertFalse(S.docs_sync_wanted({"repo": REPO, "claudeDocs": False})[0])
+        finally:
+            os.environ["GHM_DOCS_SYNC"] = env
+        self.assertFalse(S.docs_sync_wanted({"repo": REPO})[0])
+
+    def test_manager_files(self):
+        data = os.path.join(self.root, "m")
+        m = S.Manager({"repo": REPO, "port": 0, "quarkDir": data}, data, os.path.dirname(os.path.abspath(S.__file__)),
+                      quiet=True)
+        self.assertEqual(m.docs.status()["state"], "off")
+        m.default_branch = DEFAULT
+        m.notes.create({"target": {"kind": "branch", "key": "testing"}, "text": "keep testing green"})
+        f = m.docs_files()
+        self.assertEqual(sorted(f), sorted(S.DOCS_FILES))
+        self.assertIn(S.DOCS_GENERATED, f["10-github-notes.md"].splitlines()[2])
+        self.assertIn("keep testing green", f["10-github-notes.md"])
+        self.assertNotIn("Written", f["10-github-notes.md"])
+        self.assertEqual(json.loads(f["github-rules.json"])["defaultBranch"], DEFAULT)
+        self.assertEqual(f, m.docs_files())
+
+
+class EditorHttp(NotesHttp):
+    """The editor's endpoints, with the same write protections as the notes and an in-memory GitHub."""
+
+    def setUp(self):
+        NotesHttp.setUp(self)
+        self.gh = memory_github()
+        self.gh.repo = "o/r"
+        self.m.gh = self.m.pending.gh = self.gh
+        self.m.default_branch = DEFAULT
+
+    def test_crud_etag_history_and_safety(self):
+        pass  # the notes' own test runs in NotesHttp
+
+    def test_structure_rules_pending(self):
+        for path in ("/api/structure", "/api/rules", "/api/pending"):
+            code, h, body = self.call("GET", path, headers={"Content-Type": None})
+            self.assertEqual(code, 200, path)
+            self.assertEqual(self.call("GET", path, headers={"If-None-Match": h["ETag"]})[0], 304)
+        rules = json.loads(self.call("GET", "/api/rules")[2])
+        self.assertEqual((rules["hardRule"], rules["docsSync"]["state"]), (S.HARD_RULE_ID, "off"))
+        st = json.loads(self.call("GET", "/api/structure")[2])
+        self.assertEqual((st["staleDays"], st["defaultBranch"]), (7, DEFAULT))
+        # writes: the same protections as notes
+        rs = rules["rules"]
+        evil = {"Origin": "http://evil.example"}
+        for method, path, body in (("PUT", "/api/rules", {"rules": rs}),
+                                   ("PUT", "/api/structure", {"branches": {"claude/a": {"role": "infra"}}}),
+                                   ("POST", "/api/pending", {"type": "branch.delete", "params": {"name": "claude/a"}}),
+                                   ("POST", "/api/pending/apply-all", {})):
+            self.assertEqual(self.call(method, path, body, evil)[0], 403, path)
+            self.assertEqual(self.call(method, path, body, {"Origin": None})[0], 403, path)
+            self.assertEqual(self.call(method, path, raw=b"x=1",
+                                       headers={"Content-Type": "application/x-www-form-urlencoded"})[0], 415, path)
+            self.assertEqual(self.call(method, path, raw=b"{nope")[0], 400, path)
+            self.assertEqual(self.call(method, path, dict(body, extra=1))[0], 400, path)
+        self.assertEqual(self.call("PUT", "/api/rules", raw=b"x" * (256 * 1024 + 1))[0], 413)
+        self.assertEqual(self.call("POST", "/api/pending", raw=b"x" * (64 * 1024 + 1))[0], 413)
+        self.assertEqual(self.call("POST", "/api/rules", {"rules": rs})[0], 404)
+        self.assertEqual(self.call("GET", "/api/pending/c000000000000/apply")[0], 404)
+        self.assertEqual(self.call("POST", "/api/pending/../x/apply", {})[0], 404)
+        self.assertEqual(self.call("POST", "/api/pending/c000000000000/apply", {})[0], 404)
+        self.assertEqual(self.call("PUT", "/api/pending", {})[0], 405)
+        code, h, body = self.call("PUT", "/api/structure", {"branches": {"claude/a": {"role": "infra"}}},
+                                  {"Origin": "http://localhost:8768"})
+        self.assertEqual((code, json.loads(body)["branches"]["claude/a"]["role"]), (200, "infra"))
+        rs[1] = dict(rs[1], text="edited")
+        self.assertEqual(self.call("PUT", "/api/rules", {"rules": rs, "rev": 1})[0], 200)
+        self.assertEqual(self.call("PUT", "/api/rules", {"rules": rs, "rev": 1})[0], 409)
+        code, h, body = self.call("PUT", "/api/rules", {"rules": rs[1:]})
+        self.assertEqual((code, json.loads(body)["locked"]), (422, True))
+        # pending: queue, lock refusal, apply, stale, discard
+        code, h, body = self.call("POST", "/api/pending", {"type": "branch.delete", "params": {"name": "testing"}})
+        self.assertEqual((code, json.loads(body)["locked"]), (422, True))
+        code, h, body = self.call("POST", "/api/pending", {"type": "tag.create", "params": {"name": "v9.9.9"}})
+        self.assertEqual(code, 422)
+        code, h, body = self.call("POST", "/api/pending", {"type": "branch.delete", "params": {"name": "claude/a"}})
+        self.assertEqual(code, 201, body)
+        ch = json.loads(body)["change"]
+        code, h, body = self.call("POST", "/api/pending/%s/apply" % ch["id"], {"previewHash": ch["previewHash"]})
+        self.assertEqual((code, json.loads(body)["change"]["status"]), (200, "applied"))
+        self.assertNotIn("claude/a", self.gh.branches)
+        code, h, body = self.call("POST", "/api/pending", {"type": "branch.delete", "params": {"name": "claude/b"}})
+        ch = json.loads(body)["change"]
+        self.gh.branches["claude/b"] = sha_of("moved")
+        code, h, body = self.call("POST", "/api/pending/%s/apply" % ch["id"], {})
+        self.assertEqual(code, 409)
+        self.assertIn(S.STALE_MSG, json.loads(body)["error"])
+        code, h, body = self.call("POST", "/api/pending/%s/preview" % ch["id"])
+        self.assertEqual((code, json.loads(body)["change"]["status"]), (200, "pending"))
+        self.gh.fail_next = (403, "Resource not accessible by integration", [])
+        code, h, body = self.call("POST", "/api/pending/%s/apply" % ch["id"])
+        self.assertEqual((code, json.loads(body)["error"]), (502, "HTTP 403: Resource not accessible by integration"))
+        self.assertEqual(self.call("DELETE", "/api/pending/%s" % ch["id"], {"x": 1})[0], 400)
+        self.assertEqual(self.call("DELETE", "/api/pending/%s" % ch["id"])[0], 200)
+        self.assertEqual(self.call("DELETE", "/api/pending/%s" % ch["id"])[0], 404)
+        pend = json.loads(self.call("GET", "/api/pending")[2])
+        self.assertEqual([c["status"] for c in pend["changes"]], ["applied"])
+        hist = types(json.loads(self.call("GET", "/api/history")[2]))
+        for t in ("structure.changed", "rules.changed", "github.branch.deleted", "github.apply.failed"):
+            self.assertIn(t, hist)
+        # the served branches take the structure's roles at once
+        self.m.state = dict(self.m.state, branches=[{"name": "claude/zz", "date": None, "ahead": 1, "behind": 0}])
+        self.call("PUT", "/api/structure", {"branches": {"claude/zz": {"role": "other", "description": "d"}}})
+        b = json.loads(self.call("GET", "/api/state")[2])["branches"][0]
+        self.assertEqual((b["role"], b["kind"], b["description"], b["roleSet"]), ("other", "other", "d", True))
+        # rulesets, read from (the in-memory) GitHub: the production and tagging rules are locked, with why
+        code, h, body = self.call("GET", "/api/github/rulesets?fresh=1")
+        v = json.loads(body)
+        self.assertEqual((code, v["error"], v["defaultBranch"]), (200, None, DEFAULT))
+        by = dict((r["name"], r) for r in v["rulesets"])
+        self.assertTrue(by["production rule"]["locked"])
+        self.assertIn("targets the default branch", " ".join(by["production rule"]["lockReasons"]))
+        self.assertTrue(by["tagging rule"]["locked"])
+        self.assertIsNone(by["tagging rule"]["form"])
+        self.assertFalse(by["testing guard"]["locked"])
+        self.assertEqual(by["testing guard"]["form"]["include"], ["testing"])
+        self.assertIn("from-testing", v["checks"])
+        # the clone of the Claude Documents is never served, even from the output folder
+        self.m.static = self.dir
+        os.makedirs(os.path.join(self.dir, "claude-docs"), exist_ok=True)
+        write(os.path.join(self.dir, "claude-docs", "x.html"), "secret")
+        self.assertEqual(self.call("GET", "/claude-docs/x.html")[0], 404)
+
+
+@unittest.skipUnless(os.environ.get("GHM_LIVE") == "1", "set GHM_LIVE=1 for the read-only check against GitHub")
+class LiveRulesets(unittest.TestCase):
+    """Read-only: GET /api/github/rulesets against the real floration/quark (needs gh signed in). Never writes."""
+
+    def test_read_only(self):
+        d = tempfile.mkdtemp(prefix="ghm-live-")
+        try:
+            m = S.Manager({"repo": REPO, "port": 0, "quarkDir": d, "claudeDocs": False}, d,
+                          os.path.dirname(os.path.abspath(S.__file__)), quiet=True)
+            m.gh.write = None   # any write would fail loudly
+            v = m.rulesets_view(fresh=True)
+            self.assertIsNone(v["error"], v["error"])
+            by = dict((r["name"], r) for r in v["rulesets"])
+            self.assertTrue(by["production rule"]["locked"], by)
+            self.assertTrue(by["tagging rule"]["locked"])
+            print("\nlive: default %s; %s" % (v["defaultBranch"], "; ".join(
+                "%s (%s): %s%s" % (r["name"], r["target"], ", ".join(r["summary"]),
+                                   " [locked: %s]" % "; ".join(r["lockReasons"]) if r["locked"] else "")
+                for r in v["rulesets"])))
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GitHub Manager</title>
-<meta name="description" content="Quark's repository at a glance: production vs testing, branches, local copies, pull requests, CI runs and their logs, a local history of all of it, and q's notes on any of it.">
+<meta name="description" content="Quark's repository at a glance: production vs testing, branches, local copies, pull requests, CI runs and their logs, a local history of all of it, q's notes, the branch structure, the rules every Claude follows, and GitHub changes applied only when q presses Apply.">
 <script>
   // ?embed=1: hosted in the project manager's tab (it has its own tab bar), so the shared nav is hidden.
   if (/[?&]embed=1\b/.test(location.search)) document.documentElement.classList.add('embed');
@@ -30,7 +30,7 @@
   <a href="#tab=pulls" data-tab="pulls">Pull requests <span class="count" hidden></span></a>
   <a href="#tab=runs" data-tab="runs">CI runs <span class="count" hidden></span></a>
   <a href="#tab=history" data-tab="history">History</a>
-  <a href="#tab=editor" data-tab="editor" title="Notes now; structure and rules next">Editor <span class="count" hidden></span></a>
+  <a href="#tab=editor" data-tab="editor" title="Notes, structure, rules &amp; limits, and the pending GitHub changes">Editor <span class="count" hidden></span></a>
   <a href="#tab=tests" data-tab="tests" title="The tests editor (http://127.0.0.1:8775/)">Tests</a>
 </nav>
 <div id="banner" class="banner" hidden></div>
