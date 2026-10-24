@@ -1,4 +1,4 @@
-# Quark Claude Documents manager
+# Claude Manager (Claude Documents manager)
 
 A read-only local page that makes Claude Documents (the agents' shared notebook, private repo
 `floration/quark-claude-docs`, PC copy `Desktop\Quark\Claude Documents`) easy for a human to read: every entry in
@@ -14,8 +14,8 @@ python3 tools/docs_manager/install.py [--target DIR]     (or install.cmd; defaul
 python3 tools/docs_manager/serve.py --docs <Claude Documents folder> [--open]
 ```
 
-Python 3 standard library, git, and (optional) `gh` signed in. Port 8766: the editor dashboard is 8765, the GitHub
-manager 8767, the project manager app 8768. The page uses the tools' shared `quark-tools.css` and nav;
+Python 3 standard library, git, and (optional) `gh` signed in. Port 8766: the Editor Manager is 8765, the GitHub
+Manager 8767, the Supervisor Board 8768 (which hosts all of them as tabs). The page uses the tools' shared `quark-tools.css` and nav;
 `?embed=1` hides the nav for the app shell.
 
 ## Where the data comes from
@@ -50,7 +50,7 @@ Overview (Needs q first, waiting-on board, latest changes), Board (kanban, timel
 (rendered or raw), Threads. Keys: `/` search, 1-6 tabs, `?` help. Deep links: `#tab=`, `#entry=<file>:<slug>`,
 `#search=<text>`, `#file=`. Text from the docs is escaped before the small markdown renderer runs.
 
-## API (127.0.0.1 only; CORS for 127.0.0.1 / localhost ports 8765-8768; ETag / 304)
+## API (127.0.0.1 only; CORS for 127.0.0.1 / localhost ports 8765-8770; ETag / 304)
 
 - `GET /api/data`: everything (files, entries with links / waitingOn / waitingWhy / firstSeen / lastChanged,
   changes, threads, github, quarkDir, fetchOk, ghOk).

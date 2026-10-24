@@ -1,5 +1,5 @@
 @echo off
-rem Quark Claude Documents manager: starts the local read-only server and opens http://127.0.0.1:8766/
+rem Quark Claude Manager (Claude Documents): starts the local read-only server and opens http://127.0.0.1:8766/
 rem If it is already running, this only opens the page. Close this window to stop the server.
 setlocal
 cd /d "%~dp0"
@@ -23,8 +23,8 @@ if not "%~1"=="--here" (
   start "Quark docs manager" /min cmd /c ""%~f0" --here"
   exit /b 0
 )
-title Quark docs manager
-echo Quark docs manager running at %URL%  (close this window to stop)
+title Quark Claude Manager
+echo Quark Claude Manager running at %URL%  (close this window to stop)
 %PY% serve.py --docs "%USERPROFILE%\Desktop\Quark\Claude Documents" --port %PORT% --open --quiet
 if errorlevel 1 pause
 endlocal

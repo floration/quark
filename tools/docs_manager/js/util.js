@@ -252,7 +252,7 @@ window.DM = window.DM || {};
     wrap.appendChild(ext(link.url, [h('i', {class: 'ldot'}), label, word && link.kind !== 'pr' ? h('small', null, ' ' + word) : null,
       link.kind === 'pr' && st ? h('small', null, ' ' + st) : null], 'lc-main', title));
     const g = ghManagerUrl(link);
-    if (g) wrap.appendChild(h('a', {class: 'lc-gm', href: g, target: 'quark-github', rel: 'noopener', title: 'Open in the GitHub manager'}, 'mgr'));
+    if (g) wrap.appendChild(h('a', {class: 'lc-gm', href: g, target: 'quark-github', rel: 'noopener', title: 'Open in the GitHub Manager'}, 'mgr'));
     return wrap;
   }
 

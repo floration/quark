@@ -275,7 +275,7 @@
         h('p', null, n.sub || '', n.ci ? ' · CI ' + n.ci.replace('_', ' ') : '', ' ',
           DM.ext(n.url, 'open on GitHub', 'btnlink'), ' ',
           DM.ghManagerUrl({kind: n.kind === 'version' ? 'version' : n.kind, url: n.url, label: n.label}) ?
-            h('a', {href: DM.ghManagerUrl({kind: n.kind === 'version' ? 'version' : n.kind, url: n.url, label: n.label}), target: 'quark-github', rel: 'noopener', class: 'btnlink'}, 'open in the GitHub manager') : null),
+            h('a', {href: DM.ghManagerUrl({kind: n.kind === 'version' ? 'version' : n.kind, url: n.url, label: n.label}), target: 'quark-github', rel: 'noopener', class: 'btnlink'}, 'open in the GitHub Manager') : null),
         h('h4', {class: 'side-h'}, 'Linked entries (' + es.length + ')'),
         h('div', {class: 'cards one'}, es.map(e => DM.entries.card(e, {inDialog: true})))));
   }

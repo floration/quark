@@ -153,7 +153,7 @@
     const keys = [['/', 'Search (current tab, else Entries)'], ['1 – 6', 'Switch tabs'], ['Esc', 'Close a dialog, leave the search box'],
       ['Wheel / drag', 'Zoom / pan the timeline'], ['Double-click', 'Timeline: show everything']];
     openDialog('About this page', h('div', null,
-      h('p', null, 'A read-only view of Claude Documents, the notebook every Claude on Quark writes. It never changes the documents; it reads its own copy of the repo every minute and checks here every 30 s.'),
+      h('p', null, 'The Claude Manager: a read-only view of Claude Documents, the notebook every Claude on Quark writes. It never changes the documents; it reads its own copy of the repo every minute and checks here every 30 s.'),
       h('p', null, '"Waiting on" is a guess from each entry’s text and its linked PRs and CI runs: q’s decision, q to push, PR review, CI, tests, Claude working, or nobody yet.'),
       h('div', {class: 'keys'}, keys.map(([k, d]) => [h('kbd', null, k), h('span', null, d)])),
       st.data ? h('p', {class: 'faint'}, 'Data: ', st.source, ' · docs commit ', String(st.data.mirrorHead || '').slice(0, 7) || '?',

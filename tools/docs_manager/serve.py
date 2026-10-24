@@ -12,7 +12,7 @@ synced yet. GitHub (gh CLI) is refreshed every 5 min into <state dir>/cache/gith
 entry diffs are cached by sha in <state dir>/cache/changes.json. Python 3 standard library only.
 
 API: GET /api/data (everything, ETag / If-None-Match), GET /api/summary (small: in progress, waiting, questions,
-recent changes), GET /api/health, POST /api/refresh (fetch now). CORS for the sibling tools on 8765-8768.
+recent changes), GET /api/health, POST /api/refresh (fetch now). CORS for the sibling tools on 8765-8770.
 """
 import argparse, datetime, hashlib, http.server, json, os, re, subprocess, sys, threading, time, urllib.request, webbrowser
 
@@ -27,7 +27,7 @@ STATIC_DIRS = ("js/", "fonts/", "img/")
 MIME = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8",
         ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon",
         ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".otf": "font/otf", ".map": "application/json"}
-CORS_PORTS = range(8765, 8769)
+CORS_PORTS = range(8765, 8771)
 VOLATILE = ("generatedAt", "mirrorFetchedAt", "ghFetchedAt")
 
 
@@ -662,7 +662,7 @@ def default_docs():
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Claude Documents manager (read-only local server).")
+    ap = argparse.ArgumentParser(description="Claude Manager: Claude Documents, read only (local server).")
     ap.add_argument("--docs", default=None, help="the PC's Claude Documents folder (read only); default %s" % default_docs())
     ap.add_argument("--repo", default=None, help="repo to mirror (URL or path); default: the docs folder's origin")
     ap.add_argument("--branch", default="main")
