@@ -64,12 +64,16 @@ export function slotInfo(d) { return CATALOG.slots[d.name]; }
 
 // ---------------------------------------------------------------- tree helpers
 export const clone = (x) => JSON.parse(JSON.stringify(x));
+const curveTypes = new WeakMap();   // curve decl -> its result type (a cache kept off the AST so it never shows in a compare)
+
+// keys starting with "_" are page-side caches, never part of the brain
 export function deepEqual(a, b, ignore = null) {
     if (a === b) return true;
     if (typeof a !== typeof b || a === null || b === null || typeof a !== "object") return false;
     if (Array.isArray(a) !== Array.isArray(b)) return false;
     if (Array.isArray(a)) return a.length === b.length && a.every((x, i) => deepEqual(x, b[i], ignore));
-    const ka = Object.keys(a).filter((k) => a[k] !== undefined && !(ignore && ignore.has(k))), kb = Object.keys(b).filter((k) => b[k] !== undefined && !(ignore && ignore.has(k)));
+    const keep = (o) => (k) => o[k] !== undefined && k[0] !== "_" && !(ignore && ignore.has(k));
+    const ka = Object.keys(a).filter(keep(a)), kb = Object.keys(b).filter(keep(b));
     if (ka.length !== kb.length) return false;
     return ka.every((k) => Object.prototype.hasOwnProperty.call(b, k) && deepEqual(a[k], b[k], ignore));
 }
@@ -83,7 +87,7 @@ export function firstDiff(a, b, path = "") {
 }
 export function stripIds(x) {
     if (Array.isArray(x)) return x.map(stripIds);
-    if (x && typeof x === "object") { const o = {}; for (const k in x) if (k !== "id" && k !== "ref") o[k] = stripIds(x[k]); return o; }
+    if (x && typeof x === "object") { const o = {}; for (const k in x) if (k !== "id" && k !== "ref" && k[0] !== "_") o[k] = stripIds(x[k]); return o; }
     return x;
 }
 
@@ -333,7 +337,8 @@ export function typeOf(e, sc, S, err) {
                 if (e.args.length !== 1) err(`curve ${e.fn} takes one argument`, e);
                 if (sc.kind === "curve" && sc.d === c) err("a curve can't call itself", e);
                 if (c.form !== "expr") return "f32";
-                return c._type || (c._type = typeOf(c.body, { kind: "curve", arg: c.arg, argType: c.argType, d: c }, S, () => {})) || "f32";
+                if (!curveTypes.has(c)) curveTypes.set(c, typeOf(c.body, { kind: "curve", arg: c.arg, argType: c.argType, d: c }, S, () => {}));
+                return curveTypes.get(c) || "f32";
             }
             err(`unknown function '${e.fn}'`, e);
             return null;

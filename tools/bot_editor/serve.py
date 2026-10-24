@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Quark Bot Editor: the local server behind the bot editor and simulator page.
 
-    python3 tools/bot_editor/serve.py [--port 8765] [--data-dir DIR] [--maptool PATH] [--quark-tests PATH]
+    python3 tools/bot_editor/serve.py [--port 8769] [--data-dir DIR] [--maptool PATH] [--quark-tests PATH]
                                      [--maps-dir DIR ...] [--no-browser]
     tools/bot_editor/run.sh   (Linux / macOS)        tools\\bot_editor\\run.cmd   (Windows)
+    --no-open (or QUARK_SHELL=1): no browser; the project manager shell starts this and shows http://127.0.0.1:8769/
 
 Python 3 standard library only. Binds 127.0.0.1 only. It:
   - serves the page (web/),
@@ -35,6 +36,7 @@ EXE = ".exe" if IS_WIN else ""
 
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")   # brain / scenario / map names: no slashes, no "..", no leading dot
 MAX_BODY = 8 << 20
+DEFAULT_PORT = 8769          # fixed (the project manager shell opens http://127.0.0.1:8769/); bot_editor.json / --port change it
 MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
         ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png",
         ".qbrain": "text/plain; charset=utf-8", ".qmap": "text/plain; charset=utf-8", ".txt": "text/plain; charset=utf-8",
@@ -81,7 +83,7 @@ class Config:
             except Exception as ex:
                 print("bot_editor.json ignored: %s" % ex)
         g = lambda k, a=None: a if a not in (None, [], "") else cfg.get(k)
-        self.port = int(g("port", args.port) or 8765)
+        self.port = int(g("port", args.port) or DEFAULT_PORT)
         self.data_dir = os.path.abspath(g("dataDir", args.data_dir) or default_data_dir())
         self.maptool = find_binary("quark_maptool", g("maptool", args.maptool))
         self.quark_tests = find_binary("quark_tests", g("quarkTests", args.quark_tests))
@@ -101,6 +103,7 @@ class Config:
     def user_maps_dir(self): return os.path.join(self.data_dir, "maps")
     def bots_dir(self): return os.path.join(self.data_dir, "bots")
     def scenarios_dir(self): return os.path.join(self.data_dir, "bot_editor", "scenarios")
+    def state_dir(self): return os.path.join(self.data_dir, "bot_editor", "state")   # autosave, settings, drafts (JSON)
 
     def default_brain_path(self):
         for p in (self.default_brain, os.path.join(ROOT, "tools", "bots", "default.qbrain"), os.path.join(WEB, "fixtures", "default.qbrain")):
@@ -185,9 +188,9 @@ def list_files(d, ext):
     return res
 
 
-def atomic_write(path, data):
+def atomic_write(path, data, backup=True):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    if os.path.isfile(path):
+    if backup and os.path.isfile(path):
         try: shutil.copyfile(path, path + ".bak")
         except OSError: pass
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".tmp-", suffix=".part")
@@ -228,7 +231,7 @@ def update_provenance(name, prov):
         changed["bots/brain/" + name] = dict(entry, note=note + " (saved as %s.qbrain)" % name)
         items.update(changed)
         doc["items"] = dict(sorted(items.items()))
-        atomic_write(PROVENANCE, (json.dumps(doc, indent=1) + "\n").encode("utf-8"))
+        atomic_write(PROVENANCE, (json.dumps(doc, indent=1) + "\n").encode("utf-8"), backup=False)
         return changed
 
 
@@ -370,6 +373,13 @@ class Handler(BaseHTTPRequestHandler):
                 path = os.path.join(CFG.scenarios_dir(), n + ".json")
                 if not os.path.isfile(path): return self._err(404, "no such scenario")
                 with open(path, encoding="utf-8") as f: return self._send(200, f.read())
+            if p == "/api/ping": return self._send(200, {"ok": True, "tool": "bot-editor"}, extra={"Access-Control-Allow-Origin": "*"})
+            if p == "/api/state":
+                n = q.get("key", "")
+                if not valid_name(n): return self._err(400, "bad key")
+                path = os.path.join(CFG.state_dir(), n + ".json")
+                if not os.path.isfile(path): return self._send(200, "null")
+                with open(path, encoding="utf-8") as f: return self._send(200, f.read())
             if p == "/api/exportbrain":
                 if not CFG.quark_tests: return self._err(501, "quark_tests not found")
                 with tempfile.TemporaryDirectory() as td:
@@ -405,6 +415,13 @@ class Handler(BaseHTTPRequestHandler):
                 atomic_write(os.path.join(CFG.bots_dir(), n + ".qbrain"), data)
                 items = update_provenance(n, prov) if prov is not None else None
                 return self._send(200, {"ok": True, "path": os.path.join(CFG.bots_dir(), n + ".qbrain"), "provenance": items})
+            if p == "/api/state":   # the page's work between sessions (the shell's browser storage starts empty)
+                n = q.get("key", "")
+                if not valid_name(n): return self._err(400, "bad key")
+                body = self._body()
+                json.loads(body.decode("utf-8") or "null")   # (must be JSON)
+                atomic_write(os.path.join(CFG.state_dir(), n + ".json"), body, backup=False)
+                return self._send(200, {"ok": True})
             if p == "/api/provenance":   # an export (download) without a save: record it all the same
                 n = q.get("name", "")
                 if not valid_name(n): return self._err(400, "bad name")
@@ -524,13 +541,18 @@ def main():
     ap.add_argument("--maptool", help="path to quark_maptool (default: build/ of this repository, then PATH)")
     ap.add_argument("--quark-tests", help="path to quark_tests (checkbrain / exportbrain)")
     ap.add_argument("--maps-dir", action="append", help="another folder of .qmap files to list (repeatable)")
-    ap.add_argument("--no-browser", action="store_true")
-    CFG = Config(ap.parse_args())
-    if not CFG.default_maps_dir():
-        print("no built maps/ folder: generating the default maps with tools/make_maps.py ...")
-        d, msg = generate_default_maps()
-        print(("  " + msg) if d else ("  failed: " + msg))
-    srv = ThreadingHTTPServer(("127.0.0.1", CFG.port), Handler)
+    ap.add_argument("--no-browser", "--no-open", dest="no_browser", action="store_true",
+                    help="don't open a browser (also when QUARK_SHELL=1: the project manager shows the page)")
+    args = ap.parse_args()
+    CFG = Config(args)
+    if not CFG.default_maps_dir():   # (in the background: GET / answers at once; the page asks again when it's done)
+        print("no built maps/ folder: generating the default maps with tools/make_maps.py in the background ...")
+        threading.Thread(target=lambda: print("  maps: %s" % (generate_default_maps()[1] or "done")), daemon=True).start()
+    try:
+        srv = ThreadingHTTPServer(("127.0.0.1", CFG.port), Handler)
+    except OSError as ex:
+        print("can't listen on 127.0.0.1:%d (%s): is the bot editor already running? (set another port with --port or bot_editor.json)" % (CFG.port, ex))
+        sys.exit(1)
     srv.daemon_threads = True
     url = "http://127.0.0.1:%d/" % CFG.port
     print("Quark Bot Editor on %s" % url)
@@ -538,7 +560,7 @@ def main():
     print("  default maps %s" % CFG.default_maps_dir())
     print("  maptool      %s" % (CFG.maptool or "(not found: live runs use the built-in mock)"))
     print("  quark_tests  %s" % (CFG.quark_tests or "(not found: brain checks are the page's own)"))
-    if not ap.parse_args().no_browser:
+    if not args.no_browser and os.environ.get("QUARK_SHELL") != "1":
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()
     try:
         srv.serve_forever()

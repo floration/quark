@@ -3,12 +3,17 @@
 // bots) are drawn by callbacks each frame on top of a cached map layer.
 //
 // Speed: boxes are grouped into 64 m chunks x colour buckets as Path2D in world units, built once per map / slice;
-// a frame fills only the chunks in view (one fill + one stroke per bucket per chunk). The map layer is redrawn only
-// when the camera or slice changes; an overlay-only frame is one drawImage plus the overlay. No allocation per frame.
+// a redraw of the map layer fills only the chunks in view (one fill + one stroke per bucket per chunk). The layer is
+// bigger than the view (MARGIN of the view on each side) and has its own camera: a pan only moves where it is drawn
+// and a zoom draws it scaled until the wheel stops, so a pan or zoom frame is one drawImage plus the overlays. The
+// layer is redrawn when the view leaves it, the zoom settles, or what it shows changes (slice, toggles, map).
+// No allocation per frame.
 
 import { MATERIALS } from "./qmap.js";
 
 const CHUNK = 64;          // m
+const MARGIN = 0.4;        // the cached layer extends this fraction of the view past each edge
+const ZOOM_SETTLE = 140;   // ms after the last zoom step before the layer is redrawn sharp at the new scale
 const BANDS = 20;          // height colour bands
 const RAMP = [[22, 34, 48], [26, 64, 84], [30, 104, 104], [70, 140, 92], [150, 160, 84], [214, 186, 112], [236, 222, 180]];
 export const TEAM_COLORS = { a: "#f05252", b: "#3f83f8", any: "#9ca3af", race: "#a78bfa", none: "#e5e7eb" };
@@ -28,6 +33,9 @@ export class MapView {
         this.lctx = this.layer.getContext("2d", { alpha: false });
         this.map = null;
         this.cam = { x: 0, z: 0, s: 4 };         // world centre, pixels per metre (CSS px)
+        this.lcam = { x: 0, z: 0, s: 4 };        // the camera the cached layer was drawn with
+        this.lw = 1; this.lh = 1;                 // the layer's size (CSS px)
+        this._zoomAt = 0;
         this.slice = Infinity;                    // hide boxes whose bottom is at or above this
         this.show = { clip: false, trim: true, far: false, grid: true, spawns: true, objectives: true, ladders: true, labels: true };
         this.overlays = [];                       // fn(ctx, view) drawn in world space each frame
@@ -74,10 +82,10 @@ export class MapView {
         this.dpr = window.devicePixelRatio || 1;
         this.w = Math.max(1, r.width); this.h = Math.max(1, r.height);
         const W = Math.round(this.w * this.dpr), H = Math.round(this.h * this.dpr);
-        if (this.canvas.width !== W || this.canvas.height !== H) {
-            this.canvas.width = W; this.canvas.height = H;
-            this.layer.width = W; this.layer.height = H;
-        }
+        if (this.canvas.width !== W || this.canvas.height !== H) { this.canvas.width = W; this.canvas.height = H; }
+        this.lw = Math.round(this.w * (1 + 2 * MARGIN)); this.lh = Math.round(this.h * (1 + 2 * MARGIN));
+        const LW = Math.round(this.lw * this.dpr), LH = Math.round(this.lh * this.dpr);
+        if (this.layer.width !== LW || this.layer.height !== LH) { this.layer.width = LW; this.layer.height = LH; }
         this.invalidate(true);
     }
 
@@ -147,10 +155,23 @@ export class MapView {
         if (!this.dirty) return;
         const t0 = performance.now();
         this.dirty = false;
-        if (this.dirtyLayer) { this._drawLayer(); this.dirtyLayer = false; }
         const ctx = this.ctx;
+        // where the layer lands on screen: scale r and offset (device px)
+        let r = this.cam.s / this.lcam.s, ox = 0, oy = 0;
+        const place = () => {
+            r = this.cam.s / this.lcam.s;
+            ox = this.canvas.width / 2 - this.layer.width / 2 * r + (this.lcam.x - this.cam.x) * this.cam.s * this.dpr;
+            oy = this.canvas.height / 2 - this.layer.height / 2 * r + (this.lcam.z - this.cam.z) * this.cam.s * this.dpr;
+        };
+        place();
+        const covers = ox <= 0.5 && oy <= 0.5 && ox + this.layer.width * r >= this.canvas.width - 0.5 && oy + this.layer.height * r >= this.canvas.height - 0.5;
+        const zooming = performance.now() - this._zoomAt < ZOOM_SETTLE;
+        if (Math.abs(r - 1) > 1e-9 && zooming && covers) this.dirty = true;          // come back to draw it sharp
+        else if (this.dirtyLayer || !covers || Math.abs(r - 1) > 1e-9) { this._drawLayer(); this.dirtyLayer = false; place(); }
         ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.drawImage(this.layer, 0, 0);
+        if (Math.abs(r - 1) > 1e-9 || ox > 0 || oy > 0) { ctx.fillStyle = "#0b0f14"; ctx.fillRect(0, 0, this.canvas.width, this.canvas.height); }
+        if (Math.abs(r - 1) <= 1e-9) ctx.drawImage(this.layer, Math.round(ox), Math.round(oy));
+        else { ctx.imageSmoothingEnabled = true; ctx.drawImage(this.layer, ox, oy, this.layer.width * r, this.layer.height * r); }
         this._worldTransform(ctx);
         for (const f of this.overlays) f(ctx, this);
         ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -163,7 +184,15 @@ export class MapView {
         ctx.setTransform(s, 0, 0, s, (this.w / 2 - this.cam.x * this.cam.s) * this.dpr, (this.h / 2 - this.cam.z * this.cam.s) * this.dpr);
     }
 
+    // Draws the layer around the current camera. While drawing, the view is the layer (its size and camera), so
+    // toWorld / toScreen / labels work unchanged.
     _drawLayer() {
+        this.lcam = { ...this.cam };
+        const vw = this.w, vh = this.h;
+        this.w = this.lw; this.h = this.lh;
+        try { this._paintLayer(); } finally { this.w = vw; this.h = vh; }
+    }
+    _paintLayer() {
         const ctx = this.lctx, m = this.map;
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.fillStyle = "#0b0f14";
@@ -277,7 +306,8 @@ export class MapView {
             this.cam.s = Math.max(0.15, Math.min(120, this.cam.s * k));
             const after = this.toWorld(p.x, p.y);
             this.cam.x += before.x - after.x; this.cam.z += before.z - after.z;
-            this.invalidate(true);
+            this._zoomAt = performance.now();
+            this.invalidate();
         }, { passive: false });
         c.addEventListener("contextmenu", (ev) => ev.preventDefault());
         c.addEventListener("pointerdown", (ev) => {
@@ -295,7 +325,7 @@ export class MapView {
                 if (Math.abs(p.x - d.sx) + Math.abs(p.y - d.sy) > 3) d.moved = true;
                 this.cam.x = d.cx - (p.x - d.sx) / this.cam.s;
                 this.cam.z = d.cz - (p.y - d.sy) / this.cam.s;
-                this.invalidate(true);
+                this.invalidate();
             } else if (d && d.kind === "handler") { this.handlers.move && this.handlers.move(w, ev); this.invalidate(); }
             else { this.handlers.hover && this.handlers.hover(w, ev); }
             if (this.onMouse) this.onMouse(w);

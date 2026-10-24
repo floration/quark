@@ -8,17 +8,24 @@ const MAT_OF = { box: 0, accent: 1, wallbang: 2, metal: 3, glow: 4, far: 5, wate
 export const MODES = ["vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "1v1", "tourney", "hide", "tag", "points"];
 export const MODE_TITLES = { vs: "VS", bomb: "Bomb", race: "Race", koth: "King of the hill", payload: "Payload", ffa: "Free for all",
     npayload: "Neutral payload", duel: "Duel", "1v1": "1v1", tourney: "Tourney", hide: "Hide and seek", tag: "Tag", points: "Multi point" };
-export const TEAM_MODES = new Set(["vs", "bomb", "koth", "payload", "npayload", "points"]);
+export const TEAM_MODES = new Set(["vs", "bomb", "koth", "payload", "npayload", "points", "duel", "1v1", "tourney"]);   // (the game puts 1v1 / duel / tourney players on teams a and b too)
 
-// What a mode needs from the map (Map::canSupportMode, roughly).
+// What a mode needs from the map: Map::canSupportMode (src/game/map.cpp), or the game's own answer when the helper
+// read the map. Staged spawns (att0 / def0 ...) are not team a / b spawns there.
 export function mapSupports(map, mode) {
+    if (map.modesPossible) return map.modesPossible.includes(mode);
+    const has = (t) => map.spawns.some((s) => s.raw === t);
+    const teams = has("a") && has("b");
     switch (mode) {
-        case "bomb": return map.sites.length > 0;
-        case "koth": return !!map.hill;
-        case "payload": case "npayload": return map.path.length >= 2;
-        case "race": return map.checkpoints.length > 0;
-        case "points": return map.points.length > 0;
-        default: return true;
+        case "vs": case "duel": case "1v1": return teams;
+        case "tourney": case "ffa": return map.spawns.length > 0;
+        case "bomb": return teams && map.sites.length > 0;
+        case "race": return has("race") && map.checkpoints.length > 0;
+        case "koth": return teams && !!map.hill;
+        case "payload": case "npayload": return teams && map.path.length >= 2;
+        case "hide": case "tag": return map.spawns.length >= 2;
+        case "points": return map.points.length >= 2 && map.spawns.some((s) => s.stage === 0 && !s.defend) && map.spawns.some((s) => s.stage === 0 && s.defend);
+        default: return false;
     }
 }
 
@@ -101,6 +108,33 @@ export function parseQmap(text, name = "") {
     m.nBoxes = mats.length;
     m.boxes = new Float32Array(raw);
     m.mats = new Uint8Array(mats);
+    computeBounds(m);
+    return m;
+}
+
+// Replace the geometry with the game's own reading of the map (quark_maptool `parse`: brushes plus the generated
+// ladder and group boxes, its ladders, modes and warnings). The page's reader above stays the fallback (no helper,
+// or the helper failed). Spawns and objectives keep the page's reading: the same lines, read the same way.
+export function applyHelperParse(m, j) {
+    if (!j || !Array.isArray(j.brushes)) return false;
+    const all = j.brushes.concat(j.generated || []);
+    const boxes = new Float32Array(all.length * 6), mats = new Uint8Array(all.length);
+    all.forEach((b, i) => {
+        boxes.set([Math.min(b.min[0], b.max[0]), Math.min(b.min[1], b.max[1]), Math.min(b.min[2], b.max[2]), Math.max(b.min[0], b.max[0]), Math.max(b.min[1], b.max[1]), Math.max(b.min[2], b.max[2])], i * 6);
+        mats[i] = Math.max(0, Math.min(MATERIALS.length - 1, b.mat | 0));
+    });
+    m.boxes = boxes; m.mats = mats; m.nBoxes = all.length;
+    if (Array.isArray(j.ladders)) m.ladders = j.ladders.map((l) => ({ x0: l.min[0], y0: l.min[1], z0: l.min[2], x1: l.max[0], y1: l.max[1], z1: l.max[2], auto: !!l.auto }));
+    if (Array.isArray(j.modesPossible)) m.modesPossible = j.modesPossible;
+    if (Array.isArray(j.modesSupported)) m.modesSupported = j.modesSupported;
+    if (Array.isArray(j.warnings)) m.warnings = j.warnings.map(String);
+    m.bounds = { x0: 1e9, y0: 1e9, z0: 1e9, x1: -1e9, y1: -1e9, z1: -1e9 };
+    computeBounds(m);
+    m.geometryFrom = "quark_maptool parse";
+    return true;
+}
+
+function computeBounds(m) {
     const B = m.bounds;
     for (let i = 0; i < m.nBoxes; i++) {
         if (m.mats[i] >= 5) continue;   // far / water / lava / trim / clip: not the playable bounds (as the game)
@@ -109,7 +143,6 @@ export function parseQmap(text, name = "") {
         if (m.boxes[o + 3] > B.x1) B.x1 = m.boxes[o + 3]; if (m.boxes[o + 4] > B.y1) B.y1 = m.boxes[o + 4]; if (m.boxes[o + 5] > B.z1) B.z1 = m.boxes[o + 5];
     }
     if (B.x0 > B.x1) Object.assign(B, { x0: -10, y0: -1, z0: -10, x1: 10, y1: 1, z1: 10 });
-    return m;
 }
 
 function ladderBoxes(l, push) {

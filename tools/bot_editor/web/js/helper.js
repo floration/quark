@@ -29,26 +29,57 @@ export function normalizeLine(o) {
     const time = (x) => (x.t ?? x.time ?? (x.tick != null && tickRate ? x.tick / tickRate : 0));
     if (type === "start" || type === "hello" || type === "match") {
         tickRate = o.tickRate || o.tick_rate || 0;
+        lastFfa = ["ffa", "duel", "1v1", "tourney", "hide", "tag", "race"].includes(o.mode);
+        for (const b of o.bots || []) { startBrains.set(b.id, b.brain || "default"); startSkills.set(b.id, b.skill); }
         return { ...o, type: "start", t: time(o), bots: (o.bots || o.players || []).map((b) => ({ ...b, id: b.id ?? b.slot })) };
     }
-    if (type === "frame" || type === "state" || type === "tick") {
+    if (type === "frame" || type === "sample" || type === "state" || type === "tick") {
         return { type: "frame", t: time(o), events: (o.events || []).map(normEvent),
             bots: (o.bots || o.players || []).map((b) => ({
                 id: b.id ?? b.slot, pos: vec(b.pos ?? b.origin), yaw: b.yawDeg != null ? b.yawDeg * DEG : (b.yaw ?? 0),
                 pitch: b.pitchDeg != null ? b.pitchDeg * DEG : (b.pitch ?? 0), vel: vec(b.vel ?? b.velocity) || [0, 0, 0],
-                health: b.health ?? b.hp ?? 0, weapon: b.weapon ?? "", alive: b.alive ?? (b.health > 0),
+                health: b.health ?? b.hp ?? 0, weapon: String(b.weaponName ?? b.weapon ?? "").toLowerCase(), alive: b.alive ?? (b.health > 0),
                 target: b.target ?? b.debug?.target ?? -1, goal: vec(b.goal ?? b.debug?.goal), path: (b.path ?? b.debug?.path ?? []).map(vec),
-                state: b.state ?? b.debug?.state ?? "", decision: b.decision ?? b.debug?.decision ?? b.debug?.label ?? "", fov: b.fov ?? b.debug?.fov,
+                waypoint: vec(b.waypoint), state: b.state ?? b.debug?.state ?? "", fov: b.fov ?? b.debug?.fov,
+                decision: b.decision ?? b.label ?? b.debug?.decision ?? b.debug?.label ?? (b.state ? b.state + (b.goal ? " → goal " + vec(b.goal).map((v) => (+v).toFixed(0)).join(" ") : "") : ""),
+                kills: b.kills, deaths: b.deaths,
             })) };
     }
-    if (type === "end" || type === "result" || type === "done") return { ...o, type: "end", t: time(o), scores: o.scores || o.players || [] };
+    if (type === "end" || type === "result" || type === "done") {
+        const r = o.result || {};
+        let scores = o.scores || r.players || o.players || [];
+        scores = scores.map((x) => ({ ...x, brain: x.brain ?? startBrains.get(x.id), skill: x.skill ?? startSkills.get(x.id) }));
+        let winner = o.winner ?? r.winner;
+        if (winner === undefined && scores.length) {
+            const teams = new Set(scores.map((x) => x.team));
+            if (teams.size > 1 && !lastFfa) { const k = {}; for (const x of scores) k[x.team] = (k[x.team] || 0) + (x.score ?? x.kills ?? 0); const best = Object.entries(k).sort((a, b) => b[1] - a[1]); winner = best.length > 1 && best[0][1] === best[1][1] ? "draw" : best[0][0]; }
+            else winner = scores.reduce((a, b) => ((b.kills || 0) > (a.kills || 0) ? b : a)).id;
+        }
+        return { ...o, type: "end", t: time(o), reason: o.reason || (r.stopped ? "stopped" : "time"), winner, scores };
+    }
     if (type === "event") return { type: "frame", t: time(o), bots: null, events: [normEvent(o.event || o)] };
+    if (type === "error") return { type: "error", error: o.error || "helper error" };
     return { ...o, type: type || "unknown" };
 }
+const startBrains = new Map(), startSkills = new Map();
+let lastFfa = false;
 function normEvent(e) {
-    const t = e.type || e.kind;
-    if (t === "kill" || t === "frag" || t === "death") return { type: "kill", killer: e.killer ?? e.attacker ?? -1, victim: e.victim ?? e.id, weapon: e.weapon ?? e.cause ?? "" };
+    const t = e.kind || e.type;
+    if (t === "kill" || t === "frag" || t === "death") return { type: "kill", killer: e.killer ?? e.attacker ?? e.who ?? -1, victim: e.victim ?? e.id, weapon: String(e.weapon ?? e.cause ?? e.detail ?? "").toLowerCase() };
     return { ...e, type: t };
+}
+
+// the page's run request -> quark_maptool `bots --stream` (tools/map_editor/native/README.md "bots")
+export function toHelperRequest(req) {
+    return {
+        text: req.map.text, mapName: req.map.name, mode: req.mode, seconds: req.secs, seed: req.seed, rate: 20, paths: true,
+        speed: req.speed === "max" ? 0 : req.speed,
+        // sent as "placed" (the same specs): with a "bots" list and no "placed", quark_maptool adds 4 more bots
+        // (bots_cmd.cpp: more = ... : req.has("placed") ? 0 : 4), so the match would not be the line-up asked for
+        placed: req.bots.map((b) => ({ team: b.team === "b" ? "b" : "a", skill: String(b.skill || "advanced").toLowerCase(), name: b.name, brain: b.brain,
+            ...(b.pos ? { pos: b.pos, yaw: (b.yaw || 0) * DEG } : {}), objective: b.objective })),
+        brains: req.brains,
+    };
 }
 
 export function buildRequest(scenario, map, brains) {
@@ -65,7 +96,7 @@ export function buildRequest(scenario, map, brains) {
 class RealRun {
     constructor(req, handlers) {
         this.h = handlers; this.count = 0; this.closed = false; this.id = null;
-        api.post("/api/run", { args: ["bots", "--stream"], request: req }).then((r) => { this.id = r.id; this._open(); })
+        api.post("/api/run", { args: ["bots", "--stream"], request: toHelperRequest(req) }).then((r) => { this.id = r.id; this._open(); })
             .catch((e) => handlers.onError && handlers.onError(e));
     }
     _open() {
@@ -82,7 +113,7 @@ class RealRun {
         es.addEventListener("exit", (ev) => { this.closed = true; es.close(); this.h.onExit && this.h.onExit(JSON.parse(ev.data)); });
         es.onerror = () => { es.close(); if (!this.closed) setTimeout(() => !this.closed && this._open(), 500); };
     }
-    control(line) { if (this.id) return api.post(`/api/run/${this.id}/control`, { line }); }
+    control(line) { if (line === "speed max") line = "speed 0"; if (this.id) return api.post(`/api/run/${this.id}/control`, { line }); }
     stop() { if (this.id) api.post(`/api/run/${this.id}/stop`, {}); }
 }
 
@@ -159,7 +190,11 @@ export function runToEnd(helper, req, map, paramsOf, onProgress) {
 
 export async function createHelper(config) {
     const real = !!(config && config.maptool) && !new URLSearchParams(location.search).has("mock");
+    // What the helper acts on. quark_maptool `bots` stores a spec's brain and objective and echoes them, but every
+    // bot plays the game's built-in brain (tools/map_editor/native/README.md "bots"); the page says so when a run
+    // asks for more. Flip these when the helper runs .qbrain text (tools/bot_editor/native/SIM.md).
     return {
+        uses: real ? { brains: false, objectives: false } : { brains: true, objectives: true },
         kind: real ? "real" : "mock",
         label: real ? "quark_maptool" : "MOCK (no quark_maptool found: a stand-in simulation)",
         start(req, handlers, map, paramsOf) { return real ? new RealRun(req, handlers) : new MockRun(req, handlers, map, paramsOf); },

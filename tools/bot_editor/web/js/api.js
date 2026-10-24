@@ -26,5 +26,7 @@ export const api = {
     scenarios: () => req("GET", "/api/scenarios"),
     scenario: (name) => req("GET", `/api/scenario?name=${encodeURIComponent(name)}`),
     saveScenario: (name, s) => req("POST", `/api/scenario?name=${encodeURIComponent(name)}`, s, "json"),
+    state: (key) => req("GET", `/api/state?key=${encodeURIComponent(key)}`),
+    saveState: (key, obj) => req("POST", `/api/state?key=${encodeURIComponent(key)}`, obj, "json"),
     generateMaps: () => req("POST", "/api/generate-maps", {}),
 };

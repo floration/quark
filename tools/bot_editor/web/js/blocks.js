@@ -304,7 +304,8 @@ export class BlocksView {
             case "num": {
                 const inp = el("input", "bk-num");
                 inp.value = exprNumText(f.v, f.type).replace(/f$/, "");
-                inp.size = Math.max(2, inp.value.length);
+                inp.style.width = `calc(${Math.max(2, inp.value.length) + 1}ch + 12px)`;
+                inp.oninput = () => { inp.style.width = `calc(${Math.max(2, inp.value.length) + 1}ch + 12px)`; };
                 inp.disabled = preview;
                 inp.onchange = () => { const v = Number(inp.value); if (Number.isFinite(v)) { f.v = roundTo(v, f.type); this._changed(); } else inp.value = String(f.v); };
                 w.append(inp);
@@ -380,10 +381,11 @@ export class BlocksView {
     _nameField(b, key, listId) {
         const inp = el("input", "bk-namein");
         inp.value = b.fields[key];
-        inp.size = Math.max(3, inp.value.length);
+        const fit = () => { inp.style.width = `calc(${Math.max(3, inp.value.length) + 1}ch + 12px)`; };
+        fit();
         inp.setAttribute("list", listId);
         inp.onchange = () => { const v = inp.value.trim(); if (/^[A-Za-z_][A-Za-z0-9_.]*$/.test(v)) { b.fields[key] = v; this._changed(); } else inp.value = b.fields[key]; };
-        inp.oninput = () => { inp.size = Math.max(3, inp.value.length); };
+        inp.oninput = fit;
         return inp;
     }
     _datalists() {   // one shared list of names per kind (not one per field)

@@ -7,7 +7,7 @@ import { parse, print, printExpr, BrainError } from "../js/dsl.js";
 import { validate, deepEqual, firstDiff, stripIds, numberIds, carryIds, clone, slotKey, diffBrains, declAreas, decompose, compose } from "../js/ast.js";
 import { brainToBlocks, blocksToBrain, toBlocks, fromBlocks } from "../js/blocks.js";
 import { toGraph, fromGraph, overviewGraph } from "../js/graph.js";
-import { parseQmap, mapObjectives } from "../js/qmap.js";
+import { parseQmap, mapObjectives, mapSupports, applyHelperParse } from "../js/qmap.js";
 import { MockSim } from "../js/mocksim.js";
 import { normalizeLine } from "../js/helper.js";
 
@@ -100,6 +100,13 @@ t("carryIds keeps ids over a text edit", () => {
     walk(b);
     same(b.decls[0].id, a.decls[0].id);
 });
+t("checking a brain leaves it equal to a fresh parse (no caches on the AST)", () => {
+    const a = numberIds(plain(parse(DEFAULT))), b = numberIds(plain(parse(DEFAULT)));
+    validate(a);
+    same(diffBrains(a, b).filter((x) => x.change !== "default").length, 0, "validate made the brain differ");
+    eq(stripIds(a), stripIds(b), "AST changed by validate");
+    same(JSON.stringify(a), JSON.stringify(b), "validate wrote fields onto the AST");
+});
 t("diff vs default and provenance areas", () => {
     const def = plain(parse(DEFAULT));
     const mine = plain(parse(DEFAULT.replace("param fov f32 = 1.55 1.7 1.85 2", "param fov f32 = 1.6 1.7 1.85 2").replace("if hasHill: goto hill.floor", "if hasHill: goto me.pos")));
@@ -170,6 +177,22 @@ t("mock simulation is deterministic and writes the stream schema", () => {
 t("helper adapter reads other spellings", () => {
     const n = normalizeLine({ type: "state", time: 1.5, players: [{ slot: 2, origin: { x: 1, y: 2, z: 3 }, yawDeg: 90, hp: 50, debug: { goal: { x: 4, y: 5, z: 6 }, label: "go" } }] });
     same(n.type, "frame"); same(n.t, 1.5); eq(n.bots[0].pos, [1, 2, 3]); same(Math.round(n.bots[0].yaw * 1000), 1571); eq(n.bots[0].goal, [4, 5, 6]); same(n.bots[0].decision, "go");
+});
+
+console.log("maps (modes, helper geometry)");
+t("mode support follows Map::canSupportMode", () => {
+    const m = parseQmap("version 6\nbox 0 -1 0 10 0 10\nspawn att0 1 0 1 0\nspawn def0 9 0 9 0\npoint 2 0 2 4 2 4\npoint 6 0 6 8 2 8\n", "x");
+    same(mapSupports(m, "points"), true, "points"); same(mapSupports(m, "vs"), false, "staged spawns are not teams a / b");
+    same(mapSupports(m, "ffa"), true, "ffa"); same(mapSupports(m, "race"), false, "race");
+    const v = parseQmap("version 6\nbox 0 -1 0 10 0 10\nspawn a 1 0 1\nspawn b 9 0 9\nhill 4 0 4 6 2 6\n", "y");
+    same(mapSupports(v, "koth"), true, "koth"); same(mapSupports(v, "duel"), true, "duel"); same(mapSupports(v, "bomb"), false, "bomb");
+});
+t("the helper's parse replaces the geometry and the mode answer", () => {
+    const m = parseQmap("version 6\nbox 0 -1 0 10 0 10\nspawn a 1 0 1\n", "z");
+    same(applyHelperParse(m, { brushes: [{ mat: 0, min: [0, -1, 0], max: [10, 0, 10] }], generated: [{ mat: 8, min: [1, 0, 1], max: [2, 3, 1.1] }], ladders: [], modesPossible: ["ffa"], warnings: [] }), true);
+    same(m.nBoxes, 2); same(m.mats[1], 8); same(mapSupports(m, "ffa"), true); same(mapSupports(m, "hide"), false);
+    same(m.bounds.x1, 10, "bounds skip trim");
+    same(applyHelperParse(m, { error: "x" }), false, "a failed answer keeps the page's reading");
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);
