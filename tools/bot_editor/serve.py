@@ -23,7 +23,7 @@ bot_editor.json keys: port, dataDir, maptool, quarkTests, mapsDirs (list), defau
 Every request must come from the page itself: Host must be 127.0.0.1 / localhost, and every write carries the header
 X-Quark-Editor (a page on another site can't send it without a CORS preflight, which is never allowed).
 """
-import argparse, json, os, queue, re, shutil, subprocess, sys, tempfile, threading, time, uuid, webbrowser
+import argparse, json, os, queue, re, select, shutil, socket, subprocess, sys, tempfile, threading, time, uuid, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -129,8 +129,8 @@ def generate_default_maps():
 
 
 def map_header(path):
-    """title / for / modes / handmade from the first lines of a .qmap (no full parse; the page parses the text)."""
-    info = {"title": "", "for": "", "modes": [], "handmade": False}
+    """title / for / modes / ranked / handmade from the first lines of a .qmap (no full parse; the page parses the text)."""
+    info = {"title": "", "for": "", "modes": [], "ranked": "", "handmade": False}
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
             for i, line in enumerate(f):
@@ -141,6 +141,7 @@ def map_header(path):
                 if kw == "title": info["title"] = rest.strip()
                 elif kw == "for": info["for"] = rest.strip()
                 elif kw == "modes": info["modes"] = rest.split()
+                elif kw == "ranked": info["ranked"] = rest.strip() or "yes"   # (the ranked pool: its setting, e.g. vanilla)
                 elif kw == "handmade": info["handmade"] = True
     except OSError:
         pass
@@ -238,13 +239,18 @@ def update_provenance(name, prov):
 # ---------------------------------------------------------------- live runs (quark_maptool bots --stream)
 
 class Run:
-    """One helper process whose stdout JSON lines are kept (so a page that reconnects gets them from the start)."""
+    """One helper process whose stdout JSON lines are kept (so a page that reconnects gets them from the start).
+    It lives only while a page watches it: once its last event stream has been gone ORPHAN_GRACE seconds (a reload, a
+    closed tab), or no stream ever came, it is stopped, so a long real-time run or a batch on every core doesn't go on
+    for nobody. The grace covers the page's own reconnects (EventSource retries after 0.5 s)."""
     MAX_LINES = 400000
+    ORPHAN_GRACE = 5.0
 
     def __init__(self, cmd, request):
         self.id = uuid.uuid4().hex[:12]
         self.lines, self.cond, self.done, self.code, self.err = [], threading.Condition(), False, None, ""
         self.started = time.time()
+        self.clients, self.left, self.orphaned = 0, time.time(), False   # left: when the last stream went (or the start)
         flags = subprocess.CREATE_NO_WINDOW if IS_WIN else 0
         self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      bufsize=1, text=True, encoding="utf-8", errors="replace", creationflags=flags)
@@ -255,6 +261,26 @@ class Run:
         if not self.streaming: self.proc.stdin.close()
         threading.Thread(target=self._read, daemon=True).start()
         threading.Thread(target=self._read_err, daemon=True).start()
+        self._watch()   # (the page opens its stream right after the POST: none by then, it went away first)
+
+    def attach(self):
+        with self.cond: self.clients += 1
+
+    def detach(self):
+        with self.cond:
+            self.clients -= 1
+            self.left = time.time()
+            if self.clients <= 0: self._watch()
+
+    def _watch(self):
+        def check():   # (a later detach has its own timer: only the one a full grace after the last detach acts)
+            with self.cond: gone = self.clients <= 0 and not self.done and time.time() - self.left >= self.ORPHAN_GRACE - 0.05
+            if gone:
+                self.orphaned = True
+                self.stop()
+        t = threading.Timer(self.ORPHAN_GRACE, check)
+        t.daemon = True
+        t.start()
 
     def _read(self):
         for line in self.proc.stdout:
@@ -523,6 +549,14 @@ class Handler(BaseHTTPRequestHandler):
         with open(full, "rb") as f: data = f.read()
         self._send(200, data, MIME.get(ext, "application/octet-stream"))
 
+    def _client_gone(self):
+        """The page closed this stream (an EventSource sends nothing after its request: readable = closed)."""
+        try:
+            r, _, _ = select.select([self.connection], [], [], 0)
+            return bool(r) and self.connection.recv(1, socket.MSG_PEEK) == b""
+        except (OSError, ValueError):
+            return True
+
     def _events(self, rid, start):
         run = RUNS.get(rid)
         if not run: return self._err(404, "no such run")
@@ -532,27 +566,34 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Connection", "close")
         self.end_headers()
         self.close_connection = True
-        i = max(0, start)
-        while True:
-            with run.cond:
-                while i >= len(run.lines) and not run.done:
-                    run.cond.wait(timeout=10)
-                    if i >= len(run.lines) and not run.done: break   # (keepalive)
-                batch = run.lines[i:]
-                done = run.done and i + len(batch) >= len(run.lines)
-            if batch:
-                # one SSE message per batch: lines joined with \n data: (the page splits them)
-                payload = "".join("data: %s\n" % l for l in batch) + "\n"
-                self.wfile.write(payload.encode("utf-8"))
-                i += len(batch)
-            else:
-                self.wfile.write(b": keepalive\n\n")
-            self.wfile.flush()
-            if done:
-                info = json.dumps({"type": "_exit", "code": run.code, "stderr": run.err[-2000:]})
-                self.wfile.write(("event: exit\ndata: %s\n\n" % info).encode("utf-8"))
-                self.wfile.flush()
-                return
+        run.attach()
+        try:
+            i, quiet = max(0, start), time.time()
+            while True:
+                with run.cond:
+                    if i >= len(run.lines) and not run.done: run.cond.wait(timeout=1.0)   # (a paused run: look at the page every second)
+                    batch = run.lines[i:]
+                    done = run.done and i + len(batch) >= len(run.lines)
+                if batch:
+                    # one SSE message per batch: lines joined with \n data: (the page splits them)
+                    payload = "".join("data: %s\n" % l for l in batch) + "\n"
+                    self.wfile.write(payload.encode("utf-8"))
+                    self.wfile.flush()
+                    i += len(batch)
+                    quiet = time.time()
+                elif self._client_gone():
+                    return
+                elif time.time() - quiet >= 10:
+                    self.wfile.write(b": keepalive\n\n")
+                    self.wfile.flush()
+                    quiet = time.time()
+                if done:
+                    info = json.dumps({"type": "_exit", "code": run.code, "stderr": run.err[-2000:]})
+                    self.wfile.write(("event: exit\ndata: %s\n\n" % info).encode("utf-8"))
+                    self.wfile.flush()
+                    return
+        finally:
+            run.detach()
 
 
 def main():

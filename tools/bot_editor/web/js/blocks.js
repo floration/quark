@@ -55,7 +55,7 @@ export class BlocksView {
     constructor(root, app) {
         this.root = root; this.app = app;
         this.model = null; this.declIx = -1; this.floating = new Map();   // declKey -> [{block, x, y}]
-        this.mode = "whole"; this.zoom = 1; this.collapsed = new Set(); this.curIx = -1;
+        this.mode = "whole"; this.zoom = 1; this.zooms = { whole: 1, focus: 1 }; this.collapsed = new Set(); this.curIx = -1;
         root.classList.add("blocks");
         this.paletteEl = el("div", "bk-palette");
         this.catsEl = el("div", "bk-cats");
@@ -86,13 +86,17 @@ export class BlocksView {
     restoreState(st) {
         if (!st) return;
         if (st.mode === "whole" || st.mode === "focus") this.mode = st.mode;
-        if (Number.isFinite(st.zoom)) this.zoom = Math.max(ZMIN, Math.min(ZMAX, st.zoom));
+        // each mode keeps its own zoom (a single slot isn't drawn at the whole brain's fit-all 31%)
+        const z = (v) => Math.max(ZMIN, Math.min(ZMAX, v));
+        if (st.zooms && typeof st.zooms === "object") { for (const m of ["whole", "focus"]) if (Number.isFinite(st.zooms[m])) this.zooms[m] = z(st.zooms[m]); }
+        else if (Number.isFinite(st.zoom)) this.zooms.whole = z(st.zoom);
+        this.zoom = this.zooms[this.mode];
         if (Array.isArray(st.collapsed)) this.collapsed = new Set(st.collapsed);
         if (typeof st.focus === "string") this._focusKey = st.focus;
     }
     _save() {
         const d = this.brain && this.brain.decls[this.declIx];
-        if (this.app.saveViewState) this.app.saveViewState("blocks", { mode: this.mode, zoom: this.zoom, collapsed: [...this.collapsed], focus: d ? declKey(d) : this._focusKey || null });
+        if (this.app.saveViewState) this.app.saveViewState("blocks", { mode: this.mode, zoom: this.zoom, zooms: { ...this.zooms, [this.mode]: this.zoom }, collapsed: [...this.collapsed], focus: d ? declKey(d) : this._focusKey || null });
     }
 
     // the brain changed elsewhere (or first show): rebuild the model from the AST
@@ -120,7 +124,9 @@ export class BlocksView {
     setMode(m, ix) {
         if (ix !== undefined && ix >= 0) { this.declIx = ix; if (this.brain.decls[ix].kind === "slot") this.curIx = ix; }
         const was = this.mode;
+        this.zooms[was] = this.zoom;
         this.mode = m;
+        this.zoom = this.zooms[m] ?? 1;
         this.render();
         if (m === "whole" && was !== "whole" && this.declIx >= 0) this.reveal(this.declIx);
         else if (m === "focus") this.ws.scrollTo(0, 0);
