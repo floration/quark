@@ -1012,7 +1012,8 @@ static void testDashCharges() {
             int t = 0;
             for (; t < 120 && (t == 0 || q.dashTimer > 0); t++) step(q, sd, open);
             printf("  super dash from %d: %d charge(s), %.1f m/s\n", start, (int)q.dashCharges, std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z));
-            CHECK(t < 120 && std::fabs(std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z) - 11.0f) < 1e-3f && q.dashCharges == 1);   // (from a standstill: the dash's own 11)
+            const float up = std::sin(1.2f) * 0.9f;   // (1.18.31: the dash's down share of the 11 goes up, the rest level)
+            CHECK(t < 120 && std::fabs(std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z) - 11.0f * std::sqrt(1 - up * up)) < 1e-3f && q.dashCharges == 1);   // (from a standstill: the dash's own 11)
             // dash still held through the hop: nothing until the cooldown is over, then (T2: a held dash fires the moment
             // it's allowed) the next dash at once, on the one charge left
             UserCmd fly; fly.buttons = BTN_DASH;
@@ -1107,9 +1108,10 @@ static void testDashTech() {
     auto step = [&](MoveState& q, UserCmd c) { c.msec = 1; pmove(q, c, open); };
     auto standing = [&] { MoveState q; q.flags = MF_ONGROUND; for (int i = 0; i < 50; i++) step(q, UserCmd()); return q; };
     const float g1 = 22.0f * 0.001f;   // one step of gravity (the jump's own step applies it)
-    // a super dash's hop speed at a look pitch: half the jump speed (3.67) at the 14.5 deg threshold (sine 0.25) up
-    // to the full 7.34 straight down, linear in the sine
-    auto superHop = [](float pitch) { float t = std::clamp((std::sin(-pitch) - 0.25f) / 0.75f, 0.0f, 1.0f); return 7.34f * (0.866f + 0.866f * t); };
+    // a super dash (hyper) at a look pitch leaves off the floor like the dash bounced (1.18.31): the dash's down share
+    // (the sine x 0.9, the most a dash points down) of its speed goes up, the rest stays level
+    auto hyperUp = [](float pitch) { return std::min(0.9f, std::sin(-pitch) * 0.9f); };
+    auto hyperLevel = [&](float pitch) { const float u = hyperUp(pitch); return std::sqrt(1 - u * u); };
     // flies a state until it lands: horizontal distance and the highest point
     auto flight = [&](MoveState q, uint16_t buttons, float* peak) {
         Vec3 p0 = q.pos; float top = q.pos.y;
@@ -1166,21 +1168,21 @@ static void testDashTech() {
         r.pitch = -1.0f; r.buttons = BTN_DASH | BTN_JUMP;
         step(q, r);
         printf("  super dash from a run (%.2f m/s): %.3f m/s, %.3f up\n", h0, hs(q), q.vel.y);
-        const float vy = superHop(-1.0f);   // (57.3 deg down: 1.54 of a jump)
-        CHECK(q.dashTimer == 0 && std::fabs(hs(q) - (h0 + 5.0f)) < 1e-3f && std::fabs(q.vel.y - (vy - g1)) < 1e-4f);   // (owner 1.18.7: + 5)
+        const float vy = (h0 + 5.0f) * hyperUp(-1.0f), level = (h0 + 5.0f) * hyperLevel(-1.0f);   // (57.3 deg down: 76% up)
+        CHECK(q.dashTimer == 0 && std::fabs(hs(q) - level) < 0.02f && std::fabs(q.vel.y - (vy - g1)) < 1e-3f);   // (owner 1.18.7: + 5; forward held: the level part is under the run cap, so air control adds a little)
         float peak, dist = flight(q, 0, &peak), air = 2 * vy / 22.0f;   // (dash let go: held, it fires again mid-air, T2)
         printf("  super dash: %.1f m across, %.2f m up (%.2f expected)\n", dist, peak, vy * vy / 44.0f);
-        CHECK(std::fabs(peak - vy * vy / 44.0f) < 0.03f && std::fabs(dist - (h0 + 5.0f) * air) < 0.6f);
+        CHECK(std::fabs(peak - vy * vy / 44.0f) < 0.03f && std::fabs(dist - level * air) < 0.6f);
     }
     { // the hop grows with how far down the dash is aimed (owner 1.18: "the lower you look the higher you should
-      // bounce"; 1.18.28: "3x more air"): 3x the old hops, 0.866 of a jump just past the 14.5 deg threshold, 1.732
-      // straight down
+      // bounce"; 1.18.31: "up to 90% of the speed on vertical"): 22.5% of the speed up just past the 14.5 deg
+      // threshold (a skim), 90% straight down
         auto superAt = [&](float pitch, float* peak) {
             MoveState q = standing();
             UserCmd d; d.pitch = pitch; d.buttons = BTN_DASH | BTN_JUMP;
             step(q, d);
-            CHECK(q.dashTimer == 0 && q.dashCharges == 1 && std::fabs(hs(q) - 11.0f) < 1e-4f);   // (a super dash: from a standstill, the dash's own 11)
-            flight(q, 0, peak);   // (dash let go: the 1.18.28 hops outlast the 0.6 s, and a held dash would fire, T2)
+            CHECK(q.dashTimer == 0 && q.dashCharges == 1 && std::fabs(hs(q) - 11.0f * hyperLevel(pitch)) < 1e-3f);   // (a super dash: from a standstill, the dash's own 11)
+            flight(q, 0, peak);   // (dash let go: the high hops outlast the 0.6 s, and a held dash would fire, T2)
             return q.vel.y;   // (landed: the hop's peak is in *peak)
         };
         const float threshold = -std::asin(0.25f) - 1e-4f;   // just past 14.48 deg down
@@ -1191,15 +1193,15 @@ static void testDashTech() {
         superAt(-1.5707963f, &p90);
         superAt(-1.55f, &p155);   // (the mouse's limit, 88.8 deg)
         printf("  super dash hop: %.3f m at the threshold, %.3f at 20 deg, %.3f at 45, %.3f at 88.8, %.3f straight down\n", pT, p20, p45, p155, p90);
-        CHECK(std::fabs(superHop(threshold) - 7.34f * 0.866f) < 1e-3f);  // at the threshold: sqrt(3) x half the jump speed
-        CHECK(std::fabs(superHop(-1.5707963f) - 12.713f) < 1e-3f); // sqrt(3) x a jump straight down
-        CHECK(pT > 0.88f && pT < 0.97f);                          // (0.92 m: 3x the old 0.31)
-        CHECK(p90 > 3.55f && p90 < 3.78f && p155 > 3.55f);        // (3.67 m: 3x a standing jump)
+        CHECK(std::fabs(hyperUp(threshold) - 0.225f) < 1e-3f);    // at the threshold: 22.5% of the speed up
+        CHECK(std::fabs(hyperUp(-1.5707963f) - 0.9f) < 1e-6f);    // straight down: 90%
+        CHECK(pT > 0.11f && pT < 0.17f);                          // (0.14 m: a skim)
+        CHECK(p90 > 2.15f && p90 < 2.30f && p155 > 2.15f);        // (2.23 m: 9.9 of the 11 up)
         CHECK(p90 > p20 + 0.5f && p20 > pT && p45 > p20 && p90 > p45);
         { MoveState q = standing(); UserCmd d; d.pitch = -1.5707963f; d.buttons = BTN_DASH | BTN_JUMP; step(q, d);
-          CHECK(std::fabs(q.vel.y - (7.34f * 1.732f - g1)) < 1e-4f); }   // (exactly: the step's own gravity off 1.732 jumps)
+          CHECK(std::fabs(q.vel.y - (11.0f * 0.9f - g1)) < 1e-4f); }   // (exactly: the step's own gravity off 90% of 11)
         { MoveState q = standing(); UserCmd d; d.pitch = threshold; d.buttons = BTN_DASH | BTN_JUMP; step(q, d);
-          CHECK(std::fabs(q.vel.y - (7.34f * 0.866f - g1)) < 1e-3f); }
+          CHECK(std::fabs(q.vel.y - (11.0f * 0.225f - g1)) < 1e-3f); }
         // shallower than the threshold: a dash jump (a full jump at the burst speed), not a super dash
         { MoveState q = standing(); UserCmd d; d.pitch = -10 * 0.0174533f; d.buttons = BTN_DASH | BTN_JUMP; step(q, d);
           CHECK(q.dashCharges == 2 && q.dashRecharging == 0 && std::fabs(hs(q) - 24.0f) < 1e-4f && std::fabs(q.vel.y - (7.34f - g1)) < 1e-4f); }
@@ -1216,8 +1218,8 @@ static void testDashTech() {
         int t = 0;
         for (; t < 120 && (t == 0 || q.dashTimer > 0); t++) step(q, r);
         printf("  super dash out of a bhop (%.2f m/s): %.3f m/s, %.3f up after %d ms\n", h0, hs(q), q.vel.y, t);
-        const float vy = superHop(-1.2f);   // (68.8 deg down: 0.95 of a jump)
-        CHECK(t < 120 && std::fabs(hs(q) - std::max(11.0f, h0 + 5.0f)) < 1e-3f && std::fabs(q.vel.y - (vy - g1)) < 1e-4f);
+        const float sp = std::max(11.0f, h0 + 5.0f), vy = sp * hyperUp(-1.2f);   // (68.8 deg down: 84% up)
+        CHECK(t < 120 && std::fabs(hs(q) - sp * hyperLevel(-1.2f)) < 0.02f && std::fabs(q.vel.y - (vy - g1)) < 1e-3f);   // (jump held: air control adds a little, as above)
         float peak;
         flight(q, BTN_DASH, &peak);
         CHECK(peak < vy * vy / 44.0f + 0.02f);   // (no bhop bounce off the dash's push into the floor on top)
@@ -1230,7 +1232,8 @@ static void testDashTech() {
         f3.vel = {0, 0, -33};
         step(f3, d);
         printf("  super dash at 30 m/s: %.3f m/s; at 33: %.3f\n", hs(f), hs(f3));
-        CHECK(std::fabs(hs(f) - 35.0f) < 1e-3f && std::fabs(hs(f3) - 36.0f) < 1e-4f);
+        CHECK(std::fabs(hs(f) - 35.0f * hyperLevel(-1.0f)) < 1e-3f && std::fabs(hs(f3) - 36.0f * hyperLevel(-1.0f)) < 1e-3f);
+        CHECK(std::fabs(f.vel.y - (35.0f * hyperUp(-1.0f) - g1)) < 1e-3f);   // (the speed is the same, part of it up)
         MoveState f2 = standing();
         f2.vel = {0, 0, -30};
         d.pitch = 0;
@@ -1252,7 +1255,7 @@ static void testDashTech() {
             UserCmd d; d.pitch = -1.2f; d.buttons = BTN_DASH;
             int t = 0;
             for (; t < 120 && (t == 0 || q.dashTimer > 0); t++) step(q, d);
-            if (gap < 100) CHECK(t < 120 && std::fabs(hs(q) - 11.0f) < 1e-4f && q.vel.y > 3.0f);   // (a super dash from a standstill: 11)
+            if (gap < 100) CHECK(t < 120 && std::fabs(hs(q) - 11.0f * hyperLevel(-1.2f)) < 1e-3f && q.vel.y > 3.0f);   // (a super dash from a standstill: 11)
             else CHECK(t == 120 && hs(q) < 11.01f);
         }
     }

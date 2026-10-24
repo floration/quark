@@ -14,6 +14,7 @@ import selectors
 import subprocess
 import sys
 import time
+import math
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 EXE = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "build", "quark_maptool" + (".exe" if os.name == "nt" else ""))
@@ -105,7 +106,7 @@ hs = r["bhop_strafe"]["hopSpeeds"]
 check(len(hs) >= 9 and all(b > a for a, b in zip(hs, hs[1:])) and hs[0] > 9.5, "strafe bot gains every hop: %s" % hs[:4])
 check(near(r["dash"]["dashDistance"], 24 * 0.12, 0.1) and r["dash"]["dashExitSpeed"] == 11, "dash 2.88 m, leaves at 11")
 check(r["dash_jump"]["dashJumpSpeed"] == 24, "dash jump keeps the 24 m/s burst")
-check(near(r["super_dash"]["superDashSpeed"], 14.5, 0.01) and near(r["super_dash"]["jumpHeight"], 2.36, 0.04), "super dash 9.5 + 5, 2.36 m hop at 45 deg")
+check(near(r["super_dash"]["superDashSpeed"], 14.5 * math.sqrt(1 - (0.9 * math.sin(math.radians(45))) ** 2), 0.05) and near(r["super_dash"]["jumpHeight"], 1.94, 0.05), "super dash 9.5 + 5, 64% of it up at 45 deg: 11.2 level, a 1.94 m hop")
 check(r["dash_wall"]["bounceSpeed"] == 16, "wall bounce 16 m/s")
 check(r["grapple_swing"]["hookTopSpeed"] > 23 and r["grapple_swing"]["distance"] > 20, "grapple pulls to its 24 m/s")
 check(near(r["ladder_climb"]["climbHeight"], 9, 0.05) and 1.0 < r["ladder_climb"]["ladderTime"] < 1.5, "ladder: up the 8 m tower (volume to 9 m)")
