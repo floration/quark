@@ -373,6 +373,12 @@
     const d = derived();
     const att = arr(d.attention).filter(isObj);
     const steps = arr(d.nextSteps).filter(s => isObj(s) && String(s.owner || '').toLowerCase() === 'q');
+    const qs = arr(d.questions).filter(isObj);
+    const recFor = s => {
+      if (has(s.recommendation)) return s.recommendation;
+      const q = qs.find(x => (has(x.link) && x.link === s.link) || (has(x.text) && String(s.text || '').indexOf(String(x.text)) >= 0));
+      return q && has(q.recommendation) ? q.recommendation : null;
+    };
     const items = [];
     att.filter(a => a.level === 'red').forEach(a => items.push({ cls: 'red', icon: IC.crit, a }));
     att.filter(a => a.level !== 'red').forEach(a => items.push({ cls: 'amber', icon: IC.warn, a }));
@@ -386,7 +392,8 @@
       const lab = linkLabel(a.link);
       return '<li class="need ' + cls + '">' + icon + '<span class="txt">' + unk(a.text, 'no text') + '</span>' +
         (lab ? link(a.link, esc(lab) + ' &rarr;', 'go') : '<span></span>') +
-        (why ? '<span class="why">' + esc(why) + '</span>' : '') + '</li>';
+        (why ? '<span class="why">' + esc(why) + '</span>' : '') +
+        (cls === 'step' && recFor(a) != null ? '<span class="rec"><b>Recommended:</b> ' + esc(recFor(a)) + '</span>' : '') + '</li>';
     }).join('');
     return head('h-needs', 'Needs you', count(items.length), meta) + '<ul class="needs">' + li + '</ul>';
   }
@@ -425,8 +432,11 @@
         if (has(e.where)) bits.push('<span class="mono">' + esc(e.where) + '</span>');
         if (has(e.waitingWhy)) bits.push(esc(e.waitingWhy));
         if (b.id === 'other' && has(e.waitingOn)) bits.unshift('waiting on ' + esc(e.waitingOn));
+        const wl = arr(e.waitingOnList).filter(x => typeof x === 'string' && x);
+        if (wl.length > 1) bits.push('waiting on ' + wl.map(esc).join(', '));
         const tl = linkAttrs(e.threadUrl) ? link(e.threadUrl, esc(has(e.thread) ? e.thread : 'thread') + ' &#8599;') : (has(e.thread) ? '<span class="muted">' + esc(e.thread) + '</span>' : '');
-        html += '<li class="row"><span class="t">' + unk(e.title, 'untitled') + '</span><span class="r">' + tl + '</span>' +
+        const entry = linkAttrs(e.entryLink) ? e.entryLink : (has(e.id) ? tabHref('docs', '#entry=' + encodeURIComponent(e.id)) : null);
+        html += '<li class="row"><span class="t">' + (entry ? link(entry, unk(e.title, 'untitled'), 'entry') : unk(e.title, 'untitled')) + '</span><span class="r">' + tl + '</span>' +
           '<span class="m">' + (bits.length ? bits.join('<span class="sep">&middot;</span>') : '<span class="muted">no details</span>') + '</span></li>';
       }
       html += '</ul>';
@@ -503,9 +513,9 @@
 
   // ---------------------------------------------------------------- 5. assets
   function categories(p) {
-    const c = pick(p, 'byCategory', 'categories');
+    const c = pick(p, 'byCategory', 'by_category', 'categories');
     const out = [];
-    const norm = (name, x) => ({ name: String(name || pick(x, 'category', 'name') || 'unknown'), human: num(pick(x, 'human')) || 0, third: num(pick(x, 'thirdParty', 'third_party', 'third-party', 'third')) || 0, ai: num(pick(x, 'ai', 'AI')) || 0 });
+    const norm = (name, x) => ({ name: String(name || pick(x, 'category', 'name') || 'unknown'), link: x.link, human: num(pick(x, 'human')) || 0, third: num(pick(x, 'thirdParty', 'third_party', 'third-party', 'third')) || 0, ai: num(pick(x, 'ai', 'AI')) || 0 });
     if (Array.isArray(c)) c.filter(isObj).forEach(x => out.push(norm(null, x)));
     else if (isObj(c)) Object.keys(c).forEach(k => isObj(c[k]) && out.push(norm(k, c[k])));
     return out;
@@ -518,19 +528,28 @@
       if (num(d.humanPct) != null) html += '<p class="small muted" style="margin-top:8px">Last known: ' + esc(num(d.humanPct)) + '% human-made.</p>';
       return html;
     }
-    const e = data('editors'), p = obj(e.provenance);
+    // derived.assets is the server's normalized copy; the raw editors data (snake or camel case) is the fallback
+    const e = data('editors'), da = isObj(d.assets) ? d.assets : null;
+    const p = da || obj(e.provenance);
     const cats = categories(p);
     const sum = k => cats.reduce((a, c) => a + c[k], 0);
-    const human = num(p.human) != null ? num(p.human) : sum('human');
-    const third = num(pick(p, 'thirdParty', 'third_party')) != null ? num(pick(p, 'thirdParty', 'third_party')) : sum('third');
-    const ai = num(p.ai) != null ? num(p.ai) : sum('ai');
-    const total = num(p.total) != null ? num(p.total) : human + third + ai;
-    let pct = num(d.humanPct); if (pct == null) pct = num(p.humanPct); if (pct == null && total) pct = Math.round(human / total * 1000) / 10;
+    const first = (o, ...ks) => { const v = num(pick(o, ...ks)); return v; };
+    const orSum = (v, k) => v != null ? v : sum(k);
+    const human = orSum(first(p, 'human'), 'human');
+    const third = orSum(first(p, 'thirdParty', 'third_party'), 'third');
+    const ai = orSum(first(p, 'ai'), 'ai');
+    const total = first(p, 'total') != null ? first(p, 'total') : human + third + ai;
+    let pct = first(p, 'humanPct', 'pct_human', 'human_pct');
+    if (pct == null) pct = num(d.humanPct);
+    if (pct == null && total) pct = Math.round(human / total * 1000) / 10;
+    const pending = num(pick(da || {}, 'pendingMarks')) != null ? num(da.pendingMarks) : first(e, 'pendingMarks', 'pending_marks');
+    const remaining = num(pick(da || {}, 'remaining')) != null ? num(da.remaining) : first(e, 'remaining');
+    const assetsLink = (da && linkAttrs(da.link)) ? da.link : tabHref('dashboard', '#view=assets');
     html += '<div class="assets-top"><div><div class="hero">' + (pct != null ? esc(pct) + '<small>%</small>' : '<span class="muted">?</span>') + '</div>' +
       '<div class="hero-cap">human-made' + (total ? ', ' + esc(human) + ' of ' + esc(total) + ' assets' : '') + '</div></div>' +
       '<div class="mini-stats"><div><b>' + unk(num(third)) + '</b>third-party</div><div><b>' + unk(num(ai)) + '</b>AI-made</div>' +
-      '<div><b>' + unk(num(e.pendingMarks)) + '</b>' + tabLink('dashboard', '#view=assets', 'pending marks') + '</div>' +
-      '<div><b>' + unk(num(e.remaining)) + '</b>left to replace</div></div></div>';
+      '<div><b>' + unk(pending) + '</b>' + link(assetsLink, 'pending marks') + '</div>' +
+      '<div><b>' + unk(remaining) + '</b>left to replace</div></div></div>';
     html += '<div class="legend"><span><i style="background:var(--human)"></i>human</span><span><i style="background:var(--third)"></i>third-party</span><span><i style="background:var(--ai)"></i>AI</span></div>';
     if (cats.length) {
       charts.stack = cats;
@@ -554,7 +573,7 @@
     cats.forEach((c, i) => {
       const y = i * rowH, tot = c.human + c.third + c.ai;
       const label = esc(c.name);
-      const href = tabHref('dashboard', '#view=assets&category=' + encodeURIComponent(c.name));
+      const href = linkAttrs(c.link) ? c.link : tabHref('dashboard', '#view=assets&category=' + encodeURIComponent(c.name));
       const la = linkAttrs(href);
       s += la ? '<a ' + la + '><text x="0" y="' + (y + 17) + '">' + label + '</text></a>' : '<text x="0" y="' + (y + 17) + '">' + label + '</text>';
       if (!tot) { s += '<rect x="' + labW + '" y="' + (y + 7) + '" width="' + barW + '" height="14" rx="4" fill="var(--surface-2)"/>'; }
