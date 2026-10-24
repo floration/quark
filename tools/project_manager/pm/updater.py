@@ -14,9 +14,15 @@ in one background thread:
   4. `"run": "builtin:self-update"` copies this program from repository\\tools\\project_manager into
      Quark\\project-manager\\ (q's tabs.json / config.json / history / state are never touched), runs the new
      server.py --init (tabs.json upgrade), and sets `selfUpdated` when any file changed: the shell then offers a restart.
+  5. `"run": "builtin:electron-update"` (no sources, no stamp; at most every ELECTRON_CHECK_GAP): when the latest
+     stable Electron release is newer than Quark\\project-manager\\electron\\VERSION, downloads its zip, checks it
+     against that release's SHASUMS256.txt and unpacks it into electron.next\\. The running electron.exe cannot be
+     replaced, so the shell swaps the folders after it exits (shell/electron-swap.ps1, on close or restart).
 """
 import hashlib
+import json
 import os
+import platform
 import re
 import shutil
 import signal
@@ -25,6 +31,8 @@ import sys
 import threading
 import time
 import traceback
+import urllib.request
+import zipfile
 
 from . import tabs, util
 
@@ -37,6 +45,15 @@ REGISTRY = "installs.json"
 STATE_FILE = "installs-state.json"
 BRANCH = "testing"
 SELF_UPDATE = "builtin:self-update"
+ELECTRON_UPDATE = "builtin:electron-update"
+# Electron (the app's browser) updates itself: GitHub's "latest" release is the newest stable one (never a beta or
+# a draft). Checked at most every 12 h (a pass runs on every app open); the zip is about 110 MB.
+ELECTRON_RELEASES = "https://api.github.com/repos/electron/electron/releases/latest"
+ELECTRON_CHECK_GAP = 12 * 3600.0
+ELECTRON_MAX_ZIP = 400 * 1024 * 1024
+ELECTRON_TIMEOUT = 60
+ELECTRON_DIR, ELECTRON_NEXT = "electron", "electron.next"
+VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 # what setup.ps1 copies (quark.ico aside); q's files next to them (tabs.json, config.json, history.jsonl, state.json,
 # oracle-last.json, installs-state.json, logs\, electron\) are never written here
 SELF_FILES = ("server.py", "project-manager.cmd", "project-manager-hidden.vbs", REGISTRY)
@@ -80,14 +97,14 @@ def normalize_entry(raw):
     eid = raw.get("id")
     if not isinstance(eid, str) or not ID_RE.match(eid):
         return None
-    srcs = raw.get("sources")
+    srcs = raw.get("sources", [])
     if isinstance(srcs, str):
         srcs = [srcs]
     if not isinstance(srcs, list):
         return None
     srcs = [s.replace("\\", "/").strip("/") for s in srcs if isinstance(s, str) and s.strip("/\\ ")]
     run = raw.get("run")
-    if not srcs or not isinstance(run, str) or not run.strip():
+    if not isinstance(run, str) or not run.strip() or (not srcs and run.strip() != ELECTRON_UPDATE):
         return None
     check = raw.get("check") if isinstance(raw.get("check"), str) and raw.get("check").strip() else None
     rp = raw.get("restartsPort")
@@ -347,6 +364,154 @@ def self_update(paths, log_path, run_init=True):
     return code, lines[-TAIL_LINES:], changed
 
 
+# ---- Electron ---------------------------------------------------------------------------------------------------
+
+class _Done(Exception):
+    """(electron_update: nothing more to do)"""
+
+
+def electron_platform():
+    """(zip platform, program name) of the official Electron build for this PC, or None (macOS: an app bundle)."""
+    arm = platform.machine().lower() in ("arm64", "aarch64")
+    if util.IS_WINDOWS:
+        return ("win32-arm64" if arm else "win32-x64"), "electron.exe"
+    if sys.platform.startswith("linux"):
+        return ("linux-arm64" if arm else "linux-x64"), "electron"
+    return None
+
+
+def version_tuple(v):
+    return tuple(int(x) for x in v.split(".")) if isinstance(v, str) and VERSION_RE.match(v) else None
+
+
+def installed_electron(folder, exe):
+    """The version in <folder>\\VERSION when <folder> holds the program, else None."""
+    if not os.path.isfile(os.path.join(folder, exe)):
+        return None
+    try:
+        with open(os.path.join(folder, "VERSION"), encoding="utf-8") as f:
+            v = f.readline().strip().lstrip("v")
+    except OSError:
+        return None
+    return v if VERSION_RE.match(v) else None
+
+
+def _open_url(url, accept=None, timeout=ELECTRON_TIMEOUT):
+    h = {"User-Agent": util.USER_AGENT}
+    if accept:
+        h["Accept"] = accept
+    return urllib.request.urlopen(urllib.request.Request(url, headers=h), timeout=timeout)
+
+
+def _download(url, dst, limit):
+    """-> sha256 hex of what was written to dst (streamed: never the whole zip in memory)."""
+    sha = hashlib.sha256()
+    size = 0
+    with _open_url(url) as r, open(dst, "wb") as f:
+        while True:
+            chunk = r.read(1 << 20)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > limit:
+                raise OSError("%s is larger than %d MB" % (os.path.basename(dst), limit >> 20))
+            sha.update(chunk)
+            f.write(chunk)
+    return sha.hexdigest()
+
+
+def electron_update(paths, log_path, releases_url=None, plat=None):
+    """Stage the latest stable Electron in Quark\\project-manager\\electron.next\\ when it is newer than electron\\.
+    -> (exit code, tail, note, {installed, latest}). Never touches electron\\ (the running app's)."""
+    lines = ["[%s] electron update" % util.now_iso()]
+    info = {"installed": None, "latest": None}
+    note = None
+    code = 0
+    pm = paths.pm_dir
+    dl = os.path.join(pm, "electron.download")
+    tmp = os.path.join(pm, ELECTRON_NEXT + ".tmp")
+    try:
+        plat = plat or electron_platform()
+        if not plat:
+            note = "no Electron build for this system; left alone"
+            raise _Done
+        zplat, exe = plat
+        have = installed_electron(os.path.join(pm, ELECTRON_DIR), exe)
+        info["installed"] = have
+        if not have:
+            note = "no electron\\ with a VERSION file (setup -NoElectron?): nothing to update"
+            raise _Done
+        with _open_url(releases_url or ELECTRON_RELEASES, accept="application/vnd.github+json") as r:
+            rel = json.loads(r.read(4 << 20).decode("utf-8"))
+        ver = str(rel.get("tag_name") or "").lstrip("v")
+        if not VERSION_RE.match(ver) or rel.get("prerelease") or rel.get("draft"):
+            raise OSError("unexpected latest release %r" % rel.get("tag_name"))
+        info["latest"] = ver
+        lines.append("installed %s, latest stable %s" % (have, ver))
+        staged = installed_electron(os.path.join(pm, ELECTRON_NEXT), exe)
+        if version_tuple(ver) <= version_tuple(have):
+            note = "Electron %s is the latest" % have
+            if staged:
+                shutil.rmtree(os.path.join(pm, ELECTRON_NEXT), ignore_errors=True)  # (an older download: not needed)
+            raise _Done
+        if staged == ver:
+            note = "Electron %s is downloaded; it replaces %s when Quark Project next closes or restarts" % (ver, have)
+            raise _Done
+        name = "electron-v%s-%s.zip" % (ver, zplat)
+        assets = {a.get("name"): a for a in rel.get("assets") or [] if isinstance(a, dict)}
+        if name not in assets or "SHASUMS256.txt" not in assets:
+            raise OSError("Electron %s has no %s or SHASUMS256.txt" % (ver, name))
+        if (util.to_int(assets[name].get("size")) or 0) > ELECTRON_MAX_ZIP:
+            raise OSError("%s is larger than %d MB" % (name, ELECTRON_MAX_ZIP >> 20))
+        shutil.rmtree(dl, ignore_errors=True)
+        os.makedirs(dl)
+        sums_path = os.path.join(dl, "SHASUMS256.txt")
+        _download(assets["SHASUMS256.txt"]["browser_download_url"], sums_path, 1 << 20)
+        expected = None
+        with open(sums_path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                parts = line.strip().split(None, 1)
+                if len(parts) == 2 and parts[1].lstrip("*") == name and re.match(r"^[0-9a-fA-F]{64}$", parts[0]):
+                    expected = parts[0].lower()
+                    break
+        if not expected:
+            raise OSError("SHASUMS256.txt of Electron %s does not list %s" % (ver, name))
+        lines.append("downloading %s" % name)
+        zpath = os.path.join(dl, name)
+        actual = _download(assets[name]["browser_download_url"], zpath, ELECTRON_MAX_ZIP)
+        if actual != expected:
+            raise OSError("%s is corrupt: sha256 %s, expected %s" % (name, actual, expected))
+        lines.append("sha256 verified (%s)" % expected)
+        shutil.rmtree(tmp, ignore_errors=True)
+        with zipfile.ZipFile(zpath) as z:
+            z.extractall(tmp)  # (zipfile drops absolute paths and '..' parts)
+        if not os.path.isfile(os.path.join(tmp, exe)):
+            raise OSError("%s has no %s" % (name, exe))
+        with open(os.path.join(tmp, "VERSION"), "w", encoding="ascii") as f:
+            f.write(ver + "\n")
+        nxt = os.path.join(pm, ELECTRON_NEXT)
+        shutil.rmtree(nxt, ignore_errors=True)
+        os.replace(tmp, nxt)
+        note = "Electron %s is downloaded; it replaces %s when Quark Project next closes or restarts" % (ver, have)
+    except _Done:
+        pass
+    except (OSError, ValueError, zipfile.BadZipFile) as e:
+        code = 1
+        note = "failed: %s" % e
+    finally:
+        shutil.rmtree(dl, ignore_errors=True)
+        shutil.rmtree(tmp, ignore_errors=True)
+    lines.append(note or "")
+    lines.append("[%s] exit code %d" % (util.now_iso(), code))
+    try:
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        with open(log_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+    except OSError:
+        pass
+    return code, lines[-TAIL_LINES:], note, info
+
+
 # ---- the updater ------------------------------------------------------------------------------------------------
 
 class Updater:
@@ -561,6 +726,30 @@ class Updater:
                                           "at": now_iso, "atTs": time.time()})
         return ok
 
+    def electron(self, entry, now=None):
+        """builtin:electron-update: at most once per ELECTRON_CHECK_GAP (a failed check is tried again next pass).
+        The versions go in installedVersion / latestVersion (the page shortens stamps to 7 characters)."""
+        eid = entry["id"]
+        now = now or time.time()
+        rec = self.saved["entries"].setdefault(eid, {})
+        if now - (rec.get("checkedTs") or 0) < ELECTRON_CHECK_GAP:
+            self._set(eid, state="ok", note=rec.get("note"), installedVersion=rec.get("installed"),
+                      latestVersion=rec.get("latest"))
+            return True
+        log_path = self.paths.pm("logs", "install-%s.log" % eid)
+        self._set(eid, state="updating", startedAt=util.now_iso())
+        started = time.time()
+        code, lines, note, info = electron_update(self.paths, log_path)
+        now_iso = util.now_iso()
+        rec.update(lastRunAt=now_iso, exitCode=code, durationSec=round(time.time() - started, 1), note=note,
+                   installed=info["installed"], latest=info["latest"])
+        if code == 0:
+            rec["checkedTs"] = now
+        self._save_state()
+        self._set(eid, state="ok" if code == 0 else "failed", lastRunAt=now_iso, exitCode=code, logTail=lines, note=note,
+                  installedVersion=info["installed"], latestVersion=info["latest"], log=log_path)
+        return code == 0
+
     def run_once(self):
         with self.lock:
             self.running = True
@@ -593,15 +782,16 @@ class Updater:
                 "exitCode": (saved.get(e["id"]) or {}).get("exitCode"),
                 "logTail": tail(self.paths.pm("logs", "install-%s.log" % e["id"])),
                 "restartsPort": e["restartsPort"], "check": e["check"], "note": None} for e in entries}
-        if not usable:
-            for e in entries:
-                if e["enabled"]:
-                    self._set(e["id"], state="pending", note=self.repo.get("error"))
-            return
         for e in entries:
             if self.stop.is_set():
                 return
             if not e["enabled"]:
+                continue
+            if e["run"] == ELECTRON_UPDATE:
+                self.electron(e)  # (needs no repository)
+                continue
+            if not usable:
+                self._set(e["id"], state="pending", note=self.repo.get("error"))
                 continue
             cur, waiting = self.stamp(e)
             if cur is None:
