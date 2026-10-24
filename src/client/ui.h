@@ -138,6 +138,7 @@ public:
     void popups();                       // draws the open picker / dropdown over the page (call after its widgets)
     bool popupOpen() const { return popup_.kind != 0; }
     bool dropdownOpen() const { return popup_.kind == POP_DROP; }
+    bool sliderHeld() const { return activeSlider_ >= 0; }   // a slider is being dragged (the HUD tab's live preview)
     // opens the picker / dropdown with this label as if it had been clicked (screenshot runs)
     void openPopup(const std::string& label, bool dropdown) { popup_ = Popup(); popup_.kind = dropdown ? POP_DROP : POP_COLOR; popup_.id = label; popup_.seen = true; popup_.init = true; }
     void closePopup() { popup_ = Popup(); if (focus_ == kPickerFocus) focus_ = -1; }

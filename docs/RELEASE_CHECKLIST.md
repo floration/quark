@@ -80,11 +80,11 @@ The automated UI test clicks every button (`quark --uitest`, run locally on this
 For each one: change it, check the effect in a game, quit, restart, check it was kept.
 
 Settings is one panel with six tabs (PLAYER, GAMEPLAY, CONTROLS, VIDEO + AUDIO, CROSSHAIR, HUD), the same from the main
-menu and from the pause menu: BACK (bottom-left) and Esc leave it from any tab; in a game the HUD is hidden while it's open.
+menu and from the pause menu: BACK (bottom-left) and Esc leave it from any tab; in a game the HUD is hidden while it's open (except on the HUD tab, which previews it).
 
 | ✓ | Check |
 |---|---|
-| ☐ | The shell: every tab opens from the tab row, BACK never moves, nothing overlaps at 1280×720, 1920×1080 and 1024×768 (4:3); in a game nothing of the HUD shows through. |
+| ☐ | The shell: every tab opens from the tab row, BACK never moves, nothing overlaps at 1280×720, 1920×1080 and 1024×768 (4:3); in a game nothing of the HUD shows through (but on the HUD tab). |
 | ☐ | **Colour pickers** (TEAM / ENEMY COLOR, CUSTOM NAME COLOR, MAP COLOR, CROSSHAIR / HIT FLASH COLOR, the HUD element's colour): click one: drag in the square and the hue bar, type a hex value (Enter), click outside or Esc to close; right-click the swatch: its default. TEAM COLOR is also the menu accent. |
 | ☐ | Video (VIDEO + AUDIO): fullscreen / borderless / windowed, resolution, vsync, FPS limit; field of view (GAMEPLAY). |
 | ☐ | Outline thickness: **world** and **player** separately (0 = off). |
@@ -100,7 +100,7 @@ menu and from the pause menu: BACK (bottom-left) and Esc leave it from any tab; 
 | ☐ | Model overrides: install the model editor (`tools\model_editor\install.cmd`; it opens from `%USERPROFILE%\Desktop\Quark\model-editor\model-editor.html`), recolour `models/player/STANDARD` (e.g. bright green), Export to game into `%APPDATA%\quark\overrides` and restart. A casual game (vs bots) shows it, with outlines and crouching like the default; a **ranked** match (and a time trial) shows the default STANDARD instead. The payload cart and checkpoint gates (railyard), the bomb on a carrier's back and on the ground (depot), and the arms (other players' gun arms; the held-weapon arms in hide and seek) look as in the last release. Remove the file after. |
 | ☐ | Controls: rebind every action you use (GENERAL + INTERFACE KEYS and MOVE + WEAPON KEYS); **right-click** a slot unbinds it (or click it and press Del). Bind **chat to a letter key** (e.g. Y): pressing it opens chat **without** typing a "y". Bind **Toggle chat**: incoming chat hides / shows with a short message. **Disable chat** (GAMEPLAY) stays in sync with the toggle. |
 | ☐ | Interpolation setting (up to 200 ms): shots still hit what you see. |
-| ☐ | HUD tab: the ELEMENT dropdown lists WEAPON MODEL first and every HUD element; each one's SHOW / offsets / size / depth (weapon model) / colour work, RESET ELEMENT and RESET WHOLE HUD put the defaults back. |
+| ☐ | HUD tab: the ELEMENT dropdown lists WEAPON MODEL first and every HUD element; each one's SHOW / offsets / size / depth (weapon model) / colour work, RESET ELEMENT and RESET WHOLE HUD put the defaults back. **Live preview**: on the HUD tab (in a game and from the main menu) the HUD shows under a see-through panel (in game with live values; from the menu health 100, full bars, 12 m/s, FFA's weapon list, the key overlay when VERBOSE INFO is on); the selected element has a thin pulsing accent outline (dashed and dim when SHOW is off; none for WEAPON MODEL); dragging its X / Y OFFSET or SIZE, or changing its colour, draws it over the panel at full strength as it moves, for 1.5 s after the last change; the panel's text stays readable; other tabs look as before (opaque, no HUD). |
 | ☐ | HUD editor (HUD → WIDGET EDITOR): drag, add, delete, import / export a layout; the weapon list shows only the weapons the mode has. |
 | ☐ | DISCORD CODE: see section 13. |
 | ☐ | **Font** (SETTINGS → PLAYER → FONT): the game is in **Rubik Bold** everywhere (menus, HUD, chat, console still monospaced, scoreboard, editor). Pick WORK SANS, QUARK CLASSIC (square pixels, black outline, the old letter widths) and each game-styled entry: everything redraws in it at once with no stutter afterwards (F3 lows unchanged); restart: it's kept. Put a .ttf in `mods/fonts` (OPEN FOLDER), REFRESH: it's listed and works. Delete that file and restart: a notice says it fell back to Rubik. With Steam's TF2 / Quake or Windows' Verdana present, those entries say "USING YOUR ..." and look like the game. |
