@@ -239,6 +239,7 @@ void Audio::loadAnnouncer(int set) {
             }
         }
     loadOverrideVoice(set, lines, kLines);   // the owner's lines (docs/ASSETS.md); nothing without overrides
+    loadQuips(set, *built);
     std::shared_ptr<const AnnouncerLines> ready = std::move(built), unused, retired;   // (freed here, after the lock)
     {
         std::lock_guard<std::mutex> l(mu_);   // just the handover
@@ -381,8 +382,11 @@ void Audio::setListener(const Vec3& pos, float yaw) {
 
 // (the gains are worked out before taking the lock: the game thread holds it only for the push, and an inaudible sound
 // never takes it; the mixer holds it only to swap the list out, never for a mix pass)
+// (a quip: one the voice has, and QUIPS on; never another voice's set, never one asked for while they're off)
+static bool playable(int id, int quips, bool quipsOn) { return id >= 0 && (id < SND_COUNT || (quipsOn && id >= SND_QUIP && id - SND_QUIP < quips)); }
+
 void Audio::play(int id, float volume, float pitch, int pack) {
-    if (!running_ || id < 0 || id >= SND_COUNT) return;
+    if (!running_ || !playable(id, quipCount(), quipsOn_)) return;
     Voice v{id, (pack < 0 || pack >= kPacks) ? pack_.load() : pack, 0, pitch, volume, volume, false, {}, volume};
     std::lock_guard<std::mutex> l(mu_);
     v.seq = ++voiceSeq_;
@@ -390,7 +394,7 @@ void Audio::play(int id, float volume, float pitch, int pack) {
 }
 
 void Audio::play3D(int id, const Vec3& pos, float volume, float pitch, int pack) {
-    if (!running_ || id < 0 || id >= SND_COUNT) return;
+    if (!running_ || !playable(id, quipCount(), quipsOn_)) return;
     Voice v{id, (pack < 0 || pack >= kPacks) ? pack_.load() : pack, 0, pitch, 0, 0, true, pos, volume};
     voiceGains(v, listener_, rightOf(listenerYaw_));
     if (v.gainL + v.gainR < 0.002f) return; // inaudible
@@ -451,18 +455,22 @@ void Audio::render(float* buf, int n) {
         takePending();
         const Vec3 right = rightOf(mixListenerYaw_);
         const float perFrame = n > 0 ? 1.0f / n : 0.0f;
-        const float fxVol = fxVolume_, annVol = annVolume_;   // (EFFECTS / ANNOUNCER VOLUME: read once a period)
+        const float fxVol = fxVolume_, annVol = annVolume_;   // (EFFECTS / ANNOUNCER / QUIPS VOLUME: read once a period)
+        const float quipVol = quipsOn_ ? quipVolume_.load() : 0.0f;
         for (size_t k = 0; k < voices_.size();) {
             Voice& v = voices_[k];
             static const std::vector<float> none;
             const bool line = v.id >= SND_VOICE_THREE;
+            const bool quip = v.id >= SND_QUIP;
             const std::vector<float>& s = !line ? sounds_[v.pack][v.id]
-                                        : mixLines_ ? mixLines_->line[v.id - SND_VOICE_THREE] : none;
+                                        : !mixLines_ ? none
+                                        : !quip ? mixLines_->line[v.id - SND_VOICE_THREE]
+                                        : v.id - SND_QUIP < (int)mixLines_->quip.size() ? mixLines_->quip[v.id - SND_QUIP] : none;
             // a 3D sound follows the listener: its gains worked out again each period, ramped to over it (no clicks)
             float gl = v.gainL, gr = v.gainR, dl = 0, dr = 0;
             if (v.spatial) { voiceGains(v, mixListener_, right); dl = (v.gainL - gl) * perFrame; dr = (v.gainR - gr) * perFrame; }
             {   // its category's volume (the voice keeps its own gains: a change applies from the next period)
-                const float c = line ? annVol : fxVol;
+                const float c = quip ? quipVol : line ? annVol : fxVol;
                 gl *= c; gr *= c; dl *= c; dr *= c;
             }
             // the frames it has left, counted once: no end check in the loop (it reads the sample after: it ends at size - 1)
@@ -1240,5 +1248,39 @@ void Audio::loadOverrideVoice(int set, std::vector<float>* lines, int count) {
         std::vector<float> x; int rate = 0;
         std::string base = std::string("voices/") + kVoiceDirs[set] + "/" + kModSoundNames[SND_VOICE_THREE + k];
         if (overrideClip(base, x, rate)) lines[k] = prepareClip(x, rate, 5.0f, lines[k], false, kept(keep, base));
+    }
+}
+
+// The voice's quips (the QUIP key): never a gameplay call-out. Its voices/<voice>/quips/<NAME>.<ext> overrides (shipped
+// and yours, yours winning a name both have), any names, sorted, form the set; without any (or none that decodes), the
+// default set: kDefaultQuips' lines in this voice, as it says them (its line overrides included). An override is as loud
+// as the default quip of its name (else HEADSHOT's line), unless sound-levels.txt lists it.
+void Audio::loadQuips(int set, AnnouncerLines& a) {
+    a.quip.clear(); a.quipName.clear();
+    std::vector<std::pair<std::string, int>> defaults;   // (name, line)
+    for (int id : kDefaultQuips) defaults.push_back({kModSoundNames[id], id});
+    std::sort(defaults.begin(), defaults.end());
+    if (overrides::any()) {
+        const std::string dir = std::string("voices/") + kVoiceDirs[set] + "/quips";
+        const std::set<std::string> keep = keptLevels(overrides::soundLevels());
+        for (const std::string& lower : overrides::listFolder(dir, {".wav", ".ogg", ".flac", ".mp3"})) {
+            if ((int)a.quip.size() >= kMaxQuips) break;
+            std::string name = lower;
+            for (char& c : name) c = (char)std::toupper((unsigned char)c);
+            std::vector<float> x; int rate = 0;
+            const std::string base = dir + "/" + name;
+            if (!overrideClip(base, x, rate)) continue;
+            int match = SND_VOICE_HEADSHOT;
+            for (auto& d : defaults) if (d.first == name) match = d.second;
+            a.quip.push_back(prepareClip(x, rate, 5.0f, a.line[match - SND_VOICE_THREE], false, kept(keep, base)));
+            a.quipName.push_back(name);
+        }
+        if (!a.quip.empty()) return;
+    }
+    for (auto& d : defaults) {
+        const std::vector<float>& v = a.line[d.second - SND_VOICE_THREE];
+        if (v.size() < 2) continue;   // (a line this voice doesn't say: no quip of it)
+        a.quip.push_back(v);
+        a.quipName.push_back(d.first);
     }
 }

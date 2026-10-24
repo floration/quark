@@ -1,6 +1,6 @@
 # Quark Sound Editor
 
-A local page for designing and levelling Quark's sounds: every kit's 33 sounds, every voice's 27 announcer lines, the
+A local page for designing and levelling Quark's sounds: every kit's 33 sounds, every voice's 27 announcer lines and its quips, the
 events that have no sound yet, gameplay scenes to hear edits in context, and an export the game reads. It runs from
 disk (`file://`) in Chrome or Edge with no server and no network.
 
@@ -78,6 +78,9 @@ folder, not into overrides.
 
 - **Sounds / Voices**: a matrix (rows = sounds or lines, columns = kits or voices) with a mini waveform, duration,
   loudness and peak per cell; when it plays, the length guide, where it is reused, and the audit's weak spots per row.
+  The Voices tab also has a **QUIPS** group: each voice's quips (the QUIP key), rows `quips/<NAME>`, exported to
+  `voices/<voice>/quips/<NAME>.wav` (provenance id the same path). Any quip files for a voice replace its whole default
+  set in the game (docs/ASSETS.md), so export every quip you want that voice to keep.
   Flags: over the length guide, cut by the game's cap (3 s sounds, 5 s lines), edited, level yours, `=D` (this kit uses
   DEFAULT's sound, so a DEFAULT edit plays here; RETRO is DEFAULT chiptuned). Show the values as the game plays them,
   as the exported file, or as shipped. Click to play and edit; solo / mute per sound and per pack; play a row across

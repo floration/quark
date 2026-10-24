@@ -452,7 +452,7 @@ enum EventType : uint8_t {
     EV_HEALED,       // syringe throw: a was healed by b
     EV_RACE_SPLIT,   // race: a = player, b = checkpoint reached (1-based; the last one is the finish), text = ms since the start
     EV_TYPING,       // a is typing in chat (others hear key clicks and see "..." over them)
-    EV_QUIP,         // a says a line from the voice pack (b: which one, the same pick for everyone)
+    EV_QUIP,         // a says a quip (b: the pick, the same for everyone; each listener plays b modulo their voice's quip set)
     EV_LOCATE,       // the locator fired (WPN_LOCATOR), to the tagger / seeker only: a = who, text = "x y z" where they are
     EV_RANKSIGN,     // ranked match live / time trial started: text = the match (race ticket) id; the game answers "ticketsig <signature>"
     EV_RPS,          // hide and seek tiebreak: a = RpsStage, b = throw number, text = "<best of 3> <winner or -1>" then " id:shape:wins:out"

@@ -153,6 +153,12 @@ class Repo:
         parts = item_id.split("/")
         cat = category_of(item_id)
         if cat == "sounds": return self.sound(parts[1], os.path.splitext(parts[2])[0])
+        if cat == "voices" and len(parts) == 4 and parts[2] == "quips":   # a default quip: the voice's own line of that name
+            line = os.path.splitext(parts[3])[0]
+            line_ov = self.override("voices/%s/%s.wav" % (parts[1], line))
+            if line_ov: return "human", "default quip: the voice's %s line, the owner's override" % line, line_ov, {}
+            origin, source, ev, extra = self.voice(parts[1], line)
+            return origin, "default quip: the voice's %s line; %s" % (line, source), ev, extra
         if cat == "voices": return self.voice(parts[1], os.path.splitext(parts[2])[0])
         if cat == "models": return "ai", "box model in src/client/models.cpp", None, {}
         if cat == "maps":

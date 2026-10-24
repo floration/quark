@@ -43,6 +43,8 @@ struct Settings {
     float volume = 0.6f;
     float volumeEffects = 1.0f;    // x volume: every sound effect (the hitsound too)
     float volumeAnnouncer = 1.0f;  // x volume: the announcer's lines
+    bool quips = true;             // players' quips (the QUIP key) heard at all: their own setting, apart from the announcer's
+    float volumeQuips = 1.0f;      // x volume: quips
     bool hitsounds = true;
     bool exclusiveAudio = false;   // Windows: the sound device to the game alone (lower latency; other programs silent)
     // Settings > VIDEO + AUDIO > DEVICES (devices.h): stable ids, "" = the default; one that's gone falls back to it

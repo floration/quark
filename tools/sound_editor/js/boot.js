@@ -32,6 +32,7 @@
       Q.bootError = String(e); return;
     }
     U.$('#gameVersion').textContent = 'game ' + Q.manifest.version;
+    Q.QUIPS = Q.manifest.quips || [];
     Q.buildAssets(Q.manifest);
     await restore();
     U.missing.ensureAssets();

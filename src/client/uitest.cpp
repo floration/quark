@@ -601,6 +601,8 @@ private:
         g.audio_.setMasterVolume(c.volume);
         g.audio_.setEffectsVolume(c.volumeEffects);
         g.audio_.setAnnouncerVolume(c.volumeAnnouncer);
+        g.audio_.setQuips(c.quips);
+        g.audio_.setQuipVolume(c.volumeQuips);
         g.audio_.setOutputDevice(c.audioOutput);
         g.audio_.setAnnouncer(c.announcerVoice);
         g.appliedMode_ = -2;
