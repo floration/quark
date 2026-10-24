@@ -157,8 +157,8 @@ def main():
                                                       "items": meta})
     with open(os.path.join(out, "sound-editor.html"), "w", encoding="utf-8") as f:
         f.write(inline_page())
-    print("sound editor %s: %d sounds x %d kits, %d lines x %d voices, %.1f MB of data -> %s" % (
-        version, len(sounds), len(KITS), len(lines), len(VOICES), total / 1048576, os.path.join(out, "sound-editor.html")))
+    print("sound editor %s: %d sounds x %d kits, %d lines + %d quips x %d voices, %.1f MB of data -> %s" % (
+        version, len(sounds), len(KITS), len(lines), len(quips), len(VOICES), total / 1048576, os.path.join(out, "sound-editor.html")))
 
 
 main()
