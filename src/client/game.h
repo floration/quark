@@ -10,6 +10,7 @@
 #include <thread>
 #include <vector>
 #include "hudwidgets.h"
+#include "weaponpredict.h"
 #include "../game/netclient.h"
 #include "../game/server.h"
 #include "../game/ranked.h"
@@ -214,7 +215,6 @@ private:
     uint16_t localPrevButtons_ = 0;   // the last command's buttons (a held burst: the spread sequence, NET-9)
     uint32_t localBurst_ = 0;          // this shot's place in the held burst (mirrors the server's ServerPlayer::burstShot)
     int localBurstWeapon_ = -1;
-    uint8_t lastCmdWeapon_ = 255;   // the weapon the last command asked for (switching with fire held locks fire)
     // custom modes: the one being edited, its tab, and the rules arriving from a server in pieces
     CustomRules editRules_;
     std::string editOrigName_;
@@ -517,7 +517,12 @@ private:
     std::vector<float> latSamples_;      // ms, last second
     std::string latText_;
     double latNextUpdate_ = 0;
-    int desiredWeapon_ = -1;
+    // your weapon, predicted (weaponpredict.h): the key's choice until the server has run it, and what you hold now
+    // (view model, HUD, scope, local shots) without waiting a round trip for the snapshot to say so
+    WeaponPredictor wp_;
+    int heldWeapon_ = 0;   // updated every tick and frame (heldWeapon()); the snapshot's selfWeapon when dead / a demo
+    WeaponView weaponView() const;
+    int heldWeapon() const { return heldWeapon_; }
     // sound
     Audio audio_;
     void updateSounds(const NetClient::PlayerArray& players);

@@ -1554,6 +1554,151 @@ static void testHudClock(uint16_t port) {
     hudLiveLine(m, line, sizeof line); CHECK(std::string(line) == "STALEMATE - HEALTH DRAINING");
 }
 
+// The predicted weapon (src/client/weaponpredict.h, what the client draws and fires locally): after every command,
+// the weapon the server holds is the one that command predicted, and the fire lock matches the server's
+// (runPlayerCmd: switching with fire held locks fire until it's let go). Before 1.18.3 the client showed the old
+// weapon until a snapshot confirmed the switch, and the confirmation itself (the command going back to "no change")
+// locked local fire while the server kept firing. A refusal the client didn't see coming falls back to the server's
+// weapon once the server has run the asking command; dead, nothing switches.
+static void testWeaponPredict(uint16_t port) {
+    printf("weapon prediction: each command's predicted weapon and fire lock are the server's\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.autoStart = false; cfg.balanceBots = false;   // (warmup: no restarts)
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls, false)) { s.stop(); return; }
+    pump(s, cls, 1.0, idle);
+    NetClient& a = c[0];
+    ServerPlayer& sp = s.players_[a.clientId()];
+    CHECK(sp.alive && a.hasSnapshot());
+    WeaponPredictor wp;
+    struct Pred { uint32_t seq = 0; int weapon = -1; bool locked = false, alive = false; };   // (alive: as the client saw it)
+    std::vector<Pred> ring(NetClient::kCmdRing);
+    bool locked = false, verify = true;
+    uint16_t buttons = 0, localAway = 0, maskOverride = 0;
+    int checked = 0, wrong = 0, lockWrong = 0, lastPred = -1, switches = 0;
+    uint8_t lastCmdWeapon = kNoWeaponChange;
+    auto view = [&] {
+        WeaponView v;
+        const Snapshot& sn = a.latest();
+        v.serverWeapon = sn.selfWeapon; v.ackSeq = sn.ackCmdSeq; v.alive = a.selfAlive();
+        v.mask = maskOverride ? maskOverride : sn.ms.weaponMask;
+        v.away = (uint16_t)(localAway | (sn.knifeAway ? 1u << WPN_KNIFE : 0u) | (sn.syringeAway ? 1u << WPN_SYRINGE : 0u));
+        return v;
+    };
+    auto throwNext = false;
+    auto input = [&](int i) {
+        UserCmd u;
+        if (i != 0) return u;
+        u.pitch = 1.3f;   // (at the sky: nobody hit)
+        // the server has run sp.lastCmdSeq: what it holds now is what that command predicted
+        const Pred& p = ring[sp.lastCmdSeq % ring.size()];
+        if (verify && sp.alive && p.alive && sp.lastCmdSeq && p.seq == sp.lastCmdSeq) {   // (a respawn sets the weapon outside any command)
+            checked++;
+            if (p.weapon != sp.weapon && wrong++ < 3) printf("  seq %u: predicted %d, server holds %d\n", p.seq, p.weapon, sp.weapon);
+            if (p.locked != sp.fireLocked && lockWrong++ < 3) printf("  seq %u: predicted lock %d, server %d\n", p.seq, p.locked, sp.fireLocked);
+        }
+        if (localAway && a.latest().knifeAway) localAway = 0;   // (the server's word has it now)
+        u.buttons = buttons;
+        wp.fill(u, a.latest().ackCmdSeq, a.nextSeq());
+        bool sl = false;
+        int w = wp.run(u, view(), &sl);   // (as Game's tick loop does)
+        if (sl) locked = true;
+        if (throwNext && (u.buttons & BTN_ALTFIRE)) { localAway = 1u << WPN_KNIFE; locked = true; w = wp.thrown(view()); throwNext = false; }
+        if (locked && !(u.buttons & (BTN_FIRE | BTN_ALTFIRE))) locked = false;
+        if (lastPred >= 0 && w != lastPred) switches++;
+        lastPred = w; lastCmdWeapon = u.weapon;
+        ring[a.nextSeq() % ring.size()] = {a.nextSeq(), w, locked, a.selfAlive()};
+        return u;
+    };
+    // 1. a plain switch: predicted from the first command on
+    wp.want(WPN_RIFLE);
+    pump(s, cls, 0.4, input);
+    CHECK(sp.weapon == WPN_RIFLE && lastPred == WPN_RIFLE && wp.desired < 0 && lastCmdWeapon == kNoWeaponChange);
+    // 2. fire pressed right after the key, held through the confirmation: never locked (the 1.18.2 bug), firing all along
+    wp.want(WPN_SHOTGUN);
+    pump(s, cls, 0.002, input);
+    CHECK(lastPred == WPN_SHOTGUN);
+    buttons = BTN_FIRE;
+    double lf = sp.lastFire;
+    pump(s, cls, 0.4, input);
+    CHECK(sp.weapon == WPN_SHOTGUN && !sp.fireLocked && !locked && sp.lastFire != lf && wp.desired < 0);
+    // 3. switching with fire held: locked on both sides until it's let go
+    wp.want(WPN_SNIPER);
+    pump(s, cls, 0.3, input);
+    CHECK(sp.weapon == WPN_SNIPER && sp.fireLocked && locked);
+    buttons = 0;
+    pump(s, cls, 0.1, input);
+    CHECK(!sp.fireLocked && !locked);
+    // 4. a refusal the client didn't see coming (it thinks the pool has the locator): the server's weapon comes back
+    //    once it has run the asking command, and the command stops asking
+    maskOverride = 0xFFFF; verify = false;
+    int before = switches;
+    wp.want(WPN_LOCATOR);
+    pump(s, cls, 0.002, input);
+    CHECK(lastPred == WPN_LOCATOR);
+    pump(s, cls, 0.3, input);
+    CHECK(sp.weapon == WPN_SNIPER && lastPred == WPN_SNIPER && wp.desired < 0 && lastCmdWeapon == kNoWeaponChange && switches - before == 2);
+    maskOverride = 0; verify = true;
+    // ...and one the client does see coming (outside the pool): no switch at all
+    before = switches;
+    wp.want(WPN_LOCATOR);
+    pump(s, cls, 0.2, input);
+    CHECK(sp.weapon == WPN_SNIPER && switches == before);
+    // 5. the knife thrown: the next weapon in the same command; asking for the knife while it's away: refused
+    wp.want(WPN_KNIFE);
+    pump(s, cls, 1.2, input);   // (out, and past the switch's refire)
+    CHECK(sp.weapon == WPN_KNIFE);
+    throwNext = true;
+    buttons = BTN_ALTFIRE;
+    pump(s, cls, 0.2, input);
+    CHECK(!throwNext && sp.knifeBackAt > s.time() && sp.weapon != WPN_KNIFE && lastPred == sp.weapon && locked && sp.fireLocked);
+    buttons = 0;
+    wp.want(WPN_KNIFE);
+    pump(s, cls, 0.3, input);
+    CHECK(sp.weapon != WPN_KNIFE && lastPred == sp.weapon && wp.desired < 0);
+    // 6. dead: nothing switches (the server keeps the choice for the respawn)
+    s.killPlayer(a.clientId(), -1, 252);
+    pump(s, cls, 0.1, input);
+    wp.want(WPN_LASER);
+    pump(s, cls, 0.3, input);
+    CHECK(!sp.alive && lastPred == a.selfWeapon() && wp.desired < 0);
+    for (int k = 0; k < 100 && !sp.alive; k++) pump(s, cls, 0.05, input);
+    pump(s, cls, 0.2, input);
+    CHECK(sp.alive && sp.weapon == WPN_LASER && lastPred == WPN_LASER);
+    // 7. a round trip like online play (the server and the client's network only every 40 ms): the switch shows from
+    //    the key on while the snapshots still say the old weapon, and fire pressed in that window isn't locked when
+    //    the confirmation comes
+    auto lagPump = [&](double seconds) {
+        double end = timeNow() + seconds, nextTick = timeNow(), nextNet = timeNow();
+        while (timeNow() < end) {
+            if (timeNow() >= nextNet) { s.frame(); for (auto* cl : cls) cl->poll(); nextNet += 0.04; }
+            while (timeNow() >= nextTick) { for (size_t i = 0; i < cls.size(); i++) cls[i]->tick(input((int)i)); nextTick += a.tickPeriod(); }
+            sleepMs(1);
+        }
+    };
+    lagPump(0.3);
+    int was = sp.weapon;
+    CHECK(was == WPN_LASER);
+    wp.want(WPN_RIFLE);
+    lagPump(0.01);
+    CHECK(lastPred == WPN_RIFLE && a.selfWeapon() == was);   // (shown now; the server's word still the old one)
+    buttons = BTN_FIRE;
+    lf = sp.lastFire;
+    lagPump(0.4);
+    CHECK(sp.weapon == WPN_RIFLE && a.selfWeapon() == WPN_RIFLE && !locked && !sp.fireLocked && sp.lastFire != lf && wp.desired < 0);
+    wp.want(WPN_SHOTGUN);   // (fire still held: locked)
+    lagPump(0.3);
+    CHECK(sp.weapon == WPN_SHOTGUN && locked && sp.fireLocked);
+    buttons = 0;
+    lagPump(0.2);
+    CHECK(!locked && !sp.fireLocked);
+    printf("  %d commands checked, %d weapons and %d fire locks predicted wrong\n", checked, wrong, lockWrong);
+    CHECK(checked > 500 && wrong == 0 && lockWrong == 0);
+    s.stop();
+}
+
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
     std::vector<R> all = {
@@ -1577,6 +1722,7 @@ static void testGameRules(const std::string& only) {
         {"heal", [] { testLifeHealCap(TP(29253)); }},
         {"scoreboard", [] { testScoreboardValue(); }},
         {"hudclock", [] { testHudClock(TP(29280)); }},
+        {"weaponpredict", [] { testWeaponPredict(TP(29286)); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
     if (only == "rate") { testRateBetweenRounds(TP(29252)); testRateUndoStepUp(TP(29254)); testRateJitter(TP(29257)); testUploadCap(TP(29258)); testSharedCongestion(TP(29259)); }   // (timing-sensitive: the suite runs it alone, with "tickrate")

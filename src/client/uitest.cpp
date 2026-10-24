@@ -120,7 +120,7 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "hosting") return b(host_ != nullptr);
     if (w == "recording") return b(net_.recording());
     if (w == "demo") return b(net_.playback());
-    if (w == "weapon") return std::to_string(desiredWeapon_ >= 0 ? desiredWeapon_ : net_.selfWeapon());
+    if (w == "weapon") return std::to_string(wp_.desired >= 0 ? wp_.desired : heldWeapon_);
     if (w == "rps") return std::to_string(rpsMine_);
     if (w == "reach") return host_ ? std::to_string((int)host_->reachability()) + " " + host_->reachStatus() : "";
     if (w == "widgets") return widgets_.toText() + "|" + std::to_string(widgetSel_) + "|" + std::to_string(filePick_) + "|" + widgetMsg_ + "@" + std::to_string(widgetMsgUntil_);
@@ -185,7 +185,7 @@ void Game::uiTestActions() {
             const PlayerSnap* me = net_.findPlayer(net_.clientId());
             int slot = weaponSlot(WPN_LOCATOR);
             static const std::string kLocatorWeapon = std::to_string(WPN_LOCATOR);
-            if (isItMode(net_.mode().mode) && me && (me->flags & PS_HASBOMB) && net_.selfWeapon() != WPN_LOCATOR && desiredWeapon_ != WPN_LOCATOR)
+            if (isItMode(net_.mode().mode) && me && (me->flags & PS_HASBOMB) && heldWeapon_ != WPN_LOCATOR && wp_.desired != WPN_LOCATOR)
                 if (int key = bound(slotAction(slot))) ui_.keyAction("LOCATOR (SLOT KEY)", key, 0, UiExp::state("weapon", kLocatorWeapon.c_str()).withId("LOCATOR"));
         }
         if (!net_.selfAlive()) {   // dead / spectating: a click watches the next player
@@ -552,9 +552,9 @@ private:
         g.demoScroll_ = g.joinScroll_ = 0;
         g.queued_.clear();
         g.rpsMine_ = RPS_NONE;
-        g.desiredWeapon_ = -1;
+        g.wp_.reset();
         // (the seeker back on the knife: the locator's slot key is offered again)
-        if (g.screen_ == Game::Screen::InGame && isItMode(g.net_.mode().mode) && g.net_.selfWeapon() == WPN_LOCATOR) g.desiredWeapon_ = WPN_KNIFE;
+        if (g.screen_ == Game::Screen::InGame && isItMode(g.net_.mode().mode) && g.heldWeapon_ == WPN_LOCATOR) g.wp_.want(WPN_KNIFE);
         g.specPick_ = false;
         if (g.screen_ == Game::Screen::Editor && edView_.set) {
             g.edCam_ = edView_.cam; g.yaw_ = edView_.yaw; g.pitch_ = edView_.pitch;

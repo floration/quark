@@ -588,14 +588,14 @@ bool Game::pressInput(int code) {
     auto allowed = [&](int w) { return (!pool || (pool >> w & 1)) && weaponInMode(w, mode) && !emptyHanded && weaponAwayLeft(w) <= 0; }; // a thrown knife / syringe is away for a bit
     bool slotKey = false;
     for (int k = 0; k < WPN_COUNT; k++) // slot keys 1-9 and 0, in kWeaponSlots order (0: the syringe, or the locator)
-        if (b.has(slotAction(k), code)) { slotKey = true; int w = kWeaponSlots[k]; if (allowed(w)) { desiredWeapon_ = w; return true; } }
+        if (b.has(slotAction(k), code)) { slotKey = true; int w = kWeaponSlots[k]; if (allowed(w)) { wp_.want(w); return true; } }
     if (slotKey) return true;
-    int cur = weaponSlot(desiredWeapon_ >= 0 ? desiredWeapon_ : net_.selfWeapon());
+    int cur = weaponSlot(wp_.desired >= 0 ? wp_.desired : heldWeapon_);
     for (int dir : {1, -1}) {
         if (!b.has(dir > 0 ? A_NEXTWEAPON : A_PREVWEAPON, code)) continue;
         for (int k = 1; k <= WPN_COUNT; k++) {
             int w = kWeaponSlots[(cur + dir * k + WPN_COUNT * 2) % WPN_COUNT];
-            if (allowed(w)) { desiredWeapon_ = w; break; }
+            if (allowed(w)) { wp_.want(w); break; }
         }
         return true;
     }
@@ -843,6 +843,9 @@ UserCmd Game::buildCmd() {
     if (opts_.bench > 0) { yaw_ = (float)std::fmod(time_ * 0.6, 2 * PI); pitch_ = -0.15f; } // benchmark: a slow look around
     c.yaw = yaw_;
     c.pitch = pitch_;
+    // a weapon key's choice goes out until the server has run it (also while paused / typing: the switch you pressed
+    // still happens, as the view model already shows it)
+    if (net_.hasSnapshot() && !net_.playback()) wp_.fill(c, net_.latest().ackCmdSeq, net_.nextSeq());
     bool block = paused_ || chatting_ || screen_ != Screen::InGame;
     if (block) { // keep key edge tracking current, so keys held through a menu aren't fresh presses after it
         socdPrev_[0] = isDown(A_FORWARD); socdPrev_[1] = isDown(A_BACK); socdPrev_[2] = isDown(A_RIGHT); socdPrev_[3] = isDown(A_LEFT);
@@ -870,17 +873,13 @@ UserCmd Game::buildCmd() {
     if (isDown(A_USE)) c.buttons |= BTN_USE;
     if (isDown(A_DASH)) c.buttons |= BTN_DASH;
     if (isDown(A_GRAPPLE)) c.buttons |= BTN_GRAPPLE;
-    if (desiredWeapon_ >= 0) {
-        if (desiredWeapon_ == net_.selfWeapon()) desiredWeapon_ = -1;
-        else c.weapon = (uint8_t)desiredWeapon_;
-    }
     if (isDown(A_FIRE) || fireLatched_) c.buttons |= BTN_FIRE;
     bool alt = isDown(A_ALTFIRE), altEdge = alt && !altPrev_;
     altPrev_ = alt;
     if (!(modeCtlActive_ ? modeAlt_ : cfg_.altToggle) || ranked) altToggled_ = false;
     else { // tap to toggle alt-fire (scope) instead of holding it
         if (altEdge) altToggled_ = !altToggled_;
-        if (desiredWeapon_ >= 0 || !net_.selfAlive()) altToggled_ = false; // switching weapons / dying drops the scope
+        if ((wp_.desired >= 0 && wp_.desired != heldWeapon_) || !net_.selfAlive()) altToggled_ = false; // switching weapons / dying drops the scope
         alt = altToggled_;
     }
     if (alt) c.buttons |= BTN_ALTFIRE;
@@ -1348,36 +1347,39 @@ void Game::frame(double dt) {
                 continue;
             }
             UserCmd c = buildCmd();
+            // the weapon the server will hold after this command (predicted: a switch shows now, not a round trip
+            // later); switching with fire held locks fire until it's let go, as the server does (runPlayerCmd)
+            bool switchLock = false;
+            const int hw = heldWeapon_ = wp_.run(c, weaponView(), &switchLock);
+            if (switchLock) localFireLocked_ = true;
             // local fire feedback (server is authoritative for damage)
-            bool altShot = altFires(net_.selfWeapon()) && (c.buttons & BTN_ALTFIRE) && // knife throw / shotgun bounce (no throws in hide and seek / tag)
-                           !(net_.selfWeapon() == WPN_KNIFE && net_.hasSnapshot() && isItMode(net_.mode().mode));
+            bool altShot = altFires(hw) && (c.buttons & BTN_ALTFIRE) && // knife throw / shotgun bounce (no throws in hide and seek / tag)
+                           !(hw == WPN_KNIFE && net_.hasSnapshot() && isItMode(net_.mode().mode));
             bool wantFire = ((c.buttons & BTN_FIRE) != 0 || altShot) && holdFireLeft() <= 0 // (the map's holdfire: no shots yet)
-                            && weaponAwayLeft(net_.selfWeapon()) <= 0;                        // (a thrown knife / syringe: disabled)
+                            && weaponAwayLeft(hw) <= 0;                        // (a thrown knife / syringe: disabled)
             if (net_.hasSnapshot() && isItMode(net_.mode().mode)) {   // hide and seek / tag: only "it" has the knife (no swing, no slash for the rest)
                 const PlayerSnap* mp = net_.findPlayer(net_.clientId());
                 if (!mp || !(mp->flags & PS_HASBOMB)) wantFire = false;
             }
-            if (net_.selfWeapon() == WPN_LOCATOR) {   // the locator: a ping every kLocatorCooldown (the server answers with EV_LOCATE)
+            if (hw == WPN_LOCATOR) {   // the locator: a ping every kLocatorCooldown (the server answers with EV_LOCATE)
                 if (wantFire && !localFireLocked_ && net_.selfAlive() && net_.mode().phase == PHASE_LIVE && time_ >= locatorReady_) {
                     locatorReady_ = time_ + kLocatorCooldown;
                     audio_.play(SND_LOCATOR, 0.8f);
                 }
                 wantFire = false;
             }
-            if (c.weapon != lastCmdWeapon_ && (c.buttons & (BTN_FIRE | BTN_ALTFIRE))) localFireLocked_ = true; // switched with fire held
-            lastCmdWeapon_ = c.weapon;
             if (localFireLocked_) { // mirror the server: after a knife throw or a switch, let go before the next weapon fires
                 if (!(c.buttons & (BTN_FIRE | BTN_ALTFIRE))) localFireLocked_ = false;
                 else wantFire = false;
             }
-            if (weaponDef(net_.selfWeapon()).semiAuto) { // mirror the server: one shot per click, short buffer
+            if (weaponDef(hw).semiAuto) { // mirror the server: one shot per click, short buffer
                 if (wantFire && !localFireHeld_) localFireQueued_ = time_ + kFireBuffer;
                 localFireHeld_ = wantFire;
                 wantFire = time_ <= localFireQueued_;
             } else localFireHeld_ = wantFire;
             if (wantFire && net_.selfAlive() && time_ >= localNextFire_ && net_.mode().phase != PHASE_FREEZE) {
                 localFireQueued_ = -1;
-                int w = net_.selfWeapon();
+                int w = hw;
                 bool alt = (c.buttons & BTN_ALTFIRE) != 0 && ((w != WPN_KNIFE && w != WPN_SYRINGE) || altShot); // same throw rule as above
                 // the shot's place in a held burst, like the server's (it picks the spread: burstOffset, NET-9)
                 bool held = (localPrevButtons_ & (altShot ? BTN_ALTFIRE : BTN_FIRE)) != 0;
@@ -1393,7 +1395,7 @@ void Game::frame(double dt) {
                     nextLaserSound_ = time_ + 0.05;
                 }
                 if (w == WPN_KNIFE && !alt) knifeSlash_[net_.clientId() % kMaxPlayers] = time_;
-                if (isThrow(w, alt)) localFireLocked_ = true;
+                if (isThrow(w, alt)) { localFireLocked_ = true; heldWeapon_ = wp_.thrown(weaponView()); }   // (and out comes the next weapon)
                 recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
                 bool showShot = cfg_.ownShots == 1 || (cfg_.ownShots == 0 && !cfg_.hud[Settings::HUD_VIEWMODEL].hidden); // VISUALS > YOUR SHOTS
                 if (w == WPN_LASER) laserUntil_ = showShot ? time_ + 0.07 : 0;
@@ -1429,15 +1431,17 @@ void Game::frame(double dt) {
             net_.tick(c);
             tickAcc_ -= period;
         }
+        if (net_.playback()) wp_.reset();   // (a demo: what the recorded player held)
+        heldWeapon_ = wp_.current(weaponView());   // (no tick this frame: the last one's, or the snapshot's when dead)
         net_.flushInput();   // (PERF-12: one input packet per frame, or per 2 ticks when a frame runs more)
         net_.updateVisualPos(bake_ ? 0.0 : tickAcc_, yaw_, pitch_);   // your own position as of now, for drawing
         pipeMark(PM_TICKS);
         framePlayersOk_ = false;   // (the ticks moved the render time on)
-        scopeOverlay_ = net_.selfWeapon() == WPN_SNIPER; // crossbow: just a light zoom, normal crosshair
+        scopeOverlay_ = heldWeapon_ == WPN_SNIPER; // crossbow: just a light zoom, normal crosshair
         {   // the zoom follows what buildCmd sends: with ALT TOGGLE, the toggled scope (it zoomed only while held, so the
             // view and the server's scoped spread disagreed after a tap)
             const bool tog = (modeCtlActive_ ? modeAlt_ : cfg_.altToggle) && !fairRules();
-            scoped_ = net_.selfAlive() && !paused_ && !chatting_ && weaponDef(net_.selfWeapon()).scopedSpread >= 0 &&
+            scoped_ = net_.selfAlive() && !paused_ && !chatting_ && weaponDef(heldWeapon_).scopedSpread >= 0 &&
                       ((tog ? altToggled_ : isDown(A_ALTFIRE)) || opts_.debugScope);
         }
         // explosions: projectiles that vanished
@@ -1838,7 +1842,7 @@ void Game::drawWorld(float alpha) {
         remoteFiring_[i] = firing;
     }
     // own laser beam follows the crosshair while held; alt-fire (pull) adds pulses running back toward you
-    if (alive && time_ < laserUntil_ && net_.selfWeapon() == WPN_LASER) {
+    if (alive && time_ < laserUntil_ && heldWeapon_ == WPN_LASER) {
         Vec3 d = angleForward(yaw_, pitch_);
         float range = weaponDef(WPN_LASER).range;
         float bangT, t = map.raycastBullet(eye, d, range, &bangT);
@@ -1874,7 +1878,7 @@ void Game::drawWorld(float alpha) {
             for (auto& o : projStarts_) if (o.id == pr.id) { st = o; found = true; }
             if (!found && alive) {
                 // where the weapon that fired it points out of the screen (thrown knife: from the knife hand)
-                int w = pr.type < WPN_COUNT ? pr.type : net_.selfWeapon();
+                int w = pr.type < WPN_COUNT ? pr.type : heldWeapon_;
                 Vec3 muz = muzzlePoint(w, eye);
                 if (length(pr.pos - eye) < 3.0f) st.offset = muz - pr.pos;   // only shots just fired
             }
@@ -2042,7 +2046,7 @@ void Game::drawWorld(float alpha) {
     // or dead it never decayed, and unscoping replayed the whole kick, and the muzzle stayed pushed back)
     recoil_ = std::max(0.0, recoil_ - 8.0 * frameDt_);
     if ((alive || specGun) && !(scoped_ && scopeOverlay_ && !specGun) && !unarmed && !vm.hidden) {
-        int w = specGun ? (int)players[viewing].snap.weapon : net_.selfWeapon();
+        int w = specGun ? (int)players[viewing].snap.weapon : heldWeapon_;
         float kick = (float)recoil_ * 0.06f;
         // Each weapon is a handful of boxes around `at` (camera space: +x right, +y up, -z forward), models.h.
         // the map's own palette: metal body, base-coloured highlights, its glow colour on emitters / sights
@@ -2309,7 +2313,7 @@ void Game::drawHud() {
             std::string n = net_.playerName(locateId_);
             r_.text(sx - r_.textWidth(n, ts) * 0.5f, sy - bh - r_.textHeight(ts) - 4 * s, ts, n, c);
         }
-        std::string key = upper(inputName(binds().code[net_.selfWeapon() == WPN_LOCATOR ? A_FIRE : slotAction(weaponSlot(WPN_LOCATOR))][0]));
+        std::string key = upper(inputName(binds().code[heldWeapon_ == WPN_LOCATOR ? A_FIRE : slotAction(weaponSlot(WPN_LOCATOR))][0]));
         std::string t = time_ >= locatorReady_ ? "LOCATOR READY" + (key.empty() ? std::string() : " - " + key) : "LOCATOR " + std::to_string((int)std::ceil(locatorReady_ - time_)) + "s";
         float lts = std::max(1.0f, std::round(ts * 0.9f));
         r_.text(cx - r_.textWidth(t, lts) * 0.5f, H - 140 * s, lts, t, time_ >= locatorReady_ ? Color{1, 0.85f, 0.2f, 1} : kGrey);
@@ -2543,7 +2547,7 @@ void Game::drawHud() {
         if (!unarmed && !he(Settings::HUD_WEAPON).hidden) {   // current weapon name, bottom right
             auto e = he(Settings::HUD_WEAPON);
             float wts = std::max(1.0f, std::round(ts * 1.5f * e.scale));
-            std::string wn = weaponDef(net_.selfWeapon()).name;
+            std::string wn = weaponDef(heldWeapon_).name;
             r_.text(W - 24 * s + e.x * s - r_.textWidth(wn, wts), H - 50 * s * e.scale + e.y * s, wts, wn, tint(Settings::HUD_WEAPON, kWhite));
         }
         const MoveState& mv = net_.predicted();
@@ -2559,7 +2563,7 @@ void Game::drawHud() {
                 float lts = std::max(1.0f, std::round(ts * 0.5f * e.scale));
                 r_.text(bx - r_.textWidth(label, lts) - 6 * k, y - 2 * k, lts, label, f >= 1 ? kWhite : kGrey);
             };
-            int cw = net_.selfWeapon();
+            int cw = heldWeapon_;
             bar(bcy + 40 * k, "WEAPON", (float)std::max(0.0, (cw == WPN_LOCATOR ? locatorReady_ : localNextFire_) - time_), weaponDef(cw).refire);   // (the locator: its recharge)
             {   // dash: a pip per charge (lit = there to spend; the ground refills them, a bhop landing one); while the
                 // cooldown since the last dash runs, the charged pips fill grey like the old cooldown bar, lit when it's done
@@ -2597,7 +2601,7 @@ void Game::drawHud() {
         if (cfg_.stickyCounter && !unarmed) {   // stickies out (the 7th removes the oldest)
             int out = 0;
             for (auto& pr : lastProjectiles_) out += pr.type == WPN_STICKY && pr.owner == net_.clientId();   // (this frame's)
-            if (out > 0 || net_.selfWeapon() == WPN_STICKY) {
+            if (out > 0 || heldWeapon_ == WPN_STICKY) {
                 auto e = he(Settings::HUD_WEAPON);
                 float k = std::max(1.0f, std::round(ts * 0.9f * e.scale));
                 std::string t = "STICKIES " + std::to_string(out) + "/" + std::to_string(kMaxStickies);
@@ -2628,7 +2632,7 @@ void Game::drawHud() {
                 float tw = r_.textWidth(t, sts);
                 bx -= tw + 14 * s * e.scale;
                 bool inPool = (!ms.weaponMask || (ms.weaponMask >> wi & 1)) && awayLeft <= 0;
-                r_.text(bx, H - 74 * s * e.scale + e.y * s, sts, t, wi == net_.selfWeapon() && awayLeft <= 0 ? tint(Settings::HUD_SLOTS, fc) : inPool ? Color{0.85f, 0.87f, 0.9f, 0.9f} : Color{0.5f, 0.52f, 0.55f, 0.35f});
+                r_.text(bx, H - 74 * s * e.scale + e.y * s, sts, t, wi == heldWeapon_ && awayLeft <= 0 ? tint(Settings::HUD_SLOTS, fc) : inPool ? Color{0.85f, 0.87f, 0.9f, 0.9f} : Color{0.5f, 0.52f, 0.55f, 0.35f});
             }
         }
     } else if (ms.phase != PHASE_ROUND_END && ms.phase != PHASE_MATCH_END) {
@@ -4946,10 +4950,25 @@ void Game::sceneSettings() {
     r_.worldOutline = cfg_.outlineWorld;
 }
 
+// What the client knows of its own weapon (weaponpredict.h): the server's word, and the thrown knife / syringe away
+// as predicted or as the snapshot says. A demo (watching, no input) or no snapshot yet: dead to the predictor.
+WeaponView Game::weaponView() const {
+    WeaponView v;
+    if (!net_.hasSnapshot()) return v;
+    const Snapshot& s = net_.latest();
+    v.serverWeapon = s.selfWeapon;
+    v.ackSeq = s.ackCmdSeq;
+    v.alive = !net_.playback() && net_.selfAlive();
+    v.mask = s.ms.weaponMask;
+    if (weaponAwayLeft(WPN_KNIFE) > 0) v.away |= (uint16_t)(1u << WPN_KNIFE);
+    if (weaponAwayLeft(WPN_SYRINGE) > 0) v.away |= (uint16_t)(1u << WPN_SYRINGE);
+    return v;
+}
+
 float Game::viewFov() const {
     if (!scoped_) return cfg_.fov;
     // the sniper's and rifle's zoom: VISUALS > ZOOM FOV (never wider than the normal fov); the rest: their own
-    int w = net_.selfWeapon();
+    int w = heldWeapon_;
     if (w == WPN_SNIPER || w == WPN_RIFLE) return std::min(w == WPN_SNIPER ? cfg_.zoomFovSniper : cfg_.zoomFovRifle, cfg_.fov);
     return weaponDef(w).zoomFov;
 }
