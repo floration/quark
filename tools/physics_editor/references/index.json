@@ -1,6 +1,6 @@
 {
  "version": 1,
- "quark": "1.18.28",
+ "quark": "1.18.30",
  "units": "metres, seconds (Quark's); mult = value / Quark's base",
  "confidence": {
   "exact": "read from source code, a shipped config or a cvar default (converted by the stated scale)",
@@ -80,6 +80,16 @@
      "file": "quakelive.json",
      "values": 11,
      "distance": 0.707,
+     "distanceKeys": 9
+    },
+    {
+     "id": "quakelive-pql",
+     "name": "Quake Live (PQL / Turbo)",
+     "year": 2014,
+     "engine": "id Tech 3",
+     "file": "quakelive-pql.json",
+     "values": 10,
+     "distance": 0.36,
      "distanceKeys": 9
     },
     {
@@ -198,7 +208,7 @@
   },
   {
    "name": "arena shooters",
-   "desc": "other arena shooters (Unreal, Halo, Reflex): different movement models, from scripts or community measurements",
+   "desc": "other arena shooters (Unreal, Halo, Reflex, Diabotical): different movement models, from scripts, config dumps or community measurements",
    "games": [
     {
      "id": "ut99",
@@ -224,7 +234,19 @@
      "year": 2017,
      "engine": "Reflex (Turbo Pixel Studios)",
      "file": "reflex.json",
-     "values": 1
+     "values": 7,
+     "distance": 0.365,
+     "distanceKeys": 7
+    },
+    {
+     "id": "diabotical",
+     "name": "Diabotical",
+     "year": 2020,
+     "engine": "The GD Studio's own engine",
+     "file": "diabotical.json",
+     "values": 8,
+     "distance": 0.752,
+     "distanceKeys": 8
     },
     {
      "id": "ut2004",
@@ -244,6 +266,16 @@
      "file": "ut3.json",
      "values": 9,
      "distance": 0.875,
+     "distanceKeys": 7
+    },
+    {
+     "id": "ut4",
+     "name": "Unreal Tournament (2014 pre-alpha, UT4)",
+     "year": 2014,
+     "engine": "Unreal Engine 4",
+     "file": "ut4.json",
+     "values": 9,
+     "distance": 0.833,
      "distanceKeys": 7
     },
     {

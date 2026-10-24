@@ -19,6 +19,59 @@
    "raw": "base run 320 u/s",
    "note": "the number is the wiki's; the metre conversion assumes Quake's player size"
   },
+  "gravity": {
+   "value": 24.1071,
+   "unit": "m/s2",
+   "mult": 1.0958,
+   "source": "https://github.com/Kyt0z/reflex-ruleset-comparer/blob/main/defaultRuleset.js#L19 (gconst_world_gravity 750, Competitive ruleset)",
+   "confidence": "measured",
+   "raw": "gconst_world_gravity 750 u/s2",
+   "note": "a community ruleset tool's dump of the Competitive (CR1) ruleset; metres at the assumed Quake scale"
+  },
+  "jump": {
+   "value": 8.1964,
+   "unit": "m/s",
+   "mult": 1.1167,
+   "source": "https://github.com/Kyt0z/reflex-ruleset-comparer/blob/main/defaultRuleset.js#L7 (gconst_jump_velocity 255)",
+   "confidence": "measured",
+   "raw": "gconst_jump_velocity 255 u/s",
+   "note": "plus gconst_double_jump_velocity 105 for a jump within 0.4 s of the last (#L6)"
+  },
+  "ground_accel": {
+   "value": 12.5,
+   "unit": "",
+   "mult": 0.7812,
+   "source": "https://github.com/Kyt0z/reflex-ruleset-comparer/blob/main/defaultRuleset.js#L14 (gconst_playeronground_acceleration 4000) and #L16 (gconst_playeronground_speed 320)",
+   "confidence": "estimated",
+   "raw": "gconst_playeronground_acceleration 4000",
+   "note": "if 4000 is a fixed rate in u/s2 (it is far too big for a Quake factor): Quark-equivalent 4000 / 320 = 12.5; Reflex's ground formula isn't published"
+  },
+  "friction": {
+   "value": 6,
+   "unit": "",
+   "mult": 0.8571,
+   "source": "https://github.com/Kyt0z/reflex-ruleset-comparer/blob/main/defaultRuleset.js#L15 (gconst_playeronground_friction 6)",
+   "confidence": "measured",
+   "note": "assumed to be the Quake friction factor (the same 6 as Quake III / CPM)"
+  },
+  "air_accel": {
+   "value": 6.0,
+   "unit": "",
+   "mult": 2.7273,
+   "source": "https://github.com/Kyt0z/reflex-ruleset-comparer/blob/main/defaultRuleset.js#L10-11 (gconst_playerinair_bunny_accelerate 60, gconst_playerinair_bunny_wishspeed 30)",
+   "confidence": "estimated",
+   "raw": "air accelerate 60",
+   "note": "Reflex air with only a strafe key held (CPM-style bunny strafe): accel 60 toward 30 u/s; with forward held it is gconst_playerinair_acceleration 0.95 plus air control 150. Assumes Reflex keeps CPM's formula. Same formula as Quark's (accel x min(wish, cap)); Quark multiplies air_accel by 10, so 60 -> 6."
+  },
+  "air_cap": {
+   "value": 0.9643,
+   "unit": "m/s",
+   "mult": 0.4193,
+   "source": "https://github.com/Kyt0z/reflex-ruleset-comparer/blob/main/defaultRuleset.js#L10-11 (gconst_playerinair_bunny_accelerate 60, gconst_playerinair_bunny_wishspeed 30)",
+   "confidence": "measured",
+   "raw": "30 u/s",
+   "note": "the wish speed the air push aims at"
+  },
   "dash": {
    "value": false,
    "source": "http://wiki.reflexfiles.com/index.php/Tutorial_for_New_Players",
@@ -33,6 +86,13 @@
   }
  },
  "facts": {
+  "crouchSpeed": {
+   "value": 3.8571,
+   "unit": "m/s",
+   "source": "https://github.com/Kyt0z/reflex-ruleset-comparer/blob/main/defaultRuleset.js#L17 (gconst_playerongroundcrouched_speed 120)",
+   "confidence": "estimated",
+   "note": "120 u/s at the assumed Quake scale; Quark: 4 m/s"
+  },
   "wallrunMaxSpeed": {
    "value": 16.2964,
    "unit": "m/s",
@@ -59,6 +119,41 @@
    "source": "https://steamcommunity.com/sharedfiles/filedetails?id=387675048 (double jump height bonus 104 u)",
    "confidence": "estimated",
    "note": "104 u at the assumed Quake scale"
+  },
+  "jumpHeight": {
+   "value": 1.3934,
+   "unit": "m",
+   "source": "255^2 / (2 x 750) = 43.4 u",
+   "confidence": "estimated",
+   "note": "v^2/2g from the ruleset dump; Quark: 1.22 m"
+  },
+  "doubleJumpVelocity": {
+   "value": 11.5714,
+   "unit": "m/s",
+   "source": "https://github.com/Kyt0z/reflex-ruleset-comparer/blob/main/defaultRuleset.js#L6-7 (255 + gconst_double_jump_velocity 105)",
+   "confidence": "estimated",
+   "note": "if the bonus adds to the take-off speed: 360 u/s, a 86.4 u jump (v^2/2g), 43 u higher than a single jump, not the Steam guide's 104 u, so one of the two may describe another ruleset"
+  },
+  "airAccelForward": {
+   "value": 0.95,
+   "unit": "",
+   "source": "https://github.com/Kyt0z/reflex-ruleset-comparer/blob/main/defaultRuleset.js#L8 (gconst_playerinair_acceleration 0.95)",
+   "confidence": "measured",
+   "note": "the air accel with forward held (Quake III's is 1)"
+  },
+  "airControl": {
+   "value": 150,
+   "unit": "",
+   "source": "https://github.com/Kyt0z/reflex-ruleset-comparer/blob/main/defaultRuleset.js#L9 (gconst_playerinair_aircontrol 150)",
+   "confidence": "measured",
+   "note": "CPM-style air control, forward held (PQL's is also 150)"
+  },
+  "airDeceleration": {
+   "value": 2.5,
+   "unit": "",
+   "source": "https://github.com/Kyt0z/reflex-ruleset-comparer/blob/main/defaultRuleset.js#L12 (gconst_playerinair_decceleration 2.5)",
+   "confidence": "measured",
+   "note": "the air accel against your velocity (PQL's air stop accel is also 2.5)"
   }
  },
  "extras": [
@@ -67,7 +162,7 @@
   "ramp jumps",
   "wall running (507 UPS cap)"
  ],
- "notes": "Reflex's physics constants (jump, ground speed and acceleration, air control, bunny acceleration and wish speed, gravity) became server-editable in 0.47.3's Experimental Plus ruleset, but their values weren't found published. Only the run speed and a few movement facts are here.",
+ "notes": "Reflex's physics constants became server-editable in 0.47.3 (gconst_* cvars). Their Competitive (CR1) ruleset values come from a community ruleset-comparison tool's dump (Kyt0z/reflex-ruleset-comparer): gravity 750, jump 255 (+105 double), ground speed 320, ground accel 4000, friction 6, air accel 0.95, air control 150, bunny accel 60 toward 30, air decel 2.5, crouch speed 120. They are close to CPM / PQL's. The metre conversion assumes Quake's player size and the air / ground mappings assume CPM's formulas, so those are estimates.",
  "sources": [
   {
    "title": "Reflex Wiki: Tutorial for New Players",
@@ -80,6 +175,10 @@
   {
    "title": "Reflex Wiki: Changelog 0.47.x",
    "url": "http://wiki.reflexfiles.com/index.php?title=Reflex_Changelog_0.47.x"
+  },
+  {
+   "title": "Reflex ruleset comparer: Competitive ruleset gconst dump",
+   "url": "https://github.com/Kyt0z/reflex-ruleset-comparer/blob/main/defaultRuleset.js"
   }
  ]
 }

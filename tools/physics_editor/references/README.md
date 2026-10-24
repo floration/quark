@@ -37,8 +37,8 @@ converted to Quark's units and settings. `serve.py` serves this folder at `/refe
 **Scale.** Engine units become metres by the game's own player height, so every game is compared as if its player
 were Quark's 1.8 m: Quake 56 u (0.03214 m/u), Warsow/Warfork 64 u, Xonotic 69 u, GoldSrc / Source / Titanfall 72 u
 (0.025 m/u; Apex assumed the same), TF2 82 u, UT99 78 UU, Halo CE 0.70127 WU, Celeste 11 px, UT2004 / UT3 88 UU,
-Halo 3 / Reach a 7 ft Spartan. Games that document metres (Overwatch, Valorant, Minecraft, whose player is 1.8 m, DOOM
-Eternal, Fortnite, Quake Champions at its own 40 u = 1 m) are used as given; Call of Duty 4 at 1 u = 1 inch; Quake Live and
+Halo 3 / Reach a 7 ft Spartan, UT4 its 216 UU capsule (UE4 cm), Diabotical its 57 u hitbox. Games that document metres (Overwatch, Valorant, Minecraft, whose player is 1.8 m, DOOM
+Eternal, Fortnite, Quake Champions at its own 40 u = 1 m) are used as given; Call of Duty 4 at 1 u = 1 inch; Quake Live (VQL and PQL) and
 Reflex at Quake's 56 u and Portal 2 at Source's 72 u (assumed). Each file's `scale.why` says which.
 Speeds, lengths and accelerations scale; time and unitless factors don't.
 
@@ -82,24 +82,50 @@ No number here is invented: what couldn't be sourced is left out.
 ## Estimates (second pass)
 
 Mostly estimated or measured, not read from code: Quake Live (a player's cvarlist dump; stop speed assumed from Quake III),
-Quake Champions (published base speeds and air accel; the air formula assumed Quake III's), Reflex (run speed only, at an
-assumed Quake scale), Halo 3 / Halo: Reach (one player's in-game measurements: gravity and jump derived from height and
+Quake Champions (published base speeds and air accel; the air formula assumed Quake III's), Reflex (run speed at an
+assumed Quake scale; the third pass adds its ruleset dump), Halo 3 / Halo: Reach (one player's in-game measurements: gravity and jump derived from height and
 airtime, rescaled from a 7 ft Spartan), Call of Duty 4 (run speed measured, jump speed from jump_height), Fortnite and
 Portal 2 (speeds only), Apex's gravity / jump (from the measured jump), Overwatch's gravity (the Workshop community's
 counter-gravity figure) and jump, and every Unreal ground / air acceleration. UT99's gravity / JumpZ / step, UT2004, UT3
 (from UDK's copy of its scripts) and DOOM Eternal (cvar defaults) are exact apart from the formula equivalences.
 `cs16-comp` is CS 1.6 as servers run it (sv_accelerate 5, sv_stopspeed 75), next to `cs16`'s engine defaults.
 
+## Unofficial sources (third pass)
+
+Forum posts and wikis had few numbers, but community repositories of game files and config dumps did. All found through
+GitHub code search:
+
+- **UT4** (`ut4`): `UUTCharacterMovement`'s constructor defaults and `DefaultEngine.ini`'s DefaultGravityZ -2154 from a public
+  mirror of Epic's source (JimmieKJ/unrealTournament): run 940, jump 730, accel 4000, air control 0.45, step 51, dodge
+  1500 / 500, sprint 1230 UU/s. `exact` apart from the Unreal acceleration equivalences.
+- **Diabotical** (`diabotical`): the shipped `scripts/base.games` kept by a community patch tracker (ScheduleTracker/
+  DiaboticalTracker): gravity 800, jump 275, speed 320, accel 10, friction 6, air accel 1 toward 320, 125 Hz, VQL-like.
+  The Rogue tracker's UI copy has the same block. The formulas are assumed Quake III's (`estimated` where it matters).
+- **PQL** (`quakelive-pql`): the hard-coded bundle `pmove_AirControl 1` switches in (walk accel 15, strafe accel 70
+  toward 35, air accel 1.1, air control 150, air stop 2.5, circle-strafe friction 5.5), read from Kr3m/QuakeLive (a
+  reconstruction of the retail pmove from the binaries) and matched by a player's saved PQL config (Danmer/ql-configs).
+- **Reflex** (`reflex`, added to): the Competitive ruleset's gconst_* values from a community ruleset-comparison tool
+  (Kyt0z/reflex-ruleset-comparer): gravity 750, jump 255 (+105 double), accel 4000, friction 6, bunny accel 60 toward 30,
+  air control 150. `measured` (a dump), the mappings `estimated`.
+- **Halo: Reach** (cross-check facts only): a Forge editor that reads Reach's tags (Sopitive/HaloMapStudio) gives run
+  2.2 wu/s, jump 2.3 wu/s and gravity 4.17 wu/s2; at 1 wu = 10 ft they land within 2% (speed) and 5% (jump height) of the
+  bungie.net measurements already used, so the existing values stay.
+
 ## Not covered (searched, no usable numbers)
 
-- Diabotical: only "160 ups crouch-walk in Vintage physics" and forum talk of 500+ / 800+ ups; no base speed, jump or
-  gravity (patch notes, devtrackers, ESReality, Liquipedia).
-- UT4 (2014-2017 alpha): its source needs an Epic-linked GitHub account; no published defaults found.
-- DOOM (2016): only stopwatch timings that disagree (230 vs 440 u/s, unknown units); its cvar dump has no defaults.
-- Splitgate: no movement numbers in its wikis or patch notes.
-- Halo Infinite (and Halo 2, 4, 5): no measured speeds or jumps found (the H2EK stats page repeats Halo CE's).
-- Modern Call of Duty (MW2019, MWII, BO6): only TrueGameData sprint speeds (BO6 SMGs 6.6-6.7 m/s); no base speed,
-  gravity or jump.
-- Valorant's jump and gravity, Reflex's and Quake Champions' gravity / jump / acceleration, and PQL's strafe values.
+Where the third pass looked: GitHub code search (config dumps, cvar / dvar lists, tag and script dumps, source
+mirrors), Steam community discussions and guides, the Splitgate, Halopedia and Liquipedia wikis, ESReality and
+bungie.net. Reddit and its archives (pullpush, arctic-shift) and Fandom were not reachable from this environment, so
+Reddit threads weren't read.
+
+- DOOM (2016): only stopwatch timings that disagree (230 vs 440 u/s, unknown units); the DOOMLegacyMod command list
+  has names but no defaults.
+- Splitgate (1 and 2, and Arena Reloaded): no movement numbers in its wikis, patch notes or Steam threads; no config dump found.
+- Halo Infinite, Halo 2, 4, 5: no measured speeds or jumps found (the H2EK stats page repeats Halo CE's; the tag-reading
+  tools that support Halo 3 / 4 / H2A read the numbers at run time and don't publish them).
+- Modern Call of Duty (MW2019, MWII, BO6): only TrueGameData sprint speeds; the community dvar lists are hashed names
+  without defaults, so no base speed, gravity or jump.
+- Valorant's jump and gravity; Quake Champions' gravity, jump and ground acceleration (one Steam post recalls a 500-600
+  u/s cap, nothing else).
 
 To add one: add it to `build.py` with each number's source, run `python3 build.py` then `check.py`.
