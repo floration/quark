@@ -4881,155 +4881,182 @@ void Game::drawConnecting(const SetLayout& L) {
     if (ui_.button(L.X(kMX), L.Y(y), L.L(kMW), L.L(kMRow), "CANCEL", UiExp::nav("main"))) leaveGame();
 }
 
-// "NAME 2.2 -> 4.4 M/S": a custom mode's setting as the standard value and what this mode makes it
-static std::string stdTo(const char* name, float base, float mul, const char* unit = "") {
-    auto num = [](float v) { char b[32]; snprintf(b, sizeof b, v >= 100 ? "%.0f" : v >= 10 ? "%.1f" : "%.2f", v); return std::string(b); };
-    std::string u = *unit ? std::string(" ") + upper(unit) : "";
-    return std::string(name) + " " + num(base) + (std::fabs(mul - 1) > 1e-3f ? " -> " + num(base * mul) : "") + u;
+// A custom mode's setting is stored as a multiplier of the standard value; its slider shows the value it makes in this
+// mode (standard x multiplier, with its unit: "GRAVITY: 22.0 M/S2"). The standard's own decimals (3 significant
+// figures). A typed value is kept as typed (as standard x multiplier); a dragged one snaps to `snap` steps of the
+// multiplier. A standard of 0 (nothing to scale from): the multiplier itself.
+static bool realSlider(Ui& ui, float x, float y, float w, float h, const char* label, float& mult, float lo, float hi,
+                       float stdv, const char* unit, const UiExp& e, float defMult, float snap = 0) {
+    if (!(stdv > 0)) {
+        float m = mult;
+        bool ch = ui.slider(x, y, w, h, label, m, lo, hi, "%.2fX", e, defMult);
+        if (ch) mult = snap > 0 && !ui.typed() ? std::round(m / snap) * snap : m;
+        return ch;
+    }
+    char fmt[24], u[16] = {0};
+    const int dec = stdv >= 99.95f ? 0 : stdv >= 9.995f ? 1 : stdv >= 0.0995f ? 2 : 3;
+    {   // the unit: "X" right after the number, "/S" too, others after a space; upper case
+        size_t n = 0;
+        if (*unit && unit[0] != '/' && strcmp(unit, "x") != 0) u[n++] = ' ';
+        for (const char* c = unit; *c && n + 1 < sizeof u; c++) u[n++] = (char)toupper((unsigned char)*c);
+        u[n] = 0;
+    }
+    snprintf(fmt, sizeof fmt, "%%.%df%s", dec, u);
+    float v = mult * stdv;
+    bool ch = ui.slider(x, y, w, h, label, v, lo * stdv, hi * stdv, fmt, e, defMult * stdv);
+    if (ch) {
+        float m = v / stdv;
+        mult = snap > 0 && !ui.typed() ? std::round(m / snap) * snap : m;
+    }
+    return ch;
 }
 
-void Game::drawCustomModeEditor(const SetLayout&) {
-    const float cx = r_.width() * 0.5f;
-    float y = r_.height() * 0.12f + 80 * ui_.s();
-    float s = ui_.s(), w = 640 * s, x = cx - w * 0.5f, bh = 30 * s, gap = 6 * s, hw = (w - gap) * 0.5f;
-    // WEAPONS and MOVEMENT are grids of "NAME standard -> this mode: x" sliders: they get the screen's width (in 640 the
-    // labels were cut off, the value with them, at 720p - UI test)
-    const float gw = customTab_ == 1 || customTab_ == 3 ? std::max(w, std::min((float)r_.width() - 64 * s, 1100 * s)) : w, gx = cx - gw * 0.5f;
+// CUSTOM MODE: one 960 x 522 panel on every tab - the title and NAME, the tab row (GENERAL / WEAPONS / MAPS /
+// MOVEMENT / DASH + GRAPPLE, the current one framed), the tab's columns with section headers, and the footer: BACK
+// (left), RESET MOVEMENT TO STANDARD (the movement tabs), DELETE, SAVE (right)
+void Game::drawCustomModeEditor(const SetLayout& L) {
     CustomRules& r = editRules_;
-    ui_.panel(gx - 16 * s, y - 16 * s, gw + 32 * s, std::min(640 * s, r_.height() - (y - 16 * s) - 8 * s), 0.85f);
-    ui_.labelCentered(cx, y, "CUSTOM MODE");
-    y += 34 * s;
-    ui_.label(x, y + 7 * s, "NAME");
-    ui_.textField(901, x + 90 * s, y, w - 90 * s, bh, r.name, 24, UiExp::state("custom").withId("NAME"));
-    y += bh + gap * 2;
-    static const char* tabs[4] = {"GENERAL", "WEAPONS", "MAPS", "MOVEMENT"};
-    static const char* tabPaths[4] = {"custom/general", "custom/weapons", "custom/maps", "custom/movement"};
-    float tw = (w - 3 * gap) / 4;
-    for (int t = 0; t < 4; t++)
-        if (ui_.button(x + t * (tw + gap), y, tw, bh, customTab_ == t ? std::string("> ") + tabs[t] + " <" : tabs[t], UiExp::nav(tabPaths[t]).withId(tabs[t]))) customTab_ = t;
-    y += bh + gap * 2;
+    const UiExp ce = UiExp::state("custom");
+    static const CustomRules kStd;   // (right-click on a slider: the standard value)
+    ui_.panel(L.X(160), L.Y(166), L.L(960), L.L(522), 0.85f);
+    ui_.label(L.X(176), L.Y(186), "CUSTOM MODE", kWhite, 1.5f, L.L(380));
+    {
+        const float nw = r_.textWidth("NAME", ui_.textScale());
+        ui_.label(L.X(628) - nw, L.Y(190), "NAME", kGrey);
+    }
+    ui_.textField(901, L.X(640), L.Y(182), L.L(464), L.L(32), r.name, 24, UiExp::state("custom").withId("NAME"));
+    static const char* tabs[5] = {"GENERAL", "WEAPONS", "MAPS", "MOVEMENT", "DASH + GRAPPLE"};
+    static const char* tabPaths[5] = {"custom/general", "custom/weapons", "custom/maps", "custom/movement", "custom/dash"};
+    const float tw = (928 - 4 * 8) / 5.0f;   // 179.2
+    customTab_ = std::min(std::max(customTab_, 0), 4);
+    for (int t = 0; t < 5; t++) {
+        const float bx = L.X(176 + t * (tw + 8)), by = L.Y(222);
+        if (t == customTab_) tabFrame(r_, ui_, bx, by, L.L(tw), L.L(32));
+        if (ui_.button(bx, by, L.L(tw), L.L(32), tabs[t], UiExp::nav(tabPaths[t]).withId(tabs[t]))) customTab_ = t;
+    }
+    auto header = [&](float dx, float dy, const char* t, float dw) { ui_.label(L.X(dx), L.Y(dy), t, ui_.accent, 1.0f, L.L(dw)); };
+    // a column of rows: design x, the row's design y
+    const float c3 = 298.67f, cx3[3] = {176, 490.67f, 805.33f};
     if (customTab_ == 0) {
+        header(cx3[0], 270, "RULES", c3);
+        header(cx3[1], 270, "PHYSICS", c3);
+        header(cx3[2], 270, "ABILITIES", c3);
+        const float cw = L.L(c3), h = L.L(32);
+        auto at = [&](int c, int row) { return std::make_pair(L.X(cx3[c]), L.Y(294 + 40 * row)); };
         static std::vector<std::string> modes;   // (built once: 13 strings every frame)
         if (modes.empty()) for (int m = 0; m < MODE_COUNT; m++) modes.push_back(std::string("PLAYS AS: ") + upper(modeName(m)));
+        auto p = at(0, 0);
         const int before = r.baseMode;
-        ui_.cycle(x, y, w, bh, "PLAYS AS", r.baseMode, MODE_COUNT, modes, UiExp::state("custom"));
+        ui_.cycle(p.first, p.second, cw, h, "PLAYS AS", r.baseMode, MODE_COUNT, modes, ce);
         // tourney and ranked arena keep their own rules: stepped over, onwards in the direction it went (going ">" it
         // was put back to FFA, so TOURNEY's neighbours on, hide and seek, tag and points, couldn't be reached that way)
         const int step = r.baseMode == (before + 1) % MODE_COUNT ? 1 : MODE_COUNT - 1;
         for (int k = 0; k < MODE_COUNT && (r.baseMode == MODE_TOURNEY || r.baseMode == MODE_ARENA); k++) r.baseMode = (r.baseMode + step) % MODE_COUNT;
-        y += bh + gap;
-        float hp = (float)r.health;
-        const UiExp ce = UiExp::state("custom");
         // (a typed value is kept as typed, within the custom mode file's ranges - CustomRules::fromText)
-        static const CustomRules kStd;   // (right-click on a slider: the standard value)
-        ui_.slider(x, y, hw, bh, "HEALTH", hp, 1, 500, "%.0f", ce, (float)kStd.health); r.health = std::min(std::max((int)std::lround(hp), 1), 1000);
-        ui_.slider(x + hw + gap, y, hw, bh, stdTo("GRAVITY", moveBaseGravity(), r.gravity, "m/s2"), r.gravity, 0.1f, 3, "%.2fx", ce.withId("GRAVITY"), kStd.gravity); y += bh + gap;
-        ui_.slider(x, y, hw, bh, stdTo("RUN SPEED", moveBaseSpeed(), r.moveSpeed, "m/s"), r.moveSpeed, 0.25f, 3, "%.2fx", ce.withId("RUN SPEED"), kStd.moveSpeed);
-        ui_.slider(x + hw + gap, y, hw, bh, stdTo("JUMP", moveBaseJump(), r.jump, "m/s"), r.jump, 0.25f, 3, "%.2fx", ce.withId("JUMP"), kStd.jump); y += bh + gap;
-        ui_.slider(x, y, hw, bh, "KNOCKBACK", r.knockback, 0, 5, "%.2fx", ce, kStd.knockback); y += bh + gap;
-        r.gravity = clampf(r.gravity, 0.1f, 3); r.moveSpeed = clampf(r.moveSpeed, 0.25f, 3); r.jump = clampf(r.jump, 0.25f, 3); r.knockback = clampf(r.knockback, 0, 5);
-        ui_.toggle(x, y, hw, bh, "DASH", r.dash, ce);
-        ui_.toggle(x + hw + gap, y, hw, bh, "GRAPPLE", r.grapple, ce); y += bh + gap;
-        ui_.toggle(x, y, hw, bh, "SELF DAMAGE", r.selfDamage, ce);
-        ui_.toggle(x + hw + gap, y, hw, bh, "INSTAGIB", r.instagib, ce); y += bh + gap;
-        ui_.toggle(x, y, hw, bh, "VAMPIRE", r.vampire, ce);
-        ui_.toggle(x + hw + gap, y, hw, bh, "REGEN", r.regen, ce); y += bh + gap;
+        float hp = (float)r.health;
+        p = at(0, 1);
+        ui_.slider(p.first, p.second, cw, h, "HEALTH", hp, 1, 500, "%.0f", ce, (float)kStd.health); r.health = std::min(std::max((int)std::lround(hp), 1), 1000);
         float tl = (float)r.timeLimit, sl = (float)r.scoreLimit, rw = (float)r.roundsToWin;
-        // (dragged: half minutes; typed: any whole second)
-        if (ui_.slider(x, y, hw, bh, "TIME (S, 0=DEFAULT)", tl, 0, 3600, "%.0f", ce, (float)kStd.timeLimit)) r.timeLimit = std::min(std::max((int)std::lround(ui_.typed() ? tl : std::round(tl / 30) * 30), 0), 3600);
-        ui_.slider(x + hw + gap, y, hw, bh, "SCORE (0=DEFAULT)", sl, 0, 200, "%.0f", ce, (float)kStd.scoreLimit); r.scoreLimit = std::min(std::max((int)std::lround(sl), 0), 10000); y += bh + gap;
-        ui_.slider(x, y, hw, bh, "ROUNDS (0=DEFAULT)", rw, 0, 15, "%.0f", ce, (float)kStd.roundsToWin); r.roundsToWin = std::min(std::max((int)std::lround(rw), 0), 50); y += bh + gap;
-    } else if (customTab_ == 3) {   // every movement constant, x its normal value (gravity / speed / jump are on GENERAL)
-        ui_.label(x, y, "EVERY MOVEMENT SETTING: STANDARD -> THIS MODE (THE SLIDER IS THE MULTIPLIER, 1.00X = STANDARD)", kGrey, 0.5f);
-        y += 16 * s;
-        // three columns when the longest label fits one, else two; rows as tall as fit above RESET / SAVE / BACK
-        const float avail = r_.height() - y - 2 * (bh + gap) - 60 * s;
-        float widest = 0;
-        for (int k = 0; k < MV_COUNT; k++) {
-            char v[16];
-            snprintf(v, sizeof v, ": %.2fx", r.move[k]);
-            widest = std::max(widest, r_.textWidth(stdTo(moveParamLabel(k), moveParamBase(k), r.move[k], moveParamUnit(k)) + v, r_.minTextScale()));
-        }
-        int cols = widest + 8 * s <= (gw - 2 * gap) / 3 ? 3 : 2, rows = (MV_COUNT + cols - 1) / cols;
-        const float rh = std::max(18 * s, std::min(bh, avail / rows - gap));
-        float cw = (gw - (cols - 1) * gap) / cols;
-        for (int k = 0; k < MV_COUNT; k++) {
-            float cx2 = gx + (k % cols) * (cw + gap), cy2 = y + (k / cols) * (rh + gap);
-            if (ui_.slider(cx2, cy2, cw, rh, stdTo(moveParamLabel(k), moveParamBase(k), r.move[k], moveParamUnit(k)), r.move[k], 0.1f, 5, "%.2fx",
-                           UiExp::state("custom").withId(moveParamLabel(k)), CustomRules().move[k]))   // (dragged: 0.05 steps; typed / reset: as is)
-                r.move[k] = clampf(ui_.typed() ? r.move[k] : std::round(r.move[k] * 20) / 20, 0.1f, 5);
-        }
-        y += rows * (rh + gap);
-        bool standard = std::all_of(std::begin(r.move), std::end(r.move), [](float v) { return v == 1; });
-        if (ui_.button(x, y, w, bh, "RESET MOVEMENT TO STANDARD", UiExp::state("custom"), !standard)) for (float& v : r.move) v = 1;
-        y += bh + gap;
-    } else if (customTab_ == 1) {
-        static const CustomRules kStdW;   // (right-click on a slider: the standard value)
-        float sw = (gw - 130 * s - 3 * gap) / 3;
+        p = at(0, 2);   // (dragged: half minutes; typed: any whole second)
+        if (ui_.slider(p.first, p.second, cw, h, "TIME LIMIT (S)", tl, 0, 3600, "%.0f", ce, (float)kStd.timeLimit)) r.timeLimit = std::min(std::max((int)std::lround(ui_.typed() ? tl : std::round(tl / 30) * 30), 0), 3600);
+        p = at(0, 3);
+        ui_.slider(p.first, p.second, cw, h, "SCORE LIMIT", sl, 0, 200, "%.0f", ce, (float)kStd.scoreLimit); r.scoreLimit = std::min(std::max((int)std::lround(sl), 0), 10000);
+        p = at(0, 4);
+        ui_.slider(p.first, p.second, cw, h, "ROUNDS", rw, 0, 15, "%.0f", ce, (float)kStd.roundsToWin); r.roundsToWin = std::min(std::max((int)std::lround(rw), 0), 50);
+        ui_.hint(L.X(cx3[0]), L.Y(490), "TIME / SCORE / ROUNDS: 0 = THE MODE'S DEFAULT", kGrey, cw);
+        p = at(1, 0);
+        realSlider(ui_, p.first, p.second, cw, h, "GRAVITY", r.gravity, 0.1f, 3, moveBaseGravity(), "m/s2", ce.withId("GRAVITY"), kStd.gravity);
+        p = at(1, 1);
+        realSlider(ui_, p.first, p.second, cw, h, "RUN SPEED", r.moveSpeed, 0.25f, 3, moveBaseSpeed(), "m/s", ce.withId("RUN SPEED"), kStd.moveSpeed);
+        p = at(1, 2);
+        realSlider(ui_, p.first, p.second, cw, h, "JUMP", r.jump, 0.25f, 3, moveBaseJump(), "m/s", ce.withId("JUMP"), kStd.jump);
+        p = at(1, 3);
+        ui_.slider(p.first, p.second, cw, h, "KNOCKBACK", r.knockback, 0, 5, "%.2fX", ce, kStd.knockback);
+        r.gravity = clampf(r.gravity, 0.1f, 3); r.moveSpeed = clampf(r.moveSpeed, 0.25f, 3); r.jump = clampf(r.jump, 0.25f, 3); r.knockback = clampf(r.knockback, 0, 5);
+        struct { const char* name; bool* v; } abil[6] = {{"DASH", &r.dash}, {"GRAPPLE", &r.grapple}, {"SELF DAMAGE", &r.selfDamage},
+                                                         {"INSTAGIB", &r.instagib}, {"VAMPIRE", &r.vampire}, {"REGEN", &r.regen}};
+        for (int i = 0; i < 6; i++) { p = at(2, i); ui_.toggle(p.first, p.second, cw, h, abil[i].name, *abil[i].v, ce); }
+    } else if (customTab_ == 1) {   // a row per weapon: on / off, then FIRE RATE, DAMAGE, SPEED as this mode makes them
+        static const CustomRules kStdW;
+        int row = 0;
         for (int i = 0; i < WPN_COUNT; i++) {
             int wp = kWeaponSlots[i];
             if (wp == WPN_LOCATOR) continue;   // (hide and seek / tag only, always "it"'s: not a pick)
+            const float y = L.Y(270 + 34 * row++), h = L.L(30), sw = L.L(248);
             bool on = r.weapons == 0 || (r.weapons >> wp & 1);
             bool onlyOne = r.weapons == (1u << wp);   // (the last one on stays on)
-            if (ui_.toggle(gx, y, 124 * s, bh, upper(baseWeaponDef(wp).name), on, onlyOne ? UiExp::inert() : UiExp::state("custom"))) {
+            if (ui_.toggle(L.X(176), y, L.L(160), h, upper(baseWeaponDef(wp).name), on, onlyOne ? UiExp::inert() : ce)) {
                 uint16_t all = (uint16_t)((1u << WPN_COUNT) - 1), m = r.weapons ? r.weapons : all;
                 m = on ? (uint16_t)(m | 1u << wp) : (uint16_t)(m & ~(1u << wp));
                 if (m == 0) m = (uint16_t)(1u << wp);   // keep at least one
                 r.weapons = m == all ? 0 : m;
             }
-            float fx = gx + 130 * s;
-            const WeaponDef& bd = baseWeaponDef(wp);   // standard -> this mode
-            ui_.slider(fx, y, sw, bh, stdTo("SHOTS/S", bd.refire > 0 ? 1.0f / bd.refire : 0, r.fireRate[wp]), r.fireRate[wp], 0.25f, 4, "%.2fx", UiExp::state("custom").withId("SHOTS/S"), kStdW.fireRate[wp]);
-            ui_.slider(fx + sw + gap, y, sw, bh, stdTo("DMG", bd.damage, r.damage[wp]), r.damage[wp], 0.1f, 5, "%.2fx", UiExp::state("custom").withId("DMG"), kStdW.damage[wp]);
-            ui_.slider(fx + 2 * (sw + gap), y, sw, bh, (bd.projSpeed > 0 ? stdTo("SPEED", bd.projSpeed, r.projSpeed[wp], "m/s") : std::string("SPEED: HITSCAN")), r.projSpeed[wp], 0.25f, 4, "%.2fx",
-                       UiExp::state("custom").withId("SPEED"), kStdW.projSpeed[wp]);
+            const WeaponDef& bd = baseWeaponDef(wp);   // standard x this mode's multiplier
+            realSlider(ui_, L.X(344), y, sw, h, "FIRE RATE", r.fireRate[wp], 0.25f, 4, bd.refire > 0 ? 1.0f / bd.refire : 0, "/s", ce.withId("FIRE RATE"), kStdW.fireRate[wp]);
+            realSlider(ui_, L.X(600), y, sw, h, "DAMAGE", r.damage[wp], 0.1f, 5, bd.damage, "", ce.withId("DAMAGE"), kStdW.damage[wp]);
+            if (bd.projSpeed > 0)
+                realSlider(ui_, L.X(856), y, sw, h, "SPEED", r.projSpeed[wp], 0.25f, 4, bd.projSpeed, "m/s", ce.withId("SPEED"), kStdW.projSpeed[wp]);
+            else ui_.button(L.X(856), y, sw, h, "SPEED: HITSCAN", UiExp::inert().withId("SPEED"), false);   // (no projectile: nothing to set)
             r.fireRate[wp] = clampf(r.fireRate[wp], 0.1f, 10); r.damage[wp] = clampf(r.damage[wp], 0, 10); r.projSpeed[wp] = clampf(r.projSpeed[wp], 0.1f, 5);
-            y += bh + gap;
         }
-    } else {
-        ui_.label(x, y, "MAP POOL (ROTATES EACH MATCH; NONE = HOST'S MAP)", Color{0.7f, 0.7f, 0.7f, 1}, 0.8f);
-        y += 24 * s;
+    } else if (customTab_ == 2) {   // the map pool: every map built for the mode, five to a row
+        ui_.label(L.X(176), L.Y(270), "MAP POOL (ROTATES EACH MATCH; NONE = THE HOST'S MAP)", kGrey, 1.0f, L.L(928));
         int n = 0;
-        float widest = 0;
-        for (size_t i = 0; i < maps_.size() && i < mapInfo_.size(); i++)
-            if (mapInfo_[i].modes >> r.baseMode & 1) { n++; widest = std::max(widest, r_.textWidth(upper(maps_[i]) + ": OFF", r_.minTextScale())); }
-        // as many columns as fit above SAVE / BACK, but never so narrow a name is cut off (with many of your own maps:
-        // lower rows instead, never off the bottom)
-        const float avail = r_.height() - y - 80 * s;
-        int maxCols = std::max(2, std::min(6, (int)((w + gap) / (widest + 8 * s + gap))));
-        int cols = Ui::fitColumns(n, avail, bh + gap, 2, maxCols), rows = std::max(1, (n + cols - 1) / cols);
-        const float rh = std::max(18 * s, std::min(bh, avail / rows - gap));
-        float cw = (w - (cols - 1) * gap) / cols;
+        for (size_t i = 0; i < maps_.size() && i < mapInfo_.size(); i++) if (mapInfo_[i].modes >> r.baseMode & 1) n++;
+        // rows of 40 down to the footer; with many of your own maps, lower rows instead of off the bottom
+        const int rows = std::max(1, (n + 4) / 5);
+        const float step = std::min(40.0f, 322.0f / rows), rh = std::max(18.0f, std::min(32.0f, step - 8));
         int k = 0;
         for (size_t i = 0; i < maps_.size() && i < mapInfo_.size(); i++) {
             if (!(mapInfo_[i].modes >> r.baseMode & 1)) continue;
             auto it = std::find(r.maps.begin(), r.maps.end(), maps_[i]);
             bool on = it != r.maps.end();
-            if (ui_.toggle(x + (k % cols) * (cw + gap), y + (k / cols) * (rh + gap), cw, rh, upper(maps_[i]), on, UiExp::state("custom"))) {
+            if (ui_.toggle(L.X(176 + (k % 5) * (tw + 8)), L.Y(294 + (k / 5) * step), L.L(tw), L.L(rh), upper(maps_[i]), on, ce)) {
                 if (on) r.maps.push_back(maps_[i]); else r.maps.erase(it);
             }
             k++;
         }
-        y += rows * (rh + gap) - gap;
         // drop maps that no longer support the mode
-        r.maps.erase(std::remove_if(r.maps.begin(), r.maps.end(), [&](const std::string& n) {
-            for (size_t i = 0; i < maps_.size() && i < mapInfo_.size(); i++) if (maps_[i] == n) return !(mapInfo_[i].modes >> r.baseMode & 1);
+        r.maps.erase(std::remove_if(r.maps.begin(), r.maps.end(), [&](const std::string& nm) {
+            for (size_t i = 0; i < maps_.size() && i < mapInfo_.size(); i++) if (maps_[i] == nm) return !(mapInfo_[i].modes >> r.baseMode & 1);
             return true; }), r.maps.end());
+    } else {   // MOVEMENT / DASH + GRAPPLE: every movement constant as this mode makes it (gravity / speed / jump: GENERAL)
+        ui_.hint(L.X(176), L.Y(270), "EACH SLIDER SHOWS THE VALUE IN THIS MODE (STANDARD x MULTIPLIER)", kGrey, L.L(928));
+        struct Col { float x, w; const char* head; int n; int p[8]; float headY = 294; };
+        static const Col move[3] = {
+            {176, 452, "GROUND", 5, {MV_CROUCH_SPEED, MV_GROUND_ACCEL, MV_FRICTION, MV_STOP_SPEED, MV_STEP}},
+            {176, 452, "LADDER", 2, {MV_LADDER_SPEED, MV_LADDER_SIDE}, 486},
+            {652, 452, "AIR", 8, {MV_AIR_ACCEL, MV_AIR_CAP, MV_OVERSTRAFE, MV_AIR_CONTROL, MV_AIR_DRIFT, MV_STRAFE_BOOST, MV_BOUNCE_GAIN, MV_BOUNCE_MAX}}};
+        static const Col dash[3] = {
+            {176, 298.67f, "DASH", 8, {MV_DASH_SPEED, MV_DASH_TIME, MV_DASH_EXIT_MIN, MV_DASH_EXIT_MAX, MV_DASH_KEEP, MV_DASH_VERTICAL, MV_DASH_CHARGES, MV_DASH_COOLDOWN}},
+            {490.67f, 298.67f, "SUPER DASH", 5, {MV_DASH_JUMP_WINDOW, MV_SUPER_DASH_BOOST, MV_SUPER_DASH_JUMP, MV_SUPER_DASH_MAX, MV_DASH_BOUNCE_ANGLE}},
+            {805.33f, 298.67f, "GRAPPLE", 6, {MV_HOOK_RANGE, MV_HOOK_ACCEL, MV_HOOK_MAX, MV_HOOK_GRAVITY, MV_HOOK_RELEASE, MV_HOOK_COOLDOWN}}};
+        static const CustomRules kStdM;
+        for (const Col& c : customTab_ == 3 ? move : dash) {
+            header(c.x, c.headY, c.head, c.w);
+            for (int i = 0; i < c.n; i++) {
+                const int k = c.p[i];
+                if (realSlider(ui_, L.X(c.x), L.Y(c.headY + 24 + 32 * i), L.L(c.w), L.L(28), moveParamLabel(k), r.move[k], 0.1f, 5, moveParamBase(k), moveParamUnit(k),
+                               UiExp::state("custom").withId(moveParamLabel(k)), kStdM.move[k], 0.05f))   // (dragged: 0.05 steps; typed / reset: as is)
+                    r.move[k] = clampf(r.move[k], 0.1f, 5);
+            }
+        }
+        bool standard = std::all_of(std::begin(r.move), std::end(r.move), [](float v) { return v == 1; });
+        if (ui_.button(L.X(456), L.Y(632), L.L(280), L.L(40), "RESET MOVEMENT TO STANDARD", ce, !standard)) for (float& v : r.move) v = 1;
     }
-    float by = y + gap * 2;
-    float bw = (w - 2 * gap) / 3;
-    bool named = !r.name.empty();
-    if (ui_.button(x, by, bw, 36 * s, "SAVE", UiExp::nav("host"), named)) {
+    const float fy = L.Y(632), fw = L.L(176), fh = L.L(40);
+    if (ui_.button(L.X(176), fy, fw, fh, "BACK", UiExp::nav("host"))) { setScreen(Screen::Host); return; }
+    if (ui_.button(L.X(744), fy, fw, fh, "DELETE", UiExp::nav("host"), !editOrigName_.empty())) {
+        deleteCustomMode(editOrigName_);
+        if (cfg_.hostCustom == editOrigName_) cfg_.hostCustom.clear();
+        setScreen(Screen::Host);
+        return;
+    }
+    if (ui_.button(L.X(928), fy, fw, fh, "SAVE", UiExp::nav("host"), !r.name.empty())) {
         if (!editOrigName_.empty() && editOrigName_ != r.name) deleteCustomMode(editOrigName_);
         if (saveCustomMode(r)) { editOrigName_ = r.name; cfg_.hostCustom = r.name; cfg_.save(); notify("SAVED " + upper(r.name), 2); setScreen(Screen::Host); }
         else notify("COULD NOT SAVE", 3);
     }
-    if (ui_.button(x + bw + gap, by, bw, 36 * s, "DELETE", UiExp::nav("host"), !editOrigName_.empty())) {
-        deleteCustomMode(editOrigName_);
-        if (cfg_.hostCustom == editOrigName_) cfg_.hostCustom.clear();
-        setScreen(Screen::Host);
-    }
-    if (ui_.button(x + 2 * (bw + gap), by, bw, 36 * s, "BACK", UiExp::nav("host"))) setScreen(Screen::Host);
 }
 
 // ---------------------------------------------------------------------------

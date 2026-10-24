@@ -66,7 +66,7 @@ std::string Game::uiScreenPath() const {
     };
     std::string pick = picker_ != PICK_NONE ? std::string("/picker:") + pickerName(picker_) : "";
     static const char* info[] = {"modes", "controls", "hud", "hosting", "editor", "maps"};
-    static const char* custom[] = {"general", "weapons", "maps", "movement"};
+    static const char* custom[] = {"general", "weapons", "maps", "movement", "dash"};
     switch (screen_) {
         case Screen::Main: return edPrompt_ ? "main/save-copy" : "main";   // (after someone else's session: keep a copy?)
         case Screen::Join: return "join";
@@ -76,7 +76,7 @@ std::string Game::uiScreenPath() const {
         case Screen::Leaderboard: return raceStatsView_ ? "leaderboard/race-stats" : "leaderboard";
         case Screen::Info: return std::string("info/") + info[std::min(std::max(infoTab_, 0), 5)];
         case Screen::Demos: return "demos";
-        case Screen::CustomMode: return std::string("custom/") + custom[std::min(std::max(customTab_, 0), 3)];
+        case Screen::CustomMode: return std::string("custom/") + custom[std::min(std::max(customTab_, 0), 4)];
         case Screen::Connecting: return "connecting";
         case Screen::Editor: return std::string(edPath()) + (edPrompt_ ? "/keep-edits" : edGroupMenu_ ? "/groups" : edExportAsk_ ? "/export-ask" : "") + (chatting_ ? "/chat" : "");
         case Screen::InGame: {

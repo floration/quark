@@ -14,7 +14,7 @@ DISPLAY=:99 xvfb-run -a ctest --test-dir build -R uitest  # the same through cte
 Development options: `--uitest-only menus,host-ffa` runs some scenarios, `--uitest-path settings` only explores the
 screens under one path (`--uitest-path host,custom`: under any of them; the scenario's first screen always), and
 `QUARK_UITEST_VERBOSE=1` prints every activation as it happens. `quark --menupage <path> --screenshot out.png` opens a
-menu page by its path (below) for a screenshot, e.g. `host/advanced`, `vsbots/picker:maps`,
+menu page by its path (below) for a screenshot, e.g. `host/advanced`, `vsbots/picker:maps`, `custom/dash`,
 `info/controls+15` (scrolled down 15 lines).
 
 It runs with its own data folder (a fresh temp dir: your settings, maps and keys are never read or changed), the network
@@ -100,9 +100,10 @@ group / room / stairs).
 The menus' pages and their paths: `main` (`main/save-copy`: the "keep your copy?" dialog after someone else's edit
 session), `join`, `connecting`, `host` (`host/advanced`: UDP PORT, AUTO PORT FORWARD, SERVER LOG; `host/picker:maps`,
 `:modes`, `:variants`, `:ladders`), `vsbots` (+ the same pickers), `custom/general`, `custom/weapons`, `custom/maps`,
-`custom/movement`, `info/modes`, `info/controls`, `info/hud`, `info/hosting`,
+`custom/movement`, `custom/dash` (DASH + GRAPPLE), `info/modes`, `info/controls`, `info/hud`, `info/hosting`,
 `info/editor`, `info/maps` (scrolling isn't a screen: the wheel), `leaderboard` (`leaderboard/race-stats`), `demos`.
-A CONNECTING screen
+A custom mode's sliders show the value in the mode (standard x multiplier, with its unit) and store the multiplier:
+what's typed is that value, and the `.qmode` read back must show it again to the slider's decimals. A CONNECTING screen
 reached by starting a game of the scenario's own (TIME TRIAL hosts one) is on its way in game and isn't explored: the
 one JOIN > CONNECT leaves is.
 
