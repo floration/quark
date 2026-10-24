@@ -254,7 +254,7 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     resetRateWindow();
     windowBad_ = windowSevere_ = false; windowCheckedAt_ = -1e9;
     if (cfg_.channel != GOV_PROD && cfg_.channel != GOV_TESTING) cfg_.channel = testingBuild() ? GOV_TESTING : GOV_PROD;
-    closed_ = false; govPendingLogged_ = false; govReportAt_ = 0;
+    closed_ = paused_ = false; govPendingLogged_ = false; govReportAt_ = 0;
     gov_.reset();
     if (!cfg_.governorDir.empty()) {   // a production + testing pair on one machine (tools/server/install.sh)
         std::error_code ec;
@@ -368,6 +368,7 @@ void Server::run(std::atomic<bool>& quit) {
 
 void Server::idle(double wait) {
     if (closed_) { sock_.waitUs(100000); return; }   // closed by the governor: wake for packets (refused) and its decision
+    if (paused_) { if (wait > 0) sock_.waitUs((int)(std::min(wait, 0.05) * 1e6)); return; }   // (a connect wakes it: frame() resumes at once)
     bool anyHuman = false;
     for (auto& p : players_) anyHuman |= p.connected && !p.isBot;
     if (!anyHuman) { if (wait > 0) sock_.waitUs((int)std::min(wait * 1e6, 5000.0)); return; } // nobody to be on time for: no spinning
@@ -470,7 +471,7 @@ void Server::checkTickRate() {
     else if (rateDownPending_ && between && rateLevel_ < kTickRateLevels - 1) { stepRateDown(("fell behind during the round: " + rateDownWhy_).c_str()); resetRateWindow(); return; }
     if (now - rateWindowStart_ < rateWindow_) return;
     if (!g_serverRateCheck) { resetRateWindow(); return; }
-    if (editing_ || playerCount() == 0 || rateWindowStart_ < rateHoldUntil_) { resetRateWindow(); return; }
+    if (editing_ || paused_ || playerCount() == 0 || rateWindowStart_ < rateHoldUntil_) { resetRateWindow(); return; }
     int worstLoss = windowWorstLoss_;
     double lateFrac = windowTicks_ ? windowLate_ / (double)windowTicks_ : 0;
     double busy = windowBusy_ / std::max(1e-6, now - rateWindowStart_); // share of the time spent simulating + sending
@@ -625,6 +626,22 @@ void Server::setGovernorClosed(bool on) {
     glog(LOG_SIMPLE, "reopened by the load governor");
 }
 
+// Dedicated servers (cfg_.pauseWithoutHumans): bots alone don't play to nobody. No ticks, no snapshots, the game clock
+// (and every game timer on it) stopped; the network, the governor, timeouts and the restart check go on. Not while a
+// ranked match is live (its ticket deadline is game time) or an edit waits for its autosave (on the tick). The bots'
+// match and any vote are dropped: the first human back starts at warmup. Away players count as humans (their grace).
+void Server::updatePause(double now) {
+    const bool want = humanCount() == 0 && !rankedLive() && !(editing_ && ((editDirty_ && !tempEdit_) || autosaveRunning()));
+    if (want == paused_) return;
+    paused_ = want;
+    nextTick_ = now;   // (resuming: no catch-up burst)
+    resetRateWindow(); // (no rate verdict on a window across the pause)
+    if (!want) { log("resumed"); return; }
+    if (vote_.kind != VOTE_NONE) { vote_ = Vote(); ms_.voteActive = 0; }
+    if (!editing_ && ms_.phase != PHASE_WARMUP) rulesReset(*this);
+    log("paused: no humans (bots wait)");
+}
+
 bool Server::rated() const { return cfg_.channel != GOV_TESTING && !testingBuild(); }
 
 double Server::frame() {
@@ -643,6 +660,8 @@ double Server::frame() {
     if (probeSock_.isOpen() && now >= reachTickAt_) { reachTickAt_ = now + 0.01; tickReachability(); }
     if (gov_) governorFrame(now);
     if (closed_) { nextTick_ = now; checkRestartFlag(); return 0.1; }   // closed by the governor: no ticks
+    if (cfg_.pauseWithoutHumans) updatePause(now);
+    if (paused_) nextTick_ = now;   // no ticks: the clock stays where it is (the rest of the frame runs)
     double period = 1.0 / tickRate();
     if (now - nextTick_ > period * 20) { // fell far behind (debugger, hitch): skip ahead instead of spiralling
         windowLate_ += 20;
@@ -651,7 +670,7 @@ double Server::frame() {
         nextTick_ = now;
     }
     int caught = 0;
-    while (now >= nextTick_) {
+    while (!paused_ && now >= nextTick_) {
         if (++caught > 20) break; // 20 ticks per frame at most, then back to the network; the rest of the backlog
                                   // next frame (time stays continuous; a backlog past 20 periods is skipped above).
                                   // Catching up without a limit let a slow machine spin here forever.
@@ -691,7 +710,7 @@ double Server::frame() {
     }
     checkTickRate();
     checkRestartFlag();
-    return nextTick_ - timeNow();
+    return paused_ ? 0.05 : nextTick_ - timeNow();
 }
 
 int Server::findPlayer(const NetAddr& a) const {
