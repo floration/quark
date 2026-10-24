@@ -1,17 +1,18 @@
 #!/bin/bash
-# The pre-push check used for 1.17.0 (docs/HANDOVER.md section 0): every quark_tests group, 4 at a time, then the
+# The pre-push check used for 1.17.0 (docs/HANDOVER.md section 0): every quark_tests group, 3 per core at a time, then the
 # timing-sensitive ones alone, then every map hosted headless in FFA and screenshotted (it loads and the game runs).
-# Usage: tools/release_check.sh [--skip "bots botaim botfalls maps"]     (run from the repo root, after a build)
+# Usage: tools/release_check.sh [--skip "bots botaim botfalls maps mapbounds"]     (run from the repo root, after a build)
 # Needs Xvfb on Linux for the map check (skipped with a note if there's no Xvfb). Exit code 0 = everything passed.
 cd "$(dirname "$0")/.." || exit 2
 SKIP=" "
 [ "$1" = "--skip" ] && SKIP=" $2 "
 export TMPDIR="${TMPDIR:-/tmp}/quark_release_check.$$"; mkdir -p "$TMPDIR"
 fail=0
-alone="netcode tickrate governor resetmaps userdata"   # (timing-sensitive or rewrites shared files: on an idle machine)
+alone="tickrate netcode weaponpredict"   # (timing-sensitive: after the others, on an idle machine; as quark_tests orders them)
 par=""
 for g in $(build/quark_tests groups); do case "$SKIP$alone " in *" $g "*) ;; *) par="$par $g";; esac; done
-echo $par | tr ' ' '\n' | xargs -P4 -I{} sh -c 'g={}; build/quark_tests group $g > "$TMPDIR/$g.log" 2>&1; echo "$g rc=$? $(grep "^group " "$TMPDIR/$g.log")"' | tee "$TMPDIR/par.txt"
+jobs=$(( 3 * $(nproc 2>/dev/null || echo 4) ))   # (as quark_tests: the groups mostly wait on real-time play)
+echo $par | tr ' ' '\n' | xargs -P$jobs -I{} sh -c 'g={}; build/quark_tests group $g > "$TMPDIR/$g.log" 2>&1; echo "$g rc=$? $(grep "^group " "$TMPDIR/$g.log")"' | tee "$TMPDIR/par.txt"
 grep -q 'rc=[^0]' "$TMPDIR/par.txt" && fail=1
 for g in $alone; do
   case "$SKIP" in *" $g "*) continue;; esac

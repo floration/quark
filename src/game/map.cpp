@@ -632,9 +632,9 @@ bool Map::parseCurrent(const std::string& text, std::string* err) {
             if (ok) formatVersion = v;
             if (ok && v > kMapFormatVersion)
                 warnings.push_back("map format " + std::to_string(v) + " is newer than this build's (" + std::to_string(kMapFormatVersion) + "): parts it doesn't know are skipped");
-        } else if (kw == "handmade") {   // made (or changed) by a person, not tools/make_maps.py: graded, never failed
+        } else if (kw == "handmade") {   // made (or changed) by a person, not tools/make_maps.py: checked, never failed
             handmade = true;
-        } else if (kw == "setting") {    // "setting <words>": the place the map is (the map report scores it)
+        } else if (kw == "setting") {    // "setting <words>": the place the map is (every generated map has one)
             ok = ls.rest(setting);
             while (!setting.empty() && (setting[0] == ' ' || setting[0] == '\t')) setting.erase(0, 1);
             while (!setting.empty() && LineIn::space(setting.back())) setting.pop_back();

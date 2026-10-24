@@ -148,13 +148,21 @@ export function writeLists(text, want) {
     const lines = text.split("\n");
     const v = findVectors(text), ent = listEntries(text);
     const blocks = new Map();
-    for (const list in ent) for (const e of ent[list]) blocks.set(e.name, lines.slice(e.from, e.to + 1));
+    // a group's block: its lines, and the // comment lines right above it (they move with it), up to the previous
+    // group's last line or the list's start
+    for (const list in ent) ent[list].forEach((e, k) => {
+        const floor = k ? ent[list][k - 1].to + 1 : v[list].start;
+        let from = e.from;
+        while (from - 1 >= floor && /^\s*\/\//.test(lines[from - 1])) from--;
+        e.lead = from;
+        blocks.set(e.name, lines.slice(from, e.to + 1));
+    });
     const lists = Object.keys(want).filter((l) => v[l]).sort((x, y) => v[y].start - v[x].start);   // bottom-up: line numbers stay valid
     for (const list of lists) {
         const inside = lines.slice(v[list].start, v[list].end - 1);
         const used = new Set();
-        for (const e of ent[list]) for (let i = e.from; i <= e.to; i++) used.add(i - v[list].start);
-        const keep = inside.filter((_, i) => !used.has(i));   // comments / blank lines in the list stay first
+        for (const e of ent[list]) for (let i = e.lead; i <= e.to; i++) used.add(i - v[list].start);
+        const keep = inside.filter((_, i) => !used.has(i));   // other comments / blank lines in the list stay first
         const ind = ent[list].length ? /^\s*/.exec(lines[ent[list][0].from])[0] : "        ";
         const body = [...keep];
         for (const n of want[list]) body.push(...(blocks.get(n) || [`${ind}{"${n}", [] { }},`]));
@@ -399,7 +407,8 @@ export function ruleHits(path, oldText, newText, model, added) {
 }
 
 // quark_tests runs of gameplay tests in a workflow's text (not a tool command such as exportassets): [{line, text, what}]
-const TOOLS = new Set(["exportassets", "mapreport", "groups", "racefloors", "serverbench", "snapbench", "navbench", "playtest"]);
+const TOOLS = new Set(["exportassets", "groups", "racefloors", "serverbench", "snapbench", "navbench", "playtest", "bot", "ffaexperts", "bounds",
+    "exportbrain", "checkbrain", "brainast", "printbrain", "brainbench", "exportmode", "checkmode", "modeast", "printmode", "modebench"]);
 export function gameplayRuns(text, model) {
     const tools = new Set(TOOLS);
     for (const s of (model && model.suites) || []) for (const it of s.items || []) if (it.kind === "tool") tools.add(it.name);

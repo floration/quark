@@ -229,6 +229,9 @@ static void testGovernorTwoServers(uint16_t port) {
     test.setLog([&](const std::string& l) { std::lock_guard<std::mutex> g(logMu); logs.push_back("testing: " + l); });
     std::string e;
     if (!prod.start(pc, &e) || !test.start(tc, &e)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e.c_str()); g_fail++; prod.stop(); test.stop(); return; }
+    // The load signal is the players' reported loss alone: this machine's own stalls (other test groups run beside
+    // this one) would read as overload on top of it, or keep "calm" from coming.
+    prod.rateStalls_ = test.rateStalls_ = false;
     NetClient a, a2;   // (two: one player losing snapshots is that player's connection, not the machine)
     a.connect("127.0.0.1:" + std::to_string(pc.port), "player");
     a2.connect("127.0.0.1:" + std::to_string(pc.port), "player2");

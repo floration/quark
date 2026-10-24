@@ -37,12 +37,20 @@ for (const g of qt.items.filter((i) => i.kind === "group")) {
     const out2 = P.writeSequence(cpp, g, seq2, isFn);
     ok(changed(cpp, out2)[1].includes("testTimeToKill(); testLadders(); }},"), "remove + add a call", changed(cpp, out2)[1]);
 }
-// multi-line group (maps): reorder keeps comments and the non-call code
+// a multi-line group (none today: synthetic, maps split over lines with a code line and a comment): reorder keeps the
+// code, the comment and the line count
+const M = (() => {
+    const one = cpp.split("\n").find((l) => /^\s*\{"maps", \[\] \{ /.test(l));
+    const multi = one.replace('{"maps", [] { ', '{"maps", [] {\n            int keep = 1;   // a comment that stays\n            ').replace(/ \}\},$/, "\n        }},");
+    const g = { ...G("maps"), line: cpp.split("\n").indexOf(one) + 1 };
+    g.endLine = g.line + multi.split("\n").length - 1;
+    return { cpp: cpp.replace(one, multi), g, lines: multi.split("\n").length };
+})();
 {
-    const g = G("maps"), s = P.entrySequence(cpp, g, isFn);
-    const seq = s.seq.slice(); const a = seq.shift(); seq.splice(2, 0, a);
-    const out = P.writeSequence(cpp, g, seq, isFn);
-    ok(out.includes("// the map bar: every map scores") && out.split("\n").length === cpp.split("\n").length, "maps reorder keeps comment and line count");
+    const s = P.entrySequence(M.cpp, M.g, isFn);
+    const seq = s.seq.slice(); const a = seq.findIndex((x) => x.kind === "call"); seq.splice(a + 2, 0, ...seq.splice(a, 1));
+    const out = P.writeSequence(M.cpp, M.g, seq, isFn);
+    ok(out !== M.cpp && out.includes("int keep = 1;") && out.includes("// a comment that stays") && out.split("\n").length === M.cpp.split("\n").length, "maps reorder keeps code, comment and line count");
 }
 // par -> alone and back
 {
@@ -51,14 +59,14 @@ for (const g of qt.items.filter((i) => i.kind === "group")) {
     const lines = out.split("\n");
     ok(/\{"hidden"/.test(lines[v.alone.end - 2]), "hidden moved to the end of alone");
     ok(changed(cpp, out).length === 2, "move = one line out, one in");
-    const back = P.moveGroup(cpp, G("netcode"), "par", "bots");
+    const back = P.moveGroup(cpp, G("netcode"), "par", P.listEntries(cpp).par[0].name);
     ok(/\{"netcode"/.test(back.split("\n")[P.findVectors(back).par.start]), "netcode moved to the top of par");
 }
 // shortcut command body
 {
-    const c = qt.items.find((i) => i.id === "cmd:kick");
+    const c = qt.items.find((i) => i.id === "cmd:signing");
     const s = P.entrySequence(cpp, c, isFn);
-    ok(s && s.seq.length === 4 && s.seq[3].kind === "code", "kick shortcut: 3 calls + return", JSON.stringify(s && s.seq.map((x) => x.kind)));
+    ok(s && s.seq.length === 2 && s.seq[0].kind === "call" && s.seq[1].kind === "code", "signing shortcut: 1 call + return", JSON.stringify(s && s.seq.map((x) => x.kind)));
 }
 // yaml: if / needs / runs-on
 {
@@ -115,12 +123,12 @@ for (const g of qt.items.filter((i) => i.kind === "group")) {
 }
 // group lists after the group grew a line
 {
-    const g = G("maps"), s = P.entrySequence(cpp, g, isFn);
-    const grown = P.writeSequence(cpp, g, [...s.seq, { kind: "call", fn: "testLadders", args: "" }], isFn);
-    ok(grown.split("\n").length === cpp.split("\n").length + 1, "multi-line group: a new call is a new line");
-    const moved = P.moveGroup(grown, g, "alone", "netcode");
+    const g = M.g, s = P.entrySequence(M.cpp, g, isFn);
+    const grown = P.writeSequence(M.cpp, g, [...s.seq, { kind: "call", fn: "testLadders", args: "" }], isFn);
+    ok(grown.split("\n").length === M.cpp.split("\n").length && grown.includes("testLadders(); testLadders();\n        }},"), "multi-line group: a new call goes after the last, spaced like it");
+    const moved = P.moveGroup(grown, g, "alone", P.listEntries(grown).alone[0].name);
     const ent = P.listEntries(moved);
-    ok(ent.alone[0].name === "maps" && ent.alone[0].to - ent.alone[0].from === 6 && !ent.par.some((e) => e.name === "maps"), "move the grown group to alone", JSON.stringify(ent.alone[0]));
+    ok(ent.alone[0].name === "maps" && ent.alone[0].to - ent.alone[0].from === M.lines - 1 && !ent.par.some((e) => e.name === "maps"), "move the grown group to alone", JSON.stringify(ent.alone[0]));
     ok(P.writeLists(cpp, Object.fromEntries(Object.entries(P.listEntries(cpp)).map(([k, v]) => [k, v.map((e) => e.name)]))) === cpp, "writeLists identity");
 }
 // rules

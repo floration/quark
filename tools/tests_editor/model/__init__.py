@@ -183,7 +183,11 @@ class Builder:
 
         groups = []
         for l in lists:
-            parallel = bool(re.search(r"\b%s\s*\[" % re.escape(l["name"]), main_body)) and "alone" not in l["name"]
+            # run through a scheduler call (`forked(par, 3 * cores)`: parallel; `forked(alone, 1)`: one at a time), or
+            # indexed in a fork loop of its own (`par[i]`, before the shared scheduler)
+            sched = re.search(r"\b\w+\s*\(\s*%s\s*,\s*([^)]*)\)" % re.escape(l["name"]), main_body)
+            if sched: parallel = sched.group(1).strip() != "1"
+            else: parallel = bool(re.search(r"\b%s\s*\[" % re.escape(l["name"]), main_body)) and "alone" not in l["name"]
             for k, g in enumerate(l["groups"]):
                 t = None
                 note = tm.get(g["name"])

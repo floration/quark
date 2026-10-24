@@ -446,7 +446,7 @@ void RankService::run() {
             if (!j.expect.empty()) {   // (hello: until it took)
                 while (!out.empty() && (unsigned char)out.back() <= ' ') out.pop_back();
                 if (ok && out == j.expect) helloDone_ = true;
-                else if (!base.empty()) { j.tries++; j.due = rankClock() + helloRetryDelay(j.tries); jobs_.push_back(j); }
+                else if (!base.empty()) { j.tries++; j.due = rankClock() + helloRetryDelay(j.tries) * helloRetryScale; jobs_.push_back(j); }
                 continue;
             }
             texts_[j.rawKey] = ok ? out : "!" + (base.empty() ? std::string("no server configured") : err);

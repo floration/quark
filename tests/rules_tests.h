@@ -528,6 +528,7 @@ static void testGrappleTeammate(uint16_t port) {
 // Expert bots with a close-range weapon hook their target now and then (and nothing breaks while they're latched).
 static void testGrappleBots(uint16_t port) {
     printf("grapple latches onto players: bots\n");
+    SimClock clock;   // (bots only: every tick runs, none waited for)
     Server s;
     ServerConfig cfg;
     cfg.map = "";   // a map without pits or lava (there the bots only hook when the pull ends on safe ground)
@@ -542,7 +543,7 @@ static void testGrappleBots(uint16_t port) {
     { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     int bot[2] = {s.addBot(TEAM_A, BOT_EXPERT), s.addBot(TEAM_A, BOT_EXPERT)};
     for (int k : bot) if (k >= 0) s.bots_[k].forceWeapon = WPN_SHOTGUN;
-    std::vector<NetClient*> none;
+    simNavReady(s);
     int latches = 0, bad = 0;
     bool was[2] = {};
     // Until the first latch and 5 s on (nothing breaks while latched), at most 90 s: about one latch in 30 s, so a
@@ -550,7 +551,7 @@ static void testGrappleBots(uint16_t port) {
     double firstAt = -1;
     for (int t = 0; t < 1800 && (firstAt < 0 || t * 0.05 < firstAt + 5); t++) {
         if (latches && firstAt < 0) firstAt = t * 0.05;
-        pump(s, none, 0.05, idle);
+        simRun(s, 0.05);
         for (int k = 0; k < 2; k++) {
             if (bot[k] < 0) continue;
             const ServerPlayer& p = s.players_[bot[k]];
@@ -1264,47 +1265,96 @@ static void testSpawnTypes(uint16_t port) {
 }
 
 // What a shared / CPU-capped VM does to a server that is otherwise idle: every `every` seconds the OS doesn't run it
-// for `ms` (the pump's input callback sleeps: frame() comes that much late). Busy stays near 0.
+// until the server's next tick is `ms` late (the pump's input callback spins: frame() comes that late; the ticks due
+// after it in the stall are a period less late each). Measured from the tick, not a fixed sleep: the input callback
+// only runs on the client's tick grid, so a fixed stall's lateness depended on where that grid sat against the
+// server's (constant through one pump), and a sleep overshoots by up to 1-2 ms on Windows. Busy stays near 0.
 struct Stalls {
-    double every, next = 0;
+    Server* s;
+    double every;
     int ms;
-    UserCmd operator()(int) { if (timeNow() >= next) { next = timeNow() + every; sleepMs(ms); } return UserCmd(); }
+    double next = 0;
+    UserCmd operator()(int) {
+        if (timeNow() >= next) {
+            next = timeNow() + every;
+            for (double t = s->nextTickForTest() + ms * 1e-3; timeNow() < t;) cpuRelax();
+        }
+        return UserCmd();
+    }
 };
 
+// The rate test's verdicts from here on, on `window`-second windows: the window holding the server's start and the
+// connect is dropped unjudged (as the server drops one holding a map load).
+static void rateFreshWindow(Server& s, std::vector<NetClient*>& cls, double window) {
+    g_serverRateCheck = false;   // (a window that ends while the check is off is reset, not judged)
+    s.rateWindow_ = 0.01;
+    pump(s, cls, 0.03, idle);
+    s.rateWindow_ = window;
+    g_serverRateCheck = true;
+}
+// pump() that also keeps how late the server's next tick was when each frame() started: the worst lateness the
+// server itself could count. Where a test's premise is a host that adds no stall of its own (beyond what the test
+// injects), a run in which this machine broke it is run again (at most 3 times; the last one counts as it is): the
+// server was then right to count the stalls, and nothing the test asserts is loosened.
+template <class F>
+static void ratePump(Server& s, std::vector<NetClient*>& cls, double seconds, F input, double* worst) {
+    double end = timeNow() + seconds;
+    double nextTick = timeNow();
+    while (timeNow() < end) {
+        *worst = std::max(*worst, timeNow() - s.nextTickForTest());
+        s.frame();
+        for (auto* c : cls) c->poll();
+        while (timeNow() >= nextTick) {
+            for (size_t i = 0; i < cls.size(); i++) cls[i]->tick(input((int)i));
+            nextTick += cls.empty() ? 0.001 : cls[0]->tickPeriod();
+        }
+        sleepMs(1);
+    }
+}
+static constexpr int kRateTries = 3;
+
 // GAME-11: the tick rate doesn't change mid-round; a host that falls behind steps down at the next break. Here the
-// host's ticks stall (14 ms every 0.25 s: ~4% of 1000 Hz ticks over 4 ms late) with almost no load, as the Oracle box
-// did: that alone now steps the tick rate down. (14 ms whatever the phase: at 250 Hz the tick due in the stall is at
-// least 10 ms late, over its 8 ms; at 125 Hz at most 14, under its 16. A 12 ms stall that starts just after a 125 Hz
-// tick holds the next one only 4 ms, so with Linux's exact sleeps 250 Hz looked clean and it stepped up.)
+// host's ticks stall (a tick 12 ms late every 0.25 s: ~3% of 1000 Hz ticks over 4 ms late) with almost no load, as the
+// Oracle box did: that alone now steps the tick rate down. (12 ms whatever the rate: over 250 Hz's 8 ms, under 125
+// Hz's 16 with 4 ms to spare either side, so 125 Hz is clean but would count a stall at 250 Hz and stays. The pump's
+// own 1 ms sleep after the stall adds up to 2 ms on Windows: under 16 still. CI once saw 1.6% over 16 ms on Windows
+// with a 14 ms sleep.)
 static void testRateBetweenRounds(uint16_t port) {
     printf("tick rate changes only between rounds; stalled ticks with no load step it down\n");
     setTimeScale(1.0);
-    g_serverRateCheck = true;
     struct Restore { ~Restore() { setTimeScale(kTestTimeScale); g_serverRateCheck = false; } } restore;
-    Server s;
-    ServerConfig cfg;
-    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
-    NetClient c[1];
-    std::vector<NetClient*> cls;
-    if (!rulesStart(s, cfg, c, 1, cls)) { s.stop(); return; }
-    CHECK(s.tickRate() == 1000);
-    pump(s, cls, 3.0 * 2.5, Stalls{0.25, 0, 14});   // two and a half rate windows, mid-match
-    printf("  mid-match, stalling (%.1f%% of ticks over %.1f ms late): %d Hz (phase %d)\n", s.stallPct_, s.stallAfter_ * 1e3, s.tickRate(), s.ms_.phase);
-    CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 1000 && s.rateDownPending_);
-    CHECK(s.stallPct_ > 1 && s.snapRate() == 500);   // (late ticks aren't a bandwidth problem: the snapshot rate stays)
-    s.phaseEnd_ = s.time();                  // time's up: the match is over
-    pump(s, cls, 0.5, idle);
-    printf("  match over: %d Hz (phase %d), %s\n", s.tickRate(), s.ms_.phase, s.rateWhy_.c_str());
-    CHECK(s.ms_.phase == PHASE_MATCH_END && s.tickRate() == 500);   // stepped down at once, at the break
-    // between rounds the stalls go on stepping it down until a tick period absorbs them (at 125 Hz a stall is 16 ms)
-    for (int k = 0; k < 60 && s.tickRate() > 125; k++) pump(s, cls, 0.25, Stalls{0.25, 0, 14});
-    printf("  still stalling, match end: %d Hz\n", s.tickRate());
-    CHECK(s.tickRate() == 125);
-    s.rateUpAt_ = 0;   // (the wait before trying the next rate up: over)
-    pump(s, cls, 3.0 * 1.5, Stalls{0.25, 0, 14});
-    printf("  at 125 Hz, same stalls: %.1f%% over %.1f ms, %d Hz\n", s.stallPct_, s.stallAfter_ * 1e3, s.tickRate());
-    CHECK(s.tickRate() == 125 && s.stallPct_ < 1);   // clean at 125, but 250 Hz would stall: it stays
-    s.stop();
+    for (int attempt = 1; attempt <= kRateTries; attempt++) {
+        g_serverRateCheck = true;
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+        NetClient c[1];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 1, cls)) { s.stop(); return; }
+        rateFreshWindow(s, cls, 1.5);   // (6 stalls a window)
+        CHECK(s.tickRate() == 1000);
+        pump(s, cls, s.rateWindow_ * 2.5, Stalls{&s, 0.25, 12});   // two and a half rate windows, mid-match
+        printf("  mid-match, stalling (%.1f%% of ticks over %.1f ms late): %d Hz (phase %d)\n", s.stallPct_, s.stallAfter_ * 1e3, s.tickRate(), s.ms_.phase);
+        CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 1000 && s.rateDownPending_);
+        CHECK(s.stallPct_ > 1 && s.snapRate() == 500);   // (late ticks aren't a bandwidth problem: the snapshot rate stays)
+        s.phaseEnd_ = s.time();                  // time's up: the match is over
+        pump(s, cls, 0.5, idle);
+        printf("  match over: %d Hz (phase %d), %s\n", s.tickRate(), s.ms_.phase, s.rateWhy_.c_str());
+        CHECK(s.ms_.phase == PHASE_MATCH_END && s.tickRate() == 500);   // stepped down at once, at the break
+        // between rounds the stalls go on stepping it down until a tick period absorbs them (at 125 Hz a stall is 16 ms)
+        for (int k = 0; k < 60 && s.tickRate() > 125; k++) pump(s, cls, 0.25, Stalls{&s, 0.25, 12});
+        printf("  still stalling, match end: %d Hz\n", s.tickRate());
+        CHECK(s.tickRate() == 125);
+        s.rateUpAt_ = 0;   // (the wait before trying the next rate up: over)
+        double worst = 0;
+        ratePump(s, cls, s.rateWindow_ * 1.5, Stalls{&s, 0.25, 12}, &worst);
+        printf("  at 125 Hz, same stalls: %.1f%% over %.1f ms, %d Hz (latest tick %.1f ms)\n", s.stallPct_, s.stallAfter_ * 1e3, s.tickRate(), worst * 1e3);
+        bool ok = s.tickRate() == 125 && s.stallPct_ < 1;
+        s.stop();
+        if (!ok && worst > 0.016 && attempt < kRateTries) { printf("  (this machine stalled a tick past 16 ms itself: again)\n"); continue; }
+        CHECK(ok);   // clean at 125, but 250 Hz would stall: it stays
+        return;
+    }
 }
 
 // REVIEW 6.1: a step up (made in a break) that doesn't hold is undone at once, even mid-round; any other step down
@@ -1312,68 +1362,83 @@ static void testRateBetweenRounds(uint16_t port) {
 static void testRateUndoStepUp(uint16_t port) {
     printf("tick rate: a step up that doesn't hold is undone mid-round\n");
     setTimeScale(1.0);
-    g_serverRateCheck = true;
     struct Restore { ~Restore() { setTimeScale(kTestTimeScale); g_serverRateCheck = false; } } restore;
-    Server s;
-    ServerConfig cfg;
-    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
-    NetClient c[1];
-    std::vector<NetClient*> cls;
-    if (!rulesStart(s, cfg, c, 1, cls, false)) { s.stop(); return; }
-    s.rateLevel_ = 1;   // stepped down earlier (500 Hz); the wait before trying 1000 again is over
-    s.rateUpAt_ = 0;
-    for (int k = 0; k < 60 && s.tickRate() != 1000; k++) pump(s, cls, 0.25, idle);   // a clean warmup window: up
-    printf("  warmup: %d Hz\n", s.tickRate());
-    CHECK(s.ms_.phase == PHASE_WARMUP && s.tickRate() == 1000);
-    s.command("forcestart");
-    for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE; i++) { if (s.ms_.phase == PHASE_FREEZE) s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
-    CHECK(s.ms_.phase == PHASE_LIVE);
-    Stalls st{0.25, 0, 12};                  // the raise doesn't hold
-    for (int k = 0; k < 30 && s.tickRate() != 500; k++) pump(s, cls, 0.25, st);
-    printf("  live, stalling after the raise: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
-    CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 500);   // undone mid-round, not after it
-    pump(s, cls, 3.0 * 2.5, st);             // still stalling, but that's no longer our own raise: waits for the break
-    printf("  still stalling: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
-    CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 500 && s.rateDownPending_);
-    s.phaseEnd_ = s.time();                  // time's up: the match is over
-    pump(s, cls, 0.5, idle);
-    CHECK(s.ms_.phase == PHASE_MATCH_END && s.tickRate() == 250);   // (the pending step down, at the break)
-    s.stop();
+    for (int attempt = 1; attempt <= kRateTries; attempt++) {
+        g_serverRateCheck = true;
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+        NetClient c[1];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 1, cls, false)) { s.stop(); return; }
+        s.rateLevel_ = 1;   // stepped down earlier (500 Hz); the wait before trying 1000 again is over
+        s.rateUpAt_ = 0;
+        rateFreshWindow(s, cls, 1.5);
+        double worst = 0;
+        for (int k = 0; k < 60 && s.tickRate() == 500; k++) ratePump(s, cls, 0.25, idle, &worst);   // a clean warmup window: up
+        printf("  warmup: %d Hz%s%s (latest tick %.1f ms)\n", s.tickRate(), s.rateWhy_.empty() ? "" : "; ", s.rateWhy_.c_str(), worst * 1e3);
+        if (s.tickRate() != 1000 && worst > s.stallAfter_ && attempt < kRateTries) { s.stop(); printf("  (this machine stalled a tick itself: again)\n"); continue; }
+        CHECK(s.ms_.phase == PHASE_WARMUP && s.tickRate() == 1000);
+        s.command("forcestart");
+        for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE; i++) { if (s.ms_.phase == PHASE_FREEZE) s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+        CHECK(s.ms_.phase == PHASE_LIVE);
+        Stalls st{&s, 0.25, 12};                  // the raise doesn't hold
+        for (int k = 0; k < 30 && s.tickRate() != 500; k++) pump(s, cls, 0.25, st);
+        printf("  live, stalling after the raise: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
+        CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 500);   // undone mid-round, not after it
+        pump(s, cls, s.rateWindow_ * 2.5, st);   // still stalling, but that's no longer our own raise: waits for the break
+        printf("  still stalling: %d Hz (phase %d)\n", s.tickRate(), s.ms_.phase);
+        CHECK(s.ms_.phase == PHASE_LIVE && s.tickRate() == 500 && s.rateDownPending_);
+        s.phaseEnd_ = s.time();                  // time's up: the match is over
+        pump(s, cls, 0.5, idle);
+        CHECK(s.ms_.phase == PHASE_MATCH_END && s.tickRate() == 250);   // (the pending step down, at the break)
+        s.stop();
+        return;
+    }
 }
 
 // A healthy host's jitter is no stall: Windows' 1 ms timer grid wakes a 1000 Hz tick up to a period late (p99 ~0.7-1
 // ms), and now and then later. Here the server runs its own loop (frame, idle: as quark_server does) and every wake
-// comes 0-1 ms late, one in 50 1-3 ms late: 1000 Hz and 500 snapshots/s stay.
+// comes 0-1 ms late, one in 50 1-3 ms late: 1000 Hz and 500 snapshots/s stay. (Two 1.5 s windows; a run in which this
+// machine itself made a tick 4 ms late, a stall the server is right to count, runs again: ratePump.)
 static void testRateJitter(uint16_t port) {
     printf("tick rate: a healthy host's timer jitter doesn't step it down\n");
     setTimeScale(1.0);
-    g_serverRateCheck = true;
     struct Restore { ~Restore() { setTimeScale(kTestTimeScale); g_serverRateCheck = false; } } restore;
-    Server s;
-    ServerConfig cfg;
-    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
-    NetClient c[1];
-    std::vector<NetClient*> cls;
-    if (!rulesStart(s, cfg, c, 1, cls, false)) { s.stop(); return; }
-    uint32_t r = 12345;
-    auto rnd = [&] { r = r * 1664525u + 1013904223u; return (r >> 8) / 16777216.0; };
-    double end = timeNow() + 3.0 * 3.3, next = timeNow();
-    while (timeNow() < end) {
-        double wait = s.frame(), t0 = wallNow();
-        s.idle(wait);
-        hostWaited(t0, wait);
-        double late = rnd() < 0.02 ? 0.001 + 0.002 * rnd() : 0.001 * rnd();
-        t0 = wallNow();
-        for (double t = timeNow() + late; timeNow() < t;) {}   // (woken that late)
-        hostWaited(t0, late);
-        c[0].poll();
-        while (timeNow() >= next) { c[0].tick(UserCmd()); next += c[0].tickPeriod(); }
+    for (int attempt = 1; attempt <= kRateTries; attempt++) {
+        g_serverRateCheck = true;
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+        NetClient c[1];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 1, cls, false)) { s.stop(); return; }
+        rateFreshWindow(s, cls, 1.5);
+        uint32_t r = 12345;
+        auto rnd = [&] { r = r * 1664525u + 1013904223u; return (r >> 8) / 16777216.0; };
+        double end = timeNow() + s.rateWindow_ * 2.3, next = timeNow(), worst = 0;
+        while (timeNow() < end) {
+            worst = std::max(worst, timeNow() - s.nextTickForTest());   // (as ratePump)
+            double wait = s.frame(), t0 = wallNow();
+            s.idle(wait);
+            hostWaited(t0, wait);
+            double late = rnd() < 0.02 ? 0.001 + 0.002 * rnd() : 0.001 * rnd();
+            t0 = wallNow();
+            for (double t = timeNow() + late; timeNow() < t;) {}   // (woken that late)
+            hostWaited(t0, late);
+            c[0].poll();
+            while (timeNow() >= next) { c[0].tick(UserCmd()); next += c[0].tickPeriod(); }
+        }
+        std::string st = s.statusText();
+        printf("  %s\n", st.substr(0, st.find("\n  #")).c_str());
+        printf("  latest tick: %.1f ms (the test's own jitter: at most 3 and a bit)\n", worst * 1e3);
+        bool ok = s.tickRate() == 1000 && s.snapRate() == 500 && s.rateWhy_.empty() && s.stallPct_ < 0.2;
+        double over = s.stallAfter_;
+        s.stop();
+        if (!ok && worst > over && attempt < kRateTries) { printf("  (this machine stalled a tick past %.0f ms itself: again)\n", over * 1e3); continue; }
+        CHECK(ok);
+        return;
     }
-    std::string st = s.statusText();
-    printf("  %s\n", st.substr(0, st.find("\n  #")).c_str());
-    CHECK(s.tickRate() == 1000 && s.snapRate() == 500 && s.rateWhy_.empty());
-    CHECK(s.stallPct_ < 0.2);
-    s.stop();
 }
 
 // --max-upload-kbps: past 90% of it the snapshot rate steps down (500 333 250 125/s), at once (any phase), then the
@@ -1389,14 +1454,15 @@ static void testUploadCap(uint16_t port) {
     NetClient c[1];
     std::vector<NetClient*> cls;
     if (!rulesStart(s, cfg, c, 1, cls, false)) { s.stop(); return; }
+    s.rateStalls_ = false;   // (bandwidth only: this machine's own stalls aren't the test's; see testTickRateFallback)
     s.rateWindow_ = 1.0;
-    pump(s, cls, 2.2, idle);
+    pump(s, cls, s.rateWindow_ * 2.2, idle);
     double full = s.upKbps_;   // one player at 500/s
     printf("  one player: upload %.0f kbps at %d/s\n", full, s.snapRate());
     CHECK(full > 50 && s.snapRate() == 500 && s.tickRate() == 1000);
     // a cap the 333/s rate fits under (with room): one step, the tick rate untouched
     s.cfg_.maxUploadKbps = (int)(full * 0.85);
-    pump(s, cls, 4.2, idle);
+    pump(s, cls, s.rateWindow_ * 4.2, idle);
     printf("  cap %d kbps: %d/s at %d Hz, upload %.0f kbps; %s\n", s.cfg_.maxUploadKbps, s.snapRate(), s.tickRate(), s.upKbps_, s.rateWhy_.c_str());
     CHECK(s.snapRate() == 333 && s.tickRate() == 1000);
     CHECK(s.rateWhy_.find("upload") != std::string::npos);
@@ -1444,7 +1510,9 @@ static void testSharedCongestion(uint16_t port) {
     NetClient c[3];
     std::vector<NetClient*> cls;
     if (!rulesStart(s, cfg, c, 3, cls)) { s.stop(); return; }   // (live: snapshot steps don't wait for a break)
+    s.rateStalls_ = false;   // (loss and ping only: this machine's own stalls aren't the test's; see testTickRateFallback)
     s.rateWindow_ = 1.0;
+    const double w = s.rateWindow_;
     // slow: these clients read their socket only every 150 ms (their acks age: each ping, measured by the server, up)
     auto run = [&](double secs, int slow) {
         double end = timeNow() + secs, next = timeNow(), read[3] = {};
@@ -1455,13 +1523,13 @@ static void testSharedCongestion(uint16_t port) {
             hostSleepMs(1);
         }
     };
-    run(2.2, 0);   // (each player's uncongested ping)
+    run(w * 2.2, 0);   // (each player's uncongested ping)
     c[0].overrideReportedLoss(50);
-    run(3.2, 0);
+    run(w * 3.2, 0);
     printf("  one player losing snapshots: %d Hz, %d/s\n", s.tickRate(), s.snapRate());
     CHECK(s.tickRate() == 1000 && s.snapRate() == 500 && !s.rateDownPending_);
     c[0].overrideReportedLoss(0);
-    run(3.2, 1);
+    run(w * 3.2, 1);
     printf("  one player's ping up (%.0f ms, was %.0f): %d Hz, %d/s\n", s.players_[c[0].clientId()].ping, s.players_[c[0].clientId()].pingBase, s.tickRate(), s.snapRate());
     CHECK(s.tickRate() == 1000 && s.snapRate() == 500 && !s.rateDownPending_);
     c[0].overrideReportedLoss(50); c[1].overrideReportedLoss(50);
@@ -1470,7 +1538,7 @@ static void testSharedCongestion(uint16_t port) {
     CHECK(s.snapRate() == 333 && s.tickRate() == 1000 && s.ms_.phase == PHASE_LIVE);
     CHECK(s.rateWhy_.find("2 of 3 players losing") != std::string::npos);
     c[0].overrideReportedLoss(0); c[1].overrideReportedLoss(0);
-    run(2.2, 0);   // (the window that still had their loss reports)
+    run(w * 2.2, 0);   // (the window that still had their loss reports)
     int was = s.snapRate();
     for (int k = 0; k < 40 && s.snapRate() == was; k++) run(0.1, 2);
     printf("  two of three with their ping up: %d Hz, %d/s; %s\n", s.tickRate(), s.snapRate(), s.rateWhy_.c_str());
@@ -1544,7 +1612,6 @@ static void testScoreboardValue() {
     CHECK(!scoreboardGibs(ms) && scoreboardValue(fragger, ms) == 5);
 }
 
-// "quark_tests rules [name]": all of them, or the one named.
 // The HUD's live line (src/client/hudclock.h): every mode with a running round clock shows it on the default HUD
 // (1.17.0-1.18.2 showed it only in overtime, KOTH, the drain modes and the time trial: FFA, tag, hide, bomb,
 // payload, both-ways payload, points and race had no clock). Checked on what a client receives from a real server
@@ -2253,38 +2320,43 @@ static void testModeCalls(uint16_t port) {
     s.stop();
 }
 
-static void testGameRules(const std::string& only) {
-    struct R { const char* name; std::function<void()> run; };
+// "quark_tests rules NAME": the one named ("quark_tests rules" alone is the rules group: the first half).
+// half: 0 every test, 1 or 2 one of two halves of about equal time (the suite's "rules" and "rules2" groups: ~24 s each
+// on an idle box; overtime ~16 s and grapplep ~8 s are the long ones, one in each). A test of half 0 is in neither: the
+// suite runs it in a group of its own, alone. The halves run at once, sharing one port block: tests whose ports overlap
+// stay in one half (hudclock takes 29280-29291, which hide, shorthanded and rps reach too).
+static void testGameRules(const std::string& only, int half = 0) {
+    struct R { const char* name; int half; std::function<void()> run; };
     std::vector<R> all = {
-        {"overtime", [] { testOvertime(TP(29230)); testBombOvertimePlant(TP(29245)); }},
-        {"syringe", [] { testSyringeModes(); }},
-        {"throws", [] { testThrowCooldown(TP(29240)); }},
-        {"hull", [] { testSizeHull(TP(29242)); }},
-        {"grapple", [] { testGrappleNoBrake(); testGrapplePmove(); }},
-        {"grapplep", [] { testGrapplePlayers(TP(29270)); testGrappleTeammate(TP(29271)); testGrappleLagComp(TP(29272)); testGrappleBots(TP(29273)); }},
-        {"head", [] { testHeadBox(TP(29246)); }},
-        {"hide", [] { testHideScoring(TP(29247)); testSeekerRespawn(TP(29287)); }},
-        {"shorthanded", [] { testShortHanded(TP(29288)); }},
-        {"vsbots", [] { testVsBotsDuo(TP(29294)); }},
-        {"stopwatch", [] { testStopwatch(TP(29296)); testPointsNoPoints(TP(29299)); testStopwatchLevel(TP(29303)); testLastLegRespawn(TP(29305)); }},
-        {"tag", [] { testTagEscape(TP(29248)); testTagNextMatch(TP(29274)); }},
-        {"rps", [] { testRpsTwo(TP(29255)); testRpsMany(TP(29256)); testHideTimeTiebreak(TP(29290)); }},
-        {"locator", [] { testLocator(TP(29260)); }},
-        {"aware", [] { testItAwareness(TP(29263)); }},
-        {"bomb", [] { testBombDrop(TP(29249)); }},
-        {"cartbox", [] { testCartBoxPlace(TP(29275)); }},
-        {"botdefer", [] { testBalanceBotDefer(TP(29250)); }},
-        {"spawns", [] { testSpawnTypes(TP(29251)); testFfaSpawnChoice(); }},
-        {"seeds", [] { testRandomSeeds(); }},
-        {"heal", [] { testLifeHealCap(TP(29253)); }},
-        {"scoreboard", [] { testScoreboardValue(); }},
-        {"hudclock", [] { testHudClock(TP(29280)); }},
-        {"modecalls", [] { testModeCalls(TP(29312)); }},
-        {"weaponpredict", [] { testWeaponPredict(TP(29286)); }},
-        {"customkeep", [] { testCustomRulesKeep(); }},
-        {"modehooks", [] { testModeHooks(TP(29310)); }},
+        {"overtime", 1, [] { testOvertime(TP(29230)); testBombOvertimePlant(TP(29245)); }},
+        {"syringe", 2, [] { testSyringeModes(); }},
+        {"throws", 1, [] { testThrowCooldown(TP(29240)); }},
+        {"hull", 1, [] { testSizeHull(TP(29242)); }},
+        {"grapple", 2, [] { testGrappleNoBrake(); testGrapplePmove(); }},
+        {"grapplep", 2, [] { testGrapplePlayers(TP(29270)); testGrappleTeammate(TP(29271)); testGrappleLagComp(TP(29272)); testGrappleBots(TP(29273)); }},
+        {"head", 1, [] { testHeadBox(TP(29246)); }},
+        {"hide", 2, [] { testHideScoring(TP(29247)); testSeekerRespawn(TP(29287)); }},
+        {"shorthanded", 2, [] { testShortHanded(TP(29288)); }},
+        {"vsbots", 1, [] { testVsBotsDuo(TP(29294)); }},
+        {"stopwatch", 1, [] { testStopwatch(TP(29296)); testPointsNoPoints(TP(29299)); testStopwatchLevel(TP(29303)); testLastLegRespawn(TP(29305)); }},
+        {"tag", 1, [] { testTagEscape(TP(29248)); testTagNextMatch(TP(29274)); }},
+        {"rps", 2, [] { testRpsTwo(TP(29255)); testRpsMany(TP(29256)); testHideTimeTiebreak(TP(29290)); }},
+        {"locator", 1, [] { testLocator(TP(29260)); }},
+        {"aware", 2, [] { testItAwareness(TP(29263)); }},
+        {"bomb", 2, [] { testBombDrop(TP(29249)); }},
+        {"cartbox", 2, [] { testCartBoxPlace(TP(29275)); }},
+        {"botdefer", 1, [] { testBalanceBotDefer(TP(29250)); }},
+        {"spawns", 2, [] { testSpawnTypes(TP(29251)); testFfaSpawnChoice(); }},
+        {"seeds", 2, [] { testRandomSeeds(); }},
+        {"heal", 2, [] { testLifeHealCap(TP(29253)); }},
+        {"scoreboard", 2, [] { testScoreboardValue(); }},
+        {"hudclock", 2, [] { testHudClock(TP(29280)); }},
+        {"modecalls", 2, [] { testModeCalls(TP(29312)); }},
+        {"weaponpredict", 0, [] { testWeaponPredict(TP(29286)); }},   // (in neither half: real-time round trips, the suite runs it alone)
+        {"customkeep", 2, [] { testCustomRulesKeep(); }},
+        {"modehooks", 2, [] { testModeHooks(TP(29310)); }},
     };
-    for (auto& r : all) if (only.empty() || only == r.name) r.run();
+    for (auto& r : all) if ((only.empty() || only == r.name) && (!half || half == r.half)) r.run();
     if (only == "rate") {
         timingTest("rate between rounds", [] { testRateBetweenRounds(TP(29252)); });
         timingTest("rate undo step up", [] { testRateUndoStepUp(TP(29254)); });

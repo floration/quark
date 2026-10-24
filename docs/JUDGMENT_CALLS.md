@@ -9,6 +9,8 @@ The owner added one rule afterwards: **human-made maps** (the owner will hand-ma
 ### C1: Map metric corrections (MAP-4)
 **Decision:** DEFAULT ("go ahead").
 
+**Superseded:** the owner later removed the map grading ("The maps test will soon be irrelevant with the addition of real human designed maps, so get rid of it"): the map report, its scores and the ≥ 7 bar are gone. The safety checks (spawns, routes, ladders, stairs, cart sweep, out of bounds) stay.
+
 **Instruction:**
 - Fix the map-report metrics strictly:
   - count loops correctly;

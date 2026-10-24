@@ -509,7 +509,8 @@ void Server::checkTickRate() {
     // but stalls (kStallSnaps) are what players see, whatever the cause. (Bots alone: nobody to be on time for.)
     const int ticks = windowTicks_ + windowSkipped_;
     const bool humans = humanCount() > 0;
-    double stall = humans && ticks ? windowStall_ / (double)ticks : 0, stallUp = humans && ticks ? windowStallUp_ / (double)ticks : 0;
+    const bool stalls = humans && rateStalls_ && ticks;
+    double stall = stalls ? windowStall_ / (double)ticks : 0, stallUp = stalls ? windowStallUp_ / (double)ticks : 0;
     // Bandwidth (kUploadShort...)
     const double secs = std::max(1e-6, (now - rateWindowStart_) / timeScale());
     const double upKbps = windowUpBytes_ * 8e-3 / secs;

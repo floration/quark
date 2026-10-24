@@ -92,7 +92,7 @@ static const double kTestTimeScale = testTimeScale();
 // pass the automated map checks, but they're still checked and their numbers reported, for balancing. A map is
 // human-made when it says so ("handmade", which the editor writes), when tools/make_maps.py didn't write it, or when
 // it's the owner's override of a generated one (assets/overrides/maps). Generated maps keep the strict bar.
-bool isHumanMadeMap(const std::string& name, const Map& m) {   // (mapreport.cpp too)
+bool isHumanMadeMap(const std::string& name, const Map& m) {   // (mapbounds.cpp too)
     std::error_code ec;
     return m.humanMade() || (!sourceDir().empty() && std::filesystem::exists(std::filesystem::path(sourceDir()) / "assets" / "overrides" / "maps" / (name + ".qmap"), ec));
 }
@@ -135,11 +135,29 @@ static void timingTest(const char* name, const std::function<void()>& run) {
     }
 }
 
-// Pump a server and some clients for `seconds` of real time, feeding each client an input.
+// Real seconds this thread has spent off the CPU: wall time minus the thread's own CPU time. Its growth across a stretch
+// that only computes, or beyond a sleep's length, is the machine not running the test (another process, a VM's host),
+// never the game's code, which counts as CPU time however slow it is. (Windows: the thread CPU clock is 15.6 ms
+// coarse, so there it's how late sleeps woke only: offCpu() is wall time, and a pump's frames count as off the CPU.)
+static double offCpu() {
+    double wall = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+#ifdef _WIN32
+    return wall;
+#else
+    timespec ts{};
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+    return wall - (ts.tv_sec + ts.tv_nsec * 1e-9);
+#endif
+}
+
+// Pump a server and some clients for `seconds` of real time, feeding each client an input. With `stalled`, it keeps the
+// longest the machine left the loop unrun in real seconds (beyond its 1 ms sleep; see offCpu): where a check's premise
+// is a machine that runs the test when it asks, a run that this breaks is the machine's, not the game's.
 template <class F>
-static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F input) {
+static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F input, double* stalled = nullptr) {
     double end = timeNow() + seconds;
     double nextTick = timeNow();
+    double off = stalled ? offCpu() : 0;
     while (timeNow() < end) {
         s.frame();
         for (auto* c : cls) c->poll();
@@ -148,7 +166,46 @@ static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F inpu
             nextTick += cls.empty() ? 0.001 : cls[0]->tickPeriod();
         }
         hostSleepMs(1);
+        if (stalled) { double o = offCpu(); *stalled = std::max(*stalled, o - off - 0.001); off = o; }
     }
+}
+
+// Checks whose premise is a machine that runs the test when it asks (pump's `stalled`) run again when it didn't, at
+// most this many times; the last one counts as it is, and nothing they assert is loosened (ratePump does the same).
+static constexpr int kStallTries = 3;
+// The longest stall, in real seconds, after which the server still runs every tick: past 20 periods behind it skips
+// ahead (Server::frame), so its clock and the commands' tokens for that time are gone.
+static double serverSkipStall(const Server& s) { return 20.0 / s.tickRate() / timeScale(); }
+
+// A server with only in-process bots (no NetClients) runs on a manual clock instead (net.h; a SimClock for the test's
+// scope): simRun steps the clock to the server's next tick and runs frame(), one tick per call. Every tick runs,
+// however loaded the machine is (pump's real time skips ticks past 20 a frame), and no real time is waited: the same
+// game as fast as the CPU goes, and the same game every run for the same seeds. perTick runs after each tick.
+struct SimClock {
+    bool was = manualClock();
+    SimClock() { setManualClock(true); }
+    ~SimClock() { setManualClock(was); }
+};
+template <class F>
+static void simRun(Server& s, double seconds, F perTick) {
+    const uint64_t end = s.timeMs_ + (uint64_t)std::llround(seconds * 1000);
+    while (s.timeMs_ < end) {
+        advanceClockTo(s.nextTickForTest());
+        const uint64_t before = s.timeMs_;
+        s.frame();
+        if (s.timeMs_ == before) { printf("  FAIL %s:%d: simRun: no tick ran (no SimClock?)\n", __FILE__, __LINE__); g_fail++; return; }
+        perTick();
+    }
+}
+static void simRun(Server& s, double seconds) { simRun(s, seconds, [] {}); }
+// Real seconds (how long a test group took): timeNow() is game time, 4x real in the tests and stepped by SimClock
+static double wallSeconds() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+// The bots' navigation graph builds on a thread of its own, in real time: wait for it before stepping (up to 20 s), or
+// when the bots start using it would depend on the machine's speed.
+static bool simNavReady(Server& s) {
+    for (int k = 0; k < 20000; k++) { if (s.nav_.ready(s.map_)) return true; sleepMs(1); }
+    printf("  FAIL %s:%d: the navigation graph never finished building\n", __FILE__, __LINE__); g_fail++;
+    return false;
 }
 
 // Console tab completion: unique -> filled in + space; several -> common prefix and every option listed.
@@ -1318,7 +1375,7 @@ static void testTickRateIndependence() {
     }
 }
 
-// The maps a test grades: listMaps() without the zz_* test maps other tests write (the forked groups each have their
+// The maps a test checks: listMaps() without the zz_* test maps other tests write (the forked groups each have their
 // own data dir, so none should be there; this keeps a stray one from failing the map checks if one is).
 static std::vector<std::string> testedMaps() {
     std::vector<std::string> v = listMaps();
@@ -1584,7 +1641,8 @@ static void testAllMaps() {
         std::string err;
         if (!m.load(name, &err)) { printf("  %s: %s\n", name.c_str(), err.c_str()); g_fail++; continue; }
         HumanMadeGrace hg(name, m);
-        if (m.preferredMode >= 0) CHECK(m.supportsMode(m.preferredMode));
+        if (m.preferredMode < 0) printf("  %s: not built for one mode (no \"for <mode>\" line)\n", name.c_str());
+        CHECK(m.preferredMode >= 0 && m.supportsMode(m.preferredMode));   // (built for one mode, and it offers that one)
         if (name == "dojo") { CHECK(!m.lava.empty() && m.inLava(playerBox({14, -1.5f, 0}, false)) && !m.inLava(playerBox({0, 0.1f, 0}, false))); }   // lava kills on touch
         for (auto& sp : m.spawns) CHECK(!m.boxSolid(playerBox(sp.pos + Vec3(0, 0.02f, 0), false)));
         {   // walked with the player's hull against the map's collision: a route that isn't there fails
@@ -1829,7 +1887,7 @@ static void testMapConverter() {
 }
 
 // Human-made maps: what counts as one, and their failed map checks are reported but taken off the count (a generated
-// map's stay). The map report does the same with its scores (mapreport.cpp).
+// map's stay). The out-of-bounds check does the same (mapbounds.cpp).
 static void testHumanMadeMaps() {
     printf("human-made maps: checked and reported, not failing the run\n");
     Map gen;
@@ -2098,6 +2156,22 @@ static void testGridQueries() {
 }
 
 static UserCmd idle(int) { return UserCmd(); }
+// The countdowns between the parts of a match (the warmup's once it has its players, a round's freeze, its end) only
+// wait in game time: a test that isn't about them ends each now, before its next pump; the server still goes from one
+// part to the next its own way. (rulesStart does the same for the freeze.)
+static void skipCountdowns(Server& s) {
+    if (s.ms_.phase == PHASE_FREEZE || s.ms_.phase == PHASE_ROUND_END || (s.ms_.phase == PHASE_WARMUP && s.phaseEnd_ > 0)) s.phaseEnd_ = s.time();
+}
+// Pump until every client is in, has a snapshot and is spawned (a warmup spawn comes ~0.5 s after the connect), then
+// `after` more for the clients' views: instead of a fixed settle sized for a slow machine.
+static void pumpUntilSpawned(Server& s, std::vector<NetClient*>& cls, double after = 0.2) {
+    auto in = [&] {
+        for (auto* c : cls) if (!c->hasSnapshot() || c->clientId() < 0 || c->clientId() >= kMaxPlayers || !s.players_[c->clientId()].alive) return false;
+        return true;
+    };
+    for (int i = 0; i < 200 && !in(); i++) pump(s, cls, 0.05, idle);
+    pump(s, cls, after, idle);
+}
 
 static void testSession(int mode, const char* mapName, uint16_t port) {
     printf("session: %s on %s\n", modeName(mode), mapName);
@@ -2126,9 +2200,17 @@ static void testSession(int mode, const char* mapName, uint16_t port) {
     CHECK(a.playerName(b.clientId()) == "bravo");
     CHECK(a.mode().phase == PHASE_WARMUP || a.mode().phase == PHASE_FREEZE);
 
-    // Warmup countdown (5s) then freeze (3s); then live. (Race waits in practice until someone starts it.)
+    // Warmup countdown (5s) then freeze (3s); then live. (Race waits in practice until someone starts it.) One session
+    // waits them out, and the reconnect grace at the end; the others start at once and skip the freeze, and end the
+    // grace (it has its own test: testReconnectGrace).
+    const bool natural = mode == MODE_VS;
     if (mode == MODE_RACE) { pump(s, cls, 1.0, idle); CHECK(s.ms_.phase == PHASE_WARMUP); s.command("forcestart"); }
-    pump(s, cls, 8.6, idle);
+    if (natural) pump(s, cls, 8.6, idle);
+    else {
+        if (mode != MODE_RACE) s.command("forcestart");
+        for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE; i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); }
+        pump(s, cls, 0.1, idle);   // (the clients see it)
+    }
     CHECK(s.ms_.phase == PHASE_LIVE);
     CHECK(a.mode().phase == PHASE_LIVE);
 
@@ -2166,8 +2248,10 @@ static void testSession(int mode, const char* mapName, uint16_t port) {
         CHECK(s.ms_.phase == PHASE_MATCH_END);
     }
     if (mode == MODE_BOMB) {
-        // bravo was killed; wait for next round then plant with the carrier.
-        pump(s, cls, 4.5 + 3.2, idle);
+        // bravo was killed; next round (its round end and freeze skipped) then plant with the carrier.
+        pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.phase == PHASE_ROUND_END);
+        for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE; i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); }
         CHECK(s.ms_.phase == PHASE_LIVE);
         int carrier = s.ms_.bombCarrier;
         CHECK(carrier != 255);
@@ -2181,9 +2265,6 @@ static void testSession(int mode, const char* mapName, uint16_t port) {
             CHECK(s.ms_.bombState == BOMB_PLANTED);
             CHECK(cc->mode().bombState == BOMB_PLANTED);
         }
-    }
-    if (mode == MODE_PAYLOAD) {
-        pump(s, cls, 4.5 + 3.2, idle); // round 2 starts after the kill ended round 1? (no: respawn mode)
     }
     if (mode == MODE_RACE) {
         auto& p = s.players_[a.clientId()];
@@ -2207,7 +2288,8 @@ static void testSession(int mode, const char* mapName, uint16_t port) {
     a.disconnect();
     pump(s, cls, 0.5, idle);
     CHECK(s.humanCount() == 2 && s.away(a.clientId()));   // the reconnect grace keeps the slot...
-    pump(s, cls, kReconnectGrace + 0.5, idle);
+    if (!natural) s.players_[a.clientId()].awayUntil = timeNow();
+    pump(s, cls, natural ? kReconnectGrace + 0.5 : 0.2, idle);
     CHECK(s.humanCount() == 1); // ...then it's gone (a balance bot may take the empty slot)
     s.stop();
 }
@@ -2510,7 +2592,8 @@ static void testWeapons(uint16_t port) {
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "shooter");
         b.connect("127.0.0.1:" + std::to_string(cfg.port), "target");
         std::vector<NetClient*> cls = {&a, &b};
-        pump(s, cls, 2.5, idle);
+        // both in and spawned (all of it is in the warmup's free play: its 5 s countdown is still running at the end)
+        pumpUntilSpawned(s, cls);
         auto& sa = s.players_[a.clientId()];
         auto& sb = s.players_[b.clientId()];
         float dist = (w == WPN_LASER || w == WPN_SHOTGUN) ? 8.0f : 20.0f;
@@ -2657,7 +2740,7 @@ static void testFixedSpread(uint16_t port) {
     a.connect("127.0.0.1:" + std::to_string(port), "shooter");
     b.connect("127.0.0.1:" + std::to_string(port), "target");
     std::vector<NetClient*> cls = {&a, &b};
-    pump(s, cls, 2.5, idle);
+    pumpUntilSpawned(s, cls);
     auto& sa = s.players_[a.clientId()];
     auto& sb = s.players_[b.clientId()];
     sa.move.pos = {10, 0, 19}; sb.move.pos = {0, 0, 19};   // 10 m apart in the open courtyard (testWeapons)
@@ -2752,6 +2835,10 @@ static void testTickRateFallback(uint16_t port) {
     s.setLog([](const std::string&) {});
     { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     CHECK(s.tickRate() == 1000);
+    // Loss and bandwidth only: this machine's own stalls (a busy CI box) would step the tick rate down out of turn.
+    // Stalls are tested where the test makes them (testRateBetweenRounds, testRateUndoStepUp, testRateJitter).
+    s.rateStalls_ = false;
+    s.rateWindow_ = 1.0;
     NetClient a, b;
     a.connect("127.0.0.1:" + std::to_string(port), "solo");
     b.connect("127.0.0.1:" + std::to_string(port), "duo");
@@ -2760,18 +2847,17 @@ static void testTickRateFallback(uint16_t port) {
     CHECK(a.tickRate() == s.tickRate());
     // Healthy loopback clients report no loss and the server stays at 1000 Hz (snapshots go out every
     // other tick: counting ticks instead of snapshots once read as exactly 50% loss and dropped the rate).
-    pump(s, cls, 3.2 * 1.5, idle);
+    pump(s, cls, s.rateWindow_ * 1.6, idle);
     printf("  loopback: reported loss %d%%, tick rate %d, snapshot rate %d, stalls %.2f%%\n", a.snapshotLoss(), s.tickRate(), a.snapRate(), s.stallPct_);
     CHECK(a.snapshotLoss() <= 2);
     CHECK(s.tickRate() == 1000 && s.snapRate() == 500);
     // One of them losing snapshots (its own wifi): nothing changes.
     a.overrideReportedLoss(50);
-    pump(s, cls, 3.2 * 2, idle);
+    pump(s, cls, s.rateWindow_ * 2.2, idle);
     printf("  one player losing snapshots: %d Hz, %d snapshots/s\n", s.tickRate(), s.snapRate());
     CHECK(s.tickRate() == 1000 && s.snapRate() == 500);
     // Both (the server's uplink): the snapshot rate steps down first, to its floor, then the tick rate.
     b.overrideReportedLoss(50);
-    s.rateWindow_ = 1.5;
     std::vector<std::pair<int, int>> steps;   // (tick rate, snapshot rate) after each change
     std::pair<int, int> was{s.tickRate(), s.snapRate()};
     for (int k = 0; k < 160 && s.tickRate() > 125; k++) {
@@ -2799,7 +2885,7 @@ static void testRocketSelfDamage(uint16_t port) {
     NetClient a;
     a.connect("127.0.0.1:" + std::to_string(port), "jumper");
     std::vector<NetClient*> cls = {&a};
-    pump(s, cls, 2.5, idle);
+    pumpUntilSpawned(s, cls);
     auto& p = s.players_[a.clientId()];
     auto shoot = [&](float pitch, Vec3 at, float yaw = 0) {
         p.health = 100; p.move.pos = at; p.move.vel = {};
@@ -2814,7 +2900,7 @@ static void testRocketSelfDamage(uint16_t port) {
     printf("  floor blast %.1f damage, eye-level blast %.1f damage\n", down, level);
     CHECK(down > 0 && down <= weaponDef(WPN_ROCKET).damage * 0.1f + 0.01f);
     s.killPlayer(a.clientId(), -1, 255); // respawns with the last selected weapon
-    pump(s, cls, 2.5, idle);
+    pumpUntilSpawned(s, cls);
     CHECK(p.alive && p.weapon == WPN_ROCKET);
     CHECK(level > 10);
     s.stop();
@@ -3416,11 +3502,11 @@ static void testDuel(uint16_t port) {
         pump(s, cls, 0.3, idle);
         CHECK(s.players_[c.clientId()].team == TEAM_SPECTATOR && !s.players_[c.clientId()].letIn);
     }
-    pump(s, cls, 6.0, idle); // warmup countdown -> round 1
+    for (int i = 0; i < 100 && s.ms_.phase == PHASE_WARMUP; i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); }   // -> round 1
     CHECK(s.ms_.phase == PHASE_FREEZE || s.ms_.phase == PHASE_LIVE);
     unsigned seen = 0; int prev = -1;
     for (int round = 0; round < 12 && s.ms_.phase != PHASE_MATCH_END; round++) {
-        while (s.ms_.phase != PHASE_LIVE && s.ms_.phase != PHASE_MATCH_END) pump(s, cls, 0.2, idle);
+        for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE && s.ms_.phase != PHASE_MATCH_END; i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); }
         if (s.ms_.phase == PHASE_MATCH_END) break;
         int mod = s.ms_.duelMod;
         CHECK(mod < DUEL_MOD_COUNT && mod != prev && !(seen >> mod & 1)); // never a repeat within the match
@@ -3510,8 +3596,7 @@ static void testDuel2v2(uint16_t port) {
         a += t == TEAM_A; b += t == TEAM_B; spec += t == TEAM_SPECTATOR;
     }
     CHECK(a == 2 && b == 2 && spec == 1);
-    pump(s, cls, 6.0, idle);
-    for (int i = 0; i < 30 && (s.ms_.phase == PHASE_WARMUP || s.ms_.phase == PHASE_FREEZE); i++) pump(s, cls, 0.2, idle);   // (a slow host's clock lags)
+    for (int i = 0; i < 100 && (s.ms_.phase == PHASE_WARMUP || s.ms_.phase == PHASE_FREEZE); i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); }
     CHECK(s.ms_.phase == PHASE_LIVE && s.ms_.duelMod < DUEL_MOD_COUNT);
     int alive = 0;
     for (auto& p : s.players_) alive += p.connected && p.alive;
@@ -3554,9 +3639,9 @@ static void testNavGraph() {
         Map m;
         if (!m.load(name)) continue;
         NavGraph g;
-        double t0 = timeNow();
+        double t0 = wallSeconds();
         g.build(m);
-        double bt = (timeNow() - t0) * 1000;
+        double bt = (wallSeconds() - t0) * 1000;
         worstBuild = std::max(worstBuild, bt);
         const size_t n = g.nodes.size(), R = g.regions.size();
         size_t bad = 0, nl = 0;
@@ -3825,7 +3910,9 @@ static void testBotAim(uint16_t& port) {
     int rates[] = {1000, 250, 125};
     if (getenv("AIM_RATE")) rates[0] = rates[1] = rates[2] = atoi(getenv("AIM_RATE")); // (noise check: three samples at one rate)
     float dps[3][BOT_SKILLS] = {}, acc[3][BOT_SKILLS] = {};
+    SimClock clock;   // (bots only: every tick runs, none waited for)
     for (int r = 0; r < 3; r++) {
+        qsrand(0x5EED0A00u + r);
         Server s;
         ServerConfig cfg;
         cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port++; cfg.maxTickRate = rates[r];
@@ -3865,12 +3952,12 @@ static void testBotAim(uint16_t& port) {
         };
         s.players_[tid].move.pos = {-7, 0, -24}; s.players_[tid].move.vel = {}; // (in front of them from the start)
         for (int k = 0; k < BOT_SKILLS; k++) s.players_[bot[k]].move.pos = {7, 0, -27.0f + 2.0f * ((k + r) % BOT_SKILLS)};
-        std::vector<NetClient*> none;
-        pump(s, none, 1.0, idle);
+        simNavReady(s);
+        simRun(s, 1.0);
         float dealt0[BOT_SKILLS]; int fired0[BOT_SKILLS], hit0[BOT_SKILLS];
         for (int k = 0; k < BOT_SKILLS; k++) { auto& bp = s.players_[bot[k]]; dealt0[k] = bp.dmgDealt; fired0[k] = bp.shotsFired; hit0[k] = bp.shotsHit; }
         double t0 = s.time();
-        pump(s, none, kAimSample, idle);
+        simRun(s, kAimSample);
         double span = std::max(1.0, s.time() - t0);
         for (int k = 0; k < BOT_SKILLS; k++) {
             auto& bp = s.players_[bot[k]];
@@ -3903,14 +3990,14 @@ static void testBotAim(uint16_t& port) {
 // scoped rifle fires at half rate.
 // Every ladder on every map gets you to the top: stand at its foot, hold forward (into the wall) and you
 // end up standing on whatever it leads to.
-int mapReport(const char* outPath); // tests/mapreport.cpp (returns how many map scores are below 7)
+int outOfBoundsTests(int part = 0, int parts = 1);   // tests/mapbounds.cpp (returns the failures)
 int brainTests(uint16_t port);     // tests/brain_tests.cpp (returns the failure count)
 int brainTool(const std::string& cmd, const char* arg); // tests/brain_tests.cpp: exportbrain / checkbrain / brainast / printbrain
 int brainBench(uint16_t port);   // tests/brain_tests.cpp: native vs interpreted bot think cost
 int modeTests();                 // tests/mode_tests.cpp: the mode logic language (returns the failure count)
 int modeTool(const std::string& cmd, int argc, char** argv);   // tests/mode_tests.cpp: exportmode / checkmode / modeast / printmode
 int modeBench();                 // tests/mode_tests.cpp: interpreted mode slot cost
-int modeLockstepTests();         // tests/mode_tests.cpp: logic on servers, native vs interpreted lockstep (the failure count)
+int modeLockstepTests(int part = 0, int parts = 1);   // tests/mode_tests.cpp: logic on servers, native vs interpreted lockstep (the failure count)
 int exportAssets(const char* dir);   // tests/assets_tests.cpp: every default asset as files + manifest.json
 int assetTests();                    // tests/assets_tests.cpp (returns the failures)
 
@@ -3961,15 +4048,18 @@ static void testRejoin(uint16_t port) {
         std::vector<NetClient*> cls = {&a, &b, &c};
         pump(s, cls, 1.0, idle);
         s.command("forcestart");
-        pump(s, cls, 2.0, idle);
-        for (int round = 0; round < 2; round++) {
+        for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE; i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); }
+        pump(s, cls, 0.2, idle);
+        for (int round = 0; round < 2; round++) {   // (each wait: until it happened, at most what it used to be)
             int was = b.clientId();
             b.disconnect();
-            pump(s, cls, 0.5, idle);
+            for (int i = 0; i < 50 && !s.away(was); i++) pump(s, cls, 0.01, idle);
             CHECK(s.humanCount() == 3 && s.away(was));   // the slot waits for a reconnect (the grace)
             b.connect("127.0.0.1:" + std::to_string(cfg.port), "bob");
-            pump(s, cls, 1.5, idle);
-            bool ok = b.state() == ConnState::Connected && s.humanCount() == 3 && b.clientId() == was && !s.away(was);
+            auto back = [&] { return b.state() == ConnState::Connected && s.humanCount() == 3 && b.clientId() == was && !s.away(was); };
+            for (int i = 0; i < 150 && !back(); i++) pump(s, cls, 0.01, idle);
+            pump(s, cls, 0.1, idle);   // (and stays)
+            bool ok = back();
             if (!ok) printf("  %s: rejoin %d failed: state %d, players %d, error '%s'\n", modeName(mode), round + 1, (int)b.state(), s.humanCount(), b.error().c_str());
             CHECK(ok);
         }
@@ -4026,10 +4116,15 @@ static void testHostedBotsThreadExit(uint16_t port) {
         cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botSkill = BOT_EXPERT;
         s.setLog([](const std::string&) {});
         { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
-        std::atomic<bool> quit{false};
-        std::thread host([&] { s.run(quit); });   // as Game::startHost
-        std::this_thread::sleep_for(std::chrono::milliseconds(2500));
-        quit = true; host.join(); s.stop();       // as Game::stopHost
+        // Hosted until the bots have searched routes on that thread (read after each join: no race), in short spells
+        // of 100 ms, each a thread started and stopped as Game::startHost / stopHost do, 2.5 s at most
+        for (int spell = 0; spell < 25 && s.nav_.scratch_.cur == 0; spell++) {
+            std::atomic<bool> quit{false};
+            std::thread host([&] { s.run(quit); });   // as Game::startHost
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            quit = true; host.join();                 // as Game::stopHost
+        }
+        s.stop();
         CHECK(s.nav_.scratch_.cur > 0);           // (the bots did search routes on that thread)
     }
 }
@@ -4179,7 +4274,11 @@ static void testCustomMode(uint16_t port) {
     CHECK(got.name == c.name && got.health == 150 && got.weapons == c.weapons && got.maps == c.maps);
     CHECK(std::fabs(got.damage[WPN_RIFLE] - 2) < 1e-3f && std::fabs(got.gravity - 0.5f) < 1e-3f);
     s.command("forcestart");
-    for (int i = 0; i < 70 && s.config().map == "bastion"; i++) { pump(s, cls, 0.5, idle); collect(); }
+    // (the freeze, the 5 s time limit and the match end's wait are skipped: each still ends on its own clock)
+    for (int i = 0; i < 400 && s.config().map == "bastion"; i++) {
+        if (s.ms_.phase != PHASE_WARMUP) s.phaseEnd_ = std::min(s.phaseEnd_, s.time());
+        pump(s, cls, 0.05, idle); collect();
+    }
     CHECK(s.config().map == "harbor");   // the pool rotated
     s.stop();
     setActiveRules(CustomRules());
@@ -4497,7 +4596,7 @@ static void testRocketLob(uint16_t port) {
     NetClient a;
     a.connect("127.0.0.1:" + std::to_string(port), "lobber");
     std::vector<NetClient*> cls = {&a};
-    pump(s, cls, 2.0, idle);
+    pumpUntilSpawned(s, cls);
     auto fire = [&](uint16_t b) { return [&, b](int) { UserCmd c; c.weapon = WPN_ROCKET; c.buttons = b; c.pitch = 0.3f; return c; }; };
     pump(s, cls, 0.3, fire(0));
     pump(s, cls, 0.03, fire(BTN_ALTFIRE));
@@ -4617,7 +4716,7 @@ static void testStuckProps(uint16_t port) {
     a.connect("127.0.0.1:" + std::to_string(port), "thrower");
     b.connect("127.0.0.1:" + std::to_string(port), "target");
     std::vector<NetClient*> cls = {&a, &b};
-    pump(s, cls, 2.5, idle);
+    pumpUntilSpawned(s, cls);
     const int ia = a.clientId(), ib = b.clientId();
     auto& sa = s.players_[ia];
     auto& sb = s.players_[ib];
@@ -4750,7 +4849,7 @@ static void testStickyOnPlayers(uint16_t port) {
     a.connect("127.0.0.1:" + std::to_string(port), "shooter");
     b.connect("127.0.0.1:" + std::to_string(port), "target");
     std::vector<NetClient*> cls = {&a, &b};
-    pump(s, cls, 2.5, idle);
+    pumpUntilSpawned(s, cls);
     const int ia = a.clientId(), ib = b.clientId();
     auto& sa = s.players_[ia];
     auto& sb = s.players_[ib];
@@ -4908,7 +5007,7 @@ static void testAltFires(uint16_t port) {
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "shooter");
         b.connect("127.0.0.1:" + std::to_string(cfg.port), "target");
         std::vector<NetClient*> cls = {&a, &b};
-        pump(s, cls, 2.5, idle);
+        pumpUntilSpawned(s, cls);
         auto& sa = s.players_[a.clientId()];
         auto& sb = s.players_[b.clientId()];
         int w = kase == 0 ? WPN_KNIFE : kase == 1 ? WPN_SHOTGUN : WPN_RIFLE;
@@ -5003,10 +5102,10 @@ static void testMapVote(uint16_t port) {
         for (int k = 0; k < MODE_COUNT; k++) {
             if (!m.supportsMode(k)) continue;
             b.sendCommand(std::string("callvote map ") + name + " " + modeName(k) + (k == MODE_ARENA || k == MODE_TOURNEY ? " classic" : ""));
-            pump(s, cls, 0.2, idle);
+            for (int i = 0; i < 20 && s.vote_.kind != Server::VOTE_MAP; i++) pump(s, cls, 0.01, idle);   // (up to 0.2 s)
             if (s.vote_.kind != Server::VOTE_MAP) { printf("  FAIL vote refused: %s %s\n", name.c_str(), modeName(k)); g_fail++; }
             a.sendCommand("vote no"); b.sendCommand("vote no");
-            pump(s, cls, 0.2, idle);
+            for (int i = 0; i < 20 && s.vote_.kind == Server::VOTE_MAP; i++) pump(s, cls, 0.01, idle);
             s.vote_.kind = Server::VOTE_NONE;
             s.players_[b.clientId()].voteAt = 0;   // (a failed vote's caller waits before the next: not what this checks)
         }
@@ -5478,11 +5577,15 @@ static void testRankedLeaver(uint16_t port) {
     b.connect(addr, "leaver");
     pump(s, cls, 1.0, idle);
     CHECK(b.state() == ConnState::Connected && b.clientId() == ib && !s.away(ib) && s.players_[ib].score == scoreB && s.rankedLive());
-    // gone past the grace: the first leaver loses, the match ends there, and the stayer can report it
+    // gone past the grace: the first leaver loses, the match ends there, and the stayer can report it. (Each grace here
+    // is cut short once the drop is seen: testSession waits one out.)
     b.disconnect();
     std::vector<NetClient*> onlyA = {&a};
+    for (int i = 0; i < 50 && !s.away(ib); i++) pump(s, onlyA, 0.01, idle);
+    CHECK(s.away(ib));
+    s.players_[ib].awayUntil = timeNow();
     std::string ranked;
-    double end = timeNow() + kReconnectGrace + 2.0;
+    double end = timeNow() + 2.0;
     while (timeNow() < end && ranked.empty()) {
         pump(s, onlyA, 0.1, idle);
         for (auto& e : a.takeEvents()) if (e.type == EV_RANKED) ranked = e.text;
@@ -5504,8 +5607,10 @@ static void testRankedLeaver(uint16_t port) {
     }
     // the stayer leaving afterwards changes nothing (the match is over)
     a.disconnect();
-    pump(s, onlyA, kReconnectGrace + 0.5, idle);
-    CHECK(s.rankedLeft_.size() == 1);
+    for (int i = 0; i < 50 && s.players_[ia].connected && !s.away(ia); i++) pump(s, onlyA, 0.01, idle);
+    if (s.away(ia)) s.players_[ia].awayUntil = timeNow();
+    pump(s, onlyA, 0.5, idle);
+    CHECK(!s.players_[ia].connected && s.rankedLeft_.size() == 1);
     s.stop();
 }
 
@@ -5886,18 +5991,20 @@ static void testHelloRetry() {
     const char* prev = getenv("QUARK_MASTER");
     std::string was = prev ? prev : "off";
     setenv("QUARK_MASTER", ("http://127.0.0.1:" + std::to_string(ntohs(a.sin_port))).c_str(), 1);
+    // the retries 0.5, 1, 2 s apart, not 10, 20, 40 (real seconds; set before the service's thread starts)
+    RankService::helloRetryScale = 0.05;
     {
         RankService rs;
         rs.hello(k);
-        // (the retry comes 10 s later, real time: RankService delays are real seconds; a loaded CI box can be slow to start curl)
+        // (a loaded box can be slow to start curl: up to 90 s)
         auto end = std::chrono::steady_clock::now() + std::chrono::seconds(90);
         while (std::chrono::steady_clock::now() < end && !rs.helloDone()) sleepMs(20);
         if (!rs.helloDone() || requests != 2) printf("  hello: done %d after %d requests\n", (int)rs.helloDone(), requests.load());
         CHECK(rs.helloDone() && requests == 2);   // refused once, then taken
-        double settle = timeNow() + 15;
-        while (timeNow() < settle) sleepMs(20);
+        sleepMs(2000);                             // (twice the next retry's delay)
         CHECK(requests == 2);                      // and not sent again
     }
+    RankService::helloRetryScale = 1.0;
     setenv("QUARK_MASTER", was.c_str(), 1);
     quit = true;
     srv.join();
@@ -5972,7 +6079,9 @@ static void testMasterReplies(uint16_t port) {
     m.start(0, false);
     for (int batch = 0; batch < 2; batch++) {
         for (int i = 0; i < 40; i++) m.post("k" + std::to_string(batch * 40 + i), "/x", "a=1");
-        sleepMs(1000);
+        // (no list configured: each fails at once. Sent when the queue is empty, answered a moment later)
+        for (int k = 0; k < 1000 && m.queuedPosts(); k++) sleepMs(2);
+        sleepMs(10);
     }
     auto r = m.takeReplies();
     m.stop();
@@ -6273,55 +6382,65 @@ static void testSnapshotBounds() {
 // than real time still gets no more than real time out of it.
 static void testInputBacklog(uint16_t port) {
     printf("input backlog drains; a speedhack still doesn't pay\n");
-    Server s;
-    ServerConfig cfg;
-    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
-    s.setLog([](const std::string&) {});
-    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
-    NetClient a;
-    a.connect("127.0.0.1:" + std::to_string(port), "a");
-    std::vector<NetClient*> cls = {&a};
-    pump(s, cls, 1.0, idle);
-    int id = a.clientId();
-    CHECK(a.hasSnapshot() && id >= 0 && id < kMaxPlayers);
-    if (!a.hasSnapshot() || id < 0 || id >= kMaxPlayers) { s.stop(); return; }
-    // a 150 ms stall (the network, or the server's machine) while the client keeps playing: its commands then arrive
-    // all at once, more than the token burst covers
-    double until = timeNow() + 0.15, next = timeNow();
-    while (timeNow() < until) { a.poll(); while (timeNow() >= next) { a.tick(UserCmd()); next += a.tickPeriod(); } sleepMs(1); }
-    s.frame();
-    size_t after = s.players_[id].cmdQueue.size();
-    // then normal play: over the last 3/4 of a second the queue empties again. (Before, it never went below 3: the
-    // backlog stayed for good. Its average depth also depends on how bursty the client's sends are, i.e. machine load,
-    // so the test looks at the lowest.)
-    size_t lowest = 99;
-    double sum = 0;
-    int samples = 0;
-    for (double stop = timeNow() + 1.0, first = timeNow() + 0.25; timeNow() < stop;) {
-        s.frame(); a.poll();
-        while (timeNow() >= next) { a.tick(UserCmd()); next += a.tickPeriod(); }
-        if (timeNow() >= first) { size_t q = s.players_[id].cmdQueue.size(); lowest = std::min(lowest, q); sum += (double)q; samples++; }
-        sleepMs(1);
-    }
-    printf("  queued after the stall %zu, later at least %zu (%.2f on average)\n", after, lowest, samples ? sum / samples : 0.0);
+    for (int attempt = 1; attempt <= kStallTries; attempt++) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+        s.setLog([](const std::string&) {});
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+        NetClient a;
+        a.connect("127.0.0.1:" + std::to_string(port), "a");
+        std::vector<NetClient*> cls = {&a};
+        pump(s, cls, 1.0, idle);
+        int id = a.clientId();
+        CHECK(a.hasSnapshot() && id >= 0 && id < kMaxPlayers);
+        if (!a.hasSnapshot() || id < 0 || id >= kMaxPlayers) { s.stop(); return; }
+        // a 150 ms stall (the network, or the server's machine) while the client keeps playing: its commands then
+        // arrive all at once, more than the token burst covers
+        double until = timeNow() + 0.15, next = timeNow();
+        while (timeNow() < until) { a.poll(); while (timeNow() >= next) { a.tick(UserCmd()); next += a.tickPeriod(); } sleepMs(1); }
+        s.frame();
+        size_t after = s.players_[id].cmdQueue.size();
+        // then normal play: over the last 3/4 of a second the queue empties again. (Before, it never went below 3: the
+        // backlog stayed for good. Its average depth also depends on how bursty the client's sends are, i.e. machine
+        // load, so the test looks at the lowest.)
+        size_t lowest = 99;
+        double sum = 0, stalled = 0, off = offCpu();
+        int samples = 0;
+        for (double stop = timeNow() + 1.0, first = timeNow() + 0.25; timeNow() < stop;) {
+            s.frame(); a.poll();
+            while (timeNow() >= next) { a.tick(UserCmd()); next += a.tickPeriod(); }
+            if (timeNow() >= first) { size_t q = s.players_[id].cmdQueue.size(); lowest = std::min(lowest, q); sum += (double)q; samples++; }
+            sleepMs(1);
+            double o = offCpu(); stalled = std::max(stalled, o - off - 0.001); off = o;   // (as pump's)
+        }
+        printf("  queued after the stall %zu, later at least %zu (%.2f on average; machine stalled %.1f ms)\n", after, lowest,
+               samples ? sum / samples : 0.0, stalled * 1e3);
+        bool ok = after > 2 && lowest <= 1;
 #ifdef QUARK_SANITIZED   // (the CI sanitizers job: several times slower, so how fast the queue drains isn't telling)
-    if (!(after > 2 && lowest <= 1)) printf("  (sanitized build: drain timing not checked)\n");
-#else
-    CHECK(after > 2 && lowest <= 1);
+        if (!ok) printf("  (sanitized build: drain timing not checked)\n");
+        ok = true;
 #endif
-    // twice real time: the server runs about real time's worth (plus its token burst and the catch-up allowance)
-    uint32_t t0 = s.tick_, c0 = s.players_[id].cmdsRun;
-    double end = timeNow() + 1.0;
-    next = timeNow();
-    while (timeNow() < end) {
-        s.frame(); a.poll();
-        while (timeNow() >= next) { a.tick(UserCmd()); a.tick(UserCmd()); next += a.tickPeriod(); }
-        sleepMs(1);
+        // The premise: the test's own stall only. One of the machine's past the server's skip (Server::frame skips
+        // ahead 20 periods behind) drops the ticks whose tokens would have run the commands sent meanwhile: a second
+        // backlog, which the allowance (spent on the first) drains at 10 a second. Then the whole test runs again.
+        if (!ok && stalled > serverSkipStall(s) && attempt < kStallTries) { s.stop(); printf("  (the machine stalled the server past its skip: again)\n"); continue; }
+        CHECK(ok);
+        // twice real time: the server runs about real time's worth (plus its token burst and the catch-up allowance)
+        uint32_t t0 = s.tick_, c0 = s.players_[id].cmdsRun;
+        double end = timeNow() + 1.0;
+        next = timeNow();
+        while (timeNow() < end) {
+            s.frame(); a.poll();
+            while (timeNow() >= next) { a.tick(UserCmd()); a.tick(UserCmd()); next += a.tickPeriod(); }
+            sleepMs(1);
+        }
+        double ran = (double)(s.players_[id].cmdsRun - c0), ticks = (double)(s.tick_ - t0);
+        printf("  speedhack: %.0f commands run in %.0f ticks\n", ran, ticks);
+        CHECK(ran <= ticks * 1.05 + 60);
+        s.stop();
+        break;
     }
-    double ran = (double)(s.players_[id].cmdsRun - c0), ticks = (double)(s.tick_ - t0);
-    printf("  speedhack: %.0f commands run in %.0f ticks\n", ran, ticks);
-    CHECK(ran <= ticks * 1.05 + 60);
-    s.stop();
 }
 
 // Chat and votes can't flood everyone's reliable events or stall the tick (REVIEW NET-7, NET-6): chat is rate
@@ -6798,7 +6917,8 @@ static void testArenaAndTourney(uint16_t& port) {
         b.connect("127.0.0.1:" + std::to_string(cfg.port), "b");
         std::vector<NetClient*> cls = {&a, &b};
         pump(s, cls, 1.0, idle);
-        pump(s, cls, 6.0, idle);
+        for (int i = 0; i < 100 && s.ms_.phase == PHASE_WARMUP; i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); }
+        CHECK(s.ms_.phase == PHASE_FREEZE);   // (the round starts in its freeze)
         auto& pa = s.players_[a.clientId()];
         CHECK(s.ms_.weaponMask == ((1 << WPN_ROCKET) | (1 << WPN_LASER) | (1 << WPN_KNIFE)));
         CHECK(pa.weapon == WPN_ROCKET || pa.weapon == WPN_LASER || pa.weapon == WPN_KNIFE);
@@ -6807,7 +6927,7 @@ static void testArenaAndTourney(uint16_t& port) {
         pump(s, cls, 0.2, [](int) { UserCmd c; c.weapon = WPN_KNIFE; return c; });
         CHECK(pa.weapon == WPN_KNIFE);
         s.cfg_.arenaVariant = s.ms_.arenaVariant = (uint8_t)arenaVariantFromName("instagib");
-        while (s.ms_.phase != PHASE_LIVE) pump(s, cls, 0.1, idle);
+        for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE; i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); }
         auto& pb = s.players_[b.clientId()];
         s.damagePlayer(b.clientId(), a.clientId(), 1, WPN_SNIPER, {});
         CHECK(!pb.alive); // instagib
@@ -6831,7 +6951,8 @@ static void testArenaAndTourney(uint16_t& port) {
         std::string lastMatch;
         double end = timeNow() + 300;
         while (timeNow() < end && s.ms_.phase != PHASE_MATCH_END) {
-            pump(s, cls, 0.1, idle);
+            skipCountdowns(s);   // (the bracket, its byes and its matches still go their own way)
+            pump(s, cls, 0.05, idle);
             for (auto& e : h.takeEvents()) brackets += e.type == EV_BRACKET;
             int playing = 0;
             for (auto& p : s.players_) playing += p.connected && p.team != TEAM_SPECTATOR;
@@ -6858,36 +6979,46 @@ static void testArenaAndTourney(uint16_t& port) {
 // compensation is the time it shows.
 static void testUptimeClock(uint16_t port) {
     printf("client clock on a server up for 5 days\n");
-    Server s;
-    ServerConfig cfg;
-    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
-    s.setLog([](const std::string&) {});
-    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
-    s.timeMs_ += 5u * 86400u * 1000u;
-    NetClient a;
-    a.setInterpFixed(0.05f);
-    a.connect("127.0.0.1:" + std::to_string(port), "uptime");
-    std::vector<NetClient*> cls = {&a};
-    pump(s, cls, 2.0, idle);
-    CHECK(a.renderTime() > 5 * 86400.0);
-    int samples = 0, onGrid = 0;
-    double prev = 0;
-    std::vector<int> lags;
-    pump(s, cls, 1.0, [&](int) {
-        double rt = a.renderTime(), g = rt * 32;
-        if (rt != prev) { samples++; if (std::fabs(g - std::round(g)) < 1e-6) onGrid++; prev = rt; }
-        // the view tick the server gets: the interpolation delay (plus the trip) behind its clock
-        UserCmd c;
-        uint32_t sent = s.players_[a.clientId()].lastViewTick;
-        if (sent) lags.push_back((int)(s.timeMs_ - sent));
-        return c;
-    });
-    std::sort(lags.begin(), lags.end());
-    int median = lags.empty() ? -1 : lags[lags.size() / 2];
-    printf("  %d of %d render times on a float's 1/32 s grid; view tick a median %d ms behind the server (interp 50)\n", onGrid, samples, median);
-    CHECK(samples > 20 && onGrid * 4 < samples);
-    CHECK(median >= 45 && median < 150);
-    s.stop();
+    for (int attempt = 1; attempt <= kStallTries; attempt++) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+        s.setLog([](const std::string&) {});
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+        s.timeMs_ += 5u * 86400u * 1000u;
+        NetClient a;
+        a.setInterpFixed(0.05f);
+        a.connect("127.0.0.1:" + std::to_string(port), "uptime");
+        std::vector<NetClient*> cls = {&a};
+        double stalled = 0;
+        pump(s, cls, 2.0, idle, &stalled);
+        CHECK(a.renderTime() > 5 * 86400.0);
+        int samples = 0, onGrid = 0;
+        double prev = 0;
+        std::vector<int> lags;
+        pump(s, cls, 1.0, [&](int) {
+            double rt = a.renderTime(), g = rt * 32;
+            if (rt != prev) { samples++; if (std::fabs(g - std::round(g)) < 1e-6) onGrid++; prev = rt; }
+            // the view tick the server gets: the interpolation delay (plus the trip) behind its clock
+            UserCmd c;
+            uint32_t sent = s.players_[a.clientId()].lastViewTick;
+            if (sent) lags.push_back((int)(s.timeMs_ - sent));
+            return c;
+        }, &stalled);
+        std::sort(lags.begin(), lags.end());
+        int median = lags.empty() ? -1 : lags[lags.size() / 2];
+        printf("  %d of %d render times on a float's 1/32 s grid; view tick a median %d ms behind the server (interp 50; machine stalled %.1f ms)\n",
+               onGrid, samples, median, stalled * 1e3);
+        s.stop();
+        // The premise: a continuous server clock. A machine stall past the server's skip (Server::frame: 20 periods
+        // behind, it skips ahead) moves its clock back against the client's, which follows a later clock only slowly
+        // (as it should: it's how one late snapshot doesn't jerk the view): the view tick then reads early for a while.
+        bool ok = median >= 45 && median < 150;
+        if (!ok && stalled > serverSkipStall(s) && attempt < kStallTries) { printf("  (the machine stalled the server past its skip: again)\n"); continue; }
+        CHECK(samples > 20 && onGrid * 4 < samples);
+        CHECK(ok);
+        break;
+    }
 }
 
 // Lag compensation covers the longest fixed interpolation delay a client can set (FINAL_REVIEW 2.5: with interp_ms 200
@@ -6940,46 +7071,52 @@ static void testInterpRewind(uint16_t port) {
 
 static void testNetcode(uint16_t port) {
     printf("netcode: delta snapshots, visibility\n");
-    Server s;
     ServerConfig cfg;
     cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
-    s.setLog([](const std::string&) {});
-    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
-    std::vector<std::unique_ptr<NetClient>> owned;
-    std::vector<NetClient*> cls;
-    for (int i = 0; i < 4; i++) {
-        owned.push_back(std::make_unique<NetClient>());
-        owned.back()->connect("127.0.0.1:" + std::to_string(port), "c" + std::to_string(i));
-        cls.push_back(owned.back().get());
-    }
-    for (int i = 0; i < 4; i++) s.addBot(TEAM_A, BOT_ADVANCED);
-    pump(s, cls, 2.0, idle);
-    s.snapBytes_ = s.snapCount_ = 0;
-    pump(s, cls, 4.0, [](int i) { UserCmd c; c.forward = 127; c.yaw = i * 1.5f + (float)timeNow(); c.buttons = BTN_JUMP; return c; });
-    double avg = s.snapCount_ ? (double)s.snapBytes_ / s.snapCount_ : 0;
-    uint32_t misses = 0;
-    for (auto* c : cls) misses += c->baseMisses();
     // limit: two snapshot intervals plus up to 15 ms of measured timing jitter (machine dependent: shared CI
     // runners and cloud VMs measure 4-10 ms on their own; snapshots at 125/s would already be 17+ ms)
-    float limit = 2.0f / cls[0]->snapRate() + 0.015f;
-    // one scheduling hiccup on a shared machine inflates the jitter estimate for a moment (the released 1.14.0 shows
-    // it too): over the limit, keep playing 3 s more and measure again - a real regression stays over it
-    if (cls[0]->interpDelay() >= limit) {
-        printf("  (interpolation delay %.1f ms: measuring again)\n", cls[0]->interpDelay() * 1000);
-        pump(s, cls, 3.0, [](int i) { UserCmd c; c.forward = 127; c.yaw = i * 1.5f + (float)timeNow(); c.buttons = BTN_JUMP; return c; });
+    const float jitterMax = 0.015f;
+    for (int attempt = 1; attempt <= kStallTries; attempt++) {
+        Server s;
+        s.setLog([](const std::string&) {});
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+        std::vector<std::unique_ptr<NetClient>> owned;
+        std::vector<NetClient*> cls;
+        for (int i = 0; i < 4; i++) {
+            owned.push_back(std::make_unique<NetClient>());
+            owned.back()->connect("127.0.0.1:" + std::to_string(port), "c" + std::to_string(i));
+            cls.push_back(owned.back().get());
+        }
+        for (int i = 0; i < 4; i++) s.addBot(TEAM_A, BOT_ADVANCED);
+        pump(s, cls, 2.0, idle);
+        s.snapBytes_ = s.snapCount_ = 0;
+        double stalled = 0;
+        pump(s, cls, 4.0, [](int i) { UserCmd c; c.forward = 127; c.yaw = i * 1.5f + (float)timeNow(); c.buttons = BTN_JUMP; return c; }, &stalled);
+        double avg = s.snapCount_ ? (double)s.snapBytes_ / s.snapCount_ : 0;
+        uint32_t misses = 0;
+        for (auto* c : cls) misses += c->baseMisses();
+        float limit = 2.0f / cls[0]->snapRate() + jitterMax;
+        printf("  8 players moving: %.0f bytes per snapshot, %u undecodable deltas, interpolation delay %.1f ms (limit %.1f; machine stalled %.1f ms)\n",
+               avg, misses, cls[0]->interpDelay() * 1000, limit * 1000, stalled * 1e3);
+        // The premise: a machine that runs the test when it asks. Snapshots are sent from the pump's frames, 1 ms
+        // (real) apart; a stall of the machine that with that 1 ms holds them back longer than the jitter allowed is
+        // late arrivals the client is right to measure (a single one fills the estimate's top percent): then the test
+        // runs again, at most kStallTries times, the last one as it is. A real regression stays over with no stall.
+        if (cls[0]->interpDelay() >= limit && (stalled + 0.001) * timeScale() > jitterMax && attempt < kStallTries) {
+            s.stop(); printf("  (the machine stalled past the jitter allowed: again)\n"); continue;
+        }
+        CHECK(cls[0]->interpDelay() < limit);
+        CHECK(avg > 0 && avg < 400);   // full snapshots were ~420 bytes for 8 players
+        CHECK(misses < 5);
+        // decoded state matches the server (within position quantization)
+        for (auto& p : cls[0]->latest().players) {
+            if (p.hidden || !(p.flags & PS_ALIVE)) continue;
+            Vec3 sp = s.players_[p.id].move.pos;
+            CHECK(length(p.pos - sp) < 2.0f); // a snapshot or two behind the server at most
+        }
+        s.stop();
+        break;
     }
-    printf("  8 players moving: %.0f bytes per snapshot, %u undecodable deltas, interpolation delay %.1f ms (limit %.1f)\n", avg, misses,
-           cls[0]->interpDelay() * 1000, limit * 1000);
-    CHECK(cls[0]->interpDelay() < limit);
-    CHECK(avg > 0 && avg < 400);   // full snapshots were ~420 bytes for 8 players
-    CHECK(misses < 5);
-    // decoded state matches the server (within position quantization)
-    for (auto& p : cls[0]->latest().players) {
-        if (p.hidden || !(p.flags & PS_ALIVE)) continue;
-        Vec3 sp = s.players_[p.id].move.pos;
-        CHECK(length(p.pos - sp) < 2.0f); // a snapshot or two behind the server at most
-    }
-    s.stop();
 
     // visibility: the center walls block the line from one end of arena to the other
     Server v;
@@ -7155,12 +7292,13 @@ static void testHiddenInfo(uint16_t port) {
 
 // FFA on Clockwork: 3 expert bots and a player standing still, 40 s of game time. Seeded: the match is forced to
 // start over once the bots' navigation is ready, with every bot's dice and the spawn picks seeded, and the "player"
-// is in-process (a scripted bot), so no network timing gets in. A seed plays out much the same match every time
-// (8-9 kills for seed 0 in 1.17; what's left to chance is the warmup before the restart, which bots and players
-// carry a little of into it: cooldowns, the lag-compensation history).
+// is in-process (a scripted bot), so no network timing gets in. It runs on the manual clock (simRun: every tick, the
+// warmup before the restart too, which is seeded as well), so a seed plays out exactly the same match every time.
 struct FfaRun { int kills = 0, playerDeaths = 0, hooks = 0, phase = 0; };
 static FfaRun ffaVsExperts(uint16_t port, uint32_t seed) {
     FfaRun r;
+    SimClock clock;
+    qsrand(seed);   // (the warmup's spawn picks and the bots' first dice)
     Server s;
     ServerConfig cfg;
     cfg.autoStart = true;
@@ -7171,9 +7309,8 @@ static FfaRun ffaVsExperts(uint16_t port, uint32_t seed) {
     CHECK(s.playerCount() == 3);
     int me = s.addBot(TEAM_A, BOT_BEGINNER);
     auto stand = [](Server&, int) { UserCmd c; c.weapon = kNoWeaponChange; return c; };
-    std::vector<NetClient*> none;
-    pump(s, none, 1.0, idle);
-    for (int k = 0; k < 100 && !s.nav_.ready(s.map_); k++) pump(s, none, 0.05, idle);
+    simNavReady(s);
+    simRun(s, 1.0);
     CHECK(me >= 0 && s.nav_.ready(s.map_));
     if (me < 0) { s.stop(); return r; }
     qsrand(seed);   // (spawn picks)
@@ -7188,15 +7325,13 @@ static FfaRun ffaVsExperts(uint16_t port, uint32_t seed) {
     for (auto& pr : s.projectiles_) pr.active = false;   // (nothing from the warmup still flying)
     s.command("forcestart");
     bool was[kMaxPlayers] = {};
-    double end = s.time() + 40.0;
-    while (s.time() < end) { // counting grapple grabs as we go (every 20 ms: a grab let go of at once counts too)
-        pump(s, none, 0.02, idle);
+    simRun(s, 40.0, [&] {   // counting grapple grabs as we go (every tick: a grab let go of at once counts too)
         for (int k = 0; k < kMaxPlayers; k++) {
             bool h = s.players_[k].connected && s.players_[k].isBot && k != me && (s.players_[k].move.flags & MF_HOOKED);
             r.hooks += h && !was[k];
             was[k] = h;
         }
-    }
+    });
     for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && i != me) r.kills += s.players_[i].kills;
     r.playerDeaths = s.players_[me].deaths;
     r.phase = s.ms_.phase;
@@ -7206,12 +7341,12 @@ static FfaRun ffaVsExperts(uint16_t port, uint32_t seed) {
 
 static void testBots(uint16_t& port) {
     printf("bots: vs-bots fights, balance bots, votes, every mode\n");
-    { // FFA vs 3 expert bots: they should find and kill each other / us (seeded: about the same match every run)
+    { // FFA vs 3 expert bots: they should find and kill each other / us (seeded, on the manual clock: the same match every run)
         FfaRun r = ffaVsExperts(port++, 0x5EED0001u);
         printf("  ffa vs 3 expert bots: %d kills (%d of the player standing still), %d grapples in 40 s (phase %d)\n", r.kills, r.playerDeaths, r.hooks, r.phase);
-        CHECK(r.kills >= 4);         // (7 to 11 over seeds, 1.17)
+        CHECK(r.kills >= 4);         // (7 to 11 over seeds, 1.17; 3 to 8 over 20 seeds and 7 for this one, on the manual clock)
         CHECK(r.playerDeaths >= 1);  // nobody stands in the open for long
-        CHECK(r.hooks >= 1);         // bots use the grapple
+        CHECK(r.hooks >= 1);         // bots use the grapple (3 grabs here; 0 to 10 over 20 seeds, every tick counted)
     }
     { // pregame (no bots) -> vote start -> vote balance bots -> bots join; then votes
         Server s;
@@ -7301,7 +7436,9 @@ static void testBots(uint16_t& port) {
     // every mode with bots on both sides: no crashes, things happen
     const char* maps[MODE_COUNT] = {"bastion", "bastion", "foundry", "bastion", "bastion", "bastion", "bastion", "clockwork", "clockwork", "clockwork", "hamlet", "hamlet", "lodestone"};
     static_assert(MODE_COUNT == 13, "add the new mode's map here");
+    SimClock clock;   // (bots only: every tick runs, none waited for)
     for (int mode = 0; mode < MODE_COUNT; mode++) {
+        qsrand(0x5EED0100u + mode);
         Server s;
         ServerConfig cfg;
         cfg.autoStart = true;
@@ -7309,10 +7446,19 @@ static void testBots(uint16_t& port) {
         cfg.vsBots = true; cfg.botsEnemy = 3; cfg.botsAlly = 2; cfg.botSkill = BOT_ADVANCED;
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; continue; }
-        std::vector<NetClient*> cls;
-        NetClient me;   // 1v1 and duel are the player and their team size of bots (F7: no ally in 1v1): the player joins
-        if (mode == MODE_ARENA || mode == MODE_DUEL) { me.connect("127.0.0.1:" + std::to_string(cfg.port), "me"); cls.push_back(&me); }
-        pump(s, cls, 14.0, idle);
+        if (mode == MODE_ARENA || mode == MODE_DUEL) {
+            // 1v1 and duel are the player and their team size of bots (F7: no ally in 1v1): the player joins, a NetClient,
+            // so these two run on the real clock (pump) as before; the other modes are bots only
+            setManualClock(false);
+            NetClient me;
+            me.connect("127.0.0.1:" + std::to_string(cfg.port), "me");
+            std::vector<NetClient*> cls = {&me};
+            pump(s, cls, 14.0, idle);
+            setManualClock(true);
+        } else {
+            simNavReady(s);
+            simRun(s, 14.0);
+        }
         int kills = 0, cps = 0;
         for (auto& p : s.players_) { kills += p.kills; cps += p.checkpoint; }
         printf("  %-8s with 5 bots: phase %d, round %d, kills %d, score %d-%d, cart %.1f, bomb %d, race checkpoints %d\n",
@@ -7388,9 +7534,14 @@ static void serverBench(uint16_t port, int bots, int humans, double seconds, con
 
 // A bots-only match on a map: what killed whom. Falls are deaths to the void or lava (pushed = hit in the 2 s
 // before), self = own rockets / stickies, mode = the mode's own kills (bomb, drain). trace: prints the last
-// second of every fall (positions, speed, buttons, grapple) and every self-kill's weapon.
+// second of every fall (positions, speed, buttons, grapple) and every self-kill's weapon. On the manual clock
+// (simRun), seeded by the map, mode and level: the same match every run.
 struct BotMatch { int kills = 0, deaths = 0, falls = 0, pushed = 0, self = 0, modeKills = 0; std::string state; };
 static bool playBots(const std::string& name, int mode, int skill, uint16_t& port, double seconds, bool trace, BotMatch& r) {
+    SimClock clock;
+    uint32_t seed = 2166136261u;
+    for (char c : name) seed = (seed ^ (uint8_t)c) * 16777619u;
+    qsrand(seed ^ (uint32_t)(mode * 7919 + skill * 104729));
     Server s;
     ServerConfig cfg;
     std::string logPath = (std::filesystem::temp_directory_path() / ("quark_playtest_" + std::to_string(getpid()) + ".log")).string();
@@ -7403,18 +7554,19 @@ static bool playBots(const std::string& name, int mode, int skill, uint16_t& por
     bool duo = mode == MODE_ARENA || mode == MODE_DUEL || mode == MODE_TOURNEY;
     int n = duo ? 1 : mode == MODE_RACE ? 3 : 4;
     for (int i = 0; i < n; i++) { s.addBot(TEAM_A, skill); if (mode != MODE_RACE) s.addBot(TEAM_B, skill); }
-    std::vector<NetClient*> none;
-    pump(s, none, 1.0, idle);
+    simNavReady(s);
+    simRun(s, 1.0);
     s.command("forcestart");
     // where each fall began: the last place the bot stood before it died over the void / in lava
     Vec3 ground[kMaxPlayers]; bool was[kMaxPlayers] = {};
-    double end = timeNow() + seconds;
     struct Sample { double t; Vec3 pos, vel; uint16_t buttons; uint8_t flags; bool dash; Vec3 hook; };
     std::vector<Sample> hist[kMaxPlayers];   // (trace: the last second of each bot, printed for a fall)
-    double nextPos = 0;
-    while (timeNow() < end) {
-        pump(s, none, trace ? 0.01 : 0.02, idle);
-        if (getenv("PT_POS") && s.time() >= nextPos) {   // (where everyone is, every second)
+    double nextPos = 0, nextHist = 0;
+    const bool printPos = getenv("PT_POS") != nullptr;
+    simRun(s, seconds, [&] {   // (every tick)
+        const bool histNow = trace && s.time() >= nextHist;   // (trace: a sample each 10 ms of game time)
+        if (histNow) nextHist = s.time() + 0.01;
+        if (printPos && s.time() >= nextPos) {   // (where everyone is, every second)
             nextPos = s.time() + 1.0;
             printf("    t %.0f:", s.time());
             for (auto& p : s.players_) if (p.connected) printf("  %.1f %.1f %.1f%s", p.move.pos.x, p.move.pos.y, p.move.pos.z, p.alive ? "" : " dead");
@@ -7444,11 +7596,12 @@ static bool playBots(const std::string& name, int mode, int skill, uint16_t& por
             if (p.alive && (p.move.flags & MF_ONGROUND)) ground[i] = p.move.pos;
             if (trace) {
                 if (!p.alive) { hist[i].clear(); continue; }
+                if (!histNow) continue;
                 hist[i].push_back({s.time(), p.move.pos, p.move.vel, p.buttons, (uint8_t)p.move.flags, p.move.dashTimer > 0, p.move.hookPoint});
                 if (hist[i].size() > 300) hist[i].erase(hist[i].begin());
             }
         }
-    }
+    });
     for (auto& p : s.players_) if (p.connected) { r.kills += p.kills; r.deaths += p.deaths; }
     char st[160];
     int cp = 0; for (auto& p : s.players_) if (p.connected) cp = std::max(cp, (int)p.checkpoint);
@@ -7815,7 +7968,6 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (argc >= 2 && std::string(argv[1]) == "signing") { testSigning(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "demos") { testDemoUpgrade(); testDemoLengthWrap(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "launcher") { g_fail += launcherTests(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "racefloors") { // the RACE_FLOORS table for tools/master/worker.js
         Map m;
@@ -7826,32 +7978,8 @@ int main(int argc, char** argv) {
         printf("]\n");
         return 0;
     }
-    if (argc >= 2 && std::string(argv[1]) == "proc") { testProcPipes(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "hostile") { testHostileInput(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "userdata") { testUserData(); testResetMaps(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "ladders") { testLadders(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "dashtech") { testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "stairs") { testStairs(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "points") { setTimeScale(kTestTimeScale); testPoints(TP(29995)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "syringe") { setTimeScale(kTestTimeScale); testSyringe(TP(29996)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "edladder") { testEditorLadder(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "edgroups") { testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "cartchecks") { setTimeScale(kTestTimeScale); testCartChecks(TP(29997)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "cartsweep") { testCartSweep(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "spawns") { testSpawnPools(); testSpawnSanity(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "mapsym") { testMaps(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "allmaps") { testWalkGrid(); testAllMaps(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "chat") { testChatAndVoteLimits(TP(29592)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "limits") { testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(TP(29990)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "moveexpr") { testMoveExpr(); testMoveExprCallers(); testMoveExprNetwork(TP(29991)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "bounds") { g_fail += outOfBoundsTests(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "exprbench") return moveExprBench();
-    if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(TP(29980)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); testAddbotArgs(TP(29982)); testSpecVote(TP(29983)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); testTagLateJoin(TP(29455)); testBotGoalsAfterMapChange(TP(29456)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "nav") { testNavGraph(); setTimeScale(kTestTimeScale); testBotNavBlockers(TP(29030)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "navstuck") { setTimeScale(kTestTimeScale); testBotNavBlockers(TP(29030)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "navbench") { navBench(argc > 2 && std::string(argv[2]) != "all" ? argv[2] : nullptr, argc > 3 && std::string(argv[3]) == "surfaces"); return 0; }
     if (argc >= 2 && std::string(argv[1]) == "ffaexperts") {   // the seeded FFA vs experts, over many seeds
         int n = argc > 2 ? atoi(argv[2]) : 10;
@@ -7861,33 +7989,15 @@ int main(int argc, char** argv) {
         }
         return g_fail ? 1 : 0;
     }
-    if (argc >= 2 && std::string(argv[1]) == "falls") { testBotFalls(TP(29060)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "ranked") { testFilledParse(); testRanked(TP(29610)); testRankedVoteAndRestart(TP(29620)); testRankedLeaver(TP(29625)); testRankedLeaverPaths(TP(29628)); testRankedRelay(TP(29630)); testReconnectGrace(TP(29626)); testTourneySeeding(TP(29627)); testMasterReplies(TP(29629)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "edit") { testMapDownload(TP(29600)); testEditSession(TP(29601)); testBuiltInMapEditSession(TP(29606)); testVotedEdit(TP(29602)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "mapreport") return mapReport(argc > 2 ? argv[2] : "docs/MAP_REPORT.md") ? 1 : 0;
     if (argc >= 2 && std::string(argv[1]) == "exportassets") return exportAssets(argc > 2 ? argv[2] : "assets_export") ? 1 : 0;
-    if (argc >= 2 && std::string(argv[1]) == "assets") { g_fail += assetTests(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "demo") { testSnapshotBounds(); testDemoLengthWrap(); testReplayBound(TP(29604)); testMapNames(TP(29605)); testDemo(TP(29603)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "trial") { testTimeTrial(TP(29960)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "rate") { testTickRateFallback(TP(29950)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "net") { testInterpRewind(TP(29903)); testUptimeClock(TP(29902)); testNetcode(TP(29900)); testInputBacklog(TP(29901)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "hidden") { testHiddenInfo(TP(29906)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "wallbang") { testWallbang(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "tourney") { uint16_t p = TP(29800); testArenaAndTourney(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && (std::string(argv[1]) == "exportbrain" || std::string(argv[1]) == "checkbrain" || std::string(argv[1]) == "brainast" || std::string(argv[1]) == "printbrain"))
         return brainTool(argv[1], argc > 2 ? argv[2] : nullptr);
     if (argc >= 2 && std::string(argv[1]) == "brainbench") return brainBench(TP(29170));
     if (argc >= 2 && (std::string(argv[1]) == "exportweapons" || std::string(argv[1]) == "checkweapons" || std::string(argv[1]) == "weaponsast" || std::string(argv[1]) == "printweapons"))
         return weaponTool(argv[1], argc > 2 ? argv[2] : nullptr);
-    if (argc >= 2 && std::string(argv[1]) == "weaponsets") { testWeaponSets(TP(29790)); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "brains") { g_fail += brainTests(TP(29150)); return g_fail ? 1 : 0; }
     if (argc >= 2 && (std::string(argv[1]) == "exportmode" || std::string(argv[1]) == "checkmode" || std::string(argv[1]) == "modeast" || std::string(argv[1]) == "printmode"))
         return modeTool(argv[1], argc, argv);
     if (argc >= 2 && std::string(argv[1]) == "modebench") return modeBench();
-    if (argc >= 2 && std::string(argv[1]) == "modelogic") { g_fail += modeTests(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "modelockstep") { g_fail += modeLockstepTests(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "bots") { uint16_t p = TP(28900); testBots(p); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "server") { serverTests(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "snapbench") {   // PERF-8 / PERF-9: snapshot + visibility CPU per send
         double secs = argc > 2 ? atof(argv[2]) : 8;
         snapBench("midtown", 32, secs, TP(28820));
@@ -7897,43 +8007,50 @@ int main(int argc, char** argv) {
         snapBench("harbor", 16, secs, TP(28824), true, 24);
         return 0;
     }
-    if (argc >= 2 && std::string(argv[1]) == "rules") { testGameRules(argc > 2 ? argv[2] : ""); return g_fail ? 1 : 0; }    if (argc >= 2 && std::string(argv[1]) == "weapons") { uint16_t p = TP(29700); testFixedSpread(p + 50); testWeapons(p); testRocketSelfDamage(p + 20); testAltFires(p + 30); testProjectileTickRates(p + 40); testStickyOnPlayers(p + 60); testStuckProps(p + 70); testWeaponSets(p + 80); return g_fail ? 1 : 0; }
+    if (argc >= 3 && std::string(argv[1]) == "rules") { testGameRules(argv[2]); return g_fail ? 1 : 0; }   // (one rules test by name)
     // ---- the whole suite. Most tests wait on real-time network play rather than the CPU, so each runs in its own
     // process, several at once (output kept in order); a few timing-sensitive ones run alone afterwards.
     // "quark_tests serial" runs everything in this process, one after another, as before.
     struct T { const char* name; std::function<void()> run; };
-    std::vector<T> par = {   // (longest first: they set the wall time)
-        {"bots", [] { uint16_t p = TP(28900); testBots(p); }},
-        {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotNavBlockers(TP(29030)); testBotAim(p); testHostedBotsThreadExit(TP(29010)); testBotHurtTurn(TP(29011)); }},
-        {"botfalls", [] { testBotFalls(TP(29060)); }},
-        {"brains", [] { g_fail += brainTests(TP(29150)); }},
-        {"modelogic", [] { g_fail += modeTests(); }},
-        {"modelockstep", [] { g_fail += modeLockstepTests(); }},
-        {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
-        {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
+    std::vector<T> par = {   // (longest first: they set the wall time. Real seconds on an idle 4-core box, 12 at a time:
+                             //  rules / governor ~21, modelockstep / modelockstep2 ~25 (CPU: two servers stepped tick by tick),
+                             //  rules2 ~18, weapons ~16, mapbounds / mapbounds2 / maps ~12-14, server / modes ~10, ...
+                             //  duel ~3, tourney ~1: the countdowns skipped, botaim ~1 and brains ~4: the manual clock)
+        {"modelockstep", [] { g_fail += modeLockstepTests(0, 2); }},   // (every other mode each)
+        {"modelockstep2", [] { g_fail += modeLockstepTests(1, 2); }},
+        {"rules", [] { testGameRules("", 1); }},
+        // (its own governor dir and ports; the load is the players' reported loss, stalls left out: beside the others.
+        //  testGovernorPolicy and testRankedNotRated run in "server")
+        {"governor", [] { testGovernorTwoServers(TP(28714)); }},
+        {"rules2", [] { testGameRules("", 2); }},
         {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); testFeelFixes(); testTapBuffer(); testWeaponSets(TP(28559)); }},
-        {"maps", [] {
-            testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders();
-            printf("map scores\n");   // the map bar: every map scores at least 7 in every category but originality
-            std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
-            if (mapReport(p.c_str())) g_fail++;
-        }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
-        {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
-        {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
+        // (nothing reachable out of bounds, tests/mapbounds.cpp: every other map each; `quark_tests bounds` runs them all)
+        {"mapbounds2", [] { g_fail += outOfBoundsTests(1, 2); }},
+        {"maps", [] { testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders(); }},
+        {"mapbounds", [] { g_fail += outOfBoundsTests(0, 2); }},
+        {"server", [] { serverTests(); testGovernorPolicy(); testRankedNotRated(TP(28632)); }},
         {"modes", [] { testCustomMode(TP(28570)); testMoveExprNetwork(TP(28576)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
-        {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
-        {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); testRefillPrediction(TP(28586)); testHookPrediction(TP(28588)); }},
         {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); testNameColor(TP(28599)); }},
+        {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testDemoUpgrade(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testBuiltInMapEditSession(TP(28606)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
+        {"bots", [] { uint16_t p = TP(28900); testBots(p); }},
         {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); }},
         {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
-        {"rules", [] { testGameRules(""); }},
+        {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); testRefillPrediction(TP(28586)); testHookPrediction(TP(28588)); }},
+        {"brains", [] { g_fail += brainTests(TP(29150)); }},
+        {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
+        {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
+        {"botfalls", [] { testBotFalls(TP(29060)); }},
+        {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
+        {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotNavBlockers(TP(29030)); testBotAim(p); testHostedBotsThreadExit(TP(29010)); testBotHurtTurn(TP(29011)); }},
         {"assets", [] { g_fail += assetTests(); }},
-        {"server", [] { serverTests(); testGovernorPolicy(); testRankedNotRated(TP(28632)); }},
+        {"modelogic", [] { g_fail += modeTests(); }},
+        {"resetmaps", [] { testResetMaps(); }},   // (each forked group has its own user data dir: these write only there)
+        {"userdata", [] { testUserData(); }},
     };
-    std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
-        {"netcode", [] { testInterpRewind(TP(28703)); testUptimeClock(TP(28702)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
+    std::vector<T> alone = {   // timing-sensitive: after the others, on an otherwise idle machine
         {"tickrate", [] {   // (real-time: timingTest re-runs an attempt the host paused in)
             timingTest("tick rate fallback", [] { testTickRateFallback(TP(28710)); });
             timingTest("rate between rounds", [] { testRateBetweenRounds(TP(28711)); });
@@ -7942,98 +8059,111 @@ int main(int argc, char** argv) {
             timingTest("upload cap", [] { testUploadCap(TP(28721)); });
             timingTest("shared congestion", [] { testSharedCongestion(TP(28722)); });
         }},
-        {"governor", [] { testGovernorPolicy(); testGovernorTwoServers(TP(28714)); testRankedNotRated(TP(28716)); }},
-        {"resetmaps", [] { testResetMaps(); }},
-        {"userdata", [] { testUserData(); }},
+        {"netcode", [] { testInterpRewind(TP(28703)); testUptimeClock(TP(28702)); testClockWrap(TP(28804)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
+        // (the client's weapon prediction over a 40 ms network: in the rules group it missed its 0.8 s window in about 1
+        //  full run of 3 with 12 groups on 4 cores, and in 10 of 20 runs beside 8 busy loops; ~1 in 30 even idle)
+        {"weaponpredict", [] { timingTest("weapon prediction", [] { testGameRules("weaponpredict"); }); }},
     };
-    // CI runs the suite one group per runner (release.yml's test matrix): `groups` lists them, `group NAME` runs exactly
-    // that group (the older shortcuts above share some names but run less)
+    // `groups` lists the groups (tools/release_check.sh runs each); `group NAME`, or just `NAME`, runs exactly that one
+    // group in this process
     if (argc >= 2 && std::string(argv[1]) == "groups") {
         for (auto* list : {&par, &alone})
             for (auto& g : *list) printf("%s\n", g.name);
         return 0;
     }
-    if (argc >= 3 && std::string(argv[1]) == "group") {
+    if (argc >= 2 && std::string(argv[1]) != "serial") {
+        const std::string name = argc >= 3 && std::string(argv[1]) == "group" ? argv[2] : argv[1];
         for (auto* list : {&par, &alone})
             for (auto& g : *list)
-                if (std::string(argv[2]) == g.name) {
-                    double t0 = timeNow();
+                if (name == g.name) {
+                    double t0 = wallSeconds();
                     g.run();
-                    printf("group %s: %.0f s\n", g.name, timeNow() - t0);
+                    printf("group %s: %.0f s\n", g.name, wallSeconds() - t0);
                     printf(g_fail ? "%d FAILURE(S)\n" : "all tests passed\n", g_fail);
                     return g_fail ? 1 : 0;
                 }
-        printf("no test group '%s' (quark_tests groups lists them)\n", argv[2]);
+        printf("no test group '%s' (quark_tests groups lists them; the tools: playtest, serverbench, snapbench, ffaexperts,\n"
+               "racefloors, bounds, exportassets, rules NAME, signing, launcher, bot, serial)\n", name.c_str());
         return 1;
     }
-    if (argc >= 2)   // one group by name (e.g. `quark_tests netcode`), on its own
-        for (auto* list : {&par, &alone})
-            for (auto& g : *list)
-                if (std::string(argv[1]) == g.name) { g.run(); printf(g_fail ? "%d FAILURE(S)\n" : "all tests passed\n", g_fail); return g_fail ? 1 : 0; }
     [[maybe_unused]] bool serial = argc >= 2 && std::string(argv[1]) == "serial";   // (Windows: always serial)
 #ifndef _WIN32
     if (!serial) {
-        unsigned jobs = std::max(2u, std::thread::hardware_concurrency());
-        struct Job { pid_t pid; std::string out; size_t idx; double t0; };
-        std::vector<Job> running;
-        std::vector<std::string> outputs(par.size());
-        std::vector<int> done(par.size(), -1);
-        size_t next = 0, printed = 0;
-        auto tmp = std::filesystem::temp_directory_path();
-        // each group gets its own user data dir (maps, demos, keys) under this run's: the edit and ranked groups write
-        // zz_* maps that the maps group would otherwise list and grade. Removed when the group ends.
-        auto groupDir = [&](size_t i) { return userDataPath(std::string("groups/") + par[i].name); };
-        auto start = [&](size_t i) {
-            std::string out = (tmp / ("quark_test_" + std::to_string(getpid()) + "_" + par[i].name + ".log")).string();
-            std::string data = groupDir(i);
-            fflush(stdout);
-            pid_t pid = fork();
-            if (pid == 0) {   // the child: one test group, its output to a file
-                if (!freopen(out.c_str(), "w", stdout)) std::_Exit(99);
-                dup2(fileno(stdout), 2);
-                setvbuf(stdout, nullptr, _IOLBF, 0);
-                std::error_code ec;
-                std::filesystem::remove_all(data, ec);
-                std::filesystem::create_directories(data, ec);   // (the parent made the root already: set it, then make it)
-                setUserDataDir(data);
-                qsrand(1234);
-                g_fail = 0;   // (this group's own: the parent's count of groups already done isn't this one's)
-                par[i].run();
+        // Runs a list of groups, `jobs` at a time, each in its own process (output kept in the list's order).
+        auto forked = [](std::vector<T>& list, unsigned jobs) {
+            struct Job { pid_t pid; std::string out; size_t idx; double t0; };
+            std::vector<Job> running;
+            std::vector<std::string> outputs(list.size());
+            std::vector<int> done(list.size(), -1);
+            size_t next = 0, printed = 0;
+            auto tmp = std::filesystem::temp_directory_path();
+            // each group gets its own user data dir (maps, demos, keys) under this run's: the edit and ranked groups write
+            // zz_* maps that the maps group would otherwise list and check. Removed when the group ends.
+            auto groupDir = [&](size_t i) { return userDataPath(std::string("groups/") + list[i].name); };
+            auto start = [&](size_t i) {
+                std::string out = (tmp / ("quark_test_" + std::to_string(getpid()) + "_" + list[i].name + ".log")).string();
+                std::string data = groupDir(i);
                 fflush(stdout);
-                std::_Exit(std::min(g_fail, 100));
+                pid_t pid = fork();
+                if (pid == 0) {   // the child: one test group, its output to a file
+                    // Groups that only compute (no real-time play: lockstep, map reach and walk checks, bots on the
+                    // manual clock) run at a lower priority, so the real-time groups beside them get the cores when they
+                    // ask: with them at equal priority the CPU-bound ~6 cores' worth starved real-time checks (the laser's
+                    // damage in 0.5 s, payload's start) in 2 of 3 full runs. Their own results don't depend on timing.
+                    static const char* const cpuOnly[] = {"modelockstep", "modelockstep2", "mapbounds", "mapbounds2", "maps", "brains", "modelogic"};
+                    for (const char* n : cpuOnly) if (std::strcmp(n, list[i].name) == 0 && nice(10) == -1) {}
+                    if (!freopen(out.c_str(), "w", stdout)) std::_Exit(99);
+                    dup2(fileno(stdout), 2);
+                    setvbuf(stdout, nullptr, _IOLBF, 0);
+                    std::error_code ec;
+                    std::filesystem::remove_all(data, ec);
+                    std::filesystem::create_directories(data, ec);   // (the parent made the root already: set it, then make it)
+                    setUserDataDir(data);
+                    qsrand(1234);
+                    g_fail = 0;   // (this group's own: the parent's count of groups already done isn't this one's)
+                    list[i].run();
+                    fflush(stdout);
+                    std::_Exit(std::min(g_fail, 100));
+                }
+                running.push_back({pid, out, i, wallSeconds()});
+            };
+            while (next < list.size() && running.size() < jobs) start(next++);
+            while (!running.empty()) {
+                int st = 0;
+                pid_t pid = wait(&st);
+                if (pid <= 0) break;
+                for (size_t k = 0; k < running.size(); k++) {
+                    if (running[k].pid != pid) continue;
+                    size_t i = running[k].idx;
+                    std::ifstream f(running[k].out);
+                    std::stringstream ss; ss << f.rdbuf();
+                    outputs[i] = ss.str();
+                    std::remove(running[k].out.c_str());
+                    { std::error_code ec; std::filesystem::remove_all(groupDir(i), ec); }
+                    done[i] = WIFEXITED(st) ? WEXITSTATUS(st) : 1;
+                    char took[96];
+                    snprintf(took, sizeof took, "  (group %s: %.0f s)\n", list[i].name, wallSeconds() - running[k].t0);
+                    outputs[i] += took;
+                    if (!WIFEXITED(st)) outputs[i] += std::string("  FAIL ") + list[i].name + ": crashed\n";
+                    running.erase(running.begin() + k);
+                    break;
+                }
+                while (printed < list.size() && done[printed] >= 0) {
+                    fputs(outputs[printed].c_str(), stdout);
+                    if (done[printed]) printf("  (group %s: %d failure(s))\n", list[printed].name, done[printed]);
+                    g_fail += done[printed];
+                    printed++;
+                }
+                if (next < list.size()) start(next++);
             }
-            running.push_back({pid, out, i, timeNow()});
         };
-        while (next < par.size() && running.size() < jobs) start(next++);
-        while (!running.empty()) {
-            int st = 0;
-            pid_t pid = wait(&st);
-            if (pid <= 0) break;
-            for (size_t k = 0; k < running.size(); k++) {
-                if (running[k].pid != pid) continue;
-                size_t i = running[k].idx;
-                std::ifstream f(running[k].out);
-                std::stringstream ss; ss << f.rdbuf();
-                outputs[i] = ss.str();
-                std::remove(running[k].out.c_str());
-                { std::error_code ec; std::filesystem::remove_all(groupDir(i), ec); }
-                done[i] = WIFEXITED(st) ? WEXITSTATUS(st) : 1;
-                char took[96];
-                snprintf(took, sizeof took, "  (group %s: %.0f s)\n", par[i].name, timeNow() - running[k].t0);
-                outputs[i] += took;
-                if (!WIFEXITED(st)) outputs[i] += std::string("  FAIL ") + par[i].name + ": crashed\n";
-                running.erase(running.begin() + k);
-                break;
-            }
-            while (printed < par.size() && done[printed] >= 0) {
-                fputs(outputs[printed].c_str(), stdout);
-                if (done[printed]) printf("  (group %s: %d failure(s))\n", par[printed].name, done[printed]);
-                g_fail += done[printed];
-                printed++;
-            }
-            if (next < par.size()) start(next++);
-        }
-        for (auto& t : alone) t.run();
+        // 3 per core: the groups mostly wait on real-time play (the whole run uses ~65 CPU-seconds), so with one per
+        // core the cores sat ~70% idle. 4 cores: 4 at a time 153 s, 8 at a time ~114, 12 ~102-117 (then the longest
+        // group bounds it: tourney's 25 s then, rules' / governor's ~21 s now), each group taking as long as with 4.
+        forked(par, 3 * std::max(1u, std::thread::hardware_concurrency()));
+        // the timing-sensitive ones, one at a time on the idle machine (both at once saved ~5 s of ~150 and failed
+        // netcode's clock checks 3 times in 10 full runs, against 2 in 10 one at a time)
+        forked(alone, 1);
     } else
 #endif
     {

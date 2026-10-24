@@ -2,8 +2,9 @@
 import re
 
 PIN = re.compile(r"@[0-9a-f]{40}$")
-TOOL_CMDS = {"exportassets", "mapreport", "groups", "racefloors", "serverbench", "snapbench", "navbench", "playtest", "bot",
-             "ffaexperts", "bounds"}
+TOOL_CMDS = {"exportassets", "groups", "racefloors", "serverbench", "snapbench", "navbench", "playtest", "bot",
+             "ffaexperts", "bounds", "exportbrain", "checkbrain", "brainast", "printbrain", "brainbench",
+             "exportmode", "checkmode", "modeast", "printmode", "modebench"}
 _QT = re.compile(r"(?:^|[\s/;&|(\"'])(?:\./)?(?:[\w.-]+/)*quark_tests(?:\.exe)?(?![\w.-])([^\n;|&)]*)")
 
 

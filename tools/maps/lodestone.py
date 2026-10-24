@@ -158,8 +158,8 @@ def build():
     A_ZONE = (-7, -71, 7, -57)
     C_ZONE = (-7, -35, 7, -21)
     # spawn pads per stage: (y, [(x, z)], yaw). Each stage's two sides walk the same distance to its point, within a
-    # second at a run (owner decision B2: the attackers' arrival minus the defenders' is -1..+1 s at every point,
-    # measured by the map report on the bots' nav graph)
+    # second at a run (owner decision B2: the attackers' arrival minus the defenders' within -1..+1 s at every point,
+    # walked on the bots' nav graph)
     SP = {
         "att0": (14, [(50, -110), (55, -110), (60, -110), (50, -105), (55, -105), (60, -105)], 90),     # (the surface, east of the pithead)
         "def0": (14, [(-45, -110), (-40, -110), (-35, -110), (-45, -105), (-40, -105), (-35, -105)], -90),   # (the surface, west of it)

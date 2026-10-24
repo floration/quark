@@ -332,7 +332,8 @@ each match on a fresh thread (the game keeps `qrand` and its custom rules per th
 ## Copied logic (dedupe later)
 
 Game code and the tests were read and linked, never edited. Where the logic was static, inside a test, or tangled
-with the test framework, it was copied here:
+with the test framework, it was copied here (tests/mapreport.cpp has since been removed with the map grading: the
+copies below are the only measurement left; the tests keep the out-of-bounds check alone, in tests/mapbounds.cpp):
 
 | copy | from | changes |
 |---|---|---|

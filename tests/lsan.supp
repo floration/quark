@@ -1,0 +1,7 @@
+# LeakSanitizer suppressions for the CI sanitizers job (release.yml: LSAN_OPTIONS=suppressions=...).
+# Only leaks that are by design: each one says why. A new entry needs the same.
+#
+# customrules.cpp tuned(): each thread that plays gets its rules / weapon / movement tables (~1.3 KB) on the heap,
+# never freed. A thread_local with a destructor crashed at thread exit under MinGW (its emutls block freed before the
+# destructor ran), so the block outlives the thread on purpose; LSan sees it once a hosted server's thread has ended.
+leak:(anonymous namespace)::tuned()

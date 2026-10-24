@@ -1,4 +1,4 @@
-// Collision-checked reachability for the map tests and the map report (REVIEW MAP-3: the bots' nav graph links brush
+// Collision-checked reachability for the map tests (REVIEW MAP-3: the bots' nav graph links brush
 // tops with no collision check, so a spawn sealed in a box read as reachable).
 //
 // A walk grid over the map: columns every 0.25 m, and in each column every height where the real player hull

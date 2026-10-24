@@ -319,6 +319,7 @@ public:
     double rateWindow_ = 3.0;      // seconds per rate test window (tests shorten it)
     std::string rateWhy_;          // the last automatic rate change and why (status)
     double stallAfter_ = 1, stallUpAfter_ = 1;   // real seconds late past which a tick is a stall, now / at the next step up
+    bool rateStalls_ = true;       // tests only: false leaves stalls out of the rate test (loss / bandwidth tests on a busy box)
     double upKbps_ = -1, downKbps_ = 0, upPps_ = 0, downPps_ = 0, stallPct_ = 0;   // the last window's (status; -1: none yet)
     int tickRate() const { return kTickRates[rateLevel_]; }
     float dt() const { return 1.0f / tickRate(); }
@@ -737,6 +738,7 @@ public:
     uint64_t visRays_ = 0;     // lines of sight cast (tests, benchmarks)
     void updateVisibilityForTest() { updateVisibility(); }
     void explodeForTest(const Vec3& at, int owner, int weapon) { explode(at, owner, weapon); }
+    double nextTickForTest() const { return nextTick_; }   // (a manual clock steps to it: one tick per frame())
 private:
     void openGameLog();
     void logTick();

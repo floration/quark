@@ -304,7 +304,11 @@ uint16_t UdpSocket::localPort() const {
     return ntohs(a.sin_port);
 }
 
-static double g_timeScale = 1.0, g_scaleBaseReal = 0.0, g_scaleBaseGame = 0.0;
+// g_clockRate: game seconds per real second, what timeNow() runs at: g_timeScale, or 0 while the clock is manual
+// (setManualClock: then timeNow() is g_scaleBaseGame, moved only by advanceClockTo). The game's path is the same
+// one load, compare and predictable branch on a plain global as before (rate 1.0); a manual clock takes the scaled
+// path with a zero rate, no branch of its own. g_timeScale stays what timeScale() reports (real = game / scale).
+static double g_timeScale = 1.0, g_clockRate = 1.0, g_scaleBaseReal = 0.0, g_scaleBaseGame = 0.0;
 
 static double realTime() {
     using clk = std::chrono::steady_clock;
@@ -313,8 +317,8 @@ static double realTime() {
 }
 
 double timeNow() {
-    if (g_timeScale == 1.0) return realTime() - g_scaleBaseReal + g_scaleBaseGame;
-    return g_scaleBaseGame + (realTime() - g_scaleBaseReal) * g_timeScale;
+    if (g_clockRate == 1.0) return realTime() - g_scaleBaseReal + g_scaleBaseGame;
+    return g_scaleBaseGame + (realTime() - g_scaleBaseReal) * g_clockRate;
 }
 
 double timeScale() { return g_timeScale; }
@@ -323,7 +327,21 @@ void setTimeScale(double scale) {
     double now = timeNow();
     g_scaleBaseReal = realTime();
     g_scaleBaseGame = now;
-    g_timeScale = scale;
+    g_timeScale = g_clockRate = scale;
+}
+
+bool manualClock() { return g_clockRate == 0.0; }
+
+void setManualClock(bool on) {
+    if (on == manualClock()) return;
+    double now = timeNow();   // (either way the clock carries on from where it is: never backwards)
+    g_scaleBaseReal = realTime();
+    g_scaleBaseGame = now;
+    g_clockRate = on ? 0.0 : g_timeScale;
+}
+
+void advanceClockTo(double t) {
+    if (manualClock() && t > g_scaleBaseGame) g_scaleBaseGame = t;
 }
 
 #ifdef _WIN32
