@@ -2566,7 +2566,8 @@ void Game::drawHud() {
             int cw = heldWeapon_;
             bar(bcy + 40 * k, "WEAPON", (float)std::max(0.0, (cw == WPN_LOCATOR ? locatorReady_ : localNextFire_) - time_), weaponDef(cw).refire);   // (the locator: its recharge)
             {   // dash: a pip per charge (lit = there to spend; the ground refills them, a bhop landing one); while the
-                // cooldown since the last dash runs, the charged pips fill grey like the old cooldown bar, lit when it's done
+                // cooldown since the last dash runs, a charged pip shows full and dim with the cooldown's progress lit over it
+                // (it used to grow from empty, so one dash looked like it had spent both charges)
                 int n = dashMaxCharges(mv.mods), have = std::min<int>(mv.dashCharges, n);
                 const int cdTotal = dashCooldownMs(mv.mods);
                 const float f = mv.dashCooldownMs > 0 && cdTotal > 0 ? clampf(1.0f - (float)mv.dashCooldownMs / cdTotal, 0, 1) : 1.0f;
@@ -2574,7 +2575,10 @@ void Game::drawHud() {
                 for (int i = 0; i < n; i++) {
                     float px = bx + i * (pw + gap);
                     r_.rect(px - 1, y - 1, pw + 2, bh + 2, {0, 0, 0, 0.8f});
-                    if (i < have) r_.rect(px, y, pw * f, bh, f >= 1 ? full : Color{0.6f, 0.62f, 0.66f, 0.9f});
+                    if (i >= have) continue;
+                    if (f >= 1) { r_.rect(px, y, pw, bh, full); continue; }
+                    r_.rect(px, y, pw, bh, {0.6f, 0.62f, 0.66f, 0.45f});
+                    r_.rect(px, y, pw * f, bh, {0.6f, 0.62f, 0.66f, 0.9f});
                 }
                 float lts = std::max(1.0f, std::round(ts * 0.5f * e.scale));
                 r_.text(bx - r_.textWidth("DASH", lts) - 6 * k, y - 2 * k, lts, "DASH", have > 0 && f >= 1 ? kWhite : kGrey);
