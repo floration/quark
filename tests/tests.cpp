@@ -51,6 +51,7 @@
 #include "game/bots.h"
 #include "walkgrid.h"
 #include "common/proc.h"
+#include "groupproc.h"
 #ifndef _WIN32
 #include <fcntl.h>
 #endif
@@ -2493,7 +2494,8 @@ static void testPayloadPush(uint16_t port) {
     std::vector<NetClient*> cls = {&a, &b};
     pump(s, cls, 0.4, idle);
     s.command("forcestart");
-    pump(s, cls, 3.2, idle);
+    pump(s, cls, 3.2, idle);   // (the freeze; a loaded machine (the full run) sometimes needs a little longer)
+    for (int k = 0; k < 20 && s.ms_.phase != PHASE_LIVE; k++) pump(s, cls, 0.1, idle);
     CHECK(s.ms_.phase == PHASE_LIVE);
     int att = -1;
     for (int i = 0; i < kMaxPlayers; i++) if (s.players_[i].connected && s.players_[i].team == s.ms_.attackers) att = i;
@@ -7756,6 +7758,8 @@ static void ephemeralPortRange(int& lo, int& hi) {
 #endif
 }
 static void pickPortBlock() {
+    // (Windows: the parent's block, handed to each group's process, which can't inherit it through fork as on Linux)
+    if (const char* e = getenv("QUARK_TEST_PORTSHIFT"); e && *e) { g_portShift = atoi(e); return; }
 #ifdef _WIN32
     unsigned seed = (unsigned)std::chrono::steady_clock::now().time_since_epoch().count();
 #else
@@ -8065,7 +8069,8 @@ int main(int argc, char** argv) {
         {"weaponpredict", [] { timingTest("weapon prediction", [] { testGameRules("weaponpredict"); }); }},
     };
     // `groups` lists the groups (tools/release_check.sh runs each); `group NAME`, or just `NAME`, runs exactly that one
-    // group in this process
+    // group in this process (`group NAME --child`: as one of the run's processes on Windows, below: no summary, and the
+    // exit code is the failure count, at most 100, as a forked group's)
     if (argc >= 2 && std::string(argv[1]) == "groups") {
         for (auto* list : {&par, &alone})
             for (auto& g : *list) printf("%s\n", g.name);
@@ -8078,6 +8083,7 @@ int main(int argc, char** argv) {
                 if (name == g.name) {
                     double t0 = wallSeconds();
                     g.run();
+                    if (argc >= 4 && std::string(argv[3]) == "--child") { printf("%s\n", kGroupEnd); fflush(stdout); return std::min(g_fail, 100); }
                     printf("group %s: %.0f s\n", g.name, wallSeconds() - t0);
                     printf(g_fail ? "%d FAILURE(S)\n" : "all tests passed\n", g_fail);
                     return g_fail ? 1 : 0;
@@ -8086,35 +8092,43 @@ int main(int argc, char** argv) {
                "racefloors, bounds, exportassets, rules NAME, signing, launcher, bot, serial)\n", name.c_str());
         return 1;
     }
-    [[maybe_unused]] bool serial = argc >= 2 && std::string(argv[1]) == "serial";   // (Windows: always serial)
-#ifndef _WIN32
+    // QUARK_TEST_ONLY=a,b,c runs just those groups, as the whole suite runs them (in parallel, then the alone ones)
+    if (const char* e = getenv("QUARK_TEST_ONLY"); e && *e) {
+        const std::string only = std::string(",") + e + ",";
+        for (auto* list : {&par, &alone})
+            list->erase(std::remove_if(list->begin(), list->end(), [&](const T& g) { return only.find(std::string(",") + g.name + ",") == std::string::npos; }), list->end());
+    }
+    const bool serial = argc >= 2 && std::string(argv[1]) == "serial";
     if (!serial) {
-        // Runs a list of groups, `jobs` at a time, each in its own process (output kept in the list's order).
-        auto forked = [](std::vector<T>& list, unsigned jobs) {
-            struct Job { pid_t pid; std::string out; size_t idx; double t0; };
+        // Groups that only compute (no real-time play: lockstep, map reach and walk checks, bots on the manual clock) run
+        // at a lower priority, so the real-time groups beside them get the cores when they ask: with them at equal
+        // priority the CPU-bound ~6 cores' worth starved real-time checks (the laser's damage in 0.5 s, payload's start)
+        // in 2 of 3 full runs. Their own results don't depend on timing.
+        static const char* const cpuOnly[] = {"modelockstep", "modelockstep2", "mapbounds", "mapbounds2", "maps", "brains", "modelogic"};
+#ifdef _WIN32
+        // the group processes use this process's port block (pickPortBlock), so the groups' TP() ports stay apart as
+        // they do forked
+        _putenv(("QUARK_TEST_PORTSHIFT=" + std::to_string(g_portShift)).c_str());
+#endif
+        // Runs a list of groups, `jobs` at a time, each in its own process (groupproc.h: forked on Linux / macOS, this
+        // program again on Windows; output kept in the list's order).
+        auto parallel = [](std::vector<T>& list, unsigned jobs) {
+            struct Job { intptr_t proc; std::string out; size_t idx; double t0; };
             std::vector<Job> running;
             std::vector<std::string> outputs(list.size());
             std::vector<int> done(list.size(), -1);
             size_t next = 0, printed = 0;
             auto tmp = std::filesystem::temp_directory_path();
             // each group gets its own user data dir (maps, demos, keys) under this run's: the edit and ranked groups write
-            // zz_* maps that the maps group would otherwise list and check. Removed when the group ends.
+            // zz_* maps that the maps group would otherwise list and check. Removed when the group ends. (Windows: each
+            // group's process makes its own, as every run of quark_tests does, and removes it as it exits.)
             auto groupDir = [&](size_t i) { return userDataPath(std::string("groups/") + list[i].name); };
             auto start = [&](size_t i) {
                 std::string out = (tmp / ("quark_test_" + std::to_string(getpid()) + "_" + list[i].name + ".log")).string();
                 std::string data = groupDir(i);
-                fflush(stdout);
-                pid_t pid = fork();
-                if (pid == 0) {   // the child: one test group, its output to a file
-                    // Groups that only compute (no real-time play: lockstep, map reach and walk checks, bots on the
-                    // manual clock) run at a lower priority, so the real-time groups beside them get the cores when they
-                    // ask: with them at equal priority the CPU-bound ~6 cores' worth starved real-time checks (the laser's
-                    // damage in 0.5 s, payload's start) in 2 of 3 full runs. Their own results don't depend on timing.
-                    static const char* const cpuOnly[] = {"modelockstep", "modelockstep2", "mapbounds", "mapbounds2", "maps", "brains", "modelogic"};
-                    for (const char* n : cpuOnly) if (std::strcmp(n, list[i].name) == 0 && nice(10) == -1) {}
-                    if (!freopen(out.c_str(), "w", stdout)) std::_Exit(99);
-                    dup2(fileno(stdout), 2);
-                    setvbuf(stdout, nullptr, _IOLBF, 0);
+                bool low = false;
+                for (const char* n : cpuOnly) low = low || std::strcmp(n, list[i].name) == 0;
+                intptr_t proc = groupStart(list[i].name, out, low, [&list, i, data] {   // (the forked child)
                     std::error_code ec;
                     std::filesystem::remove_all(data, ec);
                     std::filesystem::create_directories(data, ec);   // (the parent made the root already: set it, then make it)
@@ -8123,50 +8137,70 @@ int main(int argc, char** argv) {
                     g_fail = 0;   // (this group's own: the parent's count of groups already done isn't this one's)
                     list[i].run();
                     fflush(stdout);
-                    std::_Exit(std::min(g_fail, 100));
-                }
-                running.push_back({pid, out, i, wallSeconds()});
+                    return std::min(g_fail, 100);
+                });
+                if (proc != -1) running.push_back({proc, out, i, wallSeconds()});
+                else { outputs[i] = std::string("  FAIL ") + list[i].name + ": its process didn't start\n"; done[i] = 1; }
             };
-            while (next < list.size() && running.size() < jobs) start(next++);
-            while (!running.empty()) {
-                int st = 0;
-                pid_t pid = wait(&st);
-                if (pid <= 0) break;
-                for (size_t k = 0; k < running.size(); k++) {
-                    if (running[k].pid != pid) continue;
-                    size_t i = running[k].idx;
-                    std::ifstream f(running[k].out);
-                    std::stringstream ss; ss << f.rdbuf();
-                    outputs[i] = ss.str();
-                    std::remove(running[k].out.c_str());
-                    { std::error_code ec; std::filesystem::remove_all(groupDir(i), ec); }
-                    done[i] = WIFEXITED(st) ? WEXITSTATUS(st) : 1;
-                    char took[96];
-                    snprintf(took, sizeof took, "  (group %s: %.0f s)\n", list[i].name, wallSeconds() - running[k].t0);
-                    outputs[i] += took;
-                    if (!WIFEXITED(st)) outputs[i] += std::string("  FAIL ") + list[i].name + ": crashed\n";
-                    running.erase(running.begin() + k);
-                    break;
-                }
+            auto print = [&] {
                 while (printed < list.size() && done[printed] >= 0) {
                     fputs(outputs[printed].c_str(), stdout);
                     if (done[printed]) printf("  (group %s: %d failure(s))\n", list[printed].name, done[printed]);
                     g_fail += done[printed];
                     printed++;
                 }
-                if (next < list.size()) start(next++);
+            };
+            while (next < list.size() && running.size() < jobs) start(next++);
+            while (!running.empty()) {
+                std::vector<intptr_t> procs;
+                for (auto& j : running) procs.push_back(j.proc);
+                int code = 0;
+                std::string crash;
+                int k = groupWait(procs, &code, &crash);
+                if (k < 0) break;
+                size_t i = running[k].idx;
+                std::ifstream f(running[k].out);
+                std::stringstream ss; ss << f.rdbuf();
+                f.close();
+                outputs[i] = ss.str();
+#ifdef _WIN32
+                size_t end = outputs[i].rfind(kGroupEnd);
+                if (end != std::string::npos && outputs[i].find_first_not_of("\r\n", end + std::strlen(kGroupEnd)) == std::string::npos)
+                    outputs[i].resize(end);
+                else if (crash.empty())
+                    crash = "ended without finishing (exit code " + std::to_string(code) + ")";
+#endif
+                std::remove(running[k].out.c_str());
+                { std::error_code ec; std::filesystem::remove_all(groupDir(i), ec); }
+                done[i] = crash.empty() ? code : 1;
+                char took[96];
+                snprintf(took, sizeof took, "  (group %s: %.0f s)\n", list[i].name, wallSeconds() - running[k].t0);
+                outputs[i] += took;
+                if (!crash.empty()) outputs[i] += std::string("  FAIL ") + list[i].name + ": " + crash + "\n";
+                running.erase(running.begin() + k);
+                print();
+                while (next < list.size() && running.size() < jobs) start(next++);
             }
+            print();
         };
         // 3 per core: the groups mostly wait on real-time play (the whole run uses ~65 CPU-seconds), so with one per
         // core the cores sat ~70% idle. 4 cores: 4 at a time 153 s, 8 at a time ~114, 12 ~102-117 (then the longest
         // group bounds it: tourney's 25 s then, rules' / governor's ~21 s now), each group taking as long as with 4.
-        forked(par, 3 * std::max(1u, std::thread::hardware_concurrency()));
+        // Windows: 1 per core. At 1x (testTimeScale) a real-time group needs a quarter of the CPU per second it needs at
+        // 4x, but under Wine on 4 vCPUs 3 per core missed 55-90 real-time checks a run (the compute-only groups niced
+        // or not) and 1 per core none, in the same wall time (~490 s: the lockstep groups' CPU bounds it there).
+        // QUARK_TEST_JOBS overrides it.
+#ifdef _WIN32
+        unsigned jobs = std::max(1u, std::thread::hardware_concurrency());
+#else
+        unsigned jobs = 3 * std::max(1u, std::thread::hardware_concurrency());
+#endif
+        if (const char* e = getenv("QUARK_TEST_JOBS"); e && atoi(e) > 0) jobs = (unsigned)atoi(e);
+        parallel(par, std::min(jobs, kGroupMaxJobs));
         // the timing-sensitive ones, one at a time on the idle machine (both at once saved ~5 s of ~150 and failed
         // netcode's clock checks 3 times in 10 full runs, against 2 in 10 one at a time)
-        forked(alone, 1);
-    } else
-#endif
-    {
+        parallel(alone, 1);
+    } else {
         for (auto& t : par) t.run();
         for (auto& t : alone) t.run();
     }

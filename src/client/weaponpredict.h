@@ -63,6 +63,11 @@ struct WeaponPredictor {
         // Base: the server's word plus this command's ask. Commands still in flight all carry the same ask (fill),
         // so the newest one's result is the prediction; once resolved there's no ask and the snapshot stands.
         int w = switchedWeapon(v.serverWeapon, want, true, v.mask, v.away);
+        // A throw this life already predicted (thrown()) while the snapshot still shows the thrown weapon held: the
+        // server switched where thrown() said (back to the weapon before it), not to the first slot.
+        if (want < 0 && held >= 0 && held != v.serverWeapon && (v.away >> v.serverWeapon & 1) && !(v.away >> held & 1) &&
+            (!v.mask || (v.mask >> held & 1)))
+            w = held;
         int before = held >= 0 ? held : v.serverWeapon;
         if (lockFire && want >= 0 && w == want && w != before && (c.buttons & (BTN_FIRE | BTN_ALTFIRE))) *lockFire = true;
         if (w != before) prev = before;

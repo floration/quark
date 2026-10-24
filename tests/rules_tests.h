@@ -1668,6 +1668,25 @@ static void testHudClock(uint16_t port) {
 // weapon once the server has run the asking command; dead, nothing switches.
 static void testWeaponPredict(uint16_t port) {
     printf("weapon prediction: each command's predicted weapon and fire lock are the server's\n");
+    {   // A knife throw predicted while the snapshots still say the knife (a round trip): the commands after it keep
+        // the weapon held before the knife, as the server does. It showed the first slot, the rocket, until the
+        // snapshot caught up (seen at Windows' 1x test pace, where a tick falls in that window).
+        WeaponPredictor p;
+        WeaponView v; v.alive = true; v.serverWeapon = WPN_SHOTGUN;
+        UserCmd c;
+        p.want(WPN_KNIFE); p.fill(c, 0, 1);
+        CHECK(p.run(c, v) == WPN_KNIFE);
+        v.serverWeapon = WPN_KNIFE; v.ackSeq = 1;
+        UserCmd c2; p.fill(c2, 1, 2);
+        CHECK(p.run(c2, v) == WPN_KNIFE);
+        v.away = 1u << WPN_KNIFE;   // (the throw, predicted: the snapshot still says the knife, not yet away)
+        CHECK(p.thrown(v) == WPN_SHOTGUN);
+        UserCmd c3; p.fill(c3, 1, 3);
+        CHECK(p.run(c3, v) == WPN_SHOTGUN && p.current(v) == WPN_SHOTGUN);
+        v.serverWeapon = WPN_SHOTGUN;   // (the snapshot catches up)
+        UserCmd c4; p.fill(c4, 3, 4);
+        CHECK(p.run(c4, v) == WPN_SHOTGUN);
+    }
     Server s;
     ServerConfig cfg;
     cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.autoStart = false; cfg.balanceBots = false;   // (warmup: no restarts)
@@ -1718,13 +1737,16 @@ static void testWeaponPredict(uint16_t port) {
         ring[a.nextSeq() % ring.size()] = {a.nextSeq(), w, locked, a.selfAlive()};
         return u;
     };
+    // One command, before the server runs anything: what the key shows at once. (A 2 ms pump ran two commands at 1x
+    // time, Windows' pace, with the server's refusal in between, so it checked the second.)
+    auto oneCmd = [&] { for (size_t i = 0; i < cls.size(); i++) cls[i]->tick(input((int)i)); };
     // 1. a plain switch: predicted from the first command on
     wp.want(WPN_RIFLE);
     pump(s, cls, 0.4, input);
     CHECK(sp.weapon == WPN_RIFLE && lastPred == WPN_RIFLE && wp.desired < 0 && lastCmdWeapon == kNoWeaponChange);
     // 2. fire pressed right after the key, held through the confirmation: never locked (the 1.18.2 bug), firing all along
     wp.want(WPN_SHOTGUN);
-    pump(s, cls, 0.002, input);
+    oneCmd();
     CHECK(lastPred == WPN_SHOTGUN);
     buttons = BTN_FIRE;
     double lf = sp.lastFire;
@@ -1742,7 +1764,7 @@ static void testWeaponPredict(uint16_t port) {
     maskOverride = 0xFFFF; verify = false;
     int before = switches;
     wp.want(WPN_LOCATOR);
-    pump(s, cls, 0.002, input);
+    oneCmd();
     CHECK(lastPred == WPN_LOCATOR);
     pump(s, cls, 0.3, input);
     CHECK(sp.weapon == WPN_SNIPER && lastPred == WPN_SNIPER && wp.desired < 0 && lastCmdWeapon == kNoWeaponChange && switches - before == 2);
