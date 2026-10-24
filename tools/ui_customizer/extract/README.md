@@ -22,6 +22,8 @@ colours and how each widget is drawn, from `src/client/ui.cpp`). `extract.py` ma
    - Safety: under `--uitest` the window is created hidden and unfocused, every display mode change keeps it hidden at
      -20000,-20000, and no audio device is opened. The UI test makes its own data folder (in the private TMP
      extract.py gives it): the player's settings, maps and demos are never touched.
+   - Settings > DEVICES shows generic names (SOUND OUTPUT n, MICROPHONE n, MONITOR n + its mode), not this PC's
+     hardware: the dump is committed.
 2. `cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DQUARK_BUILD_TESTS=OFF`, target `quark` (`build-x/`).
 3. `QUARK_EXTRACT_DIR=<run> QUARK_EXTRACT_SHOTS=1 TMP=<private> quark --uitest <run>/report.json` (about 4 minutes),
    no console window; killed by its PID after `--timeout`.

@@ -1,18 +1,33 @@
 diff --git a/src/client/game.cpp b/src/client/game.cpp
-index 076fc6d..4337078 100644
+index fccade1..2a6e7bc 100644
 --- a/src/client/game.cpp
 +++ b/src/client/game.cpp
-@@ -122,7 +122,8 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
-     audio_.setAnnouncer(cfg_.announcerVoice);
+@@ -128,7 +128,8 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
      audio_.setExclusive(cfg_.exclusiveAudio);
+     audio_.setOutputDevice(cfg_.audioOutput);   // (Settings > DEVICES; "" the default)
      if (!opts_.uiTest) rawMouse_.start();   // (the UI test drives the mouse through GLFW)
 -    if (!audio_.start()) printf("audio: no output device - running without sound\n");
 +    if (opts_.uiTest) printf("audio: off (extract)\n");   // (extract, scratch only) no sound device at all
 +    else if (!audio_.start()) printf("audio: no output device - running without sound\n");
      audio_.setMasterVolume(cfg_.volume);
- 
-     botMapIdx_ = bestMapFor(cfg_.botMode);
-@@ -5703,6 +5704,13 @@ float Game::viewFov() const {
+     audio_.setEffectsVolume(cfg_.volumeEffects);
+     audio_.setAnnouncerVolume(cfg_.volumeAnnouncer);
+@@ -4401,6 +4402,14 @@ void Game::listDevices() {
+         snprintf(mode, sizeof mode, "  %dX%d %d HZ", m.w, m.h, m.hz);
+         devMons_.push_back({names[i], upper(names[i]) + mode});
+     }
++    if (opts_.uiTest) {   // (extract, scratch only) generic names, not this PC's hardware (the ids stay real)
++        for (size_t i = 0; i < devOut_.size(); i++) devOut_[i].name = "SOUND OUTPUT " + std::to_string(i + 1);
++        for (size_t i = 0; i < devIn_.size(); i++) devIn_[i].name = "MICROPHONE " + std::to_string(i + 1);
++        for (size_t i = 0; i < devMons_.size(); i++) {
++            const size_t sp = devMons_[i].name.find("  ");
++            devMons_[i].name = "MONITOR " + std::to_string(i + 1) + (sp == std::string::npos ? "" : devMons_[i].name.substr(sp));
++        }
++    }
+     listRates();
+     devListed_ = true;
+     devScans_++;
+@@ -5876,6 +5885,13 @@ float Game::viewFov() const {
  // display modes, present modes, low latency, latency measurement
  
  void Game::applyDisplayMode() {
@@ -25,7 +40,7 @@ index 076fc6d..4337078 100644
 +    }
      vmStale_ = true;      // (the mode may change: read it again)
      mouseHeld_ = false;   // (and the cursor held at the window's new centre)
-     GLFWmonitor* mon = glfwGetPrimaryMonitor();
+     // the monitor chosen in Settings > DEVICES (else the primary), at its desktop size
 diff --git a/src/client/main.cpp b/src/client/main.cpp
 index 5daeac3..5c3208e 100644
 --- a/src/client/main.cpp
@@ -374,10 +389,10 @@ index c1b3413..b047ad4 100644
      bool reporting() const { return probe && !muted && (!blocked_ || unblock_); }
      // the open picker / dropdown (one at a time; id: its label), what it edits, and its draw for popups()
 diff --git a/src/client/uitest.cpp b/src/client/uitest.cpp
-index b56da44..ab5e6fe 100644
+index 2270cba..4aaada2 100644
 --- a/src/client/uitest.cpp
 +++ b/src/client/uitest.cpp
-@@ -402,9 +402,14 @@ private:
+@@ -403,9 +403,14 @@ private:
              // (the demo stays where it is while tested, once it has reached its first snapshot: held from the start, it
              // only crept on by the moments between this and the frame's network read, and at CI's ~60 fps it never got there)
              if (holdDemo_ && g_.net_.playback() && g_.net_.hasSnapshot()) g_.net_.holdPlaybackClock();
@@ -392,7 +407,7 @@ index b56da44..ab5e6fe 100644
              glfwSwapBuffers(win_);
              g_.afterSwap();
              frames_++;
-@@ -422,6 +427,70 @@ private:
+@@ -423,6 +428,70 @@ private:
          }
      }
      bool transitional_ = false;
