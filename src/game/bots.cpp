@@ -478,6 +478,13 @@ void perceive(Server& s, int id, BotBrain& b, const BrainParams& sp, const Vec3&
             in[S_GROUNDSPEED] = hs; in[S_DASHING] = o.move.dashTimer > 0;
             heard = ip->run(SLOT_HEARING)[0] != 0;
         }
+        // hurt by it (X11: a sniper beyond hearing went unanswered): known like a sound from where it is, once the
+        // reaction time has passed since the hit
+        const ServerPlayer& self = s.players_[id];
+        if (self.lastHitBy == i && self.lastHitByAt > a.hurtNoticed && now >= self.lastHitByAt + sp.reactMs * 0.001f) {
+            a.hurtNoticed = self.lastHitByAt;
+            heard = true;
+        }
         if (heard) {
             if (now - a.heardAt > sp.soundNewWindow) { // a new sound: a fresh guess at where it came from
                 float err = dist * sp.soundErr;

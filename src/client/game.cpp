@@ -1037,8 +1037,28 @@ void Game::handleEvents() {
                 if (nameColorOf(e.b, nc)) { size_t vn = net_.playerName(e.b).size(); f.spans.push_back({killer.empty() || e.a == e.b ? 0 : t.size() - vn, vn, nc}); }
                 killFeed_.push_back(f);
                 while (killFeed_.size() > 6) killFeed_.pop_front();
-                if (e.b == net_.clientId() && e.a < kMaxPlayers && e.a != e.b) specTarget_ = e.a;
+                if (e.b == net_.clientId() && e.a < kMaxPlayers && e.a != e.b) { specTarget_ = e.a; killCamUntil_ = time_ + kKillCamTime; }
+                if (e.b == net_.clientId()) {   // the death screen: the victim's copy carries "<killer hp> <respawn ms>"
+                    deathValid_ = true;
+                    deathKiller_ = e.a < kMaxPlayers && e.a != e.b ? e.a : -1;
+                    deathWeapon_ = wpn;
+                    deathKillerHp_ = -1;
+                    deathRespawnAt_ = -1;
+                    int hp = -1, ms = -1;
+                    if (!e.text.empty() && std::sscanf(e.text.c_str(), "%d %d", &hp, &ms) == 2) {
+                        deathKillerHp_ = hp >= 0 && hp <= 9999 ? hp : -1;
+                        if (ms >= 0 && ms <= 600000) deathRespawnAt_ = time_ + ms * 0.001;
+                    }
+                }
                 if (e.a == net_.clientId() && e.b != e.a && cfg_.hitsounds) audio_.play(SND_KILL, 0.9f);
+                if (e.a == net_.clientId() && e.b != e.a) killMarkUntil_ = time_ + 0.45;   // X6: a kill looks unlike a hit
+                if (e.b != net_.clientId() && e.b < kMaxPlayers) {   // X6: where they fell (in sight only), a thud and a red burst
+                    const PlayerSnap* v = net_.findPlayer(e.b);
+                    if (v && !v->hidden) {
+                        audio_.play3D(SND_DEATH, v->pos + Vec3(0, 1, 0), 0.8f, 1.0f, net_.playerSoundPack(e.b));
+                        explosions_.push_back({v->pos + Vec3(0, 1, 0), time_, 0.35f, false, true});
+                    }
+                }
                 break;
             }
             case EV_CHAT:   // (chat off: dropped, not just hidden - turning it back on doesn't replay what was missed)
@@ -1170,6 +1190,12 @@ void Game::handleEvents() {
                 }
                 centerText_ = e.text;
                 centerUntil_ = time_ + (e.b ? 8.0 : 3.5);
+                break;
+            }
+            case EV_GUNFIRE: {   // X9: a shot out of sight, roughly where: the weapon's sound, quieter and lower (muffled)
+                Vec3 p;
+                if (e.c >= 0 && e.c < WPN_COUNT && std::sscanf(e.text.c_str(), "%f %f %f", &p.x, &p.y, &p.z) == 3)
+                    audio_.play3D(SND_RIFLE + e.c, p, 0.45f, 0.8f);
                 break;
             }
             case EV_BRACKET: {
@@ -1424,8 +1450,13 @@ void Game::frame(double dt) {
                 if (!(c.buttons & (BTN_FIRE | BTN_ALTFIRE))) localFireLocked_ = false;
                 else wantFire = false;
             }
+            if (switchLock || localFireLocked_ || hw != localTapWeapon_) localFireQueued_ = -1;
+            if (tapBuffered(hw) && !localFireLocked_ && holdFireLeft() <= 0 && weaponAwayLeft(hw) <= 0) {   // mirror the server's tap buffer (T13)
+                if (wantFire && !altShot && (c.buttons & BTN_FIRE) && !(localPrevButtons_ & BTN_FIRE) && time_ < localNextFire_) { localFireQueued_ = time_ + kTapBuffer; localTapWeapon_ = hw; }
+                if (!wantFire && time_ <= localFireQueued_) wantFire = true;
+            }
             if (weaponDef(hw).semiAuto) { // mirror the server: one shot per click, short buffer
-                if (wantFire && !localFireHeld_) localFireQueued_ = time_ + kFireBuffer;
+                if (wantFire && !localFireHeld_) { localFireQueued_ = time_ + kFireBuffer; localTapWeapon_ = hw; }
                 localFireHeld_ = wantFire;
                 wantFire = time_ <= localFireQueued_;
             } else localFireHeld_ = wantFire;
@@ -1528,12 +1559,13 @@ void Game::frame(double dt) {
             else if (float v = hurtGate_.frame(time_, hurt ? lastHealth_ - hp : 0); v > 0) audio_.play(SND_HURT, v);
         }
         lastHealth_ = hp;
+        if (net_.selfAlive()) deathValid_ = false;   // (the death screen is this death's only)
         if (!net_.selfAlive() && uiIn_.pressed && !paused_) {
             // cycle spectate target
             const auto& ps = framePlayers();
             for (int k = 1; k <= kMaxPlayers; k++) {
                 int id = (specTarget_ + k + kMaxPlayers) % kMaxPlayers;
-                if (ps[id].valid && (ps[id].snap.flags & PS_ALIVE) && id != net_.clientId()) { specTarget_ = id; break; }
+                if (ps[id].valid && (ps[id].snap.flags & PS_ALIVE) && id != net_.clientId() && (!modeIsTeamBased(net_.mode().mode) || isFriendly(id))) { specTarget_ = id; break; }
             }
         }
         captureMouse(!paused_ && !chatting_ && !bake_);
@@ -1652,7 +1684,9 @@ void Game::drawWorld(float alpha) {
         bool crouch = net_.predicted().flags & MF_CROUCHED;
         eye = p + Vec3(0, (crouch ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
     } else {
-        if (specTarget_ < 0 || !players[specTarget_].valid || !(players[specTarget_].snap.flags & PS_ALIVE)) {
+        // team modes: an enemy (the killer) only for kKillCamTime, then a teammate (F11)
+        const bool enemyCam = specTarget_ >= 0 && modeIsTeamBased(ms.mode) && !isFriendly(specTarget_) && time_ >= killCamUntil_;
+        if (enemyCam || specTarget_ < 0 || !players[specTarget_].valid || !(players[specTarget_].snap.flags & PS_ALIVE)) {
             specTarget_ = -1;
             for (int i = 0; i < kMaxPlayers; i++)
                 if (i != me && players[i].valid && (players[i].snap.flags & PS_ALIVE) && (isFriendly(i) || !modeIsTeamBased(ms.mode))) { specTarget_ = i; break; }
@@ -2019,7 +2053,8 @@ void Game::drawWorld(float alpha) {
         if (t >= 1) { explosions_.erase(explosions_.begin() + i); continue; }
         float r = (0.5f + t * 3.0f) * explosions_[i].size;
         Vec3 c = explosions_[i].at;
-        Color ec = explosions_[i].bubble ? rgba(r_.glowColor, 0.5f * (1 - t)) : Color{1.0f, 0.85f, 0.5f, 0.55f * (1 - t)};
+        Color ec = explosions_[i].bubble ? rgba(r_.glowColor, 0.5f * (1 - t)) : explosions_[i].kill ? Color{0.85f, 0.08f, 0.06f, 0.6f * (1 - t)}
+                                                                       : Color{1.0f, 0.85f, 0.5f, 0.55f * (1 - t)};
         r_.translucentBox({c - Vec3(r, r, r), c + Vec3(r, r, r)}, ec);
         i++;
     }
@@ -2450,6 +2485,7 @@ void Game::drawHud() {
     // crosshair (scoped with the overlay on: the scope's reticle replaces it)
     if (!scopeShown && !paused_ && !rpsOn) drawCrosshair(cx, cy, s, time_ < hitUntil_); // menus open: no crosshair through them
     if (!paused_ && !rpsOn && net_.selfAlive()) drawDamageArcs(cx, cy, s);
+    if (!paused_ && !rpsOn) drawKillMark(cx, cy, s);
     if (!cfg_.dmgNums) dmgNums_.clear();   // (VISUALS > DAMAGE NUMBERS off)
     if (!dmgNums_.empty()) {   // floating damage numbers above whoever you hit
         const auto& ip = framePlayers();
@@ -2755,9 +2791,24 @@ void Game::drawHud() {
             }
         }
     } else if (ms.phase != PHASE_ROUND_END && ms.phase != PHASE_MATCH_END) {
-        std::string t = mep && (mep->flags & PS_SPECTATOR) ? "SPECTATING" : "DEAD";
+        const bool spectator = mep && (mep->flags & PS_SPECTATOR);
+        std::string t = spectator ? "SPECTATING" : "DEAD";
         if (specTarget_ >= 0) t += " - WATCHING " + net_.playerName(specTarget_) + " (CLICK TO CYCLE)";
         ui_.labelCentered(cx, H - 60 * s, t, kGrey);
+        if (!spectator && deathValid_) {   // X1: who, with what, their health; then the respawn countdown
+            const float lh = r_.textHeight(std::max(1.0f, std::round(ts))) + 6 * s;
+            float y = H - 60 * s - lh;
+            if (deathRespawnAt_ >= 0) {
+                char b[32];
+                std::snprintf(b, sizeof b, "RESPAWN IN %.1f", std::max(0.0, deathRespawnAt_ - time_));
+                ui_.labelCentered(cx, y, b, kWhite);
+                y -= lh;
+            }
+            std::string k = deathKiller_ >= 0 ? "KILLED BY " + net_.playerName(deathKiller_) + " [" + upper(weaponName(deathWeapon_)) + "]"
+                                              : std::string("YOU DIED [") + upper(weaponName(deathWeapon_)) + "]";
+            if (deathKiller_ >= 0 && deathKillerHp_ >= 0) k += " - " + std::to_string(deathKillerHp_) + " HP";
+            ui_.labelCentered(cx, y, k, rgba(cfg_.colorEnemy));
+        }
     }
 
     if (time_ < splitUntil_) { // race split, with the difference to your best run
@@ -6354,6 +6405,22 @@ void Game::drawCrosshair(float cx, float cy, float scale, bool hit) {
         for (auto& r : rs) r_.rect(r[0] - 1, r[1] - 1, r[2] + 2, r[3] + 2, {0, 0, 0, c.a * 0.9f});
     for (auto& r : rs) r_.rect(r[0], r[1], r[2], r[3], c);
     if (hit && st != 1 && st != 2) r_.rect(cx - t, cy - t, 2 * t, 2 * t, c);
+}
+
+// X6: your kill: a red X round the crosshair, bigger than the hit flash, fading (squares along the diagonals). Drawn
+// scoped too.
+void Game::drawKillMark(float cx, float cy, float scale) {
+    if (time_ >= killMarkUntil_) return;
+    float u = std::max(1.0f, std::round(scale));
+    float len = std::round(cfg_.chLength * u), g = std::round(cfg_.chGap * u);
+    cx = std::round(cx); cy = std::round(cy);
+    {
+        const float a = (float)std::min(1.0, (killMarkUntil_ - time_) / 0.2);
+        const float d = std::max(2.0f, std::round(2 * u)), r0 = g + 3 * u, r1 = g + len + 10 * u;
+        for (float r = r0; r <= r1; r += d * 0.75f)
+            for (int sx = -1; sx <= 1; sx += 2)
+                for (int sy = -1; sy <= 1; sy += 2) r_.rect(cx + sx * r * 0.7071f - d * 0.5f, cy + sy * r * 0.7071f - d * 0.5f, d, d, {1.0f, 0.12f, 0.1f, a});
+    }
 }
 
 // VISUALS: what's drawn (world look, shot effects, overlays)
