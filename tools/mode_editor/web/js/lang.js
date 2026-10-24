@@ -1,47 +1,137 @@
 // Adapted from tools/bot_editor/web/js/ast.js at c7aae27 (the brain's JSON AST helpers), for the mode logic:
-// the catalog (catalog.js until `quark_tests exportmode` gives the game's), tree helpers, the editor's checks
+// the catalog (the game's: live from `quark_tests exportmode`, else catalog_snapshot.js), tree helpers, the editor's checks
 // (types team / player / zone / phase / ..., procs inlined with no recursion, one loop level, limits), the static
 // cost of each slot, the merge with the built-in texts (common, then the base mode, then the file) and the diff
 // against them. Function names follow ast.js so a later shared module is an easy merge.
 
-import { builtinCatalog, MODES, WEAPONS } from "./catalog.js";
+import { builtinCatalog, MODES, WEAPONS, logicBase } from "./catalog.js";
+import { SNAPSHOT, SNAPSHOT_SOURCE } from "./catalog_snapshot.js";
 
 export { MODES, WEAPONS };
-export let CATALOG = builtinCatalog();
 
-// `quark_tests exportmode`'s catalog -> the shape above. Lists of {name, ...} or maps are both read; whatever the
-// export leaves out stays the built-in one (so a partial export still works).
+// `quark_tests exportmode`'s catalog (GRAMMAR.md, exportmode: lists of {name, ...}; argument and output types as
+// {name, type}; `text...` for text arguments; modes by their logic name, 1v1 = arena) -> the editor's shape
+// (catalog.js: maps by name, types as strings). The game's entries replace the design's; only what the export has no
+// word for stays from catalog.js (a slot's phase, an object's map need, modeInfo, the engine list, the typed
+// builtins min / max / ...).
 export function catalogFromExport(c) {
     const out = builtinCatalog();
-    const asMap = (x) => (Array.isArray(x) ? Object.fromEntries(x.filter((e) => e && e.name).map((e) => [e.name, e])) : x && typeof x === "object" ? x : null);
-    const slots = asMap(c.slots);
-    if (slots) for (const [n, s] of Object.entries(slots)) {
-        const old = out.slots[n] || {};
-        let args = s.args ?? s.sensors ?? old.args ?? {};
-        if (Array.isArray(args)) args = Object.fromEntries(args.map((a) => (typeof a === "string" ? [a, "any"] : [a.name, a.type])));
-        let o = s.out ?? s.output ?? old.out;
-        if (o && !Array.isArray(o)) o = [o.name, o.type];
-        out.slots[n] = { ...old, kind: s.kind || (o ? "query" : "event"), when: s.when || old.when || "", doc: s.doc || old.doc || "", args, ...(o ? { out: o } : {}), phase: s.phase || old.phase || "live", object: s.object || old.object };
+    const list = (x) => (Array.isArray(x) ? x : x && typeof x === "object" ? Object.entries(x).map(([name, v]) => (v && typeof v === "object" ? { name, ...v } : { name, type: v })) : null);
+    const ty = (t) => (t && typeof t === "object" ? t.type : t);
+    const modeKey = (m) => (m === "arena" ? "1v1" : m);
+    const L = list(c.objects);
+    if (L) {
+        const objects = {};
+        for (const o of L) { const old = out.objects[o.name] || {}; objects[o.name] = { doc: o.doc || old.doc || "", steps: o.steps || old.steps || [], events: o.events || old.events || [], params: o.params || old.params || [], needs: o.needs || old.needs, modes: (o.modes || []).map(modeKey) }; }
+        out.objects = objects;
     }
-    for (const k of ["fields", "arrays", "functions", "actions", "objects", "params", "modeInfo", "constants"]) {
-        const m = asMap(c[k]);
-        if (m) out[k] = { ...out[k], ...m };
+    const eventObject = {};
+    for (const [n, o] of Object.entries(out.objects)) for (const ev of o.events) eventObject[ev] = n;
+    const Ls = list(c.slots);
+    if (Ls) {
+        const slots = {};
+        for (const s of Ls) {
+            const old = out.slots[s.name] || {};
+            const args = {};
+            const a = s.args ?? s.sensors ?? [];
+            if (Array.isArray(a)) for (const x of a) { if (typeof x === "string") args[x] = "any"; else args[x.name] = ty(x.type); }
+            else for (const [k, v] of Object.entries(a)) args[k] = ty(v);
+            let o = s.output ?? s.out ?? null;
+            if (o && !Array.isArray(o)) o = [o.name || "value", ty(o.type)];
+            const n = { kind: s.kind || (o ? "query" : "event"), when: s.when || old.when || "", doc: s.doc || old.doc || "", args, phase: old.phase || "live" };
+            if (o) n.out = o;
+            const obj = s.object || eventObject[s.name];   // (only what the game says: the design tagged fields and slots it never checks)
+            if (obj) n.object = obj;
+            if (s.timer || old.timer) n.timer = true;
+            slots[s.name] = n;
+        }
+        out.slots = slots;
     }
-    // a param's default may come as one number per mode
-    for (const p of Object.values(out.params)) if (p && typeof p.default === "number") p.default = { "*": p.default };
-    if (c.limits) out.limits = { ...out.limits, ...c.limits };
+    const Lf = list(c.fields);
+    if (Lf) {
+        const fields = {};
+        for (const f of Lf) { const old = out.fields[f.name] || {}; fields[f.name] = { type: ty(f.type), rw: !!f.rw, unit: f.unit || "", doc: f.doc || old.doc || "", ...(f.object ? { object: f.object } : {}) }; }
+        out.fields = fields;
+    }
+    const La = list(c.arrays);
+    if (La) {
+        const arrays = {};
+        for (const f of La) { const old = out.arrays[f.name] || {}; arrays[f.name] = { index: ty(f.index), type: ty(f.type), rw: !!f.rw, unit: f.unit || "", doc: f.doc || old.doc || "", ...(f.object ? { object: f.object } : {}) }; }
+        out.arrays = arrays;
+    }
+    const Lfn = list(c.functions);
+    if (Lfn) {
+        // the builtins (min, max, int, ...) keep catalog.js's typed signatures; exportmode lists them as text only
+        const keep = ["int", "f32", "f64", "min", "max", "clamp", "abs", "sqrt", "exp"];
+        const functions = {};
+        for (const k of keep) if (out.functions[k]) functions[k] = out.functions[k];
+        if (!functions.exp) functions.exp = { args: ["num"], type: "arg" };
+        for (const b of list(c.builtins) || []) if (functions[b.name]) functions[b.name] = { ...functions[b.name], doc: b.doc || functions[b.name].doc };
+        for (const f of Lfn) { const old = out.functions[f.name] || {}; functions[f.name] = { args: (f.args || []).map(ty), type: ty(f.type), doc: f.doc || old.doc || "", ...(f.object ? { object: f.object } : {}) }; }
+        out.functions = functions;
+    }
+    const Lac = list(c.actions);
+    if (Lac) {
+        const actions = {};
+        for (const a of Lac) {
+            const args = Array.isArray(a.args) ? a.args : [];
+            const fixed = args.filter((x) => !/\.\.\.$/.test(ty(x) || "")).map(ty);
+            const n = { args: fixed, doc: a.doc || "" };
+            if (args.length !== fixed.length) n.text = true;
+            if (a.returns && a.returns !== "nothing") n.value = ty(a.returns);
+            if (a.ends) n.ends = true;
+            if (a.object) n.object = a.object;
+            if (a.available === false) n.future = true;
+            if (a.draws) n.draws = a.draws;
+            actions[a.name] = n;
+        }
+        out.actions = actions;
+    }
+    const Lag = list(c.aggregates);
+    if (Lag) out.aggregates = Object.fromEntries(Lag.map((a) => [a.name, ty(a.type)]));
+    const Lc = list(c.constants);
+    if (Lc) out.constants = Object.fromEntries(Lc.map((k) => [k.name, ty(k.type)]));
+    const Lp = list(c.params);
+    if (Lp) {
+        const params = {};
+        for (const p of Lp) {
+            const def = {};
+            if (p.default && typeof p.default === "object") for (const [m, v] of Object.entries(p.default)) { def[m] = v; def[modeKey(m)] = v; }
+            else if (typeof p.default === "number") def["*"] = p.default;
+            if (p.objectDefault !== undefined && def["*"] === undefined) def["*"] = p.objectDefault;
+            params[p.name] = { type: ty(p.type), unit: p.unit || "", min: p.min, max: p.max, doc: p.doc || "", default: def, ...(p.object ? { object: p.object } : {}) };
+        }
+        out.params = params;
+    }
+    if (Array.isArray(c.weapons) && c.weapons.length) out.weapons = c.weapons.slice();
+    if (c.limits) {
+        const l = c.limits;
+        out.limits = { ...out.limits, ...l,
+            insnPerSlot: l.instructionsPerSlot ?? l.insnPerSlot ?? out.limits.insnPerSlot, worstPerCall: l.worstCasePerCall ?? l.worstPerCall ?? out.limits.worstPerCall,
+            textArgs: l.textArguments ?? l.textArgs ?? out.limits.textArgs, strBytes: l.stringBytes ?? l.strBytes ?? out.limits.strBytes,
+            announcePerSecond: l.announcementsPerSecond ?? out.limits.announcePerSecond };
+    }
     if (Array.isArray(c.keywords)) out.keywords = c.keywords;
     out.fromGame = true;
     out.label = "the game's catalog (quark_tests exportmode)";
     return out;
 }
+// the page starts on the snapshot of the game's catalog (catalog_snapshot.js); serve.py's live exportmode replaces it
+function snapshotCatalog() {
+    const c = catalogFromExport(SNAPSHOT);
+    c.fromGame = false;
+    c.snapshot = true;
+    c.label = `snapshot of the game's catalog (${SNAPSHOT_SOURCE})`;
+    return c;
+}
+export let CATALOG = snapshotCatalog();
 export function setCatalog(c) {
     if (!c) return;
-    const n = c.fromGame !== undefined && c.slots && !Array.isArray(c.slots) && c.label ? c : catalogFromExport(c);
+    const n = catalogFromExport(c);
     for (const k of Object.keys(CATALOG)) delete CATALOG[k];
     Object.assign(CATALOG, n);
 }
-export function resetCatalog() { const n = builtinCatalog(); for (const k of Object.keys(CATALOG)) delete CATALOG[k]; Object.assign(CATALOG, n); }
+export function resetCatalog() { const n = snapshotCatalog(); for (const k of Object.keys(CATALOG)) delete CATALOG[k]; Object.assign(CATALOG, n); }
 
 export const slotKey = (d) => (d.name === "timer" ? "timer." + d.timer : d.name);
 export const declKey = (d) => d.kind + ":" + (d.kind === "slot" ? slotKey(d) : d.kind === "use" ? d.object : d.name);
@@ -85,6 +175,7 @@ export function exprChildren(e) {
         case "index": return [["index", e.index]];
         case "agg": { const r = []; if (e.set && e.set.set === "team") r.push(["set.team", e.set.team]); if (e.where) r.push(["where", e.where]); if (e.by) r.push(["by", e.by]); return r; }
         case "neg": case "not": return [["a", e.a]];
+        case "in": return e.set && e.set.set === "team" ? [["a", e.a], ["set.team", e.set.team]] : [["a", e.a]];
         case "?:": return [["c", e.c], ["a", e.a], ["b", e.b]];
         default: return [["a", e.a], ["b", e.b]];
     }
@@ -231,7 +322,7 @@ export function validate(ast, opts = {}) {
     const reserved = (n) => CATALOG.fields[n] || CATALOG.arrays[n] || CATALOG.constants[n] !== undefined || WEAPONS.includes(n) || n === "everyone" || n === "playing";
     const lim = CATALOG.limits;
     let nParams = 0, nStates = 0, nTimers = 0, nProcs = 0, stateValues = 0;
-    if (ast.base && opts.base && ast.base !== opts.base) err(`base ${ast.base} doesn't match the file's mode=${opts.base} (the game refuses that)`, ast.decls[0] || null, "base");
+    if (ast.base && opts.base && ast.base !== logicBase(opts.base)) err(`base ${ast.base} doesn't match the file's mode=${opts.base} (the game refuses that)`, ast.decls[0] || null, "base");
     if (base && base !== "common" && !CATALOG.modes.includes(base)) err(`'${base}' isn't a mode (${CATALOG.modes.join(" ")})`, null, "base");
     for (const d of ast.decls) {
         const key = declKey(d);
@@ -291,6 +382,8 @@ export function validate(ast, opts = {}) {
         go(declKey(d));
         for (const p of seen) { if (!callers.has(p)) callers.set(p, []); callers.get(p).push(d); }
     }
+    // (as checkmode says it: the game compiles a proc only where a slot inlines it)
+    for (const [n, d] of S.procs) if (!callers.has(n)) err(`proc ${n} is never called (so the game doesn't check it)`, d, "proc:" + n, "warning");
 
     const info = {};
     const cost = costs(ast, S);
@@ -308,6 +401,7 @@ export function validate(ast, opts = {}) {
                 const first = CATALOG.slots[cs[0].name]?.args || {};
                 for (const [k, t] of Object.entries(first)) if (cs.every((c) => (CATALOG.slots[c.name]?.args || {})[k] === t)) args[k] = t;
             }
+            for (const [pn, pt] of d.params || []) args[pn] = pt;   // proc name(who player): its parameters
         }
         const sc = { kind: d.kind, d, cat, args, locals: new Map(), vars: new Map(), inFor: false, inAgg: false, uses: S.uses };
         const e = (m, n, sev) => err(m, n, key, sev);
@@ -390,8 +484,11 @@ function checkSet(s, sc, S, e) {
         return;
     }
     if (CATALOG.constants[n] !== undefined || CATALOG.functions[n] || CATALOG.actions[n] || S.timers.has(n) || S.curves.has(n) || S.procs.has(n)) return e(`${n} is a name the game or this file already uses`, s);
-    if (sc.locals.has(n)) { const lt = sc.locals.get(n); if (lt && vt && !assignable(vt, lt)) e(`${n} is ${lt} (its first assignment), this is ${vt}`, s.value); }
-    else sc.locals.set(n, vt === "none" ? "player" : vt);
+    if (sc.locals.has(n)) {
+        const lt = sc.locals.get(n);
+        if (lt === "none" && vt && vt !== "none") { if (vt === "team" || vt === "player" || vt === "weapon" || vt === "bombstate") sc.locals.set(n, vt); else e(`${n} was set to none (a team, player, weapon or bomb state), this is ${vt}`, s.value); }
+        else if (lt && vt && !assignable(vt, lt)) e(`${n} is ${lt} (its first assignment), this is ${vt}`, s.value);
+    } else sc.locals.set(n, vt);
 }
 function checkArgs(fn, want, args, sc, S, e, n, textAfter = false) {
     if (!textAfter && args.length !== want.length) e(`${fn} takes ${want.length} argument${want.length === 1 ? "" : "s"}`, n);
@@ -420,7 +517,12 @@ function checkDo(s, sc, S, e) {
         if (sc.inAgg) e("an action can't run inside an aggregate", s);
         return;
     }
-    if (S.procs.has(s.fn)) { if (s.args.length) e(`proc ${s.fn} takes no arguments`, s); return; }
+    if (S.procs.has(s.fn)) {
+        const ps = S.procs.get(s.fn).params || [];
+        if (s.args.length !== ps.length) { e(`proc ${s.fn} takes ${ps.length} argument${ps.length === 1 ? "" : "s"}`, s); return; }
+        s.args.forEach((a, i) => { if (a.op === "str") { e(`proc ${s.fn}: no text here`, a); return; } const t = typeOf(a, sc, S, e); if (t && !assignable(t, ps[i][1])) e(`proc ${s.fn}: ${ps[i][0]} is ${ps[i][1]}, this is ${t}`, a); });
+        return;
+    }
     if (CATALOG.functions[s.fn] || S.curves.has(s.fn)) return e(`${s.fn}(...) has a value: assign it or use it in a condition`, s);
     e(`unknown action '${s.fn}'`, s);
 }
@@ -516,6 +618,17 @@ export function typeOf(e, sc, S, err) {
             if (CATALOG.aggregates[e.fn]) { err(`${e.fn}(p in <set> where <cond>)`, e); return null; }
             err(`unknown function '${e.fn}'`, e);
             return null;
+        }
+        case "in": {
+            const a = t(e.a);
+            if (a && !assignable(a, "player")) err(`in: the left side is a player, not ${a}`, e.a);
+            if (e.set.set === "team") { const tt = t(e.set.team); if (tt && !assignable(tt, "team")) err(`team(...) takes a team, not ${tt}`, e.set.team); }
+            return "bool";
+        }
+        case "%": {
+            const a = t(e.a), b = t(e.b);
+            if ((a && a !== "int") || (b && b !== "int")) err(`% takes ints, not ${a !== "int" ? a : b}`, e);
+            return "int";
         }
         case "neg": { const a = t(e.a); if (a && !NUM.has(a)) err(`- of ${a}`, e); return a; }
         case "not": { const a = t(e.a); if (a && a !== "bool") err(`not of ${a} (bool only)`, e); return "bool"; }
@@ -708,7 +821,7 @@ export function interpretedSlots(ast, def) {
 // ---------------------------------------------------------------- generic node parts (blocks and graph build on these)
 // decompose(node) -> {cat, op, fields, inputs: [[path, expr]], stacks: [[path, [stmt]]]}; compose is its inverse.
 // Optional inputs (an aggregate's where / by, team(t), an indexed set) leave `true` in fields where the child was.
-const EXPR_OPS = new Set(["num", "bool", "name", "hole", "str", "call", "index", "agg", "neg", "not", "?:", "+", "-", "*", "/", "<", "<=", ">", ">=", "==", "!=", "and", "or"]);
+const EXPR_OPS = new Set(["num", "bool", "name", "hole", "str", "call", "index", "agg", "in", "neg", "not", "?:", "+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "and", "or"]);
 export const isExpr = (n) => !!n && typeof n === "object" && EXPR_OPS.has(n.op) && !n.kind;
 export function decompose(n) {
     const fields = clone(n), inputs = [], stacks = [];
@@ -722,6 +835,7 @@ export function decompose(n) {
         for (const [k, c] of exprChildren(n)) inputs.push([k, c]);
         delete fields.a; delete fields.b; delete fields.c; delete fields.index;
         if (n.op === "call") fields.args = n.args.length;
+        if (n.op === "in" && n.set.set === "team") fields.set.team = true;
         if (n.op === "agg") { if (n.set.set === "team") fields.set.team = true; if (n.where) fields.where = true; if (n.by) fields.by = true; }
     } else {
         cat = "stmt"; op = n.op;
@@ -765,7 +879,7 @@ export function compose(p) {
 function needsInput(op, k) {
     if (["num", "bool", "name", "hole", "str", "call", "agg"].includes(op)) return false;
     if (op === "index") return k === "index";
-    if (op === "neg" || op === "not") return k === "a";
+    if (op === "neg" || op === "not" || op === "in") return k === "a";
     if (op === "?:") return k === "a" || k === "b" || k === "c";
     return k === "a" || k === "b";
 }
@@ -800,6 +914,7 @@ export function newExpr(op, extra = {}) {
             return n;
         }
         case "neg": case "not": return { op, a: H() };
+        case "in": return { op, a: H(), set: extra.set || { set: "playing" } };
         case "?:": return { op, c: H(), a: H(), b: H() };
         default: return { op, a: H(), b: H() };
     }

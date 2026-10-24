@@ -31,7 +31,7 @@ The header shows three badges. Each says plainly where its part comes from:
 
 | badge | with the binary | without it |
 |---|---|---|
-| catalog | `quark_tests exportmode`: the game's slots, fields, actions, params (types, units, ranges, defaults) | **BUILT-IN CATALOG**: `web/js/catalog.js`, transcribed from the mode-editor design (section 2) |
+| catalog | `quark_tests exportmode`: the game's slots, fields, actions, params (types, units, ranges, defaults) | **SNAPSHOT CATALOG**: `web/js/catalog_snapshot.js`, the same export taken from a build (`snapshot_catalog.py` refreshes it; the header says at which commit) |
 | built-in texts | `exportmode`, else the repository's `tools/modes/*.qlogic` | the page's `web/fixtures/` (common, FFA, KOTH, BOMB from the design, section 3): other modes diff against common only, and the page says so |
 | sim | `quark_maptool modesim` | **no modesim**: the Sim view says it is unavailable and runs nothing. There is no stand-in simulation |
 
@@ -113,11 +113,13 @@ exist), removes files an older install left, keeps `mode_editor.json` and `prove
 |---|---|
 | `serve.py` | the server: page, modes, catalog / texts, checkmode, modesim runs (SSE) |
 | `install.py` | copy / update into an install folder |
+| `snapshot_catalog.py` | refresh `web/js/catalog_snapshot.js` from `quark_tests exportmode` (run it when the mode catalog changes) |
 | `run.cmd`, `run.sh` | start it |
 | `web/js/qmode.js` | the logic language: parser, canonical printer, highlighter (from the bot editor's dsl.js) |
 | `web/js/lang.js` | catalog, checks, cost, merge / diff with the built-in texts (from ast.js) |
 | `web/js/qfile.js` | the `.qmode` file: key lines, ownership, patching |
-| `web/js/catalog.js` | the built-in catalog (until `exportmode`) |
+| `web/js/catalog.js` | what the export has no word for (a slot's phase, an object's map need, mode info, typed builtins) and the design's catalog under it |
+| `web/js/catalog_snapshot.js` | GENERATED: the game's catalog from `exportmode`, used when serve.py can't run it |
 | `web/js/blocks.js`, `graph.js`, `values.js`, `curves.js` | the views (from the bot editor's) |
 | `web/js/phases.js`, `sim.js` | Phases and Sim |
 | `native/modesim_cmd.cpp` | `quark_maptool modesim` / `modebatch` / `modecheck` (built into quark_maptool by CMake); formats in `native/MODESIM.md`, checks in `native/test_modesim.py` |

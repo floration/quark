@@ -222,6 +222,7 @@ function nodeTitle(n) {
         case "do": return f.fn + "()";
         case "index": return f.array + "[ ]";
         case "agg": return `${f.fn}(${f.var} in ${f.set.set === "team" ? "team(t)" : f.set.set})`;
+        case "in": return `in ${f.set.set === "team" ? "team(t)" : f.set.set}`;
         case "for": return `for ${f.var} in ${f.set.set === "team" ? "team(t)" : f.set.set}`;
         case "neg": return "−x";
         case "set": return "set " + f.name + (f.index ? "[ ]" : "");
@@ -239,10 +240,10 @@ const CLASS = (n, S) => {
         if (n.op === "do" && CATALOG.actions[n.fields.fn] && CATALOG.actions[n.fields.fn].object) return "object";
         return "action";
     }
-    if (n.op === "agg") return "random";
+    if (n.op === "agg" || n.op === "in") return "random";
     if (n.op === "str" || n.op === "index") return "data";
     if (n.op === "call") return CATALOG.actions[n.fields.fn] ? "object" : CATALOG.functions[n.fields.fn] ? "math" : "curve";
-    if (["num", "+", "-", "*", "/", "neg"].includes(n.op)) return "math";
+    if (["num", "+", "-", "*", "/", "%", "neg"].includes(n.op)) return "math";
     return "logic";
 };
 
@@ -483,13 +484,14 @@ export class GraphView {
         if (n.kind === "source") row("name", text(f.name, (v) => { if (/^[A-Za-z_][A-Za-z0-9_.]*$/.test(v)) { f.name = v; done(); } }));
         else if (n.op === "num") { row("value", text(String(f.v), (v) => { if (Number.isFinite(+v)) { f.v = roundTo(+v, f.type); done(); } })); row("type", choose(["f32", "f64", "int"], f.type, (v) => { f.type = v; done(); })); }
         else if (n.op === "bool") row("value", choose(["yes", "no"], f.v ? "yes" : "no", (v) => { f.v = v === "yes"; done(); }));
-        else if (["+", "-", "*", "/", "<", "<=", ">", ">=", "==", "!=", "and", "or"].includes(n.op)) row("operator", choose(["+", "-", "*", "/", "<", "<=", ">", ">=", "==", "!=", "and", "or"], n.op, (v) => { n.op = v; done(); }));
+        else if (["+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "and", "or"].includes(n.op)) row("operator", choose(["+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "and", "or"], n.op, (v) => { n.op = v; done(); }));
         else if (n.op === "call") row("function", text(f.fn, (v) => { f.fn = v; done(); }));
         else if (n.op === "set") row("sets", text(f.name, (v) => { f.name = v; done(); }));
         else if (n.op === "str") row("text", text(f.v, (v) => { if (!/["\\]/.test(v)) { f.v = v; done(); } }));
         else if (n.op === "do") row("action", text(f.fn, (v) => { if (/^[A-Za-z_]\w*$/.test(v)) { f.fn = v; done(); } }));
         else if (n.op === "index") row("array", text(f.array, (v) => { if (/^[A-Za-z_][A-Za-z0-9_.]*$/.test(v)) { f.array = v; done(); } }));
-        else if (n.op === "agg") { row("function", choose(["count", "any", "first", "random", "best"], f.fn, (v) => { f.fn = v; done(); })); row("player", text(f.var, (v) => { f.var = v; done(); })); if (f.set.set !== "team") row("set", choose(["everyone", "playing"], f.set.set, (v) => { f.set.set = v; done(); })); }
+        else if (n.op === "agg") { row("function", choose(["count", "any", "first", "random", "best", "names"], f.fn, (v) => { f.fn = v; done(); })); row("player", text(f.var, (v) => { f.var = v; done(); })); if (f.set.set !== "team") row("set", choose(["everyone", "playing"], f.set.set, (v) => { f.set.set = v; done(); })); }
+        else if (n.op === "in") { if (f.set.set !== "team") row("set", choose(["everyone", "playing"], f.set.set, (v) => { f.set.set = v; done(); })); }
         else if (n.op === "for") { row("player", text(f.var, (v) => { f.var = v; done(); })); if (f.set.set !== "team") row("set", choose(["everyone", "playing"], f.set.set, (v) => { f.set.set = v; done(); })); }
         if (n.kind === "stmt" || n.kind === "entry") row("comment", text(f.trail ? f.trail.replace(/^#\s?/, "") : "", (v) => { if (v.trim()) f.trail = "# " + v.trim(); else delete f.trail; done(); }));
         if (n.kind !== "entry") {

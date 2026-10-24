@@ -10,6 +10,8 @@ export const BUILTIN_CATALOG_LABEL = "built-in catalog (from the design document
 export const MODES = ["vs", "bomb", "race", "koth", "payload", "ffa", "npayload", "duel", "1v1", "tourney", "hide", "tag", "points"];
 export const MODE_TITLES = { vs: "VS", bomb: "BOMB", race: "RACE", koth: "KING OF THE HILL", payload: "PAYLOAD", ffa: "FREE FOR ALL",
     npayload: "NEUTRAL PAYLOAD", duel: "DUEL", "1v1": "1V1", tourney: "TOURNEY", hide: "HIDE AND SEEK", tag: "TAG", points: "MULTI POINT" };
+// a mode's name in the logic: 1v1 is `base arena` (tools/modes/GRAMMAR.md 11); every other mode is its own name
+export const logicBase = (m) => (m === "1v1" ? "arena" : m);
 export const WEAPONS = ["rifle", "rocket", "knife", "sniper", "laser", "shotgun", "sticky", "crossbow", "bubble", "syringe", "locator"];
 
 // a slot: kind "event" (statements) or "query" (return <out>); args are the event's sensors, in brackets in the design.
@@ -122,7 +124,7 @@ export function builtinCatalog() {
             tourneyAdvance: { args: [T], object: "bracket" },
             pickDuelModifier: { args: [], object: "duelmods" },
         },
-        aggregates: { count: "int", any: "bool", first: P, random: P, best: P },
+        aggregates: { count: "int", any: "bool", first: P, random: P, best: P, names: "text" },
         sets: ["everyone", "playing", "team"],
         constants: {
             A: T, B: T, none: "none",

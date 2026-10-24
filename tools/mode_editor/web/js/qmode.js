@@ -11,7 +11,8 @@ export const KEYWORDS = new Set(["logic", "base", "param", "curve", "use", "stat
     "return", "pass", "for", "in", "where", "by", "break", "and", "or", "not", "yes", "no", "true", "false", "none", "A", "B"]);
 export const PARAM_TYPES = ["f32", "f64", "int", "bool"];
 export const STATE_TYPES = ["f32", "f64", "int", "bool", "team", "player"];
-export const AGGREGATES = new Set(["count", "any", "first", "random", "best"]);
+export const PROC_PARAM_TYPES = ["bool", "int", "f32", "f64", "team", "player", "zone", "phase", "bombstate", "spawn", "weapon", "timer"];
+export const AGGREGATES = new Set(["count", "any", "first", "random", "best", "names"]);
 export const LOGIC_VERSION = 1;
 const CMP = new Set(["<", "<=", ">", ">=", "==", "!="]);
 const CONST_KW = new Set(["none", "A", "B"]);
@@ -54,7 +55,7 @@ export function exprNumText(v, type) {
 // ---------------------------------------------------------------- tokenizer (one line at a time)
 const NAME_RE = /[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*/y;
 const NUM_RE = /[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?f?/y;
-const PUNCT = ["==", "!=", "<=", ">=", "(", ")", "[", "]", ",", ":", "?", "=", "<", ">", "+", "-", "*", "/"];
+const PUNCT = ["==", "!=", "<=", ">=", "(", ")", "[", "]", ",", ":", "?", "=", "<", ">", "+", "-", "*", "/", "%"];
 
 function tokenize(text, line, col0) {
     const toks = [];
@@ -137,11 +138,18 @@ function parseNot(T) {
 function parseCmp(T) {
     const l = parseAdd(T);
     const x = T.peek();
+    if (x && x.t === "kw" && x.v === "in") {   // p in <set>: a bool (GRAMMAR.md 2.5)
+        T.next();
+        const node = loc({ op: "in", a: l, set: parseSet(T) }, x.line, x.col);
+        const y = T.peek();
+        if (y && ((y.t === "p" && CMP.has(y.v)) || (y.t === "kw" && y.v === "in"))) throw new ModeError("comparisons don't chain: add parentheses", y.line, y.col);
+        return node;
+    }
     if (x && x.t === "p" && CMP.has(x.v)) {
         T.next();
         const r = parseAdd(T);
         const y = T.peek();
-        if (y && y.t === "p" && CMP.has(y.v)) throw new ModeError("comparisons don't chain: add parentheses", y.line, y.col);
+        if (y && ((y.t === "p" && CMP.has(y.v)) || (y.t === "kw" && y.v === "in"))) throw new ModeError("comparisons don't chain: add parentheses", y.line, y.col);
         return loc({ op: x.v, a: l, b: r }, x.line, x.col);
     }
     return l;
@@ -153,7 +161,7 @@ function parseAdd(T) {
 }
 function parseMul(T) {
     let l = parseUnary(T);
-    while (T.atP("*") || T.atP("/")) { const o = T.next(); l = loc({ op: o.v, a: l, b: parseUnary(T) }, o.line, o.col); }
+    while (T.atP("*") || T.atP("/") || T.atP("%")) { const o = T.next(); l = loc({ op: o.v, a: l, b: parseUnary(T) }, o.line, o.col); }
     return l;
 }
 function parseUnary(T) {
@@ -407,9 +415,23 @@ function parseDecl(l, R) {
     }
     if (k.v === "proc") {
         const name = T.expectName("the proc's name").v;
+        const params = [];   // proc name(who player, n int):  (at most 4; GRAMMAR.md 2.1)
+        if (T.atP("(")) {
+            T.next();
+            if (!T.atP(")")) for (;;) {
+                const pn = T.expectName("a parameter name");
+                const ty = T.next();
+                if (!ty || (ty.t !== "name" && ty.t !== "kw") || !PROC_PARAM_TYPES.includes(ty.v)) { T.i--; T.fail(`expected a type after ${pn.v} (${PROC_PARAM_TYPES.join(" ")})`); }
+                params.push([pn.v, ty.v]);
+                if (T.atP(",")) { T.next(); continue; }
+                break;
+            }
+            T.expectP(")");
+            if (params.length > 4) throw new ModeError("a proc takes at most 4 parameters", l.line, 1);
+        }
         T.expectP(":");
         T.end();
-        const n = at({ kind: "proc", name });
+        const n = at({ kind: "proc", name, params });
         n.body = parseBody(R, 0, l);
         return n;
     }
@@ -533,7 +555,7 @@ function parseSimple(T) {
 }
 
 // ---------------------------------------------------------------- print
-const PREC = { "?:": 1, or: 2, and: 3, not: 4, "<": 5, "<=": 5, ">": 5, ">=": 5, "==": 5, "!=": 5, "+": 6, "-": 6, "*": 7, "/": 7, neg: 8 };
+const PREC = { "?:": 1, or: 2, and: 3, not: 4, "<": 5, "<=": 5, ">": 5, ">=": 5, "==": 5, "!=": 5, in: 5, "+": 6, "-": 6, "*": 7, "/": 7, "%": 7, neg: 8 };
 const prec = (e) => PREC[e.op] ?? 9;
 
 export function printSet(s) { return s.set === "team" ? `team(${printExpr(s.team)})` : s.set; }
@@ -549,6 +571,7 @@ export function printExpr(e) {
         case "agg": return `${e.fn}(${e.var} in ${printSet(e.set)}${e.where ? " where " + printExpr(e.where) : ""}${e.by ? " by " + printExpr(e.by) : ""})`;
         case "neg": return "-" + wrap(e.a, prec(e.a) < 8 || (e.a.op === "num" && e.a.v < 0) || e.a.op === "neg");
         case "not": return "not " + wrap(e.a, prec(e.a) < 4 || prec(e.a) === 5);
+        case "in": return `${wrap(e.a, prec(e.a) <= 5)} in ${printSet(e.set)}`;
         case "?:": return `${wrap(e.c, e.c.op === "?:")} ? ${wrap(e.a, e.a.op === "?:")} : ${printExpr(e.b)}`;
         default: {
             const p = PREC[e.op];
@@ -580,7 +603,7 @@ export function printDeclHead(d) {
         case "use": return `use ${d.object}`;
         case "state": return `state ${d.life} ${d.name}${d.per ? `[${d.per}]` : ""} ${d.type} = ${dataText(d.value, d.type)}`;
         case "timer": return `timer ${d.name}`;
-        case "proc": return `proc ${d.name}:`;
+        case "proc": return `proc ${d.name}${d.params && d.params.length ? `(${d.params.map(([n, t]) => `${n} ${t}`).join(", ")})` : ""}:`;
         case "slot": return d.name === "timer" ? `slot timer ${d.timer}:` : `slot ${d.name}:`;
     }
     throw new Error("unknown declaration kind " + d.kind);

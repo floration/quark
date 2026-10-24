@@ -1,10 +1,10 @@
 // Adapted from tools/bot_editor/web/js/app.js at c7aae27. Boot and shared state: config, the catalog (the game's from
-// `quark_tests exportmode`, else the built-in one from the design, with a badge saying which), the built-in logic texts
+// `quark_tests exportmode`, else the snapshot of it in catalog_snapshot.js, with a badge saying which), the built-in logic texts
 // (exportmode, else the repository's tools/modes/*.qlogic, else this page's fixtures), the user's modes; then the page.
 import { api } from "./api.js";
 import { parse } from "./qmode.js";
 import { setCatalog, mergeLogic, CATALOG } from "./lang.js";
-import { MODES } from "./catalog.js";
+import { MODES, logicBase } from "./catalog.js";
 import { ModePage } from "./modeui.js";
 
 const $ = (id) => document.getElementById(id);
@@ -84,9 +84,9 @@ class App {
             const c = await api.catalog();
             if (c.source === "game" && c.catalog) setCatalog(c.catalog);
         } catch (e) { console.warn("catalog", e); }
-        cb.textContent = CATALOG.fromGame ? "game catalog" : "BUILT-IN CATALOG";
+        cb.textContent = CATALOG.fromGame ? "game catalog" : "SNAPSHOT CATALOG";
         cb.className = "badge " + (CATALOG.fromGame ? "real" : "mock");
-        cb.title = CATALOG.fromGame ? "slots, fields, actions and params from quark_tests exportmode" : "quark_tests has no exportmode yet: the slots, fields, actions and params come from the mode-editor design (section 2), transcribed into web/js/catalog.js. Checks and ranges may differ from the game's.";
+        cb.title = CATALOG.fromGame ? "slots, fields, actions and params from quark_tests exportmode" : `no quark_tests with exportmode: the slots, fields, actions and params come from web/js/catalog_snapshot.js, the ${CATALOG.label || "snapshot"}. A newer game build may differ; tools/mode_editor/snapshot_catalog.py refreshes it.`;
         // the built-in texts
         await this.loadDefaults();
         const sb = $("simBadge");
@@ -115,7 +115,7 @@ class App {
     }
     // common + the base mode's built-in text (or common alone when that text isn't available yet)
     defaultFor(base) {
-        return mergeLogic([this.defaultAsts.get("common"), this.defaultAsts.get(base)], base);
+        return mergeLogic([this.defaultAsts.get("common"), this.defaultAsts.get(base) || this.defaultAsts.get(logicBase(base))], logicBase(base));
     }
     missingDefault(base) {
         if (this.defaultAsts.has(base)) return null;

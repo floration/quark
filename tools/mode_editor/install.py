@@ -14,7 +14,7 @@ quark_maptool). Exit code 0 on success; the last line printed is a one-line JSON
 import json, os, shutil, subprocess, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PROGRAM = ["serve.py", "run.cmd", "run.sh", "README.md", "mode_editor.example.json", "install.py", ".gitignore"]
+PROGRAM = ["serve.py", "run.cmd", "run.sh", "README.md", "mode_editor.example.json", "install.py", "snapshot_catalog.py", ".gitignore"]
 USER_OWNED = {"mode_editor.json", "provenance.json", "installed_from.json", ".cache", "__pycache__"}
 MANIFEST = ".installed_files.json"
 

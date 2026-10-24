@@ -43,9 +43,9 @@ const CAT_OF = (b) => {
         return "action";
     }
     switch (b.op) {
-        case "num": case "+": case "-": case "*": case "/": case "neg": return "math";
+        case "num": case "+": case "-": case "*": case "/": case "%": case "neg": return "math";
         case "bool": case "and": case "or": case "not": case "?:": case "<": case "<=": case ">": case ">=": case "==": case "!=": return "logic";
-        case "agg": return "random";
+        case "agg": case "in": return "random";
         case "str": return "data";
         case "call": {
             const fn = b.fields.fn;
@@ -60,8 +60,8 @@ const CAT_OF = (b) => {
         default: return "hole";
     }
 };
-const BIN_OPS = ["+", "-", "*", "/", "<", "<=", ">", ">=", "==", "!=", "and", "or"];
-const AGG_FNS = ["count", "any", "first", "random", "best"];
+const BIN_OPS = ["+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "and", "or"];
+const AGG_FNS = ["count", "any", "first", "random", "best", "names"];
 
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
 
@@ -161,7 +161,7 @@ export class BlocksView {
             H("constants"); ["A", "B", "none"].forEach((n) => add({ op: "name", name: n }));
             ["warmup", "freeze", "live", "roundEnd", "matchEnd"].forEach((n) => add({ op: "name", name: n }, "phase"));
         } else if (this.cat === "math") {
-            ["+", "-", "*", "/"].forEach((o) => add(newExpr(o))); add(newExpr("neg"));
+            ["+", "-", "*", "/"].forEach((o) => add(newExpr(o))); add(newExpr("%"), "int remainder (x % 0 is 0)"); add(newExpr("neg"));
             add({ op: "num", type: "f32", v: 1 }); add({ op: "num", type: "f64", v: 1 }); add({ op: "num", type: "int", v: 1 });
             ["min", "max", "clamp", "abs", "sqrt", "int", "f32", "f64"].forEach((f) => add(newExpr("call", { fn: f }), C.functions[f] && C.functions[f].doc));
             if (S.curves.size) { H("curves"); for (const [n] of S.curves) add({ op: "call", fn: n, args: [{ op: "hole" }] }); }
@@ -170,7 +170,8 @@ export class BlocksView {
             add(newStmt("for")); add(newStmt("for", { where: true }), "for p in playing where <cond>");
             add(newStmt("for", { set: { set: "team", team: { op: "hole" } } }), "for p in team(t)");
             H("aggregates (one value from a set)");
-            for (const f of AGG_FNS) add(newExpr("agg", { fn: f }), `${f}: ${C.aggregates[f]}`);
+            for (const f of AGG_FNS) add(newExpr("agg", { fn: f }), `${f}: ${C.aggregates[f] || "text"}`);
+            add(newExpr("in"), "p in <set>: is the player in the set");
             H("players and teams");
             for (const f of ["team", "other", "alive", "isBot", "health", "name", "aliveCount", "teamCount"]) add(newExpr("call", { fn: f }), C.functions[f] && C.functions[f].type);
         } else if (this.cat === "sensor") {
@@ -472,6 +473,14 @@ export class BlocksView {
             case "index": {
                 if (preview) t(f.array, "bk-fn"); else w.append(this._nameField(b, "array", "bk-dl-arr"));
                 t("[", "bk-p"); w.append(this._slot(b, "index", preview)); t("]", "bk-p");
+                break;
+            }
+            case "in": {
+                w.append(this._slot(b, "a", preview));
+                const holder = el("span", "bk-row");
+                holder.style.display = "inline-flex";
+                this._setRow(holder, b, preview);
+                w.append(holder);
                 break;
             }
             case "neg": t("−"); w.append(this._slot(b, "a", preview)); break;

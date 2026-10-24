@@ -12,14 +12,14 @@ import net from "net";
 import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 import { parse, print, printExpr, ModeError } from "../js/qmode.js";
-import { CATALOG, validate, deepEqual, firstDiff, stripIds, numberIds, clone, slotKey, declKey, mergeLogic, diffLogic, interpretedSlots, costs } from "../js/lang.js";
+import { CATALOG, walkStmts, validate, deepEqual, firstDiff, stripIds, numberIds, clone, slotKey, declKey, mergeLogic, diffLogic, interpretedSlots, costs } from "../js/lang.js";
 import { logicToBlocks, blocksToLogic } from "../js/blocks.js";
 import { toGraph, fromGraph, overviewGraph } from "../js/graph.js";
 import { splitQmode, patchQmode, foreignLines, newQmodeText, modeKeys, ownerOf, logicKeyClash } from "../js/qfile.js";
-import { loadModeText, logicTextFor, fileTextFor } from "../js/modeui.js";
+import { loadModeText, logicTextFor, fileTextFor, lineDiff } from "../js/modeui.js";
 import { phasesModel } from "../js/phases.js";
 import { timelineModel, batchModel } from "../js/sim.js";
-import { MODES } from "../js/catalog.js";
+import { MODES, logicBase } from "../js/catalog.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TOOL = path.join(HERE, "..", "..");
@@ -38,10 +38,10 @@ const plain = (x) => JSON.parse(JSON.stringify(x));   // (drops _loc)
 // the built-in texts: the repository's when G2's tools/modes/*.qlogic exist, else this page's fixtures
 const SRC = fs.existsSync(path.join(REPO_MODES, "common.qlogic")) ? REPO_MODES : path.join(HERE, "..", "fixtures");
 const TEXTS = {};
-for (const n of ["common", ...MODES]) { const p = path.join(SRC, n + ".qlogic"); if (fs.existsSync(p)) TEXTS[n] = fs.readFileSync(p, "utf8"); }
+for (const n of ["common", ...MODES]) { const p = path.join(SRC, logicBase(n) + ".qlogic"); if (fs.existsSync(p)) TEXTS[n] = fs.readFileSync(p, "utf8"); }
 console.log(`built-in texts from ${path.relative(process.cwd(), SRC) || SRC}: ${Object.keys(TEXTS).join(", ")}`);
 const ASTS = Object.fromEntries(Object.entries(TEXTS).map(([n, x]) => [n, plain(parse(x))]));
-const defaultFor = (b) => mergeLogic([ASTS.common, ASTS[b]], b);
+const defaultFor = (b) => mergeLogic([ASTS.common, ASTS[b] || ASTS[logicBase(b)]], logicBase(b));
 
 console.log("qmode text");
 await t("print(parse(text)) == text for every built-in text (canonical round trip)", () => {
@@ -63,6 +63,23 @@ await t("printer: precedence, aggregates, for, index, strings, actions", () => {
     }
     const src = `logic 1\nbase koth\nstate match held[team] f32 = 0\nslot tick:\n  for p in playing where alive(p):\n    if team(p) == A: held[A] = held[A] + dt\n    else: break\n  announce("round over", 3)\n  endRound(A)\n`;
     same(print(parse(src)), src);
+});
+await t("GRAMMAR.md 11 additions: %, p in <set>, proc parameters, names(...), letter(i)", () => {
+    const src = `logic 1\nbase tag\nproc eliminate(who player, n int):\n  if who in team(A) and not (who in playing): return\n  announce(names(p in playing where alive(p)), " ", letter(n % 3))\nslot leave:\n  eliminate(p, roundNo % 2)\n`;
+    const a = parse(src);
+    same(print(a), src);
+    eq(a.decls[0].params, [["who", "player"], ["n", "int"]]);
+    const v = validate(parse(src), { base: "tag" });
+    ok(!v.errors.length, v.errors.map((p) => `${p.line}:${p.col} ${p.msg}`).join("; "));
+    const bad = validate(parse(`logic 1\nbase tag\nproc f(who player):\n  pass\nslot leave:\n  f()\n  x = 1.5 % 2\n`), { base: "tag" });
+    ok(bad.errors.some((p) => /takes 1 argument/.test(p.msg)) && bad.errors.some((p) => /% takes ints/.test(p.msg)), bad.errors.map((p) => p.msg).join(" | "));
+});
+await t("a local first set to none takes its type from a later assignment", () => {
+    const v = validate(parse(`logic 1\nbase koth\nslot tick:\n  w = none\n  if teamScore[A] > 3: w = A\n  if w != none: endMatch(w)\n`), { base: "koth" });
+    ok(!v.errors.length, v.errors.map((p) => p.msg).join("; "));
+});
+await t("the diff view's line diff keeps the lines in order", () => {
+    eq(lineDiff(["a", "b", "c", "d"], ["a", "x", "c", "d", "e"]), [[" ", "a"], ["-", "b"], ["+", "x"], [" ", "c"], [" ", "d"], ["+", "e"]]);
 });
 await t("errors carry line:col", () => {
     const bad = [[`logic 1\nslot tick:\n  r = (1 +\n`, 3], [`logic 9\n`, 1], [`logic 1\nslot tick:\nr = 1\n`, 2]];
@@ -110,12 +127,20 @@ await t("a file that only changes a number: one changed decl, no interpreted slo
     same(logicTextFor(def, def, false), "", "no differences -> no logic block");
 });
 await t("changing a proc makes the slots that call it interpreted", () => {
-    const def = defaultFor("ffa");
-    const procs = def.decls.filter((d) => d.kind === "proc");
-    if (!procs.length) return;   // (the fixtures may have none)
-    const ast = clone(def);
-    ast.decls.find((d) => d.kind === "proc").body.push({ op: "pass" });
-    ok(interpretedSlots(ast, def).size > 0, "no slot interpreted");
+    let n = 0;
+    for (const m of MODES) {
+        const def = defaultFor(m);
+        const called = new Set();
+        for (const d of def.decls) if (d.kind === "slot") walkStmts(d.body, (s) => { if (s.op === "do") called.add(s.fn); });
+        const proc = def.decls.find((d) => d.kind === "proc" && called.has(d.name));
+        if (!proc) continue;
+        const ast = clone(def);
+        ast.decls.find((d) => d.kind === "proc" && d.name === proc.name).body.push({ op: "pass" });
+        const it = interpretedSlots(ast, def);
+        ok(it.size > 0, `${m}: changing proc ${proc.name} made no slot interpreted`);
+        n++;
+    }
+    ok(n >= 2, "only " + n + " modes have a called proc");
 });
 await t("loadModeText: key lines + logic -> merged AST, and back to the same file", () => {
     const user = `custommode=fast\nmode=koth\ngravity=0.8\nmove_air=2\nfoo=bar\ntimelimit=0\nlogic 1\nbase koth\nparam target int = 50\n`;
@@ -156,8 +181,8 @@ await t("graph layout: no two nodes overlap in a slot", () => {
 });
 await t("overview graph links slots to the params / state they read", () => {
     const ov = overviewGraph(defaultFor("koth"));
-    ok(ov.edges.some((e) => e.from === "param:respawn" && e.to === "slot:respawnDelay"), "respawn -> respawnDelay");
-    ok(ov.edges.some((e) => e.from === "state:held" && e.to === "slot:tick"), "held -> tick");
+    ok(ov.edges.some((e) => e.from === "param:respawnTime" && e.to === "slot:respawnDelay"), "respawnTime -> respawnDelay");
+    ok(ov.edges.some((e) => e.from === "state:hold" && e.to === "slot:tick"), "hold -> tick");
 });
 
 console.log(".qmode file rule");

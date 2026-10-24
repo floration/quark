@@ -292,6 +292,7 @@ def export_texts(doc):
     elif isinstance(src, list):
         for e in src:
             if isinstance(e, dict) and isinstance(e.get("name"), str) and isinstance(e.get("text"), str): out[e["name"]] = e["text"]
+    if "arena" in out and "1v1" not in out: out["1v1"] = out["arena"]   # (the export names 1v1 by its logic, arena)
     return out
 
 
@@ -306,7 +307,7 @@ def default_texts():
         d, source = os.path.join(WEB, "fixtures"), "fixtures"
     out = {}
     for name in ["common"] + MODES:
-        p = os.path.join(d, name + ".qlogic")
+        p = os.path.join(d, ("arena" if name == "1v1" else name) + ".qlogic")   # (1v1 is `base arena` in the logic)
         if os.path.isfile(p):
             with open(p, encoding="utf-8", errors="replace") as f: out[name] = f.read()
     return source, out

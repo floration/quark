@@ -11,7 +11,7 @@
 import { parse, print, printDecl, highlightLine, ModeError } from "./qmode.js";
 import { validate, clone, numberIds, carryIds, declKey, slotKey, diffLogic, interpretedSlots, highlightSets, CATALOG, symbols, deepEqual, stripIds, mergeLogic } from "./lang.js";
 import { splitQmode, patchQmode, modeKeys, newQmodeText, MODE_KEYS, OWNER_TEXT, PHYSICS_EDITOR_URL } from "./qfile.js";
-import { MODES, MODE_TITLES } from "./catalog.js";
+import { MODES, MODE_TITLES, logicBase } from "./catalog.js";
 import { BlocksView } from "./blocks.js";
 import { GraphView, overviewGraph } from "./graph.js";
 import { ValuesView } from "./values.js";
@@ -36,7 +36,7 @@ export function loadModeText(text, defaults, fallbackBase) {
     let user = null;
     if (sp.logicText) user = parse(sp.logicText, sp.logicLine);
     const def = defaults(base);
-    const ast = numberIds(stripIds(mergeLogic([def, user], base)));
+    const ast = numberIds(stripIds(mergeLogic([def, user], logicBase(base))));
     return { base, keys, ast, def, user, logicLine: sp.logicLine };
 }
 // the logic block to write: only what differs from the built-in (common + base), or all of it; "" when nothing differs
@@ -44,7 +44,31 @@ export function logicTextFor(ast, def, whole) {
     if (whole || !def) return print(ast);
     const changed = new Set(diffLogic(ast, def).filter((d) => d.change !== "default").map((d) => d.key));
     if (!changed.size) return "";
-    return print({ ...ast, decls: ast.decls.filter((d) => changed.has(declKey(d))) });
+    const decls = ast.decls.filter((d) => changed.has(declKey(d)));
+    // no blank line between `base` and the first declaration written (its blank lines separated it from a decl that
+    // isn't written), so a file loads and saves back to the same text
+    const c = decls[0].comments;
+    if (Array.isArray(c) && c.length && c[0].trim() === "") {
+        let i = 0;
+        while (i < c.length && c[i].trim() === "") i++;
+        decls[0] = { ...decls[0], comments: c.slice(i) };
+    }
+    return print({ ...ast, decls });
+}
+// an ordered line diff (longest common subsequence): [[" " | "-" | "+", line]] in the order the lines read
+export function lineDiff(a, b) {
+    const n = a.length, m = b.length, L = Array.from({ length: n + 1 }, () => new Int32Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = a[i] === b[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+    const out = [];
+    let i = 0, j = 0;
+    while (i < n && j < m) {
+        if (a[i] === b[j]) { out.push([" ", a[i]]); i++; j++; }
+        else if (L[i + 1][j] >= L[i][j + 1]) out.push(["-", a[i++]]);
+        else out.push(["+", b[j++]]);
+    }
+    while (i < n) out.push(["-", a[i++]]);
+    while (j < m) out.push(["+", b[j++]]);
+    return out;
 }
 export function fileTextFor(original, keySet, ast, def, whole) { return patchQmode(original, keySet, logicTextFor(ast, def, whole)); }
 
@@ -184,7 +208,7 @@ export class ModePage {
         let located = this.ast;
         if (from !== "code") { try { located = parse(this.codeText); } catch { located = this.ast; } }
         this.check = validate(located, { base: this.base });
-        if (this.ast.base && this.ast.base !== this.base) this.check.problems.unshift({ severity: "error", msg: `base ${this.ast.base} doesn't match the file's mode=${this.base}`, where: "base", line: 2, col: 1 });
+        if (this.ast.base && this.ast.base !== logicBase(this.base)) this.check.problems.unshift({ severity: "error", msg: `base ${this.ast.base} doesn't match the file's mode=${this.base}`, where: "base", line: 2, col: 1 });
         this.check.errors = this.check.problems.filter((p) => p.severity === "error");
         this.interp = this.def ? interpretedSlots(this.ast, this.def) : new Set();
         for (const v of VIEWS) if (v !== from) this.dirtyViews.add(v);
@@ -338,10 +362,8 @@ export class ModePage {
             const box = document.createElement("div"); box.className = "dItem";
             const a = it.def ? printDecl({ ...it.def, comments: undefined }) : [], b = printDecl({ ...it.decl, comments: undefined });
             box.innerHTML = `<header><b style="font-family:var(--mono)">${esc(it.key)}</b><span class="chip">${esc(it.change)}</span>${it.decl.kind === "slot" && this.interp.has(slotKey(it.decl)) ? '<span class="chip interp">interpreted</span>' : ""}<span class="grow"></span></header><pre></pre>`;
-            const A = new Set(a), Bs = new Set(b);
             let h = "";
-            for (const l of a) if (!Bs.has(l)) h += `<span class="del">- ${esc(l)}</span>`;
-            for (const l of b) h += A.has(l) ? `  ${esc(l)}\n` : `<span class="add">+ ${esc(l)}</span>`;
+            for (const [op, l] of lineDiff(a, b)) h += op === "-" ? `<span class="del">- ${esc(l)}</span>` : op === "+" ? `<span class="add">+ ${esc(l)}</span>` : `  ${esc(l)}\n`;
             box.querySelector("pre").innerHTML = h;
             const bt = document.createElement("button"); bt.textContent = it.change === "added" ? "remove" : "reset to built-in";
             bt.onclick = () => this._resetDecl(it.key);
