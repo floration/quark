@@ -57,6 +57,10 @@ const char* weaponName(int w) {
     if (w == 255) return "suicide";
     return weaponDef(w).name;
 }
+
+// GLFW's monitor callback (no user pointer): a flag the game thread picks up in gameMonitor (it runs every frame anyway)
+bool g_monitorEvent = false;
+void onMonitorEvent(GLFWmonitor*, int) { g_monitorEvent = true; }
 }
 
 // The owner's asset overrides (docs/ASSETS.md) the game reads itself: glTF models in place of the box models, and the
@@ -116,14 +120,18 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     joinAddr_ = cfg_.lastAddress;
     if (!opts_.menuPage.empty()) debugMenuPage();   // (after the host / bots settings are read: a picker can set them)
     ui_.accent = rgba(cfg_.colorFriendly);
+    glfwSetMonitorCallback(onMonitorEvent);   // (a monitor plugged in or out: DEVICES' MONITOR found again)
     applyDisplayMode();
     applyPresentMode();
     for (auto& q : latQ_) glGenQueries(1, &q.q);
     audio_.setAnnouncer(cfg_.announcerVoice);
     audio_.setExclusive(cfg_.exclusiveAudio);
+    audio_.setOutputDevice(cfg_.audioOutput);   // (Settings > DEVICES; "" the default)
     if (!opts_.uiTest) rawMouse_.start();   // (the UI test drives the mouse through GLFW)
     if (!audio_.start()) printf("audio: no output device - running without sound\n");
     audio_.setMasterVolume(cfg_.volume);
+    audio_.setEffectsVolume(cfg_.volumeEffects);
+    audio_.setAnnouncerVolume(cfg_.volumeAnnouncer);
 
     botMapIdx_ = bestMapFor(cfg_.botMode);
     if (opts_.timeTrial) startTimeTrial();
@@ -318,7 +326,7 @@ void Game::leaveGame(const std::string& error) {
     // in-game menus start closed next time (a dropped connection mid-menu left them open)
     if (widgetEdit_) widgets_.save(activeHudPath());
     if (settingsInGame_) cfg_.save();
-    settingsInGame_ = voteMenu_ = specPick_ = queueMenu_ = fontsOpen_ = widgetEdit_ = false;
+    settingsInGame_ = voteMenu_ = specPick_ = queueMenu_ = fontsOpen_ = devicesOpen_ = widgetEdit_ = false;
     setTab_ = TAB_PLAYER; controlsSub_ = 0;
     ui_.closePopup();
     picker_ = PICK_NONE;
@@ -707,6 +715,7 @@ void Game::onKey(int key, int action, int mods) {
             if (filePick_) { filePick_ = 0; return; }
             if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
             if (fontsOpen_) { fontsOpen_ = false; cfg_.save(); return; }   // (FONT: back to PLAYER)
+            if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to VIDEO + AUDIO)
             if (settingsInGame_) { leaveSettings(); return; }   // (any tab: as BACK)
             if (voteMenu_ || queueMenu_ || picker_ != PICK_NONE) { voteMenu_ = queueMenu_ = specPick_ = false; picker_ = PICK_NONE; return; }
             paused_ = !paused_;
@@ -720,6 +729,7 @@ void Game::onKey(int key, int action, int mods) {
         if (filePick_) { filePick_ = 0; return; }
         if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
         if (fontsOpen_) { fontsOpen_ = false; cfg_.save(); return; }   // (FONT: back to PLAYER)
+        if (devicesOpen_) { devicesOpen_ = false; cfg_.save(); return; }   // (DEVICES: back to VIDEO + AUDIO)
         if (screen_ == Screen::Settings) { leaveSettings(); return; }   // (any tab: as BACK)
         if (picker_ != PICK_NONE) { picker_ = PICK_NONE; return; }
         if (screen_ == Screen::Leaderboard && raceStatsView_) { raceStatsView_ = false; return; } // race stats: back to the board
@@ -825,6 +835,13 @@ void Game::onScroll(double dy) {
     if (screen_ == Screen::Demos && picker_ == PICK_NONE) { demoScroll_ = std::max(0, demoScroll_ - (dy > 0 ? 1 : -1)); return; }   // clamped when drawn
     if (screen_ == Screen::Join) { joinScroll_ = std::max(0, joinScroll_ - (dy > 0 ? 1 : -1)); return; }
     if (fontsOpen_ && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { fontScroll_ = std::max(0, fontScroll_ - (dy > 0 ? 1 : -1)); return; }   // (clamped when drawn)
+    if (devicesOpen_ && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) {   // (the list under the mouse)
+        for (int k = 0; k < 3; k++) {
+            const float* b = devListBox_[k];
+            if (uiIn_.mx >= b[0] && uiIn_.mx < b[0] + b[2] && uiIn_.my >= b[1] && uiIn_.my < b[1] + b[3]) devScroll_[k] = std::max(0, devScroll_[k] - (dy > 0 ? 1 : -1));
+        }
+        return;   // (clamped when drawn)
+    }
     // One action per whole notch: smooth-scrolling trackpads and high-res wheels send many small
     // steps, which used to skip through several weapons at once. Reversing direction starts over.
     if ((dy > 0) != (wheelAccum_ > 0)) wheelAccum_ = 0;
@@ -1261,6 +1278,8 @@ void Game::frame(double dt) {
     struct CpuTime { double t0 = timeNow(); double* out; ~CpuTime() { *out = timeNow() - t0; } } cpuTime{timeNow(), &lastCpu_}; // --bench: CPU part of the frame
     time_ += dt;
     if (cfg_.uiFont != fontTried_) applyUiFontSetting();   // (a string compare; the font is built only when it changed)
+    if (g_monitorEvent) { g_monitorEvent = false; monitorsChanged(); }   // (a bool; set by a monitor plugged in or out)
+    if (audio_.takeOutputMissing()) notify("THE CHOSEN AUDIO OUTPUT IS GONE: USING THE SYSTEM DEFAULT", 5);   // (an atomic, set by the audio thread)
     swallowChar_ = false;   // (a key that opened the chat and typed no character: don't eat a later one)
     framePlayersOk_ = false;
     if (screen_ == Screen::InGame && (!opts_.chatShot.empty() || !opts_.consoleShot.empty())) {
@@ -2956,7 +2975,11 @@ void Game::runConsole(const std::string& line) {
     cfg_.finishLoad();
     cfg_.save();
     audio_.setMasterVolume(cfg_.volume);   // (the ones that need applying; the rest are read every frame)
+    audio_.setEffectsVolume(cfg_.volumeEffects);
+    audio_.setAnnouncerVolume(cfg_.volumeAnnouncer);
+    audio_.setOutputDevice(cfg_.audioOutput);   // (nothing unless it changed)
     if (k == "voice") audio_.setAnnouncer(cfg_.announcerVoice);   // (it resamples every line: only when it's the one set)
+    if ((k == "monitor" || k == "fullscreen_hz") && cfg_.displayMode != 0) applyDisplayMode();
     ui_.accent = rgba(cfg_.colorFriendly);
     for (auto& l : lines()) if (l.rfind(k + "=", 0) == 0) consolePrint("  " + k + " = " + l.substr(k.size() + 1));
     consoleWords_.clear();   // (a setting can add a key: mode_hud_*, mode_controls_*)
@@ -3967,7 +3990,7 @@ int packOf(const Vec3& c) {
 void Game::openSettingsTab(int tab) {
     setTab_ = tab;
     controlsSub_ = 0;
-    fontsOpen_ = widgetEdit_ = false;
+    fontsOpen_ = devicesOpen_ = widgetEdit_ = false;
     widgetSel_ = -1;
     filePick_ = 0;
     captureAction_ = -1;
@@ -3986,7 +4009,7 @@ void Game::leaveSettings() {
 }
 
 // --settingstab PAGE[+PICKER]: open that page (screenshots): player, fonts, gameplay, controls, controls/movement,
-// controls/files, video, crosshair, hud, hud/elements, hud/widgets; "+LABEL" opens that colour picker on it
+// controls/files, video, video/devices, crosshair, hud, hud/elements, hud/widgets; "+LABEL" opens that colour picker on it
 void Game::debugSettingsTab() {
     std::string t = opts_.settingsTab, pick;
     if (t.empty()) return;
@@ -3995,6 +4018,7 @@ void Game::debugSettingsTab() {
     static const char* tabs[] = {"player", "gameplay", "controls", "video", "crosshair", "hud"};
     for (int i = 0; i < 6; i++) if (t.rfind(tabs[i], 0) == 0) setTab_ = i;
     if (t == "fonts") fontsOpen_ = true;
+    if (t == "video/devices") { devicesOpen_ = true; devListed_ = false; }
     if (t == "controls/movement") controlsSub_ = 1;
     if (t == "controls/files") filePick_ = 2;
     if (t == "hud/elements") ui_.openPopup("ELEMENT", true);
@@ -4019,6 +4043,7 @@ void Game::drawSettings() {
         if (pick >= 0) { openSettingsTab(pick); return; }   // (next frame: the new tab)
     }
     if (fontsOpen_) drawFontSettings(L);
+    else if (devicesOpen_) drawDeviceSettings(L);
     else switch (setTab_) {
         case TAB_PLAYER: drawPlayerSettings(L); break;
         case TAB_GAMEPLAY: drawGameplaySettings(L); break;
@@ -4028,9 +4053,11 @@ void Game::drawSettings() {
         case TAB_HUD: drawHudSettings(L); break;
     }
     if (setTab_ == TAB_HUD && widgetEdit_) return;   // (WIDGET EDITOR was just clicked)
-    // the footer: BACK (FONT: back to PLAYER), and the page's reset on the right (drawn by the page)
+    // the footer: BACK (FONT: back to PLAYER; DEVICES: to VIDEO + AUDIO), and the page's reset on the right (drawn by the page)
     if (fontsOpen_) {
         if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav("~settings"))) { fontsOpen_ = false; cfg_.save(); }
+    } else if (devicesOpen_) {
+        if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav("~settings/video"))) { devicesOpen_ = false; cfg_.save(); }
     } else if (ui_.button(L.X(268), L.Y(640), L.L(kHalfW), L.L(kRowH), "BACK", UiExp::nav(settingsInGame_ ? "ingame/pause" : "main"))) {
         leaveSettings();
         return;
@@ -4311,6 +4338,13 @@ void Game::drawVideoSettings(const SetLayout& L) {
     g.section("SOUND");
     if (ui_.slider(g.x(), g.top(), w, h, "VOLUME", cfg_.volume, 0, 1, "%.2f", UiExp::cfg("volume"), defaultSettings().volume)) audio_.setMasterVolume(cfg_.volume = clampf(cfg_.volume, 0, 1));
     g.next();
+    // on top of VOLUME: every sound effect (the hitsound too), and the announcer's lines
+    if (ui_.slider(g.x(), g.top(), w, h, "EFFECTS VOLUME", cfg_.volumeEffects, 0, 1, "%.2f", UiExp::cfg("volume_effects"), defaultSettings().volumeEffects))
+        audio_.setEffectsVolume(cfg_.volumeEffects = clampf(cfg_.volumeEffects, 0, 1));
+    g.next();
+    if (ui_.slider(g.x(), g.top(), w, h, "ANNOUNCER VOLUME", cfg_.volumeAnnouncer, 0, 1, "%.2f", UiExp::cfg("volume_announcer"), defaultSettings().volumeAnnouncer))
+        audio_.setAnnouncerVolume(cfg_.volumeAnnouncer = clampf(cfg_.volumeAnnouncer, 0, 1));
+    g.next();
     ui_.toggle(g.x(), g.top(), w, h, "HITSOUND", cfg_.hitsounds, UiExp::cfg("hitsounds"));
     g.next();
     {
@@ -4326,8 +4360,7 @@ void Game::drawVideoSettings(const SetLayout& L) {
     g.next();
     g.hint("TAKES THE SOUND DEVICE FOR LOWER AUDIO LAG");
 #endif
-    g.section("VOICE");
-    {
+    {   // the announcer (in SOUND: its own section header no longer fit under the two volumes above)
         static const std::vector<std::string> an = {"ANNOUNCER: OFF", "ANNOUNCER: COUNTDOWN", "ANNOUNCER: ALL CALLS"};
         static std::vector<std::string> av;
         if (av.empty()) for (int v = 0; v < kAnnouncerVoices; v++) av.push_back(std::string("VOICE: ") + announcerVoiceName(v));
@@ -4336,6 +4369,146 @@ void Game::drawVideoSettings(const SetLayout& L) {
         if (ui_.cycle(g.x(), g.top(), w, h, "VOICE", cfg_.announcerVoice, kAnnouncerVoices, av, UiExp::cfg("voice"))) { audio_.setAnnouncer(cfg_.announcerVoice); audio_.play(SND_VOICE_GODLIKE, 1.0f); }
         g.next();
     }
+    // the footer's right: DEVICES (sound output, microphone, monitor), a page of its own in this tab
+    if (ui_.button(L.X(836), L.Y(640), hw, h, "DEVICES  >", UiExp::nav("~settings/video/devices").withId("DEVICES"))) {
+        devicesOpen_ = true; devListed_ = false;
+        for (int& s : devScroll_) s = 0;
+        ui_.closePopup();
+    }
+}
+
+// The page's lists, from the OS (a few ms: on opening the page, REFRESH, a monitor plugged in or out). Names upper
+// case and unique; monitors with their desktop mode.
+void Game::listDevices() {
+    auto shown = [](std::vector<DeviceEntry> v) {
+        std::vector<std::string> names;
+        for (auto& d : v) names.push_back(upper(d.name));
+        names = uniqueNames(names);
+        for (size_t i = 0; i < v.size(); i++) v[i].name = names[i];
+        return v;
+    };
+    devOut_ = shown(Audio::listDevices(false));
+    devIn_ = shown(Audio::listDevices(true));
+    devMons_.clear();
+    int n = 0;
+    GLFWmonitor** ms = glfwGetMonitors(&n);
+    std::vector<std::string> names;
+    for (int i = 0; i < n; i++) { const char* nm = glfwGetMonitorName(ms[i]); names.push_back(nm ? nm : "MONITOR"); }
+    names = uniqueNames(names);   // (the ids, as cfg_.monitor stores them)
+    for (int i = 0; i < n; i++) {
+        const DeskMode m = desktopMode(ms[i]);
+        char mode[48];
+        snprintf(mode, sizeof mode, "  %dX%d %d HZ", m.w, m.h, m.hz);
+        devMons_.push_back({names[i], upper(names[i]) + mode});
+    }
+    listRates();
+    devListed_ = true;
+    devScans_++;
+}
+
+void Game::listRates() {
+    devRates_.clear();
+    GLFWmonitor* mon = chosenMonitor();
+    if (!mon) return;
+    const DeskMode d = desktopMode(mon);
+    int n = 0;
+    const GLFWvidmode* modes = glfwGetVideoModes(mon, &n);
+    for (int i = 0; i < n; i++)
+        if (modes[i].width == d.w && modes[i].height == d.h && modes[i].refreshRate != d.hz &&
+            std::find(devRates_.begin(), devRates_.end(), modes[i].refreshRate) == devRates_.end())
+            devRates_.push_back(modes[i].refreshRate);
+    std::sort(devRates_.rbegin(), devRates_.rend());
+}
+
+// DEVICES (VIDEO + AUDIO > DEVICES): a list of rows each for the sound output and the microphone (left), the monitor
+// and exclusive fullscreen's refresh rate (right), like the FONT page's rows: the one in use "> NAME <", a click on
+// another picks it, saves it and applies it at once (the output reopened, the window moved). The wheel scrolls a list
+// longer than its rows. REFRESH (bottom right) asks the OS again.
+void Game::drawDeviceSettings(const SetLayout& L) {
+    if (!devListed_) listDevices();
+    const float w = L.L(kColW), h = L.L(kRowH), hw = L.L(kHalfW);
+    const Color warn = {1.0f, 0.55f, 0.3f, 1};
+    // one list: the default first, then the OS's; rows at most; returns true when a row was picked (value set)
+    auto list = [&](SetFlow& f, int which, const char* idPrefix, const std::string& defName, const std::vector<DeviceEntry>& devs,
+                    std::string& value, const char* key, int rows) -> bool {
+        static std::string ids[3][64];   // the rows' UI test ids: "<PREFIX>: <NAME>" (kept: an id is a pointer)
+        const int n = (int)devs.size() + 1;
+        devScroll_[which] = std::min(devScroll_[which], std::max(0, n - rows));
+        const int first = devScroll_[which], shown = std::min(n - first, rows);
+        float* box = devListBox_[which];
+        box[0] = f.x(); box[1] = f.top(); box[2] = f.w(); box[3] = L.L(40.0f * shown);
+        const int cur = findDevice(devs, value);   // (gone: no row is the current one)
+        bool picked = false;
+        for (int r = 0; r < shown; r++) {
+            const int i = first + r;   // (0: the default)
+            const std::string& name = i == 0 ? defName : devs[i - 1].name;
+            const bool on = i == 0 ? cur == kDeviceDefault : cur == i - 1;
+            if (r < 64) ids[which][r] = std::string(idPrefix) + ": " + name;
+            const UiExp e = (on ? UiExp::inert() : UiExp::cfg(key)).withId(r < 64 ? ids[which][r].c_str() : idPrefix).clipOk();   // (names: may be long)
+            if (ui_.button(f.x(), f.top(), w, h, on ? "> " + name + " <" : name, e) && !on && !picked) {
+                value = i == 0 ? std::string() : devs[i - 1].id;
+                picked = true;
+            }
+            f.next();
+        }
+        if (n > rows) f.hint(std::to_string(first + 1) + "-" + std::to_string(first + shown) + " OF " + std::to_string(n) + " - WHEEL TO SCROLL");
+        return picked;
+    };
+
+    // --- left: AUDIO OUTPUT, AUDIO INPUT
+    SetFlow f{ui_, L, kColL, 90};
+    f.header("AUDIO OUTPUT");
+    if (list(f, 0, "OUTPUT", "SYSTEM DEFAULT", devOut_, cfg_.audioOutput, "audio_output", 5)) { audio_.setOutputDevice(cfg_.audioOutput); cfg_.save(); }
+    if (findDevice(devOut_, cfg_.audioOutput) == kDeviceGone || (audio_.ok() && audio_.outputMissing())) {
+        ui_.hint(f.x(), L.Y(f.y - 4), "THE SAVED DEVICE IS GONE: THE DEFAULT PLAYS", warn, f.w());
+        f.y += 16;
+    } else f.hint("SOUND SWITCHES TO IT AT ONCE");
+    f.section("AUDIO INPUT (MICROPHONE)");
+    if (list(f, 1, "INPUT", "SYSTEM DEFAULT", devIn_, cfg_.audioInput, "audio_input", 4)) cfg_.save();
+    if (findDevice(devIn_, cfg_.audioInput) == kDeviceGone) {
+        ui_.hint(f.x(), L.Y(f.y - 4), "THE SAVED MICROPHONE IS GONE: THE DEFAULT", warn, f.w());
+        f.y += 16;
+    }
+    f.hint("NOTHING IN THE GAME RECORDS YET: THIS IS", "SAVED FOR VOICE CHAT LATER");
+
+    // --- right: MONITOR, REFRESH RATE
+    SetFlow g{ui_, L, kColR, 90};
+    g.header("MONITOR");
+    if (list(g, 2, "MONITOR", "PRIMARY MONITOR", devMons_, cfg_.monitor, "monitor", 5)) {
+        cfg_.save();
+        listRates();   // (the new monitor's)
+        if (cfg_.displayMode != 0) applyDisplayMode();   // (fullscreen / borderless: the window goes there now)
+    }
+    if (findDevice(devMons_, cfg_.monitor) == kDeviceGone) {
+        ui_.hint(g.x(), L.Y(g.y - 4), "THE SAVED MONITOR IS GONE: THE PRIMARY", warn, g.w());
+        g.y += 16;
+    } else g.hint("FULLSCREEN AND BORDERLESS OPEN ON IT");
+    g.section("REFRESH RATE");
+    {   // exclusive fullscreen's: the desktop's, or another the monitor has at that size
+        static std::vector<std::string> names;
+        names.clear();   // (a few short strings, only while this page is open)
+        GLFWmonitor* mon = chosenMonitor();
+        const int deskHz = mon ? desktopMode(mon).hz : 0;
+        names.push_back("REFRESH RATE: DESKTOP (" + std::to_string(deskHz) + " HZ)");
+        int idx = 0;
+        for (size_t i = 0; i < devRates_.size(); i++) {
+            names.push_back("REFRESH RATE: " + std::to_string(devRates_[i]) + " HZ");
+            if (devRates_[i] == cfg_.fullscreenHz) idx = (int)i + 1;
+        }
+        if (cfg_.fullscreenHz > 0 && idx == 0 && cfg_.fullscreenHz != deskHz) {   // (saved for another monitor: kept until changed)
+            names.push_back("REFRESH RATE: " + std::to_string(cfg_.fullscreenHz) + " HZ (NOT ON THIS MONITOR)");
+            idx = (int)names.size() - 1;
+        }
+        if (ui_.cycle(g.x(), g.top(), w, h, "REFRESH RATE", idx, (int)names.size(), names, UiExp::cfg("fullscreen_hz"))) {
+            cfg_.fullscreenHz = idx == 0 || idx > (int)devRates_.size() ? 0 : devRates_[idx - 1];
+            cfg_.save();
+            if (cfg_.displayMode == 2) applyDisplayMode();
+        }
+        g.next();
+        g.hint("EXCLUSIVE FULLSCREEN ONLY");
+    }
+    // the footer's right: ask the OS again (a device plugged in since); a missing output is tried again
+    if (ui_.button(L.X(836), L.Y(640), hw, h, "REFRESH", UiExp::state("devscan"))) { devListed_ = false; audio_.retryOutputDevice(); }
 }
 
 void Game::drawControls(const SetLayout& L) {
@@ -5705,24 +5878,28 @@ float Game::viewFov() const {
 void Game::applyDisplayMode() {
     vmStale_ = true;      // (the mode may change: read it again)
     mouseHeld_ = false;   // (and the cursor held at the window's new centre)
-    GLFWmonitor* mon = glfwGetPrimaryMonitor();
-    const GLFWvidmode* vm = glfwGetVideoMode(mon);
+    // the monitor chosen in Settings > DEVICES (else the primary), at its desktop size
+    GLFWmonitor* mon = chosenMonitor();
+    if (!mon) return;
+    const DeskMode vm = desktopMode(mon);
+    appliedMon_ = mon;
+    int mx = 0, my = 0;
+    glfwGetMonitorPos(mon, &mx, &my);
     switch (cfg_.displayMode) {
-        case 2: // exclusive fullscreen: owns the display, bypasses the desktop compositor
+        case 2: // exclusive fullscreen: owns the display, bypasses the desktop compositor (at DEVICES' REFRESH RATE if
+                // one is picked: GLFW takes the closest mode the monitor has at that size)
             glfwSetWindowAttrib(win_, GLFW_DECORATED, GLFW_TRUE);
-            glfwSetWindowMonitor(win_, mon, 0, 0, vm->width, vm->height, vm->refreshRate);
+            glfwSetWindowMonitor(win_, mon, 0, 0, vm.w, vm.h, cfg_.fullscreenHz > 0 ? cfg_.fullscreenHz : vm.hz);
             break;
         case 1: { // borderless fullscreen window covering the monitor
-            int mx = 0, my = 0;
-            glfwGetMonitorPos(mon, &mx, &my);
-            glfwSetWindowMonitor(win_, nullptr, mx, my, vm->width, vm->height, 0);
+            glfwSetWindowMonitor(win_, nullptr, mx, my, vm.w, vm.h, 0);
             glfwSetWindowAttrib(win_, GLFW_DECORATED, GLFW_FALSE);
             glfwSetWindowPos(win_, mx, my);
-            glfwSetWindowSize(win_, vm->width, vm->height);
+            glfwSetWindowSize(win_, vm.w, vm.h);
             break;
         }
-        default:
-            glfwSetWindowMonitor(win_, nullptr, 100, 100, cfg_.width, cfg_.height, 0);
+        default:   // (on the chosen monitor too: 100 px in from its corner)
+            glfwSetWindowMonitor(win_, nullptr, mx + 100, my + 100, cfg_.width, cfg_.height, 0);
             glfwSetWindowAttrib(win_, GLFW_DECORATED, GLFW_TRUE);
             break;
     }
@@ -5730,8 +5907,54 @@ void Game::applyDisplayMode() {
     // Render at the new size right away (don't wait for a resize event that may arrive late).
     int fw = 0, fh = 0;
     glfwGetFramebufferSize(win_, &fw, &fh);
-    if (cfg_.displayMode != 0) { fw = std::max(fw, vm->width); fh = std::max(fh, vm->height); }
+    if (cfg_.displayMode != 0) { fw = std::max(fw, vm.w); fh = std::max(fh, vm.h); }
     if (fw > 0 && fh > 0) r_.resize(fw, fh);
+}
+
+// cfg_.monitor's monitor (devices.h: its name, "#2" for the second of the same name), else the primary. Looked up again
+// only when the setting or the monitors change (GLFW's list is its own memory: no OS call either way).
+GLFWmonitor* Game::chosenMonitor() {
+    if (chosenMon_ && chosenMonId_ == cfg_.monitor) return chosenMon_;
+    chosenMonId_ = cfg_.monitor;
+    chosenMon_ = nullptr;
+    chosenGone_ = false;
+    if (!cfg_.monitor.empty()) {
+        int n = 0;
+        GLFWmonitor** ms = glfwGetMonitors(&n);
+        std::vector<std::string> names;
+        for (int i = 0; i < n; i++) { const char* nm = glfwGetMonitorName(ms[i]); names.push_back(nm ? nm : "MONITOR"); }
+        names = uniqueNames(names);
+        for (int i = 0; i < n; i++) if (names[i] == cfg_.monitor) chosenMon_ = ms[i];
+        chosenGone_ = !chosenMon_;
+        if (chosenGone_ && monGoneNoted_ != cfg_.monitor) { monGoneNoted_ = cfg_.monitor; notify("MONITOR " + upper(cfg_.monitor) + " NOT FOUND: USING THE PRIMARY", 5); }
+    }
+    if (!chosenMon_) chosenMon_ = glfwGetPrimaryMonitor();
+    return chosenMon_;
+}
+
+// The monitor's desktop mode: what glfwGetVideoMode says, except while the game is exclusive on it (then that's the
+// game's own mode, maybe another refresh rate; the one read before it went exclusive is kept)
+Game::DeskMode Game::desktopMode(GLFWmonitor* mon) {
+    GLFWmonitor* on = glfwGetWindowMonitor(win_);   // (exclusive on it: its desktop mode is the one kept)
+    if (mon && mon == deskMon_ && on == mon) return desk_;
+    const GLFWvidmode* vm = mon ? glfwGetVideoMode(mon) : nullptr;
+    if (!vm) return desk_;
+    const DeskMode m = {vm->width, vm->height, vm->refreshRate};
+    if (!on || on != deskMon_) { deskMon_ = mon; desk_ = m; }   // (another monitor read while exclusive keeps the kept one)
+    return m;
+}
+
+// A monitor plugged in or out: the chosen one found again (the pointers to a gone one are dangling now), the page's
+// list made again, and a fullscreen window moved if its monitor is now another one
+void Game::monitorsChanged() {
+    chosenMon_ = nullptr;
+    deskMon_ = nullptr;
+    vmStale_ = true;
+    if (devicesOpen_) devListed_ = false;
+    GLFWmonitor* was = appliedMon_;
+    appliedMon_ = nullptr;
+    if (chosenMonitor() != was && cfg_.displayMode != 0) applyDisplayMode();
+    else appliedMon_ = chosenMonitor();
 }
 
 // Latent Sync (PRESENT: LATENT SYNC, like Special K's): one frame a refresh. It's started late enough that its input is
@@ -5740,8 +5963,9 @@ void Game::applyDisplayMode() {
 // screen, however long the frame took. The lead adapts by itself: the slowest frame (input read to finished on the GPU)
 // of the last few seconds, plus a margin. The offset moves the flip (+ later) if a driver's flip lands off the blank.
 GLFWmonitor* Game::gameMonitor() {
-    GLFWmonitor* mon = glfwGetWindowMonitor(win_);   // (both cheap: GLFW's own fields)
-    if (!mon) mon = glfwGetPrimaryMonitor();
+    if (g_monitorEvent) { g_monitorEvent = false; monitorsChanged(); }
+    GLFWmonitor* mon = glfwGetWindowMonitor(win_);   // (both cheap: GLFW's own fields; chosenMonitor() a cached pointer)
+    if (!mon) mon = chosenMonitor();
     if (vmStale_ || mon != vmMon_) {
         const GLFWvidmode* vm = mon ? glfwGetVideoMode(mon) : nullptr;
         vmMon_ = mon;

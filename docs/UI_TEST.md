@@ -111,7 +111,7 @@ one JOIN > CONNECT leaves is.
 Settings is one shell with six tabs, the same in the menus (`settings...`) and in game (`ingame/pause/settings...`):
 `settings` (PLAYER), `settings/fonts` (PLAYER > FONT), `settings/gameplay`, `settings/controls` (GENERAL + INTERFACE
 KEYS), `settings/controls/movement` (MOVE + WEAPON KEYS), `settings/controls/files` (the import list), `settings/video`
-(VIDEO + AUDIO), `settings/crosshair`, `settings/hud`, `settings/hud/elements` (the ELEMENT dropdown open),
+(VIDEO + AUDIO), `settings/video/devices` (VIDEO + AUDIO > DEVICES), `settings/crosshair`, `settings/hud`, `settings/hud/elements` (the ELEMENT dropdown open),
 `settings/hud/widgets` (+ `/files`, `/values`). The tab row's tabs are `nav("~settings/<tab>")` buttons (the current one
 too); BACK and Esc leave settings from any tab (Esc first closes an open picker, dropdown or list). `quark
 --settingsmenu --settingstab <page>[+<picker label>] --menushot --screenshot out.png` (or `--settings` in game) opens a
@@ -122,6 +122,12 @@ name as a stable id whichever is in use; REFRESH is `state("fontscan")`, OPEN FO
 settings back between widgets, and Game::frame applies `ui_font` when it differs, so every check after a font pick runs
 in the default font again. The entries depend on the machine (a game-styled entry is listed only when its look-alike
 is built in or the real font is found), so the number of widgets there can differ between computers.
+Settings > VIDEO + AUDIO > DEVICES (`settings/video/devices`): the same kind of rows, one list each for AUDIO OUTPUT
+(`cfg("audio_output")`), AUDIO INPUT (`cfg("audio_input")`) and MONITOR (`cfg("monitor")`), the default first; the row
+in use is `inert()`, ids `OUTPUT: <NAME>` / `INPUT: <NAME>` / `MONITOR: <NAME>`. The lists are the machine's: with no
+sound devices (a CI runner) a list is only its default row, in use, so it's tested as INERT. REFRESH RATE is
+`cfg("fullscreen_hz")` (one entry: inert); `monitor` and `fullscreen_hz` are put back at once like `display_mode`.
+REFRESH is `state("devscan")`.
 `QUARK_UITEST_FONT=<ui_font value>` (e.g. `classic`, `overwatch`) runs the whole test in that font, layout checks
 included: every built-in font was run through `--uitest-only menus` this way when they were added.
 

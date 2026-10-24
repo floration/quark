@@ -43,7 +43,7 @@ std::string Game::uiScreenPath() const {
         switch (setTab_) {
             case TAB_GAMEPLAY: return "/gameplay";
             case TAB_CONTROLS: return filePick_ == 2 ? "/controls/files" : controlsSub_ == 1 ? "/controls/movement" : "/controls";
-            case TAB_VIDEO: return "/video";
+            case TAB_VIDEO: return devicesOpen_ ? "/video/devices" : "/video";
             case TAB_CROSSHAIR: return "/crosshair";
             case TAB_HUD:
                 if (widgetEdit_) return filePick_ == 1 ? "/hud/widgets/files" : valueDrop_ && widgetSel_ >= 0 ? "/hud/widgets/values" : "/hud/widgets";
@@ -149,6 +149,7 @@ std::string Game::uiObserve(const std::string& w) {
     if (w == "edimport") return ed_.serialize() + b(edGroupMenu_);
     if (w == "browser") return std::to_string(browser_.refreshes());
     if (w == "fontscan") return std::to_string(fontScans_);
+    if (w == "devscan") return std::to_string(devScans_);
     if (w == "scores") return b(showScores_);
     if (w == "perf") return b(showPerf_);
     if (w == "perfmini") return b(perfMini_);
@@ -545,7 +546,8 @@ private:
         g.ui_.clearFocus();
         g.paused_ = g.chatting_ = g.console_ = false;
         g.chatText_.clear();
-        g.settingsInGame_ = g.voteMenu_ = g.queueMenu_ = g.fontsOpen_ = false;
+        g.settingsInGame_ = g.voteMenu_ = g.queueMenu_ = g.fontsOpen_ = g.devicesOpen_ = false;
+        for (int& d : g.devScroll_) d = 0;
         g.setTab_ = Game::TAB_PLAYER;
         g.controlsSub_ = 0;
         g.ui_.closePopup();
@@ -589,13 +591,17 @@ private:
         }
         // the settings as the test started (memory and file), and what follows from them
         Settings& c = g.cfg_;
-        bool display = c.displayMode != baseline_.displayMode || c.width != baseline_.width || c.height != baseline_.height;
+        bool display = c.displayMode != baseline_.displayMode || c.width != baseline_.width || c.height != baseline_.height ||
+                       c.monitor != baseline_.monitor || c.fullscreenHz != baseline_.fullscreenHz;
         c = baseline_;
         c.save();
         g.joinAddr_ = c.lastAddress;
         g.hostPortStr_ = std::to_string(c.hostPort);
         g.ui_.accent = rgba(c.colorFriendly);
         g.audio_.setMasterVolume(c.volume);
+        g.audio_.setEffectsVolume(c.volumeEffects);
+        g.audio_.setAnnouncerVolume(c.volumeAnnouncer);
+        g.audio_.setOutputDevice(c.audioOutput);
         g.audio_.setAnnouncer(c.announcerVoice);
         g.appliedMode_ = -2;
         if (display) g.applyDisplayMode();
@@ -871,12 +877,13 @@ private:
                     if (cfgLines(disk.toText(), k) != cfgLines(text, k)) fail(wkey, "the new bind wasn't saved");
                 } else pendingCfg_.push_back({k, wkey});
                 // (these change the window / frame pacing: back at once, and no "<" round trip)
-                static const char* live[] = {"display_mode", "present_mode", "maxfps", "low_latency"};
+                static const char* live[] = {"display_mode", "present_mode", "maxfps", "low_latency", "monitor", "fullscreen_hz"};
                 bool isLive = false;
                 for (const char* lk : live) isLive |= k == lk;
                 if (isLive) {
                     Settings& c = g_.cfg_;
                     c.displayMode = baseline_.displayMode; c.presentMode = baseline_.presentMode; c.maxFps = baseline_.maxFps; c.lowLatency = baseline_.lowLatency;
+                    c.monitor = baseline_.monitor; c.fullscreenHz = baseline_.fullscreenHz;
                     g_.applyDisplayMode();
                     g_.applyPresentMode();
                     pendingCfg_.pop_back();

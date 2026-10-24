@@ -78,6 +78,7 @@
   "ui/settings/hud/widgets/files": {"origin": "ai", "source": "drawn by the game's UI code (src/client/), AI-written"},
   "ui/settings/hud/widgets/values": {"origin": "ai", "source": "drawn by the game's UI code (src/client/), AI-written"},
   "ui/settings/video": {"origin": "ai", "source": "drawn by the game's UI code (src/client/), AI-written"},
+  "ui/settings/video/devices": {"origin": "ai", "source": "drawn by the game's UI code (src/client/), AI-written"},
   "ui/vsbots": {"origin": "ai", "source": "drawn by the game's UI code (src/client/), AI-written"}
  }
 }

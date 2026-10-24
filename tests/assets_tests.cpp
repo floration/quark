@@ -832,6 +832,83 @@ static void testVoiceSteal() {
     a.stop();
 }
 
+// Settings > SOUND's EFFECTS VOLUME and ANNOUNCER VOLUME: each scales its own category in the mix (on top of the
+// master), sounds already playing included, and leaves the other alone
+static void testCategoryVolumes() {
+    printf("audio: EFFECTS VOLUME and ANNOUNCER VOLUME scale their own sounds only\n");
+    Audio a;
+    a.startOffline();
+    a.setAnnouncer(1);   // (loads the lines)
+    a.setMasterVolume(0.5f);
+    int line = -1;
+    for (int id = SND_VOICE_THREE; id < SND_COUNT; id++) if (a.samples(0, id).size() > (size_t)Audio::kRate / 4) { line = id; break; }
+    ACHECK(line >= 0 && a.samples(0, SND_RIFLE).size() > 2048);
+    ACHECK(a.categoryGain(SND_HIT) == 1.0f && a.categoryGain(SND_VOICE_GO) == 1.0f);   // (the defaults: as before)
+    auto energy = [&](int id, float fx, float ann) {   // the first 1024 frames of one sound at these volumes
+        a.setEffectsVolume(fx);
+        a.setAnnouncerVolume(ann);
+        std::vector<int16_t> out(2048);
+        for (int k = 0; k < 4000 && a.voicesPlaying(SND_RIFLE) + a.voicesPlaying(line) > 0; k++) a.mix(out.data(), 1024);   // (the last one ends first)
+        a.play(id, 1.0f);
+        a.mix(out.data(), 1024);
+        double e = 0;
+        for (int16_t v : out) e += std::fabs((double)v);
+        return e;
+    };
+    const double fx1 = energy(SND_RIFLE, 1, 1), fx0 = energy(SND_RIFLE, 0, 1), fxHalf = energy(SND_RIFLE, 0.5f, 1), fxAnn0 = energy(SND_RIFLE, 1, 0);
+    const double ln1 = energy(line, 1, 1), ln0 = energy(line, 1, 0), lnFx0 = energy(line, 0, 1);
+    printf("  rifle: %.0f at 1, %.0f at 0.5, %.0f at 0, %.0f with the announcer at 0; a line: %.0f, %.0f at 0, %.0f with effects at 0\n",
+           fx1, fxHalf, fx0, fxAnn0, ln1, ln0, lnFx0);
+    ACHECK(fx1 > 1000 && fx0 == 0 && fxHalf < fx1 * 0.6 && fxHalf > fx1 * 0.4);   // (the soft limiter bends it a little)
+    ACHECK(fxAnn0 == fx1);   // the announcer's volume doesn't touch effects
+    ACHECK(ln1 > 1000 && ln0 == 0 && lnFx0 == ln1);   // nor effects' the announcer
+    // a sound already playing follows a change from the next period
+    a.setEffectsVolume(1);
+    std::vector<int16_t> out(2048);
+    for (int k = 0; k < 4000 && a.voicesPlaying(SND_RIFLE) + a.voicesPlaying(line) > 0; k++) a.mix(out.data(), 1024);
+    a.play(SND_RIFLE, 1.0f);
+    a.mix(out.data(), 256);
+    a.setEffectsVolume(0);
+    a.mix(out.data(), 256);
+    bool silent = true;
+    for (int i = 0; i < 512; i++) silent = silent && out[i] == 0;
+    ACHECK(silent);
+    a.stop();
+}
+
+// Settings > DEVICES' rules (devices.h), no hardware needed: a saved id found in the list, the default for none, gone
+// when it's not there (the default is used, with a notice); two monitors of the same name told apart; an id as a
+// quark.cfg value. And the OS's lists can be asked for at all (empty on a machine with no sound devices: the page
+// then offers only the default).
+static void testDevices() {
+    printf("devices: saved ids found, gone ones fall back, same names told apart\n");
+    const std::vector<DeviceEntry> list = {{"{0.0.0.00000000}.{aaa}", "SPEAKERS"}, {"{0.0.0.00000000}.{bbb}", "HEADPHONES"}};
+    ACHECK(findDevice(list, "") == kDeviceDefault);
+    ACHECK(findDevice(list, "{0.0.0.00000000}.{bbb}") == 1 && findDevice(list, "{0.0.0.00000000}.{aaa}") == 0);
+    ACHECK(findDevice(list, "{0.0.0.00000000}.{ccc}") == kDeviceGone);   // (unplugged)
+    ACHECK(findDevice({}, "x") == kDeviceGone && findDevice({}, "") == kDeviceDefault);
+    const std::vector<std::string> u = uniqueNames({"DELL P2419H", "LG ULTRAGEAR", "DELL P2419H", "DELL P2419H"});
+    ACHECK(u.size() == 4 && u[0] == "DELL P2419H" && u[1] == "LG ULTRAGEAR" && u[2] == "DELL P2419H #2" && u[3] == "DELL P2419H #3");
+    ACHECK(deviceCfgValue("a\r\nb") == "ab" && deviceCfgValue("hw:CARD=PCH,DEV=0") == "hw:CARD=PCH,DEV=0");
+    std::string longName(300, 'x');
+    longName.replace(255, 2, "\xC3\xA9");   // (a 2-byte character across the 256 cut: dropped whole)
+    ACHECK(deviceCfgValue(longName).size() == 255);
+    std::string endsAtCut(300, 'x');
+    endsAtCut.replace(254, 2, "\xC3\xA9");   // (one ending right at it: kept)
+    ACHECK(deviceCfgValue(endsAtCut).size() == 256);
+    for (bool input : {false, true}) {
+        const std::vector<DeviceEntry> os = Audio::listDevices(input);
+        printf("  %s: %zu device(s) here\n", input ? "inputs" : "outputs", os.size());
+        for (const DeviceEntry& d : os) ACHECK(!d.id.empty() && !d.name.empty() && d.id.find('\n') == std::string::npos);
+    }
+    // choosing an output before the device opens: no reopen storm, and nothing missing yet
+    Audio a;
+    a.setOutputDevice("{0.0.0.00000000}.{gone}");
+    a.setOutputDevice("{0.0.0.00000000}.{gone}");
+    ACHECK(!a.outputMissing() && !a.takeOutputMissing());
+    a.setOutputDevice("");
+}
+
 // Every UI font fits its line by itself (textfit.h): each built-in's ink, with the outline, stays inside the line box
 // once its fit scale is applied (Rubik, which defines the box, at 1); and a long label in a narrow box is fitted by
 // tracking first (no two letters' ink touching, at most 15% tighter), then size, then "..." (Rubik and a pixel font).
@@ -926,6 +1003,8 @@ int assetTests() {
     testTextFit();
     testHitTiers();
     testVoiceSteal();
+    testCategoryVolumes();
+    testDevices();
     testOverrides();
     testSoundLevels();
     testIconSource();

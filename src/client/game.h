@@ -677,6 +677,31 @@ private:
     std::string fontTried_;        // the ui_font value last applied (frame() applies cfg_.uiFont when it differs)
     bool loadUiFont(const std::string& id, std::string* err, std::string* name);   // built and on the GPU, or false
     void applyUiFontSetting();     // cfg_.uiFont, or Rubik with a notice when it can't be loaded
+    // DEVICES (settings/video/devices, from VIDEO + AUDIO): the sound output, the microphone, the monitor and exclusive
+    // fullscreen's refresh rate (devices.h). The OS is asked for the lists when the page opens and on REFRESH (and a
+    // monitor plugged in or out), never per frame; a pick is saved and applied at once.
+    bool devicesOpen_ = false;
+    void drawDeviceSettings(const SetLayout& L);
+    void listDevices();            // the page's lists, from the OS
+    void listRates();              // the chosen monitor's refresh rates at its desktop size (highest first)
+    bool devListed_ = false;       // (the lists are current: cleared on opening the page, by REFRESH, by a monitor change)
+    int devScans_ = 0;             // (how many times they were listed: the UI test's "devscan")
+    std::vector<DeviceEntry> devOut_, devIn_, devMons_;   // (names as shown: unique, upper case; monitors with their mode)
+    std::vector<int> devRates_;
+    int devScroll_[3] = {};        // the output / input / monitor lists' first row shown (the wheel over a list scrolls it)
+    float devListBox_[3][4] = {};  // (where each list was drawn: the wheel's target)
+    // the monitor: cfg_.monitor's, else the primary (gone: noticed once). Resolved on a change only (not per frame).
+    GLFWmonitor* chosenMonitor();
+    GLFWmonitor* chosenMon_ = nullptr;
+    std::string chosenMonId_, monGoneNoted_;
+    bool chosenGone_ = false;
+    GLFWmonitor* appliedMon_ = nullptr;   // (the monitor applyDisplayMode last put the window on)
+    // a monitor's desktop mode (its mode while the game isn't exclusive on it: then glfwGetVideoMode gives the game's)
+    struct DeskMode { int w = 0, h = 0, hz = 0; };
+    DeskMode desktopMode(GLFWmonitor* mon);
+    GLFWmonitor* deskMon_ = nullptr;
+    DeskMode desk_;
+    void monitorsChanged();        // (GLFW's monitor callback: one plugged in or out)
     // scriptable HUD: hud.cfg widgets, the verbose info block, and the in-game widget editor
     HudWidgets widgets_;
     HudVals hudVals_;
