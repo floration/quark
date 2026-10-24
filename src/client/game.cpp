@@ -2826,7 +2826,7 @@ void Game::drawHud() {
                 // wholly to the on color; a spent charge stays empty while it recharges (1.2 s) and after, until a refill
                 // (owner 1.18.7: "light grey that turns to blue, the whole bar not the slider"; a fill growing from empty
                 // made one dash look like it had spent both charges)
-                int n = dashMaxCharges(mv.mods), have = std::min<int>(mv.dashCharges, n);
+                int n = dashMaxCharges(mv, &net_.map()), have = std::min<int>(mv.dashCharges, n);
                 const bool ready = dashReady(mv);   // (pmove's own rule; mid-burst a press is dropped, so not ready either: no
                                                     // blue flash before the cooldown starts)
                 const Color pip = ready ? full : Color{0.6f, 0.62f, 0.66f, 0.9f};
@@ -2838,7 +2838,7 @@ void Game::drawHud() {
                 }
                 r_.text(bx - r_.textWidth("DASH", lts) - 6 * k, y + (bh - lh) * 0.5f, lts, "DASH", have > 0 && ready ? kWhite : kGrey);
             }
-            bar(bcy + 68 * k, "HOOK", mv.hookCooldown, kHookCooldown * moveTuning().m[MV_HOOK_COOLDOWN]);
+            bar(bcy + 68 * k, "HOOK", mv.hookCooldown, kHookCooldown * moveValue(mv, MV_HOOK_COOLDOWN, &net_.map()));
         }
         if (!paused_ && !he(Settings::HUD_SPEED).hidden) {   // speed meter: speed is unbounded, so the bar fills on a saturating exponential curve
             // (1 - e^(-v/20)): half full at ~14 m/s, 90% at ~46 m/s, always room to grow. Number shows the real value.
@@ -3093,8 +3093,8 @@ void Game::computeHudVals() {
     auto set = [&](int i, float v, float mx) { h.v[i] = v; h.max[i] = mx; };
     set(HV_HEALTH, (float)net_.selfHealth(), 100);
     set(HV_SPEED, std::sqrt(mv.vel.x * mv.vel.x + mv.vel.z * mv.vel.z), 40);
-    set(HV_DASH, (float)mv.dashCharges, (float)dashMaxCharges(mv.mods));   // dash charges left (1.17: was % of the cooldown)
-    set(HV_HOOK, 100.0f * (1.0f - clampf(mv.hookCooldown / (kHookCooldown * moveTuning().m[MV_HOOK_COOLDOWN]), 0, 1)), 100);
+    set(HV_DASH, (float)mv.dashCharges, (float)dashMaxCharges(mv, &net_.map()));   // dash charges left (1.17: was % of the cooldown)
+    set(HV_HOOK, 100.0f * (1.0f - clampf(mv.hookCooldown / (kHookCooldown * moveValue(mv, MV_HOOK_COOLDOWN, &net_.map())), 0, 1)), 100);
     {   // fps over the last second: average and the worst frame
         double sum = 0, worst = 0;
         int n = 0;

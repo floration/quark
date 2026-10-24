@@ -2555,17 +2555,17 @@ void Server::endLatch(int a) {
     if ((pa.move.flags & MF_HOOKED) && pa.move.hookTarget == v + 1) {   // let go for them: the usual cooldown follows
         pa.move.flags &= ~MF_HOOKED;
         pa.move.hookTarget = 0;
-        pa.move.hookCooldown = kHookCooldown * moveTuning().m[MV_HOOK_COOLDOWN];
+        pa.move.hookCooldown = kHookCooldown * moveValue(pa.move, MV_HOOK_COOLDOWN, &map_);   // (its per-step value: movement equations)
     }
 }
 
 // Once a tick: a latch lets go when the map comes between them, they're out of the grapple's reach, it has held
 // kGrappleLatchMax, or damage is off now (round over); stale halves (a slot reused, a respawn) are cleared.
 void Server::tickLatches() {
-    const float range = kGrappleRange * moveTuning().m[MV_HOOK_RANGE];
     for (int a = 0; a < kMaxPlayers; a++) {
         ServerPlayer& pa = players_[a];
         if (pa.hookVictim < 0) continue;
+        const float range = kGrappleRange * moveValue(pa.move, MV_HOOK_RANGE, &map_);   // (the holder's per-step value)
         if (!latchHolds(a)) { endLatch(a); continue; }
         const ServerPlayer& pv = players_[pa.hookVictim];
         Vec3 from = pa.move.pos + Vec3(0, 1.0f * moveScale(pa.move.mods), 0);
@@ -2825,7 +2825,7 @@ void Server::stepProjectile(Projectile& pr) {
                 auto& t = players_[hitPlayer];
                 t.health = std::min(lifeMaxHealth(), t.health + weaponAlt().syringeHeal);   // (x the mode's syringe damage)
                 t.nextFire = cmdClockOf(t, time());
-                dashRefillAll(t.move);   // (the charges back, the cooldown and every recharge over)
+                dashRefillAll(t.move, &map_);   // (the charges back, the cooldown and every recharge over)
                 t.move.hookCooldown = 0;
                 if (t.knifeBackAt > time()) t.knifeBackAt = time();   // (a thrown knife / syringe is back at once too)
                 if (t.syringeBackAt > time()) t.syringeBackAt = time();

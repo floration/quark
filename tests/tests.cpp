@@ -7533,6 +7533,7 @@ static void testReachProbe(uint16_t port) {
 #include "weapon_tests.h"  // weapon sets (.qweapons: the weapons editor's) + the exportweapons / checkweapons tools
 #include "server_tests.h"  // server / netcode tests (FINAL_REVIEW 2.8-2.11, 6.4, 6.5, clock, PERF-8 / 9, ENG-2)
 #include "governor_tests.h" // two servers on one machine: the load governor, ranked never rated on testing
+#include "moveexpr_tests.h" // movement equations (custom modes' expr.<key>= lines): parser, resolver, determinism, pmove, network
 
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
@@ -7612,6 +7613,8 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "chat") { testChatAndVoteLimits(TP(29592)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "limits") { testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(TP(29990)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "moveexpr") { testMoveExpr(); testMoveExprCallers(); testMoveExprNetwork(TP(29991)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "exprbench") return moveExprBench();
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(TP(29980)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); testAddbotArgs(TP(29982)); testSpecVote(TP(29983)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); testTagLateJoin(TP(29455)); testBotGoalsAfterMapChange(TP(29456)); return g_fail ? 1 : 0; }
@@ -7682,10 +7685,10 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
-        {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
+        {"modes", [] { testCustomMode(TP(28570)); testMoveExprNetwork(TP(28576)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); testRefillPrediction(TP(28586)); testHookPrediction(TP(28588)); }},
         {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); testNameColor(TP(28599)); }},

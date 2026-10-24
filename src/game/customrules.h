@@ -34,6 +34,10 @@ struct CustomRules {
     // text loadCustomMode reads into weaponSetText. The network form carries the text (`wsline=` lines, so clients
     // compile the same set); the file form only the name. Empty: the standard weapons.
     std::string weaponSetName, weaponSetText;
+    // movement equations (moveexpr.h): {key, expression} from `expr.<key>=` lines (gravity, speed, jump or a move key),
+    // kept as written, one per key, in file order. setActiveRules resolves / compiles them; the plain values above stay
+    // what the file says (the fallback, and what older versions play)
+    std::vector<std::pair<std::string, std::string>> exprs;
     CustomRules();
     bool active() const { return !name.empty(); }
     std::string toText() const;       // the .qmode file: the known keys (canonical order, no label=), then extraKeys, then logic

@@ -52,6 +52,8 @@ struct MoveState {
     // jump. Not sent and not compared: the client's prediction and the server each make their own.
     uint8_t events = 0;
     float landSpeed = 0;   // ME_LAND: the hardest landing's speed in that call, m/s
+    uint16_t phaseMs = 0;   // ms since you last landed or left the floor (MF_ONGROUND says which), at most 65535: counted
+                            // only while a custom mode's movement equation reads p.air / p.ground (moveexpr.h), else 0
 };
 enum : uint8_t {
     ME_JUMP = 1,    // left the floor by a jump (a bhop off a landing too, and a jump off a ladder)
@@ -93,8 +95,18 @@ bool rayHitsHead(const Vec3& o, const Vec3& dir, const AABB& hitbox);
 float moveParamBase(int param);           // MV_*
 const char* moveParamUnit(int param);
 float moveBaseGravity(), moveBaseSpeed(), moveBaseJump();
+// The tuning pmove's next 1 ms step plays by for this state: the custom mode's values with its dynamic movement
+// equations (moveexpr.h) worked out for `s` (the same inputs pmove computes). Without dynamic equations it is
+// moveTuning() itself (no copy, no cost); with them it is `scratch`. `map`: for p.height (null: 0). Anything outside
+// pmove that reads a movement value for a player (HUD, server grapple, bots, sounds) uses this or moveValue, never
+// moveTuning().m directly, so it never mixes a value at rest with the one the player's movement uses.
+struct MoveTuning;   // (gamedefs.h)
+const MoveTuning& stepTuning(const MoveState& s, const Map* map, MoveTuning& scratch);
+float moveValue(const MoveState& s, int param, const Map* map = nullptr);   // stepTuning(...).m[param] (MV_*)
 // how many dash charges a full refill gives (kDashCharges x the custom mode's multiplier, at least 1; quick dash
-// gives none extra since 1.18, `mods` is kept for callers)
+// gives none extra since 1.18, `mods` is kept for callers). The state's own: for that state (equations); the mods
+// one: the value at rest (moveTuning(): a fresh spawn, the tests)
+int dashMaxCharges(const MoveState& s, const Map* map = nullptr);
 int dashMaxCharges(uint8_t mods);
 // the dash cooldown in ms (kDashCooldown x the custom mode's multiplier; MOVE_QUICK_DASH in `mods`: a third of that)
 int dashCooldownMs(uint8_t mods = 0);
@@ -104,9 +116,9 @@ int dashRechargeMs(uint8_t mods = 0);
 // and the cooldown since the last one ended over by that command's first step. Bots and the HUD use it, so they match pmove.
 bool dashReady(const MoveState& s);
 // is this dash aimed down far enough that a jump makes it a super dash (else a dash jump)
-bool dashAimedDown(const MoveState& s);
+bool dashAimedDown(const MoveState& s, const Map* map = nullptr);
 // every charge back at once and nothing recharging (a teammate's syringe)
-void dashRefillAll(MoveState& s);
+void dashRefillAll(MoveState& s, const Map* map = nullptr);
 // The players a grapple fired in this command can latch onto (the server fills it, lag compensated: where the shooter
 // saw them; enemies only). The hook takes the nearest of these or the map along its ray; `hit` says which box caught.
 struct HookProbe {

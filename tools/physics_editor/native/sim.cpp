@@ -57,7 +57,8 @@ float strafeYaw(const MoveState& s, int forward, int side, float curYawDeg, int 
             for (int i = -4; i <= 4; i++) { float th = best + i * span * 0.25f; float g = gain(th); if (g > bestG) { bestG = g; best = th; } }
         return yawFor(best);
     }
-    const MoveTuning& mt = moveTuning();
+    MoveTuning scratch;   // (the values this ms plays by: movement equations worked out for s, as pmove does)
+    const MoveTuning& mt = stepTuning(s, &map, scratch);
     const float airAccel = moveParamBase(MV_AIR_ACCEL) * mt.m[MV_AIR_ACCEL] * 10.0f;
     const float airCap = moveParamBase(MV_AIR_CAP) * mt.m[MV_AIR_CAP];
     const float airControl = moveParamBase(MV_AIR_CONTROL) * mt.m[MV_AIR_CONTROL];
@@ -118,7 +119,9 @@ struct Watch {
             Json e = ev("dash", t, a);
             e.set("charges", (int)a.dashCharges);
             e.set("dir", vec(Vec3(a.dashDirX, a.dashUp, a.dashDirZ), 1e-4));
-            e.set("aimedDown", dashAimedDown(a));
+            MoveState q = b;
+            q.dashUp = a.dashUp;
+            e.set("aimedDown", dashAimedDown(q, &map));
             out.push(std::move(e));
         }
         const bool wasDashing = b.dashTimer > 0 || dashStart;
@@ -127,7 +130,9 @@ struct Watch {
             const bool early = dashStart || b.dashTimer > 1.5f * kMoveStep;
             if (early && a.vel.y > 0.01f) {
                 tech = true;
-                const char* k = dashAimedDown(a) ? "superDash" : "dashJump";
+                MoveState q = b;   // (pmove's test: this dash's aim, the dash_vertical of the step it ended in)
+                q.dashUp = a.dashUp;
+                const char* k = dashAimedDown(q, &map) ? "superDash" : "dashJump";
                 Json e = ev(k, t, a);
                 e.set("vy", roundTo(a.vel.y, 1e-4));
                 e.set("charges", (int)a.dashCharges);
@@ -316,7 +321,6 @@ MoveState startState(const Vec3& pos, const Vec3& vel, int onGround, int dashCha
     MoveState s;
     s.pos = pos;
     s.vel = vel;
-    s.dashCharges = (uint8_t)(dashCharges >= 0 ? std::min(dashCharges, dashMaxCharges(0)) : dashMaxCharges(0));
     bool g = onGround == 1;
     if (onGround < 0) {
         const float probe = map.sweepAxis(playerBox(pos, false), 1, -0.05f);
@@ -324,6 +328,8 @@ MoveState startState(const Vec3& pos, const Vec3& vel, int onGround, int dashCha
         if (g) s.pos.y += probe;
     }
     if (g) s.flags |= MF_ONGROUND;
+    const int most = dashMaxCharges(s, &map);   // (for this start: a dash_charges equation sees it, with the usual 2 held)
+    s.dashCharges = (uint8_t)(dashCharges >= 0 ? std::min(dashCharges, most) : most);
     return s;
 }
 

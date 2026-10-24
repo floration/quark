@@ -11,6 +11,7 @@ quark_maptool physpresets                    the built-in scenarios ({"run": tru
 quark_maptool physsim     [request.json]     runs a scenario under one or more physics sets
 quark_maptool physdrive   --stream           drive the real pmove line by line (WASD + mouse from the page)
 quark_maptool physexport  [request.json]     a physics set as .qmode text and as a list of C++ constants
+quark_maptool physexpr    [request.json]     a set's movement equations: errors, static / dynamic, deps, sampled curves
 ```
 
 Every command runs the game's own `pmove()` (src/game/pmove.cpp) unchanged, one 1 ms command at a time like the
@@ -37,6 +38,23 @@ $ quark_maptool physdrive --stream
 {"type":"state","t":0.016,"pos":[0.019,0,0],"vel":[2.221,0,0],"speed":2.221,"hspeed":2.221,"flags":1,...,"events":[],"us":64.4}
 stop
 {"type":"done","t":0.016}
+```
+
+Movement equations (v2, `../INTERFACE.md`): any physics set may carry `"expr": {"<key>": "<expression>"}` (or
+`expr.<key>=` lines in its qmode). They go into `CustomRules::exprs` through fromText like every value, and
+`setActiveRules` builds them exactly as the game does (src/game/moveexpr.h: static ones resolved, dynamic ones compiled
+and run by pmove every 1 ms step), so physsim and physdrive play them. Every answer's `physics` lists them
+(`expr`, `exprs`: ok / error / dynamic / deps / inputs / value).
+
+```
+$ echo '{"expr":{"friction":"curve(p.hspeed, 2, 12, 2, 0.6, \"inout\")","air_cap":"sped"},"samples":5}' | quark_maptool physexpr
+{"items":[{"key":"friction","ok":true,"dynamic":true,"deps":[],"inputs":["p.hspeed"],"value":2,"absolute":14,...,
+  "samples":[{"input":"p.hspeed","unit":"m/s","x":[0,12.5,25,37.5,50],"y":[2,0.6,0.6,0.6,0.6],"abs":[14,4.2,...]}]},
+ {"key":"air_cap","ok":false,"error":"col 1: unknown name 'sped' (a setting key, p.<input>, base.<key>, pi, ...)",...}],
+ "order":["friction"],"dynamic":1,"ops":2,...}
+
+$ echo '{"physics":{"expr":{"friction":"curve(p.hspeed, 2, 9.5, 2, 1)"}},"preset":"stop","compare":["standard"]}' | quark_maptool physsim
+... stopDistance 0.8077 m in 0.213 s (standard 1.2058 m in 0.364 s)
 ```
 
 ## The test room (testroom.cpp)
@@ -85,13 +103,15 @@ Linux, 4 cores, release build, whole process runs:
 - physpresets with `run: true` (all 15 presets): 14 ms.
 - physdrive: a 16 ms batch of commands is answered in about 50 us of compute.
 - physparams, physroom, physexport: under 1 ms.
+- physexpr, three equations sampled 101 points each: 0.3 ms of compute, 3.5 ms whole process.
 
 ## Code
 
 | file | what |
 |---|---|
 | `physics.h` | the shared declarations (namespace `phys`: no clashes with the other editors' files) |
-| `physics.cpp` | physics sets (JSON / .qmode -> CustomRules through fromText), `physparams`, `physexport` and its table of C++ constants |
+| `physics.cpp` | physics sets (JSON / .qmode -> CustomRules through fromText, equations included), `physparams` (with the equation language), `physexport` and its table of C++ constants |
+| `expr.cpp` | `physexpr`: a set's equations built by the game's moveexpr, each dynamic one sampled over its inputs |
 | `testroom.cpp` | the test room, `physroom`, the request's map (`room`, `room:<part>`, a name, `{text|file|name|map}`) |
 | `sim.cpp` | the scenario runner, the strafe bot, the events, the metrics, the presets, `physsim`, `physpresets`, `physdrive` |
 | `test_phys.py` | runs every command and checks the numbers (python3 stdlib): `python3 tools/physics_editor/native/test_phys.py [quark_maptool]` |
@@ -107,6 +127,9 @@ The helper never reads the sources at run time. A few numbers it needs are not p
   `moveParamBase`. The `"search"` strafe bot needs none of them, and the test checks that both agree.
 - the events: a dash start is `dashReady()` (pmove.h) plus a fresh press; a dash jump / super dash is a dash that ends
   with more than 1 ms left while rising, `dashAimedDown()` telling the two apart.
+
+The strafe bot's computed angle reads the active set's tuning for the state it aims from (`stepTuning`, pmove.h), so
+with dynamic equations on the air settings it aims by the values pmove's next step uses, as `"search"` does.
 
 The game's bots (src/game/bots.cpp) air-strafe with their own copy of the angle (acos(2.3 / speed)); it is inline in
 their think function and can't be called from here.

@@ -176,6 +176,49 @@ check("custommode=Test Set" in ex["qmode"] and "move_dash_charges=1.5" in ex["qm
 std = run("physexport", {})[0]
 check("no change" in std["cpp"] and std["changes"] == [], "standard: no change")
 
+print("equations (v2: expr.<key>= lines, src/game/moveexpr.h)")
+ex = pp["expr"]
+check([i["name"] for i in ex["inputs"]] == ["p.speed", "p.hspeed", "p.vspeed", "p.air", "p.ground", "p.onground", "p.charges",
+                                           "p.dashing", "p.hooked", "p.height"], "physparams lists the inputs")
+check({"sqrt", "pow", "curve", "ease", "clamp", "lerp", "step"} <= {f["name"] for f in ex["functions"]} and "inout" in ex["ease"],
+      "physparams lists the functions and ease modes")
+pe, rc, _ = run("physexpr", {"expr": {"friction": "curve(p.hspeed, 2, 12, 2, 0.6, \"inout\")", "stop_speed": "friction * 2",
+                                      "jump": "sqrt(speed)", "speed": "1.21", "air_cap": "sped", "air_accel": "air_control",
+                                      "air_control": "air_accel"}, "samples": 11})
+it = {i["key"]: i for i in pe["items"]}
+check(rc == 0 and it["friction"]["dynamic"] and it["friction"]["inputs"] == ["p.hspeed"] and it["friction"]["value"] == 2,
+      "a dynamic curve: reads p.hspeed, x2 at rest")
+fs = it["friction"]["samples"][0]
+check(fs["input"] == "p.hspeed" and len(fs["x"]) == 11 and fs["y"][0] == 2 and near(fs["y"][-1], 0.6, 1e-6) and
+      all(b <= a for a, b in zip(fs["y"], fs["y"][1:])), "sampled over p.hspeed 0..50: 2 down to 0.6, never rising")
+check(it["stop_speed"]["dynamic"] and it["stop_speed"]["deps"] == ["friction"] and it["stop_speed"]["direct"] == []
+      and near(it["stop_speed"]["samples"][0]["y"][-1], 1.2, 1e-6), "dynamic through another setting (friction x 2)")
+check(not it["jump"]["dynamic"] and near(it["jump"]["value"], 1.1, 1e-6) and pe["order"].index("speed") < pe["order"].index("jump"),
+      "static: sqrt(speed) = 1.1, after speed")
+check(not it["air_cap"]["ok"] and "unknown name 'sped'" in it["air_cap"]["error"], "a parse error, with where and why")
+check("cycle" in it["air_accel"]["error"] and "cycle" in it["air_control"]["error"], "a cycle is an error on each")
+pe2, rc, _ = run("physexpr", {"expr": "p.air > 0.25 ? 1.6 : 0.8", "key": "gravity", "inputs": {"p.air": [0, 0.5]}, "samples": 3})
+g = pe2["items"][0]["samples"][0]
+check(g["x"] == [0, 0.25, 0.5] and g["y"] == [0.8, 0.8, 1.6] and near(g["abs"][2], 35.2, 1e-4), "a string expr with key, a given input range")
+sim, rc, _ = run("physsim", {"physics": {"expr": {"friction": "curve(p.hspeed, 2, 9.5, 2, 1)"}}, "preset": "stop", "compare": ["standard"]})
+a, b = sim["runs"][0]["metrics"], sim["runs"][1]["metrics"]
+check(b["stopDistance"] * 0.6 < a["stopDistance"] < b["stopDistance"] * 0.75 and a["stopTime"] < b["stopTime"],
+      "physsim plays a friction curve: stop %.3f m in %.3f s (standard %.3f m)" % (a["stopDistance"], a["stopTime"], b["stopDistance"]))
+check(sim["runs"][0]["physics"]["expr"] == {"friction": "curve(p.hspeed, 2, 9.5, 2, 1)"} and not sim["runs"][0]["physics"]["standard"],
+      "the answer echoes the equation")
+sim, rc, _ = run("physsim", {"qmode": "custommode=q\nexpr.gravity=p.air > 0.15 ? 2 : 1\n", "preset": "standing_jump"})
+check(near(sim["runs"][0]["metrics"]["jumpHeight"], 1.0393, 0.002), "qmode expr line: gravity x2 after 0.15 s in the air (%.4f m)" % sim["runs"][0]["metrics"]["jumpHeight"])
+sim, rc, _ = run("physsim", {"physics": {"expr": {"friction": "1 + 0 * p.speed"}}, "preset": "stop", "sampleMs": 1, "compare": ["standard"]})
+check(sim["runs"][0]["trace"] == sim["runs"][1]["trace"], "an always-1 equation runs exactly the standard trace")
+bad, rc, _ = run("physsim", {"physics": {"expr": {"nothing": "1"}}, "preset": "stop"})
+check(rc == 1 and "isn't a movement setting" in bad["error"], "an unknown key is an error")
+ex2, rc, _ = run("physexport", {"physics": {"expr": {"friction": "curve(p.hspeed, 2, 9.5, 2, 1)", "jump": "sqrt(speed)", "speed": "1.21"}}})
+check("expr.friction=curve(p.hspeed, 2, 9.5, 2, 1)" in ex2["qmode"] and "move_friction=2\n" in ex2["qmode"] and "\njump=1.1\n" in ex2["qmode"],
+      "physexport: expr lines, and the plain lines at the value at rest / resolved")
+check("// dynamic: friction = curve(p.hspeed, 2, 9.5, 2, 1)" in ex2["cpp"] and "// static: jump = sqrt(speed)" in ex2["cpp"],
+      "physexport: the C++ list names the equations")
+st = None
+
 print("physdrive --stream")
 p = subprocess.Popen([EXE, "physdrive", "--stream"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 sel = selectors.DefaultSelector()
@@ -214,6 +257,12 @@ try:
     st = send({"cmd": [{"buttons": {"jump": True}, "msec": 8}] + [{"msec": 8}] * 200})
     land = [e for e in st["events"] if e["kind"] == "land"]
     check(land and near(land[0]["height"], 2.44, 0.03), "gravity x0.5 in drive: 2.44 m jump")
+    st = send({"physics": {"expr": {"gravity": "p.air > 0.15 ? 2 : 1"}}})
+    check(st["physics"]["exprs"][0]["dynamic"], "an equation swapped in live")
+    st = send("reset")
+    st = send({"cmd": [{"buttons": {"jump": True}, "msec": 8}] + [{"msec": 8}] * 200})
+    land = [e for e in st["events"] if e["kind"] == "land"]
+    check(land and near(land[0]["height"], 1.0393, 0.003), "the equation in drive: %.4f m jump" % (land[0]["height"] if land else 0))
     st = send("bogus")
     check(st["type"] == "warning", "a bad line is a warning")
     st = send("stop")
