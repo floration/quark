@@ -10,6 +10,7 @@ import { WEAPONS } from "./catalog.js";
 const isFieldName = (n) => !!(catalog() && catalog().byKey.has(n));
 const isBuiltin = (fn) => !!(catalog() && catalog().builtinShape[fn]);
 import { exprNumText, printDeclHead, roundTo } from "./dsl.js";
+import { addButton, emptyHint } from "./newdecl.js";
 
 const W = 176, HEAD = 24, LINE = 18, COLW = 216, INDENT = 230, GAP = 16;
 
@@ -348,7 +349,8 @@ export class GraphView {
         this.stage = document.createElement("div"); this.stage.className = "gr-stage";
         this.mini = document.createElement("canvas"); this.mini.className = "gr-minimap";
         this.mini.title = "the whole set: click or drag to move there";
-        this.stage.append(this.svgEl, this.mini);
+        this.emptyEl = document.createElement("div"); this.emptyEl.className = "gr-empty";
+        this.stage.append(this.svgEl, this.mini, this.emptyEl);
         const wrap = document.createElement("div"); wrap.className = "gr-wrap";
         wrap.append(this.stage, this.side);
         root.append(this.bar, wrap);
@@ -380,8 +382,17 @@ export class GraphView {
     }
     // the page shows this view: whole mode keeps its pan / zoom (fit the first time), the others fit
     shown() {
-        if (this.mode === "whole" && this.wholeView) { this.view = { ...this.wholeView }; this._applyView(); return; }
+        if (this.mode === "whole" && this.wholeView) {
+            this.view = { ...this.wholeView }; this._applyView();
+            // a saved camera can point at empty canvas (the frames moved since: a search, added logic): fit instead
+            if (this.wg && this.wg.frames.length && !this.wg.frames.some((f) => this._inView(f.x, f.y, f.w, f.h))) this.fit();
+            return;
+        }
         this.fit();
+    }
+    _inView(x, y, w, h) {
+        const a = this._toWorld(0, 0), b = this._toWorld(this.svgEl.clientWidth || 800, this.svgEl.clientHeight || 600);
+        return x < b.x && x + w > a.x && y < b.y && y + h > a.y;
     }
 
     setBrain(brain, key) {
@@ -485,6 +496,7 @@ export class GraphView {
             this.searchCount = document.createElement("span"); this.searchCount.className = "muted gr-count";
             b.append(this.searchCount);
         }
+        b.append(addButton({ app: this.app, curveForms: ["expr"], onAdded: (k, kind, existed) => this._added(k, kind, existed) }));
         if (this.mode !== "overview") btn("Auto layout", () => this._autoLayout(), false, "lay the nodes out again");
         btn("Fit all", () => this.fit(), false, "zoom to show everything");
         if (this.mode !== "overview") {
@@ -518,7 +530,7 @@ export class GraphView {
     }
 
     _addNode(op) {
-        if (!this.g) { if (this.app.app && this.app.app.toast) this.app.app.toast("click inside a slot first: the new node goes there", 3000); return; }
+        if (!this.g) { this.app.toast(this.brain && this.brain.decls.some((d) => d.kind === "slot") ? "click inside a slot first: the new node goes there" : "no slot yet: + Add makes one", 3000); return; }
         let node;
         const stmtOps = ["if", "set", "return", "pass"];
         let at = this._toWorld(this.svgEl.clientWidth / 2, this.svgEl.clientHeight / 2);
@@ -533,10 +545,14 @@ export class GraphView {
             const p = decompose(ast);
             node = { gid, kind: p.cat === "stmt" ? "stmt" : "expr", cat: p.cat, op: p.op, fields: p.fields, ins: p.inputs.map(([k]) => k), outs: p.cat === "stmt" ? [...p.stacks.map(([k]) => k), "next"] : [] };
         }
-        node.x = at.x; node.y = at.y; node.moved = true;
+        // a free spot near the middle (it used to land on top of whatever was there): down, then the next column
+        const h = nodeHeight(node), hits = (x, y) => this.g.nodes.some((n) => x < n.x + W + GAP && x + W + GAP > n.x && y < n.y + nodeHeight(n) + 8 && y + h + 8 > n.y);
+        let x = at.x, y = at.y;
+        for (let i = 0; i < 400 && hits(x, y); i++) { y += 24; if (i % 20 === 19) { y = at.y; x += W + GAP; } }
+        node.x = x; node.y = y; node.moved = true;
         this.g.nodes.push(node);
         this.sel = node.gid;
-        if (this.mode === "whole") { this._renderFrameBody(this.fr); this._side(); } else this.render();
+        if (this.mode === "whole") { this._renderFrameBody(this.fr); this._refitFrame(this.fr); this._side(); } else this.render();
     }
 
     fit() {
@@ -617,8 +633,21 @@ export class GraphView {
     }
 
     // ---- rendering
+    // a declaration was just added (newdecl.js; the app already re-rendered this view): fly to it when the graph shows it
+    _added(key, kind, existed) {
+        const d = this.brain && this.brain.decls.find((x) => declKey(x) === key);
+        if (d && (d.kind === "slot" || (d.kind === "curve" && d.form === "expr"))) { if (this.mode === "overview") this.setMode("whole"); requestAnimationFrame(() => this.select(key)); }
+        else if (d && !existed) this.app.toast(d.kind === "param" ? `param ${d.name} added: read it with a name node (Add node… › name)` : `${d.name} added: a points curve is edited in Blocks and on the Weapon tab`, 4000);
+    }
+    _empty() {
+        const none = !!this.brain && !this.brain.decls.some((d) => d.kind === "slot" || (d.kind === "curve" && d.form === "expr"));
+        this.emptyEl.textContent = "";
+        this.emptyEl.style.display = none ? "" : "none";
+        if (none) this.emptyEl.append(emptyHint({ app: this.app, curveForms: ["expr"], onAdded: (k, kind, existed) => this._added(k, kind, existed) }));
+    }
     render() {
         const L = this.layer;
+        this._empty();
         L.textContent = "";
         this._lodLevel = -1;
         this.svgEl.classList.remove("lod1", "lod2");

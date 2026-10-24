@@ -138,6 +138,24 @@ async function nodeChecks() {
         for (const shared of [false, true]) { const back = wholeGraphToBrain(ast, wholeGraph(ast, { shared })); if (print(back) !== DEMO) return "shared " + shared; }
     });
 
+    console.log("starting logic (Blocks / Graph + Add)");
+    const { addDecl } = await import(JS + "newdecl.js");
+    {
+        let set = parse('version 1\nweapons "t"\n');
+        const step = (spec) => { const r = addDecl(set, spec); if (r.error) throw new Error(r.error); set = r.set; return r.key; };
+        tryOk("+ slot hit, slot kill rocket, rifle falloff, an expression curve, a param: a set that checks clean", () => {
+            step({ kind: "slot", name: "hit" }); step({ kind: "slot", name: "kill", weapon: "rocket" }); step({ kind: "curve", name: "rifle.falloff" });
+            step({ kind: "curve", name: "ramp", form: "expr" }); step({ kind: "param", name: "bonus", type: "f32", value: "1.5" });
+            const t = print(set), p = validate(parse(t)).problems;
+            return (p.length === 0 && /param bonus f32 = 1.5\ncurve rifle.falloff[^\n]*\ncurve ramp\(x f32\) = x\nslot hit:\n  pass\nslot kill rocket:\n  pass/.test(t)) || JSON.stringify({ t, p: p.slice(0, 2) });
+        });
+        tryOk("a slot or name that's already there, a keyword or a sensor name is refused", () => {
+            const bad = [{ kind: "slot", name: "hit" }, { kind: "param", name: "bonus" }, { kind: "param", name: "slot" }, { kind: "param", name: "dist" }, { kind: "curve", name: "2x" }, { kind: "curve", name: "rifle.falloff" }];
+            const ok = bad.filter((b) => !addDecl(set, b).error);
+            return ok.length === 0 || "accepted " + JSON.stringify(ok);
+        });
+    }
+
     console.log("numbers (MOCK, standard set, 100 hp)");
     const sset = parse(STD), vals = fieldValues(sset);
     const rows = computeStats(vals, { set: sset, health: 100 }).rows;
@@ -231,6 +249,8 @@ async function serverChecks({ STD, DEMO }) {
     const hp = await post("/api/helper", { args: ["simcheck"], request: {} });
     ok(maptool ? hp.status === 200 && typeof hp.json.code === "number" : hp.status === 501, "/api/helper", maptool ? "code " + (hp.json && hp.json.code) : "501 without quark_maptool");
     ok((await post("/api/run", { args: ["rm", "-rf"] })).status === 400, "/api/run only runs the streaming commands");
+    const bad = await post("/api/helper", { args: ["rm"], request: {} });
+    ok(maptool ? bad.status === 400 && /not a helper command/.test(bad.json.error) : bad.status === 501 && /not found/.test(bad.json.error), "/api/helper names why it refused", bad.json && bad.json.error);
 }
 
 async function browserChecks() {
@@ -261,6 +281,20 @@ async function browserChecks() {
                 await p.waitForTimeout(500);
                 const f = path.join(dataDir, "custom_weapons", "browsertest.qweapons");
                 ok(fs.existsSync(f) && fs.readFileSync(f, "utf8").includes("param rocket.refire f32 = 0.6"), "Save writes custom_weapons/<name>.qweapons");
+                // Blocks: dragging a slot's only statement to the palette leaves a pass (an empty slot doesn't parse)
+                await p.evaluate(() => { const A = window.weaponsApp; A.setText('version 1\nweapons "bt"\nslot kill:\n  heal = 10\n', "code"); });
+                await p.click('#tabs button[data-page="blocks"]'); await p.waitForTimeout(300);
+                const trashed = await p.evaluate(() => {
+                    const B = window.weaponsApp.blocks, el = document.querySelector("#vBlocks .bk-stack .bk-stmt");
+                    B._drag = { active: true, ghost: { remove() {} }, el, target: { kind: "trash" }, from: el._src, block: el._src.block };
+                    B._dragEnd({});
+                    return window.weaponsApp.text;
+                });
+                ok(/slot kill:\n  pass\n/.test(trashed), "Blocks: trashing a slot's only statement leaves a pass", JSON.stringify(trashed));
+                // Copy values from another weapon (a variant)
+                await p.evaluate(() => { const A = window.weaponsApp; A.setText('version 1\nweapons "cv"\n', "code"); A.copyWeapon("sniper", "rifle", "std"); });
+                const cv = await p.evaluate(() => [window.weaponsApp.values.get("rifle.damage"), window.weaponsApp.values.get("rifle.refire"), window.weaponsApp.values.get("rifle.scopedRefire")]);
+                ok(cv[0] === 40 && Math.abs(cv[1] - 1.5) < 1e-6 && Math.abs(cv[2] - 1.1111112) < 1e-6, "Copy values: the sniper's numbers on the rifle, its alt fire field kept", JSON.stringify(cv));
             } else {
                 fs.mkdirSync(path.join(dataDir, "custom_weapons"), { recursive: true });
                 const demoText = fs.readFileSync(path.join(dataDir, "custom_weapons", "demo.qweapons.bak"), "utf8");
