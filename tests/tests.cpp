@@ -2784,6 +2784,10 @@ static void testTickRateFallback(uint16_t port) {
     s.setLog([](const std::string&) {});
     { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     CHECK(s.tickRate() == 1000);
+    // Loss and bandwidth only: this machine's own stalls (a busy CI box) would step the tick rate down out of turn.
+    // Stalls are tested where the test makes them (testRateBetweenRounds, testRateUndoStepUp, testRateJitter).
+    s.rateStalls_ = false;
+    s.rateWindow_ = 1.0;
     NetClient a, b;
     a.connect("127.0.0.1:" + std::to_string(port), "solo");
     b.connect("127.0.0.1:" + std::to_string(port), "duo");
@@ -2792,18 +2796,17 @@ static void testTickRateFallback(uint16_t port) {
     CHECK(a.tickRate() == s.tickRate());
     // Healthy loopback clients report no loss and the server stays at 1000 Hz (snapshots go out every
     // other tick: counting ticks instead of snapshots once read as exactly 50% loss and dropped the rate).
-    pump(s, cls, 3.2 * 1.5, idle);
+    pump(s, cls, s.rateWindow_ * 1.6, idle);
     printf("  loopback: reported loss %d%%, tick rate %d, snapshot rate %d, stalls %.2f%%\n", a.snapshotLoss(), s.tickRate(), a.snapRate(), s.stallPct_);
     CHECK(a.snapshotLoss() <= 2);
     CHECK(s.tickRate() == 1000 && s.snapRate() == 500);
     // One of them losing snapshots (its own wifi): nothing changes.
     a.overrideReportedLoss(50);
-    pump(s, cls, 3.2 * 2, idle);
+    pump(s, cls, s.rateWindow_ * 2.2, idle);
     printf("  one player losing snapshots: %d Hz, %d snapshots/s\n", s.tickRate(), s.snapRate());
     CHECK(s.tickRate() == 1000 && s.snapRate() == 500);
     // Both (the server's uplink): the snapshot rate steps down first, to its floor, then the tick rate.
     b.overrideReportedLoss(50);
-    s.rateWindow_ = 1.5;
     std::vector<std::pair<int, int>> steps;   // (tick rate, snapshot rate) after each change
     std::pair<int, int> was{s.tickRate(), s.snapRate()};
     for (int k = 0; k < 160 && s.tickRate() > 125; k++) {

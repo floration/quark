@@ -319,6 +319,7 @@ public:
     double rateWindow_ = 3.0;      // seconds per rate test window (tests shorten it)
     std::string rateWhy_;          // the last automatic rate change and why (status)
     double stallAfter_ = 1, stallUpAfter_ = 1;   // real seconds late past which a tick is a stall, now / at the next step up
+    bool rateStalls_ = true;       // tests only: false leaves stalls out of the rate test (loss / bandwidth tests on a busy box)
     double upKbps_ = -1, downKbps_ = 0, upPps_ = 0, downPps_ = 0, stallPct_ = 0;   // the last window's (status; -1: none yet)
     int tickRate() const { return kTickRates[rateLevel_]; }
     float dt() const { return 1.0f / tickRate(); }
