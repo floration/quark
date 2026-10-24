@@ -18,3 +18,4 @@ ModeCompile compileModeText(const std::string& text, int base, const std::vector
 }
 
 int modeBaseFromName(const std::string& name) { return modeBaseByName(name); }
+const char* modeSlotNameOf(int slot) { return modeSlotName(slot); }

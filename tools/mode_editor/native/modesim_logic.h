@@ -20,3 +20,4 @@ struct ModeCompile {
 // extraErrors (line 0) are added to the errors, and make the answer not ok (checkmode --map's missing features).
 ModeCompile compileModeText(const std::string& text, int base, const std::vector<std::string>& extraErrors = {});
 int modeBaseFromName(const std::string& name);   // the logic's mode names ("arena" = 1v1, "1v1" too); -1
+const char* modeSlotNameOf(int slot);            // modelogic.h's modeSlotName (ModeSlot as an int: "tick", "kill", ...)

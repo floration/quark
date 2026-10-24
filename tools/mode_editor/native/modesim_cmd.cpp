@@ -10,10 +10,11 @@
 // rather than using BotSim (tools/map_editor/native/botsim.h has no custom rules and belongs to the map / bot editors).
 //
 // Mode LOGIC: the language (src/game/modelogic.h) is compiled here for the label, the interpreted slots and the
-// errors. Whether the SERVER runs it is up to the game-side hook (mode editor phase 3, G1: src/game/gamemodes.*,
-// server.*). Until that lands a request with logic still plays the match with its key=value rules on the base mode
-// and says `logicApplied: false`. Everything that touches that hook is in the "logic hook" block below.
+// errors; the server runs it through the game's hook (mode editor phase 3: Server::presetModeLogic, ModeHooks). Each
+// answer says whether it did (`logicApplied`), and the interpreted slots' cost is measured by wrapping the server's
+// ModeHooks (TimedHooks below: no game code involved). Everything that touches the hook is in the "logic hook" block.
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -34,6 +35,7 @@
 #include "common/net.h"
 #include "common/u8file.h"
 #include "common/rng.h"
+#include "game/botbrain.h"
 #include "game/bots.h"
 #include "game/customrules.h"
 #include "game/gamedefs.h"
@@ -54,7 +56,9 @@ namespace fs = std::filesystem;
 //   2. serverRunsLogic(s): after start, whether the server runs logic: Server::modeHooks_ (gamemodes.h ModeHooks, G1's
 //      rules refactor) is non-null. logicApplied in every answer is that AND the file having logic: never claimed from
 //      the request alone. When G1's API can report what it loaded (a label / hash), also compare it with S.compiled.hash.
-//   (3. later: per-slot timings for `trace` / perf.logicNs need counters or a callback around ModeHooks::event/query.)
+//   3. TimedHooks: per-slot timings for `trace` and perf.logicNs. After start, the server's ModeHooks is wrapped in one
+//      that forwards every call and times it (rulesReset takes Server::modeHooks_ from modeLogicHooks_, so the wrapper
+//      goes there too and every later reset keeps it).
 template <class S, class = void> struct HasModeHooks : std::false_type {};
 template <class S> struct HasModeHooks<S, std::void_t<decltype(std::declval<const S&>().modeHooks_ != nullptr)>> : std::true_type {};
 template <class S> bool serverRunsLogicT(const S& s) {
@@ -67,6 +71,40 @@ template <class T> struct HasLogicText<T, std::void_t<decltype(std::declval<T&>(
 template <class C> void setLogicText(C& c, const std::string& text) {
     if constexpr (HasLogicText<C>::value) c.logic = text; else (void)c, (void)text;
 }
+using Clock = std::chrono::steady_clock;
+// The server's ModeHooks with a stopwatch: each event / query it forwards is timed. A slot can raise another (an
+// event's action ends the round, which runs roundOver...): the nested call's time is in its caller's too, so the
+// per-tick logic time counts only the outermost calls, while each slot's own totals are inclusive.
+class TimedHooks final : public ModeHooks {
+public:
+    explicit TimedHooks(std::shared_ptr<ModeHooks> in) : in_(std::move(in)) { interp = in_->interp; params = in_->params; }
+    bool event(Server& s, ModeSlot slot, int a, int b, int c) override { Scope sc(*this, slot); return in_->event(s, slot, a, b, c); }
+    bool query(const Server& s, ModeSlot slot, int a, int b, int c, double& out) override { Scope sc(*this, slot); return in_->query(s, slot, a, b, c, out); }
+    void nativeLifetime(ModeSlot slot) override { in_->nativeLifetime(slot); }
+    struct Agg { long long calls = 0; double ns = 0, max = 0; };
+    using Aggs = std::array<Agg, 64>;   // by ModeSlot (gamemodes.h: MSLOT_COUNT <= 64, MSLOT_TIMER among them)
+    // the outermost calls' time since the last take (one per tick)
+    double takeNs() { double v = pending_; pending_ = 0; return v; }
+    // per slot since the last take (a frame's), and for the whole match
+    Aggs takeFrame() { Aggs o = frame_; frame_ = Aggs(); return o; }
+    const Aggs& totals() const { return total_; }
+    void clear() { pending_ = 0; frame_ = total_ = Aggs(); }
+private:
+    struct Scope {
+        TimedHooks& h; int slot; Clock::time_point t0;
+        Scope(TimedHooks& h_, int slot_) : h(h_), slot(slot_ & 63), t0(Clock::now()) { h.depth_++; }
+        ~Scope() {
+            const double ns = std::chrono::duration<double, std::nano>(Clock::now() - t0).count();
+            if (--h.depth_ == 0) h.pending_ += ns;
+            for (Agg* a : {&h.frame_[slot], &h.total_[slot]}) { a->calls++; a->ns += ns; a->max = std::max(a->max, ns); }
+        }
+    };
+    std::shared_ptr<ModeHooks> in_;
+    int depth_ = 0;
+    double pending_ = 0;
+    Aggs frame_{}, total_{};
+};
+const char* hookSlotName(int slot) { return slot == MSLOT_TIMER ? "timers" : modeSlotNameOf(slot); }   // (MSLOT_TIMER: every timer)
 // --------------------------------------------------------------------------------------------------------------------
 
 // Server::simulate is private (frame() runs it on the real-time clock). An explicit instantiation may name a private
@@ -103,25 +141,22 @@ int modeByAnyName(const std::string& n) {
     return m;
 }
 
-// A .qmode split at its `logic N` line: the key lines, the logic block (from that line to the end, "" = none).
+// A .qmode split where the game splits it (customrules.cpp isModeLogicLine): the key lines, the logic block (from that
+// line to the end, "" = none).
 void splitQmode(const std::string& text, std::string& keys, std::string& logic) {
     keys.clear(); logic.clear();
     size_t pos = 0;
     while (pos < text.size()) {
         size_t e = text.find('\n', pos);
         size_t end = e == std::string::npos ? text.size() : e;
-        std::string line = text.substr(pos, end - pos);
-        while (!line.empty() && (line.back() == '\r' || line.back() == ' ' || line.back() == '\t')) line.pop_back();
-        bool isLogic = line.compare(0, 6, "logic ") == 0 && line.size() > 6 &&
-                       line.find_first_not_of("0123456789", 6) == std::string::npos;
-        if (isLogic) { logic = text.substr(pos); return; }
+        if (isModeLogicLine(text.substr(pos, end - pos))) { logic = text.substr(pos); return; }   // (the game's own rule)
         keys += text.substr(pos, (e == std::string::npos ? text.size() : e + 1) - pos);
         pos = e == std::string::npos ? text.size() : e + 1;
     }
 }
 
 // ---- the request ------------------------------------------------------------------------------------------------
-struct BotReq { int team = TEAM_A; int skill = BOT_ADVANCED; std::string name; };
+struct BotReq { int team = TEAM_A; int skill = BOT_ADVANCED; std::string name, brain; };   // brain: "" = the built-in one
 
 struct Setup {
     std::string mapName, mapText;      // the map as written into the run's data folder
@@ -142,8 +177,35 @@ struct Setup {
     double speed = 1;
     bool trace = false;
     bool positions = true;
+    bool mapView = true;               // the start line's top-down map (modesim)
+    std::map<std::string, std::string> brains, brainLabels;   // the brains the bots play: name -> text, name -> name#hash
     std::vector<std::string> warnings;
 };
+
+// A brain named by the request: its text from request.brains (serve.py puts the user's bots/<name>.qbrain there), else
+// the player's bots folder (before prepareDir points the game's data folder at the run's). It must compile.
+bool resolveBrain(const Json& req, const std::string& name, Setup& S, std::string& err) {
+    if (name.empty() || name == "default" || S.brains.count(name)) return true;
+    for (char c : name) if (!isalnum((unsigned char)c) && c != '_' && c != '-') { err = "brain '" + name + "': letters, digits, _ and -"; return false; }
+    std::string text;
+    const Json& inl = req["brains"][name];
+    if (inl.isStr()) text = inl.str();
+    else if (inl.isObj() && inl["text"].isStr()) text = inl["text"].str();
+    else {
+        std::ifstream f(utf8Path(userDataPath("bots") + "/" + name + ".qbrain"), std::ios::binary);
+        if (!f) { err = "brain '" + name + "' not found (give its text in \"brains\", or put it in the bots folder)"; return false; }
+        std::ostringstream ss; ss << f.rdbuf(); text = ss.str();
+    }
+    BrainDiag d;
+    auto b = compileBrain(text, &d);
+    if (!b) {
+        err = "brain '" + name + "' doesn't compile" + (d.errors.empty() ? std::string() : ": " + std::to_string(d.errors[0].line) + ":" + std::to_string(d.errors[0].col) + " " + d.errors[0].msg);
+        return false;
+    }
+    S.brains[name] = text;
+    S.brainLabels[name] = brainLabel(*b);
+    return true;
+}
 
 // the logic hook, part 1 (see the TODO at the top): before Server::start
 // G1's API (server.h): Server::presetModeLogic(text, base, err) compiles the .qmode exactly as compileModeText did (the
@@ -238,7 +300,9 @@ bool parseSetup(const Json& req, Setup& S, bool batch, std::string& err, Json* e
     S.speed = std::max(0.0, req["speed"].num(1));
     S.trace = req["trace"].boolean(false);
     S.positions = req["positions"].boolean(true);
+    S.mapView = req["mapView"].boolean(true);
     const int skill = skillFromJson(req["skill"], BOT_ADVANCED);
+    const std::string brain = req["brain"].str("");
     const bool teams = modeIsTeamBased(S.mode);
     auto add = [&](const Json& p) {
         BotReq b;
@@ -247,13 +311,16 @@ bool parseSetup(const Json& req, Setup& S, bool batch, std::string& err, Json* e
         b.team = t == "b" ? TEAM_B : t == "a" ? TEAM_A : (teams && n % 2) ? TEAM_B : TEAM_A;
         b.skill = skillFromJson(p["skill"], skill);
         b.name = p["name"].str().substr(0, 24);
+        b.brain = p["brain"].str(brain);
+        if (b.brain == "default") b.brain.clear();
         S.bots.push_back(b);
     };
     if (req["bots"].isNum()) for (int k = 0; k < req["bots"].i(); k++) add(Json::object());
     else if (req["bots"].isArr()) for (auto& p : req["bots"].items()) add(p);
     else for (int k = 0; k < (S.mode == MODE_DUEL || S.mode == MODE_ARENA ? 2 : 8); k++) add(Json::object());
     if (S.bots.empty() || (int)S.bots.size() > kMaxPlayers) { err = "1 to 32 bots"; return false; }
-    if (S.trace) S.warnings.push_back("trace: per-slot calls need the game's logic hook (mode editor phase 3): no slot lines yet");
+    for (const BotReq& b : S.bots) if (!resolveBrain(req, b.brain, S, err)) return false;
+    if (S.trace && S.logicBlock.empty()) S.warnings.push_back("trace: the rules have no logic, so every slot is native: there is nothing to trace");
     (void)batch;
     return true;
 }
@@ -285,6 +352,9 @@ public:
     Json winner() const;
     Json leader() const;
     Json perf() const;
+    Json slotFrame();                  // the interpreted slots' calls since the last frame (trace)
+    Json slotTotals() const;           // ... over the whole match
+    Json mapView() const;              // the map seen from above: boxes, spawns, objectives (the Sim plot draws it)
     bool runsLogic() const { return server_ && serverRunsLogicT(*server_); }
     std::string logicHash() const { return server_ && server_->modeLogic() ? server_->modeLogic()->hash : std::string(); }   // (what it loaded)
     const std::vector<std::string>& serverLog() const { return serverLog_; }
@@ -296,6 +366,7 @@ public:
 private:
     std::unique_ptr<Server> server_;
     std::vector<int> ids_;
+    std::vector<std::string> brains_;   // per bot (ids_'s order): its brain's name ("" = the built-in one)
     double t0_ = 0, matchOverAt_ = -1;
     bool started_ = false;
     std::string logPath_;
@@ -311,6 +382,8 @@ private:
     struct Prev { bool alive = false; int checkpoint = 0; bool finished = false; bool it = false; };
     Prev prev_[kMaxPlayers];
     std::vector<float> tickNs_;
+    std::shared_ptr<TimedHooks> timed_;   // the server's ModeHooks behind a stopwatch (null: no logic runs)
+    std::vector<float> logicNs_;          // the logic's time per tick (its outermost slot calls), while it runs
     long long ticks_ = 0;
     double simWall_ = 0;
     void tickOnce();
@@ -342,13 +415,21 @@ bool ModeMatch::start(const Setup& S, uint32_t seed, const std::string& dataDir,
     std::string e;
     if (!applyLogicHook(s, sc, S, &e)) { server_.reset(); if (err) *err = "logic: " + e; return false; }   // (the logic hook)
     if (!s.start(sc, &e)) { server_.reset(); if (err) *err = "server: " + e; return false; }
+    if (s.modeLogicHooks_) {   // (the logic hook, part 3: time every slot the server runs through the logic)
+        std::shared_ptr<ModeHooks> in = s.modeLogicHooks_;
+        timed_ = std::make_shared<TimedHooks>(in);
+        s.modeLogicHooks_ = timed_;
+        if (s.modeHooks_ == in.get()) s.modeHooks_ = timed_.get();
+    }
     for (int k = 0; k < 20000 && !s.nav_.ready(s.map_); k++) sleepMs(1);   // (bots stand still without the nav graph)
     for (const BotReq& b : S.bots) {
-        int id = s.addBot(b.team, b.skill);
+        int id = s.addBot(b.team, b.skill, false, b.brain.empty() ? nullptr : &b.brain);
         ids_.push_back(id);
+        brains_.push_back(b.brain);
         if (id >= 0 && !b.name.empty()) s.players_[id].name = b.name;
     }
     tickNs_.reserve((size_t)(S.seconds * S.tickRate) + 1024);
+    if (timed_) logicNs_.reserve(tickNs_.capacity());
     // a second of warmup (the bots join and spawn), then the match starts as a vote would start it
     step(std::max(1, s.tickRate()), false);
     s.command("forcestart");
@@ -358,6 +439,8 @@ bool ModeMatch::start(const Setup& S, uint32_t seed, const std::string& dataDir,
     rounds_ = Json::array();
     matchOverAt_ = -1; matchText_.clear(); winTeam_ = winPlayer_ = -1;
     tickNs_.clear(); ticks_ = 0; simWall_ = 0;
+    logicNs_.clear();
+    if (timed_) timed_->clear();
     pPhase_ = s.ms_.phase;
     started_ = true;
     return true;
@@ -372,6 +455,7 @@ void ModeMatch::tickOnce() {
     s.tick_++;
     s.timeMs_ += 1000 / s.tickRate();
     if (s.tick_ % s.snapEvery() == 0) s.sendSnapshotsForTest();   // (no clients: bookkeeping, as frame() does it)
+    if (timed_) { const double ns = timed_->takeNs(); if (s.modeHooks_) logicNs_.push_back((float)ns); }   // (while the logic plays)
 }
 
 int ModeMatch::step(int ticks, bool stopAtMatchEnd) {
@@ -518,11 +602,13 @@ void ModeMatch::readLog() {
 Json ModeMatch::startBots() const {
     const Server& s = *server_;
     Json a = Json::array();
-    for (int id : ids_) {
+    for (size_t k = 0; k < ids_.size(); k++) {
+        const int id = ids_[k];
         if (id < 0) continue;
         const ServerPlayer& p = s.players_[id];
         Json o = Json::object();
         o.set("id", id); o.set("name", p.name); o.set("team", teamStr(p.team)); o.set("skill", botSkillName(s.bots_[id].skill));
+        o.set("brain", brains_[k].empty() ? "default" : brains_[k]);
         a.push(std::move(o));
     }
     return a;
@@ -633,24 +719,87 @@ Json ModeMatch::result() const {
     return r;
 }
 
+// avg / p99 / max of per-tick nanoseconds (null: none)
+Json nsStats(const std::vector<float>& src) {
+    if (src.empty()) return Json();
+    std::vector<float> v = src;
+    double sum = 0; for (float x : v) sum += x;
+    size_t k99 = v.size() * 99 / 100;
+    std::nth_element(v.begin(), v.begin() + k99, v.end());
+    float p99 = v[k99];
+    float mx = *std::max_element(v.begin(), v.end());
+    Json o = Json::object();
+    o.set("avg", std::round(sum / v.size())); o.set("p99", std::round(p99)); o.set("max", std::round(mx)); o.set("ticks", (double)v.size());
+    return o;
+}
+
+Json aggJson(int slot, const TimedHooks::Agg& a) {
+    Json o = Json::object();
+    o.set("slot", hookSlotName(slot)); o.set("calls", (double)a.calls); o.set("ns", std::round(a.ns));
+    o.set("avg", a.calls ? std::round(a.ns / a.calls) : 0.0); o.set("max", std::round(a.max));
+    return o;
+}
+
+Json ModeMatch::slotFrame() {
+    Json a = Json::array();
+    if (!timed_) return a;
+    const TimedHooks::Aggs f = timed_->takeFrame();
+    for (int k = 0; k < (int)f.size(); k++) if (f[k].calls) a.push(aggJson(k, f[k]));
+    return a;
+}
+
+Json ModeMatch::slotTotals() const {
+    Json a = Json::array();
+    if (!timed_) return a;
+    const TimedHooks::Aggs& t = timed_->totals();
+    std::vector<int> order;
+    for (int k = 0; k < (int)t.size(); k++) if (t[k].calls) order.push_back(k);
+    std::sort(order.begin(), order.end(), [&](int x, int y) { return t[x].ns > t[y].ns; });   // (the costliest first)
+    for (int k : order) a.push(aggJson(k, t[k]));
+    return a;
+}
+
+Json ModeMatch::mapView() const {
+    const Map& m = server_->map_;
+    auto box = [](float x0, float z0, float x1, float z1) { Json a = Json::array(); a.push(r1(x0)); a.push(r1(z0)); a.push(r1(x1)); a.push(r1(z1)); return a; };
+    auto aabb = [&](const AABB& b) { return box(b.mn.x, b.mn.z, b.mx.x, b.mx.z); };
+    auto xz = [](const Vec3& v) { Json a = Json::array(); a.push(r1(v.x)); a.push(r1(v.z)); return a; };
+    Json v = Json::object();
+    // the solid boxes (not distant scenery, trim, water, lava or clip), each [x0, z0, x1, z1, top y], lowest first so
+    // the plot paints higher floors over lower ones
+    std::vector<const Brush*> bs;
+    for (const Brush& b : m.brushes) if (b.material != 5 && b.material < 6) bs.push_back(&b);
+    std::stable_sort(bs.begin(), bs.end(), [](const Brush* a, const Brush* b) { return a->box.mx.y < b->box.mx.y; });
+    Json boxes = Json::array();
+    float x0 = 1e9f, z0 = 1e9f, x1 = -1e9f, z1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
+    for (const Brush* b : bs) {
+        Json a = aabb(b->box); a.push(r1(b->box.mx.y));
+        boxes.push(std::move(a));
+        x0 = std::min(x0, b->box.mn.x); z0 = std::min(z0, b->box.mn.z); x1 = std::max(x1, b->box.mx.x); z1 = std::max(z1, b->box.mx.z);
+        y0 = std::min(y0, b->box.mx.y); y1 = std::max(y1, b->box.mx.y);
+    }
+    if (boxes.size()) { v.set("bounds", box(x0, z0, x1, z1)); Json y = Json::array(); y.push(r1(y0)); y.push(r1(y1)); v.set("heights", std::move(y)); }
+    v.set("boxes", std::move(boxes));
+    Json sp = Json::array();
+    for (const SpawnPoint& p : m.spawns) { Json a = xz(p.pos); a.push(p.team); sp.push(std::move(a)); }
+    v.set("spawns", std::move(sp));   // [x, z, SPAWN_* team]
+    Json sites = Json::array(); for (const AABB& b : m.bombSites) sites.push(aabb(b)); v.set("sites", std::move(sites));
+    if (m.hasHill) v.set("hill", aabb(m.hill));
+    Json pts = Json::array(); for (const AABB& b : m.points) pts.push(aabb(b)); v.set("points", std::move(pts));
+    Json cps = Json::array(); for (const AABB& b : m.checkpoints) cps.push(aabb(b)); v.set("checkpoints", std::move(cps));
+    Json path = Json::array(); for (const Vec3& p : m.payloadPath) path.push(xz(p)); v.set("cart", std::move(path));
+    return v;
+}
+
 Json ModeMatch::perf() const {
     Json p = Json::object();
     p.set("ticks", (double)ticks_);
     p.set("simSeconds", simWall_);
     p.set("ticksPerSecond", simWall_ > 0 ? ticks_ / simWall_ : 0.0);
     p.set("speedup", simWall_ > 0 ? time() / simWall_ : 0.0);   // game seconds per wall second (x real time)
-    Json tn = Json::object();
-    if (!tickNs_.empty()) {
-        std::vector<float> v = tickNs_;
-        double sum = 0; for (float x : v) sum += x;
-        size_t k99 = v.size() * 99 / 100;
-        std::nth_element(v.begin(), v.begin() + k99, v.end());
-        float p99 = v[k99];
-        float mx = *std::max_element(v.begin(), v.end());
-        tn.set("avg", std::round(sum / v.size())); tn.set("p99", std::round(p99)); tn.set("max", std::round(mx));
-    }
-    p.set("tickNs", std::move(tn));   // Server::simulate per tick (everything: movement, bots, rules, logic)
-    p.set("logicNs", Json());         // TODO(G1): the interpreted slots' share, when the hook can time them
+    Json tn = nsStats(tickNs_);
+    p.set("tickNs", tn.isNull() ? Json::object() : tn);   // Server::simulate per tick (everything: movement, bots, rules, logic)
+    p.set("logicNs", nsStats(logicNs_));   // the interpreted slots' share of each tick (null: no logic ran)
     return p;
 }
 
@@ -666,6 +815,11 @@ bool prepareDir(const Setup& S, const char* tag, std::string& dir, std::string& 
     if (ec) { err = "can't make a temp folder: " + ec.message(); return false; }
     dir = d.u8string();
     if (!saveMapFile((d / "maps" / (S.mapName + ".qmap")).u8string(), S.mapText)) { err = "can't write the map"; return false; }
+    if (!S.brains.empty()) fs::create_directories(d / "bots", ec);
+    for (auto& [name, text] : S.brains) {   // (Server::addBot loads bots/<name>.qbrain from the game's data folder)
+        std::ofstream f(d / "bots" / (name + ".qbrain"), std::ios::binary);
+        if (!(f << text)) { err = "can't write the brain " + name; return false; }
+    }
     setUserDataDir(dir);
     g_serverRateCheck = false;   // (no real-time clock to keep up with: never step the rate down)
     return true;
@@ -698,6 +852,7 @@ void startCommon(Json& s, const Setup& S, bool running, bool known = true) {
     s.set("logic", logicJson(S, running, known));
     s.set("teams", modeIsTeamBased(S.mode));
     s.set("tickRate", S.tickRate); s.set("seconds", S.seconds); s.set("until", S.untilMatchEnd ? "matchEnd" : "seconds");
+    if (!S.brainLabels.empty()) { Json b = Json::object(); for (auto& [n, l] : S.brainLabels) b.set(n, l); s.set("brains", std::move(b)); }
     Json w = Json::array();
     for (auto& x : S.warnings) w.push(x);
     for (auto& x : S.check["warnings"].items()) w.push(std::to_string(x["line"].i()) + ":" + std::to_string(x["col"].i()) + " " + x["msg"].str());
@@ -757,8 +912,9 @@ int runModeSim(const Json& req, Json& out, CmdCtx& ctx) {
         s.set("type", "start");
         startCommon(s, S, running);
         s.set("seed", (double)S.seed); s.set("rate", (double)M.tickRate() / ticksPer);
-        s.set("realtime", S.realtime); s.set("speed", S.speed); s.set("trace", false);   // (no slot lines until the hook can time slots)
+        s.set("realtime", S.realtime); s.set("speed", S.speed); s.set("trace", S.trace && running);   // (frames carry `slots`)
         s.set("bots", M.startBots());
+        if (S.mapView) s.set("mapView", M.mapView());
         Json log = Json::array();
         for (auto& l : M.serverLog())   // (not the log file or the ephemeral port: the same request gives the same lines)
             if (l.compare(0, 8, "logging ") != 0 && l.compare(0, 13, "listening on ") != 0) log.push(l);
@@ -797,6 +953,7 @@ int runModeSim(const Json& req, Json& out, CmdCtx& ctx) {
         Json ev = Json::array();
         for (auto& e : M.takeEvents()) ev.push(std::move(e.j));
         f.set("events", std::move(ev));
+        if (S.trace && running) f.set("slots", M.slotFrame());
         ctx.emit(f);
         if (S.realtime && speed > 0 && !paused) {
             double due = wallBase + (M.time() - simBase) / speed, now = maptoolNow();
@@ -813,6 +970,7 @@ int runModeSim(const Json& req, Json& out, CmdCtx& ctx) {
     d.set("result", M.result());
     Json perf = M.perf();
     perf.set("wallSeconds", maptoolNow() - w0); perf.set("startSeconds", startSeconds);
+    if (running) perf.set("slots", M.slotTotals());   // every interpreted slot's calls and cost over the match
     d.set("perf", std::move(perf));
     M.stop();
     finishLine(ctx, out, std::move(d));
@@ -827,7 +985,7 @@ struct MatchResult {
     double t = 0, wall = 0, simWall = 0;
     long long ticks = 0;
     int rounds = 0, scoreA = 0, scoreB = 0;
-    Json winner, leader, players;
+    Json winner, leader, players, logicNs;
     bool applied = false;
 };
 
@@ -908,6 +1066,7 @@ int runModeBatch(const Json& req, Json& out, CmdCtx& ctx) {
         R.rounds = M.roundsPlayed();
         R.scoreA = M.server().ms_.scoreA; R.scoreB = M.server().ms_.scoreB;
         R.players = M.result()["players"];
+        R.logicNs = M.perf()["logicNs"];
         M.stop();
         R.wall = maptoolNow() - a;
     };
@@ -1059,6 +1218,13 @@ int runModeBatch(const Json& req, Json& out, CmdCtx& ctx) {
     perf.set("ticksPerSecondPerMatch", simWall > 0 ? ticks / simWall : 0.0);
     perf.set("speedupPerMatch", simWall > 0 ? gameSecs / simWall : 0.0);   // game seconds per wall second, one core
     perf.set("speedupTotal", wall > 0 ? gameSecs / wall : 0.0);            // ... all threads together
+    {   // the logic's time per tick over every match: the mean of the matches' averages, the worst p99 and max
+        double avg = 0, p99 = 0, mx = 0; int n = 0;
+        for (auto& R : results) if (R.logicNs.isObj()) { n++; avg += R.logicNs["avg"].num(); p99 = std::max(p99, R.logicNs["p99"].num()); mx = std::max(mx, R.logicNs["max"].num()); }
+        Json l;
+        if (n) { l = Json::object(); l.set("avg", std::round(avg / n)); l.set("p99", p99); l.set("max", mx); l.set("matches", n); }
+        perf.set("logicNs", std::move(l));
+    }
     d.set("perf", std::move(perf));
     finishLine(ctx, out, std::move(d));
     return 0;
