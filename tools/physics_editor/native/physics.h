@@ -6,6 +6,7 @@
 #include <vector>
 #include "json.h"
 #include "game/customrules.h"
+#include "game/moveexpr.h"
 #include "game/map.h"
 #include "game/pmove.h"
 
@@ -18,8 +19,13 @@ namespace phys {
 bool physicsFromJson(const Json& j, CustomRules& out, std::vector<std::string>& clamped, std::string& err);
 // The request's main set: "physics" (any form above), else top-level "qmode", else the standard rules.
 bool requestPhysics(const Json& req, CustomRules& out, std::vector<std::string>& clamped, std::string& err);
-Json physicsToJson(const CustomRules& r);   // {gravity, speed, jump, dash, grapple, move:{every key}, changed:[keys]}
+Json physicsToJson(const CustomRules& r);   // {gravity, speed, jump, dash, grapple, move:{every key}, expr:{key: text}, exprs:[...], changed:[keys]}
 bool isStandardMovement(const CustomRules& r);
+// The set's movement equations as the game builds them (setActiveRules: mexpr::build over the plain values): the
+// tuning with the static ones resolved and the dynamic ones at rest, the compiled program, and the report.
+void buildExprs(const CustomRules& r, MoveTuning& t, mexpr::Program& prog, mexpr::Report& rep);
+Json exprItemJson(const mexpr::ItemReport& it);   // {key, text, ok, error?, dynamic, deps, inputs (all, "p.x"), direct, value, absolute}
+std::string inputList(uint32_t bits);              // "p.speed, p.air"
 
 // ---- the test room (testroom.cpp) --------------------------------------------------------------------------------
 struct RoomPart {

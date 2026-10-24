@@ -4,5 +4,6 @@
   "maptool": null,
   "mapsDirs": [],
   "defaultMapsDir": null,
+  "referencesDir": null,
   "helperArgs": []
 }

@@ -1,0 +1,168 @@
+{
+ "id": "quake3",
+ "name": "Quake III Arena (VQ3)",
+ "year": 1999,
+ "engine": "id Tech 3",
+ "group": "Quake family",
+ "scale": {
+  "unit": "u",
+  "metresPerUnit": 0.032143,
+  "why": "player hull 56 u tall (MINS_Z -24, maxs 32: bg_public.h#L49, bg_pmove.c#L1293), scaled to 1.8 m: 0.03214 m/u"
+ },
+ "values": {
+  "gravity": {
+   "value": 25.7143,
+   "unit": "m/s2",
+   "mult": 1.1688,
+   "source": "https://github.com/id-Software/Quake-III-Arena/blob/master/code/game/g_main.c#L143 (g_gravity 800); bg_public.h#L30 (DEFAULT_GRAVITY 800)",
+   "confidence": "exact",
+   "raw": "g_gravity 800 u/s2"
+  },
+  "speed": {
+   "value": 10.2857,
+   "unit": "m/s",
+   "mult": 1.0827,
+   "source": "https://github.com/id-Software/Quake-III-Arena/blob/master/code/game/g_main.c#L142 (g_speed 320)",
+   "confidence": "exact",
+   "raw": "g_speed 320 u/s"
+  },
+  "jump": {
+   "value": 8.6786,
+   "unit": "m/s",
+   "mult": 1.1824,
+   "source": "https://github.com/id-Software/Quake-III-Arena/blob/master/code/game/bg_local.h#L29 (JUMP_VELOCITY 270)",
+   "confidence": "exact",
+   "raw": "JUMP_VELOCITY 270 u/s"
+  },
+  "ground_accel": {
+   "value": 10,
+   "unit": "",
+   "mult": 0.625,
+   "source": "https://github.com/id-Software/Quake-III-Arena/blob/master/code/game/bg_pmove.c#L39 (pm_accelerate = 10.0f)",
+   "confidence": "exact",
+   "note": "Quake accelerate factor, same formula as Quark's"
+  },
+  "friction": {
+   "value": 6,
+   "unit": "",
+   "mult": 0.8571,
+   "source": "https://github.com/id-Software/Quake-III-Arena/blob/master/code/game/bg_pmove.c#L44 (pm_friction = 6.0f)",
+   "confidence": "exact"
+  },
+  "stop_speed": {
+   "value": 3.2143,
+   "unit": "m/s",
+   "mult": 1.6072,
+   "source": "https://github.com/id-Software/Quake-III-Arena/blob/master/code/game/bg_pmove.c#L34 (pm_stopspeed = 100.0f)",
+   "confidence": "exact",
+   "raw": "pm_stopspeed 100 u/s"
+  },
+  "air_accel": {
+   "value": 0.1,
+   "unit": "",
+   "mult": 0.0455,
+   "source": "https://github.com/id-Software/Quake-III-Arena/blob/master/code/game/bg_pmove.c#L40 (pm_airaccelerate = 1.0f), #L637 (PM_Accelerate with the full wish speed)",
+   "confidence": "exact",
+   "raw": "air accelerate 1",
+   "outsideClamp": true,
+   "note": "VQ3 air: accel 1 toward the full wish speed (no 30 u cap), the strafe-jump that the 'strafe angle' trick exploits. Same formula as Quark's (accel x min(wish, cap)); Quark multiplies air_accel by 10, so 1 -> 0.1. (x0.0455 is outside the editor's 0.1..5 range: applying it clamps.)"
+  },
+  "air_cap": {
+   "value": 10.2857,
+   "unit": "m/s",
+   "mult": 4.472,
+   "source": "https://github.com/id-Software/Quake-III-Arena/blob/master/code/game/bg_pmove.c#L40 (pm_airaccelerate = 1.0f), #L637 (PM_Accelerate with the full wish speed)",
+   "confidence": "exact",
+   "raw": "320 u/s",
+   "note": "the wish speed the air push aims at"
+  },
+  "overstrafe": {
+   "value": 1.0,
+   "unit": "",
+   "mult": 2.8571,
+   "source": "https://github.com/id-Software/Quake-III-Arena/blob/master/code/game/bg_pmove.c#L637",
+   "confidence": "estimated",
+   "note": "no overstrafe softening"
+  },
+  "step": {
+   "value": 0.5786,
+   "unit": "m",
+   "mult": 1.052,
+   "source": "https://github.com/id-Software/Quake-III-Arena/blob/master/code/game/bg_local.h#L27 (STEPSIZE 18)",
+   "confidence": "exact",
+   "raw": "STEPSIZE 18 u"
+  },
+  "hook_max": {
+   "value": 25.7143,
+   "unit": "m/s",
+   "mult": 1.0714,
+   "source": "https://github.com/id-Software/Quake-III-Arena/blob/master/code/game/bg_pmove.c#L672-680 (PM_GrappleMove: velocity set to 800 u/s toward the hook, 10 x distance inside 100 u)",
+   "confidence": "exact",
+   "raw": "grapple pull 800 u/s",
+   "note": "the pull SETS your velocity (no acceleration, momentum not kept); the grapple is a CTF / mod weapon, not in standard play"
+  },
+  "dash": {
+   "value": false,
+   "source": "https://github.com/id-Software/Quake-III-Arena/blob/master/code/game/bg_pmove.c",
+   "confidence": "exact",
+   "note": "no dash"
+  },
+  "grapple": {
+   "value": false,
+   "source": "https://github.com/id-Software/Quake-III-Arena/blob/master/code/game/bg_pmove.c",
+   "confidence": "exact",
+   "note": "the grappling hook exists in the code but isn't placed in standard maps / modes"
+  }
+ },
+ "facts": {
+  "jumpHeight": {
+   "value": 1.4645,
+   "unit": "m",
+   "source": "270^2 / (2 x 800) = 45.6 u",
+   "confidence": "estimated",
+   "note": "v^2/2g (higher at 125 fps from rounding in the original client); Quark: 1.22 m"
+  },
+  "timeTo90": {
+   "value": 0.133,
+   "unit": "s",
+   "source": "derived from this file's speed, ground_accel, friction, stop_speed",
+   "confidence": "estimated",
+   "note": "Quake ground model at 1 ms steps (friction then accelerate), the same way Quark's physsim measures its own run_up / stop presets; Quark: 0.072 s"
+  },
+  "stopDistance": {
+   "value": 1.438,
+   "unit": "m",
+   "source": "derived from this file's speed, friction, stop_speed",
+   "confidence": "estimated",
+   "note": "Quake ground model at 1 ms steps (friction then accelerate), the same way Quark's physsim measures its own run_up / stop presets; Quark: 1.21 m"
+  },
+  "stopTime": {
+   "value": 0.36,
+   "unit": "s",
+   "source": "derived from this file's speed, friction, stop_speed",
+   "confidence": "estimated",
+   "note": "Quake ground model at 1 ms steps (friction then accelerate), the same way Quark's physsim measures its own run_up / stop presets; Quark: 0.364 s"
+  }
+ },
+ "extras": [
+  "strafe jumping / circle jumping (air accel 1 toward 320 u/s)",
+  "crouch speed x0.25 (pm_duckScale, bg_pmove.c#L35)",
+  "no auto-hop in vanilla (jump must be re-pressed)",
+  "rocket jumping"
+ ],
+ "notes": "These pm_* constants are the 'Quake engine cvars' (pm_accelerate 10, pm_airaccelerate 1, pm_friction 6, pm_stopspeed 100, g_gravity 800, jump 270, step 18). Xonotic's Q3 port uses sv_gravity 750.",
+ "sources": [
+  {
+   "title": "Quake III Arena bg_pmove.c",
+   "url": "https://github.com/id-Software/Quake-III-Arena/blob/master/code/game/bg_pmove.c"
+  },
+  {
+   "title": "bg_local.h / bg_public.h",
+   "url": "https://github.com/id-Software/Quake-III-Arena/blob/master/code/game/bg_local.h"
+  },
+  {
+   "title": "g_main.c (cvar defaults)",
+   "url": "https://github.com/id-Software/Quake-III-Arena/blob/master/code/game/g_main.c"
+  }
+ ]
+}

@@ -1,5 +1,6 @@
 #include "pmove.h"
 #include "gamedefs.h"
+#include "moveexpr.h"
 
 // Placeholder tuning; movement will be redefined later.
 namespace {
@@ -243,12 +244,11 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         for (int i = k; i < kMaxDashCharges; i++) s.dashRechargeMs[i] = 0;
         s.dashRecharging = (uint8_t)k;
     }
+    // fewer charges now (a custom mode's dash_charges equation fell): the charges held above it go, but the ones
+    // recharging keep counting down (so a max that rises again gives them back on their own timer, not at once; a refill
+    // gives back only what fits: refillCharges). With a fixed max this never happens (charges + recharging <= max).
     const int maxCharges = maxChargesFor(mt, s.mods);
     if (s.dashCharges > maxCharges) s.dashCharges = (uint8_t)maxCharges;
-    while (s.dashRecharging > 0 && s.dashCharges + s.dashRecharging > maxCharges) {   // (fewer charges now: the oldest go)
-        for (int i = 1; i < s.dashRecharging; i++) s.dashRechargeMs[i - 1] = s.dashRechargeMs[i];
-        s.dashRechargeMs[--s.dashRecharging] = 0;
-    }
     bool dashHeld = (cmd.buttons & BTN_DASH) != 0 && !grappleOnly && !(s.mods & MOVE_RUN_ONLY) && mt.dash;
     // (owner, T2: held dash fires the moment a dash is allowed, like the held grapple: holding it chains the charges 0.6 s
     // apart; it was a fresh press only, and a press while not ready was lost. A press up to 0.1 s early: the client holds
@@ -575,13 +575,71 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     if (s.pos.y < -100.0f) s.pos.y = -100.0f; // kill plane handled by game logic
 }
 
+// The player's state as a dynamic movement equation reads it (p.*, moveexpr.h), at the start of a 1 ms step. One
+// definition for pmove and every caller that asks for a per-step value (stepTuning), so they never disagree.
+// `map` null: p.height reads 0.
+static void exprInputs(const MoveState& s, const Map* map, uint32_t need, double* in) {
+    const bool ground = (s.flags & MF_ONGROUND) != 0;
+    const float h2 = s.vel.x * s.vel.x + s.vel.z * s.vel.z;
+    in[mexpr::P_SPEED] = std::sqrt(h2 + s.vel.y * s.vel.y);
+    in[mexpr::P_HSPEED] = std::sqrt(h2);
+    in[mexpr::P_VSPEED] = s.vel.y;
+    in[mexpr::P_AIR] = ground ? 0.0 : s.phaseMs / 1000.0;
+    in[mexpr::P_GROUND] = ground ? s.phaseMs / 1000.0 : 0.0;
+    in[mexpr::P_ONGROUND] = ground ? 1.0 : 0.0;
+    in[mexpr::P_CHARGES] = s.dashCharges;
+    in[mexpr::P_DASHING] = s.dashTimer > 0 ? 1.0 : 0.0;
+    in[mexpr::P_HOOKED] = (s.flags & MF_HOOKED) ? 1.0 : 0.0;
+    in[mexpr::P_HEIGHT] = 0;
+    if ((need & 1u << mexpr::P_HEIGHT) && !ground && map)   // (a sweep down: only when an equation reads it)
+        in[mexpr::P_HEIGHT] = -map->sweepAxis(playerBox(s), 1, -50.0f);
+}
+
+const MoveTuning& stepTuning(const MoveState& s, const Map* map, MoveTuning& scratch) {
+    const MoveTuning& mt = moveTuning();
+    if (__builtin_expect(mt.expr == nullptr, 1)) return mt;
+    scratch = mt;
+    double in[mexpr::P_COUNT];
+    exprInputs(s, map, mt.expr->inputs, in);
+    mt.expr->run(in, scratch);
+    return scratch;
+}
+float moveValue(const MoveState& s, int param, const Map* map) {
+    const MoveTuning& mt = moveTuning();
+    if (__builtin_expect(mt.expr == nullptr, 1)) return mt.m[param];
+    MoveTuning t;
+    return stepTuning(s, map, t).m[param];
+}
+
+// A custom mode's dynamic movement equations (moveexpr.h): before each 1 ms step, the player's state (p.*) goes in
+// and the dynamic settings come out, into this command's own copy of the tuning (the static ones are already in it).
+// Out of line, so the standard path below stays as it was: one predictable branch per command.
+[[gnu::noinline]] static void pmoveExpr(MoveState& s, const UserCmd& cmd, const Map& map, HookProbe* probe, const MoveTuning& base,
+                                        const Vec3& fwd, const Vec3& right, int n) {
+    MoveTuning t = base;
+    const mexpr::Program& prog = *base.expr;
+    const uint32_t need = prog.inputs;
+    const CmdCtx cx{t, fwd, right};
+    for (int i = 0; i < n; i++) {
+        const bool ground = (s.flags & MF_ONGROUND) != 0;
+        double in[mexpr::P_COUNT];
+        exprInputs(s, &map, need, in);
+        prog.run(in, t);
+        pmoveStep(s, cmd, map, kMoveStep, probe, cx);
+        if (need & mexpr::kPhaseInputs)
+            s.phaseMs = ((s.flags & MF_ONGROUND) != 0) != ground ? 0 : (uint16_t)(s.phaseMs < 65535 ? s.phaseMs + 1 : 65535);
+    }
+}
+
 void pmove(MoveState& s, const UserCmd& cmd, const Map& map, HookProbe* probe) {
     static_assert(HookProbe::kMax >= kMaxPlayers, "a probe holds every player");
     int n = cmd.msec < 1 ? 1 : (cmd.msec > 8 ? 8 : cmd.msec);
     const float sy = std::sin(cmd.yaw), cy = std::cos(cmd.yaw);
-    const CmdCtx cx{moveTuning(), {-sy, 0, -cy}, {cy, 0, -sy}};
     s.events = 0;
     s.landSpeed = 0;
+    const MoveTuning& mt = moveTuning();
+    if (__builtin_expect(mt.expr != nullptr, 0)) { pmoveExpr(s, cmd, map, probe, mt, {-sy, 0, -cy}, {cy, 0, -sy}, n); return; }
+    const CmdCtx cx{mt, {-sy, 0, -cy}, {cy, 0, -sy}};
     for (int i = 0; i < n; i++) pmoveStep(s, cmd, map, kMoveStep, probe, cx);
 }
 
@@ -599,14 +657,15 @@ const char* moveParamUnit(int i) {
     return i >= 0 && i < MV_COUNT ? u[i] : "";
 }
 int dashMaxCharges(uint8_t mods) { return maxChargesFor(moveTuning(), mods); }
+int dashMaxCharges(const MoveState& s, const Map* map) { MoveTuning t; return maxChargesFor(stepTuning(s, map, t), s.mods); }
 int dashCooldownMs(uint8_t mods) { return cooldownMsFor(moveTuning(), mods); }
 int dashRechargeMs(uint8_t mods) { return rechargeMsFor(moveTuning(), mods); }
 bool dashReady(const MoveState& s) {   // (the next step counts the cooldown down by its 1 ms before it looks)
     return s.dashCharges > 0 && s.dashTimer <= 0 && (int)s.dashCooldownMs <= std::max(1, (int)std::lround(kMoveStep * 1000.0f));
 }
-bool dashAimedDown(const MoveState& s) { return s.dashUp <= -kSuperDashDown * (kDashVertical * moveTuning().m[MV_DASH_VERTICAL]); }
-void dashRefillAll(MoveState& s) {
-    s.dashCharges = (uint8_t)maxChargesFor(moveTuning(), s.mods);
+bool dashAimedDown(const MoveState& s, const Map* map) { return s.dashUp <= -kSuperDashDown * (kDashVertical * moveValue(s, MV_DASH_VERTICAL, map)); }
+void dashRefillAll(MoveState& s, const Map* map) {
+    s.dashCharges = (uint8_t)dashMaxCharges(s, map);
     s.dashCooldownMs = 0;
     s.dashRecharging = 0;
     for (uint16_t& v : s.dashRechargeMs) v = 0;

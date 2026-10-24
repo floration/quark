@@ -10,6 +10,7 @@
 #include "map.h"
 #include "modelogic.h"
 #include "weaponset.h"
+#include "moveexpr.h"
 
 namespace {
 // Per thread: a hosted server thread and the client each play by their own copy. One trivially initialised
@@ -21,6 +22,7 @@ struct Tuned {
     std::shared_ptr<const WeaponSet> set;           // the rules' weapon set, compiled (null: the standard weapons)
     const WeaponSet* logic = nullptr;               // set, when it has hit / kill slots (the server's per-hit check)
     char labels[WPN_COUNT][32] = {};                // a set's weapon names (WeaponDef::name points here)
+    mexpr::Program exprs;                           // the rules' movement equations, compiled (moveexpr.h)
 };
 thread_local Tuned* g_t = nullptr;
 
@@ -55,6 +57,11 @@ void rebuild(Tuned& t) {
         t.move.gravity = t.rules.gravity; t.move.speed = t.rules.moveSpeed; t.move.jump = t.rules.jump;
         t.move.dash = t.rules.dash; t.move.grapple = t.rules.grapple;
         for (int k = 0; k < MV_COUNT; k++) t.move.m[k] = t.rules.move[k];
+    }
+    t.exprs = mexpr::Program();   // (equations: resolved and compiled here, once, never in the 1 ms step)
+    if (t.rules.active() && !t.rules.exprs.empty()) {
+        mexpr::build(t.rules.exprs, t.move, t.exprs);
+        if (!t.exprs.empty()) t.move.expr = &t.exprs;
     }
 }
 
@@ -103,6 +110,7 @@ std::string CustomRules::toNetText() const {
       << "\ninstagib=" << instagib << "\nvampire=" << vampire << "\nregen=" << regen
       << "\ntimelimit=" << timeLimit << "\nscorelimit=" << scoreLimit << "\nrounds=" << roundsToWin;
     for (int k = 0; k < MV_COUNT; k++) if (move[k] != 1) o << "\nmove_" << moveParamKey(k) << "=" << move[k];   // (only the changed ones)
+    for (auto& e : exprs) o << "\nexpr." << e.first << "=" << e.second;
     for (int w = 0; w < WPN_COUNT; w++)
         o << "\nweapon=" << w << "," << fireRate[w] << "," << damage[w] << "," << projSpeed[w];
     o << weaponSetRulesLines(*this);   // (weaponset= / wsline=: weaponset.cpp)
@@ -151,6 +159,17 @@ bool CustomRules::fromText(const std::string& text) {
         else if (k == "speed") moveSpeed = clampf_(f, 0.25f, 3, moveSpeed);
         else if (k == "jump") jump = clampf_(f, 0.25f, 3, jump);
         else if (k == "knockback") knockback = clampf_(f, 0, 5, knockback);
+        else if (k.rfind("expr.", 0) == 0) {   // a movement equation: kept as written (trimmed), for a known key only
+            const std::string key = k.substr(5);
+            size_t a = v.find_first_not_of(" \t"), b = v.find_last_not_of(" \t");
+            std::string e = a == std::string::npos ? std::string() : v.substr(a, b - a + 1);
+            bool plain = !e.empty() && e.size() <= (size_t)mexpr::kMaxText;
+            for (char c : e) plain &= (unsigned char)c >= 0x20 && c != 0x7f;   // (one line of text: round-trips through toText)
+            if (plain && mexpr::settingIndex(key) >= 0) {
+                auto it = std::find_if(exprs.begin(), exprs.end(), [&](const std::pair<std::string, std::string>& x) { return x.first == key; });
+                if (it != exprs.end()) it->second = e; else exprs.push_back({key, e});
+            } else extraKeys.push_back(line);   // (an equation for a key this build doesn't know: kept as written)
+        }
         else if (k.rfind("move_", 0) == 0) {
             bool known = false;
             for (int m = 0; m < MV_COUNT; m++) if (k.compare(5, std::string::npos, moveParamKey(m)) == 0) { move[m] = clampf_(f, 0.1f, 5, move[m]); known = true; }

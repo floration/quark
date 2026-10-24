@@ -83,7 +83,7 @@ class RealDrive {
     }
     inflight() { return this.sent.length; }
     send(cmds) { this._send(JSON.stringify({ cmd: cmds })); }
-    setPhysics(ph) { this._send(JSON.stringify({ physics: compactPhysics(ph) })); }
+    setPhysics(ph) { this._send(JSON.stringify({ physics: compactPhysics(ph, this.h.expr) })); }
     reset(start) { this._send(start ? JSON.stringify({ reset: true, start }) : "reset"); }
     stop() {
         if (this.closed) return;
@@ -130,6 +130,14 @@ export async function createHelper(config) {
         } catch (e) { why = e.message; }
     } else why = config && config.maptool ? "?mock in the address" : "quark_maptool not found";
     const real = !!params;
+    // v2 equations: the helper runs them when it has `physexpr` (the game's own evaluator, src/game/moveexpr.cpp)
+    let hasExpr = false;
+    if (real) {
+        try {
+            const r = await api.helper(["physexpr"], { physics: { expr: { gravity: "1" } } }, 20);
+            hasExpr = r && r.code === 0 && r.answer && !r.answer.error;
+        } catch {}
+    }
     const mapCache = new Map();
     const parsed = (key, text) => {
         if (!mapCache.has(key)) { const m = parseQmap(text, key); mapCache.set(key, { map: m, sim: new MockSim(m) }); }
@@ -140,7 +148,17 @@ export async function createHelper(config) {
         kind: real ? "real" : "mock",
         label: real ? "quark_maptool" : "MOCK PHYSICS",
         why,
+        hasExpr,
         catalog: normalizeCatalog(params),
+        // physexpr on a set: {items: [{key, text, ok, dynamic, error, deps, inputs, value}], ...} (null without it)
+        async exprCheck(physics) {
+            if (!hasExpr) return null;
+            const r = await api.helper(["physexpr"], { physics: compactPhysics(physics, true) }, 20);
+            const a = r.answer || {};
+            if (r.code !== 0 && !a.items) throw new Error(a.error || r.stderr || "physexpr failed");
+            const items = a.items || a.exprs || (a.report && a.report.items) || [];
+            return { ...a, items: items.map((i) => ({ ...i, key: i.key || i.setting, value: i.value != null ? +i.value : i.atRest != null ? +i.atRest : null })) };
+        },
         async room() {
             if (roomText) return { text: roomText, info: roomInfo };
             if (real) {
@@ -167,7 +185,7 @@ export async function createHelper(config) {
         // req: {physics, compare: [physics], scenario, map: {room: true} | {name, source, text}, sampleMs}
         async sim(req) {
             if (real) {
-                const request = { physics: compactPhysics(req.physics), compare: (req.compare || []).map(compactPhysics), scenario: req.scenario,
+                const request = { physics: compactPhysics(req.physics, hasExpr), compare: (req.compare || []).map((c) => compactPhysics(c, hasExpr)), scenario: req.scenario,
                     sampleMs: req.sampleMs || 10, map: req.map && !req.map.room ? { text: req.map.text, name: req.map.name } : "room" };
                 const r = await api.helper(["physsim"], request, 60);
                 const a = r.answer || {};
@@ -183,7 +201,7 @@ export async function createHelper(config) {
         async exportSet(physics, name) {
             if (real) {
                 try {
-                    const r = await api.helper(["physexport"], { physics: compactPhysics(physics), name }, 20);
+                    const r = await api.helper(["physexport"], { physics: compactPhysics(physics, hasExpr), name }, 20);
                     if (r.code === 0 && r.answer && r.answer.cpp != null) return { ...r.answer, via: "quark_maptool physexport" };
                 } catch {}
             }
@@ -192,7 +210,8 @@ export async function createHelper(config) {
         // init: {physics, map: {room:true}|{text,name}, start}; h: {onState, onReady, onExit, onError}
         async drive(init, h) {
             if (real) {
-                const first = { physics: compactPhysics(init.physics), start: init.start, map: init.map && !init.map.room ? { text: init.map.text, name: init.map.name } : "room" };
+                h.expr = hasExpr;
+                const first = { physics: compactPhysics(init.physics, hasExpr), start: init.start, map: init.map && !init.map.room ? { text: init.map.text, name: init.map.name } : "room" };
                 return new RealDrive(first, h);
             }
             const text = init.map && !init.map.room ? init.map.text : (await H.room()).text;

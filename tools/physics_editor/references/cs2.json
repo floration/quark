@@ -1,0 +1,159 @@
+{
+ "id": "cs2",
+ "name": "Counter-Strike 2",
+ "year": 2023,
+ "engine": "Source 2",
+ "group": "Source family",
+ "scale": {
+  "unit": "u",
+  "metresPerUnit": 0.025,
+  "why": "player hull 32 x 32 x 72 u (CS:GO Mapper's Reference), scaled to 1.8 m: 0.025 m/u"
+ },
+ "values": {
+  "gravity": {
+   "value": 20.0,
+   "unit": "m/s2",
+   "mult": 0.9091,
+   "source": "https://totalcsgo.com/command/svgravity (sv_gravity 800)",
+   "confidence": "exact",
+   "raw": "sv_gravity 800 u/s2"
+  },
+  "speed": {
+   "value": 6.25,
+   "unit": "m/s",
+   "mult": 0.6579,
+   "source": "https://www.vlr.gg/416153/is-valorant-movement-slower-than-cs2 (knife 250 u/s); sv_maxspeed 320 is only the cap (https://csdb.gg/commands/movement/)",
+   "confidence": "measured",
+   "raw": "knife speed 250 u/s",
+   "note": "knife out (community-stated; the game's weapon data, not a cvar)"
+  },
+  "jump": {
+   "value": 7.5498,
+   "unit": "m/s",
+   "mult": 1.0286,
+   "source": "https://www.funplay.pro/en/convars/sv_jump_impulse (sv_jump_impulse 301.9933)",
+   "confidence": "exact",
+   "raw": "sv_jump_impulse 301.993 u/s"
+  },
+  "ground_accel": {
+   "value": 5.5,
+   "unit": "",
+   "mult": 0.3438,
+   "source": "https://totalcsgo.com/commands/svaccelerate (sv_accelerate 5.5)",
+   "confidence": "exact",
+   "note": "Source accelerate factor (same formula as Quark's); the page's intro also says 5.6"
+  },
+  "friction": {
+   "value": 5.2,
+   "unit": "",
+   "mult": 0.7429,
+   "source": "https://totalcsgo.com/commands/svfriction (sv_friction 5.2); https://developer.valvesoftware.com/wiki/Sv_friction (CS:GO 5.2)",
+   "confidence": "exact"
+  },
+  "stop_speed": {
+   "value": 2.0,
+   "unit": "m/s",
+   "mult": 1.0,
+   "source": "https://totalcsgo.com/commands/svstopspeed (sv_stopspeed 80)",
+   "confidence": "exact",
+   "raw": "sv_stopspeed 80 u/s"
+  },
+  "air_accel": {
+   "value": 10.0,
+   "unit": "",
+   "mult": 4.5455,
+   "source": "https://totalcsgo.com/commands/svairaccelerate (sv_airaccelerate 12); https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/gamemovement.h#L104 (Source's GetAirSpeedCap 30); knife speed 250",
+   "confidence": "estimated",
+   "raw": "accelerate 12, wish 250 u/s, cap 30 u/s",
+   "note": "Quark-equivalent: this engine pushes 12 x the FULL wish speed (250 u/s) per second but caps the gain at 30 u/s; Quark pushes air_accel x 10 x min(wish, air_cap), so the same push is air_accel = 12 x 250 / 30 / 10 (Xonotic's Quake port does the same: sv_airaccelerate 106.67 with sv_maxairspeed 30 for 10 x 320 / 30)."
+  },
+  "air_cap": {
+   "value": 0.75,
+   "unit": "m/s",
+   "mult": 0.3261,
+   "source": "https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/gamemovement.h#L104 (Source's GetAirSpeedCap 30)",
+   "confidence": "exact",
+   "raw": "30 u/s",
+   "note": "the air wish-speed cap (Quark's air strafe cap, W-only; A/D raises Quark's x1.1)"
+  },
+  "overstrafe": {
+   "value": 1.0,
+   "unit": "",
+   "mult": 2.8571,
+   "source": "same code: the push is applied in full whatever its angle to your velocity",
+   "confidence": "estimated",
+   "note": "no overstrafe softening: the whole push against your momentum applies (Quark lets 35% through)"
+  },
+  "step": {
+   "value": 0.45,
+   "unit": "m",
+   "mult": 0.8182,
+   "source": "https://developer.valvesoftware.com/wiki/CS:GO_Mapper's_Reference (step 18 u)",
+   "confidence": "exact",
+   "raw": "step 18 u"
+  },
+  "dash": {
+   "value": false,
+   "source": "https://csdb.gg/commands/movement/",
+   "confidence": "exact",
+   "note": "no dash"
+  },
+  "grapple": {
+   "value": false,
+   "source": "https://csdb.gg/commands/movement/",
+   "confidence": "exact",
+   "note": "no grapple"
+  }
+ },
+ "facts": {
+  "jumpHeight": {
+   "value": 1.425,
+   "unit": "m",
+   "source": "301.99^2 / (2 x 800) = 57 u",
+   "confidence": "estimated",
+   "note": "v^2/2g; the Mapper's Reference measures 54-55 u blocks cleared standing, 65-66 crouch-jumping; Quark: 1.22 m"
+  },
+  "timeTo90": {
+   "value": 0.379,
+   "unit": "s",
+   "source": "derived from this file's speed, ground_accel, friction, stop_speed",
+   "confidence": "estimated",
+   "note": "Quake ground model at 1 ms steps (friction then accelerate), the same way Quark's physsim measures its own run_up / stop presets; Quark: 0.072 s"
+  },
+  "stopDistance": {
+   "value": 1.004,
+   "unit": "m",
+   "source": "derived from this file's speed, friction, stop_speed",
+   "confidence": "estimated",
+   "note": "Quake ground model at 1 ms steps (friction then accelerate), the same way Quark's physsim measures its own run_up / stop presets; Quark: 1.21 m"
+  },
+  "stopTime": {
+   "value": 0.411,
+   "unit": "s",
+   "source": "derived from this file's speed, friction, stop_speed",
+   "confidence": "estimated",
+   "note": "Quake ground model at 1 ms steps (friction then accelerate), the same way Quark's physsim measures its own run_up / stop presets; Quark: 0.364 s"
+  }
+ },
+ "extras": [
+  "stamina: each jump costs sv_staminajumpcost 0.08 (sv_stamina_max 80), lowering consecutive jumps (https://csdb.gg/commands/movement/)",
+  "bunny hopping speed-capped (sv_enablebunnyhopping 0, no auto-hop: sv_autobunnyhopping 0)",
+  "counter-strafing: low accel 5.5 and friction 5.2 make stopping a skill",
+  "crouch jumping, weapon-dependent speeds"
+ ],
+ "notes": "CS:GO and CS2 share these defaults. CS2 runs these on sub-tick input timing.",
+ "sources": [
+  {
+   "title": "Total CS command pages (cvar defaults)",
+   "url": "https://totalcsgo.com/commands/svaccelerate"
+  },
+  {
+   "title": "csdb.gg movement commands",
+   "url": "https://csdb.gg/commands/movement/"
+  },
+  {
+   "title": "Valve Developer Community: CS:GO Mapper's Reference",
+   "url": "https://developer.valvesoftware.com/wiki/CS:GO_Mapper's_Reference"
+  }
+ ]
+}

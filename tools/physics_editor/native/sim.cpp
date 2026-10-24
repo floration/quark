@@ -57,7 +57,8 @@ float strafeYaw(const MoveState& s, int forward, int side, float curYawDeg, int 
             for (int i = -4; i <= 4; i++) { float th = best + i * span * 0.25f; float g = gain(th); if (g > bestG) { bestG = g; best = th; } }
         return yawFor(best);
     }
-    const MoveTuning& mt = moveTuning();
+    MoveTuning scratch;   // (the values this ms plays by: movement equations worked out for s, as pmove does)
+    const MoveTuning& mt = stepTuning(s, &map, scratch);
     const float airAccel = moveParamBase(MV_AIR_ACCEL) * mt.m[MV_AIR_ACCEL] * 10.0f;
     const float airCap = moveParamBase(MV_AIR_CAP) * mt.m[MV_AIR_CAP];
     const float airControl = moveParamBase(MV_AIR_CONTROL) * mt.m[MV_AIR_CONTROL];
@@ -110,24 +111,26 @@ struct Watch {
         landedThisStep = false;
         const int t = tMs + 1;   // (the state after this ms)
         const bool bG = onGroundF(b), aG = onGroundF(a);
-        const bool jumpHeld = (cmd.buttons & BTN_JUMP) != 0, frozen = (b.flags & MF_FROZEN) != 0;
-        const bool freshDash = (cmd.buttons & BTN_DASH) && !(b.flags & MF_DASHHELD);
-        const bool dashStart = freshDash && moveTuning().dash && dashReady(b) && b.dashTimer <= 0 && !frozen;
+        // (what pmove says this 1 ms call did, its ME_* events: the game's sounds read the same. Since 1.18.20 a held
+        // dash fires once one is allowed and a jump tapped just before landing jumps there, so the buttons alone no
+        // longer tell)
+        const bool dashStart = (a.events & ME_DASH) != 0, jumped = (a.events & ME_JUMP) != 0;
         bool tech = false;
         if (dashStart) {
             Json e = ev("dash", t, a);
             e.set("charges", (int)a.dashCharges);
             e.set("dir", vec(Vec3(a.dashDirX, a.dashUp, a.dashDirZ), 1e-4));
-            e.set("aimedDown", dashAimedDown(a));
+            MoveState q = b;
+            q.dashUp = a.dashUp;
+            e.set("aimedDown", dashAimedDown(q, &map));
             out.push(std::move(e));
         }
         const bool wasDashing = b.dashTimer > 0 || dashStart;
         if (wasDashing && a.dashTimer <= 0) {
-            // a dash jump / super dash ends it with time left, and leaves rising; else it ran out
-            const bool early = dashStart || b.dashTimer > 1.5f * kMoveStep;
-            if (early && a.vel.y > 0.01f) {
+            // a dash jump (ME_SUPER) / super dash (ME_HYPER) ends it with time left, and leaves rising; else it ran out
+            if (a.events & (ME_SUPER | ME_HYPER)) {
                 tech = true;
-                const char* k = dashAimedDown(a) ? "superDash" : "dashJump";
+                const char* k = (a.events & ME_HYPER) ? "superDash" : "dashJump";
                 Json e = ev(k, t, a);
                 e.set("vy", roundTo(a.vel.y, 1e-4));
                 e.set("charges", (int)a.dashCharges);
@@ -163,13 +166,13 @@ struct Watch {
         // a ladder kick-off (a fresh jump on it), a jump off the floor, a bhop off a hard landing (it bounces in the
         // same ms it lands)
         if (!tech && b.dashTimer <= 0 && a.dashTimer <= 0 && !(a.flags & MF_HOOKED)) {
-            if (bG && !aG && a.vel.y > 0.01f && jumpHeld) {
+            if (bG && !aG && a.vel.y > 0.01f && jumped) {
                 Json e = ev("jump", t, a);
                 e.set("vy", roundTo(a.vel.y, 1e-4));
                 e.set("bhop", t - lastLandMs <= 2);
                 out.push(std::move(e));
                 takeoff("jump", t, b);
-            } else if (!bG && !aG && jumpHeld && b.vel.y < -0.01f && a.vel.y > 0.01f && !onLadder && !lad) {
+            } else if (!bG && !aG && jumped && b.vel.y < -0.01f && a.vel.y > 0.01f && !onLadder && !lad) {
                 land(b, a, t, out);
                 Json e = ev("jump", t, a);
                 e.set("vy", roundTo(a.vel.y, 1e-4));
@@ -316,7 +319,6 @@ MoveState startState(const Vec3& pos, const Vec3& vel, int onGround, int dashCha
     MoveState s;
     s.pos = pos;
     s.vel = vel;
-    s.dashCharges = (uint8_t)(dashCharges >= 0 ? std::min(dashCharges, dashMaxCharges(0)) : dashMaxCharges(0));
     bool g = onGround == 1;
     if (onGround < 0) {
         const float probe = map.sweepAxis(playerBox(pos, false), 1, -0.05f);
@@ -324,6 +326,8 @@ MoveState startState(const Vec3& pos, const Vec3& vel, int onGround, int dashCha
         if (g) s.pos.y += probe;
     }
     if (g) s.flags |= MF_ONGROUND;
+    const int most = dashMaxCharges(s, &map);   // (for this start: a dash_charges equation sees it, with the usual 2 held)
+    s.dashCharges = (uint8_t)(dashCharges >= 0 ? std::min(dashCharges, most) : most);
     return s;
 }
 

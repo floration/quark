@@ -1,0 +1,90 @@
+{
+ "id": "ut99",
+ "name": "Unreal Tournament (1999)",
+ "year": 1999,
+ "engine": "Unreal Engine 1",
+ "group": "arena shooters",
+ "scale": {
+  "unit": "UU",
+  "metresPerUnit": 0.023077,
+  "why": "player cylinder 78 UU tall (CollisionHeight 39 x 2, Unreal Wiki: General Scale And Dimensions), scaled to 1.8 m: 0.02308 m/UU"
+ },
+ "values": {
+  "speed": {
+   "value": 9.2308,
+   "unit": "m/s",
+   "mult": 0.9717,
+   "source": "https://unrealarchive.org/wikis/unreal-wiki/Legacy:Movement_Metrics_(UT).html (running 400 UU/s, Classic)",
+   "confidence": "measured",
+   "raw": "ground speed 400 UU/s",
+   "note": "Classic speed; Hardcore (x1.1 game speed) 440, Turbo 560"
+  },
+  "dash_speed": {
+   "value": 13.8462,
+   "unit": "m/s",
+   "mult": 0.5769,
+   "source": "https://unrealarchive.org/wikis/unreal-wiki/Legacy:Movement_Metrics_(UT).html (dodge speed 600 UU/s)",
+   "confidence": "estimated",
+   "raw": "dodge 600 UU/s",
+   "note": "UT's dodge (double-tap): a fixed 600 UU/s hop, 23 UU high; mapped to Quark's dash burst"
+  },
+  "dash": {
+   "value": true,
+   "source": "https://unrealarchive.org/wikis/unreal-wiki/Legacy:Movement_Metrics_(UT).html",
+   "confidence": "exact",
+   "note": "the dodge"
+  },
+  "grapple": {
+   "value": false,
+   "source": "https://unrealarchive.org/wikis/unreal-wiki/Legacy:Movement_Metrics_(UT).html",
+   "confidence": "exact",
+   "note": "no grapple (the translocator teleports)"
+  }
+ },
+ "facts": {
+  "jumpHeight": {
+   "value": 1.2692,
+   "unit": "m",
+   "source": "https://unrealarchive.org/wikis/unreal-wiki/Legacy:Movement_Metrics_(UT).html (55 UU, Classic running)",
+   "confidence": "measured",
+   "note": "Hardcore 67 UU; Quark: 1.22 m"
+  },
+  "dodgeHeight": {
+   "value": 0.5308,
+   "unit": "m",
+   "source": "https://unrealarchive.org/wikis/unreal-wiki/Legacy:Movement_Metrics_(UT).html (23 UU)",
+   "confidence": "measured"
+  },
+  "dodgeDistance": {
+   "value": 5.4692,
+   "unit": "m",
+   "source": "https://unrealarchive.org/wikis/unreal-wiki/Legacy:Movement_Metrics_(UT).html (237 UU)",
+   "confidence": "measured",
+   "note": "Quark's dash covers 2.84 m"
+  },
+  "airControl": {
+   "value": "35%",
+   "unit": "",
+   "source": "https://unrealarchive.org/wikis/unreal-wiki/Legacy:Movement_Metrics_(UT).html",
+   "confidence": "measured",
+   "note": "UT's AirControl is a share of ground acceleration in the air; Quark's air_control isn't the same thing"
+  }
+ },
+ "extras": [
+  "dodging (double-tap a direction)",
+  "impact hammer jumps",
+  "translocator",
+  "jump boots"
+ ],
+ "notes": "Measured by the Unreal Wiki community (UnrealScript defaults not checked here). Gravity and JumpZ aren't on the page, so jump take-off speed is left out.",
+ "sources": [
+  {
+   "title": "Unreal Wiki: Movement Metrics (UT)",
+   "url": "https://unrealarchive.org/wikis/unreal-wiki/Legacy:Movement_Metrics_(UT).html"
+  },
+  {
+   "title": "Unreal Wiki: General Scale And Dimensions",
+   "url": "https://unrealarchive.org/wikis/unreal-wiki/Legacy:General_Scale_And_Dimensions.html"
+  }
+ ]
+}

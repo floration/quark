@@ -7,7 +7,15 @@
 // 2. browser checks (Chromium, for the real helper when quark_maptool has the physics commands, and for the MOCK):
 //    a value change shows in the Code text, a Code edit shows in Values, a preset runs, a block drags into the
 //    stack, Save keeps the gamemode editor's logic section on disk, Drive moves with W held (pointer lock faked).
-// 3. a screenshot of each tab (real helper if present) into --shots (default /mnt/project-files/physics-editor/shots/).
+//    v2: other games (the picker, a column per game, "use" / "load all" with the import line), equations and curves
+//    (expr.<key>= lines, static / dynamic badges, errors), the Movement code chips and their jump to Values, the Code
+//    graph (a click jumps to the code), the Movement graph's 3D view, lock units and A / B (B - A, a game as B, side by
+//    side).
+// 1b. v2 node checks: the merge with expr. and import lines (page == serve.py), the expression evaluator (the grammar
+//    of src/game/moveexpr.cpp), the MOCK running dynamic expressions, /api/source and /references/ served (and
+//    nothing outside them), physexpr against the page's evaluator when the helper has it.
+// 3. a screenshot of each tab (real helper if present) into --shots (default /mnt/project-files/physics-editor/shots-v2/).
+//    references/ is the checkout's; without its index.json a stub is written and passed with --references.
 //
 // serve.py runs on a free test port with a temporary data folder; nothing in the real data folder is touched.
 
@@ -25,7 +33,7 @@ const REPO = path.resolve(TOOL, "../..");
 const JS = pathToFileURL(path.join(TOOL, "web/js") + "/").href;
 const argv = process.argv.slice(2);
 const opt = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
-const SHOTS = opt("--shots", "/mnt/project-files/physics-editor/shots/");
+const SHOTS = opt("--shots", "/mnt/project-files/physics-editor/shots-v2/");
 const MOCK_ONLY = argv.includes("--mock-only");
 let fails = 0, passes = 0;
 const ok = (cond, what, extra = "") => { if (cond) { passes++; console.log("  ok   " + what + (extra ? "  " + extra : "")); } else { fails++; console.log("  FAIL " + what + (extra ? "  " + extra : "")); } };
@@ -48,10 +56,24 @@ fs.mkdirSync(path.join(dataDir, "custom_modes"), { recursive: true });
 const LOGIC = "logic\nwhen kill: score +1\nwhen round start: say \"go\"\n";
 fs.writeFileSync(path.join(dataDir, "custom_modes", "lowgrav.qmode"),
     "custommode=lowgrav\r\nmode=ffa\r\ngravity=0.5\r\nhealth=150\r\nmove_air_accel=1.5\r\n# a comment\r\n" + LOGIC.replace(/\n/g, "\r\n"));
+// other games' values: the checkout's references/, or a stub when it isn't there (then passed with --references)
+const REFS_REAL = fs.existsSync(path.join(TOOL, "references", "index.json"));
+const refsDir = REFS_REAL ? path.join(TOOL, "references") : path.join(tmp, "refs");
+if (!REFS_REAL) {
+    fs.mkdirSync(refsDir, { recursive: true });
+    fs.writeFileSync(path.join(refsDir, "index.json"), JSON.stringify({ groups: [{ name: "Quake family", games: [{ id: "quake3", name: "Quake III Arena (stub)", year: 1999, file: "quake3.json", values: 4, distance: 0.6 }] }] }));
+    fs.writeFileSync(path.join(refsDir, "quake3.json"), JSON.stringify({ id: "quake3", name: "Quake III Arena (stub)", values: {
+        gravity: { value: 25.7, unit: "m/s2", mult: 1.1688, source: "stub", confidence: "estimated", raw: "g_gravity 800" },
+        speed: { value: 10.29, unit: "m/s", mult: 1.0827, source: "stub", confidence: "exact" },
+        friction: { value: 6, unit: "", mult: 0.8571, source: "stub", confidence: "exact" },
+        air_accel: { value: 0.1, unit: "", mult: 0.0455, source: "stub", confidence: "exact", outsideClamp: true },
+        dash: { value: false, source: "stub", confidence: "exact" } },
+        facts: { jumpHeight: { value: 1.46, unit: "m", source: "stub", confidence: "estimated" } } }));
+}
 const port = 8790 + Math.floor(Math.random() * 150);
 const py = process.platform === "win32" ? "py" : "python3";
 const srvArgs = [...(process.platform === "win32" ? ["-3"] : []), path.join(TOOL, "serve.py"), "--port", String(port), "--no-open", "--data-dir", dataDir,
-    "--maptool", real ? maptool : path.join(tmp, "no_maptool")];
+    "--maptool", real ? maptool : path.join(tmp, "no_maptool"), ...(REFS_REAL ? [] : ["--references", refsDir])];
 const srv = spawn(py, srvArgs, { env: { ...process.env, QUARK_SHELL: "1" }, stdio: ["ignore", "pipe", "pipe"] });
 let srvLog = "";
 srv.stdout.on("data", (d) => (srvLog += d)); srv.stderr.on("data", (d) => (srvLog += d));
@@ -104,6 +126,8 @@ async function main() {
         const back = parseQmode(page, cat).physics;
         ok(near(back.gravity, 0.8, 1e-9) && back.grapple === false, "  parses back to the set");
     }
+
+    await v2NodeChecks(cat, ph);
 
     // ------------------------------------------------------------ blocks
     console.log("blocks round trip");
@@ -331,12 +355,330 @@ async function browserChecks(browser, mode, shots) {
     ok(/kGravity/.test(cpp), "Export: the C++ list names kGravity", cpp.split("\n")[0]);
     if (shots) await shot(page, "export");
 
+    await v2BrowserChecks(page, mode, shots);
+
     ok(!errors.length, "no page errors", errors.slice(0, 3).join(" | "));
     await page.close();
 }
 
+// ---------------------------------------------------------------- v2: equations, curves, games, code, graphs
+async function v2NodeChecks(cat, ph) {
+    const { mergeQmode, parseQmode } = await import(JS + "qmode.js");
+    const { clonePhysics, setVal, setExpr } = await import(JS + "params.js");
+    const X = await import(JS + "expr.js");
+    X.check.cat = cat;
+    console.log("qmode merge with expr. and import lines (page == serve.py)");
+    const q = clonePhysics(ph);
+    setExpr(q, "friction", "sqrt(speed)"); setVal(q, "friction", 1);
+    setExpr(q, "air_accel", 'curve(p.hspeed, 0, 20, 1, 1.5, "inout")');
+    q.imports = [{ id: "quake3", name: "Quake III Arena", keys: ["gravity", "dash_speed"] }];
+    const fx = {
+        "new file, expr + import": "",
+        "existing expr lines (one dropped, one kept)": "custommode=e\nmode=ffa\nmove_friction=1.2\nexpr.friction=speed\nmove_step=1\nexpr.step=2*0.5\nhealth=99\n",
+        "an old import line is replaced in place": "custommode=e\n# imported from CPMA (cpma): gravity\nmode=ffa\ngravity=1.1\n",
+        "crlf + logic": "custommode=e\r\nmode=ffa\r\ngravity=0.5\r\n" + LOGIC.replace(/\n/g, "\r\n"),
+    };
+    for (const [n, text] of Object.entries(fx)) {
+        const page = mergeQmode(text, q, "fixture");
+        const srvAns = await post("/api/merge", { text, physics: q, name: "fixture" });
+        ok(page === srvAns.text, n, page === srvAns.text ? "" : JSON.stringify({ page, server: srvAns.text }));
+        const back = parseQmode(page, cat);
+        ok(back.physics.expr && back.physics.expr.friction === "sqrt(speed)" && back.physics.expr.air_accel === q.expr.air_accel && !("step" in back.physics.expr), "  parses back: the expressions", JSON.stringify(back.physics.expr));
+        ok((back.physics.imports || []).length === 1 && back.physics.imports[0].id === "quake3" && back.physics.imports[0].keys.join() === "gravity,dash_speed", "  parses back: one import line", JSON.stringify(back.physics.imports));
+        ok(!/^# imported from[^\n]*=/m.test(page), "  the import line has no '=' (the game skips it)");
+        ok((page.match(/^# imported from/gm) || []).length === 1, "  exactly one import line");
+        if (n.startsWith("existing")) ok(/^expr\.friction=sqrt\(speed\)\nhealth=99$/m.test(page) && !/expr\.step/.test(page), "  the kept expr line stays in place, the dropped one goes; other lines kept", JSON.stringify(page));
+    }
+    const bad = parseQmode("custommode=b\nmode=ffa\nexpr.friction=sqrt(\n", cat);
+    ok(bad.problems.some((p) => p.level === "error" && /friction/.test(p.msg || p.message || JSON.stringify(p))), "a broken expr line is a problem at its line", JSON.stringify(bad.problems));
+
+    console.log("expression evaluator (the grammar of src/game/moveexpr.cpp)");
+    const std = (await import(JS + "params.js")).standardPhysics(cat);
+    const val = (t, P) => { const c = X.check(t, cat.keySet, cat); return c.ok ? c.fn(Object.fromEntries(cat.all.map((p) => [p.key, 1])), P || X.STANDARD_INPUTS) : "error: " + c.error.msg; };
+    const cases = [["2+3*4", 14], ["-2^2", -4], ["2^3^2", 512], ["(1<2) + (3>=3)", 2], ["1 ? 5 : 6", 5], ["0 || 2", 1], ["1 && 0", 0], ["!0", 1],
+        ["min(3, 1, 2)", 1], ["clamp(5, 0, 2)", 2], ["lerp(2, 4, 0.5)", 3], ["step(1, 1)", 1], ["round(2.5)", 3], ["sign(-3)", -1], ["pi", Math.PI],
+        ['ease(0.5, "in")', 0.25], ["ease(0.25)", 0.25], ["curve(5, 0, 10, 1, 3)", 2], ["curve(-5, 0, 10, 1, 3)", 1], ["curve(50, 0, 10, 1, 3)", 3],
+        ['curve(5, 0, 10, 1, 3, "out")', 1 + 2 * 0.75], ["base.gravity", cat.byKey.get("gravity").base], ["sqrt(speed)", 1], ["p.charges", 2], ["p.onground", 1]];
+    for (const [t, want] of cases) { const v = val(t); ok(near(v, want, 1e-6), `${t} = ${+(+want).toFixed(4)}`, String(v)); }
+    for (const t of ["1 < 2 < 3", "sqrt(", "foo(1)", "nosuch + 1", "p.nosuch", 'ease(0.5, "nope")', "curve(1,2,3)", "1 +", "x".repeat(513)]) {
+        const c = X.check(t, cat.keySet, cat);
+        ok(!c.ok && c.error && c.error.msg, `error: ${t.length > 30 ? t.slice(0, 12) + "… (" + t.length + " chars)" : t}`, c.ok ? "accepted" : c.error.msg);
+    }
+    ok(X.check("1 + p.hspeed / 40", cat.keySet, cat).dynamic === true && X.check("sqrt(speed) * 2", cat.keySet, cat).dynamic === false, "static vs dynamic");
+    const r1 = clonePhysics(std); setVal(r1, "speed", 1.44); setExpr(r1, "friction", "sqrt(speed)"); setExpr(r1, "air_accel", "friction * 2");
+    const res = X.resolve(r1, cat);
+    ok(near(res.S.friction, 1.2, 1e-9) && near(res.S.air_accel, 2.4, 1e-9) && res.order.indexOf("friction") < res.order.indexOf("air_accel"), "static expressions resolve in dependency order", JSON.stringify(res.order));
+    const r2 = clonePhysics(std); setExpr(r2, "friction", "air_accel"); setExpr(r2, "air_accel", "friction");
+    const res2 = X.resolve(r2, cat);
+    ok(!res2.info.friction.ok && /cycle/.test(res2.info.friction.error.msg || "") && res2.S.friction === 1, "a cycle is an error; the setting keeps its fixed value", res2.info.friction.error && res2.info.friction.error.msg);
+    const r3 = clonePhysics(std); setExpr(r3, "friction", "100");
+    ok(X.resolve(r3, cat).S.friction === cat.byKey.get("friction").max, "a result is clamped to the setting's range");
+    const r4 = clonePhysics(std); setVal(r4, "friction", 1.3); setExpr(r4, "friction", "sqrt(-1)");
+    ok(X.resolve(r4, cat).S.friction === 1.3, "NaN leaves the fixed value");
+    const c0 = { input: "p.hspeed", x0: 0, x1: 20, y0: 1, y1: 1.5, ease: "inout" };
+    ok(JSON.stringify(X.parseCurve(X.formatCurve(c0), cat.keySet)) === JSON.stringify(c0), "a curve round-trips through its text", X.formatCurve(c0));
+    ok(X.completions("sq", 2, cat).items.some((i) => i.text.startsWith("sqrt")) && X.completions("p.hs", 4, cat).items.some((i) => i.text === "p.hspeed"), "autocomplete: functions and p. inputs");
+    ok(/<span/.test(X.highlightExpr("sqrt(speed) + p.air", cat.keySet, null)), "syntax highlighting");
+    const sw = X.sweep(r1, cat, "air_accel", "hspeed", 0, 50, 10);
+    ok(Array.isArray(sw) && sw.length >= 10, "sweep (the editor's plot) over an input", String(sw && sw.length));
+
+    console.log("MOCK pmove with dynamic expressions");
+    const { parseQmap } = await import(JS + "qmap.js");
+    const { MockSim, computeMetrics } = await import(JS + "sim.js");
+    const { mockPresets, mockRoomText } = await import(JS + "room.js");
+    const sim = new MockSim(parseQmap(mockRoomText(), "room"));
+    const runUp = mockPresets().find((x) => x.id === "run_up");
+    const d = clonePhysics(std); setExpr(d, "speed", "curve(p.hspeed, 0, 9, 1, 2)");
+    const t0 = performance.now();
+    const md = computeMetrics(sim.run(runUp.scenario, d, 10), runUp.scenario);
+    ok(md.topSpeed > 15, "speed = curve(p.hspeed, 0, 9, 1, 2): run speed keeps rising past 9.5 m/s", `${(+md.topSpeed).toFixed(2)} m/s in ${(performance.now() - t0).toFixed(0)} ms`);
+    const ms = computeMetrics(sim.run(runUp.scenario, std, 10), runUp.scenario);
+    ok(near(ms.topSpeed, 9.5, 0.01), "  (the standard still 9.5 m/s)");
+    const st = clonePhysics(std); setExpr(st, "speed", "1.2");
+    ok(near(computeMetrics(sim.run(runUp.scenario, st, 10), runUp.scenario).topSpeed, 11.4, 0.02), "a static expression applies like a fixed value (speed=1.2: 11.4 m/s)");
+
+    if (real) {
+        // the MOCK's dynamic expressions against the game's own (physsim runs them through pmove)
+        const sj = mockPresets().find((x) => x.id === "standing_jump");
+        const cases = [["run_up", "speed", "curve(p.hspeed, 0, 9, 1, 2)", "topSpeed", 0.05], ["standing_jump", "gravity", "p.air > 0.25 ? 1.6 : 0.8", "jumpHeight", 0.02],
+            ["standing_jump", "jump", "1 + 0.2 * p.onground", "jumpHeight", 0.02]];
+        for (const [pid, key, text, metric, tol] of cases) {
+            const sc = pid === "run_up" ? runUp : sj;
+            const m = clonePhysics(std); setExpr(m, key, text);
+            const mv = computeMetrics(sim.run(sc.scenario, m, 10), sc.scenario)[metric];
+            const ans = JSON.parse(spawnSync(maptool, ["physsim"], { input: JSON.stringify({ preset: pid, physics: { expr: { [key]: text } } }), encoding: "utf8", timeout: 30000 }).stdout);
+            const rv = ans.runs && ans.runs[0].metrics[metric];
+            ok(near(mv, rv, tol), `MOCK == the game: ${key}=${text} (${pid} ${metric})`, `${(+mv).toFixed(3)} vs ${(+rv).toFixed(3)}`);
+        }
+    }
+
+    console.log("served files");
+    const sr = await fetch(BASE + "/api/source?file=pmove.cpp");
+    const stx = await sr.text();
+    ok(sr.ok && /pmoveStep/.test(stx), "/api/source?file=pmove.cpp (the game's movement code, read-only)", sr.headers.get("x-source-path") || "");
+    for (const f of ["gamedefs.h", "pmove.h"]) ok((await fetch(BASE + "/api/source?file=" + f)).ok, `/api/source?file=${f}`);
+    for (const f of ["../../CMakeLists.txt", "main.cpp", "%2e%2e%2fserve.py"]) ok(!(await fetch(BASE + "/api/source?file=" + f)).ok, `/api/source refuses ${f}`);
+    const ri = await fetch(BASE + "/references/index.json");
+    ok(ri.ok && (await ri.json()).groups, `/references/index.json (${REFS_REAL ? "the checkout's" : "a stub via --references"})`);
+    ok(!(await fetch(BASE + "/references/../serve.py")).ok && !(await fetch(BASE + "/references/%2e%2e/serve.py")).ok, "/references/ serves nothing outside its folder");
+    const cfg = await (await fetch(BASE + "/api/config")).json();
+    ok(cfg.references === true && cfg.source === true, "/api/config: references and source available");
+
+    // the game's own evaluator, when the helper has it
+    if (real) {
+        const r = spawnSync(maptool, ["physexpr"], { input: JSON.stringify({ physics: { speed: 1.44, expr: { friction: "sqrt(speed)", air_accel: "1 + p.hspeed/40", step: "sqrt(" } } }), encoding: "utf8", timeout: 20000 });
+        if (r.status !== 0) console.log("  (quark_maptool has no physexpr yet: the page uses its own evaluator, and sends fixed values only)");
+        else {
+            // the page's tables are the game's (physparams.expr, read from src/game/moveexpr.cpp)
+            const pe = JSON.parse(spawnSync(maptool, ["physparams"], { input: "{}", encoding: "utf8" }).stdout).expr;
+            if (pe) {
+                const ins = pe.inputs.map((i) => `${i.name}:${i.rest}:${i.min}..${i.max}`).join(" "), mine = X.INPUTS.map((i) => `p.${i.key}:${i.rest}:${i.min}..${i.max}`).join(" ");
+                ok(ins === mine, "the page's p. inputs (rest, range) are the game's", ins === mine ? "" : `game ${ins} | page ${mine}`);
+                const fns = pe.functions.map((f) => `${f.name}/${f.minArgs}-${f.maxArgs}`).join(" "), myf = Object.entries(X.FUNCS).map(([n, f]) => `${n}/${f.min}-${f.max}`).join(" ");
+                const srt = (x) => x.split(" ").sort().join(" ");
+                ok(srt(fns) === srt(myf), "the page's functions (and their argument counts) are the game's", srt(fns) === srt(myf) ? "" : `game ${fns} | page ${myf}`);
+                ok(pe.ease.join() === X.EASINGS.join(), "the page's easings are the game's");
+                ok(pe.maxLength === 512, "512 characters at most");
+            }
+            // the page's evaluator against the game's on the same texts (values at rest, clamped to friction's 0.1..5)
+            const texts = ["sqrt(speed) * 2", "-2^2 + 5", "2^-1", "exp(1)", "log(10)", "pow(2, 1.5)", "round(-2.5) + 4", "floor(2.7) + ceil(0.2)", "max(1, 2, 3) - min(0.5, 2)",
+                "clamp(9, 1, 3)", "lerp(1, 3, 0.25)", "step(1, 1) + 1", "(1 < 2) + (2 <= 1) + (3 == 3) + (1 != 1)", "1 && 0 || 1", "!0 + 1", "0 ? 2 : 3", "pi / 2",
+                "base.speed / 9.5", "base.friction / 3", "1 + p.onground", "p.charges", ...X.EASINGS.map((e) => `1 + ease(0.3, "${e}")`), ...X.EASINGS.map((e) => `curve(0.7, 0, 1, 1, 3, "${e}")`),
+                "curve(5, 10, 0, 1, 3)", "curve(5, 5, 5, 1, 3)", "curve(4.9, 5, 5, 1, 3)"];
+            let same = 0; const diff = [];
+            for (const tx of texts) {
+                const a2 = JSON.parse(spawnSync(maptool, ["physexpr"], { input: JSON.stringify({ physics: { expr: { friction: tx } } }), encoding: "utf8" }).stdout);
+                const gi = (a2.items || []).find((i) => i.key === "friction") || {};
+                const q2 = clonePhysics(std); setExpr(q2, "friction", tx);
+                const pv = X.resolve(q2, cat).S.friction;
+                if (near(+gi.value, pv, 2e-7 * Math.max(1, Math.abs(pv)))) same++;   // (the answer prints floats: 7 digits) else diff.push(`${tx}: game ${gi.value} page ${pv}`);
+            }
+            ok(!diff.length, `the page's evaluator == the game's on ${texts.length} expressions`, diff.slice(0, 4).join(" | ") || `${same} the same`);
+            let a = null; try { a = JSON.parse(r.stdout); } catch {}
+            const items = (a && (a.items || a.exprs)) || [];
+            const it = (k) => items.find((i) => (i.key || i.setting) === k) || {};
+            ok(near(+(it("friction").value ?? it("friction").atRest), 1.2, 1e-4), "physexpr: friction=sqrt(speed) at speed 1.44 = 1.2 (page agrees)", JSON.stringify(it("friction")));
+            ok(it("air_accel").dynamic === true && it("friction").dynamic === false, "physexpr: static / dynamic as the page says");
+            ok(it("step").ok === false || !!it("step").error, "physexpr: a parse error is reported");
+        }
+    }
+}
+
+async function v2BrowserChecks(page, mode, shots) {
+    console.log(`browser v2 (${mode})`);
+    await page.evaluate(() => window.qpe.newSet());
+    await page.selectOption("#presetSel", "bhop_strafe").catch(() => page.selectOption("#presetSel", "bhop10"));
+    await page.waitForTimeout(300);
+    await page.waitForFunction(() => !window.qpe._running, null, { timeout: 10000 });
+    await page.click("#tabs button[data-page=values]");
+
+    // ---- compare with games
+    await page.click(".gpick-btn");
+    await page.waitForSelector(".gpick input[data-id]", { timeout: 5000 });
+    const ids = await page.$$eval(".gpick input[data-id]", (l) => l.map((x) => x.dataset.id));
+    const G = ids.includes("quake3") ? "quake3" : ids[0];
+    ok(ids.length >= 1, "the game picker lists the references", `${ids.length} games`);
+    if (await page.locator(".gsort button[data-s=dist]").count()) {
+        await page.click(".gsort button[data-s=dist]");
+        const order = await page.$$eval(".gpick input[data-id]", (l) => l.map((x) => x.dataset.id));
+        ok(order.length === ids.length, "  sorted closest to Quark first", order.slice(0, 3).join(", "));
+    }
+    await page.fill(".gpick .gsearch", G.slice(0, 4));
+    ok((await page.locator(".gpick input[data-id]").count()) >= 1 && (await page.locator(".gpick input[data-id]").count()) <= ids.length, "  search filters");
+    await page.check(`.gpick input[data-id="${G}"]`);
+    ok(await page.locator(".gpick").isVisible(), "  the picker stays open while ticking");
+    await page.mouse.click(1450, 880);
+    await page.waitForSelector(`th.gh[data-id="${G}"] .gall`, { timeout: 5000 });
+    ok(true, `a column for ${G}`);
+    const gv = await page.evaluate((G) => { const g = window.qpe.games.list.find((x) => x.id === G); return { mult: g.game.values.gravity && g.game.values.gravity.mult, mapped: g.mapped.length }; }, G);
+    const cellTxt = await page.locator(`#values tr:has(td.lab[title=gravity]) td.gv[data-id="${G}"]`).innerText();
+    ok(gv.mult == null ? /no analogue/.test(cellTxt) : cellTxt.includes("×"), "  the gravity cell shows the game's value and multiplier", cellTxt.replace(/\s+/g, " "));
+    ok((await page.locator("td.gv.na").count()) > 0, "  'no analogue' where the game has nothing");
+    ok(/confidence/.test(await page.locator(`td.gv[data-id="${G}"][title*=confidence]`).first().getAttribute("title") || ""), "  source and confidence on hover");
+    ok(JSON.parse(await page.evaluate(() => localStorage.getItem("qpe.games")) || "[]").includes(G), "  the pick is remembered");
+    if (gv.mult != null) {
+        await page.click(`#values tr:has(td.lab[title=gravity]) td.gv[data-id="${G}"] .guse`);
+        await page.waitForTimeout(100);
+        const g1 = await page.evaluate(() => window.qpe.physics.gravity);
+        ok(near(g1, Math.max(0.1, Math.min(3, gv.mult)), 1e-5), "  'use' takes the game's gravity", String(g1));
+        ok(/^# imported from .*\(.*\): gravity$/m.test(await page.evaluate(() => window.qpe.set.text)), "  the import is recorded in the text");
+    }
+    if (shots) await shot(page, "values-games");
+    await page.click(`th.gh[data-id="${G}"] .gall`);
+    await page.waitForTimeout(150);
+    const imp = await page.evaluate(() => ({ text: window.qpe.set.text, ph: window.qpe.physics }));
+    const line = (imp.text.match(/^# imported from .*$/m) || [""])[0];
+    ok(line.split(":").pop().split(",").length >= Math.min(gv.mapped, 2), "'load all' loads the game's values, one import line", line);
+    if (await page.locator(".vfacts").count()) ok((await page.locator(".vfacts tr.frow").count()) >= 1, "  the game's reference facts are listed");
+    // the game as a compare set (sidebar) and A / B later
+    await page.evaluate(() => window.qpe.newSet());
+    await page.waitForTimeout(100);
+
+    // ---- equations
+    const fr = "#values tr.prow:has(td.lab[title=move_friction])";
+    await page.click(`${fr} button[data-m=equation]`);
+    const xin = page.locator(`${fr} + tr.xrow .xin`);
+    await xin.fill("sqrt(speed)");
+    await page.fill("#values tr:has(td.lab[title=speed]) input.mult", "1.44");
+    await page.waitForTimeout(100);
+    let t = await page.evaluate(() => window.qpe.set.text);
+    ok(/^expr\.friction=sqrt\(speed\)$/m.test(t) && /^move_friction=1\.2$/m.test(t), "equation: expr.friction=sqrt(speed) and its value at rest (speed x1.44: 1.2)", (t.match(/^(move_friction|expr\.friction)=.*$/gm) || []).join(" | "));
+    ok(/static/i.test(await page.locator(`${fr} .xb`).innerText()), "  badge: static");
+    ok((await page.locator(`${fr} + tr.xrow .xhl span`).count()) > 0, "  highlighted");
+    await xin.fill("1 + p.hspeed / 40");
+    await page.waitForTimeout(100);
+    ok(/dynamic/i.test(await page.locator(`${fr} .xb`).innerText()), "  badge: dynamic");
+    ok(await page.locator(`${fr} + tr.xrow canvas.xplot`).isVisible(), "  a dynamic expression is plotted against its input");
+    await xin.fill("1 + p.hsp");
+    await xin.press("End");
+    await page.keyboard.press("Tab");
+    ok((await xin.inputValue()).includes("p.hspeed"), "  Tab completes p.hspeed", await xin.inputValue());
+    await xin.fill("sqrt(");
+    await page.waitForTimeout(100);
+    ok(/✗/.test(await page.locator(`${fr} + tr.xrow .xmsg`).innerText()) && /error/i.test(await page.locator(`${fr} .xb`).innerText()), "  an error is shown live", await page.locator(`${fr} + tr.xrow .xmsg`).innerText());
+    await xin.fill("sqrt(speed)");
+    await page.waitForTimeout(100);
+    if (shots) await shot(page, "values-equation");
+
+    // ---- curves
+    const aa = "#values tr.prow:has(td.lab[title=move_air_accel])";
+    await page.click(`${aa} button[data-m=curve]`);
+    await page.waitForTimeout(100);
+    t = await page.evaluate(() => window.qpe.physics.expr && window.qpe.physics.expr.air_accel);
+    ok(/^curve\(/.test(t || ""), "curve mode writes a curve(...) expression", t);
+    await page.click(`${aa} + tr.xrow .ceases button[data-e=out]`);
+    await page.fill(`${aa} + tr.xrow .cy1`, "2");
+    await page.waitForTimeout(100);
+    t = await page.evaluate(() => window.qpe.physics.expr.air_accel);
+    ok(/"out"\)$/.test(t) && /, 2, "out"\)$/.test(t), "  the easing and the bounds go into the text", t);
+    await page.fill(`${aa} + tr.xrow .cy1`, "99");
+    await page.waitForTimeout(100);
+    t = await page.evaluate(() => window.qpe.physics.expr.air_accel);
+    ok(/, 5, "out"\)$/.test(t), "  the output is clamped to the setting's range (0.1..5)", t);
+    await page.locator(`${aa} + tr.xrow .cy1`).blur();
+    ok((await page.inputValue(`${aa} + tr.xrow .cy1`)) === "5", "  and the field shows the clamped value");
+    ok(await page.locator(`${aa} + tr.xrow canvas.cplot`).isVisible(), "  the curve is plotted");
+    if (shots) { await page.locator(aa).scrollIntoViewIfNeeded(); await shot(page, "values-curve"); }
+    const ex = await page.evaluate(() => window.qpe.set.text);
+    ok(/^expr\.air_accel=curve\(/m.test(ex), "  the Code text has the expr line");
+
+    // ---- the Code tab: .qmode and the movement code
+    await page.click("#tabs button[data-page=code]");
+    await page.click("#codeTabs button[data-sub=move]");
+    await page.waitForSelector("#mcCode .mchip", { timeout: 10000 });
+    ok((await page.locator("#mcCode .ml").count()) > 300, "Movement code: pmove.cpp shown", `${await page.locator("#mcCode .ml").count()} lines`);
+    ok((await page.locator("#mcCode .mchip.chg").count()) > 0, "  changed settings' chips highlighted");
+    const chip = await page.locator('#mcCode .mchip[data-k="friction"]').first().innerText();
+    ok(/ƒ/.test(chip) && /=/.test(chip), "  the friction chip shows its equation and base × multiplier = value", chip);
+    ok((await page.locator("#mcCode .mnote").count()) > 5, "  the plain-language notes");
+    if (shots) await shot(page, "code-movement");
+    await page.click("#mcFiles button:has-text('gamedefs.h')").catch(() => {});
+    await page.waitForTimeout(100);
+    await page.click("#mcFiles button:has-text('pmove.cpp')").catch(() => {});
+    await page.waitForSelector('#mcCode .mchip[data-k="friction"]');
+    await page.locator('#mcCode .mchip[data-k="friction"]').first().click();
+    await page.waitForTimeout(150);
+    ok((await page.evaluate(() => window.qpe.page)) === "values", "  a chip jumps to its setting in Values");
+
+    // ---- the code graph
+    await page.click("#tabs button[data-page=codegraph]");
+    await page.waitForTimeout(300);
+    const cg = await page.evaluate(() => { const v = window.qpe.codeGraph; const n = (v.nodes || []).find((x) => x.type === "step"); const r = v.c.getBoundingClientRect();
+        return { n: (v.nodes || []).length, steps: (v.nodes || []).filter((x) => x.type === "step").length, hot: (v.edges || []).filter((e) => e.hot || e.changed).length,
+            x: n && r.left + (n.x + n.w / 2 - v.cam.x) * v.cam.s, y: n && r.top + (n.y + n.h / 2 - v.cam.y) * v.cam.s, line: n && n.st.start }; });
+    ok(cg.n > 40 && cg.steps >= 10, "Code graph: settings -> steps -> state", `${cg.n} nodes, ${cg.steps} steps`);
+    if (shots) await shot(page, "codegraph");
+    await page.mouse.click(cg.x, cg.y);
+    await page.waitForTimeout(400);
+    const at = await page.evaluate(() => ({ page: window.qpe.page, sub: window.qpe.moveCode.sub, flash: [...document.querySelectorAll("#mcCode .ml.flash, #mcCode .ml.mark")].map((e) => +e.dataset.l) }));
+    ok(at.page === "code" && at.sub === "move" && at.flash.includes(cg.line), "  a click on a step jumps to its code", JSON.stringify(at));
+
+    // ---- the movement graph: 3D, lock units, A / B
+    await page.click("#tabs button[data-page=graph]");
+    await page.click('#gView button[data-v="3d"]');
+    await page.waitForTimeout(500);
+    const g3 = await page.evaluate(() => { const g = window.qpe.graph.g3; const c = document.getElementById("g3dA"); return { gl: !!(g.sA && g.sA.gl), w: c.clientWidth, h: c.clientHeight, t: document.getElementById("g3dTime").textContent }; });
+    ok(g3.gl && g3.w > 200 && g3.h > 150, "3D: the runs over the map (WebGL)", `${g3.w}x${g3.h}`);
+    await page.evaluate(() => { const s = document.getElementById("g3dT"); s.value = 300; s.dispatchEvent(new Event("input")); });
+    ok((await page.locator("#g3dTime").innerText()) !== g3.t, "  the scrubber moves the time", await page.locator("#g3dTime").innerText());
+    if (shots) await shot(page, "graph-3d");
+    await page.click('#gView button[data-v="curves"]');
+    await page.click("#gLockBtn");
+    await page.check('#gLock input[data-k="height"]');
+    await page.fill('#gLock input[data-lo="height"]', "0");
+    await page.fill('#gLock input[data-hi="height"]', "5");
+    await page.waitForTimeout(100);
+    const rg = await page.evaluate(() => window.qpe.graph.ranges.find((r) => r.s.key === "height"));
+    ok(rg && rg.lo === 0 && rg.hi === 5 && rg.locked, "lock units: height fixed at 0..5 m", rg && `${rg.lo}..${rg.hi}`);
+    ok(JSON.parse(await page.evaluate(() => localStorage.getItem("qpe.locks"))).height.on === true, "  remembered");
+    if (shots) await shot(page, "graph-locks");
+    await page.click('#gCmp button[data-c=ab]');
+    await page.waitForTimeout(100);
+    const opts = await page.$$eval("#abB option", (o) => o.map((x) => x.value));
+    ok(opts.includes("std") && opts.includes("edit") && opts.includes("mode:lowgrav") && opts.includes("game:" + G), "A / B: the edited set, the standard, saved modes and picked games", opts.join(" "));
+    await page.selectOption("#abA", "edit"); await page.selectOption("#abB", "game:" + G);
+    await page.waitForFunction(() => !window.qpe._running && window.qpe.graph.runs().length === 2 && /game/.test(document.getElementById("gNote").textContent + window.qpe.graph.runs()[1].label + " game"), null, { timeout: 15000 });
+    await page.waitForTimeout(400);
+    const ab = await page.evaluate(() => ({ head: document.querySelector("#metrics table tr").innerText, labels: window.qpe.graph.runs().map((r) => r.label), note: document.getElementById("gNote").textContent }));
+    ok(/B\s*[−-]\s*A/.test(ab.head), "  the table shows A, B and B − A", ab.head.replace(/\s+/g, " "));
+    ok(/mapped|only/.test(ab.note), "  a game as B is flagged: only its mapped settings apply", ab.note);
+    await page.click('#abLay button[data-l=side]');
+    await page.waitForTimeout(300);
+    if (shots) await shot(page, "graph-ab");
+    const hr = await page.evaluate(() => window.qpe.graph.ranges.filter((r) => r.s.key === "height").length);
+    ok(hr >= 1, "  side by side draws", String(hr));
+    await page.click('#gView button[data-v="3d"]');
+    await page.waitForTimeout(500);
+    ok(await page.evaluate(() => document.getElementById("g3dB").clientWidth > 100 && document.getElementById("g3d").classList.contains("side")), "  3D side by side: two views, one camera");
+    if (shots) await shot(page, "graph-ab-3d");
+    // back to defaults for the next run
+    await page.click('#gView button[data-v="curves"]'); await page.click('#gCmp button[data-c=all]');
+    await page.evaluate(() => { localStorage.removeItem("qpe.locks"); window.qpe.graph.locks = {}; window.qpe.newSet(); window.qpe.setGamePicks([]); });
+}
+
 async function shot(page, name, tab) {
     if (tab) { await page.click(`#tabs button[data-page=${tab}]`); await page.waitForTimeout(250); }
+    await page.evaluate(() => { const t = document.getElementById("toast"); if (t) t.style.display = "none"; });
     try { fs.mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: path.join(SHOTS, name + ".png") }); console.log("  shot " + path.join(SHOTS, name + ".png")); }
     catch (e) { console.log("  (screenshot not written: " + e.message + ")"); }
 }

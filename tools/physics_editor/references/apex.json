@@ -1,0 +1,96 @@
+{
+ "id": "apex",
+ "name": "Apex Legends",
+ "year": 2019,
+ "engine": "Source (Respawn)",
+ "group": "movement shooters",
+ "scale": {
+  "unit": "u",
+  "metresPerUnit": 0.025,
+  "why": "assumed like Titanfall 2: a 72 u (inch) tall hull scaled to 1.8 m, 0.025 m/u (the wiki converts at 1 u = 1 inch = 0.0254 m, 1.6% more)"
+ },
+ "values": {
+  "speed": {
+   "value": 7.475,
+   "unit": "m/s",
+   "mult": 0.7868,
+   "source": "https://apexlegends.wiki.gg/wiki/Sliding (sprinting 299 u/s, 7.59 m/s)",
+   "confidence": "measured",
+   "raw": "sprint 299 u/s",
+   "note": "sprint; walk 199.53 u/s, crouch-walk 92 u/s; -13% holding a weapon"
+  },
+  "hook_range": {
+   "value": 21,
+   "unit": "m",
+   "mult": 0.4667,
+   "source": "https://apexlegends.wiki.gg/wiki/Pathfinder (grappling hook max length 21 m)",
+   "confidence": "measured",
+   "note": "Pathfinder's Grappling Hook (tactical); the wiki lists a 20 s cooldown and 2 charges"
+  },
+  "dash": {
+   "value": false,
+   "source": "https://apexlegends.wiki.gg/wiki/Sliding",
+   "confidence": "exact",
+   "note": "no dash for most legends (Octane / Horizon / Pathfinder have movement abilities)"
+  },
+  "grapple": {
+   "value": false,
+   "source": "https://apexlegends.wiki.gg/wiki/Pathfinder",
+   "confidence": "exact",
+   "note": "Pathfinder only"
+  }
+ },
+ "facts": {
+  "walkSpeed": {
+   "value": 4.9883,
+   "unit": "m/s",
+   "source": "https://apexlegends.wiki.gg/wiki/Sliding (walking 199.53)",
+   "confidence": "measured"
+  },
+  "crouchSpeed": {
+   "value": 2.3,
+   "unit": "m/s",
+   "source": "https://apexlegends.wiki.gg/wiki/Sliding (crouchwalking 92)",
+   "confidence": "measured"
+  },
+  "slideTime": {
+   "value": 1,
+   "unit": "s",
+   "source": "https://apexlegends.wiki.gg/wiki/Sliding (about 1 s on flat ground before it slows)",
+   "confidence": "measured"
+  },
+  "superglideBoost": {
+   "value": 10.3,
+   "unit": "m/s",
+   "source": "https://apexlegends.fandom.com/wiki/Movement",
+   "confidence": "measured"
+  },
+  "climbHeight": {
+   "value": 6,
+   "unit": "m",
+   "source": "https://apexlegends.fandom.com/wiki/Movement (wall climb about 6 m)",
+   "confidence": "measured"
+  }
+ },
+ "extras": [
+  "slide (about 1 s on flat ground, longer downhill)",
+  "wall climb about 6 m, mantle",
+  "superglide (10.3 m/s), tap-strafe",
+  "ziplines, jump pads"
+ ],
+ "notes": "Apex's data files aren't public; numbers are community measurements. The Fandom wiki converts the same 299 u/s at 1 u = 0.75 in (5.7 m/s); this file uses the player-height scale.",
+ "sources": [
+  {
+   "title": "Apex Legends Wiki (wiki.gg): Sliding",
+   "url": "https://apexlegends.wiki.gg/wiki/Sliding"
+  },
+  {
+   "title": "Apex Legends Wiki (wiki.gg): Pathfinder",
+   "url": "https://apexlegends.wiki.gg/wiki/Pathfinder"
+  },
+  {
+   "title": "Apex Legends Wiki (Fandom): Movement",
+   "url": "https://apexlegends.fandom.com/wiki/Movement"
+  }
+ ]
+}

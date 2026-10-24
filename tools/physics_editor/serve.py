@@ -23,7 +23,7 @@ Python 3 standard library only. Binds 127.0.0.1 only. It:
     process), or, as a fallback, Server-Sent Events out + POST control lines in (/api/drive...).
 
 Settings come from (later wins): built-in defaults, physics_editor.json next to this file, then the command line.
-physics_editor.json keys: port, dataDir, maptool, mapsDirs (list), defaultMapsDir, helperArgs.
+physics_editor.json keys: port, dataDir, maptool, mapsDirs (list), defaultMapsDir, referencesDir, helperArgs.
 
 Every request must come from the page itself: Host must be 127.0.0.1 / localhost, every write carries the header
 X-Quark-Editor (a page on another site can't send it without a CORS preflight, which is never allowed), and the
@@ -44,7 +44,12 @@ NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")        # scenario / m
 MODE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _-]{0,39}$")        # custom mode names: CustomRules safeName's characters, 40 max
 MAX_BODY = 8 << 20
 DEFAULT_PORT = 8772          # fixed (the Quark Project app opens http://127.0.0.1:8772/); physics_editor.json / --port change it
-HELPER_CMDS = {"physparams", "physsim", "physpresets", "physroom", "physexport", "physdrive", "parse"}
+HELPER_CMDS = {"physparams", "physsim", "physpresets", "physroom", "physexport", "physdrive", "physexpr", "parse"}
+REFS = os.path.join(HERE, "references")      # other games' movement values (references/index.json + <game>.json)
+# The game's movement code, shown read-only by the Code tab (Movement code) and the Code graph: from the checkout this
+# runs from, else the copy --install puts in source/ next to serve.py.
+SOURCE_FILES = {"pmove.cpp": "src/game/pmove.cpp", "pmove.h": "src/game/pmove.h", "gamedefs.h": "src/game/gamedefs.h",
+                "customrules.cpp": "src/game/customrules.cpp"}
 MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
         ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png",
         ".qmode": "text/plain; charset=utf-8", ".qmap": "text/plain; charset=utf-8", ".txt": "text/plain; charset=utf-8",
@@ -150,6 +155,8 @@ class Config:
         self.extra_maps = [os.path.abspath(d) for d in (g("mapsDirs", args.maps_dir) or [])]
         dm = g("defaultMapsDir")
         self.default_maps = os.path.abspath(dm) if dm else None
+        rd = g("referencesDir", getattr(args, "references", None))
+        self.refs = os.path.abspath(rd) if rd else REFS
 
     def default_maps_dir(self):
         if self.default_maps and os.path.isdir(self.default_maps): return self.default_maps
@@ -181,6 +188,28 @@ MV_KEYS = ["crouch_speed", "ground_accel", "friction", "stop_speed", "air_accel"
            "dash_cooldown", "bounce_gain", "bounce_max", "hook_range", "hook_accel", "hook_max", "hook_gravity", "hook_release",
            "hook_cooldown", "ladder_speed", "ladder_side", "dash_jump_window", "super_dash_boost", "super_dash_jump",
            "super_dash_max", "dash_bounce_angle", "air_drift", "strafe_boost"]   # moveParamKey (gamedefs.h), in order
+EXPR_KEYS = ["gravity", "speed", "jump"] + MV_KEYS     # expr.<key> lines (v2, INTERFACE.md), written in this order
+IMPORT_PREFIX = "# imported from "                    # the set's record of values taken from other games (a comment)
+
+
+def is_move_key(k):
+    return k in TOP_KEYS or k.startswith("move_") or k.startswith("expr.")
+
+
+def is_import_line(l):
+    return l.rstrip("\r").startswith(IMPORT_PREFIX)
+
+
+def _clean(v):
+    return re.sub(r"[()]", "", re.sub(r"[=\r\n]", " ", str(v))).strip()
+
+
+def import_lines(phys):
+    out = []
+    for i in phys.get("imports") or []:
+        if not isinstance(i, dict) or not i.get("id") or not i.get("keys"): continue
+        out.append("%s%s (%s): %s" % (IMPORT_PREFIX, _clean(i.get("name") or i["id"]), _clean(i["id"]), ", ".join(_clean(k) for k in i["keys"])))
+    return out
 
 
 def is_logic_line(line):
@@ -210,6 +239,10 @@ def movement_lines(phys):
         try: f = float(v)
         except (TypeError, ValueError): continue
         if f != 1: out.append(("move_" + k, fmt_num(f)))
+    ex = phys.get("expr") or {}
+    rank = lambda k: EXPR_KEYS.index(k) if k in EXPR_KEYS else 1000
+    keys = sorted((k for k, v in ex.items() if re.match(r"^[a-z_]{1,32}$", k) and isinstance(v, str) and v.strip()), key=lambda k: (rank(k), k))
+    for k in keys: out.append(("expr." + k, re.sub(r"[\r\n]+", " ", ex[k]).strip()))
     return out
 
 
@@ -219,9 +252,10 @@ def merge_qmode(text, phys, name=None):
     other line, and everything from a `logic` line on, stays byte for byte. text None/"" = a new file: the toText
     header (custommode=, mode=) and the movement lines only."""
     want = movement_lines(phys)
+    imps = import_lines(phys)
     if not text:
         nm = name or "physics"
-        return "custommode=%s\nmode=ffa\n" % nm + "".join("%s=%s\n" % kv for kv in want)
+        return "custommode=%s\nmode=ffa\n" % nm + "".join(l + "\n" for l in imps) + "".join("%s=%s\n" % kv for kv in want)
     # (each line keeps its own ending: a file with CRLF, or mixed endings, comes back the same where it isn't changed)
     lines = text.split("\n")
     trailing = lines[-1] == ""
@@ -237,16 +271,23 @@ def merge_qmode(text, phys, name=None):
         k = keyof(l)
         if k is not None: last[k] = i
     seen = set()
+    imps_placed = False
     for i, l in enumerate(head):
         k = keyof(l)
-        if k is None or not (k in TOP_KEYS or k.startswith("move_")) or last.get(k) != i:
+        if is_import_line(l):      # the import record: rewritten where its first line was
+            if not imps_placed:
+                out.extend(x + cr(l) for x in imps); imps_placed = True
+            continue
+        if k is None or not is_move_key(k) or last.get(k) != i:
             out.append(l)          # not a movement key, or an earlier duplicate (the game reads the last one): as it was
         elif k in wantd:
             out.append("%s=%s%s" % (k, wantd[k], cr(l))); seen.add(k)
-        elif k[5:] in MV_KEYS:
+        elif k.startswith("move_") and k[5:] in MV_KEYS:
             pass                   # a move_ key back at 1: dropped (toText writes only the changed ones)
+        elif k.startswith("expr.") and k[5:] in EXPR_KEYS:
+            pass                   # an expression taken off: dropped
         else:
-            out.append(l)          # a move_ key this build doesn't know (the game ignores it): kept
+            out.append(l)          # a move_ / expr. key this build doesn't know (the game ignores it): kept
     # (a missing gravity / speed / jump / dash / grapple at 1 or on is what the game reads anyway: not added)
     missing = [(k, v) for k, v in want if k not in seen and not (k in TOP_KEYS and v == "1")]
     if missing:
@@ -256,7 +297,15 @@ def merge_qmode(text, phys, name=None):
                     if keyof(out[j]) == kk: return j
             return None
         for k, v in missing:
-            if k.startswith("move_"):
+            if k.startswith("expr."):   # after the setting's own line, else after the last movement line
+                sk = k[5:]
+                j = idx_of([sk if sk in TOP_KEYS else "move_" + sk])
+                if j is None:
+                    for jj in range(len(out) - 1, -1, -1):
+                        kk = keyof(out[jj]) or ""
+                        if kk.startswith("move_") or kk.startswith("expr."): j = jj; break
+                if j is None: j = idx_of(["rounds", "scorelimit", "timelimit", "regen", "grapple", "dash", "jump", "speed", "gravity"])
+            elif k.startswith("move_"):
                 j = None
                 for jj in range(len(out) - 1, -1, -1):
                     if (keyof(out[jj]) or "").startswith("move_"): j = jj; break
@@ -270,6 +319,14 @@ def merge_qmode(text, phys, name=None):
                 # no anchor: after the last key=value line of the head (before blank lines / comments at its end)
                 j = max([jj for jj in range(len(out)) if keyof(out[jj]) is not None] or [-1])
             out.insert(j + 1, "%s=%s%s" % (k, v, cr(out[j]) if j >= 0 else cr(text.split("\n", 1)[0])))
+    if not imps_placed and imps:   # after the mode= line, else the custommode= line, else at the top
+        j = -1
+        for kk in ("mode", "custommode"):
+            for jj in range(len(out) - 1, -1, -1):
+                if keyof(out[jj]) == kk: j = jj; break
+            if j >= 0: break
+        c = cr(out[j]) if j >= 0 else cr(text.split("\n", 1)[0])
+        out[j + 1:j + 1] = [x + c for x in imps]
     return "\n".join(out + tail) + ("\n" if trailing else "")
 
 
@@ -288,7 +345,7 @@ def mode_info(path):
                 k, _, v = line.strip().partition("=")
                 if k == "custommode": info["custommode"] = v
                 elif k == "mode": info["mode"] = v
-                elif k.startswith("move_"): info["moved"] += 1
+                elif k.startswith("move_") or k.startswith("expr."): info["moved"] += 1
                 elif k in ("gravity", "speed", "jump"):
                     try:
                         if float(v) != 1: info["moved"] += 1
@@ -297,6 +354,18 @@ def mode_info(path):
     except OSError:
         pass
     return info
+
+
+def source_path(name):
+    rel = SOURCE_FILES.get(name)
+    if not rel: return None
+    cands = []
+    if os.path.isfile(os.path.join(ROOT, "CMakeLists.txt")): cands.append(os.path.join(ROOT, rel))
+    cands.append(os.path.join(HERE, "source", name))
+    for r in source_roots(): cands.append(os.path.join(r, rel))
+    for c in cands:
+        if os.path.isfile(c): return c
+    return None
 
 
 # ---------------------------------------------------------------- maps
@@ -544,6 +613,12 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/" or p == "/index.html": return self._static("index.html")
             if p.startswith("/web/"): return self._static(p[5:])
             if p == "/api/config": return self._send(200, self._config())
+            if p == "/api/source":
+                path = source_path(q.get("file", ""))
+                if not path: return self._err(404, "no such source file")
+                with open(path, encoding="utf-8", errors="replace") as f:
+                    return self._send(200, f.read(), MIME[".txt"], extra={"X-Source-Path": os.path.relpath(path, ROOT) if path.startswith(ROOT) else path})
+            if p.startswith("/references/"): return self._static(p[len("/references/"):], CFG.refs)
             if p == "/api/ping": return self._send(200, {"ok": True, "tool": "physics-editor"}, extra={"Access-Control-Allow-Origin": "*"})
             if p == "/api/maps": return self._send(200, {"maps": list_maps(), "defaultDir": CFG.default_maps_dir()})
             if p == "/api/map":
@@ -676,12 +751,13 @@ class Handler(BaseHTTPRequestHandler):
     def _config(self):
         return {"dataDir": CFG.data_dir, "modes": CFG.modes_dir(), "scenarios": CFG.scenarios_dir(), "userMaps": CFG.user_maps_dir(),
                 "defaultMaps": CFG.default_maps_dir(), "maptool": CFG.maptool, "platform": sys.platform, "port": CFG.port,
-                "installed": not os.path.isfile(os.path.join(ROOT, "CMakeLists.txt"))}
+                "installed": not os.path.isfile(os.path.join(ROOT, "CMakeLists.txt")), "references": os.path.isfile(os.path.join(CFG.refs, "index.json")),
+                "source": bool(source_path("pmove.cpp"))}
 
-    def _static(self, rel):
+    def _static(self, rel, root=WEB):
         rel = rel.split("?", 1)[0]
-        full = os.path.normpath(os.path.join(WEB, rel))
-        if not full.startswith(os.path.normpath(WEB) + os.sep) or not os.path.isfile(full):
+        full = os.path.normpath(os.path.join(root, rel))
+        if not full.startswith(os.path.normpath(root) + os.sep) or not os.path.isfile(full):
             return self._err(404, "not found")
         ext = os.path.splitext(full)[1].lower()
         with open(full, "rb") as f: data = f.read()
@@ -832,6 +908,12 @@ def install(dest):
         if not IS_WIN and os.path.isfile(os.path.join(dest, "run.sh")): os.chmod(os.path.join(dest, "run.sh"), 0o755)
         # web/: copied over what is there (a stale file left from an older version is harmless: nothing links it)
         shutil.copytree(WEB, os.path.join(dest, "web"), dirs_exist_ok=True, ignore=shutil.ignore_patterns("node_modules", "*.png", "test"))
+        if os.path.isdir(REFS):   # other games' values (Values › Compare with games)
+            shutil.copytree(REFS, os.path.join(dest, "references"), dirs_exist_ok=True)
+        os.makedirs(os.path.join(dest, "source"), exist_ok=True)   # the movement code the Code tab shows
+        for n, rel in SOURCE_FILES.items():
+            src = os.path.join(ROOT, rel)
+            if os.path.isfile(src): shutil.copyfile(src, os.path.join(dest, "source", n))
         mt = checkout_maptool()
         have = os.path.join(dest, "quark_maptool" + EXE)
         if mt:
@@ -873,6 +955,7 @@ def main():
     ap.add_argument("--data-dir", help="the game's user data folder (default: QUARK_DATA_DIR, else %%APPDATA%%\\quark or ~/.local/share/quark)")
     ap.add_argument("--maptool", help="path to quark_maptool (default: next to serve.py, then this repository's build/, then PATH)")
     ap.add_argument("--maps-dir", action="append", help="another folder of .qmap files to list (repeatable)")
+    ap.add_argument("--references", help="the folder of other games' movement values (default: references/ next to serve.py)")
     ap.add_argument("--no-browser", "--no-open", dest="no_browser", action="store_true",
                     help="don't open a browser (also when QUARK_SHELL=1: the Quark Project app shows the page)")
     ap.add_argument("--install", nargs="?", const="", metavar="FOLDER", help="copy the tool to FOLDER (default <Quark folder>/physics-editor) and stop")

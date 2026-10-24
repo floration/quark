@@ -27,6 +27,7 @@ Flags (or the same keys in `physics_editor.json` next to `serve.py`; `physics_ed
 | `--maptool` | `maptool` | `quark_maptool` next to `serve.py` (an installed copy), then this repository's build folders, then `PATH` |
 | `--maps-dir` | `mapsDirs` | another folder of `.qmap` files to list (repeatable) |
 | | `defaultMapsDir` | the game's maps: the repository's `maps/`, or `maps/` next to an installed `serve.py` |
+| `--references` | `referencesDir` | other games' movement values: `references/` next to `serve.py` (served at `/references/`) |
 | | `helperArgs` | extra arguments put before every helper command |
 | `--no-open` | | don't open a browser (`QUARK_SHELL=1` does the same) |
 | `--install [FOLDER]` | | copy the tool to FOLDER and stop (below) |
@@ -37,7 +38,8 @@ Needs Python 3.8+ and a current Chrome, Edge or Firefox (WebGL for the Drive tab
 
 `py -3 tools\physics_editor\serve.py --install` (from a repository checkout) copies the tool to
 `<Quark folder>/physics-editor` (or the folder given): `serve.py`, `web/`, `run.cmd`, `run.sh`, this README, the
-example settings, `INTERFACE.md`, the game's default maps, and `quark_maptool(.exe)` from the checkout's build
+example settings, `INTERFACE.md`, `references/` (other games' values), `source/` (a read-only copy of the movement
+code the Code tab shows: `pmove.cpp`, `pmove.h`, `gamedefs.h`, `customrules.cpp`), the game's default maps, and `quark_maptool(.exe)` from the checkout's build
 folders (with its MinGW DLLs on Windows). It asks nothing and opens nothing, exits 0, and is safe to run again: your
 `physics_editor.json` and your data are kept, only the program files are replaced. With no built `quark_maptool`
 the installed one is kept (a one-line note says so). The app then starts it from that folder with
@@ -80,13 +82,72 @@ unit (m/s, s, m...) and the standard value. Changed rows are orange; ↺ resets 
 C++ constants it scales. **dash** and **grapple** are switches. `crouch_speed` is struck through: crouching was
 removed from the game. The filter box searches names, units and notes; **only changed** hides the rest.
 
+**fixed / ƒ / ⌒**: each setting is a fixed multiplier, an equation or a curve (`INTERFACE.md`, v2):
+
+- **ƒ equation**: type an expression (`expr.<key>=` in the .qmode). It can use other settings by key (their
+  multiplier: `friction=sqrt(speed)`), `base.<key>` (a setting's standard absolute value), the player's state
+  (`p.speed p.hspeed p.vspeed p.air p.ground p.onground p.charges p.dashing p.hooked p.height`), numbers, `pi`,
+  `+ - * / ^`, comparisons, `&& || !`, `?:` and `sqrt abs min max pow exp log floor ceil round sign clamp lerp step
+  ease curve`. The text is highlighted as you type; **Tab** / **Enter** complete a name (arrows pick); an error is
+  shown live with its column. A badge says **static** (numbers and settings only: worked out once when the rules
+  load) or **dynamic** (reads `p.`: worked out at every 1 ms pmove step), and the line under it shows the value
+  standing still (× and absolute), any clamp to the setting's range, and the game's own evaluator's value
+  (`physexpr`) next to the page's. A dynamic equation is plotted against the input it reads.
+- **⌒ curve**: a visual editor for `curve(input, x0, x1, y0, y1, "ease")`: pick the input (any `p.` input or a
+  setting), its bounds, the multiplier at each end (kept inside the setting's min..max), and one of the 13 easings
+  (linear, in / out / inout, in3 / out3 / inout3, smooth, smoother, expo / outexpo, back / outback; each button
+  draws its shape). Drag the two end points on the plot. It writes the expression text; a text that isn't a single
+  curve opens in equation mode.
+
+The setting's fixed line stays in the file with the equation's value standing still (so an older game still reads a
+sensible value), and it follows when a setting the equation reads changes. Expressions run in pmove when the helper
+has `physexpr` (it runs them on the server and the client alike); with an older helper the page says so and sends
+the fixed values only. The MOCK runs them too.
+
+**Compare with games**: a searchable picker of other games' default movement (`references/`: 22 games grouped by
+engine family, or sorted **closest** to Quark's standard first). Each picked game adds a column: its value in
+Quark's unit and as a multiplier, a confidence dot (green exact: the game's code or config; amber measured; red
+estimated: derived here), ⚠ when the multiplier is outside what Quark allows (it is clamped when applied), and
+**no analogue** where the game has nothing for that setting. Hover a cell for the game's own number, the source and
+notes; hover the header for the scale used, the notes and the game's mechanics that Quark doesn't have. **use** takes
+one value, **load all** every value the game maps (dash and grapple included; settings with no analogue keep
+theirs). Both are recorded in the set as an import (`# imported from <game> (<id>): keys`, a comment the game
+skips; a row taken from a game is marked until you change it). Under the groups, **reference facts** lists what has
+no Quark setting behind it (jump height, time to 90% of run speed, stopping distance and time, walk / sprint speeds,
+ability distances) next to Quark's standard. The picks are remembered in the browser. A picked game can be ticked
+under **Compare with** and picked as A or B in the Movement graph: it runs as a physics set made of its mapped
+settings only (the rest stay at Quark's standard; the page says so).
+
 ### Code
 
-The set as the raw .qmode text, two-way: edit the text and Values follow; change a value and the text follows.
-Movement lines are coloured, the gamemode's other lines dim; problems (a number that isn't one, a value out of
-range and clamped, an unknown key, a duplicate that the game ignores) are marked in the gutter and listed under the
-text (click one to jump to its line). From a `logic` line on, the file belongs to the gamemode editor: it is shown
-read-only under the text and never changed. **Tidy** rewrites the movement lines the way the game writes them.
+Two views (the choice is remembered):
+
+- **.qmode file**: the set as the raw .qmode text, two-way: edit the text and Values follow; change a value and the
+  text follows. Movement lines are coloured (an `expr.` line's expression highlighted like the editor's, an
+  `# imported from` line marked), the gamemode's other lines dim; problems (a number that isn't one, a value out of
+  range and clamped, an unknown key, a duplicate that the game ignores, an expression that doesn't parse) are marked
+  in the gutter and listed under the text (click one to jump to its line). From a `logic` line on, the file belongs
+  to the gamemode editor: it is shown read-only under the text and never changed. **Tidy** rewrites the movement
+  lines the way the game writes them.
+- **Movement code**: the game's real movement code, read-only (`src/game/pmove.cpp`, `pmove.h`, `gamedefs.h`, as
+  they are in the checkout, served by `/api/source`), syntax-highlighted. Every line that reads a setting carries a
+  chip: `kConstant base × multiplier = value unit` for the edited set (orange when changed; an equation shows `ƒ`,
+  its text and "at rest"); constants a setting scales get a dashed chip where they are defined. Click a chip to go to
+  that setting in Values. **notes** puts a short plain-language note above each function and each step of
+  `pmoveStep`; **only lines that use a setting** folds the rest; the find box searches. The side lists every setting
+  with how often the code reads it (click: the next place) and every function and step (click: go there).
+
+### Code graph
+
+How the settings reach the movement, drawn from `pmove.cpp` itself: the settings (left) → the steps of one 1 ms
+`pmoveStep`, in the order they run (middle: wish direction, jump, dash timers, dash start, dash jump / super dash,
+dash burst, grapple, pulled by the grapple, ladder, ground friction + accelerate, air strafe / drift / control /
+gravity, the move through the map, step-ups, wall bounce, blocked, landing, dash cooldown, charges back) → what they
+change (right: velocity, position, on the floor, dash charges and state, cooldowns, the grapple, held buttons).
+Dashed edges are reads inside a called function (**through called functions** shows them). Changed settings and
+everything they reach are highlighted; **only changed settings** hides the rest. Hover for what a node is; click a
+step or a setting to see its code; drag to pan, wheel to zoom, **Fit** (or double-click) to frame it. The layout is
+automatic (no library).
 
 ### Blocks
 
@@ -99,13 +160,27 @@ A / D at the best air-strafe angle every ms; swap off, at each landing, or weave
 time after the last block. Under the stack the timeline shows each block and the edited set's horizontal speed.
 **{ } JSON** edits the scenario as JSON; a scenario the blocks can't express exactly is shown as raw steps.
 
-### Graph
+### Movement graph
 
-Horizontal speed, speed, height, vertical speed, distance and dash charges against time, one chart each (tick the
-ones to show): the edited set solid, the standard dashed, compared sets and Drive recordings in their own colours.
-Event markers (jumps, landings, dashes, hooks, ladders, bounces) on top; hover for every run's values at that time.
-Under the charts, the metrics table: every number the helper reports for each run, with the edited set minus the
-standard and the change in %.
+**Curves**: horizontal speed, speed, height, vertical speed, distance and dash charges against time, one chart each
+(tick the ones to show): the edited set solid, the standard dashed, compared sets, games and Drive recordings in
+their own colours. Event markers (jumps, landings, dashes, hooks, ladders, bounces) on top; hover for every run's
+values at that time. Under the charts, the metrics table: every number the helper reports for each run, with the
+edited set minus the standard and the change in %.
+
+**3D**: the runs' trajectories over the map, orbit camera (drag: orbit, right drag or Alt: pan, wheel: zoom), a
+trail per set in its colour, 0.1 s ticks, events as coloured posts, and a time scrubber (or ▶) that puts each run's
+player box where it was then, with its speed and height. A re-run after a value change keeps the camera; a new
+scenario or map refits (**Fit** does it by hand).
+
+**lock units**: fix any axis (time, each series, and the 3D camera) at a range you type; a locked axis stays put
+across runs and between sets (🔒 on the chart). Unlocked axes are automatic (their current range is shown as the
+placeholder). The locks are remembered in the browser.
+
+**A / B**: two sets against each other, each one of the edited set, the standard, any saved .qmode or any picked
+game. **overlay** draws both on one chart; **side by side** draws two charts (and two 3D views with one camera)
+sharing their ranges; ⇄ swaps. The table then shows A, B and B − A (and %). A game as A or B is flagged: only its
+mapped settings are applied.
 
 ### Path
 
@@ -121,7 +196,7 @@ game's default binds), **C** or **Ctrl** crouch (no bind in the game: it ignores
 frame in pieces of at most 8 ms, and the view runs a few ms ahead of the last answer. The side panel picks the
 physics (the edited set or the standard), the camera, mouse speed, FOV and the start (the scenario's, a room part,
 a map spawn); it shows the speed over the last 10 s, the events, and the frame rate (average and 1% low) and the
-helper's round trip. **→ Graph** sends the drive so far to the Graph and Path tabs as a run.
+helper's round trip. **→ Graph** sends the drive so far to the Movement graph and Path tabs as a run.
 
 ### Export
 
@@ -160,9 +235,20 @@ renames its `custommode=` line.
 | `web/js/helper.js` | every helper call (and the MOCK's answers), the Drive transports |
 | `web/js/params.js`, `qmode.js` | the settings catalog; .qmode parsing and the save merge (the same as serve.py's) |
 | `web/js/values.js`, `code.js`, `blocks.js`, `graph.js`, `pathview.js`, `drive.js`, `export.js` | the tabs |
+| `web/js/expr.js` | equations: the grammar of `src/game/moveexpr.cpp` (parse, check, compile, resolve in dependency order, the easings and `curve`), highlighting and completions |
+| `web/js/exprui.js` | the equation editor and the curve editor in Values |
+| `web/js/refs.js` | other games: `references/` index and files, the game picker, a game as a physics set |
+| `web/js/source.js` | reads the movement code: highlighting, constants, every read of a setting, functions, the steps of `pmoveStep`, what each step changes, the notes |
+| `web/js/movecode.js`, `codegraph.js` | Code › Movement code; the Code graph tab |
+| `web/js/graph3d.js` | the Movement graph's 3D view |
+| `references/` | other games' movement values (`references/README.md`; `check.py` checks them) |
 | `web/js/gl.js`, `qmap.js` | WebGL drawing of a map; .qmap parsing |
 | `web/js/mockpm.js`, `sim.js`, `room.js` | the MOCK: pmove in JS, the scenario runner and metrics, the stand-in room |
 | `web/test/run.mjs` | the checks |
+
+`serve.py` also serves `/references/<file>` (the references folder, nothing outside it) and
+`/api/source?file=pmove.cpp|pmove.h|gamedefs.h|customrules.cpp` (the checkout's file, else the installed `source/`
+copy; any other name is refused).
 
 Your data, all in the game's data folder: `custom_modes/<name>.qmode` (physics sets), `physics_editor/scenarios/`
 (scenarios), `physics_editor/state/` (the page's last session).
@@ -171,8 +257,23 @@ Your data, all in the game's data folder: `custom_modes/<name>.qmode` (physics s
 
 `node tools/physics_editor/web/test/run.mjs [--shots DIR] [--maptool PATH] [--mock-only]` (Node 18+, Playwright
 already installed; it never installs browsers). It starts `serve.py` on a spare port with a temporary data folder and
-checks: the page's .qmode merge against serve.py's on awkward files (CRLF, a logic section, duplicates, new files),
-every preset round trip through Blocks, the MOCK against the game's numbers, then in Chromium, with the real helper
-and with the MOCK: Values → Code and Code → Values, a preset run, dragging a block, a map run, Save keeping the
-logic section and the other lines, a new file, Drive with W and Space, the WebSocket and SSE round trips, Export.
-It saves a screenshot of each tab (default `/mnt/project-files/physics-editor/shots/`).
+checks:
+
+- the page's .qmode merge against serve.py's on awkward files (CRLF, a logic section, duplicates, new files, `expr.`
+  lines kept / dropped / added, an import line replaced in place);
+- the expression evaluator: precedence, every function and easing, curve bounds, errors (chained comparisons, bad
+  names, too long), static / dynamic, dependency order, cycles, clamps, NaN; with the real helper, the page's inputs,
+  functions and easings against `physparams.expr` and its values against `physexpr` on 50 expressions;
+- the MOCK running dynamic equations, and against the game's `physsim` on the same equations;
+- `/api/source` and `/references/` (and that they serve nothing outside them); every preset round trip through
+  Blocks; the MOCK against the game's numbers;
+- in Chromium, with the real helper and with the MOCK: Values → Code and Code → Values, a preset run, dragging a
+  block, a map run, Save keeping the logic section and the other lines, a new file, Drive with W and Space, the
+  WebSocket and SSE round trips, Export; then the game picker (search, closest first, a column, use, load all and the
+  import line, reference facts), an equation (the expr line and its value at rest, static / dynamic, Tab completion,
+  a live error), a curve (easing and bounds in the text, clamped to the range), Movement code chips and the jump to
+  Values, the Code graph and a click to the code, the 3D view and its scrubber, lock units, A / B with a game as B,
+  B − A, side by side in curves and 3D.
+
+Without `references/index.json` it writes a stub and passes it with `--references`. It saves a screenshot of each
+tab and view (default `/mnt/project-files/physics-editor/shots-v2/`).

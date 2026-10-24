@@ -2,6 +2,8 @@
 // blocks.js, graph.js, pathview.js, drive.js, export.js) wire themselves to this and to each other through events:
 //   physics (from)  the edited set changed (from: "values" | "code" | "load" | ...): views refresh, runs re-run
 //   scenario        the scenario changed           results   new runs to show            map   the test map changed
+//   games           the picked reference games (Values › Compare with games) or their data changed
+//   exprcheck       the helper's own evaluator (physexpr) answered for the edited set's equations
 import { api } from "./api.js";
 import { createHelper } from "./helper.js";
 import { parseQmap } from "./qmap.js";
@@ -15,6 +17,10 @@ import { GraphView, fmtMetric } from "./graph.js";
 import { PathView } from "./pathview.js";
 import { DriveView } from "./drive.js";
 import { ExportView } from "./export.js";
+import { MoveCodeView } from "./movecode.js";
+import { CodeGraphView } from "./codegraph.js";
+import { check as exprCheck, resolve } from "./expr.js";
+import { loadPicks, savePicks, loadGame, gamePhysics } from "./refs.js";
 
 const $ = (id) => document.getElementById(id);
 export const RUN_COLORS = ["--run0", "--run1", "--run2", "--run3", "--run4", "--run5"];
@@ -61,7 +67,10 @@ class App {
         catch (e) { document.body.innerHTML = `<div style="padding:12px">Can't reach serve.py (${e.message}). Start it with tools/physics_editor/run.sh or run.cmd.</div>`; return; }
         this.helper = await createHelper(this.config);
         this.cat = this.helper.catalog;
+        this.cat.keySet = new Set(this.cat.all.map((p) => p.key));
+        exprCheck.cat = this.cat;
         this.knownMove = new Set(this.cat.params.map((p) => p.key));
+        this.games = { picks: loadPicks(), list: [] };
         const hb = $("helperBadge");
         hb.textContent = this.helper.kind === "real" ? "quark_maptool" : "MOCK PHYSICS";
         hb.className = "badge " + this.helper.kind;
@@ -80,6 +89,8 @@ class App {
 
         this.values = new ValuesView(this, $("pg-values"));
         this.code = new CodeView(this);
+        this.moveCode = new MoveCodeView(this);
+        this.codeGraph = new CodeGraphView(this);
         this.blocks = new BlocksView(this, $("pg-blocks"));
         this.graph = new GraphView(this);
         this.path = new PathView(this);
@@ -93,6 +104,7 @@ class App {
         });
         await Promise.all([this.refreshModes(), this.refreshMaps(), this.refreshScenarios()]);
         await this.restore();
+        this.setGamePicks(this.games.picks, true);
         let want = new URLSearchParams(location.search).get("page");
         try { want = want || localStorage.getItem("qpe.page"); } catch {}
         this.showPage(want && document.getElementById("pg-" + want) ? want : "values");
@@ -115,6 +127,7 @@ class App {
         this.set.dirty = true;
         this.emit("physics", from);
         this.scheduleRun();
+        this.scheduleExprCheck();
         this.autosave();
         this._setInfo();
     }
@@ -183,6 +196,50 @@ class App {
             + (this.set.saved ? ` · <span title="${this.modesDir || ""}">${this.set.saved}.qmode</span>${this.set.dirty ? " <span class='warn'>(unsaved)</span>" : ""}` : " · not saved yet");
     }
 
+    // Values: show one setting's row (from the Code tab's chips and the Code graph)
+    gotoSetting(key) {
+        this.showPage("values");
+        const v = this.values, r = v.rows.get(key);
+        if (!r) return;
+        const f = document.getElementById("vFilter"), o = document.getElementById("vOnly");
+        if (r.tr.style.display === "none") { f.value = ""; o.checked = false; v._apply(); }
+        r.tr.scrollIntoView({ block: "center" });
+        r.tr.classList.remove("flash"); void r.tr.offsetWidth; r.tr.classList.add("flash");
+    }
+
+    // ---------------------------------------------------------------- other games (references/)
+    async setGamePicks(ids, quiet) {
+        ids = [...new Set(ids)];
+        this.games.picks = ids;
+        savePicks(ids);
+        const old = new Map(this.games.list.map((g) => [g.id, g]));
+        this.games.list = ids.map((id) => old.get(id) || { id, game: null });
+        if (this.values && this.values.picker) this.values.picker.set(ids);
+        for (const id of [...this.compareSel]) if (id.startsWith("game:") && !ids.includes(id.slice(5))) this.compareSel.delete(id);
+        this.emit("games"); this._compareList();
+        const seq = (this._gseq = (this._gseq || 0) + 1);
+        await Promise.all(this.games.list.filter((g) => !g.game && !g.error).map(async (g) => {
+            try { const game = await loadGame(g.id); Object.assign(g, { game }, gamePhysics(game, this.cat)); }
+            catch (e) { g.error = e.message; }
+        }));
+        if (seq !== this._gseq) return;
+        this.emit("games"); this._compareList();
+        if (!quiet || [...this.compareSel].some((x) => x.startsWith("game:"))) this.run();
+    }
+    gameSet(id) { const g = this.games.list.find((x) => x.id === id); return g && g.physics ? g : null; }
+
+    // the game's own evaluator (physexpr) on the edited set's equations, when the helper has it
+    scheduleExprCheck() {
+        if (!this.helper.hasExpr) return;
+        clearTimeout(this._xt);
+        this._xt = setTimeout(async () => {
+            const ph = this.physics;
+            if (!ph.expr || !Object.keys(ph.expr).length) { this.exprCheck = null; this.emit("exprcheck"); return; }
+            try { this.exprCheck = await this.helper.exprCheck(ph); } catch (e) { this.exprCheck = { error: e.message }; }
+            this.emit("exprcheck");
+        }, 250);
+    }
+
     // ---------------------------------------------------------------- maps, scenarios
     async refreshMaps() {
         try { const r = await api.maps(); this.maps = r.maps; } catch { this.maps = []; }
@@ -241,8 +298,29 @@ class App {
     // ---------------------------------------------------------------- runs
     compareSets() {
         const out = [{ name: "standard", physics: this.std }];
-        for (const n of this.compareSel) { const s = this.compareCache && this.compareCache.get(n); if (s) out.push({ name: n, physics: s }); }
+        for (const n of this.compareSel) {
+            if (n.startsWith("game:")) { const g = this.gameSet(n.slice(5)); if (g) out.push({ name: g.game.name + " (game)", physics: g.physics, game: g.id }); continue; }
+            const s = this.compareCache && this.compareCache.get(n); if (s) out.push({ name: n, physics: s });
+        }
         return out;
+    }
+    // every set the Movement graph's A / B can be: [{id, label, physics()}] (saved sets load on demand)
+    setChoices() {
+        const out = [{ id: "edit", label: "the edited set" }, { id: "std", label: "standard physics" }];
+        for (const m of this.modes || []) out.push({ id: "mode:" + m.name, label: m.name + ".qmode" });
+        for (const g of this.games.list) if (g.physics) out.push({ id: "game:" + g.id, label: g.game.name + ` (game: ${g.mapped.length} of ${this.cat.all.length + 2} settings)` });
+        return out;
+    }
+    async physicsOf(id) {
+        if (id === "edit") return { physics: this.physics, label: this.set.name || this.set.saved || "edited" };
+        if (id === "std") return { physics: this.std, label: "standard" };
+        if (id.startsWith("game:")) { const g = this.gameSet(id.slice(5)); return g ? { physics: g.physics, label: g.game.name, game: g } : null; }
+        if (id.startsWith("mode:")) {
+            const n = id.slice(5);
+            if (!this.compareCache.has(n)) { try { this.compareCache.set(n, parseQmode(await api.mode(n), this.cat).physics); } catch { return null; } }
+            return { physics: this.compareCache.get(n), label: n };
+        }
+        return null;
     }
     scheduleRun() {
         if (!$("autoRun").checked) return;
@@ -264,6 +342,8 @@ class App {
                 metrics: mergeMetrics(run.metrics, computeMetrics(run, scenario)) }));
             this.results = { runs, scenario, ms: r.ms, via: r.via, at: Date.now() };
             info.textContent = `${r.via}: ${runs.length} run${runs.length > 1 ? "s" : ""} in ${(+r.ms || 0).toFixed(1)} ms${r.wallMs ? ` (${r.wallMs} ms with the process)` : ""}`;
+            const dyn = this.helper.kind === "real" && !this.helper.hasExpr && [this.physics, ...cmp.map((c) => c.physics)].some((p) => p.expr && resolve(p, this.cat).dynamicKeys.length);
+            if (dyn) info.insertAdjacentHTML("beforeend", `<div class="warn">this quark_maptool doesn't run equations yet: dynamic ones run at their value standing still</div>`);
             this._mini();
             this.emit("results");
         } catch (e) {
@@ -341,12 +421,25 @@ class App {
         const box = $("cmpList");
         box.innerHTML = `<label class="check"><input type="checkbox" checked disabled><span class="swatch" style="background:var(--run1)"></span>standard physics</label>`;
         this.compareCache = this.compareCache || new Map();
-        let i = 2;
+        const order = this.compareSets().map((c) => (c.game ? "game:" + c.game : c.name));
+        const col = (key) => RUN_COLORS[(order.indexOf(key) + 1) % RUN_COLORS.length];
+        for (const g of (this.games && this.games.list) || []) {
+            if (!g.physics) continue;
+            const key = "game:" + g.id, on = this.compareSel.has(key);
+            const l = document.createElement("label");
+            l.className = "check game";
+            l.title = `${g.game.name}'s values as a physics set: only the ${g.mapped.length} settings it maps are applied, the other ${this.cat.all.length + 2 - g.mapped.length} stay at Quark's standard`;
+            l.innerHTML = `<input type="checkbox" ${on ? "checked" : ""}><span class="swatch" style="background:var(${col(key)});${on ? "" : "opacity:0"}"></span>`;
+            l.append(document.createTextNode(g.game.name));
+            l.insertAdjacentHTML("beforeend", ` <span class="muted small">game · ${g.mapped.length} mapped</span>`);
+            l.querySelector("input").onchange = (e) => { e.target.checked ? this.compareSel.add(key) : this.compareSel.delete(key); this._compareList(); this.run(); this.autosave(); };
+            box.append(l);
+        }
         for (const m of this.modes || []) {
             const l = document.createElement("label");
             l.className = "check";
             const on = this.compareSel.has(m.name);
-            l.innerHTML = `<input type="checkbox" ${on ? "checked" : ""}><span class="swatch" style="background:var(${RUN_COLORS[(on ? i++ : 0) % RUN_COLORS.length]});${on ? "" : "opacity:0"}"></span>`;
+            l.innerHTML = `<input type="checkbox" ${on ? "checked" : ""}><span class="swatch" style="background:var(${col(m.name)});${on ? "" : "opacity:0"}"></span>`;
             l.append(document.createTextNode(m.name));
             l.querySelector("input").onchange = async (e) => {
                 if (e.target.checked) {
@@ -382,6 +475,7 @@ class App {
             if (s.scenario && Array.isArray(s.scenario.steps)) this.scenario = s.scenario;
             if (s.presetId) { this.presetId = s.presetId; $("presetSel").value = this.presets.some((p) => p.id === s.presetId) ? s.presetId : "custom"; const p = this.presets.find((x) => x.id === s.presetId); $("presetDesc").textContent = p ? p.desc || "" : "your own scenario"; }
             for (const n of s.compare || []) {
+                if (n.startsWith("game:")) { if (this.games.picks.includes(n.slice(5))) this.compareSel.add(n); continue; }
                 if (!(this.modes || []).some((m) => m.name === n)) continue;
                 try { const t = await api.mode(n); this.compareCache.set(n, parseQmode(t, this.cat).physics); this.compareSel.add(n); } catch {}
             }
