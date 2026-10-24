@@ -76,7 +76,7 @@ These preferences come from the 1.17.0 session. They are not all in CLAUDE.md:
   - when a task finishes, say so in one line, plus whether it is ahead of, on or behind schedule.
 - **Short answers.** When the owner asks for a command, give the command first.
 - **Test packages before tagging.** The owner tries the build by hand first ("build is perfect lets go").
-- **Bot and map tests were waived for 1.17.0 only.** They count again from 1.17.1, in CI and locally.
+- **Bot and map tests were waived for 1.17.0 only.** They count again from 1.17.1, locally (CI runs no gameplay tests: section 4).
 
 ### First things to do
 
@@ -92,14 +92,12 @@ These preferences come from the 1.17.0 session. They are not all in CLAUDE.md:
 ### Notes from the 1.17.0 session (things learned the hard way)
 
 **Releases and CI**
-- **1.17.0 leftovers in `release.yml`:** six conditions read `base != '1.17.0'` or `base == '1.17.0'`. They are dead from 1.17.1 on, because VERSION changes, so the tests run again. Remove them in a quiet change on `testing`, not mixed into a release.
+- **1.17.0 leftovers in `release.yml`:** the `base != '1.17.0'` / `base == '1.17.0'` conditions were removed with the CI test jobs (2026-10-24).
 - **A tag made with the workflow token doesn't start a run.** That's why tags come from the owner (a Codespace or a local clone), and why the site-only run exists.
 - **The release job refuses a release that already exists.** If a production run fails after publishing, use the site-only run for the website. If it failed before publishing, fix it, delete the tag (`git push origin :refs/tags/v<V>`) and tag again.
 - **A job that `needs` a job which can be skipped** must use `if: "!cancelled() && ..."` with explicit `needs.X.result` checks. Without them, GitHub's implicit `success()` skips it whenever anything further back was skipped (this hit the 1.17.0 site deploy).
 - **Expect about 3.5 minutes** for a build-only CI run (all three platforms).
-- **The first testing prerelease will be the first real run of:**
-  - the per-group test matrix, including the Windows test runner. If one netcode timing check fails only on real Windows, give only that check a Windows tolerance (owner, C10);
-  - the testing server's standby on the owner's box. Check `systemctl status quark-testing` once it starts.
+- **The first testing prerelease will be the first real run of** the testing server's standby on the owner's box. Check `systemctl status quark-testing` once it starts.
 
 **Cloud-session quirks**
 - **The cloud session's permission check blocked, even with the owner's approval in chat:**
@@ -190,11 +188,11 @@ build/quark_tests mapreport       # writes docs/MAP_REPORT.md
   ```
 - The UI test: `build/quark --uitest <report.json>`. It clicks every button on every screen and checks what each one does.
 
-**Before every push:** `tools/release_check.sh` runs every test group (4 at a time, then the timing-sensitive ones alone) and hosts every map headless in FFA with a screenshot. It exits 0 when everything passed. `--skip "bots maps"` leaves groups out, as for 1.17.0 only. CI runs the same groups one runner each, plus the UI test, from 1.17.1 on.
+**Before every push:** `tools/release_check.sh` runs every test group (4 at a time, then the timing-sensitive ones alone) and hosts every map headless in FFA with a screenshot. It exits 0 when everything passed. `--skip "bots maps"` leaves groups out, as for 1.17.0 only. Run the UI test (`build/quark --uitest`, [UI_TEST.md](UI_TEST.md)) too. CI runs neither (owner, 2026-10-24: CI checks meta, builds and sanitizers only), so these local runs are the only automated gameplay and UI check; the commit meant for production needs them passed on it ([RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) section 0).
 
 **Test packages for the owner:** `tools/make_test_packages.sh [out_dir]` builds unsigned Windows (MinGW cross-compile) and Linux packages of the working tree, `quark-<VERSION>-windows-test.zip` and `quark-<VERSION>-linux-test.tar.gz`, into `build/test-packages/`. The owner tries them before tagging.
 
-**Timing-sensitive tests:** the netcode, tick-rate and interpolation-delay groups fail on a loaded machine. Run the full suite on an idle machine with a private `TMPDIR` before calling a failure real. If one netcode timing check fails on the real Windows runner, the owner's decision (C10) is to give only that check a Windows-specific tolerance and keep the job blocking.
+**Timing-sensitive tests:** the netcode, tick-rate and interpolation-delay groups fail on a loaded machine. Run the full suite on an idle machine with a private `TMPDIR` before calling a failure real. If one netcode timing check fails only on Windows (`tools/build_windows.ps1 -Tests`), the owner's decision (C10) is to give only that check a Windows-specific tolerance.
 
 ## 4. Branches and releases
 
@@ -214,10 +212,10 @@ A cloud session can push only its own `claude/...` branch, so its work reaches `
 
 **Release flow:**
 1. Work is committed on `testing`, with `VERSION` bumped and `changelogs/<VERSION>.md` written.
-2. The push to `testing` runs CI: Linux tests, Windows tests, macOS build, sanitizers. It publishes the signed testing prerelease (Windows + Linux; macOS files follow).
+2. The push to `testing` runs CI: meta checks and the Windows, Linux and macOS builds (no gameplay or UI tests: those run locally before the push). It publishes the signed testing prerelease (Windows + Linux; macOS files follow). The build meant for production is marked final (`[final]` in its head commit message or PR title, or a manual run with **final** ticked), which runs the sanitizers on it; nothing waits for them, but the checklist wants them green. Work-branch pushes always run the sanitizers; production tags never do.
 3. **The owner tests that build by hand with [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).** Nothing goes further until the owner says it passed.
 4. A PR from `testing` to the default branch; the owner merges it.
-5. The owner tags it: `git tag v<VERSION> <merge commit> && git push origin v<VERSION>`. CI publishes the production release only when Windows, Linux and macOS all pass; then it deploys the website. Dedicated servers update to it by themselves.
+5. The owner tags it: `git tag v<VERSION> <merge commit> && git push origin v<VERSION>`. CI publishes the production release only when Windows, Linux and macOS all build; then it deploys the website. Dedicated servers update to it by themselves.
 
 Workflows are in `.github/workflows/`:
 - `release.yml` holds every build and publish job.
@@ -329,7 +327,7 @@ See [REMAINING.md](../REMAINING.md) for the full list, and section 0 "First thin
 - **The first push failed on macOS**, because Apple's clang rejected a `sigaction` call in the tests; the fix is `7552461`.
 
 - **Tests before the push** (this machine, Linux): every `quark_tests` group except the bot and map groups passed. That includes the timing-sensitive netcode, tick rate and governor groups, each run on its own. The owner waived the bot and map tests for this release only ("those will be replaced anyway"). Every map was instead hosted headless in FFA and screenshotted: all 21 load and run. Lodestone and Midtown need over a minute on a loaded machine with software GL before their first light bake finishes. The movement agent's last full run, which included bots and maps, passed everything but the timing groups under load.
-- **CI for 1.17.0 builds only, with no CI tests** (owner). The test jobs skip while VERSION is 1.17.0. From 1.17.1 they run one test group per runner on Linux and Windows, and the release waits for them.
+- **CI for 1.17.0 builds only, with no CI tests** (owner). The test jobs skip while VERSION is 1.17.0. From 1.17.1 they ran one test group per runner on Linux and Windows, and the release waited for them, until the owner removed CI's gameplay and UI tests on 2026-10-24 (section 4).
 - **Decided in the owner's pre-release interview:**
   - The 1.2 s dash cooldown is back on top of the 2 charges, timed from each dash's end (protocol 42). That balances what charges alone allowed: a dash every 0.12 s on the ground, and a super dash on every bunny hop. (1.18.7 replaced it: 0.6 s between dashes plus a 1.2 s recharge per spent charge, protocol 43; see "Dash recharge" above.)
   - Kept as they are: the ~5.6 m hop over a ladder top (five maps got a stop at narrow tops) and the standing jump landing at 7.3 m/s (air drift 8).
