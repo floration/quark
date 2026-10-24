@@ -136,3 +136,30 @@ base, value}], physics, clamped?}`. The .qmode is playable now (Host > Custom mo
 constant as `src/game/pmove.cpp: kGravity = 22.0f -> 17.6f   // gravity x0.8` (the names are a table in
 native/physics.cpp, checked against the sources by test_phys.py), for the owner if a set should become the game's
 standard: the owner decides movement; nothing is changed automatically.
+
+## v2: equations and curves (draft, owner request 2026-10-24)
+
+A setting can be an expression instead of a fixed multiplier. In the `.qmode` it is one extra line per setting:
+`expr.<key>=<expression>`, where `<key>` is `gravity`, `speed`, `jump` or a `moveParamKey` key. The expression's value
+is that setting's multiplier (1 = standard), clamped to the setting's min..max. The plain `<key>=` /
+`move_<key>=` line stays as well, so an older game reads a sensible fixed value. The editor writes the expression's
+value at the standard state there.
+
+- **Static** expressions use only numbers and other settings, by key: `friction=sqrt(speed)`. These are worked out
+  once, when the rules load, in dependency order. Cycles are an error.
+- **Dynamic** expressions also read the player's state, through `p.` inputs:
+  - `p.speed`, `p.hspeed`, `p.vspeed` (m/s)
+  - `p.air` and `p.ground` (s since leaving or landing)
+  - `p.charges` (dash charges)
+  - `p.dashing` and `p.hooked` (0/1)
+  - `p.height` (m above the ground under you, capped at 50)
+
+  These are evaluated in pmove at every 1 ms step, on the server and the client alike. They must be deterministic and
+  cheap: compile to bytecode or a baked table, measure it, with a budget of under 50 ns per active expression per step.
+- **Functions:**
+  - `sqrt abs min max pow exp log floor ceil sign`
+  - `clamp(x,lo,hi)`, `lerp(a,b,t)`, `step(edge,x)`
+  - `ease(t,"in"|"out"|"inout"|"smooth"|"linear"|"expo"|"back")`, with t clamped to 0..1
+  - `curve(x, x0, x1, y0, y1, "inout")`, the main curve primitive: it maps x in [x0,x1] to [y0,y1] with that easing, and is flat outside the bounds
+- **Numbers and operators:** `+ - * / ^`, comparisons giving 0/1, `?:`, and parentheses.
+- **Errors:** a parse error leaves the setting at its fixed value, and the helper's answer lists the error.
