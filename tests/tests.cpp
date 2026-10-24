@@ -3051,6 +3051,9 @@ int mapReport(const char* outPath); // tests/mapreport.cpp (returns how many map
 int brainTests(uint16_t port);     // tests/brain_tests.cpp (returns the failure count)
 int brainTool(const std::string& cmd, const char* arg); // tests/brain_tests.cpp: exportbrain / checkbrain / brainast / printbrain
 int brainBench(uint16_t port);   // tests/brain_tests.cpp: native vs interpreted bot think cost
+int modeTests();                 // tests/mode_tests.cpp: the mode logic language (returns the failure count)
+int modeTool(const std::string& cmd, int argc, char** argv);   // tests/mode_tests.cpp: exportmode / checkmode / modeast / printmode
+int modeBench();                 // tests/mode_tests.cpp: interpreted mode slot cost
 int exportAssets(const char* dir);   // tests/assets_tests.cpp: every default asset as files + manifest.json
 int assetTests();                    // tests/assets_tests.cpp (returns the failures)
 
@@ -6975,6 +6978,10 @@ int main(int argc, char** argv) {
         return brainTool(argv[1], argc > 2 ? argv[2] : nullptr);
     if (argc >= 2 && std::string(argv[1]) == "brainbench") return brainBench(TP(29170));
     if (argc >= 2 && std::string(argv[1]) == "brains") { g_fail += brainTests(TP(29150)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && (std::string(argv[1]) == "exportmode" || std::string(argv[1]) == "checkmode" || std::string(argv[1]) == "modeast" || std::string(argv[1]) == "printmode"))
+        return modeTool(argv[1], argc, argv);
+    if (argc >= 2 && std::string(argv[1]) == "modebench") return modeBench();
+    if (argc >= 2 && std::string(argv[1]) == "modelogic") { g_fail += modeTests(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "bots") { uint16_t p = TP(28900); testBots(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "server") { serverTests(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "snapbench") {   // PERF-8 / PERF-9: snapshot + visibility CPU per send
@@ -6996,6 +7003,7 @@ int main(int argc, char** argv) {
         {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotAim(p); testHostedBotsThreadExit(TP(29010)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
+        {"modelogic", [] { g_fail += modeTests(); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
         {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); }},

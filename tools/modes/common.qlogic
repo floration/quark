@@ -1,0 +1,66 @@
+logic 1
+base common
+# The shared part of every mode (tools/modes/GRAMMAR.md). It is merged under each mode's own file: a param, state,
+# timer, curve, proc or slot of the same name in the mode's file (or in a custom .qmode) replaces the one here.
+# What it says is what gamemodes.cpp does natively for every mode.
+
+# ---- the clocks (gamemodes.cpp kFreezeTime, kRoundEndTime, kMatchEndTime, kWarmupCountdown, kOvertime)
+param freezeTime f32 = 3 # countdown before each round
+param roundEndTime f32 = 4 # the round result is shown this long
+param matchEndTime f32 = 10 # the match result is shown this long
+param warmupCountdown f32 = 5 # autostart servers: enough players to the start
+param warmupRespawn f32 = 1.5 # dead this long in the warmup
+param overtime f32 = 5 # an objective touch holds the round open this long after the clock runs out
+
+# ---- what a mode usually sets
+param rounds int = 1 # rounds to win the match, when the host sets none
+param roundTime f32 = 0 # a round's clock (0: no clock)
+param respawnTime f32 = -1 # dead this long before respawning (below 0: one life a round)
+
+slot freezeLength:
+  return freezeTime
+
+slot roundLength:
+  return roundTime
+
+slot roundsToWin:
+  return cfg.roundsToWin > 0 ? cfg.roundsToWin : rounds
+
+slot respawnDelay:
+  if phase == warmup: return warmupRespawn
+  if phase == matchEnd: return -1.0f
+  return respawnTime
+
+# No damage between rounds; the world and yourself always hurt; no friendly fire in a team mode.
+slot canDamage:
+  if phase == roundEnd or phase == matchEnd or phase == freeze: return no
+  if attacker == none or attacker == victim: return yes
+  return not (teams and team(attacker) == team(victim))
+
+slot canHit:
+  return yes
+
+slot frozen:
+  return phase == freeze
+
+slot spawnType:
+  return mapSpawn(p)
+
+slot teamLocked:
+  return no
+
+slot canAutoStart:
+  return teamCount(A) >= 1 and teamCount(B) >= 1
+
+# A kill scores 1, a teamkill costs 1 (the engine has counted the death, and the kill unless it was a teamkill).
+slot kill:
+  if killer != none and killer != victim:
+    if teams and team(killer) == team(victim): addScore(killer, -1)
+    else: addScore(killer, 1)
+
+# The round modes' match end: the first side to hud.roundsToWin rounds.
+proc firstToRounds:
+  n = hud.roundsToWin
+  if teamScore[A] >= n or teamScore[B] >= n:
+    w = teamScore[A] >= n ? A : B
+    endMatch(w, w, " wins the match")
