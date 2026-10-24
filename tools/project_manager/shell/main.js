@@ -24,6 +24,7 @@ const { pathToFileURL, fileURLToPath } = require('url');
 
 const IS_WIN = process.platform === 'win32';
 const TABBAR_H = 34;
+const WINDOW_BUTTONS_W = process.platform === 'darwin' ? 0 : 140; // (the window buttons drawn over the tab bar)
 const START_TIMEOUT_MS = 20000;
 const PROBE_TIMEOUT_MS = 500;
 const STATUS_POLL_MS = 5000;
@@ -1006,6 +1007,7 @@ function onKey(event, input) {
   else if (ctrl && !input.alt && (key === 'r' || key === 'R') && input.shift) reloadTabList();
   else if (ctrl && !input.alt && (key === 'r' || key === 'R')) reloadActive(false);
   else if (key === 'F5' && !input.alt) reloadActive(ctrl);
+  else if (key === 'F11') { if (win) win.setFullScreen(!win.isFullScreen()); }
   else if (key === 'F12') { const e = views.get(activeId); if (e) e.view.webContents.toggleDevTools(); }
   else if (ctrl && key === 'PageDown') cycle(1);
   else if (ctrl && key === 'PageUp') cycle(-1);
@@ -1045,6 +1047,10 @@ function createWindow() {
   win = new BaseWindow(Object.assign(initialBounds(), {
     title: 'Quark Project', show: false, minWidth: 480, minHeight: 300,
     backgroundColor: dark ? '#16181c' : '#f4f5f7',
+    // no title bar (q, 2026-10-24): the tab bar is the top of the window; Windows/Linux draw their window buttons
+    // over its right end (WINDOW_BUTTONS_W keeps the clock clear of them), macOS keeps its traffic lights at the left
+    titleBarStyle: 'hidden',
+    titleBarOverlay: process.platform === 'darwin' ? undefined : { color: '#16181c', symbolColor: '#c9cdd4', height: TABBAR_H },
     icon: isFile(icon) ? nativeImage.createFromPath(icon) : undefined,
   }));
   win.setMenu && win.setMenu(null);
@@ -1064,6 +1070,10 @@ function createWindow() {
   tabbar.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   tabbar.webContents.on('will-navigate', (e) => e.preventDefault());
   tabbar.webContents.on('before-input-event', onKey);
+  tabbar.webContents.on('did-finish-load', () => {
+    const css = process.platform === 'darwin' ? '#bar{padding-left:78px}' : '#bar{padding-right:' + WINDOW_BUTTONS_W + 'px}';
+    tabbar.webContents.insertCSS(css).catch(() => {});
+  });
   win.contentView.addChildView(tabbar);
 
   win.on('resize', layout);
@@ -1087,7 +1097,7 @@ function createWindow() {
 
   layout();
   tabbar.webContents.once('did-finish-load', () => {
-    if (state.maximized) win.maximize();
+    if (state.maximized || state.maximized === undefined) win.maximize(); // (first run: fill the screen)
     win.show();
     const want = argValue('tab');
     const first = (want && tabById(want)) ? want : (tabById(state.lastTab) ? state.lastTab : (tabs[0] && tabs[0].id));

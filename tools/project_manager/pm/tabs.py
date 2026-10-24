@@ -30,7 +30,7 @@ DEFAULT_TABS = {"tabs": [
      "folder": "github-manager", "start": "py -3 -B server.py --data \"%QUARK%\\github-manager\"", "keepAlive": True,
      "lowPriority": True},
     {"id": "tests", "name": "Tests", "parent": "github", "url": "http://127.0.0.1:8775/?embed=1", "port": 8775,
-     "folder": "tests-editor", "start": "py -3 serve.py --port 8775 --no-browser"},
+     "folder": "tests-editor", "start": "py -3 serve.py --port 8775 --no-browser", "keepAlive": True},
     {"id": "docs", "name": "Claude Manager", "parent": "project", "url": "http://127.0.0.1:8766/?embed=1", "port": 8766,
      "folder": "docs-manager", "start": "py -3 serve.py --docs \"%QUARK%\\Claude Documents\" --port 8766 --quiet",
      "keepAlive": True},
@@ -42,14 +42,14 @@ DEFAULT_TABS = {"tabs": [
     {"id": "ui-redesign", "name": "UI Redesign", "parent": "dashboard", "folder": "ui-customizer",
      "file": "ui-customizer-redesign.html"},
     {"id": "map", "name": "Map Editor", "parent": "dashboard", "url": "http://127.0.0.1:8770/", "port": 8770,
-     "folder": "map-editor", "start": "py -3 serve.py --port 8770 --no-browser"},
+     "folder": "map-editor", "start": "py -3 serve.py --port 8770 --no-browser", "keepAlive": True},
     {"id": "bot", "name": "Bot Editor", "parent": "dashboard", "url": "http://127.0.0.1:8769/?embed=1", "port": 8769,
-     "folder": "bot-editor", "start": "run.cmd"},
+     "folder": "bot-editor", "start": "py -3 serve.py --port 8769 --no-open", "keepAlive": True},
     {"id": "model", "name": "Model Editor", "parent": "dashboard", "folder": "model-editor"},
     {"id": "gamemode", "name": "Gamemode Editor", "parent": "dashboard", "url": "http://127.0.0.1:8771/?embed=1",
-     "port": 8771, "folder": "gamemode-editor", "start": "py -3 serve.py --port 8771 --no-open"},
+     "port": 8771, "folder": "gamemode-editor", "start": "py -3 serve.py --port 8771 --no-open", "keepAlive": True},
     {"id": "physics", "name": "Physics Editor", "parent": "dashboard", "url": "http://127.0.0.1:8772/?embed=1",
-     "port": 8772, "folder": "physics-editor", "start": "py -3 serve.py --port 8772 --no-open"},
+     "port": 8772, "folder": "physics-editor", "start": "py -3 serve.py --port 8772 --no-open", "keepAlive": True},
 ]}
 PROBE_INTERVAL = 5.0
 
@@ -280,7 +280,7 @@ def write_default(paths):
 
 
 # Start commands an older tabs.default.json gave a tab (by id). `upgrade` replaces exactly these (q's own commands stay).
-OLD_DEFAULT_STARTS = {"dashboard": {None, "dashboard.cmd"}, "github": {None}, "docs": {None}}
+OLD_DEFAULT_STARTS = {"dashboard": {None, "dashboard.cmd"}, "github": {None}, "docs": {None}, "bot": {None, "run.cmd"}}
 # The default tab ids before tabs.json recorded `defaultsSeen` (q's tabs.json may have dropped some on purpose).
 LEGACY_DEFAULT_IDS = ("project", "github", "docs", "dashboard", "sound", "ui", "ui-redesign", "map", "bot", "model")
 

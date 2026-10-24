@@ -46,8 +46,9 @@ Same rules as SPEC.md, plus two optional fields:
   a labelled group after their parent while the parent or one of them is active, otherwise the parent shows a caret
   with the number of hidden tabs. An unknown parent or a cycle makes the tab top level.
 - `childLabel`: the small label in front of a parent's group of child tabs (default: the parent's name).
-- `keepAlive: true`: the shell keeps that local server running (see Supervisor below). Default tabs: Supervisor Board,
-  GitHub, Claude and Editor Manager. The editors start on demand (when their tab is opened).
+- `keepAlive: true`: the shell keeps that local server running (see Supervisor below). Default tabs: every local server
+  (Supervisor Board, GitHub, Tests, Claude, Editor Manager and the Map, Bot, Gamemode and Physics editors), so every
+  dot is green without opening the tab (q, 2026-10-24). Each is an idle Python server, so running them all costs little.
 - `lowPriority: true`: the server runs at idle CPU priority (what `start /low` gave the GitHub manager).
 
 Adding a tool is one entry: `id`, `name`, `parent`, then `url` + `port` + `folder` + `start` for a server
@@ -174,7 +175,7 @@ whose source folders and installer commands are not decided. When one has an ins
 - Downloads open a Save dialog in the last folder used.
 - A page with unsaved changes (`beforeunload`) asks before Ctrl+R / F5 reloads it.
 - Keys: Ctrl+1..8 tab, Ctrl+9 last tab, Ctrl+Tab / Ctrl+Shift+Tab (and Ctrl+PageDown / PageUp) cycle, Ctrl+R / F5 reload (Ctrl+F5
-  without cache), Ctrl+Shift+R re-read tabs.json, F12 devtools of the active tab. No menu bar.
+  without cache), Ctrl+Shift+R re-read tabs.json, F11 full screen, F12 devtools of the active tab. No menu bar and no title bar: the tab bar moves the window (drag its empty space, double-click to maximize) and the window buttons sit at its right end; the window opens maximized the first time.
 - One instance: starting it again focuses the window (and switches to `--tab=<id>` if given).
 
 ## Testing without Windows

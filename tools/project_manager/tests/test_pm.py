@@ -447,7 +447,7 @@ class TestTabs(unittest.TestCase):
             self.assertEqual(t["github"]["startCwd"], os.path.join(q, "github-manager"))
             self.assertEqual(t["docs"]["startCommand"],
                              'py -3 serve.py --docs "%s\\Claude Documents" --port 8766 --quiet' % q)
-            self.assertEqual([i for i in t if t[i]["keepAlive"]], ["project", "github", "docs", "dashboard"])
+            self.assertEqual([i for i in t if t[i]["keepAlive"]], ["project", "github", "tests", "docs", "dashboard", "map", "bot", "gamemode", "physics"])
             self.assertEqual([i for i in t if t[i]["lowPriority"]], ["github"])
             self.assertTrue(all(".cmd" not in t[i]["startCommand"] and "start " not in t[i]["startCommand"]
                                 for i in ("project", "github", "docs", "dashboard")))
@@ -464,7 +464,7 @@ class TestTabs(unittest.TestCase):
             self.assertFalse(t["sound"]["installed"])          # sound-editor.html missing
             self.assertTrue(t["sound2"]["filePath"].endswith("other.html"))  # first *.html
             self.assertTrue(t["model"]["filePath"].endswith("index.html"))
-            self.assertEqual(t["bot"]["startCommand"], '"%s"' % os.path.join(q, "bot-editor", "run.cmd"))
+            self.assertEqual(t["bot"]["startCommand"], "py -3 serve.py --port 8769 --no-open")
             self.assertEqual(t["bot"]["startCwd"], os.path.join(q, "bot-editor"))
             self.assertEqual(t["map"]["startCommand"], "py -3 serve.py --port 8770 --no-browser")
             self.assertEqual(t["map"]["startCwd"], os.path.join(q, "map-editor"))
