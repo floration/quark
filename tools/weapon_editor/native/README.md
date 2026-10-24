@@ -70,7 +70,7 @@ clamping), so they are authoritative over the page's.
 row = {id: "<weapon>:<mode>[:<variant>]", weapon, mode: "primary"|"alt", variant: ""|"direct"|"splash", kind, label,
        notes: [text], headshots, support?, beam?, heal?, refire, pellets, range, reach, speed, splashRadius, splashMax,
        body, head, burst, stkBody, stkHead, ttkBody, ttkHead, dpsBody, dpsHead,
-       t10, t20, t40, fall10, fall20, fall40, at10, at20, at40, per: [{d, body, head}]}
+       t10, t20, t40, fall10, fall20, fall40, at10, at20, at40, knock, wallbang, selfDmg, per: [{d, body, head}]}
 ```
 
 The rows are the page's `stats.js` rows: the same 20 ids in the same order, the same columns and the same arithmetic
@@ -78,7 +78,10 @@ The rows are the page's `stats.js` rows: the same 20 ids in the same order, the 
 game's compiled set: its values, the falloff fields or the set's `<weapon>.falloff` curve evaluated by the game
 (`evalWeaponCurve`), shotgun pellets in the game's fixed pattern (`pelletOffset`) against the game's hit box and head
 box at `dist`. `body` / `head` are one shot's damage at `dist` (0: every hit lands); `stk*` = ceil(health / damage);
-`ttk*` = (shots - 1) x refire (+ the sticky's arm time); `dps*` = damage / refire; `t10..40` flight times (0
+`ttk*` = (shots - 1) x refire (+ the sticky's arm time); `dps*` = damage / refire; a projectile's `reach` (and `range`)
+is how far it hits a target on its own floor: speed x life, or for one that drops, the farthest it lands from the eye
+(1.6 m) at the best angle within its life (the rocket's lob: 85 m, not 168); `knock` the field, `wallbang` one shot's
+body damage through a wallbang wall (hitscan, beam; else null), `selfDmg` your own damage at your blast's centre; `t10..40` flight times (0
 hitscan, null support / out of reach); `fall10..40` the damage factor; `at10..40` body damage there; `per` the body
 and head damage at 0..100 m (the damage-vs-distance chart). Infinite numbers (no damage) are null. Numbers carry 7
 significant digits. `gameRows` is the game's own simpler table (`computeWeaponStats`: every pellet lands, no

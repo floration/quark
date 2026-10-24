@@ -15,7 +15,11 @@ const COLS = [
     ["refire", "refire s", "fire", true], ["range", "range m", "fire", false], ["speed", "speed m/s", "fire", false], ["t20", "to 20 m s", "fire", true, "t"],
     ["splashMax", "max", "splash", false], ["splashRadius", "radius m", "splash", false],
     ["fall20", "x 20 m", "falloff", false], ["fall40", "x 40 m", "falloff", false],
+    ["knock", "knock", "other", false], ["wallbang", "wallbang", "other", false], ["selfDmg", "self", "other", true],
 ];
+const COL_TIP = { range: "hitscan: its range; a projectile: how far it hits a target on its own floor (a dropping one aimed up)",
+    knock: "the knock field: shotgun m/s per pellet's worth, crossbow m/s, laser m/s per s of beam, a blast m/s at its centre",
+    wallbang: "one shot's damage through a wallbang wall (hitscan)", selfDmg: "your own damage from the centre of your blast (below your feet: 0.1 of it)" };
 
 export class ValuesView {
     constructor(app, root) {
@@ -72,19 +76,32 @@ export class ValuesView {
         for (const c of COLS) { const g = groups[groups.length - 1]; if (g && g.name === c[2]) g.n++; else groups.push({ name: c[2], n: 1 }); }
         let h = `<table class="vt"><thead><tr><th class="grp"></th>${groups.map((g) => `<th class="grp" colspan="${g.n}">${g.name}</th>`).join("")}<th class="grp"></th></tr>`;
         const sc = (k) => (this.sort.key === k ? ` class="sorted${this.sort.asc ? " asc" : ""}"` : "");
-        h += `<tr><th data-k="label"${sc("label")}>weapon · fire mode</th>${COLS.map(([k, t]) => `<th data-k="${k}"${sc(k)}>${t}</th>`).join("")}<th>notes</th></tr></thead><tbody>`;
+        h += `<tr><th data-k="label"${sc("label")}>weapon · fire mode</th>${COLS.map(([k, t]) => `<th data-k="${k}"${sc(k)}${COL_TIP[k] ? ` title="${esc(COL_TIP[k])}"` : ""}>${t}</th>`).join("")}<th>notes</th></tr></thead><tbody>`;
         const f = (v, kind) => (kind === "int" ? fin(v) : kind === "t" ? (v == null ? "–" : fmtT(v)) : v == null ? "–" : fmtNum(v));
         for (const { r, c, changed } of rows) {
             h += `<tr class="${changed ? "changed" : ""}${r.weapon === app.sel ? " sel" : ""}" data-w="${r.weapon}"><td>${esc(r.label)}</td>`;
             for (const [k, , , lower, kind] of COLS) {
                 const a = r[k], b = c ? c[k] : undefined;
-                const show = (k === "splashMax" || k === "splashRadius") && !r.splashRadius && !(c && c.splashRadius) ? "" : f(a, kind);
+                const blank = ((k === "splashMax" || k === "splashRadius") && !r.splashRadius && !(c && c.splashRadius)) || ((k === "wallbang" || k === "selfDmg") && a == null && !(c && c[k] != null));
+                const show = blank ? "" : f(a, kind);
                 h += `<td class="n">${show}${c && show !== "" ? diffSpan(a, b, lower) : ""}${this.showStd && c && show !== "" ? `<span class="d muted">${f(b, kind)}</span>` : ""}</td>`;
             }
             h += `<td class="notes">${esc(r.notes.join(" · "))}</td></tr>`;
         }
         h += `</tbody></table>`;
         if (!rows.length) h += `<div class="muted pad">nothing matches</div>`;
+        // support items: what they heal (the damage columns don't fit them)
+        const sup = app.stats.rows.filter((r) => r.support && r.heal != null && (!this.filter || (r.label + " " + r.weapon).toLowerCase().includes(this.filter)));
+        if (sup.length && (this.kind === "all")) {
+            const cmp = new Map((app.cmpStats ? app.cmpStats.rows : []).map((r) => [r.id, r]));
+            h += `<h3>Healing</h3><table class="vt"><thead><tr><th>item · use</th><th>heal hp</th><th>refire / away s</th><th>hp / s</th><th>speed m/s</th><th>reach m</th><th>notes</th></tr></thead><tbody>`;
+            for (const r of sup) {
+                const c = cmp.get(r.id) || null, hps = r.heal / r.refire, chps = c ? c.heal / c.refire : null;
+                const cell = (a, b, lower) => `<td class="n">${a ? fmtNum(a) : "–"}${c ? diffSpan(a, b, lower) : ""}</td>`;
+                h += `<tr data-w="${r.weapon}"><td>${esc(r.label)}</td>${cell(r.heal, c && c.heal)}${cell(r.refire, c && c.refire, true)}${cell(hps, chps)}${cell(r.speed, c && c.speed)}${cell(r.reach, c && c.reach)}<td class="notes">${esc(r.notes.join(" · "))}</td></tr>`;
+            }
+            h += `</tbody></table>`;
+        }
         this.tableBox.innerHTML = h;
         this.tableBox.querySelectorAll("th[data-k]").forEach((th) => (th.onclick = () => {
             const k = th.dataset.k;

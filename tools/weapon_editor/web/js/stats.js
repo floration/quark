@@ -60,6 +60,21 @@ export function pelletHits(pellets, spread, d, aimHead) {
     return { body, head };
 }
 
+// how far a projectile can hit a target on the floor it is fired from: launched from the eye (1.6 m, kEyeHeight) at the
+// best angle (every 0.5 degree), its flight cut by the ground or its life; one that doesn't drop flies speed x life
+// (wpn_stats.cpp ballisticReach: the same loop)
+export const EYE_HEIGHT = 1.6;
+export function ballisticReach(speed, gravity, life) {
+    if (gravity <= 0 || speed <= 0) return speed * life;
+    let best = 0;
+    for (let i = 0; i <= 180; i++) {
+        const a = i * 0.5 * 3.14159265358979 / 180, vx = speed * Math.cos(a), vy = speed * Math.sin(a);
+        const tGround = (vy + Math.sqrt(vy * vy + 2 * gravity * EYE_HEIGHT)) / gravity;
+        best = Math.max(best, vx * Math.min(life, tGround));
+    }
+    return best;
+}
+
 export function bubbleCount(v, dist) {
     const near = v("bubble.streamNear"), far = v("bubble.streamFar"), mn = v("bubble.streamMin"), mx = v("bubble.streamMax");
     let f = far > near ? (dist - near) / (far - near) : dist >= far ? 1 : 0;
@@ -127,7 +142,7 @@ function row(w, mode, variant, v, curves, set, H, D) {
     else if (w === "syringe") {
         r.support = true;
         if (mode === "primary") { r.heal = dmg; r.notes.push(`heals you ${fmt(dmg)} hp a use (${fmt(dmg / refire)} hp/s)`); }
-        else { const away = v("syringe.away"); r.heal = v("syringe.throwHeal"); refire = Math.max(refire, away); speed = v("syringe.throwSpeed"); gravity = v("syringe.throwGravity"); life = v("syringe.throwLife");
+        else { const away = v("syringe.away"); r.heal = v("syringe.throwHeal"); refire = Math.max(refire, away); speed = v("syringe.throwSpeed"); gravity = v("syringe.throwGravity"); life = v("syringe.throwLife"); r.reach = ballisticReach(speed, gravity, life);
             r.notes.push(`a teammate it hits gets ${fmt(r.heal)} hp and every cooldown reset; away ${fmt(away)} s`); r.kind = "projectile"; }
     } else if (w === "laser") {
         if (mode === "alt") { const pd = v("laser.pullDamage"); dmg *= pd; head *= pd; r.notes.push(`pulls x${fmt(v("laser.pullScale"))} harder for x${fmt(pd)} damage`); }
@@ -154,7 +169,8 @@ function row(w, mode, variant, v, curves, set, H, D) {
         if (w === "knife") { const away = v("knife.away"); speed = v("knife.throwSpeed"); gravity = v("knife.throwGravity"); life = v("knife.throwLife"); refire = Math.max(refire, away); r.kind = "projectile";
             r.notes.push(`one throw, then the knife is away ${fmt(away)} s`); }
         if (w === "sticky") { extraTtk = v("sticky.armTime"); r.notes.push(`arms in ${fmt(extraTtk)} s; ${v("sticky.max")} out at once`); }
-        const reach = speed * life;
+        const reach = ballisticReach(speed, gravity, life);
+        if (gravity > 0 && reach < speed * life - 1e-6) r.notes.push(`reaches ${fmt(reach)} m on flat ground (aimed up; ${fmt(speed * life)} m straight before it expires)`);
         let base = dmg, baseHead = head;
         if (splash > 0) {
             if (variant === "splash") { base = dmg; baseHead = dmg; r.headshots = false; r.notes.push(`the blast's centre; 0 at ${fmt(splash)} m`); }
@@ -177,6 +193,11 @@ function row(w, mode, variant, v, curves, set, H, D) {
     r.splashRadius = r.kind === "projectile" && w !== "knife" && w !== "syringe" ? splash : 0;
     r.splashMax = r.splashRadius > 0 ? dmg : 0;
     r.per = per;
+    // the Values table's extras: the knockback field (its unit is the weapon's: see the field's doc), one shot's damage
+    // through a wallbang wall (hitscan: body x wallbang; the laser's beam too), your own damage from your blast's centre
+    r.knock = v(w + ".knock");
+    r.wallbang = r.kind === "hitscan" || r.kind === "beam" ? per(D, false) * v(w + ".wallbang") : null;
+    r.selfDmg = r.splashRadius > 0 ? r.splashMax * v(w + ".selfDamage") : null;
     r.body = per(D, false);
     r.head = per(D, true);
     r.burst = r.body;
@@ -198,7 +219,7 @@ const fmt = (x) => { const a = Math.abs(x); return (a >= 100 ? x.toFixed(0) : a 
 export { fmt as fmtNum };
 
 // edited minus standard per row id, for the columns that are numbers
-export const NUM_COLS = ["body", "head", "stkBody", "stkHead", "ttkBody", "ttkHead", "dpsBody", "dpsHead", "refire", "range", "speed", "t10", "t20", "t40", "splashMax", "splashRadius", "fall10", "fall20", "fall40"];
+export const NUM_COLS = ["body", "head", "stkBody", "stkHead", "ttkBody", "ttkHead", "dpsBody", "dpsHead", "refire", "range", "speed", "t10", "t20", "t40", "splashMax", "splashRadius", "fall10", "fall20", "fall40", "knock", "wallbang", "selfDmg"];
 export function diffRows(a, b) {
     const by = new Map(b.map((r) => [r.id, r]));
     return a.map((r) => {

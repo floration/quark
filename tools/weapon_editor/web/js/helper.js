@@ -96,7 +96,7 @@ export async function createHelper(config) {
     // shows up as a warning instead of silently wrong numbers. -> null (no wpnstats) or {diffs: [text]}
     H.selfCheck = async (text, values, set) => {
         if (!H.wpn) return null;
-        const COLS = ["body", "head", "stkBody", "stkHead", "ttkBody", "ttkHead", "dpsBody", "dpsHead", "refire", "range", "speed", "splashRadius", "splashMax", "at10", "at20", "at40"];
+        const COLS = ["body", "head", "stkBody", "stkHead", "ttkBody", "ttkHead", "dpsBody", "dpsHead", "refire", "range", "speed", "splashRadius", "splashMax", "at10", "at20", "at40", "knock", "wallbang", "selfDmg"];
         const same = (a, b) => (a == null || !Number.isFinite(a) ? b == null || !Number.isFinite(b) : b != null && Math.abs(a - b) <= 1e-4 * Math.max(1, Math.abs(a)));
         const diffs = [];
         for (const dist of [0, 20]) {
