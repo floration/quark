@@ -129,3 +129,18 @@ The browser keeps only conveniences (which tab was open).
   helper adapter).
 - The server's endpoints are listed at the top of `serve.py`. Writes need the `X-Quark-Editor` header and a local
   `Host`, so another web page can't write your files.
+
+## Installing / updating (one command)
+
+From the repository folder (on the owner's PC, `repository\`):
+
+    py -3 tools\bot_editor\install.py            (Linux/macOS: python3 tools/bot_editor/install.py)
+
+It builds `quark_maptool` and `quark_tests` once into `build-editors\` (client off, below-normal priority; an unchanged
+checkout rebuilds nothing), then installs the bot editor into `..\bot-editor` and the map editor (which shares the
+helper) into `..\map-editor`. Non-interactive, opens no browser, safe to re-run; `bot_editor.json`, the map editor's
+`config.json`, `provenance.json` and anything else kept there are left alone. `--bot-editor DIR` / `--map-editor DIR`
+pick other folders (`-` skips one), `--build DIR` another build folder, `--jobs N` the build's jobs. Needs cmake, a
+C++ compiler (MinGW-w64 on Windows) and Python, like the game build; the map editor's first install downloads
+three.js 0.160.0 once (checked by sha256, cached in the build folder).
+
