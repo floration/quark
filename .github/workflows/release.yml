@@ -247,7 +247,14 @@ jobs:
           # runtime reopens the file per pid), including a crash it catches in one. -fno-sanitize-recover=all
           # (CMakeLists QUARK_SANITIZE) makes any UB report fatal, so it's always written before the process ends.
           SAN="$RUNNER_TEMP/san"; mkdir -p "$SAN"
+          # Each test holds a Server (~1.2 MB) on its stack, and under ASan no two locals share stack space, so a group
+          # that inlines several tests (votes ~7.5 MB + callees, rules ~7.1 MB) passes Linux's 8 MB default: an overflow
+          # that is the instrumentation's, not the game's (Windows links a 16 MB stack). Forked groups inherit it.
+          ulimit -s 65536
           export ASAN_OPTIONS="log_path=$SAN/report" UBSAN_OPTIONS="log_path=$SAN/report:print_stacktrace=1"
+          # leaks that are by design only, each with its reason (tests/lsan.supp); print_suppressions=0 so a suppressed
+          # leak writes no report file (it would otherwise raise the "sanitizer warnings" annotation every run)
+          export LSAN_OPTIONS="suppressions=$GITHUB_WORKSPACE/tests/lsan.supp:print_suppressions=0"
           # (a hang isn't a sanitizer finding: timeout stops the whole process group, and the reports are still read)
           rc=0; timeout -k 1m 55m ./build/quark_tests || rc=$?
           shopt -s nullglob; reports=("$SAN"/report.*)
