@@ -71,6 +71,7 @@ constexpr double kVisInterval = 0.05;
 constexpr double kVisGrace = 0.6;          // a player stays sent this long after the line of sight breaks
 constexpr double kProjVisGrace = 0.3;      // a projectile, this long
 constexpr float kVisNear = 20.0f;          // within earshot: always sent, no rays
+constexpr float kVisNearHide = 24.0f;      // hide and seek: always sent this close (owner's call, NET-10)
 constexpr double kProjRevealTime = 0.05;   // a projectile that died out of sight is shown at the spot this long (its explosion)
 static inline int lowestBit(uint32_t m) {   // (m != 0)
 #if defined(__GNUC__) || defined(__clang__)
@@ -2756,6 +2757,7 @@ uint32_t Server::perspectives(int id) const {
 // tick, inside the same ray budget): a client is sent a projectile it can see, or one near it, or its own.
 void Server::updateProjectileVisibility(uint32_t need, int viewers, int& budget, float eyeH) {
     const double now = time();
+    const float nearR = ms_.mode == MODE_HIDE ? kVisNearHide : kVisNear;   // (once a pass, not per pair)
     int slots[kMaxProjectiles], n = 0;
     for (int k = 0; k < kMaxProjectiles; k++) {
         const Projectile& pr = projectiles_[k];
@@ -2779,7 +2781,7 @@ void Server::updateProjectileVisibility(uint32_t need, int viewers, int& budget,
         const Projectile& pr = projectiles_[k];
         pv.projDue[k] = now + kVisInterval;
         quota--;
-        if (pr.owner == v || length(pr.pos - pv.move.pos) < kVisNear) { pv.projSeen[k] = now; continue; }
+        if (pr.owner == v || length(pr.pos - pv.move.pos) < nearR) { pv.projSeen[k] = now; continue; }
         // from your eye to the projectile, and to where it will be in 0.1 s (a rocket about to come round the corner
         // is there in time)
         const Vec3 eye = pv.move.pos + Vec3(0, eyeH, 0);
@@ -2840,6 +2842,7 @@ void Server::updatePlayerVisibility(uint32_t need, int viewers, int targets, int
     // spreads out over the next interval instead of recurring), and never past the ray budget
     int quota = (int)std::ceil(active / (kVisInterval * tickRate())) + 1;
     const bool teams = modeIsTeamBased(ms_.mode);
+    const float nearR = ms_.mode == MODE_HIDE ? kVisNearHide : kVisNear;   // (once a pass, not per pair)
     uint32_t live = 0;   // (the targets: nothing below changes who is connected and alive)
     for (int i = 0; i < kMaxPlayers; i++) live |= players_[i].connected && players_[i].alive ? 1u << i : 0;
     for (int n = 0; n < pairs && budget > 0 && quota > 0; n++) {
@@ -2859,7 +2862,7 @@ void Server::updatePlayerVisibility(uint32_t need, int viewers, int targets, int
         quota--;
         bool mate = teams && pt.team == pv.team;
         Vec3 d = pt.move.pos - pv.move.pos;
-        if (mate || length(d) < kVisNear) { pv.lastSeen[t] = now; continue; }
+        if (mate || length(d) < nearR) { pv.lastSeen[t] = now; continue; }
         // Generous on purpose (a player popping out of view while their shoulder shows is worse than a
         // wallhack seeing a little): rays from both sides of your head to the target's head, chest, knees
         // and both shoulders, where they are and where they'll be in 0.25 s (and where you'll be).
