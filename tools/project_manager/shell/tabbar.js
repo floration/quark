@@ -1,12 +1,14 @@
 'use strict';
-// Tab bar view: renders the tab list main.js sends, forwards clicks, shows the Dallas time.
+// Tab bar view: renders the tab list main.js sends, forwards clicks, shows the Editor Manager's facts and the Dallas time.
 (() => {
   const api = window.quarkTabbar;
   const tabsEl = document.getElementById('tabs');
   const errEl = document.getElementById('err');
   const updEl = document.getElementById('update');
+  const statsEl = document.getElementById('stats');
   const label = { up: 'running', down: 'not running', starting: 'starting', restarting: 'stopped, restarting by itself shortly', missing: 'not installed', unknown: 'checking' };
   let last = '';
+  let lastStats = '';
 
   // Ctrl+1..8 = tabs 1..8, Ctrl+9 = the last tab (as in main.js)
   const shortcut = (i, count) => (i < 8 ? i + 1 : i === count - 1 ? 9 : 0);
@@ -49,7 +51,8 @@
 
   function render(data) {
     if (!data) return;
-    const key = JSON.stringify(data);
+    renderStats(data.stats || null);
+    const key = JSON.stringify([data.tabs, data.active, data.updated, data.error]);
     if (key === last) return; // nothing changed: no DOM work
     last = key;
     const byId = new Map(data.tabs.map((t) => [t.id, t]));
@@ -81,7 +84,68 @@
     updEl.hidden = data.updated !== true;
     errEl.hidden = !data.error;
     errEl.textContent = data.error || '';
+    fit();
   }
+
+  // ---- the Editor Manager's facts (right side): Testing · Production · Human-made [bar] · Refreshed ----
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' });
+  const fmtLong = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', dateStyle: 'medium', timeStyle: 'medium' });
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  // one fact: a long and a short label (fit() picks), the value, an optional muted extra
+  function fact(cls, long, short, value, extra) {
+    const f = el('span', 'f ' + cls);
+    f.append(el('span', 'k l', long), el('span', 'k s', short), el('span', 'v' + (value ? '' : ' none'), value || 'none'));
+    if (extra) f.append(extra);
+    return f;
+  }
+  function renderStats(st) {
+    const key = JSON.stringify(st);
+    if (key === lastStats) return;
+    lastStats = key;
+    statsEl.textContent = '';
+    statsEl.hidden = !st;
+    if (!st) { fit(); return; }
+    const h = st.human || {};
+    const at = st.at ? new Date(st.at) : null;
+    const when = at && !isNaN(at) ? fmt.format(at) : '';
+    statsEl.classList.toggle('stale', !!st.stale);
+    statsEl.append(fact('t', 'Testing', 'Test', st.testing.version));
+    statsEl.append(fact('p', 'Production', 'Prod', st.production.version));
+    const n = h.h + h.t + h.a;
+    const hb = el('span', 'hbar');
+    if (n > 0) for (const [c, v] of [['h', h.h], ['t', h.t], ['a', h.a]]) { const i = el('i', c); i.style.width = (100 * v / n) + '%'; hb.append(i); }
+    statsEl.append(fact('h', 'Human-made', 'Human', h.pct == null ? '' : h.pct + ' %', hb));
+    statsEl.append(fact('r', 'Refreshed', '', when, el('span', 'x', st.fetched ? 'with fetch' : 'no fetch')));
+    statsEl.title = [
+      'Editor Manager' + (st.stale ? ' (not answering: the last facts it gave)' : '') + ' (click to open)',
+      'Testing: ' + (st.testing.version || 'none') + (st.testing.sha ? '  ' + st.testing.sha : '  (no origin/testing)'),
+      'Production: ' + (st.production.version || 'none') + (st.production.tag ? '  ' + st.production.tag : '') + (st.production.sha ? '  ' + st.production.sha : ''),
+      'Human-made: ' + (h.pct == null ? '-' : h.pct + ' %') + (n ? '  (human ' + h.h + ', third-party ' + h.t + ', AI ' + h.a + ' of ' + n + ')' : ''),
+      'Last refresh: ' + (at && !isNaN(at) ? fmtLong.format(at) + ' Dallas' : '-') + ', ' + (st.fetched ? 'with git fetch' : 'no fetch'),
+    ].join('\n');
+    fit();
+  }
+  // shrink the facts before the tabs: the first level at which the tabs fit whole (1 short labels, 2 no Refreshed,
+  // 3 no Production / bar, 4 hidden). Runs only on a render or a resize (a few layouts, no timers).
+  function fit() {
+    if (statsEl.hidden) return;
+    for (let lv = 0; lv <= 4; lv++) {
+      statsEl.dataset.lv = String(lv);
+      if (lv === 4 || tabsEl.scrollWidth <= tabsEl.clientWidth + 1) break;
+    }
+  }
+  let fitQueued = false;
+  addEventListener('resize', () => {
+    if (fitQueued) return;
+    fitQueued = true;
+    requestAnimationFrame(() => { fitQueued = false; fit(); });
+  });
+  statsEl.addEventListener('click', () => api.open('dashboard'));
 
   document.getElementById('relaunch').addEventListener('click', () => api.command('relaunch'));
   document.getElementById('reload').addEventListener('click', (e) => api.command(e.shiftKey ? 'reload-tabs' : 'reload'));
@@ -92,7 +156,6 @@
   addEventListener('blur', () => document.body.classList.remove('keys'));
 
   // Dallas time, redrawn once a minute (aligned to the minute: no per-second wakeups)
-  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' });
   const timeEl = document.getElementById('time');
   function tick() {
     timeEl.textContent = fmt.format(new Date());

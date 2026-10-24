@@ -447,7 +447,7 @@ class TestTabs(unittest.TestCase):
             self.assertEqual(t["github"]["startCwd"], os.path.join(q, "github-manager"))
             self.assertEqual(t["docs"]["startCommand"],
                              'py -3 serve.py --docs "%s\\Claude Documents" --port 8766 --quiet' % q)
-            self.assertEqual([i for i in t if t[i]["keepAlive"]], ["project", "github", "tests", "docs", "dashboard", "map", "bot", "gamemode", "physics", "weapons"])
+            self.assertEqual([i for i in t if t[i]["keepAlive"]], ["project", "docs", "github", "tests", "dashboard", "map", "bot", "gamemode", "physics", "weapons"])
             self.assertEqual([i for i in t if t[i]["lowPriority"]], ["github"])
             self.assertTrue(all(".cmd" not in t[i]["startCommand"] and "start " not in t[i]["startCommand"]
                                 for i in ("project", "github", "docs", "dashboard")))
@@ -522,7 +522,10 @@ class TestTabs(unittest.TestCase):
                    {"id": "ui-redesign", "name": "UI Redesign", "parent": "dashboard", "folder": "ui-customizer",
                     "file": "ui-customizer-redesign.html"}]
             write(paths.pm("tabs.json"), json.dumps({"tabs": old}))
-            self.assertEqual(tabs.upgrade(paths), ["ui-redesign", "project", "github", "dashboard", "play", "tests", "gamemode", "physics", "weapons"])
+            self.assertEqual(tabs.upgrade(paths), ["ui-redesign", "project", "github", "dashboard", "docs", "play", "tests", "gamemode", "physics", "weapons"])
+            # (the old default order, top level here: Claude Manager moved before GitHub Manager, Tests after it)
+            self.assertEqual([t["id"] for t in util.read_json_file(paths.pm("tabs.json"))["tabs"]][:6],
+                             ["project", "play", "docs", "github", "tests", "dashboard"])
             got = {t["id"]: t for t in util.read_json_file(paths.pm("tabs.json"))["tabs"]}
             d = {t["id"]: t for t in tabs.DEFAULT_TABS["tabs"]}
             self.assertEqual(got["project"]["name"], "Mine")
@@ -538,6 +541,7 @@ class TestTabs(unittest.TestCase):
             self.assertEqual(util.read_json_file(paths.pm("tabs.json.old"))["tabs"], old)
             saved = util.read_json_file(paths.pm("tabs.json"))
             self.assertEqual(saved["defaultsSeen"], sorted(d))
+            self.assertEqual(saved["defaultsMoved"], ["docs-before-github"])
             self.assertEqual(tabs.upgrade(paths), [])  # (idempotent)
             # q removes a tab that was added: it stays removed
             saved["tabs"] = [t for t in saved["tabs"] if t["id"] != "physics"]
@@ -552,6 +556,7 @@ class TestTabs(unittest.TestCase):
             os.remove(paths.pm("tabs.json"))
             self.assertTrue(tabs.write_default(paths))
             self.assertEqual(util.read_json_file(paths.pm("tabs.json"))["defaultsSeen"], sorted(d))
+            self.assertEqual(util.read_json_file(paths.pm("tabs.json"))["defaultsMoved"], ["docs-before-github"])
             self.assertEqual(tabs.upgrade(paths), [])
 
     def test_shell_supervisor(self):
@@ -1081,8 +1086,8 @@ class TestServer(unittest.TestCase):
     def test_tabs_history(self):
         d = json.loads(self.req("/api/tabs")[2])
         ids = [t["id"] for t in d["tabs"]]
-        self.assertEqual(ids[:6], ["project", "play", "github", "tests", "docs", "dashboard"])
-        self.assertEqual([x["depth"] for x in d["tabs"]][:7], [0, 1, 1, 2, 1, 1, 2])
+        self.assertEqual(ids[:6], ["project", "play", "docs", "github", "tests", "dashboard"])
+        self.assertEqual([x["depth"] for x in d["tabs"]][:7], [0, 1, 1, 1, 2, 1, 2])
         self.assertTrue(all("installed" in t and "up" in t for t in d["tabs"]))
         self.assertEqual(json.loads(self.req("/api/history?limit=5")[2]), {"events": []})
 

@@ -211,7 +211,7 @@ class TestTabsUpgrade(unittest.TestCase):
             write(paths.pm("tabs.json"), json.dumps({"tabs": self.old_tabs(), "defaultsSeen": seen}))
             self.assertEqual(tabs.upgrade(paths), ["play"])
             o = self.order(paths)
-            self.assertEqual(o[:3], [("project", 0, None), ("play", 1, "project"), ("github", 1, "project")])
+            self.assertEqual(o[:3], [("project", 0, None), ("play", 1, "project"), ("docs", 1, "project")])
             self.assertEqual([x for x in o if x[1] == 0], [("project", 0, None)])
             self.assertEqual(tabs.upgrade(paths), [])  # (idempotent)
 
@@ -236,6 +236,79 @@ class TestTabsUpgrade(unittest.TestCase):
             write(paths.pm("tabs.json"), json.dumps(saved))
             self.assertEqual(tabs.upgrade(paths), [])
             self.assertEqual(self.order(paths)[-1][0], "play")
+
+
+class TestTabsMoveOnce(unittest.TestCase):
+    """The Claude Manager tab moved before the GitHub Manager (q, 2026-10-24): q's saved tabs.json with the older
+    default order gets the new order once; an order q chose himself stays."""
+
+    def order(self, paths):
+        return [t["id"] for t in tabs.Tabs(paths).resolved()["tabs"]]
+
+    def old_default(self):
+        # (the default list before the swap: github + its Tests child, then docs)
+        by = {t["id"]: dict(t) for t in tabs.DEFAULT_TABS["tabs"]}
+        ids = [t["id"] for t in tabs.DEFAULT_TABS["tabs"]]
+        ids.remove("docs")
+        ids.insert(ids.index("tests") + 1, "docs")
+        return [by[i] for i in ids]
+
+    def save(self, paths, lst, **extra):
+        data = dict({"tabs": lst, "defaultsSeen": sorted(t["id"] for t in tabs.DEFAULT_TABS["tabs"]),
+                     "defaultsPlaced": ["play"]}, **extra)
+        write(paths.pm("tabs.json"), json.dumps(data))
+
+    def test_old_default_order_is_swapped_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = config.Paths(PM_ROOT, os.path.join(tmp, "Quark"))
+            # (what q's PC has: the old order, plus a tab of q's own between them, which keeps its place)
+            lst = self.old_default()
+            lst.insert(4, {"id": "mine", "name": "Mine", "parent": "project", "folder": "x"})
+            self.save(paths, lst)
+            self.assertEqual(self.order(paths)[:7], ["project", "play", "github", "tests", "mine", "docs", "dashboard"])
+            self.assertEqual(tabs.upgrade(paths), ["docs"])
+            self.assertEqual(self.order(paths)[:7], ["project", "play", "docs", "github", "tests", "mine", "dashboard"])
+            saved = util.read_json_file(paths.pm("tabs.json"))
+            self.assertEqual(saved["defaultsMoved"], ["docs-before-github"])
+            self.assertEqual(util.read_json_file(paths.pm("tabs.json.old"))["tabs"], lst)
+            self.assertEqual(tabs.upgrade(paths), [])  # (idempotent)
+            # q puts it back after the GitHub Manager: left there
+            t = next(x for x in saved["tabs"] if x["id"] == "docs")
+            saved["tabs"].remove(t)
+            saved["tabs"].insert(5, t)
+            write(paths.pm("tabs.json"), json.dumps(saved))
+            self.assertEqual(tabs.upgrade(paths), [])
+            self.assertEqual(self.order(paths)[:6], ["project", "play", "github", "tests", "mine", "docs"])
+
+    def test_own_order_stays(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = config.Paths(PM_ROOT, os.path.join(tmp, "Quark"))
+            lst = self.old_default()
+            dash = next(x for x in lst if x["id"] == "dashboard")
+            lst.remove(dash)
+            lst.insert(2, dash)  # (q's own order: the Editor Manager first)
+            self.save(paths, lst)
+            before = self.order(paths)
+            self.assertEqual(tabs.upgrade(paths), [])
+            self.assertEqual(self.order(paths), before)
+            self.assertEqual(util.read_json_file(paths.pm("tabs.json"))["defaultsMoved"], ["docs-before-github"])
+
+    def test_different_parents_stay(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = config.Paths(PM_ROOT, os.path.join(tmp, "Quark"))
+            lst = self.old_default()
+            next(x for x in lst if x["id"] == "docs").pop("parent")  # (q made the Claude Manager top level)
+            self.save(paths, lst)
+            before = self.order(paths)
+            self.assertEqual(tabs.upgrade(paths), [])
+            self.assertEqual(self.order(paths), before)
+
+    def test_new_default_file_is_already_in_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = config.Paths(PM_ROOT, os.path.join(tmp, "Quark"))
+            self.assertTrue(tabs.write_default(paths))
+            self.assertEqual(tabs.upgrade(paths), [])
+            self.assertEqual(self.order(paths)[:5], ["project", "play", "docs", "github", "tests"])
 
 
 @unittest.skipIf(util.IS_WINDOWS, "the fake quark.exe is a shell script")

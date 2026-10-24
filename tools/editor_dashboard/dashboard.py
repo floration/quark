@@ -743,8 +743,10 @@ class State:
                           "ahead_production": len(local) + len(p["testing"]),
                           "uncommitted": sum(len(c["uncommitted"]) for c in p["clones"]),
                           "files_changed": sum(1 for _, sts in p["files"] if "local" in sts.values())})
-        return {"testing": {"version": st["testing"]["version"], "ref": st["testing"]["ref"]},
-                "production": {"version": st["production"]["version"], "tag": st["production"]["tag"]},
+        return {"testing": {"version": st["testing"]["version"], "ref": st["testing"]["ref"], "sha": st["testing"]["sha"]},
+                "production": {"version": st["production"]["version"], "tag": st["production"]["tag"],
+                               "sha": st["production"]["sha"]},
+                "fetched": bool(st["fetched"]),             # (the Quark Project tab bar shows these: "with fetch" / "no fetch")
                 "provenance": dict(total=n, pct_human=pct_human(tot["human"] + tot["third_party"], n),
                                    by_category=cats, **tot),
                 "pending_marks": sum(1 for r in a["rows"] if r.get("p")), "programs": progs, "remaining": tot["ai"],

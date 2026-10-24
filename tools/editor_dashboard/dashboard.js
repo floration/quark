@@ -87,6 +87,7 @@ async function refresh() {
   try {
     await api("/api/refresh", { fetch: fetchToo });
     await loadAll();
+    shellStats();
     const fe = S.summary.fetchErrors || [];
     toast(fe.length ? "fetch failed in: " + fe.join(", ") : "Refreshed in " + (S.summary.ms / 1000).toFixed(2) + " s", fe.length > 0);
   } catch (e) { toast("Refresh failed: " + e.message, true); }
@@ -159,8 +160,17 @@ function writeHash() {
 }
 
 // ---- header ---------------------------------------------------------------------------------------------------------
+// In the Quark Project app (?embed=1) its tab bar shows Testing / Production / Human-made / Last refresh (from
+// /api/summary), so the page drops its header row: Refresh and fetch move to the right of the view tabs, and the row
+// comes back only for the "no git clones" error. shellStats() asks the app to re-read the summary after a refresh / mark.
+const EMBED = document.documentElement.classList.contains("embed");
+if (EMBED) $("#tabs").append($("#top .actions"));
+function shellStats() {
+  try { if (window.quarkShell && typeof window.quarkShell.statsChanged === "function") window.quarkShell.statsChanged(); } catch (e) { /* (an older app) */ }
+}
 function renderHeader() {
   const s = S.summary, h = s.human, c = h.counts;
+  $("#top").classList.toggle("alert", !!s.noClones);
   const ver = (x) => x.version ? `<b>${esc(x.version)}</b>` : `<b class="muted">none</b>`;
   $("#facts").innerHTML = `
     <div class="fact"><span class="k">Testing</span>${ver(s.testing)}<span class="muted small mono" title="${esc(s.testing.ref || "no origin/testing")}">${esc(s.testing.sha || "no origin/testing")}</span></div>
@@ -435,7 +445,7 @@ async function mark(clear) {
   try {
     const r = await api("/api/mark", { ids, origin: S.markOrigin, by, note, clear: !!clear });
     S.assets = r.assets; S.summary = r.status; S.sel.clear();
-    renderHeader();
+    renderHeader(); shellStats();
     const keep = $("#vbody").scrollTop;
     renderAssets(S.tab); $("#vbody").scrollTop = keep; drawRows();
     toast(clear ? `Removed your mark from ${plural(ids.length, "item")}` : `Marked ${plural(ids.length, "item")} ${ORIGIN_LABEL[S.markOrigin]}`);
