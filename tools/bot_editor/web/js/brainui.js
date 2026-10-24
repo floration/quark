@@ -32,6 +32,7 @@ export class BrainPage {
         app.on("brains", () => this._fillSel());
         app.on("catalog", () => this._afterChange(null));
         app.on("page", (p) => { if (p === "brain") this._showView(this.view); });
+        addEventListener("qbe-theme", () => { for (const v of ["blocks", "graph", "values"]) this.dirtyViews.add(v); if (this.app.page === "brain") this._refreshView(); });   // (canvases take the theme's colours when drawn)
     }
 
     async start() {
@@ -60,6 +61,7 @@ export class BrainPage {
         }
         if (!st) await this.open("default");
         this._fillSel();   // (after the name is restored: a brain that was never saved gets its "(not saved)" entry)
+        this._brainInfo();   // (saved / unsaved: known only now)
         this._showView(new URLSearchParams(location.search).get("view") || "code");
     }
 

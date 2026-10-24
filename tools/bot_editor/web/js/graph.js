@@ -898,7 +898,7 @@ export class GraphView {
         const b = this.wg.bounds, s = Math.min((Wc - 8) / b.w, (Hc - 8) / b.h);
         const ox = (Wc - b.w * s) / 2 - b.x * s, oy = (Hc - b.h * s) / 2 - b.y * s;
         this._miniT = { s, ox, oy };
-        ctx.fillStyle = "rgba(11,15,20,.85)"; ctx.fillRect(0, 0, Wc, Hc);
+        ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--overlay").trim() || "rgba(11,15,20,.85)"; ctx.fillRect(0, 0, Wc, Hc);
         for (const c of this.wg.clusters) { ctx.strokeStyle = AREA_COLOR[c.area] || "#6b7d93"; ctx.globalAlpha = 0.5; ctx.strokeRect(ox + c.x * s, oy + c.y * s, c.w * s, c.h * s); }
         for (const f of this.wg.frames) {
             ctx.globalAlpha = f === this.fr ? 1 : 0.75;

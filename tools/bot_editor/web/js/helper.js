@@ -137,7 +137,7 @@ export function buildRequest(scenario, map, brains) {
 // Runs still going when the page goes away (reload, tab closed) are stopped at once; serve.py also stops a run whose
 // event stream has been gone a few seconds, for a page that couldn't say so.
 const LIVE_RUNS = new Set();
-addEventListener("pagehide", () => {
+if (typeof addEventListener === "function") addEventListener("pagehide", () => {   // (not under node: the tests import this)
     for (const r of LIVE_RUNS) if (r.id) fetch(`/api/run/${r.id}/stop`, { method: "POST", keepalive: true, headers: { "X-Quark-Editor": "1" } }).catch(() => {});
 });
 class RealRun {

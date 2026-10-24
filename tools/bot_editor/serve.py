@@ -129,8 +129,8 @@ def generate_default_maps():
 
 
 def map_header(path):
-    """title / for / modes / handmade from the first lines of a .qmap (no full parse; the page parses the text)."""
-    info = {"title": "", "for": "", "modes": [], "handmade": False}
+    """title / for / modes / ranked / handmade from the first lines of a .qmap (no full parse; the page parses the text)."""
+    info = {"title": "", "for": "", "modes": [], "ranked": "", "handmade": False}
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
             for i, line in enumerate(f):
@@ -141,6 +141,7 @@ def map_header(path):
                 if kw == "title": info["title"] = rest.strip()
                 elif kw == "for": info["for"] = rest.strip()
                 elif kw == "modes": info["modes"] = rest.split()
+                elif kw == "ranked": info["ranked"] = rest.strip() or "yes"   # (the ranked pool: its setting, e.g. vanilla)
                 elif kw == "handmade": info["handmade"] = True
     except OSError:
         pass

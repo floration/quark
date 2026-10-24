@@ -54,8 +54,9 @@ export class CurveWidget {
         if (!this._dragging) this.sample();
         this.box = { l: 40, t: 8, w: W - 50, h: H - 30 };
         const r = this.box;
-        ctx.fillStyle = "#0b0f14"; ctx.fillRect(r.l, r.t, r.w, r.h);
-        ctx.strokeStyle = "#1f2a37"; ctx.lineWidth = 1; ctx.font = "10px ui-monospace, monospace"; ctx.fillStyle = "#6b7d93";
+        const css = getComputedStyle(document.documentElement), tok = (n, d) => css.getPropertyValue(n).trim() || d;   // (the theme's colours)
+        ctx.fillStyle = tok("--bg", "#0b0f14"); ctx.fillRect(r.l, r.t, r.w, r.h);
+        ctx.strokeStyle = tok("--line", "#1f2a37"); ctx.lineWidth = 1; ctx.font = "10px ui-monospace, monospace"; ctx.fillStyle = tok("--fg3", "#6b7d93");
         for (let k = 0; k <= 4; k++) {
             const y = this.yr[0] + (this.yr[1] - this.yr[0]) * k / 4, [, py] = this.toPx(0, y);
             ctx.beginPath(); ctx.moveTo(r.l, py); ctx.lineTo(r.l + r.w, py); ctx.stroke();

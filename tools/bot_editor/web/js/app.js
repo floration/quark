@@ -204,7 +204,7 @@ function applyTheme(t) {
 let theme = "auto";
 try { theme = THEMES.includes(localStorage.getItem("qbe.theme")) ? localStorage.getItem("qbe.theme") : "auto"; } catch {}
 applyTheme(theme);
-sysLight.addEventListener("change", () => applyTheme(theme));
+sysLight.addEventListener("change", () => { applyTheme(theme); window.dispatchEvent(new Event("qbe-theme")); });
 $("themeBtn").onclick = () => { theme = THEMES[(THEMES.indexOf(theme) + 1) % 3]; try { localStorage.setItem("qbe.theme", theme); } catch {} applyTheme(theme); window.dispatchEvent(new Event("qbe-theme")); };
 
 const app = new App();

@@ -346,6 +346,7 @@ table.params td.u { color: var(--fg2); font-size: 11px; }
 .bcard { background: var(--bg1); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px 8px; min-width: 0; overflow-x: auto; }
 .bcard h3 { margin-top: 4px; }
 .bcard table.score td .muted { font-size: 11px; }
+.bcard table.score td:not(:first-child), .bcard table.score th { white-space: nowrap; }
 .bscroll { max-height: 420px; overflow: auto; }
 .nowrap { white-space: nowrap; }
 .ok { color: var(--ok); }
