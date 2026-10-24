@@ -3,8 +3,9 @@
 (function (DM) {
   const {h, s, clear} = DM;
   const st = DM.state;
-  const KIND_RANK = {status: 0, added: 1, removed: 2, moved: 3, edited: 4};
-  const KIND_LABEL = {added: 'New entry', status: 'Status change', edited: 'Edit', moved: 'Move', removed: 'Removal'};
+  const KIND_RANK = {halt: -1, status: 0, added: 1, removed: 2, moved: 3, edited: 4};
+  const KIND_LABEL = {halt: 'Became halting (HALT)', added: 'New entry', status: 'Status change', edited: 'Edit', moved: 'Move', removed: 'Removal'};
+  const kindOf = it => it.halting === true ? 'halt' : it.kind;
   const RANGES = [['6h', '6 h', 6 * 3600e3], ['24h', '24 h', 86400e3], ['3d', '3 days', 3 * 86400e3], ['7d', '7 days', 7 * 86400e3], ['all', 'All', 0]];
   const LANE_H = 24, AXIS_H = 26;
   let view = null; // {t0, t1} kept across data refreshes
@@ -25,7 +26,7 @@
         ev.items.push(it);
       }
     }
-    for (const ev of map.values()) ev.kind = ev.items.reduce((k, it) => (KIND_RANK[it.kind] ?? 9) < (KIND_RANK[k] ?? 9) ? it.kind : k, 'edited');
+    for (const ev of map.values()) ev.kind = ev.items.reduce((k, it) => (KIND_RANK[kindOf(it)] ?? 9) < (KIND_RANK[k] ?? 9) ? kindOf(it) : k, 'edited');
     return [...map.values()];
   }
 
@@ -119,7 +120,8 @@
         const y = laneY[ev.lane];
         const g = s('g', {class: 'tl-ev', tabindex: 0, role: 'button', 'aria-label': ev.c.subject || 'change'});
         g.appendChild(s('circle', {cx: xx, cy: y, r: 10, class: 'hit'}));
-        g.appendChild(s('circle', {cx: xx, cy: y, r: ev.items.length > 2 ? 6.5 : 5, class: 'tdot k-' + ev.kind}));
+        if (ev.kind === 'halt') g.appendChild(s('circle', {cx: xx, cy: y, r: 9, class: 'tdot-ring'}));
+        g.appendChild(s('circle', {cx: xx, cy: y, r: ev.items.length > 2 || ev.kind === 'halt' ? 6.5 : 5, class: 'tdot k-' + ev.kind}));
         g.addEventListener('pointerenter', pe => DM.tip(tipFor(ev), pe.clientX, pe.clientY));
         g.addEventListener('pointermove', pe => DM.tip(tipFor(ev), pe.clientX, pe.clientY));
         g.addEventListener('pointerleave', () => DM.tip(null));
@@ -132,7 +134,8 @@
       return h('div', {class: 'tl-tip'},
         h('div', null, h('b', null, DM.dayLabel(new Date(ev.t)) + ' ' + DM.hhmm(new Date(ev.t))), ' · ', DM.rel(new Date(ev.t))),
         h('div', {class: 'dim'}, ev.c.subject || ''),
-        h('ul', null, ev.items.slice(0, 6).map(it => h('li', {class: 'k-' + it.kind}, h('i', {class: 'kd'}), KIND_LABEL[it.kind] || it.kind, ': ', DM.trimTitle(it.title || '')))),
+        h('ul', null, ev.items.slice(0, 6).map(it => h('li', {class: 'k-' + kindOf(it)}, h('i', {class: 'kd'}),
+          it.halting === false ? 'No longer halting' : KIND_LABEL[kindOf(it)] || it.kind, ': ', DM.trimTitle(it.title || '')))),
         ev.items.length > 6 ? h('div', {class: 'faint'}, '+ ' + (ev.items.length - 6) + ' more') : null);
     }
     // zoom + pan

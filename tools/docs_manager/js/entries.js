@@ -25,11 +25,11 @@
     const done = DM.isDone(e);
     const expanded = opts.full || st.expanded.has(e.id);
     const long = e.body.length > 320 || (e.body.match(/\n/g) || []).length > 3;
-    const el = h('article', {class: 'card' + (done ? ' done' : '') + (DM.needsQ(e) ? ' needq' : ''), id: opts.inDialog ? null : 'card-' + DM.app.cssId(e.id)});
+    const el = h('article', {class: 'card' + (done ? ' done' : '') + (DM.isHalting(e) ? ' halting' : DM.needsQ(e) ? ' needq' : ''), id: opts.inDialog ? null : 'card-' + DM.app.cssId(e.id)});
     const title = DM.md.into(h('span', {class: 'ttl'}), e.title, true);
     el.appendChild(h('div', {class: 'card-h'},
       DM.pillEl(e),
-      e.priority ? h('span', {class: 'pri ' + e.priority, title: {P1: 'Priority 1 (highest)', P2: 'Priority 2', P3: 'Priority 3 (lowest)'}[e.priority] || e.priority}, e.priority) : null,
+      DM.priEl(e),
       opts.inDialog ? h('h3', {class: 'ttl-w'}, title) :
         h('a', {class: 'ttl-w', href: '#entry=' + encodeURIComponent(e.id), title: 'Open details',
           onclick: ev => { ev.preventDefault(); DM.app.openEntry(e.id); }}, title)));
@@ -48,7 +48,9 @@
         el.replaceWith(card(e, opts));
       }}, expanded ? 'Show less' : 'Show more'));
     }
-    if (!done && e.waitingWhy && !GENERIC_WHY.test(e.waitingWhy.trim()) && e.status !== 'unknown')
+    if (DM.isHalting(e)) el.appendChild(h('div', {class: 'why halt-why'}, h('span', {class: 'why-k'}, 'A Claude agent is stopped until you: '),
+      e.haltWhat || DM.sentences(e.body)[0] || DM.trimTitle(e.title), e.haltingSince ? [' ', h('span', {class: 'faint'}, '(halting since ', haltTime(e), ')')] : null));
+    else if (!done && e.waitingWhy && !GENERIC_WHY.test(e.waitingWhy.trim()) && e.status !== 'unknown')
       el.appendChild(h('div', {class: 'why'}, /^waiting\b/i.test(e.waitingWhy) ? null : h('span', {class: 'why-k'}, 'Waiting: '), e.waitingWhy));
     if (e.statusNote) el.appendChild(h('div', {class: 'note'}, h('span', {class: 'why-k'}, noteLabel(e)), DM.md.into(h('span'), e.statusNote, true)));
     const chips = chipsFor(e);
@@ -57,8 +59,15 @@
     el.appendChild(h('div', {class: 'card-f'},
       fs.time ? h('span', null, 'First written ', DM.timeEl(fs.time)) : null,
       lc.time && lc.time !== fs.time ? [h('span', {class: 'dotsep'}), h('span', null, 'last changed ', DM.timeEl(lc.time), lc.what ? ' (' + humanWhat(lc.what) + ')' : '')] : null,
-      e.status === 'unknown' ? [h('span', {class: 'dotsep'}), h('span', {title: 'The entry has no "_date, thread, status_" line at its end'}, 'no status line')] : null));
+      e.status === 'unknown' ? [h('span', {class: 'dotsep'}), h('span', {title: 'The entry has no "_date, thread, status_" line at its end'}, 'no status line')] : null,
+      DM.edit ? DM.edit.editButton(e) : null));
+    if (DM.edit && DM.edit.canAnswer(e)) el.appendChild(DM.edit.answerBox(e));
     return el;
+  }
+  // When an entry became halting: a relative <time> (a date-only value is shown as the day it was written).
+  function haltTime(e) {
+    const s = e.haltingSince;
+    return /^\d{4}-\d{2}-\d{2}$/.test(s || '') ? h('span', {title: 'Date written in the entry'}, DM.dateOnly(s)) : DM.timeEl(s);
   }
   function humanWhat(w) {
     return String(w).replace(/\bin-progress\b/g, 'in progress').replace(/\bwontfix\b/g, "won't fix").replace(/->/g, '→');
@@ -154,6 +163,6 @@
     $(id).addEventListener('change', () => { st.prefs.entries[key] = $(id).value; DM.app.save(); render(); $('#eScroll').scrollTop = 0; });
   $('#eReset').addEventListener('click', reset);
 
-  DM.entries = {card, matches, syncControls, filterTo, chipsFor, humanWhat};
+  DM.entries = {card, matches, syncControls, filterTo, chipsFor, humanWhat, haltTime};
   (DM.views = DM.views || {}).entries = {render};
 })(window.DM);

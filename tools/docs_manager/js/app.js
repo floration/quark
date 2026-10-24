@@ -3,7 +3,7 @@
 (function (DM) {
   const {h, clear, $, $$} = DM;
   const st = DM.state;
-  const TABS = ['overview', 'board', 'entries', 'changes', 'files', 'threads'];
+  const TABS = ['overview', 'board', 'entries', 'changes', 'files', 'threads', 'edit'];
   const VIEWS = DM.views = DM.views || {}; // tab -> {render(), scroller()}, filled by the view modules
   const stale = new Set(TABS);
 
@@ -20,6 +20,7 @@
     timeline: {range: '3d', openOnly: false},
     flow: {showDone: false, linkedOnly: true, collapsed: {}},
     files: {sel: '', raw: false},
+    editSub: 'file', editFile: '', addFile: '', haltOpen: true,
   };
   function merge(def, got) {
     const out = {};
@@ -51,7 +52,7 @@
   }
 
   function show(tab, opts) {
-    if (!TABS.includes(tab)) tab = 'overview';
+    if (!TABS.includes(tab) || (tab === 'edit' && st.data && !DM.edit.showTab())) tab = 'overview';
     st.prefs.tab = tab; save();
     for (const b of $$('#tabs button')) { const on = b.dataset.tab === tab; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); }
     for (const v of $$('.view')) v.classList.toggle('on', v.dataset.view === tab);
@@ -61,6 +62,9 @@
 
   function dataChanged() {
     $('#loading').hidden = true;
+    DM.data.banners();
+    if (DM.edit) DM.edit.dataChanged();
+    if (st.prefs.tab === 'edit' && !DM.edit.showTab()) show('overview', {keepHash: true});
     for (const t of TABS) stale.add(t);
     render(st.prefs.tab);
     if (!st.routed) { st.routed = true; route(); }
@@ -150,10 +154,12 @@
   }
 
   function help() {
-    const keys = [['/', 'Search (current tab, else Entries)'], ['1 – 6', 'Switch tabs'], ['Esc', 'Close a dialog, leave the search box'],
+    const keys = [['/', 'Search (current tab, else Entries)'], ['1 – 7', 'Switch tabs'], ['Ctrl+S', 'Edit tab: save'], ['Ctrl+Enter', 'In an answer box: save the answer'], ['Esc', 'Close a dialog, leave the search box'],
       ['Wheel / drag', 'Zoom / pan the timeline'], ['Double-click', 'Timeline: show everything']];
     openDialog('About this page', h('div', null,
-      h('p', null, 'The Claude Manager: a read-only view of Claude Documents, the notebook every Claude on Quark writes. It never changes the documents; it reads its own copy of the repo every minute and checks here every 30 s.'),
+      h('p', null, 'The Claude Manager: a view of Claude Documents, the notebook every Claude on Quark writes. It reads its own copy of the repo every minute and checks here every 30 s.'),
+      DM.edit && DM.edit.canEdit() ? h('p', null, 'Edit tab: change any file, answer questions (they go into 09-answers-from-q.md) or add an entry. Each save goes to the Claude Documents folder on this PC, is committed and pushed straight away; if GitHub can’t be reached it stays on the PC and goes up later.') :
+        h('p', null, 'Editing is off here, so this page only reads.'),
       h('p', null, '"Waiting on" is a guess from each entry’s text and its linked PRs and CI runs: q’s decision, q to push, PR review, CI, tests, Claude working, or nobody yet.'),
       h('div', {class: 'keys'}, keys.map(([k, d]) => [h('kbd', null, k), h('span', null, d)])),
       st.data ? h('p', {class: 'faint'}, 'Data: ', st.source, ' · docs commit ', String(st.data.mirrorHead || '').slice(0, 7) || '?',
@@ -194,8 +200,9 @@
       let tab = st.prefs.tab;
       if (!SEARCH[tab]) { tab = 'entries'; show(tab); }
       const i = $(SEARCH[tab]); i.focus(); i.select();
-    } else if (/^[1-6]$/.test(ev.key)) {
-      show(TABS[+ev.key - 1]);
+    } else if (/^[1-7]$/.test(ev.key)) {
+      const b = $('#tabs button[data-tab="' + TABS[+ev.key - 1] + '"]');
+      if (b && !b.hidden) show(TABS[+ev.key - 1]);
     } else if (ev.key === '?') help();
   });
 

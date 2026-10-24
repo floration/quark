@@ -88,9 +88,51 @@
     return DM.ext(url || threadUrl(name), name, 'thread', 'Open the thread "' + name + '" on claude.ai');
   }
 
+  // HALT items: a red banner above every other one, on every tab. Rebuilt only when the data changes (not on every
+  // 30 s poll) and never while q is typing in it, so an answer box keeps its text and focus.
+  let haltVer = -1;
+  function haltingList() {
+    const t = e => Date.parse(e.haltingSince || e.date || '') || 0;
+    return st.data ? st.data.entries.filter(DM.isHalting).sort((a, b) => t(b) - t(a)) : [];
+  }
+  function paintHalt(box) {
+    const key = (st.version || 0) + '|' + (DM.edit && DM.edit.canEdit() ? 1 : 0) + '|' + (st.prefs && st.prefs.haltOpen ? 1 : 0);
+    if (key === haltVer && box.childElementCount) return;
+    if (box.contains(document.activeElement) && box.childElementCount) return;
+    haltVer = key;
+    clear(box);
+    const list = haltingList();
+    box.hidden = !list.length;
+    if (!list.length) return;
+    const open = !st.prefs || st.prefs.haltOpen !== false;
+    const n = list.length;
+    const open1 = id => ev => { ev.preventDefault(); DM.app.openEntry(id); };
+    box.appendChild(h('div', {class: 'banner b-halt', role: 'alert'},
+      h('div', {class: 'halt-h'},
+        h('span', {class: 'halt-pill'}, 'HALT'),
+        h('b', null, n + (n === 1 ? ' Claude agent is' : ' Claude agents are') + ' stopped until you act'),
+        h('span', {class: 'halt-sub'}, 'nothing moves on ' + (n === 1 ? 'it' : 'these') + ' until you do the step below'),
+        h('span', {class: 'spacer'}),
+        h('button', {class: 'mini', 'aria-expanded': String(open), onclick: () => { st.prefs.haltOpen = !open; DM.app.save(); paintHalt(box); }}, open ? 'Hide list' : 'Show list')),
+      open ? h('ol', {class: 'halt-list'}, list.map(e => h('li', {class: 'halt-it'},
+        h('div', {class: 'halt-it-h'},
+          h('a', {class: 'halt-t', href: '#entry=' + encodeURIComponent(e.id), onclick: open1(e.id)}, DM.md.into(h('span'), DM.trimTitle(e.title), true)),
+          h('span', {class: 'dotsep'}), threadLink(e.thread, e.threadUrl),
+          h('span', {class: 'dotsep'}), h('span', {class: 'faint'}, DM.fileShort(e.file)),
+          h('span', {class: 'spacer'}),
+          h('span', {class: 'faint halt-age'}, e.firstSeen && e.firstSeen.time ? ['written ', DM.timeEl(e.firstSeen.time)] : ['written ', DM.dateOnly(e.date)],
+            e.haltingSince && e.firstSeen && e.haltingSince !== e.firstSeen.timeUtc ? [' · halting ', DM.entries.haltTime(e)] : null)),
+        h('div', {class: 'halt-what'}, h('span', {class: 'why-k'}, 'What to do: '), DM.md.into(h('span'), e.haltWhat || DM.sentences(e.body)[0] || DM.trimTitle(e.title), true)),
+        DM.edit && (DM.edit.canAnswer(e) || DM.edit.editButton(e)) ? h('div', {class: 'halt-act'},
+          DM.edit.editButton(e), DM.edit.canAnswer(e) ? DM.edit.answerBox(e) : null) : null))) : null));
+  }
+
   function banners() {
-    const box = $('#banners');
-    if (!box) return;
+    const root = $('#banners');
+    if (!root) return;
+    let hb = $('#bHalt'), box = $('#bOther');
+    if (!hb) { clear(root); hb = h('div', {id: 'bHalt'}); box = h('div', {id: 'bOther'}); root.append(hb, box); }
+    if (st.data) paintHalt(hb);
     clear(box);
     const d = st.data;
     if (st.offline) {
@@ -127,5 +169,5 @@
 
   document.addEventListener('visibilitychange', () => { if (!document.hidden && (!st.lastTry || Date.now() - st.lastTry > 5000)) load(); });
 
-  DM.data = {load, threadUrl, threadLink, banners, setData};
+  DM.data = {load, threadUrl, threadLink, banners, setData, haltingList};
 })(window.DM);

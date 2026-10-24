@@ -28,7 +28,7 @@
   function row(e) {
     return h('li', {class: 'trow' + (DM.isDone(e) ? ' done' : '')},
       DM.pillEl(e, true),
-      e.priority ? h('span', {class: 'pri ' + e.priority}, e.priority) : null,
+      DM.priEl(e),
       h('a', {href: '#entry=' + encodeURIComponent(e.id), onclick: ev => { ev.preventDefault(); DM.app.openEntry(e.id); }, title: e.waitingWhy || ''}, DM.md.into(h('span'), e.title, true)),
       h('span', {class: 'faint'}, ' ' + DM.fileShort(e.file)));
   }

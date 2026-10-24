@@ -28,17 +28,21 @@
     const qs = questionsOf(e);
     const rec = recommendation(e);
     const push = e.waitingOn.includes('push');
-    const ctx = rawSentences(e.body).filter(x => !qs.some(q => q.includes(x)) && !/recommend/i.test(x)).slice(0, 2).join(' ');
-    const el = h('div', {class: 'nq' + (e.priority === 'P1' ? ' p1' : '')});
+    const halt = DM.isHalting(e);
+    const what = halt ? (e.haltWhat || rawSentences(e.body)[0] || '') : '';
+    const ctx = rawSentences(e.body).filter(x => !qs.some(q => q.includes(x)) && !/recommend/i.test(x) && !(halt && DM.plain(x) === DM.plain(what))).slice(0, 2).join(' ');
+    const el = h('div', {class: 'nq' + (halt ? ' halting' : e.priority === 'P1' ? ' p1' : '')});
     el.appendChild(h('div', {class: 'nq-h'},
-      e.priority ? h('span', {class: 'pri ' + e.priority}, e.priority) : null,
+      DM.priEl(e),
       h('a', {class: 'nq-t', href: '#entry=' + encodeURIComponent(e.id), onclick: ev => { ev.preventDefault(); DM.app.openEntry(e.id); }},
         DM.md.into(h('span'), DM.trimTitle(e.title) === DM.plain(e.title) ? e.title : e.title.replace(/[.:,;]+$/, ''), true)),
       h('span', {class: 'spacer'}),
+      halt && e.haltingSince ? h('span', {class: 'faint nq-age'}, 'halting since ', DM.entries.haltTime(e)) :
       e.firstSeen && e.firstSeen.time ? h('span', {class: 'faint nq-age'}, push ? 'ready ' : 'asked ', DM.timeEl(e.firstSeen.time)) :
         e.date ? h('span', {class: 'faint nq-age'}, DM.dateOnly(e.date)) : null));
+    if (halt) el.appendChild(h('div', {class: 'nq-ask halt-what'}, h('span', {class: 'why-k'}, 'What to do: '), DM.md.into(h('span'), what || DM.trimTitle(e.title), true)));
     if (qs.length && !(isQ && qs.length === 1)) el.appendChild(h('ul', {class: 'nq-qs'}, qs.map(q => DM.md.into(h('li'), q, true))));
-    if (!isQ && !qs.length && (push || !e.file.startsWith('07'))) el.appendChild(h('div', {class: 'nq-ask'}, h('span', {class: 'why-k'}, push ? 'q’s part: ' : 'Needed from q: '),
+    if (!halt && !isQ && !qs.length && (push || !e.file.startsWith('07'))) el.appendChild(h('div', {class: 'nq-ask'}, h('span', {class: 'why-k'}, push ? 'q’s part: ' : 'Needed from q: '),
       e.waitingWhy || (push ? 'Push to testing.' : 'A decision.')));
     if (ctx) el.appendChild(DM.md.into(h('div', {class: 'nq-ctx'}), ctx, true));
     if (rec) el.appendChild(h('div', {class: 'nq-rec'}, h('span', {class: 'why-k'}, 'Recommended: '), DM.md.into(h('span'), rec, true)));
@@ -46,7 +50,9 @@
     el.appendChild(h('div', {class: 'nq-m'},
       h('span', {class: 'faint'}, DM.fileTitle(e.file), e.section ? ' › ' + e.section : ''),
       h('span', {class: 'dotsep'}), DM.data.threadLink(e.thread, e.threadUrl),
-      chips.length ? h('span', {class: 'chips inl'}, chips) : null));
+      chips.length ? h('span', {class: 'chips inl'}, chips) : null,
+      DM.edit ? DM.edit.editButton(e) : null));
+    if (DM.edit && DM.edit.canAnswer(e)) el.appendChild(DM.edit.answerBox(e));
     return el;
   }
 
@@ -64,7 +70,8 @@
     const d = st.data, E = d.entries;
     const root = clear($('#ovBody'));
     const open = E.filter(e => !DM.isDone(e));
-    const need = open.filter(DM.needsQ);
+    const halting = DM.data.haltingList();
+    const need = open.filter(e => DM.needsQ(e) && !DM.isHalting(e));
     const pushes = need.filter(e => e.waitingOn.includes('push')).sort(byPriThenNew);
     const decisions = need.filter(e => !e.waitingOn.includes('push')).sort(byPriThenNew);
     const tell = open.filter(e => e.file.startsWith('06') && !DM.needsQ(e));
@@ -75,6 +82,8 @@
     // stat tiles
     const tile = (n, label, cls, onclick, title) => h('button', {class: 'tile ' + cls, onclick, title}, h('b', null, String(n)), h('span', null, label));
     root.appendChild(h('div', {class: 'tiles'},
+      halting.length ? tile(halting.length, 'halting (Claude stopped)', 'halt', () => DM.entries.filterTo({wait: 'halt', status: 'notdone'}),
+        'HALT items: a Claude agent can’t continue until you act') : null,
       tile(need.length, 'need q', 'q', () => DM.entries.filterTo({wait: 'q', status: 'notdone'}), 'Entries waiting on q: decisions and pushes'),
       tile(k('claude'), 'Claude working', 'claude', () => DM.entries.filterTo({wait: 'claude', status: 'notdone'})),
       tile(open.filter(e => DM.waitKeys(e).some(x => x === 'pr' || x === 'ci')).length, 'waiting for PR / CI', 'ci', () => DM.entries.filterTo({wait: 'prci', status: 'notdone'})),
@@ -87,6 +96,12 @@
 
     // Needs q (left) + latest changes (right)
     const left = h('div', {class: 'ov-col'});
+    if (halting.length) {
+      const hs = section('Halting', halting.length, 'a Claude agent is stopped on each of these until you act');
+      hs.classList.add('halt-sec');
+      hs.appendChild(h('div', {class: 'nq-group'}, halting.map(needItem)));
+      left.appendChild(hs);
+    }
     const nq = section('Needs q', need.length, need.length ? 'every item waiting on you, as a question' : null);
     nq.classList.add('needq-sec');
     if (!need.length) nq.appendChild(h('div', {class: 'empty ok'}, 'Nothing is waiting on you right now.'));
@@ -109,14 +124,16 @@
 
     // waiting-on board (compact)
     const board = section('Waiting on', open.length, 'unfinished entries by what they wait for');
+    const WCOLS = DM.WAIT.filter(w => w.key !== 'halt' || halting.length);
     const cols = h('div', {class: 'wboard'});
-    for (const w of DM.WAIT) {
+    cols.style.setProperty('--wn', WCOLS.length);
+    for (const w of WCOLS) {
       const list = open.filter(e => DM.waitKeys(e)[0] === w.key).sort(byPriThenNew);
       cols.appendChild(h('div', {class: 'wcol ' + w.cls},
         h('div', {class: 'wcol-h'}, h('span', null, w.label), h('b', null, String(list.length))),
         list.slice(0, 6).map(e => h('a', {class: 'witem', href: '#entry=' + encodeURIComponent(e.id), title: DM.plain(e.title) + '\n' + (e.waitingWhy || ''),
           onclick: ev => { ev.preventDefault(); DM.app.openEntry(e.id); }},
-          e.priority ? h('span', {class: 'pri ' + e.priority}, e.priority) : null, ' ', DM.trimTitle(e.title))),
+          DM.priEl(e), ' ', DM.trimTitle(e.title))),
         list.length > 6 ? h('button', {class: 'mini more', onclick: () => DM.entries.filterTo({wait: w.key, status: 'notdone'})}, '+ ' + (list.length - 6) + ' more') : null));
     }
     board.appendChild(cols);
@@ -125,6 +142,7 @@
     // counts per file
     const cnt = section('By file', null, 'click a number to see those entries');
     const COLS = [
+      ['halt', 'Halting', e => DM.isHalting(e)],
       ['q', 'Needs q', e => DM.needsQ(e)],
       ['prci', 'PR / CI', e => DM.waitKeys(e).some(x => x === 'pr' || x === 'ci')],
       ['tests', 'Tests', e => DM.waitKeys(e).includes('tests')],
