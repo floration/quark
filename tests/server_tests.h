@@ -147,8 +147,8 @@ SERVER_TEST void testSeedFetchDedupe() {
 SERVER_TEST void testStopDoesNotBlock(uint16_t port) {
     printf("stopping a hosted game doesn't wait on the network\n");
 #ifndef _WIN32
-    SlowHttp http(2500, "");
-    CHECK(http.ok());
+    SlowHttp http(1000, "");   // (held well past the ~0.15 s of frames and the 0.3 s stop() may take: a stop that
+    CHECK(http.ok());          // waited on them would take ~0.85 s or more)
     if (!http.ok()) return;
     setenv("QUARK_MASTER", http.url().c_str(), 1);
     unsetenv("QUARK_PROBER");

@@ -2156,6 +2156,22 @@ static void testGridQueries() {
 }
 
 static UserCmd idle(int) { return UserCmd(); }
+// The countdowns between the parts of a match (the warmup's once it has its players, a round's freeze, its end) only
+// wait in game time: a test that isn't about them ends each now, before its next pump; the server still goes from one
+// part to the next its own way. (rulesStart does the same for the freeze.)
+static void skipCountdowns(Server& s) {
+    if (s.ms_.phase == PHASE_FREEZE || s.ms_.phase == PHASE_ROUND_END || (s.ms_.phase == PHASE_WARMUP && s.phaseEnd_ > 0)) s.phaseEnd_ = s.time();
+}
+// Pump until every client is in, has a snapshot and is spawned (a warmup spawn comes ~0.5 s after the connect), then
+// `after` more for the clients' views: instead of a fixed settle sized for a slow machine.
+static void pumpUntilSpawned(Server& s, std::vector<NetClient*>& cls, double after = 0.2) {
+    auto in = [&] {
+        for (auto* c : cls) if (!c->hasSnapshot() || c->clientId() < 0 || c->clientId() >= kMaxPlayers || !s.players_[c->clientId()].alive) return false;
+        return true;
+    };
+    for (int i = 0; i < 200 && !in(); i++) pump(s, cls, 0.05, idle);
+    pump(s, cls, after, idle);
+}
 
 static void testSession(int mode, const char* mapName, uint16_t port) {
     printf("session: %s on %s\n", modeName(mode), mapName);
@@ -2184,9 +2200,17 @@ static void testSession(int mode, const char* mapName, uint16_t port) {
     CHECK(a.playerName(b.clientId()) == "bravo");
     CHECK(a.mode().phase == PHASE_WARMUP || a.mode().phase == PHASE_FREEZE);
 
-    // Warmup countdown (5s) then freeze (3s); then live. (Race waits in practice until someone starts it.)
+    // Warmup countdown (5s) then freeze (3s); then live. (Race waits in practice until someone starts it.) One session
+    // waits them out, and the reconnect grace at the end; the others start at once and skip the freeze, and end the
+    // grace (it has its own test: testReconnectGrace).
+    const bool natural = mode == MODE_VS;
     if (mode == MODE_RACE) { pump(s, cls, 1.0, idle); CHECK(s.ms_.phase == PHASE_WARMUP); s.command("forcestart"); }
-    pump(s, cls, 8.6, idle);
+    if (natural) pump(s, cls, 8.6, idle);
+    else {
+        if (mode != MODE_RACE) s.command("forcestart");
+        for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE; i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); }
+        pump(s, cls, 0.1, idle);   // (the clients see it)
+    }
     CHECK(s.ms_.phase == PHASE_LIVE);
     CHECK(a.mode().phase == PHASE_LIVE);
 
@@ -2224,8 +2248,10 @@ static void testSession(int mode, const char* mapName, uint16_t port) {
         CHECK(s.ms_.phase == PHASE_MATCH_END);
     }
     if (mode == MODE_BOMB) {
-        // bravo was killed; wait for next round then plant with the carrier.
-        pump(s, cls, 4.5 + 3.2, idle);
+        // bravo was killed; next round (its round end and freeze skipped) then plant with the carrier.
+        pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.phase == PHASE_ROUND_END);
+        for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE; i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); }
         CHECK(s.ms_.phase == PHASE_LIVE);
         int carrier = s.ms_.bombCarrier;
         CHECK(carrier != 255);
@@ -2239,9 +2265,6 @@ static void testSession(int mode, const char* mapName, uint16_t port) {
             CHECK(s.ms_.bombState == BOMB_PLANTED);
             CHECK(cc->mode().bombState == BOMB_PLANTED);
         }
-    }
-    if (mode == MODE_PAYLOAD) {
-        pump(s, cls, 4.5 + 3.2, idle); // round 2 starts after the kill ended round 1? (no: respawn mode)
     }
     if (mode == MODE_RACE) {
         auto& p = s.players_[a.clientId()];
@@ -2265,7 +2288,8 @@ static void testSession(int mode, const char* mapName, uint16_t port) {
     a.disconnect();
     pump(s, cls, 0.5, idle);
     CHECK(s.humanCount() == 2 && s.away(a.clientId()));   // the reconnect grace keeps the slot...
-    pump(s, cls, kReconnectGrace + 0.5, idle);
+    if (!natural) s.players_[a.clientId()].awayUntil = timeNow();
+    pump(s, cls, natural ? kReconnectGrace + 0.5 : 0.2, idle);
     CHECK(s.humanCount() == 1); // ...then it's gone (a balance bot may take the empty slot)
     s.stop();
 }
@@ -2568,7 +2592,8 @@ static void testWeapons(uint16_t port) {
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "shooter");
         b.connect("127.0.0.1:" + std::to_string(cfg.port), "target");
         std::vector<NetClient*> cls = {&a, &b};
-        pump(s, cls, 2.5, idle);
+        // both in and spawned (all of it is in the warmup's free play: its 5 s countdown is still running at the end)
+        pumpUntilSpawned(s, cls);
         auto& sa = s.players_[a.clientId()];
         auto& sb = s.players_[b.clientId()];
         float dist = (w == WPN_LASER || w == WPN_SHOTGUN) ? 8.0f : 20.0f;
@@ -2715,7 +2740,7 @@ static void testFixedSpread(uint16_t port) {
     a.connect("127.0.0.1:" + std::to_string(port), "shooter");
     b.connect("127.0.0.1:" + std::to_string(port), "target");
     std::vector<NetClient*> cls = {&a, &b};
-    pump(s, cls, 2.5, idle);
+    pumpUntilSpawned(s, cls);
     auto& sa = s.players_[a.clientId()];
     auto& sb = s.players_[b.clientId()];
     sa.move.pos = {10, 0, 19}; sb.move.pos = {0, 0, 19};   // 10 m apart in the open courtyard (testWeapons)
@@ -2860,7 +2885,7 @@ static void testRocketSelfDamage(uint16_t port) {
     NetClient a;
     a.connect("127.0.0.1:" + std::to_string(port), "jumper");
     std::vector<NetClient*> cls = {&a};
-    pump(s, cls, 2.5, idle);
+    pumpUntilSpawned(s, cls);
     auto& p = s.players_[a.clientId()];
     auto shoot = [&](float pitch, Vec3 at, float yaw = 0) {
         p.health = 100; p.move.pos = at; p.move.vel = {};
@@ -2875,7 +2900,7 @@ static void testRocketSelfDamage(uint16_t port) {
     printf("  floor blast %.1f damage, eye-level blast %.1f damage\n", down, level);
     CHECK(down > 0 && down <= weaponDef(WPN_ROCKET).damage * 0.1f + 0.01f);
     s.killPlayer(a.clientId(), -1, 255); // respawns with the last selected weapon
-    pump(s, cls, 2.5, idle);
+    pumpUntilSpawned(s, cls);
     CHECK(p.alive && p.weapon == WPN_ROCKET);
     CHECK(level > 10);
     s.stop();
@@ -3477,11 +3502,11 @@ static void testDuel(uint16_t port) {
         pump(s, cls, 0.3, idle);
         CHECK(s.players_[c.clientId()].team == TEAM_SPECTATOR && !s.players_[c.clientId()].letIn);
     }
-    pump(s, cls, 6.0, idle); // warmup countdown -> round 1
+    for (int i = 0; i < 100 && s.ms_.phase == PHASE_WARMUP; i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); }   // -> round 1
     CHECK(s.ms_.phase == PHASE_FREEZE || s.ms_.phase == PHASE_LIVE);
     unsigned seen = 0; int prev = -1;
     for (int round = 0; round < 12 && s.ms_.phase != PHASE_MATCH_END; round++) {
-        while (s.ms_.phase != PHASE_LIVE && s.ms_.phase != PHASE_MATCH_END) pump(s, cls, 0.2, idle);
+        for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE && s.ms_.phase != PHASE_MATCH_END; i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); }
         if (s.ms_.phase == PHASE_MATCH_END) break;
         int mod = s.ms_.duelMod;
         CHECK(mod < DUEL_MOD_COUNT && mod != prev && !(seen >> mod & 1)); // never a repeat within the match
@@ -3571,8 +3596,7 @@ static void testDuel2v2(uint16_t port) {
         a += t == TEAM_A; b += t == TEAM_B; spec += t == TEAM_SPECTATOR;
     }
     CHECK(a == 2 && b == 2 && spec == 1);
-    pump(s, cls, 6.0, idle);
-    for (int i = 0; i < 30 && (s.ms_.phase == PHASE_WARMUP || s.ms_.phase == PHASE_FREEZE); i++) pump(s, cls, 0.2, idle);   // (a slow host's clock lags)
+    for (int i = 0; i < 100 && (s.ms_.phase == PHASE_WARMUP || s.ms_.phase == PHASE_FREEZE); i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); }
     CHECK(s.ms_.phase == PHASE_LIVE && s.ms_.duelMod < DUEL_MOD_COUNT);
     int alive = 0;
     for (auto& p : s.players_) alive += p.connected && p.alive;
@@ -4024,15 +4048,18 @@ static void testRejoin(uint16_t port) {
         std::vector<NetClient*> cls = {&a, &b, &c};
         pump(s, cls, 1.0, idle);
         s.command("forcestart");
-        pump(s, cls, 2.0, idle);
-        for (int round = 0; round < 2; round++) {
+        for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE; i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); }
+        pump(s, cls, 0.2, idle);
+        for (int round = 0; round < 2; round++) {   // (each wait: until it happened, at most what it used to be)
             int was = b.clientId();
             b.disconnect();
-            pump(s, cls, 0.5, idle);
+            for (int i = 0; i < 50 && !s.away(was); i++) pump(s, cls, 0.01, idle);
             CHECK(s.humanCount() == 3 && s.away(was));   // the slot waits for a reconnect (the grace)
             b.connect("127.0.0.1:" + std::to_string(cfg.port), "bob");
-            pump(s, cls, 1.5, idle);
-            bool ok = b.state() == ConnState::Connected && s.humanCount() == 3 && b.clientId() == was && !s.away(was);
+            auto back = [&] { return b.state() == ConnState::Connected && s.humanCount() == 3 && b.clientId() == was && !s.away(was); };
+            for (int i = 0; i < 150 && !back(); i++) pump(s, cls, 0.01, idle);
+            pump(s, cls, 0.1, idle);   // (and stays)
+            bool ok = back();
             if (!ok) printf("  %s: rejoin %d failed: state %d, players %d, error '%s'\n", modeName(mode), round + 1, (int)b.state(), s.humanCount(), b.error().c_str());
             CHECK(ok);
         }
@@ -4247,7 +4274,11 @@ static void testCustomMode(uint16_t port) {
     CHECK(got.name == c.name && got.health == 150 && got.weapons == c.weapons && got.maps == c.maps);
     CHECK(std::fabs(got.damage[WPN_RIFLE] - 2) < 1e-3f && std::fabs(got.gravity - 0.5f) < 1e-3f);
     s.command("forcestart");
-    for (int i = 0; i < 70 && s.config().map == "bastion"; i++) { pump(s, cls, 0.5, idle); collect(); }
+    // (the freeze, the 5 s time limit and the match end's wait are skipped: each still ends on its own clock)
+    for (int i = 0; i < 400 && s.config().map == "bastion"; i++) {
+        if (s.ms_.phase != PHASE_WARMUP) s.phaseEnd_ = std::min(s.phaseEnd_, s.time());
+        pump(s, cls, 0.05, idle); collect();
+    }
     CHECK(s.config().map == "harbor");   // the pool rotated
     s.stop();
     setActiveRules(CustomRules());
@@ -4565,7 +4596,7 @@ static void testRocketLob(uint16_t port) {
     NetClient a;
     a.connect("127.0.0.1:" + std::to_string(port), "lobber");
     std::vector<NetClient*> cls = {&a};
-    pump(s, cls, 2.0, idle);
+    pumpUntilSpawned(s, cls);
     auto fire = [&](uint16_t b) { return [&, b](int) { UserCmd c; c.weapon = WPN_ROCKET; c.buttons = b; c.pitch = 0.3f; return c; }; };
     pump(s, cls, 0.3, fire(0));
     pump(s, cls, 0.03, fire(BTN_ALTFIRE));
@@ -4685,7 +4716,7 @@ static void testStuckProps(uint16_t port) {
     a.connect("127.0.0.1:" + std::to_string(port), "thrower");
     b.connect("127.0.0.1:" + std::to_string(port), "target");
     std::vector<NetClient*> cls = {&a, &b};
-    pump(s, cls, 2.5, idle);
+    pumpUntilSpawned(s, cls);
     const int ia = a.clientId(), ib = b.clientId();
     auto& sa = s.players_[ia];
     auto& sb = s.players_[ib];
@@ -4818,7 +4849,7 @@ static void testStickyOnPlayers(uint16_t port) {
     a.connect("127.0.0.1:" + std::to_string(port), "shooter");
     b.connect("127.0.0.1:" + std::to_string(port), "target");
     std::vector<NetClient*> cls = {&a, &b};
-    pump(s, cls, 2.5, idle);
+    pumpUntilSpawned(s, cls);
     const int ia = a.clientId(), ib = b.clientId();
     auto& sa = s.players_[ia];
     auto& sb = s.players_[ib];
@@ -4976,7 +5007,7 @@ static void testAltFires(uint16_t port) {
         a.connect("127.0.0.1:" + std::to_string(cfg.port), "shooter");
         b.connect("127.0.0.1:" + std::to_string(cfg.port), "target");
         std::vector<NetClient*> cls = {&a, &b};
-        pump(s, cls, 2.5, idle);
+        pumpUntilSpawned(s, cls);
         auto& sa = s.players_[a.clientId()];
         auto& sb = s.players_[b.clientId()];
         int w = kase == 0 ? WPN_KNIFE : kase == 1 ? WPN_SHOTGUN : WPN_RIFLE;
@@ -5071,10 +5102,10 @@ static void testMapVote(uint16_t port) {
         for (int k = 0; k < MODE_COUNT; k++) {
             if (!m.supportsMode(k)) continue;
             b.sendCommand(std::string("callvote map ") + name + " " + modeName(k) + (k == MODE_ARENA || k == MODE_TOURNEY ? " classic" : ""));
-            pump(s, cls, 0.2, idle);
+            for (int i = 0; i < 20 && s.vote_.kind != Server::VOTE_MAP; i++) pump(s, cls, 0.01, idle);   // (up to 0.2 s)
             if (s.vote_.kind != Server::VOTE_MAP) { printf("  FAIL vote refused: %s %s\n", name.c_str(), modeName(k)); g_fail++; }
             a.sendCommand("vote no"); b.sendCommand("vote no");
-            pump(s, cls, 0.2, idle);
+            for (int i = 0; i < 20 && s.vote_.kind == Server::VOTE_MAP; i++) pump(s, cls, 0.01, idle);
             s.vote_.kind = Server::VOTE_NONE;
             s.players_[b.clientId()].voteAt = 0;   // (a failed vote's caller waits before the next: not what this checks)
         }
@@ -5546,11 +5577,15 @@ static void testRankedLeaver(uint16_t port) {
     b.connect(addr, "leaver");
     pump(s, cls, 1.0, idle);
     CHECK(b.state() == ConnState::Connected && b.clientId() == ib && !s.away(ib) && s.players_[ib].score == scoreB && s.rankedLive());
-    // gone past the grace: the first leaver loses, the match ends there, and the stayer can report it
+    // gone past the grace: the first leaver loses, the match ends there, and the stayer can report it. (Each grace here
+    // is cut short once the drop is seen: testSession waits one out.)
     b.disconnect();
     std::vector<NetClient*> onlyA = {&a};
+    for (int i = 0; i < 50 && !s.away(ib); i++) pump(s, onlyA, 0.01, idle);
+    CHECK(s.away(ib));
+    s.players_[ib].awayUntil = timeNow();
     std::string ranked;
-    double end = timeNow() + kReconnectGrace + 2.0;
+    double end = timeNow() + 2.0;
     while (timeNow() < end && ranked.empty()) {
         pump(s, onlyA, 0.1, idle);
         for (auto& e : a.takeEvents()) if (e.type == EV_RANKED) ranked = e.text;
@@ -5572,8 +5607,10 @@ static void testRankedLeaver(uint16_t port) {
     }
     // the stayer leaving afterwards changes nothing (the match is over)
     a.disconnect();
-    pump(s, onlyA, kReconnectGrace + 0.5, idle);
-    CHECK(s.rankedLeft_.size() == 1);
+    for (int i = 0; i < 50 && s.players_[ia].connected && !s.away(ia); i++) pump(s, onlyA, 0.01, idle);
+    if (s.away(ia)) s.players_[ia].awayUntil = timeNow();
+    pump(s, onlyA, 0.5, idle);
+    CHECK(!s.players_[ia].connected && s.rankedLeft_.size() == 1);
     s.stop();
 }
 
@@ -5954,18 +5991,20 @@ static void testHelloRetry() {
     const char* prev = getenv("QUARK_MASTER");
     std::string was = prev ? prev : "off";
     setenv("QUARK_MASTER", ("http://127.0.0.1:" + std::to_string(ntohs(a.sin_port))).c_str(), 1);
+    // the retries 0.5, 1, 2 s apart, not 10, 20, 40 (real seconds; set before the service's thread starts)
+    RankService::helloRetryScale = 0.05;
     {
         RankService rs;
         rs.hello(k);
-        // (the retry comes 10 s later, real time: RankService delays are real seconds; a loaded CI box can be slow to start curl)
+        // (a loaded box can be slow to start curl: up to 90 s)
         auto end = std::chrono::steady_clock::now() + std::chrono::seconds(90);
         while (std::chrono::steady_clock::now() < end && !rs.helloDone()) sleepMs(20);
         if (!rs.helloDone() || requests != 2) printf("  hello: done %d after %d requests\n", (int)rs.helloDone(), requests.load());
         CHECK(rs.helloDone() && requests == 2);   // refused once, then taken
-        double settle = timeNow() + 15;
-        while (timeNow() < settle) sleepMs(20);
+        sleepMs(2000);                             // (twice the next retry's delay)
         CHECK(requests == 2);                      // and not sent again
     }
+    RankService::helloRetryScale = 1.0;
     setenv("QUARK_MASTER", was.c_str(), 1);
     quit = true;
     srv.join();
@@ -6040,7 +6079,9 @@ static void testMasterReplies(uint16_t port) {
     m.start(0, false);
     for (int batch = 0; batch < 2; batch++) {
         for (int i = 0; i < 40; i++) m.post("k" + std::to_string(batch * 40 + i), "/x", "a=1");
-        sleepMs(1000);
+        // (no list configured: each fails at once. Sent when the queue is empty, answered a moment later)
+        for (int k = 0; k < 1000 && m.queuedPosts(); k++) sleepMs(2);
+        sleepMs(10);
     }
     auto r = m.takeReplies();
     m.stop();
@@ -6876,7 +6917,8 @@ static void testArenaAndTourney(uint16_t& port) {
         b.connect("127.0.0.1:" + std::to_string(cfg.port), "b");
         std::vector<NetClient*> cls = {&a, &b};
         pump(s, cls, 1.0, idle);
-        pump(s, cls, 6.0, idle);
+        for (int i = 0; i < 100 && s.ms_.phase == PHASE_WARMUP; i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); }
+        CHECK(s.ms_.phase == PHASE_FREEZE);   // (the round starts in its freeze)
         auto& pa = s.players_[a.clientId()];
         CHECK(s.ms_.weaponMask == ((1 << WPN_ROCKET) | (1 << WPN_LASER) | (1 << WPN_KNIFE)));
         CHECK(pa.weapon == WPN_ROCKET || pa.weapon == WPN_LASER || pa.weapon == WPN_KNIFE);
@@ -6885,7 +6927,7 @@ static void testArenaAndTourney(uint16_t& port) {
         pump(s, cls, 0.2, [](int) { UserCmd c; c.weapon = WPN_KNIFE; return c; });
         CHECK(pa.weapon == WPN_KNIFE);
         s.cfg_.arenaVariant = s.ms_.arenaVariant = (uint8_t)arenaVariantFromName("instagib");
-        while (s.ms_.phase != PHASE_LIVE) pump(s, cls, 0.1, idle);
+        for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE; i++) { skipCountdowns(s); pump(s, cls, 0.05, idle); }
         auto& pb = s.players_[b.clientId()];
         s.damagePlayer(b.clientId(), a.clientId(), 1, WPN_SNIPER, {});
         CHECK(!pb.alive); // instagib
@@ -6909,7 +6951,8 @@ static void testArenaAndTourney(uint16_t& port) {
         std::string lastMatch;
         double end = timeNow() + 300;
         while (timeNow() < end && s.ms_.phase != PHASE_MATCH_END) {
-            pump(s, cls, 0.1, idle);
+            skipCountdowns(s);   // (the bracket, its byes and its matches still go their own way)
+            pump(s, cls, 0.05, idle);
             for (auto& e : h.takeEvents()) brackets += e.type == EV_BRACKET;
             int playing = 0;
             for (auto& p : s.players_) playing += p.connected && p.team != TEAM_SPECTATOR;

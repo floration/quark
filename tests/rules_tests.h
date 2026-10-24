@@ -528,6 +528,7 @@ static void testGrappleTeammate(uint16_t port) {
 // Expert bots with a close-range weapon hook their target now and then (and nothing breaks while they're latched).
 static void testGrappleBots(uint16_t port) {
     printf("grapple latches onto players: bots\n");
+    SimClock clock;   // (bots only: every tick runs, none waited for)
     Server s;
     ServerConfig cfg;
     cfg.map = "";   // a map without pits or lava (there the bots only hook when the pull ends on safe ground)
@@ -542,7 +543,7 @@ static void testGrappleBots(uint16_t port) {
     { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
     int bot[2] = {s.addBot(TEAM_A, BOT_EXPERT), s.addBot(TEAM_A, BOT_EXPERT)};
     for (int k : bot) if (k >= 0) s.bots_[k].forceWeapon = WPN_SHOTGUN;
-    std::vector<NetClient*> none;
+    simNavReady(s);
     int latches = 0, bad = 0;
     bool was[2] = {};
     // Until the first latch and 5 s on (nothing breaks while latched), at most 90 s: about one latch in 30 s, so a
@@ -550,7 +551,7 @@ static void testGrappleBots(uint16_t port) {
     double firstAt = -1;
     for (int t = 0; t < 1800 && (firstAt < 0 || t * 0.05 < firstAt + 5); t++) {
         if (latches && firstAt < 0) firstAt = t * 0.05;
-        pump(s, none, 0.05, idle);
+        simRun(s, 0.05);
         for (int k = 0; k < 2; k++) {
             if (bot[k] < 0) continue;
             const ServerPlayer& p = s.players_[bot[k]];
