@@ -42,7 +42,7 @@ Each file:
   "category": "sounds",
   "items": {
     "sounds/default/HIT.wav": { "origin": "ai", "source": "synthesized in src/client/audio.cpp" },
-    "sounds/heavy_metal/HIT.wav": { "origin": "ai", "source": "Kenney Impact Sounds (CC0), mixed by tools/import_sfx.py" },
+    "sounds/heavy_metal/HIT.wav": { "origin": "third-party", "source": "Kenney Impact Sounds (CC0), mixed by tools/import_sfx.py" },
     "sounds/default/ROCKET.wav": { "origin": "human", "by": "q", "date": "2026-10-24", "tool": "sound-editor", "version": "1.19.0" }
   }
 }
@@ -68,11 +68,9 @@ apart.
 - A new asset starts as `ai` unless the repository shows otherwise.
 - Evidence the tool applies by itself (`tools/provenance.py sync`): a file at the asset's path in `assets/overrides/`,
   a recording in `assets/sfx/custom/`, or a map with a `handmade` line makes that item `human`. A HEAVY METAL /
-  MAGICAL / MOUTH sound that tools/import_sfx.py's `KITS` table mixes from Kenney clips counts as `ai` (CC0,
-  assets/sfx/CREDITS.md; the owner's rule, 2026-10-24: only what the team made counts as human); one it mixes only
-  from the owner's recordings (MOUTH's hitsound tiers) is `human`; a sound a kit doesn't have falls back to DEFAULT's
-  (synthesized: `ai`). The bundled OFL fonts count as `ai` too (same rule). `third-party` stays available for an item
-  the owner decides to count that way.
+  MAGICAL / MOUTH sound that tools/import_sfx.py's `KITS` table mixes from Kenney clips is `third-party` (CC0,
+  assets/sfx/CREDITS.md); one it mixes only from the owner's recordings (MOUTH's hitsound tiers) is `human`; a sound a
+  kit doesn't have falls back to DEFAULT's (synthesized: `ai`). Fonts with an OFL file next to them are `third-party`.
   Removed assets are dropped; new ones are added as `ai`.
 - **Curated entries**: an entry with `by`, `date` or `tool` was set by a person or an editor (a merge, the
   dashboard), and `sync` never changes it (it still drops it when the asset is gone, except `ui/` and `bots/` ids).
@@ -128,9 +126,9 @@ Every release's notes (testing prereleases and production releases) end with the
 the publish steps in `.github/workflows/release.yml`, e.g.:
 
 ```
-**Human-made assets: 5.7%** (31 of 542) · AI-made 94.3%
+**Human-made assets: 17.1%** (93 of 542: 31 by the team, 62 third-party) · AI-made 82.9%
 
-Human-made by category: sounds 30/165 · voices 0/210 · ... Every sound, voice line, model, map, font, picture, UI page and bot area counts as one item (assets/provenance/).
+Human-made by category: sounds 90/165 · voices 0/210 · ... Every sound, voice line, model, map, font, picture, UI page and bot area counts as one item (assets/provenance/).
 ```
 
 They show where the GitHub release body is shown: the release page, the launcher's changelog (ASCII: `·` becomes
