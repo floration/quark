@@ -62,7 +62,7 @@ The automated UI test clicks every button (`quark --uitest`, run locally on this
 | ✓ | Check |
 |---|---|
 | ☐ | Main menu: JOIN GAME, HOST GAME, RANKED, MAP EDITOR, SETTINGS, INFO, DEMOS, QUIT each open the right screen, and Esc / BACK returns. |
-| ☐ | The **QUARK title** looks like the app icon (the Q split cyan / red along a slanted line with a black seam, every letter on a black outline, UARK in your team colour) and is crisp at 1280×720, 1920×1080 and your own resolution; change TEAM COLOR: UARK follows it, the Q doesn't. The settings pages show no title. |
+| ☐ | The **QUARK title** looks like the app icon (the Q split cyan / red along a slanted line with a black seam, every letter on a black outline) and is crisp at 1280×720, 1920×1080 and your own resolution. It's in your team colours: the Q's left and UARK in TEAM COLOR, the Q's right in ENEMY COLOR (cyan / red by default; try another TEAM COLORS preset). Pick another font (SETTINGS → PLAYER → FONT): the title is in that font, its Q still split with the seam. The app icon keeps its cyan / red. The settings pages show no title. |
 | ☐ | INFO: every tab reads correctly and matches this version (weapons, modes, controls). |
 | ☐ | Text fits everywhere: nothing overlaps or runs off a button at your normal resolution and at 1280×720. |
 | ☐ | Pause menu in a game: SETTINGS, record / stop demo, EDIT THE MAP TOGETHER (not in ranked), DISCONNECT / STOP HOSTING (host with bots, play 30 s, STOP HOSTING: back to the main menu, the game must not close), QUIT. |

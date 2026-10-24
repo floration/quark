@@ -260,26 +260,38 @@ const char* kUiVS = R"(#version 330 core
 layout(location=0) in vec2 aPos;
 layout(location=1) in vec2 aUV;
 layout(location=2) in vec4 aColor;
-layout(location=3) in vec2 aText; // text scale: x integer part, y 1/256ths (0 = plain rect)
+layout(location=3) in vec4 aText; // text scale: x integer part, y 1/256ths (0 = plain rect); z 1: the title's split Q
 uniform vec2 uScreen;
 uniform vec2 uFontSize;
 uniform vec2 uLogoSize;
-out vec2 vUV; out vec4 vColor; flat out float vScale;
+out vec2 vUV; out vec4 vColor; flat out float vScale; flat out float vSplit;
 void main() {
     vScale = aText.x + aText.y / 256.0;   // (255 + 255/256: a logo texel, Renderer::logo)
+    vSplit = aText.z;
     vUV = (aUV / 32.0 - 1.0) / (vScale > 255.5 ? uLogoSize : uFontSize); vColor = aColor;
     gl_Position = vec4(aPos.x / uScreen.x * 2.0 - 1.0, 1.0 - aPos.y / uScreen.y * 2.0, 0.0, 1.0);
 })";
 // Text: one distance-field sample per pixel. The glyph edge (0.5) is smoothed over one screen pixel; a band
 // outside it (1 px, wider on big text) is the black outline, coverage-blended under the fill.
 const char* kUiFS = R"(#version 330 core
-in vec2 vUV; in vec4 vColor; flat in float vScale;
+in vec2 vUV; in vec4 vColor; flat in float vScale; flat in float vSplit;
 uniform sampler2D uFont;
 uniform sampler2D uLogo;
 uniform float uK; // distance-field units per screen pixel at scale 1 (texels per font unit / (2 * spread))
+// the title (Renderer::logo): its two team colours; the split Q's line (a window point, its normal towards the second
+// colour) and half the seam's width (px)
+uniform vec3 uLogoA, uLogoB;
+uniform vec2 uSplitP, uSplitN;
+uniform float uSplitSeam;
 out vec4 fragColor;
 void main() {
-    if (vScale > 255.5) { fragColor = texture(uLogo, vUV) * vColor; return; }   // the title logo (straight alpha)
+    if (vScale > 255.5) {   // the baked title: masks, R the friendly half, G the enemy half, A the black outline
+        vec4 t = texture(uLogo, vUV);
+        float a = max(t.a, max(t.r, t.g));
+        vec3 c = uLogoA * t.r + uLogoB * t.g;   // (over black: premultiplied)
+        fragColor = vec4(a > 0.0 ? c / a : c, a * vColor.a);
+        return;
+    }
     float d = texture(uFont, vUV).r;
     if (vScale <= 0.0) { fragColor = vec4(vColor.rgb, vColor.a * d); return; }
     float px = uK / vScale;                       // one screen pixel in distance-field units
@@ -288,7 +300,12 @@ void main() {
     float o = smoothstep(od - w, od + w, d);
     if (o <= 0.004) discard;
     float fill = smoothstep(0.5 - w, 0.5 + w, d);
-    fragColor = vec4(vColor.rgb * fill, vColor.a * o);
+    vec3 col = vColor.rgb;
+    if (vSplit > 0.5) {   // the title's Q in another font: the second colour past the slanted line, a black seam on it
+        float s = dot(gl_FragCoord.xy - uSplitP, uSplitN);
+        col = mix(col, uLogoB, clamp(s + 0.5, 0.0, 1.0)) * (1.0 - clamp(uSplitSeam + 0.5 - abs(s), 0.0, 1.0));
+    }
+    fragColor = vec4(col * fill, vColor.a * o);
 })";
 
 // Uniforms by location (Renderer::init looks each one up once: no string or hash lookups in the frame loop).
@@ -407,7 +424,7 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glEnableVertexAttribArray(0); glVertexAttribPointer(0, 2, GL_SHORT, GL_FALSE, sizeof(Vertex2D), (void*)0);
     glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_UNSIGNED_SHORT, GL_FALSE, sizeof(Vertex2D), (void*)4);
     glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex2D), (void*)8);
-    glEnableVertexAttribArray(3); glVertexAttribPointer(3, 2, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(Vertex2D), (void*)12);
+    glEnableVertexAttribArray(3); glVertexAttribPointer(3, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(Vertex2D), (void*)12);   // (scale, frac, split Q flag, 0)
     glBindVertexArray(0);
 
     // Font texture: the UI font's distance field (linear filtering: one atlas serves every text size)
@@ -490,7 +507,9 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glUniform2f(U(uiProg_, "uFontSize"), (float)kUiTexW, (float)kUiTexH);
     glUniform1f(U(uiProg_, "uK"), kUiTpu / (2.0f * kUiSpread));
     glUniform1i(U(uiProg_, "uLogo"), 1);
-    glUniform2f(U(uiProg_, "uLogoSize"), (float)kLogoW, (float)(kLogoBY + kLogoH));
+    glUniform2f(U(uiProg_, "uLogoSize"), (float)kLogoW, (float)kLogoH);
+    uLogoA_ = U(uiProg_, "uLogoA"); uLogoB_ = U(uiProg_, "uLogoB");
+    uSplitP_ = U(uiProg_, "uSplitP"); uSplitN_ = U(uiProg_, "uSplitN"); uSplitSeam_ = U(uiProg_, "uSplitSeam");
     if (edgeProg_) {
         glUseProgram(edgeProg_);
         uEdgeRcp_ = U(edgeProg_, "uRcp");
@@ -1139,21 +1158,41 @@ void Renderer::rectGradient(float x, float y, float w, float h, const Color& tl,
     col(d[1], tr); col(d[2], br); col(d[4], br); col(d[5], bl);
 }
 
-// the logo's size: the em of the game's text at ts (7.5 units) times Rubik's cap height matched to the old UI font's
-// (0.66 / 0.70), as it was designed (ui-redesign-spec, "Title logo"); its baseline 5.7 units below the line top
-static float logoScale(float ts) { return 7.5f * ts * (0.66f / 0.70f) / kLogoEm; }
-float Renderer::logoWidth(float ts) const { return kLogoAdv * logoScale(ts); }
+// The logo's size: the em of the game's text at ts (7.5 units) times Rubik's cap height matched to the old UI font's
+// (0.66 / 0.70), as it was designed (ui-redesign-spec, "Title logo"); its baseline 5.7 units below the line top.
+static constexpr float kLogoEmK = 0.66f / 0.70f, kLogoTilt = 0.16f, kLogoSeam = 12.0f / 844.0f;
 
-void Renderer::logo(float cx, float y, float ts, const Color& tint) {
-    if (!logoTex_ || ts <= 0) return;
-    const float k = logoScale(ts);
-    // whole pixels: the pen origin on the pixel grid, the quad its exact size (no shimmer as it's scaled)
-    const float x0 = std::round(cx - kLogoAdv * k * 0.5f - kLogoOX * k), y0 = std::round(y + 5.7f * ts - kLogoOY * k);
-    const float x1 = x0 + kLogoW * k, y1 = y0 + kLogoH * k;
-    const Color a = {1, 1, 1, tint.a};
-    uiQuad(ui_, x0, y0, x1, y1, u16uv(0), u16uv(0), u16uv(kLogoW), u16uv(kLogoH), rgba8(a), 255, 255);                                   // outline + the split Q
-    uiQuad(ui_, x0, y0, x1, y1, u16uv(0), u16uv(kLogoBY), u16uv(kLogoW), u16uv(kLogoBY + kLogoH), rgba8(tint), 255, 255);           // the rest, tinted
-    logoDrawn_ = true;
+void Renderer::logo(float cx, float y, float ts, const Color& friendly, const Color& enemy) {
+    if (ts <= 0) return;
+    logoA_ = friendly; logoB_ = enemy;
+    if (!g_uiFont && logoTex_) {   // Rubik: the baked logo, one quad (its masks tinted in the shader)
+        const float k = 7.5f * ts * kLogoEmK / kLogoEm;
+        // whole pixels: the pen origin on the pixel grid, the quad its exact size (no shimmer as it's scaled)
+        const float x0 = std::round(cx - kLogoAdv * k * 0.5f - kLogoOX * k), y0 = std::round(y + 5.7f * ts - kLogoOY * k);
+        uiQuad(ui_, x0, y0, x0 + kLogoW * k, y0 + kLogoH * k, u16uv(0), u16uv(0), u16uv(kLogoW), u16uv(kLogoH), rgba8({1, 1, 1, friendly.a}), 255, 255);
+        logoDrawn_ = true;
+        return;
+    }
+    // another UI font: the word in it, as big (the same em), its own outline; the Q split at the same slant through the
+    // middle of its advance and its ink, a black seam on the line (the text shader, for that glyph's quad only)
+    const TextMetrics& m = uiMetrics();
+    const float sc = ts * kLogoEmK, sk = sc * m.fitScale;
+    const float w = textWidth("QUARK", sc), x0 = std::round(cx - w * 0.5f);
+    const float top = y + 5.7f * ts - (6.0f * m.fitScale + m.fitShift) * sc;   // (its baseline on the logo's)
+    const size_t n0 = ui_.size();
+    text(x0, top, sc, "Q", friendly);
+    for (size_t i = n0; i < ui_.size(); i++) ui_[i].pad[0] = 1;   // (the split Q)
+    text(x0 + w - textWidth("UARK", sc), top, sc, "UARK", friendly);
+    const int q = 'Q' - 32;
+    const GlyphInk& ink = m.ink[q];
+    const float qx = x0 + m.adv[q] * sk * 0.5f;
+    const float qy = std::round(top) + (ink.empty() ? 3.0f * m.fitScale : (ink.y0 + ink.y1) * 0.5f * m.fitScale) * sc + m.fitShift * sc;
+    // (the line x = qx - tilt (y - qy) in screen pixels, y down; the shader gets it in window pixels, y up)
+    const float nl = std::sqrt(1 + kLogoTilt * kLogoTilt);
+    splitP_[0] = qx; splitP_[1] = (float)height_ - qy;
+    splitN_[0] = 1 / nl; splitN_[1] = -kLogoTilt / nl;
+    splitSeam_ = 0.5f * kLogoSeam * 7.5f * ts * kLogoEmK;
+    splitDrawn_ = true;
 }
 
 static inline float glyphAdv(int prev, int g) { return g_uiAdv[prev] + g_uiKern[prev * 95 + g] * (1.0f / 16.0f); }
@@ -1278,10 +1317,20 @@ void Renderer::flush2D() {
         uiScreen_[0] = (float)width_; uiScreen_[1] = (float)height_;
         glUniform2f(uUiScreen_, uiScreen_[0], uiScreen_[1]);
     }
-    if (logoDrawn_) {   // (only a frame with the title binds its texture; uLogo / uLogoSize are fixed: init)
+    if (logoDrawn_ || splitDrawn_) {   // (only a frame with the title sets its colours)
+        glUniform3f(uLogoA_, logoA_.r, logoA_.g, logoA_.b);
+        glUniform3f(uLogoB_, logoB_.r, logoB_.g, logoB_.b);
+    }
+    if (logoDrawn_) {   // (...and binds its texture; uLogo / uLogoSize are fixed: init)
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, logoTex_);
         logoDrawn_ = false;
+    }
+    if (splitDrawn_) {   // (the title in another font: its Q's split line)
+        glUniform2f(uSplitP_, splitP_[0], splitP_[1]);
+        glUniform2f(uSplitN_, splitN_[0], splitN_[1]);
+        glUniform1f(uSplitSeam_, splitSeam_);
+        splitDrawn_ = false;
     }
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, fontTex_);

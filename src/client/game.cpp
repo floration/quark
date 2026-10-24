@@ -4548,7 +4548,7 @@ void Game::drawMenu() {
     float x = cx - bw * 0.5f;
     float y = H * 0.12f;
     // the title, drawn like the app icon (a baked texture: Renderer::logo); not over the settings shell (it covered it)
-    if (screen_ != Screen::Settings) r_.logo(cx, y, 8 * s, rgba(cfg_.colorFriendly));
+    if (screen_ != Screen::Settings) r_.logo(cx, y, 8 * s, rgba(cfg_.colorFriendly), rgba(cfg_.colorEnemy));   // (the Q in both team colours)
     r_.text(8 * s, H - 20 * s, std::max(1.0f, std::round(s)), std::string("V") + QUARK_VERSION, kGrey);
     y += 80 * s;
 
