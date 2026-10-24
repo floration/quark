@@ -644,6 +644,19 @@ def job_info(j):
             "failedSteps": [s.get("name") for s in (j.get("steps") or []) if s.get("conclusion") == "failure"]}
 
 
+def last_testing_run(runs):
+    """The newest (by createdAt, then id) completed build-and-release run on testing, without jobs. A re-run keeps
+    its run id and createdAt, so one that passes on the same sha replaces the red result."""
+    best = None
+    for r in runs:
+        if r.get("branch") == "testing" and r.get("workflow") == "build-and-release" and \
+                r.get("status") == "completed":
+            if best is None or (r.get("createdAt") or "", r.get("id") or 0) > (best.get("createdAt") or "",
+                                                                                 best.get("id") or 0):
+                best = r
+    return {k: v for k, v in best.items() if k != "jobs"} if best else None
+
+
 def is_active(run):
     return (run or {}).get("status") in ACTIVE_STATUSES
 
@@ -1691,6 +1704,7 @@ class Manager:
                                "checks": {"state": (x.get("checks") or {}).get("state")}, "url": x.get("url")}
                               for x in state.get("pulls") or [] if x.get("state") == "open"],
                 "running": state.get("running") or [], "lastFailed": failed,
+                "lastTesting": last_testing_run(state.get("runs") or []),
                 "local": [{"name": l.get("name"), "branch": l.get("branch"), "aheadOfTesting": l.get("aheadOfTesting"),
                            "behindTesting": l.get("behindTesting"), "dirty": l.get("dirty")}
                           for l in state.get("local") or []]}

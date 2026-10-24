@@ -138,6 +138,16 @@ class Parsers(unittest.TestCase):
                   "updatedAt", "durationSec", "attempt", "url"):
             self.assertIn(k, s)
 
+    def test_last_testing_run(self):
+        r = lambda i, c, **kw: dict({"id": i, "branch": "testing", "workflow": "build-and-release",
+                                     "status": "completed", "conclusion": c, "createdAt": "2026-10-24T0%d:00:00Z" % i,
+                                     "jobs": []}, **kw)
+        runs = [r(5, None, status="in_progress"), r(4, "success", workflow="main-guard"), r(3, "success", branch="x"),
+                r(2, "success"), r(1, "failure")]  # a re-run of 2 that passed: same id, newest completed
+        self.assertEqual(S.last_testing_run(runs)["id"], 2)
+        self.assertNotIn("jobs", S.last_testing_run(runs))
+        self.assertIsNone(S.last_testing_run(runs[:1]))
+
     def test_job_info_failed_steps(self):
         j = S.job_info({"id": 1, "name": "windows-tests", "status": "completed", "conclusion": "failure",
                         "steps": [{"name": "build", "conclusion": "success"}, {"name": "quark_tests",
@@ -609,7 +619,9 @@ class EndToEnd(unittest.TestCase):
             self.assertNotIn("Access-Control-Allow-Origin", h)
             summ = json.loads(body)
             self.assertEqual(sorted(summ), sorted(["generatedAt", "repo", "poll", "testing", "production",
-                                                   "openPulls", "running", "lastFailed", "local"]))
+                                                   "openPulls", "running", "lastFailed", "lastTesting", "local"]))
+            self.assertEqual((summ["lastTesting"]["id"], summ["lastTesting"]["conclusion"]), (102, "failure"))
+            self.assertNotIn("jobs", summ["lastTesting"])
             self.assertEqual(summ["lastFailed"]["id"], 102)
             self.assertEqual(summ["openPulls"][0]["checks"]["state"], "failure")
             code, h, body = get("/api/history?limit=2")

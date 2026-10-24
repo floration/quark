@@ -98,6 +98,8 @@ A small digest for the other local tools (the project manager on :8768), rebuilt
  "production": {"tag": "v1.17.0", "version": "1.17.0"},
  "openPulls": [{"number": 8, "title": "...", "head": "claude/...", "checks": {"state": "pending"}, "url": "..."}],
  "running": [runSummary...], "lastFailed": runSummary | null,      // newest run that failed (no jobs)
+ "lastTesting": runSummary | null,   // newest completed build-and-release run on testing (by createdAt): a re-run
+                                     // that passes on the same sha turns it green
  "local": [{"name": "working-repo", "branch": "testing", "aheadOfTesting": 1, "behindTesting": 0, "dirty": 2}]}
 ```
 
