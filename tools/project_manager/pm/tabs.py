@@ -39,8 +39,6 @@ DEFAULT_TABS = {"tabs": [
      "childLabel": "Editors"},
     {"id": "sound", "name": "Sound Editor", "parent": "dashboard", "folder": "sound-editor", "file": "sound-editor.html"},
     {"id": "ui", "name": "UI Editor", "parent": "dashboard", "folder": "ui-customizer", "file": "ui-customizer.html"},
-    {"id": "ui-redesign", "name": "UI Redesign", "parent": "dashboard", "folder": "ui-customizer",
-     "file": "ui-customizer-redesign.html"},
     {"id": "map", "name": "Map Editor", "parent": "dashboard", "url": "http://127.0.0.1:8770/", "port": 8770,
      "folder": "map-editor", "start": "py -3 serve.py --port 8770 --no-browser", "keepAlive": True},
     {"id": "bot", "name": "Bot Editor", "parent": "dashboard", "url": "http://127.0.0.1:8769/?embed=1", "port": 8769,
@@ -282,6 +280,9 @@ def write_default(paths):
 # Start commands an older tabs.default.json gave a tab (by id). `upgrade` replaces exactly these (q's own commands stay).
 OLD_DEFAULT_STARTS = {"dashboard": {None, "dashboard.cmd"}, "github": {None}, "docs": {None}, "bot": {None, "run.cmd"}}
 # The default tab ids before tabs.json recorded `defaultsSeen` (q's tabs.json may have dropped some on purpose).
+# Default tabs that were retired: upgrade() drops them from q's tabs.json while they still point where the old
+# default did. (ui-redesign: the redesign shipped in 1.18.13, so the UI Editor tab is the only UI tool.)
+RETIRED_DEFAULTS = {"ui-redesign": {"folder": "ui-customizer", "file": "ui-customizer-redesign.html"}}
 LEGACY_DEFAULT_IDS = ("project", "github", "docs", "dashboard", "sound", "ui", "ui-redesign", "map", "bot", "model")
 
 
@@ -289,6 +290,7 @@ def upgrade(paths):
     """Bring q's tabs.json up to the current defaults without touching what q changed:
     - a default tab that is new since this file was written (its id is neither in the file nor in its `defaultsSeen`
       list) is appended, so a new tool appears after setup; a default tab q removed stays removed;
+    - a retired default tab (RETIRED_DEFAULTS, still pointing where it did) is removed;
     - for a default tab (same id, url, port and folder as the default), a start command that an older default used
       (or none) becomes the new one, and keepAlive / lowPriority are added when the tab does not set them.
     `defaultsSeen` (top level, next to `tabs`) lists the default ids already offered. The old file is kept as
@@ -306,8 +308,13 @@ def upgrade(paths):
     defaults = {d["id"]: d for d in DEFAULT_TABS["tabs"]}
     seen = data.get("defaultsSeen")
     seen = set(seen) if isinstance(seen, list) else set(LEGACY_DEFAULT_IDS)
-    have = {t.get("id") for t in lst if isinstance(t, dict)}
     changed = []
+    for t in list(lst):
+        r = RETIRED_DEFAULTS.get(t.get("id")) if isinstance(t, dict) else None
+        if r and all(t.get(k) == v for k, v in r.items()):
+            lst.remove(t)
+            changed.append(t["id"])
+    have = {t.get("id") for t in lst if isinstance(t, dict)}
     for t in lst:
         d = defaults.get(t.get("id")) if isinstance(t, dict) else None
         if not d or any(t.get(k) != d.get(k) for k in ("url", "port", "folder")):
@@ -324,7 +331,7 @@ def upgrade(paths):
         if d["id"] not in have and d["id"] not in seen:
             lst.append(dict(d))
             changed.append(d["id"])
-    all_seen = sorted(seen | set(defaults))
+    all_seen = sorted((seen | set(defaults)) - set(RETIRED_DEFAULTS))
     if changed or data.get("defaultsSeen") != all_seen:
         data["defaultsSeen"] = all_seen
         try:
