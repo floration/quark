@@ -105,6 +105,28 @@ std::string soundLevels() {
     return text;
 }
 
+std::vector<std::string> listFolder(const std::string& dir, std::initializer_list<const char*> exts) {
+    if (!any()) return {};
+    std::string pre = lower(dir);
+    while (!pre.empty() && pre.back() == '/') pre.pop_back();
+    pre += '/';
+    std::vector<std::string> out;
+    auto take = [&](const std::string& key) {
+        if (key.compare(0, pre.size(), pre) != 0) return;
+        std::string rest = key.substr(pre.size());
+        if (rest.find('/') != std::string::npos) return;
+        for (const char* ext : exts) {
+            std::string e = lower(ext);
+            if (rest.size() > e.size() && rest.compare(rest.size() - e.size(), e.size(), e) == 0) { out.push_back(rest.substr(0, rest.size() - e.size())); return; }
+        }
+    };
+    for (auto& kv : g_user) take(kv.first);
+    for (const EmbeddedOverride* e = kEmbeddedOverrides; e->path; e++) take(lower(e->path));
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
+}
+
 std::vector<std::string> list() {
     scan();
     std::vector<std::string> v;

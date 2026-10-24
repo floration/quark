@@ -179,6 +179,13 @@ int exportAssets(const char* dirArg) {
                  std::string("announcer ") + announcerVoiceName(v) + ": \"" + lineText(id) + "\"" + (x.empty() ? " (not recorded yet: silent)" : ""), vd},
                 wavFile(x.empty() ? std::vector<float>(Audio::kRate / 10, 0.0f) : x, Audio::kRate));
         }
+        // its quips (the QUIP key): the set it has now (the default one: its hype lines), each replaceable as a file
+        for (int k = 0; k < audio.quipCount(); k++) {
+            std::string n = audio.quipName(k);
+            add({"voice/" + vd + "/quips/" + n, "Voices", "sound", n, "voices/" + vd + "/quips/" + n + ".wav",
+                 std::string("quip ") + announcerVoiceName(v) + ": a line a player says with the QUIP key (any quips/ files replace the whole set)", vd},
+                wavFile(audio.samples(0, SND_QUIP + k), Audio::kRate));
+        }
     }
     audio.stop();
     // models, as the game draws them with the reference colours (models.h)
@@ -777,13 +784,14 @@ static void testExport() {
     fs::path dir = fs::u8path(userDataPath("export_test"));
     ACHECK(exportAssets(dir.u8string().c_str()) == 0);
     std::string man = slurp(dir / "manifest.json");
-    size_t n = 0, sounds = 0, voices = 0, models = 0, maps = 0, missing = 0;
+    size_t n = 0, sounds = 0, voices = 0, quips = 0, models = 0, maps = 0, missing = 0;
     for (size_t at = 0; (at = man.find("\"file\":\"", at)) != std::string::npos; at++) {
         size_t e = man.find('"', at + 8);
         std::string f = man.substr(at + 8, e - at - 8);
         n++;
         sounds += f.rfind("sounds/", 0) == 0;
         voices += f.rfind("voices/", 0) == 0;
+        quips += f.rfind("voices/", 0) == 0 && f.find("/quips/") != std::string::npos;
         models += f.rfind("models/", 0) == 0;
         maps += f.rfind("maps/", 0) == 0;
         std::error_code ec;
@@ -792,7 +800,8 @@ static void testExport() {
     size_t official = 0;
     for (const OfficialMapData* m = kOfficialMapData; m->name; m++) official++;
     ACHECK(sounds == (size_t)Audio::kPacks * SND_VOICE_THREE);
-    ACHECK(voices == (size_t)kAnnouncerVoices * (SND_COUNT - SND_VOICE_THREE));
+    ACHECK(voices - quips == (size_t)kAnnouncerVoices * (SND_COUNT - SND_VOICE_THREE));
+    ACHECK(quips >= (size_t)kAnnouncerVoices);   // (every voice has its quips: the default set, or the shipped quips/ files)
     ACHECK(models == 30 && maps == official && missing == 0);   // (5 players, 11 weapons, 7 projectiles, the crown, 6 props)
     ACHECK(man.find("\"fonts/Rubik.") != std::string::npos && man.find("\"fonts/WorkSans.") != std::string::npos && man.find("\"images/icon.") != std::string::npos);
     std::error_code ec;
@@ -874,6 +883,120 @@ static void testCategoryVolumes() {
     for (int i = 0; i < 512; i++) silent = silent && out[i] == 0;
     ACHECK(silent);
     a.stop();
+}
+
+// Quips (the QUIP key): their own sounds, never a gameplay call-out. Each voice's default set is its hype lines (sorted
+// by name); any voices/<voice>/quips/ override files replace that voice's whole set (sorted, sound-levels.txt kept);
+// a sender's pick means pick modulo the listener's set; QUIPS off starts none and silences one playing; QUIPS VOLUME
+// is its own category, apart from the announcer's and the effects'.
+static void testQuips() {
+    printf("audio: quips are their own set (never a call-out), overridable per voice, with their own on / off and volume\n");
+    fs::path root = fs::u8path(userDataPath("overrides"));
+    std::error_code ec;
+    fs::remove_all(root, ec);
+    overrides::useUserFolder(true);
+    auto isDefaultQuip = [](int id) { for (int q : kDefaultQuips) if (q == id) return true; return false; };
+    for (int q : kDefaultQuips)   // (the default set leaves out every countdown, objective, round and time call)
+        ACHECK(q != SND_VOICE_THREE && q != SND_VOICE_TWO && q != SND_VOICE_ONE && q != SND_VOICE_GO && q != SND_VOICE_BOMB_PLANTED &&
+               q != SND_VOICE_BOMB_DEFUSED && q != SND_VOICE_HILL_TAKEN && q != SND_VOICE_HILL_LOST && q != SND_VOICE_POINT_TAKEN &&
+               q != SND_VOICE_POINT_LOST && q != SND_VOICE_ROUND_WON && q != SND_VOICE_ROUND_LOST && q != SND_VOICE_OVERTIME &&
+               q != SND_VOICE_YOU_WIN && q != SND_VOICE_YOU_LOSE && q != SND_VOICE_YOU_DIED && q != SND_VOICE_ONE_MINUTE &&
+               q != SND_VOICE_THIRTY_SECONDS && q != SND_VOICE_ROUND_OVER);
+    {   // the default sets: every voice's, its own lines, none a call-out
+        overrides::useUserFolder(false);
+        Audio a;
+        a.startOffline();
+        for (int v = 0; v < kAnnouncerVoices; v++) {
+            a.setAnnouncer(v);
+            const int n = a.quipCount();
+            ACHECK(n == (int)(sizeof(kDefaultQuips) / sizeof(kDefaultQuips[0])) && n <= kMaxQuips);
+            for (int k = 0; k < n; k++) {
+                const std::string name = a.quipName(k);
+                if (k > 0) ACHECK(a.quipName(k - 1) < name);   // (sorted)
+                int line = -1;
+                for (int id = SND_VOICE_THREE; id < SND_COUNT; id++) if (name == Audio::soundName(id)) line = id;
+                ACHECK(line >= 0 && isDefaultQuip(line) && a.samples(0, SND_QUIP + k) == a.samples(0, line) && a.hasSound(SND_QUIP + k));
+                for (int id = SND_VOICE_THREE; id < SND_COUNT; id++)   // (no call-out sounds like it)
+                    if (!isDefaultQuip(id) && !a.samples(0, id).empty()) ACHECK(a.samples(0, SND_QUIP + k) != a.samples(0, id));
+            }
+            ACHECK(!a.hasSound(SND_QUIP + n) && a.samples(0, SND_QUIP + n).empty());
+            // the sender's pick (one byte, the same for everyone): modulo the listener's set
+            for (int pick : {0, 1, 7, 8, 200, 255}) ACHECK(a.quipFor(pick) == pick % n);
+        }
+        a.stop();
+        overrides::useUserFolder(true);
+    }
+    {   // MALE's quips/ files: they are its set (any names, sorted; one that doesn't decode left out), FEMALE keeps the defaults
+        std::vector<float> laugh(14400), cheer(9600);
+        for (size_t i = 0; i < laugh.size(); i++) laugh[i] = 0.1f * std::sin(i * 0.05f);
+        for (size_t i = 0; i < cheer.size(); i++) cheer[i] = 0.6f * std::sin(i * 0.11f) * (1.0f - (float)i / cheer.size());
+        ACHECK(spit(root / "voices/male/quips/laugh.wav", wavFile(laugh, 48000)));
+        ACHECK(spit(root / "voices/male/quips/Cheer.WAV", wavFile(cheer, 44100)));
+        ACHECK(spit(root / "voices/male/quips/broken.ogg", "not an ogg file at all"));
+        ACHECK(spit(root / "voices/male/quips/notes.txt", "not a sound"));
+        ACHECK(spit(root / "voices/male/quips/old/OLD.wav", wavFile(cheer, 48000)));   // (a sub-folder: not a quip)
+        ACHECK(spit(root / "sound-levels.txt", "voices/male/quips/LAUGH\n"));
+        overrides::useUserFolder(true);
+        const std::vector<std::string> listed = overrides::listFolder("voices/MALE/quips/", {".wav", ".ogg"});
+        ACHECK(listed.size() == 3 && listed[0] == "broken" && listed[1] == "cheer" && listed[2] == "laugh");
+        Audio a;
+        a.startOffline();
+        printf("  MALE with 2 quip files: %d quips (%s, %s)\n", a.quipCount(), a.quipName(0).c_str(), a.quipName(1).c_str());
+        ACHECK(a.quipCount() == 2 && a.quipName(0) == "CHEER" && a.quipName(1) == "LAUGH");
+        ACHECK(std::fabs(peakOf(a.samples(0, SND_QUIP + 1)) - 0.1f) < 0.004f);           // LAUGH: listed, its own level
+        ACHECK(peakOf(a.samples(0, SND_QUIP)) > 0.2f && a.samples(0, SND_QUIP).size() > 9000);   // CHEER: matched, at the mix rate
+        for (int id = SND_VOICE_THREE; id < SND_COUNT; id++) ACHECK(a.samples(0, SND_QUIP) != a.samples(0, id));
+        for (int pick : {0, 1, 2, 255}) ACHECK(a.quipFor(pick) == pick % 2);
+        a.setAnnouncer(1);   // FEMALE: no files of its own, the default set
+        ACHECK(a.quipCount() == (int)(sizeof(kDefaultQuips) / sizeof(kDefaultQuips[0])) && a.quipName(0) == "AIR_ROCKET");
+        a.stop();
+        fs::remove_all(root, ec);
+        overrides::useUserFolder(true);
+    }
+    {   // QUIPS off: nothing starts, and one playing goes silent; QUIPS VOLUME scales quips only
+        Audio a;
+        a.startOffline();
+        a.setMasterVolume(0.5f);
+        ACHECK(a.quipCount() > 0 && a.categoryGain(SND_QUIP) == 1.0f);
+        std::vector<int16_t> out(2048);
+        auto drain = [&] { for (int k = 0; k < 4000 && a.voicesPlaying(SND_QUIP) + a.voicesPlaying(SND_VOICE_GODLIKE) + a.voicesPlaying(SND_RIFLE) > 0; k++) a.mix(out.data(), 1024); };
+        auto energy = [&](int id, float fx, float ann, float quip, bool on) {
+            a.setEffectsVolume(fx); a.setAnnouncerVolume(ann); a.setQuipVolume(quip); a.setQuips(on);
+            drain();
+            a.play(id, 1.0f);
+            double e = 0;
+            for (int p = 0; p < 8; p++) {   // (the first 8192 frames: a line's onset is quiet)
+                a.mix(out.data(), 1024);
+                for (int16_t v : out) e += std::fabs((double)v);
+            }
+            return e;
+        };
+        const double q1 = energy(SND_QUIP, 1, 1, 1, true), qHalf = energy(SND_QUIP, 1, 1, 0.5f, true), q0 = energy(SND_QUIP, 1, 1, 0, true);
+        const double qAnn0 = energy(SND_QUIP, 1, 0, 1, true), qFx0 = energy(SND_QUIP, 0, 1, 1, true), qOff = energy(SND_QUIP, 1, 1, 1, false);
+        const double ln1 = energy(SND_VOICE_GODLIKE, 1, 1, 1, true), lnQ0 = energy(SND_VOICE_GODLIKE, 1, 1, 0, false);
+        const double fx1 = energy(SND_RIFLE, 1, 1, 1, true), fxQ0 = energy(SND_RIFLE, 1, 1, 0, false);
+        printf("  quip: %.0f at 1, %.0f at 0.5, %.0f at 0, %.0f off, %.0f with the announcer at 0, %.0f with effects at 0\n", q1, qHalf, q0, qOff, qAnn0, qFx0);
+        ACHECK(q1 > 1000 && q0 == 0 && qOff == 0 && qHalf < q1 * 0.6 && qHalf > q1 * 0.4);
+        ACHECK(qAnn0 == q1 && qFx0 == q1);              // the announcer's and the effects' volumes leave quips alone
+        ACHECK(lnQ0 == ln1 && fxQ0 == fx1 && ln1 > 1000);   // and quips' (or QUIPS off) the rest
+        a.setQuips(false);
+        ACHECK(a.categoryGain(SND_QUIP) == 0.0f && a.categoryGain(SND_VOICE_GO) == 1.0f);
+        drain();
+        a.play(SND_QUIP, 1.0f);
+        a.play3D(SND_QUIP + 1, Vec3(0, 0, 0), 1.0f);
+        ACHECK(a.voicesPlaying(SND_QUIP) == 0 && a.voicesPlaying(SND_QUIP + 1) == 0);   // (off: not even started)
+        a.setQuips(true);
+        a.play(SND_QUIP, 1.0f);
+        a.play(SND_QUIP + kMaxQuips - 1, 1.0f);   // (one the set doesn't have: nothing)
+        ACHECK(a.voicesPlaying(SND_QUIP) == 1 && a.voicesPlaying(SND_QUIP + kMaxQuips - 1) == 0);
+        a.mix(out.data(), 256);
+        a.setQuips(false);   // one playing: silent from the next period
+        a.mix(out.data(), 256);
+        bool silent = true;
+        for (int i = 0; i < 512; i++) silent = silent && out[i] == 0;
+        ACHECK(silent);
+        a.stop();
+    }
 }
 
 // Settings > DEVICES' rules (devices.h), no hardware needed: a saved id found in the list, the default for none, gone
@@ -1029,6 +1152,7 @@ int assetTests() {
     testHitTiers();
     testVoiceSteal();
     testCategoryVolumes();
+    testQuips();
     testDevices();
     testBehindSound();
     testOverrides();

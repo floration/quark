@@ -99,18 +99,20 @@ def main():
     ffmpeg = find_ffmpeg()
     print("sound editor: clips stored as %s" % ("FLAC (ffmpeg)" if ffmpeg else "WAV (no ffmpeg found)"))
 
-    sounds, lines, items = [], [], {}
+    sounds, lines, quips, items = [], [], [], {}
     for it in man.get("items", []):
         if it.get("category") not in ("Sounds", "Voices"): continue
         f = os.path.join(export, it["file"])
         if not os.path.isfile(f): continue
         kind = "sound" if it["category"] == "Sounds" else "voice"
-        names = sounds if kind == "sound" else lines
-        if it["name"] not in names: names.append(it["name"])
+        quip = kind == "voice" and "/quips/" in it["file"]   # (voices/<voice>/quips/<NAME>.wav: named quips/<NAME>)
+        name = "quips/" + it["name"] if quip else it["name"]
+        names = sounds if kind == "sound" else quips if quip else lines
+        if name not in names: names.append(name)
         desc = it.get("desc", "")
         when = desc.split(":", 1)[1].strip() if ":" in desc else desc
         if kind == "sound" and " - " in when: when = when.rsplit(" - ", 1)[0]
-        items[it["file"][:-4]] = {"kind": kind, "pack": it["kit"], "name": it["name"], "desc": desc, "when": when,
+        items[it["file"][:-4]] = {"kind": kind, "pack": it["kit"], "name": name, "desc": desc, "when": when,
                                   "guide": guide_seconds(desc) if kind == "sound" else None, "src": f}
 
     # which kits' sounds are DEFAULT's own (the game gives them a DEFAULT override too; RETRO is always DEFAULT chiptuned)
@@ -151,7 +153,8 @@ def main():
     meta = {k: {kk: vv for kk, vv in v.items() if kk != "src"} for k, v in items.items()}
     version = man.get("version") or ""
     write_js(os.path.join(data_dir, "manifest.js"), {"type": "manifest", "version": version, "kits": KITS,
-                                                      "voices": VOICES, "sounds": sounds, "lines": lines, "items": meta})
+                                                      "voices": VOICES, "sounds": sounds, "lines": lines, "quips": sorted(quips),
+                                                      "items": meta})
     with open(os.path.join(out, "sound-editor.html"), "w", encoding="utf-8") as f:
         f.write(inline_page())
     print("sound editor %s: %d sounds x %d kits, %d lines x %d voices, %.1f MB of data -> %s" % (

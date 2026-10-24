@@ -1418,7 +1418,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
         rulesRpsPick(*this, id, shape);
         return;
     }
-    if (cmd == "quip") { // a random voice line, heard from where they stand; one every 1.5 s at most
+    if (cmd == "quip") { // a random quip (each listener's voice's set), heard from where they stand; one every 1.5 s at most
         if (time() < p.quipAt) return;
         p.quipAt = time() + 1.5f;
         GameEvent e; e.type = EV_QUIP; e.a = (uint8_t)id; e.b = (uint8_t)(qrand() & 255);

@@ -36,6 +36,9 @@
     'ROUND_WON', 'ROUND_LOST', 'OVERTIME', 'YOU_WIN', 'YOU_LOSE', 'HIGH_SCORE', 'NEW_LEADER', 'YOU_DIED', 'HEADSHOT',
     'AIR_ROCKET', 'SPREE', 'RAMPAGE', 'UNSTOPPABLE', 'GODLIKE', 'ONE_MINUTE', 'THIRTY_SECONDS', 'ROUND_OVER'];
   // display order of the sound matrix: grouped the way a sound designer thinks about them
+  // each voice's quips (the QUIP key; never a call-out), named 'quips/<NAME>' so a key is their file's path
+  // (voices/<voice>/quips/<NAME>.wav): the manifest's list (build.py), the game's default set until recorded ones ship
+  Q.QUIPS = [];
   Q.SOUND_GROUPS = [
     ['Hitsounds', ['HIT', 'HIT_MED', 'HIT_HEAVY', 'HIT_BRUTAL', 'KILL']],
     ['Weapons', ['RIFLE', 'ROCKET', 'KNIFE', 'SNIPER', 'LASER', 'SHOTGUN', 'STICKY', 'CROSSBOW', 'BUBBLE', 'SYRINGE']],
@@ -62,7 +65,7 @@
   Q.loaded = {};         // 'kit:default' -> true once decoded
   Q.loading = {};        // 'kit:default' -> Promise
   Q.key = (kind, pack, name) => (kind === 'voice' ? 'voices/' : 'sounds/') + pack + '/' + name;
-  Q.parseKey = key => { const [d, pack, name] = key.split('/'); return { kind: d === 'voices' ? 'voice' : 'sound', pack, name }; };
+  Q.parseKey = key => { const [d, pack, ...rest] = key.split('/'); return { kind: d === 'voices' ? 'voice' : 'sound', pack, name: rest.join('/') }; };
 
   window.qseRegister = function (obj) {
     if (obj.type === 'manifest') { Q.manifest = obj; Q.onManifest && Q.onManifest(obj); return; }
