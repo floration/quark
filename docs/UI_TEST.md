@@ -80,11 +80,17 @@ click-to-watch-next, the editor's 3D view (click to select), the selection's dra
 | `hide-seeker` | hosting hide and seek, seeking | the locator's slot key (0) |
 | `hide-rps` | hosting hide and seek, at the tiebreak | rock / paper / scissors (slot keys 1 / 2 / 3) |
 | `editor-builtin` | the offline editor, a built-in map with edits | the "keep your edits as a new map?" prompt from each way out (save, leave, test, host, open); only that prompt's buttons |
-| `menus` | the main menu, offline | everything else: join, host (custom modes: every tab), vs bots, settings (every page), leaderboard, info, demos, the offline map editor (every tool, material, selection kind, handle) |
+| `menus` | the main menu, offline | everything else: join, host (custom modes: every tab), vs bots, settings (every page, FONT too: each font is picked and the layout checked in it), leaderboard, info, demos, the offline map editor (every tool, material, selection kind, handle) |
 
 The same widget is tested once per scenario and screen (`<scenario> :: <screen> [<what it acts on>] > <id>`); the
 editor's selection tools are tested once per selection kind (box, spawn, light, site, hill, checkpoint, path, ladder,
 group / room / stairs).
+
+Settings > FONT (`settings/fonts`): each font entry is a `cfg("ui_font")` button (the one in use: `inert()`), with its
+name as a stable id whichever is in use; REFRESH is `state("fontscan")`, OPEN FOLDER `url()`. The test puts the
+settings back between widgets, and Game::frame applies `ui_font` when it differs, so every check after a font pick runs
+in the default font again. The entries depend on the machine (a game-styled entry is listed only when its look-alike
+is built in or the real font is found), so the number of widgets there can differ between computers.
 
 ## Adding a widget
 

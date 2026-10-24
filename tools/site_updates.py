@@ -150,7 +150,7 @@ def page(title, body, depth, head="", lede=""):
             "<div class=\"page\"><div class=\"wrap\">\n%s\n</div></div>\n</main>\n"
             "<footer class=\"foot\"><div class=\"wrap\">\n"
             "<div><p>Free and open source. No ads, no tracking, no cookies.</p>"
-            "<p class=\"small\">UI font: Work Sans. Logo: Rubik. Both SIL Open Font License 1.1.</p></div>\n"
+            "<p class=\"small\">UI font and logo: Rubik (Work Sans and others in Settings &gt; Font). SIL Open Font License 1.1.</p></div>\n"
             "<ul aria-label=\"Links\"><li><a href=\"%s\">Home</a></li><li><a href=\"%sassets/\">Assets</a></li>"
             "<li><a href=\"%ssounds/\">Sounds</a></li><li><a href=\"%sleaderboard/\">Leaderboard</a></li>"
             "<li><a href=\"%supdates/\">Updates</a></li><li><a href=\"%stesting/\">Testing</a></li>"
