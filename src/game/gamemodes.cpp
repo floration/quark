@@ -542,6 +542,7 @@ void startMatch(Server& s) {
     s.kothPoints_[0] = s.kothPoints_[1] = 0;
     s.bestProgress_[0] = s.bestProgress_[1] = 0;
     s.completeTime_[0] = s.completeTime_[1] = 0;
+    s.bestTime_[0] = s.bestTime_[1] = 0;
     for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; p.dmgDealt = p.objTime = 0; p.hideSurvived = 0; p.shotsFired = p.shotsHit = 0; p.out = false; p.it = false; }
     s.lastIt_ = -1;
     s.tagOut_.clear();   // tag knockouts last one match: everyone is back in for the next
@@ -567,7 +568,15 @@ int payloadWinner(const Server& s) {
         return -1;
     }
     if (s.bestProgress_[0] != s.bestProgress_[1]) return s.bestProgress_[0] > s.bestProgress_[1] ? TEAM_A : TEAM_B;
+    // T17: level: whoever got there first (tiebreaker rounds used to add 8-11 min, in 6 of 16 Midtown matches)
+    if (s.bestProgress_[0] > 0 && s.bestTime_[0] != s.bestTime_[1]) return s.bestTime_[0] < s.bestTime_[1] ? TEAM_A : TEAM_B;
     return -1;
+}
+// A new best for the attack: its progress, and when it got there (T17's tiebreak)
+void noteBest(Server& s, int att, float v) {
+    if (v <= s.bestProgress_[att]) return;
+    s.bestProgress_[att] = v;
+    s.bestTime_[att] = (float)(s.time() - s.roundStart_);
 }
 
 const char* teamName(int t) { return t == TEAM_A ? "TEAM A" : "TEAM B"; }
@@ -605,7 +614,8 @@ int stopwatchLocked(const Server& s) {
     if (m.round % 2 != 0) return -1;
     const int att = m.attackers, first = other(att);
     if (s.completeTime_[first] > 0) return s.time() - s.roundStart_ > s.completeTime_[first] ? first : -1;
-    return s.bestProgress_[att] > s.bestProgress_[first] ? att : -1;
+    const float a = s.bestProgress_[att], f = s.bestProgress_[first];   // (level but there sooner: theirs too, T17)
+    return a > f || (a == f && a > 0 && s.bestTime_[att] < s.bestTime_[first]) ? att : -1;
 }
 
 // winner: team for team modes, player id for race, -1 = draw/no winner.
@@ -621,11 +631,19 @@ void endRound(Server& s, int winner, const std::string& why, bool award = true) 
         if (winner >= 0 && award) (winner == TEAM_A ? m.scoreA : m.scoreB)++;
         const int att = m.attackers, first = other(att);
         text = std::string(teamName(att)) + " " + attackText(s, att);
-        if (m.round % 2 == 1) { text += " - " + std::string(teamName(first)) + " must beat it"; winner = -1; }
+        // (by when: a level attack is decided on it, T17)
+        auto by = [&](int t) { return s.completeTime_[t] > 0 || s.bestProgress_[t] <= 0 ? std::string() : " by " + clockText(s.bestTime_[t]); };
+        if (m.round % 2 == 1) { text += by(att) + " - " + std::string(teamName(first)) + " must beat it"; winner = -1; }
         else {
             winner = payloadWinner(s);
-            text += winner == att ? " - beats " : winner < 0 ? " - level with " : " - short of ";
-            text += std::string(teamName(first)) + "'s " + markText(s, first);
+            const bool level = s.completeTime_[att] <= 0 && s.completeTime_[first] <= 0 && s.bestProgress_[att] == s.bestProgress_[first];
+            if (level && winner >= 0)
+                text += by(att) + " - level with " + teamName(first) + "'s " + markText(s, first) + (winner == att ? ", there sooner than its " : ", which got there sooner, by ") +
+                        clockText(s.bestTime_[first]);
+            else {
+                text += winner == att ? " - beats " : winner < 0 ? " - level with " : " - short of ";
+                text += std::string(teamName(first)) + "'s " + markText(s, first);
+            }
         }
     } else if (winner >= 0) {
         if (award) (winner == TEAM_A ? m.scoreA : m.scoreB)++;
@@ -699,14 +717,7 @@ bool checkMatchOver(Server& s) {
         case MODE_PAYLOAD:
         case MODE_POINTS: {   // (multi point: progress = points taken + the capture on the next one)
             if (m.round < 2 || m.round % 2 != 0) return false;
-            int w = payloadWinner(s);
-            if (w < 0 && m.round < 4) { // the tiebreaker is decided on its own two rounds
-                s.message("tied - tiebreaker rounds");
-                m.scoreA = m.scoreB = 0;
-                s.bestProgress_[0] = s.bestProgress_[1] = 0;
-                s.completeTime_[0] = s.completeTime_[1] = 0;
-                return false;
-            }
+            int w = payloadWinner(s);   // (level on progress: the sooner there, T17; no tiebreaker rounds: dead level is a draw)
             enterMatchEnd(s, w >= 0 ? std::string(teamName(w)) + " wins the match" : "match draw", w);
             return true;
         }
@@ -1003,8 +1014,7 @@ void tickPayload(Server& s) {
         s.phaseEnd_ = std::max(s.phaseEnd_, s.time()) + kCartCheckBonus;   // (in overtime the clock is past: from now)
         s.message(std::string(teamName(att)) + " reached checkpoint " + std::to_string(m.point) + " - +" + std::to_string((int)kCartCheckBonus) + " s");
     }
-    float& best = s.bestProgress_[att];
-    best = std::max(best, m.payloadDist);
+    noteBest(s, att, m.payloadDist);
     if (m.payloadDist >= m.payloadLen - 1e-3f) {
         s.completeTime_[att] = s.time() - s.roundStart_;
         endRound(s, att, "payload delivered");
@@ -1050,8 +1060,7 @@ void tickPoints(Server& s) {
     if (m.capture >= 1.0f) {
         m.capture = 0;
         m.point++;
-        float& best = s.bestProgress_[att];
-        best = std::max(best, (float)m.point);
+        noteBest(s, att, (float)m.point);
         if (m.point >= m.pointCount) {
             s.completeTime_[att] = s.time() - s.roundStart_;
             endRound(s, att, "every point taken");
@@ -1062,7 +1071,7 @@ void tickPoints(Server& s) {
         s.glog(LOG_SIMPLE, "point %d taken by team %d", m.point, att);
         return;
     }
-    s.bestProgress_[att] = std::max(s.bestProgress_[att], m.point + m.capture * 0.99f);
+    noteBest(s, att, m.point + m.capture * 0.99f);
     if (int w = stopwatchLocked(s); w >= 0) { endRound(s, w, "", false); return; }
     if (s.time() < s.phaseEnd_) m.flags &= ~MS_OVERTIME;
     else if (!overtime(s)) endRound(s, def, "time", false);   // (overtime: the attack goes on while it's on the point)

@@ -1889,6 +1889,43 @@ static void testStopwatch(uint16_t port) {
     }
 }
 
+// T17: a level attack is decided by who got there sooner, not by tiebreaker rounds. Multi point, one point each:
+// the second side there sooner wins at once (locked); there later, the first side wins at time out, in two rounds.
+static void testStopwatchLevel(uint16_t port) {
+    printf("payload / multi point: level attacks go to the sooner\n");
+    for (bool sooner : {true, false}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "midtown"; cfg.mode = MODE_POINTS; cfg.port = port++; cfg.balanceBots = false;
+        NetClient c[2];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, 2, cls)) { s.stop(); continue; }
+        std::vector<std::string> logs;
+        s.setLog([&](const std::string& l) { logs.push_back(l); });
+        int first = s.ms_.attackers;
+        s.ms_.capture = 1.05f;   // point A taken (past 1: nobody on it, it drains a hair first)
+        pump(s, cls, 0.1, idle);
+        CHECK(s.ms_.point == 1 && s.bestProgress_[first] == 1.0f);
+        s.bestTime_[first] = sooner ? 100.0f : 0.01f;   // (when they got there)
+        s.phaseEnd_ = s.time() - 10;
+        pumpServerTime(s, cls, 0.2, idle);
+        CHECK(s.ms_.phase == PHASE_ROUND_END);
+        for (int k = 0; k < 40 && !(s.ms_.round == 2 && s.ms_.phase == PHASE_LIVE); k++) { s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+        CHECK(s.ms_.round == 2 && s.ms_.phase == PHASE_LIVE);
+        s.ms_.capture = 1.05f;   // point A for the other side too: level
+        pump(s, cls, 0.1, idle);
+        if (!sooner) { CHECK(s.ms_.phase == PHASE_LIVE); s.phaseEnd_ = s.time() - 10; pumpServerTime(s, cls, 0.2, idle); }
+        printf("  there %s: \"%s\"\n", sooner ? "sooner" : "later", logs.empty() ? "" : logs.back().c_str());
+        CHECK(s.ms_.phase == PHASE_ROUND_END && !logs.empty() && logs.back().find("level with") != std::string::npos);
+        s.phaseEnd_ = s.time(); pump(s, cls, 0.1, idle);
+        int w = sooner ? (first == TEAM_A ? TEAM_B : TEAM_A) : first;
+        bool won = false;
+        for (auto& l : logs) won |= l.find(std::string(w == TEAM_A ? "TEAM A" : "TEAM B") + " wins the match") != std::string::npos;
+        CHECK(s.ms_.phase == PHASE_MATCH_END && s.ms_.round == 2 && won);
+        s.stop();
+    }
+}
+
 // F23: multi point on a map without points can't start (it never ended).
 static void testPointsNoPoints(uint16_t port) {
     printf("multi point on a map without points\n");
@@ -1953,7 +1990,7 @@ static void testGameRules(const std::string& only) {
         {"hide", [] { testHideScoring(TP(29247)); testSeekerRespawn(TP(29287)); }},
         {"shorthanded", [] { testShortHanded(TP(29288)); }},
         {"vsbots", [] { testVsBotsDuo(TP(29294)); }},
-        {"stopwatch", [] { testStopwatch(TP(29296)); testPointsNoPoints(TP(29299)); }},
+        {"stopwatch", [] { testStopwatch(TP(29296)); testPointsNoPoints(TP(29299)); testStopwatchLevel(TP(29303)); }},
         {"tag", [] { testTagEscape(TP(29248)); testTagNextMatch(TP(29274)); }},
         {"rps", [] { testRpsTwo(TP(29255)); testRpsMany(TP(29256)); testHideTimeTiebreak(TP(29290)); }},
         {"locator", [] { testLocator(TP(29260)); }},

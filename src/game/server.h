@@ -377,6 +377,7 @@ public:
     double payloadIdleSince_ = 0;
     float bestProgress_[2] = {0, 0};
     float completeTime_[2] = {0, 0};
+    float bestTime_[2] = {0, 0};   // payload / multi point: when (since the round went live) each attack reached its best (T17)
     float kothPoints_[2] = {0, 0};
     double bombDroppedAt_ = 0;   // bomb: when it was dropped (it goes back to an attacker if nobody picks it up)
     double objTouch_ = -1e9;     // payload / multi point / bomb / neutral payload: when the side that needs time last touched the objective (overtime)
