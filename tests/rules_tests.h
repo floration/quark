@@ -1506,6 +1506,54 @@ static void testScoreboardValue() {
 }
 
 // "quark_tests rules [name]": all of them, or the one named.
+// The HUD's live line (src/client/hudclock.h): every mode with a running round clock shows it on the default HUD
+// (1.17.0-1.18.2 showed it only in overtime, KOTH, the drain modes and the time trial: FFA, tag, hide, bomb,
+// payload, both-ways payload, points and race had no clock). Checked on what a client receives from a real server
+// in each mode, plus the special cases by hand.
+static void testHudClock(uint16_t port) {
+    printf("hud clock: every timed mode shows its clock while live\n");
+    char line[32];
+    auto fmt = [](float sec) { int t = (int)std::ceil(std::max(0.0f, sec)); char b[16]; snprintf(b, sizeof b, "%d:%02d", t / 60, t % 60); return std::string(b); };
+    struct Case { int mode; const char* map; int players; };
+    for (Case cs : {Case{MODE_FFA, "harbor", 2}, Case{MODE_TAG, "foundry", 3}, Case{MODE_HIDE, "hamlet", 3}, Case{MODE_BOMB, "depot", 2},
+                    Case{MODE_PAYLOAD, "railyard", 2}, Case{MODE_NPAYLOAD, "canal", 2}, Case{MODE_POINTS, "midtown", 2}, Case{MODE_RACE, "viaduct", 2},
+                    Case{MODE_KOTH, "summit", 2}, Case{MODE_VS, "bastion", 2}, Case{MODE_DUEL, "clockwork", 2}, Case{MODE_ARENA, "temple", 2}}) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = cs.map; cfg.mode = cs.mode; cfg.port = port++; cfg.balanceBots = false;
+        NetClient c[3];
+        std::vector<NetClient*> cls;
+        if (!rulesStart(s, cfg, c, cs.players, cls)) { s.stop(); continue; }
+        pump(s, cls, 0.3, idle);
+        const ModeState& ms = c[0].mode();   // (what the HUD draws from)
+        hudLiveLine(ms, line, sizeof line);
+        const bool drainMode = cs.mode == MODE_VS || cs.mode == MODE_DUEL || cs.mode == MODE_ARENA;
+        printf("  %s: phase %d, time left %.1f -> \"%s\"\n", modeName(cs.mode), ms.phase, ms.timeLeft, line);
+        CHECK(ms.phase == PHASE_LIVE);
+        if (cs.mode == MODE_KOTH) CHECK(ms.timeLeft == 0 && std::string(line) == "FIRST TO " + std::to_string(ms.target));   // (untimed)
+        else if (drainMode) CHECK(ms.timeLeft > 0 && std::string(line) == "DRAIN IN " + fmt(ms.timeLeft));
+        else CHECK(ms.timeLeft > 10 && std::string(line) == fmt(ms.timeLeft));   // the round clock itself
+        s.stop();
+    }
+    // the special cases
+    ModeState m;
+    m.phase = PHASE_LIVE;
+    m.mode = MODE_BOMB; m.timeLeft = 61.2f;
+    hudLiveLine(m, line, sizeof line); CHECK(std::string(line) == "1:02");
+    m.bombState = BOMB_PLANTED; m.bombTimer = 34.5f; m.timeLeft = 34.5f;   // planted: the fuse is the clock
+    hudLiveLine(m, line, sizeof line); CHECK(std::string(line) == "BOMB 0:35");
+    m = ModeState(); m.phase = PHASE_LIVE; m.mode = MODE_PAYLOAD; m.flags = MS_OVERTIME; m.timeLeft = 3.2f;
+    hudLiveLine(m, line, sizeof line); CHECK(std::string(line) == "OVERTIME 0:04");
+    m.mode = MODE_FFA; m.timeLeft = 0;
+    hudLiveLine(m, line, sizeof line); CHECK(std::string(line) == "OVERTIME - NEXT KILL WINS");
+    m.flags = MS_TIMETRIAL; m.mode = MODE_RACE; m.timeLeft = 300.0f - 72.345f;   // the run time, counting up
+    hudLiveLine(m, line, sizeof line); CHECK(std::string(line) == "1:12.34");
+    m.flags = 0; m.mode = MODE_TAG; m.timeLeft = 0;   // no clock running: nothing (never a frozen 0:00)
+    hudLiveLine(m, line, sizeof line); CHECK(line[0] == 0);
+    m.mode = MODE_VS; m.flags = MS_DRAIN;
+    hudLiveLine(m, line, sizeof line); CHECK(std::string(line) == "STALEMATE - HEALTH DRAINING");
+}
+
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
     std::vector<R> all = {
@@ -1528,6 +1576,7 @@ static void testGameRules(const std::string& only) {
         {"seeds", [] { testRandomSeeds(); }},
         {"heal", [] { testLifeHealCap(TP(29253)); }},
         {"scoreboard", [] { testScoreboardValue(); }},
+        {"hudclock", [] { testHudClock(TP(29280)); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
     if (only == "rate") { testRateBetweenRounds(TP(29252)); testRateUndoStepUp(TP(29254)); testRateJitter(TP(29257)); testUploadCap(TP(29258)); testSharedCongestion(TP(29259)); }   // (timing-sensitive: the suite runs it alone, with "tickrate")

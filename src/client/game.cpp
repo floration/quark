@@ -20,6 +20,7 @@
 #include "../common/version.h"
 #include "gltf.h"
 #include "overrides.h"
+#include "hudclock.h"
 
 static std::string fmtRace(int ms);
 static std::string hudCfgPath() { return userDataPath("hud.cfg"); } // scriptable widgets, next to quark.cfg
@@ -2395,13 +2396,12 @@ void Game::drawHud() {
         case PHASE_FREEZE: // free for all is one long round: just the countdown
             phase = (ms.mode == MODE_FFA ? std::string("STARTING IN ") : "ROUND " + std::to_string(ms.round) + " - STARTS IN ") + std::to_string((int)std::ceil(ms.timeLeft));
             break;
-        case PHASE_LIVE:
-            if (ms.mode == MODE_VS || ms.mode == MODE_DUEL || ms.mode == MODE_ARENA || ms.mode == MODE_TOURNEY) phase = (ms.flags & MS_DRAIN) ? "STALEMATE - HEALTH DRAINING" : "DRAIN IN " + fmtTime(ms.timeLeft);
-            else if (ms.mode == MODE_KOTH) phase = "FIRST TO " + std::to_string(ms.target);
-            else if (ms.flags & MS_TIMETRIAL) phase = fmtRace((int)std::lround((300.0f - ms.timeLeft) * 1000)).substr(0, 7); // run time so far
-            else if ((ms.flags & MS_OVERTIME) && ms.mode == MODE_FFA) phase = "OVERTIME - NEXT KILL WINS";
-            else if (ms.flags & MS_OVERTIME) phase = "OVERTIME " + fmtTime(ms.timeLeft);   // (ends this long after the objective was last touched)
+        case PHASE_LIVE: {   // the round clock in every timed mode (hudclock.h; short enough to stay in the string's own buffer)
+            char line[32];
+            hudLiveLine(ms, line, sizeof line);
+            phase = line;
             break;
+        }
         case PHASE_ROUND_END: phase = "ROUND OVER"; break;
         case PHASE_MATCH_END: phase = "MATCH OVER"; break;
     }

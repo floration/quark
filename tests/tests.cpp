@@ -24,6 +24,7 @@
 #include "game/demo.h"
 #include "../src/client/complete.h"
 #include "../src/client/lightmap.h"
+#include "../src/client/hudclock.h"
 #include <filesystem>
 #include <sstream>
 #include <fstream>
