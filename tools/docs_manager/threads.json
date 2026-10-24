@@ -1,0 +1,116 @@
+{
+ "_about": "Project threads, so entries can link to the thread that wrote them. Snapshot 2026-10-24; add new threads here (title, link, other names entries use for it).",
+ "threads": [
+  {
+   "title": "Testing branch setup",
+   "url": "https://claude.ai/code/project/chan_01Ncrpwpcaze2Www61uhc3fn?thread=cmsg_01Ncrpwpcaze2Www61uhc3fnHytrcT11xhn8wbYNsPSCzP",
+   "aliases": []
+  },
+  {
+   "title": "Local game builds and workflow",
+   "url": "https://claude.ai/code/project/chan_01Ncrpwpcaze2Www61uhc3fn?thread=cmsg_01Ncrpwpcaze2Www61uhc3fnLmD2MmprS1gFgeK8QnMwEF",
+   "aliases": [
+    "Local build sync"
+   ]
+  },
+  {
+   "title": "Game performance optimization",
+   "url": "https://claude.ai/code/project/chan_01Ncrpwpcaze2Www61uhc3fn?thread=cmsg_01Ncrpwpcaze2Www61uhc3fnYM5Bao3Ajsp9ErgXxW5Vjq",
+   "aliases": [
+    "Performance pass",
+    "Performance optimization pass"
+   ]
+  },
+  {
+   "title": "Shared Claude documents folder",
+   "url": "https://claude.ai/code/project/chan_01Ncrpwpcaze2Www61uhc3fn?thread=cmsg_01Ncrpwpcaze2Www61uhc3fn6h9RYT18J2NrySrj162BTu",
+   "aliases": [
+    "Claude Documents setup"
+   ]
+  },
+  {
+   "title": "Dedicated server hosting",
+   "url": "https://claude.ai/code/project/chan_01Ncrpwpcaze2Www61uhc3fn?thread=cmsg_01Ncrpwpcaze2Www61uhc3fnUeVnUgpTEsMiX4DBy1pMMc",
+   "aliases": [
+    "Hosting"
+   ]
+  },
+  {
+   "title": "Server CPU cost reduction",
+   "url": "https://claude.ai/code/project/chan_01Ncrpwpcaze2Www61uhc3fn?thread=cmsg_01Ncrpwpcaze2Www61uhc3fnCmySfd54xKyAdyNqYP57mj",
+   "aliases": [
+    "Server CPU cost"
+   ]
+  },
+  {
+   "title": "UI customizer web app",
+   "url": "https://claude.ai/code/project/chan_01Ncrpwpcaze2Www61uhc3fn?thread=cmsg_01Ncrpwpcaze2Www61uhc3fnVHUtUhHirYcJnA7cxN8Ey2",
+   "aliases": [
+    "UI customizer",
+    "Game font menu",
+    "UI redesign"
+   ]
+  },
+  {
+   "title": "Tweak gameplay",
+   "url": "https://claude.ai/code/project/chan_01Ncrpwpcaze2Www61uhc3fn?thread=cmsg_01Ncrpwpcaze2Www61uhc3fnCXK3s5B1mKyBVksxBYNc97",
+   "aliases": []
+  },
+  {
+   "title": "Fix Stop hosting closing the game",
+   "url": "https://claude.ai/code/project/chan_01Ncrpwpcaze2Www61uhc3fn?thread=cmsg_01Ncrpwpcaze2Www61uhc3fnHj2md6qZJ62YPVX8BMyEuR",
+   "aliases": [
+    "Stop hosting"
+   ]
+  },
+  {
+   "title": "Build a sound editor for the game",
+   "url": "https://claude.ai/code/project/chan_01Ncrpwpcaze2Www61uhc3fn?thread=cmsg_01Ncrpwpcaze2Www61uhc3fnUvmHeQisxuYNWeiQYYaCMA",
+   "aliases": [
+    "Sound editor"
+   ]
+  },
+  {
+   "title": "Discuss and improve release tests",
+   "url": "https://claude.ai/code/project/chan_01Ncrpwpcaze2Www61uhc3fn?thread=cmsg_01Ncrpwpcaze2Www61uhc3fnXztXSRa5x6qkERjs41MSe3",
+   "aliases": [
+    "Release tests"
+   ]
+  },
+  {
+   "title": "Build a model editor for the game",
+   "url": "https://claude.ai/code/project/chan_01Ncrpwpcaze2Www61uhc3fn?thread=cmsg_01Ncrpwpcaze2Www61uhc3fn8TVpo8daKBzGmx3omsEErp",
+   "aliases": [
+    "Model editor"
+   ]
+  },
+  {
+   "title": "Build a map editor with testing tools",
+   "url": "https://claude.ai/code/project/chan_01Ncrpwpcaze2Www61uhc3fn?thread=cmsg_01Ncrpwpcaze2Www61uhc3fn7zFZQNfeoPZkbUPNaxhB6i",
+   "aliases": [
+    "Map editor"
+   ]
+  },
+  {
+   "title": "Build a bot editor and simulator",
+   "url": "https://claude.ai/code/project/chan_01Ncrpwpcaze2Www61uhc3fn?thread=cmsg_01Ncrpwpcaze2Www61uhc3fnMFsoYHkUf2i5dcwiqCtFTV",
+   "aliases": [
+    "Bot editor"
+   ]
+  },
+  {
+   "title": "Build an editor dashboard and asset tracker",
+   "url": "https://claude.ai/code/project/chan_01Ncrpwpcaze2Www61uhc3fn?thread=cmsg_01Ncrpwpcaze2Www61uhc3fnMN8kAFYpvg7AajrJTe26fN",
+   "aliases": [
+    "Editor dashboard"
+   ]
+  },
+  {
+   "title": "Build a Claude Documents manager",
+   "url": "https://claude.ai/code/project/chan_01Ncrpwpcaze2Www61uhc3fn?thread=cmsg_01Ncrpwpcaze2Www61uhc3fnHaKdPVZksw6j98qLFwRoDu",
+   "aliases": [
+    "Claude Documents manager"
+   ]
+  }
+ ]
+}
