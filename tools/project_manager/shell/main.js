@@ -622,6 +622,25 @@ async function restartForUpdate(r) {
   const e = views.get(id);
   if (res.up && e && e.mode === 'page' && !e.view.webContents.isDestroyed()) e.view.webContents.reload();
 }
+// A tool installed (or the tab list changed) while the app is open: its tab was resolved as "not installed" when the
+// app started, so its server would wait for the next open. Each update poll re-reads the tab list while some tab is
+// missing or tabs.json changed, and reloads it when anything differs (startKeepAlive then starts the new server).
+let tabsMtime = 0;
+function fileMtime(f) { try { return fs.statSync(f).mtimeMs; } catch { return 0; } }
+function refreshTabsIfChanged() {
+  const m = tabsFile ? fileMtime(tabsFile) : 0;
+  const changedFile = tabsMtime && m && m !== tabsMtime;
+  if (!tabsMtime) tabsMtime = m;
+  if (!changedFile && !tabs.some((t) => !t.installed)) return;
+  const r = loadTabs();
+  const key = (l) => JSON.stringify(l.map((t) => [t.id, t.url, t.installed, t.start, t.keepAlive]));
+  tabsMtime = m;
+  if (key(r.tabs) === key(tabs)) return;
+  const was = new Set(tabs.filter((t) => t.installed).map((t) => t.id));
+  const now = r.tabs.filter((t) => t.installed && !was.has(t.id)).map((t) => t.name);
+  logNote('updates', 'tab list changed' + (now.length ? ' (now installed: ' + now.join(', ') + ')' : '') + '; reloading it');
+  reloadTabList();
+}
 async function pollUpdates() {
   clearTimeout(updatesTimer);
   if (stopped) return;
@@ -648,6 +667,7 @@ async function pollUpdates() {
       }
     }
   } finally {
+    try { if (!stopped && win && !relaunching) refreshTabsIfChanged(); } catch (err) { logNote('updates', 'tab list check failed: ' + (err && err.message)); }
     if (!stopped) updatesTimer = setTimeout(pollUpdates, win && win.isMinimized() ? UPDATES_POLL_MS * 2 : UPDATES_POLL_MS);
   }
 }

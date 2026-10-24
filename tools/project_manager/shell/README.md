@@ -125,6 +125,9 @@ started with the server; `server.py --no-update` turns it off) does this, hidden
    Supervisor Board server and the servers the shell started, and relaunches the app, whose supervisor starts the new
    server). When the update is found within 5 minutes of opening the app (the usual case: the pass runs at open), the
    shell does that relaunch by itself without asking, so one open is enough; at most once every 10 minutes.
+   A tool installed while the app is open starts right away too: each update poll (15 s) re-reads the tab list while
+   a tab is not installed or tabs.json changed, and when anything differs reloads it, so the new tool's tab appears
+   and its keepAlive server starts without another open.
 
 The Supervisor Board's "Tools & updates" card shows the repository state, each entry with a status pill (`ok`,
 `updating`, `failed`, `pending`, `waiting`, `disabled`), the last run time (Dallas) and the log's last lines, and an
