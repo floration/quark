@@ -522,12 +522,15 @@ class Drive:
             if not line: break
             line = line.decode("utf-8", "replace").strip()
             if not line: continue
-            s = self.sink
+            with self.cond:      # (the sink is read under the lock: attach() hands over the lines kept until then, in order)
+                s = self.sink
+                if not s: self.lines.append(line)
             if s:
                 try: s(line); continue
-                except Exception: self.sink = None
+                except Exception:
+                    self.sink = None
+                    continue
             with self.cond:
-                self.lines.append(line)
                 if len(self.lines) > self.MAX_LINES:     # (a page that stopped reading: keep the newest)
                     drop = len(self.lines) - self.MAX_LINES
                     del self.lines[:drop]; self.base += drop
@@ -540,6 +543,15 @@ class Drive:
         if s:
             try: s(None)
             except Exception: pass
+
+    def attach(self, sink):
+        """Send the answer lines to sink from now on, after the ones that came before it was attached (physdrive's start
+        line is often written before the WebSocket's sink is set: it went to the SSE buffer and the page waited for it)."""
+        with self.cond:
+            backlog, self.lines = self.lines, []
+            self.base += len(backlog)
+            for l in backlog: sink(l)
+            self.sink = sink
 
     def _read_err(self):
         for line in self.proc.stderr:
@@ -851,9 +863,14 @@ class Handler(BaseHTTPRequestHandler):
             hdr = bytes([0x81, n]) if n < 126 else (bytes([0x81, 126]) + struct.pack(">H", n) if n < 65536 else bytes([0x81, 127]) + struct.pack(">Q", n))
             with slock: sock.sendall(hdr + data)
 
-        def send_close():
+        closed = []
+
+        def send_close():   # (once: a second close frame is a protocol error the browser logs)
             try:
-                with slock: sock.sendall(b"\x88\x00")
+                with slock:
+                    if closed: return
+                    closed.append(1)
+                    sock.sendall(b"\x88\x00")
             except OSError: pass
 
         drive = None
@@ -879,8 +896,8 @@ class Handler(BaseHTTPRequestHandler):
                             send_close()
                             return
                         send_text(l)
-                    drive.sink = sink
                     send_text(json.dumps({"type": "_ready", "id": drive.id}))
+                    drive.attach(sink)
                     continue
                 if not control_ok(line): continue
                 if not drive.send(line):
