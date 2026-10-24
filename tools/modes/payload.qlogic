@@ -1,0 +1,49 @@
+logic 1
+base payload
+# Payload: each team attacks once, pushing the cart down the track against the clock (checkpoints add time). The
+# team that pushed it farther (or delivered it faster) wins; a tie plays two more rounds.
+use cart
+
+param roundTime f32 = 240
+param respawnTime f32 = 5
+param cartRange f32 = 4 # from the cart that counts as at it
+param cartSpeed f32 = 1.6 # with one pusher (+25% for each more, up to twice)
+param cartRollback f32 = 0.6 # the cart rolls back this fast when left alone...
+param cartIdle f32 = 10 # ...after this long with no attacker at it
+param cartCheckBonus f32 = 60 # added to the clock at each checkpoint
+
+slot roundSetup:
+  attackers = roundNo % 2 == 1 ? A : B
+
+slot tick:
+  cartStep()
+  if now < phaseEnd: hud.overtime = no
+  elif not holdOvertime(): endRoundNoScore(other(attackers), "time")
+
+slot cartCheckpoint:
+  addTime(cartCheckBonus)
+  announce(attackers, " reached checkpoint ", i, " - +", int(cartCheckBonus), " s")
+
+slot delivered:
+  cart.completed[attackers] = f32(now - roundStartTime)
+  endRound(attackers, "payload delivered")
+
+# After both teams have attacked: more deliveries wins, then the faster delivery, then the farther push.
+slot roundOver:
+  if roundNo < 2 or roundNo % 2 != 0: return
+  w = none
+  if teamScore[A] != teamScore[B]: w = teamScore[A] > teamScore[B] ? A : B
+  elif teamScore[A] > 0:
+    if cart.completed[A] != cart.completed[B]: w = cart.completed[A] < cart.completed[B] ? A : B
+  elif cart.best[A] != cart.best[B]: w = cart.best[A] > cart.best[B] ? A : B
+  if w == none and roundNo < 4:
+    announce("tied - tiebreaker rounds")
+    teamScore[A] = 0
+    teamScore[B] = 0
+    cart.best[A] = 0.0f
+    cart.best[B] = 0.0f
+    cart.completed[A] = 0.0f
+    cart.completed[B] = 0.0f
+    return
+  if w == none: endMatch(none, "match draw")
+  endMatch(w, w, " wins the match")
