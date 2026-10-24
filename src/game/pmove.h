@@ -15,10 +15,10 @@ struct UserCmd {
 };
 
 constexpr int kDashCharges = 2;   // dashes you hold (owner 1.17)...
-constexpr float kDashCooldown = 0.6f;   // ...a dash waits this long after the previous dash ENDS (owner 1.18.5: "you can use them 0.6
+constexpr float kDashCooldown = 0.6f;   // ...a dash waits this long after the previous dash ENDS (owner 1.18.7: "you can use them 0.6
                                         // seconds apart"; it was 1.2 s between any two dashes)...
 constexpr float kDashRecharge = 1.2f;   // ...and a spent charge can only come back this long after the dash that spent it ended (owner
-                                        // 1.18.5: "dashes take 1.2 seconds to recharge ... when you jump in the air with 2 dashes, you
+                                        // 1.18.7: "dashes take 1.2 seconds to recharge ... when you jump in the air with 2 dashes, you
                                         // can use both of them within 1 second, without recharging any charges"); it still comes back
                                         // only the way charges always have (the floor all, a bhop landing one, the dash techs)
 constexpr int kMaxDashCharges = 10;     // the most charges a custom mode can give (2 x its 5x limit): the recharge timers' room

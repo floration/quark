@@ -2569,7 +2569,7 @@ void Game::drawHud() {
                 // that's there but can't be dashed yet (the dash still running, or the 0.6 s cooldown since it ended) is a
                 // whole pip in the off color (light grey, no progress fill), and the moment that dash is allowed it turns
                 // wholly to the on color; a spent charge stays empty while it recharges (1.2 s) and after, until a refill
-                // (owner 1.18.5: "light grey that turns to blue, the whole bar not the slider"; a fill growing from empty
+                // (owner 1.18.7: "light grey that turns to blue, the whole bar not the slider"; a fill growing from empty
                 // made one dash look like it had spent both charges)
                 int n = dashMaxCharges(mv.mods), have = std::min<int>(mv.dashCharges, n);
                 const bool ready = dashReady(mv);   // (pmove's own rule; mid-burst a press is dropped, so not ready either: no
@@ -5808,7 +5808,7 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
         // a dash cut short by a jump: a super (dash jump), or a hyper (super dash: the dash was aimed down into the
         // floor). (A dash running out on its own has under a frame left; an upward dash ending isn't a jump.)
         if (prevMove_.dashTimer > (float)frameDt + 0.01f && m.dashTimer <= 0 && m.vel.y > 1.0f && !(m.flags & MF_ONGROUND))
-            audio_.play(dashAimedDown(prevMove_) ? SND_HYPER : SND_SUPER, 0.9f);   // (pmove's own test: since 1.18.5 the charges left no longer tell them apart)
+            audio_.play(dashAimedDown(prevMove_) ? SND_HYPER : SND_SUPER, 0.9f);   // (pmove's own test: since 1.18.7 the charges left no longer tell them apart)
         if ((m.flags & MF_HOOKED) && !(prevMove_.flags & MF_HOOKED)) {
             audio_.play(SND_GRAPPLE_FIRE, 0.7f);
             audio_.play3D(SND_GRAPPLE_HIT, m.hookPoint, 0.9f);

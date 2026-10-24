@@ -446,7 +446,7 @@ static void testMovementTuning() {
 // Dash charges (owner 1.17): two; a dash spends one; no dash while one runs (the press is dropped, not kept), the next
 // press after it ends spends the next; the ground refills both, holding jump (a bhop landing) only up to one; a dash jump
 // refills all, a super dash leaves exactly one, a wall bounce exactly one; the super dash's own floor contact is no refill;
-// ladders refill nothing. 1.18.5 (owner: "dashes take 1.2 seconds to recharge, but you can use them 0.6 seconds apart,
+// ladders refill nothing. 1.18.7 (owner: "dashes take 1.2 seconds to recharge, but you can use them 0.6 seconds apart,
 // so when you jump in the air with 2 dashes, you can use both of them within 1 second, without recharging any
 // charges"): a dash waits 0.6 s from the end of the last one, and a spent charge only comes back by those refills
 // once 1.2 s have passed since the dash that spent it ended. Quick dash (1.18): the usual two charges, a third of
@@ -576,7 +576,7 @@ static void testDashCharges() {
                mods ? " (quick dash)" : "", (int)st.size(), minStep(st), minGap(st, en));
         CHECK(minGap(st, en) >= (mods ? 200 : 600) && st.size() >= 3);
     }
-    { // a dash jump refills all (it's off the floor), the charge its own dash just spent too (owner 1.18.5: "exempt the
+    { // a dash jump refills all (it's off the floor), the charge its own dash just spent too (owner 1.18.7: "exempt the
       // dash jump"); an older charge still recharging stays out: a ground dash, 0.6 s later a ground dash + jump
         MoveState q; q.flags = MF_ONGROUND;
         for (int i = 0; i < 20; i++) step(q, none, open);
@@ -748,7 +748,7 @@ static void testDashTech() {
         step(q, r);
         printf("  super dash from a run (%.2f m/s): %.3f m/s, %.3f up\n", h0, hs(q), q.vel.y);
         const float vy = superHop(-1.0f);   // (57.3 deg down: 0.89 of a jump)
-        CHECK(q.dashTimer == 0 && std::fabs(hs(q) - (h0 + 5.0f)) < 1e-3f && std::fabs(q.vel.y - (vy - g1)) < 1e-4f);   // (owner 1.18.5: + 5)
+        CHECK(q.dashTimer == 0 && std::fabs(hs(q) - (h0 + 5.0f)) < 1e-3f && std::fabs(q.vel.y - (vy - g1)) < 1e-4f);   // (owner 1.18.7: + 5)
         float peak, dist = flight(q, BTN_DASH, &peak), air = 2 * vy / 22.0f;
         printf("  super dash: %.1f m across, %.2f m up (%.2f expected)\n", dist, peak, vy * vy / 44.0f);
         CHECK(std::fabs(peak - vy * vy / 44.0f) < 0.03f && std::fabs(dist - (h0 + 5.0f) * air) < 0.6f);
@@ -836,7 +836,7 @@ static void testDashTech() {
             else CHECK(t == 120 && hs(q) < 11.01f);
         }
     }
-    { // dash wall bounce: a dash 30 deg off a wall's normal reflects at 16 m/s (owner 1.18.5; it was the dash's speed); 50 deg (glancing) slides
+    { // dash wall bounce: a dash 30 deg off a wall's normal reflects at 16 m/s (owner 1.18.7; it was the dash's speed); 50 deg (glancing) slides
         Map wall;   // a wall across -z, its face 1.5 m ahead
         CHECK(wall.parse("box -50 -1 -50 50 0 50\nbox -50 0 -3 50 4 -1.5\nspawn any 0 0 0\n", &err));
         auto dashAt = [&](float deg, bool jumpAfter, MoveState* out) {
