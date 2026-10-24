@@ -135,11 +135,29 @@ static void timingTest(const char* name, const std::function<void()>& run) {
     }
 }
 
-// Pump a server and some clients for `seconds` of real time, feeding each client an input.
+// Real seconds this thread has spent off the CPU: wall time minus the thread's own CPU time. Its growth across a stretch
+// that only computes, or beyond a sleep's length, is the machine not running the test (another process, a VM's host),
+// never the game's code, which counts as CPU time however slow it is. (Windows: the thread CPU clock is 15.6 ms
+// coarse, so there it's how late sleeps woke only: offCpu() is wall time, and a pump's frames count as off the CPU.)
+static double offCpu() {
+    double wall = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+#ifdef _WIN32
+    return wall;
+#else
+    timespec ts{};
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+    return wall - (ts.tv_sec + ts.tv_nsec * 1e-9);
+#endif
+}
+
+// Pump a server and some clients for `seconds` of real time, feeding each client an input. With `stalled`, it keeps the
+// longest the machine left the loop unrun in real seconds (beyond its 1 ms sleep; see offCpu): where a check's premise
+// is a machine that runs the test when it asks, a run that this breaks is the machine's, not the game's.
 template <class F>
-static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F input) {
+static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F input, double* stalled = nullptr) {
     double end = timeNow() + seconds;
     double nextTick = timeNow();
+    double off = stalled ? offCpu() : 0;
     while (timeNow() < end) {
         s.frame();
         for (auto* c : cls) c->poll();
@@ -148,8 +166,16 @@ static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F inpu
             nextTick += cls.empty() ? 0.001 : cls[0]->tickPeriod();
         }
         hostSleepMs(1);
+        if (stalled) { double o = offCpu(); *stalled = std::max(*stalled, o - off - 0.001); off = o; }
     }
 }
+
+// Checks whose premise is a machine that runs the test when it asks (pump's `stalled`) run again when it didn't, at
+// most this many times; the last one counts as it is, and nothing they assert is loosened (ratePump does the same).
+static constexpr int kStallTries = 3;
+// The longest stall, in real seconds, after which the server still runs every tick: past 20 periods behind it skips
+// ahead (Server::frame), so its clock and the commands' tokens for that time are gone.
+static double serverSkipStall(const Server& s) { return 20.0 / s.tickRate() / timeScale(); }
 
 // A server with only in-process bots (no NetClients) runs on a manual clock instead (net.h; a SimClock for the test's
 // scope): simRun steps the clock to the server's next tick and runs frame(), one tick per call. Every tick runs,
@@ -6315,55 +6341,65 @@ static void testSnapshotBounds() {
 // than real time still gets no more than real time out of it.
 static void testInputBacklog(uint16_t port) {
     printf("input backlog drains; a speedhack still doesn't pay\n");
-    Server s;
-    ServerConfig cfg;
-    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
-    s.setLog([](const std::string&) {});
-    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
-    NetClient a;
-    a.connect("127.0.0.1:" + std::to_string(port), "a");
-    std::vector<NetClient*> cls = {&a};
-    pump(s, cls, 1.0, idle);
-    int id = a.clientId();
-    CHECK(a.hasSnapshot() && id >= 0 && id < kMaxPlayers);
-    if (!a.hasSnapshot() || id < 0 || id >= kMaxPlayers) { s.stop(); return; }
-    // a 150 ms stall (the network, or the server's machine) while the client keeps playing: its commands then arrive
-    // all at once, more than the token burst covers
-    double until = timeNow() + 0.15, next = timeNow();
-    while (timeNow() < until) { a.poll(); while (timeNow() >= next) { a.tick(UserCmd()); next += a.tickPeriod(); } sleepMs(1); }
-    s.frame();
-    size_t after = s.players_[id].cmdQueue.size();
-    // then normal play: over the last 3/4 of a second the queue empties again. (Before, it never went below 3: the
-    // backlog stayed for good. Its average depth also depends on how bursty the client's sends are, i.e. machine load,
-    // so the test looks at the lowest.)
-    size_t lowest = 99;
-    double sum = 0;
-    int samples = 0;
-    for (double stop = timeNow() + 1.0, first = timeNow() + 0.25; timeNow() < stop;) {
-        s.frame(); a.poll();
-        while (timeNow() >= next) { a.tick(UserCmd()); next += a.tickPeriod(); }
-        if (timeNow() >= first) { size_t q = s.players_[id].cmdQueue.size(); lowest = std::min(lowest, q); sum += (double)q; samples++; }
-        sleepMs(1);
-    }
-    printf("  queued after the stall %zu, later at least %zu (%.2f on average)\n", after, lowest, samples ? sum / samples : 0.0);
+    for (int attempt = 1; attempt <= kStallTries; attempt++) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+        s.setLog([](const std::string&) {});
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+        NetClient a;
+        a.connect("127.0.0.1:" + std::to_string(port), "a");
+        std::vector<NetClient*> cls = {&a};
+        pump(s, cls, 1.0, idle);
+        int id = a.clientId();
+        CHECK(a.hasSnapshot() && id >= 0 && id < kMaxPlayers);
+        if (!a.hasSnapshot() || id < 0 || id >= kMaxPlayers) { s.stop(); return; }
+        // a 150 ms stall (the network, or the server's machine) while the client keeps playing: its commands then
+        // arrive all at once, more than the token burst covers
+        double until = timeNow() + 0.15, next = timeNow();
+        while (timeNow() < until) { a.poll(); while (timeNow() >= next) { a.tick(UserCmd()); next += a.tickPeriod(); } sleepMs(1); }
+        s.frame();
+        size_t after = s.players_[id].cmdQueue.size();
+        // then normal play: over the last 3/4 of a second the queue empties again. (Before, it never went below 3: the
+        // backlog stayed for good. Its average depth also depends on how bursty the client's sends are, i.e. machine
+        // load, so the test looks at the lowest.)
+        size_t lowest = 99;
+        double sum = 0, stalled = 0, off = offCpu();
+        int samples = 0;
+        for (double stop = timeNow() + 1.0, first = timeNow() + 0.25; timeNow() < stop;) {
+            s.frame(); a.poll();
+            while (timeNow() >= next) { a.tick(UserCmd()); next += a.tickPeriod(); }
+            if (timeNow() >= first) { size_t q = s.players_[id].cmdQueue.size(); lowest = std::min(lowest, q); sum += (double)q; samples++; }
+            sleepMs(1);
+            double o = offCpu(); stalled = std::max(stalled, o - off - 0.001); off = o;   // (as pump's)
+        }
+        printf("  queued after the stall %zu, later at least %zu (%.2f on average; machine stalled %.1f ms)\n", after, lowest,
+               samples ? sum / samples : 0.0, stalled * 1e3);
+        bool ok = after > 2 && lowest <= 1;
 #ifdef QUARK_SANITIZED   // (the CI sanitizers job: several times slower, so how fast the queue drains isn't telling)
-    if (!(after > 2 && lowest <= 1)) printf("  (sanitized build: drain timing not checked)\n");
-#else
-    CHECK(after > 2 && lowest <= 1);
+        if (!ok) printf("  (sanitized build: drain timing not checked)\n");
+        ok = true;
 #endif
-    // twice real time: the server runs about real time's worth (plus its token burst and the catch-up allowance)
-    uint32_t t0 = s.tick_, c0 = s.players_[id].cmdsRun;
-    double end = timeNow() + 1.0;
-    next = timeNow();
-    while (timeNow() < end) {
-        s.frame(); a.poll();
-        while (timeNow() >= next) { a.tick(UserCmd()); a.tick(UserCmd()); next += a.tickPeriod(); }
-        sleepMs(1);
+        // The premise: the test's own stall only. One of the machine's past the server's skip (Server::frame skips
+        // ahead 20 periods behind) drops the ticks whose tokens would have run the commands sent meanwhile: a second
+        // backlog, which the allowance (spent on the first) drains at 10 a second. Then the whole test runs again.
+        if (!ok && stalled > serverSkipStall(s) && attempt < kStallTries) { s.stop(); printf("  (the machine stalled the server past its skip: again)\n"); continue; }
+        CHECK(ok);
+        // twice real time: the server runs about real time's worth (plus its token burst and the catch-up allowance)
+        uint32_t t0 = s.tick_, c0 = s.players_[id].cmdsRun;
+        double end = timeNow() + 1.0;
+        next = timeNow();
+        while (timeNow() < end) {
+            s.frame(); a.poll();
+            while (timeNow() >= next) { a.tick(UserCmd()); a.tick(UserCmd()); next += a.tickPeriod(); }
+            sleepMs(1);
+        }
+        double ran = (double)(s.players_[id].cmdsRun - c0), ticks = (double)(s.tick_ - t0);
+        printf("  speedhack: %.0f commands run in %.0f ticks\n", ran, ticks);
+        CHECK(ran <= ticks * 1.05 + 60);
+        s.stop();
+        break;
     }
-    double ran = (double)(s.players_[id].cmdsRun - c0), ticks = (double)(s.tick_ - t0);
-    printf("  speedhack: %.0f commands run in %.0f ticks\n", ran, ticks);
-    CHECK(ran <= ticks * 1.05 + 60);
-    s.stop();
 }
 
 // Chat and votes can't flood everyone's reliable events or stall the tick (REVIEW NET-7, NET-6): chat is rate
@@ -6900,36 +6936,46 @@ static void testArenaAndTourney(uint16_t& port) {
 // compensation is the time it shows.
 static void testUptimeClock(uint16_t port) {
     printf("client clock on a server up for 5 days\n");
-    Server s;
-    ServerConfig cfg;
-    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
-    s.setLog([](const std::string&) {});
-    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
-    s.timeMs_ += 5u * 86400u * 1000u;
-    NetClient a;
-    a.setInterpFixed(0.05f);
-    a.connect("127.0.0.1:" + std::to_string(port), "uptime");
-    std::vector<NetClient*> cls = {&a};
-    pump(s, cls, 2.0, idle);
-    CHECK(a.renderTime() > 5 * 86400.0);
-    int samples = 0, onGrid = 0;
-    double prev = 0;
-    std::vector<int> lags;
-    pump(s, cls, 1.0, [&](int) {
-        double rt = a.renderTime(), g = rt * 32;
-        if (rt != prev) { samples++; if (std::fabs(g - std::round(g)) < 1e-6) onGrid++; prev = rt; }
-        // the view tick the server gets: the interpolation delay (plus the trip) behind its clock
-        UserCmd c;
-        uint32_t sent = s.players_[a.clientId()].lastViewTick;
-        if (sent) lags.push_back((int)(s.timeMs_ - sent));
-        return c;
-    });
-    std::sort(lags.begin(), lags.end());
-    int median = lags.empty() ? -1 : lags[lags.size() / 2];
-    printf("  %d of %d render times on a float's 1/32 s grid; view tick a median %d ms behind the server (interp 50)\n", onGrid, samples, median);
-    CHECK(samples > 20 && onGrid * 4 < samples);
-    CHECK(median >= 45 && median < 150);
-    s.stop();
+    for (int attempt = 1; attempt <= kStallTries; attempt++) {
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+        s.setLog([](const std::string&) {});
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+        s.timeMs_ += 5u * 86400u * 1000u;
+        NetClient a;
+        a.setInterpFixed(0.05f);
+        a.connect("127.0.0.1:" + std::to_string(port), "uptime");
+        std::vector<NetClient*> cls = {&a};
+        double stalled = 0;
+        pump(s, cls, 2.0, idle, &stalled);
+        CHECK(a.renderTime() > 5 * 86400.0);
+        int samples = 0, onGrid = 0;
+        double prev = 0;
+        std::vector<int> lags;
+        pump(s, cls, 1.0, [&](int) {
+            double rt = a.renderTime(), g = rt * 32;
+            if (rt != prev) { samples++; if (std::fabs(g - std::round(g)) < 1e-6) onGrid++; prev = rt; }
+            // the view tick the server gets: the interpolation delay (plus the trip) behind its clock
+            UserCmd c;
+            uint32_t sent = s.players_[a.clientId()].lastViewTick;
+            if (sent) lags.push_back((int)(s.timeMs_ - sent));
+            return c;
+        }, &stalled);
+        std::sort(lags.begin(), lags.end());
+        int median = lags.empty() ? -1 : lags[lags.size() / 2];
+        printf("  %d of %d render times on a float's 1/32 s grid; view tick a median %d ms behind the server (interp 50; machine stalled %.1f ms)\n",
+               onGrid, samples, median, stalled * 1e3);
+        s.stop();
+        // The premise: a continuous server clock. A machine stall past the server's skip (Server::frame: 20 periods
+        // behind, it skips ahead) moves its clock back against the client's, which follows a later clock only slowly
+        // (as it should: it's how one late snapshot doesn't jerk the view): the view tick then reads early for a while.
+        bool ok = median >= 45 && median < 150;
+        if (!ok && stalled > serverSkipStall(s) && attempt < kStallTries) { printf("  (the machine stalled the server past its skip: again)\n"); continue; }
+        CHECK(samples > 20 && onGrid * 4 < samples);
+        CHECK(ok);
+        break;
+    }
 }
 
 // Lag compensation covers the longest fixed interpolation delay a client can set (FINAL_REVIEW 2.5: with interp_ms 200
@@ -6982,46 +7028,52 @@ static void testInterpRewind(uint16_t port) {
 
 static void testNetcode(uint16_t port) {
     printf("netcode: delta snapshots, visibility\n");
-    Server s;
     ServerConfig cfg;
     cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
-    s.setLog([](const std::string&) {});
-    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
-    std::vector<std::unique_ptr<NetClient>> owned;
-    std::vector<NetClient*> cls;
-    for (int i = 0; i < 4; i++) {
-        owned.push_back(std::make_unique<NetClient>());
-        owned.back()->connect("127.0.0.1:" + std::to_string(port), "c" + std::to_string(i));
-        cls.push_back(owned.back().get());
-    }
-    for (int i = 0; i < 4; i++) s.addBot(TEAM_A, BOT_ADVANCED);
-    pump(s, cls, 2.0, idle);
-    s.snapBytes_ = s.snapCount_ = 0;
-    pump(s, cls, 4.0, [](int i) { UserCmd c; c.forward = 127; c.yaw = i * 1.5f + (float)timeNow(); c.buttons = BTN_JUMP; return c; });
-    double avg = s.snapCount_ ? (double)s.snapBytes_ / s.snapCount_ : 0;
-    uint32_t misses = 0;
-    for (auto* c : cls) misses += c->baseMisses();
     // limit: two snapshot intervals plus up to 15 ms of measured timing jitter (machine dependent: shared CI
     // runners and cloud VMs measure 4-10 ms on their own; snapshots at 125/s would already be 17+ ms)
-    float limit = 2.0f / cls[0]->snapRate() + 0.015f;
-    // one scheduling hiccup on a shared machine inflates the jitter estimate for a moment (the released 1.14.0 shows
-    // it too): over the limit, keep playing 3 s more and measure again - a real regression stays over it
-    if (cls[0]->interpDelay() >= limit) {
-        printf("  (interpolation delay %.1f ms: measuring again)\n", cls[0]->interpDelay() * 1000);
-        pump(s, cls, 3.0, [](int i) { UserCmd c; c.forward = 127; c.yaw = i * 1.5f + (float)timeNow(); c.buttons = BTN_JUMP; return c; });
+    const float jitterMax = 0.015f;
+    for (int attempt = 1; attempt <= kStallTries; attempt++) {
+        Server s;
+        s.setLog([](const std::string&) {});
+        { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+        std::vector<std::unique_ptr<NetClient>> owned;
+        std::vector<NetClient*> cls;
+        for (int i = 0; i < 4; i++) {
+            owned.push_back(std::make_unique<NetClient>());
+            owned.back()->connect("127.0.0.1:" + std::to_string(port), "c" + std::to_string(i));
+            cls.push_back(owned.back().get());
+        }
+        for (int i = 0; i < 4; i++) s.addBot(TEAM_A, BOT_ADVANCED);
+        pump(s, cls, 2.0, idle);
+        s.snapBytes_ = s.snapCount_ = 0;
+        double stalled = 0;
+        pump(s, cls, 4.0, [](int i) { UserCmd c; c.forward = 127; c.yaw = i * 1.5f + (float)timeNow(); c.buttons = BTN_JUMP; return c; }, &stalled);
+        double avg = s.snapCount_ ? (double)s.snapBytes_ / s.snapCount_ : 0;
+        uint32_t misses = 0;
+        for (auto* c : cls) misses += c->baseMisses();
+        float limit = 2.0f / cls[0]->snapRate() + jitterMax;
+        printf("  8 players moving: %.0f bytes per snapshot, %u undecodable deltas, interpolation delay %.1f ms (limit %.1f; machine stalled %.1f ms)\n",
+               avg, misses, cls[0]->interpDelay() * 1000, limit * 1000, stalled * 1e3);
+        // The premise: a machine that runs the test when it asks. Snapshots are sent from the pump's frames, 1 ms
+        // (real) apart; a stall of the machine that with that 1 ms holds them back longer than the jitter allowed is
+        // late arrivals the client is right to measure (a single one fills the estimate's top percent): then the test
+        // runs again, at most kStallTries times, the last one as it is. A real regression stays over with no stall.
+        if (cls[0]->interpDelay() >= limit && (stalled + 0.001) * timeScale() > jitterMax && attempt < kStallTries) {
+            s.stop(); printf("  (the machine stalled past the jitter allowed: again)\n"); continue;
+        }
+        CHECK(cls[0]->interpDelay() < limit);
+        CHECK(avg > 0 && avg < 400);   // full snapshots were ~420 bytes for 8 players
+        CHECK(misses < 5);
+        // decoded state matches the server (within position quantization)
+        for (auto& p : cls[0]->latest().players) {
+            if (p.hidden || !(p.flags & PS_ALIVE)) continue;
+            Vec3 sp = s.players_[p.id].move.pos;
+            CHECK(length(p.pos - sp) < 2.0f); // a snapshot or two behind the server at most
+        }
+        s.stop();
+        break;
     }
-    printf("  8 players moving: %.0f bytes per snapshot, %u undecodable deltas, interpolation delay %.1f ms (limit %.1f)\n", avg, misses,
-           cls[0]->interpDelay() * 1000, limit * 1000);
-    CHECK(cls[0]->interpDelay() < limit);
-    CHECK(avg > 0 && avg < 400);   // full snapshots were ~420 bytes for 8 players
-    CHECK(misses < 5);
-    // decoded state matches the server (within position quantization)
-    for (auto& p : cls[0]->latest().players) {
-        if (p.hidden || !(p.flags & PS_ALIVE)) continue;
-        Vec3 sp = s.players_[p.id].move.pos;
-        CHECK(length(p.pos - sp) < 2.0f); // a snapshot or two behind the server at most
-    }
-    s.stop();
 
     // visibility: the center walls block the line from one end of arena to the other
     Server v;
