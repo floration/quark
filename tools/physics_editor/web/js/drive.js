@@ -223,6 +223,6 @@ export class DriveView {
         run.metrics = computeMetrics(run, null);
         this.app.extraRuns.push(run);
         this.app.emit("results");
-        this.app.toast(`Sent ${trace[trace.length - 1].t.toFixed(1)} s of driving to the Graph and Path tabs`);
+        this.app.toast(`Sent ${trace[trace.length - 1].t.toFixed(1)} s of driving to the Movement graph and Path tabs`);
     }
 }

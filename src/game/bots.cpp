@@ -343,7 +343,8 @@ bool safeDrop(const Server& s, const Vec3& p) {
 // when a hook is planned and again when it catches (the bot has moved by then, and the catch may be off the aim).
 bool safeHook(const Server& s, const ServerPlayer& me, const Vec3& anchor) {
     if (!s.map_.hasVoid && s.map_.lava.empty()) return true;
-    const auto& mt = moveTuning().m;
+    MoveTuning scratch;   // (the values pmove plays for the bot's state now: movement equations; moveTuning() without)
+    const auto& mt = stepTuning(me.move, &s.map_, scratch).m;
     const float accel = 38.0f * mt[MV_HOOK_ACCEL], top = 24.0f * mt[MV_HOOK_MAX], fall = 22.0f * 0.5f * mt[MV_HOOK_GRAVITY]; // (pmove.cpp)
     Vec3 p = me.move.pos, v = me.move.vel;
     const bool level = anchor.y < p.y + 1.0f;
@@ -1026,7 +1027,7 @@ UserCmd botThinkDirect(Server& s, int id) {
             // advanced and up, a close-range weapon out: now and then hook the target to drag the fight in (the hook
             // latches onto an enemy it hits and pulls the two together). Held by holdHook below once it catches.
             const bool closeWeapon = (sp.l_hookWeapons.mask >> w & 1) != 0;
-            const float hookRange = kGrappleRange * moveTuning().m[MV_HOOK_RANGE];
+            const float hookRange = kGrappleRange * moveValue(me.move, MV_HOOK_RANGE, &s.map_);
             const bool onTarget = err < 0.35f / std::max(dist, 1.0f);   // (the hook needs the body under the crosshair)
             if (now < b.fightHookUntil) {
                 if (me.move.flags & MF_HOOKED) {   // caught: them (held by holdHook below), or the map behind them (let go)
@@ -1199,7 +1200,7 @@ UserCmd botThinkDirect(Server& s, int id) {
                     if (!want) continue;
                     Vec3 tgt = cand - Vec3(0, 0.1f, 0); // just into the walkable surface, so the hook catches on it
                     Vec3 d = normalize(tgt - eye);
-                    float t = s.map_.raycast(eye, d, kGrappleRange * moveTuning().m[MV_HOOK_RANGE]);
+                    float t = s.map_.raycast(eye, d, kGrappleRange * moveValue(me.move, MV_HOOK_RANGE, &s.map_));
                     if (t >= 0 && length(eye + d * t - tgt) < 3.0f && safeHook(s, me, eye + d * t)) {
                         b.hookAnchor = eye + d * t;
                         b.hookUntil = now + 1.6;

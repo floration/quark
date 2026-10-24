@@ -109,6 +109,31 @@ struct HumanMadeGrace {
     }
 };
 
+// Host pauses. The tick-rate tests run the server and its clients in real time on this one thread, and the server
+// rightly counts a tick more than its stall threshold late (4 ms at 1000 Hz / 500 snapshots/s) as a stall players see:
+// 1% of a window's ticks steps it down. A cloud VM sometimes doesn't run the thread at all: on a 4 vCPU sandbox with
+// nothing else running, a plain 1 ms sleep woke more than 4 ms late 25 times a minute and up to 21 ms late (a spin:
+// 51 ms; steal time rising), and one 20 ms pause is 16 ticks over 4 ms, 1.6% of a 1 s window. That isn't the code
+// under test. So the harness measures its own waits (the time asleep, or spinning, past what it asked for: nothing
+// the server's code does can lengthen it), and an attempt of a timing test that failed while the host paused past the
+// stall threshold is set aside and run again (timingTest). Every check is the same; the third attempt always counts.
+static double g_hostPause = 0;   // the longest host pause in this attempt (real seconds)
+static double wallNow() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+static void hostWaited(double t0, double asked) { g_hostPause = std::max(g_hostPause, wallNow() - t0 - std::max(asked, 0.0)); }
+static void hostSleepMs(int ms) { double t0 = wallNow(); sleepMs(ms); hostWaited(t0, ms * 1e-3); }
+constexpr double kHostPauseVoid = 0.004;   // (the server's stall threshold at 1000 Hz, 500/s: kStallSnaps x 2 ms)
+static void timingTest(const char* name, const std::function<void()>& run) {
+    for (int attempt = 1;; attempt++) {
+        int before = g_fail;
+        g_hostPause = 0;
+        run();
+        if (g_fail == before || attempt == 3 || g_hostPause <= kHostPauseVoid) return;
+        printf("  %s: the host paused this thread %.1f ms (over the %.0f ms stall threshold) in this attempt: its %d failure(s) "
+               "are set aside, attempt %d of 3\n", name, g_hostPause * 1e3, kHostPauseVoid * 1e3, g_fail - before, attempt + 1);
+        g_fail = before;
+    }
+}
+
 // Pump a server and some clients for `seconds` of real time, feeding each client an input.
 template <class F>
 static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F input) {
@@ -121,7 +146,7 @@ static void pump(Server& s, std::vector<NetClient*>& cls, double seconds, F inpu
             for (size_t i = 0; i < cls.size(); i++) cls[i]->tick(input((int)i));
             nextTick += cls.empty() ? 0.001 : cls[0]->tickPeriod();
         }
-        sleepMs(1);
+        hostSleepMs(1);
     }
 }
 
@@ -7534,6 +7559,7 @@ static void testReachProbe(uint16_t port) {
 #include "weapon_tests.h"  // weapon sets (.qweapons: the weapons editor's) + the exportweapons / checkweapons tools
 #include "server_tests.h"  // server / netcode tests (FINAL_REVIEW 2.8-2.11, 6.4, 6.5, clock, PERF-8 / 9, ENG-2)
 #include "governor_tests.h" // two servers on one machine: the load governor, ranked never rated on testing
+#include "moveexpr_tests.h" // movement equations (custom modes' expr.<key>= lines): parser, resolver, determinism, pmove, network
 
 int main(int argc, char** argv) {
     setExecutableDir(argv[0]);
@@ -7613,6 +7639,8 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "chat") { testChatAndVoteLimits(TP(29592)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "limits") { testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testClipRays(); testAtomicWrite(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "custom") { testRulesValues(); testCustomMode(TP(29990)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "moveexpr") { testMoveExpr(); testMoveExprCallers(); testMoveExprNetwork(TP(29991)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "exprbench") return moveExprBench();
     if (argc >= 2 && std::string(argv[1]) == "rejoin") { testRejoin(TP(29980)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); testAddbotArgs(TP(29982)); testSpecVote(TP(29983)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); testTagLateJoin(TP(29455)); testBotGoalsAfterMapChange(TP(29456)); return g_fail ? 1 : 0; }
@@ -7683,10 +7711,10 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
-        {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
+        {"modes", [] { testCustomMode(TP(28570)); testMoveExprNetwork(TP(28576)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); testRefillPrediction(TP(28586)); testHookPrediction(TP(28588)); }},
         {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); testNameColor(TP(28599)); }},
@@ -7699,7 +7727,14 @@ int main(int argc, char** argv) {
     };
     std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
         {"netcode", [] { testInterpRewind(TP(28703)); testUptimeClock(TP(28702)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
-        {"tickrate", [] { testTickRateFallback(TP(28710)); testRateBetweenRounds(TP(28711)); testRateUndoStepUp(TP(28712)); testRateJitter(TP(28720)); testUploadCap(TP(28721)); testSharedCongestion(TP(28722)); }},
+        {"tickrate", [] {   // (real-time: timingTest re-runs an attempt the host paused in)
+            timingTest("tick rate fallback", [] { testTickRateFallback(TP(28710)); });
+            timingTest("rate between rounds", [] { testRateBetweenRounds(TP(28711)); });
+            timingTest("rate undo step up", [] { testRateUndoStepUp(TP(28712)); });
+            timingTest("rate jitter", [] { testRateJitter(TP(28720)); });
+            timingTest("upload cap", [] { testUploadCap(TP(28721)); });
+            timingTest("shared congestion", [] { testSharedCongestion(TP(28722)); });
+        }},
         {"governor", [] { testGovernorPolicy(); testGovernorTwoServers(TP(28714)); testRankedNotRated(TP(28716)); }},
         {"resetmaps", [] { testResetMaps(); }},
         {"userdata", [] { testUserData(); }},

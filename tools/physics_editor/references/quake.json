@@ -1,0 +1,164 @@
+{
+ "id": "quake",
+ "name": "Quake / QuakeWorld",
+ "year": 1996,
+ "engine": "Quake engine (NetQuake, QuakeWorld)",
+ "group": "Quake family",
+ "scale": {
+  "unit": "u",
+  "metresPerUnit": 0.032143,
+  "why": "player hull 56 u tall (VEC_HULL_MIN '-16 -16 -24' .. VEC_HULL_MAX '16 16 32'), scaled to Quark's 1.8 m: 0.03214 m/u"
+ },
+ "values": {
+  "gravity": {
+   "value": 25.7143,
+   "unit": "m/s2",
+   "mult": 1.1688,
+   "source": "https://github.com/id-Software/Quake/blob/master/QW/server/sv_phys.c#L44 (sv_gravity 800); https://github.com/id-Software/Quake/blob/master/WinQuake/sv_phys.c#L44",
+   "confidence": "exact",
+   "raw": "sv_gravity 800 u/s2"
+  },
+  "speed": {
+   "value": 10.2857,
+   "unit": "m/s",
+   "mult": 1.0827,
+   "source": "https://github.com/id-Software/Quake/blob/master/QW/server/sv_phys.c#L46 (sv_maxspeed 320); https://github.com/id-Software/Quake/blob/master/WinQuake/sv_user.c#L167",
+   "confidence": "exact",
+   "raw": "sv_maxspeed 320 u/s",
+   "note": "the server's cap; cl_forwardspeed is 200 unless +speed / always run (400, clamped to 320)"
+  },
+  "jump": {
+   "value": 8.6786,
+   "unit": "m/s",
+   "mult": 1.1824,
+   "source": "https://github.com/id-Software/Quake/blob/master/QW/client/pmove.c#L681 (velocity[2] += 270); https://github.com/id-Software/Quake-Tools/blob/master/qcc/v101qc/client.qc#L811",
+   "confidence": "exact",
+   "raw": "jump velocity 270 u/s"
+  },
+  "ground_accel": {
+   "value": 10,
+   "unit": "",
+   "mult": 0.625,
+   "source": "https://github.com/id-Software/Quake/blob/master/QW/server/sv_phys.c#L48 (sv_accelerate 10); https://github.com/id-Software/Quake/blob/master/WinQuake/sv_user.c#L168",
+   "confidence": "exact",
+   "note": "Quake accelerate factor (accel x wish speed per second), the same formula as Quark's"
+  },
+  "friction": {
+   "value": 4,
+   "unit": "",
+   "mult": 0.5714,
+   "source": "https://github.com/id-Software/Quake/blob/master/QW/server/sv_phys.c#L51 (sv_friction 4); https://github.com/id-Software/Quake/blob/master/WinQuake/sv_phys.c#L42",
+   "confidence": "exact",
+   "note": "x2 when the floor drops away 16 u ahead (edgefriction 2; QW pmove.c#L348-360): Quark has no edge friction"
+  },
+  "stop_speed": {
+   "value": 3.2143,
+   "unit": "m/s",
+   "mult": 1.6072,
+   "source": "https://github.com/id-Software/Quake/blob/master/QW/server/sv_phys.c#L45 (sv_stopspeed 100); https://github.com/id-Software/Quake/blob/master/WinQuake/sv_phys.c#L43",
+   "confidence": "exact",
+   "raw": "sv_stopspeed 100 u/s"
+  },
+  "air_accel": {
+   "value": 10.6667,
+   "unit": "",
+   "mult": 4.8485,
+   "source": "https://github.com/id-Software/Quake/blob/master/QW/client/pmove.c#L548 (air uses movevars.accelerate); https://github.com/id-Software/Quake/blob/master/QW/client/pmove.c#L422 (wishspd capped at 30); https://github.com/id-Software/Quake/blob/master/WinQuake/sv_user.c#L213; sv_maxspeed 320",
+   "confidence": "estimated",
+   "raw": "accelerate 10, wish 320 u/s, cap 30 u/s",
+   "note": "Quark-equivalent: this engine pushes 10 x the FULL wish speed (320 u/s) per second but caps the gain at 30 u/s; Quark pushes air_accel x 10 x min(wish, air_cap), so the same push is air_accel = 10 x 320 / 30 / 10 (Xonotic's Quake port does the same: sv_airaccelerate 106.67 with sv_maxairspeed 30 for 10 x 320 / 30)."
+  },
+  "air_cap": {
+   "value": 0.9643,
+   "unit": "m/s",
+   "mult": 0.4193,
+   "source": "https://github.com/id-Software/Quake/blob/master/QW/client/pmove.c#L422 (wishspd capped at 30); https://github.com/id-Software/Quake/blob/master/WinQuake/sv_user.c#L213",
+   "confidence": "exact",
+   "raw": "30 u/s",
+   "note": "the air wish-speed cap (Quark's air strafe cap, W-only; A/D raises Quark's x1.1)"
+  },
+  "overstrafe": {
+   "value": 1.0,
+   "unit": "",
+   "mult": 2.8571,
+   "source": "same code: the push is applied in full whatever its angle to your velocity",
+   "confidence": "estimated",
+   "note": "no overstrafe softening: the whole push against your momentum applies (Quark lets 35% through)"
+  },
+  "step": {
+   "value": 0.5786,
+   "unit": "m",
+   "mult": 1.052,
+   "source": "https://github.com/id-Software/Quake/blob/master/QW/client/pmove.c#L56 (STEPSIZE 18); https://github.com/id-Software/Quake/blob/master/WinQuake/sv_phys.c#L957",
+   "confidence": "exact",
+   "raw": "STEPSIZE 18 u"
+  },
+  "dash": {
+   "value": false,
+   "source": "https://github.com/id-Software/Quake/blob/master/QW/client/pmove.c",
+   "confidence": "exact",
+   "note": "no dash"
+  },
+  "grapple": {
+   "value": false,
+   "source": "https://github.com/id-Software/Quake/blob/master/QW/client/pmove.c",
+   "confidence": "exact",
+   "note": "no grapple in the base game (mods add one)"
+  }
+ },
+ "facts": {
+  "jumpHeight": {
+   "value": 1.4645,
+   "unit": "m",
+   "source": "270^2 / (2 x 800) = 45.6 u",
+   "confidence": "estimated",
+   "note": "v^2/2g; Quark: 1.22 m"
+  },
+  "timeTo90": {
+   "value": 0.114,
+   "unit": "s",
+   "source": "derived from this file's speed, ground_accel, friction, stop_speed",
+   "confidence": "estimated",
+   "note": "Quake ground model at 1 ms steps (friction then accelerate), the same way Quark's physsim measures its own run_up / stop presets; edge friction not modelled; Quark: 0.072 s"
+  },
+  "stopDistance": {
+   "value": 2.161,
+   "unit": "m",
+   "source": "derived from this file's speed, friction, stop_speed",
+   "confidence": "estimated",
+   "note": "Quake ground model at 1 ms steps (friction then accelerate), the same way Quark's physsim measures its own run_up / stop presets; edge friction not modelled; Quark: 1.21 m"
+  },
+  "stopTime": {
+   "value": 0.541,
+   "unit": "s",
+   "source": "derived from this file's speed, friction, stop_speed",
+   "confidence": "estimated",
+   "note": "Quake ground model at 1 ms steps (friction then accelerate), the same way Quark's physsim measures its own run_up / stop presets; edge friction not modelled; Quark: 0.364 s"
+  }
+ },
+ "extras": [
+  "bunny hopping and strafe jumping (air acceleration above), but jump must be released between jumps in QuakeWorld ('don't pogo stick', pmove.c#L677)",
+  "edge friction: friction x2 near a drop",
+  "QuakeWorld's sv_airaccelerate 0.7 cvar exists but pmove uses sv_accelerate in the air",
+  "rocket / grenade jumping"
+ ],
+ "notes": "Quake and QuakeWorld share these numbers; QuakeWorld's client-side pmove.c is the reference here (NetQuake's sv_user.c / sv_phys.c agree). No auto-hop: Quark's held-jump bhop is closer to later Quake mods.",
+ "sources": [
+  {
+   "title": "QuakeWorld pmove.c",
+   "url": "https://github.com/id-Software/Quake/blob/master/QW/client/pmove.c"
+  },
+  {
+   "title": "QuakeWorld sv_phys.c (cvar defaults)",
+   "url": "https://github.com/id-Software/Quake/blob/master/QW/server/sv_phys.c"
+  },
+  {
+   "title": "WinQuake sv_user.c / sv_phys.c",
+   "url": "https://github.com/id-Software/Quake/blob/master/WinQuake/sv_user.c"
+  },
+  {
+   "title": "Quake QuakeC client.qc / defs.qc",
+   "url": "https://github.com/id-Software/Quake-Tools/blob/master/qcc/v101qc/client.qc"
+  }
+ ]
+}

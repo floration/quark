@@ -1,0 +1,116 @@
+{
+ "id": "overwatch2",
+ "name": "Overwatch 2",
+ "year": 2022,
+ "engine": "Overwatch engine",
+ "group": "hero/tactical shooters",
+ "scale": {
+  "unit": "m",
+  "metresPerUnit": 1.0,
+  "why": "the game documents metres; heroes vary in size, so values are as given (not rescaled to 1.8 m)"
+ },
+ "values": {
+  "speed": {
+   "value": 5.5,
+   "unit": "m/s",
+   "mult": 0.5789,
+   "source": "https://overwatch.fandom.com/wiki/Character (base move speed 5.5 m/s)",
+   "confidence": "measured",
+   "note": "most heroes; Genji and Tracer 6 m/s; backwards -10%"
+  },
+  "dash_charges": {
+   "value": 3,
+   "unit": "",
+   "mult": 1.5,
+   "source": "https://overwatch.fandom.com/wiki/Tracer (Blink: 3 charges)",
+   "confidence": "measured",
+   "note": "Tracer's Blink: a 7.5 m instant teleport, not a burst"
+  },
+  "dash_cooldown": {
+   "value": 0.1,
+   "unit": "s",
+   "mult": 0.1667,
+   "source": "https://overwatch.fandom.com/wiki/Tracer (Blink: 0.1 s between uses)",
+   "confidence": "measured",
+   "note": "between blinks; each charge recharges in 3 s (Quark 1.2 s: x2.5), one multiplier can't express both"
+  },
+  "hook_range": {
+   "value": 20,
+   "unit": "m",
+   "mult": 0.4444,
+   "source": "https://overwatch.fandom.com/wiki/Widowmaker (Grappling Hook: 20 m)",
+   "confidence": "measured",
+   "note": "Widowmaker's Grappling Hook"
+  },
+  "hook_max": {
+   "value": 20,
+   "unit": "m/s",
+   "mult": 0.8333,
+   "source": "https://overwatch.fandom.com/wiki/Widowmaker (Grappling Hook: 20 m/s)",
+   "confidence": "measured",
+   "note": "pulls at a set speed, not an acceleration"
+  },
+  "hook_cooldown": {
+   "value": 10,
+   "unit": "s",
+   "mult": 10.0,
+   "source": "https://overwatch.fandom.com/wiki/Widowmaker (Grappling Hook: 10 s)",
+   "confidence": "measured",
+   "outsideClamp": true,
+   "note": "(x10.0 is outside the editor's 0.1..5 range: applying it clamps.)"
+  },
+  "dash": {
+   "value": false,
+   "source": "https://overwatch.fandom.com/wiki/Character",
+   "confidence": "exact",
+   "note": "hero abilities only (Tracer, Genji...)"
+  },
+  "grapple": {
+   "value": false,
+   "source": "https://overwatch.fandom.com/wiki/Widowmaker",
+   "confidence": "exact",
+   "note": "hero abilities only (Widowmaker, Ashe...)"
+  }
+ },
+ "facts": {
+  "jumpHeight": {
+   "value": 0.98,
+   "unit": "m",
+   "source": "https://overwatch.fandom.com/wiki/Character (jump height 0.98 m)",
+   "confidence": "measured",
+   "note": "Quark: 1.22 m"
+  },
+  "crouchSpeed": {
+   "value": 3,
+   "unit": "m/s",
+   "source": "https://overwatch.fandom.com/wiki/Character",
+   "confidence": "measured"
+  },
+  "blinkDistance": {
+   "value": 7.5,
+   "unit": "m",
+   "source": "https://overwatch.fandom.com/wiki/Tracer",
+   "confidence": "measured",
+   "note": "Quark's dash covers 2.84 m"
+  }
+ },
+ "extras": [
+  "hero-specific movement abilities (blinks, dashes, wall-ride, jet packs, double jumps)",
+  "no air strafing to speak of"
+ ],
+ "notes": "Gravity and acceleration aren't documented, so jump take-off speed is left out (jump height only). The dash and hook rows are single heroes (Tracer, Widowmaker).",
+ "sources": [
+  {
+   "title": "Overwatch Wiki: Character",
+   "url": "https://overwatch.fandom.com/wiki/Character"
+  },
+  {
+   "title": "Overwatch Wiki: Tracer",
+   "url": "https://overwatch.fandom.com/wiki/Tracer"
+  },
+  {
+   "title": "Overwatch Wiki: Widowmaker",
+   "url": "https://overwatch.fandom.com/wiki/Widowmaker"
+  }
+ ]
+}
