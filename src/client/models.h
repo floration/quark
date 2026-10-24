@@ -37,6 +37,7 @@ struct ModelPart {
     float alpha = 1;           // < 1: translucent (the bubble's shell)
 };
 using ModelParts = std::vector<ModelPart>;
+constexpr size_t kMaxDefaultParts = 32;   // the most boxes in one default model (the tests check): the game reserves it
 
 // The colour of each slot (index TintSlot; TINT_NONE unused).
 struct ModelPalette { Vec3 c[TINT_COUNT] = {{1, 1, 1}, {1, 1, 1}, {1, 1, 1}, {1, 1, 1}, {1, 1, 1}, {1, 1, 1}}; };

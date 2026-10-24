@@ -91,6 +91,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     if (!r_.init(cfg_.shadowRes, err)) return false;
     loadAssetOverrides();
     applyUiFontSetting();   // (Settings > FONT; the default needs nothing)
+    parts_.reserve(kMaxDefaultParts);   // (the box list every model is drawn from: never grown while drawing)
     rescanMaps();
     rankKey_ = loadOrCreateRankKey(userDataPath("quark.key")); // ranked identity: stays on this computer
     net_.setRankKey(rankKey_);   // (servers check the id against it; the key itself never goes to them)

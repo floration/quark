@@ -265,7 +265,7 @@ static void testModelExport() {
             if (!modelExists(kind, i)) continue;
             models++;
             defaultParts(kind, i, parts);
-            ACHECK(!parts.empty());
+            ACHECK(!parts.empty() && parts.size() <= kMaxDefaultParts);
             ACHECK(modelPath(kind, i).find("//") == std::string::npos && modelName(kind, i)[0]);
             MeshData a, b;
             partsToMesh(parts, a);
