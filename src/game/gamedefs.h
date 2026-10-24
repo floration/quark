@@ -194,6 +194,10 @@ struct WeaponDef {
     bool semiAuto = false; // one shot per click (a click up to 0.15 s early is kept until it can fire)
 };
 constexpr float kFireBuffer = 0.15f;
+// Slow weapons keep a click up to kTapBuffer before they're ready and fire it when they are (T13: an early tap on
+// the sniper, crossbow or rocket was dropped). Primary fire only (the rocket's alt-fire is its lob).
+constexpr float kTapBuffer = 0.1f;
+inline bool tapBuffered(int w) { return w == WPN_SNIPER || w == WPN_CROSSBOW || w == WPN_ROCKET; }
 constexpr float kKillCamTime = 1.5f;    // dead in a team mode: the killer's view this long, then teammates only
 constexpr float kRingOutCredit = 3.0f;  // a fall / lava death this soon after an enemy's hit or knock is their kill
 constexpr float kWallbangDamage = 0.5f; // hitscan through a wallbang wall

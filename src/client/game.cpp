@@ -1391,8 +1391,13 @@ void Game::frame(double dt) {
                 if (!(c.buttons & (BTN_FIRE | BTN_ALTFIRE))) localFireLocked_ = false;
                 else wantFire = false;
             }
+            if (switchLock || localFireLocked_ || hw != localTapWeapon_) localFireQueued_ = -1;
+            if (tapBuffered(hw) && !localFireLocked_ && holdFireLeft() <= 0 && weaponAwayLeft(hw) <= 0) {   // mirror the server's tap buffer (T13)
+                if (wantFire && !altShot && (c.buttons & BTN_FIRE) && !(localPrevButtons_ & BTN_FIRE) && time_ < localNextFire_) { localFireQueued_ = time_ + kTapBuffer; localTapWeapon_ = hw; }
+                if (!wantFire && time_ <= localFireQueued_) wantFire = true;
+            }
             if (weaponDef(hw).semiAuto) { // mirror the server: one shot per click, short buffer
-                if (wantFire && !localFireHeld_) localFireQueued_ = time_ + kFireBuffer;
+                if (wantFire && !localFireHeld_) { localFireQueued_ = time_ + kFireBuffer; localTapWeapon_ = hw; }
                 localFireHeld_ = wantFire;
                 wantFire = time_ <= localFireQueued_;
             } else localFireHeld_ = wantFire;

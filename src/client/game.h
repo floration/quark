@@ -425,6 +425,7 @@ private:
     bool fireLatched_ = false;
     bool localFireHeld_ = false, scopeOverlay_ = false, localFireLocked_ = false;
     double localFireQueued_ = -1;
+    int localTapWeapon_ = -1;   // the weapon localFireQueued_'s click was made with (a switch drops it)
     double nextLaserSound_ = 0;
     double knifeSlash_[kMaxPlayers] = {}; // when each player last swung the knife (slash trail)
     void drawKnifeSlash(const Vec3& eye, float yaw, float pitch, float t, const Vec3& color, Vec3 from);   // from: the knife (zero: a spot by the eye)

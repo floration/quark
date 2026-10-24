@@ -2180,6 +2180,11 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
         else wantFire = altShot = false;
     }
     const double now = p.cmdTime;   // refire runs on the command clock (F22)
+    if (p.weapon != heldWeapon || p.fireLocked) p.fireQueuedUntil = -1;   // (a buffered tap is for the weapon it was made with)
+    if (tapBuffered(p.weapon) && !p.fireLocked && !disabled) {   // T13: a click up to kTapBuffer early fires when it's ready
+        if (wantFire && !altShot && (cmd.buttons & BTN_FIRE) && !(p.prevButtons & BTN_FIRE) && now < p.nextFire) p.fireQueuedUntil = now + kTapBuffer;
+        if (!wantFire && now <= p.fireQueuedUntil) wantFire = true;
+    }
     if (weaponDef(p.weapon).semiAuto) { // one shot per click
         if (wantFire && !(p.prevButtons & BTN_FIRE)) p.fireQueuedUntil = now + kFireBuffer;
         wantFire = now <= p.fireQueuedUntil;

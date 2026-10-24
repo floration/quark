@@ -2650,6 +2650,42 @@ static void testFeelFixes() {
     }
 }
 
+// T13: a click on the sniper / crossbow / rocket up to kTapBuffer before it's ready fires when it is; an earlier one,
+// the rocket's alt-fire (lob) and other weapons aren't kept.
+static void testTapBuffer() {
+    printf("tap buffer: slow weapons keep a click up to 0.1 s early\n");
+    for (int w : {WPN_SNIPER, WPN_CROSSBOW, WPN_ROCKET, WPN_RIFLE}) {
+        for (double early : {0.05, 0.15}) {
+            for (bool alt : {false, true}) {
+                if (alt && w != WPN_ROCKET) continue;
+                Server s;
+                s.setLog([](const std::string&) {});
+                CHECK(s.map_.parse("box -40 -1 -40 40 0 40\nspawn any 0 0 0\n"));
+                s.cfg_.mode = s.ms_.mode = MODE_FFA;
+                s.timeMs_ = 10000;
+                auto& p = s.players_[0];
+                p.connected = p.alive = true; p.health = 100; p.move.flags = MF_ONGROUND; p.weapon = w;
+                UserCmd c; c.weapon = (uint8_t)w; c.msec = 1; c.pitch = 1.2f;
+                auto run = [&](uint16_t b, int n) {
+                    for (int k = 0; k < n; k++) { if (p.cmdTime >= s.time() - 1e-9) s.timeMs_ += 1; c.buttons = b; s.runPlayerCmdForTest(0, c); }
+                };
+                const uint16_t btn = alt ? BTN_ALTFIRE : BTN_FIRE;
+                run(btn, 1);
+                run(0, 1);
+                const int shots0 = p.shotsFired;
+                const double ready = p.nextFire;
+                while (p.cmdTime + 0.001 < ready - early) run(0, 1);
+                run(btn, 3);   // a 3 ms tap, early
+                run(0, (int)((early + 0.05) * 1000));
+                const int got = p.shotsFired - shots0;
+                const bool want = tapBuffered(w) && early <= kTapBuffer && !alt;
+                printf("  %-8s%s tapped %.2f s early: %d shot(s)\n", weaponDef(w).name, alt ? " (alt)" : "", early, got);
+                CHECK(got == (want ? 1 : 0));
+            }
+        }
+    }
+}
+
 static void testWallbang() {
     printf("wallbang: bullets pass through, movement and normal rays don't\n");
     Map m;
@@ -7189,7 +7225,7 @@ int main(int argc, char** argv) {
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); testFeelFixes(); }},
+        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); testFeelFixes(); testTapBuffer(); }},
         {"maps", [] {
             testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders();
             printf("map scores\n");   // the map bar: every map scores at least 7 in every category but originality
