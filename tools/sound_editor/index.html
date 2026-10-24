@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quark Sound Editor</title>
+<link rel="stylesheet" href="editor.css">
+</head>
+<body>
+<header id="top">
+  <div class="brand"><b>QUARK</b> SOUND EDITOR <span id="gameVersion" class="faint"></span></div>
+  <nav id="tabs">
+    <button data-tab="sounds" class="on">Sounds</button>
+    <button data-tab="voices">Voices</button>
+    <button data-tab="scenes">Scenes</button>
+    <button data-tab="groups">Levelling</button>
+    <button data-tab="missing">Missing</button>
+    <button data-tab="overview">Overview</button>
+  </nav>
+  <div class="spacer"></div>
+  <div class="tb">
+    <button id="btnUndo" title="Undo (Ctrl+Z)">Undo</button>
+    <button id="btnRedo" title="Redo (Ctrl+Shift+Z / Ctrl+Y)">Redo</button>
+    <span class="sep"></span>
+    <button id="btnUpload" title="Upload audio files (or drop them anywhere)">Upload</button>
+    <input type="file" id="fileUpload" multiple accept=".wav,.ogg,.mp3,.flac,audio/*" hidden>
+    <div class="menu"><button>Project</button>
+      <div class="menu-list">
+        <button id="btnSaveProject">Save project file (.json)</button>
+        <button id="btnLoadProject">Open project file...</button>
+        <input type="file" id="fileProject" accept=".json,application/json" hidden>
+        <button id="btnResetProject">New project (discard all edits)</button>
+      </div>
+    </div>
+    <button id="btnExport" class="primary" title="Write the edited sounds for the game">Export to game</button>
+    <span class="sep"></span>
+    <label class="mon" title="Monitor level (your speakers only; not exported)">MON <input type="range" id="monitor" min="0" max="1.5" step="0.01" value="1"></label>
+    <canvas id="meter" width="60" height="14" title="Output peak"></canvas>
+    <button id="btnHelp" title="Keyboard shortcuts (?)">?</button>
+  </div>
+</header>
+
+<div id="banner" hidden></div>
+
+<main id="main">
+  <section id="view-sounds" class="view on">
+    <div class="toolbar">
+      <label>Show <select id="sMetric">
+        <option value="lufs">Integrated LUFS</option><option value="mmax">Max momentary</option><option value="tp">True peak dBTP</option>
+        <option value="heard">Heard loudness (game)</option><option value="dur">Duration</option></select></label>
+      <label>of <select id="sWhich"><option value="game">as heard in the game</option><option value="out">the file you export</option><option value="orig">the shipped sound</option></select></label>
+      <input type="search" id="sFilter" placeholder="filter: name or when it plays">
+      <label class="chk"><input type="checkbox" id="sEdited"> edited</label>
+      <label class="chk"><input type="checkbox" id="sOver"> over guide</label>
+      <label class="chk"><input type="checkbox" id="sFav"> favourites</label>
+      <span class="spacer"></span>
+      <span class="faint">click a cell to play + edit, drop a file on a cell to replace it</span>
+    </div>
+    <div class="matrix-wrap"><table id="soundMatrix" class="matrix"></table></div>
+  </section>
+
+  <section id="view-voices" class="view">
+    <div class="toolbar">
+      <label>Show <select id="vMetric">
+        <option value="lufs">Integrated LUFS</option><option value="mmax">Max momentary</option><option value="tp">True peak dBTP</option>
+        <option value="heard">Heard loudness (game)</option><option value="dur">Duration</option></select></label>
+      <label>of <select id="vWhich"><option value="game">as heard in the game</option><option value="out">the file you export</option><option value="orig">the shipped line</option></select></label>
+      <input type="search" id="vFilter" placeholder="filter lines">
+      <label class="chk"><input type="checkbox" id="vEdited"> edited</label>
+      <span class="spacer"></span>
+      <span id="voiceLoad" class="faint"></span>
+    </div>
+    <div class="matrix-wrap"><table id="voiceMatrix" class="matrix"></table></div>
+  </section>
+
+  <section id="view-scenes" class="view">
+    <div class="scenes">
+      <aside id="sceneList" class="list"></aside>
+      <div class="scene-main">
+        <div class="toolbar scene-bar">
+          <button id="scPlay" class="primary">Play</button>
+          <label class="chk"><input type="checkbox" id="scLoop" checked> loop</label>
+          <label>You <select id="scMyKit"></select></label>
+          <label>Enemies <select id="scEnemyKit"></select></label>
+          <label>Announcer <select id="scVoice"></select></label>
+          <label title="The game's VOLUME setting (default 0.6)">Volume <input type="number" id="scMaster" min="0" max="1" step="0.05" value="0.6"></label>
+          <label class="chk" title="The mixer's soft limit x / (1 + 0.3|x|)"><input type="checkbox" id="scLimiter" checked> game limiter</label>
+          <label class="chk" title="Per-shot random pitch, as the game"><input type="checkbox" id="scJitter" checked> pitch jitter</label>
+          <label class="chk" title="Play sounds you designed in Missing (HEADSHOT tink, BOMB_TICK, ...)"><input type="checkbox" id="scMissing" checked> designed missing sounds</label>
+          <span class="spacer"></span>
+          <button id="scRender" title="Render this scene offline: its mix loudness, and a WAV of it">Render mix</button>
+        </div>
+        <div id="sceneDesc" class="scene-desc"></div>
+        <div id="sceneMixer" class="scene-mixer"></div>
+        <div class="timeline-wrap"><div id="tlLabels" class="tl-labels"></div><div class="tl-canvas-wrap"><canvas id="tlCanvas"></canvas></div></div>
+        <div id="sceneRender" class="scene-render"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-groups" class="view">
+    <div class="groups">
+      <aside class="list">
+        <div class="list-head"><b>Groups</b>
+          <div class="menu"><button>+ Preset</button><div class="menu-list" id="presetMenu"></div></div>
+          <button id="grNew">+ Empty</button></div>
+        <div id="groupList"></div>
+      </aside>
+      <div id="groupEditor" class="group-editor"></div>
+    </div>
+  </section>
+
+  <section id="view-missing" class="view">
+    <div class="toolbar">
+      <span>Events with no sound yet (the 1.18.3 audit). Design one here: it exports as <code>sounds/&lt;kit&gt;/&lt;NAME&gt;.wav</code> (voices: <code>voices/&lt;voice&gt;/&lt;NAME&gt;.wav</code>). Each <b>needs a game hook</b> before it plays.</span>
+      <span class="spacer"></span>
+      <input id="msName" placeholder="YOUR_NEW_SOUND" size="16"><select id="msKind"><option value="sound">sound</option><option value="voice">voice line</option></select>
+      <button id="msAdd">+ Add your own</button>
+    </div>
+    <div class="matrix-wrap"><table id="missingTable" class="matrix missing"></table></div>
+  </section>
+
+  <section id="view-overview" class="view">
+    <div class="toolbar">
+      <label>Library <select id="ovSet"><option value="sound">Sounds (kits)</option><option value="voice">Voices</option></select></label>
+      <label>Measure <select id="ovMetric"><option value="lufs">Integrated LUFS</option><option value="mmax">Max momentary</option><option value="heard">Heard loudness (game)</option><option value="tp">True peak dBTP</option></select></label>
+      <label>of <select id="ovWhich"><option value="game">as heard in the game</option><option value="out">the file</option><option value="orig">shipped</option></select></label>
+      <span class="spacer"></span><span id="ovLegend" class="legend"></span>
+    </div>
+    <div id="overview" class="overview"></div>
+    <div id="ovTip" class="tip" hidden></div>
+  </section>
+</main>
+
+<section id="dock">
+  <div id="dockGrip" title="Drag to resize"></div>
+  <div id="editor"><div class="empty">Select a sound (click a cell) to edit it here.</div></div>
+</section>
+
+<div id="dropHint" hidden><div>Drop audio files: they are matched to sounds by file name (ROCKET.wav, heavy_metal/ROCKET.ogg, male_GO.wav). A folder works too.</div></div>
+<div id="toast"></div>
+<dialog id="dlg"><form method="dialog" id="dlgBody"></form></dialog>
+
+<script src="js/data.js"></script>
+<script src="js/audit.js"></script>
+<script src="js/loudness.js"></script>
+<script src="js/dsp.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/scenes.js"></script>
+<script src="js/groups.js"></script>
+<script src="js/export.js"></script>
+<script src="js/render.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/ui_library.js"></script>
+<script src="js/ui_editor.js"></script>
+<script src="js/ui_scenes.js"></script>
+<script src="js/ui_groups.js"></script>
+<script src="js/ui_missing.js"></script>
+<script src="js/ui_files.js"></script>
+<script src="js/boot.js"></script>
+</body>
+</html>

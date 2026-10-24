@@ -92,6 +92,16 @@ bool readRelative(const std::string& path, std::vector<uint8_t>& out) {
     return false;
 }
 
+std::string soundLevels() {
+    if (!any()) return {};
+    std::string text;
+    if (const EmbeddedOverride* e = embedded("sound-levels.txt")) text.assign((const char*)e->data, e->size);
+    auto it = g_user.find("sound-levels.txt");
+    std::vector<uint8_t> b;
+    if (it != g_user.end() && readFile(it->second, b)) { text += '\n'; text.append((const char*)b.data(), b.size()); }
+    return text;
+}
+
 std::vector<std::string> list() {
     scan();
     std::vector<std::string> v;

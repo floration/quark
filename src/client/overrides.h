@@ -20,6 +20,9 @@ bool find(const std::string& base, std::initializer_list<const char*> exts, std:
           std::string* matched = nullptr, std::string* where = nullptr);
 // Reads a file next to an override (a .gltf's separate buffer): path relative to the overrides root.
 bool readRelative(const std::string& path, std::vector<uint8_t>& out);
+// sound-levels.txt at the overrides root: the shipped file's text, then yours (your lines add to the shipped ones);
+// empty without either. Each line names a sound / voice override that keeps its own level (audio.cpp).
+std::string soundLevels();
 std::vector<std::string> list();  // every override (lower-case paths, "shipped:" / "user:" prefixed); for logs and tests
 void useUserFolder(bool on);      // off: shipped overrides only (the asset export); also re-reads your folder (tests)
 }

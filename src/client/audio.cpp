@@ -10,7 +10,10 @@
 #include <cstdlib>
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <cstring>
+#include <set>
+#include <string>
 
 #if defined(_WIN32)
   #define WIN32_LEAN_AND_MEAN
@@ -895,7 +898,8 @@ void Audio::stop() {
 // ---- mods: anyone's own sounds, no rebuild needed. <game folder>/mods/sounds/<kit>/<SOUND>.wav replaces that sound
 // in that kit (kit: default, heavy_metal, magical, retro, mouth; "all" = every kit); SOUND as in the list in
 // mods/sounds/README.txt (ROCKET, STEP, ...). WAV only (8 / 16 / 24-bit PCM or 32-bit float, any rate, mono or
-// stereo). Trimmed of leading silence, cut at 3 s, loudness matched to the sound it replaces. Read once at startup.
+// stereo). Trimmed of leading silence, cut at 3 s, loudness matched to the sound it replaces (unless listed in
+// mods/sounds/sound-levels.txt, e.g. "default/ROCKET": then it keeps its own level). Read once at startup.
 static const char* kModSoundNames[] = {"HIT", "KILL", "HURT", "STEP", "JUMP", "LAND", "RIFLE", "ROCKET", "KNIFE", "SNIPER", "LASER",
     "SHOTGUN", "STICKY", "CROSSBOW", "BUBBLE", "SYRINGE", "EXPLOSION", "STICKY_ATTACH", "BOLT_HIT", "DASH", "GRAPPLE_FIRE",
     "GRAPPLE_HIT", "DEATH", "STREAK", "TYPING", "CHECKPOINT", "FINISH", "HIT_MED", "HIT_HEAVY", "HIT_BRUTAL",
@@ -914,10 +918,41 @@ const char* Audio::soundName(int id) { return kModSoundNames[id < 0 || id >= SND
 const char* Audio::kitDir(int pack) { return kModKitDirs[pack < 0 || pack >= kPacks ? 0 : pack]; }
 const char* Audio::voiceDir(int v) { return kVoiceDirs[v < 0 || v >= kAnnouncerVoices ? 0 : v]; }
 
+// sound-levels.txt (docs/ASSETS.md): the replacements that keep their own level. The sound editor levels groups of
+// sounds by LUFS, and matching each one to the sound it replaces would undo that. One asset path a line without its
+// extension ("sounds/default/ROCKET", "voices/male/GO"; in mods/sounds/ relative to it: "default/ROCKET"), any case,
+// '#' starts a comment line. Kept lower case with '/' separators; a stray audio extension is dropped.
+static std::set<std::string> keptLevels(const std::string& text) {
+    std::set<std::string> out;
+    for (size_t at = 0; at < text.size();) {
+        size_t e = text.find('\n', at);
+        if (e == std::string::npos) e = text.size();
+        std::string l = text.substr(at, e - at);
+        at = e + 1;
+        size_t a = l.find_first_not_of(" \t\r"), b = l.find_last_not_of(" \t\r");
+        if (a == std::string::npos || l[a] == '#') continue;
+        l = l.substr(a, b - a + 1);
+        for (char& c : l) c = c == '\\' ? '/' : (char)std::tolower((unsigned char)c);
+        while (l.rfind("./", 0) == 0) l.erase(0, 2);
+        for (const char* ext : {".wav", ".ogg", ".flac", ".mp3"}) {
+            size_t n = strlen(ext);
+            if (l.size() > n && l.compare(l.size() - n, n, ext) == 0) { l.resize(l.size() - n); break; }
+        }
+        out.insert(l);
+    }
+    return out;
+}
+static bool kept(const std::set<std::string>& k, std::string path) {
+    if (k.empty()) return false;
+    for (char& c : path) c = (char)std::tolower((unsigned char)c);
+    return k.count(path) != 0;
+}
+
 // A clip (mono, any rate) ready to play: leading silence off (it starts the moment it plays), at the mix rate, cut
 // at maxSeconds with a short fade, as loud as `match` (the sound it replaces; peak 0.89 when that's silent; heard
-// loudness for the hitsound's tiers, so a replacement keeps its place on the ladder).
-static std::vector<float> prepareClip(const std::vector<float>& x, int rate, float maxSeconds, const std::vector<float>& match, bool heard = false) {
+// loudness for the hitsound's tiers, so a replacement keeps its place on the ladder). keep (sound-levels.txt): its
+// own level instead, only brought down to peak 1.0 if it goes over (scaled, never clipped).
+static std::vector<float> prepareClip(const std::vector<float>& x, int rate, float maxSeconds, const std::vector<float>& match, bool heard = false, bool keep = false) {
     float peak = 1e-6f; for (float v : x) peak = std::max(peak, std::fabs(v));
     size_t on = 0; while (on < x.size() && std::fabs(x[on]) < peak * 0.03f) on++;
     size_t n = std::min<size_t>((size_t)((double)(x.size() - on) * R / rate), (size_t)(R * maxSeconds));
@@ -929,6 +964,11 @@ static std::vector<float> prepareClip(const std::vector<float>& x, int rate, flo
     }
     size_t fade = std::min<size_t>(n, R / 100);
     for (size_t i = 0; i < fade; i++) v[n - 1 - i] *= (float)i / fade;
+    if (keep) {
+        float m = 0; for (float s : v) m = std::max(m, std::fabs(s));
+        if (m > 1.0f) for (auto& s : v) s /= m;
+        return v;
+    }
     if (heard && Audio::heardLoudness(match) > 1e-6f) { levelHit(v, match); return v; }
     float want = loudness(match), have = loudness(v);
     if (want > 1e-6f && have > 1e-6f) { float g = want / have; for (auto& s : v) s = std::clamp(s * g, -1.0f, 1.0f); }
@@ -938,9 +978,17 @@ static std::vector<float> prepareClip(const std::vector<float>& x, int rate, flo
 
 void Audio::loadModSounds() {
     std::string root = findDataPath("mods/sounds");
+    std::set<std::string> keep;
+    if (FILE* f = u8fopen(root + "/sound-levels.txt", "rb")) {   // (the one extra file open without it)
+        std::string text; char buf[4096]; size_t n;
+        while ((n = fread(buf, 1, sizeof buf, f)) > 0 && text.size() < (1u << 20)) text.append(buf, n);
+        fclose(f);
+        keep = keptLevels(text);
+    }
     for (int pass = 0; pass < 2; pass++)   // "all" first, a kit's own folder wins over it
     for (int kit = 0; kit < kPacks; kit++) {
-        std::string dir = root + "/" + (pass == 0 ? "all" : kModKitDirs[kit]);
+        const char* sub = pass == 0 ? "all" : kModKitDirs[kit];
+        std::string dir = root + "/" + sub;
         for (int id = 0; id < SND_VOICE_THREE; id++) {
             FILE* f = u8fopen(dir + "/" + kModSoundNames[id] + ".wav", "rb");
             if (!f) continue;
@@ -950,13 +998,15 @@ void Audio::loadModSounds() {
             fclose(f);
             std::vector<float> x; int rate = 0;
             if (file.size() < 4 || memcmp(file.data(), "RIFF", 4) || !decodeSound(file.data(), file.size(), x, rate) || x.size() < 16) continue;
-            sounds_[kit][id] = prepareClip(x, rate, 3.0f, sounds_[kit][id], hitTier(id) >= 0);
+            sounds_[kit][id] = prepareClip(x, rate, 3.0f, sounds_[kit][id], hitTier(id) >= 0,
+                                           kept(keep, std::string(sub) + "/" + kModSoundNames[id]));
         }
     }
 }
 
 // ---- the owner's overrides (docs/ASSETS.md): sounds/<kit>/<SOUND>.<wav|ogg|flac|mp3> replaces that sound in that
-// kit, voices/<voice>/<LINE>.<ext> that announcer line; each as loud as the sound it replaces. A DEFAULT override
+// kit, voices/<voice>/<LINE>.<ext> that announcer line; each as loud as the sound it replaces, unless sound-levels.txt
+// lists it (then its own level, keptLevels). A DEFAULT override
 // also becomes the sound of every kit that had DEFAULT's (and RETRO's chiptune of it). Nothing to do without any.
 static bool overrideClip(const std::string& base, std::vector<float>& x, int& rate) {
     std::vector<uint8_t> file;
@@ -969,11 +1019,13 @@ static bool overrideClip(const std::string& base, std::vector<float>& x, int& ra
 
 void Audio::loadOverrideSounds() {
     if (!overrides::any()) return;
+    const std::set<std::string> keep = keptLevels(overrides::soundLevels());
     for (int kit = 0; kit < kPacks; kit++)   // (DEFAULT first: the other kits are matched to its loudness)
         for (int id = 0; id < SND_VOICE_THREE; id++) {
             std::vector<float> x; int rate = 0;
-            if (!overrideClip(std::string("sounds/") + kModKitDirs[kit] + "/" + kModSoundNames[id], x, rate)) continue;
-            std::vector<float> v = prepareClip(x, rate, 3.0f, sounds_[0][id], hitTier(id) >= 0);
+            std::string base = std::string("sounds/") + kModKitDirs[kit] + "/" + kModSoundNames[id];
+            if (!overrideClip(base, x, rate)) continue;
+            std::vector<float> v = prepareClip(x, rate, 3.0f, sounds_[0][id], hitTier(id) >= 0, kept(keep, base));
             if (kit == 0) {
                 for (int p = 1; p < kPacks; p++)
                     if (p != kPackRetro && sounds_[p][id] == sounds_[0][id]) sounds_[p][id] = v;   // kits that had DEFAULT's sound
@@ -986,9 +1038,10 @@ void Audio::loadOverrideSounds() {
 
 void Audio::loadOverrideVoice(int set, std::vector<float>* lines, int count) {
     if (!overrides::any()) return;
+    const std::set<std::string> keep = keptLevels(overrides::soundLevels());
     for (int k = 0; k < count && SND_VOICE_THREE + k < SND_COUNT; k++) {
         std::vector<float> x; int rate = 0;
-        if (overrideClip(std::string("voices/") + kVoiceDirs[set] + "/" + kModSoundNames[SND_VOICE_THREE + k], x, rate))
-            lines[k] = prepareClip(x, rate, 5.0f, lines[k]);
+        std::string base = std::string("voices/") + kVoiceDirs[set] + "/" + kModSoundNames[SND_VOICE_THREE + k];
+        if (overrideClip(base, x, rate)) lines[k] = prepareClip(x, rate, 5.0f, lines[k], false, kept(keep, base));
     }
 }

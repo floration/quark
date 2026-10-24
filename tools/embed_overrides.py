@@ -4,12 +4,14 @@
 writes kEmbeddedOverrides[] (path relative to the overrides dir, bytes) to <out header>. Everything under the folder
 is embedded except maps/ (tools/make_maps.py and embed_maps.py take those: a map is official map data, not a file
 the game looks up), website/ (the site's pictures: the release workflow copies them over site/img/) and notes
-(*.md, *.txt). No overrides: an empty table, and the game never looks further.
+(*.md, *.txt; except sound-levels.txt at the root, the list of sounds that keep their own level, which the game
+reads). No overrides: an empty table, and the game never looks further.
 The header is only rewritten when its contents change, so an unchanged set recompiles nothing."""
 import os, sys
 
 SKIP_DIRS = {"maps", "website"}
 SKIP_EXT = {".md", ".txt"}
+KEEP_ROOT = {"sound-levels.txt"}   # (root notes the game reads: embedded despite the extension)
 
 
 def write_if_changed(path, text):
@@ -33,7 +35,8 @@ def files(root):
             dirs[:] = [x for x in dirs if x.lower() not in SKIP_DIRS]
         dirs.sort()
         for n in sorted(names):
-            if n.startswith(".") or os.path.splitext(n)[1].lower() in SKIP_EXT: continue
+            if n.startswith("."): continue
+            if os.path.splitext(n)[1].lower() in SKIP_EXT and not (rel_d == "." and n.lower() in KEEP_ROOT): continue
             rel = n if rel_d == "." else rel_d + "/" + n
             out.append((rel, os.path.join(d, n)))
     return out

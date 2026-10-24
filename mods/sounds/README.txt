@@ -8,6 +8,8 @@ Example: mods/sounds/all/ROCKET.wav gives every kit your rocket sound.
 
 WAV only: 8, 16 or 24-bit PCM or 32-bit float, any sample rate, mono or stereo.
 The game trims silence at the start, cuts it at 3 seconds and matches its loudness to the sound it replaces.
+To keep a file's own loudness, list it in sound-levels.txt in this folder, one per line without the extension
+(for example default/ROCKET); it is then only turned down if it would clip.
 Updates never touch your files here.
 
 SOUND names:
