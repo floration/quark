@@ -179,6 +179,30 @@ docs `#entry=<id>`, `#tab=board`; GitHub `#pr=<n>`, `#run=<id>`, `#branch=<name>
 a link to `http://127.0.0.1:876x/...` is sent to the shell as "open that tab at this hash"
 (`window.quarkShell?.open(tabId, hash)`, exposed by `preload.js`; in the browser fallback it is a normal link).
 
+## 3b. The Play tab (`web/play.html`, `play.js`, `play.css`; `pm/play.py`)
+
+Tab `play` ("Play", under the Supervisor Board) is a page of this same server (`/play`, port 8768; no keepAlive of its
+own, the project tab keeps the server up). It lists the local game folders (production, testing, working, testing-f3)
+and the older versions installed in `Quark\versions\<tag>\` with a Play button each, an optional launch options field,
+the GitHub releases of floration/quark (public API, no sign-in, cached 10 min with an ETag; Install downloads the
+release's `quark-windows.zip` in the background, checks it against `SHA256SUMS`, unpacks it without its top folder and
+writes `BUILD.txt` like `fetch_release.ps1`; Remove deletes that `versions\<tag>` folder after a confirm), recent games
+and the last 20 play notes with their status read back from Claude Documents.
+
+A game starts hidden from any console (a short-lived starter process, so the shell's `taskkill /T` of this server never
+reaches the game), from its own folder, at normal priority; its output goes to `logs\play-<session>.log`. Sessions are
+in `project-manager\play-sessions.json`; when the game exits the session wants a note (`needsNote`) and the page opens
+the form (did / noticed / want changed / anything else; Save, Skip, Later). A server restart while a game runs picks
+the game up again by pid (Windows: only when its creation time matches). Notes: `project-manager\play-notes.jsonl`
+(local copy) and one `open` entry at the top of `## Notes` in `Claude Documents\12-play-notes.md`, committed (that file
+only) and pushed; offline it stays committed on the PC and is retried every 5 min. The Supervisor Board's status line
+shows "Play · N play notes open · M waiting" (`/api/pm` field `play`).
+
+Endpoints: `GET /play`, `GET /api/play[?refresh=1]` (everything the page shows), `GET /api/play/pending`
+(`{running, pending: [{id, label, version, endedAt, durationSec}], openNotes}`, for the shell); POST with a JSON body:
+`/api/play/launch {build, args}`, `/api/play/note {session, did, noticed, change, other}`, `/api/play/skip {session}`,
+`/api/play/install {tag}`, `/api/play/remove {tag}`, `/api/play/sync` (retry the push now).
+
 ## 4. Install (`tools/project_manager/setup.ps1`, `setup.cmd`)
 
 `setup.cmd` (double-click) → `setup.ps1 [-Quark <folder>] [-NoElectron]`: copies `server.py`, `pm\`, `web\`, `shell\`,

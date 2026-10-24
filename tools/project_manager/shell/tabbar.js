@@ -24,7 +24,12 @@
     const name = document.createElement('span'); name.className = 'name'; name.textContent = t.name;
     b.append(dot, name);
     const halt = Number(t.badge) || 0;
-    if (halt > 0) {
+    if (halt > 0 && t.badgeKind === 'note') {
+      // the Play tab: play notes waiting to be written (a game it started has closed)
+      const bd = document.createElement('span'); bd.className = 'badge note'; bd.textContent = halt > 99 ? '99+' : String(halt);
+      b.append(bd);
+      b.title += '\n' + halt + (halt === 1 ? ' play note' : ' play notes') + ' to write';
+    } else if (halt > 0) {
       // the Supervisor Board's halting count: things q must do that block a Claude agent
       const bd = document.createElement('span'); bd.className = 'badge'; bd.textContent = halt > 99 ? '99+' : String(halt);
       b.append(bd);
