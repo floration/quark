@@ -98,3 +98,11 @@ JSON `{assetId, target, filename, mime, data: base64}`. For each waiting one: de
 `assets/overrides/<target>` with the uploaded file's extension, build, run `build/quark_tests`, mention it in the
 changelog, then set the doc's status to `shipped` (`shippedIn: <VERSION>`). An icon also needs `tools/make_icon.py`.
 After the push, rebuild the studio files (commands above) and republish the page.
+
+## Provenance
+
+Which assets are still AI-made: `assets/provenance/<category>.json` lists every asset (plus the UI pages and bot areas)
+as `ai`, `human` or `third-party`, with where it came from ([PROVENANCE.md](PROVENANCE.md)). After the export, run
+`python3 tools/provenance.py sync build/assets_export` (a shipped override or custom recording marks its item `human`)
+and `python3 tools/provenance.py merge <sidecar>` for an editor's `provenance.json`; `summary` shows how far along it
+is, and every release's notes end with that line. The studio's manifest.json carries each item's `origin`.

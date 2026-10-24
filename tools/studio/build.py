@@ -32,6 +32,18 @@ def owners():
     return mine
 
 
+def origins():
+    """{lower-case asset path without extension: origin} from the provenance registry (assets/provenance/,
+    docs/PROVENANCE.md): ai, human or third-party"""
+    out = {}
+    reg = os.path.join(ROOT, "assets", "provenance")
+    for n in sorted(os.listdir(reg)) if os.path.isdir(reg) else []:
+        if n.endswith(".json"):
+            for k, e in json.load(open(os.path.join(reg, n), encoding="utf-8")).get("items", {}).items():
+                out[os.path.splitext(k)[0].lower()] = e.get("origin")
+    return out
+
+
 def main():
     export = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "build", "assets_export")
     man = os.path.join(export, "manifest.json")
@@ -41,6 +53,7 @@ def main():
     if os.path.isdir(OUT): shutil.rmtree(OUT)
     os.makedirs(OUT)
     mine = owners()
+    origin = origins()
     items, ids, missing = [], set(), []
     for it in src["items"]:
         if it["id"] in ids: continue
@@ -51,6 +64,7 @@ def main():
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copyfile(f, dst)
         if os.path.splitext(it["file"])[0].lower() in mine: it["owner"] = True
+        if origin.get(os.path.splitext(it["file"])[0].lower()): it["origin"] = origin[os.path.splitext(it["file"])[0].lower()]
         if it.get("category") not in CATEGORIES: print("note: category %r isn't one the page orders" % it.get("category"))
         ids.add(it["id"]); items.append(it)
     if missing: sys.exit("the export lists files it didn't write: " + ", ".join(missing[:10]))
