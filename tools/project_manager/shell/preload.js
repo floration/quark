@@ -1,6 +1,6 @@
 'use strict';
 // Runs (sandboxed, isolated world) in every tab and in the tab bar.
-// Tabs get window.quarkShell = { open(tabId, hash), retry(), version }.
+// Tabs get window.quarkShell = { open(tabId, hash), retry(), setBadge(n), version } (setBadge: project tab only).
 // The tab bar (started with --quark-tabbar) gets window.quarkTabbar instead.
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -26,5 +26,7 @@ if ((process.argv || []).includes('--quark-tabbar')) {
     open: (tabId, hash) => ipcRenderer.send('shell:open', String(tabId), hash == null ? '' : String(hash)),
     // the "Start" / "Try again" button of the shell's own "not running" page
     retry: () => ipcRenderer.send('shell:retry'),
+    // the Supervisor Board's halting count: a red badge on its tab and the taskbar (ignored from any other tab)
+    setBadge: (n) => ipcRenderer.send('shell:badge', Number(n) || 0),
   });
 }

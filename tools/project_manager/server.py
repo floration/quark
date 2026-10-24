@@ -23,7 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from pm import config, scheduler, tabs, updater, util  # noqa: E402
+from pm import config, derive, scheduler, tabs, updater, util  # noqa: E402
 from pm.history import History  # noqa: E402
 
 DEFAULT_PORT = 8768
@@ -72,8 +72,10 @@ class App:
         return r if r is not None else self.tabs.resolved()  # (first moments: resolved without `up`)
 
     def pm(self, refresh=False):
-        out = {"generatedAt": self.store.generated_at, "sources": self.store.results(), "derived": self.store.derived,
-               "history": self.history.latest(30), "tabs": self.tabs_view()["tabs"], "updates": self.updater.view()}
+        upd = self.updater.view()
+        out = {"generatedAt": self.store.generated_at, "sources": self.store.results(),
+               "derived": derive.with_updates(self.store.derived, upd),  # (+ failed installs: halting)
+               "history": self.history.latest(30), "tabs": self.tabs_view()["tabs"], "updates": upd}
         if refresh:
             ok, wait = self.store.refresh_all()
             out["refresh"] = {"accepted": ok, "nextAllowedIn": wait}

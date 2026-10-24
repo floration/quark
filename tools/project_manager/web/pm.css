@@ -18,6 +18,7 @@
   --surface-sunk: #15181d; --ink-2: #b7bfc8; --grid: #262c34; --axis: #3a424c; --border-strong: #3d4651;
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
   --good-ink: #4fd08f; --warn-ink: #e6b84a; --crit-ink: #f07a66; --idle: #6b7480;
+  --halt-bg: #8e1b13; --halt-edge: #f07a66; --halt-ink: #ffffff; --halt-soft: #ffd9d3; --halt-row: rgba(0, 0, 0, 0.24);
   --shadow: none; color-scheme: dark;
 }
 @media (prefers-color-scheme: light) {
@@ -30,6 +31,7 @@
   --surface-sunk: #e9ecf0; --ink-2: #444c57; --grid: #e3e6ea; --axis: #c3c9d1; --border-strong: #c3c9d1;
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
   --good-ink: #1d7a4a; --warn-ink: #7d5a00; --crit-ink: #b0321f; --idle: #8b95a1;
+  --halt-bg: #b42318; --halt-edge: #7a1209; --halt-ink: #ffffff; --halt-soft: #ffe4e0; --halt-row: rgba(0, 0, 0, 0.16);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.05); color-scheme: light;
   }
 }
@@ -42,6 +44,7 @@
   --surface-sunk: #e9ecf0; --ink-2: #444c57; --grid: #e3e6ea; --axis: #c3c9d1; --border-strong: #c3c9d1;
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
   --good-ink: #1d7a4a; --warn-ink: #7d5a00; --crit-ink: #b0321f; --idle: #8b95a1;
+  --halt-bg: #b42318; --halt-edge: #7a1209; --halt-ink: #ffffff; --halt-soft: #ffe4e0; --halt-row: rgba(0, 0, 0, 0.16);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.05); color-scheme: light;
 }
 
@@ -220,6 +223,27 @@ main {
   .checklist { columns: 1; }
   .pipe-foot details { margin-left: 0; }
 }
+
+/* ---------- 0. halting: what q must do that blocks a Claude agent (solid red, white text: >= 6:1 in both themes) ---------- */
+.halting-card { background: var(--halt-bg); color: var(--halt-ink); border: 2px solid var(--halt-edge); padding: 14px 18px 14px; }
+.halting-card .card-head { margin-bottom: 10px; }
+.halting-card .card-head h2 { font-size: 18px; letter-spacing: 0.01em; color: var(--halt-ink); }
+.halting-card .card-head h2 .ic { width: 20px; height: 20px; color: var(--halt-ink); }
+.halting-card .card-head .count { background: var(--halt-ink); color: var(--halt-bg); border-color: transparent; font-size: 13px; font-weight: 750; }
+.halting-card .src, .halting-card .src b { color: var(--halt-soft); }
+.halting-card a { color: var(--halt-ink); text-decoration: underline; text-underline-offset: 2px; font-weight: 600; }
+.halting-card a:focus-visible { outline-color: var(--halt-ink); }
+.halts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.halt { background: var(--halt-row); border-radius: var(--radius-sm); padding: 9px 12px 9px; display: grid;
+        grid-template-columns: minmax(0, 1fr) auto; gap: 3px 14px; align-items: baseline; }
+.halt .h-what { font-weight: 700; font-size: 14.5px; line-height: 1.35; overflow-wrap: anywhere; }
+.halt .h-go { white-space: nowrap; font-size: 13px; display: flex; gap: 12px; }
+.halt .h-blocks, .halt .h-meta { grid-column: 1 / -1; font-size: 13px; color: var(--halt-soft); overflow-wrap: anywhere; }
+.halt .h-blocks b { color: var(--halt-ink); font-weight: 650; }
+.halt .h-meta { font-size: 12.5px; display: flex; flex-wrap: wrap; gap: 2px 8px; }
+.halt .h-src { border: 1px solid color-mix(in srgb, var(--halt-ink) 45%, transparent); border-radius: 999px; padding: 0 7px; line-height: 18px; font-size: 11.5px; font-weight: 600; color: var(--halt-ink); }
+.halt .h-detail { font-family: var(--mono); font-size: 12px; }
+@media (max-width: 640px) { .halt { grid-template-columns: minmax(0, 1fr); } .halt .h-go { white-space: normal; flex-wrap: wrap; } }
 
 /* ---------- 2. needs you ---------- */
 .needs-card { border-left: 4px solid var(--warn); padding-left: 16px; }

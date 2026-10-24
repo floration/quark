@@ -127,6 +127,7 @@ active state, an in-progress entry added / finished, % human changed. `{time, ki
    "inProgress": [{"title", "thread", "threadUrl", "status", "where", "waitingOn", "waitingWhy"}],
    "nextSteps": [{"text", "why", "owner": "q|claude", "link"}],
    "attention": [{"level": "red|amber", "text", "link"}],
+   "halting": [{"id", "title", "what", "blocks", "thread", "threadUrl", "since", "link", "source"}], "haltingCount": 1,
    "humanPct": 16.9}}
 ```
 
@@ -137,6 +138,11 @@ Derived rules (keep them simple and explainable; each item says where it came fr
   production; local copies with unpushed commits ("working-repo has N commits not on testing").
 - `attention`: last CI run failed on testing; a unit on the Oracle box not active; a source down; production server
   list empty; uncommitted changes in a local copy older than a day.
+- `halting` (top priority: something only q can do is blocking a Claude agent; tests waiting do not count): the Claude
+  Manager's `halting` list plus in-progress entries whose status / priority / waitingOn says halting (or `(HALT)`),
+  newest first; then the board's own (`source` oracle: the SSH check fails in a way only q can fix, e.g. "SSH key not
+  found" or a timeout; `source` updates, added per request from the updater: repository\ not fast-forwardable, an
+  install that failed). An item shown here is left out of `nextSteps` / `attention`.
 
 ## 3. The PM page (`tools/project_manager/web/`: `index.html`, `pm.css`, `pm.js`)
 
@@ -148,6 +154,10 @@ Each card says which source it came from and how old it is; a down source shows 
 fix ("start the GitHub manager" / "SSH key not found").
 
 Layout (top to bottom):
+0. **HALTING — Claude is blocked on you** (only when there is something): a solid red full-width card, each item
+   with what to do (bold), what it blocks, since (Dallas time and age), the source and a link (the Claude Manager entry,
+   else the thread). The count goes in the page title, "(2) Supervisor Board", in `window.quarkHalting`, and to the
+   shell (`quarkShell.setBadge(n)`: a red count on the Supervisor Board tab, a red dot over the taskbar icon).
 1. **Release pipeline**: three big stages left to right, working → testing → production, each with version, short
    sha, age, and the arrow between them labelled with what is pending (e.g. "3 commits", "hand-test checklist",
    "PR #9 open"). Plus the testing prerelease tag and `nextFree`.

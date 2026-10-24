@@ -231,6 +231,8 @@ def in_progress(d):
         if not waiting and eid is not None:
             waiting = by_id.get(str(eid))
         wl = [w for w in (waiting if isinstance(waiting, list) else [waiting]) if isinstance(w, str) and w and w != "none"]
+        prio = get(e, "priority", "prio")
+        halting = any(_has_halt(x) for x in (status, prio, waiting))
         out.append({"id": eid, "title": get(e, "title", "name", "text", default="(untitled)"),
                     "thread": get(e, "thread", "threadName", "thread_name"), "threadUrl": url,
                     "status": status, "where": get(e, "where", "location", "branch"),
@@ -238,8 +240,112 @@ def in_progress(d):
                     "waitingWhy": get(e, "waitingWhy", "waiting_why", "why", "reason"),
                     "date": get(e, "date"), "lastChanged": get(e, "lastChanged"),
                     "bucket": bucket(wl), "link": entry_link(eid) if eid is not None else (url or entry_link(None)),
-                    "entryLink": entry_link(eid), "source": "docs"})
+                    "entryLink": entry_link(eid), "priority": prio if isinstance(prio, str) else None,
+                    "halting": halting, "since": get(e, "since", "haltingSince"), "blocks": get(e, "blocks"),
+                    "source": "docs"})
     return out
+
+
+def _has_halt(x):
+    """True when a status / priority / waitingOn (string or list) says "halting" (or the docs' "(HALT)")."""
+    if isinstance(x, (list, tuple)):
+        return any(_has_halt(y) for y in x)
+    return isinstance(x, str) and "halt" in x.lower()
+
+
+# ---- halting: what q must do that blocks a Claude agent (shown in red at the top) -----------------------------
+
+def _halt_time(h):
+    return util.parse_time(h.get("since")) or 0
+
+
+def docs_halting(d, ip):
+    """The Claude Manager's halting list, plus in-progress entries marked halting (status / priority / waitingOn),
+    one item per entry id, newest first."""
+    out, seen = [], set()
+    for h in as_list(get(d, "halting", "halts", "haltingEntries")):
+        if isinstance(h, str):
+            h = {"what": h}
+        if not isinstance(h, dict):
+            continue
+        hid = get(h, "id", "entryId")
+        title = get(h, "title", "name")
+        what = get(h, "what", "action", "todo", "text") or title or "(no details)"
+        thread_url = get(h, "threadUrl", "thread_url", "url")
+        lk = get(h, "link")
+        out.append({"id": hid, "title": title or what, "what": what, "blocks": get(h, "blocks", "blocking"),
+                    "thread": get(h, "thread", "threadName"), "threadUrl": thread_url,
+                    "since": get(h, "since", "date", "time", "createdAt"),
+                    "link": lk if isinstance(lk, str) and lk else (entry_link(hid) if hid is not None else thread_url),
+                    "source": "docs"})
+        if hid is not None:
+            seen.add(str(hid))
+    for e in ip:
+        if not e.get("halting") or (e.get("id") is not None and str(e["id"]) in seen):
+            continue
+        out.append({"id": e.get("id"), "title": e["title"], "what": e.get("waitingWhy") or e["title"],
+                    "blocks": e.get("blocks") or e["title"], "thread": e.get("thread"), "threadUrl": e.get("threadUrl"),
+                    "since": e.get("since") or e.get("date"), "link": e.get("link"), "source": "docs"})
+    out.sort(key=_halt_time, reverse=True)  # (stable: undated ones keep their order, last)
+    return out
+
+
+ORACLE_HALT = (("ssh key not found", "Put the Oracle SSH key where Quark\\project-manager\\config.json says (oracle.key), or fix that path"),
+               ("ssh.exe not found", "Install the Windows OpenSSH client (Settings > Apps > Optional features)"),
+               ("not valid", "Fix oracle.host / oracle.user in Quark\\project-manager\\config.json"),
+               ("timed out", "Check that the Oracle box is up and reachable over SSH (it timed out)"),
+               ("timeout", "Check that the Oracle box is up and reachable over SSH (it timed out)"),
+               ("permission denied", "Fix the Oracle SSH login (the key was refused: permission denied)"),
+               ("host key", "Check the Oracle box's SSH host key (it changed or is unknown)"))
+
+
+def board_halting(results):
+    """The Supervisor Board's own sources that only q can fix (today: the Oracle box's SSH check)."""
+    out = []
+    r = results.get("oracle") or {}
+    if not r.get("ok") and not r.get("pending"):
+        err = str(r.get("error") or "")
+        fix = next((f for k, f in ORACLE_HALT if k in err.lower()), None)
+        if fix:
+            out.append({"id": None, "title": "Oracle box check failing", "what": fix,
+                        "blocks": "the Oracle box status (servers and bot units) for Claude and this board",
+                        "detail": err[:200], "thread": None, "threadUrl": None,
+                        "since": r.get("lastOkAt") or r.get("fetchedAt"), "link": None, "source": "oracle"})
+    return out
+
+
+def updates_halting(u):
+    """From pm/updater.py's view (/api/pm `updates`): repository\\ not fast-forwardable, installs that failed."""
+    out = []
+    if not isinstance(u, dict) or u.get("enabled") is False:
+        return out
+    repo = u.get("repo") if isinstance(u.get("repo"), dict) else {}
+    if repo.get("ffOk") is False and repo.get("error"):
+        out.append({"id": None, "title": "repository\\ not updated",
+                    "what": "Fix Quark\\repository\\ so it can fast-forward to testing: %s" % str(repo["error"])[:200],
+                    "blocks": "installing Claude's merged tool changes on this PC",
+                    "thread": None, "threadUrl": None, "since": u.get("lastRunAt"), "link": None, "source": "updates"})
+    for e in as_list(u.get("entries")):
+        if isinstance(e, dict) and e.get("state") == "failed":
+            name = e.get("name") or e.get("id") or "a tool"
+            code = e.get("exitCode")
+            out.append({"id": None, "title": "%s install failed" % name,
+                        "what": "Fix the %s install (%slog under Tools & updates), then Update now" %
+                                (name, "exit %s; " % code if code is not None else ""),
+                        "blocks": "the new %s from testing" % name, "thread": None, "threadUrl": None,
+                        "since": e.get("lastRunAt"), "link": None, "source": "updates"})
+    return out
+
+
+def with_updates(derived, updates):
+    """`derived` plus the updater's halting items (a copy: the store's dict is shared between requests)."""
+    extra = updates_halting(updates)
+    if not extra:
+        return derived
+    d = dict(derived)
+    d["halting"] = list(derived.get("halting") or []) + extra
+    d["haltingCount"] = len(d["halting"])
+    return d
 
 
 def questions(d):
@@ -495,8 +601,18 @@ def derive(results, now=None):
                         "link": x["link"], "source": x["source"]})
     att.sort(key=lambda a: 0 if a["level"] == "red" else 1)
 
+    # halting (shown above everything; not repeated under Needs you) ----------------------------------------------
+    halting = (docs_halting(docs, ip) if docs else []) + board_halting(results)
+    halt_links = {h["link"] for h in halting if h.get("link")}
+    halt_ids = {str(h["id"]) for h in halting if h.get("id") is not None}
+    halt_sources = {h["source"] for h in halting if h["source"] != "docs"}
+    steps = [s for s in steps if not (s.get("link") in halt_links and s.get("source") == "docs")]
+    steps = [s for s in steps if not any(s.get("link") == entry_link(i) for i in halt_ids)]
+    att = [a for a in att if not (a.get("source") in halt_sources and a.get("link") is None and
+                                  a["text"].startswith(SOURCE_LABELS.get(a["source"], "?")))]
+
     return {"versions": v, "pipeline": pipeline, "arrows": arrows, "inProgress": ip, "nextSteps": steps,
-            "attention": att, "humanPct": human_pct(ed) if ed else None,
+            "attention": att, "halting": halting, "haltingCount": len(halting), "humanPct": human_pct(ed) if ed else None,
             # normalized copies of what the page needs most (the raw data stays in `sources`)
             "questions": qs, "prs": prs, "runs": {"running": runs["running"], "lastFailed": runs["lastFailed"],
                                                   "lastTesting": ci or runs["lastTesting"]},

@@ -23,6 +23,14 @@
     const dot = document.createElement('span'); dot.className = 'dot';
     const name = document.createElement('span'); name.className = 'name'; name.textContent = t.name;
     b.append(dot, name);
+    const halt = Number(t.badge) || 0;
+    if (halt > 0) {
+      // the Supervisor Board's halting count: things q must do that block a Claude agent
+      const bd = document.createElement('span'); bd.className = 'badge'; bd.textContent = halt > 99 ? '99+' : String(halt);
+      b.append(bd);
+      b.title += '\n' + halt + ' halting: Claude is blocked on you';
+      b.classList.add('halting');
+    }
     if (kids && t.depth >= 1) {
       // a parent below the top level (Editor Manager): a caret that shows whether its child tabs are open
       const c = document.createElement('span'); c.className = 'caret' + (open ? ' open' : ''); c.textContent = open ? '' : String(kids);

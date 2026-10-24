@@ -218,6 +218,7 @@
     idle: '<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="3" fill="currentColor"/></svg>',
     ahead: '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10V2.5M2.8 5.5 6 2.3l3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     wait: '<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 3.6V6l1.6 1.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+    halt: '<svg class="ic" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 2h6l5 5v6l-5 5H7l-5-5V7z" fill="currentColor"/><rect x="6.5" y="8.6" width="7" height="2.8" rx="0.6" fill="var(--halt-bg)"/></svg>',
     down: '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6.5 10h7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
   };
   function pill(kind, text, title) {
@@ -369,6 +370,51 @@
     return arr(pick(obj(c), 'headings', 'sections', 'items')).map(x => typeof x === 'string' ? x : (obj(x).title || obj(x).heading || ''));
   }
 
+  // ---------------------------------------------------------------- 0. halting (q must act; a Claude agent is blocked)
+  const HALT_SOURCES = {
+    docs: 'Claude Manager', oracle: 'Oracle box (this board)', updates: 'Tool updates (this board)',
+    repo: 'Repository (this board)', github: 'GitHub Manager', editors: 'Editor Manager',
+  };
+  const HALT_GOTO = { oracle: ['#sec-servers', 'Servers & bot'], updates: ['#sec-tools', 'Tools & updates'] };
+  function haltingItems() { return arr(derived().halting).filter(isObj); }
+  function renderHalting() {
+    const items = haltingItems();
+    const sec = document.getElementById('sec-halting');
+    sec.hidden = items.length === 0;
+    if (!items.length) return '';
+    const li = items.map(h => {
+      const t = parseTime(h.since);
+      const go = [];
+      if (linkAttrs(h.link)) go.push(link(h.link, (/^http:\/\/(127\.0\.0\.1|localhost):8766\//.test(String(h.link)) ? 'Open entry' : esc(linkLabel(h.link) || 'Open')) + ' &rarr;'));
+      if (linkAttrs(h.threadUrl) && h.threadUrl !== h.link) go.push(link(h.threadUrl, esc(has(h.thread) ? h.thread : 'Thread') + ' &#8599;'));
+      if (!go.length && HALT_GOTO[h.source]) go.push('<a href="' + HALT_GOTO[h.source][0] + '">' + esc(HALT_GOTO[h.source][1]) + ' &darr;</a>');
+      const what = has(h.what) ? h.what : (has(h.title) ? h.title : 'Something needs you');
+      const blocks = has(h.blocks) ? h.blocks : (has(h.thread) ? h.thread : null);
+      const meta = [
+        '<span class="h-src">' + esc(HALT_SOURCES[h.source] || h.source || 'unknown source') + '</span>',
+        t != null ? '<span>since ' + whenSpan(t) + ' Dallas &middot; ' + ageSpan(t) + '</span>' : '<span>since unknown</span>',
+      ];
+      if (has(h.title) && h.title !== what) meta.push('<span>' + esc(h.title) + '</span>');
+      if (has(h.detail)) meta.push('<span class="h-detail">' + esc(h.detail) + '</span>');
+      return '<li class="halt"><div class="h-what">' + esc(what) + '</div><div class="h-go">' + go.join('') + '</div>' +
+        (blocks ? '<div class="h-blocks">Blocks <b>' + esc(blocks) + '</b></div>' : '') +
+        '<div class="h-meta">' + meta.join('') + '</div></li>';
+    }).join('');
+    return head('h-halting', 'HALTING \u2014 Claude is blocked on you', count(items.length)).replace('<h2 id="h-halting">', '<h2 id="h-halting">' + IC.halt) +
+      '<ol class="halts">' + li + '</ol>';
+  }
+  // the count in the page title and for the Quark Project shell (red badge on this tab and the taskbar)
+  let lastHaltBadge = null;
+  function publishHalting() {
+    const n = haltingItems().length;
+    window.quarkHalting = n;
+    document.title = (n ? '(' + n + ') ' : '') + 'Supervisor Board';
+    if (n === lastHaltBadge) return;
+    lastHaltBadge = n;
+    const sh = window.quarkShell;
+    if (sh && typeof sh.setBadge === 'function') { try { sh.setBadge(n); } catch (err) { /* older shell */ } }
+  }
+
   // ---------------------------------------------------------------- 2. needs you
   function renderNeeds() {
     const d = derived();
@@ -429,6 +475,7 @@
       html += '<div class="group-head">' + bucketPill(b, g.length) + '<span class="why">' + esc(b.hint) + '</span></div><ul class="rows">';
       for (const e of g) {
         const bits = [];
+        if (e.halting === true) bits.push(pill('crit', 'halting', 'q must act: shown at the top of the page'));
         if (has(e.status)) bits.push(esc(e.status));
         if (has(e.where)) bits.push('<span class="mono">' + esc(e.where) + '</span>');
         if (has(e.waitingWhy)) bits.push(esc(e.waitingWhy));
@@ -927,7 +974,7 @@
 
   // ---------------------------------------------------------------- render
   const SECTIONS = [
-    ['sec-pipeline', renderPipeline], ['sec-needs', renderNeeds], ['sec-progress', renderProgress], ['sec-ci', renderCi],
+    ['sec-halting', renderHalting], ['sec-pipeline', renderPipeline], ['sec-needs', renderNeeds], ['sec-progress', renderProgress], ['sec-ci', renderCi],
     ['sec-assets', renderAssets], ['sec-servers', renderServers], ['sec-local', renderLocal], ['sec-tools', renderTools],
     ['sec-changelogs', renderChangelogs], ['sec-history', renderHistory], ['sec-tabs', renderTabs],
   ];
@@ -945,6 +992,7 @@
       if (html != null) el.innerHTML = html;
     }
     document.querySelectorAll('details[data-key]').forEach(d => { if (state.openDetails.has(d.dataset.key)) d.open = true; });
+    publishHalting();
     drawCharts();
     tick();
   }

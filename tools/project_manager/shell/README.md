@@ -164,6 +164,8 @@ whose source folders and installer commands are not decided. When one has an ins
   dropped. `window.open` / `target=_blank` never opens a window.
 - `window.quarkShell.open(tabId, hash)` switches tab and sets `location.hash` (on first open the page loads with that
   hash). `quarkShell.version` is the shell version. `quarkShell.retry()` is for the shell's own placeholder page.
+  `quarkShell.setBadge(n)` (accepted from the `project` tab only) shows the Supervisor Board's halting count as a red
+  badge on its tab button and, on Windows, a red dot over the taskbar icon (elsewhere the app badge count).
 - Permissions: `fileSystem`, `clipboard-sanitized-write` and `media` for local pages (file:// and 127.0.0.1 /
   localhost); everything else is denied (notifications, geolocation, HID / USB / serial, ...).
 - File System Access (`showDirectoryPicker`, `showSaveFilePicker`, handles kept in IndexedDB) works in file:// and local
