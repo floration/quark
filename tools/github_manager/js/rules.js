@@ -191,7 +191,7 @@ function limitRow(r) {
 
 function docsLine(ds) {
   if (!ds) return '';
-  const files = html`<code>09-github-rules.md</code>, <code>github-rules.json</code>, <code>10-github-notes.md</code>`;
+  const files = html`<code>10-github-rules.md</code>, <code>github-rules.json</code>, <code>11-github-notes.md</code>`;
   if (ds.state === 'off') return html`<p class="muted small docs-line">Claude Documents copy: ${ds.offReason || 'off'}.</p>`;
   if (ds.state === 'failed') return html`<p class="msg bad small docs-line" role="alert"><b>The Claude Documents copy failed</b> (${relOnly(ds.lastAttempt)}): <code>${ds.lastError}</code>. The rules are saved on this PC; the copy is tried again on the next change.</p>`;
   if (ds.state === 'waiting' || ds.state === 'syncing') return html`<p class="small docs-line"><span class="spin s-run" aria-hidden="true"></span> ${ds.state === 'syncing' ? 'Writing' : 'About to write'} ${files} to the Claude Documents (<code>${ds.repo}</code>): one commit for a burst of edits.</p>`;

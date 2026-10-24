@@ -37,7 +37,7 @@ Two more tabs:
   each call.
 
   The agent rules and the notes are also written to the Claude Documents (the private repo
-  floration/quark-claude-docs) as `09-github-rules.md`, `github-rules.json` and `10-github-notes.md`, 10 s after the
+  floration/quark-claude-docs) as `10-github-rules.md`, `github-rules.json` and `11-github-notes.md`, 10 s after the
   last change, by the server's own clone (`claude-docs/`) with q's gh login; a failure shows in the page and in the
   poll warnings and is retried on the next change.
 

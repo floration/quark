@@ -1740,8 +1740,8 @@ class DocsSyncTest(unittest.TestCase):
     def setUp(self):
         self.root = tempfile.mkdtemp(prefix="ghm-docs-")
         self.bare, self.seed = bare_docs_repo(self.root)
-        self.files = {"09-github-rules.md": "# GitHub rules\n\none\n", "github-rules.json": "{}\n",
-                      "10-github-notes.md": "# GitHub notes\n"}
+        self.files = {"10-github-rules.md": "# GitHub rules\n\none\n", "github-rules.json": "{}\n",
+                      "11-github-notes.md": "# GitHub notes\n"}
         self.proc = DocsProc(self.bare)
         self.state = os.path.join(self.root, "data", "editor", "docs-sync.json")
         self.d = S.DocsSync(os.path.join(self.root, "data", "claude-docs"), self.state, self.proc,
@@ -1771,7 +1771,7 @@ class DocsSyncTest(unittest.TestCase):
                                                      os.path.join(self.root, "data", "claude-docs")])
         self.assertIn("credential.helper=!gh auth git-credential", self.proc.gh_calls[0])
         self.assertEqual(self.log(), [S.DOCS_COMMIT_MSG, "first"])
-        self.assertEqual(self.show("09-github-rules.md"), "# GitHub rules\n\none")
+        self.assertEqual(self.show("10-github-rules.md"), "# GitHub rules\n\none")
         self.assertEqual(self.show("README.md"), "# Claude Documents")   # other files are left alone
         self.assertEqual(st["lastCommit"], git("--git-dir", self.bare, "rev-parse", "main"))
         self.assertEqual(S.read_json(self.state)["digest"], S._digest(self.files))
@@ -1780,10 +1780,25 @@ class DocsSyncTest(unittest.TestCase):
         self.assertEqual(len(self.log()), 2)
         d2 = S.DocsSync(self.d.folder, self.state, self.proc, lambda: dict(self.files), debounce=0.3)
         self.assertFalse(d2.schedule_if_changed(0))
-        self.files["10-github-notes.md"] = "# GitHub notes\n\nnew\n"
+        self.files["11-github-notes.md"] = "# GitHub notes\n\nnew\n"
         self.assertTrue(d2.schedule_if_changed(0))
         self.assertTrue(self.wait(lambda: len(self.log()) == 3 and d2.status()["state"] == "ok"))
         self.assertEqual(len(self.proc.gh_calls), 1)   # cloned once
+
+    def test_legacy_generated_files_are_removed(self):
+        # 09-github-rules.md written by an older version (generated header) goes; a hand-written 10-github-notes.md stays
+        write(os.path.join(self.seed, "09-github-rules.md"), "# GitHub rules\n\n" + S.DOCS_GENERATED + "\n")
+        write(os.path.join(self.seed, "10-github-notes.md"), "# someone's own notes\n")
+        git("add", "09-github-rules.md", "10-github-notes.md", cwd=self.seed)
+        git("commit", "-qm", "old names", cwd=self.seed)
+        git("push", "-q", "origin", "HEAD:main", cwd=self.seed)
+        st = self.d.sync_now()
+        self.assertEqual((st["state"], st["lastError"]), ("ok", None))
+        names = git("--git-dir", self.bare, "ls-tree", "--name-only", "main").splitlines()
+        self.assertNotIn("09-github-rules.md", names)
+        self.assertIn("10-github-notes.md", names)
+        self.assertIn("10-github-rules.md", names)
+        self.assertIn("11-github-notes.md", names)
 
     def test_rejected_push_is_retried_after_pull_rebase(self):
         self.d.sync_now()
@@ -1802,23 +1817,23 @@ class DocsSyncTest(unittest.TestCase):
                 git("push", "-q", "origin", "HEAD:main", cwd=self.seed)
             return real(args, **kw)
         self.proc.run = racing
-        self.files["09-github-rules.md"] = "# GitHub rules\n\ntwo\n"
+        self.files["10-github-rules.md"] = "# GitHub rules\n\ntwo\n"
         st = self.d.sync_now()
         self.assertEqual(st["state"], "ok", st["lastError"])
         self.assertEqual(self.log(), [S.DOCS_COMMIT_MSG, "other change", S.DOCS_COMMIT_MSG, "first"])
         self.assertEqual(self.show("05-other.md"), "someone else")
-        self.assertEqual(self.show("09-github-rules.md"), "# GitHub rules\n\ntwo")
+        self.assertEqual(self.show("10-github-rules.md"), "# GitHub rules\n\ntwo")
 
     def test_debounce_one_commit_for_a_burst(self):
         self.d.sync_now()
         for i in range(5):
-            self.files["09-github-rules.md"] = "# GitHub rules\n\nedit %d\n" % i
+            self.files["10-github-rules.md"] = "# GitHub rules\n\nedit %d\n" % i
             self.d.schedule()
             self.assertEqual(self.d.status()["state"], "waiting")
             time.sleep(0.05)
         self.assertTrue(self.wait(lambda: self.d.status()["state"] == "ok"))
         self.assertEqual(self.log(), [S.DOCS_COMMIT_MSG, S.DOCS_COMMIT_MSG, "first"])
-        self.assertEqual(self.show("09-github-rules.md"), "# GitHub rules\n\nedit 4")
+        self.assertEqual(self.show("10-github-rules.md"), "# GitHub rules\n\nedit 4")
 
     def test_failures_are_reported_never_raised(self):
         shutil.rmtree(self.bare)
@@ -1853,9 +1868,9 @@ class DocsSyncTest(unittest.TestCase):
         m.notes.create({"target": {"kind": "branch", "key": "testing"}, "text": "keep testing green"})
         f = m.docs_files()
         self.assertEqual(sorted(f), sorted(S.DOCS_FILES))
-        self.assertIn(S.DOCS_GENERATED, f["10-github-notes.md"].splitlines()[2])
-        self.assertIn("keep testing green", f["10-github-notes.md"])
-        self.assertNotIn("Written", f["10-github-notes.md"])
+        self.assertIn(S.DOCS_GENERATED, f["11-github-notes.md"].splitlines()[2])
+        self.assertIn("keep testing green", f["11-github-notes.md"])
+        self.assertNotIn("Written", f["11-github-notes.md"])
         self.assertEqual(json.loads(f["github-rules.json"])["defaultBranch"], DEFAULT)
         self.assertEqual(f, m.docs_files())
 
