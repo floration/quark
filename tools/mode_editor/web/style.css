@@ -322,6 +322,9 @@ table.keys td { font-size: 12px; }
 .sim-run canvas.plot { border-radius: 4px; }
 .sim-card { background: var(--bg2); border-radius: 6px; padding: 6px 8px; font-size: 12px; }
 .sim-log { max-height: 220px; overflow: auto; font: 11px var(--mono); margin-top: 6px; }
+.sim-tab { border-collapse: collapse; font-size: 11px; margin-top: 6px; width: 100%; }
+.sim-tab th, .sim-tab td { padding: 1px 6px; text-align: right; border-bottom: 1px solid var(--line); }
+.sim-tab th:first-child, .sim-tab td:first-child { text-align: left; }
 /* ?embed=1: the page header goes (the Supervisor Board has its own title bar) */
 .embed.modeed #top { display: none; }
 .embed.modeed #app { grid-template-rows: 1fr; }

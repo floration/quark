@@ -18,7 +18,7 @@ import { toGraph, fromGraph, overviewGraph } from "../js/graph.js";
 import { splitQmode, patchQmode, foreignLines, newQmodeText, modeKeys, ownerOf, logicKeyClash } from "../js/qfile.js";
 import { loadModeText, logicTextFor, fileTextFor } from "../js/modeui.js";
 import { phasesModel } from "../js/phases.js";
-import { timelineModel } from "../js/sim.js";
+import { timelineModel, batchModel } from "../js/sim.js";
 import { MODES } from "../js/catalog.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -225,6 +225,24 @@ await t("sim timeline model reads modesim NDJSON without inventing values", () =
     same(m.frames.length, 2); same(m.bands.length, 2); same(m.markers.length, 1); same(m.slots.length, 1);
     same(m.end.winner, "A"); same(m.maxScore, 1); same(m.t1, 3);
     same(timelineModel([]).end, null);
+});
+await t("sim timeline model reads the real modesim shapes (MODESIM.md): names, round results, markers", () => {
+    const lines = [{ type: "start", map: "depot", base: "bomb", label: "rush#648ff484", logicApplied: false, logic: { present: true, applied: false, interpreted: ["plant"] }, teams: true,
+            bots: [{ id: 0, name: "BOT ANNA", team: "a" }, { id: 1, name: "BOT HANA", team: "b" }] },
+        { type: "frame", t: 0, phase: "freeze", round: 1, scoreA: 0, scoreB: 0, players: [{ id: 0, team: "a", alive: true, pos: [1, 0, 2], score: 0 }] },
+        { type: "frame", t: 108, phase: "roundEnd", round: 1, scoreA: 0, scoreB: 1, players: [{ id: 0, team: "a", alive: true, pos: [1, 0, 3], score: 0 }],
+            events: [{ type: "phase", phase: "roundEnd", t: 108 }, { type: "score", scoreA: 0, scoreB: 1, t: 108 },
+                { type: "kill", killer: 1, victim: 0, weapon: "rifle", t: 50 }, { type: "roundEnd", round: 1, text: "TEAM B wins the round (time)", winner: "b", t: 108 }] },
+        { type: "end", t: 108, reason: "matchEnd", winner: { team: "b", player: null, name: "TEAM B", text: "TEAM B wins the match" }, rounds: 1,
+            result: { scoreA: 0, scoreB: 1, players: [] }, perf: { ticks: 13500, speedup: 300, tickNs: { avg: 20000, p99: 50000, max: 900000 }, logicNs: null } }];
+    const m = timelineModel(lines);
+    same(m.markers.map((x) => x.kind).join(","), "kill,roundEnd", "phase / score events are bands and lines, not markers");
+    same(m.markers[0].text, "BOT HANA killed BOT ANNA (rifle)");
+    same(m.rounds.length, 1); same(m.rounds[0].winner, "b");
+    same(m.players.get(0).name, "BOT ANNA"); same(m.end.winner.text, "TEAM B wins the match");
+    const b = batchModel([{ type: "start", matches: 2 }, { type: "match", done: 1, total: 2, seed: 1 }, { type: "progress", done: 1, total: 2 },
+        { type: "end", matchesPlayed: 2, teams: { a: { wins: 0, winRate: 0 }, b: { wins: 2, winRate: 1 }, draws: 0 }, csv: "index\n" }]);
+    same(b.matches.length, 1); same(b.progress.done, 1); same(b.end.teams.b.wins, 2);
 });
 
 console.log("serve.py");

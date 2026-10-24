@@ -2,7 +2,7 @@
 
 A local page for making your own game modes (`.qmode`): start from one of the 13 built-in modes, change its numbers,
 or rewrite what happens when (scoring, rounds, respawns, win conditions) as code, blocks, a graph or a table of values.
-It shows which phase each part runs in and, once the game's helper can run modes, simulates matches with bots.
+It shows which phase each part runs in and simulates matches with bots (the game's own server, headless).
 
 It runs on your computer only: a small Python server (`serve.py`, standard library only) on `127.0.0.1` serves the
 page. Nothing is fetched from the internet.
@@ -63,9 +63,16 @@ marked **i** in the list.
 - **Phases**: warmup, freeze, round, overtime, round end, match end, with the slots that run in each (interpreted /
   native / not written), the objects with their events, timers, state, and what stays engine whatever the logic says.
   Clicking a slot nobody writes offers to add it.
-- **Sim**: map, bots, skill, seed, seconds; Run streams `quark_maptool modesim` (timeline with scores, phase bands,
-  markers and slot calls; player positions; event log; end card with the logic's cost per tick). *Compare* runs the
-  built-in base mode with the same seed. *Batch* runs `modebatch`.
+- **Sim**: map, bots, skill, seed, the most game seconds, tick rate, real time or flat out; Run streams
+  `quark_maptool modesim` (`native/MODESIM.md`) on the text as it is now, saved or not. It draws a timeline (team or
+  player scores, phase bands, a tick per round result in the winner's colour, kill and objective markers, slot calls
+  when traced), a top-down plot of where everyone went and is now, an event log, and an end card (winner, reason,
+  rounds, length, the scoreboard, x real time and server ns per tick). *Compare* runs the built-in base mode with the
+  same seed beside it. *Batch* streams `modebatch` over N seeds (every core but one): win rate per team, draws,
+  timeouts, match length, rounds, score spread, a row per bot, and a CSV of the matches.
+  The same request and seed always give the same match. Each run says whether the server ran the file's **logic**:
+  until the game has the logic hook (mode editor phase 3), `LOGIC NOT RUN` means the match played the base mode with
+  the file's key=value rules (time limit, rounds, weapons, movement), and the slots it would interpret are listed.
 
 ## The file, and the other editors
 
@@ -113,6 +120,7 @@ exist), removes files an older install left, keeps `mode_editor.json` and `prove
 | `web/js/catalog.js` | the built-in catalog (until `exportmode`) |
 | `web/js/blocks.js`, `graph.js`, `values.js`, `curves.js` | the views (from the bot editor's) |
 | `web/js/phases.js`, `sim.js` | Phases and Sim |
+| `native/modesim_cmd.cpp` | `quark_maptool modesim` / `modebatch` / `modecheck` (built into quark_maptool by CMake); formats in `native/MODESIM.md`, checks in `native/test_modesim.py` |
 | `web/js/modeui.js`, `app.js`, `api.js` | the page |
 | `web/fixtures/*.qlogic` | the design's texts, until `tools/modes/` exists |
 
@@ -126,3 +134,8 @@ itself is not changed.
 Round trips (text, AST, blocks, graph) on every built-in text merged for all 13 modes, the checks, the file rule
 (foreign lines byte for byte, CRLF, refusals), and serve.py itself (save, 409 when the file changed on disk, 400 when
 a save would touch a foreign line, Host / header checks). `QME_VERBOSE=1` logs every request.
+
+    python3 tools/mode_editor/native/test_modesim.py
+
+The sim helper against the real `build/quark_maptool`: every mode on its own map, determinism, key rules taking
+effect, logic labels and errors, the controls, and batch == modesim for one seed (by hand; not in CI).
