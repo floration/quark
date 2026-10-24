@@ -51,17 +51,27 @@
   };
 
   // --- the library --------------------------------------------------------------------------------------------------
-  const thumbs = {};   // key -> { url, ver, pal }
+  const thumbs = {}, inflight = {};   // key -> { url, sig } (shown), key -> sig (being drawn / read back)
+  const thumbSig = key => (Q.ver[key] || 0) + '|' + S.view.palette + '|' + S.drawMode(key);
   let thumbQueue = [], thumbTimer = 0;
-  function queueThumb(key) { if (!thumbQueue.includes(key)) thumbQueue.push(key); if (!thumbTimer) thumbTimer = setTimeout(runThumbs, 30); }
-  function runThumbs() {
+  function queueThumb(key) {
+    if (inflight[key] === thumbSig(key) || thumbQueue.includes(key)) return;
+    thumbQueue.push(key); if (!thumbTimer) thumbTimer = setTimeout(runThumbs, 30);
+  }
+  function runThumbs() {   // (a few per frame; each read back asynchronously, in order: no GPU stall)
     thumbTimer = 0;
     const t0 = performance.now();
-    while (thumbQueue.length && performance.now() - t0 < 25) {
-      const key = thumbQueue.shift();
-      try { thumbs[key] = { url: S.thumbnail(key, 96), ver: Q.ver[key] || 0, pal: S.view.palette, mode: S.drawMode(key) }; } catch (e) { console.warn(e); }
-      const img = document.querySelector('.card[data-key="' + CSS.escape(key) + '"] img');
-      if (img && thumbs[key]) img.src = thumbs[key].url;
+    while (thumbQueue.length && performance.now() - t0 < 8) {
+      const key = thumbQueue.shift(), sig = thumbSig(key);
+      inflight[key] = sig;
+      try {
+        S.thumbnail(key, 96, url => {
+          if (inflight[key] === sig) delete inflight[key];
+          thumbs[key] = { url, sig };
+          const img = document.querySelector('.card[data-key="' + CSS.escape(key) + '"] img');
+          if (img) img.src = url;
+        });
+      } catch (e) { delete inflight[key]; console.warn(e); }
     }
     if (thumbQueue.length) thumbTimer = setTimeout(runThumbs, 16);
     S.dirty = true;
@@ -80,11 +90,14 @@
   };
   function card(key) {
     const m = Q.models[key], t = thumbs[key];
-    if (!t || t.ver !== (Q.ver[key] || 0) || t.pal !== S.view.palette || t.mode !== S.drawMode(key)) queueThumb(key);
-    const probs = Q.problems(key), origin = Q.originOf(key);
+    if (!t || t.sig !== thumbSig(key)) queueThumb(key);
+    const probs = Q.problems(key), pv = Q.provFor(key), origin = pv.origin, edited = Q.isEdited(key), cur = Q.current(key);
     const badges = h('div.badges');
-    if (Q.isEdited(key)) badges.append(h('span.badge.edited', 'edited'));
-    badges.append(h('span.badge.o-' + origin, { title: 'origin (provenance)' }, origin === 'third-party' ? '3rd party' : origin));
+    if (edited) badges.append(h('span.badge.edited', 'edited'));
+    else if (cur.shipped) badges.append(h('span.badge.o-shipped', { title: 'the shipped override (assets/overrides): what the game draws' }, 'shipped'));
+    badges.append(h('span.badge.o-' + origin, { title: 'origin: ' + origin + (pv.by ? ', by ' + pv.by : '') + (pv.source ? '\n' + pv.source : '') + (pv.note ? '\n' + pv.note : '') +
+      (edited ? '' : '\n(' + (cur.shipped ? 'the shipped model' : 'the default') + ': assets/provenance)') }, origin === 'third-party' ? '3rd party' : origin));
+    if (m.shipped && m.shipped.err) badges.append(h('span.badge.err', { title: 'The shipped override is refused by the game (it draws the default): ' + m.shipped.err }, 'refused'));
     if (m.err) badges.append(h('span.badge.err', 'bad file'));
     else if (probs.some(p => p.level === 'error')) badges.append(h('span.badge.err', '!'));
     else if (probs.some(p => p.level === 'warn')) badges.append(h('span.badge.warn', '!'));
@@ -109,7 +122,7 @@
     S.build(); S.frame(key); S.build(); S.updateOverlay();
     document.querySelectorAll('.card.sel').forEach(c => c.classList.remove('sel'));
     const c = document.querySelector('.card[data-key="' + CSS.escape(key) + '"]'); if (c) c.classList.add('sel');
-    U.syncTabs(); U.renderPanel(); U.renderHud();
+    U.syncTabs(); U.syncAvail(); U.renderPanel(); U.renderHud();
   };
   U.selectPart = function (i) {
     S.part = i;
@@ -133,6 +146,20 @@
       if (t === 'chk') el.checked = !!v[k]; else if (t === 'sun') el.checked = v[k] > 0.5; else el.value = v[k];
     }
     $('#vVmCustom').checked = !!v.vmColor; $('#vVmColor').value = v.vmColor || Q.linToHex(Q.TEAM.friendly);
+    U.syncAvail();
+  };
+  // an option that does nothing in this view is disabled, and says why
+  U.syncAvail = function () {
+    const m = S.sel && Q.models[S.sel], mode = S.view.mode;
+    const avail = (sel, ok, why) => {
+      const el = $(sel), lab = el.closest('label') || el;
+      if (lab.dataset.title == null) lab.dataset.title = lab.title || '';
+      el.disabled = !ok; lab.classList.toggle('off', !ok); lab.title = ok ? lab.dataset.title : why;
+    };
+    avail('#vHoldIt', !(m && m.kind === 'weapon' && mode === 'tp'), 'Third person with a weapon selected: the player always holds it');
+    avail('#vBombLineup', !S.holdIt(), 'Off while players hold the weapon: "it" (hide and seek / tag) carries no bomb');
+    avail('#vTeam', !(m && m.kind === 'weapon' && (mode === 'orbit' || (mode === 'fp' && !S.view.fpLineup))),
+      'A weapon in your hands is drawn in the viewmodel colour (More > Viewmodel colour), not a team colour');
   };
   function viewChanged(rebuildThumbs) {
     S.saveView(); S.build(); S.updateOverlay(); U.renderHud(); U.syncTabs();
@@ -144,7 +171,7 @@
   };
   U.setMode = function (mode) {
     if (!S.sel || !S.modesFor(S.sel).includes(mode)) return;
-    S.view.mode = mode; S.saveView(); S.build(); S.frame(S.sel); S.build(); S.updateOverlay(); U.syncTabs(); U.renderHud();
+    S.view.mode = mode; S.saveView(); S.build(); S.frame(S.sel); S.build(); S.updateOverlay(); U.syncTabs(); U.syncAvail(); U.renderHud();
   };
 
   // --- the HUD (what is drawn, warnings) ------------------------------------------------------------------------------
@@ -162,29 +189,54 @@
   };
 
   // --- the panel ------------------------------------------------------------------------------------------------------
+  // Rebuilt after a change; the field that has the focus (data-fid) keeps it, with its caret, and the scroll stays:
+  // Tab moves on through the fields and arrow keys keep stepping the value. A change rebuilds it on the next frame
+  // (U.schedulePanel): after Tab has moved the focus, and once for several changes.
   const fmt = Q.fmt;
+  let panelRaf = 0;
+  U.schedulePanel = function () { if (!panelRaf) panelRaf = requestAnimationFrame(() => { panelRaf = 0; U.renderPanel(); }); };
   U.renderPanel = function () {
-    const panel = $('#panel'), key = S.sel;
+    if (panelRaf) { cancelAnimationFrame(panelRaf); panelRaf = 0; }
+    const panel = $('#panel'), key = S.sel, scroll = panel.scrollTop, act = document.activeElement;
+    const fid = act && panel.contains(act) && act.dataset ? act.dataset.fid : null;
+    let caret = null;
+    try { if (fid && act.selectionStart != null) caret = [act.selectionStart, act.selectionEnd]; } catch (e) { }
+    buildPanel(panel, key);
+    panel.scrollTop = scroll;
+    if (fid) {
+      const el = panel.querySelector('[data-fid="' + CSS.escape(fid) + '"]');
+      if (el) { el.focus({ preventScroll: true }); try { if (caret) el.setSelectionRange(caret[0], caret[1]); } catch (e) { } }
+    }
+  };
+  function buildPanel(panel, key) {
     panel.innerHTML = '';
     if (!key) { panel.append(h('div.empty', 'Pick a model on the left.')); return; }
     const m = Q.models[key], cur = Q.current(key), edited = Q.isEdited(key);
     panel.append(h('div.ph', h('h2', m.name), h('span.path', key + '.glb')));
     panel.append(h('div.desc', m.desc));
+    const pv = Q.provFor(key);
     let status = edited ? (cur.type === 'boxes' ? 'Edited boxes (' + cur.parts.length + ')' : 'Imported mesh: ' + (cur.name || '')) :
       cur.shipped ? 'The shipped override (assets/overrides): ' + (cur.type === 'boxes' ? 'a box model, ' + cur.parts.length + ' boxes' : 'a mesh') :
-        cur.type === 'boxes' ? 'Default: ' + cur.parts.length + ' boxes (AI-made)' : 'Default mesh';
+        cur.type === 'boxes' ? 'Default: ' + cur.parts.length + ' boxes' : 'Default mesh';
     if (m.err) status = 'The export file could not be read: ' + m.err;
-    if (m.shipped && m.shipped.err) status += ' (the shipped override is refused by the game: ' + m.shipped.err + ')';
     panel.append(h('div.row', h('b', status)));
+    if (m.shipped && m.shipped.err) panel.append(h('div.probs', h('div.prob.error', 'The shipped override (assets/overrides/' + key.slice(7) + ', ' + m.shipped.name + ') is refused by the game: ' + m.shipped.err + '. The game logs it and draws the default (shown here).')));
+    if (!edited) panel.append(h('div.row', h('span.badge.o-' + pv.origin, pv.origin), h('span.dim', [pv.by ? 'by ' + pv.by : '', pv.source, pv.note].filter(Boolean).join(' / ') || 'no details'),
+      h('span.faint', '(assets/provenance, ' + (cur.shipped ? 'the shipped model' : 'the default') + ')')));
+    const known = Q.knownProv(key);
+    if (known && known.origin) panel.append(h('div.row.faint', 'Last exported from this editor: ' + known.origin + (known.date ? ' on ' + known.date : '') + (known.note ? ' (' + known.note + ')' : '') +
+      '. Loading that file back (Import, Project > Load an overrides folder) keeps its origin.'));
     const acts = h('div.row');
     if (edited) acts.append(h('button.danger', { type: 'button', title: 'Throw the edits away (undo brings them back)', onclick: () => {
-      Q.beginChange(key); delete Q.state.edits[key]; Q.endChange(key, 'reset'); S.part = -1; U.toast('Back to the default (Ctrl+Z undoes it)');
+      Q.beginChange(key); delete Q.state.edits[key]; if (Q.state.prov) delete Q.state.prov[key];   // (its origin goes with it)
+      Q.endChange(key, 'reset'); S.part = -1; U.toast('Back to ' + (cur.shipped || Q.baseOf(key).shipped ? 'the shipped model' : 'the default') + ' (Ctrl+Z undoes it)');
     } }, 'Reset to default'));
     if (cur.type === 'mesh' && m.defParts) acts.append(h('span.faint', 'A mesh: edit it in a 3D program, or reset to edit the boxes.'));
     acts.append(h('button', { type: 'button', title: 'Replace this model with a .glb / .gltf', onclick: () => $('#fileImport').click() }, 'Import replacement...'));
     acts.append(h('button', { type: 'button', title: 'Start from one box: a model you make yourself (origin: human)', onclick: () => {
       Q.beginChange(key); Q.state.edits[key] = { type: 'boxes', parts: [Object.assign(Q.newPart(), { name: 'box', c: [0, m.kind === 'player' ? 1 : 0, 0], h: m.kind === 'player' ? [0.3, 0.5, 0.2] : [0.03, 0.03, 0.1] })] };
-      Q.setProv(key, { origin: 'human', auto: false }); Q.endChange(key, 'scratch'); U.selectPart(0);
+      Q.state.prov = Q.state.prov || {}; Q.state.prov[key] = { origin: 'human', auto: true, scratch: true };   // (part of the undo step)
+      Q.endChange(key, 'scratch'); U.selectPart(0);
     } }, 'Start from scratch'));
     acts.append(h('button', { type: 'button', title: 'Download this model as the .glb the game reads', onclick: () => {
       const b = Q.gltf.exportBytes(key); if (b) Q.download(new Blob([b], { type: 'model/gltf-binary' }), m.name + '.glb');
@@ -205,21 +257,22 @@
     if (cur.type !== 'boxes') return;
     panel.append(partsSection(key, cur.parts));
     if (S.part >= 0 && cur.parts[S.part]) panel.append(partFields(key, cur.parts[S.part]));
-  };
+  }
 
   function provSection(key) {
     const p = Q.provFor(key), st = (Q.state.prov && Q.state.prov[key]) || {};
-    const set = fields => { Q.setProv(key, fields); U.refreshCard(key); };
-    const origin = h('select', { onchange: e => { set({ origin: e.target.value }); U.renderPanel(); } },
+    const set = fields => { Q.beginChange(key, 'prov.' + Object.keys(fields)[0]); Q.setProv(key, fields); };   // (an undo step)
+    const origin = h('select', { 'data-fid': 'prov.origin', onchange: e => set({ origin: e.target.value }) },
       ['ai', 'human', 'third-party'].map(o => h('option', { value: o, selected: p.origin === o }, o)));
-    const txt = (field, ph) => h('input', { type: 'text', value: st[field] || '', placeholder: ph || '', onchange: e => set({ [field]: e.target.value, ...(field === 'note' ? { auto: !e.target.value } : {}) }) });
-    const by = h('input', { type: 'text', value: st.by || Q.defaultBy(), onchange: e => { set({ by: e.target.value }); Q.setDefaultBy(e.target.value); } });
+    const txt = (field, ph) => h('input', { type: 'text', 'data-fid': 'prov.' + field, value: st[field] || '', placeholder: ph || '', onchange: e => set({ [field]: e.target.value, ...(field === 'note' ? { auto: !e.target.value } : {}) }) });
+    const by = h('input', { type: 'text', 'data-fid': 'prov.by', value: st.by || Q.defaultBy(), onchange: e => { set({ by: e.target.value }); Q.setDefaultBy(e.target.value); } });
     return h('div.sect', h('h3', 'Provenance (provenance.json)'),
       h('div.kv', h('span', 'Origin'), origin, h('span', 'By'), by,
         h('span', 'Source'), txt('source', p.origin === 'third-party' ? 'pack name / URL (required)' : 'Quark model editor'),
         p.origin === 'third-party' ? [h('span', 'Licence'), txt('licence', 'e.g. CC0, CC-BY 4.0 (author)')] : null,
         h('span', 'Note'), txt('note', p.note || '')),
-      h('p.faint', 'human = made from scratch here; ai = a tweak of the AI-made default (the note says what changed); third-party = from a pack. Written to provenance.json on export, keyed ' + Q.provId(key) + '.'));
+      h('p.faint', 'human = made by a person (Start from scratch, or a tweak of a human-made shipped model); ai = a tweak of an AI-made model (the note says what changed, against ' + Q.describeBase(key) +
+        '); third-party = from a pack. Written to provenance.json and into the .glb on export, keyed ' + Q.provId(key) + '.'));
   }
 
   // the swatch: the colour as drawn now (slot colour * mul + team * teamMul + add, this view's team / map)
@@ -277,43 +330,45 @@
   function delPart(key) {
     U.change(key, null, parts => { parts.splice(S.part, 1); S.part = Math.min(S.part, parts.length - 1); }, 'delete');
   }
-  function num(val, step, on, title) {
-    return h('input', { type: 'number', step, value: fmt(val, 5), title: title || '', oninput: e => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) on(v, true); },
+  function num(val, step, on, title, fid, min) {
+    return h('input', { type: 'number', step, min, value: fmt(val, 5), title: title || '', 'data-fid': fid, oninput: e => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) on(v, true); },
       onchange: e => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) on(v, false); } });
   }
+  const MIN_HALF = 0.0005;   // (the smallest half size: what the gizmo stops at; the game needs over 0)
   function partFields(key, p) {
     const i = S.part, ref = Q.refOf(key), m = Q.models[key], slot = p.slot | 0;
     const set = (group, fn) => (v, typing) => U.change(key, 'f' + i + group, parts => fn(parts[i], v), typing ? 'typing' : 'field');
+    const n3 = (group, vals, step, fn, title, min) => [0, 1, 2].map(k => num(vals[k], step, set(group + k, (q, v) => fn(q, v, k)), title, group + k, min));
     const shown = Q.colorAtRef(p, ref);   // (the colour at the export's palette: what the fields edit)
     const intensity = Math.max(1, shown[0], shown[1], shown[2]);
     const recol = (q, D) => Q.recolor(q, D, ref);
-    const picker = h('input', { type: 'color', value: Q.linToHex(shown), title: 'sRGB colour (the game stores linear colour; over 1 = brighter, glowing)',
+    const picker = h('input', { type: 'color', 'data-fid': 'picker', value: Q.linToHex(shown), title: 'sRGB colour (the game stores linear colour; over 1 = brighter, glowing)',
       oninput: e => U.change(key, 'f' + i + 'col', parts => { const c = Q.hexToLin(e.target.value); recol(parts[i], c.map(x => x * intensity)); }, 'typing'),
       onchange: () => U.renderPanel() });
     const formula = slot ? [
       h('div.grid3', { style: { marginTop: '6px' } },
-        h('span', { title: 'drawn = ' + Q.SLOT_NAMES[slot] + ' colour * mul + team colour * teamMul + add' }, 'mul'), [0, 1, 2].map(k => num((p.mul || [1, 1, 1])[k], 0.01, set('mul' + k, (q, v) => { q.mul = (q.mul || [1, 1, 1]).slice(); q.mul[k] = Math.max(0, v); q.color = Q.colorAtRef(q, ref); }), 'times the ' + Q.SLOT_NAMES[slot] + ' colour')),
-        h('span', 'add'), [0, 1, 2].map(k => num((p.add || [0, 0, 0])[k], 0.01, set('add' + k, (q, v) => { q.add = (q.add || [0, 0, 0]).slice(); q.add[k] = Math.max(0, v); q.color = Q.colorAtRef(q, ref); }), 'added, whatever the slot colour (a grey that stays light in a dark team colour)')),
-        slot !== 1 ? [h('span', 'teamMul'), [0, 1, 2].map(k => num((p.teamMul || [0, 0, 0])[k], 0.01, set('tm' + k, (q, v) => { q.teamMul = (q.teamMul || [0, 0, 0]).slice(); q.teamMul[k] = Math.max(0, v); q.color = Q.colorAtRef(q, ref); }), 'times the team colour, on top (the cart\'s core)'))] : null),
+        h('span', { title: 'drawn = ' + Q.SLOT_NAMES[slot] + ' colour * mul + team colour * teamMul + add' }, 'mul'), n3('mul', p.mul || [1, 1, 1], 0.01, (q, v, k) => { q.mul = (q.mul || [1, 1, 1]).slice(); q.mul[k] = Math.max(0, v); q.color = Q.colorAtRef(q, ref); }, 'times the ' + Q.SLOT_NAMES[slot] + ' colour', 0),
+        h('span', 'add'), n3('add', p.add || [0, 0, 0], 0.01, (q, v, k) => { q.add = (q.add || [0, 0, 0]).slice(); q.add[k] = Math.max(0, v); q.color = Q.colorAtRef(q, ref); }, 'added, whatever the slot colour (a grey that stays light in a dark team colour)', 0),
+        slot !== 1 ? [h('span', 'teamMul'), n3('tm', p.teamMul || [0, 0, 0], 0.01, (q, v, k) => { q.teamMul = (q.teamMul || [0, 0, 0]).slice(); q.teamMul[k] = Math.max(0, v); q.color = Q.colorAtRef(q, ref); }, 'times the team colour, on top (the cart\'s core)', 0)] : null),
       h('p.faint', 'Drawn = ' + Q.SLOT_NAMES[slot] + ' colour x mul' + (slot !== 1 ? ' + team colour x teamMul' : '') + ' + add. Recolouring rewrites mul (and keeps add while it fits).')] : null;
     return h('div.sect', h('h3', 'Box ' + (i + 1)),
-      h('div.kv', h('span', 'Name'), h('input', { type: 'text', value: p.name || '', onchange: e => U.change(key, null, parts => { parts[i].name = e.target.value; }, 'field') })),
+      h('div.kv', h('span', 'Name'), h('input', { type: 'text', 'data-fid': 'name', value: p.name || '', placeholder: 'unnamed', onchange: e => U.change(key, null, parts => { parts[i].name = e.target.value; }, 'field') })),
       h('div.grid3', { style: { marginTop: '6px' } },
         h('span'), h('span.faint', 'x (right)'), h('span.faint', 'y (up)'), h('span.faint', 'z (back)'),
-        h('span', 'Centre'), [0, 1, 2].map(k => num(p.c[k], 0.005, set('c' + k, (q, v) => { q.c[k] = v; }), 'metres')),
-        h('span', 'Half size'), [0, 1, 2].map(k => num(p.h[k], 0.005, set('h' + k, (q, v) => { q.h[k] = Math.max(0, v); }), 'half the box\'s size, metres')),
+        h('span', 'Centre'), n3('c', p.c, 0.005, (q, v, k) => { q.c[k] = v; }, 'metres'),
+        h('span', 'Half size'), n3('h', p.h, 0.005, (q, v, k) => { q.h[k] = Math.max(MIN_HALF, v); }, 'half the box\'s size, metres (at least ' + MIN_HALF + ')', MIN_HALF),
         h('span', 'Colour'), [0, 1, 2].map(k => num(shown[k], 0.01, set('col' + k, (q, v) => { const D = Q.colorAtRef(q, ref); D[k] = Math.max(0, v); recol(q, D); }),
-          'linear ' + 'rgb'[k] + (slot ? ' at the export\'s palette (team: white)' : '') + ' (over 1: brighter than the light)'))),
+          'linear ' + 'rgb'[k] + (slot ? ' at the export\'s palette (team: white)' : '') + ' (over 1: brighter than the light)', 'col' + k, 0))),
       h('div.kv', { style: { marginTop: '6px' } },
         h('span', 'Picker'), h('div.row', { style: { margin: 0 } }, picker,
-          h('span.faint', 'x'), num(intensity, 0.05, set('int', (q, v) => { const D = Q.colorAtRef(q, ref), cur = Math.max(1, D[0], D[1], D[2]); recol(q, D.map(x => x / cur * Math.max(0, v))); }), 'intensity: the colour times this (over 1 glows)'),
+          h('span.faint', 'x'), num(intensity, 0.05, set('int', (q, v) => { const D = Q.colorAtRef(q, ref), cur = Math.max(1, D[0], D[1], D[2]); recol(q, D.map(x => x / cur * Math.max(0, v))); }), 'intensity: the colour times this (over 1 glows)', 'int', 0),
           h('span.faint.num', 'sRGB ' + Q.linToHex(shown))),
-        h('span', 'Tint slot'), h('select', { onchange: e => U.change(key, null, parts => { Q.setSlot(parts[i], +e.target.value, ref); }, 'field') },
+        h('span', 'Tint slot'), h('select', { 'data-fid': 'slot', onchange: e => U.change(key, null, parts => { Q.setSlot(parts[i], +e.target.value, ref); }, 'field') },
           Q.SLOT_TITLES.map((t, s2) => h('option', { value: s2, selected: slot === s2 }, Q.SLOT_NAMES[s2] + ': ' + t + (s2 && Q.drivenSlots(m.kind, m.name).indexOf(s2) < 0 ? ' (not set for this model)' : '')))),
-        h('span', 'Alpha'), num(p.alpha == null ? 1 : p.alpha, 0.05, set('a', (q, v) => { q.alpha = Math.max(0.01, Math.min(1, v)); }), 'under 1: see-through (projectiles only, drawn unlit, like the bubble)'),
-        h('span', 'Flags'), h('div', h('label.chk', { title: 'Casts a shadow' }, h('input', { type: 'checkbox', checked: p.shadow !== false, onchange: e => U.change(key, null, parts => { parts[i].shadow = e.target.checked; }, 'field') }), ' shadow '),
-          h('label.chk', { title: 'Only seen from outside (face plates: not drawn on your own body in first person)' }, h('input', { type: 'checkbox', checked: !!p.visOnly, onchange: e => U.change(key, null, parts => { parts[i].visOnly = e.target.checked; }, 'field') }), ' outside only '),
-          m.kind === 'player' ? h('label.chk', { title: 'A crouch squashes this box\'s height too (every box\'s centre height follows a crouch anyway; the default legs and body have it, the head not)' }, h('input', { type: 'checkbox', checked: !!p.crouch, onchange: e => U.change(key, null, parts => { parts[i].crouch = e.target.checked; }, 'field') }), ' crouch') : null)),
+        h('span', 'Alpha'), num(p.alpha == null ? 1 : p.alpha, 0.05, set('a', (q, v) => { q.alpha = Math.max(0.01, Math.min(1, v)); }), 'under 1: see-through (projectiles only, drawn unlit, like the bubble)', 'alpha', 0.01),
+        h('span', 'Flags'), h('div', h('label.chk', { title: 'Casts a shadow' }, h('input', { type: 'checkbox', 'data-fid': 'shadow', checked: p.shadow !== false, onchange: e => U.change(key, null, parts => { parts[i].shadow = e.target.checked; }, 'field') }), ' shadow '),
+          h('label.chk', { title: 'Only seen from outside (face plates: not drawn on your own body in first person)' }, h('input', { type: 'checkbox', 'data-fid': 'visOnly', checked: !!p.visOnly, onchange: e => U.change(key, null, parts => { parts[i].visOnly = e.target.checked; }, 'field') }), ' outside only '),
+          m.kind === 'player' ? h('label.chk', { title: 'A crouch squashes this box\'s height too (every box\'s centre height follows a crouch anyway; the default legs and body have it, the head not)' }, h('input', { type: 'checkbox', 'data-fid': 'crouch', checked: !!p.crouch, onchange: e => U.change(key, null, parts => { parts[i].crouch = e.target.checked; }, 'field') }), ' crouch') : null)),
       formula,
       h('p.faint', 'Slot: team = the team / accent colour, glow / metal / base / accent = the map\'s colours; the colour here is at the export\'s palette (team white). Exported as a box model (extras.quark version 2), the game draws these boxes exactly like its own: outlines, shadows, crouch, outside-only.'));
   }
@@ -383,7 +438,7 @@
       e.preventDefault();
       const v = S.view;
       if (v.mode === 'orbit' || v.mode === 'tp' || v.mode === 'flight' || v.mode === 'track') { S.orbit.dist = Math.max(0.05, Math.min(60, S.orbit.dist * Math.exp(e.deltaY * 0.0012))); S.build(); S.updateOverlay(); }
-      else { v.fov = Math.max(40, Math.min(140, Math.round(v.fov + Math.sign(e.deltaY) * 2))); S.saveView(); S.build(); U.syncViewBar(); }
+      else { v.fov = Math.max(60, Math.min(140, Math.round(v.fov + Math.sign(e.deltaY) * 2))); S.saveView(); S.build(); U.syncViewBar(); }   // (the game's range)
     }, { passive: false });
   }
 
@@ -404,9 +459,13 @@
     try { mesh = Q.gltf.parse(bytes, main.name, extra); } catch (e) { U.dialog('Cannot read ' + main.name, h('p', String(e.message || e) + '. The game would not load it either (it keeps the default).')); return; }
     let boxes = Q.boxes.partsOf(mesh, key, false);
     if (boxes && boxes.error) { U.dialog('Cannot use ' + main.name, h('p', 'Its box list (extras.quark version 2) fails the game\'s checks: ' + boxes.error + '. The game would log it and keep the default.')); return; }
-    const fields = { origin: boxes ? ((Q.state.prov && Q.state.prov[key] && Q.state.prov[key].origin) || 'ai') : 'third-party', source: '', licence: '', note: '' };
+    // the origin it comes with: written into the file by this editor, else what this editor last exported for the
+    // model, else a box model is taken as a tweak of what it replaces and a mesh as third-party
+    const rec = Q.provState(mesh.provenance) || Q.provState(Q.knownProv(key));
+    const fields = rec ? rec : { origin: boxes ? Q.baseOf(key).prov.origin : 'third-party' };
     const originSel = h('select', ['third-party', 'human', 'ai'].map(o => h('option', { value: o, selected: fields.origin === o }, o)));
-    const src = h('input', { type: 'text', placeholder: 'pack name, URL' }), lic = h('input', { type: 'text', placeholder: 'CC0, CC-BY 4.0 (author), ...' }), note = h('input', { type: 'text' });
+    const src = h('input', { type: 'text', placeholder: 'pack name, URL', value: fields.source || '' }), lic = h('input', { type: 'text', placeholder: 'CC0, CC-BY 4.0 (author), ...', value: fields.licence || '' });
+    const note = h('input', { type: 'text', value: fields.note || '' });
     const target = h('select', Q.order.map(k => h('option', { value: k, selected: k === key }, k)));
     const ok = await U.dialog('Import ' + main.name, [
       h('div.kv', h('span', 'Replaces'), target),
@@ -415,13 +474,15 @@
         : h('p', 'A mesh: shown as the game draws it (no outline, tinted by material name).'),
       mesh.tris > Q.MAX_TRIS ? h('p', { style: { color: '#ff8b8b' } }, 'Over the game\'s ' + Q.MAX_TRIS + ' triangle limit: the game would refuse it.') : null,
       h('div.kv', h('span', 'Origin'), originSel, h('span', 'Source'), src, h('span', 'Licence'), lic, h('span', 'Note'), note),
+      mesh.provenance ? h('p', 'The file says: ' + (mesh.provenance.origin || '?') + (mesh.provenance.by ? ', by ' + mesh.provenance.by : '') + (mesh.provenance.date ? ', ' + mesh.provenance.date : '') + (mesh.provenance.note ? ' (' + mesh.provenance.note + ')' : '') + '.') : null,
       h('p.faint', 'For provenance.json: a model from a pack is third-party (fill in where it is from and its licence); human = you made it yourself.')],
     [{ label: 'Cancel', value: false }, { label: 'Replace', value: true, primary: true, action: () => {
       if (originSel.value === 'third-party' && !src.value.trim()) { U.toast('Third-party: say where it is from (Source)'); src.focus(); return false; }
     } }]);
     if (!ok) return;
     key = target.value;
-    const prov = { origin: originSel.value };
+    const prov = { origin: originSel.value, auto: true };
+    if (rec && rec.origin === prov.origin) { if (rec.by) prov.by = rec.by; if (rec.scratch) prov.scratch = true; }
     if (src.value.trim()) prov.source = src.value.trim();
     if (lic.value.trim()) prov.licence = lic.value.trim();
     if (note.value.trim()) { prov.note = note.value.trim(); prov.auto = false; }
@@ -500,8 +561,14 @@
     ['drag / right drag / wheel', 'orbit / pan / zoom (first person, lineup: look around / fov)'], ['arrows, PgUp / PgDn', 'nudge the box 1 mm in x / z, y (Shift: 1 cm)'],
     ['Ctrl+D, Delete', 'duplicate, delete the box'], ['M', 'mirror the box across x = 0'], ['Space', 'animations on / off'], ['Esc', 'deselect'], ['?', 'this list']];
   U.help = () => U.dialog('Keys', h('table.keys', KEYS.map(([k, d]) => h('tr', h('td', k), h('td', d)))));
+  U.closeMenus = function () {
+    const open = document.querySelectorAll('.menu.open');
+    open.forEach(x => x.classList.remove('open'));
+    return open.length > 0;
+  };
   function onKey(e) {
     const t = e.target;
+    if (e.key === 'Escape' && U.closeMenus()) { e.preventDefault(); if (t && t.blur && t.closest && t.closest('.menu')) t.blur(); return; }
     if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA') && t.type !== 'checkbox') return;
     if ($('#dlg').open) return;
     const k = e.key, ctrl = e.ctrlKey || e.metaKey, key = S.sel;
@@ -541,9 +608,15 @@
       $(sel).addEventListener('change', e => {
         const el = e.target, v = S.view;
         if (t === 'chk') v[k] = el.checked; else if (t === 'sun') v[k] = el.checked ? 1 : 0;
-        else if (t === 'num') { const x = parseFloat(el.value); if (!Number.isFinite(x)) return; v[k] = x; }
+        else if (t === 'num') {   // (within the field's min / max: a bad value would blank the view)
+          const x = parseFloat(el.value);
+          if (!Number.isFinite(x)) { el.value = v[k]; return; }
+          v[k] = Math.min(el.max === '' ? Infinity : +el.max, Math.max(el.min === '' ? -Infinity : +el.min, x));
+          if (v[k] !== x) el.value = v[k];
+        }
         else if (t === 'int') v[k] = parseInt(el.value, 10); else v[k] = el.value;
         viewChanged(k === 'palette' || k === 'drawAs' || k === 'team');
+        U.syncAvail();
         if (k === 'drawAs' || k === 'palette') U.renderPanel();
       });
     }
@@ -570,7 +643,7 @@
       if (!Q.canPickFolder()) { U.dialog('Not in this browser', h('p', 'Reading a folder needs Chrome or Edge.')); return; }
       let root; try { root = await window.showDirectoryPicker({ id: 'quark-overrides', mode: 'read' }); } catch (e) { return; }
       try {
-        const r = await Q.loadFromFolder(root);
+        const r = await Q.loadFromFolder(root, { provDir: await Q.loadHandle('provDir') });
         U.afterLoad();
         U.dialog('Loaded from ' + r.where, [h('p', r.loaded.length + ' model(s) loaded as edits' + (r.loaded.length ? ': ' + r.loaded.join(', ') : '') + '.'),
           r.failed.length ? h('ul', r.failed.map(f => h('li', f.name + ': ' + f.why))) : null]);
@@ -584,6 +657,7 @@
       await Q.clearAutosave(); U.afterLoad();
     });
     document.addEventListener('keydown', onKey);
+    initLibResize();
     // drop files anywhere
     let dragDepth = 0;
     window.addEventListener('dragenter', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { dragDepth++; $('#dropHint').hidden = false; e.preventDefault(); } });
@@ -592,30 +666,48 @@
     window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; $('#dropHint').hidden = true; if (e.dataTransfer.files.length) U.importFiles(e.dataTransfer.files); });
     U.syncViewBar();
   };
+  // the library's width: drag its edge (remembered; double-click: back to the default, about a fifth of the window,
+  // so a 2560 px screen shows five cards across and 1280 two)
+  function initLibResize() {
+    const lib = $('#lib'), grip = $('#libResize'), KEY = 'qme.libW';
+    const clampW = w => Math.round(Math.max(160, Math.min(window.innerWidth * 0.6, w)));
+    try { const w = +localStorage.getItem(KEY); if (w > 0) lib.style.width = clampW(w) + 'px'; } catch (e) { }
+    let start = null;
+    grip.addEventListener('pointerdown', e => { grip.setPointerCapture(e.pointerId); start = { x: e.clientX, w: lib.getBoundingClientRect().width }; grip.classList.add('on'); e.preventDefault(); });
+    grip.addEventListener('pointermove', e => { if (start) lib.style.width = clampW(start.w + e.clientX - start.x) + 'px'; });
+    grip.addEventListener('pointerup', () => {
+      if (!start) return;
+      start = null; grip.classList.remove('on');
+      try { localStorage.setItem(KEY, String(parseInt(lib.style.width, 10))); } catch (e) { }
+    });
+    grip.addEventListener('dblclick', () => { lib.style.width = ''; try { localStorage.removeItem(KEY); } catch (e) { } });
+  }
   U.afterLoad = function () {
     for (const k of Q.order) Q.bump(k);
     U.renderLibrary();
     if (S.sel) U.select(S.sel, true);
+    U.syncUndo();
     Q.scheduleAutosave();
   };
+  U.syncUndo = () => { $('#btnUndo').disabled = !Q.canUndo(); $('#btnRedo').disabled = !Q.canRedo(); };
 
   // --- reacting to changes -------------------------------------------------------------------------------------------
   let saveT = 0, cardT = 0;
   Q.scheduleAutosave = () => { clearTimeout(saveT); saveT = setTimeout(() => Q.autosave(), 800); };
   Q.onStateChanged = function (why, key) {
     Q.scheduleAutosave();
-    if (why === 'prov') return;
+    if (why === 'prov') { U.syncUndo(); U.schedulePanel(); if (key) U.refreshCard(key); return; }
     if (key && key !== S.sel && (why === 'undo' || why === 'redo')) { U.select(key, true); return; }
     const cur = key ? Q.current(key) : null;
     if (cur && cur.type === 'boxes' && S.part >= cur.parts.length) S.part = cur.parts.length - 1;
     if (cur && cur.type !== 'boxes') S.part = -1;
     S.build(); S.updateOverlay(); U.renderHud();
-    if (why !== 'typing') U.renderPanel();
+    if (why !== 'typing') U.schedulePanel();
     else {   // typing / dragging: only the list row (the field being typed in stays)
       const row = document.querySelectorAll('.parts tr')[S.part], p = cur && cur.parts && cur.parts[S.part];
       if (row && p) { row.querySelector('.sw').style.background = slotColorCss(p); row.lastChild.textContent = fmt(p.h[0] * 200, 1) + 'x' + fmt(p.h[1] * 200, 1) + 'x' + fmt(p.h[2] * 200, 1) + ' cm'; }
     }
-    $('#btnUndo').disabled = !Q.canUndo(); $('#btnRedo').disabled = !Q.canRedo();
+    U.syncUndo();
     clearTimeout(cardT); cardT = setTimeout(() => { if (key) U.refreshCard(key); }, why === 'typing' ? 400 : 0);
   };
 
@@ -631,6 +723,7 @@
   };
   U.loop = function (t) {
     requestAnimationFrame(U.loop);
+    R.pollReads();
     const dt = last ? t - last : 16; last = t;
     if (S.view.play) { S.time += dt / 1000; S.animate(S.time); }
     const cv = $('#gl');
