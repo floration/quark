@@ -3040,6 +3040,17 @@ static void testWallbang() {
 
 // Syringe: each use heals you 10 hp, with a 1 s cooldown (owner 1.17); a thrown one heals the teammate it hits by 30
 // and resets their cooldowns; it does nothing to an enemy.
+// A spawn with an open 5 m lane in front of it (-z) and floor at its end: where the syringe tests throw (spawns no
+// longer keep teammates apart, T16, so whichever one b got may face a wall)
+static Vec3 openLane(const Map& m, Vec3 fallback) {
+    for (auto& sp : m.spawns) {
+        Vec3 p = sp.pos, end = p + Vec3(0, 0, -5);
+        bool clear = m.raycast(p + Vec3(0, 0.5f, 0), {0, 0, -1}, 6) < 0 && m.raycast(p + Vec3(0, 1.6f, 0), {0, 0, -1}, 6) < 0;
+        float down = m.raycast(end + Vec3(0, 1, 0), {0, -1, 0}, 3);
+        if (clear && down > 0.9f && down < 1.1f) return p;
+    }
+    return fallback;
+}
 static void testSyringe(uint16_t port) {
     printf("syringe\n");
     Server s;
@@ -3073,7 +3084,7 @@ static void testSyringe(uint16_t port) {
     // b throws at a, 5 m in front of it (yaw 0 looks down -z)
     pa.health = 40; pa.move.dashCharges = 0; pa.nextFire = s.time() + 5;
     pa.move.dashCooldownMs = 30000; pa.move.dashRecharging = 2; pa.move.dashRechargeMs[0] = pa.move.dashRechargeMs[1] = 30000;   // (nothing comes back on its own)
-    Vec3 base = pb.move.pos;
+    Vec3 base = openLane(s.map_, pb.move.pos);
     auto place = [&] { pb.move.pos = base; pb.move.vel = {}; pa.move.pos = base + Vec3(0, 0, -5); pa.move.vel = {}; };
     for (int k = 0; k < 5; k++) { place(); pump(s, cls, 0.02, idle); }
     int tick = 0;
@@ -7051,6 +7062,8 @@ static void testBots(uint16_t& port) {
         s.setLog([](const std::string&) {});
         if (!s.start(cfg)) { g_fail++; continue; }
         std::vector<NetClient*> cls;
+        NetClient me;   // 1v1 and duel are the player and their team size of bots (F7: no ally in 1v1): the player joins
+        if (mode == MODE_ARENA || mode == MODE_DUEL) { me.connect("127.0.0.1:" + std::to_string(cfg.port), "me"); cls.push_back(&me); }
         pump(s, cls, 14.0, idle);
         int kills = 0, cps = 0;
         for (auto& p : s.players_) { kills += p.kills; cps += p.checkpoint; }

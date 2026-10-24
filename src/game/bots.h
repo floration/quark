@@ -148,3 +148,7 @@ UserCmd botThink(Server& s, int id);
 // calling botThinkDirect, which is botThink without the hook).
 extern UserCmd (*g_botThinkHook)(Server& s, int id);
 UserCmd botThinkDirect(Server& s, int id);
+// Tests: the route-search budget's state (the tick it counts for, searches used): the lockstep harness hands both
+// brains the same budget, as each would have had thinking alone.
+uint32_t& botPathTick();
+int& botPathsThisTick();

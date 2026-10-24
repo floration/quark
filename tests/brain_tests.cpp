@@ -65,9 +65,12 @@ UserCmd lockstepThink(Server& s, int id) {
     BotBrain saved = s.bots_[id];
     saved.tc.dt = -1;   // (each side works out its own per-tick constants)
     s.bots_[id] = saved;
+    const uint32_t pathTick = botPathTick();   // (the route-search budget is per tick: both sides start from the same)
+    const int paths = botPathsThisTick();
     UserCmd ca = ls.a(s, id);
     BotBrain ba = s.bots_[id];
     s.bots_[id] = saved;
+    botPathTick() = pathTick; botPathsThisTick() = paths;
     UserCmd cb = ls.b(s, id);
     ls.thinks++;
     ls.buttons |= cb.buttons;

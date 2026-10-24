@@ -275,6 +275,9 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     if (cfg_.editMode) setEditing(true);
     if (cfg_.vsBots) {
         cfg_.autoStart = true;
+        // 1v1 is one enemy and no allies, duel its team size a side (the team sliders made both 2v3: F7)
+        if (cfg_.mode == MODE_ARENA) { cfg_.botsEnemy = 1; cfg_.botsAlly = 0; }
+        else if (cfg_.mode == MODE_DUEL) { int n = std::min(std::max(cfg_.duelTeamSize, 1), 2); cfg_.botsEnemy = n; cfg_.botsAlly = n - 1; }
         bool teams = modeIsTeamBased(cfg_.mode);
         for (int k = 0; k < cfg_.botsEnemy; k++) addBot(teams ? TEAM_B : TEAM_A, cfg_.botSkill);
         for (int k = 0; k < cfg_.botsAlly && teams; k++) addBot(TEAM_A, cfg_.botSkill);
@@ -1780,7 +1783,12 @@ void Server::spawnPlayer(int id) {
     } else {
         // Pick the free spawn farthest from other living players. Free for all and instagib (one hit kills):
         // above all, one nobody can see (a clear line from anyone's eyes), so nobody is shot as they appear.
-        const bool unseen = ms_.mode == MODE_FFA || (arenaRules() & AR_INSTAGIB);
+        // Team modes (T16): the same, but only enemies count, for distance and for sight; it used to keep away from
+        // teammates as much as from enemies, and 49-61% of Summit's KOTH respawns were in an enemy's sight. A spawn a
+        // teammate stands on is taken (-1e5: behind any seen one, ahead of a crouch-only one).
+        const bool teams = modeIsTeamBased(ms_.mode) && p.team != TEAM_SPECTATOR;
+        const bool unseen = ms_.mode == MODE_FFA || (arenaRules() & AR_INSTAGIB) || teams;
+        auto rival = [&](int i) { return i != id && players_[i].connected && players_[i].alive && (!teams || players_[i].team != p.team); };
         const SpawnPoint* best = cands[qrand() % cands.size()];
         float bestScore = -1e9f;
         bool bestCrouched = false;
@@ -1794,20 +1802,22 @@ void Server::spawnPlayer(int id) {
         int nEyes = 0;
         Vec3 eyes[kMaxPlayers];
         for (int i = 0; i < kMaxPlayers; i++)
-            if (i != id && players_[i].connected && players_[i].alive) eyes[nEyes++] = players_[i].move.pos + Vec3(0, kEyeHeight * bodyScale(), 0);
+            if (rival(i)) eyes[nEyes++] = players_[i].move.pos + Vec3(0, kEyeHeight * bodyScale(), 0);
         for (size_t c = 0; c < cands.size(); c++) {
             const SpawnPoint* sp = cands[c];
             float nearest = 1e9f;
+            bool taken = false;
             for (int i = 0; i < kMaxPlayers; i++) {
                 if (i == id || !players_[i].connected || !players_[i].alive) continue;
-                nearest = std::min(nearest, length(players_[i].move.pos - sp->pos));
+                if (rival(i)) nearest = std::min(nearest, length(players_[i].move.pos - sp->pos));
+                else taken |= length(players_[i].move.pos - sp->pos) < 1.2f;   // (a teammate on it)
             }
             // a giant needs a giant's room: standing, else crouched (it stands up once there's room), always behind
             // any spawn where it can stand
             bool low = map_.boxSolid(playerBox(sp->pos, false, scale));
             if (low && map_.boxSolid(playerBox(sp->pos, true, scale))) continue;
             float base = nearest + (qrand() % 100) * 0.01f;
-            cands_.push_back({sp, base - 0 * 1000.0f - (low ? 1e6f : 0.0f), (int)c, low, base});
+            cands_.push_back({sp, base - (taken ? 1e5f : 0.0f) - (low ? 1e6f : 0.0f), (int)c, low, base});
         }
         int bestIdx = -1;
         auto beats = [&](float score, int idx) { return score > bestScore || (score == bestScore && bestIdx >= 0 && idx < bestIdx); };
@@ -1827,7 +1837,7 @@ void Server::spawnPlayer(int id) {
                     float d = length(to);
                     if (d > 0.1f && !map_.raycastAny(eyes[e], to / d, d)) {   // nothing in between
                         seenBy++;
-                        score = c.base - seenBy * 1000.0f - (c.low ? 1e6f : 0.0f);
+                        score = c.upper - seenBy * 1000.0f;   // (upper: base less the taken / crouch-only penalties)
                         out = !beats(score, c.idx);
                     }
                 }
@@ -1924,6 +1934,9 @@ void Server::killPlayer(int victim, int killer, int weapon) {
          v.name.c_str(), weapon);
     rulesOnDeath(*this, victim, killer);
     float d = rulesRespawnDelay(*this);
+    // hide and seek: a seeker who falls (or dies) is back after 2 s; it used to stay dead and the round idled out
+    // its 300 s with every hider scoring (owner's pick, F6)
+    if (ms_.mode == MODE_HIDE && v.it && (ms_.phase == PHASE_LIVE || ms_.phase == PHASE_FREEZE)) d = kSeekerRespawn;
     v.respawnAt = d >= 0 ? time() + d : -1;
 }
 

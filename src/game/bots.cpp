@@ -407,6 +407,14 @@ struct Interp {
 };
 #define NATIVE(slot) (!ip || ip->native(slot))
 
+// How many of the bot's teammates have a lower slot id: defenders deal out the bomb sites by it (by slot id they
+// could all draw the same one: in a vs bots game every defender bot had an odd id - F10)
+int teamRank(const Server& s, int id) {
+    int r = 0;
+    for (int i = 0; i < id; i++) r += s.players_[i].connected && s.players_[i].team == s.players_[id].team;
+    return r;
+}
+
 // The objective slots' sensors (and urgent's)
 void objectiveSensors(const Server& s, int id, BrainCall& c) {
     const ModeState& m = s.ms_;
@@ -427,6 +435,7 @@ void objectiveSensors(const Server& s, int id, BrainCall& c) {
     in[S_NAVREADY] = !s.nav_.nodes.empty() && s.nav_.mapId == map.id();
     in[S_IT] = me.it;
     in[S_SITECOUNT] = (double)map.bombSites.size();
+    in[S_TEAMRANK] = teamRank(s, id);
 }
 
 // ---- perception: look (view cone + line of sight) and listen, at 20 Hz of game time
@@ -630,8 +639,9 @@ Vec3 objective(Server& s, int id, BotBrain& b, const BrainParams& sp, Interp* ip
             if (m.bombState == BOMB_PLANTED) return m.bombPos;
             if (m.bombState == BOMB_DROPPED && att) return m.bombPos;
             if (!map.bombSites.empty()) {
-                // carrier (and attackers) head for the nearest site; defenders guard a site each
-                const AABB& site = map.bombSites[(att ? 0 : id) % map.bombSites.size()];
+                // carrier (and attackers) head for the nearest site; defenders guard a site each, dealt out by their
+                // rank in the team (by slot id they could all draw the same site: every defender bot had odd ids - F10)
+                const AABB& site = map.bombSites[(att ? 0 : teamRank(s, id)) % map.bombSites.size()];
                 if (att && m.bombState == BOMB_CARRIED && m.bombCarrier != id) {
                     const auto& c = s.players_[m.bombCarrier];
                     if (c.connected && c.alive) return c.move.pos; // escort (a teammate: shown on the HUD)
@@ -706,6 +716,8 @@ const char* botSkillName(int skill) {
 }
 
 UserCmd (*g_botThinkHook)(Server&, int) = nullptr;
+uint32_t& botPathTick() { return g_pathTick; }
+int& botPathsThisTick() { return g_pathsThisTick; }
 UserCmd botThink(Server& s, int id) { return g_botThinkHook ? g_botThinkHook(s, id) : botThinkDirect(s, id); }
 
 UserCmd botThinkDirect(Server& s, int id) {
