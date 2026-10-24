@@ -1422,7 +1422,7 @@ void Game::frame(double dt) {
                 // the next shot one refire after this one's slot, not after this frame: re-basing on the frame's time made
                 // every held shot up to a frame late, adding up (a rifle burst's last shot heard ~70 ms after the real one)
                 localNextFire_ = (cadence ? localNextFire_ : time_) + shotRefire(w, alt);
-                if (isThrow(w, alt)) (w == WPN_KNIFE ? localKnifeBack_ : localSyringeBack_) = time_ + (w == WPN_KNIFE ? kKnifeAway : kSyringeAway);
+                if (isThrow(w, alt)) (w == WPN_KNIFE ? localKnifeBack_ : localSyringeBack_) = time_ + (w == WPN_KNIFE ? weaponAlt().knifeAway : weaponAlt().syringeAway);
                 if (w != WPN_LASER || time_ >= nextLaserSound_) { // laser fires every 10 ms: sound at 20 Hz
                     audio_.play(SND_RIFLE + w, w == WPN_LASER ? 0.6f : 0.8f, 0.97f + (qrand() % 7) * 0.01f);
                     nextLaserSound_ = time_ + 0.05;
@@ -1444,7 +1444,7 @@ void Game::frame(double dt) {
                         if (w == WPN_SHOTGUN && alt) { // ricochet: draw each leg (players ignored, like the server's walls)
                             Vec3 o = eye;
                             float range = wd.range;
-                            for (int b = 0; b <= kShotgunBounces && range > 0.01f; b++) {
+                            for (int b = 0; b <= weaponAlt().bounces && range > 0.01f; b++) {
                                 Vec3 n;
                                 float t = net_.map().raycast(o, d, range, &n);
                                 Vec3 to = o + d * (t < 0 ? range : t);
@@ -2694,8 +2694,8 @@ void Game::drawHud() {
             if (out > 0 || heldWeapon_ == WPN_STICKY) {
                 auto e = he(Settings::HUD_WEAPON);
                 float k = std::max(1.0f, std::round(ts * 0.9f * e.scale));
-                std::string t = "STICKIES " + std::to_string(out) + "/" + std::to_string(kMaxStickies);
-                r_.text(W - 24 * s - r_.textWidth(t, k) + e.x * s, H - 128 * s * e.scale + e.y * s, k, t, out >= kMaxStickies ? Color{1, 0.6f, 0.2f, 1} : tint(Settings::HUD_WEAPON, kWhite));
+                std::string t = "STICKIES " + std::to_string(out) + "/" + std::to_string(weaponAlt().stickyMax);
+                r_.text(W - 24 * s - r_.textWidth(t, k) + e.x * s, H - 128 * s * e.scale + e.y * s, k, t, out >= weaponAlt().stickyMax ? Color{1, 0.6f, 0.2f, 1} : tint(Settings::HUD_WEAPON, kWhite));
             }
         }
         {   // enemy stickies stuck on you: a blinking warning under the crosshair

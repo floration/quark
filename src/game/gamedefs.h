@@ -194,6 +194,40 @@ struct WeaponDef {
     float life;         // projectile lifetime (s)
     bool semiAuto = false; // one shot per click (a click up to 0.15 s early is kept until it can fire)
 };
+// The rest of a weapon's numbers (weaponset.h: a weapon set can change every one; the standard values are the
+// constants below). Read through weaponExtra(w) / weaponAlt(), the active rules' tuned copies (customrules.cpp).
+struct WeaponExtra {
+    float headDamage;     // a hit on the head (0 = no headshots); x the custom mode's damage multiplier
+    float knock;          // knockback: hitscan x1 (pellets: per pellet's worth of damage), beam m/s per s, bolt m/s, blast centre m/s
+    float falloffStart, falloffEnd, falloffMin;   // damage x1 up to start (m), then linearly to x min at end; min 1 = none
+    float directDamage;   // a projectile that hits the player itself does at least this (x the mode's damage multiplier)
+    float selfDamage;     // x your own splash damage
+    float wallbang;       // x damage through a wallbang wall (hitscan)
+    uint8_t curveKind, curveN;   // a falloff curve of the set (0 none, 1 steps, 2 points: evalWeaponCurve), replaces the fields
+    float curveBase, curveX[16], curveY[16];
+    bool falloff;         // falloffMin != 1 or a curve: weaponFalloff() has work to do
+};
+struct WeaponAlt {        // the alt-fires (one weapon each)
+    float scopedRefire;                                    // rifle: x refire while scoped
+    float lobSpeed, lobGravity;                            // rocket lob: x speed, its drop (m/s2)
+    float knifeThrowSpeed, knifeThrowGravity, knifeThrowLife, knifeAway, knifeGrow;
+    int bounces; float bounceDamage;                       // shotgun ricochets
+    float pullScale, pullDamage;                           // laser pull beam
+    int streamMin, streamMax; float streamNear, streamFar, streamRefire, streamSlow, streamFast;   // bubble stream
+    float syringeThrowSpeed, syringeThrowGravity, syringeThrowLife, syringeHeal, syringeAway;      // (heal x the mode's syringe damage)
+    int stickyMax; float stickyArmTime, stickyInherit;
+};
+const WeaponExtra& weaponExtra(int w);   // customrules.cpp: the active rules' (standard when none)
+const WeaponAlt& weaponAlt();
+float evalWeaponCurve(const WeaponExtra& e, float x);   // weaponset.cpp
+// Damage x this at `dist` metres (1 when the weapon has no falloff: the caller skips it then).
+inline float weaponFalloff(const WeaponExtra& e, float dist) {
+    if (!e.falloff) return 1.0f;
+    if (e.curveKind) return evalWeaponCurve(e, dist);
+    if (dist <= e.falloffStart) return 1.0f;
+    if (e.falloffEnd <= e.falloffStart || dist >= e.falloffEnd) return e.falloffMin;
+    return 1.0f + (e.falloffMin - 1.0f) * ((dist - e.falloffStart) / (e.falloffEnd - e.falloffStart));
+}
 constexpr float kFireBuffer = 0.15f;
 constexpr float kWallbangDamage = 0.5f; // hitscan through a wallbang wall
 constexpr float kLaserPush = 20.0f;        // laser knockback (m/s per second of beam on target)
@@ -313,10 +347,9 @@ struct MoveTuning {
     MoveTuning() { for (float& v : m) v = 1; }
 };
 const MoveTuning& moveTuning();
-inline float headDamage(int w) {
-    return tunedDamage(w) * (w == WPN_SNIPER ? kSniperHeadDamage : w == WPN_CROSSBOW ? kCrossbowHeadDamage : w == WPN_RIFLE ? kRifleHeadDamage
-         : w == WPN_SHOTGUN ? kPelletHeadDamage : 0.0f);
-}
+// (standard: sniper kSniperHeadDamage, crossbow kCrossbowHeadDamage, rifle kRifleHeadDamage, each pellet kPelletHeadDamage, else 0;
+// x the custom mode's damage multiplier)
+inline float headDamage(int w) { return weaponExtra(w).headDamage; }
 constexpr float kHeadFraction = 0.2f;       // the head: the top 20% of the hitbox...
 constexpr float kHeadWidthFraction = 0.45f; // ...and 45% of its width, centred (0.36 m of 0.8): the shoulders beside it are body
 constexpr float kRocketLobSpeed = 0.7f, kRocketLobGravity = 13.5f; // rocket alt-fire: a lob at 70% speed that drops at 13.5 m/s2 (owner 1.17: the old primary's 10.8 + 25%; was 3x 10.8); the primary flies straight
@@ -336,10 +369,11 @@ inline bool isThrow(int w, bool alt) { return alt && (w == WPN_KNIFE || w == WPN
 // Projectiles fly in fixed kMoveStep (1 ms) steps, like movement, so an arc is the same at every server tick rate
 // (C8); the client draws them with the same steps. One step: vel.y -= gravity * step, then pos += vel * step.
 inline float projectileGravity(int type, float gravMul, const WeaponDef& wd) {   // wd: weaponDef(type) (stepProjectile has it)
-    if (type == WPN_ROCKET && gravMul != 1) return kRocketLobGravity;   // (the primary flies straight: no gravity to scale)
-    return type == WPN_KNIFE ? kKnifeThrowGravity : type == WPN_SYRINGE ? kSyringeThrowGravity : wd.gravity * gravMul;
+    // (gravMul != 1 marks a rocket lob: it drops at the lob's own gravity; the primary flies straight)
+    if (type == WPN_ROCKET && gravMul != 1) return weaponAlt().lobGravity;
+    return type == WPN_KNIFE ? weaponAlt().knifeThrowGravity : type == WPN_SYRINGE ? weaponAlt().syringeThrowGravity : wd.gravity * gravMul;
 }
-inline float projectileGravity(int type, float gravMul) {   // gravMul: kRocketLobGravity for a rocket lob (its own drop), else 1
+inline float projectileGravity(int type, float gravMul) {   // gravMul: kRocketLobGravity (a marker) for a rocket lob (its own drop), else 1
     return projectileGravity(type, gravMul, weaponDef(type));
 }
 // Where those steps take a projectile in t seconds (walls aren't checked): the whole steps summed in closed form (one
@@ -362,10 +396,11 @@ constexpr int kBubbleStreamMin = 5, kBubbleStreamMax = 15;
 constexpr float kBubbleStreamNear = 5.0f, kBubbleStreamFar = 30.0f;
 constexpr float kBubbleStreamRefire = 1.8f;
 constexpr float kBubbleStreamSlow = 8.4f, kBubbleStreamFast = 24.0f;
-inline int bubbleStreamCount(float nearestEnemy) {
-    float f = (nearestEnemy - kBubbleStreamNear) / (kBubbleStreamFar - kBubbleStreamNear);
+inline int bubbleStreamCount(float nearestEnemy) {   // (the numbers: weaponAlt(), standard the constants above)
+    const WeaponAlt& a = weaponAlt();
+    float f = a.streamFar > a.streamNear ? (nearestEnemy - a.streamNear) / (a.streamFar - a.streamNear) : nearestEnemy > a.streamNear ? 1.0f : 0.0f;
     f = f < 0 ? 0 : f > 1 ? 1 : f;
-    return kBubbleStreamMin + (int)(f * (kBubbleStreamMax - kBubbleStreamMin) + 0.5f);
+    return a.streamMin + (int)(f * (a.streamMax - a.streamMin) + 0.5f);
 }
 constexpr float kProjInherit = 0.9f;    // stickies keep 90% of the shooter's forward / back and vertical velocity (not sideways: owner 1.17)
 // What a sticky inherits from its shooter's velocity: kProjInherit of the part along where they aim (horizontally:
@@ -375,7 +410,7 @@ inline Vec3 stickyInherit(const Vec3& shooterVel, const Vec3& aim) {
     float fl = std::sqrt(aim.x * aim.x + aim.z * aim.z);
     Vec3 v = {0, shooterVel.y, 0};
     if (fl > 1e-4f) { float fx = aim.x / fl, fz = aim.z / fl, along = shooterVel.x * fx + shooterVel.z * fz; v.x = fx * along; v.z = fz * along; }
-    return v * kProjInherit;
+    return v * weaponAlt().stickyInherit;   // (standard kProjInherit)
 }
 constexpr float kCrossbowKnock = 16.0f; // a bolt hit shoves hard (m/s along the bolt)
 constexpr float kBubbleKnock = 0.35f; // a pop shoves you a third as hard as a rocket blast of the same strength
@@ -383,8 +418,8 @@ constexpr float kVampireFadeTime = 60.0f, kVampireMinHeal = 0.5f; // laser vampi
 // The refire for this shot: alt-fire modes change it.
 inline float shotRefire(int w, bool alt) {
     float r = weaponDef(w).refire;
-    if (alt && w == WPN_RIFLE) return r * kRifleScopedRefire;       // scoped rifle
-    if (alt && w == WPN_BUBBLE) return kBubbleStreamRefire;         // the bubble stream
+    if (alt && w == WPN_RIFLE) return r * weaponAlt().scopedRefire;   // scoped rifle (standard kRifleScopedRefire)
+    if (alt && w == WPN_BUBBLE) return weaponAlt().streamRefire;      // the bubble stream (standard kBubbleStreamRefire)
     // (knife / syringe throws: the weapon's own cooldown, for every weapon: no throw + instant shot combo, GAME-8)
     return r;
 }

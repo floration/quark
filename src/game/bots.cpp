@@ -929,9 +929,9 @@ UserCmd botThinkDirect(Server& s, int id) {
         if (NATIVE(SLOT_THROW_KNIFE)) throwKnife = w == WPN_KNIFE && dist > wd.range + 0.5f && dist < sp.knifeThrowMax && sp.canLead && !isItMode(s.ms_.mode);
         else { ip->c.in[S_WEAPON] = w; ip->c.in[S_DIST] = dist; ip->c.in[S_WEAPONRANGE] = wd.range; throwKnife = ip->run(SLOT_THROW_KNIFE)[0] != 0; }
         if (throwKnife) {
-            float tf = dist / kKnifeThrowSpeed;
+            float tf = dist / weaponAlt().knifeThrowSpeed;
             aimAt += b.velEst * (tf * b.leadFactor);
-            aimAt.y += 0.5f * kKnifeThrowGravity * tf * tf * b.dropFactor;
+            aimAt.y += 0.5f * weaponAlt().knifeThrowGravity * tf * tf * b.dropFactor;
         }
         if (wd.projectile) {
             float tf = dist / wd.projSpeed;

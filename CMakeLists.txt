@@ -152,6 +152,7 @@ add_library(quark_core STATIC
   src/game/master.cpp
   src/game/ranked.cpp
   src/game/customrules.cpp
+  src/game/weaponset.cpp
   src/game/demo.cpp
   ${CMAKE_BINARY_DIR}/generated/version.cpp
   ${CMAKE_BINARY_DIR}/generated/default_brain.h
