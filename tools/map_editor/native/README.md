@@ -323,7 +323,10 @@ What `start()` does:
 snapshot pass at the snapshot rate, exactly as `frame()` does. No sockets are read and no real-time clock is
 involved. `server()` gives the real `Server` for anything the API doesn't cover.
 
-One BotSim runs per process: the user data folder and `qsrand` are global.
+Several BotSims can run at once, one per thread (`simbatch` does): the game's user data folder is one global, so
+each gets the same `sharedDataDir`, made once by `BotSim::prepareSharedDir()` before the threads start, and runs
+each match on a fresh thread (the game keeps `qrand` and its custom rules per thread). A single BotSim with no
+`sharedDataDir` makes a folder of its own. `tools/bot_editor/native/SIM.md` has the details.
 
 ## Copied logic (dedupe later)
 

@@ -13,6 +13,7 @@
 #include <functional>
 #include <memory>
 #include <vector>
+#include "botbrain.h"
 #include "map.h"
 #include "../common/qmath.h"
 #include "pmove.h"
@@ -35,6 +36,7 @@ struct BotAwareness {
 struct BotBrain {
     int skill = BOT_INTERMEDIATE;
     uint32_t rng = 1;
+    std::shared_ptr<const Brain> brain;   // its brain (botbrain.h); null: the built-in one
     int forceWeapon = -1;      // tests: always use this weapon
     int onlyEnemy = -1;        // tests: the only player treated as an enemy
     std::function<UserCmd(Server&, int)> script; // tests: this bot's input comes from here instead (a scripted player)
@@ -82,6 +84,7 @@ struct BotBrain {
     // again whenever either changes (bots.cpp tickConsts: the same expressions, so bit-identical to inline)
     struct TickConsts {
         float dt = -1; int rate = -1, skill = -1;   // what they were worked out for
+        const void* params = nullptr;      // (and for which brain's numbers)
         float velK = 0;                    // perceived velocity catch-up per tick: 1 - exp(-dt / velTau)
         float noiseA = 0, noiseKK = 0;     // tracking error: exp(-dt / noiseTau), sqrt(max(0, 1 - a^2))
         float settle = 0;                  // flick error left after a tick: exp(-dt / settleTau)
@@ -89,6 +92,7 @@ struct BotBrain {
         int seenTicks = 0, olderTicks = 0; // seenAgo's history offsets (visDelayMs, visDelayMs + 16)
         int turnSteps = 1; float turnH = 0, turnDv = 0; // the hand's 1 ms steps: count, length, speed change
     } tc;
+    BrainChanceCache chance;   // an interpreted brain's chance() thresholds (botbrain.h)
 };
 
 struct NavJob;
@@ -139,3 +143,7 @@ struct NavGraph {
 
 // Produces this tick's input for bot `id`.
 UserCmd botThink(Server& s, int id);
+// Tests: when set, botThink calls this instead (the lockstep tests run two brains side by side through it, each
+// calling botThinkDirect, which is botThink without the hook).
+extern UserCmd (*g_botThinkHook)(Server& s, int id);
+UserCmd botThinkDirect(Server& s, int id);

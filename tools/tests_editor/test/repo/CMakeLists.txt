@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.16)
+if(QUARK_BUILD_TESTS)
+  add_test(NAME quark_tests COMMAND quark_tests WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+  set_tests_properties(quark_tests PROPERTIES TIMEOUT 600)
+endif()

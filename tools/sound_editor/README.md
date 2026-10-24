@@ -20,6 +20,11 @@ Python 3 standard library only. `--page-only` rewrites only the page and keeps `
 Rebuild after a game update so the page shows the current defaults. Your work is not in these files: it is autosaved in
 the browser and in the project files you save.
 
+**Install / update in one step** (non-interactive; the Quark Project app runs it): `python tools/sound_editor/install.py [out]`
+(default out: `<checkout>/../sound-editor`). It exports the sounds with the first `quark_tests` it finds (`$QUARK_TESTS`,
+`build-win`, `build`, `../working-repo-sound/build-win`, `../.src/testing/build-win`) and rebuilds page + data; with none it
+rebuilds only the page if data is already there. It writes `INSTALLED.txt` and never opens a browser.
+
 ## Export to the game
 
 **Export to game** renders every edited sound (trim, fades, chain) as 48 kHz 16-bit mono WAV at its override path,

@@ -37,6 +37,9 @@ python3 dashboard.py [--quark <Quark folder>] [--repo <clone>] [--port 8765] [--
   `%APPDATA%\quark`, `~/.local/share/quark`, `~/Library/Application Support/quark`).
 - `--sidecar`: where your marks go. Default `provenance.json` next to the program; when the program runs from inside a
   git clone, `Quark\editor-dashboard\provenance.json` instead (it never writes into a clone).
+- `QUARK_SHELL=1` (environment): never opens a browser (the Quark Project app shows the page); if a server is
+  already on the port it just exits. The app installs / updates with `python tools/editor_dashboard/dashboard.py
+  --install` run in `repository\` (non-interactive, safe to re-run, keeps your marks).
 - `--dump`: build the snapshot once, print every endpoint's JSON, exit (tests; no server).
 
 ## What it reads, what it writes

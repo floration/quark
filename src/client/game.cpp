@@ -47,6 +47,8 @@ std::string fmtTime(float s) {
     return b;
 }
 
+const ModelPalette kNoSlots;   // (props with no colour slots: the arms, the bomb's backpack)
+
 const char* weaponName(int w) {
     if (w == kDamageGrapple) return "grapple";
     if (w == 252) return "fell";
@@ -61,22 +63,7 @@ const char* weaponName(int w) {
 // window icon. (Sounds: Audio; the font: Renderer; maps: the build.) Nothing is read when there are none.
 void Game::loadAssetOverrides() {
     if (!overrides::any()) return;
-    for (int kind = 0; kind < MODEL_KINDS; kind++)
-        for (int i = 0; i < modelCount(kind); i++) {
-            if (!modelExists(kind, i)) continue;
-            std::vector<uint8_t> file;
-            std::string matched, gerr;
-            if (!overrides::find(modelPath(kind, i), {".glb", ".gltf"}, file, &matched)) continue;
-            std::string dir = matched.substr(0, matched.rfind('/') + 1);
-            MeshData mesh;
-            auto resolve = [&](const std::string& uri, std::vector<uint8_t>& out) { return uri.find("..") == std::string::npos && overrides::readRelative(dir + uri, out); };
-            if (!loadGltf(file.data(), file.size(), resolve, mesh, &gerr)) { printf("override %s: %s\n", matched.c_str(), gerr.c_str()); continue; }
-            if (mesh.triangleCount() > kMaxOverrideTriangles) { printf("override %s: %zu triangles (at most %zu)\n", matched.c_str(), mesh.triangleCount(), kMaxOverrideTriangles); continue; }
-            auto m = std::make_unique<ModelMesh>();
-            meshToModel(mesh, *m);
-            modelOv_[kind][i] = std::move(m);
-            printf("override: %s\n", matched.c_str());
-        }
+    loadModelOverrides(modelOv_);
     std::vector<uint8_t> icon;
     int w = 0, h = 0;
     std::vector<uint8_t> rgba;
@@ -86,8 +73,9 @@ void Game::loadAssetOverrides() {
     }
 }
 
-void Game::overrideTints(int kind, const ModelPalette& pal, Vec3* tint) const {
-    const ModelPalette& ref = referencePalette(kind);
+void Game::overrideTints(int kind, int idx, const ModelPalette& drawn, Vec3* tint) const {
+    const ModelPalette& ref = referencePalette(kind, idx);
+    const ModelPalette pal = drivenPalette(kind, idx, drawn);   // (a slot this model's drawing doesn't colour: 1)
     tint[0] = {1, 1, 1};
     auto ratio = [](float a, float b) { return b > 1e-3f ? a / b : a; };
     for (int s = 1; s < TINT_COUNT; s++)
@@ -104,6 +92,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     if (!r_.init(cfg_.shadowRes, err)) return false;
     loadAssetOverrides();
     applyUiFontSetting();   // (Settings > FONT; the default needs nothing)
+    parts_.reserve(std::max(kMaxDefaultParts, modelOv_.maxBoxes()));   // (the box list every model is drawn from, box models' too: never grown while drawing)
     rescanMaps();
     rankKey_ = loadOrCreateRankKey(userDataPath("quark.key")); // ranked identity: stays on this computer
     net_.setRankKey(rankKey_);   // (servers check the id against it; the key itself never goes to them)
@@ -1241,11 +1230,12 @@ void Game::drawStuckProps(const Vec3& eye, float alpha) {
         ppal.c[TINT_GLOW] = r_.glowColor;
         if (const ModelMesh* ov = modelOverride(MODEL_PROJECTILE, mt)) {
             Vec3 tint[TINT_COUNT];
-            overrideTints(MODEL_PROJECTILE, ppal, tint);
+            overrideTints(MODEL_PROJECTILE, mt, ppal, tint);
             r_.mesh(*ov, Mat4::translate(pos) * Mat4::rotY(yaw) * Mat4::rotX(pitch), tint, 1.0f);
             continue;
         }
-        projectileParts(mt, ppal, 1, 1, 0, parts_);
+        if (const ModelParts* bx = boxOverride(MODEL_PROJECTILE, mt)) overrideBoxParts(MODEL_PROJECTILE, mt, *bx, ppal, 1.0f, parts_);
+        else projectileParts(mt, ppal, 1, 1, 0, parts_);
         for (const ModelPart& q : parts_) {   // (opaque parts only: a stuck one has no glow; far off: its main part only)
             if (q.alpha < 1) continue;
             r_.boxPitched(pos, q.c, q.h, yaw, pitch, q.color, 1.0f, false);   // (no shadow: see boxPitched)
@@ -1573,9 +1563,10 @@ void Game::drawWorld(float alpha) {
     auto& players = framePlayers();
     int me = net_.clientId();
     bool alive = net_.selfAlive();
+    fairModels_ = rankedPlayer();   // (ranked: nobody's own model files, the shipped ones only: decided once a frame)
     // demo playback: through the recorder's eyes (their recorded view, interpolated like everyone else)
     const bool demoView = net_.playback() && me >= 0 && me < kMaxPlayers && players[me].valid;
-    const bool lateLatch = alive && !demoView && mouseCaptured_;   // (your own view: the aim is re-read before drawing)
+    const bool lateLatch = alive && !demoView && mouseCaptured_ && !opts_.camSet;   // (your own view: the aim is re-read before drawing)
     r_.cullPad = lateLatch ? 0.06f : 0.0f;   // (~3.5 degrees: what a fast flick turns in the time until then)
     if (demoView) { yaw_ = players[me].snap.yaw; pitch_ = players[me].snap.pitch; }
 
@@ -1615,12 +1606,16 @@ void Game::drawWorld(float alpha) {
     // the server sends a dead player what the one it watches can see (NET-10): tell it who that is
     if (alive || net_.playback() || net_.state() != ConnState::Connected) specSent_ = -2;
     else if (specTarget_ != specSent_) { net_.sendCommand("spectate " + std::to_string(specTarget_)); specSent_ = specTarget_; }
+    if (opts_.camSet) { eye = opts_.camPos; camYaw = deg2rad(opts_.camYaw); camPitch = deg2rad(opts_.camPitch); }   // (--cam: screenshots of a match from a fixed spot)
     r_.setCamera(eye, camYaw, camPitch, alive ? viewFov() : cfg_.fov);
     audio_.setListener(eye, camYaw);
     updateSounds(players);
 
+    Vec3 dbgBombPos;   // (--models in bomb mode: a dropped bomb in front of the lineup, which carries it)
+    const bool dbgBomb = opts_.debugModels && alive && ms.mode == MODE_BOMB;
     if (opts_.debugModels && alive) { // model lineup for screenshots: the last slots, 5 m ahead, facing you
         Vec3 f = {-std::sin(yaw_), 0, -std::cos(yaw_)}, rt = {std::cos(yaw_), 0, -std::sin(yaw_)};
+        dbgBombPos = net_.smoothedPos(alpha) + f * 3.0f;
         for (int k = 0; k < kPlayerModels; k++) {
             auto& ip = players[kMaxPlayers - kPlayerModels + k];
             ip.valid = true;
@@ -1629,6 +1624,7 @@ void Game::drawWorld(float alpha) {
             ip.snap.flags = PS_ALIVE | (k % 2 ? PS_TEAM_B : 0);
             ip.snap.pos = net_.smoothedPos(alpha) + f * 5.0f + rt * ((k - 2) * 1.5f);
             ip.snap.yaw = yaw_ + 3.14159265f;
+            if (dbgBomb) { ip.snap.flags |= PS_HASBOMB; ip.snap.yaw -= 2.3f; }   // (turned away: the backpack shows)
             if (isItMode(net_.mode().mode)) {   // hide and seek / tag: each as "it", holding the knife (or --weapon)
                 ip.snap.flags |= PS_HASBOMB;
                 ip.snap.yaw -= 1.0f;   // (turned aside: the weapon side-on)
@@ -1668,12 +1664,13 @@ void Game::drawWorld(float alpha) {
         pal.c[TINT_TEAM] = col;
         if (ov) {   // the owner's model (docs/ASSETS.md)
             Vec3 tint[TINT_COUNT];
-            overrideTints(MODEL_PLAYER, pal, tint);
+            overrideTints(MODEL_PLAYER, pm, pal, tint);
             Mat4 sc;
             sc.m[0] = bs; sc.m[5] = bs * hs; sc.m[10] = bs;
             r_.mesh(*ov, Mat4::translate(pos) * Mat4::rotY(yaw) * sc, tint, sv, true, vis);
         } else {
-            playerModelParts(pm, hs, pal, parts_);
+            if (const ModelParts* bx = boxOverride(MODEL_PLAYER, pm)) overrideBoxParts(MODEL_PLAYER, pm, *bx, pal, hs, parts_);
+            else playerModelParts(pm, hs, pal, parts_);
             const float cy = std::cos(yaw), sy = std::sin(yaw);
             for (const ModelPart& q : parts_) {
                 if (q.visOnly && !vis) continue;
@@ -1685,9 +1682,24 @@ void Game::drawWorld(float alpha) {
             if (p.flags & PS_HASBOMB) drawHeldWeapon(i, p.weapon, at(1.3f) + rgt * (0.3f * bs), yaw, pitch, bs, col, sv);
         } else if (vis) {
             Vec3 shoulder = at(1.3f) + Vec3(std::cos(yaw), 0, -std::sin(yaw)) * (0.3f * bs);
-            r_.boxPitched(shoulder, Vec3(0, 0, -0.35f) * bs, Vec3(0.06f, 0.07f, 0.35f) * bs, yaw, pitch, {0.12f, 0.12f, 0.14f}, sv);
-            if ((p.flags & PS_HASBOMB) && !isItMode(net_.mode().mode))
-                r_.box(at(1.15f) + fwd * -0.32f, {0.2f, 0.22f, 0.1f}, yaw, {0.1f, 0.1f, 0.1f}, sv);
+            drawArm(PROP_GUN_ARM, shoulder, yaw, pitch, bs, sv);
+            if ((p.flags & PS_HASBOMB) && !isItMode(net_.mode().mode)) {   // the bomb on its carrier's back (player space)
+                if (const ModelMesh* bov = modelOverride(MODEL_PROP, PROP_BOMB_PACK)) {
+                    Vec3 tint[TINT_COUNT];
+                    overrideTints(MODEL_PROP, PROP_BOMB_PACK, kNoSlots, tint);
+                    Mat4 sc;
+                    sc.m[0] = bs; sc.m[5] = bs * hs; sc.m[10] = bs;
+                    r_.mesh(*bov, Mat4::translate(pos) * Mat4::rotY(yaw) * sc, tint, sv, true);
+                } else {   // (the box keeps its size when crouched: only its height follows)
+                    if (const ModelParts* bx = boxOverride(MODEL_PROP, PROP_BOMB_PACK)) overrideBoxParts(MODEL_PROP, PROP_BOMB_PACK, *bx, kNoSlots, 1.0f, parts_);
+                    else propParts(PROP_BOMB_PACK, kNoSlots, parts_);
+                    const float cy = std::cos(yaw), sy = std::sin(yaw);
+                    for (const ModelPart& q : parts_) {
+                        const Vec3 c = {q.c.x * bs, q.c.y * hs * bs, q.c.z * bs};
+                        r_.box(pos + Vec3(cy * c.x + sy * c.z, c.y, -sy * c.x + cy * c.z), q.h * bs, yaw, q.color, sv, q.shadow);
+                    }
+                }
+            }
         }
         // hide and seek: the seeker is marked only where you can see them (hiders are never shown where the seeker is,
         // owner B8); tag: the HUD marks the tagger everywhere, through walls (drawTaggerMarker)
@@ -1706,12 +1718,13 @@ void Game::drawWorld(float alpha) {
             cpal.c[TINT_TEAM] = crownColor(place);
             if (const ModelMesh* ov = modelOverride(MODEL_CROWN, 0)) {
                 Vec3 tint[TINT_COUNT];
-                overrideTints(MODEL_CROWN, cpal, tint);
+                overrideTints(MODEL_CROWN, 0, cpal, tint);
                 Mat4 sc;
                 sc.m[0] = sc.m[5] = sc.m[10] = bs;
                 r_.mesh(*ov, Mat4::translate(top) * Mat4::rotY(yaw) * sc, tint, sv, false);
             } else {
-                crownParts(cpal, parts_);                                   // a band and four points
+                if (const ModelParts* bx = boxOverride(MODEL_CROWN, 0)) overrideBoxParts(MODEL_CROWN, 0, *bx, cpal, 1.0f, parts_);
+                else crownParts(cpal, parts_);                              // a band and four points
                 const float cy = std::cos(yaw), sy = std::sin(yaw);
                 for (const ModelPart& q : parts_) {
                     Vec3 c = q.c * bs;
@@ -1916,10 +1929,11 @@ void Game::drawWorld(float alpha) {
         ppal.c[TINT_GLOW] = r_.glowColor;
         if (const ModelMesh* ov = modelOverride(MODEL_PROJECTILE, mt)) {
             Vec3 tint[TINT_COUNT];
-            overrideTints(MODEL_PROJECTILE, ppal, tint);
+            overrideTints(MODEL_PROJECTILE, mt, ppal, tint);
             r_.mesh(*ov, Mat4::translate(pr.pos) * Mat4::rotY(my) * Mat4::rotX(mp), tint, 1.0f);
         } else {
-            projectileParts(mt, ppal, fl, core, wob, parts_);
+            if (const ModelParts* bx = boxOverride(MODEL_PROJECTILE, mt)) overrideBoxParts(MODEL_PROJECTILE, mt, *bx, ppal, 1.0f, parts_);   // (still: no flicker / blink / wobble)
+            else projectileParts(mt, ppal, fl, core, wob, parts_);
             for (const ModelPart& q : parts_) {
                 if (q.alpha < 1) r_.translucentBox({pr.pos + q.c - q.h, pr.pos + q.c + q.h}, rgba(q.color, q.alpha));
                 else r_.boxPitched(pr.pos, q.c, q.h, my, mp, q.color, 1.0f);
@@ -1968,11 +1982,13 @@ void Game::drawWorld(float alpha) {
             Vec3 c = map.bombSites[i].center();
             labelAt({c.x, map.bombSites[i].mx.y + 0.5f, c.z}, std::string("SITE ") + names[i % 4], kWhite);
         }
-        if (ms.bombState == BOMB_DROPPED || ms.bombState == BOMB_PLANTED) {
+        if (ms.bombState == BOMB_DROPPED || ms.bombState == BOMB_PLANTED || dbgBomb) {
+            const Vec3 bombPos = dbgBomb ? dbgBombPos : ms.bombPos;
             bool blink = ms.bombState == BOMB_PLANTED && std::fmod(time_, std::max(0.15, ms.bombTimer / 20.0)) < 0.08;
-            Vec3 c = blink ? Vec3(1, 0.2f, 0.2f) : Vec3(0.15f, 0.15f, 0.15f);
-            r_.box(ms.bombPos + Vec3(0, 0.15f, 0), {0.25f, 0.15f, 0.18f}, 0, c, 1.0f);
-            labelAt(ms.bombPos + Vec3(0, 0.8f, 0), ms.bombState == BOMB_PLANTED ? "BOMB" : "BOMB (DROPPED)", rgba(teamCol(ms.attackers)));
+            ModelPalette bpal;
+            bpal.c[TINT_GLOW] = blink ? Vec3(1, 0.2f, 0.2f) : Vec3(0.15f, 0.15f, 0.15f);
+            drawProp(PROP_BOMB, bpal, bombPos, 0, {1, 0, 0}, {0, 0, 1}, 0, 1.0f);
+            labelAt(bombPos + Vec3(0, 0.8f, 0), ms.bombState == BOMB_PLANTED ? "BOMB" : "BOMB (DROPPED)", rgba(teamCol(ms.attackers)));
         }
     } else if (ms.mode == MODE_POINTS && !map.points.empty()) {
         // the point under attack glows (attacker colour while it fills); taken points are dim; later ones outlined
@@ -2000,11 +2016,12 @@ void Game::drawWorld(float alpha) {
         float plen = map.payloadLength();
         for (size_t k = 0; k < map.cartChecks.size() && !neutral; k++) {
             Vec3 at = map.cartPoint(ms.mode, ms.attackers, map.cartChecks[k] * plen), ah = map.cartPoint(ms.mode, ms.attackers, map.cartChecks[k] * plen + 0.5f) - at;
-            Vec3 side = normalize(Vec3(-ah.z, 0, ah.x)) * 1.8f;
+            Vec3 side = normalize(Vec3(-ah.z, 0, ah.x));   // (to the right of the cart's way)
             bool reached = (int)k < ms.point;
             Vec3 gc = reached ? teamCol(ms.attackers) : Vec3(0.8f, 0.8f, 0.8f);
-            r_.box(at + side + Vec3(0, 1.4f, 0), {0.12f, 1.4f, 0.12f}, 0, gc, 1.0f);
-            r_.box(at - side + Vec3(0, 1.4f, 0), {0.12f, 1.4f, 0.12f}, 0, gc, 1.0f);
+            ModelPalette gpal;
+            gpal.c[TINT_TEAM] = gc;
+            drawProp(PROP_GATE, gpal, at, std::atan2(-ah.x, -ah.z), side, Vec3(-side.z, 0, side.x), 0, 1.0f);   // (box posts: square to the world)
             labelAt(at + Vec3(0, 3.2f, 0), "CHECKPOINT " + std::to_string(k + 1), rgba(gc));
         }
         Vec3 cart = map.cartPoint(ms.mode, ms.attackers, ms.payloadDist);
@@ -2012,20 +2029,14 @@ void Game::drawWorld(float alpha) {
         Vec3 d = ahead - cart;
         float yaw = (length(d) > 1e-3f) ? std::atan2(-d.x, -d.z) : 0;
         float sv = sunVisibility(map, cart + Vec3(0, 1, 0));
-        // an armoured ore cart in the map's palette: metal chassis on four wheels, team-coloured band, a
-        // glowing core in a cradle on top
-        auto lin = [](const Vec3& c) { return Vec3(std::pow(c.x, 2.2f), std::pow(c.y, 2.2f), std::pow(c.z, 2.2f)); };
-        Vec3 metal = lin(r_.metalColor) * 1.6f + Vec3(0.04f, 0.04f, 0.04f), accent = lin(r_.accentColor) * 1.4f;
-        float cy = std::cos(yaw), syw = std::sin(yaw);
-        auto at = [&](float x, float y, float z) { return cart + Vec3(x * cy + z * syw, y, -x * syw + z * cy); };
-        for (int k = 0; k < 4; k++) r_.box(at(k & 1 ? 0.85f : -0.85f, 0.32f, k & 2 ? 0.75f : -0.75f), {0.12f, 0.3f, 0.3f}, yaw, metal * 0.45f, sv);
-        r_.box(at(0, 0.75f, 0), {0.8f, 0.4f, 1.25f}, yaw, metal, sv);                       // chassis
-        r_.box(at(0, 0.8f, 0), {0.83f, 0.12f, 1.28f}, yaw, cartCol * 0.9f, sv);            // team band
-        r_.box(at(0, 1.2f, 0), {0.85f, 0.06f, 1.3f}, yaw, accent, sv);                     // rim
-        r_.box(at(0, 1.45f, 0), {0.45f, 0.2f, 0.6f}, yaw, metal * 0.7f, sv);                // cradle
-        r_.box(at(0, 1.75f, 0), {0.3f, 0.22f, 0.3f}, yaw, r_.glowColor * 1.3f + cartCol * 0.3f, sv);  // core
-        r_.box(at(0, 0.75f, 1.3f), {0.5f, 0.15f, 0.06f}, yaw, r_.glowColor, sv);            // lamps front
-        r_.box(at(0, 0.75f, -1.3f), {0.5f, 0.15f, 0.06f}, yaw, r_.glowColor, sv);           // and back
+        // the ore cart (models.h) in the map's palette
+        ModelPalette cpal;
+        cpal.c[TINT_METAL] = cartMetal(r_.metalColor);
+        cpal.c[TINT_ACCENT] = cartAccent(r_.accentColor);
+        cpal.c[TINT_TEAM] = cartCol;
+        cpal.c[TINT_GLOW] = r_.glowColor;
+        const float cy = std::cos(yaw), syw = std::sin(yaw);
+        drawProp(PROP_CART, cpal, cart, yaw, {cy, 0, -syw}, {syw, 0, cy}, yaw, sv);
     } else if (ms.mode == MODE_RACE) {
         int next = mep ? mep->checkpoint : 0;
         for (size_t i = 0; i < map.checkpoints.size(); i++) {
@@ -2064,10 +2075,11 @@ void Game::drawWorld(float alpha) {
         const float k = vm.scale;
         if (const ModelMesh* ov = modelOverride(MODEL_WEAPON, w)) {   // the owner's model (docs/ASSETS.md)
             Vec3 tint[TINT_COUNT];
-            overrideTints(MODEL_WEAPON, vpal, tint);
+            overrideTints(MODEL_WEAPON, w, vpal, tint);
             r_.viewMesh(*ov, at, k, tint);
         } else {
-            viewmodelParts(w, vpal, parts_);
+            if (const ModelParts* bx = boxOverride(MODEL_WEAPON, w)) overrideBoxParts(MODEL_WEAPON, w, *bx, vpal, 1.0f, parts_);
+            else viewmodelParts(w, vpal, parts_);
             // the locator's screen: dim while it recharges, pulsing when it's ready
             float glow = w != WPN_LOCATOR || specGun ? 1.0f : time_ >= locatorReady_ ? 0.85f + 0.35f * (float)std::sin(time_ * 6.0) : 0.3f;
             for (const ModelPart& q : parts_) r_.viewBox(at + q.c * k, q.h * k, q.slot == TINT_GLOW ? q.color * glow : q.color);
@@ -5483,11 +5495,38 @@ void Game::drawKnifeSlash(const Vec3& eye, float yaw, float pitch, float t, cons
     r_.line(from, tip, 0.015f, rgba({1, 1, 1}, 0.7f * fade));
 }
 
+void Game::drawProp(int prop, const ModelPalette& pal, const Vec3& origin, float yaw, const Vec3& right, const Vec3& back, float boxYaw, float sv) {
+    if (const ModelMesh* ov = modelOverride(MODEL_PROP, prop)) {   // the owner's model (docs/ASSETS.md)
+        Vec3 tint[TINT_COUNT];
+        overrideTints(MODEL_PROP, prop, pal, tint);
+        r_.mesh(*ov, Mat4::translate(origin) * Mat4::rotY(yaw), tint, sv, true);
+        return;
+    }
+    if (const ModelParts* bx = boxOverride(MODEL_PROP, prop)) overrideBoxParts(MODEL_PROP, prop, *bx, pal, 1.0f, parts_);
+    else propParts(prop, pal, parts_);
+    for (const ModelPart& q : parts_)
+        r_.box(origin + Vec3(right.x * q.c.x + back.x * q.c.z, q.c.y, right.z * q.c.x + back.z * q.c.z), q.h, boxYaw, q.color, sv, q.shadow);
+}
+
+void Game::drawArm(int prop, const Vec3& shoulder, float yaw, float pitch, float bs, float sv) {
+    if (const ModelMesh* ov = modelOverride(MODEL_PROP, prop)) {
+        Vec3 tint[TINT_COUNT];
+        overrideTints(MODEL_PROP, prop, kNoSlots, tint);
+        Mat4 sc;
+        sc.m[0] = sc.m[5] = sc.m[10] = bs;
+        r_.mesh(*ov, Mat4::translate(shoulder) * Mat4::rotY(yaw) * Mat4::rotX(pitch) * sc, tint, sv, true);
+        return;
+    }
+    if (const ModelParts* bx = boxOverride(MODEL_PROP, prop)) overrideBoxParts(MODEL_PROP, prop, *bx, kNoSlots, 1.0f, parts_);
+    else propParts(prop, kNoSlots, parts_);
+    for (const ModelPart& q : parts_) r_.boxPitched(shoulder, q.c * bs, q.h * bs, yaw, pitch, q.color, sv, q.shadow);
+}
+
 void Game::drawHeldWeapon(int i, int w, const Vec3& shoulder, float yaw, float pitch, float bs, const Vec3& accent, float sv) {
     if (w < 0 || w >= WPN_COUNT) w = WPN_KNIFE;
     float sw = (float)(time_ - knifeSlash_[i]) / 0.18f;   // a knife swing: the hand chops down and back up
     if (w == WPN_KNIFE && knifeSlash_[i] > 0 && sw < 1) pitch -= 0.7f * std::sin(sw * 3.14159f);
-    r_.boxPitched(shoulder, Vec3(0, 0, -0.22f) * bs, Vec3(0.055f, 0.06f, 0.22f) * bs, yaw, pitch, {0.12f, 0.12f, 0.14f}, sv);   // the arm
+    drawArm(PROP_ARM, shoulder, yaw, pitch, bs, sv);
     const Vec3 hand = Vec3(0, 0.02f, -0.5f) * bs;
     const float k = 2.0f * bs;   // the viewmodel's boxes at world size (a held weapon reads at a distance)
     ModelPalette pal;
@@ -5497,13 +5536,14 @@ void Game::drawHeldWeapon(int i, int w, const Vec3& shoulder, float yaw, float p
     pal.c[TINT_GLOW] = r_.glowColor;
     if (const ModelMesh* ov = modelOverride(MODEL_WEAPON, w)) {   // the owner's model (docs/ASSETS.md)
         Vec3 tint[TINT_COUNT];
-        overrideTints(MODEL_WEAPON, pal, tint);
+        overrideTints(MODEL_WEAPON, w, pal, tint);
         Mat4 sc;
         sc.m[0] = sc.m[5] = sc.m[10] = k;
         r_.mesh(*ov, Mat4::translate(shoulder) * Mat4::rotY(yaw) * Mat4::rotX(pitch) * Mat4::translate(hand) * sc, tint, sv, true);
         return;
     }
-    viewmodelParts(w, pal, parts_);
+    if (const ModelParts* bx = boxOverride(MODEL_WEAPON, w)) overrideBoxParts(MODEL_WEAPON, w, *bx, pal, 1.0f, parts_);
+    else viewmodelParts(w, pal, parts_);
     for (const ModelPart& q : parts_) r_.boxPitched(shoulder, hand + q.c * k, q.h * k, yaw, pitch, q.color, sv);
 }
 

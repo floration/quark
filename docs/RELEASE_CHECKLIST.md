@@ -79,6 +79,7 @@ For each one: change it, check the effect in a game, quit, restart, check it was
 | ☐ | Audio: master, effects, announcer, music volumes; the announcer pack. |
 | ☐ | Audio (Windows): sound is clean with EXCLUSIVE AUDIO off (shared, 10 ms) and on (3 ms on the owner's PC; other programs go silent, back when it's turned off); unplugging or switching the output device mid-game moves the sound to the new default. |
 | ☐ | Sound levels: put a quiet `ROCKET.wav` in `%APPDATA%\quark\overrides\sounds\default\` and restart: the rocket is as loud as before (matched). Add `sounds/default/ROCKET` to `%APPDATA%\quark\overrides\sound-levels.txt` and restart: it is now quiet (its own level). Remove both after. The sound editor (`tools\sound_editor\build.cmd`) builds and its Export to game writes these files. |
+| ☐ | Model overrides: install the model editor (`tools\model_editor\install.cmd`; it opens from `%USERPROFILE%\Desktop\Quark\model-editor\model-editor.html`), recolour `models/player/STANDARD` (e.g. bright green), Export to game into `%APPDATA%\quark\overrides` and restart. A casual game (vs bots) shows it, with outlines and crouching like the default; a **ranked** match (and a time trial) shows the default STANDARD instead. The payload cart and checkpoint gates (railyard), the bomb on a carrier's back and on the ground (depot), and the arms (other players' gun arms; the held-weapon arms in hide and seek) look as in the last release. Remove the file after. |
 | ☐ | Controls: rebind every action you use. Bind **chat to a letter key** (e.g. Y): pressing it opens chat **without** typing a "y". Bind **Toggle chat**: incoming chat hides / shows with a short message. **Disable chat** in settings stays in sync with the toggle. |
 | ☐ | Interpolation setting (up to 200 ms): shots still hit what you see. |
 | ☐ | HUD editor: drag, add, delete, import / export a layout; the weapon list shows only the weapons the mode has. |
@@ -135,6 +136,8 @@ Host each mode on **its own map** with bots (and a second human if you can). For
 | ☐ | Run around the edges of 3–4 maps: you can't get out of bounds or stuck; invisible walls (clip) block players but not shots or light. |
 | ☐ | Any map in a mode it wasn't built for: the menu warns that it may not work, and it still loads. |
 | ☐ | Bots on 3–4 maps for a few minutes: they navigate, use objectives, and don't keep falling off. |
+| ☐ | **Bot brains** (1.18.11): the default bots play as before. Copy `tools/bots/default.qbrain` to `%APPDATA%\quark\bots\fast.qbrain`, change `reactMs` to 40 for every level, host, console `addbot b expert brain=fast`: the join line reads `BOT <NAME> (EXPERT, fast#xxxxxxxx)` and that bot reacts much faster. A broken file (delete a `:`) is refused with `file:line:col`. `brain=default` gives the built-in bot. Ranked never loads brain files. |
+| ☐ | **Bot editor** (`tools\bot_editor\run.cmd`, http://127.0.0.1:8769): a map loads; place 2 bots, give one a hold objective, run live: they move, the inspector shows decisions; in Brain edit `reactMs`, switch Code / Blocks / Graph (the change shows in each), run that brain against the default; a 6-match batch fills the brain table; Save writes `%APPDATA%\quark\bots\<name>.qbrain`. |
 
 ## 8. Map editor
 

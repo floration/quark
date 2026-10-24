@@ -1,0 +1,4 @@
+.cache/
+bot_editor.json
+*.bak
+__pycache__/

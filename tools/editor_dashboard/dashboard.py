@@ -928,8 +928,10 @@ def main():
         state.refresh()
         json.dump({"summary": state.summary(), "status": state.status, "changes": state.changes, "assets": state.assets}, sys.stdout, indent=1)
         return
-    if not a.no_browser and already_running(a.port):                    # (a second double-click: show the open one)
-        webbrowser.open("http://127.0.0.1:%d/" % a.port); print("already running on port %d" % a.port); return
+    if os.environ.get("QUARK_SHELL") == "1": a.no_browser = True           # (the Quark Project app shows the page itself)
+    if already_running(a.port):                                         # (a second double-click: show the open one)
+        if not a.no_browser: webbrowser.open("http://127.0.0.1:%d/" % a.port)
+        print("already running on port %d" % a.port); return
     Handler.state = state
     srv = bind(a.port)
     url = "http://127.0.0.1:%d/" % srv.server_address[1]

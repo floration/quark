@@ -1,0 +1,2 @@
+group      game-s  ~real-s
+  alpha  40  10

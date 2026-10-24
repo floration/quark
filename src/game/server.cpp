@@ -1654,16 +1654,30 @@ void Server::command(const std::string& line, int fromPlayer) {
         else if (arg == "on" && v >= 0 && arenaVariantRanked(v)) setRanked(true, v);
         else reply("ranked on [vanilla|vampire|instagib] / ranked off");
     } else if (cmd == "addbot") {
-        // addbot [a|b] [skill]: the skill is 0-3 or its name in any case (what the console completes: REVIEW 4.2)
-        std::string sk;
-        ss >> sk;
-        if (arg != "a" && arg != "b" && sk.empty()) sk = arg;   // (just a skill)
-        int team = arg == "b" ? TEAM_B : TEAM_A;
+        // addbot [a|b] [skill] [brain=<name>]: the skill is 0-3 or its name in any case (what the console completes:
+        // REVIEW 4.2); the brain a file in bots/ (brain=default: the built-in one, whatever the server's botBrain says)
+        std::vector<std::string> words;
+        for (std::string w = arg; !w.empty(); w.clear(), ss >> w) words.push_back(w);
+        std::string brain, sk;
+        bool hasBrain = false, bad = false;
+        int team = TEAM_A;
+        for (size_t k = 0; k < words.size(); k++) {
+            const std::string& w = words[k];
+            if (w.rfind("brain=", 0) == 0) { brain = w.substr(6); hasBrain = true; }
+            else if (k == 0 && (w == "a" || w == "b")) team = w == "b" ? TEAM_B : TEAM_A;
+            else if (sk.empty()) sk = w;
+            else bad = true;
+        }
         int skill = sk.empty() ? cfg_.botSkill : -1;
         auto lower = [](std::string s) { for (auto& c : s) c = (char)tolower((unsigned char)c); return s; };
         for (int i = 0; i < BOT_SKILLS && skill < 0; i++) if (sk == std::to_string(i) || lower(sk) == lower(botSkillName(i))) skill = i;
-        if (skill < 0) { reply("addbot [a|b] [0-3 or beginner|intermediate|advanced|expert]"); return; }
-        if (addBot(team, std::min(std::max(skill, 0), BOT_SKILLS - 1)) < 0) reply("server is full");
+        if (skill < 0 || bad || (hasBrain && brain.empty())) { reply("addbot [a|b] [0-3 or beginner|intermediate|advanced|expert] [brain=<name>]"); return; }
+        if (hasBrain && brain != "default") {
+            if (cfg_.timeTrial) { reply("time trial bots play the built-in brain"); return; }
+            std::string err;
+            if (!loadBrain(brain, &err)) { reply("brain " + brain + ": " + err); return; }
+        }
+        if (addBot(team, std::min(std::max(skill, 0), BOT_SKILLS - 1), false, hasBrain ? &brain : nullptr) < 0) reply("server is full");
     } else if (cmd == "kickbots") {
         for (int i = 0; i < kMaxPlayers; i++) if (players_[i].connected && players_[i].isBot) removeBot(i);
     } else if (cmd == "forcestart") {
@@ -1684,7 +1698,7 @@ void Server::command(const std::string& line, int fromPlayer) {
     } else if (cmd == "status") {
         reply(statusText());
     } else {
-        reply("commands: map <name> [mode], mode <name>, reload, editmode on|off, ranked on [ladder]|off, forcestart, restart, kick <name|id>, say <text>, status, addbot [a|b] [0-3|skill], kickbots");
+        reply("commands: map <name> [mode], mode <name>, reload, editmode on|off, ranked on [ladder]|off, forcestart, restart, kick <name|id>, say <text>, status, addbot [a|b] [0-3|skill] [brain=<name>], kickbots");
     }
 }
 
@@ -3106,7 +3120,7 @@ int Server::humanCount(int team) const {
     return c;
 }
 
-int Server::addBot(int team, int skill, bool balance) {
+int Server::addBot(int team, int skill, bool balance, const std::string* brainName) {
     if (playerCount() >= cfg_.maxPlayers) return -1;
     int id = -1;
     for (int i = 0; i < kMaxPlayers; i++) if (!players_[i].connected) { id = i; break; }
@@ -3135,7 +3149,16 @@ int Server::addBot(int team, int skill, bool balance) {
     p.soundPack = (int)((bots_[id].rng >> 8) % kSoundPacks);
     GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.c = (int16_t)p.nameColor; e.text = p.name;
     broadcastEvent(e);
-    message(p.name + " (" + botSkillName(skill) + ") joined " + (waits ? "- plays the next match" : team == TEAM_B ? "team B" : modeIsTeamBased(cfg_.mode) ? "team A" : "the game"));
+    // Its brain: the one asked for, else the server's (cfg botBrain); never on ranked or time trial (setBotBrain refuses)
+    std::string label;
+    const std::string& bn = brainName ? *brainName : cfg_.botBrain;
+    if (!bn.empty() && bn != "default" && !cfg_.ranked && !cfg_.timeTrial) {
+        std::string err;
+        auto brain = loadBrain(bn, &err);
+        if (brain && setBotBrain(*this, id, brain)) label = ", " + brainLabel(*brain);
+        else if (!brain) log("bot brain " + bn + ": " + err + " (playing the built-in brain)");
+    }
+    message(p.name + " (" + botSkillName(skill) + label + ") joined " + (waits ? "- plays the next match" : team == TEAM_B ? "team B" : modeIsTeamBased(cfg_.mode) ? "team A" : "the game"));
     if (rulesRespawnDelay(*this) >= 0 && team != TEAM_SPECTATOR) p.respawnAt = time() + 0.5f;
     return id;
 }

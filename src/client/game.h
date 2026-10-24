@@ -49,7 +49,7 @@ struct LaunchOptions {
     bool debugHudLayout = false; // --hudlayout: open HUD layout settings in game
     bool debugModels = false;
     int debugRps = 0;           // --rpsshot: the hide and seek tiebreak panel with made-up players (1 picking, 2 reveal, 3 three-way reveal)
-    bool camSet = false;         // --cam: fixed backdrop camera (map analysis shots)
+    bool camSet = false;         // --cam: fixed backdrop camera (map analysis shots); in a match, the view's camera
     Vec3 camPos;
     float camYaw = 0, camPitch = 0;
     bool timeTrial = false;      // --timetrial: start a Viaduct time trial
@@ -182,9 +182,18 @@ private:
     Renderer r_;
     // models (models.h): the box list being drawn (reused every frame), and the owner's glTF overrides (null: none)
     ModelParts parts_;
-    std::unique_ptr<ModelMesh> modelOv_[MODEL_KINDS][kProjectileModels];
-    const ModelMesh* modelOverride(int kind, int i) const { return i >= 0 && i < kProjectileModels ? modelOv_[kind][i].get() : nullptr; }
-    void overrideTints(int kind, const ModelPalette& pal, Vec3* tint) const;   // tint[TINT_COUNT]
+    ModelOverrides modelOv_;
+    bool fairModels_ = false;   // this frame: ranked / time trial (rankedPlayer), only the shipped overrides are drawn
+    // the override drawn for a model: a mesh (drawn as triangles), or a box model (its boxes go through the box path
+    // in place of the built-in ones: overrideBoxParts); null: none of that kind
+    const ModelMesh* modelOverride(int kind, int i) const { const ModelMesh* m = modelOv_.get(kind, i, fairModels_); return m && m->boxes.empty() ? m : nullptr; }
+    const ModelParts* boxOverride(int kind, int i) const { const ModelMesh* m = modelOv_.get(kind, i, fairModels_); return m && !m->boxes.empty() ? &m->boxes : nullptr; }
+    void overrideTints(int kind, int idx, const ModelPalette& pal, Vec3* tint) const;   // tint[TINT_COUNT]
+    // a prop (models.h) at `origin`: its override turned by yaw, or its boxes at origin + right * x + y + back * z
+    // (model space), each box turned by boxYaw
+    void drawProp(int prop, const ModelPalette& pal, const Vec3& origin, float yaw, const Vec3& right, const Vec3& back, float boxYaw, float sv);
+    // an arm prop (GUN_ARM / ARM) from the shoulder, along the aim, at body scale bs
+    void drawArm(int prop, const Vec3& shoulder, float yaw, float pitch, float bs, float sv);
     void loadAssetOverrides();
     Ui ui_;
     UiInput uiIn_;
