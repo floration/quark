@@ -2003,6 +2003,31 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
     }
 }
 
+// X9: gunfire more than kVisNear away and out of sight was silent to players (their snapshot has no shooter), while
+// bots hear it to 75 m. Each listener within kMuffledRange that isn't sent the shooter gets a muffled shot, at most
+// one every 0.3 s per shooter, at a spot rounded to a 4 m grid (no shooter id): a direction, not a wallhack.
+void Server::muffledGunfire(int shooter, int weapon) {
+    if (weapon == WPN_KNIFE || weapon == WPN_SYRINGE || weapon == WPN_LOCATOR || weapon < 0 || weapon >= WPN_COUNT) return;
+    ServerPlayer& p = players_[shooter];
+    const double now = time();
+    if (now < p.muffledScanAt) return;
+    p.muffledScanAt = now + 0.05;
+    const bool teams = modeIsTeamBased(ms_.mode);
+    for (int i = 0; i < kMaxPlayers; i++) {
+        ServerPlayer& v = players_[i];
+        if (i == shooter || !v.connected || v.isBot || !v.alive || v.team == TEAM_SPECTATOR) continue;
+        if ((teams && v.team == p.team) || now - v.lastSeen[shooter] <= kVisGrace) continue;   // (sent: their own shot sound plays)
+        const Vec3 d = p.move.pos - v.move.pos;
+        if (dot(d, d) > kMuffledRange * kMuffledRange || now < p.muffledAt[i]) continue;
+        p.muffledAt[i] = now + 0.3;
+        auto grid = [](float x) { return (int)std::lround(x / 4.0f) * 4; };
+        GameEvent e;
+        e.type = EV_GUNFIRE; e.a = 255; e.c = (int16_t)weapon;
+        e.text = std::to_string(grid(p.move.pos.x)) + " " + std::to_string(grid(p.move.pos.y + 1.5f)) + " " + std::to_string(grid(p.move.pos.z));
+        sendEvent(i, e);
+    }
+}
+
 int Server::ringOutKiller(int victim) const {
     const ServerPlayer& v = players_[victim];
     const int a = v.lastHitBy;
@@ -2211,6 +2236,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
         bool threw = isThrow(p.weapon, (cmd.buttons & BTN_ALTFIRE) != 0) && !itMode; // same test as fireWeapon
         int firedWeapon = p.weapon;
         bool hit = fireWeapon(id, cmd);
+        muffledGunfire(id, firedWeapon);
         p.knifeSwingUntil = (p.weapon == WPN_KNIFE && !threw && !hit) ? time() + kKnifeSwingTime : -1;
         if (threw) { // the knife / syringe is away: switch to the next weapon (usable after the throw's cooldown: nextFire above)
             if (firedWeapon == WPN_KNIFE) p.knifeBackAt = time() + kKnifeAway;

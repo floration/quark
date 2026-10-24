@@ -199,6 +199,7 @@ constexpr float kFireBuffer = 0.15f;
 constexpr float kTapBuffer = 0.1f;
 inline bool tapBuffered(int w) { return w == WPN_SNIPER || w == WPN_CROSSBOW || w == WPN_ROCKET; }
 constexpr float kSelfRampLow = 0.3f, kSelfRampHigh = 1.2f;   // own splash: 10% at or below feet + low, full at feet + high (linear between)
+constexpr float kMuffledRange = 60.0f;   // X9: gunfire out of sight is heard muffled this far (bots hear 45-75 m)
 constexpr float kKillCamTime = 1.5f;    // dead in a team mode: the killer's view this long, then teammates only
 constexpr float kRingOutCredit = 3.0f;  // a fall / lava death this soon after an enemy's hit or knock is their kill
 constexpr float kWallbangDamage = 0.5f; // hitscan through a wallbang wall
@@ -429,6 +430,8 @@ enum EventType : uint8_t {
     EV_RPS,          // hide and seek tiebreak: a = RpsStage, b = throw number, text = "<best of 3> <winner or -1>" then " id:shape:wins:out"
                      // per player (shape RPS_PICKED until the reveal), then a line with what happened
     EV_PROP,         // a thrown knife / bolt / thrown syringe stuck where it landed, or a clear (cosmetic): StuckProp, protocol.h
+    EV_GUNFIRE,      // a shot out of your sight within kMuffledRange (X9): c = weapon, text = "x y z" roughly where (a 4 m grid);
+                     // no shooter (a = 255). Older clients ignore it (an unknown type), so no protocol change.
 };
 
 #define WB(w) (1u << (w))

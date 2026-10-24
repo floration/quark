@@ -1183,6 +1183,12 @@ void Game::handleEvents() {
                 centerUntil_ = time_ + (e.b ? 8.0 : 3.5);
                 break;
             }
+            case EV_GUNFIRE: {   // X9: a shot out of sight, roughly where: the weapon's sound, quieter and lower (muffled)
+                Vec3 p;
+                if (e.c >= 0 && e.c < WPN_COUNT && std::sscanf(e.text.c_str(), "%f %f %f", &p.x, &p.y, &p.z) == 3)
+                    audio_.play3D(SND_RIFLE + e.c, p, 0.45f, 0.8f);
+                break;
+            }
             case EV_BRACKET: {
                 parseBracket(e.text, bracket_, bracketRound_, bracketMatch_);
                 for (int i = 0; i < kMaxPlayers; i++) { std::string n = net_.playerName(i); if (!n.empty()) bracketNames_[i] = n; }

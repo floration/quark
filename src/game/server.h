@@ -210,6 +210,8 @@ struct ServerPlayer {
     // [time() - kCmdClockLag, time()]. Refire is timed by it (the Quake 3 way) rather than by when a packet arrived,
     // so a shot fires on the command that ends its cooldown, with that command's aim. -1: no command yet.
     double cmdTime = -1;
+    double muffledScanAt = 0;              // X9: this player's next shot that may be heard muffled (a scan at most 20 a second)
+    double muffledAt[kMaxPlayers] = {};    // ...and when each listener may next be sent one
     // lag compensation history
     struct Hist { uint64_t tick; Vec3 pos; bool crouched; bool alive; };   // tick: timeMs_ when recorded (kNoHistory: none)
     static constexpr uint64_t kNoHistory = ~0ull;
@@ -409,7 +411,8 @@ public:
     void killPlayer(int victim, int killer, int weapon);
     void useLocator(int id);    // hide and seek / tag: "it" fired the locator (WPN_LOCATOR)
     void damagePlayer(int victim, int attacker, float dmg, int weapon, const Vec3& knock);
-    int ringOutKiller(int victim) const;   // who a fall / lava / "kill" now credits (T21), or -1
+    int ringOutKiller(int victim) const;
+    void muffledGunfire(int shooter, int weapon);   // X9: EV_GUNFIRE to the players who can't see the shot but are near   // who a fall / lava / "kill" now credits (T21), or -1
     int aliveCount(int team) const;
     int teamCount(int team) const;
     void log(const std::string& s);

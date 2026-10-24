@@ -2624,6 +2624,28 @@ static void testFeelFixes() {
         CHECK(std::fabs(at.x - 0.12f) < 0.002f);
         CHECK(std::fabs(s.rewoundPosForTest(0, t0 + 16, &cr).x - 0.16f) < 1e-4f);   // on a record: that record
     }
+    {   // X9: a shot out of a player's sight within 60 m is sent to them muffled (roughly where, no shooter), at most
+        // every 0.3 s; one they can see, or farther off, isn't
+        Server s; fresh(s, open, 4);
+        auto& p = s.players_[0];
+        p.weapon = WPN_RIFLE; p.move.pos = {1, 0, 1};
+        s.players_[1].move.pos = {40, 0, 1};    // out of sight (never seen), 39 m
+        s.players_[2].move.pos = {-39, 0, 0};   // in sight
+        s.players_[3].move.pos = {0, 0, -70};   // too far
+        for (int i = 1; i < 4; i++) s.players_[i].events.clear();
+        UserCmd c; c.weapon = WPN_RIFLE; c.msec = 1; c.pitch = 1.3f;
+        int sent[4] = {};
+        for (int t = 0; t < 100; t++) {   // 0.8 s of holding fire
+            s.timeMs_ += 8;
+            s.players_[2].lastSeen[0] = s.time();
+            for (int k = 0; k < 8; k++) { c.buttons = BTN_FIRE; s.runPlayerCmdForTest(0, c); }
+        }
+        std::string where;
+        for (int i = 1; i < 4; i++)
+            for (auto& e : s.players_[i].events) if (e.type == EV_GUNFIRE) { sent[i]++; where = e.text; CHECK(e.a == 255 && e.c == WPN_RIFLE); }
+        printf("  muffled shots: %d to the one out of sight (at \"%s\"), %d in sight, %d at 70 m; %d shots fired\n", sent[1], where.c_str(), sent[2], sent[3], p.shotsFired);
+        CHECK(sent[1] >= 2 && sent[1] <= 3 && sent[2] == 0 && sent[3] == 0 && where == "0 0 0");
+    }
     {   // F22: refire on the command clock. 1 ms commands, 8 a tick (125 Hz): a held rifle fires on the command that
         // ends its cooldown (not the first of the tick that does), a tap there still fires, and a burst of commands
         // never fires faster than real time
