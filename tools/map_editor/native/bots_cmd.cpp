@@ -57,7 +57,7 @@ static int runBots(const Json& req, Json& out, CmdCtx& ctx) {
         b.extra = p;
         cfg.bots.push_back(b);
     }
-    int more = req["bots"].isNum() ? req["bots"].i() : req.has("placed") ? 0 : 4;
+    int more = req["bots"].isNum() ? req["bots"].i() : (req.has("placed") || req["bots"].isArr()) ? 0 : 4;   // (a list or placed bots: only those)
     for (auto& p : req["bots"].items()) {   // (a list: the same specs as "placed")
         BotSpec b;
         b.team = p["team"].str("a") == "b" ? TEAM_B : TEAM_A;

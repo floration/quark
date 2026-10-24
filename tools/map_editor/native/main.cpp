@@ -14,7 +14,17 @@
 #include <fcntl.h>
 #include <io.h>
 #include <windows.h>
+#else
+#include <unistd.h>
 #endif
+
+static bool stdinIsTerminal() {
+#ifdef _WIN32
+    return _isatty(_fileno(stdin)) != 0;
+#else
+    return isatty(0) != 0;
+#endif
+}
 
 static int runHelp(const Json&, Json& out, CmdCtx&) {
     out = Json::object();
@@ -109,7 +119,8 @@ int main(int argc, char** argv) {
     } else if (ctx.stream) {   // the request is stdin's first line; the lines after it are controls
         std::getline(std::cin, text);
         ctx.control = &std::cin;
-    } else text.assign(std::istreambuf_iterator<char>(std::cin), std::istreambuf_iterator<char>());
+    } else if (strcmp(cmd->name, "help") != 0 && !stdinIsTerminal())   // (help takes no request; a terminal isn't waited on)
+        text.assign(std::istreambuf_iterator<char>(std::cin), std::istreambuf_iterator<char>());
     Json req = Json::object();
     bool blank = text.find_first_not_of(" \t\r\n") == std::string::npos;
     std::string err;
