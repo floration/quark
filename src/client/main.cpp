@@ -8,6 +8,7 @@
 #include "game.h"
 #include "../game/server.h"
 #include "gl.h"
+#include "lightmap.h"
 #include "../launcher/selfupdate.h"
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -49,6 +50,7 @@ int main(int argc, char** argv) {
         std::string a = argv[i];
         auto next = [&]() -> std::string { return i + 1 < argc ? argv[++i] : ""; };
         if (a == "--data-dir") setUserDataDir(next()); // settings, key, demos, your maps (default: per-user folder)
+        else if (a == "--bake-maps") return bakeOfficialMaps(next());   // the official maps' light into DIR (packages: maps/lightcache); no window
         else if (a == "--connect") opts.connect = next();
         else if (a == "--host") opts.hostMode = modeFromName(next().c_str());
         else if (a == "--vsbots") opts.vsBotsMode = modeFromName(next().c_str());

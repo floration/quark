@@ -106,12 +106,32 @@ jobs:
           print("groups=" + json.dumps(names))
           PY
 
+  lightcache:   # the official maps' light (quark --bake-maps), baked once and shipped in every package's maps/lightcache/
+    # so no first join waits for a bake (Midtown ~5 s). Linux only: the Windows exe is cross-compiled and can't run here.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update && sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev
+      - name: build the game, bake every embedded map (no window, every core)
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DQUARK_BUILD_TESTS=OFF
+          cmake --build build -j --target quark
+          build/quark --bake-maps lightcache
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with: { name: lightcache, path: lightcache, retention-days: 7 }   # (the packaging jobs put it in their packages)
+
   windows:
+    needs: lightcache
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { name: lightcache, path: lightcache }
       - name: MinGW (x86-64, posix threads; apt retries a stalled mirror download instead of hanging)
         timeout-minutes: 15
         run: |
@@ -131,6 +151,7 @@ jobs:
             -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc-posix -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++-posix \
             -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres -DCMAKE_BUILD_TYPE=Release
           mkdir -p pkg && cp build/quark.exe build/quark_server.exe build-launcher/quark_launcher.exe pkg/ && cp -r maps mods pkg/
+          cp -r lightcache pkg/maps/lightcache && sh tools/check_lightcache.sh build pkg/maps/lightcache
           python3 tools/pack.py pkg quark-windows.qpak
           mkdir -p quark-windows && cp -r pkg/* README.md quark-windows/
           zip -qr quark-windows.zip quark-windows
@@ -163,12 +184,14 @@ jobs:
         run: ./build/quark_tests.exe group "${{ matrix.group }}"
 
   linux:
-    needs: meta
+    needs: [meta, lightcache]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { name: lightcache, path: lightcache }
       - run: sudo apt-get update && sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { persist-credentials: false, ref: site, path: site }   # the website's source: the site branch (HANDOVER section 4)
@@ -188,6 +211,7 @@ jobs:
           python3 tools/site_assets.py --studio build/studio --out site-assets
           sh tools/launcher_build.sh -DCMAKE_BUILD_TYPE=Release
           mkdir -p pkg && cp build/quark build/quark_server build-launcher/quark_launcher pkg/ && cp -r maps mods pkg/
+          cp -r lightcache pkg/maps/lightcache && sh tools/check_lightcache.sh build pkg/maps/lightcache
           python3 tools/pack.py pkg quark-linux.qpak
           mkdir -p quark-linux && cp -r pkg/* README.md quark-linux/
           tar czf quark-linux.tar.gz quark-linux
@@ -274,7 +298,7 @@ jobs:
         with: { name: fuzz-crashes, path: "build/crash-*", retention-days: 7, if-no-files-found: ignore }
 
   macos:
-    needs: meta
+    needs: [meta, lightcache]
     runs-on: macos-latest
     timeout-minutes: 60
     continue-on-error: ${{ needs.meta.outputs.channel != 'production' }}   # required for production only
@@ -282,6 +306,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { name: lightcache, path: lightcache }
       - run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15 \
             -DQUARK_VERSION_SUFFIX="$QUARK_VERSION_SUFFIX"
@@ -289,6 +315,8 @@ jobs:
           sh tools/launcher_build.sh -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
           mkdir -p pkg && cp -r build/quark.app build/quark_server build-launcher/quark_launcher pkg/ && cp -r maps pkg/
           mkdir -p pkg/quark.app/Contents/Resources && cp -r maps mods pkg/quark.app/Contents/Resources/
+          # (the bakes only where the game reads its maps: pkg/maps is the dedicated server's, which draws nothing)
+          cp -r lightcache pkg/quark.app/Contents/Resources/maps/lightcache && sh tools/check_lightcache.sh build pkg/quark.app/Contents/Resources/maps/lightcache
           python3 tools/pack.py pkg quark-macos.qpak
           mkdir -p quark-macos && cp -r pkg/* README.md quark-macos/
           zip -qry quark-macos.zip quark-macos
@@ -346,8 +374,8 @@ jobs:
       - name: all three platforms are here (no macOS, no release)
         run: |
           # (not release files: the test jobs' binaries + maps (folders: `sha256sum */*` below fails on them), the UI
-          # test's report, and the website's assets, which the pages job publishes)
-          rm -rf dist/windows-tests dist/linux-tests dist/uitest-report dist/site-assets
+          # test's report, the website's assets, which the pages job publishes, and the light bakes, inside every package)
+          rm -rf dist/windows-tests dist/linux-tests dist/uitest-report dist/site-assets dist/lightcache
           for p in windows linux macos; do test -f "dist/$p/quark-$p.qpak" || { echo "::error::no $p build"; exit 1; }; done
       - name: sign the launchers, release manifest, sign every published file (Ed25519, docs/SIGNING.md)
         env:
@@ -396,7 +424,7 @@ jobs:
           TAG: ${{ needs.meta.outputs.tag }}
           VER: ${{ needs.meta.outputs.version }}
         run: |
-          rm -rf dist/windows-tests dist/linux-tests dist/uitest-report dist/macos dist/site-assets   # (as the production job; site-assets: last step)
+          rm -rf dist/windows-tests dist/linux-tests dist/uitest-report dist/macos dist/site-assets dist/lightcache   # (as the production job; site-assets: last step)
           # (as in the production job: launcher signatures into the packages first, then the manifest, then every file)
           sh tools/sign/sign_release.sh --launchers dist/*/quark-*.qpak
           sh tools/sign/release_manifest.sh testing "$TAG" "$VER" "$GITHUB_SHA" dist/*/quark-*.qpak dist/*/quark-launcher-* \

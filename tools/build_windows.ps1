@@ -69,6 +69,13 @@ if ($Tests) {
   if ($LASTEXITCODE -ne 0) { throw "quark_tests failed (exit $LASTEXITCODE)" }
 }
 
+# the official maps' light, baked by this quark.exe as CI does (packages ship it in maps\lightcache, so no first join
+# waits for a bake). Kept in build-win\lightcache between builds: only maps that changed are baked again (all of them
+# take ~25 s on 20 threads; none changed: under a second). (piped: PowerShell waits for a windowed exe only then)
+$bakeTime = Measure-Command { & .\build-win\quark.exe --bake-maps build-win\lightcache | Write-Host }
+if ($LASTEXITCODE -ne 0) { throw "quark --bake-maps failed (exit $LASTEXITCODE)" }
+Write-Host ("light bakes: {0:N1} s" -f $bakeTime.TotalSeconds)
+
 # the package, laid out like CI's quark-windows.zip (exes, maps, mods, README). The launcher is this checkout's
 # own quark_launcher; releases take it from the `launcher` branch instead (tools/launcher_build.sh), which only matters
 # when testing the launcher itself.
@@ -77,6 +84,8 @@ if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
 New-Item -ItemType Directory -Force $dest | Out-Null
 Copy-Item build-win\quark.exe, build-win\quark_server.exe, build-win\quark_launcher.exe $dest
 Copy-Item -Recurse maps, mods $dest
+if (Test-Path "$dest\maps\lightcache") { Remove-Item -Recurse -Force "$dest\maps\lightcache" }   # (only this build's bakes)
+Copy-Item -Recurse build-win\lightcache "$dest\maps\lightcache"
 Copy-Item README.md $dest
 Compress-Archive -Force -Path $dest -DestinationPath "$dest.zip"
 $latest = Join-Path $OutDir 'latest'
@@ -84,6 +93,8 @@ if (Test-Path $latest) { Remove-Item -Recurse -Force $latest }
 Copy-Item -Recurse $dest $latest
 if ($Play) {   # (copied over the old files, never emptied first: settings and your own maps live in %APPDATA%\quark anyway)
   New-Item -ItemType Directory -Force $Play | Out-Null
+  # (the shipped light bakes are replaced, not merged: older builds' bakes of changed maps would pile up)
+  if (Test-Path "$Play\maps\lightcache") { Remove-Item -Recurse -Force "$Play\maps\lightcache" }
   robocopy $dest $Play /E /NFL /NDL /NJH /NJS /NP | Out-Null   # (merges into the existing folders; Copy-Item would nest maps\maps)
   if ($LASTEXITCODE -ge 8) { throw "copying into $Play failed (robocopy $LASTEXITCODE)" }
   Set-Content (Join-Path $Play 'BUILD.txt') "$name (local build, $(Get-Date -Format 'yyyy-MM-dd HH:mm'))"

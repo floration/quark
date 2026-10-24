@@ -109,12 +109,13 @@ void basis(const Vec3& n, Vec3& t, Vec3& b) {
 
 // Light caches are keyed by the map's content (cache/<sha256>.qlm): the same map under any name shares one, an
 // edited map never picks up the bake of the version before, and there's nothing to invalidate.
-std::string cachePath(const Map& m) { return userDataPath("cache") + "/" + m.contentId().hex() + ".qlm"; }
+std::string cachePath(const Map& m) { return userDataPath("cache") + "/" + lightCacheName(m); }
 constexpr size_t kMaxCaches = 32;   // bakes kept (an editor's BAKE LIGHT after each change makes a new one): oldest go
 uint32_t idWord(const Map& m) { const uint8_t* b = m.contentId().b; return (uint32_t)b[0] | (uint32_t)b[1] << 8 | (uint32_t)b[2] << 16 | (uint32_t)b[3] << 24; }
+std::string g_shippedDir;   // (setShippedLightCacheDir: tests)
 
-bool loadCache(const Map& m, BakedWorld& out) {
-    std::ifstream f(utf8Path(cachePath(m)), std::ios::binary);
+bool readCache(const std::string& path, const Map& m, BakedWorld& out) {
+    std::ifstream f(utf8Path(path), std::ios::binary);
     if (!f) return false;
     uint32_t hdr[5];
     f.read((char*)hdr, sizeof hdr);
@@ -122,31 +123,44 @@ bool loadCache(const Map& m, BakedWorld& out) {
         (int)hdr[3] != out.atlasW || (int)hdr[4] != out.atlasH) return false;
     out.texels.resize((size_t)out.atlasW * out.atlasH * 2);
     f.read((char*)out.texels.data(), out.texels.size());
-    if (!f) return false;
-    f.close();
-    // (eviction goes by write time: a hit marks the bake used, so the maps being played keep theirs)
+    return (bool)f;
+}
+
+bool loadCache(const Map& m, BakedWorld& out) {
+    if (readCache(cachePath(m), m, out)) {
+        // (eviction goes by write time: a hit marks the bake used, so the maps being played keep theirs)
+        std::error_code ec;
+        std::filesystem::last_write_time(utf8Path(cachePath(m)), std::filesystem::file_time_type::clock::now(), ec);
+        return true;
+    }
+    // the package's bake of an official map (read-only: the install may be, and an update replaces the folder)
+    const std::string dir = g_shippedDir.empty() ? findDataPath("maps/lightcache") : g_shippedDir;
+    return readCache(dir + "/" + lightCacheName(m, true), m, out);
+}
+
+// written to a temporary file and renamed over the cache in one step (a crash or a full disk mid-write left a
+// truncated cache that every later load turned down and baked again)
+bool writeCache(const std::string& path, const Map& m, const BakedWorld& w) {
     std::error_code ec;
-    std::filesystem::last_write_time(utf8Path(cachePath(m)), std::filesystem::file_time_type::clock::now(), ec);
+    const std::string tmp = path + ".tmp";
+    {
+        std::ofstream f(utf8Path(tmp), std::ios::binary | std::ios::trunc);
+        if (!f) return false;
+        uint32_t hdr[5] = {kCacheMagic, kBakeVersion, idWord(m), (uint32_t)w.atlasW, (uint32_t)w.atlasH};
+        f.write((const char*)hdr, sizeof hdr);
+        f.write((const char*)w.texels.data(), w.texels.size());
+        f.flush();
+        if (!f) { f.close(); std::filesystem::remove(utf8Path(tmp), ec); return false; }
+    }
+    std::filesystem::rename(utf8Path(tmp), utf8Path(path), ec);
+    if (ec) { std::filesystem::remove(utf8Path(tmp), ec); return false; }
     return true;
 }
 
 void saveCache(const Map& m, const BakedWorld& w) {
     std::error_code ec;
     std::filesystem::create_directories(userDataPath("cache"), ec);
-    // written to a temporary file and renamed over the cache in one step (a crash or a full disk mid-write left a
-    // truncated cache that every later load turned down and baked again)
-    const std::string path = cachePath(m), tmp = path + ".tmp";
-    {
-        std::ofstream f(utf8Path(tmp), std::ios::binary | std::ios::trunc);
-        if (!f) return;
-        uint32_t hdr[5] = {kCacheMagic, kBakeVersion, idWord(m), (uint32_t)w.atlasW, (uint32_t)w.atlasH};
-        f.write((const char*)hdr, sizeof hdr);
-        f.write((const char*)w.texels.data(), w.texels.size());
-        f.flush();
-        if (!f) { f.close(); std::filesystem::remove(utf8Path(tmp), ec); return; }
-    }
-    std::filesystem::rename(utf8Path(tmp), utf8Path(path), ec);
-    if (ec) { std::filesystem::remove(utf8Path(tmp), ec); return; }
+    if (!writeCache(cachePath(m), m, w)) return;
     std::vector<std::pair<std::filesystem::file_time_type, std::filesystem::path>> all;
     for (auto& e : std::filesystem::directory_iterator(userDataPath("cache"), ec))
         if (e.path().extension() == ".qlm") all.push_back({e.last_write_time(ec), e.path()});
@@ -155,12 +169,20 @@ void saveCache(const Map& m, const BakedWorld& w) {
     for (size_t i = kMaxCaches; i < all.size(); i++) std::filesystem::remove(all[i].second, ec);
 }
 
+// one core left for the game (the loading screen, a hosted server's thread, software GL's own threads); quark
+// --bake-maps has nothing else to run and takes them all
+std::atomic<bool> g_allCores{false};
+unsigned bakeThreads() {
+    unsigned hc = std::thread::hardware_concurrency();
+    return g_allCores ? std::max(1u, hc) : std::max(1u, hc > 2 ? hc - 1 : hc);
+}
+
 // fn(i) for every i in [0, n), on the bake's thread count (the caller's thread is one of them), 256 at a time from a
 // shared counter; false if stopped() turned true (checked once per chunk). Each fn(i) writes only its own slots, so
 // the result is the same as a serial loop's.
 template <class S, class F> bool parallelFor(size_t n, const S& stopped, const F& fn) {
     constexpr size_t kChunk = 256;
-    unsigned hc = std::thread::hardware_concurrency(), nt = std::max(1u, hc > 2 ? hc - 1 : hc);
+    unsigned nt = bakeThreads();
     nt = (unsigned)std::min<size_t>(nt, (n + kChunk - 1) / kChunk);
     std::atomic<size_t> next{0};
     std::atomic<bool> halted{false};
@@ -187,7 +209,10 @@ float sunVisibility(const Map& map, const Vec3& p) {
     return anyHit(map, p, map.sunDir, 500.0f) ? 0.0f : 1.0f;
 }
 
-void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)>& progress, const std::atomic<bool>* cancel) {
+// The user's cache (then a shipped bake) is read first and a bake saved to it; with `file`, only that file is read and
+// nothing is saved (quark --bake-maps: the caller writes it).
+static void bake(const Map& map, BakedWorld& out, const std::function<void(float)>& progress, const std::atomic<bool>* cancel,
+                 const std::string* file) {
     out = BakedWorld();
     // 1. Collect visible faces.
     std::vector<Face> faces;
@@ -389,7 +414,7 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
         else { out.verts.insert(out.verts.end(), {a, c, b, a, d, c}); }
     }
 
-    if (loadCache(map, out)) { out.fromCache = true; if (progress) progress(1.0f); return; }
+    if (file ? readCache(*file, map, out) : loadCache(map, out)) { out.fromCache = true; if (progress) progress(1.0f); return; }
 
     // 5. Bake, multithreaded over faces.
     out.texels.assign((size_t)W * H * 2, 0);
@@ -474,8 +499,7 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
             doneCount++;
         }
     };
-    // one core left for the game (the loading screen, a hosted server's thread, software GL's own threads)
-    unsigned hc = std::thread::hardware_concurrency(), nt = std::max(1u, hc > 2 ? hc - 1 : hc);
+    const unsigned nt = bakeThreads();
     std::vector<std::thread> threads;
     for (unsigned i = 0; i < nt; i++) threads.emplace_back(worker);
     if (progress) {
@@ -488,6 +512,54 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
     }
     for (auto& th : threads) th.join();
     if (cancel && cancel->load()) { out.cancelled = true; return; }
-    saveCache(map, out);
+    if (!file) saveCache(map, out);
     if (progress) progress(1.0f);
+}
+
+void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)>& progress, const std::atomic<bool>* cancel) {
+    bake(map, out, progress, cancel, nullptr);
+}
+
+std::string lightCacheName(const Map& map, bool shipped) { return map.contentId().hex() + (shipped ? ".qlb" : ".qlm"); }
+void setShippedLightCacheDir(const std::string& dir) { g_shippedDir = dir; }
+
+bool bakeLightCacheFile(const Map& map, const std::string& path, bool* kept) {
+    BakedWorld w;
+    bake(map, w, nullptr, nullptr, &path);
+    if (kept) *kept = w.fromCache;
+    return w.fromCache || writeCache(path, map, w);
+}
+
+int bakeOfficialMaps(const std::string& dir) {
+    namespace fs = std::filesystem;
+    if (dir.empty()) { fprintf(stderr, "quark --bake-maps <dir>\n"); return 2; }
+    g_allCores = true;
+    // the atlas is packed to fit the GPU's largest texture (PERF-13): baked for 16384, what current GPUs (and
+    // software GL) offer; a map that only fits a 4096 GPU differently is baked there, as before
+    setLightmapMaxTextureSize(16384);
+    std::error_code ec;
+    fs::create_directories(utf8Path(dir), ec);
+    std::vector<std::string> made;
+    int failed = 0;
+    const double t0 = timeNow();
+    for (auto& [name, text] : officialMapTexts()) {
+        Map m;
+        m.name = name;
+        std::string err;
+        if (!m.parse(text, &err)) { fprintf(stderr, "%s: %s\n", name.c_str(), err.c_str()); failed++; continue; }
+        m.dynSolids.clear();   // (as the client bakes a joined map: no payload cart box)
+        const std::string file = lightCacheName(m, true), path = dir + "/" + file;
+        made.push_back(file);
+        const double t = timeNow();
+        bool kept = false;
+        if (!bakeLightCacheFile(m, path, &kept)) { fprintf(stderr, "%s: can't write %s\n", name.c_str(), path.c_str()); failed++; continue; }
+        printf("%-12s %s %.2f s\n", name.c_str(), kept ? "kept " : "baked", timeNow() - t);
+        fflush(stdout);
+    }
+    // anything else there is an older bake: dropped, so the folder holds exactly this build's maps
+    for (auto& e : fs::directory_iterator(utf8Path(dir), ec))
+        if (e.path().extension() == ".qlb" && std::find(made.begin(), made.end(), e.path().filename().u8string()) == made.end())
+            fs::remove(e.path(), ec);
+    printf("%d maps, %.1f s, %u threads%s\n", (int)made.size(), timeNow() - t0, bakeThreads(), failed ? ", FAILED" : "");
+    return failed ? 1 : 0;
 }

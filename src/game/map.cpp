@@ -187,6 +187,12 @@ int resetOfficialMaps(const std::string& shippedDir) {
     return n;
 }
 
+std::vector<std::pair<std::string, std::string>> officialMapTexts() {
+    std::vector<std::pair<std::string, std::string>> out;
+    for (const OfficialMapData* m = kOfficialMapData; m->name; m++) out.emplace_back(m->name, std::string((const char*)m->data, m->size));
+    return out;
+}
+
 std::string mapsFolder() {
     std::error_code ec;
     fs::create_directories(userMapsDir(), ec);

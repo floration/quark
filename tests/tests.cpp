@@ -23,6 +23,7 @@
 #include "common/profile.h"
 #include "game/demo.h"
 #include "../src/client/complete.h"
+#include "../src/client/lightmap.h"
 #include <filesystem>
 #include <sstream>
 #include <fstream>
@@ -1548,6 +1549,53 @@ static void testAtomicWrite() {
 #endif
     CHECK(!writeFileAtomic((fs::temp_directory_path() / "no_such_dir_quark" / "x.cfg").string(), "x"));   // a failed write says so
     fs::remove(path, ec);
+}
+
+// Shipped light bakes (maps/lightcache/, quark --bake-maps): a package's bake of a map is used when the user's cache
+// misses (no bake, nothing written to the user's cache, the shipped file left alone); a stale one (another bake
+// version, another map's) is turned down and the map baked into the user's cache as before.
+static void testShippedLightCache() {
+    printf("shipped light bakes\n");
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const std::string shipped = userDataPath("zz_lightcache"), user = userDataPath("cache");
+    fs::remove_all(fs::u8path(shipped), ec);
+    fs::create_directories(fs::u8path(shipped), ec);
+    setShippedLightCacheDir(shipped);
+    Map m;
+    std::string err;
+    CHECK(m.parse("box -8 -1 -8 8 0 8\nbox 2 0 -2 3 3 2\nbox -4 2 -4 -3 2.5 4\nlight 0 2 0 6 1\nspawn any 0 0 0\n", &err));
+    const std::string file = shipped + "/" + lightCacheName(m, true), mine = user + "/" + lightCacheName(m);
+    CHECK(lightCacheName(m) == m.contentId().hex() + ".qlm" && lightCacheName(m, true) == m.contentId().hex() + ".qlb");
+    bool kept = true;
+    CHECK(bakeLightCacheFile(m, file, &kept) && !kept && fs::exists(fs::u8path(file), ec));
+    CHECK(bakeLightCacheFile(m, file, &kept) && kept);   // (a valid one is kept: --bake-maps redoes only changed maps)
+    const auto stamp = fs::last_write_time(fs::u8path(file), ec);
+    BakedWorld a;
+    buildWorld(m, a);
+    CHECK(a.fromCache && !a.texels.empty() && !fs::exists(fs::u8path(mine), ec));   // the shipped bake: no bake, no copy
+    CHECK(fs::last_write_time(fs::u8path(file), ec) == stamp);                      // read-only: not touched
+    // stale: another bake version's file is a miss, baked into the user's cache (the same light)
+    std::string bytes;
+    { std::ifstream f(fs::u8path(file), std::ios::binary); std::stringstream ss; ss << f.rdbuf(); bytes = ss.str(); }
+    CHECK(bytes.size() == 20 + a.texels.size());
+    std::string stale = bytes;
+    stale[4]++;   // (the header's second word: kBakeVersion)
+    { std::ofstream(fs::u8path(file), std::ios::binary | std::ios::trunc) << stale; }
+    BakedWorld b;
+    buildWorld(m, b);
+    CHECK(!b.fromCache && b.texels == a.texels && fs::exists(fs::u8path(mine), ec));
+    fs::remove(fs::u8path(mine), ec);
+    // another map's bake under this map's name: turned down too
+    Map other;
+    CHECK(other.parse("box -9 -1 -9 9 0 9\nspawn any 0 0 0\n", &err));
+    CHECK(bakeLightCacheFile(other, file, &kept) && !kept);   // (written there: its header names the other map)
+    BakedWorld c;
+    buildWorld(m, c);
+    CHECK(!c.fromCache && c.texels == a.texels);
+    setShippedLightCacheDir("");
+    fs::remove_all(fs::u8path(shipped), ec);
+    fs::remove(fs::u8path(mine), ec);
 }
 
 static void testGridQueries() {
@@ -6838,7 +6886,7 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
