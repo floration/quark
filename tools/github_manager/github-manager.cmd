@@ -1,25 +1,52 @@
 @echo off
-rem Quark GitHub manager: starts the read-only dashboard server at low priority and opens http://127.0.0.1:8767/
+rem Quark GitHub manager: starts the read-only dashboard server with no window, at low priority, and opens
+rem http://127.0.0.1:8767/ (if it is already running, only opens the page).
 rem   github-manager.cmd [output folder]
 rem Output folder default: %USERPROFILE%\Desktop\Quark\github-manager (github-manager.json, cache\, history.jsonl,
-rem logs\, mirror.git). Needs Python 3, git and gh (signed in: gh auth login). Close its window to stop it.
+rem logs\, mirror.git, server.log). Needs Python 3, git and gh (signed in: gh auth login). The server's own log is
+rem server.log in the output folder. Port: 8767, or set GHM_PORT if github-manager.json says otherwise.
 setlocal
 set "OUT=%~1"
 if "%OUT%"=="" set "OUT=%USERPROFILE%\Desktop\Quark\github-manager"
 rem no trailing backslash: "C:\x\" would hide the closing quote from Python
 if "%OUT:~-1%"=="\" set "OUT=%OUT:~0,-1%"
-set "PY="
-py -3 -c "import sys" >nul 2>nul && set "PY=py -3"
-if not defined PY python -c "import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)" >nul 2>nul && set "PY=python"
-if not defined PY (
+set "PORT=%GHM_PORT%"
+if "%PORT%"=="" set "PORT=8767"
+set "URL=http://127.0.0.1:%PORT%/"
+
+rem already running: just open the page (curl.exe ships with Windows 10 and 11)
+where curl.exe >nul 2>nul && curl.exe -s -f -o nul -m 2 "%URL%api/summary" && (
+  start "" "%URL%"
+  exit /b 0
+)
+if not exist "%OUT%" mkdir "%OUT%"
+set "GHM_SERVER=%~dp0server.py"
+set "GHM_OUT=%OUT%"
+
+rem 1) a windowless Python: pyw -3, pythonw on PATH, or pythonw.exe next to the Python that py / python run
+set "PYW="
+pyw -3 -c "import sys" >nul 2>nul && set "PYW=pyw -3"
+if not defined PYW pythonw -c "import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)" >nul 2>nul && set "PYW=pythonw"
+set "GHM_TMP=%TEMP%\quark-ghm-pythonw.txt"
+set "GHM_FIND=import os,sys; sys.stdout.write(os.path.join(os.path.dirname(sys.executable), 'pythonw.exe'))"
+if not defined PYW py -3 -c "%GHM_FIND%" > "%GHM_TMP%" 2>nul || python -c "%GHM_FIND%" > "%GHM_TMP%" 2>nul
+set "PYW_EXE="
+if not defined PYW if exist "%GHM_TMP%" set /p PYW_EXE=<"%GHM_TMP%"
+if exist "%GHM_TMP%" del "%GHM_TMP%" >nul 2>nul
+if not defined PYW if defined PYW_EXE if exist "%PYW_EXE%" set PYW="%PYW_EXE%"
+if defined PYW (
+  start "" /b /low %PYW% -B "%GHM_SERVER%" --data "%GHM_OUT%" --open
+  exit /b 0
+)
+
+rem 2) no pythonw: a console Python started hidden through PowerShell
+set "GHM_PY="
+py -3 -c "import sys" >nul 2>nul && set "GHM_PY=py" && set "GHM_PYARG=-3"
+if not defined GHM_PY python -c "import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)" >nul 2>nul && set "GHM_PY=python" && set "GHM_PYARG=-B"
+if not defined GHM_PY (
   echo Python 3 was not found. Install it from https://www.python.org/downloads/ and tick "Add python.exe to PATH".
   pause
   exit /b 1
 )
-where git >nul 2>nul || echo Warning: git is not on PATH, so branches and local copies cannot be compared.
-where gh >nul 2>nul || echo Warning: gh ^(GitHub CLI^) is not on PATH, so there is no GitHub data. https://cli.github.com/
-if not exist "%OUT%" mkdir "%OUT%"
-rem /low: the server and the git / gh it runs stay out of the game's way. It opens the page itself once it listens
-rem (or, if it is already running, just opens the page).
-start "Quark GitHub manager" /low /min %PY% -B "%~dp0server.py" --data "%OUT%" --open
-endlocal
+powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "$p = Start-Process -PassThru -WindowStyle Hidden -FilePath $env:GHM_PY -ArgumentList @($env:GHM_PYARG, '-B', ('\"' + $env:GHM_SERVER + '\"'), '--data', ('\"' + $env:GHM_OUT + '\"'), '--open'); try { $p.PriorityClass = 'Idle' } catch {}"
+exit /b 0

@@ -24,8 +24,11 @@ import gzip
 import hashlib
 import http.server
 import json
+import logging
+import logging.handlers
 import os
 import re
+import signal
 import subprocess
 import threading
 import time
@@ -63,6 +66,9 @@ WIN = os.name == "nt"
 NO_WINDOW = 0x08000000 if WIN else 0  # CREATE_NO_WINDOW: git / gh never flash a console window
 
 UTC = datetime.timezone.utc
+LOG = logging.getLogger("github-manager")
+LOG_BYTES = 1000000      # server.log rotates at ~1 MB, keeping 3 old files
+EXIT_PORT_BUSY = 2
 
 
 # ----------------------------------------------------------------------------------------------------------------
@@ -334,6 +340,7 @@ class GitHub:
             break
         m = re.search(r"HTTP (\d{3})", err or "")
         first = next((l.strip() for l in (err or "").splitlines() if l.strip()), "failed (exit %s)" % code)
+        first = re.sub(r"(https?://[^\s\"?]+)\?[^\s\"]*", r"\1?...", first)  # drop signed-URL tokens
         raise GhError(int(m.group(1)) if m else None, "gh api %s: %s" % (path, first[:300]))
 
     def check_rate(self):
@@ -1053,9 +1060,9 @@ class Manager:
     def _p(self, *parts):
         return os.path.join(self.data, *parts)
 
-    def say(self, msg):
-        if not self.quiet:
-            print("[%s] %s" % (time.strftime("%H:%M:%S"), msg), flush=True)
+    def say(self, msg, level=logging.INFO):
+        if not self.quiet or level >= logging.WARNING:
+            LOG.log(level, msg)
 
     def _empty_state(self):
         return {"generatedAt": iso(now_dt()), "repo": self.repo, "defaultBranch": self.default_branch,
@@ -1731,13 +1738,17 @@ class Manager:
         while not self.stop.is_set():
             try:
                 self.poll()
-            except Exception as e:  # never let the thread die
+            except Exception as e:  # never let the thread die: log it and poll again later
                 self.last_error = "poll crashed: %r" % e
-                self.say(self.last_error)
+                LOG.exception("poll crashed (will poll again in %d s)", self.interval)
                 self.next_at = time.time() + self.interval
-            wait = max(1.0, (self.next_at or time.time() + self.interval) - time.time())
-            self.wake.wait(wait)
-            self.wake.clear()
+            try:
+                wait = max(1.0, (self.next_at or time.time() + self.interval) - time.time())
+                self.wake.wait(wait)
+                self.wake.clear()
+            except Exception:
+                LOG.exception("poll thread wait failed")
+                time.sleep(5)
 
     def refresh(self):
         """POST /api/refresh: poll now unless one ran in the last 10 s. -> (polled: bool)."""
@@ -1968,24 +1979,85 @@ The API is running: <a href="/api/state">/api/state</a>, <a href="/api/summary">
 
 class Server(http.server.ThreadingHTTPServer):
     daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        # the default prints to sys.stderr, which is None under pythonw
+        if sys.exc_info()[0] in (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            return
+        LOG.exception("error answering %s", client_address[0] if client_address else "?")
     allow_reuse_address = not WIN  # on Windows SO_REUSEADDR would let a second copy share the port
 
 
 def make_server(manager, port):
+    """Binds 127.0.0.1:port (OSError when busy). manager may be set later: server.RequestHandlerClass.manager."""
     handler = type("BoundHandler", (Handler,), {"manager": manager})
     return Server(("127.0.0.1", port), handler)
 
 
-def already_running(port):
+def already_running(port, timeout=2):
     import urllib.request
     try:
-        with urllib.request.urlopen("http://127.0.0.1:%d/api/summary" % port, timeout=3) as r:
+        with urllib.request.urlopen("http://127.0.0.1:%d/api/summary" % port, timeout=timeout) as r:
             return r.status == 200
     except Exception:
         return False
 
 
+def port_busy(e):
+    return e.errno in (errno.EADDRINUSE, errno.EACCES, getattr(errno, "WSAEADDRINUSE", -1), 10048, 10013) or \
+        "in use" in str(e).lower()
+
+
+def setup_logging(data, console=True):
+    """<data>/server.log (rotating), plus the console when there is one (pythonw has no stdout / stderr)."""
+    for name in ("stdout", "stderr"):
+        if getattr(sys, name) is None:  # pythonw: make stray prints harmless
+            setattr(sys, name, open(os.devnull, "w", encoding="utf-8"))
+    LOG.setLevel(logging.INFO)
+    LOG.propagate = False
+    for h in list(LOG.handlers):
+        LOG.removeHandler(h)
+        h.close()
+    fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s", "%Y-%m-%d %H:%M:%S")
+    try:
+        fh = logging.handlers.RotatingFileHandler(os.path.join(data, "server.log"), maxBytes=LOG_BYTES,
+                                                  backupCount=3, encoding="utf-8", delay=False)
+        fh.setFormatter(fmt)
+        LOG.addHandler(fh)
+    except OSError:
+        pass
+    if console and getattr(sys.stdout, "name", "") != os.devnull:
+        ch = logging.StreamHandler(sys.stdout)
+        ch.setFormatter(logging.Formatter("[%(asctime)s] %(message)s", "%H:%M:%S"))
+        LOG.addHandler(ch)
+
+    def thread_hook(args):
+        if args.exc_type is not SystemExit:
+            LOG.error("thread %s died", args.thread.name if args.thread else "?",
+                      exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+    threading.excepthook = thread_hook
+
+
+def wants_browser(a):
+    """--open, unless the Quark Project app runs us (QUARK_SHELL=1): it shows the page itself."""
+    return bool(a.open) and os.environ.get("QUARK_SHELL") != "1"
+
+
+class Stop(Exception):
+    pass
+
+
 def main(argv=None):
+    try:
+        return _main(argv)
+    except SystemExit:
+        raise
+    except BaseException:
+        LOG.exception("stopped: unexpected error")
+        return 1
+
+
+def _main(argv=None):
     ap = argparse.ArgumentParser(description="Quark GitHub manager (read-only): http://127.0.0.1:%d/" % DEFAULT_PORT)
     ap.add_argument("--data", default=None, help="output folder (default %%USERPROFILE%%\\Desktop\\Quark\\github-manager)")
     ap.add_argument("--port", type=int, default=None, help="port (default: github-manager.json, else %d)" % DEFAULT_PORT)
@@ -1995,38 +2067,69 @@ def main(argv=None):
     a = ap.parse_args(argv)
     data = os.path.abspath(os.path.expanduser(a.data or default_data_dir()))
     os.makedirs(data, exist_ok=True)
+    setup_logging(data, console=not a.quiet)
     cfg = load_config(data)
     port = a.port or int(cfg.get("port") or DEFAULT_PORT)
     static = os.path.dirname(os.path.abspath(__file__))
     url = "http://127.0.0.1:%d/" % port
-    m = Manager(cfg, data, static, quiet=a.quiet)
     if a.once:
-        m.poll(manual=True)
+        Manager(cfg, data, static, quiet=a.quiet).poll(manual=True)
         return 0
+    # bind first: a second copy leaves at once, before loading any cache
     try:
-        srv = make_server(m, port)
+        srv = make_server(None, port)
     except OSError as e:
-        if e.errno in (errno.EADDRINUSE, getattr(errno, "WSAEADDRINUSE", -1), 10048) or "in use" in str(e).lower():
-            if already_running(port):
-                print("The GitHub manager is already running at %s" % url)
-                if a.open:
-                    webbrowser.open(url)
-                return 0
-        print("cannot listen on 127.0.0.1:%d: %s" % (port, e))
+        if port_busy(e):
+            up = already_running(port)
+            LOG.warning("not starting: port %d is already in use%s (exit %d)", port,
+                        " by a running GitHub manager" if up else " by another program", EXIT_PORT_BUSY)
+            if up and wants_browser(a):
+                webbrowser.open(url)
+            return EXIT_PORT_BUSY
+        LOG.error("not starting: cannot listen on 127.0.0.1:%d: %s", port, e)
         return 1
-    m.say("GitHub manager for %s at %s (data: %s)" % (m.repo, url, data))
+    LOG.info("starting (pid %d, Python %s, %s) for %s at %s, data %s", os.getpid(), sys.version.split()[0],
+             os.path.basename(sys.executable or "python"), cfg.get("repo"), url, data)
+    try:
+        m = Manager(cfg, data, static, quiet=a.quiet)
+    except BaseException:
+        srv.server_close()
+        raise
+    srv.RequestHandlerClass.manager = m
+    reason = ["the server loop ended"]
+
+    def on_signal(signum, frame):
+        try:
+            reason[0] = "signal %s" % signal.Signals(signum).name
+        except ValueError:
+            reason[0] = "signal %s" % signum
+        raise Stop()
+    for sig in ("SIGTERM", "SIGINT", "SIGBREAK", "SIGHUP"):
+        if hasattr(signal, sig):
+            try:
+                signal.signal(getattr(signal, sig), on_signal)
+            except (OSError, ValueError):
+                pass
     t = threading.Thread(target=m.loop, name="poll", daemon=True)
     t.start()
-    if a.open:
+    if wants_browser(a):
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()
+    elif a.open:
+        LOG.info("not opening the browser (QUARK_SHELL=1)")
     try:
         srv.serve_forever(poll_interval=1.0)
-    except KeyboardInterrupt:
-        pass
+    except (Stop, KeyboardInterrupt):
+        if reason[0] == "the server loop ended":
+            reason[0] = "Ctrl+C"
+    except BaseException as e:
+        reason[0] = "error: %r" % e
+        LOG.exception("server loop crashed")
+        raise
     finally:
         m.stop.set()
         m.wake.set()
         srv.server_close()
+        LOG.info("stopped (%s)", reason[0])
     return 0
 
 

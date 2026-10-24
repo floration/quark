@@ -11,17 +11,34 @@ never changes a branch and never writes into a working copy. It keeps its own hi
 You need Python 3 (standard library only), git, and gh signed in (`gh auth login`).
 
 ```
-tools\github_manager\install.cmd [output folder]      (Windows: copy the tool there and start it)
+tools\github_manager\install.cmd [output folder]          (Windows: copy the tool there and start it)
 tools\github_manager\github-manager.cmd [output folder]   (start it from where it is)
-python3 tools/github_manager/server.py [--data <folder>] [--port N] [--open] [--once]
+python3 tools/github_manager/server.py [--data <folder>] [--port N] [--open] [--once] [--quiet]
 ```
 
-Output folder default: `%USERPROFILE%\Desktop\Quark\github-manager`. `install.cmd` (or `python install.py <folder>`)
-copies the server, launcher and page files there, so the tool doesn't depend on the branch a working copy is on;
-the data already in the folder stays. Run it again after updating the repository. `github-manager.cmd` starts the
-server minimized at low priority (`start /low`, which git and gh inherit) and opens http://127.0.0.1:8767/ in the
-default browser; if it is already running it only opens the page. Close its window to stop it. `--once` polls once,
-writes the files and exits. The page is served from the folder `server.py` is in; the server listens on 127.0.0.1 only.
+Output folder default: `%USERPROFILE%\Desktop\Quark\github-manager`. Nothing opens a command window that stays:
+
+- `github-manager.cmd` opens http://127.0.0.1:8767/ if the server already answers (set `GHM_PORT` for another
+  port). Otherwise it starts the server with no window at low priority (`start "" /b /low` with `pyw -3`, `pythonw`,
+  or the `pythonw.exe` next to the Python that `py` / `python` run; with none of those, a hidden PowerShell
+  `Start-Process -WindowStyle Hidden` at idle priority) and closes at once. The server opens the page itself once it
+  listens. git and gh inherit the low priority and never show a console (CREATE_NO_WINDOW).
+- `install.cmd` (or `python install.py <folder> [--no-start]`) copies the server, launcher and page files there, so the
+  tool doesn't depend on the branch a working copy is on, then starts it the same way (pythonw, detached, idle
+  priority), or opens the page if it is already running. The data already in the folder stays; what it did goes to
+  `install.log`. Run it again after updating the repository; a server that is already running keeps its old code
+  until it is restarted.
+- The Quark Project app runs `python server.py --data <Quark>\github-manager` hidden, with `QUARK_SHELL=1` (then
+  `--open` is ignored: the app shows the page), and restarts it if it stops.
+
+The server writes its own log, `server.log` in the output folder (rotating at about 1 MB, 3 old files kept): start
+(pid, Python), one line per poll, every error with its traceback (a crash in the poll thread is logged and the next
+poll runs as usual), and why it stopped (a signal, Ctrl+C, an error). Under pythonw there is no console, so nothing is
+printed; with a console, the same lines are printed too (`--quiet`: errors only). A second copy on a busy port
+leaves at once with exit code 2 and the line "not starting: port 8767 is already in use by a running GitHub manager"
+(or "by another program"); with `--open` it opens the running one's page. Exit code 1: another startup error.
+`--once` polls once, writes the files and exits. The page is served from the folder `server.py` is in; the server
+listens on 127.0.0.1 only.
 
 ## Settings: `github-manager.json` in the output folder
 
@@ -70,7 +87,8 @@ first start's backfill is still downloading). Refresh on the page polls at once 
   changed.
 - `cache/github.json`: the page's state minus the local copies, plus every release, rewritten each poll (the Claude
   Documents manager reads it). `cache/runs/`, `cache/pulls.json`, `cache/meta.json`: the caches above.
-- `logs/<run>/<job>.txt`, `mirror.git/`, `state-prev.json`, `github-manager.json`.
+- `logs/<run>/<job>.txt`, `mirror.git/`, `state-prev.json`, `github-manager.json`, `server.log` (+ `.1`-`.3`),
+  `install.log`.
 
 Delete `state-prev.json` and `history.jsonl` to start the history again; delete `cache/` to fetch everything again.
 

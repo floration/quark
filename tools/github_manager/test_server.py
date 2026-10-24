@@ -10,6 +10,7 @@ sys.dont_write_bytecode = True
 
 import gzip
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -368,6 +369,12 @@ class RawLogs(unittest.TestCase):
             g.raw("repos/o/r/actions/jobs/1/logs")
         self.assertIn("the response contains terminal escape sequences", str(cm.exception))
         self.assertIsNone(cm.exception.status)
+        g = S.GitHub("o/r", RawProc(True, fail='Get "https://x.blob.core.windows.net/a/b.txt?sig=SECRET&se=1": '
+                                                 'Forbidden\n'))
+        with self.assertRaises(S.GhError) as cm:
+            g.raw("y")
+        self.assertNotIn("SECRET", str(cm.exception))
+        self.assertIn("https://x.blob.core.windows.net/a/b.txt?...", str(cm.exception))
         g = S.GitHub("o/r", RawProc(True, fail="gh: Not Found (HTTP 404)\n"))
         with self.assertRaises(S.GhError) as cm:
             g.raw("x")
@@ -434,6 +441,156 @@ class Discovery(unittest.TestCase):
                                                                    self.q, "working-repo-server")}]},
                               self.git, "floration/quark")
         self.assertEqual([(x["name"], x["worktreeOf"]) for x in e], [("working-repo", None), ("srv", "working-repo")])
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# running windowless: logging, crashes, a second copy
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def free_port():
+    import socket
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    p = s.getsockname()[1]
+    s.close()
+    return p
+
+
+class Windowless(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="ghm-run-")
+        self.env = dict(os.environ, PATH=os.path.join(self.dir, "no-tools"))  # no gh, no git: polls fail fast
+        self.env.pop("QUARK_SHELL", None)
+        self.procs = []
+
+    def tearDown(self):
+        for p in self.procs:
+            if p.poll() is None:
+                p.kill()
+                p.wait()
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def log(self, data):
+        try:
+            with open(os.path.join(data, "server.log"), encoding="utf-8") as f:
+                return f.read()
+        except OSError:
+            return ""
+
+    def test_no_stdout_like_pythonw(self):
+        data = os.path.join(self.dir, "data")
+        code = ("import sys; sys.stdout = None; sys.stderr = None; sys.path.insert(0, %r); import server; "
+                "sys.exit(server.main(['--data', %r, '--once']))" % (HERE, data))
+        p = subprocess.run([sys.executable, "-B", "-c", code], env=self.env, capture_output=True, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("poll with errors", self.log(data))
+
+    def test_second_copy_exits_2_and_signals_are_logged(self):
+        data, data2 = os.path.join(self.dir, "data"), os.path.join(self.dir, "data2")
+        port = free_port()
+        first = subprocess.Popen([sys.executable, "-B", os.path.join(HERE, "server.py"), "--data", data, "--port",
+                                  str(port), "--quiet"], env=self.env, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+        self.procs.append(first)
+        for _ in range(200):
+            if S.already_running(port, timeout=0.5):
+                break
+            threading.Event().wait(0.05)
+        self.assertTrue(S.already_running(port))
+        t0 = S.time.time()
+        p = subprocess.run([sys.executable, "-B", os.path.join(HERE, "server.py"), "--data", data2, "--port",
+                            str(port), "--quiet"], env=self.env, capture_output=True, timeout=30)
+        self.assertEqual(p.returncode, S.EXIT_PORT_BUSY)
+        self.assertLess(S.time.time() - t0, 10)
+        self.assertIn("port %d is already in use by a running GitHub manager" % port, self.log(data2))
+        if os.name != "nt":
+            import signal
+            first.send_signal(signal.SIGTERM)
+            first.wait(timeout=20)
+            self.assertIn("stopped (signal SIGTERM)", self.log(data))
+        self.assertIn("starting (pid %d" % first.pid, self.log(data))
+
+    def test_busy_port_by_another_program(self):
+        import socket
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        s.listen(1)
+        port = s.getsockname()[1]
+        try:
+            data = os.path.join(self.dir, "data")
+            p = subprocess.run([sys.executable, "-B", os.path.join(HERE, "server.py"), "--data", data, "--port",
+                                str(port)], env=self.env, capture_output=True, text=True, timeout=30)
+        finally:
+            s.close()
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("already in use by another program", self.log(data))
+        self.assertIn("already in use", p.stdout)  # and on the console when there is one
+
+    def test_quark_shell_skips_the_browser(self):
+        a = type("A", (), {"open": True})()
+        old = os.environ.pop("QUARK_SHELL", None)
+        try:
+            self.assertTrue(S.wants_browser(a))
+            os.environ["QUARK_SHELL"] = "1"
+            self.assertFalse(S.wants_browser(a))
+            a.open = False
+            os.environ.pop("QUARK_SHELL")
+            self.assertFalse(S.wants_browser(a))
+        finally:
+            if old is not None:
+                os.environ["QUARK_SHELL"] = old
+
+    def test_poll_thread_logs_crashes_and_keeps_going(self):
+        m = S.Manager.__new__(S.Manager)
+        m.stop, m.wake, m.interval, m.next_at, m.last_error = threading.Event(), threading.Event(), 0, None, None
+        calls = []
+
+        def poll():
+            calls.append(1)
+            if len(calls) == 1:
+                raise KeyError("boom")
+            m.stop.set()
+        m.poll = poll
+        records = []
+        h = logging.Handler()
+        h.emit = records.append
+        S.LOG.addHandler(h)
+        try:
+            t = threading.Thread(target=m.loop)
+            m.wake.set()
+            t.start()
+            t.join(10)
+        finally:
+            S.LOG.removeHandler(h)
+        self.assertFalse(t.is_alive())
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(any("poll crashed" in r.getMessage() and r.exc_info for r in records))
+        self.assertIn("boom", m.last_error)
+
+    def test_install_copies_without_data(self):
+        out = os.path.join(self.dir, "out dir")
+        os.makedirs(out)
+        write(os.path.join(out, "history.jsonl"), "keep\n")
+        sys.path.insert(0, HERE)
+        try:
+            import install
+        finally:
+            sys.path.remove(HERE)
+        self.assertEqual(install.main([out, "--no-start"]), 0)
+        for n in ("server.py", "github-manager.cmd", "README.md", "API.md"):
+            self.assertTrue(os.path.isfile(os.path.join(out, n)), n)
+        for n in ("test_server.py", "install.py", "test"):
+            self.assertFalse(os.path.exists(os.path.join(out, n)), n)
+        with open(os.path.join(out, "history.jsonl"), encoding="utf-8") as f:
+            self.assertEqual(f.read(), "keep\n")
+        self.assertIn("installed", open_text(os.path.join(out, "install.log")))
+
+
+def open_text(path):
+    with open(path, encoding="utf-8") as f:
+        return f.read()
 
 
 # ----------------------------------------------------------------------------------------------------------------
