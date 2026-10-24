@@ -34,7 +34,7 @@ const RESTART_DELAYS_MS = [10000, 30000, 60000, 120000];
 const FAIL_WINDOW_MS = 5 * 60000;
 const WATCH_PROBE_TIMEOUT_MS = 1500; // (the watchdog is slower to call a busy server dead than the tab probe)
 const LOG_MAX = 4e6;
-const LOCAL_PERMISSIONS = new Set(['fileSystem', 'clipboard-sanitized-write', 'media']);
+const LOCAL_PERMISSIONS = new Set(['fileSystem', 'clipboard-sanitized-write', 'media', 'pointerLock']);
 // automatic updates: GET <Supervisor Board>/api/updates every UPDATES_POLL_MS (the first one a few seconds after start)
 const UPDATES_POLL_MS = 15000;
 const UPDATES_FIRST_MS = 3000;

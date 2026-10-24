@@ -32,7 +32,7 @@ code. Python 3 standard library only (q's PC has Python 3.14, `py -3`). No secre
 - **Locked**: no menu bar; `window.open` / `target=_blank` / navigation to anything outside the tab's own origin
   (or, for a `file://` tab, outside its folder) is denied in-app and, if it is an `https://` link, opened in the
   default browser (`shell.openExternal`, only `https:`). No new BrowserWindows. Downloads go to a Save dialog.
-  Permissions: grant `fileSystem` / `clipboard-sanitized-write` / `media` (audio playback) to local tabs only; deny
+  Permissions: grant `fileSystem` / `clipboard-sanitized-write` / `media` (audio playback) / `pointerLock` (physics editor Drive) to local tabs only; deny
   everything else. `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false` for every tab.
 - **Servers** (current behaviour, including the keepAlive supervisor and the watchdog: `shell/README.md`): before showing a server tab, main checks `http://127.0.0.1:<port>/` (500 ms timeout). If down and the
   tab has `start`, it spawns that command hidden (`windowsHide`, detached, working dir = the tab's folder), shows
