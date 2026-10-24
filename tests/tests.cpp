@@ -2624,6 +2624,19 @@ static void testFeelFixes() {
         CHECK(std::fabs(at.x - 0.12f) < 0.002f);
         CHECK(std::fabs(s.rewoundPosForTest(0, t0 + 16, &cr).x - 0.16f) < 1e-4f);   // on a record: that record
     }
+    {   // T22: the round end is 2.5 s in 1v1 (and duel / tourney), still 4 s in team vs
+        for (int mode : {MODE_ARENA, MODE_VS}) {
+            Server s; fresh(s, open, 2);
+            s.cfg_.mode = s.ms_.mode = (uint8_t)mode;
+            s.players_[1].team = TEAM_B;
+            s.ms_.phase = PHASE_LIVE;
+            s.phaseEnd_ = s.time() + 60;
+            s.damagePlayer(1, 0, 150, WPN_ROCKET, Vec3());
+            for (int k = 0; k < 3 && s.ms_.phase == PHASE_LIVE; k++) s.simulateForTest();   // (the rules see one side out)
+            printf("  %s: round end %.1f s\n", mode == MODE_ARENA ? "1v1" : "vs", s.phaseEnd_ - s.time());
+            CHECK(s.ms_.phase == PHASE_ROUND_END && std::fabs(s.phaseEnd_ - s.time() - (mode == MODE_ARENA ? 2.5 : 4.0)) < 1e-6);
+        }
+    }
     {   // X9: a shot out of a player's sight within 60 m is sent to them muffled (roughly where, no shooter), at most
         // every 0.3 s; one they can see, or farther off, isn't
         Server s; fresh(s, open, 4);

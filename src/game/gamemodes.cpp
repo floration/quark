@@ -6,6 +6,7 @@
 namespace {
 constexpr float kFreezeTime = 3.0f;
 constexpr float kRoundEndTime = 4.0f;
+constexpr float kDuelRoundEndTime = 2.5f;   // 1v1, duel and tourney: short rounds, a shorter break (T22: 4 s)
 constexpr float kMatchEndTime = 10.0f;
 constexpr float kWarmupCountdown = 5.0f;
 // VS
@@ -579,7 +580,8 @@ void endRound(Server& s, int winner, const std::string& why, bool award = true) 
     s.glog(LOG_SIMPLE, "round %d end: %s (score %d-%d)", m.round, text.c_str(), m.scoreA, m.scoreB);
     m.actionPlayer = 255;
     m.actionProgress = 0;
-    setPhase(s, PHASE_ROUND_END, kRoundEndTime);
+    const bool duelish = m.mode == MODE_ARENA || m.mode == MODE_DUEL || m.mode == MODE_TOURNEY;
+    setPhase(s, PHASE_ROUND_END, duelish ? kDuelRoundEndTime : kRoundEndTime);
 }
 
 // Called when ROUND_END finishes: returns true if the match is decided.
