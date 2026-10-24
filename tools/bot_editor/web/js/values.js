@@ -10,10 +10,12 @@ const esc = (x) => String(x ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const catParam = (d) => (d.kind === "param" && CATALOG.params && CATALOG.params[d.name]) || null;
 export function unitOf(d) { const c = catParam(d); if (c && c.unit) return c.unit; const m = /\(([^()]*)\)\s*$/.exec(d.trail || ""); return m ? m[1] : ""; }
 export function docOf(d) { const c = catParam(d); if (c && c.doc) return c.doc; return (d.trail || "").replace(/^#\s?/, "").replace(/\s*\([^()]*\)\s*$/, ""); }
-// shown as a percentage: shares, chances, fractions, qualities in 0..1
-function pctKind(d) {
-    const doc = (d.trail || "").toLowerCase();
-    if (/per second|per s\b|times a second|\/s\b/.test(doc) || /rate$/i.test(d.name) && !/turn/i.test(d.name)) return "rate";
+// shown as a percentage: shares, chances, fractions, qualities in 0..1; events per second as the chance of one in a
+// second. Speeds and gains (m/s, rad/s, 1/s: "turnRate", "trackGain") are neither.
+export function pctKind(d) {
+    const c = catParam(d), doc = ((d.trail || "") + " " + ((c && c.doc) || "")).toLowerCase(), unit = unitOf(d).toLowerCase();
+    if (/\b(m|rad|1)\s*\/\s*s/.test(unit) || /\((m|rad|1)\/s(\^2)?\)/.test(doc)) return null;
+    if (/per second|per s\b|times a second/.test(doc)) return "rate";
     if (/share|chance|fraction|quality|probab/.test(doc) || /chance/i.test(d.name)) return "share";
     return null;
 }

@@ -10,6 +10,8 @@ import { toGraph, fromGraph, overviewGraph, wholeGraph, wholeGraphToBrain, share
 import { parseQmap, mapObjectives, mapSupports, applyHelperParse } from "../js/qmap.js";
 import { MockSim } from "../js/mocksim.js";
 import { normalizeLine, toSimRequest, toSimObjective } from "../js/helper.js";
+import { pctKind } from "../js/values.js";
+import { wilson, rateDiff, rateText, summarize } from "../js/batch.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 let pass = 0, fail = 0;
@@ -305,6 +307,32 @@ t("sim lines: paths carried, the end's winner and scores", () => {
     normalizeLine({ type: "start", mode: "ffa", teams: false, bots: [] });
     same(normalizeLine({ type: "end", reason: "matchEnd", winner: { team: null, player: 2, text: "x" }, bots: [], perf: {} }).winner, 2);
     same(normalizeLine({ type: "end", reason: "time", winner: null, leader: { team: "b" }, bots: [], perf: {} }).winner, null);
+});
+
+console.log("values");
+t("% labels only for shares and chances: speeds and gains (m/s, rad/s, 1/s) get none", () => {
+    const d = Object.fromEntries(parse(DEFAULT).decls.filter((x) => x.kind === "param").map((x) => [x.name, x]));
+    for (const n of ["hearStepSpeed", "turnRate", "turnAccel", "trackGain", "lookGain", "trackPerRad"]) same(pctKind(d[n]), null, n);
+    for (const n of ["jukeRate", "jumpRate", "dashRate", "pulledDashRate"]) same(pctKind(d[n]), "rate", n);
+    for (const n of ["strafe", "fightHookChance", "soundErr", "airStrafe"]) same(pctKind(d[n]), "share", n);
+});
+
+console.log("batch statistics");
+t("win rates: Wilson interval, the difference of two runs, per brain counted per match", () => {
+    const c = wilson(31, 50);
+    same(Math.round(c.lo * 1000), 482, "lo"); same(Math.round(c.hi * 1000), 741, "hi");
+    same(wilson(0, 10).lo, 0); same(wilson(10, 10).hi, 1); same(wilson(0, 0).hi, 1, "no matches: anything");
+    same(rateText(31, 50).text, "62% ±13");
+    same(rateDiff(30, 60, 45, 60).sure, true, "50% -> 75% over 60 each is more than chance");
+    same(rateDiff(30, 60, 33, 60).sure, false, "50% -> 55% isn't");
+    // a 2 v 2: brain A on team a (2 bots), B on team b; A's team wins 2 of 3 matches, one ran out of time
+    const bot = (id, team, brain, won, kills) => ({ id, name: "N" + id, team, brain, brainLabel: brain + "#1", kills, deaths: 1, won });
+    const ms = [1, 2, 3].map((k) => ({ map: "m", seed: k, t: 60, winner: k < 3 ? { team: "a", text: "TEAM A wins" } : null,
+        bots: [bot(0, "a", "A", k < 3, 2), bot(1, "a", "A", k < 3, 1), bot(2, "b", "B", false, 0), bot(3, "b", "B", false, 1)] }));
+    ms.push({ map: "m", seed: 4, error: "boom" });
+    const S = summarize(ms), A = S.brains.find((b) => b.name === "A"), B = S.brains.find((b) => b.name === "B");
+    same(A.n, 3, "two bots of one brain are one match"); same(A.w, 2); same(A.botMatches, 6); same(A.kills, 9); same(B.w, 0);
+    same(S.maps[0].a, 2); same(S.maps[0].timeouts, 1); same(S.maps[0].errors, 1); same(S.bots.length, 4);
 });
 
 console.log("catalog (quark_tests exportbrain)");

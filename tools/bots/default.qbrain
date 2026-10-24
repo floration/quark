@@ -3,7 +3,7 @@ brain "default"
 levels BEGINNER INTERMEDIATE ADVANCED EXPERT
 
 # The built-in bot brain. One value = every level; four = BEGINNER INTERMEDIATE ADVANCED EXPERT.
-# Every number here is today's (1.18.4) bot exactly: the game runs this brain as native code, and a test
+# Every number here is the game's own bot exactly: the game runs this brain as native code, and a test
 # (quark_tests brains) checks that the interpreter running this text makes the same input every tick.
 
 # perception: what it sees and hears
