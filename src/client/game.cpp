@@ -595,6 +595,10 @@ bool Game::pressInput(int code) {
         return true;
     }
     if (b.has(A_FIRE, code)) fireLatched_ = true; // a click shorter than a tick still fires
+    // ...and so does a jump, dash or grapple tap (it went down and up between two ticks: no command saw it held)
+    if (b.has(A_JUMP, code)) moveLatched_ |= BTN_JUMP;
+    if (b.has(A_DASH, code)) moveLatched_ |= BTN_DASH;
+    if (b.has(A_GRAPPLE, code)) moveLatched_ |= BTN_GRAPPLE;
     return false;
 }
 
@@ -851,6 +855,7 @@ UserCmd Game::buildCmd() {
         socdPrev_[0] = isDown(A_FORWARD); socdPrev_[1] = isDown(A_BACK); socdPrev_[2] = isDown(A_RIGHT); socdPrev_[3] = isDown(A_LEFT);
         altPrev_ = isDown(A_ALTFIRE);
         fireLatched_ = false;   // (a click just before Esc / chat / console fired on the first tick after it)
+        moveLatched_ = 0;
         return c;
     }
     // Opposite movement keys held together (SOCD): cancel out (default), or the last / first pressed wins.
@@ -873,6 +878,8 @@ UserCmd Game::buildCmd() {
     if (isDown(A_USE)) c.buttons |= BTN_USE;
     if (isDown(A_DASH)) c.buttons |= BTN_DASH;
     if (isDown(A_GRAPPLE)) c.buttons |= BTN_GRAPPLE;
+    c.buttons |= moveLatched_;   // (a tap since the last command: in this one)
+    moveLatched_ = 0;
     if (isDown(A_FIRE) || fireLatched_) c.buttons |= BTN_FIRE;
     bool alt = isDown(A_ALTFIRE), altEdge = alt && !altPrev_;
     altPrev_ = alt;
@@ -1348,6 +1355,7 @@ void Game::frame(double dt) {
         while (tickAcc_ >= period) {
             if (bake_) {   // the world isn't there yet: keep the connection alive, nothing else
                 fireLatched_ = false;   // (no stray shot when the new map is ready)
+                moveLatched_ = 0;
                 UserCmd k; k.yaw = yaw_; k.pitch = pitch_;
                 net_.tick(k);
                 tickAcc_ -= period;
