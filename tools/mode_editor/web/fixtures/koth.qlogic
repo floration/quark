@@ -1,0 +1,44 @@
+logic 1
+base koth
+# King of the hill: a team alone on the hill scores a point a second; the first to the target wins.
+# (fixture: transcribed from the mode-editor design, section 3.3, until tools/modes/koth.qlogic exists)
+
+param respawn f32 = 4 # s dead before respawning
+param target int = 100 # points to win, when the host sets no score limit
+
+state match held[team] f32 = 0 # seconds each team has held the hill (its score is the whole part)
+
+slot roundsToWin:
+  return 1
+
+slot roundLength:
+  return 0.0f # no clock
+
+slot respawnDelay:
+  return respawn
+
+slot matchStart:
+  hud.target = cfg.scoreLimit > 0 ? cfg.scoreLimit : target
+
+slot tick:
+  inA = 0
+  inB = 0
+  for p in playing where alive(p) and inZone(p, hill):
+    if team(p) == A: inA = inA + 1
+    else: inB = inB + 1
+    objTime[p] = objTime[p] + dt
+  hud.contested = no
+  if inA > 0 and inB > 0:
+    hud.contested = yes
+    hud.owner = none
+  elif inA > 0 or inB > 0:
+    t = inA > 0 ? A : B
+    hud.owner = t
+    held[t] = held[t] + dt
+  else: hud.owner = none
+  teamScore[A] = int(held[A])
+  teamScore[B] = int(held[B])
+  hud.clock = 0.0f
+  if teamScore[A] >= hud.target or teamScore[B] >= hud.target:
+    w = teamScore[A] >= hud.target ? A : B
+    endMatch(w, w, " wins the match")

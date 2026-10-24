@@ -1,0 +1,15 @@
+custommode=rush
+mode=bomb
+future_key=7
+gravity=0.8
+move_newthing=2
+label=rush#1a2b3c4d
+maps=depot
+logic 1
+# Rush
+param bombFuse f32 = 25
+gravity=3
+state match plants[team] int = 0
+
+slot plant:
+  plants[attackers] = plants[attackers] + 1

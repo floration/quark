@@ -2,9 +2,11 @@
 // The host's server applies them and sends them to everyone who joins (EV_RULES), so every client predicts
 // movement and weapon timing with the same numbers. Stored as text: custom_modes/<name>.qmode.
 #pragma once
+#include <memory>
 #include <string>
 #include <vector>
 #include "gamedefs.h"
+struct ModeLogic;
 
 struct CustomRules {
     std::string name;                 // empty = no custom mode (the standard rules)
@@ -19,11 +21,25 @@ struct CustomRules {
     bool dash = true, grapple = true, selfDamage = true, instagib = false, vampire = false, regen = false;
     int timeLimit = 0, scoreLimit = 0, roundsToWin = 0;   // 0 = the mode's default
     std::vector<std::string> maps;    // map pool (rotates after each match); empty = the host's map only
+    // Lines this build doesn't read but must not lose: a save from Host > Custom modes rewrites the known keys and
+    // keeps these as they were, so another editor's keys (the physics editor, a newer game) and the mode editor's
+    // logic survive it.
+    std::vector<std::string> extraKeys;   // key=value lines with a key this build doesn't know, verbatim, in file order
+    std::string logic;                // the mode logic: everything from the first `logic` line to the end of the file,
+                                      // verbatim ("" = none); it starts with that line. Never parsed for keys.
+    std::string label;                // the logic's name#hash8 (GRAMMAR.md 9; "" = no logic): the server fills it in
+                                      // and sends it as label=; read back for display only, never trusted
+    int logicLine = 0;                // fromText: the file line the logic starts on (1 = the first; 0: none / not read)
     CustomRules();
     bool active() const { return !name.empty(); }
-    std::string toText() const;       // key=value lines (the file and the network format)
+    std::string toText() const;       // the .qmode file: the known keys (canonical order, no label=), then extraKeys, then logic
+    std::string toNetText() const;    // what EV_RULES sends: the known keys and label= (clients never run logic)
     bool fromText(const std::string& text);  // false if it isn't a custom mode
 };
+bool isModeLogicLine(const std::string& line);   // `logic` or `logic <anything>`: where a .qmode's logic block starts
+// The rules' logic compiled as a server plays it (toText(), base = baseMode); null with no logic, or on an error (then
+// *err: "the mode logic doesn't compile: line:col message"). Its label: modeLabel (modelogic.h).
+std::shared_ptr<const ModeLogic> compileCustomLogic(const CustomRules& r, std::string* err = nullptr);
 
 const CustomRules& activeRules();
 void setActiveRules(const CustomRules& r);   // the rules the CALLING THREAD plays by (and its weapon table); per thread, so a hosted server and the client never share them

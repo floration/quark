@@ -148,12 +148,14 @@ add_library(quark_core STATIC
   src/game/netclient.cpp
   src/game/bots.cpp
   src/game/botbrain.cpp
+  src/game/modelogic.cpp
   src/game/master.cpp
   src/game/ranked.cpp
   src/game/customrules.cpp
   src/game/demo.cpp
   ${CMAKE_BINARY_DIR}/generated/version.cpp
   ${CMAKE_BINARY_DIR}/generated/default_brain.h
+  ${CMAKE_BINARY_DIR}/generated/default_modes.h
 )
 target_include_directories(quark_core PUBLIC src ${CMAKE_BINARY_DIR}/generated)
 # ---- maps (a build artifact) ---------------------------------------------------------------------------
@@ -169,6 +171,14 @@ add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/default_brain.h
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/bots/embed_brain.py ${CMAKE_BINARY_DIR}/generated ${CMAKE_SOURCE_DIR}/tools/bots/default.qbrain
   DEPENDS ${CMAKE_SOURCE_DIR}/tools/bots/embed_brain.py ${CMAKE_SOURCE_DIR}/tools/bots/default.qbrain
   COMMENT "Embedding the built-in bot brain (tools/bots/default.qbrain)" VERBATIM)
+# The built-in modes' logic (tools/modes/common.qlogic + one .qlogic per mode, tools/modes/GRAMMAR.md) likewise.
+set(QUARK_MODE_LOGIC_FILES common vs bomb race koth payload ffa npayload duel arena tourney hide tag points)
+list(TRANSFORM QUARK_MODE_LOGIC_FILES PREPEND ${CMAKE_SOURCE_DIR}/tools/modes/)
+list(TRANSFORM QUARK_MODE_LOGIC_FILES APPEND .qlogic)
+add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/default_modes.h
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/modes/embed_modes.py ${CMAKE_BINARY_DIR}/generated ${CMAKE_SOURCE_DIR}/tools/modes
+  DEPENDS ${CMAKE_SOURCE_DIR}/tools/modes/embed_modes.py ${QUARK_MODE_LOGIC_FILES}
+  COMMENT "Embedding the built-in modes' logic (tools/modes/*.qlogic)" VERBATIM)
 set(QUARK_MAPS_DIR ${CMAKE_SOURCE_DIR}/maps)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/make_maps.py)
 execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/make_maps.py --list
@@ -362,7 +372,7 @@ endif()
 
 if(QUARK_BUILD_TESTS)
   # (src/client/lightmap.cpp: the light bake has no graphics; the shipped-bake check runs it)
-  add_executable(quark_tests tests/tests.cpp tests/mapreport.cpp tests/launcher_tests.cpp tests/assets_tests.cpp tests/brain_tests.cpp src/client/lightmap.cpp)
+  add_executable(quark_tests tests/tests.cpp tests/mapreport.cpp tests/launcher_tests.cpp tests/assets_tests.cpp tests/brain_tests.cpp tests/mode_tests.cpp src/client/lightmap.cpp)
   target_link_libraries(quark_tests quark_core quark_launcher_core quark_audio)
   target_compile_definitions(quark_tests PRIVATE QUARK_SOURCE_DIR="${CMAKE_SOURCE_DIR}")   # cross-language constant checks read tools/
   target_compile_definitions(quark_tests PRIVATE QUARK_TEST_DATA="${CMAKE_SOURCE_DIR}/tests/data")   # regression inputs
@@ -379,11 +389,15 @@ if(QUARK_BUILD_TESTS)
              WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
     set_tests_properties(uitest PROPERTIES TIMEOUT 3600 SKIP_RETURN_CODE 77)
   endif()
-  # The map editor's native helper (tools/map_editor/native/README.md), plus the bot and physics editors' commands linked into it
+  # The map editor's native helper (tools/map_editor/native/README.md), plus the bot, physics and mode editors' commands
+  # linked into it (an empty or missing tools/mode_editor/native globs to nothing)
   file(GLOB QUARK_MAPTOOL_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/map_editor/native/*.cpp ${CMAKE_SOURCE_DIR}/tools/bot_editor/native/*.cpp
-       ${CMAKE_SOURCE_DIR}/tools/physics_editor/native/*.cpp)
+       ${CMAKE_SOURCE_DIR}/tools/physics_editor/native/*.cpp ${CMAKE_SOURCE_DIR}/tools/mode_editor/native/*.cpp)
   add_executable(quark_maptool ${QUARK_MAPTOOL_SOURCES})
   target_include_directories(quark_maptool PRIVATE tests tools/map_editor/native)
+  if(EXISTS ${CMAKE_SOURCE_DIR}/tools/mode_editor/native)
+    target_include_directories(quark_maptool PRIVATE tools/mode_editor/native)
+  endif()
   target_link_libraries(quark_maptool quark_core)
   if(WIN32)
     target_link_options(quark_maptool PRIVATE -Wl,--stack,16777216)

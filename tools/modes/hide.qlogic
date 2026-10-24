@@ -1,0 +1,71 @@
+logic 1
+base hide
+# Hide and seek: each player seeks once, in slot order, while the rest hide (a 30 s head start, the seeker facing the
+# wall). A stab with the knife finds a hider. The seeker scores 1 a find; a hider still unfound at the end scores 1.
+# Tied for first after the last round: rock paper scissors.
+use it
+use tiebreak
+
+param roundTime f32 = 300
+param hideTime f32 = 30 # the hiders' head start
+param rpsPickTime f32 = 6 # rock paper scissors: to choose
+param rpsRevealTime f32 = 3 # each throw is shown this long
+
+slot freezeLength:
+  return hideTime
+
+slot canAutoStart:
+  return teamCount(A) >= 2
+
+slot roundSetup:
+  for p in everyone:
+    out[p] = no
+  pickSeeker()
+
+slot roundStart:
+  for p in everyone where it[p]:
+    announce(p, " is seeking - hide! (", int(hideTime), " s)")
+
+# The seeker faces the wall while the hiders hide.
+slot frozen:
+  return phase == freeze and it[p]
+
+# Only the seeker touches anyone: with the knife, once the round is live (the stab finds).
+slot canHit:
+  if attacker == none or attacker == victim: return yes
+  return phase == live and it[attacker] and not it[victim] and weapon == knife
+
+slot stab:
+  found[victim] = yes
+  kill(victim, attacker, knife)
+
+# A find scores the seeker 1; a fall scores nobody.
+slot kill:
+  if phase == live and not it[victim] and killer != none and it[killer] and found[victim]: addScore(killer, 1)
+
+# Every hider still hidden when the round ends scores 1.
+proc payUnfound:
+  for p in playing where not it[p] and alive(p):
+    addScore(p, 1)
+
+slot tick:
+  seeker = first(p in playing where it[p])
+  hiding = count(p in playing where not it[p] and alive(p))
+  nFound = count(p in playing where not it[p] and not alive(p) and found[p])
+  if seeker == none:
+    payUnfound()
+    endRoundText("the seeker left")
+  if hiding == 0:
+    if nFound > 0: endRoundText(seeker, " found everyone")
+    endRoundText("no hiders left")
+  if now >= phaseEnd:
+    payUnfound()
+    endRoundText("the hiders win - ", names(p in playing where not it[p] and alive(p)), " stayed hidden")
+
+# Once everyone has sought: the top score wins (tied: rock paper scissors decides).
+slot roundOver:
+  if any(p in playing where not sought[p]) and count(p in playing) > 1: return
+  if startTiebreak(): return
+  w = best(p in playing by score[p])
+  if w == none: endMatch(none, "match over")
+  endMatch(w, w, " wins the match")

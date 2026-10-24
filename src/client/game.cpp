@@ -1170,7 +1170,7 @@ void Game::handleEvents() {
                 for (auto& p : rulesParts_) { if (p == "\x01") { done = false; break; } all += p; }
                 if (!done) break;
                 CustomRules r;
-                if (r.fromText(all)) { setActiveRules(r); notify("CUSTOM MODE: " + upper(r.name), 4); }
+                if (r.fromText(all)) { setActiveRules(r); notify("CUSTOM MODE: " + upper(r.name) + (r.label.empty() ? "" : " - LOGIC: " + r.label), 4); }
                 rulesParts_.clear();
                 break;
             }
@@ -5253,6 +5253,27 @@ void Game::drawCustomModeEditor(const SetLayout& L) {
         p = at(0, 4);
         ui_.slider(p.first, p.second, cw, h, "ROUNDS", rw, 0, 15, "%.0f", ce, (float)kStd.roundsToWin); r.roundsToWin = std::min(std::max((int)std::lround(rw), 0), 50);
         ui_.hint(L.X(cx3[0]), L.Y(490), "TIME / SCORE / ROUNDS: 0 = THE MODE'S DEFAULT", kGrey, cw);
+        if (!r.logic.empty()) {   // a mode editor file with logic: the label a server will play it as (name#hash8), under the hint
+            // (re-made four times a second at most, compiled only when the text changed: the hash covers the keys too)
+            static std::string text, label;
+            static bool ok = false;
+            static double when = -1;
+            if (time_ >= when || time_ < when - 1) {
+                when = time_ + 0.25;
+                CustomRules c = r;
+                c.label.clear();
+                std::string t = c.toText();
+                if (t != text) {
+                    text.swap(t);
+                    std::string err;
+                    auto lg = compileCustomLogic(r, &err);
+                    ok = lg != nullptr;
+                    label = ok ? modeLabel(*lg) : err;
+                    if (label.size() > 60) label.resize(60);
+                }
+            }
+            ui_.label(L.X(cx3[0]), L.Y(514), ok ? "LOGIC: " + label : upper(label), ok ? kGrey : kRed, 0.5f);
+        }
         p = at(1, 0);
         realSlider(ui_, p.first, p.second, cw, h, "GRAVITY", r.gravity, 0.1f, 3, moveBaseGravity(), "m/s2", ce.withId("GRAVITY"), kStd.gravity);
         p = at(1, 1);

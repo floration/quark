@@ -8,6 +8,7 @@
 #include <fstream>
 #include <sstream>
 #include "map.h"
+#include "modelogic.h"
 
 namespace {
 // Per thread: a hosted server thread and the client each play by their own copy. One trivially initialised
@@ -62,7 +63,13 @@ const MoveTuning& moveTuning() { return tuned().move; }
 const CustomRules& activeRules() { return tuned().rules; }
 void setActiveRules(const CustomRules& r) { Tuned& t = tuned(); t.rules = r; rebuild(t); }
 
-std::string CustomRules::toText() const {
+bool isModeLogicLine(const std::string& line) {
+    // (any `logic` line starts the block, even with a bad version: the logic compiler reports that, and the lines
+    // after it must not be read as keys)
+    return line.compare(0, 5, "logic") == 0 && (line.size() == 5 || line[5] == ' ' || line[5] == '\t' || line[5] == '\r');
+}
+
+std::string CustomRules::toNetText() const {
     std::ostringstream o;
     o << "custommode=" << name << "\nmode=" << modeName(baseMode) << "\nweapons=" << weapons
       << "\ngravity=" << gravity << "\nspeed=" << moveSpeed << "\njump=" << jump << "\nknockback=" << knockback
@@ -75,18 +82,34 @@ std::string CustomRules::toText() const {
     o << "\nmaps=";
     for (size_t i = 0; i < maps.size(); i++) o << (i ? "," : "") << maps[i];
     o << "\n";
+    if (!label.empty()) o << "label=" << label << "\n";   // (the logic's name#hash8: never part of the hash)
     return o.str();
+}
+
+std::string CustomRules::toText() const {
+    // (no label=: the file's label would go stale at the next edit of its logic; the server works it out at start)
+    CustomRules keys;
+    std::string t;
+    if (label.empty()) t = toNetText();
+    else { keys = *this; keys.label.clear(); t = keys.toNetText(); }
+    for (const std::string& l : extraKeys) { t += l; t += '\n'; }
+    return t + logic;
 }
 
 bool CustomRules::fromText(const std::string& text) {
     *this = CustomRules();
-    std::istringstream in(text);
     std::string line;
     bool any = false;
     // out of range: the nearest bound; not a number (nan, inf): the default (the member's value from CustomRules())
     auto clampf_ = [](float v, float a, float b, float def) { return !std::isfinite(v) ? def : v < a ? a : v > b ? b : v; };
-    while (std::getline(in, line)) {
-        if (!line.empty() && line.back() == '\r') line.pop_back();
+    int fileLine = 1;
+    for (size_t at = 0; at < text.size();) {
+        size_t nl = text.find('\n', at);
+        line.assign(text, at, nl == std::string::npos ? std::string::npos : nl - at);
+        if (isModeLogicLine(line)) { logic.assign(text, at, std::string::npos); logicLine = fileLine; break; }   // (the rest is the logic's)
+        at = nl == std::string::npos ? text.size() : nl + 1;
+        fileLine++;
+        while (!line.empty() && line.back() == '\r') line.pop_back();   // (every \r: a kept line must read back the same)
         size_t eq = line.find('=');
         if (eq == std::string::npos) continue;
         std::string k = line.substr(0, eq), v = line.substr(eq + 1);
@@ -100,7 +123,11 @@ bool CustomRules::fromText(const std::string& text) {
         else if (k == "speed") moveSpeed = clampf_(f, 0.25f, 3, moveSpeed);
         else if (k == "jump") jump = clampf_(f, 0.25f, 3, jump);
         else if (k == "knockback") knockback = clampf_(f, 0, 5, knockback);
-        else if (k.rfind("move_", 0) == 0) { for (int m = 0; m < MV_COUNT; m++) if (k.compare(5, std::string::npos, moveParamKey(m)) == 0) move[m] = clampf_(f, 0.1f, 5, move[m]); }
+        else if (k.rfind("move_", 0) == 0) {
+            bool known = false;
+            for (int m = 0; m < MV_COUNT; m++) if (k.compare(5, std::string::npos, moveParamKey(m)) == 0) { move[m] = clampf_(f, 0.1f, 5, move[m]); known = true; }
+            if (!known) extraKeys.push_back(line);   // (a movement constant a newer game or the physics editor added)
+        }
         else if (k == "health") health = std::max(1, std::min(1000, i));
         else if (k == "dash") dash = i != 0;
         else if (k == "grapple") grapple = i != 0;
@@ -122,10 +149,34 @@ bool CustomRules::fromText(const std::string& text) {
             std::string m;
             // (a name with nothing safe in it is dropped, not kept as "": found by tests/fuzz/fuzz_rules)
             while (std::getline(ms, m, ',')) if (maps.size() < 32 && !(m = safeName(m)).empty()) maps.push_back(m);
-        }
+        } else if (k == "label") {   // (name#hash8: shown, never trusted; the server recomputes it from the logic)
+            label.clear();
+            for (char c : v) if (label.size() < 80 && (isalnum((unsigned char)c) || c == '-' || c == '_' || c == ' ' || c == '#')) label += c;
+        } else extraKeys.push_back(line);   // a key this build doesn't know: kept verbatim for the next save
     }
     if (name.empty()) any = false;
     return any;
+}
+
+std::shared_ptr<const ModeLogic> compileCustomLogic(const CustomRules& r, std::string* err) {
+    if (err) err->clear();
+    if (r.logic.empty()) return nullptr;
+    CustomRules c = r;
+    c.label.clear();   // (the hash leaves label= out anyway)
+    ModeDiag d;
+    const std::string text = c.toText();
+    auto L = compileModeLogic(text, c.baseMode, &d);
+    if (!L && err) {
+        *err = "the mode logic doesn't compile";
+        if (!d.errors.empty()) {
+            // (the canonical key lines aren't the file's: a line in the logic is told as the file's line, when known)
+            int line = d.errors[0].line;
+            int keyLines = (int)std::count(text.begin(), text.end() - (std::ptrdiff_t)c.logic.size(), '\n');
+            if (r.logicLine > 0 && line > keyLines) line = line - keyLines - 1 + r.logicLine;
+            *err += ": " + std::to_string(line) + ":" + std::to_string(d.errors[0].col) + " " + d.errors[0].msg;
+        }
+    }
+    return L;
 }
 
 std::string customModesDir() { return userDataPath("custom_modes"); }
