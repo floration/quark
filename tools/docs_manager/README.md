@@ -10,10 +10,12 @@ It never writes to the Claude Documents folder or repo.
 
 ```
 python3 tools/docs_manager/install.py [--target DIR]     (or install.cmd; default %USERPROFILE%\Desktop\Quark\docs-manager)
-%USERPROFILE%\Desktop\Quark\docs-manager\docs-manager.cmd  (starts the server if needed, opens http://127.0.0.1:8766/)
+%USERPROFILE%\Desktop\Quark\docs-manager\docs-manager.cmd  (starts the server with no window via pyw, opens http://127.0.0.1:8766/)
 python3 tools/docs_manager/serve.py --docs <Claude Documents folder> [--open]
 ```
 
+The Quark app starts it hidden as `serve.py --docs ... --port 8766 --quiet` and restarts it if it stops; with
+`QUARK_SHELL=1` it never opens a browser. Without a console (pythonw) it logs to `cache/serve.log`.
 Python 3 standard library, git, and (optional) `gh` signed in. Port 8766: the Editor Manager is 8765, the GitHub
 Manager 8767, the Supervisor Board 8768 (which hosts all of them as tabs). The page uses the tools' shared `quark-tools.css` and nav;
 `?embed=1` hides the nav for the app shell.

@@ -699,6 +699,13 @@ def main(argv=None):
                                                                   len(data["changes"]), "ok" if data["ghOk"] else "off"))
         return 0 if data["files"] else 1
 
+    if os.environ.get("QUARK_SHELL") == "1": args.open = False             # (the Quark app shows the page itself)
+    if sys.stderr is None:                                                  # pythonw / hidden start: log to a file
+        try:
+            os.makedirs(os.path.join(mgr.state_dir, "cache"), exist_ok=True)
+            sys.stderr = open(os.path.join(mgr.state_dir, "cache", "serve.log"), "a", encoding="utf-8", buffering=1)
+        except OSError:
+            pass
     if ping(args.port):
         log("already running on port %d" % args.port)
         if args.open: webbrowser.open("http://127.0.0.1:%d/" % args.port)
