@@ -8,7 +8,7 @@ SKIP=" "
 [ "$1" = "--skip" ] && SKIP=" $2 "
 export TMPDIR="${TMPDIR:-/tmp}/quark_release_check.$$"; mkdir -p "$TMPDIR"
 fail=0
-alone="netcode tickrate governor resetmaps userdata"   # (timing-sensitive or rewrites shared files: on an idle machine)
+alone="tickrate netcode"   # (timing-sensitive: after the others, on an idle machine; as quark_tests orders them)
 par=""
 for g in $(build/quark_tests groups); do case "$SKIP$alone " in *" $g "*) ;; *) par="$par $g";; esac; done
 echo $par | tr ' ' '\n' | xargs -P4 -I{} sh -c 'g={}; build/quark_tests group $g > "$TMPDIR/$g.log" 2>&1; echo "$g rc=$? $(grep "^group " "$TMPDIR/$g.log")"' | tee "$TMPDIR/par.txt"

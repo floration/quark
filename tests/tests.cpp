@@ -7961,7 +7961,8 @@ int main(int argc, char** argv) {
     // "quark_tests serial" runs everything in this process, one after another, as before.
     struct T { const char* name; std::function<void()> run; };
     std::vector<T> par = {   // (longest first: they set the wall time. Real seconds on an idle 4-core box: rules ~40,
-                             //  maps ~30, tourney / duel / weapons ~25 ... bots ~9, botaim and botfalls ~1: the manual clock)
+                             //  maps ~30, tourney / duel / weapons ~25, governor ~22 ... bots ~9, botaim and botfalls ~1:
+                             //  the manual clock)
         {"rules", [] { testGameRules(""); }},
         {"maps", [] {
             testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders();
@@ -7970,6 +7971,9 @@ int main(int argc, char** argv) {
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
         {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); testFeelFixes(); testTapBuffer(); testWeaponSets(TP(28559)); }},
+        // (its own governor dir and ports; the load is the players' reported loss, stalls left out: beside the others.
+        //  testGovernorPolicy and testRankedNotRated run in "server")
+        {"governor", [] { testGovernorTwoServers(TP(28714)); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); }},
@@ -7988,9 +7992,10 @@ int main(int argc, char** argv) {
         {"modelockstep", [] { g_fail += modeLockstepTests(); }},
         {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"assets", [] { g_fail += assetTests(); }},
+        {"resetmaps", [] { testResetMaps(); }},   // (each forked group has its own user data dir: these write only there)
+        {"userdata", [] { testUserData(); }},
     };
-    std::vector<T> alone = {   // timing-sensitive (or rewrites shared files): one at a time, on an otherwise idle machine
-        {"netcode", [] { testInterpRewind(TP(28703)); testUptimeClock(TP(28702)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
+    std::vector<T> alone = {   // timing-sensitive: after the others, on an otherwise idle machine
         {"tickrate", [] {   // (real-time: timingTest re-runs an attempt the host paused in)
             timingTest("tick rate fallback", [] { testTickRateFallback(TP(28710)); });
             timingTest("rate between rounds", [] { testRateBetweenRounds(TP(28711)); });
@@ -7999,9 +8004,7 @@ int main(int argc, char** argv) {
             timingTest("upload cap", [] { testUploadCap(TP(28721)); });
             timingTest("shared congestion", [] { testSharedCongestion(TP(28722)); });
         }},
-        {"governor", [] { testGovernorPolicy(); testGovernorTwoServers(TP(28714)); testRankedNotRated(TP(28716)); }},
-        {"resetmaps", [] { testResetMaps(); }},
-        {"userdata", [] { testUserData(); }},
+        {"netcode", [] { testInterpRewind(TP(28703)); testUptimeClock(TP(28702)); testNetcode(TP(28700)); testInputBacklog(TP(28701)); testCrossLanguageConstants(TP(28705)); }},
     };
     // CI runs the suite one group per runner (release.yml's test matrix): `groups` lists them, `group NAME` runs exactly
     // that group (the older shortcuts above share some names but run less)
@@ -8030,67 +8033,72 @@ int main(int argc, char** argv) {
     [[maybe_unused]] bool serial = argc >= 2 && std::string(argv[1]) == "serial";   // (Windows: always serial)
 #ifndef _WIN32
     if (!serial) {
-        unsigned jobs = std::max(2u, std::thread::hardware_concurrency());
-        struct Job { pid_t pid; std::string out; size_t idx; double t0; };
-        std::vector<Job> running;
-        std::vector<std::string> outputs(par.size());
-        std::vector<int> done(par.size(), -1);
-        size_t next = 0, printed = 0;
-        auto tmp = std::filesystem::temp_directory_path();
-        // each group gets its own user data dir (maps, demos, keys) under this run's: the edit and ranked groups write
-        // zz_* maps that the maps group would otherwise list and check. Removed when the group ends.
-        auto groupDir = [&](size_t i) { return userDataPath(std::string("groups/") + par[i].name); };
-        auto start = [&](size_t i) {
-            std::string out = (tmp / ("quark_test_" + std::to_string(getpid()) + "_" + par[i].name + ".log")).string();
-            std::string data = groupDir(i);
-            fflush(stdout);
-            pid_t pid = fork();
-            if (pid == 0) {   // the child: one test group, its output to a file
-                if (!freopen(out.c_str(), "w", stdout)) std::_Exit(99);
-                dup2(fileno(stdout), 2);
-                setvbuf(stdout, nullptr, _IOLBF, 0);
-                std::error_code ec;
-                std::filesystem::remove_all(data, ec);
-                std::filesystem::create_directories(data, ec);   // (the parent made the root already: set it, then make it)
-                setUserDataDir(data);
-                qsrand(1234);
-                g_fail = 0;   // (this group's own: the parent's count of groups already done isn't this one's)
-                par[i].run();
+        // Runs a list of groups, `jobs` at a time, each in its own process (output kept in the list's order).
+        auto forked = [](std::vector<T>& list, unsigned jobs) {
+            struct Job { pid_t pid; std::string out; size_t idx; double t0; };
+            std::vector<Job> running;
+            std::vector<std::string> outputs(list.size());
+            std::vector<int> done(list.size(), -1);
+            size_t next = 0, printed = 0;
+            auto tmp = std::filesystem::temp_directory_path();
+            // each group gets its own user data dir (maps, demos, keys) under this run's: the edit and ranked groups write
+            // zz_* maps that the maps group would otherwise list and check. Removed when the group ends.
+            auto groupDir = [&](size_t i) { return userDataPath(std::string("groups/") + list[i].name); };
+            auto start = [&](size_t i) {
+                std::string out = (tmp / ("quark_test_" + std::to_string(getpid()) + "_" + list[i].name + ".log")).string();
+                std::string data = groupDir(i);
                 fflush(stdout);
-                std::_Exit(std::min(g_fail, 100));
+                pid_t pid = fork();
+                if (pid == 0) {   // the child: one test group, its output to a file
+                    if (!freopen(out.c_str(), "w", stdout)) std::_Exit(99);
+                    dup2(fileno(stdout), 2);
+                    setvbuf(stdout, nullptr, _IOLBF, 0);
+                    std::error_code ec;
+                    std::filesystem::remove_all(data, ec);
+                    std::filesystem::create_directories(data, ec);   // (the parent made the root already: set it, then make it)
+                    setUserDataDir(data);
+                    qsrand(1234);
+                    g_fail = 0;   // (this group's own: the parent's count of groups already done isn't this one's)
+                    list[i].run();
+                    fflush(stdout);
+                    std::_Exit(std::min(g_fail, 100));
+                }
+                running.push_back({pid, out, i, wallSeconds()});
+            };
+            while (next < list.size() && running.size() < jobs) start(next++);
+            while (!running.empty()) {
+                int st = 0;
+                pid_t pid = wait(&st);
+                if (pid <= 0) break;
+                for (size_t k = 0; k < running.size(); k++) {
+                    if (running[k].pid != pid) continue;
+                    size_t i = running[k].idx;
+                    std::ifstream f(running[k].out);
+                    std::stringstream ss; ss << f.rdbuf();
+                    outputs[i] = ss.str();
+                    std::remove(running[k].out.c_str());
+                    { std::error_code ec; std::filesystem::remove_all(groupDir(i), ec); }
+                    done[i] = WIFEXITED(st) ? WEXITSTATUS(st) : 1;
+                    char took[96];
+                    snprintf(took, sizeof took, "  (group %s: %.0f s)\n", list[i].name, wallSeconds() - running[k].t0);
+                    outputs[i] += took;
+                    if (!WIFEXITED(st)) outputs[i] += std::string("  FAIL ") + list[i].name + ": crashed\n";
+                    running.erase(running.begin() + k);
+                    break;
+                }
+                while (printed < list.size() && done[printed] >= 0) {
+                    fputs(outputs[printed].c_str(), stdout);
+                    if (done[printed]) printf("  (group %s: %d failure(s))\n", list[printed].name, done[printed]);
+                    g_fail += done[printed];
+                    printed++;
+                }
+                if (next < list.size()) start(next++);
             }
-            running.push_back({pid, out, i, wallSeconds()});
         };
-        while (next < par.size() && running.size() < jobs) start(next++);
-        while (!running.empty()) {
-            int st = 0;
-            pid_t pid = wait(&st);
-            if (pid <= 0) break;
-            for (size_t k = 0; k < running.size(); k++) {
-                if (running[k].pid != pid) continue;
-                size_t i = running[k].idx;
-                std::ifstream f(running[k].out);
-                std::stringstream ss; ss << f.rdbuf();
-                outputs[i] = ss.str();
-                std::remove(running[k].out.c_str());
-                { std::error_code ec; std::filesystem::remove_all(groupDir(i), ec); }
-                done[i] = WIFEXITED(st) ? WEXITSTATUS(st) : 1;
-                char took[96];
-                snprintf(took, sizeof took, "  (group %s: %.0f s)\n", par[i].name, wallSeconds() - running[k].t0);
-                outputs[i] += took;
-                if (!WIFEXITED(st)) outputs[i] += std::string("  FAIL ") + par[i].name + ": crashed\n";
-                running.erase(running.begin() + k);
-                break;
-            }
-            while (printed < par.size() && done[printed] >= 0) {
-                fputs(outputs[printed].c_str(), stdout);
-                if (done[printed]) printf("  (group %s: %d failure(s))\n", par[printed].name, done[printed]);
-                g_fail += done[printed];
-                printed++;
-            }
-            if (next < par.size()) start(next++);
-        }
-        for (auto& t : alone) t.run();
+        forked(par, std::max(2u, std::thread::hardware_concurrency()));
+        // the timing-sensitive ones, one at a time on the idle machine (both at once saved ~5 s of ~150 and failed
+        // netcode's clock checks 3 times in 10 full runs, against 2 in 10 one at a time)
+        forked(alone, 1);
     } else
 #endif
     {

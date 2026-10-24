@@ -175,7 +175,7 @@ Building:
 ```
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-build/quark_tests                 # everything (forks one process per group; netcode timing groups run alone)
+build/quark_tests                 # everything (forks one process per group, 4 at a time; tickrate and netcode after them)
 build/quark_tests <group>         # one group: bots, maps, movement, modes, hidden, race, votes, edit, ranked,
                                   # ranked2, rules, assets, server, netcode, tickrate, ...
 build/quark_tests bounds          # out-of-bounds reach check (OOB_TRACE=<map> lists escape spots)
