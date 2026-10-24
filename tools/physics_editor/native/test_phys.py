@@ -147,6 +147,18 @@ ev = run("physsim", {"preset": "super_dash"})[0]["runs"][0]["events"]
 check("superDash" in [e["kind"] for e in ev], "superDash event")
 ev = run("physsim", {"preset": "dash_jump"})[0]["runs"][0]["events"]
 check("dashJump" in [e["kind"] for e in ev], "dashJump event")
+# the events are pmove's own (ME_*): a held dash chains its charges (1.18.20, T2), a jump tapped just before landing
+# jumps there (T1); the buttons alone don't show either
+ev = run("physsim", {"scenario": {"start": {"pos": [0, 0, 0], "yaw": -90}, "durationMs": 1500,
+                                  "steps": [{"atMs": 0, "forward": 127, "dash": True}]}})[0]["runs"][0]["events"]
+check([e["kind"] for e in ev].count("dash") >= 2, "a held dash chains: %s" % [(e["kind"], e["t"]) for e in ev if e["kind"] == "dash"])
+hop = {"start": {"pos": [0, 0, 0], "yaw": -90}, "durationMs": 1200, "steps": [{"atMs": 0, "jump": True}, {"atMs": 20}]}
+ev = run("physsim", {"scenario": hop})[0]["runs"][0]["events"]
+landT = [e["t"] for e in ev if e["kind"] == "land"][0]
+hop["steps"] += [{"atMs": int(landT * 1000) - 50, "jump": True}, {"atMs": int(landT * 1000) - 40}]
+ev = run("physsim", {"scenario": hop})[0]["runs"][0]["events"]
+jumps = [e["t"] for e in ev if e["kind"] == "jump"]
+check(len(jumps) == 2 and abs(jumps[1] - landT) < 0.003, "a jump tapped 50 ms before landing jumps there: jumps at %s, landed at %.3f" % (jumps, landT))
 sim, rc, _ = run("physsim", {"preset": "running_jump", "map": "temple",
                              "scenario": None})
 check(rc == 0 and sim["map"] == "temple", "a real map by name")

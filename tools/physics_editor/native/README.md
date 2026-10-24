@@ -125,8 +125,10 @@ The helper never reads the sources at run time. A few numbers it needs are not p
 - the strafe bot (sim.cpp `strafeYaw`): pmove's A/D factors `kStrafeCapAD` 1.1 and `kStrafeAccelAD` 1.15, the strafe
   boost's ramp from `cross` to 1.25 x cross, and the x10 on the air acceleration. The bases themselves come from
   `moveParamBase`. The `"search"` strafe bot needs none of them, and the test checks that both agree.
-- the events: a dash start is `dashReady()` (pmove.h) plus a fresh press; a dash jump / super dash is a dash that ends
-  with more than 1 ms left while rising, `dashAimedDown()` telling the two apart.
+- the events: dash, dash jump, super dash and jump are what pmove says each 1 ms call did (`MoveState::events`, ME_DASH /
+  ME_SUPER / ME_HYPER / ME_JUMP, the same flags the game's sounds read), so a held dash that chains its charges and a
+  jump tapped just before landing (1.18.20) show up; landings, ladders, walls, steps and the grapple come from
+  comparing the states either side of the ms.
 
 The strafe bot's computed angle reads the active set's tuning for the state it aims from (`stepTuning`, pmove.h), so
 with dynamic equations on the air settings it aims by the values pmove's next step uses, as `"search"` does.
