@@ -39,7 +39,7 @@ export const FALLBACK = {
         P("dash_jump_window", "DASH JUMP WINDOW", 0.1, "s", "dash", "kDashJumpWindow", "a jump this early still makes a dash jump / super dash"),
         P("dash_bounce_angle", "DASH WALL BOUNCE ANGLE", 45, "deg", "dash", "kDashBounceAngle", "a dash this head-on into a wall bounces off it"),
         P("super_dash_boost", "SUPER DASH BOOST", 5, "m/s", "super dash", "kSuperDashBoost", "a super dash leaves with the speed you carried in + this"),
-        P("super_dash_jump", "SUPER DASH JUMP", 0.5, "x", "super dash", "kSuperDashJump", "its hop as a share of a jump (both ends: 0.5 at 14.5 deg down, 1 straight down)"),
+        P("super_dash_jump", "SUPER DASH JUMP", 0.866, "x", "super dash", "kSuperDashJump", "its hop as a share of a jump (both ends: 0.866 at 14.5 deg down, 1.732 straight down: 3x the old hop)"),
         P("super_dash_max", "SUPER DASH SPEED (MAX)", 36, "m/s", "super dash", "kSuperDashMax", "the fastest a super dash leaves"),
         P("hook_range", "GRAPPLE RANGE", 45, "m", "grapple", "kGrappleRange", "how far the hook reaches"),
         P("hook_accel", "GRAPPLE PULL", 38, "m/s2", "grapple", "kHookAccel", "pull toward the anchor"),

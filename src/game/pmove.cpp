@@ -55,13 +55,14 @@ constexpr float kSuperDashDown = 0.25f;  // a dash at least this far down (share
 constexpr float kSuperDashBoost = 5.0f;  // super dash (the hyper): the horizontal speed you carried into the dash + this, m/s
                                          // (owner 1.18.7: "+5 of current"; it was the burst speed x 1.25, 30 m/s from a
                                          // standstill), never less than the same dash would leave with on its own...
-constexpr float kSuperDashJump = 0.5f;   // ...with a jump at this share of the jump speed at the kSuperDashDown threshold
-                                         // (Celeste: half; a 0.31 m hop that skims the floor, bhop on from its landing)...
-constexpr float kSuperDashJumpMax = 1.0f; // ...rising linearly with how far down the dash was aimed (the sine of the look
-                                          // pitch, 0.25 -> 1) to this share looking straight down: a full 1.22 m jump
+constexpr float kSuperDashJump = 0.866f; // ...with a jump at this share of the jump speed at the kSuperDashDown threshold
+                                         // (Celeste: half; owner 1.18.28: "3x more air, since we nerfed the speed", so
+                                         // sqrt(3) x the old 0.5 for 3x the height: a 0.91 m hop, was 0.31)...
+constexpr float kSuperDashJumpMax = 1.732f; // ...rising linearly with how far down the dash was aimed (the sine of the
+                                          // look pitch, 0.25 -> 1) to this share looking straight down: 3x a 1.22 m jump
                                           // (owner 1.18: "the lower you look the higher you should bounce"). Hops (jump
-                                          // 7.34, gravity 22): 14.5 deg 0.31 m, 20 deg 0.39 m, 30 deg 0.54 m, 45 deg
-                                          // 0.79 m, 60 deg 1.02 m, 90 deg 1.22 m (the mouse stops at 88.8 deg: 1.22 m)
+                                          // 7.34, gravity 22): 14.5 deg 0.91 m, 20 deg 1.15 m, 30 deg 1.6 m, 45 deg
+                                          // 2.36 m, 60 deg 3.0 m, 90 deg 3.65 m (the mouse stops at 88.8 deg: 3.65 m)
 constexpr float kSuperDashMax = 36.0f;   // its cap: above the dash's 32, so a super dash at top dash speed still boosts (the
                                          // dash's limit is intended, owner decision 5.4: the cap keeps chained hypers from
                                          // adding 5 each without end)

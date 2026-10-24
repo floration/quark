@@ -16,7 +16,7 @@ const K = {
     gravity: 22, jump: 7.34, ground: 9.5, crouch: 4, groundAccel: 16, airAccel: 2.2, airCap: 2.3, strafeCapAD: 1.1, strafeAccelAD: 1.15,
     overstrafe: 0.35, airControl: 4, airControlFrom: 9.5, airControlW: 0.9, airDrift: 8, strafeBoost: 0.1, friction: 7, stopSpeed: 2,
     step: 0.55, dashSpeed: 24, dashTime: 0.12, dashExitMin: 11, dashKeep: 1, dashExitMax: 32, dashVertical: 0.6375, dashJumpWindow: 0.1,
-    superDashDown: 0.25, superDashBoost: 5, superDashJump: 0.5, superDashJumpMax: 1, superDashMax: 36, dashBounceSpeed: 16,
+    superDashDown: 0.25, superDashBoost: 5, superDashJump: 0.866, superDashJumpMax: 1.732, superDashMax: 36, dashBounceSpeed: 16,
     dashBounceAngle: 45, dashMaxBounces: 2, bounceGain: 0.5, bounceMax: 8, hookAccel: 38, hookMax: 24, hookGravity: 0.5, hookRelease: 1.2,
     ladderSpeed: 6.75, ladderSide: 4.5, grappleRange: 45, hookCooldown: 1, dashCharges: 2, dashCooldown: 0.6, dashRecharge: 1.2,
     maxCharges: 10, halfWidth: 0.4, height: 1.8, crouchHeight: 1.2, eye: 1.6, crouchEye: 1.05,
