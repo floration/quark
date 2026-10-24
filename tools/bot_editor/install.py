@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Installs or updates the local Bot Editor (and the Map Editor, which shares its helper) from this checkout.
+r"""Installs or updates the local Bot Editor (and the Map Editor, which shares its helper) from this checkout.
 
     python3 tools/bot_editor/install.py [--bot-editor DIR] [--map-editor DIR] [--build DIR] [--jobs N]
 
@@ -12,10 +12,12 @@ Run it from the repository folder (the owner's `repository\`): non-interactive, 
      the owner keeps there are left alone);
   3. --map-editor DIR (default ../map-editor; `--map-editor -` skips it): runs tools/map_editor/build.py with the
      same build folder (its own page, three.js download, maps, models; its config.json is kept).
-A helper that's in use (a live run) is replaced on the next run instead of failing the install. Exit code 0 = done.
+A helper that's in use (a live run) is replaced on the next run instead of failing the install. A bot editor that's
+running when its files change is told to quit (POST /api/quit) and started again from the new files; when the Quark
+Project app is open (its port 8768 answers) its watchdog restarts it instead. Exit code 0 = done.
 Python 3 standard library; needs cmake, a C++ compiler (MinGW-w64 on Windows) and python on PATH, like the game build.
 """
-import argparse, filecmp, json, os, shutil, subprocess, sys, time
+import argparse, filecmp, json, os, shutil, subprocess, sys, time, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
@@ -106,6 +108,40 @@ def install_bot_editor(dest, bdir):
         with open(cfg_path, "w", encoding="utf-8") as f: json.dump(want, f, indent=2)
         n += 1
     print("bot editor: %s (%d file(s) updated)" % (dest, n))
+    if n: restart_bot_editor(dest, want["port"])
+
+
+def http(url, data=None, timeout=1.5):
+    """The answer's JSON, or None when nothing answers on that port."""
+    req = urllib.request.Request(url, data=data, headers={"X-Quark-Editor": "1"} if data is not None else {})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r: return json.loads(r.read() or b"{}")
+    except Exception:
+        return None
+
+
+def restart_bot_editor(dest, port):
+    """A running bot editor keeps serving the old serve.py and page until it restarts: ask it to quit, then start it
+    again (the Quark Project app's watchdog does that itself when the app is open)."""
+    base = "http://127.0.0.1:%d/api/" % port
+    ping = http(base + "ping")
+    if not ping or ping.get("tool") != "bot-editor": return
+    if http(base + "quit", data=b"") is None:
+        print("  note: the bot editor on port %d runs older code without /api/quit: restart it by hand" % port)
+        return
+    for _ in range(50):   # (up to 10 s: a live run's helper is stopped first)
+        if http(base + "ping", timeout=0.5) is None: break
+        time.sleep(0.2)
+    if http("http://127.0.0.1:8768/", timeout=1.0) is not None or os.environ.get("QUARK_SHELL") == "1":
+        print("  bot editor stopped: the Quark Project app restarts it from the new files")
+        return
+    if IS_WIN:   # (its own console window, like run.cmd from Explorer)
+        subprocess.Popen(["cmd", "/c", "start", "Quark Bot Editor", os.path.join(dest, "run.cmd"), "--no-open"], cwd=dest)
+    else:
+        subprocess.Popen([sys.executable, os.path.join(dest, "serve.py"), "--no-open"], cwd=dest, start_new_session=True,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ok = any(http(base + "ping", timeout=0.5) or time.sleep(0.5) for _ in range(20))
+    print("  bot editor restarted from the new files on port %d" % port if ok else "  note: the bot editor didn't come back on port %d: start run.cmd" % port)
 
 
 def main():

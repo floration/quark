@@ -149,3 +149,7 @@ pick other folders (`-` skips one), `--build DIR` another build folder, `--jobs 
 C++ compiler (MinGW-w64 on Windows) and Python, like the game build; the map editor's first install downloads
 three.js 0.160.0 once (checked by sha256, cached in the build folder).
 
+A bot editor that's running when its files change is restarted on the new ones: install.py asks it to quit
+(`POST /api/quit`) and starts `run.cmd --no-open` again in its own window, or, when the Quark Project app is open,
+leaves the restart to the app's watchdog. A map editor that's running still needs restarting by hand (or by the app).
+
