@@ -265,6 +265,15 @@ class Diff(unittest.TestCase):
         self.assertIn("forced moved f1 -> f2 (force-pushed)", texts)
         self.assertIn("Release test-1.0.1-test.3 published (prerelease)", texts)
 
+    def test_rename_is_one_event(self):
+        prev = snap(at=AT0, branches={"testing": "a", "claude/old": "s1", "claude/gone": "s2"})
+        cur = snap(branches={"testing": "a", "claude/new": "s1", "claude/other": "s3"})
+        ev = S.diff_events(prev, cur)
+        self.assertEqual(sorted(types(ev)), ["branch.created", "branch.deleted", "branch.renamed"])
+        ren = [e for e in ev if e["type"] == "branch.renamed"][0]
+        self.assertEqual((ren["ref"], ren["data"]["from"]), ({"branch": "claude/new"}, "claude/old"))
+        self.assertEqual(ren["text"], "Branch claude/old renamed to claude/new (at s1)")
+
     def test_unknown_sections_are_skipped(self):
         prev = snap(at=AT0, branches={"testing": "a"}, tags={"v1": "a"})
         cur = snap(branches=None, tags=None, runs=None, pulls=None, releases=None)
@@ -1012,6 +1021,55 @@ class EndToEnd(unittest.TestCase):
         return S.Manager(dict(self.cfg), self.data, os.path.dirname(os.path.abspath(S.__file__)), proc=self.gh,
                          quiet=True)
 
+    def test_first_poll_without_github_then_signed_in(self):
+        # gh signed out on a fresh data folder: the mirror still gives production and testing
+        routes, self.gh.routes = self.gh.routes, {}
+        m = self.manager()
+        st = m.poll(manual=True)
+        self.assertTrue(st["poll"]["lastError"])
+        self.assertEqual(st["testing"]["version"], "1.0.1")
+        self.assertEqual(st["notRead"], ["pulls", "releases", "runs"])   # the page shows these as unknown
+        self.assertEqual(m.summary_obj["notRead"], ["pulls", "releases", "runs"])
+        self.assertEqual(m.history.query(), [])                        # no baseline from a poll that read nothing
+        self.assertFalse(os.path.exists(os.path.join(self.data, "state-prev.json")))
+        # signed in: the baseline counts what GitHub has
+        self.gh.routes = routes
+        st = m.poll(manual=True)
+        self.assertEqual(st["notRead"], [])
+        hist = m.history.query()
+        self.assertEqual(types(hist), ["baseline"])
+        self.assertIn("1 open PR", hist[0]["text"])
+        self.assertIn("2 runs", hist[0]["text"])
+
+    def test_orphan_branch_and_closed_prs(self):
+        main_sha = git("rev-parse", "main", cwd=self.origin)
+        git("checkout", "-q", "--orphan", "gh-pages", cwd=self.origin)
+        write(os.path.join(self.origin, "index.html"), "site\n")
+        git("add", "index.html", cwd=self.origin)
+        git("commit", "-qm", "site", cwd=self.origin)
+        git("checkout", "-q", "-b", "claude/done", self.testing1, cwd=self.origin)
+        git("checkout", "-q", "main", cwd=self.origin)
+
+        def closed(n, head, sha):
+            return {"number": n, "title": "pr %d" % n, "state": "closed", "draft": False,
+                    "merged_at": "2026-10-23T00:00:00Z", "closed_at": "2026-10-23T00:00:00Z",
+                    "head": {"ref": head, "sha": sha, "repo": {"full_name": "o/r"}}, "base": {"ref": "testing"},
+                    "user": {"login": "q"}, "created_at": "2026-10-22T00:00:00Z",
+                    "updated_at": "2026-10-23T00:00:00Z", "html_url": "u"}
+        # #3 merged claude/done where it still is; #2 merged main long ago (main moved on since)
+        self.gh.routes["repos/o/r/pulls?state=closed"] = [closed(3, "claude/done", self.testing1),
+                                                          closed(2, "main", "0" * 40)]
+        for n in (2, 3):
+            self.gh.routes["repos/o/r/pulls/%d" % n] = {"updated_at": "2026-10-23T00:00:00Z", "merged": True}
+        st = self.manager().poll(manual=True)
+        b = {x["name"]: x for x in st["branches"]}
+        self.assertEqual((b["gh-pages"]["ahead"], b["gh-pages"]["behind"], b["gh-pages"]["unrelated"]),
+                         (None, None, True))
+        self.assertFalse(b["main"]["unrelated"])
+        self.assertEqual(b["claude/done"]["pr"], 3)
+        self.assertIsNone(b["main"]["pr"])
+        self.assertEqual(b["main"]["sha"], main_sha)
+
     def test_poll_restart_and_http(self):
         m = self.manager()
         st = m.poll(manual=True)
@@ -1117,7 +1175,13 @@ class EndToEnd(unittest.TestCase):
             self.assertNotIn("Access-Control-Allow-Origin", h)
             summ = json.loads(body)
             self.assertEqual(sorted(summ), sorted(["generatedAt", "repo", "poll", "testing", "production",
-                                                   "openPulls", "running", "lastFailed", "lastTesting", "local"]))
+                                                   "openPulls", "running", "lastFailed", "lastTesting", "local",
+                                                   "notRead"]))
+            # the Supervisor Board tells a production PR from the rest by base, and orders them by updatedAt
+            self.assertEqual(sorted(summ["openPulls"][0]), ["base", "checks", "draft", "head", "number", "title",
+                                                            "updatedAt", "url"])
+            self.assertEqual(sorted(summ["production"]), ["publishedAt", "sha", "tag", "version"])
+            self.assertEqual(summ["notRead"], [])
             self.assertEqual((summ["lastTesting"]["id"], summ["lastTesting"]["conclusion"]), (102, "failure"))
             self.assertNotIn("jobs", summ["lastTesting"])
             self.assertEqual(summ["lastFailed"]["id"], 102)
@@ -1478,7 +1542,19 @@ class ApplyAndStale(unittest.TestCase):
         self.gh.default = "testing"
         self.assertIn("the default branch is now testing", self.p.apply(ch["id"])["result"]["error"])
         self.assertEqual(self.gh.writes, [])
-        self.assertEqual(self.events, [])
+        # nothing was applied, but every attempt is in the history (README: results go to History)
+        self.assertEqual(set(types(self.events)), {"github.apply.stale"})
+        self.assertIn("changed on GitHub since the preview", self.events[-1]["text"])
+
+    def test_refused_apply_is_logged(self):
+        ch = self.p.queue({"type": "branch.delete", "params": {"name": "claude/a"}})
+        self.gh.default = "claude/a"   # it became the default branch since: the lock refuses at apply
+        out = self.p.apply(ch["id"])
+        self.assertEqual(out["status"], "refused")
+        self.assertEqual(types(self.events), ["github.apply.refused"])
+        self.assertIn("refused by the production lock", self.events[0]["text"])
+        self.assertEqual(self.events[0]["data"]["status"], "refused")
+        self.assertEqual(self.gh.writes, [])
 
     def test_apply_errors_and_apply_all(self):
         a = self.p.queue({"type": "branch.delete", "params": {"name": "claude/a"}})
@@ -1544,6 +1620,36 @@ class RulesStore(unittest.TestCase):
         self.assertEqual(self.r.limit(S.STALE_RULE_ID, 99), 7)
         self.assertTrue(os.path.exists(os.path.join(self.dir, "rules.json")))
         self.assertEqual(S.Rules(self.dir).obj()["rules"], self.r.obj()["rules"])  # loaded, not seeded again
+
+    def test_seeded_rules_give_way_to_the_claude_documents(self):
+        self.assertTrue(self.r.seeded)
+        self.assertTrue(S.Rules(self.dir).seeded)       # remembered across a restart until edited or adopted
+        doc = {"rev": 9, "updatedAt": "2026-10-01T00:00:00Z", "rules": [
+            dict(S.HARD_RULE, text="an edited copy", updatedAt="2026-09-01T00:00:00Z"),
+            {"id": "own-rule", "title": "q's own rule", "text": "made on the other PC", "kind": "other",
+             "scope": {"type": "all", "match": ""}, "value": None, "unit": "", "locked": False,
+             "updatedAt": "2026-10-01T00:00:00Z"}, {"id": "bad", "title": ""}]}
+        self.assertTrue(self.r.adopt(doc))
+        o = self.r.obj()
+        self.assertEqual([x["id"] for x in o["rules"]], [S.HARD_RULE_ID, "own-rule"])
+        self.assertEqual(o["rules"][0]["text"], S.HARD_RULE["text"])   # the production rule is always ours
+        self.assertEqual((o["rev"], o["updatedAt"]), (9, "2026-10-01T00:00:00Z"))
+        self.assertEqual(types(self.events), ["rules.changed"])
+        self.assertIn("loaded from the Claude Documents", self.events[0]["text"])
+        r2 = S.Rules(self.dir)
+        self.assertFalse(r2.seeded)
+        self.assertEqual(r2.obj()["rules"], o["rules"])
+        self.assertFalse(self.r.adopt(doc))              # once only
+        # rules edited here are never replaced
+        d2 = tempfile.mkdtemp(prefix="ghm-rules2-")
+        try:
+            r3 = S.Rules(d2)
+            r3.replace({"rules": [x for x in r3.obj()["rules"] if x["id"] != "ci-scope"]})
+            self.assertFalse(r3.seeded)
+            self.assertFalse(r3.adopt(doc))
+            self.assertFalse(S.Rules(d2).seeded)
+        finally:
+            shutil.rmtree(d2, ignore_errors=True)
 
     def test_edit_add_remove_and_events(self):
         rs = self.rules()
@@ -1702,6 +1808,37 @@ class StructureStore(unittest.TestCase):
         self.assertEqual(branches[7]["description"], "bot")
         S.branch_roles(branches, self.s, 30, DEFAULT, now)
         self.assertFalse(any(x["stale"] for x in branches))
+        # the stale rule's scope: claude/* (the seed) leaves dependabot out
+        S.branch_roles(branches, self.s, 7, DEFAULT, now, stale_scope={"type": "branch", "match": "claude/*"})
+        self.assertEqual(sorted(x["name"] for x in branches if x["stale"]), ["claude/old-merged"])
+        S.branch_roles(branches, self.s, 7, DEFAULT, now, stale_scope={"type": "all", "match": ""})
+        self.assertEqual(sorted(x["name"] for x in branches if x["stale"]), ["claude/old-merged", "dependabot/x"])
+
+    def test_rename_moves_the_entry_and_the_notes(self):
+        self.s.update({"branches": {"claude/a": {"role": "infra", "description": "the a branch"}}})
+        self.assertTrue(self.s.rename("claude/a", "claude/b"))
+        self.assertEqual(S.Structure(self.dir).obj()["branches"], {"claude/b": dict(
+            self.s.obj()["branches"]["claude/b"])})
+        self.assertEqual(self.s.entry("claude/b")["description"], "the a branch")
+        self.assertIn("moved to claude/b (renamed)", self.events[-1]["text"])
+        self.assertFalse(self.s.rename("claude/nothing", "claude/c"))
+        # the manager does it after an applied rename, and moves the branch's notes too
+        data = tempfile.mkdtemp(prefix="ghm-rename-")
+        try:
+            m = S.Manager({"repo": REPO, "port": 0, "quarkDir": data}, data,
+                          os.path.dirname(os.path.abspath(S.__file__)), quiet=True)
+            m.structure.update({"branches": {"claude/x": {"role": None, "description": "x"}}})
+            n = m.notes.create({"target": {"kind": "branch", "key": "claude/x"}, "text": "about x"})
+            other = m.notes.create({"target": {"kind": "branch", "key": "claude/y"}, "text": "about y"})
+            m._after_apply({"type": "branch.rename", "status": "applied",
+                            "params": {"name": "claude/x", "newName": "claude/x2"}})
+            got = dict((x["id"], x["target"]["key"]) for x in m.notes.all())
+            self.assertEqual(got, {n["id"]: "claude/x2", other["id"]: "claude/y"})
+            self.assertEqual(list(m.structure.obj()["branches"]), ["claude/x2"])
+            moved = [e for e in m.history.query() if e["type"] == "note.edited"]
+            self.assertEqual(moved[0]["data"]["from"], {"kind": "branch", "key": "claude/x"})
+        finally:
+            shutil.rmtree(data, ignore_errors=True)
 
 
 def bare_docs_repo(root):
@@ -1847,6 +1984,35 @@ class DocsSyncTest(unittest.TestCase):
         off = S.DocsSync(self.d.folder, None, self.proc, dict, enabled=False, off_reason="off (test)")
         off.schedule()
         self.assertEqual((off.status()["state"], off.sync_now()["state"], off.warnings()), ("off", "off", []))
+
+    def test_seeded_rules_adopt_the_pushed_rules_and_retry(self):
+        # another install pushed its own rules; this fresh one must take them, not push its seed over them
+        theirs = S.Rules(None)
+        theirs.replace({"rules": [x for x in theirs.obj()["rules"] if x["id"] != "ci-scope"]})
+        write(os.path.join(self.seed, "github-rules.json"), S.dumps(theirs.export(REPO, DEFAULT), pretty=True) + "\n")
+        git("add", "github-rules.json", cwd=self.seed)
+        git("commit", "-qm", "their rules", cwd=self.seed)
+        git("push", "-q", "origin", "HEAD:main", cwd=self.seed)
+        mine = S.Rules(os.path.join(self.root, "data", "editor"))
+        self.assertTrue(mine.seeded)
+        render = lambda: {"github-rules.json": S.dumps(mine.export(REPO, DEFAULT), pretty=True) + "\n"}
+        adopt = lambda folder: mine.adopt(S.read_json(os.path.join(folder, "github-rules.json")))
+        # first try fails (offline): retried by the next poll, and then it works
+        moved = self.bare + ".away"
+        os.rename(self.bare, moved)
+        d = S.DocsSync(os.path.join(self.root, "data", "claude-docs"), self.state, self.proc, render,
+                       repo=S.DOCS_REPO, debounce=0.3, adopt=adopt)
+        self.assertEqual(d.sync_now()["state"], "failed")
+        self.assertIn("retries on every poll", d.warnings()[0])
+        os.rename(moved, self.bare)
+        self.assertTrue(d.retry_if_failed())
+        self.assertFalse(d.retry_if_failed())   # already on its way
+        self.assertTrue(self.wait(lambda: d.status()["state"] == "ok"), d.status())
+        self.assertFalse(d.retry_if_failed())
+        self.assertNotIn("ci-scope", [x["id"] for x in mine.obj()["rules"]])
+        self.assertFalse(mine.seeded)
+        self.assertNotIn("ci-scope", self.show("github-rules.json"))
+        self.assertEqual(self.log(), ["their rules", "first"])   # what was there is what we'd write: no commit
 
     def test_wanted(self):
         env = os.environ.pop("GHM_DOCS_SYNC")

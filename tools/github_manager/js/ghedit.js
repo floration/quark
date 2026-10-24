@@ -15,7 +15,7 @@ export const ged = {
 
 // UI state that survives redraws: open forms / confirms, busy buttons, errors, drafts
 export const gui = { open: new Set(), confirm: new Set(), busy: new Set(), errors: new Map(), drafts: new Map() };
-let hooks = { onChange() {}, toast() {} };
+let hooks = { onChange() {}, toast() {}, reload() {} };
 const actions = {}, submits = {}, inputs = {};
 
 // ---- loading ----
@@ -140,6 +140,8 @@ export const onSubmit = (kind, fn) => { submits[kind] = fn; };
 export const onInput = (kind, fn) => { inputs[kind] = fn; };
 export const redraw = () => hooks.onChange();
 export const toast = (t, bad) => hooks.toast(t, bad);
+// after an Apply: fetch the state as soon as the server's own poll has it (Branches and Structure show the change)
+export const reloadState = () => hooks.reload();
 
 export function initGhEdit(h) {
   hooks = { ...hooks, ...h };

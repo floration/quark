@@ -68,7 +68,7 @@ export const history = {
     const oldest = evs.length ? evs[evs.length - 1].at : null;
     box.innerHTML = String(html`
       <p class="hint">${plural(list.length, 'event')}${list.length !== evs.length ? ` of ${evs.length}` : ''} in the local log${oldest ? html`, which goes back to ${fmtDay(oldest)}` : ''}. The server appends to it on every poll and never trims it.</p>
-      ${days.length ? days.map((d) => html`<section class="card day"><h2 class="day-h">${fmtDay(d.at)} <span class="count">${d.evs.length}</span></h2><ul class="events">${d.evs.map((e) => eventRow(e))}</ul></section>`) : html`<section class="card"><p class="empty">Nothing in the log matches.</p></section>`}
+      ${days.length ? days.map((d) => html`<section class="card day"><h2 class="day-h">${fmtDay(d.at)} <span class="count">${d.evs.length}</span></h2><ul class="events cols">${d.evs.map((e) => eventRow(e))}</ul></section>`) : html`<section class="card"><p class="empty">Nothing in the log matches.</p></section>`}
       ${list.length > shown ? html`<p class="center"><button data-more-history>Show older events (${list.length - shown} more)</button></p>` : ''}`);
   },
 };

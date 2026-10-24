@@ -41,10 +41,10 @@ export const runs = {
     const run = list.filter((r) => RUNNING.has(r.status)).sort((a, b) => ms(a.createdAt) - ms(b.createdAt));
     const done = list.filter((r) => !RUNNING.has(r.status));
     document.getElementById('runs-list').innerHTML = String(html`
-      ${run.length ? html`<section class="card"><h2>Running now <span class="count run">${run.length}</span></h2><ul class="rows">${run.map((r) => runRow(r))}</ul></section>` : ''}
+      ${run.length ? html`<section class="card"><h2>Running now <span class="count run">${run.length}</span></h2><ul class="rows cols">${run.map((r) => runRow(r))}</ul></section>` : ''}
       ${fs.st.result === 'running' ? (run.length ? '' : html`<section class="card"><p class="empty">Nothing is running right now.</p></section>`) : html`<section class="card"><h2>${run.length ? 'Finished' : 'Runs'} <span class="count">${done.length}</span></h2>
         <p class="hint">${plural(all.length, 'run')} known (the last 100 from GitHub plus everything in the local log). Click a run for its jobs and logs.</p>
-        ${done.length ? html`<ul class="rows">${done.slice(0, 200).map((r) => runRow(r))}</ul>` : html`<p class="empty">No runs match.</p>`}
+        ${done.length ? html`<ul class="rows cols">${done.slice(0, 200).map((r) => runRow(r))}</ul>` : html`<p class="empty">No runs match.</p>`}
         ${done.length > 200 ? html`<p class="small muted">Showing the newest 200; narrow the filters to see older ones.</p>` : ''}
       </section>`}`);
   },

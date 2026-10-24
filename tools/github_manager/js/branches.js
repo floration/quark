@@ -1,13 +1,12 @@
 // Branches: one table, filter by kind / CI / text, sort by age or by how far ahead.
 import { store } from './store.js';
-import { html, relOnly, matches, ms, enc, runState, plural, aheadBehind, prChip, ghLink, docsLink, commitChip } from './util.js';
+import { html, relOnly, matches, ms, enc, runState, plural, aheadBehind, prChip, ghLink, docsLink, commitChip, kindLabel } from './util.js';
 import { lastRunCell, abBar } from './parts.js';
 import { noteBadge } from './notes.js';
 import { filterState, search, select, segmented, bind } from './filters.js';
 
 let fs;
 const KINDS = [['all', 'All'], ['claude', 'Work (claude/*)'], ['main', 'Testing + production'], ['infra', 'Infra'], ['other', 'Other'], ['stale', 'Stale']];
-const KIND_LABEL = { production: 'production', testing: 'testing', claude: 'work', infra: 'infra', other: 'other' };
 
 function want(b, st) {
   if (st.kind === 'main' && !(b.kind === 'production' || b.kind === 'testing')) return false;
@@ -48,10 +47,10 @@ export const branches = {
     const row = (b) => {
       const p = b.pr != null ? store.idx.pulls.get(String(b.pr)) : null;
       return html`<tr class="k-${b.kind}" data-action="row" data-href="#branch=${enc(b.name)}" tabindex="0">
-        <td class="b-name"><span class="lane-tag k-${b.kind}" title="${b.roleSet ? 'Role set in the Editor (Structure)' : 'Role by its name'}">${KIND_LABEL[b.kind] || b.kind}</span> <a href="#branch=${enc(b.name)}" class="bn" title="${b.description || b.name}">${b.name}</a>${ghLink(b.url, 'Open the branch on GitHub')}${b.stale ? html` <a class="tag t-warn" href="#tab=editor&sec=structure" title="Stale: no recent commit, merged into or behind testing (see Editor, Structure)">stale</a>` : ''}${noteBadge('branch', b.name, `#branch=${enc(b.name)}`)}<span class="b-sub muted small" title="${b.subject}">${commitChip(b.sha)} ${b.subject}</span></td>
+        <td class="b-name"><span class="lane-tag k-${b.kind}" title="${b.roleSet ? 'Role set in the Editor (Structure)' : 'Role by its name'}">${kindLabel(b.kind)}</span> <a href="#branch=${enc(b.name)}" class="bn" title="${b.description || b.name}">${b.name}</a>${ghLink(b.url, 'Open the branch on GitHub')}${b.stale ? html` <a class="tag t-warn" href="#tab=editor&sec=structure" title="Stale: no recent commit, merged into or behind testing (see Editor, Structure)">stale</a>` : ''}${noteBadge('branch', b.name, `#branch=${enc(b.name)}`)}<span class="b-sub muted small" title="${b.subject}">${commitChip(b.sha)} ${b.subject}</span></td>
         <td class="b-head"><span class="subj" title="${b.subject}">${b.subject}</span><span class="muted small">${commitChip(b.sha)} ${b.author}</span></td>
         <td class="b-age nowrap">${relOnly(b.date)}</td>
-        <td class="b-ab"><span class="ab-text">${b.kind === 'testing' ? html`<span class="muted">the reference</span>` : aheadBehind(b.ahead, b.behind).replace(' of testing', '')}</span>${b.kind === 'testing' ? '' : abBar(b.ahead, b.behind, max)}</td>
+        <td class="b-ab"><span class="ab-text">${b.kind === 'testing' ? html`<span class="muted">the reference</span>` : b.unrelated ? html`<span class="muted" title="An orphan branch: it shares no commit with testing, so there is no ahead / behind">no shared history</span>` : aheadBehind(b.ahead, b.behind).replace(' of testing', '')}</span>${b.kind === 'testing' || b.unrelated ? '' : abBar(b.ahead, b.behind, max)}</td>
         <td class="b-pr nowrap">${p ? html`${prChip(p.number, p.title)} <span class="muted small">${p.state === 'open' ? (p.draft ? 'draft' : 'open') : p.merged ? 'merged' : 'closed'}</span>` : html`<span class="muted">—</span>`}</td>
         <td class="b-ci nowrap">${lastRunCell(b.lastRun)}</td>
         <td class="b-docs">${docsLink(b.name)}</td>

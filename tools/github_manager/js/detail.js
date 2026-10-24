@@ -2,7 +2,7 @@
 import { store, findCommit } from './store.js';
 import {
   html, when, relOnly, dur, plural, enc, gh, ghLink, docsLink, dashLink, branchChip, commitChip, prChip,
-  localChip, runBadge, badge, aheadBehind, RUNNING, ms, elapsed, short,
+  localChip, runBadge, badge, RUNNING, ms, elapsed, short, kindLabel, branchVsTesting,
 } from './util.js';
 import { runRow, prState, checksBadge, eventRow, eventsFor, runOutcome, jobsOf, testsLink } from './parts.js';
 import { notesBlock, md } from './notes.js';
@@ -66,7 +66,7 @@ function prDetail(n) {
       <dt>Author</dt><dd>${p.author}</dd>
       <dt>Opened</dt><dd>${when(p.createdAt)}</dd>
       <dt>${p.merged ? 'Merged' : p.state === 'closed' ? 'Closed' : 'Updated'}</dt><dd>${when(p.merged ? p.mergedAt : p.updatedAt)}</dd>
-      ${b ? html`<dt>Branch now</dt><dd>${aheadBehind(b.ahead, b.behind)} · head ${commitChip(b.sha)}</dd>` : ''}
+      ${b ? html`<dt>Branch now</dt><dd>${branchVsTesting(b)} · head ${commitChip(b.sha)}</dd>` : ''}
     </dl>
     ${notesBlock('pr', p.number)}
     <h3>Checks</h3>
@@ -83,11 +83,11 @@ function branchDetail(name) {
   const evs = eventsFor((e) => e.ref && (e.ref.branch === name || (e.ref.run != null && store.idx.runs.get(String(e.ref.run))?.branch === name) || (e.ref.pr != null && store.idx.pulls.get(String(e.ref.pr))?.head === name)));
   if (!b && !runs.length && !pulls.length) return html`${notFound('Branch', name)}${notesBlock('branch', name)}${historyBlock(evs, 'branch')}`;
   const path = name.split('/').map(enc).join('/');
-  return html`${head(`Branch${b ? ` · ${b.kind}` : ' · deleted or not polled'}`, name, html`${ext(gh(`/tree/${path}`), 'Open on GitHub')} · ${ext(gh(`/compare/testing...${path}`), 'Compare with testing')} · ${ext(gh(`/commits/${path}`), 'Commits')} · ${docsLink(name)} · <a href="${dashLink(`branch=${enc(name)}`)}" target="quark-dashboard">dashboard</a>`)}
+  return html`${head(`Branch${b ? ` · ${kindLabel(b.kind)}` : ' · deleted or not polled'}`, name, html`${ext(gh(`/tree/${path}`), 'Open on GitHub')} · ${ext(gh(`/compare/testing...${path}`), 'Compare with testing')} · ${ext(gh(`/commits/${path}`), 'Commits')} · ${docsLink(name)} · <a href="${dashLink(`branch=${enc(name)}`)}" target="quark-dashboard">dashboard</a>`)}
     ${b ? html`<dl class="kv">
       <dt>Head</dt><dd>${commitChip(b.sha)} <span class="subj">${b.subject}</span></dd>
       <dt>By</dt><dd>${b.author} · ${when(b.date)}</dd>
-      <dt>vs testing</dt><dd>${b.kind === 'testing' ? html`<span class="muted">this is testing</span>` : aheadBehind(b.ahead, b.behind)}</dd>
+      <dt>vs testing</dt><dd>${b.kind === 'testing' ? html`<span class="muted">this is testing</span>` : branchVsTesting(b)}</dd>
       <dt>Last CI</dt><dd>${b.lastRun ? html`${runBadge(b.lastRun)} <a href="#run=${b.lastRun.id}">${runOutcome(b.lastRun)}</a>` : html`<span class="muted">no runs</span>`}</dd>
       ${locals.length ? html`<dt>On this PC</dt><dd>${locals.map((l) => localChip(l.name))}</dd>` : ''}
       <dt>Role</dt><dd>${b.role || b.kind}${b.roleSet ? ' (set by you)' : ''}${b.stale ? html` <span class="tag t-warn">stale</span>` : ''} · <a href="#tab=editor&sec=structure">Structure</a></dd>
