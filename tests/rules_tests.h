@@ -1745,6 +1745,76 @@ static void testCustomRulesKeep() {
     deleteCustomMode("zz_keep_test");
 }
 
+// Mode editor phase 1b / 3: the rules' slots and the hook a custom mode's logic plugs into. Built-in modes have no
+// hook (each slot is one null test from its native code) and read their numbers from the built-in ModeParams; a
+// hook with only numbers runs the native slots with them; a hooked slot is called with its arguments in place of
+// the native one, and the rest stay native.
+struct FakeModeHooks : ModeHooks {
+    int calls[MSLOT_COUNT] = {};
+    int lastA[MSLOT_COUNT], lastB[MSLOT_COUNT], lastC[MSLOT_COUNT];
+    FakeModeHooks() { for (int k = 0; k < MSLOT_COUNT; k++) lastA[k] = lastB[k] = lastC[k] = -9; }
+    void note(ModeSlot k, int a, int b, int c) { calls[k]++; lastA[k] = a; lastB[k] = b; lastC[k] = c; }
+    void event(Server&, ModeSlot k, int a, int b, int c) override { note(k, a, b, c); }
+    double query(const Server&, ModeSlot k, int a, int b, int c) override {
+        const_cast<FakeModeHooks*>(this)->note(k, a, b, c);
+        switch (k) {
+            case MSLOT_ROUNDS_TO_WIN: return 4;
+            case MSLOT_RESPAWN_DELAY: return 9;
+            case MSLOT_FROZEN: return a == 0;   // only player 0
+            default: return 0;
+        }
+    }
+};
+
+static void testModeHooks(uint16_t port) {
+    printf("mode rules: slots, ModeParams and the custom-mode hook\n");
+    CHECK(std::string(modeSlotName(MSLOT_MATCH_START)) == "matchStart" && std::string(modeSlotName(MSLOT_CART_CHECKPOINT)) == "cartCheckpoint");
+    CHECK(std::string(modeSlotName(MSLOT_CAN_AUTO_START)) == "canAutoStart" && std::string(modeSlotName(MSLOT_COUNT)) == "?");
+    // the built-in numbers are the ones the modes always had
+    CHECK(builtinModeParams(MODE_BOMB).rounds == 7 && builtinModeParams(MODE_BOMB).roundTime == 105.0f && builtinModeParams(MODE_BOMB).plantTime == 3.0f);
+    CHECK(builtinModeParams(MODE_KOTH).respawn == 4.0f && builtinModeParams(MODE_KOTH).target == 100 && builtinModeParams(MODE_VS).respawn < 0);
+    CHECK(builtinModeParams(MODE_HIDE).roundTime == kHideRoundTime && builtinModeParams(MODE_DUEL).rounds == 11 && builtinModeParams(MODE_FFA).matchTime == 600.0f);
+    for (int m = 0; m < MODE_COUNT; m++) CHECK(builtinModeParams(m).respawn == modeRespawnDelay(m));
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "summit"; cfg.mode = MODE_KOTH; cfg.port = port;
+    NetClient c[2];
+    std::vector<NetClient*> cls;
+    if (!rulesStart(s, cfg, c, 2, cls, false)) { s.stop(); return; }
+    CHECK(s.modeHooks_ == nullptr && s.mp_ == &builtinModeParams(MODE_KOTH));
+    // numbers only: the native slots run with the hook's ModeParams
+    FakeModeHooks h;
+    ModeParams mp = builtinModeParams(MODE_KOTH);
+    mp.target = 7;
+    mp.warmupRespawn = 2.5f;
+    h.params = &mp;
+    s.modeHooks_ = &h;
+    s.command("forcestart");   // (a match end / reset picks the numbers up: rulesReset)
+    rulesEndMatch(s, "test", -1);
+    s.phaseEnd_ = s.time();
+    pump(s, cls, 0.1, idle);
+    CHECK(s.ms_.phase == PHASE_WARMUP && s.mp_ == &mp && rulesRespawnDelay(s, 0) == 2.5f);
+    s.command("forcestart");
+    pump(s, cls, 0.1, idle);
+    CHECK(s.ms_.target == 7);
+    for (int k = 0; k < MSLOT_COUNT; k++) CHECK(h.calls[k] == 0);   // (nothing hooked: nothing called)
+    // hooked slots replace the native ones; the rest stay native
+    h.interp = (1ull << MSLOT_ROUNDS_TO_WIN) | (1ull << MSLOT_TICK) | (1ull << MSLOT_FROZEN) | (1ull << MSLOT_RESPAWN_DELAY) | (1ull << MSLOT_KILL) | (1ull << MSLOT_LIVE);
+    rulesForceStart(s);
+    CHECK(s.ms_.roundsToWin == 4 && h.calls[MSLOT_ROUNDS_TO_WIN] > 0);
+    for (int i = 0; i < 100 && s.ms_.phase != PHASE_LIVE; i++) { if (s.ms_.phase == PHASE_FREEZE) s.phaseEnd_ = s.time(); pump(s, cls, 0.05, idle); }
+    pump(s, cls, 0.2, idle);
+    CHECK(s.ms_.phase == PHASE_LIVE && h.calls[MSLOT_LIVE] == 1 && h.calls[MSLOT_TICK] > 0);
+    CHECK(rulesFrozen(s, 0) && !rulesFrozen(s, 1) && rulesRespawnDelay(s, 1) == 9.0f && h.lastA[MSLOT_RESPAWN_DELAY] == 1);
+    int score0 = s.players_[0].score;
+    s.killPlayer(1, 0, WPN_RIFLE);
+    CHECK(h.calls[MSLOT_KILL] == 1 && h.lastA[MSLOT_KILL] == 1 && h.lastB[MSLOT_KILL] == 0 && h.lastC[MSLOT_KILL] == WPN_RIFLE);
+    CHECK(s.players_[0].score == score0 && s.players_[0].kills == 1);   // (the engine's stats; no native score)
+    CHECK(s.ms_.scoreA == 0 && s.ms_.scoreB == 0);   // (the native KOTH tick never ran)
+    s.modeHooks_ = nullptr;
+    s.stop();
+}
+
 static void testGameRules(const std::string& only) {
     struct R { const char* name; std::function<void()> run; };
     std::vector<R> all = {
@@ -1770,6 +1840,7 @@ static void testGameRules(const std::string& only) {
         {"hudclock", [] { testHudClock(TP(29280)); }},
         {"weaponpredict", [] { testWeaponPredict(TP(29286)); }},
         {"customkeep", [] { testCustomRulesKeep(); }},
+        {"modehooks", [] { testModeHooks(TP(29288)); }},
     };
     for (auto& r : all) if (only.empty() || only == r.name) r.run();
     if (only == "rate") { testRateBetweenRounds(TP(29252)); testRateUndoStepUp(TP(29254)); testRateJitter(TP(29257)); testUploadCap(TP(29258)); testSharedCongestion(TP(29259)); }   // (timing-sensitive: the suite runs it alone, with "tickrate")

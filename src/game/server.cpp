@@ -1088,7 +1088,7 @@ void Server::handleConnect(const NetAddr& from, Reader& r, int len) {
     log(name + " connected from " + from.toString() + " as #" + std::to_string(id) + (rankId.empty() ? "" : " (ranked id " + rankId + ")"));
     if (cfg_.mode == MODE_TOURNEY && !rankId.empty() && !tourney_.running) prefetchSeedRatings();
 
-    float d = rulesRespawnDelay(*this);
+    float d = rulesRespawnDelay(*this, id);
     if (d >= 0 && p.team != TEAM_SPECTATOR) p.respawnAt = time() + 0.5f;
 }
 
@@ -1435,7 +1435,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
         if (t == TEAM_SPECTATOR) moveToSpectator(id);
         else { if (p.alive) killPlayer(id, -1, 255); p.team = t; }
         message(p.name + (t == TEAM_SPECTATOR ? " is spectating" : !modeIsTeamBased(cfg_.mode) ? " joined the game" : t == TEAM_A ? " joined team A" : " joined team B"));
-        if (t != TEAM_SPECTATOR && rulesRespawnDelay(*this) >= 0) p.respawnAt = time() + 1.0f;
+        if (t != TEAM_SPECTATOR && rulesRespawnDelay(*this, id) >= 0) p.respawnAt = time() + 1.0f;
     } else if (cmd == "name") {
         if (rest.empty()) return;
         rest = uniqueName(rest, id);
@@ -1734,7 +1734,10 @@ bool Server::editBacklogged() const {
     return false;
 }
 
+void (*g_eventHook)(const Server&, const GameEvent&) = nullptr;
+
 void Server::broadcastEvent(const GameEvent& e) {
+    if (__builtin_expect(g_eventHook != nullptr, 0)) g_eventHook(*this, e);
     for (int i = 0; i < kMaxPlayers; i++)
         if (players_[i].connected) sendEvent(i, e);
 }
@@ -1885,14 +1888,7 @@ void Server::killPlayer(int victim, int killer, int weapon) {
     v.health = 0;
     v.deaths++;
     v.specTarget = killer >= 0 && killer < kMaxPlayers && killer != victim ? killer : -1;   // (the client watches the killer first, too)
-    if (killer >= 0 && killer != victim) {
-        ServerPlayer& k = players_[killer];
-        bool teamkill = modeIsTeamBased(cfg_.mode) && k.team == v.team;
-        if (teamkill) k.score--;
-        else { k.kills++; k.score += ms_.mode == MODE_HIDE ? 0 : 1; }   // (hide and seek: 1 a find, in rulesOnDeath)
-    } else if (cfg_.mode == MODE_FFA && ms_.phase == PHASE_LIVE) {
-        v.score--; // suicide
-    }
+    if (killer >= 0 && killer != victim && !(modeIsTeamBased(cfg_.mode) && players_[killer].team == v.team)) players_[killer].kills++;
     GameEvent e;
     e.type = EV_KILL;
     e.a = (uint8_t)(killer < 0 ? 255 : killer);
@@ -1903,38 +1899,19 @@ void Server::killPlayer(int victim, int killer, int weapon) {
     broadcastEvent(e);
     glog(LOG_SIMPLE, "kill killer=%d \"%s\" victim=%d \"%s\" weapon=%d", killer, killer >= 0 ? players_[killer].name.c_str() : "", victim,
          v.name.c_str(), weapon);
-    rulesOnDeath(*this, victim, killer);
-    float d = rulesRespawnDelay(*this);
+    rulesOnDeath(*this, victim, killer, weapon);   // (the bomb drops; then the mode's kill rules: scores)
+    float d = rulesRespawnDelay(*this, victim);
     v.respawnAt = d >= 0 ? time() + d : -1;
 }
 
 void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const Vec3& knock) {
     ServerPlayer& v = players_[victim];
     if (!v.alive) return;
-    bool canHurt = rulesCanDamage(*this, attacker, victim);
+    bool canHurt = rulesCanDamage(*this, attacker, victim, weapon);
     bool friendly = attacker >= 0 && attacker != victim && modeIsTeamBased(cfg_.mode) && players_[attacker].team == v.team;
-    // Race: you can only affect yourself (rocket jumps etc.), never other racers.
-    if (ms_.mode == MODE_RACE && ms_.phase != PHASE_WARMUP && attacker >= 0 && attacker != victim) return;
-    if (isItMode(ms_.mode) && attacker >= 0 && attacker != victim) {
-        // hide and seek / tag: only "it" can touch anyone, with the knife, once the round is live.
-        // Hide and seek: one stab finds (kills) a hider. Tag: the stab passes "it" on.
-        ServerPlayer& a = players_[attacker];
-        if (ms_.phase != PHASE_LIVE || !a.it || v.it || weapon != WPN_KNIFE) return;
-        if (ms_.mode == MODE_TAG) {
-            a.it = false;
-            v.it = true;
-            v.weapon = WPN_KNIFE;   // (the new tagger has the knife out; the old one holds nothing now)
-            v.locateAt = 0;
-            v.itFreezeUntil = time() + kTagFreeze;
-            a.score++;
-            message(v.name + " is it");
-            glog(LOG_SIMPLE, "tag %d -> %d", attacker, victim);
-            return;
-        }
-        v.found = true;
-        killPlayer(victim, attacker, WPN_KNIFE); // found
-        return;
-    }
+    // Race: you can only affect yourself (rocket jumps etc.); hide and seek / tag: only "it" touches anyone (the rules)
+    if (!rulesCanHit(*this, attacker, victim, weapon)) return;
+    if (isItMode(ms_.mode) && attacker >= 0 && attacker != victim) { rulesStab(*this, attacker, victim); return; }   // (a find / "it" passed on)
     Vec3 kb = cfg_.custom.active() ? knock * cfg_.custom.knockback : knock;   // (a custom mode's knockback)
     if (!friendly) {
         v.move.vel += kb;
@@ -2264,7 +2241,7 @@ void Server::grappleTargets(int id, const UserCmd& cmd, HookProbe& probe) {
         if (q.hookedBy >= 0 && q.hookedBy != id) continue;     // someone else's grapple holds them already
         if (modeIsTeamBased(ms_.mode) && q.team == p.team) continue;   // teammates: the hook goes through
         if (isItMode(ms_.mode) && q.it == p.it) continue;   // hide and seek / tag: "it" and the others only (pull, no damage)
-        if (!rulesCanDamage(*this, id, i)) continue;
+        if (!rulesCanDamage(*this, id, i, kDamageGrapple)) continue;
         if (!rewound) { vt = rewindViewMs(id, cmd.viewTick); rewound = true; }
         bool crouched;
         Vec3 pos = rewoundPos(i, vt, &crouched);
@@ -2344,7 +2321,7 @@ void Server::tickLatches() {
         Vec3 d = to - from;
         float dist = length(d);
         bool blocked = dist > 1e-3f && map_.raycastAny(from, d / dist, dist);   // (any wall: no need for the nearest)
-        if (blocked || dist > range || time() - pa.hookSince > kGrappleLatchMax || !rulesCanDamage(*this, a, pa.hookVictim)) endLatch(a);
+        if (blocked || dist > range || time() - pa.hookSince > kGrappleLatchMax || !rulesCanDamage(*this, a, pa.hookVictim, kDamageGrapple)) endLatch(a);
     }
     for (int v = 0; v < kMaxPlayers; v++) {
         ServerPlayer& pv = players_[v];
@@ -3159,7 +3136,7 @@ int Server::addBot(int team, int skill, bool balance, const std::string* brainNa
         else if (!brain) log("bot brain " + bn + ": " + err + " (playing the built-in brain)");
     }
     message(p.name + " (" + botSkillName(skill) + label + ") joined " + (waits ? "- plays the next match" : team == TEAM_B ? "team B" : modeIsTeamBased(cfg_.mode) ? "team A" : "the game"));
-    if (rulesRespawnDelay(*this) >= 0 && team != TEAM_SPECTATOR) p.respawnAt = time() + 0.5f;
+    if (rulesRespawnDelay(*this, id) >= 0 && team != TEAM_SPECTATOR) p.respawnAt = time() + 0.5f;
     return id;
 }
 
@@ -3296,7 +3273,7 @@ void Server::tickVote() {
                 q.letIn = true;
                 q.team = a <= b ? TEAM_A : TEAM_B;
                 message(q.name + (q.team == TEAM_A ? " joined team A" : " joined team B"));
-                if (rulesRespawnDelay(*this) >= 0) q.respawnAt = time() + 1.0f;
+                if (rulesRespawnDelay(*this, who) >= 0) q.respawnAt = time() + 1.0f;
             }
             return;
         }
