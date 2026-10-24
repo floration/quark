@@ -51,7 +51,7 @@ Extra (all weapons, defaults from today's constants):
 
 | field | default | what |
 |---|---|---|
-| `headDamage` | sniper 50, crossbow 75, rifle 7.5, shotgun 2.55, else 0 | damage of a hit on the head (0 = no headshots) |
+| `headDamage` | sniper 50, crossbow 75, rifle 7.5, shotgun 2.6, else 0 | damage of a hit on the head (0 = no headshots) |
 | `knock` | weapon's own knockback (shotgun 0.30 per pellet's worth, crossbow 16, laser 20 m/s per s, projectile hit 3, splash 11) | knockback strength |
 | `falloffStart`, `falloffEnd`, `falloffMin` | 0, 0, 1 | damage x 1 up to start, then linearly to x min at end (m); min 1 = no falloff |
 | `directDamage` | rocket 50, else 0 | a projectile that hits the player itself does at least this (splash weapons) |
@@ -69,11 +69,13 @@ Alt fire (only the weapon that has it):
 | `shotgun.bounces`, `shotgun.bounceDamage` | 2, 0.5 | bouncing pellets |
 | `laser.pullScale`, `laser.pullDamage` | 1.82, 0.75 | the pull beam |
 | `bubble.streamMin`, `streamMax`, `streamNear`, `streamFar`, `streamRefire`, `streamSlow`, `streamFast` | 5, 15, 5, 30, 1.8, 8.4, 24 | the stream |
-| `syringe.throwSpeed`, `throwGravity`, `throwLife`, `throwHeal`, `away` | 30, 9, 2, 30, 4 | the throw |
+| `syringe.throwHeal` | 30 | the throw's heal (its speed 30, drop 9, life 2 s and the 4 s away are fixed: `kSyringeThrow*`, `kSyringeAway`) |
 | `sticky.max`, `sticky.armTime`, `sticky.inherit` | 6, 0.35, 0.9 | stickies |
 
 Ranges (clamped like `CustomRules::fromText` clamps: out of range -> the nearest bound, nan -> default) are in the
-catalog (`exportweapons`). A field a set doesn't write keeps its default.
+catalog (`exportweapons`). A field a set doesn't write keeps its default. The page's built-in copy of the catalog
+(`web/js/catalog_data.js`, for the MOCK) is generated from `exportweapons` by `build_catalog.py`, never typed by hand;
+the page's tests fail while it differs from the game's.
 
 ## 2. The `.qweapons` grammar
 

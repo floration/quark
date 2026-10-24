@@ -87,6 +87,20 @@ const char* kindOf(int w) {
 }
 const double kPerAt[] = {0, 1, 2, 3, 5, 7.5, 10, 12.5, 15, 20, 25, 30, 35, 40, 50, 60, 70, 80, 100};
 
+// how far a projectile can hit a target on the floor it is fired from: launched from the eye (kEyeHeight) at the best
+// angle (every 0.5 degree tried), its flight cut by the ground or its life. A projectile that doesn't drop (or floats
+// up) flies speed x life. (stats.js ballisticReach is the same loop: the page's numbers are checked against these.)
+double ballisticReach(double speed, double gravity, double life) {
+    if (gravity <= 0 || speed <= 0) return speed * life;
+    double best = 0;
+    for (int i = 0; i <= 180; i++) {
+        const double a = i * 0.5 * 3.14159265358979 / 180, vx = speed * std::cos(a), vy = speed * std::sin(a);
+        const double tGround = (vy + std::sqrt(vy * vy + 2 * gravity * kEyeHeight)) / gravity;
+        best = std::max(best, vx * std::min(life, tGround));
+    }
+    return best;
+}
+
 Json row(const RowDef& R, const WeaponValues& V, const WeaponSet* set, double H, double D) {
     const int w = R.w;
     const bool alt = std::string(R.mode) == "alt";
@@ -111,6 +125,7 @@ Json row(const RowDef& R, const WeaponValues& V, const WeaponSet* set, double H,
         if (!alt) { heal = dmg; notes.push("heals you " + fmt(dmg) + " hp a use (" + fmt(dmg / refire) + " hp/s)"); }
         else {
             heal = A.syringeHeal; refire = std::max<double>(refire, A.syringeAway); speed = A.syringeThrowSpeed; gravity = A.syringeThrowGravity; life = A.syringeThrowLife;
+            reach = ballisticReach(speed, gravity, life);
             notes.push("a teammate it hits gets " + fmt(heal) + " hp and every cooldown reset; away " + fmt(A.syringeAway) + " s");
             kind = "projectile";
         }
@@ -133,7 +148,8 @@ Json row(const RowDef& R, const WeaponValues& V, const WeaponSet* set, double H,
         if (w == WPN_KNIFE) { speed = A.knifeThrowSpeed; gravity = A.knifeThrowGravity; life = A.knifeThrowLife; refire = std::max<double>(refire, A.knifeAway); kind = "projectile";
             notes.push("one throw, then the knife is away " + fmt(A.knifeAway) + " s"); }
         if (w == WPN_STICKY) { extraTtk = A.stickyArmTime; notes.push("arms in " + fmt(extraTtk) + " s; " + std::to_string(A.stickyMax) + " out at once"); }
-        reach = speed * life;
+        reach = ballisticReach(speed, gravity, life);
+        if (gravity > 0 && reach < speed * life - 1e-6) notes.push("reaches " + fmt(reach) + " m on flat ground (aimed up; " + fmt(speed * life) + " m straight before it expires)");
         double base = dmg, baseHead = head;
         if (splash > 0) {
             if (variant == "splash") { base = dmg; baseHead = dmg; headshots = false; notes.push("the blast's centre; 0 at " + fmt(splash) + " m"); }
@@ -176,6 +192,10 @@ Json row(const RowDef& R, const WeaponValues& V, const WeaponSet* set, double H,
     r.set("body", num(body)); r.set("head", num(hd)); r.set("burst", num(body));
     r.set("stkBody", num(sb)); r.set("stkHead", num(sh)); r.set("ttkBody", num(ttk(sb))); r.set("ttkHead", num(ttk(sh)));
     r.set("dpsBody", num(body / refire)); r.set("dpsHead", num(hd / refire));
+    // the Values table's extras (stats.js): the knock field, one shot through a wallbang wall, your own blast's centre
+    r.set("knock", num(ex.knock));
+    r.set("wallbang", kind == "hitscan" || kind == "beam" ? num(per(D, false) * ex.wallbang) : Json());
+    r.set("selfDmg", splashOut > 0 ? num(dmg * ex.selfDamage) : Json());
     for (double d : {10.0, 20.0, 40.0}) {
         std::string k = std::to_string((int)d);
         Json t = kind == "projectile" && speed > 0 ? (reach > 0 && d > reach ? Json() : num(d / speed)) : kind == "support" ? Json() : Json(0.0);

@@ -7,7 +7,7 @@ import { api } from "./api.js";
 import { createHelper } from "./helper.js";
 import { WEAPONS } from "./catalog.js";
 import { parse, print } from "./dsl.js";
-import { setCatalog, catalog, fieldValues, labelsOf, changedFields, withField, withLabel, carryIds, numberIds, symbols, slotKey } from "./ast.js";
+import { setCatalog, catalog, fieldValues, labelsOf, changedFields, withField, withLabel, carryIds, numberIds, symbols, slotKey, sameVal } from "./ast.js";
 import { computeStats, fmtNum } from "./stats.js";
 import { $, fin, fmtT } from "./util.js";
 import { WeaponView } from "./weapon.js";
@@ -82,6 +82,19 @@ class App {
         });
         window.addEventListener("beforeunload", () => this._saveDraftNow());
         this.ready = true;
+        this._selfCheck();
+    }
+    // the page's numbers against the game's wpnstats, once per load (helper.js selfCheck): a mismatch is a warning on
+    // the badge, never a block
+    async _selfCheck() {
+        const r = await this.helper.selfCheck(this.cat.defaultText, this.stdValues, this.stdAst).catch(() => null);
+        const b = $("helperBadge");
+        if (!r) return;
+        if (!r.diffs.length) { b.title += "\nThe page's numbers (stats.js) match the game's wpnstats on the standard set."; return; }
+        b.textContent += " ≠"; b.classList.add("drift");
+        b.title += `\nThe page's numbers differ from the game's wpnstats in ${r.diffs.length} place${r.diffs.length > 1 ? "s" : ""} (stats.js needs updating to the game):\n` + r.diffs.slice(0, 12).join("\n");
+        console.warn("weapons editor: stats.js differs from wpnstats:", r.diffs);
+        this.toast(`the page's numbers differ from the game's in ${r.diffs.length} place${r.diffs.length > 1 ? "s" : ""}: see the header badge`, 6000);
     }
 
     // ---------------------------------------------------------------- the set
@@ -131,6 +144,26 @@ class App {
         if (!this.parseOk) return;
         const keys = new Set(this.cat.fieldsOf(w).map((f) => f.key));
         this.brainEdited({ ...this.ast, decls: this.ast.decls.filter((d) => !(d.kind === "param" && keys.has(d.name)) && !(d.kind === "label" && d.weapon === w)) }, "reset");
+    }
+    // a variant: weapon `from`'s values (this set's, the comparison set's or the standard ones) onto weapon `to`, for
+    // every field both have that a set can write (the alt fire's own fields and the kind stay `to`'s). The game has 11
+    // weapon slots and no way to add a 12th without changing it, so a variant is one of them retuned.
+    copyWeapon(from, to, src = "set") {
+        if (!this.parseOk) { this.toast("the code has an error: fix it on the Code tab first", 3500); return; }
+        const vals = src === "cmp" ? this.cmp.values : src === "std" ? this.stdValues : this.values;
+        const mine = new Map(this.cat.fieldsOf(to).filter((f) => !f.readOnly && !f.alt).map((f) => [f.field, f]));
+        let ast = this.ast, n = 0;
+        for (const f of this.cat.fieldsOf(from)) {
+            const g = mine.get(f.field);
+            if (!g || f.readOnly || f.alt || !vals.has(f.key)) continue;
+            const v = vals.get(f.key);
+            if (sameVal(v, this.values.get(g.key), g.type)) continue;
+            ast = withField(ast, g.key, v); n++;
+        }
+        if (!n) { this.toast("nothing to copy: the values are the same", 2500); return; }
+        this.brainEdited(ast, "copy");
+        const fromT = (src === "set" && this.titles.get(from)) || this.cat.byId.get(from).title;
+        this.toast(`${n} value${n > 1 ? "s" : ""} of ${fromT}${src === "cmp" ? ` ("${this.cmp.name}")` : src === "std" ? " (standard)" : ""} copied to ${this.cat.byId.get(to).title}; it stays a ${this.cat.byId.get(to).kind} weapon with its own alt fire`, 5000);
     }
     _derive() {
         this.values = fieldValues(this.ast);
@@ -230,7 +263,13 @@ class App {
         this.setText(this._newText(n), null, true);
         $("setSel").value = "";
     }
-    async save(asName) {
+    // one save at a time: a double click (or Ctrl+S held) waits for the save in flight instead of asking twice
+    save(asName) {
+        if (this._saving) return this._saving;
+        this._saving = this._save(asName).finally(() => { this._saving = null; });
+        return this._saving;
+    }
+    async _save(asName) {
         let name = asName || $("setName").value.trim() || this.set.name;
         if (!SET_RE.test(name)) { this.toast("a set's name: letters, digits, space, _ and -, 36 at most, starting with a letter or digit", 4500); return false; }
         // the header carries the set's name
@@ -240,7 +279,17 @@ class App {
             await api.saveSet(name, this.text, expect);
         } catch (e) {
             if (e.status === 409) {
-                if (!confirm(`custom_weapons/${name}.qweapons changed on disk since it was opened (another editor, or by hand). Overwrite it?`)) return false;
+                if (!confirm(`custom_weapons/${name}.qweapons changed on disk since it was opened (another editor, or by hand).\n\nOK: overwrite it with this set (the disk version is kept as .bak).\nCancel: don't save (then choose whether to open the disk version).`)) {
+                    const disk = e.data && typeof e.data.text === "string" ? e.data.text : null;
+                    if (disk !== null && confirm(`Open the version on disk instead? Your unsaved changes here are lost (Download keeps a copy).`)) {
+                        this.set = { name, saved: name, baseText: disk };
+                        this.ast = null;
+                        this.setText(disk, null, true);
+                        this._saveDraftNow();
+                        await this.refreshSets();
+                    }
+                    return false;
+                }
                 await api.saveSet(name, this.text, undefined, true);
             } else { this.toast("save failed: " + e.message, 4000); return false; }
         }
@@ -276,12 +325,13 @@ class App {
         $("setOpenFile").onclick = () => $("fileIn").click();
         $("fileIn").onchange = async () => {
             const f = $("fileIn").files[0]; if (!f) return;
+            $("fileIn").value = "";
+            if (this.dirty && !confirm(`"${this.set.name}" has unsaved changes. Open ${f.name} anyway (the changes are lost)?`)) return;
             const text = await f.text();
             const name = f.name.replace(/\.(qweapons|txt)$/i, "").replace(/[^A-Za-z0-9 _-]/g, "").slice(0, 36) || "imported";
             this.set = { name, saved: null, baseText: null };
             this.ast = null;
             this.setText(text);
-            $("fileIn").value = "";
         };
         $("setDownload").onclick = () => {
             const a = document.createElement("a");
@@ -312,7 +362,12 @@ class App {
     }
     async playInGame() {
         if (this.allProblems().some((p) => p.severity === "error")) { this.toast("the set has errors: the game would play the standard weapons. Fix them first (Code tab).", 5000); return; }
-        if (!this.set.saved || this.dirty || this.set.saved !== this.set.name) { if (!(await this.save())) return; }
+        if (!this.set.saved || this.dirty || this.set.saved !== this.set.name) {
+            // the game reads the set from its file: say so before writing it (an existing one is kept as .bak)
+            const exists = (this.sets || []).some((s) => s.name === this.set.name);
+            if (!confirm(`Play in game saves the set first: ${exists ? "overwrite" : "write"} custom_weapons/${this.set.name}.qweapons${exists ? " (the old file is kept as .bak)" : ""}, then write the custom mode. Go on?`)) return;
+            if (!(await this.save())) return;
+        }
         try {
             const r = await api.playMode(this.set.saved, $("baseMode").value);
             $("playInfo").innerHTML = `${r.created ? "wrote" : "updated"} <code>custom_modes/${r.name}.qmode</code> (weaponset=${this.set.saved}). In the game: Host &gt; Custom modes &gt; <b>${r.name}</b>.`;

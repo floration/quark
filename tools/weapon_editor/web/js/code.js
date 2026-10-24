@@ -76,6 +76,7 @@ export class CodeView {
         const app = this.app, box = $("codeSide");
         if (this._editingSide) return;
         const t = this.trial, cat = slotCat(t.slot);
+        this._dmgIn = null;
         const S = symbols(app.ast);
         box.innerHTML = "";
         box.append(el("h3", null, "Try a hit"));
@@ -85,16 +86,21 @@ export class CodeView {
         top.querySelector("#trSlot").value = t.slot; top.querySelector("#trW").value = t.weapon;
         top.querySelector("#trSlot").onchange = (e) => { t.slot = e.target.value; this._side(); };
         top.querySelector("#trW").onchange = (e) => { t.weapon = e.target.value; this._side(); };
-        const row = app.stats.rows.find((r) => r.weapon === t.weapon && r.mode === "primary");
-        const defs = { damage: row ? +row.body.toFixed(3) : 10, dist: 10, splash: 1, victimHealth: app.health, shooterHealth: app.health, victimSpeed: 0, shooterSpeed: 0, time: 30, streak: 1, kills: 1 };
+        const defs = { damage: this._gameDamage(), dist: 10, splash: 1, victimHealth: app.health, shooterHealth: app.health, victimSpeed: 0, shooterSpeed: 0, time: 30, streak: 1, kills: 1 };
         const sens = el("div", "sens");
         const sensors = cat ? cat.sensors.filter((s) => s.name !== "weapon") : [];
         const fields = t.slot === "hit" ? [{ name: "damage", type: "f32", doc: "the damage the game worked out (the damage output starts here)" }, ...sensors] : sensors;
         for (const s of fields) {
             const lab = el("span", "small", esc(s.name)); lab.title = s.doc || "";
             let inp;
-            if (s.type === "bool") { inp = el("input"); inp.type = "checkbox"; inp.checked = !!(t.s[s.name] ?? false); inp.onchange = () => { t.s[s.name] = inp.checked; this._run(); }; }
-            else { inp = el("input"); inp.type = "number"; inp.step = "any"; inp.value = t.s[s.name] ?? defs[s.name] ?? 0; inp.oninput = () => { t.s[s.name] = +inp.value; this._run(); }; }
+            // damage starts as the game's for the weapon, head / alt and distance (falloff) and follows them until typed
+            const follow = () => { if (t.s.damage === undefined && this._dmgIn) { defs.damage = this._gameDamage(); this._dmgIn.value = defs.damage; } };
+            if (s.type === "bool") { inp = el("input"); inp.type = "checkbox"; inp.checked = !!(t.s[s.name] ?? false); inp.onchange = () => { t.s[s.name] = inp.checked; follow(); this._run(); }; }
+            else {
+                inp = el("input"); inp.type = "number"; inp.step = "any"; inp.value = t.s[s.name] ?? defs[s.name] ?? 0;
+                inp.oninput = () => { if (s.name === "damage" && inp.value.trim() === "") delete t.s.damage; else t.s[s.name] = +inp.value; if (s.name === "dist") follow(); this._run(); };
+                if (s.name === "damage") { this._dmgIn = inp; inp.title = "the game's damage for this hit (weapon, head, alt, distance); type to try another, empty it to follow again"; }
+            }
             sens.append(lab, inp);
         }
         box.append(sens);
@@ -116,6 +122,14 @@ export class CodeView {
         h += `<div style="margin-top:6px"><span>${S.slots.size} slot${S.slots.size === 1 ? "" : "s"}, ${S.curves.size} curve${S.curves.size === 1 ? "" : "s"}, ${S.params.size} param${S.params.size === 1 ? "" : "s"} in this set</span></div>`;
         ref.innerHTML = h;
         box.append(ref);
+    }
+    // the damage the game works out for the trial's hit: the weapon's row (alt or primary, a direct hit for blast
+    // weapons) at the trial's distance, head or body
+    _gameDamage() {
+        const t = this.trial, s = t.s, rows = this.app.stats.rows.filter((r) => r.weapon === t.weapon && r.variant !== "splash");
+        const row = rows.find((r) => r.mode === (s.alt ? "alt" : "primary")) || rows[0];
+        if (!row || row.support) return 10;
+        return +row.per(Number.isFinite(s.dist) ? s.dist : 10, !!s.head).toFixed(3);
     }
     _run() {
         const app = this.app, t = this.trial;

@@ -1,6 +1,6 @@
 // Headless checks for the weapons editor (node 18+, Playwright from the environment; never `playwright install`).
 //
-//   node tools/weapon_editor/web/test/run.mjs [--shots DIR] [--maptool PATH] [--quark-tests PATH] [--mock-only] [--no-browser]
+//   node tools/weapon_editor/web/test/run.mjs [--shots DIR] [--port N] [--maptool PATH] [--quark-tests PATH] [--mock-only] [--no-browser]
 //
 // 1. node checks: .qweapons text round-trips (the built-in standard set, the game's default text from quark_tests
 //    exportweapons when there is one, a set with labels / curves / slots), the page's checks, Blocks and Graph give
@@ -94,6 +94,15 @@ async function nodeChecks() {
         const gc = normalizeCatalog(gameCat);
         setCatalog(gc);
         tryOk("game catalog: " + gameCat.fields.length + " fields, " + gameCat.weapons.length + " weapons", () => gc.fields.length > 100 && gc.weapons.length >= 11);
+        tryOk("the built-in catalog (catalog_data.js) is the game's: every field, range, default; weapons; default text", () => {
+            const bad = [];
+            const gf = new Map(gameCat.fields.map((f) => [f.key, f]));
+            if (cat.fields.length !== gameCat.fields.length) bad.push(`fields: page ${cat.fields.length}, game ${gameCat.fields.length}`);
+            for (const f of cat.fields) { const g = gf.get(f.key); if (!g) { bad.push("no field " + f.key + " in the game"); continue; } for (const k of ["type", "min", "max", "default"]) if (g[k] !== f[k]) bad.push(`${f.key}.${k}: page ${f[k]}, game ${g[k]}`); }
+            if (cat.defaultText !== gameCat.defaultText) bad.push("defaultText differs");
+            if (cat.weapons.map((w) => w.id + ":" + w.kind).join(" ") !== gameCat.weapons.map((w) => w.name + ":" + w.kind).join(" ")) bad.push("weapons differ");
+            return bad.length === 0 || bad.slice(0, 6).join("; ") + " (run python3 tools/weapon_editor/build_catalog.py)";
+        });
         tryOk("the built-in catalog's slots match the game's", () => {
             const bad = [];
             for (const gs of gameCat.slots) { const bs = cat.slots.find((x) => x.name === gs.name); if (!bs) { bad.push("no slot " + gs.name); continue; }
@@ -129,11 +138,29 @@ async function nodeChecks() {
         for (const shared of [false, true]) { const back = wholeGraphToBrain(ast, wholeGraph(ast, { shared })); if (print(back) !== DEMO) return "shared " + shared; }
     });
 
+    console.log("starting logic (Blocks / Graph + Add)");
+    const { addDecl } = await import(JS + "newdecl.js");
+    {
+        let set = parse('version 1\nweapons "t"\n');
+        const step = (spec) => { const r = addDecl(set, spec); if (r.error) throw new Error(r.error); set = r.set; return r.key; };
+        tryOk("+ slot hit, slot kill rocket, rifle falloff, an expression curve, a param: a set that checks clean", () => {
+            step({ kind: "slot", name: "hit" }); step({ kind: "slot", name: "kill", weapon: "rocket" }); step({ kind: "curve", name: "rifle.falloff" });
+            step({ kind: "curve", name: "ramp", form: "expr" }); step({ kind: "param", name: "bonus", type: "f32", value: "1.5" });
+            const t = print(set), p = validate(parse(t)).problems;
+            return (p.length === 0 && /param bonus f32 = 1.5\ncurve rifle.falloff[^\n]*\ncurve ramp\(x f32\) = x\nslot hit:\n  pass\nslot kill rocket:\n  pass/.test(t)) || JSON.stringify({ t, p: p.slice(0, 2) });
+        });
+        tryOk("a slot or name that's already there, a keyword or a sensor name is refused", () => {
+            const bad = [{ kind: "slot", name: "hit" }, { kind: "param", name: "bonus" }, { kind: "param", name: "slot" }, { kind: "param", name: "dist" }, { kind: "curve", name: "2x" }, { kind: "curve", name: "rifle.falloff" }];
+            const ok = bad.filter((b) => !addDecl(set, b).error);
+            return ok.length === 0 || "accepted " + JSON.stringify(ok);
+        });
+    }
+
     console.log("numbers (MOCK, standard set, 100 hp)");
     const sset = parse(STD), vals = fieldValues(sset);
     const rows = computeStats(vals, { set: sset, health: 100 }).rows;
     const row = (w, m = "primary") => rows.find((r) => r.weapon === w && r.mode === m);
-    const want = [["rifle", 21, 14, 3.03, 1.97], ["sniper", 3, 2, 3, 1.5], ["shotgun", 3, 2, 1.5, 0.75], ["crossbow", 2, 2, 2, 2]];
+    const want = [["rifle", 20, 14, 2.88, 1.97], ["sniper", 3, 2, 3, 1.5], ["shotgun", 3, 2, 1.5, 0.75], ["crossbow", 2, 2, 2, 2]];
     for (const [w, sb, sh, tb, th] of want) tryOk(`${w}: ${sb}/${sh} shots, ${tb}/${th} s`, () => { const r = row(w); return (r.stkBody === sb && r.stkHead === sh && near(r.ttkBody, tb) && near(r.ttkHead, th)) || `${r.stkBody}/${r.stkHead} ${r.ttkBody}/${r.ttkHead}`; });
     tryOk("rocket direct hit: 2 shots, 1.2 s", () => { const r = rows.find((r) => r.weapon === "rocket" && /direct/.test(r.label) && !/lob/.test(r.label)); return (r && r.stkBody === 2 && near(r.ttkBody, 1.2)) || JSON.stringify(r && [r.stkBody, r.ttkBody]); });
     tryOk("laser: 40 hp/s, 2.5 s", () => { const r = row("laser"); return (near(r.dpsBody, 40, 0.05) && near(r.ttkBody, 2.5)) || `${r.dpsBody} ${r.ttkBody}`; });
@@ -162,7 +189,7 @@ const tmp = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), "qwe-tes
 const dataDir = path.join(tmp, "data");
 fs.mkdirSync(path.join(dataDir, "custom_modes"), { recursive: true });
 fs.writeFileSync(path.join(dataDir, "custom_modes", "wpn-keep.qmode"), "custommode=wpn-keep\r\nmode=duel\r\nhealth=150\r\nweaponset=old\r\n# a comment\r\nlogic\r\nwhen kill: score +1\r\n");
-const port = 8800 + Math.floor(Math.random() * 150);
+const port = +opt("--port", 0) || 8800 + Math.floor(Math.random() * 150);
 const py = process.platform === "win32" ? "py" : "python3";
 const srvArgs = [...(process.platform === "win32" ? ["-3"] : []), path.join(TOOL, "serve.py"), "--port", String(port), "--no-open", "--data-dir", dataDir,
     "--maptool", maptool || path.join(tmp, "no_maptool"), "--quark-tests", quarkTests || path.join(tmp, "no_quark_tests")];
@@ -222,6 +249,8 @@ async function serverChecks({ STD, DEMO }) {
     const hp = await post("/api/helper", { args: ["simcheck"], request: {} });
     ok(maptool ? hp.status === 200 && typeof hp.json.code === "number" : hp.status === 501, "/api/helper", maptool ? "code " + (hp.json && hp.json.code) : "501 without quark_maptool");
     ok((await post("/api/run", { args: ["rm", "-rf"] })).status === 400, "/api/run only runs the streaming commands");
+    const bad = await post("/api/helper", { args: ["rm"], request: {} });
+    ok(maptool ? bad.status === 400 && /not a helper command/.test(bad.json.error) : bad.status === 501 && /not found/.test(bad.json.error), "/api/helper names why it refused", bad.json && bad.json.error);
 }
 
 async function browserChecks() {
@@ -252,6 +281,20 @@ async function browserChecks() {
                 await p.waitForTimeout(500);
                 const f = path.join(dataDir, "custom_weapons", "browsertest.qweapons");
                 ok(fs.existsSync(f) && fs.readFileSync(f, "utf8").includes("param rocket.refire f32 = 0.6"), "Save writes custom_weapons/<name>.qweapons");
+                // Blocks: dragging a slot's only statement to the palette leaves a pass (an empty slot doesn't parse)
+                await p.evaluate(() => { const A = window.weaponsApp; A.setText('version 1\nweapons "bt"\nslot kill:\n  heal = 10\n', "code"); });
+                await p.click('#tabs button[data-page="blocks"]'); await p.waitForTimeout(300);
+                const trashed = await p.evaluate(() => {
+                    const B = window.weaponsApp.blocks, el = document.querySelector("#vBlocks .bk-stack .bk-stmt");
+                    B._drag = { active: true, ghost: { remove() {} }, el, target: { kind: "trash" }, from: el._src, block: el._src.block };
+                    B._dragEnd({});
+                    return window.weaponsApp.text;
+                });
+                ok(/slot kill:\n  pass\n/.test(trashed), "Blocks: trashing a slot's only statement leaves a pass", JSON.stringify(trashed));
+                // Copy values from another weapon (a variant)
+                await p.evaluate(() => { const A = window.weaponsApp; A.setText('version 1\nweapons "cv"\n', "code"); A.copyWeapon("sniper", "rifle", "std"); });
+                const cv = await p.evaluate(() => [window.weaponsApp.values.get("rifle.damage"), window.weaponsApp.values.get("rifle.refire"), window.weaponsApp.values.get("rifle.scopedRefire")]);
+                ok(cv[0] === 40 && Math.abs(cv[1] - 1.5) < 1e-6 && Math.abs(cv[2] - 1.1111112) < 1e-6, "Copy values: the sniper's numbers on the rifle, its alt fire field kept", JSON.stringify(cv));
             } else {
                 fs.mkdirSync(path.join(dataDir, "custom_weapons"), { recursive: true });
                 const demoText = fs.readFileSync(path.join(dataDir, "custom_weapons", "demo.qweapons.bak"), "utf8");
