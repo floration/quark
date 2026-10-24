@@ -19,7 +19,7 @@ What every map gets, whatever its mode (checked by `quark_tests`):
 - **Nothing out of bounds**: from the first spawn, with every move a good player has (bunny-hops, dashes, the grapple, measured with the game's movement code), no floor outside the playable floor's footprint is reachable (`quark_tests bounds`; `OOB_TRACE=<map>` lists what is).
 - **One mode and a setting**: a `for <mode>` line the map offers, and a `setting` line.
 
-`quark_tests maps` (or `group maps`) runs them all but the out-of-bounds check, which is `quark_tests mapbounds` (or `bounds`). **Human-made maps** (a `handmade` line, which the editor writes on every save; a file `tools/make_maps.py` didn't write; or an override in `assets/overrides/maps/`) run every check, but what they miss is printed as `HUMAN-MADE` and doesn't fail the run. `LADDER_TRACE=<map>` (with `LADDER_AT=<x>`) and `STAIRS_TRACE=<map>` trace a climb.
+`quark_tests maps` (or `group maps`) runs them all but the out-of-bounds check, which is `quark_tests bounds` (the full suite runs it as two groups, `mapbounds` and `mapbounds2`, every other map each). **Human-made maps** (a `handmade` line, which the editor writes on every save; a file `tools/make_maps.py` didn't write; or an override in `assets/overrides/maps/`) run every check, but what they miss is printed as `HUMAN-MADE` and doesn't fail the run. `LADDER_TRACE=<map>` (with `LADDER_AT=<x>`) and `STAIRS_TRACE=<map>` trace a climb.
 
 ---
 

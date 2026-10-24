@@ -3990,7 +3990,7 @@ static void testBotAim(uint16_t& port) {
 // scoped rifle fires at half rate.
 // Every ladder on every map gets you to the top: stand at its foot, hold forward (into the wall) and you
 // end up standing on whatever it leads to.
-int outOfBoundsTests();              // tests/mapbounds.cpp (returns the failures)
+int outOfBoundsTests(int part = 0, int parts = 1);   // tests/mapbounds.cpp (returns the failures)
 int brainTests(uint16_t port);     // tests/brain_tests.cpp (returns the failure count)
 int brainTool(const std::string& cmd, const char* arg); // tests/brain_tests.cpp: exportbrain / checkbrain / brainast / printbrain
 int brainBench(uint16_t port);   // tests/brain_tests.cpp: native vs interpreted bot think cost
@@ -8012,36 +8012,39 @@ int main(int argc, char** argv) {
     // process, several at once (output kept in order); a few timing-sensitive ones run alone afterwards.
     // "quark_tests serial" runs everything in this process, one after another, as before.
     struct T { const char* name; std::function<void()> run; };
-    std::vector<T> par = {   // (longest first: they set the wall time. Real seconds on an idle 4-core box: tourney ~25,
-                             //  duel / weapons ~24, mapbounds ~23, rules / rules2 / governor / sessions / ranked ~20 ...
-                             //  bots ~9, botaim and botfalls ~1: the manual clock)
-        {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
-        {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); testFeelFixes(); testTapBuffer(); testWeaponSets(TP(28559)); }},
-        {"mapbounds", [] { g_fail += outOfBoundsTests(); }},   // (nothing reachable out of bounds: tests/mapbounds.cpp)
-        {"rules2", [] { testGameRules("", 2); }},
+    std::vector<T> par = {   // (longest first: they set the wall time. Real seconds on an idle 4-core box, 12 at a time:
+                             //  rules / governor ~21, rules2 ~18, weapons ~16, mapbounds / mapbounds2 / maps ~12-14,
+                             //  server / modes ~10, ... duel ~3, tourney ~1: the countdowns skipped, botaim ~1: the
+                             //  manual clock)
         {"rules", [] { testGameRules("", 1); }},
         // (its own governor dir and ports; the load is the players' reported loss, stalls left out: beside the others.
         //  testGovernorPolicy and testRankedNotRated run in "server")
         {"governor", [] { testGovernorTwoServers(TP(28714)); }},
-        {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
-        {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
-        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); }},
-        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); testNameColor(TP(28599)); }},
-        {"modes", [] { testCustomMode(TP(28570)); testMoveExprNetwork(TP(28576)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
-        {"server", [] { serverTests(); testGovernorPolicy(); testRankedNotRated(TP(28632)); }},
-        {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
+        {"rules2", [] { testGameRules("", 2); }},
+        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); testFeelFixes(); testTapBuffer(); testWeaponSets(TP(28559)); }},
+        // (nothing reachable out of bounds, tests/mapbounds.cpp: every other map each; `quark_tests bounds` runs them all)
+        {"mapbounds2", [] { g_fail += outOfBoundsTests(1, 2); }},
         {"maps", [] { testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders(); }},
-        {"bots", [] { uint16_t p = TP(28900); testBots(p); }},
+        {"mapbounds", [] { g_fail += outOfBoundsTests(0, 2); }},
+        {"server", [] { serverTests(); testGovernorPolicy(); testRankedNotRated(TP(28632)); }},
+        {"modes", [] { testCustomMode(TP(28570)); testMoveExprNetwork(TP(28576)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
+        {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); testNameColor(TP(28599)); }},
+        {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testDemoUpgrade(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testBuiltInMapEditSession(TP(28606)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
+        {"bots", [] { uint16_t p = TP(28900); testBots(p); }},
+        {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); }},
+        {"ranked2", [] { testRankedLeaver(TP(28636)); testRankedLeaverPaths(TP(28639)); testRankedRelay(TP(28640)); testReconnectGrace(TP(28637)); testTourneySeeding(TP(28638)); }},
         {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); testRefillPrediction(TP(28586)); testHookPrediction(TP(28588)); }},
-        {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
-        {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotNavBlockers(TP(29030)); testBotAim(p); testHostedBotsThreadExit(TP(29010)); testBotHurtTurn(TP(29011)); }},
-        {"botfalls", [] { testBotFalls(TP(29060)); }},
+        {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
+        {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"modelogic", [] { g_fail += modeTests(); }},
         {"modelockstep", [] { g_fail += modeLockstepTests(); }},
         {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testMoveExpr(); testMoveExprCallers(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
+        {"botfalls", [] { testBotFalls(TP(29060)); }},
+        {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
+        {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotNavBlockers(TP(29030)); testBotAim(p); testHostedBotsThreadExit(TP(29010)); testBotHurtTurn(TP(29011)); }},
         {"assets", [] { g_fail += assetTests(); }},
         {"resetmaps", [] { testResetMaps(); }},   // (each forked group has its own user data dir: these write only there)
         {"userdata", [] { testUserData(); }},
@@ -8144,9 +8147,9 @@ int main(int argc, char** argv) {
                 if (next < list.size()) start(next++);
             }
         };
-        // 3 per core: the groups mostly wait on real-time play (the whole run uses ~75 CPU-seconds), so with one per
-        // core the cores sat ~70% idle. 4 cores: 4 at a time 153 s, 8 at a time ~114, 12 ~102-117 (then tourney's 25 s,
-        // the longest group, bounds it), each group taking as long as with 4.
+        // 3 per core: the groups mostly wait on real-time play (the whole run uses ~65 CPU-seconds), so with one per
+        // core the cores sat ~70% idle. 4 cores: 4 at a time 153 s, 8 at a time ~114, 12 ~102-117 (then the longest
+        // group bounds it: tourney's 25 s then, rules' / governor's ~21 s now), each group taking as long as with 4.
         forked(par, 3 * std::max(1u, std::thread::hardware_concurrency()));
         // the timing-sensitive ones, one at a time on the idle machine (both at once saved ~5 s of ~150 and failed
         // netcode's clock checks 3 times in 10 full runs, against 2 in 10 one at a time)

@@ -177,7 +177,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 build/quark_tests                 # everything (forks one process per group, 3 per core at a time; tickrate and netcode after them)
 build/quark_tests <group>         # one group: bots, maps, movement, modes, hidden, race, votes, edit, ranked,
-                                  # ranked2, rules, rules2, mapbounds, assets, server, netcode, tickrate, ...
+                                  # ranked2, rules, rules2, mapbounds, mapbounds2, assets, server, netcode, tickrate, ...
 build/quark_tests bounds          # out-of-bounds reach check (OOB_TRACE=<map> lists escape spots)
 ```
 - Linux needs the X11/GL dev packages listed in the README; python3 is needed at build time.

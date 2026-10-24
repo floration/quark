@@ -382,12 +382,14 @@ bool isHumanMadeMap(const std::string& name, const Map& m);   // tests.cpp
 
 // Every map (but the zz_ ones other tests write): with every move a good player has, from the first spawn, no floor
 // outside the playable floor's footprint (the floor you can walk to from a spawn) is reachable. Returns the failures;
-// a human-made map's are printed and reported, not counted.
-int outOfBoundsTests() {
+// a human-made map's are printed and reported, not counted. part / parts: every parts-th map from the part-th (the
+// suite runs it as two groups, ~12 s of CPU each: one was the longest of all the groups).
+int outOfBoundsTests(int part, int parts) {
     printf("out of bounds: nothing outside the playable floor reachable with every move\n");
-    int fails = 0;
+    int fails = 0, index = -1;
     for (const std::string& name : listMaps()) {
         if (name.rfind("zz_", 0) == 0) continue;
+        if (++index % parts != part) continue;
         auto t0 = std::chrono::steady_clock::now();
         Map m;
         if (!m.load(name)) continue;   // (testAllMaps fails a map that doesn't load)
