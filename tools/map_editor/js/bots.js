@@ -34,18 +34,22 @@ export class Bots {
   request() {
     const o = this.opts;
     const req = { mode: o.mode, bots: o.bots, seconds: o.seconds, skill: o.skill };
-    if (o.simSpeed) req.speed = o.simSpeed;
+    req.speed = o.simSpeed || 0;   // (0: as fast as it goes; a live run left without it would be real time)
     if (o.useStarts && (this.doc.sidecar.botStarts || []).length) req.placed = this.doc.sidecar.botStarts.map(b => ({ pos: b.pos, yaw: b.yaw, team: b.team || "any" }));
     return req;
   }
-  saveOpts() { this.doc.sidecar.bots = { ...this.opts }; }
+  // the options are kept in the sidecar: a change marks the map unsaved (no undo step: they are settings, not the map)
+  saveOpts() {
+    const d = this.doc, next = { ...this.opts };
+    if (JSON.stringify(d.sidecar.bots) === JSON.stringify(next)) return;
+    d.sidecar.bots = next; d.seq++; d.emit("dirty");
+  }
   newRun(meta) {
     return { meta, rate: meta.rate || 10, bots: (meta.bots || []).map((b, j) => ({ ...b, id: b.id ?? j, color: botColor(b.team, b.id ?? j) })), frames: [], events: [], done: false, result: null, seconds: meta.seconds || this.opts.seconds };
   }
   async start(liveMode) {
     if (!this.api.hasTool) { banner("quark_maptool isn't there: build it and rebuild the editor", true); return; }
     this.stop();
-    this.saveOpts();
     let text;
     try { text = (await this.api.tool("serialize", this.app.mapForSave())).text; } catch (e) { banner("bots: " + e.message, true); return; }
     const req = { text, name: this.doc.name || "untitled", ...this.request() };
@@ -77,7 +81,7 @@ export class Bots {
     else if (m.type === "error") banner("bots: " + m.error, true, 0);
     this.dockDirty = true;
   }
-  // the non-stream answer: {rate, bots:[{name, team, trace:[[t,x,y,z,yaw,state]...]}], events, players, score}
+  // the non-stream answer: {rate, bots:[{name, team, trace:[[t,x,y,z,yaw,state]...]}], events, result: {score, players, ...}}
   fromTraces(r) {
     const run = this.newRun({ rate: r.rate || 10, bots: (r.bots || []).map((b, j) => ({ id: b.id ?? j, name: b.name, team: b.team, skill: b.skill })), seconds: this.opts.seconds });
     const times = new Map();
@@ -90,7 +94,7 @@ export class Bots {
     });
     run.frames = [...times.values()].sort((a, b) => a.t - b.t);
     run.events = r.events || [];
-    run.done = true; run.result = { score: r.score, players: r.players };
+    run.done = true; run.result = r.result || { score: r.score, players: r.players };
     if (run.frames.length) run.seconds = run.frames[run.frames.length - 1].t;
     return run;
   }
@@ -221,14 +225,15 @@ export class Bots {
       el("label", {}, "seconds"), numInput(o.seconds, v => { o.seconds = Math.max(1, Math.min(1800, v)); this.saveOpts(); }, { step: 10 }),
       el("label", {}, "skill"), select(SKILLS, o.skill, v => { o.skill = v; this.saveOpts(); }),
       el("label", { title: "live runs: how fast the match runs (0 = as fast as it can)" }, "live speed"), select([[0, "as fast as it can"], [1, "real time"], [2, "2x"], [4, "4x"]], o.simSpeed, v => { o.simSpeed = +v; this.saveOpts(); }),
-      el("label", {}, ""), check("start at the placed bot starts (" + starts.length + ")", o.useStarts, v => { o.useStarts = v; this.saveOpts(); })));
+      el("label", {}, ""), check("start at the placed bot starts (" + starts.length + ")", o.useStarts, v => { o.useStarts = v; this.saveOpts(); this.render(); })));
+    if (o.useStarts && starts.length) out.push(el("p", { class: "faint" }, "The placed bot starts add " + starts.length + " bot" + (starts.length > 1 ? "s" : "") + " to the " + o.bots + " above: " + (o.bots + starts.length) + " in the match."));
     out.push(el("div", { class: "btnrow" },
       el("button", { class: "primary", disabled: !tool || !!this.status, onclick: () => this.start(true) }, "Run live"),
       el("button", { disabled: !tool || !!this.status, onclick: () => this.start(false) }, "Run, then play"),
       this.live ? el("button", { class: "danger", onclick: () => this.stop() }, "Stop") : null));
     if (this.status) out.push(el("p", { class: "warn" }, this.status));
     out.push(el("h3", {}, "Bot starts", el("span", { class: "spacer" }), el("button", { onclick: () => this.app.setTool("botstart") }, "Place"),
-      starts.length ? el("button", { onclick: () => d.edit("clear bot starts", ["sc.botStarts"], (m, sc) => { sc.botStarts = []; }) }, "Clear") : null));
+      starts.length ? el("button", { onclick: () => d.edit("clear bot starts", ["sc.botStarts"], (m, sc) => { sc.botStarts = []; }, { touch: [] }) }, "Clear") : null));
     out.push(el("p", { class: "faint" }, "Click the floor with the Bot tool (team from the toolbar). Saved with the map; Q / E turn the selected one."));
     starts.forEach((b, i) => out.push(el("div", { class: "row", style: { display: "flex", gap: "6px", cursor: "pointer" }, onclick: () => { d.select([{ k: "botstart", i }]); this.app.frameSel(); } },
       el("span", {}, "#" + (i + 1) + " " + (b.team || "any")), el("span", { class: "faint num" }, b.pos.map(v => fmt(v, 1)).join(" ")))));

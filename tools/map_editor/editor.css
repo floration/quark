@@ -8,7 +8,7 @@
   --team-a: #4f9cf5; --team-b: #ec5a4f; --team-any: #e8e8e8; --team-race: #f2d45a;
   --mono: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --left-w: 230px; --right-w: 330px;
+  --left-w: clamp(230px, 13vw, 340px); --right-w: clamp(330px, 18vw, 470px);
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -61,6 +61,10 @@ html.embed #top .brand { display: none; }   /* ?embed=1: the shell's tab has the
 .list .row:hover { background: var(--panel2); }
 .list .row.on { background: var(--raise); border-left-color: var(--accent); }
 .list .row .sub { color: var(--text-faint); font-size: 10px; margin-left: auto; white-space: nowrap; }
+.list .row .mname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list .row .fname { color: var(--text-faint); font-family: var(--mono); font-size: 10px; margin-left: 6px; }
+.list .row .acts { display: none; gap: 2px; }
+.list .row:hover .acts, .list .row.on .acts { display: flex; }
 .list .row .tag { font-size: 9px; padding: 0 4px; border-radius: 3px; background: var(--panel2); color: var(--text-dim); }
 
 .toolbar { display: flex; align-items: center; gap: 8px; padding: 4px 8px; background: var(--panel); border-bottom: 1px solid var(--line); flex: none; flex-wrap: wrap; }
@@ -86,8 +90,8 @@ html.embed #top .brand { display: none; }   /* ?embed=1: the shell's tab has the
 
 #dockBottom { flex: none; height: 116px; background: var(--panel); border-top: 1px solid var(--line); overflow: hidden; display: flex; flex-direction: column; }
 
-.tabs { display: flex; gap: 2px; padding: 4px; border-bottom: 1px solid var(--line); flex: none; flex-wrap: wrap; }
-.tabs button { background: transparent; border-color: transparent; color: var(--text-dim); padding: 3px 8px; }
+.tabs { display: flex; gap: 1px; padding: 4px; border-bottom: 1px solid var(--line); flex: none; flex-wrap: wrap; }
+.tabs button { background: transparent; border-color: transparent; color: var(--text-dim); padding: 3px 5px; font-size: 11px; }
 .tabs button.on { background: var(--raise); border-color: var(--line2); color: var(--text); }
 #rpanels { flex: 1; min-height: 0; position: relative; }
 .rpanel { display: none; position: absolute; inset: 0; overflow: auto; padding: 8px; }
