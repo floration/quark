@@ -714,6 +714,13 @@ private:
     int devScans_ = 0;             // (how many times they were listed: the UI test's "devscan")
     std::vector<DeviceEntry> devOut_, devIn_, devMons_;   // (names as shown: unique, upper case; monitors with their mode)
     std::vector<int> devRates_;
+    // the rows' text, made when the lists are (listDevices / listRates), not per frame: each row's UI test id "<PREFIX>: <NAME>"
+    // and its label in use "> NAME <" (an id is a pointer the UI test keeps past the frame: it must not move while the lists
+    // stay the same), and REFRESH RATE's names (made again only when the rates, the desktop rate or the saved rate change)
+    void devRowText();
+    std::vector<std::string> devRowId_[3], devRowOn_[3];
+    std::vector<std::string> devRateNames_;
+    int devRateKey_[2] = {-1, -1};   // (the desktop rate and cfg_.fullscreenHz devRateNames_ were made for; -1: make them again)
     int devScroll_[3] = {};        // the output / input / monitor lists' first row shown (the wheel over a list scrolls it)
     float devListBox_[3][4] = {};  // (where each list was drawn: the wheel's target)
     // the monitor: cfg_.monitor's, else the primary (gone: noticed once). Resolved on a change only (not per frame).
