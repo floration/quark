@@ -5,10 +5,12 @@
 //
 // Layout once installed:  Quark\project-manager\shell\main.js   (this file)
 //                         Quark\project-manager\tabs.json        (q's tab list; shell\tabs.default.json if missing)
-//                         Quark\project-manager\state.json       (window bounds, last tab, last download folder)
 //                         Quark\project-manager\quark.ico
-//                         Quark\project-manager\electron-data\   (Chromium profile: one persist:<id> partition per tab)
-//                         Quark\project-manager\logs\<id>.log    (output of servers the shell started)
+// Data folder (Windows: %LOCALAPPDATA%\QuarkProject, off the Desktop so OneDrive never syncs a live Chromium
+// profile; elsewhere: Quark\project-manager):
+//                         <data>\state.json       (window bounds, last tab, last download folder)
+//                         <data>\electron-data\   (Chromium profile: one persist:<id> partition per tab)
+//                         <data>\logs\<id>.log    (output of servers the shell started)
 
 const { app, BaseWindow, WebContentsView, Menu, session, shell, ipcMain, dialog, nativeTheme, nativeImage, screen } = require('electron');
 const path = require('path');
@@ -33,14 +35,16 @@ function argValue(name, argv = process.argv) {
 const SHELL_DIR = __dirname;
 const PM_DIR = path.resolve(SHELL_DIR, '..');
 const QUARK_DIR = path.resolve(argValue('quark') || path.join(PM_DIR, '..'));
-const STATE_FILE = path.join(PM_DIR, 'state.json');
-const LOG_DIR = path.join(PM_DIR, 'logs');
+const DATA_DIR = IS_WIN && process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'QuarkProject') : PM_DIR;
+const STATE_FILE = path.join(DATA_DIR, 'state.json');
+const LOG_DIR = path.join(DATA_DIR, 'logs');
 const SELFTEST_SHOT = argValue('selftest-shot');
 const SELFTEST_SCRIPT = process.env.QUARK_SHELL_SELFTEST === '1' ? argValue('selftest') : null;
 
 // The Chromium profile lives next to state.json so everything the app keeps is in Quark\project-manager\.
 // Must be set before the single-instance lock (the lock file is in userData).
-app.setPath('userData', path.join(PM_DIR, 'electron-data'));
+try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch { /* setPath below still works or fails loudly */ }
+app.setPath('userData', path.join(DATA_DIR, 'electron-data'));
 app.setName('Quark Project');
 if (IS_WIN) app.setAppUserModelId('Quark.ProjectManager');
 
@@ -178,7 +182,8 @@ function loadTabs() {
 }
 
 // ---------- state.json ----------
-let state = readJSON(STATE_FILE, {}) || {};
+// (state.json used to live in Quark\project-manager on Windows too: read that once if the new one is missing)
+let state = readJSON(STATE_FILE, null) || (DATA_DIR !== PM_DIR && readJSON(path.join(PM_DIR, 'state.json'), null)) || {};
 let saveTimer = null;
 function saveState(now) {
   clearTimeout(saveTimer);
@@ -603,7 +608,11 @@ function onKey(event, input) {
   const ctrl = input.control || (process.platform === 'darwin' && input.meta);
   const key = input.key;
   let handled = true;
-  if (ctrl && !input.alt && !input.shift && /^[1-9]$/.test(key)) { const t = tabs[Number(key) - 1]; if (t) openTab(t.id); }
+  if (ctrl && !input.alt && !input.shift && /^[1-9]$/.test(key)) {
+    // Ctrl+1..8 = that tab in tree order, Ctrl+9 = the last tab (browser convention)
+    const t = key === '9' ? tabs[tabs.length - 1] : tabs[Number(key) - 1];
+    if (t) openTab(t.id);
+  }
   else if (ctrl && key === 'Tab') cycle(input.shift ? -1 : 1);
   else if (ctrl && !input.alt && (key === 'r' || key === 'R') && input.shift) reloadTabList();
   else if (ctrl && !input.alt && (key === 'r' || key === 'R')) reloadActive(false);

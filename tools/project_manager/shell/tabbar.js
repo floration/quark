@@ -7,14 +7,18 @@
   const label = { up: 'running', down: 'not running', starting: 'starting', missing: 'not installed', unknown: 'checking' };
   let last = '';
 
-  function tabButton(t, i, active, kids, open) {
+  // Ctrl+1..8 = tabs 1..8, Ctrl+9 = the last tab (as in main.js)
+  const shortcut = (i, count) => (i < 8 ? i + 1 : i === count - 1 ? 9 : 0);
+
+  function tabButton(t, i, count, active, kids, open) {
     const b = document.createElement('button');
     b.className = 'tab' + (t.id === active ? ' active' : '') + (t.depth >= 2 ? ' child' : '');
     b.dataset.status = t.status;
     b.setAttribute('role', 'tab');
     b.setAttribute('aria-selected', t.id === active ? 'true' : 'false');
     const what = t.kind === 'file' && t.status === 'up' ? 'local page' : (label[t.status] || t.status);
-    b.title = t.name + ': ' + what + (t.missing ? ' (' + t.missing + ')' : '') + (i < 9 ? '  [Ctrl+' + (i + 1) + ']' : '');
+    const n = shortcut(i, count);
+    b.title = t.name + ': ' + what + (t.missing ? ' (' + t.missing + ')' : '') + (n ? '  [Ctrl+' + n + ']' : '');
     const dot = document.createElement('span'); dot.className = 'dot';
     const name = document.createElement('span'); name.className = 'name'; name.textContent = t.name;
     b.append(dot, name);
@@ -23,7 +27,7 @@
       const c = document.createElement('span'); c.className = 'caret' + (open ? ' open' : ''); c.textContent = open ? '' : String(kids);
       b.append(c);
     }
-    if (i < 9) { const k = document.createElement('span'); k.className = 'key'; k.textContent = String(i + 1); b.append(k); }
+    if (n) { const k = document.createElement('span'); k.className = 'key'; k.textContent = String(n); b.append(k); }
     b.addEventListener('mousedown', (e) => { if (e.button === 0) api.open(t.id); });
     b.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') api.open(t.id); });
     return b;
@@ -54,7 +58,7 @@
           tabsEl.append(group);
         }
       } else group = null;
-      const b = tabButton(t, i, data.active, kids.get(t.id) || 0, chain.has(t.id));
+      const b = tabButton(t, i, data.tabs.length, data.active, kids.get(t.id) || 0, chain.has(t.id));
       (group || tabsEl).append(b);
       if (t.depth === 0 && kids.get(t.id)) { const s = document.createElement('span'); s.className = 'sep'; tabsEl.append(s); }
     });

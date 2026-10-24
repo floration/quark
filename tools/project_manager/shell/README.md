@@ -18,10 +18,14 @@ Quark\project-manager\electron\electron.exe Quark\project-manager\shell [--tab=<
 | `tabs.default.json` | used when `Quark\project-manager\tabs.json` is missing (setup can copy it there) |
 | `package.json` | app name / version (`quarkShell.version`), entry point |
 
-Kept next to the `shell` folder (`Quark\project-manager\`): `tabs.json`, `state.json` (window bounds, maximized, last
-tab, last download folder), `quark.ico`, `electron-data\` (the Chromium profile: one `persist:<id>` partition per tab,
-so each editor's IndexedDB / localStorage autosaves stay separate) and `logs\<id>.log` (output of servers the shell
-started; rewritten on each start, cut at 4 MB).
+Next to the `shell` folder (`Quark\project-manager\`): `tabs.json` and `quark.ico`.
+
+The shell's own data lives in `%LOCALAPPDATA%\QuarkProject\` on Windows (off the Desktop, so OneDrive never syncs a
+live Chromium profile) and in `Quark\project-manager\` elsewhere: `state.json` (window bounds, maximized, last tab,
+last download folder; an older `Quark\project-manager\state.json` is read once if the new one is missing),
+`electron-data\` (the Chromium profile: one `persist:<id>` partition per tab, so each editor's IndexedDB /
+localStorage autosaves stay separate) and `logs\<id>.log` (output of servers the shell started; rewritten on each
+start, cut at 4 MB).
 
 ## Paths
 
@@ -32,8 +36,8 @@ started; rewritten on each start, cut at 4 MB).
 Same rules as SPEC.md, plus two optional fields:
 
 - `parent`: the id of the tab this one sits under. The default tree is Supervisor Board → GitHub Manager, Claude
-  Manager, Editor Manager → the editors. Tabs are ordered depth first (siblings keep their file order); Ctrl+1..9 and
-  Ctrl+Tab follow that order. The top level and its children are always shown; deeper tabs (the editors) are shown as
+  Manager, Editor Manager → the editors. Tabs are ordered depth first (siblings keep their file order); Ctrl+1..8 and
+  Ctrl+Tab follow that order, Ctrl+9 is the last tab. The top level and its children are always shown; deeper tabs (the editors) are shown as
   a labelled group after their parent while the parent or one of them is active, otherwise the parent shows a caret
   with the number of hidden tabs. An unknown parent or a cycle makes the tab top level.
 - `childLabel`: the small label in front of a parent's group of child tabs (default: the parent's name).
@@ -60,7 +64,7 @@ tab loads by itself when its server comes up later. On window close the shell ki
   AppData, system folders): the shell then asks "Allow this folder / Choose another / Cancel" instead of failing silently.
 - Downloads open a Save dialog in the last folder used.
 - A page with unsaved changes (`beforeunload`) asks before Ctrl+R / F5 reloads it.
-- Keys: Ctrl+1..9 tab, Ctrl+Tab / Ctrl+Shift+Tab (and Ctrl+PageDown / PageUp) cycle, Ctrl+R / F5 reload (Ctrl+F5
+- Keys: Ctrl+1..8 tab, Ctrl+9 last tab, Ctrl+Tab / Ctrl+Shift+Tab (and Ctrl+PageDown / PageUp) cycle, Ctrl+R / F5 reload (Ctrl+F5
   without cache), Ctrl+Shift+R re-read tabs.json, F12 devtools of the active tab. No menu bar.
 - One instance: starting it again focuses the window (and switches to `--tab=<id>` if given).
 
