@@ -168,7 +168,7 @@ class Repo:
             authors = {"WorkSans": "Work Sans Project Authors", "Rubik": "The Rubik Project Authors"}.get(stem, "its authors")
             use = {"WorkSans": "the game's UI font", "Rubik": "the icon's letter and the website's logo"}.get(stem, "")
             if os.path.exists(os.path.join(ROOT, lic)):
-                return "third-party", "%s by %s, SIL OFL 1.1 (%s)%s" % (stem, authors, lic, "; " + use if use else ""), None, {}
+                return "ai", "counted as AI-made (owner, 2026-10-24): %s by %s, SIL OFL 1.1 (%s)%s" % (stem, authors, lic, "; " + use if use else ""), None, {}
             return "ai", "a font file with no licence file next to it", None, {}
         if item_id == "images/icon.png":
             return "ai", "drawn by tools/make_icon.py: a Rubik ExtraBold Q (the letterform is the font's, third-party) in the team colours", None, {}
@@ -208,7 +208,7 @@ class Repo:
             packs = sorted(set(KENNEY.get(c.split("/")[0], c.split("/")[0]) for c in clips if not c.startswith("custom/")))
             src = "Kenney %s (CC0 1.0, assets/sfx/CREDITS.md): %s, mixed by tools/import_sfx.py" % (
                 " + ".join(packs), ", ".join(c for c in clips))
-            return "third-party", src + ("; also the owner's recordings" if own else ""), None, {}
+            return "ai", "counted as AI-made (owner, 2026-10-24): " + src + ("; also the owner's recordings" if own else ""), None, {}
         if default_ov: return "human", "falls back to the DEFAULT kit's sound: the owner's override", default_ov, {}
         return "ai", "falls back to the DEFAULT kit's sound, synthesized in src/client/audio.cpp", None, {}
 
@@ -414,8 +414,8 @@ def cmd_summary(args):
     if "--markdown" in args:
         cats = " · ".join("%s %d/%d" % (c, per[c]["human"] + per[c]["third-party"], sum(per[c].values()))
                           for c in CATEGORIES if sum(per[c].values()))
-        print("**Human-made assets: %s** (%d of %d: %d by the team, %d third-party) · AI-made %s" % (
-            pct(h, n), h, n, tot["human"], tot["third-party"], ai_pct(h, n)))
+        split = (": %d by the team, %d third-party" % (tot["human"], tot["third-party"])) if tot["third-party"] else ""
+        print("**Human-made assets: %s** (%d of %d%s) · AI-made %s" % (pct(h, n), h, n, split, ai_pct(h, n)))
         print()
         print("Human-made by category: %s. Every sound, voice line, model, map, font, picture, UI page and bot area "
               "counts as one item (assets/provenance/)." % cats)

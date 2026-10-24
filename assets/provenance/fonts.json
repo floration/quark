@@ -2,7 +2,7 @@
  "format": 1,
  "category": "fonts",
  "items": {
-  "fonts/Rubik.ttf": {"origin": "third-party", "source": "Rubik by The Rubik Project Authors, SIL OFL 1.1 (assets/fonts/Rubik-OFL.txt); the icon's letter and the website's logo"},
-  "fonts/WorkSans.ttf": {"origin": "third-party", "source": "WorkSans by Work Sans Project Authors, SIL OFL 1.1 (assets/fonts/WorkSans-OFL.txt); the game's UI font"}
+  "fonts/Rubik.ttf": {"origin": "ai", "source": "counted as AI-made (owner, 2026-10-24): Rubik by The Rubik Project Authors, SIL OFL 1.1 (assets/fonts/Rubik-OFL.txt); the icon's letter and the website's logo"},
+  "fonts/WorkSans.ttf": {"origin": "ai", "source": "counted as AI-made (owner, 2026-10-24): WorkSans by Work Sans Project Authors, SIL OFL 1.1 (assets/fonts/WorkSans-OFL.txt); the game's UI font"}
  }
 }
