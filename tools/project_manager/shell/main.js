@@ -63,6 +63,17 @@ const QUARK_DIR = path.resolve(argValue('quark') || path.join(PM_DIR, '..'));
 const DATA_DIR = IS_WIN && process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'QuarkProject') : PM_DIR;
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const LOG_DIR = path.join(DATA_DIR, 'logs');
+// An error in the main process must never show Electron's modal error box (q would have to dismiss it, and while
+// quitting it blocked the automatic relaunch): it goes to logs\shell-errors.log instead.
+function logShellError(kind, err) {
+  try {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+    fs.appendFileSync(path.join(LOG_DIR, 'shell-errors.log'),
+      '[' + new Date().toISOString() + '] ' + kind + ': ' + ((err && err.stack) || String(err)) + '\n');
+  } catch { /* nowhere to log */ }
+}
+process.on('uncaughtException', (err) => logShellError('uncaught exception', err));
+process.on('unhandledRejection', (err) => logShellError('unhandled rejection', err));
 const SELFTEST_SHOT = argValue('selftest-shot');
 const SELFTEST_SCRIPT = process.env.QUARK_SHELL_SELFTEST === '1' ? argValue('selftest') : null;
 
@@ -846,8 +857,9 @@ function bringUpPlayNote(id) {
 }
 
 function updateTabbar() {
+  // (a server's exit handler can run while the app quits, after the tab bar's webContents is gone)
+  if (stopped || !tabbar || !tabbar.webContents || tabbar.webContents.isDestroyed()) return;
   writeShellStatus();
-  if (!tabbar || tabbar.webContents.isDestroyed()) return;
   tabbar.webContents.send('shell:tabs', {
     active: activeId,
     error: tabsError,
@@ -865,6 +877,7 @@ function writeShellStatus() {
   if (statusWriteTimer) return;
   statusWriteTimer = setTimeout(() => {
     statusWriteTimer = null;
+    if (stopped) return;
     const body = JSON.stringify({
       shellVersion: app.getVersion(), pid: process.pid, startedAt: new Date(APP_STARTED_AT).toISOString(),
       autoRelaunchedAt: state.autoRelaunchedAt ? new Date(state.autoRelaunchedAt).toISOString() : null,
