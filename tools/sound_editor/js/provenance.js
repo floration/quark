@@ -33,6 +33,11 @@
     const a = Q.assets[key];
     if (!a || a.custom) return null;
     if (a.shippedOverride) return { origin: 'human', source: 'the owner\'s file in assets/overrides', what: 'owner\'s own sound' };
+    // a default quip is the voice's own line of that name, as it says it (audio.cpp loadQuips, its line override included)
+    if (a.kind === 'voice' && a.name.startsWith('quips/')) {
+      const line = P.defaultOrigin(Q.key('voice', a.pack, a.name.slice(6)));
+      return line && { origin: line.origin, source: 'the voice\'s ' + a.name.slice(6) + ' line: ' + line.source, what: line.what.replace(/line$/, 'line (quip)') };
+    }
     if (a.kind === 'voice') {
       if (RECORDED.includes(a.name)) return { origin: 'ai', source: 'recorded announcer line, assets/voice/' + (VOICE_FOLDER[a.pack] || a.pack) + '/ (tools/import_voice.py); its maker is not recorded in the repository', what: 'AI announcer line' };
       if (a.pack === 'male' || a.pack === 'female') return { origin: 'ai', source: 'Piper text to speech (tools/make_voice.py)', what: 'AI text-to-speech line' };
@@ -85,12 +90,38 @@
     return { origin: d.origin, note: (ops.length ? ops.join(', ') : 'unchanged re-export') + ' of the ' + d.what, source: d.source, choose: false,
       why: 'An edit of the shipped sound keeps its origin (' + d.origin + '): editing it doesn\'t make it a new sound. Drop your own file or use Design... for a new one.' };
   };
+  /* Who made what the game plays at `key` now (the matrix chips, the "still AI-made" filter, the counts):
+     {origin: 'human' | 'third-party' | 'ai' | 'unset' (a dropped file, origin not chosen yet) | 'empty' (a slot with no
+     sound), why}. An edit is its export's origin; a kit sound with no edit that plays DEFAULT's edit in the game (=D,
+     RETRO) is that edit's; a default quip is its line as the voice says it now (audio.cpp loadQuips). */
+  P.currentOrigin = function (key) {
+    const a = Q.assets[key];
+    if (!a) return { origin: 'empty', why: '' };
+    if (Q.state.edits[key]) {
+      const o = P.originOf(key);
+      return { origin: o.origin || 'unset', why: o.choose ? (o.origin ? (o.file || '') + (o.source ? ': ' + o.source : o.note ? ': ' + o.note : '') : o.why) : o.note };
+    }
+    if (a.custom) return { origin: 'empty', why: 'no sound yet' };
+    const inh = Q.inheritsFrom(key);
+    if (inh) { const d = P.currentOrigin(inh.key); return { origin: d.origin, why: 'plays DEFAULT\'s edit' + (inh.retro ? ' chiptuned' : '') + ': ' + d.why }; }
+    if (a.kind === 'voice' && a.name.startsWith('quips/') && !a.shippedOverride) {
+      const lk = Q.key('voice', a.pack, a.name.slice(6));
+      if (Q.assets[lk] && Q.state.edits[lk]) { const d = P.currentOrigin(lk); return { origin: d.origin, why: 'plays your ' + a.name.slice(6) + ' line: ' + d.why }; }
+    }
+    const d = P.defaultOrigin(key);
+    return d ? { origin: d.origin, why: 'shipped: ' + d.source } : { origin: 'empty', why: '' };
+  };
+  P.SHORT = { human: 'HUM', 'third-party': '3P', ai: 'AI', unset: 'SET?', empty: '' };
+
   // the owner's choice for a dropped file: {origin, note, source}; returns false when `key` has no choice to make
   P.setOrigin = function (key, origin, note, source) {
     const e = Q.state.edits[key];
     if (!e || P.audioKind(key) !== 'file') return false;
     if (!origin) { delete e.origin; return true; }
-    e.origin = { origin, note: note == null ? (e.origin && e.origin.note) || '' : note, source: source == null ? (e.origin && e.origin.source) || '' : source };
+    // a field not given is kept only while the origin stays the same: "recorded by q" never survives a switch to
+    // third-party, nor a pack's source a switch to human
+    const was = e.origin && e.origin.origin === origin ? e.origin : {};
+    e.origin = { origin, note: note == null ? was.note || '' : note, source: source == null ? was.source || '' : source };
     return true;
   };
   // ready to export: an origin, and for a third-party file where it came from (pack / site / licence)
