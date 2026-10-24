@@ -1575,7 +1575,7 @@ void Game::drawWorld(float alpha) {
     bool alive = net_.selfAlive();
     // demo playback: through the recorder's eyes (their recorded view, interpolated like everyone else)
     const bool demoView = net_.playback() && me >= 0 && me < kMaxPlayers && players[me].valid;
-    const bool lateLatch = alive && !demoView && mouseCaptured_;   // (your own view: the aim is re-read before drawing)
+    const bool lateLatch = alive && !demoView && mouseCaptured_ && !opts_.camSet;   // (your own view: the aim is re-read before drawing)
     r_.cullPad = lateLatch ? 0.06f : 0.0f;   // (~3.5 degrees: what a fast flick turns in the time until then)
     if (demoView) { yaw_ = players[me].snap.yaw; pitch_ = players[me].snap.pitch; }
 
@@ -1615,12 +1615,16 @@ void Game::drawWorld(float alpha) {
     // the server sends a dead player what the one it watches can see (NET-10): tell it who that is
     if (alive || net_.playback() || net_.state() != ConnState::Connected) specSent_ = -2;
     else if (specTarget_ != specSent_) { net_.sendCommand("spectate " + std::to_string(specTarget_)); specSent_ = specTarget_; }
+    if (opts_.camSet) { eye = opts_.camPos; camYaw = deg2rad(opts_.camYaw); camPitch = deg2rad(opts_.camPitch); }   // (--cam: screenshots of a match from a fixed spot)
     r_.setCamera(eye, camYaw, camPitch, alive ? viewFov() : cfg_.fov);
     audio_.setListener(eye, camYaw);
     updateSounds(players);
 
+    Vec3 dbgBombPos;   // (--models in bomb mode: a dropped bomb in front of the lineup, which carries it)
+    const bool dbgBomb = opts_.debugModels && alive && ms.mode == MODE_BOMB;
     if (opts_.debugModels && alive) { // model lineup for screenshots: the last slots, 5 m ahead, facing you
         Vec3 f = {-std::sin(yaw_), 0, -std::cos(yaw_)}, rt = {std::cos(yaw_), 0, -std::sin(yaw_)};
+        dbgBombPos = net_.smoothedPos(alpha) + f * 3.0f;
         for (int k = 0; k < kPlayerModels; k++) {
             auto& ip = players[kMaxPlayers - kPlayerModels + k];
             ip.valid = true;
@@ -1629,6 +1633,7 @@ void Game::drawWorld(float alpha) {
             ip.snap.flags = PS_ALIVE | (k % 2 ? PS_TEAM_B : 0);
             ip.snap.pos = net_.smoothedPos(alpha) + f * 5.0f + rt * ((k - 2) * 1.5f);
             ip.snap.yaw = yaw_ + 3.14159265f;
+            if (dbgBomb) { ip.snap.flags |= PS_HASBOMB; ip.snap.yaw -= 2.3f; }   // (turned away: the backpack shows)
             if (isItMode(net_.mode().mode)) {   // hide and seek / tag: each as "it", holding the knife (or --weapon)
                 ip.snap.flags |= PS_HASBOMB;
                 ip.snap.yaw -= 1.0f;   // (turned aside: the weapon side-on)
@@ -1968,11 +1973,12 @@ void Game::drawWorld(float alpha) {
             Vec3 c = map.bombSites[i].center();
             labelAt({c.x, map.bombSites[i].mx.y + 0.5f, c.z}, std::string("SITE ") + names[i % 4], kWhite);
         }
-        if (ms.bombState == BOMB_DROPPED || ms.bombState == BOMB_PLANTED) {
+        if (ms.bombState == BOMB_DROPPED || ms.bombState == BOMB_PLANTED || dbgBomb) {
+            const Vec3 bombPos = dbgBomb ? dbgBombPos : ms.bombPos;
             bool blink = ms.bombState == BOMB_PLANTED && std::fmod(time_, std::max(0.15, ms.bombTimer / 20.0)) < 0.08;
             Vec3 c = blink ? Vec3(1, 0.2f, 0.2f) : Vec3(0.15f, 0.15f, 0.15f);
-            r_.box(ms.bombPos + Vec3(0, 0.15f, 0), {0.25f, 0.15f, 0.18f}, 0, c, 1.0f);
-            labelAt(ms.bombPos + Vec3(0, 0.8f, 0), ms.bombState == BOMB_PLANTED ? "BOMB" : "BOMB (DROPPED)", rgba(teamCol(ms.attackers)));
+            r_.box(bombPos + Vec3(0, 0.15f, 0), {0.25f, 0.15f, 0.18f}, 0, c, 1.0f);
+            labelAt(bombPos + Vec3(0, 0.8f, 0), ms.bombState == BOMB_PLANTED ? "BOMB" : "BOMB (DROPPED)", rgba(teamCol(ms.attackers)));
         }
     } else if (ms.mode == MODE_POINTS && !map.points.empty()) {
         // the point under attack glows (attacker colour while it fills); taken points are dim; later ones outlined

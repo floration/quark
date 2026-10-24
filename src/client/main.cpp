@@ -65,7 +65,7 @@ int main(int argc, char** argv) {
         else if (a == "--perf") opts.debugPerf = true;
         else if (a == "--settings") opts.debugSettings = true;
         else if (a == "--backdrop") opts.backdrop = next();
-        else if (a == "--cam") { // --cam x y z yawDeg pitchDeg: fixed camera over a --backdrop map (map shots)
+        else if (a == "--cam") { // --cam x y z yawDeg pitchDeg: fixed camera over a --backdrop map (map shots), or in a match
             opts.camSet = true;
             for (int k = 0; k < 3; k++) opts.camPos[k] = (float)atof(next().c_str());
             opts.camYaw = (float)atof(next().c_str()); opts.camPitch = (float)atof(next().c_str());
