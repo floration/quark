@@ -5,7 +5,8 @@
                drawn after a depth clear, no shadows on it), the game's fov and near plane
      tp        third person: a player with the gun arm, or holding a weapon as "it" (hide and seek / tag: the viewmodel
                boxes at 2x on the hand), the crown on the head; hitbox overlay
-     flight    a projectile flying with its trail, spun / wobbled as the game does
+     flight    a projectile flying with its trail, spun / wobbled as the game does (the camera flies with it: the floor
+               streams past, so the model stays in view to inspect and edit)
      lineup    the screenshot lineup (quark --models): 5 players 5 m ahead, 1.5 m apart, facing you, your viewmodel
      track     a payload track: the cart, a checkpoint gate either side (reached / not), the track line
    Draw as (S.drawMode): the game's own boxes, a box model file (extras.quark version 2: the same box path, without the
@@ -52,6 +53,7 @@
   // --- GPU meshes per (model, draw mode, crouch), refilled when the model changes -------------------------------------------
   const cache = new Map();
   const HS = Q.CROUCH_H / Q.PLAYER_H;   // kPlayerCrouchHeight / kPlayerHeight
+  const FLIGHT_Y = 1.5;                  // the in-flight view's projectile height
   S.meshFor = function (key, mode, crouch) {
     const id = key + '|' + mode + '|' + (crouch || ''), v = Q.ver[key] || 0;
     let e = cache.get(id);
@@ -161,7 +163,7 @@
     if (k === 'crown') return ['orbit', 'tp', 'lineup'];
     if (k === 'prop') {
       if (m.name === 'GUN_ARM' || m.name === 'ARM' || m.name === 'BOMB_PACK') return ['orbit', 'tp', 'lineup'];
-      if (m.name === 'BOMB') return ['orbit', 'lineup', 'track'];
+      if (m.name === 'BOMB') return ['orbit', 'lineup'];   // (bomb mode: the payload track has no bomb)
       if (m.name === 'CART' || m.name === 'GATE') return ['orbit', 'track'];
     }
     return ['orbit'];
@@ -256,7 +258,10 @@
     const v = S.view, o = S.orbit, m = Q.models[key];
     let mn = [-0.5, 0, -0.5], mx = [0.5, 2, 0.5];
     if (v.mode === 'orbit' && key) { const b = S.bounds(key); if (b) { mn = b.mn; mx = b.mx; } }
-    else if (v.mode === 'flight') { mn = [-0.5, 1, -2]; mx = [0.5, 2, 2]; }
+    else if (v.mode === 'flight') {   // the projectile at FLIGHT_Y and a little of its trail behind it
+      const b = key && S.bounds(key) || { mn: [-0.1, -0.1, -0.2], mx: [0.1, 0.1, 0.2] };
+      mn = [b.mn[0], b.mn[1] + FLIGHT_Y, b.mn[2]]; mx = [b.mx[0], b.mx[1] + FLIGHT_Y, b.mx[2] + 0.6];
+    }
     else if (v.mode === 'track') { mn = [-2, 0, -3]; mx = [2, 2.8, 3]; }
     const c = [(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2], r = Math.max(0.05, Math.hypot(mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]) / 2);
     o.target = c;
@@ -267,6 +272,7 @@
     else if (v.mode === 'tp' && m && m.name === 'BOMB_PACK') { o.yaw = 0.55; o.pitch = -0.2; }   // (from behind: the pack)
     else if (v.mode === 'orbit' || v.mode === 'tp') { o.yaw = Math.PI + 0.55; o.pitch = -0.2; }
     else if (v.mode === 'track') { o.yaw = Math.PI * 0.75; o.pitch = -0.3; }
+    else if (v.mode === 'flight') { o.yaw = Math.PI + 1.1; o.pitch = -0.25; }
     else { o.yaw = 1.3; o.pitch = -0.15; }
     S.dirty = true;
   };
@@ -327,16 +333,16 @@
       n = addViewmodel(n, S.weaponKey(), cam);
     } else if (v.mode === 'flight' && key) {
       const it = modelItem(item(n++), key, { kind, role: 'subject' });
+      M.trs(it.model, 0, FLIGHT_Y, 0, 0, 0, 1, 1, 1);
       it.spin = projSpin(key, true);
       it.trail = Q.PROJ[m.name] && Q.PROJ[m.name].trail || null;
       S.focus = it;
     } else if (v.mode === 'track') {
       // a payload track (game.cpp): the cart at the origin pushed toward -Z, a checkpoint gate ahead (not reached:
-      // grey) and one behind (reached: the attackers' colour), the track line; a dropped bomb beside it
+      // grey) and one behind (reached: the attackers' colour), the track line
       n = addProp(n, 'CART', 0, 0, 0, 0, { cartTeam: v.cartNeutral ? null : undefined }, false);
       n = addProp(n, 'GATE', 0, 0, -7, 0, { gateReached: false }, true);
       n = addProp(n, 'GATE', 0, 0, 7, 0, { gateReached: true }, true);
-      if (kind === 'prop' && m.name === 'BOMB') n = addProp(n, 'BOMB', 3, 0, 0, 0, { bombBlink: v.bombBlink }, true);
       S.trackLine = { col: v.cartNeutral ? [1, 1, 1] : S.teamColor() };
     }
     if (!S.focus) for (let i = 0; i < n; i++) if (pool[i].key === key) { S.focus = pool[i]; break; }   // (the model being edited)
@@ -387,15 +393,17 @@
         moved = true;
       }
       if (v.mode === 'flight' && it.role === 'subject') {
-        const p = Q.PROJ[Q.models[it.key].name] || { speed: 30 }, L = 12;
+        // the camera flies with the projectile (toward -z): it stays where it is, spun as the game spins it, and the
+        // floor streams past at its speed (the floor's pattern repeats every 4 m)
+        const p = Q.PROJ[Q.models[it.key].name] || { speed: 30 };
         const sp = p.speed * (v.speed || 1) * 0.25;   // (a quarter speed at 1x, to see it)
-        const z = v.play ? L / 2 - ((t * sp) % L) : 0;
+        if (scene.ground) scene.ground.z = v.play ? (t * sp) % 4 : 0;
         let my = 0, mp = 0;
         if (it.spin === 'stickySpin' && v.play) my = t * 6;
         if (it.spin === 'knifeSpin' && v.play) mp = t * 25;
-        M.trs(it.model, 0, 1.5, z, my, mp, 1, 1, 1);
-        if (it.trail) { const tr = it.trail; addLine(0, 1.5, z - tr.from, 0, 1.5, z + tr.len, tr.w, S.teamColor(), tr.a); }
-        moved = true;
+        M.trs(it.model, 0, FLIGHT_Y, 0, my, mp, 1, 1, 1);
+        if (it.trail) { const tr = it.trail; addLine(0, FLIGHT_Y, -tr.from, 0, FLIGHT_Y, tr.len, tr.w, S.teamColor(), tr.a); }
+        moved = v.play || moved;
       } else if (v.mode === 'orbit' && it.role === 'subject' && it.spin && v.play) {
         M.trs(it.model, 0, 0, 0, it.spin === 'stickySpin' ? t * 6 : 0, it.spin === 'knifeSpin' ? t * 25 : 0, 1, 1, 1);
         moved = true;
@@ -444,7 +452,7 @@
     const v = S.view, L = scene.lines, O = scene.overlay;
     L.count = 0; O.count = 0;
     if (v.hitbox) for (const it of scene.items) {
-      if (it.role !== 'player') continue;
+      if (it.role !== 'player' && !(it.role === 'subject' && it.kind === 'player')) continue;   // (orbit: the player being edited)
       const hs = v.crouch ? Q.CROUCH_H / Q.PLAYER_H : 1, H = Q.PLAYER_H * hs, w = Q.HALF_W;
       // hitbox: an axis-aligned box at the feet (not turned with the model); the head: the top 20 %, 45 % of the width
       const feet = [it.model[12], it.model[13], it.model[14]], I = M.ident(new Float32Array(16));
@@ -542,9 +550,10 @@
   };
 
   // --- thumbnails ------------------------------------------------------------------------------------------------------
+  // drawn into a small target and read back without a stall (R.readTargetAsync): done(dataUrl) comes a frame or two later
   let thumbTarget = null, thumbCanvas = null;
   const thumbScene = { cam: { pos: [0, 0, 0], yaw: 0, pitch: 0, fov: 40 }, pal: Q.DEFAULT_PALETTE, sky: true, ground: null, shadows: false, bright: 1, items: [], trails: null, lines: null, overlay: null };
-  S.thumbnail = function (key, size) {
+  S.thumbnail = function (key, size, done) {
     size = size || 96;
     if (!thumbTarget) { thumbTarget = R.target(size, size); thumbCanvas = document.createElement('canvas'); thumbCanvas.width = thumbCanvas.height = size; }
     const m = Q.models[key];
@@ -558,7 +567,6 @@
     const yaw = m && m.kind === 'weapon' ? 2.0 : Math.PI + 0.6, pitch = -0.3, f = R.forward(yaw, pitch), dist = r / Math.tan(20 * Math.PI / 180) * 1.05;
     thumbScene.cam.pos = [c[0] - f[0] * dist, c[1] - f[1] * dist, c[2] - f[2] * dist]; thumbScene.cam.yaw = yaw; thumbScene.cam.pitch = pitch;
     R.draw(thumbScene, thumbTarget);
-    R.readTarget(thumbTarget, thumbCanvas.getContext('2d'));
-    return thumbCanvas.toDataURL('image/png');
+    R.readTargetAsync(thumbTarget, (px, w, h) => { R.putFlipped(px, w, h, thumbCanvas.getContext('2d')); done(thumbCanvas.toDataURL('image/png')); });
   };
 })();
