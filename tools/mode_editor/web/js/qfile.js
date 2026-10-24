@@ -1,5 +1,6 @@
 // The .qmode file as a whole (design 2.1): the game's key=value lines (CustomRules::toText, customrules.cpp),
-// then the logic block from the first line that is exactly `logic <N>` to the end.
+// then the logic block from the first line that starts it as the game's isModeLogicLine says (customrules.cpp: `logic`
+// then the end of the line, a space, a tab or a \r: `logic 1`, `logic`, `logic x`) to the end.
 //
 // The shared file rule (agreed with the physics editor): each editor rewrites only the lines it owns and keeps every
 // other line exactly as written, in place. This editor owns the mode keys (custommode, mode, timelimit, scorelimit,
@@ -14,7 +15,9 @@ export const PHYSICS_PREFIXES = ["move_", "move."];
 export const UNDECIDED_KEYS = ["weapons", "weapon", "health", "instagib", "vampire", "regen"];   // design 7: ask the owner
 export const GAME_KEYS = new Set([...MODE_KEYS, ...PHYSICS_KEYS, ...UNDECIDED_KEYS, "label"]);
 export const PHYSICS_EDITOR_URL = "http://127.0.0.1:8772/";
-const LOGIC_LINE = /^logic [0-9]+[ \t]*$/;
+// customrules.cpp isModeLogicLine, on the line as the game reads it (split at \n, its \r still on): any `logic` line
+// starts the block, even one with a bad version (the compiler reports that; the lines after it are never keys)
+export const LOGIC_LINE = /^logic(?:$|[ \t\r])/;
 
 export function ownerOf(key) {
     if (key == null) return "none";
@@ -48,8 +51,7 @@ export function splitQmode(text) {
     let logicIx = -1;
     for (let i = 0; i < raws.length; i++) {
         const r = raws[i];
-        const bare = r.endsWith("\r") ? r.slice(0, -1) : r;
-        if (LOGIC_LINE.test(bare)) { logicIx = i; break; }
+        if (LOGIC_LINE.test(r)) { logicIx = i; break; }
         const { key, value } = keyOf(r);
         lines.push({ raw: r, key, value, owner: ownerOf(key), n: i + 1 });
     }

@@ -71,6 +71,22 @@ export function lineDiff(a, b) {
     return out;
 }
 export function fileTextFor(original, keySet, ast, def, whole) { return patchQmode(original, keySet, logicTextFor(ast, def, whole)); }
+// A line of the saved file (checkmode counts the file's lines) -> the same line in the Code view, which shows the whole
+// merged logic: both are the canonical printer's lines, so the line keeps its offset under its declaration's first line
+// (the nth time that line starts a declaration in each). null: a key line, or a declaration the Code view doesn't have.
+export function codeLineFor(fileText, fileLine, codeText) {
+    const sp = splitQmode(fileText);
+    if (!sp.logicLine || fileLine < sp.logicLine) return null;
+    const file = fileText.split("\n").map((l) => l.replace(/\r$/, "")), code = codeText.split("\n");
+    const head = (l) => /^[A-Za-z_]/.test(l || "");   // (a declaration, `logic` and `base` start at column 0; comments with #)
+    let h = Math.min(fileLine, file.length) - 1;
+    while (h >= sp.logicLine - 1 && !head(file[h])) h--;
+    if (h < sp.logicLine - 1) return null;
+    let nth = 0;
+    for (let i = sp.logicLine - 1; i < h; i++) if (file[i] === file[h]) nth++;
+    for (let i = 0, k = 0; i < code.length; i++) if (code[i] === file[h] && k++ === nth) return Math.min(code.length, i + 1 + (fileLine - 1 - h));
+    return null;
+}
 
 export class ModePage {
     constructor(app) {
@@ -152,11 +168,24 @@ export class ModePage {
         this.keyBase = text; this.keySet = {};
         this.base = m.base; this.def = m.def;
         this.hist = []; this.histIx = -1; this.sel = null;
+        this.gameCheck = null;
         this._set(m.ast, null);
         this.savedSig = this._sig();
         this._fillSel();
         this._modeInfo();
         this._persist();
+        this._loadProvenance();
+    }
+    // "I wrote this myself" says what provenance.json says of this mode (a built-in or new one: unticked), so a re-save
+    // keeps a human-made mode human and another mode never inherits the tick
+    async _loadProvenance() {
+        const box = $("modeHuman"), name = this.name;
+        box.checked = false;
+        if (this.builtin || !this.fileMeta) return;
+        try {
+            const r = await api.provenanceOf(name);
+            if (this.name === name && !this.builtin) box.checked = !!(r.item && r.item.origin === "human");
+        } catch {}
     }
     async newFrom(name, base) {
         const text = newQmodeText(name, base);
@@ -207,7 +236,7 @@ export class ModePage {
         // checks run on the canonical text so problems carry line:col of the Code view
         let located = this.ast;
         if (from !== "code") { try { located = parse(this.codeText); } catch { located = this.ast; } }
-        this.check = validate(located, { base: this.base });
+        this.check = validate(located, { base: this.base, def: this.def });
         if (this.ast.base && this.ast.base !== logicBase(this.base)) this.check.problems.unshift({ severity: "error", msg: `base ${this.ast.base} doesn't match the file's mode=${this.base}`, where: "base", line: 2, col: 1 });
         this.check.errors = this.check.problems.filter((p) => p.severity === "error");
         this.interp = this.def ? interpretedSlots(this.ast, this.def) : new Set();
@@ -233,6 +262,10 @@ export class ModePage {
     }
     // the built-in base mode with the same keys (Sim's compare): the key lines without a logic block
     builtinText() { return patchQmode(this.keyBase, this.keySet, ""); }
+    // a built-in mode as it ships (Sim sends it as `mode`, not as rules)
+    isPristineBuiltin() { return this.builtin && this.savedSig === this._sig(); }
+    // whether the game takes this base as a custom mode's (customrules.cpp ignores mode=tourney)
+    baseTakesCustom() { return !(CATALOG.modeInfo[this.base] && CATALOG.modeInfo[this.base].noCustom); }
 
     // ---------------------------------------------------------------- views
     _showView(v) {
@@ -312,6 +345,7 @@ export class ModePage {
     _codeEdited(final) {
         const text = $("codeTa").value;
         this.codeText = text;
+        const hadError = !!this.codeError;
         try {
             const ast = carryIds(this.ast, clone(parse(text)));
             this.codeError = null;
@@ -324,6 +358,7 @@ export class ModePage {
             this.codeError = e;
             this._persist();
         }
+        if (hadError !== !!this.codeError) { this._problems(); this._modeInfo(); }
         this._highlight();
     }
     _scrollCodeTo(key) {
@@ -392,7 +427,8 @@ export class ModePage {
         const changed = this.def ? diffLogic(this.ast, this.def).filter((d) => d.change !== "default").length : 0;
         const unsaved = this.savedSig !== this._sig();
         $("modeInfo").innerHTML = `<b>${esc(this.name)}</b>${this.builtin ? " (built-in)" : ".qmode"} · base <b>${esc(this.base)}</b> · ${changed} change${changed === 1 ? "" : "s"} vs built-in · ${this.interp.size ? `<span class="warn">${this.interp.size} interpreted</span>` : "all native"}${unsaved ? ' · <span class="warn">unsaved</span>' : ""}`
-            + (CATALOG.modeInfo[this.base] && CATALOG.modeInfo[this.base].noCustom ? `<div class="bad">The game doesn't take ${esc(this.base)} as a custom mode's base (customrules.cpp): a .qmode with mode=${esc(this.base)} won't load.</div>` : "");
+            + (this.codeError ? `<div class="bad">The code doesn't parse (${esc(this.codeError.line)}:${esc(this.codeError.col)}): these counts are the last version that parsed.</div>` : "")
+            + (CATALOG.modeInfo[this.base] && CATALOG.modeInfo[this.base].noCustom ? `<div class="bad">The game doesn't take ${esc(this.base)} as a custom mode's base: customrules.cpp ignores mode=${esc(this.base)}, so a .qmode with it loads as a free for all (CustomRules' default base) and logic written for ${esc(this.base)} doesn't match it.</div>` : "");
     }
     _items() {
         const L = $("items");
@@ -428,17 +464,23 @@ export class ModePage {
         }));
         this._modeInfo();
     }
+    // the problems: the code's parse error (the checks below it are the last version that parsed), the game's errors
+    // from the last save (at their Code view line), then the editor's checks
     _problems() {
         const P = $("problems"), c = this.check;
         if (!c) return;
-        const n = c.problems.length;
-        const judge = this.app.config.checkmode ? "the game's checkmode runs on save" : "quark_tests checkmode not found: these are the editor's checks only";
-        $("checkSummary").innerHTML = n ? `${c.errors.length} error${c.errors.length === 1 ? "" : "s"}, ${n - c.errors.length} warning${n - c.errors.length === 1 ? "" : "s"} <span class="muted">(${judge})</span>` : `Clean. <span class='muted'>(${judge})</span>`;
         const g = this.gameCheck;
-        if (g) $("checkSummary").insertAdjacentHTML("beforeend", `<div class="muted" style="font-size:12px;margin-top:4px">Last save, the game's check: <b>${esc(g.label || "")}</b> · ${g.interp.length ? `interpreted: ${esc(g.interp.join(", "))}` : "every slot native"}${g.errors ? ` · <span class="bad">${g.errors} error(s)</span>` : ""}</div>`);
-        P.innerHTML = c.problems.slice(0, 200).map((p, i) => `<div class="prob ${p.severity}" data-i="${i}">${p.line ? p.line + ":" + p.col + " " : ""}${esc(p.where || "")}: ${esc(p.msg)}</div>`).join("");
+        const list = [];
+        if (this.codeError) list.push({ severity: "error", where: "parse", msg: `${this.codeError.msg} (the checks below are of the last version that parsed)`, line: this.codeError.line, col: this.codeError.col });
+        for (const e of (g && g.errorList) || []) list.push({ severity: "error", where: "game (last save)", msg: e.msg + (e.fileLine ? ` (file line ${e.fileLine})` : ""), line: e.line, col: e.col });
+        list.push(...c.problems);
+        const nErr = list.filter((p) => p.severity === "error").length, n = list.length;
+        const judge = this.app.config.checkmode ? "the game's checkmode runs on save" : "quark_tests checkmode not found: these are the editor's checks only";
+        $("checkSummary").innerHTML = n ? `${nErr} error${nErr === 1 ? "" : "s"}, ${n - nErr} warning${n - nErr === 1 ? "" : "s"} <span class="muted">(${judge})</span>` : `Clean. <span class='muted'>(${judge})</span>`;
+        if (g) $("checkSummary").insertAdjacentHTML("beforeend", `<div class="muted" style="font-size:12px;margin-top:4px">Last save, the game's check: <b>${esc(g.label || "")}</b> · ${g.errors ? `<span class="bad">${g.errors} error(s)</span>` : g.interp.length ? `interpreted: ${esc(g.interp.join(", "))}` : "every slot native"}</div>`);
+        P.innerHTML = list.slice(0, 200).map((p, i) => `<div class="prob ${p.severity}" data-i="${i}">${p.line ? p.line + ":" + p.col + " " : ""}${esc(p.where || "")}: ${esc(p.msg)}</div>`).join("");
         P.querySelectorAll(".prob").forEach((e) => (e.onclick = () => {
-            const p = c.problems[+e.dataset.i];
+            const p = list[+e.dataset.i];
             if (p.line) { this._showView("code"); $("codeScroll").scrollTop = Math.max(0, (p.line - 1) * LINE_H - 80); }
         }));
     }
@@ -474,6 +516,47 @@ export class ModePage {
     }
 
     // ---------------------------------------------------------------- files
+    // Rename / duplicate / delete one of the user's saved modes (serve.py: the old file stays as <name>.qmode.bak;
+    // provenance moves or is copied with it). Refused (409) when the file changed on disk since the page loaded it.
+    async fileOp(op) {
+        const onDisk = !this.builtin && this.fileMeta && this.app.userModes.some((u) => u.name === this.name);
+        if (!onDisk) { this.app.toast(this.builtin ? "A built-in mode has no file: Save as makes one" : "This mode isn't saved yet", 4000); return; }
+        const from = this.name, dirty = this.savedSig !== this._sig();
+        let to = null;
+        if (op === "delete") {
+            if (!confirm(`Delete ${from}.qmode?${dirty ? "\n\nIts unsaved changes are lost too." : ""}\n\nThe file is kept as ${from}.qmode.bak in ${this.app.modesDir} (the game doesn't load it).`)) return;
+        } else {
+            const what = op === "rename" ? "Rename" : "Duplicate";
+            to = await this.app.prompt(`${what} ${from}`, op === "rename" ? from : from + "2",
+                op === "rename" ? `The file and its custommode= line take the new name (${from}.qmode stays as ${from}.qmode.bak).${dirty ? " Your unsaved changes stay in the page." : ""}`
+                    : `A copy of the saved file${dirty ? " (not your unsaved changes: Save as copies those)" : ""}, with custommode= set to the new name.`,
+                (n) => this.app.modeNameProblem(n) || (n === from ? "That's its name now." : this.app.userModes.some((u) => u.name === n) ? `${n}.qmode already exists.` : null));
+            if (!to) return;
+        }
+        let r;
+        try { r = await api.modeOp(op, from, to, this.fileMeta.sha256); }
+        catch (e) {
+            if (e.status === 409 && e.data && e.data.changed) { this.app.toast(e.message + " Reload it (open it again) first.", 8000); return; }
+            this.app.toast(`${op} failed: ${e.message}`, 8000); return;
+        }
+        await this.app.refreshModes();
+        if (op === "delete") {
+            this.savedSig = this._sig();   // (nothing to lose any more: open the base mode without asking)
+            await this.open(this.base, true);
+            this.app.toast(`Deleted ${from}.qmode (kept as ${r.backup})`, 6000);
+        } else if (op === "rename") {
+            const keep = { ast: this.ast, keySet: { ...this.keySet } };
+            delete keep.keySet.custommode;
+            this.name = to; this.fileText = r.text; this.fileMeta = { mtime: r.mtime, sha256: r.sha256 }; this.keyBase = r.text;
+            this.keySet = keep.keySet; this.ast = keep.ast;
+            if (!dirty) this.savedSig = this._sig();
+            this._fillSel(); this._afterChange(null); this._persist();
+            this.app.toast(`Renamed to ${to}.qmode (the old file is ${r.backup})`, 6000);
+        } else {
+            this._fillSel();
+            this.app.toast(`Copied to ${to}.qmode (open it from the list)`, 5000);
+        }
+    }
     _fillSel() {
         const s = $("modeSel");
         s.textContent = "";
@@ -485,14 +568,26 @@ export class ModePage {
         if (!this.builtin && !this.app.userModes.some((u) => u.name === this.name)) { const o = document.createElement("option"); o.value = "u:" + this.name; o.textContent = this.name + " (not saved)"; g2.append(o); }
         s.append(g2);
         s.value = (this.builtin ? "b:" : "u:") + this.name;
+        const onDisk = !this.builtin && !!this.fileMeta && this.app.userModes.some((u) => u.name === this.name);
+        for (const id of ["modeRename", "modeDuplicate", "modeDelete"]) $(id).disabled = !onDisk;
     }
     _provenance(name) { return { items: ["gamemodes/" + name], human: $("modeHuman").checked }; }
+    // One save at a time: a second click (or Ctrl+S) while one is on its way would carry the old file's sha256 and get a
+    // false "changed on disk" 409, so Save is disabled until the answer is in.
     async save(asName) {
-        if (!this.ast) return;
+        if (!this.ast || this._saving) return;
+        this._saving = true;
+        $("modeSave").disabled = $("modeSaveAs").disabled = true;
+        try { await this._save(asName); }
+        finally { this._saving = false; $("modeSave").disabled = $("modeSaveAs").disabled = false; }
+    }
+    async _save(asName) {
         if (this.codeError) { this.app.toast("The code has an error: fix it first (" + this.codeError.message + ")", 5000); return; }
+        const errs = (this.check && this.check.errors) || [];
+        if (errs.length && !confirm(`The checks found ${errs.length} error${errs.length > 1 ? "s" : ""} (first: ${errs[0].line ? errs[0].line + ":" + errs[0].col + " " : ""}${errs[0].msg}).\n\nThe game refuses to play a mode whose logic doesn't compile. Save it anyway?`)) return;
         let name = asName || (this.builtin ? null : this.name);
         if (!name) {
-            name = await this.app.prompt("Save as", "my" + this.base, `A built-in mode can't be overwritten: save yours under a name (letters, digits, _ . -). It goes to ${this.app.modesDir}`);
+            name = await this.app.prompt("Save as", "my" + this.base, `A built-in mode can't be overwritten: save yours under a name (letters, digits, _ . -). It goes to ${this.app.modesDir}`, (n) => this.app.modeNameProblem(n));
             if (!name) return;
         }
         if (!NAME_RE.test(name)) { this.app.toast("Bad name: letters, digits, _ . - (up to 64)"); return; }
@@ -519,7 +614,7 @@ export class ModePage {
         this._fillSel();
         this._afterChange(null);
         this.app.toast(`Saved ${r.path}`);
-        this._gameResult(r.check);
+        this._gameResult(r.check, text);
     }
     // the file changed on disk since it was loaded: offer to reload it and keep this page's logic / key edits
     _conflict(name, msg) {
@@ -543,13 +638,19 @@ export class ModePage {
         }));
         document.body.append(m);
     }
-    _gameResult(c) {
+    // checkmode's answer for the saved file: {ok, errors: [{line, col, msg}] (file lines), interpreted: [slot], slots:
+    // [{slot, interpreted}], label}. Its errors go in Checks at their Code view line.
+    _gameResult(c, fileText) {
         if (!c || !c.available) { this.gameCheck = null; this._problems(); return; }
         const res = c.result || {};
         const errs = res.errors || [];
-        const interp = (res.slots || []).filter((x) => !x.native).map((x) => x.slot);
-        this.gameCheck = { label: res.label, interp, errors: errs.length };
-        if (errs.length) this.app.toast(`quark_tests checkmode: ${errs.length} error(s): ${errs[0].line}:${errs[0].col} ${errs[0].msg || errs[0].message}`, 9000);
+        const interp = Array.isArray(res.interpreted) ? res.interpreted : (res.slots || []).filter((x) => x.interpreted).map((x) => x.slot);
+        const errorList = errs.map((e) => {
+            const at = fileText && e.line ? codeLineFor(fileText, e.line, this.codeText) : null;
+            return { msg: e.msg || e.message || String(e), line: at, col: at ? e.col : null, fileLine: e.line || null };
+        });
+        this.gameCheck = { label: res.label, interp, errors: errs.length, errorList };
+        if (errs.length) { const e = errorList[0]; this.app.toast(`quark_tests checkmode: ${errs.length} error(s): ${e.line ? e.line + ":" + e.col : "file line " + e.fileLine} ${e.msg} (in Checks)`, 9000); }
         else if (res.ok) this.app.toast(`The game compiles it: ${res.label || "ok"} · ${interp.length ? interp.length + " interpreted (" + interp.join(", ") + ")" : "every slot native"}`, 6000);
         this._problems();
     }
@@ -564,11 +665,13 @@ export class ModePage {
         $("modeNew").onclick = async () => {
             const r = await this.app.promptNew(this.base);
             if (!r) return;
-            if (!NAME_RE.test(r.name)) { this.app.toast("Bad name: letters, digits, _ . -"); return; }
             this.newFrom(r.name, r.base);
         };
         $("modeSave").onclick = () => this.save();
-        $("modeSaveAs").onclick = async () => { const n = await this.app.prompt("Save as", this.builtin ? "my" + this.base : this.name + "2", "Letters, digits, _ . - · saved to " + this.app.modesDir); if (n) this.save(n); };
+        $("modeSaveAs").onclick = async () => { const n = await this.app.prompt("Save as", this.builtin ? "my" + this.base : this.name + "2", "Letters, digits, _ . - · saved to " + this.app.modesDir, (x) => this.app.modeNameProblem(x)); if (n) this.save(n); };
+        $("modeRename").onclick = () => this.fileOp("rename");
+        $("modeDuplicate").onclick = () => this.fileOp("duplicate");
+        $("modeDelete").onclick = () => this.fileOp("delete");
         $("modeDownload").onclick = () => {
             const text = this.saveText();
             if (text == null) { this.app.toast("The code has an error"); return; }
