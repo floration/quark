@@ -232,7 +232,8 @@ def in_progress(d):
             waiting = by_id.get(str(eid))
         wl = [w for w in (waiting if isinstance(waiting, list) else [waiting]) if isinstance(w, str) and w and w != "none"]
         prio = get(e, "priority", "prio")
-        halting = any(_has_halt(x) for x in (status, prio, waiting))
+        halting = any(_has_halt(x) for x in (status, prio, waiting)) or \
+            "(HALT)" in str(get(e, "title", "name", default=""))  # (the docs write the priority into the title)
         out.append({"id": eid, "title": get(e, "title", "name", "text", default="(untitled)"),
                     "thread": get(e, "thread", "threadName", "thread_name"), "threadUrl": url,
                     "status": status, "where": get(e, "where", "location", "branch"),
