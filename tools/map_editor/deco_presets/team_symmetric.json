@@ -1,0 +1,15 @@
+{
+  "name": "Team map (point symmetric)",
+  "description": "For two-team maps mirrored through the centre (like the shipped ones): every unit is placed with its mirror (x, z) -> (-x, -z) or not at all, so both sides get the same cover and the same lights.",
+  "rules": [
+    { "name": "Cover crates", "gen": "scatter", "target": { "kind": "filter", "filter": { "role": "floor", "minLength": 8 } },
+      "params": { "step": 6, "chance": 0.4, "clear": 1.4, "stack": 0.3 },
+      "constraints": { "symmetry": "point", "maxCount": 20 } },
+    { "name": "Ceiling lamps", "gen": "lightStrip", "target": { "kind": "filter", "filter": { "role": "ceiling" } },
+      "params": { "style": "lamps", "lampSize": 0.5, "lampSpacing": 5, "spacing": 5, "minClear": 2.6, "mat": 4 },
+      "constraints": { "symmetry": "point" } },
+    { "name": "Skirting", "gen": "edgeTrim", "target": { "kind": "filter", "filter": { "role": "wall" } },
+      "params": { "edges": "bottom", "at": "cover", "height": 0.22, "mat": 8 },
+      "constraints": { "symmetry": "point" } }
+  ]
+}

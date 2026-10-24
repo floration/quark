@@ -144,6 +144,7 @@ Host each mode on **its own map** with bots (and a second human if you can). For
 | ☐ | SAVE, SAVE AS, OPEN, TEST (plays it), back to the editor. Names are what you typed. |
 | ☐ | Open a **built-in** map, change something, then SAVE / leave: it asks whether to keep your edits as a **new map** (suggests e.g. `temple_edit`). Yes saves a copy; No drops the edits; the built-in map is never changed. |
 | ☐ | EDIT THE MAP TOGETHER with a second player: edits appear for both; leaving offers a copy. |
+| ☐ | **Map editor tool** (`tools\map_editor\build.cmd`, then `run.cmd` in `Quark\map-editor`): it opens a default map and one of yours; Checks all pass on a default map; Metrics shows times to points with routes; a 10 s Bots run plays live and scrubs; a player figure stands 1.8 m against the scale bar; a decoration preset applies, undoes and regenerates; Save as writes a map the game's MAP EDITOR opens. |
 
 ## 9. Demos
 

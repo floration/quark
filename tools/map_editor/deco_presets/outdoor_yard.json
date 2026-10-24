@@ -1,0 +1,15 @@
+{
+  "name": "Outdoor yard",
+  "description": "Outdoors (prefabs style 'yard'): railings along every drop, a kerb along the free edges of the ground, a low glow strip at the foot of the walls and a few crates by the walls.",
+  "rules": [
+    { "name": "Railings", "gen": "railings", "target": { "kind": "filter", "filter": { "role": "floor" } },
+      "params": { "minDrop": 1.0, "height": 1.0, "postSpacing": 2.0, "midRail": false, "mat": 8 } },
+    { "name": "Kerb", "gen": "floorBorder", "target": { "kind": "filter", "filter": { "role": "floor" } },
+      "params": { "at": "edges", "width": 0.2, "sink": 0.02, "raise": 0.01, "mat": 8 } },
+    { "name": "Wall foot glow", "gen": "bands", "target": { "kind": "filter", "filter": { "role": "wall" } },
+      "params": { "heights": "0.15", "base": "floor", "height": 0.06, "depth": 0.02, "mat": 4 } },
+    { "name": "Crates", "gen": "scatter", "target": { "kind": "filter", "filter": { "role": "floor", "minLength": 6 } },
+      "params": { "step": 7, "chance": 0.3, "clear": 1.2, "wallDist": 1.8, "stack": 0.3 },
+      "constraints": { "maxCount": 16 } }
+  ]
+}
