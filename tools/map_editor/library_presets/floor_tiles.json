@@ -1,0 +1,38 @@
+{
+ "kind": "object",
+ "name": "floor tiles",
+ "note": "2 m metal plates with a 0.1 m seam, both ways",
+ "def": {
+  "unit": [
+   2,
+   0.1,
+   2
+  ],
+  "axes": [
+   true,
+   false,
+   true
+  ],
+  "spacing": [
+   2.1,
+   0.1,
+   2.1
+  ],
+  "boxes": [
+   {
+    "mat": 3,
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     2,
+     0.1,
+     2
+    ]
+   }
+  ],
+  "name": "floor tiles"
+ }
+}

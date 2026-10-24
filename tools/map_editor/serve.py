@@ -21,6 +21,11 @@ Binds 127.0.0.1 only (nothing on the network can reach it). Python 3 standard li
     GET  /api/sidecar/<name>        PUT /api/sidecar/<name>      <name>.mapedit.json next to your map ({} when none)
     GET  /api/deco-presets          PUT /api/deco-presets/<name>  the decoration panel's own presets ({"presets": [...]}),
                                     deco_presets/user/<name>.json in this folder
+    GET  /api/clipboard             PUT /api/clipboard   the copied objects (clipboard.json next to this file: it
+                                    survives switching maps and restarts)
+    GET  /api/library               {"items": [...]}: saved groups and custom objects, yours (library/<name>.json next
+                                    to this file) and the shipped ones (library_presets/, read-only: "builtin": true)
+    PUT  /api/library/<name>        DELETE /api/library/<name>   one of yours ({"kind": "group"|"object", ...})
     POST /api/tool/<command>        quark_maptool <command> with the body JSON on stdin: its JSON answer
     POST /api/stream/bots           quark_maptool bots --stream: NDJSON lines as they come (chunked); the first line
                                     is {"type":"run","run":"<id>"}
@@ -55,6 +60,25 @@ def list_deco_presets():
         except (OSError, ValueError): continue
         if isinstance(obj, dict) and isinstance(obj.get("rules"), list): out.append(dict(obj, file=n[:-5]))
     return out
+
+
+CLIPBOARD = os.path.join(HERE, "clipboard.json")
+LIB_KINDS = ("group", "object")
+
+
+def list_library():
+    """saved groups / custom objects: library_presets/*.json (shipped) then library/*.json (yours; same name wins)"""
+    items = {}
+    for sub, builtin in (("library_presets", True), ("library", False)):
+        d = os.path.join(HERE, sub)
+        for n in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+            if not n.endswith(".json") or not valid_name(n[:-5]): continue
+            try:
+                with open(os.path.join(d, n), encoding="utf-8") as fh: obj = json.load(fh)
+            except (OSError, ValueError): continue
+            if isinstance(obj, dict) and obj.get("kind") in LIB_KINDS:
+                items[n[:-5]] = dict(obj, file=n[:-5], builtin=builtin)
+    return list(items.values())
 
 
 def valid_name(n):
@@ -293,6 +317,11 @@ class Handler(BaseHTTPRequestHandler):
             f = os.path.join(st.user_maps(), name + ".mapedit.json")
             if not os.path.isfile(f): return self.send(200, {})
             with open(f, "rb") as fh: return self.send(200, fh.read())
+        if p == "clipboard":
+            if not os.path.isfile(CLIPBOARD): return self.send(200, {})
+            with open(CLIPBOARD, "rb") as fh: return self.send(200, fh.read())
+        if p == "library":
+            return self.send(200, {"items": list_library()})
         if p == "deco-presets":   # the decoration panel's own presets (deco_presets/user/<name>.json; DECO.md)
             return self.send(200, {"presets": list_deco_presets()})
         self.err(404, "not found")
@@ -312,6 +341,21 @@ class Handler(BaseHTTPRequestHandler):
             with open(f + ".tmp", "w", encoding="utf-8", newline="\n") as fh: json.dump(obj, fh, indent=2)
             os.replace(f + ".tmp", f)
             return self.send(200, {"ok": True, "file": name + ".json"})
+        if p == "clipboard":
+            try: obj = json.loads(data or b"{}")
+            except ValueError: return self.err(400, "bad JSON")
+            if not isinstance(obj, dict): return self.err(400, "the clipboard is a JSON object")
+            write_atomic(CLIPBOARD, json.dumps(obj).encode("utf-8"))
+            return self.send(200, {"ok": True})
+        m = re.match(r"^library/([^/]+)$", p)
+        if m:
+            name = m.group(1)
+            if not valid_name(name): return self.err(400, "a name is 1-40 letters, digits, - and _")
+            try: obj = json.loads(data or b"null")
+            except ValueError: return self.err(400, "bad JSON")
+            if not isinstance(obj, dict) or obj.get("kind") not in LIB_KINDS: return self.err(400, "a library item is {kind: group|object, ...}")
+            write_atomic(os.path.join(HERE, "library", name + ".json"), json.dumps(obj, indent=1).encode("utf-8"))
+            return self.send(200, {"ok": True, "file": name})
         if p == "config":
             try: cfg = json.loads(data or b"{}")
             except ValueError: return self.err(400, "bad JSON")
@@ -370,6 +414,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         path = unquote(self.path.split("?", 1)[0])
         if not path.startswith("/api/") or not self.same_origin(): return self.err(403, "forbidden")
+        lib = re.match(r"^/api/library/([^/]+)$", path)
+        if lib:
+            f = os.path.join(HERE, "library", lib.group(1) + ".json")
+            if not valid_name(lib.group(1)) or not os.path.isfile(f): return self.err(404, "not in your library (shipped items can't be deleted)")
+            os.remove(f)
+            return self.send(200, {"ok": True})
         m = re.match(r"^/api/map/mine/([^/]+)$", path)
         if not m: return self.err(404, "not found")
         name, d = m.group(1), self.server.st.user_maps()

@@ -2,6 +2,7 @@
 import { el, fill, $, numInput, select, check, fmt, tidy, rgbHex, hexRgb } from "./util.js";
 import { KINDS, objectiveName } from "./doc.js";
 import { LIMITS } from "./validate.js";
+import { repeatCounts } from "./repeat.js";
 import { MATERIALS, MODES } from "./fallback_parse.js";
 
 export const TEAMS = ["a", "b", "any", "race", ...Array.from({ length: 10 }, (_, i) => "att" + i), ...Array.from({ length: 10 }, (_, i) => "def" + i)];
@@ -162,6 +163,22 @@ export class Panels {
         add(this.field("intensity", numInput(o.intensity, v => this.set("light intensity", s, x => { x.intensity = Math.max(0.01, Math.min(10, v)); }), { step: 0.1 })));
         break;
       case "path": posFields(o, false); add(this.field("", el("span", { class: "faint" }, "point " + (s.i + 1) + " of " + m.path.length + ": the Path tool adds after the selected point"))); break;
+      case "object": {
+        const rep = this.app.editor.objDef(o), n = repeatCounts(rep, o);
+        add(this.field("object", el("span", {}, o.name)));
+        add(this.field("", el("span", { class: "faint" }, "a custom object: it grows by whole units where it repeats (drag a face handle, or Shift / Ctrl + arrows); saved into the map as plain boxes")));
+        add(this.field("units", el("div", { class: "v3" }, [0, 1, 2].map(k => rep.axes[k]
+          ? numInput(n[k], v => this.set("units", s, x => { const len = (Math.max(1, Math.min(500, Math.round(v))) - 1) * Math.max(0.05, rep.spacing[k]) + rep.unit[k]; x.max[k] = tidy(x.min[k] + len); }), { step: 1, min: 1 })
+          : el("span", { class: "faint num" }, "x1")))));
+        add(this.field("spacing", el("div", { class: "v3" }, [0, 1, 2].map(k => rep.axes[k]
+          ? numInput(rep.spacing[k], v => this.set("spacing", s, x => { const kk = (x.rot || 0) % 2 && k !== 1 ? 2 - k : k; x.def = { ...x.def, spacing: x.def.spacing.map((q, j) => j === kk ? Math.max(0.05, Math.min(64, v)) : q) }; const len = (n[k] - 1) * Math.max(0.05, Math.min(64, v)) + rep.unit[k]; x.max[k] = tidy(x.min[k] + len); }), { step: 0.25, min: 0.05 })
+          : el("span", { class: "faint num" }, "-")))));
+        add(this.field("position", this.v3(o.min, (k, v) => this.set("move", s, (x) => { const d0 = tidy(v) - x.min[k]; x.min[k] = tidy(v); x.max[k] = tidy(x.max[k] + d0); }))));
+        add(this.field("", el("div", { class: "btnrow" },
+          el("button", { class: "mini", title: "turn it into plain boxes (no longer a custom object)", onclick: () => this.app.library.explode(s.i) }, "make plain boxes"),
+          el("button", { class: "mini", title: "save its definition (with this spacing) in the library", onclick: () => this.app.library.saveDef(o.def) }, "save to library"))));
+        break;
+      }
       case "ladder": add(this.field("", check("draws its rails and rungs (auto)", o.auto, v => this.set("ladder auto", s, x => { x.auto = v; })))); boxFields(); break;
       case "stairs":
         add(this.field("", el("span", { class: "faint" }, "a staircase record (quark_tests walks it); it doesn't make boxes and doesn't move with them")));

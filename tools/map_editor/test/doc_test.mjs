@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // the page's modules are plain ES modules in js/ (no package.json there): copy the ones under test next to one
 const JS = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "js");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "qme-doc-"));
-for (const f of ["doc.js", "util.js", "fallback_parse.js", "validate.js", "groups.js"]) if (fs.existsSync(path.join(JS, f))) fs.copyFileSync(path.join(JS, f), path.join(tmp, f));
+for (const f of ["doc.js", "util.js", "fallback_parse.js", "validate.js", "groups.js", "repeat.js"]) if (fs.existsSync(path.join(JS, f))) fs.copyFileSync(path.join(JS, f), path.join(tmp, f));
 fs.writeFileSync(path.join(tmp, "package.json"), '{"type":"module"}');
 const { Doc, objectiveName } = await import(pathToFileURL(path.join(tmp, "doc.js")));
 const { validateMap } = await import(pathToFileURL(path.join(tmp, "validate.js")));
@@ -126,12 +126,13 @@ if (G) {
   d.select([{ k: "brush", i: 1 }, { k: "brush", i: 2 }, { k: "light", i: 0 }, { k: "spawn", i: 0 }]);
   const clip = G.copySelection(d);
   ok(clip && clip.brushes.length === 2 && clip.lights.length === 1 && clip.spawns.length === 1, "copied two boxes, a light, a spawn");
-  ok(clip.brushes[0].min[0] === 1 - clip.origin[0] + 0 || true, "relative positions");
+  ok(clip.brushes[0].min[0] === 1.4 && clip.spawns[0].pos[0] === 0.4, "positions relative to the selection's bounds (the spawn's hull starts at x -0.4)");
   const d2 = open(bigMap(2));
   const n0 = d2.map.brushes.length;
   G.pasteGroup(d2, clip, [100, 0, 100]);
   ok(d2.map.brushes.length === n0 + 2 && d2.map.lights.length === 1 && d2.map.spawns.length === 3, "pasted into another map");
   ok(d2.sel.length === 4, "the pasted objects are selected");
+  ok(d2.undoStack.length === 1, "one undo step");
   const bb = d2.selBounds();
   ok(Math.abs(bb.min[0] - 100) < 1e-6 || Math.abs((bb.min[0] + bb.max[0]) / 2 - 100) < 2, "at the paste point");
   d2.undo();
@@ -142,6 +143,19 @@ if (G) {
   ok(boxes.length === 3 && boxes[2].min[0] === 4, "a 6 m long row of a 2 m spaced post is 3 posts");
   const boxes2 = G.expandRepeat(def, { min: [0, 0, 0], max: [6, 3, 1] });
   ok(boxes2.length === 3 && boxes2[0].max[1] === 1, "an axis that doesn't repeat isn't stretched either");
+  const turned = G.expandRepeat(def, { min: [0, 0, 0], max: [1, 1, 6] }, 1);
+  ok(turned.length === 3 && turned[2].min[2] === 4, "turned a quarter, it repeats along z");
+  // an object in a map: drawn from the sidecar, saved as plain boxes, taken out again when the map opens
+  const d3 = open(bigMap(2));
+  d3.edit("add post row", ["sc.objects"], (m, sc) => { sc.objects.push({ name: "post", def, rot: 0, min: [10, 0, 0], max: [16, 1, 1] }); }, { touch: [] });
+  ok(d3.map.generated.filter(b => b.object === 0).length === 3 && d3.mapEdited, "its 3 posts are drawn; the map counts as edited");
+  const saved = structuredClone(d3.map); saved.brushes.push(...d3.map.generated.filter(b => b.object !== undefined).map(b => ({ mat: b.mat, min: b.min, max: b.max })));
+  const side = { objects: structuredClone(d3.sidecar.objects) };
+  const R = await import(pathToFileURL(path.join(tmp, "repeat.js")));
+  ok(R.stripObjects(saved, side).length === 0 && saved.brushes.length === 2 && side.objects.length === 1, "opening it takes the saved posts back out of the boxes");
+  const edited = structuredClone(saved); edited.brushes.push({ mat: 3, min: [10, 0, 0], max: [10.5, 1, 0.5] });
+  const side2 = { objects: structuredClone(d3.sidecar.objects) };
+  ok(R.stripObjects(edited, side2).length === 1 && edited.brushes.length === 3 && side2.objects.length === 0, "posts no longer all there: the object goes, its boxes stay");
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });

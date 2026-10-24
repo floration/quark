@@ -6,6 +6,7 @@ import * as THREE from "../vendor/three.module.min.js";
 import { Picker, rayBox, normalOf } from "./pick.js";
 import { KINDS } from "./doc.js";
 import { snap, tidy } from "./util.js";
+import { repeatCounts, turnDef } from "./repeat.js";
 
 export const GRIDS = [0.125, 0.25, 0.5, 1, 2, 4];
 const AX = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)];
@@ -32,7 +33,15 @@ export class Editor {
     this.view.onBeforeRender = () => this.updateGizmo();
   }
   get grid() { return GRIDS[this.gridIdx]; }
+  objDef(o) { return o && o.def ? turnDef(o.def, o.rot || 0) : null; }   // a custom object's definition as it is turned
   setTool(t) { this.tool = t; this.routeA = null; this.app.emit("tool", t); this.view.redraw(); }
+  // where a paste goes: the surface under the mouse when it is over the view, else under the view's centre
+  pastePoint() {
+    const r = this.canvas().getBoundingClientRect();
+    const at = this.lastMouse && this.canvas().matches(":hover") ? this.lastMouse : { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+    const s = this.surface(at);
+    return s ? s.p : this.view.cam.target.toArray();
+  }
   pickPoint(cb) { this.pickCb = cb; this.setTool("pickpoint"); }   // the next click in the view gives a point
 
   // ---- picking
@@ -41,9 +50,11 @@ export class Editor {
     const sh = this.view.show;
     this.brushItem = new Array(m.brushes.length);
     m.brushes.forEach((b, i) => { if ((b.mat === 9 && !sh.clip) || (b.mat === 5 && !sh.far)) return; this.brushItem[i] = items.length; items.push({ min: b.min, max: b.max, ref: { k: "brush", i } }); });
-    if (sh.generated) m.generated.forEach((b, i) => {
+    m.generated.forEach((b, i) => {
+      if (!sh.generated && b.object === undefined) return;   // (custom objects are the map's own boxes: always pickable)
       if (b.group !== undefined) items.push({ min: b.min, max: b.max, ref: { k: "group", i: b.group, gen: i } });
       else if (b.ladder !== undefined) items.push({ min: b.min, max: b.max, ref: { k: "ladder", i: b.ladder } });
+      else if (b.object !== undefined) items.push({ min: b.min, max: b.max, ref: { k: "object", i: b.object } });
     });
     this.picker.build(items); this.pickDirty = false;
   }
@@ -124,8 +135,10 @@ export class Editor {
     }
     // face handles: one object with a box (resize)
     if (d.sel.length === 1 && ["box", "stairs"].includes(KINDS[d.sel[0].k].shape)) {
+      const rep = d.sel[0].k === "object" ? this.objDef(d.obj(d.sel[0])) : null;
       for (let a = 0; a < 3; a++) for (const side of [0, 1]) {
         if (top && a === 1) continue;
+        if (rep && !rep.axes[a]) continue;   // (a custom object only grows where it repeats)
         const p = ctr.slice(); p[a] = side ? bb.max[a] : bb.min[a];
         const s = 6 / ppm;
         const h = new THREE.Mesh(new THREE.BoxGeometry(s, s, s), mat(0xffffff, 0.9));
@@ -201,7 +214,7 @@ export class Editor {
     }
     if (this.drag) { this.dragMove(e); return; }
     if (this.marquee) { this.drawMarquee(e); return; }
-    if (e.target === this.canvas()) this.hoverAt(e);
+    if (e.target === this.canvas()) { this.lastMouse = { clientX: e.clientX, clientY: e.clientY }; this.hoverAt(e); }
   }
   up(e) {
     const v = this.view;
@@ -311,6 +324,17 @@ export class Editor {
       const s = dr.sel[0], o = d.obj(s), f = dr.from[0], a = dr.axis;
       const t = snap(this.axisParam(e, dr.P0, a) - dr.s0, g);
       const box = KINDS[s.k].shape === "stairs" ? stairsBox(f) : { min: f.min.slice(), max: f.max.slice() };
+      const rep = s.k === "object" ? this.objDef(o) : null;
+      if (rep) {   // a custom object: whole units (the spacing), at least one; the far side stays put
+        const sp = Math.max(0.05, rep.spacing[a]), n0 = repeatCounts(rep, f)[a];
+        const moved = (this.axisParam(e, dr.P0, a) - dr.s0) * (dr.side ? 1 : -1);   // (+: longer)
+        const n = Math.max(1, n0 + Math.round(moved / sp));
+        const len = (n - 1) * sp + rep.unit[a];
+        if (dr.side) box.max[a] = tidy(box.min[a] + len); else box.min[a] = tidy(box.max[a] - len);
+        o.min = box.min; o.max = box.max;
+        this.app.hudDrag = s.k + " " + repeatCounts(rep, box).join(" x ") + " units";
+        dr.tx.live(); return;
+      }
       const minSize = Math.min(g, box.max[a] - box.min[a]);
       if (dr.side) box.max[a] = tidy(Math.max(box.min[a] + minSize, box.max[a] + t)); else box.min[a] = tidy(Math.min(box.max[a] - minSize, box.min[a] + t));
       if (KINDS[s.k].shape === "stairs") setStairsBox(o, box); else { o.min = box.min; o.max = box.max; }
@@ -406,6 +430,7 @@ export class Editor {
         b.auto = true; add("ladder", "ladders", b, "ladder"); break;
       }
       case "figure": this.app.player.drop(p, yaw); break;
+      case "stamp": this.app.library.stampAt(s); break;
     }
     this.pickDirty = true;
   }
@@ -432,7 +457,7 @@ export class Editor {
     if ((e.code === "KeyQ" || e.code === "KeyE") && v.keys.has("RMB")) { v.keys.add(e.code); return; }
     if (!inView && !["Escape", "Delete"].includes(e.key)) return;
     switch (e.key) {
-      case "Escape": if (this.tool !== "select") this.setTool("select"); else d.select([]); return;
+      case "Escape": if (this.tool !== "select") { this.stamp = null; this.setTool("select"); } else d.select([]); return;
       case "Delete": case "Backspace": d.deleteSel(); this.pickDirty = true; e.preventDefault(); return;
       case "[": this.app.setGrid(Math.max(0, this.gridIdx - 1)); return;
       case "]": this.app.setGrid(Math.min(GRIDS.length - 1, this.gridIdx + 1)); return;
@@ -466,6 +491,12 @@ export class Editor {
         const K = KINDS[s.k], o = d.obj(s);
         if (grow || shrink) {
           if (s.k === "light") { o.radius = Math.max(1, Math.min(60, o.radius + (grow ? 1 : -1))); continue; }
+          if (s.k === "object") {   // one unit more / less where it repeats
+            const rep = this.objDef(o); if (!rep.axes[axis]) continue;
+            const sp = Math.max(0.05, rep.spacing[axis]), n = Math.max(1, repeatCounts(rep, o)[axis] + (grow ? 1 : -1)), len = (n - 1) * sp + rep.unit[axis];
+            if (sign > 0) o.max[axis] = tidy(o.min[axis] + len); else o.min[axis] = tidy(o.max[axis] - len);
+            continue;
+          }
           if (K.shape !== "box") continue;
           const amount = grow ? g : -g, minSize = Math.min(g, o.max[axis] - o.min[axis]);
           if (sign > 0) o.max[axis] = tidy(Math.max(o.min[axis] + minSize, o.max[axis] + amount));
@@ -517,6 +548,7 @@ export class Editor {
         if (K.shape === "box") {
           const [ax, az] = rot(o.min[0], o.min[2]), [bx, bz] = rot(o.max[0], o.max[2]);
           o.min = [Math.min(ax, bx), o.min[1], Math.min(az, bz)]; o.max = [Math.max(ax, bx), o.max[1], Math.max(az, bz)];
+          if (s.k === "object") o.rot = ((o.rot || 0) + 1) % 4;
           if (s.k === "group") {
             if (o.type === "stairs") o.dir = DIR[o.dir];
             if (o.type === "custom") for (const p of o.parts) { const x0 = p.min[0], x1 = p.max[0]; p.min[0] = tidy(1 - p.max[2]); p.max[0] = tidy(1 - p.min[2]); p.min[2] = x0; p.max[2] = x1; }

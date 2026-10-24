@@ -35,6 +35,12 @@
     <div id="mapList" class="list"></div>
     <div class="paneltitle">Outliner</div>
     <div id="outliner" class="list"></div>
+    <div class="paneltitle wrap" title="Copy / paste between maps, saved groups, custom objects that repeat">Library <span class="acts">
+      <button class="mini" id="libCopy" title="Copy the selection (Ctrl+C): it pastes into any map">copy</button>
+      <button class="mini" id="libPaste" title="Paste at the cursor or the view's centre (Ctrl+V)">paste</button>
+      <button class="mini" id="libGroup" title="Save the selection in the library as a group">+ group</button>
+      <button class="mini" id="libObject" title="Make a custom object from the selected boxes: it repeats instead of stretching">+ object</button></span></div>
+    <div id="library" class="list"></div>
   </aside>
 
   <section id="center">
@@ -101,7 +107,7 @@
   </aside>
 </main>
 
-<dialog id="dlg"><form method="dialog" id="dlgForm"><div id="dlgBody"></div><div class="dlgbtns" id="dlgBtns"></div></form></dialog>
+<dialog id="dlg"><form method="dialog" id="dlgForm" novalidate><div id="dlgBody"></div><div class="dlgbtns" id="dlgBtns"></div></form></dialog>
 
 <script>window.qmeBootStart = performance.now();</script>
 <script type="module" src="js/boot.js"></script>

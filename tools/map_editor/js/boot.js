@@ -3,17 +3,19 @@ import * as THREE from "../vendor/three.module.min.js";
 import { api } from "./api.js";
 import { Doc, KINDS, objectiveName } from "./doc.js";
 import { validateMap } from "./validate.js";
+import { stripObjects, repeatCounts, turnDef } from "./repeat.js";
 import { View } from "./view.js";
 import { Editor, GRIDS } from "./edit.js";
 import { Panels } from "./panels.js";
 import { Player } from "./player.js";
 import { Testing } from "./testing.js";
 import { Bots } from "./bots.js";
+import { Library } from "./groups.js";
 import { el, fill, $, $$, Emitter, banner, dialog, prompt, check, validMapName, fmt } from "./util.js";
 import { MATERIALS, MODES } from "./fallback_parse.js";
 
 window.THREE = THREE;
-const MARKER_KEYS = new Set(["spawns", "lights", "sites", "hill", "points", "checkpoints", "path", "cartChecks", "ladders", "stairs", "groups", "sc.botStarts", "*"]);
+const MARKER_KEYS = new Set(["spawns", "lights", "sites", "hill", "points", "checkpoints", "path", "cartChecks", "ladders", "stairs", "groups", "sc.botStarts", "sc.objects", "*"]);
 const SIDE_KEYS = ["figures", "botStarts", "tests", "deco", "camera", "bots"];
 
 class App extends Emitter {
@@ -35,6 +37,7 @@ class App extends Emitter {
     this.panels = new Panels(this);
     this.testing = new Testing(this);
     this.bots = new Bots(this);
+    this.library = new Library(this);
     this.origin = { origin: "human", note: "" };
     this.wire();
     await this.panels.loadList();
@@ -53,7 +56,7 @@ class App extends Emitter {
     d.on("map", (keys, live, change) => {
       if (!keys) { v.setPalette(d.map); v.rebuildBrushes(); v.rebuildMarkers(); v.rebuildGrid(0); ed.pickDirty = true; return; }
       if (keys.some(k => k === "palette" || k === "sun" || k === "*")) { v.setPalette(d.map); }
-      const geo = keys.some(k => k === "brushes" || k === "groups" || k === "ladders" || k === "*");
+      const geo = keys.some(k => k === "brushes" || k === "groups" || k === "ladders" || k === "sc.objects" || k === "*");
       if (geo) {
         // boxes changed in place (a drag, a nudge, a material): only their instances and their picking cells
         const inPlace = keys.every(k => k === "brushes" || k.startsWith("sc.")) && change && change.touched.brushes && !change.structural.has("brushes");
@@ -125,6 +128,7 @@ class App extends Emitter {
     if (ref.k === "brush") return "box #" + ref.i + " " + MATERIALS[m.brushes[ref.i].mat];
     if (ref.k === "group") return "group #" + ref.i + " " + m.groups[ref.i].type + (ref.gen !== undefined ? " (" + MATERIALS[m.generated[ref.gen].mat] + " part)" : "");
     if (ref.k === "spawn") return "spawn #" + ref.i + " team " + m.spawns[ref.i].team;
+    if (ref.k === "object") { const o = this.doc.sidecar.objects[ref.i]; return "custom object #" + ref.i + " " + (o ? o.name + " (" + repeatCounts(turnDef(o.def, o.rot || 0), o).join(" x ") + ")" : ""); }
     return objectiveName(m, ref.k, ref.i);
   }
   readOnlyNote() { if (!this.roNoted) { this.roNoted = true; banner("This is a default map: your changes are kept when you Save as a map of your own.", false, 6000); } }
@@ -151,6 +155,7 @@ class App extends Emitter {
     if (d.sel.length) lines.push(d.sel.length === 1 ? this.describe(d.sel[0]) : d.sel.length + " selected");
     if (this.hudDrag) lines.push(this.hudDrag);
     if (ed.tool === "route" && this.testing.routeA) lines.push("route: click the end point");
+    if (ed.tool === "stamp" && ed.stamp) lines.push("click to place " + ed.stamp.name + " (Esc: cancel)");
     $("#hudInfo").textContent = lines.join("\n");
     const s = v.stats();
     $("#hudStats").textContent = (d.map.brushes.length + d.map.generated.length) + " boxes  " + (s ? s.calls + " draws\n" + (v.show.continuous ? Math.round(s.fps) + " fps  1% " + Math.round(s.low1) + "  0.1% " + Math.round(s.low01) + "\n" : "") + "render " + s.cpu.toFixed(1) + " ms cpu" : "");
@@ -184,6 +189,8 @@ class App extends Emitter {
       if (map.error) throw new Error(map.error);
       let side = {};
       try { side = await api.readSidecar(name); } catch { side = {}; }
+      const dropped = stripObjects(map, side);   // (custom objects' boxes are drawn from the objects, not kept twice)
+      if (dropped.length) banner("Custom object" + (dropped.length > 1 ? "s " : " ") + dropped.join(", ") + " no longer matched the map (edited elsewhere?): kept as plain boxes", true, 8000);
       if (src === "default") this.origin = { origin: "ai", note: "edited from " + name, base: name };
       else {
         const L = this.panels.list.mine.find(m => m.name === name);
@@ -208,15 +215,17 @@ class App extends Emitter {
     this.emit("opened");
   }
   mapForSave() {
-    const m = structuredClone(this.doc.map);
-    for (const k of ["generated", "materials", "player", "warnings", "fallback", "modesSupported", "modesPossible", "payloadLength", "bounds", "ms", "killY", "humanMade"]) delete m[k];
+    const skip = new Set(["generated", "materials", "player", "warnings", "fallback", "modesSupported", "modesPossible", "payloadLength", "bounds", "ms", "killY", "humanMade"]);
+    const m = structuredClone(Object.fromEntries(Object.entries(this.doc.map).filter(([k]) => !skip.has(k))));
+    // custom objects (sidecar) go into the .qmap as the plain boxes they are made of, after the map's own
+    for (const b of this.doc.map.generated) if (b.object !== undefined) m.brushes.push({ mat: b.mat, min: b.min.slice(), max: b.max.slice() });
     // a map changed here is human-made; an unedited one keeps its own line, so it saves byte for byte as its file
     m.handmade = !!this.doc.map.handmade || this.doc.mapEdited;
     return m;
   }
   sidecarForSave() {
     const s = {}; const sc = this.doc.sidecar;
-    for (const [k, v] of Object.entries(sc)) if (v !== undefined && !(Array.isArray(v) && !v.length && (k === "figures" || k === "botStarts"))) s[k] = v;
+    for (const [k, v] of Object.entries(sc)) if (v !== undefined && !(Array.isArray(v) && !v.length && (k === "figures" || k === "botStarts" || k === "objects"))) s[k] = v;
     const c = this.view.cam; s.camera = { pos: c.pos.toArray().map(x => Math.round(x * 100) / 100), yaw: c.yaw, pitch: c.pitch };
     return s;
   }
@@ -336,7 +345,7 @@ class App extends Emitter {
     const K = [["Right mouse + WASD", "fly (Space / C up / down, Shift fast, wheel forward, Ctrl+wheel speed)"], ["Alt + drag", "orbit"], ["T", "top-down view"], ["F / Home", "frame the selection / the map"],
       ["Click", "select (Shift adds, again: what is behind, Ctrl: a group's part)"], ["Drag", "a rectangle selects; on a selected object: slide it"], ["Arrows / PgUp PgDn", "move by the grid (Shift / Ctrl: grow / shrink that face)"],
       ["[ ]", "grid 1/8 m .. 4 m"], ["M", "material (spawn: team)"], ["R", "rotate 90 degrees"], ["Q / E", "turn a spawn 45 degrees"], ["Ctrl+D", "duplicate"], ["Del", "delete"],
-      ["Ctrl+Z / Ctrl+Y", "undo / redo"], ["Ctrl+S", "save"], ["B", "box tool"], ["Esc", "back to select / clear"]];
+      ["Ctrl+Z / Ctrl+Y", "undo / redo"], ["Ctrl+C / Ctrl+V", "copy the selection / paste it at the cursor (any map)"], ["Ctrl+S", "save"], ["B", "box tool"], ["Esc", "back to select / clear"]];
     dialog([el("h2", {}, "Keys"), el("div", { class: "keys" }, K.flatMap(([k, t]) => [el("kbd", {}, k), el("span", {}, t)]))]);
   }
 

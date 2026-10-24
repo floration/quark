@@ -58,7 +58,7 @@ export class Markers {
   clear() {
     for (const c of this.layer.children.slice()) { if (c === this.extra) continue; this.layer.remove(c); dispose(c); }
     this.clearExtra();
-    this.zones = []; this.pawns = []; this.lightsM = null; this.pathM = null; this.groupLines = null;
+    this.zones = []; this.pawns = []; this.lightsM = null; this.pathM = null; this.groupLines = null; this.objLines = null;
   }
   clearExtra() { for (const c of this.extra.children.slice()) { this.extra.remove(c); dispose(c); } }
 
@@ -89,6 +89,13 @@ export class Markers {
       const gl = this.groupLines = add(lineSet(m.groups.length, true)), P = gl.geometry.attributes.position.array;
       m.groups.forEach((g, j) => { for (let p = 0; p < 24; p++) for (let n = 0; n < 3; n++) P[(j * 24 + p) * 3 + n] = g.min[n] + (BOX_EDGES[p * 3 + n] + 0.5) * (g.max[n] - g.min[n]); });
       gl.renderOrder = 6;
+    }
+    // custom objects: their box outlined (so a row of posts reads as one object)
+    const objs = d.sidecar.objects || [];
+    if (objs.length) {
+      const ol = this.objLines = add(lineSet(objs.length, true)), P = ol.geometry.attributes.position.array;
+      objs.forEach((o, j) => { for (let p = 0; p < 24; p++) for (let n = 0; n < 3; n++) P[(j * 24 + p) * 3 + n] = o.min[n] + (BOX_EDGES[p * 3 + n] + 0.5) * (o.max[n] - o.min[n]); });
+      ol.renderOrder = 6;
     }
     // the payload path: the track, a ball per point, the cart checkpoints
     if (sh.path && m.path.length) {
@@ -158,6 +165,7 @@ export class Markers {
       const gray = tmpC.setHex(0x8a93a3);
       m.groups.forEach((g, j) => { const s = d.isSel("group", j); colorRange(this.groupLines, j, s ? SEL : gray, s ? 1 : sh.generated ? 0.5 : 0); });
     }
+    if (this.objLines) (d.sidecar.objects || []).forEach((o, j) => { const s = d.isSel("object", j); colorRange(this.objLines, j, s ? SEL : tmpC.setHex(0x5fd0c0), s ? 1 : 0.55); });
     if (this.pathM) {
       m.path.forEach((p, j) => {
         const s = d.isSel("path", j);

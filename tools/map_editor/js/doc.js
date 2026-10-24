@@ -5,6 +5,7 @@
 // whole (they are small). So a step costs what it touched: one nudged box of Midtown's 11 681 is one box, not all.
 import { Emitter } from "./util.js";
 import { generateParts } from "./fallback_parse.js";
+import { objectParts } from "./repeat.js";
 
 export const KINDS = {   // selection kind -> map key, and what it is (box: {min,max}; point: [x,y,z] or {pos})
   brush: { key: "brushes", shape: "box", label: "box" },
@@ -20,6 +21,7 @@ export const KINDS = {   // selection kind -> map key, and what it is (box: {min
   stairs: { key: "stairs", shape: "stairs", label: "stairs record" },
   figure: { key: "sc.figures", shape: "pos", label: "player figure" },
   botstart: { key: "sc.botStarts", shape: "pos", label: "bot start" },
+  object: { key: "sc.objects", shape: "box", label: "custom object" },   // (repeat.js: kept in the sidecar, saved as plain boxes)
 };
 // an objective's name as the game shows it (SITE A, POINT A) and quark_maptool's tests / metrics read it
 export function objectiveName(map, k, i) {
@@ -31,7 +33,7 @@ export function objectiveName(map, k, i) {
 // the lists whose undo is per object (every other key is copied whole)
 const LISTS = new Set(Object.values(KINDS).filter(K => !K.single).map(K => K.key));
 
-const touchesMap = (step) => step.keys.some(k => !k.startsWith("sc."));
+const touchesMap = (step) => step.keys.some(k => !k.startsWith("sc.") || k === "sc.objects");   // (custom objects are map boxes once saved)
 const clone = (v) => v === undefined ? undefined : structuredClone(v);
 const same = (a, b) => a === b || JSON.stringify(a) === JSON.stringify(b);   // (small JSON values)
 // o takes src's contents, keeping its identity (later steps and the selection refer to the object itself)
@@ -85,8 +87,8 @@ export class Doc extends Emitter {
   // fileText: the file's own text (a map saved unedited is written back as that text, byte for byte)
   open(map, name, src, sidecar, fileText = null) {
     this.map = map; this.name = name; this.src = src; this.sidecar = sidecar || {}; this.fileText = fileText;
-    for (const k of ["figures", "botStarts"]) if (!Array.isArray(this.sidecar[k])) this.sidecar[k] = [];
-    this.map.generated = generateParts(this.map);
+    for (const k of ["figures", "botStarts", "objects"]) if (!Array.isArray(this.sidecar[k])) this.sidecar[k] = [];
+    this.regen();
     this.sel = []; this.undoStack = []; this.redoStack = []; this.seq = 0; this.savedAt = 0; this.lostEdits = false;
     this.emit("open"); this.emit("map", null); this.emit("selection"); this.emit("dirty");
   }
@@ -202,9 +204,11 @@ export class Doc extends Emitter {
   // change: {touched: {key: [indices changed in place]}, structural: Set(keys added to / taken from / replaced)}
   changed(keys, live = false, change = null) {
     if (this.sel.length && !live && !this.sel.every(x => this.exists(x))) this.sel = this.sel.filter(x => this.exists(x));
-    if (keys.some(k => k === "groups" || k === "ladders" || k === "*")) this.map.generated = generateParts(this.map);
+    if (keys.some(k => k === "groups" || k === "ladders" || k === "sc.objects" || k === "*")) this.regen();
     this.emit("map", keys, live, change);
   }
+  // the boxes made from other things: groups' parts and ladders' rungs (as the game makes them), custom objects' units
+  regen() { this.map.generated = generateParts(this.map).concat(objectParts(this.sidecar.objects)); }
 
   // Replace the whole map (the decoration hook's setMap): one step. Objects that are the same as before keep their
   // identity, so the step holds only the boxes the decoration added and took out, not two copies of the map.

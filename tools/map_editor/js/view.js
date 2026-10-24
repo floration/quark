@@ -201,10 +201,10 @@ export class View {
   // whose selection changed are rewritten, unless groups or a highlight are involved (then every instance)
   updateSelectionTint(full = false) {
     const d = this.doc;
-    const selB = d.selIndex.brush || new Set(), selG = d.selIndex.group || new Set();
+    const selB = d.selIndex.brush || new Set(), selG = d.selIndex.group || new Set(), selO = d.selIndex.object || new Set();
     const hl = this.highlight || null;
     const prev = this.tinted;
-    if (!full && prev && prev.hl === hl && !selG.size && !prev.groups) {
+    if (!full && prev && prev.hl === hl && !selG.size && !selO.size && !prev.groups) {
       for (const set of [prev.brushes, selB]) for (const i of set) {
         if (prev.brushes.has(i) === selB.has(i)) continue;
         const r = this.brushInst[i]; if (!r) continue;
@@ -222,11 +222,12 @@ export class View {
         let v = 0;
         if (e.k === "b") { if (selB.has(e.i)) v = 1; else if (hl && hl.brushes.has(e.i)) v = hl.color; }
         else if (e.b.group !== undefined && selG.has(e.b.group)) v = part && part.i === e.b.group ? (this.partIndex(e) === part.part ? 1 : 2) : 1;
+        else if (e.b.object !== undefined && selO.has(e.b.object)) v = 1;
         S[j] = v;
       });
       mesh.geometry.attributes.aSel.needsUpdate = true;
     }
-    this.tinted = { brushes: new Set(selB), hl, groups: selG.size > 0 };
+    this.tinted = { brushes: new Set(selB), hl, groups: selG.size > 0 || selO.size > 0 };
     this.redraw();
   }
   partIndex(e) {   // which part of its group a generated box is (they are made in order)
