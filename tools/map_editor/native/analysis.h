@@ -17,8 +17,10 @@ struct Analysis {
     const Map& open();
     // the bots' nav graph: on the map as loaded (what the game's bots use, and what quark_tests' route checks walk)
     const NavGraph& nav();
-    // ...and on the map without clip (the map report's: its walking distances and objective timings)
+    // the map report's model of the map (NavKind::Surfaces: every top whole) on the map without clip: its walking
+    // distances and objective timings
     const NavGraph& navOpen();
+    const NavGraph& navSurfaces();  // (the same on the map as loaded: the stairs check's walkable tops, as quark_tests')
     WalkGrid& walk();               // built, with its components
     const std::vector<char>& reach();   // walk grid spots a player gets to from some spawn (the report's walkReachable)
     Json timings() const;           // ms per part built so far
@@ -26,7 +28,7 @@ struct Analysis {
     Json objectives(int mode, Json& routes, bool withPaths);
 private:
     std::unique_ptr<Map> open_;
-    std::unique_ptr<NavGraph> nav_, navOpen_;
+    std::unique_ptr<NavGraph> nav_, navOpen_, navSurf_;
     std::unique_ptr<WalkGrid> walk_;
     std::vector<char> reach_;
     bool reachDone_ = false;
