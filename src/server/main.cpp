@@ -46,6 +46,7 @@ static void usage() {
         "  --bots N         play-vs-bots server: N bots (team modes: on team B; humans join team A)\n"
         "  --allies N       team modes with --bots: N bots on the humans' team\n"
         "  --botskill N     0 beginner, 1 intermediate (default), 2 advanced, 3 expert\n"
+        "  --botbrain NAME  bots play bots/NAME.qbrain (not on ranked; default: the built-in brain)\n"
         "  --log LEVEL      game log to <data>/logs/: simple (deaths, map changes, chat, wins),\n"
         "                   verbose (+ 125 Hz gameplay), extreme (every tick, everything)\n"
         "  --logfile PATH   write the game log here instead\n"
@@ -98,6 +99,7 @@ int main(int argc, char** argv) {
         else if (a == "--bots") { cfg.vsBots = true; cfg.botsEnemy = atoi(next().c_str()); }
         else if (a == "--allies") cfg.botsAlly = atoi(next().c_str());
         else if (a == "--botskill") cfg.botSkill = cfg.balanceBotSkill = atoi(next().c_str());
+        else if (a == "--botbrain") cfg.botBrain = next();
         else if (a == "--log") {
             std::string l = next();
             cfg.logLevel = logLevelFromName(l);

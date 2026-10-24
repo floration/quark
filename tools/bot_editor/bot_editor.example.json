@@ -1,0 +1,10 @@
+{
+  "port": 8769,
+  "dataDir": null,
+  "maptool": null,
+  "quarkTests": null,
+  "mapsDirs": [],
+  "defaultMapsDir": null,
+  "defaultBrain": null,
+  "helperArgs": []
+}

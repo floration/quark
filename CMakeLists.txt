@@ -147,11 +147,13 @@ add_library(quark_core STATIC
   src/game/gamemodes.cpp
   src/game/netclient.cpp
   src/game/bots.cpp
+  src/game/botbrain.cpp
   src/game/master.cpp
   src/game/ranked.cpp
   src/game/customrules.cpp
   src/game/demo.cpp
   ${CMAKE_BINARY_DIR}/generated/version.cpp
+  ${CMAKE_BINARY_DIR}/generated/default_brain.h
 )
 target_include_directories(quark_core PUBLIC src ${CMAKE_BINARY_DIR}/generated)
 # ---- maps (a build artifact) ---------------------------------------------------------------------------
@@ -162,6 +164,11 @@ target_include_directories(quark_core PUBLIC src ${CMAKE_BINARY_DIR}/generated)
 # copied) only when .gitignore un-ignores it with a "!/maps/<name>.qmap" line, i.e. it's tracked: any other *.qmap
 # in maps/ (one the generator no longer makes, a test leftover, a stray file) is neither embedded nor copied.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# The built-in bot brain (tools/bots/default.qbrain, tools/bots/GRAMMAR.md) is embedded at build time.
+add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/default_brain.h
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/bots/embed_brain.py ${CMAKE_BINARY_DIR}/generated ${CMAKE_SOURCE_DIR}/tools/bots/default.qbrain
+  DEPENDS ${CMAKE_SOURCE_DIR}/tools/bots/embed_brain.py ${CMAKE_SOURCE_DIR}/tools/bots/default.qbrain
+  COMMENT "Embedding the built-in bot brain (tools/bots/default.qbrain)" VERBATIM)
 set(QUARK_MAPS_DIR ${CMAKE_SOURCE_DIR}/maps)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/make_maps.py)
 execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/make_maps.py --list
@@ -354,7 +361,7 @@ endif()
 
 if(QUARK_BUILD_TESTS)
   # (src/client/lightmap.cpp: the light bake has no graphics; the shipped-bake check runs it)
-  add_executable(quark_tests tests/tests.cpp tests/mapreport.cpp tests/launcher_tests.cpp tests/assets_tests.cpp src/client/lightmap.cpp)
+  add_executable(quark_tests tests/tests.cpp tests/mapreport.cpp tests/launcher_tests.cpp tests/assets_tests.cpp tests/brain_tests.cpp src/client/lightmap.cpp)
   target_link_libraries(quark_tests quark_core quark_launcher_core quark_audio)
   target_compile_definitions(quark_tests PRIVATE QUARK_SOURCE_DIR="${CMAKE_SOURCE_DIR}")   # cross-language constant checks read tools/
   target_compile_definitions(quark_tests PRIVATE QUARK_TEST_DATA="${CMAKE_SOURCE_DIR}/tests/data")   # regression inputs

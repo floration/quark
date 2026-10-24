@@ -135,6 +135,8 @@ Host each mode on **its own map** with bots (and a second human if you can). For
 | ☐ | Run around the edges of 3–4 maps: you can't get out of bounds or stuck; invisible walls (clip) block players but not shots or light. |
 | ☐ | Any map in a mode it wasn't built for: the menu warns that it may not work, and it still loads. |
 | ☐ | Bots on 3–4 maps for a few minutes: they navigate, use objectives, and don't keep falling off. |
+| ☐ | **Bot brains** (1.18.11): the default bots play as before. Copy `tools/bots/default.qbrain` to `%APPDATA%\quark\bots\fast.qbrain`, change `reactMs` to 40 for every level, host, console `addbot b expert brain=fast`: the join line reads `BOT <NAME> (EXPERT, fast#xxxxxxxx)` and that bot reacts much faster. A broken file (delete a `:`) is refused with `file:line:col`. `brain=default` gives the built-in bot. Ranked never loads brain files. |
+| ☐ | **Bot editor** (`tools\bot_editor\run.cmd`, http://127.0.0.1:8769): a map loads; place 2 bots, give one a hold objective, run live: they move, the inspector shows decisions; in Brain edit `reactMs`, switch Code / Blocks / Graph (the change shows in each), run that brain against the default; a 6-match batch fills the brain table; Save writes `%APPDATA%\quark\bots\<name>.qbrain`. |
 
 ## 8. Map editor
 
