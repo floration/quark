@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Supervisor Board</title>
+<link rel="stylesheet" href="static/quark-tools.css">
+<link rel="stylesheet" href="static/pm.css">
+</head>
+<body>
+<header class="qt-nav top" id="top">
+  <a class="qt-brand" href="./">
+    <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7.5" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
+    Supervisor Board
+  </a>
+  <span class="qt-nav-sep"></span>
+  <nav id="nav-tabs" class="nav-tabs" aria-label="Tools"></nav>
+  <span class="grow"></span>
+  <span class="clock" id="clock" title="Dallas time (America/Chicago)">--:--</span>
+</header>
+
+<main id="main">
+  <div class="statusline" id="statusline" role="status" aria-live="polite">
+    <span id="status-text">Loading&hellip;</span>
+    <button type="button" class="btn ghost small" id="refresh-btn" title="Ask the PM server to refresh every source now (at most once per 10 s)">Refresh</button>
+  </div>
+
+  <section class="card pipeline-card" id="sec-pipeline" aria-labelledby="h-pipeline"></section>
+  <section class="card needs-card" id="sec-needs" aria-labelledby="h-needs"></section>
+
+  <div class="grid two">
+    <section class="card" id="sec-progress" aria-labelledby="h-progress"></section>
+    <section class="card" id="sec-ci" aria-labelledby="h-ci"></section>
+  </div>
+
+  <div class="grid two">
+    <section class="card" id="sec-assets" aria-labelledby="h-assets"></section>
+    <section class="card" id="sec-servers" aria-labelledby="h-servers"></section>
+  </div>
+
+  <section class="card" id="sec-local" aria-labelledby="h-local"></section>
+
+  <div class="grid two">
+    <section class="card" id="sec-changelogs" aria-labelledby="h-changelogs"></section>
+    <section class="card" id="sec-history" aria-labelledby="h-history"></section>
+  </div>
+
+  <section class="card tabs-card" id="sec-tabs" aria-labelledby="h-tabs" hidden></section>
+</main>
+
+<script src="static/pm.js"></script>
+</body>
+</html>

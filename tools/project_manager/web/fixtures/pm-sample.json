@@ -1,0 +1,977 @@
+{
+  "generatedAt": "2026-10-24T19:42:10Z",
+  "sources": {
+    "github": {
+      "ok": true,
+      "fetchedAt": "2026-10-24T19:41:52Z",
+      "error": null,
+      "data": {
+        "repo": "floration/quark",
+        "testing": {
+          "branch": "testing",
+          "sha": "4fe65a7c3b1e9d2a0f6e8c7b5a4d3c2b1a0f9e8d",
+          "version": "1.18.6",
+          "committedAt": "2026-10-24T04:57:48Z",
+          "url": "https://github.com/floration/quark/tree/testing",
+          "prerelease": {
+            "tag": "test-1.18.6-test.231",
+            "url": "https://github.com/floration/quark/releases/tag/test-1.18.6-test.231",
+            "publishedAt": "2026-10-24T05:31:09Z"
+          }
+        },
+        "production": {
+          "tag": "v1.17.0",
+          "version": "1.17.0",
+          "sha": "b81c0de9a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2",
+          "publishedAt": "2026-10-02T21:10:44Z",
+          "url": "https://github.com/floration/quark/releases/tag/v1.17.0"
+        },
+        "prs": [
+          {
+            "number": 9,
+            "title": "Release 1.18.6: testing into main",
+            "url": "https://github.com/floration/quark/pull/9",
+            "head": "testing",
+            "base": "main",
+            "draft": false,
+            "checks": "pending",
+            "checksText": "3 of 5 checks done",
+            "updatedAt": "2026-10-24T19:30:02Z"
+          },
+          {
+            "number": 8,
+            "title": "Map editor: brush snapping and prefab palette",
+            "url": "https://github.com/floration/quark/pull/8",
+            "head": "claude/project-thread-vgm0tm",
+            "base": "testing",
+            "draft": true,
+            "checks": "success",
+            "checksText": "5 of 5 passed",
+            "updatedAt": "2026-10-24T17:12:40Z"
+          }
+        ],
+        "runs": {
+          "running": [
+            {
+              "id": 18342001,
+              "name": "build-and-release",
+              "branch": "testing",
+              "event": "push",
+              "sha": "4fe65a7",
+              "startedAt": "2026-10-24T19:35:58Z",
+              "job": "windows-tests (group 2 of 4)",
+              "url": "https://github.com/floration/quark/actions/runs/18342001"
+            },
+            {
+              "id": 18342207,
+              "name": "build-and-release",
+              "branch": "claude/project-thread-vgm0tm",
+              "event": "push",
+              "sha": "9c2e1f0",
+              "startedAt": "2026-10-24T19:40:31Z",
+              "job": "linux-build",
+              "url": "https://github.com/floration/quark/actions/runs/18342207"
+            }
+          ],
+          "lastFailed": {
+            "id": 18330417,
+            "name": "build-and-release",
+            "branch": "claude/project-thread-xq2e2m",
+            "sha": "06e6fc4",
+            "conclusion": "failure",
+            "job": "windows-tests (group 3 of 4)",
+            "finishedAt": "2026-10-24T14:12:31Z",
+            "url": "https://github.com/floration/quark/actions/runs/18330417"
+          },
+          "lastTesting": {
+            "id": 18329950,
+            "conclusion": "success",
+            "finishedAt": "2026-10-24T05:31:02Z",
+            "url": "https://github.com/floration/quark/actions/runs/18329950"
+          }
+        },
+        "locals": [
+          {
+            "name": "working-repo",
+            "path": "C:\\Users\\user\\Desktop\\Quark\\working-repo",
+            "branch": "testing",
+            "sha": "9c2e1f0a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e",
+            "ahead": 3,
+            "behind": 0,
+            "dirty": true,
+            "dirtyFiles": 4,
+            "dirtySince": "2026-10-23T12:20:00Z"
+          },
+          {
+            "name": "repository",
+            "path": "C:\\Users\\user\\Desktop\\Quark\\repository",
+            "branch": "testing",
+            "sha": "4fe65a7c3b1e9d2a0f6e8c7b5a4d3c2b1a0f9e8d",
+            "ahead": 0,
+            "behind": 0,
+            "dirty": false
+          },
+          {
+            "name": "map-editor-repo",
+            "path": "C:\\Users\\user\\Desktop\\Quark\\map-editor\\repo",
+            "branch": "claude/project-thread-vgm0tm",
+            "sha": "a3d91c2",
+            "ahead": 5,
+            "behind": 2,
+            "dirty": false
+          }
+        ]
+      }
+    },
+    "docs": {
+      "ok": true,
+      "fetchedAt": "2026-10-24T19:41:58Z",
+      "error": null,
+      "data": {
+        "questions": [
+          {
+            "id": "q-14",
+            "text": "Should gantry stay a 5 min FFA, or go to 7 min now that it has the second lift?",
+            "thread": "Tweak gameplay",
+            "askedAt": "2026-10-24T15:02:00Z"
+          }
+        ],
+        "recent": [
+          {
+            "time": "2026-10-24T19:20:00Z",
+            "text": "Map editor: prefab palette done, snapping next"
+          }
+        ]
+      }
+    },
+    "editors": {
+      "ok": true,
+      "fetchedAt": "2026-10-24T19:41:49Z",
+      "error": null,
+      "data": {
+        "versions": {
+          "testing": "1.18.6",
+          "production": "1.17.0"
+        },
+        "provenance": {
+          "total": 542,
+          "human": 92,
+          "thirdParty": 131,
+          "ai": 319,
+          "humanPct": 16.9,
+          "byCategory": [
+            {
+              "category": "textures",
+              "human": 31,
+              "thirdParty": 44,
+              "ai": 97
+            },
+            {
+              "category": "sounds",
+              "human": 18,
+              "thirdParty": 61,
+              "ai": 88
+            },
+            {
+              "category": "models",
+              "human": 12,
+              "thirdParty": 9,
+              "ai": 74
+            },
+            {
+              "category": "voice",
+              "human": 4,
+              "thirdParty": 14,
+              "ai": 29
+            },
+            {
+              "category": "ui",
+              "human": 9,
+              "thirdParty": 3,
+              "ai": 31
+            },
+            {
+              "category": "bots",
+              "human": 18,
+              "thirdParty": 0,
+              "ai": 0
+            }
+          ]
+        },
+        "pendingMarks": 6,
+        "remaining": 450,
+        "programs": [
+          {
+            "id": "map-editor",
+            "name": "Map editor",
+            "ahead_testing": 5,
+            "ahead_production": 12,
+            "uncommitted": 2,
+            "files_changed": 7
+          },
+          {
+            "id": "sound-editor",
+            "name": "Sound editor",
+            "ahead_testing": 0,
+            "ahead_production": 4,
+            "uncommitted": 0,
+            "files_changed": 0
+          },
+          {
+            "id": "model-editor",
+            "name": "Model editor",
+            "ahead_testing": 1,
+            "ahead_production": 1,
+            "uncommitted": 0,
+            "files_changed": 3
+          },
+          {
+            "id": "ui-customizer",
+            "name": "UI customizer",
+            "ahead_testing": 0,
+            "ahead_production": 2,
+            "uncommitted": 1,
+            "files_changed": 1
+          },
+          {
+            "id": "bot-editor",
+            "name": "Bot editor",
+            "ahead_testing": 0,
+            "ahead_production": 0,
+            "uncommitted": 0,
+            "files_changed": 0
+          }
+        ]
+      }
+    },
+    "builds": {
+      "ok": true,
+      "fetchedAt": "2026-10-24T19:41:10Z",
+      "error": null,
+      "data": {
+        "folders": [
+          {
+            "name": "production",
+            "version": "1.17.0",
+            "commit": "b81c0de",
+            "mtime": "2026-10-02T21:40:12Z",
+            "lines": [
+              "version 1.17.0",
+              "commit b81c0de9a7f6",
+              "built 2026-10-02 16:40 CDT (release)"
+            ]
+          },
+          {
+            "name": "testing",
+            "version": "1.18.6-test.231",
+            "commit": "4fe65a7",
+            "mtime": "2026-10-24T05:44:51Z",
+            "lines": [
+              "version 1.18.6-test.231",
+              "commit 4fe65a7c3b1e",
+              "channel testing"
+            ]
+          },
+          {
+            "name": "working",
+            "version": "1.18.6",
+            "commit": "9c2e1f0",
+            "mtime": "2026-10-24T18:58:03Z",
+            "lines": [
+              "version 1.18.6",
+              "commit 9c2e1f0a8b7c (dirty)",
+              "built by build-working.cmd"
+            ]
+          },
+          {
+            "name": "testing-f3",
+            "version": "1.18.5-test.228",
+            "commit": "173b9ee",
+            "mtime": "2026-10-23T05:10:40Z",
+            "lines": [
+              "version 1.18.5-test.228",
+              "commit 173b9ee",
+              "F3 overlay on"
+            ]
+          }
+        ]
+      }
+    },
+    "repo": {
+      "ok": true,
+      "fetchedAt": "2026-10-24T19:41:10Z",
+      "error": null,
+      "data": {
+        "version": "1.18.6",
+        "fullChangelog": true,
+        "changelogs": [
+          {
+            "version": "1.18.6",
+            "mtime": "2026-10-24T04:32:52Z",
+            "lines": [
+              "# 1.18.6",
+              "",
+              "A sound modding update: replacement sounds can now keep the volume you set for them.",
+              "",
+              "## Sounds",
+              "- **Your own volume for replacement sounds.** A file listed in `sound-levels.txt` now keeps its own loudness instead (it is only turned down if it would clip).",
+              "- **Sound editor (for modders and the developer):** `tools/sound_editor` builds a local page to hear every pack's sounds and every voice line."
+            ]
+          },
+          {
+            "version": "1.18.5",
+            "mtime": "2026-10-24T04:01:11Z",
+            "lines": [
+              "# 1.18.5",
+              "",
+              "A client performance and polish update: smoother frames, fewer stutters, faster map loads, and a batch of fixes.",
+              "",
+              "## Loading",
+              "- **The official maps ship with their lighting already baked.** Midtown 5.3 s -> 0.05 s, Lodestone 2.8 s -> 0.04 s.",
+              "- **Cached map loads are about 2.5x faster** (the light bake's preparation runs on every core)."
+            ]
+          },
+          {
+            "version": "1.18.4",
+            "mtime": "2026-10-22T23:40:00Z",
+            "lines": [
+              "# 1.18.4",
+              "",
+              "A small server fix. Network protocol unchanged (42).",
+              "",
+              "## Servers",
+              "- A big reliable message, such as a long chat line, a ranked ticket or a map edit, can no longer get stuck waiting while a crowded snapshot has no room for it."
+            ]
+          },
+          {
+            "version": "1.18.3",
+            "mtime": "2026-10-21T18:05:00Z",
+            "lines": [
+              "# 1.18.3",
+              "",
+              "Ranked queue fixes and a Discord bot update.",
+              "",
+              "## Ranked",
+              "- The queue no longer pairs you with the player you just played twice in a row."
+            ]
+          }
+        ],
+        "log": [
+          {
+            "sha": "4fe65a7c3b1e9d2a0f6e8c7b5a4d3c2b1a0f9e8d",
+            "short": "4fe65a7",
+            "time": "2026-10-23T21:57:48-07:00",
+            "subject": "Merge pull request #9 from floration/claude/project-thread-xq2e2m"
+          },
+          {
+            "sha": "06e6fc4",
+            "short": "06e6fc4",
+            "time": "2026-10-24T04:49:47+00:00",
+            "subject": "Sound editor: provenance.json (who made each exported sound)"
+          }
+        ]
+      }
+    },
+    "servers": {
+      "ok": true,
+      "fetchedAt": "2026-10-24T19:40:30Z",
+      "error": null,
+      "data": {
+        "production": {
+          "version": "1.17.0",
+          "count": 3,
+          "addresses": [
+            "129.151.8.15:27960",
+            "51.68.204.11:27960",
+            "45.33.12.90:27961"
+          ]
+        },
+        "testing": {
+          "version": "1.18.6-test.231",
+          "count": 1,
+          "addresses": [
+            "129.151.8.15:27970"
+          ]
+        },
+        "queue": "2"
+      }
+    },
+    "oracle": {
+      "ok": true,
+      "fetchedAt": "2026-10-24T19:36:40Z",
+      "error": null,
+      "data": {
+        "host": "ubuntu@129.151.8.15",
+        "uptime": "up 3 weeks, 2 days, 4 hours, 11 minutes",
+        "load": [
+          0.08,
+          0.12,
+          0.1
+        ],
+        "memUsedMb": 612,
+        "memTotalMb": 960,
+        "units": {
+          "quark": {
+            "active": "active",
+            "sub": "running",
+            "since": "2026-10-02T21:52:10Z"
+          },
+          "quark-testing": {
+            "active": "failed",
+            "sub": "failed",
+            "since": "2026-10-24T05:46:02Z"
+          },
+          "quark-discord": {
+            "active": "active",
+            "sub": "running",
+            "since": "2026-10-21T18:20:33Z"
+          },
+          "quark-update.timer": {
+            "active": "active",
+            "sub": "waiting",
+            "since": "2026-10-01T09:00:00Z"
+          },
+          "quark-testing-update.timer": {
+            "active": "active",
+            "sub": "waiting",
+            "since": "2026-10-01T09:00:00Z"
+          },
+          "quark-discord-update.timer": {
+            "active": "active",
+            "sub": "waiting",
+            "since": "2026-10-01T09:00:00Z"
+          }
+        },
+        "botUpdate": [
+          "Already up to date: quark-discord 1.18.3",
+          "Next check in 10 min"
+        ],
+        "serverUpdate": [
+          "Production is 1.17.0, installed 1.17.0: nothing to do",
+          "Next check in 10 min"
+        ]
+      }
+    },
+    "checklist": {
+      "ok": true,
+      "fetchedAt": "2026-10-24T19:37:10Z",
+      "error": null,
+      "data": {
+        "headings": [
+          "0. Before you start: the build is complete",
+          "1. Install and update (launcher)",
+          "2. First start and performance",
+          "3. Menus (every screen)",
+          "4. Settings",
+          "5. Weapons and movement",
+          "6. Game modes",
+          "7. Maps",
+          "8. Map editor",
+          "9. Demos",
+          "10. Hosting and joining (two machines, or two game windows)",
+          "11. Dedicated servers",
+          "12. Ranked",
+          "13. Ranking server (the Cloudflare Worker + D1 database)",
+          "14. Discord bot",
+          "15. Website",
+          "16. Sign-off and going to production"
+        ]
+      }
+    }
+  },
+  "derived": {
+    "versions": {
+      "production": "1.17.0",
+      "testing": "1.18.6",
+      "testingPrerelease": "test-1.18.6-test.231",
+      "working": "1.18.6",
+      "nextFree": "1.18.7"
+    },
+    "pipeline": [
+      {
+        "stage": "working",
+        "version": "1.18.6",
+        "sha": "9c2e1f0",
+        "state": "ahead",
+        "note": "3 commits not on testing, 4 files uncommitted",
+        "time": "2026-10-24T18:58:03Z"
+      },
+      {
+        "stage": "testing",
+        "version": "1.18.6",
+        "sha": "4fe65a7",
+        "state": "ahead",
+        "note": "prerelease test-1.18.6-test.231",
+        "time": "2026-10-24T05:31:09Z"
+      },
+      {
+        "stage": "production",
+        "version": "1.17.0",
+        "sha": "b81c0de",
+        "state": "behind",
+        "note": "waiting for the hand-test",
+        "time": "2026-10-02T21:10:44Z"
+      }
+    ],
+    "arrows": [
+      {
+        "from": "working",
+        "to": "testing",
+        "label": "3 commits"
+      },
+      {
+        "from": "testing",
+        "to": "production",
+        "label": "PR #9 open",
+        "link": "http://127.0.0.1:8767/#pr=9"
+      }
+    ],
+    "inProgress": [
+      {
+        "title": "Build a map editor",
+        "thread": "Map editor",
+        "threadUrl": "https://claude.ai/code/session_01MapEditorThread",
+        "status": "working",
+        "where": "claude/project-thread-vgm0tm",
+        "waitingOn": "Claude",
+        "waitingWhy": "prefab palette done, brush snapping next",
+        "id": "map-editor",
+        "bucket": "claude",
+        "waitingOnList": [
+          "Claude"
+        ],
+        "entryLink": "http://127.0.0.1:8766/#entry=map-editor",
+        "link": "http://127.0.0.1:8766/#entry=map-editor",
+        "source": "docs"
+      },
+      {
+        "title": "Tweak gameplay (waiting on push)",
+        "thread": "Tweak gameplay",
+        "threadUrl": "https://claude.ai/code/session_01TweakGameplay",
+        "status": "done locally",
+        "where": "working-repo, 3 commits",
+        "waitingOn": "push",
+        "waitingWhy": "3 local commits ready; say push to release them",
+        "id": "tweak-gameplay",
+        "bucket": "push",
+        "waitingOnList": [
+          "push"
+        ],
+        "entryLink": "http://127.0.0.1:8766/#entry=tweak-gameplay",
+        "link": "http://127.0.0.1:8766/#entry=tweak-gameplay",
+        "source": "docs"
+      },
+      {
+        "title": "Gantry round length",
+        "thread": "Tweak gameplay",
+        "threadUrl": "https://claude.ai/code/session_01TweakGameplay",
+        "status": "blocked",
+        "where": "tools/maps/gantry.py",
+        "waitingOn": "owner",
+        "waitingWhy": "5 min or 7 min? (question q-14)",
+        "id": "gantry-length",
+        "bucket": "owner",
+        "waitingOnList": [
+          "owner"
+        ],
+        "entryLink": "http://127.0.0.1:8766/#entry=gantry-length",
+        "link": "http://127.0.0.1:8766/#entry=gantry-length",
+        "source": "docs"
+      },
+      {
+        "title": "Discord bot rank roles",
+        "thread": "Discord bot",
+        "threadUrl": "https://claude.ai/code/session_01DiscordBot",
+        "status": "blocked",
+        "where": "tools/master",
+        "waitingOn": "owner",
+        "waitingWhy": "needs the role names you want for each rank",
+        "id": "discord-roles",
+        "bucket": "owner",
+        "waitingOnList": [
+          "owner"
+        ],
+        "entryLink": "http://127.0.0.1:8766/#entry=discord-roles",
+        "link": "http://127.0.0.1:8766/#entry=discord-roles",
+        "source": "docs"
+      },
+      {
+        "title": "Release 1.18.6 to production",
+        "thread": "Releases",
+        "threadUrl": "https://github.com/floration/quark/pull/9",
+        "status": "PR open",
+        "where": "PR #9",
+        "waitingOn": "PR",
+        "waitingWhy": "checks running; then your hand-test",
+        "id": "release-1-18-6",
+        "bucket": "pr",
+        "waitingOnList": [
+          "PR",
+          "owner"
+        ],
+        "entryLink": "http://127.0.0.1:8766/#entry=release-1-18-6",
+        "link": "http://127.0.0.1:8766/#entry=release-1-18-6",
+        "source": "docs"
+      },
+      {
+        "title": "Windows test flake in group 3",
+        "thread": "CI health",
+        "threadUrl": "https://claude.ai/code/session_01CIHealth",
+        "status": "investigating",
+        "where": "run 18330417",
+        "waitingOn": "CI",
+        "waitingWhy": "re-run to see if it repeats",
+        "id": "win-flake",
+        "bucket": "ci",
+        "waitingOnList": [
+          "CI"
+        ],
+        "entryLink": "http://127.0.0.1:8766/#entry=win-flake",
+        "link": "http://127.0.0.1:8766/#entry=win-flake",
+        "source": "docs"
+      },
+      {
+        "title": "Hightown staircase balance",
+        "thread": "Maps",
+        "threadUrl": "https://claude.ai/code/session_01Maps",
+        "status": "testing",
+        "where": "tools/maps/hightown.py",
+        "waitingOn": "tests",
+        "waitingWhy": "mapreport running (balance 6.8, needs 7)",
+        "id": "hightown-stairs",
+        "bucket": "tests",
+        "waitingOnList": [
+          "tests"
+        ],
+        "entryLink": "http://127.0.0.1:8766/#entry=hightown-stairs",
+        "link": "http://127.0.0.1:8766/#entry=hightown-stairs",
+        "source": "docs"
+      },
+      {
+        "title": "Project manager app",
+        "thread": "Project manager",
+        "threadUrl": "https://claude.ai/code/session_019MhL2wrnrSs8rRjXkZh5do",
+        "status": "working",
+        "where": "claude/project-thread-vgm0tm",
+        "waitingOn": "Claude",
+        "waitingWhy": "server, shell and page in progress",
+        "id": "project-manager",
+        "bucket": "claude",
+        "waitingOnList": [
+          "Claude"
+        ],
+        "entryLink": "http://127.0.0.1:8766/#entry=project-manager",
+        "link": "http://127.0.0.1:8766/#entry=project-manager",
+        "source": "docs"
+      }
+    ],
+    "nextSteps": [
+      {
+        "text": "Answer: Should gantry stay a 5 min FFA, or go to 7 min now that it has the second lift?",
+        "why": "open question in the Claude Manager (asked 4 h ago)",
+        "owner": "q",
+        "link": "http://127.0.0.1:8766/#entry=q-14",
+        "source": "docs"
+      },
+      {
+        "text": "Hand-test 1.18.6 with RELEASE_CHECKLIST",
+        "why": "testing (1.18.6) is ahead of production (1.17.0)",
+        "owner": "q",
+        "link": "https://github.com/floration/quark/blob/testing/docs/RELEASE_CHECKLIST.md",
+        "source": "derived"
+      },
+      {
+        "text": "Say push for \"Tweak gameplay\"",
+        "why": "in-progress entry waiting on push",
+        "owner": "q",
+        "link": "https://claude.ai/code/session_01TweakGameplay",
+        "source": "docs"
+      },
+      {
+        "text": "Give the Discord rank role names",
+        "why": "in-progress entry waiting on owner",
+        "owner": "q",
+        "link": "http://127.0.0.1:8766/#entry=discord-roles",
+        "source": "docs"
+      },
+      {
+        "text": "working-repo has 3 commits not on testing",
+        "why": "local copy ahead of testing",
+        "owner": "q",
+        "link": "http://127.0.0.1:8767/#local=working-repo",
+        "source": "github"
+      },
+      {
+        "text": "Finish brush snapping in the map editor",
+        "why": "in-progress entry waiting on Claude",
+        "owner": "claude",
+        "link": "https://claude.ai/code/session_01MapEditorThread",
+        "source": "docs"
+      },
+      {
+        "text": "Re-run Windows tests group 3",
+        "why": "last failed run on a feature branch",
+        "owner": "claude",
+        "link": "http://127.0.0.1:8767/#run=18330417",
+        "source": "github"
+      },
+      {
+        "text": "Lift Hightown balance to 7",
+        "why": "in-progress entry waiting on tests",
+        "owner": "claude",
+        "link": "http://127.0.0.1:8765/#view=changes&program=map-editor",
+        "source": "docs"
+      }
+    ],
+    "attention": [
+      {
+        "level": "red",
+        "text": "quark-testing is failed on the Oracle box (since 00:46)",
+        "link": null,
+        "source": "oracle"
+      },
+      {
+        "level": "amber",
+        "text": "working-repo has uncommitted changes older than a day (4 files)",
+        "link": "http://127.0.0.1:8767/#local=working-repo",
+        "source": "github"
+      }
+    ],
+    "humanPct": 16.9,
+    "assets": {
+      "total": 542,
+      "human": 92,
+      "thirdParty": 131,
+      "ai": 319,
+      "humanPct": 16.9,
+      "byCategory": [
+        {
+          "category": "textures",
+          "total": 172,
+          "human": 31,
+          "thirdParty": 44,
+          "ai": 97,
+          "link": "http://127.0.0.1:8765/#view=assets&category=textures"
+        },
+        {
+          "category": "sounds",
+          "total": 167,
+          "human": 18,
+          "thirdParty": 61,
+          "ai": 88,
+          "link": "http://127.0.0.1:8765/#view=assets&category=sounds"
+        },
+        {
+          "category": "models",
+          "total": 95,
+          "human": 12,
+          "thirdParty": 9,
+          "ai": 74,
+          "link": "http://127.0.0.1:8765/#view=assets&category=models"
+        },
+        {
+          "category": "voice",
+          "total": 47,
+          "human": 4,
+          "thirdParty": 14,
+          "ai": 29,
+          "link": "http://127.0.0.1:8765/#view=assets&category=voice"
+        },
+        {
+          "category": "ui",
+          "total": 43,
+          "human": 9,
+          "thirdParty": 3,
+          "ai": 31,
+          "link": "http://127.0.0.1:8765/#view=assets&category=ui"
+        },
+        {
+          "category": "bots",
+          "total": 18,
+          "human": 18,
+          "thirdParty": 0,
+          "ai": 0,
+          "link": "http://127.0.0.1:8765/#view=assets&category=bots"
+        }
+      ],
+      "pendingMarks": 6,
+      "remaining": 450,
+      "generatedAt": "2026-10-24T19:41:40Z",
+      "link": "http://127.0.0.1:8765/#view=assets"
+    },
+    "questions": [
+      {
+        "id": "q-14",
+        "text": "Should gantry stay a 5 min FFA, or go to 7 min now that it has the second lift?",
+        "body": null,
+        "thread": "Tweak gameplay",
+        "threadUrl": "https://claude.ai/code/session_01TweakGameplay",
+        "recommendation": "Keep 5 min: the map report's pace score drops below 7 at 7 min, and ranked rounds stay short.",
+        "askedAt": "2026-10-24T15:02:00Z",
+        "link": "http://127.0.0.1:8766/#entry=q-14"
+      }
+    ]
+  },
+  "history": [
+    {
+      "time": "2026-10-24T19:35:58Z",
+      "kind": "ci",
+      "text": "CI started on testing (build-and-release)",
+      "link": "http://127.0.0.1:8767/#run=18342001"
+    },
+    {
+      "time": "2026-10-24T19:30:02Z",
+      "kind": "pr",
+      "text": "PR #9 opened: Release 1.18.6: testing into main",
+      "link": "http://127.0.0.1:8767/#pr=9"
+    },
+    {
+      "time": "2026-10-24T17:12:40Z",
+      "kind": "pr",
+      "text": "PR #8 opened (draft): Map editor brush snapping",
+      "link": "http://127.0.0.1:8767/#pr=8"
+    },
+    {
+      "time": "2026-10-24T15:02:00Z",
+      "kind": "entry",
+      "text": "In progress: Gantry round length (waiting on owner)",
+      "link": "http://127.0.0.1:8766/#entry=q-14"
+    },
+    {
+      "time": "2026-10-24T14:12:31Z",
+      "kind": "ci",
+      "text": "CI failed on claude/project-thread-xq2e2m (windows-tests group 3)",
+      "link": "http://127.0.0.1:8767/#run=18330417"
+    },
+    {
+      "time": "2026-10-24T05:46:02Z",
+      "kind": "unit",
+      "text": "quark-testing: active -> failed",
+      "link": null
+    },
+    {
+      "time": "2026-10-24T05:31:09Z",
+      "kind": "release",
+      "text": "New prerelease test-1.18.6-test.231",
+      "link": "https://github.com/floration/quark/releases/tag/test-1.18.6-test.231"
+    },
+    {
+      "time": "2026-10-24T04:57:48Z",
+      "kind": "release",
+      "text": "testing is now 1.18.6 (4fe65a7)",
+      "link": null
+    },
+    {
+      "time": "2026-10-24T04:01:11Z",
+      "kind": "release",
+      "text": "testing is now 1.18.5 (173b9ee)",
+      "link": null
+    },
+    {
+      "time": "2026-10-23T22:10:00Z",
+      "kind": "human",
+      "text": "Human-made assets 15.8% -> 16.9% (6 sounds replaced)",
+      "link": "http://127.0.0.1:8765/#view=assets&category=sounds"
+    },
+    {
+      "time": "2026-10-23T18:30:00Z",
+      "kind": "entry",
+      "text": "Finished: Sound editor",
+      "link": null
+    },
+    {
+      "time": "2026-10-22T23:40:00Z",
+      "kind": "release",
+      "text": "testing is now 1.18.4",
+      "link": null
+    },
+    {
+      "time": "2026-10-21T18:20:33Z",
+      "kind": "unit",
+      "text": "quark-discord: failed -> active",
+      "link": null
+    },
+    {
+      "time": "2026-10-20T16:00:00Z",
+      "kind": "ci",
+      "text": "CI passed on testing",
+      "link": null
+    },
+    {
+      "time": "2026-10-19T20:15:00Z",
+      "kind": "human",
+      "text": "Human-made assets 14.2% -> 15.8%",
+      "link": null
+    }
+  ],
+  "tabs": [
+    {
+      "id": "project",
+      "name": "Supervisor Board",
+      "url": "http://127.0.0.1:8768/?embed=1",
+      "port": 8768,
+      "installed": true,
+      "up": true
+    },
+    {
+      "id": "github",
+      "name": "GitHub Manager",
+      "url": "http://127.0.0.1:8767/?embed=1",
+      "port": 8767,
+      "installed": true,
+      "up": true,
+      "parent": "project"
+    },
+    {
+      "id": "docs",
+      "name": "Claude Manager",
+      "url": "http://127.0.0.1:8766/?embed=1",
+      "port": 8766,
+      "installed": true,
+      "up": true,
+      "parent": "project"
+    },
+    {
+      "id": "dashboard",
+      "name": "Editor Manager",
+      "url": "http://127.0.0.1:8765/?embed=1",
+      "port": 8765,
+      "installed": true,
+      "up": true,
+      "parent": "project"
+    },
+    {
+      "id": "sound",
+      "name": "Sound Editor",
+      "url": "file:///C:/Users/user/Desktop/Quark/sound-editor/sound-editor.html",
+      "installed": true,
+      "parent": "dashboard"
+    },
+    {
+      "id": "ui",
+      "name": "UI Editor",
+      "url": "file:///C:/Users/user/Desktop/Quark/ui-customizer/ui-customizer.html",
+      "installed": true,
+      "parent": "dashboard"
+    },
+    {
+      "id": "map",
+      "name": "Map Editor",
+      "url": "file:///C:/Users/user/Desktop/Quark/map-editor/index.html",
+      "installed": true,
+      "parent": "dashboard"
+    },
+    {
+      "id": "bot",
+      "name": "Bot Editor",
+      "installed": false,
+      "parent": "dashboard"
+    },
+    {
+      "id": "model",
+      "name": "Model Editor",
+      "installed": false,
+      "parent": "dashboard"
+    }
+  ]
+}

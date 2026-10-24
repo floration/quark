@@ -1,0 +1,8 @@
+{
+  "name": "quark-project",
+  "productName": "Quark Project",
+  "version": "1.0.0",
+  "description": "Quark Project: one window with the project manager and the Quark editors as tabs (local tooling).",
+  "main": "main.js",
+  "private": true
+}
