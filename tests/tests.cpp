@@ -1551,13 +1551,33 @@ static void testAtomicWrite() {
     fs::remove(path, ec);
 }
 
-// Shipped light bakes (maps/lightcache/, quark --bake-maps): a package's bake of a map is used when the user's cache
-// misses (no bake, nothing written to the user's cache, the shipped file left alone); a stale one (another bake
-// version, another map's) is turned down and the map baked into the user's cache as before.
+// Shipped light bakes (maps/lightcache/<sha256>.qlbz: quark --bake-maps' raw .qlb, zlib'd by tools/pack_lightcache.py):
+// a package's bake of a map is used when the user's cache misses (no bake, nothing written to the user's cache, the
+// shipped file left alone); a stale one (another bake version, another map's, cut short, not compressed) is turned
+// down and the map baked into the user's cache as before.
 static void testShippedLightCache() {
     printf("shipped light bakes\n");
     namespace fs = std::filesystem;
     std::error_code ec;
+    // a zlib stream of stored blocks (what pack_lightcache.py writes, compressed: the same decoder reads both)
+    auto zlibStored = [](const std::string& d) {
+        std::string z = "\x78\x01";
+        size_t at = 0;
+        do {
+            const size_t n = std::min<size_t>(65535, d.size() - at);
+            z += (char)(at + n == d.size());
+            z += (char)(n & 255); z += (char)(n >> 8); z += (char)(~n & 255); z += (char)((~n >> 8) & 255);
+            z.append(d, at, n);
+            at += n;
+        } while (at < d.size());
+        uint32_t s1 = 1, s2 = 0;
+        for (unsigned char c : d) { s1 = (s1 + c) % 65521; s2 = (s2 + s1) % 65521; }
+        const uint32_t ad = s2 << 16 | s1;
+        for (int k = 3; k >= 0; k--) z += (char)(ad >> (8 * k));
+        return z;
+    };
+    auto readFile = [](const std::string& path) { std::ifstream f(fs::u8path(path), std::ios::binary); std::stringstream ss; ss << f.rdbuf(); return ss.str(); };
+    auto writeFile = [](const std::string& path, const std::string& d) { std::ofstream(fs::u8path(path), std::ios::binary | std::ios::trunc) << d; };
     const std::string shipped = userDataPath("zz_lightcache"), user = userDataPath("cache");
     fs::remove_all(fs::u8path(shipped), ec);
     fs::create_directories(fs::u8path(shipped), ec);
@@ -1565,37 +1585,41 @@ static void testShippedLightCache() {
     Map m;
     std::string err;
     CHECK(m.parse("box -8 -1 -8 8 0 8\nbox 2 0 -2 3 3 2\nbox -4 2 -4 -3 2.5 4\nlight 0 2 0 6 1\nspawn any 0 0 0\n", &err));
-    const std::string file = shipped + "/" + lightCacheName(m, true), mine = user + "/" + lightCacheName(m);
-    CHECK(lightCacheName(m) == m.contentId().hex() + ".qlm" && lightCacheName(m, true) == m.contentId().hex() + ".qlb");
+    const std::string raw = shipped + "/raw.qlb", file = shipped + "/" + lightCacheName(m, true), mine = user + "/" + lightCacheName(m);
+    CHECK(lightCacheName(m) == m.contentId().hex() + ".qlm" && lightCacheName(m, true) == m.contentId().hex() + ".qlbz");
     bool kept = true;
-    CHECK(bakeLightCacheFile(m, file, &kept) && !kept && fs::exists(fs::u8path(file), ec));
-    CHECK(bakeLightCacheFile(m, file, &kept) && kept);   // (a valid one is kept: --bake-maps redoes only changed maps)
+    CHECK(bakeLightCacheFile(m, raw, &kept) && !kept && fs::exists(fs::u8path(raw), ec));
+    CHECK(bakeLightCacheFile(m, raw, &kept) && kept);   // (a valid one is kept: --bake-maps redoes only changed maps)
+    const std::string bytes = readFile(raw);
+    writeFile(file, zlibStored(bytes));
     const auto stamp = fs::last_write_time(fs::u8path(file), ec);
     BakedWorld a;
     buildWorld(m, a);
-    CHECK(a.fromCache && !a.texels.empty() && !fs::exists(fs::u8path(mine), ec));   // the shipped bake: no bake, no copy
-    CHECK(fs::last_write_time(fs::u8path(file), ec) == stamp);                      // read-only: not touched
+    CHECK(a.fromCache && bytes.size() == 20 + a.texels.size() && !fs::exists(fs::u8path(mine), ec));   // no bake, no copy
+    CHECK(a.texels == std::vector<uint8_t>(bytes.begin() + 20, bytes.end()));
+    CHECK(fs::last_write_time(fs::u8path(file), ec) == stamp);                                          // read-only: not touched
     // stale: another bake version's file is a miss, baked into the user's cache (the same light)
-    std::string bytes;
-    { std::ifstream f(fs::u8path(file), std::ios::binary); std::stringstream ss; ss << f.rdbuf(); bytes = ss.str(); }
-    CHECK(bytes.size() == 20 + a.texels.size());
     std::string stale = bytes;
     stale[4]++;   // (the header's second word: kBakeVersion)
-    { std::ofstream(fs::u8path(file), std::ios::binary | std::ios::trunc) << stale; }
+    writeFile(file, zlibStored(stale));
     BakedWorld b;
     buildWorld(m, b);
     CHECK(!b.fromCache && b.texels == a.texels && fs::exists(fs::u8path(mine), ec));
     fs::remove(fs::u8path(mine), ec);
-    // another map's bake under this map's name: turned down too
+    // another map's bake under this map's name, a stream cut short, the raw bytes not compressed: turned down too
     Map other;
     CHECK(other.parse("box -9 -1 -9 9 0 9\nspawn any 0 0 0\n", &err));
-    CHECK(bakeLightCacheFile(other, file, &kept) && !kept);   // (written there: its header names the other map)
-    BakedWorld c;
-    buildWorld(m, c);
-    CHECK(!c.fromCache && c.texels == a.texels);
+    CHECK(bakeLightCacheFile(other, raw, &kept) && !kept);   // (written over raw.qlb: its header names the other map)
+    const std::string z = zlibStored(bytes);
+    for (const std::string& bad : {zlibStored(readFile(raw)), z.substr(0, z.size() / 2), bytes}) {
+        writeFile(file, bad);
+        BakedWorld c;
+        buildWorld(m, c);
+        CHECK(!c.fromCache && c.texels == a.texels);
+        fs::remove(fs::u8path(mine), ec);
+    }
     setShippedLightCacheDir("");
     fs::remove_all(fs::u8path(shipped), ec);
-    fs::remove(fs::u8path(mine), ec);
 }
 
 static void testGridQueries() {

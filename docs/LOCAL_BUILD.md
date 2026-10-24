@@ -64,9 +64,10 @@ A build of uncommitted changes gets `-dirty` in its name. Options: `-Tests` also
 The build's own files (`build-win\`) stay in the checkout and are ignored by git.
 Linking prints `ld.exe: .rsrc merge failure: multiple non-default manifests` and newer GCCs warn that NOMINMAX is
 already defined: both harmless (the exes carry only quark's own manifest). A full build takes about a minute.
-After building, the new `quark.exe --bake-maps` bakes the official maps' light into the build's `maps\lightcache\`
-(as CI does for every package: no first join waits for a bake). Bakes are kept in `build-win\lightcache\` between
-builds, so only changed maps are baked again: about 25 s for all 21 on a 20-thread CPU, under a second when none changed.
+After building, `quark.exe --bake-maps` bakes the official maps' light and `tools\pack_lightcache.py` puts it, zlib'd,
+into the build's `maps\lightcache\` (as CI does for every package: no first join waits for a bake). Raw bakes are kept in
+`build-win\lightcache\` between builds, so only changed maps are baked again: about 25 s for all 21 on a 20-thread CPU,
+under a second when none changed, plus ~1.5 s to pack.
 
 ## 3. Download a CI build
 

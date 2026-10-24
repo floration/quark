@@ -69,9 +69,10 @@ if ($Tests) {
   if ($LASTEXITCODE -ne 0) { throw "quark_tests failed (exit $LASTEXITCODE)" }
 }
 
-# the official maps' light, baked by this quark.exe as CI does (packages ship it in maps\lightcache, so no first join
-# waits for a bake). Kept in build-win\lightcache between builds: only maps that changed are baked again (all of them
-# take ~25 s on 20 threads; none changed: under a second). (piped: PowerShell waits for a windowed exe only then)
+# the official maps' light, baked by this quark.exe as CI does (packages ship it zlib'd in maps\lightcache, so no first
+# join waits for a bake). Kept raw in build-win\lightcache between builds: only maps that changed are baked again (all
+# of them take ~25 s on 20 threads; none changed: under a second), then packed (~1.5 s). (piped: PowerShell waits for a
+# windowed exe only then)
 $bakeTime = Measure-Command { & .\build-win\quark.exe --bake-maps build-win\lightcache | Write-Host }
 if ($LASTEXITCODE -ne 0) { throw "quark --bake-maps failed (exit $LASTEXITCODE)" }
 Write-Host ("light bakes: {0:N1} s" -f $bakeTime.TotalSeconds)
@@ -84,8 +85,8 @@ if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
 New-Item -ItemType Directory -Force $dest | Out-Null
 Copy-Item build-win\quark.exe, build-win\quark_server.exe, build-win\quark_launcher.exe $dest
 Copy-Item -Recurse maps, mods $dest
-if (Test-Path "$dest\maps\lightcache") { Remove-Item -Recurse -Force "$dest\maps\lightcache" }   # (only this build's bakes)
-Copy-Item -Recurse build-win\lightcache "$dest\maps\lightcache"
+& $py tools\pack_lightcache.py build-win\lightcache "$dest\maps\lightcache"   # (any other bake there is removed)
+if ($LASTEXITCODE -ne 0) { throw 'tools\pack_lightcache.py failed' }
 Copy-Item README.md $dest
 Compress-Archive -Force -Path $dest -DestinationPath "$dest.zip"
 $latest = Join-Path $OutDir 'latest'

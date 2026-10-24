@@ -10,6 +10,9 @@
 #include <fstream>
 #include <chrono>
 #include <thread>
+#include <climits>
+#include <cstdlib>
+#include "stb/stb_image.h"   // (its zlib decoder, for shipped bakes: built in quark_assets)
 
 namespace {
 constexpr uint32_t kCacheMagic = 0x324D4C51; // "QLM2": named by the map's sha256 (QLM1: by its name, with its CRC)
@@ -114,16 +117,41 @@ constexpr size_t kMaxCaches = 32;   // bakes kept (an editor's BAKE LIGHT after 
 uint32_t idWord(const Map& m) { const uint8_t* b = m.contentId().b; return (uint32_t)b[0] | (uint32_t)b[1] << 8 | (uint32_t)b[2] << 16 | (uint32_t)b[3] << 24; }
 std::string g_shippedDir;   // (setShippedLightCacheDir: tests)
 
+bool headerOk(const uint32_t hdr[5], const Map& m, const BakedWorld& out) {
+    return hdr[0] == kCacheMagic && hdr[1] == kBakeVersion && hdr[2] == idWord(m) &&
+           (int)hdr[3] == out.atlasW && (int)hdr[4] == out.atlasH;
+}
+
 bool readCache(const std::string& path, const Map& m, BakedWorld& out) {
     std::ifstream f(utf8Path(path), std::ios::binary);
     if (!f) return false;
     uint32_t hdr[5];
     f.read((char*)hdr, sizeof hdr);
-    if (!f || hdr[0] != kCacheMagic || hdr[1] != kBakeVersion || hdr[2] != idWord(m) ||
-        (int)hdr[3] != out.atlasW || (int)hdr[4] != out.atlasH) return false;
+    if (!f || !headerOk(hdr, m, out)) return false;
     out.texels.resize((size_t)out.atlasW * out.atlasH * 2);
     f.read((char*)out.texels.data(), out.texels.size());
     return (bool)f;
+}
+
+// A shipped bake (.qlbz): a cache file's bytes as one zlib stream (tools/pack_lightcache.py; 84 MB of bakes ship as
+// ~12), inflated by stb_image's decoder (Midtown: 2.7 -> 16.8 MB).
+bool readShipped(const std::string& path, const Map& m, BakedWorld& out) {
+    std::ifstream f(utf8Path(path), std::ios::binary | std::ios::ate);
+    if (!f) return false;
+    const std::streamoff zn = f.tellg();
+    const size_t want = sizeof(uint32_t) * 5 + (size_t)out.atlasW * out.atlasH * 2;
+    if (zn <= 0 || zn > INT_MAX || want > INT_MAX) return false;
+    std::vector<char> z((size_t)zn);
+    f.seekg(0);
+    if (!f.read(z.data(), zn)) return false;
+    int n = 0;
+    char* raw = stbi_zlib_decode_malloc_guesssize_headerflag(z.data(), (int)zn, (int)want, &n, 1);
+    if (!raw) return false;
+    uint32_t hdr[5];
+    const bool ok = (size_t)n == want && (memcpy(hdr, raw, sizeof hdr), headerOk(hdr, m, out));
+    if (ok) out.texels.assign(raw + sizeof hdr, raw + want);
+    free(raw);   // (stb's allocator: malloc)
+    return ok;
 }
 
 bool loadCache(const Map& m, BakedWorld& out) {
@@ -135,7 +163,7 @@ bool loadCache(const Map& m, BakedWorld& out) {
     }
     // the package's bake of an official map (read-only: the install may be, and an update replaces the folder)
     const std::string dir = g_shippedDir.empty() ? findDataPath("maps/lightcache") : g_shippedDir;
-    return readCache(dir + "/" + lightCacheName(m, true), m, out);
+    return readShipped(dir + "/" + lightCacheName(m, true), m, out);
 }
 
 // written to a temporary file and renamed over the cache in one step (a crash or a full disk mid-write left a
@@ -520,7 +548,7 @@ void buildWorld(const Map& map, BakedWorld& out, const std::function<void(float)
     bake(map, out, progress, cancel, nullptr);
 }
 
-std::string lightCacheName(const Map& map, bool shipped) { return map.contentId().hex() + (shipped ? ".qlb" : ".qlm"); }
+std::string lightCacheName(const Map& map, bool shipped) { return map.contentId().hex() + (shipped ? ".qlbz" : ".qlm"); }
 void setShippedLightCacheDir(const std::string& dir) { g_shippedDir = dir; }
 
 bool bakeLightCacheFile(const Map& map, const std::string& path, bool* kept) {
@@ -548,7 +576,7 @@ int bakeOfficialMaps(const std::string& dir) {
         std::string err;
         if (!m.parse(text, &err)) { fprintf(stderr, "%s: %s\n", name.c_str(), err.c_str()); failed++; continue; }
         m.dynSolids.clear();   // (as the client bakes a joined map: no payload cart box)
-        const std::string file = lightCacheName(m, true), path = dir + "/" + file;
+        const std::string file = m.contentId().hex() + ".qlb", path = dir + "/" + file;   // (raw: pack_lightcache.py compresses)
         made.push_back(file);
         const double t = timeNow();
         bool kept = false;

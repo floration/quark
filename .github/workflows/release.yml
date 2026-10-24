@@ -115,11 +115,12 @@ jobs:
         with:
           persist-credentials: false
       - run: sudo apt-get update && sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev
-      - name: build the game, bake every embedded map (no window, every core)
+      - name: build the game, bake every embedded map (no window, every core), zlib them for the packages
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DQUARK_BUILD_TESTS=OFF
           cmake --build build -j --target quark
-          build/quark --bake-maps lightcache
+          build/quark --bake-maps bake
+          python3 tools/pack_lightcache.py bake lightcache   # (~84 MB raw, ~12 MB as shipped: packages aren't compressed)
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: { name: lightcache, path: lightcache, retention-days: 7 }   # (the packaging jobs put it in their packages)
 

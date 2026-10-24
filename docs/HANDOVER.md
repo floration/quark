@@ -274,7 +274,7 @@ Workflows are in `.github/workflows/`:
 - The player's own movement state's opt bits: 1 hooked, 2 dash, 4 dash charges + cooldown (a u8 + a u16 in ms, sent when the charges aren't 2 or the cooldown runs; protocol 42; 41 had the u8 alone, older the cooldown f32), 8 hook cooldown, 16 hook target, 32 pull point, 64 jump buffer + grace, 128 dash bounces.
 - Name colour rides in EV_PLAYERINFO's i16 `c` (RGB565, 0 = default): no wire change.
 - Maps are identified by the sha256 of their content: the ranked allowlist, light caches (`cache/<sha256>.qlm`), downloads (`maps/downloads/<sha256>.qmap`) and edit-session chains.
-- Packages ship the official maps' light bakes in `maps/lightcache/<sha256>.qlb` (the cache's format; `.qlb` because installed launchers keep every `.qlm` through updates). release.yml's `lightcache` job bakes them once (`quark --bake-maps <dir>`, no window); the game reads them when its own cache misses and never writes them.
+- Packages ship the official maps' light bakes in `maps/lightcache/<sha256>.qlbz`: the cache file's bytes zlib'd (84 MB raw, ~12 MB shipped; not `.qlm` also because installed launchers keep every `.qlm` through updates). release.yml's `lightcache` job makes them once (`quark --bake-maps <dir>`, no window, writes raw `.qlb`; `tools/pack_lightcache.py` compresses); the game inflates one (Midtown ~20 ms) when its own cache misses and never writes them.
 - Map format version 2: `version`, `stairs`, `setting` and `handmade` keywords. Unknown optional keys only warn; gameplay keys stay strict.
 
 ## 9. Planned after 1.17.0 (owner decisions)
