@@ -13,6 +13,7 @@
   const NS = build.storeNs || 'quark-ui-customizer';
   const STORE_KEY = NS + '/layout/v1';
   const PREFS_KEY = NS + '/prefs/v1';
+  const PAGE_KEY = NS + '/page/v1';   // the page on screen (small, written on every page switch; the layout is not)
   const UNDO_MAX = 200;
   const INTERACTIVE = new Set(['button', 'toggle', 'cycle', 'slider', 'text', 'key', 'custom', 'colorpicker', 'dropdown', 'handle', 'view']);
   const KNOWN = new Set(['kind', 'x', 'y', 'w', 'h', 'label', 'value', 'options', 'min', 'max', 'def', 'fmt', 'maxLen', 'enabled', 'color',
@@ -20,7 +21,7 @@
   const PALETTE = [['button', 'Button'], ['toggle', 'Toggle'], ['cycle', 'Cycle'], ['slider', 'Slider'], ['text', 'Text field'],
     ['key', 'Keybind'], ['label', 'Label'], ['panel', 'Panel'], ['colorpicker', 'Color picker'], ['dropdown', 'Dropdown'],
     ['rect', 'Rectangle'], ['view', '3D view']];
-  const GROUP_NAMES = { ingame: 'in-game', settings: 'settings', editor: 'editor', hud: 'hud', info: 'info' };
+  const GROUP_NAMES = { main: 'main menu', ingame: 'in-game', 'editor-online': 'editor online' };
 
   // ---- data ------------------------------------------------------------------------------------------------------
   const dump = readJson('dumpData');
@@ -42,10 +43,10 @@
   const S = {
     doc: null, pageUid: null, sel: new Set(), undo: [], redo: [], clip: null, hover: null, drag: null, gesture: null,
     diff: null, search: '', guides: [], lastNudge: null, saveState: '', provState: '', pasteN: 0,
-    prefs: { grid: false, gridSize: 10, ghost: true, shot: false, shotOpacity: 50, zoom: 'fit', widgetsOnly: false },
+    prefs: { grid: false, gridSize: 10, ghost: true, shot: false, shotOpacity: 50, zoom: 'fit', widgetsOnly: false, specLayout: 'changed' },
     // font trial (saved with the layout): null = the font's own default
     font: { id: QFonts.DEFAULT_ID, weight: null, ls: null, upper: null, sizeK: null, mult: 1, minTs: 0, cmp: '', side: false },
-    flip: false, sheet: false, tour: 0,
+    flip: false, sheet: false, tour: 0, originFilter: '', view: '',
   };
 
   const store = {
@@ -63,7 +64,7 @@
         const saved = JSON.parse(raw);
         doc = QModel.sanitizeWorking(saved.doc);
         if (saved.baseSig !== SIG) setTimeout(() => toast('The saved layout was made against a different dump (' + (saved.source && saved.source.commit) + '). Kept it; Reset starts over.', 6000), 300);
-        if (saved.pageUid) S.pageUid = saved.pageUid;
+        S.pageUid = store.get(PAGE_KEY) || saved.pageUid || null;
         if (saved.font) S.font = sanitizeFont(saved.font);
         else if (fontOfDoc(doc)) S.font = fontOfDoc(doc);
       } catch (e) { console.warn('saved layout unreadable, starting from the default', e); doc = null; }
@@ -89,19 +90,40 @@
   // ---- undo -----------------------------------------------------------------------------------------------------
   // A snapshot is one JSON string per page; a page that didn't change reuses the previous snapshot's string, so 200
   // undo steps over a 100-page layout cost about one copy of the layout plus the pages that were edited.
-  const pageJson = new Map();   // page uid -> its last JSON string
+  // Only the pages an edit can have changed are stringified again: the current page, pages handed to touch() (a move
+  // to another page) and page objects not seen yet (new, imported, restored). Every edit ends in changed(), which
+  // refreshes them, so a page nobody touched keeps its string: an edit costs one page, not the whole layout (1.7 MB).
+  // Something that changes many pages outside an undo step calls forgetPages().
+  let pageJson = new WeakMap();   // page object -> its JSON as of the last snapshot
+  const touched = new Set();
+  const touch = (p) => { if (p) touched.add(p); };
+  const forgetPages = () => { pageJson = new WeakMap(); };
   function docSnap() {
-    return S.doc.pages.map((p) => {
-      const j = JSON.stringify(p), c = pageJson.get(p.uid);
+    touch(page());
+    const out = S.doc.pages.map((p) => {
+      const c = pageJson.get(p);
+      if (c !== undefined && !touched.has(p)) return c;
+      const j = JSON.stringify(p);
       if (c === j) return c;
-      pageJson.set(p.uid, j);
+      pageJson.set(p, j);
       return j;
     });
+    touched.clear();
+    return out;
   }
   const snap = () => ({ pages: docSnap(), pageUid: S.pageUid, sel: [...S.sel] });
   const differs = (s) => { const now = docSnap(); return now.length !== s.pages.length || now.some((j, i) => j !== s.pages[i]); };
   function restore(s) {
-    S.doc = Object.assign({}, S.doc && S.doc.font ? { font: S.doc.font } : {}, { pages: s.pages.map((j) => JSON.parse(j)) });
+    // pages the snapshot has unchanged keep their objects (and cached strings); the others are parsed
+    const keep = new Map();
+    for (const p of S.doc.pages) { const j = pageJson.get(p); if (j !== undefined) keep.set(j, p); }
+    const pages = s.pages.map((j) => {
+      let p = keep.get(j);
+      if (p) keep.delete(j);
+      else { p = JSON.parse(j); pageJson.set(p, j); }
+      return p;
+    });
+    S.doc = Object.assign({}, S.doc && S.doc.font ? { font: S.doc.font } : {}, { pages });
     S.pageUid = s.pageUid;
     S.sel = new Set(s.sel);
     if (!page()) S.pageUid = S.doc.pages[0] && S.doc.pages[0].uid;
@@ -144,20 +166,29 @@
   // page.prov (QModel.markHuman / markAi): which pages the owner changed. A page's body without its mark is remembered
   // after every change; an edit that changes it marks the page 'human' (with today's date). The mark is part of the page,
   // so undo restores it with the page: undoing every edit of a page brings back its loaded state, mark included.
-  const seenPages = new Map();   // page uid -> its JSON without the mark, as of the last change
-  const pageBody = (p) => JSON.stringify(p, (k, v) => (k === 'prov' ? undefined : v));
-  function syncSeen() { seenPages.clear(); for (const p of S.doc.pages) seenPages.set(p.uid, pageBody(p)); }
-  function markEdits(only) {
+  // Only pages whose snapshot string changed since the last change are looked at (docSnap() keeps that cheap).
+  let seenPages = new WeakMap();   // page object -> {json: its snapshot string, body: its JSON without the mark}, as of the last change
+  const pageBody = (p) => { const { prov, ...rest } = p; return JSON.stringify(rest); };
+  // After undo / redo / import / reset: what is there now is the starting point (no marks).
+  function syncSeen() {
+    const now = docSnap();
+    S.doc.pages.forEach((p, i) => { const s = seenPages.get(p); if (!s || s.json !== now[i]) seenPages.set(p, { json: now[i], body: pageBody(p) }); });
+  }
+  function markEdits() {
     const today = QModel.ymd(new Date());
-    const live = new Set(S.doc.pages.map((p) => p.uid));
-    for (const p of only ? only.filter(Boolean) : S.doc.pages) {
-      const j = pageBody(p);
-      if (seenPages.get(p.uid) !== j) { QModel.markHuman(p, today); seenPages.set(p.uid, j); }
-    }
-    for (const u of [...seenPages.keys()]) if (!live.has(u)) seenPages.delete(u);
+    const now = docSnap();
+    S.doc.pages.forEach((p, i) => {
+      const s = seenPages.get(p);
+      if (s && s.json === now[i]) return;
+      const body = pageBody(p);
+      if (!s || s.body !== body) { QModel.markHuman(p, today); touch(p); }   // (a page an edit made is the owner's too)
+      seenPages.set(p, { json: null, body });
+    });
+    const after = docSnap();   // (the marks are part of the page: its string again)
+    S.doc.pages.forEach((p, i) => { const s = seenPages.get(p); if (s.json === null) s.json = after[i]; });
   }
   // a proposal build: every page that differs from the game default and has no mark is the AI's
-  const markProposal = () => { if (startLayout) { QModel.markAi(baseline, S.doc); S.diff = null; } };
+  const markProposal = () => { if (startLayout) { QModel.markAi(baseline, S.doc); forgetPages(); S.diff = null; } };
 
   // ---- save ------------------------------------------------------------------------------------------------------
   let saveTimer = 0;
@@ -165,12 +196,18 @@
   const syncDocFont = () => { if (S.doc) QModel.setLayoutFont(S.doc, S.font.id, S.font.weight != null ? S.font.weight : null); };
   // S.font from a layout's doc.font (null when it has none)
   const fontOfDoc = (doc) => { const f = QModel.layoutFont(doc); return f ? sanitizeFont(Object.assign({}, S.font, { id: f.id, weight: f.weight, ls: null, upper: null, sizeK: null })) : null; };
-  const payload = () => (syncDocFont(), { format: 'quark-ui-layout', version: 1, savedAt: new Date().toISOString(), baseSig: SIG, source: baseline.source,
-    pageUid: S.pageUid, font: S.font, doc: S.doc });
+  const payloadHead = () => (syncDocFont(), { format: 'quark-ui-layout', version: 1, savedAt: new Date().toISOString(), baseSig: SIG, source: baseline.source,
+    pageUid: S.pageUid, font: S.font });
+  const payload = () => Object.assign(payloadHead(), { doc: S.doc });
+  // the same JSON, the pages from the snapshot strings (no second stringify of the whole layout)
+  function payloadJson() {
+    const head = payloadHead(), { pages, ...rest } = S.doc, open = (o) => JSON.stringify(o).slice(0, -1) + (Object.keys(o).length ? ',' : '');
+    return open(head) + '"doc":' + open(rest) + '"pages":[' + docSnap().join(',') + ']}}';
+  }
   function saveNow() {
     clearTimeout(saveTimer);
     saveTimer = 0;
-    S.saveState = store.set(STORE_KEY, JSON.stringify(payload())) ? 'saved in this browser' : 'NOT saved (browser storage unavailable: export the layout)';
+    S.saveState = store.set(STORE_KEY, payloadJson()) ? 'saved in this browser' : 'NOT saved (browser storage unavailable: export the layout)';
     renderStatus();
   }
   function scheduleSave() { clearTimeout(saveTimer); S.saveState = 'saving...'; saveTimer = setTimeout(saveNow, 400); }
@@ -181,7 +218,7 @@
   function changed(opts = {}) {
     S.diff = null;
     if (opts.history || opts.noMark) syncSeen();
-    else markEdits(opts.keepInspector ? [curPage()] : null);
+    else markEdits();
     scheduleSave();
     if (opts.keepInspector) { renderPages(); requestRender(); renderOffCanvas(); renderStatus(); refreshInspectorMarks(); updateButtons(); }
     else renderAll();
@@ -209,6 +246,46 @@
     for (const c of kids.flat()) if (c != null && c !== false) n.append(c.nodeType ? c : document.createTextNode(String(c)));
     return n;
   }
+  // In-page dialogs instead of prompt() / confirm() / alert(): the Quark Project app's Electron window has no
+  // window.prompt() (it throws), and native boxes block the page. Resolves with the typed text (input), true (OK) or
+  // null (Cancel, Esc, a click outside). check(text) returns why the text can't be used ('' = fine).
+  let dlgDone = null;
+  function ask({ title, text = '', input = null, ok = 'OK', cancel = 'Cancel', danger = false, check = null }) {
+    if (dlgDone) dlgDone(null);
+    const inp = $('dlgInput'), err = $('dlgErr');
+    $('dlgTitle').textContent = title;
+    $('dlgText').textContent = text;
+    inp.hidden = input === null;
+    inp.value = input === null ? '' : String(input);
+    err.textContent = '';
+    $('dlgOk').textContent = ok;
+    $('dlgOk').className = danger ? 'danger primary' : 'primary';
+    $('dlgCancel').hidden = !cancel;
+    $('dlgCancel').textContent = cancel || '';
+    $('dlg').hidden = false;
+    const back = document.activeElement;
+    if (input !== null) { inp.focus(); inp.select(); } else $('dlgOk').focus();
+    return new Promise((resolve) => {
+      const why = () => (check && input !== null ? check(inp.value) || '' : '');
+      inp.oninput = () => { err.textContent = why(); };
+      $('dlgForm').onsubmit = (ev) => {
+        ev.preventDefault();
+        const w = why();
+        if (w) { err.textContent = w; inp.focus(); return; }
+        finish(input === null ? true : inp.value);
+      };
+      $('dlgCancel').onclick = () => finish(null);
+      function finish(v) {
+        dlgDone = null;
+        $('dlg').hidden = true;
+        if (back && back.focus && back !== document.body) back.focus();
+        resolve(v);
+      }
+      dlgDone = finish;
+    });
+  }
+  const confirmed = (title, text, ok, danger = true) => ask({ title, text, ok, danger }).then((r) => r === true);
+  const tell = (title, text) => ask({ title, text, cancel: null });
   function download(name, text, type) {
     const url = URL.createObjectURL(new Blob([text], { type }));
     const a = el('a', { href: url, download: name });
@@ -220,13 +297,33 @@
   const isTyping = (t) => t && (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' ||
     (t.tagName === 'INPUT' && !['checkbox', 'range', 'button', 'file', 'color'].includes(t.type)));
   const r1 = (n) => Math.round(n);
-  const groupOf = (p) => {
-    const path = String(p.path || p.id || '');
-    const seg = path.split(/[/ ]/)[0];
-    if (GROUP_NAMES[seg]) return GROUP_NAMES[seg];
-    if (!path.includes('/')) return p.editor ? 'editor' : p.inGame ? 'in-game' : 'menu';
-    return seg;
-  };
+  // Page groups: a screen with sub-pages is a group with its sub-pages (host, host/advanced ...); screens on their own
+  // (connecting, demos, join) share "menu". The main menu comes first, then the other menus, then the rest as listed.
+  const segOf = (p) => String(p.path || p.id || '').split(/[/ ]/)[0];
+  function pageGroups(pages) {
+    const n = new Map();
+    for (const p of pages) n.set(segOf(p), (n.get(segOf(p)) || 0) + 1);
+    const groups = new Map([['main menu', []], ['menu', []]]);
+    for (const p of pages) {
+      const seg = segOf(p);
+      const g = GROUP_NAMES[seg] || (n.get(seg) > 1 ? seg : p.editor ? 'editor' : p.inGame ? 'in-game' : 'menu');
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(p);
+    }
+    for (const [g, list] of groups) if (!list.length) groups.delete(g);
+    return groups;
+  }
+  // Who made a page: in this layout, a changed page is the owner's (or the AI proposal's: its mark, as Export records
+  // it); a page as the game ships it is what the game's registry says (assets/provenance/ui.json).
+  const ORIGINS = build.origins || {};
+  function originOf(p, entry) {
+    if (entry && entry.status !== 'unchanged') {
+      const m = QModel.sanitizeProv(p.prov);
+      return { origin: m ? m.origin : startLayout ? 'ai' : 'human', why: m ? (m.origin === 'ai' ? 'AI proposal' : 'changed by you' + (m.from === 'ai' ? ' (on the AI proposal)' : '')) : 'changed in this layout' };
+    }
+    const o = ORIGINS[QModel.registryKey(QModel.provKey(p))];
+    return { origin: o || 'unknown', why: o ? 'the game\'s page (assets/provenance/ui.json)' : 'not in the game\'s provenance registry' };
+  }
   // Full-screen rects / panels are the page's backdrop: not picked by clicks or rubber bands (select them below the page).
   const isBackdrop = (e) => ((e.kind === 'rect' || e.kind === 'panel') && e.x <= 1 && e.y <= 1 && e.w >= W * 0.95 && e.h >= H * 0.95) ||
     (e.kind === 'view' && e.w * e.h >= W * H * 0.4);   // (the editor's / spectator's big 3D view)
@@ -258,24 +355,89 @@
   const ctx = cv.getContext('2d'), octx = ov.getContext('2d');
   let zoom = 1, dpr = 1, raf = 0;
 
+  // ---- preview at another resolution (read only) -------------------------------------------------------------------
+  // The game lays the UI out in 720p units times ui.s() = height / 720, and its text at scale max(1, round(2 * s))
+  // (Ui::begin). In those units every screen is 720 tall and 720 * aspect wide: a 16:9 screen is the dump's frame (only
+  // the text rounds: 1080p and 1440p are exact), 16:10 is narrower (1152), 21:9 wider (1680). The dump has the widgets'
+  // positions, not the code's anchors, so this guesses them as the menus are written: a widget (or the panel around it)
+  // that hugs the left / right edge stays on that edge, a full-width bar stretches, everything else keeps its offset
+  // from the centre (cx + (x - 640) * s). Widgets that end up off the screen are outlined in red.
+  const VIEWS = [['', 'View: 1280x720 (edit)'], ['1920x1080', '1920x1080 16:9'], ['2560x1440', '2560x1440 16:9'], ['3840x2160', '3840x2160 16:9'],
+    ['1920x1200', '1920x1200 16:10'], ['2560x1600', '2560x1600 16:10'], ['2560x1080', '2560x1080 21:9'], ['3440x1440', '3440x1440 21:9'],
+    ['5120x1440', '5120x1440 32:9'], ['1280x1024', '1280x1024 5:4']];
+  const EDGE = 48;   // (720p px: closer than this to a side edge = pinned to it)
+  function viewOf() {
+    if (!S.view || S.sheet) return null;
+    const [w, h] = S.view.split('x').map(Number), s = h / H;
+    return { w, h, s, fw: Math.round(w / s), ts: Math.max(1, Math.round(2 * s)), k: Math.max(1, Math.round(2 * s)) / (2 * s) };
+  }
+  const frameW = () => { const v = viewOf(); return v ? v.fw : W; };
+  function anchorOf(b) {
+    if (b.x <= 1 && b.x + b.w >= W - 1) return 'stretch';
+    if (b.x < EDGE && b.x + b.w <= W / 2) return 'left';
+    if (b.x + b.w > W - EDGE && b.x >= W / 2) return 'right';
+    return 'center';
+  }
+  // The page with every widget moved as the game would at that size: {page, clipped: [boxes], pinned: n}.
+  function previewPage(p, v) {
+    const boxes = p.elements.map((e) => boxOf(e));
+    const conts = p.elements.map((e, i) => ({ e, b: boxes[i] }))
+      .filter((c) => c.b && (c.e.kind === 'panel' || c.e.kind === 'rect') && !isBackdrop(c.e) && anchorOf(c.b) !== 'stretch');
+    const inside = (a, c) => a !== c && a.x >= c.x - 0.5 && a.y >= c.y - 0.5 && a.x + a.w <= c.x + c.w + 0.5 && a.y + a.h <= c.y + c.h + 0.5;
+    const clipped = [];
+    let pinned = 0;
+    const elements = p.elements.map((e, i) => {
+      const b = boxes[i];
+      if (!b) return e;
+      let outer = null;   // (the biggest panel around it decides: a panel's labels move with the panel)
+      for (const c of conts) if (inside(b, c.b) && (!outer || c.b.w * c.b.h > outer.w * outer.h)) outer = c.b;
+      const a = anchorOf(outer || b);
+      let dx = a === 'left' ? 0 : a === 'right' ? v.fw - W : (v.fw - W) / 2;
+      const m = Object.assign({}, e);
+      if (a === 'stretch') { m.x = 0; m.w = v.fw; dx = 0; } else m.x = e.x + dx;
+      if (a === 'left' || a === 'right') pinned++;
+      const nb = { x: b.x + dx, y: b.y, w: a === 'stretch' ? v.fw : b.w, h: b.h };
+      if (nb.x < -0.5 || nb.x + nb.w > v.fw + 0.5) clipped.push(nb);
+      return m;
+    });
+    return { page: Object.assign({}, p, { elements }), clipped, pinned };
+  }
+  // draws page p (a preview's mapped page when one is on) with the preview's text rounding
+  function drawFrame(c, p, hover) {
+    const v = viewOf();
+    if (!v) { QRender.drawPage(c, p, W, H, hover); return null; }
+    const pv = previewPage(p, v);
+    QRender.setTextOpts({ mult: S.font.mult * v.k, minTs: S.font.minTs });
+    try { QRender.drawPage(c, pv.page, v.fw, H, null); } finally { QRender.setTextOpts({ mult: S.font.mult, minTs: S.font.minTs }); }
+    return pv;
+  }
+  function setView(id) {
+    S.view = VIEWS.some(([v]) => v === id) ? id : '';
+    if (S.view) { S.sel = new Set(); S.hover = null; ov.style.cursor = ''; }
+    $('sView').value = S.view;
+    $('stage').classList.toggle('preview', !!S.view);
+    layoutStage();
+    renderAfterSelect();
+  }
+
   function layoutStage() {
     const wrap = $('stageWrap');
-    const side = sideOn();
-    wrap.classList.toggle('side', side);
+    const side = sideOn(), FW = frameW();
+    wrap.classList.toggle('side', side || !!viewOf());
     $('stage2').hidden = !side;
-    const fit = side ? Math.max(0.1, Math.min((wrap.clientWidth - 36) / (2 * W), (wrap.clientHeight - 36) / H))
-      : Math.max(0.1, Math.min((wrap.clientWidth - 24) / W, (wrap.clientHeight - 24) / H));
+    const fit = side ? Math.max(0.1, Math.min((wrap.clientWidth - 36) / (2 * FW), (wrap.clientHeight - 36) / H))
+      : Math.max(0.1, Math.min((wrap.clientWidth - 24) / FW, (wrap.clientHeight - (viewOf() ? 36 : 24)) / H));
     zoom = S.prefs.zoom === 'fit' ? fit : Number(S.prefs.zoom) || 1;
     dpr = window.devicePixelRatio || 1;
     const st = $('stage');
-    st.style.width = W * zoom + 'px';
+    st.style.width = FW * zoom + 'px';
     st.style.height = H * zoom + 'px';
-    for (const c of [cv, ov]) { c.width = Math.round(W * zoom * dpr); c.height = Math.round(H * zoom * dpr); }
+    for (const c of [cv, ov]) { c.width = Math.round(FW * zoom * dpr); c.height = Math.round(H * zoom * dpr); }
     if (side) {
       const s2 = $('stage2'), c2 = $('cv2');
-      s2.style.width = W * zoom + 'px';
+      s2.style.width = FW * zoom + 'px';
       s2.style.height = H * zoom + 'px';
-      c2.width = Math.round(W * zoom * dpr); c2.height = Math.round(H * zoom * dpr);
+      c2.width = Math.round(FW * zoom * dpr); c2.height = Math.round(H * zoom * dpr);
     }
     renderCaptions();
     requestRender();
@@ -291,16 +453,34 @@
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, cv.width, cv.height);
     ctx.setTransform(k, 0, 0, k, 0, 0);
-    if (p) QRender.drawPage(ctx, p, W, H, S.drag ? null : S.hover);
-    drawOverlay(p, k);
+    const pv = p ? drawFrame(ctx, p, S.drag ? null : S.hover) : null;
+    if (pv) drawPreviewOverlay(pv, k);
+    else drawOverlay(p, k);
     updateShot(p);
     if (sideOn()) {   // the other font, same page, not editable
       const c2 = $('cv2').getContext('2d');
       c2.setTransform(1, 0, 0, 1, 0, 0);
       c2.clearRect(0, 0, c2.canvas.width, c2.canvas.height);
       c2.setTransform(k, 0, 0, k, 0, 0);
-      withFont(otherId(), () => { if (p) QRender.drawPage(c2, p, W, H, null); });
+      withFont(otherId(), () => { if (p) drawFrame(c2, p, null); });
     }
+  }
+  // the dump's 1280x720 frame (dashed) and the widgets the preview puts off the screen (red)
+  function drawPreviewOverlay(pv, k) {
+    const o = octx, px = 1 / zoom, v = viewOf();
+    o.setTransform(1, 0, 0, 1, 0, 0);
+    o.clearRect(0, 0, ov.width, ov.height);
+    o.setTransform(k, 0, 0, k, 0, 0);
+    o.lineWidth = px;
+    o.setLineDash([6 * px, 4 * px]);
+    o.strokeStyle = 'rgba(64,217,255,0.45)';
+    o.strokeRect((v.fw - W) / 2, 0, W, H);
+    o.setLineDash([]);
+    o.strokeStyle = 'rgba(255,90,90,0.95)';
+    o.lineWidth = 2 * px;
+    for (const b of pv.clipped) o.strokeRect(Math.max(0, b.x), b.y, Math.min(v.fw, b.x + b.w) - Math.max(0, b.x), b.h);
+    $('cap1').textContent = `${v.w}x${v.h}: UI scale ${v.s.toFixed(2)}, text scale ${v.ts}${v.k !== 1 ? ` (text ${Math.round(v.k * 100)}% of the 720p size)` : ''}` +
+      `  -  ${pv.pinned} pinned to an edge${pv.clipped.length ? `, ${pv.clipped.length} off the screen (red)` : ''}  -  read only: View: 1280x720 to edit`;
   }
 
   function drawOverlay(p, k) {
@@ -390,7 +570,7 @@
 
   let shotErrFor = null;
   function updateShot(p) {
-    const has = !!(p && p.screenshot);
+    const has = !!(p && p.screenshot) && !viewOf();
     $('cShot').disabled = !has;
     $('rShot').disabled = !has;
     $('shotGroup').title = has ? 'Reference screenshot: ' + p.screenshot : 'This page has no screenshot in the dump';
@@ -432,8 +612,8 @@
     }
     return out;
   }
-  function toGame(ev) {
-    const r = ov.getBoundingClientRect();
+  // (a drag keeps the canvas origin it started with: nothing that reflows the page mid-drag can shift the widget)
+  function toGame(ev, r = ov.getBoundingClientRect()) {
     return { x: (ev.clientX - r.left) / zoom, y: (ev.clientY - r.top) / zoom };
   }
   function bandRect() {
@@ -446,13 +626,15 @@
     if (S.tour) toggleTour();
     if (ev.button !== 0) return;
     ev.preventDefault();
+    if (viewOf()) { toast('Preview at ' + S.view + ' is read only: pick View: 1280x720 to edit'); return; }
     if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
     endGesture();
-    const pt = toGame(ev);
+    const rect = ov.getBoundingClientRect();
+    const pt = toGame(ev, rect);
     const h = handleAt(pt);
     if (h) {
       const e = selected()[0];
-      S.drag = { mode: 'resize', handle: h.id, el: e, start: pt, orig: { x: e.x, y: e.y, w: e.w, h: e.h }, before: snap(), moved: false };
+      S.drag = { mode: 'resize', handle: h.id, el: e, start: pt, rect, orig: { x: e.x, y: e.y, w: e.w, h: e.h }, before: snap(), moved: false };
       return;
     }
     const hits = ev.ctrlKey ? [] : elementsAt(pt);   // (Ctrl+drag: always a rubber band, even over a panel)
@@ -467,23 +649,23 @@
         S.sel.add(e.uid);
       } else if (!S.sel.has(e.uid)) S.sel = new Set([e.uid]);
       const items = selected().map((x) => ({ el: x, x: x.x, y: x.y }));
-      S.drag = { mode: 'move', start: pt, primary: e, items, before: snap(), moved: false };
+      S.drag = { mode: 'move', start: pt, rect, primary: e, items, before: snap(), moved: false };
       renderAfterSelect();
       return;
     }
     const keep = ev.shiftKey || ev.ctrlKey;
-    S.drag = { mode: 'band', start: pt, cur: pt, initial: keep ? new Set(S.sel) : new Set() };
+    S.drag = { mode: 'band', start: pt, rect, cur: pt, initial: keep ? new Set(S.sel) : new Set() };
     if (!keep) S.sel = new Set();
     renderAfterSelect();
   });
 
   window.addEventListener('mousemove', (ev) => {
-    const pt = toGame(ev);
-    const inside = pt.x >= 0 && pt.y >= 0 && pt.x <= W && pt.y <= H;
-    $('stPos').textContent = inside ? `x ${r1(pt.x)}  y ${r1(pt.y)}` : '';
     const d = S.drag;
+    const pt = toGame(ev, d ? d.rect : undefined);
+    const v = viewOf(), inside = pt.x >= 0 && pt.y >= 0 && pt.x <= frameW() && pt.y <= H;
+    $('stPos').textContent = !inside ? '' : v ? `${v.w}x${v.h}: x ${r1(pt.x * v.s)}  y ${r1(pt.y * v.s)}` : `x ${r1(pt.x)}  y ${r1(pt.y)}`;
     if (!d) {
-      if (ev.target !== ov) { if (S.hover) { S.hover = null; requestRender(); } return; }
+      if (ev.target !== ov || viewOf()) { if (S.hover) { S.hover = null; requestRender(); } return; }
       const h = handleAt(pt);
       const top = elementsAt(pt)[0];
       ov.style.cursor = h ? CURSORS[h.id] : top ? 'move' : 'default';
@@ -527,13 +709,15 @@
     S.guides = [];
     const p0 = d.items.find((i) => i.el === d.primary) || d.items[0];
     let nx = p0.x + dx, ny = p0.y + dy;
+    // only an axis the pointer moved along snaps: a sideways drag never nudges y onto the grid or the centre line
+    const ax = Math.abs(dx) * zoom >= 3, ay = Math.abs(dy) * zoom >= 3;
     if (!noSnap) {
-      if (S.prefs.grid) { nx = snapGrid(nx); ny = snapGrid(ny); }
+      if (S.prefs.grid) { if (ax) nx = snapGrid(nx); if (ay) ny = snapGrid(ny); }
       const b = boxOf(d.primary) || { w: d.primary.w, h: d.primary.h };
       const tol = 6 / zoom;
       const offX = (d.primary.kind === 'label' && !(d.primary.w > 0)) ? b.x - d.primary.x : 0;   // (auto-sized labels)
-      if (Math.abs(nx + offX + b.w / 2 - W / 2) < tol) { nx = W / 2 - b.w / 2 - offX; S.guides.push({ x: W / 2 }); }
-      if (Math.abs(ny + b.h / 2 - H / 2) < tol) { ny = H / 2 - b.h / 2; S.guides.push({ y: H / 2 }); }
+      if (ax && Math.abs(nx + offX + b.w / 2 - W / 2) < tol) { nx = W / 2 - b.w / 2 - offX; S.guides.push({ x: W / 2 }); }
+      if (ay && Math.abs(ny + b.h / 2 - H / 2) < tol) { ny = H / 2 - b.h / 2; S.guides.push({ y: H / 2 }); }
     }
     const ddx = Math.round(nx - p0.x), ddy = Math.round(ny - p0.y);
     for (const it of d.items) { it.el.x = it.x + ddx; it.el.y = it.y + ddy; }
@@ -636,6 +820,7 @@
       const ids = new Set(sel.map((e) => e.uid)), p = curPage();
       p.elements = p.elements.filter((e) => !ids.has(e.uid));
       for (const e of sel) insertElement(target, e);
+      touch(target);
       S.sel = new Set();
     });
     toast(`Moved ${sel.length} to ${target.id}`);
@@ -705,7 +890,7 @@
     S.sel = new Set();
     S.hover = null;
     renderAll();
-    store.set(STORE_KEY, JSON.stringify(payload()));
+    store.set(PAGE_KEY, uid);
   }
   function stepPage(d) {
     const list = visiblePageOrder();
@@ -713,10 +898,11 @@
     const i = list.findIndex((p) => p.uid === S.pageUid);
     selectPage(list[(i + d + list.length) % list.length].uid);
   }
-  function addPage() {
-    const id = prompt('New page id (a screen path, e.g. settings/accessibility):', 'new-page');
-    if (!id) return;
-    const p = QModel.newPage(uniquePageId(id.trim() || 'new-page'), '');
+  async function addPage() {
+    const id = await ask({ title: 'Add a page', text: 'Page id: a screen path, e.g. settings/accessibility (a taken id gets -2, -3 ...)',
+      input: 'new-page', ok: 'Add page', check: (v) => (v.trim() ? '' : 'Give the page an id') });
+    if (id === null) return;
+    const p = QModel.newPage(uniquePageId(id.trim()), '');
     p.title = p.id;
     commit(() => {
       const i = S.doc.pages.findIndex((x) => x.uid === S.pageUid);
@@ -737,10 +923,11 @@
       S.sel = new Set();
     });
   }
-  function deletePage() {
+  async function deletePage() {
     const p = curPage();
     if (p.origId) return;
-    if (p.elements.length && !confirm(`Delete page "${p.id}" and its ${p.elements.length} widget(s)?`)) return;
+    if (p.elements.length && !(await confirmed('Delete page', `Delete page "${p.id}" and its ${p.elements.length} widget(s)? (Undo brings it back.)`, 'Delete'))) return;
+    if (!S.doc.pages.includes(p)) return;
     commit(() => {
       const i = S.doc.pages.indexOf(p);
       S.doc.pages.splice(i, 1);
@@ -751,44 +938,48 @@
   }
 
   // ---- page list -------------------------------------------------------------------------------------------------
-  function visiblePageOrder() {
-    const groups = new Map();
-    for (const p of S.doc.pages) {
-      const g = groupOf(p);
-      if (!groups.has(g)) groups.set(g, []);
-      groups.get(g).push(p);
-    }
-    return [...groups.values()].flat();
-  }
+  const visiblePageOrder = () => [...pageGroups(S.doc.pages).values()].flat();
+  const ORIGIN_TAG = { human: 'HU', ai: 'AI', unknown: '?' };
   function renderPages() {
     const list = $('pageList');
     const q = S.search.trim().toLowerCase();
     const D = getDiff();
-    const groups = new Map();
+    const entries = new Map(D.pages.map((e) => [e.page, e]));
+    const count = { human: 0, ai: 0, unknown: 0 };
+    const shown = [], info = new Map();
     for (const p of S.doc.pages) {
+      const entry = entries.get(p), o = originOf(p, entry);
+      count[o.origin]++;
+      if (S.originFilter && o.origin !== S.originFilter) continue;
       let matches = 0;
       if (q) {
         const hitPage = (p.id + ' ' + p.title).toLowerCase().includes(q);
         matches = p.elements.filter((e) => ((e.label || '') + ' ' + (e.action || '') + ' ' + (e.id || '')).toLowerCase().includes(q)).length;
         if (!hitPage && !matches) continue;
       }
-      const g = groupOf(p);
-      if (!groups.has(g)) groups.set(g, []);
-      groups.get(g).push({ p, matches });
+      shown.push(p);
+      info.set(p, { entry, o, matches });
     }
+    const groups = pageGroups(shown);
     list.textContent = '';
+    // who made the pages (the 100% human-made goal): click to list only those
+    const chip = (k, label) => el('span', { class: 'ochip o-' + k + (S.originFilter === k ? ' on' : ''), text: `${label} ${count[k]}`,
+      title: S.originFilter === k ? 'Show every page' : `List only the ${label} pages`, onclick: () => { S.originFilter = S.originFilter === k ? '' : k; renderPages(); } });
+    list.append(el('div', { class: 'origins', title: 'Who made each page: HU human, AI AI-made (a changed page counts as yours; the others as the game\'s provenance registry says)' },
+      'Made by', chip('human', 'human'), chip('ai', 'AI'), count.unknown ? chip('unknown', 'unknown') : null));
     list.append(el('div', { class: 'pg-group', text: 'tool only' }),
       el('div', { class: 'tpg' + (S.sheet ? ' cur' : ''), id: 'pgSheet', title: 'Every font trial drawing real game labels at text scale 1, 2 and 3 (not a game page)',
         text: 'Font sheet', onclick: () => showSheet(true) }));
     for (const [g, items] of groups) {
       list.append(el('div', { class: 'pg-group', text: g }));
-      for (const { p, matches } of items) {
-        const entry = D.pages.find((e) => e.page === p);
+      for (const p of items) {
+        const { entry, o, matches } = info.get(p);
         const st = entry ? entry.status : 'unchanged';
         list.append(el('div', {
-          class: 'pg' + (p.uid === S.pageUid && !S.sheet ? ' cur' : '') + (p.hidden ? ' hidden' : ''), title: p.id + (p.title !== p.id ? ' - ' + p.title : ''),
+          class: 'pg' + (p.uid === S.pageUid && !S.sheet ? ' cur' : '') + (p.hidden ? ' hidden' : ''), title: p.id + (p.title !== p.id ? ' - ' + p.title : '') + '\nmade by: ' + o.origin + ' (' + o.why + ')',
           onclick: () => selectPage(p.uid),
-        }, el('span', { class: 't', text: p.title || p.id }),
+        }, el('span', { class: 'org o-' + o.origin, text: ORIGIN_TAG[o.origin] }),
+        el('span', { class: 't', text: p.title || p.id }),
         matches ? el('span', { class: 'badge match', text: matches }) : null,
         st !== 'unchanged' ? el('span', { class: 'badge ' + st, text: st === 'added' ? 'new' : st }) : null,
         el('span', { class: 'n', text: p.elements.length })));
@@ -1005,7 +1196,9 @@
     const entry = diffEntry(p);
     const out = [];
     out.push(el('h2', {}, el('span', { class: 'kind', text: 'page' }), p.title || p.id));
-    out.push(el('div', { class: 'sub', text: (p.origId ? 'orig ' + p.origId : 'new page') + '  -  ' + (entry ? entry.status : '') + '  -  ' + p.elements.length + ' widgets' }));
+    const o = originOf(p, entry);
+    out.push(el('div', { class: 'sub', text: (p.origId ? 'orig ' + p.origId : 'new page') + '  -  ' + (entry ? entry.status : '') + '  -  ' + p.elements.length + ' widgets' +
+      '  -  made by ' + o.origin + ' (' + o.why + ')' }));
     const pageField = (f, name, opts = {}) => {
       const lab = el('label', { text: name });
       const bp = p.origId ? baseline.pages.find((b) => b.origId === p.origId) : null;
@@ -1014,10 +1207,15 @@
       upd();
       const inp = opts.area ? el('textarea', { rows: 4, placeholder: opts.placeholder || '' }) : el('input', { type: 'text', placeholder: opts.placeholder || '' });
       inp.value = p[f] == null ? '' : p[f];
+      // (a value check fails: shown on the field and not applied; leaving the field puts the page's value back)
+      const bad = () => (opts.check ? opts.check(inp.value) : '');
+      inp.addEventListener('input', (ev) => { const w = bad(); inp.classList.toggle('bad', !!w); inp.title = w; if (w) ev.stopImmediatePropagation(); });
+      inp.addEventListener('change', () => { if (bad()) { inp.value = p[f] == null ? '' : p[f]; inp.classList.remove('bad'); inp.title = ''; } });
       bind(inp, () => { p[f] = inp.value; });
       return el('div', { class: 'row' }, lab, inp);
     };
-    out.push(sec('', pageField('id', 'id', { placeholder: 'screen path, e.g. settings/video' }), pageField('title', 'title'), pageField('background', 'backdrop')));
+    const idCheck = (v) => (!v.trim() ? 'A page needs an id' : S.doc.pages.some((x) => x !== p && x.id === v) ? `Another page is "${v}" already: ids must be unique (the spec and provenance go by id)` : '');
+    out.push(sec('', pageField('id', 'id', { placeholder: 'screen path, e.g. settings/video', check: idCheck }), pageField('title', 'title'), pageField('background', 'backdrop')));
     const ig = el('input', { type: 'checkbox' });
     ig.checked = !!p.inGame;
     ig.addEventListener('change', () => commit(() => { p.inGame = ig.checked; }));
@@ -1064,11 +1262,11 @@
   function renderStatus() {
     renderSelStatus();
     const src = baseline.source;
-    const from = (dump ? (build.dump || 'dump') + ' @ ' + (src.commit || '?') : 'NO DATA (run build.cmd)') + (startLayout ? '  -  proposal ' + (build.layout || '') : '');
+    const from = (dump ? (build.dump || 'dump') + ' @ ' + (src.commit || '?') : 'NO DATA (run install.py)') + (startLayout ? '  -  proposal ' + (build.layout || '') : '');
     const sample = build.sample ? '  [SAMPLE DATA]' : '';
     const fe = QFonts.get(activeId());
     const fl = fe ? `  -  font ${fe.name}${S.flip ? ' (compare, F)' : ''} [${LIC_WORD[licOf(fe)]}]` : '';
-    $('stInfo').textContent = `${from}${sample}${fl}  -  undo ${S.undo.length}  -  ${S.saveState}` + (S.provState ? '  -  ' + S.provState : '');
+    $('stInfo').textContent = $('stInfo').title = `${from}${sample}${fl}  -  undo ${S.undo.length}  -  ${S.saveState}` + (S.provState ? '  -  ' + S.provState : '');
   }
   function updateButtons() {
     $('bUndo').disabled = !S.undo.length;
@@ -1086,15 +1284,21 @@
 
   // ---- spec / layout files ---------------------------------------------------------------------------------------
   let lastSpec = null;
+  const makeSpec = () => QModel.specMarkdown(baseline, S.doc, { dumpName: build.dump, font: fontDesc(), freshness: build.freshness, layout: S.prefs.specLayout });
+  function showSpec(r, downloaded) {
+    lastSpec = r;
+    const kb = Math.max(1, Math.round(r.markdown.length / 1024));
+    $('modalTitle').textContent = `${r.fileName}  (${kb} KB${downloaded ? ', downloaded' : ': Download again saves this one'})`;
+    $('modalText').value = r.markdown;
+    $('sSpecLayout').value = S.prefs.specLayout;
+    $('modal').hidden = false;
+  }
   function exportSpec() {
     endGesture();
-    const r = QModel.specMarkdown(baseline, S.doc, { dumpName: build.dump, font: fontDesc() });
-    lastSpec = r;
+    const r = makeSpec();
     download(r.fileName, r.markdown, 'text/markdown');
     exportProvenance();
-    $('modalTitle').textContent = r.fileName + '  (downloaded)';
-    $('modalText').value = r.markdown;
-    $('modal').hidden = false;
+    showSpec(r, true);
   }
   function exportLayout() {
     endGesture();
@@ -1144,10 +1348,10 @@
         if (perm === 'granted') return provDir;
       } catch (e) { console.warn('provenance folder permission', e); }
     }
-    toast('Pick the ui-customizer folder (where build.cmd is): provenance.json is updated there', 6000);
+    toast('Pick the ui-customizer folder (Quark\\ui-customizer, where ui-customizer.html is): provenance.json is updated there', 6000);
     const dir = await window.showDirectoryPicker({ id: 'quark-ui-customizer', mode: 'readwrite' });
-    if (!(await hasFile(dir, 'build.py')) && !(await hasFile(dir, PROV_FILE)) &&
-      !confirm(`"${dir.name}" has no build.py or provenance.json: is it the ui-customizer folder? OK writes provenance.json there.`)) return null;
+    if (!(await hasFile(dir, 'ui-customizer.html')) && !(await hasFile(dir, PROV_FILE)) &&
+      !(await confirmed('Is this the ui-customizer folder?', `"${dir.name}" has no ui-customizer.html or provenance.json. Write provenance.json there anyway?`, 'Write it here', false))) return null;
     provDir = dir;
     try { await handleStore('readwrite', (st) => st.put(dir, 'provDir')); } catch (e) { console.warn('could not remember the folder', e); }
     return dir;
@@ -1200,13 +1404,13 @@
         else if (fontOfDoc(doc)) { S.font = fontOfDoc(doc); applyFont(); scheduleSave(); }
         if (data.baseSig && data.baseSig !== SIG) toast('Imported. Note: it was made against a different dump (' + (data.source && data.source.commit) + ')', 5000);
         else toast('Layout imported (Undo puts the old one back)');
-      } catch (err) { alert('Could not import that file: ' + err.message); }
+      } catch (err) { tell('Could not import that file', err.message + ' (nothing was changed)'); }
     };
     fr.readAsText(file);
   }
-  function resetAll() {
+  async function resetAll() {
     if (startLayout) return resetToProposal();
-    if (!confirm('Reset the whole layout to the game\'s default? (Undo can bring your changes back while this tab is open.)')) return;
+    if (!(await confirmed('Reset', 'Reset the whole layout to the game\'s default? (Undo can bring your changes back while this tab is open.)', 'Reset'))) return;
     commit(() => { S.doc = QModel.makeWorking(baseline); S.pageUid = S.doc.pages[0].uid; S.sel = new Set(); }, { noMark: true });
     toast('Back to the default layout');
   }
@@ -1215,8 +1419,8 @@
     const d = startLayout && startLayout.data;
     return d && d.font ? sanitizeFont(d.font) : fontOfDoc(doc) || S.font;
   }
-  function resetToProposal() {
-    if (!confirm('Reset the whole layout to the proposal this file was built with? (Undo can bring your changes back while this tab is open.)')) return;
+  async function resetToProposal() {
+    if (!(await confirmed('Reset', 'Reset the whole layout to the proposal this file was built with? (Undo can bring your changes back while this tab is open.)', 'Reset'))) return;
     const doc = JSON.parse(startLayout.json);
     const pu = startLayout.data.pageUid;
     commit(() => { S.doc = doc; S.pageUid = doc.pages.some((p) => p.uid === pu) ? pu : doc.pages[0].uid; S.sel = new Set(); }, { noMark: true });
@@ -1226,8 +1430,8 @@
     scheduleSave();
     toast('Back to the proposal');
   }
-  function resetToGameDefault() {
-    if (!confirm('Reset the whole layout to the game\'s default layout and font, dropping the proposal? (Undo can bring the layout back while this tab is open; Reset goes back to the proposal.)')) return;
+  async function resetToGameDefault() {
+    if (!(await confirmed('Reset to game default', 'Reset the whole layout to the game\'s default layout and font, dropping the proposal? (Undo can bring the layout back while this tab is open; Reset goes back to the proposal.)', 'Reset'))) return;
     commit(() => { S.doc = QModel.makeWorking(baseline); S.pageUid = S.doc.pages[0].uid; S.sel = new Set(); }, { noMark: true });
     S.font = sanitizeFont(Object.assign({}, S.font, { id: QFonts.DEFAULT_ID, weight: null, ls: null, upper: null, sizeK: null }));
     applyFont();
@@ -1381,6 +1585,7 @@
     renderCaptions();
   }
   function renderCaptions() {
+    if (viewOf()) { $('cap2').textContent = ''; requestRender(); return; }   // (drawPreviewOverlay writes cap1)
     const side = sideOn();
     const a = QFonts.get(activeId()), b = QFonts.get(otherId());
     $('cap1').textContent = side && a ? a.name + '  [' + LIC_WORD[licOf(a)] + ']  (edit here)' : '';
@@ -1395,7 +1600,9 @@
     const i = e.info || {}, lic = licOf(e), cfg = cfgFor(S.font.id);
     const kv = [];
     const add = (k, v) => { if (v !== undefined && v !== null && v !== '') kv.push(el('span', { text: k }), el('span', { text: String(v) })); };
-    add('family', [i.family, i.subfamily].filter(Boolean).join(' / '));
+    // (a variable font's subfamily is only its default instance, e.g. Rubik "Light": the weight in use is below)
+    const variable = (i.axes || []).some((a) => a.tag === 'wght');
+    add('family', [i.family, variable ? 'variable' : i.subfamily].filter(Boolean).join(' / '));
     add('file', i.uploaded ? i.fileName + ' (uploaded, kept in this browser)' : i.builtin ? 'assets/fonts/' + (i.fileName || 'Rubik.ttf') + ' (the game\'s font)' : i.path || i.fileName);
     add('why', e.why);
     add('cap height', i.capRatio ? `${i.capRatio} em (${i.capFrom || '?'}); the game's font ${QFonts.refCap()} em` : 'not known yet');
@@ -1426,7 +1633,7 @@
   }
   async function removeFont(id) {
     const e = QFonts.get(id);
-    if (!e || !confirm(`Remove the uploaded font "${e.name}" from this browser?`)) return;
+    if (!e || !(await confirmed('Remove font', `Remove the uploaded font "${e.name}" from this browser?`, 'Remove'))) return;
     await QFonts.remove(id);
     if (S.font.id === id) S.font = Object.assign(S.font, { id: QFonts.DEFAULT_ID, weight: null, ls: null, upper: null, sizeK: null });
     if (S.font.cmp === id) S.font.cmp = '';
@@ -1619,6 +1826,7 @@
   // ---- keyboard --------------------------------------------------------------------------------------------------
   window.addEventListener('keydown', (ev) => {
     const k = ev.key, ctrl = ev.ctrlKey || ev.metaKey;
+    if (!$('dlg').hidden) { if (k === 'Escape' && dlgDone) { ev.preventDefault(); dlgDone(null); } return; }
     if (!$('modal').hidden) { if (k === 'Escape') $('modal').hidden = true; return; }
     if (isTyping(ev.target)) {
       if (k === 'Escape') ev.target.blur();
@@ -1634,6 +1842,7 @@
     else if (ctrl && lk === 'x') copySel(true);
     else if (ctrl && lk === 'v') paste();
     else if (ctrl && lk === 'd') duplicateSel();
+    else if (ctrl && lk === 'a' && viewOf()) toast('Preview is read only: pick View: 1280x720 to edit');
     else if (ctrl && lk === 'a') { S.sel = new Set(curPage().elements.filter(pickable).map((e) => e.uid)); renderAfterSelect(); }
     else if (ctrl && lk === 's') { saveNow(); toast('Saved in this browser (it saves by itself too)'); }
     else if (ctrl) handled = false;
@@ -1685,6 +1894,24 @@
     $('cShot').onchange = () => { S.prefs.shot = $('cShot').checked; savePrefs(); requestRender(); };
     $('rShot').oninput = () => { S.prefs.shotOpacity = Number($('rShot').value); savePrefs(); requestRender(); };
     $('sZoom').onchange = () => { S.prefs.zoom = $('sZoom').value; savePrefs(); layoutStage(); };
+    for (const [v, t] of VIEWS) $('sView').append(el('option', { value: v, text: t }));
+    $('sView').onchange = () => setView($('sView').value);
+    // Ctrl+wheel: the next zoom step, keeping the game point under the mouse where it is
+    $('stageWrap').addEventListener('wheel', (ev) => {
+      if (!ev.ctrlKey || S.sheet) return;
+      ev.preventDefault();
+      const steps = [...$('sZoom').options].map((o) => Number(o.value)).filter((v) => v > 0);
+      const next = ev.deltaY < 0 ? steps.find((v) => v > zoom + 1e-6) : steps.slice().reverse().find((v) => v < zoom - 1e-6);
+      if (!next) return;
+      const pt = toGame(ev), wrap = $('stageWrap');
+      S.prefs.zoom = String(next);
+      savePrefs();
+      syncToolbar();
+      layoutStage();
+      const r = ov.getBoundingClientRect();
+      wrap.scrollLeft += r.left + pt.x * zoom - ev.clientX;
+      wrap.scrollTop += r.top + pt.y * zoom - ev.clientY;
+    }, { passive: false });
     $('bSpec').onclick = exportSpec;
     $('bExport').onclick = exportLayout;
     $('bImport').onclick = () => $('fImport').click();
@@ -1703,7 +1930,9 @@
     $('mClose').onclick = () => { $('modal').hidden = true; };
     $('mCopy').onclick = copySpec;
     $('mDownload').onclick = () => { if (lastSpec) download(lastSpec.fileName, lastSpec.markdown, 'text/markdown'); };
+    $('sSpecLayout').onchange = () => { S.prefs.specLayout = $('sSpecLayout').value; savePrefs(); showSpec(makeSpec(), false); };
     $('modal').addEventListener('mousedown', (ev) => { if (ev.target === $('modal')) $('modal').hidden = true; });
+    $('dlg').addEventListener('mousedown', (ev) => { if (ev.target === $('dlg') && dlgDone) dlgDone(null); });
     const pal = $('palette');
     for (const [kind, name] of PALETTE) {
       const proposed = QModel.NEW_KINDS.includes(kind);
@@ -1722,10 +1951,24 @@
     }
   }
 
+  // ---- an out-of-date dump (build.py freshness: the checkout's VERSION / UI code moved on since the extract) ----
+  function showFreshness() {
+    const f = build.freshness;
+    if (!f || !f.stale) return;
+    $('staleWhy').textContent = f.why;
+    $('staleCmd').textContent = f.refresh;
+    $('staleBar').hidden = false;
+    $('bStaleHide').onclick = () => { $('staleBar').hidden = true; layoutStage(); };
+    $('bStaleCopy').onclick = async () => {
+      try { await navigator.clipboard.writeText(f.refresh); toast('Copied: ' + f.refresh); } catch (e) { toast('Copy failed: select the command and press Ctrl+C', 4000); }
+    };
+  }
+
   // ---- start -----------------------------------------------------------------------------------------------------
   loadInitial();
   loadProvDir();
   wire();
+  showFreshness();
   syncToolbar();
   applyFont();
   QFonts.loadUploads().then((n) => {
@@ -1736,12 +1979,13 @@
   renderAll();
   S.saveState = store.get(STORE_KEY) ? 'saved in this browser' : startLayout ? 'proposal layout' : 'default layout';
   renderStatus();
-  if (!dump) toast('No layout data embedded: run build.cmd to build ui-customizer.html', 8000);
+  if (!dump) toast('No layout data embedded: run tools/ui_customizer/install.py to build ui-customizer.html', 8000);
   else if (build.sample) toast('Using sample data (extract/ui-dump.json was not there at build time)', 4000);
 
   // for tests and the console
   window.QApp = { S, baseline, commit, undo, redo, addWidget, selectPage, paste, copySel, deleteSel, moveSelToPage, exportSpec,
-    spec: () => QModel.specMarkdown(baseline, S.doc, { dumpName: build.dump, font: fontDesc() }).markdown, zoom: () => zoom,
+    spec: (layout) => QModel.specMarkdown(baseline, S.doc, { dumpName: build.dump, font: fontDesc(), freshness: build.freshness, layout: layout || S.prefs.specLayout }).markdown,
+    zoom: () => zoom, setView, preview: () => { const v = viewOf(), p = curPage(); return v && p ? Object.assign(previewPage(p, v), { view: v }) : null; },
     setFont, setFontOpt, showSheet, fontDesc, fonts: QFonts, addFontFile: (f) => addFonts([f]), tour: toggleTour,
     provItems, exportProvenance, forgetProvFolder: () => { provDir = null; } };
 })();

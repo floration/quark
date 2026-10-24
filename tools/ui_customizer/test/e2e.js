@@ -170,6 +170,64 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
   assert.ok(kept && kept.label === 'RENAMED BY TEST', 'autosaved layout reloaded');
   assert.strictEqual((await provOf(target.page)).origin, 'human', 'mark autosaved');
 
+  // ---- in-page dialogs (the Quark Project app's Electron has no window.prompt): + Page, Esc cancels, ids stay unique ----
+  page.on('dialog', (d) => { errors.push('native dialog: ' + d.type() + ' ' + d.message()); d.dismiss(); });
+  const nBefore = await ev(() => QApp.S.doc.pages.length);
+  await page.locator('#bAddPage').click();
+  assert.ok(await page.locator('#dlg').isVisible(), '+ Page opens the in-page dialog');
+  await page.keyboard.press('Escape');
+  assert.ok(!(await page.locator('#dlg').isVisible()) && (await ev(() => QApp.S.doc.pages.length)) === nBefore, 'Esc cancels');
+  await page.locator('#bAddPage').click();
+  await page.locator('#dlgInput').fill('  ');
+  await page.keyboard.press('Enter');
+  assert.ok(await page.locator('#dlg').isVisible(), 'an empty id is refused');
+  await page.locator('#dlgInput').fill('main');
+  await page.keyboard.press('Enter');
+  const addedId = await ev(() => QApp.S.doc.pages.find((p) => p.uid === QApp.S.pageUid).id);
+  assert.strictEqual(addedId, 'main-2', 'a taken id gets -2');
+  assert.strictEqual(await ev(() => QApp.S.doc.pages.length), nBefore + 1, '+ Page added a page');
+  const idInput = page.locator('#inspector .row:has(> label:text-is("id")) input');
+  await idInput.fill('main');
+  assert.ok(await idInput.evaluate((i) => i.classList.contains('bad')), 'a duplicate page id is flagged');
+  assert.strictEqual(await ev(() => QApp.S.doc.pages.find((p) => p.uid === QApp.S.pageUid).id), 'main-2', 'and not applied');
+  await idInput.press('Tab');
+  assert.strictEqual(await idInput.inputValue(), 'main-2', 'leaving the field puts the id back');
+  await page.locator('#palette button', { hasText: 'Button' }).click();   // (an empty page goes without asking)
+  await ev(() => { QApp.S.sel = new Set(); });
+  await ev(() => QApp.commit(() => {}));
+  await page.locator('#inspector button', { hasText: 'Delete page' }).click();
+  assert.ok(await page.locator('#dlg').isVisible(), 'Delete page asks in the page');
+  await page.locator('#dlgOk').click();
+  assert.strictEqual(await ev(() => QApp.S.doc.pages.length), nBefore, 'Delete page (confirmed in the page)');
+
+  // ---- origins in the page list, preview at other resolutions (read only), spec layout tables ----
+  const nOrg = await page.locator('#pageList .pg .org').count();
+  assert.strictEqual(nOrg, nBefore, 'every page shows who made it');
+  await page.locator('.ochip.o-human').click();
+  const humanRows = await page.locator('#pageList .pg').count();
+  assert.ok(humanRows >= 1 && humanRows < nBefore, 'origin filter lists the human pages (' + humanRows + ')');
+  await page.locator('.ochip.o-human').click();
+  const mainId = await ev(() => QApp.S.doc.pages.find((p) => p.id === 'main').uid);
+  await ev((u) => QApp.selectPage(u), mainId);
+  const quit = await ev(() => QApp.S.doc.pages.find((p) => p.id === 'main').elements.find((e) => e.kind === 'button' && /QUIT/.test(e.label || '')));
+  for (const [v, fw] of [['2560x1440', 1280], ['1920x1200', 1152], ['3440x1440', 1720]]) {
+    await page.locator('#sView').selectOption(v);
+    const pv = await ev(() => { const r = QApp.preview(); const q = r.page.elements.find((e) => e.kind === 'button' && /QUIT/.test(e.label || '')); return { fw: r.view.fw, x: q.x, k: r.view.k }; });
+    assert.strictEqual(pv.fw, fw, v + ' frame width in 720p units');
+    assert.strictEqual(pv.x, quit.x + (fw - 1280) / 2, v + ': a centred button keeps its offset from the centre');
+  }
+  assert.ok(Math.abs((await ev(() => QApp.preview().view.k)) - 1) < 1e-9, '1440p text is exact (scale 4)');
+  const ovBox = await page.locator('#ov').boundingBox();
+  await page.mouse.click(ovBox.x + ovBox.width / 2, ovBox.y + ovBox.height / 2);
+  assert.strictEqual(await ev(() => QApp.S.sel.size), 0, 'the preview is read only');
+  if (shots) await page.screenshot({ path: path.join(shots, 'e2e-preview-3440.png') });
+  await page.locator('#sView').selectOption('');
+  assert.strictEqual(await ev(() => QApp.preview()), null, 'back to editing');
+  const full = await ev(() => QApp.spec('all')), part = await ev(() => QApp.spec('changed'));
+  assert.ok(full.includes('## Full layout') && !part.includes('## Full layout') && part.length < full.length / 2, `changes-only spec is small (${part.length} vs ${full.length} chars)`);
+  const stale = await ev(() => JSON.parse(document.getElementById('buildInfo').textContent).freshness);
+  assert.strictEqual(await page.locator('#staleBar').isVisible(), !!(stale && stale.stale), 'the out-of-date banner shows exactly when the dump is stale');
+
   // the help popover and a screenshot of every page group's first page
   await page.keyboard.press('?');
   assert.ok(await page.locator('#help').isVisible(), 'help opens with ?');
@@ -283,6 +341,7 @@ const { findPlaywright, findBrowser, defaultHtml } = require('./browser.js');
   if (upId) {   // remove it again (confirm dialog accepted above)
     await page.locator('#bFonts').click();
     await page.locator('#upList button', { hasText: 'Remove' }).first().click();
+    await page.locator('#dlgOk').click();   // (the in-page confirm)
     await page.waitForFunction((x) => !QApp.fonts.get(x), upId);
     assert.strictEqual(await ev(() => QApp.S.font.id), 'rubik', "back to the game's font after removing the upload");
     await page.locator('#fpClose').click();
