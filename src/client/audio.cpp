@@ -1105,8 +1105,7 @@ static const char* kModSoundNames[] = {"HIT", "KILL", "HURT", "STEP", "JUMP", "L
     // the announcer's lines (SND_VOICE_*), as the asset export and the overrides name them
     "THREE", "TWO", "ONE", "GO", "BOMB_PLANTED", "BOMB_DEFUSED", "HILL_TAKEN", "HILL_LOST", "POINT_TAKEN", "POINT_LOST",
     "ROUND_WON", "ROUND_LOST", "OVERTIME", "YOU_WIN", "YOU_LOSE", "HIGH_SCORE", "NEW_LEADER", "YOU_DIED", "HEADSHOT",
-    "AIRBORNE", "AIR_ROCKET", "SPREE", "RAMPAGE", "UNSTOPPABLE", "GODLIKE", "ONE_MINUTE", "THIRTY_SECONDS", "TEN_SECONDS",
-    "FIVE_SECONDS", "ROUND_OVER"};
+    "AIR_ROCKET", "SPREE", "RAMPAGE", "UNSTOPPABLE", "GODLIKE", "ONE_MINUTE", "THIRTY_SECONDS", "ROUND_OVER"};
 static_assert(sizeof(kModSoundNames) / sizeof(kModSoundNames[0]) == SND_COUNT, "one name per sound, in SoundId order");
 static const char* kModKitDirs[] = {"default", "heavy_metal", "magical", "retro", "mouth"};
 static_assert(sizeof(kModKitDirs) / sizeof(kModKitDirs[0]) == Audio::kPacks, "one folder per sound kit");

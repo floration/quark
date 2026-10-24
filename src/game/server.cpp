@@ -3425,7 +3425,8 @@ bool Server::switchMapKeepRules(const std::string& name) {
     return true;
 }
 
-// The tagger / seeker's locator fired: one random hider / runner's position, to them only (EV_LOCATE).
+// The tagger / seeker's locator fired: one random hider / runner's position, to them only (EV_LOCATE); everyone
+// else hears it (EV_SOUND).
 void Server::useLocator(int id) {
     ServerPlayer& p = players_[id];
     if (!isItMode(ms_.mode) || ms_.phase != PHASE_LIVE || !p.it || !p.alive || time() < p.locateAt) return;
@@ -3443,6 +3444,12 @@ void Server::useLocator(int id) {
     snprintf(pos, sizeof pos, "%.2f %.2f %.2f", p.locatedPos.x, p.locatedPos.y, p.locatedPos.z);
     GameEvent e; e.type = EV_LOCATE; e.a = (uint8_t)t; e.text = pos;
     sendEvent(id, e);
+    // everyone else hears the ping from where "it" stands (owner, 2026-10-24): the hiders / runners it hunts get a
+    // warning and a rough direction. An event, not PS_FIRING: hide and seek's seeker is usually out of a hider's sight,
+    // and a hidden player's snapshot carries no position or firing flag.
+    snprintf(pos, sizeof pos, "%.2f %.2f %.2f", p.move.pos.x, p.move.pos.y, p.move.pos.z);
+    GameEvent snd; snd.type = EV_SOUND; snd.a = (uint8_t)id; snd.c = WPN_LOCATOR; snd.text = pos;
+    for (int i = 0; i < kMaxPlayers; i++) if (i != id && players_[i].connected) sendEvent(i, snd);
 }
 
 uint16_t Server::weaponMask() const {

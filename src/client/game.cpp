@@ -1106,6 +1106,13 @@ void Game::handleEvents() {
                 }
                 break;
             }
+            case EV_SOUND: {   // someone else's sound, from where they are (even out of sight): the seeker's / tagger's locator ping
+                std::istringstream ls(e.text);
+                Vec3 p;
+                if (e.c == WPN_LOCATOR && e.a < kMaxPlayers && e.a != net_.clientId() && (ls >> p.x >> p.y >> p.z))
+                    audio_.play3D(SND_LOCATOR, p + Vec3(0, 1.5f, 0), 1.0f, 1.0f, net_.playerSoundPack(e.a));   // (their pack, like their shots)
+                break;
+            }
             case EV_RPS: {   // the hide and seek tiebreak: who's in, who has chosen, the reveal
                 RpsView v;
                 v.stage = e.a; v.throwNo = e.b; v.at = time_;
@@ -5363,7 +5370,7 @@ static const char* const kInfoPages[][48] = {
         "RACE - the course's checkpoints in order. It starts as untimed practice; vote start (F4) to race. TIME TRIAL (main menu) is the ranked race on Viaduct.",
         "HIDE AND SEEK - one seeker with a knife, everyone else hides first. Everyone seeks once: 1 point for each hider you find, 1 for staying hidden to the end of a round. A tie for first is settled by rock paper scissors (keys 1 / 2 / 3).",
         "TAG - whoever is the TAGGER when the timer runs out is eliminated. Last one standing wins.",
-        "LOCATOR (hide and seek and tag: the seeker's / tagger's second weapon, key 0) - fire it to see one random hider / runner through walls for a second; it recharges in 5 s.",
+        "LOCATOR (hide and seek and tag: the seeker's / tagger's second weapon, key 0) - fire it to see one random hider / runner through walls for a second; it recharges in 5 s. Everyone else hears its ping from where you stand.",
         "# CUSTOM MODES",
         "Host Game > CUSTOM MODE > NEW: any base mode with your own health, gravity, speed, jump, knockback, weapons (fire rate, damage, projectile speed) and map pool. Players who join get the rules automatically.",
         "# MAPS AND MODES",
@@ -6579,7 +6586,7 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
             if (firing && p.weapon == WPN_LASER && time_ >= ra.nextLaser) {
                 audio_.play3D(SND_LASER, p.pos + Vec3(0, 1.5f, 0), 0.7f, 1.0f, sp);
                 ra.nextLaser = time_ + 0.05;
-            } else if (firing && !remoteFiring_[i] && p.weapon != WPN_LASER && p.weapon < WPN_LOCATOR && time_ >= ra.nextShot) {
+            } else if (firing && !remoteFiring_[i] && p.weapon != WPN_LASER && p.weapon < WPN_LOCATOR && time_ >= ra.nextShot) {   // (the locator's ping: EV_SOUND)
                 ra.nextShot = time_ + weaponDef(p.weapon).refire * 0.6f; // (a flag flicker between snapshots isn't a second shot)
                 audio_.play3D(SND_RIFLE + p.weapon, p.pos + Vec3(0, 1.5f, 0), 1.0f, 0.97f + (qrand() % 7) * 0.01f, sp);
             }
