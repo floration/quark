@@ -16,7 +16,7 @@ import datetime, hashlib, os, re, tempfile, threading, time
 import docsparse
 from ghlinks import run, now_iso
 
-NAME_RE = re.compile(r"^(0[0-9]-[a-z0-9-]+|README)\.md$")
+NAME_RE = re.compile(r"^([0-9]{2}-[a-z0-9-]+|README)\.md$")
 QUESTIONS = "07-things-to-ask-the-user.md"
 ANSWERS = "09-answers-from-q.md"
 ANSWERS_SECTION = "Answers"

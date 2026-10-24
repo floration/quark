@@ -358,7 +358,7 @@ class WriterTests(unittest.TestCase):
         self.assertNotIn(b"\r\n", raw)
 
     def test_whitelist(self):
-        for bad in ("../x.md", "..\\x.md", "07-x.md/../../a.md", "/etc/passwd", "10-x.md", "07-X.md", "07-x.txt", "readme.md",
+        for bad in ("1-x.md", "../x.md", "..\\x.md", "07-x.md/../../a.md", "/etc/passwd", "100-x.md", "07-X.md", "07-x.txt", "readme.md",
                     "", None, "07-x.md\n", "C:\\x\\07-a.md", "sync.cmd", ".git/config"):
             self.assertFalse(docsedit.valid_name(bad), bad)
             with self.assertRaises(docsedit.EditError):

@@ -5,7 +5,7 @@
 (function (DM) {
   const {h, clear, $} = DM;
   const st = DM.state;
-  const NAME_RE = /^(0[0-9]-[a-z0-9-]+|README)\.md$/;
+  const NAME_RE = /^([0-9]{2}-[a-z0-9-]+|README)\.md$/;
   const ANSWERS = '09-answers-from-q.md';
   const STATUSES = ['open', 'in-progress', 'fixed', 'wontfix', 'answered', 'told', 'done'];
   const MARKER_RE = /^(<{7}|={7}|>{7})( |$)/m;
