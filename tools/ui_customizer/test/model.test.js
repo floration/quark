@@ -93,10 +93,40 @@ has('Page title: "Settings: video" -> "Video settings"');
 has('| colorpicker | CROSSHAIR \\| COLOUR |');
 has('| toggle | VSYNC | 100 | 220 | 600 | 32 | cfg:vsync | moved from settings/video, moved |');
 has('| button | DEMOS | 520 | 434 | 240 | 36 | nav:demos | removed | main#6 |');
-// changes come before the full layout
-assert.ok(md.indexOf('## Changes') < md.indexOf('## Full layout'));
-// unchanged pages are only in the full layout
-assert.ok(!md.slice(md.indexOf('## Changes'), md.indexOf('## Full layout')).includes('Pause menu) - changed') || true);
+// changes come before the layout tables (every page here is changed, so the default lists them all)
+assert.ok(md.indexOf('## Changes') < md.indexOf('## Layout of the changed pages'));
+assert.ok(!md.includes('## Full layout'), 'the default spec has no full layout');
+
+// spec layout tables: changed pages (default), every page, none
+{
+  const d2 = M.makeWorking(base);
+  d2.pages.find((p) => p.id === 'main').elements.find((e) => e.label === 'QUIT').x += 10;
+  const changedOnly = M.specMarkdown(base, d2).markdown, all = M.specMarkdown(base, d2, { layout: 'all' }), none = M.specMarkdown(base, d2, { layout: 'none' }).markdown;
+  const tableOf = (m, id) => m.includes('### `' + id + '`') && m.split('### `' + id + '`').length - 1;
+  assert.strictEqual(tableOf(changedOnly, 'main'), 2, 'changed page: in the changes and in the tables');
+  assert.ok(!tableOf(changedOnly, 'ingame/pause'), 'unchanged page left out by default');
+  assert.ok(changedOnly.includes('## Layout of the changed pages') && !changedOnly.includes('## Full layout'));
+  assert.ok(all.markdown.includes('## Full layout') && tableOf(all.markdown, 'ingame/pause') === 1, 'every page: unchanged ones too');
+  assert.ok(/-full\.md$/.test(all.fileName), 'full spec file name: ' + all.fileName);
+  assert.strictEqual(tableOf(none, 'main'), 1, 'none: only the changes');
+  assert.ok(!none.includes('| # | kind |'), 'none: no widget tables');
+  assert.ok(none.length < changedOnly.length && changedOnly.length < all.markdown.length);
+  // a stale dump is called out at the top
+  const stale = M.specMarkdown(base, d2, { freshness: { stale: true, why: 'the dump is 1.0.0, the game 1.0.1' } }).markdown;
+  assert.ok(stale.indexOf('**Warning: made against an out-of-date UI dump (the dump is 1.0.0, the game 1.0.1).**') > 0 && stale.indexOf('Warning') < stale.indexOf('## Summary'));
+  assert.ok(!changedOnly.includes('out-of-date'));
+}
+
+// the diff's fast path (identical copies) agrees with the field by field compare
+{
+  const d3 = M.makeWorking(base), e = d3.pages[0].elements[0];
+  const b = base.pages[0].elements[0];
+  assert.deepStrictEqual(M.elementChanges(b, e), { flags: [], changes: [] });
+  e.x += 0.001;   // (within the compare's tolerance: still unchanged)
+  assert.deepStrictEqual(M.elementChanges(b, e).flags, []);
+  e.color = [1, 0, 0, 1];
+  assert.deepStrictEqual(M.elementChanges(b, e).flags, ['edited']);
+}
 
 // cut + paste to another page keeps identity; a second paste is a copy
 const back = find(video, 'BACK');

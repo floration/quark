@@ -196,8 +196,22 @@ const QModel = (() => {
     return [...keys];
   };
 
+  // The same fields with the same values (=== or equal arrays of plain values): the untouched copy most widgets are.
+  // Cheap, so the diff (run after every edit) only compares field by field the few that differ.
+  function identical(a, b) {
+    let n = 0;
+    for (const k in a) {
+      if (META.has(k)) continue;
+      n++;
+      const x = a[k], y = b[k];
+      if (x !== y && !(Array.isArray(x) && Array.isArray(y) && x.length === y.length && x.every((v, i) => v === y[i]))) return false;
+    }
+    for (const k in b) if (!META.has(k)) n--;
+    return n === 0;
+  }
   // What changed between one baseline element and its working copy: {flags, changes:[{field, old, new}]}
   function elementChanges(base, el) {
+    if (identical(base, el)) return { flags: [], changes: [] };
     const flags = [], changes = [];
     if (!same(base.x, el.x) || !same(base.y, el.y)) { flags.push('moved'); changes.push({ field: 'position', old: [base.x, base.y], new: [el.x, el.y] }); }
     if (!same(base.w, el.w) || !same(base.h, el.h)) { flags.push('resized'); changes.push({ field: 'size', old: [base.w, base.h], new: [el.w, el.h] }); }
@@ -249,8 +263,8 @@ const QModel = (() => {
       }
       // draw order of the original widgets that are still on this page
       if (base) {
-        const now = entry.rows.filter((r) => r.base && !r.fromPage).map((r) => r.base.origId);
-        const was = base.elements.map((e) => e.origId).filter((o) => now.includes(o));
+        const now = entry.rows.filter((r) => r.base && !r.fromPage).map((r) => r.base.origId), still = new Set(now);
+        const was = base.elements.map((e) => e.origId).filter((o) => still.has(o));
         if (now.join() !== was.join()) { entry.pageChanges.push({ field: 'draw order', old: null, new: null }); counts.reordered++; }
       }
       entries.push(entry);
@@ -440,6 +454,10 @@ const QModel = (() => {
   }
 
   // ---- the spec ----------------------------------------------------------------------------------------------------
+  // opts: date, dumpName, font (fontDesc), freshness (build.py's: a stale dump is called out at the top), layout: which
+  // pages get a full widget table after the changes: 'changed' (default: the changed pages, so an agent sees each one
+  // whole), 'all' (every page: about 800 KB for the whole game) or 'none'.
+  const SPEC_LAYOUTS = ['changed', 'all', 'none'];
   function specMarkdown(baseline, doc, opts = {}) {
     const date = opts.date || new Date();
     const lf = layoutFont(doc);   // (the layout's own font wins over none / the default Work Sans)
@@ -458,6 +476,9 @@ const QModel = (() => {
     L.push(`- Text: drawn at text scale ${baseline.style.textScale || 2} at 720p (a line is 8 * scale px tall); "textScale" values below are at 720p.`);
     L.push('- Widget identity: "orig" is `<page id>#<index>` in the dump\'s draw order; also given: the widget\'s UiExp (action) and id. ' +
       'Find a widget in the code by its label and UiExp, not by the index.', '');
+    const fr = opts.freshness;
+    if (fr && fr.stale) L.push(`**Warning: made against an out-of-date UI dump (${fr.why}).** The game may have changed these pages since: ` +
+      'check each change against the current code before applying it.', '');
     if (opts.font && !isDefaultFont(opts.font)) L.push(...fontSection(opts.font, baseline.style.textScale || 2));
 
     L.push(...logoSection(doc, baseline.style.textScale || 2, baseline));
@@ -510,10 +531,13 @@ const QModel = (() => {
       L.push('');
     }
 
-    // ---- full layout
-    L.push('## Full layout', '');
-    L.push('Every page of the edited layout. Widget rows are in draw order (later rows draw on top).', '');
-    for (const e of D.pages) {
+    // ---- full layout (of the changed pages, or of every page)
+    const layout = SPEC_LAYOUTS.includes(opts.layout) ? opts.layout : 'changed';
+    const tables = layout === 'all' ? D.pages : layout === 'changed' ? changed : [];
+    if (layout === 'all') L.push('## Full layout', '', 'Every page of the edited layout. Widget rows are in draw order (later rows draw on top).', '');
+    else if (tables.length) L.push('## Layout of the changed pages', '', 'Every widget of each changed page, as edited. Widget rows are in draw order (later rows draw on top). ' +
+      'Unchanged pages are left out (export with "every page" to list them too).', '');
+    for (const e of tables) {
       const p = e.page;
       const st = e.status === 'added' ? 'new' : e.status;
       L.push(`### ${pageName(p)} - ${st}`, '');
@@ -541,7 +565,7 @@ const QModel = (() => {
         L.push('');
       }
     }
-    return { markdown: L.join('\n'), diff: D, fileName: 'ui-spec-' + stamp(date) + '.md' };
+    return { markdown: L.join('\n'), diff: D, fileName: 'ui-spec-' + stamp(date) + (layout === 'all' ? '-full' : '') + '.md' };
   }
 
   // ---- provenance ----------------------------------------------------------------------------------------------------
@@ -675,7 +699,7 @@ const QModel = (() => {
   }
 
   return { KINDS, GAME_KINDS, NEW_KINDS, normalizeDump, makeWorking, sanitizeWorking, signature, newElement, copyElement, newPage,
-    diff, elementChanges, specMarkdown, fontHeadline, isDefaultFont, stamp, clone, uid, layoutFont, setLayoutFont, layoutFontDesc,
+    diff, elementChanges, specMarkdown, SPEC_LAYOUTS, fontHeadline, isDefaultFont, stamp, clone, uid, layoutFont, setLayoutFont, layoutFontDesc,
     ymd, provKey, registryKey, mapProvenanceItems, sanitizeProv, markHuman, markAi, provenanceItems, parseProvenance, mergeProvenance };
 })();
 
