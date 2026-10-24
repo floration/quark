@@ -38,6 +38,12 @@ const LOG_MAX = 4e6;
 const LOCAL_PERMISSIONS = new Set(['fileSystem', 'clipboard-sanitized-write', 'media', 'pointerLock']);
 // automatic updates: GET <Supervisor Board>/api/updates every UPDATES_POLL_MS (the first one a few seconds after start)
 const UPDATES_POLL_MS = 15000;
+// A self-update found in the first minutes after opening relaunches the app by itself (q opened it moments ago, so no
+// editor work is open yet), instead of asking for a second open. Later ones ask first (Restart button). Never twice
+// within AUTO_RELAUNCH_GAP_MS, so a server that keeps reporting the update cannot loop.
+const AUTO_RELAUNCH_WINDOW_MS = 5 * 60 * 1000;
+const AUTO_RELAUNCH_GAP_MS = 10 * 60 * 1000;
+const APP_STARTED_AT = Date.now();
 const UPDATES_FIRST_MS = 3000;
 const PM_PORT_DEFAULT = 8768;
 // the Play tab (pm/play.py): GET <Supervisor Board>/api/play/pending every PLAY_FAST_MS while a game it started runs or a
@@ -616,6 +622,25 @@ async function restartForUpdate(r) {
   const e = views.get(id);
   if (res.up && e && e.mode === 'page' && !e.view.webContents.isDestroyed()) e.view.webContents.reload();
 }
+// A tool installed (or the tab list changed) while the app is open: its tab was resolved as "not installed" when the
+// app started, so its server would wait for the next open. Each update poll re-reads the tab list while some tab is
+// missing or tabs.json changed, and reloads it when anything differs (startKeepAlive then starts the new server).
+let tabsMtime = 0;
+function fileMtime(f) { try { return fs.statSync(f).mtimeMs; } catch { return 0; } }
+function refreshTabsIfChanged() {
+  const m = tabsFile ? fileMtime(tabsFile) : 0;
+  const changedFile = tabsMtime && m && m !== tabsMtime;
+  if (!tabsMtime) tabsMtime = m;
+  if (!changedFile && !tabs.some((t) => !t.installed)) return;
+  const r = loadTabs();
+  const key = (l) => JSON.stringify(l.map((t) => [t.id, t.url, t.installed, t.start, t.keepAlive]));
+  tabsMtime = m;
+  if (key(r.tabs) === key(tabs)) return;
+  const was = new Set(tabs.filter((t) => t.installed).map((t) => t.id));
+  const now = r.tabs.filter((t) => t.installed && !was.has(t.id)).map((t) => t.name);
+  logNote('updates', 'tab list changed' + (now.length ? ' (now installed: ' + now.join(', ') + ')' : '') + '; reloading it');
+  reloadTabList();
+}
 async function pollUpdates() {
   clearTimeout(updatesTimer);
   if (stopped) return;
@@ -624,7 +649,15 @@ async function pollUpdates() {
     if (u && typeof u === 'object') {
       // once per app open: an install pass (the server's own one at its start makes this a no-op within a minute)
       if (!askedUpdate) { askedUpdate = true; pmRequest('POST', '/api/updates/run'); }
-      if (u.selfUpdated === true && !selfUpdated) { selfUpdated = true; updateTabbar(); }
+      if (u.selfUpdated === true && !selfUpdated) {
+        selfUpdated = true; updateTabbar();
+        const now = Date.now();
+        if (now - APP_STARTED_AT < AUTO_RELAUNCH_WINDOW_MS && !(now - (state.autoRelaunchedAt || 0) < AUTO_RELAUNCH_GAP_MS)) {
+          state.autoRelaunchedAt = now;
+          logNote('updates', 'Quark Project updated itself right after opening: relaunching with the new version');
+          relaunchApp(true);
+        }
+      }
       for (const r of Array.isArray(u.restart) ? u.restart : []) {
         if (!r || typeof r.id !== 'string' || handledRestarts.has(r.id)) continue;
         handledRestarts.add(r.id);
@@ -634,16 +667,17 @@ async function pollUpdates() {
       }
     }
   } finally {
+    try { if (!stopped && win && !relaunching) refreshTabsIfChanged(); } catch (err) { logNote('updates', 'tab list check failed: ' + (err && err.message)); }
     if (!stopped) updatesTimer = setTimeout(pollUpdates, win && win.isMinimized() ? UPDATES_POLL_MS * 2 : UPDATES_POLL_MS);
   }
 }
-async function relaunchApp() {
+async function relaunchApp(auto = false) {
   // the tab bar's Restart button after a self-update: a new shell with the new files; the old Supervisor Board server
   // goes too (stopped here when this shell started it, else when its command line is Quark\project-manager's), and
   // the new shell's supervisor starts the new one
   if (relaunching || !win) return;
   relaunching = true;
-  const r = await dialog.showMessageBox(win, {
+  const r = auto ? { response: 0 } : await dialog.showMessageBox(win, {
     type: 'question', title: 'Quark Project', noLink: true, defaultId: 0, cancelId: 1, buttons: ['Restart', 'Later'],
     message: 'Restart Quark Project with the new version?',
     detail: 'Every tab closes and opens again. Save open work in the editors first (their autosaves are kept).',
