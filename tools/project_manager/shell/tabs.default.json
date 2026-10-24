@@ -3,7 +3,7 @@
    "start": "py -3 \"%PM%\\server.py\""},
   {"id": "github",      "name": "GitHub Manager",   "parent": "project", "url": "http://127.0.0.1:8767/?embed=1", "port": 8767, "folder": "github-manager"},
   {"id": "docs",        "name": "Claude Manager",   "parent": "project", "url": "http://127.0.0.1:8766/?embed=1", "port": 8766, "folder": "docs-manager"},
-  {"id": "dashboard",   "name": "Editor Manager",   "parent": "project", "url": "http://127.0.0.1:8765/?embed=1", "port": 8765, "folder": "editor-dashboard",
+  {"id": "dashboard",   "name": "Editor Manager",   "parent": "project", "url": "http://127.0.0.1:8765/?embed=1", "port": 8765, "folder": "editor-dashboard", "start": "dashboard.cmd",
    "childLabel": "Editors"},
   {"id": "sound",       "name": "Sound Editor",     "parent": "dashboard", "folder": "sound-editor",  "file": "sound-editor.html"},
   {"id": "ui",          "name": "UI Editor",        "parent": "dashboard", "folder": "ui-customizer", "file": "ui-customizer.html"},
