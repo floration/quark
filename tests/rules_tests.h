@@ -1556,7 +1556,7 @@ static void testHudClock(uint16_t port) {
 
 // The predicted weapon (src/client/weaponpredict.h, what the client draws and fires locally): after every command,
 // the weapon the server holds is the one that command predicted, and the fire lock matches the server's
-// (runPlayerCmd: switching with fire held locks fire until it's let go). Before 1.18.3 the client showed the old
+// (runPlayerCmd: switching with fire held locks fire until it's let go). Before 1.18.5 the client showed the old
 // weapon until a snapshot confirmed the switch, and the confirmation itself (the command going back to "no change")
 // locked local fire while the server kept firing. A refusal the client didn't see coming falls back to the server's
 // weapon once the server has run the asking command; dead, nothing switches.
