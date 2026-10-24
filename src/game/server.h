@@ -143,6 +143,7 @@ struct ServerPlayer {
     std::vector<int> raceSplits;   // race: ms at each checkpoint of the current run (time trials report it)
     uint32_t joinId = 0;        // unique per connection (a new player in a reused slot gets a new one)
     float dmgDealt = 0, objTime = 0;    // scoreboard: damage to enemies, seconds on the objective (score = dmg / 10 + obj)
+    double hideSurvived = 0;    // hide and seek: seconds hidden (alive, not seeking) in live rounds this match: the first tiebreak (T23)
     int shotsFired = 0, shotsHit = 0;   // accuracy: shots (hitscan or projectile) that damaged an enemy
     bool hitSinceShot = false;
     double typingAt = 0, quipAt = 0, locateAt = 0;   // next "typing" relay allowed (and quip pings, the locator ready)
