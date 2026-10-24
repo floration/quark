@@ -25,6 +25,14 @@
 
 struct GLFWwindow;
 
+// The settings shell's design coordinates (720p, a 1280 frame) on this screen: x centred on W / 2, everything times s
+struct SetLayout {
+    float s = 1, cx = 640;
+    float X(float px) const { return cx + (px - 640) * s; }
+    float Y(float py) const { return py * s; }
+    float L(float px) const { return px * s; }
+};
+
 struct LaunchOptions {
     std::string connect;        // --connect addr
     int hostMode = -1;          // --host mode
@@ -56,6 +64,7 @@ struct LaunchOptions {
     bool debugRaceStats = false; // --racestats: the leaderboard's race stats page    // --models: every player model lined up in front of you  // --widgets: open the HUD widget editor in game
     bool debugSettings = false; // --settings: open the settings screen in game
     bool debugControls = false; // --controls
+    std::string settingsTab;    // --settingstab PAGE: with --settings / --settingsmenu, that page (gameplay, controls/movement, hud/elements...)
     std::string editMap;        // --editor MAP: open the map editor on that map
     bool editSession = false;   // --editsession MAP: and host it as an edit session
     int editSel = -1;           // --edsel N: select box N (screenshots)
@@ -163,7 +172,18 @@ private:
     void drawScoreboard();
     void drawMenu();
     void drawPauseMenu(float cx, float y);
-    void drawSettings(float x, float y, float w);
+    // Settings: one shell, six tabs (drawSettings: the menus and the pause menu; game.cpp "Settings")
+    enum { TAB_PLAYER, TAB_GAMEPLAY, TAB_CONTROLS, TAB_VIDEO, TAB_CROSSHAIR, TAB_HUD };
+    int setTab_ = TAB_PLAYER;
+    int controlsSub_ = 0;    // CONTROLS: 0 general + interface keys, 1 move + weapon keys
+    void drawSettings();
+    void openSettingsTab(int tab);
+    void leaveSettings();
+    void debugSettingsTab();   // --settingstab
+    void drawPlayerSettings(const SetLayout& L);
+    void drawGameplaySettings(const SetLayout& L);
+    void drawVideoSettings(const SetLayout& L);
+    void drawImportDialog(const SetLayout& L);
     void captureMouse(bool on);
     Vec3 teamColor(int playerId) const;
     Vec3 outlineColor(int playerId) const; // the player outline (settings: friendly / enemy presets)
@@ -619,19 +639,14 @@ private:
     int bestMapFor(int mode) const;
     int bestRankedMap(int ladder) const; // the ladder's own ranked map, else any ranked map for it
     bool pressInput(int code);
-    void drawControls(float x, float y, float w);
-    void drawHudSettings(float x0, float y0, float wTotal);
-    void drawCrosshairSettings(float x, float y, float w);
+    void drawControls(const SetLayout& L);
+    void drawHudSettings(const SetLayout& L);
+    void drawCrosshairSettings(const SetLayout& L);
     void drawCrosshair(float cx, float cy, float scale, bool hit);
-    bool controlsOpen_ = false;
-    bool crosshairOpen_ = false;
-    bool hudOpen_ = false;
-    bool visualsOpen_ = false;
-    void drawVisualSettings(float x0, float y0, float wTotal);
-    // FONT (settings/fonts): the built-in UI fonts, then the player's mods/fonts files (uifonts.h). The list is
-    // looked up when the page opens and on REFRESH; a font's atlas is built once when it's picked.
+    // FONT (settings/fonts, from PLAYER): the built-in UI fonts, then the player's mods/fonts files (uifonts.h). The
+    // list is looked up when the page opens and on REFRESH; a font's atlas is built once when it's picked.
     bool fontsOpen_ = false;
-    void drawFontSettings(float x0, float y0, float wTotal);
+    void drawFontSettings(const SetLayout& L);
     std::vector<uifonts::Entry> fontList_;
     bool fontListed_ = false;      // (fontList_ is current: cleared on opening the page and by REFRESH)
     int fontScans_ = 0, fontScroll_ = 0;
@@ -686,11 +701,9 @@ private:
     std::string activeHudPath() const;
     void applyModeRules(int mode);
     bool drawFileList(const char* sub, float x, float y, float w, std::string& picked);
-    void ruleRow(float x, float y, float w, float h, bool hud);
     void drawVerboseHud(float W, float s, float& y);
     void drawWidgetEditor();
-    int hudSel_ = 0;
-    bool hudDrop_ = false;   // HUD settings: the element dropdown is open
+    int hudSel_ = 0;         // HUD settings: the element (its ELEMENT dropdown)
     int captureAction_ = -1, captureSlot_ = 0;
     std::string voteText_;
     // tourney bracket (EV_BRACKET): rounds of player ids (-1 bye, -2 undecided), current match

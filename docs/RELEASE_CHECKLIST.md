@@ -62,6 +62,7 @@ The automated UI test clicks every button (`quark --uitest`, run locally on this
 | ✓ | Check |
 |---|---|
 | ☐ | Main menu: JOIN GAME, HOST GAME, RANKED, MAP EDITOR, SETTINGS, INFO, DEMOS, QUIT each open the right screen, and Esc / BACK returns. |
+| ☐ | The **QUARK title** looks like the app icon (the Q split cyan / red along a slanted line with a black seam, every letter on a black outline, UARK in your team colour) and is crisp at 1280×720, 1920×1080 and your own resolution; change TEAM COLOR: UARK follows it, the Q doesn't. The settings pages show no title. |
 | ☐ | INFO: every tab reads correctly and matches this version (weapons, modes, controls). |
 | ☐ | Text fits everywhere: nothing overlaps or runs off a button at your normal resolution and at 1280×720. |
 | ☐ | Pause menu in a game: SETTINGS, record / stop demo, EDIT THE MAP TOGETHER (not in ranked), DISCONNECT / STOP HOSTING (host with bots, play 30 s, STOP HOSTING: back to the main menu, the game must not close), QUIT. |
@@ -71,23 +72,29 @@ The automated UI test clicks every button (`quark --uitest`, run locally on this
 
 For each one: change it, check the effect in a game, quit, restart, check it was kept.
 
+Settings is one panel with six tabs (PLAYER, GAMEPLAY, CONTROLS, VIDEO + AUDIO, CROSSHAIR, HUD), the same from the main
+menu and from the pause menu: BACK (bottom-left) and Esc leave it from any tab; in a game the HUD is hidden while it's open.
+
 | ✓ | Check |
 |---|---|
-| ☐ | Video: fullscreen / borderless / windowed, resolution, vsync, FPS cap, field of view. |
+| ☐ | The shell: every tab opens from the tab row, BACK never moves, nothing overlaps at 1280×720, 1920×1080 and 1024×768 (4:3); in a game nothing of the HUD shows through. |
+| ☐ | **Colour pickers** (TEAM / ENEMY COLOR, CUSTOM NAME COLOR, MAP COLOR, CROSSHAIR / HIT FLASH COLOR, the HUD element's colour): click one: drag in the square and the hue bar, type a hex value (Enter), click outside or Esc to close; right-click the swatch: its default. TEAM COLOR is also the menu accent. |
+| ☐ | Video (VIDEO + AUDIO): fullscreen / borderless / windowed, resolution, vsync, FPS limit; field of view (GAMEPLAY). |
 | ☐ | Outline thickness: **world** and **player** separately (0 = off). |
 | ☐ | Crosshair: style, size and colour; the **hit-flash colour** setting, including **off**; the default is unchanged from the last release. |
 | ☐ | Audio: master, effects, announcer, music volumes; the announcer pack. |
 | ☐ | Audio (Windows): sound is clean with EXCLUSIVE AUDIO off (shared, 10 ms) and on (3 ms on the owner's PC; other programs go silent, back when it's turned off); unplugging or switching the output device mid-game moves the sound to the new default. |
 | ☐ | Sound levels: put a quiet `ROCKET.wav` in `%APPDATA%\quark\overrides\sounds\default\` and restart: the rocket is as loud as before (matched). Add `sounds/default/ROCKET` to `%APPDATA%\quark\overrides\sound-levels.txt` and restart: it is now quiet (its own level). Remove both after. The sound editor (`tools\sound_editor\build.cmd`) builds and its Export to game writes these files. |
 | ☐ | Model overrides: install the model editor (`tools\model_editor\install.cmd`; it opens from `%USERPROFILE%\Desktop\Quark\model-editor\model-editor.html`), recolour `models/player/STANDARD` (e.g. bright green), Export to game into `%APPDATA%\quark\overrides` and restart. A casual game (vs bots) shows it, with outlines and crouching like the default; a **ranked** match (and a time trial) shows the default STANDARD instead. The payload cart and checkpoint gates (railyard), the bomb on a carrier's back and on the ground (depot), and the arms (other players' gun arms; the held-weapon arms in hide and seek) look as in the last release. Remove the file after. |
-| ☐ | Controls: rebind every action you use. Bind **chat to a letter key** (e.g. Y): pressing it opens chat **without** typing a "y". Bind **Toggle chat**: incoming chat hides / shows with a short message. **Disable chat** in settings stays in sync with the toggle. |
+| ☐ | Controls: rebind every action you use (GENERAL + INTERFACE KEYS and MOVE + WEAPON KEYS); **right-click** a slot unbinds it (or click it and press Del). Bind **chat to a letter key** (e.g. Y): pressing it opens chat **without** typing a "y". Bind **Toggle chat**: incoming chat hides / shows with a short message. **Disable chat** (GAMEPLAY) stays in sync with the toggle. |
 | ☐ | Interpolation setting (up to 200 ms): shots still hit what you see. |
-| ☐ | HUD editor: drag, add, delete, import / export a layout; the weapon list shows only the weapons the mode has. |
+| ☐ | HUD tab: the ELEMENT dropdown lists WEAPON MODEL first and every HUD element; each one's SHOW / offsets / size / depth (weapon model) / colour work, RESET ELEMENT and RESET WHOLE HUD put the defaults back. |
+| ☐ | HUD editor (HUD → WIDGET EDITOR): drag, add, delete, import / export a layout; the weapon list shows only the weapons the mode has. |
 | ☐ | DISCORD CODE: see section 13. |
-| ☐ | **Font** (SETTINGS → FONT): the game is in **Rubik Bold** everywhere (menus, HUD, chat, console still monospaced, scoreboard, editor). Pick WORK SANS, QUARK CLASSIC (square pixels, black outline, the old letter widths) and each game-styled entry: everything redraws in it at once with no stutter afterwards (F3 lows unchanged); restart: it's kept. Put a .ttf in `mods/fonts` (OPEN FOLDER), REFRESH: it's listed and works. Delete that file and restart: a notice says it fell back to Rubik. With Steam's TF2 / Quake or Windows' Verdana present, those entries say "USING YOUR ..." and look like the game. |
-| ☐ | **Name colour** (SETTINGS, right column): turn it on and pick a colour; a second player sees your name in it on the scoreboard, in chat and in the kill feed; team name tags stay the team colour; a very dark colour shows lighter. Off again: your name goes back to the default. |
+| ☐ | **Font** (SETTINGS → PLAYER → FONT): the game is in **Rubik Bold** everywhere (menus, HUD, chat, console still monospaced, scoreboard, editor). Pick WORK SANS, QUARK CLASSIC (square pixels, black outline, the old letter widths) and each game-styled entry: everything redraws in it at once with no stutter afterwards (F3 lows unchanged); restart: it's kept. Put a .ttf in `mods/fonts` (OPEN FOLDER), REFRESH: it's listed and works. Delete that file and restart: a notice says it fell back to Rubik. With Steam's TF2 / Quake or Windows' Verdana present, those entries say "USING YOUR ..." and look like the game. |
+| ☐ | **Name colour** (SETTINGS → PLAYER → LOOK): turn it on and pick a colour (picking one turns it on; right-click the swatch: off); a second player sees your name in it on the scoreboard, in chat and in the kill feed; team name tags stay the team colour; a very dark colour shows lighter. Off again: your name goes back to the default. |
 | ☐ | **Health bars** are on after updating from 1.16 even if you had them off; turning them off now stays off across restarts. |
-| ☐ | Every number slider: click it and **type a value**; **right-click** resets it to its default (check the custom-mode MOVEMENT page too). Damage-number size, damage flash (off by default; on / intensity in VISUALS), sniper and rifle zoom FOV, and the fullbright map colour all work. |
+| ☐ | Every number slider: click it and **type a value**; **right-click** resets it to its default (check the custom-mode MOVEMENT page too). Damage-number size, damage flash (off by default; on / intensity in GAMEPLAY), sniper and rifle zoom FOV, and the fullbright map colour (VIDEO + AUDIO → FLAT MAP) all work. |
 
 ## 5. Weapons and movement
 

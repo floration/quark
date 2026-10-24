@@ -39,14 +39,17 @@ namespace fs = std::filesystem;
 // Game's side: where the UI is, what can be observed, and the interactive things that aren't widgets
 
 std::string Game::uiScreenPath() const {
-    auto settingsSub = [&]() -> std::string {
-        if (controlsOpen_) return filePick_ == 2 ? "/controls/files" : "/controls";
-        if (crosshairOpen_) return "/crosshair";
-        if (widgetEdit_) return filePick_ == 1 ? "/hud/widgets/files" : valueDrop_ && widgetSel_ >= 0 ? "/hud/widgets/values" : "/hud/widgets";
-        if (hudOpen_) return hudDrop_ ? "/hud/elements" : "/hud";
-        if (visualsOpen_) return "/visuals";
-        if (fontsOpen_) return "/fonts";
-        return "";
+    auto settingsSub = [&]() -> std::string {   // (the tab, then what's open on it)
+        switch (setTab_) {
+            case TAB_GAMEPLAY: return "/gameplay";
+            case TAB_CONTROLS: return filePick_ == 2 ? "/controls/files" : controlsSub_ == 1 ? "/controls/movement" : "/controls";
+            case TAB_VIDEO: return "/video";
+            case TAB_CROSSHAIR: return "/crosshair";
+            case TAB_HUD:
+                if (widgetEdit_) return filePick_ == 1 ? "/hud/widgets/files" : valueDrop_ && widgetSel_ >= 0 ? "/hud/widgets/values" : "/hud/widgets";
+                return ui_.dropdownOpen() ? "/hud/elements" : "/hud";
+        }
+        return fontsOpen_ ? "/fonts" : "";
     };
     auto pickerName = [](int p) -> const char* {
         switch (p) {
@@ -530,10 +533,13 @@ private:
         g.ui_.clearFocus();
         g.paused_ = g.chatting_ = g.console_ = false;
         g.chatText_.clear();
-        g.settingsInGame_ = g.voteMenu_ = g.queueMenu_ = g.controlsOpen_ = g.crosshairOpen_ = g.hudOpen_ = g.visualsOpen_ = g.fontsOpen_ = false;
+        g.settingsInGame_ = g.voteMenu_ = g.queueMenu_ = g.fontsOpen_ = false;
+        g.setTab_ = Game::TAB_PLAYER;
+        g.controlsSub_ = 0;
+        g.ui_.closePopup();
         g.fontScroll_ = 0;   // (the font itself follows the settings put back below: Game::frame applies ui_font)
         if (g.widgetEdit_) g.widgets_.save(g.activeHudPath());
-        g.widgetEdit_ = g.hudDrop_ = g.valueDrop_ = false;
+        g.widgetEdit_ = g.valueDrop_ = false;
         g.widgetSel_ = -1;
         g.filePick_ = 0;
         g.captureAction_ = -1;

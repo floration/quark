@@ -20,7 +20,7 @@ own, and URLs / folders / quitting intercepted.
 
 ## How it works
 
-Every widget call (`Ui::button`, `toggle`, `cycle`, `slider`, `textField`) takes a **`UiExp`** — the expectation:
+Every widget call (`Ui::button`, `tab`, `toggle`, `cycle`, `slider`, `textField`, `colorPicker`, `dropdown`) takes a **`UiExp`** — the expectation:
 what activating it is meant to do. It's a required argument, so a widget can't be added without one. In normal play
 it's a few pointers on the stack and one null check; nothing is recorded (`Ui::probe` is null).
 
@@ -31,6 +31,13 @@ While the test runs, the `Ui` reports every widget it draws each frame (rect, la
    controls) is explored later by replaying the clicks that led there.
 2. **Activates** each widget the way a player would: a button / toggle is clicked, a cycle's `>` is clicked (then `<`
    must go back), a slider is dragged and then a number typed into it, a text field gets typed into and Enter, a keybind slot is clicked and given a key, a hotkey is pressed, a 3D-view handle is dragged.
+   A **colour picker** (`Ui::colorPicker`, kind `color`) is clicked: its picker must open (on screen), a drag across
+   its saturation / value square and a click on its hue bar must each change the colour, a hex value typed into its
+   field (Enter) must be taken exactly, and Esc must close it; then it's **right-clicked**: it must show its default
+   (the CFG is checked as saved when the screen is left). A **dropdown** (`Ui::dropdown`, kind `dropdown`) is clicked:
+   it declares where opening it leads (e.g. `nav("~settings/hud/elements")`), and its list's entries are that screen's
+   widgets (the page under it is modal: inert and unreported). A **keybind slot** is also right-clicked after its bind:
+   it must show `-` and the cleared bind be saved at once.
 3. **Checks the expectation** (and that a toggle / cycle / slider / text field's own value changed):
 
 | UiExp | checked |
@@ -40,7 +47,7 @@ While the test runs, the `Ui` reports every widget it draws each frame (rect, la
 | `UiExp::state("widgets")` | the observable (`Game::uiObserve`) changed; `state("hosting", "1")`: became that value |
 | `UiExp::cmd("team spec")` | a server command starting with that was sent. In game it's recorded and kept from the server, so the game stays as it was for the next widget |
 | `UiExp::edit()` | the editor's map changed, there's an undo step, and Ctrl+Z puts the map back exactly (in an edit session: through the server) |
-| `UiExp::bind()` | a keybind slot: it captures the next key, which is saved to quark.cfg at once |
+| `UiExp::bind()` | a keybind slot: it captures the next key, which is saved to quark.cfg at once; a right-click unbinds it (saved at once) |
 | `UiExp::url()` / `quit()` | a URL / folder was opened / the game would quit (both intercepted) |
 | `UiExp::local()` | only the widget's own value changes (a field read later, a list position) |
 | `UiExp::inert()` | nothing changes (and a greyed-out widget is always checked this way) |
@@ -85,6 +92,15 @@ click-to-watch-next, the editor's 3D view (click to select), the selection's dra
 The same widget is tested once per scenario and screen (`<scenario> :: <screen> [<what it acts on>] > <id>`); the
 editor's selection tools are tested once per selection kind (box, spawn, light, site, hill, checkpoint, path, ladder,
 group / room / stairs).
+
+Settings is one shell with six tabs, the same in the menus (`settings...`) and in game (`ingame/pause/settings...`):
+`settings` (PLAYER), `settings/fonts` (PLAYER > FONT), `settings/gameplay`, `settings/controls` (GENERAL + INTERFACE
+KEYS), `settings/controls/movement` (MOVE + WEAPON KEYS), `settings/controls/files` (the import list), `settings/video`
+(VIDEO + AUDIO), `settings/crosshair`, `settings/hud`, `settings/hud/elements` (the ELEMENT dropdown open),
+`settings/hud/widgets` (+ `/files`, `/values`). The tab row's tabs are `nav("~settings/<tab>")` buttons (the current one
+too); BACK and Esc leave settings from any tab (Esc first closes an open picker, dropdown or list). `quark
+--settingsmenu --settingstab <page>[+<picker label>] --menushot --screenshot out.png` (or `--settings` in game) opens a
+page for a screenshot, e.g. `hud/elements` or `player+TEAM COLOR`.
 
 Settings > FONT (`settings/fonts`): each font entry is a `cfg("ui_font")` button (the one in use: `inert()`), with its
 name as a stable id whichever is in use; REFRESH is `state("fontscan")`, OPEN FOLDER `url()`. The test puts the

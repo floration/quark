@@ -90,6 +90,7 @@ int main(int argc, char** argv) {
         else if (a == "--menushot") opts.menuShot = true;
         else if (a == "--fonts") opts.debugFonts = 1;   // Settings > FONT open from the start (screenshots: with --menushot)
         else if (a == "--settingsmenu") opts.debugFonts = 2;   // the settings page from the main menu (screenshots)
+        else if (a == "--settingstab") opts.settingsTab = next();   // that settings page (screenshots): gameplay, controls/movement, video...
         else if (a == "--edfocus") opts.edFocus = true;
         else if (a == "--chatshot") opts.chatShot = next();
         else if (a == "--consoleshot") opts.consoleShot = next();
