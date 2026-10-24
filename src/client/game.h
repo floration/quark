@@ -405,7 +405,7 @@ private:
     bool edPlaceGroup(const std::string& text); // a "quark-group 1" text, added at the screen center
     void edImportGroup();               // clipboard first (saved to groups/), else the groups menu
     void edExportGroup();               // the selected group to groups/<new file> + clipboard, then open the folder
-    void drawEditorGroupMenu(float x, float y, float w);
+    void drawEditorGroupMenu();         // IMPORT's list / EXPORT's question: the editor's dialog template (drawEditorSavePrompt)
     std::vector<EdSel> edPickAll(const Vec3& o, const Vec3& dir) const;   // everything under the ray, nearest first
     float edLastClickX_ = -1e9f, edLastClickY_ = -1e9f, edLastClickYaw_ = 0, edLastClickPitch_ = 0;   // (clicking the same spot again cycles)
     Vec3 edLastClickCam_;
@@ -484,6 +484,7 @@ private:
     void sceneSettings();   // the renderer's world look from cfg_
     static const Settings& defaultSettings() { static const Settings d; return d; }   // (sliders' right-click: back to these)
     float edPanelX_ = 1e9f;   // the editor's side panel starts here (a right-click there is the UI's, not mouse look)
+    float edBarTop_ = 0;      // the top of the editor's key bar (the 3D view's status line + key help): its dialogs centre over it
 
     // F3 performance overlay: frame-time percentiles (lows matter, averages hide stutter)
     bool showPerf_ = false;
