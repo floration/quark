@@ -224,6 +224,10 @@ try {
     await page.waitForTimeout(100);
     const hits = await page.$$eval("#tree .trow:not([hidden])", (r) => r.filter((x) => x.offsetParent).map((x) => x.dataset.key));
     ok(hits.includes("fn:testWallbang") && hits.includes("quark_tests|group:weapons") && hits.length < 10, "search finds the function and the groups that call it", hits.join());
+    await page.fill("#search", "zzzznomatch");
+    await page.waitForTimeout(100);
+    ok(await page.$$eval("#tree .trow, #tree .thead, #tree .tsub", (r) => r.filter((x) => x.offsetParent).length) === 0, "search with no match shows no rows");
+    await page.fill("#search", "");
 
     // ---- run
     await go("#group/weapons");

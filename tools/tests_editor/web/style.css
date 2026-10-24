@@ -57,7 +57,7 @@ body.when-on #views > #vWhen { display: block !important; }
 .thead.sel { background: color-mix(in srgb, var(--qt-accent) 22%, transparent); }
 .ttw { width: 10px; color: var(--qt-muted); transition: transform .1s; font-size: 10px; }
 .closed > .ttw { transform: rotate(-90deg); }
-.folded { display: none !important; }
+.folded, .thead[hidden], .tsub[hidden], .trow[hidden] { display: none !important; }   /* (search hides rows: [hidden] loses to display:flex without this) */
 .tkind { font-size: 9.5px; font-weight: 700; padding: 0 4px; border-radius: 3px; border: 1px solid var(--qt-line); color: var(--qt-muted); text-transform: uppercase; }
 .tkind.k-ci { border-color: var(--c-job); color: var(--c-job); } .tkind.k-local { border-color: var(--c-group); color: var(--c-group); } .tkind.k-fn { border-color: var(--c-fn); color: var(--c-fn); }
 .tname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
