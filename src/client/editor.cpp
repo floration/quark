@@ -1273,12 +1273,16 @@ void Game::editorFrame(double dt) {
     r_.resize((int)panelX, (int)H);
     r_.setCamera(edCam_, yaw_, pitch_, cfg_.fov);
     if (ui_.probing()) uiTestHandles();   // (the UI test: where the selection's handles are on screen)
-    auto closestOnAxis = [&](const Vec3& p0, int axis, const Vec3& d) { // param along the axis nearest the mouse ray
+    // param along the axis nearest the mouse ray; ahead: false when that nearest point of the ray is behind the camera
+    // (the mouse is past the axis's vanishing point - a handle on a far face dragged toward the horizon)
+    auto closestOnAxis = [&](const Vec3& p0, int axis, const Vec3& d, bool* ahead = nullptr) {
         Vec3 a;
         a[axis] = 1;
         Vec3 w = p0 - edCam_;
         float bb = dot(a, d), den = 1 - bb * bb;
-        return den < 1e-4f ? 0.0f : (bb * dot(d, w) - dot(a, w)) / den;
+        float t = den < 1e-4f ? 0.0f : (bb * dot(d, w) - dot(a, w)) / den;
+        if (ahead) *ahead = den >= 1e-4f && dot(d, w) + bb * t > 0;
+        return t;
     };
     auto handles = [&]() -> const std::vector<EdHandle>& {   // edHandles(), into a buffer kept from frame to frame
         edHandleBuf_.clear();
@@ -1359,8 +1363,12 @@ void Game::editorFrame(double dt) {
         }
     }
     if (edDragAxis_ >= 0 && (!uiIn_.down || !edSelValid())) edDragAxis_ = -1;
-    if (edDragAxis_ >= 0 && (size_t)edSel_.idx < kindCount(edDragBase_, edSel_.kind)) {
-        float delta = snapTo(closestOnAxis(edDragP0_, edDragAxis_, edMouseRay()) - edDragT0_, g);
+    // (past the vanishing point the nearest param jumps to the axis's other end - a face pulled out flipped in, or
+    // stuck at its smallest: UI test, a group's far face - so the drag holds where it was until the mouse comes back)
+    bool dragAhead = true;
+    float dragT = edDragAxis_ >= 0 ? closestOnAxis(edDragP0_, edDragAxis_, edMouseRay(), &dragAhead) : 0;
+    if (edDragAxis_ >= 0 && dragAhead && (size_t)edSel_.idx < kindCount(edDragBase_, edSel_.kind)) {
+        float delta = snapTo(dragT - edDragT0_, g);
         delta = clampf(delta, -500, 500);
         int kind = edSel_.kind, i = edSel_.idx, a = edDragAxis_;
         char k = kKindChar[kind];
