@@ -496,6 +496,50 @@ static void testHookPrediction(uint16_t port) {
     s.stop();
 }
 
+// T3 / T4: the dash jump's 0.1 s window for a ground dash aimed a hair up, and for held-jump hoppers.
+static void testDashJumpWindows() {
+    printf("dash jump windows\n");
+    Map m;
+    std::string err;
+    CHECK(m.parse("box -900 -1 -900 900 0 900\nspawn any 0 0 0\n", &err));
+    auto hs = [](const MoveState& q) { return std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z); };
+    auto step = [&](MoveState& q, UserCmd c) { c.msec = 1; pmove(q, c, m); };
+    auto standing = [&] { MoveState q; q.flags = MF_ONGROUND; for (int i = 0; i < 50; i++) step(q, UserCmd()); return q; };
+    // T3: dash on the floor aimed 0.5 deg up (it leaves the floor at once), jump 30 ms in: the 24 m/s dash jump
+    for (float up : {0.0087f, 0.05f}) {
+        MoveState q = standing();
+        UserCmd d; d.buttons = BTN_DASH; d.pitch = up;
+        for (int i = 0; i < 30; i++) step(q, d);
+        CHECK(!(q.flags & MF_ONGROUND) && q.dashTimer > 0);
+        d.buttons |= BTN_JUMP;
+        step(q, d);
+        printf("  ground dash %.1f deg up, jump 30 ms in: %.2f m/s, %.2f up\n", up * 57.3f, hs(q), q.vel.y);
+        CHECK(q.dashTimer == 0 && std::fabs(hs(q) - 24.0f) < 0.01f && q.vel.y > 7.0f && (q.events & ME_SUPER));
+    }
+    {   // ...but not past the window (a dash started in the air has none)
+        MoveState q = standing();
+        q.pos.y = 3; q.flags = 0;
+        UserCmd d; d.buttons = BTN_DASH; d.pitch = 0.05f;
+        for (int i = 0; i < 30; i++) step(q, d);
+        d.buttons |= BTN_JUMP;
+        step(q, d);
+        CHECK(q.dashTimer > 0);
+    }
+    // T4: holding jump (a hop off the floor, no fresh press), dash 60 ms after leaving it: a dash jump, as after a press
+    {
+        MoveState q = standing();
+        q.flags |= MF_JUMPHELD;   // (jump held from before: this hop is no fresh press)
+        UserCmd j; j.buttons = BTN_JUMP;
+        step(q, j);
+        CHECK((q.events & ME_JUMP) && !(q.flags & MF_ONGROUND));
+        for (int i = 0; i < 60; i++) step(q, j);   // 60 ms up
+        UserCmd dj; dj.buttons = BTN_JUMP | BTN_DASH;
+        step(q, dj);
+        printf("  held-jump hop, dash 60 ms after: %.2f m/s\n", hs(q));
+        CHECK(q.dashTimer == 0 && std::fabs(hs(q) - 24.0f) < 0.01f && (q.events & ME_SUPER));
+    }
+}
+
 static void testMovement() {
     printf("movement\n");
     Map m;
@@ -624,8 +668,11 @@ static void testMovementTuning() {
         c.forward = 0; c.side = 127;
         step(q, c, m);
         printf(", sideways %.3f m/s\n", q.vel.x);
-        CHECK(std::fabs(q.vel.x - 4.5f) < 1e-4f && std::fabs(q.vel.y - 6.75f) < 1e-4f);   // (any held key climbs)
-        c.side = 0; c.buttons = BTN_JUMP;   // the kick-off is unchanged: 4 m/s back, 0.7 of a jump up
+        CHECK(std::fabs(q.vel.x - 4.5f) < 1e-4f && q.vel.y == 0);   // (T6: A/D only sideways; any key climbed before)
+        c.side = 0; c.forward = -127;   // T6: S climbs down (and backs you off the wall, as before)
+        step(q, c, m);
+        CHECK(std::fabs(q.vel.y + 6.75f) < 1e-4f && std::fabs(q.vel.z - 4.5f) < 1e-4f);   // (and backs off the wall, as before)
+        c.forward = 0; c.buttons = BTN_JUMP;   // the kick-off is unchanged: 4 m/s back, 0.7 of a jump up
         step(q, c, m);
         CHECK(std::fabs(q.vel.z - 4.0f) < 1e-3f && q.vel.y > 7.34f * 0.7f - 0.05f && q.vel.y <= 7.34f * 0.7f);
     }
@@ -3687,7 +3734,7 @@ static void testLadders() {
                 if (m.boxSolid(playerBox(ms.pos, false))) continue;
                 UserCmd cmd; cmd.yaw = yaw; cmd.pitch = 0.2f; cmd.forward = 127; cmd.msec = 8;
                 for (int t = 0; t < 1000 && !ok; t++) {   // up to 8 s: standing on top at any point counts
-                    cmd.forward = t < 700 ? 127 : -127;            // a ladder that ends at a wall: step back off it
+                    cmd.forward = t < 700 ? 127 : -127;            // a ladder that ends at a wall: step back off it...
                     pmove(ms, cmd, m);
                     if (getenv("LADDER_TRACE") && t % 50 == 0 && name == getenv("LADDER_TRACE") && (!getenv("LADDER_AT") || std::fabs(c.x - atof(getenv("LADDER_AT"))) < 0.5f)) printf("      t %d yaw %.2f pos %.2f %.2f %.2f vel %.2f %.2f %.2f ladder %d\n", t, yaw, ms.pos.x, ms.pos.y, ms.pos.z, ms.vel.x, ms.vel.y, ms.vel.z, (int)m.onLadder(playerBox(ms.pos, false)));
                     ok = ms.pos.y > l.mx.y - 1.3f && (ms.flags & MF_ONGROUND) && !m.onLadder(playerBox(ms.pos, false));
@@ -7631,7 +7678,7 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testDashJumpWindows(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},

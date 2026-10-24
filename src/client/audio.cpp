@@ -365,6 +365,10 @@ void Audio::voiceGains(Voice& v, const Vec3& listener, const Vec3& right) {
     if (dist > 90.0f) g = 0;
     // pan: how far to the listener's right the sound is
     float pan = dist > 0.01f ? clampf(dot(d / dist, right), -1, 1) : 0;
+    // X8: behind you, up to -3 dB and a soft low-pass (one pole, ~3 kHz straight behind), so front and back differ
+    const float back = dist > 0.01f ? clampf(dot(d / dist, Vec3(right.z, 0, -right.x)) * -1.0f, 0, 1) : 0;   // (forward = (-sin, 0, -cos))
+    g *= 1.0f - 0.29f * back;
+    v.lp = 1.0f - 0.6f * back;
     v.gainL = g * std::sqrt(0.5f * (1 - pan * 0.8f));
     v.gainR = g * std::sqrt(0.5f * (1 + pan * 0.8f));
 }
@@ -472,13 +476,29 @@ void Audio::render(float* buf, int n) {
             if (v.pos < end) m = step == 0 ? n : (int)std::min<uint64_t>((uint64_t)n, (end - v.pos + step - 1) / step);
             const float* d = s.data();
             uint64_t p = v.pos;
-            for (int i = 0; i < m; i++) {
-                const size_t idx = (size_t)(p >> 32);
-                const float f = (float)(uint32_t)p * (1.0f / 4294967296.0f), x = d[idx] + (d[idx + 1] - d[idx]) * f;
-                gl += dl; gr += dr;
-                buf[i * 2] += x * gl;
-                buf[i * 2 + 1] += x * gr;
-                p += step;
+            if (v.lp < 0.999f) {   // (behind you: the low-pass, one multiply-add a frame; in front the plain loop below)
+                const float a = v.lp;
+                float y = v.lpY;
+                for (int i = 0; i < m; i++) {
+                    const size_t idx = (size_t)(p >> 32);
+                    const float f = (float)(uint32_t)p * (1.0f / 4294967296.0f), x = d[idx] + (d[idx + 1] - d[idx]) * f;
+                    y += a * (x - y);
+                    gl += dl; gr += dr;
+                    buf[i * 2] += y * gl;
+                    buf[i * 2 + 1] += y * gr;
+                    p += step;
+                }
+                v.lpY = y;
+            } else {
+                for (int i = 0; i < m; i++) {
+                    const size_t idx = (size_t)(p >> 32);
+                    const float f = (float)(uint32_t)p * (1.0f / 4294967296.0f), x = d[idx] + (d[idx + 1] - d[idx]) * f;
+                    gl += dl; gr += dr;
+                    buf[i * 2] += x * gl;
+                    buf[i * 2 + 1] += x * gr;
+                    p += step;
+                }
+                v.lpY = m > 0 ? d[(size_t)((p - step) >> 32)] : v.lpY;   // (the filter starts from where the sound is)
             }
             v.pos = p;
             if (p >= end) { voices_[k] = voices_.back(); voices_.pop_back(); } // finished: swap-and-pop (order doesn't matter)

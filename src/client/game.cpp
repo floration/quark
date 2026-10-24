@@ -1511,6 +1511,10 @@ void Game::frame(double dt) {
                 if (w == WPN_KNIFE && !alt) knifeSlash_[net_.clientId() % kMaxPlayers] = time_;
                 if (isThrow(w, alt)) { localFireLocked_ = true; heldWeapon_ = wp_.thrown(weaponView()); }   // (and out comes the next weapon)
                 recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
+                if (w == WPN_ROCKET || w == WPN_CROSSBOW || (w == WPN_KNIFE && alt)) spawnPredictedProjectile(w, alt, c);   // X5
+                if (!weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) &&
+                    (w != WPN_LASER || time_ >= nextLocalSpark_))
+                    localImpactSparks(w, c);   // X4: a spark on an enemy you hit, at once (the sound and number: the server's)
                 bool showShot = cfg_.ownShots == 1 || (cfg_.ownShots == 0 && !cfg_.hud[Settings::HUD_VIEWMODEL].hidden); // VISUALS > YOUR SHOTS
                 if (w == WPN_LASER) laserUntil_ = showShot ? time_ + 0.07 : 0;
                 else if (showShot && !weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE) { // (knife throw: the projectile shows it)
@@ -1713,7 +1717,20 @@ void Game::drawWorld(float alpha) {
         Vec3 p = demoView ? players[me].snap.pos : net_.smoothedPos(alpha);
         bool crouch = net_.predicted().flags & MF_CROUCHED;
         eye = p + Vec3(0, (crouch ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
+        {   // X7: a stair step moves you up to 0.55 m in one tick: the camera (only: shots still leave from the real eye)
+            // starts where it was and closes the gap with an 8 ms time constant (95% in 25 ms), up and down
+            const bool gr = !demoView && (net_.predicted().flags & MF_ONGROUND);
+            stepCam_ *= (float)std::exp(-frameDt_ / 0.008);
+            if (gr && stepGround_) {
+                const float dy = p.y - stepFeetY_;
+                if (std::fabs(dy) > 0.02f && std::fabs(dy) < 0.6f * bodyScale()) stepCam_ = clampf(stepCam_ - dy, -0.6f, 0.6f);
+            }
+            if (std::fabs(stepCam_) < 1e-4f) stepCam_ = 0;
+            stepFeetY_ = p.y; stepGround_ = gr;
+            eye.y += stepCam_;
+        }
     } else {
+        stepCam_ = 0; stepGround_ = false;
         // team modes: an enemy (the killer) only for kKillCamTime, then a teammate (F11)
         const bool enemyCam = specTarget_ >= 0 && modeIsTeamBased(ms.mode) && !isFriendly(specTarget_) && time_ >= killCamUntil_;
         if (enemyCam || specTarget_ < 0 || !players[specTarget_].valid || !(players[specTarget_].snap.flags & PS_ALIVE)) {
@@ -2015,7 +2032,24 @@ void Game::drawWorld(float alpha) {
                        selfView ? muzzlePoint(WPN_KNIFE, eye) : Vec3());
     }
 
-    // projectiles (yours: from your weapon model's muzzle, blending onto the real path over 0.2 s)
+    // projectiles (yours: from your weapon model's muzzle, blending onto the real path over 0.2 s; X5: your rockets,
+    // bolts and thrown knives fly from the click, a predicted copy, until the server's arrives and takes over as far
+    // along as the copy was)
+    auto projGravity = [](int type, bool lob) { return projectileGravity(type, lob ? kRocketLobGravity : 1.0f); };
+    if (!alive) for (auto& q : predProj_) q.live = false;
+    for (auto& q : predProj_) {   // the copies, where they'd be now (stopped at the first wall: the server's word follows)
+        if (!q.live) continue;
+        const double age = time_ - q.born;
+        if (age > 0.6) { q.live = false; continue; }   // (no copy came: a shot the server refused)
+        if (q.atWall) continue;
+        Vec3 p = q.pos0, v = q.vel0;
+        projectileExtrapolate(p, v, projGravity(q.type, q.lob), (float)age);
+        const Vec3 d = p - q.pos;
+        const float len = length(d);
+        if (len > 1e-4f && map.raycast(q.pos, d / len, len) >= 0) { q.atWall = true; continue; }   // (hidden; the server's copy still takes over from it)
+        q.pos = p;
+        if (!q.started) { q.started = true; q.offset = muzzlePoint(q.type, eye) - q.pos0; }
+    }
     {
         std::vector<ProjStart>& keep = projStartsKeep_;   // (the two trade memory each frame)
         keep.clear();
@@ -2024,7 +2058,18 @@ void Game::drawWorld(float alpha) {
             ProjStart st{pr.id, time_, {}};
             bool found = false;
             for (auto& o : projStarts_) if (o.id == pr.id) { st = o; found = true; }
-            if (!found && alive) {
+            PredProj* copy = nullptr;   // a new one of yours: the oldest copy of its kind takes it
+            if (!found && alive && !(pr.flags & (PROJ_STUCK | PROJ_ON_PLAYER)))
+                for (auto& q : predProj_) if (q.live && q.type == pr.type && (!copy || q.born < copy->born)) copy = &q;
+            if (copy) {
+                const float sp = length(pr.vel);
+                if (sp > 0.1f) st.lead = clampf(dot(copy->pos - pr.pos, pr.vel / sp) / sp, 0.0f, 0.4f);
+                Vec3 p = pr.pos, v = pr.vel;
+                projectileExtrapolate(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
+                st.offset = copy->pos - p;   // (what's left: blended out like the muzzle start)
+                if (length(st.offset) > 3.0f) st.offset = {};
+                copy->live = false;
+            } else if (!found && alive) {
                 // where the weapon that fired it points out of the screen (thrown knife: from the knife hand)
                 int w = pr.type < WPN_COUNT ? pr.type : heldWeapon_;
                 Vec3 muz = muzzlePoint(w, eye);
@@ -2034,11 +2079,12 @@ void Game::drawWorld(float alpha) {
         }
         projStarts_.swap(keep);
     }
-    for (auto pr : lastProjectiles_) {
+    auto drawProj = [&](ProjectileSnap pr, bool copy) {
         // (on you: where you are this frame; on anyone else, interpolatedProjectiles already put it on them)
         if ((pr.flags & PROJ_ON_PLAYER) && pr.onPlayer == me) net_.attachedPos(pr, alpha, &pr.pos);
-        for (auto& st : projStarts_)
-            if (st.id == pr.id) { float f = 1.0f - (float)(time_ - st.seen) / 0.2f; if (f > 0) pr.pos = pr.pos + st.offset * f; }
+        if (!copy)
+            for (auto& st : projStarts_)
+                if (st.id == pr.id) { float f = 1.0f - (float)(time_ - st.seen) / 0.2f; if (f > 0) pr.pos = pr.pos + st.offset * f; }
         Vec3 col = teamColor(pr.owner);
         float sp = length(pr.vel);
         Vec3 dir = sp > 0.01f ? pr.vel / sp : Vec3(0, 0, -1);
@@ -2075,6 +2121,31 @@ void Game::drawWorld(float alpha) {
         else if (mt == WPN_KNIFE) r_.line(pr.pos, pr.pos - dir * 2.0f, 0.03f, rgba(col, 0.4f));
         else if (mt == WPN_CROSSBOW) r_.line(pr.pos, pr.pos - dir * 4.0f, 0.04f, rgba(col, 0.5f));
         else if (mt == MODEL_PROJ_ORB) r_.line(pr.pos, pr.pos - dir * 3.5f, 0.12f, rgba(col, 0.5f));
+        };
+    for (auto pr : lastProjectiles_) {
+        for (auto& st : projStarts_)
+            if (st.id == pr.id && st.lead > 0 && !(pr.flags & (PROJ_STUCK | PROJ_ON_PLAYER))) {   // (X5: as far along as its copy was, short of the wall)
+                Vec3 p = pr.pos, v = pr.vel;
+                projectileExtrapolate(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
+                const Vec3 d = p - pr.pos;
+                const float len = length(d);
+                const float hit = len > 1e-4f ? map.raycast(pr.pos, d / len, len) : -1.0f;
+                pr.pos = hit >= 0 ? pr.pos + d / len * std::max(0.0f, hit - 0.05f) : p;
+                pr.vel = v;
+            }
+        drawProj(pr, false);
+    }
+    for (auto& q : predProj_) {
+        if (!q.live || q.atWall) continue;
+        ProjectileSnap pr;
+        pr.type = q.type; pr.owner = (uint8_t)me; pr.id = 0xFFFF;
+        Vec3 v = q.vel0, p = q.pos0;
+        projectileExtrapolate(p, v, projGravity(q.type, q.lob), (float)(time_ - q.born));
+        pr.vel = v;
+        float f = 1.0f - (float)(time_ - q.born) / 0.2f;   // (from the muzzle, like the server's copy did)
+        pr.pos = q.pos + (f > 0 ? q.offset * f : Vec3());
+        if (length(pr.pos - eye) < 0.8f) continue;   // (its first ~10 ms: the model would fill the view from the muzzle)
+        drawProj(pr, true);
     }
     drawStuckProps(eye, alpha);
     // explosions
@@ -2083,8 +2154,8 @@ void Game::drawWorld(float alpha) {
         if (t >= 1) { explosions_.erase(explosions_.begin() + i); continue; }
         float r = (0.5f + t * 3.0f) * explosions_[i].size;
         Vec3 c = explosions_[i].at;
-        Color ec = explosions_[i].bubble ? rgba(r_.glowColor, 0.5f * (1 - t)) : explosions_[i].kill ? Color{0.85f, 0.08f, 0.06f, 0.6f * (1 - t)}
-                                                                       : Color{1.0f, 0.85f, 0.5f, 0.55f * (1 - t)};
+        Color ec = explosions_[i].bubble ? rgba(r_.glowColor, 0.5f * (1 - t)) : explosions_[i].spark ? Color{1.0f, 0.35f, 0.2f, 0.9f * (1 - t)}
+                 : explosions_[i].kill ? Color{0.85f, 0.08f, 0.06f, 0.6f * (1 - t)} : Color{1.0f, 0.85f, 0.5f, 0.55f * (1 - t)};
         r_.translucentBox({c - Vec3(r, r, r), c + Vec3(r, r, r)}, ec);
         i++;
     }
@@ -6604,6 +6675,57 @@ void Game::drawBracket() {
 }
 
 // Crosshair from the settings: style, size, thickness, gap, color, outline. A hit flashes it white.
+// X5: a copy of the projectile the server will launch for this command, as it launches it (Server::fireWeapon): from
+// 0.3 m in front of the eye, at the weapon's speed (a rocket lob: 70% and its drop; a thrown knife: its own).
+void Game::spawnPredictedProjectile(int w, bool alt, const UserCmd& c) {
+    const MoveState& m = net_.predicted();
+    const Vec3 eye = m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
+    const Vec3 aim = angleForward(c.yaw, c.pitch);
+    const WeaponDef& wd = weaponDef(w);
+    PredProj* slot = &predProj_[0];   // (a free one, else the oldest)
+    for (auto& q : predProj_) { if (!q.live) { slot = &q; break; } if (q.born < slot->born) slot = &q; }
+    PredProj q;
+    q.type = (uint8_t)w;
+    q.live = true;
+    q.pos0 = q.pos = eye + aim * 0.3f;
+    if (w == WPN_KNIFE) q.vel0 = aim * kKnifeThrowSpeed;
+    else {
+        const float spread = (wd.scopedSpread >= 0 && (c.buttons & BTN_ALTFIRE)) ? wd.scopedSpread : wd.spread;
+        q.vel0 = spreadAim(aim, spread, 0, 1, localBurst_) * wd.projSpeed;
+        if (w == WPN_ROCKET && alt) { q.vel0 = q.vel0 * kRocketLobSpeed; q.lob = true; }
+    }
+    q.born = time_;
+    *slot = q;
+}
+
+// X4: your hitscan shot against the enemies as you see them: a spark where each pellet / bullet meets one in front of
+// the wall (the server's word, the hit sound and number, comes a round trip later). Rays only against the few boxes
+// in sight, once a shot (the laser: at most 20 a second).
+void Game::localImpactSparks(int w, const UserCmd& c) {
+    const MoveState& m = net_.predicted();
+    const Vec3 eye = m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
+    const Vec3 aim = angleForward(c.yaw, c.pitch);
+    const WeaponDef& wd = weaponDef(w);
+    const float spread = (wd.scopedSpread >= 0 && (c.buttons & BTN_ALTFIRE)) ? wd.scopedSpread : wd.spread;
+    const auto& ps = framePlayers();
+    const int me = net_.clientId();
+    bool any = false;
+    for (int k = 0; k < wd.pellets; k++) {
+        const Vec3 d = spreadAim(aim, spread, k, wd.pellets, localBurst_);
+        float bangT, t = net_.map().raycastBullet(eye, d, wd.range, &bangT);
+        if (t < 0) t = wd.range;
+        const Vec3 inv = safeInv(d);
+        float best = t;
+        for (int i = 0; i < kMaxPlayers; i++) {
+            if (i == me || !ps[i].valid || !(ps[i].snap.flags & PS_ALIVE) || (ps[i].snap.flags & PS_SPECTATOR) || isFriendly(i)) continue;
+            const float tk = rayAABB(eye, inv, playerBox(ps[i].snap.pos, (ps[i].snap.flags & PS_CROUCHED) != 0, bodyScale()), best);
+            if (tk >= 0 && tk < best) best = tk;
+        }
+        if (best < t) { explosions_.push_back({eye + d * best, time_, 0.1f, false, false, true}); any = true; }
+    }
+    if (any) nextLocalSpark_ = time_ + 0.05;
+}
+
 // Where the hits you took came from (X3): a red arc round the crosshair toward each attacker (as they stood when it
 // hit), for kDmgDirTime, fading. A few dozen small rects while one shows; nothing otherwise.
 void Game::drawDamageArcs(float cx, float cy, float scale) {

@@ -219,7 +219,8 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         s.vel.y = jumpSpeed;
         onGround = false;
         s.events |= ME_JUMP;
-        if (freshJump) s.jumpGrace = jumpWindow;   // (a dash right after this press is still a ground dash jump)
+        s.jumpGrace = jumpWindow;   // (a dash right after this jump is still a ground dash jump; T4: held-jump hops too,
+                                    // they had only the ~6 ms of floor contact against a fresh press's 0.1 s)
         if (tapped) s.jumpBuffer = 0;              // (that press is used)
     }
 
@@ -260,6 +261,9 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         float h = std::sqrt(s.vel.x * s.vel.x + s.vel.z * s.vel.z);
         s.dashDirX = d.x;
         s.dashDirZ = d.z;
+        // T3: a dash that starts on the floor counts as on it for the jump window (one aimed a hair up leaves it at once:
+        // at +0.5 deg a jump made a plain 11 m/s dash, not the 24 m/s dash jump). jumpGrace is on the wire: no new state.
+        if (grounded) s.jumpGrace = jumpWindow;
         s.dashFromSpeed = h;   // (a super dash adds to this)
         s.dashExitSpeed = std::min((kDashExitMax * mt.m[MV_DASH_EXIT_MAX]), std::max((kDashExitMin * mt.m[MV_DASH_EXIT_MIN]), h + (kDashKeep * mt.m[MV_DASH_KEEP])));
         s.dashUp = std::sin(cmd.pitch) * (kDashVertical * mt.m[MV_DASH_VERTICAL]);
@@ -282,7 +286,10 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         const bool down = s.dashUp <= -kSuperDashDown * (kDashVertical * mt.m[MV_DASH_VERTICAL]);
         const bool wantJump = jumpHeld || s.jumpBuffer > 0;
         const bool graceJump = dashStart && !grounded && s.jumpGrace > 0 && !down;
-        if ((grounded && wantJump) || graceJump) {
+        // (T3: a dash running since it left the floor, the jump within the window: a dash jump from the floor. During a
+        // dash, jumpGrace is left only by that: a jump just before a dash spends it as the dash starts, graceJump)
+        const bool liftJump = !dashStart && dashActive && !grounded && s.jumpGrace > 0 && wantJump && !down;
+        if ((grounded && wantJump) || graceJump || liftJump) {
             float sp = burst, vy = graceJump ? s.vel.y : jumpSpeed;
             if (grounded && down) {
                 // the hyper: the speed carried into the dash + kSuperDashBoost (owner 1.18.7: "+5 of current"), at least
@@ -412,8 +419,12 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             s.vel = fwd * -4.0f + Vec3(0, jumpSpeed * 0.7f, 0);
             s.events |= ME_JUMP;
         } else {
-            float climb = std::min(wishLen, 1.0f) * (kLadderSpeed * mt.m[MV_LADDER_SPEED]) * (cmd.pitch < -0.45f ? -1.0f : 1.0f);
-            s.vel = {wishDir.x * std::min(wishSpeed, (kLadderSide * mt.m[MV_LADDER_SIDE])), wishLen > 0 ? climb : 0.0f, wishDir.z * std::min(wishSpeed, (kLadderSide * mt.m[MV_LADDER_SIDE]))};
+            // (owner, T6: W climbs (down while looking down past 26 deg), S the other way, A/D don't climb, only move
+            // sideways; it was any key climbing, S and A/D up too. Held keys still move you along the wall and to / from it
+            // as before: W carries you over the top, S backs you off one that ends at a wall)
+            const float f = std::clamp(cmd.forward / 127.0f, -1.0f, 1.0f);
+            float climb = (wishLen > 0 ? f : 0.0f) * (kLadderSpeed * mt.m[MV_LADDER_SPEED]) * (cmd.pitch < -0.45f ? -1.0f : 1.0f);
+            s.vel = {wishDir.x * std::min(wishSpeed, (kLadderSide * mt.m[MV_LADDER_SIDE])), climb, wishDir.z * std::min(wishSpeed, (kLadderSide * mt.m[MV_LADDER_SIDE]))};
         }
         onGround = false;
     } else if (onGround) {
@@ -535,6 +546,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             bounced = true;
             s.events |= ME_JUMP;
             if (tapped) s.jumpBuffer = 0;
+            s.jumpGrace = jumpWindow;   // (T4: a hop off a landing, like a jump off the floor)
         } else if (s.vel.y < 0) s.vel.y = 0;
     } else if (onGround && s.vel.y <= 0) {
         float down = map.sweepAxis(feet, 1, -(kStepHeight * mt.m[MV_STEP]));

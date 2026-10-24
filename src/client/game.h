@@ -468,17 +468,26 @@ private:
     }
     int lastHealth_ = 0;
     bool fireAlive_ = false;
+    float stepCam_ = 0, stepFeetY_ = 0;   // X7: the camera's lag behind a stair step (m), and last frame's feet height
+    bool stepGround_ = false;
     float localRefire_ = 0;    // the refire localNextFire_ counts down (the last shot's, alt-fire's own; the spawn lock's)
     float tickYaw_ = 0;        // the yaw the last tick sent (F18: the next frame's turn spreads from it)   // alive as of the last frame's ticks (a spawn starts the mirrored spawn fire lock)
     struct Tracer { Vec3 a, b; double until; };
     std::vector<Tracer> tracers_;
-    struct Explosion { Vec3 at; double start; float size = 1; bool bubble = false; bool kill = false; };   // kill: a red burst where someone died (X6)
+    struct Explosion { Vec3 at; double start; float size = 1; bool bubble = false; bool kill = false; bool spark = false; };   // kill: a red burst where someone died (X6); spark: X4's local hit spark
+    void localImpactSparks(int w, const UserCmd& c);
+    double nextLocalSpark_ = 0;
     std::vector<Explosion> explosions_;
     std::vector<ProjectileSnap> lastProjectiles_;
     std::vector<ProjectileSnap> projScratch_;   // (frame: this frame's projectiles, built here then swapped in)
     std::vector<GameEvent> evScratch_;          // (handleEvents)
     // your own projectiles start drawn at your weapon model's muzzle and blend onto their real path
-    struct ProjStart { uint16_t id; double seen; Vec3 offset; };
+    struct ProjStart { uint16_t id; double seen; Vec3 offset; float lead = 0; };   // lead: X5, drawn this far ahead (s)
+    // X5: your own rockets, bolts and thrown knives, flying from the click until the server's copy arrives (a round trip
+    // later), which then takes over drawn as far ahead as the copy was (lead), so nothing jumps back
+    struct PredProj { uint8_t type = 0; bool live = false, lob = false, started = false, atWall = false; Vec3 pos0, vel0, pos, offset; double born = 0; };
+    PredProj predProj_[8];
+    void spawnPredictedProjectile(int w, bool alt, const UserCmd& c);
     std::vector<ProjStart> projStarts_, projStartsKeep_;
     std::string feedPart_;   // (drawFeedText)
     double frameDt_ = 0;     // this frame's dt (frame)
