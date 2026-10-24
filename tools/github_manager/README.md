@@ -26,7 +26,9 @@ Two more tabs:
     / CI / limit / other, scoped to all, a branch pattern or a tool), with the limits' values editable inline, saved
     locally (`editor/rules.json`) at once.
   - **Pending changes**: each queued GitHub change with its before -> after (a sentence for a branch, the JSON diff
-    for a ruleset), warnings, the exact `gh api` call, and Apply / Preview again / Discard (plus Apply all). Nothing
+    for a ruleset), warnings, the exact `gh api` call, and Apply / Preview again / Discard (plus Apply all). A delete,
+    or a change with warnings, asks before it goes; Apply all's confirm lists every change with its warnings. After
+    an Apply the page follows the server's own poll and redraws as soon as GitHub's new state is in. Nothing
     is sent to GitHub before Apply. Right before the call the server reads GitHub again, re-checks the production
     lock and refuses a change whose preview is out of date ("changed on GitHub since preview, review again"). The
     result (or GitHub's exact error) stays on the card and goes into the History tab (`github.*` events).
@@ -48,7 +50,8 @@ Two more tabs:
   Notes: a note is
   plain text with a little markdown (paragraphs, lists, `` `code` ``, **bold**, links; everything else is shown as
   typed) about a branch, PR, run, commit, version or local copy, or a general one; it can be pinned, marked done,
-  edited and deleted (after a confirm; the deleted note stays in the history). Notes show where their target shows: a
+  edited and deleted (after a confirm; the deleted note stays in the history). A note about a branch, PR, run or local copy the page
+  doesn't know (a typo, a deleted branch) gets a warning in the form, and can still be saved. Notes show where their target shows: a
   count on branch / PR / run rows and local-copy cards, all of them with "add note" in that item's details, and the
   pinned ones in a Notes card on the Overview. Every change is a `note.*` event in the History tab. Notes stay on this
   PC (and in the Claude Documents copy); nothing is sent to GitHub.
@@ -183,5 +186,5 @@ production lock (every refused case), previews and diffs, apply / stale / refuse
 a fake gh, the editor endpoints' protections, and an offline end-to-end poll against a local repository with canned
 gh answers; `GHM_LIVE=1 ... LiveRulesets` reads the real repo's rulesets, read-only), `test/fixture_server.py` (the
 page on fixtures, with in-memory notes, structure, rules and pending changes and a fake apply; `--no-editor`,
-`--docs-error`),
+`--docs-error`, `--signed-out`: gh signed out since the start, so the GitHub parts show as unknown),
 `install.py` / `install.cmd`, `github-manager.cmd`; the page: `index.html`, the CSS and `js/`.

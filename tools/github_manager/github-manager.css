@@ -165,6 +165,7 @@ time .abs { white-space: nowrap; }
 .ev-ico { text-align: center; font-size: 12px; color: var(--gm-muted); }
 .ev-bad .ev-ico { color: var(--gm-bad); } .ev-good .ev-ico { color: var(--gm-good); } .ev-run .ev-ico { color: var(--gm-run); } .ev-merged .ev-ico { color: var(--gm-merged); }
 .ev-bad .ev-text { color: var(--gm-bad); }
+.ev-warn .ev-ico { color: var(--gm-warn); }
 .ev-text { min-width: 0; overflow-wrap: anywhere; }
 .ev-ref { white-space: nowrap; }
 .day-h { position: sticky; top: 0; }
@@ -266,11 +267,17 @@ table.branches tbody tr:hover, table.branches tbody tr:focus-visible { backgroun
 .lr { display: inline-flex; }
 .lr:hover { text-decoration: none; filter: brightness(1.1); }
 .b-sub { display: none; }
-@media (max-width: 1100px) {
-  table.branches .b-head, table.branches th:nth-child(2), table.branches .b-age, table.branches th:nth-child(3) { display: none; }
-  .b-name { max-width: 300px; }
+/* narrower than 1500 px (a 1280 window): the head commit folds under the branch name, so the table fits without
+   sideways scrolling; narrower than 1100 px the age goes too */
+@media (max-width: 1500px) {
+  table.branches .b-head, table.branches th:nth-child(2) { display: none; }
+  .b-name { max-width: 380px; }
   .b-sub { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
   .b-ab { min-width: 160px; }
+}
+@media (max-width: 1100px) {
+  table.branches .b-age, table.branches th:nth-child(3) { display: none; }
+  .b-name { max-width: 300px; }
 }
 
 /* ---- local copies ---- */
@@ -374,6 +381,7 @@ button.danger:hover { border-color: var(--gm-bad); }
 .nform.compose textarea { background: var(--gm-panel); }
 .nform textarea:focus, .nform input:focus, .nform select:focus { outline: 2px solid color-mix(in srgb, var(--gm-accent) 70%, transparent); outline-offset: -1px; border-color: var(--gm-accent); }
 .nform input[type=text] { min-width: 0; }
+.nf-unknown { margin: 0; }
 .nf-target { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--gm-s2); }
 .nf-key { flex: 1 1 260px; max-width: 520px; }
 .nf-key input { width: 100%; }
@@ -475,6 +483,8 @@ input.num { width: 76px; background: var(--gm-panel2); border: 1px solid var(--g
 .st-desc { margin: 3px 0 0 2px; padding-left: var(--gm-s2); border-left: 2px solid var(--gm-line); color: var(--gm-text); }
 .st-op { grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; }
 .st-op p { margin: 0; }
+.st-op .gf-note { grid-column: 1 / -1; }
+.st-namehint { margin: 0; color: var(--gm-warn); }
 .st-del { border-color: var(--gm-bad); }
 .st-create { margin-top: var(--gm-s2); }
 .pd-bar { display: block; margin: var(--gm-s2) 0 0; padding: 6px var(--gm-s3); border-radius: var(--gm-radius); border: 1px dashed var(--gm-warn); color: var(--gm-text); background: color-mix(in srgb, var(--gm-warn) 7%, transparent); }
@@ -554,7 +564,11 @@ pre.diff .d-add::first-letter { color: var(--gm-add); font-weight: 700; }
 pre.diff .d-del::first-letter { color: var(--gm-del); font-weight: 700; }
 pre.diff .d-hunk { color: var(--gm-muted); background: var(--gm-panel2); }
 pre.diff .d-ctx { color: var(--gm-muted); }
-.pd-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pd-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 var(--gm-s2); }
+.pd-confirm-all { display: grid; gap: 6px; }
+.pd-confirm-all p { margin: 0; }
+.pd-all-list { margin: 0; padding-left: 22px; display: grid; gap: 4px; max-height: 360px; overflow-y: auto; }
+.pd-all-list .pd-warn { margin: 3px 0 0; }
 .pd-done-h { margin-top: var(--gm-s5); }
 .chip.c-ruleset > a:first-child { font-weight: 600; }
 @media (max-width: 760px) { .pd-ba { grid-template-columns: minmax(0, 1fr); } .pd-arrow { transform: rotate(90deg); } }
@@ -596,4 +610,10 @@ pre.diff .d-ctx { color: var(--gm-muted); }
 @media (min-width: 1800px) {
   :root { --gm-max: 2400px; }
   .grid2.cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* the CI runs and Pull requests tabs: rows side by side (three across at 2560), read left to right like a table */
+  .rows.cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 700px), 1fr)); column-gap: var(--gm-s4); }
+  .rows.cols > .row { margin: 0; }
+  /* History: a day's events flow down then into the next column, so it still reads as a timeline */
+  .events.cols { columns: 3 640px; column-gap: var(--gm-s5); }
+  .events.cols > .ev { break-inside: avoid; }
 }

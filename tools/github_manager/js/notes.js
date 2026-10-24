@@ -198,6 +198,17 @@ function keyOptions(kind) {
 }
 const KEY_HINT = { branch: 'branch name', pr: 'PR number', run: 'run id', commit: 'commit sha', version: 'e.g. 1.18.6', local: 'local copy name' };
 
+// A target the page doesn't know (a typo, a deleted branch, a run older than the page's) is said, not refused.
+// Commits and versions can be anything, so only branches, PRs, runs and local copies are checked.
+function unknownTarget(kind, key) {
+  key = normKey(kind, String(key || '').trim());
+  const idx = store.idx;
+  if (!key || !idx) return '';
+  const known = { branch: () => idx.branches.has(key), pr: () => idx.pulls.has(key.replace(/^#/, '')), run: () => idx.runs.has(key), local: () => idx.local.has(key) }[kind];
+  return known && !known() ? `No ${KIND_WORD[kind]} “${key}” in the current data: check it (it may be gone, or not polled yet). The note can still be saved.` : '';
+}
+const unknownLine = (kind, key) => { const w = unknownTarget(kind, key); return html`<p class="msg warn small nf-unknown" data-nf-unknown${w ? '' : ' hidden'}>${w}</p>`; };
+
 // A note form. fk (form key) names it: "<scope>:add:<kind>:<key>", "<scope>:edit:<id>" or "e:new" (the composer,
 // whose target is picked); the draft lives under it, so a redraw while typing loses nothing.
 export function noteForm({ fk, note = null, kind = 'general', key = '', pickTarget = false, cancel = true }) {
@@ -211,6 +222,7 @@ export function noteForm({ fk, note = null, kind = 'general', key = '', pickTarg
       ${d.kind !== 'general' ? html`<label class="f nf-key"><span class="sr">${KIND_LABEL[d.kind]}</span><input type="text" data-nf="key" value="${d.key}" list="${listId}" placeholder="${KEY_HINT[d.kind]}" autocomplete="off" spellcheck="false"></label>
         <datalist id="${listId}">${keyOptions(d.kind).map(([v, t]) => html`<option value="${v}">${t}</option>`)}</datalist>` : html`<span class="muted small">not about one thing in particular</span>`}
     </div>` : ''}
+    ${d.kind !== 'general' ? unknownLine(d.kind, pickTarget ? d.key : note ? note.target.key : key) : ''}
     <textarea data-nf="text" rows="${pickTarget ? 4 : 3}" placeholder="Write a note. Markdown works: paragraphs, - lists, 1. lists, \`code\`, **bold**, [links](https://…)" spellcheck="true">${d.text}</textarea>
     <div class="nf-bar">
       <label class="chk"><input type="checkbox" data-nf="pinned"${d.pinned ? ' checked' : ''}> Pin to the Overview</label>
@@ -379,6 +391,7 @@ export function initNotes(h) {
     const c = form.querySelector('[data-nf-count]');
     if (c) { const n = bytes(d.text); c.textContent = size(n); c.className = `nf-count small${n > TEXT_MAX ? ' err' : ' muted'}`; }
     if (e.target.dataset.nf === 'kind') { d.key = ''; hooks.onChange(); }
+    if (e.target.dataset.nf === 'key') { const p = form.querySelector('[data-nf-unknown]'); if (p) p.outerHTML = String(unknownLine(d.kind, d.key)); }
   });
   document.addEventListener('keydown', (e) => {
     const form = e.target.closest && e.target.closest('[data-nform]');

@@ -2,7 +2,7 @@
 """Dev server for the GitHub manager page: serves the page and the fixtures on the API paths (stdlib only).
 
     python3 tools/github_manager/test/fixture_server.py [--port 8767] [--no-shift] [--poll-error TEXT] [--no-notes]
-                                                         [--no-editor] [--docs-error TEXT]
+                                                         [--no-editor] [--docs-error TEXT] [--signed-out]
 
 Every timestamp in the fixtures is shifted so the fixture's generatedAt is "now" (so elapsed timers and
 "5 min ago" look live); --no-shift serves them as written. /api/log returns a made-up GitHub Actions log for a
@@ -13,6 +13,7 @@ its history events are added to the fixture history. The GitHub editor (/api/str
 GitHub (test/fake_github.py) made from the fixture's branches and PRs: Apply really "applies" there and nothing else.
 It starts with sample changes: a ruleset diff and a branch delete waiting, one apply that failed, one that is out of
 date, one applied (--no-editor: an empty queue). --docs-error TEXT shows the Claude Documents copy as failed.
+--signed-out: gh signed out since the start (notRead: pulls, releases, runs; no PRs or releases, runs from "cache").
 """
 import argparse, json, os, re, sys
 from datetime import datetime, timedelta, timezone
@@ -38,8 +39,8 @@ def parse(s):
 
 
 class Fixtures:
-    def __init__(self, shift, poll_error, sample_notes=True, sample_editor=True, docs_error=None):
-        self.shift, self.poll_error, self.docs_error = shift, poll_error, docs_error
+    def __init__(self, shift, poll_error, sample_notes=True, sample_editor=True, docs_error=None, signed_out=False):
+        self.shift, self.poll_error, self.docs_error, self.signed_out = shift, poll_error, docs_error, signed_out
         self.note_events = []
         self.notes = S.Notes(None, self.note_events.extend, "floration/quark")
         if sample_notes:
@@ -171,6 +172,14 @@ class Fixtures:
             r.setdefault("workflowFile", WORKFLOW_FILES.get(r["workflow"]))
         if self.poll_error:
             s["poll"]["lastError"] = self.poll_error
+        s["notRead"] = []
+        if self.signed_out:
+            s["notRead"] = list(S.NOT_READ_SECTIONS)
+            s["pulls"], s["releases"], s["poll"]["lastOk"] = [], [], None
+            s["testing"]["prerelease"] = None
+            s["poll"]["lastError"] = self.poll_error or "gh: To get started with GitHub CLI, please run: gh auth login"
+            for b in s["branches"]:
+                b["pr"] = None
         if roles and hasattr(self, "rules"):
             now = S.parse_time(s["generatedAt"]) if not self.shift else datetime.now(timezone.utc)
             S.branch_roles(s["branches"], self.structure, self.rules.limit(S.STALE_RULE_ID, 7), s["defaultBranch"], now,
@@ -359,8 +368,9 @@ def main():
     ap.add_argument("--no-notes", action="store_true", help="start with no sample notes")
     ap.add_argument("--no-editor", action="store_true", help="start with no sample structure / pending changes")
     ap.add_argument("--docs-error", default=None, help="show the Claude Documents copy as failed with this error")
+    ap.add_argument("--signed-out", action="store_true", help="gh signed out since the start: GitHub parts unknown")
     a = ap.parse_args()
-    Handler.fx = Fixtures(not a.no_shift, a.poll_error, not a.no_notes, not a.no_editor, a.docs_error)
+    Handler.fx = Fixtures(not a.no_shift, a.poll_error, not a.no_notes, not a.no_editor, a.docs_error, a.signed_out)
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
     print(f"fixture server on http://127.0.0.1:{a.port}/", flush=True)
     srv.serve_forever()

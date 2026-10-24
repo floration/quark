@@ -2,7 +2,7 @@
 // descriptions (kept on this PC; they set the Branches tab's kind), and the branch changes that go to GitHub (create,
 // rename, delete), queued as pending changes and applied only from Pending changes.
 import { store } from './store.js';
-import { html, raw, relOnly, plural, enc, aheadBehind, prChip, ghLink } from './util.js';
+import { html, raw, relOnly, plural, enc, prChip, ghLink, branchVsTesting } from './util.js';
 import { lastRunCell } from './parts.js';
 import { md } from './notes.js';
 import { ged, gui, act, draft, closeForm, onAction, onSubmit, onInput, queuedFor, putStructure, queueChange, redraw, LOCK } from './ghedit.js';
@@ -50,6 +50,21 @@ function roleForm(b) {
   </form>`;
 }
 
+// What the server will make of a typed branch name, said while it is typed (it drops refs/heads/ and origin/).
+function nameHint(raw, current) {
+  const v = String(raw || '').trim(), m = /^(refs\/heads\/|origin\/)/.exec(v);
+  const name = m ? v.slice(m[1].length) : v;
+  const out = [];
+  if (m) out.push(html`<code>${m[1]}</code> is dropped: the branch will be <code>${name}</code>.`);
+  if (name && name !== current && store.idx.branches.has(name)) out.push(html`A branch <code>${name}</code> already exists.`);
+  else if (name && name !== current && !name.startsWith('claude/')) out.push(html`Not under <code>claude/</code>: it won't be counted as a work branch (Claude's branches are <code>claude/*</code>).`);
+  return html`<p class="small gf-note st-namehint" data-name-hint${out.length ? '' : ' hidden'}>${out.map((x) => html`${x} `)}</p>`;
+}
+function refreshNameHint(n, current) {
+  const p = n.closest('[data-gform]').querySelector('[data-name-hint]');
+  if (p) p.outerHTML = String(nameHint(n.value, current));
+}
+
 function opForm(kind, b) {
   const fk = `st-${kind}:${b.name}`;
   const d = draft(fk, { newName: b.name });
@@ -58,6 +73,7 @@ function opForm(kind, b) {
     return html`<form class="gform st-op" data-gform="${fk}" novalidate>
       <label class="f gf-grow"><span class="f-l">New name</span><input type="text" data-gf="newName" value="${d.newName}" autocomplete="off" spellcheck="false"></label>
       <button type="button" data-gact="st-cancel" data-fk="${fk}">Cancel</button><button type="submit" class="primary"${busy ? ' disabled' : ''}>Queue rename</button>
+      ${nameHint(d.newName, b.name)}
       <p class="muted small gf-note">Queued in Pending changes with a preview (open PRs move with it); nothing changes on GitHub until you apply it there.</p>
       ${err ? html`<p class="msg bad small gf-note" role="alert">${err}</p>` : ''}
     </form>`;
@@ -84,7 +100,7 @@ function branchRow(b, s) {
       <span class="lane-tag ${KIND_CLASS[b.role] || ''}" title="${b.roleSet ? 'Role set by you (automatic: by its name)' : 'Role by its name'}">${ROLE_LABEL[b.role] || b.role}</span>${b.roleSet ? html`<span class="muted small">role set by you</span>` : ''}
       ${b.stale ? html`<span class="tag t-warn" title="No commit in ${s.staleDays} days, merged into or behind testing">stale</span>` : ''}
       ${queued.map((c) => html`<a class="tag t-queued" href="#tab=editor&sec=pending" title="${c.summary}">${c.type.slice(7)} queued</a>`)}
-      <span class="st-facts muted small">${b.kind === 'testing' ? 'the reference' : aheadBehind(b.ahead, b.behind)}${b.date ? html` · last commit ${relOnly(b.date)}` : ''}</span>
+      <span class="st-facts muted small">${b.kind === 'testing' ? 'the reference' : branchVsTesting(b)}${b.date ? html` · last commit ${relOnly(b.date)}` : ''}</span>
       ${p ? html`<span class="small">${prChip(p.number, p.title)} <span class="muted">${p.state === 'open' ? 'open' : p.merged ? 'merged' : 'closed'}</span></span>` : ''}
       <span class="st-ci small">${lastRunCell(b.lastRun)}</span>
       <span class="grow"></span>
@@ -115,6 +131,7 @@ function createForm(s) {
       <button type="button" data-gact="st-cancel" data-fk="${fk}">Cancel</button>
       <button type="submit" class="primary"${busy ? ' disabled' : ''}>${busy ? 'Reading GitHub…' : 'Queue create'}</button>
     </div>
+    ${nameHint(d.name === 'claude/' ? '' : d.name, null)}
     <p class="muted small">Queued in Pending changes with a preview read from GitHub (the commit it will point at); created only when you apply it there.</p>
     ${err ? html`<p class="msg bad small" role="alert">${err}</p>` : ''}
   </form>`;
@@ -155,7 +172,8 @@ export const structureSection = {
 
 onAction('st-open', (b) => { gui.open.add(b.dataset.fk); redraw(); requestAnimationFrame(() => { const f = document.querySelector(`[data-gform="${CSS.escape(b.dataset.fk)}"] [data-gf]`); if (f) f.focus(); }); });
 onAction('st-cancel', (b) => { closeForm(b.dataset.fk); redraw(); });
-onInput('st-create', (fk, d, n) => { if (n.dataset.gf === 'from') redraw(); });
+onInput('st-create', (fk, d, n) => { if (n.dataset.gf === 'from') redraw(); else if (n.dataset.gf === 'name') refreshNameHint(n, null); });
+onInput('st-rename', (fk, d, n) => { if (n.dataset.gf === 'newName') refreshNameHint(n, fk.slice('st-rename:'.length)); });
 
 onSubmit('st-edit', async (fk, d) => {
   const name = fk.slice('st-edit:'.length);

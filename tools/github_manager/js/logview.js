@@ -26,6 +26,7 @@ export async function openLog(run, job, onClose) {
   $('log-body').innerHTML = '<p class="muted pad">Loading the log…</p>';
   $('log-q').value = '';
   $('log-count').textContent = '';
+  $('log-meta').textContent = '';
   $('log-errnav').hidden = true;
   let got;
   try {
@@ -52,8 +53,9 @@ function render(text) {
     const m = TS.exec(s);
     if (m) { ts = timeFmt.format(Date.parse(m[1] + 'Z')); s = s.slice(m[0].length); }
     let cls = '';
-    if (s.startsWith('##[error]')) { cls = 'l-err'; s = s.slice(9); errors.push(i); }
-    else if (s.startsWith('##[warning]')) { cls = 'l-warn'; s = s.slice(11); }
+    // the marker shows as a word, as GitHub shows it (so a search for "error" finds the error lines)
+    if (s.startsWith('##[error]')) { cls = 'l-err'; s = `Error: ${s.slice(9)}`; errors.push(i); }
+    else if (s.startsWith('##[warning]')) { cls = 'l-warn'; s = `Warning: ${s.slice(11)}`; }
     else if (s.startsWith('##[group]')) { cls = 'l-group'; s = s.slice(9); }
     else if (s.startsWith('##[endgroup]')) { cls = 'l-end'; s = ''; }
     else if (/\b(FAILED|FAIL:|error:|Error:)/.test(s)) cls = 'l-bad';

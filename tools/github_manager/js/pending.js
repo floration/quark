@@ -3,7 +3,7 @@
 // try. Nothing reaches GitHub until Apply; the server re-reads GitHub and re-checks the production lock right
 // before each call.
 import { html, raw, relOnly, plural, branchChip } from './util.js';
-import { ged, gui, act, onAction, waitingChanges, applyChange, applyAll, discardChange, repreviewChange, loadRulesets, redraw, toast, LOCK } from './ghedit.js';
+import { ged, gui, act, onAction, waitingChanges, applyChange, applyAll, discardChange, repreviewChange, loadRulesets, redraw, toast, reloadState, LOCK } from './ghedit.js';
 
 const STATUS = {
   pending: ['wait', 'waiting'], applying: ['run', 'applying…'], applied: ['good', 'applied'], failed: ['bad', 'failed'],
@@ -26,6 +26,10 @@ export function pendingBar() {
   if (!n) return '';
   return html`<a class="pd-bar" href="#tab=editor&sec=pending"><span class="count warn">${n}</span> ${plural(n, 'change')} waiting in <b>Pending changes</b>: nothing is sent to GitHub until you apply ${n === 1 ? 'it' : 'them'} there →</a>`;
 }
+
+// a delete, or a change with warnings (an open PR closes, commits not in testing...), asks before it goes
+const needsConfirm = (c) => c.type.endsWith('.delete') || (c.warnings || []).length > 0;
+const warnList = (ws, cls = 'pd-warn') => (ws || []).length ? html`<ul class="${cls}">${ws.map((w) => html`<li><span class="ico" aria-hidden="true">!</span> ${w}</li>`)}</ul>` : '';
 
 function diffBlock(lines) {
   if (!lines || !lines.length) return '';
@@ -51,6 +55,7 @@ function changeCard(c) {
   // out of date or refused: it has to be previewed again (and looked at) before Apply comes back
   const review = c.status === 'stale' || c.status === 'refused';
   const body = c.call && c.call.body != null ? JSON.stringify(c.call.body, null, 2) : null;
+  const confirming = gui.confirm.has(`apply:${c.id}`);
   return html`<section class="card pd pd-${c.status}" id="pd-${c.id}">
     <div class="pd-top">
       ${statusBadge(c)}
@@ -58,15 +63,17 @@ function changeCard(c) {
       <h3 class="pd-sum">${c.summary}</h3>
       <span class="grow"></span>
       <span class="pd-acts">
-        ${done || review ? '' : html`<button type="button" class="primary" data-gact="pd-apply" data-id="${c.id}"${busy ? ' disabled' : ''} title="Send this one change to GitHub now">${gui.busy.has(`apply:${c.id}`) ? 'Applying…' : c.status === 'failed' ? 'Apply again' : 'Apply'}</button>`}
+        ${done || review || confirming ? '' : html`<button type="button" class="primary" data-gact="pd-apply" data-id="${c.id}"${busy ? ' disabled' : ''} title="${needsConfirm(c) ? 'Asks first: this one deletes something or has warnings' : 'Send this one change to GitHub now'}">${gui.busy.has(`apply:${c.id}`) ? 'Applying…' : `${c.status === 'failed' ? 'Apply again' : 'Apply'}${needsConfirm(c) ? '…' : ''}`}</button>`}
         ${done ? '' : html`<button type="button"${review ? ' class="primary"' : ''} data-gact="pd-preview" data-id="${c.id}"${busy ? ' disabled' : ''} title="Read GitHub again and rebuild the before / after">Preview again</button>`}
         <button type="button" data-gact="pd-discard" data-id="${c.id}"${busy ? ' disabled' : ''}>${done ? 'Clear' : 'Discard'}</button>
       </span>
     </div>
     <p class="muted small pd-when">Queued ${relOnly(c.createdAt)}${c.previewedAt && c.previewedAt !== c.createdAt ? html` · previewed again ${relOnly(c.previewedAt)}` : ''}${c.ref && c.ref.branch ? html` · ${branchChip(c.ref.branch)}` : ''} · <code>${c.id}</code></p>
+    ${confirming ? html`<div class="msg warn pd-confirm" role="alert"><b>${c.summary} on GitHub now?</b>${(c.warnings || []).length ? ' Read the warnings below first.' : ' This can\'t be undone from here.'}
+      <span class="grow"></span><button type="button" class="danger" data-gact="pd-apply-yes" data-id="${c.id}">Yes, apply it</button><button type="button" data-gact="pd-apply-no" data-id="${c.id}">Cancel</button></div>` : ''}
     ${result(c)}
     ${gui.errors.has(`apply:${c.id}`) ? html`<p class="msg bad small" role="alert">${gui.errors.get(`apply:${c.id}`)}</p>` : ''}
-    ${(c.warnings || []).length ? html`<ul class="pd-warn">${c.warnings.map((w) => html`<li><span class="ico" aria-hidden="true">!</span> ${w}</li>`)}</ul>` : ''}
+    ${warnList(c.warnings)}
     <div class="pd-ba">
       <div class="pd-b"><span class="eyebrow">${done ? 'Before' : 'Before (GitHub now)'}</span><p>${c.beforeText}</p></div>
       <span class="pd-arrow" aria-hidden="true">→</span>
@@ -97,8 +104,9 @@ export const pendingSection = {
       <h2>Pending changes ${waiting.length ? html`<span class="count warn">${waiting.length} waiting</span>` : ''}<span class="grow"></span>
         ${ready.length > 1 && !confirming ? html`<button type="button" class="primary" data-gact="pd-apply-all"${gui.busy.has('apply-all') ? ' disabled' : ''}>Apply all (${ready.length})</button>` : ''}</h2>
       <p class="hint">${raw(LOCK)} Nothing changes on GitHub until you press <b>Apply</b>. Right before each call the server reads GitHub again, checks the production lock once more (only q pushes to production: nothing touches the default branch, its rulesets or v* tags) and refuses a change whose preview is out of date: “changed on GitHub since preview, review again”. The calls run with your own <code>gh</code> login on this PC; each result goes into the History tab.</p>
-      ${confirming ? html`<div class="msg warn pd-confirm" role="alert">Apply ${plural(ready.length, 'waiting change')} to GitHub, one after another (stopping at the first that doesn't go through)?
-        <button type="button" class="primary" data-gact="pd-apply-all-yes">Apply ${ready.length}</button><button type="button" data-gact="pd-apply-all-no">Cancel</button></div>` : ''}
+      ${confirming ? html`<div class="msg warn pd-confirm-all" role="alert"><p><b>Apply ${plural(ready.length, 'waiting change')} to GitHub</b>, one after another (stopping at the first that doesn't go through)?${ready.some(needsConfirm) ? html` <b>${plural(ready.filter(needsConfirm).length, 'of them deletes something or has warnings', 'of them delete something or have warnings')}:</b> read them first.` : ''}</p>
+        <ol class="pd-all-list">${ready.map((c) => html`<li><span class="tag">${TYPE[c.type] || c.type}</span> ${c.summary}${warnList(c.warnings, 'pd-warn small')}</li>`)}</ol>
+        <p class="pd-confirm"><button type="button" class="danger" data-gact="pd-apply-all-yes">Apply all ${ready.length}</button><button type="button" data-gact="pd-apply-all-no">Cancel</button></p></div>` : ''}
       ${!all.length ? html`<p class="empty">Nothing is queued. Queue a branch change in <a href="#tab=editor&sec=structure">Structure</a> or a ruleset change in <a href="#tab=editor&sec=rules">Rules &amp; limits</a>.</p>` : ''}
       ${ged.pending.loadError ? html`<p class="msg warn small">${ged.pending.loadError}</p>` : ''}
     </section>
@@ -110,17 +118,24 @@ export const pendingSection = {
 const find = (id) => ((ged.pending && ged.pending.changes) || []).find((c) => c.id === id);
 function after(c) {
   if (c && c.type.startsWith('ruleset.')) loadRulesets(true);
+  if (c && c.status === 'applied') reloadState();
 }
-onAction('pd-apply', async (b) => {
+onAction('pd-apply', (b) => {
   const c = find(b.dataset.id);
   if (!c) return;
+  if (needsConfirm(c)) { gui.confirm.add(`apply:${c.id}`); redraw(); return; }
+  apply(c);
+});
+onAction('pd-apply-yes', (b) => { gui.confirm.delete(`apply:${b.dataset.id}`); const c = find(b.dataset.id); if (c) apply(c); });
+onAction('pd-apply-no', (b) => { gui.confirm.delete(`apply:${b.dataset.id}`); redraw(); });
+async function apply(c) {
   let out = null;
   await act(`apply:${c.id}`, async () => { out = await applyChange(c); });
   if (!out) return;
   if (out.status === 'applied') toast(`Applied on GitHub: ${out.summary}`);
   else toast(`Not applied (${STATUS[out.status] ? STATUS[out.status][1] : out.status})`, true);
   after(out);
-});
+}
 onAction('pd-preview', async (b) => {
   await act(`apply:${b.dataset.id}`, () => repreviewChange(b.dataset.id), 'Previewed again from GitHub: check the new before / after');
 });
@@ -137,4 +152,5 @@ onAction('pd-apply-all-yes', async () => {
   if (!res) return;
   toast(res.stoppedAt ? `Applied ${res.applied}; stopped at one that didn't go through` : `Applied ${res.applied} on GitHub`, !!res.stoppedAt);
   if (res.results.some((c) => c.type && c.type.startsWith('ruleset.'))) loadRulesets(true);
+  if (res.applied) reloadState();
 });

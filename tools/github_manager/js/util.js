@@ -163,6 +163,11 @@ export function aheadBehind(a, b, ref = 'testing') {
   if (a) return `${plural(a, 'commit')} ahead of ${ref}`;
   return `${plural(b, 'commit')} behind ${ref}`;
 }
+// the branch kinds as the page names them everywhere (the server's kind "claude" is the Structure role "work")
+export const KIND_LABEL = { production: 'production', testing: 'testing', claude: 'work', infra: 'infra', other: 'other' };
+export const kindLabel = (k) => KIND_LABEL[k] || k;
+// a branch against testing; an orphan branch (gh-pages) shares no history with it, so there is nothing to count
+export const branchVsTesting = (b) => (b.unrelated ? 'no shared history with testing' : aheadBehind(b.ahead, b.behind));
 export function debounce(fn, wait) {
   let t;
   return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), wait); };

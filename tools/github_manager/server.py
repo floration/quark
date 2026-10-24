@@ -3928,7 +3928,8 @@ class Manager:
                                         ("runs", not self.runs_read)) if unread]
         return {"generatedAt": at, "repo": repo, "defaultBranch": self.default_branch, "poll": {},
                 "production": production, "testing": testing, "branches": branches, "pulls": pulls, "runs": runs,
-                "local": local, "running": running, "releases": releases, "notRead": not_read}
+                "local": local, "running": running, "releases": releases, "notRead": not_read,
+                "shell": os.environ.get("QUARK_SHELL") == "1"}
 
     def snapshot(self, at, state, heads, tags):
         runs = None

@@ -2,7 +2,7 @@
 import { store } from './store.js';
 import {
   html, when, relOnly, plural, versionChip, commitChip, branchChip, prChip, ghLink, aheadBehind, runBadge,
-  enc, localChip, gh, RUNNING, ms, docsLink, shortBranch,
+  enc, localChip, gh, RUNNING, ms, docsLink, shortBranch, kindLabel,
 } from './util.js';
 import { failureSentence, commitList, eventRow, checksBadge, lastRunCell, runningSentence } from './parts.js';
 import { laneChart, ciTimeline } from './charts.js';
@@ -10,6 +10,11 @@ import { notes, noteCard, sortNotes, noteBadge } from './notes.js';
 
 const preVersion = (tag) => (/^test-(\d+\.\d+\.\d+)/.exec(tag || '') || [])[1];
 const FAILED = new Set(['failure', 'timed_out', 'startup_failure']);
+// parts of the state GitHub hasn't answered since the server started (gh signed out, offline): shown as unknown,
+// never as "none" / "all passed"
+const unread = (s, part) => (s.notRead || []).includes(part);
+const UNREAD_WHAT = { runs: 'CI runs', pulls: 'pull requests', releases: 'releases' };
+const unknown = (part, cached) => html`<p class="empty unknown"><span class="tag t-warn">unknown</span> GitHub's ${UNREAD_WHAT[part]} haven't been read since the server started (see the warning above)${cached ? '; what shows is the local cache and may be out of date' : ''}.</p>`;
 
 function releases(s) {
   const p = s.production || {}, t = s.testing || {};
@@ -20,7 +25,7 @@ function releases(s) {
       <div class="rel-version">${versionChip(p.version, p.url)}</div>
       <div class="rel-lines">
         <div>tag <span class="chip c-tag"><a href="#version=${enc(p.version || '')}">${p.tag || '—'}</a>${ghLink(p.url, 'Open the release on GitHub')}</span> ${commitChip(p.sha)}</div>
-        <div>published ${when(p.publishedAt)}</div>
+        <div>${unread(s, 'releases') ? html`tagged ${when(p.publishedAt)} <span class="muted small">(release date unknown: releases not read yet)</span>` : html`published ${when(p.publishedAt)}`}</div>
         <div>branch ${branchChip(s.defaultBranch, { label: 'default branch' })}</div>
       </div>
     </div>
@@ -36,7 +41,7 @@ function releases(s) {
       <div class="rel-lines">
         <div>head ${commitChip(t.sha)} <span class="subj" title="${t.subject}">${t.subject}</span></div>
         <div>committed ${when(t.date)}</div>
-        <div>${pre ? html`prerelease <span class="chip c-tag"><a href="#version=${enc(preVersion(pre.tag) || t.version || '')}">${pre.tag}</a>${ghLink(pre.url, 'Open the prerelease on GitHub')}</span> ${relOnly(pre.publishedAt)}${preVersion(pre.tag) && t.version && preVersion(pre.tag) !== t.version ? html` <span class="tag t-warn" title="The newest prerelease is for an older version: ${t.version}'s TESTING build hasn't been published yet (its run may still be going, or it failed)">not ${t.version} yet</span>` : ''}` : html`<span class="muted">no prerelease for this head yet</span>`}</div>
+        <div>${pre ? html`prerelease <span class="chip c-tag"><a href="#version=${enc(preVersion(pre.tag) || t.version || '')}">${pre.tag}</a>${ghLink(pre.url, 'Open the prerelease on GitHub')}</span> ${relOnly(pre.publishedAt)}${preVersion(pre.tag) && t.version && preVersion(pre.tag) !== t.version ? html` <span class="tag t-warn" title="The newest prerelease is for an older version: ${t.version}'s TESTING build hasn't been published yet (its run may still be going, or it failed)">not ${t.version} yet</span>` : ''}` : unread(s, 'releases') ? html`<span class="muted">prerelease unknown: releases not read yet</span>` : html`<span class="muted">no prerelease for this head yet</span>`}</div>
       </div>
     </div>
   </section>`;
@@ -58,14 +63,15 @@ function pinnedNotes() {
 }
 
 function running(s) {
-  const rs = store.idx.running;
+  const rs = store.idx.running, stale = unread(s, 'runs');
   return html`<section class="card">
     <h2>Running now ${rs.length ? html`<span class="count run">${rs.length}</span>` : ''}</h2>
+    ${stale ? unknown('runs', rs.length) : ''}
     ${rs.length ? html`<ul class="rows">${rs.map((r) => html`<li class="row" data-action="row" data-href="#run=${r.id}" tabindex="0">
         <div class="r-main">${runBadge(r)}<a class="r-title" href="#run=${r.id}">${r.workflow}</a> <span class="muted">on</span> ${branchChip(r.branch)}</div>
         <div class="r-meta"><span class="subj">${r.title}</span></div>
         <div class="r-out">${runningSentence(r)} ${ghLink(r.url)}</div></li>`)}</ul>`
-      : html`<p class="empty">Nothing is running. ${lastFinished(s)}</p>`}
+      : stale ? '' : html`<p class="empty">Nothing is running. ${lastFinished(s)}</p>`}
   </section>`;
 }
 function lastFinished(s) {
@@ -84,13 +90,15 @@ function failures(s) {
     if (FAILED.has(r.conclusion)) out.push(r);
   }
   const older = (s.runs || []).filter((r) => FAILED.has(r.conclusion) && !out.includes(r)).length;
+  const stale = unread(s, 'runs');
   return html`<section class="card">
     <h2>Failing now ${out.length ? html`<span class="count bad">${out.length}</span>` : ''}</h2>
     <p class="hint">The latest run of each branch and workflow, where that run failed.</p>
+    ${stale ? unknown('runs', out.length) : ''}
     ${out.length ? html`<ul class="rows">${out.slice(0, 6).map((r) => html`<li class="row" data-action="row" data-href="#run=${r.id}" tabindex="0">
         <div class="r-main">${runBadge(r)}<a class="r-title" href="#run=${r.id}">${r.workflow}</a> <span class="muted">on</span> ${branchChip(r.branch)} ${prOfBranch(r.branch)}</div>
         <div class="r-out">${failureSentence(r)} ${ghLink(r.url)}</div></li>`)}</ul>`
-      : html`<p class="empty good">Every branch's latest run passed.</p>`}
+      : stale ? '' : html`<p class="empty good">Every branch's latest run passed.</p>`}
     ${older ? html`<p class="small"><a href="#tab=runs&result=failure">${plural(older, 'older failed run')}</a> in the CI runs tab.</p>` : ''}
   </section>`;
 }
@@ -109,10 +117,11 @@ function lanes(s) {
   const brs = (s.branches || []).filter((b) => b.kind !== 'production' && b.kind !== 'testing');
   const open = (b) => { const p = store.idx.pullByHead.get(b.name); return p && p.state === 'open'; };
   brs.sort((a, b) => (open(b) - open(a)) || (ms(b.date) - ms(a.date)));
-  const shown = brs.filter((b) => open(b) || b.ahead > 0 || Date.now() - ms(b.date) < 3 * 86400e3).slice(0, 12);
+  // an orphan branch (gh-pages) has no ahead / behind to draw
+  const shown = brs.filter((b) => !b.unrelated && (open(b) || b.ahead > 0 || Date.now() - ms(b.date) < 3 * 86400e3)).slice(0, 12);
   for (const b of shown) {
     const p = store.idx.pullByHead.get(b.name);
-    rows.push({ label: shortBranch(b.name), sub: p && p.state === 'open' ? `PR #${p.number}` : '', tag: b.kind, href: `#branch=${enc(b.name)}`,
+    rows.push({ label: shortBranch(b.name), sub: p && p.state === 'open' ? `PR #${p.number}` : '', tag: b.kind, tagText: kindLabel(b.kind), href: `#branch=${enc(b.name)}`,
       ahead: b.ahead, behind: b.behind, state: lastRunCell(b.lastRun), tip: `${b.name}: ${aheadBehind(b.ahead, b.behind)}${p ? ` · PR #${p.number} ${p.state}` : ''}` });
   }
   for (const l of s.local || []) {
@@ -137,7 +146,7 @@ function openPulls(s) {
   const open = (s.pulls || []).filter((p) => p.state === 'open');
   return html`<section class="card">
     <h2>Open pull requests ${open.length ? html`<span class="count">${open.length}</span>` : ''}</h2>
-    ${open.length ? html`<ul class="rows compact">${open.map((p) => html`<li class="row" data-action="row" data-href="#pr=${p.number}" tabindex="0">
+    ${unread(s, 'pulls') ? unknown('pulls') : open.length ? html`<ul class="rows compact">${open.map((p) => html`<li class="row" data-action="row" data-href="#pr=${p.number}" tabindex="0">
       <div class="r-main">${prChip(p.number, p.title)} <a class="r-title" href="#pr=${p.number}">${p.title}</a>${p.draft ? html` <span class="tag t-draft">draft</span>` : ''}${noteBadge('pr', p.number, `#pr=${p.number}`)}</div>
       <div class="r-meta">${checksBadge(p)} ${branchChip(p.head)} <span class="muted">→ ${p.base} · updated ${relOnly(p.updatedAt)}</span> ${docsLink(`PR #${p.number}`)}</div></li>`)}</ul>`
       : html`<p class="empty">No open pull requests.</p>`}
