@@ -634,6 +634,22 @@ UserCmd BotSim::think(int id) {
         c.forward = 0; c.side = 0;
         c.buttons &= (uint16_t)~(BTN_JUMP | BTN_DASH | BTN_GRAPPLE);
     }
+    // a hold fights inside its area: past half the radius, the fight's moves (strafes, closing in, backing off) lose
+    // the part that leads farther out, with no dashes or grapple; outside it, it steps back in while it fights
+    if (o.kind == BotOverride::HOLD && fighting && !(me.move.flags & MF_HOOKED)) {
+        const float r = std::max(o.radius > 0 ? o.radius : kHoldRadius, kArriveGoto), d = std::sqrt(dx * dx + dz * dz);
+        if (d > r * 0.5f) {
+            const Vec3 fwd = {-std::sin(c.yaw), 0, -std::cos(c.yaw)}, right = {std::cos(c.yaw), 0, -std::sin(c.yaw)};
+            const Vec3 out = {dx / d, 0, dz / d};
+            Vec3 wish = fwd * (c.forward / 127.0f) + right * (c.side / 127.0f);
+            wish = wish - out * (std::max(0.0f, dot(wish, out)) + (d > r ? 1.0f : 0.0f));
+            const float wl = length(wish);
+            if (wl > 1.0f) wish = wish / wl;
+            c.forward = (int8_t)std::clamp(dot(wish, fwd) * 127.0f, -127.0f, 127.0f);
+            c.side = (int8_t)std::clamp(dot(wish, right) * 127.0f, -127.0f, 127.0f);
+            c.buttons &= (uint16_t)~(BTN_DASH | BTN_GRAPPLE);
+        }
+    }
     return c;
 }
 

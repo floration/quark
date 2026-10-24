@@ -86,7 +86,7 @@ and uses things.
 |---|---|---|
 | `default` | | No override. |
 | `goto` | `pos`, `radius` (2) | Walks to `pos` and stands once within `radius` (in xz, and within 2.5 m in height). |
-| `hold` | `pos`, `radius` (4) | Walks to `pos` and stands once within 2 m. If it's pushed out of `radius` (by a fight, a blast), it walks back to the middle. |
+| `hold` | `pos`, `radius` (4) | Walks to `pos` and stands once within 2 m. It fights inside its radius: past half the radius, the fight's moves lose the part that leads farther out, with no dashes or grapple. If it's pushed out of `radius` (by a blast), it steps back in while it fights and walks back to the middle. |
 | `route` (`follow`) | `points: [[x,y,z], ...]`, `loop` (false) | Walks to each point in turn; a point is reached within 2 m. With `loop` it starts again after the last point; without it, it holds the last one. After a death it starts again from the first point. |
 | `attack` | `objectiveIndex` | Goes for the mode's objective as an attacker would. KOTH: the hill. Points: point `objectiveIndex`, or the one under attack. Race: checkpoint `objectiveIndex`, or its next one. Bomb: site `objectiveIndex` (default 0, the site attackers go for); a planted or dropped bomb and the cart are left to the bot's own code. Modes with no objective (vs, ffa, duel, arena, tourney): enemy spawn `objectiveIndex`, or the nearest one (ffa: the farthest spawn). Hide and seek and tag have no objective: no override. |
 | `defend` | `objectiveIndex` | Holds the objective (radius 6 m). KOTH: the hill. Points: the point. Bomb: site `objectiveIndex`, or the site the game gives that bot. Payload: 10 m ahead of the cart. No objective: own spawn `objectiveIndex`, or the nearest one. |
