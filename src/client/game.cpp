@@ -1365,6 +1365,14 @@ void Game::frame(double dt) {
             fireAlive_ = aliveNow;
         }
         QZONE("input + prediction ticks");
+        // F18: this frame's turn spread over its ticks (clientfeel.h spreadYaw): the last tick has now's exact yaw, each
+        // earlier one its share of the way there; a tick with fire, alt-fire or a grapple shot held, and every tick after
+        // it, takes the exact aim (what you see is what you shoot). Not across a spawn or while dead (the yaw is set).
+        const int frameTicks = (int)(tickAcc_ / period);
+        const bool spread = frameTicks > 1 && fireAlive_ && net_.selfAlive() && !net_.playback();
+        const float yawFrom = spread ? tickYaw_ : yaw_;
+        bool exactAim = !spread;
+        int tickNo = 0;
         while (tickAcc_ >= period) {
             if (bake_) {   // the world isn't there yet: keep the connection alive, nothing else
                 fireLatched_ = false;   // (no stray shot when the new map is ready)
@@ -1375,6 +1383,10 @@ void Game::frame(double dt) {
                 continue;
             }
             UserCmd c = buildCmd();
+            tickNo++;
+            if (c.buttons & (BTN_FIRE | BTN_ALTFIRE)) exactAim = true;
+            if ((c.buttons & BTN_GRAPPLE) && !(net_.predicted().flags & MF_HOOKED)) exactAim = true;
+            if (!exactAim) c.yaw = spreadYaw(yawFrom, yaw_, tickNo, frameTicks);
             // the weapon the server will hold after this command (predicted: a switch shows now, not a round trip
             // later); switching with fire held locks fire until it's let go, as the server does (runPlayerCmd)
             bool switchLock = false;
@@ -1460,6 +1472,7 @@ void Game::frame(double dt) {
             if (net_.predicted().events & ME_DASH) dashHoldUntil_ = -1;   // (the press made its dash)
             tickAcc_ -= period;
         }
+        tickYaw_ = yaw_;   // (the last tick's: now's)
         if (net_.playback()) wp_.reset();   // (a demo: what the recorded player held)
         heldWeapon_ = wp_.current(weaponView());   // (no tick this frame: the last one's, or the snapshot's when dead)
         net_.flushInput();   // (PERF-12: one input packet per frame, or per 2 ticks when a frame runs more)
@@ -1495,7 +1508,7 @@ void Game::frame(double dt) {
         lastProjectiles_.swap(projScratch_);
 
         int hp = net_.selfHealth();
-        {   // the hurt sound: one per 0.15 s at most, louder for more damage (feelsounds.h; it played on every drop)
+        {   // the hurt sound: one per 0.15 s at most, louder for more damage (clientfeel.h; it played on every drop)
             const bool hurt = hp < lastHealth_ && net_.selfAlive();
             if (hurt) damageUntil_ = time_ + 0.25;
             if (!net_.selfAlive()) hurtGate_.reset();

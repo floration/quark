@@ -15,7 +15,7 @@
 #include "../game/server.h"
 #include "../game/ranked.h"
 #include "audio.h"
-#include "feelsounds.h"
+#include "clientfeel.h"
 #include "rawmouse.h"
 #include "gpuprefs.h"
 #include "binds.h"
@@ -449,7 +449,7 @@ private:
     void addChat(const Feed& f) { chatFeed_.push_back(f); chatLog_.push_back(f); while (chatFeed_.size() > 8) chatFeed_.pop_front(); while (chatLog_.size() > 30) chatLog_.pop_front(); }
     std::string centerText_;
     double centerUntil_ = 0, hitUntil_ = 0, damageUntil_ = 0, recoil_ = 0, localNextFire_ = 0;
-    HurtSoundGate hurtGate_;   // your own hurt sound: one per 0.15 s, louder for more damage (feelsounds.h)
+    HurtSoundGate hurtGate_;   // your own hurt sound: one per 0.15 s, louder for more damage (clientfeel.h)
     HitSoundGate hitGate_;   // the hitsound: one per moment, the heaviest (audio.h)
     double localKnifeBack_ = 0, localSyringeBack_ = 0;   // predicted: a thrown knife / syringe is away (disabled) until then
     // seconds until a thrown knife / syringe is back (0 = have it): the prediction, or the server's word (snapshot)
@@ -459,7 +459,8 @@ private:
         return std::max(local - time_, snap * 0.1);
     }
     int lastHealth_ = 0;
-    bool fireAlive_ = false;   // alive as of the last frame's ticks (a spawn starts the mirrored spawn fire lock)
+    bool fireAlive_ = false;
+    float tickYaw_ = 0;        // the yaw the last tick sent (F18: the next frame's turn spreads from it)   // alive as of the last frame's ticks (a spawn starts the mirrored spawn fire lock)
     struct Tracer { Vec3 a, b; double until; };
     std::vector<Tracer> tracers_;
     struct Explosion { Vec3 at; double start; float size = 1; bool bubble = false; };

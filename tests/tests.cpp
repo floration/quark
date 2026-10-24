@@ -26,7 +26,7 @@
 #include "../src/client/lightmap.h"
 #include "../src/client/hudclock.h"
 #include "../src/client/weaponpredict.h"
-#include "../src/client/feelsounds.h"
+#include "../src/client/clientfeel.h"
 #include <filesystem>
 #include <sstream>
 #include <fstream>
@@ -221,7 +221,7 @@ static void testSleepPrecision() {
     CHECK(ms < 20 * 5.0);
 }
 
-// The feel fixes' client sound rules (feelsounds.h).
+// The feel fixes' client sound rules (clientfeel.h).
 static void testFeelSounds() {
     printf("feel sounds\n");
     {   // F3: your hurt sound once per 0.15 s at most, louder for more damage; the laser's hits every 10 ms add up
@@ -362,6 +362,47 @@ static void testHeldDash() {
     std::vector<int> b = starts(air, 3000);
     printf("  held in the air: %zu dashes\n", b.size());
     CHECK(b.size() == 2 && std::abs(b[1] - b[0] - 720) <= 1);
+}
+
+// F18: air-strafe speed doesn't depend on the frame rate: the frame's turn spread over its ticks (spreadYaw).
+static void testStrafeFps() {
+    printf("strafe speed vs fps\n");
+    Map m;
+    std::string err;
+    CHECK(m.parse("box -900 -1 -900 900 0 900\nspawn any 0 0 0\n", &err));
+    // 1.5 s of A/D strafing in the air at a steady turn, 1000 Hz ticks, the mouse read once a frame
+    auto run = [&](int fps, float rate, bool spread) {
+        MoveState q; q.pos = {0, 300, 0}; q.vel = {0, 0, -10};
+        float yaw = 0, sent = 0;
+        int msLeft = 1500;
+        double acc = 0;
+        while (msLeft > 0) {
+            acc += 1000.0 / fps;
+            const int n = std::min(msLeft, (int)acc);
+            acc -= n;
+            yaw -= rate / fps;
+            for (int k = 1; k <= n; k++) {
+                UserCmd c; c.msec = 1; c.side = 127;
+                c.yaw = spread ? spreadYaw(sent, yaw, k, n) : yaw;
+                pmove(q, c, m);
+            }
+            if (n > 0) sent = yaw;
+            msLeft -= n;
+        }
+        return std::sqrt(q.vel.x * q.vel.x + q.vel.z * q.vel.z);
+    };
+    float worstOld = 1, worstNew = 1;
+    for (float rate : {1.5f, 2.5f, 3.5f}) {
+        const float ref = run(1000, rate, false);
+        for (int fps : {30, 60, 144}) {
+            const float o = run(fps, rate, false) / ref, nw = run(fps, rate, true) / ref;
+            printf("  turn %.1f rad/s, %d fps: %.1f%% before, %.2f%% now (1000 fps: %.2f m/s)\n", rate, fps, (o - 1) * 100, (nw - 1) * 100, ref);
+            worstOld = std::min(worstOld, o); worstNew = std::min(worstNew, nw);
+        }
+    }
+    CHECK(worstNew > 0.995f && worstOld < worstNew);
+    CHECK(spreadYaw(3.1f, -3.1f, 1, 2) > 3.1f || spreadYaw(3.1f, -3.1f, 1, 2) < -3.1f);   // (across the wrap: the short way)
+    CHECK(spreadYaw(0.2f, 0.6f, 4, 4) == 0.6f && spreadYaw(0.2f, 0.6f, 1, 1) == 0.6f);
 }
 
 static void testMovement() {
@@ -7159,7 +7200,7 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testJumpTapBuffer(); testHeldDash(); testStrafeFps(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
