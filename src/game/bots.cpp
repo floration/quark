@@ -391,7 +391,7 @@ void NavGraph::build(const Map& m, NavKind k) {
     // Regions: the pieces of one top that join up (where they meet) within a 12 m tile, so not many more than there are
     // tops (a floor a wall cuts in two is two; a street through a city a few). Routes are planned over the regions,
     // then walked over the pieces of the regions planned (findPath). (The tiles keep a region's centre near all of
-    // it, so the plan's costs are near the walk's: routes come out within a few % of the shortest, quark_tests nav.)
+    // it, so the plan's costs are near the walk's: routes come out within a few % of the shortest, quark_tests botaim.)
     region.assign(n, -1);
     std::vector<int> q;
     auto tile = [&](int i) { const Node& nd = nodes[i]; return std::make_pair((int)std::floor((nd.x0 + nd.x1) * 0.5f / kNavTile), (int)std::floor((nd.z0 + nd.z1) * 0.5f / kNavTile)); };
