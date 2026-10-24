@@ -35,8 +35,8 @@
   })();
   const W = Number(baseline.source.width) || 1280, H = Number(baseline.source.height) || 720;
   const SIG = QModel.signature(baseline);
-  const baseEls = new Map();
-  for (const p of baseline.pages) for (const e of p.elements) baseEls.set(e.origId, e);
+  const baseEls = new Map(), basePageOf = new Map();   // origId -> baseline element / the origId of its page
+  for (const p of baseline.pages) for (const e of p.elements) { baseEls.set(e.origId, e); basePageOf.set(e.origId, p.origId); }
   QRender.setStyle(baseline.style);
 
   QFonts.init(readJson('fontCatalog'), readJson('fontFiles'), { ns: NS });
@@ -519,12 +519,14 @@
       if (gd.x != null) { o.moveTo(gd.x, 0); o.lineTo(gd.x, H); } else { o.moveTo(0, gd.y); o.lineTo(W, gd.y); }
       o.stroke();
     }
-    // where changed widgets are by default
+    // where moved / resized widgets are by default (straight from the baseline, not the whole diff: this runs every
+    // frame of a drag)
     if (S.prefs.ghost) {
-      const entry = diffEntry(p);
-      if (entry) for (const r of entry.rows) {
-        if (!r.base || r.fromPage || !(r.flags.includes('moved') || r.flags.includes('resized'))) continue;
-        const b = QRender.box(ctx, r.base), c = boxOf(r.el);
+      const off = (a, b) => Math.abs(a - b) >= 0.005;
+      for (const e of p.elements) {
+        const base = e.origId && basePageOf.get(e.origId) === p.origId ? baseEls.get(e.origId) : null;
+        if (!base || !(off(base.x, e.x) || off(base.y, e.y) || off(base.w, e.w) || off(base.h, e.h))) continue;
+        const b = QRender.box(ctx, base), c = boxOf(e);
         if (!b) continue;
         o.setLineDash([4 * px, 3 * px]);
         o.strokeStyle = 'rgba(255,179,71,0.75)';
@@ -680,8 +682,7 @@
     d.moved = true;
     if (d.mode === 'move') moveDrag(d, dx, dy, noSnap);
     else resizeDrag(d, dx, dy, noSnap);
-    S.diff = null;
-    requestRender();
+    requestRender();   // (the diff is redone once, at mouseup)
     refreshInspectorGeom();
     renderSelStatus();
   });
