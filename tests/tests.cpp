@@ -3210,6 +3210,40 @@ static constexpr float kAimSample = 75.0f; // s of game time per tick rate (all 
 // target) and they all shoot at it, so every level gets the same movement; their places rotate between rates.
 // Levels must be clearly ordered, play the same at every tick rate (their timing is all game time), and even
 // the expert must stay beatable (well under perfect aim).
+// X11: a bot hurt by someone it can't see or hear (a sniper far off) turns toward them once its reaction time is
+// over, not before.
+static void testBotHurtTurn(uint16_t port) {
+    printf("bots turn toward whoever hurt them, after their reaction time\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.balanceBots = false;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    int shooter = s.addBot(TEAM_A, BOT_BEGINNER), bot = s.addBot(TEAM_A, BOT_INTERMEDIATE);
+    s.bots_[bot].onlyEnemy = shooter;
+    const Vec3 at(7, 0, -27), from(-7, 0, -24);   // the shooter stands still, silent, behind the bot
+    s.bots_[shooter].script = [&](Server& sv, int) {
+        auto& bp = sv.players_[bot]; bp.move.pos = at; bp.move.vel = {}; bp.health = 100;
+        auto& sp = sv.players_[shooter]; sp.move.pos = from; sp.move.vel = {};
+        UserCmd c; c.weapon = kNoWeaponChange; return c;
+    };
+    auto run = [&](double sec) { double end = timeNow() + sec; while (timeNow() < end) { s.frame(); sleepMs(1); } };
+    run(1.0);
+    Vec3 d = from - at;
+    const float toShooter = std::atan2(-d.x, -d.z);
+    s.bots_[bot].aimYaw = toShooter + PI;   // (facing away)
+    s.players_[bot].health = 100;
+    s.damagePlayer(bot, shooter, 1, WPN_SNIPER, Vec3());
+    const double hitAt = s.time();
+    run(0.1);
+    CHECK(s.bots_[bot].aware[shooter].hurtNoticed < hitAt);   // still reacting
+    run(1.2);
+    auto off = [&] { float a = std::fmod(s.bots_[bot].aimYaw - toShooter + 3 * PI, 2 * PI) - PI; return std::fabs(a); };
+    printf("  hit at %.2f, noticed at %.2f; facing %.0f deg off the shooter 1.3 s later\n", hitAt, s.bots_[bot].aware[shooter].hurtNoticed, off() * 180 / PI);
+    CHECK(s.bots_[bot].aware[shooter].hurtNoticed == hitAt && off() < 0.6f);
+    s.stop();
+}
+
 static void testBotAim(uint16_t& port) {
     printf("bot aim: damage per second vs a strafing player, by level and server tick rate\n");
     int rates[] = {1000, 250, 125};
@@ -7239,7 +7273,7 @@ int main(int argc, char** argv) {
     struct T { const char* name; std::function<void()> run; };
     std::vector<T> par = {   // (longest first: they set the wall time)
         {"bots", [] { uint16_t p = TP(28900); testBots(p); }},
-        {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotAim(p); testHostedBotsThreadExit(TP(29010)); }},
+        {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotAim(p); testHostedBotsThreadExit(TP(29010)); testBotHurtTurn(TP(29011)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
