@@ -65,7 +65,7 @@ def find_binary(name, explicit=None):
     if explicit:
         return explicit if os.path.isfile(explicit) else None
     cands = []
-    for b in ("build", "build-release", "build/Release", "build/RelWithDebInfo", "build/Debug", "bin", "."):
+    for b in ("build", "build-release", "build/Release", "build/RelWithDebInfo", "build/Debug", "build-sim", "bin", "."):
         cands.append(os.path.join(ROOT, b, name + EXE))
     cands.append(os.path.join(HERE, name + EXE))
     for c in cands:
@@ -250,6 +250,9 @@ class Run:
                                      bufsize=1, text=True, encoding="utf-8", errors="replace", creationflags=flags)
         self.proc.stdin.write(json.dumps(request) + "\n")
         self.proc.stdin.flush()
+        # without --stream the helper reads its request until stdin closes (and takes no controls)
+        self.streaming = "--stream" in cmd
+        if not self.streaming: self.proc.stdin.close()
         threading.Thread(target=self._read, daemon=True).start()
         threading.Thread(target=self._read_err, daemon=True).start()
 
@@ -270,6 +273,7 @@ class Run:
             self.err = (self.err + line)[-4000:]
 
     def control(self, line):
+        if not self.streaming: return False
         if self.done or self.proc.poll() is not None: return False
         try:
             self.proc.stdin.write(line.strip() + "\n")
@@ -279,7 +283,7 @@ class Run:
             return False
 
     def stop(self):
-        self.control("stop")
+        if not self.control("stop") and self.proc.poll() is None and not self.streaming: self.proc.terminate()
         def killer():
             try: self.proc.wait(timeout=3)
             except subprocess.TimeoutExpired: self.proc.kill()
@@ -288,6 +292,16 @@ class Run:
 
 RUNS = {}
 RUNS_LOCK = threading.Lock()
+
+
+def parse_answer(out):
+    """A helper's answer: one JSON object, or NDJSON whose last line is the answer (simcheck, sim without --stream)."""
+    try: return json.loads(out)
+    except ValueError: pass
+    for line in reversed(out.strip().splitlines()):
+        try: return json.loads(line)
+        except ValueError: continue
+    return {"raw": out[-8000:]}
 
 
 def helper_cmd(args):
@@ -436,8 +450,14 @@ class Handler(BaseHTTPRequestHandler):
                 d, msg = generate_default_maps()
                 return self._send(200 if d else 500, {"dir": d, "log": msg})
             if p == "/api/checkbrain":
-                if not CFG.quark_tests: return self._send(200, {"available": False})
                 data = self._body()
+                if not CFG.quark_tests:
+                    # quark_maptool simcheck: compiles the text the way a sim run would (when the build has brains)
+                    cmd = helper_cmd(["simcheck"])
+                    if not cmd: return self._send(200, {"available": False})
+                    r = subprocess.run(cmd, input=json.dumps({"text": data.decode("utf-8", "replace")}), capture_output=True,
+                                       text=True, timeout=60)
+                    return self._send(200, {"available": True, "via": "simcheck", "code": r.returncode, "result": parse_answer(r.stdout)})
                 with tempfile.TemporaryDirectory() as td:
                     f = os.path.join(td, "check.qbrain")
                     with open(f, "wb") as fh: fh.write(data)
@@ -451,9 +471,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not cmd: return self._err(501, "quark_maptool not found (or bad args)")
                 r = subprocess.run(cmd, input=json.dumps(body.get("request") or {}), capture_output=True, text=True,
                                    timeout=float(body.get("timeout") or 300))
-                try: ans = json.loads(r.stdout)
-                except ValueError: ans = {"raw": r.stdout[-8000:]}
-                return self._send(200, {"code": r.returncode, "answer": ans, "stderr": r.stderr[-4000:]})
+                return self._send(200, {"code": r.returncode, "answer": parse_answer(r.stdout), "stderr": r.stderr[-4000:]})
             if p == "/api/run":
                 body = self._json_body()
                 cmd = helper_cmd(body.get("args") or ["bots", "--stream"])
@@ -471,7 +489,7 @@ class Handler(BaseHTTPRequestHandler):
                     run.stop()
                     return self._send(200, {"ok": True})
                 line = (self._json_body().get("line") or "").strip()
-                if not re.match(r"^(pause|resume|step|stop|speed ([0-9.]{1,8}|max)|seek [0-9.]{1,12})$", line):
+                if not re.match(r"^(pause|resume|step|stop|speed ([0-9.]{1,8}|max)|realtime (on|off)|seek [0-9.]{1,12})$", line):
                     return self._err(400, "bad control line")
                 return self._send(200, {"ok": run.control(line)})
             return self._err(404, "not found")

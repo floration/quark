@@ -261,6 +261,7 @@ export class SimPage {
         else if (o.kind === "objective") of.innerHTML = objs.length ? `<div class="field"><span>Target</span><select data-o="target">${objs.map((x, i) => `<option value="${i}" ${o.target && o.target.kind === x.kind && o.target.index === x.index ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select></div>
             <div class="field"><span>Role</span><select data-o="role">${sel([["attack", "attack"], ["defend", "defend"]], o.role || "attack")}</select></div>` : `<div class="warn">This map has no mode objectives.</div>`;
         else of.innerHTML = `<div class="muted" style="font-size:12px">The brain's <code>objective ${esc(this.sc.mode === "1v1" ? "arena" : this.sc.mode)}</code> slot picks where to go (Brain tab).</div>`;
+        if (o.kind && o.kind !== "default") of.insertAdjacentHTML("beforeend", `<label class="check muted" title="off: the bot forgets enemies it can't see (no hunting, no turning to sounds), so a hold stays put"><input type="checkbox" data-o="chase" ${o.chase !== false ? "checked" : ""}><span>chase enemies it lost sight of</span></label>`);
         E.querySelectorAll("[data-k]").forEach((inp) => (inp.onchange = () => {
             const k = inp.dataset.k;
             b[k] = k === "yaw" ? +inp.value || 0 : inp.value;
@@ -271,6 +272,7 @@ export class SimPage {
             if (k === "kind") { b.objective = { kind: inp.value }; if (inp.value === "objective" && objs[0]) b.objective.target = { kind: objs[0].kind, index: objs[0].index }; if (inp.value === "goto" || inp.value === "hold") this._startPick(inp.value, b); if (inp.value === "follow") this._startPick("follow", b); }
             else if (k === "radius") o.radius = Math.max(0.5, +inp.value || 4);
             else if (k === "loop") o.loop = inp.checked;
+            else if (k === "chase") o.chase = inp.checked;
             else if (k === "role") o.role = inp.value;
             else if (k === "target") { const x = objs[+inp.value]; o.target = { kind: x.kind, index: x.index }; }
             this.renderBots(); this._save();
@@ -441,7 +443,8 @@ export class SimPage {
         const ignored = [];
         if (!uses.brains && this.sc.bots.some((b) => b.brain && b.brain !== "default")) ignored.push("brains other than the default");
         if (!uses.objectives && this.sc.bots.some((b) => b.objective && b.objective.kind !== "default")) ignored.push("objective overrides");
-        if (ignored.length) this.app.toast(`quark_maptool doesn't run ${ignored.join(" or ")} yet: every bot plays the game's built-in brain and the mode's objectives. (Add ?mock to the address for the stand-in simulation, which uses them.)`, 9000);
+        if (ignored.length) this.app.toast(`This quark_maptool doesn't run ${ignored.join(" or ")}: ${!uses.brains ? "every bot plays the game's built-in brain (the game's brain code isn't in this build yet)" : "bots play the mode's own objectives"}. (?mock in the address: the stand-in simulation, which uses them.)`, 9000);
+        const warnedBrains = !uses.brains && ignored.length > 0;
         const sc = { ...this.sc, mapSource: m.source, speed: $("runSpeed").value === "max" ? "max" : +$("runSpeed").value };
         const req = buildRequest(sc, m, brains);
         req.mode = this.sc.mode;
@@ -453,7 +456,7 @@ export class SimPage {
         const run = this.app.helper.start(req, {
             onLine: (l) => {
                 if (l.type === "error") { this.app.toast("Helper: " + l.error, 8000); return; }
-                if (l.type === "warning") { this.app.toast("Helper: " + (l.warning || ""), 5000); return; }
+                if (l.type === "warning") { if (!(warnedBrains && /brain/i.test(l.warning || ""))) this.app.toast("Helper: " + (l.warning || ""), 5000); return; }
                 if (l.type === "start") for (const b of l.bots || []) { const p = this.app.paramsOf(b.brain || "default").fov; if (p) b.fov = p[Math.max(0, ["BEGINNER", "INTERMEDIATE", "ADVANCED", "EXPERT"].indexOf(String(b.skill).toUpperCase()))]; }
                 rec.push(l); this.mv.invalidate();
             },

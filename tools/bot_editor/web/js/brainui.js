@@ -344,11 +344,16 @@ export class BrainPage {
         } catch (e) { this.app.toast("Save failed: " + e.message, 6000); }
     }
     async _checkWithGame(text) {
-        if (!this.app.config.quarkTests) return;
+        if (!this.app.config.quarkTests && !this.app.config.maptool) return;
         try {
             const r = await api.checkBrain(text);
             if (!r.available) return;
             const res = r.result || {};
+            if (r.via === "simcheck") {   // quark_maptool simcheck: {brainSupport, ok, label?, error?: "line:col message"}
+                if (res.brainSupport && !res.ok && res.error) this.app.toast(`The game's brain compiler: ${res.error}`, 8000);
+                else if (res.brainSupport && res.ok) this.app.toast(`The game compiles it (${res.label || "ok"})`);
+                return;
+            }
             const errs = res.errors || [];
             if (errs.length) this.app.toast(`quark_tests checkbrain: ${errs.length} error(s): ${errs[0].line}:${errs[0].col} ${errs[0].msg || errs[0].message}`, 8000);
         } catch {}

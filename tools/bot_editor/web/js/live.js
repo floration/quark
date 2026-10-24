@@ -28,6 +28,11 @@ export class Recording {
         return lo;
     }
     scoresAt(t) {
+        // sim frames carry each bot's own counters (kills, deaths, damage this match): exact, damage included
+        const i = this.indexAt(t), F = i >= 0 ? this.frames[i] : null;
+        if (F && F.bots.length && F.bots[0].kills != null) {
+            return F.bots.map((x) => { const b = this.bots.get(x.id) || {}; return { id: x.id, name: b.name, team: b.team, brain: b.brainLabel || b.brain, brainStatus: b.brainStatus, kills: x.kills || 0, deaths: x.deaths || 0, damage: x.damage || 0 }; });
+        }
         const s = new Map();
         for (const [id, b] of this.bots) s.set(id, { id, name: b.name, team: b.team, brain: b.brain, kills: 0, deaths: 0, damage: 0 });
         for (const e of this.events) {
@@ -199,7 +204,7 @@ export class LiveView {
         const scores = R.scoresAt(t).sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
         const esc = (x) => String(x ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
         let h = `<h3>Score ${R.end ? "(final)" : ""}</h3><table class="score"><tr><th>Bot</th><th>Brain</th><th>K</th><th>D</th><th>Dmg</th></tr>`;
-        for (const s of scores) h += `<tr data-id="${s.id}" class="${s.id === this.sel ? "sel" : ""}"><td><span style="color:${TEAM_COLORS[s.team] || (R.bots.get(s.id) || {}).color}">●</span> ${esc(s.name)}</td><td class="muted">${esc(s.brain)}</td><td>${s.kills}</td><td>${s.deaths}</td><td>${Math.round(s.damage)}</td></tr>`;
+        for (const s of scores) h += `<tr data-id="${s.id}" class="${s.id === this.sel ? "sel" : ""}"><td><span style="color:${TEAM_COLORS[s.team] || (R.bots.get(s.id) || {}).color}">●</span> ${esc(s.name)}</td><td class="muted"${s.brainStatus === "unsupported" ? ' title="not applied: this build plays the built-in brain"' : ""}>${esc(s.brain)}${s.brainStatus === "unsupported" ? " <span class=\"warn\">✕</span>" : ""}</td><td>${s.kills}</td><td>${s.deaths}</td><td>${Math.round(s.damage)}</td></tr>`;
         h += "</table>";
         // inspector
         const i = R.indexAt(t);
@@ -210,7 +215,9 @@ export class LiveView {
             const info = R.bots.get(b.id) || {};
             const tgt = b.target >= 0 ? (R.bots.get(b.target) || {}).name || "#" + b.target : "none";
             const sp = Math.hypot(b.vel[0], b.vel[2]);
-            h += `<div class="insp"><span>bot</span><span>${esc(info.name)} (${esc(info.skill)}, ${esc(info.brain)})</span><span>state</span><span>${esc(b.state)}</span>
+            const bs = info.brainStatus === "unsupported" ? " · not applied (built-in brain)" : info.brainStatus === "applied" ? " · applied" : "";
+            const ob = info.objective && info.objective.type && info.objective.type !== "default" ? info.objective.type + (info.objective.objectiveIndex != null ? " " + (info.objective.objectiveIndex + 1) : "") : "";
+            h += `<div class="insp"><span>bot</span><span>${esc(info.name)} (${esc(info.skill)})</span><span>brain</span><span>${esc(info.brainLabel || info.brain)}${esc(bs)}</span>${ob ? `<span>override</span><span>${esc(ob)}</span>` : ""}<span>state</span><span>${esc(b.state)}</span>
                 <span>health</span><span>${b.health}</span><span>weapon</span><span>${esc(b.weapon)}</span><span>target</span><span>${esc(tgt)}</span>
                 <span>position</span><span>${b.pos.map((v) => v.toFixed(1)).join(" ")}</span><span>speed</span><span>${sp.toFixed(1)} m/s</span>
                 <span>goal</span><span>${b.goal ? b.goal.map((v) => v.toFixed(1)).join(" ") : "-"}</span><span>path</span><span>${(b.path || []).length} waypoints</span></div>
@@ -227,7 +234,12 @@ export class LiveView {
         }
         if (!kills.length) h += `<div class="muted">no kills yet</div>`;
         h += "</div>";
-        if (R.end) h += `<h3>Result</h3><div>${esc(R.end.reason || "")} · winner: <b>${esc(typeof R.end.winner === "number" ? (R.bots.get(R.end.winner) || {}).name : R.end.winner)}</b></div>`;
+        if (R.end) {
+            const w = R.end.winnerText || (R.end.winner == null ? "" : typeof R.end.winner === "number" ? (R.bots.get(R.end.winner) || {}).name + " wins" : "team " + R.end.winner + " wins");
+            const lead = R.end.leader ? (R.end.leader.team ? "team " + R.end.leader.team : (R.bots.get(R.end.leader.player) || {}).name) + " ahead" : "";
+            h += `<h3>Result</h3><div>${esc({ matchEnd: "match over", time: "time up", stopped: "stopped" }[R.end.reason] || R.end.reason || "")}${w ? ` · <b>${esc(w)}</b>` : lead ? ` · ${esc(lead)}` : " · no winner"}</div>`;
+            if (R.end.perf && R.end.perf.speedup) h += `<div class="muted" style="font-size:11px">${R.end.perf.ticks} ticks · ${Math.round(R.end.perf.speedup)}x real time when stepping</div>`;
+        }
         el.innerHTML = h;
         el.querySelectorAll("tr[data-id]").forEach((tr) => (tr.onclick = () => { this.sel = +tr.dataset.id; this.mv.invalidate(); this.renderSide(el); }));
         const fc = el.querySelector("#followCam");

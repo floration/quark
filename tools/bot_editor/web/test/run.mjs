@@ -9,7 +9,7 @@ import { brainToBlocks, blocksToBrain, toBlocks, fromBlocks } from "../js/blocks
 import { toGraph, fromGraph, overviewGraph } from "../js/graph.js";
 import { parseQmap, mapObjectives, mapSupports, applyHelperParse } from "../js/qmap.js";
 import { MockSim } from "../js/mocksim.js";
-import { normalizeLine } from "../js/helper.js";
+import { normalizeLine, toSimRequest, toSimObjective } from "../js/helper.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 let pass = 0, fail = 0;
@@ -193,6 +193,36 @@ t("the helper's parse replaces the geometry and the mode answer", () => {
     same(m.nBoxes, 2); same(m.mats[1], 8); same(mapSupports(m, "ffa"), true); same(mapSupports(m, "hide"), false);
     same(m.bounds.x1, 10, "bounds skip trim");
     same(applyHelperParse(m, { error: "x" }), false, "a failed answer keeps the page's reading");
+});
+
+console.log("sim (quark_maptool sim, SIM.md)");
+t("page objectives -> sim overrides", () => {
+    same(toSimObjective({ kind: "default" }), null);
+    eq(toSimObjective({ kind: "goto", pos: [1, 0, 2] }), { type: "goto", pos: [1, 0, 2] });
+    same(toSimObjective({ kind: "goto" }), null, "no point yet: none");
+    eq(toSimObjective({ kind: "hold", pos: [1, 0, 2], radius: 6, chase: false }), { type: "hold", pos: [1, 0, 2], radius: 6, chase: false });
+    eq(toSimObjective({ kind: "follow", points: [[0, 0, 0], [5, 0, 5]] }), { type: "route", points: [[0, 0, 0], [5, 0, 5]], loop: true });
+    eq(toSimObjective({ kind: "objective", role: "defend", target: { kind: "site", index: 1 } }), { type: "defend", objectiveIndex: 1 });
+});
+t("the run request -> sim's", () => {
+    const r = toSimRequest({ map: { name: "depot", source: "default", text: "x" }, mode: "bomb", seed: 3, secs: 60, speed: "max",
+        bots: [{ name: "A", team: "a", skill: "expert", brain: "(editor)", pos: [1, 0, 2], yaw: 90, objective: { kind: "hold", pos: [3, 0, 4] } }, { name: "B", team: "any", brain: "default" }],
+        brains: { "(editor)": "version 1\n" } });
+    same(r.realtime, false); same(r.speed, 0); same(r.seconds, 60); same(r.bots[0].skill, "EXPERT"); same(r.bots[0].brain, "(editor)");
+    same(Math.round(r.bots[0].yaw * 1000), 1571); same(r.bots[0].objective.type, "hold"); same("team" in r.bots[1], false); same("objective" in r.bots[1], false);
+    same(r.brains["(editor)"], "version 1\n");
+});
+t("sim lines: paths carried, the end's winner and scores", () => {
+    normalizeLine({ type: "start", mode: "vs", teams: true, bots: [{ id: 0, name: "A", team: "a", brain: "x", brainStatus: "unsupported" }] });
+    const f1 = normalizeLine({ type: "frame", t: 0.1, bots: [{ id: 0, alive: true, pos: [0, 0, 0], yaw: 0, health: 100, weapon: "RIFLE", state: "move", decision: "override:hold", target: -1, goal: [1, 0, 1], path: [[1, 0, 1]], kills: 0, deaths: 0, damage: 0 }], events: [{ t: 0.1, kind: "kill", who: 0, victim: 1, detail: "rifle" }] });
+    const f2 = normalizeLine({ type: "frame", t: 0.2, bots: [{ id: 0, alive: true, pos: [0, 0, 0], yaw: 0, health: 100, weapon: "RIFLE", state: "move", decision: "override:hold (there)", target: -1, goal: [1, 0, 1], kills: 1 }], events: [] });
+    eq(f2.bots[0].path, [[1, 0, 1]], "a frame without path keeps the last"); same(f2.bots[0].decision, "override:hold (there)"); same(f1.bots[0].weapon, "rifle");
+    same(f1.events[0].type, "kill"); same(f1.events[0].killer, 0);
+    const e = normalizeLine({ type: "end", t: 30, reason: "matchEnd", winner: { team: "a", player: null, text: "TEAM A wins the match" }, bots: [{ id: 0, name: "A", kills: 3 }], result: {}, perf: { speedup: 400 } });
+    same(e.winner, "a"); same(e.winnerText, "TEAM A wins the match"); same(e.scores[0].kills, 3);
+    normalizeLine({ type: "start", mode: "ffa", teams: false, bots: [] });
+    same(normalizeLine({ type: "end", reason: "matchEnd", winner: { team: null, player: 2, text: "x" }, bots: [], perf: {} }).winner, 2);
+    same(normalizeLine({ type: "end", reason: "time", winner: null, leader: { team: "b" }, bots: [], perf: {} }).winner, null);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

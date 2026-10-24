@@ -30,14 +30,20 @@ Needs Python 3.8+ and a current Chrome, Edge or Firefox.
 ### Real helper or MOCK
 
 With `quark_maptool` found (the badge in the header says `quark_maptool`), runs are the game's own server and bots,
-headless, tick by tick. Without it the badge says **MOCK SIMULATION**: a stand-in simulation in the page (simple
-paths, sight cones, shooting) that uses the brain's values, so the page can be tried before the helper is built.
-Add `?mock` to the address to use the mock even when the helper is there. MOCK results are not the game's bots.
+headless, tick by tick: live runs use its `sim` command, batches `simbatch` (every core but one), and a saved brain
+is compiled with `simcheck` (`native/SIM.md` has the formats). Each bot's objective override is played; each bot's
+brain is sent as text (saved brains and the unsaved "(editor)" one alike).
 
-Build the helper: `cmake --build build --target quark_maptool` (see `tools/map_editor/native/README.md`).
+Without the helper the badge says **MOCK SIMULATION**: a stand-in simulation in the page (simple paths, sight
+cones, shooting) that uses the brain's values, so the page can be tried before the helper is built. Add `?mock` to
+the address to use the mock even when the helper is there. MOCK results are not the game's bots.
 
-What the real helper does not do yet: it stores each bot's brain and objective and echoes them, but every bot plays
-the game's built-in brain and the mode's objectives. The page says so when a run asks for more.
+Build the helper: `cmake --build build --target quark_maptool` (`build-sim/` is found too).
+
+Brains are played only by a build with the game's brain code (`src/game/botbrain.h`, the bot-brains branch). Without
+it the helper answers `brainSupport: false`: every bot plays the built-in brain, the page says so when a run or
+batch uses another brain, and marks those bots' brain "not applied". An older `quark_maptool` without `sim` is used
+through its `bots` command (no brains, no overrides).
 
 ## The page
 
@@ -52,11 +58,13 @@ the game's built-in brain and the mode's objectives. The page says so when a run
 - **Mode**: any mode on any map. The page warns when the map lacks what the mode needs, or isn't offered for it.
 - **Bots**: **+ Bot**, **Fill 2 v 2**, **4 v 4**. Each bot has a name, team, skill, brain (the default, your saved
   brains, or "(editor)" for the brain open in the Brain tab) and an objective: the brain's, go to a point, hold an
-  area, follow waypoints, or attack / defend one of the map's objectives. **Place bot** puts a bot on the map: click
+  area, follow waypoints, or attack / defend one of the map's objectives (an override bot still fights what it
+  sees; untick "chase" and it also forgets enemies it lost sight of). **Place bot** puts a bot on the map: click
   for the position, drag for the facing. Placed bots and objective points can be dragged.
 - **Scenario**: name, seed and length. **Save** writes it to the data folder; **Load** reads it back; ⇩ / ⇧ export
   and import the JSON.
-- **Run**: ▶ starts the match. Pause, Step (one sample), speed (¼x to max), Stop. The timeline scrubs back through
+- **Run**: ▶ starts the match. Pause, Step (one frame), speed (¼x to 8x real time, or max: as fast as it goes),
+  Stop. A run stops when the match ends or at the scenario's seconds. The timeline scrubs back through
   what has run; **Live** jumps back to now. On the map: each bot's view cone, path, goal, target line and trail; its
   decision under its name. Click a bot (or a score row) for the inspector; **camera follows** keeps it centred.
   The kill feed and scores are on the right.
@@ -88,8 +96,9 @@ replaced wholesale.
 ### Batch runs
 
 The Simulator's line-up, N matches on each chosen map (seed, seed + 1, ...), as fast as the helper goes. Results
-per brain and skill, per bot (kills, deaths, K/D, wins; damage, accuracy and objective time when the helper reports
-them) and per match. **⇩ CSV** downloads every bot-match row.
+per brain, per bot (wins, kills, deaths, K/D, damage, accuracy, objective time, time alive), wins per map (team or
+player wins, draws, matches that ran out of time) and per match. **Seconds** is the most game time a match may run
+(a free for all lasts 600 s). **⇩ CSV** downloads every bot-match row.
 
 ## Files
 
