@@ -9,7 +9,7 @@
 Python 3 standard library only. Binds 127.0.0.1 only. Every source refreshes in the background on its own interval
 and requests are answered from memory. Endpoints: GET /  /static/...  /api/pm[?refresh=1]  /api/tabs
 /api/history?limit=N  /api/health  /api/updates;  POST /api/refresh?source=<key|all>  /api/updates/run
-/api/updates/ack?id=<restart request id>.
+/api/updates/ack?id=<restart request id>  /api/checklist (JSON {version, section, done}: q's release-checklist ticks).
 The Play tab (pm/play.py): GET /play  /api/play[?refresh=1]  /api/play/pending;  POST (JSON body) /api/play/launch
 {build, args}  /api/play/note {session, did, noticed, change, other}  /api/play/skip {session}  /api/play/install {tag}
 /api/play/remove {tag}  /api/play/sync.
@@ -20,13 +20,14 @@ import os
 import re
 import sys
 import threading
+import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from pm import config, derive, play, scheduler, tabs, updater, util  # noqa: E402
+from pm import checklist, config, derive, play, scheduler, tabs, updater, util  # noqa: E402
 from pm.history import History  # noqa: E402
 
 DEFAULT_PORT = 8768
@@ -53,6 +54,7 @@ class App:
         # (off unless asked for: main() turns it on, --no-update and the tests leave it off)
         self.updater = updater.Updater(paths, enabled=update)
         self.play = play.Play(paths, **(play_opts or {}))
+        self.ticks = checklist.Ticks(paths)
 
     def start(self):
         self.store.start()
@@ -79,8 +81,11 @@ class App:
 
     def pm(self, refresh=False):
         upd = self.updater.view()
-        out = {"generatedAt": self.store.generated_at, "sources": self.store.results(),
-               "derived": derive.with_updates(self.store.derived, upd),  # (+ failed installs: halting)
+        d = derive.with_updates(self.store.derived, upd)  # (+ failed installs: halting)
+        d = derive.with_checklist(d, self.ticks.view((d.get("versions") or {}).get("testing")))
+        # serverNow: the page's clock (generatedAt is the last derive, up to a source interval old)
+        out = {"generatedAt": self.store.generated_at, "serverNow": int(time.time() * 1000),
+               "sources": self.store.results(), "derived": d,
                "history": self.history.latest(30), "tabs": self.tabs_view()["tabs"], "updates": upd,
                "play": self.play.summary()}
         if refresh:
@@ -224,6 +229,8 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/updates/ack":
             rid = urllib.parse.parse_qs(u.query).get("id", [""])[0]
             return self._json({"removed": self.app.updater.ack(rid)})
+        if u.path == "/api/checklist":
+            return self._checklist_post(body)
         if u.path != "/api/refresh":
             return self._send(404, "not found", "text/plain; charset=utf-8")
         src = urllib.parse.parse_qs(u.query).get("source", ["all"])[0]
@@ -236,6 +243,19 @@ class Handler(BaseHTTPRequestHandler):
             ok, wait = res
         self._json({"accepted": ok, "source": src, "nextAllowedIn": wait})
 
+
+    def _checklist_post(self, body):
+        """{version, section, done, build?}: tick / untick one section of the release checklist for one version."""
+        if "json" not in (self.headers.get("Content-Type") or "").lower():  # (no cross-site form posts)
+            return self._json({"ok": False, "message": "Send JSON."}, 415)
+        try:
+            req = json.loads(body.decode("utf-8"))
+            view = self.app.ticks.set(req.get("version"), req.get("section"), req.get("done") is True, req.get("build"))
+        except (ValueError, UnicodeDecodeError, AttributeError):
+            return self._json({"ok": False, "message": "Needs {version, section, done}."}, 400)
+        except OSError as e:
+            return self._json({"ok": False, "message": "Not saved (%s)." % type(e).__name__}, 500)
+        return self._json({"ok": True, "checklist": view})
 
     def _play_post(self, what, body):
         # (a JSON body only: a page on another origin cannot send one without a preflight, which _origin_ok refuses)

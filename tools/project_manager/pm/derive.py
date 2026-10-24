@@ -5,6 +5,7 @@ import time
 import urllib.parse
 
 from . import util
+from .checklist import section_key
 from .util import get, as_list
 
 DASH = "http://127.0.0.1:8765/"
@@ -19,6 +20,8 @@ SOURCE_FIX = {"github": "start the GitHub Manager", "docs": "start the Claude Ma
               "editors": "start the Editor Manager", "servers": "check the internet connection",
               "oracle": "check config.json's oracle key path and that ssh.exe works"}
 DAY = 86400.0
+BODY_MAX = 1500           # (a halting entry's body, kept for its `code` spans)
+DISAGREE_GRACE = 600.0    # sources may differ for this long (a push reaches them at different times) before it is shown
 
 
 def ok_data(results, key):
@@ -274,10 +277,13 @@ def docs_halting(d, ip):
         what = get(h, "what", "action", "todo", "text") or title or "(no details)"
         thread_url = get(h, "threadUrl", "thread_url", "url")
         lk = get(h, "link")
+        body = get(h, "body")
         out.append({"id": hid, "title": title or what, "what": what, "blocks": get(h, "blocks", "blocking"),
                     "thread": get(h, "thread", "threadName"), "threadUrl": thread_url,
                     "since": get(h, "since", "date", "time", "createdAt"),
                     "link": lk if isinstance(lk, str) and lk else (entry_link(hid) if hid is not None else thread_url),
+                    # (the entry text: the page offers its `code` spans, e.g. a command to run, as Copy buttons)
+                    "body": body[:BODY_MAX] if isinstance(body, str) else None, "file": get(h, "file"),
                     "source": "docs"})
         if hid is not None:
             seen.add(str(hid))
@@ -346,6 +352,24 @@ def with_updates(derived, updates):
     d = dict(derived)
     d["halting"] = list(derived.get("halting") or []) + extra
     d["haltingCount"] = len(d["halting"])
+    return d
+
+
+def with_checklist(derived, ticks):
+    """`derived` plus q's checklist ticks for the testing version (pm/checklist.py Ticks.view): `checklist`
+    {version, done, count, total}, and the hand-test step's `progress` (a copy, like with_updates)."""
+    if not isinstance(ticks, dict) or not ticks.get("version"):
+        return derived
+    d = dict(derived)
+    done = ticks.get("done") or {}
+    steps = []
+    for s in derived.get("nextSteps") or []:
+        if s.get("steps") and str(s.get("text", "")).startswith("Hand-test"):
+            keys = [section_key(h) for h in s["steps"]]
+            s = dict(s, progress={"done": sum(1 for k in keys if k in done), "total": len(keys)})
+        steps.append(s)
+    d["nextSteps"] = steps
+    d["checklist"] = {"version": ticks["version"], "done": done, "count": len(done)}
     return d
 
 
@@ -436,8 +460,16 @@ def versions(results):
     testing = t.get("version") or util.parse_version(repo.get("version")) or \
         util.parse_version(get(ed, "testing.version", "versions.testing", "testingVersion"))
     pre = (t.get("prerelease") or {}).get("tag")
-    if not pre and b_test and str(b_test.get("tag") or "").startswith("test-"):
-        pre = b_test["tag"]
+    if not pre and b_test:
+        bv = b_test.get("version") or ""
+        if str(b_test.get("tag") or "").startswith("test-"):
+            pre = b_test["tag"]
+        elif "-test." in bv and (not testing or util.base_version(bv) == util.base_version(testing)):
+            pre = "test-" + bv  # (the prerelease tag is test-<VERSION>-test.<run>: CLAUDE.md "Releases")
+    # production tags are exactly v<VERSION>
+    prod_tag = p.get("tag") or get(ed, "production.tag") or \
+        ((b_prod or {}).get("tag") if str((b_prod or {}).get("tag") or "").startswith("v") else None) or \
+        ("v" + production if production else None)
     # the version a testing server registers with (QUARK_VERSION of the CI build: <VERSION>-test.<run>)
     testing_server = None
     for cand in (util.parse_version(pre), (b_test or {}).get("version")):
@@ -449,9 +481,57 @@ def versions(results):
     if bv:
         a, b, c = bv.split(".")
         next_free = "%s.%s.%d" % (a, b, int(c) + 1)
-    return {"production": production, "testing": testing, "testingPrerelease": pre,
+    return {"production": production, "productionTag": prod_tag, "testing": testing, "testingPrerelease": pre,
             "working": util.base_version((b_work or {}).get("version")) if b_work else None,
             "nextFree": next_free, "testingServer": testing_server}
+
+
+def _same_sha(a, b):
+    a, b = str(a).lower(), str(b).lower()
+    return a.startswith(b) or b.startswith(a)
+
+
+def disagreements(results, repo_head=None):
+    """The local sources whose testing / production differ from GitHub's (the GitHub Manager, live; its cache is
+    left out): Quark\\repository\\ (pulled on app open and on Update now) and the Editor Manager (its clones'
+    origin/testing, fetched on its Refresh with fetch). Behind GitHub = not synced; ahead of it = the GitHub Manager is
+    stale. Without GitHub, the two local ones are compared with each other. -> [{key, text, why, fix}]."""
+    gh = ok_data(results, "github") if not (results.get("github") or {}).get("stale") else None
+    repo, ed = ok_data(results, "repo"), ok_data(results, "editors")
+    t, p = (gh_testing(gh), gh_production(gh)) if gh else ({}, {})
+    local = []
+    if repo:
+        local.append(("repo", "Quark\\repository\\", util.parse_version(repo.get("version")), _str(repo_head), None,
+                      "Update now (under Tools & updates) pulls testing into Quark\\repository\\"))
+    if ed:
+        local.append(("editors", "the Editor Manager",
+                      util.parse_version(get(ed, "testing.version", "versions.testing", "testingVersion")),
+                      _str(get(ed, "testing.sha")),
+                      util.parse_version(get(ed, "production.version", "versions.production", "productionVersion")),
+                      "Refresh with fetch in the Editor Manager"))
+    out = []
+    if not gh:
+        a, b = (local + [None, None])[:2]
+        if a and b and a[2] and b[2] and a[2] != b[2]:
+            out.append({"key": "local", "text": "Sources disagree on the testing version: %s has %s, %s %s" %
+                        (a[1], a[2], b[1], b[2]), "why": "the GitHub Manager is not up to say which is right",
+                        "fix": "start the GitHub Manager"})
+        return out
+    for key, label, tver, tsha, pver, fix in local:
+        bits, newer = [], False
+        if t.get("version") and tver and tver != t["version"]:
+            newer = util.version_key(tver) > util.version_key(t["version"])
+            bits.append("testing %s (GitHub: %s)" % (tver, t["version"]))
+        elif t.get("sha") and tsha and not _same_sha(tsha, t["sha"]):
+            bits.append("testing at %s (GitHub: %s)" % (tsha[:7], t["sha"][:7]))
+        if p.get("version") and pver and pver != p["version"]:
+            newer = newer or util.version_key(pver) > util.version_key(p["version"])
+            bits.append("production %s (GitHub: %s)" % (pver, p["version"]))
+        if bits:
+            out.append({"key": key, "text": "%s%s has %s" % (label[0].upper(), label[1:], " and ".join(bits)),
+                        "why": "the GitHub Manager looks out of date" if newer else "not synced with GitHub yet",
+                        "fix": "refresh the GitHub Manager (its tab)" if newer else fix})
+    return out
 
 
 def _age_ok(ts, now, limit):
@@ -459,7 +539,9 @@ def _age_ok(ts, now, limit):
     return t is not None and now - t > limit
 
 
-def derive(results, now=None):
+def derive(results, now=None, memo=None):
+    """`memo`: a dict the caller keeps between calls (the store does), for what must last a while before it is
+    shown (sources that disagree); without one it is shown at once."""
     now = now or time.time()
     gh, docs, ed = ok_data(results, "github"), ok_data(results, "docs"), ok_data(results, "editors")
     repo, srv, orc = ok_data(results, "repo") or {}, ok_data(results, "servers"), ok_data(results, "oracle")
@@ -482,6 +564,7 @@ def derive(results, now=None):
 
     # pipeline ---------------------------------------------------------------------------------------------------
     bw = _build(results, "working") or {}
+    bp = _build(results, "production") or {}
     wr = loc.get("working-repo") or {}
     w_notes, w_state = [], "unknown"
     if wr:
@@ -520,9 +603,13 @@ def derive(results, now=None):
          "state": "unknown" if testing_ahead is None else ("ahead" if testing_ahead else "ok"),
          "note": ", ".join(t_notes), "time": pre.get("publishedAt") or t.get("committedAt") or log0.get("time"),
          "source": "github" if gh else "repo"},
-        {"stage": "production", "version": v["production"], "sha": util.short_sha(p.get("sha")),
+        # (the GitHub Manager's summary has no production sha / date: the Editor Manager's sha, production\BUILD.txt)
+        {"stage": "production", "version": v["production"],
+         "sha": util.short_sha(p.get("sha")) or util.short_sha(get(ed or {}, "production.sha")) or
+         util.short_sha(bp.get("sha") or bp.get("commit")),
          "state": "unknown" if testing_ahead is None else ("behind" if testing_ahead else "ok"),
-         "note": ", ".join(p_notes), "time": p.get("publishedAt"), "source": "github" if gh else "builds"},
+         "note": ", ".join(p_notes), "time": p.get("publishedAt") or bp.get("publishedAt") or bp.get("mtime"),
+         "source": "github" if gh else "builds"},
     ]
     arrows = [
         {"from": "working", "to": "testing",
@@ -600,6 +687,15 @@ def derive(results, now=None):
             att.append({"level": "amber", "text": "%s has uncommitted changes older than a day%s" %
                         (x["name"], " (%d file%s)" % (n, "" if n == 1 else "s") if n else ""),
                         "link": x["link"], "source": x["source"]})
+    dis = disagreements(results, log0.get("sha"))
+    if memo is not None:  # (shown only once it has lasted DISAGREE_GRACE: a push reaches the sources at different times)
+        since = memo.setdefault("disagreeSince", {})
+        for k in [k for k in since if k not in {x["key"] for x in dis}]:
+            del since[k]
+        dis = [x for x in dis if now - since.setdefault(x["key"], now) >= DISAGREE_GRACE]
+    for x in dis:
+        att.append({"level": "amber", "source": "derived", "link": None, "kind": "disagree", "text": x["text"],
+                    "why": x["why"], "fix": x["fix"]})
     att.sort(key=lambda a: 0 if a["level"] == "red" else 1)
 
     # halting (shown above everything; not repeated under Needs you) ----------------------------------------------

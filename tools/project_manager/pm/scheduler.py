@@ -109,7 +109,8 @@ class Store:
         self.runners = {m.KEY: Runner(m, self) for m in modules}
         for k in self.runners:
             self._results[k] = {"ok": False, "fetchedAt": None, "error": "not fetched yet", "data": None, "pending": True}
-        self.derived = derive.derive(self.results())
+        self.memo = {}  # (derive's memory between refreshes: how long sources have disagreed)
+        self.derived = derive.derive(self.results(), memo=self.memo)
         self.generated_at = util.now_iso()
         self.last_refresh_all = 0.0
         self.stop = threading.Event()
@@ -161,7 +162,7 @@ class Store:
         with self.compute_lock:
             results = self.results()
             try:
-                d = derive.derive(results)
+                d = derive.derive(results, memo=self.memo)
             except Exception:
                 util.log("derive failed: %s" % traceback.format_exc(limit=4))
                 return
