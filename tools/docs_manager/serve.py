@@ -244,7 +244,7 @@ def _sentence(text, m):
 def halt_what(e):
     """What q has to do for a HALT entry: the body's first sentence (the README asks for it there), else the title."""
     text = re.sub(r"\s+", " ", (e.get("body") or "").replace("**", "").replace("`", "")).strip()
-    m = re.match(r"(.+?[.!?])(?=\s+[A-Z0-9(\"'\[]|\s*$)", text)
+    m = re.match(r"(.+?(?<!\be\.g)(?<!\bi\.e)(?<!\betc)(?<!\bvs)[.!?])(?=\s+[A-Z0-9(\"'\[]|\s*$)", text)   # (not at e.g. / i.e.)
     s = (m.group(1) if m else text).strip() or docsparse._short((e.get("title") or "").replace("**", "").replace("`", ""))
     s = re.sub(r"\bthe owner'?s\b", "q's", s, flags=re.I)
     s = re.sub(r"\bthe owner\b", "q", s, flags=re.I)
