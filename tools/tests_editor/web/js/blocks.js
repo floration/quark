@@ -289,10 +289,15 @@ export class BlocksView {
     _group(it) {
         const fns = this.app.ix.m.functions || {};
         const seq0 = this.file ? P.entrySequence(this.file.disk, it, this._isFn) : null;
-        const ed = this.editable && !!seq0;
+        const tool = it.kind === "tool";   // (a tool command: C++ around a call or two, not a list of tests: read-only)
+        const ed = this.editable && !!seq0 && !tool;
         const d = this._draft(() => ({ seq: seq0 ? seq0.seq.map((s) => ({ ...s })) : (it.calls || []).map((c) => ({ kind: "call", fn: c.fn, args: c.args })), list: it.list || null }));
+        if (tool) {
+            this.palette.append(el("div", "bk-ph", "Read-only"), el("div", "muted small bk-phsub", "A tool command isn't a list of tests: its body is C++ (arguments, loops, output). Change it in Code."));
+            return this._groupHat(it, d, seq0, ed);
+        }
         // palette: every test function
-        this._palHead("Test functions", "drag into the group, or + to add at the end");
+        this._palHead("Test functions", `drag into the ${it.kind === "group" ? "group" : "command"}, or + to add at the end`);
         const q = el("input", "bk-text"); q.type = "search"; q.placeholder = "filter functions"; q.value = this._fq || "";
         this.palette.append(q);
         const list = el("div", "bk-plist");
@@ -318,8 +323,10 @@ export class BlocksView {
         };
         q.oninput = () => { this._fq = q.value; fill(); };
         fill();
-        // the group
-        const parts = [el("span", "bk-kw", it.kind === "group" ? "group" : "command"), it.name, this._jump(it.file, it.line)];
+        this._groupHat(it, d, seq0, ed);
+    }
+    _groupHat(it, d, seq0, ed) {
+        const parts = [el("span", "bk-kw", it.kind === "group" ? "group" : it.kind === "tool" ? "tool" : "command"), it.name, this._jump(it.file, it.line)];
         const hat = this._hat("c-group", parts);
         if (it.kind === "group") {
             const seg = el("span", "seg");

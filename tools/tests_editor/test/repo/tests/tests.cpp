@@ -33,15 +33,15 @@ static void testPorts(unsigned short port) {
     CHECK(port + 3 > port);
 }
 static void testOther(unsigned short port) { OTHERCHECK(port != 0); testBraces(); }
-static int helperCount() { return 3; }
+static int helperCount() { return 3; } static void timed(const char* n, const std::function<void()>& f) { (void)n; f(); }
 static void testNeverRun() { CHECK(helperCount() == 3); }
-int launcherTests() { int f = 0; return f; }
+int launcherTests() { int f = 0; return f; } static void testNamed(const std::string& only) { struct R { const char* name; std::function<void()> run; }; std::vector<R> all = {{"one", [] { testBraces(); }}, {"two", [] { testInNamespace(); }}}; for (auto& r : all) if (only == r.name) r.run(); }
 
 int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "braces") { testBraces(); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "ports") { testPorts(TP(100)); return 0; }    if (argc >= 2 && std::string(argv[1]) == "toolish") { printf("%d\n", helperCount()); return 0; }
-    if (argc >= 2 && std::string(argv[1]) == "bench")
-        return helperCount() > 2 ? 0 : 1;
+    if (argc >= 2 && std::string(argv[1]) == "ports") { testPorts(TP(100)); return 0; }    if (argc >= 2 && std::string(argv[1]) == "toolish") { printf("%d\n", helperCount()); return 0; }    if (argc >= 3 && std::string(argv[1]) == "named") { testNamed(argv[2]); return 0; }   // NAME: one of testNamed's
+    if (argc >= 2 && std::string(argv[1]) == "bench")   // [secs]
+        { double secs = argc > 2 ? atof(argv[2]) : 15; return helperCount() > secs ? 0 : 1; }
     struct T { const char* name; std::function<void()> run; };
     std::vector<T> par = {   // a comment { with a brace
         {"alpha", [] { uint16_t p = TP(200); testPorts(p); testOther(p + 1); }},
@@ -54,7 +54,7 @@ int main(int argc, char** argv) {
         {"gamma", [] { testPorts(TP(203)); testMissing(); }},
     };
     std::vector<T> alone = {
-        {"delta", [] { testBraces(); }},
+        {"delta", [] { timed("d", [] { testBraces(); }); }},
     };
     if (argc >= 2 && std::string(argv[1]) == "groups") {
         for (auto* list : {&par, &alone}) for (auto& g : *list) printf("%s\n", g.name);

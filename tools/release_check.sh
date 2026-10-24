@@ -12,16 +12,19 @@ alone="tickrate netcode weaponpredict"   # (timing-sensitive: after the others, 
 par=""
 for g in $(build/quark_tests groups); do case "$SKIP$alone " in *" $g "*) ;; *) par="$par $g";; esac; done
 jobs=$(( 3 * $(nproc 2>/dev/null || echo 4) ))   # (as quark_tests: the groups mostly wait on real-time play)
-echo $par | tr ' ' '\n' | xargs -P$jobs -I{} sh -c 'g={}; build/quark_tests group $g > "$TMPDIR/$g.log" 2>&1; echo "$g rc=$? $(grep "^group " "$TMPDIR/$g.log")"' | tee "$TMPDIR/par.txt"
+echo "running $(echo $par | wc -w) groups, $jobs at a time, then alone:$(for g in $alone; do case "$SKIP" in *" $g "*) ;; *) printf ' %s' $g;; esac; done) (logs: $TMPDIR)"   # (progress: a line as each group starts and ends)
+echo $par | tr ' ' '\n' | xargs -P$jobs -I{} sh -c 'g={}; echo "... $g"; build/quark_tests group $g > "$TMPDIR/$g.log" 2>&1; echo "$g rc=$? $(grep "^group " "$TMPDIR/$g.log")"' | tee "$TMPDIR/par.txt"
 grep -q 'rc=[^0]' "$TMPDIR/par.txt" && fail=1
 for g in $alone; do
   case "$SKIP" in *" $g "*) continue;; esac
+  echo "... $g (alone)"
   build/quark_tests group $g > "$TMPDIR/$g.log" 2>&1; rc=$?
   echo "$g rc=$rc $(grep '^group ' "$TMPDIR/$g.log")"; [ $rc = 0 ] || fail=1
 done
 if command -v Xvfb >/dev/null; then
   Xvfb :97 >/dev/null 2>&1 & xpid=$!
   for i in $(seq 50); do [ -S /tmp/.X11-unix/X97 ] && break; sleep 0.2; done   # (until the display is up)
+  echo "hosting $(ls maps/*.qmap | wc -l) maps headless, one at a time"
   for f in maps/*.qmap; do n=$(basename "$f" .qmap)
     # (the biggest maps need over a minute for their first light bake on a loaded machine with software GL)
     DISPLAY=:97 timeout 300 build/quark --host ffa --map "$n" --screenshot "$TMPDIR/$n.png" > "$TMPDIR/$n.map.log" 2>&1; rc=$?

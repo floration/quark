@@ -27,6 +27,7 @@ MIME = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", 
         ".map": "application/json", ".txt": "text/plain; charset=utf-8", ".md": "text/plain; charset=utf-8"}
 TEXT_EXT = {".cpp", ".h", ".hpp", ".c", ".cc", ".txt", ".md", ".json", ".py", ".sh", ".cmake", ".yml", ".yaml"}
 MAX_BODY = 8 << 20
+ARG_OK = re.compile(r"^[\w.:,+-]{1,64}$")
 MAX_CHUNK = 512 << 10
 BACKUPS_KEPT = 50
 RUNS_KEPT = 500
@@ -174,15 +175,80 @@ def find_bash():
     return None
 
 
-_GROUP_TIME = re.compile(r"^\s*\(?group ([\w-]+): (\d+(?:\.\d+)?) s\)?", re.M)
+# a group's wall time: "group X: N s" (one group), "  (group X: N s)" (the whole suite), "X rc=0 group X: N s" (release_check)
+_GROUP_TIME = re.compile(r"^(?:[\w-]+ rc=\d+ )?\s*\(?group ([\w-]+): (\d+(?:\.\d+)?) s\)?", re.M)
+_GROUP_FAILS = re.compile(r"^\s*\(group ([\w-]+): (\d+) failure")      # (the whole suite, after a failed group's time)
+_GROUP_CRASH = re.compile(r"^\s*FAIL ([\w-]+): ")                      # (its process crashed / didn't start)
+_RC_LINE = re.compile(r"^([\w-]+) rc=(\d+)\b")                         # (release_check.sh, one per group)
+_FAIL = re.compile(r"^\s*(?:FAIL\b|TIMEOUT:)")
+_FAIL_AT = re.compile(r"FAIL\s+(\S+?):(\d+):\s*(.*)$")
+FAILS_KEPT = 20
+
+
+def fail_line(line, repo=None):
+    """{text, file?, line?} for a FAIL line (file repo-relative, e.g. tests/tests.cpp, when it can be found)."""
+    t = line.strip()
+    out = {"text": t[:300]}
+    m = _FAIL_AT.search(t)
+    if m:
+        p = m.group(1).replace("\\", "/")
+        i = p.rfind("tests/")
+        rel = p[i:] if i >= 0 else (p if not os.path.isabs(p) else None)
+        if rel: out.update(file=rel, line=int(m.group(2)))
+    return out
+
+
+def parse_log(text, group=None):
+    """(times, results) from a run's output. times {group: sec}; results {group: {status, fails: n, failLines}}.
+
+    One group (`group` given): every FAIL line is its own. The whole suite: each group's output comes in one piece,
+    ended by its "(group X: N s)" line, then "FAIL X: <why>" if its process crashed and "(group X: K failure(s))" if it
+    failed. release_check.sh: "X rc=N group X: N s" per group (its FAIL lines are in the group's own log)."""
+    times, res = {}, {}
+    def r(g): return res.setdefault(g, {"status": "passed", "fails": 0, "failLines": []})
+    pending, last = [], None                                         # FAIL lines of the group printing now
+    for ln in text.split("\n"):
+        m = _GROUP_TIME.match(ln)
+        if m:
+            g = last = m.group(1)
+            times[g] = float(m.group(2))
+            rc = _RC_LINE.match(ln)
+            if group is None:
+                x = r(g)
+                x["failLines"] += pending; pending = []
+                if rc and rc.group(2) != "0": x["status"] = "failed"
+            continue
+        if group is None:
+            m = _GROUP_FAILS.match(ln)
+            if m:
+                x = r(m.group(1)); x["status"] = "failed"; x["fails"] = int(m.group(2)); continue
+            m = _RC_LINE.match(ln)
+            if m:
+                r(m.group(1))["status"] = "passed" if m.group(2) == "0" else "failed"; continue
+            m = _GROUP_CRASH.match(ln)
+            if m and m.group(1) == last:
+                x = r(last); x["status"] = "failed"; x["failLines"].append(fail_line(ln)); continue
+        if _FAIL.match(ln): pending.append(fail_line(ln))
+    if group is not None: r(group)["failLines"] = pending
+    for x in res.values():
+        if x["failLines"]: x["status"] = "failed"
+        if x["status"] == "failed": x["fails"] = x["fails"] or len(x["failLines"]) or 1   # (the group's own count first:
+                                                                                         #  timingTest's set-aside FAILs print too)
+        x["failLines"] = x["failLines"][:FAILS_KEPT]
+    return times, res
 
 
 class Runs:
-    """One local run at a time; history in cache/runs.json (oldest first, last 500), output in cache/runs/<id>.log."""
+    """One local run at a time; history in cache/runs.json (oldest first, last 500), output in cache/runs/<id>.log.
+
+    Every finished run also updates cache/groups.json: per group, its newest time (from "(group X: N s)" lines: the
+    whole suite, one group, release_check.sh, or an imported log) and its newest result (passed / failed, the FAIL
+    lines). That file is the timing source on any machine; it outlives the run history."""
 
     def __init__(self, state_dir):
         self.dir = os.path.join(state_dir, "cache")
         self.path = os.path.join(self.dir, "runs.json")
+        self.gpath = os.path.join(self.dir, "groups.json")
         self.lock = threading.Lock()
         self.cur = None                                                 # {rec, proc, stopping}
         self.hist = []
@@ -196,10 +262,47 @@ class Runs:
             if r.get("status") == "running":
                 r["status"], r["endedAt"], changed = "stopped", r.get("endedAt") or now_iso(), True
         if changed: self.save()
+        self.groups, self.gen = {}, 0
+        try:
+            with open(self.gpath, encoding="utf-8") as f: g = json.load(f)
+            if isinstance(g, dict) and isinstance(g.get("groups"), dict): self.groups = g["groups"]
+        except (OSError, ValueError):
+            for r in self.hist:                                         # (first start: what the history already has)
+                self._note(r, r.get("groupTimes") or {}, r.get("groupResults") or {})
 
     def save(self):
         os.makedirs(self.dir, exist_ok=True)
         atomic_write(self.path, json.dumps(self.hist[-RUNS_KEPT:], indent=0).encode("utf-8"))
+
+    def _note(self, rec, times, results, source=None):
+        """Fold one run's group times / results into self.groups (newest wins)."""
+        at = rec.get("endedAt") or rec.get("startedAt") or now_iso()
+        src = source or "local run %s" % at
+        for g, sec in times.items():
+            e = self.groups.setdefault(g, {})
+            if (e.get("timeAt") or "") <= at: e.update(sec=sec, timeAt=at, timeRun=rec.get("id"), timeSource=src)
+        for g, x in results.items():
+            e = self.groups.setdefault(g, {})
+            if (e.get("at") or "") <= at: e.update(status=x["status"], at=at, run=rec.get("id"), fails=x.get("fails", 0),
+                                                   failLines=x.get("failLines") or [], source=src)
+        self.gen += 1
+
+    def save_groups(self):
+        os.makedirs(self.dir, exist_ok=True)
+        atomic_write(self.gpath, json.dumps({"version": 1, "groups": self.groups}, indent=0).encode("utf-8"))
+
+    def group_state(self):
+        """(generation, {group: {sec, timeAt, timeRun, timeSource, status, at, run, fails, failLines}})."""
+        with self.lock: return self.gen, json.loads(json.dumps(self.groups))
+
+    def import_log(self, text, name=None):
+        """Feed a run's output from elsewhere (a terminal run of build/quark_tests): its group times and results."""
+        times, results = parse_log(text)
+        if not times and not results: return 0
+        with self.lock:
+            self._note({"id": None, "endedAt": now_iso()}, times, results, "imported log %s%s" % (now_iso(), " (%s)" % name if name else ""))
+            self.save_groups()
+        return len(set(times) | set(results))
 
     def history(self):
         with self.lock: return list(self.hist)
@@ -213,14 +316,14 @@ class Runs:
     def log_path(self, rid):
         return os.path.join(self.dir, "runs", rid + ".log")
 
-    def start(self, cmd, argv, cwd, group=None):
+    def start(self, cmd, argv, cwd, group=None, extra=None, env_add=None):
         with self.lock:
             if self.cur: return None, self.cur["rec"]["id"]
             rid = time.strftime("%Y%m%d-%H%M%S", time.gmtime()) + "-" + os.urandom(2).hex()
             os.makedirs(os.path.join(self.dir, "runs"), exist_ok=True)
             tmp = os.path.join(self.dir, "tmp", rid)
             os.makedirs(tmp, exist_ok=True)
-            env = dict(os.environ, TMPDIR=tmp, TMP=tmp, TEMP=tmp, PYTHONUNBUFFERED="1")
+            env = dict(os.environ, TMPDIR=tmp, TMP=tmp, TEMP=tmp, PYTHONUNBUFFERED="1", **(env_add or {}))
             out = open(self.log_path(rid), "wb")
             kw = {}
             if WIN:
@@ -236,6 +339,7 @@ class Runs:
                 return None, "cannot start: %s" % e
             rec = {"id": rid, "cmd": cmd, "argv": argv, "status": "running", "exit": None, "startedAt": now_iso(),
                    "endedAt": None, "sec": None, "pid": proc.pid, "group": group}
+            rec.update(extra or {})
             self.hist.append(rec)
             self.hist = self.hist[-RUNS_KEPT:]
             self.cur = {"rec": rec, "proc": proc, "stopping": False, "t0": time.time(), "out": out, "tmp": tmp}
@@ -249,18 +353,36 @@ class Runs:
         cur["out"].close()
         sec = round(time.time() - cur["t0"], 1)
         rec = cur["rec"]
-        times = {}
+        text = ""
         try:
             with open(self.log_path(rec["id"]), "rb") as f:
-                f.seek(max(0, os.path.getsize(self.log_path(rec["id"])) - (4 << 20)))
-                for g, s in _GROUP_TIME.findall(f.read().decode("utf-8", "replace")): times[g] = float(s)
+                f.seek(max(0, os.path.getsize(self.log_path(rec["id"])) - (8 << 20)))
+                text = f.read().decode("utf-8", "replace")
         except OSError:
             pass
-        if rec.get("group"): times[rec["group"]] = sec                  # (one group: its wall clock)
+        group = rec.get("group")
+        times, results = parse_log(text, group)
+        if rec["cmd"] == "script:release_check.sh":                     # (its groups' own logs: their FAIL lines)
+            for lp in glob.glob(os.path.join(cur["tmp"], "quark_release_check.*", "*.log")):
+                g = os.path.basename(lp)[:-4]
+                if g in results and results[g]["status"] == "failed":
+                    try:
+                        with open(lp, encoding="utf-8", errors="replace") as f: results[g]["failLines"] = parse_log(f.read(), g)[1][g]["failLines"]
+                    except OSError:
+                        pass
+        status = "stopped" if cur["stopping"] else ("passed" if code == 0 else "failed")
+        if group:
+            if status == "stopped": times, results = {}, {}             # (stopped: not a time, not a result)
+            else:
+                times[group] = sec                                       # (one group: its wall clock)
+                results[group] = dict(results.get(group) or {"fails": 0, "failLines": []}, status=status)
         with self.lock:
-            rec.update(exit=code, endedAt=now_iso(), sec=sec,
-                       status="stopped" if cur["stopping"] else ("passed" if code == 0 else "failed"))
-            if times and rec["status"] != "stopped": rec["groupTimes"] = times
+            rec.update(exit=code, endedAt=now_iso(), sec=sec, status=status)
+            if times: rec["groupTimes"] = times                         # (a stopped suite run: the groups that finished)
+            if results: rec["groupResults"] = {g: {"status": x["status"], "fails": x["fails"]} for g, x in results.items()}
+            if times or results:
+                self._note(rec, times, results)
+                self.save_groups()
             self.cur = None
             self.save()
             self._prune_tmp()
@@ -377,7 +499,7 @@ class App:
         self.gm_url = (self.cfg.get("githubManager") or "http://127.0.0.1:8767").rstrip("/")
         self.runs = Runs(self.state_dir)
         self.bgroups = BuildGroups(self.repo, self.cfg.get("quark_tests"), self.state_dir)
-        self.builder = modelmod.Builder(self.repo, self.timing_dir, self.overview, runs=self.runs.history,
+        self.builder = modelmod.Builder(self.repo, self.timing_dir, self.overview, local=self.runs.group_state,
                                         build_groups=self.bgroups)
         self.gz = (None, None)
         self.ci_cache = (0, None)
@@ -459,25 +581,54 @@ class App:
         return self.write_file(rel, out.decode("utf-8", "replace"), cur)
 
     # runs
-    def start_run(self, cmd):
+    def start_run(self, cmd, args=None, groups=None):
+        """cmd: "suite" (the whole suite; `groups` = just those, as QUARK_TEST_ONLY), "group:<name>", "cmd:<name>"
+        (`args`: what follows the name, checked against its argsSpec), "script:<name>", or "groups" (list them)."""
         m, _, _ = self.model()
         qt = next((s for s in m["suites"] if s["id"] == "quark_tests"), {"items": []})
-        names = {it["id"] for it in qt["items"]}
+        items = {it["id"]: it for it in qt["items"]}
         if not isinstance(cmd, str): return 400, {"error": "cmd must be a string"}
+        if args is not None and (not isinstance(args, list) or not all(isinstance(a, str) and ARG_OK.match(a) for a in args)):
+            return 400, {"error": "args must be a list of short words (letters, digits, . _ - : , +)"}
+        if groups is not None and (not isinstance(groups, list) or not all(isinstance(g, str) for g in groups)):
+            return 400, {"error": "groups must be a list of group names"}
+        if (args and not cmd.startswith("cmd:")) or (groups and cmd != "suite"):
+            return 400, {"error": "args go with cmd:<name>, groups with suite"}
+        extra, env, group = {}, None, None
         if cmd.startswith("script:"):
             s = next((s for s in m["suites"] if s["id"] == cmd and s["kind"] == "script"), None)
             if not s: return 404, {"error": "no such script", "cmd": cmd}
             bash = find_bash()
             if not bash: return 404, {"error": "no bash (install Git for Windows)"}
-            argv, group = [bash, s["file"]], None
+            argv = [bash, s["file"]]
         else:
-            if cmd.startswith(("group:", "cmd:")) and cmd not in names: return 404, {"error": "no such test", "cmd": cmd}
-            if not cmd.startswith(("group:", "cmd:")) and cmd != "groups": return 400, {"error": "unknown cmd", "cmd": cmd}
+            if cmd.startswith(("group:", "cmd:")) and cmd not in items: return 404, {"error": "no such test", "cmd": cmd}
+            if not cmd.startswith(("group:", "cmd:")) and cmd not in ("groups", "suite"): return 400, {"error": "unknown cmd", "cmd": cmd}
             b = find_binary(self.repo, self.cfg.get("quark_tests"))
             if not b: return 404, {"error": "no build"}
-            group = cmd[6:] if cmd.startswith("group:") else None
-            argv = [b, "group", group] if group else ([b, cmd[4:]] if cmd.startswith("cmd:") else [b, "groups"])
-        rec, err = self.runs.start(cmd, argv, self.repo, group)
+            if cmd == "suite":
+                argv = [b]
+                if groups:
+                    known = {it["name"] for it in qt["items"] if it["kind"] == "group"}
+                    bad = [g for g in groups if g not in known]
+                    if bad: return 404, {"error": "no such group: " + ", ".join(bad[:5])}
+                    groups = [g for g in dict.fromkeys(groups)]
+                    env, extra["only"] = {"QUARK_TEST_ONLY": ",".join(groups)}, groups
+            elif cmd.startswith("group:"):
+                group = cmd[6:]
+                argv = [b, "group", group]
+            elif cmd.startswith("cmd:"):
+                it = items[cmd]
+                if (it.get("run") or {}).get("byHand"): return 403, {"error": "run it by hand: " + it["run"]["byHand"]}
+                spec, args = it.get("argsSpec") or {"min": 0, "max": 0}, args or []
+                if len(args) < spec["min"] or (spec["max"] is not None and len(args) > spec["max"]):
+                    want = "%d" % spec["min"] if spec["min"] == spec["max"] else "%d to %s" % (spec["min"], "any" if spec["max"] is None else spec["max"])
+                    return 400, {"error": "quark_tests %s takes %s argument(s)" % (it["name"], want)}
+                argv = [b, it["name"]] + args
+                if args: extra["args"] = args
+            else:
+                argv = [b, "groups"]
+        rec, err = self.runs.start(cmd, argv, self.repo, group, extra, env)
         if not rec:
             if err and err.startswith("cannot"): return 500, {"error": err}
             return 409, {"error": "busy", "running": err}
@@ -500,7 +651,8 @@ class App:
                 sec = round((datetime.datetime.now(datetime.timezone.utc) - t0).total_seconds(), 1)
             except ValueError:
                 pass
-        return 200, {"id": rid, "cmd": r["cmd"], "status": r["status"], "exit": r["exit"], "startedAt": r["startedAt"],
+        return 200, {"id": rid, "cmd": r["cmd"], "args": r.get("args"), "only": r.get("only"), "groupResults": r.get("groupResults"),
+                     "status": r["status"], "exit": r["exit"], "startedAt": r["startedAt"],
                      "endedAt": r["endedAt"], "sec": sec, "output": data.decode("utf-8", "replace"), "size": size,
                      "from": frm, "next": frm + len(data), "more": frm + len(data) < size, "groupTimes": r.get("groupTimes")}
 
@@ -655,7 +807,7 @@ def make_handler(app, port):
                     except ValueError: frm = 0
                     return self._json(*app.run_status(q.get("id", ""), frm))
                 if path == "/api/runs":
-                    return self._json(200, [{k: r.get(k) for k in ("id", "cmd", "status", "exit", "startedAt", "endedAt", "sec")}
+                    return self._json(200, [{k: r.get(k) for k in ("id", "cmd", "status", "exit", "startedAt", "endedAt", "sec", "args", "only", "groupResults")}
                                             for r in reversed(app.runs.history())])
                 if path == "/api/ci": return self._json(200, app.ci())
                 if path == "/api/summary": return self._json(200, app.summary())
@@ -694,7 +846,11 @@ def make_handler(app, port):
                     _, mbody, _ = app.model()
                     out = json.dumps(obj, ensure_ascii=False).encode("utf-8")[:-1] + b',"model":' + mbody + b"}"
                     return self._send(200, out, headers={"Cache-Control": "no-store"})
-                if path == "/api/run": return self._json(*app.start_run(body.get("cmd")))
+                if path == "/api/run": return self._json(*app.start_run(body.get("cmd"), body.get("args"), body.get("groups")))
+                if path == "/api/import-log":
+                    text = body.get("text")
+                    if not isinstance(text, str): return self._json(400, {"error": "text must be a string"})
+                    return self._json(200, {"ok": True, "groups": app.runs.import_log(text, str(body.get("name") or "")[:80] or None)})
                 if path == "/api/run/stop":
                     ok = app.runs.stop(body.get("id", ""))
                     return self._json(200 if ok else 404, {"ok": ok} if ok else {"error": "not running"})

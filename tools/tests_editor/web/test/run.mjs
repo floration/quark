@@ -224,6 +224,63 @@ try {
     await page.waitForTimeout(100);
     const hits = await page.$$eval("#tree .trow:not([hidden])", (r) => r.filter((x) => x.offsetParent).map((x) => x.dataset.key));
     ok(hits.includes("fn:testWallbang") && hits.includes("quark_tests|group:weapons") && hits.length < 10, "search finds the function and the groups that call it", hits.join());
+    await page.fill("#search", "zzzznomatch");
+    await page.waitForTimeout(100);
+    ok(await page.$$eval("#tree .trow, #tree .thead, #tree .tsub", (r) => r.filter((x) => x.offsetParent).length) === 0, "search with no match shows no rows");
+    await page.fill("#search", "");
+
+    // ---- last local results in the tree, side panels, the code editor's Esc-then-Tab
+    if (FIXTURE) {
+        ok(await page.locator('#tree .trow[data-key="quark_tests|group:duel"] .tdot.cc-bad').count() === 1 && await page.locator('#tree .trow[data-key="quark_tests|group:weapons"] .tdot.cc-ok').count() === 1, "tree: each group's last local result");
+        await go("#group/duel");
+        ok(/Last local run/.test(await page.textContent("#details")) && await page.locator("#details .fline .link:has-text('tests/tests.cpp:120')").count() === 1, "details: the last run's FAIL line links to its CHECK");
+    }
+    const mw = () => page.$eval("#main", (e) => e.getBoundingClientRect().width);
+    const w0 = await mw();
+    await page.click("#leftToggle"); await page.waitForTimeout(80);
+    const w1 = await mw();
+    await page.click("#leftToggle"); await page.click("#rightToggle"); await page.waitForTimeout(80);
+    const w2 = await mw();
+    await page.click("#rightToggle");
+    ok(w1 > w0 + 150 && w2 > w0 + 200 && Math.abs(await mw() - w0) < 2, "panels: hiding the tree / details gives the code their width", [w0, w1, w2].join());
+    await go("#group/duel", "code");
+    await page.focus(".code-ta");
+    await page.keyboard.press("Escape"); await page.keyboard.press("Tab");
+    ok(await page.evaluate(() => document.activeElement !== document.querySelector(".code-ta")), "code: Esc then Tab leaves the editor");
+    await page.keyboard.press("Escape");
+
+    // ---- a command that takes a NAME: the page asks for it
+    if (FIXTURE) {
+        await go("#cmd/rules");
+        ok(/Without NAME, quark_tests rules runs the group rules/.test(await page.textContent("#details")) && await page.locator("#runArgs").count() === 1, "rules NAME: asked for, with the group warning");
+        await page.click("#runBtn");
+        ok(/takes 1 argument/.test(await page.textContent("#toast")), "rules NAME: refused without it");
+        await page.fill("#runArgs", "overtime");
+        await page.click("#runBtn");
+        await page.waitForFunction(() => /passed/.test(document.querySelector("#runState").textContent), null, { timeout: 8000 });
+        ok((await page.textContent("#runTitle")) === "quark_tests rules overtime", "rules NAME: run with it", await page.textContent("#runTitle"));
+    }
+
+    // ---- the whole suite: FAIL lines marked, jump to the next one, its file:line opens the CHECK
+    await go("#suite/quark_tests");
+    ok(/Run the whole suite/.test(await page.textContent("#runBtn")) && await page.locator("#details .gchip").count() === qt.items.filter((i) => i.kind === "group").length, "suite: whole-suite button and a chip per group");
+    if (FIXTURE) {
+        ok(/Rerun failed \(1\)/.test(await page.textContent("#details")), "suite: rerun failed counts the failed groups");
+        await page.click("#runBtn");
+        await page.waitForFunction(() => /failed/.test(document.querySelector("#runState").textContent), null, { timeout: 8000 });
+        ok(await page.locator("#runOut .ofail").count() === 3 && await page.locator("#runOut .opass").count() === 0, "run output: the FAIL lines are marked", await page.locator("#runOut .ofail").count());
+        await page.click("#runFails");
+        ok(await page.locator("#runOut .ofail.cur").count() === 1 && /1\/3/.test(await page.textContent("#runFails")), "run output: jump to the first failure");
+        await page.click("#runOut .olink");
+        await page.waitForTimeout(300);
+        ok((await page.textContent(".code-path")) === "tests/tests.cpp" && /lines 120-120/.test(await page.textContent(".code-bar")), "run output: the FAIL's file:line opens in Code");
+        await go("#suite/quark_tests");
+        await page.click("details.pick summary");
+        await page.click('.gchip[data-g="duel"]');
+        await page.click("details.pick .runbtn");
+        await page.waitForFunction(() => /duel/.test(document.querySelector("#runTitle").textContent) && /failed/.test(document.querySelector("#runState").textContent), null, { timeout: 8000 });
+        ok(/only=duel/.test(await page.textContent("#runOut")) && /quark_tests: duel/.test(await page.textContent("#runTitle")), "suite: a chosen set runs as QUARK_TEST_ONLY");
+    }
 
     // ---- run
     await go("#group/weapons");
