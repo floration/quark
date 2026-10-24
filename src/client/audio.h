@@ -66,6 +66,7 @@ struct HitSoundGate {
 class Audio {
 public:
     static constexpr int kRate = 48000;
+    Audio();
     bool start();                 // opens the device; false = no sound (game keeps running)
     void startOffline() { synthesize(); running_ = true; } // tests: mix() without a device
     void stop();
@@ -76,13 +77,17 @@ public:
     void play(int id, float volume = 1.0f, float pitch = 1.0f, int pack = -1);
     void play3D(int id, const Vec3& pos, float volume = 1.0f, float pitch = 1.0f, int pack = -1);
     bool hasSound(int id) const { return id >= 0 && id < SND_COUNT && !samples(0, id).empty(); }
-    // (game thread only, as play / play3D, the only readers: the mixer never reads it, so no lock against it)
-    void setListener(const Vec3& pos, float yaw) { listener_ = pos; listenerYaw_ = yaw; }
+    // (game thread: play3D's copy, plus one handed to the mixer, which re-pans every playing 3D sound with it each period)
+    void setListener(const Vec3& pos, float yaw);
     void setMasterVolume(float v) { master_ = v; }
     // EXCLUSIVE AUDIO (Windows): the sound device to the game alone, past the system mixer (lower latency; other programs
     // are silent meanwhile). Reopens the output when it changes; falls back to shared when the device can't.
     void setExclusive(bool on) { if (exclusive_.exchange(on) != on) reopen_ = true; }
-    bool exclusiveActive() const { return exclusiveActive_; }
+    // what exclusive got: off (not asked, or not opened yet), on, busy (another program has the device), unsupported
+    // (the device takes none of our formats, or Windows doesn't allow exclusive use of it)
+    enum ExclusiveState { kExclOff, kExclOn, kExclBusy, kExclUnsupported };
+    int exclusiveState() const { return exclusiveState_; }
+    bool exclusiveActive() const { return exclusiveState_ == kExclOn; }
     void setAnnouncer(int set) { if (set != announcer_) { if (running_) loadAnnouncer(set); else announcer_ = set; } } // 0 male, 1 female
     // Sound kits: DEFAULT (synthesized), HEAVY METAL, MAGICAL, WOODEN (recorded CC0 clips, sfx_recorded.h), RETRO (DEFAULT, chiptuned).
     // All packs are built at startup, so switching is free and every player can sound different.
@@ -91,7 +96,7 @@ public:
     void setPack(int pack) { pack_ = (pack < 0 || pack >= kPacks) ? 0 : pack; }
     int pack() const { return pack_; }
     bool ok() const { return running_; }
-    int voicesPlaying(int id) { std::lock_guard<std::mutex> l(mu_); int n = 0; for (auto& v : voices_) n += v.id == id; return n; } // tests
+    int voicesPlaying(int id); // tests (what the next mix would play: the sounds started since the last one included)
     const std::vector<float>& samples(int pack, int id) const { // tests / tools (the game thread: announcerLines_' only writer)
         static const std::vector<float> none;
         if (id < SND_VOICE_THREE) return sounds_[pack][id];
@@ -108,8 +113,11 @@ public:
     void mix(int16_t* out, int frames);
 
 private:
-    struct Voice { int id, pack; float pos; float step; float gainL, gainR; bool spatial; Vec3 at; float volume; uint32_t seq = 0; };
-    void addVoice(Voice& v);   // (under mu_) full: the oldest sound effect makes room (an announcer line only if all are)
+    // pos: where in the sound, 32.32 fixed point (exact over long clips, where a float's step went coarse past ~2.7 s);
+    // step: the pitch; gainL / gainR: the gains the last period ended on (a 3D sound ramps from them to the new ones)
+    struct Voice { int id, pack; uint64_t pos; float step; float gainL, gainR; bool spatial; Vec3 at; float volume; uint32_t seq = 0; };
+    // full: the oldest sound effect makes room (an announcer line only if all are)
+    static void addVoice(std::vector<Voice>& list, const Voice& v, size_t cap);
     uint32_t voiceSeq_ = 0;    // (under mu_) start order: the mixer's swap-and-pop doesn't keep voices_ in it
     void synthesize();
     void loadRecordedKits();
@@ -118,23 +126,38 @@ private:
     void loadOverrideVoice(int set, std::vector<float>* lines, int count); // voices/<voice>/<LINE>.*
     void loadAnnouncer(int set);
     int announcer_ = 0;
-    // the announcer's lines, the same in every pack: built off the mixer's lock and swapped in as one pointer (a
+    // the announcer's lines, the same in every pack: built off the mixer's lock and handed over as one pointer (a
     // voice change used to copy every line into all 5 packs while holding the lock the audio thread mixes under)
     struct AnnouncerLines { std::vector<float> line[SND_COUNT - SND_VOICE_THREE]; };
-    std::shared_ptr<const AnnouncerLines> announcerLines_;   // (written under mu_, by the game thread only)
+    std::shared_ptr<const AnnouncerLines> announcerLines_;   // (the game thread's: samples())
+    // (under mu_) the handover: nextLines_ for the mixer to take (linesNew_), retiredLines_ the ones it let go of, freed
+    // by the game thread (a voice's lines are megabytes: never freed on the audio thread, never while it reads them)
+    std::shared_ptr<const AnnouncerLines> nextLines_, retiredLines_;
+    bool linesNew_ = false;
+    std::shared_ptr<const AnnouncerLines> mixLines_;   // (the mixer's)
     std::atomic<int> pack_{0};
-    void voiceGains(Voice& v);
+    static void voiceGains(Voice& v, const Vec3& listener, const Vec3& right);   // right: the listener's right
+    void takePending();                    // (the mixer, under mixMu_) the sounds started since, the listener, the lines
+    void render(float* buf, int frames);   // mix() before it is made 16-bit (1 = full scale; the limiter lets the loudest past it)
     void backendThread();
     void wasapiThread(std::atomic<int>* started);   // Windows: WASAPI output; started: 1 running, -1 unavailable (WinMM then)
 
     std::vector<float> sounds_[kPacks][SND_COUNT];   // (announcer ids stay empty: announcerLines_)
-    std::vector<Voice> voices_;
-    std::mutex mu_;
-    Vec3 listener_;
+    // The game thread never waits for a mix pass: play / play3D only push onto pending_ (mu_ held just for that), and
+    // the mixer swaps it for its empty incoming_ at the top of each period, then mixes voices_ (its own) with mu_ free.
+    std::vector<Voice> voices_, incoming_;   // (the mixer's, under mixMu_)
+    std::vector<Voice> pending_;             // (under mu_)
+    std::mutex mu_, mixMu_;   // (mixMu_: the mixer's for the whole pass; only the tests' voicesPlaying ever waits on it)
+    Vec3 listener_;           // (the game thread's: play3D's audible check)
     float listenerYaw_ = 0;
+    Vec3 listenerNext_;       // (under mu_) for the mixer
+    float listenerYawNext_ = 0;
+    Vec3 mixListener_;        // (the mixer's)
+    float mixListenerYaw_ = 0;
     std::atomic<float> master_{0.8f};
     std::atomic<bool> running_{false}, quit_{false};
-    std::atomic<bool> exclusive_{false}, reopen_{false}, exclusiveActive_{false};
+    std::atomic<bool> exclusive_{false}, reopen_{false};
+    std::atomic<int> exclusiveState_{kExclOff};
     float rateScale_ = 1.0f;   // (audio thread: our rate over the device's)
     std::thread thread_;
     void* backend_ = nullptr;
