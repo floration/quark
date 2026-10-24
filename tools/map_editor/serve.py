@@ -15,6 +15,8 @@ Binds 127.0.0.1 only (nothing on the network can reach it). Python 3 standard li
                                     also records it in provenance.json next to this file)
     GET  /api/provenance            provenance.json
     GET  /api/sidecar/<name>        PUT /api/sidecar/<name>      <name>.mapedit.json next to your map ({} when none)
+    GET  /api/deco-presets          PUT /api/deco-presets/<name>  the decoration panel's own presets ({"presets": [...]}),
+                                    deco_presets/user/<name>.json in this folder
     POST /api/tool/<command>        quark_maptool <command> with the body JSON on stdin: its JSON answer
     POST /api/stream/bots           quark_maptool bots --stream: NDJSON lines as they come (chunked); the first line
                                     is {"type":"run","run":"<id>"}
@@ -36,6 +38,19 @@ WIN_DEVICES = {"con", "prn", "aux", "nul"} | {"com%d" % i for i in range(10)} | 
 STATIC = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8",
           ".json": "application/json", ".gltf": "model/gltf+json", ".png": "image/png", ".svg": "image/svg+xml",
           ".ico": "image/x-icon", ".txt": "text/plain; charset=utf-8", ".md": "text/plain; charset=utf-8"}
+
+
+def list_deco_presets():
+    """the decoration presets saved from the panel: deco_presets/user/<name>.json (bad files are skipped)"""
+    d = os.path.join(HERE, "deco_presets", "user")
+    out = []
+    for n in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+        if not n.endswith(".json") or not valid_name(n[:-5]): continue
+        try:
+            with open(os.path.join(d, n), encoding="utf-8") as fh: obj = json.load(fh)
+        except (OSError, ValueError): continue
+        if isinstance(obj, dict) and isinstance(obj.get("rules"), list): out.append(dict(obj, file=n[:-5]))
+    return out
 
 
 def valid_name(n):
@@ -274,10 +289,25 @@ class Handler(BaseHTTPRequestHandler):
             f = os.path.join(st.user_maps(), name + ".mapedit.json")
             if not os.path.isfile(f): return self.send(200, {})
             with open(f, "rb") as fh: return self.send(200, fh.read())
+        if p == "deco-presets":   # the decoration panel's own presets (deco_presets/user/<name>.json; DECO.md)
+            return self.send(200, {"presets": list_deco_presets()})
         self.err(404, "not found")
 
     def api_put(self, p, data):
         st = self.server.st
+        m = re.match(r"^deco-presets/([^/]+)$", p)
+        if m:
+            name = m.group(1)
+            if not valid_name(name): return self.err(400, "a preset name is 1-40 letters, digits, - and _")
+            try: obj = json.loads(data or b"null")
+            except ValueError: return self.err(400, "bad JSON")
+            if not isinstance(obj, dict) or not isinstance(obj.get("rules"), list): return self.err(400, "a preset is {name, description, rules: [...]}")
+            d = os.path.join(HERE, "deco_presets", "user")
+            os.makedirs(d, exist_ok=True)
+            f = os.path.join(d, name + ".json")
+            with open(f + ".tmp", "w", encoding="utf-8", newline="\n") as fh: json.dump(obj, fh, indent=2)
+            os.replace(f + ".tmp", f)
+            return self.send(200, {"ok": True, "file": name + ".json"})
         if p == "config":
             try: cfg = json.loads(data or b"{}")
             except ValueError: return self.err(400, "bad JSON")
