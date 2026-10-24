@@ -239,7 +239,23 @@
             "time": "2026-10-24T19:20:00Z",
             "text": "Map editor: prefab palette done, snapping next"
           }
-        ]
+        ],
+        "halting": [
+          {
+            "id": "02-in-progress.md:worker-secret",
+            "title": "Ranking Worker secret",
+            "what": "Add the RANK_SIGNING_KEY secret to the ranking Worker (Cloudflare dashboard > quark-master > Settings > Variables)",
+            "blocks": "Ranked season reset: the deploy-worker job fails without it",
+            "thread": "Ranked season reset",
+            "threadUrl": "https://claude.ai/code/session_01RankedSeasonReset",
+            "file": "02-in-progress.md",
+            "section": "Ranked season reset",
+            "date": "2026-10-24",
+            "since": "2026-10-24T18:55:00Z",
+            "link": "http://127.0.0.1:8766/#entry=02-in-progress.md:worker-secret"
+          }
+        ],
+        "haltingCount": 1
       }
     },
     "editors": {
@@ -640,7 +656,8 @@
         ],
         "entryLink": "http://127.0.0.1:8766/#entry=map-editor",
         "link": "http://127.0.0.1:8766/#entry=map-editor",
-        "source": "docs"
+        "source": "docs",
+        "halting": false
       },
       {
         "title": "Tweak gameplay (waiting on push)",
@@ -657,7 +674,8 @@
         ],
         "entryLink": "http://127.0.0.1:8766/#entry=tweak-gameplay",
         "link": "http://127.0.0.1:8766/#entry=tweak-gameplay",
-        "source": "docs"
+        "source": "docs",
+        "halting": false
       },
       {
         "title": "Gantry round length",
@@ -674,7 +692,8 @@
         ],
         "entryLink": "http://127.0.0.1:8766/#entry=gantry-length",
         "link": "http://127.0.0.1:8766/#entry=gantry-length",
-        "source": "docs"
+        "source": "docs",
+        "halting": false
       },
       {
         "title": "Discord bot rank roles",
@@ -691,7 +710,11 @@
         ],
         "entryLink": "http://127.0.0.1:8766/#entry=discord-roles",
         "link": "http://127.0.0.1:8766/#entry=discord-roles",
-        "source": "docs"
+        "source": "docs",
+        "priority": "(HALT)",
+        "since": "2026-10-24T16:20:00Z",
+        "blocks": "the Discord bot rank roles release",
+        "halting": true
       },
       {
         "title": "Release 1.18.6 to production",
@@ -709,7 +732,8 @@
         ],
         "entryLink": "http://127.0.0.1:8766/#entry=release-1-18-6",
         "link": "http://127.0.0.1:8766/#entry=release-1-18-6",
-        "source": "docs"
+        "source": "docs",
+        "halting": false
       },
       {
         "title": "Windows test flake in group 3",
@@ -726,7 +750,8 @@
         ],
         "entryLink": "http://127.0.0.1:8766/#entry=win-flake",
         "link": "http://127.0.0.1:8766/#entry=win-flake",
-        "source": "docs"
+        "source": "docs",
+        "halting": false
       },
       {
         "title": "Hightown staircase balance",
@@ -743,7 +768,8 @@
         ],
         "entryLink": "http://127.0.0.1:8766/#entry=hightown-stairs",
         "link": "http://127.0.0.1:8766/#entry=hightown-stairs",
-        "source": "docs"
+        "source": "docs",
+        "halting": false
       },
       {
         "title": "Project manager app",
@@ -760,7 +786,8 @@
         ],
         "entryLink": "http://127.0.0.1:8766/#entry=project-manager",
         "link": "http://127.0.0.1:8766/#entry=project-manager",
-        "source": "docs"
+        "source": "docs",
+        "halting": false
       }
     ],
     "nextSteps": [
@@ -783,13 +810,6 @@
         "why": "in-progress entry waiting on push",
         "owner": "q",
         "link": "https://claude.ai/code/session_01TweakGameplay",
-        "source": "docs"
-      },
-      {
-        "text": "Give the Discord rank role names",
-        "why": "in-progress entry waiting on owner",
-        "owner": "q",
-        "link": "http://127.0.0.1:8766/#entry=discord-roles",
         "source": "docs"
       },
       {
@@ -908,7 +928,43 @@
         "askedAt": "2026-10-24T15:02:00Z",
         "link": "http://127.0.0.1:8766/#entry=q-14"
       }
-    ]
+    ],
+    "halting": [
+      {
+        "id": "02-in-progress.md:worker-secret",
+        "title": "Ranking Worker secret",
+        "what": "Add the RANK_SIGNING_KEY secret to the ranking Worker (Cloudflare dashboard > quark-master > Settings > Variables)",
+        "blocks": "Ranked season reset: the deploy-worker job fails without it",
+        "thread": "Ranked season reset",
+        "threadUrl": "https://claude.ai/code/session_01RankedSeasonReset",
+        "since": "2026-10-24T18:55:00Z",
+        "link": "http://127.0.0.1:8766/#entry=02-in-progress.md:worker-secret",
+        "source": "docs"
+      },
+      {
+        "id": "discord-roles",
+        "title": "Discord bot rank roles",
+        "what": "needs the role names you want for each rank",
+        "blocks": "the Discord bot rank roles release",
+        "thread": "Discord bot",
+        "threadUrl": "https://claude.ai/code/session_01DiscordBot",
+        "since": "2026-10-24T16:20:00Z",
+        "link": "http://127.0.0.1:8766/#entry=discord-roles",
+        "source": "docs"
+      },
+      {
+        "id": null,
+        "title": "Model Editor install failed",
+        "what": "Fix the Model Editor install (exit 1; log under Tools & updates), then Update now",
+        "blocks": "the new Model Editor from testing",
+        "thread": null,
+        "threadUrl": null,
+        "since": "2026-10-24T19:41:02Z",
+        "link": null,
+        "source": "updates"
+      }
+    ],
+    "haltingCount": 3
   },
   "history": [
     {

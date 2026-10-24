@@ -718,7 +718,42 @@ function tabStatus(tab) {
 }
 const tabbarTabs = () => tabs.map((t) => ({
   id: t.id, name: t.name, kind: t.kind, status: tabStatus(t), missing: t.missing, parent: t.parent, depth: t.depth, childLabel: t.childLabel,
+  badge: t.id === 'project' ? haltCount : 0,
 }));
+
+// ---------- halting badge ----------
+// The Supervisor Board page (tab "project" only) reports how many things q must do that block a Claude agent:
+// a red count on its tab button, and on Windows a red dot over the taskbar icon (elsewhere the app badge count).
+let haltCount = 0;
+let haltDot = null;
+function redDot() {
+  if (haltDot) return haltDot;
+  const n = 16, buf = Buffer.alloc(n * n * 4);
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      const d = Math.hypot(x + 0.5 - n / 2, y + 0.5 - n / 2);
+      const a = Math.max(0, Math.min(1, n / 2 - 0.5 - d)); // (anti-aliased edge)
+      const ring = d > n / 2 - 2.5 ? 1 : 0; // (a white rim so it reads on a red or dark icon)
+      const [r, g, b] = ring ? [255, 255, 255] : [0xd9, 0x2d, 0x20];
+      const i = (y * n + x) * 4; // BGRA, premultiplied
+      buf[i] = Math.round(b * a); buf[i + 1] = Math.round(g * a); buf[i + 2] = Math.round(r * a); buf[i + 3] = Math.round(255 * a);
+    }
+  }
+  haltDot = nativeImage.createFromBitmap(buf, { width: n, height: n });
+  return haltDot;
+}
+function setHalting(n) {
+  n = Math.max(0, Math.min(999, Math.floor(Number(n)) || 0));
+  if (n === haltCount) return;
+  haltCount = n;
+  updateTabbar();
+  if (!win || win.isDestroyed()) return;
+  try {
+    if (IS_WIN && typeof win.setOverlayIcon === 'function') win.setOverlayIcon(n ? redDot() : null, n ? n + ' halting: Claude is blocked on you' : '');
+    else if (typeof app.setBadgeCount === 'function') app.setBadgeCount(n);
+  } catch (err) { /* (cosmetic) */ }
+  win.setTitle(n ? '(' + n + ') Quark Project' : 'Quark Project');
+}
 function updateTabbar() {
   if (!tabbar || tabbar.webContents.isDestroyed()) return;
   tabbar.webContents.send('shell:tabs', {
@@ -1071,6 +1106,11 @@ function createWindow() {
 ipcMain.on('shell:open', (e, id, hash) => {
   if (!entryFor(e.sender) && (!tabbar || e.sender !== tabbar.webContents)) return;
   if (typeof id === 'string') openTab(id, typeof hash === 'string' ? hash : '');
+});
+ipcMain.on('shell:badge', (e, n) => {
+  const entry = entryFor(e.sender);
+  if (!entry || entry.tab.id !== 'project' || entry.mode !== 'page' || typeof n !== 'number') return;
+  setHalting(n);
 });
 ipcMain.on('shell:retry', (e) => {
   const entry = entryFor(e.sender);

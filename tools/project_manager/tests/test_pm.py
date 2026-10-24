@@ -615,6 +615,62 @@ class TestDerive(unittest.TestCase):
         self.assertEqual({e["bucket"] for e in d["inProgress"]}, {"claude", "push", "owner", "pr", "ci", "tests"})
         hand = next(s for s in d["nextSteps"] if s["text"].startswith("Hand-test"))
         self.assertEqual(len(hand["steps"]), 17)
+        # halting: the summary's item (newest) then the in-progress entry marked (HALT); its step is not repeated
+        self.assertEqual([h["id"] for h in d["halting"]], ["02-in-progress.md:worker-secret", "discord-roles"])
+        self.assertEqual(d["haltingCount"], 2)
+        self.assertNotIn("http://127.0.0.1:8766/#entry=discord-roles", [s["link"] for s in d["nextSteps"]])
+
+    def test_halting(self):
+        docs = {"halting": [
+            {"id": "a", "title": "Old", "what": "Do the old thing", "since": "2026-10-24T01:00:00Z"},
+            {"id": "b", "title": "New", "blocks": "Thread B", "threadUrl": "https://claude.ai/b", "date": "2026-10-24T09:00:00Z"},
+            {"title": "No id", "threadUrl": "https://claude.ai/c"}, "just text", 7],
+            "inProgress": [
+                {"id": "a", "title": "Dup of a", "status": "halting", "waitingOn": ["owner"]},
+                {"id": "p", "title": "Prio", "priority": "(HALT)", "waitingOn": ["owner"], "waitingWhy": "Paste the token",
+                 "date": "2026-10-24T05:00:00Z"},
+                {"id": "w", "title": "Waiting", "waitingOn": ["owner", "halting"]},
+                {"id": "n", "title": "Normal", "waitingOn": ["owner"], "waitingWhy": "role names"}]}
+        res = {"docs": env(docs), "oracle": {"ok": False, "error": "SSH key not found", "fetchedAt": "2026-10-24T10:00:00Z",
+                                             "lastOkAt": "2026-10-20T10:00:00Z"}}
+        d = derive.derive(res)
+        h = d["halting"]
+        self.assertEqual([x["id"] for x in h if x["source"] == "docs"], ["b", "p", "a", None, None, "w"])
+        self.assertEqual(h[0]["link"], derive.entry_link("b"))
+        self.assertEqual(h[0]["what"], "New")
+        self.assertEqual(h[1]["what"], "Paste the token")
+        nid = next(x for x in h if x["title"] == "No id")
+        self.assertEqual(nid["link"], "https://claude.ai/c")
+        self.assertEqual(h[-1]["source"], "oracle")  # (board items after the docs ones)
+        self.assertIn("SSH key", h[-1]["what"])
+        self.assertEqual(h[-1]["since"], "2026-10-20T10:00:00Z")
+        self.assertEqual(d["haltingCount"], len(h))
+        # not shown twice: no Needs-you step for a halting entry, no amber card for the Oracle source
+        links = [s["link"] for s in d["nextSteps"]]
+        for i in ("a", "p", "w"):
+            self.assertNotIn(derive.entry_link(i), links)
+        self.assertIn(derive.entry_link("n"), links)
+        self.assertFalse([a for a in d["attention"] if a["source"] == "oracle"])
+        self.assertTrue(next(e for e in d["inProgress"] if e["id"] == "p")["halting"])
+        self.assertFalse(next(e for e in d["inProgress"] if e["id"] == "n")["halting"])
+        # an Oracle error q can't fix by hand is attention, not halting
+        d2 = derive.derive({"oracle": {"ok": False, "error": "internal error (KeyError)"}})
+        self.assertEqual(d2["halting"], [])
+        self.assertTrue([a for a in d2["attention"] if a["source"] == "oracle"])
+        # the updater: repository\ not fast-forwardable, a failed install; the store's dict stays as it was
+        upd = {"enabled": True, "lastRunAt": "2026-10-24T11:00:00Z",
+               "repo": {"ffOk": False, "error": "repository\\ has local changes: not updated (2 commits behind)"},
+               "entries": [{"id": "model", "name": "Model Editor", "state": "failed", "exitCode": 1,
+                            "lastRunAt": "2026-10-24T11:01:00Z"}, {"id": "docs", "state": "ok"}]}
+        d3 = derive.with_updates(d, upd)
+        self.assertEqual(len(d["halting"]), len(h))
+        self.assertEqual([x["source"] for x in d3["halting"][-2:]], ["updates", "updates"])
+        self.assertIn("local changes", d3["halting"][-2]["what"])
+        self.assertIn("exit 1", d3["halting"][-1]["what"])
+        self.assertEqual(d3["haltingCount"], len(h) + 2)
+        self.assertIs(derive.with_updates(d, {"enabled": False, "repo": upd["repo"]}), d)
+        self.assertIs(derive.with_updates(d, None), d)
+        json.dumps(d3)
 
     def test_minimal_and_down(self):
         res = {k: {"ok": False, "error": "x", "data": None} for k in derive.SOURCE_LABELS}
@@ -1014,6 +1070,9 @@ class TestServer(unittest.TestCase):
         for k in ("versions", "pipeline", "inProgress", "nextSteps", "attention", "humanPct"):
             self.assertIn(k, der)
         self.assertEqual(der["versions"]["nextFree"], "1.18.7")
+        self.assertEqual([h["source"] for h in der["halting"]], ["oracle"])  # (SSH key not found: q must fix it)
+        self.assertEqual(der["haltingCount"], 1)
+        self.assertFalse([a for a in der["attention"] if a["source"] == "oracle"])
         self.assertIn("no-store", hdr["Cache-Control"])
         self.assertEqual(self.req("/api/pm?refresh=1")[0], 200)
 

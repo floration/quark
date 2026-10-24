@@ -40,6 +40,10 @@ body.keys .tab .key { display: inline; }
 .tab .caret { color: var(--muted); font-size: 10.5px; min-width: 6px; margin-left: -2px; }
 .tab .caret::before { content: ""; display: inline-block; width: 4px; height: 4px; margin-right: 4px; border: solid currentColor; border-width: 0 1.3px 1.3px 0; transform: rotate(-45deg) translateY(-2px); }
 .tab .caret.open::before { transform: rotate(45deg) translate(-2px, -1px); }
+.tab .badge { min-width: 17px; height: 16px; padding: 0 5px; border-radius: 8px; background: #d92d20; color: #fff; font-size: 10.5px; font-weight: 700;
+  line-height: 16px; text-align: center; font-variant-numeric: tabular-nums; margin-left: -1px; box-shadow: 0 0 0 1px rgba(0,0,0,.35); }
+.tab.halting .name { color: #ffb4a8; }
+.tab.halting.active .name { color: var(--strong); }
 .sep { flex: none; width: 1px; height: 16px; background: var(--line); margin: 0 5px; }
 .group { flex: none; display: flex; align-items: center; gap: 2px; height: 26px; margin-left: 4px; padding-left: 9px; border-left: 1px solid var(--line); }
 .group:not(:last-child) { padding-right: 4px; margin-right: 4px; border-right: 1px solid var(--line); }
