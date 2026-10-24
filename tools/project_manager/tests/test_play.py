@@ -193,6 +193,51 @@ class TestPure(unittest.TestCase):
             self.assertIn(needle, js)
 
 
+class TestTabsUpgrade(unittest.TestCase):
+    """q's tabs.json from before the Play tab: the upgrade puts Play under the Supervisor Board, first among its
+    children (where the defaults have it), never at the end after the editors (bug: it showed at the bar's right end)."""
+
+    def order(self, paths):
+        r = tabs.Tabs(paths).resolved()["tabs"]  # (tree order = the tab bar's order, as main.js treeOrder)
+        return [(t["id"], t["depth"], t["parent"]) for t in r]
+
+    def old_tabs(self):
+        return [dict(t) for t in tabs.DEFAULT_TABS["tabs"] if t["id"] != "play"]
+
+    def test_new_play_goes_under_project(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = config.Paths(PM_ROOT, os.path.join(tmp, "Quark"))
+            seen = sorted(t["id"] for t in self.old_tabs())
+            write(paths.pm("tabs.json"), json.dumps({"tabs": self.old_tabs(), "defaultsSeen": seen}))
+            self.assertEqual(tabs.upgrade(paths), ["play"])
+            o = self.order(paths)
+            self.assertEqual(o[:3], [("project", 0, None), ("play", 1, "project"), ("github", 1, "project")])
+            self.assertEqual([x for x in o if x[1] == 0], [("project", 0, None)])
+            self.assertEqual(tabs.upgrade(paths), [])  # (idempotent)
+
+    def test_play_appended_by_an_older_upgrade_is_moved_once(self):
+        # what q's PC had: play appended at the end (and an operator's keepAlive, here also without its parent)
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = config.Paths(PM_ROOT, os.path.join(tmp, "Quark"))
+            play_tab = dict(next(t for t in tabs.DEFAULT_TABS["tabs"] if t["id"] == "play"), keepAlive=True)
+            play_tab.pop("parent")
+            lst = self.old_tabs() + [play_tab]
+            write(paths.pm("tabs.json"), json.dumps({"tabs": lst, "defaultsSeen": sorted(t["id"] for t in lst)}))
+            self.assertEqual(self.order(paths)[-1], ("play", 0, None))  # (the bug: top level, at the right end)
+            self.assertEqual(tabs.upgrade(paths), ["play"])
+            o = self.order(paths)
+            self.assertEqual(o[1], ("play", 1, "project"))
+            saved = util.read_json_file(paths.pm("tabs.json"))
+            self.assertTrue(saved["tabs"][1]["keepAlive"])  # (q's / the operator's own setting stays)
+            self.assertEqual(saved["defaultsPlaced"], ["play"])
+            # q moves it somewhere else afterwards: left alone
+            t = saved["tabs"].pop(1)
+            saved["tabs"].append(t)
+            write(paths.pm("tabs.json"), json.dumps(saved))
+            self.assertEqual(tabs.upgrade(paths), [])
+            self.assertEqual(self.order(paths)[-1][0], "play")
+
+
 @unittest.skipIf(util.IS_WINDOWS, "the fake quark.exe is a shell script")
 class TestPlay(unittest.TestCase):
     def setUp(self):
@@ -247,8 +292,7 @@ class TestPlay(unittest.TestCase):
         self.assertEqual([x["id"] for x in p2.pending()["pending"]], [s["id"]])
         p2.skip(s["id"])
         self.assertEqual(p2.pending()["pending"], [])
-        with self.assertRaises(play.PlayError):
-            p2.skip(s["id"])
+        self.assertTrue(p2.skip(s["id"])["noop"])  # (skipped twice: a no-op)
 
     def test_injected_spawner_and_adoption(self):
         # any command can stand in for the game (cross-platform): it runs, exits, the session wants a note
@@ -553,6 +597,19 @@ class TestPlayServer(unittest.TestCase):
         self.assertEqual(code, 200, body)
         self.assertIn("12-play-notes.md", json.loads(body)["message"])
         self.assertEqual(json.loads(self.req("/api/play/pending")[1])["pending"], [])
+        # a stale form (the note was saved from another page): a clear 409, never a second note
+        code, body = self.req("/api/play/note", "POST", body={"session": sid, "did": "again"})
+        self.assertEqual((code, json.loads(body)["reason"]), (409, "already-noted"))
+        code, body = self.req("/api/play/skip", "POST", body={"session": sid})
+        self.assertEqual((code, json.loads(body)["reason"]), (409, "already-noted"))
+        self.assertEqual(len(self.app.play.notes()), 1)
+        # skipped elsewhere, then Skip again from a stale form: ok, nothing changes
+        code, body = self.req("/api/play/launch", "POST", body={"build": "testing"})
+        sid2 = json.loads(body)["session"]["id"]
+        self.assertTrue(wait_for(lambda: json.loads(self.req("/api/play/pending")[1])["pending"]))
+        self.assertEqual(self.req("/api/play/skip", "POST", body={"session": sid2})[0], 200)
+        code, body = self.req("/api/play/skip", "POST", body={"session": sid2})
+        self.assertEqual((code, json.loads(body)["session"]["noop"]), (200, True))
         code, body = self.req("/api/play/remove", "POST", body={"tag": "../testing"})
         self.assertEqual(code, 400)
         self.assertEqual(self.req("/api/play/sync", "POST", body={})[0], 200)
