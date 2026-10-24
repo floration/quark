@@ -26,6 +26,9 @@ bool readRelative(const std::string& path, std::vector<uint8_t>& out, From from 
 // sound-levels.txt at the overrides root: the shipped file's text, then yours (your lines add to the shipped ones);
 // empty without either. Each line names a sound / voice override that keeps its own level (audio.cpp).
 std::string soundLevels();
+// The overrides directly in a folder ("voices/male/quips") with one of exts: their names, lower case without the
+// extension, each once (yours and the shipped ones), sorted. find(dir + "/" + name, exts) reads one.
+std::vector<std::string> listFolder(const std::string& dir, std::initializer_list<const char*> exts);
 std::vector<std::string> list();  // every override (lower-case paths, "shipped:" / "user:" prefixed); for logs and tests
 void useUserFolder(bool on);      // off: shipped overrides only (the asset export); also re-reads your folder (tests)
 }

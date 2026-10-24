@@ -42,6 +42,15 @@ enum SoundId {
     SND_COUNT
 };
 
+// Quips (the QUIP key): each voice's own set of lines, never a gameplay call-out, played as ids SND_QUIP + k (k: the
+// quip in the listener's set, Audio::quipFor). Overridable per voice as voices/<voice>/quips/<NAME>.<ext> (docs/ASSETS.md):
+// any override files there form the set (sorted by name), replacing the default one: kDefaultQuips' lines in that voice.
+constexpr int SND_QUIP = SND_COUNT;
+constexpr int kMaxQuips = 64;
+// the default set (no recorded quips yet): the voice's hype lines; never a countdown, objective, round or time call
+constexpr int kDefaultQuips[] = {SND_VOICE_HEADSHOT, SND_VOICE_AIR_ROCKET, SND_VOICE_SPREE, SND_VOICE_RAMPAGE,
+                                 SND_VOICE_UNSTOPPABLE, SND_VOICE_GODLIKE, SND_VOICE_NEW_LEADER, SND_VOICE_HIGH_SCORE};
+
 // The hitsound for one hit you dealt (an EV_HIT: that hit's damage in points, a batch of laser ticks or a whole
 // shotgun blast is one hit): four tiers, each heavier and louder. < 10 light, 10 to < 25 medium, 25 to 50 heavy
 // (a sniper's 50 is heavy), > 50 brutal (51+: a crossbow headshot, a direct rocket plus splash).
@@ -78,7 +87,7 @@ public:
     // pack: which sound pack to voice it with (-1 = yours; other players' sounds use the pack they picked)
     void play(int id, float volume = 1.0f, float pitch = 1.0f, int pack = -1);
     void play3D(int id, const Vec3& pos, float volume = 1.0f, float pitch = 1.0f, int pack = -1);
-    bool hasSound(int id) const { return id >= 0 && id < SND_COUNT && !samples(0, id).empty(); }
+    bool hasSound(int id) const { return id >= 0 && id < SND_QUIP + kMaxQuips && !samples(0, id).empty(); }
     // (game thread: play3D's copy, plus one handed to the mixer, which re-pans every playing 3D sound with it each period)
     void setListener(const Vec3& pos, float yaw);
     void setMasterVolume(float v) { master_ = v; }
@@ -86,8 +95,19 @@ public:
     // steps...) and the announcer's lines. Applied by the mixer each period, to sounds already playing too.
     void setEffectsVolume(float v) { fxVolume_ = v; }
     void setAnnouncerVolume(float v) { annVolume_ = v; }
+    // QUIPS / QUIPS VOLUME (Settings > SOUND): quips are their own category, apart from the announcer's. Off: a quip
+    // doesn't start, and one playing goes silent from the next period.
+    void setQuips(bool on) { quipsOn_ = on; }
+    void setQuipVolume(float v) { quipVolume_ = v; }
     // the gain the mixer gives a sound of this id (its category's volume; the master comes after the mix)
-    float categoryGain(int id) const { return id < SND_VOICE_THREE ? fxVolume_.load() : annVolume_.load(); }
+    float categoryGain(int id) const {
+        return id < SND_VOICE_THREE ? fxVolume_.load() : id < SND_QUIP ? annVolume_.load() : quipsOn_ ? quipVolume_.load() : 0.0f;
+    }
+    // the current voice's quips (game thread): how many, each one's name (as its file: "HEADSHOT"), and the one a
+    // sender's pick (EV_QUIP's byte, the same for every listener) means here: pick modulo this set's size, -1 for none
+    int quipCount() const { return announcerLines_ ? (int)announcerLines_->quip.size() : 0; }
+    std::string quipName(int k) const { return k >= 0 && k < quipCount() ? announcerLines_->quipName[k] : std::string(); }
+    int quipFor(int pick) const { int n = quipCount(); return n > 0 ? (pick < 0 ? -pick : pick) % n : -1; }
     // Settings > DEVICES. The output: "" = the system default; else a device id from listDevices(false). Reopens the
     // output when it changes (the same path a device change or EXCLUSIVE AUDIO takes: the same buffers, no added
     // latency). A saved device that isn't there opens the default instead and outputMissing() says so.
@@ -120,6 +140,7 @@ public:
     const std::vector<float>& samples(int pack, int id) const { // tests / tools (the game thread: announcerLines_' only writer)
         static const std::vector<float> none;
         if (id < SND_VOICE_THREE) return sounds_[pack][id];
+        if (id >= SND_QUIP) return announcerLines_ && id - SND_QUIP < (int)announcerLines_->quip.size() ? announcerLines_->quip[id - SND_QUIP] : none;
         return announcerLines_ ? announcerLines_->line[id - SND_VOICE_THREE] : none;
     }
     // names as files use them (mods/, the asset export, overrides): "ROCKET" / "GO", "heavy_metal", "old_man"
@@ -144,11 +165,17 @@ private:
     void loadModSounds();     // players' own sounds: <game folder>/mods/sounds/<kit or all>/<SOUND>.wav
     void loadOverrideSounds(); // the owner's: sounds/<kit>/<SOUND>.* overrides (docs/ASSETS.md)
     void loadOverrideVoice(int set, std::vector<float>* lines, int count); // voices/<voice>/<LINE>.*
+    struct AnnouncerLines;
+    void loadQuips(int set, AnnouncerLines& a);   // the voice's quip set: its voices/<voice>/quips/ overrides, else the defaults
     void loadAnnouncer(int set);
     int announcer_ = 0;
     // the announcer's lines, the same in every pack: built off the mixer's lock and handed over as one pointer (a
     // voice change used to copy every line into all 5 packs while holding the lock the audio thread mixes under)
-    struct AnnouncerLines { std::vector<float> line[SND_COUNT - SND_VOICE_THREE]; };
+    struct AnnouncerLines {
+        std::vector<float> line[SND_COUNT - SND_VOICE_THREE];
+        std::vector<std::vector<float>> quip;   // (SND_QUIP + k; at most kMaxQuips)
+        std::vector<std::string> quipName;
+    };
     std::shared_ptr<const AnnouncerLines> announcerLines_;   // (the game thread's: samples())
     // (under mu_) the handover: nextLines_ for the mixer to take (linesNew_), retiredLines_ the ones it let go of, freed
     // by the game thread (a voice's lines are megabytes: never freed on the audio thread, never while it reads them)
@@ -175,7 +202,8 @@ private:
     Vec3 mixListener_;        // (the mixer's)
     float mixListenerYaw_ = 0;
     std::atomic<float> master_{0.8f};
-    std::atomic<float> fxVolume_{1.0f}, annVolume_{1.0f};
+    std::atomic<float> fxVolume_{1.0f}, annVolume_{1.0f}, quipVolume_{1.0f};
+    std::atomic<bool> quipsOn_{true};
     std::atomic<bool> running_{false}, quit_{false};
     std::atomic<bool> exclusive_{false}, reopen_{false};
     // the chosen output (under devMu_: the game thread sets it, the backend reads it when it opens a device)

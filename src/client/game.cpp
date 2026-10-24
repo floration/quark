@@ -132,6 +132,8 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     audio_.setMasterVolume(cfg_.volume);
     audio_.setEffectsVolume(cfg_.volumeEffects);
     audio_.setAnnouncerVolume(cfg_.volumeAnnouncer);
+    audio_.setQuips(cfg_.quips);
+    audio_.setQuipVolume(cfg_.volumeQuips);
 
     botMapIdx_ = bestMapFor(cfg_.botMode);
     if (opts_.timeTrial) startTimeTrial();
@@ -1088,11 +1090,12 @@ void Game::handleEvents() {
                 notify("RANKED MATCH OVER - REPORTING THE RESULT", 4);
                 break;
             }
-            case EV_QUIP: {   // someone's quip: a voice line from the pack (only lines that are recorded), from where they are
-                std::vector<int> lines;
-                for (int id = SND_VOICE_THREE; id < SND_COUNT; id++) if (audio_.hasSound(id)) lines.push_back(id);
-                if (lines.empty() || e.a >= kMaxPlayers) break;
-                int line = lines[e.b % lines.size()];
+            case EV_QUIP: {   // someone's quip, from where they are: one of your voice's quips (never a call-out), QUIPS on
+                // (e.b: the sender's pick, the same byte for everyone; each listener plays pick modulo their voice's set,
+                // so everyone with the same voice and quip files hears the same quip)
+                const int q = audio_.quipFor(e.b);
+                if (!cfg_.quips || q < 0 || e.a >= kMaxPlayers) break;
+                const int line = SND_QUIP + q;
                 if (e.a == net_.clientId()) audio_.play(line, 0.9f);
                 else if (const PlayerSnap* qp = net_.findPlayer(e.a); qp && !qp->hidden) audio_.play3D(line, qp->pos + Vec3(0, 1.6f, 0), 1.0f);
                 break;
@@ -2984,6 +2987,8 @@ void Game::runConsole(const std::string& line) {
     audio_.setMasterVolume(cfg_.volume);   // (the ones that need applying; the rest are read every frame)
     audio_.setEffectsVolume(cfg_.volumeEffects);
     audio_.setAnnouncerVolume(cfg_.volumeAnnouncer);
+    audio_.setQuips(cfg_.quips);
+    audio_.setQuipVolume(cfg_.volumeQuips);
     audio_.setOutputDevice(cfg_.audioOutput);   // (nothing unless it changed)
     if (k == "voice") audio_.setAnnouncer(cfg_.announcerVoice);   // (it resamples every line: only when it's the one set)
     if ((k == "monitor" || k == "fullscreen_hz") && cfg_.displayMode != 0) applyDisplayMode();
@@ -4352,7 +4357,16 @@ void Game::drawVideoSettings(const SetLayout& L) {
     if (ui_.slider(g.x(), g.top(), w, h, "ANNOUNCER VOLUME", cfg_.volumeAnnouncer, 0, 1, "%.2f", UiExp::cfg("volume_announcer"), defaultSettings().volumeAnnouncer))
         audio_.setAnnouncerVolume(cfg_.volumeAnnouncer = clampf(cfg_.volumeAnnouncer, 0, 1));
     g.next();
-    ui_.toggle(g.x(), g.top(), w, h, "HITSOUND", cfg_.hitsounds, UiExp::cfg("hitsounds"));
+    // quips (the QUIP key): their own volume and on / off, apart from the announcer's (QUIPS shares HITSOUND's row:
+    // a row more would not fit above DEVICES with Windows' EXCLUSIVE AUDIO)
+    if (ui_.slider(g.x(), g.top(), w, h, "QUIPS VOLUME", cfg_.volumeQuips, 0, 1, "%.2f", UiExp::cfg("volume_quips"), defaultSettings().volumeQuips))
+        audio_.setQuipVolume(cfg_.volumeQuips = clampf(cfg_.volumeQuips, 0, 1));
+    g.next();
+    ui_.toggle(g.x(), g.top(), hw, h, "HITSOUND", cfg_.hitsounds, UiExp::cfg("hitsounds"));
+    if (ui_.toggle(L.X(kColR + kColW - kHalfW), g.top(), hw, h, "QUIPS", cfg_.quips, UiExp::cfg("quips"))) {
+        audio_.setQuips(cfg_.quips);
+        if (cfg_.quips && audio_.quipCount() > 0) audio_.play(SND_QUIP, 1.0f);   // (a taste of them)
+    }
     g.next();
     {
         static const std::vector<std::string> sn = {"SOUND PACK: DEFAULT", "SOUND PACK: HEAVY METAL", "SOUND PACK: MAGICAL", "SOUND PACK: RETRO", "SOUND PACK: MOUTH"};

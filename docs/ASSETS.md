@@ -21,6 +21,7 @@ python3 tools/studio/build.py build/assets_export     # -> build/studio/ (+ mani
 |---|---|---|
 | Sounds | 33 sounds x 5 kits = 165 WAV (48 kHz mono) | `sounds/<kit>/<SOUND>.wav`, kit = `default` `heavy_metal` `magical` `retro` `mouth` |
 | Voices | 27 announcer lines x 7 voices = 189 WAV | `voices/<voice>/<LINE>.wav`, voice = `male` `female` `british` `old_man` `e_girl` `india` `spy` |
+| Quips | each voice's quip set (today the default: 8 x 7 = 56 WAV) | `voices/<voice>/quips/<NAME>.wav` |
 | Models | 5 players, 11 weapon viewmodels, 7 projectiles, the crown, 6 props = 30 glTF | `models/player/<NAME>.gltf`, `models/weapon/<NAME>.gltf`, `models/projectile/<NAME>.gltf`, `models/crown/CROWN.gltf`, `models/prop/<NAME>.gltf` |
 | Maps | every shipped map (.qmap) | `maps/<name>.qmap` |
 | Fonts | the default UI font (Rubik), WORK SANS and the game-font look-alikes of Settings > FONT | `fonts/Rubik.ttf`, `fonts/WorkSans.ttf`, `fonts/<file in assets/fonts>` (`BebasNeue-Regular.ttf`, `LibreQuake-CONCHARS.png`, ...) |
@@ -31,7 +32,22 @@ Sound names are the SND_* names (`HIT`, `ROCKET`, `GRAPPLE_FIRE` ... `assets/sfx
 plays; the hitsound is four: `HIT` under 10 damage, `HIT_MED` 10 to 24, `HIT_HEAVY` 25 to 50, `HIT_BRUTAL` over 50, each
 replaced at the loudness of its tier, as heard, so the four stay in order); voice lines are `THREE` `TWO` `ONE` `GO` `BOMB_PLANTED` ... `ROUND_OVER` (src/client/audio.cpp). A line a
 voice has no recording of would be exported as a tenth of a second of silence (it is silent in the game), so it can still
-be added; today every voice has all 27. The export is what the game uses now: the built-in assets with the shipped overrides applied, never this
+be added; today every voice has all 27.
+
+**Quips** (the QUIP key, G: a line a player says out loud where they stand) are their own sounds, never a gameplay
+call-out, with their own setting (Settings > VIDEO + AUDIO > SOUND: QUIPS on / off and QUIPS VOLUME, apart from the
+announcer's). Each voice has its own set. Until recorded quips exist, a voice's default set is its own hype lines
+(`AIR_ROCKET` `GODLIKE` `HEADSHOT` `HIGH_SCORE` `NEW_LEADER` `RAMPAGE` `SPREE` `UNSTOPPABLE`, as that voice says them,
+its line overrides included), exported as `voices/<voice>/quips/<NAME>.wav`. **Any** quip files for a voice
+(`voices/<voice>/quips/<any name>.<wav|ogg|flac|mp3>`, shipped and yours together, yours winning a name both have) are
+that voice's whole set, sorted by name, replacing the default set (not just the quip of the same name): to keep some
+default quips, ship those files too (the export has them). At most 64 per voice; files in sub-folders aren't quips.
+Each is matched to the loudness of the default quip of its name (any other name: the voice's HEADSHOT line), unless
+`sound-levels.txt` lists it (`voices/male/quips/LAUGH`), cut at 5 s. Which quip plays: the server picks a number for the
+quip, the same for everyone, and each listener plays number modulo their own voice's set (players hear quips in their
+own VOICE, like the announcer), so everyone with the same voice and quip files hears the same quip.
+
+The export is what the game uses now: the built-in assets with the shipped overrides applied, never this
 computer's own overrides folder.
 
 Models are the game's box models (src/client/models.cpp, the same lists drawWorld draws: every model in the game,
