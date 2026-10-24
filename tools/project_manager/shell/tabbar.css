@@ -16,7 +16,9 @@ html, body {
   margin: 0; height: 34px; overflow: hidden; background: var(--bg); color: var(--text);
   font: 12.5px/1 system-ui, -apple-system, "Segoe UI", sans-serif; user-select: none; cursor: default;
 }
-#bar { display: flex; align-items: center; height: 34px; padding: 0 8px 0 7px; gap: 6px; border-bottom: 1px solid var(--line); }
+#bar { display: flex; align-items: center; height: 34px; padding: 0 8px 0 7px; gap: 6px; border-bottom: 1px solid var(--line); -webkit-app-region: drag; }
+/* the bar moves the window (there is no title bar); everything clickable in it does not */
+.tab, .icon, #update, #clock, #err { -webkit-app-region: no-drag; }
 #logo { flex: none; display: flex; align-items: center; padding-right: 4px; }
 #tabs { flex: 1 1 auto; display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; height: 100%; }
 #tabs::-webkit-scrollbar { display: none; }
