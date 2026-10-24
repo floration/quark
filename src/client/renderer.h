@@ -81,6 +81,13 @@ public:
 
     // 2D (pixels, origin top-left)
     void rect(float x, float y, float w, float h, const Color& c);
+    // a rect whose corners have their own colours (blended across it): colour pickers' hue and value ramps
+    void rectGradient(float x, float y, float w, float h, const Color& tl, const Color& tr, const Color& br, const Color& bl);
+    // The QUARK title logo (tools/make_logo.py, logo_data.h): centred on cx, its line top at y (as text() takes it), at
+    // text scale ts (fractional is fine: it's a mipmapped texture); the letters after the Q in `tint`, whose alpha
+    // fades all of it. Two quads in the 2D batch, sampled from the logo texture (no extra pass or draw call).
+    void logo(float cx, float y, float ts, const Color& tint);
+    float logoWidth(float ts) const;   // its advance at ts (what logo() centres)
     void text(float x, float y, float scale, const std::string& s, const Color& c);
     // proportional UI font (Rubik Bold, or the one picked in Settings > FONT): widths come from per-glyph advances
     // and kerning
@@ -164,6 +171,8 @@ private:
     int shadowRes_ = 2048;
     bool shadowsOn_ = true;
     unsigned fontTex_ = 0;
+    unsigned logoTex_ = 0;     // (logo_data.h, RGBA, mipmapped; bound to unit 1 by a flush that draws it)
+    bool logoDrawn_ = false;   // (this frame's 2D batch has the logo in it)
     float minScale_ = kMinTextScale;   // (the UI font's smallest scale: setUiFont)
     size_t dynCap_ = 0, flatCap_ = 0, uiCap_ = 0;
     size_t uiUploaded_ = 0;   // (prepare2D: this many 2D vertices are in uiVbo_ already; 0: none)

@@ -4099,7 +4099,8 @@ void Game::drawMenu() {
     float bw = 340 * s, bh = 40 * s, gap = 10 * s;
     float x = cx - bw * 0.5f;
     float y = H * 0.12f;
-    ui_.labelCentered(cx, y, "QUARK", rgba(cfg_.colorFriendly), 4.0f);
+    // the title, drawn like the app icon (a baked texture: Renderer::logo); not over the settings shell (it covered it)
+    if (screen_ != Screen::Settings) r_.logo(cx, y, 8 * s, rgba(cfg_.colorFriendly));
     r_.text(8 * s, H - 20 * s, std::max(1.0f, std::round(s)), std::string("V") + QUARK_VERSION, kGrey);
     y += 80 * s;
 

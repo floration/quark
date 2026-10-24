@@ -6,6 +6,8 @@
 #include <cstring>
 #include <fstream>
 #include "font_ui.h"
+#include "logo_data.h"
+#include "overrides.h"
 #include "fontatlas.h"
 #include <memory>
 
@@ -239,9 +241,11 @@ layout(location=2) in vec4 aColor;
 layout(location=3) in vec2 aText; // text scale: x integer part, y 1/256ths (0 = plain rect)
 uniform vec2 uScreen;
 uniform vec2 uFontSize;
+uniform vec2 uLogoSize;
 out vec2 vUV; out vec4 vColor; flat out float vScale;
 void main() {
-    vUV = (aUV / 32.0 - 1.0) / uFontSize; vColor = aColor; vScale = aText.x + aText.y / 256.0;
+    vScale = aText.x + aText.y / 256.0;   // (255 + 255/256: a logo texel, Renderer::logo)
+    vUV = (aUV / 32.0 - 1.0) / (vScale > 255.5 ? uLogoSize : uFontSize); vColor = aColor;
     gl_Position = vec4(aPos.x / uScreen.x * 2.0 - 1.0, 1.0 - aPos.y / uScreen.y * 2.0, 0.0, 1.0);
 })";
 // Text: one distance-field sample per pixel. The glyph edge (0.5) is smoothed over one screen pixel; a band
@@ -249,9 +253,11 @@ void main() {
 const char* kUiFS = R"(#version 330 core
 in vec2 vUV; in vec4 vColor; flat in float vScale;
 uniform sampler2D uFont;
+uniform sampler2D uLogo;
 uniform float uK; // distance-field units per screen pixel at scale 1 (texels per font unit / (2 * spread))
 out vec4 fragColor;
 void main() {
+    if (vScale > 255.5) { fragColor = texture(uLogo, vUV) * vColor; return; }   // the title logo (straight alpha)
     float d = texture(uFont, vUV).r;
     if (vScale <= 0.0) { fragColor = vec4(vColor.rgb, vColor.a * d); return; }
     float px = uK / vScale;                       // one screen pixel in distance-field units
@@ -393,6 +399,22 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    {   // the title logo: baked at its 2160p size, mipmapped so it's crisp smaller (tools/make_logo.py)
+        int lw = 0, lh = 0;
+        std::vector<uint8_t> px;
+        if (decodeImage(kLogoPng, sizeof kLogoPng, lw, lh, px)) {
+            glGenTextures(1, &logoTex_);
+            glBindTexture(GL_TEXTURE_2D, logoTex_);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, lw, lh, 0, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+            glGenerateMipmap(GL_TEXTURE_2D);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        }
+    }
 
     // Shadow map (depth only)
     shadowRes_ = shadowRes < 256 ? 256 : shadowRes;
@@ -445,6 +467,8 @@ bool Renderer::init(int shadowRes, std::string* err) {
     glUniform1i(U(uiProg_, "uFont"), 0);
     glUniform2f(U(uiProg_, "uFontSize"), (float)kUiTexW, (float)kUiTexH);
     glUniform1f(U(uiProg_, "uK"), kUiTpu / (2.0f * kUiSpread));
+    glUniform1i(U(uiProg_, "uLogo"), 1);
+    glUniform2f(U(uiProg_, "uLogoSize"), (float)kLogoW, (float)(kLogoBY + kLogoH));
     if (edgeProg_) {
         glUseProgram(edgeProg_);
         uEdgeRcp_ = U(edgeProg_, "uRcp");
@@ -1083,6 +1107,33 @@ void Renderer::rect(float x, float y, float w, float h, const Color& c) {
     uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(c), 0, 0);
 }
 
+void Renderer::rectGradient(float x, float y, float w, float h, const Color& tl, const Color& tr, const Color& br, const Color& bl) {
+    constexpr uint16_t u = (uint16_t)((kUiCell * 0.5f + 1) * 32.0f), v = (uint16_t)((kUiCell * 6.5f + 1) * 32.0f);
+    const size_t n = ui_.size();
+    uiQuad(ui_, x, y, x + w, y + h, u, v, u, v, rgba8(tl), 0, 0);
+    // corners 0 tl, 1 tr, 2 br, 5 bl (3 = 0, 4 = 2): their own colours
+    auto col = [&](Vertex2D& d, const Color& c) { d.color[0] = u8c(c.r); d.color[1] = u8c(c.g); d.color[2] = u8c(c.b); d.color[3] = u8c(c.a); };
+    Vertex2D* d = ui_.data() + n;
+    col(d[1], tr); col(d[2], br); col(d[4], br); col(d[5], bl);
+}
+
+// the logo's size: the em of the game's text at ts (7.5 units) times Rubik's cap height matched to the old UI font's
+// (0.66 / 0.70), as it was designed (ui-redesign-spec, "Title logo"); its baseline 5.7 units below the line top
+static float logoScale(float ts) { return 7.5f * ts * (0.66f / 0.70f) / kLogoEm; }
+float Renderer::logoWidth(float ts) const { return kLogoAdv * logoScale(ts); }
+
+void Renderer::logo(float cx, float y, float ts, const Color& tint) {
+    if (!logoTex_ || ts <= 0) return;
+    const float k = logoScale(ts);
+    // whole pixels: the pen origin on the pixel grid, the quad its exact size (no shimmer as it's scaled)
+    const float x0 = std::round(cx - kLogoAdv * k * 0.5f - kLogoOX * k), y0 = std::round(y + 5.7f * ts - kLogoOY * k);
+    const float x1 = x0 + kLogoW * k, y1 = y0 + kLogoH * k;
+    const Color a = {1, 1, 1, tint.a};
+    uiQuad(ui_, x0, y0, x1, y1, u16uv(0), u16uv(0), u16uv(kLogoW), u16uv(kLogoH), rgba8(a), 255, 255);                                   // outline + the split Q
+    uiQuad(ui_, x0, y0, x1, y1, u16uv(0), u16uv(kLogoBY), u16uv(kLogoW), u16uv(kLogoBY + kLogoH), rgba8(tint), 255, 255);           // the rest, tinted
+    logoDrawn_ = true;
+}
+
 static inline float glyphAdv(int prev, int g) { return g_uiAdv[prev] + g_uiKern[prev * 95 + g] * (1.0f / 16.0f); }
 
 void Renderer::text(float x, float y, float s, const std::string& str, const Color& c) {
@@ -1193,6 +1244,11 @@ void Renderer::flush2D() {
     if ((float)width_ != uiScreen_[0] || (float)height_ != uiScreen_[1]) {   // (the rest are fixed: init)
         uiScreen_[0] = (float)width_; uiScreen_[1] = (float)height_;
         glUniform2f(uUiScreen_, uiScreen_[0], uiScreen_[1]);
+    }
+    if (logoDrawn_) {   // (only a frame with the title binds its texture; uLogo / uLogoSize are fixed: init)
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, logoTex_);
+        logoDrawn_ = false;
     }
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, fontTex_);
