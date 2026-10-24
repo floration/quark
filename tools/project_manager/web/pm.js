@@ -16,6 +16,7 @@
   const POLL_MS = 15000;
   const ORACLE_MIN_MS = 120000;
   const REFRESH_MIN_MS = 10000;
+  const UPDATE_MIN_MS = 60000;
   const FIXTURE_URL = 'static/fixtures/pm-sample.json';
   const DEFAULT_TAB_PORTS = { 8765: 'dashboard', 8766: 'docs', 8767: 'github', 8768: 'project' };
   const TAB_NAMES = { dashboard: 'Editor Manager', docs: 'Claude Manager', github: 'GitHub Manager', project: 'Supervisor Board' };
@@ -54,7 +55,7 @@
   const state = {
     pm: null, history: null, tabs: null,
     genMs: 0, fetchedPerf: 0, lastOkMs: 0, error: null, historyAt: 0,
-    sig: '', timer: 0, lastPollPerf: -1e9, refreshAt: -1e9, oracleClickAt: -1e9,
+    sig: '', timer: 0, lastPollPerf: -1e9, refreshAt: -1e9, oracleClickAt: -1e9, updateClickAt: -1e15, updateMsg: '',
     showAllHistory: false, openDetails: new Set(), toast: '',
   };
   const charts = {};
@@ -706,6 +707,65 @@
     return html + '<div class="locals">' + cards.join('') + '</div>';
   }
 
+  // ---------------------------------------------------------------- 7b. tools & updates (pm/updater.py, installs.json)
+  function updatesInfo() { return obj(state.pm && state.pm.updates); }
+  const TOOL_STATES = {
+    ok: ['good', 'up to date'], updating: ['run', 'updating'], failed: ['crit', 'failed'], pending: ['idle', 'pending'],
+    disabled: ['idle', 'disabled'], waiting: ['warn', 'waiting (not merged yet)'],
+  };
+  function updateWaitMs() {
+    // what the server said (nextAllowedIn at generatedAt), or the last click here
+    const u = updatesInfo();
+    const srv = num(u.nextAllowedIn) != null ? num(u.nextAllowedIn) * 1000 - (nowMs() - state.genMs) : 0;
+    return Math.max(srv, UPDATE_MIN_MS - (nowMs() - state.updateClickAt));
+  }
+  function tmeta(e, ports) {
+    // installed stamp (-> the new one when it differs), and the servers restarted after an install
+    const parts = [];
+    const inst = has(e.installedStamp) ? '<span class="mono" title="installed from these sources">' + esc(short(e.installedStamp)) + '</span>' : '';
+    const cur = has(e.currentStamp) && e.currentStamp !== e.installedStamp ? '<span class="mono" title="repository\\ now">' + esc(short(e.currentStamp)) + '</span>' : '';
+    if (inst || cur) parts.push(inst && cur ? inst + ' &rarr; ' + cur : inst || 'new: ' + cur);
+    if (ports.length) parts.push('restarts ' + ports.map(p => esc(p)).join(', '));
+    return parts.length ? '<div class="t-meta small muted">' + parts.join(' &middot; ') + '</div>' : '';
+  }
+  function renderTools() {
+    const u = updatesInfo();
+    const last = parseTime(u.lastRunAt);
+    const meta = '<span class="src" title="Checked when the app opens and on Update now (installs.json in Quark\\repository)">' +
+      (u.running === true ? pill('run', 'checking now') : 'checked ' + (last != null ? ageSpan(last) : '<span class="muted">not yet</span>')) +
+      (u.enabled === false ? '' : ' <button type="button" class="btn small" id="tools-update" title="Pull testing into Quark\\repository and install what changed (at most once a minute)">Update now</button>') + '</span>';
+    let html = head('h-tools', 'Tools & updates', '', meta);
+    if (!state.pm) return html + '<p class="empty">Loading&hellip;</p>';
+    if (!isObj(state.pm.updates)) return html + '<p class="empty">This PM server does not report updates (an older version: reopen Quark Project).</p>';
+    if (u.enabled === false) html += '<p class="empty">Automatic installs are off (the PM server was started with --no-update).</p>';
+    if (u.selfUpdated === true) html += '<div class="tools-banner">' + pill('ahead', 'Quark Project updated') + ' <span>Reopen the app to finish (the Restart button in the tab bar does it).</span></div>';
+    if (state.updateMsg) html += '<p class="small muted">' + esc(state.updateMsg) + '</p>';
+    const r = obj(u.repo);
+    if (Object.keys(r).length) {
+      const bh = num(r.behind);
+      const st = has(r.error) ? pill(r.ffOk === true ? 'warn' : 'crit', r.ffOk === true ? 'note' : 'not updated') :
+        r.ffOk === true ? pill('good', num(r.pulled) ? 'pulled ' + plural(num(r.pulled), 'commit') : 'up to date') : bh ? pill('warn', bh + ' behind') : pill('idle', 'unknown');
+      html += '<div class="tools-repo"><span class="mono">repository\\</span> <span class="mono">' + esc(r.branch || '?') + '</span> ' +
+        (has(r.head) ? '<span class="mono muted">' + esc(short(r.head)) + '</span> ' : '') + st +
+        (has(r.error) ? '<div class="err small">' + esc(r.error) + '</div>' : '') + '</div>';
+    }
+    const ents = arr(u.entries).filter(isObj);
+    if (!ents.length) return html + (u.enabled === false ? '' : '<p class="empty">' + (u.running === true || !last ? 'Checking the tools&hellip;' : 'No tools in installs.json.') + '</p>');
+    html += '<ul class="tools">' + ents.map(e => {
+      const s = TOOL_STATES[e.state] || ['idle', typeof e.state === 'string' && e.state ? e.state : 'unknown'];
+      const text = e.state === 'failed' && num(e.exitCode) != null ? 'failed (exit ' + num(e.exitCode) + ')' : s[1];
+      const ran = parseTime(e.lastRunAt);
+      const tailLines = arr(e.logTail).map(String);
+      const ports = arr(Array.isArray(e.restartsPort) ? e.restartsPort : [e.restartsPort]).filter(p => num(p) != null);
+      return '<li><div class="t-main"><span class="t-name">' + esc(e.name || e.id || '?') + '</span>' + pill(s[0], text, has(e.note) ? String(e.note) : '') +
+        '<span class="t-when small muted">' + (ran != null ? 'last run ' + whenSpan(ran) : 'never run here') + '</span></div>' +
+        (has(e.note) ? '<div class="small muted">' + esc(e.note) + '</div>' : '') +
+        tmeta(e, ports) +
+        (tailLines.length ? '<details data-key="tool-' + esc(e.id) + '"><summary>log</summary><pre>' + tailLines.map(esc).join('\n') + '</pre></details>' : '') + '</li>';
+    }).join('') + '</ul>';
+    return html;
+  }
+
   // ---------------------------------------------------------------- 8. updates
   function renderChangelogs() {
     let html = head('h-changelogs', 'Changelogs', '', srcMeta(['repo']));
@@ -868,7 +928,7 @@
   // ---------------------------------------------------------------- render
   const SECTIONS = [
     ['sec-pipeline', renderPipeline], ['sec-needs', renderNeeds], ['sec-progress', renderProgress], ['sec-ci', renderCi],
-    ['sec-assets', renderAssets], ['sec-servers', renderServers], ['sec-local', renderLocal],
+    ['sec-assets', renderAssets], ['sec-servers', renderServers], ['sec-local', renderLocal], ['sec-tools', renderTools],
     ['sec-changelogs', renderChangelogs], ['sec-history', renderHistory], ['sec-tabs', renderTabs],
   ];
   const DRAW = { buckets: drawBuckets, stack: drawStack, mem: drawMem, timeline: drawTimeline };
@@ -921,6 +981,13 @@
       const wait = ORACLE_MIN_MS - (nowMs() - last);
       b.disabled = wait > 0;
       b.textContent = wait > 0 ? 'Check in ' + fmtDur(wait) : 'Check now';
+    }
+    const ub = document.getElementById('tools-update');
+    if (ub) {
+      const u = updatesInfo();
+      const w = updateWaitMs();
+      ub.disabled = u.running === true || w > 0;
+      ub.textContent = u.running === true ? 'Updating…' : w > 0 ? 'Update in ' + fmtDur(w) : 'Update now';
     }
     const r = document.getElementById('refresh-btn');
     if (r) { const w2 = REFRESH_MIN_MS - (performance.now() - state.refreshAt); r.disabled = w2 > 0; }
@@ -995,6 +1062,18 @@
     if (op) { const d = document.getElementById(op.dataset.open); if (d) { e.preventDefault(); d.open = true; d.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } return; }
     if (t.closest('#history-more')) { state.showAllHistory = !state.showAllHistory; const el = document.getElementById('sec-history'); el.innerHTML = renderHistory(); drawCharts(); tick(); return; }
     if (t.closest('#refresh-btn')) { state.refreshAt = performance.now(); tick(); poll(true); return; }
+    if (t.closest('#tools-update')) {
+      state.updateClickAt = nowMs(); state.updateMsg = ''; tick();
+      if (FIXTURE) return;
+      fetch('/api/updates/run', { method: 'POST', cache: 'no-store' })
+        .then(r => r.json())
+        .then(j => {
+          const o = obj(j);
+          if (o.accepted !== true) state.updateMsg = o.enabled === false ? 'Automatic installs are off on this server.' : 'Not started: an update ran less than a minute ago or is running.';
+          setTimeout(() => poll(false), 2000);
+        }, () => { state.updateMsg = 'The PM server did not answer.'; });
+      return;
+    }
     if (t.closest('#oracle-check')) {
       state.oracleClickAt = nowMs(); tick();
       if (FIXTURE) return;

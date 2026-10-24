@@ -330,6 +330,20 @@ table.t .z { color: var(--ink-3); }
 .loc details summary { cursor: pointer; }
 .loc pre { margin: 4px 0 0; font-family: var(--mono); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2); }
 
+/* tools & updates */
+.tools-banner { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 10px; margin-bottom: 10px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--s1) 10%, var(--surface)); font-size: 13px; }
+.tools-repo { font-size: 13px; margin-bottom: 10px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; overflow-wrap: anywhere; }
+.tools-repo .err { flex-basis: 100%; color: var(--ink-2); }
+.tools { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+.tools li { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; background: var(--surface-2); min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.tools .t-main { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.tools .t-name { font-weight: 650; margin-right: auto; overflow-wrap: anywhere; }
+.tools .t-when { flex-basis: 100%; }
+.tools .t-meta { overflow-wrap: anywhere; }
+.tools details { font-size: 12px; color: var(--ink-3); }
+.tools details summary { cursor: pointer; }
+.tools pre { margin: 4px 0 0; font-family: var(--mono); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2); max-height: 220px; overflow: auto; }
+
 /* ---------- 8. updates ---------- */
 .cl { padding: 10px 0; border-bottom: 1px solid var(--border); }
 .cl:first-of-type { padding-top: 0; }
