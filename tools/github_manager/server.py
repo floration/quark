@@ -51,6 +51,7 @@ MAX_TESTING_COMMITS = 200
 MAX_LOCAL_COMMITS = 100
 MAX_DIRTY_FILES = 50
 NEW_SLACK_SEC = 600      # an item first seen now is "new" (gets an event) if it changed after the last poll - this
+NOT_READ_SECTIONS = ("pulls", "releases", "runs")  # GitHub-only parts of the state (state.notRead: not read yet)
 
 ACTIVE_STATUSES = frozenset(("queued", "in_progress", "waiting", "pending", "requested"))
 FAILED_CONCLUSIONS = frozenset(("failure", "timed_out", "startup_failure"))
@@ -485,6 +486,13 @@ class Mirror:
             self.memo[key] = (int(a), int(b))
         return self.memo[key]
 
+    def related(self, a, b):
+        """-> True when a and b share history (an orphan branch such as gh-pages doesn't share any with testing)."""
+        key = ("related", a, b)
+        if key not in self.memo:
+            self.memo[key] = self.git.run(["--git-dir", self.path, "merge-base", a, b])[0] == 0
+        return self.memo[key]
+
     def count(self, *revs):
         key = ("count",) + revs
         if key not in self.memo:
@@ -838,10 +846,20 @@ def diff_events(prev, cur, describe=None):
     # branches
     pb, cb = prev.get("branches"), cur.get("branches")
     if pb is not None and cb is not None:
+        # a branch gone and a new one at the same commit in the same poll is a rename (one event, not two)
+        gone = dict((pb[n], n) for n in sorted(set(pb) - set(cb), reverse=True) if pb[n])
+        renamed = {}
+        for name in sorted(set(cb) - set(pb)):
+            old_name = gone.pop(cb[name], None)
+            if old_name:
+                renamed[old_name] = name
+                out.append(ev("branch.renamed:%s:%s:%s" % (old_name, name, cb[name]), at, "branch.renamed",
+                              {"branch": name}, "Branch %s renamed to %s (at %s)" % (old_name, name, short(cb[name])),
+                              {"from": old_name, "to": name, "sha": cb[name]}))
         for name in sorted(set(pb) | set(cb)):
             old, new = pb.get(name), cb.get(name)
             ref = {"branch": name}
-            if old == new:
+            if old == new or name in renamed or name in renamed.values():
                 continue
             if old is None:
                 out.append(ev("branch.created:%s:%s" % (name, new), at, "branch.created", ref,
@@ -2029,12 +2047,36 @@ class Structure(_Store):
         self._emit([e])
         return out
 
+    def rename(self, old, new):
+        """A branch renamed on GitHub: its role and description move to the new name. -> True when one moved."""
+        with self.lock:
+            e = self.branches.get(old)
+            if not e or new in self.branches:
+                return False
+            at = self.now()
+            prev = (self.branches, self.rev, self.updated_at)
+            self.branches = dict((new if k == old else k, v) for k, v in self.branches.items())
+            self.rev, self.updated_at = self.rev + 1, at
+            try:
+                self._write({"version": 1, "rev": self.rev, "updatedAt": at, "branches": self.branches})
+            except EditError as err:
+                self.branches, self.rev, self.updated_at = prev
+                LOG.warning("editor: %s", err)
+                return False
+            data = {"rev": self.rev, "from": old, "to": new, "branches": {new: dict(e), old: None}}
+            ev_ = ev("structure.changed:%d:%s" % (self.rev, _digest(data)[:8]), at, "structure.changed",
+                     {"branch": new}, "Structure: %s's role and description moved to %s (renamed)" % (old, new), data)
+        self._emit([ev_])
+        return True
 
-def branch_roles(branches, structure, stale_days, default_branch, now=None):
+
+def branch_roles(branches, structure, stale_days, default_branch, now=None, stale_scope=None):
     """Sets role / roleSet / description / stale / kind on the state's branches (dicts, changed in place).
     stale: a work or other branch with no commit in stale_days that is merged into testing (nothing ahead) or behind
-    it; the default branch, testing and the infra branches are never stale."""
+    it, and inside the stale rule's scope (stale_scope, a rule's scope: a "branch" pattern limits it, e.g. claude/*);
+    the default branch, testing and the infra branches are never stale."""
     now = now or now_dt()
+    scoped = (stale_scope or {}).get("type") == "branch" and (stale_scope or {}).get("match")
     for b in branches:
         auto = ROLE_OF_KIND.get(branch_kind(b["name"], default_branch), "other")
         e = structure.entry(b["name"]) if structure else None
@@ -2048,7 +2090,8 @@ def branch_roles(branches, structure, stale_days, default_branch, now=None):
         d = parse_time(b.get("date"))
         old = d is not None and (now - d).total_seconds() > stale_days * 86400
         b["stale"] = bool(role in ("work", "other") and b["name"] not in PROTECTED_BRANCHES and old and
-                          (b.get("ahead") == 0 or (b.get("behind") or 0) > 0))
+                          (b.get("ahead") == 0 or (b.get("behind") or 0) > 0) and
+                          (not scoped or pattern_hits_branch(stale_scope["match"], b["name"])))
     return branches
 
 
@@ -2065,7 +2108,7 @@ HARD_RULE = _rule(
     "default branch, merges into it, or creates or moves a v* tag. The production PR (testing into the default "
     "branch) is opened only after q says the testing build passed docs/RELEASE_CHECKLIST.md. The GitHub Manager "
     "refuses any change to a ruleset on the default branch or v* tags, and deleting or renaming the default branch, "
-    "testing, launcher, site or discord-bot.", locked=True)
+    "testing, launcher, site, discord-bot or gh-pages.", locked=True)
 SEED_RULES = [
     HARD_RULE,
     _rule("claude-pushes-non-production", "Claude may push and merge to testing", "merge",
@@ -2089,7 +2132,8 @@ SEED_RULES = [
           "The most open PRs one thread (one Claude session) keeps open at a time.", value=2, unit="PRs"),
     _rule(STALE_RULE_ID, "Stale branch age", "limit",
           "A work branch with no commits in this many days that is merged into or behind testing is stale (the "
-          "Structure section lists it under Stale).", ("branch", "claude/*"), value=STALE_DAYS_DEFAULT, unit="days"),
+          "Structure section lists it under Stale). Only branches in this rule's scope go stale.", ("branch", "claude/*"),
+          value=STALE_DAYS_DEFAULT, unit="days"),
     _rule("limit-ci-job-minutes", "CI minutes per job", "limit",
           "The longest a CI job may run (its timeout-minutes).", ("tool", "GitHub Actions"), value=120,
           unit="minutes"),
@@ -2148,7 +2192,9 @@ def _slug(title, taken):
 
 class Rules(_Store):
     """The agent rules: what every Claude follows (and the limits it keeps), editor/rules.json. Seeded on the first
-    start with the rules as they stand; the production rule (HARD_RULE) is locked for good: it can't be edited,
+    start with the rules as they stand, marked "seeded" until q edits them: a seeded set gives way to the
+    github-rules.json already in the Claude Documents (adopt), so a new install or a lost data folder never pushes
+    the seed over rules edited elsewhere. The production rule (HARD_RULE) is locked for good: it can't be edited,
     unlocked or removed, and its text always comes from this file. Other rules can be locked / unlocked by q."""
 
     def __init__(self, folder, on_events=None, now=None):
@@ -2157,11 +2203,12 @@ class Rules(_Store):
         self.rules = []
         self.rev = 0
         self.updated_at = None
+        self.seeded = False     # the built-in seed, never edited here
         d = self.file.load()
         if d is None:
             at = self.now()
             self.rules = [dict(r, updatedAt=at) for r in SEED_RULES]
-            self.rev, self.updated_at = 1, at
+            self.rev, self.updated_at, self.seeded = 1, at, not self.file.load_error
             if folder and not self.file.load_error:
                 try:
                     self.file.save(self._obj_file())
@@ -2170,27 +2217,73 @@ class Rules(_Store):
         else:
             self.rev = d.get("rev") if isinstance(d.get("rev"), int) else 1
             self.updated_at = d.get("updatedAt")
-            seen = set()
-            for raw in d["rules"]:
-                try:
-                    r = rule_fields(dict((k, v) for k, v in raw.items() if k in RULE_FIELDS))
-                except (EditError, AttributeError):
-                    continue
-                if r["id"] and r["id"] not in seen:
-                    seen.add(r["id"])
-                    self.rules.append(dict(r, updatedAt=raw.get("updatedAt")))
+            self.seeded = d.get("seeded") is True
+            self.rules = self._read_rules(d["rules"])
         # the production rule is always there, first, exactly as written above
         old = next((r for r in self.rules if r["id"] == HARD_RULE_ID), None)
         self.rules = [dict(HARD_RULE, updatedAt=(old or {}).get("updatedAt") or self.now())] + \
             [r for r in self.rules if r["id"] != HARD_RULE_ID]
 
+    @staticmethod
+    def _read_rules(raws):
+        """Stored rules (rules.json, or github-rules.json in the Claude Documents) -> the valid ones, ids unique."""
+        out, seen = [], set()
+        for raw in raws:
+            try:
+                r = rule_fields(dict((k, v) for k, v in raw.items() if k in RULE_FIELDS))
+            except (EditError, AttributeError):
+                continue
+            if r["id"] and r["id"] not in seen:
+                seen.add(r["id"])
+                out.append(dict(r, updatedAt=raw.get("updatedAt")))
+        return out
+
     def _obj_file(self):
-        return {"version": 1, "rev": self.rev, "updatedAt": self.updated_at, "rules": self.rules}
+        o = {"version": 1, "rev": self.rev, "updatedAt": self.updated_at, "rules": self.rules}
+        if self.seeded:
+            o["seeded"] = True
+        return o
+
+    def adopt(self, doc):
+        """github-rules.json from the Claude Documents replaces a still-seeded rule set (the production rule stays as
+        written here). -> True when adopted; False when the rules were edited here already or doc isn't rules."""
+        if not isinstance(doc, dict) or not isinstance(doc.get("rules"), list):
+            return False
+        got = [r for r in self._read_rules(doc["rules"]) if r["id"] != HARD_RULE_ID]
+        hard_at = next((r.get("updatedAt") for r in doc["rules"] if isinstance(r, dict) and
+                        r.get("id") == HARD_RULE_ID), None)
+        with self.lock:
+            if not self.seeded:
+                return False
+            prev = (self.rules, self.rev, self.updated_at, self.seeded)
+            self.rules = [dict(HARD_RULE, updatedAt=hard_at or self.rules[0].get("updatedAt"))] + got
+            self.rev = doc["rev"] if isinstance(doc.get("rev"), int) and doc["rev"] > 0 else self.rev
+            self.updated_at = doc.get("updatedAt") if isinstance(doc.get("updatedAt"), str) else self.now()
+            self.seeded = False
+            try:
+                self._write(self._obj_file())
+            except EditError as e:
+                self.rules, self.rev, self.updated_at, self.seeded = prev
+                LOG.warning("editor: %s", e)
+                return False
+            data = {"rev": self.rev, "adopted": True, "rules": [r["id"] for r in self.rules]}
+            e = ev("rules.changed:%d:adopted:%s" % (self.rev, _digest(data)[:8]), self.now(), "rules.changed", {},
+                   "Agent rules: %s loaded from the Claude Documents (github-rules.json, version %d) instead of the "
+                   "built-in starting set" % (plural(len(self.rules), "rule"), self.rev), data)
+        self._emit([e])
+        return True
 
     def obj(self):
         with self.lock:
             return {"rules": [dict(r) for r in self.rules], "rev": self.rev, "updatedAt": self.updated_at,
                     "loadError": self.file.load_error}
+
+    def scope(self, rid):
+        with self.lock:
+            for r in self.rules:
+                if r["id"] == rid:
+                    return dict(r["scope"])
+        return None
 
     def limit(self, rid, default):
         with self.lock:
@@ -2239,12 +2332,12 @@ class Rules(_Store):
             moved = [r["id"] for r in out] != [r["id"] for r in self.rules]
             if not (added or edited or removed or moved):
                 return self.obj()
-            old_all = (self.rules, self.rev, self.updated_at)
-            self.rules, self.rev, self.updated_at = out, self.rev + 1, at
+            old_all = (self.rules, self.rev, self.updated_at, self.seeded)
+            self.rules, self.rev, self.updated_at, self.seeded = out, self.rev + 1, at, False
             try:
                 self._write(self._obj_file())
             except EditError:
-                self.rules, self.rev, self.updated_at = old_all
+                self.rules, self.rev, self.updated_at, self.seeded = old_all
                 raise
             title = dict((r["id"], r["title"]) for r in list(cur.values()) + out)
             words = [w for w in (
@@ -2655,18 +2748,14 @@ class Pending(_Store):
                 rs = typ.startswith("ruleset.")
                 hard_lock(typ, p, default, before=pv["before"] if rs else None, after=pv["after"] if rs else None)
             except LockError as e:
-                with self.lock:
-                    return self._finish(ch, "refused", at, error=str(e), locked=True)
+                return self._not_applied(ch, "refused", at, str(e), locked=True)
             except EditError as e:
-                with self.lock:
-                    return self._finish(ch, "failed", at, error=str(e))
+                return self._not_applied(ch, "failed", at, str(e))
             if pv["basis"] != ch["basis"] or pv["call"] != ch["call"]:
                 what = self._what_changed(ch["basis"] or {}, pv["basis"] or {}) or ["the call would differ"]
-                with self.lock:
-                    return self._finish(ch, "stale", at, error="%s: %s" % (STALE_MSG, "; ".join(what)))
+                return self._not_applied(ch, "stale", at, "%s: %s" % (STALE_MSG, "; ".join(what)))
             if pv["problems"]:
-                with self.lock:
-                    return self._finish(ch, "failed", at, error="; ".join(pv["problems"]))
+                return self._not_applied(ch, "failed", at, "; ".join(pv["problems"]))
             call = pv["call"]
             with self.lock:
                 ch["status"] = "applying"
@@ -2677,12 +2766,7 @@ class Pending(_Store):
             try:
                 status, data = self.gh.write(call["method"], call["path"], call.get("body"))
             except GhError as e:
-                with self.lock:
-                    out = self._finish(ch, "failed", self.now(), error=str(e), httpStatus=e.status)
-                self._emit([ev("github.apply.failed:%s:%s" % (cid, at), at, "github.apply.failed", ch.get("ref") or {},
-                               "Not applied on GitHub: %s: %s" % (ch["summary"], e),
-                               {"change": cid, "type": typ, "call": call, "error": str(e)})])
-                return out
+                return self._not_applied(ch, "failed", at, str(e), httpStatus=e.status)
             done_at = self.now()
             info = self._result_info(typ, data)
             with self.lock:
@@ -2693,6 +2777,19 @@ class Pending(_Store):
                 self.on_applied(out)
             except Exception:
                 LOG.exception("editor: after-apply hook failed")
+        return out
+
+    def _not_applied(self, ch, status, at, error, **result):
+        """Finishes a change that didn't go through (refused by the lock, out of date, failed) and logs it in the
+        history, like an applied one: github.apply.refused / .stale / .failed."""
+        with self.lock:
+            out = self._finish(ch, status, self.now() if status == "failed" else at, error=error, **result)
+        word = {"refused": "refused by the production lock", "stale": "changed on GitHub since the preview"}.get(
+            status, "failed")
+        self._emit([ev("github.apply.%s:%s:%s" % (status, ch["id"], at), at, "github.apply.%s" % status,
+                       ch.get("ref") or {}, "Not applied on GitHub (%s): %s: %s" % (word, ch["summary"], error),
+                       {"change": ch["id"], "type": ch["type"], "call": ch.get("call"), "status": status,
+                        "error": error})])
         return out
 
     @staticmethod
@@ -2761,8 +2858,9 @@ class DocsSync:
     `git pull --rebase`. Failures are kept for the page and poll.warnings; nothing here raises into the server."""
 
     def __init__(self, folder, state_path, proc, render, repo=DOCS_REPO, branch=DOCS_BRANCH, enabled=True,
-                 off_reason=None, debounce=DOCS_DEBOUNCE_SEC):
+                 off_reason=None, debounce=DOCS_DEBOUNCE_SEC, adopt=None):
         self.folder, self.state_path, self.proc, self.render = folder, state_path, proc, render
+        self.adopt = adopt      # adopt(clone folder): called on origin's files right before the files are rendered
         self.repo, self.branch, self.enabled, self.off_reason, self.debounce = repo, branch, enabled, off_reason, debounce
         self.lock = threading.Lock()
         self.sync_lock = threading.Lock()
@@ -2787,8 +2885,16 @@ class DocsSync:
     def warnings(self):
         with self.lock:
             if self.enabled and self.state == "failed" and self.last_error:
-                return ["Claude Documents sync failed (it retries on the next change): %s" % self.last_error]
+                return ["Claude Documents sync failed (it retries on every poll): %s" % self.last_error]
         return []
+
+    def retry_if_failed(self):
+        """Each poll: a failed sync (gh signed out, offline) is tried again, so it recovers once gh works."""
+        with self.lock:
+            again = self.enabled and self.state == "failed" and self.due is None
+        if again:
+            self.schedule(0)
+        return again
 
     def schedule(self, delay=None):
         if not self.enabled:
@@ -2892,8 +2998,6 @@ class DocsSync:
             with self.lock:
                 self.state, self.last_attempt = "syncing", iso(now_dt())
             try:
-                files = self.render()
-                digest = _digest(files)
                 git_dir = os.path.join(self.folder, ".git")
                 if not os.path.isdir(git_dir):
                     if os.path.isdir(self.folder) and os.listdir(self.folder):
@@ -2912,6 +3016,10 @@ class DocsSync:
                         self._git("rebase", "--abort")
                 self._git_ok("fetch", "--quiet", "origin", self.branch, timeout=180)
                 self._git_ok("checkout", "-q", "-f", "-B", self.branch, "origin/" + self.branch)
+                if self.adopt:
+                    self.adopt(self.folder)
+                files = self.render()
+                digest = _digest(files)
                 committed = self._commit(files)
                 if committed:
                     code, out, err = self._git("push", "--quiet", "origin", "HEAD:" + self.branch, timeout=180)
@@ -3006,7 +3114,8 @@ class Manager:
         docs_on, docs_off = docs_sync_wanted(cfg)
         self.docs = DocsSync(os.path.join(data_dir, "claude-docs"), os.path.join(editor, "docs-sync.json"), self.proc,
                              self.docs_files, repo=cfg.get("claudeDocsRepo") or DOCS_REPO,
-                             branch=cfg.get("claudeDocsBranch") or DOCS_BRANCH, enabled=docs_on, off_reason=docs_off)
+                             branch=cfg.get("claudeDocsBranch") or DOCS_BRANCH, enabled=docs_on, off_reason=docs_off,
+                             adopt=self.adopt_docs_rules)
         self.rs_lock = threading.Lock()
         self.rs_view = None     # the last GET /api/github/rulesets answer
         self.rs_at = 0.0
@@ -3032,6 +3141,7 @@ class Manager:
         self.pulls_open = None
         self.pulls_closed = None
         self.releases = None
+        self.runs_read = False  # the run list was read from GitHub since the start (self.runs may be the disk cache)
         self.refs = None        # (heads, tags, local) from the mirror
         self.api_branches = None
         self.local_cache = {}   # (path, oid, testing, prod) -> derived fields
@@ -3072,7 +3182,8 @@ class Manager:
         with self.lock:
             st = dict(self.state)
             st["branches"] = [dict(b) for b in st.get("branches") or []]
-        branch_roles(st["branches"], self.structure, self.stale_days(), self.default_branch)
+        branch_roles(st["branches"], self.structure, self.stale_days(), self.default_branch,
+                     stale_scope=self.rules.scope(STALE_RULE_ID))
         with self.lock:
             if self.state.get("generatedAt") == st.get("generatedAt"):  # a poll in between applied it already
                 self.state = st
@@ -3088,16 +3199,37 @@ class Manager:
                 "github-rules.json": dumps(self.rules.export(self.repo, db), pretty=True) + "\n",
                 "11-github-notes.md": notes_md}
 
+    def adopt_docs_rules(self, folder):
+        """Before the first push of a seeded rule set: take the Claude Documents' github-rules.json instead."""
+        if self.rules.seeded:
+            doc = read_json(os.path.join(folder, "github-rules.json"))
+            if doc is not None and self.rules.adopt(doc):
+                LOG.info("editor: agent rules taken from the Claude Documents' github-rules.json")
+
     def _after_apply(self, change):
         with self.rs_lock:
             self.rs_at = 0.0    # the next rulesets read goes to GitHub
+        if change.get("type") == "branch.rename" and change.get("status") == "applied":
+            self.follow_rename(change["params"]["name"], change["params"]["newName"])
         self.wake.set()         # and the next poll runs now, so the branches show the change
+
+    def follow_rename(self, old, new):
+        """An applied rename takes the branch's structure entry and its notes along (each note's move is a
+        note.edited event with the old target in "from")."""
+        self.structure.rename(old, new)
+        for n in self.notes.all():
+            if n["target"] == {"kind": "branch", "key": old}:
+                try:
+                    self.notes.update(n["id"], {"target": {"kind": "branch", "key": new}, "rev": n["rev"]})
+                except NoteError as e:
+                    LOG.warning("editor: could not move note %s to %s: %s", n["id"], new, e)
 
     def structure_view(self):
         o = self.structure.obj()
         o.update({"roles": list(ROLES), "settableRoles": list(SETTABLE_ROLES),
                   "protectedBranches": list(PROTECTED_BRANCHES), "defaultBranch": self.default_branch,
-                  "staleDays": self.stale_days(), "staleRule": STALE_RULE_ID})
+                  "staleDays": self.stale_days(), "staleScope": self.rules.scope(STALE_RULE_ID),
+                  "staleRule": STALE_RULE_ID})
         return o
 
     def rules_view(self):
@@ -3164,7 +3296,7 @@ class Manager:
                 "poll": {"lastOk": None, "lastError": None, "nextAt": None, "intervalSec": SLOW_SEC,
                          "rateRemaining": None},
                 "production": None, "testing": None, "branches": [], "pulls": [], "runs": [], "local": [],
-                "running": [], "releases": []}
+                "running": [], "releases": [], "notRead": list(NOT_READ_SECTIONS)}
 
     # -- persistence -------------------------------------------------------------------------------------------
 
@@ -3235,6 +3367,7 @@ class Manager:
             if changed:
                 for r in (data or {}).get("workflow_runs", []):
                     self._merge_run(r)
+        self.runs_read = True
         seen_active = set()
         for st in ("in_progress", "queued", "waiting"):
             try:
@@ -3548,10 +3681,15 @@ class Manager:
             snap = self.snapshot(at, state, heads if self.refs else None,
                                  tags if self.refs and not refs_from_api else None)
             snap["pollError"] = "; ".join(errors) if errors else None
-            events = diff_events(self.prev, snap, self.describe)
-            fresh = self.history.append(events)
-            self.prev = merge_snapshot(self.prev, snap)
-            write_atomic(self._p("state-prev.json"), dumps(self.prev))
+            if self.prev is None and any(k in state["notRead"] for k in NOT_READ_SECTIONS):
+                # the one-time baseline waits for a poll that read GitHub: one written by a failed first poll
+                # ("0 open PRs, 0 runs") would make the next good poll skip everything that happened in between
+                fresh = []
+            else:
+                events = diff_events(self.prev, snap, self.describe)
+                fresh = self.history.append(events)
+                self.prev = merge_snapshot(self.prev, snap)
+                write_atomic(self._p("state-prev.json"), dumps(self.prev))
             self.mirror.trim_memo()
             if len(self.local_cache) > 500:
                 self.local_cache.clear()
@@ -3565,6 +3703,7 @@ class Manager:
                 self.last_ok = at
             self.last_error = "; ".join(errors) if errors else None
             warnings += self.docs.warnings()
+            self.docs.retry_if_failed()
             state["poll"] = {"lastOk": self.last_ok, "lastError": self.last_error,
                              "nextAt": iso(datetime.datetime.fromtimestamp(self.next_at, UTC)),
                              "intervalSec": self.interval, "rateRemaining": self.gh.rate.get("remaining"),
@@ -3759,26 +3898,37 @@ class Manager:
         t_in_mirror = bool(testing_sha) and self.mirror.has_commit(testing_sha)
         for name, h in heads.items():
             ahead = behind = None
+            unrelated = False
             if t_in_mirror and h.get("sha"):
                 try:
-                    ahead, behind = self.mirror.ahead_behind(testing_sha, h["sha"])
+                    # no shared history (gh-pages): ahead / behind would just count both sides' every commit
+                    unrelated = not self.mirror.related(testing_sha, h["sha"])
+                    if not unrelated:
+                        ahead, behind = self.mirror.ahead_behind(testing_sha, h["sha"])
                 except (RuntimeError, ValueError):
                     pass
             pr = pr_by_head.get(name)
+            if pr and pr["state"] != "open" and pr.get("headSha") != h.get("sha"):
+                pr = None  # a closed PR is the branch's only while the branch is still where the PR left it
             lr = last_by_branch.get(name)
             branches.append({"name": name, "sha": h.get("sha"), "date": h.get("date"), "subject": h.get("subject"),
                              "author": h.get("author"), "kind": branch_kind(name, self.default_branch),
-                             "ahead": ahead, "behind": behind, "pr": pr["number"] if pr else None,
+                             "ahead": ahead, "behind": behind, "unrelated": unrelated,
+                             "pr": pr["number"] if pr else None,
                              "lastRun": dict(lr) if lr else None,
                              "url": "https://github.com/%s/tree/%s" % (repo, urllib.parse.quote(name, safe="/"))})
-        branch_roles(branches, self.structure, self.stale_days(), self.default_branch)
+        branch_roles(branches, self.structure, self.stale_days(), self.default_branch,
+                     stale_scope=self.rules.scope(STALE_RULE_ID))
         order = {"production": 0, "testing": 1}
         branches.sort(key=lambda b: (b["date"] or ""), reverse=True)
         branches.sort(key=lambda b: order.get(b["kind"], 2))
 
+        # what GitHub hasn't answered yet since the start: the page shows those parts as unknown, not as "none"
+        not_read = [k for k, unread in (("pulls", self.pulls_open is None), ("releases", self.releases is None),
+                                        ("runs", not self.runs_read)) if unread]
         return {"generatedAt": at, "repo": repo, "defaultBranch": self.default_branch, "poll": {},
                 "production": production, "testing": testing, "branches": branches, "pulls": pulls, "runs": runs,
-                "local": local, "running": running, "releases": releases}
+                "local": local, "running": running, "releases": releases, "notRead": not_read}
 
     def snapshot(self, at, state, heads, tags):
         runs = None
@@ -3822,10 +3972,13 @@ class Manager:
         p = state.get("production") or {}
         return {"generatedAt": state.get("generatedAt"), "repo": state.get("repo"), "poll": state.get("poll"),
                 "testing": {"sha": t.get("sha"), "version": t.get("version"), "prerelease": t.get("prerelease")},
-                "production": {"tag": p.get("tag"), "version": p.get("version")},
+                "production": {"tag": p.get("tag"), "version": p.get("version"), "sha": p.get("sha"),
+                               "publishedAt": p.get("publishedAt")},
                 "openPulls": [{"number": x.get("number"), "title": x.get("title"), "head": x.get("head"),
+                               "base": x.get("base"), "draft": bool(x.get("draft")), "updatedAt": x.get("updatedAt"),
                                "checks": {"state": (x.get("checks") or {}).get("state")}, "url": x.get("url")}
                               for x in state.get("pulls") or [] if x.get("state") == "open"],
+                "notRead": state.get("notRead") or [],
                 "running": state.get("running") or [], "lastFailed": failed,
                 "lastTesting": last_testing_run(state.get("runs") or []),
                 "local": [{"name": l.get("name"), "branch": l.get("branch"), "aheadOfTesting": l.get("aheadOfTesting"),

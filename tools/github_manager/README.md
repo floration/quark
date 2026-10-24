@@ -13,11 +13,13 @@ Two more tabs:
 - **Editor**, the GitHub editor, in four sections (left list, `#tab=editor&sec=...`):
   - **Notes** (below).
   - **Structure**: the branches grouped by role (production, testing, infra, work `claude/*`, other, stale: no
-    commit in N days, the `limit-stale-days` rule, and merged into or behind testing). Per branch q sets a role and a
+    commit in N days, the `limit-stale-days` rule, inside that rule's branch scope (`claude/*` by default), and merged
+    into or behind testing). Per branch q sets a role and a
     description (local, `editor/structure.json`); they set the Branches tab's kind and show in the branch's details.
     Create a branch (from testing, another branch or a sha), rename or delete one (not the default branch, testing,
-    launcher, site, discord-bot or gh-pages; a delete warns about commits not in testing and open PRs): these are
-    GitHub changes, queued in Pending changes.
+    launcher, site, discord-bot or gh-pages; a delete warns about commits not in testing and open PRs; an applied
+    rename takes the branch's role, description and notes along): these are GitHub changes, queued in Pending
+    changes.
   - **Rules & limits**, two kinds, labelled: *Enforced by GitHub*, the repository's branch rulesets (block force
     push, block deletion, require a PR, required status checks picked from the recent runs' job names, linear
     history), edited with a form and queued; and *Followed by every Claude*, the agent rules (push / merge / version
@@ -39,7 +41,9 @@ Two more tabs:
   The agent rules and the notes are also written to the Claude Documents (the private repo
   floration/quark-claude-docs) as `10-github-rules.md`, `github-rules.json` and `11-github-notes.md`, 10 s after the
   last change, by the server's own clone (`claude-docs/`) with q's gh login; a failure shows in the page and in the
-  poll warnings and is retried on the next change.
+  poll warnings and is retried on every poll until it works. On a first start the built-in rules give way to the
+  `github-rules.json` already in the Claude Documents (rules edited on another PC, or before the data folder was
+  lost), so the seed is never pushed over them.
 
   Notes: a note is
   plain text with a little markdown (paragraphs, lists, `` `code` ``, **bold**, links; everything else is shown as
@@ -138,8 +142,9 @@ first start's backfill is still downloading). Refresh on the page polls at once 
 - `history.jsonl`: the event log, append-only, never trimmed (runs started / passed / failed, PRs opened / merged /
   closed / updated, branches created / moved / deleted, tags, releases, local commits / moves / clean-dirty changes,
   poll errors). Events come from comparing each poll with `state-prev.json`. Each event has a fixed id, so a restart
-  or a crash never logs one twice. The very first poll writes a single `baseline` event (what it found) instead of
-  thousands of events for things that already existed; while the tool is off nothing is lost, the next poll logs what
+  or a crash never logs one twice. The first poll that reads GitHub writes a single `baseline` event (what it found) instead of
+  thousands of events for things that already existed (while gh is signed out or offline nothing is logged, so a
+  failed first poll never records "0 PRs, 0 runs"); while the tool is off nothing is lost, the next poll logs what
   changed.
 - `cache/github.json`: the page's state minus the local copies, plus every release, rewritten each poll (the Claude
   Documents manager reads it). `cache/runs/`, `cache/pulls.json`, `cache/meta.json`: the caches above.

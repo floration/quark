@@ -99,7 +99,8 @@ class Fixtures:
         o = self.structure.obj()
         o.update({"roles": list(S.ROLES), "settableRoles": list(S.SETTABLE_ROLES),
                   "protectedBranches": list(S.PROTECTED_BRANCHES), "defaultBranch": self.default,
-                  "staleDays": self.rules.limit(S.STALE_RULE_ID, S.STALE_DAYS_DEFAULT), "staleRule": S.STALE_RULE_ID})
+                  "staleDays": self.rules.limit(S.STALE_RULE_ID, S.STALE_DAYS_DEFAULT),
+                  "staleScope": self.rules.scope(S.STALE_RULE_ID), "staleRule": S.STALE_RULE_ID})
         return o
 
     def rules_view(self):
@@ -172,7 +173,8 @@ class Fixtures:
             s["poll"]["lastError"] = self.poll_error
         if roles and hasattr(self, "rules"):
             now = S.parse_time(s["generatedAt"]) if not self.shift else datetime.now(timezone.utc)
-            S.branch_roles(s["branches"], self.structure, self.rules.limit(S.STALE_RULE_ID, 7), s["defaultBranch"], now)
+            S.branch_roles(s["branches"], self.structure, self.rules.limit(S.STALE_RULE_ID, 7), s["defaultBranch"], now,
+                           stale_scope=self.rules.scope(S.STALE_RULE_ID))
         return s
 
     def history(self, since=None, limit=None):
