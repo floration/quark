@@ -21,6 +21,7 @@
 #include "gltf.h"
 #include "overrides.h"
 #include "hudclock.h"
+#include "modecalls.h"
 
 static std::string fmtRace(int ms);
 static std::string hudCfgPath() { return userDataPath("hud.cfg"); } // scriptable widgets, next to quark.cfg
@@ -974,16 +975,21 @@ void Game::updateAnnouncer() {
                 static const struct { float t; int snd; } marks[] = {{60, SND_VOICE_ONE_MINUTE}, {30, SND_VOICE_THIRTY_SECONDS}};
                 for (auto& m : marks) if (pv.timeLeft > m.t && ms.timeLeft <= m.t && pv.timeLeft - ms.timeLeft < 2) say(m.snd, 2);
             }
-            if (ms.mode == MODE_FFA) {   // free for all: someone new has the most kills (a clear lead, not a tie)
-                int lead = -1, best = 0; bool tie = false;
-                for (auto& p : net_.latest().players) {
-                    if (p.flags & PS_SPECTATOR) continue;
-                    if (p.score > best) { best = p.score; lead = p.id; tie = false; } else if (p.score == best && best > 0) tie = true;
-                }
-                if (tie) lead = -1;
-                if (lead >= 0 && lead != annLeader_ && annLeader_ != -2) say(SND_VOICE_NEW_LEADER, 2);
-                if (lead >= 0) annLeader_ = lead;
+            if (ms.mode == MODE_FFA && me && myTeam >= 0) {   // free for all: your own lead only (a clear one, not a tie; X10)
+                int of = 0; bool tied = false;
+                const bool lead = ffaPlace(net_.latest().players, net_.clientId(), &of, &tied) == 1 && !tied && me->score > 0;
+                const int c = annLeader_ == -2 ? -1 : ffaLeadCall(annLeader_ == 1, lead);
+                if (c == 1) { notify("YOU TOOK THE LEAD", 2); say(SND_VOICE_NEW_LEADER, 2); }
+                else if (c == 0) notify("YOU LOST THE LEAD", 2);
+                annLeader_ = lead ? 1 : 0;
             }
+        }
+        // bomb: your side's job as each round's freeze begins, a halftime swap, the bomb dropped / picked up; payload:
+        // a checkpoint as the point taken / lost line (modecalls.h, X10)
+        ModeCall calls[4];
+        for (int k = 0, n = modeCalls(pv, ms, myTeam, SND_VOICE_POINT_TAKEN, SND_VOICE_POINT_LOST, calls, 4); k < n; k++) {
+            if (calls[k].text[0]) notify(calls[k].text, 4);
+            if (calls[k].voice >= 0) say(calls[k].voice, calls[k].level);
         }
     }
     if (ms.phase != PHASE_LIVE) annLeader_ = -2;   // (a new match: the first lead isn't "new")
@@ -2635,6 +2641,11 @@ void Game::drawHud() {
             char line[32];
             hudLiveLine(ms, line, sizeof line);
             phase = line;
+            if (ms.mode == MODE_FFA) {   // your place (X10): "2ND OF 8", "=2ND" when shared
+                int of = 0; bool tied = false;
+                if (int k = ffaPlace(net_.latest().players, net_.clientId(), &of, &tied); k > 0 && of > 1)
+                    phase += (phase.empty() ? "" : "  -  ") + std::string(tied ? "=" : "") + std::to_string(k) + ordinalSuffix(k) + " OF " + std::to_string(of);
+            }
             break;
         }
         case PHASE_ROUND_END: phase = "ROUND OVER"; break;
