@@ -6,6 +6,7 @@
 namespace {
 constexpr float kFreezeTime = 3.0f;
 constexpr float kRoundEndTime = 4.0f;
+constexpr float kDuelRoundEndTime = 2.5f;   // 1v1, duel and tourney: short rounds, a shorter break (T22: 4 s)
 constexpr float kMatchEndTime = 10.0f;
 constexpr float kWarmupCountdown = 5.0f;
 // VS
@@ -177,7 +178,7 @@ void tickHide(Server& s) {
     for (int i = 0; i < kMaxPlayers; i++) {
         if (!inPlay(s, i)) continue;
         if (s.players_[i].it) seeker = i;
-        else if (s.players_[i].alive) hiding++;
+        else if (s.players_[i].alive) { hiding++; s.players_[i].hideSurvived += s.dt(); }
         else found += s.players_[i].found;
     }
     if (seeker < 0) { payUnfound(s); endRoundText(s, "the seeker left"); return; }   // (still unfound when the round ends)
@@ -229,8 +230,11 @@ void rpsNewThrow(Server& s) {
     rpsBroadcast(s);
 }
 
-// After the last round: true (and the tiebreak is on) when two or more players share the top score.
-bool rpsStartIfTied(Server& s) {
+// After the last round: true (and the tiebreak is on) when two or more players share the top score and the most
+// time survived hiding (T23: that decides first; rock paper scissors decided 4 of 6 bot matches, two of them 5-way
+// ties after 15-20 min). *winner: a tie that time settled, else -1.
+bool rpsStartIfTied(Server& s, int* winner) {
+    *winner = -1;
     int best = bestScorer(s);
     if (best < 0) return false;
     uint32_t tied = 0;
@@ -240,6 +244,19 @@ bool rpsStartIfTied(Server& s) {
         if (p.connected && p.team != TEAM_SPECTATOR && p.score == s.players_[best].score) { tied |= 1u << i; n++; }
     }
     if (n < 2) return false;
+    {   // the longest hidden among them goes on (a tick's worth apart counts as equal)
+        double most = 0;
+        for (int i = 0; i < kMaxPlayers; i++) if (tied >> i & 1) most = std::max(most, s.players_[i].hideSurvived);
+        uint32_t still = 0; int m = 0;
+        for (int i = 0; i < kMaxPlayers; i++)
+            if ((tied >> i & 1) && s.players_[i].hideSurvived >= most - 0.5 * s.dt()) { still |= 1u << i; m++; }
+        if (m == 1) {
+            for (int i = 0; i < kMaxPlayers; i++) if (still >> i & 1) *winner = i;
+            s.message("tied for first - " + s.players_[*winner].name + " stayed hidden longest (" + std::to_string((int)most) + " s)");
+            return false;
+        }
+        tied = still; n = m;
+    }
     s.rps_ = Server::Rps();
     s.rps_.in = tied;
     s.rps_.bestOf3 = n == 2;
@@ -525,7 +542,7 @@ void startMatch(Server& s) {
     s.kothPoints_[0] = s.kothPoints_[1] = 0;
     s.bestProgress_[0] = s.bestProgress_[1] = 0;
     s.completeTime_[0] = s.completeTime_[1] = 0;
-    for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; p.dmgDealt = p.objTime = 0; p.shotsFired = p.shotsHit = 0; p.out = false; p.it = false; }
+    for (auto& p : s.players_) { p.kills = p.deaths = p.score = 0; p.dmgDealt = p.objTime = 0; p.hideSurvived = 0; p.shotsFired = p.shotsHit = 0; p.out = false; p.it = false; }
     s.lastIt_ = -1;
     s.tagOut_.clear();   // tag knockouts last one match: everyone is back in for the next
     for (auto& p : s.players_) p.sought = false;
@@ -626,7 +643,8 @@ void endRound(Server& s, int winner, const std::string& why, bool award = true) 
     s.glog(LOG_SIMPLE, "round %d end: %s (score %d-%d)", m.round, text.c_str(), m.scoreA, m.scoreB);
     m.actionPlayer = 255;
     m.actionProgress = 0;
-    setPhase(s, PHASE_ROUND_END, kRoundEndTime);
+    const bool duelish = m.mode == MODE_ARENA || m.mode == MODE_DUEL || m.mode == MODE_TOURNEY;
+    setPhase(s, PHASE_ROUND_END, duelish ? kDuelRoundEndTime : kRoundEndTime);
 }
 
 // Called when ROUND_END finishes: returns true if the match is decided.
@@ -671,8 +689,8 @@ bool checkMatchOver(Server& s) {
             return false;
         case MODE_HIDE:
             if (hidersYetToSeek(s) > 0 && playersInPlay(s) > 1) return false;   // (everyone has had a turn seeking)
-            if (rpsStartIfTied(s)) return true;   // tied for first: rock paper scissors decides (tickRps ends the match)
-            { int w = bestScorer(s); enterMatchEnd(s, w >= 0 ? s.players_[w].name + " wins the match" : "match over", w); }
+            { int w; if (rpsStartIfTied(s, &w)) return true;   // tied for first: time hidden, then rock paper scissors (tickRps ends the match)
+              if (w < 0) w = bestScorer(s); enterMatchEnd(s, w >= 0 ? s.players_[w].name + " wins the match" : "match over", w); }
             return true;
         case MODE_TAG:
             if (playersInPlay(s) > 1) return false;

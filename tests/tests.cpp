@@ -2460,6 +2460,286 @@ static void testRocketSelfDamage(uint16_t port) {
     s.stop();
 }
 
+// The 2026-10 feel review's server fixes, on a server that isn't started (no network: the players are set up by hand
+// and the server's own functions are called): the hit before the kill (F13), shotgun headshots (F14), the bubble
+// stream's count (F15), splash round cover (F16), the killer cam (F11), lag compensation between records (F21), refire
+// on the command clock (F22), the near-miss kills (T9), ring-out credit (T21) and the death screen's text (X1).
+static void testFeelFixes() {
+    printf("feel fixes: hit before kill, shotgun headshots, bubble count, splash, killer cam, rewind lerp, command clock, ring-outs\n");
+    // T9: 20 rifle body shots kill; two point-blank head blasts (18 of 20 pellets on the head) kill
+    CHECK(weaponDef(WPN_RIFLE).damage * 20 >= kMaxHealth);
+    CHECK(2 * (18 * headDamage(WPN_SHOTGUN) + 2 * weaponDef(WPN_SHOTGUN).damage) >= kMaxHealth);
+    // T10: a crossbow headshot saves a bolt (body 3, a head and a body 2), as the sniper's does
+    CHECK(2 * weaponDef(WPN_CROSSBOW).damage < kMaxHealth && 3 * weaponDef(WPN_CROSSBOW).damage >= kMaxHealth);
+    CHECK(headDamage(WPN_CROSSBOW) + weaponDef(WPN_CROSSBOW).damage >= kMaxHealth);
+    auto fresh = [](Server& s, const char* mapText, int n) {
+        s.setLog([](const std::string&) {});
+        CHECK(s.map_.parse(mapText));
+        s.cfg_.mode = s.ms_.mode = MODE_FFA;
+        s.ms_.phase = PHASE_WARMUP;
+        s.timeMs_ = 10000;
+        for (int i = 0; i < n; i++) {
+            auto& p = s.players_[i];
+            p.connected = true; p.alive = true; p.health = 100; p.team = TEAM_A; p.joinId = 100 + i;
+            p.move.flags = MF_ONGROUND;
+        }
+    };
+    const char* open = "box -40 -1 -40 40 0 40\nspawn any 0 0 0\n";
+    auto events = [](Server& s, int i, int type) {
+        std::vector<int> at;
+        for (size_t k = 0; k < s.players_[i].events.size(); k++) if (s.players_[i].events[k].type == type) at.push_back((int)k);
+        return at;
+    };
+    {   // F13: batched laser damage, then the killing hit: the attacker's last EV_HIT comes before the EV_KILL
+        Server s; fresh(s, open, 2);
+        s.players_[1].move.pos = {5, 0, 0};
+        s.damagePlayer(1, 0, 1, WPN_LASER, Vec3());    // goes out at once (none for 50 ms before)
+        s.damagePlayer(1, 0, 1, WPN_LASER, Vec3());    // batched
+        s.damagePlayer(1, 0, 98, WPN_LASER, Vec3());   // the kill
+        auto hits = events(s, 0, EV_HIT), kills = events(s, 0, EV_KILL);
+        CHECK(!s.players_[1].alive && kills.size() == 1 && hits.size() == 2 && hits.back() < kills[0]);
+        float total = 0;
+        for (int k : hits) total += s.players_[0].events[k].c / 100.0f;
+        CHECK(std::fabs(total - 100) < 0.05f);   // every point of it shown, none left for later
+        // X1: the victim's copy says the killer's health and the respawn delay (warmup: 1.5 s); nobody else's does
+        auto vk = events(s, 1, EV_KILL);
+        CHECK(vk.size() == 1 && s.players_[1].events[vk[0]].text == "100 1500" && s.players_[0].events[kills[0]].text.empty());
+        // F11 (free for all): the killer is watched
+        CHECK(s.players_[1].specTarget == 0 && (s.perspectivesForTest(1) & 1u));
+    }
+    {   // X1 in ranked: no health
+        Server s; fresh(s, open, 2);
+        s.cfg_.ranked = true;
+        s.damagePlayer(1, 0, 150, WPN_ROCKET, Vec3());
+        auto vk = events(s, 1, EV_KILL);
+        CHECK(vk.size() == 1 && s.players_[1].events[vk[0]].text.rfind("-1 ", 0) == 0);
+    }
+    {   // F11 (team mode): the killer's view for kKillCamTime, then teammates only
+        Server s; fresh(s, open, 3);
+        s.cfg_.mode = s.ms_.mode = MODE_KOTH;
+        s.players_[0].team = TEAM_B;   // the killer; 1 the victim, 2 their teammate
+        s.players_[2].move.pos = {-5, 0, 0};
+        s.damagePlayer(1, 0, 150, WPN_ROCKET, Vec3());
+        uint32_t m = s.perspectivesForTest(1);
+        CHECK((m & 1u) && (m & 4u));
+        s.timeMs_ += (uint64_t)(kKillCamTime * 1000) + 10;
+        m = s.perspectivesForTest(1);
+        CHECK(!(m & 1u) && (m & 4u));
+        s.handleStringCmdForTest(1, "spectate 0");   // asking for the enemy again changes nothing
+        CHECK(!(s.perspectivesForTest(1) & 1u));
+    }
+    {   // T21: knocked off within 3 s: the attacker's kill (no suicide point lost); later than that: nobody's
+        Server s; fresh(s, open, 2);
+        s.ms_.phase = PHASE_LIVE;
+        s.damagePlayer(1, 0, 10, WPN_ROCKET, Vec3(5, 4, 0));
+        s.timeMs_ += 2500;
+        CHECK(s.ringOutKiller(1) == 0);
+        s.players_[1].move.pos.y = s.map_.killY() - 1;
+        s.simulateForTest();
+        CHECK(!s.players_[1].alive && s.players_[0].kills == 1 && s.players_[1].score == 0);
+        auto vk = events(s, 0, EV_KILL);
+        CHECK(!vk.empty() && s.players_[0].events[vk.back()].a == 0 && (s.players_[0].events[vk.back()].c & KILL_WEAPON) == 252);
+        s.spawnPlayer(1);
+        s.players_[1].health = 100;
+        s.damagePlayer(1, 0, 10, WPN_CROSSBOW, Vec3(5, 4, 0));
+        s.timeMs_ += (uint64_t)(kRingOutCredit * 1000) + 100;
+        CHECK(s.ringOutKiller(1) == -1);
+        s.players_[0].joinId = 999;    // (and a newcomer in the attacker's slot is never credited)
+        s.timeMs_ -= 1000;
+        CHECK(s.ringOutKiller(1) == -1);
+    }
+    {   // F16: splash reaches a player whose body centre is behind a crate but whose head shows; full cover still blocks
+        Server s; fresh(s, "box -40 -1 -40 40 0 40\nbox 0 0 -5 1 1.2 5\nbox 10 0 -5 11 3 5\nspawn any 0 0 20\n", 3);
+        s.players_[0].move.pos = {0, 0, 30};    // the shooter, far off
+        s.players_[1].move.pos = {1.5f, 0, 0};  // behind the crate
+        s.players_[2].move.pos = {11.5f, 0, 0}; // behind the wall
+        s.explodeForTest({-2, 1, 0}, 0, WPN_ROCKET);
+        s.explodeForTest({8.6f, 1, 0}, 0, WPN_ROCKET);
+        printf("  splash over a crate: %.1f damage; behind a wall: %.1f\n", 100 - s.players_[1].health, 100 - s.players_[2].health);
+        CHECK(s.players_[1].health < 100 && s.players_[2].health == 100);
+    }
+    {   // T11: own splash rises evenly with the blast's height: 10% up to feet + 0.3 m, full from chest height
+        float prev = -1, at3 = 0, at31 = 0;
+        for (float h : {0.0f, 0.3f, 0.31f, 0.5f, 0.75f, 1.0f, 1.2f, 1.5f}) {
+            Server s; fresh(s, open, 1);
+            s.explodeForTest({0, h, 0}, 0, WPN_ROCKET);
+            float d = 100 - s.players_[0].health;
+            CHECK(d >= prev - 1e-3f);
+            prev = d;
+            if (h == 0.3f) at3 = d;
+            if (h == 0.31f) at31 = d;
+            if (h <= 0.3f) CHECK(std::fabs(d - weaponDef(WPN_ROCKET).damage * 0.1f) < 0.01f);
+            if (h >= 1.2f) CHECK(std::fabs(d - weaponDef(WPN_ROCKET).damage) < 0.01f);
+            if (h == 0.5f) printf("  own rocket at knee height (0.5 m): %.1f damage\n", d);
+        }
+        CHECK(at31 - at3 < 1.0f);   // no step: a hair higher is a hair more
+    }
+    {   // F14: a blast with a pellet or two on the head isn't a headshot; one that's mostly head is
+        for (bool high : {false, true}) {
+            Server s; fresh(s, open, 2);
+            s.players_[0].weapon = WPN_SHOTGUN;
+            const float dist = high ? 1.2f : 3.0f;
+            s.players_[1].move.pos = {-dist, 0, 0};
+            s.simulateForTest();   // (a history record where they stand)
+            Vec3 eye = s.players_[0].move.pos + Vec3(0, kEyeHeight, 0);
+            Vec3 d = normalize(s.players_[1].move.pos + Vec3(0, high ? 1.68f : 1.3f, 0) - eye);
+            UserCmd c; c.pitch = std::asin(d.y); c.yaw = std::atan2(-d.x, -d.z); c.weapon = WPN_SHOTGUN; c.buttons = BTN_FIRE;
+            c.viewTick = (uint32_t)s.timeMs_;
+            s.players_[0].events.clear();
+            CHECK(s.fireWeaponForTest(0, c));
+            auto hits = events(s, 0, EV_HIT);
+            CHECK(!hits.empty());
+            bool head = !hits.empty() && s.players_[0].events[hits.back()].text == "h";
+            printf("  shotgun at the %s: %.1f damage, %s\n", high ? "head, point blank" : "neck, 3 m", 100 - s.players_[1].health, head ? "headshot" : "body");
+            CHECK(head == high);
+        }
+    }
+    {   // F15: an enemy 3 m away behind a wall doesn't shrink the bubble stream; one in sight does
+        auto stream = [&](bool wall) {
+            Server s; fresh(s, wall ? "box -40 -1 -40 40 0 40\nbox -2 0 -5 -1.5 4 5\nspawn any 0 0 20\n" : open, 2);
+            s.players_[0].weapon = WPN_BUBBLE;
+            s.players_[1].move.pos = {-3, 0, 0};
+            UserCmd c; c.yaw = PI * 0.5f; c.weapon = WPN_BUBBLE; c.buttons = BTN_ALTFIRE;
+            s.fireWeaponForTest(0, c);
+            int n = 0;
+            for (auto& pr : s.projectiles_) n += pr.active && pr.type == WPN_BUBBLE;
+            return n;
+        };
+        int seen = stream(false), hidden = stream(true);
+        printf("  bubble stream: %d bubbles with an enemy 3 m away in sight, %d behind a wall\n", seen, hidden);
+        CHECK(seen == bubbleStreamCount(3) && hidden == kBubbleStreamMax);
+    }
+    {   // F21: a rewind between two records lands between them, not on the older one
+        Server s; fresh(s, open, 1);
+        auto& p = s.players_[0];
+        for (int k = 0; k < 4; k++) {   // records 8 ms apart, moving 0.08 m each
+            p.move.pos = {0.08f * k, 0, 0};
+            s.simulateForTest();
+            s.tick_++; s.timeMs_ += 8;
+        }
+        uint64_t t0 = s.timeMs_ - 8 * 4;   // (the first record)
+        bool cr;
+        Vec3 at = s.rewoundPosForTest(0, t0 + 8 + 4, &cr);
+        printf("  rewind 4 ms past a record: x %.3f (records at 0.080 and 0.160)\n", at.x);
+        CHECK(std::fabs(at.x - 0.12f) < 0.002f);
+        CHECK(std::fabs(s.rewoundPosForTest(0, t0 + 16, &cr).x - 0.16f) < 1e-4f);   // on a record: that record
+    }
+    {   // T22: the round end is 2.5 s in 1v1 (and duel / tourney), still 4 s in team vs
+        for (int mode : {MODE_ARENA, MODE_VS}) {
+            Server s; fresh(s, open, 2);
+            s.cfg_.mode = s.ms_.mode = (uint8_t)mode;
+            s.players_[1].team = TEAM_B;
+            s.ms_.phase = PHASE_LIVE;
+            s.phaseEnd_ = s.time() + 60;
+            s.damagePlayer(1, 0, 150, WPN_ROCKET, Vec3());
+            for (int k = 0; k < 3 && s.ms_.phase == PHASE_LIVE; k++) s.simulateForTest();   // (the rules see one side out)
+            printf("  %s: round end %.1f s\n", mode == MODE_ARENA ? "1v1" : "vs", s.phaseEnd_ - s.time());
+            CHECK(s.ms_.phase == PHASE_ROUND_END && std::fabs(s.phaseEnd_ - s.time() - (mode == MODE_ARENA ? 2.5 : 4.0)) < 1e-6);
+        }
+    }
+    {   // X9: a shot out of a player's sight within 60 m is sent to them muffled (roughly where, no shooter), at most
+        // every 0.3 s; one they can see, or farther off, isn't
+        Server s; fresh(s, open, 4);
+        auto& p = s.players_[0];
+        p.weapon = WPN_RIFLE; p.move.pos = {1, 0, 1};
+        s.players_[1].move.pos = {40, 0, 1};    // out of sight (never seen), 39 m
+        s.players_[2].move.pos = {-39, 0, 0};   // in sight
+        s.players_[3].move.pos = {0, 0, -70};   // too far
+        for (int i = 1; i < 4; i++) s.players_[i].events.clear();
+        UserCmd c; c.weapon = WPN_RIFLE; c.msec = 1; c.pitch = 1.3f;
+        int sent[4] = {};
+        for (int t = 0; t < 100; t++) {   // 0.8 s of holding fire
+            s.timeMs_ += 8;
+            s.players_[2].lastSeen[0] = s.time();
+            for (int k = 0; k < 8; k++) { c.buttons = BTN_FIRE; s.runPlayerCmdForTest(0, c); }
+        }
+        std::string where;
+        for (int i = 1; i < 4; i++)
+            for (auto& e : s.players_[i].events) if (e.type == EV_GUNFIRE) { sent[i]++; where = e.text; CHECK(e.a == 255 && e.c == WPN_RIFLE); }
+        printf("  muffled shots: %d to the one out of sight (at \"%s\"), %d in sight, %d at 70 m; %d shots fired\n", sent[1], where.c_str(), sent[2], sent[3], p.shotsFired);
+        CHECK(sent[1] >= 2 && sent[1] <= 3 && sent[2] == 0 && sent[3] == 0 && where == "0 0 0");
+    }
+    {   // F22: refire on the command clock. 1 ms commands, 8 a tick (125 Hz): a held rifle fires on the command that
+        // ends its cooldown (not the first of the tick that does), a tap there still fires, and a burst of commands
+        // never fires faster than real time
+        Server s; fresh(s, open, 1);
+        auto& p = s.players_[0];
+        p.weapon = WPN_RIFLE;
+        UserCmd c; c.weapon = WPN_RIFLE; c.msec = 1;
+        int early = 0, late = 0, shots = 0;
+        for (int t = 0; t < 120; t++) {   // ~1 s of ticks, fire held
+            s.timeMs_ += 8;
+            for (int k = 0; k < 8; k++) {
+                c.buttons = BTN_FIRE;
+                double nf = p.nextFire;
+                int before = p.shotsFired;
+                c.viewTick = (uint32_t)s.timeMs_;
+                s.runPlayerCmdForTest(0, c);
+                if (p.shotsFired > before && shots++ > 0) {
+                    early += p.cmdTime < nf - 1e-9;          // fired before its cooldown was up on the command clock
+                    late += p.cmdTime - 0.001 >= nf - 1e-9;  // ... or a command after the one that ended it
+                }
+            }
+        }
+        printf("  held rifle: %d shots in ~0.96 s, %d early, %d late\n", shots, early, late);
+        CHECK(early == 0 && late == 0 && shots >= 6 && shots <= 8);
+        // a tap of 2 commands that starts on the command ending the cooldown fires (it fell between ticks before)
+        for (int t = 0; t < 40; t++) { s.timeMs_ += 8; for (int k = 0; k < 8; k++) { c.buttons = 0; s.runPlayerCmdForTest(0, c); } }
+        int before = p.shotsFired;
+        for (int k = 0; k < 2; k++) { c.buttons = BTN_FIRE; s.runPlayerCmdForTest(0, c); }
+        CHECK(p.shotsFired == before + 1);
+        double nf = p.nextFire;
+        c.buttons = 0;
+        while (p.cmdTime + 0.001 < nf - 1e-9) { if (p.cmdTime >= s.time() - 1e-9) s.timeMs_ += 8; s.runPlayerCmdForTest(0, c); }
+        if (p.cmdTime >= s.time() - 1e-9) s.timeMs_ += 8;   // (the next command's tick)
+        before = p.shotsFired;
+        c.buttons = BTN_FIRE; s.runPlayerCmdForTest(0, c); s.runPlayerCmdForTest(0, c);   // tapped right at the end
+        CHECK(p.shotsFired == before + 1);
+        // 200 commands of 8 ms in one tick: the command clock stops at the server's, so one shot at most
+        for (int t = 0; t < 40; t++) { s.timeMs_ += 8; for (int k = 0; k < 8; k++) { c.buttons = 0; s.runPlayerCmdForTest(0, c); } }
+        before = p.shotsFired;
+        c.msec = 8; c.buttons = BTN_FIRE;
+        for (int k = 0; k < 200; k++) s.runPlayerCmdForTest(0, c);
+        CHECK(p.shotsFired - before == 1 && p.cmdTime <= s.time() + 1e-9);
+    }
+}
+
+// T13: a click on the sniper / crossbow / rocket up to kTapBuffer before it's ready fires when it is; an earlier one,
+// the rocket's alt-fire (lob) and other weapons aren't kept.
+static void testTapBuffer() {
+    printf("tap buffer: slow weapons keep a click up to 0.1 s early\n");
+    for (int w : {WPN_SNIPER, WPN_CROSSBOW, WPN_ROCKET, WPN_RIFLE}) {
+        for (double early : {0.05, 0.15}) {
+            for (bool alt : {false, true}) {
+                if (alt && w != WPN_ROCKET) continue;
+                Server s;
+                s.setLog([](const std::string&) {});
+                CHECK(s.map_.parse("box -40 -1 -40 40 0 40\nspawn any 0 0 0\n"));
+                s.cfg_.mode = s.ms_.mode = MODE_FFA;
+                s.timeMs_ = 10000;
+                auto& p = s.players_[0];
+                p.connected = p.alive = true; p.health = 100; p.move.flags = MF_ONGROUND; p.weapon = w;
+                UserCmd c; c.weapon = (uint8_t)w; c.msec = 1; c.pitch = 1.2f;
+                auto run = [&](uint16_t b, int n) {
+                    for (int k = 0; k < n; k++) { if (p.cmdTime >= s.time() - 1e-9) s.timeMs_ += 1; c.buttons = b; s.runPlayerCmdForTest(0, c); }
+                };
+                const uint16_t btn = alt ? BTN_ALTFIRE : BTN_FIRE;
+                run(btn, 1);
+                run(0, 1);
+                const int shots0 = p.shotsFired;
+                const double ready = p.nextFire;
+                while (p.cmdTime + 0.001 < ready - early) run(0, 1);
+                run(btn, 3);   // a 3 ms tap, early
+                run(0, (int)((early + 0.05) * 1000));
+                const int got = p.shotsFired - shots0;
+                const bool want = tapBuffered(w) && early <= kTapBuffer && !alt;
+                printf("  %-8s%s tapped %.2f s early: %d shot(s)\n", weaponDef(w).name, alt ? " (alt)" : "", early, got);
+                CHECK(got == (want ? 1 : 0));
+            }
+        }
+    }
+}
+
 static void testWallbang() {
     printf("wallbang: bullets pass through, movement and normal rays don't\n");
     Map m;
@@ -2508,7 +2788,8 @@ static void testSyringe(uint16_t port) {
     for (int k = 0; k < 50 && pa.health == 50; k++) pump(s, cls, 0.01, heal);
     double first = pa.lastFire;
     printf("  one use: %.0f hp (from 50), next in %.2f s\n", pa.health, pa.nextFire - first);
-    CHECK(pa.health == 60 && std::fabs(pa.nextFire - (first + 1.0)) < 0.002);
+    // (the cooldown runs from the use's command on the command clock, F22: the server clock or up to 0.1 s behind it)
+    CHECK(pa.health == 60 && pa.nextFire - 1.0 <= first + 0.002 && pa.nextFire - 1.0 >= first - 0.102);
     while (s.time() < first + 0.9) pump(s, cls, 0.01, heal);   // held: nothing more until the 1 s cooldown is over
     CHECK(pa.health == 60);
     while (s.time() < first + 1.2) pump(s, cls, 0.01, heal);
@@ -2975,6 +3256,40 @@ static constexpr float kAimSample = 75.0f; // s of game time per tick rate (all 
 // target) and they all shoot at it, so every level gets the same movement; their places rotate between rates.
 // Levels must be clearly ordered, play the same at every tick rate (their timing is all game time), and even
 // the expert must stay beatable (well under perfect aim).
+// X11: a bot hurt by someone it can't see or hear (a sniper far off) turns toward them once its reaction time is
+// over, not before.
+static void testBotHurtTurn(uint16_t port) {
+    printf("bots turn toward whoever hurt them, after their reaction time\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port; cfg.balanceBots = false;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    int shooter = s.addBot(TEAM_A, BOT_BEGINNER), bot = s.addBot(TEAM_A, BOT_INTERMEDIATE);
+    s.bots_[bot].onlyEnemy = shooter;
+    const Vec3 at(7, 0, -27), from(-7, 0, -24);   // the shooter stands still, silent, behind the bot
+    s.bots_[shooter].script = [&](Server& sv, int) {
+        auto& bp = sv.players_[bot]; bp.move.pos = at; bp.move.vel = {}; bp.health = 100;
+        auto& sp = sv.players_[shooter]; sp.move.pos = from; sp.move.vel = {};
+        UserCmd c; c.weapon = kNoWeaponChange; return c;
+    };
+    auto run = [&](double sec) { double end = timeNow() + sec; while (timeNow() < end) { s.frame(); sleepMs(1); } };
+    run(1.0);
+    Vec3 d = from - at;
+    const float toShooter = std::atan2(-d.x, -d.z);
+    s.bots_[bot].aimYaw = toShooter + PI;   // (facing away)
+    s.players_[bot].health = 100;
+    s.damagePlayer(bot, shooter, 1, WPN_SNIPER, Vec3());
+    const double hitAt = s.time();
+    run(0.1);
+    CHECK(s.bots_[bot].aware[shooter].hurtNoticed < hitAt);   // still reacting
+    run(1.2);
+    auto off = [&] { float a = std::fmod(s.bots_[bot].aimYaw - toShooter + 3 * PI, 2 * PI) - PI; return std::fabs(a); };
+    printf("  hit at %.2f, noticed at %.2f; facing %.0f deg off the shooter 1.3 s later\n", hitAt, s.bots_[bot].aware[shooter].hurtNoticed, off() * 180 / PI);
+    CHECK(s.bots_[bot].aware[shooter].hurtNoticed == hitAt && off() < 0.6f);
+    s.stop();
+}
+
 static void testBotAim(uint16_t& port) {
     printf("bot aim: damage per second vs a strafing player, by level and server tick rate\n");
     int rates[] = {1000, 250, 125};
@@ -7006,12 +7321,12 @@ int main(int argc, char** argv) {
     struct T { const char* name; std::function<void()> run; };
     std::vector<T> par = {   // (longest first: they set the wall time)
         {"bots", [] { uint16_t p = TP(28900); testBots(p); }},
-        {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotAim(p); testHostedBotsThreadExit(TP(29010)); }},
+        {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotAim(p); testHostedBotsThreadExit(TP(29010)); testBotHurtTurn(TP(29011)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
-        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); }},
+        {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); testFeelFixes(); testTapBuffer(); }},
         {"maps", [] {
             testMaps(); testWalkGrid(); testAllMaps(); testCartSweep(); testSpawnPools(); testSpawnSanity(); testStairs(); testLadders();
             printf("map scores\n");   // the map bar: every map scores at least 7 in every category but originality

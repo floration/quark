@@ -25,6 +25,8 @@ namespace {
 constexpr double kTimeout = 10.0;
 constexpr uint32_t kMaxRewindMs = 500; // lag compensation window (hard ceiling)
 constexpr uint32_t kRewindToleranceMs = 30; // over ping + interpolation (ping smoothing, jitter)
+constexpr float kRewindTeleport = 4.0f;     // two history records further apart than this: a respawn or teleport, not lerped
+constexpr double kCmdClockLag = 0.1;        // the command clock never trails the server clock by more (nor leads it)
 constexpr float kMaxCmdTokensMs = 40.0f; // burst allowance after network jitter
 constexpr int kMaxStringCmdsPerTick = 8;   // per player (chat, votes, commands)
 // Map edits (MAP-12): an op updates the map in place (a few us; a rebuild when the grid has to move or grow, ~0.3 ms
@@ -84,6 +86,8 @@ static inline int lowestBit(uint32_t m) {   // (m != 0)
 constexpr int kVisRaysPerSecond = 1000000;   // ~1/3 of a core on Midtown, only when every pair is a hidden one
 constexpr int kVisMinRaysPerTick = 64;
 
+// A player's command clock now (refire runs on it, F22): the last command's end, or the server clock before any.
+static double cmdClockOf(const ServerPlayer& p, double now) { return p.cmdTime < 0 ? now : std::max(p.cmdTime, now - kCmdClockLag); }
 bool isLoopback(const NetAddr& a) { return (a.ip >> 24) == 127; }
 constexpr double kProbeTimeout = 3.0;     // no PKT_PROBE_REPLY on the game port by then: not reachable
 constexpr double kProbeRecheck = 300.0;   // re-check every 5 minutes (and on the menu button)
@@ -1559,7 +1563,7 @@ void Server::handleStringCmd(int id, const std::string& s) {
         int w = rest.empty() ? -1 : std::atoi(rest.c_str());
         p.specTarget = w >= 0 && w < kMaxPlayers ? w : -1;
     } else if (cmd == "kill") {
-        if (p.alive) killPlayer(id, -1, 255);
+        if (p.alive) killPlayer(id, ringOutKiller(id), 255);   // (knocked off, then "kill": still theirs)
     } else if (isAdmin(id)) {
         command(s, id);
     }
@@ -1869,6 +1873,7 @@ void Server::spawnPlayer(int id) {
     p.alive = true;
     p.health = kMaxHealth;
     p.weapon = isItMode(ms_.mode) ? WPN_KNIFE : p.selectedWeapon;   // (hide and seek / tag: "it" starts with the knife out)
+    p.prevWeapon = -1;
     p.knifeBackAt = p.syringeBackAt = 0;
     if (!weaponAllowed(p.weapon)) // restricted pool: first allowed weapon, in slot order
         for (int k = 0; k < WPN_COUNT; k++) if (weaponAllowed(kWeaponSlots[k])) { p.weapon = kWeaponSlots[k]; break; }
@@ -1878,7 +1883,7 @@ void Server::spawnPlayer(int id) {
     if (crouch) p.move.flags |= MF_CROUCHED;
     if (arenaRules() & AR_QUICK_DASH) p.move.mods |= MOVE_QUICK_DASH;
     if (arenaRules() & AR_LOW_GRAVITY) p.move.mods |= MOVE_LOW_GRAVITY;
-    p.nextFire = time() + 0.25f;
+    p.nextFire = cmdClockOf(p, time()) + 0.25f;   // (on the command clock, as refire)
     p.respawnAt = -1;
     GameEvent e;
     e.type = EV_SPAWN;
@@ -1895,6 +1900,9 @@ void Server::killPlayer(int victim, int killer, int weapon) {
     v.health = 0;
     v.deaths++;
     v.specTarget = killer >= 0 && killer < kMaxPlayers && killer != victim ? killer : -1;   // (the client watches the killer first, too)
+    v.killCamOf = v.specTarget;   // (team modes: watchable for kKillCamTime, then teammates only)
+    v.killCamUntil = time() + kKillCamTime;
+    v.lastHitBy = -1;
     if (killer >= 0 && killer != victim) {
         ServerPlayer& k = players_[killer];
         bool teamkill = modeIsTeamBased(cfg_.mode) && k.team == v.team;
@@ -1910,7 +1918,18 @@ void Server::killPlayer(int victim, int killer, int weapon) {
     // c: the weapon, plus how it happened (the announcer's headshot / airborne / air rocket calls)
     bool airborne = !(v.move.flags & MF_ONGROUND) && !map_.onLadder(playerBox(v.move));
     e.c = (int16_t)(weapon < 0 ? weapon : weapon | (headHit_[victim] ? KILL_HEADSHOT : 0) | (airborne ? KILL_AIRBORNE : 0));
-    broadcastEvent(e);
+    {   // the victim's copy says "<killer's health, -1: not shown> <respawn in ms, -1: none>" for the death screen (old
+        // clients ignore a kill's text). No killer health in ranked.
+        const float rs = rulesRespawnDelay(*this);
+        const bool showHp = killer >= 0 && killer < kMaxPlayers && killer != victim && players_[killer].alive && !cfg_.ranked;
+        const std::string mine = std::to_string(showHp ? (int)std::ceil(std::max(0.0f, players_[killer].health)) : -1) + " " +
+                                 std::to_string(rs >= 0 ? (int)std::lround(rs * 1000) : -1);
+        for (int i = 0; i < kMaxPlayers; i++) {
+            if (!players_[i].connected) continue;
+            if (i == victim) { e.text = mine; sendEvent(i, e); e.text.clear(); }
+            else sendEvent(i, e);
+        }
+    }
     glog(LOG_SIMPLE, "kill killer=%d \"%s\" victim=%d \"%s\" weapon=%d", killer, killer >= 0 ? players_[killer].name.c_str() : "", victim,
          v.name.c_str(), weapon);
     rulesOnDeath(*this, victim, killer);
@@ -1953,6 +1972,11 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
         v.move.vel += kb;
         if (kb.y > 0.5f) v.move.flags &= ~MF_ONGROUND;
     }
+    if (canHurt && !friendly && attacker >= 0 && attacker != victim && attacker < kMaxPlayers) {   // a ring-out is theirs (T21)
+        v.lastHitBy = attacker;
+        v.lastHitByJoin = players_[attacker].joinId;
+        v.lastHitByAt = time();
+    }
     if (!canHurt || dmg <= 0) return;
     uint8_t rules = arenaRules();
     if (attacker == victim && (rules & AR_NO_SELF_DAMAGE)) return;
@@ -1985,7 +2009,44 @@ void Server::damagePlayer(int victim, int attacker, float dmg, int weapon, const
         }
     }
     glog(LOG_VERBOSE, "hit attacker=%d victim=%d dmg=%.2f weapon=%d health=%.2f", attacker, victim, dmg, weapon, v.health);
-    if (v.health <= 0) killPlayer(victim, attacker, weapon);
+    if (v.health <= 0) {
+        // the last hit's number and sound go out before the kill (they came after it: laser and sticky chains)
+        if (attacker >= 0 && attacker != victim) flushHit(attacker, victim);
+        killPlayer(victim, attacker, weapon);
+    }
+}
+
+// X9: gunfire more than kVisNear away and out of sight was silent to players (their snapshot has no shooter), while
+// bots hear it to 75 m. Each listener within kMuffledRange that isn't sent the shooter gets a muffled shot, at most
+// one every 0.3 s per shooter, at a spot rounded to a 4 m grid (no shooter id): a direction, not a wallhack.
+void Server::muffledGunfire(int shooter, int weapon) {
+    if (weapon == WPN_KNIFE || weapon == WPN_SYRINGE || weapon == WPN_LOCATOR || weapon < 0 || weapon >= WPN_COUNT) return;
+    ServerPlayer& p = players_[shooter];
+    const double now = time();
+    if (now < p.muffledScanAt) return;
+    p.muffledScanAt = now + 0.05;
+    const bool teams = modeIsTeamBased(ms_.mode);
+    for (int i = 0; i < kMaxPlayers; i++) {
+        ServerPlayer& v = players_[i];
+        if (i == shooter || !v.connected || v.isBot || !v.alive || v.team == TEAM_SPECTATOR) continue;
+        if ((teams && v.team == p.team) || now - v.lastSeen[shooter] <= kVisGrace) continue;   // (sent: their own shot sound plays)
+        const Vec3 d = p.move.pos - v.move.pos;
+        if (dot(d, d) > kMuffledRange * kMuffledRange || now < p.muffledAt[i]) continue;
+        p.muffledAt[i] = now + 0.3;
+        auto grid = [](float x) { return (int)std::lround(x / 4.0f) * 4; };
+        GameEvent e;
+        e.type = EV_GUNFIRE; e.a = 255; e.c = (int16_t)weapon;
+        e.text = std::to_string(grid(p.move.pos.x)) + " " + std::to_string(grid(p.move.pos.y + 1.5f)) + " " + std::to_string(grid(p.move.pos.z));
+        sendEvent(i, e);
+    }
+}
+
+int Server::ringOutKiller(int victim) const {
+    const ServerPlayer& v = players_[victim];
+    const int a = v.lastHitBy;
+    if (a < 0 || a >= kMaxPlayers || a == victim || time() - v.lastHitByAt > kRingOutCredit) return -1;
+    const ServerPlayer& k = players_[a];
+    return k.connected && k.joinId == v.lastHitByJoin && k.team != TEAM_SPECTATOR ? a : -1;
 }
 
 void Server::flushHit(int attacker, int victim) {
@@ -2067,7 +2128,7 @@ void Server::simulate() {
     for (int i = 0; i < kMaxPlayers; i++) {
         ServerPlayer& p = players_[i];
         if (!p.connected) continue;
-        if (p.alive && (p.move.pos.y < map_.killY() || (!map_.lava.empty() && map_.inLava(playerBox(p.move))))) killPlayer(i, -1, 252);
+        if (p.alive && (p.move.pos.y < map_.killY() || (!map_.lava.empty() && map_.inLava(playerBox(p.move))))) killPlayer(i, ringOutKiller(i), 252);
         if (!p.alive && p.respawnAt >= 0 && time() >= p.respawnAt && p.team != TEAM_SPECTATOR) spawnPlayer(i);
         if (p.alive && (arenaRules() & AR_REGEN) && time() - p.lastDamagedAt > 3.0 && p.health < lifeMaxHealth())
             p.health = std::min(lifeMaxHealth(), p.health + 10.0f * dt()); // regeneration: 10 hp/s after 3 s untouched
@@ -2103,6 +2164,11 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     p.prevButtons = p.buttons;
     p.buttons = cmd.buttons;
     p.lastViewTick = fromWireMs(cmd.viewTick);
+    // the command clock (F22): this command ends cmd.msec after the last one. Never ahead of the server clock (no
+    // faster refire than real time) and never more than kCmdClockLag behind it (a client that sent nothing for a
+    // while starts from now - kCmdClockLag, as the held-fire catch-up allows). A bot's commands are the tick's.
+    if (p.isBot || p.cmdTime < 0) p.cmdTime = time();
+    else p.cmdTime = std::min(time(), std::max(p.cmdTime + cmd.msec * 0.001, time() - kCmdClockLag));
     if (cmd.weapon < WPN_COUNT) p.selectedWeapon = cmd.weapon; // also while dead: you respawn with it
     if (!p.alive) return;
     if (rulesFrozen(*this, id)) p.move.flags |= MF_FROZEN;
@@ -2124,6 +2190,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
     int heldWeapon = p.weapon;
     if (cmd.weapon < WPN_COUNT && weaponAllowed(cmd.weapon) && !(away(cmd.weapon) && otherWeapon() >= 0)) p.weapon = cmd.weapon;
     if (away(p.weapon) && otherWeapon() >= 0) p.weapon = otherWeapon();
+    if (p.weapon != heldWeapon) p.prevWeapon = heldWeapon;
     bool disabled = away(p.weapon);
     // a weapon switch never fires the new weapon with a button held from before: let go and press again
     if (p.weapon != heldWeapon && (cmd.buttons & (BTN_FIRE | BTN_ALTFIRE))) p.fireLocked = true;
@@ -2150,9 +2217,15 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
         if (!(cmd.buttons & (BTN_FIRE | BTN_ALTFIRE))) p.fireLocked = false;
         else wantFire = altShot = false;
     }
+    const double now = p.cmdTime;   // refire runs on the command clock (F22)
+    if (p.weapon != heldWeapon || p.fireLocked) p.fireQueuedUntil = -1;   // (a buffered tap is for the weapon it was made with)
+    if (tapBuffered(p.weapon) && !p.fireLocked && !disabled) {   // T13: a click up to kTapBuffer early fires when it's ready
+        if (wantFire && !altShot && (cmd.buttons & BTN_FIRE) && !(p.prevButtons & BTN_FIRE) && now < p.nextFire) p.fireQueuedUntil = now + kTapBuffer;
+        if (!wantFire && now <= p.fireQueuedUntil) wantFire = true;
+    }
     if (weaponDef(p.weapon).semiAuto) { // one shot per click
-        if (wantFire && !(p.prevButtons & BTN_FIRE)) p.fireQueuedUntil = time() + kFireBuffer;
-        wantFire = time() <= p.fireQueuedUntil;
+        if (wantFire && !(p.prevButtons & BTN_FIRE)) p.fireQueuedUntil = now + kFireBuffer;
+        wantFire = now <= p.fireQueuedUntil;
     }
     // A knife swing that missed keeps cutting along your current aim for a moment (one hit at most).
     if (p.knifeSwingUntil > 0 && (p.weapon != WPN_KNIFE || disabled || time() > p.knifeSwingUntil)) p.knifeSwingUntil = -1;
@@ -2161,27 +2234,31 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
         if (fireWeapon(id, sw)) p.knifeSwingUntil = -1;
     }
     // Fast weapons (laser: every 10 ms) can fire more than once in a command at low tick rates.
-    for (int shot = 0; shot < 16 && wantFire && time() >= p.nextFire && !(p.move.flags & MF_FROZEN); shot++) {
+    for (int shot = 0; shot < 16 && wantFire && now >= p.nextFire && !(p.move.flags & MF_FROZEN); shot++) {
         p.fireQueuedUntil = -1;
         // Holding fire keeps an exact cadence, catching up shots that fell between commands (the laser
         // fires every 1 ms, so late or batched commands must not drop shots). After a pause, or more
         // than 100 ms behind, the timer restarts from now.
         float refire = shotRefire(p.weapon, (cmd.buttons & BTN_ALTFIRE) != 0);   // (a throw: the weapon's own cooldown)
         bool held = (p.prevButtons & (altShot ? BTN_ALTFIRE : BTN_FIRE)) != 0;
-        bool burst = held && time() - p.nextFire < 0.1f && p.weapon == p.burstWeapon;
+        bool burst = held && now - p.nextFire < 0.1f && p.weapon == p.burstWeapon;
         p.burstShot = burst ? p.burstShot + 1 : 0;   // the shot's place in the fixed spread sequence (NET-9)
         p.burstWeapon = p.weapon;
-        p.nextFire = (held && time() - p.nextFire < 0.1f) ? p.nextFire + refire : time() + refire;
+        p.nextFire = (held && now - p.nextFire < 0.1f) ? p.nextFire + refire : now + refire;
         p.lastFire = time();
         bool threw = isThrow(p.weapon, (cmd.buttons & BTN_ALTFIRE) != 0) && !itMode; // same test as fireWeapon
         int firedWeapon = p.weapon;
         bool hit = fireWeapon(id, cmd);
+        muffledGunfire(id, firedWeapon);
         p.knifeSwingUntil = (p.weapon == WPN_KNIFE && !threw && !hit) ? time() + kKnifeSwingTime : -1;
         if (threw) { // the knife / syringe is away: switch to the next weapon (usable after the throw's cooldown: nextFire above)
             if (firedWeapon == WPN_KNIFE) p.knifeBackAt = time() + kKnifeAway;
             else p.syringeBackAt = time() + kSyringeAway;
             p.fireLocked = true;
-            if (otherWeapon() >= 0) p.weapon = otherWeapon();
+            // back to the weapon held before (T14: it was always the first slot, the rocket); else the first one usable
+            const int back = p.prevWeapon >= 0 && p.prevWeapon < WPN_COUNT && p.prevWeapon != firedWeapon && !away(p.prevWeapon) &&
+                             weaponAllowed(p.prevWeapon) ? p.prevWeapon : otherWeapon();
+            if (back >= 0) { p.prevWeapon = firedWeapon; p.weapon = back; }
             p.fireQueuedUntil = -1;
             break;
         }
@@ -2190,7 +2267,7 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
 
 // One lag-compensated ray: adds dmg to the first player it hits (tested against where players
 // were at the shooter's view time).
-void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint64_t vt, float* dmgPer, float dmg, float headDmg, float grow, bool pierce) {
+void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint64_t vt, float* dmgPer, float dmg, float headDmg, float grow, bool pierce, float* headPer) {
     float bang;
     float wall = map_.raycastBullet(eye, dir, range, &bang); // goes through wallbang brushes
     float best = wall >= 0 ? wall : range;
@@ -2205,16 +2282,22 @@ void Server::hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint
             float t = rayAABB(eye, inv, bb, best);
             if (t < 0) continue;
             float d = dmg;
-            if (headDmg > 0 && rayHitsHead(eye, dir, bb)) { d = std::max(d, headDmg); headHit_[i] = true; }
-            dmgPer[i] += (bang >= 0 && t > bang) ? d * kWallbangDamage : d;
+            const bool head = headDmg > 0 && rayHitsHead(eye, dir, bb);
+            if (head) { d = std::max(d, headDmg); headHit_[i] = true; }
+            if (bang >= 0 && t > bang) d *= kWallbangDamage;
+            dmgPer[i] += d;
+            if (head && headPer) headPer[i] += d;
             continue;
         }
         float t = rayAABB(eye, inv, bb, best);
         if (t >= 0 && t < best) { best = t; hit = i; hitBb = bb; }
     }
     if (hit < 0) return;
-    if (headDmg > 0 && rayHitsHead(eye, dir, hitBb)) { dmg = std::max(dmg, headDmg); headHit_[hit] = true; }   // (the head, not the shoulders)
-    dmgPer[hit] += (bang >= 0 && best > bang) ? dmg * kWallbangDamage : dmg;
+    const bool head = headDmg > 0 && rayHitsHead(eye, dir, hitBb);   // (the head, not the shoulders)
+    if (head) { dmg = std::max(dmg, headDmg); headHit_[hit] = true; }
+    if (bang >= 0 && best > bang) dmg *= kWallbangDamage;
+    dmgPer[hit] += dmg;
+    if (head && headPer) headPer[hit] += dmg;
 }
 
 // ---- the grapple latched onto a player (owner: "if the tip of the hook hits a player it sticks to them, 10 damage, 15
@@ -2257,7 +2340,22 @@ Vec3 Server::rewoundPos(int i, uint64_t vt, bool* crouched) const {
     for (; k <= (uint32_t)ServerPlayer::kHistory && k <= tick_; k++) {   // (as hitscan: newest at or before vt)
         const auto& h = q.history[(tick_ - k) % ServerPlayer::kHistory];
         if (h.tick == ServerPlayer::kNoHistory || h.tick > timeMs_) break;
-        if (h.tick <= vt) { if (h.alive) { pos = h.pos; *crouched = h.crouched; } break; }
+        if (h.tick <= vt) {
+            if (h.alive) {
+                pos = h.pos; *crouched = h.crouched;
+                // between this record and the next one (F21: the newest at or before vt was up to a tick behind what
+                // the client drew, ~8 cm at strafe speed). The next one is newer than vt: the search passed it.
+                if (k >= 2 && h.tick < vt) {
+                    const auto& n = q.history[(tick_ - (k - 1)) % ServerPlayer::kHistory];
+                    if (n.alive && n.tick > h.tick && n.tick != ServerPlayer::kNoHistory && dot(n.pos - h.pos, n.pos - h.pos) < kRewindTeleport * kRewindTeleport) {
+                        float f = (float)(vt - h.tick) / (float)(n.tick - h.tick);
+                        pos = h.pos + (n.pos - h.pos) * f;
+                        if (f >= 0.5f) *crouched = n.crouched;
+                    }
+                }
+            }
+            break;
+        }
     }
     return pos;
 }
@@ -2358,6 +2456,10 @@ void Server::tickLatches() {
         float dist = length(d);
         bool blocked = dist > 1e-3f && map_.raycastAny(from, d / dist, dist);   // (any wall: no need for the nearest)
         if (blocked || dist > range || time() - pa.hookSince > kGrappleLatchMax || !rulesCanDamage(*this, a, pa.hookVictim)) endLatch(a);
+        else {   // still pulling them: a ring-out now (or within kRingOutCredit of the release) is the puller's
+            ServerPlayer& v = players_[pa.hookVictim];
+            v.lastHitBy = a; v.lastHitByJoin = pa.joinId; v.lastHitByAt = time();
+        }
     }
     for (int v = 0; v < kMaxPlayers; v++) {
         ServerPlayer& pv = players_[v];
@@ -2447,11 +2549,22 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
             if (count >= kMaxStickies && oldest >= 0) projectiles_[oldest].active = false;
         }
         if (p.weapon == WPN_BUBBLE && alt) { // the stream: every bubble at once, each at its own speed
+            // the nearest enemy in sight (F15: counting through walls told you someone was within 5 m): a ray or two
+            // per enemy inside the count's range, once a stream (1.8 s)
             float nearest = 1e9f;
             for (int i = 0; i < kMaxPlayers; i++) {
                 const auto& o = players_[i];
                 if (i == id || !o.connected || !o.alive || (modeIsTeamBased(cfg_.mode) && o.team == p.team)) continue;
-                nearest = std::min(nearest, length(o.move.pos - p.move.pos));
+                const float dist = length(o.move.pos - p.move.pos);
+                if (dist >= nearest || dist >= kBubbleStreamFar) continue;   // (it can't lower the count)
+                const float sc = moveScale(o.move.mods);
+                bool seen = false;
+                for (float h : {1.6f, 1.0f}) {   // head, then chest
+                    Vec3 to = o.move.pos + Vec3(0, h * sc, 0) - eye;
+                    float len = length(to);
+                    if (len < 0.01f || !map_.raycastAny(eye, to / len, len)) { seen = true; break; }
+                }
+                if (seen) nearest = dist;
             }
             const int count = bubbleStreamCount(nearest);
             int n = 0;
@@ -2504,6 +2617,7 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
     float range = p.weapon == WPN_KNIFE ? kKnifeRange : wd.range;
     // Pellets add up per target so one shotgun blast is one hit (one damage event) per player.
     float dmgPer[kMaxPlayers] = {};
+    float headPer[kMaxPlayers] = {};   // ...and the part of it that was to the head (a blast is a headshot when that's half)
     // Laser alt-fire is a tractor beam: pulls the target toward you for a little less damage.
     bool pull = wd.beam && (cmd.buttons & BTN_ALTFIRE);
     float dmg = wd.damage * (pull ? kLaserPullDamage : 1.0f);
@@ -2511,8 +2625,11 @@ bool Server::fireWeapon(int id, const UserCmd& cmd) {
     for (int k = 0; k < wd.pellets; k++) {
         Vec3 d = spreadAim(aim, spread, k, wd.pellets, p.burstShot);   // the fixed pattern (NET-9)
         if (bounce) bounceShot(id, eye, d, range, vt, dmgPer, dmg * kShotgunBounceDamage);
-        else hitscan(id, eye, d, range, vt, dmgPer, dmg, pull ? 0.0f : headDamage(p.weapon), p.weapon == WPN_KNIFE ? kKnifeGrow : 0.0f, p.weapon == WPN_SNIPER);
+        else hitscan(id, eye, d, range, vt, dmgPer, dmg, pull ? 0.0f : headDamage(p.weapon), p.weapon == WPN_KNIFE ? kKnifeGrow : 0.0f, p.weapon == WPN_SNIPER, headPer);
     }
+    // F14: one head pellet made the whole blast a HEADSHOT (most mid-range shotgun kills): at least half its damage now
+    if (wd.pellets > 1)
+        for (int i = 0; i < kMaxPlayers; i++) headHit_[i] = dmgPer[i] > 0 && headPer[i] * 2 >= dmgPer[i];
     bool any = false;
     for (int i = 0; i < kMaxPlayers; i++) {
         if (dmgPer[i] <= 0) continue;
@@ -2579,7 +2696,7 @@ void Server::stepProjectile(Projectile& pr) {
             if (hitPlayer >= 0 && modeIsTeamBased(ms_.mode) && players_[hitPlayer].team == o.team) {
                 auto& t = players_[hitPlayer];
                 t.health = std::min(lifeMaxHealth(), t.health + kSyringeHeal * tunedDamage(WPN_SYRINGE));
-                t.nextFire = time();
+                t.nextFire = cmdClockOf(t, time());
                 dashRefillAll(t.move);   // (the charges back, the cooldown and every recharge over)
                 t.move.hookCooldown = 0;
                 if (t.knifeBackAt > time()) t.knifeBackAt = time();   // (a thrown knife / syringe is back at once too)
@@ -2717,13 +2834,23 @@ void Server::explode(const Vec3& at, int owner, int weapon, int direct) {
         float dist = length(to);
         if (dist > 0.01f) {
             float w = map_.raycast(at, to / dist, dist);
-            if (w >= 0 && w < dist - 0.1f) continue;
+            if (w >= 0 && w < dist - 0.1f) {
+                // the centre is behind cover: a half-peeking player still takes it if the blast reaches the box's
+                // nearest point or the head (F16: 0 instead of ~30). At most these 2 rays, and only here.
+                auto clear = [&](const Vec3& pt) {
+                    Vec3 v = pt - at;
+                    float len = length(v);
+                    return len < 0.11f || !map_.raycastAny(at, v / len, len - 0.1f);
+                };
+                if (!clear(closest) && !clear(Vec3(c.x, b.mx.y - 0.15f * (b.mx.y - b.mn.y), c.z))) continue;
+            }
         }
         float frac = 1.0f - d / wd.splashRadius;
         Vec3 push = dist > 0.01f ? to / dist : Vec3(0, 1, 0);
         bool self = i == owner;
-        // Self damage: 10% when the blast is at or below your feet (rocket jumps), full otherwise.
-        float selfScale = at.y <= p.move.pos.y + 0.3f ? 0.1f : 1.0f;
+        // Self damage: 10% when the blast is at or below your feet + 0.3 m (rocket jumps), rising evenly to full at
+        // feet + 1.2 m (chest height). T11: it jumped tenfold at feet + 0.3 (a knee-high blast ~30 hp, a hair lower 3).
+        float selfScale = 0.1f + 0.9f * clampf((at.y - (p.move.pos.y + kSelfRampLow)) / (kSelfRampHigh - kSelfRampLow), 0, 1);
         float dmg = wd.damage * frac * (self ? selfScale : 1.0f);
         if (i == direct && !self) dmg = std::max(dmg, kRocketDirectDamage * tunedDamage(weapon));   // a direct hit
         Vec3 knock = push * (11.0f * frac * (self ? 1.3f : 1.0f) * (weapon == WPN_BUBBLE ? kBubbleKnock : 1.0f));
@@ -2752,9 +2879,11 @@ uint32_t Server::perspectives(int id) const {
     if (p.alive) return m;
     const bool teams = modeIsTeamBased(ms_.mode);
     int w = p.specTarget;
+    // team modes: a teammate, or the killer for kKillCamTime after the death (F11: dead players watched enemies'
+    // views for as long as they liked)
     auto watchable = [&](int w) {
         return w >= 0 && w < kMaxPlayers && w != id && players_[w].connected && players_[w].alive && players_[w].team != TEAM_SPECTATOR &&
-               (!teams || players_[w].team == p.team);
+               (!teams || players_[w].team == p.team || (w == p.killCamOf && time() < p.killCamUntil));
     };
     if (!watchable(w) && !teams)   // watching nobody yet: the first one alive (as the client picks), until it says otherwise
         for (w = 0; w < kMaxPlayers && !watchable(w); w++) {}

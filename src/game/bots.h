@@ -31,6 +31,7 @@ struct BotAwareness {
     Vec3 seenPos, seenVel;     // where it was then, and how it seemed to move
     double heardAt = -1e9;     // last time it was heard (gunfire, footsteps)
     Vec3 heardPos;             // roughly where (the error grows with distance)
+    double hurtNoticed = -1e9; // the hit from it (ServerPlayer::lastHitByAt) last turned to (X11)
 };
 
 struct BotBrain {

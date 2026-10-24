@@ -425,6 +425,7 @@ private:
     bool fireLatched_ = false;
     bool localFireHeld_ = false, scopeOverlay_ = false, localFireLocked_ = false;
     double localFireQueued_ = -1;
+    int localTapWeapon_ = -1;   // the weapon localFireQueued_'s click was made with (a switch drops it)
     double nextLaserSound_ = 0;
     double knifeSlash_[kMaxPlayers] = {}; // when each player last swung the knife (slash trail)
     void drawKnifeSlash(const Vec3& eye, float yaw, float pitch, float t, const Vec3& color, Vec3 from);   // from: the knife (zero: a spot by the eye)
@@ -435,6 +436,12 @@ private:
     double wheelHeldUntil_[2] = {}; // a scroll step counts as "held" briefly, so hold actions (jump, fire...) work on the wheel
     int specTarget_ = -1;
     int specSent_ = -2;         // the spectate target last told to the server (-2: none since alive)
+    double killCamUntil_ = 0;   // team modes: the killer can be watched until then (kKillCamTime), then teammates only
+    // the death screen (X1): who killed you with what, their health then (-1: not shown, ranked or an old server), and
+    // when you respawn (-1: not known / not this round)
+    int deathKiller_ = -1, deathWeapon_ = -1, deathKillerHp_ = -1;
+    double deathRespawnAt_ = -1;
+    bool deathValid_ = false;
 
     // effects + feeds
     struct Span { size_t at, len; Color color; };   // part of a feed line in its own colour (a player's chosen name colour)
@@ -444,6 +451,7 @@ private:
     std::deque<Feed> chatLog_;   // the chat history shown while typing (Enter)
     void addChat(const Feed& f) { chatFeed_.push_back(f); chatLog_.push_back(f); while (chatFeed_.size() > 8) chatFeed_.pop_front(); while (chatLog_.size() > 30) chatLog_.pop_front(); }
     std::string centerText_;
+    double killMarkUntil_ = 0;   // your kill: a bigger red X on the crosshair until then (X6)
     double centerUntil_ = 0, hitUntil_ = 0, damageUntil_ = 0, recoil_ = 0, localNextFire_ = 0;
     HitSoundGate hitGate_;   // the hitsound: one per moment, the heaviest (audio.h)
     double localKnifeBack_ = 0, localSyringeBack_ = 0;   // predicted: a thrown knife / syringe is away (disabled) until then
@@ -456,7 +464,7 @@ private:
     int lastHealth_ = 0;
     struct Tracer { Vec3 a, b; double until; };
     std::vector<Tracer> tracers_;
-    struct Explosion { Vec3 at; double start; float size = 1; bool bubble = false; };
+    struct Explosion { Vec3 at; double start; float size = 1; bool bubble = false; bool kill = false; };   // kill: a red burst where someone died (X6)
     std::vector<Explosion> explosions_;
     std::vector<ProjectileSnap> lastProjectiles_;
     std::vector<ProjectileSnap> projScratch_;   // (frame: this frame's projectiles, built here then swapped in)
@@ -666,6 +674,7 @@ private:
     void drawControls(const SetLayout& L);
     void drawHudSettings(const SetLayout& L);
     void drawCrosshairSettings(const SetLayout& L);
+    void drawKillMark(float cx, float cy, float scale);
     void drawCrosshair(float cx, float cy, float scale, bool hit);
     // FONT (settings/fonts, from PLAYER): the built-in UI fonts, then the player's mods/fonts files (uifonts.h). The
     // list is looked up when the page opens and on REFRESH; a font's atlas is built once when it's picked.

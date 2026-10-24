@@ -51,10 +51,10 @@
       s.steps(0, 2.2).theirSteps(0, 1.2, E);
       s.theirFire(0.55, 'RIFLE', 9, E);
       for (let i = 0; i < 4; i++) s.hurt(0.6 + i * 0.3);
-      s.fire(0.9, 'RIFLE', 10, { hit: i => i % 3 === 2 ? 0 : (i % 4 === 0 ? 7.5 : 4.95), head: i => i % 4 === 0 });
+      s.fire(0.9, 'RIFLE', 10, { hit: i => i % 3 === 2 ? 0 : (i % 4 === 0 ? 7.5 : 5.0), head: i => i % 4 === 0 });
       s.steps(2.6, 4.2);
       s.theirFire(2.9, 'RIFLE', 5, E);
-      const end = s.fire(3.4, 'RIFLE', 8, { hit: i => i === 7 ? 7.5 : 4.95, head: i => i === 7 });
+      const end = s.fire(3.4, 'RIFLE', 8, { hit: i => i === 7 ? 7.5 : 5.0, head: i => i === 7 });
       s.kill(end + 0.03).say(end + 0.12, 'HEADSHOT');
       s.steps(end + 0.5, 6.3);
       return s.ev;
@@ -127,7 +127,7 @@
       let t = 0.2;
       for (let k = 1; k <= 10; k++) {
         const w = k % 2 ? 'RIFLE' : 'SHOTGUN';
-        const end = w === 'RIFLE' ? s.fire(t, 'RIFLE', 4, { hit: () => 4.95 }) : s.fire(t, 'SHOTGUN', 1, { hit: () => 34 });
+        const end = w === 'RIFLE' ? s.fire(t, 'RIFLE', 4, { hit: () => 5.0 }) : s.fire(t, 'SHOTGUN', 1, { hit: () => 34 });
         s.kill(end + 0.04);
         if (lines[k]) s.say(end + 0.12, lines[k]);
         if (k === 4) s.me(end + 0.6, 'STREAK', 0.7);

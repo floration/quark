@@ -126,6 +126,7 @@ struct ServerPlayer {
     float health = 0;
     int weapon = WPN_ROCKET;
     int selectedWeapon = WPN_ROCKET; // last weapon the player picked (slot 1 to start); kept across respawns
+    int prevWeapon = -1;         // the weapon held before this one this life (a throw switches back to it; -1: none)
     double knifeBackAt = 0;      // a thrown knife is away (disabled) until then: it can't be drawn or used before it
     double syringeBackAt = 0;    // ...and a thrown syringe
     double backAt(int w) const { return w == WPN_KNIFE ? knifeBackAt : w == WPN_SYRINGE ? syringeBackAt : 0; }
@@ -142,6 +143,7 @@ struct ServerPlayer {
     std::vector<int> raceSplits;   // race: ms at each checkpoint of the current run (time trials report it)
     uint32_t joinId = 0;        // unique per connection (a new player in a reused slot gets a new one)
     float dmgDealt = 0, objTime = 0;    // scoreboard: damage to enemies, seconds on the objective (score = dmg / 10 + obj)
+    double hideSurvived = 0;    // hide and seek: seconds hidden (alive, not seeking) in live rounds this match: the first tiebreak (T23)
     int shotsFired = 0, shotsHit = 0;   // accuracy: shots (hitscan or projectile) that damaged an enemy
     bool hitSinceShot = false;
     double typingAt = 0, quipAt = 0, locateAt = 0;   // next "typing" relay allowed (and quip pings, the locator ready)
@@ -198,6 +200,19 @@ struct ServerPlayer {
     double projSeen[kMaxProjectiles] = {};
     double projDue[kMaxProjectiles] = {};
     int specTarget = -1;        // dead: whose view this client watches ("spectate <id>"; the killer at first): what it's sent
+    int killCamOf = -1;         // dead: the killer, watchable until killCamUntil even in team modes (then teammates only)
+    double killCamUntil = 0;
+    // The last enemy who hit or knocked this player (rocket, bolt, grapple pull...): a fall or lava within
+    // kRingOutCredit of it, or a "kill", is their kill (ring-outs). joinId: a newcomer in their slot isn't them.
+    int lastHitBy = -1;
+    uint32_t lastHitByJoin = 0;
+    double lastHitByAt = -1e9;
+    // The command clock (seconds on the server clock): advanced by each command's msec, kept within
+    // [time() - kCmdClockLag, time()]. Refire is timed by it (the Quake 3 way) rather than by when a packet arrived,
+    // so a shot fires on the command that ends its cooldown, with that command's aim. -1: no command yet.
+    double cmdTime = -1;
+    double muffledScanAt = 0;              // X9: this player's next shot that may be heard muffled (a scan at most 20 a second)
+    double muffledAt[kMaxPlayers] = {};    // ...and when each listener may next be sent one
     // lag compensation history
     struct Hist { uint64_t tick; Vec3 pos; bool crouched; bool alive; };   // tick: timeMs_ when recorded (kNoHistory: none)
     static constexpr uint64_t kNoHistory = ~0ull;
@@ -401,6 +416,8 @@ public:
     void killPlayer(int victim, int killer, int weapon);
     void useLocator(int id);    // hide and seek / tag: "it" fired the locator (WPN_LOCATOR)
     void damagePlayer(int victim, int attacker, float dmg, int weapon, const Vec3& knock);
+    int ringOutKiller(int victim) const;
+    void muffledGunfire(int shooter, int weapon);   // X9: EV_GUNFIRE to the players who can't see the shot but are near   // who a fall / lava / "kill" now credits (T21), or -1
     int aliveCount(int team) const;
     int teamCount(int team) const;
     void log(const std::string& s);
@@ -529,6 +546,10 @@ public:
     bool editBacklogged() const;
     void handleStringCmdForTest(int id, const std::string& s) { handleStringCmd(id, s); }
     bool fireWeaponForTest(int id, const UserCmd& c) { return fireWeapon(id, c); }
+    void runPlayerCmdForTest(int id, const UserCmd& c) { runPlayerCmd(id, c); }
+    void simulateForTest() { simulate(); }
+    Vec3 rewoundPosForTest(int i, uint64_t viewMs, bool* crouched) const { return rewoundPos(i, viewMs, crouched); }
+    uint32_t perspectivesForTest(int id) const { return perspectives(id); }
     void tickProjectilesForTest() { tickProjectiles(); }
     void sendSnapshotsForTest() { sendSnapshots(); }   // (benchmarks: tests/server_tests.h snapbench)
     void glog(int level, const char* fmt, ...);   // game log file (no-op below cfg_.logLevel)
@@ -643,7 +664,7 @@ private:
     uint8_t projTargetId_[kMaxPlayers] = {};
     AABB projTargetBox_[kMaxPlayers];
     void explode(const Vec3& at, int owner, int weapon, int direct = -1);   // direct: the player a rocket hit itself
-    void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint64_t viewMs, float* dmgPerPlayer, float dmg, float headDmg = 0, float grow = 0, bool pierce = false);
+    void hitscan(int id, const Vec3& eye, const Vec3& dir, float range, uint64_t viewMs, float* dmgPerPlayer, float dmg, float headDmg = 0, float grow = 0, bool pierce = false, float* headPerPlayer = nullptr);
     void sendSnapshots();
     void updateVisibility();
     uint32_t visCursor_ = 0;   // the viewer x target pair the next tick's checks start from (round robin)
