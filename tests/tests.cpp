@@ -2469,6 +2469,9 @@ static void testFeelFixes() {
     // T9: 20 rifle body shots kill; two point-blank head blasts (18 of 20 pellets on the head) kill
     CHECK(weaponDef(WPN_RIFLE).damage * 20 >= kMaxHealth);
     CHECK(2 * (18 * headDamage(WPN_SHOTGUN) + 2 * weaponDef(WPN_SHOTGUN).damage) >= kMaxHealth);
+    // T10: a crossbow headshot saves a bolt (body 3, a head and a body 2), as the sniper's does
+    CHECK(2 * weaponDef(WPN_CROSSBOW).damage < kMaxHealth && 3 * weaponDef(WPN_CROSSBOW).damage >= kMaxHealth);
+    CHECK(headDamage(WPN_CROSSBOW) + weaponDef(WPN_CROSSBOW).damage >= kMaxHealth);
     auto fresh = [](Server& s, const char* mapText, int n) {
         s.setLog([](const std::string&) {});
         CHECK(s.map_.parse(mapText));
