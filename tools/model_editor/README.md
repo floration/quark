@@ -15,6 +15,8 @@ python3 tools/model_editor/build.py <export folder> <output folder>
 tools\model_editor\build.cmd <export folder> [output folder]      (Windows; default output %USERPROFILE%\Desktop\Quark\model-editor)
 ```
 
+On Windows, `tools\model_editor\install.cmd [output folder]` from any repository checkout installs or updates the editor in one step: it builds only `quark_tests` (MinGW, in `build-model-editor\`), exports the assets and runs build.cmd (non-interactive, safe to re-run).
+
 The output folder gets `model-editor.html` (this folder's `index.html` with `editor.css` and `js/*.js` inlined) and
 `data/manifest.js`: every model of the export (its .gltf, with its box list), the model overrides already shipped in this
 repository (`assets/overrides/models/...`, which the game draws in place of the built-in models), and each map's
