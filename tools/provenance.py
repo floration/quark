@@ -216,8 +216,8 @@ class Repo:
         folder = voice.replace("_", "")
         f = self.recorded.get(folder, {}).get(line)
         if f:
-            return ("ai", "recording assets/voice/%s/%s, cut by tools/import_voice.py (added in 1.12.0; nothing in the repository "
-                    "says who or what voiced it)" % (folder, f), None, {})
+            return ("ai", "recording assets/voice/%s/%s, cut by tools/import_voice.py (added in 1.12.0; AI-voiced, "
+                    "the owner said so 2026-10-24)" % (folder, f), None, {})
         if folder in self.tts:
             return "ai", "Piper neural TTS (tools/make_voice.py -> src/client/voice_data.h)", None, {}
         return "ai", "missing: no recording of this line, exported as silence (silent in the game)", None, {}

@@ -2,7 +2,7 @@
  "format": 1,
  "category": "images",
  "items": {
-  "images/icon.png": {"origin": "ai", "source": "drawn by tools/make_icon.py: a Rubik ExtraBold Q (the letterform is the font's, third-party) in the team colours"},
+  "images/icon.png": {"origin": "human", "source": "drawn by tools/make_icon.py: a Rubik ExtraBold Q in the team colours", "by": "q", "date": "2026-10-24", "tool": "dashboard", "note": "designed by the owner (explicit spec), so counted as human (owner, 2026-10-24)"},
   "website/anvil.jpg": {"origin": "ai", "source": "picture on the website (site/img/anvil.jpg, the site branch): an in-game shot of the AI-made maps / models"},
   "website/bastion.jpg": {"origin": "ai", "source": "picture on the website (site/img/bastion.jpg, the site branch): an in-game shot of the AI-made maps / models"},
   "website/canal.jpg": {"origin": "ai", "source": "picture on the website (site/img/canal.jpg, the site branch): an in-game shot of the AI-made maps / models"},
