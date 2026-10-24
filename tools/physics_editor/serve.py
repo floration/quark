@@ -811,7 +811,7 @@ def checkout_maptool():
         r = os.path.abspath(r)
         if os.path.isfile(os.path.join(r, "CMakeLists.txt")) and r not in roots: roots.append(r)
     for r in roots:
-        for b in ("build", "build-release", "build/Release", "build/RelWithDebInfo", "build/Debug", "build-sim", "bin"):
+        for b in ("build-editors", "build", "build-release", "build/Release", "build/RelWithDebInfo", "build/Debug", "build-sim", "bin"):
             c = os.path.join(r, b, "quark_maptool" + EXE)
             if os.path.isfile(c): return c
     return None
