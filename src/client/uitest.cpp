@@ -762,6 +762,18 @@ private:
     // Activate the widget at cur_[i] and check it did what it declares. (A click the layout moved away from under is tried
     // once more from the state it left.)
     void activate(int i, bool again = false) {
+        // CHECK AGAIN (state "reach") drawn while the host's last check is still finishing: let it finish first, or the
+        // click lands on a check that's already running and nothing changes (it was a flaky failure)
+        if (!again && cur_[i].exp.kind == UiExp::STATE && cur_[i].exp.what && std::string(cur_[i].exp.what) == "reach" && g_.host_ &&
+            g_.host_->reachability() == Server::REACH_CHECKING) {
+            const std::string id = ids_[i];
+            waitFor([&] { return g_.host_->reachability() != Server::REACH_CHECKING; }, 6);
+            step(2);
+            int j = find(id);
+            if (j >= 0) { activate(j, true); return; }
+            i = -1;
+        }
+        if (i < 0) return;
         const UiWidget w = cur_[i];
         clickMoved_ = false;
         const std::string id = ids_[i], wkey = keyOf(i), path0 = path(), ctx0 = ctx();
