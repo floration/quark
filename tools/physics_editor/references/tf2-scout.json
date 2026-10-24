@@ -1,0 +1,176 @@
+{
+ "id": "tf2-scout",
+ "name": "Team Fortress 2 (Scout)",
+ "year": 2007,
+ "engine": "Source",
+ "group": "Source family",
+ "scale": {
+  "unit": "u",
+  "metresPerUnit": 0.021951,
+  "why": "player hull 48 x 48 x 82 u (tf_gamerules.cpp#L1345-1346), scaled to 1.8 m: 0.02195 m/u"
+ },
+ "values": {
+  "gravity": {
+   "value": 17.561,
+   "unit": "m/s2",
+   "mult": 0.7982,
+   "source": "https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/movevars_shared.cpp#L22 (sv_gravity 800); https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_gamemovement.cpp (Assert gravity == 800)",
+   "confidence": "exact",
+   "raw": "sv_gravity 800 u/s2"
+  },
+  "speed": {
+   "value": 8.7805,
+   "unit": "m/s",
+   "mult": 0.9243,
+   "source": "https://strategywiki.org/wiki/Team_Fortress_2/Scout (133% of normal speed) x 300 HU/s (240 / 0.8)",
+   "confidence": "estimated",
+   "raw": "class speed 400 u/s",
+   "note": "Scout: 133% of the 300 HU/s normal speed"
+  },
+  "jump": {
+   "value": 6.3439,
+   "unit": "m/s",
+   "mult": 0.8643,
+   "source": "https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_gamemovement.cpp#L1160+ (CheckJumpButton: flMul = 289)",
+   "confidence": "exact",
+   "raw": "jump 289 u/s"
+  },
+  "ground_accel": {
+   "value": 10,
+   "unit": "",
+   "mult": 0.625,
+   "source": "https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/movevars_shared.cpp#L64 (sv_accelerate 10)",
+   "confidence": "exact",
+   "note": "Quake accelerate factor"
+  },
+  "friction": {
+   "value": 4,
+   "unit": "",
+   "mult": 0.5714,
+   "source": "https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/movevars_shared.cpp#L88 (sv_friction 4)",
+   "confidence": "exact"
+  },
+  "stop_speed": {
+   "value": 2.1951,
+   "unit": "m/s",
+   "mult": 1.0976,
+   "source": "https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/movevars_shared.cpp#L42 (sv_stopspeed 100)",
+   "confidence": "exact",
+   "raw": "sv_stopspeed 100 u/s"
+  },
+  "air_accel": {
+   "value": 13.3333,
+   "unit": "",
+   "mult": 6.0606,
+   "source": "https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/movevars_shared.cpp#L77 (sv_airaccelerate 10); https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/gamemovement.h#L104 (GetAirSpeedCap 30, used by tf_gamemovement.cpp#L2033+); class speed 400",
+   "confidence": "estimated",
+   "raw": "accelerate 10, wish 400 u/s, cap 30 u/s",
+   "outsideClamp": true,
+   "note": "Quark-equivalent: this engine pushes 10 x the FULL wish speed (400 u/s) per second but caps the gain at 30 u/s; Quark pushes air_accel x 10 x min(wish, air_cap), so the same push is air_accel = 10 x 400 / 30 / 10 (Xonotic's Quake port does the same: sv_airaccelerate 106.67 with sv_maxairspeed 30 for 10 x 320 / 30). (x6.0606 is outside the editor's 0.1..5 range: applying it clamps.)"
+  },
+  "air_cap": {
+   "value": 0.6585,
+   "unit": "m/s",
+   "mult": 0.2863,
+   "source": "https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/gamemovement.h#L104 (GetAirSpeedCap 30, used by tf_gamemovement.cpp#L2033+)",
+   "confidence": "exact",
+   "raw": "30 u/s",
+   "note": "the air wish-speed cap (Quark's air strafe cap, W-only; A/D raises Quark's x1.1)"
+  },
+  "overstrafe": {
+   "value": 1.0,
+   "unit": "",
+   "mult": 2.8571,
+   "source": "same code: the push is applied in full whatever its angle to your velocity",
+   "confidence": "estimated",
+   "note": "no overstrafe softening: the whole push against your momentum applies (Quark lets 35% through)"
+  },
+  "step": {
+   "value": 0.3951,
+   "unit": "m",
+   "mult": 0.7184,
+   "source": "https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/movevars_shared.cpp#L100 (sv_stepsize 18)",
+   "confidence": "exact",
+   "raw": "sv_stepsize 18 u"
+  },
+  "hook_max": {
+   "value": 16.4634,
+   "unit": "m/s",
+   "mult": 0.686,
+   "source": "https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_gamemovement.cpp#L63 (tf_grapplinghook_move_speed 750)",
+   "confidence": "exact",
+   "raw": "tf_grapplinghook_move_speed 750 u/s",
+   "note": "the grappling hook exists only in Mannpower mode"
+  },
+  "dash": {
+   "value": false,
+   "source": "https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_gamemovement.cpp",
+   "confidence": "exact",
+   "note": "no dash"
+  },
+  "grapple": {
+   "value": false,
+   "source": "https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_gamemovement.cpp",
+   "confidence": "exact",
+   "note": "grapple only in Mannpower mode"
+  }
+ },
+ "facts": {
+  "jumpHeight": {
+   "value": 1.1459,
+   "unit": "m",
+   "source": "289^2 / (2 x 800) = 52.2 u",
+   "confidence": "estimated",
+   "note": "v^2/2g; Quark: 1.22 m"
+  },
+  "timeTo90": {
+   "value": 0.113,
+   "unit": "s",
+   "source": "derived from this file's speed, ground_accel, friction, stop_speed",
+   "confidence": "estimated",
+   "note": "Quake ground model at 1 ms steps (friction then accelerate), the same way Quark's physsim measures its own run_up / stop presets; Quark: 0.072 s"
+  },
+  "stopDistance": {
+   "value": 1.913,
+   "unit": "m",
+   "source": "derived from this file's speed, friction, stop_speed",
+   "confidence": "estimated",
+   "note": "Quake ground model at 1 ms steps (friction then accelerate), the same way Quark's physsim measures its own run_up / stop presets; Quark: 1.21 m"
+  },
+  "stopTime": {
+   "value": 0.596,
+   "unit": "s",
+   "source": "derived from this file's speed, friction, stop_speed",
+   "confidence": "estimated",
+   "note": "Quake ground model at 1 ms steps (friction then accelerate), the same way Quark's physsim measures its own run_up / stop presets; Quark: 0.364 s"
+  },
+  "doubleJumpUp": {
+   "value": 5.8901,
+   "unit": "m/s",
+   "source": "https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_gamemovement.cpp (AirDash: flDashZ = 268.33)",
+   "confidence": "exact",
+   "note": "the double jump sets your velocity to the held direction and 268.33 u/s up"
+  }
+ },
+ "extras": [
+  "double jump: in the air, jump again to SET your velocity to the held direction plus 268.33 u/s up (tf_gamemovement.cpp, AirDash)",
+  "bunny-hop limit: a jump above 1.2 x max speed crops speed to that (tf_gamemovement.cpp#L1087-1110, PreventBunnyJumping)",
+  "crouch jump",
+  "rocket / sticky jumping"
+ ],
+ "notes": "Team Fortress 2 game movement from the 2025 Source SDK 2013 release; class speeds from the game's class data (not in the SDK), via StrategyWiki.",
+ "sources": [
+  {
+   "title": "Source SDK 2013 tf_gamemovement.cpp",
+   "url": "https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_gamemovement.cpp"
+  },
+  {
+   "title": "tf_gamerules.cpp (hull)",
+   "url": "https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_gamerules.cpp"
+  },
+  {
+   "title": "StrategyWiki TF2 classes",
+   "url": "https://strategywiki.org/wiki/Team_Fortress_2/Scout"
+  }
+ ]
+}

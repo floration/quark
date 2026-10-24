@@ -48,7 +48,7 @@ export class CodeView {
     }
     _paint(p) {
         const text = this.ta.value;
-        this.hl.innerHTML = highlight(text) + "\n";
+        this.hl.innerHTML = highlight(text, this.app.cat.keySet) + "\n";
         const n = text.split("\n").length;
         const byLine = new Map();
         const probs = [...p.problems];

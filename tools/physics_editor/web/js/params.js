@@ -87,20 +87,32 @@ export function standardPhysics(cat) {
     for (const p of (cat || normalizeCatalog()).params) move[p.key] = 1;
     return { gravity: 1, speed: 1, jump: 1, dash: true, grapple: true, move };
 }
-export function clonePhysics(p) { return { gravity: p.gravity, speed: p.speed, jump: p.jump, dash: p.dash, grapple: p.grapple, move: { ...p.move } }; }
+export function clonePhysics(p) {
+    const o = { gravity: p.gravity, speed: p.speed, jump: p.jump, dash: p.dash, grapple: p.grapple, move: { ...p.move } };
+    if (p.expr && Object.keys(p.expr).length) o.expr = { ...p.expr };
+    if (p.imports && p.imports.length) o.imports = p.imports.map((i) => ({ ...i, keys: [...i.keys] }));
+    return o;
+}
 export function getVal(ph, key) { return key === "gravity" || key === "speed" || key === "jump" ? ph[key] : (ph.move[key] ?? 1); }
 export function setVal(ph, key, v) { if (key === "gravity" || key === "speed" || key === "jump") ph[key] = v; else ph.move[key] = v; }
 export function changedKeys(ph, cat) {
     const out = [];
-    for (const p of cat.all) if (Math.abs(getVal(ph, p.key) - 1) > 1e-9) out.push(p.key);
+    for (const p of cat.all) if (Math.abs(getVal(ph, p.key) - 1) > 1e-9 || hasExpr(ph, p.key)) out.push(p.key);
     for (const s of SWITCHES) if (ph[s.key] === false) out.push(s.key);
     return out;
 }
-// the compact form sent to the helper (missing keys = 1 / true)
-export function compactPhysics(ph) {
+export const hasExpr = (ph, key) => !!(ph.expr && typeof ph.expr[key] === "string" && ph.expr[key].trim());
+export function setExpr(ph, key, text) {
+    if (text == null || !String(text).trim()) { if (ph.expr) { delete ph.expr[key]; if (!Object.keys(ph.expr).length) delete ph.expr; } }
+    else (ph.expr || (ph.expr = {}))[key] = String(text).replace(/[\r\n]+/g, " ").trim();
+}
+// the compact form sent to the helper (missing keys = 1 / true); `expr` (v2) only when the helper evaluates expressions
+export function compactPhysics(ph, withExpr = true) {
     const move = {};
     for (const [k, v] of Object.entries(ph.move || {})) if (v !== 1) move[k] = v;
-    return { gravity: ph.gravity, speed: ph.speed, jump: ph.jump, dash: ph.dash !== false, grapple: ph.grapple !== false, move };
+    const o = { gravity: ph.gravity, speed: ph.speed, jump: ph.jump, dash: ph.dash !== false, grapple: ph.grapple !== false, move };
+    if (withExpr && ph.expr && Object.keys(ph.expr).length) o.expr = { ...ph.expr };
+    return o;
 }
 
 // The C++ constants list (physexport's `cpp`, made in the page for the MOCK): each changed constant at base x mult.
@@ -118,6 +130,7 @@ export function cppList(ph, cat) {
         if (p.key === "dash_speed") lines.push(`pmove.cpp: kDashBounceSpeed = ${n(16 * m)};   // was 16.0f (the dash speed multiplier scales the wall bounce too)`);
         if (p.key === "dash_cooldown") lines.push(`pmove.h: kDashRecharge = ${n(1.2 * m)};   // was 1.2f (the cooldown multiplier scales the recharge too)`);
     }
+    for (const [k, t] of Object.entries(ph.expr || {})) lines.push(`(${k}: an equation, expr.${k}=${t}: the line above is its value standing still; the equation itself needs v2's moveexpr, no constant)`);
     if (ph.dash === false) lines.push("(dash off: a custom mode switch, no constant)");
     if (ph.grapple === false) lines.push("(grapple off: a custom mode switch, no constant)");
     return lines.length ? lines.join("\n") + "\n" : "// no change from the standard physics\n";

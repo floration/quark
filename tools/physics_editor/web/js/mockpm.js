@@ -6,6 +6,9 @@
 //
 // Units: metres, seconds, y up; yaw / pitch in radians here (the page's scenarios are in degrees: sim.js converts).
 
+import { normalizeCatalog } from "./params.js";
+import { resolve, dynamicPlan } from "./expr.js";
+
 export const BTN_JUMP = 1, BTN_CROUCH = 2, BTN_DASH = 1 << 11, BTN_GRAPPLE = 1 << 12;
 export const MF_ONGROUND = 1, MF_CROUCHED = 2, MF_JUMPHELD = 4, MF_HOOKHELD = 16, MF_HOOKED = 32, MF_DASHHELD = 64;
 
@@ -114,14 +117,40 @@ export function newState(start) {
         pos: [...(start.pos || [0, 0, 0])], vel: [...(start.vel || [0, 0, 0])], flags: start.onGround === false ? 0 : MF_ONGROUND,
         dashCharges: start.dashCharges ?? K.dashCharges, dashCooldownMs: 0, dashRecharging: 0, dashRechargeMs: new Array(K.maxCharges).fill(0),
         dashTimer: 0, dashDirX: 0, dashDirZ: 0, dashUp: 0, dashExitSpeed: 0, dashFromSpeed: 0, jumpBuffer: 0, jumpGrace: 0, dashBounces: 0,
-        hookCooldown: 0, hookPoint: [0, 0, 0], onLadder: false,
+        hookCooldown: 0, hookPoint: [0, 0, 0], onLadder: false, phaseMs: 0,
     };
 }
 export function cloneState(s) { return { ...s, pos: [...s.pos], vel: [...s.vel], dashRechargeMs: [...s.dashRechargeMs], hookPoint: [...s.hookPoint] }; }
 
-// physics (INTERFACE.md form) -> tuning
-export function tuningOf(ph) {
-    return { gravity: ph.gravity ?? 1, speed: ph.speed ?? 1, jump: ph.jump ?? 1, dash: ph.dash !== false, grapple: ph.grapple !== false, m: flatMove(ph.move) };
+// physics (INTERFACE.md form) -> tuning. Expressions (v2): static ones are worked out here once; dynamic ones (p.*) get
+// a plan that pmoveStep runs at the start of every 1 ms step, from the state as the step begins.
+let defCat = null;
+export function tuningOf(ph, cat) {
+    const mt = { gravity: ph.gravity ?? 1, speed: ph.speed ?? 1, jump: ph.jump ?? 1, dash: ph.dash !== false, grapple: ph.grapple !== false, m: flatMove(ph.move) };
+    if (ph.expr && Object.keys(ph.expr).length) {
+        cat = cat || defCat || (defCat = normalizeCatalog());
+        const r = resolve(ph, cat);
+        for (const k of r.order) { if (k === "gravity" || k === "speed" || k === "jump") mt[k] = r.S[k]; else mt.m[k] = r.S[k]; }
+        const plan = dynamicPlan(ph, cat);
+        if (plan) {
+            mt.dyn = plan;
+            mt.dynInputs = new Set(plan.keys.flatMap((k) => r.info[k].inputs));
+            mt.P = { speed: 0, hspeed: 0, vspeed: 0, air: 0, ground: 0, onground: 1, charges: 0, dashing: 0, hooked: 0, height: 0 };
+            mt.set = (k, v) => { if (k === "gravity" || k === "speed" || k === "jump") mt[k] = v; else mt.m[k] = v; };
+        }
+    }
+    return mt;
+}
+// the player's state as pmove's equations see it (pmove.cpp pmoveExpr): p.air / p.ground from the ms since the floor
+// flag last changed (MoveState::phaseMs), p.height a hull sweep down (in the air only)
+function dynInputs(s, w, mt) {
+    const P = mt.P, v = s.vel, ground = (s.flags & MF_ONGROUND) !== 0;
+    P.hspeed = Math.hypot(v[0], v[2]); P.speed = Math.hypot(v[0], v[1], v[2]); P.vspeed = v[1];
+    P.air = ground ? 0 : (s.phaseMs || 0) / 1000; P.ground = ground ? (s.phaseMs || 0) / 1000 : 0; P.onground = ground ? 1 : 0;
+    P.charges = s.dashCharges; P.dashing = s.dashTimer > 0 ? 1 : 0; P.hooked = (s.flags & MF_HOOKED) ? 1 : 0;
+    P.height = 0;
+    if (!ground && mt.dynInputs.has("height")) P.height = -w.sweepAxis(box(s.pos, false), 1, -50);
+    mt.dyn.update(P, mt.set);
 }
 function flatMove(mv) {
     const keys = ["crouch_speed", "ground_accel", "friction", "stop_speed", "air_accel", "air_cap", "overstrafe", "air_control", "step", "dash_speed",
@@ -173,6 +202,7 @@ function airAccelerate(mt, vel, wd, wishSpeed, accel, dt, side, cross) {
 
 // One 1 ms step (pmoveStep). ev(kind, data) reports events.
 export function pmoveStep(s, cmd, w, dt, mt, ev) {
+    if (mt.dyn) dynInputs(s, w, mt);
     const sy = Math.sin(cmd.yaw), cy = Math.cos(cmd.yaw);
     const fwd = [-sy, 0, -cy], right = [cy, 0, -sy];
     const crouched = false;   // (the game ignores crouch: pmove.cpp wantCrouch = false)
@@ -406,6 +436,7 @@ export function pmoveStep(s, cmd, w, dt, mt, ev) {
     if (((s.flags & MF_ONGROUND) && !wasOn) || bounced) ev("land", { impact: -before.vel[1], hspeed: Math.hypot(before.vel[0], before.vel[2]) });
     if (jumpHeld) s.flags |= MF_JUMPHELD;
     if (dashHeld) s.flags |= MF_DASHHELD;
+    if (mt.dyn) s.phaseMs = ((s.flags & MF_ONGROUND) !== 0) !== wasOn ? 0 : Math.min(65535, (s.phaseMs || 0) + 1);
     if (s.pos[1] < -100) s.pos[1] = -100;
 }
 
