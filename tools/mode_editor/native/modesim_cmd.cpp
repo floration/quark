@@ -146,10 +146,12 @@ struct Setup {
 };
 
 // the logic hook, part 1 (see the TODO at the top): before Server::start
+// G1's API (server.h): Server::presetModeLogic(text, base, err) compiles the .qmode exactly as compileModeText did (the
+// same text and base: the same hash), and start() plays it (never on ranked / time trial; only on its base mode).
 bool applyLogicHook(Server& s, ServerConfig& sc, const Setup& S, std::string* err) {
-    (void)s; (void)err;
     if (sc.custom.active()) setLogicText(sc.custom, S.logicBlock);
-    return true;
+    if (S.logicBlock.empty() || !S.compiled.ok) return true;
+    return s.presetModeLogic(S.rulesText, S.compiled.base, err);
 }
 
 bool loadMap(const Json& req, Map& m, std::string& err) {
@@ -284,6 +286,7 @@ public:
     Json leader() const;
     Json perf() const;
     bool runsLogic() const { return server_ && serverRunsLogicT(*server_); }
+    std::string logicHash() const { return server_ && server_->modeLogic() ? server_->modeLogic()->hash : std::string(); }   // (what it loaded)
     const std::vector<std::string>& serverLog() const { return serverLog_; }
     long long ticks() const { return ticks_; }
     double simWall() const { return simWall_; }
@@ -652,7 +655,7 @@ Json ModeMatch::perf() const {
 }
 
 // the logic hook, part 2 (see the TODO at the top): the server runs logic, and the file has some
-bool fileLogicRunning(const ModeMatch& M, const Setup& S) { return M.runsLogic() && !S.logicBlock.empty() && S.compiled.ok; }
+bool fileLogicRunning(const ModeMatch& M, const Setup& S) { return M.runsLogic() && !S.logicBlock.empty() && S.compiled.ok && M.logicHash() == S.compiled.hash; }
 
 // ---- shared pieces of the commands ---------------------------------------------------------------------------------
 // a data folder for the run(s): maps/<name>.qmap, made the game's user data folder (never the player's real one)

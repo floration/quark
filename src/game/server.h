@@ -40,6 +40,7 @@ extern bool g_serverRateCheck;
 struct GameEvent;
 class Server;
 struct ModeHooks;
+struct ModeLogic;
 // Tests only: sees every event Server::broadcastEvent sends (the mode lockstep and the rules traces compare them).
 extern void (*g_eventHook)(const Server& s, const GameEvent& e);
 
@@ -372,6 +373,21 @@ public:
     ModeHooks* modeHooks_ = nullptr;   // a custom mode's logic (phase 3 of the mode editor); null: every slot native
     uint32_t phaseSerial_ = 0;   // counts phase changes: a slot that ended the round or the match changed it
     float liveLength_ = 0;       // the round clock the round went live with (race splits)
+    int cartNear_[2] = {0, 0};   // players of each team alive at the cart at the last cart step (the logic's cart.near)
+    bool cartDelivered_ = false; // the delivered event was raised this round (once a round)
+    // ---- a custom mode's logic (tools/modes/GRAMMAR.md; design.md 4): compiled at start() from cfg.custom's logic
+    // block, or the one preset below. Never on ranked or time trial servers, and only while the server plays the
+    // logic's base mode (rulesReset sets modeHooks_ from modeLogicHooks_).
+    // Before start(): play this .qmode's logic (the whole file: key lines and logic; base: MODE_* it plays as, -1 its
+    // mode= key). False and *err (line:col message) if it doesn't compile; nothing is kept then. The mode editor's
+    // headless sim calls it (its key lines still go in ServerConfig::custom, as for any custom mode).
+    bool presetModeLogic(const std::string& qmodeText, int base, std::string* err);
+    void presetModeLogic(std::shared_ptr<const ModeLogic> logic);   // a compiled one (null: none; the lockstep tests)
+    const ModeLogic* modeLogic() const { return modeLogic_.get(); }   // the logic this server plays (null: none)
+    const std::string& modeLabel() const { return modeLabel_; }      // its name#hash8 ("": none)
+    std::shared_ptr<const ModeLogic> presetLogic_, modeLogic_;
+    std::shared_ptr<ModeHooks> modeLogicHooks_;
+    std::string modeLabel_;
 
     BotBrain bots_[kMaxPlayers];
     NavGraph nav_;
@@ -538,6 +554,8 @@ public:
     bool fireWeaponForTest(int id, const UserCmd& c) { return fireWeapon(id, c); }
     void tickProjectilesForTest() { tickProjectiles(); }
     void sendSnapshotsForTest() { sendSnapshots(); }   // (benchmarks: tests/server_tests.h snapbench)
+    // One tick on the game clock alone, no sockets or real time (frame()'s tick: the lockstep tests, headless tools)
+    void stepTick() { simulate(); tick_++; timeMs_ += 1000 / tickRate(); if (tick_ % snapEvery() == 0) sendSnapshots(); }
     void glog(int level, const char* fmt, ...);   // game log file (no-op below cfg_.logLevel)
     float bodyScale() const { return duelModDef(duelMod()).size; } // duel "double size": hull, hitbox and eye height (MOVE_BIG / MOVE_TINY)
     int duelMod() const { return ms_.mode == MODE_DUEL ? ms_.duelMod : 255; } // 255 in warmup (rulesReset clears it)

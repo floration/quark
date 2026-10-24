@@ -3054,6 +3054,7 @@ int brainBench(uint16_t port);   // tests/brain_tests.cpp: native vs interpreted
 int modeTests();                 // tests/mode_tests.cpp: the mode logic language (returns the failure count)
 int modeTool(const std::string& cmd, int argc, char** argv);   // tests/mode_tests.cpp: exportmode / checkmode / modeast / printmode
 int modeBench();                 // tests/mode_tests.cpp: interpreted mode slot cost
+int modeLockstepTests();         // tests/mode_tests.cpp: logic on servers, native vs interpreted lockstep (the failure count)
 int exportAssets(const char* dir);   // tests/assets_tests.cpp: every default asset as files + manifest.json
 int assetTests();                    // tests/assets_tests.cpp (returns the failures)
 
@@ -6982,6 +6983,7 @@ int main(int argc, char** argv) {
         return modeTool(argv[1], argc, argv);
     if (argc >= 2 && std::string(argv[1]) == "modebench") return modeBench();
     if (argc >= 2 && std::string(argv[1]) == "modelogic") { g_fail += modeTests(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "modelockstep") { g_fail += modeLockstepTests(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "bots") { uint16_t p = TP(28900); testBots(p); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "server") { serverTests(); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "snapbench") {   // PERF-8 / PERF-9: snapshot + visibility CPU per send
@@ -7004,6 +7006,7 @@ int main(int argc, char** argv) {
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"modelogic", [] { g_fail += modeTests(); }},
+        {"modelockstep", [] { g_fail += modeLockstepTests(); }},
         {"tourney", [] { uint16_t p = TP(29100); testArenaAndTourney(p); }},
         {"duel", [] { testDuel(TP(28520)); testDuel2v2(TP(28521)); }},
         {"weapons", [] { testFixedSpread(TP(28555)); testWeapons(TP(28530)); testRocketSelfDamage(TP(28540)); testAltFires(TP(28545)); testRocketLob(TP(28550)); testProjectileTickRates(TP(28556)); testStickyOnPlayers(TP(28557)); testStuckProps(TP(28558)); testTimeToKill(); testWallbang(); }},

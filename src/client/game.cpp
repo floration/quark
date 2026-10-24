@@ -1149,7 +1149,7 @@ void Game::handleEvents() {
                 for (auto& p : rulesParts_) { if (p == "\x01") { done = false; break; } all += p; }
                 if (!done) break;
                 CustomRules r;
-                if (r.fromText(all)) { setActiveRules(r); notify("CUSTOM MODE: " + upper(r.name), 4); }
+                if (r.fromText(all)) { setActiveRules(r); notify("CUSTOM MODE: " + upper(r.name) + (r.label.empty() ? "" : " - LOGIC: " + r.label), 4); }
                 rulesParts_.clear();
                 break;
             }
@@ -4379,7 +4379,29 @@ void Game::drawCustomModeEditor(float cx, float y) {
         // (dragged: half minutes; typed: any whole second)
         if (ui_.slider(x, y, hw, bh, "TIME (S, 0=DEFAULT)", tl, 0, 3600, "%.0f", ce, (float)kStd.timeLimit)) r.timeLimit = std::min(std::max((int)std::lround(ui_.typed() ? tl : std::round(tl / 30) * 30), 0), 3600);
         ui_.slider(x + hw + gap, y, hw, bh, "SCORE (0=DEFAULT)", sl, 0, 200, "%.0f", ce, (float)kStd.scoreLimit); r.scoreLimit = std::min(std::max((int)std::lround(sl), 0), 10000); y += bh + gap;
-        ui_.slider(x, y, hw, bh, "ROUNDS (0=DEFAULT)", rw, 0, 15, "%.0f", ce, (float)kStd.roundsToWin); r.roundsToWin = std::min(std::max((int)std::lround(rw), 0), 50); y += bh + gap;
+        ui_.slider(x, y, hw, bh, "ROUNDS (0=DEFAULT)", rw, 0, 15, "%.0f", ce, (float)kStd.roundsToWin); r.roundsToWin = std::min(std::max((int)std::lround(rw), 0), 50);
+        if (!r.logic.empty()) {   // a mode editor file with logic: the label a server will play it as (name#hash8), beside ROUNDS
+            // (re-made four times a second at most, compiled only when the text changed: the hash covers the keys too)
+            static std::string text, label;
+            static bool ok = false;
+            static double at = -1;
+            if (time_ >= at || time_ < at - 1) {
+                at = time_ + 0.25;
+                CustomRules c = r;
+                c.label.clear();
+                std::string t = c.toText();
+                if (t != text) {
+                    text.swap(t);
+                    std::string err;
+                    auto L = compileCustomLogic(r, &err);
+                    ok = L != nullptr;
+                    label = ok ? modeLabel(*L) : err;
+                    if (label.size() > 60) label.resize(60);
+                }
+            }
+            ui_.label(x + hw + gap, y + 9 * s, ok ? "LOGIC: " + label : upper(label), ok ? kGrey : kRed, 0.5f);
+        }
+        y += bh + gap;
     } else if (customTab_ == 3) {   // every movement constant, x its normal value (gravity / speed / jump are on GENERAL)
         ui_.label(x, y, "EVERY MOVEMENT SETTING: STANDARD -> THIS MODE (THE SLIDER IS THE MULTIPLIER, 1.00X = STANDARD)", kGrey, 0.5f);
         y += 16 * s;

@@ -1,7 +1,8 @@
 // Game mode logic tests (src/game/modelogic.*, tools/modes): the .qlogic format (parse / print round trip, the JSON
 // AST, converters), compile errors with line:col, every built-in default compiling with every slot native, and the
-// interpreter run by hand against a test double of the game (FakeHost). The lockstep test against gamemodes.cpp comes
-// with the engine binding (ModeHost on Server).
+// interpreter run by hand against a test double of the game (FakeHost). At the end (modeLockstepTests, G1): logic on
+// real servers (ranked / time trial exclusion, errors, labels) and the lockstep of every built-in mode, native vs
+// forced through the interpreter, on the engine binding (gamemodes.cpp: ModeHost on Server).
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -715,4 +716,393 @@ int modeTool(const std::string& cmd, int argc, char** argv) {
     fputs(out.c_str(), stdout);
     if (cmd == "modeast") fputs("\n", stdout);
     return 0;
+}
+
+// =====================================================================================================================
+// Lockstep (the engine binding: gamemodes.cpp's ModeHost / ModeHooks on Server). Two servers play the same match from
+// the same seed, tick by tick on the game clock: one runs a mode's rules natively, the other the same mode's built-in
+// logic with every slot forced through the interpreter. After every tick their qrand streams, ModeState, rules
+// bookkeeping, players and the events they broadcast must be identical. All 13 modes at 1000, 250 and 125 Hz.
+// =====================================================================================================================
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+#include "common/rng.h"
+#include "game/gamemodes.h"
+#include "game/server.h"
+
+namespace {
+
+struct LockEvents {
+    const Server* s[2] = {nullptr, nullptr};
+    std::vector<std::string> ev[2];
+};
+LockEvents* g_lockEv = nullptr;
+void lockEventHook(const Server& s, const GameEvent& e) {
+    if (!g_lockEv) return;
+    for (int k = 0; k < 2; k++)
+        if (g_lockEv->s[k] == &s && g_lockEv->ev[k].size() < 4096)
+            g_lockEv->ev[k].push_back(std::to_string(e.type) + " " + std::to_string(e.a) + " " + std::to_string(e.b) + " " + std::to_string(e.c) + " " + e.text);
+}
+
+template <class T> bool bitsSame(const T& x, const T& y) { return std::memcmp(&x, &y, sizeof(T)) == 0; }
+
+// What differs between the two servers' rules state ("" = nothing).
+std::string lockDiff(const Server& a, const Server& b) {
+    std::string d;
+    const ModeState &x = a.ms_, &y = b.ms_;
+#define LD(f) if (!bitsSame(x.f, y.f)) d += "ms." #f " ";
+    LD(mode) LD(phase) LD(timeLeft) LD(round) LD(roundsToWin) LD(scoreA) LD(scoreB) LD(attackers) LD(flags) LD(bombState) LD(bombCarrier)
+    LD(bombPos) LD(bombTimer) LD(actionProgress) LD(actionPlayer) LD(hillOwner) LD(target) LD(payloadDist) LD(payloadLen) LD(point)
+    LD(pointCount) LD(capture) LD(duelMod) LD(arenaVariant) LD(weaponMask)
+#undef LD
+#define LS(f) if (!bitsSame(a.f, b.f)) d += #f " ";
+    LS(phaseEnd_) LS(liveSince_) LS(roundStart_) LS(lastProgress_) LS(lastIt_) LS(drainAccum_) LS(duelUsed_) LS(payloadIdleSince_)
+    LS(bestProgress_) LS(completeTime_) LS(bombDroppedAt_) LS(objTouch_) LS(phaseSerial_) LS(liveLength_)
+#undef LS
+    if (a.tourney_.running != b.tourney_.running || a.tourney_.rounds != b.tourney_.rounds || a.tourney_.round != b.tourney_.round ||
+        a.tourney_.match != b.tourney_.match || a.tourney_.played != b.tourney_.played) d += "tourney ";
+    if (a.rps_.in != b.rps_.in || a.rps_.out != b.rps_.out || a.rps_.stage != b.rps_.stage || a.rps_.winner != b.rps_.winner || a.rps_.result != b.rps_.result) d += "rps ";
+    if (a.tagOut_ != b.tagOut_) d += "tagOut ";
+    for (int i = 0; i < kMaxPlayers; i++) {
+        const ServerPlayer &p = a.players_[i], &q = b.players_[i];
+        if (p.connected != q.connected) { d += "p" + std::to_string(i) + ".connected "; continue; }
+        if (!p.connected) continue;
+        std::string pd;
+#define LP(f) if (!bitsSame(p.f, q.f)) pd += #f ",";
+        LP(team) LP(alive) LP(finished) LP(move.pos) LP(move.vel) LP(move.flags) LP(health) LP(weapon) LP(kills) LP(deaths) LP(score)
+        LP(respawnAt) LP(checkpoint) LP(objTime) LP(it) LP(found) LP(sought) LP(out) LP(itFreezeUntil) LP(waitingToPlay) LP(locateAt)
+#undef LP
+        if (!pd.empty()) d += "p" + std::to_string(i) + "." + pd + " ";
+    }
+    return d;
+}
+
+// The mode's `for` map, bots, and numbers that make rounds and matches turn over quickly (both servers play them).
+struct LockCase { int mode; const char* map; int bots; const char* params; };
+const LockCase kLockCases[] = {
+    {MODE_VS, "bastion", 6, "param rounds int = 2\nparam stalemate f32 = 6\nparam drainRate f32 = 40\n"},
+    {MODE_BOMB, "depot", 8, "param rounds int = 3\nparam roundTime f32 = 35\nparam bombFuse f32 = 12\nparam bombReturn f32 = 4\n"},
+    {MODE_RACE, "viaduct", 4, "param rounds int = 2\nparam roundTime f32 = 25\n"},
+    {MODE_KOTH, "summit", 8, "param target int = 15\n"},
+    {MODE_PAYLOAD, "railyard", 8, "param roundTime f32 = 25\nparam cartIdle f32 = 2\nparam cartCheckBonus f32 = 5\n"},
+    {MODE_FFA, "harbor", 6, "param matchTime f32 = 25\n"},
+    {MODE_NPAYLOAD, "canal", 8, "param roundTime f32 = 25\nparam cartSpeed f32 = 6\n"},
+    {MODE_DUEL, "clockwork", 2, "param rounds int = 3\nparam stalemate f32 = 5\nparam drainRate f32 = 50\n"},
+    {MODE_ARENA, "temple", 2, "param rounds int = 2\nparam stalemate f32 = 5\nparam drainRate f32 = 50\n"},
+    {MODE_TOURNEY, "colosseum", 4, "param rounds int = 1\nparam stalemate f32 = 4\nparam drainRate f32 = 60\n"},
+    {MODE_HIDE, "hamlet", 4, "param roundTime f32 = 12\nparam hideTime f32 = 3\nparam rpsPickTime f32 = 2\nparam rpsRevealTime f32 = 1\n"},
+    {MODE_TAG, "foundry", 5, "param roundTime f32 = 8\nparam tagFreeze f32 = 1\n"},
+    {MODE_POINTS, "midtown", 8, "param roundTime f32 = 25\nparam captureTime f32 = 3\nparam pointBonus f32 = 5\n"},
+};
+const char* const kCommonFast = "param freezeTime f32 = 1\nparam roundEndTime f32 = 1\nparam matchEndTime f32 = 1.5\nparam warmupCountdown f32 = 1\n";
+
+std::string lockText(const LockCase& c, const std::string& extra = "") {
+    return std::string("logic 1\nbase ") + modeBaseName(c.mode) + "\n" + kCommonFast + c.params + extra;
+}
+
+struct LockRun {
+    long ticks = 0;
+    std::string first;          // the first difference, described ("" = none)
+    int rounds = 0, matches = 0, kills = 0;
+    std::string why;            // a setup failure
+};
+
+// The bots don't reach every objective in 90 s (depot's bombers stand still, seekers rarely find anyone), so a coach
+// on top of their thinking pushes each mode through its objective events on both servers alike (it's a pure function
+// of the server's state): bombers walk into a site and plant, defenders defuse every other bomb, attackers stand at
+// the cart / on the point, racers step from checkpoint to checkpoint, "it" knifes the nearest player in play.
+void coachTo(ServerPlayer& p, const AABB& zone) {
+    if (playerBox(p.move).overlaps(zone)) return;
+    p.move.pos = Vec3((zone.mn.x + zone.mx.x) * 0.5f, zone.mn.y + 0.05f, (zone.mn.z + zone.mx.z) * 0.5f);
+    p.move.vel = Vec3();
+}
+UserCmd lockCoach(Server& s, int id) {
+    UserCmd c = botThinkDirect(s, id);
+    ServerPlayer& p = s.players_[id];
+    const ModeState& m = s.ms_;
+    if (m.phase != PHASE_LIVE || !p.alive) return c;
+    const double live = s.time() - s.liveSince_;
+    const bool every = (s.tick_ + (uint32_t)id * 37u) % (uint32_t)s.tickRate() == 0;   // (once a second each, staggered)
+    switch (m.mode) {
+        case MODE_BOMB:
+            if (m.bombState == BOMB_CARRIED && m.bombCarrier == id && live > 3 && !s.map_.bombSites.empty()) {
+                coachTo(p, s.map_.bombSites[m.round % s.map_.bombSites.size()]);
+                c.buttons |= BTN_USE; c.forward = c.side = 0;
+            }
+            if (m.bombState == BOMB_PLANTED && p.team != m.attackers && m.round % 2 == 0 && m.bombTimer < s.mp_->bombFuse * 0.6f) {
+                if (length(p.move.pos - m.bombPos) > 1.0f) { p.move.pos = m.bombPos + Vec3(0, 0.05f, 0); p.move.vel = Vec3(); }
+                c.buttons |= BTN_USE; c.forward = c.side = 0;
+            }
+            break;
+        case MODE_PAYLOAD:
+        case MODE_NPAYLOAD:
+            if ((p.team == m.attackers || m.mode == MODE_NPAYLOAD) && id % 3 != 2 && s.map_.payloadPath.size() >= 2 && every) {
+                Vec3 cart = s.map_.cartPoint(m.mode, m.attackers, m.payloadDist);
+                if (length(p.move.pos - cart) > 3.0f) { p.move.pos = cart + Vec3(0, 2.0f, 0); p.move.vel = Vec3(); }
+            }
+            break;
+        case MODE_POINTS:
+            if (p.team == m.attackers && m.point < s.map_.points.size() && id % 3 != 2) coachTo(p, s.map_.points[m.point]);
+            break;
+        case MODE_RACE:
+            if (every && p.checkpoint < (int)s.map_.checkpoints.size()) coachTo(p, s.map_.checkpoints[p.checkpoint]);
+            break;
+        case MODE_HIDE:
+        case MODE_TAG:
+            if (p.it && every && live > 1.5) {
+                int best = -1;
+                float bd = 1e9f;
+                for (int i = 0; i < kMaxPlayers; i++) {
+                    const ServerPlayer& q = s.players_[i];
+                    if (i == id || !q.connected || !q.alive || q.it || q.team == TEAM_SPECTATOR || q.out) continue;
+                    float d = length(q.move.pos - p.move.pos);
+                    if (d < bd) { bd = d; best = i; }
+                }
+                if (best >= 0) s.damagePlayer(best, id, 10.0f, WPN_KNIFE, Vec3());   // (canHit, then the stab)
+            }
+            break;
+        default: break;
+    }
+    return c;
+}
+
+// One server on its own thread, stepped one tick at a time on request: a hosted server's thread-local state (qrand,
+// the bots' path budget, the custom rules) stays its own, as with two real servers.
+struct LockWorker {
+    Server s;
+    std::thread th;
+    std::mutex mu;
+    std::condition_variable cv;
+    int want = 0, done = 0;      // requests made / finished (a request: one tick; forceAt: "forcestart" before it)
+    bool quit = false, ok = false, ready = false;
+    long forceAt = -1;
+    uint32_t rng = 0;
+    std::string why;
+    void run(const LockCase& c, int rate, uint32_t seed, std::shared_ptr<const ModeLogic> logic) {
+        th = std::thread([this, &c, rate, seed, logic] {
+            ServerConfig cfg;
+            cfg.map = c.map; cfg.mode = c.mode; cfg.port = 0; cfg.maxTickRate = rate; cfg.maxPlayers = 16;
+            cfg.autoStart = true; cfg.balanceBots = false; cfg.lanOnly = true;
+            s.setLog([](const std::string&) {});
+            s.presetModeLogic(logic);
+            qsrand(seed);
+            std::string err;
+            bool started = s.start(cfg, &err);
+            if (started) {
+                setActiveRules(s.cfg_.custom);
+                for (int b = 0; b < c.bots; b++) s.addBot(b % 2 ? TEAM_B : TEAM_A, (b + 1) % BOT_SKILLS);
+                for (int w = 0; w < 20000 && !s.nav_.ready(s.map_); w++) sleepMs(1);
+            }
+            {
+                std::lock_guard<std::mutex> l(mu);
+                ok = started && s.nav_.ready(s.map_);
+                why = !started ? "server start: " + err : !ok ? "no nav graph" : "";
+                rng = qrng_detail::state();
+                ready = true;
+            }
+            cv.notify_all();
+            long t = 0;
+            for (;;) {
+                std::unique_lock<std::mutex> l(mu);
+                cv.wait(l, [&] { return quit || want > done; });
+                if (quit) break;
+                l.unlock();
+                if (ok) {
+                    if (t == forceAt) s.command("forcestart");
+                    s.stepTick();
+                }
+                t++;
+                l.lock();
+                rng = qrng_detail::state();
+                done++;
+                l.unlock();
+                cv.notify_all();
+            }
+            if (started) s.stop();
+        });
+    }
+    void waitReady() { std::unique_lock<std::mutex> l(mu); cv.wait(l, [&] { return ready; }); }
+    void request() { { std::lock_guard<std::mutex> l(mu); want++; } cv.notify_all(); }
+    void waitDone() { std::unique_lock<std::mutex> l(mu); cv.wait(l, [&] { return done == want; }); }
+    void finish() { { std::lock_guard<std::mutex> l(mu); quit = true; } cv.notify_all(); if (th.joinable()) th.join(); }
+};
+
+// One match pair: native logic (params only: every slot native; null: no hooks at all) on server 0, the same logic
+// forced through the interpreter on server 1. secs of game time after the forced start.
+LockRun lockstepPair(const LockCase& c, int rate, double secs, uint32_t seed, std::shared_ptr<const ModeLogic> nat, std::shared_ptr<const ModeLogic> interp) {
+    LockRun r;
+    LockWorker w[2];
+    LockEvents ev;
+    const long total = (long)(secs * rate) + rate;   // (a second of warmup, then the forced start)
+    for (int k = 0; k < 2; k++) { ev.s[k] = &w[k].s; w[k].forceAt = rate; }
+    g_lockEv = &ev;
+    auto prevHook = g_eventHook;
+    auto prevThink = g_botThinkHook;
+    g_eventHook = lockEventHook;
+    g_botThinkHook = lockCoach;
+    for (int k = 0; k < 2; k++) w[k].run(c, rate, seed, k == 0 ? nat : interp);
+    for (int k = 0; k < 2; k++) w[k].waitReady();
+    for (int k = 0; k < 2 && r.why.empty(); k++) {
+        if (!w[k].ok) r.why = w[k].why;
+        else if (w[k].s.tickRate() != rate) r.why = "tick rate " + std::to_string(w[k].s.tickRate());
+        else if (!w[k].s.modeHooks_ && (k == 1 || nat)) r.why = "no hooks";
+    }
+    if (r.why.empty() && ((w[1].s.modeHooks_->interp >> MSLOT_TICK & 1) == 0 || (w[0].s.modeHooks_ && w[0].s.modeHooks_->interp != 0)))
+        r.why = "the hooks aren't native / interpreted";
+    if (r.why.empty() && w[0].rng != w[1].rng) r.why = "the setups drew different random numbers";
+    for (int k = 0; k < 2; k++) ev.ev[k].clear();
+    int lastRound = 0, lastPhase = -1;
+    for (long t = 0; t < total && r.first.empty() && r.why.empty(); t++) {
+        for (int k = 0; k < 2; k++) w[k].request();
+        for (int k = 0; k < 2; k++) w[k].waitDone();
+        const Server &a = w[0].s, &b = w[1].s;
+        r.ticks++;
+        std::string d = lockDiff(a, b);
+        if (w[0].rng != w[1].rng) d += "qrand ";
+        if (ev.ev[0] != ev.ev[1]) {
+            size_t i = 0;
+            while (i < ev.ev[0].size() && i < ev.ev[1].size() && ev.ev[0][i] == ev.ev[1][i]) i++;
+            d += "events (native: '" + (i < ev.ev[0].size() ? ev.ev[0][i] : std::string("-")) + "', logic: '" + (i < ev.ev[1].size() ? ev.ev[1][i] : std::string("-")) + "') ";
+        }
+        for (int k = 0; k < 2; k++) ev.ev[k].clear();
+        if (!d.empty()) {
+            char buf[160];
+            snprintf(buf, sizeof buf, "tick %ld (%.3f s, phase %d, round %d): ", t, a.time(), a.ms_.phase, a.ms_.round);
+            r.first = buf + d;
+        }
+        if (a.ms_.round != lastRound) { lastRound = a.ms_.round; r.rounds++; }
+        if (a.ms_.phase == PHASE_MATCH_END && lastPhase != PHASE_MATCH_END) r.matches++;
+        lastPhase = a.ms_.phase;
+    }
+    for (auto& p : w[0].s.players_) r.kills += p.connected ? p.deaths : 0;
+    for (int k = 0; k < 2; k++) w[k].finish();
+    g_botThinkHook = prevThink;
+    g_eventHook = prevHook;
+    g_lockEv = nullptr;
+    return r;
+}
+
+} // namespace
+
+namespace {
+
+// Where logic never runs (ranked, time trials), what a compile error does, and the label a logic server shows.
+void testLogicServers() {
+    printf("  logic on servers: ranked and time trials never, errors refuse the start, the label\n");
+    auto custom = [](const std::string& text) { CustomRules c; c.fromText(text); return c; };
+    const std::string koth = "custommode=hold\nmode=koth\nlogic 1\nparam target int = 30\nslot kill:\n  if killer != none and killer != victim: addScore(killer, 3)\n";
+    {   // an unranked server plays it: label name#hash8 in the list name, EV_RULES (label=) and modeLabel()
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "summit"; cfg.port = 0; cfg.lanOnly = true; cfg.custom = custom(koth);
+        s.setLog([](const std::string&) {});
+        std::string err;
+        MCHECK(s.start(cfg, &err));
+        const ModeLogic* L = s.modeLogic();
+        MCHECK(L && s.modeHooks_ && s.cfg_.mode == MODE_KOTH && s.modeHooks_->has(MSLOT_KILL) && !s.modeHooks_->has(MSLOT_TICK));
+        if (L) {
+            MCHECK(s.modeLabel() == "hold#" + L->hash && s.cfg_.custom.label == s.modeLabel());
+            MCHECK(s.listName().find("[" + s.modeLabel() + "]") == 0);
+            MCHECK(s.cfg_.custom.toNetText().find("\nlabel=" + s.modeLabel() + "\n") != std::string::npos);
+            MCHECK(s.cfg_.custom.toNetText().find("logic") == std::string::npos);   // (never the logic itself)
+            MCHECK(s.mp_->target == 30);   // (a param edit reaches the native slots)
+        }
+        // the console moves it to another mode: the native rules play there; back on its own mode, the logic again
+        s.command("mode ffa");
+        MCHECK(s.modeHooks_ == nullptr && s.mp_ == &builtinModeParams(MODE_FFA));
+        s.command("mode koth");
+        MCHECK(s.modeHooks_ != nullptr && s.mp_->target == 30);
+        s.stop();
+    }
+    {   // ranked: the custom mode and its logic are dropped (a preset one too)
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "temple"; cfg.port = 0; cfg.lanOnly = true; cfg.ranked = true; cfg.arenaVariant = 0;
+        cfg.custom = custom("custommode=r\nmode=1v1\nlogic 1\nslot kill:\n  pass\n");
+        s.presetModeLogic(compileModeLogic("logic 1\nbase arena\nslot kill:\n  pass\n", MODE_ARENA));
+        s.setLog([](const std::string&) {});
+        std::string err;
+        MCHECK(s.start(cfg, &err));
+        MCHECK(s.modeLogic() == nullptr && s.modeHooks_ == nullptr && !s.cfg_.custom.active() && s.modeLabel().empty() && s.mp_ == &builtinModeParams(MODE_ARENA));
+        s.stop();
+    }
+    {   // the Viaduct time trial: the same
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "viaduct"; cfg.mode = MODE_RACE; cfg.port = 0; cfg.lanOnly = true; cfg.timeTrial = true; cfg.maxPlayers = 1;
+        cfg.custom = custom("custommode=t\nmode=race\ngravity=0.5\nlogic 1\nslot finish:\n  pass\n");
+        s.presetModeLogic(compileModeLogic("logic 1\nbase race\nslot finish:\n  pass\n", MODE_RACE));
+        s.setLog([](const std::string&) {});
+        std::string err;
+        MCHECK(s.start(cfg, &err));
+        MCHECK(s.modeLogic() == nullptr && s.modeHooks_ == nullptr && !s.cfg_.custom.active() && s.cfg_.custom.gravity == 1.0f);
+        s.stop();
+    }
+    {   // a logic error refuses the start, with its line:col
+        Server s;
+        ServerConfig cfg;
+        cfg.map = "summit"; cfg.port = 0; cfg.lanOnly = true;
+        cfg.custom = custom("custommode=bad\nmode=koth\nlogic 1\nslot tick:\n  x = \n");
+        s.setLog([](const std::string&) {});
+        std::string err;
+        MCHECK(!s.start(cfg, &err) && err.find("doesn't compile: 5:") != std::string::npos);
+        std::string perr;
+        MCHECK(!s.presetModeLogic("logic 1\nbase koth\nslot tick:\n  x = \n", MODE_KOTH, &perr) && perr.find("4:") != std::string::npos);
+    }
+}
+
+} // namespace
+
+int modeLockstepTests() {
+    g_modeFail = 0;
+    printf("mode logic on the server\n");
+    testLogicServers();
+    const bool rateCheck = g_serverRateCheck;
+    g_serverRateCheck = false;   // (the game clock, not the real one: never step the tick rate down)
+    printf("  lockstep: every built-in mode native vs forced through the interpreter, at 1000 / 250 / 125 Hz\n");
+    const int rates[] = {1000, 250, 125};
+    long ticks = 0;
+    int rounds = 0, deaths = 0;
+    for (const LockCase& c : kLockCases) {
+        ModeDiag d1, d2;
+        auto nat = compileModeLogic(lockText(c), c.mode, &d1);
+        auto interp = compileModeLogic(lockText(c), c.mode, &d2, true);
+        MCHECK(nat && interp && !nat->anyInterp && interp->interp[MSLOT_TICK]);
+        if (!nat || !interp) { printf("    %s: %s\n", modeName(c.mode), modeDiagJson(nat ? d2 : d1, nullptr).c_str()); continue; }
+        std::string line;
+        for (int r = 0; r < 3; r++) {
+            LockRun run = lockstepPair(c, rates[r], 60.0, 0x51EDu + 131u * (uint32_t)c.mode + 7u * (uint32_t)r, nat, interp);
+            if (!run.why.empty()) { printf("  FAIL %s at %d Hz: %s\n", modeName(c.mode), rates[r], run.why.c_str()); g_modeFail++; continue; }
+            if (!run.first.empty()) { printf("  FAIL %s at %d Hz: native and interpreted differ at %s\n", modeName(c.mode), rates[r], run.first.c_str()); g_modeFail++; }
+            ticks += run.ticks; rounds += run.rounds; deaths += run.kills;
+            line += "  " + std::to_string(rates[r]) + " Hz: " + std::to_string(run.rounds) + " rounds, " + std::to_string(run.matches) + " match ends, " + std::to_string(run.kills) + " deaths";
+        }
+        printf("    %-8s%s\n", modeName(c.mode), line.c_str());
+    }
+    printf("  lockstep: %ld ticks compared (%d rounds started, %d deaths)\n", ticks, rounds, deaths);
+    MCHECK(rounds > 13 * 3 * 2 && deaths > 0);
+    {   // and against a server with no hooks at all (the built-in mode, its built-in numbers)
+        const LockCase c = {MODE_KOTH, "summit", 8, ""};
+        auto interp = compileModeLogic(defaultModeText(MODE_KOTH), MODE_KOTH, nullptr, true);
+        MCHECK(interp != nullptr);
+        if (interp) {
+            LockRun run = lockstepPair(c, 250, 30.0, 11, nullptr, interp);
+            if (!run.why.empty() || !run.first.empty()) printf("  FAIL koth, no hooks vs interpreted: %s%s\n", run.why.c_str(), run.first.c_str());
+            MCHECK(run.why.empty() && run.first.empty() && run.ticks > 7000);
+        }
+    }
+    {   // the harness sees a difference: a kill slot that scores 2
+        const LockCase& c = kLockCases[MODE_VS];
+        auto nat = compileModeLogic(lockText(c), c.mode);
+        auto other = compileModeLogic(lockText(c, "slot kill:\n  if killer != none and killer != victim: addScore(killer, 2)\n"), c.mode, nullptr, true);
+        MCHECK(nat && other);
+        if (nat && other) {
+            LockRun run = lockstepPair(c, 250, 40.0, 7, nat, other);
+            printf("  lockstep sees a changed slot: %s\n", run.first.empty() ? "no difference (FAIL)" : run.first.c_str());
+            MCHECK(run.why.empty() && run.first.find("score") != std::string::npos);
+        }
+    }
+    g_serverRateCheck = rateCheck;
+    return g_modeFail;
 }

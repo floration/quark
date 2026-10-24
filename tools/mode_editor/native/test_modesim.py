@@ -148,6 +148,12 @@ if s["logic"]["hook"] == "pending":
 else:
     check(s["logicApplied"] is True and s["interpreted"], "logic with the game hook: applied")
 check(max(x["scoreA"] for x in r if x["type"] == "frame") <= 3 and max(x["scoreB"] for x in r if x["type"] == "frame") <= 3, "rounds=3: first to 3")
+if s["logic"]["hook"] != "pending":   # an interpreted kill slot changes the result: 10 a kill
+    ten = "custommode=ten\nmode=ffa\ntimelimit=120\nlogic 1\nslot kill:\n  if killer != none and killer != victim: addScore(killer, 10)\n"
+    code, k = run("modesim", {"map": "harbor", "bots": 6, "seed": 2, "rate": 1, "seconds": 120, "until": "time", "rules": ten})
+    ps = k[-1]["result"]["players"] if code == 0 else []
+    check(k[0]["logicApplied"] is True and k[-1]["logicApplied"] is True and k[0]["interpreted"] == ["kill"], "kill slot logic: applied, interpreted")
+    check(ps and any(p["kills"] > 0 for p in ps) and all(p["score"] == 10 * p["kills"] for p in ps), "kill slot logic: every kill scored 10")
 code, e = run("modesim", {"map": "depot", "rules": "custommode=x\nmode=bomb\nlogic 1\nslot tick:\n  foo = \n"})
 check(code == 1 and e[-1]["errors"][0]["line"] == 5, "a logic error refuses the run, with line:col")
 code, e = run("modesim", {"map": "nosuchmap"})

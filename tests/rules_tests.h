@@ -1710,7 +1710,8 @@ static void testCustomRulesKeep() {
     CustomRules r;
     CHECK(r.fromText(file));
     CHECK(r.name == "rush" && r.baseMode == MODE_BOMB && std::fabs(r.gravity - 0.8f) < 1e-6f && r.maps == std::vector<std::string>({"depot"}));
-    CHECK(r.extraKeys == std::vector<std::string>({"future_key=7", "move_newthing=2"}));   // (label is never kept: it's recomputed)
+    CHECK(r.extraKeys == std::vector<std::string>({"future_key=7", "move_newthing=2"}));   // (label isn't an extra key)
+    CHECK(r.label == "rush#1a2b3c4d");   // (read for display only: never saved, the server works it out)
     CHECK(r.logic == file.substr(file.find("logic 1")));   // verbatim, \r and all; its `gravity=3` isn't a key
     // the host screen's edit and save
     r.gravity = 1.5f;
@@ -1722,10 +1723,11 @@ static void testCustomRulesKeep() {
     CHECK(back.fromText(saved) && back.toText() == saved && back.extraKeys == r.extraKeys && back.logic == r.logic);
     CHECK(std::fabs(back.gravity - 1.5f) < 1e-6f && back.health == 120);
     // the network text: the known keys only
+    CHECK(saved.find("label=") == std::string::npos);
     std::string net = r.toNetText();
-    CHECK(net.find("future_key") == std::string::npos && net.find("logic") == std::string::npos && net.find("label=") == std::string::npos);
+    CHECK(net.find("future_key") == std::string::npos && net.find("logic") == std::string::npos && net.find("label=rush#1a2b3c4d\n") != std::string::npos);
     CustomRules got;
-    CHECK(got.fromText(net) && got.extraKeys.empty() && got.logic.empty() && got.toNetText() == net);
+    CHECK(got.fromText(net) && got.extraKeys.empty() && got.logic.empty() && got.toNetText() == net && got.label == r.label);
     // no extras, no logic: the same text as before phase 1a
     CustomRules plain;
     CHECK(plain.fromText("custommode=x\ngravity=2\n") && plain.toText() == plain.toNetText());
@@ -1754,16 +1756,20 @@ struct FakeModeHooks : ModeHooks {
     int lastA[MSLOT_COUNT], lastB[MSLOT_COUNT], lastC[MSLOT_COUNT];
     FakeModeHooks() { for (int k = 0; k < MSLOT_COUNT; k++) lastA[k] = lastB[k] = lastC[k] = -9; }
     void note(ModeSlot k, int a, int b, int c) { calls[k]++; lastA[k] = a; lastB[k] = b; lastC[k] = c; }
-    void event(Server&, ModeSlot k, int a, int b, int c) override { note(k, a, b, c); }
-    double query(const Server&, ModeSlot k, int a, int b, int c) override {
-        const_cast<FakeModeHooks*>(this)->note(k, a, b, c);
+    int lifetimes = 0;
+    bool refuse = false;   // (as at the nesting limit: the caller runs the native version)
+    bool event(Server&, ModeSlot k, int a, int b, int c) override { note(k, a, b, c); return !refuse; }
+    bool query(const Server&, ModeSlot k, int a, int b, int c, double& out) override {
+        note(k, a, b, c);
         switch (k) {
-            case MSLOT_ROUNDS_TO_WIN: return 4;
-            case MSLOT_RESPAWN_DELAY: return 9;
-            case MSLOT_FROZEN: return a == 0;   // only player 0
-            default: return 0;
+            case MSLOT_ROUNDS_TO_WIN: out = 4; break;
+            case MSLOT_RESPAWN_DELAY: out = 9; break;
+            case MSLOT_FROZEN: out = a == 0; break;   // only player 0
+            default: out = 0; break;
         }
+        return !refuse;
     }
+    void nativeLifetime(ModeSlot) override { lifetimes++; }
 };
 
 static void testModeHooks(uint16_t port) {
@@ -1772,9 +1778,37 @@ static void testModeHooks(uint16_t port) {
     CHECK(std::string(modeSlotName(MSLOT_CAN_AUTO_START)) == "canAutoStart" && std::string(modeSlotName(MSLOT_COUNT)) == "?");
     // the built-in numbers are the ones the modes always had
     CHECK(builtinModeParams(MODE_BOMB).rounds == 7 && builtinModeParams(MODE_BOMB).roundTime == 105.0f && builtinModeParams(MODE_BOMB).plantTime == 3.0f);
-    CHECK(builtinModeParams(MODE_KOTH).respawn == 4.0f && builtinModeParams(MODE_KOTH).target == 100 && builtinModeParams(MODE_VS).respawn < 0);
+    CHECK(builtinModeParams(MODE_KOTH).respawnTime == 4.0f && builtinModeParams(MODE_KOTH).target == 100 && builtinModeParams(MODE_VS).respawnTime < 0);
     CHECK(builtinModeParams(MODE_HIDE).roundTime == kHideRoundTime && builtinModeParams(MODE_DUEL).rounds == 11 && builtinModeParams(MODE_FFA).matchTime == 600.0f);
-    for (int m = 0; m < MODE_COUNT; m++) CHECK(builtinModeParams(m).respawn == modeRespawnDelay(m));
+    for (int m = 0; m < MODE_COUNT; m++) CHECK(builtinModeParams(m).respawnTime == modeRespawnDelay(m));
+    // ...and the ones the built-in logic texts (tools/modes/*.qlogic) declare: every param both know, in every mode
+    for (int m = 0; m < MODE_COUNT; m++) {
+        auto L = defaultModeLogic(m);
+        CHECK(L != nullptr);
+        if (!L) continue;
+        const ModeParams& b = builtinModeParams(m);
+        int seen = 0;
+#define QUARK_MP_CHECK(nm, ctype, ltype, unit, lo, hi, def, doc) \
+        for (auto& pv : L->params) if (pv.name == #nm) { seen++; if ((ctype)pv.value != b.nm) { printf("  %s: param %s is %g in the logic, %g natively\n", modeName(m), #nm, pv.value, (double)b.nm); CHECK(false); } }
+        QUARK_MODE_PARAMS(QUARK_MP_CHECK)
+#undef QUARK_MP_CHECK
+        CHECK(seen >= 9);   // (common's nine at least)
+        // every param the game's catalog knows is a ModeParams field of the same name (an edit reaches the native code)
+        for (auto& pv : L->params) {
+            bool known = false;
+#define QUARK_MP_NAME(nm, ctype, ltype, unit, lo, hi, def, doc) known |= pv.name == #nm;
+            QUARK_MODE_PARAMS(QUARK_MP_NAME)
+#undef QUARK_MP_NAME
+            if (pv.catalog && !known) { printf("  param %s: in the logic's catalog, not in ModeParams\n", pv.name.c_str()); CHECK(false); }
+        }
+    }
+    {   // and a custom mode's param edit reaches the native slots' numbers (the slots stay native)
+        auto L = compileModeLogic("custommode=p\nmode=bomb\nlogic 1\nparam bombFuse f32 = 25\nparam respawnTime f32 = 3\nparam freezeTime f32 = 1.5\n", MODE_BOMB);
+        CHECK(L && !L->anyInterp);
+        auto H = makeModeLogicHooks(L);
+        CHECK(H && H->interp == 0 && H->params && H->params->bombFuse == 25.0f && H->params->respawnTime == 3.0f && H->params->freezeTime == 1.5f &&
+              H->params->plantTime == 3.0f && H->params->rounds == 7);
+    }
     Server s;
     ServerConfig cfg;
     cfg.map = "summit"; cfg.mode = MODE_KOTH; cfg.port = port;
@@ -1811,6 +1845,14 @@ static void testModeHooks(uint16_t port) {
     CHECK(h.calls[MSLOT_KILL] == 1 && h.lastA[MSLOT_KILL] == 1 && h.lastB[MSLOT_KILL] == 0 && h.lastC[MSLOT_KILL] == WPN_RIFLE);
     CHECK(s.players_[0].score == score0 && s.players_[0].kills == 1);   // (the engine's stats; no native score)
     CHECK(s.ms_.scoreA == 0 && s.ms_.scoreB == 0);   // (the native KOTH tick never ran)
+    CHECK(h.lifetimes > 0);   // (matchStart and roundSetup ran natively: the logic's state of their lifetime reset)
+    // a hook that can't run (slots nested too deep) falls back to the native slot
+    h.refuse = true;
+    CHECK(rulesRespawnDelay(s, 1) == builtinModeParams(MODE_KOTH).respawnTime && !rulesFrozen(s, 0));
+    int kills0 = h.calls[MSLOT_KILL];
+    s.spawnPlayer(1);
+    s.killPlayer(1, 0, WPN_RIFLE);
+    CHECK(h.calls[MSLOT_KILL] == kills0 + 1 && s.players_[0].score == score0 + 1);   // (asked, refused: the native kill scored)
     s.modeHooks_ = nullptr;
     s.stop();
 }

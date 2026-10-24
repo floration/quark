@@ -21,7 +21,7 @@
     /* per mode */ \
     X(rounds,          int,   "int", "",     1,    50,   1,     "rounds to win the match (the host's rounds key beats it)") \
     X(roundTime,       float, "f32", "s",    0,    3600, 0.0f,  "the round clock (0: none)") \
-    X(respawn,         float, "f32", "s",    -1,   60,   -1.0f, "dead before respawning during play (< 0: one life a round)") \
+    X(respawnTime,     float, "f32", "s",    -1,   60,   -1.0f, "dead before respawning during play (< 0: one life a round)") \
     X(matchTime,       float, "f32", "s",    1,    3600, 600.0f, "free for all: the match clock when the host sets no time limit") \
     X(rankedTime,      float, "f32", "s",    1,    3600, kRankedFfaTime, "ranked free for all (instagib): the match clock") \
     X(target,          int,   "int", "",     1,    10000, 100,  "king of the hill: points to win when the host sets no score limit") \
@@ -62,7 +62,7 @@ struct ModeParams {
 // Each built-in mode's numbers: the common defaults above, with the mode's own rounds, clock and respawn.
 constexpr ModeParams builtinModeParamsFor(int mode) {
     ModeParams p;
-    p.respawn = modeRespawnDelay(mode);
+    p.respawnTime = modeRespawnDelay(mode);
     switch (mode) {
         case MODE_VS: p.rounds = 5; break;
         case MODE_DUEL: p.rounds = 11; break;          // first to 11 lives

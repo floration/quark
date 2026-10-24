@@ -7,11 +7,14 @@
 // events (plant, defuse, explode, cartCheckpoint, delivered, capture, checkpoint, finish) that are slots too.
 //
 // A custom mode's logic (phase 3) replaces some slots: the server then holds a ModeHooks, and each slot first tests
-// it (one null test, predicted not taken; built-in modes never have one).
+// it (one null test, predicted not taken; built-in modes never have one). The logic reads and drives the same
+// engine through ModeHost (modelogic.h), which the hooks implement over the Server (gamemodes.cpp, end).
 #pragma once
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
+#include "modelogic.h"   // ModeSlot (the slots), ModeLogic
 class Server;
 struct Map;
 struct SpawnPoint;
@@ -45,58 +48,34 @@ int modeSpawnType(const Map& m, int mode, int team, int attackers, bool tourneyM
 std::vector<const SpawnPoint*> spawnPool(const Map& m, int want, int pointsTaken);
 void rulesRpsPick(Server& s, int id, int shape);   // hide and seek tiebreak: a player chose (RpsShape; "rps" command)
 
-// ---- the slots (design.md 2.3) and the hook a custom mode's logic plugs in (phase 3)
-enum ModeSlot : uint8_t {
-    // event slots (statements); their arguments in ModeHooks::event's a, b, c
-    MSLOT_RESET,          // back to warmup (rulesReset)
-    MSLOT_WARMUP,         // each warmup tick, before the autostart check
-    MSLOT_MATCH_START,    // a match starts, before round 1 (after the scores and stats are zeroed)
-    MSLOT_ROUND_SETUP,    // a round starts: after the round's resets, before the spawns
-    MSLOT_ROUND_START,    // after the spawns, as the freeze begins
-    MSLOT_LIVE,           // the freeze ended: the round is live
-    MSLOT_TIMER,          // each live tick before `tick`: the logic's timers (no native version)
-    MSLOT_TICK,           // each live tick (the engine has set ModeState::timeLeft to the round clock, if any)
-    MSLOT_TIME_UP,        // each live tick after `tick` while the round clock has run out (no native version)
-    MSLOT_KILL,           // a = victim, b = killer (-1 the world), c = weapon / damage source
-    MSLOT_STAB,           // a = attacker ("it"), b = victim
-    MSLOT_LEAVE,          // a = the player leaving
-    MSLOT_SPECTATE,       // a = the player going to spectate
-    MSLOT_ROUND_OVER,     // the round-end screen is over: end the match, or the next round starts
-    MSLOT_PLANT,          // bomb: a = the planter
-    MSLOT_DEFUSE,         // bomb: a = the defuser
-    MSLOT_EXPLODE,        // bomb: the blast (everyone in its radius is dead already)
-    MSLOT_CART_CHECKPOINT,// payload: a = checkpoints reached (1 = the first)
-    MSLOT_DELIVERED,      // payload: the cart reached the end
-    MSLOT_CAPTURE,        // multi point: a = the index of the point just taken
-    MSLOT_CHECKPOINT,     // race: a = the player, b = checkpoints passed (1 = the first)
-    MSLOT_FINISH,         // race: a = the player through the last checkpoint
-    // query slots (return a value)
-    MSLOT_FREEZE_LENGTH,  // s (f32)
-    MSLOT_ROUND_LENGTH,   // s (f32), 0 = no clock
-    MSLOT_ROUNDS_TO_WIN,  // int
-    MSLOT_RESPAWN_DELAY,  // a = the player (-1 any): s (f32), < 0 no respawn
-    MSLOT_CAN_DAMAGE,     // a = attacker (-1 the world), b = victim, c = weapon: bool
-    MSLOT_CAN_HIT,        // a = attacker, b = victim, c = weapon: bool
-    MSLOT_FROZEN,         // a = the player: bool (asked once a tick for everyone, kept in ModeHooks::frozenMask)
-    MSLOT_SPAWN_TYPE,     // a = the player: SPAWN_*
-    MSLOT_TEAM_LOCKED,    // bool
-    MSLOT_CAN_AUTO_START, // bool
-    MSLOT_COUNT
-};
+// ---- the slots (design.md 2.3: ModeSlot, modelogic.h) and the hook a custom mode's logic plugs in (phase 3)
+// Each slot's arguments arrive in ModeHooks::event / query's a, b, c in modelogic.h's order (ModeArgs): kill [victim,
+// killer, weapon]; stab [attacker, victim]; leave, spectate, plant, defuse, finish, respawnDelay, frozen, spawnType
+// [p]; cartCheckpoint, capture [the count reached now, 1 = the first]; checkpoint [p, i]; canDamage, canHit
+// [attacker, victim, weapon].
 static_assert(MSLOT_COUNT <= 64, "ModeHooks::interp is a 64-bit mask");
-const char* modeSlotName(int slot);   // the .qlogic name ("matchStart", "cartCheckpoint", ...); "?" out of range
 
-// What a custom mode's logic gives the server (phase 3: the logic runtime implements it). Server::modeHooks_ is null
-// for every built-in mode, and then each slot is one null test away from the native code.
+// What a custom mode's logic gives the server. Server::modeHooks_ is null for every built-in mode (and on ranked and
+// time trial servers), and then each slot is one null test away from the native code.
 struct ModeHooks {
-    uint64_t interp = 0;                   // bit per ModeSlot: run through the logic; the rest stay native
+    uint64_t interp = 0;                   // bit per ModeSlot (a timer's: MSLOT_TIMER + i): run through the logic
     const ModeParams* params = nullptr;    // the mode's numbers for the native slots (null: the base mode's built-in ones)
-    uint32_t frozenMask = 0;               // MSLOT_FROZEN's answers this tick (bit per player), filled by rulesTick
     virtual ~ModeHooks() = default;
-    // An event slot. When it ends the round or the match (the phase changes), the caller returns, as the native code
-    // does after an endRound.
-    virtual void event(Server& s, ModeSlot slot, int a, int b, int c) = 0;
-    // A query slot's value: f32 / int / bool / SPAWN_* as a double.
-    virtual double query(const Server& s, ModeSlot slot, int a, int b, int c) = 0;
-    bool has(ModeSlot k) const { return interp >> k & 1; }
+    // An event slot (MSLOT_TIMER: every timer that ran out). When it ends the round or the match (the phase changes),
+    // the caller returns, as the native code does after an endRound. False: it couldn't run (slots nested deeper than
+    // kModeFrames): the caller runs the native version instead.
+    virtual bool event(Server& s, ModeSlot slot, int a, int b, int c) = 0;
+    // A query slot's value in out (f32 / int / bool / SPAWN_* as a double); false: the caller asks the native version.
+    // Read-only for the server: a query's actions and field writes are ignored.
+    virtual bool query(const Server& s, ModeSlot slot, int a, int b, int c, double& out) = 0;
+    // reset / matchStart / roundSetup ran natively: the logic's state of that lifetime goes back to its declared
+    // values all the same (runModeSlot does it itself when the slot is interpreted).
+    virtual void nativeLifetime(ModeSlot slot) { (void)slot; }
+    bool has(int k) const { return (interp >> k & 1) != 0; }
 };
+
+// The ModeHooks that plays a compiled ModeLogic on a server: its interpreted slots through the interpreter (with the
+// Server as its ModeHost), its params as the native slots' ModeParams. One per server: it holds the logic's state.
+std::shared_ptr<ModeHooks> makeModeLogicHooks(std::shared_ptr<const ModeLogic> logic);
+// "reset matchStart tick ..." : the slots a ModeHooks runs through the logic, by name (the start log line)
+std::string modeHookedSlots(const ModeHooks& h);

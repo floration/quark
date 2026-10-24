@@ -202,7 +202,8 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     lateHist_.clear(); lateP99_ = -1;
     if (cfg_.maxPlayers < 1) cfg_.maxPlayers = 1;
     if (cfg_.maxPlayers > kMaxPlayers) cfg_.maxPlayers = kMaxPlayers;
-    if (cfg_.ranked) cfg_.custom = CustomRules();   // ranked plays by the standard rules
+    // ranked and time trials (their runs reach the leaderboard) play by the standard rules: no custom numbers, no logic
+    if (cfg_.ranked || cfg_.timeTrial) cfg_.custom = CustomRules();
     if (cfg_.custom.active()) { // a custom mode: its mode, limits and map pool
         const CustomRules& c = cfg_.custom;
         cfg_.mode = c.baseMode;
@@ -215,6 +216,29 @@ bool Server::start(const ServerConfig& cfg, std::string* err) {
     if (cfg_.ranked) { // ranked = 1v1 on one of the ladder rulesets
         if (!arenaVariantRanked(cfg_.arenaVariant)) cfg_.arenaVariant = 0;
         cfg_.mode = rankedMode(cfg_.arenaVariant);
+    }
+    // A custom mode's logic (the preset one, else cfg.custom's logic block), compiled once here: a compile error refuses
+    // the start with its line:col (the host screen shows it). rulesReset plays it while the server plays its base mode.
+    modeHooks_ = nullptr;
+    modeLogicHooks_.reset();
+    modeLogic_.reset();
+    modeLabel_.clear();
+    cfg_.custom.label.clear();
+    if (!cfg_.ranked && !cfg_.timeTrial) {
+        std::shared_ptr<const ModeLogic> L = presetLogic_;
+        if (!L && !cfg_.custom.logic.empty()) {
+            std::string le;
+            L = compileCustomLogic(cfg_.custom, &le);
+            if (!L) { if (err) *err = le; return false; }
+        }
+        if (L) {
+            modeLogic_ = L;
+            modeLogicHooks_ = makeModeLogicHooks(L);
+            modeLabel_ = ::modeLabel(*L);
+            if (cfg_.custom.active()) cfg_.custom.label = modeLabel_;   // (EV_RULES carries it: label=)
+            log("mode logic " + modeLabel_ + " (" + modeName(L->base) + "): interpreted slots: " + modeHookedSlots(*modeLogicHooks_) +
+                (L->base != cfg_.mode ? std::string(" - not played: the server plays ") + modeName(cfg_.mode) : std::string()));
+        }
     }
     {   // the connect-challenge secret
         std::random_device rd;
@@ -1085,7 +1109,8 @@ void Server::handleConnect(const NetAddr& from, Reader& r, int len) {
     broadcastEvent(rk);
     message(name + " joined");
     sendRules(id);
-    log(name + " connected from " + from.toString() + " as #" + std::to_string(id) + (rankId.empty() ? "" : " (ranked id " + rankId + ")"));
+    log(name + " connected from " + from.toString() + " as #" + std::to_string(id) + (rankId.empty() ? "" : " (ranked id " + rankId + ")") +
+        (modeHooks_ ? " - playing mode logic " + modeLabel_ : std::string()));
     if (cfg_.mode == MODE_TOURNEY && !rankId.empty() && !tourney_.running) prefetchSeedRatings();
 
     float d = rulesRespawnDelay(*this, id);
@@ -3811,8 +3836,24 @@ void Server::handleMasterReply(const std::string& key, const std::string& reply)
     }
 }
 
+bool Server::presetModeLogic(const std::string& qmodeText, int base, std::string* err) {
+    ModeDiag d;
+    auto L = compileModeLogic(qmodeText, base, &d);
+    if (!L) {
+        if (err) {
+            *err = "the mode logic doesn't compile";
+            if (!d.errors.empty()) *err += ": " + std::to_string(d.errors[0].line) + ":" + std::to_string(d.errors[0].col) + " " + d.errors[0].msg;
+        }
+        return false;
+    }
+    presetLogic_ = std::move(L);
+    return true;
+}
+
+void Server::presetModeLogic(std::shared_ptr<const ModeLogic> logic) { presetLogic_ = std::move(logic); }
+
 std::string Server::listName() const {
-    if (cfg_.custom.active()) return "[" + cfg_.custom.name + "] " + cfg_.name;
+    if (cfg_.custom.active()) return "[" + (cfg_.custom.label.empty() ? cfg_.custom.name : cfg_.custom.label) + "] " + cfg_.name;   // (name#hash8: the same label, the same rules)
     if (!cfg_.ranked) return cfg_.name;
     return std::string("[RANKED ") + arenaVariant(ms_.arenaVariant).title + (rated() ? "] " : " - NOT RATED] ") + cfg_.name;
 }
