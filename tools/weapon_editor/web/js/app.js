@@ -243,7 +243,13 @@ class App {
         this.setText(this._newText(n), null, true);
         $("setSel").value = "";
     }
-    async save(asName) {
+    // one save at a time: a double click (or Ctrl+S held) waits for the save in flight instead of asking twice
+    save(asName) {
+        if (this._saving) return this._saving;
+        this._saving = this._save(asName).finally(() => { this._saving = null; });
+        return this._saving;
+    }
+    async _save(asName) {
         let name = asName || $("setName").value.trim() || this.set.name;
         if (!SET_RE.test(name)) { this.toast("a set's name: letters, digits, space, _ and -, 36 at most, starting with a letter or digit", 4500); return false; }
         // the header carries the set's name
@@ -253,7 +259,17 @@ class App {
             await api.saveSet(name, this.text, expect);
         } catch (e) {
             if (e.status === 409) {
-                if (!confirm(`custom_weapons/${name}.qweapons changed on disk since it was opened (another editor, or by hand). Overwrite it?`)) return false;
+                if (!confirm(`custom_weapons/${name}.qweapons changed on disk since it was opened (another editor, or by hand).\n\nOK: overwrite it with this set (the disk version is kept as .bak).\nCancel: don't save (then choose whether to open the disk version).`)) {
+                    const disk = e.data && typeof e.data.text === "string" ? e.data.text : null;
+                    if (disk !== null && confirm(`Open the version on disk instead? Your unsaved changes here are lost (Download keeps a copy).`)) {
+                        this.set = { name, saved: name, baseText: disk };
+                        this.ast = null;
+                        this.setText(disk, null, true);
+                        this._saveDraftNow();
+                        await this.refreshSets();
+                    }
+                    return false;
+                }
                 await api.saveSet(name, this.text, undefined, true);
             } else { this.toast("save failed: " + e.message, 4000); return false; }
         }
@@ -289,12 +305,13 @@ class App {
         $("setOpenFile").onclick = () => $("fileIn").click();
         $("fileIn").onchange = async () => {
             const f = $("fileIn").files[0]; if (!f) return;
+            $("fileIn").value = "";
+            if (this.dirty && !confirm(`"${this.set.name}" has unsaved changes. Open ${f.name} anyway (the changes are lost)?`)) return;
             const text = await f.text();
             const name = f.name.replace(/\.(qweapons|txt)$/i, "").replace(/[^A-Za-z0-9 _-]/g, "").slice(0, 36) || "imported";
             this.set = { name, saved: null, baseText: null };
             this.ast = null;
             this.setText(text);
-            $("fileIn").value = "";
         };
         $("setDownload").onclick = () => {
             const a = document.createElement("a");
@@ -325,7 +342,12 @@ class App {
     }
     async playInGame() {
         if (this.allProblems().some((p) => p.severity === "error")) { this.toast("the set has errors: the game would play the standard weapons. Fix them first (Code tab).", 5000); return; }
-        if (!this.set.saved || this.dirty || this.set.saved !== this.set.name) { if (!(await this.save())) return; }
+        if (!this.set.saved || this.dirty || this.set.saved !== this.set.name) {
+            // the game reads the set from its file: say so before writing it (an existing one is kept as .bak)
+            const exists = (this.sets || []).some((s) => s.name === this.set.name);
+            if (!confirm(`Play in game saves the set first: ${exists ? "overwrite" : "write"} custom_weapons/${this.set.name}.qweapons${exists ? " (the old file is kept as .bak)" : ""}, then write the custom mode. Go on?`)) return;
+            if (!(await this.save())) return;
+        }
         try {
             const r = await api.playMode(this.set.saved, $("baseMode").value);
             $("playInfo").innerHTML = `${r.created ? "wrote" : "updated"} <code>custom_modes/${r.name}.qmode</code> (weaponset=${this.set.saved}). In the game: Host &gt; Custom modes &gt; <b>${r.name}</b>.`;
