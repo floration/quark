@@ -405,6 +405,37 @@ static void testStrafeFps() {
     CHECK(spreadYaw(0.2f, 0.6f, 4, 4) == 0.6f && spreadYaw(0.2f, 0.6f, 1, 1) == 0.6f);
 }
 
+// F19: a refill the server makes between commands (a teammate's syringe) reaches the prediction with the next snapshot.
+static void testRefillPrediction(uint16_t port) {
+    printf("syringe refill predicted\n");
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a;
+    a.connect("127.0.0.1:" + std::to_string(port), "dasher");
+    std::vector<NetClient*> cls = {&a};
+    auto idle = [](int) { return UserCmd(); };
+    pump(s, cls, 2.0, idle);
+    const int id = a.clientId();
+    CHECK(id >= 0 && s.players_[id].alive);
+    if (id < 0) { s.stop(); return; }
+    // both charges spent (held dash: 0.72 s apart)
+    pump(s, cls, 0.85, [](int) { UserCmd c; c.buttons = BTN_DASH; c.forward = 127; return c; });
+    pump(s, cls, 0.05, idle);
+    const int before = a.predicted().dashCharges;
+    dashRefillAll(s.players_[id].move);   // (what the syringe does)
+    s.players_[id].move.hookCooldown = 0;
+    pump(s, cls, 0.1, idle);
+    printf("  charges: %d before the refill, predicted %d after it (server %d)\n", before, (int)a.predicted().dashCharges, (int)s.players_[id].move.dashCharges);
+    CHECK(before < 2 && a.predicted().dashCharges == s.players_[id].move.dashCharges && a.predicted().dashCooldownMs == s.players_[id].move.dashCooldownMs);
+    // and no replay while nothing differs
+    pump(s, cls, 0.3, idle);
+    CHECK(a.lastReplayCount() == 0);
+    s.stop();
+}
+
 static void testMovement() {
     printf("movement\n");
     Map m;
@@ -7205,7 +7236,7 @@ int main(int argc, char** argv) {
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
-        {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); }},
+        {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); testRefillPrediction(TP(28586)); }},
         {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); testNameColor(TP(28599)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testDemoUpgrade(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testBuiltInMapEditSession(TP(28606)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
         {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); }},

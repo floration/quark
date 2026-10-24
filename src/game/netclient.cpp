@@ -462,6 +462,16 @@ void NetClient::afterSnapshots() {
     if (reconcilePending_) { reconcilePending_ = false; if (!snaps_.empty()) reconcile(snaps_.back()); }
 }
 
+// The dash charges, their timers and the hook cooldown agree (F19): a teammate's syringe refills them on the server
+// between commands, which moves nothing, so a position-only compare kept the empty pips and the next dash or grapple
+// came a round trip late as a correction. Each is exact on the wire and pmove's integer / float steps match.
+static bool sameCharges(const MoveState& a, const MoveState& b) {
+    if (a.dashCharges != b.dashCharges || a.dashRecharging != b.dashRecharging || a.dashCooldownMs != b.dashCooldownMs ||
+        std::fabs(a.hookCooldown - b.hookCooldown) > 1e-4f) return false;
+    for (int i = 0; i < a.dashRecharging && i < kMaxDashCharges; i++) if (a.dashRechargeMs[i] != b.dashRechargeMs[i]) return false;
+    return true;
+}
+
 void NetClient::reconcile(const Snapshot& s) {
     // The payload cart is solid: mirror the server's collision box so prediction agrees (at the cart's place on
     // the track, which runs from the other end when team B attacks an unstaged map: Map::cartTrack, as the server).
@@ -475,7 +485,8 @@ void NetClient::reconcile(const Snapshot& s) {
     for (auto& p : s.players) if (p.id == s.clientId) alive = p.flags & PS_ALIVE;
     const MoveState& mine = predicted_[s.ackCmdSeq % kCmdRing];
     bool match = predictedSeq_[s.ackCmdSeq % kCmdRing] == s.ackCmdSeq && length(mine.pos - s.self.pos) < 1e-4f &&
-                 length(mine.vel - s.self.vel) < 1e-3f && mine.flags == s.self.flags && mine.hookTarget == s.self.hookTarget;
+                 length(mine.vel - s.self.vel) < 1e-3f && mine.flags == s.self.flags && mine.hookTarget == s.self.hookTarget &&
+                 sameCharges(mine, s.self);
     lastReplay_ = 0;
     if (!alive || !mapReady_) {
         pred_ = predPrev_ = s.self;
