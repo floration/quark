@@ -18,7 +18,7 @@ function xRange(c) {
 }
 
 export class CurveWidget {
-    constructor(host, curve, getBrain, onChange) {
+    constructor(host, curve, getBrain, onChange, opts = {}) {
         this.host = host; this.c = curve; this.getBrain = getBrain; this.onChange = onChange;
         this.cv = document.createElement("canvas");
         this.cv._widget = this;   // (for the headless checks)
@@ -27,7 +27,7 @@ export class CurveWidget {
         this.ys = new Float64Array(4 * 121);   // sampled values (reused)
         this._input();
         this.draw();
-        if (curve.form === "expr") this._sliders();
+        if (curve.form === "expr" && opts.sliders !== false) this._sliders();
     }
     sample() {
         const b = this.getBrain(), S = symbols(b), [x0, x1] = this.range;
@@ -88,7 +88,8 @@ export class CurveWidget {
     }
     _input() {
         const cv = this.cv;
-        const pos = (e) => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+        // (in CSS px of the canvas: the box may be scaled, e.g. by the blocks view's zoom)
+        const pos = (e) => { const r = cv.getBoundingClientRect(), sx = (cv.clientWidth || r.width) / (r.width || 1), sy = (cv.clientHeight || r.height) / (r.height || 1); return [(e.clientX - r.left) * sx, (e.clientY - r.top) * sy]; };
         cv.addEventListener("contextmenu", (e) => {
             e.preventDefault();
             const i = this._hit(...pos(e));
