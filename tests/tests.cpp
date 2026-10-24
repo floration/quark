@@ -26,6 +26,7 @@
 #include "../src/client/lightmap.h"
 #include "../src/client/hudclock.h"
 #include "../src/client/weaponpredict.h"
+#include "../src/client/feelsounds.h"
 #include <filesystem>
 #include <sstream>
 #include <fstream>
@@ -218,6 +219,92 @@ static void testSleepPrecision() {
     double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     printf("  sleepMs(1): %.2f ms average\n", ms / 20);
     CHECK(ms < 20 * 5.0);
+}
+
+// The feel fixes' client sound rules (feelsounds.h).
+static void testFeelSounds() {
+    printf("feel sounds\n");
+    {   // F3: your hurt sound once per 0.15 s at most, louder for more damage; the laser's hits every 10 ms add up
+        HurtSoundGate g;
+        int plays = 0;
+        float loudest = 0;
+        for (int ms = 0; ms < 1000; ms += 10) { float v = g.frame(ms / 1000.0, 3); if (v > 0) { plays++; loudest = std::max(loudest, v); } }
+        printf("  laser for 1 s: %d hurt sounds (one per hit was 100)\n", plays);
+        CHECK(plays >= 6 && plays <= 7);
+        CHECK(loudest > HurtSoundGate::volumeFor(3));   // (the 15 damage of a gap, not one hit's 3)
+        HurtSoundGate h;
+        CHECK(h.frame(0, 10) > 0 && h.frame(0.05, 0) == 0 && h.frame(0.16, 0) == 0);   // nothing pending: silent
+        CHECK(HurtSoundGate::volumeFor(50) > HurtSoundGate::volumeFor(10) && HurtSoundGate::volumeFor(200) <= 1.0f);
+        CHECK(h.frame(0.2, 5) > 0);   // a fresh hit after the gap: at once
+    }
+    {   // F8: movement reports what each command did, so sounds don't depend on what a frame's state compare sees
+        Map m;
+        std::string err;
+        CHECK(m.parse("box -50 -1 -50 50 0 50\nspawn any 0 0 0\n", &err));
+        auto settle = [&](MoveState& q) { q = MoveState(); q.pos = {0, 0.5f, 0}; for (int i = 0; i < 400; i++) pmove(q, UserCmd(), m); CHECK(q.flags & MF_ONGROUND); };
+        MoveState q;
+        // a bhop: falling onto the floor with jump held bounces straight off it in one step: a landing AND a jump
+        settle(q);
+        q.pos.y = 0.004f; q.vel = {6, -12, 0}; q.flags = MF_JUMPHELD;
+        UserCmd j; j.msec = 1; j.buttons = BTN_JUMP;
+        pmove(q, j, m);
+        CHECK((q.events & (ME_LAND | ME_JUMP)) == (ME_LAND | ME_JUMP) && q.landSpeed > 11.9f && q.vel.y > 0);
+        pmove(q, j, m);
+        CHECK(q.events == 0);   // (each call reports its own)
+        // jump and dash pressed together on the floor: the dash and its dash jump in one command (it was silent)
+        settle(q);
+        UserCmd d; d.msec = 8; d.forward = 127; d.buttons = BTN_JUMP | BTN_DASH;
+        pmove(q, d, m);
+        CHECK((q.events & ME_DASH) && (q.events & ME_SUPER) && !(q.events & ME_HYPER));
+        // the same aimed down: a hyper
+        settle(q);
+        d.pitch = -0.8f;
+        pmove(q, d, m);
+        CHECK((q.events & ME_DASH) && (q.events & ME_HYPER) && !(q.events & ME_SUPER));
+        // walking: nothing
+        settle(q);
+        UserCmd w; w.msec = 8; w.forward = 127;
+        uint8_t any = 0;
+        for (int i = 0; i < 50; i++) { pmove(q, w, m); any |= q.events; }
+        CHECK(any == 0);
+    }
+}
+
+// X2: everyone else's jumps, landings and dashes reach the other clients (PlayerSnap::keys' KEY_EV_* bits), once each.
+static void testRemoteMoveSounds(uint16_t port) {
+    printf("remote movement sounds\n");
+    auto idle = [](int) { return UserCmd(); };
+    Server s;
+    ServerConfig cfg;
+    cfg.map = "bastion"; cfg.mode = MODE_FFA; cfg.port = port;
+    s.setLog([](const std::string&) {});
+    { std::string e_; if (!s.start(cfg, &e_)) { printf("  FAIL %s:%d: server start: %s\n", __FILE__, __LINE__, e_.c_str()); g_fail++; return; } }
+    NetClient a, b;
+    a.connect("127.0.0.1:" + std::to_string(port), "hopper");
+    b.connect("127.0.0.1:" + std::to_string(port), "listener");
+    std::vector<NetClient*> cls = {&a, &b};
+    pump(s, cls, 2.0, idle);
+    const int ia = a.clientId(), ib = b.clientId();
+    CHECK(ia >= 0 && ib >= 0 && s.players_[ia].alive && s.players_[ib].alive);
+    if (ia < 0 || ib < 0) { s.stop(); return; }
+    s.players_[ib].move.pos = s.players_[ia].move.pos;   // (side by side: in sight of each other)
+    pump(s, cls, 0.5, idle);
+    NetClient::RemoteMoveEvent e;
+    while (b.nextRemoteMoveEvent(1e18, &e)) {}
+    // hop for 2 s, then a dash
+    pump(s, cls, 2.0, [&](int i) { UserCmd c; if (i == 0) c.buttons = BTN_JUMP; return c; });
+    pump(s, cls, 0.4, idle);
+    pump(s, cls, 0.3, [&](int i) { UserCmd c; if (i == 0) { c.buttons = BTN_DASH; c.forward = 127; } return c; });
+    pump(s, cls, 0.3, idle);
+    int jumps = 0, lands = 0, dashes = 0, mine = 0;
+    while (b.nextRemoteMoveEvent(1e18, &e)) {
+        if (e.id != ia) { mine++; continue; }
+        const uint16_t ev = e.ev >> kKeyEvShift;
+        jumps += (ev & ME_JUMP) != 0; lands += (ev & ME_LAND) != 0; dashes += (ev & ME_DASH) != 0;
+    }
+    printf("  2 s of hopping and a dash, heard by the other client: %d jumps, %d landings, %d dashes (%d of its own)\n", jumps, lands, dashes, mine);
+    CHECK(jumps >= 3 && jumps <= 6 && lands >= 2 && dashes == 1 && mine == 0);
+    s.stop();
 }
 
 static void testMovement() {
@@ -7005,12 +7092,12 @@ int main(int argc, char** argv) {
             std::string p = (std::filesystem::temp_directory_path() / ("quark_map_report_" + std::to_string(getpid()) + ".md")).string();
             if (mapReport(p.c_str())) g_fail++;
         }},
-        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
+        {"movement", [] { testPortBlocks(); testProcPipes(); testSleepPrecision(); testCompletion(); testSigning(); g_fail += launcherTests(); testHostileInput(); testFeelSounds(); testMovement(); testMovementTuning(); testDashCharges(); testDashTech(); testTickRateIndependence(); testMapSaveExact(); testMapIdentity(); testMapFormat(); testMapConverter(); testHumanMadeMaps(); testMapLimits(); testRulesValues(); testClipRays(); testAtomicWrite(); testShippedLightCache(); testGridQueries(); testEditorLadder(); testEditorGroups(); testTrimClipEdits(); testIncrementalEdits(); }},
         {"sessions", [] { testSession(MODE_VS, "bastion", TP(28560)); testSession(MODE_BOMB, "bastion", TP(28561)); testSession(MODE_KOTH, "bastion", TP(28562)); }},
         {"sessions2", [] { testSession(MODE_PAYLOAD, "bastion", TP(28563)); testSession(MODE_FFA, "bastion", TP(28564)); testSession(MODE_RACE, "foundry", TP(28565)); }},
         {"modes", [] { testCustomMode(TP(28570)); testPoints(TP(28571)); testSyringe(TP(28572)); testCartChecks(TP(28573)); testItModes(TP(28574)); testTagLateJoin(TP(28579)); testBotGoalsAfterMapChange(TP(28578)); }},
         {"hidden", [] { testStickyInherit(); testHiddenInfo(TP(28587)); }},
-        {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); }},
+        {"race", [] { testRaceFloors(); testTimeTrial(TP(28580)); testPayloadPush(TP(28581)); testPacketLoss(TP(28582)); testCartDash(TP(28583)); testSemiAuto(TP(28584)); testRemoteMoveSounds(TP(28585)); }},
         {"votes", [] { testRejoin(TP(28590)); testMapVote(TP(28591)); testChatAndVoteLimits(TP(28592)); testHandshake(TP(28594)); testReachProbe(TP(28595)); testKickByName(TP(28596)); testAddbotArgs(TP(28597)); testSpecVote(TP(28598)); testNameColor(TP(28599)); }},
         {"edit", [] { testSnapshotBounds(); testDemoLengthWrap(); testDemoUpgrade(); testReplayBound(TP(28604)); testMapNames(TP(28605)); testMapDownload(TP(28600)); testEditSession(TP(28601)); testBuiltInMapEditSession(TP(28606)); testVotedEdit(TP(28602)); testDemo(TP(28603)); }},
         {"ranked", [] { testFilledParse(); testRanked(TP(28610)); testRankedVoteAndRestart(TP(28620)); testInternetList(TP(28625)); testMasterReplies(TP(28627)); testHelloRetry(); testMasterSignature(); testPlacementConstant(); testRankedLockLadders(); }},

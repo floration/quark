@@ -164,6 +164,7 @@ struct ServerPlayer {
     double itFreezeUntil = 0;    // tag: just got tagged, stands still until then
     uint32_t lastCmdSeq = 0;
     uint16_t keys = 0;          // KEY_* from the last command
+    uint16_t moveEv = 0;        // KEY_EV_* bits: what its movement did since the last snapshots (sendSnapshots clears it)
     float chatTokens = kChatBurst; // say: a burst, then one a second (REVIEW NET-7)
     double chatAt = 0;
     uint32_t strTick = 0;       // string commands handled this tick (a budget: the rest wait, the client resends them)

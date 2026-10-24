@@ -24,6 +24,12 @@ constexpr uint16_t kSnapDashRechargeSince = 43;  // ...and from here on the char
 constexpr uint16_t kOldestDemoProtocol = 33;  // demos recorded at this protocol or later still play (raise it when a wire change can't read older ones)
 // PlayerSnap::keys: what a player is holding (spectators see it on the key overlay)
 enum : uint16_t { KEY_FWD = 1, KEY_BACK = 2, KEY_LEFT = 4, KEY_RIGHT = 8, KEY_JUMP = 16, KEY_CROUCH = 32, KEY_FIRE = 64, KEY_ALT = 128, KEY_DASH = 256, KEY_HOOK = 512 };
+// ...and its top six bits, what their movement did since the last snapshot (pmove's ME_JUMP / LAND / DASH / SUPER / HYPER,
+// << kKeyEvShift; KEY_EV_LAND_HARD: a landing over 12 m/s): the client plays their jump, land and dash sounds from them.
+// Older clients only look at the held-key bits; older servers and demos never set these.
+constexpr int kKeyEvShift = 10;
+enum : uint16_t { KEY_HELD_MASK = 1023, KEY_EV_LAND_HARD = 32768 };
+constexpr float kHardLandSpeed = 12.0f;
 
 // Player hull
 constexpr float kPlayerHalfWidth = 0.4f;

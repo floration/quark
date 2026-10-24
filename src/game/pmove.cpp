@@ -215,6 +215,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     if (onGround && jumpHeld && !frozen && !dashActive) {
         s.vel.y = jumpSpeed;
         onGround = false;
+        s.events |= ME_JUMP;
         if (freshJump) s.jumpGrace = jumpWindow;   // (a dash right after this press is still a ground dash jump)
     }
 
@@ -259,6 +260,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         s.dashTimer = (kDashTime * mt.m[MV_DASH_TIME]);
         s.dashBounces = 0;
         s.dashCharges--;
+        s.events |= ME_DASH;
         if (s.dashRecharging < kMaxDashCharges) s.dashRechargeMs[s.dashRecharging++] = (uint16_t)rechargeMsFor(mt, s.mods);   // (held there until the dash ends)
     }
     bool dashing = s.dashTimer > 0;
@@ -298,6 +300,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
                 refillCharges(s, maxCharges, maxCharges);
             }
             chargesSet = true;
+            s.events |= (grounded && down) ? ME_HYPER : ME_SUPER;
             s.vel = {s.dashDirX * sp, vy, s.dashDirZ * sp};
             s.dashTimer = 0;
             s.jumpBuffer = 0;
@@ -349,11 +352,13 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             s.hookTarget = (uint8_t)(hp->id[caught] + 1);
             s.flags |= MF_HOOKED | MF_HOOKHELD;
             s.flags &= ~MF_PULLED;   // grabbing with your own grapple breaks free of someone else's
+            s.events |= ME_HOOK;
         } else if (t >= 0) {
             s.hookPoint = eye + dir * t;
             s.hookTarget = 0;
             s.flags |= MF_HOOKED | MF_HOOKHELD;
             s.flags &= ~MF_PULLED;
+            s.events |= ME_HOOK;
         }
     }
     if (!hookHeld || frozen) s.flags &= ~MF_HOOKED;
@@ -399,6 +404,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
         bool jumpPress = jumpHeld && !(s.flags & MF_JUMPHELD);
         if (jumpPress) {
             s.vel = fwd * -4.0f + Vec3(0, jumpSpeed * 0.7f, 0);
+            s.events |= ME_JUMP;
         } else {
             float climb = std::min(wishLen, 1.0f) * (kLadderSpeed * mt.m[MV_LADDER_SPEED]) * (cmd.pitch < -0.45f ? -1.0f : 1.0f);
             s.vel = {wishDir.x * std::min(wishSpeed, (kLadderSide * mt.m[MV_LADDER_SIDE])), wishLen > 0 ? climb : 0.0f, wishDir.z * std::min(wishSpeed, (kLadderSide * mt.m[MV_LADDER_SIDE]))};
@@ -513,6 +519,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
     if (nowGround) {
         s.pos.y += probe; // settle onto the floor
         float impact = -before.vel.y;
+        if (!grounded && !dashing && impact > kLandSoundSpeed) { s.events |= ME_LAND; s.landSpeed = std::max(s.landSpeed, impact); }
         if (jumpHeld && !frozen && !grappleOnly && impact > jumpSpeed && !onLadder && !dashing) {
             // bhop off a hard landing: bounce higher than a normal jump (the landing speed is the only input,
             // so prediction replays it exactly). Not off a dash's own push into the floor: that's a super dash
@@ -520,6 +527,7 @@ static void pmoveStep(MoveState& s, const UserCmd& cmd, const Map& map, float dt
             s.vel.y = jumpSpeed + std::min((impact - jumpSpeed) * (kBounceGain * mt.m[MV_BOUNCE_GAIN]), (kBounceMax * mt.m[MV_BOUNCE_MAX]));
             nowGround = false;
             bounced = true;
+            s.events |= ME_JUMP;
         } else if (s.vel.y < 0) s.vel.y = 0;
     } else if (onGround && s.vel.y <= 0) {
         float down = map.sweepAxis(feet, 1, -(kStepHeight * mt.m[MV_STEP]));
@@ -553,6 +561,8 @@ void pmove(MoveState& s, const UserCmd& cmd, const Map& map, HookProbe* probe) {
     int n = cmd.msec < 1 ? 1 : (cmd.msec > 8 ? 8 : cmd.msec);
     const float sy = std::sin(cmd.yaw), cy = std::cos(cmd.yaw);
     const CmdCtx cx{moveTuning(), {-sy, 0, -cy}, {cy, 0, -sy}};
+    s.events = 0;
+    s.landSpeed = 0;
     for (int i = 0; i < n; i++) pmoveStep(s, cmd, map, kMoveStep, probe, cx);
 }
 

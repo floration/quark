@@ -1122,7 +1122,7 @@ void Server::holdPlayer(int id, const std::string& reason) {
     p.addr = NetAddr{};   // (no packets to or from it until a reconnect)
     p.cmdQueue.clear();
     p.events.clear();
-    p.keys = 0;
+    p.keys = 0; p.moveEv = 0;
     vote_.yes &= ~(1u << id); vote_.no &= ~(1u << id);
     message(p.name + " " + (reason == "disconnected" ? "disconnected" : "lost connection") + " - their place is kept for " +
             std::to_string((int)kReconnectGrace) + " s");
@@ -1148,7 +1148,7 @@ bool Server::restorePlayer(int id, const NetAddr& from, uint32_t nonce, const st
     p.reportedLoss = 0; p.lastViewTick = 0; p.ping = 0; p.lastRecv = timeNow();
     p.windowLoss = 0; p.windowPingMin = 0; p.pingBase = 0;
     p.mapTokens = fresh.mapTokens; p.mapTokensAt = 0;
-    p.buttons = p.prevButtons = 0; p.keys = 0;
+    p.buttons = p.prevButtons = 0; p.keys = 0; p.moveEv = 0;
     sendAccept(sock_, p, id, map_, cfg_.mode);
     sendWelcome(id);
     { GameEvent e; e.type = EV_PLAYERINFO; e.a = (uint8_t)id; e.b = looksByte(p); e.c = (int16_t)p.nameColor; e.text = p.name; sendEvent(id, e); }
@@ -2098,6 +2098,8 @@ void Server::runPlayerCmd(int id, const UserCmd& cmd) {
         HookProbe probe;   // a grapple that may fire in this command: the enemies it can catch
         grappleTargets(id, cmd, probe);
         pmove(p.move, cmd, map_, probe.n ? &probe : nullptr);
+        if (p.move.events & (ME_JUMP | ME_LAND | ME_DASH | ME_SUPER | ME_HYPER))   // (for everyone else's sounds: PlayerSnap::keys)
+            p.moveEv |= (uint16_t)((p.move.events & 31) << kKeyEvShift) | (p.move.landSpeed > kHardLandSpeed ? KEY_EV_LAND_HARD : 0);
         if (probe.hit >= 0) startLatch(id, probe.id[probe.hit], probe.head);
         if (p.hookVictim >= 0) syncLatch(id);           // released / met / out of reach: let go; else the anchors follow
         if (p.hookedBy >= 0) syncLatch(p.hookedBy);     // (broke free with a dash or a grab of our own)
@@ -2918,7 +2920,8 @@ void Server::sendSnapshots() {
         ps.acc = (uint8_t)(p.shotsFired ? std::min(100, p.shotsHit * 100 / p.shotsFired) : 0);
         ps.ping = (uint16_t)p.ping;
         ps.checkpoint = (uint8_t)p.checkpoint;
-        ps.keys = p.alive ? p.keys : 0;
+        ps.keys = p.alive ? (uint16_t)(p.keys | p.moveEv) : 0;
+        p.moveEv = 0;   // (every client's snapshot is built from this one list: each event goes out once)
         ps.hooked = p.alive && (p.move.flags & MF_HOOKED) ? (uint8_t)(1 + p.move.hookTarget) : 0;   // (2 + id: latched onto that player)
         ps.hookPoint = p.move.hookPoint;
         all.push_back(ps);

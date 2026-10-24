@@ -1473,7 +1473,12 @@ void Game::frame(double dt) {
         lastProjectiles_.swap(projScratch_);
 
         int hp = net_.selfHealth();
-        if (hp < lastHealth_ && net_.selfAlive()) { damageUntil_ = time_ + 0.25; audio_.play(SND_HURT, 0.7f); }
+        {   // the hurt sound: one per 0.15 s at most, louder for more damage (feelsounds.h; it played on every drop)
+            const bool hurt = hp < lastHealth_ && net_.selfAlive();
+            if (hurt) damageUntil_ = time_ + 0.25;
+            if (!net_.selfAlive()) hurtGate_.reset();
+            else if (float v = hurtGate_.frame(time_, hurt ? lastHealth_ - hp : 0); v > 0) audio_.play(SND_HURT, v);
+        }
         lastHealth_ = hp;
         if (!net_.selfAlive() && uiIn_.pressed && !paused_) {
             // cycle spectate target
@@ -6309,21 +6314,30 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
     const double frameDt = time_ - prevSoundAt_;
     prevSoundAt_ = time_;
     if (alive && prevAlive_) {
-        bool was = prevMove_.flags & MF_ONGROUND, now = m.flags & MF_ONGROUND;
+        bool now = m.flags & MF_ONGROUND;
         Vec3 d = m.pos - prevMove_.pos;
         float h = std::sqrt(d.x * d.x + d.z * d.z);
         if (now && h < 2.0f) {
             stepDist_ += h;
             if (stepDist_ > 2.4f) { stepDist_ = 0; audio_.play(SND_STEP, 0.55f, 0.9f + (qrand() % 20) * 0.01f); }
         }
-        if (was && !now && m.vel.y > 3) audio_.play(SND_JUMP, 0.5f);
-        if (!was && now && prevMove_.vel.y < -6) audio_.play(SND_LAND, clampf(-prevMove_.vel.y / 20.0f, 0.3f, 1.0f));
-        if (m.dashTimer > 0 && prevMove_.dashTimer <= 0) audio_.play(SND_DASH, 0.8f);
-        // a dash cut short by a jump: a super (dash jump), or a hyper (super dash: the dash was aimed down into the
-        // floor). (A dash running out on its own has under a frame left; an upward dash ending isn't a jump.)
-        if (prevMove_.dashTimer > (float)frameDt + 0.01f && m.dashTimer <= 0 && m.vel.y > 1.0f && !(m.flags & MF_ONGROUND))
-            audio_.play(dashAimedDown(prevMove_) ? SND_HYPER : SND_SUPER, 0.9f);   // (pmove's own test: since 1.18.7 the charges left no longer tell them apart)
-        if ((m.flags & MF_HOOKED) && !(prevMove_.flags & MF_HOOKED)) {
+    }
+    {   // jumps, landings, dashes and the grapple from what each tick's movement did (pmove's ME_*): comparing the state once
+        // a frame missed a jump and its landing in one tick (bhops: more of them silent the higher the fps) and a dash
+        // with its dash jump in one frame (a silent super or hyper)
+        float land = 0;
+        const uint8_t ev = net_.takeMoveEvents(&land);
+        if (alive && prevAlive_ && ev) {
+            if (ev & ME_LAND) audio_.play(SND_LAND, clampf(land / 20.0f, 0.3f, 1.0f));
+            if (ev & ME_JUMP) audio_.play(SND_JUMP, 0.5f);
+            if (ev & ME_DASH) audio_.play(SND_DASH, 0.8f);
+            if (ev & (ME_SUPER | ME_HYPER)) audio_.play((ev & ME_HYPER) ? SND_HYPER : SND_SUPER, 0.9f);
+            if (ev & ME_HOOK) {
+                audio_.play(SND_GRAPPLE_FIRE, 0.7f);
+                audio_.play3D(SND_GRAPPLE_HIT, m.hookPoint, 0.9f);
+            }
+        }
+        if (net_.playback() && alive && prevAlive_ && (m.flags & MF_HOOKED) && !(prevMove_.flags & MF_HOOKED)) {   // (a demo: no ME_HOOK)
             audio_.play(SND_GRAPPLE_FIRE, 0.7f);
             audio_.play3D(SND_GRAPPLE_HIT, m.hookPoint, 0.9f);
         }
@@ -6364,6 +6378,21 @@ void Game::updateSounds(const NetClient::PlayerArray& players) {
         ra.hooked = p.hooked;
         ra.health = p.health;
         ra.valid = true;
+    }
+    // everyone else's jumps, landings and dashes (the server's KEY_EV_* bits), each as that player is drawn where it
+    // happened: in the air they were silent (holding jump is the best way to move, so movers made no sound at all)
+    NetClient::RemoteMoveEvent e;
+    while (net_.nextRemoteMoveEvent(net_.renderTime(), &e)) {
+        if (e.id >= kMaxPlayers || !players[e.id].valid || !(players[e.id].snap.flags & PS_ALIVE)) continue;
+        const uint16_t ev = (uint16_t)(e.ev >> kKeyEvShift);
+        const bool self = e.id == me;   // (a demo: the recorded player, whose view this is)
+        const Vec3 at = players[e.id].snap.pos;
+        const int sp = net_.playerSoundPack(e.id);
+        auto play = [&](int snd, float vol) { if (self) audio_.play(snd, vol * 0.6f, 1.0f, sp); else audio_.play3D(snd, at, vol, 1.0f, sp); };
+        if (ev & ME_LAND) play(SND_LAND, (e.ev & KEY_EV_LAND_HARD) ? 1.0f : 0.6f);
+        if (ev & ME_JUMP) play(SND_JUMP, 0.8f);
+        if (ev & ME_DASH) play(SND_DASH, 1.0f);
+        if (ev & (ME_SUPER | ME_HYPER)) play((ev & ME_HYPER) ? SND_HYPER : SND_SUPER, 1.0f);
     }
 }
 

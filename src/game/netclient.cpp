@@ -32,6 +32,8 @@ void NetClient::resetPrediction() {
     errorOffset_ = {};
     lastReplay_ = 0;
     havePendingOffset_ = reconcilePending_ = false;
+    moveEv_ = 0; moveLand_ = 0;
+    remoteEvHead_ = remoteEvTail_;   // (another server's or demo's clock)
 }
 
 void NetClient::resetJitter() {
@@ -421,6 +423,13 @@ void NetClient::onSnapshot(Snapshot& s) {
 
     reconcilePending_ = true;   // (once a poll, against its newest snapshot: reconcile)
 
+    // everyone else's movement events, played as each is drawn there (an old server or demo sends none)
+    for (const PlayerSnap& p : s.players) {
+        const uint16_t ev = p.keys & (uint16_t)~KEY_HELD_MASK;
+        if (!ev || p.hidden || (p.id == s.clientId && !play_.active) || !(p.flags & PS_ALIVE)) continue;   // (a demo: the recorded player's too)
+        if (remoteEvTail_ - remoteEvHead_ >= kRemoteEvRing) remoteEvHead_++;   // (nobody's reading: the oldest goes)
+        remoteEv_[remoteEvTail_++ % kRemoteEvRing] = {s.timeMs * 0.001, p.id, ev};
+    }
     if (rec_) recordSnapshot(s, fresh);
     snaps_.push_back(std::move(s));
     indexLatest();
@@ -521,7 +530,11 @@ void NetClient::tick(UserCmd cmd) {
     if (interpMs != interpSent_) { interpSent_ = interpMs; sendCommand("interp " + std::to_string(interpMs)); }
     cmds_[cmd.seq % kCmdRing] = cmd;
     predPrev_ = pred_;
-    if (selfAlive()) pmove(pred_, cmd, map_);
+    if (selfAlive()) {
+        pmove(pred_, cmd, map_);
+        moveEv_ |= pred_.events;
+        moveLand_ = std::max(moveLand_, pred_.landSpeed);
+    }
     predicted_[cmd.seq % kCmdRing] = pred_;
     predictedSeq_[cmd.seq % kCmdRing] = cmd.seq;
     errorOffset_ *= std::exp(-cmd.msec / 60.0f); // fade corrections out over ~60 ms, at any tick rate
@@ -865,7 +878,7 @@ bool NetClient::startRecording(const std::string& path, bool fullRate) {
     if (!rec_->open(path)) { rec_.reset(); return false; }
     uint32_t magic = kDemoMagic; uint16_t ver = kProtocolVersion;
     rec_->write(&magic, 4); rec_->write(&ver, 2);
-    recStart_ = timeNow(); recLast_ = -1; recEvery_ = fullRate ? 0.0 : 0.016; recMapRev_ = 0xFFFFFFFFu; recEventId_ = 0; recHavePrev_ = false;
+    recStart_ = timeNow(); recLast_ = -1; recEvery_ = fullRate ? 0.0 : 0.016; recMapRev_ = 0xFFFFFFFFu; recEventId_ = 0; recHavePrev_ = false; std::memset(recMoveEv_, 0, sizeof recMoveEv_);
     // who's who so far (names, models, ranked ids arrived as events before the recording started)
     recEvents_.clear();
     for (int i = 0; i < kMaxPlayers; i++) {
@@ -886,6 +899,8 @@ double NetClient::recordingTime() const { return rec_ ? timeNow() - recStart_ : 
 
 void NetClient::recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& events) {
     for (const auto& e : events) recEvents_.push_back(e);
+    for (const PlayerSnap& p : s.players)   // (movement events of the snapshots skipped go in the next one recorded)
+        if (p.id < kMaxPlayers) recMoveEv_[p.id] |= p.keys & (uint16_t)~KEY_HELD_MASK;
     double t = timeNow() - recStart_;
     if (recLast_ >= 0 && t - recLast_ < recEvery_ && recMapRev_ == mapRevision()) return; // 62.5 Hz, or every snapshot (full rate)
     recLast_ = t;
@@ -906,6 +921,9 @@ void NetClient::recordSnapshot(const Snapshot& s, const std::vector<GameEvent>& 
     // (recCur_ and recBuf_ keep their memory: no allocations per recorded snapshot)
     Snapshot& c = recCur_;
     c = s;
+    for (PlayerSnap& p : c.players)
+        if (p.id < kMaxPlayers) p.keys = (uint16_t)((p.keys & KEY_HELD_MASK) | recMoveEv_[p.id]);
+    std::memset(recMoveEv_, 0, sizeof recMoveEv_);
     c.baseTick = recHavePrev_ ? recPrev_.tick : 0;
     // numbered from 1 in the demo's own order; at most 255 a record (the count is a u8: the rest go in the next one)
     const size_t nEv = std::min<size_t>(recEvents_.size(), 255);
