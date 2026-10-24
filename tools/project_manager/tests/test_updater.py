@@ -184,9 +184,12 @@ class TestUpdater(unittest.TestCase):
         # (the registry next to server.py is the fallback; nothing runs without the repository)
         self.assertEqual(v["registry"], "installed")
         self.assertTrue(ents)
+        el = ents.pop("electron")  # (needs no repository; here there is no electron\ to update)
+        self.assertEqual(el["state"], "ok")
+        self.assertIn("nothing to update", el["note"])
         for e in ents.values():
             self.assertEqual((e["state"], e["note"]), ("pending", "Quark\\repository\\ not found"))
-        self.assertFalse(os.path.exists(self.paths.pm("logs")))
+        self.assertEqual(os.listdir(self.paths.pm("logs")), ["install-electron.log"])
 
     # -- installs -------------------------------------------------------------------------------------------------
     def test_stamp_change_triggers_run(self):
@@ -336,6 +339,163 @@ class TestUpdater(unittest.TestCase):
         self.assertFalse(v["selfUpdated"])
 
 
+class TestElectronUpdate(unittest.TestCase):
+    """builtin:electron-update against a local fake of GitHub's releases API (port 9238)."""
+    PORT = 9238
+
+    def setUp(self):
+        import hashlib
+        import io
+        import zipfile
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        self.tmp = tempfile.mkdtemp()
+        self.q = os.path.join(self.tmp, "Quark")
+        self.paths = config.Paths(PM_ROOT, self.q)
+        self.el = os.path.join(self.paths.pm_dir, "electron")
+        write(os.path.join(self.el, "electron"), "old program")
+        write(os.path.join(self.el, "VERSION"), "44.9.2\n")
+        self.files = {}
+        self.hits = []
+        self.release = None
+        self.set_release("45.1.0")
+        outer = self
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                outer.hits.append(self.path)
+                body = json.dumps(outer.release).encode() if self.path == "/latest" else outer.files.get(self.path)
+                if body is None:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", self.PORT), H)
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+        self._old = updater.ELECTRON_RELEASES, updater.electron_platform
+        updater.ELECTRON_RELEASES = "http://127.0.0.1:%d/latest" % self.PORT
+        updater.electron_platform = lambda: ("linux-x64", "electron")
+        self._hashlib, self._io, self._zipfile = hashlib, io, zipfile
+
+    def tearDown(self):
+        updater.ELECTRON_RELEASES, updater.electron_platform = self._old
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def set_release(self, ver, corrupt=False, prerelease=False):
+        import hashlib
+        import io
+        import zipfile
+        name = "electron-v%s-linux-x64.zip" % ver
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("electron", "new program " + ver)
+            z.writestr("resources/default_app.asar", "x")
+            z.writestr("../escape.txt", "never outside")
+        data = buf.getvalue()
+        digest = hashlib.sha256(b"other" if corrupt else data).hexdigest()
+        self.files["/" + name] = data
+        self.files["/SHASUMS256.txt"] = ("%s *%s\n%s *electron-v%s-win32-x64.zip\n" % (digest, name, "0" * 64, ver)).encode()
+        base = "http://127.0.0.1:%d" % self.PORT
+        self.release = {"tag_name": "v" + ver, "prerelease": prerelease, "draft": False, "assets": [
+            {"name": name, "size": len(data), "browser_download_url": base + "/" + name},
+            {"name": "SHASUMS256.txt", "size": 100, "browser_download_url": base + "/SHASUMS256.txt"}]}
+
+    def run_entry(self, now=None):
+        u = updater.Updater(self.paths, enabled=True)
+        u.entries = {"electron": {"id": "electron"}}
+        u.electron({"id": "electron", "run": updater.ELECTRON_UPDATE}, now=now)
+        return u, u.entries["electron"]
+
+    def test_stage_and_gap(self):
+        nxt = os.path.join(self.paths.pm_dir, "electron.next")
+        u, e = self.run_entry()
+        self.assertEqual(e["state"], "ok", e.get("logTail"))
+        self.assertIn("45.1.0 is downloaded", e["note"])
+        self.assertEqual(read(os.path.join(nxt, "electron")), "new program 45.1.0")
+        self.assertEqual(read(os.path.join(nxt, "VERSION")).strip(), "45.1.0")
+        self.assertEqual(read(os.path.join(self.el, "electron")), "old program")  # (the running one is never touched)
+        self.assertFalse(os.path.exists(os.path.join(self.paths.pm_dir, "escape.txt")))
+        self.assertFalse(os.path.exists(os.path.join(self.paths.pm_dir, "electron.download")))
+        self.assertEqual((e["installedVersion"], e["latestVersion"]), ("44.9.2", "45.1.0"))
+        # within 12 h: no request at all
+        n = len(self.hits)
+        _, e = self.run_entry()
+        self.assertEqual((len(self.hits), e["state"]), (n, "ok"))
+        self.assertIn("45.1.0 is downloaded", e["note"])
+        # after the gap, the same release already staged: only the API is asked
+        _, e = self.run_entry(now=time.time() + updater.ELECTRON_CHECK_GAP + 5)
+        self.assertEqual(self.hits[n:], ["/latest"])
+        # the shell swapped it in (electron\ now 45.1.0): nothing newer, nothing staged
+        shutil.rmtree(self.el)
+        os.replace(nxt, self.el)
+        _, e = self.run_entry(now=time.time() + 3 * updater.ELECTRON_CHECK_GAP)
+        self.assertEqual(e["note"], "Electron 45.1.0 is the latest")
+        self.assertFalse(os.path.exists(nxt))
+
+    def test_corrupt_prerelease_and_missing(self):
+        self.set_release("45.1.0", corrupt=True)
+        _, e = self.run_entry()
+        self.assertEqual(e["state"], "failed")
+        self.assertIn("corrupt", e["note"])
+        self.assertFalse(os.path.exists(os.path.join(self.paths.pm_dir, "electron.next")))
+        # a failed check is tried again on the next pass (no 12 h wait)
+        self.set_release("45.1.1", prerelease=True)
+        _, e = self.run_entry()
+        self.assertEqual(e["state"], "failed")
+        self.assertIn("unexpected latest release", e["note"])
+        # an older or equal release never replaces the installed one
+        self.set_release("44.0.0")
+        _, e = self.run_entry()
+        self.assertEqual((e["state"], e["note"]), ("ok", "Electron 44.9.2 is the latest"))
+        # no electron\ (setup -NoElectron): nothing is downloaded
+        shutil.rmtree(self.el)
+        n = len(self.hits)
+        _, e = self.run_entry(now=time.time() + 2 * updater.ELECTRON_CHECK_GAP)
+        self.assertEqual(e["state"], "ok")
+        self.assertIn("nothing to update", e["note"])
+        self.assertEqual(len(self.hits), n)
+
+
+@unittest.skipIf(util.IS_WINDOWS, "posix process groups (the Windows path uses a process snapshot)")
+class TestShellGuard(unittest.TestCase):
+    """shell/guard.py: the servers the shell started stop when the shell's pipe closes without "quit"."""
+    def spawn_server(self):
+        return subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=True)
+
+    def guard(self):
+        return subprocess.Popen([sys.executable, os.path.join(PM_ROOT, "shell", "guard.py")], stdin=subprocess.PIPE)
+
+    def test_dies_with_the_shell(self):
+        a, b, c = self.spawn_server(), self.spawn_server(), self.spawn_server()
+        g = self.guard()
+        g.stdin.write(("add %d\nadd %d\nadd %d\ndel %d\n" % (a.pid, b.pid, c.pid, c.pid)).encode())
+        g.stdin.close()  # (the shell died: its end of the pipe closed)
+        self.assertEqual(g.wait(10), 0)
+        self.assertIsNotNone(a.wait(10))
+        self.assertIsNotNone(b.wait(10))
+        self.assertIsNone(c.poll())  # (it had exited as far as the shell knew: left alone)
+        c.kill()
+        c.wait()
+
+    def test_normal_close_leaves_them(self):
+        a = self.spawn_server()
+        g = self.guard()
+        g.stdin.write(("add %d\nquit\n" % a.pid).encode())
+        g.stdin.close()
+        self.assertEqual(g.wait(10), 0)
+        time.sleep(0.2)
+        self.assertIsNone(a.poll())
+        a.kill()
+        a.wait()
+
+
 class TestHelpers(unittest.TestCase):
     def test_expand_and_python(self):
         p = config.Paths(PM_ROOT, os.path.join(tempfile.gettempdir(), "Q"))
@@ -355,6 +515,8 @@ class TestHelpers(unittest.TestCase):
         self.assertIsNone(updater.normalize_entry({"id": "a", "sources": [], "run": "x"}))
         self.assertIsNone(updater.normalize_entry({"id": "../a", "sources": ["a"], "run": "x"}))
         self.assertIsNone(updater.normalize_entry("x"))
+        self.assertEqual(updater.normalize_entry({"id": "electron", "run": updater.ELECTRON_UPDATE})["sources"], [])
+        self.assertIsNone(updater.normalize_entry({"id": "a", "run": "x"}))  # (only the electron builtin has no sources)
 
     def test_shipped_registry(self):
         entries, _ = updater.load_registry(config.Paths(PM_ROOT, tempfile.gettempdir()))
@@ -364,6 +526,10 @@ class TestHelpers(unittest.TestCase):
         self.assertIn("docs", ids)
         for e in entries:
             self.assertTrue(e["check"], e["id"])
+        self.assertEqual(entries[-1]["run"], updater.ELECTRON_UPDATE)  # (last: the big download never delays a tool)
+        model = next(e for e in entries if e["id"] == "model")
+        # install.cmd's default output is %USERPROFILE%\Desktop\Quark, which is not always the Quark folder
+        self.assertTrue(model["run"].endswith('install.cmd "%QUARK%\\model-editor"'), model["run"])
         self.assertEqual(len(ids), len(json.loads(read(os.path.join(PM_ROOT, "installs.json")))["entries"]))
 
 
