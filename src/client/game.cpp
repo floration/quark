@@ -1450,6 +1450,7 @@ void Game::frame(double dt) {
                 if (w == WPN_KNIFE && !alt) knifeSlash_[net_.clientId() % kMaxPlayers] = time_;
                 if (isThrow(w, alt)) { localFireLocked_ = true; heldWeapon_ = wp_.thrown(weaponView()); }   // (and out comes the next weapon)
                 recoil_ = w == WPN_LASER ? 0.15 : w == WPN_SNIPER ? 1.6 : 1.0;
+                if (w == WPN_ROCKET || w == WPN_CROSSBOW || (w == WPN_KNIFE && alt)) spawnPredictedProjectile(w, alt, c);   // X5
                 if (!weaponDef(w).projectile && w != WPN_KNIFE && w != WPN_SYRINGE && w != WPN_LOCATOR && !(w == WPN_SHOTGUN && alt) &&
                     (w != WPN_LASER || time_ >= nextLocalSpark_))
                     localImpactSparks(w, c);   // X4: a spark on an enemy you hit, at once (the sound and number: the server's)
@@ -1967,7 +1968,24 @@ void Game::drawWorld(float alpha) {
                        selfView ? muzzlePoint(WPN_KNIFE, eye) : Vec3());
     }
 
-    // projectiles (yours: from your weapon model's muzzle, blending onto the real path over 0.2 s)
+    // projectiles (yours: from your weapon model's muzzle, blending onto the real path over 0.2 s; X5: your rockets,
+    // bolts and thrown knives fly from the click, a predicted copy, until the server's arrives and takes over as far
+    // along as the copy was)
+    auto projGravity = [](int type, bool lob) { return projectileGravity(type, lob ? kRocketLobGravity : 1.0f); };
+    if (!alive) for (auto& q : predProj_) q.live = false;
+    for (auto& q : predProj_) {   // the copies, where they'd be now (stopped at the first wall: the server's word follows)
+        if (!q.live) continue;
+        const double age = time_ - q.born;
+        if (age > 0.6) { q.live = false; continue; }   // (no copy came: a shot the server refused)
+        if (q.atWall) continue;
+        Vec3 p = q.pos0, v = q.vel0;
+        projectileExtrapolate(p, v, projGravity(q.type, q.lob), (float)age);
+        const Vec3 d = p - q.pos;
+        const float len = length(d);
+        if (len > 1e-4f && map.raycast(q.pos, d / len, len) >= 0) { q.atWall = true; continue; }   // (hidden; the server's copy still takes over from it)
+        q.pos = p;
+        if (!q.started) { q.started = true; q.offset = muzzlePoint(q.type, eye) - q.pos0; }
+    }
     {
         std::vector<ProjStart>& keep = projStartsKeep_;   // (the two trade memory each frame)
         keep.clear();
@@ -1976,7 +1994,18 @@ void Game::drawWorld(float alpha) {
             ProjStart st{pr.id, time_, {}};
             bool found = false;
             for (auto& o : projStarts_) if (o.id == pr.id) { st = o; found = true; }
-            if (!found && alive) {
+            PredProj* copy = nullptr;   // a new one of yours: the oldest copy of its kind takes it
+            if (!found && alive && !(pr.flags & (PROJ_STUCK | PROJ_ON_PLAYER)))
+                for (auto& q : predProj_) if (q.live && q.type == pr.type && (!copy || q.born < copy->born)) copy = &q;
+            if (copy) {
+                const float sp = length(pr.vel);
+                if (sp > 0.1f) st.lead = clampf(dot(copy->pos - pr.pos, pr.vel / sp) / sp, 0.0f, 0.4f);
+                Vec3 p = pr.pos, v = pr.vel;
+                projectileExtrapolate(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
+                st.offset = copy->pos - p;   // (what's left: blended out like the muzzle start)
+                if (length(st.offset) > 3.0f) st.offset = {};
+                copy->live = false;
+            } else if (!found && alive) {
                 // where the weapon that fired it points out of the screen (thrown knife: from the knife hand)
                 int w = pr.type < WPN_COUNT ? pr.type : heldWeapon_;
                 Vec3 muz = muzzlePoint(w, eye);
@@ -1986,11 +2015,12 @@ void Game::drawWorld(float alpha) {
         }
         projStarts_.swap(keep);
     }
-    for (auto pr : lastProjectiles_) {
+    auto drawProj = [&](ProjectileSnap pr, bool copy) {
         // (on you: where you are this frame; on anyone else, interpolatedProjectiles already put it on them)
         if ((pr.flags & PROJ_ON_PLAYER) && pr.onPlayer == me) net_.attachedPos(pr, alpha, &pr.pos);
-        for (auto& st : projStarts_)
-            if (st.id == pr.id) { float f = 1.0f - (float)(time_ - st.seen) / 0.2f; if (f > 0) pr.pos = pr.pos + st.offset * f; }
+        if (!copy)
+            for (auto& st : projStarts_)
+                if (st.id == pr.id) { float f = 1.0f - (float)(time_ - st.seen) / 0.2f; if (f > 0) pr.pos = pr.pos + st.offset * f; }
         Vec3 col = teamColor(pr.owner);
         float sp = length(pr.vel);
         Vec3 dir = sp > 0.01f ? pr.vel / sp : Vec3(0, 0, -1);
@@ -2027,6 +2057,31 @@ void Game::drawWorld(float alpha) {
         else if (mt == WPN_KNIFE) r_.line(pr.pos, pr.pos - dir * 2.0f, 0.03f, rgba(col, 0.4f));
         else if (mt == WPN_CROSSBOW) r_.line(pr.pos, pr.pos - dir * 4.0f, 0.04f, rgba(col, 0.5f));
         else if (mt == MODEL_PROJ_ORB) r_.line(pr.pos, pr.pos - dir * 3.5f, 0.12f, rgba(col, 0.5f));
+        };
+    for (auto pr : lastProjectiles_) {
+        for (auto& st : projStarts_)
+            if (st.id == pr.id && st.lead > 0 && !(pr.flags & (PROJ_STUCK | PROJ_ON_PLAYER))) {   // (X5: as far along as its copy was, short of the wall)
+                Vec3 p = pr.pos, v = pr.vel;
+                projectileExtrapolate(p, v, projGravity(pr.type, (pr.flags & PROJ_LOB) != 0), st.lead);
+                const Vec3 d = p - pr.pos;
+                const float len = length(d);
+                const float hit = len > 1e-4f ? map.raycast(pr.pos, d / len, len) : -1.0f;
+                pr.pos = hit >= 0 ? pr.pos + d / len * std::max(0.0f, hit - 0.05f) : p;
+                pr.vel = v;
+            }
+        drawProj(pr, false);
+    }
+    for (auto& q : predProj_) {
+        if (!q.live || q.atWall) continue;
+        ProjectileSnap pr;
+        pr.type = q.type; pr.owner = (uint8_t)me; pr.id = 0xFFFF;
+        Vec3 v = q.vel0, p = q.pos0;
+        projectileExtrapolate(p, v, projGravity(q.type, q.lob), (float)(time_ - q.born));
+        pr.vel = v;
+        float f = 1.0f - (float)(time_ - q.born) / 0.2f;   // (from the muzzle, like the server's copy did)
+        pr.pos = q.pos + (f > 0 ? q.offset * f : Vec3());
+        if (length(pr.pos - eye) < 0.8f) continue;   // (its first ~10 ms: the model would fill the view from the muzzle)
+        drawProj(pr, true);
     }
     drawStuckProps(eye, alpha);
     // explosions
@@ -6314,6 +6369,29 @@ void Game::drawBracket() {
 }
 
 // Crosshair from the settings: style, size, thickness, gap, color, outline. A hit flashes it white.
+// X5: a copy of the projectile the server will launch for this command, as it launches it (Server::fireWeapon): from
+// 0.3 m in front of the eye, at the weapon's speed (a rocket lob: 70% and its drop; a thrown knife: its own).
+void Game::spawnPredictedProjectile(int w, bool alt, const UserCmd& c) {
+    const MoveState& m = net_.predicted();
+    const Vec3 eye = m.pos + Vec3(0, ((m.flags & MF_CROUCHED) ? kCrouchEyeHeight : kEyeHeight) * bodyScale(), 0);
+    const Vec3 aim = angleForward(c.yaw, c.pitch);
+    const WeaponDef& wd = weaponDef(w);
+    PredProj* slot = &predProj_[0];   // (a free one, else the oldest)
+    for (auto& q : predProj_) { if (!q.live) { slot = &q; break; } if (q.born < slot->born) slot = &q; }
+    PredProj q;
+    q.type = (uint8_t)w;
+    q.live = true;
+    q.pos0 = q.pos = eye + aim * 0.3f;
+    if (w == WPN_KNIFE) q.vel0 = aim * kKnifeThrowSpeed;
+    else {
+        const float spread = (wd.scopedSpread >= 0 && (c.buttons & BTN_ALTFIRE)) ? wd.scopedSpread : wd.spread;
+        q.vel0 = spreadAim(aim, spread, 0, 1, localBurst_) * wd.projSpeed;
+        if (w == WPN_ROCKET && alt) { q.vel0 = q.vel0 * kRocketLobSpeed; q.lob = true; }
+    }
+    q.born = time_;
+    *slot = q;
+}
+
 // X4: your hitscan shot against the enemies as you see them: a spark where each pellet / bullet meets one in front of
 // the wall (the server's word, the hit sound and number, comes a round trip later). Rays only against the few boxes
 // in sight, once a shot (the laser: at most 20 a second).
