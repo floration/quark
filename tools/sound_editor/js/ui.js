@@ -37,8 +37,9 @@
   U.fail = function (where, e) { console.warn(where, e); Q.log.push(where + ': ' + (e && e.message || e)); U.toast(where + ': ' + (e && e.message || e), true); };
 
   // --- dialog: U.dialog(title, body nodes, buttons [{label, primary, value, onclick}]) -> Promise(value) ---------
-  U.dialog = function (title, body, buttons) {
-    const dlg = U.$('#dlg'), form = U.$('#dlgBody');
+  // (opts.second: the second dialog, shown over the first one: #dlg2)
+  U.dialog = function (title, body, buttons, opts) {
+    const dlg = U.$(opts && opts.second ? '#dlg2' : '#dlg'), form = dlg.querySelector('form');
     form.innerHTML = '';
     form.append(h('div.dlg-h', title), h('div.dlg-b', body));
     const foot = h('div.dlg-f');
@@ -56,6 +57,7 @@
     });
   };
   U.closeDialog = () => { const d = U.$('#dlg'); if (d.open) d.close(); };
+  U.closeDialog2 = () => { const d = U.$('#dlg2'); if (d.open) d.close(); };
 
   // --- tabs ------------------------------------------------------------------------------------------------------
   Q.tab = 'sounds';

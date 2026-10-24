@@ -221,7 +221,8 @@ table.missing td.cell { min-width: 110px; }
 /* dialogs, toast, drop */
 dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line2); border-radius: 8px; padding: 0; max-width: min(1000px, 94vw); max-height: 88vh; box-shadow: 0 20px 60px #000c; }
 dialog::backdrop { background: #0009; }
-#dlgBody { display: flex; flex-direction: column; max-height: 88vh; }
+#dlgBody, #dlg2Body { display: flex; flex-direction: column; max-height: 88vh; }
+#dlg2 { max-width: min(640px, 94vw); }
 .dlg-h { padding: 10px 14px; font-size: 14px; font-weight: 600; border-bottom: 1px solid var(--line); }
 .dlg-b { padding: 10px 14px; overflow: auto; min-width: 420px; }
 .dlg-f { padding: 8px 14px; border-top: 1px solid var(--line); display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
@@ -246,3 +247,17 @@ td .slot, .slot { display: inline-flex; align-items: center; gap: 4px; min-width
 .slot.sel { box-shadow: inset 0 0 0 1px var(--accent); }
 .slot.drop { background: #22324a; border-color: var(--accent); }
 .slot .badge { position: static; }
+
+/* provenance: who made each exported sound */
+.chip.origin { font-size: 10px; }
+.chip.origin.human { background: #1d3a24; color: #8ee08e; border-color: #2f6b3b; }
+.chip.origin.third-party { background: #24303d; color: #9cc3ef; border-color: #35506d; }
+.chip.origin.ai { background: #3a2f1a; color: var(--warn); border-color: #6b5426; }
+.chip.origin.unset { background: #4a1f1f; color: #ff9b9b; border-color: var(--bad); }
+.origin-pick { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+.origin-pick select.unset { border-color: var(--bad); color: #ff9b9b; }
+.origin-pick input[type=text] { flex: 1; min-width: 120px; }
+.origin-pick input.need { border-color: var(--bad); }
+.prov-bulk { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 6px 0; padding: 6px; border: 1px solid var(--line2); border-radius: 6px; }
+.prov-gate { color: #ff9b9b; margin: 4px 0; }
+.dlg-f button:disabled { opacity: .45; cursor: not-allowed; }

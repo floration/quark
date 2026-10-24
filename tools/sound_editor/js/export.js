@@ -81,8 +81,14 @@
     return { files, keys, levels };
   };
 
+  // the zip also carries provenance.json at its root (it belongs in the sound-editor folder, not in overrides): every
+  // entry this editor has exported, with this export's on top (js/provenance.js)
   Q.exportZip = async function (onProgress) {
     const r = await Q.buildExportFiles('', onProgress);
+    if (Q.prov) {
+      r.provenance = await Q.prov.offline(Q.prov.entries(r.keys));
+      r.files.push({ name: Q.prov.FILE, data: new TextEncoder().encode(Q.prov.text(r.provenance)) });
+    }
     const blob = Q.zip(r.files);
     Q.lastZip = blob;   // (tests read it back)
     Q.download(blob, 'quark-overrides.zip');
