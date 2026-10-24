@@ -21,6 +21,7 @@
 #include "bots.h"
 #include "master.h"
 #include "customrules.h"
+#include "modeparams.h"
 #include "ranked.h"
 
 // Every game: a player whose connection drops keeps their slot, team, score and state this long (seconds) and gets
@@ -36,6 +37,11 @@ constexpr float kVerifyBurst = 50, kVerifyPerSec = 50;      // connect signature
 
 // Tests running on a sped-up clock turn off the warmup tick-rate check (it would see "late" ticks).
 extern bool g_serverRateCheck;
+struct GameEvent;
+class Server;
+struct ModeHooks;
+// Tests only: sees every event Server::broadcastEvent sends (the mode lockstep and the rules traces compare them).
+extern void (*g_eventHook)(const Server& s, const GameEvent& e);
 
 struct ServerConfig {
     std::string name = "quark server";
@@ -361,6 +367,11 @@ public:
     float kothPoints_[2] = {0, 0};
     double bombDroppedAt_ = 0;   // bomb: when it was dropped (it goes back to an attacker if nobody picks it up)
     double objTouch_ = -1e9;     // payload / multi point / bomb / neutral payload: when the side that needs time last touched the objective (overtime)
+    // the mode's rules (gamemodes.cpp)
+    const ModeParams* mp_ = &kBuiltinModeParams[MODE_FFA];   // the numbers the native rules read (set by rulesReset)
+    ModeHooks* modeHooks_ = nullptr;   // a custom mode's logic (phase 3 of the mode editor); null: every slot native
+    uint32_t phaseSerial_ = 0;   // counts phase changes: a slot that ended the round or the match changed it
+    float liveLength_ = 0;       // the round clock the round went live with (race splits)
 
     BotBrain bots_[kMaxPlayers];
     NavGraph nav_;

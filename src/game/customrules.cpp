@@ -62,7 +62,13 @@ const MoveTuning& moveTuning() { return tuned().move; }
 const CustomRules& activeRules() { return tuned().rules; }
 void setActiveRules(const CustomRules& r) { Tuned& t = tuned(); t.rules = r; rebuild(t); }
 
-std::string CustomRules::toText() const {
+bool isModeLogicLine(const std::string& line) {
+    // (any `logic` line starts the block, even with a bad version: the logic compiler reports that, and the lines
+    // after it must not be read as keys)
+    return line.compare(0, 5, "logic") == 0 && (line.size() == 5 || line[5] == ' ' || line[5] == '\t' || line[5] == '\r');
+}
+
+std::string CustomRules::toNetText() const {
     std::ostringstream o;
     o << "custommode=" << name << "\nmode=" << modeName(baseMode) << "\nweapons=" << weapons
       << "\ngravity=" << gravity << "\nspeed=" << moveSpeed << "\njump=" << jump << "\nknockback=" << knockback
@@ -78,15 +84,24 @@ std::string CustomRules::toText() const {
     return o.str();
 }
 
+std::string CustomRules::toText() const {
+    std::string t = toNetText();
+    for (const std::string& l : extraKeys) { t += l; t += '\n'; }
+    return t + logic;
+}
+
 bool CustomRules::fromText(const std::string& text) {
     *this = CustomRules();
-    std::istringstream in(text);
     std::string line;
     bool any = false;
     // out of range: the nearest bound; not a number (nan, inf): the default (the member's value from CustomRules())
     auto clampf_ = [](float v, float a, float b, float def) { return !std::isfinite(v) ? def : v < a ? a : v > b ? b : v; };
-    while (std::getline(in, line)) {
-        if (!line.empty() && line.back() == '\r') line.pop_back();
+    for (size_t at = 0; at < text.size();) {
+        size_t nl = text.find('\n', at);
+        line.assign(text, at, nl == std::string::npos ? std::string::npos : nl - at);
+        if (isModeLogicLine(line)) { logic.assign(text, at, std::string::npos); break; }   // (the rest is the logic's)
+        at = nl == std::string::npos ? text.size() : nl + 1;
+        while (!line.empty() && line.back() == '\r') line.pop_back();   // (every \r: a kept line must read back the same)
         size_t eq = line.find('=');
         if (eq == std::string::npos) continue;
         std::string k = line.substr(0, eq), v = line.substr(eq + 1);
@@ -100,7 +115,11 @@ bool CustomRules::fromText(const std::string& text) {
         else if (k == "speed") moveSpeed = clampf_(f, 0.25f, 3, moveSpeed);
         else if (k == "jump") jump = clampf_(f, 0.25f, 3, jump);
         else if (k == "knockback") knockback = clampf_(f, 0, 5, knockback);
-        else if (k.rfind("move_", 0) == 0) { for (int m = 0; m < MV_COUNT; m++) if (k.compare(5, std::string::npos, moveParamKey(m)) == 0) move[m] = clampf_(f, 0.1f, 5, move[m]); }
+        else if (k.rfind("move_", 0) == 0) {
+            bool known = false;
+            for (int m = 0; m < MV_COUNT; m++) if (k.compare(5, std::string::npos, moveParamKey(m)) == 0) { move[m] = clampf_(f, 0.1f, 5, move[m]); known = true; }
+            if (!known) extraKeys.push_back(line);   // (a movement constant a newer game or the physics editor added)
+        }
         else if (k == "health") health = std::max(1, std::min(1000, i));
         else if (k == "dash") dash = i != 0;
         else if (k == "grapple") grapple = i != 0;
@@ -122,7 +141,9 @@ bool CustomRules::fromText(const std::string& text) {
             std::string m;
             // (a name with nothing safe in it is dropped, not kept as "": found by tests/fuzz/fuzz_rules)
             while (std::getline(ms, m, ',')) if (maps.size() < 32 && !(m = safeName(m)).empty()) maps.push_back(m);
-        }
+        } else if (k == "label") {
+            // (name#hash of the rules: the server writes it for the network, and it's recomputed, never read)
+        } else extraKeys.push_back(line);   // a key this build doesn't know: kept verbatim for the next save
     }
     if (name.empty()) any = false;
     return any;
