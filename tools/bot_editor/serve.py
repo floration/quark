@@ -416,6 +416,10 @@ class Handler(BaseHTTPRequestHandler):
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         p = u.path
         try:
+            if p == "/api/quit":   # install.py after an update: this process still runs the old files (it starts the new ones)
+                self._send(200, {"ok": True})
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
+                return
             if p == "/api/brain":
                 n = q.get("name", "")
                 if not valid_name(n) or n == "default": return self._err(400, "bad name (letters, digits, _ . -; not 'default')")
