@@ -16,7 +16,7 @@ What it reads (README.md has the views):
   - every working-repo* clone in the Quark folder and every worktree `git worktree list` gives for them: the editors'
     files in their commits ahead of origin/testing and their uncommitted files (other files are not shown);
   - the editors' files that differ between the production tag (the newest v<semver>) and origin/testing;
-  - each editor folder (sound-editor\\, model-editor\\, map-editor\\, bot-editor\\, ui-customizer\\): its exported files
+  - each editor folder (sound-editor\\, model-editor\\, map-editor\\, bot-editor\\, physics-editor\\, ui-customizer\\): its exported files
     and its provenance.json sidecar (docs/PROVENANCE.md), and the game's own overrides folder on this PC;
   - the provenance registry, <repo>/assets/provenance/*.json.
 
@@ -53,6 +53,7 @@ EDITORS = [
     ("map-editor", "Map editor", "map-editor"),
     ("bot-editor", "Bot editor", "bot-editor"),
     ("model-editor", "Model editor", "model-editor"),
+    ("physics-editor", "Physics editor", "physics-editor"),
 ]
 PROGRAMS = [p for _, p, _ in EDITORS]
 PROGRAM_ID = {p: f for f, p, _ in EDITORS}
@@ -72,6 +73,7 @@ PATH_RULES = [
                     "assets/overrides/maps/", "src/client/editor.cpp", "docs/map_*"]),
     ("Bot editor", ["tools/bot_editor/", "src/game/bots.*"]),
     ("Model editor", ["tools/model_editor/", "assets/overrides/models/", "src/client/models.*", "src/client/gltf.*"]),
+    ("Physics editor", ["tools/physics_editor/", "src/game/pmove.*"]),
 ]
 
 

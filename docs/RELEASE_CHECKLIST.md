@@ -148,6 +148,7 @@ Host each mode on **its own map** with bots (and a second human if you can). For
 | ☐ | Open a **built-in** map, change something, then SAVE / leave: it asks whether to keep your edits as a **new map** (suggests e.g. `temple_edit`). Yes saves a copy; No drops the edits; the built-in map is never changed. |
 | ☐ | EDIT THE MAP TOGETHER with a second player: edits appear for both; leaving offers a copy. |
 | ☐ | **Map editor tool** (`tools\map_editor\build.cmd`, then `run.cmd` in `Quark\map-editor`): it opens a default map and one of yours; Checks all pass on a default map; Metrics shows times to points with routes; a 10 s Bots run plays live and scrubs; a player figure stands 1.8 m against the scale bar; a decoration preset applies, undoes and regenerates; Save as writes a map the game's MAP EDITOR opens. |
+| ☐ | **Physics editor tool** (`py -3 tools\physics_editor\serve.py --install`, then `run.cmd` in `Quark\physics-editor`, http://127.0.0.1:8772/): the header badge says quark_maptool; Standing jump gives 1.22 m with the standard physics; gravity x0.5 in Values updates Code and gives about 2.44 m; Drive with WASD reaches 9.5 m/s; Save writes `custom_modes\<name>.qmode` and the game's Host > Custom modes plays it with the same jump height; a .qmode with a `logic` section keeps it untouched after a save. |
 
 ## 9. Demos
 

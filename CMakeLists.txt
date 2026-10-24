@@ -378,8 +378,9 @@ if(QUARK_BUILD_TESTS)
              WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
     set_tests_properties(uitest PROPERTIES TIMEOUT 3600 SKIP_RETURN_CODE 77)
   endif()
-  # The map editor's native helper (tools/map_editor/native/README.md), plus the bot editor's commands linked into it
-  file(GLOB QUARK_MAPTOOL_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/map_editor/native/*.cpp ${CMAKE_SOURCE_DIR}/tools/bot_editor/native/*.cpp)
+  # The map editor's native helper (tools/map_editor/native/README.md), plus the bot and physics editors' commands linked into it
+  file(GLOB QUARK_MAPTOOL_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/map_editor/native/*.cpp ${CMAKE_SOURCE_DIR}/tools/bot_editor/native/*.cpp
+       ${CMAKE_SOURCE_DIR}/tools/physics_editor/native/*.cpp)
   add_executable(quark_maptool ${QUARK_MAPTOOL_SOURCES})
   target_include_directories(quark_maptool PRIVATE tests tools/map_editor/native)
   target_link_libraries(quark_maptool quark_core)
