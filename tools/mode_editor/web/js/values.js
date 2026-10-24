@@ -97,20 +97,23 @@ export class ValuesView {
             sec.append(t);
         }
 
-        // ---- params, grouped by the file's section comments
+        // ---- params: one table (the columns line up), a sub-heading row per section comment (`# ---- the clocks`)
         const groups = [];
         let cur = null;
         for (const d of B.decls) {
             const heading = (d.comments || []).filter((c) => c && c.startsWith("#") && !/^#\s*\(fixture/.test(c)).pop();
             if (d.kind !== "param") { if (heading) cur = null; continue; }
-            if (!cur) { cur = { title: "params", items: [] }; groups.push(cur); }
+            if (!cur || (heading && /^#\s*-{2,}/.test(heading))) { cur = { title: heading && /^#\s*-{2,}/.test(heading) ? heading.replace(/^#\s*-+\s*/, "") : "", items: [] }; groups.push(cur); }
             cur.items.push(d);
         }
-        for (const g of groups) {
+        if (groups.length) {
             const sec = section("Params", "Numbers the logic and the objects read. A file that only changes numbers runs all native (no interpreted slot).");
             const t = document.createElement("table"); t.className = "params";
             t.innerHTML = `<tr><th>param</th><th>unit</th><th>value</th><th>built-in</th><th>range</th><th></th><th>what it does</th></tr>`;
-            for (const d of g.items) t.append(this._paramRow(d, defS && defS.params.get(d.name)));
+            for (const g of groups) {
+                if (g.title || groups.length > 1) { const tr = document.createElement("tr"); tr.className = "psub"; tr.innerHTML = `<td colspan="7">${esc(g.title || "the mode's own")}</td>`; t.append(tr); }
+                for (const d of g.items) t.append(this._paramRow(d, defS && defS.params.get(d.name)));
+            }
             sec.append(t);
         }
         // ---- state
