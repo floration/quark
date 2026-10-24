@@ -399,7 +399,7 @@ export function ruleHits(path, oldText, newText, model, added) {
 }
 
 // quark_tests runs of gameplay tests in a workflow's text (not a tool command such as exportassets): [{line, text, what}]
-const TOOLS = new Set(["exportassets", "mapreport", "groups", "racefloors", "serverbench", "snapbench", "playtest"]);
+const TOOLS = new Set(["exportassets", "mapreport", "groups", "racefloors", "serverbench", "snapbench", "navbench", "playtest"]);
 export function gameplayRuns(text, model) {
     const tools = new Set(TOOLS);
     for (const s of (model && model.suites) || []) for (const it of s.items || []) if (it.kind === "tool") tools.add(it.name);

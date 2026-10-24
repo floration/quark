@@ -108,10 +108,10 @@ static void checkNavRoutes(Analysis& a, Check& c) {
     for (auto& p : m.points) goals.push_back({p.center().x, p.mn.y, p.center().z});
     if (m.preferredMode == MODE_HIDE || m.preferredMode == MODE_TAG) for (auto& sp2 : m.spawns) goals.push_back(sp2.pos);
     std::vector<int> goalNode;
-    for (auto& gl : goals) goalNode.push_back(g.nodeAt(gl + Vec3(0, 0.5f, 0)));
+    for (auto& gl : goals) goalNode.push_back(g.nodeNear(gl + Vec3(0, 0.5f, 0), NavGraph::kGoalNear));   // (as bots take them)
     int pairs = 0;
     for (auto& sp : m.spawns) {
-        int s = g.nodeAt(sp.pos + Vec3(0, 0.1f, 0));
+        int s = g.nodeNear(sp.pos + Vec3(0, 0.1f, 0), NavGraph::kStandNear);
         std::vector<char> seen(g.nodes.size(), 0);   // (one search per spawn: the same answers as one per pair)
         if (s >= 0) {
             std::vector<int> q = {s};
@@ -165,7 +165,7 @@ static void checkLadders(Analysis& a, Check& c) {
 // testStairs: every flight walked up and jumped up with the real movement code, and none cutting a path
 static void checkStairs(Analysis& a, Check& walkC, Check& jumpC, Check& cutC) {
     const Map& m = a.m;
-    const NavGraph& g = a.nav();
+    const NavGraph& g = a.navSurfaces();   // (every walkable top whole, as quark_tests' check)
     struct Res { bool up = false; Vec3 got; int bonks = 0; std::vector<std::pair<std::string, Vec3>> cuts; };
     std::vector<Res> res(m.stairs.size());
     parallelFor((int)m.stairs.size(), [&](int si) {

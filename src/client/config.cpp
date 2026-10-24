@@ -2,6 +2,7 @@
 #include "devices.h"
 #include "../common/u8file.h"
 #include "../game/gamedefs.h"
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -132,6 +133,11 @@ void Settings::set(const std::string& k, const std::string& v) {
         else if (k == "host_public") hostPublic = iv != 0;
         else if (k == "host_ranked") hostRanked = iv != 0;
         else if (k == "host_custom") hostCustom = v.substr(0, 40);
+        else if (k == "host_bot_brain") {   // (a brain name loadBrain takes, else the built-in brain)
+            hostBotBrain = v.substr(0, 64);
+            for (char ch : hostBotBrain) if (!(isalnum((unsigned char)ch) || ch == '_' || ch == '-')) { hostBotBrain.clear(); break; }
+            if (hostBotBrain == "default") hostBotBrain.clear();
+        }
         else if (k == "host_variant") hostArenaVariant = std::min(std::max(iv, 0), kArenaVariants - 1);
         else if (k == "bot_variant") botArenaVariant = std::min(std::max(iv, 0), kArenaVariants - 1);
         else if (k == "host_duel_size") hostDuelSize = iv == 2 ? 2 : 1;
@@ -198,7 +204,7 @@ std::string Settings::toText() const {
       << "\nch_hit_flash=" << chHitFlash << "\nch_hit_color=" << colorHex(chHitColor)
       << "\nlast_address=" << lastAddress << "\nrank_hello=" << rankHello << "\nhost_name=" << hostName << "\nhost_prober=" << hostProber << "\nhost_map=" << hostMap
       << "\nhost_mode=" << hostMode << "\nhost_port=" << hostPort << "\nhost_max=" << hostMaxPlayers
-      << "\nhost_upnp=" << hostUpnp << "\nhost_balance_bots=" << hostBalanceBots << "\nhost_log=" << hostLog << "\nhost_duel_size=" << hostDuelSize << "\nhost_public=" << hostPublic << "\nhost_ranked=" << hostRanked << "\nhost_custom=" << hostCustom << "\nhost_variant=" << hostArenaVariant << "\nbot_variant=" << botArenaVariant << "\nbot_skill=" << botSkill
+      << "\nhost_upnp=" << hostUpnp << "\nhost_balance_bots=" << hostBalanceBots << "\nhost_log=" << hostLog << "\nhost_duel_size=" << hostDuelSize << "\nhost_public=" << hostPublic << "\nhost_ranked=" << hostRanked << "\nhost_custom=" << hostCustom << "\nhost_bot_brain=" << hostBotBrain << "\nhost_variant=" << hostArenaVariant << "\nbot_variant=" << botArenaVariant << "\nbot_skill=" << botSkill
       << "\nbot_enemies=" << botEnemies << "\nbot_allies=" << botAllies << "\nbot_mode=" << botMode << "\n";
     for (int i = 0; i < HUD_COUNT; i++)
         f << "hud_" << i << "=" << hud[i].x << "," << hud[i].y << "," << hud[i].scale << "," << hud[i].custom << ","

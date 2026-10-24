@@ -17,6 +17,7 @@
 #include "openurl.h"
 #include "profiles.h"
 #include "../common/u8file.h"
+#include "../game/botbrain.h"
 #include "../game/customrules.h"
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -1543,6 +1544,11 @@ void uiTestPrepare(LaunchOptions& o) {
     // QUARK_UITEST_FONT=<ui_font>: the whole test (layout checks too) in that font (docs/UI_TEST.md)
     { const char* f = getenv("QUARK_UITEST_FONT"); if (f && *f) { s.uiFont = f; printf("uitest: font %s\n", f); } }
     s.save();
+    {   // two bot brains for HOST > ADVANCED's BOT BRAIN: one that compiles, one that doesn't (its error line shows)
+        fs::create_directories(dir / "bots", ec);
+        std::ofstream(dir / "bots" / "uitest.qbrain", std::ios::binary) << defaultBrainText();
+        std::ofstream(dir / "bots" / "broken.qbrain", std::ios::binary) << "version 1\nbrain \"broken\"\nparam reactMs f64 = \n";
+    }
     printf("uitest: data in %s\n", dir.u8string().c_str());
     (void)o;
 }

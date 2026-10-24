@@ -80,8 +80,12 @@ const NavGraph& Analysis::nav() {
     return *nav_;
 }
 const NavGraph& Analysis::navOpen() {
-    if (!navOpen_) { const Map& o = open(); double t0 = maptoolNow(); navOpen_ = std::make_unique<NavGraph>(); navOpen_->build(o); lap("navNoClip", t0); }
+    if (!navOpen_) { const Map& o = open(); double t0 = maptoolNow(); navOpen_ = std::make_unique<NavGraph>(); navOpen_->build(o, NavKind::Surfaces); lap("navNoClip", t0); }
     return *navOpen_;
+}
+const NavGraph& Analysis::navSurfaces() {
+    if (!navSurf_) { double t0 = maptoolNow(); navSurf_ = std::make_unique<NavGraph>(); navSurf_->build(m, NavKind::Surfaces); lap("navSurfaces", t0); }
+    return *navSurf_;
 }
 WalkGrid& Analysis::walk() {
     if (!walk_) {

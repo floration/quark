@@ -24,7 +24,139 @@ namespace {
 constexpr float kNavCell = 4.0f;
 constexpr float kLinkGap = 2.6f;   // farthest jump between surfaces
 constexpr float kNodePad = 0.3f;   // nodeAt counts a point this close to a surface's edge as on it
+constexpr float kNavInf = 1e30f;
+// What stands on a surface and blocks a walk across it: a solid that reaches above a step (kStepHeight 0.55, pmove.cpp)
+// and starts below a standing player's head (bots don't crouch). Its footprint, grown by the hull's half width less a
+// centimetre (so a gap just wide enough for the hull still leaves a sliver), is cut out of the surface: what's left is
+// where a player's centre can be, in rectangles.
+constexpr float kNavStep = 0.56f;
+constexpr float kNavHead = kPlayerHeight;
+constexpr float kNavClear = kPlayerHalfWidth - 0.01f;
+constexpr float kNavSnap = 0.1f;   // blockers' edges this close together are one edge (no slivers: a gap under 0.88 m closes)
+constexpr size_t kNavSplitAt = 48;  // a surface with more blockers than this is halved first (keeps the cutting cheap)
+constexpr float kNavTile = 12.0f;   // regions are cut at these tiles (by piece centre): a region's centre then says where it is
+
+struct Rect { float x0, z0, x1, z1; };
+
+// Calls f(brush index) for the solid brushes (the collision grid's: what boxSolid tests) in the cells the rectangle
+// touches. A brush can come more than once.
+template <class F> void brushesNear(const Map& m, float x0, float z0, float x1, float z1, F f) {
+    if (m.gridW <= 0 || m.gridH <= 0 || m.cells.empty()) return;
+    int cx0 = std::max(0, (int)std::floor((x0 - m.gridX0) / Map::kCell)), cx1 = std::min(m.gridW - 1, (int)std::floor((x1 - m.gridX0) / Map::kCell));
+    int cz0 = std::max(0, (int)std::floor((z0 - m.gridZ0) / Map::kCell)), cz1 = std::min(m.gridH - 1, (int)std::floor((z1 - m.gridZ0) / Map::kCell));
+    for (int z = cz0; z <= cz1; z++)
+        for (int x = cx0; x <= cx1; x++) {
+            const Map::GridCell& c = m.cells[(size_t)z * m.gridW + x];
+            for (uint32_t k = c.start; k < c.end; k++) f((int)m.cellBrushes[k]);
+        }
 }
+bool blocksAt(const AABB& b, float y) { return b.mn.y < y + kNavHead && b.mx.y > y + kNavStep; }
+
+// The rectangle r with the blockers (each clipped to r) cut out, as rectangles: the blockers' edges grid r into cells
+// (edges within kNavSnap merged: no slivers), and the free cells are covered greedily, each time with a run along x
+// grown along z while the whole run stays free. A rectangle with a great many blockers (a city block under its
+// buildings) is halved first, so the grid stays small.
+void freeRects(const Rect& r, const std::vector<Rect>& blk, std::vector<Rect>& out, int depth = 0) {
+    if (blk.empty()) { out.push_back(r); return; }
+    if (blk.size() > kNavSplitAt && depth < 16) {
+        bool alongX = r.x1 - r.x0 >= r.z1 - r.z0;
+        float mid = alongX ? (r.x0 + r.x1) * 0.5f : (r.z0 + r.z1) * 0.5f;
+        Rect h[2] = {r, r};
+        if (alongX) { h[0].x1 = mid; h[1].x0 = mid; } else { h[0].z1 = mid; h[1].z0 = mid; }
+        for (const Rect& hr : h) {
+            std::vector<Rect> sub;
+            for (const Rect& b : blk) {
+                Rect c = {std::max(b.x0, hr.x0), std::max(b.z0, hr.z0), std::min(b.x1, hr.x1), std::min(b.z1, hr.z1)};
+                if (c.x1 > c.x0 && c.z1 > c.z0) sub.push_back(c);
+            }
+            freeRects(hr, sub, out, sub.size() < blk.size() ? depth + 1 : 16);   // (no fewer: halving again gains nothing)
+        }
+        return;
+    }
+    auto edges = [](float lo, float hi, std::vector<float>& v) {
+        std::sort(v.begin(), v.end());
+        std::vector<float> e = {lo};
+        for (float x : v) if (x - e.back() >= kNavSnap && hi - x >= kNavSnap) e.push_back(x);
+        e.push_back(hi);
+        v.swap(e);
+    };
+    std::vector<float> xs, zs;
+    for (const Rect& b : blk) { xs.push_back(b.x0); xs.push_back(b.x1); zs.push_back(b.z0); zs.push_back(b.z1); }
+    edges(r.x0, r.x1, xs); edges(r.z0, r.z1, zs);
+    const int nx = (int)xs.size() - 1, nz = (int)zs.size() - 1;
+    auto nearest = [](const std::vector<float>& v, float x) {   // the (merged) edge a blocker's edge became
+        int i = (int)(std::lower_bound(v.begin(), v.end(), x) - v.begin());
+        if (i >= (int)v.size()) return (int)v.size() - 1;
+        if (i > 0 && x - v[i - 1] < v[i] - x) i--;
+        return i;
+    };
+    std::vector<char> used((size_t)nx * nz, 0);
+    for (const Rect& b : blk) {
+        int i0 = nearest(xs, b.x0), i1 = nearest(xs, b.x1), k0 = nearest(zs, b.z0), k1 = nearest(zs, b.z1);
+        for (int k = k0; k < k1; k++) for (int i = i0; i < i1; i++) used[(size_t)k * nx + i] = 1;
+    }
+    auto isFree = [&](int k, int i) { return !used[(size_t)k * nx + i]; };
+    for (int k = 0; k < nz; k++)
+        for (int i = 0; i < nx; i++) {
+            if (!isFree(k, i)) continue;
+            // the bigger of: a run along x grown along z, and a run along z grown along x (no long thin strips where
+            // the other way round makes a square)
+            int ia = i + 1;
+            while (ia < nx && isFree(k, ia)) ia++;
+            int ka = k + 1;
+            for (bool ok = true; ka < nz && ok; ka += ok) for (int q = i; q < ia && ok; q++) ok = isFree(ka, q);
+            int kb = k + 1;
+            while (kb < nz && isFree(kb, i)) kb++;
+            int ib = i + 1;
+            for (bool ok = true; ib < nx && ok; ib += ok) for (int q = k; q < kb && ok; q++) ok = isFree(q, ib);
+            const bool a = (xs[ia] - xs[i]) * (zs[ka] - zs[k]) >= (xs[ib] - xs[i]) * (zs[kb] - zs[k]);
+            const int i1 = a ? ia : ib, k1 = a ? ka : kb;
+            for (int kk = k; kk < k1; kk++) for (int q = i; q < i1; q++) used[(size_t)kk * nx + q] = 1;
+            out.push_back({xs[i], zs[k], xs[i1], zs[k1]});
+        }
+}
+
+float centreDist(float ax0, float az0, float ax1, float az1, float bx0, float bz0, float bx1, float bz1) {
+    float cx = ((ax0 + ax1) - (bx0 + bx1)) * 0.5f, cz = ((az0 + az1) - (bz0 + bz1)) * 0.5f;
+    return std::sqrt(cx * cx + cz * cz);
+}
+
+// A* over adjacency lists (the surfaces' links, or the regions'), with a heuristic h(v) that never overestimates and
+// returns kNavInf for "can't get there from v". Reuses the scratch (stamped: nothing cleared per search).
+template <class H>
+bool astar(int a, int b, size_t n, const std::vector<std::vector<std::pair<int, float>>>& adj, NavGraph::PathScratch& s, H h, std::vector<int>& out) {
+    out.clear();
+    auto& [g, hc, prev, stamp, heap, cur] = s;
+    if (g.size() < n) { g.resize(n); hc.resize(n); prev.resize(n); stamp.assign(n, 0); cur = 0; }
+    if (++cur == 0) { std::fill(stamp.begin(), stamp.end(), 0); cur = 1; }
+    heap.clear();
+    stamp[a] = cur; g[a] = 0; prev[a] = -1; hc[a] = h(a);
+    if (hc[a] >= kNavInf) return false;
+    heap.push_back({-hc[a], a});
+    auto cmp = [](const std::pair<float, int>& x, const std::pair<float, int>& y) { return x.first < y.first; }; // max-heap on -f
+    bool found = false;
+    while (!heap.empty()) {
+        std::pop_heap(heap.begin(), heap.end(), cmp);
+        auto [nf, u] = heap.back();
+        heap.pop_back();
+        if (-nf > g[u] + hc[u] + 1e-4f) continue; // stale entry
+        if (u == b) { found = true; break; }
+        for (auto& [v, c] : adj[u]) {
+            float ng = g[u] + c;
+            if (stamp[v] != cur) { stamp[v] = cur; hc[v] = h(v); g[v] = kNavInf; }
+            if (ng < g[v] && hc[v] < kNavInf) {
+                g[v] = ng; prev[v] = u;
+                heap.push_back({-(ng + hc[v]), v});
+                std::push_heap(heap.begin(), heap.end(), cmp);
+            }
+        }
+    }
+    if (!found) return false;
+    for (int v = b; v != a; v = prev[v]) out.push_back(v);
+    std::reverse(out.begin(), out.end());
+    return true;
+}
+}  // namespace
 
 int NavGraph::cellOf(float x, float z) const {
     int cx = (int)std::floor((x - gx0) / kNavCell), cz = (int)std::floor((z - gz0) / kNavCell);
@@ -32,125 +164,360 @@ int NavGraph::cellOf(float x, float z) const {
     return cz * gw + cx;
 }
 
-void NavGraph::build(const Map& m) {
-    nodes.clear();
-    links.clear();
+// The part of linkCost that's the same both ways: is the way between surfaces i and j open (for a player at the
+// higher one's level), and not just a shortcut over a surface between them.
+bool NavGraph::linkOpen(const Map& m, int i, int j) const {
+    if (kind == NavKind::Surfaces) return true;   // (gap and height alone)
+    const Node &a = nodes[i], &b = nodes[j];
+    // the overlap of the two along each axis (negative: the gap between them)
+    const float ox = std::min(a.x1, b.x1) - std::max(a.x0, b.x0), oz = std::min(a.z1, b.z1) - std::max(a.z0, b.z0);
+    if (surf[i] == surf[j]) return ox >= 0 && oz >= 0 && std::max(ox, oz) >= 0.01f; // pieces of one top: where they meet along an edge
+    if (ox > 1e-4f && oz > 1e-4f) return true;   // one over the other (a step on a floor, a ledge over one)
+    // level, meeting along an edge: anything standing across it would have been cut out of both
+    if (ox >= -1e-4f && oz >= -1e-4f && std::max(ox, oz) >= 0.05f && std::fabs(a.y - b.y) < 1e-4f) return true;
+    // side by side: the stretch between them (a line where they meet)
+    float cx0 = std::min(a.x1, b.x1), cx1 = std::max(a.x0, b.x0), cz0 = std::min(a.z1, b.z1), cz1 = std::max(a.z0, b.z0);
+    if (ox > 0) { cx0 = std::max(a.x0, b.x0); cx1 = std::min(a.x1, b.x1); }
+    if (oz > 0) { cz0 = std::max(a.z0, b.z0); cz1 = std::min(a.z1, b.z1); }
+    const float base = std::max(a.y, b.y), dy = std::fabs(b.y - a.y);
+    if (ox < -1e-4f || oz < -1e-4f) {
+        // a gap: another surface in it, from about the lower one's level to a step over the higher one's, is walked onto
+        // (or landed on) on the way across. The route goes by that one, so a link straight across would only be a
+        // shortcut (and a floor cut into pieces would have a great many).
+        const float px = (cx0 + cx1) * 0.5f, pz = (cz0 + cz1) * 0.5f;
+        const float lo = std::min(a.y, b.y) - (dy <= kNavStep ? 0.6f : 0.05f), hi = base + kNavStep;
+        int c = cellOf(px, pz);
+        if (c >= 0)
+            for (uint32_t k = cellStart[c]; k < cellStart[c + 1]; k++) {
+                const Node& n = nodes[cellNodes[k]];
+                if ((n.y >= lo) & (n.y <= hi) & (px >= n.x0) & (px <= n.x1) & (pz >= n.z0) & (pz <= n.z1)) return false;   // (&: no branch per test)
+            }
+    }
+    const float yLo = base + kNavStep, yHi = base + kNavHead;
+    if (ox < -1e-4f && oz < -1e-4f) {
+        // corner to corner (a jump across to a pad off to one side): the line between the near corners, which is where
+        // steer() aims, clear of anything standing in the way (grown by the hull, less what the cutting may leave)
+        const float sx = a.x1 < b.x0 ? a.x1 : a.x0, sz = a.z1 < b.z0 ? a.z1 : a.z0;
+        const float ex = a.x1 < b.x0 ? b.x0 : b.x1, ez = a.z1 < b.z0 ? b.z0 : b.z1;
+        const float dx = ex - sx, dz = ez - sz, grow = kNavClear - kNavSnap;
+        bool blocked = false;
+        brushesNear(m, cx0 - kNavClear, cz0 - kNavClear, cx1 + kNavClear, cz1 + kNavClear, [&](int k) {
+            const AABB& bb = m.brushes[k].box;
+            if (blocked || bb.mn.y >= yHi || bb.mx.y <= yLo) return;
+            // slab test of the segment against the grown box in xz (dx, dz are never 0 here: both gaps are open)
+            float t0x = (bb.mn.x - grow - sx) / dx, t1x = (bb.mx.x + grow - sx) / dx;
+            float t0z = (bb.mn.z - grow - sz) / dz, t1z = (bb.mx.z + grow - sz) / dz;
+            float t0 = std::max(std::min(t0x, t1x), std::min(t0z, t1z)), t1 = std::min(std::max(t0x, t1x), std::max(t0z, t1z));
+            blocked = t0 < std::min(t1, 1.0f) && t1 > 0.0f;
+        });
+        return !blocked;
+    }
+    // nothing standing in the stretch (a wall between two floors, a crate on the seam), grown by the hull like the
+    // cuts. Not counting what reaches less than kNavSnap into it, the most the cutting's merged edges can leave of a
+    // blocker in a piece (so on a line: only a blocker reaching that far past both sides of it).
+    const bool lineX = cx1 - cx0 < 2e-4f, lineZ = cz1 - cz0 < 2e-4f;
+    const float ax0 = lineX ? cx1 + kNavSnap : cx0 + kNavSnap, ax1 = lineX ? cx0 - kNavSnap : cx1 - kNavSnap;
+    const float az0 = lineZ ? cz1 + kNavSnap : cz0 + kNavSnap, az1 = lineZ ? cz0 - kNavSnap : cz1 - kNavSnap;
+    bool blocked = false;
+    brushesNear(m, cx0 - kNavClear, cz0 - kNavClear, cx1 + kNavClear, cz1 + kNavClear, [&](int k) {
+        const AABB& bb = m.brushes[k].box;
+        blocked |= (bb.mn.y < yHi) & (bb.mx.y > yLo) & (bb.mn.x - kNavClear < ax1) & (bb.mx.x + kNavClear > ax0) &
+                   (bb.mn.z - kNavClear < az1) & (bb.mx.z + kNavClear > az0);   // (&: no branch per test)
+    });
+    return !blocked;
+}
+
+namespace {
+float linkGap(const NavGraph::Node& a, const NavGraph::Node& b) {
+    float gx = std::max(0.0f, std::max(a.x0, b.x0) - std::min(a.x1, b.x1));
+    float gz = std::max(0.0f, std::max(a.z0, b.z0) - std::min(a.z1, b.z1));
+    return std::sqrt(gx * gx + gz * gz);
+}
+bool linkReach(float gap, float up) { return gap <= kLinkGap && up <= 1.15f && up >= -8.0f; }
+float linkCostOf(const NavGraph::Node& a, const NavGraph::Node& b, float gap) {
+    return centreDist(a.x0, a.z0, a.x1, a.z1, b.x0, b.z0, b.x1, b.z1) + gap * 2 + std::max(b.y - a.y, 0.0f) * 2;
+}
+}  // namespace
+
+bool NavGraph::linkCost(const Map& m, int i, int j, float& cost) const {
+    if (i == j) return false;
+    const Node &a = nodes[i], &b = nodes[j];
+    float gap = linkGap(a, b);
+    if (!linkReach(gap, b.y - a.y) || !linkOpen(m, i, j)) return false;
+    cost = linkCostOf(a, b, gap);
+    return true;
+}
+
+void NavGraph::build(const Map& m, NavKind k) {
+    kind = k;
+    nodes.clear(); surf.clear(); links.clear(); region.clear(); regions.clear(); rlinks.clear(); rcomp.clear();
     mapId = m.id();
     generation++;
-    for (const Brush& b : m.brushes) {
+    // Surfaces: the top of every solid block, with whatever stands on it cut out, in rectangles (walls, crates and
+    // pillars on a floor split it, so a route goes round them instead of into them).
+    std::vector<uint32_t> seen(m.brushes.size(), 0);
+    uint32_t mark = 0;
+    std::vector<Rect> blk, pieces;
+    for (size_t bi = 0; bi < m.brushes.size(); bi++) {
+        const Brush& b = m.brushes[bi];
         const AABB& a = b.box;
         if (b.material >= 5) continue; // far scenery, water / lava
         if (a.mx.x - a.mn.x < 0.4f || a.mx.z - a.mn.z < 0.4f) continue; // (0.5 m stair steps are floor)
-        // standable if a player fits on top somewhere (5x5 samples: other blocks may cover parts of it)
-        bool free = false;
-        for (int k = 0; k < 25 && !free; k++) {
-            Vec3 top = {lerpf(a.mn.x, a.mx.x, 0.1f + 0.2f * (k % 5)), a.mx.y + 0.02f, lerpf(a.mn.z, a.mx.z, 0.1f + 0.2f * (k / 5))};
-            AABB probe = {{top.x - 0.05f, top.y, top.z - 0.05f}, {top.x + 0.05f, top.y + kPlayerCrouchHeight, top.z + 0.05f}};
-            free = !m.boxSolid(probe);
+        const Rect r = {a.mn.x, a.mn.z, a.mx.x, a.mx.z};
+        const float y = a.mx.y;
+        blk.clear();
+        ++mark;
+        if (kind == NavKind::Bots) brushesNear(m, r.x0 - kNavClear, r.z0 - kNavClear, r.x1 + kNavClear, r.z1 + kNavClear, [&](int k) {
+            if (seen[k] == mark) return;
+            seen[k] = mark;
+            const AABB& o = m.brushes[k].box;
+            if (!blocksAt(o, y)) return;
+            Rect c = {std::max(o.mn.x - kNavClear, r.x0), std::max(o.mn.z - kNavClear, r.z0), std::min(o.mx.x + kNavClear, r.x1), std::min(o.mx.z + kNavClear, r.z1)};
+            if (c.x1 > c.x0 && c.z1 > c.z0) blk.push_back(c);
+        });
+        pieces.clear();
+        if (kind == NavKind::Surfaces) {
+            // the whole top, if a player fits on it somewhere (5x5 samples: other blocks may cover parts of it)
+            bool free = false;
+            for (int s = 0; s < 25 && !free; s++) {
+                Vec3 top = {lerpf(a.mn.x, a.mx.x, 0.1f + 0.2f * (s % 5)), a.mx.y + 0.02f, lerpf(a.mn.z, a.mx.z, 0.1f + 0.2f * (s / 5))};
+                AABB probe = {{top.x - 0.05f, top.y, top.z - 0.05f}, {top.x + 0.05f, top.y + kPlayerCrouchHeight, top.z + 0.05f}};
+                free = !m.boxSolid(probe);
+            }
+            if (free) pieces.push_back(r);
+        } else {
+            freeRects(r, blk, pieces);
         }
-        if (!free) continue;
-        nodes.push_back({a.mn.x, a.mn.z, a.mx.x, a.mx.z, a.mx.y});
+        for (const Rect& p : pieces) {
+            nodes.push_back({p.x0, p.z0, p.x1, p.z1, y});
+            surf.push_back((int)bi);
+        }
     }
+    const int n = (int)nodes.size();
     // Grid of the surfaces (each in every cell its padded rectangle touches): nodeAt looks in one cell, and the
     // link pass only compares surfaces within jumping distance instead of every pair (REVIEW PERF-10).
     cellStart.clear(); cellNodes.clear(); gw = gh = 0;
-    if (!nodes.empty()) {
+    if (n) {
         float x0 = 1e30f, z0 = 1e30f, x1 = -1e30f, z1 = -1e30f;
-        for (auto& n : nodes) { x0 = std::min(x0, n.x0); z0 = std::min(z0, n.z0); x1 = std::max(x1, n.x1); z1 = std::max(z1, n.z1); }
+        for (auto& nd : nodes) { x0 = std::min(x0, nd.x0); z0 = std::min(z0, nd.z0); x1 = std::max(x1, nd.x1); z1 = std::max(z1, nd.z1); }
         gx0 = x0 - kNodePad - 0.01f; gz0 = z0 - kNodePad - 0.01f;
         gw = std::max(1, (int)std::ceil((x1 + kNodePad + 0.01f - gx0) / kNavCell));
         gh = std::max(1, (int)std::ceil((z1 + kNodePad + 0.01f - gz0) / kNavCell));
         if ((size_t)gw * gh > 4u * 1024 * 1024) gw = gh = 0; // absurd extents: no grid (checks every surface instead)
-        auto range = [&](const Node& n, float pad, int& cx0, int& cz0, int& cx1, int& cz1) {
-            cx0 = std::clamp((int)std::floor((n.x0 - pad - gx0) / kNavCell), 0, gw - 1);
-            cx1 = std::clamp((int)std::floor((n.x1 + pad - gx0) / kNavCell), 0, gw - 1);
-            cz0 = std::clamp((int)std::floor((n.z0 - pad - gz0) / kNavCell), 0, gh - 1);
-            cz1 = std::clamp((int)std::floor((n.z1 + pad - gz0) / kNavCell), 0, gh - 1);
+        auto range = [&](const Node& nd, float pad, int& cx0, int& cz0, int& cx1, int& cz1) {
+            cx0 = std::clamp((int)std::floor((nd.x0 - pad - gx0) / kNavCell), 0, gw - 1);
+            cx1 = std::clamp((int)std::floor((nd.x1 + pad - gx0) / kNavCell), 0, gw - 1);
+            cz0 = std::clamp((int)std::floor((nd.z0 - pad - gz0) / kNavCell), 0, gh - 1);
+            cz1 = std::clamp((int)std::floor((nd.z1 + pad - gz0) / kNavCell), 0, gh - 1);
         };
         if (gw > 0) {
-        std::vector<uint32_t> count((size_t)gw * gh + 1, 0);
-        for (auto& n : nodes) {
-            int a, b, c, d; range(n, kNodePad, a, b, c, d);
-            for (int z = b; z <= d; z++) for (int x = a; x <= c; x++) count[(size_t)z * gw + x]++;
-        }
-        cellStart.assign((size_t)gw * gh + 1, 0);
-        for (size_t i = 0; i < (size_t)gw * gh; i++) cellStart[i + 1] = cellStart[i] + count[i];
-        cellNodes.resize(cellStart.back());
-        std::vector<uint32_t> fill(cellStart.begin(), cellStart.end() - 1);
-        for (size_t i = 0; i < nodes.size(); i++) { // (ascending: each cell's list is in node order)
-            int a, b, c, d; range(nodes[i], kNodePad, a, b, c, d);
-            for (int z = b; z <= d; z++) for (int x = a; x <= c; x++) cellNodes[fill[(size_t)z * gw + x]++] = (int)i;
-        }
+            std::vector<uint32_t> count((size_t)gw * gh + 1, 0);
+            for (auto& nd : nodes) {
+                int a, b, c, d; range(nd, kNodePad, a, b, c, d);
+                for (int z = b; z <= d; z++) for (int x = a; x <= c; x++) count[(size_t)z * gw + x]++;
+            }
+            cellStart.assign((size_t)gw * gh + 1, 0);
+            for (size_t i = 0; i < (size_t)gw * gh; i++) cellStart[i + 1] = cellStart[i] + count[i];
+            cellNodes.resize(cellStart.back());
+            std::vector<uint32_t> fill(cellStart.begin(), cellStart.end() - 1);
+            for (int i = 0; i < n; i++) { // (ascending: each cell's list is in node order)
+                int a, b, c, d; range(nodes[i], kNodePad, a, b, c, d);
+                for (int z = b; z <= d; z++) for (int x = a; x <= c; x++) cellNodes[fill[(size_t)z * gw + x]++] = i;
+            }
         }
     }
-    links.resize(nodes.size());
-    std::vector<uint32_t> stamp(nodes.size(), 0);
+    // Links: each pair once (j after i; the open check is the same both ways), into both lists in ascending order
+    // (the order checking every pair gives).
+    struct Pair { int from, to; float cost; };
+    std::vector<Pair> pairs;   // (collected flat, then grouped by node: no list grows one link at a time)
+    std::vector<uint32_t> stamp(n, 0);
     std::vector<int> cand;
-    hScale = 1.0f;
-    for (size_t i = 0; i < nodes.size(); i++) {
+    for (int i = 0; i < n; i++) {
         cand.clear();
+        const Node& a = nodes[i];
         if (gw > 0) {
-            const Node& a = nodes[i];
             int cx0 = std::clamp((int)std::floor((a.x0 - kLinkGap - gx0) / kNavCell), 0, gw - 1), cx1 = std::clamp((int)std::floor((a.x1 + kLinkGap - gx0) / kNavCell), 0, gw - 1);
             int cz0 = std::clamp((int)std::floor((a.z0 - kLinkGap - gz0) / kNavCell), 0, gh - 1), cz1 = std::clamp((int)std::floor((a.z1 + kLinkGap - gz0) / kNavCell), 0, gh - 1);
             for (int z = cz0; z <= cz1; z++)
                 for (int x = cx0; x <= cx1; x++)
                     for (uint32_t k = cellStart[(size_t)z * gw + x]; k < cellStart[(size_t)z * gw + x + 1]; k++) {
                         int j = cellNodes[k];
-                        if (stamp[j] != i + 1) { stamp[j] = (uint32_t)i + 1; cand.push_back(j); }
+                        if (j > i && stamp[j] != (uint32_t)i + 1) { stamp[j] = (uint32_t)i + 1; cand.push_back(j); }
                     }
-            std::sort(cand.begin(), cand.end()); // same order as checking every node
+            std::sort(cand.begin(), cand.end());
         } else {
-            for (size_t j = 0; j < nodes.size(); j++) cand.push_back((int)j);
+            for (int j = i + 1; j < n; j++) cand.push_back(j);
         }
         for (int j : cand) {
-            if ((size_t)j == i) continue;
-            const Node &a = nodes[i], &b = nodes[j];
-            float gx = std::max(0.0f, std::max(a.x0, b.x0) - std::min(a.x1, b.x1));
-            float gz = std::max(0.0f, std::max(a.z0, b.z0) - std::min(a.z1, b.z1));
-            float gap = std::sqrt(gx * gx + gz * gz);
-            float up = b.y - a.y;
-            if (gap > kLinkGap || up > 1.15f || up < -8.0f) continue;
-            float cx = ((a.x0 + a.x1) - (b.x0 + b.x1)) * 0.5f, cz = ((a.z0 + a.z1) - (b.z0 + b.z1)) * 0.5f;
-            links[i].push_back({j, std::sqrt(cx * cx + cz * cz) + gap * 2 + std::max(up, 0.0f) * 2});
+            const Node& b = nodes[j];
+            float gap = linkGap(a, b);
+            bool ij = linkReach(gap, b.y - a.y), ji = linkReach(gap, a.y - b.y);
+            if (!ij && !ji) continue;
+            if (!linkOpen(m, i, j)) continue;
+            if (ij) pairs.push_back({i, j, linkCostOf(a, b, gap)});
+            if (ji) pairs.push_back({j, i, linkCostOf(b, a, gap)});
+        }
+    }
+    {   // each node's links in ascending order (the order checking every pair gives): a stable counting sort by node
+        std::vector<uint32_t> count(n + 1, 0);
+        for (const Pair& p : pairs) count[p.from + 1]++;
+        for (int i = 0; i < n; i++) count[i + 1] += count[i];
+        std::vector<std::pair<int, float>> flat(pairs.size());
+        std::vector<uint32_t> at(count.begin(), count.end() - 1);
+        for (const Pair& p : pairs) flat[at[p.from]++] = {p.to, p.cost};
+        links.assign(n, {});
+        for (int i = 0; i < n; i++) {
+            links[i].assign(flat.begin() + count[i], flat.begin() + count[i + 1]);
+            std::sort(links[i].begin(), links[i].end(), [](const std::pair<int, float>& x, const std::pair<int, float>& y) { return x.first < y.first; });
         }
     }
     // ladders: from the surface at the foot of each ladder up to the surfaces at its top
     ladderLinks.clear();
     for (const AABB& l : m.ladders) {
         Vec3 c = l.center();
-        int bottom = nodeAt({c.x, l.mn.y + 0.05f, c.z});
+        // (a ladder against a wall stands in the strip cut off the floor along it: the floor a step out from it)
+        int bottom = nodeNear({c.x, l.mn.y + 0.05f, c.z}, 1.0f);
         if (bottom < 0) continue;
-        for (size_t j = 0; j < nodes.size(); j++) {
-            const Node& n = nodes[j];
-            if (n.y > l.mx.y + 0.2f || n.y < l.mx.y - 1.8f || (int)j == bottom) continue; // the climb volume ends ~1 m over the top floor
-            float gx = std::max(0.0f, std::max(l.mn.x, n.x0) - std::min(l.mx.x, n.x1));
-            float gz = std::max(0.0f, std::max(l.mn.z, n.z0) - std::min(l.mx.z, n.z1));
+        for (int j = 0; j < n; j++) {
+            const Node& nd = nodes[j];
+            if (nd.y > l.mx.y + 0.2f || nd.y < l.mx.y - 1.8f || j == bottom) continue; // the climb volume ends ~1 m over the top floor
+            float gx = std::max(0.0f, std::max(l.mn.x, nd.x0) - std::min(l.mx.x, nd.x1));
+            float gz = std::max(0.0f, std::max(l.mn.z, nd.z0) - std::min(l.mx.z, nd.z1));
             if (gx * gx + gz * gz > 1.5f * 1.5f) continue;
-            links[bottom].push_back({(int)j, (l.mx.y - l.mn.y) * 2 + 2});
-            ladderLinks.push_back({{bottom, (int)j}, Vec3(c.x, l.mn.y, c.z)});
+            links[bottom].push_back({j, (l.mx.y - l.mn.y) * 2 + 2});
+            ladderLinks.push_back({{bottom, j}, Vec3(c.x, l.mn.y, c.z)});
         }
     }
-    // A* heuristic scale: the smallest cost per metre of straight-line distance between surface centres over all
-    // links (ladders can be cheap for how far apart their surfaces' centres are), so it never overestimates.
-    for (size_t i = 0; i < nodes.size(); i++)
-        for (auto& [j, c] : links[i]) {
-            const Node &a = nodes[i], &b = nodes[j];
-            float dx = ((a.x0 + a.x1) - (b.x0 + b.x1)) * 0.5f, dz = ((a.z0 + a.z1) - (b.z0 + b.z1)) * 0.5f;
-            float d = std::sqrt(dx * dx + dz * dz);
+    // Regions: the pieces of one top that join up (where they meet) within a 12 m tile, so not many more than there are
+    // tops (a floor a wall cuts in two is two; a street through a city a few). Routes are planned over the regions,
+    // then walked over the pieces of the regions planned (findPath). (The tiles keep a region's centre near all of
+    // it, so the plan's costs are near the walk's: routes come out within a few % of the shortest, quark_tests nav.)
+    region.assign(n, -1);
+    std::vector<int> q;
+    auto tile = [&](int i) { const Node& nd = nodes[i]; return std::make_pair((int)std::floor((nd.x0 + nd.x1) * 0.5f / kNavTile), (int)std::floor((nd.z0 + nd.z1) * 0.5f / kNavTile)); };
+    for (int i = 0; i < n; i++) {
+        if (region[i] >= 0) continue;
+        const auto ti = tile(i);
+        const int r = (int)regions.size();
+        Region rg = {nodes[i].x0, nodes[i].z0, nodes[i].x1, nodes[i].z1, nodes[i].y};
+        region[i] = r;
+        q.assign(1, i);
+        for (size_t k = 0; k < q.size(); k++)
+            for (auto& l : links[q[k]])
+                if (region[l.first] < 0 && surf[l.first] == surf[i] && tile(l.first) == ti) {
+                    const Node& nd = nodes[l.first];
+                    region[l.first] = r; q.push_back(l.first);
+                    rg.x0 = std::min(rg.x0, nd.x0); rg.z0 = std::min(rg.z0, nd.z0); rg.x1 = std::max(rg.x1, nd.x1); rg.z1 = std::max(rg.z1, nd.z1);
+                }
+        regions.push_back(rg);
+    }
+    // ...linked where any of their pieces are, at the old cost (centre to centre, plus gaps and climbs; a ladder its climb)
+    const int R = (int)regions.size();
+    rlinks.assign(R, {});
+    std::vector<int> at(R, -1);
+    std::vector<std::vector<int>> members(R);
+    for (int i = 0; i < n; i++) members[region[i]].push_back(i);
+    for (int r = 0; r < R; r++) {
+        const Region& ra = regions[r];
+        for (int i : members[r])
+            for (auto& [j, c] : links[i]) {
+                const int s = region[j];
+                if (s == r) continue;
+                const Node &a = nodes[i], &b = nodes[j];
+                const Region& rb = regions[s];
+                float rc = std::max(0.01f, c - centreDist(a.x0, a.z0, a.x1, a.z1, b.x0, b.z0, b.x1, b.z1) + centreDist(ra.x0, ra.z0, ra.x1, ra.z1, rb.x0, rb.z0, rb.x1, rb.z1));
+                if (at[s] < 0) { at[s] = (int)rlinks[r].size(); rlinks[r].push_back({s, rc}); }
+                else rlinks[r][at[s]].second = std::min(rlinks[r][at[s]].second, rc);
+            }
+        for (auto& l : rlinks[r]) at[l.first] = -1;
+    }
+    // connected groups of regions (links taken both ways): a search between two groups fails at once
+    rcomp.resize(R);
+    for (int r = 0; r < R; r++) rcomp[r] = r;
+    auto root = [&](int x) { while (rcomp[x] != x) x = rcomp[x] = rcomp[rcomp[x]]; return x; };
+    for (int r = 0; r < R; r++)
+        for (auto& l : rlinks[r]) { int ra = root(r), rb = root(l.first); if (ra != rb) rcomp[std::max(ra, rb)] = std::min(ra, rb); }
+    for (int r = 0; r < R; r++) rcomp[r] = root(r);
+    // A* heuristic scale: the smallest cost per metre of straight-line distance between region centres over all
+    // links (ladders can be cheap for how far apart their regions' centres are), so it never overestimates.
+    hScale = 1.0f;
+    for (int r = 0; r < R; r++)
+        for (auto& [s, c] : rlinks[r]) {
+            const Region &a = regions[r], &b = regions[s];
+            float d = centreDist(a.x0, a.z0, a.x1, a.z1, b.x0, b.z0, b.x1, b.z1);
             if (d > 1e-3f) hScale = std::min(hScale, c / d);
         }
     hScale = std::max(0.0f, hScale * 0.999f);
+    hScaleNodes = 1.0f;   // (the same over the pieces' links, for the walk through the planned regions)
+    for (int i = 0; i < n; i++)
+        for (auto& [j, c] : links[i]) {
+            const Node &a = nodes[i], &b = nodes[j];
+            float d = centreDist(a.x0, a.z0, a.x1, a.z1, b.x0, b.z0, b.x1, b.z1);
+            if (d > 1e-3f) hScaleNodes = std::min(hScaleNodes, c / d);
+        }
+    hScaleNodes = std::max(0.0f, hScaleNodes * 0.999f);
+    buildLandmarks();
+}
+
+// A* landmarks (ALT) over the regions: a few far apart, with every region's route distance from and to each. The
+// triangle rule bounds a route from below (from v to t: at least d(L,t) - d(L,v), and d(v,L) - d(t,L)), far closer than
+// a straight line round a city's walls, so a search opens far fewer regions; and a goal it can't reach shows at once (L
+// reaches v but not t, or t reaches L and v can't). Still never an overestimate, so routes stay the shortest.
+void NavGraph::buildLandmarks() {
+    landFwd.clear(); landBwd.clear(); nLand = 0;
+    const int R = (int)regions.size();
+    if (R < 32) return;   // (small maps: the straight line does fine)
+    std::vector<std::vector<std::pair<int, float>>> rev(R);
+    for (int r = 0; r < R; r++) for (auto& [s, c] : rlinks[r]) rev[s].push_back({r, c});
+    auto dijkstra = [&](int src, const std::vector<std::vector<std::pair<int, float>>>& adj, std::vector<float>& d) {
+        d.assign(R, kNavInf);
+        std::vector<std::pair<float, int>> q;
+        auto cmp = [](const std::pair<float, int>& x, const std::pair<float, int>& y) { return x.first > y.first; };
+        d[src] = 0; q.push_back({0, src});
+        while (!q.empty()) {
+            std::pop_heap(q.begin(), q.end(), cmp);
+            auto [du, u] = q.back(); q.pop_back();
+            if (du > d[u]) continue;
+            for (auto& [v, c] : adj[u]) if (du + c < d[v]) { d[v] = du + c; q.push_back({d[v], v}); std::push_heap(q.begin(), q.end(), cmp); }
+        }
+    };
+    // in the biggest group: the first landmark farthest from its first region, each next farthest from those picked
+    std::vector<int> size(R, 0);
+    for (int r = 0; r < R; r++) size[rcomp[r]]++;
+    const int big = (int)(std::max_element(size.begin(), size.end()) - size.begin());
+    int start = 0;
+    while (rcomp[start] != big) start++;
+    std::vector<float> d, near(R, kNavInf), fwd[kNavLandmarks], bwd[kNavLandmarks];
+    dijkstra(start, rlinks, d);
+    auto farthest = [&](const std::vector<float>& w) {
+        int best = -1; float bd = 0;
+        for (int r = 0; r < R; r++) if (rcomp[r] == big && w[r] < kNavInf && w[r] > bd) { bd = w[r]; best = r; }
+        return best;
+    };
+    for (int L = farthest(d); L >= 0 && nLand < kNavLandmarks; L = farthest(near)) {
+        dijkstra(L, rlinks, fwd[nLand]);
+        dijkstra(L, rev, bwd[nLand]);
+        for (int r = 0; r < R; r++) near[r] = std::min(near[r], std::min(fwd[nLand][r], bwd[nLand][r]));
+        nLand++;
+    }
+    landFwd.resize((size_t)R * nLand); landBwd.resize((size_t)R * nLand);
+    for (int r = 0; r < R; r++)
+        for (int l = 0; l < nLand; l++) { landFwd[(size_t)r * nLand + l] = fwd[l][r]; landBwd[(size_t)r * nLand + l] = bwd[l][r]; }
 }
 
 int NavGraph::nodeAt(const Vec3& p) const {
+    // the highest surface under the point (within a step over it, 6 m under it); of equal ones, the one it's on (or
+    // nearest to: pieces of a top meet, and their padding overlaps). (Surfaces: the first of equal ones, as the map
+    // report has always had it.)
     int best = -1;
-    float bestY = -1e9f;
+    float bestY = -1e9f, bestOut = 1e9f;
+    const float tie = kind == NavKind::Bots ? 1e-4f : 0.0f;
     auto test = [&](int i) {
         const Node& n = nodes[i];
         if (p.x < n.x0 - kNodePad || p.x > n.x1 + kNodePad || p.z < n.z0 - kNodePad || p.z > n.z1 + kNodePad) return;
         if (n.y > p.y + 0.6f || n.y < p.y - 6.0f) return; // the surface below us, not one overhead
-        if (n.y > bestY) { bestY = n.y; best = i; }
+        float out = std::max({n.x0 - p.x, p.x - n.x1, 0.0f}) + std::max({n.z0 - p.z, p.z - n.z1, 0.0f});
+        if (n.y > bestY + tie || (tie > 0 && n.y > bestY - tie && out < bestOut)) { bestY = n.y; bestOut = out; best = i; }
     };
     if (gw > 0) {
         int c = cellOf(p.x, p.z);
@@ -162,42 +529,78 @@ int NavGraph::nodeAt(const Vec3& p) const {
     return best;
 }
 
+int NavGraph::nodeNear(const Vec3& p, float radius) const {
+    int best = nodeAt(p);
+    if (best >= 0 || radius <= 0) return best;
+    // not over a node (in the strip cut round a wall, a crate, a mast): the nearest one within radius (a level about
+    // the same counts more than a few metres of distance)
+    float bestD = 1e30f;
+    auto test = [&](int i) {
+        const Node& n = nodes[i];
+        if (n.y > p.y + 0.6f || n.y < p.y - 6.0f) return;
+        float dx = std::max({n.x0 - p.x, p.x - n.x1, 0.0f}), dz = std::max({n.z0 - p.z, p.z - n.z1, 0.0f});
+        float d = dx * dx + dz * dz;
+        if (d > radius * radius) return;
+        d += (p.y - n.y) * (p.y - n.y) * 0.25f;
+        if (d < bestD) { bestD = d; best = i; }
+    };
+    if (gw > 0) {
+        int cx0 = std::clamp((int)std::floor((p.x - radius - gx0) / kNavCell), 0, gw - 1), cx1 = std::clamp((int)std::floor((p.x + radius - gx0) / kNavCell), 0, gw - 1);
+        int cz0 = std::clamp((int)std::floor((p.z - radius - gz0) / kNavCell), 0, gh - 1), cz1 = std::clamp((int)std::floor((p.z + radius - gz0) / kNavCell), 0, gh - 1);
+        for (int z = cz0; z <= cz1; z++)
+            for (int x = cx0; x <= cx1; x++)
+                for (uint32_t k = cellStart[(size_t)z * gw + x]; k < cellStart[(size_t)z * gw + x + 1]; k++) test(cellNodes[k]);
+    } else {
+        for (size_t i = 0; i < nodes.size(); i++) test((int)i);
+    }
+    return best;
+}
+
+bool NavGraph::findRegionPath(int ra, int rb, std::vector<int>& out) const {
+    out.clear();
+    const int R = (int)regions.size();
+    if (ra < 0 || rb < 0 || ra >= R || rb >= R) return false;
+    if (ra == rb) return true;
+    if (rcomp[ra] != rcomp[rb]) return false;   // (no link between their groups either way)
+    auto cx = [&](int r) { return (regions[r].x0 + regions[r].x1) * 0.5f; };
+    auto cz = [&](int r) { return (regions[r].z0 + regions[r].z1) * 0.5f; };
+    const float bx = cx(rb), bz = cz(rb);
+    const int K = nLand;
+    const float* tf = K ? &landFwd[(size_t)rb * K] : nullptr;
+    const float* tb = K ? &landBwd[(size_t)rb * K] : nullptr;
+    auto h = [&](int r) {
+        float dx = cx(r) - bx, dz = cz(r) - bz, e = std::sqrt(dx * dx + dz * dz) * hScale;
+        if (K) {
+            const float *vf = &landFwd[(size_t)r * K], *vb = &landBwd[(size_t)r * K];
+            for (int l = 0; l < K; l++) {
+                if (tf[l] < kNavInf) { if (vf[l] < kNavInf) e = std::max(e, (tf[l] - vf[l]) * 0.9999f); }
+                else if (vf[l] < kNavInf) return kNavInf;   // L reaches r but not the goal: r can't either
+                if (tb[l] < kNavInf) { if (vb[l] >= kNavInf) return kNavInf; e = std::max(e, (vb[l] - tb[l]) * 0.9999f); } // the goal reaches L, r can't
+            }
+        }
+        return e;
+    };
+    return astar(ra, rb, regions.size(), rlinks, regionScratch_, h, out);
+}
+
 bool NavGraph::findPath(int a, int b, std::vector<int>& out) const {
     out.clear();
     if (a < 0 || b < 0 || a >= (int)nodes.size() || b >= (int)nodes.size()) return false;
     if (a == b) return true;
-    // scratch reused between searches (stamped, so nothing is cleared per search): the graph's own (bots.h)
-    auto& [g, prev, stamp, heap, cur] = scratch_;
-    if (g.size() < nodes.size()) { g.resize(nodes.size()); prev.resize(nodes.size()); stamp.assign(nodes.size(), 0); cur = 0; }
-    if (++cur == 0) { std::fill(stamp.begin(), stamp.end(), 0); cur = 1; }
-    auto cx = [&](int i) { return (nodes[i].x0 + nodes[i].x1) * 0.5f; };
-    auto cz = [&](int i) { return (nodes[i].z0 + nodes[i].z1) * 0.5f; };
-    const float bx = cx(b), bz = cz(b);
-    auto h = [&](int i) { float dx = cx(i) - bx, dz = cz(i) - bz; return std::sqrt(dx * dx + dz * dz) * hScale; };
-    heap.clear();
-    stamp[a] = cur; g[a] = 0; prev[a] = -1;
-    heap.push_back({-h(a), a});
-    auto cmp = [](const std::pair<float, int>& x, const std::pair<float, int>& y) { return x.first < y.first; }; // max-heap on -f
-    bool found = false;
-    while (!heap.empty()) {
-        std::pop_heap(heap.begin(), heap.end(), cmp);
-        auto [nf, u] = heap.back();
-        heap.pop_back();
-        if (-nf > g[u] + h(u) + 1e-4f) continue; // stale entry
-        if (u == b) { found = true; break; }
-        for (auto& [v, c] : links[u]) {
-            float ng = g[u] + c;
-            if (stamp[v] != cur || ng < g[v]) {
-                stamp[v] = cur; g[v] = ng; prev[v] = u;
-                heap.push_back({-(ng + h(v)), v});
-                std::push_heap(heap.begin(), heap.end(), cmp);
-            }
-        }
-    }
-    if (!found) return false;
-    for (int v = b; v != a; v = prev[v]) out.push_back(v);
-    std::reverse(out.begin(), out.end());
-    return true;
+    // the regions to cross (A* over the regions), then the shortest walk over the pieces of those regions only
+    std::vector<int>& rp = regionPath_;
+    if (!findRegionPath(region[a], region[b], rp)) return false;
+    if (corridor_.size() < regions.size()) corridor_.resize(regions.size(), 0);
+    if (++corridorMark_ == 0) { std::fill(corridor_.begin(), corridor_.end(), 0); corridorMark_ = 1; }
+    corridor_[region[a]] = corridorMark_;
+    for (int r : rp) corridor_[r] = corridorMark_;
+    const float bx = (nodes[b].x0 + nodes[b].x1) * 0.5f, bz = (nodes[b].z0 + nodes[b].z1) * 0.5f;
+    auto h = [&](int i) {
+        if (corridor_[region[i]] != corridorMark_) return kNavInf;
+        float dx = (nodes[i].x0 + nodes[i].x1) * 0.5f - bx, dz = (nodes[i].z0 + nodes[i].z1) * 0.5f - bz;
+        return std::sqrt(dx * dx + dz * dz) * hScaleNodes;
+    };
+    return astar(a, b, nodes.size(), links, scratch_, h, out);
 }
 
 Vec3 NavGraph::steer(const Vec3& from, int prevNode, const std::vector<int>& path, const Vec3& to) const {
@@ -247,10 +650,7 @@ bool NavGraph::ready(const Map& m) {
         auto j = std::move(job);
         if (j->result.mapId == m.id()) {
             uint32_t gen = generation;
-            NavGraph& r = j->result;
-            nodes = std::move(r.nodes); links = std::move(r.links); ladderLinks = std::move(r.ladderLinks);
-            cellStart = std::move(r.cellStart); cellNodes = std::move(r.cellNodes);
-            gx0 = r.gx0; gz0 = r.gz0; gw = r.gw; gh = r.gh; hScale = r.hScale; mapId = r.mapId;
+            *this = std::move(j->result);   // (its job is empty: ours was just taken)
             generation = gen + 1;
         }
     }
@@ -771,9 +1171,20 @@ UserCmd botThinkDirect(Server& s, int id) {
 
     // --- perception (20 Hz of game time, each bot at its own phase)
     bool damageOn = (s.ms_.phase == PHASE_LIVE || s.ms_.phase == PHASE_WARMUP) && !(s.ms_.mode == MODE_RACE && s.ms_.phase != PHASE_WARMUP);
-    if (b.nextLook <= 0) b.nextLook = now + (id % 10) * (sp.lookEvery / 10); // spread the bots' looks over the 50 ms
+    // Each bot looks at its own fixed phase of the period, from its id (golden-ratio steps: any number of bots spread
+    // evenly), kept through deaths: a round's respawn (everyone on one tick) used to start every bot's looks again
+    // together, ten or more of them on one tick from then on (worst-tick cost).
+    const double look = sp.lookEvery, lookPhase = look * (id * 0.6180339887498949 - std::floor(id * 0.6180339887498949));
+    auto lookAfter = [&](double t, bool strict) {   // the first look time at or (strict) after t on this bot's phase
+        if (look <= 0) return t;
+        double k = std::ceil((t - lookPhase) / look), at = lookPhase + k * look;
+        return strict && at <= t ? at + look : at;
+    };
+    // (new; the clock went back: a new match; or a look was missed, as after a death: the next one on the phase, not
+    // straight away, or a round's bots, respawned together, would all look on that one tick)
+    if (b.nextLook <= 0 || b.nextLook > now + look || now - b.nextLook >= look + dt) b.nextLook = lookAfter(now, false);
     if (now >= b.nextLook) {
-        b.nextLook = std::max(b.nextLook + sp.lookEvery, now + sp.lookEvery * 0.5);
+        b.nextLook = lookAfter(now, true);
         { QZONE("bot perceive"); perceive(s, id, b, sp, eye, now, ip); }
         // Edges: the void or lava within a stumble, a knockback or a hop (maps that have them). Eight directions at
         // 1.5 and 3 m (near: no jumping about), and 5 m (a fight drifts away from it: a laser or a blast pushes you
@@ -824,15 +1235,17 @@ UserCmd botThinkDirect(Server& s, int id) {
         bool steerNow = now >= b.nextSteer || b.needPath || toWp.x * toWp.x + toWp.z * toWp.z < 1.0f || length(goal - b.pathGoal) > 1.0f;
         if (navOk && steerNow) { // (route progress and the next waypoint: every 20 ms of game time, or when needed)
             b.nextSteer = now + sp.steerEvery;
-            int cur = s.nav_.nodeAt(me.move.pos + Vec3(0, 0.1f, 0));
+            int cur = s.nav_.nodeNear(me.move.pos + Vec3(0, 0.1f, 0), NavGraph::kStandNear);
             // follow the kept route: drop the surfaces already reached; off it (fell, pushed): find a new one
             if (cur >= 0 && cur != b.pathPrev) {
                 auto it = std::find(b.path.begin(), b.path.end(), cur);
                 if (it != b.path.end()) { b.path.erase(b.path.begin(), it + 1); b.pathPrev = cur; }
+                else if (!b.path.empty() && std::any_of(s.nav_.links[cur].begin(), s.nav_.links[cur].end(), [&](const std::pair<int, float>& l) { return l.first == b.path.front(); }))
+                    b.pathPrev = cur;   // (cut across a neighbouring piece of the floor: on from here, no new search)
                 else b.needPath = true;
             }
             if (length(goal - b.pathGoal) > 1.0f) {
-                int gn = s.nav_.nodeAt(goal + Vec3(0, 0.5f, 0));
+                int gn = s.nav_.nodeNear(goal + Vec3(0, 0.5f, 0), NavGraph::kGoalNear);
                 if (gn != b.pathGoalNode) b.needPath = true;
                 b.pathGoal = goal;
             }
@@ -842,7 +1255,7 @@ UserCmd botThinkDirect(Server& s, int id) {
                 if (g_pathsThisTick < kPathsPerTick) {
                     g_pathsThisTick++;
                     QZONE("bot nav path");
-                    b.pathGoalNode = s.nav_.nodeAt(goal + Vec3(0, 0.5f, 0));
+                    b.pathGoalNode = s.nav_.nodeNear(goal + Vec3(0, 0.5f, 0), NavGraph::kGoalNear);
                     b.pathGoal = goal;
                     if (!s.nav_.findPath(cur, b.pathGoalNode, b.path)) b.path.clear();
                     b.pathPrev = cur;
@@ -1109,11 +1522,12 @@ UserCmd botThinkDirect(Server& s, int id) {
                     if (groundAlong(s, me.move.pos, normalize(moveDir), 10.0f)) cmd.buttons |= BTN_DASH;
                 }
             }
-        } else { // hunt: go to where it was last seen
+        } else if (!urgent) { // hunt: go to where it was last seen
             Vec3 lastSeen = ta->seenPos;
             objectiveMove(moveDir, cmd.buttons, &lastSeen);
         }
-        if (urgent) { // keep going for the objective, shooting on the way
+        if (urgent) { // keep going for the objective, shooting on the way (instead of hunting: a route to each, every
+                      // think, would plan both again every time, the goal jumping between them)
             uint16_t extra = 0;
             objectiveMove(moveDir, extra, nullptr);
             if (extra & BTN_USE) cmd.buttons = (uint16_t)((cmd.buttons & ~BTN_FIRE) | BTN_USE);

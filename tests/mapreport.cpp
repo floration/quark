@@ -1427,7 +1427,7 @@ int mapReport(const char* outPath) {
         m.brushes.erase(std::remove_if(m.brushes.begin(), m.brushes.end(), [](const Brush& b) { return b.material == 9; }), m.brushes.end());
         m.rebuild();
         NavGraph g;
-        g.build(m);
+        g.build(m, NavKind::Surfaces);   // (the metrics' model of the map: every top whole)
         Metrics r;
         r.human = human;
         WalkGrid w;   // (the reachability every metric uses: walked with the player's hull against the real collision)

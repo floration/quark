@@ -5,6 +5,7 @@
 #include <cstring>
 #include <algorithm>
 #include <csignal>
+#include <numeric>
 #include <queue>
 #include <thread>
 #include "../src/common/rng.h"
@@ -1618,7 +1619,7 @@ static void testAllMaps() {
         int unreachable = 0;
         for (auto& sp : m.spawns)
             for (auto& gl : goals) {
-                int a = g.nodeAt(sp.pos + Vec3(0, 0.1f, 0)), b = g.nodeAt(gl + Vec3(0, 0.5f, 0));
+                int a = g.nodeNear(sp.pos + Vec3(0, 0.1f, 0), NavGraph::kStandNear), b = g.nodeNear(gl + Vec3(0, 0.5f, 0), NavGraph::kGoalNear);   // (as bots take them)
                 if (a < 0 || b < 0) {
                     unreachable++;
                     printf("    %s: %s at %.1f %.1f %.1f is off the walkable surfaces\n", name.c_str(), a < 0 ? "spawn" : "goal", a < 0 ? sp.pos.x : gl.x, a < 0 ? sp.pos.y : gl.y, a < 0 ? sp.pos.z : gl.z);
@@ -3544,9 +3545,11 @@ static void testInternetList(uint16_t port) {
 // The bots' nav graph uses a grid for neighbours and nodeAt, and A* for routes (REVIEW PERF-10): the same graph
 // and equally short routes as checking every pair and running Dijkstra, on every map.
 static void testNavGraph() {
-    printf("nav graph: grid build and A* match the brute force on every map\n");
-    size_t maps = 0, surfaces = 0, links = 0;
-    double worstBuild = 0;
+    printf("nav graph: grid build matches the brute force, region A* is exact, routes are real and short, on every map\n");
+    size_t maps = 0, surfaces = 0, links = 0, regionsN = 0;
+    double worstBuild = 0, worstSearch = 0, sumSearch = 0, worstRatio = 1, sumRatio = 0;
+    int searches = 0, routes = 0;
+    const bool verbose = getenv("QUARK_NAV_VERBOSE") != nullptr;
     for (auto& name : listMaps()) {
         Map m;
         if (!m.load(name)) continue;
@@ -3555,20 +3558,16 @@ static void testNavGraph() {
         g.build(m);
         double bt = (timeNow() - t0) * 1000;
         worstBuild = std::max(worstBuild, bt);
-        size_t n = g.nodes.size(), bad = 0;
-        maps++; surfaces += n;
-        for (auto& l : g.links) links += l.size();
+        const size_t n = g.nodes.size(), R = g.regions.size();
+        size_t bad = 0, nl = 0;
+        maps++; surfaces += n; regionsN += R;
+        for (auto& l : g.links) nl += l.size();
+        links += nl;
         for (size_t i = 0; i < n; i++) {   // links: every pair, the old way (ladder links come after, same as build)
             std::vector<std::pair<int, float>> want;
             for (size_t j = 0; j < n; j++) {
-                if (i == j) continue;
-                const auto &a = g.nodes[i], &b = g.nodes[j];
-                float gx = std::max(0.0f, std::max(a.x0, b.x0) - std::min(a.x1, b.x1));
-                float gz = std::max(0.0f, std::max(a.z0, b.z0) - std::min(a.z1, b.z1));
-                float gap = std::sqrt(gx * gx + gz * gz), up = b.y - a.y;
-                if (gap > 2.6f || up > 1.15f || up < -8.0f) continue;
-                float cx = ((a.x0 + a.x1) - (b.x0 + b.x1)) * 0.5f, cz = ((a.z0 + a.z1) - (b.z0 + b.z1)) * 0.5f;
-                want.push_back({(int)j, std::sqrt(cx * cx + cz * cz) + gap * 2 + std::max(up, 0.0f) * 2});
+                float c;
+                if (g.linkCost(m, (int)i, (int)j, c)) want.push_back({(int)j, c});
             }
             bool same = g.links[i].size() >= want.size() && std::equal(want.begin(), want.end(), g.links[i].begin());
             bad += !same;
@@ -3576,37 +3575,208 @@ static void testNavGraph() {
         CHECK(bad == 0);
         uint32_t r = 12345;
         auto rf = [&] { r = r * 1664525u + 1013904223u; return (r >> 8) / 16777216.0f; };
-        int nodeMismatch = 0, pathMismatch = 0;
-        for (int k = 0; k < 400 && n; k++) {   // nodeAt: grid vs every surface
+        int nodeMismatch = 0, pathMismatch = 0, regionMismatch = 0;
+        for (int k = 0; k < 400 && n; k++) {   // nodeAt: grid vs every surface (the highest; of equal ones, the nearest)
             const auto& nd = g.nodes[(size_t)(rf() * n) % n];
             Vec3 p = {nd.x0 - 0.5f + rf() * (nd.x1 - nd.x0 + 1.0f), nd.y + rf() * 0.5f, nd.z0 - 0.5f + rf() * (nd.z1 - nd.z0 + 1.0f)};
-            int best = -1; float by = -1e9f;
+            int best = -1; float by = -1e9f, bo = 1e9f;
             for (size_t i = 0; i < n; i++) {
                 const auto& q = g.nodes[i];
                 if (p.x < q.x0 - 0.3f || p.x > q.x1 + 0.3f || p.z < q.z0 - 0.3f || p.z > q.z1 + 0.3f || q.y > p.y + 0.6f || q.y < p.y - 6.0f) continue;
-                if (q.y > by) { by = q.y; best = (int)i; }
+                float out = std::max({q.x0 - p.x, p.x - q.x1, 0.0f}) + std::max({q.z0 - p.z, p.z - q.z1, 0.0f});
+                if (q.y > by + 1e-4f || (q.y > by - 1e-4f && out < bo)) { by = q.y; bo = out; best = (int)i; }
             }
             nodeMismatch += best != g.nodeAt(p);
         }
-        std::vector<int> path;
-        for (int k = 0; k < 40 && n; k++) {    // A* route length == Dijkstra distance
-            int a = (int)(rf() * n) % (int)n, b = (int)(rf() * n) % (int)n;
-            std::vector<float> d(n, 1e30f);
+        auto dijkstra = [](const std::vector<std::vector<std::pair<int, float>>>& adj, int a) {
+            std::vector<float> d(adj.size(), 1e30f);
             std::priority_queue<std::pair<float, int>, std::vector<std::pair<float, int>>, std::greater<>> q;
             d[a] = 0; q.push({0, a});
-            while (!q.empty()) { auto [du, u] = q.top(); q.pop(); if (du > d[u]) continue; for (auto& [v, c] : g.links[u]) if (du + c < d[v]) { d[v] = du + c; q.push({d[v], v}); } }
-            bool ok = g.findPath(a, b, path);
-            if (ok != (d[b] < 1e29f)) { pathMismatch++; continue; }
+            while (!q.empty()) { auto [du, u] = q.top(); q.pop(); if (du > d[u]) continue; for (auto& [v, c] : adj[u]) if (du + c < d[v]) { d[v] = du + c; q.push({d[v], v}); } }
+            return d;
+        };
+        std::vector<int> path;
+        for (int k = 0; k < 40 && R; k++) {    // region A* route length == Dijkstra distance
+            int a = (int)(rf() * R) % (int)R, b = (int)(rf() * R) % (int)R;
+            auto d = dijkstra(g.rlinks, a);
+            bool ok = g.findRegionPath(a, b, path);
+            if (ok != (d[b] < 1e29f)) { regionMismatch++; continue; }
             if (!ok || a == b) continue;
             float len = 0; int prev = a;
-            for (int v : path) { float c = 1e30f; for (auto& l : g.links[prev]) if (l.first == v) c = std::min(c, l.second); len += c; prev = v; }
-            pathMismatch += prev != b || std::fabs(len - d[b]) > 1e-3f * std::max(1.0f, d[b]);
+            for (int v : path) { float c = 1e30f; for (auto& l : g.rlinks[prev]) if (l.first == v) c = std::min(c, l.second); len += c; prev = v; }
+            regionMismatch += prev != b || std::fabs(len - d[b]) > 1e-3f * std::max(1.0f, d[b]);
         }
-        if (nodeMismatch || pathMismatch || bad) printf("    %s: %zu link lists, %d nodeAt, %d routes differ\n", name.c_str(), bad, nodeMismatch, pathMismatch);
-        CHECK(nodeMismatch == 0 && pathMismatch == 0);
+        // routes over the surfaces: found exactly when there is one, every step a link, ending at b; how much longer
+        // than the shortest (the region plan is coarse) and how long each search takes
+        double mapWorst = 0;
+        for (int k = 0; k < 60 && n; k++) {
+            int a = (int)(rf() * n) % (int)n, b = (int)(rf() * n) % (int)n;
+            if (k % 2) {   // (half of them from and to where players stand: the big regions)
+                for (int t = 0; t < 8 && g.regions[g.region[a]].x1 - g.regions[g.region[a]].x0 < 8; t++) a = (int)(rf() * n) % (int)n;
+                for (int t = 0; t < 8 && g.regions[g.region[b]].x1 - g.regions[g.region[b]].x0 < 8; t++) b = (int)(rf() * n) % (int)n;
+            }
+            auto d = dijkstra(g.links, a);
+            double t1 = timeNow();
+            bool ok = g.findPath(a, b, path);
+            double dt = (timeNow() - t1) * 1e6;
+            searches++; sumSearch += dt; worstSearch = std::max(worstSearch, dt); mapWorst = std::max(mapWorst, dt);
+            if (ok != (d[b] < 1e29f)) { pathMismatch++; continue; }
+            if (!ok || a == b) continue;
+            float len = 0; int prev = a; bool linked = true;
+            for (int v : path) { float c = 1e30f; for (auto& l : g.links[prev]) if (l.first == v) c = std::min(c, l.second); linked = linked && c < 1e29f; len += c; prev = v; }
+            if (!linked || prev != b) { pathMismatch++; continue; }
+            double ratio = d[b] > 0.5f ? len / d[b] : 1.0;
+            routes++; sumRatio += ratio; worstRatio = std::max(worstRatio, ratio);
+        }
+        if (verbose) printf("    %-10s %6zu surfaces %5zu regions %7zu links  build %6.1f ms  worst search %6.0f us\n", name.c_str(), n, R, nl, bt, mapWorst);
+        if (nodeMismatch || pathMismatch || regionMismatch || bad) printf("    %s: %zu link lists, %d nodeAt, %d region routes, %d routes differ\n", name.c_str(), bad, nodeMismatch, regionMismatch, pathMismatch);
+        CHECK(nodeMismatch == 0 && pathMismatch == 0 && regionMismatch == 0);
     }
-    printf("  %zu maps, %zu surfaces, %zu links; slowest build %.2f ms (in the background on a server)\n", maps, surfaces, links, worstBuild);
+    printf("  %zu maps, %zu surfaces in %zu regions, %zu links; slowest build %.1f ms (in the background on a server)\n", maps, surfaces, regionsN, links, worstBuild);
+    printf("  %d routes: search avg %.0f us, worst %.0f us; length vs the shortest avg x%.3f, worst x%.2f\n", searches, searches ? sumSearch / searches : 0, worstSearch,
+           routes ? sumRatio / routes : 1, worstRatio);
     CHECK(maps >= 20);
+    CHECK(routes == 0 || sumRatio / routes < 1.25);   // (the region plan costs a little length, not a detour)
+}
+
+// Bots walk round what stands on a floor (owner, 2026-10-24): nav nodes are walkable tops, and before they were cut round
+// the walls and crates standing on them, a bot and its goal on one floor with a wall between had an empty route, and
+// the bot walked into the wall. Each case is one bot, alone (nothing to fight), put where a bot got stuck and sent where
+// it was going; it must get there within the time a walk round takes, plus slack.
+static void testBotNavBlockers(uint16_t port) {
+    printf("bot navigation round walls and crates on a floor\n");
+    struct Case { const char* what; const char* map; int mode; Vec3 from, to; double limit; };
+    const Case cases[] = {
+        // Depot (bomb): the attackers' gatehouse has a front wall (z 24.6-25, x -8.4..8.4); the bomb carrier stayed behind it
+        {"depot: from the attackers' gate round its front wall to the west site", "depot", MODE_FFA, {-2, 0, 28.5}, {-18, 0, 0}, 16},
+        // Depot: the defenders' yard, east corner to west corner past the perch (x -4..4, 2 m high); blocked at x = 4.4
+        {"depot: across the defenders' yard round the perch", "depot", MODE_FFA, {16, 0, -31}, {-16, 0, -31}, 14},
+        // Summit (KOTH): the west attackers' spawn behind a staircase and a pillar; stuck there ~20 s on the way to the hill
+        {"summit: from the west spawn up to the hill", "summit", MODE_KOTH, {-8, 0, 23}, {0, 4.5f, 0}, 16},
+    };
+    for (const Case& c : cases) {
+        Server s;
+        ServerConfig cfg;
+        cfg.autoStart = false; cfg.map = c.map; cfg.mode = c.mode; cfg.port = port++;
+        s.setLog([](const std::string&) {});
+        if (!s.start(cfg)) { printf("  %s: server didn't start\n", c.what); g_fail++; continue; }
+        int bot = s.addBot(TEAM_A, BOT_ADVANCED);
+        std::vector<NetClient*> none;
+        for (int k = 0; k < 100 && (!s.nav_.ready(s.map_) || !s.players_[bot].alive); k++) pump(s, none, 0.05, idle);
+        CHECK(bot >= 0 && s.nav_.ready(s.map_) && s.players_[bot].alive);
+        if (bot < 0 || !s.players_[bot].alive) { s.stop(); continue; }
+        ServerPlayer& p = s.players_[bot];
+        BotBrain& b = s.bots_[bot];
+        p.move.pos = c.from; p.move.vel = {};
+        b.path.clear(); b.pathPrev = -1; b.needPath = true;
+        const bool hill = c.mode == MODE_KOTH;
+        auto there = [&] {
+            if (hill) return playerBox(p.move).overlaps(s.map_.hill);
+            Vec3 d = p.move.pos - c.to;
+            return d.x * d.x + d.z * d.z < 2.0f * 2.0f && std::fabs(d.y) < 1.5f;
+        };
+        const double t0 = s.time();
+        double took = -1;
+        Vec3 maxStill = p.move.pos;
+        // ...and never held up anywhere on the way: a bot walking into a wall stays within a metre or so of one spot
+        // (jumping at it) until its unstick kicks in, which can still get it there in time
+        Vec3 anchor = p.move.pos; double anchorAt = t0, held = 0; Vec3 heldAt = anchor;
+        while (s.time() - t0 < c.limit && p.alive) {
+            if (!hill) { b.goal = c.to; b.goalUntil = s.time() + 60; }   // (free for all: the goal a roaming bot would have)
+            pump(s, none, 0.02, idle);
+            if (there()) { took = s.time() - t0; break; }
+            maxStill = p.move.pos;
+            { float dx = p.move.pos.x - anchor.x, dz = p.move.pos.z - anchor.z;
+              if (dx * dx + dz * dz > 1.5f * 1.5f) { anchor = p.move.pos; anchorAt = s.time(); }
+              else if (s.time() - anchorAt > held) { held = s.time() - anchorAt; heldAt = anchor; } }
+            if (getenv("QUARK_NAV_TRACE") && (int)((s.time() - t0) * 50) % 25 == 0) printf("    t %.1f pos %.2f %.2f %.2f path %zu\n", s.time() - t0, p.move.pos.x, p.move.pos.y, p.move.pos.z, b.path.size());
+        }
+        printf("  %s: %s (%.1f s; limit %.0f s)%s\n", c.what, took >= 0 ? "got there" : "STUCK", took >= 0 ? took : s.time() - t0, c.limit,
+               took >= 0 ? "" : (" at " + std::to_string(maxStill.x).substr(0, 6) + " " + std::to_string(maxStill.y).substr(0, 5) + " " + std::to_string(maxStill.z).substr(0, 6)).c_str());
+        if (held > 2.5) printf("    held up %.1f s at %.1f %.1f %.1f\n", held, heldAt.x, heldAt.y, heldAt.z);
+        CHECK(took >= 0);
+        CHECK(held <= 2.5);
+        s.stop();
+    }
+}
+
+// quark_tests navbench [map] [kind]: the bots' nav graph per map: build time, size, and route searches between random
+// spots players stand on (avg / p99 / worst), for perf work on the graph (kind: bots, the default, or surfaces)
+// (surfaces: the search as it was before the graph was cut up and split into regions, A* with a straight-line
+// heuristic over every top: the "before" numbers)
+static bool oldAStar(const NavGraph& G, int a, int b, std::vector<int>& out) {
+    static std::vector<float> g; static std::vector<int> prev; static std::vector<uint32_t> stamp; static std::vector<std::pair<float, int>> heap; static uint32_t cur = 0;
+    const auto& nodes = G.nodes;
+    out.clear();
+    if (a == b) return true;
+    if (g.size() < nodes.size()) { g.resize(nodes.size()); prev.resize(nodes.size()); stamp.assign(nodes.size(), 0); cur = 0; }
+    if (++cur == 0) { std::fill(stamp.begin(), stamp.end(), 0); cur = 1; }
+    float hs = 1.0f;
+    static const NavGraph* last = nullptr; static float lastH = 1;
+    if (last != &G) {   // (the old graph's scale: over every link)
+        for (size_t i = 0; i < nodes.size(); i++) for (auto& [j, c] : G.links[i]) {
+            float dx = ((nodes[i].x0 + nodes[i].x1) - (nodes[j].x0 + nodes[j].x1)) * 0.5f, dz = ((nodes[i].z0 + nodes[i].z1) - (nodes[j].z0 + nodes[j].z1)) * 0.5f;
+            float d = std::sqrt(dx * dx + dz * dz); if (d > 1e-3f) hs = std::min(hs, c / d); }
+        last = &G; lastH = hs * 0.999f;
+    }
+    hs = lastH;
+    auto cx = [&](int i) { return (nodes[i].x0 + nodes[i].x1) * 0.5f; };
+    auto cz = [&](int i) { return (nodes[i].z0 + nodes[i].z1) * 0.5f; };
+    const float bx = cx(b), bz = cz(b);
+    auto h = [&](int i) { float dx = cx(i) - bx, dz = cz(i) - bz; return std::sqrt(dx * dx + dz * dz) * hs; };
+    heap.clear();
+    stamp[a] = cur; g[a] = 0; prev[a] = -1;
+    heap.push_back({-h(a), a});
+    auto cmp = [](const std::pair<float, int>& x, const std::pair<float, int>& y) { return x.first < y.first; };
+    bool found = false;
+    while (!heap.empty()) {
+        std::pop_heap(heap.begin(), heap.end(), cmp);
+        auto [nf, u] = heap.back();
+        heap.pop_back();
+        if (-nf > g[u] + h(u) + 1e-4f) continue;
+        if (u == b) { found = true; break; }
+        for (auto& [v, c] : G.links[u]) {
+            float ng = g[u] + c;
+            if (stamp[v] != cur || ng < g[v]) { stamp[v] = cur; g[v] = ng; prev[v] = u; heap.push_back({-(ng + h(v)), v}); std::push_heap(heap.begin(), heap.end(), cmp); }
+        }
+    }
+    if (!found) return false;
+    for (int v = b; v != a; v = prev[v]) out.push_back(v);
+    std::reverse(out.begin(), out.end());
+    return true;
+}
+
+static void navBench(const char* only, bool surfaces) {
+    for (auto& name : listMaps()) {
+        if (only && name != only) continue;
+        Map m;
+        if (!m.load(name)) continue;
+        NavGraph g;
+        double best = 1e9;
+        for (int k = 0; k < 3; k++) { double t0 = timeNow(); g.build(m, surfaces ? NavKind::Surfaces : NavKind::Bots); best = std::min(best, timeNow() - t0); }
+        size_t nl = 0;
+        for (auto& l : g.links) nl += l.size();
+        // where spawns' routes go: random pieces of the regions spawns are in or reach (the playable part)
+        std::vector<int> spots;
+        std::vector<char> seen(g.nodes.size(), 0);
+        for (auto& sp : m.spawns) { int a = g.nodeNear(sp.pos + Vec3(0, 0.1f, 0), NavGraph::kStandNear); if (a >= 0 && !seen[a]) { seen[a] = 1; spots.push_back(a); } }
+        for (size_t i = 0; i < spots.size(); i++) for (auto& l : g.links[spots[i]]) if (!seen[l.first]) { seen[l.first] = 1; spots.push_back(l.first); }
+        uint32_t r = 99;
+        auto ri = [&](size_t n) { r = r * 1664525u + 1013904223u; return (int)((r >> 8) % n); };
+        std::vector<double> t;
+        std::vector<int> path;
+        for (int k = 0; k < 4000 && !spots.empty(); k++) {
+            int a = spots[ri(spots.size())], b = k % 8 == 7 ? ri(g.nodes.size()) : spots[ri(spots.size())];   // (1 in 8 to anywhere: tops nobody reaches)
+            double t0 = timeNow();
+            if (surfaces) oldAStar(g, a, b, path); else g.findPath(a, b, path);
+            t.push_back((timeNow() - t0) * 1e6);
+        }
+        std::sort(t.begin(), t.end());
+        double sum = 0;
+        for (double v : t) sum += v;
+        printf("  %-10s %6zu nodes %5zu regions %7zu links  build %6.1f ms  search avg %5.1f us  p99 %6.1f us  worst %6.1f us\n", name.c_str(), g.nodes.size(),
+               g.regions.size(), nl, best * 1000, t.empty() ? 0 : sum / t.size(), t.empty() ? 0 : t[t.size() * 99 / 100], t.empty() ? 0 : t.back());
+    }
 }
 
 static constexpr float kAimSample = 75.0f; // s of game time per tick rate (all four levels at once)
@@ -4029,7 +4199,7 @@ static void testStairs() {
         if (!m.load(name)) continue;
         HumanMadeGrace hg(name, m);
         NavGraph g;
-        g.build(m);
+        g.build(m, NavKind::Surfaces);   // (every walkable top whole: the bots' graph cuts out what stands on them)
         for (const Map::Stairs& st : m.stairs) {
             float x0 = st.x0, z0 = st.z0, x1 = st.x1, z1 = st.z1, base = st.base, top = st.top, rising = st.rising;
             bool solid = st.solid;
@@ -7154,11 +7324,26 @@ static void testBots(uint16_t& port) {
 
 // Server CPU benchmark: a full server (bots fighting + human clients receiving snapshots) on a busy map;
 // prints the time per tick (simulate + snapshots) against the 1 ms budget of a 1000 Hz server.
-static void serverBench(uint16_t port, int bots, int humans, double seconds, const char* map) {
+// serverbench: the bots' thinking per tick, timed through the think hook (summed per tick)
+static uint64_t g_benchThinkTick = ~0ull;
+static double g_benchThinkSum = 0;
+static std::vector<float>* g_benchThinks = nullptr;
+static UserCmd benchThink(Server& s, int id) {
+    if (s.tick_ != g_benchThinkTick) {
+        if (g_benchThinkTick != ~0ull && g_benchThinks) g_benchThinks->push_back((float)g_benchThinkSum);
+        g_benchThinkTick = s.tick_; g_benchThinkSum = 0;
+    }
+    double t0 = timeNow();
+    UserCmd c = botThinkDirect(s, id);
+    g_benchThinkSum += timeNow() - t0;
+    return c;
+}
+static void serverBench(uint16_t port, int bots, int humans, double seconds, const char* map, int mode = MODE_FFA, int rate = 0) {
     g_serverRateCheck = false; // measure at 1000 Hz, don't step down
     Server s;
     ServerConfig cfg;
-    cfg.map = map; cfg.mode = MODE_FFA; cfg.port = port; cfg.autoStart = true; cfg.maxPlayers = kMaxPlayers;
+    cfg.map = map; cfg.mode = mode; cfg.port = port; cfg.autoStart = true; cfg.maxPlayers = kMaxPlayers;
+    if (rate) cfg.maxTickRate = rate;
     s.setLog([](const std::string&) {});
     if (!s.start(cfg)) { printf("  start failed\n"); return; }
     std::vector<std::unique_ptr<NetClient>> owned;
@@ -7168,20 +7353,35 @@ static void serverBench(uint16_t port, int bots, int humans, double seconds, con
         owned.back()->connect("127.0.0.1:" + std::to_string(port), "h" + std::to_string(i));
         cls.push_back(owned.back().get());
     }
-    for (int i = 0; i < bots; i++) s.addBot(TEAM_A, BOT_ADVANCED);
+    const bool teams = modeIsTeamBased(mode);
+    for (int i = 0; i < bots; i++) s.addBot(teams && i % 2 ? TEAM_B : TEAM_A, BOT_ADVANCED);
     pump(s, cls, 2.0, idle);
+    if (teams) { s.command("forcestart"); pump(s, cls, 0.5, idle); }   // (a team mode: everyone spawns at once, as a round starts)
     std::vector<float> t;
     t.reserve(200000);
     s.tickTimes_ = &t;
+    std::vector<float> th;
+    th.reserve(200000);
+    g_benchThinks = &th; g_benchThinkTick = ~0ull; g_botThinkHook = benchThink;
     pump(s, cls, seconds, [](int i) { UserCmd c; c.forward = 127; c.yaw = i * 1.3f + (float)timeNow(); c.buttons = BTN_JUMP | BTN_FIRE; return c; });
+    g_botThinkHook = nullptr; g_benchThinks = nullptr;
     s.tickTimes_ = nullptr;
+    std::sort(th.begin(), th.end());
+    auto pctTh = [&](double p) { return th.empty() ? 0.0 : th[std::min(th.size() - 1, (size_t)(th.size() * p))] * 1e6; };
+    // the bots' perception phases: how many look on the same tick (the busiest tick of each 50 ms)
+    int slots[1000] = {}, busiest = 0, period = std::max(1, (int)std::lround(0.05 * s.tickRate()));
+    for (int i = 0; i < kMaxPlayers; i++)
+        if (s.players_[i].connected && s.players_[i].isBot && s.players_[i].alive && period <= 1000)
+            busiest = std::max(busiest, ++slots[(int)(std::llround(s.bots_[i].nextLook * s.tickRate()) % period)]);
     std::sort(t.begin(), t.end());
     double sum = 0;
     for (float v : t) sum += v;
     auto pct = [&](double p) { return t.empty() ? 0.0 : t[std::min(t.size() - 1, (size_t)(t.size() * p))] * 1e6; };
-    printf("  SERVERBENCH %s: %d bots + %d clients, %zu ticks at %d Hz: avg %.1f us  p99 %.1f us  p99.9 %.1f us  worst %.1f us  (%.1f%% of the tick budget)\n",
-           map, bots, humans, t.size(), s.tickRate(), t.empty() ? 0 : sum / t.size() * 1e6, pct(0.99), pct(0.999), t.empty() ? 0 : t.back() * 1e6,
-           t.empty() ? 0 : sum / t.size() * s.tickRate() * 100);
+    printf("  SERVERBENCH %s %s: %d bots + %d clients, %zu ticks at %d Hz: avg %.1f us  p99 %.1f us  p99.9 %.1f us  worst %.1f us  (%.1f%% of the tick budget); at most %d bots look on one tick\n"
+           "    bot thinks per tick: avg %.1f us  p99 %.1f us  p99.9 %.1f us  worst %.1f us\n",
+           map, modeName(mode), bots, humans, t.size(), s.tickRate(), t.empty() ? 0 : sum / t.size() * 1e6, pct(0.99), pct(0.999), t.empty() ? 0 : t.back() * 1e6,
+           t.empty() ? 0 : sum / t.size() * s.tickRate() * 100, busiest,
+           th.empty() ? 0 : std::accumulate(th.begin(), th.end(), 0.0) / th.size() * 1e6, pctTh(0.99), pctTh(0.999), th.empty() ? 0 : th.back() * 1e6);
     qzoneDump();
     s.stop();
 }
@@ -7604,9 +7804,14 @@ int main(int argc, char** argv) {
 #endif
     }
     if (argc >= 2 && std::string(argv[1]) == "playtest") { playtestMaps(TP(29400), argc > 2 ? atof(argv[2]) : 40); return 0; }
-    if (argc >= 2 && std::string(argv[1]) == "serverbench") {
-        serverBench(TP(29300), 12, 4, argc > 2 ? atof(argv[2]) : 15, "harbor");
-        serverBench(TP(29301), 24, 8, argc > 2 ? atof(argv[2]) : 15, "hamlet");
+    if (argc >= 2 && std::string(argv[1]) == "serverbench") {   // [secs] [run: 1..5, or all]
+        double secs = argc > 2 ? atof(argv[2]) : 15;
+        int only = argc > 3 ? atoi(argv[3]) : 0;
+        if (!only || only == 1) serverBench(TP(29300), 12, 4, secs, "harbor");
+        if (!only || only == 2) serverBench(TP(29301), 24, 8, secs, "hamlet");
+        if (!only || only == 3) serverBench(TP(29302), 16, 4, secs, "midtown", MODE_POINTS);
+        if (!only || only == 4) serverBench(TP(29303), 16, 0, secs * 2, "depot", MODE_BOMB);        // (rounds: everyone respawns at once)
+        if (!only || only == 5) serverBench(TP(29304), 16, 0, secs * 2, "depot", MODE_BOMB, 125);   // (...at 125 Hz: a look period is 6 ticks)
         return 0;
     }
     if (argc >= 2 && std::string(argv[1]) == "signing") { testSigning(); return g_fail ? 1 : 0; }
@@ -7645,7 +7850,9 @@ int main(int argc, char** argv) {
     if (argc >= 2 && std::string(argv[1]) == "kick") { testKickByName(TP(29981)); testAddbotArgs(TP(29982)); testSpecVote(TP(29983)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "it") { testItModes(TP(29450)); testTagLateJoin(TP(29455)); testBotGoalsAfterMapChange(TP(29456)); return g_fail ? 1 : 0; }
     if (argc >= 2 && std::string(argv[1]) == "aim") { uint16_t p = TP(29500); testBotAim(p); return g_fail ? 1 : 0; }
-    if (argc >= 2 && std::string(argv[1]) == "nav") { testNavGraph(); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "nav") { testNavGraph(); setTimeScale(kTestTimeScale); testBotNavBlockers(TP(29030)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "navstuck") { setTimeScale(kTestTimeScale); testBotNavBlockers(TP(29030)); return g_fail ? 1 : 0; }
+    if (argc >= 2 && std::string(argv[1]) == "navbench") { navBench(argc > 2 && std::string(argv[2]) != "all" ? argv[2] : nullptr, argc > 3 && std::string(argv[3]) == "surfaces"); return 0; }
     if (argc >= 2 && std::string(argv[1]) == "ffaexperts") {   // the seeded FFA vs experts, over many seeds
         int n = argc > 2 ? atoi(argv[2]) : 10;
         for (int k = 0; k < n; k++) {
@@ -7697,7 +7904,7 @@ int main(int argc, char** argv) {
     struct T { const char* name; std::function<void()> run; };
     std::vector<T> par = {   // (longest first: they set the wall time)
         {"bots", [] { uint16_t p = TP(28900); testBots(p); }},
-        {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotAim(p); testHostedBotsThreadExit(TP(29010)); testBotHurtTurn(TP(29011)); }},
+        {"botaim", [] { uint16_t p = TP(29000); testNavGraph(); testBotNavBlockers(TP(29030)); testBotAim(p); testHostedBotsThreadExit(TP(29010)); testBotHurtTurn(TP(29011)); }},
         {"botfalls", [] { testBotFalls(TP(29060)); }},
         {"brains", [] { g_fail += brainTests(TP(29150)); }},
         {"modelogic", [] { g_fail += modeTests(); }},
