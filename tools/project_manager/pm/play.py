@@ -112,9 +112,9 @@ os.write(1, str(p.pid).encode())
 class PlayError(Exception):
     """A request that could not be done: HTTP code and a sentence for q."""
 
-    def __init__(self, code, message):
+    def __init__(self, code, message, reason=None):
         super().__init__(message)
-        self.code, self.message = code, message
+        self.code, self.message, self.reason = code, message, reason
 
 
 # ---- time (Dallas) ---------------------------------------------------------------------------------------------
@@ -735,8 +735,12 @@ class Play:
             s = self._session(str(sid or ""))
             if not s:
                 raise PlayError(404, "No such game session.")
+            if s.get("state") == "skipped":
+                return dict(s, noop=True)  # (skipped already, e.g. from another page: nothing to do)
+            if s.get("state") == "noted":
+                raise PlayError(409, "That game's note was already saved.", "already-noted")
             if s.get("state") != "needsNote":
-                raise PlayError(409, "That session is not waiting for a note.")
+                raise PlayError(409, "That game is still running.", "running")
             s["state"] = "skipped"
             s["skippedAt"] = util.now_iso()
         self._save_sessions()
@@ -754,9 +758,10 @@ class Play:
             s = self._session(str(sid or ""))
             if not s:
                 raise PlayError(404, "No such game session.")
+            if s.get("state") == "noted":  # (saved from another page already: never a second copy)
+                raise PlayError(409, "That game's note was already saved.", "already-noted")
             if s.get("state") not in ("needsNote", "skipped"):
-                raise PlayError(409, "That session already has a note." if s.get("state") == "noted" else
-                                "That game is still running.")
+                raise PlayError(409, "That game is still running.", "running")
             base = title = note_title(s)
             taken = {(n.get("title"), n.get("stamp")) for n in self.notes()}
             k = 2

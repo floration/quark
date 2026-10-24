@@ -188,6 +188,11 @@ the Play page calls `quarkShell.playChanged()` after starting a game or saving a
 a blue badge on the Play tab. When a new note waits (a game it started closed), the shell opens the Play tab at
 `#note=<session>`, restores and shows the window, puts it on top for a moment and focuses it; when Windows refuses the
 focus the taskbar button flashes until the window is focused. Notes already waiting when the app starts only badge.
+`server.py --init` (tabs.upgrade) puts a new default tab right after the default tab before it that q's tabs.json has
+(Play: right after the Supervisor Board, its first child), not at the end; a Play tab an older upgrade appended (or
+one without its `parent`) is moved there once (`defaultsPlaced` in tabs.json), after which q's placement stays.
+A note form whose session was saved or skipped elsewhere closes on the next refresh; Save / Skip on it answer 409
+`already-noted` (Skip of a skipped session is an ok no-op), so a note is never written twice.
 
 ## Testing without Windows
 
