@@ -282,7 +282,7 @@ export class SimView {
     _req(rules) {
         const f = this.form, n = this._value("bots");
         const req = { map: this._value("map"), skill: f.skill, seed: f.seed, seconds: f.secs, tickRate: f.hz, rate: 4,
-            realtime: f.real, speed: 1, until: "matchEnd", trace: f.trace };
+            realtime: f.real, speed: 1, until: "matchEnd", trace: f.trace && !!rules && /^logic(?:$|[ \t\r])/m.test(rules) };   // (no logic: nothing to trace)
         const a = f.brainA || "default", b = f.brainB || a;
         req.bots = a === b ? n : Array.from({ length: n }, (_, i) => ({ brain: i % 2 ? b : a }));
         if (a === b && a !== "default") req.brain = a;
