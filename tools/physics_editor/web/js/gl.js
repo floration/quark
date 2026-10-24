@@ -21,7 +21,8 @@ void main(){
   float k = clamp((vd - fogFar * 0.25) / fogFar, 0.0, 0.7);
   gl_FragColor = vec4(mix(col, fog, k), 1.0);
 }`;
-const LVS = `attribute vec3 p; attribute vec3 c; uniform mat4 m; varying vec3 vc; void main(){ gl_Position = m * vec4(p, 1.0); vc = c; }`;
+// (WebGL draws 1 px lines only: a wider line is the same lines drawn again, shifted a pixel on screen: `off`, in clip space)
+const LVS = `attribute vec3 p; attribute vec3 c; uniform mat4 m; uniform vec2 off; varying vec3 vc; void main(){ gl_Position = m * vec4(p, 1.0); gl_Position.xy += off * gl_Position.w; vc = c; }`;
 const LFS = `precision mediump float; varying vec3 vc; void main(){ gl_FragColor = vec4(vc, 1.0); }`;
 
 const RAMP = [[44, 58, 76], [40, 86, 108], [42, 120, 120], [84, 150, 104], [160, 168, 96], [214, 186, 112], [236, 222, 180]];
@@ -60,7 +61,7 @@ export class GLScene {
         this.a = { p: gl.getAttribLocation(this.pr, "p"), c: gl.getAttribLocation(this.pr, "c"), n: gl.getAttribLocation(this.pr, "n") };
         this.u = { m: gl.getUniformLocation(this.pr, "m"), eye: gl.getUniformLocation(this.pr, "eye"), fog: gl.getUniformLocation(this.pr, "fog"), grid: gl.getUniformLocation(this.pr, "grid"), fogFar: gl.getUniformLocation(this.pr, "fogFar") };
         this.lpr = prog(LVS, LFS);
-        this.la = { p: gl.getAttribLocation(this.lpr, "p"), c: gl.getAttribLocation(this.lpr, "c") }; this.lu = gl.getUniformLocation(this.lpr, "m");
+        this.la = { p: gl.getAttribLocation(this.lpr, "p"), c: gl.getAttribLocation(this.lpr, "c") }; this.lu = gl.getUniformLocation(this.lpr, "m"); this.lo = gl.getUniformLocation(this.lpr, "off");
         this.buf = gl.createBuffer(); this.n = 0;
         this.dynBuf = gl.createBuffer(); this.dyn = new Float32Array(MAX_DYN * 36 * 9); this.nDyn = 0;
         gl.bindBuffer(gl.ARRAY_BUFFER, this.dynBuf); gl.bufferData(gl.ARRAY_BUFFER, this.dyn.byteLength, gl.DYNAMIC_DRAW);
@@ -113,7 +114,7 @@ export class GLScene {
         if (this.c.width !== W || this.c.height !== H) { this.c.width = W; this.c.height = H; return true; }
         return false;
     }
-    // eye: [x,y,z]; view: Float32Array(16) (lookAt); fovY radians
+    // eye: [x,y,z]; view: Float32Array(16) (lookAt); fovY radians; opts.lineWidth: the strips' width in CSS px (1..4)
     render(eye, view, fovY, opts = {}) {
         const gl = this.gl; if (!gl) return;
         this.resize();
@@ -147,7 +148,10 @@ export class GLScene {
             gl.enableVertexAttribArray(this.la.p); gl.vertexAttribPointer(this.la.p, 3, gl.FLOAT, false, 24, 0);
             gl.enableVertexAttribArray(this.la.c); gl.vertexAttribPointer(this.la.c, 3, gl.FLOAT, false, 24, 12);
             gl.disable(gl.DEPTH_TEST);
-            gl.drawArrays(gl.LINES, 0, this.nLine);
+            const lw = Math.max(1, Math.min(4, Math.round((opts.lineWidth || 1) * Math.min(2, window.devicePixelRatio || 1))));
+            // (a plus of device pixels, lw across: as wide whichever way a line runs; the centre drawn once)
+            for (let j = 0; j < lw; j++) { gl.uniform2f(this.lo, (2 * j - lw + 1) / W, 0); gl.drawArrays(gl.LINES, 0, this.nLine); }
+            for (let j = 0; j < lw; j++) if (2 * j !== lw - 1) { gl.uniform2f(this.lo, 0, (2 * j - lw + 1) / H); gl.drawArrays(gl.LINES, 0, this.nLine); }
             gl.enable(gl.DEPTH_TEST);
         }
     }
