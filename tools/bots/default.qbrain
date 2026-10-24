@@ -1,0 +1,291 @@
+version 1
+brain "default"
+levels BEGINNER INTERMEDIATE ADVANCED EXPERT
+
+# The built-in bot brain. One value = every level; four = BEGINNER INTERMEDIATE ADVANCED EXPERT.
+# Every number here is today's (1.18.4) bot exactly: the game runs this brain as native code, and a test
+# (quark_tests brainlockstep) checks that the interpreter running this text makes the same input every tick.
+
+# perception: what it sees and hears
+param fov f32 = 1.55 1.7 1.85 2 # full horizontal view cone (rad)
+param viewDist f32 = 150 # sees nobody farther than this (m)
+param vertCone f32 = 0.95 # vertical half cone (rad)
+param feelDist f32 = 1.2 # someone this close is noticed in any direction (bumped into) (m)
+param chestHeight f32 = 1.1 # line of sight checked to the chest... (m above the feet, x body scale)
+param headHeight f32 = 1.6 # ...and the head (m, x body scale)
+param lookEvery f64 = 0.05 # perception runs this often (s of game time)
+param hearSteps f32 = 12 16 20 24 # footsteps heard within (m)
+param hearGun f32 = 45 55 65 75 # gunfire heard within (m)
+param hearGunWindow f64 = 0.2 # a shot can be heard this long after it (s)
+param hearStepSpeed f32 = 3 # footsteps are audible above this ground speed (m/s)
+param hearDashMult f32 = 1.5 # a dash is heard this many times farther than footsteps
+param soundErr f32 = 0.3 0.22 0.15 0.1 # heard position error, fraction of the distance (sd)
+param soundNewWindow f64 = 0.6 # a sound after this long is a new one: a fresh guess (s)
+param soundRefine f32 = 0.15 # a repeated sound moves the guess this far toward the truth
+param memory f32 = 1.5 2.5 3.5 5 # a last-seen position is hunted / aimed at for (s)
+param reactMs f32 = 450 300 200 150 # reaction time to a newly seen target (ms)
+param reacquire f32 = 0.75 0.65 0.55 0.45 # reaction multiplier for a target lost a moment ago
+param reacquireWindow f64 = 1 # "a moment ago" (s)
+param targetAimHeight f32 = 1.1 # target choice measures to this point above the feet (m)
+param targetAngleWeight f32 = 12 # target score: metres per rad off the crosshair
+param targetKeepBonus f32 = 6 # target score: the current target counts this much nearer (m)
+
+# aim: the hand, the eyes, the misjudgements
+param visDelayMs f32 = 160 120 90 60 # sees the target as it was this long ago (ms)
+param predict f32 = 0 0.3 0.6 0.8 # fraction of that delay extrapolated; hunt extrapolation; feed-forward
+param velTau f32 = 0.4 0.28 0.16 0.09 # perceived velocity catch-up time constant (s)
+param initVelEst f32 = 0.5 # a new target's velocity starts at this fraction of what was seen
+param speedJudge f32 = 0.3 0.2 0.12 0.07 # sd of the perceived speed factor
+param huntPredictCap f64 = 0.5 # a hidden target is extrapolated at most this long (s)
+param trackBase f32 = 0.1 0.06 0.045 0.03 # tracking error sd on a still target (rad)
+param trackPerRad f32 = 0.15 0.1 0.075 0.055 # extra tracking error sd per rad/s of crossing speed
+param trackPitch f32 = 0.6 # pitch share of the tracking error
+param noiseTau f32 = 0.25 0.2 0.15 0.12 # how slowly the tracking error wanders (s)
+param flickErr f32 = 0.22 0.15 0.1 0.06 # flick landing sd, fraction of the flick
+param overshoot f32 = 0.12 0.09 0.06 0.03 # mean flick overshoot (fraction)
+param flickMin f32 = 0.05 # flicks smaller than this land exactly (rad)
+param flickAcross f32 = 0.5 # sideways flick error, share of the along error
+param flickPitch f32 = 0.6 # pitch share of the flick error
+param settleTau f32 = 0.3 0.22 0.15 0.09 # flick error correction time constant (s)
+param trackGain f32 = 7 10 15 22 # aim correction gain while tracking (1/s)
+param turnRate f32 = 4 6 9 13 # top hand speed (rad/s)
+param turnAccel f32 = 25 40 70 120 # hand acceleration (rad/s^2)
+param handBrake f32 = 0.85 # hand braking curve factor
+param lookGain f32 = 10 # aim gain just looking around (1/s)
+param soundGain f32 = 14 # aim gain turning to a sound (1/s)
+param hookAimGain f32 = 25 # aim gain onto a grapple anchor (1/s)
+param hookAimTol f32 = 0.08 # the route hook fires when the aim is this close (rad)
+param soundLookWindow f64 = 1.2 # looks toward a sound this fresh (s)
+param fireCone f32 = 0.15 0.1 0.07 0.04 # clicks when the aim error is below this (rad, + body width / distance)
+param leadMean f32 = 0.3 0.6 0.85 0.95 # mean fraction of the needed projectile lead
+param leadSd f32 = 0.35 0.3 0.2 0.12 # sd of the lead (drop: x 0.7)
+param canLead bool = no no yes yes # leads well: projectile weapon lists, knife throws, rockets at the feet, rifle scope
+param rocketFeetHeight f32 = 0.1 # with canLead: rockets aim this high above the target's feet (m)
+param aimHeight f32 = 1 1.1 1.2 1.3 # aim point above the feet (m, x body scale)
+param weapons bool = no yes yes yes # picks weapons by range (else the rifle)
+param weaponClose f32 = 7 # close range ends here (m)
+param weaponMid f32 = 18 # mid range ends here (m)
+param weaponFar f32 = 35 # far range ends here; beyond: very far (m)
+param knifeThrowMax f32 = 18 # throws the knife at targets out of reach but nearer than this (m)
+param rifleScopeDist f32 = 30 # with canLead: scopes the rifle beyond this (m)
+
+# fight movement
+param strafe f32 = 0.35 0.7 1 1 # share of fight time spent strafing
+param jukeRate f32 = 1 1.4 2 2.6 # strafe direction changes per second
+param rangeBand f32 = 3 # keeps within this of the weapon's ideal range (m)
+param edgeFlipDot f32 = -0.2 # by a drop: a strafe pointing this much toward it is flipped
+param edgePushNear f32 = 1.5 # by a drop (3 m): steps away from it this hard
+param edgePushFar f32 = 0.7 # near a drop (5 m): steps away this hard
+param jumpRate f32 = 0 0.1 0.35 0.6 # fight jumps per second
+param dashRate f32 = 0 0.05 0.2 0.35 # fight dashes per second
+param dashCloseDist f32 = 20 # a fight dash closes in beyond this, else dodges sideways (m)
+param pulledDashRate f32 = 3 # dashes out of an enemy's grapple, per second
+param pulledDashMinRange f32 = 6 # ...when the weapon wants more range than this (m)
+param grapple bool = no no yes yes # uses the grapple (routes, fights)
+param fightHookMin f32 = 7 # hooks a target farther than this (m)...
+param fightHookChance f32 = 0.3 0.3 0.3 0.5 # ...with this chance per try
+param fightHookRetry f64 = 0.5 # tries again after (s)
+param fightHookHold f64 = 0.3 # holds the aim on the target for the hook this long (s)
+
+# routes
+param bhop bool = no no yes yes # bunny-hops on routes
+param bhopMinDist f32 = 3 # ...toward waypoints farther than this (m)
+param airStrafe f32 = 0 0 0.6 0.9 # air-strafe quality 0..1
+param runDash f32 = 0 0 0.15 0.35 # dashes per second on long straight routes
+param runDashMinDist f32 = 9 # ...toward a waypoint farther than this (m)
+param runDashStraight f32 = 0.95 # ...when facing it this squarely (cos)
+param dashJump bool = no no no yes # makes a run dash a dash jump
+param dashJumpMinDist f32 = 20 # ...toward a waypoint farther than this (m)
+param hookRetry f64 = 0.5 0.5 0.5 0.25 # route hook: looks for an anchor this often (s)
+param hookRetryGrappleOnly f64 = 0.2 # ...in grapple-only movement (s)
+param hookRise f32 = 2 2 2 1.2 # hooks up to ledges higher than this (m)...
+param hookRiseReach f32 = 30 # ...nearer than this (m)
+param hookFlat f32 = 14 14 14 8 # hooks across open ground longer than this (m)...
+param hookFlatDrop f32 = -3 # ...not dropping more than this (m)
+param repathEvery f64 = 1.5 # plans the route again after (s)...
+param repathRand f64 = 1 # ...plus up to this (s)
+param steerEvery f64 = 0.02 # picks the next waypoint this often (s)
+param defuseDist f32 = 1.5 # bomb: defuses within this (m)
+param objectiveSlow f32 = 0.3 # on the hill / point: moves at this fraction
+param stuckDist f32 = 0.5 # moved less than this...
+param stuckEvery f64 = 1.5 # ...in this long: stuck (s)
+param unstickTime f64 = 0.8 # sidesteps this long when stuck (s)
+param glanceIdle f32 = 2.6 # standing: looks up to this far around (rad)
+param glanceMoving f32 = 1.6 # moving: glances up to this far off the route (rad)
+
+# objectives: hunting, roaming, hide and seek / tag
+param arriveDist f32 = 2 # a goal this close is reached (m)
+param huntHeardWindow f64 = 3 # no objective: goes after sounds this fresh (s)
+param roamGoal f64 = 8 # roams to a spawn point for (s)...
+param roamGoalRand f64 = 6 # ...plus up to this (s)
+param seekLocatorWindow f64 = 0.1 # seeker: follows a locator find this fresh (s)...
+param seekLocatorGoal f64 = 6 # ...for this long (s)
+param seekHeardWindow f64 = 1 # seeker: follows sounds this fresh (s)...
+param seekUnseen f64 = 1 # ...of someone not seen for this long (s)...
+param seekHeardGoal f64 = 4 # ...for this long (s)
+param seekWanderGoal f64 = 12 # seeker: wanders to a spot for (s)
+param evadeRangeTag f32 = 30 # tag: runs from "it" seen within (m)
+param evadeRangeHide f32 = 18 # hide and seek: runs from the seeker seen within (m)
+param evadeHeardMult f32 = 0.5 # ...or heard within this fraction of that
+param evadeFresh f64 = 0.8 # ...this recently (s)
+param fleeCandidates int = 12 # spots looked at for an escape
+param fleeNearWeight f32 = 0.5 # escape score: distance from "it" minus this x distance from here
+param fleeGoal f64 = 6 # runs to the escape spot for (s)
+param fleeCommit f64 = 1.5 # committed to it for this long (s)...
+param fleeHesitate f32 = 0.8 # ...plus this x (1 - fleePredict) (s)
+param fleePredict f32 = 0 0.3 0.6 0.8 # how well it reads where "it" is going
+param hideHold f64 = 90 # hider keeps one spot for (s)...
+param hideArrive f32 = 1.2 # ...and stands still within this of it (m)
+param evadeWanderGoal f64 = 10 # tag runner: wanders to a spot for (s)
+
+curve reactAngle(off f32) = 1.0f + 0.5f * off / (fov * 0.5f) # slower out of the corner of the eye
+curve reactDist(dist f32) = steps 1, 40: 1.25 # slower far away
+
+# weapon preferences, best first (the first one the server allows is used)
+list close = shotgun knife laser bubble rocket rifle sticky crossbow sniper syringe
+list mid = rocket laser rifle sticky bubble crossbow shotgun sniper knife syringe
+list midNoLead = rifle laser shotgun rocket sticky crossbow bubble sniper knife syringe
+list far = crossbow rifle sniper laser rocket sticky shotgun bubble knife syringe
+list farNoLead = rifle sniper laser crossbow rocket sticky shotgun bubble knife syringe
+list vfar = sniper crossbow rifle rocket sticky laser shotgun bubble knife syringe
+list hookWeapons = shotgun knife laser bubble # close-range weapons: hooks the target in to use them
+table idealRange = shotgun 4, sniper 40, knife 1.5, laser 12, sticky 10, bubble 7, crossbow 22, rifle 18, else 14 # m
+
+# perception
+slot react:
+  r = reactMs * 0.001f * reactAngle(off) * reactDist(dist)
+  if sinceSeen < reacquireWindow: r = r * reacquire # lost behind cover a moment ago: expected back
+  return r
+
+slot hearing:
+  gun = gunAge < hearGunWindow and dist < hearGun
+  steps = onGround and groundSpeed > hearStepSpeed and dist < hearSteps
+  dash = dashing and dist < hearSteps * hearDashMult
+  return gun or steps or dash
+
+slot targetScore:
+  return dist + angleOff * targetAngleWeight - (current ? targetKeepBonus : 0.0f)
+
+# where to go when not fighting
+slot objective race:
+  if checkpointsLeft: goto checkpoint.next
+  fallback
+
+slot objective koth:
+  if hasHill: goto hill.floor
+  fallback
+
+slot objective payload:
+  if hasCart: goto cart.goal
+  fallback
+
+slot objective npayload:
+  if hasCart: goto cart.goal
+  fallback
+
+slot objective points:
+  if pointActive: goto point.floor # both sides go to the point under attack
+  fallback
+
+slot objective bomb:
+  if bombPlanted: goto bomb.pos
+  if bombDropped and attacker: goto bomb.pos
+  if siteCount == 0: fallback
+  if attacker and bombCarried and not carrierIsMe and carrierAlive: goto carrier.pos # escort
+  goto site(attacker ? 0 : myId) # the carrier to the first site; defenders guard one each
+
+slot objective hide:
+  if not navReady: fallback
+  if it: seek
+  evade
+
+slot objective tag:
+  if not navReady: fallback
+  if it: seek
+  evade
+
+slot objective default:
+  fallback
+
+# keeps going for the objective while fighting
+slot urgent:
+  return mode == bomb and ((bombCarried and carrierIsMe) or (bombPlanted and not attacker))
+
+# fight
+slot pickWeapon:
+  if not weapons and allowed(rifle): return rifle
+  if dist < weaponClose: return firstAllowed(close, rifle)
+  if dist < weaponMid: return firstAllowed(canLead ? mid : midNoLead, rifle)
+  if dist < weaponFar: return firstAllowed(canLead ? far : farNoLead, rifle)
+  return firstAllowed(canLead ? vfar : farNoLead, rifle)
+
+slot throwKnife:
+  return weapon == knife and dist > weaponRange + 0.5f and dist < knifeThrowMax and canLead and not itMode
+
+slot idealRange:
+  return idealRange[weapon]
+
+slot rejudge:
+  lead = max(0.0f, leadMean + gauss() * leadSd)
+  drop = max(0.3f, 1.0f + gauss() * leadSd * 0.7f)
+  speed = max(0.3f, 1.0f + gauss() * speedJudge)
+  next = now + 0.7 + roll() * 0.8
+
+slot fire:
+  ready = err < fireCone + 0.35f / max(dist, 1.0f)
+  knifeOut = weapon == knife and not throwKnife and dist > weaponRange + 0.3f # closing in to stab
+  if ready and not knifeOut and not ownBlast:
+    if throwKnife: alt = yes
+    else: fire = yes
+  if weapon == sniper: alt = yes
+  if weapon == rifle and dist > rifleScopeDist and canLead: alt = yes
+
+slot fightHook:
+  if grapple and weapon in hookWeapons and dist > fightHookMin and dist < hookRange * 0.8f:
+    try = yes
+    retry = now + fightHookRetry
+    go = roll() < fightHookChance
+    hold = now + fightHookHold
+
+slot strafe:
+  dir = roll() < strafe ? (roll() < 0.5f ? -1.0f : 1.0f) : 0.0f
+  next = now + (0.15 + roll() * 2.0 / jukeRate)
+
+slot pulledDash:
+  return grapple and ideal > pulledDashMinRange and chance(pulledDashRate)
+
+slot fightJump:
+  return chance(jumpRate)
+
+slot fightDash:
+  if chance(dashRate):
+    dash = yes
+    closeIn = dist > dashCloseDist
+
+# looking around, routes
+slot glance:
+  yaw = (roll() * 2 - 1) * (idle ? glanceIdle : glanceMoving)
+  until = now + (idle ? 1.0 + roll() * 1.5 : 0.35 + roll() * 0.4)
+  next = now + 1.5 + roll() * 3.0
+
+slot hookRetry:
+  return now + (grappleOnly ? hookRetryGrappleOnly : hookRetry)
+
+slot routeHook:
+  return grappleOnly ? flat > 2.0f : (rise > hookRise and flat < hookRiseReach) or (flat > hookFlat and rise > hookFlatDrop)
+
+slot bhop:
+  return bhop and not fighting and mode != race and wpDist > bhopMinDist
+
+slot runDash:
+  return runDash > 0 and wpDist > runDashMinDist and straight > runDashStraight and chance(runDash)
+
+slot dashJump:
+  return dashJump and hopping and wpDist > dashJumpMinDist
+
+slot unstick:
+  if moving and moved < stuckDist and not hasTarget:
+    stuck = yes
+    side = roll() < 0.5f ? -1.0f : 1.0f
+    until = now + unstickTime
+  next = now + stuckEvery
