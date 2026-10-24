@@ -1,0 +1,8 @@
+{
+  "repo": "../working-repo",
+  "port": 8775,
+  "timingDir": null,
+  "overview": null,
+  "quark_tests": null,
+  "githubManager": "http://127.0.0.1:8767"
+}

@@ -1,0 +1,45 @@
+# A fixture workflow: the YAML shapes release.yml uses, and some it doesn't.
+name: fixture-ci
+on: [push, workflow_dispatch]
+env:
+  A: ${{ github.ref == 'refs/heads/testing' && 'x' || '' }}   # a comment
+jobs:
+  meta:   # the first job
+    # a comment line under the key
+    runs-on: ubuntu-24.04
+    outputs:
+      sanitizers: ${{ steps.c.outputs.sanitizers }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false, path: "a\nb" }
+      - id: c
+        name: "a quoted: name # not a comment"
+        run: |
+          SANITIZERS=false
+          case "$CHANNEL" in
+            final) SANITIZERS=true ;;
+            none|testing) case "$HEAD_MSG" in *'[final]'*) SANITIZERS=true ;; esac ;;
+          esac
+          echo "sanitizers=$SANITIZERS" >> "$GITHUB_OUTPUT"
+  build:
+    needs: [meta]
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.final) }}
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        group: [alpha, beta]
+    steps:
+      - uses: actions/setup-python@v5
+      - name: folded
+        run: >-
+          echo one
+          echo two
+      - run: build/quark_tests group ${{ matrix.group }}
+      - run: echo "[final] in a run step"
+  'quoted-job':
+    needs: [build, nope]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - run: build/quark_tests exportassets out   # a tool command: fine in CI

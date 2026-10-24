@@ -1,0 +1,3 @@
+#!/bin/sh
+# fixture hook
+exec python3 tools/check_secrets.py --staged
