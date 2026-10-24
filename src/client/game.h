@@ -185,7 +185,12 @@ private:
     ModelOverrides modelOv_;
     bool fairModels_ = false;   // this frame: ranked / time trial (rankedPlayer), only the shipped overrides are drawn
     const ModelMesh* modelOverride(int kind, int i) const { return modelOv_.get(kind, i, fairModels_); }
-    void overrideTints(int kind, const ModelPalette& pal, Vec3* tint) const;   // tint[TINT_COUNT]
+    void overrideTints(int kind, int idx, const ModelPalette& pal, Vec3* tint) const;   // tint[TINT_COUNT]
+    // a prop (models.h) at `origin`: its override turned by yaw, or its boxes at origin + right * x + y + back * z
+    // (model space), each box turned by boxYaw
+    void drawProp(int prop, const ModelPalette& pal, const Vec3& origin, float yaw, const Vec3& right, const Vec3& back, float boxYaw, float sv);
+    // an arm prop (GUN_ARM / ARM) from the shoulder, along the aim, at body scale bs
+    void drawArm(int prop, const Vec3& shoulder, float yaw, float pitch, float bs, float sv);
     void loadAssetOverrides();
     Ui ui_;
     UiInput uiIn_;

@@ -5,7 +5,7 @@
 #include <cstring>
 
 const char* tintSlotName(int s) {
-    static const char* n[TINT_COUNT] = {"body", "team", "glow", "metal", "base"};
+    static const char* n[TINT_COUNT] = {"body", "team", "glow", "metal", "base", "accent"};
     return n[s < 0 || s >= TINT_COUNT ? 0 : s];
 }
 
@@ -20,6 +20,8 @@ int tintSlotFromName(const std::string& name) {
 static Vec3 lin(const Vec3& c) { return Vec3(std::pow(c.x, 2.2f), std::pow(c.y, 2.2f), std::pow(c.z, 2.2f)); }
 Vec3 viewmodelMetal(const Vec3& m) { return lin(m) * 1.6f + Vec3(0.05f, 0.05f, 0.05f); }
 Vec3 viewmodelBase(const Vec3& b) { return lin(b) * 1.1f; }
+Vec3 cartMetal(const Vec3& m) { return lin(m) * 1.6f + Vec3(0.04f, 0.04f, 0.04f); }
+Vec3 cartAccent(const Vec3& a) { return lin(a) * 1.4f; }
 Vec3 crownColor(int place) { return place == 1 ? Vec3{1.0f, 0.78f, 0.15f} : Vec3{0.82f, 0.85f, 0.9f}; }
 
 int modelCount(int kind) {
@@ -28,6 +30,7 @@ int modelCount(int kind) {
         case MODEL_WEAPON: return WPN_COUNT;
         case MODEL_PROJECTILE: return kProjectileModels;
         case MODEL_CROWN: return 1;
+        case MODEL_PROP: return PROP_COUNT;
     }
     return 0;
 }
@@ -37,7 +40,7 @@ bool modelExists(int kind, int i) {
     return i == WPN_ROCKET || i == WPN_KNIFE || i == WPN_STICKY || i == WPN_CROSSBOW || i == WPN_BUBBLE || i == WPN_SYRINGE || i == MODEL_PROJ_ORB;
 }
 const char* modelKindName(int kind) {
-    static const char* n[MODEL_KINDS] = {"player", "weapon", "projectile", "crown"};
+    static const char* n[MODEL_KINDS] = {"player", "weapon", "projectile", "crown", "prop"};
     return kind >= 0 && kind < MODEL_KINDS ? n[kind] : "model";
 }
 const char* modelName(int kind, int i) {
@@ -47,23 +50,37 @@ const char* modelName(int kind, int i) {
         case MODEL_WEAPON: return w[i < 0 || i >= WPN_COUNT ? 0 : i];
         case MODEL_PROJECTILE: return i >= 0 && i < WPN_COUNT ? w[i] : "ORB";
         case MODEL_CROWN: return "CROWN";
+        case MODEL_PROP: {
+            static const char* p[PROP_COUNT] = {"GUN_ARM", "ARM", "BOMB_PACK", "BOMB", "CART", "GATE"};
+            return p[i < 0 || i >= PROP_COUNT ? 0 : i];
+        }
     }
     return "";
 }
 std::string modelPath(int kind, int i) { return std::string("models/") + modelKindName(kind) + "/" + modelName(kind, i); }
 
-static ModelPalette makeReference(int kind) {
+static_assert(PROP_COUNT <= kMaxModelsPerKind, "ModelOverrides holds kMaxModelsPerKind models of a kind");
+
+static ModelPalette makeReference(int kind, int idx = 0) {
     // team colours are white (a "team" material drawn white is exactly the team colour); the map colours are the
-    // stock palette (the Renderer's defaults when a map sets none); the crown is the #1 gold
+    // stock palette (the Renderer's defaults when a map sets none); the crown is the #1 gold; the props as they are
+    // seen most: the cart's own metal and rim, the bomb dark (not blinking), a gate grey (not reached yet)
     ModelPalette p;
     p.c[TINT_GLOW] = {1.00f, 0.55f, 0.15f};
     p.c[TINT_METAL] = viewmodelMetal({0.30f, 0.33f, 0.37f});
     p.c[TINT_BASE] = viewmodelBase({0.62f, 0.62f, 0.64f});
+    p.c[TINT_ACCENT] = cartAccent({0.40f, 0.40f, 0.43f});
     if (kind == MODEL_CROWN) p.c[TINT_TEAM] = crownColor(1);
+    if (kind == MODEL_PROP && idx == PROP_CART) p.c[TINT_METAL] = cartMetal({0.30f, 0.33f, 0.37f});
+    if (kind == MODEL_PROP && idx == PROP_BOMB) p.c[TINT_GLOW] = {0.15f, 0.15f, 0.15f};
+    if (kind == MODEL_PROP && idx == PROP_GATE) p.c[TINT_TEAM] = {0.8f, 0.8f, 0.8f};
     return p;
 }
-const ModelPalette& referencePalette(int kind) {
-    static const ModelPalette pals[MODEL_KINDS] = {makeReference(0), makeReference(1), makeReference(2), makeReference(3)};
+const ModelPalette& referencePalette(int kind, int idx) {
+    static const ModelPalette pals[MODEL_KINDS] = {makeReference(0), makeReference(1), makeReference(2), makeReference(3), makeReference(4)};
+    static const ModelPalette props[PROP_COUNT] = {makeReference(MODEL_PROP, 0), makeReference(MODEL_PROP, 1), makeReference(MODEL_PROP, 2),
+                                                   makeReference(MODEL_PROP, 3), makeReference(MODEL_PROP, 4), makeReference(MODEL_PROP, 5)};
+    if (kind == MODEL_PROP && idx >= 0 && idx < PROP_COUNT) return props[idx];
     return pals[kind < 0 || kind >= MODEL_KINDS ? 0 : kind];
 }
 
@@ -284,6 +301,45 @@ void crownParts(const ModelPalette& pal, ModelParts& out) {
     for (int k = 0; k < 4; k++) {                                              // four points
         Vec3 d = (k & 1 ? rgt : fwd) * ((k & 2) ? -0.14f : 0.14f);
         e(d + Vec3(0, 0.17f, 0), {0.035f, 0.06f, 0.035f}, gold, TINT_TEAM, false);
+    }
+}
+
+// (the same boxes drawWorld / drawHeldWeapon drew before they moved here: see git history of src/client/game.cpp)
+void propParts(int prop, const ModelPalette& pal, ModelParts& out) {
+    out.clear();
+    Emit e{out};
+    const Vec3 arm = {0.12f, 0.12f, 0.14f};
+    const uint8_t N = TINT_NONE;
+    switch (prop) {
+        case PROP_GUN_ARM:   // everyone else's arm and gun: one dark block from the shoulder, along the aim
+            e({0, 0, -0.35f}, {0.06f, 0.07f, 0.35f}, arm, N);
+            break;
+        case PROP_ARM:       // the arm a weapon model is held out on (hide and seek / tag: "it"; the hand at z -0.5)
+            e({0, 0, -0.22f}, {0.055f, 0.06f, 0.22f}, arm, N);
+            break;
+        case PROP_BOMB_PACK: // the bomb on its carrier's back
+            e({0, 1.15f, 0.32f}, {0.2f, 0.22f, 0.1f}, {0.1f, 0.1f, 0.1f}, N);
+            break;
+        case PROP_BOMB:      // the bomb on the ground, dropped or planted
+            e({0, 0.15f, 0}, {0.25f, 0.15f, 0.18f}, pal.c[TINT_GLOW], TINT_GLOW);
+            break;
+        case PROP_CART: {    // an armoured ore cart: metal chassis on four wheels, team-coloured band, accent rim, a
+                             // glowing core in a cradle on top, lamps front and back
+            const Vec3 metal = pal.c[TINT_METAL], team = pal.c[TINT_TEAM], glow = pal.c[TINT_GLOW];
+            const uint8_t M = TINT_METAL, G = TINT_GLOW;
+            for (int k = 0; k < 4; k++) e({k & 1 ? 0.85f : -0.85f, 0.32f, k & 2 ? 0.75f : -0.75f}, {0.12f, 0.3f, 0.3f}, metal * 0.45f, M);
+            e({0, 0.75f, 0}, {0.8f, 0.4f, 1.25f}, metal, M);                        // chassis
+            e({0, 0.8f, 0}, {0.83f, 0.12f, 1.28f}, team * 0.9f, TINT_TEAM);         // team band
+            e({0, 1.2f, 0}, {0.85f, 0.06f, 1.3f}, pal.c[TINT_ACCENT], TINT_ACCENT); // rim
+            e({0, 1.45f, 0}, {0.45f, 0.2f, 0.6f}, metal * 0.7f, M);                  // cradle
+            e({0, 1.75f, 0}, {0.3f, 0.22f, 0.3f}, glow * 1.3f + team * 0.3f, G);     // core
+            e({0, 0.75f, 1.3f}, {0.5f, 0.15f, 0.06f}, glow, G);                      // lamps front
+            e({0, 0.75f, -1.3f}, {0.5f, 0.15f, 0.06f}, glow, G);                     // and back
+        } break;
+        case PROP_GATE:      // a checkpoint on the payload track: a post each side
+            e({1.8f, 1.4f, 0}, {0.12f, 1.4f, 0.12f}, pal.c[TINT_TEAM], TINT_TEAM);
+            e({-1.8f, 1.4f, 0}, {0.12f, 1.4f, 0.12f}, pal.c[TINT_TEAM], TINT_TEAM);
+            break;
     }
 }
 

@@ -21,7 +21,7 @@ python3 tools/studio/build.py build/assets_export     # -> build/studio/ (+ mani
 |---|---|---|
 | Sounds | 33 sounds x 5 kits = 165 WAV (48 kHz mono) | `sounds/<kit>/<SOUND>.wav`, kit = `default` `heavy_metal` `magical` `retro` `mouth` |
 | Voices | 30 announcer lines x 7 voices = 210 WAV | `voices/<voice>/<LINE>.wav`, voice = `male` `female` `british` `old_man` `e_girl` `india` `spy` |
-| Models | 5 players, 10 weapon viewmodels, 7 projectiles, the crown = 23 glTF | `models/player/<NAME>.gltf`, `models/weapon/<NAME>.gltf`, `models/projectile/<NAME>.gltf`, `models/crown/CROWN.gltf` |
+| Models | 5 players, 11 weapon viewmodels, 7 projectiles, the crown, 6 props = 30 glTF | `models/player/<NAME>.gltf`, `models/weapon/<NAME>.gltf`, `models/projectile/<NAME>.gltf`, `models/crown/CROWN.gltf`, `models/prop/<NAME>.gltf` |
 | Maps | every shipped map (.qmap) | `maps/<name>.qmap` |
 | Fonts | the default UI font (Rubik), WORK SANS and the game-font look-alikes of Settings > FONT | `fonts/Rubik.ttf`, `fonts/WorkSans.ttf`, `fonts/<file in assets/fonts>` (`BebasNeue-Regular.ttf`, `LibreQuake-CONCHARS.png`, ...) |
 | Images | the game icon | `images/icon.png` |
@@ -34,8 +34,9 @@ voice has no recording of is exported as a tenth of a second of silence (it is s
 added. The export is what the game uses now: the built-in assets with the shipped overrides applied, never this
 computer's own overrides folder.
 
-Models are the game's box models (src/client/models.cpp, the same lists drawWorld draws), one glTF primitive per
-colour slot, in each model's own space (metres, +Y up, front at -Z):
+Models are the game's box models (src/client/models.cpp, the same lists drawWorld draws: every model in the game,
+everything but the map, explosions, tracers / beams and the zone volumes), one glTF primitive per colour slot, in each
+model's own space (metres, +Y up, front at -Z):
 
 - **player**: feet on the ground at the origin, 2 m tall, facing -Z. Every model shares one hitbox: stay inside it.
 - **weapon**: the first-person viewmodel. Origin at the weapon's pivot (the HUD's viewmodel x / y / depth put it
@@ -43,14 +44,27 @@ colour slot, in each model's own space (metres, +Y up, front at -Z):
 - **projectile**: origin at the projectile, flying toward -Z (ROCKET, KNIFE, STICKY, CROSSBOW, BUBBLE, SYRINGE, ORB =
   every other projectile). The game spins the sticky and the thrown knife and wobbles the bubble.
 - **crown**: the leaderboard crown, origin at the top of the head, front at -Z (the board letter stays drawn on top).
+- **prop** (`models/prop/<NAME>`), the rest of what the game draws as a model; the game keeps moving them (where they
+  are, aim, crouch, body size are transforms on top of the model):
+  - `GUN_ARM`: the arm and gun every other player holds out (one dark block). Origin at the shoulder, reaching along
+    -Z (0.7 m); turned with their aim (yaw and pitch) and scaled with their body (duel's double size).
+  - `ARM`: the arm that holds out a weapon model (hide and seek / tag: whoever is it). Origin at the shoulder, along
+    -Z; the hand, where the weapon's own model sits (at twice its viewmodel size), is at z -0.5.
+  - `BOMB_PACK`: the bomb on its carrier's back, in the player's space (feet at the origin, facing -Z: the pack sits at
+    +Z, 1.15 m up). An override is squashed with a crouch like the player model.
+  - `BOMB`: the bomb on the ground, dropped or planted. Origin on the ground under it, never turned.
+  - `CART`: the payload cart. Origin on the track under its middle, front (-Z) the way it's being pushed.
+  - `GATE`: a payload checkpoint (both posts, either side of the track at x +-1.8). Origin on the track at the
+    checkpoint, -Z the cart's way. (The default's posts stay square to the world; an override turns with the track.)
 
 Material names pick a colour that changes at run time (prefix, any case: `team`, `Team_cloth`, `glow.001`):
 
 | Material | Follows | Draw it in |
 |---|---|---|
-| `team*` | players / projectiles: the team colour; weapon: your accent colour; crown: gold (#1) or silver | white = exactly that colour (crown: the export's gold) |
-| `glow*` | the map's glow colour | the export's orange |
-| `metal*`, `base*` | the map's metal / base colours (viewmodels) | the export's colours |
+| `team*` | players / projectiles: the team colour; weapon: your accent colour; crown: gold (#1) or silver; cart: the pushing team (grey when neutral); gate: grey, the attackers' colour once reached | white = exactly that colour (crown: the export's gold; gate: the export's grey) |
+| `glow*` | the map's glow colour; bomb: red while a planted one blinks | the export's orange (bomb: the export's dark grey) |
+| `metal*`, `base*` | the map's metal / base colours (viewmodels, the cart's metal) | the export's colours |
+| `accent*` | the map's accent colour (the cart's rim) | the export's colour |
 | anything else | nothing: drawn as authored | |
 
 An override's colour in a slot is multiplied by (the current colour / the colour shown in the export), so a model drawn

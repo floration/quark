@@ -100,6 +100,26 @@ const char* modelDesc(int kind) {
     }
     return "";
 }
+const char* propDesc(int prop) {
+    switch (prop) {
+        case PROP_GUN_ARM: return "the arm and gun other players hold out: metres, origin at the shoulder, reaching along -Z (turned with their aim, scaled with their body). No colour slots";
+        case PROP_ARM: return "the arm that holds out a weapon model (hide and seek / tag: whoever is it): origin at the shoulder, along -Z, the hand (the weapon's pivot) at z -0.5. No colour slots";
+        case PROP_BOMB_PACK: return "the bomb on its carrier's back: in the player's space (feet at the origin, facing -Z, the pack at +Z). Moves down with a crouch. No colour slots";
+        case PROP_BOMB: return "the bomb on the ground, dropped or planted: origin on the ground under it. Materials glow* blink red while a planted bomb ticks (drawn dark in the export)";
+        case PROP_CART: return "the payload cart: origin on the track under its middle, front (-Z) the way it is pushed. Materials team* = the pushing team (white = that colour; grey when neutral), metal* / accent* / glow* = the map's colours";
+        case PROP_GATE: return "a payload checkpoint: origin on the track, -Z the cart's way, posts either side (x +-1.8). Materials team* = grey, the attackers' colour once the cart has reached it";
+    }
+    return "";
+}
+// A model's default boxes with the export's colours
+void defaultParts(int kind, int i, ModelParts& parts) {
+    const ModelPalette& pal = referencePalette(kind, i);
+    if (kind == MODEL_PLAYER) playerModelParts(i, 1.0f, pal, parts);
+    else if (kind == MODEL_WEAPON) viewmodelParts(i, pal, parts);
+    else if (kind == MODEL_PROJECTILE) projectileParts(i, pal, 1.0f, 1.0f, 0.0f, parts);
+    else if (kind == MODEL_PROP) propParts(i, pal, parts);
+    else crownParts(pal, parts);
+}
 
 struct Item { std::string id, category, kind, name, file, desc, kit; };
 std::string manifestJson(const std::vector<Item>& items) {
@@ -163,15 +183,12 @@ int exportAssets(const char* dirArg) {
     for (int kind = 0; kind < MODEL_KINDS; kind++)
         for (int i = 0; i < modelCount(kind); i++) {
             if (!modelExists(kind, i)) continue;
-            const ModelPalette& pal = referencePalette(kind);
-            if (kind == MODEL_PLAYER) playerModelParts(i, 1.0f, pal, parts);
-            else if (kind == MODEL_WEAPON) viewmodelParts(i, pal, parts);
-            else if (kind == MODEL_PROJECTILE) projectileParts(i, pal, 1.0f, 1.0f, 0.0f, parts);
-            else crownParts(pal, parts);
+            defaultParts(kind, i, parts);
             MeshData mesh;
             partsToMesh(parts, mesh);
             std::string path = modelPath(kind, i);
-            add({"model/" + path.substr(7), "Models", "model", modelName(kind, i), path + ".gltf", modelDesc(kind), modelKindName(kind)}, writeGltf(mesh, modelName(kind, i)));
+            add({"model/" + path.substr(7), "Models", "model", modelName(kind, i), path + ".gltf", kind == MODEL_PROP ? propDesc(i) : modelDesc(kind), modelKindName(kind)},
+                writeGltf(mesh, modelName(kind, i)));
         }
     // maps: the shipped text (the generated map, or its override)
     for (const OfficialMapData* m = kOfficialMapData; m->name; m++) {
@@ -247,12 +264,9 @@ static void testModelExport() {
         for (int i = 0; i < modelCount(kind); i++) {
             if (!modelExists(kind, i)) continue;
             models++;
-            const ModelPalette& pal = referencePalette(kind);
-            if (kind == MODEL_PLAYER) playerModelParts(i, 1.0f, pal, parts);
-            else if (kind == MODEL_WEAPON) viewmodelParts(i, pal, parts);
-            else if (kind == MODEL_PROJECTILE) projectileParts(i, pal, 1.0f, 1.0f, 0.0f, parts);
-            else crownParts(pal, parts);
+            defaultParts(kind, i, parts);
             ACHECK(!parts.empty());
+            ACHECK(modelPath(kind, i).find("//") == std::string::npos && modelName(kind, i)[0]);
             MeshData a, b;
             partsToMesh(parts, a);
             ACHECK(a.triangleCount() == parts.size() * 12);
@@ -271,7 +285,18 @@ static void testModelExport() {
             meshToModel(b, mm);
             ACHECK(mm.opaque.size() + mm.translucent.size() == b.triangleCount() * 3 && mm.radius > 0);
         }
-    ACHECK(models == 5 + 11 + 7 + 1);   // (weapons: 11 with the locator)
+    ACHECK(models == 5 + 11 + 7 + 1 + 6);   // (weapons: 11 with the locator; props: GUN_ARM ARM BOMB_PACK BOMB CART GATE)
+    ACHECK(modelPath(MODEL_PROP, PROP_CART) == "models/prop/CART" && modelPath(MODEL_PROP, PROP_BOMB_PACK) == "models/prop/BOMB_PACK");
+    // a prop's slot colours come from the palette (the cart: 11 boxes, its band the team colour, its rim the accent)
+    {
+        ModelPalette cp;
+        cp.c[TINT_TEAM] = {0.2f, 0.4f, 0.8f};
+        cp.c[TINT_ACCENT] = {0.5f, 0.1f, 0.1f};
+        propParts(PROP_CART, cp, parts);
+        ACHECK(parts.size() == 11 && parts[5].slot == TINT_TEAM && length(parts[5].color - cp.c[TINT_TEAM] * 0.9f) < 1e-6f);
+        ACHECK(parts[6].slot == TINT_ACCENT && length(parts[6].color - cp.c[TINT_ACCENT]) < 1e-6f);
+        ACHECK(tintSlotFromName("Accent_rim") == TINT_ACCENT);
+    }
     // the default parts are what drawWorld draws: a known box, the standard model's chest, team coloured
     ModelPalette pal;
     pal.c[TINT_TEAM] = {0.2f, 0.4f, 0.8f};
@@ -668,7 +693,7 @@ static void testExport() {
     for (const OfficialMapData* m = kOfficialMapData; m->name; m++) official++;
     ACHECK(sounds == (size_t)Audio::kPacks * SND_VOICE_THREE);
     ACHECK(voices == (size_t)kAnnouncerVoices * (SND_COUNT - SND_VOICE_THREE));
-    ACHECK(models == 24 && maps == official && missing == 0);
+    ACHECK(models == 30 && maps == official && missing == 0);   // (5 players, 11 weapons, 7 projectiles, the crown, 6 props)
     ACHECK(man.find("\"fonts/Rubik.") != std::string::npos && man.find("\"fonts/WorkSans.") != std::string::npos && man.find("\"images/icon.") != std::string::npos);
     std::error_code ec;
     fs::remove_all(dir, ec);
