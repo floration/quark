@@ -151,11 +151,11 @@ def set_answer_trailer(lines, entry, answer, today, thread_names=()):
     line = lines[i]
     body, tail = line.rstrip(), line[len(line.rstrip()):]
     status = "answered: %s %s" % (_trailer_note(answer), VIA)
-    m = docsparse._TRAILER_RE.search(body)
+    m = docsparse.find_trailer(body)                                       # (text may follow it: kept as it is)
     if m:
         thread = docsparse.parse_trailer(m.group(2), thread_names)[0]
         inner = (", " + thread if thread else "") + ", " + status
-        lines[i] = body[:m.start(2)] + inner + "_" + tail
+        lines[i] = body[:m.start(2)] + inner + "_" + body[m.end():] + tail
     else:
         lines[i] = body + " _%s, %s_" % (today, status) + tail
     return lines

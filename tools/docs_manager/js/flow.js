@@ -77,7 +77,7 @@
       return vers.get(v);
     }
 
-    const entries = d.entries.filter(e => p.showDone || !DM.isDone(e));
+    const entries = d.entries.filter(e => p.showDone || DM.isOpen(e));
     const groups = new Map();
     for (const e of entries) {
       const t = e.thread || '(no thread)';

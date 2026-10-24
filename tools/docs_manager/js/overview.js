@@ -69,12 +69,12 @@
   function render() {
     const d = st.data, E = d.entries;
     const root = clear($('#ovBody'));
-    const open = E.filter(e => !DM.isDone(e));
+    const open = E.filter(DM.isOpen);                       // (not finished, not a reference note, not archived)
     const halting = DM.data.haltingList();
     const need = open.filter(e => DM.needsQ(e) && !DM.isHalting(e));
     const pushes = need.filter(e => e.waitingOn.includes('push')).sort(byPriThenNew);
     const decisions = need.filter(e => !e.waitingOn.includes('push')).sort(byPriThenNew);
-    const tell = open.filter(e => e.file.startsWith('06') && !DM.needsQ(e));
+    const tell = open.filter(e => DM.waitKeys(e).includes('read')).sort(byPriThenNew);
     const weekAgo = Date.now() - 7 * 86400000;
     const finishedWeek = E.filter(e => DM.isDone(e) && e.lastChanged && Date.parse(e.lastChanged.time) > weekAgo).length;
     const k = key => open.filter(e => DM.waitKeys(e).includes(key)).length;
@@ -85,11 +85,14 @@
       halting.length ? tile(halting.length, 'halting (Claude stopped)', 'halt', () => DM.entries.filterTo({wait: 'halt', status: 'notdone'}),
         'HALT items: a Claude agent can’t continue until you act') : null,
       tile(need.length, 'need q', 'q', () => DM.entries.filterTo({wait: 'q', status: 'notdone'}), 'Entries waiting on q: decisions and pushes'),
+      tell.length ? tile(tell.length, 'for q to read', 'read', () => DM.entries.filterTo({wait: 'read', status: 'notdone'}), 'News in "Things to tell q" not told yet') : null,
+      k('answered') ? tile(k('answered'), 'answered, Claude to act', 'answered', () => DM.entries.filterTo({wait: 'answered', status: 'notdone'}),
+        'q answered these (09); a Claude still has to act on the answer') : null,
       tile(k('claude'), 'Claude working', 'claude', () => DM.entries.filterTo({wait: 'claude', status: 'notdone'})),
       tile(open.filter(e => DM.waitKeys(e).some(x => x === 'pr' || x === 'ci')).length, 'waiting for PR / CI', 'ci', () => DM.entries.filterTo({wait: 'prci', status: 'notdone'})),
       tile(k('tests'), 'need tests / repro', 'tests', () => DM.entries.filterTo({wait: 'tests', status: 'notdone'})),
       tile(k('nobody'), 'not started', 'nobody', () => DM.entries.filterTo({wait: 'nobody', status: 'notdone'})),
-      tile(finishedWeek, 'finished this week', 'done', () => DM.entries.filterTo({status: 'done'})),
+      tile(finishedWeek, 'finished this week', 'done', () => DM.entries.filterTo({status: '__finished', sort: 'changed'})),
       h('span', {class: 'spacer'}),
       h('span', {class: 'tiles-note faint'}, E.length + ' entries in ' + d.files.filter(f => f.kind !== 'document').length + ' files',
         d.changes[0] ? [h('br'), 'last change ', DM.timeEl(d.changes[0].time)] : null)));
@@ -117,14 +120,17 @@
     }
     const right = h('div', {class: 'ov-col'});
     const latest = section('Latest changes', null, null);
-    latest.appendChild(h('div', {class: 'mini-log'}, d.changes.slice(0, 15).map(c => DM.changes.commitBlock(c, false, 3))));
+    // On a wide screen the board and the table sit under Needs q, so Latest changes (beside them) can be longer.
+    const wide = wideNow();
+    latest.appendChild(h('div', {class: 'mini-log'}, d.changes.slice(0, wide ? 30 : 15).map(c => DM.changes.commitBlock(c, false, 3))));
     latest.appendChild(h('button', {class: 'mini', onclick: () => DM.app.show('changes')}, 'Full change log'));
     right.appendChild(latest);
     root.appendChild(h('div', {class: 'ov-grid'}, left, right));
+    const below = wide ? left : root;
 
-    // waiting-on board (compact)
+    // waiting-on board (compact); the columns that are only sometimes used show only when they hold something
     const board = section('Waiting on', open.length, 'unfinished entries by what they wait for');
-    const WCOLS = DM.WAIT.filter(w => w.key !== 'halt' || halting.length);
+    const WCOLS = DM.WAIT.filter(w => !['halt', 'read', 'answered'].includes(w.key) || open.some(e => DM.waitKeys(e)[0] === w.key));
     const cols = h('div', {class: 'wboard'});
     cols.style.setProperty('--wn', WCOLS.length);
     for (const w of WCOLS) {
@@ -137,18 +143,21 @@
         list.length > 6 ? h('button', {class: 'mini more', onclick: () => DM.entries.filterTo({wait: w.key, status: 'notdone'})}, '+ ' + (list.length - 6) + ' more') : null));
     }
     board.appendChild(cols);
-    root.appendChild(board);
+    below.appendChild(board);
 
     // counts per file
     const cnt = section('By file', null, 'click a number to see those entries');
     const COLS = [
       ['halt', 'Halting', e => DM.isHalting(e)],
       ['q', 'Needs q', e => DM.needsQ(e)],
+      ['read', 'To read', e => DM.waitKeys(e).includes('read')],
+      ['answered', 'Answered', e => DM.waitKeys(e).includes('answered')],
       ['prci', 'PR / CI', e => DM.waitKeys(e).some(x => x === 'pr' || x === 'ci')],
       ['tests', 'Tests', e => DM.waitKeys(e).includes('tests')],
       ['claude', 'Claude working', e => DM.waitKeys(e).includes('claude')],
       ['nobody', 'Not started', e => DM.waitKeys(e).includes('nobody')],
       ['done', 'Finished', e => DM.isDone(e)],
+      ['ref', 'Reference', e => DM.isRef(e)],
     ];
     const tbl = h('table', {class: 'counts'}, h('thead', null, h('tr', null, h('th', null, 'File'), COLS.map(c => h('th', {class: 'n'}, c[1])), h('th', {class: 'n'}, 'Total'), h('th', null, ''))));
     const tb = h('tbody');
@@ -162,14 +171,19 @@
         h('td', null, h('a', {href: '#file=' + encodeURIComponent(f.name), onclick: ev => { ev.preventDefault(); DM.app.openFile(f.name); }}, DM.fileTitle(f.name)),
           f.pcUnsynced ? h('span', {class: 'badge pc', title: 'Edited on the PC, not synced yet'}, 'PC') : null),
         COLS.map((c, i) => h('td', {class: 'n'}, nums[i] ? h('button', {class: 'num-btn c-' + c[0], onclick: () => DM.entries.filterTo(
-          c[0] === 'done' ? {file: f.name, status: 'done'} : {file: f.name, status: 'notdone', wait: c[0]})}, String(nums[i])) : h('span', {class: 'faint'}, '–'))),
+          c[0] === 'done' ? {file: f.name, status: '__finished'} : c[0] === 'ref' ? {file: f.name, status: '__ref'} : {file: f.name, status: 'notdone', wait: c[0]})},
+          String(nums[i])) : h('span', {class: 'faint'}, '–'))),
         h('td', {class: 'n'}, h('button', {class: 'num-btn', onclick: () => DM.entries.filterTo({file: f.name})}, String(fe.length))),
         h('td', {class: 'barcell'}, bar)));
     }
     tbl.appendChild(tb);
-    cnt.appendChild(tbl);
-    root.appendChild(cnt);
+    cnt.appendChild(h('div', {class: 'counts-wrap'}, tbl));
+    below.appendChild(cnt);
   }
+  const WIDE = 1800;
+  let lastWide = null;
+  function wideNow() { lastWide = ($('#ovScroll').clientWidth || innerWidth) >= WIDE; return lastWide; }
+  new ResizeObserver(() => { if (st.data && st.prefs.tab === 'overview' && lastWide !== null && (($('#ovScroll').clientWidth || innerWidth) >= WIDE) !== lastWide) DM.app.render('overview'); }).observe($('#ovScroll'));
 
   (DM.views = DM.views || {}).overview = {render};
   DM.overview = {recommendation, questionsOf};
