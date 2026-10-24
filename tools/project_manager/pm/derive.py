@@ -112,7 +112,7 @@ def gh_runs(d):
         running = [x for x in r if isinstance(x, dict) and get(x, "status") in ("in_progress", "queued", "running", "waiting")]
     running = running or as_list(get(d, "running", "runningRuns", "activeRuns"))
     last_failed = last_failed or get(d, "lastFailedRun", "lastFailure", "lastFailed")
-    last_testing = last_testing or get(d, "lastTestingRun", "testing.lastRun", "testing.ci", "testing.run")
+    last_testing = last_testing or get(d, "lastTesting", "lastTestingRun", "testing.lastRun", "testing.ci", "testing.run")
     if not last_testing:  # (the state / cache file: branches[name=testing].lastRun)
         last_testing = next((get(b, "lastRun") for b in as_list(get(d, "branches"))
                              if isinstance(b, dict) and b.get("name") == "testing"), None)
