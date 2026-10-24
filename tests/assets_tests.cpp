@@ -443,6 +443,65 @@ static void testOverrides() {
     overrides::useUserFolder(true);
 }
 
+// sound-levels.txt: a listed replacement keeps its own level (the sound editor levels groups by LUFS); only a peak
+// over 1.0 is scaled down to 1.0. Unlisted ones are still matched to the sound they replace. Any case, comments.
+static void testSoundLevels() {
+    printf("audio: overrides listed in sound-levels.txt keep their own level\n");
+    fs::path root = fs::u8path(userDataPath("overrides"));
+    std::error_code ec;
+    fs::remove_all(root, ec);
+    auto floatWav = [](const std::vector<float>& x, int rate) {   // 32-bit float: may go over 1.0
+        std::string d;
+        auto u32 = [&](uint32_t v) { for (int i = 0; i < 4; i++) d += (char)(v >> (8 * i) & 255); };
+        auto u16 = [&](uint16_t v) { d += (char)(v & 255); d += (char)(v >> 8); };
+        uint32_t bytes = (uint32_t)x.size() * 4;
+        d += "RIFF"; u32(36 + bytes); d += "WAVEfmt "; u32(16); u16(3); u16(1); u32((uint32_t)rate); u32((uint32_t)rate * 4); u16(4); u16(32);
+        d += "data"; u32(bytes);
+        for (float v : x) { uint32_t b; memcpy(&b, &v, 4); u32(b); }
+        return d;
+    };
+    auto tone = [](float amp, size_t n) {
+        std::vector<float> t(n);
+        for (size_t i = 0; i < n; i++) t[i] = amp * std::sin(i * 0.05f);
+        return t;
+    };
+    const std::vector<float> quiet = tone(0.1f, 14400), loud = tone(2.5f, 14400);   // 0.3 s each
+    ACHECK(spit(root / "sounds/default/ROCKET.wav", wavFile(quiet, 48000)));     // listed (in other case)
+    ACHECK(spit(root / "sounds/default/SHOTGUN.wav", wavFile(quiet, 48000)));    // not listed: matched as before
+    ACHECK(spit(root / "sounds/mouth/HIT_MED.wav", wavFile(quiet, 48000)));      // a hitsound tier, listed: no levelHit
+    ACHECK(spit(root / "sounds/heavy_metal/SNIPER.wav", floatWav(loud, 48000))); // listed, peak 2.5: limited to 1.0
+    ACHECK(spit(root / "voices/male/GO.wav", wavFile(quiet, 48000)));            // a voice line, listed
+    ACHECK(spit(root / "voices/male/ONE.wav", wavFile(quiet, 48000)));           // not listed
+    ACHECK(spit(root / "Sound-Levels.txt", "# levelled in the sound editor\r\n  Sounds/Default/rocket \r\n\r\nsounds\\mouth\\hit_med\n"
+                                           "SOUNDS/HEAVY_METAL/SNIPER.wav\nvoices/MALE/go\n#voices/male/ONE\n"));
+    Audio plain, mine;
+    overrides::useUserFolder(false);
+    plain.startOffline();
+    overrides::useUserFolder(true);
+    ACHECK(overrides::soundLevels().find("Sounds/Default/rocket") != std::string::npos);
+    mine.startOffline();
+    auto near = [](float a, float b) { return std::fabs(a - b) < 0.004f; };
+    const auto& rocket = mine.samples(0, SND_ROCKET);
+    printf("  peaks: kept ROCKET %.3f, matched SHOTGUN %.3f, kept HIT_MED %.3f, limited SNIPER %.3f, kept GO %.3f, matched ONE %.3f\n",
+           peakOf(rocket), peakOf(mine.samples(0, SND_SHOTGUN)), peakOf(mine.samples(Audio::kPackWooden, SND_HIT_MED)),
+           peakOf(mine.samples(Audio::kPackMetal, SND_SNIPER)), peakOf(mine.samples(0, SND_VOICE_GO)), peakOf(mine.samples(0, SND_VOICE_ONE)));
+    ACHECK(rocket.size() >= 14000 && rocket.size() <= 14400 && near(peakOf(rocket), 0.1f));
+    ACHECK(std::fabs(peakOf(mine.samples(0, SND_SHOTGUN)) - 0.1f) > 0.05f);   // (DEFAULT's shotgun is far louder than 0.1)
+    ACHECK(near(peakOf(mine.samples(Audio::kPackWooden, SND_HIT_MED)), 0.1f));
+    ACHECK(near(peakOf(mine.samples(Audio::kPackMetal, SND_SNIPER)), 1.0f));
+    ACHECK(near(peakOf(mine.samples(0, SND_VOICE_GO)), 0.1f));
+    ACHECK(std::fabs(peakOf(mine.samples(0, SND_VOICE_ONE)) - 0.1f) > 0.05f);
+    // a kept DEFAULT still becomes the sound of the kits that had DEFAULT's, at its own level (and RETRO's, chiptuned)
+    for (int p = 1; p < Audio::kPacks; p++) {
+        if (p == Audio::kPackRetro) { ACHECK(mine.samples(p, SND_ROCKET) != plain.samples(p, SND_ROCKET)); continue; }
+        if (plain.samples(p, SND_ROCKET) == plain.samples(0, SND_ROCKET)) ACHECK(mine.samples(p, SND_ROCKET) == rocket);
+        else ACHECK(mine.samples(p, SND_ROCKET) == plain.samples(p, SND_ROCKET));
+    }
+    fs::remove_all(root, ec);
+    overrides::useUserFolder(true);
+    ACHECK(overrides::soundLevels().find("rocket") == std::string::npos);
+}
+
 // The shipped icon follows the icon override (tools/make_icon.py draws it from the override and records which)
 static void testIconSource() {
     const fs::path src = srcDir();
@@ -526,6 +585,7 @@ int assetTests() {
     testHitTiers();
     testVoiceSteal();
     testOverrides();
+    testSoundLevels();
     testIconSource();
     testExport();
     return g_afail;

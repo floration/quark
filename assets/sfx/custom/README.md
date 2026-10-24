@@ -8,6 +8,11 @@ Formats: .wav, .ogg, .mp3 or .flac, any sample rate. The importer makes it mono,
 cuts it at the length in the table below (with a short fade) and normalises it. In the other kits it is matched to the DEFAULT sound's loudness.
 Example: `heavy_metal/ROCKET.wav`.
 
+Files here are always loudness matched. A sound that must keep its own level (levelled in the sound editor) goes in
+as an override instead, `assets/overrides/sounds/<kit>/<SOUND>.*`, listed in `assets/overrides/sound-levels.txt`
+(one `sounds/<kit>/<SOUND>` a line; docs/ASSETS.md): the game then skips the matching and only keeps its peak at or
+under 1.0.
+
 Keep them short and starting instantly (no silence before the sound): they play the moment the thing happens.
 
 | File name | When it plays | Length guide |
