@@ -7,7 +7,7 @@ import { api } from "./api.js";
 import { createHelper } from "./helper.js";
 import { WEAPONS } from "./catalog.js";
 import { parse, print } from "./dsl.js";
-import { setCatalog, catalog, fieldValues, labelsOf, changedFields, withField, withLabel, carryIds, numberIds, symbols, slotKey } from "./ast.js";
+import { setCatalog, catalog, fieldValues, labelsOf, changedFields, withField, withLabel, carryIds, numberIds, symbols, slotKey, sameVal } from "./ast.js";
 import { computeStats, fmtNum } from "./stats.js";
 import { $, fin, fmtT } from "./util.js";
 import { WeaponView } from "./weapon.js";
@@ -144,6 +144,26 @@ class App {
         if (!this.parseOk) return;
         const keys = new Set(this.cat.fieldsOf(w).map((f) => f.key));
         this.brainEdited({ ...this.ast, decls: this.ast.decls.filter((d) => !(d.kind === "param" && keys.has(d.name)) && !(d.kind === "label" && d.weapon === w)) }, "reset");
+    }
+    // a variant: weapon `from`'s values (this set's, the comparison set's or the standard ones) onto weapon `to`, for
+    // every field both have that a set can write (the alt fire's own fields and the kind stay `to`'s). The game has 11
+    // weapon slots and no way to add a 12th without changing it, so a variant is one of them retuned.
+    copyWeapon(from, to, src = "set") {
+        if (!this.parseOk) { this.toast("the code has an error: fix it on the Code tab first", 3500); return; }
+        const vals = src === "cmp" ? this.cmp.values : src === "std" ? this.stdValues : this.values;
+        const mine = new Map(this.cat.fieldsOf(to).filter((f) => !f.readOnly && !f.alt).map((f) => [f.field, f]));
+        let ast = this.ast, n = 0;
+        for (const f of this.cat.fieldsOf(from)) {
+            const g = mine.get(f.field);
+            if (!g || f.readOnly || f.alt || !vals.has(f.key)) continue;
+            const v = vals.get(f.key);
+            if (sameVal(v, this.values.get(g.key), g.type)) continue;
+            ast = withField(ast, g.key, v); n++;
+        }
+        if (!n) { this.toast("nothing to copy: the values are the same", 2500); return; }
+        this.brainEdited(ast, "copy");
+        const fromT = (src === "set" && this.titles.get(from)) || this.cat.byId.get(from).title;
+        this.toast(`${n} value${n > 1 ? "s" : ""} of ${fromT}${src === "cmp" ? ` ("${this.cmp.name}")` : src === "std" ? " (standard)" : ""} copied to ${this.cat.byId.get(to).title}; it stays a ${this.cat.byId.get(to).kind} weapon with its own alt fire`, 5000);
     }
     _derive() {
         this.values = fieldValues(this.ast);

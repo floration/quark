@@ -37,12 +37,17 @@ export class WeaponView {
         const head = el("div", "whead");
         head.innerHTML = `<h2>${esc(W.title)}</h2><span class="kind">${esc(W.kind || "")}${W.altFire ? " · alt: " + esc(W.altFire) : ""}</span>
             <label class="small muted">label in this set <input class="label" maxlength="24" placeholder="(the game's own name)" title="the weapon's display name in this set: A-Z, 0-9, spaces (24)"></label>
+            <select id="wCopy" title="a variant of another weapon: copy its damage, fire, projectile, spread, knockback and falloff values onto this one. This weapon keeps its own kind (hitscan / projectile / beam...), alt fire and name: a set has the game's 11 weapons, each retuned, not new ones"></select>
             <span class="grow"></span><span id="wChanged" class="small"></span>
             <button id="wReset" class="danger" title="every value of this weapon back to the standard">Reset ${esc(W.title)}</button>`;
         const lab = head.querySelector("input.label");
         lab.value = app.labels.get(w) || "";
         lab.onchange = () => { const v = lab.value.toUpperCase().replace(/[^A-Z0-9 ]/g, "").slice(0, 24).trim(); lab.value = v; app.setLabel(w, v); };
         head.querySelector("#wReset").onclick = () => app.resetWeapon(w);
+        const cp = head.querySelector("#wCopy");
+        const srcs = [["", "this set"], ...(app.cmp.name ? [["cmp", `"${app.cmp.name}"`]] : []), ["std", "standard"]];
+        cp.innerHTML = `<option value="">Copy values from…</option>` + srcs.map(([k, t]) => `<optgroup label="${esc(t)}">${cat.weapons.filter((x) => x.id !== w || k).map((x) => `<option value="${k}:${x.id}">${esc(app.titles.get(x.id) && !k ? app.titles.get(x.id) : x.title)}</option>`).join("")}</optgroup>`).join("");
+        cp.onchange = () => { const [src, from] = cp.value.split(":"); cp.value = ""; if (from) app.copyWeapon(from, w, src || "set"); };
         root.append(head);
         this.headEl = head;
         const grid = el("div", "cards");
