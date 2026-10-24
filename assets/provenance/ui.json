@@ -67,6 +67,7 @@
   "ui/settings/controls": {"origin": "ai", "source": "drawn by the game's UI code (src/client/), AI-written"},
   "ui/settings/controls/files": {"origin": "ai", "source": "drawn by the game's UI code (src/client/), AI-written"},
   "ui/settings/crosshair": {"origin": "ai", "source": "drawn by the game's UI code (src/client/), AI-written"},
+  "ui/settings/fonts": {"origin": "ai", "source": "drawn by the game's UI code (src/client/), AI-written"},
   "ui/settings/hud": {"origin": "ai", "source": "drawn by the game's UI code (src/client/), AI-written"},
   "ui/settings/hud/elements": {"origin": "ai", "source": "drawn by the game's UI code (src/client/), AI-written"},
   "ui/settings/hud/widgets": {"origin": "ai", "source": "drawn by the game's UI code (src/client/), AI-written"},

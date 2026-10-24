@@ -20,6 +20,7 @@
 #include "binds.h"
 #include "config.h"
 #include "renderer.h"
+#include "uifonts.h"
 #include "ui.h"
 
 struct GLFWwindow;
@@ -66,6 +67,7 @@ struct LaunchOptions {
     std::string chatShot;       // --chatshot TEXT: in game, chat open with TEXT typed and the caret in the middle
     std::string consoleShot;    // --consoleshot TEXT: in game, the console open with TEXT typed, then Tab pressed
     bool edFocus = false;       // --edfocus: the editor's map title field focused (caret screenshot)
+    int debugFonts = 0;         // --fonts: open Settings > FONT in the main menu (1); --settingsmenu: the settings page (2)
     bool menuShot = false;      // --menushot: screenshot whatever menu is up (main / settings / controls)
     double bench = 0;           // --bench SECONDS: measure frame times in a vs-bots game, print, quit
     bool uiTest = false;        // --uitest [report.json]: click every widget and check it does what it says (uitest.cpp)
@@ -617,6 +619,16 @@ private:
     bool hudOpen_ = false;
     bool visualsOpen_ = false;
     void drawVisualSettings(float x0, float y0, float wTotal);
+    // FONT (settings/fonts): the built-in UI fonts, then the player's mods/fonts files (uifonts.h). The list is
+    // looked up when the page opens and on REFRESH; a font's atlas is built once when it's picked.
+    bool fontsOpen_ = false;
+    void drawFontSettings(float x0, float y0, float wTotal);
+    std::vector<uifonts::Entry> fontList_;
+    bool fontListed_ = false;      // (fontList_ is current: cleared on opening the page and by REFRESH)
+    int fontScans_ = 0, fontScroll_ = 0;
+    std::string fontTried_;        // the ui_font value last applied (frame() applies cfg_.uiFont when it differs)
+    bool loadUiFont(const std::string& id, std::string* err, std::string* name);   // built and on the GPU, or false
+    void applyUiFontSetting();     // cfg_.uiFont, or Rubik with a notice when it can't be loaded
     // scriptable HUD: hud.cfg widgets, the verbose info block, and the in-game widget editor
     HudWidgets widgets_;
     HudVals hudVals_;

@@ -269,6 +269,7 @@ add_library(quark_assets STATIC
   src/client/overrides.cpp
   src/client/decoders.cpp
   src/client/fontatlas.cpp
+  src/client/uifonts.cpp
   src/client/codec_vorbis.c
   src/client/codec_flac_mp3.c
   src/client/codec_image_font.c
@@ -369,6 +370,14 @@ if(QUARK_BUILD_TESTS)
     add_test(NAME uitest COMMAND sh ${CMAKE_SOURCE_DIR}/tools/uitest.sh $<TARGET_FILE:quark> ${CMAKE_BINARY_DIR}/uitest-report.json
              WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
     set_tests_properties(uitest PROPERTIES TIMEOUT 3600 SKIP_RETURN_CODE 77)
+  endif()
+  # The map editor's native helper (tools/map_editor/native/README.md), plus the bot editor's commands linked into it
+  file(GLOB QUARK_MAPTOOL_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/map_editor/native/*.cpp ${CMAKE_SOURCE_DIR}/tools/bot_editor/native/*.cpp)
+  add_executable(quark_maptool ${QUARK_MAPTOOL_SOURCES})
+  target_include_directories(quark_maptool PRIVATE tests tools/map_editor/native)
+  target_link_libraries(quark_maptool quark_core)
+  if(WIN32)
+    target_link_options(quark_maptool PRIVATE -Wl,--stack,16777216)
   endif()
 endif()
 

@@ -103,6 +103,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     r_.resize(w, h);
     if (!r_.init(cfg_.shadowRes, err)) return false;
     loadAssetOverrides();
+    applyUiFontSetting();   // (Settings > FONT; the default needs nothing)
     rescanMaps();
     rankKey_ = loadOrCreateRankKey(userDataPath("quark.key")); // ranked identity: stays on this computer
     net_.setRankKey(rankKey_);   // (servers check the id against it; the key itself never goes to them)
@@ -113,6 +114,7 @@ bool Game::init(GLFWwindow* win, const LaunchOptions& opts, std::string* err) {
     ui_.steadyCaret = !opts_.screenshot.empty();
     if (opts_.hostMode < 0 && opts_.vsBotsMode < 0 && opts_.connect.empty() && opts_.editMap.empty()) loadMenuBackdrop();
     if (opts_.debugInfo) { setScreen(Screen::Info); infoTab_ = opts_.debugInfo - 1; }
+    if (opts_.debugFonts) { setScreen(Screen::Settings); fontsOpen_ = opts_.debugFonts == 1; }
     if (opts_.debugCustom) { rescanMaps(); editRules_ = CustomRules(); editRules_.name = "my mode"; editRules_.move[MV_AIR_ACCEL] = 2; editRules_.gravity = 0.5f; customTab_ = opts_.debugCustom - 1; setScreen(Screen::CustomMode); }
     if (!opts_.demo.empty()) playDemo(opts_.demo);
     if (opts_.debugLeaderboard) { setScreen(Screen::Leaderboard); raceStatsView_ = opts_.debugRaceStats; }
@@ -326,7 +328,7 @@ void Game::leaveGame(const std::string& error) {
     // in-game menus start closed next time (a dropped connection mid-menu left them open)
     if (widgetEdit_) widgets_.save(activeHudPath());
     if (settingsInGame_) cfg_.save();
-    settingsInGame_ = voteMenu_ = specPick_ = queueMenu_ = controlsOpen_ = crosshairOpen_ = hudOpen_ = visualsOpen_ = widgetEdit_ = hudDrop_ = false;
+    settingsInGame_ = voteMenu_ = specPick_ = queueMenu_ = controlsOpen_ = crosshairOpen_ = hudOpen_ = visualsOpen_ = fontsOpen_ = widgetEdit_ = hudDrop_ = false;
     picker_ = PICK_NONE;
     filePick_ = 0;
     captureAction_ = -1;
@@ -710,7 +712,7 @@ void Game::onKey(int key, int action, int mods) {
         if (key == GLFW_KEY_ESCAPE) {
             if (filePick_) { filePick_ = 0; return; }
             if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
-            if (controlsOpen_ || crosshairOpen_ || hudOpen_ || visualsOpen_) { controlsOpen_ = crosshairOpen_ = hudOpen_ = visualsOpen_ = false; captureAction_ = -1; cfg_.save(); return; }
+            if (controlsOpen_ || crosshairOpen_ || hudOpen_ || visualsOpen_ || fontsOpen_) { controlsOpen_ = crosshairOpen_ = hudOpen_ = visualsOpen_ = fontsOpen_ = false; captureAction_ = -1; cfg_.save(); return; }
             if (settingsInGame_) { settingsInGame_ = false; cfg_.save(); return; }
             if (voteMenu_ || queueMenu_ || picker_ != PICK_NONE) { voteMenu_ = queueMenu_ = specPick_ = false; picker_ = PICK_NONE; return; }
             paused_ = !paused_;
@@ -722,7 +724,7 @@ void Game::onKey(int key, int action, int mods) {
         if (edPrompt_ && screen_ == Screen::Main) { edPrompt_ = false; return; }   // "save your copy?": Esc = DON'T SAVE (it did nothing - UI test)
         if (filePick_) { filePick_ = 0; return; }
         if (widgetEdit_) { widgetEdit_ = false; widgets_.save(activeHudPath()); return; }
-        if (controlsOpen_ || crosshairOpen_ || hudOpen_ || visualsOpen_) { controlsOpen_ = crosshairOpen_ = hudOpen_ = visualsOpen_ = false; captureAction_ = -1; cfg_.save(); return; }
+        if (controlsOpen_ || crosshairOpen_ || hudOpen_ || visualsOpen_ || fontsOpen_) { controlsOpen_ = crosshairOpen_ = hudOpen_ = visualsOpen_ = fontsOpen_ = false; captureAction_ = -1; cfg_.save(); return; }
         if (picker_ != PICK_NONE) { picker_ = PICK_NONE; return; }
         if (screen_ == Screen::Leaderboard && raceStatsView_) { raceStatsView_ = false; return; } // race stats: back to the board
         if (screen_ == Screen::CustomMode) { setScreen(Screen::Host); return; }                  // same as its BACK (unsaved changes dropped)
@@ -825,6 +827,7 @@ void Game::onScroll(double dy) {
     if (screen_ == Screen::Info) { infoScroll_ -= (float)dy * 60.0f; return; }
     if (screen_ == Screen::Demos && picker_ == PICK_NONE) { demoScroll_ = std::max(0, demoScroll_ - (dy > 0 ? 1 : -1)); return; }   // clamped when drawn
     if (screen_ == Screen::Join) { joinScroll_ = std::max(0, joinScroll_ - (dy > 0 ? 1 : -1)); return; }
+    if (fontsOpen_ && (screen_ == Screen::Settings || (screen_ == Screen::InGame && settingsInGame_))) { fontScroll_ = std::max(0, fontScroll_ - (dy > 0 ? 1 : -1)); return; }   // (clamped when drawn)
     // One action per whole notch: smooth-scrolling trackpads and high-res wheels send many small
     // steps, which used to skip through several weapons at once. Reversing direction starts over.
     if ((dy > 0) != (wheelAccum_ > 0)) wheelAccum_ = 0;
@@ -1259,6 +1262,7 @@ void Game::frame(double dt) {
     QZONE("Game::frame");
     struct CpuTime { double t0 = timeNow(); double* out; ~CpuTime() { *out = timeNow() - t0; } } cpuTime{timeNow(), &lastCpu_}; // --bench: CPU part of the frame
     time_ += dt;
+    if (cfg_.uiFont != fontTried_) applyUiFontSetting();   // (a string compare; the font is built only when it changed)
     swallowChar_ = false;   // (a key that opened the chat and typed no character: don't eat a later one)
     framePlayersOk_ = false;
     if (screen_ == Screen::InGame && (!opts_.chatShot.empty() || !opts_.consoleShot.empty())) {
@@ -3829,6 +3833,7 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     if (widgetEdit_) { drawWidgetEditor(); return; }
     if (hudOpen_) { drawHudSettings(x0, y0, wTotal); return; }
     if (visualsOpen_) { drawVisualSettings(x0, y0, wTotal); return; }
+    if (fontsOpen_) { drawFontSettings(x0, y0, wTotal); return; }
     float s = ui_.s();
     float h = 32 * s, gap = 7 * s, colGap = 24 * s;
     float w = std::max(370 * s, wTotal * 0.5f);   // (320: HITSOUND / PLAYER SHADOWS / VOICE were cut off at 720p - UI test)
@@ -3846,7 +3851,7 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     {   // (fits its half column: shrunk, then a long linked name clipped, keeping "(PUBLIC)")
         float lw = w * 0.5f - gap * 0.5f;
         std::string dl = cfg_.discordName.empty() ? "DISCORD CODE (/link) - PUBLIC"
-            : "DISCORD: " + r_.textClip(cfg_.discordName, Renderer::kMinTextScale, lw - r_.textWidth("DISCORD:  (PUBLIC)", Renderer::kMinTextScale)) + " (PUBLIC)";
+            : "DISCORD: " + r_.textClip(cfg_.discordName, r_.minTextScale(), lw - r_.textWidth("DISCORD:  (PUBLIC)", r_.minTextScale())) + " (PUBLIC)";
         ui_.labelFit(x + w * 0.5f + gap * 0.5f, y, lw, dl);
     }
     y += 22 * s;
@@ -4055,7 +4060,8 @@ void Game::drawSettings(float x0, float y0, float wTotal) {
     if (ui_.button(xr, y, w * 0.5f - gap * 0.5f, h, "HUD LAYOUT", UiExp::nav("~settings/hud"))) hudOpen_ = true;
     if (ui_.button(xr + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "VISUALS", UiExp::nav("~settings/visuals"))) visualsOpen_ = true;
     y += h + gap;
-    if (ui_.button(xr, y, w, h, "BACK", UiExp::nav(settingsInGame_ ? "ingame/pause" : "main"))) {
+    if (ui_.button(xr, y, w * 0.5f - gap * 0.5f, h, "FONT", UiExp::nav("~settings/fonts"))) { fontsOpen_ = true; fontListed_ = false; fontScroll_ = 0; }
+    if (ui_.button(xr + w * 0.5f + gap * 0.5f, y, w * 0.5f - gap * 0.5f, h, "BACK", UiExp::nav(settingsInGame_ ? "ingame/pause" : "main"))) {
         cfg_.save();
         linkDiscord();
         if (net_.state() == ConnState::Connected) net_.sendCommand("name " + cfg_.name);
@@ -4383,7 +4389,7 @@ void Game::drawCustomModeEditor(float cx, float y) {
         for (int k = 0; k < MV_COUNT; k++) {
             char v[16];
             snprintf(v, sizeof v, ": %.2fx", r.move[k]);
-            widest = std::max(widest, r_.textWidth(stdTo(moveParamLabel(k), moveParamBase(k), r.move[k], moveParamUnit(k)) + v, Renderer::kMinTextScale));
+            widest = std::max(widest, r_.textWidth(stdTo(moveParamLabel(k), moveParamBase(k), r.move[k], moveParamUnit(k)) + v, r_.minTextScale()));
         }
         int cols = widest + 8 * s <= (gw - 2 * gap) / 3 ? 3 : 2, rows = (MV_COUNT + cols - 1) / cols;
         const float rh = std::max(18 * s, std::min(bh, avail / rows - gap));
@@ -4427,7 +4433,7 @@ void Game::drawCustomModeEditor(float cx, float y) {
         int n = 0;
         float widest = 0;
         for (size_t i = 0; i < maps_.size() && i < mapInfo_.size(); i++)
-            if (mapInfo_[i].modes >> r.baseMode & 1) { n++; widest = std::max(widest, r_.textWidth(upper(maps_[i]) + ": OFF", Renderer::kMinTextScale)); }
+            if (mapInfo_[i].modes >> r.baseMode & 1) { n++; widest = std::max(widest, r_.textWidth(upper(maps_[i]) + ": OFF", r_.minTextScale())); }
         // as many columns as fit above SAVE / BACK, but never so narrow a name is cut off (with many of your own maps:
         // lower rows instead, never off the bottom)
         const float avail = r_.height() - y - 80 * s;
@@ -5648,6 +5654,80 @@ void Game::drawVisualSettings(float x0, float y0, float wTotal) {
     ui_.label(x, y, "RANKED: NO HEALTH BARS", {0.7f, 0.72f, 0.75f, 1}, 0.5f);
     y += 14 * s + gap * 2;
     if (ui_.button(x, y, w, h, "BACK", UiExp::nav("~settings"))) { visualsOpen_ = false; cfg_.save(); }
+}
+
+// FONT: the UI font (uifonts.h). Built-ins first, then mods/fonts; a click builds that font's atlas once and saves it.
+bool Game::loadUiFont(const std::string& id, std::string* err, std::string* name) {
+    std::unique_ptr<FontAtlas> fa;
+    const double t0 = timeNow();
+    if (!uifonts::load(id, Renderer::uiFontLayout(), fa, err, name)) return false;
+    if (fa) printf("font: %s built in %.0f ms\n", name ? name->c_str() : id.c_str(), (timeNow() - t0) * 1000);
+    r_.setUiFont(std::move(fa));   // (null: the baked default)
+    return true;
+}
+
+void Game::applyUiFontSetting() {
+    fontTried_ = cfg_.uiFont;
+    std::string err, name;
+    if (loadUiFont(cfg_.uiFont, &err, &name)) return;
+    r_.setUiFont(nullptr);   // (Rubik; the setting is kept, so the font is back once its file is)
+    notify("FONT " + upper(name) + ": " + upper(err) + " - USING RUBIK", 6);
+}
+
+void Game::drawFontSettings(float x0, float y0, float wTotal) {
+    if (!fontListed_) { fontList_ = uifonts::scan(); fontListed_ = true; fontScans_++; }
+    const float s = ui_.s(), h = 30 * s, gap = 6 * s, w = std::min(std::max(560 * s, wTotal * 0.5f), (float)r_.width() - 40 * s);
+    const float x = x0 + wTotal * 0.5f - w * 0.5f, nameW = w * 0.5f;
+    const int n = (int)fontList_.size();
+    // as many rows as fit above OPEN FOLDER / REFRESH, the note and BACK; the wheel scrolls the rest
+    const float H = (float)r_.height(), top0 = std::max(24 * s, y0);
+    // (the panel may rise over the logo, as the settings page does: every built-in fits at 1024x768 without scrolling)
+    const int fitRows = std::max(3, (int)((H - 24 * s - 3 * (h + gap) - 100 * s) / (h + gap)));
+    fontScroll_ = std::min(fontScroll_, std::max(0, n - fitRows));
+    const int rows = std::min(n - fontScroll_, fitRows);
+    bool noneOfYours = std::none_of(fontList_.begin(), fontList_.end(), [](const uifonts::Entry& e) { return e.user; });
+    const float ph = (rows + 3) * (h + gap) + (n > rows ? 14 * s : 0) + (noneOfYours ? 16 * s : 0) + 62 * s;
+    float y = std::max(24 * s, std::min(top0, H - ph + 8 * s));   // (the panel's bottom stays on screen)
+    ui_.panel(x - 16 * s, y - 16 * s, w + 32 * s, ph);
+    ui_.labelCentered(x + w * 0.5f, y, "FONT", kWhite, 1.4f);
+    y += h + gap;
+    const std::string current = cfg_.uiFont.empty() ? uifonts::kDefault : cfg_.uiFont;
+    for (int k = 0; k < rows; k++, y += h + gap) {
+        const uifonts::Entry& e = fontList_[fontScroll_ + k];
+        const bool on = e.id == current;
+        // (its id: the font's name, the same whether it's the one in use or not)
+        if (ui_.button(x, y, nameW, h, on ? "> " + e.name + " <" : e.name, (on ? UiExp::inert() : UiExp::cfg("ui_font")).withId(e.name.c_str())) && !on) {
+            std::string err, name;
+            if (loadUiFont(e.id, &err, &name)) { cfg_.uiFont = fontTried_ = e.id; cfg_.save(); }
+            else notify("FONT " + upper(name) + ": " + upper(err), 5);   // (nothing changes)
+            return;   // (fontList_ stays; the next frame draws in the new font)
+        }
+        if (!e.hint.empty()) {
+            const float hs = std::max(1.0f, std::round(ui_.textScale() * 0.55f)), hx = x + nameW + 12 * s;
+            ui_.label(hx, y + (h - r_.textHeight(hs)) * 0.5f, r_.textClip(e.hint, hs, x + w - hx), kGrey, 0.55f);
+        }
+    }
+    if (n > rows) {
+        std::string more = std::to_string(fontScroll_ + 1) + "-" + std::to_string(fontScroll_ + rows) + " OF " + std::to_string(n) + " - WHEEL TO SCROLL";
+        ui_.labelCentered(x + w * 0.5f, y - gap + 2 * s, more, kGrey, 0.5f);
+        y += 14 * s;
+    }
+    const float ns = std::max(1.0f, std::round(ui_.textScale() * 0.5f));   // (notes: cut to the panel in a wide font)
+    if (noneOfYours) {
+        ui_.label(x, y, r_.textClip("YOUR OWN: PUT .TTF / .OTF FILES IN MODS/FONTS, THEN REFRESH", ns, w), kGrey, 0.5f);
+        y += 16 * s;
+    }
+    const float hw = (w - gap) * 0.5f;
+    if (ui_.button(x, y, hw, h, "OPEN FOLDER", UiExp::url())) {
+        std::error_code ec;
+        std::filesystem::create_directories(std::filesystem::u8path(uifonts::modsDir()), ec);
+        openUrl(std::filesystem::absolute(std::filesystem::u8path(uifonts::modsDir()), ec).lexically_normal().u8string());
+    }
+    if (ui_.button(x + hw + gap, y, hw, h, "REFRESH", UiExp::state("fontscan"))) fontListed_ = false;
+    y += h + gap;
+    ui_.label(x, y, r_.textClip("A VARIABLE FONT IS DRAWN AT ITS DEFAULT WEIGHT - GAME FONTS: YOUR OWN COPY IF FOUND", ns, w), kGrey, 0.5f);
+    y += 16 * s + gap;
+    if (ui_.button(x, y, w, h, "BACK", UiExp::nav("~settings"))) { fontsOpen_ = false; cfg_.save(); }
 }
 
 void Game::drawHudSettings(float x0, float y0, float wTotal) {

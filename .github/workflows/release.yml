@@ -1,4 +1,9 @@
-# Builds and tests every push. Publishes only from two places (docs: CLAUDE.md "Releases"):
+# Builds every push and checks it: meta (VERSION, changelogs, no secrets), the Windows / Linux / macOS builds and
+# packages, the website's data, and (only a build a human marks as a final test: meta's sanitizer trigger) the
+# sanitizers + fuzzers, which fail only on memory / undefined-behaviour errors and which no release waits for.
+# CI runs no gameplay or UI tests (owner, 2026-10-24): quark_tests and quark --uitest are run locally before every
+# push, and the testing build is play-tested by hand (docs/RELEASE_CHECKLIST.md) before production.
+# Publishes only from two places (docs: CLAUDE.md "Releases"):
 #   TESTING     a push to the `testing` branch: a signed GitHub *prerelease* tagged test-<VERSION>-test.<run number>,
 #               built as version <VERSION>-test.<run number> (never "latest"; of the website only the testing
 #               channel's asset data, assets/data/testing/, is replaced). The tag
@@ -6,11 +11,14 @@
 #               it's a prerelease. macOS is optional: the prerelease goes out with
 #               Windows + Linux, and the macOS files are added when (if) that build finishes.
 #   PRODUCTION  a pushed tag v<VERSION> (no suffix) on a commit of the protected default branch: a signed release
-#               marked latest, only when Windows, Linux AND macOS all built and passed; then the website.
+#               marked latest, only when Windows, Linux AND macOS all built; then the website.
 #   SITE        a manual run on the default branch with "site" ticked: builds, then publishes only the website for the
 #               production release VERSION names (which must exist and be latest). For a site deploy that failed or
 #               was skipped; it never makes a release.
-# Any other push (or a manual run) builds and tests only.
+#   FINAL       a manual run with "final" ticked (any branch, usually `testing`): meta + the sanitizers on its current
+#               commit, nothing built or published. A push whose head commit message (a merged PR: its title) has
+#               [final] runs them too, beside its normal build. Nothing else runs them (owner: a human marks a final test).
+# Any other push (or a manual run) builds and checks only.
 name: build-and-release
 on:
   push:
@@ -22,13 +30,18 @@ on:
         description: 'Only publish the website again, for the latest production release (run it on the default branch)'
         type: boolean
         default: false
+      final:
+        description: "Final test: run the sanitizers on this branch's current commit (builds and publishes nothing)"
+        type: boolean
+        default: false
 permissions:
   contents: read   # every job only reads; release and pages get write below
 env:
   # testing builds carry their own version (<VERSION>-test.<N>: below the production release it leads to)
   QUARK_VERSION_SUFFIX: ${{ github.ref == 'refs/heads/testing' && github.event_name == 'push' && format('-test.{0}', github.run_number) || '' }}
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # (a final-test run gets its own group: a testing push queued after it must not replace it, nor it the push)
+  group: ${{ github.workflow }}-${{ github.ref }}${{ github.event_name == 'workflow_dispatch' && inputs.final && '-final' || '' }}
   # a newer push to a work branch replaces its build; a release (testing branch or tag) always runs to the end
   cancel-in-progress: ${{ github.ref_type == 'branch' && github.ref_name != 'testing' }}
 jobs:
@@ -39,22 +52,25 @@ jobs:
       version: ${{ steps.c.outputs.version }}   # what the build says it is (testing: <VERSION>-test.<N>)
       base: ${{ steps.c.outputs.base }}         # the VERSION file (changelogs/<base>.md)
       tag: ${{ steps.c.outputs.tag }}
-      groups: ${{ steps.g.outputs.groups }}     # quark_tests' groups (JSON): the test matrix, one runner per group
+      sanitizers: ${{ steps.c.outputs.sanitizers }}   # 'true': the sanitizers job runs (the trigger is in step c)
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
           fetch-depth: 0
       - id: c
-        name: which channel this run publishes to (production / testing / none)
+        name: which channel this run publishes to (production / testing / site / final / none), and if the sanitizers run
         env:
           GH_TOKEN: ${{ github.token }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           SITE_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.site || false }}
+          FINAL_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.final || false }}
+          HEAD_MSG: ${{ github.event.head_commit.message }}   # (a push's head commit; empty on a manual run)
         run: |
           set -eu
           V=$(head -n1 VERSION | tr -d '[:space:]')
           echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::VERSION '$V' isn't x.y.z"; exit 1; }
+          if [ "$SITE_ONLY" = true ] && [ "$FINAL_ONLY" = true ]; then echo "::error::tick site or final, not both"; exit 1; fi
           CHANNEL=none; TAG=""
           if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF_TYPE" = tag ]; then
             TAG="$GITHUB_REF_NAME"
@@ -80,6 +96,8 @@ jobs:
             LATEST=$(gh release view -R "$GITHUB_REPOSITORY" --json tagName -q .tagName 2>/dev/null || true)
             [ "$LATEST" = "v$V" ] || { echo "::error::VERSION $V isn't the latest production release ($LATEST): nothing to publish the site for"; exit 1; }
             TAG="v$V"; CHANNEL=site
+          elif [ "$FINAL_ONLY" = true ]; then
+            CHANNEL=final   # (the build, package and publish jobs skip on a final run: only meta and the sanitizers)
           fi
           if [ "$CHANNEL" = production ] || [ "$CHANNEL" = testing ]; then
             [ -f "changelogs/$V.md" ] || { [ "$CHANNEL" = testing ] || { echo "::error::changelogs/$V.md is missing"; exit 1; }; }
@@ -89,27 +107,27 @@ jobs:
               echo "::error::release $TAG already exists: bump VERSION (releases are never replaced)"; exit 1
             fi
           fi
-          { echo "channel=$CHANNEL"; echo "version=$V$QUARK_VERSION_SUFFIX"; echo "base=$V"; echo "tag=$TAG"; } >> "$GITHUB_OUTPUT"
-          echo "### $CHANNEL ${TAG:-(build only)}" >> "$GITHUB_STEP_SUMMARY"
+          # When the sanitizers run (owner, 2026-10-24): ONLY for a build a human marks as a final test, on any branch; this is
+          # the one place to change it. Nothing waits for them. Agents never add the marker themselves.
+          #   (1) a push whose head commit message has [final] (a merged PR's commit carries the PR title), or
+          #   (2) a manual run with "final" ticked (channel final: meta + the sanitizers only)
+          #   (to keep only one of the two: delete the line for the other, and for (2) the `final` input above)
+          #   production tags (that commit ran them on testing) and site-only runs: never
+          SANITIZERS=false
+          case "$CHANNEL" in
+            final) SANITIZERS=true ;;                                                 # (2)
+            none|testing) case "$HEAD_MSG" in *'[final]'*) SANITIZERS=true ;; esac ;;  # (1)
+          esac
+          { echo "channel=$CHANNEL"; echo "version=$V$QUARK_VERSION_SUFFIX"; echo "base=$V"; echo "tag=$TAG"; echo "sanitizers=$SANITIZERS"; } >> "$GITHUB_OUTPUT"
+          echo "### $CHANNEL ${TAG:-(build only)}$([ "$SANITIZERS" = true ] && echo ', sanitizers')" >> "$GITHUB_STEP_SUMMARY"
       - name: no keys, tokens or secrets in the repository (tools/check_secrets.py; the pre-commit hook runs it too)
         run: python3 -I tools/check_secrets.py
       - name: the asset provenance registry is valid (tools/provenance.py check, docs/PROVENANCE.md)
         run: python3 -I tools/provenance.py check
-      - id: g
-        name: the test groups (tests/tests.cpp's par + alone lists; the linux job checks the built binary agrees)
-        run: |
-          python3 - >> "$GITHUB_OUTPUT" <<'PY'
-          import json, re
-          s = open("tests/tests.cpp").read()
-          a = s.index("std::vector<T> par = {")
-          b = s.index("#ifndef _WIN32", a)
-          names = re.findall(r'^\s*\{"([a-z0-9_]+)", \[\]', s[a:b], re.M)
-          assert names, "no test groups found"
-          print("groups=" + json.dumps(names))
-          PY
 
   lightcache:   # the official maps' light (quark --bake-maps), baked once and shipped in every package's maps/lightcache/
     # so no first join waits for a bake (Midtown ~5 s). Linux only: the Windows exe is cross-compiled and can't run here.
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.final) }}   # (as windows)
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
@@ -128,6 +146,7 @@ jobs:
 
   windows:
     needs: lightcache
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.final) }}   # (a final run builds nothing: meta + sanitizers only)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -149,7 +168,7 @@ jobs:
             -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc-posix -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++-posix \
             -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres -DCMAKE_BUILD_TYPE=Release \
             -DQUARK_VERSION_SUFFIX="$QUARK_VERSION_SUFFIX"
-          cmake --build build -j
+          cmake --build build -j   # (every target: quark_tests.exe too, so a MinGW-only compile error in the tests shows here)
           sh tools/launcher_build.sh -DCMAKE_SYSTEM_NAME=Windows \
             -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc-posix -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++-posix \
             -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres -DCMAKE_BUILD_TYPE=Release
@@ -161,33 +180,10 @@ jobs:
           cp build-launcher/quark_launcher.exe quark-launcher-windows.exe
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: { name: windows, path: "quark-windows.zip\nquark-windows.qpak\nquark-launcher-windows.exe" }
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with: { name: windows-tests, path: "build/quark_tests.exe\nmaps/*.qmap", retention-days: 7 }   # (maps are generated at build time: not in the checkout)
-
-  windows-tests:   # the release's own MinGW build of the tests, run on Windows (REVIEW ENG-1), one group per runner
-    needs: [meta, windows]
-    runs-on: windows-2022
-    timeout-minutes: 45
-    if: needs.meta.outputs.base != '1.17.0'   # 1.17.0 alone ships on its local test run (owner); every later version is tested here
-    strategy:
-      fail-fast: false   # (every failing group shows up in one run)
-      matrix:
-        group: ${{ fromJSON(needs.meta.outputs.groups) }}
-    name: windows-tests (${{ matrix.group }})
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with: { name: windows-tests, path: . }   # build/quark_tests.exe + maps/
-      - name: quark_tests (Windows)
-        shell: bash
-        env:
-          QUARK_SOURCE_DIR: ${{ github.workspace }}   # tools/, assets/ and tests/data/ (the exe was built on another machine)
-        run: ./build/quark_tests.exe group "${{ matrix.group }}"
 
   linux:
-    needs: [meta, lightcache]
+    needs: lightcache
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.final) }}   # (as windows)
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -198,14 +194,9 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { persist-credentials: false, ref: site, path: site }   # the website's source: the site branch (HANDOVER section 4)
-      - env:
-          GROUPS: ${{ needs.meta.outputs.groups }}
-        run: |
+      - run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DQUARK_VERSION_SUFFIX="$QUARK_VERSION_SUFFIX"
           cmake --build build -j
-          # the test matrix (meta's list, read from the source) must be the binary's own groups
-          [ "$(build/quark_tests groups | tr '\n' ' ')" = "$(echo "$GROUPS" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)), end=" ")')" ] \
-            || { echo "::error::meta's test groups ($GROUPS) aren't quark_tests' own: fix the parser in the meta job"; exit 1; }
           python3 tools/site_changelog.py .   # the website's data builds (checked here, before anything is published)
           python3 tools/site_updates.py . --allow-missing-full   # (work in progress may not have its full changelog yet)
           # the website's assets/ and sounds/ pages: this build's models, maps, sounds and voices (docs/ASSETS.md)
@@ -222,55 +213,14 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: { name: linux, path: "quark-linux.tar.gz\nquark-linux.qpak\nquark-launcher-linux" }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with: { name: linux-tests, path: "build/quark_tests\nmaps/*.qmap", retention-days: 7 }
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: { name: site-assets, path: site-assets, retention-days: 7 }   # (the pages / release-testing jobs publish it)
 
-  linux-tests:   # quark_tests, one group per runner (the slowest group sets the time, and the timing tests run alone)
-    needs: [meta, linux]
-    runs-on: ubuntu-22.04
-    timeout-minutes: 45
-    if: needs.meta.outputs.base != '1.17.0'   # (as windows-tests)
-    strategy:
-      fail-fast: false
-      matrix:
-        group: ${{ fromJSON(needs.meta.outputs.groups) }}
-    name: linux-tests (${{ matrix.group }})
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with: { name: linux-tests, path: . }
-      - name: quark_tests
-        env:
-          QUARK_SOURCE_DIR: ${{ github.workspace }}
-        run: |
-          chmod +x build/quark_tests
-          ./build/quark_tests group "${{ matrix.group }}"
-
-  linux-uitest:   # quark --uitest (docs/UI_TEST.md): every widget on every screen, under Xvfb, on the release's own Linux build
-    needs: [meta, linux]
-    if: needs.meta.outputs.base != '1.17.0'   # (as windows-tests)
-    runs-on: ubuntu-22.04
-    timeout-minutes: 60
-    steps:
-      - run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri libglx-mesa0 libxrandr2 libxinerama1 libxcursor1 libxi6
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with: { name: linux, path: . }
-      - name: quark --uitest
-        run: |
-          tar xzf quark-linux.tar.gz
-          cd quark-linux
-          xvfb-run -a -s "-screen 0 1920x1080x24" ./quark --uitest ../uitest-report.json
-          test -f ../uitest-report.json   # (it ran: not skipped)
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: always()
-        with: { name: uitest-report, path: uitest-report.json, retention-days: 14, if-no-files-found: ignore }
-
-  sanitizers:   # REVIEW ENG-3: work branches only (never a release, and no release job waits for it)
+  sanitizers:   # REVIEW ENG-3: a memory / undefined-behaviour check, not a gameplay test (those run locally before a push).
+    # quark_tests only drives the code here: the job fails on a sanitizer report or a fuzzer crash, never on a test's own
+    # CHECK. When it runs is meta's sanitizer trigger (only a build a human marks as a final test, any branch; never a
+    # production tag or a site-only run), and no release job waits for it (owner, 2026-10-24).
     needs: meta
-    if: needs.meta.outputs.channel == 'none' && needs.meta.outputs.base != '1.17.0'   # (1.17.0: no CI tests, owner)
+    if: needs.meta.outputs.sanitizers == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     steps:
@@ -282,11 +232,27 @@ jobs:
         run: |
           CC=clang-18 CXX=clang++-18 cmake -S . -B build -DQUARK_FUZZ=ON -DQUARK_BUILD_CLIENT=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo
           cmake --build build -j
-      - name: quark_tests under the sanitizers (any report fails it)
+      - name: quark_tests under the sanitizers (fails only on a sanitizer report; the tests' own results don't count here)
         env:
           QUARK_TEST_TIMESCALE: "1"   # real time: sanitized code can't keep the network tests' 4x clock
-          UBSAN_OPTIONS: print_stacktrace=1
-        run: ./build/quark_tests
+        run: |
+          # Every ASan / LSan / UBSan report goes to its own file, <log_path>.<pid>: the forked test groups' too (the
+          # runtime reopens the file per pid), including a crash it catches in one. -fno-sanitize-recover=all
+          # (CMakeLists QUARK_SANITIZE) makes any UB report fatal, so it's always written before the process ends.
+          SAN="$RUNNER_TEMP/san"; mkdir -p "$SAN"
+          export ASAN_OPTIONS="log_path=$SAN/report" UBSAN_OPTIONS="log_path=$SAN/report:print_stacktrace=1"
+          # (a hang isn't a sanitizer finding: timeout stops the whole process group, and the reports are still read)
+          rc=0; timeout -k 1m 55m ./build/quark_tests || rc=$?
+          shopt -s nullglob; reports=("$SAN"/report.*)
+          for f in "${reports[@]}"; do echo "::group::sanitizer output: $f"; cat "$f"; echo "::endgroup::"; done
+          if [ ${#reports[@]} -gt 0 ] && grep -qE 'ERROR: |runtime error:|SUMMARY: ' "${reports[@]}"; then
+            echo "::error::the sanitizers reported an error (above; the files are the sanitizer-reports artifact)"; exit 1
+          fi
+          [ ${#reports[@]} -eq 0 ] || echo "::warning::sanitizer warnings, no errors (above)"
+          echo "::notice::no sanitizer errors. quark_tests itself exited $rc$([ "$rc" = 124 ] && echo ' (timed out)') under the sanitizers: not counted here (gameplay tests run locally before a push)"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with: { name: sanitizer-reports, path: "${{ runner.temp }}/san/", retention-days: 7, if-no-files-found: ignore }
       - name: "fuzzers: every saved input (tests/data/fuzz), then 30 s of new ones each"
         working-directory: build   # (fuzz_server loads maps/ from here)
         env:
@@ -302,6 +268,7 @@ jobs:
 
   macos:
     needs: [meta, lightcache]
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.final) }}   # (as windows)
     runs-on: macos-latest
     timeout-minutes: 60
     continue-on-error: ${{ needs.meta.outputs.channel != 'production' }}   # required for production only
@@ -331,7 +298,9 @@ jobs:
     # run (and the next testing push behind it). After 5 min queued, once every other job has finished, this cancels the
     # run, skipping only the macOS part (the testing prerelease is out by then; production waits for macOS as always), and
     # macos-retry.yml re-runs the cancelled macOS part (and what needs it) an hour later. Owner's call, 2026-10-23.
+    # (The sanitizers, when they run, are one of those other jobs: the cancel waits for them to finish.)
     needs: meta
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.final) }}   # (no macos job on a final run)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     permissions:
@@ -361,9 +330,10 @@ jobs:
           done
 
   release:   # PRODUCTION: every platform, signed, latest
-    needs: [meta, windows, windows-tests, linux, linux-tests, linux-uitest, macos]
-    # (!cancelled(): the skipped 1.17.0 tests would otherwise skip this too; every other job it needs must have passed)
-    if: "!cancelled() && needs.meta.outputs.channel == 'production' && needs.meta.result == 'success' && needs.windows.result == 'success' && needs.linux.result == 'success' && needs.macos.result == 'success' && (needs.windows-tests.result == 'success' || (needs.windows-tests.result == 'skipped' && needs.meta.outputs.base == '1.17.0')) && (needs.linux-tests.result == 'success' || (needs.linux-tests.result == 'skipped' && needs.meta.outputs.base == '1.17.0')) && (needs.linux-uitest.result == 'success' || (needs.linux-uitest.result == 'skipped' && needs.meta.outputs.base == '1.17.0'))"
+    needs: [meta, windows, linux, macos]
+    # (no status function: GitHub's implicit success() also requires every job above to have passed; none of them is
+    # ever skipped on a production run)
+    if: needs.meta.outputs.channel == 'production' && needs.meta.result == 'success' && needs.windows.result == 'success' && needs.linux.result == 'success' && needs.macos.result == 'success'
     runs-on: ubuntu-24.04
     environment: production
     permissions:
@@ -376,9 +346,9 @@ jobs:
         with: { path: dist }
       - name: all three platforms are here (no macOS, no release)
         run: |
-          # (not release files: the test jobs' binaries + maps (folders: `sha256sum */*` below fails on them), the UI
-          # test's report, the website's assets, which the pages job publishes, and the light bakes, inside every package)
-          rm -rf dist/windows-tests dist/linux-tests dist/uitest-report dist/site-assets dist/lightcache
+          # only the platforms' artifacts are release files: drop every other one (the website's assets, which the pages
+          # job publishes, and any a check job uploaded), or `sha256sum */*` below would list them
+          find dist -mindepth 1 -maxdepth 1 ! -name windows ! -name linux ! -name macos -exec rm -rf {} +
           for p in windows linux macos; do test -f "dist/$p/quark-$p.qpak" || { echo "::error::no $p build"; exit 1; }; done
       - name: sign the launchers, release manifest, sign every published file (Ed25519, docs/SIGNING.md)
         env:
@@ -409,8 +379,8 @@ jobs:
             dist/windows/* dist/linux/* dist/macos/* dist/quark-release.txt dist/quark-release.txt.sig dist/SHA256SUMS dist/SHA256SUMS.sig
 
   release-testing:   # TESTING: Windows + Linux, signed prerelease (macOS follows in release-testing-macos)
-    needs: [meta, windows, windows-tests, linux, linux-tests, linux-uitest]
-    if: "!cancelled() && needs.meta.outputs.channel == 'testing' && needs.meta.result == 'success' && needs.windows.result == 'success' && needs.linux.result == 'success' && (needs.windows-tests.result == 'success' || (needs.windows-tests.result == 'skipped' && needs.meta.outputs.base == '1.17.0')) && (needs.linux-tests.result == 'success' || (needs.linux-tests.result == 'skipped' && needs.meta.outputs.base == '1.17.0')) && (needs.linux-uitest.result == 'success' || (needs.linux-uitest.result == 'skipped' && needs.meta.outputs.base == '1.17.0'))"
+    needs: [meta, windows, linux]
+    if: needs.meta.outputs.channel == 'testing' && needs.meta.result == 'success' && needs.windows.result == 'success' && needs.linux.result == 'success'   # (as release)
     runs-on: ubuntu-24.04
     environment: testing
     permissions:
@@ -428,7 +398,9 @@ jobs:
           TAG: ${{ needs.meta.outputs.tag }}
           VER: ${{ needs.meta.outputs.version }}
         run: |
-          rm -rf dist/windows-tests dist/linux-tests dist/uitest-report dist/macos dist/site-assets dist/lightcache   # (as the production job; site-assets: last step)
+          # only Windows + Linux (as the production job: no other artifact, e.g. the website's assets, which the last step
+          # publishes, or a sanitizer / fuzzer report uploaded by then; macOS: release-testing-macos adds it)
+          find dist -mindepth 1 -maxdepth 1 ! -name windows ! -name linux -exec rm -rf {} +
           # (as in the production job: launcher signatures into the packages first, then the manifest, then every file)
           sh tools/sign/sign_release.sh --launchers dist/*/quark-*.qpak
           sh tools/sign/release_manifest.sh testing "$TAG" "$VER" "$GITHUB_SHA" dist/*/quark-*.qpak dist/*/quark-launcher-* \
@@ -516,7 +488,7 @@ jobs:
 
   pages:   # the website follows production only (or a site-only run: SITE above)
     needs: [meta, linux, release]   # linux: its site-assets export (a site-only run has no release job to wait on it)
-    # !cancelled(): without it, a job skipped further back (1.17.0's CI tests) skips this one too (it did for 1.17.0)
+    # !cancelled(): a site-only run skips release, and without it GitHub's implicit success() would skip this job too
     if: "!cancelled() && needs.meta.result == 'success' && needs.linux.result == 'success' && ((needs.meta.outputs.channel == 'production' && needs.release.result == 'success') || needs.meta.outputs.channel == 'site')"
     runs-on: ubuntu-24.04
     environment: production

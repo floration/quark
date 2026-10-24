@@ -13,7 +13,9 @@ Do this for **every** update, after it has been pushed to the `testing` branch a
 
 | ✓ | Check |
 |---|---|
-| ☐ | GitHub → Actions: the run for the `testing` push is green: Linux tests, Windows tests, macOS build, sanitizers. |
+| ☐ | GitHub → Actions: the run for the `testing` push is green: meta (VERSION, changelogs, secrets check), the Windows, Linux and macOS builds, the testing prerelease. CI runs **no** gameplay or UI tests (owner, 2026-10-24): those are the local runs below and this checklist. |
+| ☐ | This is the **final test build** (the one you mean to ship) and its **sanitizers** run is green. Mark it either way: give the push to `testing` a head commit message with `[final]` in it (for a merged PR, put `[final]` in the PR's title), or after the push run Actions → **build-and-release** → **Run workflow** on `testing` with **final** ticked (that runs only the sanitizers, on the branch's current commit; nothing is built or published). The sanitizers fail only on a memory or undefined-behaviour error (ASan / UBSan / the fuzzers), never on a test's own result. No other build runs them (work branches and pull requests included): only a human marks a final test, never an agent. |
+| ☐ | Claude's local test runs passed **on this commit** (ask for the results): `tools/release_check.sh` (every `build/quark_tests` group, plus every map hosted headless; exit 0) and the UI test `build/quark --uitest` under Xvfb ([UI_TEST.md](UI_TEST.md); exit 0). CI no longer runs them, so nothing else checks them before production. |
 | ☐ | GitHub → Releases: the prerelease `test-<VERSION>-test.<N>` exists. It is marked **Pre-release**, not "Latest". |
 | ☐ | Its assets: `quark-windows.qpak`, `quark-linux.qpak` (and `quark-macos.qpak` once the macOS build finished), each with a `.sig`; `quark-release.txt` + `.sig`; `SHA256SUMS` + `.sig`. |
 | ☐ | `VERSION` is bumped. `changelogs/<VERSION>.md` (the short notes) and `changelogs/full/<VERSION>.md` (every change, and why) both exist; a production tag without either fails. |
@@ -55,7 +57,7 @@ Do this on Windows; also on Linux / macOS if you have one.
 
 ## 3. Menus (every screen)
 
-The automated UI test clicks every button (`quark --uitest`, part of the test suite). Here you check that things look right and make sense to a person.
+The automated UI test clicks every button (`quark --uitest`, run locally on this commit: section 0). Here you check that things look right and make sense to a person.
 
 | ✓ | Check |
 |---|---|
@@ -81,6 +83,7 @@ For each one: change it, check the effect in a game, quit, restart, check it was
 | ☐ | Interpolation setting (up to 200 ms): shots still hit what you see. |
 | ☐ | HUD editor: drag, add, delete, import / export a layout; the weapon list shows only the weapons the mode has. |
 | ☐ | DISCORD CODE: see section 13. |
+| ☐ | **Font** (SETTINGS → FONT): the game is in **Rubik Bold** everywhere (menus, HUD, chat, console still monospaced, scoreboard, editor). Pick WORK SANS, QUARK CLASSIC (square pixels, black outline, the old letter widths) and each game-styled entry: everything redraws in it at once with no stutter afterwards (F3 lows unchanged); restart: it's kept. Put a .ttf in `mods/fonts` (OPEN FOLDER), REFRESH: it's listed and works. Delete that file and restart: a notice says it fell back to Rubik. With Steam's TF2 / Quake or Windows' Verdana present, those entries say "USING YOUR ..." and look like the game. |
 | ☐ | **Name colour** (SETTINGS, right column): turn it on and pick a colour; a second player sees your name in it on the scoreboard, in chat and in the kill feed; team name tags stay the team colour; a very dark colour shows lighter. Off again: your name goes back to the default. |
 | ☐ | **Health bars** are on after updating from 1.16 even if you had them off; turning them off now stays off across restarts. |
 | ☐ | Every number slider: click it and **type a value**; **right-click** resets it to its default (check the custom-mode MOVEMENT page too). Damage-number size, damage flash (off by default; on / intensity in VISUALS), sniper and rifle zoom FOV, and the fullbright map colour all work. |
@@ -141,6 +144,7 @@ Host each mode on **its own map** with bots (and a second human if you can). For
 | ☐ | SAVE, SAVE AS, OPEN, TEST (plays it), back to the editor. Names are what you typed. |
 | ☐ | Open a **built-in** map, change something, then SAVE / leave: it asks whether to keep your edits as a **new map** (suggests e.g. `temple_edit`). Yes saves a copy; No drops the edits; the built-in map is never changed. |
 | ☐ | EDIT THE MAP TOGETHER with a second player: edits appear for both; leaving offers a copy. |
+| ☐ | **Map editor tool** (`tools\map_editor\build.cmd`, then `run.cmd` in `Quark\map-editor`): it opens a default map and one of yours; Checks all pass on a default map; Metrics shows times to points with routes; a 10 s Bots run plays live and scrubs; a player figure stands 1.8 m against the scale bar; a decoration preset applies, undoes and regenerates; Save as writes a map the game's MAP EDITOR opens. |
 
 ## 9. Demos
 

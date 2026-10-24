@@ -1,0 +1,158 @@
+/* Overview tab: Needs q first, then latest changes, the waiting-on board and counts per file. */
+'use strict';
+(function (DM) {
+  const {h, clear, $} = DM;
+  const st = DM.state;
+
+  // Sentences of a raw markdown body (whitespace collapsed, markdown kept for rendering).
+  function rawSentences(md) {
+    return String(md || '').replace(/\s+/g, ' ').trim().split(/(?<=[.?!])\s+(?=[A-Z0-9(`"'*_\[])/).filter(Boolean);
+  }
+  function recommendation(e) {
+    const s = rawSentences(e.body).find(x => /recommend/i.test(x));
+    if (!s) return e.recommendation ? String(e.recommendation) : null;
+    return s.replace(/^\s*(\*\*)?(recommendation|recommended|we recommend)\s*(\*\*)?\s*[:\-]\s*/i, '');
+  }
+  // Question sentences of the body; a very short one ("OK?") takes the sentence before it as its context.
+  function questionsOf(e) {
+    const ss = rawSentences(e.body), out = [];
+    ss.forEach((x, i) => {
+      if (!/\?\s*$/.test(x.replace(/[)*_"']+$/, '')) || /recommend/i.test(x)) return;
+      out.push(DM.plain(x).length < 16 && i > 0 && !out.includes(ss[i - 1]) ? ss[i - 1] + ' ' + x : x);
+    });
+    return out.slice(0, 6);
+  }
+
+  function needItem(e) {
+    const isQ = /\?\s*$/.test(DM.plain(e.title));
+    const qs = questionsOf(e);
+    const rec = recommendation(e);
+    const push = e.waitingOn.includes('push');
+    const ctx = rawSentences(e.body).filter(x => !qs.some(q => q.includes(x)) && !/recommend/i.test(x)).slice(0, 2).join(' ');
+    const el = h('div', {class: 'nq' + (e.priority === 'P1' ? ' p1' : '')});
+    el.appendChild(h('div', {class: 'nq-h'},
+      e.priority ? h('span', {class: 'pri ' + e.priority}, e.priority) : null,
+      h('a', {class: 'nq-t', href: '#entry=' + encodeURIComponent(e.id), onclick: ev => { ev.preventDefault(); DM.app.openEntry(e.id); }},
+        DM.md.into(h('span'), DM.trimTitle(e.title) === DM.plain(e.title) ? e.title : e.title.replace(/[.:,;]+$/, ''), true)),
+      h('span', {class: 'spacer'}),
+      e.firstSeen && e.firstSeen.time ? h('span', {class: 'faint nq-age'}, push ? 'ready ' : 'asked ', DM.timeEl(e.firstSeen.time)) :
+        e.date ? h('span', {class: 'faint nq-age'}, DM.dateOnly(e.date)) : null));
+    if (qs.length && !(isQ && qs.length === 1)) el.appendChild(h('ul', {class: 'nq-qs'}, qs.map(q => DM.md.into(h('li'), q, true))));
+    if (!isQ && !qs.length && (push || !e.file.startsWith('07'))) el.appendChild(h('div', {class: 'nq-ask'}, h('span', {class: 'why-k'}, push ? 'q’s part: ' : 'Needed from q: '),
+      e.waitingWhy || (push ? 'Push to testing.' : 'A decision.')));
+    if (ctx) el.appendChild(DM.md.into(h('div', {class: 'nq-ctx'}), ctx, true));
+    if (rec) el.appendChild(h('div', {class: 'nq-rec'}, h('span', {class: 'why-k'}, 'Recommended: '), DM.md.into(h('span'), rec, true)));
+    const chips = DM.entries.chipsFor(e).slice(0, 4);
+    el.appendChild(h('div', {class: 'nq-m'},
+      h('span', {class: 'faint'}, DM.fileTitle(e.file), e.section ? ' › ' + e.section : ''),
+      h('span', {class: 'dotsep'}), DM.data.threadLink(e.thread, e.threadUrl),
+      chips.length ? h('span', {class: 'chips inl'}, chips) : null));
+    return el;
+  }
+
+  function byPriThenNew(a, b) {
+    const t = e => Date.parse((e.firstSeen && e.firstSeen.time) || '') || 0;
+    return (DM.PRI_RANK[a.priority] || 9) - (DM.PRI_RANK[b.priority] || 9) || t(b) - t(a);
+  }
+
+  function section(title, count, sub, ...kids) {
+    return h('section', {class: 'ov-sec'}, h('h2', null, title, count != null ? h('span', {class: 'cnt'}, count) : null,
+      sub ? h('span', {class: 'sub'}, sub) : null), kids);
+  }
+
+  function render() {
+    const d = st.data, E = d.entries;
+    const root = clear($('#ovBody'));
+    const open = E.filter(e => !DM.isDone(e));
+    const need = open.filter(DM.needsQ);
+    const pushes = need.filter(e => e.waitingOn.includes('push')).sort(byPriThenNew);
+    const decisions = need.filter(e => !e.waitingOn.includes('push')).sort(byPriThenNew);
+    const tell = open.filter(e => e.file.startsWith('06') && !DM.needsQ(e));
+    const weekAgo = Date.now() - 7 * 86400000;
+    const finishedWeek = E.filter(e => DM.isDone(e) && e.lastChanged && Date.parse(e.lastChanged.time) > weekAgo).length;
+    const k = key => open.filter(e => DM.waitKeys(e).includes(key)).length;
+
+    // stat tiles
+    const tile = (n, label, cls, onclick, title) => h('button', {class: 'tile ' + cls, onclick, title}, h('b', null, String(n)), h('span', null, label));
+    root.appendChild(h('div', {class: 'tiles'},
+      tile(need.length, 'need q', 'q', () => DM.entries.filterTo({wait: 'q', status: 'notdone'}), 'Entries waiting on q: decisions and pushes'),
+      tile(k('claude'), 'Claude working', 'claude', () => DM.entries.filterTo({wait: 'claude', status: 'notdone'})),
+      tile(open.filter(e => DM.waitKeys(e).some(x => x === 'pr' || x === 'ci')).length, 'waiting for PR / CI', 'ci', () => DM.entries.filterTo({wait: 'prci', status: 'notdone'})),
+      tile(k('tests'), 'need tests / repro', 'tests', () => DM.entries.filterTo({wait: 'tests', status: 'notdone'})),
+      tile(k('nobody'), 'not started', 'nobody', () => DM.entries.filterTo({wait: 'nobody', status: 'notdone'})),
+      tile(finishedWeek, 'finished this week', 'done', () => DM.entries.filterTo({status: 'done'})),
+      h('span', {class: 'spacer'}),
+      h('span', {class: 'tiles-note faint'}, E.length + ' entries in ' + d.files.filter(f => f.kind !== 'document').length + ' files',
+        d.changes[0] ? [h('br'), 'last change ', DM.timeEl(d.changes[0].time)] : null)));
+
+    // Needs q (left) + latest changes (right)
+    const left = h('div', {class: 'ov-col'});
+    const nq = section('Needs q', need.length, need.length ? 'every item waiting on you, as a question' : null);
+    nq.classList.add('needq-sec');
+    if (!need.length) nq.appendChild(h('div', {class: 'empty ok'}, 'Nothing is waiting on you right now.'));
+    if (decisions.length) nq.appendChild(h('div', {class: 'nq-group'}, h('h3', null, 'Decisions (' + decisions.length + ')'), decisions.map(needItem)));
+    if (pushes.length) nq.appendChild(h('div', {class: 'nq-group'}, h('h3', null, 'Ready for you to push (' + pushes.length + ')'), pushes.map(needItem)));
+    left.appendChild(nq);
+    if (tell.length) {
+      const sec = section('Not told yet', tell.length, 'news for q in "Things to tell q"; nothing to decide');
+      sec.appendChild(h('ul', {class: 'tell'}, tell.map(e => h('li', null,
+        h('a', {href: '#entry=' + encodeURIComponent(e.id), onclick: ev => { ev.preventDefault(); DM.app.openEntry(e.id); }}, DM.md.into(h('span'), e.title, true)),
+        ' ', h('span', {class: 'faint'}, e.thread || '', e.firstSeen && e.firstSeen.time ? [' · ', DM.timeEl(e.firstSeen.time)] : '')))));
+      left.appendChild(sec);
+    }
+    const right = h('div', {class: 'ov-col'});
+    const latest = section('Latest changes', null, null);
+    latest.appendChild(h('div', {class: 'mini-log'}, d.changes.slice(0, 15).map(c => DM.changes.commitBlock(c, false, 3))));
+    latest.appendChild(h('button', {class: 'mini', onclick: () => DM.app.show('changes')}, 'Full change log'));
+    right.appendChild(latest);
+    root.appendChild(h('div', {class: 'ov-grid'}, left, right));
+
+    // waiting-on board (compact)
+    const board = section('Waiting on', open.length, 'unfinished entries by what they wait for');
+    const cols = h('div', {class: 'wboard'});
+    for (const w of DM.WAIT) {
+      const list = open.filter(e => DM.waitKeys(e)[0] === w.key).sort(byPriThenNew);
+      cols.appendChild(h('div', {class: 'wcol ' + w.cls},
+        h('div', {class: 'wcol-h'}, h('span', null, w.label), h('b', null, String(list.length))),
+        list.slice(0, 6).map(e => h('a', {class: 'witem', href: '#entry=' + encodeURIComponent(e.id), title: DM.plain(e.title) + '\n' + (e.waitingWhy || ''),
+          onclick: ev => { ev.preventDefault(); DM.app.openEntry(e.id); }},
+          e.priority ? h('span', {class: 'pri ' + e.priority}, e.priority) : null, ' ', DM.trimTitle(e.title))),
+        list.length > 6 ? h('button', {class: 'mini more', onclick: () => DM.entries.filterTo({wait: w.key, status: 'notdone'})}, '+ ' + (list.length - 6) + ' more') : null));
+    }
+    board.appendChild(cols);
+    root.appendChild(board);
+
+    // counts per file
+    const cnt = section('By file', null, 'click a number to see those entries');
+    const COLS = [
+      ['q', 'Needs q', e => DM.needsQ(e)],
+      ['prci', 'PR / CI', e => DM.waitKeys(e).some(x => x === 'pr' || x === 'ci')],
+      ['tests', 'Tests', e => DM.waitKeys(e).includes('tests')],
+      ['claude', 'Claude working', e => DM.waitKeys(e).includes('claude')],
+      ['nobody', 'Not started', e => DM.waitKeys(e).includes('nobody')],
+      ['done', 'Finished', e => DM.isDone(e)],
+    ];
+    const tbl = h('table', {class: 'counts'}, h('thead', null, h('tr', null, h('th', null, 'File'), COLS.map(c => h('th', {class: 'n'}, c[1])), h('th', {class: 'n'}, 'Total'), h('th', null, ''))));
+    const tb = h('tbody');
+    for (const f of d.files.filter(f => f.kind !== 'document')) {
+      const fe = E.filter(e => e.file === f.name);
+      const nums = COLS.map(c => fe.filter(c[2]).length);
+      const bar = h('div', {class: 'sbar', title: COLS.map((c, i) => c[1] + ': ' + nums[i]).join('\n')});
+      const tot = fe.length || 1;
+      COLS.forEach((c, i) => { if (nums[i]) bar.appendChild(h('i', {class: 'b-' + c[0], style: {width: (100 * nums[i] / tot) + '%'}})); });
+      tb.appendChild(h('tr', null,
+        h('td', null, h('a', {href: '#file=' + encodeURIComponent(f.name), onclick: ev => { ev.preventDefault(); DM.app.openFile(f.name); }}, DM.fileTitle(f.name)),
+          f.pcUnsynced ? h('span', {class: 'badge pc', title: 'Edited on the PC, not synced yet'}, 'PC') : null),
+        COLS.map((c, i) => h('td', {class: 'n'}, nums[i] ? h('button', {class: 'num-btn c-' + c[0], onclick: () => DM.entries.filterTo(
+          c[0] === 'done' ? {file: f.name, status: 'done'} : {file: f.name, status: 'notdone', wait: c[0]})}, String(nums[i])) : h('span', {class: 'faint'}, '–'))),
+        h('td', {class: 'n'}, h('button', {class: 'num-btn', onclick: () => DM.entries.filterTo({file: f.name})}, String(fe.length))),
+        h('td', {class: 'barcell'}, bar)));
+    }
+    tbl.appendChild(tb);
+    cnt.appendChild(tbl);
+    root.appendChild(cnt);
+  }
+
+  (DM.views = DM.views || {}).overview = {render};
+  DM.overview = {recommendation, questionsOf};
+})(window.DM);

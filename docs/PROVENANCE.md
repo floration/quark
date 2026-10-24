@@ -70,7 +70,9 @@ apart.
   a recording in `assets/sfx/custom/`, or a map with a `handmade` line makes that item `human`. A HEAVY METAL /
   MAGICAL / MOUTH sound that tools/import_sfx.py's `KITS` table mixes from Kenney clips is `third-party` (CC0,
   assets/sfx/CREDITS.md); one it mixes only from the owner's recordings (MOUTH's hitsound tiers) is `human`; a sound a
-  kit doesn't have falls back to DEFAULT's (synthesized: `ai`). Fonts with an OFL file next to them are `third-party`.
+  kit doesn't have falls back to DEFAULT's (synthesized: `ai`). Fonts with a licence file next to
+  them (`<family>-OFL.txt`, `-LICENSE.txt` or `-COPYING.txt`, the font's file name starting with `<family>`) are
+  `third-party`.
   Removed assets are dropped; new ones are added as `ai`.
 - **Curated entries**: an entry with `by`, `date` or `tool` was set by a person or an editor (a merge, the
   dashboard), and `sync` never changes it (it still drops it when the asset is gone, except `ui/` and `bots/` ids).

@@ -41,10 +41,10 @@ void Ui::labelCentered(float cx, float y, const std::string& t, const Color& c, 
 }
 
 // Text scale that fits maxW: the normal size, or shrunk only as much as needed. The renderer never draws below
-// Renderer::kMinTextScale, so text that still doesn't fit at that size is clipped with "..." (t is replaced).
+// Renderer::minTextScale() (the font's), so text that still doesn't fit at that size is clipped with "..." (t is replaced).
 float Ui::fit(std::string& t, float maxW, bool* clipped) const {
     if (t.empty() || r_->textWidth(t, textScale_) <= maxW) return textScale_;
-    float ts = std::max(Renderer::kMinTextScale, maxW / (r_->textWidth(t, 10.0f) * 0.1f)); // (width at 10: above the minimum)
+    float ts = std::max(r_->minTextScale(), maxW / (r_->textWidth(t, 10.0f) * 0.1f)); // (width at 10: above the minimum)
     if (r_->textWidth(t, ts) > maxW + 0.01f) {   // (shrunk to exactly fit, rounding can come out a hair over: not cut)
         t = r_->textClip(t, ts, maxW);
         if (clipped) *clipped = true;
@@ -58,7 +58,7 @@ const std::string& Ui::fitText(const std::string& t, float maxW, std::string& bu
     ts = textScale_;
     tw = t.empty() ? 0.0f : r_->textWidth(t, textScale_);
     if (t.empty() || tw <= maxW) return t;
-    ts = std::max(Renderer::kMinTextScale, maxW / (r_->textWidth(t, 10.0f) * 0.1f)); // (width at 10: above the minimum)
+    ts = std::max(r_->minTextScale(), maxW / (r_->textWidth(t, 10.0f) * 0.1f)); // (width at 10: above the minimum)
     tw = r_->textWidth(t, ts);
     if (tw <= maxW + 0.01f) return t;   // (shrunk to exactly fit, rounding can come out a hair over: not cut)
     buf = r_->textClip(t, ts, maxW);
@@ -210,7 +210,7 @@ bool Ui::slider(float x, float y, float w, float h, const std::string& label, fl
         ts = textScale_;
         const std::string full = lab + ": " + num;   // (built once: it was three times)
         if (r_->textWidth(full, ts) <= maxW) return;
-        ts = std::max(Renderer::kMinTextScale, maxW / (r_->textWidth(full, 10.0f) * 0.1f));
+        ts = std::max(r_->minTextScale(), maxW / (r_->textWidth(full, 10.0f) * 0.1f));
         if (r_->textWidth(full, ts) > maxW + 0.01f) lab = r_->textClip(lab, ts, std::max(0.0f, maxW - r_->textWidth(": " + num, ts)));
     };
     std::string lab;
@@ -287,7 +287,7 @@ bool Ui::slider(float x, float y, float w, float h, const std::string& label, fl
         // under the mouse, away from its default: a small hint above it (a dark tag, the smallest text)
         if (hover(x, y, w, h) && v != def && !in_.down) {
             const std::string hint = "RIGHT-CLICK: RESET";
-            float hs = Renderer::kMinTextScale, hw2 = r_->textWidth(hint, hs) + 8 * scale_, hh = r_->textHeight(hs) + 4 * scale_;
+            float hs = r_->minTextScale(), hw2 = r_->textWidth(hint, hs) + 8 * scale_, hh = r_->textHeight(hs) + 4 * scale_;
             float hx = std::min(x + w - hw2, std::max(x, in_.mx - hw2 * 0.5f)), hy = y - hh - 2 * scale_;
             r_->rect(hx, hy, hw2, hh, {0, 0, 0, 0.75f});
             r_->text(hx + 4 * scale_, hy + 2 * scale_, hs, hint, {0.85f, 0.87f, 0.9f, 1});
